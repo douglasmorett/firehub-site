@@ -9,7 +9,7 @@ import { camposDoApp, pontoNoMapa } from "@/lib/app-motoboy/pedido-no-app";
 import { previsaoDaEntrega } from "@/lib/previsao-da-entrega";
 import { limitesDoAlerta } from "@/lib/relatorios/tempos";
 import { ehPedido99Food } from "@/lib/food99-status";
-import { jaSaiuNoParceiro } from "@/lib/codigo-de-entrega";
+import { codigoJaConferido, jaSaiuNoParceiro } from "@/lib/codigo-de-entrega";
 
 export async function GET(req: NextRequest) {
   try {
@@ -118,6 +118,10 @@ export async function GET(req: NextRequest) {
         // app não precisa dele, e id de parceiro não viaja para o celular.
         ifoodDropCodeRequired: true,
         ifoodOrderId: true,
+        // O código já conferido nesta entrega (o passo do código vem antes do
+        // pagamento e da bebida): o app não pergunta de novo. Também sai da
+        // resposta — o que o cliente ditou não viaja de volta.
+        ifoodDropCodeInfo: true,
         // 99Food com entrega própria: todo pedido tem código do cliente.
         deliveryBy: true,
         openDeliveryOrderId: true,
@@ -156,7 +160,7 @@ export async function GET(req: NextRequest) {
       }
     } catch {}
 
-    const ordersComSequencia = orders.map(({ ifoodOrderId, ifoodDropCodeRequired, deliveryBy, openDeliveryOrderId, openDeliveryChannel, ...o }) => {
+    const ordersComSequencia = orders.map(({ ifoodOrderId, ifoodDropCodeRequired, ifoodDropCodeInfo, deliveryBy, openDeliveryOrderId, openDeliveryChannel, ...o }) => {
       // O iFood marca "exige código" também em pedido que ELE entrega (195 no
       // banco em 11/09/2026, nenhum com motoboy da loja) — ali quem confere é o
       // entregador do iFood, não o nosso.
@@ -165,6 +169,11 @@ export async function GET(req: NextRequest) {
         appConfig.pedirCodigo99Food &&
         ehPedido99Food({ source: o.source, openDeliveryChannel, openDeliveryOrderId }) &&
         deliveryBy === "MERCHANT";
+      // Código já aprovado nesta entrega (o app fechou entre o código e a
+      // baixa): o próximo toque vai direto ao pagamento e à bebida.
+      const jaConferido =
+        (pedeIfood && codigoJaConferido(ifoodDropCodeInfo, "iFood")) ||
+        (pede99 && codigoJaConferido(ifoodDropCodeInfo, "99Food"));
       // ── QUANTO RECEBER NA PORTA ──────────────────────────────────────
       //
       // Decidido AQUI, no servidor, e não no celular: a regra de "está pago
@@ -185,8 +194,9 @@ export async function GET(req: NextRequest) {
         // O ponto para o entregador VER no mapa (pode ser aproximado).
         mapa: pontoNoMapa(customerLatLng),
         routeSequence: sequencias[o.id] ?? null,
-        pedeCodigoEntrega: pedeIfood || pede99,
+        pedeCodigoEntrega: (pedeIfood || pede99) && !jaConferido,
         canalDoCodigo: pedeIfood ? "iFood" : pede99 ? "99Food" : null,
+        codigoJaConferido: Boolean(jaConferido),
         cobrarNaEntrega: cobranca && cobranca.cobrar ? cobranca : null,
       };
       if (!formatoDoApp) return pedido;
@@ -539,6 +549,9 @@ export async function PATCH(req: NextRequest) {
   try {
     const corpo = await req.json().catch(() => ({} as any));
     const { orderId, codigo, semCodigo, pagamento } = corpo;
+    // Só o passo do código, sem dar baixa: o app confere o código ANTES de
+    // perguntar pagamento e bebida (lib/codigo-de-entrega.ts → codigoJaConferido).
+    const apenasConferirCodigo = corpo?.apenasConferirCodigo === true;
     // App nativo: quem dá a baixa sai da sessão assinada, nunca do corpo.
     const { temSessaoAssinada, exigirMotoboy } = await import("@/lib/motoboy-sessao");
     const daSessao = temSessaoAssinada(req) ? await exigirMotoboy(req) : null;
@@ -631,7 +644,18 @@ export async function PATCH(req: NextRequest) {
     let avisoCodigo: string | null = null;
     /** O que gravar no pedido sobre a tentativa (diagnóstico e auditoria). */
     let infoCodigo: Record<string, unknown> | null = null;
-    if ((exigeCodigo || eh99Propria) && !semCodigo) {
+    // O código já foi aprovado no passo próprio (antes do pagamento e da
+    // bebida). A plataforma já concluiu o pedido: conferir de novo seria
+    // recusa ("já confirmado"/sem permissão) e prenderia uma entrega pronta.
+    const jaConferido =
+      (exigeCodigo && codigoJaConferido((order as any).ifoodDropCodeInfo, "iFood")) ||
+      (!exigeCodigo && eh99Propria && codigoJaConferido((order as any).ifoodDropCodeInfo, "99Food"));
+    if (jaConferido) {
+      if (exigeCodigo) codigoConferido = true;
+      else codigoConferido99 = true;
+      if (apenasConferirCodigo) return NextResponse.json({ success: true, codigoConferido: true, jaConferido: true });
+    }
+    if ((exigeCodigo || eh99Propria) && !semCodigo && !jaConferido) {
       const loja = await prisma.user.findUnique({ where: { id: String(storeId) }, select: { appMotoboyConfig: true } });
       const cfg = lerAppMotoboyConfig(loja?.appMotoboyConfig);
       const canal = exigeCodigo ? "iFood" : "99Food";
@@ -738,7 +762,7 @@ export async function PATCH(req: NextRequest) {
         }
       }
     }
-    if ((exigeCodigo || eh99Propria) && semCodigo) {
+    if ((exigeCodigo || eh99Propria) && semCodigo && !jaConferido) {
       // "O cliente não tem o código" só vale se a loja deixou (App Motoboys →
       // configurações; o dono, 04/10/2026: "escolhe na configuração").
       const lojaDoSem = await prisma.user.findUnique({ where: { id: String(storeId) }, select: { appMotoboyConfig: true } });
@@ -753,6 +777,23 @@ export async function PATCH(req: NextRequest) {
         canal: exigeCodigo ? "iFood" : "99Food", digitado: null,
         resultado: "sem-codigo", resposta: "cliente não tinha o código", motoboyId: String(motoboyId),
       };
+    }
+
+    // ── SÓ O PASSO DO CÓDIGO: GRAVA E VOLTA, SEM BAIXA ──────────────────────
+    //
+    // O entregador só abre a bag com o código aprovado; pagamento e bebida vêm
+    // depois, e a baixa reconhece este registro (jaConferido, acima). Pedido
+    // que não pede código (loja desligou, entrega do parceiro) segue direto.
+    if (apenasConferirCodigo) {
+      if (codigoConferido || codigoConferido99) {
+        await prisma.customerOrder.update({
+          where: { id: order.id },
+          data: { ifoodDropCodeInfo: { ...(infoCodigo || {}), resultado: "conferido", quando: new Date().toISOString() } as any },
+        });
+        console.log(`[Motoboy Entrega] 🔐 código de ${order.id} aprovado antes da baixa (${exigeCodigo ? "iFood" : "99Food"})`);
+        return NextResponse.json({ success: true, codigoConferido: true });
+      }
+      return NextResponse.json({ success: true, codigoDispensado: true });
     }
 
     // ── O CLIENTE PAGOU DE OUTRO JEITO ──────────────────────────────────────

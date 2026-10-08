@@ -1,13 +1,15 @@
 /**
  * Da porta do cliente até a baixa — a mesma fila da página web:
  *
- *   1. BEBIDAS: "você entregou a 2x Coca?" (a loja liga no painel). "Ainda
- *      não" fecha sem baixa: ele volta, pega a bebida e confirma depois.
+ *   1. CÓDIGO do iFood/99: os 4 dígitos do cliente, conferidos com a
+ *      plataforma ANTES de tudo, sem dar baixa. "Só abro a bag depois que
+ *      tenho o código" (Lucas, Frangoso, 05/10/2026; o dono confirmou).
  *   2. RECEBER: quanto e em quê, com o troco já calculado. "Pagou de outro
  *      jeito" vai junto na baixa — o acerto não cobra dele um dinheiro que ele
  *      não recebeu.
- *   3. CÓDIGO do iFood/99: os 4 dígitos do cliente. É o último passo porque,
- *      conferido, o pedido fecha lá na hora.
+ *   3. BEBIDAS: "você entregou a 2x Coca?" (a loja liga no painel), a última
+ *      pergunta. "Ainda não" fecha sem baixa: ele volta, pega a bebida e
+ *      confirma depois — o código aprovado fica valendo.
  *
  * Pedido sem nenhuma pergunta ainda passa por "Entregou?": no app, um toque
  * de bolso no botão verde mandaria o WhatsApp "seu pedido chegou" e fecharia
@@ -32,12 +34,15 @@ export type ResultadoDaBaixa =
   | { ok: true }
   | { ok: false; precisaCodigo?: boolean; canalDoCodigo?: string | null; erroNoCodigo?: string; erro?: string };
 
+/** O passo do código sozinho (PATCH com `apenasConferirCodigo`): aprova, não dá baixa. */
+export type ResultadoDaConferencia = { ok: true } | { ok: false; erroNoCodigo?: string; erro?: string };
+
 type Passo = "bebidas" | "cobranca" | "codigo" | "confirmar";
 
 function primeiroPasso(p: Pedido): Passo {
-  if (p.bebidasParaConferir.length > 0) return "bebidas";
-  if (p.cobrarNaEntrega) return "cobranca";
   if (p.pedeCodigoEntrega) return "codigo";
+  if (p.cobrarNaEntrega) return "cobranca";
+  if (p.bebidasParaConferir.length > 0) return "bebidas";
   return "confirmar";
 }
 
@@ -46,6 +51,7 @@ export function FluxoDaEntrega({
   formas,
   aoFechar,
   baixar,
+  conferirCodigo,
 }: {
   /** A tela monta este fluxo só enquanto há um pedido em entrega: cada abertura começa do zero. */
   pedido: Pedido;
@@ -53,6 +59,8 @@ export function FluxoDaEntrega({
   aoFechar: () => void;
   /** A baixa de verdade (PATCH). O fluxo só fecha quando ela confirma. */
   baixar: (pedido: Pedido, extra: ExtraDaBaixa) => Promise<ResultadoDaBaixa>;
+  /** O primeiro passo: confere o código com o iFood/99, sem baixa. */
+  conferirCodigo: (pedido: Pedido, codigo: string) => Promise<ResultadoDaConferencia>;
 }) {
   const [passo, setPasso] = useState<Passo>(() => primeiroPasso(pedido));
   const [extra, setExtra] = useState<ExtraDaBaixa>({});
@@ -61,6 +69,9 @@ export function FluxoDaEntrega({
   const [erroCodigo, setErroCodigo] = useState("");
   const [canal, setCanal] = useState<string | null>(pedido.canalDoCodigo);
   const [enviando, setEnviando] = useState(false);
+  /** A baixa já tinha pagamento e bebida respondidos quando o servidor pediu o
+      código (lista defasada): aprovado o código, volta direto a ela. */
+  const [retomarBaixa, setRetomarBaixa] = useState(false);
 
   const fechar = () => {
     if (!enviando) aoFechar();
@@ -82,6 +93,7 @@ export function FluxoDaEntrega({
         setCanal(r.canalDoCodigo || canal || "iFood");
         setCodigo("");
         setErroCodigo("");
+        setRetomarBaixa(true);
         setPasso("codigo");
         return;
       }
@@ -101,9 +113,31 @@ export function FluxoDaEntrega({
   /** Avança para o próximo passo que este pedido tem, ou dá a baixa. */
   function seguirDepoisDe(atual: Passo, extraAtual: ExtraDaBaixa) {
     setExtra(extraAtual);
-    if (atual === "bebidas" && pedido.cobrarNaEntrega) return setPasso("cobranca");
-    if ((atual === "bebidas" || atual === "cobranca") && pedido.pedeCodigoEntrega) return setPasso("codigo");
+    if (atual === "codigo" && retomarBaixa) return finalizar(extraAtual);
+    if (atual === "codigo" && pedido.cobrarNaEntrega) return setPasso("cobranca");
+    if ((atual === "codigo" || atual === "cobranca") && pedido.bebidasParaConferir.length > 0) return setPasso("bebidas");
     finalizar(extraAtual);
+  }
+
+  /** O passo do código: só segue com a plataforma aprovando. */
+  async function conferir() {
+    if (enviando || codigo.length < 4) return;
+    setEnviando(true);
+    let aprovado = false;
+    try {
+      const r = await conferirCodigo(pedido, codigo);
+      if (r.ok) {
+        aprovado = true;
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        setErroCodigo("");
+      } else {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        setErroCodigo(r.erroNoCodigo || r.erro || "Não consegui conferir o código. Tente de novo.");
+      }
+    } finally {
+      setEnviando(false);
+    }
+    if (aprovado) seguirDepoisDe("codigo", extra);
   }
 
   const cobranca = pedido.cobrarNaEntrega;
@@ -203,7 +237,7 @@ export function FluxoDaEntrega({
           <Cabeca
             emoji="🔐"
             titulo={`Código de entrega do ${canal || "iFood"}`}
-            subtitulo={`Peça ao cliente o código de 4 dígitos que aparece no app do ${canal || "iFood"} dele.`}
+            subtitulo={`Peça ao cliente o código de 4 dígitos que aparece no app do ${canal || "iFood"} dele. Só abra a bag depois que o código for aprovado.`}
           />
           <TextInput
             value={codigo}
@@ -217,17 +251,17 @@ export function FluxoDaEntrega({
             placeholder="• • • •"
             placeholderTextColor={cor.bordaForte}
             style={[s.codigo, erroCodigo ? { borderColor: cor.vermelho } : null]}
-            onSubmitEditing={() => codigo.length >= 4 && finalizar({ ...extra, codigo })}
+            onSubmitEditing={() => conferir()}
             accessibilityLabel="Código de entrega"
           />
           {erroCodigo ? <Text style={s.erro}>{erroCodigo}</Text> : null}
           <Botao
-            titulo="Conferir e confirmar entrega"
+            titulo="Conferir código"
             variante="verde"
             desabilitado={codigo.length < 4}
             carregando={enviando}
             icone={<Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />}
-            aoTocar={() => finalizar({ ...extra, codigo })}
+            aoTocar={() => conferir()}
           />
           <Botao
             titulo="O cliente não tem o código"
@@ -240,7 +274,7 @@ export function FluxoDaEntrega({
                 `O ${canal || "iFood"} pode não reconhecer a entrega. Só faça isso se o cliente realmente não tem o código.`,
                 [
                   { text: "Voltar", style: "cancel" },
-                  { text: "Confirmar sem código", style: "destructive", onPress: () => finalizar({ ...extra, semCodigo: true }) },
+                  { text: "Confirmar sem código", style: "destructive", onPress: () => seguirDepoisDe("codigo", { ...extra, semCodigo: true }) },
                 ],
               )
             }

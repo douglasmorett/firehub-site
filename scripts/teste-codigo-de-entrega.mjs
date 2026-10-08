@@ -13,7 +13,7 @@ import ts from "typescript";
 const js = ts.transpileModule(readFileSync("src/lib/codigo-de-entrega.ts", "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { lerRespostaCodigoIfood, jaSaiuNoParceiro, deveReconferir } = await import(
+const { lerRespostaCodigoIfood, jaSaiuNoParceiro, deveReconferir, codigoJaConferido } = await import(
   "data:text/javascript," + encodeURIComponent(js)
 );
 
@@ -122,6 +122,16 @@ igual("99Food não entra", deveReconferir({ ...barrado, canal: "99Food" }, T0 + 
 igual("sem data não tenta", deveReconferir({ ...barrado, quando: undefined }, T0 + min), null);
 igual("nada gravado não tenta", deveReconferir(null, T0), null);
 igual("zero à esquerda fica", deveReconferir({ ...barrado, digitado: "0403" }, T0 + min)?.digitado, "0403");
+
+console.log("\n5) Código primeiro: a baixa reconhece o código já conferido (Lucas, 05/10)");
+igual("iFood conferido vale para o iFood", codigoJaConferido({ canal: "iFood", resultado: "conferido", digitado: "1234" }, "iFood"), true);
+igual("99 conferido vale para o 99", codigoJaConferido({ canal: "99Food", resultado: "conferido" }, "99Food"), true);
+igual("conferido de outro canal não vale", codigoJaConferido({ canal: "iFood", resultado: "conferido" }, "99Food"), false);
+igual("indisponível não é aprovação", codigoJaConferido({ canal: "iFood", resultado: "indisponivel" }, "iFood"), false);
+igual("não confirmado não é aprovação", codigoJaConferido({ canal: "iFood", resultado: "nao-confirmado" }, "iFood"), false);
+igual("errado não é aprovação", codigoJaConferido({ canal: "99Food", resultado: "errado" }, "99Food"), false);
+igual("sem código não é aprovação", codigoJaConferido({ canal: "iFood", resultado: "sem-codigo" }, "iFood"), false);
+igual("nada gravado", codigoJaConferido(null, "iFood"), false);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)\n` : "\n✅ tudo certo\n");
 process.exit(falhas ? 1 : 0);

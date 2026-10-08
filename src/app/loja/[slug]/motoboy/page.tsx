@@ -551,59 +551,107 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
    */
   const [cobrancaModalOrder, setCobrancaModalOrder] = useState<any | null>(null);
 
-  // Código de entrega do iFood: o cliente dita 4 dígitos, o servidor confere
-  // com o iFood e só então dá a baixa.
+  // Código de entrega do iFood/99: o cliente dita 4 dígitos e o servidor
+  // confere com a plataforma ANTES de qualquer outra pergunta.
   const [codigoModalOrder, setCodigoModalOrder] = useState<any | null>(null);
   const [codigoDigitado, setCodigoDigitado] = useState("");
   const [codigoErro, setCodigoErro] = useState("");
-  /** O que viaja na baixa além do código. Hoje: a forma de pagamento que o
-      cliente usou de verdade. É estado porque o teclado do código abre
-      DEPOIS da escolha e dispara a baixa por conta própria. */
+  /** O que viaja na baixa: "cliente não tem o código" e a forma de pagamento
+      que o cliente usou de verdade. É estado porque cada passo abre um modal e
+      o último dispara a baixa por conta própria. */
   type BaixaExtra = { codigo?: string; semCodigo?: boolean; pagamento?: string };
   const [extraDaBaixa, setExtraDaBaixa] = useState<BaixaExtra>({});
   /** A forma tocada no modal de cobrança; nulo = a que o pedido já dizia. */
   const [pagamentoNaPorta, setPagamentoNaPorta] = useState<string | null>(null);
 
-  // Initiate Delivery Flow (Checks for Beverages)
+  // ── A FILA DA PORTA: CÓDIGO → PAGAMENTO → BEBIDA → BAIXA ──────────────────
+  //
+  // Era bebida → pagamento → código, porque o código aprovado conclui o pedido
+  // no iFood/99. O Lucas (Frangoso, 05/10/2026) mostrou que na porta é o
+  // contrário: "primeiro pega o código, depois o restante; só abro a bag depois
+  // que tenho o código". O dono: enquanto o código não for aprovado, não tem
+  // por que seguir para pagamento e bebida. A conferência virou um passo
+  // próprio (sem baixa) e a baixa reconhece o código já aprovado.
   const handleInitiateDelivery = (order: any) => {
-    const bevList = appConfig.lembrarBebidas ? getBeveragesFromOrder(order, bevKeywords) : [];
-    if (bevList && bevList.length > 0) {
-      setBeveragesList(bevList);
-      setBeverageModalOrder(order);
-    } else {
-      prosseguirEntrega(order);
-    }
-  };
-
-  /**
-   * Depois das bebidas: se tem dinheiro a receber, lembra ANTES de qualquer
-   * outra coisa. O código do parceiro vem depois porque ele é a confirmação
-   * final — uma vez conferido, o pedido está fechado no iFood/99 e o
-   * entregador já saiu da tela.
-   */
-  const prosseguirEntrega = (order: any) => {
-    if (order?.cobrarNaEntrega) {
-      setPagamentoNaPorta(null);
-      setCobrancaModalOrder(order);
-      return;
-    }
-    pedirCodigoOuBaixar(order);
-  };
-
-  /**
-   * Fim da fila: pedido do iFood/99Food que exige o código do cliente abre o
-   * teclado do código (`pedeCodigoEntrega` vem do servidor, já com a regra da
-   * loja aplicada); os outros dão baixa direto.
-   */
-  const pedirCodigoOuBaixar = (order: any, extra: BaixaExtra = {}) => {
-    setExtraDaBaixa(extra);
     if (order?.pedeCodigoEntrega) {
+      setExtraDaBaixa({});
       setCodigoDigitado("");
       setCodigoErro("");
       setCodigoModalOrder(order);
       return;
     }
+    depoisDoCodigo(order, {});
+  };
+
+  /** Código aprovado (ou o cliente não tinha e a loja deixa): o dinheiro. */
+  const depoisDoCodigo = (order: any, extra: BaixaExtra) => {
+    if (order?.cobrarNaEntrega) {
+      setExtraDaBaixa(extra);
+      setPagamentoNaPorta(null);
+      setCobrancaModalOrder(order);
+      return;
+    }
+    depoisDoPagamento(order, extra);
+  };
+
+  /** A bebida é a última pergunta; sem ela, a baixa. */
+  const depoisDoPagamento = (order: any, extra: BaixaExtra) => {
+    const bevList = appConfig.lembrarBebidas ? getBeveragesFromOrder(order, bevKeywords) : [];
+    if (bevList && bevList.length > 0) {
+      setExtraDaBaixa(extra);
+      setBeveragesList(bevList);
+      setBeverageModalOrder(order);
+      return;
+    }
     handleMarkDelivered(order.id, extra);
+  };
+
+  /**
+   * O passo do código: confere com a plataforma e NÃO dá baixa. Aprovado, o
+   * pedido deixa de pedir código (o app pode fechar aqui e voltar depois) e a
+   * fila segue. `retomarBaixa`: a baixa já tinha pagamento e bebida respondidos
+   * e o servidor pediu o código (lista defasada) — aprovado, volta direto a ela.
+   */
+  const conferirCodigoPrimeiro = async (order: any, codigo: string) => {
+    if (!session || !order?.id) return;
+    if (baixandoRef.current.has(order.id)) return;
+    baixandoRef.current.add(order.id);
+    setUpdatingOrderId(order.id);
+    try {
+      const res = await fetch("/api/motoboys/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: order.id, motoboyId: session.motoboyId, storeId: session.storeId, codigo, apenasConferirCodigo: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success && data.jaEntregue) {
+        setCodigoModalOrder(null);
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: "ENTREGUE" } : o));
+        setToastMsg("✅ Este pedido já estava confirmado.");
+        setTimeout(() => setToastMsg(null), 3000);
+      } else if (res.ok && data.success) {
+        setCodigoModalOrder(null);
+        const aprovado = { ...order, pedeCodigoEntrega: false, codigoJaConferido: true };
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, pedeCodigoEntrega: false, codigoJaConferido: true } : o));
+        if (data.codigoConferido) {
+          setToastMsg("✅ Código aprovado! Pode abrir a bag.");
+          setTimeout(() => setToastMsg(null), 2500);
+        }
+        if (order.retomarBaixa) handleMarkDelivered(order.id, extraDaBaixa);
+        else depoisDoCodigo(aprovado, {});
+      } else if (data.codigoIncorreto || data.ifoodIndisponivel || data.parceiroIndisponivel || data.precisaCodigo) {
+        // Fica no teclado: digitar de novo é o caminho, não fechar.
+        setCodigoErro(data.error || "Código não confere. Tente de novo.");
+      } else {
+        setToastMsg(`⚠️ ${data.error || "Não consegui conferir o código. Tente de novo."}`);
+        setTimeout(() => setToastMsg(null), 4500);
+      }
+    } catch {
+      setCodigoErro("Sem conexão — o código NÃO foi conferido. Tente de novo.");
+    } finally {
+      baixandoRef.current.delete(order.id);
+      setUpdatingOrderId(null);
+    }
   };
 
   // Mark Order as Delivered
@@ -673,11 +721,13 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         setTimeout(() => setToastMsg(null), data.avisoCodigo ? 7000 : 3000);
       } else if (data.precisaCodigo) {
         // O servidor sabe que este pedido exige código (a lista do app pode
-        // estar defasada): abre o teclado em vez de mostrar erro.
+        // estar defasada): abre o teclado em vez de mostrar erro. Pagamento e
+        // bebida já foram respondidos — aprovado o código, volta à baixa.
         const alvo = orders.find((o) => o.id === orderId) || { id: orderId };
+        setExtraDaBaixa(extra);
         setCodigoDigitado("");
         setCodigoErro("");
-        setCodigoModalOrder({ ...alvo, canalDoCodigo: data.canalDoCodigo || alvo.canalDoCodigo });
+        setCodigoModalOrder({ ...alvo, canalDoCodigo: data.canalDoCodigo || alvo.canalDoCodigo, retomarBaixa: true });
       } else if (data.codigoIncorreto || data.ifoodIndisponivel || data.parceiroIndisponivel) {
         // Fica no teclado: digitar de novo é o caminho, não fechar.
         setCodigoErro(data.error || "Código não confere. Tente de novo.");
@@ -1742,9 +1792,11 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               <button
                 type="button"
                 onClick={() => {
+                  // Última pergunta da porta: código e pagamento já ficaram
+                  // para trás, então daqui é a baixa.
                   const alvo = beverageModalOrder;
                   setBeverageModalOrder(null);
-                  prosseguirEntrega(alvo);
+                  handleMarkDelivered(alvo.id, extraDaBaixa);
                 }}
                 style={{
                   flex: 1.5, padding: "12px", background: "#16A34A", color: "#FFFFFF",
@@ -1881,10 +1933,14 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                   // Só viaja se for DIFERENTE do que o pedido já dizia: confirmar
                   // "Dinheiro" num pedido em dinheiro não vira troca no histórico.
                   const formaDoPedido = formaCanonica(alvo.cobrarNaEntrega?.metodo);
+                  // O que veio do passo do código ("cliente não tem o código")
+                  // segue junto até a baixa.
                   const extra: BaixaExtra =
-                    pagamentoNaPorta && pagamentoNaPorta !== formaDoPedido ? { pagamento: pagamentoNaPorta } : {};
+                    pagamentoNaPorta && pagamentoNaPorta !== formaDoPedido
+                      ? { ...extraDaBaixa, pagamento: pagamentoNaPorta }
+                      : { ...extraDaBaixa };
                   setCobrancaModalOrder(null);
-                  pedirCodigoOuBaixar(alvo, extra);
+                  depoisDoPagamento(alvo, extra);
                 }}
                 style={{
                   flex: 1.5, padding: "12px", background: "#16A34A", color: "#FFFFFF",
@@ -1931,6 +1987,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             </h3>
             <p style={{ fontSize: "0.9rem", color: "#475569", margin: "0 0 1rem" }}>
               Peça ao cliente o código de <b>4 dígitos</b> que aparece no app do {codigoModalOrder.canalDoCodigo || "iFood"} dele e digite aqui.
+              {" "}<b>Só abra a bag depois que o código for aprovado.</b>
               {codigoModalOrder.canalDoCodigo === "99Food"
                 ? " O 99Food conclui o pedido na hora em que o código confere."
                 : " Sem ele o iFood pode cancelar a entrega."}
@@ -1943,7 +2000,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               maxLength={6}
               value={codigoDigitado}
               onChange={(e) => { setCodigoDigitado(e.target.value.replace(/\D/g, "")); setCodigoErro(""); }}
-              onKeyDown={(e) => { if (e.key === "Enter" && codigoDigitado.length >= 4) handleMarkDelivered(codigoModalOrder.id, { ...extraDaBaixa, codigo: codigoDigitado }); }}
+              onKeyDown={(e) => { if (e.key === "Enter" && codigoDigitado.length >= 4) conferirCodigoPrimeiro(codigoModalOrder, codigoDigitado); }}
               placeholder="• • • •"
               style={{
                 width: "100%", boxSizing: "border-box", fontSize: "2rem", letterSpacing: "0.5em", textAlign: "center",
@@ -1957,7 +2014,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
             <button
               type="button"
               disabled={codigoDigitado.length < 4 || updatingOrderId === codigoModalOrder.id}
-              onClick={() => handleMarkDelivered(codigoModalOrder.id, { ...extraDaBaixa, codigo: codigoDigitado })}
+              onClick={() => conferirCodigoPrimeiro(codigoModalOrder, codigoDigitado)}
               style={{
                 width: "100%", marginTop: "1rem", padding: "14px",
                 background: codigoDigitado.length < 4 ? "#94A3B8" : "#16A34A", color: "#FFFFFF",
@@ -1968,7 +2025,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               {updatingOrderId === codigoModalOrder.id
                 ? <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} />
                 : <CheckCircle2 size={18} />}
-              Conferir e confirmar entrega
+              Conferir código
             </button>
             {/* Só aparece se a loja deixa fechar sem código (App Motoboys →
                 configurações). O servidor também recusa. */}
@@ -1977,9 +2034,11 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 type="button"
                 onClick={() => {
                   if (!confirm("Confirmar a entrega SEM o código? O iFood pode não reconhecer a entrega. Só faça isso se o cliente realmente não tem o código.")) return;
-                  const alvo = codigoModalOrder.id;
+                  const alvo = codigoModalOrder;
                   setCodigoModalOrder(null);
-                  handleMarkDelivered(alvo, { ...extraDaBaixa, semCodigo: true });
+                  // Baixa já respondida (lista defasada): volta direto a ela.
+                  if (alvo.retomarBaixa) handleMarkDelivered(alvo.id, { ...extraDaBaixa, semCodigo: true });
+                  else depoisDoCodigo(alvo, { semCodigo: true });
                 }}
                 style={{
                   width: "100%", marginTop: "10px", padding: "10px", background: "#FFFFFF", color: "#B91C1C",
