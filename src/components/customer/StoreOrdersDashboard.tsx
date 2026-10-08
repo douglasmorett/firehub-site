@@ -2161,6 +2161,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       food99ShopId: (order as any).food99ShopId,
       franchiseeId: (order as any).franchiseeId,
       openDeliveryReference: order.openDeliveryReference,
+      // O canal e o código de coleta do 99/Open Delivery: sem eles a comanda
+      // não sabe que é entrega do parceiro nem imprime o código que o
+      // entregador dele fala no balcão (lib/entrega-parceira.ts).
+      openDeliveryChannel: (order as any).openDeliveryChannel,
+      openDeliveryPickupCode: (order as any).openDeliveryPickupCode,
       source: order.source,
       // A PREVISÃO DE ENTREGA no topo da comanda (lib/previsao-da-entrega.ts).
       // Calculada aqui, do pedido inteiro: este objeto não leva o prazo cru.

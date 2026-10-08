@@ -357,6 +357,20 @@ export default function GlobalPrintListener() {
                     changeAmount: order.changeAmount,
                     ifoodReference: order.ifoodReference,
                     ifoodPickupCode: order.ifoodPickupCode,
+                    // ── O NÚMERO DO PEDIDO NO 99FOOD / BRENDI / JOTAJÁ ──────
+                    //
+                    // Saiu daqui em 02/08 (ca2b03d5) e nunca voltou: a comanda
+                    // que ESTE ouvinte imprimia chegava ao Assistente sem a
+                    // referência do parceiro. O Assistente até a 1.2.22 caía no
+                    // fim do id interno ("(46) DELIVERY #C08V2G" / "N. do
+                    // Pedido: C08V2G"); o novo não imprimia número nenhum. O
+                    // entregador do 99 chega dizendo o número do app e o papel
+                    // não tem (Lucas, Frangoso, 04/10/2026). A fila da nuvem e a
+                    // tela de pedidos sempre mandaram — só este trilho perdia.
+                    openDeliveryReference: (order as any).openDeliveryReference,
+                    openDeliveryChannel: (order as any).openDeliveryChannel,
+                    openDeliveryOrderId: (order as any).openDeliveryOrderId,
+                    openDeliveryPickupCode: (order as any).openDeliveryPickupCode,
                     // `source` diz de onde o pedido veio, e sem ele o roteamento
                     // não tem como escolher a impressora certa: toda comanda por
                     // este caminho cairia como delivery, inclusive a da mesa. O

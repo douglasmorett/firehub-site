@@ -1031,6 +1031,9 @@ export async function GET(req: NextRequest) {
         ifoodDriverName: true, ifoodDriverPhone: true,
         ifoodDriverStatus: true, ifoodDriverRequestedAt: true,
         openDeliveryOrderId: true, openDeliveryReference: true, openDeliveryChannel: true,
+        // O código que o entregador do 99 fala no balcão: a comanda que o
+        // navegador imprime precisa dele como a da fila da nuvem.
+        openDeliveryPickupCode: true,
         items: {
           select: {
             id: true, quantity: true, price: true, notes: true,
