@@ -1,6 +1,8 @@
 /**
- * GET  /api/store/avisos              → cancelamentos e disputas do dia em aberto
- * POST /api/store/avisos { ciente: [] } → "Ciente" nos cancelamentos listados
+ * GET  /api/store/avisos              → cancelamentos, disputas e cancelamentos
+ *                                       parciais do dia em aberto
+ * POST /api/store/avisos { ciente: [], cienteParcial: [{ id, registros }] }
+ *                                     → "Ciente" nos cancelamentos e nos cortes
  *
  * Consultado em loop pelo AvisosDoDia (components/customer), montado SÓ na tela
  * de pedidos — no KDS e nas outras telas o aviso não aparece (dono, 25/09/2026).
@@ -11,7 +13,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { FUSO_PADRAO } from "@/lib/fuso";
-import { avisosDoDia, marcarCiente } from "@/lib/avisos-do-dia";
+import { avisosDoDia, marcarCiente, marcarCienteParcial } from "@/lib/avisos-do-dia";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +39,7 @@ export async function GET() {
     // Coluna ainda não criada (boot que falhou) ou banco fora: sem aviso, mas
     // sem 500 em loop no console da loja a cada poucos segundos.
     console.error("[Avisos] Não consegui listar os avisos do dia:", e?.message);
-    return NextResponse.json({ cancelamentos: [], disputas: [], erro: true });
+    return NextResponse.json({ cancelamentos: [], disputas: [], parciais: [], erro: true });
   }
 }
 
@@ -46,6 +48,8 @@ export async function POST(req: Request) {
   if (!s) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   const body = await req.json().catch(() => ({} as any));
   const ids = Array.isArray(body?.ciente) ? body.ciente : [];
-  const marcados = await marcarCiente(s.ids, ids, s.quem);
-  return NextResponse.json({ ok: true, marcados });
+  const parciais = Array.isArray(body?.cienteParcial) ? body.cienteParcial : [];
+  const marcados = ids.length ? await marcarCiente(s.ids, ids, s.quem) : 0;
+  const marcadosParciais = parciais.length ? await marcarCienteParcial(s.ids, parciais, s.quem) : 0;
+  return NextResponse.json({ ok: true, marcados, marcadosParciais });
 }

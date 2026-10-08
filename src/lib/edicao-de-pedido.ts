@@ -673,8 +673,10 @@ export type RegistroDeEdicao = {
    * DESCONTO: desconto dado na aba Editar itens (`descontoNaEdicao`), sem
    * mexer em item; com item junto, a ação é a do item e o desconto vai na descrição.
    * REPOSICAO: saiu um pedido de reposição (item faltante/troca) — lib/reposicao.ts.
+   * CANCELAMENTO_PARCIAL: o APP (iFood/99Food) tirou parte do pedido; o status
+   * não muda e o total cai (lib/cancelamento-parcial.ts).
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;

@@ -920,6 +920,10 @@ model CustomerOrder {
   /// todas as telas da loja (decisão do dono, 23/09/2026).
   cancelCienteEm      DateTime?
   cancelCientePor     String?
+  /// Cancelamento PARCIAL feito pelo app (iFood/99Food): lista de cortes
+  /// { id, canal, quando, itens, valor, totalAntes, totalDepois, cienteEm }.
+  /// O status NÃO muda; o total cai. Ver lib/cancelamento-parcial.ts.
+  cancelamentoParcial Json?
   // === EMISSÃO FISCAL (NFC-e / NF-e) ===
   fiscalStatus        String?   @default("PENDING") // PENDING | EMITTED | FAILED | CANCELED
   fiscalInfo          Json?              // { nfceKey, nfceNumber, emittedAt, xmlUrl, pdfUrl, fiscalItems: [...] }

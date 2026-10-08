@@ -41,6 +41,7 @@ import { PALETA } from "@/lib/paleta-brasa";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { criarFeedDePedidos } from "@/lib/feed-de-pedidos";
 import { pedidoComAcrescimos } from "@/lib/acrescimo-na-comanda";
+import { ehDisputaParcial, lerCancelamentosParciais } from "@/lib/cancelamento-parcial";
 import { origemDaVenda } from "@/lib/origem-da-venda";
 
 const BOTAO_ACAO: React.CSSProperties = {
@@ -946,9 +947,26 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               parte dele foi (ou está sendo) reembolsada. Tem que estar escrito
               com os itens — senão vira "entregue normal" aos olhos de quem lê
               o card, e a diferença para o cancelamento total some. */}
+          {/* O corte que o app JÁ fez (lib/cancelamento-parcial.ts): os itens
+              riscados, quem cortou e o total de antes. O pedido continua. */}
+          {lerCancelamentosParciais((order as any).cancelamentoParcial).map((r) => (
+            <div key={r.id} style={{ margin: "0 0 6px", padding: "5px 10px", borderRadius: 8, background: PALETA.atencaoClaro, border: `1px solid ${PALETA.atencaoBorda}`, color: PALETA.atencao, fontWeight: 800, fontSize: "0.76rem" }}>
+              ✂️ CANCELAMENTO PARCIAL · feito pelo {r.canal}
+              {r.itens.length > 0 && (
+                <span style={{ display: "block", fontWeight: 600, color: "#9A3412", textDecoration: "line-through" }}>
+                  {r.itens.map((i) => `${i.quantidade}x ${i.nome}`).join(", ")}
+                </span>
+              )}
+              <span style={{ display: "block", fontWeight: 700, color: "#9A3412" }}>
+                Total <span style={{ textDecoration: "line-through", fontWeight: 600 }}>R$ {r.totalAntes.toFixed(2).replace(".", ",")}</span> → R$ {r.totalDepois.toFixed(2).replace(".", ",")}
+              </span>
+            </div>
+          ))}
           {(() => {
             const cd: any = (order as any).cancelDispute;
             if (!cd || cd.parcial !== true) return null;
+            // Já cortado: o selo de cima diz tudo, este repetiria.
+            if (cd.disputeId && lerCancelamentosParciais((order as any).cancelamentoParcial).some((r) => r.id === cd.disputeId)) return null;
             const ativo = cd.pending === true || cd.resolved === "accepted_partial" || cd.resolved === "refund_proposed" || cd.parcialConfirmado === true;
             if (!ativo) return null;
             const itens: any[] = Array.isArray(cd.itens) ? cd.itens : [];
@@ -1255,7 +1273,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             {order.status === "CANCELADO" && (
               <span style={etiquetaDeEstado("grave")}>Cancelado</span>
             )}
-            {(order as any).cancelDispute?.parcial === true && ["accepted_partial", "refund_proposed"].includes((order as any).cancelDispute?.resolved) && (
+            {(lerCancelamentosParciais((order as any).cancelamentoParcial).length > 0 ||
+              ((order as any).cancelDispute?.parcial === true && ["accepted_partial", "refund_proposed"].includes((order as any).cancelDispute?.resolved))) && (
               <span style={etiquetaDeEstado("atencao")}>Cancelamento parcial</span>
             )}
             {order.status === "ENCERRADO" && (
@@ -1608,7 +1627,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         // respondida em outro aparelho, que ficava aberta aqui.
         p.cancelDispute?.pending !== n.cancelDispute?.pending ||
         p.cancelDispute?.disputeId !== n.cancelDispute?.disputeId ||
-        p.cancelDispute?.requestedAt !== n.cancelDispute?.requestedAt
+        p.cancelDispute?.requestedAt !== n.cancelDispute?.requestedAt ||
+        p.cancelDispute?.resolved !== n.cancelDispute?.resolved ||
+        // O corte do app (lib/cancelamento-parcial.ts) pode chegar sem mexer
+        // em nenhum campo acima quando o valor ainda não é conhecido.
+        lerCancelamentosParciais(p.cancelamentoParcial).length !== lerCancelamentosParciais(n.cancelamentoParcial).length
       ) {
         return false;
       }
@@ -4514,6 +4537,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   })}
                 </div>
 
+                {/* ── O QUE O APP CANCELOU (lib/cancelamento-parcial.ts) ────
+                    Riscado, com quem cortou: o pedido continua, e quem olha o
+                    pedido precisa ver que a diferença não foi da loja. */}
+                {lerCancelamentosParciais((order as any).cancelamentoParcial).map((r) => (
+                  <div key={`parcial-${r.id}`} style={{ border: "1.5px dashed #B45309", background: "#FFF7E6", borderRadius: "4px", padding: "6px 10px", margin: "8px 0 4px", fontSize: "12px", color: "#78350F" }}>
+                    <div style={{ fontWeight: 900 }}>
+                      ✂️ Cancelamento parcial feito pelo {r.canal} às {new Date(r.quando).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                    {r.itens.map((i, k) => (
+                      <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <span style={{ textDecoration: "line-through" }}>{i.quantidade}x {i.nome}</span>
+                        {i.valor != null && <span style={{ textDecoration: "line-through", whiteSpace: "nowrap" }}>R$ {i.valor.toFixed(2).replace('.', ',')}</span>}
+                      </div>
+                    ))}
+                    <div style={{ marginTop: 2 }}>
+                      O pedido continua. Total: <span style={{ textDecoration: "line-through" }}>R$ {r.totalAntes.toFixed(2).replace('.', ',')}</span> → <b>R$ {r.totalDepois.toFixed(2).replace('.', ',')}</b>
+                    </div>
+                  </div>
+                ))}
+
                 <div style={{ paddingTop: "8px", marginBottom: "10px" }}>
                   <div style={{ display: "flex", justifyContent: "space-between" }}>
                     <span>Subtotal:</span>
@@ -4613,6 +4656,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       </div>
                     );
                   })()}
+
+                  {/* O corte do app que NÃO tirou o item da lista (iFood): sem
+                      esta linha, Subtotal e Total não fecham. No 99 os itens
+                      já vêm sem o que saiu e a linha contaria duas vezes. */}
+                  {lerCancelamentosParciais((order as any).cancelamentoParcial)
+                    .filter((r) => !r.itensJaSairam && r.valor > 0)
+                    .map((r) => (
+                      <div key={`linha-parcial-${r.id}`} style={{ display: "flex", justifyContent: "space-between", color: "#B45309", fontWeight: 700 }}>
+                        <span>Cancelado pelo {r.canal}:</span>
+                        <span>- R$ {r.valor.toFixed(2).replace('.', ',')}</span>
+                      </div>
+                    ))}
 
                   {/* Total Box */}
                   <div style={{ border: "1.5px solid #000", padding: "6px 10px", borderRadius: "4px", margin: "8px 0", display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: "15px" }}>
@@ -4844,7 +4899,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const timeLeftMin = timeLeft != null ? Math.floor(timeLeft / 60) : 0;
         const timeLeftSec = timeLeft != null ? String(timeLeft % 60).padStart(2, "0") : "00";
 
-        const isDueDateChange = dispute.type === "DUE_DATE_CHANGE" || dispute.reason?.toLowerCase().includes("previsão") || dispute.reason?.toLowerCase().includes("atrasado");
+        // Disputa de PARTE do pedido (parcial, reembolso) nunca abre a janela de
+        // nova previsão, mesmo que o motivo do cliente fale em "atrasado".
+        const isDueDateChange = !ehDisputaParcial(dispute) && (dispute.type === "DUE_DATE_CHANGE" || dispute.reason?.toLowerCase().includes("previsão") || dispute.reason?.toLowerCase().includes("atrasado"));
 
         if (isDueDateChange) {
           return (
@@ -5017,6 +5074,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const fmtBR = (v: number) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
         const isResend = !isParcial && (dispute.type === "RESEND_ITEMS" || /reenvio|reenviar|repor|substituir|troca/i.test(dispute.reason || ""));
         const isRefund = !isParcial && (dispute.type === "REFUND_ITEMS" || /reembolso|reembolsar/i.test(dispute.reason || ""));
+        // Reembolso de item no iFood é de PARTE do pedido: aceitar devolve o
+        // valor e o pedido continua (lib/cancelamento-parcial.ts). Brendi e
+        // JotaJá seguem com "aceitar" = cancelamento do pedido.
+        const reembolsoMantemPedido = isRefund && ehDisputaParcial(dispute) && !["BRENDI", "JOTAJA"].includes(String((disputeOrder as any).source || "").toUpperCase());
         const isDueDate = !isParcial && (dispute.type === "DUE_DATE_CHANGE" || /previsão|atraso|tempo/i.test(dispute.reason || ""));
 
         const modalEmoji = isParcial ? "✂️" : isResend ? "📦" : isRefund ? "💰" : isDueDate ? "⏱️" : "⚠️";
@@ -5179,13 +5240,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   }}
                   style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#0F766E", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
-                  {loadingId === disputeOrder.id ? "..." : (isResend ? "📦 Reenviar item — manter pedido" : isParcial ? "✋ Recusar — o pedido foi entregue corretamente" : "✋ Recusar cancelamento — manter pedido")}
+                  {loadingId === disputeOrder.id ? "..." : (isResend ? "📦 Reenviar item — manter pedido" : isParcial ? "✋ Recusar — o pedido foi entregue corretamente" : reembolsoMantemPedido ? "✋ Recusar reembolso — manter pedido" : "✋ Recusar cancelamento — manter pedido")}
                 </button>
                 <button
                   disabled={!!loadingId}
                   onClick={async () => {
                     if (!confirm(isParcial
                       ? `Aceitar o cancelamento PARCIAL? Só os itens contestados são reembolsados (${fmtBR(reembolsoPedido)}); o pedido continua.`
+                      : reembolsoMantemPedido ? "Aceitar o REEMBOLSO? O valor contestado volta para o cliente pelo iFood; o pedido continua — não vai para Cancelado."
                       : isResend ? "Deseja recusar a proposta de reenvio e cancelar o pedido?" : "Tem certeza que deseja ACEITAR o cancelamento? O pedido será cancelado.")) return;
                     setLoadingId(disputeOrder.id);
                     try {
@@ -5200,11 +5262,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       }
                       const d = await r.json().catch(() => ({} as any));
                       if (r.ok) {
-                        // Parcial aceito: o pedido NÃO vira cancelado — fica
-                        // marcado "cancelamento parcial" com os itens e o valor.
+                        // Parcial ou reembolso aceito: o pedido NÃO vira
+                        // cancelado — fica marcado com os itens e o valor (o
+                        // total cai no servidor, lib/cancelamento-parcial.ts).
                         setOrders(prev => prev.map(o => o.id === disputeOrder.id
-                          ? (isParcial
-                            ? { ...o, cancelDispute: { ...dispute, pending: false, parcial: true, resolved: "accepted_partial", valorReembolso: reembolsoPedido } }
+                          ? (isParcial || reembolsoMantemPedido
+                            ? { ...o, cancelDispute: { ...dispute, pending: false, parcial: isParcial, resolved: "accepted_partial", valorReembolso: reembolsoPedido } }
                             : { ...o, status: "CANCELADO", cancelledBy: "LOJA", cancelDispute: { ...dispute, pending: false } })
                           : o));
                         if (d.ifoodOk === false) showToast("⚠️ Gravado aqui, mas o iFood não aceitou a resposta: " + (d.ifoodErro || "responda pelo app do iFood."), "#B45309");
@@ -5212,9 +5275,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       }
                     } catch {} finally { setLoadingId(null); }
                   }}
-                  style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: isParcial ? "#E8590C" : "#C92E09", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
+                  style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: isParcial || reembolsoMantemPedido ? "#E8590C" : "#C92E09", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
                 >
-                  {loadingId === disputeOrder.id ? "..." : (isResend ? "❌ Recusar reenvio — cancelar pedido" : isParcial ? `✅ Aceitar cancelamento parcial — reembolsar ${fmtBR(reembolsoPedido)}` : "✅ Aceitar cancelamento")}
+                  {loadingId === disputeOrder.id ? "..." : (isResend ? "❌ Recusar reenvio — cancelar pedido" : isParcial ? `✅ Aceitar cancelamento parcial — reembolsar ${fmtBR(reembolsoPedido)}` : reembolsoMantemPedido ? "✅ Aceitar reembolso — o pedido continua" : "✅ Aceitar cancelamento")}
                 </button>
               </div>
             </div>

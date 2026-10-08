@@ -1,6 +1,8 @@
 "use client";
 /**
- * O aviso que TOCA: pedido cancelado por quem não é a loja, e disputa aberta.
+ * O aviso que TOCA: pedido cancelado por quem não é a loja, cancelamento
+ * PARCIAL feito pelo app (iFood/99 tirou parte do pedido — o pedido continua,
+ * lib/cancelamento-parcial.ts) e disputa aberta.
  *
  * SÓ NA TELA DE PEDIDOS (montado em app/store/pedidos-clientes/page.tsx). Já
  * morou no layout da loja, para aparecer em qualquer tela, e abria no meio do
@@ -26,7 +28,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PALETA } from "@/lib/paleta-brasa";
-import type { AvisoDeCancelamento, AvisoDeDisputa } from "@/lib/avisos-do-dia";
+import type { AvisoDeCancelamento, AvisoDeCancelamentoParcial, AvisoDeDisputa } from "@/lib/avisos-do-dia";
 
 const INTERVALO_DA_CONSULTA = 8000;
 const INTERVALO_DO_SOM = 6000;
@@ -48,11 +50,14 @@ function porQuem(quem: string | null) {
 export default function AvisosDoDia() {
   const [cancelamentos, setCancelamentos] = useState<AvisoDeCancelamento[]>([]);
   const [disputas, setDisputas] = useState<AvisoDeDisputa[]>([]);
+  // Cancelamento PARCIAL feito pelo app (lib/cancelamento-parcial.ts): o pedido
+  // continua, só parte saiu. Um aviso por corte, com "Ciente".
+  const [parciais, setParciais] = useState<AvisoDeCancelamentoParcial[]>([]);
   const [enviando, setEnviando] = useState(false);
   const [somBloqueado, setSomBloqueado] = useState(false);
   // "Ciente" dado AQUI e que o servidor ainda não devolveu sem ele: sem isto a
   // janela piscava de volta na consulta que já estava no ar quando o clique
-  // aconteceu.
+  // aconteceu. O corte entra como "<pedido>:<registro>".
   const cienteLocalRef = useRef<Set<string>>(new Set());
 
   // ── CONSULTA ─────────────────────────────────────────────────────────────
@@ -67,6 +72,7 @@ export default function AvisosDoDia() {
           const j = await r.json();
           setCancelamentos(((j.cancelamentos || []) as AvisoDeCancelamento[]).filter((c) => !cienteLocalRef.current.has(c.id)));
           setDisputas((j.disputas || []) as AvisoDeDisputa[]);
+          setParciais(((j.parciais || []) as AvisoDeCancelamentoParcial[]).filter((p) => !cienteLocalRef.current.has(`${p.id}:${p.registroId}`)));
         }
       } catch {
         // Sem rede: tenta de novo na próxima volta. O aviso não some por isso.
@@ -149,16 +155,18 @@ export default function AvisosDoDia() {
 
   const temCancelamento = cancelamentos.length > 0;
   const temDisputa = disputas.length > 0;
+  // O corte também "desfaz" (parte do pedido): o mesmo som do cancelamento.
+  const temParcial = parciais.length > 0;
   useEffect(() => {
-    if (!temCancelamento && !temDisputa) return;
+    if (!temCancelamento && !temDisputa && !temParcial) return;
     const tocar = () => {
-      if (temCancelamento) somDeCancelamento();
-      if (temDisputa) setTimeout(somDeDisputa, temCancelamento ? 2200 : 0);
+      if (temCancelamento || temParcial) somDeCancelamento();
+      if (temDisputa) setTimeout(somDeDisputa, temCancelamento || temParcial ? 2200 : 0);
     };
     tocar();
     const t = setInterval(tocar, INTERVALO_DO_SOM);
     return () => clearInterval(t);
-  }, [temCancelamento, temDisputa, somDeCancelamento, somDeDisputa]);
+  }, [temCancelamento, temDisputa, temParcial, somDeCancelamento, somDeDisputa]);
 
   // ── CIENTE ───────────────────────────────────────────────────────────────
   const ciente = async () => {
@@ -175,6 +183,28 @@ export default function AvisosDoDia() {
     } catch {
       // Falhou a gravação: nesta tela o aviso já saiu (o atendente viu); as
       // outras telas continuam avisando até alguém dar ciente nelas.
+    } finally {
+      setEnviando(false);
+    }
+  };
+
+  /** "Ciente" dos cortes na tela: grava no registro de cada um. */
+  const cienteDoParcial = async () => {
+    const porPedido = new Map<string, string[]>();
+    for (const p of parciais) {
+      cienteLocalRef.current.add(`${p.id}:${p.registroId}`);
+      porPedido.set(p.id, [...(porPedido.get(p.id) || []), p.registroId]);
+    }
+    setParciais([]);
+    setEnviando(true);
+    try {
+      await fetch("/api/store/avisos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cienteParcial: [...porPedido].map(([id, registros]) => ({ id, registros })) }),
+      });
+    } catch {
+      // Igual ao cancelamento: aqui já saiu; as outras telas seguem avisando.
     } finally {
       setEnviando(false);
     }
@@ -247,6 +277,87 @@ export default function AvisosDoDia() {
             </div>
             <button type="button" style={botaoPrincipal} onClick={ciente} disabled={enviando} autoFocus>
               {um ? "CIENTE" : `CIENTE DOS ${cancelamentos.length}`}
+            </button>
+            {avisoDeSom}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── CANCELAMENTO PARCIAL ─────────────────────────────────────────────────
+  //
+  // "Foi feito um cancelamento parcial no seu iFood" (dono, 08/10/2026). O
+  // pedido continua — o que saiu vem riscado, com o total de antes e o de
+  // agora, e quem cortou foi o app. Sai depois dos cancelamentos (que param a
+  // cozinha) e antes da disputa (que tem o modal próprio na tela de pedidos).
+  if (temParcial) {
+    const um = parciais.length === 1 ? parciais[0] : null;
+    const quemDoTitulo = (um?.quem || parciais[0]?.quem || "aplicativo").toUpperCase();
+    const riscados = (p: AvisoDeCancelamentoParcial) =>
+      p.itens.length > 0 ? (
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, margin: "4px 0" }}>
+          {p.itens.map((i, k) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.92rem" }}>
+              <span style={{ textDecoration: "line-through", color: PALETA.areiaTinta }}>{i.quantidade}x {i.nome}</span>
+              {i.valor != null && <span style={{ fontWeight: 800, color: PALETA.grave, whiteSpace: "nowrap" }}>−{reais(i.valor)}</span>}
+            </div>
+          ))}
+        </div>
+      ) : null;
+    return (
+      <div style={fundo} role="alertdialog" aria-modal="true" aria-labelledby="aviso-parcial-titulo">
+        <div style={cartao}>
+          <div id="aviso-parcial-titulo" style={{ background: PALETA.atencao, color: "#FFF", padding: "14px 18px", fontWeight: 900, fontSize: "1.05rem", letterSpacing: 0.3 }}>
+            ✂️ {um ? `CANCELAMENTO PARCIAL NO SEU ${quemDoTitulo}` : `${parciais.length} CANCELAMENTOS PARCIAIS`}
+          </div>
+          <div style={{ padding: "16px 18px 18px" }}>
+            {um ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, color: PALETA.carvao }}>
+                <div style={{ fontSize: "1rem", fontWeight: 800 }}>
+                  Foi feito um cancelamento parcial no seu {um.quem}.
+                </div>
+                <div style={{ fontSize: "1.25rem", fontWeight: 900 }}>
+                  Pedido {um.numero != null ? `#${um.numero}` : ""} · {um.canal}
+                </div>
+                {numeroNoParceiro(um) && (
+                  <div style={{ alignSelf: "flex-start", background: PALETA.atencaoClaro, border: `1px solid ${PALETA.atencaoBorda}`, color: PALETA.atencao, borderRadius: 8, padding: "4px 10px", fontWeight: 900, fontSize: "1rem" }}>
+                    {numeroNoParceiro(um)}
+                  </div>
+                )}
+                {um.cliente && <div style={{ fontSize: "0.95rem" }}>Cliente: <b>{um.cliente}</b></div>}
+                {riscados(um)}
+                <div style={{ fontSize: "0.95rem" }}>
+                  Total do pedido:{" "}
+                  <span style={{ textDecoration: "line-through", color: PALETA.areiaTinta }}>{reais(um.totalAntes)}</span>{" "}
+                  <b>{reais(um.totalDepois)}</b>
+                </div>
+                <div style={{ fontSize: "0.85rem", color: PALETA.carvao2 }}>Feito pelo {um.quem} às <b>{hora(um.quando)}</b> — não pela loja.</div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, maxHeight: "50vh", overflowY: "auto" }}>
+                {parciais.map((p) => (
+                  <div key={`${p.id}:${p.registroId}`} style={{ border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 10, padding: "8px 12px", color: PALETA.carvao }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                      <b>
+                        {p.numero != null ? `#${p.numero} ` : ""}{p.canal}
+                        {p.referencia ? <span style={{ color: PALETA.atencao }}> {p.referencia}</span> : null}
+                      </b>
+                      <span style={{ fontWeight: 800 }}>
+                        <span style={{ textDecoration: "line-through", color: PALETA.areiaTinta, fontWeight: 600 }}>{reais(p.totalAntes)}</span> {reais(p.totalDepois)}
+                      </span>
+                    </div>
+                    {riscados(p)}
+                    <div style={{ fontSize: "0.8rem", color: PALETA.areiaTinta }}>pelo {p.quem} às {hora(p.quando)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ margin: "14px 0 12px", fontSize: "0.85rem", color: PALETA.areiaTinta }}>
+              O pedido continua — só o que está riscado saiu.
+            </div>
+            <button type="button" style={botaoPrincipal} onClick={cienteDoParcial} disabled={enviando} autoFocus>
+              {um ? "CIENTE" : `CIENTE DOS ${parciais.length}`}
             </button>
             {avisoDeSom}
           </div>

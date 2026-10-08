@@ -12,6 +12,8 @@ import {
   entregaPropriaConcluida,
 } from "@/lib/food99-api";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
+import { complementosGravados, itensQueSairam, lerCancelamentosParciais, registrarCorte } from "@/lib/cancelamento-parcial";
+import { empilharEdicao } from "@/lib/edicao-de-pedido";
 
 /**
  * /src/lib/food99-status.ts
@@ -493,17 +495,20 @@ export async function sincronizar99Food(
 export async function aplicarPedidoAlterado99(
   orderId99: string
 ): Promise<{ ok: boolean; motivo: string }> {
-  const pedido = await prisma.customerOrder.findFirst({
+  const pedido: any = await (prisma.customerOrder as any).findFirst({
     where: { openDeliveryOrderId: orderId99 },
-    select: { id: true, franchiseeId: true, notes: true, status: true },
+    select: {
+      id: true, franchiseeId: true, notes: true, status: true, totalAmount: true, food99AppShopId: true,
+      cancelamentoParcial: true, editHistory: true,
+      items: { select: { productName: true, quantity: true, price: true, comboSelections: true } },
+    },
   });
   if (!pedido) return { ok: false, motivo: `pedido ${orderId99} não existe no FireHub` };
 
-  const token = await tokenDaLoja(pedido.franchiseeId);
-  if (!token) return { ok: false, motivo: "loja sem autorização válida no 99Food" };
-
-  const r = await detalheDoPedido(token, orderId99);
-  if (r.errno !== 0 || !r.data) {
+  // Com o token da loja DO PEDIDO: a 2ª e a 3ª loja do 99 de uma conta (a
+  // Frangoso tem três) não respondem com o token da primeira.
+  const r = await buscarPedido99(pedido.franchiseeId, orderId99, pedido.food99AppShopId);
+  if (!r.ok) {
     return { ok: false, motivo: `order/detail recusou: ${r.errno} ${r.errmsg}` };
   }
 
@@ -515,6 +520,40 @@ export async function aplicarPedidoAlterado99(
   const notes = pedido.notes?.includes(aviso)
     ? pedido.notes
     : [aviso, p.observacoes || pedido.notes || ""].filter(Boolean).join(" | ");
+
+  // ── O QUE SAIU, PARA A LOJA VER RISCADO E SER AVISADA ──────────────────
+  //
+  // Os itens são refeitos logo abaixo e o que havia antes sumia sem rastro: a
+  // loja via um pedido menor sem saber o que o 99 tirou nem que tinha tirado.
+  // Agora o corte fica registrado (lib/cancelamento-parcial.ts) — os itens de
+  // antes contra os de agora, o total de antes e o de agora — e vira o aviso
+  // com "Ciente". Releitura sem diferença não registra nada.
+  const totalAntes = Number(pedido.totalAmount) || 0;
+  const saiu = itensQueSairam(
+    (pedido.items || []).map((i: any) => ({
+      nome: i.productName || "Item",
+      quantidade: Number(i.quantity) || 0,
+      precoUnitario: Number(i.price) || 0,
+      complementos: complementosGravados(i.comboSelections),
+    })),
+    p.itens.map((i) => ({
+      nome: i.nome,
+      quantidade: i.quantidade,
+      precoUnitario: i.precoUnitario,
+      complementos: i.complementos.map((c) => ({ nome: c.name, quantidade: c.quantity, preco: c.price })),
+    }))
+  );
+  const corte =
+    saiu.length > 0 || p.total < totalAntes - 0.009
+      ? registrarCorte(lerCancelamentosParciais(pedido.cancelamentoParcial), totalAntes, {
+          id: `99:${Date.now()}`,
+          canal: "99Food",
+          itens: saiu,
+          valor: Math.max(0, totalAntes - p.total),
+          totalDepois: p.total,
+          itensJaSairam: true,
+        })
+      : null;
 
   await prisma.$transaction([
     prisma.customerOrderItem.deleteMany({ where: { orderId: pedido.id } }),
@@ -531,12 +570,26 @@ export async function aplicarPedidoAlterado99(
         ...(p.codigoDeColeta ? { openDeliveryPickupCode: p.codigoDeColeta } : {}),
         notes,
         items: { create: itens99ParaPrisma(p.itens, pedido.franchiseeId) },
+        ...(corte?.novo
+          ? {
+              cancelamentoParcial: corte.registros,
+              editHistory: empilharEdicao(pedido.editHistory, {
+                quando: corte.novo.quando,
+                quem: "99Food",
+                acao: "CANCELAMENTO_PARCIAL",
+                descricao: `Cancelamento parcial feito pelo 99Food${saiu.length ? `: ${saiu.map((i) => `${i.quantidade}x ${i.nome}`).join(", ")}` : ""}`,
+                totalAntes: corte.novo.totalAntes,
+                totalDepois: corte.novo.totalDepois,
+              }),
+            }
+          : {}),
       },
     }),
   ]);
 
   console.log(
-    `[99Food] Pedido ${orderId99} alterado: agora ${p.itens.length} item(ns), R$ ${p.total.toFixed(2)}`
+    `[99Food] Pedido ${orderId99} alterado: agora ${p.itens.length} item(ns), R$ ${p.total.toFixed(2)}` +
+      (corte?.novo ? ` — cancelamento parcial registrado (R$ ${corte.novo.totalAntes.toFixed(2)} → R$ ${corte.novo.totalDepois.toFixed(2)})` : "")
   );
   return { ok: true, motivo: `itens refeitos: ${p.itens.length} item(ns), total R$ ${p.total.toFixed(2)}` };
 }
