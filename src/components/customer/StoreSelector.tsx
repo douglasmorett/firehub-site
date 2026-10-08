@@ -3,15 +3,9 @@
 import { useState, useEffect, useRef } from "react";
 import { ChevronDown, Plus, Store as StoreIcon, LayoutGrid } from "lucide-react";
 import NewStoreModal from "./NewStoreModal";
+import { trocarDeLoja, type LojaDoGrupo } from "@/lib/trocar-de-loja";
 
-interface StoreInfo {
-  id: string;
-  storeName: string;
-  storeOpen: boolean;
-  city: string | null;
-  isPrimaryStore: boolean;
-  ifoodConnected: boolean;
-}
+type StoreInfo = LojaDoGrupo;
 
 /**
  * `variante`:
@@ -67,35 +61,18 @@ export default function StoreSelector({ variante = "barra" }: { variante?: "barr
   const handleSwitch = async (storeId: string) => {
     if (trocando) return;
     setErroDaTroca("");
-    const alvo = storeId === "all"
-      ? (stores.find(s => s.isPrimaryStore)?.id || stores[0]?.id)
-      : storeId;
-    if (!alvo) return;
     setTrocando(true);
-    try {
-      if (alvo !== sessaoLojaId) {
-        const { signIn } = await import("next-auth/react");
-        const r = await signIn("credentials", { trocarLoja: alvo, redirect: false });
-        if (!r || r.error || !r.ok) {
-          setErroDaTroca("Não consegui trocar de loja. Entre de novo e tente outra vez.");
-          setTrocando(false);
-          return;
-        }
-      }
-      await fetch("/api/store/switch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storeId }),
-      });
-      setActiveStoreId(storeId);
-      setOpen(false);
-      // Recarrega inteira: o que está na tela (pedidos, cardápio, config) é da
-      // loja anterior até o servidor montar de novo.
-      window.location.reload();
-    } catch {
-      setErroDaTroca("Sem conexão — a loja não foi trocada.");
+    const r = await trocarDeLoja(storeId, stores, sessaoLojaId);
+    if (!r.ok) {
+      setErroDaTroca(r.erro);
       setTrocando(false);
+      return;
     }
+    setActiveStoreId(storeId);
+    setOpen(false);
+    // Recarrega inteira: o que está na tela (pedidos, cardápio, config) é da
+    // loja anterior até o servidor montar de novo.
+    window.location.reload();
   };
 
   // Se só tem 1 loja, não mostra seletor (mostra só o nome)

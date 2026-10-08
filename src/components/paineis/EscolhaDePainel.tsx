@@ -54,7 +54,7 @@ export default function EscolhaDePainel({
 
   return (
     <div className="ep">
-      <style>{ESTILO}</style>
+      <style>{ESTILO_DA_ESCOLHA}</style>
       {/* Sem "Olá, <nome>": o nome da conta da loja costuma ser o da loja ou
           o do cadastro antigo, e "Olá, Pizzaria!" é pior do que nenhum. */}
       <h1 className="ep-titulo">Vimos que você também é {vendedor ? "vendedor" : "embaixador"}.</h1>
@@ -116,7 +116,7 @@ export default function EscolhaDePainel({
   );
 }
 
-const ESTILO = `
+export const ESTILO_DA_ESCOLHA = `
 .ep-titulo { font-size: 1.2rem; font-weight: 800; color: #111827; text-align: center; line-height: 1.3; letter-spacing: -0.01em; }
 .ep-sub { text-align: center; color: #6B7280; font-size: 0.9rem; margin: 6px 0 22px; }
 .ep-opcoes { display: flex; flex-direction: column; gap: 10px; }

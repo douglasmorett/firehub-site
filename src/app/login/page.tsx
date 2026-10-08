@@ -4,6 +4,8 @@ import { signIn, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff } from "lucide-react";
 import EscolhaDePainel from "@/components/paineis/EscolhaDePainel";
+import EscolhaDeLoja from "@/components/paineis/EscolhaDeLoja";
+import { buscarLojasDoGrupo, type GrupoDeLojas } from "@/lib/trocar-de-loja";
 import type { PaineisDaSessao } from "@/lib/paineis-do-dono";
 import { esquecerCentralFechada } from "@/lib/tutoriais";
 
@@ -29,6 +31,16 @@ async function paineisParaEscolher(): Promise<PaineisDaSessao | null> {
   }
 }
 
+/**
+ * Mais de uma loja no mesmo acesso: pergunta qual abrir, ou todas
+ * (components/paineis/EscolhaDeLoja). Funcionário recebe só a loja dele de
+ * /api/store/list e nunca vê a pergunta.
+ */
+async function lojasParaEscolher(): Promise<GrupoDeLojas | null> {
+  const g = await buscarLojasDoGrupo();
+  return g && g.stores.length > 1 ? g : null;
+}
+
 export default function FireHubLoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -39,11 +51,17 @@ export default function FireHubLoginPage() {
   const router = useRouter();
   const passwordRef = useRef<HTMLInputElement>(null);
   const [escolha, setEscolha] = useState<PaineisDaSessao | null>(null);
+  const [escolhaDeLoja, setEscolhaDeLoja] = useState<GrupoDeLojas | null>(null);
 
   // Já logado com loja E portal (a aba da loja cai aqui quando outra aba
   // trocou para o portal): pergunta o painel em vez de pedir a senha de novo.
+  // Já logado com várias lojas: pergunta a loja.
   useEffect(() => {
-    paineisParaEscolher().then((e) => e && setEscolha(e));
+    paineisParaEscolher().then(async (e) => {
+      if (e) return setEscolha(e);
+      const g = await lojasParaEscolher();
+      if (g) setEscolhaDeLoja(g);
+    });
   }, []);
 
   // Restaura o acesso lembrado: checkbox marcado e e-mail já preenchido.
@@ -129,6 +147,13 @@ export default function FireHubLoginPage() {
       const paraEscolher = await paineisParaEscolher();
       if (paraEscolher) {
         setEscolha(paraEscolher);
+        return;
+      }
+
+      // Mais de uma loja no acesso: pergunta qual abrir (ou todas).
+      const grupo = await lojasParaEscolher();
+      if (grupo) {
+        setEscolhaDeLoja(grupo);
         return;
       }
 
@@ -301,6 +326,15 @@ export default function FireHubLoginPage() {
             aoEntrarComOutraConta={async () => {
               await signOut({ redirect: false }).catch(() => {});
               setEscolha(null);
+              setPassword("");
+            }}
+          />
+        ) : escolhaDeLoja ? (
+          <EscolhaDeLoja
+            grupo={escolhaDeLoja}
+            aoEntrarComOutraConta={async () => {
+              await signOut({ redirect: false }).catch(() => {});
+              setEscolhaDeLoja(null);
               setPassword("");
             }}
           />
