@@ -2041,6 +2041,30 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
    * o comportamento nele tiraria o preço de todo cupom que a loja imprime
    * sozinha — que não é o que ninguém pediu. Só o botão "Cupom da Cozinha" pede.
    */
+  /**
+   * A config da loja DO PEDIDO. Em "Todas as lojas" a tela mostra pedidos das
+   * lojas irmãs, e cada uma tem as suas impressoras e o seu "itens separados";
+   * imprimir com a config da loja logada misturava as duas (Lucas, Frangoso,
+   * 05/10/2026). Mesma regra do GlobalPrintListener e da fila da nuvem.
+   */
+  const configsDasIrmasRef = useRef<Record<string, { config: any; lidaEm: number }>>({});
+  const configDaLojaDoPedido = async (order: any) => {
+    const loja = String(order?.franchiseeId || "");
+    const daSessao = String(user?.ownerId || user?.id || "");
+    if (!loja || !daSessao || loja === daSessao) return printerConfig;
+    const guardada = configsDasIrmasRef.current[loja];
+    if (guardada && Date.now() - guardada.lidaEm < RELEITURA_DA_CONFIG_MS) return guardada.config;
+    try {
+      const r = await fetch(`/api/store/printer-config?loja=${encodeURIComponent(loja)}`, { cache: "no-store" });
+      const c = r.ok ? await r.json() : null;
+      if (c && !c.error) {
+        configsDasIrmasRef.current[loja] = { config: c, lidaEm: Date.now() };
+        return c;
+      }
+    } catch {}
+    return guardada?.config || printerConfig;
+  };
+
   const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false, semValores = false) => {
     if (!order) return;
     if (order.status === "CRIANDO_IA") {
@@ -2086,7 +2110,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // SÓ o automático: `isManual` passa direto. O botão Imprimir do painel é a
     // pessoa pedindo o papel agora, e uma opção sobre QUANDO imprimir sozinho
     // não pode transformar o botão em botão que não funciona.
-    if (!isManual && aguardandoFimDoKds(order, printerConfig)) {
+    const configDoPedido = await configDaLojaDoPedido(order);
+    if (!isManual && aguardandoFimDoKds(order, configDoPedido)) {
       console.log(`[Print] ⏸️ ${orderKey}: a comanda sai quando a cozinha finalizar no KDS (opção ligada em Impressoras).`);
       if (orderKey) printingInProgressRef.current.delete(orderKey);
       return;
@@ -2102,9 +2127,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // Espalha a config REAL por baixo do fallback: o formato antigo descartava
     // o objeto inteiro quando `printers` estava vazio — e com ele iam flags
     // como a do QR do motoboy, justamente na loja de uma impressora só.
-    const activeConfig = printerConfig && printerConfig.printers?.length > 0
-      ? printerConfig
-      : { ...(printerConfig || {}), autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
+    const activeConfig = configDoPedido && configDoPedido.printers?.length > 0
+      ? configDoPedido
+      : { ...(configDoPedido || {}), autoprint: true, printers: [{ id: "default", name: "", label: "Padrao", categories: [], copies: 1, paperWidth: "80mm" }] };
 
     // Pago pelo site vai como "Pix Pago Online" (lib/pagamento-na-entrega.ts).
     const peloSite = pagamentoPeloSiteParaImpressao(order) as { paymentMethod?: string; isPrepaid?: boolean };
