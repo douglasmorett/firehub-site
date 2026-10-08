@@ -8,6 +8,8 @@ import {
   itemPronto,
   itensDaTela,
   juntarPedidosDaProducao,
+  lerKdsConfig,
+  ordenarPelaPrioridade,
   telaTemPendencia,
   lerTelasProntas,
   temAlgoPronto,
@@ -299,6 +301,18 @@ export async function GET(req: NextRequest) {
         visiveis = visiveis.filter((o) => telaTemPendencia(minha, o?.items || []));
       }
     }
+
+    // ── QUEM A LOJA PÔS NA FRENTE (lib/kds-telas.ts, `ordenarPelaPrioridade`) ──
+    //
+    // A ordem do banco é reposição → rota → chegada. Se a loja marcou tipos de
+    // pedido como prioridade (a mesa da Pizzaria 17), eles passam na frente do
+    // resto. A regra mora na conta do DONO, onde o painel grava — por isso o
+    // `ownerId`. Falhou a leitura: fica a ordem de sempre, nunca a tela vazia.
+    const regrasDaLoja = await prisma.user
+      .findUnique({ where: { id: user?.ownerId || user?.id || userStoreIds[0] }, select: { kdsConfig: true } })
+      .then((u) => lerKdsConfig(u?.kdsConfig))
+      .catch(() => null);
+    visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja);
 
     return NextResponse.json(visiveis, {
       headers: {

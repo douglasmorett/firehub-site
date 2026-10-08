@@ -27,6 +27,10 @@ export default function KDSHubClient() {
   // e uma tela nova não pode trazê-la de volta. Vive em `User.kdsConfig`.
   const [soNaFinalizacao, setSoNaFinalizacao] = useState<string[]>([]);
 
+  // Tipos de pedido que furam a fila da cozinha (lib/kds-telas.ts,
+  // `ordenarPelaPrioridade`). Também é regra da loja, em `User.kdsConfig`.
+  const [prioridade, setPrioridade] = useState<string[]>([]);
+
   // Form state
   const [formName, setFormName] = useState("");
   const [formStage, setFormStage] = useState<"production" | "finishing">("production");
@@ -76,7 +80,10 @@ export default function KDSHubClient() {
     // Regras da loja fora das telas
     fetch("/api/store/kds-config")
       .then(r => r.ok ? r.json() : null)
-      .then(cfg => { if (cfg && Array.isArray(cfg.soNaFinalizacao)) setSoNaFinalizacao(cfg.soNaFinalizacao.map(String)); })
+      .then(cfg => {
+        if (cfg && Array.isArray(cfg.soNaFinalizacao)) setSoNaFinalizacao(cfg.soNaFinalizacao.map(String));
+        if (cfg && Array.isArray(cfg.prioridade)) setPrioridade(cfg.prioridade.map(String));
+      })
       .catch(() => {});
   }, []);
 
@@ -87,6 +94,22 @@ export default function KDSHubClient() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ soNaFinalizacao: lista }),
     }).catch(() => {});
+  };
+
+  // Manda só `prioridade`: a rota junta com o resto do que está gravado.
+  const savePrioridade = (lista: string[]) => {
+    const antes = prioridade;
+    setPrioridade(lista);
+    fetch("/api/store/kds-config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prioridade: lista }),
+    })
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); })
+      .catch(() => {
+        setPrioridade(antes);
+        alert("Não consegui salvar a prioridade. As telas da cozinha continuam com a ordem anterior. Confira a internet e tente de novo.");
+      });
   };
 
   const save = (s: KDSScreenConfig[]) => {
@@ -189,6 +212,65 @@ export default function KDSHubClient() {
           </button>
         </div>
       )}
+
+      {/* ── PRIORIDADE NA COZINHA ─────────────────────────────────────────────
+          A Pizzaria 17 (08/10/2026): o garçom lança a mesa e ela fica atrás de
+          um monte de delivery. Cada loja escolhe quem passa na frente — nem
+          todo mundo concorda que mesa vem antes. Vale em todas as telas. */}
+      {screens.length > 0 && (() => {
+        const TIPOS: { id: string; emoji: string; nome: string; dica: string }[] = [
+          { id: "MESA", emoji: "🍽️", nome: "Mesa", dica: "pedido lançado pelo garçom ou pelo QR da mesa" },
+          { id: "BALCAO", emoji: "🧍", nome: "Balcão", dica: "pedido feito na loja para levar (balcão e totem)" },
+          { id: "RETIRADA", emoji: "🛍️", nome: "Retirada", dica: "pedido do site, app ou WhatsApp que o cliente vem buscar" },
+          { id: "DELIVERY", emoji: "🛵", nome: "Delivery", dica: "pedido para entregar" },
+        ];
+        const marcado = (id: string) => prioridade.includes(id);
+        const alternar = (id: string) =>
+          savePrioridade(marcado(id) ? prioridade.filter((p) => p !== id) : [...prioridade, id]);
+        return (
+          <div style={{
+            background: "#1C1917", border: "1px solid #292524", borderLeft: "4px solid #F59E0B",
+            borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1rem",
+          }}>
+            <div style={{ color: "#F59E0B", fontWeight: 800, fontSize: "0.85rem", marginBottom: 6 }}>
+              ⏩ Prioridade na cozinha
+            </div>
+            <div style={{ color: "#cbd5e1", fontSize: "0.82rem", lineHeight: 1.5 }}>
+              Marque os tipos de pedido que <b style={{ color: "#fff" }}>entram na frente</b> em todas as telas do KDS. Entre eles, vale quem chegou primeiro.
+              <br />
+              <span style={{ color: "#94a3b8" }}>
+                Item faltante e pedido de rota criada continuam no topo. Sem nada marcado, a fila é pela ordem de chegada.
+              </span>
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "0.75rem" }}>
+              {TIPOS.map((t) => {
+                const on = marcado(t.id);
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => alternar(t.id)}
+                    title={t.dica}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: "6px",
+                      padding: "8px 14px", borderRadius: "999px", cursor: "pointer", fontFamily: "inherit",
+                      fontSize: "0.82rem", fontWeight: 800,
+                      border: `1.5px solid ${on ? "#F59E0B" : "#292524"}`,
+                      background: on ? "rgba(245,158,11,0.18)" : "#12122a",
+                      color: on ? "#FDE68A" : "#cbd5e1",
+                    }}
+                  >
+                    <span>{on ? "✓" : "○"} {t.emoji} {t.nome}</span>
+                    <span style={{ color: on ? "#FCD34D" : "#64748b", fontWeight: 600 }}>
+                      {on ? "na frente" : "pela chegada"}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── ACOMPANHAMENTOS: O QUE NÃO É DE TELA NENHUMA ──────────────────────
           A borda é feita junto com a pizza, o sachê vai na mesma sacola. Quem

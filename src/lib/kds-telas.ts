@@ -460,15 +460,82 @@ export function pedidoNaTela<I extends ItemParaTela, P extends { items: I[] }>(
 export type KdsConfig = {
   /** Nomes de categoria que não aparecem na produção, só na finalização. */
   soNaFinalizacao: string[];
+  /** Tipos de pedido que entram na frente da fila (ver `TIPOS_DE_PRIORIDADE`). */
+  prioridade: TipoDePrioridade[];
 };
 
-/** Lê `User.kdsConfig` sem confiar no formato. Ausente = nada escondido. */
+/* ═══════════════════════════════════════════════════════════════════════════
+   QUEM FURA A FILA DA COZINHA
+
+   A Pizzaria 17 (08/10/2026): o garçom lança a mesa e o KDS está cheio de
+   delivery na frente — "quem está na loja, o delivery atrasa um pouco". Cada
+   loja decide: nem todo mundo concorda que mesa vem antes. Por isso é regra
+   da LOJA, em `kdsConfig.prioridade`, e ausente = ordem de chegada, como era.
+
+   O tipo marcado vai para a frente dos não marcados; entre os marcados (e
+   entre os não marcados) continua valendo a chegada. Reposição e rota criada
+   continuam acima — são as prioridades que já existiam.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export const TIPOS_DE_PRIORIDADE = ["MESA", "BALCAO", "RETIRADA", "DELIVERY"] as const;
+export type TipoDePrioridade = (typeof TIPOS_DE_PRIORIDADE)[number];
+
+const ORIGEM_DA_LOJA = new Set(["PRESENCIAL", "PDV", "TOTEM", "BALCAO"]);
+
+/**
+ * O tipo do pedido para a fila da cozinha.
+ *
+ * BALCÃO é o pedido feito NA LOJA para levar (balcão, totem, PDV): o cliente
+ * está em pé esperando. RETIRADA é o que veio de fora (site, app, robô) e o
+ * cliente ainda vai buscar. Pedido de balcão para entregar continua delivery.
+ */
+export function tipoNaFila(pedido: { deliveryType?: string | null; source?: string | null } | null | undefined): TipoDePrioridade {
+  const tipo = String(pedido?.deliveryType || "").toUpperCase();
+  const origem = String(pedido?.source || "").toUpperCase();
+  if (tipo === "MESA") return "MESA";
+  if (tipo === "DELIVERY") return "DELIVERY";
+  return ORIGEM_DA_LOJA.has(origem) ? "BALCAO" : "RETIRADA";
+}
+
+/** Lê `User.kdsConfig` sem confiar no formato. Ausente = nada escondido e ninguém fura fila. */
 export function lerKdsConfig(bruto: unknown): KdsConfig {
   const obj = bruto && typeof bruto === "object" && !Array.isArray(bruto) ? (bruto as any) : {};
   const lista = Array.isArray(obj.soNaFinalizacao) ? obj.soNaFinalizacao : [];
+  const prioridade = Array.isArray(obj.prioridade) ? obj.prioridade : [];
   return {
     soNaFinalizacao: [...new Set(lista.map((v: unknown) => String(v ?? "").trim()).filter(Boolean))] as string[],
+    prioridade: TIPOS_DE_PRIORIDADE.filter((t) => prioridade.map((v: unknown) => String(v ?? "").toUpperCase()).includes(t)),
   };
+}
+
+/**
+ * A fila da cozinha na ordem da loja: reposição, rota criada, os tipos que a
+ * loja marcou como prioridade e, no resto, quem chegou primeiro.
+ *
+ * Estável de propósito: sem prioridade marcada a lista volta exatamente como
+ * entrou — que é a ordem que a consulta e `juntarPedidosDaProducao` já dão.
+ */
+export function ordenarPelaPrioridade<
+  T extends { isRoutePriority?: boolean | null; prioridadeNaCozinha?: boolean | null; deliveryType?: string | null; source?: string | null; createdAt?: Date | string | null },
+>(pedidos: T[], config: KdsConfig | null | undefined): T[] {
+  const marcados = new Set(config?.prioridade || []);
+  if (marcados.size === 0) return pedidos;
+  const quando = (p: T) => {
+    const ms = new Date(p?.createdAt as any).getTime();
+    return Number.isFinite(ms) ? ms : 0;
+  };
+  return [...pedidos].sort(
+    (a, b) =>
+      Number(!!b.prioridadeNaCozinha) - Number(!!a.prioridadeNaCozinha) ||
+      Number(!!b.isRoutePriority) - Number(!!a.isRoutePriority) ||
+      Number(marcados.has(tipoNaFila(b))) - Number(marcados.has(tipoNaFila(a))) ||
+      quando(a) - quando(b),
+  );
+}
+
+/** Este pedido está na frente por ser de um tipo prioritário da loja? (o selo no card) */
+export function furaAFila(pedido: { deliveryType?: string | null; source?: string | null }, config: KdsConfig | null | undefined): boolean {
+  return (config?.prioridade || []).includes(tipoNaFila(pedido));
 }
 
 /**

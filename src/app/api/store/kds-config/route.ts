@@ -7,8 +7,9 @@ import { lerKdsConfig } from "@/lib/kds-telas";
 /**
  * `User.kdsConfig` — as regras do KDS que não são de uma tela.
  *
- * Hoje é uma só: `soNaFinalizacao`, as categorias que não aparecem na
- * produção (a bebida da NIK). É irmã de `/api/store/kds-screens`, e separada
+ * São duas: `soNaFinalizacao`, as categorias que não aparecem na produção (a
+ * bebida da NIK), e `prioridade`, os tipos de pedido que entram na frente da
+ * fila (a mesa da Pizzaria 17). É irmã de `/api/store/kds-screens`, e separada
  * dela porque aquela devolve a LISTA de telas e todo leitor confia que é um
  * array — misturar a regra ali quebraria a tela da TV, o hub e a baixa.
  */
@@ -44,7 +45,18 @@ export async function PUT(req: NextRequest) {
   if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) {
     return NextResponse.json({ error: "Formato inválido" }, { status: 400 });
   }
-  const config = lerKdsConfig(bruto);
+  // Cada tela do painel salva só a regra dela (o hub manda `soNaFinalizacao`,
+  // a prioridade manda `prioridade`). Juntar com o que já está gravado é o que
+  // impede uma de apagar a outra.
+  const atual = await prisma.user
+    .findUnique({ where: { id: lojaId }, select: { kdsConfig: true } })
+    .catch(() => null);
+  const gravado = lerKdsConfig(atual?.kdsConfig);
+  const enviado = lerKdsConfig(bruto);
+  const config = {
+    soNaFinalizacao: "soNaFinalizacao" in bruto ? enviado.soNaFinalizacao : gravado.soNaFinalizacao,
+    prioridade: "prioridade" in bruto ? enviado.prioridade : gravado.prioridade,
+  };
 
   await prisma.user.update({
     where: { id: lojaId },

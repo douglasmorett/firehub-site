@@ -9,7 +9,9 @@ import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import {
   categoriaSoNaFinalizacao,
   categoriasComDono as donosDaEtapa,
+  furaAFila,
   lerKdsConfig,
+  tipoNaFila,
   pedidoNaTela,
   type KdsConfig,
 } from "@/lib/kds-telas";
@@ -354,16 +356,16 @@ export default function KDSTelaPage() {
     if (!stage) return;
     let vivo = true;
     const carregar = () => {
-      // A regra "só na finalização" só importa na produção — e falha de rede
-      // deixa o estado como está, pelo mesmo motivo do filtro abaixo.
-      if (stage === "production") {
-        fetch("/api/store/kds-config", { credentials: "include", cache: "no-store" })
-          .then((r) => (r.ok ? r.json() : null))
-          .then((cfg) => {
-            if (vivo && cfg) setKdsConfig(lerKdsConfig(cfg));
-          })
-          .catch(() => {});
-      }
+      // As regras da loja: "só na finalização" (que só é aplicada na produção,
+      // quem confere é quem usa) e a prioridade, cujo selo vale nas duas
+      // etapas. Falha de rede deixa o estado como está, pelo mesmo motivo do
+      // filtro abaixo.
+      fetch("/api/store/kds-config", { credentials: "include", cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((cfg) => {
+          if (vivo && cfg) setKdsConfig(lerKdsConfig(cfg));
+        })
+        .catch(() => {});
       fetch("/api/store/kds-screens", { credentials: "include", cache: "no-store" })
         .then((r) => (r.ok ? r.json() : null))
         .then((telas) => {
@@ -1694,6 +1696,7 @@ export default function KDSTelaPage() {
                   accent={accent}
                   isExiting={exitingOrderIds.has(order.id)}
                   tick={tick}
+                  prioridadeDaLoja={furaAFila(order, kdsConfig)}
                   onMarkPronto={() => markAsPronto(order)}
                 />
               ))}
@@ -1852,6 +1855,7 @@ function OrderCard({
   accent,
   isExiting,
   tick,
+  prioridadeDaLoja,
   onMarkPronto,
 }: {
   order: Order;
@@ -1861,6 +1865,8 @@ function OrderCard({
   accent: string;
   isExiting: boolean;
   tick: number;
+  /** O tipo deste pedido está na prioridade da loja (kdsConfig.prioridade). */
+  prioridadeDaLoja?: boolean;
   onMarkPronto?: () => void;
 }) {
   // ── O TOQUE QUE ERA DO CARTÃO DE ANTES ─────────────────────────────────
@@ -1962,6 +1968,27 @@ function OrderCard({
         >
           <span>{order.reposicao.motivo === "TROCA" ? "🔁 TROCA" : "🔁 ITEM FALTANTE"}{order.prioridadeNaCozinha ? " · PRIORIDADE" : ""}</span>
           <span style={{ fontSize: 12, opacity: 0.9 }}>do #{order.reposicao.numero} · JÁ PAGO</span>
+        </div>
+      )}
+
+      {/* ⏩ PRIORIDADE DA LOJA (Configurações do KDS → Prioridade). Só quando
+          não há faixa mais forte: reposição e rota já dizem por que o pedido
+          está na frente. */}
+      {prioridadeDaLoja && !order.prioridadeNaCozinha && !order.isRoutePriority && !order.routeSchedule?.routeNumber && (
+        <div
+          style={{
+            width: "100%",
+            background: "#B45309",
+            color: "#fff",
+            padding: "6px 12px",
+            borderRadius: 8,
+            fontWeight: 800,
+            fontSize: 13,
+            letterSpacing: "0.5px",
+            border: "1px solid #F59E0B",
+          }}
+        >
+          ⏩ PRIORIDADE · {({ MESA: "MESA", BALCAO: "BALCÃO", RETIRADA: "RETIRADA", DELIVERY: "DELIVERY" } as const)[tipoNaFila(order)]}
         </div>
       )}
 
