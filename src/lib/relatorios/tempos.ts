@@ -103,6 +103,19 @@
  * SEPARADO: o pedido espera horas de propósito e o `kdsProductionAt` dele é a
  * hora da criação, então somar nas etapas faria a cozinha "demorar" 6 h.
  *
+ * ── Produção e finalização: a montagem e o forno ────────────────────────────
+ *
+ * A NIK dá baixa duas vezes: na tela de produção (a montagem, que carimba o
+ * `prontoEm` do item) e na de finalização (o forno, que finaliza o pedido).
+ * "Na cozinha" vai da entrada ao fim; "Na produção" e "Na finalização" são as
+ * duas pernas dela, só para quem passou pelo KDS. E a produção por produto
+ * mede até onde o lojista escolher (`medirAte`): o pronto da produção, a
+ * finalização (o percurso completo do item) ou a baixa de uma tela. Cada
+ * baixa guarda a tela e a hora desde 09/10/2026 (`CustomerOrder.kdsBaixas`);
+ * antes disso só há o pronto do item e a hora em que o pedido foi finalizado
+ * (Danilo, NIK, 09/10/2026: "esses tempos aí está só de montagem e não está a
+ * finalização do forno").
+ *
  * ── Mesa ────────────────────────────────────────────────────────────────────
  *
  * O dinheiro da mesa mora em TableSession, mas este relatório não soma
@@ -123,6 +136,8 @@ import { ehCancelado, naLoja, somarDias, TIPOS_DE_VENDA, type TipoDeVenda } from
 export const DIA_DOS_CARIMBOS = "2026-08-29";
 /** Desde quando o KDS carimba o pronto de cada item (CustomerOrderItem.prontoEm). */
 export const DIA_DO_PRONTO_POR_ITEM = "2026-09-22";
+/** Desde quando cada baixa guarda a tela e a hora (CustomerOrder.kdsBaixas). */
+export const DIA_DAS_BAIXAS_POR_TELA = "2026-10-09";
 
 /** Prazo padrão sem hora prometida — o do cartão do painel. */
 export const PRAZO_PADRAO_RETIRADA_MIN = 40;
@@ -189,7 +204,30 @@ export type ItemParaTempos = {
   prontoEm: Instante;
   /** Sabores, borda, bebida do combo — para a lista de pedidos da hora ("qual sabor que é"). */
   escolhas?: string;
+  /** Id do item (CustomerOrderItem), para casar com a baixa de cada tela. */
+  id?: string;
 };
+
+/** Uma baixa do KDS, como `CustomerOrder.kdsBaixas` guarda (lib/kds-telas.ts, BaixaDoKds). */
+export type BaixaParaTempos = {
+  tela: string;
+  nome?: string;
+  estagio: "production" | "finishing";
+  em: Instante;
+  /** Os itens que a tela mostrava nessa baixa. */
+  itens: string[];
+};
+
+/**
+ * Até onde a produção por produto mede cada item (ver `prontoDoItem`):
+ * - producao: o pronto do item na tela de produção (`prontoEm`) — a montagem, na loja que tem forno depois;
+ * - finalizacao: a baixa da tela de finalização que mostra o item — o percurso completo (montagem + forno);
+ * - tela: a baixa de UMA tela do KDS, só nos itens que ela mostra.
+ */
+export type MedirAte =
+  | { tipo: "producao" }
+  | { tipo: "finalizacao" }
+  | { tipo: "tela"; chave: string; nome: string; estagio: "production" | "finishing"; categorias: string[] };
 
 export type PedidoParaTempos = {
   id: string;
@@ -218,6 +256,10 @@ export type PedidoParaTempos = {
   kdsFinishingAt?: Instante;
   kdsFinishedAt?: Instante;
   scheduledDatetime?: Instante;
+  /** As chaves das telas que já deram baixa (`kdsTelasProntas`). */
+  telasProntas?: string[];
+  /** Cada baixa com a tela e a hora (`kdsBaixas`, desde 09/10/2026). */
+  baixas?: BaixaParaTempos[];
   itens: ItemParaTempos[];
 };
 
@@ -235,17 +277,25 @@ export type ConfigDosTempos = {
   limiteDaLista?: number;
   /** Quantos pedidos cada hora da produção devolve (padrão LIMITE_DE_PEDIDOS_POR_HORA). */
   limitePorHora?: number;
+  /** Até onde a produção por produto mede cada item (padrão: o pronto da produção). */
+  medirAte?: MedirAte;
 };
 
 // ── O QUE SAI ───────────────────────────────────────────────────────────────
 
-export type ChaveDaEtapa = "aceite" | "cozinha" | "esperandoSaida" | "rua" | "totalEntrega" | "totalNaLoja";
+export type ChaveDaEtapa = "aceite" | "cozinha" | "producao" | "finalizacao" | "esperandoSaida" | "rua" | "totalEntrega" | "totalNaLoja";
 
-export const ETAPAS: { chave: ChaveDaEtapa; titulo: string; legenda: string; aplicaA: string }[] = [
+export const ETAPAS: { chave: ChaveDaEtapa; titulo: string; legenda: string; aplicaA: string; dentroDaCozinha?: boolean }[] = [
   { chave: "aceite", titulo: "Esperando aceite", legenda: "Da hora do pedido até alguém aceitar.",
     aplicaA: "Pedidos que alguém precisa aceitar (iFood, Brendi, Jotajá; site, Wabiz, 99Food e totem quando o aceite automático está desligado). Balcão, mesa e o que a loja aceita sozinha já nascem aceitos." },
   { chave: "cozinha", titulo: "Na cozinha", legenda: "Da entrada na cozinha (o pedido aparece no KDS) até ficar pronto.",
     aplicaA: "Todos os tipos de venda." },
+  // As duas pernas da cozinha, para a loja que dá baixa duas vezes (a montagem
+  // e o forno da NIK; a produção e a expedição). Só quem passou pelo KDS.
+  { chave: "producao", titulo: "Na produção", legenda: "Da entrada na cozinha até o último item ganhar o pronto na tela de produção (a montagem, na loja que tem forno depois).",
+    aplicaA: "Pedidos que passaram pelo KDS com o pronto por item (desde 22/09/2026).", dentroDaCozinha: true },
+  { chave: "finalizacao", titulo: "Na finalização", legenda: "Do último pronto da produção até a cozinha finalizar o pedido (a baixa da tela de finalização: o forno, a expedição).",
+    aplicaA: "Pedidos que passaram pelo KDS com o pronto por item.", dentroDaCozinha: true },
   { chave: "esperandoSaida", titulo: "Pronto esperando saída", legenda: "Do pronto até o entregador sair.",
     aplicaA: "Entrega." },
   { chave: "rua", titulo: "Na rua", legenda: "Da saída até a entrega no cliente.",
@@ -268,6 +318,8 @@ export type ResumoDaEtapa = Estatistica & {
   titulo: string;
   legenda: string;
   aplicaA: string;
+  /** Produção e finalização: as duas pernas de "na cozinha", mostradas dentro dela. */
+  dentroDaCozinha?: boolean;
   /** Pedidos em que a etapa vale (medidos + não medidos). */
   elegiveis: number;
   semCarimbo: number;
@@ -506,6 +558,78 @@ function primeiraBaixa(p: PedidoParaTempos): number | null {
   return tempos.length ? Math.min(...tempos) : null;
 }
 
+// ── ATÉ ONDE O ITEM É MEDIDO ────────────────────────────────────────────────
+
+const normal = (s: unknown) => String(s ?? "").toLowerCase().trim();
+
+/**
+ * A tela mostra o item, pela categoria — a régua de `telaMostraItem`
+ * (lib/kds-telas.ts) menos o curinga do item sem categoria: aqui é conta, e o
+ * sem categoria não pode ganhar o tempo de toda tela.
+ */
+function telaMostraPelaCategoria(categorias: string[], item: ItemParaTempos): boolean {
+  const filtros = categorias.map(normal).filter(Boolean);
+  if (filtros.length === 0) return true;
+  return filtros.includes(normal(item.categoria));
+}
+
+/** A última baixa da lista (pela hora), ou null. */
+function ultimaBaixa(baixas: BaixaParaTempos[]): BaixaParaTempos | null {
+  let ultima: BaixaParaTempos | null = null;
+  for (const b of baixas) if (ms(b.em) !== null && (!ultima || ms(b.em)! > ms(ultima.em)!)) ultima = b;
+  return ultima;
+}
+
+/**
+ * Até que hora o item é medido na produção por produto, no modo escolhido.
+ * null = sem carimbo (o item não passou por ali, ou a hora não existe).
+ *
+ * As baixas com hora (`CustomerOrder.kdsBaixas`) existem desde 09/10/2026.
+ * Antes delas, o que dá para saber: o pronto do item (a produção) e a hora em
+ * que o pedido foi finalizado (a finalização do pedido inteiro). Para uma tela
+ * de finalização específica, só quando ela foi a única a dar baixa no pedido —
+ * aí a finalização do pedido é a dela; com duas telas, não se sabe qual foi a
+ * última, e o item fica sem medição em vez de ganhar a hora da outra.
+ */
+export function prontoDoItem(p: PedidoParaTempos, item: ItemParaTempos, modo: MedirAte | undefined): Instante {
+  if (!modo || modo.tipo === "producao") return item.prontoEm;
+  const baixas = (p.baixas || []).filter((b) => ms(b.em) !== null);
+
+  if (modo.tipo === "finalizacao") {
+    const daFinalizacao = baixas.filter((b) => b.estagio === "finishing");
+    // Sem baixa de finalização registrada, a finalização é a do pedido: o
+    // pedido de antes do registro, ou o que o painel deu por pronto.
+    if (daFinalizacao.length === 0) return horaDoPronto(p);
+    // A tela de finalização que mostrava o item; o que nenhuma listou (a
+    // bebida, o acompanhamento) fica pronto com a última delas.
+    const minhas = item.id ? daFinalizacao.filter((b) => b.itens.includes(item.id!)) : [];
+    return (ultimaBaixa(minhas) || ultimaBaixa(daFinalizacao))!.em;
+  }
+
+  // Uma tela só.
+  const desta = baixas.filter((b) => b.tela === modo.chave && b.estagio === modo.estagio);
+  if (desta.length) {
+    const b = ultimaBaixa(desta)!;
+    return item.id && b.itens.includes(item.id) ? b.em : null;
+  }
+  // O pedido tem o registro e esta tela não está nele: ela não deu baixa.
+  if (baixas.length) return null;
+  // Antes do registro (ver acima): o pronto do item vale para a tela de
+  // produção que mostra a categoria dele; a finalização do pedido vale para a
+  // tela de finalização só quando ela foi a única a dar baixa.
+  if (!telaMostraPelaCategoria(modo.categorias, item)) return null;
+  if (modo.estagio === "production") return item.prontoEm;
+  const prontas = p.telasProntas || [];
+  return prontas.length === 1 && prontas[0] === modo.chave ? horaDoPronto(p) : null;
+}
+
+/** Para a tela e a planilha: "… até o pronto da produção / a finalização / a baixa da tela «Forno»". */
+export function rotuloDoMedirAte(m: MedirAte | undefined): string {
+  if (!m || m.tipo === "producao") return "o pronto da produção";
+  if (m.tipo === "finalizacao") return "a finalização do pedido (o percurso completo)";
+  return `a baixa da tela «${m.nome}»`;
+}
+
 /** Agendamento de verdade: a hora prometida está mais de 3 h depois do pedido. */
 export function ehAgendado(p: Pick<PedidoParaTempos, "createdAt" | "scheduledDatetime">): boolean {
   const c = ms(p.createdAt), s = ms(p.scheduledDatetime);
@@ -554,6 +678,17 @@ export function etapasDoPedido(p: PedidoParaTempos): Record<ChaveDaEtapa, Medida
   }
 
   const cozinha = medir(p.kdsProductionAt || p.createdAt, pronto);
+
+  // As duas pernas da cozinha, só para quem passou pelo KDS com o pronto por
+  // item: até o ÚLTIMO item ganhar o pronto da produção (a montagem) e, daí,
+  // até a cozinha finalizar (o forno, a expedição). O pedido arrastado até
+  // "pronto" no painel não tem essas pernas e não entra nelas.
+  const prontos = p.itens.map((i) => ms(i.prontoEm)).filter((t): t is number => t !== null);
+  const ultimoDaProducao = prontos.length ? new Date(Math.max(...prontos)) : null;
+  const passouPeloKds = prontos.length > 0 || ms(p.kdsFinishedAt) !== null;
+  const producao = passouPeloKds ? medir(p.kdsProductionAt || p.createdAt, ultimoDaProducao) : NAO_SE_APLICA;
+  const finalizacao = passouPeloKds ? medir(ultimoDaProducao, pronto) : NAO_SE_APLICA;
+
   const esperandoSaida = entrega ? medir(p.readyAt || p.kdsFinishedAt, p.dispatchedAt) : NAO_SE_APLICA;
   const rua = entrega ? medir(p.dispatchedAt, p.deliveredAt, TETO_DA_RUA_MIN) : NAO_SE_APLICA;
 
@@ -567,7 +702,7 @@ export function etapasDoPedido(p: PedidoParaTempos): Record<ChaveDaEtapa, Medida
   }
   const totalNaLoja = entrega ? NAO_SE_APLICA : medir(p.createdAt, pronto);
 
-  return { aceite, cozinha, esperandoSaida, rua, totalEntrega, totalNaLoja };
+  return { aceite, cozinha, producao, finalizacao, esperandoSaida, rua, totalEntrega, totalNaLoja };
 }
 
 /** Onde a saída caiu em relação ao prazo, com as faixas de alerta do lojista. */
@@ -721,8 +856,11 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
       const itensMedidos: PedidoDaProducao["itens"] = [];
       for (const item of p.itens) {
         if (comFiltroDeItem && !itemPassa(item)) continue;
-        if (!ms(item.prontoEm)) { semPronto++; continue; }
-        const m = cozinhaLargada ? null : minutosEntre(entrada, item.prontoEm);
+        // Até onde o item é medido: o pronto da produção, a finalização ou a
+        // baixa de uma tela (ver `prontoDoItem`).
+        const pronto = prontoDoItem(p, item, cfg.medirAte);
+        if (!ms(pronto)) { semPronto++; continue; }
+        const m = cozinhaLargada ? null : minutosEntre(entrada, pronto);
         if (m === null) { producaoForaDaCurva++; continue; }
         const qtd = Number(item.quantidade) || 0;
         valoresDaProducao.push(m);

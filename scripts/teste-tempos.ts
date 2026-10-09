@@ -16,7 +16,7 @@
  * mesa #14 com "144 min de preparo".
  */
 import {
-  aceitoNaChegada, estatistica, etapasDoPedido, faixaDoPrazo, fmtMin, limitesDoAlerta, prazoDoPedido, temposDoRelatorio,
+  aceitoNaChegada, estatistica, etapasDoPedido, faixaDoPrazo, fmtMin, limitesDoAlerta, prazoDoPedido, rotuloDoMedirAte, temposDoRelatorio,
   type ConfigDosTempos, type ItemParaTempos, type PedidoParaTempos,
 } from "../src/lib/relatorios/tempos";
 
@@ -292,6 +292,80 @@ confere("limite por hora: a lista corta, o mais rápido continua", (() => {
   const x = temposDoRelatorio([rapido, lento], cfg({ limitePorHora: 1 })).producao.porHora[0];
   return [x.lista.length, x.maisRapido?.id];
 })(), [1, rapido.id]);
+
+console.log("\n13) Produção e finalização: a montagem e o forno (NIK, 09/10/2026)");
+// NIK #125 de 09/10/2026: entrou 04:54:57, montagem pronta 04:57:03 (o
+// prontoEm do item), forno — a baixa da tela de finalização — 05:00:09
+// (readyAt/kdsFinishedAt). O relatório mostrava os 2 min da montagem como se
+// fossem o preparo inteiro: "esses tempos aí está só de montagem".
+const c12 = h("2026-10-09 04:54");
+const nik125 = pedido({
+  canal: "IFOOD", createdAt: c12, kdsProductionAt: c12, kdsFinishingAt: mais(c12, 2.1), readyAt: mais(c12, 5.2), kdsFinishedAt: mais(c12, 5.2),
+  telasProntas: ["fim-esfiha"],
+  itens: [{ ...item("Combo 1", "Combos Esfihas", 1, mais(c12, 2.1)), id: "i-combo" }],
+});
+const e12 = etapasDoPedido(nik125);
+confere("cozinha 5,2 = produção 2,1 (até o último pronto) + finalização 3,1 (até a baixa do forno)",
+  [e12.cozinha, e12.producao, e12.finalizacao], [{ aplica: true, minutos: 5.2 }, { aplica: true, minutos: 2.1 }, { aplica: true, minutos: 3.1 }]);
+confere("pedido que não passou pelo KDS (pronto pelo painel) não tem produção nem finalização",
+  [etapasDoPedido(site).producao, etapasDoPedido(site).finalizacao], [{ aplica: false }, { aplica: false }]);
+const soMontado = pedido({ createdAt: c12, kdsProductionAt: c12, itens: [{ ...item("Esfiha Carne", "Esfihas", 2, mais(c12, 3)), id: "i-x" }] });
+confere("montado e ainda não finalizado: produção 3, finalização sem carimbo (não zero)",
+  [etapasDoPedido(soMontado).producao, etapasDoPedido(soMontado).finalizacao], [{ aplica: true, minutos: 3 }, { aplica: true, minutos: null, motivo: "semCarimbo" }]);
+confere("no relatório: produção e finalização só com quem passou pelo KDS (iFood 4/4,5; mesa 3/2; madrugada 6/14)",
+  rel.etapas.filter((e) => e.chave === "producao" || e.chave === "finalizacao").map((e) => [e.chave, e.elegiveis, e.medidos, e.mediana, e.maximo, e.dentroDaCozinha]),
+  [["producao", 3, 3, 4, 6, true], ["finalizacao", 3, 3, 4.5, 14, true]]);
+
+console.log("\n14) Medir até: a finalização e cada tela (a montagem e o forno por produto)");
+const MONT = "mont-esfiha", FORNO = "forno-esfiha", FORNO_PIZZA = "forno-pizza";
+const c13 = h("2026-10-09 20:00");
+const misto = pedido({
+  createdAt: c13, kdsProductionAt: c13, readyAt: mais(c13, 15), kdsFinishedAt: mais(c13, 15), telasProntas: [FORNO, FORNO_PIZZA],
+  itens: [
+    { ...item("Esfiha Carne", "Esfihas", 10, mais(c13, 3)), id: "e1" },
+    { ...item("Pizza Grande", "Pizzas", 1, mais(c13, 8)), id: "p1" },
+    { ...item("Coca Cola 2l", "Bebidas", 1, null), id: "b1" },
+  ],
+  baixas: [
+    { tela: MONT, estagio: "production", em: mais(c13, 3), itens: ["e1"] },
+    { tela: "mont-pizza", estagio: "production", em: mais(c13, 8), itens: ["p1"] },
+    { tela: FORNO, estagio: "finishing", em: mais(c13, 10), itens: ["e1"] },
+    { tela: FORNO_PIZZA, estagio: "finishing", em: mais(c13, 15), itens: ["p1"] },
+  ],
+});
+const producaoAte = (medirAte: ConfigDosTempos["medirAte"], pedidos: PedidoParaTempos[] = [misto]) => temposDoRelatorio(pedidos, cfg({ medirAte })).producao;
+const porCategoria = (pr: ReturnType<typeof producaoAte>) => pr.categorias.map((c) => [c.nome, c.mediana]);
+const fornoEsfiha: ConfigDosTempos["medirAte"] = { tipo: "tela", chave: FORNO, nome: "Forno Esfiha", estagio: "finishing", categorias: ["Esfihas"] };
+const montagem: ConfigDosTempos["medirAte"] = { tipo: "tela", chave: MONT, nome: "Montagem", estagio: "production", categorias: ["Esfihas"] };
+confere("pronto da produção (o padrão): esfiha 3, pizza 8, a coca sem pronto",
+  [porCategoria(producaoAte(undefined)), producaoAte(undefined).semPronto], [[["Esfihas", 3], ["Pizzas", 8]], 1]);
+confere("finalização: a esfiha até o forno dela (10), a pizza até o dela (15), a coca com a última finalização (15)",
+  porCategoria(producaoAte({ tipo: "finalizacao" })), [["Esfihas", 10], ["Bebidas", 15], ["Pizzas", 15]]);
+confere("a tela do forno da esfiha: só a esfiha, até a baixa dela (10)", porCategoria(producaoAte(fornoEsfiha)), [["Esfihas", 10]]);
+confere("a tela da montagem: só o que ela mostrou (a esfiha, 3)", porCategoria(producaoAte(montagem)), [["Esfihas", 3]]);
+confere("tela que não deu baixa neste pedido: nada medido",
+  porCategoria(producaoAte({ tipo: "tela", chave: "outra", nome: "Outra", estagio: "finishing", categorias: [] })), []);
+confere("por hora, o pedido vai até o último item no modo escolhido (15 na finalização, 8 na produção)",
+  [producaoAte({ tipo: "finalizacao" }).porHora[0].maisDemorado?.minutos, producaoAte(undefined).porHora[0].maisDemorado?.minutos], [15, 8]);
+
+// Antes do registro das baixas (até 09/10/2026) só há o pronto do item e a
+// hora em que o pedido foi finalizado.
+const antigoSo = pedido({
+  createdAt: c13, kdsProductionAt: c13, readyAt: mais(c13, 6), kdsFinishedAt: mais(c13, 6), telasProntas: [FORNO],
+  itens: [{ ...item("Esfiha Carne", "Esfihas", 10, mais(c13, 3)), id: "e2" }],
+});
+const antigoMisto = pedido({
+  createdAt: c13, kdsProductionAt: c13, readyAt: mais(c13, 15), kdsFinishedAt: mais(c13, 15), telasProntas: [FORNO, FORNO_PIZZA],
+  itens: [{ ...item("Esfiha Carne", "Esfihas", 10, mais(c13, 3)), id: "e3" }, { ...item("Pizza Grande", "Pizzas", 1, mais(c13, 8)), id: "p3" }],
+});
+confere("sem o registro: a finalização é a do pedido inteiro (esfihas 6 e 15 → mediana 10,5; pizza 15)",
+  porCategoria(producaoAte({ tipo: "finalizacao" }, [antigoSo, antigoMisto])), [["Esfihas", 10.5], ["Pizzas", 15]]);
+confere("sem o registro: a tela de finalização só é medida no pedido em que foi a única a dar baixa (6); no misto, ninguém",
+  (() => { const pr = producaoAte(fornoEsfiha, [antigoSo, antigoMisto]); return [porCategoria(pr), pr.semPronto]; })(), [[["Esfihas", 6]], 2]);
+confere("sem o registro: a tela de produção mede pelo pronto do item, só nas categorias dela (esfiha 3, pizza fora)",
+  (() => { const pr = producaoAte(montagem, [antigoMisto]); return [porCategoria(pr), pr.semPronto]; })(), [[["Esfihas", 3]], 1]);
+confere("o rótulo do 'medir até'", [rotuloDoMedirAte(undefined), rotuloDoMedirAte({ tipo: "finalizacao" }), rotuloDoMedirAte(fornoEsfiha)],
+  ["o pronto da produção", "a finalização do pedido (o percurso completo)", "a baixa da tela «Forno Esfiha»"]);
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

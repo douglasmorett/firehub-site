@@ -554,3 +554,80 @@ export function categoriaSoNaFinalizacao(
   if ((filtroDaTela || []).map(texto).includes(cat)) return false;
   return config.soNaFinalizacao.map(texto).includes(cat);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CADA BAIXA GUARDA A TELA E A HORA
+
+   `kdsTelasProntas` diz QUEM já deu baixa; `prontoEm` diz quando o ITEM ficou
+   pronto na produção. Faltava quando cada TELA deu baixa — e sem isso o
+   relatório de tempos só enxergava a montagem: na NIK o pronto do item é a
+   baixa da tela de produção (montagem) e a baixa do forno (a tela de
+   finalização) não tinha hora nenhuma. Danilo, 09/10/2026: "esses tempos aí
+   está só de montagem e não está a finalização do forno".
+
+   Mora em `CustomerOrder.kdsBaixas`: uma entrada por tela e etapa, com os
+   itens que a tela mostrava na hora. O desfazer tira a entrada da tela que
+   desfez — e só dela, pelo mesmo motivo de `kdsTelasProntas`.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export type EstagioDaBaixa = "production" | "finishing";
+
+export type BaixaDoKds = {
+  /** `chaveDaTela`; "" = baixa sem identidade de tela (link antigo, loja de uma tela só). */
+  tela: string;
+  nome: string;
+  estagio: EstagioDaBaixa;
+  /** ISO. */
+  em: string;
+  /** Os itens que a tela mostrava nessa baixa (ids de CustomerOrderItem). */
+  itens: string[];
+};
+
+/** Lê o campo do banco sem confiar no formato. */
+export function lerBaixas(bruto: unknown): BaixaDoKds[] {
+  if (!Array.isArray(bruto)) return [];
+  const saida: BaixaDoKds[] = [];
+  for (const b of bruto) {
+    if (!b || typeof b !== "object") continue;
+    const estagio = texto((b as any).estagio);
+    const em = String((b as any).em ?? "");
+    if ((estagio !== "production" && estagio !== "finishing") || !Number.isFinite(new Date(em).getTime())) continue;
+    saida.push({
+      tela: String((b as any).tela ?? "").trim(),
+      nome: String((b as any).nome ?? "").trim(),
+      estagio,
+      em,
+      itens: Array.isArray((b as any).itens) ? (b as any).itens.map((v: unknown) => String(v ?? "")).filter(Boolean) : [],
+    });
+  }
+  return saida;
+}
+
+/**
+ * A lista com esta baixa. A mesma tela na mesma etapa fica com uma entrada só
+ * (a última): dar baixa de novo depois de um desfazer não pode duplicar a tela.
+ */
+export function registrarBaixa(
+  baixas: unknown,
+  nova: { tela: string; nome?: string | null; estagio: EstagioDaBaixa; em: Date; itens: string[] }
+): BaixaDoKds[] {
+  const chave = String(nova.tela ?? "").trim();
+  const entrada: BaixaDoKds = {
+    tela: chave,
+    nome: String(nova.nome ?? "").trim(),
+    estagio: nova.estagio,
+    em: nova.em.toISOString(),
+    itens: nova.itens.map((id) => String(id ?? "")).filter(Boolean),
+  };
+  return [...lerBaixas(baixas).filter((b) => !(b.tela === chave && b.estagio === nova.estagio)), entrada];
+}
+
+/**
+ * A lista sem a baixa desfeita: a desta tela nesta etapa. Sem identidade de
+ * tela, saem todas as baixas da etapa — o mesmo alcance que o desfazer tem
+ * sobre `kdsTelasProntas` e `prontoEm`.
+ */
+export function tirarBaixa(baixas: unknown, chave: string, estagio: EstagioDaBaixa): BaixaDoKds[] {
+  const c = String(chave ?? "").trim();
+  return lerBaixas(baixas).filter((b) => b.estagio !== estagio || (c !== "" && b.tela !== c));
+}

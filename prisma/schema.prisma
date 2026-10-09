@@ -1002,6 +1002,15 @@ model CustomerOrder {
   /// de quem deu baixa e o `kdsStage` avança quando a última delas terminar.
   /// Nulo/vazio = ninguém deu baixa ainda, que é como todo pedido nasce.
   kdsTelasProntas   Json?
+  /// CADA BAIXA DO KDS, COM A TELA, A HORA E OS ITENS (lib/kds-telas.ts, `BaixaDoKds`).
+  ///
+  /// `kdsTelasProntas` diz QUEM já deu baixa; esta lista diz QUANDO. É o que o
+  /// relatório de tempos precisa para medir cada tela: na NIK o pronto do item
+  /// (`prontoEm`) é a baixa da montagem, e a do forno — a tela de finalização —
+  /// não tinha hora nenhuma (Danilo, 09/10/2026: "esses tempos aí está só de
+  /// montagem"). `[{ tela, nome, estagio: "production"|"finishing", em, itens }]`.
+  /// Nulo = pedido de antes desta coluna, ou sem baixa.
+  kdsBaixas         Json?
   // === MARCOS DA OPERACAO (base dos relatorios de tempo) ===
   // O pedido so guardava createdAt e updatedAt, e updatedAt e sobrescrito por
   // qualquer edicao — nao dava para saber quanto tempo ele ficou em cada tela

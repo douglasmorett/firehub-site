@@ -12,7 +12,9 @@ import {
   ordenarPelaPrioridade,
   telaTemPendencia,
   lerTelasProntas,
+  registrarBaixa,
   temAlgoPronto,
+  tirarBaixa,
   type TelaDoKds,
 } from "@/lib/kds-telas";
 
@@ -371,6 +373,9 @@ export async function PUT(req: NextRequest) {
       // o pedido tem — é o cruzamento com `User.kdsScreens` que diz se ainda
       // falta alguém (ver lib/kds-telas.ts).
       kdsTelasProntas: true,
+      // Cada baixa com a tela e a hora — o que o relatório de tempos mede por
+      // tela (lib/kds-telas.ts, `BaixaDoKds`).
+      kdsBaixas: true,
       // Para nao reescrever a hora de entrada na finalizacao a cada baixa.
       kdsFinishingAt: true,
       // O numero do pedido: e o que o filtro de par/impar da tela usa.
@@ -476,17 +481,18 @@ export async function PUT(req: NextRequest) {
     // lista que o desfazer apaga — e só ela, para não tirar o pronto que
     // outra tela deu.
     const carimbados = aCarimbar.filter((i: any) => i?.id && !i?.prontoEm).map((i: any) => i.id);
+    const agora = new Date();
     if (ids.length) {
       await prisma.customerOrderItem.updateMany({
         where: { id: { in: ids }, orderId, prontoEm: null },
-        data: { prontoEm: new Date() },
+        data: { prontoEm: agora },
       }).catch(() => null);
     }
 
     // Reflete o carimbo na lista em memória para decidir o estágio sem uma
     // segunda ida ao banco.
     const depois = itens.map((i: any) =>
-      ids.includes(i?.id) ? { ...i, prontoEm: i?.prontoEm || new Date() } : i,
+      ids.includes(i?.id) ? { ...i, prontoEm: i?.prontoEm || agora } : i,
     );
 
     // ── QUANDO O PEDIDO CHEGA NA FINALIZAÇÃO ──────────────────────────────
@@ -502,8 +508,11 @@ export async function PUT(req: NextRequest) {
       where: { id: orderId },
       data: {
         ...(jaTemAlgoPronto && order.kdsStage !== "FINISHED"
-          ? { kdsStage: "FINISHING", kdsFinishingAt: order.kdsFinishingAt || new Date() }
+          ? { kdsStage: "FINISHING", kdsFinishingAt: order.kdsFinishingAt || agora }
           : {}),
+        // A baixa DESTA tela, com a hora e o que ela mostrava: é o que o
+        // relatório de tempos mede por tela (lib/kds-telas.ts, BaixaDoKds).
+        kdsBaixas: registrarBaixa((order as any).kdsBaixas, { tela: chaveDaTelaQueDeuBaixa, nome: minhaTela?.name, estagio: "production", em: agora, itens: ids }) as any,
         kdsStationId: null,
         status: order.status === "ACEITO" ? "PREPARANDO" : undefined,
       },
@@ -538,21 +547,32 @@ export async function PUT(req: NextRequest) {
       : null;
     const pedidoParaFiltro = { numero: (order as any).dailyOrderNumber, deliveryType: order.deliveryType };
     const itensParaFiltro = await itensResolvidos();
+    // A baixa DESTA tela com a hora: `kdsTelasProntas` diz quem já deu baixa,
+    // `kdsBaixas` diz quando — é o forno no relatório de tempos da NIK
+    // (lib/kds-telas.ts, BaixaDoKds). Sem identidade de tela, a baixa vale
+    // para o pedido inteiro, como sempre valeu.
+    const agora = new Date();
+    const minhaTelaFim = telasFim.find((t) => chaveDaTela(t) === chaveDaTelaQueDeuBaixa);
+    const baixas = registrarBaixa((order as any).kdsBaixas, {
+      tela: chaveDaTelaQueDeuBaixa, nome: minhaTelaFim?.name, estagio: "finishing", em: agora,
+      itens: (minhaTelaFim ? itensDaTela(minhaTelaFim, itensParaFiltro) : itensParaFiltro).map((i: any) => i?.id).filter(Boolean),
+    });
     if (prontas && faltaFinalizacao(telasFim, prontas, pedidoParaFiltro, itensParaFiltro)) {
       // Outra tela de finalização ainda tem que fazer a parte dela. O pedido
       // sai DESTA e continua lá; nada de FINISHED, de readyAt nem de avisar
       // a plataforma, porque a expedição ainda não acabou.
       await prisma.customerOrder.update({
         where: { id: orderId },
-        data: { kdsTelasProntas: prontas as any },
+        data: { kdsTelasProntas: prontas as any, kdsBaixas: baixas as any },
       });
       return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true });
     }
     const isPickup = order.deliveryType !== "DELIVERY";
     const updateData: any = {
       ...(prontas ? { kdsTelasProntas: prontas } : {}),
+      kdsBaixas: baixas,
       kdsStage: "FINISHED",
-      kdsFinishingAt: new Date(),
+      kdsFinishingAt: agora,
       // A HORA EM QUE A COZINHA DEU O PEDIDO POR PRONTO.
       //
       // `kdsFinishingAt` logo acima não serve para isso: ele também é carimbado
@@ -563,7 +583,7 @@ export async function PUT(req: NextRequest) {
       // enxerga as últimas horas, e sem esta data o pedido que demorou na
       // cozinha já teria saído da janela quando fosse finalizado — a comanda
       // nunca sairia, justamente nos pedidos que mais demoram.
-      kdsFinishedAt: new Date(),
+      kdsFinishedAt: agora,
       // O MARCO "PRONTO" DO PEDIDO.
       //
       // Quem carimba readyAt é a extensão do Prisma, e ela só age quando a
@@ -574,7 +594,7 @@ export async function PUT(req: NextRequest) {
       // finalizados no KDS. O relatório de tempo de cozinha ficava cego e o
       // lojista via "dei pronto e não aparece". A extensão respeita o campo
       // quando ele já vem na escrita, então basta mandá-lo.
-      readyAt: new Date(),
+      readyAt: agora,
       kdsStationId: null,
     };
 
@@ -710,11 +730,15 @@ export async function PUT(req: NextRequest) {
     // finalização (com o ○ no que voltou) e reaparece nesta tela pela busca
     // dos adiantados. Se nada ficou pronto, volta inteiro para a produção.
     const aindaPronto = itens.some((i: any) => i?.prontoEm && !aDescarimbar.includes(i.id));
+    // A baixa desfeita sai do registro de baixas — a desta tela; sem tela,
+    // todas da produção. Voltando inteiro, as da finalização também, que é o
+    // que o `kdsTelasProntas: []` ao lado já faz.
+    const semEsta = tirarBaixa((order as any).kdsBaixas, chaveDaTelaQueDeuBaixa, "production");
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: aindaPronto
-        ? { kdsStage: "FINISHING" }
-        : { kdsStage: "PRODUCTION", kdsFinishingAt: null, kdsTelasProntas: [] as any },
+        ? { kdsStage: "FINISHING", kdsBaixas: semEsta as any }
+        : { kdsStage: "PRODUCTION", kdsFinishingAt: null, kdsTelasProntas: [] as any, kdsBaixas: tirarBaixa(semEsta, "", "finishing") as any },
     });
     return NextResponse.json({ success: true, stage: aindaPronto ? "FINISHING" : "PRODUCTION" });
   }
@@ -731,6 +755,7 @@ export async function PUT(req: NextRequest) {
     const updateData: any = {
       kdsStage: "FINISHING",
       kdsTelasProntas: (chaveDaTelaQueDeuBaixa ? prontas.filter((c) => c !== chaveDaTelaQueDeuBaixa) : []) as any,
+      kdsBaixas: tirarBaixa((order as any).kdsBaixas, chaveDaTelaQueDeuBaixa, "finishing") as any,
     };
     if (order.kdsStage === "FINISHED") {
       // Não está mais pronto: a próxima baixa carimba as horas de novo, e a

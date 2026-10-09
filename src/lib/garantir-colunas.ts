@@ -802,6 +802,11 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // pizza, que nem tinha começado (NIK, 21/09/2026). Nulo = ninguém deu baixa,
   // que é o comportamento de sempre para quem tem uma tela só.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "kdsTelasProntas" JSONB`,
+  // Cada baixa do KDS com a tela, a hora e os itens (lib/kds-telas.ts,
+  // `BaixaDoKds`). `kdsTelasProntas` diz quem deu baixa; esta diz quando. Sem
+  // ela o relatório de tempos só via a montagem (o `prontoEm` do item) e nunca
+  // o forno — a tela de finalização (NIK, 09/10/2026).
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "kdsBaixas" JSONB`,
   // O "pronto" de CADA ITEM na produção do KDS (ver lib/kds-telas.ts). É o que
   // permite a tela de esfirra marcar só as esfirras, a de pizza continuar com a
   // pizza, e a finalização mostrar o pedido inteiro com visto no que já ficou

@@ -19,9 +19,11 @@ import { cabecalhoDoRelatorio, contextoDoRelatorio, pedidosDoRelatorio } from "@
 import { catalogoDoRelatorio } from "@/lib/relatorios/catalogo";
 import { canalDoRelatorio, DIAS_CURTOS, fmtDia, ROTULO_DO_TIPO, tipoDeVenda } from "@/lib/relatorios/base";
 import {
-  aceitoNaChegada, antesDoDado, DIA_DO_PRONTO_POR_ITEM, DIA_DOS_CARIMBOS, ETAPAS, limitesDoAlerta, ROTULO_DA_FAIXA, temposDoRelatorio,
-  TETO_DA_RUA_MIN, type ChaveDaEtapa, type ConfigDosTempos, type NoDaProducao, type PedidoDaProducao, type PedidoParaTempos, type ResumoDoPrazo,
+  aceitoNaChegada, antesDoDado, DIA_DAS_BAIXAS_POR_TELA, DIA_DO_PRONTO_POR_ITEM, DIA_DOS_CARIMBOS, ETAPAS, limitesDoAlerta, ROTULO_DA_FAIXA, rotuloDoMedirAte,
+  temposDoRelatorio, TETO_DA_RUA_MIN,
+  type ChaveDaEtapa, type ConfigDosTempos, type MedirAte, type NoDaProducao, type PedidoDaProducao, type PedidoParaTempos, type ResumoDoPrazo,
 } from "@/lib/relatorios/tempos";
+import { chaveDaTela, lerBaixas, lerTelasProntas } from "@/lib/kds-telas";
 import { categoriaDoItem, escolhasDoItem, SEM_CATEGORIA } from "@/lib/itens-do-relatorio";
 import { nomeDoProduto } from "@/lib/relatorios/itens-vendidos";
 import { chaveDoNome } from "@/lib/categoria-do-item";
@@ -46,12 +48,15 @@ export async function GET(req: NextRequest) {
         acceptedAt: true, readyAt: true, dispatchedAt: true, deliveredAt: true,
         kdsProductionAt: true, kdsFinishingAt: true, kdsFinishedAt: true, scheduledDatetime: true,
         dailyOrderNumber: true, openDeliveryReference: true,
+        // Quem já deu baixa e cada baixa com a tela e a hora: é o que mede a
+        // finalização e cada tela do KDS (lib/kds-telas.ts, BaixaDoKds).
+        kdsTelasProntas: true, kdsBaixas: true,
         // O cartão do painel decide retirada (40 min) ou entrega (45 min) pelo
         // tipo gravado e pelo marcador na observação — o prazo copia o cartão.
         notes: true,
         items: {
           select: {
-            quantity: true, productName: true, menuProductId: true, comboSelections: true, prontoEm: true,
+            id: true, quantity: true, productName: true, menuProductId: true, comboSelections: true, prontoEm: true,
             menuProduct: { select: { id: true, name: true, category: true, active: true } },
           },
         },
@@ -60,10 +65,31 @@ export async function GET(req: NextRequest) {
     catalogoDoRelatorio(ctx.lojaIds),
     prisma.user.findUnique({ where: { id: ctx.donoId }, select: { timeAlertConfig: true } }),
     // Cada loja com o seu aceite automático: é a coluna que decide se o
-    // pedido do site, da Wabiz, do 99Food e do totem nasce ACEITO.
-    prisma.user.findMany({ where: { id: { in: ctx.lojaIds } }, select: { id: true, autoAcceptOrders: true } }),
+    // pedido do site, da Wabiz, do 99Food e do totem nasce ACEITO. E as
+    // telas do KDS dela, para o "Medir até" da produção por produto.
+    prisma.user.findMany({ where: { id: { in: ctx.lojaIds } }, select: { id: true, storeName: true, autoAcceptOrders: true, kdsScreens: true } }),
   ]);
   const aceitaSozinha = new Set(lojas.filter((l) => l.autoAcceptOrders).map((l) => l.id));
+
+  // Até onde a produção por produto mede: `ate=finalizacao` (o percurso
+  // completo) ou `ate=tela:<chave>` (a baixa de uma tela do KDS); ausente =
+  // o pronto da produção, como sempre foi.
+  const telasDoKds = lojas.flatMap((l) =>
+    (Array.isArray(l.kdsScreens) ? (l.kdsScreens as any[]) : []).map((t) => ({
+      chave: chaveDaTela(t),
+      nome: String(t?.name || "").trim() || "Tela sem nome",
+      estagio: (String(t?.stage || "").toLowerCase().trim() === "finishing" ? "finishing" : "production") as "production" | "finishing",
+      categorias: (Array.isArray(t?.categoryFilter) ? t.categoryFilter : []).map((c: unknown) => String(c ?? "")),
+      ...(lojas.length > 1 ? { loja: String(l.storeName || "").trim() } : {}),
+    })),
+  ).filter((t) => t.chave);
+  const ate = sp.get("ate") || "";
+  let medirAte: MedirAte = { tipo: "producao" };
+  if (ate === "finalizacao") medirAte = { tipo: "finalizacao" };
+  else if (ate.startsWith("tela:")) {
+    const t = telasDoKds.find((x) => x.chave === ate.slice("tela:".length));
+    if (t) medirAte = { tipo: "tela", chave: t.chave, nome: t.nome, estagio: t.estagio, categorias: t.categorias };
+  }
 
   // O pedido na forma da conta: tipo, canal e, para cada item, a categoria DE
   // VERDADE (a do cardápio, também para o item espelho do iFood) e a chave que
@@ -85,10 +111,13 @@ export async function GET(req: NextRequest) {
       acceptedAt: p.acceptedAt, readyAt: p.readyAt, dispatchedAt: p.dispatchedAt, deliveredAt: p.deliveredAt,
       kdsProductionAt: p.kdsProductionAt, kdsFinishingAt: p.kdsFinishingAt, kdsFinishedAt: p.kdsFinishedAt,
       scheduledDatetime: p.scheduledDatetime,
+      telasProntas: lerTelasProntas(p.kdsTelasProntas),
+      baixas: lerBaixas(p.kdsBaixas),
       itens: (p.items || []).map((i: any) => {
         const categoria = categoriaDoItem(i, mapas) || SEM_CATEGORIA;
         const nome = nomeDoProduto(i);
         return {
+          id: i.id,
           nome, categoria,
           chave: `${categoria}:${chaveDoNome(nome) || nome.toLowerCase()}`,
           produtoId: i.menuProductId || i.menuProduct?.id || null,
@@ -111,19 +140,22 @@ export async function GET(req: NextRequest) {
     apenasAtrasados: planilha ? false : sp.get("apenasAtrasados") !== "0",
     limiteDaLista: planilha ? Number.MAX_SAFE_INTEGER : LIMITE_DA_LISTA_NA_TELA,
     limitePorHora: planilha ? 0 : undefined,
+    medirAte,
   };
   const resultado = temposDoRelatorio(paraConta, cfg);
   const cabecalho = cabecalhoDoRelatorio(ctx);
   const avisos = {
     carimbosDesde: DIA_DOS_CARIMBOS,
     prontoPorItemDesde: DIA_DO_PRONTO_POR_ITEM,
+    baixasDesde: DIA_DAS_BAIXAS_POR_TELA,
     periodoAntesDosCarimbos: antesDoDado(ctx.filtros.de, DIA_DOS_CARIMBOS),
     periodoAntesDoProntoPorItem: antesDoDado(ctx.filtros.de, DIA_DO_PRONTO_POR_ITEM),
+    periodoAntesDasBaixas: antesDoDado(ctx.filtros.de, DIA_DAS_BAIXAS_POR_TELA),
     tetoDaRua: TETO_DA_RUA_MIN,
   };
 
   if (!planilha) {
-    return NextResponse.json({ ...cabecalho, ...resultado, avisos });
+    return NextResponse.json({ ...cabecalho, ...resultado, avisos, telas: telasDoKds, medirAte });
   }
 
   // ── A PLANILHA ──────────────────────────────────────────────────────────
@@ -136,6 +168,7 @@ export async function GET(req: NextRequest) {
     ctx.filtros.marcas.length ? `Marca: ${ctx.filtros.marcas.map((m) => nomeDaMarca.get(m) || m).join(", ")}` : "",
     ctx.filtros.categorias.length ? `Pedidos com: ${ctx.filtros.categorias.join(", ")}` : "",
     ctx.filtros.produtos.length ? `${ctx.filtros.produtos.length} produto(s) marcado(s)` : "",
+    medirAte.tipo !== "producao" ? `Produção medida até ${rotuloDoMedirAte(medirAte)}` : "",
   ].filter(Boolean).join(" · ");
   const alertas = [
     limites.amareloAtivo ? `amarelo com até ${limites.amareloMin} min de folga` : "amarelo desligado",
@@ -258,9 +291,10 @@ export async function GET(req: NextRequest) {
     ...pr.categorias.flatMap((c) => [linhaDaProducao(c, 0, c.nome), ...(c.filhos || []).map((f) => linhaDaProducao(f, 1, c.nome))]),
     { celulas: [{ v: "TOTAL", estilo: "negrito" }, "", "", qtd(pr.medidos, true), qtd(pr.quantidade, true), min(pr.minimo), min(pr.mediana, true), min(pr.media), min(pr.p90), min(pr.maximo)] },
     { celulas: [] },
-    { celulas: [{ v: "Da entrada do pedido na cozinha (a tela do KDS; balcão e mesa, a hora do lançamento) até o cozinheiro dar o item por pronto. O pronto é da TELA: os itens da mesma tela ganham a mesma hora na baixa.", estilo: "suave" }] },
-    { celulas: [{ v: `Medição = uma linha de pedido ("10 esfihas" é uma medição e 10 unidades). Itens sem pronto (bebida só na finalização, por exemplo): ${pr.semPronto}. Fora da curva (pronto fora de ordem, a mais de 4 h, ou de pedido que a cozinha só finalizou horas depois): ${pr.foraDaCurva}. Agendados não entram.`, estilo: "suave" }] },
+    { celulas: [{ v: `Da entrada do pedido na cozinha (a tela do KDS; balcão e mesa, a hora do lançamento) até ${rotuloDoMedirAte(medirAte)}. O pronto é da TELA: os itens da mesma tela ganham a mesma hora na baixa.${medirAte.tipo === "producao" ? " Na loja com produção e finalização separadas (montagem e forno), é só a produção — escolha 'Finalização' em 'Medir até' para o percurso completo." : ""}`, estilo: "suave" }] },
+    { celulas: [{ v: `Medição = uma linha de pedido ("10 esfihas" é uma medição e 10 unidades). ${medirAte.tipo === "producao" ? "Itens sem pronto (bebida só na finalização, por exemplo)" : "Itens que essa baixa não mediu"}: ${pr.semPronto}. Fora da curva (pronto fora de ordem, a mais de 4 h, ou de pedido que a cozinha só finalizou horas depois): ${pr.foraDaCurva}. Agendados não entram.`, estilo: "suave" }] },
     ...(avisos.periodoAntesDoProntoPorItem ? [{ celulas: [{ v: `O pronto por item existe desde ${fmtDia(DIA_DO_PRONTO_POR_ITEM)}: antes disso não há medição.`, estilo: "suave" as const }] }] : []),
+    ...(medirAte.tipo !== "producao" && avisos.periodoAntesDasBaixas ? [{ celulas: [{ v: `A hora de cada baixa por tela existe desde ${fmtDia(DIA_DAS_BAIXAS_POR_TELA)}: antes disso a finalização é a do pedido inteiro (a última tela a dar baixa), e uma tela de finalização só é medida no pedido em que foi a única a dar baixa.`, estilo: "suave" as const }] }] : []),
   ];
 
   // Aba 5 — produção por hora do dia.
@@ -284,8 +318,8 @@ export async function GET(req: NextRequest) {
 
   const buffer = montarPlanilha([
     { nome: "Etapas", congelarLinhas: 6, larguras: [30, 44, 10, 10, 12, 13, 17, 10, 10, 10, 12, 10], linhas: abaEtapas },
-    { nome: "Por dia", congelarLinhas: 6, larguras: [12, 13, 10, 17, 12, 22, 10, 16, 14, 17, 18, 13], linhas: abaPorDia },
-    { nome: "Pedidos", congelarLinhas: 6, larguras: [12, 7, 7, 15, 12, 10, 10, 13, 13, 14, 19, 20, 17, 12, 22, 10, 16, 14], linhas: abaPedidos },
+    { nome: "Por dia", congelarLinhas: 6, larguras: [12, 13, 10, 17, 12, 13, 14, 22, 10, 16, 14, 17, 18, 13], linhas: abaPorDia },
+    { nome: "Pedidos", congelarLinhas: 6, larguras: [12, 7, 7, 15, 12, 10, 10, 13, 13, 14, 19, 20, 17, 12, 13, 14, 22, 10, 16, 14], linhas: abaPedidos },
     { nome: "Produção por produto", congelarLinhas: 6, larguras: [44, 11, 24, 11, 12, 10, 10, 10, 12, 10], linhas: abaProducao },
     { nome: "Produção por hora", congelarLinhas: 6, larguras: [8, 10, 15, 30, 9, 30, 9, 10, 16, 12], linhas: abaPorHora },
   ]);

@@ -17,9 +17,9 @@ import React, { useMemo, useState } from "react";
 import { PALETA } from "@/lib/paleta-brasa";
 import { DIAS_CURTOS, fmtDia, fmtPct, fmtQtd, ROTULO_DO_TIPO, type TipoDeVenda } from "@/lib/relatorios/base";
 import {
-  ETAPAS, fmtMin, ROTULO_DA_FAIXA,
-  type ChaveDaEtapa, type FaixaDoPrazo, type HoraDaProducao, type LinhaDoDia, type LinhaDoPedido, type LinhaDoTipo, type NoDaProducao, type PedidoDaProducao,
-  type ResumoDaEtapa, type ResumoDaProducao, type ResumoDoPrazo,
+  ETAPAS, fmtMin, ROTULO_DA_FAIXA, rotuloDoMedirAte,
+  type ChaveDaEtapa, type FaixaDoPrazo, type HoraDaProducao, type LinhaDoDia, type LinhaDoPedido, type LinhaDoTipo, type MedirAte, type NoDaProducao,
+  type PedidoDaProducao, type ResumoDaEtapa, type ResumoDaProducao, type ResumoDoPrazo,
 } from "@/lib/relatorios/tempos";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
 import BarraDeFiltros from "@/components/relatorios/BarraDeFiltros";
@@ -41,11 +41,16 @@ type Resposta = {
   totalDaLista: number;
   listaCortada: boolean;
   producao: ResumoDaProducao;
+  /** As telas do KDS da loja — as opções do "Medir até" da produção por produto. */
+  telas: { chave: string; nome: string; estagio: "production" | "finishing"; loja?: string }[];
+  medirAte: MedirAte;
   avisos: {
     carimbosDesde: string;
     prontoPorItemDesde: string;
+    baixasDesde: string;
     periodoAntesDosCarimbos: boolean;
     periodoAntesDoProntoPorItem: boolean;
+    periodoAntesDasBaixas: boolean;
     tetoDaRua: number;
   };
 };
@@ -56,6 +61,7 @@ const num: React.CSSProperties = { textAlign: "right", fontVariantNumeric: "tabu
 const cabecaDaTabela: React.CSSProperties = { color: PALETA.areiaTinta, fontSize: "0.7rem", textTransform: "uppercase", letterSpacing: "0.03em", borderBottom: `1px solid ${PALETA.areiaBorda}` };
 const suave: React.CSSProperties = { fontSize: "0.72rem", color: PALETA.areiaTinta, fontWeight: 500 };
 const caixa: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.86rem", fontWeight: 700, cursor: "pointer", color: PALETA.carvao };
+const campoSelect: React.CSSProperties = { padding: "7px 10px", borderRadius: 10, border: `1.5px solid ${PALETA.areiaBorda}`, fontSize: "0.84rem", fontFamily: "inherit", background: "#fff", color: PALETA.carvao, maxWidth: 380 };
 
 const nomeDoCanal = new Map<string, string>(canaisConhecidos().map((c) => [c.chave, `${c.emoji} ${c.nome}`]));
 
@@ -108,9 +114,13 @@ function Cobertura({ e }: { e: ResumoDaEtapa }) {
 
 export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
   const opcoes = useOpcoesDosFiltros();
-  const { filtros, mudar, extras, mudarExtra, query } = useFiltros(inicio, "7d", { apenasAtrasados: "" });
+  // `ate`: até onde a produção por produto mede ("" = o pronto da produção,
+  // "finalizacao", "tela:<chave>") — ver lib/relatorios/tempos.ts, MedirAte.
+  const { filtros, mudar, extras, mudarExtra, query } = useFiltros(inicio, "7d", { apenasAtrasados: "", ate: "" });
   const { dados, carregando, erro, recarregar } = useRelatorio<Resposta>("tempos", query);
   const apenasAtrasados = extras.apenasAtrasados !== "0";
+  const telas = dados?.telas || [];
+  const medirAte: MedirAte = dados?.medirAte || { tipo: "producao" };
 
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
   const [busca, setBusca] = useState("");
@@ -211,9 +221,9 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
                 </thead>
                 <tbody>
                   {dados.etapas.map((e) => (
-                    <tr key={e.chave} style={{ borderBottom: `1px solid ${PALETA.areia}` }}>
-                      <td style={{ ...td, minWidth: 260 }}>
-                        <div style={{ fontWeight: 800 }} title={e.aplicaA}>{e.titulo}</div>
+                    <tr key={e.chave} style={{ borderBottom: `1px solid ${PALETA.areia}`, background: e.dentroDaCozinha ? "#FDFBF9" : undefined }}>
+                      <td style={{ ...td, minWidth: 260, paddingLeft: e.dentroDaCozinha ? "2rem" : undefined }}>
+                        <div style={{ fontWeight: 800 }} title={e.aplicaA}>{e.dentroDaCozinha ? "└ " : ""}{e.titulo}</div>
                         <div style={suave}>{e.legenda}</div>
                         <Cobertura e={e} />
                       </td>
@@ -242,7 +252,7 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
       {dados && dados.porTipo.length > 0 && (
         <Bloco titulo="Por tipo de venda" subtitulo="Mediana de cada etapa em cada tipo de venda. “—”: a etapa não vale para o tipo, ou nenhum pedido foi medido nela." semPadding>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", minWidth: 760 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", minWidth: 920 }}>
               <thead>
                 <tr style={cabecaDaTabela}>
                   <th style={th}>Tipo</th><th style={{ ...th, ...num }}>Pedidos</th>
@@ -304,13 +314,16 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
             <Vazio texto={apenasAtrasados ? "Nenhum pedido saiu depois do prazo no período." : "Nenhum pedido no período e filtros escolhidos."} />
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem", minWidth: 860 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem", minWidth: 980 }}>
                 <thead>
                   <tr style={cabecaDaTabela}>
                     <th style={th}>Pedido</th><th style={th}>Canal</th><th style={th}>Dia</th>
                     <th style={{ ...th, ...num }}>Prazo</th><th style={{ ...th, ...num }}>Saída</th>
                     <th style={{ ...th, ...num }}>Até sair</th><th style={th}>Situação</th><th style={{ ...th, ...num }}>Passou</th>
-                    <th style={{ ...th, ...num }}>Cozinha</th><th style={{ ...th, ...num }}>Na rua</th>
+                    <th style={{ ...th, ...num }}>Cozinha</th>
+                    <th style={{ ...th, ...num }} title="Da entrada na cozinha até o último item ganhar o pronto da produção">Produção</th>
+                    <th style={{ ...th, ...num }} title="Do último pronto da produção até a cozinha finalizar o pedido">Finalização</th>
+                    <th style={{ ...th, ...num }}>Na rua</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -334,6 +347,8 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
                         {l.faixa !== "estourado" ? "—" : (l.excedeu ?? 0) < 0.1 ? "+segundos" : `+${fmtMin(l.excedeu)}`}
                       </td>
                       <td style={{ ...td, ...num }}>{fmtMin(l.etapas.cozinha)}</td>
+                      <td style={{ ...td, ...num }}>{fmtMin(l.etapas.producao)}</td>
+                      <td style={{ ...td, ...num }}>{fmtMin(l.etapas.finalizacao)}</td>
                       <td style={{ ...td, ...num }}>{fmtMin(l.etapas.rua)}</td>
                     </tr>
                   ))}
@@ -352,7 +367,7 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
       {dados && dados.porDia.length > 0 && (
         <Bloco titulo="Por dia" subtitulo="Mediana de cada etapa no dia operacional (o dia vira às 5h)" semPadding>
           <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem", minWidth: 820 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem", minWidth: 980 }}>
               <thead>
                 <tr style={cabecaDaTabela}>
                   <th style={th}>Dia</th><th style={{ ...th, ...num }}>Pedidos</th>
@@ -384,9 +399,36 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
       {dados && (
         <>
           <h2 style={{ fontSize: "1.15rem", fontWeight: 900, margin: "2rem 0 0.4rem" }}>Tempo de produção por produto</h2>
-          <p style={{ margin: "0 0 1rem", fontSize: "0.84rem", color: PALETA.areiaTinta, maxWidth: 820 }}>
-            Da entrada do pedido na cozinha (a tela do KDS; balcão e mesa, a hora do lançamento) até o cozinheiro dar o item por pronto no KDS.
+          <p style={{ margin: "0 0 0.8rem", fontSize: "0.84rem", color: PALETA.areiaTinta, maxWidth: 820 }}>
+            Da entrada do pedido na cozinha (a tela do KDS; balcão e mesa, a hora do lançamento) até <strong>{rotuloDoMedirAte(medirAte)}</strong>.
+            {medirAte.tipo === "producao" && " Na loja com produção e finalização separadas (montagem e forno), é só a produção — escolha “Finalização” em “Medir até” para o percurso completo."}
+            {medirAte.tipo === "finalizacao" && " O percurso completo do item: produção e finalização (montagem e forno), até a baixa da tela de finalização que o mostra."}
+            {medirAte.tipo === "tela" && " Só os itens que essa tela mostra, até a baixa dela."}
           </p>
+          {/* Até onde medir — NIK, 09/10/2026: "esses tempos aí está só de montagem e não está a finalização do forno". */}
+          <div className="fh-sem-impressao" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: "0.8rem" }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.82rem", fontWeight: 800, color: PALETA.carvao }}>
+              Medir até
+              <select name="ate" value={extras.ate} onChange={(e) => mudarExtra("ate", e.target.value)} style={campoSelect}>
+                <option value="">Pronto da produção (a baixa da tela de produção)</option>
+                <option value="finalizacao">Finalização — o percurso completo</option>
+                {telas.length > 0 && (
+                  <optgroup label="Uma tela do KDS">
+                    {telas.map((t) => (
+                      <option key={t.chave} value={`tela:${t.chave}`}>
+                        {t.nome} · {t.estagio === "finishing" ? "finalização" : "produção"}{t.loja ? ` (${t.loja})` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </label>
+          </div>
+          {medirAte.tipo !== "producao" && dados.avisos.periodoAntesDasBaixas && (
+            <p role="note" style={{ background: PALETA.atencaoClaro, border: `1px solid ${PALETA.atencaoBorda}`, color: PALETA.carvao2, borderRadius: 12, padding: "0.7rem 1rem", fontSize: "0.84rem", margin: "0 0 1rem" }}>
+              A hora de cada baixa por tela existe desde <strong>{fmtDia(dados.avisos.baixasDesde)}</strong>: antes disso a finalização é a do pedido inteiro (a última tela a dar baixa), e uma tela de finalização só é medida no pedido em que foi a única a dar baixa.
+            </p>
+          )}
           {dados.avisos.periodoAntesDoProntoPorItem && (
             <p role="note" style={{ background: PALETA.atencaoClaro, border: `1px solid ${PALETA.atencaoBorda}`, color: PALETA.carvao2, borderRadius: 12, padding: "0.7rem 1rem", fontSize: "0.84rem", margin: "0 0 1rem" }}>
               O pronto por item existe desde <strong>{fmtDia(dados.avisos.prontoPorItemDesde)}</strong>: antes disso não há medição por produto.
@@ -395,7 +437,8 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
           <GradeDeCartoes>
             <Cartao rotulo="Mediana por item" valor={fmtMin(dados.producao.mediana)} detalhe={dados.producao.medidos ? `9 em cada 10 em até ${fmtMin(dados.producao.p90)}` : "Nenhum item com pronto no período"} />
             <Cartao rotulo="Itens medidos" valor={fmtQtd(dados.producao.quantidade)} detalhe={`${dados.producao.medidos.toLocaleString("pt-BR")} linhas de pedido`} />
-            <Cartao rotulo="O mais demorado" valor={fmtMin(dados.producao.maximo)} detalhe={dados.producao.semPronto ? `${dados.producao.semPronto} itens sem pronto (não passam pela produção) ficaram de fora` : undefined} />
+            <Cartao rotulo="O mais demorado" valor={fmtMin(dados.producao.maximo)}
+              detalhe={dados.producao.semPronto ? `${dados.producao.semPronto} itens ${medirAte.tipo === "producao" ? "sem pronto (não passam pela produção)" : "que essa baixa não mediu"} ficaram de fora` : undefined} />
           </GradeDeCartoes>
 
           <div className="fh-sem-impressao" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: "0.8rem" }}>
@@ -452,7 +495,8 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
 
           <p style={{ fontSize: "0.78rem", color: PALETA.areiaTinta, marginTop: "0.2rem", lineHeight: 1.5 }}>
             O pronto é da <strong>tela</strong> do KDS: quando o cozinheiro dá baixa, todos os itens daquela tela ganham a mesma hora — um produto que sai junto com outro mais demorado herda o tempo dele.
-            Qtd. são unidades; a mediana é por linha de pedido (“10 esfihas” é uma medição). Na hora do dia, o tempo do pedido vai da entrada na cozinha até o último item dele ficar pronto. Agendados não entram.
+            {" "}Qtd. são unidades; a mediana é por linha de pedido (“10 esfihas” é uma medição). Na hora do dia, o tempo do pedido vai da entrada na cozinha até o último item dele chegar em {rotuloDoMedirAte(medirAte)}. Agendados não entram.
+            {" "}“Na produção” e “Na finalização”, lá em cima, são as duas pernas de “Na cozinha” por pedido: até o último item ganhar o pronto da produção e, daí, até a cozinha finalizar.
           </p>
         </>
       )}

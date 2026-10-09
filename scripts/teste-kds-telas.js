@@ -40,6 +40,9 @@ const {
   faltaFinalizacao,
   telaMostraPedido,
   juntarPedidosDaProducao,
+  lerBaixas,
+  registrarBaixa,
+  tirarBaixa,
 } = jiti(path.resolve(__dirname, "..", "src", "lib", "kds-telas.ts"));
 
 let ok = 0;
@@ -152,6 +155,27 @@ console.log("\nchave da tela");
 conferir("usa o id quando existe", chaveDaTela({ id: "abc", name: "Esfirras" }), "abc");
 conferir("cai no nome quando nao ha id (link antigo)", chaveDaTela({ name: "Esfirras" }), "nome:esfirras");
 conferir("sem id e sem nome -> vazio", chaveDaTela({}), "");
+
+// NIK, 09/10/2026: o relatorio de tempos so via a montagem (prontoEm) e nunca
+// o forno, porque a baixa da tela de finalizacao nao tinha hora.
+console.log("\nCADA BAIXA GUARDA A TELA, A HORA E OS ITENS");
+const as20 = new Date("2026-10-09T20:00:00.000Z");
+const as2003 = new Date("2026-10-09T20:03:00.000Z");
+const b1 = registrarBaixa(null, { tela: "t-esfirra", nome: "Esfirras", estagio: "production", em: as20, itens: ["i1"] });
+conferir("a primeira baixa entra com tela, hora e itens", b1,
+  [{ tela: "t-esfirra", nome: "Esfirras", estagio: "production", em: "2026-10-09T20:00:00.000Z", itens: ["i1"] }]);
+const b2 = registrarBaixa(b1, { tela: "t-final", nome: "Expedição", estagio: "finishing", em: as2003, itens: ["i1", "i2"] });
+conferir("a finalizacao entra depois, sem mexer na producao", b2.map((b) => [b.tela, b.estagio]), [["t-esfirra", "production"], ["t-final", "finishing"]]);
+conferir("a mesma tela de novo substitui, nao duplica",
+  registrarBaixa(b2, { tela: "t-esfirra", nome: "Esfirras", estagio: "production", em: as2003, itens: ["i1"] }).map((b) => [b.tela, b.em]),
+  [["t-final", as2003.toISOString()], ["t-esfirra", as2003.toISOString()]]);
+conferir("baixa sem identidade de tela entra com tela vazia", registrarBaixa([], { tela: "", estagio: "finishing", em: as20, itens: [] })[0].tela, "");
+conferir("desfazer a finalizacao tira so a dela", tirarBaixa(b2, "t-final", "finishing").map((b) => b.tela), ["t-esfirra"]);
+conferir("desfazer sem identidade de tela tira todas da etapa", tirarBaixa(b2, "", "production").map((b) => b.tela), ["t-final"]);
+conferir("lixo no campo nao derruba a leitura",
+  lerBaixas([null, 1, { estagio: "x", em: "2026-10-09T20:00:00.000Z" }, { estagio: "finishing", em: "nada" }, { estagio: "finishing", em: "2026-10-09T20:00:00.000Z", itens: [1, null] }]),
+  [{ tela: "", nome: "", estagio: "finishing", em: "2026-10-09T20:00:00.000Z", itens: ["1"] }]);
+conferir("campo nulo = sem baixas", lerBaixas(null), []);
 
 console.log("\n" + ok + " ok, " + falhou + " falharam\n");
 process.exit(falhou ? 1 : 0);
