@@ -44,6 +44,7 @@ import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
 import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
 import { regrasDoRobo } from "./regras-do-robo";
 import { cardapioParaORobo } from "./cardapio-para-o-robo";
+import { lojasDoGrupo } from "./loja-ativa";
 import { DOCUMENTO_NAO_PEDIDO, documentoNoPedido, formasEmTexto, type DocumentoNoPedido } from "./fiscal-modo";
 import { normalizarConfigFiscal } from "./fiscal-config";
 import { lerDocumentoDoCliente } from "./documento-do-cliente";
@@ -308,6 +309,13 @@ export async function processChatbotAI(
     orderOrConditions.push({ id: { contains: numStr } });
   }
 
+  // O pedido aceito pela principal pode ter ido para uma filial do grupo
+  // (Pizzaria 17 → Aeroporto, 09/10/2026): "cadê meu pedido?" tem de achá-lo
+  // lá também. Loja sem grupo = só ela mesma.
+  const lojasDoGrupoDoRobo = await lojasDoGrupo(targetFranchiseeId).catch(() => []);
+  const idsDasLojasDoRobo = lojasDoGrupoDoRobo.length > 0 ? lojasDoGrupoDoRobo.map((l) => l.id) : [targetFranchiseeId];
+  const nomeDaLojaDoGrupo = new Map(lojasDoGrupoDoRobo.map((l) => [l.id, String(l.storeName || "").trim()]));
+
   // Buscar cardápio ao vivo da loja, pedidos por código/telefone e nome do cliente
   const [produtosCrus, categories, searchedOrders, customerCandidates] = await Promise.all([
     prisma.menuProduct.findMany({
@@ -384,13 +392,14 @@ export async function processChatbotAI(
     }),
     orderOrConditions.length > 0 ? prisma.customerOrder.findMany({
       where: {
-        franchiseeId: targetFranchiseeId,
+        franchiseeId: { in: idsDasLojasDoRobo },
         createdAt: { gte: startOfToday },
         status: { not: "CRIANDO_IA" },
         OR: orderOrConditions,
       },
       select: {
         id: true,
+        franchiseeId: true,
         status: true,
         totalAmount: true,
         customerName: true,
@@ -795,7 +804,9 @@ export async function processChatbotAI(
       const refNum = (o as any).openDeliveryReference || (o as any).ifoodReference || (o as any).dailyOrderNumber || o.id.slice(-4).toUpperCase();
       const customerName = o.customerName || "Cliente";
 
-      return `- Pedido #${refNum} (${channel}) | Tipo: ${tipoDoPedido} | Cliente: "${customerName}" | Tel: "${o.customerPhone || '—'}" | Status: "${statusReadable}" | Itens: ${itemsList} | Total: R$ ${o.totalAmount.toFixed(2)}`;
+      // Pedido que foi para outra loja do grupo: o cliente precisa saber de onde ele sai.
+      const outraLoja = o.franchiseeId && o.franchiseeId !== targetFranchiseeId ? nomeDaLojaDoGrupo.get(o.franchiseeId) || "" : "";
+      return `- Pedido #${refNum} (${channel}) | Tipo: ${tipoDoPedido} | Cliente: "${customerName}" | Tel: "${o.customerPhone || '—'}" | Status: "${statusReadable}" | Itens: ${itemsList} | Total: R$ ${o.totalAmount.toFixed(2)}${outraLoja ? ` | Preparado pela loja: ${outraLoja}` : ""}`;
     }).join("\n");
   }
 

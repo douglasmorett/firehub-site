@@ -17,6 +17,8 @@ import {
   type EntregaDoPedido,
 } from "@/lib/entrega-do-pedido";
 import { tempoDeEntregaParaGravar } from "@/lib/previsao-da-entrega";
+import { lojasDoGrupo } from "@/lib/loja-ativa";
+import { lojaDeDestinoDoAceite } from "@/lib/finalizar-rascunho";
 import {
   lerFinalizacao,
   notasDaFinalizacao,
@@ -147,10 +149,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const loja = await prisma.user.findUnique({
       where: { id: lojaId },
       select: {
-        city: true, chatbotConfig: true,
+        city: true, chatbotConfig: true, storeName: true,
         deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, storeAddress: true,
       },
     });
+
+    // ── PARA QUAL LOJA DO GRUPO VAI O PEDIDO ──────────────────────────────
+    // Pizzaria 17 (Antonio, 09/10/2026): o robô atende no WhatsApp da loja
+    // principal, mas o pedido pode ser da filial do aeroporto. Com a opção
+    // `escolherLojaAoAceitar`, o aviso roxo pergunta a loja e o pedido passa a
+    // SER dela: painel, impressora, KDS e motoboys da filial o veem como seu.
+    // O cliente continua avisado pelo WhatsApp da principal
+    // (lib/order-notifications.ts) e o robô dela continua achando o pedido
+    // (chatbot-ai.ts busca no grupo).
+    const grupo = await lojasDoGrupo(lojaId).catch(() => []);
+    const destino = lojaDeDestinoDoAceite({
+      lojaId,
+      pedido: corpo?.lojaDestinoId,
+      grupo,
+      permitido: (loja?.chatbotConfig as any)?.escolherLojaAoAceitar === true,
+    });
+    if ("erro" in destino) return NextResponse.json({ error: destino.erro }, { status: 400 });
+    const destinoId = destino.id;
+    const mudaDeLoja = destinoId !== lojaId;
 
     // ── A ENTREGA: a medida do balcão (api/store/orders/presencial) ─────────
     // A taxa cobrada é a da loja. A distância, o ponto e o repasse do motoboy
@@ -224,9 +245,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     const status = aceitoPelaLoja ? "ACEITO" : statusDaFinalizacao(loja?.chatbotConfig);
-    const dailyOrderNumber = order.dailyOrderNumber || (await generateDailyOrderNumber(lojaId));
+    // O número do dia é da loja que vai preparar: o da principal não vale na filial.
+    const dailyOrderNumber = mudaDeLoja
+      ? await generateDailyOrderNumber(destinoId)
+      : order.dailyOrderNumber || (await generateDailyOrderNumber(lojaId));
     const quem = nomeDoOperador(operador);
     const totalAmount = totalComATaxa(order.totalAmount, order.deliveryFee, f.taxa);
+    const notasDaLoja = mudaDeLoja
+      ? [`📍 Preparado pela loja ${destino.nome} — pedido do WhatsApp da ${loja?.storeName || "loja principal"}, entrega medida a partir dela`]
+      : [];
 
     // Só grava se AINDA é rascunho: o robô (o cliente voltou a falar) ou a
     // faxina podem ter mexido nele enquanto a janela estava aberta.
@@ -235,6 +262,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       data: {
         status,
         dailyOrderNumber,
+        ...(mudaDeLoja ? { franchiseeId: destinoId } : {}),
         // O pedido nasce AGORA (o mesmo que o robô faz no fechamento): com a
         // hora do rascunho, a impressão e o prazo de entrega contariam desde a
         // primeira mensagem do cliente.
@@ -261,7 +289,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           : { deliveryDistance: null, motoboyFee: null, tempoEntregaMin: null }),
         // Entrega cobrada deixou de ser grátis: a nota não pode mostrar "grátis" ao lado da taxa.
         ...(f.taxa > 0 && order.entregaGratis != null ? { entregaGratis: Prisma.DbNull } : {}),
-        notes: notasDaFinalizacao(order.notes, quem, f.observacao, notasDeEntrega),
+        notes: notasDaFinalizacao(order.notes, quem, f.observacao, [...notasDeEntrega, ...notasDaLoja]),
       },
     });
     if (gravados.count !== 1) {
@@ -271,7 +299,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       );
     }
 
-    console.log(`[Finalizar rascunho] pedido ${order.id} (#${dailyOrderNumber}) finalizado por ${quem}: ${status}, total R$ ${totalAmount}, entrega R$ ${f.taxa}`);
+    console.log(`[Finalizar rascunho] pedido ${order.id} (#${dailyOrderNumber}) finalizado por ${quem}: ${status}, total R$ ${totalAmount}, entrega R$ ${f.taxa}${mudaDeLoja ? ` — vai para a loja ${destino.nome} (${destinoId})` : ""}`);
 
     const completo = await prisma.customerOrder.findUnique({
       where: { id: order.id },
@@ -282,7 +310,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     try {
       if (completo) {
         const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
-        pushJobToPrintQueue(lojaId, completo);
+        // A comanda sai na impressora da loja que vai preparar.
+        pushJobToPrintQueue(destinoId, completo);
       }
     } catch (e: any) {
       console.error("[Finalizar rascunho] Erro ao enfileirar a comanda:", e?.message || e);

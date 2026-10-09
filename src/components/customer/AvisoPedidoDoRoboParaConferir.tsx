@@ -68,18 +68,27 @@ export default function AvisoPedidoDoRoboParaConferir({
   onEditar,
   onNaoAceitar,
   onDepois,
+  lojas = [],
+  lojaAtualId = "",
 }: {
   pedido: any;
   /** Quantos outros pedidos do robô estão esperando além deste. */
   quantosMais: number;
-  /** Aceita como está; devolve a mensagem de erro, ou null quando deu certo. */
-  onAceitar: () => Promise<string | null>;
+  /** Aceita como está, na loja escolhida; devolve a mensagem de erro, ou null quando deu certo. */
+  onAceitar: (lojaDestinoId: string) => Promise<string | null>;
   onEditar: () => void;
   /** Cancela o rascunho; devolve a mensagem de erro, ou null quando deu certo. */
   onNaoAceitar: (motivoDaRecusa: string) => Promise<string | null>;
   onDepois: () => void;
+  /**
+   * As lojas do grupo em que o pedido pode ser preparado (Pizzaria 17 →
+   * Aeroporto, 09/10/2026). Vazio ou uma só = sem escolha, fica na loja atual.
+   */
+  lojas?: { id: string; storeName?: string | null }[];
+  lojaAtualId?: string;
 }) {
   const [recusando, setRecusando] = useState(false);
+  const [lojaEscolhida, setLojaEscolhida] = useState(lojaAtualId);
   const [motivoEscolhido, setMotivoEscolhido] = useState(MOTIVOS_DE_RECUSA[0]);
   const [outro, setOutro] = useState("");
   const [enviando, setEnviando] = useState<"aceitar" | "recusar" | null>(null);
@@ -130,11 +139,13 @@ export default function AvisoPedidoDoRoboParaConferir({
   const whats = linkDoWhatsapp(pedido?.customerPhone);
   const motivoDaRecusa = motivoEscolhido === "Outro motivo" ? outro.trim() : motivoEscolhido;
 
+  const escolheLoja = lojas.length > 1;
+
   async function aceitar() {
     if (enviando) return;
     setEnviando("aceitar");
     setErro(null);
-    const falha = await onAceitar();
+    const falha = await onAceitar(escolheLoja ? lojaEscolhida || lojaAtualId : lojaAtualId);
     setEnviando(null);
     if (falha) setErro(falha);
   }
@@ -214,6 +225,21 @@ export default function AvisoPedidoDoRoboParaConferir({
           </div>
 
           {obs && <div style={{ ...linha, alignItems: "flex-start" }}><span style={rotulo}>Anotações</span><span style={{ fontSize: "0.82rem", color: "#334155" }}>{obs}</span></div>}
+
+          {escolheLoja && (
+            // Igual à escolha de impressora: uma lista, um clique. O pedido
+            // passa a ser da loja marcada (painel, comanda, cozinha e motoboys dela).
+            <div style={{ marginTop: 4, padding: "10px 12px", borderRadius: 10, background: "#fff", border: `1.5px solid ${ROXO}`, display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: "0.85rem", color: ROXO }}>🏪 Em qual loja este pedido vai ser preparado?</div>
+              {lojas.map((l) => (
+                <label key={l.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.92rem", cursor: "pointer", padding: "6px 8px", borderRadius: 8, background: lojaEscolhida === l.id ? ROXO_CLARO : "transparent", border: `1px solid ${lojaEscolhida === l.id ? ROXO_BORDA : "transparent"}` }}>
+                  <input type="radio" name="loja-do-pedido-do-robo" checked={lojaEscolhida === l.id} onChange={() => setLojaEscolhida(l.id)} disabled={!!enviando} />
+                  <span style={{ fontWeight: lojaEscolhida === l.id ? 800 : 500 }}>{l.storeName || "Loja"}</span>
+                  {l.id === lojaAtualId && <span style={{ fontSize: "0.72rem", color: CINZA }}>(esta loja)</span>}
+                </label>
+              ))}
+            </div>
+          )}
 
           {recusando && (
             <div style={{ marginTop: 6, padding: 10, borderRadius: 10, background: "#FEF2F2", border: "1px solid #FECACA", display: "grid", gap: 6 }}>

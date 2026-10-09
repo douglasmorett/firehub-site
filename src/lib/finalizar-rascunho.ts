@@ -125,6 +125,32 @@ export function statusDaFinalizacao(chatbotConfig: unknown): "ACEITO" | "NOVO" {
   return c.autoAcceptOrders === true ? "ACEITO" : "NOVO";
 }
 
+// ── PARA QUAL LOJA DO GRUPO VAI O PEDIDO ACEITO ─────────────────────────────
+//
+// Pizzaria 17 (Antonio, 09/10/2026): o robô atende no WhatsApp da loja
+// principal, mas o pedido pode ser da filial do aeroporto — "a menina escolhe
+// qual loja vai confirmar o pedido". Com `chatbotConfig.escolherLojaAoAceitar`
+// na loja da sessão, o aviso roxo pergunta a loja e o pedido passa a ser dela.
+
+export type LojaDoGrupoParaAceite = { id: string; storeName?: string | null };
+
+/** A loja em que o pedido vai ser preparado: a da sessão, ou outra do grupo quando a opção está ligada. */
+export function lojaDeDestinoDoAceite(e: {
+  lojaId: string;
+  /** `lojaDestinoId` do corpo, como veio. */
+  pedido: unknown;
+  grupo: LojaDoGrupoParaAceite[];
+  permitido: boolean;
+}): { id: string; nome: string } | { erro: string } {
+  const pedido = typeof e.pedido === "string" ? e.pedido.trim() : "";
+  const nomeDe = (id: string) => String(e.grupo.find((l) => l.id === id)?.storeName || "").trim();
+  if (!pedido || pedido === e.lojaId) return { id: e.lojaId, nome: nomeDe(e.lojaId) };
+  if (!e.permitido) return { erro: "Esta conta não escolhe a loja ao aceitar o pedido." };
+  const alvo = e.grupo.find((l) => l.id === pedido);
+  if (!alvo) return { erro: "A loja escolhida não é deste grupo de lojas." };
+  return { id: alvo.id, nome: nomeDe(alvo.id) || "outra loja" };
+}
+
 // ── "AGUARDANDO A LOJA" ─────────────────────────────────────────────────────
 //
 // Regra do dono (25/09/2026): pedido do robô cujo endereço o mapa não

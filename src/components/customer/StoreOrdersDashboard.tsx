@@ -1999,6 +1999,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const [printerConfig, setPrinterConfig] = useState<any>(null);
 
+  // As lojas do grupo para o aviso roxo perguntar onde o pedido do robô vai
+  // ser preparado (Pizzaria 17 → Aeroporto, 09/10/2026). Só quando a conta
+  // ligou `escolherLojaAoAceitar` e tem mais de uma loja; senão fica vazio.
+  const [lojasParaAceitar, setLojasParaAceitar] = useState<{ id: string; storeName?: string | null }[]>([]);
+  const [lojaDaSessaoId, setLojaDaSessaoId] = useState<string>("");
+  useEffect(() => {
+    fetch("/api/store/list")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.sessaoLojaId) setLojaDaSessaoId(String(d.sessaoLojaId));
+        if (d?.escolherLojaAoAceitar === true && Array.isArray(d.stores) && d.stores.length > 1) setLojasParaAceitar(d.stores);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const carregar = () =>
       fetch("/api/store/printer-config")
@@ -4176,7 +4191,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               onDepois={dispensar}
               onEditar={() => { dispensar(); setRascunhoParaFinalizar(primeiro.id); }}
               onNaoAceitar={naoAceitar}
-              onAceitar={async () => {
+              lojas={lojasParaAceitar}
+              lojaAtualId={lojaDaSessaoId}
+              onAceitar={async (lojaDestinoId) => {
                 try {
                   const res = await fetch(`/api/store/orders/${primeiro.id}/finalizar-rascunho`, {
                     method: "POST",
@@ -4192,6 +4209,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       observacao: "",
                       aceitar: true,
                       manterEntregaDoRobo: true,
+                      // A loja do grupo que vai preparar (vazio = esta mesma).
+                      ...(lojaDestinoId && lojaDestinoId !== lojaDaSessaoId ? { lojaDestinoId } : {}),
                     }),
                   });
                   const d = await res.json().catch(() => null);

@@ -38,12 +38,28 @@ export async function sendOrderNotification(
             // Sem o slug o link da avaliação saía "/loja/loja/avaliar/<id>".
             slug: true,
             chatbotConfig: true,
+            accountGroupId: true,
           }
         }
       }
     });
 
     if (!order || !order.customerPhone) return;
+
+    // ── QUEM MANDA O AVISO: A LOJA DO PEDIDO OU A PRINCIPAL DO GRUPO ────────
+    // A filial que recebe um pedido aceito pela principal (Pizzaria 17 →
+    // Aeroporto, 09/10/2026) não tem WhatsApp conectado: mandar por ela dava
+    // 503 no gateway e o cliente ficava sem "em preparo" e "saiu para
+    // entrega". Sem conexão própria, o aviso sai pela principal do grupo —
+    // que é o número em que o cliente fez o pedido.
+    let lojaQueEnvia = order.franchiseeId;
+    const configDaLoja = (order.franchisee?.chatbotConfig as any) || {};
+    if (configDaLoja.connected !== true && order.franchisee?.accountGroupId) {
+      const principal = await prisma.user
+        .findUnique({ where: { id: order.franchisee.accountGroupId }, select: { id: true, chatbotConfig: true } })
+        .catch(() => null);
+      if ((principal?.chatbotConfig as any)?.connected === true) lojaQueEnvia = principal!.id;
+    }
 
     // Pedido que o cliente vem BUSCAR nunca "saiu para entrega". A rota de
     // status já escolhe PRONTO_RETIRADA para quem não é DELIVERY, mas qualquer
@@ -187,12 +203,12 @@ Muito obrigado e bom apetite! ⭐😋`;
 
     if (message) {
       console.log(`[OrderNotification] Enviando notificação '${type}' para ${phoneClean} do pedido ${shortId}`);
-      let enviou = await sendEvolutionMessage(order.franchiseeId, phoneClean, message);
+      let enviou = await sendEvolutionMessage(lojaQueEnvia, phoneClean, message);
       // Uma segunda tentativa: o gateway devolve "Timed Out" de vez em quando
       // (visto no log de 04/10) e o aviso do pedido não tinha outra chance.
       if (!enviou) {
         await new Promise((r) => setTimeout(r, 5000));
-        enviou = await sendEvolutionMessage(order.franchiseeId, phoneClean, message);
+        enviou = await sendEvolutionMessage(lojaQueEnvia, phoneClean, message);
       }
       // O gateway recusa (503) quando a instância da loja não está aberta, e
       // este retorno era jogado fora: o painel dizia "conectado" e o cliente

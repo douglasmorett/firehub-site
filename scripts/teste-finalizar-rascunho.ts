@@ -3,7 +3,7 @@
  *
  *   npx tsx scripts/teste-finalizar-rascunho.ts
  */
-import { lerFinalizacao, notasDaFinalizacao, statusDaFinalizacao, totalComATaxa, numeroDigitado, marcarAguardandoLoja, motivoDeAguardarLoja } from "../src/lib/finalizar-rascunho";
+import { lerFinalizacao, notasDaFinalizacao, statusDaFinalizacao, totalComATaxa, numeroDigitado, marcarAguardandoLoja, motivoDeAguardarLoja, lojaDeDestinoDoAceite } from "../src/lib/finalizar-rascunho";
 
 let ok = 0, falhas = 0;
 function confere(nome: string, cond: boolean, detalhe?: unknown) {
@@ -81,6 +81,16 @@ confere("pedido já finalizado não abre aviso", motivoDeAguardarLoja({ status: 
 confere("rascunho sem marca não abre aviso", motivoDeAguardarLoja({ status: "CRIANDO_IA", notes: doRobo }) === null);
 const finalizada = notasDaFinalizacao(marcada, "Ana (funcionário)", "");
 confere("finalizar tira a marca", !finalizada.includes("AGUARDANDO A LOJA") && finalizada.includes("Obs: sem cebola"), finalizada);
+
+// ── A loja do grupo que vai preparar (Pizzaria 17 → Aeroporto, 09/10/2026) ──
+const grupo = [{ id: "p17", storeName: "PIZZARIA 17" }, { id: "aero", storeName: "PIZZARIA 17 AEROPORTO" }];
+const destino = (pedido: unknown, permitido = true) => lojaDeDestinoDoAceite({ lojaId: "p17", pedido, grupo, permitido });
+confere("sem escolha fica na loja da sessão", JSON.stringify(destino(undefined)) === JSON.stringify({ id: "p17", nome: "PIZZARIA 17" }));
+confere("escolheu a própria loja", JSON.stringify(destino("p17")) === JSON.stringify({ id: "p17", nome: "PIZZARIA 17" }));
+confere("escolheu a filial", JSON.stringify(destino(" aero ")) === JSON.stringify({ id: "aero", nome: "PIZZARIA 17 AEROPORTO" }));
+confere("filial sem a opção ligada é recusada", "erro" in destino("aero", false));
+confere("loja de fora do grupo é recusada", "erro" in destino("outra"));
+confere("valor que não é texto fica na loja da sessão", (destino(123) as any).id === "p17");
 
 console.log(`${ok} ok, ${falhas} falha(s)`);
 process.exit(falhas ? 1 : 0);

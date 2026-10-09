@@ -46,10 +46,17 @@ export async function GET() {
     const cookieStore = await cookies();
     const todas = !ehFuncionario && stores.length > 1 && cookieStore.get("firehub_active_store")?.value === "all";
 
+    // A conta escolhe, ao aceitar o pedido do robô, em qual loja do grupo ele
+    // vai ser preparado (Pizzaria 17, 09/10/2026). Só com a opção ligada na
+    // loja da sessão e com mais de uma loja.
+    const sessao = user.ownerId ? await prisma.user.findUnique({ where: { id: franchiseeId }, select: { chatbotConfig: true } }) : user;
+    const escolherLojaAoAceitar = stores.length > 1 && (sessao?.chatbotConfig as any)?.escolherLojaAoAceitar === true;
+
     return NextResponse.json({
       stores,
       activeStoreId: todas ? "all" : franchiseeId,
       sessaoLojaId: franchiseeId,
+      escolherLojaAoAceitar,
     });
   } catch (error) {
     console.error("Error listing stores:", error);
