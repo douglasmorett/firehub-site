@@ -9,7 +9,11 @@
  * diferente. O DF vem primeiro porque é o da primeira loja (a NIK, em
  * Sobradinho). Textos conferidos em 24/09/2026 (RJ, DF, MG, PA) e revistos em
  * 29/09/2026 para o emissor próprio — com a Focus, o certificado ia para ela;
- * agora ele fica no cofre do FireHub.
+ * agora ele fica no cofre do FireHub. Em 09/10/2026, quando o emissor passou a
+ * atender as 27 UF, entraram mais 18 (SP, CE, RS, GO, BA, PR, PE, SC, PI, MT,
+ * MA, ES, RN, TO, PB, AM, MS, RO), pelos portais oficiais de cada SEFAZ; as
+ * que só tinham guia de terceiros (PI, MA, RN) avisam. AC, AL, AP, RR e SE
+ * ficam no genérico.
  *
  * Puro (sem imports): a tela importa.
  */
@@ -30,6 +34,15 @@ const CERTIFICADO = {
 
 const SERIE_NOVA =
   "Se a loja já emitiu NFC-e por outro sistema (a NIK usou a Saipos), use uma SÉRIE NOVA no FireHub — sugerimos a 2. Número repetido na mesma série é rejeitado pela SEFAZ (rejeição 539), e o FireHub não sabe até onde o outro sistema chegou.";
+
+const CSC_NO_NAVEGADOR =
+  "Para gerar o CSC, a maioria dos portais exige o certificado digital instalado no navegador do computador (ou o contador entra com o dele). É o mesmo certificado do arquivo .pfx que você envia ao FireHub.";
+
+const FONTE_DE_TERCEIROS =
+  "O FireHub não achou a página oficial com esses passos no site da SEFAZ deste estado (09/10/2026): o caminho acima vem de guias de terceiros. Confirme com o contador antes de contar com ele.";
+
+/** Credenciamento que a SEFAZ dá sem pedido: basta a Inscrição Estadual ativa. */
+const CREDENCIAMENTO_AUTOMATICO = { titulo: "Credenciamento", texto: "Automático para quem tem Inscrição Estadual ativa — não precisa pedir." };
 
 export const PASSO_A_PASSO_DO_EMISSOR: Record<string, PassoAPasso> = {
   DF: {
@@ -102,6 +115,300 @@ export const PASSO_A_PASSO_DO_EMISSOR: Record<string, PassoAPasso> = {
     links: [{ rotulo: "SIARE (SEF-MG)", url: "https://www2.fazenda.mg.gov.br/sol/" }],
     avisos: ["Em Minas a SEFAZ não aceita cancelamento fora do prazo (extemporâneo): nota errada depois dos 30 minutos só sai por devolução com o contador.", SERIE_NOVA],
   },
+
+  // ── As UF que entraram em 09/10/2026, quando o emissor passou a atender as 27.
+  // Textos dos portais oficiais de cada SEFAZ (páginas abertas em 09/10/2026);
+  // onde só havia guia de terceiros, o aviso FONTE_DE_TERCEIROS diz.
+  SP: {
+    uf: "SP",
+    titulo: "São Paulo — Portal NFC-e da SEFAZ-SP",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciar a empresa",
+        texto:
+          "No Portal NFC-e (nfce.fazenda.sp.gov.br/NFCePortal), menu \"Credenciamento\", entrando com o certificado digital. A Inscrição Estadual precisa estar regular.",
+      },
+      {
+        titulo: "Gerar o CSC",
+        texto:
+          "No mesmo portal, \"Gerenciar Código de Segurança\" gera o CSC de PRODUÇÃO; o de homologação (teste) é gerado no portal de homologação (www.homologacao.nfce.fazenda.sp.gov.br). Anote o ID e o código de cada ambiente.",
+      },
+    ],
+    links: [
+      { rotulo: "Portal NFC-e SEFAZ-SP", url: "https://www.nfce.fazenda.sp.gov.br/NFCePortal/" },
+      { rotulo: "Portal de homologação (CSC de teste)", url: "https://www.homologacao.nfce.fazenda.sp.gov.br/" },
+    ],
+    avisos: [
+      "A FAQ da SEFAZ-SP lista \"ter um equipamento SAT ativo\" entre os requisitos para credenciar a NFC-e. Se a loja nunca teve SAT, confirme com o contador se o credenciamento sai ANTES de contar com a nota pelo FireHub.",
+      CSC_NO_NAVEGADOR,
+      SERIE_NOVA,
+    ],
+  },
+  CE: {
+    uf: "CE",
+    titulo: "Ceará — SEFAZ-CE",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciar a empresa",
+        texto:
+          "No Portal NFC-e (nfce.sefaz.ce.gov.br) → \"Credenciar Empresa\", com o certificado digital do CNPJ (a matriz credencia). Exige situação regular no Cadastro Geral da Fazenda; o CSC é informado depois do deferimento.",
+      },
+      {
+        titulo: "Consultar o CSC",
+        texto: "Em \"Consultar CSC\" (nfe.sefaz.ce.gov.br/ccc2-web), com o certificado: anote o ID e o código de cada ambiente.",
+      },
+    ],
+    links: [
+      { rotulo: "Portal NFC-e SEFAZ-CE", url: "http://nfce.sefaz.ce.gov.br/pages/index.jsf" },
+      { rotulo: "Consultar CSC", url: "https://nfe.sefaz.ce.gov.br/ccc2-web/pages/csc/csc.jsf" },
+    ],
+    avisos: [CSC_NO_NAVEGADOR, SERIE_NOVA],
+  },
+  RS: {
+    uf: "RS",
+    titulo: "Rio Grande do Sul — Receita Estadual (e-CAC)",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "Automático: quem já emite NF-e não precisa de nenhum cadastramento para a NFC-e." },
+      {
+        titulo: "Gerar o CSC",
+        texto:
+          "No e-CAC da Receita Estadual → \"Manutenção de CSC\", com o certificado digital ou com a autorização eletrônica de sócio/contador. O MEI entra pelo Portal MEI (gov.br). Gere o de homologação e o de produção.",
+      },
+    ],
+    links: [
+      { rotulo: "e-CAC — Manutenção de CSC", url: "https://www.sefaz.rs.gov.br/NFCE/NFC-TOK-MAN.aspx" },
+      { rotulo: "SEFAZ-RS", url: "https://www.sefaz.rs.gov.br" },
+    ],
+    avisos: [CSC_NO_NAVEGADOR, SERIE_NOVA],
+  },
+  GO: {
+    uf: "GO",
+    titulo: "Goiás — SEFAZ-GO",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciamento",
+        texto: "Quem já emite NF-e não precisa pedir. Senão, \"Credenciamento NF-e\" no portal da NF-e de Goiás, com o certificado digital.",
+      },
+      {
+        titulo: "Gerar o CSC",
+        texto: "No portal da NF-e/NFC-e: escolha o ambiente (homologação ou produção) e gere o CSC com o certificado digital. Anote o ID e o código de cada um.",
+      },
+    ],
+    links: [
+      { rotulo: "SEFAZ-GO — CSC da NFC-e", url: "https://nfe.sefaz.go.gov.br/nfeweb/jsp/SelecionarAmbienteCSC.jsf" },
+      { rotulo: "SEFAZ-GO", url: "https://www.sefaz.go.gov.br" },
+    ],
+    avisos: [CSC_NO_NAVEGADOR, SERIE_NOVA],
+  },
+  BA: {
+    uf: "BA",
+    titulo: "Bahia — SEFAZ-BA (Inspetoria Eletrônica)",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "Sem pedido formal: a loja com Inscrição Estadual ativa gera o CSC direto na Inspetoria Eletrônica." },
+      {
+        titulo: "Gerar o CSC",
+        texto:
+          "Inspetoria Eletrônica → ICMS → Documentos fiscais → Nota Fiscal de Consumidor Eletrônica → \"Solicitar/Inutilizar CSC\", com o login da Inspetoria. O de produção fica em nfe.sefaz.ba.gov.br e o de homologação em hnfe.sefaz.ba.gov.br — gere os dois.",
+      },
+    ],
+    links: [
+      { rotulo: "Inspetoria Eletrônica — NFC-e", url: "https://www.sefaz.ba.gov.br/inspetoria-eletronica/icms/documentos-fiscais/nota-fiscal-de-consumidor-eletronica" },
+    ],
+    avisos: [SERIE_NOVA],
+  },
+  PR: {
+    uf: "PR",
+    titulo: "Paraná — Receita Estadual (Portal de Serviços)",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Autorização de uso da NFC-e",
+        texto: "No Portal de Serviços da Receita/PR (receita.pr.gov.br), peça a \"autorização de uso de DF-e modelo 65\" (a NFC-e).",
+      },
+      {
+        titulo: "Gerar o CSC",
+        texto: "No mesmo portal, entrando com certificado digital ou usuário e senha: DF-e → NFC-e → CSC. Gere o de homologação e o de produção.",
+      },
+    ],
+    links: [{ rotulo: "Portal de Serviços — Receita/PR", url: "https://receita.pr.gov.br/login" }],
+    avisos: [SERIE_NOVA],
+  },
+  PE: {
+    uf: "PE",
+    titulo: "Pernambuco — SEFAZ-PE (e-Fisco)",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciamento",
+        texto:
+          "No e-Fisco (ARE Virtual): pedir o credenciamento de NFC-e — tipo 83 para homologação e 84 para produção; o deferimento sai na hora. Peça os dois ambientes de uma vez.",
+      },
+      {
+        titulo: "Gerar o CSC",
+        texto: "No e-Fisco: Tributário → Notas Fiscais → DFE → CSC → Incluir, pela raiz do CNPJ e por ambiente. No máximo 2 CSC por ambiente por raiz.",
+      },
+    ],
+    links: [{ rotulo: "e-Fisco (SEFAZ-PE)", url: "https://efisco.sefaz.pe.gov.br/" }],
+    avisos: [SERIE_NOVA],
+  },
+  SC: {
+    uf: "SC",
+    titulo: "Santa Catarina — SEF-SC (SAT)",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciamento (TTD 706 e 707)",
+        texto:
+          "No SAT (tributario.sef.sc.gov.br): peça o TTD 706 (homologação) e o TTD 707 (produção), sem taxa. A nota de produção só sai com o TTD deferido, e a empresa precisa ter o DTEC (domicílio tributário eletrônico).",
+      },
+      {
+        titulo: "Gerar o CSC",
+        texto: "SAT → \"Gestão do CSC\", com o certificado do titular, sócio, responsável ou contabilista. Até 2 CSC por ambiente por raiz de CNPJ.",
+      },
+    ],
+    links: [
+      { rotulo: "SAT — Gestão do CSC", url: "https://tributario.sef.sc.gov.br/tax.NET/Sat.Dfe.NFCe.Web/GestaoDeCscs.aspx" },
+      { rotulo: "SEF-SC — NFC-e", url: "https://www.sef.sc.gov.br/nfce" },
+    ],
+    avisos: [CSC_NO_NAVEGADOR, SERIE_NOVA],
+  },
+  PI: {
+    uf: "PI",
+    titulo: "Piauí — SEFAZ-PI (SIAT Web)",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciamento",
+        texto: "Pedir em webas.sefaz.pi.gov.br/credenciamentoNFe (tipo NFC-e), com a Inscrição Estadual e o e-mail cadastrado na DIEF.",
+      },
+      { titulo: "Gerar o CSC", texto: "No SIAT Web (siatweb.sefaz.pi.gov.br): Autoatendimento → NFC-e → Manutenção do CSC." },
+    ],
+    links: [
+      { rotulo: "SIAT Web (SEFAZ-PI)", url: "https://siatweb.sefaz.pi.gov.br/portal-publico" },
+      { rotulo: "Credenciamento NFC-e", url: "https://webas.sefaz.pi.gov.br/credenciamentoNFe/?tipo=NFCe" },
+    ],
+    avisos: [FONTE_DE_TERCEIROS, SERIE_NOVA],
+  },
+  MT: {
+    uf: "MT",
+    titulo: "Mato Grosso — SEFAZ-MT",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "Automático para quem tem inscrição no ICMS (Portaria 177/2021). O MEI opta pelo CREDESP." },
+      {
+        titulo: "Gerar o CSC",
+        texto:
+          "Homologação: formulário público do portal da NFC-e, pela Inscrição Estadual. Produção: área restrita do portal → Nota Fiscal de Consumidor Eletrônica → Gerar CSC, com o certificado digital. Até 2 CSC por raiz; a revogação é na mesma tela.",
+      },
+    ],
+    links: [{ rotulo: "Portal NFC-e SEFAZ-MT", url: "https://www.sefaz.mt.gov.br/portal/nfce/" }],
+    avisos: [CSC_NO_NAVEGADOR, SERIE_NOVA],
+  },
+  MA: {
+    uf: "MA",
+    titulo: "Maranhão — SEFAZ-MA (SefazNet)",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "Sai ao informar a Inscrição Estadual, nos dois ambientes." },
+      { titulo: "Gerar o CSC", texto: "No SefazNet (senha ou certificado): Autoatendimento → gerar o CSC de cada ambiente." },
+    ],
+    links: [{ rotulo: "SefazNet (SEFAZ-MA)", url: "https://sefaznet.sefaz.ma.gov.br/sefaznet/login.do?method=prepareLogin" }],
+    avisos: [FONTE_DE_TERCEIROS, SERIE_NOVA],
+  },
+  ES: {
+    uf: "ES",
+    titulo: "Espírito Santo — SEFAZ-ES (Agência Virtual)",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "No site da SEFAZ-ES, credenciar a empresa em homologação e em produção (precisa pedir)." },
+      {
+        titulo: "Receber o CSC",
+        texto: "O CSC de cada ambiente é enviado por e-mail ao contador e fica na página do credenciamento. Anote o ID e o código dos dois.",
+      },
+    ],
+    links: [{ rotulo: "SEFAZ-ES — credenciamento NFC-e", url: "https://internet.sefaz.es.gov.br/informacoes/nfcEletronica/credenciamento.php" }],
+    avisos: [SERIE_NOVA],
+  },
+  RN: {
+    uf: "RN",
+    titulo: "Rio Grande do Norte — SET-RN (UVT)",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "Pedir na SET-RN, pela Unidade Virtual de Tributação (UVT)." },
+      { titulo: "Gerar o CSC", texto: "UVT → Meus Serviços → Gerar CSC — um para cada ambiente." },
+    ],
+    links: [{ rotulo: "UVT (SET-RN)", url: "https://uvt.set.rn.gov.br/" }],
+    avisos: [FONTE_DE_TERCEIROS, SERIE_NOVA],
+  },
+  TO: {
+    uf: "TO",
+    titulo: "Tocantins — SEFAZ-TO",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "No portal da NFC-e → \"Credenciamento\" (apps.sefaz.to.gov.br/tcredpro), com o certificado digital." },
+      { titulo: "Gerar o CSC", texto: "Portal NFC-e → \"Gerar/Consultar CSC\" — o de homologação e o de produção." },
+    ],
+    links: [
+      { rotulo: "Portal NFC-e SEFAZ-TO", url: "https://www.sefaz.to.gov.br/nfce" },
+      { rotulo: "Gerar/Consultar CSC", url: "https://www.sefaz.to.gov.br/nfce2/pages/contribuinte/csc.jsf" },
+    ],
+    avisos: [CSC_NO_NAVEGADOR, SERIE_NOVA],
+  },
+  PB: {
+    uf: "PB",
+    titulo: "Paraíba — SEFAZ-PB (SER Virtual)",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "Pedir no SER Virtual, com o login da empresa." },
+      { titulo: "Gerar o CSC", texto: "SER Virtual → Documentos Fiscais → NFC-e → Gerar CSC (só pelo computador, não pelo celular)." },
+    ],
+    links: [{ rotulo: "SER Virtual — Gerar CSC", url: "https://www.sefaz.pb.gov.br/servirtual/documentos-fiscais/nfc-e/gerar-csc" }],
+    avisos: [SERIE_NOVA],
+  },
+  AM: {
+    uf: "AM",
+    titulo: "Amazonas — SEFAZ-AM (DT-e)",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "Nenhum: a SEFAZ-AM diz que não é preciso processo para aderir à NFC-e." },
+      { titulo: "Gerar o CSC", texto: "No DT-e (online.sefaz.am.gov.br), com o certificado digital da empresa — um por ambiente." },
+    ],
+    links: [
+      { rotulo: "DT-e (SEFAZ-AM)", url: "https://online.sefaz.am.gov.br/inicioDte.asp" },
+      { rotulo: "Portal NFC-e SEFAZ-AM", url: "https://portalnfce.sefaz.am.gov.br" },
+    ],
+    avisos: [CSC_NO_NAVEGADOR, SERIE_NOVA],
+  },
+  MS: {
+    uf: "MS",
+    titulo: "Mato Grosso do Sul — SEFAZ-MS (Portal DFE)",
+    passos: [
+      CERTIFICADO,
+      CREDENCIAMENTO_AUTOMATICO,
+      { titulo: "Gerar o CSC", texto: "No Portal DFE-MS → CSC, com o e-CNPJ da raiz e a Inscrição Estadual ativa — um por ambiente." },
+    ],
+    links: [{ rotulo: "Portal DFE-MS — CSC", url: "https://www.dfe.ms.gov.br/csc/" }],
+    avisos: [CSC_NO_NAVEGADOR, SERIE_NOVA],
+  },
+  RO: {
+    uf: "RO",
+    titulo: "Rondônia — SEFIN-RO (Portal do Contribuinte)",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "Pedir no Portal do Contribuinte (DET, login gov.br); a liberação é na hora." },
+      { titulo: "Gerar o CSC", texto: "No mesmo portal. Só 2 CSC ativos por empresa." },
+    ],
+    links: [{ rotulo: "Portal do Contribuinte (DET)", url: "https://det.sefin.ro.gov.br/" }],
+    avisos: [
+      "Em Rondônia o CSC de produção vale também para homologação: cadastre o mesmo ID e código nos dois ambientes aqui no FireHub.",
+      SERIE_NOVA,
+    ],
+  },
 };
 
 const GENERICO: Omit<PassoAPasso, "uf"> = {
@@ -119,7 +426,7 @@ const GENERICO: Omit<PassoAPasso, "uf"> = {
     },
   ],
   links: [],
-  avisos: [SERIE_NOVA],
+  avisos: [CSC_NO_NAVEGADOR, SERIE_NOVA],
 };
 
 /** O passo a passo da UF (o genérico quando o FireHub ainda não conferiu a UF). */

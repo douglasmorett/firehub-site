@@ -411,7 +411,17 @@ console.log("\n— o passo a passo por UF");
     textoDf.includes("DF-e → Código CSC"), textoDf.includes("até 2 CSCs ativos"), textoDf.includes("CF/DF"), textoDf.includes(".pfx"), textoDf.includes("Saipos"),
   ], [true, true, true, true, true, true, true, true]);
   confere("RJ, PA e MG têm o passo a passo próprio", [JSON.stringify(passoAPassoDaUf("RJ")).includes("fazenda.rj.gov.br/dfe"), JSON.stringify(passoAPassoDaUf("PA")).includes("Cadastro Software NFC-e"), JSON.stringify(passoAPassoDaUf("MG")).includes("SIARE")], [true, true, true]);
-  confere("outra UF: o genérico", passoAPassoDaUf("SP").titulo, "Seu estado");
+  confere("UF que não existe: o genérico", passoAPassoDaUf("ZZ").titulo, "Seu estado");
+  // 09/10/2026: as UF onde há loja vendendo têm o guia próprio, com link do portal.
+  const comGuia = ["SP", "CE", "RS", "GO", "BA", "PR", "PE", "SC", "PI", "MT", "MA", "ES", "RN", "TO", "PB", "AM", "MS", "RO"];
+  confere(
+    "as 18 UF novas têm passo a passo próprio, com pelo menos um link oficial (gov.br)",
+    comGuia.filter((uf) => {
+      const g = passoAPassoDaUf(uf);
+      return g.titulo === "Seu estado" || g.links.length === 0 || !g.links.every((l) => /\.gov\.br/.test(l.url)) || g.passos.length < 3;
+    }),
+    []
+  );
 }
 
 console.log("\n— a rota do certificado e a tela (conferência estática)");
