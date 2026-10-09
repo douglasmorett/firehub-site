@@ -13,6 +13,7 @@
  * de a impressão existir — também podem ser impressas.
  */
 import { NextResponse } from "next/server";
+import { secoesDoFechamento, type SecoesDoFechamento } from "@/lib/secoes-do-fechamento";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
 
   const dono = await prisma.user.findUnique({
     where: { id: lojaId },
-    select: { storeName: true, storeTimezone: true },
+    select: { storeName: true, storeTimezone: true, printerConfig: true },
   });
   const comum = {
     sessionId: caixa.id,
@@ -57,6 +58,8 @@ export async function POST(req: Request) {
     operador: session.user?.name || session.user?.email || "",
     abertoEm: caixa.openedAt,
     trocoInicial: Number(caixa.openingAmount || 0),
+    // O que a loja escolheu imprimir no fechamento (lib/secoes-do-fechamento.ts).
+    secoes: secoesDoFechamento(dono?.printerConfig),
   };
 
   const cupom =
@@ -93,7 +96,7 @@ const centavos = (n: number) => Math.round(n * 100) / 100;
 async function segundaViaDoFechamento(
   lojaId: string,
   caixa: CashSession,
-  comum: { sessionId: string; loja: string; fuso: string; operador: string; abertoEm: Date; trocoInicial: number },
+  comum: { sessionId: string; loja: string; fuso: string; operador: string; abertoEm: Date; trocoInicial: number; secoes: SecoesDoFechamento },
   quemPediu: string
 ) {
   const esperado = {

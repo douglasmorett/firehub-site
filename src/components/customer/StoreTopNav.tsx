@@ -10,6 +10,7 @@ import StoreSelector from "./StoreSelector";
 import SimularPedidos from "./SimularPedidos";
 import VendasPorTipoDoCaixa, { type VendasPorTipo } from "./VendasPorTipoDoCaixa";
 import CancelamentosDoCaixa, { type CancelamentosDoTurno } from "./CancelamentosDoCaixa";
+import SecoesDoFechamentoNoPapel from "./SecoesDoFechamentoNoPapel";
 import {
   avisarQueOCaixaMudou, EVENTO_ABRIR_MENU_DO_CAIXA, PARAMETRO_ABRIR_CAIXA, type PedidoDoCaixa,
 } from "@/lib/caixa-aberto";
@@ -1160,8 +1161,8 @@ export default function StoreTopNav({
                   Deseja imprimir o fechamento desse caixa?
                 </h2>
                 <p style={{ margin:"0 0 14px", fontSize:"0.9rem", color:"#475569", lineHeight:1.5 }}>
-                  Sai o relatório completo do turno: conferência forma por forma, a diferença,
-                  venda por canal, sangrias e reforços e tudo que não passou pela gaveta.
+                  Sai a conferência forma por forma, a diferença e o total faturado, mais as
+                  seções que você escolher logo abaixo.
                 </p>
                 <div style={{ background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:12, padding:"12px 14px", margin:"0 0 14px", textAlign:"left", fontSize:"0.84rem", color:"#475569", lineHeight:1.6 }}>
                   <div style={{ display:"flex", justifyContent:"space-between" }}>
@@ -1175,6 +1176,8 @@ export default function StoreTopNav({
                     <strong style={{ color: Math.abs(diff) < 0.01 ? "#0F766E" : diff < 0 ? "#C92E09" : "#B45309" }}>{fmt(diff)}</strong>
                   </div>
                 </div>
+                {/* Papel comprido demais (Divinos, 09/10/2026): a loja escolhe as seções. */}
+                <SecoesDoFechamentoNoPapel />
                 <p style={{ margin:"0 0 1rem", fontSize:"0.76rem", color:"#94A3B8", lineHeight:1.5 }}>
                   Não imprimindo agora, o caixa encerra do mesmo jeito — e o papel pode sair
                   depois pelo <strong>Histórico</strong>.

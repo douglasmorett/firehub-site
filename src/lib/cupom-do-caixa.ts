@@ -36,6 +36,8 @@
 //
 // O sinal vem ANTES do "R$": a sangria já saía "-R$ 150,00" e a diferença
 // saía "R$ -10,00" no mesmo papel — dois jeitos de escrever falta.
+import type { ChaveDaSecao, SecoesDoFechamento } from "./secoes-do-fechamento";
+
 const reais = (v: number | null | undefined) => {
   const n = Number(v || 0);
   const abs = Math.abs(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -331,6 +333,8 @@ export function cupomDeFechamentoDeCaixa(entrada: {
    * FECHOU (a sessão grava), para o cabeçalho dizer o mesmo que o original.
    */
   segundaVia?: { por: string; em: Date } | null;
+  /** O que a loja escolheu imprimir (lib/secoes-do-fechamento.ts). Ausente = tudo. */
+  secoes?: SecoesDoFechamento | null;
 }) {
   const c = cabecalho("FECHAMENTO DE CAIXA", entrada.loja, entrada.fechadoEm, entrada.fuso, entrada.operador);
   const v = entrada.valores;
@@ -531,6 +535,7 @@ function relatorioDoFechamento(
     trocoInicial: number;
     valores: ValoresDoFechamento;
     segundaVia?: { por: string; em: Date } | null;
+    secoes?: SecoesDoFechamento | null;
   },
   contadoTotal: number,
   online: number
@@ -545,6 +550,9 @@ function relatorioDoFechamento(
   const hora = (h: Date | string) =>
     new Date(h).toLocaleTimeString("pt-BR", { timeZone: fuso, hour: "2-digit", minute: "2-digit" });
   const vezes = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
+  // Seção desligada pela loja não sai (lib/secoes-do-fechamento.ts). A
+  // conferência, a diferença e o TOTAL FATURADO não têm chave: saem sempre.
+  const mostra = (k: ChaveDaSecao) => entrada.secoes?.[k] !== false;
 
   // ── O TURNO ─────────────────────────────────────────────────────────────
   linha("Aberto em", hhmm(entrada.abertoEm, fuso));
@@ -625,7 +633,7 @@ function relatorioDoFechamento(
   // abaixo.
   const entradas = v.movimentacoes?.entradas || 0;
   const saidas = v.movimentacoes?.saidas || 0;
-  if (d) {
+  if (d && mostra("gaveta")) {
     titulo("Dinheiro na gaveta");
     linha("Troco de abertura", reais(entrada.trocoInicial));
     // ── O TROCO DA MESA, À VISTA ───────────────────────────────────────────
@@ -675,22 +683,22 @@ function relatorioDoFechamento(
   // ── FATURAMENTO ─────────────────────────────────────────────────────────
   if (d.vendas.qtd > 0) {
     titulo("Faturamento");
-    for (const f of naOrdemDasFormas(d.porForma)) {
+    if (mostra("faturamento")) for (const f of naOrdemDasFormas(d.porForma)) {
       const nota = f.nome === "Fiado" ? "acertado fora do caixa" : f.nome === "Forma nao identificada" ? "vale conferir o que e" : undefined;
       linha(`${f.nome} (${f.qtd})`, reais(f.valor), nota);
     }
     const cuponsDasPlataformas = d.cupomDaPlataforma.reduce((s, c) => ({ qtd: s.qtd + c.qtd, valor: s.valor + c.valor }), { qtd: 0, valor: 0 });
-    if (cuponsDasPlataformas.valor > 0.01) {
+    if (mostra("faturamento") && cuponsDasPlataformas.valor > 0.01) {
       linha(`Cupom pago pelas plataformas (${cuponsDasPlataformas.qtd})`, reais(cuponsDasPlataformas.valor), "elas repassam para a loja");
     }
-    L.push({ tipo: "separador" });
+    if (mostra("faturamento")) L.push({ tipo: "separador" });
     L.push({
       tipo: "destaque",
       texto: "TOTAL FATURADO",
       valor: reais(d.vendas.valor),
       nota: `${vezes(d.vendas.qtd, "venda", "vendas")} | ticket medio ${reais(d.vendas.valor / d.vendas.qtd)}`,
     });
-    if (d.taxaDeEntrega.valor > 0.01) linha(`Incluso: taxa de entrega (${d.taxaDeEntrega.qtd})`, reais(d.taxaDeEntrega.valor));
+    if (mostra("faturamento") && d.taxaDeEntrega.valor > 0.01) linha(`Incluso: taxa de entrega (${d.taxaDeEntrega.qtd})`, reais(d.taxaDeEntrega.valor));
     if (d.mesas.servico > 0.01) linha(`Incluso: taxa de servico (${vezes(d.mesas.servicoQtd, "mesa", "mesas")})`, reais(d.mesas.servico));
     if (d.mesas.gorjeta > 0.01) linha("Incluso: gorjeta", reais(d.mesas.gorjeta));
     if ((d.mesas.troco || 0) > 0.01) {
@@ -709,7 +717,7 @@ function relatorioDoFechamento(
   // pediu igual: o salão separado da entrega, cada um com o que entrou em
   // cada forma. Tudo sai da mesma apuração (lib/apuracao-do-turno.ts), e a
   // última linha prova que a soma dos blocos é o TOTAL FATURADO.
-  if (d.porTipo.length > 0) {
+  if (d.porTipo.length > 0 && mostra("porTipo")) {
     for (const b of naOrdemDosTipos(d.porTipo)) linhasDoBloco(L, b, d.vendas.valor);
     const soma = Number(d.porTipo.reduce((s, b) => s + b.valor, 0).toFixed(2));
     const bate = Math.abs(soma - d.vendas.valor) < 0.005;
@@ -722,7 +730,7 @@ function relatorioDoFechamento(
   }
 
   // ── POR CANAL, COM O PAGAMENTO DE CADA UM ───────────────────────────────
-  if (d.porCanal.length > 0) {
+  if (d.porCanal.length > 0 && mostra("porCanal")) {
     titulo("Vendas por canal");
     for (const c of d.porCanal) {
       linha(`${c.nome} (${c.qtd})`, reais(c.valor));
@@ -735,7 +743,7 @@ function relatorioDoFechamento(
   // Sempre impresso quando houve venda, mesmo zerado: "quanto foi de cupom da
   // loja e quanto do iFood" é pergunta que o dono faz todo dia, e linha que
   // some quando é zero obriga a adivinhar se foi zero ou se não foi contado.
-  if (d.vendas.qtd > 0) {
+  if (d.vendas.qtd > 0 && mostra("cupons")) {
     titulo("Cupons e descontos");
     linha(`Pago pela loja (${d.cupomDaLoja.qtd})`, reais(d.cupomDaLoja.valor), d.cupomDaLoja.valor > 0.01 ? "saiu do bolso da loja" : undefined);
     if (d.cupomDaLoja.porCanal.length > 1) {
@@ -754,7 +762,7 @@ function relatorioDoFechamento(
   }
 
   // ── FIADO ───────────────────────────────────────────────────────────────
-  if (d.fiado.length > 0) {
+  if (d.fiado.length > 0 && mostra("fiado")) {
     titulo("Fiado / conta funcionario");
     for (const f of d.fiado) linha(`${hora(f.hora)} ${f.numero} ${f.nome}`.replace(/\s+/g, " ").trim(), reais(f.valor));
     const total = d.fiado.reduce((s, f) => s + f.valor, 0);
@@ -769,7 +777,7 @@ function relatorioDoFechamento(
   }
 
   // ── ENTREGADORES ────────────────────────────────────────────────────────
-  if (d.entregadores.length > 0 || d.entregaParceira.qtd > 0 || d.semEntregador.qtd > 0) {
+  if (mostra("entregadores") && (d.entregadores.length > 0 || d.entregaParceira.qtd > 0 || d.semEntregador.qtd > 0)) {
     titulo("Entregadores");
     for (const m of d.entregadores) {
       // "Jobson 30 notas, e o valor dos pedidos das 30 do lado" (Delícia de
@@ -801,7 +809,7 @@ function relatorioDoFechamento(
   //
   // Um a um, com o número do parceiro: é por ele que o lojista acha o pedido
   // no portal do iFood quando o cliente liga reclamando.
-  if (d.cancelados.qtd > 0) {
+  if (d.cancelados.qtd > 0 && mostra("cancelados")) {
     titulo("Cancelados");
     const LIMITE = 40;
     for (const c of d.cancelados.lista.slice(0, LIMITE)) {
@@ -823,7 +831,7 @@ function relatorioDoFechamento(
   // cancelado), e era a conferência que o dono da Pizzaria 17 pediu
   // (09/10/2026): quem tirou, quando, o item, o valor e o motivo.
   const itensFora = d.itensCancelados || [];
-  if (itensFora.length > 0) {
+  if (itensFora.length > 0 && mostra("itensCancelados")) {
     titulo("Itens cancelados");
     const LIMITE = 40;
     for (const i of itensFora.slice(0, LIMITE)) {
@@ -844,13 +852,13 @@ function relatorioDoFechamento(
   if (f && (f.mesasAbertasQtd || 0) > 0) {
     deFora.push({ tipo: "linha", texto: `Mesas ainda abertas (${vezes(f.mesasAbertasQtd || 0, "pedido", "pedidos")})`, valor: reais(f.mesasAbertas || 0), nota: "a conta ainda nao foi fechada" });
   }
-  if (deFora.length > 0) {
+  if (deFora.length > 0 && mostra("deFora")) {
     titulo("Ficou de fora do faturamento");
     L.push(...deFora);
   }
 
   // ── MAIS VENDIDOS ───────────────────────────────────────────────────────
-  if (d.maisVendidos.length > 0) {
+  if (d.maisVendidos.length > 0 && mostra("maisVendidos")) {
     titulo("Mais vendidos");
     for (const i of d.maisVendidos) linha(`${i.qtd}x ${i.nome}`, reais(i.valor));
   }

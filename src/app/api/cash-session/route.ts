@@ -11,6 +11,7 @@ import { enfileirarCupomDoCaixa, assistenteOuvindoAFila } from "@/lib/imprimir-c
 // O esperado e o retrato do turno moram em lib/esperado-do-turno.ts: a 2ª via
 // (api/cash-session/imprimir) também precisa deles, e rota não exporta função.
 import { calcularEsperadoDoTurno } from "@/lib/esperado-do-turno";
+import { secoesDoFechamento } from "@/lib/secoes-do-fechamento";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -453,7 +454,7 @@ export async function PUT(req: Request) {
     data: { cashOpen: false, cashClosedAt: new Date() },
   });
 
-  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true, chatbotConfig: true } });
+  const ownerInfo = await prisma.user.findUnique({ where: { id: user.targetId }, select: { notificationPhone: true, storeName: true, storeTimezone: true, chatbotConfig: true, printerConfig: true } });
 
   // ── O PAPEL DO FECHAMENTO ──────────────────────────────────────────────
   //
@@ -481,6 +482,8 @@ export async function PUT(req: Request) {
         operador: session.user?.name || session.user?.email || "",
         abertoEm: paraOCupom.abertoEm,
         fechadoEm: new Date(),
+        // O que a loja escolheu imprimir (lib/secoes-do-fechamento.ts).
+        secoes: secoesDoFechamento(ownerInfo?.printerConfig),
         trocoInicial: paraOCupom.trocoInicial,
         valores: {
           esperado: paraOCupom.esperado,
