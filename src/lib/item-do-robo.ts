@@ -31,6 +31,9 @@
 export type GrupoDoProduto = {
   id: string;
   title?: string | null;
+  /** Quantas escolhas a pergunta exige: `minQty`, ou exatamente `maxQty` quando nulo (schema). */
+  minQty?: number | null;
+  maxQty?: number | null;
   items?: Array<{ additionalPrice?: number | null; menuProduct?: { name?: string | null } | null } | null> | null;
 };
 
@@ -58,6 +61,13 @@ export type EscolhasDoItem = {
   somaDasOpcoes: number;
   /** Opções que a IA anotou e que não existem no cadastro — NÃO são cobradas. */
   naoCasadas: string[];
+  /**
+   * Pergunta OBRIGATÓRIA que ficou com menos escolhas do que exige porque algo
+   * que o cliente pediu não casou (o título dela), ou null. É o sabor da pizza
+   * que o robô anotou com nome que o cadastro não tem: cobrar o piso aqui é
+   * cobrar errado, então quem chama segura o pedido para a loja.
+   */
+  grupoIncompleto: string | null;
   /** Nome para `productName`: o do cadastro, com as escolhas entre parênteses. */
   productName: string;
   /** Texto para `notes` do item, ou null. */
@@ -133,16 +143,35 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
 
   /**
    * Procura a opção: o nome exato; senão sem a fração da meia pizza; senão a
-   * ÚNICA opção do produto que contém o nome pedido, palavra por palavra.
+   * ÚNICA opção que contém o nome pedido inteiro; senão pelas PALAVRAS.
    *
    * Deeds Delivery, 02/10/2026, pedido #21: a IA anotou "1/2 Pizza Premium Dois
    * Queijos" e "1/2 Pizza Premium Calacheese LANÇAMENTO!" — é como se escreve
    * meio a meio. O "1/2" não casava, os dois sabores foram para "conferir", e a
    * pizza que o robô disse ao cliente por R$ 69,79 (com o broto) foi gravada por
-   * R$ 42,89. Duas opções que contêm o nome ("Calabresa" com Calabresa Paulista e
-   * Calabresa Argentina) é ambiguidade: não se adivinha, vai para a conferência —
-   * a mesma regra do produto em chatbot-ai.ts.
+   * R$ 42,89.
+   *
+   * Deeds de novo, 08/10/2026, pedido #21: "1/2 Pizza Frango I" e "1/2 Pizza
+   * Calabresa" para um cadastro com "Pizza Tradicional Frango I" e "Pizza
+   * Tradicional Calabresa". O modelo pulou a palavra do meio ("Tradicional"),
+   * o nome inteiro não está contido em nenhuma opção, e a pizza que o robô
+   * disse por R$ 41,90 saiu por R$ 39,90 com "conferir". Então, por último,
+   * valem as palavras: toda palavra pedida tem de aparecer na opção. Várias
+   * opções servem ("Calabresa" cabe em Calabresa, Calabresa Paulista e
+   * Calabresa Argentina)? Fica a que tem MENOS palavras a mais — a versão
+   * simples do sabor é o que quem diz só "calabresa" quer — e só se ela for
+   * única nesse tamanho. Empate ("Frango" entre Frango I e Frango Especial)
+   * continua ambiguidade: não se adivinha, vai para a conferência.
    */
+  type Achado = { grupo: GrupoDoProduto; opcao: NonNullable<NonNullable<GrupoDoProduto["items"]>[number]> };
+  const todasAsOpcoes = (): Achado[] => {
+    const lista: Achado[] = [];
+    for (const grupo of produto.comboGroups || []) {
+      if (!grupo) continue;
+      for (const gi of grupo.items || []) if (gi) lista.push({ grupo, opcao: gi });
+    }
+    return lista;
+  };
   const procurar = (chave: string) => {
     if (!chave) return null;
     const direto = exata(chave);
@@ -152,16 +181,25 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
       const achado = exata(semFracao);
       if (achado) return achado;
     }
-    const alvo = ` ${semFracao || chave} `;
-    const contem: Array<{ grupo: GrupoDoProduto; opcao: NonNullable<NonNullable<GrupoDoProduto["items"]>[number]> }> = [];
-    for (const grupo of produto.comboGroups || []) {
-      if (!grupo) continue;
-      for (const gi of grupo.items || []) {
-        if (gi && ` ${chaveDeNome(gi.menuProduct?.name)} `.includes(alvo)) contem.push({ grupo, opcao: gi });
-      }
+    const pedido = semFracao || chave;
+    const alvo = ` ${pedido} `;
+    const contem = todasAsOpcoes().filter((c) => ` ${chaveDeNome(c.opcao.menuProduct?.name)} `.includes(alvo));
+    const nomesQueContem = new Set(contem.map((c) => chaveDeNome(c.opcao.menuProduct?.name)));
+    if (nomesQueContem.size === 1) return contem[0];
+
+    const palavras = pedido.split(" ").filter(Boolean);
+    if (palavras.length === 0) return null;
+    const porNome = new Map<string, { c: Achado; tamanho: number }>();
+    for (const c of todasAsOpcoes()) {
+      const nome = chaveDeNome(c.opcao.menuProduct?.name);
+      const daOpcao = nome.split(" ").filter(Boolean);
+      if (!palavras.every((p) => daOpcao.includes(p))) continue;
+      if (!porNome.has(nome)) porNome.set(nome, { c, tamanho: daOpcao.length });
     }
-    const nomes = new Set(contem.map((c) => chaveDeNome(c.opcao.menuProduct?.name)));
-    return nomes.size === 1 ? contem[0] : null;
+    if (porNome.size === 0) return null;
+    const menor = Math.min(...[...porNome.values()].map((v) => v.tamanho));
+    const curtas = [...porNome.values()].filter((v) => v.tamanho === menor);
+    return curtas.length === 1 ? curtas[0].c : null;
   };
 
   for (const bruta of brutas) {
@@ -206,10 +244,25 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
   for (const c of casadas) contagem.set(c.nome, (contagem.get(c.nome) || 0) + c.quantidade);
   const resumo = [...contagem.entries()].map(([n, q]) => (q > 1 ? `${n} x${q}` : n));
 
+  // Pergunta obrigatória que ficou curta POR CAUSA de algo que não casou. A
+  // que o modelo nem preencheu (`options: []`) não entra: aí vale o piso de
+  // sempre, que é o Nugget de base R$ 0,00 (01/08/2026).
+  let grupoIncompleto: string | null = null;
+  if (naoCasadas.length > 0) {
+    for (const grupo of produto.comboGroups || []) {
+      if (!grupo) continue;
+      const exigidas = grupo.minQty != null ? Number(grupo.minQty) || 0 : Number(grupo.maxQty) || 0;
+      if (exigidas < 1) continue;
+      const escolhidas = Object.values(selecoes[grupo.id] || {}).reduce((s, q) => s + q, 0);
+      if (escolhidas < exigidas) { grupoIncompleto = String(grupo.title || "").trim() || "opção obrigatória"; break; }
+    }
+  }
+
   return {
     comboSelections: Object.keys(selecoes).length > 0 ? selecoes : null,
     somaDasOpcoes: Math.round(somaDasOpcoes * 100) / 100,
     naoCasadas,
+    grupoIncompleto,
     productName: resumo.length > 0 ? `${produto.name} (${resumo.join(", ")})` : produto.name,
     notes,
   };

@@ -1607,7 +1607,9 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
          Cliente que escreve em espanhol ou outra língua ("mitad" = metade, "quesos" = queijos,
          "a domicilio" = entrega): entenda, responda na língua dele, e no JSON use os nomes do cardápio.
       b) "options" leva TODA escolha que o cliente fez dentro do produto: o sabor, o tamanho, cada
-         adicional. Escreva cada uma com o nome EXATO que aparece nas opções daquele produto.
+         adicional. Escreva cada uma com o nome EXATO que aparece nas opções daquele produto — o nome
+         INTEIRO, sem pular palavra do meio: a opção "Pizza Tradicional Frango I" vai como
+         "Pizza Tradicional Frango I", nunca "Pizza Frango I" ou "Frango".
       c) QUANTAS de cada opção: quando o cliente escolhe mais de uma unidade da mesma opção (combo de
          10 unidades com 6 de um sabor e 4 de outro, por exemplo), escreva a quantidade junto:
          "options": ["6x Sabor A", "4x Sabor B"]. Sem isso a cozinha recebe uma de cada e a conta sai errada.
@@ -2973,6 +2975,8 @@ async function syncAiOrderToDatabase({
 
   /** Nomes da tag que a guilhotina abaixo jogou fora. */
   const itensDescartados: string[] = [];
+  /** "Produto: sabor que não casou" de pergunta OBRIGATÓRIA que ficou incompleta (lib/item-do-robo.ts). */
+  const saboresSemCasar: string[] = [];
   const orderItemsData = (payload.items || [])
     .map((it: any) => {
       const pedido = chaveDeNome(it.name);
@@ -3033,6 +3037,7 @@ async function syncAiOrderToDatabase({
       // mesmos três campos que o site grava e que a impressão, o KDS e o painel
       // já leem: comboSelections, notes e productName.
       const doItem = escolhasDoItem(it, matchedProduct as any);
+      if (doItem.grupoIncompleto) saboresSemCasar.push(`${matchedProduct.name}: ${doItem.naoCasadas.join(", ")}`);
       if (doItem.naoCasadas.length > 0) {
         console.warn(
           `[Chatbot AI] opções sem correspondência em "${matchedProduct.name}": ${doItem.naoCasadas.join(", ")} — não cobradas; foram para a observação do item.`
@@ -3257,6 +3262,35 @@ async function syncAiOrderToDatabase({
   }
   const existingDraft =
     destino.acao === "reescrever" ? candidatosDoCliente.find((p) => p.id === destino.pedido.id) || null : null;
+
+  // ── SABOR QUE NÃO CASOU NÃO FECHA PELO PISO ───────────────────────────────
+  //
+  // Deeds, 06 e 08/10/2026: o modelo escreveu o sabor de um jeito que o
+  // cadastro não tinha, a pergunta "Escolha os 2 sabores" ficou pela metade e
+  // o pedido fechou pela opção mais barata — R$ 39,90 numa pizza de R$ 41,90
+  // (e R$ 42,90), com "conferir" na comanda. A loja só via depois de impresso.
+  // Agora o rascunho fica esperando a loja (o mesmo aviso do endereço não
+  // confirmado), com o sabor pedido na observação, e o cliente sabe que a
+  // loja vai conferir. Pedido JÁ ENVIADO sendo alterado não passa por aqui.
+  if (isFinal && saboresSemCasar.length > 0 && (!existingDraft || String(existingDraft.status).toUpperCase() === "CRIANDO_IA")) {
+    const motivo = `sabor/opção que não está no cadastro: ${saboresSemCasar.join(" | ")}`;
+    console.error(`[Chatbot AI Order Sync] 🛑 Pedido segurado para a loja — ${motivo}. Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`);
+    const rascunho = existingDraft || candidatosDoCliente.find((p: any) => String(p.status).toUpperCase() === "CRIANDO_IA") || null;
+    await segurarRascunhoParaALoja(rascunho?.id, motivo, {
+      customerAddress: payload.address || null,
+      paymentMethod: payload.paymentMethod || null,
+      customerName,
+    });
+    return {
+      gravado: false,
+      motivo,
+      regraDeNegocio: true,
+      chamarAtendente: true,
+      mensagemParaOCliente:
+        `Anotei seu pedido! 📝 Só não achei no cardápio exatamente "${saboresSemCasar.map((s) => s.split(": ")[1]).join(", ")}", ` +
+        `então a loja vai conferir o sabor e o valor com você por aqui antes de mandar pra cozinha — não precisa repetir nada! 😊`,
+    };
+  }
 
   // ── OPÇÃO PAUSADA E COMBO QUE A PAUSA TRAVOU ──────────────────────────────
   // O cardápio que o modelo lê já esconde a opção pausada e lista o combo

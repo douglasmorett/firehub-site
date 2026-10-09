@@ -118,7 +118,40 @@ igual("'½', 'meia' e 'metade de' também", escolhasDoItem({ options: ["½ Pizza
   { g_sabores: { "Pizza Premium Dois Queijos": 1, "Pizza Premium Calacheese LANÇAMENTO!": 1 } });
 igual("'metade de' + nome curto que só UMA opção contém", escolhasDoItem({ options: ["metade de Calacheese", "1/2 dois queijos"] }, grande).comboSelections,
   { g_sabores: { "Pizza Premium Calacheese LANÇAMENTO!": 1, "Pizza Premium Dois Queijos": 1 } });
-igual("nome curto que DUAS opções contêm não adivinha", escolhasDoItem({ options: ["1/2 Calabresa"] }, grande).naoCasadas, ["1/2 Calabresa"]);
+igual("nome curto com a versão simples e a composta: fica a simples", escolhasDoItem({ options: ["1/2 Calabresa"] }, grande).comboSelections, { g_sabores: { "Pizza Tradicional Calabresa": 1 } });
+
+console.log("\n4c) O modelo pula a palavra do meio do sabor (Deeds, 08/10/2026, pedido #21)");
+const deeds = {
+  name: "Pizza Grande 8 Pedaços - 2 Sabores",
+  comboGroups: [
+    { id: "g_sabores", title: "Escolha os 2 sabores", minQty: 2, maxQty: 2, items: [
+      { additionalPrice: 41.9, menuProduct: { name: "Pizza Tradicional Calabresa" } },
+      { additionalPrice: 41.9, menuProduct: { name: "Pizza Tradicional Calabresa Paulista" } },
+      { additionalPrice: 41.9, menuProduct: { name: "Pizza Tradicional Calabresa Argentina" } },
+      { additionalPrice: 43.9, menuProduct: { name: "Pizza Tradicional Frango I" } },
+      { additionalPrice: 45.9, menuProduct: { name: "Pizza Premium Frango Especial" } },
+      { additionalPrice: 45.9, menuProduct: { name: "Pizza Premium Portuguesa" } },
+      { additionalPrice: 47.9, menuProduct: { name: "Pizza Premium Portuguesa com Catupiry" } },
+      { additionalPrice: 41.9, menuProduct: { name: "Pizza Tradicional Brócolis" } },
+      { additionalPrice: 45.9, menuProduct: { name: "Pizza Premium Brócolis 2" } },
+    ] },
+    { id: "g_borda", title: "Borda", minQty: 0, maxQty: 1, items: [{ additionalPrice: 11.99, menuProduct: { name: "Borda de Catupiry Pizza Grande" } }] },
+  ],
+};
+const d0810 = escolhasDoItem({ options: ["1/2 Pizza Frango I", "1/2 Pizza Calabresa"] }, deeds);
+igual("'Pizza Frango I' e 'Pizza Calabresa' casam com as Tradicionais", d0810.comboSelections, { g_sabores: { "Pizza Tradicional Frango I": 1, "Pizza Tradicional Calabresa": 1 } });
+igual("nada para conferir", d0810.naoCasadas, []);
+igual("nenhuma pergunta obrigatória incompleta", d0810.grupoIncompleto, null);
+igual("pedido #9 de 06/10: 'Portuguesa' e 'Calabresa'", escolhasDoItem({ options: ["1/2 Portuguesa", "1/2 Calabresa"] }, deeds).comboSelections,
+  { g_sabores: { "Pizza Premium Portuguesa": 1, "Pizza Tradicional Calabresa": 1 } });
+igual("'Brócolis' com Brócolis e Brócolis 2: a simples", escolhasDoItem({ options: ["brocolis"] }, deeds).comboSelections, { g_sabores: { "Pizza Tradicional Brócolis": 1 } });
+igual("'Portuguesa com Catupiry' inteira casa com a composta", escolhasDoItem({ options: ["1/2 portuguesa com catupiry"] }, deeds).comboSelections, { g_sabores: { "Pizza Premium Portuguesa com Catupiry": 1 } });
+const empate = escolhasDoItem({ options: ["1/2 Frango", "1/2 Calabresa"] }, deeds);
+igual("'Frango' entre Frango I e Frango Especial (mesmo tamanho) não adivinha", empate.naoCasadas, ["1/2 Frango"]);
+igual("…e a pergunta dos 2 sabores fica incompleta: a loja confere", empate.grupoIncompleto, "Escolha os 2 sabores");
+igual("palavra que não existe em sabor nenhum", escolhasDoItem({ options: ["1/2 Pizza Frango Tropical"] }, deeds).naoCasadas, ["1/2 Pizza Frango Tropical"]);
+igual("borda não casada não deixa a pergunta OPCIONAL incompleta", escolhasDoItem({ options: ["1/2 Pizza Frango I", "1/2 Pizza Calabresa", "borda de cheddar"] }, deeds).grupoIncompleto, null);
+igual("sem opção nenhuma não é 'incompleta' (piso de sempre)", escolhasDoItem({ options: [] }, deeds).grupoIncompleto, null);
 
 console.log("\n5) Bordas");
 igual("options ausente", escolhasDoItem({ name: "Pizza" }, pizza).comboSelections, null);
