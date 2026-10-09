@@ -132,7 +132,7 @@ export default function Conta() {
             variante="contorno"
             pequeno
             icone={<Ionicons name="open-outline" size={16} color={cor.texto} />}
-            aoTocar={() => Linking.openURL(`${API_URL}/privacidade`)}
+            aoTocar={() => Linking.openURL(`${API_URL}/privacidade-entregador`)}
           />
         </View>
 
