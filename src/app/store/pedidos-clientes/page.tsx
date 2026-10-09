@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import StoreOrdersDashboard from "@/components/customer/StoreOrdersDashboard";
 import AvisosDoDia from "@/components/customer/AvisosDoDia";
 import AvisoDeAcrescimo from "@/components/customer/AvisoDeAcrescimo";
+import AvisoDeTransferencia from "@/components/customer/AvisoDeTransferencia";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
@@ -213,6 +214,8 @@ export default async function FranchiseeCustomerOrdersPage() {
       {/* Cliente pedindo pelo WhatsApp para acrescentar num pedido que já está
           na cozinha: a loja aceita ou recusa (lib/acrescimo-do-pedido.ts). */}
       <AvisoDeAcrescimo />
+      {/* "Enviar para outra loja": o pop-up de aceitar e a resposta para quem enviou. */}
+      <AvisoDeTransferencia />
       <StoreOrdersDashboard
         user={{
           ...user,

@@ -25,6 +25,7 @@ import { pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
+import EnviarParaOutraLojaPainel from "@/components/customer/EnviarParaOutraLojaPainel";
 import TrocarTipoDoPedidoPainel from "@/components/customer/TrocarTipoDoPedidoPainel";
 import ReposicaoPainel from "@/components/customer/ReposicaoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
@@ -2065,6 +2066,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       return null;
     }
   }, []);
+
+  // "Enviar para outra loja" (components/customer/AvisoDeTransferencia): o
+  // pedido entrou ou saiu desta loja — a lista é relida na hora, sem esperar
+  // a volta completa do feed.
+  useEffect(() => {
+    const aoMudar = () => { recarregarPedidos(); };
+    window.addEventListener("firehub:pedidos-mudaram", aoMudar);
+    return () => window.removeEventListener("firehub:pedidos-mudaram", aoMudar);
+  }, [recarregarPedidos]);
   useEffect(() => {
     periodoRef.current = { from: dateFrom, to: dateTo };
     // Trocar o período muda o que o SERVIDOR devolve, não só o que a tela
@@ -4597,6 +4607,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {/* Delivery que vira mesa ou balcão (lib/troca-de-tipo.ts):
                     o cliente está no salão e pediu pelo cardápio do delivery
                     (Ragnar, 01/10/2026). Fica no lápis, acima dos itens. */}
+                <EnviarParaOutraLojaPainel
+                  key={`loja-${order.id}`}
+                  pedido={order}
+                  aoMudar={async (r) => {
+                    if (r.enviado) showToast(`Pedido #${order.dailyOrderNumber ?? ""} enviado para ${r.enviado}. Ele fica aqui até a loja de lá aceitar.`, "#5B21B6");
+                    if (r.desfeito) showToast(`Envio do pedido #${order.dailyOrderNumber ?? ""} desfeito: ele continua nesta loja.`, "#0F766E");
+                    await recarregarPedidos();
+                  }}
+                />
                 <TrocarTipoDoPedidoPainel
                   key={`tipo-${order.id}`}
                   pedido={order}
