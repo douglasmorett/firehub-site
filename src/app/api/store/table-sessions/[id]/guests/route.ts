@@ -10,6 +10,7 @@
  * hora de rachar a conta o garçom tem que lembrar de cabeça quem comeu o quê —
  * e é aí que a mesa trava, a fila cresce e alguém acaba pagando a mais.
  */
+import { MAXIMO_DE_PESSOAS_POR_VEZ } from "@/lib/quantidade-de-pessoas";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
@@ -85,7 +86,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // renomeia depois se quiser.
   const quantidade = Number(corpo.quantidade);
   if (Number.isFinite(quantidade) && quantidade > 0) {
-    const quantos = Math.min(Math.floor(quantidade), 20);
+    // Mesa de 30 (Douglas, 09/10/2026): o teto é o do campo "nome ou quantidade".
+    const quantos = Math.min(Math.floor(quantidade), MAXIMO_DE_PESSOAS_POR_VEZ);
     const novos = Array.from({ length: quantos }, (_, i) => ({
       tableSessionId: id,
       name: `Cliente ${existentes + i + 1}`,

@@ -1,5 +1,6 @@
 "use client";
 
+import { quantidadeDigitada } from "@/lib/quantidade-de-pessoas";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { useRouter } from "next/navigation";
@@ -677,6 +678,15 @@ export default function MesasApp({
     });
     if (res.ok) { setNovaPessoa(""); await carregarPessoas(sessionId); }
     else showToast("❌ Não consegui adicionar a pessoa");
+  };
+
+  /** O campo aceita nome ("João") ou quantidade ("30" = Cliente 1 … Cliente 30). */
+  const quantasDigitadas = quantidadeDigitada(novaPessoa);
+  const adicionarDoCampo = () => {
+    const t = novaPessoa.trim();
+    if (!t) return;
+    if (quantasDigitadas) adicionarPessoas(quantasDigitadas);
+    else adicionarPessoas(undefined, t);
   };
 
   const renomearPessoa = async (guestId: string, nome: string) => {
@@ -2432,26 +2442,30 @@ export default function MesasApp({
                 </div>
               )}
 
-              {pessoas.length > 0 && (
+              {/* Nome OU quantidade: "30" põe a mesa de 30 de uma vez. Aparece
+                  também com a mesa vazia (antes só os atalhos 2p/3p/4p). */}
+              {(
                 <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
                   <input
-                    placeholder="Nome (ex: João)"
+                    placeholder="Nome ou quantidade (ex: João ou 30)"
+                    aria-label="Nome da pessoa ou quantidade de pessoas"
                     value={novaPessoa}
                     onChange={e => setNovaPessoa(e.target.value)}
-                    onKeyDown={e => { if (e.key === "Enter" && novaPessoa.trim()) adicionarPessoas(undefined, novaPessoa.trim()); }}
+                    onKeyDown={e => { if (e.key === "Enter") adicionarDoCampo(); }}
                     style={{
                       flex: 1, padding: "6px 10px", borderRadius: 8, border: "1px solid #E2E8F0",
                       fontSize: 12, fontFamily: "inherit", outline: "none",
                     }}
                   />
                   <button
-                    onClick={() => novaPessoa.trim() && adicionarPessoas(undefined, novaPessoa.trim())}
+                    onClick={adicionarDoCampo}
                     disabled={!novaPessoa.trim()}
                     style={{
                       padding: "6px 12px", borderRadius: 8, border: "none", background: "#475569",
                       color: "#fff", fontSize: 12, fontWeight: 700,
                       cursor: novaPessoa.trim() ? "pointer" : "default", opacity: novaPessoa.trim() ? 1 : 0.4,
-                    }}>Add</button>
+                      whiteSpace: "nowrap",
+                    }}>{quantasDigitadas ? `+ ${quantasDigitadas} ${quantasDigitadas === 1 ? "pessoa" : "pessoas"}` : "Add"}</button>
                 </div>
               )}
             </div>

@@ -23,6 +23,7 @@
  * pagamento, que não cabem bem num celular.
  */
 
+import { quantidadeDigitada } from "@/lib/quantidade-de-pessoas";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft, Check, ChevronRight, Minus, Plus, Printer, RefreshCw, Search,
@@ -728,16 +729,18 @@ export default function MesasCelular({
   const adicionarPessoa = async () => {
     const nome = novaPessoa.trim();
     if (!sessionId || !nome) return;
+    // "30" = a mesa de 30 de uma vez (Cliente 1 … Cliente 30), como no painel.
+    const quantidade = quantidadeDigitada(nome);
     const res = await chamar(`/api/store/table-sessions/${sessionId}/guests`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: nome }),
+      body: JSON.stringify(quantidade ? { quantidade } : { name: nome }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return avisar("erro", "Não deu para adicionar a pessoa", data?.error);
     setNovaPessoa("");
     await carregarPessoas(sessionId);
-    if (data?.guest?.id) setPessoaAtiva(data.guest.id);
+    if (!quantidade && data?.guest?.id) setPessoaAtiva(data.guest.id);
     setEscolhendoPessoa(false);
   };
 
@@ -1286,9 +1289,9 @@ export default function MesasCelular({
             </button>
           ))}
         </div>
-        <label className="mc-rotulo" htmlFor="mc-pessoa">Nova pessoa</label>
+        <label className="mc-rotulo" htmlFor="mc-pessoa">Nova pessoa (nome ou quantidade)</label>
         <div style={{ display: "flex", gap: 8 }}>
-          <input id="mc-pessoa" className="mc-campo" value={novaPessoa} onChange={(e) => setNovaPessoa(e.target.value)} placeholder="Nome" onKeyDown={(e) => { if (e.key === "Enter") adicionarPessoa(); }} />
+          <input id="mc-pessoa" className="mc-campo" value={novaPessoa} onChange={(e) => setNovaPessoa(e.target.value)} placeholder="Ex.: João ou 30" onKeyDown={(e) => { if (e.key === "Enter") adicionarPessoa(); }} />
           <button className="mc-btn marca" style={{ flex: "0 0 auto" }} onClick={adicionarPessoa} disabled={!novaPessoa.trim()}><Plus size={18} /></button>
         </div>
       </Folha>
