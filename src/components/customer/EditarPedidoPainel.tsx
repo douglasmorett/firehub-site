@@ -24,6 +24,11 @@
  *   • Dá para dar DESCONTO na mesma edição (% ou R$, com motivo — o mesmo do
  *     balcão), desde que o cliente ainda vá pagar: pago online ou no parceiro,
  *     o botão diz por que não (`descontoNaEdicao`).
+ *   • Rodada de MESA aberta (lápis do card de mesa, 09/10/2026): tira item e
+ *     muda quantidade, pela regra da tela de Mesas (lib/edicao-na-mesa.ts) —
+ *     a conta da mesa soma as rodadas e acompanha. Sem "Acrescentar" (item
+ *     novo é rodada nova, lançada na mesa) e sem desconto (o da mesa é da
+ *     conta, no fechamento).
  *
  * Quem decide o que pode é lib/edicao-de-pedido.ts — a MESMA função que a API
  * consulta. Esta tela não tem régua própria de status nem de canal: se ela
@@ -31,7 +36,7 @@
  */
 
 import { useState, useMemo, useEffect } from "react";
-import { avaliarEdicao, contaDoDescontoDaEdicao, descontoNaEdicao, type ModoDeEdicao } from "@/lib/edicao-de-pedido";
+import { avaliarEdicaoNoPainel, contaDoDescontoDaEdicao, descontoNaEdicao, type ModoDeEdicao } from "@/lib/edicao-de-pedido";
 import { MOTIVOS_COMUNS, type DescontoManual, type TipoDeDesconto } from "@/lib/desconto-manual";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import ComboModal from "@/components/customer/ComboModal";
@@ -102,10 +107,12 @@ export default function EditarPedidoPainel({
   /** Chamada depois que o servidor confirmou. Recarrega a lista e reimprime. */
   aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number; soDesconto?: boolean; desconto?: number }) => void;
 }) {
-  const avaliacao = useMemo(() => avaliarEdicao(pedido, operador), [pedido, operador]);
+  const avaliacao = useMemo(() => avaliarEdicaoNoPainel(pedido, operador), [pedido, operador]);
   const modo: ModoDeEdicao = avaliacao.modo;
   /** Marketplace e pedido próprio editam itens do mesmo jeito. O que muda é o dinheiro. */
   const ehMarketplace = modo === "MARKETPLACE";
+  /** Rodada de mesa: só tira e muda quantidade; a conta da mesa acompanha. */
+  const ehMesa = modo === "MESA";
   /** No marketplace pago na plataforma o total NÃO acompanha o item que saiu. */
   const totalAcompanha = avaliacao.totalMuda !== false;
 
@@ -302,6 +309,12 @@ export default function EditarPedidoPainel({
       );
       if (!ok) return;
     }
+    if (ehMesa && !sobrouAlgum) {
+      const ok = confirm(
+        "Você tirou todos os itens.\n\nIsso CANCELA esta rodada inteira: ela sai da conta da mesa e o estoque baixado volta. Confirma?"
+      );
+      if (!ok) return;
+    }
 
     // No marketplace tirar tudo NÃO cancela: cancelar pedido de parceiro é pelo
     // botão que avisa o parceiro. O servidor recusa; a tela diz antes, para o
@@ -395,9 +408,33 @@ export default function EditarPedidoPainel({
         </div>
       )}
 
+      {/* A rodada é da CONTA da mesa: o atendente precisa saber, antes de
+          mexer, que o total da mesa muda junto e que a mesa só fecha pela
+          tela de Mesas. O estoque é a regra de lá: tirar item não devolve. */}
+      {ehMesa && (
+        <div
+          style={{
+            background: "#EFF6FF",
+            border: "1px solid #BFDBFE",
+            borderRadius: "10px",
+            padding: "10px 12px",
+            fontSize: "0.82rem",
+            color: "#1E3A8A",
+            lineHeight: 1.5,
+            marginBottom: "12px",
+          }}
+        >
+          <div style={{ fontWeight: 800, marginBottom: "4px" }}>{avaliacao.motivo}</div>
+          <div>
+            Tirar item ou diminuir não devolve o estoque sozinho — só cancelar a rodada inteira devolve. Para
+            acrescentar, lance uma rodada nova na tela de Mesas.
+          </div>
+        </div>
+      )}
+
       {/* ── Itens do pedido ───────────────────────────────────────────── */}
       <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: "6px" }}>
-        {ehMarketplace ? `Itens do pedido (só aqui — o ${avaliacao.canal || "parceiro"} não muda)` : "Itens do pedido"}
+        {ehMarketplace ? `Itens do pedido (só aqui — o ${avaliacao.canal || "parceiro"} não muda)` : ehMesa ? "Itens da rodada" : "Itens do pedido"}
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "14px" }}>
@@ -488,6 +525,7 @@ export default function EditarPedidoPainel({
       </div>
 
       {/* ── Acrescentar ───────────────────────────────────────────────── */}
+      {!ehMesa && (<>
       <div style={{ fontSize: "0.75rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", marginBottom: "6px" }}>
         Acrescentar item
       </div>
@@ -630,6 +668,7 @@ export default function EditarPedidoPainel({
           </button>
         </div>
       )}
+      </>)}
 
       {/* ── Como o cliente paga o acréscimo (só marketplace) ───────────── */}
       {ehMarketplace && acrescimos.length > 0 && (
@@ -827,6 +866,21 @@ export default function EditarPedidoPainel({
             )}
             {acrescimos.length > 0 && (
               <Linha rotulo="Acréscimo a cobrar do cliente" valor={fmt(totalPrevisto)} destaque />
+            )}
+          </>
+        ) : ehMesa ? (
+          <>
+            {desconto > 0 && <Linha rotulo="Desconto da rodada (mantido)" valor={`− ${fmt(desconto)}`} />}
+            <Linha rotulo="Rodada hoje" valor={fmt(totalAtual)} />
+            <Linha
+              rotulo={!sobrouAlgum ? "Rodada será CANCELADA (sai da conta)" : "Nova rodada"}
+              valor={!sobrouAlgum ? "—" : fmt(totalPrevisto)}
+              destaque
+            />
+            {sobrouAlgum && mexeuNosOriginais && (
+              <div style={{ marginTop: "4px", fontSize: "0.76rem", color: "#64748B" }}>
+                A conta da mesa {totalPrevisto < totalAtual ? "cai" : "sobe"} {fmt(Math.abs(totalPrevisto - totalAtual))}.
+              </div>
             )}
           </>
         ) : (

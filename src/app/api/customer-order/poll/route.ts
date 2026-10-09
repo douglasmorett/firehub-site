@@ -6,7 +6,7 @@ import { authOptions } from "@/lib/auth";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
-import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
+import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from "@/lib/filtro-do-feed";
 
@@ -1012,8 +1012,9 @@ export async function GET(req: NextRequest) {
         // itens dele saem no papel do pedido principal (lib/acrescimo-na-comanda.ts).
         parentOrderId: true,
         // A mesa e o garçom da conta, para a comanda que ESTE painel imprime
-        // sair igual à da fila da nuvem (lib/mesa-na-comanda.ts).
-        tableSession: MESA_DA_COMANDA,
+        // sair igual à da fila da nuvem (lib/mesa-na-comanda.ts) — e o status da
+        // conta, que decide o lápis do card de mesa (mesa fechada não edita).
+        tableSession: MESA_DO_QUADRO,
         ifoodOrderId: true, ifoodReference: true, ifoodPickupCode: true,
         ifoodStoreName: true, ifoodStoreMerchant: true,
         // De qual loja do 99Food veio: a impressora de uma marca filtra por isto.

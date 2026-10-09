@@ -10,7 +10,7 @@ import AvisoDeTransferencia from "@/components/customer/AvisoDeTransferencia";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
-import { MESA_DA_COMANDA } from "@/lib/mesa-na-comanda";
+import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed } from "@/lib/filtro-do-feed";
 import { lojasDaVisao } from "@/lib/loja-ativa";
 
@@ -163,7 +163,7 @@ export default async function FranchiseeCustomerOrdersPage() {
         include: {
           // A mesa e o garçom da conta, como no feed (/api/customer-order/poll):
           // a comanda impressa antes do primeiro poll sai igual à de depois.
-          tableSession: MESA_DA_COMANDA,
+          tableSession: MESA_DO_QUADRO,
           items: {
             include: {
               menuProduct: {
