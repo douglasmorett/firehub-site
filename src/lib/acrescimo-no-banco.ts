@@ -28,6 +28,7 @@ import { sendEvolutionMessage } from "./whatsapp-evolution";
 import { registrarMensagemDaLoja } from "./memoria-da-conversa-no-banco";
 import { empilharEdicao, type RegistroDeEdicao } from "./edicao-de-pedido";
 import { telefoneDeVerdade, paraEnvioWhatsApp } from "./telefone";
+import { CANAIS_DA_LOJA, funilDoCliente, pedidoEhDoCliente } from "./pedido-do-cliente";
 import {
   itensEmTexto,
   mensagemDaResposta,
@@ -93,30 +94,50 @@ const JANELA_DO_PEDIDO_ATIVO_MS = 12 * 60 * 60 * 1000;
 const STATUS_FORA = ["CRIANDO_IA", "ENTREGUE", "CANCELADO", "CANCELED", "RECUSADO", "REJEITADO", "ENCERRADO", "CONCLUIDO", "FINALIZADO", "AGUARDANDO_PAGAMENTO"];
 
 /**
- * O pedido mais recente deste telefone nesta loja, ainda não entregue, feito
- * pelo robô ou pelo site (os canais da loja; o de iFood/99 não se altera daqui)
- * nas últimas 12 h — com o acréscimo que estiver esperando a loja.
+ * O pedido mais recente DESTE CLIENTE nesta loja, ainda não entregue, feito
+ * pelo robô, pelo site ou no balcão (os canais da loja; o de iFood/99 não se
+ * altera daqui) nas últimas 12 h — com o acréscimo que estiver esperando a loja.
+ *
+ * Quem decide se o pedido é do cliente é `pedidoEhDoCliente`
+ * (lib/pedido-do-cliente.ts): mesmo telefone, ou telefone com um dígito errado
+ * e o mesmo primeiro nome — o cliente que digitou o número errado no site
+ * também é reconhecido. `nomes` = o nome do WhatsApp e o do cadastro.
  */
-export async function pedidoAtivoDoTelefone(franchiseeId: string, telefone: string) {
-  const digitos = String(telefone || "").replace(/\D/g, "");
-  if (digitos.length < 8) return null;
-  const final8 = digitos.slice(-8);
+export async function pedidoAtivoDoTelefone(
+  franchiseeId: string,
+  telefone: string,
+  nomes: Array<string | null | undefined> = []
+) {
+  const { final4, primeirosNomes } = funilDoCliente({ telefone, nomes });
+  if (!final4) return null;
   const desde = new Date(Date.now() - JANELA_DO_PEDIDO_ATIVO_MS);
-  // O telefone fica gravado com máscara: a comparação é só pelos dígitos
-  // (o mesmo cuidado de lib/cashback-no-banco.ts).
-  const ids = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT "id" FROM "CustomerOrder"
+  // Funil no banco: o telefone fica gravado com máscara (a comparação é só
+  // pelos dígitos, o mesmo cuidado de lib/cashback-no-banco.ts), e o nome sem
+  // acento. Quem decide é `pedidoEhDoCliente`, logo abaixo.
+  const nomesLike = primeirosNomes.map((n) => n + "%");
+  const candidatos = await prisma.$queryRaw<{ id: string; customerPhone: string | null; customerName: string | null }[]>`
+    SELECT "id", "customerPhone", "customerName" FROM "CustomerOrder"
     WHERE "franchiseeId" = ${franchiseeId}
       AND "createdAt" >= ${desde}
-      AND regexp_replace(COALESCE("customerPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + final8}
+      AND (
+        regexp_replace(COALESCE("customerPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + final4}
+        OR lower(translate(COALESCE("customerName", ''),
+             'ÁÀÂÃÄáàâãäÉÈÊËéèêëÍÌÎÏíìîïÓÒÔÕÖóòôõöÚÙÛÜúùûüÇç',
+             'AAAAAaaaaaEEEEeeeeIIIIiiiiOOOOOoooooUUUUuuuuCc')) LIKE ANY (${nomesLike}::text[])
+      )
     ORDER BY "createdAt" DESC
-    LIMIT 10`;
-  if (!ids.length) return null;
+    LIMIT 30`;
+  const comoReconheceu = new Map<string, "telefone" | "parecido">();
+  for (const c of candidatos) {
+    const como = pedidoEhDoCliente(c, { telefone, nomes });
+    if (como) comoReconheceu.set(c.id, como);
+  }
+  if (!comoReconheceu.size) return null;
   const pedidos = await prisma.customerOrder.findMany({
     where: {
-      id: { in: ids.map((r) => r.id) },
+      id: { in: Array.from(comoReconheceu.keys()) },
       status: { notIn: STATUS_FORA },
-      source: { in: ["WHATSAPP_IA", "SITE"] },
+      source: { in: CANAIS_DA_LOJA },
       ifoodOrderId: null,
       openDeliveryOrderId: null,
       tableSessionId: null,
@@ -128,7 +149,7 @@ export async function pedidoAtivoDoTelefone(franchiseeId: string, telefone: stri
   const pedido = pedidos[0];
   if (!pedido) return null;
   const pendente = await acrescimoPendenteDoPedido(pedido.id);
-  return { pedido, pendente };
+  return { pedido, pendente, comoReconheceu: comoReconheceu.get(pedido.id)! };
 }
 
 async function acrescimoPendenteDoPedido(orderId: string): Promise<Linha | null> {
@@ -156,11 +177,13 @@ export async function registrarAcrescimo(o: {
   remoteJid?: string | null;
   numeroDoPedido: unknown;
   itens: ItemDoAcrescimo[];
+  /** O nome do WhatsApp e o do cadastro: os mesmos com que o robô achou o pedido. */
+  nomes?: Array<string | null | undefined>;
 }): Promise<ResultadoDoRegistro> {
   if (!o.itens.length) return { ok: false, motivo: "nenhum item do acréscimo existe no cardápio" };
   if (!(await garantirTabelaDeAcrescimos())) return { ok: false, motivo: "tabela de acréscimos indisponível" };
 
-  const ativo = await pedidoAtivoDoTelefone(o.franchiseeId, o.telefone);
+  const ativo = await pedidoAtivoDoTelefone(o.franchiseeId, o.telefone, o.nomes || []);
   if (!ativo) return { ok: false, motivo: "o cliente não tem pedido em andamento hoje" };
   const { pedido, pendente } = ativo;
   const numeroPedido = String(o.numeroDoPedido ?? "").replace(/\D/g, "");

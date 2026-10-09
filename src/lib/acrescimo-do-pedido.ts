@@ -100,6 +100,12 @@ export type PedidoAtivo = {
   taxaDeEntrega: number;
   /** Já há um acréscimo esperando a resposta da loja. */
   acrescimoPendente?: string | null;
+  /**
+   * O pedido foi achado pelo NOME, com o telefone um dígito diferente do
+   * WhatsApp (lib/pedido-do-cliente.ts) — quase sempre número digitado errado
+   * no site. O robô confirma com o cliente antes de tratar o pedido como dele.
+   */
+  outroTelefone?: { nome: string; telefone: string } | null;
 };
 
 /**
@@ -114,7 +120,13 @@ export function pedidoAtivoParaOPrompt(p: PedidoAtivo): string {
   const numeroNaTag = typeof p.numero === "number" ? String(p.numero) : JSON.stringify(String(n));
   const cabecalho =
     `📦 ESTE CLIENTE JÁ TEM UM PEDIDO HOJE: nº ${n}, feito há ${p.minutos} min, ${statusParaOCliente(p.status)}.\n` +
-    `Itens: ${p.itens}. Total: ${reais(p.total)}.`;
+    `Itens: ${p.itens}. Total: ${reais(p.total)}.` +
+    (p.outroTelefone
+      ? `
+Este pedido está no nome de "${p.outroTelefone.nome}" com o telefone ${p.outroTelefone.telefone}, um dígito diferente deste WhatsApp ` +
+        `(o número foi digitado errado no pedido). Na primeira resposta sobre ele, confirme: "É o pedido nº ${n}, no nome de ${p.outroTelefone.nome}?". ` +
+        `Se o cliente disser que não é dele, ignore este pedido e atenda normalmente.`
+      : "");
 
   if (situacao === "SAIU") {
     return (

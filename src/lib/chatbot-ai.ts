@@ -33,6 +33,7 @@ import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, motivoForaDoCardapio, t
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
+import { pedidoEhDoCliente, primeiroNomeDe } from "./pedido-do-cliente";
 import { ehNumeroDoDono } from "./numeros-do-dono";
 import { horaDaLoja, inicioDoExpedienteDaLoja } from "./fuso";
 import { ehSoUmaSaudacao, ehPrimeiraMensagemDoDia, linkDoCardapioDaLoja, mensagemDeBoasVindasDoDia } from "./saudacao-do-dia";
@@ -299,6 +300,12 @@ export async function processChatbotAI(
     // hífen, contíguos, e casam em qualquer formato. Quem decide de verdade é o
     // filtro em memória logo abaixo, que compara dígito a dígito.
     orderOrConditions.push({ customerPhone: { contains: clientPhoneDigits.slice(-4) } });
+    // E pelo primeiro nome do WhatsApp: o cliente que errou um dos quatro
+    // últimos dígitos no site (lib/pedido-do-cliente.ts) só é achado por ele.
+    const primeiroDoWhatsApp = String(pushName || "").trim().split(/\s+/)[0] || "";
+    if (primeiroNomeDe(primeiroDoWhatsApp)) {
+      orderOrConditions.push({ customerName: { startsWith: primeiroDoWhatsApp, mode: "insensitive" } });
+    }
   }
 
   for (const numStr of extractedNumbers) {
@@ -422,7 +429,9 @@ export async function processChatbotAI(
         }
       },
       orderBy: { createdAt: "desc" },
-      take: 5,
+      // Folga para o funil pelo nome: outro "Carlos" do dia não pode empurrar
+      // o pedido deste cliente para fora. O filtro abaixo deixa só os dele.
+      take: 15,
     }) : Promise.resolve([]),
     clientPhoneDigits ? prisma.storeCustomer.findMany({
       where: {
@@ -457,6 +466,8 @@ export async function processChatbotAI(
     if (!clientPhoneDigits) return true;
     const orderPhone = (o.customerPhone || "").replace(/\D/g, "");
     if (orderPhone && orderPhone.includes(clientPhoneDigits.slice(-8))) return true;
+    // Telefone com um dígito errado e o mesmo primeiro nome (lib/pedido-do-cliente.ts).
+    if (pedidoEhDoCliente(o, { telefone: clientPhoneDigits, nomes: [pushName, customerRecord?.name] })) return true;
     if (extractedNumbers.some((num: string) => o.ifoodReference === num || o.openDeliveryReference === num || o.id.includes(num))) return true;
     return false;
   });
@@ -748,7 +759,7 @@ export async function processChatbotAI(
       // sempre, que deixa o robô alterar direto.
       let blocoDoPedidoAtivo = "";
       try {
-        const ativo = await pedidoAtivoDoTelefone(targetFranchiseeId, clientPhoneDigits);
+        const ativo = await pedidoAtivoDoTelefone(targetFranchiseeId, clientPhoneDigits, [pushName, customerRecord?.name, rawCustomerName]);
         const jaNaMemoria = ativo && candidatosValidos(daConversa as any, agoraDaMemoria).some((p) => p.id === ativo.pedido.id);
         if (ativo && !jaNaMemoria) {
           const p = ativo.pedido;
@@ -766,6 +777,8 @@ export async function processChatbotAI(
             entrega: String(p.deliveryType || "").toUpperCase() === "DELIVERY",
             taxaDeEntrega: Number(p.deliveryFee) || 0,
             acrescimoPendente: ativo.pendente ? itensEmTexto(ativo.pendente.itens) : null,
+            // Achado pelo nome, com o telefone do pedido um dígito diferente.
+            outroTelefone: ativo.comoReconheceu === "parecido" ? { nome: p.customerName || "", telefone: p.customerPhone || "" } : null,
           });
         }
       } catch (e: any) {
@@ -2739,6 +2752,9 @@ async function syncAiOrderToDatabase({
       remoteJid: remoteJid ?? null,
       numeroDoPedido: acrescentarAoPedido,
       itens: itensDoAcrescimo,
+      // O cliente que digitou o telefone errado no site é achado pelo nome
+      // (lib/pedido-do-cliente.ts) — o mesmo nome com que o prompt o achou.
+      nomes: [customerName, payload?.customerName, payload?.nome],
     });
     if (r.ok) {
       return r.repetido
