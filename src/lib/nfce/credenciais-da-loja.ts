@@ -124,6 +124,16 @@ export function qrCodeDaLoja(config: unknown, ambiente: 1 | 2): ConfiguracaoDoQr
 
 // ── O responsável técnico ────────────────────────────────────────────────────
 
+/**
+ * As UF em que a SEFAZ RECUSA a NFC-e sem o grupo infRespTec (rejeição 972),
+ * desde 07/05/2019: AL, AM, MS, PE, PR, SC e TO. Nas outras o grupo é
+ * facultativo ("implementação futura", sem data). Levantado em 09/10/2026
+ * (NT 2018.005; oobj.com.br/bc/rejeicao-972-como-resolver). O emissor manda
+ * o grupo sempre que FH_RESP_TEC_* está completo — a lista serve para a
+ * conferência avisar ANTES da primeira nota, e só onde dói.
+ */
+export const UFS_QUE_EXIGEM_RESP_TEC = new Set(["AL", "AM", "MS", "PE", "PR", "SC", "TO"]);
+
 let avisouRespTec = false;
 
 export function responsavelTecnico(env: Record<string, string | undefined> = process.env): ResponsavelTecnico | null {

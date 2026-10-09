@@ -18,9 +18,13 @@ import {
   formasEmTexto,
   lerFormasPorIntegracao,
   modoDaEmissao,
+  motivoDoTetoSemDocumento,
   porQueSemNota,
   resumoDaEmissao,
+  tetoSemDocumento,
+  vendaAcimaDoTetoSemDocumento,
   DOCUMENTO_NAO_PEDIDO,
+  TETO_SEM_DOCUMENTO_NACIONAL,
 } from "../src/lib/fiscal-modo";
 import { aplicarFormularioFiscal, type ConfigFiscalGravada } from "../src/lib/fiscal-config";
 import { rotuloDoCampoFiscal } from "../src/lib/textos-da-tela-fiscal";
@@ -158,6 +162,30 @@ confere(
   ["modoDaEmissao", "formasPorIntegracao", "cpfNaEntrega"].map((c) => rotuloDoCampoFiscal(c) !== c),
   [true, true, true]
 );
+
+console.log("\n— O teto da NFC-e sem CPF, por UF (W16-40, rejeição 750) —");
+confere("teto nacional é R$ 10.000", [tetoSemDocumento("SP"), tetoSemDocumento(""), tetoSemDocumento(undefined), TETO_SEM_DOCUMENTO_NACIONAL], [10_000, 10_000, 10_000, 10_000]);
+confere("UF com teto próprio (PE, MT 1.000 · RJ 2.000 · TO 3.000 · SE 5.000), em qualquer caixa", [tetoSemDocumento("pe"), tetoSemDocumento("MT"), tetoSemDocumento(" rj "), tetoSemDocumento("TO"), tetoSemDocumento("SE")], [1_000, 1_000, 2_000, 3_000, 5_000]);
+confere(
+  "venda de R$ 2.000 no RJ sem CPF: passa do teto; com CPF, não; em SP só a partir de 10.000",
+  [
+    vendaAcimaDoTetoSemDocumento({ valorTotal: 2000, documentoDoCliente: null }, { uf: "RJ" }),
+    vendaAcimaDoTetoSemDocumento({ valorTotal: 2000, documentoDoCliente: "52998224725" }, { uf: "RJ" }),
+    vendaAcimaDoTetoSemDocumento({ valorTotal: 1999.99, documentoDoCliente: null }, { uf: "RJ" }),
+    vendaAcimaDoTetoSemDocumento({ valorTotal: 2000, documentoDoCliente: null }, { uf: "SP" }),
+    vendaAcimaDoTetoSemDocumento({ valorTotal: "10000", documentoDoCliente: "00000000000" }, { uf: "SP" }),
+  ],
+  [true, false, false, false, true]
+);
+confere("o motivo diz o valor da UF e a rejeição", /2\.000/.test(motivoDoTetoSemDocumento("RJ")) && /750/.test(motivoDoTetoSemDocumento("RJ")), true);
+{
+  const configRj = { enabled: true, autoEmitPaymentMethods: ["PIX"], uf: "RJ" };
+  const pedidoGrande = { paymentMethod: "PIX", status: "DELIVERED", deliveryType: "PICKUP", totalAmount: 2500, customerCpfCnpj: null };
+  const porque = porQueSemNota(configRj, pedidoGrande);
+  confere("porQueSemNota: retirada de R$ 2.500 no RJ sem CPF é 'falta_documento' com o motivo do teto", [porque?.tipo, /2\.000/.test(porque?.texto ?? "")], ["falta_documento", true]);
+  const comCpf = porQueSemNota(configRj, { ...pedidoGrande, customerCpfCnpj: "52998224725" });
+  confere("…e com CPF o motivo não é o documento", comCpf?.tipo !== "falta_documento", true);
+}
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 if (falhas > 0) process.exit(1);

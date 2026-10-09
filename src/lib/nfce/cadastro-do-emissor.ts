@@ -508,7 +508,7 @@ export function prontidaoDoEmissor(
       detalhe:
         extras.responsavelTecnicoOk !== false
           ? "Configurado no servidor do FireHub."
-          : "O FireHub ainda não configurou o responsável técnico (infRespTec) no servidor: em vários estados a SEFAZ recusa a nota sem ele (rejeição 972). É com o suporte do FireHub, não com a loja.",
+          : `O FireHub ainda não configurou o responsável técnico (infRespTec) no servidor. ${["AL", "AM", "MS", "PE", "PR", "SC", "TO"].includes(uf) ? `A SEFAZ-${uf} recusa a nota sem ele (rejeição 972)` : "Em AL, AM, MS, PE, PR, SC e TO a SEFAZ recusa a nota sem ele (972); na sua UF ele é facultativo"}. É com o suporte do FireHub, não com a loja.`,
     },
     {
       chave: "homologacao",

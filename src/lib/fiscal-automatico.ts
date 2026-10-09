@@ -117,6 +117,8 @@ import {
   nomeDaIntegracao,
   MOTIVO_DA_EMISSAO_MANUAL,
   MOTIVO_DA_ENTREGA_SEM_DOCUMENTO,
+  motivoDoTetoSemDocumento,
+  vendaAcimaDoTetoSemDocumento,
 } from "./fiscal-modo";
 
 // Reexportados: quem já importava daqui (e a frente 2, para consultar e
@@ -863,17 +865,26 @@ export async function emitirNfceAutomatica(orderId: string): Promise<ResultadoAu
     // fiscalInfo vazio) e a tela mostra "Falta CPF"; a pessoa emite pelo
     // pedido quando o cliente informar. Só grava se ninguém escreveu a nota
     // no meio (a trava de nota viva e o fiscalInfo lido).
-    if (entregaSemDocumento(nota, config)) {
+    //
+    // O mesmo vale para a venda que passa do teto da UF sem CPF (W16-40,
+    // rejeição 750 — R$ 1.000 em PE e MT, 2.000 no RJ…): não vai, fica
+    // "Falta CPF" e sai quando a pessoa digitar o documento.
+    const semDocumento = entregaSemDocumento(nota, config)
+      ? MOTIVO_DA_ENTREGA_SEM_DOCUMENTO
+      : vendaAcimaDoTetoSemDocumento(nota, config)
+        ? motivoDoTetoSemDocumento(config.uf)
+        : null;
+    if (semDocumento) {
       await prisma.customerOrder.updateMany({
         where: { AND: [{ id: order.id }, SEM_NOTA_VIVA, oMesmoFiscalInfo(order.fiscalInfo)] },
         data: {
           fiscalInfo: {
             ...semMarcasDaTentativaAnterior(fiscalAtual),
-            semNotaAutomatica: { motivo: MOTIVO_DA_ENTREGA_SEM_DOCUMENTO, falta: "documento", em: new Date().toISOString() },
+            semNotaAutomatica: { motivo: semDocumento, falta: "documento", em: new Date().toISOString() },
           } as Prisma.InputJsonValue,
         },
       });
-      return foraDaAutomatica(MOTIVO_DA_ENTREGA_SEM_DOCUMENTO);
+      return foraDaAutomatica(semDocumento);
     }
     alvo.nota = dadosDaNota(nota);
 

@@ -183,6 +183,41 @@ export const MOTIVO_DA_ENTREGA_SEM_DOCUMENTO =
 export const MOTIVO_DA_EMISSAO_MANUAL =
   "A loja emite as notas à mão (Fiscal → Configurações → Como a nota é emitida): emita pelo pedido.";
 
+// ── O VALOR ACIMA DO QUAL A NFC-e PRECISA DO CPF ─────────────────────────────
+
+/**
+ * Teto da NFC-e sem identificar o consumidor (regra W16-40, rejeição 750).
+ * Nacional: R$ 10.000; desde 15/06/2026 a tabela é por UF (NT 2026.002), e
+ * algumas UF já cobravam o CPF bem antes disso por lei estadual. Valores de
+ * 09/10/2026 (notagateway.com.br/blog/valor-maximo-nfc-e, 10/06/2025 — fonte
+ * de terceiros; a rejeição 750 é a régua final): PE 1.000, MT 1.000,
+ * RJ 2.000, TO 3.000, SE 5.000; o resto fica no teto nacional. Acima do teto
+ * a venda presencial também pede o CPF, igual à entrega — uma mesa de 30
+ * pessoas no Rio passa de R$ 2.000 fácil.
+ */
+export const TETO_SEM_DOCUMENTO_NACIONAL = 10_000;
+export const TETO_SEM_DOCUMENTO_POR_UF: Record<string, number> = { PE: 1_000, MT: 1_000, RJ: 2_000, TO: 3_000, SE: 5_000 };
+
+export function tetoSemDocumento(uf: unknown): number {
+  const sigla = String(uf ?? "").trim().toUpperCase();
+  return TETO_SEM_DOCUMENTO_POR_UF[sigla] ?? TETO_SEM_DOCUMENTO_NACIONAL;
+}
+
+/** A venda chega ao teto da UF e não tem CPF/CNPJ? Vale para presencial e entrega. */
+export function vendaAcimaDoTetoSemDocumento(
+  nota: { valorTotal?: number | string | null; documentoDoCliente?: string | null },
+  config: { uf?: unknown } | null | undefined
+): boolean {
+  const valor = Number(nota.valorTotal) || 0;
+  if (valor < tetoSemDocumento(config?.uf)) return false;
+  return documentoDeVerdade(nota.documentoDoCliente) === null;
+}
+
+/** O motivo gravado em `semNotaAutomatica` quando a venda passa do teto sem CPF. */
+export const motivoDoTetoSemDocumento = (uf: unknown): string =>
+  `Falta o CPF/CNPJ do cliente: a partir de R$ ${tetoSemDocumento(uf).toLocaleString("pt-BR")} a SEFAZ só aceita a NFC-e com o consumidor identificado (rejeição 750). ` +
+  "Quando o cliente informar, digite o documento e emita.";
+
 // ── POR QUE O PEDIDO NÃO TEM NOTA ───────────────────────────────────────────
 
 export type SemNotaPorque = {
@@ -202,6 +237,7 @@ export type PedidoSemNota = PedidoParaForma & {
   deliveryType?: string | null;
   tableSessionId?: string | null;
   customerCpfCnpj?: string | null;
+  totalAmount?: number | string | null;
   source?: string | null;
   openDeliveryChannel?: string | null;
   openDeliveryOrderId?: string | null;
@@ -231,6 +267,7 @@ export function porQueSemNota(
     momentoDaEmissao?: unknown;
     entregaComoPresencial?: unknown;
     emissaoLigadaEm?: unknown;
+    uf?: unknown;
   } | null | undefined,
   pedido: PedidoSemNota,
   agora: number = Date.now()
@@ -257,6 +294,9 @@ export function porQueSemNota(
   const entrega = String(pedido.deliveryType ?? "").trim().toUpperCase() === "DELIVERY";
   if (entregaSemDocumento({ entregaEmDomicilio: entrega, documentoDoCliente: pedido.customerCpfCnpj ?? null }, config)) {
     return { tipo: "falta_documento", texto: MOTIVO_DA_ENTREGA_SEM_DOCUMENTO };
+  }
+  if (vendaAcimaDoTetoSemDocumento({ valorTotal: pedido.totalAmount ?? 0, documentoDoCliente: pedido.customerCpfCnpj ?? null }, config)) {
+    return { tipo: "falta_documento", texto: motivoDoTetoSemDocumento(config?.uf) };
   }
   const momento = momentoDaEmissao(config);
   if (!deveEmitirNoStatus(pedido, momento)) {

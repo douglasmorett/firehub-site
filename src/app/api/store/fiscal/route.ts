@@ -15,7 +15,7 @@ import {
 import type { Problema } from "@/lib/fiscal-validacao";
 import { tokenDeRevenda } from "@/lib/focus-empresas";
 import { configDoEmissorProprio, usaEmissorProprio } from "@/lib/nfce/config-da-loja";
-import { responsavelTecnico } from "@/lib/nfce/credenciais-da-loja";
+import { responsavelTecnico, UFS_QUE_EXIGEM_RESP_TEC } from "@/lib/nfce/credenciais-da-loja";
 import {
   aplicarFormularioDoEmissor,
   conferirComEmissorProprio,
@@ -136,7 +136,21 @@ function configParaTela(config: ConfigFiscalGravada) {
  * conferirComEmissorProprio).
  */
 function conferir(config: ConfigFiscalGravada): Problema[] {
-  return conferirComEmissorProprio(pendenciasParaEmitir(configParaConferencia(config)), config);
+  const base = conferirComEmissorProprio(pendenciasParaEmitir(configParaConferencia(config)), config);
+  // O responsável técnico é do servidor, não da loja — mas na UF que recusa a
+  // nota sem ele (972) a loja não pode ligar achando que vai emitir. A
+  // pendência diz que é com o FireHub; nas outras UF o checklist só avisa.
+  const uf = String(config.uf ?? "").trim().toUpperCase();
+  if (!RESPONSAVEL_TECNICO_OK && usaEmissorProprio(config) && UFS_QUE_EXIGEM_RESP_TEC.has(uf)) {
+    base.push({
+      campo: "responsavelTecnico",
+      valor: null,
+      mensagem:
+        `A SEFAZ-${uf} recusa a NFC-e sem o responsável técnico do software (rejeição 972), e o servidor do FireHub ` +
+        "ainda não tem esse cadastro (FH_RESP_TEC_*). Isso é com o suporte do FireHub, não com a loja — avise.",
+    });
+  }
+  return base;
 }
 
 async function lojaDaSessao() {

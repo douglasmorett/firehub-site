@@ -19,7 +19,7 @@ import {
 } from "@/lib/textos-da-tela-fiscal";
 import { documentoDeVerdade, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import ComoANotaEEmitida from "./ComoANotaEEmitida";
-import { formasEmTexto, modoDaEmissao, type IntegracaoDaNota } from "@/lib/fiscal-modo";
+import { formasEmTexto, modoDaEmissao, tetoSemDocumento, type IntegracaoDaNota } from "@/lib/fiscal-modo";
 import { listaDaEmissaoAutomatica } from "@/lib/fiscal-momento";
 
 type FiscalConfig = {
@@ -1391,11 +1391,17 @@ ${dados.aviso}` : "")
   // O documento do modal de emissão: obrigatório na ENTREGA (a nota vai com
   // presença 4, e a SEFAZ recusa sem CPF/CNPJ — 787), opcional no resto. A
   // mesa é presencial e a loja que declara a entrega como presencial também.
+  // E acima do teto da UF (W16-40, rejeição 750: R$ 1.000 em PE e MT, 2.000
+  // no RJ, 10.000 no resto) o CPF é obrigatório em qualquer venda.
+  const modalPassaDoTeto = Boolean(
+    selectedOrderForEmit && (Number((selectedOrderForEmit as { totalAmount?: unknown }).totalAmount) || 0) >= tetoSemDocumento(fiscalConfig.uf)
+  );
   const documentoObrigatorioNoModal = Boolean(
     selectedOrderForEmit &&
-      !selectedOrderForEmit.tableSessionId &&
-      String(selectedOrderForEmit.deliveryType || "").toUpperCase() === "DELIVERY" &&
-      fiscalConfig.entregaComoPresencial !== true
+      ((!selectedOrderForEmit.tableSessionId &&
+        String(selectedOrderForEmit.deliveryType || "").toUpperCase() === "DELIVERY" &&
+        fiscalConfig.entregaComoPresencial !== true) ||
+        modalPassaDoTeto)
   );
   const problemaNoDocumentoDoModal = problemaDoDocumento(emitCpfInput);
   const documentoDoModalServe = !problemaNoDocumentoDoModal && (!documentoObrigatorioNoModal || emitCpfInput.trim() !== "");
@@ -3274,9 +3280,11 @@ ${dados.aviso}` : "")
                   qualquer pedido — na entrega não é: sem CPF/CNPJ a SEFAZ
                   recusa a nota (787/788) e a pessoa só descobria no erro. */}
               <div style={{ background: "#FFF4EF", border: "1px solid #FFD3C2", borderRadius: 10, padding: "12px", marginBottom: 16, fontSize: "0.82rem", color: "#9A3412", lineHeight: 1.4 }}>
-                {documentoObrigatorioNoModal
-                  ? <>Pedido de <strong>entrega</strong>: a SEFAZ só aceita a nota com o <strong>CPF ou CNPJ</strong> e o endereço do cliente. Pergunte ao cliente e digite abaixo — sem o documento, a nota da entrega não sai.</>
-                  : <>Retirada, balcão, mesa e totem saem como <strong>operação presencial</strong>: o CPF/CNPJ é <strong>opcional</strong>. Informe se o cliente pedir — é o que permite a ele usar a nota depois.</>}
+                {modalPassaDoTeto
+                  ? <>Venda de <strong>{fmt(Number((selectedOrderForEmit as { totalAmount?: unknown }).totalAmount) || 0)}</strong>: a partir de <strong>{fmt(tetoSemDocumento(fiscalConfig.uf))}</strong> a SEFAZ{fiscalConfig.uf ? `-${String(fiscalConfig.uf).toUpperCase()}` : ""} só aceita a NFC-e com o <strong>CPF ou CNPJ</strong> do cliente (rejeição 750). Pergunte ao cliente e digite abaixo.</>
+                  : documentoObrigatorioNoModal
+                    ? <>Pedido de <strong>entrega</strong>: a SEFAZ só aceita a nota com o <strong>CPF ou CNPJ</strong> e o endereço do cliente. Pergunte ao cliente e digite abaixo — sem o documento, a nota da entrega não sai.</>
+                    : <>Retirada, balcão, mesa e totem saem como <strong>operação presencial</strong>: o CPF/CNPJ é <strong>opcional</strong>. Informe se o cliente pedir — é o que permite a ele usar a nota depois.</>}
               </div>
 
               <p style={{ fontSize: "0.9rem", color: "#1E293B", margin: "0 0 16px", lineHeight: 1.5 }}>
@@ -3289,7 +3297,7 @@ ${dados.aviso}` : "")
                   enquanto se digita: errado, a SEFAZ recusaria depois. */}
               <div style={{ marginBottom: 20 }}>
                 <label htmlFor="fiscal-emitir-documento" style={{ fontSize: "0.75rem", fontWeight: 700, color: "#1C1917", display: "block", marginBottom: 4 }}>
-                  {documentoObrigatorioNoModal ? "CPF ou CNPJ do cliente (obrigatório na entrega)" : "CPF ou CNPJ na nota (opcional)"}
+                  {modalPassaDoTeto ? "CPF ou CNPJ do cliente (obrigatório acima do teto da UF)" : documentoObrigatorioNoModal ? "CPF ou CNPJ do cliente (obrigatório na entrega)" : "CPF ou CNPJ na nota (opcional)"}
                 </label>
                 <input
                   id="fiscal-emitir-documento"
@@ -3302,7 +3310,7 @@ ${dados.aviso}` : "")
                   style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: `2px solid ${problemaNoDocumentoDoModal ? "#B71C1C" : "#1C1917"}`, fontSize: "0.88rem", outline: "none" }}
                 />
                 <span id="fiscal-emitir-documento-ajuda" style={{ display: "block", fontSize: "0.72rem", marginTop: 4, color: problemaNoDocumentoDoModal ? "#B71C1C" : "#64748B" }}>
-                  {problemaNoDocumentoDoModal || (documentoObrigatorioNoModal && !emitCpfInput.trim() ? "Sem o documento a nota da entrega não sai." : " ")}
+                  {problemaNoDocumentoDoModal || (documentoObrigatorioNoModal && !emitCpfInput.trim() ? modalPassaDoTeto ? "Sem o documento a SEFAZ recusa a nota deste valor." : "Sem o documento a nota da entrega não sai." : " ")}
                 </span>
               </div>
 

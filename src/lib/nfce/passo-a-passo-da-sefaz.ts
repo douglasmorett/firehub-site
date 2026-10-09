@@ -140,7 +140,7 @@ export const PASSO_A_PASSO_DO_EMISSOR: Record<string, PassoAPasso> = {
       { rotulo: "Portal de homologação (CSC de teste)", url: "https://www.homologacao.nfce.fazenda.sp.gov.br/" },
     ],
     avisos: [
-      "A FAQ da SEFAZ-SP lista \"ter um equipamento SAT ativo\" entre os requisitos para credenciar a NFC-e. Se a loja nunca teve SAT, confirme com o contador se o credenciamento sai ANTES de contar com a nota pelo FireHub.",
+      "Não precisa de SAT: a exigência de \"equipamento SAT ativo\" (CAT 12/2015) foi revogada pela Portaria SRE 34/2023, e desde 01/01/2026 a NFC-e é o documento do varejo paulista (SRE 79/2024, fim do SAT em 31/12/2025). A FAQ antiga do portal ainda cita o SAT — ignore. Basta o e-CNPJ A1 e o CSC.",
       CSC_NO_NAVEGADOR,
       SERIE_NOVA,
     ],
