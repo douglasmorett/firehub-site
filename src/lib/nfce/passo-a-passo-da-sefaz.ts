@@ -12,8 +12,9 @@
  * agora ele fica no cofre do FireHub. Em 09/10/2026, quando o emissor passou a
  * atender as 27 UF, entraram mais 18 (SP, CE, RS, GO, BA, PR, PE, SC, PI, MT,
  * MA, ES, RN, TO, PB, AM, MS, RO), pelos portais oficiais de cada SEFAZ; as
- * que só tinham guia de terceiros (PI, MA, RN) avisam. AC, AL, AP, RR e SE
- * ficam no genérico.
+ * que só tinham guia de terceiros (PI, MA, RN) avisam. Na segunda rodada do
+ * mesmo dia entraram AC, AL, AP, RR e SE — as 27 têm guia. O genérico fica
+ * só para UF inexistente.
  *
  * Puro (sem imports): a tela importa.
  */
@@ -408,6 +409,101 @@ export const PASSO_A_PASSO_DO_EMISSOR: Record<string, PassoAPasso> = {
       "Em Rondônia o CSC de produção vale também para homologação: cadastre o mesmo ID e código nos dois ambientes aqui no FireHub.",
       SERIE_NOVA,
     ],
+  },
+
+  // ── As últimas cinco (09/10/2026, segunda rodada). Nenhuma gera o CSC na
+  // SVRS: a SVRS só autoriza; o CSC nasce no sistema de cada estado.
+  AC: {
+    uf: "AC",
+    titulo: "Acre — SEFAZ-AC (Sefaz Online)",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciamento",
+        texto:
+          "Pedido à SEFAZ-AC (Decreto 7.668/2021: a pedido do contribuinte ou de ofício). Na prática é feito na agência da Fazenda, com requerimento e os documentos da empresa — e a senha do Sefaz Online é habilitada lá.",
+      },
+      { titulo: "Gerar o CSC", texto: "No Sefaz Online (sefazonline.ac.gov.br), entrando com a senha habilitada na SEFAZ → menu NFC-e → gerar o CSC de homologação e o de produção." },
+    ],
+    links: [{ rotulo: "Sefaz Online (SEFAZ-AC)", url: "https://sefazonline.ac.gov.br/sefazonline/" }],
+    avisos: ["O Portal DF-e do Acre (dfe.sefaz.ac.gov.br) é só consulta e aponta para a SVRS — o CSC não sai dele.", FONTE_DE_TERCEIROS, SERIE_NOVA],
+  },
+  AL: {
+    uf: "AL",
+    titulo: "Alagoas — SEFAZ-AL (Portal NFC-e)",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciamento",
+        texto: "Automático: desde a IN SEF 56/2024 a SEFAZ-AL credencia de ofício todo contribuinte com inscrição (CACEAL) ativa. O MEI que quiser emitir pede pelo NISE.",
+      },
+      {
+        titulo: "Gerar o CSC",
+        texto:
+          "No Portal NFC-e → \"Acesso ao Sistema\": usuário é o CACEAL sem o dígito e a senha é a do Portal do Contribuinte (habilitada na Unidade Fazendária). Aba Cadastro → gerar/verificar o CSC de produção e o de homologação.",
+      },
+    ],
+    links: [
+      { rotulo: "Portal NFC-e SEFAZ-AL", url: "https://www.sefaz.al.gov.br/nfce" },
+      { rotulo: "Acesso ao Sistema (CSC)", url: "https://nfce.sefaz.al.gov.br/sca_default_login_page" },
+    ],
+    avisos: ["A página antiga \"nfce-credenciamento\" (e-mail + processo com taxa) é de antes da IN 56/2024 e não vale mais.", SERIE_NOVA],
+  },
+  AP: {
+    uf: "AP",
+    titulo: "Amapá — SEFAZ-AP (SEFAZ Virtual / SATE)",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciamento",
+        texto: "Pedido online: SEFAZ Virtual → menu NFC-e → \"Credenciamento NFC-e\" (e \"Consultar Credenciamento\" para acompanhar). O acesso é com usuário externo do SATE, que só o sócio ou o contador de empresa ativa consegue (CPF e e-mail já cadastrados na SEFAZ).",
+      },
+      { titulo: "Gerar o CSC", texto: "Depois da liberação, no mesmo menu NFC-e → \"Gerar CSC\" (e \"Consultar CSC\") — um para cada ambiente. O SATE aceita usuário/senha ou certificado digital." },
+    ],
+    links: [
+      { rotulo: "SEFAZ Virtual (AP) — Gerar CSC", url: "https://virtual.sefaz.ap.gov.br/" },
+      { rotulo: "SATE (SEFAZ-AP)", url: "https://www.sefaz.ap.gov.br/sate/" },
+    ],
+    avisos: ["O site da SEFAZ-AP abre com aviso de certificado inválido no navegador — é do site deles, não da sua empresa.", SERIE_NOVA],
+  },
+  RR: {
+    uf: "RR",
+    titulo: "Roraima — SEFAZ-RR",
+    passos: [
+      CERTIFICADO,
+      { titulo: "Credenciamento", texto: "Pedido à SEFAZ-RR pelo Portal do Contribuinte (Portaria 768/2014 obriga a NFC-e, mas não detalha o caminho)." },
+      {
+        titulo: "Gerar o CSC",
+        texto: "Na área restrita do portal estadual da NFC-e, entrando com a Inscrição Estadual e a senha do contribuinte (a mesma do SIATE). A SVRS autoriza a nota de Roraima, mas o CSC não sai dela.",
+      },
+    ],
+    links: [
+      { rotulo: "SEFAZ-RR", url: "https://www.sefaz.rr.gov.br" },
+      { rotulo: "Consulta pública da NFC-e (SVRS)", url: "https://dfe-portal.svrs.rs.gov.br/NFCe" },
+    ],
+    avisos: [
+      "Roraima é o estado com menos informação publicada: a página de login antiga do portal da NFC-e saiu do ar. Antes de começar, confirme o caminho com o Plantão Fiscal da SEFAZ-RR, (95) 2121-9095.",
+      FONTE_DE_TERCEIROS,
+      SERIE_NOVA,
+    ],
+  },
+  SE: {
+    uf: "SE",
+    titulo: "Sergipe — SEFAZ-SE (Portal NFC-e)",
+    passos: [
+      CERTIFICADO,
+      {
+        titulo: "Credenciamento",
+        texto: "Quem não foi credenciado de ofício pede por e-mail a nfe@sefaz.se.gov.br, com CNPJ, Inscrição Estadual e razão social (Portaria 312/2014; costuma sair em um dia útil).",
+      },
+      {
+        titulo: "Gerar o CSC",
+        texto:
+          "Homologação: no portal, Serviços → \"Código de Segurança do Contribuinte\" → Manutenção de CSC – Homologação (gera, consulta e inutiliza pelo CNPJ, sem login). Produção: pedido por e-mail a nfce@sefaz.se.gov.br informando o CNPJ, ou pela Área Restrita do portal com o certificado digital.",
+      },
+    ],
+    links: [{ rotulo: "Portal NFC-e SEFAZ-SE", url: "https://nfce.sefaz.se.gov.br/" }],
+    avisos: ["A Área Restrita do portal não tem autocadastro: o acesso e o CSC de produção andam por e-mail com a SEFAZ-SE.", FONTE_DE_TERCEIROS, SERIE_NOVA],
   },
 };
 

@@ -421,10 +421,10 @@ console.log("\n— o passo a passo por UF");
   ], [true, true, true, true, true, true, true, true]);
   confere("RJ, PA e MG têm o passo a passo próprio", [JSON.stringify(passoAPassoDaUf("RJ")).includes("fazenda.rj.gov.br/dfe"), JSON.stringify(passoAPassoDaUf("PA")).includes("Cadastro Software NFC-e"), JSON.stringify(passoAPassoDaUf("MG")).includes("SIARE")], [true, true, true]);
   confere("UF que não existe: o genérico", passoAPassoDaUf("ZZ").titulo, "Seu estado");
-  // 09/10/2026: as UF onde há loja vendendo têm o guia próprio, com link do portal.
-  const comGuia = ["SP", "CE", "RS", "GO", "BA", "PR", "PE", "SC", "PI", "MT", "MA", "ES", "RN", "TO", "PB", "AM", "MS", "RO"];
+  // 09/10/2026: as 27 UF têm o guia próprio, com link do portal.
+  const comGuia = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"];
   confere(
-    "as 18 UF novas têm passo a passo próprio, com pelo menos um link oficial (gov.br)",
+    "as 27 UF têm passo a passo próprio, com pelo menos um link oficial (gov.br)",
     comGuia.filter((uf) => {
       const g = passoAPassoDaUf(uf);
       return g.titulo === "Seu estado" || g.links.length === 0 || !g.links.every((l) => /\.gov\.br/.test(l.url)) || g.passos.length < 3;
