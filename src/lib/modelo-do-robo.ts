@@ -47,6 +47,19 @@ const ENTREGA_EM_ANDAMENTO = /\b(cade|demor\w*|saiu|chegou|chegando|chega|entreg
  * O modelo da resposta. Na dúvida, o de pedido: errar para o caro custa
  * centavos; errar para o barato pode perder um pedido.
  */
+/**
+ * TUDO NO 3.6 (Douglas, 09/10/2026: "bota tudo no 3.6 então").
+ *
+ * Com o prompt enxuto e em cache, a divisão com o Lite passou a economizar
+ * R$ 35/mês somando as 37 lojas (simulação com o uso real de 30 dias:
+ * misto R$ 314, tudo no 3.6 R$ 349; loja maior, a Divinos, R$ 54) — e os
+ * juízes do A/B pegaram o Lite inventando status de pedido, negando chave Pix
+ * e disparando a regra bancária por engano. O roteador fica aqui, desligado,
+ * para o dia em que o preço do 3.6 dobrar (01/01/2027) e a conta precisar ser
+ * refeita.
+ */
+export const TUDO_NO_MODELO_DE_PEDIDO = true;
+
 export function escolherModeloDoRobo(entrada: {
   /** Há rascunho ou pedido ainda alterável deste cliente (memória do pedido no prompt). */
   temPedidoEmAndamento: boolean;
@@ -55,8 +68,11 @@ export function escolherModeloDoRobo(entrada: {
   temAudio?: boolean;
   /** A loja não anota pedido pelo robô: não há pedido para fechar. */
   anotaPedido?: boolean;
+  /** Só o teste usa: roteia de verdade, ignorando TUDO_NO_MODELO_DE_PEDIDO. */
+  rotearDeVerdade?: boolean;
 }): EscolhaDoModelo {
   const caro = (motivo: string): EscolhaDoModelo => ({ modelo: MODELO_DE_PEDIDO, motivo });
+  if (TUDO_NO_MODELO_DE_PEDIDO && !entrada.rotearDeVerdade) return caro("tudo no 3.6");
   if (entrada.anotaPedido === false) return { modelo: MODELO_BARATO, motivo: null };
   // Áudio: o que o cliente disse só se sabe ouvindo — pode ser o pedido inteiro.
   if (entrada.temAudio) return caro("áudio");

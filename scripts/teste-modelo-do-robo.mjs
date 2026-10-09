@@ -17,8 +17,10 @@ const { escolherModeloDoRobo, MODELO_BARATO, MODELO_DE_PEDIDO } = await import("
 let falhas = 0;
 const bot = (text) => ({ sender: "bot", text });
 const user = (text) => ({ sender: "user", text });
+// Desde 09/10/2026 tudo vai ao 3.6 (TUDO_NO_MODELO_DE_PEDIDO); o roteador é
+// testado "de verdade" para continuar certo no dia em que voltar a ser usado.
 function espera(nome, entrada, modelo) {
-  const r = escolherModeloDoRobo({ temPedidoEmAndamento: false, historico: [], ...entrada });
+  const r = escolherModeloDoRobo({ temPedidoEmAndamento: false, historico: [], rotearDeVerdade: true, ...entrada });
   if (r.modelo === modelo) { console.log(`  ok    ${nome}${r.motivo ? ` (${r.motivo})` : ""}`); return; }
   falhas++;
   console.log(`  FALHA ${nome} — veio ${r.modelo} (${r.motivo}), esperado ${modelo}`);
@@ -65,6 +67,16 @@ espera("buzinando no portão", { mensagem: "To buzinando aqui" }, MODELO_DE_PEDI
 espera("tá demorando", { mensagem: "ta demorando muito" }, MODELO_DE_PEDIDO);
 espera("meu pedido chegou errado", { mensagem: "meu pedido veio errado" }, MODELO_DE_PEDIDO);
 espera("'que horas abre' continua no Lite", { mensagem: "que horas abre hoje?" }, MODELO_BARATO);
+
+console.log("\n6) Em produção, tudo vai ao 3.6 (09/10/2026)");
+{
+  const r = escolherModeloDoRobo({ temPedidoEmAndamento: false, historico: [], mensagem: "oi" });
+  if (r.modelo === MODELO_DE_PEDIDO && r.motivo === "tudo no 3.6") console.log("  ok    'oi' sem rotearDeVerdade → 3.6 (tudo no 3.6)");
+  else { falhas++; console.log(`  FALHA 'oi' sem rotearDeVerdade — veio ${r.modelo} (${r.motivo})`); }
+  const d = escolherModeloDoRobo({ temPedidoEmAndamento: false, historico: [], mensagem: "quero 2 x tudo", anotaPedido: false });
+  if (d.modelo === MODELO_DE_PEDIDO) console.log("  ok    loja que não anota pedido também vai ao 3.6");
+  else { falhas++; console.log(`  FALHA loja que não anota — veio ${d.modelo}`); }
+}
 
 console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);
