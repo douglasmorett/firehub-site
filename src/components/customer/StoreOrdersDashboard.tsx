@@ -3850,8 +3850,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       );
                     })}
                   </div>
-                  <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: "6px" }}>
-                    {impressoraDaReimpressao ? "Sai o pedido inteiro só nesta impressora." : "Cada impressora imprime os itens dela, como na primeira vez."}
+                  {/* Uma linha só: frase curta e sem quebra (Douglas, 09/10). */}
+                  <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {impressoraDaReimpressao ? "Pedido inteiro só nesta impressora." : "Cada impressora com os itens dela."}
                   </div>
                 </div>
               )}
