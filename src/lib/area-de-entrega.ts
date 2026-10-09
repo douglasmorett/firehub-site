@@ -173,6 +173,13 @@ export type VeredictoDeEntrega = {
    * nos leitores, para veredito que chegue sem este campo.
    */
   semPontoDaLoja?: boolean;
+  /**
+   * true = loja por bairro e o cliente NÃO disse o bairro: no endereço digitado
+   * não há pedaço que seja bairro ("W 5 travessa Francisca casa 12"). É
+   * DESCONHECIDO, não FORA — quem lê pergunta o bairro em vez de recusar
+   * (lib/entrega-do-robo.ts `avaliarEntregaDoRobo`).
+   */
+  faltaBairro?: boolean;
 };
 
 export function normalizarTexto(texto: unknown): string {

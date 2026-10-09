@@ -321,6 +321,25 @@ export type AvaliadorDaEntrega = (pedido: {
 }) => Promise<VeredictoDeEntrega>;
 
 /**
+ * Loja por bairro e o cliente não disse o bairro: "não sei", não "fora".
+ *
+ * O motor casa o bairro cadastrado também dentro do texto corrido; sem casar,
+ * respondia FORA com o endereço inteiro no lugar do bairro. Pizzaria 17
+ * (09/10/2026): "W 5 travessa Francisca casa 12" virou "não entregamos na W 5"
+ * — a cliente repetiu com "Lagomar" no fim e era bairro atendido. FORA fica
+ * para quando há um bairro (o campo, ou um pedaço do endereço que é bairro) e
+ * ele não está na lista.
+ */
+export function semBairroInformado(
+  veredito: VeredictoDeEntrega,
+  pedido: { bairro?: string | null; partes?: PartesDoEndereco },
+): VeredictoDeEntrega {
+  if (veredito.modo !== "BAIRRO" || veredito.resultado !== "FORA") return veredito;
+  if (String(pedido.bairro || "").trim() || String(pedido.partes?.neighborhood || "").trim()) return veredito;
+  return { ...veredito, resultado: "DESCONHECIDO", faltaBairro: true, motivo: "bairro não informado" };
+}
+
+/**
  * A avaliação da entrega do robô — a MESMA na cotação da conversa e na
  * gravação do pedido, para a taxa não mudar no fechamento (R1).
  *
@@ -345,7 +364,7 @@ export async function avaliarEntregaDoRobo(
   const base = { endereco: pedido.endereco, bairro: pedido.bairro ?? null, partes: pedido.partes };
   const texto = String(pedido.textoDepoisDoPonto || "").trim();
   if (!gps || !texto) {
-    return { veredito: await avaliar({ ...base, coords: gps }), coords: gps, trocouPeloTexto: false };
+    return { veredito: semBairroInformado(await avaliar({ ...base, coords: gps }), pedido), coords: gps, trocouPeloTexto: false };
   }
   const [peloTexto, peloPonto] = await Promise.all([
     avaliar({ ...base, endereco: texto, coords: null }).catch(() => null),

@@ -275,5 +275,30 @@ console.log("\n11) Quem só mandou a localização: entrega ou retirada?");
   conferir("endereço digitado não é o de reserva", !ehEnderecoDaLocalizacao("Rua X, 10") && !ehEnderecoDaLocalizacao(null));
 }
 
+console.log("\n12) Loja por bairro, endereço sem bairro: pergunta o bairro, não recusa (Pizzaria 17, 09/10)");
+{
+  // O motor no modo BAIRRO: casa o bairro cadastrado no campo, nas partes ou no texto; senão FORA.
+  const lista = ["Lagomar", "Cavaleiros"];
+  const avaliar = async ({ endereco, bairro, partes }) => {
+    const achado = lista.find((b) => [bairro, partes?.neighborhood, endereco].some((t) => new RegExp(`\\b${b}\\b`, "i").test(String(t || ""))));
+    return achado
+      ? { modo: "BAIRRO", resultado: "ATENDE", taxa: 3, tempoMin: 40, bairro: achado, motivo: `bairro cadastrado: ${achado}` }
+      : { modo: "BAIRRO", resultado: "FORA", taxa: null, tempoMin: null, motivo: `bairro não cadastrado (${bairro || partes?.neighborhood || endereco})` };
+  };
+  const pelaConversa = (texto) => avaliarEntregaDoRobo(avaliar, { endereco: texto, partes: partesDoEnderecoDigitado(texto, "MACAE"), gps: null });
+  const semBairro = (await pelaConversa("W 5 travessa Francisca casa 12")).veredito;
+  conferir("'W 5 travessa Francisca casa 12': falta o bairro, não é FORA", semBairro.resultado === "DESCONHECIDO" && semBairro.faltaBairro === true, semBairro);
+  const comBairro = (await pelaConversa("W 5 travessa Francisca casa 12 Lagomar")).veredito;
+  conferir("com 'Lagomar' no fim: ATENDE com a taxa do bairro", comBairro.resultado === "ATENDE" && comBairro.taxa === 3 && !comBairro.faltaBairro, comBairro);
+  const outroBairro = (await pelaConversa("W 5 travessa Francisca casa 12 Imboassica")).veredito;
+  conferir("bairro dito e fora da lista: continua FORA", outroBairro.resultado === "FORA" && !outroBairro.faltaBairro, outroBairro);
+  const peloCampo = (await avaliarEntregaDoRobo(avaliar, { endereco: "Rua A, 10", bairro: "Imboassica", gps: null })).veredito;
+  conferir("bairro no campo da tag e fora da lista: FORA", peloCampo.resultado === "FORA", peloCampo);
+  const explicito = (await pelaConversa("Rua A, 10, bairro Imboassica")).veredito;
+  conferir("'bairro Imboassica' escrito: FORA", explicito.resultado === "FORA", explicito);
+  const km = (await avaliarEntregaDoRobo(async () => ({ modo: "KM", resultado: "FORA", taxa: null, tempoMin: null, motivo: "longe" }), { endereco: "Rua A, 10", gps: null })).veredito;
+  conferir("loja por km: FORA sem bairro continua FORA", km.resultado === "FORA" && !km.faltaBairro, km);
+}
+
 console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

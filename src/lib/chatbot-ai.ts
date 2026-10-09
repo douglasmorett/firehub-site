@@ -1090,6 +1090,15 @@ export async function processChatbotAI(
 - Diga com gentileza que a loja não entrega nesse endereço${v.modo === "KM" && !v.areaDeRisco && !v.foraDoLimite && distancia?.limite ? ` (fica a ${distancia.distancia}; ${distancia.limite})` : ""}${aceitaRetirada ? " e ofereça RETIRADA no balcão" : ""}. Se o cliente tiver outro endereço, peça e valide de novo.${v.peloBairro ? `
 - Essa distância foi medida pelo CENTRO DO BAIRRO (o mapa não achou a rua). Se o cliente disser que mora na parte do bairro mais perto da loja, peça a LOCALIZAÇÃO dele (${COMO_MANDAR_A_LOCALIZACAO}) — com ela o sistema mede de novo.` : ""}
 `;
+      } else if (v.faltaBairro) {
+        // Loja por bairro e o endereço veio sem bairro: recusar era errar
+        // (Pizzaria 17, 09/10/2026: "não entregamos na W 5" para o Lagomar).
+        addressValidationText = `
+🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
+- A loja entrega POR BAIRRO e o cliente ainda NÃO disse o bairro (rua e número sozinhos não dizem o bairro).
+- RESULTADO: ❓ FALTA O BAIRRO. É PROIBIDO dizer que a loja não entrega nesse endereço ou nessa rua, cotar taxa ou finalizar a entrega.
+- Pergunte o BAIRRO, numa frase só, antes de qualquer outra coisa: "Qual é o seu bairro? 😊" Com o bairro o sistema confere a área e a taxa na hora.
+`;
       } else if (pedirLocalizacao === "desconhecido") {
         // R2: em KM/ROTA (e área desenhada), "não sei" nunca vira "faixa mais
         // cara". O dado que resolve é o ponto do aparelho do cliente.
@@ -3050,6 +3059,21 @@ async function syncAiOrderToDatabase({
         customerName: finalCustomerName,
       });
     if (vereditoDaArea.resultado === "DESCONHECIDO") {
+      // ── LOJA POR BAIRRO, ENDEREÇO SEM BAIRRO ────────────────────────────
+      // Falta um dado que só o cliente tem: pergunta, sem segurar o pedido
+      // nem chamar atendente. A resposta dele refaz a conferência.
+      if (vereditoDaArea.faltaBairro) {
+        console.warn(
+          `[Chatbot AI Order Sync] 🏘️ Pedido aguardando o BAIRRO: endereço sem bairro em loja por bairro. ` +
+          `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} end="${payload.address}"`
+        );
+        return {
+          gravado: false,
+          motivo: "endereço sem bairro — perguntando o bairro ao cliente",
+          regraDeNegocio: true,
+          mensagemParaOCliente: `Só falta uma coisinha: qual é o seu bairro? 😊 Com ele eu confiro a taxa de entrega na hora.`,
+        };
+      }
       // ── A LOJA SEM PONTO NO MAPA ────────────────────────────────────────
       // Sem pino e sem endereço da loja que o mapa ache, não há de onde medir:
       // a localização do cliente não resolve (o motor devolve o mesmo "não
