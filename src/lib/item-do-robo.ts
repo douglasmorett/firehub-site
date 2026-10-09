@@ -76,12 +76,19 @@ export type EscolhasDoItem = {
 
 /** minúsculas, sem acento, só letra e número — a mesma chave que chatbot-ai usa para casar nomes. */
 export function chaveDeNome(texto: unknown): string {
-  return String(texto ?? "")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
+  return (
+    String(texto ?? "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      // "Frango C/ Requeijão" e "Frango com Requeijão" são o mesmo sabor: o
+      // cadastro abrevia, o modelo escreve por extenso (Divinos, 09/10/2026).
+      // Dos dois lados, então a igualdade continua igualdade.
+      .replace(/\bc\b/g, "com")
+      .replace(/\bs\b/g, "sem")
+  );
 }
 
 const LIMITE_DA_OBSERVACAO = 500;

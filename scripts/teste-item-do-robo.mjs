@@ -153,6 +153,19 @@ igual("palavra que não existe em sabor nenhum", escolhasDoItem({ options: ["1/2
 igual("borda não casada não deixa a pergunta OPCIONAL incompleta", escolhasDoItem({ options: ["1/2 Pizza Frango I", "1/2 Pizza Calabresa", "borda de cheddar"] }, deeds).grupoIncompleto, null);
 igual("sem opção nenhuma não é 'incompleta' (piso de sempre)", escolhasDoItem({ options: [] }, deeds).grupoIncompleto, null);
 
+console.log("\n4d) 'c/' do cadastro e 'com' do modelo são a mesma coisa (Divinos, 09/10/2026)");
+const familia = {
+  name: "Pizza Familia 40cm 16 fatias",
+  comboGroups: [{ id: "g_sabores", title: "Sabores", minQty: 2, maxQty: 2, items: [
+    { additionalPrice: 0, menuProduct: { name: "Frango C/ Requeijão" } },
+    { additionalPrice: 0, menuProduct: { name: "Frango com Cheddar" } },
+    { additionalPrice: 0, menuProduct: { name: "Calabresa S/ Cebola" } },
+  ] }],
+};
+igual("'1/2 Frango com Requeijão' casa com 'Frango C/ Requeijão'", escolhasDoItem({ options: ["1/2 Frango com Requeijão"] }, familia).comboSelections, { g_sabores: { "Frango C/ Requeijão": 1 } });
+igual("'calabresa sem cebola' casa com 'Calabresa S/ Cebola'", escolhasDoItem({ options: ["calabresa sem cebola"] }, familia).comboSelections, { g_sabores: { "Calabresa S/ Cebola": 1 } });
+igual("chaveDeNome normaliza c/ e s/", chaveDeNome("Frango C/ Requeijão S/ Cebola"), "frango com requeijao sem cebola");
+
 console.log("\n5) Bordas");
 igual("options ausente", escolhasDoItem({ name: "Pizza" }, pizza).comboSelections, null);
 igual("options não-array", escolhasDoItem({ options: "calabresa" }, pizza).comboSelections, null);

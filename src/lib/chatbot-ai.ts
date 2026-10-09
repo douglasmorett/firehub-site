@@ -1301,19 +1301,18 @@ COMO LER A CONVERSA: a primeira mensagem do usuário é um bloco "════ C
       // tentativa ele ia na última mensagem, junto da fala do cliente — e o
       // modelo tratava o bloco como novidade: repetia o nome, o cupom e o link
       // que o histórico mostrava já ditos (A/B de 09/10/2026, 5 casos em 61).
-      const situacaoDaLoja = estadoAtualDaLoja.aberta
-        ? `ABERTA${estadoAtualDaLoja.fechaAs ? ` (fecha às ${estadoAtualDaLoja.fechaAs})` : ""}`
-        : `FECHADA — ${estadoAtualDaLoja.texto} Não anote nem feche pedido agora.`;
+      // A situação aberta/fechada NÃO entra aqui de propósito: repetida no
+      // contexto (A/B v2 de 09/10/2026) o modelo passou a avisar "estamos
+      // fechados" em agradecimento e a inventar hora de abrir. O topo da
+      // instrução de sistema (instrucaoDeHorario) já cuida disso.
       const contextoDaConversa = `════ CONTEXTO DESTA CONVERSA ════ (montado pelo sistema — não é fala do cliente; não repita nem mencione)
-
-- Situação da loja agora: ${situacaoDaLoja}
 
 DADOS DO CLIENTE CONVERSANDO AGORA:
 - Primeiro Nome: ${customerFirstName || "NÃO INFORMADO"}
 - Telefone: ${clientPhoneDigits || "Não informado"}
 
 REGRAS CRÍTICAS DE NOME E IDENTIFICAÇÃO DO CLIENTE:
-1. ${customerFirstName ? `O nome CONFIRMADO deste cliente no banco da loja é "${customerFirstName}". Cumprimente-o com simpatia pelo nome!` : `O nome deste cliente NÃO FOI INFORMADO e NÃO CONSTA no cadastro. Você está RIGOROSAMENTE PROIBIDO de inventar, supor ou usar qualquer nome! Cumprimente SEMPRE usando apenas "Oi!", "Olá!", "Boa noite!", "Tudo bem?". NUNCA chame por nenhum nome se ele não estiver confirmado!`}
+1. ${customerFirstName ? `O nome confirmado deste cliente no cadastro da loja é "${customerFirstName}". Use-o só na PRIMEIRA resposta da conversa: se o histórico já tem uma saudação pelo nome, não repita o nome nem a saudação.` : `O nome deste cliente NÃO FOI INFORMADO e NÃO CONSTA no cadastro. Você está RIGOROSAMENTE PROIBIDO de inventar, supor ou usar qualquer nome! Cumprimente SEMPRE usando apenas "Oi!", "Olá!", "Boa noite!", "Tudo bem?". NUNCA chame por nenhum nome se ele não estiver confirmado!`}
 2. PROIBIÇÃO ABSOLUTA DE ATRIBUIR PEDIDOS DE OUTROS: Se o cliente veio de um anúncio (ex: "Olá! Posso ter mais informações sobre isso?"), pergunta "quero fazer pedido" ou se não possui pedido cadastrado no seu número de telefone hoje, NUNCA diga que ele tem um pedido em preparação ou em entrega! Acolha a pessoa com simpatia, ofereça ajuda e ENVIE O LINK DO CARDÁPIO DIGITAL DA LOJA: ${storeLink}
 ${phoneInstruction ? `\n${phoneInstruction}\n` : ""}${wasInactivityCancelled ? `
 RETORNO APÓS INATIVIDADE DE 20 MINUTOS (MUITO IMPORTANTE!):
