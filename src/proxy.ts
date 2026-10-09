@@ -179,13 +179,18 @@ export async function proxy(request: NextRequest) {
 
   // ─── DOMÍNIO PRÓPRIO DA LOJA → CARDÁPIO NO FIREHUB ────────────────────────
   // O lojista registrou o domínio dele (Registro.br, DNS apontando para o
-  // servidor do FireHub) e quer que ele abra o cardápio. É REDIRECT, não
-  // rewrite: o login do cliente, o cashback e os links do pedido moram em
-  // firehubfood.com.br, e servir o cardápio em outro host quebraria a sessão.
-  // O domínio também precisa estar cadastrado no app do Coolify (HTTPS).
+  // servidor do FireHub) e quer que o cliente veja SÓ esse domínio. Igual à
+  // Icebox: a raiz é rewrite para o cardápio e o resto (/loja/<slug>/pedido,
+  // /api, /_next, /uploads) segue no mesmo host. O cardápio não usa o
+  // NextAuth nem endereço fixo do FireHub, e nenhuma API recusa pela origem
+  // (lib/cors.ts só monta cabeçalho), então funciona fora de firehubfood.
+  // O domínio também precisa estar em Domains do app no Coolify (HTTPS), e o
+  // link do robô sai de chatbotConfig.externalMenuUrl.
   const lojaDoDominio = DOMINIOS_DE_LOJA[hostSemPorta.replace(/^www\./, "")];
-  if (lojaDoDominio) {
-    return NextResponse.redirect(`https://firehubfood.com.br/loja/${lojaDoDominio}${request.nextUrl.search}`, 301);
+  if (lojaDoDominio && (pathname === "/" || pathname === "")) {
+    const url = request.nextUrl.clone();
+    url.pathname = `/loja/${lojaDoDominio}`;
+    return NextResponse.rewrite(url);
   }
 
   // ─── CORS preflight for API routes ───
