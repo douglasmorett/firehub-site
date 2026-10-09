@@ -560,7 +560,14 @@ export async function printOrder(
    * com via do entregador, sai só ela (é o cupom completo, com o QR); sem via,
    * cada impressora imprime com valores, mesmo a que tem modelo sem valores.
    */
-  cupomCompleto = false
+  cupomCompleto = false,
+  /**
+   * Reimpressão numa impressora escolhida no modal do painel (o `name` dela).
+   * Sai o pedido INTEIRO só nela, como o `impressoraAlvo` da fila da nuvem:
+   * quem escolhe a impressora escolhe onde o papel aparece, não o roteamento.
+   * Vazio = como sempre, cada impressora com os itens dela.
+   */
+  impressoraEscolhida?: string
 ): Promise<{ success: boolean; printed: number; attempted: boolean; aguardando: boolean }> {
   const baseUrl = await getAssistantUrl();
   if (!baseUrl) return { success: false, printed: 0, attempted: false, aguardando: false };
@@ -646,7 +653,12 @@ export async function printOrder(
   // fila, roteamento-de-impressao.ts → umaPorImpressora).
   const uniquePrinters = umaPorImpressora(printersToUse);
 
-  if (cupomCompleto && !semValores) {
+  const escolhida = impressoraEscolhida
+    ? todasAsImpressoras.find(p => String(p.name || "").trim() === impressoraEscolhida.trim())
+    : undefined;
+  if (impressoraEscolhida && !escolhida?.name) return { success: false, printed: 0, attempted: true, aguardando: false };
+
+  if (cupomCompleto && !semValores && !escolhida) {
     const via = impressoraDaViaDoEntregador(todasAsImpressoras, order as any, []);
     if (via) {
       const r = await imprimirViaDoEntregador(via);
@@ -662,21 +674,22 @@ export async function printOrder(
   // Quem ficou com itens do pedido: é onde a via do entregador sai (abaixo).
   const receberam: { nome: string; itens: number }[] = [];
 
-  for (const printer of uniquePrinters) {
+  for (const printer of escolhida ? [escolhida] : uniquePrinters) {
     if (!printer.name) continue;
 
-    const daImpressora = itensDaImpressora(printer, pedidoParaRotear, pedidas);
+    // Impressora escolhida na mão: o pedido inteiro, sem filtro de categoria.
+    const daImpressora = escolhida ? null : itensDaImpressora(printer, pedidoParaRotear, pedidas);
     // Nada deste pedido é desta impressora: o bar não recebe a comanda do
     // burger. (Antes saía o pedido inteiro — ver roteamento-de-impressao.ts.)
-    if (daImpressora === null) continue;
-    const itemsToPrint = daImpressora.map(i => i.item);
+    if (daImpressora === null && !escolhida) continue;
+    const itemsToPrint = daImpressora ? daImpressora.map(i => i.item) : order.items;
     receberam.push({ nome: printer.name, itens: itensQueContamParaAVia(itemsToPrint) });
 
     // O que foi para as outras impressoras, para o papel desta dizer "Em outra
     // impressora (2 itens)" em vez de "Outros valores do pedido" (mesma regra
     // da fila da nuvem, lib/roteamento-de-impressao.ts). A de bebida recebe o
     // pedido inteiro e não imprime valores: não tem resto.
-    const resto = printer.somenteBebidas ? undefined : restoDoPedido(order.items, itemsToPrint);
+    const resto = printer.somenteBebidas || escolhida ? undefined : restoDoPedido(order.items, itemsToPrint);
     const filteredOrder = { ...order, items: itemsToPrint, ...(resto ? { restoDoPedido: resto } : {}) };
 
     // ── CAMPANHA "CONVERTER PARA SITE PRÓPRIO" ────────────────────────────
@@ -710,7 +723,8 @@ export async function printOrder(
       // O botão "Cupom da cozinha" força sem valores em todas; o modelo da
       // impressora ("Cozinha sem valores") força só nela.
       semValoresAqui,
-      printer.somenteBebidas === true,
+      // Na escolhida sai o pedido inteiro: o "só bebidas" dela não corta o papel.
+      printer.somenteBebidas === true && !escolhida,
       printer.separarItens === true,
       qrLigadoNaImpressora(printer, printerConfig as any),
       campanha,
@@ -736,7 +750,7 @@ export async function printOrder(
   // mais na impressora marcada — a mesma regra da fila da nuvem. O id com
   // sufixo é o que impede o Assistente de tomá-la por segunda via da comanda
   // que acabou de sair na mesma impressora. O "Cupom da cozinha" não a leva.
-  const daVia = semValores ? null : impressoraDaViaDoEntregador(todasAsImpressoras, order as any, receberam);
+  const daVia = semValores || escolhida ? null : impressoraDaViaDoEntregador(todasAsImpressoras, order as any, receberam);
   if (daVia) {
     const via = await imprimirViaDoEntregador(daVia);
     if (via.aguardando) aguardando = true;

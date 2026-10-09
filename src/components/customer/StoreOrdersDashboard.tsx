@@ -2065,7 +2065,35 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     return guardada?.config || printerConfig;
   };
 
-  const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false, semValores = false) => {
+  // ── EM QUAL IMPRESSORA REIMPRIMIR (o modal do botão Imprimir) ────────────
+  // "" = todas, como o pedido sai sozinho (cada impressora com os itens dela).
+  // As impressoras são as da loja DO PEDIDO (em "Todas as lojas" pode ser irmã).
+  const [impressoraDaReimpressao, setImpressoraDaReimpressao] = useState("");
+  const [impressorasDoModal, setImpressorasDoModal] = useState<{ nome: string; rotulo: string }[]>([]);
+  useEffect(() => {
+    setImpressoraDaReimpressao("");
+    setImpressorasDoModal([]);
+    const order = printSelectOrderId ? orders.find((o: any) => o.id === printSelectOrderId) : null;
+    if (!order) return;
+    let vivo = true;
+    void configDaLojaDoPedido(order).then((c: any) => {
+      if (!vivo) return;
+      const vistas = new Set<string>();
+      const lista: { nome: string; rotulo: string }[] = [];
+      for (const p of Array.isArray(c?.printers) ? c.printers : []) {
+        const nome = String(p?.name || "").trim();
+        // A mesma impressora em duas linhas vale uma vez (a primeira, como a fila).
+        if (!nome || vistas.has(nome)) continue;
+        vistas.add(nome);
+        lista.push({ nome, rotulo: String(p?.label || "").trim() || nome });
+      }
+      setImpressorasDoModal(lista);
+    });
+    return () => { vivo = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printSelectOrderId]);
+
+  const handlePrint = async (order: any, type: "cozinha" | "completo" = "cozinha", isManual = false, semValores = false, impressoraEscolhida?: string) => {
     if (!order) return;
     if (order.status === "CRIANDO_IA") {
       showToast("⚠️ O pedido ainda está sendo montado pela IA no WhatsApp. Aguarde a finalização para imprimir.", "#B45309");
@@ -2248,7 +2276,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     try {
       const { printOrder } = await import("@/lib/print");
       // "Cupom Completo" no botão é um papel só, com valores (lib/print.ts).
-      const result = await printOrder(comanda as any, storeName, activeConfig, {}, isManual, semValores, isManual && type === "completo");
+      const result = await printOrder(comanda as any, storeName, activeConfig, {}, isManual, semValores, isManual && type === "completo", isManual ? impressoraEscolhida : undefined);
       if (result.success) {
         showToast("✅ Comanda enviada para a impressora térmica!", "#0F766E");
         printedLocally = true;
@@ -2288,9 +2316,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           franchiseeId: user.ownerId || user.id,
           // O "Cupom da cozinha" pela nuvem também sai sem valores: o
           // Assistente lê `order.semValores` em todos os destinos.
-          order: semValores
-            ? { ...comanda, semValores: true }
-            : isManual && type === "completo" ? { ...comanda, cupomCompleto: true } : comanda,
+          order: {
+            ...(semValores
+              ? { ...comanda, semValores: true }
+              : isManual && type === "completo" ? { ...comanda, cupomCompleto: true } : comanda),
+            // Impressora escolhida no modal: o pedido inteiro só nela (print-queue, impressoraAlvo).
+            ...(isManual && impressoraEscolhida ? { impressoraAlvo: impressoraEscolhida } : {}),
+          },
           storeName,
           paperWidth: receiptPaperSize || "80mm",
         }),
@@ -3793,11 +3825,41 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "24px", width: "100%", maxWidth: "380px", boxShadow: "0 25px 60px rgba(0,0,0,0.3)", textAlign: "center" }}>
               <div style={{ fontSize: "2rem", marginBottom: "8px" }}>🖨️</div>
               <div style={{ fontWeight: 800, fontSize: "1.15rem", color: "#1E293B", marginBottom: "16px" }}>Como deseja imprimir o pedido?</div>
-              
+
+              {/* Em qual impressora: só aparece com mais de uma cadastrada. */}
+              {impressorasDoModal.length > 1 && (
+                <div style={{ textAlign: "left", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B", marginBottom: "6px" }}>Em qual impressora?</div>
+                  <div role="radiogroup" aria-label="Em qual impressora" style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                    {[{ nome: "", rotulo: "Todas" }, ...impressorasDoModal].map((imp) => {
+                      const marcada = impressoraDaReimpressao === imp.nome;
+                      return (
+                        <button
+                          key={imp.nome || "todas"}
+                          role="radio"
+                          aria-checked={marcada}
+                          onClick={() => setImpressoraDaReimpressao(imp.nome)}
+                          title={imp.nome ? `O pedido inteiro só na ${imp.rotulo}` : "Cada impressora com os itens dela, como o pedido sai sozinho"}
+                          style={{
+                            padding: "6px 12px", borderRadius: "999px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 700, fontFamily: "inherit",
+                            border: `1px solid ${marcada ? "#1C1917" : "#CBD5E1"}`, background: marcada ? "#1C1917" : "#fff", color: marcada ? "#fff" : "#334155",
+                          }}
+                        >
+                          {imp.rotulo}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: "6px" }}>
+                    {impressoraDaReimpressao ? "Sai o pedido inteiro só nesta impressora." : "Cada impressora imprime os itens dela, como na primeira vez."}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
                 <button
                   onClick={() => {
-                    handlePrint(order, "cozinha", true, true);
+                    handlePrint(order, "cozinha", true, true, impressoraDaReimpressao || undefined);
                     setPrintSelectOrderId(null);
                   }}
                   style={{ padding: "12px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#F8FAFC", color: "#334155", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
@@ -3806,7 +3868,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </button>
                 <button
                   onClick={() => {
-                    handlePrint(order, "completo", true);
+                    handlePrint(order, "completo", true, false, impressoraDaReimpressao || undefined);
                     setPrintSelectOrderId(null);
                   }}
                   style={{ padding: "12px", borderRadius: "10px", border: "none", background: "#1C1917", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
