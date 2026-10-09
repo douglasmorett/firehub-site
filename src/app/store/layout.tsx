@@ -37,6 +37,11 @@ const BOTAO_DA_FAIXA: React.CSSProperties = {
   borderRadius: 8, fontWeight: 700, fontSize: ".8rem", textDecoration: "none", whiteSpace: "nowrap",
 };
 
+// O painel se instala como app (ícone "Instalar" na barra do Chrome). O
+// manifesto mora só aqui, no admin e no login: no cardápio do cliente
+// (/loja/...) ele ofereceria instalar um app que abre no painel.
+export const metadata = { manifest: "/painel.webmanifest" };
+
 export default async function StoreLayout({ children }: { children: React.ReactNode }) {
   let session;
   try {

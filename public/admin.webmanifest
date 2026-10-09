@@ -1,0 +1,18 @@
+{
+  "id": "/admin",
+  "name": "FireHub Admin",
+  "short_name": "FireHub Admin",
+  "description": "Gestão das lojas do FireHub.",
+  "lang": "pt-BR",
+  "start_url": "/admin",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#DC2626",
+  "icons": [
+    { "src": "/app-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/app-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/app-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/app-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
