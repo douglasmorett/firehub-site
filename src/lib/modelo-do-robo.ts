@@ -35,6 +35,13 @@ const semAcento = (t: unknown) =>
 const ENDERECO = /localizacao enviada|\b(rua|r\.|av\.?|avenida|travessa|estrada|rodovia|beco|alameda|bairro|numero|casa|apto|apartamento|bloco|lote|quadra|cep)\b|\bn[º°o]\.?\s*\d|\d{5}-?\d{3}/;
 const PEDIDO = /\b(quero|queria|vou querer|vo querer|manda|me ve|me da|pedir|fazer (o |um )?pedido|encomendar|\d+\s*x|meio a meio|metade|sabor|sem (cebola|salada|tomate)|com (bacon|cheddar|catupiry)|troco|pix|cartao|dinheiro|debito|credito|retir|buscar|entrega(r)?|confirm|pode (mandar|fechar|ser)|fech(a|ado)|isso mesmo|ta certo|correto)\b/;
 const ROBO_PERGUNTOU = /endereco|forma de pagamento|pagamento|confirma|resumo|total|taxa|anot|r\$|reais|tamanho|sabor|qual (vai|voce)|retirada|entrega|troco/;
+// Entrega em andamento e atraso: no A/B de 09/10/2026 o Lite inventou "seu
+// pedido está em preparo" para quem não tinha pedido e "o motoboy está
+// chegando" sem pedido na rua. Mentira de status é a reclamação mais cara que
+// existe; essas perguntas vão ao 3.6, que lê o contexto direito. "Já está
+// preparando?" continua no Lite, que no A/B de 03/10 respondeu status tão bem
+// quanto o 3.6 — o problema é a situação com entregador, atraso e portão.
+const ENTREGA_EM_ANDAMENTO = /\b(cade|demor\w*|saiu|chegou|chegando|chega|entregador|motoboy|buzin\w*|interfone|portao|atras(o|ado|ada)?|previsao|rastre\w*)\b|meu pedido/;
 
 /**
  * O modelo da resposta. Na dúvida, o de pedido: errar para o caro custa
@@ -59,6 +66,7 @@ export function escolherModeloDoRobo(entrada: {
   if (!/[a-z]{2,}/.test(m)) return caro("sem palavras");
   if (ENDERECO.test(m)) return caro("endereço");
   if (PEDIDO.test(m)) return caro("pedido");
+  if (ENTREGA_EM_ANDAMENTO.test(m)) return caro("entrega em andamento");
   if (/^\s*\d+\s+\S/.test(m)) return caro("quantidade");
   const historico = Array.isArray(entrada.historico) ? entrada.historico : [];
   const ultimoDoRobo = [...historico].reverse().find((h) => h && h.sender !== "user");

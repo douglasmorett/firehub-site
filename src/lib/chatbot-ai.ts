@@ -1658,6 +1658,10 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           .replace(/\[\[(?!TRANSCRICAO|CHAMAR_ATENDENTE|ENVIAR_CARDAPIO)[\s\S]*?\]\]/g, "")
           .replace(/[ \t]{2,}/g, " ")
           .trim();
+        // A transcrição só existe para ÁUDIO. Depois de uma sequência de áudios
+        // o Lite punha a marca também na mensagem de texto (A/B de 09/10/2026):
+        // o webhook trocaria o texto do cliente pela "transcrição" dele mesmo.
+        if (!audioData?.base64) cleanText = cleanText.replace(/\[\[TRANSCRICAO[\s\S]*?\]\]\s*/g, "").trim();
 
         // As marcas que o modelo escreveu voltam aqui, na grafia que o webhook lê.
         if (modeloMandouCardapio) cleanText = `${cleanText}\n[[ENVIAR_CARDAPIO]]`.trim();

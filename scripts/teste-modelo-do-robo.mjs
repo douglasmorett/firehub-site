@@ -58,5 +58,13 @@ console.log("\n4) Loja que não anota pedido pelo robô: sempre o Lite");
 espera("pedido escrito, mas o robô não anota", { mensagem: "quero 2 x tudo", anotaPedido: false }, MODELO_BARATO);
 espera("áudio, mas o robô não anota", { mensagem: "", temAudio: true, anotaPedido: false }, MODELO_BARATO);
 
+console.log("\n5) Entrega em andamento e atraso (A/B de 09/10/2026: o Lite inventou status) → 3.6");
+espera("cadê meu pedido", { mensagem: "Cadê meu pedido?" }, MODELO_DE_PEDIDO);
+espera("o motoboy já saiu?", { mensagem: "O motoboy já saiu?" }, MODELO_DE_PEDIDO);
+espera("buzinando no portão", { mensagem: "To buzinando aqui" }, MODELO_DE_PEDIDO);
+espera("tá demorando", { mensagem: "ta demorando muito" }, MODELO_DE_PEDIDO);
+espera("meu pedido chegou errado", { mensagem: "meu pedido veio errado" }, MODELO_DE_PEDIDO);
+espera("'que horas abre' continua no Lite", { mensagem: "que horas abre hoje?" }, MODELO_BARATO);
+
 console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);
