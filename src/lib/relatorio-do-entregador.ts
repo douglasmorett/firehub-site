@@ -95,6 +95,12 @@ export async function montarRelatorioDosEntregadores(opts: {
       status: true,
       motoboyId: true,
       paymentMethod: true,
+      // A troca de pagamento pela linha da entrega (TrocaDePagamentoPainel)
+      // precisa da divisão e da prova de pago online (podeTrocarPagamento).
+      paymentMethods: true,
+      gatewayPaymentId: true,
+      // O rastro das edições: a linha marca "editado" e o "Ver pedido" mostra.
+      editHistory: true,
       changeAmount: true,
       items: true,
       notes: true,
@@ -258,6 +264,12 @@ export async function montarRelatorioDosEntregadores(opts: {
           customerPhone: o.customerPhone,
           customerAddress: o.customerAddress,
           paymentMethod: o.paymentMethod,
+          paymentMethods: o.paymentMethods,
+          gatewayPaymentId: o.gatewayPaymentId,
+          tableSessionId: o.tableSessionId,
+          deliveryType: "DELIVERY",
+          /** Quantas vezes o pedido foi mexido depois de lançado (editHistory). */
+          edicoes: Array.isArray(o.editHistory) ? o.editHistory.length : 0,
           status: o.status,
           /** Conta na corrida, sai do dinheiro — as telas marcam "CANCELADO". */
           cancelado,

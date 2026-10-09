@@ -762,7 +762,11 @@ function relatorioDoFechamento(
   if (d.entregadores.length > 0 || d.entregaParceira.qtd > 0 || d.semEntregador.qtd > 0) {
     titulo("Entregadores");
     for (const m of d.entregadores) {
-      linha(m.nome, vezes(m.entregas, "entrega", "entregas"));
+      // "Jobson 30 notas, e o valor dos pedidos das 30 do lado" (Delícia de
+      // Casa, 09/10/2026): o nome com as entregas, e à direita quanto valem
+      // os pedidos que ele levou, de todas as formas — as linhas abaixo abrem.
+      const valorDosPedidos = m.dinheiro + m.cartao + m.pix + m.online + m.outros;
+      linha(`${m.nome} (${vezes(m.entregas, "entrega", "entregas")})`, reais(valorDosPedidos), "valor dos pedidos");
       if (m.dinheiro > 0.01) linha("- Dinheiro recebido", reais(m.dinheiro), "prestar contas no caixa");
       if (m.cartao > 0.01) linha("- Cartao na maquininha", reais(m.cartao));
       if (m.pix > 0.01) linha("- Pix", reais(m.pix));

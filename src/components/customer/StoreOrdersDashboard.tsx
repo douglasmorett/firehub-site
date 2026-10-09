@@ -16,6 +16,7 @@ import { isStoreOpen } from "@/lib/store-hours";
 import { inicioDoExpedienteDaLoja, inicioDoDiaDaLoja } from "@/lib/fuso";
 import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 import { avaliarEdicao, podeEditarPedidos } from "@/lib/edicao-de-pedido";
+import { edicoesDosItens, lerHistorico, quandoFoi, ROTULO_DA_EDICAO } from "@/lib/historico-do-pedido";
 import { podeTerReposicao } from "@/lib/reposicao";
 import { aguardandoFimDoKds, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
@@ -2387,6 +2388,39 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     setViewReceiptOrderId(id);
   };
 
+  /**
+   * ── "VER PEDIDO" VINDO DE OUTRA TELA ──────────────────────────────────────
+   *
+   * O relatório de motoboys abre `?pedido=<id>&dia=AAAA-MM-DD` em outra aba:
+   * a loja quer a COMANDA de verdade, com Editar, Trocar pagamento e o
+   * histórico — não uma janela só de leitura com as mesmas informações
+   * (Douglas, 09/10/2026). O quadro mostra um dia, então o período vai para o
+   * dia do pedido; quando ele chega na lista, o modal abre e o endereço volta
+   * a ser o da tela de Pedidos (F5 não reabre).
+   */
+  const pedidoDoLinkRef = useRef<string | null>(null);
+  useEffect(() => {
+    try {
+      const busca = new URLSearchParams(window.location.search);
+      const id = busca.get("pedido");
+      if (!id) return;
+      pedidoDoLinkRef.current = id;
+      const dia = busca.get("dia");
+      if (dia && /^\d{4}-\d{2}-\d{2}$/.test(dia)) {
+        setDateFrom(`${dia}T00:00`);
+        setDateTo(`${dia}T23:59`);
+      }
+    } catch {}
+  }, []);
+  useEffect(() => {
+    const id = pedidoDoLinkRef.current;
+    if (!id || !orders.some((o: any) => o.id === id)) return;
+    pedidoDoLinkRef.current = null;
+    abrirRecibo(id);
+    try { window.history.replaceState(null, "", window.location.pathname); } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders]);
+
   /** Quem está logado, no formato que lib/edicao-de-pedido.ts espera. */
   const operadorDaEdicao = { role: user?.role, permissions: user?.permissions };
 
@@ -4263,6 +4297,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         const isDelivery = order.deliveryType === "DELIVERY";
         const seqNum = getDisplayOrderNumber(order);
         const subtotal = order.items?.reduce((sum: number, it: any) => sum + getItemEffectivePrice(it, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0) * it.quantity, 0) || order.totalAmount;
+        // O rastro do que foi mexido depois de lançado — gravado desde 15/09
+        // e, até 09/10/2026, sem tela nenhuma que mostrasse.
+        const historicoDoPedido = lerHistorico(order.editHistory);
+        const edicoesDoPedido = edicoesDosItens(order.editHistory);
 
         return (
           <div onClick={() => setViewReceiptOrderId(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 10003, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
@@ -4307,6 +4345,35 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </div>
                 );
               })()}
+
+              {/* ── HISTÓRICO DE ALTERAÇÕES ─────────────────────────────────
+                  Tudo o que foi mexido depois de lançado — itens, pagamento,
+                  taxa, desconto, tipo —, com quem, quando e o total antes e
+                  depois. É o que o dono consulta quando o pedido fecha
+                  diferente do que entrou (Douglas, 09/10/2026). */}
+              {historicoDoPedido.length > 0 && (
+                <details style={{ background: "#FFFBEB", border: "1.5px solid #FCD34D", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontFamily: "system-ui, sans-serif" }}>
+                  <summary style={{ cursor: "pointer", fontWeight: 800, fontSize: "0.82rem", color: "#92400E" }}>
+                    ✏️ Pedido editado {historicoDoPedido.length === 1 ? "1 vez" : `${historicoDoPedido.length} vezes`} — ver o histórico de alterações
+                  </summary>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 8 }}>
+                    {[...historicoDoPedido].reverse().map((h, k) => (
+                      <div key={k} style={{ background: "#fff", border: "1px solid #FDE68A", borderRadius: 8, padding: "6px 10px", fontSize: "0.78rem", color: "#334155" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", fontWeight: 700, color: "#78350F" }}>
+                          <span>{ROTULO_DA_EDICAO[h.acao] || h.acao} · {h.quem}</span>
+                          <span style={{ fontWeight: 600, color: "#92400E" }}>{quandoFoi(h.quando, user?.storeTimezone || undefined)}</span>
+                        </div>
+                        <div style={{ marginTop: 2 }}>{h.descricao}</div>
+                        {Math.abs(Number(h.totalAntes || 0) - Number(h.totalDepois || 0)) >= 0.01 && (
+                          <div style={{ marginTop: 2, fontSize: "0.74rem", color: "#64748B" }}>
+                            Total: <span style={{ textDecoration: "line-through" }}>R$ {Number(h.totalAntes || 0).toFixed(2).replace(".", ",")}</span> → <b style={{ color: "#0F172A" }}>R$ {Number(h.totalDepois || 0).toFixed(2).replace(".", ",")}</b>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
 
               {/* A nota fiscal do pedido (NotaFiscalDoPedido): o estado, o
                   porquê de não ter e o Emitir com o CPF/CNPJ. Acima de tudo
@@ -4553,14 +4620,31 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     const extras = nameParts.slice(1);
                     const itemPrice = getItemEffectivePrice(item, order.items, order.totalAmount, order.deliveryFee || 0, order.discountTotal || 0);
                     const isStandaloneBeverage = comboSels.length === 0 && isBeverageItem(item);
+                    // Mexido depois de lançado (lib/historico-do-pedido.ts):
+                    // o item ganha a moldura amarela e diz como estava.
+                    const marcas = edicoesDoPedido.marcasDe(item.productName || mainName);
 
                     return (
                       <div key={item.id} style={{
-                        border: "1.5px solid #000",
+                        border: marcas.length > 0 ? "2px solid #D97706" : "1.5px solid #000",
+                        background: marcas.length > 0 ? "#FFFBEB" : undefined,
                         padding: "8px 10px",
                         borderRadius: "4px",
                         marginBottom: "8px"
                       }}>
+                        {marcas.length > 0 && (
+                          <div style={{ fontFamily: "system-ui, sans-serif", fontSize: "11px", color: "#92400E", fontWeight: 700, marginBottom: "6px", display: "flex", flexDirection: "column", gap: "2px" }}>
+                            {marcas.map((m, k) => (
+                              <span key={k}>
+                                ✏️ EDITADO —{" "}
+                                {m.tipo === "QUANTIDADE"
+                                  ? <>antes: <span style={{ textDecoration: "line-through" }}>{m.antes}x</span> → agora {m.depois}x</>
+                                  : <>acrescentado depois ({m.quantidade}x)</>}
+                                {" "}· {m.quem}, {quandoFoi(m.quando, user?.storeTimezone || undefined)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                         <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", marginBottom: "4px" }}>
                           <span>Qtd: {item.quantity}x</span>
                           <span>Valor: R$ {(itemPrice * item.quantity).toFixed(2).replace('.', ',')}</span>
@@ -4647,6 +4731,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     );
                   })}
                 </div>
+
+                {/* ── O QUE A LOJA TIROU DEPOIS ─────────────────────────────
+                    Riscado, com quem tirou e quando: o item sumiu da lista
+                    acima, e sem esta linha ninguém saberia que existiu. */}
+                {edicoesDoPedido.removidos.map((r, k) => (
+                  <div key={`removido-${k}`} style={{ border: "1.5px dashed #B91C1C", background: "#FEF2F2", borderRadius: "4px", padding: "6px 10px", margin: "0 0 8px", fontSize: "12px", color: "#7F1D1D" }}>
+                    <span style={{ textDecoration: "line-through", fontWeight: 700 }}>{r.nome}</span>
+                    <span style={{ fontFamily: "system-ui, sans-serif", fontSize: "11px", fontWeight: 700 }}> — ✏️ REMOVIDO · {r.quem}, {quandoFoi(r.quando, user?.storeTimezone || undefined)}</span>
+                  </div>
+                ))}
 
                 {/* ── O QUE O APP CANCELOU (lib/cancelamento-parcial.ts) ────
                     Riscado, com quem cortou: o pedido continua, e quem olha o

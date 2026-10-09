@@ -31,15 +31,24 @@ export default function TrocaDePagamentoPainel({
   pedido,
   operador,
   aoSalvar,
+  abrirDireto = false,
+  aoFechar,
 }: {
   pedido: any;
   operador: OperadorDaEdicao;
   aoSalvar: (resultado: { paymentMethod: string; changeAmount: number | null; paymentMethods?: ParteDoPagamento[] | null }) => void | Promise<void>;
+  /**
+   * Quem abre a troca por um clique na própria forma de pagamento (relatório
+   * de motoboys) já pediu para trocar: o painel nasce aberto, e "Cancelar"
+   * devolve o controle por `aoFechar` em vez de voltar ao botão "Trocar".
+   */
+  abrirDireto?: boolean;
+  aoFechar?: () => void;
 }) {
   const total = Number(pedido?.totalAmount || 0);
   const partesAtuais = useMemo(() => lerPartes(pedido?.paymentMethods), [pedido?.paymentMethods]);
 
-  const [aberto, setAberto] = useState(false);
+  const [aberto, setAberto] = useState(abrirDireto);
   const [dividido, setDividido] = useState(partesAtuais.length >= 2);
   const [forma, setForma] = useState<string>(formaCanonica(pedido?.paymentMethod) || "Dinheiro");
   const [partes, setPartes] = useState<{ method: string; valor: string }[]>(
@@ -58,17 +67,37 @@ export default function TrocaDePagamentoPainel({
   };
   const dinheiro = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 
+  const botaoFechar = aoFechar && (
+    <button
+      type="button"
+      onClick={aoFechar}
+      style={{ padding: "4px 10px", borderRadius: 6, fontSize: "0.75rem", fontWeight: 700, border: "1.5px solid #E2E8F0", background: "#FFF", color: "#64748B", cursor: "pointer", fontFamily: "inherit" }}
+    >
+      Fechar
+    </button>
+  );
+
   if (!podeEditarPedidos(operador)) {
     return (
-      <div style={{ ...caixa, fontSize: "0.8rem", color: "#334155" }}>
-        💳 <b>Pagamento:</b> {atual}
+      <div style={{ ...caixa, fontSize: "0.8rem", color: "#334155", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span>
+          💳 <b>Pagamento:</b> {atual}
+          {/* Quem clicou para trocar precisa saber POR QUE não abriu — e com
+              quem resolver. Sem isto, o clique parecia não fazer nada. */}
+          {abrirDireto && (
+            <span style={{ display: "block", fontSize: "0.72rem", color: "#94A3B8", marginTop: 2 }}>
+              Você não tem permissão para editar pedidos. O dono da loja libera em Configurações → Equipe.
+            </span>
+          )}
+        </span>
+        {botaoFechar}
       </div>
     );
   }
 
   const avaliacao = podeTrocarPagamento(pedido);
 
-  if (!aberto) {
+  if (!aberto || !avaliacao.pode) {
     return (
       <div style={{ ...caixa, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span style={{ fontSize: "0.8rem", color: "#334155" }}>
@@ -84,7 +113,10 @@ export default function TrocaDePagamentoPainel({
             Trocar
           </button>
         ) : (
-          <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>{avaliacao.motivo}</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: "0.7rem", color: "#94A3B8" }}>{avaliacao.motivo}</span>
+            {botaoFechar}
+          </span>
         )}
       </div>
     );
@@ -230,12 +262,16 @@ export default function TrocaDePagamentoPainel({
               + Adicionar forma
             </button>
             {/* A conta feita pela tela: a pessoa lê, não calcula. */}
-            <span style={{ fontSize: "0.76rem", fontWeight: 800, color: fecha ? "#0F766E" : falta > 0 ? "#B45309" : "#B71C1C" }}>
+            <span style={{ fontSize: "0.76rem", fontWeight: 800, color: fecha ? "#0F766E" : falta >= -0.02 ? "#B45309" : "#B71C1C" }}>
+              {/* Soma certa com uma forma só ainda não é divisão: dizia
+                  "passou R$ 0,00" logo ao abrir, antes da segunda forma. */}
               {fecha
                 ? `✓ fecha em ${dinheiro(somado)}`
-                : falta > 0
-                  ? `faltam ${dinheiro(falta)}`
-                  : `passou ${dinheiro(Math.abs(falta))}`}
+                : Math.abs(falta) <= 0.02
+                  ? "escolha a segunda forma"
+                  : falta > 0
+                    ? `faltam ${dinheiro(falta)}`
+                    : `passou ${dinheiro(Math.abs(falta))}`}
             </span>
           </div>
         </div>
@@ -260,7 +296,7 @@ export default function TrocaDePagamentoPainel({
       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
         <button
           type="button"
-          onClick={() => { setAberto(false); setErro(null); }}
+          onClick={() => { setErro(null); if (aoFechar) aoFechar(); else setAberto(false); }}
           style={{ padding: "6px 12px", borderRadius: 8, fontSize: "0.78rem", fontWeight: 700, border: "1.5px solid #E2E8F0", background: "#FFF", color: "#64748B", cursor: "pointer", fontFamily: "inherit" }}
         >
           Cancelar

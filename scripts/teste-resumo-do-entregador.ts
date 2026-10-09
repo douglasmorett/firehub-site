@@ -39,6 +39,9 @@ confere("tudo: troco levado", tudo.changeGivenSum, 78.5);
 confere("tudo: débito", [tudo.debitTotal, tudo.debitCount], [35, 1]);
 confere("tudo: pago online", [tudo.onlineTotal, tudo.onlineCount], [58.9, 1]);
 confere("tudo: ganho (cancelado conta)", tudo.feeTotal, 32);
+confere("tudo: 4 entregues + 1 cancelada", [tudo.entreguesCount, tudo.canceladasCount, tudo.canceladasValor], [4, 1, 20]);
+// Valor dos pedidos: todas as formas (online, dinheiro, débito), sem o troco e sem o cancelado.
+confere("tudo: valor dos pedidos", tudo.valorDosPedidos, 165.4);
 
 const so = (canal: string) => resumoDasEntregas(pedidos.filter((p) => chaveDoCanal(p as any) === canal), tz);
 const ifood = so("IFOOD"), noventaENove = so("99FOOD"), site = so("SITE"), balcao = so("PDV");
@@ -49,7 +52,7 @@ confere("só balcão: troco da observação", [balcao.cashCollectedSum, balcao.c
 // As partes somam o todo: filtrar não pode criar nem sumir dinheiro.
 const partes = [ifood, noventaENove, site, balcao];
 const soma = (campo: keyof typeof tudo) => Math.round(partes.reduce((s, p) => s + (p[campo] as number), 0) * 100) / 100;
-for (const campo of ["totalDeliveries", "cashCollectedSum", "changeGivenSum", "debitTotal", "onlineTotal", "feeTotal", "totalDistance"] as const) {
+for (const campo of ["totalDeliveries", "cashCollectedSum", "changeGivenSum", "debitTotal", "onlineTotal", "feeTotal", "totalDistance", "valorDosPedidos", "canceladasCount"] as const) {
   confere(`partes = todo: ${campo}`, soma(campo), Math.round((tudo[campo] as number) * 100) / 100);
 }
 

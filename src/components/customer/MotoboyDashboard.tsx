@@ -3,8 +3,9 @@ import { useState } from "react";
 import MotoboyManager from "./MotoboyManager";
 import RegraDoPagamentoDoApp from "./RegraDoPagamentoDoApp";
 import MotoboyReport from "./MotoboyReport";
+import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 
-export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliveryConfig }: { initialMotoboys: any[], storeTimezone?: string, deliveryConfig?: unknown }) {
+export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliveryConfig, operador }: { initialMotoboys: any[], storeTimezone?: string, deliveryConfig?: unknown, operador: OperadorDaEdicao }) {
   const [tab, setTab] = useState<"cadastro" | "relatorio">("cadastro");
   const [motoboys, setMotoboys] = useState(initialMotoboys);
 
@@ -36,7 +37,7 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
         </>
       )}
       {tab === "relatorio" && (
-        <MotoboyReport motoboys={motoboys} storeTimezone={storeTimezone} />
+        <MotoboyReport motoboys={motoboys} storeTimezone={storeTimezone} operador={operador} />
       )}
     </div>
   );

@@ -84,11 +84,25 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
   let voucherTotal = 0, voucherCount = 0;
   let onlineTotal = 0, onlineCount = 0;
 
+  // ── ENTREGUES, CANCELADAS E O VALOR DOS PEDIDOS ───────────────────────────
+  // "Jobson 30 notas, e o valor dos pedidos das 30 do lado" (Delícia de Casa,
+  // 09/10/2026). As entregas contam o cancelado (a corrida é dele); o lojista
+  // precisa ver quantas daquelas foram canceladas, e o valor dos pedidos é só
+  // o das entregues, em qualquer forma de pagamento — ninguém pagou o
+  // cancelado.
+  let canceladasCount = 0, canceladasValor = 0;
+  let valorDosPedidos = 0;
+
   for (const o of orders) {
-    if (ehCancelado(o.status)) continue; // Pedido cancelado: não cobrar prestação de contas do motoboy
+    const total = Number(o.totalAmount || 0);
+    if (ehCancelado(o.status)) { // Pedido cancelado: não cobrar prestação de contas do motoboy
+      canceladasCount++;
+      canceladasValor += total;
+      continue;
+    }
+    valorDosPedidos += total;
 
     const pm = (o.paymentMethod || "").toUpperCase();
-    const total = Number(o.totalAmount || 0);
 
     if (ehDinheiro(o.paymentMethod)) {
       const changeFor = trocoParaDoPedido(o);
@@ -113,8 +127,15 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
     }
   }
 
+  const centavos = (v: number) => Math.round(v * 100) / 100;
+
   return {
     totalDeliveries,
+    entreguesCount: totalDeliveries - canceladasCount,
+    canceladasCount,
+    canceladasValor: centavos(canceladasValor),
+    /** Soma do total das entregas que não foram canceladas, de todas as formas. */
+    valorDosPedidos: centavos(valorDosPedidos),
     totalDistance,
     uniqueDays,
     deliveryFeeSum,

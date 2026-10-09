@@ -1027,6 +1027,10 @@ export async function GET(req: NextRequest) {
         // O que o app (iFood/99) tirou do pedido: os itens riscados e o total
         // de antes, dentro do pedido (lib/cancelamento-parcial.ts).
         cancelamentoParcial: true,
+        // O rastro das edições (lib/historico-do-pedido.ts): a comanda marca o
+        // item editado e mostra o histórico. Sem ele aqui, só a 1ª carga da
+        // página (que traz todas as colunas) mostrava — o poll apagava.
+        editHistory: true,
         items: {
           select: {
             id: true, quantity: true, price: true, notes: true,

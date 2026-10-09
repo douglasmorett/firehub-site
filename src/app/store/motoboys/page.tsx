@@ -32,7 +32,14 @@ export default async function MotoboysPage() {
       <p className="text-muted" style={{ marginBottom: "1.5rem" }}>
         Cadastre seus entregadores, configure pagamentos e gere relatórios de comissão.
       </p>
-      <MotoboyDashboard initialMotoboys={motoboys} storeTimezone={user.storeTimezone || undefined} deliveryConfig={(dono as any)?.deliveryConfig ?? (user as any).deliveryConfig} />
+      <MotoboyDashboard
+        initialMotoboys={motoboys}
+        storeTimezone={user.storeTimezone || undefined}
+        deliveryConfig={(dono as any)?.deliveryConfig ?? (user as any).deliveryConfig}
+        // Quem está logado — não o dono: trocar a forma de pagamento pelo
+        // relatório segue a permissão de editar pedidos de cada funcionário.
+        operador={{ role: user.role, permissions: (user as any).permissions }}
+      />
     </div>
   );
 }
