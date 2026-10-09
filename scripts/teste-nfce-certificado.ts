@@ -295,7 +295,8 @@ console.log("\n— pendências do emissor próprio e o checklist");
     campos({ ...pronta, sefaz: { ...(pronta.sefaz as object), certificado: { ...registro!, validoAte: "2021-01-01T00:00:00.000Z" } } }),
     ["certificado"]
   );
-  confere("UF que o emissor não atende: pendência (e a IE de 13 dígitos não é de SP)", campos({ ...pronta, uf: "SP" }), ["inscricaoEstadual", "uf"]);
+  confere("SP é atendida desde 09/10/2026: só a IE (a de 13 dígitos é do DF, não de SP)", campos({ ...pronta, uf: "SP" }), ["inscricaoEstadual"]);
+  verdade("UF que não existe (ZZ): pendência de UF", campos({ ...pronta, uf: "ZZ" }).includes("uf"));
   const semEmissor = conferir({ ...pronta, provedor: null }).find((p) => p.campo === "provedor");
   verdade(
     "sem emissor escolhido: a pendência diz as duas saídas (e não mais \"o FireHub não transmite sozinho\")",

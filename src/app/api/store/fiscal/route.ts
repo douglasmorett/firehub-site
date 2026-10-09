@@ -189,7 +189,21 @@ export async function GET() {
     const pendencias = conferir(config);
     // O checklist do emissor próprio lê o banco (produtos sem NCM, nota de
     // teste): só para a loja que usa, ou vai usar, o emissor do FireHub.
-    const prontidao = provedorEfetivo(config).provedor === "sefaz" ? prontidaoDoEmissor(config, await extrasDaProntidao(lojaId)) : null;
+    //
+    // Se essa leitura falhar, o checklist some — a tela NÃO. Antes, qualquer
+    // erro aqui virava "Erro interno" e a tela ficava com os valores de
+    // fábrica: "0 pendência(s)", botão de ligar travado e a Focus marcada
+    // como emissor. O lojista via um cadastro que não era o dele.
+    let prontidao: ReturnType<typeof prontidaoDoEmissor> | null = null;
+    let prontidaoIndisponivel = false;
+    if (provedorEfetivo(config).provedor === "sefaz") {
+      try {
+        prontidao = prontidaoDoEmissor(config, await extrasDaProntidao(lojaId));
+      } catch (err: any) {
+        prontidaoIndisponivel = true;
+        console.error("[Fiscal Config GET] checklist de prontidão:", String(err?.message ?? "").slice(0, 300));
+      }
+    }
 
     return NextResponse.json({
       success: true,
@@ -204,6 +218,7 @@ export async function GET() {
       pendencias,
       podeEmitir: pendencias.length === 0,
       prontidao,
+      prontidaoIndisponivel,
       ufsDoEmissorProprio: UFS_DO_EMISSOR,
       provedoresSuportados: PROVEDORES_SUPORTADOS,
       papelDoUsuario: user.role,
@@ -220,8 +235,20 @@ export async function GET() {
       ),
     });
   } catch (err: any) {
-    console.error("[Fiscal Config GET]", String(err?.message ?? "").slice(0, 300));
-    return NextResponse.json({ error: "Erro interno" }, { status: 500 });
+    // O motivo vai para o log inteiro (com a pilha) e, resumido, para a tela:
+    // "Erro interno" sem mais nada deixava o suporte sem ter por onde começar.
+    // Só a primeira linha da mensagem — nela não há segredo, e o resto (a
+    // consulta do Prisma, por exemplo) não ajuda quem lê a tela.
+    console.error("[Fiscal Config GET]", String(err?.stack ?? err?.message ?? err).slice(0, 2000));
+    const motivo = String(err?.message ?? "").split("\n")[0].trim().slice(0, 160);
+    return NextResponse.json(
+      {
+        error: "Erro interno",
+        mensagem: "O servidor não conseguiu montar o cadastro fiscal desta loja.",
+        motivo: motivo || null,
+      },
+      { status: 500 }
+    );
   }
 }
 

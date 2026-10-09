@@ -155,7 +155,8 @@ async function main() {
     verdade("certificado vencido: pendência 'venceu'", vencido.some((p) => p.campo === "certificado" && /venceu/.test(p.mensagem)));
     confere("produção sem CSC de produção: pendências do CSC (o de homologação não vale)", campos(configDaNik({ ambiente: 1, sefaz: { ...configDaNik().sefaz, csc: { homologacao: cscDe("1") } } })), ["cscId", "csc"]);
     confere("QR Code v3: sem CSC e sem pendência", campos(configDaNik({ ambiente: 1, sefaz: { ...configDaNik().sefaz, csc: null, qrVersao: 3 } })), []);
-    confere("UF que o emissor ainda não atende (SP): pendência de UF", campos(configDaNik({ uf: "SP", codigoMunicipio: "3550308", inscricaoEstadual: "110042490114" })), ["uf"]);
+    confere("UF atendida desde 09/10/2026 (SP): sem pendência de UF", campos(configDaNik({ uf: "SP", codigoMunicipio: "3550308", inscricaoEstadual: "110042490114" })), []);
+    confere("UF que não existe (ZZ): pendência de UF", campos(configDaNik({ uf: "ZZ", codigoMunicipio: "3550308", inscricaoEstadual: "110042490114" })).filter((c) => c === "uf"), ["uf"]);
     confere("CRT 3 continua bloqueado", campos(configDaNik({ regimeTributario: 3 })), ["regimeTributario"]);
   }
 

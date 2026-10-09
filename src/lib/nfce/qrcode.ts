@@ -28,38 +28,94 @@ export type Ambiente = 1 | 2;
 
 type PorAmbiente = { producao: string; homologacao: string };
 
+/** O mesmo endereço nos dois ambientes (a SEFAZ separa pelo tpAmb que vai no QR). */
+const igual = (url: string): PorAmbiente => ({ producao: url, homologacao: url });
+
 /**
  * Endereço da consulta por QR Code (a "1ª parte" da URL, sem o "?p=").
- * Só as UF que o FireHub atende hoje; UF nova entra aqui com a fonte.
+ *
+ * As 27 UF, da tabela "URL por UF utilizada QR code" do portal
+ * (nfce.encat.org/desenvolvedor/qrcode, produção e homologação, baixada em
+ * 09/10/2026) — o portal escreve "…?" no fim de algumas; o "?p=" é posto
+ * aqui na montagem. Onde o portal dá duas datas, vale a vigente em 10/2026
+ * (GO: nfeweb desde 16/06/2025; RN: sefaz.rn.gov.br desde 25/05/2026, o
+ * set.rn.gov.br valeu até 30/09/2026; PB: sefaz.pb.gov.br; RJ: consultadfe;
+ * MG: portalsped). Cruzada com storage/wsnfe_4.00_mod65.xml da NFePHP: as
+ * duas fontes batem em todas, menos as três marcadas "conferir" — nelas
+ * fica a do portal, e a primeira nota de homologação da UF é que confirma.
  */
 export const URL_DO_QRCODE: Record<string, PorAmbiente> = {
-  // Distrito Federal: o mesmo endereço nos dois ambientes; a SEFAZ separa pelo tpAmb do QR.
-  DF: { producao: "http://www.fazenda.df.gov.br/nfce/qrcode", homologacao: "http://www.fazenda.df.gov.br/nfce/qrcode" },
-  // Rio de Janeiro: consultadfe desde 19/12/2023 (o www4 valeu até 02/09/2024).
-  RJ: {
-    producao: "https://consultadfe.fazenda.rj.gov.br/consultaNFCe/QRCode",
-    homologacao: "https://consultadfe.fazenda.rj.gov.br/consultaNFCe/QRCode",
-  },
-  // Minas Gerais: portalsped desde 21/03/2022.
-  MG: {
-    producao: "https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml",
-    homologacao: "https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml",
-  },
+  AC: { producao: "http://www.sefaznet.ac.gov.br/nfce/qrcode", homologacao: "http://www.hml.sefaznet.ac.gov.br/nfce/qrcode" },
+  AL: igual("http://nfce.sefaz.al.gov.br/QRCode/consultarNFCe.jsp"),
+  // AM, conferir na 1ª nota: o portal não traz o esquema e a NFePHP usa
+  // sistemas.sefaz.am.gov.br/nfceweb-hom para homologação.
+  AM: { producao: "https://sistemas.sefaz.am.gov.br/nfceweb/consultarNFCe.jsp", homologacao: "https://homnfce.sefaz.am.gov.br/nfceweb/consultarNFCe.jsp" },
+  AP: { producao: "https://www.sefaz.ap.gov.br/nfce/nfcep.php", homologacao: "https://www.sefaz.ap.gov.br/nfcehml/nfce.php" },
+  BA: { producao: "http://nfe.sefaz.ba.gov.br/servicos/nfce/qrcode.aspx", homologacao: "http://hnfe.sefaz.ba.gov.br/servicos/nfce/qrcode.aspx" },
+  CE: { producao: "http://nfce.sefaz.ce.gov.br/pages/ShowNFCe.html", homologacao: "http://nfceh.sefaz.ce.gov.br/pages/ShowNFCe.html" },
+  DF: igual("http://www.fazenda.df.gov.br/nfce/qrcode"),
+  // ES, conferir na 1ª nota: o portal publica a pasta ("ConsultaNFCe/"); a NFePHP, "ConsultaNFCe/qrcode.aspx".
+  ES: { producao: "http://app.sefaz.es.gov.br/ConsultaNFCe/", homologacao: "http://homologacao.sefaz.es.gov.br/ConsultaNFCe/" },
+  GO: { producao: "https://nfeweb.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe", homologacao: "https://nfewebhomolog.sefaz.go.gov.br/nfeweb/sites/nfce/danfeNFCe" },
+  // MA, conferir na 1ª nota: o portal não traz o esquema e a NFePHP usa www.nfce / www.hom.nfce.
+  MA: { producao: "http://nfce.sefaz.ma.gov.br/portal/consultarNFCe.jsp", homologacao: "http://homologacao.sefaz.ma.gov.br/portal/consultarNFCe.jsp" },
+  MG: igual("https://portalsped.fazenda.mg.gov.br/portalnfce/sistema/qrcode.xhtml"),
+  MS: igual("http://www.dfe.ms.gov.br/nfce/qrcode"),
+  MT: { producao: "http://www.sefaz.mt.gov.br/nfce/consultanfce", homologacao: "http://homologacao.sefaz.mt.gov.br/nfce/consultanfce" },
   PA: {
     producao: "https://appnfc.sefa.pa.gov.br/portal/view/consultas/nfce/nfceForm.seam",
     homologacao: "https://appnfc.sefa.pa.gov.br/portal-homologacao/view/consultas/nfce/nfceForm.seam",
   },
+  PB: { producao: "http://www.sefaz.pb.gov.br/nfce", homologacao: "http://www.sefaz.pb.gov.br/nfcehom" },
+  PE: { producao: "http://nfce.sefaz.pe.gov.br/nfce/consulta", homologacao: "http://nfcehomolog.sefaz.pe.gov.br/nfce/consulta" },
+  PI: igual("http://www.sefaz.pi.gov.br/nfce/qrcode"),
+  PR: igual("http://www.fazenda.pr.gov.br/nfce/qrcode"),
+  RJ: igual("https://consultadfe.fazenda.rj.gov.br/consultaNFCe/QRCode"),
+  RN: { producao: "https://nfce.sefaz.rn.gov.br/consultarNFCe.aspx", homologacao: "https://hom.nfce.sefaz.rn.gov.br/consultarNFCe.aspx" },
+  RO: igual("http://www.nfce.sefin.ro.gov.br/consultanfce/consulta.jsp"),
+  RR: { producao: "https://www.sefaz.rr.gov.br/nfce/servlet/qrcode", homologacao: "http://200.174.88.103:8080/nfce/servlet/qrcode" },
+  RS: igual("https://www.sefaz.rs.gov.br/NFCE/NFCE-COM.aspx"),
+  SC: { producao: "https://sat.sef.sc.gov.br/nfce/consulta", homologacao: "https://hom.sat.sef.sc.gov.br/nfce/consulta" },
+  SE: { producao: "http://www.nfce.se.gov.br/nfce/qrcode", homologacao: "http://www.hom.nfe.se.gov.br/nfce/qrcode" },
+  SP: { producao: "https://www.nfce.fazenda.sp.gov.br/qrcode", homologacao: "https://www.homologacao.nfce.fazenda.sp.gov.br/qrcode" },
+  TO: { producao: "http://www.sefaz.to.gov.br/nfce/qrcode", homologacao: "http://homologacao.sefaz.to.gov.br/nfce/qrcode" },
 };
 
-/** Endereço de consulta pela chave (urlChave, impresso no DANFE). Schema: 21 a 85 caracteres. */
+/**
+ * Endereço de consulta pela chave (urlChave, impresso no DANFE). Schema: 21 a
+ * 85 caracteres. A página "URL por UF utilizada para consulta chave" do portal
+ * não traz a tabela no HTML (09/10/2026); a lista é a da NFePHP
+ * (storage/uri_consulta_nfce.json), que bate com o portal nas quatro UF que
+ * já estavam aqui (DF, RJ, MG, PA).
+ */
 export const URL_DA_CONSULTA_PELA_CHAVE: Record<string, PorAmbiente> = {
-  DF: { producao: "www.fazenda.df.gov.br/nfce/consulta", homologacao: "www.fazenda.df.gov.br/nfce/consulta" },
-  RJ: { producao: "www.fazenda.rj.gov.br/nfce/consulta", homologacao: "www.fazenda.rj.gov.br/nfce/consulta" },
-  MG: {
-    producao: "https://portalsped.fazenda.mg.gov.br/portalnfce",
-    homologacao: "https://hportalsped.fazenda.mg.gov.br/portalnfce",
-  },
-  PA: { producao: "www.sefa.pa.gov.br/nfce/consulta", homologacao: "www.sefa.pa.gov.br/nfce/consulta" },
+  AC: igual("www.sefaznet.ac.gov.br/nfce/consulta"),
+  AL: igual("www.sefaz.al.gov.br/nfce/consulta"),
+  AM: igual("www.sefaz.am.gov.br/nfce/consulta"),
+  AP: igual("www.sefaz.ap.gov.br/nfce/consulta"),
+  BA: { producao: "http://www.sefaz.ba.gov.br/nfce/consulta", homologacao: "http://hinternet.sefaz.ba.gov.br/nfce/consulta" },
+  CE: igual("www.sefaz.ce.gov.br/nfce/consulta"),
+  DF: igual("www.fazenda.df.gov.br/nfce/consulta"),
+  ES: igual("www.sefaz.es.gov.br/nfce/consulta"),
+  GO: { producao: "www.sefaz.go.gov.br/nfce/consulta", homologacao: "www.nfce.go.gov.br/post/ver/214413/consulta-nfc-e-homologacao" },
+  MA: igual("www.sefaz.ma.gov.br/nfce/consulta"),
+  MG: { producao: "https://portalsped.fazenda.mg.gov.br/portalnfce", homologacao: "https://hportalsped.fazenda.mg.gov.br/portalnfce" },
+  MS: igual("http://www.dfe.ms.gov.br/nfce/consulta"),
+  MT: { producao: "http://www.sefaz.mt.gov.br/nfce/consultanfce", homologacao: "http://homologacao.sefaz.mt.gov.br/nfce/consultanfce" },
+  PA: igual("www.sefa.pa.gov.br/nfce/consulta"),
+  PB: { producao: "www.sefaz.pb.gov.br/nfce/consulta", homologacao: "www.sefaz.pb.gov.br/nfcehom" },
+  PE: igual("nfce.sefaz.pe.gov.br/nfce/consulta"),
+  PI: igual("www.sefaz.pi.gov.br/nfce/consulta"),
+  PR: igual("http://www.fazenda.pr.gov.br/nfce/consulta"),
+  RJ: igual("www.fazenda.rj.gov.br/nfce/consulta"),
+  RN: igual("www.set.rn.gov.br/nfce/consulta"),
+  RO: igual("www.sefin.ro.gov.br/nfce/consulta"),
+  RR: igual("www.sefaz.rr.gov.br/nfce/consulta"),
+  RS: igual("www.sefaz.rs.gov.br/nfce/consulta"),
+  SC: { producao: "https://sat.sef.sc.gov.br/nfce/consulta", homologacao: "https://hom.sat.sef.sc.gov.br/nfce/consulta" },
+  SE: { producao: "http://www.nfce.se.gov.br/nfce/consulta", homologacao: "http://www.hom.nfe.se.gov.br/nfce/consulta" },
+  SP: { producao: "https://www.nfce.fazenda.sp.gov.br/NFCeConsultaPublica", homologacao: "https://www.homologacao.nfce.fazenda.sp.gov.br/NFCeConsultaPublica" },
+  TO: { producao: "www.sefaz.to.gov.br/nfce/consulta", homologacao: "http://homologacao.sefaz.to.gov.br/nfce/consulta.jsf" },
 };
 
 const doAmbiente = (t: PorAmbiente, ambiente: Ambiente) => (ambiente === 1 ? t.producao : t.homologacao);

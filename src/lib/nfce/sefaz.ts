@@ -27,8 +27,11 @@
  * ── OS ENDEREÇOS ────────────────────────────────────────────────────────────
  *
  * Portal Nacional da NFC-e (nfce.encat.org → Desenvolvedor → Web Services,
- * produção e homologação, páginas baixadas em 29/09/2026). DF, RJ e PA
- * autorizam na SVRS; MG tem autorizador próprio.
+ * produção e homologação, páginas baixadas em 29/09/2026 e de novo em
+ * 09/10/2026, quando as 27 UF entraram). Dezenove UF autorizam na SVRS; AM,
+ * GO, MG, MS, MT, PR, RS e SP têm autorizador próprio. A tabela UF →
+ * autorizador foi cruzada com a da NFePHP (sped-nfe, storage/autorizadores.json,
+ * modelo 65), que bate com o portal nas quatro UF que já estavam no ar.
  *
  * ── O TLS ───────────────────────────────────────────────────────────────────
  *
@@ -60,41 +63,141 @@ export const SERVICOS: Record<Servico, { wsdl: string; metodo: string }> = {
 
 type Autorizador = { nome: string; producao: string; homologacao: string; caminhos: Record<Servico, string> };
 
-export const AUTORIZADORES: Record<"SVRS" | "MG", Autorizador> = {
+/**
+ * Os caminhos dos seis serviços 4.00 em cada autorizador, como o portal
+ * publica (nfce.encat.org → Desenvolvedor → Webservices Produção /
+ * Homologação, 09/10/2026). O portal lista o de GO com "?wsdl" no fim — é o
+ * endereço do contrato; a chamada SOAP vai sem ele.
+ *
+ * Três famílias de nomes: a SVRS/RS (pasta + .asmx), a "asmx na raiz" (SP),
+ * e a "nome do serviço na raiz" (MG, PR, MS, GO — com NFeConsultaProtocolo4 e
+ * NFeRecepcaoEvento4; MT e AM — com NfeConsulta4 e RecepcaoEvento4).
+ */
+const CAMINHOS_SVRS: Record<Servico, string> = {
+  autorizacao: "NfeAutorizacao/NFeAutorizacao4.asmx",
+  retAutorizacao: "NfeRetAutorizacao/NFeRetAutorizacao4.asmx",
+  consulta: "NfeConsulta/NfeConsulta4.asmx",
+  status: "NfeStatusServico/NfeStatusServico4.asmx",
+  evento: "recepcaoevento/recepcaoevento4.asmx",
+  inutilizacao: "nfeinutilizacao/nfeinutilizacao4.asmx",
+};
+const CAMINHOS_NOME_DO_SERVICO: Record<Servico, string> = {
+  autorizacao: "NFeAutorizacao4",
+  retAutorizacao: "NFeRetAutorizacao4",
+  consulta: "NFeConsultaProtocolo4",
+  status: "NFeStatusServico4",
+  evento: "NFeRecepcaoEvento4",
+  inutilizacao: "NFeInutilizacao4",
+};
+const CAMINHOS_NOME_CURTO: Record<Servico, string> = {
+  autorizacao: "NfeAutorizacao4",
+  retAutorizacao: "NfeRetAutorizacao4",
+  consulta: "NfeConsulta4",
+  status: "NfeStatusServico4",
+  evento: "RecepcaoEvento4",
+  inutilizacao: "NfeInutilizacao4",
+};
+
+export const AUTORIZADORES: Record<"SVRS" | "MG" | "SP" | "PR" | "RS" | "MS" | "MT" | "GO" | "AM", Autorizador> = {
   SVRS: {
     nome: "SEFAZ Virtual do RS (SVRS)",
     producao: "https://nfce.svrs.rs.gov.br/ws/",
     homologacao: "https://nfce-homologacao.svrs.rs.gov.br/ws/",
-    caminhos: {
-      autorizacao: "NfeAutorizacao/NFeAutorizacao4.asmx",
-      retAutorizacao: "NfeRetAutorizacao/NFeRetAutorizacao4.asmx",
-      consulta: "NfeConsulta/NfeConsulta4.asmx",
-      status: "NfeStatusServico/NfeStatusServico4.asmx",
-      evento: "recepcaoevento/recepcaoevento4.asmx",
-      inutilizacao: "nfeinutilizacao/nfeinutilizacao4.asmx",
-    },
+    caminhos: CAMINHOS_SVRS,
   },
   MG: {
     nome: "SEFAZ MG",
     producao: "https://nfce.fazenda.mg.gov.br/nfce/services/",
     homologacao: "https://hnfce.fazenda.mg.gov.br/nfce/services/",
+    caminhos: CAMINHOS_NOME_DO_SERVICO,
+  },
+  SP: {
+    nome: "SEFAZ SP",
+    producao: "https://nfce.fazenda.sp.gov.br/ws/",
+    homologacao: "https://homologacao.nfce.fazenda.sp.gov.br/ws/",
     caminhos: {
-      autorizacao: "NFeAutorizacao4",
-      retAutorizacao: "NFeRetAutorizacao4",
-      consulta: "NFeConsultaProtocolo4",
-      status: "NFeStatusServico4",
-      evento: "NFeRecepcaoEvento4",
-      inutilizacao: "NFeInutilizacao4",
+      autorizacao: "NFeAutorizacao4.asmx",
+      retAutorizacao: "NFeRetAutorizacao4.asmx",
+      consulta: "NFeConsultaProtocolo4.asmx",
+      status: "NFeStatusServico4.asmx",
+      evento: "NFeRecepcaoEvento4.asmx",
+      inutilizacao: "NFeInutilizacao4.asmx",
     },
+  },
+  PR: {
+    nome: "SEFA PR",
+    producao: "https://nfce.sefa.pr.gov.br/nfce/",
+    homologacao: "https://homologacao.nfce.sefa.pr.gov.br/nfce/",
+    caminhos: CAMINHOS_NOME_DO_SERVICO,
+  },
+  RS: {
+    nome: "SEFAZ RS",
+    producao: "https://nfce.sefazrs.rs.gov.br/ws/",
+    homologacao: "https://nfce-homologacao.sefazrs.rs.gov.br/ws/",
+    caminhos: CAMINHOS_SVRS,
+  },
+  MS: {
+    nome: "SEFAZ MS",
+    producao: "https://nfce.sefaz.ms.gov.br/ws/",
+    homologacao: "https://hom.nfce.sefaz.ms.gov.br/ws/",
+    caminhos: CAMINHOS_NOME_DO_SERVICO,
+  },
+  MT: {
+    nome: "SEFAZ MT",
+    producao: "https://nfce.sefaz.mt.gov.br/nfcews/services/",
+    homologacao: "https://homologacao.sefaz.mt.gov.br/nfcews/services/",
+    caminhos: CAMINHOS_NOME_CURTO,
+  },
+  GO: {
+    nome: "SEFAZ GO",
+    producao: "https://nfe.sefaz.go.gov.br/nfe/services/",
+    homologacao: "https://homolog.sefaz.go.gov.br/nfe/services/",
+    caminhos: CAMINHOS_NOME_DO_SERVICO,
+  },
+  AM: {
+    nome: "SEFAZ AM",
+    producao: "https://nfce.sefaz.am.gov.br/nfce-services/services/",
+    homologacao: "https://homnfce.sefaz.am.gov.br/nfce-services/services/",
+    caminhos: CAMINHOS_NOME_CURTO,
   },
 };
 
-/** Quem autoriza a NFC-e de cada UF. UF nova entra aqui, com a fonte. */
+/**
+ * Quem autoriza a NFC-e de cada UF (as 27). Fonte: nfce.encat.org →
+ * Desenvolvedor → Webservices (quem tem tabela própria ali tem autorizador
+ * próprio; o resto vai na SVRS), cruzada com storage/autorizadores.json da
+ * NFePHP (modelo 65) em 09/10/2026 — as duas listas são idênticas. BA, CE,
+ * MA e PE têm autorizador próprio para a NF-e (modelo 55), mas a NFC-e deles
+ * é SVRS.
+ */
 export const AUTORIZADOR_DA_UF: Record<string, keyof typeof AUTORIZADORES> = {
+  AC: "SVRS",
+  AL: "SVRS",
+  AM: "AM",
+  AP: "SVRS",
+  BA: "SVRS",
+  CE: "SVRS",
   DF: "SVRS",
-  RJ: "SVRS",
-  PA: "SVRS",
+  ES: "SVRS",
+  GO: "GO",
+  MA: "SVRS",
   MG: "MG",
+  MS: "MS",
+  MT: "MT",
+  PA: "SVRS",
+  PB: "SVRS",
+  PE: "SVRS",
+  PI: "SVRS",
+  PR: "PR",
+  RJ: "SVRS",
+  RN: "SVRS",
+  RO: "SVRS",
+  RR: "SVRS",
+  RS: "RS",
+  SC: "SVRS",
+  SE: "SVRS",
+  SP: "SP",
+  TO: "SVRS",
 };
 
 export function urlDoServico(uf: string, ambiente: Ambiente, servico: Servico): string {

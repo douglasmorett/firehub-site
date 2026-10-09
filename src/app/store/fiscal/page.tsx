@@ -295,6 +295,19 @@ function Sugestao({ id, campo, valor, origem, onUsar }: { id: string; campo: str
   );
 }
 
+/**
+ * O que dizer quando o GET do cadastro fiscal não responde 200. O lojista lê
+ * isto no topo da tela; o `motivo` do servidor (quando há) vai embaixo.
+ */
+function mensagemDoErroDeCarga(status: number, dados: any): string {
+  if (status === 401) return "Sua sessão expirou — entre de novo no painel.";
+  if (status === 403) return "Este usuário não tem acesso ao módulo fiscal.";
+  if (status === 404) return "Não achei a loja deste usuário.";
+  if (status === 502 || status === 503 || status === 504) return "O servidor está reiniciando ou fora do ar — espere um minuto e tente de novo.";
+  const doServidor = typeof dados?.mensagem === "string" && dados.mensagem ? dados.mensagem : typeof dados?.error === "string" && dados.error ? dados.error : "";
+  return doServidor || `O servidor respondeu com erro ${status} ao ler o cadastro fiscal.`;
+}
+
 export default function StoreFiscalPage() {
   const [activeNav, setActiveNav] = useState<"config" | "products" | "invoices" | "inutilizacao" | "contador">("invoices");
   const [loading, setLoading] = useState(true);
@@ -372,6 +385,10 @@ export default function StoreFiscalPage() {
   // O que falta para esta loja emitir, conforme o servidor. Vazio = pronta.
   const [pendenciasFiscais, setPendenciasFiscais] = useState<{ campo: string; mensagem: string }[]>([]);
   const [podeEmitir, setPodeEmitir] = useState(false);
+  // O GET falhou (500, sessão vencida, servidor reiniciando)? A tela diz isso,
+  // em vez de mostrar os valores de fábrica como se fossem o cadastro da loja.
+  const [erroAoCarregar, setErroAoCarregar] = useState<{ status: number | null; mensagem: string; motivo: string | null } | null>(null);
+  const [prontidaoIndisponivel, setProntidaoIndisponivel] = useState(false);
   // Emissor próprio: o checklist até a primeira nota (null na loja da Focus),
   // as UF que ele atende e a gravação da escolha do emissor.
   const [prontidao, setProntidao] = useState<ItemDeProntidao[] | null>(null);
@@ -490,7 +507,7 @@ export default function StoreFiscalPage() {
 
   const fetchFiscalData = async () => {
     try {
-      const res = await fetch("/api/store/fiscal");
+      const res = await fetch("/api/store/fiscal", { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setStoreName(data.storeName || "");
@@ -509,13 +526,37 @@ export default function StoreFiscalPage() {
         setIntermediadoresOficiais(data.intermediadoresOficiais && typeof data.intermediadoresOficiais === "object" ? data.intermediadoresOficiais : {});
         setIntegracoesDaLoja(Array.isArray(data.integracoesDaLoja) ? data.integracoesDaLoja : []);
         setProntidao(Array.isArray(data.prontidao) ? data.prontidao : null);
+        setProntidaoIndisponivel(Boolean(data.prontidaoIndisponivel));
         setUfsDoEmissorProprio(Array.isArray(data.ufsDoEmissorProprio) ? data.ufsDoEmissorProprio : []);
+        setErroAoCarregar(null);
+      } else {
+        // Antes, a resposta que não era 200 era ignorada e a tela ficava com
+        // os valores de fábrica: "0 pendência(s)", botão de ligar travado e a
+        // Focus marcada como emissor — a foto de um cadastro que não é o da
+        // loja. Agora a falha aparece, com o motivo e um botão de tentar de novo.
+        let dados: any = null;
+        try {
+          dados = await res.json();
+        } catch {
+          dados = null;
+        }
+        setErroAoCarregar({
+          status: res.status,
+          mensagem: mensagemDoErroDeCarga(res.status, dados),
+          motivo: typeof dados?.motivo === "string" && dados.motivo ? dados.motivo : null,
+        });
       }
     } catch (err) {
       console.error(err);
+      setErroAoCarregar({ status: null, mensagem: "Sem resposta do servidor — sem internet, ou o servidor está reiniciando.", motivo: null });
     } finally {
       setLoading(false);
     }
+  };
+
+  const recarregarCadastroFiscal = () => {
+    setLoading(true);
+    void fetchFiscalData();
   };
 
   const fetchProducts = async () => {
@@ -1378,7 +1419,38 @@ ${dados.aviso}` : "")
   // Cadastro completo mas emissão desligada: antes a tela ficava muda nesse
   // caso, e o lojista só descobria no erro "emissão desligada" ao emitir.
   const AvisoDoEstadoFiscal = () =>
-    podeEmitir ? (
+    erroAoCarregar ? (
+      // A falha de carga tem de ser a PRIMEIRA coisa que a tela diz: tudo o
+      // que vem abaixo (pendências, emissor, ambiente) é valor de fábrica, não
+      // o cadastro da loja — e a faixa vermelha "ainda não emite" seria mentira.
+      <div role="alert" style={{ margin: "0 0 1.25rem", padding: "1rem 1.25rem", background: "#FFF7E6", border: "1px solid #FDE68A", borderLeft: "6px solid #B45309", borderRadius: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <AlertTriangle size={18} color="#B45309" />
+          <strong style={{ fontSize: "0.92rem", color: "#92400E", flex: 1, minWidth: 200 }}>
+            O cadastro fiscal não carregou
+          </strong>
+          <button
+            type="button"
+            onClick={recarregarCadastroFiscal}
+            disabled={loading}
+            style={{ padding: "7px 14px", background: "#1C1917", color: "#fff", border: "none", borderRadius: 8, fontWeight: 800, fontSize: "0.82rem", cursor: loading ? "wait" : "pointer", opacity: loading ? 0.6 : 1 }}
+          >
+            {loading ? "Carregando…" : "Tentar de novo"}
+          </button>
+        </div>
+        <p style={{ fontSize: "0.83rem", color: "#78350F", margin: "8px 0 0", lineHeight: 1.5 }}>
+          {erroAoCarregar.mensagem}
+          {erroAoCarregar.status ? ` (erro ${erroAoCarregar.status})` : ""}
+          {" "}Nada do que aparece abaixo é o cadastro desta loja — nem a lista de pendências, nem o emissor escolhido.
+          Se continuar depois de tentar de novo, fale com o suporte do FireHub e diga o nome da loja.
+        </p>
+        {erroAoCarregar.motivo && (
+          <p style={{ fontSize: "0.76rem", color: "#92400E", margin: "6px 0 0", fontFamily: "ui-monospace, monospace", wordBreak: "break-word" }}>
+            Motivo informado pelo servidor: {erroAoCarregar.motivo}
+          </p>
+        )}
+      </div>
+    ) : podeEmitir ? (
       fiscalConfig.enabled ? null : (
         <div style={{ margin: "0 0 1.25rem", padding: "1rem 1.25rem", background: "#F8FAFC", border: "1px solid #CBD5E1", borderRadius: 12 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1500,6 +1572,14 @@ ${dados.aviso}` : "")
           <div>
             <AvisoDoEstadoFiscal />
             <AvisoDeHomologacao />
+            {!erroAoCarregar && prontidaoIndisponivel && (
+              // O cadastro carregou, mas o checklist do emissor (produtos sem
+              // NCM, nota de teste) não pôde ser lido: a tela segue inteira e
+              // diz que só esse pedaço ficou de fora.
+              <div style={{ margin: "0 0 1.25rem", padding: "0.75rem 1.25rem", background: "#F8FAFC", border: "1px solid #CBD5E1", borderRadius: 12, fontSize: "0.82rem", color: "#475569", lineHeight: 1.5 }}>
+                O checklist "Passo a passo do emissor" não pôde ser lido agora — o cadastro acima está certo; só a conferência de NCM e da nota de teste ficou de fora. Recarregue a tela daqui a pouco.
+              </div>
+            )}
             <h1 style={{ margin: "0 0 1.25rem", fontSize: "1.35rem", fontWeight: 800, color: "#1E293B" }}>
               Configurações fiscais
             </h1>
@@ -1537,9 +1617,13 @@ ${dados.aviso}` : "")
                           ? producao
                             ? "As notas saem com valor fiscal. Desligar para aqui a emissão manual e a automática."
                             : "As notas saem pelo ambiente de TESTE da SEFAZ, sem valor fiscal. Quando estiver tudo certo, passe para produção."
-                          : podeEmitir
-                            ? "O cadastro está completo. Ligue para começar — de preferência em homologação primeiro."
-                            : `Só dá para ligar com o cadastro completo: ${pendenciasFiscais.length} pendência(s) na lista vermelha do topo.`}
+                          : loading
+                            ? "Carregando o cadastro…"
+                            : erroAoCarregar
+                              ? "O cadastro não carregou — não dá para dizer o que falta nem ligar. Use \"Tentar de novo\" no aviso do topo."
+                              : podeEmitir
+                                ? "O cadastro está completo. Ligue para começar — de preferência em homologação primeiro."
+                                : `Só dá para ligar com o cadastro completo: ${pendenciasFiscais.length} pendência(s) na lista vermelha do topo.`}
                       </p>
 
                       <div role="group" aria-label="Ambiente da emissão" style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
@@ -1564,7 +1648,7 @@ ${dados.aviso}` : "")
                               type="button"
                               aria-pressed={ativo}
                               onClick={() => trocarAmbiente(amb)}
-                              disabled={!ehTitular || alterandoEmissao}
+                              disabled={!ehTitular || alterandoEmissao || loading || Boolean(erroAoCarregar)}
                               style={{
                                 padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${ativo ? "#1C1917" : "#CBD5E1"}`,
                                 background: ativo ? "#FAF6F2" : "#fff", color: ativo ? "#1C1917" : "#475569", fontWeight: 700,
@@ -1606,8 +1690,8 @@ ${dados.aviso}` : "")
                         ) : (
                           <button
                             onClick={() => alternarEmissao(true)}
-                            disabled={!ehTitular || !podeEmitir || alterandoEmissao}
-                            title={!podeEmitir ? "Resolva as pendências do cadastro para ligar" : undefined}
+                            disabled={!ehTitular || !podeEmitir || alterandoEmissao || loading || Boolean(erroAoCarregar)}
+                            title={erroAoCarregar ? "O cadastro não carregou — tente de novo no aviso do topo" : loading ? "Carregando o cadastro…" : !podeEmitir ? "Resolva as pendências do cadastro para ligar" : undefined}
                             style={{ padding: "9px 18px", background: podeEmitir && ehTitular ? "#1C1917" : "#CBD5E1", color: "#fff", border: "none", borderRadius: 8, fontWeight: 800, cursor: podeEmitir && ehTitular ? "pointer" : "not-allowed", opacity: alterandoEmissao ? 0.6 : 1 }}
                           >
                             {producao ? "Ligar emissão em PRODUÇÃO" : "Ligar emissão (homologação)"}
@@ -1642,7 +1726,7 @@ ${dados.aviso}` : "")
 
                 {/* Quem transmite as notas: o emissor do FireHub (padrão da
                     loja nova, sem custo por nota) ou a Focus (conta própria). */}
-                {!loading && (
+                {!loading && !erroAoCarregar && (
                   <EscolhaDoEmissor
                     provedor={emissorProprioAtivo ? "sefaz" : "focusnfe"}
                     padrao={Boolean(fiscalConfig.provedorPadrao)}
@@ -1652,7 +1736,7 @@ ${dados.aviso}` : "")
                     aoEscolher={escolherEmissor}
                   />
                 )}
-                {!loading && emissorProprioAtivo && (
+                {!loading && !erroAoCarregar && emissorProprioAtivo && (
                   <EmissorProprio
                     emissor={fiscalConfig.emissorProprio ?? null}
                     prontidao={prontidao}

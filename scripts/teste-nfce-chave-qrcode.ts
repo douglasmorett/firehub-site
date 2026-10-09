@@ -27,6 +27,8 @@ import {
   qrCodeV3Online,
   urlsDaUf,
 } from "../src/lib/nfce/qrcode";
+import { urlDoServico } from "../src/lib/nfce/sefaz";
+import { ufsDoEmissorProprio } from "../src/lib/nfce/pendencias";
 import { assinarTextoRsaSha1, verificarTextoRsaSha1 } from "../src/lib/nfce/assinatura";
 import { certificadoDeTeste, confere, terminar, verdade } from "./nfce-teste-apoio";
 
@@ -174,15 +176,28 @@ console.log("\n— Endereços por UF —");
   confere("MG homologação: urlChave hportalsped", urlsDaUf("MG", 2).urlChave, "https://hportalsped.fazenda.mg.gov.br/portalnfce");
   confere("PA homologação: portal-homologacao", urlsDaUf("PA", 2).qrCode, "https://appnfc.sefa.pa.gov.br/portal-homologacao/view/consultas/nfce/nfceForm.seam");
   confere("RJ: consultadfe", urlsDaUf("RJ", 1).qrCode, "https://consultadfe.fazenda.rj.gov.br/consultaNFCe/QRCode");
-  for (const uf of ["DF", "RJ", "MG", "PA"]) {
+  // As 27 UF (09/10/2026): cada uma com QR Code E urlChave nos dois
+  // ambientes, dentro do que o schema aceita, e com autorizador conhecido.
+  const TODAS = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"];
+  confere("o emissor atende as 27 UF", ufsDoEmissorProprio(), TODAS);
+  for (const uf of TODAS) {
     for (const amb of [1, 2] as const) {
-      const u = urlsDaUf(uf, amb).urlChave;
-      verdade(`urlChave ${uf}/${amb} cabe no schema (21–85)`, u.length >= 21 && u.length <= 85, `${u.length}`);
+      const { qrCode, urlChave } = urlsDaUf(uf, amb);
+      verdade(`urlChave ${uf}/${amb} cabe no schema (21–85)`, urlChave.length >= 21 && urlChave.length <= 85, `${urlChave.length}`);
+      verdade(`qrCode ${uf}/${amb} é http(s) sem "?" no fim`, /^https?:\/\/\S+[^?]$/.test(qrCode), qrCode);
+      for (const servico of ["autorizacao", "retAutorizacao", "consulta", "status", "evento", "inutilizacao"] as const) {
+        const url = urlDoServico(uf, amb, servico);
+        verdade(`webservice ${uf}/${amb}/${servico} é https sem "?wsdl"`, /^https:\/\/\S+$/.test(url) && !/\?/.test(url), url);
+      }
     }
   }
+  confere("SP produção: QR do portal", urlsDaUf("SP", 1).qrCode, "https://www.nfce.fazenda.sp.gov.br/qrcode");
+  confere("SP homologação: webservice de homologação", urlDoServico("SP", 2, "autorizacao"), "https://homologacao.nfce.fazenda.sp.gov.br/ws/NFeAutorizacao4.asmx");
+  confere("BA vai na SVRS (NFC-e, não NF-e)", urlDoServico("BA", 1, "status"), "https://nfce.svrs.rs.gov.br/ws/NfeStatusServico/NfeStatusServico4.asmx");
+  confere("GO: sem ?wsdl na chamada", urlDoServico("GO", 1, "evento"), "https://nfe.sefaz.go.gov.br/nfe/services/NFeRecepcaoEvento4");
   let recusou = false;
   try {
-    urlsDaUf("SP", 1);
+    urlsDaUf("ZZ", 1);
   } catch {
     recusou = true;
   }
