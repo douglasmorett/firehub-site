@@ -747,10 +747,11 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           background: cardBackground,
           borderRadius: "10px",
           border: cardBorder,
-          borderLeft: `4px solid ${canalDoPedido(order).texto}`,
           marginBottom: "0.4rem",
-          padding: "0.4rem 0.6rem",
-          boxShadow: isDragging ? cardBoxShadow : "none",
+          padding: "0.4rem 0.6rem 0.4rem 0.75rem",
+          // A faixa da cor do canal à esquerda vai como sombra interna:
+          // `borderLeft` junto do `border` é a mistura que o React acusa.
+          boxShadow: `inset 4px 0 0 ${canalDoPedido(order).texto}${isDragging ? `, ${cardBoxShadow}` : ""}`,
           cursor: canDrag ? (isDragging ? "grabbing" : "grab") : "pointer",
           userSelect: "none",
           opacity: isDragging ? 0.92 : 1,
@@ -779,7 +780,12 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           <span style={{ whiteSpace: "nowrap" }}>
             {ehMesa ? "🍽️ Mesa" : isTakeoutOrder ? "🏪 Retirada" : order.deliveryType === "BALCAO" ? "🧾 Balcão" : "🛵 Entrega"}
           </span>
-          <span style={{ marginLeft: "auto", whiteSpace: "nowrap", fontWeight: 800, color: timerColor }}>{timerLabel}</span>
+          {/* O tempo curto: "-58min atrasado" inteiro cortava na borda do card estreito. */}
+          <span title={timerLabel} style={{ marginLeft: "auto", whiteSpace: "nowrap", fontWeight: 800, color: timerColor, flexShrink: 0 }}>
+            {isFinished || remainingMins === null
+              ? (ehMesa ? `🍽️ ${decorrido}` : decorrido)
+              : isLate ? `⚠ -${Math.abs(remainingMins)}min` : `⏱ ${remainingMins}min`}
+          </span>
         </div>
       </div>
     );
