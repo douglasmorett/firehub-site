@@ -826,9 +826,16 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       // regra do navegador (lib/print.ts, cupomCompleto). Com via do entregador
       // marcada, sai só ela; sem via, o modelo sem valores da impressora não vale.
       const completo = order.cupomCompleto === true && order.semValores !== true;
-      const daVia = completo && !alvo ? impressoraDaViaDoEntregador(printers, order, []) : null;
+      const daVia = completo && !alvo && order.reimprimirInteiro !== true ? impressoraDaViaDoEntregador(printers, order, []) : null;
+      // Reimpressão "Todas" pelo modal do painel: o pedido inteiro em cada
+      // impressora cadastrada (uma vez por nome), sem roteamento nem via.
+      const nomeDa = (p: any) => String(p?.name || "").trim();
       const destinos = alvo
-        ? [{ impressora: printers.find((p) => String(p?.name || "").trim() === alvo) || { name: alvo }, itens: order.items || [] }]
+        ? [{ impressora: printers.find((p) => nomeDa(p) === alvo) || { name: alvo }, itens: order.items || [] }]
+        : order.reimprimirInteiro === true
+          ? printers
+              .filter((p, i, todas) => nomeDa(p) && todas.findIndex((q) => nomeDa(q) === nomeDa(p)) === i)
+              .map((p) => ({ impressora: p, itens: order.items || [] }))
         : daVia
           ? [{ impressora: daVia, itens: order.items || [] }]
           : destinosDoPedido(printers, order, { palavrasDeBebida: pc?.customBeverageKeywords });
@@ -873,7 +880,8 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           paperWidth: d.impressora.paperWidth || pc?.defaultPaperWidth || "80mm",
           columns: d.impressora.columns ?? undefined,
           escposProfile: d.impressora.escposProfile ?? undefined,
-          somenteBebidas: d.impressora.somenteBebidas === true,
+          // Reimpressão pelo modal sai inteira: o "só bebidas" não corta o papel.
+          somenteBebidas: d.impressora.somenteBebidas === true && !alvo && order.reimprimirInteiro !== true,
           separarItens: d.impressora.separarItens === true,
           items: d.itens,
           ...(d.impressora.somenteBebidas !== true && restoDoPedido(order.items, d.itens)

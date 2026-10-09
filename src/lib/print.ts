@@ -543,6 +543,9 @@ async function printToDevice(
 }
 
 /* ─── Função principal: imprime o pedido roteando por categoria ─ */
+/** `impressoraEscolhida` de printOrder para "Todas" no modal de reimpressão. */
+export const TODAS_AS_IMPRESSORAS = "*";
+
 export async function printOrder(
   order: PrintOrder,
   storeName: string,
@@ -562,10 +565,11 @@ export async function printOrder(
    */
   cupomCompleto = false,
   /**
-   * Reimpressão numa impressora escolhida no modal do painel (o `name` dela).
-   * Sai o pedido INTEIRO só nela, como o `impressoraAlvo` da fila da nuvem:
-   * quem escolhe a impressora escolhe onde o papel aparece, não o roteamento.
-   * Vazio = como sempre, cada impressora com os itens dela.
+   * Reimpressão pelo modal do painel: o `name` de uma impressora, ou
+   * TODAS_AS_IMPRESSORAS. Em qualquer dos dois sai o pedido INTEIRO em cada
+   * destino, sem a regra de categoria, de "só bebidas" nem a via do
+   * entregador: no modal a pessoa já escolheu com ou sem valores, e o papel é
+   * o pedido (Douglas, 09/10/2026). Ausente = o roteamento de sempre.
    */
   impressoraEscolhida?: string
 ): Promise<{ success: boolean; printed: number; attempted: boolean; aguardando: boolean }> {
@@ -653,12 +657,17 @@ export async function printOrder(
   // fila, roteamento-de-impressao.ts → umaPorImpressora).
   const uniquePrinters = umaPorImpressora(printersToUse);
 
-  const escolhida = impressoraEscolhida
-    ? todasAsImpressoras.find(p => String(p.name || "").trim() === impressoraEscolhida.trim())
-    : undefined;
-  if (impressoraEscolhida && !escolhida?.name) return { success: false, printed: 0, attempted: true, aguardando: false };
+  const reimpressao = impressoraEscolhida !== undefined && impressoraEscolhida !== "";
+  const nomeDe = (p: { name?: string }) => String(p.name || "").trim();
+  // A mesma impressora em duas linhas recebe uma vez (vale a primeira linha).
+  const destinosDaReimpressao = !reimpressao
+    ? null
+    : impressoraEscolhida === TODAS_AS_IMPRESSORAS
+      ? todasAsImpressoras.filter((p, i, todas) => nomeDe(p) && todas.findIndex(q => nomeDe(q) === nomeDe(p)) === i)
+      : todasAsImpressoras.filter(p => nomeDe(p) === impressoraEscolhida!.trim()).slice(0, 1);
+  if (destinosDaReimpressao && destinosDaReimpressao.length === 0) return { success: false, printed: 0, attempted: true, aguardando: false };
 
-  if (cupomCompleto && !semValores && !escolhida) {
+  if (cupomCompleto && !semValores && !reimpressao) {
     const via = impressoraDaViaDoEntregador(todasAsImpressoras, order as any, []);
     if (via) {
       const r = await imprimirViaDoEntregador(via);
@@ -674,14 +683,14 @@ export async function printOrder(
   // Quem ficou com itens do pedido: é onde a via do entregador sai (abaixo).
   const receberam: { nome: string; itens: number }[] = [];
 
-  for (const printer of escolhida ? [escolhida] : uniquePrinters) {
+  for (const printer of destinosDaReimpressao || uniquePrinters) {
     if (!printer.name) continue;
 
-    // Impressora escolhida na mão: o pedido inteiro, sem filtro de categoria.
-    const daImpressora = escolhida ? null : itensDaImpressora(printer, pedidoParaRotear, pedidas);
+    // Reimpressão pelo modal: o pedido inteiro, sem filtro de categoria.
+    const daImpressora = reimpressao ? null : itensDaImpressora(printer, pedidoParaRotear, pedidas);
     // Nada deste pedido é desta impressora: o bar não recebe a comanda do
     // burger. (Antes saía o pedido inteiro — ver roteamento-de-impressao.ts.)
-    if (daImpressora === null && !escolhida) continue;
+    if (daImpressora === null && !reimpressao) continue;
     const itemsToPrint = daImpressora ? daImpressora.map(i => i.item) : order.items;
     receberam.push({ nome: printer.name, itens: itensQueContamParaAVia(itemsToPrint) });
 
@@ -689,7 +698,7 @@ export async function printOrder(
     // impressora (2 itens)" em vez de "Outros valores do pedido" (mesma regra
     // da fila da nuvem, lib/roteamento-de-impressao.ts). A de bebida recebe o
     // pedido inteiro e não imprime valores: não tem resto.
-    const resto = printer.somenteBebidas || escolhida ? undefined : restoDoPedido(order.items, itemsToPrint);
+    const resto = printer.somenteBebidas || reimpressao ? undefined : restoDoPedido(order.items, itemsToPrint);
     const filteredOrder = { ...order, items: itemsToPrint, ...(resto ? { restoDoPedido: resto } : {}) };
 
     // ── CAMPANHA "CONVERTER PARA SITE PRÓPRIO" ────────────────────────────
@@ -723,8 +732,8 @@ export async function printOrder(
       // O botão "Cupom da cozinha" força sem valores em todas; o modelo da
       // impressora ("Cozinha sem valores") força só nela.
       semValoresAqui,
-      // Na escolhida sai o pedido inteiro: o "só bebidas" dela não corta o papel.
-      printer.somenteBebidas === true && !escolhida,
+      // Na reimpressão sai o pedido inteiro: o "só bebidas" não corta o papel.
+      printer.somenteBebidas === true && !reimpressao,
       printer.separarItens === true,
       qrLigadoNaImpressora(printer, printerConfig as any),
       campanha,
@@ -750,7 +759,7 @@ export async function printOrder(
   // mais na impressora marcada — a mesma regra da fila da nuvem. O id com
   // sufixo é o que impede o Assistente de tomá-la por segunda via da comanda
   // que acabou de sair na mesma impressora. O "Cupom da cozinha" não a leva.
-  const daVia = semValores || escolhida ? null : impressoraDaViaDoEntregador(todasAsImpressoras, order as any, receberam);
+  const daVia = semValores || reimpressao ? null : impressoraDaViaDoEntregador(todasAsImpressoras, order as any, receberam);
   if (daVia) {
     const via = await imprimirViaDoEntregador(daVia);
     if (via.aguardando) aguardando = true;

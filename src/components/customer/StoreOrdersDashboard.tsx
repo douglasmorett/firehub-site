@@ -2066,7 +2066,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   };
 
   // ── EM QUAL IMPRESSORA REIMPRIMIR (o modal do botão Imprimir) ────────────
-  // "" = todas, como o pedido sai sozinho (cada impressora com os itens dela).
+  // "" = todas. Em qualquer escolha sai o PEDIDO INTEIRO (lib/print.ts,
+  // TODAS_AS_IMPRESSORAS): o modal já pergunta com ou sem valores.
   // As impressoras são as da loja DO PEDIDO (em "Todas as lojas" pode ser irmã).
   const [impressoraDaReimpressao, setImpressoraDaReimpressao] = useState("");
   const [impressorasDoModal, setImpressorasDoModal] = useState<{ nome: string; rotulo: string }[]>([]);
@@ -2320,8 +2321,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             ...(semValores
               ? { ...comanda, semValores: true }
               : isManual && type === "completo" ? { ...comanda, cupomCompleto: true } : comanda),
-            // Impressora escolhida no modal: o pedido inteiro só nela (print-queue, impressoraAlvo).
-            ...(isManual && impressoraEscolhida ? { impressoraAlvo: impressoraEscolhida } : {}),
+            // Reimpressão pelo modal: o pedido inteiro só na escolhida
+            // (impressoraAlvo) ou em todas (reimprimirInteiro) — print-queue.
+            ...(isManual && impressoraEscolhida
+              ? impressoraEscolhida === "*" ? { reimprimirInteiro: true } : { impressoraAlvo: impressoraEscolhida }
+              : {}),
           },
           storeName,
           paperWidth: receiptPaperSize || "80mm",
@@ -3839,7 +3843,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           role="radio"
                           aria-checked={marcada}
                           onClick={() => setImpressoraDaReimpressao(imp.nome)}
-                          title={imp.nome ? `O pedido inteiro só na ${imp.rotulo}` : "Cada impressora com os itens dela, como o pedido sai sozinho"}
+                          title={imp.nome ? `O pedido inteiro só na ${imp.rotulo}` : "O pedido inteiro em cada impressora cadastrada"}
                           style={{
                             padding: "6px 12px", borderRadius: "999px", cursor: "pointer", fontSize: "0.8rem", fontWeight: 700, fontFamily: "inherit",
                             border: `1px solid ${marcada ? "#1C1917" : "#CBD5E1"}`, background: marcada ? "#1C1917" : "#fff", color: marcada ? "#fff" : "#334155",
@@ -3852,7 +3856,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   </div>
                   {/* Uma linha só: frase curta e sem quebra (Douglas, 09/10). */}
                   <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {impressoraDaReimpressao ? "Pedido inteiro só nesta impressora." : "Cada impressora com os itens dela."}
+                    {impressoraDaReimpressao ? "Pedido inteiro só nesta impressora." : "Pedido inteiro em todas as impressoras."}
                   </div>
                 </div>
               )}
@@ -3860,7 +3864,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
                 <button
                   onClick={() => {
-                    handlePrint(order, "cozinha", true, true, impressoraDaReimpressao || undefined);
+                    handlePrint(order, "cozinha", true, true, impressoraDaReimpressao || "*");
                     setPrintSelectOrderId(null);
                   }}
                   style={{ padding: "12px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#F8FAFC", color: "#334155", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
@@ -3869,7 +3873,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </button>
                 <button
                   onClick={() => {
-                    handlePrint(order, "completo", true, false, impressoraDaReimpressao || undefined);
+                    handlePrint(order, "completo", true, false, impressoraDaReimpressao || "*");
                     setPrintSelectOrderId(null);
                   }}
                   style={{ padding: "12px", borderRadius: "10px", border: "none", background: "#1C1917", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.9rem", transition: "background 0.2s" }}
