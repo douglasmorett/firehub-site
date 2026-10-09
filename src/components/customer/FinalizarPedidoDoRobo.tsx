@@ -48,12 +48,27 @@ export default function FinalizarPedidoDoRobo({
   orderId,
   onClose,
   onFinalizado,
+  lojas = [],
+  lojaAtualId = "",
 }: {
   orderId: string;
   onClose: () => void;
   /** Depois de gravar: quem abriu atualiza a lista. */
   onFinalizado: (pedido: any) => void;
+  /**
+   * As lojas do grupo em que o pedido pode ser preparado — a mesma escolha do
+   * aviso roxo de conferência. Pizzaria 17 (09/10/2026): o pedido segurado por
+   * endereço e o "✏️ Editar" passam por AQUI, e sem a escolha a funcionária
+   * não conseguia mandar o pedido para o Aeroporto. Vazio ou uma só = fica na
+   * loja atual.
+   */
+  lojas?: { id: string; storeName?: string | null }[];
+  lojaAtualId?: string;
 }) {
+  const [lojaEscolhida, setLojaEscolhida] = useState(lojaAtualId);
+  // A lista de lojas pode chegar depois de o formulário abrir: começa marcada a atual.
+  useEffect(() => { if (!lojaEscolhida && lojaAtualId) setLojaEscolhida(lojaAtualId); }, [lojaAtualId, lojaEscolhida]);
+  const escolheLoja = lojas.length > 1;
   const [carregando, setCarregando] = useState(true);
   const [rascunho, setRascunho] = useState<Rascunho | null>(null);
   const [cidade, setCidade] = useState("");
@@ -163,6 +178,8 @@ export default function FinalizarPedidoDoRobo({
           troco,
           observacao: obs,
           ...(tipo === "DELIVERY" ? entregaNoPedidoDoBalcao(endereco, cotacao, taxaNaMao, cidade) : {}),
+          // A loja do grupo que vai preparar (vazio = esta mesma).
+          ...(escolheLoja && lojaEscolhida && lojaEscolhida !== lojaAtualId ? { lojaDestinoId: lojaEscolhida } : {}),
         }),
       });
       const d = await res.json().catch(() => null);
@@ -290,6 +307,21 @@ export default function FinalizarPedidoDoRobo({
                   </div>
                 )}
               </div>
+
+              {escolheLoja && (
+                // A mesma escolha do aviso roxo de conferência: o pedido passa a
+                // ser da loja marcada (painel, comanda, cozinha e motoboys dela).
+                <div style={{ padding: "10px 12px", borderRadius: 10, background: "#fff", border: "1.5px solid #6D28D9", display: "grid", gap: 6 }}>
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#6D28D9" }}>🏪 Em qual loja este pedido vai ser preparado?</div>
+                  {lojas.map((l) => (
+                    <label key={l.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: "0.92rem", cursor: "pointer", padding: "6px 8px", borderRadius: 8, background: lojaEscolhida === l.id ? "#F5F3FF" : "transparent", border: `1px solid ${lojaEscolhida === l.id ? "#DDD6FE" : "transparent"}` }}>
+                      <input type="radio" name="loja-do-pedido-finalizado" checked={lojaEscolhida === l.id} onChange={() => setLojaEscolhida(l.id)} disabled={salvando} />
+                      <span style={{ fontWeight: lojaEscolhida === l.id ? 800 : 500 }}>{l.storeName || "Loja"}</span>
+                      {l.id === lojaAtualId && <span style={{ fontSize: "0.72rem", color: PALETA.areiaTinta }}>(esta loja)</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
 
               <div>
                 <label style={rotulo}>Observação da loja (sai na comanda)</label>

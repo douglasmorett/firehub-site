@@ -4288,6 +4288,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           key={rascunhoParaFinalizar}
           orderId={rascunhoParaFinalizar}
           onClose={() => setRascunhoParaFinalizar(null)}
+          lojas={lojasParaAceitar}
+          lojaAtualId={lojaDaSessaoId}
           onFinalizado={async () => {
             setRascunhoParaFinalizar(null);
             await recarregarPedidos();
