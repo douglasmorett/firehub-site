@@ -24,14 +24,14 @@ export async function PATCH(req: NextRequest) {
   // que não é da loja dona do pedido, disparando WhatsApp em nome dela.
   const usuario = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, ownerId: true, role: true },
+    select: { id: true, ownerId: true, role: true, name: true, email: true },
   });
   if (!usuario) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
   const lojaDaSessao = usuario.ownerId || usuario.id;
 
   const pedidoAlvo = await prisma.customerOrder.findUnique({
     where: { id: orderId },
-    select: { franchiseeId: true, status: true, motoboyId: true },
+    select: { franchiseeId: true, status: true, motoboyId: true, totalAmount: true, editHistory: true, motoboy: { select: { name: true } } },
   });
   if (!pedidoAlvo) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
   if (usuario.role !== "ADMIN" && pedidoAlvo.franchiseeId !== lojaDaSessao) {
@@ -39,45 +39,54 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Este pedido não é desta loja" }, { status: 403 });
   }
 
-  // ── PEDIDO JÁ ENTREGUE NÃO TROCA DE ENTREGADOR ────────────────────────────
+  // ── PEDIDO JÁ ENTREGUE TAMBÉM TROCA DE ENTREGADOR ─────────────────────────
   //
   // Trocar o nome aqui é o que MOVE o pedido de um celular para o outro (o app
-  // lista por `motoboyId`), e é para isso que a tela existe: o entregador puxou
-  // o pedido errado, a loja corrige e ele sai do aparelho dele.
+  // lista por `motoboyId`), e o relatório de entregas soma o repasse por ele.
   //
-  // Depois de ENTREGUE, porém, o pedido é história — e o relatório de entregas
-  // soma o repasse por `motoboyId`. Reatribuir ali pagaria a entrega a quem não
-  // a fez, e tiraria de quem fez. É a mesma trava que a troca de entregador da
-  // ROTA já tem (api/store/routes PATCH), que faltava só neste caminho.
+  // Até 09/10/2026 pedido ENTREGUE recusava a troca (409) — e fechar o caixa
+  // marca como ENTREGUE tudo o que estava na rua. A Delícias de Casa acerta os
+  // motoboys DEPOIS de fechar o caixa, e é aí que descobre que a entrega foi
+  // de outro: a troca não passava, a tela mostrava o nome novo mesmo assim, e
+  // o relatório seguia com o antigo. "A loja é dos caras, eles fazem o que
+  // quiserem" (Douglas). Agora troca, e fica no histórico do pedido
+  // (editHistory, MOTOBOY): quem, quando, de quem para quem.
   const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
   const jaFechou = [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS].includes(pedidoAlvo.status as any);
   const trocandoDeFato = String(motoboyId || "") !== String(pedidoAlvo.motoboyId || "");
-  if (jaFechou && trocandoDeFato) {
-    return NextResponse.json(
-      {
-        error: "Este pedido já foi finalizado — o entregador não pode mais ser trocado, senão o acerto da entrega iria para quem não a fez.",
-        status: pedidoAlvo.status,
-      },
-      { status: 409 },
-    );
-  }
 
   // O motoboy também tem que ser da loja: senão dava para "emprestar" o
   // entregador de outra loja para um pedido seu.
+  let nomeDoNovo: string | null = null;
   if (motoboyId) {
     const motoboyDaLoja = await prisma.motoboy.findFirst({
       where: { id: String(motoboyId), franchiseeId: pedidoAlvo.franchiseeId },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!motoboyDaLoja) {
       return NextResponse.json({ error: "Este entregador não é desta loja" }, { status: 403 });
     }
+    nomeDoNovo = motoboyDaLoja.name;
   }
 
+  const { empilharEdicao } = await import("@/lib/edicao-de-pedido");
+  const total = Number(pedidoAlvo.totalAmount || 0);
   const order = await prisma.customerOrder.update({
     where: { id: orderId },
     data: {
       motoboyId: motoboyId || null,
+      ...(trocandoDeFato
+        ? {
+            editHistory: empilharEdicao(pedidoAlvo.editHistory, {
+              quando: new Date().toISOString(),
+              quem: usuario.name || usuario.email || "loja",
+              acao: "MOTOBOY",
+              descricao: `Entregador: ${pedidoAlvo.motoboy?.name || "nenhum"} → ${nomeDoNovo || "nenhum"}`,
+              totalAntes: total,
+              totalDepois: total,
+            }) as any,
+          }
+        : {}),
       // A LOJA atribuindo (ou desatribuindo) apaga o carimbo de "puxou pelo
       // app": senão o selo "puxou 19:42" ficava ao lado do nome de quem a loja
       // escolheu DEPOIS — a etiqueta erraria exatamente na discussão para a
@@ -108,8 +117,10 @@ export async function PATCH(req: NextRequest) {
       .catch(() => {});
   }
 
-  // Disparar notificação automática via WhatsApp para o Motoboy se atribuído
-  if (order.motoboy && order.motoboy.phone && order.motoboyId) {
+  // Disparar notificação automática via WhatsApp para o Motoboy se atribuído.
+  // Pedido já finalizado é acerto de contas, não entrega nova: nada de
+  // mandar o endereço para o entregador sair de novo.
+  if (!jaFechou && order.motoboy && order.motoboy.phone && order.motoboyId) {
     try {
       const cleanPhone = order.motoboy.phone.replace(/\D/g, "");
       if (cleanPhone.length >= 8) {

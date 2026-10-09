@@ -91,7 +91,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     );
   }
 
-  const avaliacao = podeTrocarPagamento(order);
+  const avaliacao = podeTrocarPagamento(order, { pelaLoja: true });
   if (!avaliacao.pode) {
     return NextResponse.json({ error: avaliacao.motivo }, { status: 403 });
   }

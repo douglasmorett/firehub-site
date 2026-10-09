@@ -4,7 +4,7 @@
  * GERADO por scripts/gerar-comanda-do-assistente.mjs — NÃO EDITE AQUI.
  *
  * É o código que monta a comanda no Assistente de Impressão
- * (firehub-print-assistant/server.js, versão 1.2.33), copiado para a prévia
+ * (firehub-print-assistant/server.js, versão 1.2.34), copiado para a prévia
  * de "Personalizar impressão" desenhar o papel com o MESMO código que imprime.
  * Mudou o server.js? Rode o script de novo; `--conferir` falha enquanto esta
  * cópia estiver velha.
@@ -1171,9 +1171,23 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   const customKeywords = order.customBeverageKeywords || order.printerConfig?.customBeverageKeywords || "";
   const autoBeverageTag = order.printerConfig?.autoBeverageTag !== false; // Padrão: true
 
+  // "Nao quero a bebida." / "Sem refri": a opcao de RECUSA do combo tem a
+  // palavra de bebida e saia com "POSSUI BEBIDA" justo no pedido sem bebida
+  // (Delicias de Casa, 09/10/2026). A negacao so vale no comeco do nome ou
+  // como "nao quero" — "Refrigerante sem Acucar" continua bebida. A mesma
+  // regra mora no site (src/lib/beverage.ts, ehRecusaDeBebida).
+  const reRecusa = /^\s*(nao|sem|dispenso|nenhum|nenhuma)\b|\bnao\s+(quero|desejo|preciso|vou querer)\b/i;
+  const ehRecusaDeBebida = (name) => {
+    if (!name) return false;
+    const limpo = cleanAscii(name);
+    return reRecusa.test(limpo) && /\b(bebida|bebidas|refri|refris|refrigerante|refrigerantes|suco|sucos|coca|guarana|agua|lata|drink)\b/i.test(limpo);
+  };
+  const recusouBebidaNoItem = (item) => normalizarCombo(item && item.comboSelections).some(s => ehRecusaDeBebida(s.name));
+
   const isBeverageName = (name) => {
     if (!name || !autoBeverageTag) return false;
     const cleanName = cleanAscii(name);
+    if (reRecusa.test(cleanName)) return false;
     const defaultPattern = "bebida|bebidas|refrigerante|refrigerantes|suco|sucos|cerveja|cervejas|agua|guarana|guaravita|coca|fanta|sprite|pepsi|soda|h2oh|monster|red bull|redbull|energetico|cha|mate|lata|2l|600ml|350ml|long neck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|sol|corona|smirnoff|ice|tonica|schweppes|del valle|tampico|kapo|suffresh|feel good|kombucha|vibe|tnt|bravus|skol beats|51|pitu|velho barreiro|corote|vodka|gin|whisky|whiskey|licor|vinho|espumante|champagne|chopp";
 
     let customPattern = "";
@@ -1193,6 +1207,8 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     if (!item) return false;
     if (item.isBeverage === true || item.isBeverage === "true") return true;
     if (!autoBeverageTag) return false;
+    // "Parmegiana + 2 Coca" com "Nao quero a bebida": o cliente recusou.
+    if (recusouBebidaNoItem(item)) return false;
     const cat = String(item.category || item.menuProduct?.category || "");
     const name = String(item.name || item.menuProduct?.name || "");
     return isBeverageName(cat) || isBeverageName(name);
@@ -1801,10 +1817,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   return Buffer.from(res, "binary");
 }
 
-export const VERSAO_DO_ASSISTENTE = "1.2.33";
-export const ASSINATURA_DO_CODIGO = "7d913ce9b71ee4a2";
+export const VERSAO_DO_ASSISTENTE = "1.2.34";
+export const ASSINATURA_DO_CODIGO = "32c0c18501a2a697";
 
-/** Os bytes ESC/POS da comanda, como o Assistente 1.2.33 manda para a impressora. */
+/** Os bytes ESC/POS da comanda, como o Assistente 1.2.34 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
   return buildEscPos(order, storeName, columns, profile);
 }

@@ -78,6 +78,36 @@ export function isBeverageCategory(category?: string | null): boolean {
  * `categoriaEhDeBebida` destrava as ambíguas: "Vinho Tinto Suave" na categoria
  * "Vinhos" é bebida; "Filé ao Molho de Vinho" na categoria "Pratos" não é.
  */
+/**
+ * ── "NÃO QUERO A BEBIDA" NÃO É BEBIDA ───────────────────────────────────────
+ *
+ * A opção de recusa do combo ("Não quero a bebida.", "Sem refrigerante")
+ * tem a palavra de bebida no nome, e a regex achava a palavra: o papel saía
+ * com "ATENÇÃO: POSSUI BEBIDA" e "<=== BEBIDA" justamente no pedido em que o
+ * cliente disse que não queria (Delícias de Casa, 09/10/2026). A negação só
+ * vale no COMEÇO do nome ou como "não quero": "Refrigerante sem Açúcar"
+ * continua bebida. A mesma regra mora no Assistente (server.js).
+ */
+const reRecusa = /^\s*(nao|sem|dispenso|nenhum|nenhuma)\b|\bnao\s+(quero|desejo|preciso|vou querer)\b/i;
+
+/** O nome é uma RECUSA de bebida ("Não quero a bebida", "Sem refri")? */
+export function ehRecusaDeBebida(name?: string | null): boolean {
+  if (!name) return false;
+  const limpo = cleanAscii(name);
+  return reRecusa.test(limpo) && /\b(bebida|bebidas|refri|refris|refrigerante|refrigerantes|suco|sucos|coca|guarana|agua|lata|drink)\b/i.test(limpo);
+}
+
+/** O cliente recusou a bebida dentro deste item (opção do combo)? */
+function recusouBebidaNoItem(item: any): boolean {
+  if (!item?.comboSelections) return false;
+  try {
+    const parsed = safeParseCombo(item.comboSelections);
+    return Array.isArray(parsed) && parsed.some((s: any) => ehRecusaDeBebida(s?.name || s?.productName || s?.title));
+  } catch {
+    return false;
+  }
+}
+
 export function isBeverageName(
   name?: string | null,
   customKeywords?: string | string[],
@@ -85,6 +115,7 @@ export function isBeverageName(
 ): boolean {
   if (!name) return false;
   const cleanName = cleanAscii(name);
+  if (reRecusa.test(cleanName)) return false;
 
   // A palavra da LOJA é lei — é a saída de emergência para a marca regional.
   const custom = regexCustom(customKeywords);
@@ -99,6 +130,9 @@ export function isBeverageItem(item: any, customKeywords?: string | string[]): b
   if (!item) return false;
   if (item.isBeverage === true || item.isBeverage === "true") return true;
   if (item.menuProduct?.isBeverage === true) return true;
+  // "Parmegiana + 2 Coca-Cola" com a opção "Não quero a bebida": o nome do
+  // prato fala da Coca, mas o cliente recusou — o item não leva bebida.
+  if (recusouBebidaNoItem(item)) return false;
   const cat = String(item.category || item.menuProduct?.category || "");
   // A coluna real do item de pedido é `productName`; `item.name` só existe em
   // payload montado na mão. Sem o fallback, pedido vindo do banco era invisível.
@@ -148,7 +182,7 @@ export function getBeveragesFromOrder(order: any, customKeywords?: string | stri
     const catBebida = isBeverageCategory(String(item.category || item.menuProduct?.category || ""));
     const paiEhBebida =
       item.isBeverage === true || item.menuProduct?.isBeverage === true ||
-      (catBebida && !!name) || isBeverageName(name, customKeywords, catBebida);
+      (!recusouBebidaNoItem(item) && ((catBebida && !!name) || isBeverageName(name, customKeywords, catBebida)));
 
     let bebidasDeDentro: { name: string; quantity: number }[] = [];
     if (item.comboSelections) {

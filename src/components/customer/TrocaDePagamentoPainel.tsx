@@ -95,7 +95,7 @@ export default function TrocaDePagamentoPainel({
     );
   }
 
-  const avaliacao = podeTrocarPagamento(pedido);
+  const avaliacao = podeTrocarPagamento(pedido, { pelaLoja: true });
 
   if (!aberto || !avaliacao.pode) {
     return (

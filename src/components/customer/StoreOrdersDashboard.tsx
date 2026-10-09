@@ -419,6 +419,20 @@ const OPCOES_COLUNAS: {
     ],
   },
   {
+    chave: "colunaCardsClean", padrao: false,
+    rotulo: "Painel clean",
+    ajuda: "Cards pequenos: mais pedidos na tela, sem rolar",
+    aoLigar: [
+      "Cada pedido vira um card de duas linhas: número, cliente, valor, canal, tipo e o tempo.",
+      "Cabe muito mais pedido em cada coluna sem precisar descer a tela.",
+      "Os botões (aceitar, motoboy, imprimir, ver pedido) aparecem quando você clica no card: ele abre completo, como hoje. Clicando de novo, fecha.",
+      "Arrastar o card entre as colunas continua igual.",
+    ],
+    aoDesligar: [
+      "Os pedidos voltam a aparecer no card grande, com tudo à vista.",
+    ],
+  },
+  {
     chave: "colunaProntos", padrao: false,
     rotulo: "Coluna Prontos",
     ajuda: "Só o que já saiu da cozinha",
@@ -581,6 +595,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   destacarCancelado = false,
   /** As lojas da conta, para dizer de qual marca é este pedido. */
   lojasDeOrigem,
+  /** Painel clean (engrenagem → Colunas do painel): o card fechado vira duas linhas. */
+  compacto = false,
 }: any) {
   // O resumo que abria ao passar o mouse no número do pedido mudou de tela:
   // aqui ele não servia (o dono, 13/09/2026), e a informação foi para o MAPA da
@@ -707,6 +723,65 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
     (order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || !order.deliveryType || order.source === "IFOOD" || order.source === "99FOOD") &&
     order.deliveryType !== "RETIRADA" && order.deliveryType !== "TAKEOUT" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA";
   const puxouPeloApp = Boolean((order as any).motoboyPuxadoEm && order.motoboyId);
+
+  // ── PAINEL CLEAN ─────────────────────────────────────────────────────────
+  //
+  // Opção da engrenagem (Colunas do painel → "Painel clean"), desligada por
+  // padrão: o quadrado grande continua sendo o painel do FireHub. Para quem
+  // prefere o jeito do CardápioWeb — pouca informação por pedido e muitos
+  // pedidos na tela sem rolar (Douglas, 09/10/2026) —, o card vira duas
+  // linhas: número, cliente, valor, canal e o tempo. Um clique abre o card
+  // completo de sempre, com todos os botões; outro clique fecha.
+  if (compacto && !expanded) {
+    const total = Number(order.totalAmount || 0);
+    return (
+      <div
+        draggable={canDrag}
+        onDragStart={canDrag ? (e => onDragStart && onDragStart(e, order.id)) : undefined}
+        onDragEnd={canDrag ? onDragEnd : undefined}
+        onClick={() => onToggleExpand && onToggleExpand(order.id)}
+        title="Clique para abrir o pedido completo"
+        style={{
+          background: cardBackground,
+          borderRadius: "10px",
+          border: cardBorder,
+          borderLeft: `4px solid ${canalDoPedido(order).texto}`,
+          marginBottom: "0.4rem",
+          padding: "0.4rem 0.6rem",
+          boxShadow: isDragging ? cardBoxShadow : "none",
+          cursor: canDrag ? (isDragging ? "grabbing" : "grab") : "pointer",
+          userSelect: "none",
+          opacity: isDragging ? 0.92 : 1,
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={selectedOrderIds?.has(order.id) || false}
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => onToggleSelectOrder && onToggleSelectOrder(order.id)}
+            style={{ width: 15, height: 15, cursor: "pointer", accentColor: "#1C1917", flexShrink: 0 }}
+            title="Selecionar pedido"
+          />
+          <span style={{ fontWeight: 900, fontSize: "0.86rem", color: "#0F172A", flexShrink: 0 }}>#{seqNum}</span>
+          <span style={{ fontWeight: 700, fontSize: "0.84rem", color: "#1E293B", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {order.customerName}
+          </span>
+          <span style={{ fontWeight: 900, fontSize: "0.84rem", color: "#0F172A", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+            R$ {total.toFixed(2).replace(".", ",")}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, paddingLeft: 21, fontSize: "0.72rem", color: "#64748B", fontWeight: 600, minWidth: 0 }}>
+          <span style={{ whiteSpace: "nowrap" }}>{rotuloDoCanal(order)}</span>
+          <span aria-hidden>·</span>
+          <span style={{ whiteSpace: "nowrap" }}>
+            {ehMesa ? "🍽️ Mesa" : isTakeoutOrder ? "🏪 Retirada" : order.deliveryType === "BALCAO" ? "🧾 Balcão" : "🛵 Entrega"}
+          </span>
+          <span style={{ marginLeft: "auto", whiteSpace: "nowrap", fontWeight: 800, color: timerColor }}>{timerLabel}</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1801,6 +1876,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const colNovos = naBarra("colunaNovos");
   const colCancelados = naBarra("colunaCancelados");
   const colProntos = barraConfig["colunaProntos"] === true;
+  /** Painel clean: card fechado em duas linhas (DashboardOrderCard, `compacto`). */
+  const painelClean = barraConfig["colunaCardsClean"] === true;
   // Sem a coluna Novos não existe lugar para um pedido esperar aceite. Então o
   // aceite automático vira obrigatório — não é o botão do lojista que decide,
   // é a ausência da coluna. Vale mesmo que este navegador tenha o botão
@@ -3040,7 +3117,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const seqNum = targetOrder ? getDisplayOrderNumber(targetOrder) : undefined;
 
     try {
-      await fetch("/api/customer-order/assign-motoboy", {
+      const res = await fetch("/api/customer-order/assign-motoboy", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -3049,6 +3126,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           firehubOrderNumber: seqNum,
         }),
       });
+      // Sem conferir a resposta, a tela trocava o nome mesmo quando o
+      // servidor recusava — o card dizia "Jobson" e o relatório seguia com o
+      // entregador antigo (Delícias de Casa, 09/10/2026).
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        showToast(data.error || "Não consegui trocar o entregador. Tente de novo.", "#B91C1C");
+        return;
+      }
       setOrders(prev => prev.map(o =>
         o.id === orderId
           ? { ...o, motoboyId, motoboy: motoboys.find(m => m.id === motoboyId) || null }
@@ -6515,6 +6600,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   key={o.id}
                   order={o}
                   expanded={expandedId === o.id}
+                  compacto={painelClean}
                   isLoading={loadingId === o.id}
                   isDragging={draggedOrderId === o.id}
                   now={now}
@@ -6587,6 +6673,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
+                  compacto={painelClean}
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
@@ -6630,6 +6717,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
+                  compacto={painelClean}
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
@@ -6669,6 +6757,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
+                  compacto={painelClean}
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
@@ -6705,6 +6794,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
+                  compacto={painelClean}
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
@@ -6741,6 +6831,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 order={o}
                 destacarCancelado={!colCancelados}
                 expanded={expandedId === o.id}
+                  compacto={painelClean}
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}
@@ -6779,6 +6870,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
+                  compacto={painelClean}
                 isLoading={loadingId === o.id}
                 isDragging={draggedOrderId === o.id}
                 now={now}

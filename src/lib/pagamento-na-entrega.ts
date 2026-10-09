@@ -184,6 +184,15 @@ export function formaCanonica(texto: string | null | undefined): FormaNaEntrega 
  */
 export function podeTrocarPagamento(
   pedido: (PedidoParaCobranca & { status?: string | null; gatewayPaymentId?: string | null; tableSessionId?: string | null }) | null | undefined,
+  /**
+   * A LOJA trocando (painel, relatório de motoboys): pago online também troca.
+   * "A loja é dos caras, eles fazem o que quiserem" (Douglas, 09/10/2026) — a
+   * Delícias de Casa acerta o motoboy depois de fechar o caixa, e o pedido
+   * marcado "Pix (Pago Online)" ficava com 🔒. O rastro (editHistory,
+   * PAGAMENTO) registra quem trocou. O APP DO MOTOBOY não passa isto:
+   * entregador continua sem poder mexer em pedido já pago.
+   */
+  opcoes?: { pelaLoja?: boolean },
 ): { pode: boolean; motivo?: string } {
   if (!pedido) return { pode: false, motivo: "Pedido não encontrado." };
   if (String(pedido.status || "").toUpperCase().startsWith("CANCEL")) {
@@ -205,7 +214,7 @@ export function podeTrocarPagamento(
   if (pedido.kind === "CONTA_DA_MESA" || pedido.tableSessionId) {
     return { pode: false, motivo: "Conta de mesa aberta: a forma de pagamento se acerta no painel de Mesas." };
   }
-  if (ehPagoOnline(pedido)) {
+  if (!opcoes?.pelaLoja && ehPagoOnline(pedido)) {
     return { pode: false, motivo: "Pagamento online já confirmado — não dá para trocar." };
   }
   return { pode: true };

@@ -162,6 +162,34 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
     setTimeout(() => setAcabouDeTrocar((atual) => (atual === pedidoId ? null : atual)), 2500);
   };
 
+  // ── TROCAR O ENTREGADOR DA ENTREGA ─────────────────────────────────────────
+  // No acerto, depois de fechar o caixa, a loja descobre que a entrega foi de
+  // outro motoboy (Delícias de Casa, 09/10/2026). Troca aqui mesmo: a entrega
+  // muda de cartão e o histórico do pedido registra quem trocou.
+  const [trocandoEntregador, setTrocandoEntregador] = useState<string | null>(null);
+  const [erroDoEntregador, setErroDoEntregador] = useState<{ id: string; texto: string } | null>(null);
+  const trocarEntregador = async (pedidoId: string, novoId: string) => {
+    setTrocandoEntregador(pedidoId);
+    setErroDoEntregador(null);
+    try {
+      const res = await fetch("/api/customer-order/assign-motoboy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: pedidoId, motoboyId: novoId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setErroDoEntregador({ id: pedidoId, texto: data.error || "Não consegui trocar o entregador." });
+        return;
+      }
+      if (buscaNaTela.current) await buscar(buscaNaTela.current, true);
+    } catch {
+      setErroDoEntregador({ id: pedidoId, texto: "Sem conexão. Tente de novo." });
+    } finally {
+      setTrocandoEntregador(null);
+    }
+  };
+
   /**
    * "Ver pedido" abre O PEDIDO, na tela de Pedidos (aba nova): a mesma comanda
    * com Editar, Trocar pagamento, Nota e o histórico do que foi mexido — não
@@ -640,10 +668,10 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                         const acabou = acabouDeTrocar === o.id;
                         // Pago no app não se troca: o cadeado diz isso antes
                         // do clique, e o motivo aparece ao passar o mouse.
-                        const trocavel = podeTrocarPagamento(o);
+                        const trocavel = podeTrocarPagamento(o, { pelaLoja: true });
                         return (
                           <div key={o.id}>
-                          <div style={{ display: "grid", gridTemplateColumns: "85px 1fr auto auto auto auto", gap: 8, padding: "8px 10px", background: acabou ? "#F0FDFA" : "#F8FAFC", outline: acabou ? "1.5px solid #99F6E4" : trocando ? "1.5px solid #FDE68A" : "none", borderRadius: 8, fontSize: "0.78rem", alignItems: "center", transition: "background 0.3s" }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "85px 1fr auto auto auto auto auto auto", gap: 8, padding: "8px 10px", background: acabou ? "#F0FDFA" : "#F8FAFC", outline: acabou ? "1.5px solid #99F6E4" : trocando ? "1.5px solid #FDE68A" : "none", borderRadius: 8, fontSize: "0.78rem", alignItems: "center", transition: "background 0.3s" }}>
                             <span style={{ color: "#64748B" }}>{dateStr ? new Date(dateStr).toLocaleDateString("pt-BR") : "-"}</span>
                             <span style={{ fontWeight: 600 }}>
                               {numDisplay ? <strong style={{ color: "#0F172A", marginRight: 4 }}>{numDisplay}</strong> : null}
@@ -654,6 +682,16 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                                   ✏️ EDITADO
                                 </span>
                               )}
+                            </span>
+                            {/* O valor do pedido na própria linha: quem procura "a
+                                latinha de R$ 7" acha pelo valor, sem abrir pedido
+                                por pedido (Douglas, 09/10/2026). Cancelado vem
+                                riscado — não entra no valor dos pedidos. */}
+                            <span
+                              title={o.cancelado ? "Pedido cancelado — fora do valor dos pedidos" : "Valor do pedido"}
+                              style={{ fontWeight: 900, fontSize: "0.86rem", color: o.cancelado ? "#94A3B8" : "#0F172A", textDecoration: o.cancelado ? "line-through" : "none", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+                            >
+                              {fmt(Number(o.totalAmount || 0))}
                             </span>
                             <span>
                               {o.cancelado ? (
@@ -698,6 +736,17 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                               {r.motoboy.usandoTaxaDoCliente ? "Taxa do cliente: " : "Motoboy: "}
                               {fmt(o.ganhoDoMotoboy ?? o.deliveryFee ?? 0)}
                             </span>
+                            <select
+                              value={r.motoboy.id}
+                              disabled={trocandoEntregador === o.id}
+                              onChange={(e) => { if (e.target.value !== r.motoboy.id) trocarEntregador(o.id, e.target.value); }}
+                              title="Trocar o entregador desta entrega — fica no histórico do pedido"
+                              style={{ padding: "3px 4px", borderRadius: 6, border: "1px solid #E2E8F0", background: "#fff", fontSize: "0.72rem", fontWeight: 700, color: "#334155", maxWidth: 120, fontFamily: "inherit", cursor: "pointer" }}
+                            >
+                              {motoboys.map((m) => (
+                                <option key={m.id} value={m.id}>🛵 {m.name}</option>
+                              ))}
+                            </select>
                             <a
                               href={linkDoPedido(o)}
                               target="_blank"
@@ -708,6 +757,11 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                               👁️ Ver Pedido ↗
                             </a>
                           </div>
+                          {erroDoEntregador?.id === o.id && (
+                            <div style={{ margin: "2px 0 4px", padding: "6px 10px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", fontSize: "0.74rem", fontWeight: 700 }}>
+                              {erroDoEntregador?.texto}
+                            </div>
+                          )}
                           {trocando && (
                             <div style={{ margin: "4px 0 6px 0" }}>
                               <TrocaDePagamentoPainel
