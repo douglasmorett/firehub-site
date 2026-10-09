@@ -57,8 +57,14 @@ import { midiaGuardada, midiaSendoLida } from "./midias";
  */
 
 const ESPERA_MS = 6_000;
-/** Trava de laço: tantas respostas do robô nesta janela = algo respondendo sozinho do outro lado. */
-const MAXIMO_NA_JANELA = 20;
+/**
+ * Trava de laço: tantas respostas do robô nesta janela = algo respondendo
+ * sozinho do outro lado. Era 20; baixou para 12 em 08/10/2026, quando o número
+ * foi banido pela 2ª vez — 20 mensagens em 10 min para um robô de lojista é
+ * exatamente o padrão que o antispam pune. Conversa de gente cabe em 12.
+ * O sinal mais cedo é a mesma mensagem voltando (respostaAutomaticaDoOutroLado).
+ */
+const MAXIMO_NA_JANELA = 12;
 const JANELA_DO_LACO_MS = 10 * 60_000;
 const MENSAGEM_VELHA_MS = 20 * 60_000;
 export const MODELOS = ["gemini-3.6-flash", "gemini-2.5-flash"];
@@ -122,6 +128,35 @@ const SINAIS_DA_OFERTA = [
   /(de gra[çc]a|sem (?:te |lhe )?cobrar|sem (?:nenhum |qualquer )?custo|n[ãa]o (?:te |lhe )?cobra|gratuitamente)/i,
 ];
 const ehOfertaDaMontagem = (texto: string) => SINAIS_DA_OFERTA.every((r) => r.test(texto));
+
+/**
+ * O robô do outro lado (a saudação automática do número de um lojista) responde
+ * SEMPRE a mesma coisa: a mesma mensagem do contato voltando depois de uma
+ * resposta nossa, na janela do laço, é robô × robô — e cada volta é mais uma
+ * mensagem automática do número do FireHub. Gente que repete a pergunta sem
+ * resposta no meio não conta. Devolve o texto repetido, ou null.
+ */
+export function respostaAutomaticaDoOutroLado(
+  historico: { direcao: string; autor: string; texto: string; criadoEm: Date; canal?: string | null }[],
+  agora = Date.now(),
+): string | null {
+  const desde = agora - JANELA_DO_LACO_MS;
+  const vistas = new Map<string, number>();
+  let respostasDoRobo = 0;
+  for (const m of historico) {
+    if (m.criadoEm.getTime() < desde || (m.canal && m.canal !== "WHATSAPP")) continue;
+    if (m.direcao === "SAIDA") {
+      if (m.autor === "ROBO") respostasDoRobo++;
+      continue;
+    }
+    const chave = m.texto.toLowerCase().replace(/\s+/g, " ").trim();
+    if (chave.length < 15) continue;
+    const antes = vistas.get(chave);
+    if (antes !== undefined && respostasDoRobo > antes) return m.texto;
+    vistas.set(chave, respostasDoRobo);
+  }
+  return null;
+}
 
 /** Os vídeos na conversa: o manual (a fala de todos, na base) e os títulos dos que já foram mandados. */
 export type VideosDaConversa = { manual: string; jaEnviados: string[] };
@@ -299,6 +334,11 @@ async function responder(contatoId: string) {
   });
   if (respostas >= MAXIMO_NA_JANELA) {
     await chamarPessoa(contato, `O robô respondeu ${respostas} vezes em 10 minutos nesta conversa: parece resposta automática do outro lado.`);
+    return;
+  }
+  const repetida = canal === "WHATSAPP" ? respostaAutomaticaDoOutroLado(historico) : null;
+  if (repetida) {
+    await chamarPessoa(contato, `O outro lado mandou de novo a mesma mensagem depois da resposta do robô ("${repetida.slice(0, 120)}"): parece robô respondendo robô. O nosso parou.`);
     return;
   }
 

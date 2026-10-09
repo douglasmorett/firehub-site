@@ -219,7 +219,10 @@ export async function enviarTexto(destino: string, texto: string, opcoes: { como
       body: JSON.stringify({
         number: numero,
         text: conteudo,
-        options: { delay: opcoes.comoRobo ? atrasoDoRobo(conteudo) : 400, presence: "composing" },
+        // `lerAntes`: a mensagem do contato fica lida (tique azul) antes da
+        // resposta — quem responde sem ler é robô para o antispam. Só este
+        // número pede; o gateway não lê pelas lojas (server.js, responderComoGente).
+        options: { delay: opcoes.comoRobo ? atrasoDoRobo(conteudo) : 400, presence: "composing", lerAntes: true },
       }),
       signal: AbortSignal.timeout(25000),
     });

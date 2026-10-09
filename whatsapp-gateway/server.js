@@ -1056,6 +1056,9 @@ async function criarSocket(instanceName) {
         continue;
       }
 
+      // Para ler antes de responder (responderComoGente).
+      lembrarRecebida(instanceName, msg);
+
       // O conteúdo de verdade, fora do envelope de mensagem temporária ou de
       // visualização única — sem isto, quem usa mensagens temporárias falava
       // sozinho: o texto estava em `ephemeralMessage.message` e não era lido.
@@ -1783,6 +1786,56 @@ app.delete("/instance/clean-all", async (req, res) => {
   return res.json({ success: true, message: "Todas as sessões limpas" });
 });
 
+// ── RESPONDER COMO GENTE: "DIGITANDO…" E LIDA ANTES DA RESPOSTA ──────────────
+//
+// O site manda `options: { delay, presence: "composing" }` em todo envio do
+// robô (tempoDeDigitacao em whatsapp-evolution.ts, atrasoDoRobo no atendimento
+// do FireHub), e este gateway IGNORAVA as duas coisas: a resposta saía na hora,
+// sem "digitando…", e a mensagem do contato nunca era marcada como lida. Para o
+// antispam do WhatsApp, responder sem ler e sem digitar é assinatura de robô —
+// o número do FireHub foi banido duas vezes (Douglas, 08/10/2026).
+//
+// Ler (tique azul) só quando o site pede `lerAntes`: no número de uma LOJA, o
+// "não lida" no celular é o que chama o dono para a conversa, e o robô ler por
+// ele apagaria esse aviso. Hoje só o número do FireHub pede.
+
+const ultimaRecebida = new Map(); // "<instância>|<usuário>" → key da última mensagem do contato
+const TETO_DO_DIGITANDO_MS = 12_000;
+
+const usuarioDoJid = (jid) => String(jid || "").split("@")[0].split(":")[0];
+
+function lembrarRecebida(instanceName, msg) {
+  const key = msg?.key;
+  if (!key?.id || key.fromMe) return;
+  const jids = [key.remoteJid, key.remoteJidAlt, key.senderPn, key.participant, key.participantPn].filter(Boolean);
+  for (const jid of jids) ultimaRecebida.set(`${instanceName}|${usuarioDoJid(jid)}`, key);
+  if (ultimaRecebida.size > 20_000) ultimaRecebida.delete(ultimaRecebida.keys().next().value);
+}
+
+async function responderComoGente(sock, instanceName, jids, opcoes) {
+  try {
+    if (opcoes?.lerAntes) {
+      const chaves = [...new Set(jids.map((j) => `${instanceName}|${usuarioDoJid(j)}`))];
+      const key = chaves.map((c) => ultimaRecebida.get(c)).find(Boolean);
+      if (key) {
+        await sock.readMessages([key]).catch(() => {});
+        // Uma leitura só por mensagem recebida: a 2ª resposta seguida não relê.
+        for (const [c, k] of ultimaRecebida) if (k === key) ultimaRecebida.delete(c);
+      }
+    }
+    const atraso = Math.min(Math.max(Number(opcoes?.delay) || 0, 0), TETO_DO_DIGITANDO_MS);
+    if (atraso > 0) {
+      const destino = jids[jids.length - 1];
+      if (opcoes?.presence === "composing") await sock.sendPresenceUpdate("composing", destino).catch(() => {});
+      await new Promise((r) => setTimeout(r, atraso));
+      if (opcoes?.presence === "composing") await sock.sendPresenceUpdate("paused", destino).catch(() => {});
+    }
+  } catch (err) {
+    // Enfeite nunca segura a resposta.
+    console.warn(`[WhatsApp Gateway] Aviso no "digitando" de ${instanceName}:`, err?.message || err);
+  }
+}
+
 // 4. Enviar Mensagem de Texto
 app.post("/message/sendText/:instanceName", async (req, res) => {
   const { instanceName } = req.params;
@@ -1823,6 +1876,8 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
   // o envio: se a consulta falhar, a mensagem sai do mesmo jeito.
   // `resolverDestino` já consulta e grava o LID quando precisa; não há mais uma
   // consulta USync solta a cada mensagem enviada.
+
+  await responderComoGente(session.sock, instanceName, [jidBruto, jid], req.body?.options);
 
   try {
     const enviada = await session.sock.sendMessage(jid, { text });

@@ -242,7 +242,9 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
           presence: "composing",
         },
       }),
-      signal: AbortSignal.timeout(15000),
+      // O gateway segura a resposta durante o "digitando…" (até 12 s; antes
+      // ele ignorava o atraso e respondia na hora). 15 s não cabia.
+      signal: AbortSignal.timeout(30000),
     });
     return res.ok;
   } catch (err) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { podeVerContato, quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
-import { gravarMensagem } from "@/lib/crm/mensagens";
+import { gravarMensagem, jaEscreveuPeloWhatsApp, NUNCA_ESCREVEU } from "@/lib/crm/mensagens";
 import { mensagemParaTela } from "@/lib/crm/serializar";
 import { jidDoTelefone } from "@/lib/crm/telefone";
 import { enviarTexto } from "@/lib/atendimento/whatsapp";
@@ -41,6 +41,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   if (canal === "PAINEL" && !contato.userId) return NextResponse.json({ error: "Este contato não tem loja: não há painel para responder." }, { status: 400 });
   const destino = contato.jid || jidDoTelefone(contato.telefone);
   if (canal === "WHATSAPP" && !destino) return NextResponse.json({ error: "Este contato não tem número de WhatsApp." }, { status: 400 });
+  if (canal === "WHATSAPP" && !(await jaEscreveuPeloWhatsApp(id))) {
+    return NextResponse.json({ error: contato.userId ? `${NUNCA_ESCREVEU} Ou responda pelo Painel.` : NUNCA_ESCREVEU }, { status: 400 });
+  }
 
   // No painel o nome de quem respondeu já aparece no balão; a assinatura é coisa do WhatsApp.
   const assinar = canal === "WHATSAPP" && quem.tipo === "VENDEDOR" && b.assinar !== false;

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
-import { gravarMensagem } from "@/lib/crm/mensagens";
+import { gravarMensagem, jaEscreveuPeloWhatsApp, NUNCA_ESCREVEU } from "@/lib/crm/mensagens";
 import { textoDoLembrete } from "@/lib/crm/lembretes";
 import { jidDoTelefone } from "@/lib/crm/telefone";
 import { enviarTexto } from "@/lib/atendimento/whatsapp";
@@ -26,6 +26,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   }
   const destino = r.contato.jid || jidDoTelefone(r.contato.telefone);
   if (!destino) return NextResponse.json({ error: "O contato não tem WhatsApp." }, { status: 400 });
+  if (!(await jaEscreveuPeloWhatsApp(r.contato.id))) return NextResponse.json({ error: NUNCA_ESCREVEU }, { status: 400 });
 
   const vendedor = await prisma.ambassador.findUnique({ where: { id: r.vendedorId }, select: { name: true } });
   const texto = textoDoLembrete(r, r.contato, vendedor?.name || null);

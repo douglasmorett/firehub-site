@@ -89,3 +89,23 @@ export async function mensagensDoContato(contatoId: string, limite = 200) {
   });
   return ultimas.reverse();
 }
+
+/**
+ * O contato já escreveu para o WhatsApp do FireHub alguma vez?
+ *
+ * O número do FireHub só RESPONDE (Douglas): mandar a primeira mensagem para
+ * quem nunca falou com ele — a loja trazida por "Trazer as lojas cadastradas",
+ * o contato criado à mão — é o 1º contato frio que o antispam do WhatsApp pune,
+ * e o número já foi banido duas vezes (08/10/2026). A tela e o lembrete da
+ * reunião só mandam para quem já escreveu.
+ */
+export async function jaEscreveuPeloWhatsApp(contatoId: string): Promise<boolean> {
+  const entrada = await prisma.crmMensagem.findFirst({
+    where: { contatoId, direcao: "ENTRADA", canal: "WHATSAPP" },
+    select: { id: true },
+  });
+  return !!entrada;
+}
+
+export const NUNCA_ESCREVEU =
+  "Este contato nunca escreveu para o WhatsApp do FireHub. Mandar a primeira mensagem é o que faz o WhatsApp banir o número: peça para ele chamar primeiro (ou ligue).";

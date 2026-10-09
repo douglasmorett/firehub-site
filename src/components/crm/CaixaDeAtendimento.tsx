@@ -192,6 +192,10 @@ export default function CaixaDeAtendimento({
   const c = detalhe?.contato;
   const ultimaEntrada = [...mensagens].reverse().find((m) => m.direcao === "ENTRADA");
   const canal: "WHATSAPP" | "PAINEL" = canalEscolhido || (ultimaEntrada?.canal === "PAINEL" && c?.temPainel ? "PAINEL" : "WHATSAPP");
+  // O número do FireHub só responde: a 1ª mensagem pelo WhatsApp tem que ser do
+  // contato (o servidor confere de novo; 300 é o tamanho da conversa carregada).
+  const frioNoWhatsApp = canal === "WHATSAPP" && mensagens.length < 300 && !mensagens.some((m) => m.direcao === "ENTRADA" && m.canal === "WHATSAPP");
+  const podeEscrever = !!c?.podeResponder && !frioNoWhatsApp;
   const nomeDe = (x: { nomeDaLoja: string | null; nome: string | null; telefone: string | null }) => x.nomeDaLoja || x.nome || x.telefone || "Contato";
 
   const blocos = useMemo(() => {
@@ -375,14 +379,14 @@ export default function CaixaDeAtendimento({
                   <textarea
                     className="crm-textarea"
                     rows={1}
-                    placeholder={!c.podeResponder ? "Este contato não tem WhatsApp." : canal === "PAINEL" ? "Escreva a resposta (vai para o chat do painel da loja)…" : "Escreva a resposta…"}
+                    placeholder={!c.podeResponder ? "Este contato não tem WhatsApp." : frioNoWhatsApp ? `Ele nunca escreveu para o WhatsApp do FireHub: a 1ª mensagem tem que ser dele (é o que bane o número).${c.temPainel ? " Dá para responder pelo Painel." : ""}` : canal === "PAINEL" ? "Escreva a resposta (vai para o chat do painel da loja)…" : "Escreva a resposta…"}
                     aria-label="Resposta"
-                    disabled={!c.podeResponder}
+                    disabled={!podeEscrever}
                     value={texto}
                     onChange={(e) => setTexto(e.target.value)}
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void enviar(); } }}
                   />
-                  <button className="crm-enviar" disabled={enviando || !texto.trim() || !c.podeResponder} onClick={enviar} aria-label="Enviar" title="Enviar (Enter)">
+                  <button className="crm-enviar" disabled={enviando || !texto.trim() || !podeEscrever} onClick={enviar} aria-label="Enviar" title="Enviar (Enter)">
                     <SendHorizontal size={19} strokeWidth={2.2} aria-hidden />
                   </button>
                 </div>
