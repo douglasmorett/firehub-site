@@ -186,5 +186,26 @@ igual("sem troco", trocoEObservacaoDoPedido({ paymentMethod: "Dinheiro", total: 
 igual("observação limpa e cortada", trocoEObservacaoDoPedido({ observation: "  portão   azul ", total: 1 }).observacao, "portão azul");
 igual("sem observação", trocoEObservacaoDoPedido({ total: 1 }).observacao, null);
 
+console.log("\n7) Mesmo nome em duas perguntas (SP Pizza, 09/10/2026)");
+{
+  // Ordem do banco: Adicionais antes dos sabores — foi assim que a calabresa caiu no adicional.
+  const adicionais = { id: "adic", title: "Adicionais", maxQty: 11, minQty: 0, priceRule: null, sortOrder: 3, items: [
+    { additionalPrice: 12, menuProduct: { name: "CALABRESA" } },
+    { additionalPrice: 12, menuProduct: { name: "muçarela" } },
+  ] };
+  const sabores = { id: "sab", title: "Escolha até 2 sabores", maxQty: 2, minQty: 1, priceRule: "MAIOR", sortOrder: 1, items: [
+    { additionalPrice: 83, menuProduct: { name: "filé miau" } },
+    { additionalPrice: 55, menuProduct: { name: "CALABRESA" } },
+    { additionalPrice: 55, menuProduct: { name: "muçarela" } },
+  ] };
+  const sp = { name: "Pizza Grande (8 pedaços)", comboGroups: [adicionais, sabores] };
+  igual("meia filé + meia calabresa: calabresa é sabor",
+    escolhasDoItem({ options: ["filé miau", "CALABRESA"] }, sp).comboSelections, { sab: { "filé miau": 1, "CALABRESA": 1 } });
+  igual("com '1/2' também",
+    escolhasDoItem({ options: ["1/2 filé miau", "1/2 Calabresa"] }, sp).comboSelections, { sab: { "filé miau": 1, "CALABRESA": 1 } });
+  igual("sabores cheios: o que sobra vai ao adicional",
+    escolhasDoItem({ options: ["filé miau", "muçarela", "CALABRESA"] }, sp).comboSelections, { sab: { "filé miau": 1, "muçarela": 1 }, adic: { "CALABRESA": 1 } });
+}
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

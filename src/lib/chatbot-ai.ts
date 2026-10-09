@@ -382,6 +382,9 @@ export async function processChatbotAI(
             // no Camarão com Catupiry enquanto o robô dizia R$ 131,40 ao
             // cliente no WhatsApp, com o mesmo produto e a mesma função.
             id: true, title: true, maxQty: true, minQty: true, priceRule: true,
+            // Desempate quando o mesmo nome está em duas perguntas (sabor e
+            // adicional): ver `preferida` em lib/item-do-robo.ts.
+            sortOrder: true,
             // `additionalPriceDelivery` pelo mesmo motivo do `priceDelivery`
             // acima: nas lojas de cardápio no molde iFood/Anota AI o preço mora
             // na OPÇÃO de tamanho, não no produto — sem esta coluna o robô

@@ -34,6 +34,9 @@ export type GrupoDoProduto = {
   /** Quantas escolhas a pergunta exige: `minQty`, ou exatamente `maxQty` quando nulo (schema). */
   minQty?: number | null;
   maxQty?: number | null;
+  /** "MAIOR"/"MEDIA" na pergunta de sabores da pizza; nulo nas outras. */
+  priceRule?: string | null;
+  sortOrder?: number | null;
   items?: Array<{ additionalPrice?: number | null; menuProduct?: { name?: string | null } | null } | null> | null;
 };
 
@@ -138,14 +141,44 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
   const naoCasadas: string[] = [];
   let somaDasOpcoes = 0;
 
+  /**
+   * O mesmo nome em mais de uma pergunta: qual delas o cliente quis.
+   *
+   * SP Pizza, 09/10/2026: "CALABRESA" é sabor (R$ 55, na pergunta de sabores
+   * com a regra do mais caro) e também adicional (+R$ 12). O cliente pediu meia
+   * filé, meia calabresa; a calabresa caiu nos Adicionais — a primeira pergunta
+   * na ordem em que o banco devolveu — e a pizza de R$ 83 saiu por R$ 95.
+   *
+   * Vence a pergunta que ainda tem vaga, e entre elas a de sabores (a que tem
+   * regra de preço: mais caro/média), depois a ordem do cardápio (sortOrder).
+   * Sem vaga em nenhuma, a primeira pela mesma ordem.
+   */
+  const preferida = <T extends { grupo: GrupoDoProduto }>(lista: T[]): T | null => {
+    if (lista.length <= 1) return lista[0] ?? null;
+    const temVaga = (g: GrupoDoProduto) => {
+      const maximo = Number(g.maxQty);
+      if (!Number.isFinite(maximo) || maximo <= 0) return true;
+      const usadas = Object.values(selecoes[g.id] || {}).reduce((s, q) => s + q, 0);
+      return usadas < maximo;
+    };
+    const ordem = (g: GrupoDoProduto) => (Number.isFinite(Number(g.sortOrder)) ? Number(g.sortOrder) : 0);
+    const ordenada = [...lista].sort((a, b) =>
+      Number(temVaga(b.grupo)) - Number(temVaga(a.grupo)) ||
+      Number(!!b.grupo.priceRule) - Number(!!a.grupo.priceRule) ||
+      ordem(a.grupo) - ordem(b.grupo)
+    );
+    return ordenada[0];
+  };
+
   /** A opção com este nome exato no cadastro do produto; null quando não existe. */
   const exata = (chave: string) => {
+    const achados: Array<{ grupo: GrupoDoProduto; opcao: NonNullable<NonNullable<GrupoDoProduto["items"]>[number]> }> = [];
     for (const grupo of produto.comboGroups || []) {
       if (!grupo) continue;
       const opcao = (grupo.items || []).find((gi) => gi && chaveDeNome(gi.menuProduct?.name) === chave);
-      if (opcao) return { grupo, opcao };
+      if (opcao) achados.push({ grupo, opcao });
     }
-    return null;
+    return preferida(achados);
   };
 
   /**
@@ -192,21 +225,23 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
     const alvo = ` ${pedido} `;
     const contem = todasAsOpcoes().filter((c) => ` ${chaveDeNome(c.opcao.menuProduct?.name)} `.includes(alvo));
     const nomesQueContem = new Set(contem.map((c) => chaveDeNome(c.opcao.menuProduct?.name)));
-    if (nomesQueContem.size === 1) return contem[0];
+    if (nomesQueContem.size === 1) return preferida(contem);
 
     const palavras = pedido.split(" ").filter(Boolean);
     if (palavras.length === 0) return null;
-    const porNome = new Map<string, { c: Achado; tamanho: number }>();
+    const porNome = new Map<string, { cs: Achado[]; tamanho: number }>();
     for (const c of todasAsOpcoes()) {
       const nome = chaveDeNome(c.opcao.menuProduct?.name);
       const daOpcao = nome.split(" ").filter(Boolean);
       if (!palavras.every((p) => daOpcao.includes(p))) continue;
-      if (!porNome.has(nome)) porNome.set(nome, { c, tamanho: daOpcao.length });
+      const ja = porNome.get(nome);
+      if (ja) ja.cs.push(c);
+      else porNome.set(nome, { cs: [c], tamanho: daOpcao.length });
     }
     if (porNome.size === 0) return null;
     const menor = Math.min(...[...porNome.values()].map((v) => v.tamanho));
     const curtas = [...porNome.values()].filter((v) => v.tamanho === menor);
-    return curtas.length === 1 ? curtas[0].c : null;
+    return curtas.length === 1 ? preferida(curtas[0].cs) : null;
   };
 
   for (const bruta of brutas) {
