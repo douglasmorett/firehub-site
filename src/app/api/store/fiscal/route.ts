@@ -15,6 +15,7 @@ import {
 import type { Problema } from "@/lib/fiscal-validacao";
 import { tokenDeRevenda } from "@/lib/focus-empresas";
 import { configDoEmissorProprio, usaEmissorProprio } from "@/lib/nfce/config-da-loja";
+import { responsavelTecnico } from "@/lib/nfce/credenciais-da-loja";
 import {
   aplicarFormularioDoEmissor,
   conferirComEmissorProprio,
@@ -160,8 +161,15 @@ async function extrasDaProntidao(lojaId: string) {
     where: { franchiseeId: lojaId, fiscalStatus: "EMITTED", fiscalInfo: { path: ["ambiente"], equals: 2 } },
     select: { id: true },
   });
-  return { produtosSemNcm: semNcm, totalDeProdutos: produtos.length, temNotaDeHomologacao: Boolean(notaDeTeste) };
+  return { produtosSemNcm: semNcm, totalDeProdutos: produtos.length, temNotaDeHomologacao: Boolean(notaDeTeste), responsavelTecnicoOk: RESPONSAVEL_TECNICO_OK };
 }
+
+/**
+ * O servidor tem o responsável técnico do software (FH_RESP_TEC_*, infRespTec)?
+ * Lido uma vez por processo: `responsavelTecnico()` avisa no log quando falta,
+ * e esse aviso não precisa sair a cada GET.
+ */
+const RESPONSAVEL_TECNICO_OK = Boolean(responsavelTecnico());
 
 export async function GET() {
   try {

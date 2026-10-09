@@ -311,8 +311,17 @@ console.log("\n— pendências do emissor próprio e o checklist");
     []
   );
   const itens = prontidaoDoEmissor(pronta, { produtosSemNcm: 163, totalDeProdutos: 163, temNotaDeHomologacao: false, agora: AGORA });
-  confere("o checklist, na ordem do caminho", itens.map((i) => i.chave), ["certificado", "csc", "ie", "empresa", "ncm", "conexao", "homologacao", "notaDeTeste", "producao"]);
-  confere("NIK hoje: certificado ✓, CSC só de homologação ✗, IE ✓, empresa ✓, NCM ✗ (163), conexão ✗, desligada", itens.map((i) => i.ok), [true, false, true, true, false, false, false, false, false]);
+  confere("o checklist, na ordem do caminho", itens.map((i) => i.chave), ["certificado", "csc", "ie", "empresa", "ncm", "conexao", "respTec", "homologacao", "notaDeTeste", "producao"]);
+  confere("responsável técnico não conferido (extras sem o campo): não acusa", itens.find((i) => i.chave === "respTec")?.ok, true);
+  confere(
+    "responsável técnico ausente no servidor: o checklist acusa e diz que é com o FireHub",
+    (() => {
+      const item = prontidaoDoEmissor(pronta, { produtosSemNcm: 0, totalDeProdutos: 1, temNotaDeHomologacao: false, responsavelTecnicoOk: false, agora: AGORA }).find((i) => i.chave === "respTec");
+      return [item?.ok, /972/.test(item?.detalhe ?? ""), /FireHub/.test(item?.detalhe ?? "")];
+    })(),
+    [false, true, true]
+  );
+  confere("NIK hoje: certificado ✓, CSC só de homologação ✗, IE ✓, empresa ✓, NCM ✗ (163), conexão ✗, resp. técnico não conferido ✓, desligada", itens.map((i) => i.ok), [true, false, true, true, false, false, true, false, false, false]);
   verdade("o item do NCM diz quantos faltam", /163 de 163/.test(itens.find((i) => i.chave === "ncm")!.detalhe));
   const semIe = prontidaoDoEmissor({ ...pronta, inscricaoEstadual: "" }, { produtosSemNcm: 0, totalDeProdutos: 10, temNotaDeHomologacao: false, agora: AGORA });
   verdade("sem IE no DF, o checklist fala do CF/DF e de que a Receita não informa", /CF\/DF/.test(semIe.find((i) => i.chave === "ie")!.detalhe) && /Receita Federal não informa/.test(semIe.find((i) => i.chave === "ie")!.detalhe));

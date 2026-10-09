@@ -386,7 +386,7 @@ function dataCurta(iso: string): string {
 // ─── CHECKLIST DE PRONTIDÃO ─────────────────────────────────────────────────
 
 export type ItemDeProntidao = {
-  chave: "certificado" | "csc" | "ie" | "empresa" | "ncm" | "conexao" | "homologacao" | "notaDeTeste" | "producao";
+  chave: "certificado" | "csc" | "ie" | "empresa" | "ncm" | "conexao" | "respTec" | "homologacao" | "notaDeTeste" | "producao";
   rotulo: string;
   ok: boolean;
   detalhe: string;
@@ -402,7 +402,14 @@ export type ItemDeProntidao = {
  */
 export function prontidaoDoEmissor(
   config: Record<string, unknown>,
-  extras: { produtosSemNcm: number; totalDeProdutos: number; temNotaDeHomologacao: boolean; agora?: Date }
+  extras: {
+    produtosSemNcm: number;
+    totalDeProdutos: number;
+    temNotaDeHomologacao: boolean;
+    /** O servidor tem FH_RESP_TEC_* completo (infRespTec)? Ausente = não conferido (não acusa). */
+    responsavelTecnicoOk?: boolean;
+    agora?: Date;
+  }
 ): ItemDeProntidao[] {
   const agora = extras.agora ?? new Date();
   const tela = emissorParaTela(config, agora);
@@ -490,6 +497,18 @@ export function prontidaoDoEmissor(
       detalhe: ultimo
         ? `${ultimo.ok ? "OK" : "Falhou"} em ${dataCurta(ultimo.quando)}${ultimo.cStat ? ` (cStat ${ultimo.cStat})` : ""}: ${ultimo.mensagem}`
         : "Use \"Testar conexão com a SEFAZ\".",
+    },
+    {
+      // É do FireHub, não da loja: o grupo infRespTec (NT 2018.005) leva o
+      // CNPJ e o contato de quem fez o software, e várias UF recusam a nota
+      // sem ele (972). Fica no checklist para ninguém descobrir na recusa.
+      chave: "respTec",
+      rotulo: "Responsável técnico do software (FireHub)",
+      ok: extras.responsavelTecnicoOk !== false,
+      detalhe:
+        extras.responsavelTecnicoOk !== false
+          ? "Configurado no servidor do FireHub."
+          : "O FireHub ainda não configurou o responsável técnico (infRespTec) no servidor: em vários estados a SEFAZ recusa a nota sem ele (rejeição 972). É com o suporte do FireHub, não com a loja.",
     },
     {
       chave: "homologacao",
