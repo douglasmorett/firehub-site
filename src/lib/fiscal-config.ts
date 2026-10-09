@@ -28,6 +28,7 @@ import { cnpjValido, type Problema } from "./fiscal-validacao";
 import { ehNotaDaConta, idDaNotaDoPedido, pedidoDeMesaExigeNotaDaConta } from "./fiscal-momento";
 import { lerFormasPorIntegracao } from "./fiscal-modo";
 import { finalDoCsc } from "./focus-empresas";
+import { PROVEDOR_PROPRIO, provedorEfetivoDaLoja } from "./nfce/config-da-loja";
 
 /** O que fica guardado no fiscalConfig além dos dados do emitente. */
 export type ConfigFiscalGravada = ConfiguracaoFiscal & {
@@ -290,6 +291,11 @@ export function comPadroesDeGravacao<T extends ConfigFiscalGravada>(config: T): 
   if (ambienteNumerico(c.ambiente) === null) c.ambiente = 2;
   if (!(Number.isInteger(Number(c.serie)) && Number(c.serie) >= 1)) c.serie = 1;
   if (!Array.isArray(c.autoEmitPaymentMethods)) c.autoEmitPaymentMethods = [...FORMAS_AUTOMATICAS_PADRAO];
+  // O emissor: desde 09/10/2026 só existe o do FireHub. A loja que nunca
+  // escolheu passa a ter "sefaz" gravado no primeiro Salvar — e o GET confere
+  // com ele, então a tela não pede mais para "escolher quem transmite". A loja
+  // que já estava na Focus (token, empresa cadastrada) fica onde está até trocar.
+  if (!texto(c.provedor) && provedorEfetivoDaLoja(c) === PROVEDOR_PROPRIO) c.provedor = PROVEDOR_PROPRIO;
   return c;
 }
 

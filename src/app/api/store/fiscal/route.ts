@@ -266,8 +266,10 @@ export async function PUT(req: Request) {
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       return NextResponse.json({ error: "Corpo inválido" }, { status: 400 });
     }
-    // O emissor é "sefaz" (o do FireHub) ou "focusnfe". aplicarFormularioFiscal
-    // gravaria qualquer texto — e texto desconhecido é loja sem emissor.
+    // O emissor é "sefaz" (o do FireHub); "focusnfe" só volta da loja antiga
+    // que já está nela (a troca PARA a Focus é barrada mais abaixo).
+    // aplicarFormularioFiscal gravaria qualquer texto — e texto desconhecido
+    // é loja sem emissor.
     if ("provedor" in body && body.provedor !== null && body.provedor !== undefined && body.provedor !== "") {
       const lido = lerProvedor(body.provedor);
       if (!lido.ok) return NextResponse.json({ error: "provedor_invalido", mensagem: lido.mensagem }, { status: 400 });
@@ -295,6 +297,19 @@ export async function PUT(req: Request) {
       });
       if (!f.ok) return { gravar: null, resposta: { status: f.status, corpo: f.corpo } };
       let config = f.config;
+
+      // A Focus NFe deixou de ser oferecida (09/10/2026): quem já estava nela
+      // continua até trocar; ninguém entra. O "Salvar Dados" da loja antiga
+      // manda o "focusnfe" gravado de volta — isso não é mudança e passa.
+      if (String(config.provedor ?? "") === "focusnfe" && String(f.antes.provedor ?? "") !== "focusnfe") {
+        return {
+          gravar: null,
+          resposta: {
+            status: 400,
+            corpo: { error: "provedor_invalido", mensagem: "A Focus NFe não é mais oferecida: as notas saem pelo Emissor do FireHub, direto na SEFAZ." },
+          },
+        };
+      }
 
       // O bloco do emissor próprio.
       const ligadaNoProprio = f.antes.enabled === true && usaEmissorProprio(f.antes);

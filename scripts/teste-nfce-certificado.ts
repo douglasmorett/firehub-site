@@ -297,10 +297,13 @@ console.log("\n— pendências do emissor próprio e o checklist");
   );
   confere("SP é atendida desde 09/10/2026: só a IE (a de 13 dígitos é do DF, não de SP)", campos({ ...pronta, uf: "SP" }), ["inscricaoEstadual"]);
   verdade("UF que não existe (ZZ): pendência de UF", campos({ ...pronta, uf: "ZZ" }).includes("uf"));
-  const semEmissor = conferir({ ...pronta, provedor: null }).find((p) => p.campo === "provedor");
+  // Desde 09/10/2026 a Focus não é mais oferecida: sem emissor gravado, a
+  // loja É do Emissor do FireHub — nada de "escolha quem transmite".
+  confere("sem emissor gravado: é o Emissor do FireHub, com a conferência dele", conferir({ ...pronta, provedor: null }).map((p) => p.campo), []);
+  const antigaNaFocus = conferir({ ...CONFIG_NIK, provedor: null, tokenDoProvedor: cifrar("tok"), cscId: "1", csc: "X".repeat(36), temCertificado: true });
   verdade(
-    "sem emissor escolhido: a pendência diz as duas saídas (e não mais \"o FireHub não transmite sozinho\")",
-    Boolean(semEmissor && /Emissor do FireHub/.test(semEmissor.mensagem) && !/não transmite sozinho/.test(semEmissor.mensagem))
+    "loja antiga na Focus (token, sem escolha gravada): continua na Focus e a pendência manda passar para o FireHub",
+    antigaNaFocus.some((p) => p.campo === "provedor" && /Emissor do FireHub/.test(p.mensagem)) && !antigaNaFocus.some((p) => p.campo === "serie")
   );
   confere(
     "loja na Focus: a conferência de sempre, sem a série do emissor próprio",
@@ -430,7 +433,7 @@ console.log("\n— a rota do certificado e a tela (conferência estática)");
   verdade("os campos do CSC têm rótulo por ambiente", tela.includes("htmlFor={`nfce-id-csc-${amb}`}") && tela.includes("id={`nfce-id-csc-${amb}`}") && tela.includes("htmlFor={`nfce-csc-${amb}`}") && tela.includes("id={`nfce-csc-${amb}`}"));
   const senhas = [...tela.matchAll(/<input\b[\s\S]*?\/>/g)].map((m) => m[0]).filter((t) => /type="(password|file)"/.test(t));
   confere("todo campo de senha/arquivo tem id (e o rótulo acima como nome)", [senhas.length, senhas.filter((t) => !/\bid=/.test(t)).length], [3, 0]);
-  verdade("a escolha do emissor: grupo nomeado e aria-pressed", tela.includes('role="group" aria-label="Quem transmite as notas"') && tela.includes("aria-pressed={ativo && !p.padrao}"));
+  verdade("a escolha da Focus saiu da tela (09/10/2026): sem \"Quem transmite as notas\" nem EscolhaDoEmissor", !tela.includes("Quem transmite as notas") && !tela.includes("EscolhaDoEmissor"));
   // A rota é só POST { ambiente } (o GET com ?ambiente= saiu): a tela manda o corpo.
   verdade(
     "o teste de conexão chama a rota da emissão em homologação (POST com { ambiente })",

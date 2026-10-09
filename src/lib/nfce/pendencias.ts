@@ -137,7 +137,7 @@ export function pendenciasDoEmissorProprio(config: ConfigComEmissor | null | und
       3,
       "Regime Normal (CRT 3) ainda não é emitido pelo emissor do FireHub: a nota desse regime já exige o grupo " +
         "IBS/CBS da reforma tributária (NT 2025.002, rejeição 1115 desde 03/08/2026), que o emissor ainda não monta. " +
-        "Use a Focus NFe nesta loja ou fale com o suporte."
+        "Fale com o suporte do FireHub."
     );
   }
 
@@ -148,8 +148,8 @@ export function pendenciasDoEmissorProprio(config: ConfigComEmissor | null | und
     falta(
       "uf",
       uf,
-      `O emissor próprio do FireHub ainda não transmite NFC-e da UF ${uf} (hoje: ${atendidas.join(", ")}). ` +
-        "Use o provedor Focus NFe nesta loja por enquanto."
+      `O Emissor do FireHub não transmite NFC-e da UF "${uf}" (atende: ${atendidas.join(", ")}). ` +
+        "Confira a UF do endereço fiscal em Dados da empresa."
     );
   }
 

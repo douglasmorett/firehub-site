@@ -2,8 +2,9 @@
  * A configuração do EMISSOR PRÓPRIO (lib/nfce) dentro de User.fiscalConfig.
  *
  * `fiscalConfig.provedor` decide quem transmite: "sefaz" é o emissor do
- * próprio FireHub, direto na SEFAZ, sem custo por nota; "focusnfe" continua
- * existindo para a loja que já tem conta lá. Os dados da empresa (CNPJ, IE,
+ * próprio FireHub, direto na SEFAZ, sem custo por nota — e, desde 09/10/2026,
+ * o único oferecido. "focusnfe" só sobrevive na loja que já estava na Focus
+ * por um cadastro antigo (provedorEfetivoDaLoja). Os dados da empresa (CNPJ, IE,
  * razão social, regime, endereço, ambiente, emissão ligada) são os mesmos
  * campos de sempre do fiscalConfig — este bloco guarda só o que é do emissor.
  *
@@ -67,9 +68,30 @@ export function configDoEmissorProprio(fiscalConfig: unknown): ConfigDoEmissorPr
   return s as ConfigDoEmissorProprio;
 }
 
-export function usaEmissorProprio(fiscalConfig: unknown): boolean {
+const textoDe = (v: unknown): string => (typeof v === "string" ? v.trim() : v == null ? "" : String(v).trim());
+
+/**
+ * O emissor que vale para a loja — a regra única, lida por quem emite, por
+ * quem confere e pela tela.
+ *
+ * O gravado manda. Sem nada gravado: a loja que já tem algo da Focus (empresa
+ * cadastrada pela revenda, token por ambiente, token colado) continua na Focus
+ * — trocar de emissor em silêncio mudaria de onde saem as notas dela —, e
+ * qualquer outra É do Emissor do FireHub. Antes de 09/10/2026 a loja sem
+ * escolha ficava "sem emissor" até clicar em "Quem transmite as notas"; a
+ * escolha saiu da tela, então o padrão passou a valer de verdade.
+ */
+export function provedorEfetivoDaLoja(fiscalConfig: unknown): "sefaz" | "focusnfe" {
   const fc = (fiscalConfig && typeof fiscalConfig === "object" ? fiscalConfig : {}) as Record<string, any>;
-  return String(fc.provedor || "") === PROVEDOR_PROPRIO;
+  const gravado = textoDe(fc.provedor);
+  if (gravado === PROVEDOR_PROPRIO || gravado === "focusnfe") return gravado;
+  const tokens = fc.tokens && typeof fc.tokens === "object" ? (fc.tokens as Record<string, unknown>) : {};
+  const temFocus = Boolean(textoDe(fc.focusEmpresaId) || textoDe(tokens.homologacao) || textoDe(tokens.producao) || textoDe(fc.tokenDoProvedor));
+  return temFocus ? "focusnfe" : PROVEDOR_PROPRIO;
+}
+
+export function usaEmissorProprio(fiscalConfig: unknown): boolean {
+  return provedorEfetivoDaLoja(fiscalConfig) === PROVEDOR_PROPRIO;
 }
 
 /** Nome do ambiente na chave do CSC: 1 = produção, 2 = homologação. */

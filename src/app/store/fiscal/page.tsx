@@ -8,7 +8,7 @@ import {
   ExternalLink, Eye, ChevronDown, ChevronUp, Lock, HelpCircle, X, CheckSquare, Square,
   Send, Mail, FileArchive
 } from "lucide-react";
-import EmissorProprio, { EscolhaDoEmissor, pedirTesteDeConexao } from "./EmissorProprio";
+import EmissorProprio, { pedirTesteDeConexao } from "./EmissorProprio";
 import NcmAssistido, { type SugestaoComAtual } from "./NcmAssistido";
 import ModalDeJustificativa from "./ModalDeJustificativa";
 import type { EmissorNaTela, ItemDeProntidao } from "@/lib/nfce/cadastro-do-emissor";
@@ -221,7 +221,7 @@ const FAQ_ITEMS = [
   // é o mesmo tipo de mentira que o módulo fiscal falso antigo contava.
   { q: "A nota sai sozinha ou eu preciso emitir?", a: "Você escolhe em Configurações → Como a nota é emitida. Automática: o FireHub emite sozinho nas formas de pagamento que você marcar (uma coluna para as vendas da loja e uma para cada integração, como iFood e 99Food), e o pedido já pergunta o CPF/CNPJ. Manual: nenhuma nota sai sozinha — em Pedidos, clique no 🧾 do pedido, digite o CPF/CNPJ se o cliente quiser e clique em Emitir NFC-e." },
   { q: "O cliente precisa informar o CPF?", a: "No balcão, na retirada, na mesa e no totem, não: a nota sai sem destinatário, e o CPF é só para quem quiser a nota no nome. Na ENTREGA, sim: a SEFAZ só aceita a nota de entrega com o CPF/CNPJ e o endereço de quem recebe. Por isso a entrega sem documento fica em \"Falta CPF\" — ela não gasta número nem vira erro; se o cliente informar depois, você emite pelo pedido. Na emissão automática dá para tornar o CPF obrigatório na entrega do site, do robô e do balcão." },
-  { q: "Preciso contratar um provedor (a Focus NFe) para emitir?", a: "Não. O Emissor do FireHub transmite a NFC-e direto à SEFAZ, com o certificado A1 da própria loja, sem custo por nota. A Focus NFe continua como alternativa para quem já tem conta lá — a escolha fica em Configurações → Quem transmite as notas." },
+  { q: "Preciso contratar um provedor para emitir?", a: "Não. O Emissor do FireHub transmite a NFC-e direto à SEFAZ, com o certificado A1 da própria loja, sem provedor no meio e sem custo por nota. Você só precisa do certificado A1 e do CSC do seu estado — o passo a passo está em Configurações → Emissor do FireHub." },
   { q: "Que tipos de notas podem ser emitidas?", a: "O sistema emite NFC-e (Nota Fiscal de Consumidor Eletrônica, modelo 65) — a nota do consumidor final, para delivery, balcão, mesa e totem. NF-e modelo 55 (para venda a outra empresa) ainda não é emitida por aqui." },
   { q: "Como as recompensas de fidelidade aparecem na nota?", a: "Entram junto com os demais descontos: são rateadas entre os itens na proporção do valor de cada um (vDesc do item) e somam no vDesc do total." },
   { q: "Como as taxas de serviços e acréscimos aparecem na nota?", a: "A taxa de entrega vai como Outras Despesas Acessórias (vOutro), rateada entre os itens na proporção do valor de cada um. NFC-e não tem campo de frete, por isso a modalidade vai como 'sem frete'." },
@@ -777,19 +777,21 @@ export default function StoreFiscalPage() {
   };
 
   /**
-   * Grava quem transmite as notas (fiscalConfig.provedor). Com a emissão
-   * ligada, o servidor só aceita a troca se o outro emissor estiver completo
-   * — e diz o que falta; aqui a confirmação vem antes.
+   * Passa a loja antiga da Focus para o Emissor do FireHub (grava
+   * fiscalConfig.provedor = "sefaz" — o único emissor desde 09/10/2026). Com
+   * a emissão ligada, o servidor só aceita a troca se o emissor do FireHub
+   * estiver completo — e diz o que falta; aqui a confirmação vem antes.
    */
-  const escolherEmissor = async (provedor: "sefaz" | "focusnfe") => {
+  const escolherEmissor = async () => {
+    const provedor = "sefaz" as const;
     if (!ehTitular) return;
     if (fiscalConfig.provedorEfetivo === provedor && !fiscalConfig.provedorPadrao) return;
     if (
       fiscalConfig.enabled &&
       fiscalConfig.provedorEfetivo !== provedor &&
       !window.confirm(
-        `Trocar o emissor para ${provedor === "sefaz" ? "o Emissor do FireHub" : "a Focus NFe"} com a emissão LIGADA?\n\n` +
-          "A partir da próxima venda as notas sairão por ele. A troca só passa se ele já estiver completo."
+        "Passar para o Emissor do FireHub com a emissão LIGADA?\n\n" +
+          "A partir da próxima venda as notas sairão por ele. A troca só passa se o certificado e o CSC já estiverem no FireHub."
       )
     ) return;
     setGravandoEmissor(true);
@@ -1724,17 +1726,34 @@ ${dados.aviso}` : "")
                   );
                 })()}
 
-                {/* Quem transmite as notas: o emissor do FireHub (padrão da
-                    loja nova, sem custo por nota) ou a Focus (conta própria). */}
-                {!loading && !erroAoCarregar && (
-                  <EscolhaDoEmissor
-                    provedor={emissorProprioAtivo ? "sefaz" : "focusnfe"}
-                    padrao={Boolean(fiscalConfig.provedorPadrao)}
-                    ehTitular={ehTitular}
-                    emissaoLigada={Boolean(fiscalConfig.enabled)}
-                    gravando={gravandoEmissor}
-                    aoEscolher={escolherEmissor}
-                  />
+                {/* Quem transmite as notas: o Emissor do FireHub, e só ele, desde
+                    09/10/2026 — a escolha "Focus NFe (conta própria)" saiu da
+                    tela (Douglas: "tira a opção da Focus"). A loja que já estava
+                    na Focus por um cadastro antigo continua lá até passar para
+                    o emissor do FireHub; só ela vê este aviso. */}
+                {!loading && !erroAoCarregar && !emissorProprioAtivo && (
+                  <section aria-labelledby="emissor-legado-titulo" style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 14, padding: "1.1rem 1.3rem" }}>
+                    <h2 id="emissor-legado-titulo" style={{ margin: 0, fontSize: "1rem", fontWeight: 800, color: "#92400E" }}>
+                      Esta loja ainda transmite pela Focus NFe
+                    </h2>
+                    <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "#78350F", lineHeight: 1.5 }}>
+                      A Focus deixou de ser oferecida: as lojas transmitem pelo Emissor do FireHub, direto na SEFAZ e sem custo por nota.
+                      O cadastro da Focus abaixo continua valendo até você passar para o Emissor do FireHub — depois da troca, envie o
+                      certificado A1 e o CSC no cartão que aparece no lugar dele.
+                    </p>
+                    {ehTitular ? (
+                      <button
+                        type="button"
+                        onClick={() => escolherEmissor()}
+                        disabled={gravandoEmissor}
+                        style={{ marginTop: 10, padding: "8px 14px", background: "#1C1917", color: "#fff", border: "none", borderRadius: 8, fontWeight: 800, fontSize: "0.82rem", cursor: gravandoEmissor ? "wait" : "pointer", opacity: gravandoEmissor ? 0.6 : 1 }}
+                      >
+                        {gravandoEmissor ? "Trocando…" : "Passar para o Emissor do FireHub"}
+                      </button>
+                    ) : (
+                      <p style={{ fontSize: "0.75rem", color: "#92400E", margin: "8px 0 0" }}>Só o responsável pela loja faz a troca.</p>
+                    )}
+                  </section>
                 )}
                 {!loading && !erroAoCarregar && emissorProprioAtivo && (
                   <EmissorProprio

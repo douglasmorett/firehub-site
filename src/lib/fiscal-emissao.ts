@@ -361,8 +361,8 @@ export function pendenciasParaEmitir(config: ConfiguracaoFiscal): Problema[] {
       campo: "provedor",
       valor: config.provedor ?? null,
       mensagem:
-        "Nenhum provedor de emissão está configurado. A NFC-e precisa ser transmitida à SEFAZ " +
-        "por um serviço homologado — o FireHub não transmite sozinho.",
+        "Emissor não definido. Salve o cadastro fiscal uma vez: desde 09/10/2026 as notas saem pelo " +
+        "Emissor do FireHub, direto na SEFAZ, e a gravação deixa isso marcado.",
     });
   } else if (!tokenDoAmbiente(config)) {
     faltas.push({

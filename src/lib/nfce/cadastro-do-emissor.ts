@@ -22,7 +22,7 @@
 import { finalDoCsc } from "../focus-empresas";
 import { cnpjValido, inscricaoEstadualValida, pendenciasDoEmitente, type Problema } from "../fiscal-validacao";
 import { camposEmTexto } from "../textos-da-tela-fiscal";
-import { chaveDoAmbiente, configDoEmissorProprio, PROVEDOR_PROPRIO, type CertificadoDaLoja, type ConfigDoEmissorProprio, type CscDoAmbiente } from "./config-da-loja";
+import { chaveDoAmbiente, configDoEmissorProprio, PROVEDOR_PROPRIO, provedorEfetivoDaLoja, type CertificadoDaLoja, type ConfigDoEmissorProprio, type CscDoAmbiente } from "./config-da-loja";
 import { SERIE_MAXIMA } from "./pendencias";
 
 export const PROVEDORES_DA_TELA = ["sefaz", "focusnfe"] as const;
@@ -55,27 +55,25 @@ export function cnpjFormatado(v: unknown): string {
 // ─── QUEM TRANSMITE ─────────────────────────────────────────────────────────
 
 /**
- * O emissor que vale para a loja.
- *
- * O gravado manda. Sem nada gravado, a loja que já tem algo da Focus
- * (cadastro pela revenda, token colado) continua na Focus — trocar de emissor
- * em silêncio mudaria de onde saem as notas dela —, e a loja nova começa no
- * emissor do FireHub, que não cobra por nota. O `padrao` diz à tela que a
- * escolha ainda não foi gravada.
+ * O emissor que vale para a loja: a regra é `provedorEfetivoDaLoja`
+ * (lib/nfce/config-da-loja), a mesma de quem emite. O `padrao` diz à tela
+ * que nada está gravado ainda (o primeiro Salvar grava "sefaz" —
+ * lib/fiscal-config → comPadroesDeGravacao).
  */
 export function provedorEfetivo(config: Record<string, unknown>): { provedor: ProvedorDaTela; gravado: string | null; padrao: boolean } {
   const gravado = texto(config.provedor) || null;
-  if (gravado === "sefaz" || gravado === "focusnfe") return { provedor: gravado, gravado, padrao: false };
-  const tokens = config.tokens && typeof config.tokens === "object" ? (config.tokens as Record<string, unknown>) : {};
-  const temFocus = Boolean(texto(config.focusEmpresaId) || texto(tokens.homologacao) || texto(tokens.producao) || texto(config.tokenDoProvedor));
-  return { provedor: temFocus ? "focusnfe" : "sefaz", gravado, padrao: true };
+  return { provedor: provedorEfetivoDaLoja(config), gravado, padrao: gravado !== "sefaz" && gravado !== "focusnfe" };
 }
 
-/** O `provedor` que o PUT aceita: só os dois que a tela oferece. */
+/**
+ * O `provedor` que o PUT aceita. "focusnfe" ainda passa por aqui porque o
+ * "Salvar Dados" da loja antiga manda o gravado de volta; entrar na Focus é
+ * barrado no PUT (a Focus não é mais oferecida desde 09/10/2026).
+ */
 export function lerProvedor(valor: unknown): { ok: true; provedor: ProvedorDaTela } | { ok: false; mensagem: string } {
   const v = texto(valor).toLowerCase();
   if (v === "sefaz" || v === "focusnfe") return { ok: true, provedor: v };
-  return { ok: false, mensagem: "Emissor desconhecido. Escolha \"Emissor do FireHub\" (sefaz) ou \"Focus NFe\" (focusnfe)." };
+  return { ok: false, mensagem: "Emissor desconhecido. O emissor é o do FireHub (\"sefaz\")." };
 }
 
 // ─── O BLOCO `sefaz` NO PUT ─────────────────────────────────────────────────
@@ -353,12 +351,18 @@ export function emissorParaTela(config: Record<string, unknown>, agora: Date = n
  *  - sem emissor escolhido, a frase da pendência "provedor" diz as duas saídas.
  */
 export function conferirComEmissorProprio(base: Problema[], config: Record<string, unknown>): Problema[] {
-  const gravado = texto(config.provedor);
-  if (gravado !== PROVEDOR_PROPRIO) {
-    if (gravado) return base;
+  if (provedorEfetivoDaLoja(config) !== PROVEDOR_PROPRIO) {
+    if (texto(config.provedor)) return base;
+    // Loja antiga na Focus (token, empresa cadastrada) sem a escolha gravada:
+    // a Focus não é mais oferecida, então a saída é uma só.
     return base.map((p) =>
       p.campo === "provedor"
-        ? { ...p, mensagem: "Escolha quem transmite as notas: o Emissor do FireHub (direto na SEFAZ, sem custo por nota) ou a Focus NFe." }
+        ? {
+            ...p,
+            mensagem:
+              "Esta loja tem um cadastro antigo na Focus NFe e nenhum emissor gravado. A Focus não é mais oferecida: " +
+              "passe para o Emissor do FireHub em Configurações fiscais (botão \"Passar para o Emissor do FireHub\").",
+          }
         : p
     );
   }

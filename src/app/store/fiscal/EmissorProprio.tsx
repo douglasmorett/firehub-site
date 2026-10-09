@@ -130,84 +130,6 @@ export async function pedirTesteDeConexao(ambiente: 1 | 2): Promise<RespostaDoTe
   };
 }
 
-// ─── ESCOLHA DO EMISSOR ─────────────────────────────────────────────────────
-
-/**
- * "Quem transmite as notas": o emissor do FireHub é o padrão para loja nova
- * (sem custo por nota); a Focus continua para quem tem conta própria lá. A
- * escolha é gravada (fiscalConfig.provedor) só quando o titular clica.
- */
-export function EscolhaDoEmissor(p: {
-  provedor: "sefaz" | "focusnfe";
-  padrao: boolean;
-  ehTitular: boolean;
-  emissaoLigada: boolean;
-  gravando: boolean;
-  aoEscolher: (provedor: "sefaz" | "focusnfe") => void;
-}) {
-  const opcoes = [
-    {
-      valor: "sefaz" as const,
-      titulo: "Emissor do FireHub",
-      sub: "Direto na SEFAZ, sem custo por nota. O FireHub assina com o certificado da loja e transmite.",
-    },
-    {
-      valor: "focusnfe" as const,
-      titulo: "Focus NFe (conta própria)",
-      sub: "Para quem já tem conta na Focus NFe. A Focus cobra por nota e transmite por você.",
-    },
-  ];
-  return (
-    <section aria-labelledby="emissor-escolha-titulo" style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1.1rem 1.3rem" }}>
-      <h2 id="emissor-escolha-titulo" style={{ margin: 0, fontSize: "1rem", fontWeight: 800, color: "#1E293B" }}>
-        Quem transmite as notas
-      </h2>
-      {p.padrao && (
-        <p style={{ margin: "6px 0 0", fontSize: "0.78rem", color: "#92400E" }}>
-          Ainda não escolhido — o padrão para loja nova é o Emissor do FireHub. Clique para confirmar.
-        </p>
-      )}
-      <div role="group" aria-label="Quem transmite as notas" style={{ ...grade, marginTop: 10 }}>
-        {opcoes.map((o) => {
-          const ativo = p.provedor === o.valor;
-          return (
-            <button
-              key={o.valor}
-              type="button"
-              aria-pressed={ativo && !p.padrao}
-              disabled={!p.ehTitular || p.gravando}
-              onClick={() => p.aoEscolher(o.valor)}
-              style={{
-                textAlign: "left",
-                padding: "12px 14px",
-                borderRadius: 12,
-                border: `2px solid ${ativo ? "#1C1917" : "#CBD5E1"}`,
-                background: ativo ? "#FAF6F2" : "#fff",
-                cursor: p.ehTitular ? "pointer" : "not-allowed",
-                font: "inherit",
-                color: "inherit",
-              }}
-            >
-              <span style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, fontSize: "0.9rem", color: "#1E293B" }}>
-                {ativo ? <CheckCircle2 size={16} color="#0F766E" aria-hidden /> : <Circle size={16} color="#94A3B8" aria-hidden />}
-                {o.titulo}
-                {o.valor === "sefaz" && <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#0F766E", background: "#F0FDFA", borderRadius: 999, padding: "2px 8px" }}>padrão</span>}
-              </span>
-              <span style={{ display: "block", fontSize: "0.76rem", color: "#64748B", marginTop: 4, lineHeight: 1.45 }}>{o.sub}</span>
-            </button>
-          );
-        })}
-      </div>
-      {!p.ehTitular && <p style={{ fontSize: "0.75rem", color: "#94A3B8", margin: "8px 0 0" }}>Só o responsável pela loja escolhe o emissor.</p>}
-      {p.emissaoLigada && p.ehTitular && (
-        <p style={{ fontSize: "0.75rem", color: "#64748B", margin: "8px 0 0" }}>
-          Com a emissão ligada, a troca só passa se o outro emissor já estiver completo — senão toda venda falharia.
-        </p>
-      )}
-    </section>
-  );
-}
-
 // ─── O EMISSOR DO FIREHUB ───────────────────────────────────────────────────
 
 type Props = {
@@ -420,7 +342,7 @@ export default function EmissorProprio({ emissor, prontidao, uf, ufsAtendidas, e
       </p>
       {ufFora && (
         <p style={{ margin: "10px 0 0", fontSize: "0.8rem", color: "#92400E", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 8, padding: "8px 12px" }}>
-          O emissor do FireHub ainda não atende {uf.toUpperCase()} (hoje: {ufsAtendidas.join(", ")}). Use a Focus NFe enquanto isso.
+          O Emissor do FireHub não transmite para a UF &quot;{uf.toUpperCase()}&quot; (atende: {ufsAtendidas.join(", ")}). Confira a UF do endereço fiscal em Dados da empresa.
         </p>
       )}
 
