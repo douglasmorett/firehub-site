@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { segredoObrigatorio } from "./segredos";
 import { levarAoGatewayNovoSeFor } from "./gateway-da-loja";
+import { contaParaEnviar } from "./conta-do-whatsapp";
 
 export async function getEvolutionQRCode(userId: string, storePhone?: string) {
   const instanceName = `firehub_${userId.slice(-10)}`;
@@ -214,6 +215,17 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
   try {
     const typingDelay = tempoDeDigitacao(text);
 
+    // Celular digitado com o nono dígito: a conta do WhatsApp pode não ter o 9
+    // (lib/conta-do-whatsapp.ts). Pergunta-se ao WhatsApp antes de mandar.
+    const destino = await contaParaEnviar(`${baseUrl}|${instanceName}`, number, async (n) => {
+      const r = await fetch(`${baseUrl}/instance/quem-e/${instanceName}?number=${n}`, {
+        headers: { "apikey": apiKey, "Bypass-Tunnel-Remainder": "true", "User-Agent": "FireHub" },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!r.ok) throw new Error(`quem-e ${r.status}`);
+      return r.json();
+    });
+
     const res = await fetch(`${baseUrl}/message/sendText/${instanceName}`, {
       method: "POST",
       headers: {
@@ -223,7 +235,7 @@ export async function sendEvolutionMessage(userIdOrInstance: string, toPhone: st
         "User-Agent": "FireHub"
       },
       body: JSON.stringify({
-        number,
+        number: destino,
         text,
         options: {
           delay: typingDelay,
