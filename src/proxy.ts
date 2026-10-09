@@ -106,6 +106,15 @@ function ehDoCofreFiscal(pathname: string): boolean {
   return caminho.replace(/\/+/g, "/").toLowerCase().startsWith("/uploads/_fiscal");
 }
 
+/**
+ * Domínio próprio de loja → slug do cardápio (sem o "www."). Loja nova entra
+ * aqui e no Coolify (Domains do app), com o DNS dela apontando para o servidor.
+ */
+const DOMINIOS_DE_LOJA: Record<string, string> = {
+  // Luiz Carlos, 09/10/2026: "redirecionar pro site" o domínio do Registro.br.
+  "divinosburger.com.br": "divinos-burger",
+};
+
 // Next 16 renomeou a convenção `middleware` para `proxy` (roda no runtime
 // Node.js). Mesma lógica de sempre; só o nome do arquivo e da função mudaram.
 export async function proxy(request: NextRequest) {
@@ -166,6 +175,17 @@ export async function proxy(request: NextRequest) {
     const url = request.nextUrl.clone();
     url.pathname = "/icebox/compras";
     return NextResponse.rewrite(url);
+  }
+
+  // ─── DOMÍNIO PRÓPRIO DA LOJA → CARDÁPIO NO FIREHUB ────────────────────────
+  // O lojista registrou o domínio dele (Registro.br, DNS apontando para o
+  // servidor do FireHub) e quer que ele abra o cardápio. É REDIRECT, não
+  // rewrite: o login do cliente, o cashback e os links do pedido moram em
+  // firehubfood.com.br, e servir o cardápio em outro host quebraria a sessão.
+  // O domínio também precisa estar cadastrado no app do Coolify (HTTPS).
+  const lojaDoDominio = DOMINIOS_DE_LOJA[hostSemPorta.replace(/^www\./, "")];
+  if (lojaDoDominio) {
+    return NextResponse.redirect(`https://firehubfood.com.br/loja/${lojaDoDominio}${request.nextUrl.search}`, 301);
   }
 
   // ─── CORS preflight for API routes ───
