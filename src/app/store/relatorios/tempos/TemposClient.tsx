@@ -114,9 +114,10 @@ function Cobertura({ e }: { e: ResumoDaEtapa }) {
 
 export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
   const opcoes = useOpcoesDosFiltros();
-  // `ate`: até onde a produção por produto mede ("" = o pronto da produção,
+  // `medir`: até onde a produção por produto mede ("" = o pronto da produção,
   // "finalizacao", "tela:<chave>") — ver lib/relatorios/tempos.ts, MedirAte.
-  const { filtros, mudar, extras, mudarExtra, query } = useFiltros(inicio, "7d", { apenasAtrasados: "", ate: "" });
+  // Não pode se chamar `ate`: esse é a data final do período na URL.
+  const { filtros, mudar, extras, mudarExtra, query } = useFiltros(inicio, "7d", { apenasAtrasados: "", medir: "" });
   const { dados, carregando, erro, recarregar } = useRelatorio<Resposta>("tempos", query);
   const apenasAtrasados = extras.apenasAtrasados !== "0";
   const telas = dados?.telas || [];
@@ -409,7 +410,7 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
           <div className="fh-sem-impressao" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: "0.8rem" }}>
             <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.82rem", fontWeight: 800, color: PALETA.carvao }}>
               Medir até
-              <select name="ate" value={extras.ate} onChange={(e) => mudarExtra("ate", e.target.value)} style={campoSelect}>
+              <select name="medir" value={extras.medir} onChange={(e) => mudarExtra("medir", e.target.value)} style={campoSelect}>
                 <option value="">Pronto da produção (a baixa da tela de produção)</option>
                 <option value="finalizacao">Finalização — o percurso completo</option>
                 {telas.length > 0 && (

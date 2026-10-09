@@ -71,9 +71,9 @@ export async function GET(req: NextRequest) {
   ]);
   const aceitaSozinha = new Set(lojas.filter((l) => l.autoAcceptOrders).map((l) => l.id));
 
-  // Até onde a produção por produto mede: `ate=finalizacao` (o percurso
-  // completo) ou `ate=tela:<chave>` (a baixa de uma tela do KDS); ausente =
-  // o pronto da produção, como sempre foi.
+  // Até onde a produção por produto mede: `medir=finalizacao` (o percurso
+  // completo) ou `medir=tela:<chave>` (a baixa de uma tela do KDS); ausente =
+  // o pronto da produção, como sempre foi. (`ate` é a data final do período.)
   const telasDoKds = lojas.flatMap((l) =>
     (Array.isArray(l.kdsScreens) ? (l.kdsScreens as any[]) : []).map((t) => ({
       chave: chaveDaTela(t),
@@ -83,11 +83,11 @@ export async function GET(req: NextRequest) {
       ...(lojas.length > 1 ? { loja: String(l.storeName || "").trim() } : {}),
     })),
   ).filter((t) => t.chave);
-  const ate = sp.get("ate") || "";
+  const medir = sp.get("medir") || "";
   let medirAte: MedirAte = { tipo: "producao" };
-  if (ate === "finalizacao") medirAte = { tipo: "finalizacao" };
-  else if (ate.startsWith("tela:")) {
-    const t = telasDoKds.find((x) => x.chave === ate.slice("tela:".length));
+  if (medir === "finalizacao") medirAte = { tipo: "finalizacao" };
+  else if (medir.startsWith("tela:")) {
+    const t = telasDoKds.find((x) => x.chave === medir.slice("tela:".length));
     if (t) medirAte = { tipo: "tela", chave: t.chave, nome: t.nome, estagio: t.estagio, categorias: t.categorias };
   }
 
