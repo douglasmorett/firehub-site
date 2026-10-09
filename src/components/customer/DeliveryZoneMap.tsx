@@ -81,7 +81,8 @@ const CORES_DA_AREA = ["#0F766E", "#1C1917", "#44403C", "#E8590C", "#0F766E", "#
 /** Faixa de distância (modos KM e ROTA). */
 type FaixaNaTela = { id: string; km: number | null; time: number | null; fee: number | null; motoboyFee: number | null };
 /** Bairro atendido (modo NEIGHBORHOOD). */
-type BairroNaTela = { id: string; name: string; time: number | null; fee: number | null; motoboyFee: number | null };
+/** `minimo`: pedido mínimo só deste bairro; null = vale o geral da loja (lib/minimo-do-bairro.ts). */
+type BairroNaTela = { id: string; name: string; time: number | null; fee: number | null; motoboyFee: number | null; minimo: number | null };
 /** Área desenhada (modo POLIGONO; lib/area-de-entrega.ts lê `pontos`, `fee`, `time` e `repasse`). */
 type AreaNaTela = { id: string; nome: string; pontos: [number, number][]; fee: number | null; time: number | null; repasse: number | null };
 
@@ -458,8 +459,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           time: numeroOuNulo(z.time),
           fee: numeroOuNulo(z.fee),
           motoboyFee: numeroOuNulo(z.motoboyFee),
+          minimo: numeroOuNulo(z.minimo),
         }))
-      : BAIRROS_DE_EXEMPLO.map((b) => ({ id: novoId("b"), ...b, motoboyFee: null }));
+      : BAIRROS_DE_EXEMPLO.map((b) => ({ id: novoId("b"), ...b, motoboyFee: null, minimo: null }));
   });
 
   // ── AS ABAS DO PAINEL ─────────────────────────────────────────────────────
@@ -485,7 +487,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     porDistancia
       ? ordenarFaixas(faixas).map((f) => [f.km, f.time, f.fee])
       : porBairro
-        ? bairros.filter((b) => b.name.trim()).map((b) => [b.name.trim(), b.time, b.fee])
+        ? bairros.filter((b) => b.name.trim()).map((b) => [b.name.trim(), b.time, b.fee, b.minimo])
         : areasDeEntrega.map((a) => [a.nome, a.time, a.fee, a.pontos.length]),
   );
   const [tabelaGravada, setTabelaGravada] = useState(retratoDaTabela);
@@ -1206,7 +1208,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
   };
 
   const adicionarBairro = () => {
-    const novo: BairroNaTela = { id: novoId("b"), name: "", time: bairros[bairros.length - 1]?.time ?? 40, fee: null, motoboyFee: null };
+    const novo: BairroNaTela = { id: novoId("b"), name: "", time: bairros[bairros.length - 1]?.time ?? 40, fee: null, motoboyFee: null, minimo: null };
     setBairros((prev) => [...prev, novo]);
     setBuscaDoBairro("");
     setFocarNoBairro(novo.id);
@@ -1253,6 +1255,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     if (porBairro) {
       return bairros.map((b) => ({
         name: b.name, time: b.time, fee: b.fee,
+        ...(b.minimo != null ? { minimo: b.minimo } : {}),
         ...(repassePorFaixa && b.motoboyFee != null ? { motoboyFee: b.motoboyFee } : {}),
         ...marcar(b.fee, b.motoboyFee),
       }));
@@ -2278,6 +2281,12 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
                             invalido={campoComErro(zona.id, "motoboyFee")} onMudar={(n) => mudar({ motoboyFee: n })} />
                         </label>
                       )}
+                      {/* Vazio = o pedido mínimo geral da loja (Configurações). lib/minimo-do-bairro.ts */}
+                      <label style={campoDaFaixa} title="Deixe vazio para usar o pedido mínimo geral da loja. 0 = sem mínimo neste bairro.">
+                        <span style={rotuloDoCampo}>🧾 Pedido mínimo</span>
+                        <CampoNumerico valor={zona.minimo} formato="reais" rotulo="Pedido mínimo neste bairro (R$)" placeholder="o da loja"
+                          invalido={campoComErro(zona.id, "minimo")} onMudar={(n) => mudar({ minimo: n })} />
+                      </label>
                     </div>
                   </div>
                 );
