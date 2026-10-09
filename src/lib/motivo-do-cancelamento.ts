@@ -41,6 +41,17 @@ export const SUGESTOES_DE_MOTIVO = [
 /** O texto do 400, igual em todas as rotas. */
 export const MENSAGEM_SEM_MOTIVO = `Escreva o motivo do cancelamento (pelo menos ${MINIMO_DO_MOTIVO} letras). Ele aparece no fechamento do caixa.`;
 
+/**
+ * A recusa do SERVIDOR leva também o que fazer quando não há onde escrever.
+ *
+ * O painel aberto antes do deploy de 09/10/2026 (20h05) cancelava ao arrastar
+ * sem perguntar o motivo; o servidor novo recusa, e a tela velha mostrava só
+ * "Escreva o motivo…" — sem campo nenhum para escrever (Lapastine, 20h28: "a
+ * gente está tentando cancelar e não cancela"). A tela antiga mostra o `error`
+ * da resposta como veio, então a saída tem de estar nele: atualizar o painel.
+ */
+export const MENSAGEM_SEM_MOTIVO_DO_SERVIDOR = `${MENSAGEM_SEM_MOTIVO} Se não apareceu onde escrever, aperte F5 para atualizar o painel e cancele de novo.`;
+
 /** O motivo limpo (espaços juntados, cortado no teto), ou "" quando não serve. */
 export function limparMotivo(texto: unknown): string {
   if (typeof texto !== "string") return "";

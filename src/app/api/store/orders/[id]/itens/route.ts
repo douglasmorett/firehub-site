@@ -71,7 +71,7 @@ import {
   type RegistroDeEdicao,
 } from "@/lib/edicao-de-pedido";
 import { descontoDoCorpo, descreverDesconto, notaDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
-import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
+import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
 
 /** Os campos do pedido que a decisão e o recálculo precisam. */
 const CAMPOS_DO_PEDIDO = {
@@ -172,7 +172,7 @@ function retiradosDaEdicao(
   return saida;
 }
 
-const semMotivo = () => NextResponse.json({ error: MENSAGEM_SEM_MOTIVO, precisaDeMotivo: true }, { status: 400 });
+const semMotivo = () => NextResponse.json({ error: MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, precisaDeMotivo: true }, { status: 400 });
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {

@@ -6,7 +6,7 @@ import { trackSaleForBilling } from "@/lib/billing";
 import { ehPedido99Food, sincronizar99Food } from "@/lib/food99-status";
 import { ehPedidoBrendi, sincronizarBrendi } from "@/lib/brendi-status";
 import { ehPedidoWabiz, sincronizarWabiz } from "@/lib/wabiz-status";
-import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO } from "@/lib/motivo-do-cancelamento";
+import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR } from "@/lib/motivo-do-cancelamento";
 import { empilharEdicao } from "@/lib/edicao-de-pedido";
 
 // Status que contam como venda confirmada para fins de faturamento
@@ -141,7 +141,7 @@ export async function PUT(req: Request) {
   // 400 — antes do pedido ser lido, nada muda nem avisa parceiro.
   const cancelReason: string | undefined = status === "CANCELADO" ? motivoDoCorpo(body) : undefined;
   if (status === "CANCELADO" && !cancelReason) {
-    return NextResponse.json({ error: MENSAGEM_SEM_MOTIVO, precisaDeMotivo: true }, { status: 400 });
+    return NextResponse.json({ error: MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, precisaDeMotivo: true }, { status: 400 });
   }
 
   const order = await prisma.customerOrder.findUnique({

@@ -33,7 +33,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa, rotuloDoOperador, type OperadorDaMesa } from "@/lib/garcom-auth";
-import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
+import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
 import { empilharEdicao, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
 import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 import { conferirEstoque } from "@/lib/estoque-restante";
@@ -156,7 +156,7 @@ export async function PATCH(
     ];
     const motivo = motivoDoCorpo(body);
     if (retirados.length > 0 && !motivo) {
-      return NextResponse.json({ error: MENSAGEM_SEM_MOTIVO, precisaDeMotivo: true }, { status: 400 });
+      return NextResponse.json({ error: MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, precisaDeMotivo: true }, { status: 400 });
     }
     const descricao = [
       ...order.items.filter((i) => remover.includes(i.id)).map((i) => `−${nomeDoItem(i)}`),
@@ -235,7 +235,7 @@ async function cancelarPedido(
   operador: OperadorDaMesa,
   motivo: string
 ) {
-  if (!motivo) return NextResponse.json({ error: MENSAGEM_SEM_MOTIVO, precisaDeMotivo: true }, { status: 400 });
+  if (!motivo) return NextResponse.json({ error: MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, precisaDeMotivo: true }, { status: 400 });
   const orderId = order.id;
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
