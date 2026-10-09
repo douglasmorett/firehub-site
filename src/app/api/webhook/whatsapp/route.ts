@@ -1402,7 +1402,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       if (/\[\[\s*CHAMAR_ATENDENTE/i.test(replyText)) {
         replyText = replyText.replace(/\[\[\s*CHAMAR_ATENDENTE[^\]]*\]\]/gi, "").trim();
         // A loja optou por NÃO pausar, e o dono já foi avisado pelo detector lá em
-        // cima: a marca da IA (regra 6g do prompt) não tira o robô da conversa.
+        // cima: a marca da IA (regra de status, "pediu uma pessoa", em lib/regras-do-robo.ts) não tira o robô da conversa.
         const soAlerta = pedidoDeAtendente.pediu && !stopOnHuman;
         if (!soAlerta && !donoNaQueda) callHuman = true;
         if (!replyText) replyText = FRASE_DE_CHAMAR_ATENDENTE;

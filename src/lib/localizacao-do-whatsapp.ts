@@ -358,7 +358,7 @@ export const COMO_MANDAR_A_LOCALIZACAO = "É só tocar no 📎 (clipe) → Local
  * O clipe vem ANTES da palavra localização, como nos passos que se ensinam.
  *
  * Até 25/09/2026 valia qualquer "mandar/enviar … localização". A OFERTA da
- * regra 18a ("me passa a rua, o número e o bairro (ou manda sua localização
+ * regra da taxa de entrega (lib/regras-do-robo.ts: "me passa a rua, o número e o bairro (ou manda sua localização
  * pelo 📎)"), que o robô diz a quem só perguntou a taxa, já contava como
  * pedido, e "quer que eu te envie a localização da loja?" também: a trava que
  * pede o ponto UMA vez antes de segurar (R2) ou de fechar com a taxa estimada

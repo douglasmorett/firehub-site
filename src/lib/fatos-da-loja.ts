@@ -62,7 +62,7 @@ export function linhasDoMinimoNosDados(o: { minimoEntrega: number; minimoRetirad
 }
 
 /**
- * A conferência "A" da regra 21.9 do prompt (pedido mínimo antes de fechar).
+ * A conferência "A" das DUAS CONFERÊNCIAS da regra do pedido (lib/regras-do-robo.ts: pedido mínimo antes de fechar).
  *
  * O exemplo de tom usa números derivados do mínimo REAL da loja — assim o
  * modelo nunca vê dois mínimos diferentes no mesmo prompt — e fala em "mais
@@ -112,7 +112,7 @@ ${saidaPelaRetirada}
          mandar para a cozinha. É isto que esta regra impede.`;
 }
 
-/** O lembrete de mínimo na resposta sobre a promoção de amanhã (regra 23). */
+/** O lembrete de mínimo na resposta sobre a promoção de amanhã (regra PROMOÇÕES E CUPONS de lib/regras-do-robo.ts). */
 export function lembreteDoMinimo(minimoEntrega: number): string {
   return minimoEntrega > 0
     ? `, e lembre o pedido mínimo de ${brl(minimoEntrega)} reais para entrega`
@@ -142,7 +142,7 @@ export type PrazoParaORobo = {
   faixa: string;
   /** Valor da linha "Tempo Médio de Entrega da Loja" em DADOS DA LOJA. */
   linhaDosDados: string;
-  /** Texto da regra 9 (cliente pergunta o tempo de entrega). */
+  /** Texto da regra TEMPO / PREVISÃO DE ENTREGA de lib/regras-do-robo.ts (cliente pergunta o tempo de entrega). */
   regra: string;
 };
 

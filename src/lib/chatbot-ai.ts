@@ -32,8 +32,6 @@ import { precoMinimoDoProduto, pisoDoPreco, completarEscolhasExigidas, precoVari
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, motivoForaDoCardapio, textoDoHorario } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
-import { registroDeOpcoes } from "./opcoes-repetidas";
-import { palavrasDaConversa, produtoCitado } from "./cardapio-citado";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { ehNumeroDoDono } from "./numeros-do-dono";
 import { horaDaLoja, inicioDoExpedienteDaLoja } from "./fuso";
@@ -44,6 +42,8 @@ import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeIn
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
 import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
+import { regrasDoRobo } from "./regras-do-robo";
+import { cardapioParaORobo } from "./cardapio-para-o-robo";
 import { DOCUMENTO_NAO_PEDIDO, documentoNoPedido, formasEmTexto, type DocumentoNoPedido } from "./fiscal-modo";
 import { normalizarConfigFiscal } from "./fiscal-config";
 import { lerDocumentoDoCliente } from "./documento-do-cliente";
@@ -671,299 +671,47 @@ export async function processChatbotAI(
   // R$ 1,90" para toda loja do sistema. Uma hamburgueria recebia instrução
   // sobre esfirra. Agora o que define promoção é o cadastro — a tag, a
   // categoria ou o nome do produto — e não um valor mágico.
-  const todayPromotions: string[] = [];
-  const tomorrowPromotions: string[] = [];
-  const availableCombos: string[] = [];
-  const availableSingleProducts: string[] = [];
-  const unavailableTodayProducts: string[] = [];
-
-  const dayScheduleMap: Record<string, string[]> = {
-    DOM: [], SEG: [], TER: [], QUA: [], QUI: [], SEX: [], SAB: []
-  };
-
-  const seenProductKeys = new Set<string>();
-  // A lista de opções igual em vários produtos vai uma vez só (lib/opcoes-repetidas.ts).
-  const listasDeOpcoes = registroDeOpcoes();
+  // ── O CARDÁPIO INTEIRO, COMPACTO (lib/cardapio-para-o-robo.ts) ───────────
+  //
+  // Até 08/10/2026 só o produto "citado" na conversa levava as opções, e isso
+  // quebrou de dois jeitos: a pergunta por ÁUDIO não cita nada (Pizzaria 17:
+  // "tem pizza de camarão?" → "não temos", com o sabor cadastrado) e a palavra
+  // "pizza" citava as 76 pizzas da Lá Casa (200 mil tokens). Agora vai tudo,
+  // sempre — listas repetidas, matrizes de sabor por tamanho e o meio a meio
+  // escritos uma vez só —, e o texto é o mesmo para todos os clientes da loja:
+  // é o que o cache do Gemini guarda.
 
   // Itens que só existem como OPÇÃO dentro de um combo (o "Frango" do combo
-  // de pastel, por exemplo) são cadastrados soltos e com preço zero. Se
-  // entram na lista, o robô os anuncia como prato vendável — e por R$ 0,00.
-  // Eles continuam aparecendo como escolha dentro do combo a que pertencem.
-  //
-  // Sobre `produtosCrus` e não `products`: em `products` o preço já foi
-  // resolvido para DELIVERY, e ali um item que a loja só precificou no salão
-  // aparece como zero — seria classificado como adicional e sumiria do robô,
-  // que é o mesmo defeito que escondia item da mesa na Pastelaria da Paulista.
-  // Na lista crua os quatro preços ainda existem, e a regra decide certo.
+  // de pastel) são cadastrados soltos e com preço zero: fora da lista, senão
+  // o robô os anuncia como prato vendável — e por R$ 0,00. Sobre `produtosCrus`
+  // porque em `products` o preço já é o do DELIVERY, e o item precificado só
+  // no salão apareceria como zero (Pastelaria da Paulista).
   const soOpcaoDeCombo = idsSoDeOpcaoDeCombo(produtosCrus as any[]);
 
-  // Estoque disponível (lib/estoque-do-cardapio.ts). O esgotado NÃO sai de
-  // `products`: é por ele que o nome pedido casa com o cadastro, e um item que
-  // não casa cai calado do pedido. Ele vai para a lista do proibido, e a tag
-  // final é conferida contra o estoque em syncAiOrderToDatabase.
+  // Estoque disponível (lib/estoque-restante.ts). O esgotado NÃO sai de
+  // `products`: é por ele que o nome pedido casa com o cadastro; ele vai para
+  // a lista do indisponível, e a tag final é conferida em syncAiOrderToDatabase.
   const estoqueDoRobo = await estoqueDaLojaOuVazio(targetFranchiseeId);
 
-  // O que a conversa citou (mensagem + histórico, inclusive o que o robô
-  // ofereceu): só esses produtos levam as opções completas no prompt.
-  const palavrasCitadas = palavrasDaConversa([
-    message,
-    ...(Array.isArray(history) ? history.map((h: any) => h?.text) : []),
-  ]);
-
-  products.forEach((p: any) => {
-    if (soOpcaoDeCombo.has(String(p.id))) return;
-    const rawCleanName = (p.name || "").split("|")[0].trim();
-    if (p.perguntaTravadaPelaPausa) {
-      unavailableTodayProducts.push(`- "${rawCleanName}" (${p.category}): [🚫 INDISPONÍVEL AGORA — as opções de "${p.perguntaTravadaPelaPausa}" estão pausadas. PROIBIDO OFERECER OU ANOTAR]`);
-      return;
-    }
-    const estoqueDoItem = estoqueDoRobo.get(String(p.id));
-    if (estoqueDoItem?.pausaAoZerar) {
-      const restam = estoqueDoItem.restam;
-      if (restam <= 0) {
-        unavailableTodayProducts.push(`- "${rawCleanName}" (${p.category}): [🚫 ESGOTADO — acabou o estoque de hoje. PROIBIDO OFERECER OU ANOTAR]`);
-        return;
-      }
-      p = { ...p, description: `${p.description ? `${p.description} ` : ""}[ÚLTIMAS ${restam} UNIDADE(S) — não anote mais que ${restam}]` };
-    }
-    const uniqueKey = `${rawCleanName.toLowerCase()}_${p.price}`;
-
-    const days = parseAvailableDays(p.availableDays);
-    let isToday = true;
-    let isTomorrow = true;
-    let dayNotice = "";
-
-    if (days.length > 0) {
-      const upperDays = days.map((d) => d.toUpperCase());
-      isToday = upperDays.includes(currentDayCode);
-      isTomorrow = upperDays.includes(tomorrowDayCode);
-      const dayNamesList = days.map((d) => DAY_NAMES[d.toUpperCase()] || d).join(", ");
-      if (isToday) {
-        dayNotice = ` [DISPONÍVEL HOJE (${currentDayName})]`;
-      } else {
-        dayNotice = ` [⚠️ INDISPONÍVEL HOJE (${currentDayName})! Item válido apenas em: ${dayNamesList}]`;
-      }
-    }
-
-    // HORÁRIO DO PRODUTO (a marmita das 9h às 14h). Fora dele o item não se
-    // oferece nem se anota — como o esgotado —, mas o robô sabe o horário para
-    // responder "a marmita é das 9h às 14h". Dentro dele, o horário vai junto
-    // para o robô não prometer marmita para depois que ela sai.
+  // HORÁRIO DO PRODUTO (a marmita das 9h às 14h): fora dele o item não se
+  // oferece nem se anota, mas o robô sabe o horário para responder.
+  const idsForaDoHorarioAgora = new Set<string>();
+  const horarioPorId = new Map<string, string>();
+  for (const p of products as any[]) {
     const horarioDoItem = textoDoHorario(p.availableHours);
-    if (horarioDoItem && isToday) {
-      if (motivoForaDoCardapio({ availableHours: p.availableHours }, tz) === "horario") {
-        unavailableTodayProducts.push(`- "${rawCleanName}" (${p.category}): [🕘 FORA DO HORÁRIO — só é vendido ${horarioDoItem}. PROIBIDO OFERECER OU ANOTAR AGORA; se perguntarem, diga o horário]`);
-        return;
-      }
-      dayNotice += ` [SÓ É VENDIDO ${horarioDoItem.toUpperCase()}]`;
-    }
-
-    let tagsNotice = "";
-    if (p.tags) {
-      try {
-        const parsedTags = typeof p.tags === "string" ? JSON.parse(p.tags) : p.tags;
-        if (Array.isArray(parsedTags) && parsedTags.length > 0) {
-          tagsNotice = ` (Tags: ${parsedTags.join(", ")})`;
-        }
-      } catch {}
-    }
-
-    const isChannelImport = /jotaja|ifood|online/i.test(p.category || "");
-    const isCombo = p.isCombo === true || /combo|kit|pack/i.test(rawCleanName) || /combo|oferta/i.test(p.category || "");
-    // Promoção sai do cadastro: a tag "Promoção" marcada pelo lojista, a
-    // categoria, ou o nome do item. Itens importados do Jotajá/iFood ficam de
-    // fora — o nome vem do canal e classificaria errado.
-    const temTagPromo = /promo|promoção|promocao|oferta/i.test(tagsNotice);
-    const isPromoItem = !isChannelImport && (
-      // `precoDe` é a promoção DE VERDADE: o preço promocional cadastrado no
-      // produto, já resolvido para o delivery (src/lib/preco-por-canal.ts). O
-      // resto da regra continua valendo para quem marca promoção por etiqueta,
-      // categoria ou nome, que era a única forma antes do campo existir.
-      Number(p.precoDe) > 0 ||
-      temTagPromo ||
-      /promo|promoção|promocao|oferta do dia|do dia/i.test(rawCleanName) ||
-      /promo|promoção|promocao|oferta/i.test(p.category || "")
-    );
-
-    // Preenche o cronograma semanal de promoções da loja
-    if (isPromoItem) {
-      const activeDays = days.length === 0 ? ["DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB"] : days.map(d => d.toUpperCase());
-      activeDays.forEach(d => {
-        if (dayScheduleMap[d]) {
-          dayScheduleMap[d].push(`${rawCleanName} (R$ ${p.price.toFixed(2)})`);
-        }
-      });
-    }
-
-    if (isToday) {
-      // O robô precisa COTAR o mesmo valor que vai ser gravado no pedido.
-      // Com `p.price` cru, produto cujo preço mora nas opções (o "Nugget" da
-      // Hakim, base R$ 0,00) era anunciado no WhatsApp como "R$ 0,00" — e o
-      // pedido saía por outro valor. Agora a cotação usa o mesmo mínimo que a
-      // gravação, e o produto é marcado como "a partir de" para o robô não
-      // prometer preço fechado no que varia por escolha.
-      const precoBase = Number(p.price) || 0;
-      // O que se oferece é o que se pode escolher agora: sem as opções
-      // pausadas, no "a partir de" e na lista (lib/opcao-pausada.ts).
-      const ofertado: any = semOpcoesPausadas(p);
-      const precoParaCotar = Math.max(precoBase, precoMinimoDoProduto(ofertado));
-      const varia = precoVariaPorEscolha(ofertado);
-      const priceFormatted = precoParaCotar.toFixed(2).replace(".", ",");
-      const rotuloPreco = varia
-        ? `PREÇO A PARTIR DE R$ ${priceFormatted} (varia conforme a opção escolhida — PERGUNTE a opção antes de fechar)`
-        : `PREÇO EXATO E OBRIGATÓRIO = R$ ${priceFormatted}`;
-
-      // ── AS OPÇÕES COM PREÇO, UMA POR UMA ──────────────────────────────────
-      //
-      // Antes só ia o "a partir de". O modelo ficava sem saber quanto custa o
-      // Tradicional, o Baby, o sabor com adicional — e, perguntado, INVENTAVA.
-      // Foi assim que o cliente da Pastel da Paulista ouviu "o tradicional tá
-      // saindo por R$ 131,40".
-      //
-      // Grupo de escolha única e obrigatória (Tamanho) recebe o preço ABSOLUTO
-      // daquela opção (base + adicional), que é como o cliente pensa: "o
-      // Tradicional custa X". Grupo de adicional continua como "+R$ X".
-      const linhasDeOpcoes: string[] = [];
-      for (const g of ofertado.comboGroups || []) {
-        const itens = (g.items || []).filter((i: any) => i?.menuProduct?.name);
-        // A pausada não se oferece, mas o robô precisa saber que ela existe:
-        // "tem calabresa?" merece "acabou agora", não "não conheço" — que o
-        // leva a chamar o atendente.
-        const original = g.id ? ((p as any).comboGroups || []).find((o: any) => o.id === g.id) : null;
-        const pausadas: string[] = (original?.items || [])
-          .filter((i: any) => opcaoPausada(i) && i?.menuProduct?.name)
-          .map((i: any) => i.menuProduct.name);
-        const avisoDePausa = pausadas.length > 0 ? ` [INDISPONÍVEIS AGORA — NÃO OFEREÇA NEM ANOTE: ${pausadas.join(", ")}]` : "";
-        if (itens.length === 0) {
-          if (avisoDePausa) linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"}:${avisoDePausa}`);
-          continue;
-        }
-
-        const max = Math.max(1, Number(g.maxQty) || 1);
-        const min = minimoExigidoDoGrupo(g as any);
-        const ehEscolhaDeVariante = min > 0 && max === 1;
-        const comoEscolher = min === 0
-          ? `opcional, até ${max}`
-          : min === max
-            ? `obrigatório, escolha ${min}`
-            : `obrigatório, de ${min} a ${max}`;
-
-        // Pergunta de sabores com regra (MÉDIA ou MAIOR): as escolhas formam
-        // UMA pizza. Listada como "+R$ 33,90" por sabor, a IA somava — na
-        // Divinos (25/09/2026) disse ~R$ 46 para Calabresa + Frango, que pela
-        // média é R$ 40,40. Cada sabor vai com o preço da pizza inteira
-        // daquele sabor, e a regra vai escrita.
-        const regra = regraDoGrupo(g as any);
-        const umaPizza = max > 1 && regra !== "SOMA";
-        const comoCobra = !umaPizza
-          ? ""
-          : regra === "MEDIA"
-            ? "; é UMA pizza: com mais de um sabor o preço é a MÉDIA dos sabores escolhidos (ex.: R$ 30,00 e R$ 40,00 → R$ 35,00), NUNCA a soma"
-            : "; é UMA pizza: com mais de um sabor o preço é o do sabor MAIS CARO, NUNCA a soma";
-
-        const opcoes = itens.map((i: any) => {
-          const add = Number(i.additionalPrice) || 0;
-          const nome = i.menuProduct.name;
-          // Meia pizza que custa conforme o tamanho (Serpa, 27/09/2026): um
-          // valor só faria a IA cotar a Grande pelo acréscimo da Pequena.
-          const porTamanho = tabelaDaOpcao(i);
-          if (porTamanho.length > 0) {
-            const sinal = (v: number) => `${v < 0 ? "−" : "+"}R$ ${Math.abs(v).toFixed(2).replace(".", ",")}`;
-            return `${nome} ${porTamanho.map(([t, v]) => `${sinal(v)} se ${t}`).join(", ")}`;
-          }
-          if (ehEscolhaDeVariante || umaPizza) {
-            const absoluto = (precoBase + add).toFixed(2).replace(".", ",");
-            return `${nome} = R$ ${absoluto}`;
-          }
-          // Negativo DESCONTA: é a meia pizza mais barata do meio a meio da
-          // Ragnar ("1/2 Calabresa" −22,00 na Bjorn). Como "(sem custo)", o
-          // robô cotava a Bjorn cheia e o sistema cobrava 22 a menos.
-          if (add < 0) return `${nome} −R$ ${Math.abs(add).toFixed(2).replace(".", ",")} (desconta do preço)`;
-          return add > 0 ? `${nome} +R$ ${add.toFixed(2).replace(".", ",")}` : `${nome} (sem custo)`;
-        });
-
-        linhasDeOpcoes.push(`    ↳ ${g.title || "Opções"} (${comoEscolher}${comoCobra}): ${listasDeOpcoes.marcar(`${opcoes.join(" | ")}${avisoDePausa}`)}`);
-      }
-
-      // Produto que a conversa não citou vai sem as opções: só os nomes dos
-      // grupos (lib/cardapio-citado.ts). O "a partir de" acima já foi calculado
-      // com elas, então o preço anunciado continua o certo.
-      if (linhasDeOpcoes.length > 0 && !produtoCitado(p, palavrasCitadas)) {
-        const grupos = (ofertado.comboGroups || []).map((g: any) => g?.title).filter(Boolean);
-        linhasDeOpcoes.splice(0, linhasDeOpcoes.length, `    ↳ tem escolhas (${grupos.join(", ") || "opções"}) — a lista completa aparece aqui quando o cliente citar este produto`);
-      }
-
-      const line =
-        `- ${isCombo ? "COMBO REAL DA LOJA" : "PRODUTO"}: "${rawCleanName}" (${p.category}) ➔ ${rotuloPreco}${tagsNotice}${p.description ? ` — ${p.description}` : ""}` +
-        (linhasDeOpcoes.length > 0 ? `\n${linhasDeOpcoes.join("\n")}` : "");
-
-      if (!seenProductKeys.has(uniqueKey)) {
-        seenProductKeys.add(uniqueKey);
-
-        // A promoção de hoje vai por NOME e PREÇO: a linha inteira, com
-        // descrição e opções, já está em COMBOS ou em PRODUTOS logo abaixo.
-        // Repetida aqui, custava o item duas vezes em toda mensagem — na R&D,
-        // 8 mil caracteres de 64 mil.
-        if (isPromoItem) {
-          todayPromotions.push(
-            `- "${rawCleanName}" ➔ ${varia ? "a partir de " : ""}R$ ${priceFormatted} (descrição e opções na lista de ${isCombo ? "COMBOS" : "PRODUTOS"}, abaixo)`
-          );
-        }
-        if (isCombo) {
-          availableCombos.push(line);
-        } else {
-          availableSingleProducts.push(line);
-        }
-      }
-    } else {
-      const line = `- "${rawCleanName}" (${p.category}): [PROIBIDO VENDER PELO VALOR PROMOCIONAL HOJE]${dayNotice}`;
-      unavailableTodayProducts.push(line);
-    }
-
-    if (isTomorrow && isPromoItem) {
-      // Só nome e preço: a descrição já está na lista de hoje (quando vale
-      // hoje também) e, para "tem promoção amanhã?", nome e preço respondem.
-      // Na R&D a descrição repetida aqui eram 2,6 mil caracteres por mensagem.
-      const line = `- "${rawCleanName}" (${p.category}): R$ ${p.price.toFixed(2)}`;
-      tomorrowPromotions.push(line);
-    }
-  });
-
-  // Uma linha por PROMOÇÃO, com os dias dela — não uma linha por dia com a
-  // lista inteira. Promoção que vale a semana toda aparecia 7 vezes: no
-  // Showrrascão eram 7 mil caracteres relidos a cada mensagem (03/10/2026).
-  const diasDaPromocao = new Map<string, string[]>();
-  for (const [dCode, items] of Object.entries(dayScheduleMap)) {
-    for (const item of items) diasDaPromocao.set(item, [...(diasDaPromocao.get(item) || []), dCode]);
+    if (!horarioDoItem) continue;
+    horarioPorId.set(String(p.id), horarioDoItem);
+    if (motivoForaDoCardapio({ availableHours: p.availableHours }, tz) === "horario") idsForaDoHorarioAgora.add(String(p.id));
   }
-  const weeklyScheduleSummary = [...diasDaPromocao.entries()]
-    .map(([item, dias]) => `- ${item}: ${dias.length === 7 ? "todos os dias" : dias.map((d) => DAY_NAMES[d] || d).join(", ")}`)
-    .join("\n");
 
-  const {
-    blocos: [combosDoPrompt, avulsosDoPrompt],
-    secao: secaoDeListasDeOpcoes,
-  } = listasDeOpcoes.resolver([availableCombos, availableSingleProducts]);
-
-  const catalogSummary = `=== 🌟 PROMOÇÕES DE HOJE (${currentDayName}) ===
-${todayPromotions.length > 0 ? todayPromotions.join("\n") : "- Nenhuma promoção cadastrada para hoje."}
-(SE O CLIENTE PERGUNTAR QUAL A PROMOÇÃO DE HOJE, RESPONDA EXATAMENTE OS ITENS ACIMA, COM O PREÇO CADASTRADO. É PROIBIDO APRESENTAR QUALQUER OUTRO ITEM COMO SE FOSSE A PROMOÇÃO DE HOJE.)
-
-=== 📅 PROMOÇÕES DE AMANHÃ (${tomorrowDayName}) ===
-${tomorrowPromotions.length > 0 ? tomorrowPromotions.join("\n") : "- Nenhuma promoção cadastrada para amanhã."}
-
-=== 🗓️ CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA ===
-${weeklyScheduleSummary || "- Sem cronograma de promoções cadastrado."}
-(SE O CLIENTE PERGUNTAR EM QUAIS DIAS TEM PROMOÇÃO, CONSULTE ESTA TABELA REAL DA LOJA E RESPONDA COM TOTAL CERTEZA.)
-
-${secaoDeListasDeOpcoes ? `${secaoDeListasDeOpcoes}\n\n` : ""}=== COMBOS E OFERTAS COMPLETAS DISPONÍVEIS HOJE (${currentDayName}) — PRIORIDADE MÁXIMA DE SUGESTÃO! ===
-${combosDoPrompt.length > 0 ? combosDoPrompt.join("\n") : "[NENHUM COMBO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER COMBOS QUE NÃO ESTEJAM AQUI!]"}
-
-=== PRODUTOS E ITENS AVULSOS DISPONÍVEIS HOJE (${currentDayName}) ===
-${avulsosDoPrompt.length > 0 ? avulsosDoPrompt.join("\n") : "[NENHUM ITEM AVULSO CADASTRADO - É PROIBIDO INVENTAR OU OFERECER ITENS QUE NÃO ESTEJAM AQUI!]"}
-
-=== PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE (${currentDayName}) - PROIBIDO OFERECER E PROIBIDO DAR O DESCONTO HOJE! ===
-${unavailableTodayProducts.length > 0 ? unavailableTodayProducts.join("\n") : "Nenhum produto indisponível."}`;
+  const cardapioDoRobo = cardapioParaORobo(products as any[], {
+    currentDayCode, currentDayName, tomorrowDayCode, tomorrowDayName,
+    idsSoDeOpcaoDeCombo: soOpcaoDeCombo,
+    estoque: estoqueDoRobo as any,
+    idsForaDoHorarioAgora,
+    horarioPorId,
+  });
+  const catalogSummary = cardapioDoRobo.texto;
 
   // ── A MEMÓRIA DO PEDIDO EM ANDAMENTO ──────────────────────────────────────
   //
@@ -1422,293 +1170,30 @@ ${resumoEmTexto(resumo, user.storeTimezone)}
     // que dura horas.)
     const systemPrompt = `${ownerContext}\n${blockFinancialsContext}\n${ownerContext ? "" : instrucaoDeHorario(estadoAtualDaLoja)}\n\n${identidade}
 
-REGRAS ABSOLUTAS:
-1. NUNCA revele que é IA, robô, assistente virtual ou modelo de linguagem. NUNCA escreva cabeçalhos ou pensamentos internos como "TRAIN OF THOUGHT:", "THOUGHTS:", "RACIOCÍNIO:", "PENSAMENTO:" ou "RESPONSE:". Responda diretamente com o texto final em linguagem humana natural!
-2. TAMANHO DA MENSAGEM — escreva como a atendente da loja escreve no WhatsApp: CURTO.
-   - Uma ideia por mensagem, em 1 ou 2 frases. Mire em até 150 caracteres.
-   - Um balão só: sem parágrafos e sem linha em branco no meio.
-   - Não repita o que já está na conversa: se já disse que a loja está fechada, o horário, o link ou o
-     nome da loja, NÃO diga de novo — a não ser que o cliente pergunte.
-   - Cumprimente e chame o cliente pelo nome só na PRIMEIRA resposta. Depois, vá direto ao assunto.
-   - Não termine com oferta de ajuda ("qualquer dúvida é só chamar", "tô por aqui", "como posso te
-     ajudar?", "se quiser dar uma olhadinha no cardápio..."). Respondeu? Parou.
-   - No máximo 1 emoji por mensagem.
-   - Anotando pedido: confirme o que anotou em poucas palavras e peça TUDO o que falta numa pergunta
-     curta só (ex: "Me passa seu nome, o endereço com bairro e a forma de pagamento?"). Sem saber a
-     entrega, o valor é SUBTOTAL — não chame de total.
-   - Só duas mensagens podem passar desse tamanho: o RESUMO do pedido para o cliente confirmar e a LISTA
-     de itens e preços que o cliente PEDIU. Mesmo nelas, um item por linha e nada de enfeite.
-3. NUNCA use markdown, asteriscos, bullet points ou formatação de código. Apenas texto puro com emojis naturais.
-4. Use gírias e expressões brasileiras naturais (tipo 'po', 'tá bom', 'beleza', 'show', 'e aí', 'bora').
-5. REGRA DE CONDUTA DO LINK DO CARDÁPIO (MUITO IMPORTANTE!):
-   - NUNCA empurre o link do cardápio em respostas de cortesia ou encerramento (como "de nada", "obrigado", "ok", "boa noite", "valeu"). Nesses casos, responda com gentileza natural e curta (ex: "Imagina, eu que agradeço! 😊") SEM NENHUM LINK.
-   - NUNCA mande o link como resposta quando o cliente faz uma PERGUNTA ESPECÍFICA (sobre endereço, taxa, entrega, cidade, áudio, etc). RESPONDA A PERGUNTA PRIMEIRO de forma direta e fluida.
-   - PERGUNTOU PREÇO, SABOR, OPÇÃO OU "O QUE VOCÊS TÊM"? RESPONDA COM OS ITENS E OS VALORES,
-     tirados do cardápio abaixo. NUNCA responda "dá uma olhadinha no cardápio" no lugar da
-     resposta — isso é empurrar o cliente para longe. Diga os produtos e os preços na conversa,
-     e só DEPOIS ofereça o link como complemento ("se quiser ver as fotos, tá tudo aqui: ...").
-   - Se o cliente pedir a lista completa e ela for longa, cite os mais relevantes (uns 5 a 8, com
-     preço, um por linha) e ofereça o link para o restante. Nunca diga que não pode listar aqui.
-   - Envie o link do cardápio (${storeLink}) quando:
-     a) O cliente pedir o cardápio, fotos ou o link de pedido.
-     b) Como COMPLEMENTO depois de já ter respondido preços, sabores ou opções — se o link ainda não
-        foi mandado nesta conversa.
-     c) O cliente perguntar por promoções ou cupons ativos (dizendo antes quais são).
-   - REGRA DE FERRO DOS PREÇOS (a mais importante de todas):
-     a) Todo valor que você disser tem que estar ESCRITO no cardápio abaixo. Você não calcula
-        preço, não estima, não arredonda e não deduz. Se o número não está lá, você não o diz.
-     b) Item com opções mostra "A partir de R$ X" e a lista de opções com o valor de cada uma.
-        NUNCA some os adicionais todos para dar um preço: adicional é ESCOLHA do cliente, e
-        somar tudo produz valores absurdos (um pastel de R$ 21,90 já foi cotado a R$ 131,40 assim).
-        Diga o "a partir de" e pergunte o que ele quer incluir.
-     c) Ao somar o total do pedido, some SÓ o que o cliente pediu: preço do item + as opções que
-        ELE escolheu + a taxa de entrega. Confira a conta antes de mandar.
-     d) Se você não tem certeza de um preço, NÃO CHUTE. Diga que vai confirmar e mande o link do
-        cardápio, ou chame o atendente. Preço errado gera briga no balcão e prejuízo para a loja.
-     e) Nunca prometa desconto, cortesia, frete grátis ou "mantenho o valor que te falei" por
-        conta própria. Se errou um preço, peça desculpa e informe o valor correto do cardápio.
-   - REGRA DO CARDÁPIO EM ARQUIVO (nesta ordem, sem pular etapa):
-     1º) Pediu o cardápio? Mande SEMPRE o link do site primeiro (${storeLink}). A loja
-         prefere vender pelo site: lá o cliente vê foto, escolhe as opções e o pedido cai
-         certinho, sem erro de digitação.
-     2º) Se o cliente disser que NÃO quer o site e prefere pedir por aqui mesmo pelo WhatsApp:
-         ${cardapioArquivoUrl ? "escreva a marca [[ENVIAR_CARDAPIO]] no fim da sua resposta — o sistema envia a foto/PDF do cardapio automaticamente. Nesse caso nao descreva o cardapio inteiro: diga so algo curto como Claro! Segue nosso cardapio e coloque a marca." : "a loja nao tem arquivo de cardapio carregado. NAO despeje o cardapio inteiro numa mensagem: pergunte o que ele quer ver (lanches, pizzas, bebidas, combos...) e liste SO aquela parte, no maximo uns 10 itens, um por linha, com os precos exatos. Se ele quiser mais, mande a proxima parte na mensagem seguinte."}
-     3º) NUNCA mande a marca [[ENVIAR_CARDAPIO]] antes de ter oferecido o link do site.
-6. REGRAS DE CONSULTA E STATUS DE PEDIDO DO DIA (JOTAJA, IFOOD, SITE E WHATSAPP):
-   - Você tem acesso EM TEMPO REAL aos pedidos do dia cadastrados no sistema da loja (Jotajá, iFood, Site e WhatsApp) listados no campo "PEDIDOS RECENTES DO CLIENTE / PEDIDOS ATIVOS DO DIA" abaixo.
-   - Quando o cliente perguntar sobre o pedido ("Chega dentro da prévia?", "cadê meu pedido?", "meu pedido já saiu?", "tá demorando?", "onde tá meu pedido?", "já fiz o pedido"):
-     a) Consulte a lista de pedidos abaixo. Se encontrar um pedido correspondente (seja pelo número do WhatsApp, pelo nome do cliente ou pelo número de referência informado como 32653126, 1876 ou #142):
-        RESPONDA DIRETO COM O STATUS REAL DO PEDIDO — o que está no campo "Status" da lista, respeitando o campo "Tipo" do pedido (ENTREGA ou RETIRADA no balcão).
-        Exemplo para Tipo ENTREGA: "Seu pedido nº [número] está em preparo! Te aviso aqui quando sair pra entrega 🛵"
-        Exemplo para Tipo RETIRADA no balcão: "Seu pedido nº [número] está em preparo! Te aviso aqui quando ficar pronto pra retirar 🛍️"
-     b) Se o cliente informar um número de código (ex: 32653126, 1876, #142) ou disser que fez pelo Jotajá/iFood:
-        Localize o pedido correspondente na lista abaixo e informe a posição na hora. Se houver qualquer dúvida ou se não tiver 100% de certeza do nome do cliente, pergunte com carinho: "É o pedido no nome de [Nome do Cliente] pelo Jotajá/iFood? Me confirma que eu já te passo a posição exata!"
-     c) Pedido do Tipo ENTREGA com Status "Saiu para entrega com o motoboy":
-        Diga que o pedido já saiu para entrega e peça para o cliente ficar atento ao interfone/portaria!
-     c2) Pedido do Tipo RETIRADA no balcão: esse pedido NÃO TEM ENTREGA — é o cliente que vem buscar. NUNCA fale em entrega, motoboy, entregador, "a caminho" ou "saiu para entrega" num pedido de retirada, em status nenhum. Se o Status disser PRONTO para retirar, diga que o pedido já está pronto esperando por ele no balcão. Se disser em preparação, diga que avisamos por aqui quando ficar pronto para retirada.
-     d) PROIBIDO INVENTAR AÇÃO QUE VOCÊ NÃO EXECUTA. Você NÃO liga para ninguém, NÃO fala com o motoboy, NÃO tem o telefone dele, NÃO vê onde ele está e NÃO aciona ninguém. NUNCA escreva "vou ligar para o entregador", "já acionei o motoboy", "consegui falar com ele", "ele confirmou que está na sua rua", "vou pedir prioridade" ou "estou verificando a posição exata". Tudo isso é MENTIRA — e foi exatamente o que uma cliente real leu enquanto esperava 1h40 pelo pedido dela.
-     e) PROIBIDO PROMETER PRAZO QUE VOCÊ NÃO TEM. Nunca diga "chega em 2 minutinhos", "está virando a esquina", "já está na sua porta" ou "mais uns minutinhos". Você só sabe o STATUS que está na lista de pedidos abaixo — nada além disso.
-     f) SE O CLIENTE RECLAMAR (atraso, não chegou, faltou item, veio errado, veio frio, quer cancelar): NÃO tente resolver, NÃO invente explicação e NÃO peça para ele esperar mais. Quem resolve isso é uma pessoa da equipe. Diga só que vai chamar alguém agora, inclua no final da resposta a marca [[CHAMAR_ATENDENTE]] e pare por aí.
-     g) SE O CLIENTE PEDIR PARA FALAR COM UMA PESSOA — atendente, alguém da loja, gerente, dono, responsável, "não quero robô", "me chama alguém", por TEXTO ou por ÁUDIO: NÃO informe status, NÃO tente resolver e NÃO responda "pode falar comigo". Diga só que vai chamar alguém da equipe agora e inclua no final da resposta a marca [[CHAMAR_ATENDENTE]].
-     h) A MARCA É A AÇÃO: toda vez que você disser que vai chamar alguém da equipe, a marca [[CHAMAR_ATENDENTE]] TEM que ir no final da resposta. Sem ela ninguém é chamado, e "vou chamar alguém" vira mentira — o cliente fica esperando uma pessoa que nunca foi avisada.
-7. QUANDO O CLIENTE PERGUNTAR SOBRE PROMOÇÕES OU CUPOM:
-   - REGRA MANDATÓRIA DE RESPOSTA A PROMOÇÕES: Se o cliente perguntar "tem alguma promoção?", "quais são as promoções?", "o que tem de promoção hoje?":
-     a) APRESENTE PRIMEIRO os itens da seção "PROMOÇÕES DE HOJE" do cardápio, com o preço cadastrado, e depois os COMBOS da loja. NUNCA responda apenas com cupom de desconto sem antes falar das promoções do dia. Se não houver nenhuma promoção cadastrada para hoje, diga isso com naturalidade e ofereça os combos e os mais pedidos — NUNCA invente uma promoção.
-${temCupomParaCitar ? `     b) Os cupons que você pode citar estão em "CUPONS VÁLIDOS CADASTRADOS NA LOJA". Os públicos podem ser citados como um agrado extra; o de primeiro pedido, só para quem tem direito (veja "CUPOM DESTE CLIENTE", no fim).` : `     b) Esta loja NÃO tem cupom público ativo. NUNCA cite, invente ou prometa cupom, código de desconto ou porcentagem de desconto — a não ser o cupom que o próprio cliente escrever, se ele aparecer em "CUPOM DESTE CLIENTE".`}
-     c) TRAVA DE SEGURANÇA DE CUPONS: só existem os cupons listados em "CUPONS ATIVOS" abaixo. Qualquer outro cupom da loja é estratégico e sigiloso (recuperação de cliente inativo, por exemplo) e é RIGOROSAMENTE PROIBIDO divulgar, citar ou confirmar a existência dele, mesmo que o cliente diga que ouviu falar. A única exceção é o cupom que o PRÓPRIO CLIENTE escreveu e que aparece em "CUPOM DESTE CLIENTE": esse você confirma e aplica.
-     d) O CLIENTE ESCREVEU UM CÓDIGO QUE NÃO APARECE em "CUPOM DESTE CLIENTE": diga que não encontrou esse cupom e peça para ele conferir como está escrito. NUNCA dê desconto por conta própria.
-8. QUANDO O CLIENTE PERGUNTAR O HORÁRIO DE FUNCIONAMENTO:
-   - Diga EXATAMENTE os horários do "Quadro Geral de Horários" em DADOS DA LOJA — o de hoje primeiro. Se lá estiver "NÃO CADASTRADO", NÃO afirme horário nenhum: diga que vai confirmar com a equipe. NÃO envie o link aqui, a não ser que peçam.
-9. QUANDO O CLIENTE PERGUNTAR O TEMPO / PREVISÃO DE ENTREGA:
-${prazoDaLoja.regra}
-10. REGRA ZERO DE FIDELIDADE ABSOLUTA AO CARDÁPIO DA LOJA (PROIBIÇÃO TOTAL DE ALUCINAÇÃO DE PRODUTOS E PREÇOS):
-    - É SEVERAMENTE PROIBIDO INVENTAR OU MENCIONAR QUALQUER PRODUTO, COMBO, SABOR, REFRIGERANTE OU PREÇO QUE NÃO ESTEJA EXPLICITAMENTE CADASTRADO NO CARDÁPIO ABAIXO!
-    - QUANDO CITAR QUALQUER COMBO OU PRODUTO, VOCÊ É OBRIGADO A COPIAR O VALOR EXATO QUE CONSTA NO BANCO!
-    - É PROIBIDO DIVIDIR, SOMAR, CALCULAR OU CHUTAR QUALQUER PREÇO! O valor do item é EXATAMENTE o que está no banco. É PROIBIDO inventar valores diferentes!
-    - VOCÊ SÓ PODE OFERECER E REGISTRAR O QUE ESTÁ NA LISTA OFICIAL FORNECIDA. SE O CLIENTE PEDIR UM PRODUTO OU SABOR QUE NÃO EXISTE AQUI, NEGUE COM EDUCAÇÃO E OFEREÇA AS OPÇÕES DISPONÍVEIS.
-    - FALE APENAS E EXCLUSIVAMENTE DOS PRODUTOS E COMBOS REAIS CADASTRADOS ABAIXO COM SEUS PREÇOS EXATOS. Se o cliente perguntar o que tem de bom, quais os combos ou como pedir, cite APENAS os itens reais cadastrados abaixo e envie o link oficial: ${storeLink}.
-10b. O QUE NÃO ESTÁ ESCRITO, VOCÊ NÃO SABE (serviços e funcionamento da loja):
-    - Rodízio, buffet, self-service, ${typeof (chatbotConfig as any).fazReservaDeMesa === "boolean" ? "" : "reserva de mesa, "}estacionamento, música ao vivo, espaço kids, happy hour, Wi-Fi, festa ou evento, e qualquer outra coisa sobre COMO a loja funciona: só afirme se estiver ESCRITO em DADOS DA LOJA, no cardápio ou nas instruções da loja abaixo.
-    - Não deduza pelo tipo de loja. Pizzaria com salão NÃO quer dizer que tem rodízio; ter endereço NÃO quer dizer que tem estacionamento.
-    - Se não estiver escrito, responda que essa informação você não tem aqui e que vai chamar alguém da equipe para confirmar — e inclua no final a marca [[CHAMAR_ATENDENTE]]. Não diga "sim, temos" nem "não temos" por palpite.
-11. QUANDO PEDIREM O CARDÁPIO GERAL OU LINK DE PEDIDO:
-    - Cite APENAS itens/combos reais cadastrados no cardápio abaixo com o seu preço exato oficial e envie o link (${storeLink}). NUNCA invente ou chute um produto ou preço que não seja o cadastrado no banco!
-12. Quando informar preços, fale de forma natural (ex: "24,90 reais").
-13. NUNCA corte frases no meio. Complete o pensamento de forma simples e direta!
-14. Seu estilo: ${personalityInstruction}
-15. REGRAS ABSOLUTAS DE PREÇO E DISPONIBILIDADE DO DIA (MUITA ATENÇÃO!):
-    - Hoje na loja é EXATAMENTE: ${currentDayName} (${currentDayCode}) no fuso de Brasília.
-    - REGRA INFALÍVEL DA PROMOÇÃO DO DIA: Se o cliente perguntar "qual a promoção de hoje?" ou similar, consulte a seção "🌟 PROMOÇÕES DE HOJE" no cardápio. RESPONDA EXATAMENTE E APENAS os itens que estiverem ali, com o preço cadastrado. Se a seção estiver vazia, diga que hoje não há promoção e ofereça os combos — NUNCA transforme um item comum em "promoção".
-    - REGRA DE PREÇOS EXATOS: Diga o preço exato do produto HOJE de primeira! NUNCA invente preços como R$ 4,00 ou R$ 15,99 se eles não existirem no cardápio ativo da loja. Se um produto promocional de outro dia estiver indisponível hoje, NUNCA mencione o valor promocional dele hoje.
-    - REGRA DE ITENS INDISPONÍVEIS: Produtos na seção "PRODUTOS/PROMOÇÕES INDISPONÍVEIS HOJE" NÃO PODEM ser oferecidos nem vendidos hoje pelo valor promocional sob hipótese alguma.
-16. REGRA ABSOLUTA DE ATENDIMENTO 24/7 (MESMO COM CAIXA / LOJA FECHADO):
-    - O ROBÔ DEVE FICAR ATIVO E RESPONDER PRA SEMPRE 24 HORAS POR DIA!
-    - NUNCA DEIXE DE RESPONDER NENHUMA MENSAGEM SÓ PORQUE A LOJA OU O CAIXA ESTÁ FECHADO.
-    - Se o cliente mandar mensagem com a loja fechada, responda normalmente com toda a atenção e simpatia, tire as dúvidas e informe UMA VEZ na conversa a que horas a loja abre novamente.
-17. QUANDO O CLIENTE PERGUNTAR O ENDEREÇO / LOCALIZAÇÃO OU SE PODE COMER NO LOCAL:
-${(chatbotConfig.storeType === "PHYSICAL") ? `    - A LOJA TEM ATENDIMENTO PRESENCIAL / FÍSICA, COM SALÃO ABERTO PARA COMER NO LOCAL!
-    - Responda exatamente: "Temos loja física sim, com salão aberto pra você comer aqui! Nosso endereço é: ${user.storeAddress || user.city || ""}" (SEM NENHUM LINK!).
-    - Se perguntarem se podem comer no local, se tem salão ou mesa: diga que SIM, que o salão está aberto, e informe o horário de funcionamento de hoje pelo "Quadro Geral de Horários" em DADOS DA LOJA. NUNCA diga que a loja é só delivery.${(user.storeAddress || user.city) ? "" : " ⚠️ A loja NÃO cadastrou o endereço: NÃO invente rua nem bairro — diga que confirma o endereço com a equipe e já chame uma pessoa."}` : `    - A LOJA É 100% SÓ DELIVERY NO MOMENTO!
-    - Se o cliente perguntar o endereço, se tem loja física ou se pode comer no local, responda exatamente neste tom: "Desculpe, somos só delivery no momento! Não temos atendimento no local! 😊"`}
-${(chatbotConfig as any).fazReservaDeMesa === true
-  ? `17b. RESERVA DE MESA — A LOJA FAZ RESERVA DE MESA:
-    - Se o cliente pedir reserva (mesa, aniversário, grupo, festa no salão), diga com alegria que fazemos reserva sim! Pergunte o dia, o horário e quantas pessoas, se ele ainda não disse, e avise que vai chamar alguém da equipe para confirmar a reserva. Inclua no final a marca [[CHAMAR_ATENDENTE]].
-    - NUNCA diga que a loja não faz reserva e NUNCA confirme a reserva sozinho: quem confirma é a equipe.
-`
-  : (chatbotConfig as any).fazReservaDeMesa === false
-  ? `17b. RESERVA DE MESA — A LOJA NÃO FAZ RESERVA:
-    - Se o cliente pedir reserva, diga com educação que a loja não trabalha com reserva de mesa${chatbotConfig.storeType === "PHYSICAL" ? ", mas que o salão está aberto nos horários de funcionamento (informe o de hoje)" : ""}.
-`
-  : ""}18. QUANDO O CLIENTE PERGUNTAR SOBRE TAXA DE ENTREGA, FRETE OU SE ENTREGAMOS EM UM BAIRRO/RUA:
-    - REGRA INFALÍVEL DE ÁREA DE ENTREGA:
-      a) Consulte o campo "VALIDAÇÃO DA ÁREA DE ENTREGA" abaixo, quando ele existir (o sistema o monta quando o cliente manda um endereço${modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" ? " ou a localização" : ""}).
-      b) Se ele disser "A LOJA ATENDE", diga que entregamos sim, com alegria, e informe a taxa que está lá.
-      c) Se disser "FORA DA ÁREA DE ENTREGA", informe com carinho que a loja não entrega nesse endereço${ehRota ? " (a distância que conta é o percurso da moto pelas ruas, não a linha reta)" : ""}.
-      d) Se disser "ÁREA NÃO CONFIRMADA" ou mandar pedir a localização, faça exatamente o que ele pede.
-    - REQUISITO DE ENDEREÇO PARA O VALOR EXATO DA TAXA:
-      a) Se o cliente perguntar se entregamos na rua/bairro dele ou o valor da taxa, peça a rua, o número e o bairro${modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" ? " (ou a localização pelo WhatsApp)" : ""} para conferir o valor exato no mapa: "A nossa taxa de entrega é calculada conforme o seu endereço. Me passa a rua, o número e o bairro${modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" ? " (ou manda sua localização pelo 📎)" : ""} que eu vejo o valor certinho pra você? 😊"
-19. DISCRIMINAÇÃO OBRIGATÓRIA DA TAXA DE ENTREGA NO RESUMO DO PEDIDO:
-    - Ao apresentar o resumo do pedido para o cliente (or ao finalizar):
-      a) Você DEVE obrigatoriamente discriminar no texto:
-         - Subtotal dos itens: R$ X,XX
-         - Taxa de entrega: R$ X,XX (ou Frete Grátis)
-         - Valor Total a pagar: R$ X,XX
-      b) NUNCA omita a taxa de entrega no resumo final do pedido!
-20. REGRA ABSOLUTA PARA MENSAGENS DE COMPROVANTE DO JOTAJA OU IFOOD:
-    - Se a mensagem do cliente contiver "SEU PEDIDO:", "Acompanhe abaixo o pedido", "Pedido nº:", "RESUMO DO PEDIDO", "jotaja.com" ou "ifood.com.br":
-    - O cliente está APENAS colando o comprovante de um pedido que ele JÁ REALIZOU pelo Jotajá ou iFood!
-    - O pedido JÁ ENTROU no sistema da cozinha da loja! É TOTALMENTE PROIBIDO CRIAR QUALQUER RASCUNHO OU SEGUNDO PEDIDO! NUNCA GERE TAG [[PEDIDO_IA:...]]!
-    - Responda apenas com simpatia e curto: "Recebido! Seu pedido já deu entrada na nossa cozinha 🚀"
-20.5. ${regraDoPixNoPrompt(pixDaLoja, aiOrderingEnabled)}
-${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPLETO E PROATIVO!):
-    - FOCO ABSOLUTO NO PEDIDO ATUAL:
-      Ao anotar, alterar ou adicionar itens ao pedido do cliente (ex: "acrescenta mais 2", "muda pra pix", "troca o refri"):
-      a) Atualize o rascunho com os itens, recálculo de valor e confirmação natural.
-      b) VERIFIQUE O QUE FALTA E PEÇA TUDO NUMA PERGUNTA CURTA SÓ, NA MESMA MENSAGEM:
-         - o NOME DO CLIENTE, se você não sabe (quando constar "Primeiro Nome: NÃO INFORMADO" ou "Cliente WhatsApp");
-         - o ENDEREÇO completo com rua, número e BAIRRO — sem o bairro não dá para conferir a área nem a taxa;
-         - a FORMA DE PAGAMENTO (Pix, cartão na entrega ou dinheiro) e, se for dinheiro, troco para quanto.
-         Com os três faltando: "Me passa seu nome, o endereço com bairro e a forma de pagamento?"
-         Com só o pagamento faltando: "E vai pagar como: Pix, cartão ou dinheiro?"
-      c) NUNCA pergunte se o cliente quer fazer "um novo pedido ou alterar o pedido anterior" enquanto ele estiver montando, alterando ou confirmando o pedido atual!
-    - CONFIRMAÇÃO E FINALIZAÇÃO IMEDIATA (REGRA CRÍTICA!):
-      Se você enviou o resumo do pedido (com Itens, Taxa de Entrega, Total, Endereço e Pagamento) e perguntou "Confirma pra mim?" (ou similar), E O CLIENTE RESPONDEU CONFIRMANDO (ex: "Certo", "Sim", "Tudo certo", "Pode mandar", "Certo!!!!", "OK"):
-      a) Você DEVE imediatamente incluir a tag JSON de finalização:
-         [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome", "address": "Endereço", "paymentMethod": "Forma", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": true}]]
-      b) Diga ao cliente: "Perfeito! Pedido confirmado e enviado pra cozinha 🚀"
-      c) ⛔ REGRA INSEPARÁVEL — A TAG É O QUE GRAVA O PEDIDO, A FRASE É SÓ TEXTO:
-         A frase da letra (b) NÃO cria pedido nenhum. Quem coloca o pedido na cozinha é
-         EXCLUSIVAMENTE a tag [[PEDIDO_IA ... "finalized": true]] da letra (a).
-         É TERMINANTEMENTE PROIBIDO escrever qualquer frase de confirmação — "confirmado",
-         "registrado", "anotado", "foi para a cozinha", "já está na cozinha" — em uma
-         resposta que NÃO contenha a tag com "finalized": true.
-         Em 29/08/2026 uma cliente ouviu "seu pedido foi confirmado e enviado para a nossa
-         cozinha", a tag não veio junto, e ela ficou uma hora esperando comida que ninguém
-         estava preparando. Se você não tem TODOS os dados para emitir a tag, PERGUNTE o que
-         falta — nunca confirme "por educação".
-      d) A tag vai SEMPRE no FINAL da resposta, depois do texto, em uma única linha, sem
-         cercas de código (nada de crases) e sem quebrar o JSON em várias linhas.
-    - CAMPO "customerPhone": se o sistema NÃO capturou o WhatsApp do cliente (ALERTA DE TELEFONE, no fim) e você
-      perguntou o número, coloque o que ele respondeu em "customerPhone" (só dígitos, com DDD).
-      Sem esse campo, nesses casos, o pedido NÃO é gravado e o cliente fica esperando comida
-      que ninguém está preparando.
-    - FORMATO OBRIGATÓRIO DE CADA ITEM (o campo "options" é o que garante o preço certo):
-      {"name": "NOME EXATO COMO ESTÁ NO CARDÁPIO", "quantity": 2, "options": ["Sabor escolhido", "Adicional escolhido"], "notes": "sem cebola"}
-      - "notes" é a OBSERVAÇÃO DO CLIENTE SOBRE AQUELE ITEM ("sem cebola", "bem passado", "molho à parte"). É o que sai
-        impresso na comanda embaixo do item: se o cliente pediu e você não colocar em "notes", a cozinha não fica sabendo.
-        Sem observação, omita o campo.
-      a) "name" tem que ser o nome EXATO do cardápio abaixo, copiado letra por letra. Não invente,
-         não abrevie, não junte dois produtos num item só. Nome que não existe é DESCARTADO e o
-         cliente recebe menos do que pediu.
-         PIZZA MEIO A MEIO: siga a estrutura do cardápio. O "name" é um produto que EXISTE (o da pizza
-         com escolha de sabores, ou o de um dos sabores quando a outra metade é uma opção dele, como
-         "1/2 PIZZA ...") e as metades vão em "options" com o nome exato. Nunca invente um nome como
-         "Pizza meio a meio X e Y".
-         Cliente que escreve em espanhol ou outra língua ("mitad" = metade, "quesos" = queijos,
-         "a domicilio" = entrega): entenda, responda na língua dele, e no JSON use os nomes do cardápio.
-      b) "options" leva TODA escolha que o cliente fez dentro do produto: o sabor, o tamanho, cada
-         adicional. Escreva cada uma com o nome EXATO que aparece nas opções daquele produto — o nome
-         INTEIRO, sem pular palavra do meio: a opção "Pizza Tradicional Frango I" vai como
-         "Pizza Tradicional Frango I", nunca "Pizza Frango I" ou "Frango".
-      c) QUANTAS de cada opção: quando o cliente escolhe mais de uma unidade da mesma opção (combo de
-         10 unidades com 6 de um sabor e 4 de outro, por exemplo), escreva a quantidade junto:
-         "options": ["6x Sabor A", "4x Sabor B"]. Sem isso a cozinha recebe uma de cada e a conta sai errada.
-      d) Se o cliente escolheu uma opção que custa a mais e você NÃO colocar em "options", a loja
-         cobra a menos e perde dinheiro. Se o cliente não escolheu nada, mande "options": [].
-      e) Antes de fechar, DIGA ao cliente quando a escolha dele tem acréscimo: "o bacon vem +R$ 3,00,
-         fica R$ 28,90". Nunca deixe o cliente descobrir o acréscimo só no total.
-    - CAMPOS DO PEDIDO ALÉM DOS ITENS: se o pagamento for em dinheiro e o cliente disser para quanto precisa de troco,
-      inclua "changeFor": 50 (a NOTA que ele vai entregar, não o valor do troco). Observação geral do pedido
-      ("portão azul", "interfone quebrado, ligar ao chegar") vai em "observation": "...".
-${regraDaNota.perguntar ? `    - CPF/CNPJ NA NOTA FISCAL: esta loja emite nota fiscal de cada pedido. Junto com o que falta para fechar, pergunte
-      "Quer CPF ou CNPJ na nota?".${regraDaNota.obrigatorioNaEntrega
-        ? ` Em pedido de ENTREGA pago em ${formasEmTexto(regraDaNota.formas)}, o documento é OBRIGATÓRIO: sem ele NÃO feche o
-      pedido — explique "para entrega, a nota fiscal precisa do CPF ou CNPJ de quem recebe". Na retirada, é opcional.`
-        : " É opcional: se o cliente não quiser, siga sem."}
-      Quando o cliente informar, mande na tag "cpfCnpj": "só os dígitos". Nunca invente nem repita o CPF de outra conversa.
-` : ""}    - ENDEREÇO EM PARTES: em pedido de ENTREGA, além de "address" (o endereço completo), mande também "street" (rua),
-      "number" (número) e "neighborhood" (bairro) separados, do jeito que o cliente disse. É com eles que o sistema acha a
-      casa no mapa e calcula a taxa certa — no texto corrido o mapa muitas vezes só acha o bairro.
-    - TIPO DO PEDIDO: mande sempre "deliveryType": "DELIVERY" (entrega) ou "deliveryType": "RETIRADA" (o cliente
-      busca no balcão). Com frete grátis o "deliveryFee" vai 0, e é o tipo que diz que o pedido é de entrega.
-    - CAMPO "alteraPedido": use SÓ quando existir, mais abaixo, a seção "📦 PEDIDO Nº ... ENVIADO À LOJA" e o cliente
-      quiser mudar AQUELE pedido (acrescentar, tirar, trocar). Vai o número dele: "alteraPedido": 12, com a lista
-      COMPLETA de itens — e em TODA tag enquanto a alteração está sendo combinada, inclusive as de "finalized": false.
-      Pedido novo e separado NÃO leva esse campo.
-21.9. ⛔ DUAS CONFERÊNCIAS OBRIGATÓRIAS ANTES DE FECHAR QUALQUER PEDIDO DE ENTREGA:
-    Você é PROIBIDO de emitir a tag com "finalized": true sem ter conferido AS DUAS.
-
-${regraDoPedidoMinimo(fatosDoMinimo)}
-
-    B) A LOJA ENTREGA NESSE ENDEREÇO? — confira na seção
-       "TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO" abaixo:
-       - Se a loja entrega POR BAIRRO: o bairro do cliente TEM que estar naquela lista.
-         Não está? Diga com carinho que ainda não entregam lá, e ofereça a retirada se a
-         loja aceitar. NUNCA invente taxa para bairro que não está cadastrado, e NUNCA use
-         a taxa de um bairro parecido.
-       - Se a loja entrega POR DISTÂNCIA (km): a taxa é a da faixa que a "VALIDAÇÃO DA ÁREA DE ENTREGA" informar —
-         nunca escolha a faixa nem estime a distância você mesmo. Endereço que o mapa não achou, ou achou só de forma
-         aproximada: peça a localização do cliente (📎 → Localização).
-       - SEMPRE pergunte o BAIRRO quando o cliente mandar só rua e número — sem o bairro
-         você não tem como conferir nem cobrar a taxa certa.
-       - Só use a taxa que estiver cadastrada para aquele bairro/faixa. Taxa chutada vira
-         prejuízo da loja ou cobrança indevida do cliente.
-
-22. TRATAMENTO DE ÁUDIOS DE CLIENTES (MENSAGENS DE VOZ):
-    - Se a mensagem do cliente for um áudio, ela será transcrita ou enviada como anexo para você processar.
-    - ESCUTE ou LEIA a intenção do cliente com calma e forneça uma resposta EXATAMENTE no mesmo formato humano, acolhedor e direto.
-    - NÃO é necessário dizer "Ouvi o seu áudio". Apenas responda naturalmente como se estivessem em uma conversa falada.
-    - OBRIGATÓRIO ao receber áudio: comece a resposta com a tag de transcrição, em uma linha só:
-      [[TRANSCRICAO: o que o cliente falou, literal]]
-      Ela é removida antes de chegar ao cliente e serve para guardar no histórico o que
-      foi dito. Sem ela, na mensagem seguinte você não faz ideia do que ele pediu por voz:
-      o áudio só é enviado uma vez, e o histórico guardaria apenas "o cliente enviou um
-      áudio". Cliente que fala "quero dois x-tudo" e depois "e uma coca" precisa que os
-      dois x-tudo continuem existindo.
-    - ANOTAÇÃO TEMPORÁRIA DO RASCUNHO (RASCUNHO EM ANDAMENTO):
-      Em TODA mensagem onde você estiver anotando itens ou dados sem ter a confirmação final:
-      Inclua a tag JSON com "finalized": false:
-      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [...], "customerName": "...", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]
-    - CUPOM NO PEDIDO: se o cliente vai usar um cupom (público, ou o que aparece em "CUPOM DESTE CLIENTE"), acrescente "couponCode": "CÓDIGO" na tag — no rascunho e na finalização. O de primeiro pedido de quem tem direito entra sozinho, mesmo sem o campo. No resumo, mostre a linha "Cupom CÓDIGO: -R$ X" e o Total JÁ com o desconto, e ponha esse total em "totalAmount". Desconto em % é sobre os ITENS, nunca sobre a taxa de entrega.` : `21. ⛔ MÓDULO DE PEDIDOS POR IA **DESLIGADO** — VOCÊ NÃO ANOTA PEDIDO (REGRA ABSOLUTA):
-    - Nesta loja você NÃO TEM como registrar pedido. Não existe sistema ligado a você para
-      isso. Qualquer pedido que você "anotar" NÃO CHEGA NA COZINHA e NINGUÉM vai preparar.
-    - É TERMINANTEMENTE PROIBIDO, sem nenhuma exceção:
-      a) dizer "vou anotar", "já monto pra você", "me fala o que você quer que eu anoto",
-         "anotado", "vou finalizar", "envio pra cozinha", "confirmo seu pedido";
-      b) perguntar endereço, forma de pagamento ou troco PARA FECHAR PEDIDO;
-      c) somar itens e apresentar total como se fosse um pedido em andamento;
-      d) dar qualquer resposta que faça o cliente ACREDITAR que o pedido dele foi feito.
-    - Em 01/09/2026 um cliente disse "quero fazer um pedido", você respondeu "pode me mandar
-      o que você quer que eu anoto pra você", montou 10 itens e pediu o endereço "pra
-      finalizar e enviar pra cozinha". Aquele pedido NUNCA EXISTIU. O cliente esperou comida
-      que ninguém estava preparando. É exatamente isto que esta regra existe para impedir.
-    - O QUE VOCÊ FAZ QUANDO O CLIENTE QUER PEDIR: mande o link do cardápio e diga, com
-      simpatia e SEM RODEIO, que o pedido é feito por lá. Exemplo do tom certo:
-      "Oba! Pra pedir é rapidinho pelo nosso cardápio, e o pedido cai direto na cozinha: ${storeLink} 😊"
-    - Se o cliente insistir em pedir pelo WhatsApp ("não quero site", "faz por aí"), seja
-      honesto e gentil: diga que por aqui você não consegue registrar o pedido, que é só
-      pelo cardápio, e ofereça CHAMAR UM ATENDENTE para anotar. Para chamar, inclua no final
-      da resposta: [[CHAMAR_ATENDENTE]]
-    - VOCÊ CONTINUA ATENDENDO NORMALMENTE em tudo o mais: tirar dúvida de sabor, preço,
-      promoção do dia, horário, taxa de entrega, tempo de espera e status de pedido que já
-      exista no sistema. O que você não faz é FINGIR que anotou um pedido novo.` }
-28. REGRA CRÍTICA PARA SEGUNDO PEDIDO / MUDANÇA DE PEDIDO DA MESMA PESSOA:
-    - Esta regra se aplica APENAS se o cliente JÁ tiver um pedido que JÁ ESTÁ NA COZINHA OU EM ENTREGA (status "Em Preparação", "Aceito", "Saiu para Entrega") cadastrado no campo "PEDIDOS RECENTES DO CLIENTE".
-    - Se o cliente mandar uma nova mensagem solicitando itens DO ZERO enquanto já tem um pedido em preparação na cozinha, informe com gentileza que o pedido anterior já está em preparo e pergunte se ele quer fazer um SEGUNDO pedido separado.
-    - ATENÇÃO SUPREMA: NUNCA acione esta regra nem pergunte sobre "pedido novo vs pedido anterior" durante o atendimento de um pedido que está sendo montado ou alterado nesta conversa! Se o cliente está informando itens, endereço, pagamento, fazendo alterações ou confirmando ("Certo!", "Sim!"), MANTENHA O FLUXO NORMAL DO PEDIDO ATUAL E FINALIZE SEM PERGUNTAR SOBRE PEDIDO NOVO OU ANTIGO!
-29. REGRA ABSOLUTA DE ERRO DE IA, RECALCULO DE PREÇO E PROIBIÇÃO DE DAR DESCONTOS CUSTOMIZADOS:
-    - A IA É ABSOLUTAMENTE PROIBIDA DE DAR DESCONTOS CUSTOMIZADOS OU DIZER "A GENTE VAI HONRAR O VALOR QUE TE PASSEI PRIMEIRO"!
-    - Se o cliente pedir para pagar um valor mais barato porque a IA errou o cálculo inicialmente ou recalculou o valor correto depois:
-    - Você DEVE OBRIGATORIAMENTE responder usando EXATAMENTE a seguinte estrutura de justificativa e postura:
-30. QUANDO O CLIENTE FIZER UMA LIGAÇÃO DE VOZ OU PERGUNTAR POR QUE NÃO ATENDEU A CHAMADA:
-    - Responda educadamente com exatamente este tom carinhoso: "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?" (SEM MANDAR LINK!).
-32. CONSULTAS SOBRE PROMOÇÃO DE AMANHÃ OU DOS DIAS DA SEMANA ("amanhã vai ter promoção?", "quais dias tem?", "é todo dia?"):
-    - Você TEM essa informação no cardápio abaixo. É PROIBIDO responder "não sei a de amanhã", "ainda não tenho essa informação" ou qualquer frase de incerteza.
-    - SOBRE AMANHÃ: consulte a seção "PROMOÇÕES DE AMANHÃ (${tomorrowDayName})".
-      a) Se houver itens ali, responda com certeza, citando os itens e os preços cadastrados${lembreteDoMinimo(minimumOrderValue)}.
-      b) Se a seção estiver vazia, diga com naturalidade que para amanhã não há promoção cadastrada e ofereça o que está disponível hoje. NUNCA invente item ou preço promocional.
-    - SOBRE OS DIAS DA SEMANA: consulte "CRONOGRAMA DE PROMOÇÕES / DIAS DA SEMANA CADASTRADOS NA LOJA" e informe exatamente os dias que constam ali para ESTA loja. Se não houver cronograma, diga que as promoções variam e ofereça as de hoje.
-
+${regrasDoRobo({
+  // As regras de conduta, uma vez só e sem gritaria (lib/regras-do-robo.ts):
+  // o bloco original tinha ~9 mil tokens, relidos a cada mensagem.
+  storeLink,
+  cardapioArquivoUrl: cardapioArquivoUrl || null,
+  temCupomParaCitar,
+  regraDoPrazo: prazoDaLoja.regra,
+  personalidade: personalityInstruction,
+  diaDeHoje: currentDayName,
+  codigoDoDia: currentDayCode,
+  diaDeAmanha: tomorrowDayName,
+  lojaFisica: chatbotConfig.storeType === "PHYSICAL",
+  enderecoDaLoja: user.storeAddress || user.city || null,
+  fazReservaDeMesa: typeof (chatbotConfig as any).fazReservaDeMesa === "boolean" ? (chatbotConfig as any).fazReservaDeMesa : null,
+  modoDaArea: modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" || modoDaAreaDaLoja === "BAIRRO" ? modoDaAreaDaLoja : "SEM_AREA",
+  ehRota,
+  regraDoPix: regraDoPixNoPrompt(pixDaLoja, aiOrderingEnabled),
+  anotaPedido: aiOrderingEnabled,
+  notaFiscal: regraDaNota.perguntar
+    ? { perguntar: true, obrigatorioNaEntrega: regraDaNota.obrigatorioNaEntrega, formas: formasEmTexto(regraDaNota.formas) }
+    : null,
+  regraDoMinimo: regraDoPedidoMinimo(fatosDoMinimo),
+  lembreteDoMinimo: lembreteDoMinimo(minimumOrderValue),
+})}
 
 DADOS DA LOJA:
 - Nome da Loja: ${storeName}
@@ -1798,7 +1283,30 @@ ${availableCouponsText || "NENHUM CUPOM DISPONÍVEL NO MOMENTO."}
 NOSSO CARDÁPIO COMPLETO DA LOJA:
 ${catalogSummary}
 ${customPrompt ? `\nINSTRUÇÕES EXTRAS E PROMOÇÕES DA LOJA: ${customPrompt}\n` : ""}
-════════ DAQUI PARA BAIXO: ESTA CONVERSA ════════
+COMO LER A CONVERSA: a primeira mensagem do usuário é um bloco "════ CONTEXTO DESTA CONVERSA ════" montado pelo sistema (situação da loja agora, dados do cliente, pedidos dele, memória do pedido em andamento, validação do endereço no mapa) — não é fala do cliente. É a fonte da verdade sobre ele: use-o, mas NUNCA o repita, cite ou mencione, e não o trate como novidade: o que o histórico mostra que você já disse (nome, cupom, link, horário) não se diz de novo. Depois vem a conversa de verdade, e a última mensagem é o que o cliente acabou de dizer.`;
+
+      // ── O QUE É DA LOJA FICA NO SISTEMA; O QUE É DESTA CONVERSA VAI NA MENSAGEM ──
+      //
+      // O Gemini guarda em cache o PREFIXO repetido do pedido (instrução de
+      // sistema + começo do conteúdo) e cobra 10% pelos tokens que vêm dele.
+      // Tudo acima deste ponto é igual para todos os clientes da loja no dia:
+      // é o que se quer cacheado. Daqui para baixo muda a cada conversa e a
+      // cada mensagem — dentro da instrução de sistema, quebrava o prefixo
+      // logo no primeiro byte diferente (medido em 08/10/2026: 38% das chamadas
+      // do 3.6 sem cache nenhum, e as com cache deixavam ~10 mil tokens de fora).
+      // Por isso o contexto da conversa vai no CONTEÚDO, como primeira mensagem
+      // do usuário (o modelo responde "Entendido" e a conversa real vem depois):
+      // o prefixo da loja fica intacto e o modelo lê o contexto ANTES do
+      // histórico, como lia quando ele estava no fim do sistema. Na primeira
+      // tentativa ele ia na última mensagem, junto da fala do cliente — e o
+      // modelo tratava o bloco como novidade: repetia o nome, o cupom e o link
+      // que o histórico mostrava já ditos (A/B de 09/10/2026, 5 casos em 61).
+      const situacaoDaLoja = estadoAtualDaLoja.aberta
+        ? `ABERTA${estadoAtualDaLoja.fechaAs ? ` (fecha às ${estadoAtualDaLoja.fechaAs})` : ""}`
+        : `FECHADA — ${estadoAtualDaLoja.texto} Não anote nem feche pedido agora.`;
+      const contextoDaConversa = `════ CONTEXTO DESTA CONVERSA ════ (montado pelo sistema — não é fala do cliente; não repita nem mencione)
+
+- Situação da loja agora: ${situacaoDaLoja}
 
 DADOS DO CLIENTE CONVERSANDO AGORA:
 - Primeiro Nome: ${customerFirstName || "NÃO INFORMADO"}
@@ -1826,6 +1334,15 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         parts: [{ text: h.text }]
       }));
 
+      /**
+       * A primeira mensagem do usuário: o contexto desta conversa e, no modelo
+       * barato, o lembrete da marca do pedido — ele segue a instrução curta
+       * melhor que a regra no meio do texto (A/B de 03/10/2026).
+       */
+      const partesDoContexto = (ehOBarato: boolean): any[] => [
+        { text: `${contextoDaConversa}${ehOBarato ? LEMBRETE_DO_MODELO_BARATO : ""}` },
+      ];
+
       const userParts: any[] = [];
       if (audioData?.base64) {
         let cleanBase64 = audioData.base64;
@@ -1851,9 +1368,15 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         userParts.push({ text: "O cliente enviou um anexo de mídia." });
       }
 
-      const fullContents = [
+      /** O pedido ao modelo: [contexto da conversa (+ lembrete no barato)], "Entendido", o histórico, a fala do cliente. */
+      // O "Entendido." só entra quando o histórico não começa pelo próprio
+      // robô — senão ficavam dois turnos do modelo seguidos (a API aceita,
+      // mas o turno sintético não acrescenta nada ali).
+      const conteudoParaOModelo = (ehOBarato: boolean) => [
+        { role: "user", parts: partesDoContexto(ehOBarato) },
+        ...(chatHistory[0]?.role === "model" ? [] : [{ role: "model", parts: [{ text: "Entendido." }] }]),
         ...chatHistory,
-        { role: "user", parts: userParts }
+        { role: "user", parts: userParts },
       ];
 
       // Os dois modelos que estavam aqui — gemini-2.0-flash e gemini-1.5-flash —
@@ -1894,9 +1417,11 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
 
           const response = await ai.models.generateContent({
             model: mName,
-            contents: fullContents,
+            contents: conteudoParaOModelo(ehOBarato),
             config: {
-              systemInstruction: ehOBarato ? systemPrompt + LEMBRETE_DO_MODELO_BARATO : systemPrompt,
+              // Só o que é da loja: o contexto desta conversa (e o lembrete do
+              // barato) vai na última mensagem — ver `contextoDaConversa`.
+              systemInstruction: systemPrompt,
               // ── TEMPERATURA: 0.9 era de escrever texto, não de copiar preço ──
               //
               // A REGRA DE FERRO manda copiar o número que está escrito no
@@ -1956,6 +1481,9 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                   remoteJid,
                   // Por que foi ao 3.6 ("pedido em andamento", "endereço"…); nulo = conversa comum no Lite.
                   rota: escolhaDoModelo.motivo,
+                  // Qual montagem de prompt respondeu: é por aqui que o custo e o
+                  // cache de antes e de depois se comparam no painel de uso.
+                  prompt: "enxuto-2026-10-09",
                   ...(response?.text ? {} : { respostaVazia: true }),
                 },
                 { thoughtsTokens: usage.thoughtsTokenCount, cachedTokens: usage.cachedContentTokenCount }
@@ -2146,7 +1674,17 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         // conversa do pedido que acabou de ser gravado.
         if (inicioPedido === -1) {
           const semMarcas = cleanText.replace(/\[\[[\s\S]*?\]\]/g, " ");
-          const fonteDosFatos = [storeName, user.storeAddress, catalogSummary, customPrompt].filter(Boolean).join("\n");
+          // A reserva de mesa entra como fato quando a loja a configurou
+          // (Pizzaria 17, 08/10/2026): sem isto, "fazemos reserva sim" era
+          // trocado por "não sei" — a rede só conhecia nome, endereço, cardápio
+          // e instruções extras.
+          const fatoDaReserva =
+            (chatbotConfig as any).fazReservaDeMesa === true
+              ? "A loja faz reserva de mesa."
+              : (chatbotConfig as any).fazReservaDeMesa === false
+                ? "A loja não faz reserva de mesa."
+                : "";
+          const fonteDosFatos = [storeName, user.storeAddress, catalogSummary, customPrompt, fatoDaReserva].filter(Boolean).join("\n");
           const semFonte = servicosSemFonte(semMarcas, fonteDosFatos, { soDelivery: chatbotConfig.storeType !== "PHYSICAL" });
           if (semFonte.length > 0) {
             console.warn(`[Chatbot AI] 🚫 Resposta afirmava sem fonte (${semFonte.join(", ")}) — troquei por "não sei" e chamei o atendente. Era: ${semMarcas.slice(0, 200)}`);
@@ -2961,7 +2499,7 @@ async function syncAiOrderToDatabase({
     /ifood\.com\.br/i.test(payloadStr)
   ) {
     console.log("[Chatbot AI Sync] 🛑 Abortando sincronização de rascunho IA pois o conteúdo é um comprovante do Jotajá/iFood.");
-    return { gravado: false, motivo: "payload parece comprovante de Jotajá/iFood (regra 20)" };
+    return { gravado: false, motivo: "payload parece comprovante de Jotajá/iFood (regra do comprovante)" };
   }
 
   /** Normaliza para comparar nome: sem acento, sem pontuação, espaço único. */

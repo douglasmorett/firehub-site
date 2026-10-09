@@ -4,8 +4,8 @@
  * Quem abre a conversa com "oi", "boa noite", "e aí, tudo bem?" não perguntou
  * nada — e a resposta mais útil que existe para essa mensagem é o link do
  * cardápio, que é onde o pedido nasce. Deixar o modelo decidir aqui custava
- * uma chamada de IA para devolver "Oi! Como posso ajudar?", e a regra 5 do
- * prompt ("nunca empurre o link em cortesia") fazia com que o link só saísse
+ * uma chamada de IA para devolver "Oi! Como posso ajudar?", e a regra do link
+ * do cardápio (lib/regras-do-robo.ts, "nunca em cortesia") fazia com que o link só saísse
  * na terceira mensagem. Pedido do dono em 24/09/2026: "oi, tudo bem? Para
  * conhecer nosso cardápio e pedir acesse: ..." na primeira mensagem do dia, e
  * depois a conversa segue normal.

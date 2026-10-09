@@ -68,13 +68,13 @@ export function escolherModeloDoRobo(entrada: {
 
 /**
  * Lembrete no FIM do prompt, só para o modelo barato: ele segue a instrução
- * curta e recente melhor que a regra 21 no meio do texto (5 → 10 de 15 no A/B).
+ * curta e recente melhor que a regra do pedido no meio do texto (5 → 10 de 15 no A/B).
  */
 export const LEMBRETE_DO_MODELO_BARATO = `
 
 ⚠️ MARCA DO PEDIDO — CONFIRA ANTES DE ENVIAR:
 Se nesta conversa o cliente já escolheu algum item (mesmo sem endereço ou pagamento), sua resposta TEM QUE terminar com a marca do rascunho, com TODOS os itens escolhidos até agora:
 [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [{"name": "...", "quantity": 1, "options": ["..."]}], "customerName": "...", "address": "...", "paymentMethod": "...", "deliveryFee": 0, "totalAmount": 0.00, "finalized": false}]]
-Sem a marca o pedido NÃO entra no sistema da loja. Quando o cliente CONFIRMAR o resumo final, use a marca com "status": "NOVO" e "finalized": true (regra 21). Não ponha a marca se o cliente ainda não escolheu nada, se só está perguntando, ou se o pedido já foi enviado à cozinha.
+Sem a marca o pedido NÃO entra no sistema da loja. Quando o cliente CONFIRMAR o resumo final, use a marca com "status": "NOVO" e "finalized": true (regra do pedido). Não ponha a marca se o cliente ainda não escolheu nada, se só está perguntando, ou se o pedido já foi enviado à cozinha.
 Quando o cliente escolhe o item, o próximo passo é pedir o que falta (endereço/retirada e pagamento) — não ofereça outro produto no lugar disso.
 Taxa de entrega: NUNCA diga um valor sem o endereço confirmado no mapa — peça a localização pelo 📎.`;
