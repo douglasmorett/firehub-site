@@ -1,6 +1,7 @@
 import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
 import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
-import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, minimoDaZona, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
+import { bairrosComMinimoProprio, minimoDaEntregaNoBairro } from "@/lib/minimo-do-bairro";
 import { limitesDeAtendimento } from "@/lib/limite-de-atendimento";
 import { distanciaDoVeredicto } from "@/lib/distancia-da-entrega";
 import { lerRegraDeRepasse, repasseDoPedido } from "@/lib/repasse-do-entregador";
@@ -482,7 +483,13 @@ export async function processChatbotAI(
   const aceitaRetirada = !(user as any).storeDeliveryOnly;
   // Mínimo da retirada: ausente = herda o da entrega, igual ao cardápio.
   const minimumOrderValuePickup = minimoDeRetirada(delivConfig);
-  const fatosDoMinimo = { minimoEntrega: minimumOrderValue, minimoRetirada: minimumOrderValuePickup, aceitaRetirada };
+  const fatosDoMinimo = {
+    minimoEntrega: minimumOrderValue,
+    minimoRetirada: minimumOrderValuePickup,
+    aceitaRetirada,
+    // Bairros com mínimo próprio (lib/minimo-do-bairro.ts): o prompt diz, a gravação confere.
+    bairrosComMinimo: bairrosComMinimoProprio(user as any),
+  };
   // Tempo de entrega: o `time` das zonas, o mesmo que o site mostra. Sem zona
   // com tempo, o robô não promete minutos — era "45 a 60" para todo mundo.
   const prazoDaLoja = prazoParaORobo((user as any).deliveryZones);
@@ -1249,7 +1256,12 @@ ${(() => {
   const kmDaFaixa = (z: any) => Number(z.km ?? z.radius ?? z.maxKm ?? 0);
   let taxaText = "";
   if (zones.length > 0 && zoneType === "NEIGHBORHOOD") {
-    taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}`).join("\n") +
+    taxaText = "TIPO DE ENTREGA DA LOJA: POR BAIRRO ESPECÍFICO\n" + zones.map((z: any) => {
+      // Mínimo próprio do bairro, ao lado da taxa: é onde o modelo olha ao cotar.
+      const minimo = minimoDaZona(z);
+      const doMinimo = minimo == null ? "" : minimo > 0 ? ` · pedido mínimo R$ ${minimo.toFixed(2)}` : " · sem pedido mínimo";
+      return `- ${z.name}: R$ ${Number(z.fee || 0).toFixed(2)}${tempoDaZona(z)}${doMinimo}`;
+    }).join("\n") +
       "\n- A LOJA SÓ ENTREGA NESTES BAIRROS. Bairro fora da lista: NÃO anote entrega nem cote taxa — ofereça retirada ou peça outro endereço. O sistema recusa a gravação de entrega fora da lista.";
   } else if (modoDaAreaDaLoja === "POLIGONO") {
     // Área desenhada não tem km: descrever como raio dizia "RAIO MÁXIMO 0 KM".
@@ -3350,13 +3362,21 @@ async function syncAiOrderToDatabase({
   // quem vem buscar não gera custo de entrega. Ausente, herda o da entrega.
   // Rascunho não entra: o cliente ainda está montando, travar no meio seria
   // implicância.
-  const minimoDaEntrega = Number(minimumOrderValue) || 0;
+  const minimoGeralDaEntrega = Number(minimumOrderValue) || 0;
   const minimoDaRetirada =
     minimumOrderValuePickup === undefined || minimumOrderValuePickup === null
-      ? minimoDaEntrega
+      ? minimoGeralDaEntrega
       : Number(minimumOrderValuePickup) || 0;
+  // Bairro com mínimo próprio (lib/minimo-do-bairro.ts): vale o dele, pelo
+  // bairro que a REGRA DA ÁREA casou — não pelo que o modelo escreveu.
+  const bairroDaEntrega = vereditoDaArea?.modo === "BAIRRO" && vereditoDaArea.resultado === "ATENDE" ? vereditoDaArea.bairro ?? null : null;
+  const minimoDaEntrega = bairroDaEntrega && loja
+    ? minimoDaEntregaNoBairro(loja, bairroDaEntrega, minimoGeralDaEntrega)
+    : minimoGeralDaEntrega;
   const minimoDaLoja = deliveryType === "RETIRADA" ? minimoDaRetirada : minimoDaEntrega;
-  const comoRecebe = deliveryType === "RETIRADA" ? "para retirada" : "para entrega";
+  const comoRecebe = deliveryType === "RETIRADA"
+    ? "para retirada"
+    : bairroDaEntrega && minimoDaEntrega !== minimoGeralDaEntrega ? `para entrega no bairro ${bairroDaEntrega}` : "para entrega";
   if (isFinal && minimoDaLoja > 0 && totalItemsSum < minimoDaLoja) {
     const falta = centavos(minimoDaLoja - totalItemsSum);
     console.warn(

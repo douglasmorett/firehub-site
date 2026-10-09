@@ -37,6 +37,7 @@ import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./GoogleAnalytics";
 import { isStoreOpen } from "@/lib/store-hours";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
+import { menorMinimoDeEntrega, minimoDaEntregaNoBairro } from "@/lib/minimo-do-bairro";
 import { avisoDoCep, buscarCep, cepFormatado, digitosDoCep } from "@/lib/cep";
 import { bairroComNomeDosCorreios } from "@/lib/bairro-dos-correios";
 import {
@@ -784,14 +785,27 @@ export default function CustomerStorePage({
   // `minimumOrderValuePickup` ausente = loja que nunca configurou: herda o
   // mínimo da entrega, que é exatamente como o cardápio sempre se comportou.
   // Zero = retirada sem mínimo.
-  const storeMinOrderDelivery = Number(delivConfig.minimumOrderValue || 0);
+  const minimoGeralDaEntrega = Number(delivConfig.minimumOrderValue || 0);
+  // Pedido mínimo POR BAIRRO (lib/minimo-do-bairro.ts): com o bairro escolhido,
+  // vale o dele; antes disso, o geral da loja. Fora do modo bairro, sempre o geral.
+  const bairroDoMinimo = customerNeighborhood.trim();
+  const minimoProprioDoBairro = bairroDoMinimo
+    ? bairroCadastrado(bairroDoMinimo, franchisee as any)?.minimo ?? null
+    : null;
+  const storeMinOrderDelivery = bairroDoMinimo
+    ? minimoDaEntregaNoBairro(franchisee as any, bairroDoMinimo, minimoGeralDaEntrega)
+    : minimoGeralDaEntrega;
+  // Sem o bairro ainda, o menor mínimo que alguma entrega tem: travar a sacola
+  // pelo geral barraria quem mora num bairro de mínimo menor.
+  const menorMinimoDaEntrega = bairroDoMinimo ? storeMinOrderDelivery : menorMinimoDeEntrega(franchisee as any, minimoGeralDaEntrega);
   const pickupMinConfigured =
     delivConfig.minimumOrderValuePickup !== undefined &&
     delivConfig.minimumOrderValuePickup !== null &&
     delivConfig.minimumOrderValuePickup !== "";
+  // Herda o GERAL, não o do bairro: retirada não tem bairro.
   const storeMinOrderPickup = pickupMinConfigured
     ? Number(delivConfig.minimumOrderValuePickup) || 0
-    : storeMinOrderDelivery;
+    : minimoGeralDaEntrega;
   const pickupAvailable = !franchisee.storeDeliveryOnly;
 
   // O mínimo que vale agora é o do caminho que o cliente escolheu.
@@ -803,8 +817,8 @@ export default function CustomerStorePage({
   // entrega esconderia a retirada de quem já tinha direito a ela. Aqui só
   // barra o valor que não alcança nenhum dos dois caminhos.
   const minOrderToLeaveCart = pickupAvailable
-    ? Math.min(storeMinOrderDelivery, storeMinOrderPickup)
-    : storeMinOrderDelivery;
+    ? Math.min(menorMinimoDaEntrega, storeMinOrderPickup)
+    : menorMinimoDaEntrega;
   const isBelowCartMin = Boolean(minOrderToLeaveCart > 0 && cartTotal > 0 && cartTotal < minOrderToLeaveCart);
   const remainingForCartMin = minOrderToLeaveCart > 0 ? Math.max(0, minOrderToLeaveCart - cartTotal) : 0;
 
@@ -813,8 +827,8 @@ export default function CustomerStorePage({
   const somenteRetiradaPorValor = Boolean(
     pickupAvailable &&
     cartTotal > 0 &&
-    storeMinOrderDelivery > storeMinOrderPickup &&
-    cartTotal < storeMinOrderDelivery &&
+    menorMinimoDaEntrega > storeMinOrderPickup &&
+    cartTotal < menorMinimoDaEntrega &&
     cartTotal >= storeMinOrderPickup
   );
 
@@ -2204,7 +2218,9 @@ export default function CustomerStorePage({
       return;
     }
     if (storeMinOrder > 0 && cartTotal < storeMinOrder) {
-      const qual = deliveryType === "PICKUP" ? "para retirada" : "para entrega";
+      const qual = deliveryType === "PICKUP"
+        ? "para retirada"
+        : minimoProprioDoBairro != null ? `para entrega no bairro ${bairroDoMinimo}` : "para entrega";
       const saidaPelaRetirada =
         deliveryType === "DELIVERY" && pickupAvailable && cartTotal >= storeMinOrderPickup
           ? ` Se preferir, escolha "Retirar no Balcão" — o mínimo ${storeMinOrderPickup > 0 ? `é de R$ ${storeMinOrderPickup.toFixed(2).replace(".", ",")}` : "não se aplica"} nesse caso.`
@@ -3194,8 +3210,8 @@ export default function CustomerStorePage({
                   <div style={{ fontSize: "0.78rem", color: "#92400E", lineHeight: 1.35 }}>
                     <div style={{ fontWeight: 800 }}>Pedido Mínimo da Loja: R$ {minOrderToLeaveCart.toFixed(2).replace(".", ",")}</div>
                     <div>Adicione mais <strong>R$ {remainingForCartMin.toFixed(2).replace(".", ",")}</strong> para continuar.</div>
-                    {storeMinOrderDelivery > minOrderToLeaveCart && (
-                      <div style={{ marginTop: "3px" }}>Para <strong>entrega</strong>, o mínimo é R$ {storeMinOrderDelivery.toFixed(2).replace(".", ",")}.</div>
+                    {menorMinimoDaEntrega > minOrderToLeaveCart && (
+                      <div style={{ marginTop: "3px" }}>Para <strong>entrega</strong>, o mínimo é R$ {menorMinimoDaEntrega.toFixed(2).replace(".", ",")}.</div>
                     )}
                   </div>
                 </div>
@@ -3215,7 +3231,7 @@ export default function CustomerStorePage({
                 }}>
                   <span style={{ fontSize: "1.2rem", flexShrink: 0 }}>🛍️</span>
                   <div style={{ fontSize: "0.78rem", color: "#1E40AF", lineHeight: 1.35 }}>
-                    <div style={{ fontWeight: 800 }}>Abaixo de R$ {storeMinOrderDelivery.toFixed(2).replace(".", ",")} a loja não entrega.</div>
+                    <div style={{ fontWeight: 800 }}>Abaixo de R$ {menorMinimoDaEntrega.toFixed(2).replace(".", ",")} a loja não entrega.</div>
                     <div>Mas você pode <strong>retirar no balcão</strong>{storeMinOrderPickup > 0 ? ` — mínimo de R$ ${storeMinOrderPickup.toFixed(2).replace(".", ",")}` : " — sem valor mínimo"}. É só continuar.</div>
                   </div>
                 </div>
@@ -3337,11 +3353,11 @@ export default function CustomerStorePage({
                     // Trocar para entrega abaixo do mínimo dela levaria o
                     // cliente a preencher o endereço todo para só então
                     // descobrir que não fecha.
-                    if (storeMinOrderDelivery > 0 && cartTotal < storeMinOrderDelivery) {
+                    if (menorMinimoDaEntrega > 0 && cartTotal < menorMinimoDaEntrega) {
                       avisar({
                         tipo: "falta",
                         titulo: "Entrega tem pedido mínimo",
-                        texto: `O mínimo para entrega é R$ ${storeMinOrderDelivery.toFixed(2).replace(".", ",")} — faltam R$ ${(storeMinOrderDelivery - cartTotal).toFixed(2).replace(".", ",")}. Adicione mais itens ou retire no balcão.`,
+                        texto: `O mínimo para entrega é R$ ${menorMinimoDaEntrega.toFixed(2).replace(".", ",")} — faltam R$ ${(menorMinimoDaEntrega - cartTotal).toFixed(2).replace(".", ",")}. Adicione mais itens ou retire no balcão.`,
                       });
                       return;
                     }
@@ -3596,6 +3612,7 @@ export default function CustomerStorePage({
                     {isNeighborhoodType && availableNeighborhoods.length > 0 ? (
                       <div style={{ position: "relative" }}>
                         {customerNeighborhood ? (
+                          <>
                           <div
                             onClick={() => {
                               setIsNeighborhoodOpen(true);
@@ -3619,6 +3636,14 @@ export default function CustomerStorePage({
                               {effectiveDeliveryFee > 0 ? `R$ ${effectiveDeliveryFee.toFixed(2).replace('.', ',')}` : isFreeShippingByMin ? 'Grátis' : 'Grátis'}
                             </span>
                           </div>
+                          {/* O bairro tem pedido mínimo próprio (lib/minimo-do-bairro.ts): dizer já, não no último clique. */}
+                          {minimoProprioDoBairro != null && minimoProprioDoBairro > 0 && (
+                            <div style={{ marginTop: 4, fontSize: "0.72rem", fontWeight: 700, color: cartTotal < minimoProprioDoBairro ? "#B45309" : "#64748B" }}>
+                              Pedido mínimo para este bairro: R$ {minimoProprioDoBairro.toFixed(2).replace(".", ",")}
+                              {cartTotal < minimoProprioDoBairro ? ` — faltam R$ ${(minimoProprioDoBairro - cartTotal).toFixed(2).replace(".", ",")}` : ""}
+                            </div>
+                          )}
+                          </>
                         ) : (
                           <div>
                             <input

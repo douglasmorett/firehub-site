@@ -80,7 +80,16 @@ export type AreaDesenhada = {
   repasse?: number | null;
 };
 
-export type BairroAtendido = { name: string; fee: number; time: number };
+/** `minimo`: pedido mínimo deste bairro; null = vale o da loja (lib/minimo-do-bairro.ts). */
+export type BairroAtendido = { name: string; fee: number; time: number; minimo?: number | null };
+
+/** O mínimo gravado no bairro: número ≥ 0, ou null quando a linha não tem (vazio, lixo, negativo). */
+export function minimoDaZona(z: any): number | null {
+  const bruto = z?.minimo;
+  if (bruto === undefined || bruto === null || bruto === "") return null;
+  const n = Number(bruto);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+}
 
 export type VeredictoDeEntrega = {
   modo: ModoDaArea;
@@ -273,7 +282,7 @@ export function modoDaArea(loja: LojaParaEntrega): ModoDaArea {
 export function bairrosAtendidos(loja: LojaParaEntrega): BairroAtendido[] {
   return zonas(loja)
     .filter((z) => z && z.name)
-    .map((z) => ({ name: String(z.name).trim(), fee: Number(z.fee) || 0, time: Number(z.time) || 45 }))
+    .map((z) => ({ name: String(z.name).trim(), fee: Number(z.fee) || 0, time: Number(z.time) || 45, minimo: minimoDaZona(z) }))
     .filter((z) => z.name);
 }
 
@@ -312,12 +321,12 @@ export function bairroCadastrado(texto: unknown, lista: BairroAtendido[] | LojaP
     .filter((b) => b.norm);
 
   const exato = candidatos.find((b) => b.norm === alvo);
-  if (exato) return { name: exato.name, fee: exato.fee, time: exato.time };
+  if (exato) return { name: exato.name, fee: exato.fee, time: exato.time, minimo: exato.minimo ?? null };
 
   const contidos = candidatos
     .filter((b) => new RegExp(`(^|[^a-z0-9])${escapar(b.norm)}([^a-z0-9]|$)`).test(alvo))
     .sort((a, b) => b.norm.length - a.norm.length);
-  return contidos[0] ? { name: contidos[0].name, fee: contidos[0].fee, time: contidos[0].time } : null;
+  return contidos[0] ? { name: contidos[0].name, fee: contidos[0].fee, time: contidos[0].time, minimo: contidos[0].minimo ?? null } : null;
 }
 
 /** Acima disto, o mapa achou um homônimo em outra cidade, não o cliente. */

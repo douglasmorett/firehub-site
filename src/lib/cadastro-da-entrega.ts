@@ -38,6 +38,12 @@ export type BairroDoCadastro = {
   name: string;
   time: number;
   fee: number;
+  /**
+   * Pedido mínimo (subtotal dos itens) para entregar NESTE bairro. Ausente =
+   * vale o mínimo geral da loja; 0 = este bairro não tem mínimo, mesmo que a
+   * loja tenha. Quem lê: lib/minimo-do-bairro.ts.
+   */
+  minimo?: number;
   motoboyFee?: number;
   repasseAcimaDaTaxa?: true;
 };
@@ -57,7 +63,7 @@ export type TipoDeCobranca = "KM" | "RADIUS" | "DISTANCE" | "ROTA" | "NEIGHBORHO
 
 const TIPOS: TipoDeCobranca[] = ["KM", "RADIUS", "DISTANCE", "ROTA", "NEIGHBORHOOD", "POLIGONO"];
 
-export type CampoDoCadastro = "km" | "time" | "fee" | "motoboyFee" | "name" | "pontos" | "cadastro";
+export type CampoDoCadastro = "km" | "time" | "fee" | "motoboyFee" | "minimo" | "name" | "pontos" | "cadastro";
 
 export type Problema = {
   /** Posição do item na lista que ENTROU (antes de ordenar). -1 = a lista inteira. */
@@ -85,6 +91,8 @@ export type ResultadoDoCadastro<T> = {
 export const LIMITES_DO_CADASTRO = {
   kmMax: 100,
   taxaMax: 500,
+  /** Pedido mínimo de um bairro. Acima disto é a vírgula esquecida ("3000" por "30,00"). */
+  minimoMax: 2000,
   tempoMax: 600,
   faixasMax: 50,
   bairrosMax: 400,
@@ -322,7 +330,7 @@ export function normalizarBairros(bruto: unknown): ResultadoDoCadastro<BairroDoC
   }
 
   const vistos = new Map<string, number>();
-  const lidos: { i: number; name: string; v: Valores; confirmado: boolean }[] = [];
+  const lidos: { i: number; name: string; v: Valores; minimo: number | null; confirmado: boolean }[] = [];
   bruto.forEach((z: any, i: number) => {
     const name = String(z?.name ?? z?.nome ?? "").replace(/\s+/g, " ").trim();
     if (!name) {
@@ -338,7 +346,14 @@ export function normalizarBairros(bruto: unknown): ResultadoDoCadastro<BairroDoC
       problemas.push({ indice: i, campo: "name", nivel: "erro", mensagem: `O bairro ${name} aparece duas vezes. Deixe um só, com a taxa certa.` });
     } else vistos.set(chave, i);
     const v = lerValores(z, i, rotulo, "motoboyFee", problemas);
-    lidos.push({ i, name, v, confirmado: z?.repasseAcimaDaTaxa === true });
+    // Vazio = segue o mínimo geral da loja. Quase todo bairro fica assim.
+    let minimo = lerValorDigitado(z?.minimo);
+    if (minimo != null) {
+      if (minimo < 0) { problemas.push({ indice: i, campo: "minimo", nivel: "erro", mensagem: `${rotulo}: o pedido mínimo não pode ser negativo.` }); minimo = null; }
+      else if (minimo > L.minimoMax) { problemas.push({ indice: i, campo: "minimo", nivel: "erro", mensagem: `${rotulo}: pedido mínimo de ${formatarReais(minimo)} — confira a vírgula (máximo ${formatarReais(L.minimoMax)}).` }); minimo = null; }
+      else minimo = centavos(minimo);
+    }
+    lidos.push({ i, name, v, minimo, confirmado: z?.repasseAcimaDaTaxa === true });
   });
 
   if (lidos.length === 0) {
@@ -352,6 +367,7 @@ export function normalizarBairros(bruto: unknown): ResultadoDoCadastro<BairroDoC
       name: b.name,
       time: b.v.time as number,
       fee: b.v.fee as number,
+      ...(b.minimo != null ? { minimo: b.minimo } : {}),
       ...(b.v.repasse != null ? { motoboyFee: b.v.repasse } : {}),
       ...(b.v.repasse != null && b.v.repasse > (b.v.fee as number) && b.confirmado ? { repasseAcimaDaTaxa: true as const } : {}),
     }));
