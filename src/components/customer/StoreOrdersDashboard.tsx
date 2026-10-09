@@ -456,7 +456,6 @@ const DashboardColumn = memo(function DashboardColumn({
   color,
   count,
   columnOrders,
-  dragOverColumn,
   selectedOrderIds,
   onToggleSelectColumn,
   onDragOver,
@@ -467,7 +466,8 @@ const DashboardColumn = memo(function DashboardColumn({
   children,
   isTabActive = true,
 }: any) {
-  const isOver = dragOverColumn === columnId;
+  // "Por cima" é CSS (data-alvo, ver o <style> do painel): assim o arrasto não
+  // passa pelo React e a coluna acende no mesmo quadro em que o card entra.
   const canDrop = true;
   const hasOrders = columnOrders && columnOrders.length > 0;
   const isAllSelected = hasOrders && columnOrders.every((o: any) => selectedOrderIds.has(o.id));
@@ -481,12 +481,12 @@ const DashboardColumn = memo(function DashboardColumn({
       className={`dashboard-kanban-column ${!isTabActive ? "is-hidden-tab" : ""}`}
       style={{
         flex: "1 1 0px", minWidth: "180px",
-        background: isOver ? PALETA.brasaClaro : "#F8FAFC",
+        background: "#F8FAFC",
         borderRadius: "14px",
-        border: isOver ? `2.5px dashed ${PALETA.brasa}` : "1px solid #E2E8F0",
+        border: "1px solid #E2E8F0",
         display: "flex", flexDirection: "column",
         minHeight: "calc(100vh - 175px)", maxHeight: "calc(100vh - 175px)",
-        boxShadow: isOver ? "0 0 24px rgba(28, 25, 23, 0.25)" : "0 1px 3px 0 rgba(0,0,0,0.05)",
+        boxShadow: "0 1px 3px 0 rgba(0,0,0,0.05)",
         transition: "border-color 0.15s ease, background 0.15s ease",
       }}
     >
@@ -521,11 +521,11 @@ const DashboardColumn = memo(function DashboardColumn({
         {count === 0 ? (
           <div style={{ textAlign: "center", padding: "4rem 0", color: "#94A3B8", fontSize: "0.9rem" }}>
             <Package size={36} style={{ opacity: 0.25, marginBottom: "0.75rem" }} />
-            <p>{isOver ? "Solte aqui!" : "Nenhum pedido"}</p>
+            <p><span className="so-no-alvo">Solte aqui!</span><span className="fora-do-alvo">Nenhum pedido</span></p>
           </div>
         ) : children}
-        {count > 0 && isOver && (
-          <div style={{ textAlign: "center", padding: "1rem", color: "#1C1917", fontWeight: 700, fontSize: "0.85rem", border: "2px dashed #E7DDD3", borderRadius: "10px", margin: "0.5rem 0" }}>
+        {count > 0 && (
+          <div className="so-no-alvo" style={{ textAlign: "center", padding: "1rem", color: "#1C1917", fontWeight: 700, fontSize: "0.85rem", border: "2px dashed #E7DDD3", borderRadius: "10px", margin: "0.5rem 0" }}>
             ↓ Solte aqui para mover ↓
           </div>
         )}
@@ -2016,7 +2016,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // Drag state
   const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
-  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   // Default date — will be overridden by cash session openedAt if available
   const _now = new Date();
   const _ref = _now;
@@ -3370,30 +3369,46 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     highlightCard(e.currentTarget as HTMLElement);
   };
 
+  // ── A COLUNA-ALVO ACENDE PELO DOM ───────────────────────────────────────
+  //
+  // `dragover` dispara dezenas de vezes por segundo, e cada um gravava
+  // `dragOverColumn` no estado: o painel INTEIRO (todas as colunas, todos os
+  // cards) redesenhava a cada coluna cruzada, e a caixa pontilhada só aparecia
+  // depois disso — o atraso entre arrastar e "solte aqui" que o Douglas notou
+  // (09/10/2026). Agora o atributo data-alvo vai direto no elemento da coluna
+  // e o CSS faz o resto, como o card arrastado já fazia (highlightCard).
+  const colunaAlvoRef = useRef<HTMLElement | null>(null);
+  const marcarColunaAlvo = (el: HTMLElement | null) => {
+    if (colunaAlvoRef.current === el) return;
+    colunaAlvoRef.current?.removeAttribute("data-alvo");
+    colunaAlvoRef.current = el;
+    el?.setAttribute("data-alvo", "1");
+  };
+
   const handleDragEnd = (e: React.DragEvent) => {
     isDraggingRef.current = false;
     resetCard(e.currentTarget as HTMLElement);
-    setDragOverColumn(null);
+    marcarColunaAlvo(null);
   };
 
-  const handleDragOver = (e: React.DragEvent, columnId: string) => {
+  const handleDragOver = (e: React.DragEvent, _columnId: string) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    setDragOverColumn(columnId);
+    marcarColunaAlvo(e.currentTarget as HTMLElement);
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
     // Only clear if leaving the column entirely
     const relatedTarget = e.relatedTarget as HTMLElement;
     const currentTarget = e.currentTarget as HTMLElement;
-    if (!currentTarget.contains(relatedTarget)) {
-      setDragOverColumn(null);
+    if (!currentTarget.contains(relatedTarget) && colunaAlvoRef.current === currentTarget) {
+      marcarColunaAlvo(null);
     }
   };
 
   const handleDrop = (e: React.DragEvent, columnId: string) => {
     e.preventDefault();
-    setDragOverColumn(null);
+    marcarColunaAlvo(null);
     resetCard(activeDragElRef.current);
 
     // Never allow dropping into Novos Pedidos
@@ -3486,17 +3501,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       ghostRef.current.style.left = `${touch.clientX - 40}px`;
       ghostRef.current.style.top = `${touch.clientY - 20}px`;
 
-      // Highlight column under finger
+      // Highlight column under finger — pelo data-alvo, como no mouse.
       const columns = document.querySelectorAll("[data-droppable]");
+      let debaixoDoDedo: HTMLElement | null = null;
       columns.forEach(col => {
         const rect = col.getBoundingClientRect();
         if (touch.clientX >= rect.left && touch.clientX <= rect.right && touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
-          (col as HTMLElement).style.background = "#FAF6F2";
-          setDragOverColumn(col.getAttribute("data-droppable"));
-        } else {
-          (col as HTMLElement).style.background = "";
+          debaixoDoDedo = col as HTMLElement;
         }
       });
+      marcarColunaAlvo(debaixoDoDedo);
     }
   }, []);
 
@@ -3545,7 +3559,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     }
 
     isDraggingRef.current = false;
-    setDragOverColumn(null);
+    marcarColunaAlvo(null);
     touchRef.current = null;
   }, [orders]);
 
@@ -6329,6 +6343,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
                 {[
                   { chave: "filtroCanais", rotulo: "Filtros de integrações e de pedidos", ajuda: "iFood, 99Food, Brendi, Wabiz, Loja · Delivery, Retirada, Balcão, Mesa" },
+                  { chave: "botaoPainelClean", rotulo: "Interruptor do Painel clean", ajuda: "Cards pequenos, mais pedidos na tela" },
                   { chave: "botaoResumo", rotulo: "Resumo das vendas", ajuda: "" },
                   { chave: "botaoAltaDemanda", rotulo: "Alta Demanda", ajuda: "Aumenta o tempo de entrega no movimento" },
                   { chave: "botaoAgendamentos", rotulo: "Agendamentos", ajuda: "" },
@@ -6452,6 +6467,45 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
           {/* Row 2: Action buttons */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", flexWrap: "wrap" }}>
+            {/* ── PAINEL CLEAN À VISTA ───────────────────────────────────────
+                Era só uma opção na engrenagem; o dono gostou tanto que quis o
+                interruptor na barra, destacado, "o cara vê com facilidade"
+                (Douglas, 09/10/2026). Liga e desliga na hora, salvo por loja
+                — o mesmo `colunaCardsClean` da engrenagem. */}
+            {naBarra("botaoPainelClean") && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={painelClean}
+              onClick={() => salvarBarraConfig({ ...barraConfig, colunaCardsClean: !painelClean })}
+              title={painelClean ? "Painel clean LIGADO: cards pequenos. Clique para voltar aos cards grandes." : "Painel clean DESLIGADO. Clique para ver mais pedidos na tela, em cards pequenos."}
+              style={{
+                ...BOTAO_BARRA,
+                display: "inline-flex", alignItems: "center", gap: 8,
+                background: painelClean ? "#ECFDF5" : "#fff",
+                color: painelClean ? "#047857" : PALETA.carvao,
+                border: `1.5px solid ${painelClean ? "#10B981" : PALETA.brasa}`,
+                fontWeight: 800,
+              }}
+            >
+              Painel clean
+              <span
+                aria-hidden
+                style={{
+                  position: "relative", width: 32, height: 18, borderRadius: 999, flexShrink: 0,
+                  background: painelClean ? "#10B981" : "#CBD5E1", transition: "background 0.15s ease",
+                }}
+              >
+                <span style={{
+                  position: "absolute", top: 2, left: painelClean ? 16 : 2, width: 14, height: 14, borderRadius: 999,
+                  background: "#fff", boxShadow: "0 1px 2px rgba(0,0,0,0.25)", transition: "left 0.15s ease",
+                }} />
+              </span>
+              <span style={{ fontSize: "0.68rem", fontWeight: 900, letterSpacing: "0.04em", minWidth: 58, textAlign: "left" }}>
+                {painelClean ? "LIGADO" : "DESLIGADO"}
+              </span>
+            </button>
+            )}
             {naBarra("botaoResumo") && (
             <button onClick={() => setShowResumo(true)} style={{ ...BOTAO_BARRA, background: PALETA.carvao, color: "#fff", border: `1px solid ${PALETA.carvao}` }}>Resumo das vendas</button>
             )}
@@ -6653,7 +6707,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               columnId="col-aguardando-pagamento"
               title="Aguardando Pagamento" emoji="💰" color="#0F766E" count={aguardandoPagamento.length} columnOrders={aguardandoPagamento}
               isTabActive={activeColumnTab === "all" || activeColumnTab === "col-aguardando-pagamento"}
-              dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+              selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             >
               {aguardandoPagamento.map(o => (
                 <DashboardOrderCard
@@ -6697,7 +6751,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             columnId="col-novos"
             title="Novos Pedidos" emoji="🔔" color={PALETA.carvao} count={novos.length} columnOrders={novos}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-novos"}
-            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-novos")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-novos")}
             headerBelow={
               /* Faixa larga logo abaixo do cabeçalho: um pill de 40px escrito
@@ -6763,7 +6817,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           )}
           <DashboardColumn columnId="col-preparo" title="Em Produção" emoji="👨‍🍳" color={PALETA.carvao} count={preparo.length} columnOrders={preparo}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-preparo"}
-            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-preparo")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-preparo")}
             headerBelow={aceiteObrigatorio ? (
               /* Com Novos oculta, o botão de aceite some junto com a coluna.
@@ -6810,7 +6864,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           {colProntos && (
           <DashboardColumn columnId="col-prontos" title="Prontos" emoji="✅" color="#0F766E" count={prontos.length} columnOrders={prontos}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-prontos"}
-            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-prontos")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-prontos")}>
             {prontos.map(o => (
               <DashboardOrderCard
@@ -6847,7 +6901,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           )}
           <DashboardColumn columnId="col-transporte" title="Saiu para Entrega" emoji="🛵" color={PALETA.carvao} count={transporte.length} columnOrders={transporte}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-transporte"}
-            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-transporte")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-transporte")}>
             {transporte.map(o => (
               <DashboardOrderCard
@@ -6883,7 +6937,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           </DashboardColumn>
           <DashboardColumn columnId="col-finalizado" title="Finalizado" emoji="✅" color={PALETA.carvao} count={finalizados.length} columnOrders={finalizados}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-finalizado"}
-            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-finalizado")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-finalizado")}>
             {finalizados.map(o => (
               <DashboardOrderCard
@@ -6923,7 +6977,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           {colCancelados && (
           <DashboardColumn columnId="col-cancelados" title="Cancelado" emoji="🚫" color={PALETA.carvao} count={cancelados.length} columnOrders={cancelados}
             isTabActive={activeColumnTab === "all" || activeColumnTab === "col-cancelados"}
-            dragOverColumn={dragOverColumn} selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
+            selectedOrderIds={selectedOrderIds} onToggleSelectColumn={toggleSelectColumn}
             onDragOver={(e: any) => handleDragOver(e, "col-cancelados")} onDragLeave={handleDragLeave} onDrop={(e: any) => handleDrop(e, "col-cancelados")}>
             {cancelados.map(o => (
               <DashboardOrderCard
@@ -7308,6 +7362,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           background: #CBD5E1;
           border-radius: 4px;
         }
+
+        /* A coluna em que o card arrastado vai cair. Marcada pelo atributo
+           data-alvo direto no DOM (handleDragOver), sem estado do React:
+           cada dragover redesenhava o painel inteiro e a caixa pontilhada
+           demorava a aparecer (Douglas, 09/10/2026). */
+        .dashboard-kanban-column[data-alvo="1"] {
+          background: #FFF4EF !important;
+          border: 2.5px dashed #E8590C !important;
+          box-shadow: 0 0 24px rgba(28, 25, 23, 0.25) !important;
+        }
+        .dashboard-kanban-column .so-no-alvo { display: none; }
+        .dashboard-kanban-column[data-alvo="1"] .so-no-alvo { display: block; }
+        .dashboard-kanban-column[data-alvo="1"] .fora-do-alvo { display: none; }
 
         .dashboard-kanban-column {
           flex: 1 1 0px !important;
