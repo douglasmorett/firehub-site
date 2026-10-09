@@ -38,7 +38,7 @@ import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { ehNumeroDoDono } from "./numeros-do-dono";
 import { horaDaLoja, inicioDoExpedienteDaLoja } from "./fuso";
 import { ehSoUmaSaudacao, ehPrimeiraMensagemDoDia, linkDoCardapioDaLoja, mensagemDeBoasVindasDoDia } from "./saudacao-do-dia";
-import { tipoDoPedidoDoRobo } from "./tipo-do-pedido-do-robo";
+import { tipoDoPedidoDoRobo, clientePediuRetirada } from "./tipo-do-pedido-do-robo";
 import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmergencia } from "./status-para-o-cliente";
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
@@ -1600,6 +1600,12 @@ ${aiOrderingEnabled ? `21. MÓDULO DE PEDIDOS DIRETO VIA IA ATIVADO (FLUXO COMPL
       a) "name" tem que ser o nome EXATO do cardápio abaixo, copiado letra por letra. Não invente,
          não abrevie, não junte dois produtos num item só. Nome que não existe é DESCARTADO e o
          cliente recebe menos do que pediu.
+         PIZZA MEIO A MEIO: siga a estrutura do cardápio. O "name" é um produto que EXISTE (o da pizza
+         com escolha de sabores, ou o de um dos sabores quando a outra metade é uma opção dele, como
+         "1/2 PIZZA ...") e as metades vão em "options" com o nome exato. Nunca invente um nome como
+         "Pizza meio a meio X e Y".
+         Cliente que escreve em espanhol ou outra língua ("mitad" = metade, "quesos" = queijos,
+         "a domicilio" = entrega): entenda, responda na língua dele, e no JSON use os nomes do cardápio.
       b) "options" leva TODA escolha que o cliente fez dentro do produto: o sabor, o tamanho, cada
          adicional. Escreva cada uma com o nome EXATO que aparece nas opções daquele produto.
       c) QUANTAS de cada opção: quando o cliente escolhe mais de uma unidade da mesma opção (combo de
@@ -2311,6 +2317,14 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                     ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").slice(-12).map((h: any) => String(h.text || "")),
                     String(message || ""),
                   ],
+                  // Retirada só fecha se o cliente pediu (lib/tipo-do-pedido-do-robo.ts).
+                  retiradaPedidaPeloCliente: clientePediuRetirada(
+                    [
+                      ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").map((h: any) => h.text),
+                      message,
+                    ],
+                    Boolean(audioData?.base64),
+                  ),
                 });
               }
             } else if (rawJsonPayload) {
@@ -2729,6 +2743,7 @@ async function syncAiOrderToDatabase({
   remoteJid,
   textosDoCliente,
   conferirAntes,
+  retiradaPedidaPeloCliente,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -2767,6 +2782,8 @@ async function syncAiOrderToDatabase({
   textosDoCliente?: string[];
   /** A loja confere cada pedido do robô antes de entrar (`chatbotConfig.conferirPedidoDoRobo`). */
   conferirAntes?: boolean;
+  /** O cliente falou em retirar/buscar? null = não dá para saber (áudio) e não trava. */
+  retiradaPedidaPeloCliente?: boolean | null;
 }): Promise<SyncResultado> {
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
@@ -2954,6 +2971,8 @@ async function syncAiOrderToDatabase({
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
 
+  /** Nomes da tag que a guilhotina abaixo jogou fora. */
+  const itensDescartados: string[] = [];
   const orderItemsData = (payload.items || [])
     .map((it: any) => {
       const pedido = chaveDeNome(it.name);
@@ -2987,6 +3006,7 @@ async function syncAiOrderToDatabase({
         console.warn(
           `[Chatbot AI] item "${it.name}" descartado: ${candidatos.length === 0 ? "não existe no cardápio" : candidatos.length + " produtos com esse nome (ambíguo)"}.`
         );
+        itensDescartados.push(String(it.name));
         return null;
       }
 
@@ -3100,6 +3120,31 @@ async function syncAiOrderToDatabase({
       `Loja=${franchiseeId} tel=${phoneClean.slice(-4)} pedidos="${pedidos}"`
     );
     return { gravado: false, motivo: `nenhum item do pedido existe no cardápio (${pedidos || "sem itens"})` };
+  }
+
+  // ── ITEM PERDIDO NÃO FECHA O PEDIDO CALADO ────────────────────────────────
+  //
+  // Pizzaria Lapastine, 08/10/2026: "mitad a modo da casa, mitad 4 quesos, coca
+  // 1 litro". O modelo escreveu a pizza com um nome que não existe no cadastro
+  // (o meio a meio de lá é a PIZZA MODA DA CASA com a opção "1/2 PIZZA 4
+  // QUEIJOS"); a guilhotina descartou a pizza e ficou só a Coca de R$ 10 — e o
+  // cliente ouviu que faltavam R$ 15 para o pedido mínimo. Fechar sem um item
+  // que o cliente pediu é entregar o pedido errado: a loja assume a conversa.
+  // Taxa, desconto e troco escritos como item não contam.
+  const perdidos = itensDescartados.filter((n) => !/taxa|frete|entrega|desconto|cupom|troco/i.test(n));
+  if (isFinal && perdidos.length > 0) {
+    console.error(
+      `[Chatbot AI Order Sync] 🛑 Pedido FINALIZADO recusado: item(ns) fora do cardápio "${perdidos.join(" | ")}". Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
+    );
+    return {
+      gravado: false,
+      motivo: `item do pedido não existe no cardápio com esse nome (${perdidos.join(" | ")})`,
+      regraDeNegocio: true,
+      chamarAtendente: true,
+      mensagemParaOCliente:
+        `Opa! Não consegui lançar *${perdidos.join(", ")}* no sistema 😕 ` +
+        `Já chamei alguém da loja pra conferir e fechar seu pedido por aqui — não precisa repetir nada!`,
+    };
   }
 
   // ── ACRÉSCIMO A PEDIDO QUE JÁ ESTÁ NA COZINHA (lib/acrescimo-do-pedido.ts) ──
@@ -3292,6 +3337,26 @@ async function syncAiOrderToDatabase({
     tipoInformado: payload.deliveryType || payload.orderType,
     frete: deliveryFee,
   });
+
+  // ── RETIRADA QUE O CLIENTE NÃO PEDIU NÃO FECHA ────────────────────────────
+  // Lapastine, 08/10/2026 (lib/tipo-do-pedido-do-robo.ts): o modelo pôs
+  // "Retirada no balcão" no resumo por conta própria e o "sim" do cliente
+  // fechou um balcão para quem esperava entrega. Pedido já enviado sendo
+  // alterado não passa por aqui: o tipo dele a loja já recebeu.
+  const ehPedidoNovo = !existingDraft || String(existingDraft.status).toUpperCase() === "CRIANDO_IA";
+  if (isFinal && ehPedidoNovo && deliveryType === "RETIRADA" && retiradaPedidaPeloCliente === false) {
+    console.warn(
+      `[Chatbot AI Order Sync] 🛑 Fechamento como RETIRADA sem o cliente ter pedido retirada. Loja=${franchiseeId} tel=${phoneClean.slice(-4)} endereço="${String(payload.address || "")}"`
+    );
+    return {
+      gravado: false,
+      motivo: "retirada que o cliente não pediu (ninguém falou em retirar/buscar)",
+      regraDeNegocio: true,
+      mensagemParaOCliente: aceitaRetirada
+        ? "Antes de mandar pra cozinha, só me confirma: é pra *entrega* ou você vem *retirar* aqui na loja? 😊"
+        : "Pra fechar, me passa o endereço de entrega com rua, número e bairro? 😊",
+    };
+  }
 
   // ── ONDE ESTÁ O CLIENTE ─────────────────────────────────────────────────
   // A localização que ele mandou nesta conversa (📎 → Localização); senão a

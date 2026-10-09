@@ -11,6 +11,7 @@ import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { SELECT_DO_CARDAPIO, ordemDasCategorias, ordenarComoALoja } from "@/lib/cardapio-da-loja";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 import { refazerMeiasDaLoja } from "@/lib/meio-a-meio-no-banco";
+import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -533,6 +534,25 @@ export async function PUT(req: NextRequest) {
     data: updateData
   });
 
+  // ── PAUSAR O SABOR PAUSA A MEIA DELE ──────────────────────────────────────
+  // Pizzaria Lapastine, 08/10/2026: a meia pizza é outro produto ("1/2 PIZZA
+  // CALABRESA", opção dentro das outras pizzas). Pausar a Calabresa tirava a
+  // inteira da vitrine e a meia continuava sendo vendida no meio a meio. A
+  // pausa (e a volta) passa para a meia do mesmo nome; pausar só a meia
+  // continua valendo sozinho.
+  let meiasJuntas = 0;
+  if (typeof updateData.active === "boolean" && product.name && !product.name.startsWith(PREFIXO_DA_MEIA)) {
+    const r = await prisma.menuProduct.updateMany({
+      where: {
+        franchiseeId: existing.franchiseeId,
+        name: { equals: PREFIXO_DA_MEIA + product.name, mode: "insensitive" },
+        active: !updateData.active,
+      },
+      data: { active: updateData.active },
+    });
+    meiasJuntas = r.count;
+  }
+
   // Estoque reposto (ou "pausar" trocado): a vitrine é cacheada por 60 s e o
   // item pausado ficaria fora do ar esse tempo depois da reposição.
   // A pausa de verdade (`active`, e o desligar no delivery) também: com o
@@ -569,7 +589,7 @@ export async function PUT(req: NextRequest) {
     );
   }
 
-  return NextResponse.json(product);
+  return NextResponse.json(meiasJuntas > 0 ? { ...product, meiasJuntas } : product);
 }
 
 export async function DELETE(req: NextRequest) {

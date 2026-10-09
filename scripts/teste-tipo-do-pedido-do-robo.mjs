@@ -12,7 +12,7 @@ import ts from "typescript";
 const js = ts.transpileModule(readFileSync("src/lib/tipo-do-pedido-do-robo.ts", "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { tipoDoPedidoDoRobo } = await import("data:text/javascript," + encodeURIComponent(js));
+const { tipoDoPedidoDoRobo, clientePediuRetirada } = await import("data:text/javascript," + encodeURIComponent(js));
 
 let falhas = 0;
 const conferir = (nome, ok, detalhe) => {
@@ -76,6 +76,24 @@ igual(
 console.log("\n4) Sem endereço mas com frete: entrega (a área segura se não achar)");
 igual("frete 5,99 sem endereço é ENTREGA", tipo({ enderecoDoPayload: "", frete: 5.99 }), "DELIVERY");
 igual("endereço só com espaços conta como vazio", tipo({ enderecoDoPayload: "   ", frete: 0 }), "RETIRADA");
+
+console.log("\n5) Retirada só fecha se o cliente pediu (Lapastine, 08/10, pedido nº 2)");
+const pediu = (textos, audio) => clientePediuRetirada(textos, audio);
+igual(
+  "o nº 2: cliente nunca falou em retirar → não pediu",
+  pediu(["Boa noite", "quero uma pizza grande calabresa", "Papelaria", "pix", "Sim completa"]),
+  false,
+);
+igual("\"vou buscar\"", pediu(["quero 2 x-tudo", "vou buscar"]), true);
+igual("\"retirada\" respondendo à pergunta", pediu(["Retirada"]), true);
+igual("\"passo aí pra pegar\"", pediu(["passo aí pra pegar umas 20h"]), true);
+igual("\"eu pego aí\"", pediu(["eu pego aí"]), true);
+igual("\"no balcão\" com acento", pediu(["é pra retirar no balcão"]), true);
+igual("espanhol: \"lo recojo\"", pediu(["mitad 4 quesos", "lo recojo yo"]), true);
+igual("\"tira a cebola\" não é retirada", pediu(["sem cebola", "pode tirar a cebola"]), false);
+igual("áudio desta mensagem: não dá para saber", pediu(["quero uma pizza"], true), null);
+igual("mensagem sem texto (áudio não transcrito): não dá para saber", pediu(["quero uma pizza", ""]), null);
+igual("entrega pedida não é retirada", pediu(["manda pra Rua A, 10", "entrega"]), false);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)\n` : "\n✅ tudo certo\n");
 process.exit(falhas ? 1 : 0);

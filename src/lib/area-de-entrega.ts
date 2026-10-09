@@ -759,6 +759,9 @@ export function descreverVeredicto(v: VeredictoDeEntrega): string {
       const medida = v.medida === "rota" ? " pela rua" : v.medida === "estimada" ? " (distância estimada)" : "";
       return `${v.distanciaKm} km${medida}${v.aproximado ? " (ponto aproximado)" : ""} de ${v.raioMaxKm} km, taxa R$ ${(v.taxa ?? 0).toFixed(2).replace(".", ",")}`;
     }
+    // Área desenhada caía aqui e a nota do pedido dizia "sem área cadastrada"
+    // para quem tem o mapa todo desenhado (Lapastine, 08/10/2026).
+    if (v.modo === "POLIGONO") return `área ${v.bairro || "desenhada"}, taxa R$ ${(v.taxa ?? 0).toFixed(2).replace(".", ",")}`;
     return "sem área cadastrada";
   }
   if (v.resultado === "FORA") {

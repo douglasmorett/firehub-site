@@ -38,3 +38,41 @@ export function tipoDoPedidoDoRobo(e: {
   const retirada = FALA_DE_BALCAO.test(texto) || (!endereco && e.frete === 0);
   return { tipo: retirada ? "RETIRADA" : "DELIVERY", endereco };
 }
+
+// ── RETIRADA SÓ QUANDO O CLIENTE PEDIU ──────────────────────────────────────
+//
+// Pizzaria Lapastine, 08/10/2026, pedido nº 2: o cliente não disse se era
+// entrega ou retirada. O modelo escreveu "Tipo: Retirada no balcão" no resumo
+// (e "Retirada no balcão" no endereço da tag), o cliente respondeu "Sim
+// completa" ao resumo e o pedido fechou como RETIRADA — enquanto o robô ainda
+// pedia a localização para entregar. A localização chegou depois e virou
+// "alteração" de um pedido que já estava na cozinha como balcão.
+//
+// O tipo continua vindo da tag (acima). Esta é só a trava do FECHAMENTO: o
+// pedido final de retirada precisa de o cliente ter falado em retirar/buscar
+// em algum momento da conversa.
+
+const CLIENTE_FALA_EM_RETIRAR = new RegExp(
+  [
+    /retirada|\bretiro\b|vou retirar|pra retirar|para retirar|retirar (ai|aqui|na loja|no balcao|no local)/.source,
+    /\bbuscar\b|\bbusco\b|vou busca|passo (ai|ae|la|pra pegar|para pegar)|\bvou (ai|ae|la)\b/.source,
+    /pego (ai|ae|la|aqui)|vou pegar|eu pego|balcao|takeout|pickup/.source,
+    // Espanhol: "paso a buscar", "lo recojo"
+    /recoger|\brecojo\b/.source,
+  ].join("|"),
+);
+
+const semAcento = (s: string) =>
+  s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+
+/**
+ * O cliente pediu para retirar? `true` = falou; `false` = não falou em nenhuma
+ * mensagem; `null` = não dá para saber (áudio sem transcrição, mensagem sem
+ * texto) — e aí ninguém trava nada.
+ */
+export function clientePediuRetirada(textosDoCliente: unknown[], ouvindoAudio = false): boolean | null {
+  const textos = (textosDoCliente || []).map((t) => String(t ?? ""));
+  if (textos.some((t) => CLIENTE_FALA_EM_RETIRAR.test(semAcento(t)))) return true;
+  if (ouvindoAudio || textos.some((t) => !t.trim() || /(^|[^a-z])[aá]udio([^a-z]|$)/i.test(t))) return null;
+  return false;
+}
