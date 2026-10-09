@@ -44,6 +44,8 @@ import { criarFeedDePedidos } from "@/lib/feed-de-pedidos";
 import { pedidoComAcrescimos } from "@/lib/acrescimo-na-comanda";
 import { ehDisputaParcial, lerCancelamentosParciais } from "@/lib/cancelamento-parcial";
 import { origemDaVenda } from "@/lib/origem-da-venda";
+import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
+import { motivoValido, MENSAGEM_SEM_MOTIVO, SUGESTOES_DE_MOTIVO } from "@/lib/motivo-do-cancelamento";
 
 const BOTAO_ACAO: React.CSSProperties = {
   padding: "5px 14px", borderRadius: "8px", border: "none",
@@ -1769,6 +1771,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // === SELEÇÃO E AÇÕES EM MASSA (Bulk Actions) ===
   const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set());
   const [bulkTargetStatus, setBulkTargetStatus] = useState<string>("");
+  // Cancelar em lote também pede o motivo (vale para todos os selecionados).
+  const [bulkMotivo, setBulkMotivo] = useState<string>("");
   const [bulkUpdating, setBulkUpdating] = useState<boolean>(false);
 
   const toggleSelectOrder = (id: string) => {
@@ -1797,6 +1801,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   const handleBulkStatusUpdate = async () => {
     if (!bulkTargetStatus || selectedOrderIds.size === 0) return;
+    if (bulkTargetStatus === "CANCELADO" && !motivoValido(bulkMotivo)) {
+      showToast(MENSAGEM_SEM_MOTIVO, "#B45309");
+      return;
+    }
     setBulkUpdating(true);
     const ids = Array.from(selectedOrderIds);
 
@@ -1811,19 +1819,25 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }
 
       let successCount = 0;
+      const mudaram = new Set<string>();
       for (const orderId of ids) {
         const res = await fetch("/api/customer-order/status", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId, status: bulkTargetStatus })
+          body: JSON.stringify({
+            orderId,
+            status: bulkTargetStatus,
+            ...(bulkTargetStatus === "CANCELADO" ? { cancelReason: bulkMotivo.trim() } : {}),
+          })
         });
-        if (res.ok) successCount++;
+        if (res.ok) { successCount++; mudaram.add(orderId); }
       }
 
-      setOrders(prev => prev.map(o => selectedOrderIds.has(o.id) ? { ...o, status: bulkTargetStatus } : o));
+      setOrders(prev => prev.map(o => mudaram.has(o.id) ? { ...o, status: bulkTargetStatus } : o));
       showToast(`${successCount} pedido(s) atualizados com sucesso!`, "#0F766E");
       setSelectedOrderIds(new Set());
       setBulkTargetStatus("");
+      setBulkMotivo("");
       router.refresh();
     } catch {
       showToast("Erro ao atualizar pedidos em massa.", "#C92E09");
@@ -2813,7 +2827,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (Array.isArray(data) && data.length > 0) {
           setCancellationReasons(data);
           setSelectedCancelCode(data[0].cancelCodeId);
-          setCancelReason(data[0].description);
+          // O código da plataforma vem escolhido; o MOTIVO não: preenchê-lo
+          // aqui fazia um clique só gravar "Área de risco" em todo
+          // cancelamento. Quem escreve é a pessoa (lib/motivo-do-cancelamento.ts).
         }
       })
       .catch(err => {
@@ -3282,7 +3298,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     if (!cancelConfirmId) return;
     const alvo = orders.find(o => o.id === cancelConfirmId);
     if (alvo && finalizadoPedeTrava(alvo) && !travaAberta(travaDoCancelamento)) return;
-    const finalReason = cancelReason.trim() || cancellationReasons.find(r => r.cancelCodeId === selectedCancelCode)?.description || "Cancelado pela loja";
+    // O motivo é o que a pessoa escreveu (ou a sugestão/código que escolheu):
+    // obrigatório, igual ao servidor (lib/motivo-do-cancelamento.ts).
+    if (!motivoValido(cancelReason)) { showToast(MENSAGEM_SEM_MOTIVO, "#B45309"); return; }
+    const finalReason = cancelReason.trim();
     setLoadingId(cancelConfirmId);
     try {
       const res = await fetch("/api/customer-order/status", {
@@ -3304,7 +3323,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
         if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
         if (data?.avisoEstorno) showToast(`⚠️ Estorno do Pix: ${data.avisoEstorno}`, "#B45309");
-      } else showToast("Erro ao cancelar.", "#C92E09");
+      } else {
+        const erro = await res.json().catch(() => null);
+        showToast(erro?.error || "Erro ao cancelar.", "#C92E09");
+      }
     } catch { showToast("Erro.", "#C92E09"); } finally {
       setLoadingId(null);
       setCancelConfirmId(null);
@@ -3412,6 +3434,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     if (columnId === "col-transporte") newStatus = "SAIU_ENTREGA";
 
     if (order.status === newStatus) return;
+
+    // Cancelar pede o motivo: abre a mesma janela do botão Cancelar.
+    if (newStatus === "CANCELADO") {
+      setCancelConfirmId(order.id);
+      setCancelReason("");
+      setSelectedCancelCode("");
+      setTravaDoCancelamento("");
+      return;
+    }
 
     updateStatus(orderId, newStatus);
   };
@@ -3850,7 +3881,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       {cancelConfirmId && (() => {
         const pedido = orders.find(o => o.id === cancelConfirmId);
         const finalizado = finalizadoPedeTrava(pedido);
-        const podeConfirmar = !finalizado || travaAberta(travaDoCancelamento);
+        const podeConfirmar = (!finalizado || travaAberta(travaDoCancelamento)) && motivoValido(cancelReason);
         const fechar = () => { setCancelConfirmId(null); setCancelReason(""); setSelectedCancelCode(""); setTravaDoCancelamento(""); };
         // O que muda ao cancelar um pedido que já foi entregue — só o que vale
         // para ESTE pedido (lib/pagamento-na-entrega, api/customer-order/status).
@@ -3889,7 +3920,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               </div>
             )}
             <div style={{ marginBottom: "16px" }}>
-              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Selecione o motivo do cancelamento:</label>
+              {(loadingReasons || cancellationReasons.length > 0) && (
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Motivo para a plataforma:</label>
+              )}
               {loadingReasons ? (
                 <div style={{ fontSize: "0.82rem", color: "#64748B", padding: "6px 0" }}>Carregando motivos do iFood...</div>
               ) : cancellationReasons.length > 0 ? (
@@ -3909,18 +3942,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     </option>
                   ))}
                 </select>
-              ) : (
-                <div style={{ fontSize: "0.82rem", color: "#C92E09", padding: "6px 0" }}>Usando motivos padrão do sistema.</div>
-              )}
+              ) : null}
 
-              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Detalhes do motivo (opcional):</label>
-              <textarea
-                value={cancelReason}
-                onChange={e => setCancelReason(e.target.value)}
-                placeholder="Ex: Cliente desistiu, item indisponível..."
-                autoFocus={!finalizado}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit", resize: "vertical", minHeight: "80px", outline: "none", boxSizing: "border-box" }}
-              />
+              <MotivoDoCancelamento valor={cancelReason} aoMudar={setCancelReason} autoFocus={!finalizado} />
             </div>
             {finalizado && (
               <div style={{ marginBottom: "16px" }}>
@@ -4431,6 +4455,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 );
               })()}
 
+              {/* O motivo do cancelamento, no topo do detalhe: é a pergunta que
+                  o dono faz ao abrir um cancelado (lib/motivo-do-cancelamento.ts). */}
+              {order.status === "CANCELADO" && (
+                <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: "0.82rem", color: "#7F1D1D", fontFamily: "system-ui, sans-serif" }}>
+                  <b>❌ Cancelado</b>
+                  {(order as any).cancelReason ? <>: {(order as any).cancelReason}</> : " — sem motivo registrado"}
+                </div>
+              )}
+
               {/* ── HISTÓRICO DE ALTERAÇÕES ─────────────────────────────────
                   Tudo o que foi mexido depois de lançado — itens, pagamento,
                   taxa, desconto, tipo —, com quem, quando e o total antes e
@@ -4449,6 +4482,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           <span style={{ fontWeight: 600, color: "#92400E" }}>{quandoFoi(h.quando, user?.storeTimezone || undefined)}</span>
                         </div>
                         <div style={{ marginTop: 2 }}>{h.descricao}</div>
+                        {h.motivo && (
+                          <div style={{ marginTop: 2, fontWeight: 700, color: "#9F1239" }}>Motivo: {h.motivo}</div>
+                        )}
                         {Math.abs(Number(h.totalAntes || 0) - Number(h.totalDepois || 0)) >= 0.01 && (
                           <div style={{ marginTop: 2, fontSize: "0.74rem", color: "#64748B" }}>
                             Total: <span style={{ textDecoration: "line-through" }}>R$ {Number(h.totalAntes || 0).toFixed(2).replace(".", ",")}</span> → <b style={{ color: "#0F172A" }}>R$ {Number(h.totalDepois || 0).toFixed(2).replace(".", ",")}</b>
@@ -6553,9 +6589,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <option value="CANCELADO">🚫 Cancelado</option>
               </select>
 
+              {bulkTargetStatus === "CANCELADO" && (
+                <input
+                  value={bulkMotivo}
+                  onChange={(e) => setBulkMotivo(e.target.value)}
+                  placeholder="Motivo do cancelamento (obrigatório)"
+                  list="sugestoes-de-motivo"
+                  autoFocus
+                  style={{
+                    background: "#fff", color: "#0F172A", border: `2px solid ${motivoValido(bulkMotivo) ? "#0F766E" : "#F59E0B"}`,
+                    padding: "8px 12px", borderRadius: "8px", fontSize: "0.85rem", minWidth: 240, fontFamily: "inherit",
+                  }}
+                />
+              )}
+              <datalist id="sugestoes-de-motivo">
+                {SUGESTOES_DE_MOTIVO.map((m) => <option key={m} value={m} />)}
+              </datalist>
+
               <button
                 onClick={handleBulkStatusUpdate}
-                disabled={!bulkTargetStatus || bulkUpdating}
+                disabled={!bulkTargetStatus || bulkUpdating || (bulkTargetStatus === "CANCELADO" && !motivoValido(bulkMotivo))}
                 style={{
                   background: bulkTargetStatus ? "#1C1917" : "#64748B",
                   color: "#fff", border: "none", padding: "8px 18px",

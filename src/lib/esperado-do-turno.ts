@@ -21,6 +21,7 @@
  * para o retrato.
  */
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { temEstruturaDeCaixa } from "@/lib/garantir-colunas";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
@@ -31,6 +32,7 @@ import { ganhoDoPedido, lerAcerto } from "@/lib/ganho-do-entregador";
 // precisa do banco: buscar, e o que vem depois das vendas.
 import { apurarVendasDoTurno, PAGO_ONLINE, type MesaDoTurno } from "@/lib/apuracao-do-turno";
 import type { DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do-caixa";
+import { itensCanceladosNoTurno, quemCancelouPeloRastro } from "@/lib/cancelamentos-do-turno";
 
 export { PAGO_ONLINE };
 
@@ -77,6 +79,7 @@ export async function calcularEsperadoDoTurno(
   let sangriasQtd = 0;
   let movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date }[] = [];
   let cancelados: DetalheDoTurno["cancelados"] = { qtd: 0, valor: 0, lista: [] };
+  let itensCancelados: NonNullable<DetalheDoTurno["itensCancelados"]> = [];
   let entregadores: DetalheDoTurno["entregadores"] = [];
   let maisVendidos: ParteDoRetrato[] = [];
 
@@ -184,15 +187,17 @@ export async function calcularEsperadoDoTurno(
   try {
     const lista = await prisma.customerOrder.findMany({
       where: { franchiseeId: targetId, status: "CANCELADO", createdAt: janela },
-      select: { createdAt: true, dailyOrderNumber: true, totalAmount: true, cancelReason: true, cancelledBy: true,
+      select: { createdAt: true, dailyOrderNumber: true, totalAmount: true, cancelReason: true, cancelledBy: true, editHistory: true,
         source: true, openDeliveryChannel: true, ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true, tableSessionId: true },
       orderBy: { createdAt: "asc" },
     });
     cancelados = {
       qtd: lista.length,
       valor: centavos(lista.reduce((s, o) => s + (o.totalAmount || 0), 0)),
-      lista: opcoes.retrato
-        ? lista.map((o) => {
+      // Um a um também para a TELA do fechamento (não só o papel): o dono
+      // confere o motivo de cada cancelamento antes de fechar (Pizzaria 17,
+      // 09/10/2026). A lista já vinha nesta consulta; montar é barato.
+      lista: lista.map((o) => {
             const c = canalDoPedido(o as any);
             return {
               hora: o.createdAt,
@@ -202,12 +207,49 @@ export async function calcularEsperadoDoTurno(
               valor: centavos(o.totalAmount || 0),
               motivo: o.cancelReason ? String(o.cancelReason).trim() || null : null,
               quem: quemCancelou(o.cancelledBy),
+              // O nome de quem cancelou na loja, pelo rastro (lib/cancelamentos-do-turno.ts).
+              operador: quemCancelouPeloRastro(o.editHistory),
             };
-          })
-        : [],
+          }),
     };
   } catch (e: any) {
     console.error("[Caixa] Não consegui somar os cancelados do turno:", e?.message);
+  }
+
+  // ── OS ITENS TIRADOS NO TURNO (lib/cancelamentos-do-turno.ts) ──────────
+  //
+  // A bebida tirada da mesa, o item tirado na edição do pedido: o pedido
+  // continua valendo, então não aparece em Cancelados — e o dono quer ver na
+  // conferência quem tirou, o quê, quanto e por quê. Vem do rastro do pedido
+  // (`editHistory`) de quem foi mexido no turno; o pedido de mesa pode ter
+  // nascido antes de o caixa abrir, por isso a janela é a do `updatedAt` e a
+  // hora de cada retirada é conferida lá dentro.
+  try {
+    const mexidos = await prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: targetId,
+        updatedAt: janela,
+        editHistory: { not: Prisma.DbNull },
+      },
+      select: { dailyOrderNumber: true, status: true, editHistory: true, tableSessionId: true, source: true,
+        openDeliveryChannel: true, ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true,
+        tableSession: { select: { table: { select: { number: true } } } } },
+    });
+    itensCancelados = itensCanceladosNoTurno(
+      mexidos.map((o: any) => {
+        const c = canalDoPedido(o as any);
+        const mesa = o.tableSession?.table?.number;
+        return {
+          dailyOrderNumber: o.dailyOrderNumber,
+          status: o.status,
+          editHistory: o.editHistory,
+          onde: o.tableSessionId ? (mesa != null ? `Mesa ${mesa}` : "Mesa") : c.chave === "SITE" ? "Site" : c.nome,
+        };
+      }),
+      { de: openSession.openedAt, ate: opcoes.ate || null }
+    );
+  } catch (e: any) {
+    console.error("[Caixa] Não consegui listar os itens cancelados do turno:", e?.message);
   }
 
   // ── ENTREGADORES ──────────────────────────────────────────────────────
@@ -304,6 +346,7 @@ export async function calcularEsperadoDoTurno(
     gaveta: { vendasEmDinheiro: centavos(vendasEmDinheiro), reforcosQtd, sangriasQtd },
     movimentacoes,
     cancelados,
+    itensCancelados,
     entregadores,
     maisVendidos,
   };

@@ -130,8 +130,18 @@ export type DetalheDoTurno = {
   cancelados: {
     qtd: number;
     valor: number;
-    lista: { hora: Date | string; numero: string; canal: string; referencia: string | null; valor: number; motivo: string | null; quem: string | null }[];
+    lista: {
+      hora: Date | string; numero: string; canal: string; referencia: string | null; valor: number; motivo: string | null; quem: string | null;
+      /** O nome de quem cancelou na loja, pelo rastro do pedido. Ausente = cancelamento sem rastro. */
+      operador?: string | null;
+    }[];
   };
+  /**
+   * Itens tirados de pedidos que continuaram valendo — a bebida tirada da
+   * mesa, o item tirado na edição (lib/cancelamentos-do-turno.ts). Ausente
+   * no papel de caixa fechado antes de 09/10/2026.
+   */
+  itensCancelados?: { hora: Date | string; numero: string; onde: string; quem: string; item: string; valor: number; motivo: string | null }[];
   entregadores: {
     nome: string;
     entregas: number;
@@ -797,11 +807,32 @@ function relatorioDoFechamento(
     for (const c of d.cancelados.lista.slice(0, LIMITE)) {
       const ref = c.referencia ? ` #${c.referencia}` : "";
       const quem = c.quem ? (c.quem === "loja" ? "pela loja" : c.quem === "cliente" ? "pelo cliente" : `pelo ${c.quem}`) : "";
-      const nota = [quem, c.motivo].filter(Boolean).join(": ");
+      // "pela loja (Maria - funcionário)": o nome vem do rastro do pedido.
+      const quemComNome = c.operador ? `${quem || "por"} (${c.operador})`.trim() : quem;
+      const nota = [quemComNome, c.motivo].filter(Boolean).join(": ");
       linha(`${hora(c.hora)} ${c.numero} ${c.canal}${ref}`.replace(/\s+/g, " ").trim(), reais(c.valor), nota ? `cancelado ${nota}` : undefined);
     }
     if (d.cancelados.lista.length > LIMITE) texto(`e mais ${d.cancelados.lista.length - LIMITE} cancelados`);
     linha(`Total cancelado (${d.cancelados.qtd})`, reais(d.cancelados.valor), "nao entra em conta nenhuma");
+  }
+
+  // ── ITENS CANCELADOS ────────────────────────────────────────────────────
+  //
+  // O item tirado de um pedido que continuou valendo — a bebida tirada da
+  // mesa, o item tirado na edição. Não está em Cancelados (o pedido não foi
+  // cancelado), e era a conferência que o dono da Pizzaria 17 pediu
+  // (09/10/2026): quem tirou, quando, o item, o valor e o motivo.
+  const itensFora = d.itensCancelados || [];
+  if (itensFora.length > 0) {
+    titulo("Itens cancelados");
+    const LIMITE = 40;
+    for (const i of itensFora.slice(0, LIMITE)) {
+      const onde = [i.numero, i.onde].filter(Boolean).join(" ");
+      linha(`${hora(i.hora)} ${onde} ${i.item}`.replace(/\s+/g, " ").trim(), reais(i.valor), `por ${i.quem}: ${i.motivo || "sem motivo"}`);
+    }
+    if (itensFora.length > LIMITE) texto(`e mais ${itensFora.length - LIMITE} itens`);
+    const soma = Math.round(itensFora.reduce((t, i) => t + (Number(i.valor) || 0), 0) * 100) / 100;
+    linha(`Total de itens cancelados (${itensFora.length})`, reais(soma), "ja fora dos pedidos");
   }
 
   // ── FICOU DE FORA DO FATURAMENTO ────────────────────────────────────────

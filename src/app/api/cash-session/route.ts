@@ -147,6 +147,12 @@ export async function GET() {
     vendasPorTipo: detalhe
       ? { vendas: detalhe.vendas, porTipo: detalhe.porTipo, trocoDasMesas: { valor: detalhe.mesas.troco || 0, qtd: detalhe.mesas.trocoQtd || 0 } }
       : null,
+    // Os cancelamentos do turno, um a um, com quem e o motivo — o pedido
+    // cancelado inteiro e o item tirado (lib/cancelamentos-do-turno.ts). Só
+    // informação: o dono confere antes de fechar.
+    cancelamentos: detalhe
+      ? { pedidos: detalhe.cancelados, itens: detalhe.itensCancelados || [] }
+      : null,
   });
 }
 

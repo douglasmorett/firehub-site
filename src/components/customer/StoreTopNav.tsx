@@ -9,6 +9,7 @@ import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
 import SimularPedidos from "./SimularPedidos";
 import VendasPorTipoDoCaixa, { type VendasPorTipo } from "./VendasPorTipoDoCaixa";
+import CancelamentosDoCaixa, { type CancelamentosDoTurno } from "./CancelamentosDoCaixa";
 import {
   avisarQueOCaixaMudou, EVENTO_ABRIR_MENU_DO_CAIXA, PARAMETRO_ABRIR_CAIXA, type PedidoDoCaixa,
 } from "@/lib/caixa-aberto";
@@ -358,6 +359,7 @@ export default function StoreTopNav({
   const [diff, setDiff]         = useState(0);
   // As vendas do turno por tipo (Delivery, Retirada, Balcão, Mesas, Totem).
   const [vendasPorTipo, setVendasPorTipo] = useState<VendasPorTipo | null>(null);
+  const [cancelamentos, setCancelamentos] = useState<CancelamentosDoTurno | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
   const fecharAviso = useCallback(() => setAviso(null), []);
 
@@ -528,6 +530,7 @@ export default function StoreTopNav({
       if (d.foraDoTurno) setForaDoTurno(d.foraDoTurno);
       if (d.ultimoFechamento !== undefined) setUltimoFechamento(d.ultimoFechamento);
       setVendasPorTipo(d.vendasPorTipo || null);
+      setCancelamentos(d.cancelamentos || null);
     });
     // Buscar pedidos pendentes em SAIU_ENTREGA
     fetch("/api/customer-order/pending-count").then(r => r.json()).then(d => {
@@ -1500,6 +1503,9 @@ export default function StoreTopNav({
                     conferência: a soma dos tipos é o total faturado, que não é
                     o esperado acima (este tem troco e sangrias; aquele, fiado). */}
                 <VendasPorTipoDoCaixa dados={vendasPorTipo} />
+                {/* Pedido cancelado e item tirado, com quem e o motivo — a
+                    conferência que o dono faz antes de fechar. */}
+                <CancelamentosDoCaixa dados={cancelamentos} />
                 {/* Gruda no rodapé do cartão enquanto a tabela rola: o botão
                     de encerrar fica sempre à vista, seja qual for a altura da
                     tela. */}

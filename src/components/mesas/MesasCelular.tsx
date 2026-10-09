@@ -30,6 +30,8 @@ import {
   StickyNote, Trash2, User, LogOut, Monitor, X, Users, ArrowLeftRight,
 } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
+import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
+import { motivoValido } from "@/lib/motivo-do-cancelamento";
 import SelecionarItensParaImpressao from "@/components/mesas/SelecionarItensParaImpressao";
 import { montarCardapioDaMesa, gruposDoProduto, type ItemDaMesa } from "@/lib/cardapio-da-mesa";
 import { numerosDaFaixa, type AndarDaMesa, lerAndares } from "@/lib/andares-da-mesa";
@@ -357,6 +359,8 @@ export default function MesasCelular({
   // ── Itens já lançados ────────────────────────────────────────────────────
   const [itemLancado, setItemLancado] = useState<{
     orderId: string; itemId: string; nome: string; atual: number; novo: number; ultimoDoPedido: boolean;
+    /** Remover ou diminuir pede o motivo (lib/motivo-do-cancelamento.ts). */
+    motivo?: string;
   } | null>(null);
   const [mexendo, setMexendo] = useState(false);
   const [imprimindo, setImprimindo] = useState(false);
@@ -638,9 +642,18 @@ export default function MesasCelular({
     if (!sessionId || !itemLancado || mexendo) return;
     setMexendo(true);
     try {
-      const corpo = remover
-        ? { removerItemIds: [itemLancado.itemId] }
-        : { itens: [{ itemId: itemLancado.itemId, quantity: itemLancado.novo }] };
+      const tira = remover || itemLancado.novo < itemLancado.atual;
+      const motivo = tira ? (itemLancado.motivo || "").trim() : "";
+      if (tira && !motivoValido(motivo)) {
+        avisar("erro", "Escreva o motivo", "Remover ou diminuir item pede o motivo (pelo menos 3 letras). Ele aparece no fechamento do caixa.");
+        return;
+      }
+      const corpo = {
+        ...(remover
+          ? { removerItemIds: [itemLancado.itemId] }
+          : { itens: [{ itemId: itemLancado.itemId, quantity: itemLancado.novo }] }),
+        ...(motivo ? { motivo } : {}),
+      };
       const res = await chamar(`/api/store/table-sessions/${sessionId}/orders/${itemLancado.orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -1310,15 +1323,25 @@ export default function MesasCelular({
                 <button onClick={() => setItemLancado({ ...itemLancado, novo: itemLancado.novo + 1 })} aria-label="Mais"><Plus size={18} /></button>
               </div>
             </div>
+            {/* Remover e diminuir tiram dinheiro da conta: o motivo vai junto e
+                aparece no fechamento do caixa. Aumentar não pede nada. */}
+            <div style={{ marginTop: 14 }}>
+              <MotivoDoCancelamento
+                compacto
+                valor={itemLancado.motivo || ""}
+                aoMudar={(m) => setItemLancado({ ...itemLancado, motivo: m })}
+                rotulo="Motivo (para remover ou diminuir)"
+              />
+            </div>
             <button
               className="mc-btn primario"
-              style={{ width: "100%", marginTop: 16 }}
-              disabled={mexendo || itemLancado.novo === itemLancado.atual}
+              style={{ width: "100%", marginTop: 4 }}
+              disabled={mexendo || itemLancado.novo === itemLancado.atual || (itemLancado.novo < itemLancado.atual && !motivoValido(itemLancado.motivo))}
               onClick={() => confirmarItemLancado(false)}
             >
               {mexendo ? "Salvando..." : `Mudar para ${itemLancado.novo}x`}
             </button>
-            <button className="mc-btn perigo" style={{ width: "100%", marginTop: 10 }} disabled={mexendo} onClick={() => confirmarItemLancado(true)}>
+            <button className="mc-btn perigo" style={{ width: "100%", marginTop: 10 }} disabled={mexendo || !motivoValido(itemLancado.motivo)} onClick={() => confirmarItemLancado(true)}>
               <Trash2 size={18} /> {itemLancado.ultimoDoPedido ? "Remover (cancela o pedido inteiro)" : "Remover item"}
             </button>
           </>

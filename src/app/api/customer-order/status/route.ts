@@ -6,6 +6,8 @@ import { trackSaleForBilling } from "@/lib/billing";
 import { ehPedido99Food, sincronizar99Food } from "@/lib/food99-status";
 import { ehPedidoBrendi, sincronizarBrendi } from "@/lib/brendi-status";
 import { ehPedidoWabiz, sincronizarWabiz } from "@/lib/wabiz-status";
+import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO } from "@/lib/motivo-do-cancelamento";
+import { empilharEdicao } from "@/lib/edicao-de-pedido";
 
 // Status que contam como venda confirmada para fins de faturamento
 // Disparado apenas em ENTREGUE para evitar contagem duplicada
@@ -79,6 +81,9 @@ const CAMPOS_DO_PEDIDO = {
   openDeliveryChannel: true,
   openDeliveryReference: true,
   food99AppShopId: true,
+  totalAmount: true,
+  // O rastro do pedido: o cancelamento à mão entra nele com quem e o motivo.
+  editHistory: true,
   franchisee: { select: { ownerId: true } },
 } as const;
 
@@ -121,10 +126,22 @@ export async function PUT(req: Request) {
 
   const role = (session.user as any)?.role;
   const body = await req.json();
-  const { orderId, status, scheduledDatetime, cancelReason, cancellationCode } = body;
+  const { orderId, status, scheduledDatetime, cancellationCode } = body;
 
   if (!orderId || !status) {
     return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
+  }
+
+  // ── CANCELAR PEDE O MOTIVO (lib/motivo-do-cancelamento.ts) ────────────────
+  //
+  // Esta rota é sempre a PESSOA na loja (sessão do painel): o quadro de
+  // pedidos, o arrastar para Cancelado, a ação em lote, o "Não aceitar" do
+  // rascunho do robô. iFood/99Food cancelando, o cliente no site e o sistema
+  // entram por outras rotas e seguem com o motivo deles. Sem motivo escrito,
+  // 400 — antes do pedido ser lido, nada muda nem avisa parceiro.
+  const cancelReason: string | undefined = status === "CANCELADO" ? motivoDoCorpo(body) : undefined;
+  if (status === "CANCELADO" && !cancelReason) {
+    return NextResponse.json({ error: MENSAGEM_SEM_MOTIVO, precisaDeMotivo: true }, { status: 400 });
   }
 
   const order = await prisma.customerOrder.findUnique({
@@ -138,7 +155,7 @@ export async function PUT(req: Request) {
 
   const currentUser = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, ownerId: true }
+    select: { id: true, ownerId: true, name: true, role: true }
   });
   if (!currentUser) {
     return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
@@ -218,6 +235,21 @@ export async function PUT(req: Request) {
   }
 
   const updateData: any = { status };
+
+  // Quem cancelou e por quê, no rastro do pedido: é dele que o fechamento do
+  // caixa e a comanda do painel leem o nome de quem fez.
+  if (status === "CANCELADO") {
+    const papel = String(currentUser.role || "").toUpperCase() === "STAFF" ? "funcionário" : role === "ADMIN" ? "admin" : "dono";
+    updateData.editHistory = empilharEdicao((order as any).editHistory, {
+      quando: new Date().toISOString(),
+      quem: `${(currentUser.name || "").trim() || "Loja"} (${papel})`,
+      acao: "CANCELOU",
+      descricao: "Pedido cancelado pelo painel",
+      totalAntes: Number((order as any).totalAmount) || 0,
+      totalDepois: 0,
+      motivo: cancelReason,
+    }) as any;
+  }
 
   // ── RASCUNHO DO ROBÔ ARRASTADO NO QUADRO ────────────────────────────────
   //

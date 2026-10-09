@@ -71,6 +71,7 @@ import {
   type RegistroDeEdicao,
 } from "@/lib/edicao-de-pedido";
 import { descontoDoCorpo, descreverDesconto, notaDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
+import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
 
 /** Os campos do pedido que a decisão e o recálculo precisam. */
 const CAMPOS_DO_PEDIDO = {
@@ -147,6 +148,32 @@ function nomeDoOperador(op: { name?: string | null; email?: string | null; role?
   return `${op.name || op.email || "?"} (${papel})`;
 }
 
+/**
+ * O que esta edição TIRA do pedido: os removidos inteiros e a diferença de
+ * quem teve a quantidade diminuída. Vazio = não tira nada (só acrescenta ou
+ * dá desconto), e aí o motivo não é pedido.
+ */
+function retiradosDaEdicao(
+  itensDoPedido: { id: string; quantity: number; price: number; productName?: string | null }[],
+  remover: string[],
+  mudar: { itemId: string; quantity: number }[]
+): ItemRetirado[] {
+  const linha = (i: { quantity: number; price: number; productName?: string | null }, quantidade: number): ItemRetirado => ({
+    nome: String(i.productName || "item").trim() || "item",
+    quantidade,
+    valor: Math.round(Number(i.price || 0) * quantidade * 100) / 100,
+  });
+  const saida: ItemRetirado[] = [];
+  for (const i of itensDoPedido || []) {
+    if (remover.includes(i.id)) { saida.push(linha(i, i.quantity)); continue; }
+    const m = mudar.find((x) => x.itemId === i.id);
+    if (m && m.quantity < i.quantity) saida.push(linha(i, i.quantity - m.quantity));
+  }
+  return saida;
+}
+
+const semMotivo = () => NextResponse.json({ error: MENSAGEM_SEM_MOTIVO, precisaDeMotivo: true }, { status: 400 });
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const ctx = await contexto(params);
@@ -162,6 +189,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const querMexerNosOriginais = itens.length > 0 || removerItemIds.length > 0;
     const desconto = descontoDoCorpo(body?.desconto);
+    // Tirar item ou diminuir quantidade pede o motivo (lib/motivo-do-cancelamento.ts).
+    const motivo = motivoDoCorpo(body);
 
     if (!querMexerNosOriginais && acrescentar.length === 0 && !desconto) {
       return NextResponse.json({ error: "Nada para alterar" }, { status: 400 });
@@ -187,6 +216,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
           removerItemIds,
           totalMuda: avaliacao.totalMuda === true,
           desconto,
+          motivo,
         });
         // Erro (nada válido, ou tirou tudo): não segue para o acréscimo.
         if (!resposta.ok) return resposta.resposta;
@@ -210,7 +240,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // acrescentasse um pastel na mesma edição via a tela prever um total e o
     // pedido fechar noutro, com a Coca ainda lá. Uma transação só também deixa o
     // total ser recalculado uma vez, do estado final.
-    return await editarPedidoProprio({ order, lojaId, operador, itens, removerItemIds, acrescentar, desconto });
+    return await editarPedidoProprio({ order, lojaId, operador, itens, removerItemIds, acrescentar, desconto, motivo });
   } catch (error: any) {
     console.error("[Editar Pedido PATCH]", error);
     return NextResponse.json({ error: "Erro ao editar o pedido" }, { status: 500 });
@@ -231,7 +261,10 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
         { status: 403 }
       );
     }
-    return await cancelarPedido(ctx.order, ctx.operador);
+    // O motivo vem no corpo ({ motivo }) ou em ?motivo=.
+    const body = await req.json().catch(() => ({}) as any);
+    const motivo = motivoDoCorpo(body) || motivoDoCorpo({ motivo: req.nextUrl.searchParams.get("motivo") });
+    return await cancelarPedido(ctx.order, ctx.operador, motivo);
   } catch (error: any) {
     console.error("[Editar Pedido DELETE]", error);
     return NextResponse.json({ error: "Erro ao cancelar o pedido" }, { status: 500 });
@@ -248,8 +281,9 @@ async function editarPedidoProprio(entrada: {
   removerItemIds: string[];
   acrescentar: Acrescimo[];
   desconto: DescontoManual | null;
+  motivo: string;
 }) {
-  const { order, lojaId, operador, desconto } = entrada;
+  const { order, lojaId, operador, desconto, motivo } = entrada;
 
   // Só itens DESTE pedido: id de item de outro pedido no corpo não alcança nada.
   const idsDoPedido = new Set(order.items.map((i: any) => i.id));
@@ -270,6 +304,9 @@ async function editarPedidoProprio(entrada: {
   if (!mexeuNosItens && !desconto) {
     return NextResponse.json({ error: "Nenhum item válido para alterar" }, { status: 400 });
   }
+
+  const retirados = retiradosDaEdicao(order.items, remover, mudar);
+  if (retirados.length > 0 && !motivo) return semMotivo();
 
   // Estoque disponível. O que o pedido JÁ tem já está contado como vendido,
   // então o que se confere é a DIFERENÇA por produto: o acrescentado, mais o
@@ -305,7 +342,7 @@ async function editarPedidoProprio(entrada: {
   if (finais.length === 0) {
     // Tirou tudo e não acrescentou nada: pedido sem item não pode continuar
     // valendo dinheiro. Mesma via do DELETE, com devolução de estoque.
-    return cancelarPedido(order, operador);
+    return cancelarPedido(order, operador, motivo);
   }
 
   const comDesconto = gravacaoDoDesconto(order, finais, desconto);
@@ -347,6 +384,7 @@ async function editarPedidoProprio(entrada: {
     descricao,
     totalAntes: order.totalAmount || 0,
     totalDepois: novoTotal,
+    ...(retirados.length > 0 ? { motivo, itensRetirados: retirados } : {}),
   };
 
   await prisma.$transaction(async (tx) => {
@@ -485,8 +523,10 @@ async function editarItensDoMarketplace(entrada: {
   removerItemIds: string[];
   totalMuda: boolean;
   desconto?: DescontoManual | null;
+  motivo?: string;
 }): Promise<{ ok: boolean; resposta: NextResponse }> {
   const { order, operador, totalMuda } = entrada;
+  const motivo = entrada.motivo || "";
   // Só chega com desconto quando totalMuda: o PATCH recusa o do pedido pago no parceiro.
   const desconto = totalMuda ? entrada.desconto || null : null;
 
@@ -504,6 +544,9 @@ async function editarItensDoMarketplace(entrada: {
       resposta: NextResponse.json({ error: "Nenhum item válido para alterar" }, { status: 400 }),
     };
   }
+
+  const retirados = retiradosDaEdicao(order.items, remover, mudar);
+  if (retirados.length > 0 && !motivo) return { ok: false, resposta: semMotivo() };
 
   const sobraram = order.items
     .filter((i: any) => !remover.includes(i.id))
@@ -556,6 +599,7 @@ async function editarItensDoMarketplace(entrada: {
     descricao,
     totalAntes: order.totalAmount || 0,
     totalDepois: novoTotal,
+    ...(retirados.length > 0 ? { motivo, itensRetirados: retirados } : {}),
   };
 
   await prisma.$transaction(async (tx) => {
@@ -858,14 +902,24 @@ async function acrescentarColado(entrada: {
 
 // ── Cancelar ────────────────────────────────────────────────────────────────
 
-async function cancelarPedido(order: any, operador: any) {
+/**
+ * Cancelar pela edição: o botão Cancelar da aba Editar itens, ou tirar todos
+ * os itens. As duas são a PESSOA cancelando — não há nada automático aqui —,
+ * então o motivo é obrigatório como em qualquer cancelamento da loja. Antes o
+ * fechamento do caixa mostrava "Cancelado pelo painel ao editar o pedido", e
+ * o dono não sabia por quê (Pizzaria 17, 09/10/2026).
+ */
+async function cancelarPedido(order: any, operador: any, motivo: string) {
+  if (!motivo) return semMotivo();
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
     quem: nomeDoOperador(operador),
-    acao: "CANCELADO" as any,
+    acao: "CANCELOU",
     descricao: "Pedido cancelado pela edição (ficou sem itens ou foi cancelado na mão)",
     totalAntes: order.totalAmount || 0,
     totalDepois: 0,
+    motivo,
+    itensRetirados: retiradosDaEdicao(order.items, (order.items || []).map((i: any) => i.id), []),
   };
 
   await prisma.customerOrder.update({
@@ -874,8 +928,8 @@ async function cancelarPedido(order: any, operador: any) {
       // A grafia é CANCELADO — a que o resto do sistema grava e filtra.
       status: "CANCELADO",
       cancelledBy: "LOJA",
-      cancelReason: "Cancelado pelo painel ao editar o pedido",
-      editHistory: empilharEdicao(order.editHistory, { ...registro, acao: "CANCELOU" }) as any,
+      cancelReason: motivo,
+      editHistory: empilharEdicao(order.editHistory, registro) as any,
     },
   });
 

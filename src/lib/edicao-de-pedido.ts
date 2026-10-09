@@ -681,6 +681,17 @@ export type RegistroDeEdicao = {
   descricao: string;
   totalAntes: number;
   totalDepois: number;
+  /**
+   * O motivo que a pessoa escreveu ao tirar item ou cancelar
+   * (lib/motivo-do-cancelamento.ts). Registro antigo não tem.
+   */
+  motivo?: string;
+  /**
+   * O que saiu do pedido nesta edição, item a item, com o valor da linha —
+   * o fechamento do caixa lista daqui os "Itens cancelados". Só nas edições
+   * que tiram item ou diminuem quantidade (e no cancelamento à mão).
+   */
+  itensRetirados?: { nome: string; quantidade: number; valor: number }[];
 };
 
 /**

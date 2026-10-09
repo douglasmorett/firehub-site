@@ -18,6 +18,8 @@ import { impressorasDaContaNoAndar, lerAndares, numerosDaFaixa, type AndarDaMesa
 import { numeroDaMesa } from "@/lib/mesa-na-comanda";
 import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
+import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
+import { motivoValido } from "@/lib/motivo-do-cancelamento";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
   type DescontoManual,
@@ -586,16 +588,27 @@ export default function MesasApp({
   // com 3"), nunca um incremento, e só vai ao servidor no Confirmar.
   const [editorQtd, setEditorQtd] = useState<{
     orderId: string; itemId: string; nome: string; atual: number; novo: number; preco: number; ultimoDoPedido: boolean;
+    /** Diminuir ou zerar pede o motivo (lib/motivo-do-cancelamento.ts). */
+    motivo?: string;
   } | null>(null);
 
-  const editarQtdItem = useCallback(async (orderId: string, itemId: string, quantity: number, nome?: string, atual?: number) => {
+  // ── O MOTIVO DE TIRAR ITEM OU CANCELAR PEDIDO ──────────────────────────
+  // Pizzaria 17 (09/10/2026): o caixa que tira a bebida da mesa escreve o
+  // porquê na hora, e o dono lê no fechamento do caixa. O servidor recusa
+  // sem ele; a janela substitui o confirm() que só perguntava "certeza?".
+  const [pedidoDeMotivo, setPedidoDeMotivo] = useState<{
+    titulo: string; aviso: string; botao: string; executar: (motivo: string) => void;
+  } | null>(null);
+  const [textoDoMotivo, setTextoDoMotivo] = useState("");
+
+  const editarQtdItem = useCallback(async (orderId: string, itemId: string, quantity: number, nome?: string, atual?: number, motivo?: string) => {
     if (!selectedTable?.openSession || quantity < 1 || editandoItem) return;
     setEditandoItem(itemId);
     try {
       const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ itens: [{ itemId, quantity }] }),
+        body: JSON.stringify({ itens: [{ itemId, quantity }], ...(motivo ? { motivo } : {}) }),
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok) alert(data.error || "Não consegui alterar o item.");
@@ -606,18 +619,27 @@ export default function MesasApp({
     finally { setEditandoItem(null); }
   }, [selectedTable, editandoItem, fetchSessionDetail, fetchTables]);
 
-  const removerItemPedido = useCallback(async (orderId: string, itemId: string, nome: string, ultimo: boolean) => {
+  const removerItemPedido = useCallback(async (orderId: string, itemId: string, nome: string, ultimo: boolean, motivo?: string) => {
     if (!selectedTable?.openSession || editandoItem) return;
-    const aviso = ultimo
-      ? `Remover "${nome}"?\n\nÉ o último item: o PEDIDO INTEIRO será cancelado e o estoque devolvido.`
-      : `Remover "${nome}" deste pedido?\n\n(O estoque deste item não volta sozinho — se precisar, ajuste no Estoque.)`;
-    if (!confirm(aviso)) return;
+    if (!motivo) {
+      // Sem motivo ainda: a janela pede, e chama de novo com ele.
+      setTextoDoMotivo("");
+      setPedidoDeMotivo({
+        titulo: `Remover "${nome}"`,
+        aviso: ultimo
+          ? "É o último item: o PEDIDO INTEIRO será cancelado e o estoque devolvido."
+          : "O estoque deste item não volta sozinho — se precisar, ajuste no Estoque.",
+        botao: ultimo ? "Remover e cancelar o pedido" : "Remover item",
+        executar: (m) => { removerItemPedido(orderId, itemId, nome, ultimo, m); },
+      });
+      return;
+    }
     setEditandoItem(itemId);
     try {
       const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ removerItemIds: [itemId] }),
+        body: JSON.stringify({ removerItemIds: [itemId], motivo }),
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok) alert(data.error || "Não consegui remover o item.");
@@ -627,13 +649,24 @@ export default function MesasApp({
     finally { setEditandoItem(null); }
   }, [selectedTable, editandoItem, fetchSessionDetail, fetchTables]);
 
-  const cancelarPedidoMesa = useCallback(async (orderId: string, numero: string | number) => {
+  const cancelarPedidoMesa = useCallback(async (orderId: string, numero: string | number, motivo?: string) => {
     if (!selectedTable?.openSession || editandoItem) return;
-    if (!confirm(`Cancelar o pedido #${numero} inteiro?\n\nEle sai da conta da mesa e o estoque baixado é devolvido.`)) return;
+    if (!motivo) {
+      setTextoDoMotivo("");
+      setPedidoDeMotivo({
+        titulo: `Cancelar o pedido #${numero} inteiro`,
+        aviso: "Ele sai da conta da mesa e o estoque baixado é devolvido.",
+        botao: "Cancelar pedido",
+        executar: (m) => { cancelarPedidoMesa(orderId, numero, m); },
+      });
+      return;
+    }
     setEditandoItem(orderId);
     try {
       const res = await chamar(`/api/store/table-sessions/${selectedTable.openSession.id}/orders/${orderId}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motivo }),
       });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok) alert(data.error || "Não consegui cancelar o pedido.");
@@ -2642,17 +2675,47 @@ export default function MesasApp({
                         ? "Sem alteração"
                         : `Fica ${editorQtd.novo}x = ${fmt(editorQtd.preco * editorQtd.novo)} (antes ${fmt(editorQtd.preco * editorQtd.atual)})`}
                   </div>
+                  {editorQtd.novo < editorQtd.atual && (
+                    <div style={{ marginTop: 12 }}>
+                      <MotivoDoCancelamento
+                        compacto
+                        valor={editorQtd.motivo || ""}
+                        aoMudar={(m) => setEditorQtd({ ...editorQtd, motivo: m })}
+                        rotulo={editorQtd.novo === 0 ? "Motivo de remover" : "Motivo de diminuir"}
+                      />
+                    </div>
+                  )}
                   <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
                     <button onClick={() => setEditorQtd(null)} style={{ flex: 1, height: 46, borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", fontWeight: 800, fontSize: 14, color: "#475569", cursor: "pointer" }}>Cancelar</button>
                     <button
-                      disabled={editorQtd.novo === editorQtd.atual || !!editandoItem}
+                      disabled={editorQtd.novo === editorQtd.atual || !!editandoItem || (editorQtd.novo < editorQtd.atual && !motivoValido(editorQtd.motivo))}
                       onClick={async () => {
                         const e = editorQtd; setEditorQtd(null);
-                        if (e.novo === 0) removerItemPedido(e.orderId, e.itemId, e.nome, e.ultimoDoPedido);
-                        else editarQtdItem(e.orderId, e.itemId, e.novo, e.nome, e.atual);
+                        const motivo = e.novo < e.atual ? (e.motivo || "").trim() : undefined;
+                        if (e.novo === 0) removerItemPedido(e.orderId, e.itemId, e.nome, e.ultimoDoPedido, motivo);
+                        else editarQtdItem(e.orderId, e.itemId, e.novo, e.nome, e.atual, motivo);
                       }}
                       style={{ flex: 2, height: 46, borderRadius: 12, border: "none", background: editorQtd.novo === editorQtd.atual ? "#CBD5E1" : (editorQtd.novo === 0 ? "#C92E09" : "#475569"), color: "#fff", fontWeight: 900, fontSize: 14, cursor: editorQtd.novo === editorQtd.atual ? "default" : "pointer" }}
                     >{editorQtd.novo === 0 ? "Remover" : `Confirmar ${editorQtd.novo}x`}</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {pedidoDeMotivo && (
+              <div style={{ position: "fixed", inset: 0, zIndex: 1001, background: "rgba(15,23,42,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+                onClick={() => setPedidoDeMotivo(null)}>
+                <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 420, background: "#fff", borderRadius: 16, padding: "18px 18px 16px", boxShadow: "0 20px 50px rgba(0,0,0,0.3)" }}>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: "#1E293B" }}>{pedidoDeMotivo.titulo}</div>
+                  <div style={{ fontSize: 13, color: "#475569", margin: "4px 0 12px", lineHeight: 1.45 }}>{pedidoDeMotivo.aviso}</div>
+                  <MotivoDoCancelamento valor={textoDoMotivo} aoMudar={setTextoDoMotivo} autoFocus />
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => setPedidoDeMotivo(null)} style={{ flex: 1, height: 44, borderRadius: 12, border: "1px solid #E2E8F0", background: "#fff", fontWeight: 800, fontSize: 14, color: "#475569", cursor: "pointer" }}>Voltar</button>
+                    <button
+                      disabled={!motivoValido(textoDoMotivo)}
+                      onClick={() => { const p = pedidoDeMotivo; setPedidoDeMotivo(null); p.executar(textoDoMotivo.trim()); }}
+                      style={{ flex: 2, height: 44, borderRadius: 12, border: "none", background: motivoValido(textoDoMotivo) ? "#C92E09" : "#CBD5E1", color: "#fff", fontWeight: 900, fontSize: 14, cursor: motivoValido(textoDoMotivo) ? "pointer" : "default" }}
+                    >{pedidoDeMotivo.botao}</button>
                   </div>
                 </div>
               </div>

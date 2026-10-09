@@ -35,6 +35,8 @@ import { avaliarEdicao, contaDoDescontoDaEdicao, descontoNaEdicao, type ModoDeEd
 import { MOTIVOS_COMUNS, type DescontoManual, type TipoDeDesconto } from "@/lib/desconto-manual";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import ComboModal from "@/components/customer/ComboModal";
+import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
+import { motivoValido } from "@/lib/motivo-do-cancelamento";
 
 type ItemDoPedido = {
   id: string;
@@ -123,6 +125,9 @@ export default function EditarPedidoPainel({
   const [abrindoBusca, setAbrindoBusca] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  // Tirar item ou diminuir quantidade pede o motivo (lib/motivo-do-cancelamento.ts):
+  // é o que o dono lê no fechamento do caixa.
+  const [motivo, setMotivo] = useState("");
 
   // Desconto da edição. Fechado por padrão: a maioria das edições é só item.
   const [descontoAberto, setDescontoAberto] = useState(false);
@@ -227,6 +232,11 @@ export default function EditarPedidoPainel({
   const mexeuNosOriginais =
     removidos.size > 0 ||
     itensOriginais.some((i) => (quantidades[i.id] ?? i.quantity) !== i.quantity);
+  /** A edição TIRA alguma coisa (item ou quantidade)? Então pede motivo. */
+  const tiraAlgo =
+    removidos.size > 0 ||
+    itensOriginais.some((i) => !removidos.has(i.id) && (quantidades[i.id] ?? i.quantity) < i.quantity);
+  const faltaMotivo = tiraAlgo && !motivoValido(motivo);
   const mudouOsItens = acrescimos.length > 0 || mexeuNosOriginais;
   const mudouAlgo = mudouOsItens || descontoValido;
   /** Só o desconto: a cozinha não tem o que refazer, a comanda não sai de novo. */
@@ -254,6 +264,10 @@ export default function EditarPedidoPainel({
       return;
     }
     if (!mudouAlgo) return;
+    if (faltaMotivo) {
+      setErro("Escreva o motivo de tirar o item (pelo menos 3 letras). Ele aparece no fechamento do caixa.");
+      return;
+    }
 
     // Tirar tudo = cancelar. Vale um aviso separado, porque a consequência é
     // outra: o pedido sai do painel e o estoque volta.
@@ -307,6 +321,7 @@ export default function EditarPedidoPainel({
       // O servidor recalcula o desconto do zero: vai o pedido (tipo, valor,
       // motivo), nunca os reais prontos.
       if (descontoValido && descontoNovo) corpo.desconto = descontoNovo;
+      if (tiraAlgo) corpo.motivo = motivo.trim();
 
       const res = await fetch(`/api/store/orders/${pedido.id}/itens`, {
         method: "PATCH",
@@ -764,6 +779,16 @@ export default function EditarPedidoPainel({
         )}
       </div>
 
+      {tiraAlgo && (
+        <div style={{ marginTop: "12px" }}>
+          <MotivoDoCancelamento
+            valor={motivo}
+            aoMudar={setMotivo}
+            rotulo={!sobrouAlgum && acrescimos.length === 0 ? "Motivo do cancelamento do pedido" : "Motivo de tirar o item"}
+          />
+        </div>
+      )}
+
       {erro && (
         <div style={{ marginTop: "10px", background: "#FEF2F2", border: "1px solid #FECACA", color: "#B71C1C", borderRadius: "8px", padding: "8px 10px", fontSize: "0.82rem" }}>
           {erro}
@@ -777,17 +802,17 @@ export default function EditarPedidoPainel({
         <button
           type="button"
           onClick={salvar}
-          disabled={salvando || !mudouAlgo}
+          disabled={salvando || !mudouAlgo || faltaMotivo}
           style={{
             flex: 2,
             padding: "10px",
             borderRadius: "10px",
             border: "none",
-            background: !mudouAlgo ? "#CBD5E1" : "#C92E09",
+            background: !mudouAlgo || faltaMotivo ? "#CBD5E1" : "#C92E09",
             color: "#FFF",
             fontWeight: 800,
             fontSize: "0.88rem",
-            cursor: !mudouAlgo || salvando ? "default" : "pointer",
+            cursor: !mudouAlgo || faltaMotivo || salvando ? "default" : "pointer",
             fontFamily: "inherit",
           }}
         >
