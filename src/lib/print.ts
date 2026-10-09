@@ -4,7 +4,7 @@ import { comboParaImpressao } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
-import { categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, itensQueContamParaAVia, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR, umaPorImpressora } from "./roteamento-de-impressao";
+import { categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, impressorasPeloTipoDoPedido, itensQueContamParaAVia, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR, umaPorImpressora } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
@@ -203,6 +203,8 @@ export type PrinterEntry = {
   pedidoSoDeBebida?: boolean;
   /** Com pedidoSoDeBebida: também o pedido de comida com bebida, inteiro. */
   pedidoComBebida?: boolean;
+  /** Só pedido de mesa (lib/roteamento-de-impressao.ts → impressorasPeloTipoDoPedido). Ausente = qualquer. */
+  soPedidoDeMesa?: boolean;
   /** true = uma linha por unidade ("1x X-Bacon" cinco vezes). Ausente = agrupado. */
   separarItens?: boolean;
   /* Quais mundos esta impressora atende: salao, delivery, ou os dois.
@@ -604,6 +606,13 @@ export async function printOrder(
   // (O modelo de comanda NÃO é resolvido aqui: ele é por IMPRESSORA, e sai
   //  dentro do laço lá embaixo. Resolver uma vez só entregava o modelo da
   //  primeira impressora para todas, e o defeito só aparece em loja com duas.)
+
+  // ── SÓ PEDIDOS DE MESA ─────────────────────────────────────────────────
+  // A linha marcada assim não recebe balcão, retirada nem delivery — nem os
+  // lançados no PDV, que o módulo chama de salão. Antes do módulo, para o
+  // resgate dele não trazê-la de volta (mesma regra da fila da nuvem,
+  // roteamento-de-impressao.ts → impressorasPeloTipoDoPedido).
+  printersToUse = impressorasPeloTipoDoPedido(printersToUse, order as any);
 
   const modulo = moduloDoPedido((order as any).source);
   const doModulo = printersToUse.filter(p => impressoraAtendeModulo(p.modulos, modulo));

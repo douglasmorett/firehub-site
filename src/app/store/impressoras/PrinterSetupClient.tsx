@@ -71,6 +71,9 @@ type PrinterEntry = {
   pedidoSoDeBebida?: boolean;
   // Com pedidoSoDeBebida: recebe tambem o pedido de comida com bebida, inteiro.
   pedidoComBebida?: boolean;
+  // So pedido de MESA: balcao, retirada e delivery (inclusive os do PDV) nao
+  // saem nesta linha. Ausente = qualquer pedido (lib/roteamento-de-impressao.ts).
+  soPedidoDeMesa?: boolean;
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
@@ -881,7 +884,7 @@ export default function PrinterSetupClient({
                           padding: "3px 9px", borderRadius: 20, background: "#fff",
                           border: "1px solid #CBD5E1", fontSize: "0.72rem", fontWeight: 700, color: "#334155",
                         }}>
-                          🖨️ {p.label || p.name}
+                          🖨️ {p.label || p.name}{p.soPedidoDeMesa ? " · só mesa" : ""}
                         </span>
                       ))}
                     </div>
@@ -1122,6 +1125,39 @@ export default function PrinterSetupClient({
               <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "6px 0 0" }}>
                 Os dois ligados = esta impressora recebe tudo. Pelo menos um precisa ficar ligado.
               </p>
+
+              {/* ── Só pedidos de mesa ──
+                  Pizzaria 17 (09/10/2026): a comanda de bebidas no caixa é para
+                  a MESA (o garçom pega lá), mas saía também na retirada e no
+                  delivery lançados no PDV — que são "Balcão e mesa" para o
+                  módulo, porque nasceram aqui dentro. A opção olha o pedido:
+                  conta de mesa aberta ou aba Mesa do PDV
+                  (lib/modulo-do-pedido.ts → ehPedidoDeMesa). */}
+              <button
+                onClick={() => updatePrinter(printer.id, { soPedidoDeMesa: !printer.soPedidoDeMesa })}
+                style={{
+                  width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                  padding: "10px 12px", borderRadius: 12, marginTop: 8,
+                  border: printer.soPedidoDeMesa ? "2px solid #1C1917" : "1.5px solid #E2E8F0",
+                  background: printer.soPedidoDeMesa ? "#FAF6F2" : "#fff",
+                  color: printer.soPedidoDeMesa ? "#1C1917" : "#64748B",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                  {printer.soPedidoDeMesa ? "✓" : "○"} 🪑 Só pedidos de mesa
+                </div>
+                <div style={{ fontSize: "0.72rem", fontWeight: 500, marginTop: 2, lineHeight: 1.35, opacity: 0.9 }}>
+                  Marcado, esta impressora só imprime o pedido lançado na mesa (garçom, QR da mesa ou a aba
+                  Mesa do balcão). Balcão, retirada e delivery não saem aqui — nem os lançados no balcão.
+                </div>
+              </button>
+              {printer.soPedidoDeMesa && (
+                <p style={{ fontSize: "0.72rem", color: "#475569", margin: "6px 0 0", lineHeight: 1.45 }}>
+                  A conta da mesa e a reimpressão que você escolher no botão Imprimir continuam saindo aqui.
+                  Esta impressora também tira a comanda do balcão ou do delivery? Cadastre-a de novo em{" "}
+                  <strong>+ Adicionar impressora</strong>, escolhendo a mesma no Windows e sem esta opção.
+                </p>
+              )}
             </div>
 
             {/* ── COMO OS ITENS SAEM NESTA IMPRESSORA ──

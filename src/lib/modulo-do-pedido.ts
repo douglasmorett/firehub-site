@@ -71,3 +71,29 @@ export const MODULOS: { chave: ModuloDePedido; emoji: string; nome: string; expl
     explica: "Pedidos que chegam de fora: seu cardápio online, iFood, JotaJá, 99Food e WhatsApp.",
   },
 ];
+
+/**
+ * O pedido é de MESA? Para a opção "Só pedidos de mesa" da impressora
+ * (lib/roteamento-de-impressao.ts → impressorasPeloTipoDoPedido).
+ *
+ * O módulo não responde isto: balcão, mesa, retirada e delivery LANÇADOS NO
+ * PDV são todos "salao" (source PRESENCIAL/PDV). A Pizzaria 17 (09/10/2026)
+ * queria a comanda de bebidas no caixa só na mesa, e o #4 RETIRADA e o #5
+ * DELIVERY do PDV dela saíam lá também — desmarcar "Delivery e retirada" na
+ * impressora não mudava nada.
+ *
+ * Mesa é: lançamento numa conta de mesa aberta (`tableSessionId` — garçom,
+ * link, celular, QR da mesa) OU a aba Mesa do PDV (`deliveryType` "MESA",
+ * sem conta aberta). As duas são cliente sentado no salão. Balcão do PDV é
+ * gravado como RETIRADA (orders/presencial), então não dá para separar o
+ * balcão da retirada pelo pedido — por isso a opção é "só mesa" e não uma
+ * lista de tipos.
+ */
+export function ehPedidoDeMesa(
+  pedido: { tableSessionId?: unknown; deliveryType?: unknown } | null | undefined
+): boolean {
+  if (!pedido) return false;
+  if (typeof pedido.tableSessionId === "string" && pedido.tableSessionId.trim() !== "") return true;
+  const tipo = String(pedido.deliveryType ?? "").trim().toUpperCase();
+  return tipo === "MESA";
+}

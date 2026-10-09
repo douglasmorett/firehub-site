@@ -18,7 +18,7 @@
  *
  * Agora a decisão é tomada aqui, e os dois caminhos chamam esta função.
  */
-import { moduloDoPedido, impressoraAtendeModulo, type ModuloDePedido } from "./modulo-do-pedido";
+import { moduloDoPedido, impressoraAtendeModulo, ehPedidoDeMesa, type ModuloDePedido } from "./modulo-do-pedido";
 import { impressorasDaLoja, type PedidoComOrigem } from "./loja-de-origem";
 import { CATEGORIAS_DE_INTEGRACAO } from "./cardapio-interno";
 import { isBeverageCategory, isBeverageName } from "./beverage";
@@ -46,6 +46,11 @@ export type ImpressoraConfigurada = {
    * comanda inteira, a mesma da cozinha. Pedido só de comida continua fora.
    */
   pedidoComBebida?: boolean | null;
+  /**
+   * Só imprime pedido de MESA (lib/modulo-do-pedido.ts → ehPedidoDeMesa).
+   * Ausente = qualquer pedido do módulo. Ver `impressorasPeloTipoDoPedido`.
+   */
+  soPedidoDeMesa?: boolean | null;
   /** true = uma linha por unidade no papel desta impressora. */
   separarItens?: boolean | null;
   /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
@@ -419,13 +424,43 @@ export function impressorasPeloPedidoSoDeBebida<P extends ImpressoraConfigurada>
 }
 
 /**
+ * Tira as impressoras marcadas "Só pedidos de mesa" quando o pedido não é de
+ * mesa.
+ *
+ * Pizzaria 17 (09/10/2026): o caixa tira a "COMANDA DE BEBIDAS" da mesa — o
+ * garçom pega a bebida lá —, mas saía também no #4 RETIRADA e no #5 DELIVERY
+ * lançados no PDV. O módulo da impressora não separa esses: o PDV é "salao"
+ * qualquer que seja a aba (lib/modulo-do-pedido.ts). A opção olha o PEDIDO:
+ * conta de mesa aberta ou aba Mesa do PDV (`ehPedidoDeMesa`).
+ *
+ * ANTES do módulo e da deduplicação, como o pedido só de bebida: a linha que
+ * sai daqui não conta para o resgate do módulo (senão voltaria) e, com a
+ * mesma impressora física em duas linhas, a outra linha segue valendo.
+ *
+ * Sobrou nenhuma = a lista inteira: comanda que não sai é prejuízo, comanda a
+ * mais é papel (a loja com uma impressora só, marcada por engano).
+ */
+export function impressorasPeloTipoDoPedido<P extends ImpressoraConfigurada>(
+  impressoras: P[],
+  pedido: { tableSessionId?: unknown; deliveryType?: unknown } | null | undefined
+): P[] {
+  const lista = impressoras || [];
+  if (ehPedidoDeMesa(pedido)) return lista;
+  const ficam = lista.filter((p) => p?.soPedidoDeMesa !== true);
+  return ficam.length > 0 ? ficam : lista;
+}
+
+/**
  * Uma linha por impressora FÍSICA (o nome do Windows): duas linhas com o
  * mesmo nome fariam o mesmo papel sair duas vezes. Fica a primeira da lista —
  * menos quando a outra linha da mesma impressora é a de "pedido só de bebida".
  * Essa só chega aqui quando o pedido é dela (`impressorasPeloPedidoSoDeBebida`)
  * e leva o pedido INTEIRO; a linha comum levaria um pedaço dele, ou nada. A NIK
  * tem a EPSON do balcão em duas linhas (30/09/2026): com a primeira vencendo,
- * a pizza com refrigerante não sairia no balcão.
+ * a pizza com refrigerante não sairia no balcão. Pelo mesmo motivo a linha de
+ * "Só pedidos de mesa" vence a comum no pedido de mesa (Pizzaria 17,
+ * 09/10/2026: o caixa com a comanda de bebidas da mesa numa linha e a via de
+ * sempre na outra).
  */
 export function umaPorImpressora<P extends ImpressoraConfigurada>(lista: P[]): P[] {
   const saida: P[] = [];
@@ -438,6 +473,14 @@ export function umaPorImpressora<P extends ImpressoraConfigurada>(lista: P[]): P
       posicao.set(chave, saida.length);
       saida.push(imp);
     } else if (imp.pedidoSoDeBebida === true && saida[ondeEsta].pedidoSoDeBebida !== true) {
+      saida[ondeEsta] = imp;
+    } else if (
+      imp.soPedidoDeMesa === true &&
+      saida[ondeEsta].soPedidoDeMesa !== true &&
+      saida[ondeEsta].pedidoSoDeBebida !== true
+    ) {
+      // A linha "Só pedidos de mesa" só chega aqui com pedido de mesa
+      // (`impressorasPeloTipoDoPedido`): é a regra que a loja fez para ele.
       saida[ondeEsta] = imp;
     }
   }
@@ -470,7 +513,7 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   // (27/09/2026): na Ragnar, todo pedido de mesa passou a sair também no
   // balcão ou no bar do andar — "deveria imprimir só no burger".
   const validas = impressorasDaLoja(
-    (impressoras || []).filter((p) => p && texto(p.name)),
+    impressorasPeloTipoDoPedido((impressoras || []).filter((p) => p && texto(p.name)), pedido as any),
     pedido as PedidoComOrigem
   );
 
@@ -542,7 +585,10 @@ export function impressoraDaViaDoEntregador<T extends ImpressoraConfigurada>(
   recebem?: { nome: string | null | undefined; itens: number }[]
 ): T | null {
   if (!ehEntregaDaLoja(pedido as any)) return null;
-  const daLoja = impressorasDaLoja((impressoras || []).filter((p) => p && texto(p.name)), pedido);
+  const daLoja = impressorasDaLoja(
+    impressorasPeloTipoDoPedido((impressoras || []).filter((p) => p && texto(p.name)), pedido as any),
+    pedido
+  );
   const modulo = moduloDoPedido(pedido?.source as any);
   const doModulo = daLoja.filter((imp) => impressoraAtendeModulo(imp.modulos as any, modulo));
   const candidatas = doModulo.length > 0 ? doModulo : daLoja;
