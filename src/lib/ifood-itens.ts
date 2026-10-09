@@ -60,11 +60,53 @@ function opcoesDoItem(i: any): OpcaoDoItem[] {
   if (!Array.isArray(lista) || lista.length === 0) return [];
   return lista
     .map((s: any) => ({
-      name: s?.name || s?.label || s?.productName || "",
+      name: nomeDaOpcaoDePizza(s?.name || s?.label || s?.productName || ""),
       quantity: s?.quantity || 1,
       price: s?.price || s?.unitPrice || s?.addition || 0,
     }))
     .filter((s: OpcaoDoItem) => s.name);
+}
+
+/**
+ * A opção de massa e borda da pizza, como a cozinha precisa ler.
+ *
+ * O iFood monta o nome sozinho, "Massa <massa> + Borda <borda>", juntando o
+ * prefixo ao nome que a loja deu. Loja que chamou a massa de "Massa Artesanal"
+ * e a borda de "Borda Catupiry" recebe "Massa Massa Artesanal + Borda Borda
+ * Catupiry"; borda vazia vem "Borda : Sem Borda". E, às vezes, duas bordas no
+ * mesmo texto: Ragnar, pedido 8069 de 09/10/2026, "Massa Massa Artesanal +
+ * Borda Catupiry + Borda Tradicional" (R$ 22, o preço da Catupiry). A cozinha
+ * leu "Tradicional" e a pizza saiu sem a borda que o cliente pagou.
+ *
+ * Aqui: tira o prefixo repetido, troca "Borda : Sem Borda" por "Sem Borda" e,
+ * quando há uma borda recheada junto da tradicional (ou de "sem borda"), fica
+ * só a recheada. Só mexe no texto com a cara do modelo do iFood (começa por
+ * "Massa" e tem "+ Borda"); qualquer outra opção passa intacta.
+ */
+export function nomeDaOpcaoDePizza(nome: string): string {
+  const texto = String(nome || "").trim();
+  if (!/^massa\b/i.test(texto) || !/\+\s*borda\b/i.test(texto)) return texto;
+
+  const partes = texto
+    .split(/\s+\+\s+/)
+    .map((p) =>
+      p
+        .replace(/^(massa)\s+massa\b/i, "$1")
+        .replace(/^(borda)\s+borda\b/i, "$1")
+        .replace(/^borda\s*:\s*(sem borda)$/i, "$1")
+        .trim()
+    )
+    .filter(Boolean);
+
+  const ehBorda = (p: string) => /^(borda\b|sem borda$)/i.test(p);
+  const semRecheio = (p: string) => /^(borda\s+(tradicional|simples|comum|normal)|sem borda)$/i.test(p);
+  const bordas = partes.filter(ehBorda);
+  const recheadas = bordas.filter((p) => !semRecheio(p));
+  const ficam = bordas.length > 1 && recheadas.length > 0
+    ? partes.filter((p) => !ehBorda(p) || !semRecheio(p))
+    : partes;
+
+  return ficam.join(" + ");
 }
 
 /** Nome do item como o iFood mandou. Nunca vem do nosso banco. */
