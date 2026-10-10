@@ -11,7 +11,8 @@
  * - a MEDIANA e o "9 em cada 10 em até", que um pedido esquecido não arrasta;
  * - o prazo com as faixas de alerta que o próprio lojista configurou no painel,
  *   e a lista dos que estouraram com quanto passaram;
- * - o tempo de preparo por PRODUTO, que sai do pronto por item do KDS.
+ * - o tempo de preparo por PRODUTO, que sai das baixas de cada tela do KDS —
+ *   o percurso completo (montagem + forno) e, aberto, tela por tela.
  */
 import React, { useMemo, useState } from "react";
 import { PALETA } from "@/lib/paleta-brasa";
@@ -114,14 +115,14 @@ function Cobertura({ e }: { e: ResumoDaEtapa }) {
 
 export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
   const opcoes = useOpcoesDosFiltros();
-  // `medir`: até onde a produção por produto mede ("" = o pronto da produção,
-  // "finalizacao", "tela:<chave>") — ver lib/relatorios/tempos.ts, MedirAte.
+  // `medir`: até onde a produção por produto mede ("" = o percurso completo,
+  // "producao" = só a montagem, "tela:<chave>") — ver lib/relatorios/tempos.ts, MedirAte.
   // Não pode se chamar `ate`: esse é a data final do período na URL.
   const { filtros, mudar, extras, mudarExtra, query } = useFiltros(inicio, "7d", { apenasAtrasados: "", medir: "" });
   const { dados, carregando, erro, recarregar } = useRelatorio<Resposta>("tempos", query);
   const apenasAtrasados = extras.apenasAtrasados !== "0";
   const telas = dados?.telas || [];
-  const medirAte: MedirAte = dados?.medirAte || { tipo: "producao" };
+  const medirAte: MedirAte = dados?.medirAte || { tipo: "completo" };
 
   const [abertos, setAbertos] = useState<Set<string>>(new Set());
   const [busca, setBusca] = useState("");
@@ -402,8 +403,8 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
           <h2 style={{ fontSize: "1.15rem", fontWeight: 900, margin: "2rem 0 0.4rem" }}>Tempo de produção por produto</h2>
           <p style={{ margin: "0 0 0.8rem", fontSize: "0.84rem", color: PALETA.areiaTinta, maxWidth: 820 }}>
             Da entrada do pedido na cozinha (a tela do KDS; balcão e mesa, a hora do lançamento) até <strong>{rotuloDoMedirAte(medirAte)}</strong>.
-            {medirAte.tipo === "producao" && " Na loja com produção e finalização separadas (montagem e forno), é só a produção — escolha “Finalização” em “Medir até” para o percurso completo."}
-            {medirAte.tipo === "finalizacao" && " O percurso completo do item: produção e finalização (montagem e forno), até a baixa da tela de finalização que o mostra."}
+            {medirAte.tipo === "completo" && " É o tempo total dentro da cozinha. O que nenhuma tela mostra (bebida) não entra, e o item que saiu sem a baixa da finalização fica sem medição — a montagem sozinha não é o percurso inteiro."}
+            {medirAte.tipo === "producao" && " Na loja com produção e finalização separadas (montagem e forno), é só a montagem: o forno não entra."}
             {medirAte.tipo === "tela" && " Só os itens que essa tela mostra, até a baixa dela."}
           </p>
           {/* Até onde medir — NIK, 09/10/2026: "esses tempos aí está só de montagem e não está a finalização do forno". */}
@@ -411,8 +412,8 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
             <label style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.82rem", fontWeight: 800, color: PALETA.carvao }}>
               Medir até
               <select name="medir" value={extras.medir} onChange={(e) => mudarExtra("medir", e.target.value)} style={campoSelect}>
-                <option value="">Pronto da produção (a baixa da tela de produção)</option>
-                <option value="finalizacao">Finalização — o percurso completo</option>
+                <option value="">Percurso completo — o total dentro da cozinha</option>
+                <option value="producao">Só a produção (a montagem, sem o forno)</option>
                 {telas.length > 0 && (
                   <optgroup label="Uma tela do KDS">
                     {telas.map((t) => (
@@ -439,7 +440,7 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
             <Cartao rotulo="Mediana por item" valor={fmtMin(dados.producao.mediana)} detalhe={dados.producao.medidos ? `9 em cada 10 em até ${fmtMin(dados.producao.p90)}` : "Nenhum item com pronto no período"} />
             <Cartao rotulo="Itens medidos" valor={fmtQtd(dados.producao.quantidade)} detalhe={`${dados.producao.medidos.toLocaleString("pt-BR")} linhas de pedido`} />
             <Cartao rotulo="O mais demorado" valor={fmtMin(dados.producao.maximo)}
-              detalhe={dados.producao.semPronto ? `${dados.producao.semPronto} itens ${medirAte.tipo === "producao" ? "sem pronto (não passam pela produção)" : "que essa baixa não mediu"} ficaram de fora` : undefined} />
+              detalhe={dados.producao.semPronto ? `${dados.producao.semPronto} itens ${medirAte.tipo === "producao" ? "sem pronto (não passam pela produção)" : medirAte.tipo === "completo" ? "sem o percurso completo (bebida, ou saiu sem a baixa da finalização)" : "que essa baixa não mediu"} ficaram de fora` : undefined} />
           </GradeDeCartoes>
 
           <div className="fh-sem-impressao" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: "0.8rem" }}>
@@ -472,20 +473,21 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
 
           </div>
 
-          <Bloco titulo="Por hora do dia" subtitulo="Hora em que o pedido entrou na cozinha. Toque na hora para ver os pedidos, o mais demorado primeiro." semPadding>
+          <Bloco titulo="Por hora do dia" subtitulo={`Hora em que o pedido entrou na cozinha. O tempo do pedido vai até ${rotuloDoMedirAte(medirAte)}. Toque na hora para ver os pedidos, o mais demorado primeiro, com a hora de cada tela.`} semPadding>
             {dados.producao.porHora.length === 0 ? <Vazio texto="Nenhum item com pronto no período." /> : (
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", minWidth: 640 }}>
                   <thead>
                     <tr style={cabecaDaTabela}>
-                      <th style={th}>Hora</th><th style={{ ...th, ...num }}>Pedidos</th><th style={{ ...th, ...num }}>Média</th>
+                      <th style={th}>Hora</th><th style={{ ...th, ...num }}>Pedidos</th>
+                      <th style={{ ...th, ...num }}>{medirAte.tipo === "completo" ? "Média total" : medirAte.tipo === "producao" ? "Média da montagem" : "Média"}</th>
                       <th style={{ ...th, width: 90 }} aria-label="Média em barra" />
                       <th style={th}>Mais rápido</th><th style={th}>Mais demorado</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dados.producao.porHora.map((x) => (
-                      <LinhasDaHora key={x.hora} x={x} aberto={abertos.has(`h:${x.hora}`)} alternar={() => alternar(`h:${x.hora}`)}
+                      <LinhasDaHora key={x.hora} x={x} medirAte={medirAte} aberto={abertos.has(`h:${x.hora}`)} alternar={() => alternar(`h:${x.hora}`)}
                         escala={Math.max(1, ...dados.producao.porHora.map((y) => y.mediaDoPedido || 0))} />
                     ))}
                   </tbody>
@@ -496,7 +498,7 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
 
           <p style={{ fontSize: "0.78rem", color: PALETA.areiaTinta, marginTop: "0.2rem", lineHeight: 1.5 }}>
             O pronto é da <strong>tela</strong> do KDS: quando o cozinheiro dá baixa, todos os itens daquela tela ganham a mesma hora — um produto que sai junto com outro mais demorado herda o tempo dele.
-            {" "}Qtd. são unidades; a mediana é por linha de pedido (“10 esfihas” é uma medição). Na hora do dia, o tempo do pedido vai da entrada na cozinha até o último item dele chegar em {rotuloDoMedirAte(medirAte)}. Agendados não entram.
+            {" "}Qtd. são unidades; a mediana é por linha de pedido (“10 esfihas” é uma medição). Na hora do dia, o tempo do pedido vai da entrada na cozinha até o último item dele chegar em {rotuloDoMedirAte(medirAte)}; no percurso completo, a linha de baixo da média mostra quanto disso foi a montagem. Agendados não entram.
             {" "}“Na produção” e “Na finalização”, lá em cima, são as duas pernas de “Na cozinha” por pedido: até o último item ganhar o pronto da produção e, daí, até a cozinha finalizar.
           </p>
         </>
@@ -586,7 +588,7 @@ function RotuloDoPedido({ p, comDia }: { p: PedidoDaProducao; comDia: boolean })
  * que era o que a NIK olhava na Saipos ("teve um pedido que demorou 10 minutos
  * na montagem: qual pedido, qual sabor, qual horário").
  */
-function LinhasDaHora({ x, aberto, alternar, escala }: { x: HoraDaProducao; aberto: boolean; alternar: () => void; escala: number }) {
+function LinhasDaHora({ x, medirAte, aberto, alternar, escala }: { x: HoraDaProducao; medirAte: MedirAte; aberto: boolean; alternar: () => void; escala: number }) {
   const temPedidos = x.lista.length > 0;
   // Mais de um dia no período: o pedido precisa do dia para ser achado.
   const comDia = new Set(x.lista.map((p) => p.dia)).size > 1 || (x.maisRapido?.dia !== x.maisDemorado?.dia);
@@ -605,7 +607,11 @@ function LinhasDaHora({ x, aberto, alternar, escala }: { x: HoraDaProducao; aber
           {String(x.hora).padStart(2, "0")}h
         </td>
         <td style={{ ...td, ...num }}>{fmtQtd(x.pedidos)}</td>
-        <td style={{ ...td, ...num, fontWeight: 900 }}>{fmtMin(x.mediaDoPedido)}</td>
+        <td style={{ ...td, ...num }}>
+          <div style={{ fontWeight: 900 }}>{fmtMin(x.mediaDoPedido)}</div>
+          {/* "É o total ou só a montagem?" (Danilo, NIK, 10/10/2026): a parte da montagem embaixo. */}
+          {medirAte.tipo === "completo" && x.mediaDaProducao !== null && <div style={suave}>montagem {fmtMin(x.mediaDaProducao)}</div>}
+        </td>
         <td style={{ ...td, paddingTop: 14 }}><BarraDeMinutos valor={x.mediaDoPedido} escala={escala} cor={PALETA.carvao2} /></td>
         <td style={td}>{celulaDoPedido(x.maisRapido, PALETA.ok)}</td>
         <td style={td}>{celulaDoPedido(x.maisDemorado, PALETA.grave)}</td>
@@ -620,6 +626,13 @@ function LinhasDaHora({ x, aberto, alternar, escala }: { x: HoraDaProducao; aber
                   <RotuloDoPedido p={p} comDia={comDia} />
                   <span style={suave}>{ROTULO_DO_TIPO[p.tipo]}</span>
                 </div>
+                {p.passos.length > 0 && (
+                  <div style={{ marginLeft: 62, fontSize: "0.76rem", color: PALETA.areiaTinta, fontVariantNumeric: "tabular-nums" }}>
+                    {p.passos.map((s, k) => (
+                      <span key={k}>{k > 0 ? " → " : ""}{s.nome} <strong style={{ color: PALETA.carvao2 }}>aos {fmtMin(s.minutos)}</strong></span>
+                    ))}
+                  </div>
+                )}
                 <div style={{ marginLeft: 62, fontSize: "0.8rem", color: PALETA.carvao2 }}>
                   {p.itens.map((i, k) => (
                     <div key={k}>
