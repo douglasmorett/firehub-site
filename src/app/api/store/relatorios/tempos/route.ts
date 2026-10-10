@@ -71,9 +71,11 @@ export async function GET(req: NextRequest) {
   ]);
   const aceitaSozinha = new Set(lojas.filter((l) => l.autoAcceptOrders).map((l) => l.id));
 
-  // Até onde a produção por produto mede: `medir=finalizacao` (o percurso
-  // completo) ou `medir=tela:<chave>` (a baixa de uma tela do KDS); ausente =
-  // o pronto da produção, como sempre foi. (`ate` é a data final do período.)
+  // Até onde a produção por produto mede: ausente = o percurso completo na
+  // cozinha (a última tela que mostrou o item — o padrão desde 10/10/2026);
+  // `medir=producao` = só o pronto da produção (a montagem); `medir=tela:<chave>`
+  // = a baixa de uma tela do KDS. `finalizacao` era o nome antigo do completo.
+  // (`ate` é a data final do período.)
   const telasDoKds = lojas.flatMap((l) =>
     (Array.isArray(l.kdsScreens) ? (l.kdsScreens as any[]) : []).map((t) => ({
       chave: chaveDaTela(t),
@@ -84,8 +86,8 @@ export async function GET(req: NextRequest) {
     })),
   ).filter((t) => t.chave);
   const medir = sp.get("medir") || "";
-  let medirAte: MedirAte = { tipo: "producao" };
-  if (medir === "finalizacao") medirAte = { tipo: "finalizacao" };
+  let medirAte: MedirAte = { tipo: "completo" };
+  if (medir === "producao") medirAte = { tipo: "producao" };
   else if (medir.startsWith("tela:")) {
     const t = telasDoKds.find((x) => x.chave === medir.slice("tela:".length));
     if (t) medirAte = { tipo: "tela", chave: t.chave, nome: t.nome, estagio: t.estagio, categorias: t.categorias };
@@ -119,6 +121,7 @@ export async function GET(req: NextRequest) {
         return {
           id: i.id,
           nome, categoria,
+          semCategoria: categoria === SEM_CATEGORIA,
           chave: `${categoria}:${chaveDoNome(nome) || nome.toLowerCase()}`,
           produtoId: i.menuProductId || i.menuProduct?.id || null,
           quantidade: Number(i.quantity) || 0,
@@ -141,6 +144,7 @@ export async function GET(req: NextRequest) {
     limiteDaLista: planilha ? Number.MAX_SAFE_INTEGER : LIMITE_DA_LISTA_NA_TELA,
     limitePorHora: planilha ? 0 : undefined,
     medirAte,
+    telas: telasDoKds.map((t) => ({ chave: t.chave, estagio: t.estagio, categorias: t.categorias })),
   };
   const resultado = temposDoRelatorio(paraConta, cfg);
   const cabecalho = cabecalhoDoRelatorio(ctx);
@@ -168,7 +172,7 @@ export async function GET(req: NextRequest) {
     ctx.filtros.marcas.length ? `Marca: ${ctx.filtros.marcas.map((m) => nomeDaMarca.get(m) || m).join(", ")}` : "",
     ctx.filtros.categorias.length ? `Pedidos com: ${ctx.filtros.categorias.join(", ")}` : "",
     ctx.filtros.produtos.length ? `${ctx.filtros.produtos.length} produto(s) marcado(s)` : "",
-    medirAte.tipo !== "producao" ? `Produção medida até ${rotuloDoMedirAte(medirAte)}` : "",
+    `Produção medida até ${rotuloDoMedirAte(medirAte)}`,
   ].filter(Boolean).join(" · ");
   const alertas = [
     limites.amareloAtivo ? `amarelo com até ${limites.amareloMin} min de folga` : "amarelo desligado",
@@ -291,8 +295,8 @@ export async function GET(req: NextRequest) {
     ...pr.categorias.flatMap((c) => [linhaDaProducao(c, 0, c.nome), ...(c.filhos || []).map((f) => linhaDaProducao(f, 1, c.nome))]),
     { celulas: [{ v: "TOTAL", estilo: "negrito" }, "", "", qtd(pr.medidos, true), qtd(pr.quantidade, true), min(pr.minimo), min(pr.mediana, true), min(pr.media), min(pr.p90), min(pr.maximo)] },
     { celulas: [] },
-    { celulas: [{ v: `Da entrada do pedido na cozinha (a tela do KDS; balcão e mesa, a hora do lançamento) até ${rotuloDoMedirAte(medirAte)}. O pronto é da TELA: os itens da mesma tela ganham a mesma hora na baixa.${medirAte.tipo === "producao" ? " Na loja com produção e finalização separadas (montagem e forno), é só a produção — escolha 'Finalização' em 'Medir até' para o percurso completo." : ""}`, estilo: "suave" }] },
-    { celulas: [{ v: `Medição = uma linha de pedido ("10 esfihas" é uma medição e 10 unidades). ${medirAte.tipo === "producao" ? "Itens sem pronto (bebida só na finalização, por exemplo)" : "Itens que essa baixa não mediu"}: ${pr.semPronto}. Fora da curva (pronto fora de ordem, a mais de 4 h, ou de pedido que a cozinha só finalizou horas depois): ${pr.foraDaCurva}. Agendados não entram.`, estilo: "suave" }] },
+    { celulas: [{ v: `Da entrada do pedido na cozinha (a tela do KDS; balcão e mesa, a hora do lançamento) até ${rotuloDoMedirAte(medirAte)}. O pronto é da TELA: os itens da mesma tela ganham a mesma hora na baixa.${medirAte.tipo === "producao" ? " Na loja com produção e finalização separadas (montagem e forno), é só a montagem — o padrão 'Medir até: percurso completo' vai até a finalização." : ""}`, estilo: "suave" }] },
+    { celulas: [{ v: `Medição = uma linha de pedido ("10 esfihas" é uma medição e 10 unidades). ${medirAte.tipo === "producao" ? "Itens sem pronto (bebida só na finalização, por exemplo)" : medirAte.tipo === "completo" ? "Itens sem o percurso completo (o que nenhuma tela mostrou, como a bebida, ou o que saiu sem a baixa da finalização)" : "Itens que essa baixa não mediu"}: ${pr.semPronto}. Fora da curva (pronto fora de ordem, a mais de 4 h, ou de pedido que a cozinha só finalizou horas depois): ${pr.foraDaCurva}. Agendados não entram.`, estilo: "suave" }] },
     ...(avisos.periodoAntesDoProntoPorItem ? [{ celulas: [{ v: `O pronto por item existe desde ${fmtDia(DIA_DO_PRONTO_POR_ITEM)}: antes disso não há medição.`, estilo: "suave" as const }] }] : []),
     ...(medirAte.tipo !== "producao" && avisos.periodoAntesDasBaixas ? [{ celulas: [{ v: `A hora de cada baixa por tela existe desde ${fmtDia(DIA_DAS_BAIXAS_POR_TELA)}: antes disso a finalização é a do pedido inteiro (a última tela a dar baixa), e uma tela de finalização só é medida no pedido em que foi a única a dar baixa.`, estilo: "suave" as const }] }] : []),
   ];
@@ -303,17 +307,17 @@ export async function GET(req: NextRequest) {
     x ? `${fmtDia(x.dia).slice(0, 5)} ${x.entrada} · ${x.numero != null ? `#${x.numero}` : "sem número"}${x.referencia ? ` (${x.referencia})` : ""}` : "";
   const abaPorHora: LinhaDaPlanilha[] = [
     ...topo("Tempo de produção por hora do dia"),
-    { celulas: ["Hora", "Pedidos", "Média do pedido", "Mais rápido", "Tempo", "Mais demorado", "Tempo", "Itens", "Mediana por item", "90% em até"], estilo: "cabecalho" },
+    { celulas: ["Hora", "Pedidos", "Média do pedido", "Média só da produção", "Mais rápido", "Tempo", "Mais demorado", "Tempo", "Itens", "Mediana por item", "90% em até"], estilo: "cabecalho" },
     ...pr.porHora.map((x) => ({
       celulas: [
-        `${String(x.hora).padStart(2, "0")}h`, qtd(x.pedidos), min(x.mediaDoPedido, true),
+        `${String(x.hora).padStart(2, "0")}h`, qtd(x.pedidos), min(x.mediaDoPedido, true), min(x.mediaDaProducao),
         qualPedido(x.maisRapido), min(x.maisRapido?.minutos), qualPedido(x.maisDemorado), min(x.maisDemorado?.minutos),
         qtd(x.quantidade), min(x.mediana), min(x.p90),
       ] as Celula[],
     })),
     { celulas: [] },
     { celulas: [{ v: "A hora é a da entrada do pedido na cozinha, no relógio da loja; da 0h às 4h é o fim do expediente do dia anterior.", estilo: "suave" }] },
-    { celulas: [{ v: "Tempo do pedido: da entrada na cozinha até o ÚLTIMO item dele ficar pronto no KDS. Mediana por item: cada linha de pedido é uma medição.", estilo: "suave" }] },
+    { celulas: [{ v: `Tempo do pedido: da entrada na cozinha até o ÚLTIMO item dele chegar em ${rotuloDoMedirAte(medirAte)}. Média só da produção: os mesmos pedidos até o último pronto da tela de produção (a montagem). Mediana por item: cada linha de pedido é uma medição.`, estilo: "suave" }] },
   ];
 
   const buffer = montarPlanilha([
@@ -321,7 +325,7 @@ export async function GET(req: NextRequest) {
     { nome: "Por dia", congelarLinhas: 6, larguras: [12, 13, 10, 17, 12, 13, 14, 22, 10, 16, 14, 17, 18, 13], linhas: abaPorDia },
     { nome: "Pedidos", congelarLinhas: 6, larguras: [12, 7, 7, 15, 12, 10, 10, 13, 13, 14, 19, 20, 17, 12, 13, 14, 22, 10, 16, 14], linhas: abaPedidos },
     { nome: "Produção por produto", congelarLinhas: 6, larguras: [44, 11, 24, 11, 12, 10, 10, 10, 12, 10], linhas: abaProducao },
-    { nome: "Produção por hora", congelarLinhas: 6, larguras: [8, 10, 15, 30, 9, 30, 9, 10, 16, 12], linhas: abaPorHora },
+    { nome: "Produção por hora", congelarLinhas: 6, larguras: [8, 10, 15, 18, 30, 9, 30, 9, 10, 16, 12], linhas: abaPorHora },
   ]);
   return respostaDePlanilha(buffer, `tempos_${ctx.filtros.de}_a_${ctx.filtros.ate}.xlsx`);
 }
