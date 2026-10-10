@@ -1093,6 +1093,15 @@ export async function verifyStoreDeliveryAddress(
       const r = await buscarLivre(consultaDoBairro);
       if (!r.ok || !r.valor) return r;
       const v = r.valor;
+      // ── BAIRRO DE MESMO NOME EM OUTRA CIDADE NÃO É O BAIRRO ─────────────
+      // Pizzaria do Costa (São Paulo, 09/10/2026): "Jardim Catanduva, sao
+      // paulo" casou o ESTADO de São Paulo e voltou o "Jardim Nova Catanduva"
+      // da cidade de Catanduva, a ~280 km. Esse ponto virou a régua: a rua do
+      // cliente, achada a 0,7 km da loja, saiu como "longe do bairro" e a
+      // cotação terminou em "não localizamos esse endereço". Centro de bairro
+      // muito além da área de entrega é homônimo: fica valendo a rua.
+      const longeDaLoja = Math.max(30, 3 * maxRadiusKm);
+      if (haversineDistanceKm(loja.lat, loja.lng, v.lat, v.lng) > longeDaLoja) return { ok: true, valor: null };
       const ehOBairro = v.nivel === "area" || (!!nomeDeBairro(v.bairro || "") && bairroConfere(neigh, v.bairro));
       return ehOBairro ? r : { ok: true, valor: null };
     };

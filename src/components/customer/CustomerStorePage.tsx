@@ -1951,7 +1951,7 @@ export default function CustomerStorePage({
     try {
       // Sem prazo, um Nominatim lento prendia o "Localizando..." para sempre.
       const prazo = typeof AbortSignal !== "undefined" && typeof (AbortSignal as any).timeout === "function"
-        ? (AbortSignal as any).timeout(6000) as AbortSignal
+        ? (AbortSignal as any).timeout(4000) as AbortSignal
         : undefined;
       const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${ponto.lat}&lon=${ponto.lng}&addressdetails=1`, {
         headers: { "Accept-Language": "pt-BR" },
@@ -2011,8 +2011,25 @@ export default function CustomerStorePage({
       return;
     }
     setGpsLoading(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
+    // ── O GPS NÃO PODE PRENDER O CLIENTE ──────────────────────────────────
+    // Pizzaria do Costa (09/10/2026): "fica localizando e dá erro". Dentro de
+    // casa o GPS de alta precisão estoura as 8 s e o cliente via o erro
+    // genérico. Agora: vale a localização do último minuto (maximumAge), e
+    // quem estourou o tempo tenta UMA vez no modo rápido (rede/wi-fi) antes de
+    // desistir. Permissão negada tem a própria mensagem.
+    const aoFalhar = (err: GeolocationPositionError, jaTentouORapido: boolean) => {
+      if (err?.code === 3 /* TIMEOUT */ && !jaTentouORapido) {
+        navigator.geolocation.getCurrentPosition(aoAchar, (e) => aoFalhar(e, true), { enableHighAccuracy: false, timeout: 6000, maximumAge: 300000 });
+        return;
+      }
+      setGpsLoading(false);
+      avisar(err?.code === 1 /* PERMISSION_DENIED */
+        ? { tipo: "erro", titulo: "A localização está bloqueada", texto: "Libere a localização para este site nas configurações do navegador — ou preencha rua, número e bairro." }
+        // "Digite seu endereço" era beco sem saída para quem chegou aqui
+        // porque o endereço digitado não foi achado (pedirGps).
+        : { tipo: "erro", titulo: "Não consegui pegar sua localização", texto: "Confira se a localização do celular está ligada — ou preencha rua, número e bairro." });
+    };
+    const aoAchar = async (pos: GeolocationPosition) => {
         try {
           const ponto: PontoDoCliente = { lat: pos.coords.latitude, lng: pos.coords.longitude, origem: "gps" };
           if (!gpsEhPreciso(pos.coords.accuracy)) {
@@ -2034,19 +2051,8 @@ export default function CustomerStorePage({
         } finally {
           setGpsLoading(false);
         }
-      },
-      () => {
-        setGpsLoading(false);
-        // "Digite seu endereço" era beco sem saída para quem chegou aqui
-        // porque o endereço digitado não foi achado (pedirGps).
-        avisar({
-          tipo: "erro",
-          titulo: "Não consegui pegar sua localização",
-          texto: "Confira se a localização do celular está ligada e liberada para este site — ou preencha rua, número e bairro.",
-        });
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
+    };
+    navigator.geolocation.getCurrentPosition(aoAchar, (e) => aoFalhar(e, false), { enableHighAccuracy: true, timeout: 8000, maximumAge: 60000 });
   };
 
   /** O cliente tocou "É aqui" no mapa: o pino vira o ponto dele, e a cotação é refeita com ele. */
