@@ -102,6 +102,8 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     amount: number; url: string | null; isOverdue: boolean;
     /** "05/10" — o vencimento impresso no boleto. */
     venceEm: string;
+    /** "setembro de 2026" — o mês de uso que esta mensalidade cobra. */
+    referenteA: string;
     /** Dias de calendário até o vencimento; negativo depois dele. */
     diasParaVencer: number;
     ocorrencia: string;
@@ -140,6 +142,11 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           url: closedCycle.asaasBoletoUrl,
           isOverdue,
           venceEm: diaEMes(venc.dia),
+          referenteA: (() => {
+            const [ano, mes] = closedCycle.yearMonth.split("-").map(Number);
+            const nome = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"][mes - 1];
+            return nome ? `${nome} de ${ano}` : closedCycle.yearMonth;
+          })(),
           diasParaVencer,
           // Para o "não ver mais" (components/customer/NaoVerMais.tsx): cala
           // ESTA fatura — e volta uma vez perto do vencimento e outra depois
@@ -342,7 +349,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
                   loja abre a fatura para ver quanto é — e o Asaas registra que
                   ela abriu (Douglas, 09/10/2026). */}
               <p style={{ color: "#64748B", fontSize: "0.95rem", lineHeight: 1.6, marginBottom: "1.5rem" }}>
-                A mensalidade venceu em {pendingPayment!.venceEm} e não foi paga. Pague o boleto para liberar o sistema.
+                A mensalidade referente a <strong>{pendingPayment!.referenteA}</strong> venceu em {pendingPayment!.venceEm} e não foi paga. Pague o boleto para liberar o sistema.
               </p>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
