@@ -338,16 +338,12 @@ export default async function StoreLayout({ children }: { children: React.ReactN
             <div style={{ background: "#fff", borderRadius: 20, padding: "2.5rem", maxWidth: 500, width: "100%", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)" }}>
               <div style={{ fontSize: "3.5rem", marginBottom: "0.75rem" }}>🔒</div>
               <h2 style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F172A", marginBottom: "0.5rem" }}>Sua conta está bloqueada</h2>
-              <p style={{ color: "#64748B", fontSize: "0.92rem", lineHeight: 1.6, marginBottom: "1.5rem" }}>
-                A mensalidade venceu em {pendingPayment!.venceEm} e não foi paga. Para liberar o sistema imediatamente, pague o boleto: o valor abaixo, mais os juros e a multa do atraso.
+              {/* Sem o valor e sem falar de juros: tudo isso está no boleto. A
+                  loja abre a fatura para ver quanto é — e o Asaas registra que
+                  ela abriu (Douglas, 09/10/2026). */}
+              <p style={{ color: "#64748B", fontSize: "0.95rem", lineHeight: 1.6, marginBottom: "1.5rem" }}>
+                A mensalidade venceu em {pendingPayment!.venceEm} e não foi paga. Pague o boleto para liberar o sistema.
               </p>
-
-              <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 14, padding: "1.25rem", marginBottom: "1.5rem" }}>
-                <div style={{ fontSize: "0.8rem", color: "#B71C1C", fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.5 }}>Para liberar pague o valor de:</div>
-                <div style={{ fontSize: "2.4rem", fontWeight: 900, color: "#C92E09", marginTop: 4 }}>
-                  R$ {pendingPayment!.amount.toFixed(2).replace(".", ",")}
-                </div>
-              </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
                 {/* Abre a FATURA do Asaas (boleto, Pix e cartão) em outra aba.
