@@ -13,9 +13,27 @@
  * filtro dá um valor, sem filtro dá outro" — então os dois chamam esta.
  *
  * A diária fica de fora: ela é por DIA trabalhado, não se divide por canal.
+ *
+ * ── Em que caixa cai cada entrega ───────────────────────────────────────────
+ * A forma de pagamento sai da régua do FECHAMENTO DE CAIXA
+ * (lib/relatorios/formas-de-pagamento.ts, `formaDoPedido`), não de uma leitura
+ * própria. A leitura antiga daqui procurava pedaços de palavra na ordem
+ * dinheiro → débito → vale → cartão, e o resto virava "Pago Online":
+ *   • "Cartão (Pago Online)", "Débito (Pago Online)", "Vale Refeição (Pago
+ *     Online)" — pagos no app — iam para a MAQUININHA;
+ *   • o Pix pago na porta ("Pix" trocado na entrega, "PIX_ENTREGA" do site),
+ *     "A combinar (Cobrar na Entrega)" e o pedido sem forma iam para o PAGO
+ *     ONLINE.
+ * A Delícia de Casa somou as notas pagas online de um motoboy e o quadrado
+ * "Pago Online" dava outro valor, "mais de uma nota" de diferença, sem ter
+ * como achar quais (Fellipe, 10/10/2026). Agora cada entrega cai na caixa que
+ * o caixa daria a ela, e a tela marca a caixa na linha de cada entrega
+ * (`partesDaEntrega`) — a soma das linhas marcadas é o quadrado.
  */
 import { toLocalISODate } from "@/lib/timezone";
 import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
+import { formaDoPedido, formaDoTexto, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
+import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
 
@@ -26,11 +44,6 @@ type PedidoDoDinheiro = {
   totalAmount?: number | null;
   changeAmount?: number | null;
   notes?: string | null;
-};
-
-export const ehDinheiro = (paymentMethod: string | null | undefined) => {
-  const pm = String(paymentMethod || "").toUpperCase();
-  return pm === "CASH" || pm.includes("DINHEIR");
 };
 
 /**
@@ -53,7 +66,57 @@ export function trocoParaDoPedido(o: PedidoDoDinheiro): number | null {
   return null;
 }
 
-export type EntregaDoResumo = PedidoDoDinheiro & {
+/** O que a régua do caixa lê para decidir a forma de uma entrega. */
+export type EntregaParaCaixa = PedidoDoDinheiro & {
+  source?: string | null;
+  paymentPaidAt?: Date | string | null;
+  gatewayProvider?: string | null;
+  openDeliveryChannel?: string | null;
+  /** Pagamento dividido (troca de pagamento na loja ou no app): manda no texto. */
+  paymentMethods?: unknown;
+};
+
+/** As caixas do acerto, na ordem da tela. As três últimas só aparecem com valor. */
+export const CAIXAS_DO_ACERTO: { chave: ChaveDaForma; rotulo: string; curto: string }[] = [
+  { chave: "DINHEIRO", rotulo: "💵 Dinheiro (em mãos)", curto: "💵 Dinheiro" },
+  { chave: "DEBITO", rotulo: "💳 Débito (Máquina)", curto: "💳 Débito" },
+  { chave: "CREDITO", rotulo: "💳 Crédito (Máquina)", curto: "💳 Crédito" },
+  { chave: "VALE", rotulo: "🎟️ Voucher (Vale)", curto: "🎟️ Vale" },
+  { chave: "PIX", rotulo: "📲 Pix na entrega", curto: "📲 Pix na entrega" },
+  { chave: "ONLINE", rotulo: "⚡ Pago Online", curto: "⚡ Pago Online" },
+  { chave: "FIADO", rotulo: "📒 Fiado", curto: "📒 Fiado" },
+  { chave: "OUTROS", rotulo: "❓ Forma não identificada", curto: "❓ Não identificada" },
+];
+
+/** Um pedaço do pagamento de uma entrega: em que caixa cai e quanto. */
+export type ParteDaEntrega = {
+  caixa: ChaveDaForma;
+  valor: number;
+  /** Só no dinheiro: a nota com que o cliente pagou ("troco para 100"). */
+  trocoPara: number | null;
+};
+
+/**
+ * Em que caixa do acerto cai cada real desta entrega. Pagamento dividido vai
+ * parte por parte (cada uma pela forma escrita nela, como o caixa faz); o
+ * resto é UMA parte, pela cascata do caixa. No dinheiro dividido, o troco é o
+ * `changeAmount` — a observação "troco para 50" fala do pedido inteiro, não
+ * da parte.
+ */
+export function partesDaEntrega(o: EntregaParaCaixa): ParteDaEntrega[] {
+  const divisao = lerPagamentos(o.paymentMethods);
+  if (divisao.length > 0) {
+    return divisao.map((p) => {
+      const caixa = formaDoTexto(p.method);
+      const nota = Number(o.changeAmount || 0);
+      return { caixa, valor: p.amount, trocoPara: caixa === "DINHEIRO" && nota > p.amount ? nota : null };
+    });
+  }
+  const caixa = formaDoPedido(o);
+  return [{ caixa, valor: Number(o.totalAmount || 0), trocoPara: caixa === "DINHEIRO" ? trocoParaDoPedido(o) : null }];
+}
+
+export type EntregaDoResumo = EntregaParaCaixa & {
   status?: string | null;
   createdAt: Date | string;
   deliveryDistance?: number | null;
@@ -83,6 +146,11 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
   let creditTotal = 0, creditCount = 0;
   let voucherTotal = 0, voucherCount = 0;
   let onlineTotal = 0, onlineCount = 0;
+  // Pix na porta não está no bolso do motoboy nem na maquininha: caiu na
+  // conta da loja. Fiado e forma não identificada: ninguém recebeu na hora.
+  let pixTotal = 0, pixCount = 0;
+  let fiadoTotal = 0, fiadoCount = 0;
+  let naoIdentificadoTotal = 0, naoIdentificadoCount = 0;
 
   // ── ENTREGUES, CANCELADAS E O VALOR DOS PEDIDOS ───────────────────────────
   // "Jobson 30 notas, e o valor dos pedidos das 30 do lado" (Delícia de Casa,
@@ -102,28 +170,24 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
     }
     valorDosPedidos += total;
 
-    const pm = (o.paymentMethod || "").toUpperCase();
-
-    if (ehDinheiro(o.paymentMethod)) {
-      const changeFor = trocoParaDoPedido(o);
-      // O valor que o motoboy recebe fisicamente do cliente e entrega para a loja
-      cashCollectedSum += changeFor ? changeFor : total;
-      cashOrdersCount++;
-      changeGivenSum += changeFor ? changeFor - total : 0;
-      cashOrdersValueSum += total;
-    } else if (pm.includes("DEBIT") || pm.includes("DEBITO") || pm.includes("DÉBITO")) {
-      debitTotal += total;
-      debitCount++;
-    } else if (pm.includes("VOUCHER") || pm.includes("VALE") || pm.includes("VR") || pm.includes("VA")) {
-      voucherTotal += total;
-      voucherCount++;
-    } else if (pm.includes("CARD") || pm.includes("CART") || pm.includes("CREDIT") || pm.includes("MAQUININHA") || pm.includes("MAQUINA")) {
-      creditTotal += total;
-      creditCount++;
-    } else {
-      // PIX Online, iFood Pago Online, etc.
-      onlineTotal += total;
-      onlineCount++;
+    for (const parte of partesDaEntrega(o)) {
+      const v = parte.valor;
+      switch (parte.caixa) {
+        case "DINHEIRO":
+          // O valor que o motoboy recebe fisicamente do cliente e entrega para a loja
+          cashCollectedSum += parte.trocoPara ?? v;
+          cashOrdersCount++;
+          changeGivenSum += parte.trocoPara ? parte.trocoPara - v : 0;
+          cashOrdersValueSum += v;
+          break;
+        case "DEBITO": debitTotal += v; debitCount++; break;
+        case "CREDITO": creditTotal += v; creditCount++; break;
+        case "VALE": voucherTotal += v; voucherCount++; break;
+        case "PIX": pixTotal += v; pixCount++; break;
+        case "ONLINE": onlineTotal += v; onlineCount++; break;
+        case "FIADO": fiadoTotal += v; fiadoCount++; break;
+        default: naoIdentificadoTotal += v; naoIdentificadoCount++;
+      }
     }
   }
 
@@ -140,20 +204,26 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
     uniqueDays,
     deliveryFeeSum,
     motoboyFeeSum,
-    cashCollectedSum,
+    cashCollectedSum: centavos(cashCollectedSum),
     cashOrdersCount,
-    cashOrdersValueSum,
-    changeGivenSum,
-    cardPosTotal: debitTotal + creditTotal + voucherTotal,
+    cashOrdersValueSum: centavos(cashOrdersValueSum),
+    changeGivenSum: centavos(changeGivenSum),
+    cardPosTotal: centavos(debitTotal + creditTotal + voucherTotal),
     cardPosCount: debitCount + creditCount + voucherCount,
-    debitTotal,
+    debitTotal: centavos(debitTotal),
     debitCount,
-    creditTotal,
+    creditTotal: centavos(creditTotal),
     creditCount,
-    voucherTotal,
+    voucherTotal: centavos(voucherTotal),
     voucherCount,
-    onlineTotal,
+    onlineTotal: centavos(onlineTotal),
     onlineCount,
+    pixTotal: centavos(pixTotal),
+    pixCount,
+    fiadoTotal: centavos(fiadoTotal),
+    fiadoCount,
+    naoIdentificadoTotal: centavos(naoIdentificadoTotal),
+    naoIdentificadoCount,
     feeTotal: Math.round(orders.reduce((s, o) => s + o.ganho, 0) * 100) / 100,
   };
 }

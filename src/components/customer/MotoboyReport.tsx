@@ -2,15 +2,58 @@
 import { useState, useCallback, useRef } from "react";
 import { Calendar, Download, Filter, Bike, TrendingUp, DollarSign, MapPin, Loader2, X } from "lucide-react";
 import type { ChaveDeCanal } from "@/lib/canal-do-pedido";
-import { resumoDasEntregas } from "@/lib/resumo-do-entregador";
+import { CAIXAS_DO_ACERTO, partesDaEntrega, resumoDasEntregas } from "@/lib/resumo-do-entregador";
+import type { ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import { podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
 import { toLocalISODate } from "@/lib/timezone";
 import TrocaDePagamentoPainel from "./TrocaDePagamentoPainel";
+import VerPedidoDoAcerto from "./VerPedidoDoAcerto";
 
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
 const fmt = (v: number) => `R$ ${(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+/**
+ * A cor de cada caixa do acerto — a MESMA no quadrado e na etiqueta da linha
+ * da entrega, para o olho ligar uma coisa à outra: as linhas com a etiqueta
+ * verde "Pago Online" são as que somam o quadrado verde.
+ */
+const COR_DA_CAIXA: Record<ChaveDaForma, { fundo: string; borda: string; texto: string }> = {
+  DINHEIRO: { fundo: "#FFF7E6", borda: "#FCD9A8", texto: "#B45309" },
+  DEBITO: { fundo: "#F1F5F9", borda: "#CBD5E1", texto: "#334155" },
+  CREDITO: { fundo: "#F1F5F9", borda: "#CBD5E1", texto: "#334155" },
+  VALE: { fundo: "#F1F5F9", borda: "#CBD5E1", texto: "#334155" },
+  PIX: { fundo: "#EEF2FF", borda: "#C7D2FE", texto: "#4338CA" },
+  ONLINE: { fundo: "#F0FDFA", borda: "#99F6E4", texto: "#0F766E" },
+  FIADO: { fundo: "#FEF3C7", borda: "#FDE68A", texto: "#92400E" },
+  OUTROS: { fundo: "#FEF2F2", borda: "#FECACA", texto: "#B91C1C" },
+};
+const ROTULO_DA_CAIXA = new Map(CAIXAS_DO_ACERTO.map((c) => [c.chave, c]));
+
+/**
+ * Os quadrados da conferência de UM motoboy. Dinheiro e maquininha sempre
+ * aparecem (é o que o motoboy traz na mão); Pix na entrega, Pago Online,
+ * Fiado e Forma não identificada só com valor.
+ */
+function quadradosDaConferencia(st: any): { chave: ChaveDaForma; valor: number; qtd: number; nota?: string }[] {
+  const todos: { chave: ChaveDaForma; valor: number; qtd: number; sempre?: boolean; nota?: string }[] = [
+    { chave: "DINHEIRO", valor: st.cashCollectedSum || 0, qtd: st.cashOrdersCount || 0, sempre: true,
+      nota: (st.changeGivenSum || 0) > 0 ? `${fmt(st.cashOrdersValueSum || 0)} ped. + ${fmt(st.changeGivenSum || 0)} troco` : undefined },
+    { chave: "DEBITO", valor: st.debitTotal || 0, qtd: st.debitCount || 0, sempre: true },
+    { chave: "CREDITO", valor: st.creditTotal || 0, qtd: st.creditCount || 0, sempre: true },
+    { chave: "VALE", valor: st.voucherTotal || 0, qtd: st.voucherCount || 0, sempre: true },
+    { chave: "PIX", valor: st.pixTotal || 0, qtd: st.pixCount || 0, nota: "caiu na conta da loja" },
+    { chave: "ONLINE", valor: st.onlineTotal || 0, qtd: st.onlineCount || 0, nota: "site/app — não passa pelo motoboy" },
+    { chave: "FIADO", valor: st.fiadoTotal || 0, qtd: st.fiadoCount || 0, nota: "acertado depois" },
+    { chave: "OUTROS", valor: st.naoIdentificadoTotal || 0, qtd: st.naoIdentificadoCount || 0, nota: "confira a forma de pagamento" },
+  ];
+  return todos.filter((q) => q.sempre || q.qtd > 0);
+}
+
+/** Quanto do quadrado vem desta parte: no dinheiro, a nota que o motoboy trouxe. */
+const valorNoQuadrado = (p: { caixa: ChaveDaForma; valor: number; trocoPara: number | null }) =>
+  p.caixa === "DINHEIRO" ? (p.trocoPara ?? p.valor) : p.valor;
 /**
  * Os botões do filtro de integrações no cartão de cada motoboy. Os quatro
  * primeiros aparecem sempre (é o que o lojista procura: iFood, 99, site,
@@ -125,6 +168,23 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
       return { ...atual, [motoboyId]: ocultos.includes(canal) ? ocultos.filter((c) => c !== canal) : [...ocultos, canal] };
     });
 
+  // ── O QUADRADO MOSTRA DE ONDE VEIO O VALOR ─────────────────────────────────
+  // Clicar num quadrado da conferência abre a lista só com as entregas que
+  // formam aquele valor. Era o que faltava para achar a diferença no "Pago
+  // Online": o lojista somava as notas e não tinha como saber quais o sistema
+  // tinha posto ali (Fellipe, Delícia de Casa, 10/10/2026).
+  const [caixaFiltrada, setCaixaFiltrada] = useState<Record<string, ChaveDaForma | null>>({});
+  const filtrarPelaCaixa = (motoboyId: string, chave: ChaveDaForma) => {
+    const jaEstava = caixaFiltrada[motoboyId] === chave;
+    setCaixaFiltrada((atual) => ({ ...atual, [motoboyId]: jaEstava ? null : chave }));
+    if (jaEstava) return;
+    setEntregasAbertas((atual) => ({ ...atual, [motoboyId]: true }));
+    setTimeout(() => document.getElementById(`entregas-${motoboyId}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 60);
+  };
+
+  // O "Ver pedido" aberto aqui mesmo (VerPedidoDoAcerto), com quem entregou.
+  const [pedidoAberto, setPedidoAberto] = useState<{ pedido: any; entregador: string } | null>(null);
+
   // A entrega com a troca de pagamento aberta embaixo dela, e a que acabou de
   // ser salva (fica verde um instante, para o olho achar o que mudou).
   const [trocandoPagamento, setTrocandoPagamento] = useState<string | null>(null);
@@ -191,10 +251,11 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
   };
 
   /**
-   * "Ver pedido" abre O PEDIDO, na tela de Pedidos (aba nova): a mesma comanda
-   * com Editar, Trocar pagamento, Nota e o histórico do que foi mexido — não
-   * uma cópia só de leitura (Douglas, 09/10/2026). A data vai junto porque o
-   * quadro de Pedidos mostra um dia; pedido de outro dia não estaria nele.
+   * "Editar na tela de Pedidos", dentro do Ver pedido: a mesma comanda com
+   * Editar, Trocar pagamento, Nota e o histórico, numa aba nova (Douglas,
+   * 09/10/2026). O Ver pedido em si abre aqui mesmo (VerPedidoDoAcerto). A
+   * data vai junto porque o quadro de Pedidos mostra um dia; pedido de outro
+   * dia não estaria nele.
    */
   const linkDoPedido = (o: any) => {
     const dia = toLocalISODate(new Date(o.createdAt || o.date), tzLoja);
@@ -495,7 +556,7 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                       📋 CONFERÊNCIA DO MOTOBOY ({st.totalDeliveries} entregas)
                     </span>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#0F766E", background: "#F0FDFA", padding: "4px 10px", borderRadius: 20 }}>
+                      <span style={{ fontSize: "0.78rem", fontWeight: 800, color: COR_DA_CAIXA.DINHEIRO.texto, background: COR_DA_CAIXA.DINHEIRO.fundo, padding: "4px 10px", borderRadius: 20 }}>
                         💵 Entregar Dinheiro: {fmt(st.cashCollectedSum || 0)}
                       </span>
                       <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#334155", background: "#FAF6F2", padding: "4px 10px", borderRadius: 20 }}>
@@ -505,49 +566,39 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-                    {/* Quadrado Dinheiro */}
-                    <div style={{ background: (st.cashCollectedSum || 0) > 0 ? "#F0FDFA" : "#fff", border: `1.5px solid ${(st.cashCollectedSum || 0) > 0 ? "#99F6E4" : "#CBD5E1"}`, borderRadius: 10, padding: "10px 12px" }}>
-                      <div style={{ fontSize: "0.72rem", color: (st.cashCollectedSum || 0) > 0 ? "#0F766E" : "#64748B", fontWeight: 700 }}>💵 Dinheiro (em mãos)</div>
-                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: (st.cashCollectedSum || 0) > 0 ? "#0F766E" : "#0F172A", marginTop: 2 }}>{fmt(st.cashCollectedSum || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: (st.cashCollectedSum || 0) > 0 ? "#0F766E" : "#94A3B8", marginTop: 2 }}>
-                        {st.cashOrdersCount || 0} pedido(s)
-                      </div>
-                      {(st.changeGivenSum || 0) > 0 && (
-                        <div style={{ fontSize: "0.65rem", color: "#0F766E", marginTop: 3, fontWeight: 600, borderTop: "1px dashed #99F6E4", paddingTop: 3 }}>
-                          {fmt(st.cashOrdersValueSum || 0)} ped. + {fmt(st.changeGivenSum || 0)} troco
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Quadrado Débito */}
-                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px 12px" }}>
-                      <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>💳 Débito (Máquina)</div>
-                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(st.debitTotal || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{st.debitCount || 0} pedido(s)</div>
-                    </div>
-
-                    {/* Quadrado Crédito */}
-                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px 12px" }}>
-                      <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>💳 Crédito (Máquina)</div>
-                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(st.creditTotal || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{st.creditCount || 0} pedido(s)</div>
-                    </div>
-
-                    {/* Quadrado Voucher */}
-                    <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: 10, padding: "10px 12px" }}>
-                      <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 700 }}>🎟️ Voucher (Vale)</div>
-                      <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F172A", marginTop: 2 }}>{fmt(st.voucherTotal || 0)}</div>
-                      <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>{st.voucherCount || 0} pedido(s)</div>
-                    </div>
-
-                    {/* Quadrado Pago Online */}
-                    {st.onlineTotal > 0 && (
-                      <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 10, padding: "10px 12px" }}>
-                        <div style={{ fontSize: "0.72rem", color: "#0F766E", fontWeight: 700 }}>⚡ Pago Online</div>
-                        <div style={{ fontWeight: 900, fontSize: "1.05rem", color: "#0F766E", marginTop: 2 }}>{fmt(st.onlineTotal)}</div>
-                        <div style={{ fontSize: "0.68rem", color: "#0F766E", marginTop: 2 }}>{st.onlineCount} pedido(s) site/app</div>
-                      </div>
-                    )}
+                    {quadradosDaConferencia(st).map((q) => {
+                      const cor = COR_DA_CAIXA[q.chave];
+                      const comValor = q.qtd > 0;
+                      const ativo = caixaFiltrada[r.motoboy.id] === q.chave;
+                      return (
+                        <button
+                          key={q.chave}
+                          type="button"
+                          disabled={!comValor}
+                          onClick={() => filtrarPelaCaixa(r.motoboy.id, q.chave)}
+                          aria-pressed={ativo}
+                          title={comValor ? (ativo ? "Mostrando só estas entregas — clique de novo para ver todas" : "Clique para ver quais entregas formam este valor") : "Nenhuma entrega nesta forma"}
+                          style={{
+                            textAlign: "left", fontFamily: "inherit", cursor: comValor ? "pointer" : "default",
+                            background: comValor ? cor.fundo : "#fff",
+                            border: ativo ? `2.5px solid ${cor.texto}` : `1.5px solid ${comValor ? cor.borda : "#E2E8F0"}`,
+                            boxShadow: ativo ? `0 0 0 3px ${cor.borda}` : "none",
+                            borderRadius: 10, padding: "10px 12px",
+                          }}
+                        >
+                          <div style={{ fontSize: "0.72rem", color: comValor ? cor.texto : "#64748B", fontWeight: 700 }}>{ROTULO_DA_CAIXA.get(q.chave)?.rotulo}</div>
+                          <div style={{ fontWeight: 900, fontSize: "1.05rem", color: comValor ? cor.texto : "#0F172A", marginTop: 2, fontVariantNumeric: "tabular-nums" }}>{fmt(q.valor)}</div>
+                          <div style={{ fontSize: "0.68rem", color: comValor ? cor.texto : "#94A3B8", marginTop: 2, fontWeight: comValor ? 700 : 400 }}>
+                            {q.qtd} pedido(s){comValor ? (ativo ? " · ✓ na lista" : " · ver quais ›") : ""}
+                          </div>
+                          {q.nota && comValor && (
+                            <div style={{ fontSize: "0.65rem", color: cor.texto, marginTop: 3, fontWeight: 600, borderTop: `1px dashed ${cor.borda}`, paddingTop: 3 }}>
+                              {q.nota}
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
 
@@ -639,8 +690,16 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                     09/10/2026). Agora é um botão da largura do cartão. */}
                 {visiveis.length > 0 && (() => {
                   const aberto = !!entregasAbertas[r.motoboy.id];
+                  // Com um quadrado escolhido, a lista é só o que soma nele.
+                  const filtroDaCaixa = caixaFiltrada[r.motoboy.id] || null;
+                  const naLista: any[] = filtroDaCaixa
+                    ? visiveis.filter((o: any) => !o.cancelado && partesDaEntrega(o).some((p) => p.caixa === filtroDaCaixa))
+                    : visiveis;
+                  const somaDaCaixa = filtroDaCaixa
+                    ? Math.round(naLista.reduce((s: number, o: any) => s + partesDaEntrega(o).filter((p) => p.caixa === filtroDaCaixa).reduce((t, p) => t + valorNoQuadrado(p), 0), 0) * 100) / 100
+                    : 0;
                   return (
-                  <div style={{ marginTop: 14 }}>
+                  <div id={`entregas-${r.motoboy.id}`} style={{ marginTop: 14, scrollMarginTop: 12 }}>
                     <button
                       type="button"
                       onClick={() => setEntregasAbertas((atual) => ({ ...atual, [r.motoboy.id]: !aberto }))}
@@ -657,11 +716,25 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                     </button>
                     {aberto && (
                     <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+                      {filtroDaCaixa && (() => {
+                        const cor = COR_DA_CAIXA[filtroDaCaixa];
+                        return (
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: cor.fundo, border: `1.5px solid ${cor.borda}`, color: cor.texto, borderRadius: 10, padding: "8px 12px", fontSize: "0.8rem", fontWeight: 700 }}>
+                            <span>
+                              Só {ROTULO_DA_CAIXA.get(filtroDaCaixa)?.rotulo}: {naLista.length} entrega{naLista.length === 1 ? "" : "s"} somando <b>{fmt(somaDaCaixa)}</b> — o valor do quadrado.
+                            </span>
+                            <button type="button" onClick={() => setCaixaFiltrada((atual) => ({ ...atual, [r.motoboy.id]: null }))}
+                              style={{ background: "#fff", border: `1px solid ${cor.borda}`, color: cor.texto, borderRadius: 8, padding: "4px 10px", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit" }}>
+                              Mostrar todas
+                            </button>
+                          </div>
+                        );
+                      })()}
                       <div style={{ fontSize: "0.72rem", color: "#64748B", fontWeight: 600, padding: "0 2px 2px" }}>
-                        ✏️ Clique na forma de pagamento para trocar. <b>Ver pedido</b> abre a comanda em outra aba, onde dá para editar — e tudo o que for mudado fica no histórico do pedido.
+                        ✏️ Clique na forma de pagamento para trocar. A etiqueta colorida diz em qual quadrado a entrega soma. <b>Ver pedido</b> mostra o pedido aqui mesmo, com os valores para imprimir — tudo o que for mudado fica no histórico do pedido.
                       </div>
-                      {visiveis.map((o: any) => {
-                        const isCash = (o.paymentMethod || "").toUpperCase() === "CASH" || (o.paymentMethod || "").toUpperCase().includes("DINHEIR");
+                      {naLista.map((o: any) => {
+                        const partes = partesDaEntrega(o);
                         const dateStr = o.createdAt || o.date;
                         const numDisplay = o.dailyOrderNumber ? `#${o.dailyOrderNumber}` : o.ifoodReference ? `#${o.ifoodReference}` : o.openDeliveryReference ? `#${o.openDeliveryReference}` : "";
                         const trocando = trocandoPagamento === o.id;
@@ -702,26 +775,25 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                                 <button
                                   type="button"
                                   onClick={() => setTrocandoPagamento(trocando ? null : o.id)}
-                                  title={trocavel.pode ? "Trocar a forma de pagamento desta entrega" : trocavel.motivo}
-                                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 4 }}
+                                  title={`${o.paymentMethod || "Sem forma gravada"} — ${trocavel.pode ? "clique para trocar a forma de pagamento desta entrega" : trocavel.motivo}`}
+                                  style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit", display: "inline-flex", alignItems: "center", flexWrap: "wrap", gap: 4, maxWidth: 260, textAlign: "left" }}
                                 >
-                                  {isCash ? (
-                                    (o.changeGiven || 0) > 0 ? (
-                                      <span style={{ background: "#F0FDFA", color: "#0F766E", border: "1px solid #99F6E4", padding: "2px 8px", borderRadius: 6, fontWeight: 800, fontSize: "0.72rem", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                                        💵 Entregar: {fmt(o.cashToDeliver || o.totalAmount)}
-                                        <span style={{ fontWeight: 600, color: "#0F766E", fontSize: "0.68rem" }}>(Ped: {fmt(o.totalAmount)} + Troco: {fmt(o.changeGiven)})</span>
+                                  {/* A etiqueta é a CAIXA do acerto (a cor do
+                                      quadrado); embaixo, o texto que o app ou o
+                                      site gravou — "PIX" do iFood é pago no app,
+                                      "Pix" trocado na porta não. */}
+                                  {partes.map((p, k) => {
+                                    const cor = COR_DA_CAIXA[p.caixa];
+                                    return (
+                                      <span key={k} style={{ background: cor.fundo, color: cor.texto, border: `1px solid ${cor.borda}`, padding: "2px 7px", borderRadius: 6, fontWeight: 800, fontSize: "0.7rem", lineHeight: 1.35 }}>
+                                        {ROTULO_DA_CAIXA.get(p.caixa)?.curto}
+                                        {partes.length > 1 ? ` ${fmt(p.valor)}` : ""}
+                                        {p.caixa === "DINHEIRO" && p.trocoPara ? ` · entregar ${fmt(p.trocoPara)} (troco ${fmt(p.trocoPara - p.valor)})` : ""}
                                       </span>
-                                    ) : (
-                                      <span style={{ background: "#FFF7E6", color: "#B45309", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
-                                        💵 Dinheiro ({fmt(o.totalAmount)})
-                                      </span>
-                                    )
-                                  ) : (
-                                    <span style={{ background: "#E2E8F0", color: "#475569", padding: "2px 6px", borderRadius: 4, fontWeight: 700, fontSize: "0.7rem" }}>
-                                      💳 {o.paymentMethod}
-                                    </span>
-                                  )}
+                                    );
+                                  })}
                                   <span style={{ fontSize: "0.72rem", opacity: trocando ? 1 : 0.6 }} aria-hidden>{trocavel.pode ? "✏️" : "🔒"}</span>
+                                  <span style={{ flexBasis: "100%", fontSize: "0.66rem", color: "#94A3B8", fontWeight: 600, lineHeight: 1.2 }}>{o.paymentMethod || "sem forma gravada"}</span>
                                 </button>
                               )}
                             </span>
@@ -747,15 +819,14 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                                 <option key={m.id} value={m.id}>🛵 {m.name}</option>
                               ))}
                             </select>
-                            <a
-                              href={linkDoPedido(o)}
-                              target="_blank"
-                              rel="noopener"
-                              title="Abre a comanda deste pedido na tela de Pedidos, em outra aba"
-                              style={{ padding: "4px 8px", background: "#FAF6F2", color: "#1C1917", border: "1px solid #E7DDD3", borderRadius: 6, fontWeight: 700, fontSize: "0.72rem", textDecoration: "none", whiteSpace: "nowrap" }}
+                            <button
+                              type="button"
+                              onClick={() => setPedidoAberto({ pedido: o, entregador: r.motoboy.name })}
+                              title="Mostra o pedido aqui mesmo, com os valores e o botão de imprimir"
+                              style={{ padding: "4px 8px", background: "#FAF6F2", color: "#1C1917", border: "1px solid #E7DDD3", borderRadius: 6, fontWeight: 700, fontSize: "0.72rem", whiteSpace: "nowrap", cursor: "pointer", fontFamily: "inherit" }}
                             >
-                              👁️ Ver Pedido ↗
-                            </a>
+                              👁️ Ver Pedido
+                            </button>
                           </div>
                           {erroDoEntregador?.id === o.id && (
                             <div style={{ margin: "2px 0 4px", padding: "6px 10px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", fontSize: "0.74rem", fontWeight: 700 }}>
@@ -785,6 +856,16 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
             );
           })}
         </>
+      )}
+
+      {pedidoAberto && (
+        <VerPedidoDoAcerto
+          pedido={pedidoAberto.pedido}
+          entregador={pedidoAberto.entregador}
+          tz={tzLoja}
+          linkDeEdicao={linkDoPedido(pedidoAberto.pedido)}
+          aoFechar={() => setPedidoAberto(null)}
+        />
       )}
     </div>
   );

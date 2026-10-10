@@ -3,7 +3,7 @@
  * relatório faz no servidor e que a tela refaz quando o lojista filtra o
  * cartão do motoboy por integração. Rodar: npx tsx scripts/teste-resumo-do-entregador.ts
  */
-import { resumoDasEntregas, type EntregaDoResumo } from "../src/lib/resumo-do-entregador";
+import { resumoDasEntregas, partesDaEntrega, type EntregaDoResumo } from "../src/lib/resumo-do-entregador";
 import { chaveDoCanal } from "../src/lib/canal-do-pedido";
 
 let falhas = 0;
@@ -55,6 +55,51 @@ const soma = (campo: keyof typeof tudo) => Math.round(partes.reduce((s, p) => s 
 for (const campo of ["totalDeliveries", "cashCollectedSum", "changeGivenSum", "debitTotal", "onlineTotal", "feeTotal", "totalDistance", "valorDosPedidos", "canceladasCount"] as const) {
   confere(`partes = todo: ${campo}`, soma(campo), Math.round((tudo[campo] as number) * 100) / 100);
 }
+
+// ── A CAIXA DE CADA ENTREGA É A DO FECHAMENTO DE CAIXA ───────────────────────
+// Delícia de Casa (10/10/2026): o "Pago Online" do acerto não batia com a soma
+// das notas pagas online. A leitura antiga mandava o pago no app com "Cartão",
+// "Débito" ou "Vale" no nome para a maquininha, e o Pix da porta, o "A
+// combinar" e o pedido sem forma para o Pago Online.
+const caixa = (p: Partial<EntregaDoResumo>) => partesDaEntrega({ totalAmount: 10, ...p }).map((x) => x.caixa).join("+");
+const casos: [string, Partial<EntregaDoResumo>, string][] = [
+  ["iFood cartão pago no app", { source: "IFOOD", paymentMethod: "Cartão (Pago Online)" }, "ONLINE"],
+  ["iFood débito pago no app", { source: "IFOOD", paymentMethod: "Débito (Pago Online)" }, "ONLINE"],
+  ["iFood vale pago no app", { source: "IFOOD", paymentMethod: "Vale Refeição (Pago Online)" }, "ONLINE"],
+  ["iFood crédito sem acento pago no app", { source: "IFOOD", paymentMethod: "Credito (Pago Online)" }, "ONLINE"],
+  ["iFood Pix pago no app (código cru)", { source: "IFOOD", paymentMethod: "PIX" }, "ONLINE"],
+  ["99 pago online", { source: "99FOOD", paymentMethod: "Pago Online (99Food)" }, "ONLINE"],
+  ["site: Pix pago pelo cardápio (Asaas)", { source: "ONLINE", paymentMethod: "PIX", gatewayProvider: "asaas", paymentPaidAt: "2026-10-09T22:00:00Z" }, "ONLINE"],
+  ["iFood trocado para Pix na porta", { source: "IFOOD", paymentMethod: "Pix" }, "PIX"],
+  ["site: Pix na entrega", { source: "ONLINE", paymentMethod: "PIX_ENTREGA" }, "PIX"],
+  ["A combinar", { source: "ONLINE", paymentMethod: "A combinar (Cobrar na Entrega)" }, "OUTROS"],
+  ["sem forma gravada", { source: "ONLINE", paymentMethod: null }, "OUTROS"],
+  ["iFood dinheiro na porta", { source: "IFOOD", paymentMethod: "Dinheiro (Cobrar na Entrega)" }, "DINHEIRO"],
+  ["iFood crédito na porta", { source: "IFOOD", paymentMethod: "Crédito (Cobrar na Entrega)" }, "CREDITO"],
+  ["Wabiz débito abreviado", { source: "WABIZ", paymentMethod: "Cartão Deb Master (Cobrar na Entrega)" }, "DEBITO"],
+  ["troca para Vale-refeição", { source: "IFOOD", paymentMethod: "Vale-refeição" }, "VALE"],
+  ["fiado", { source: "ONLINE", paymentMethod: "Fiado" }, "FIADO"],
+  ["dividido: dinheiro + Pix", { source: "IFOOD", paymentMethod: "Dinheiro + Pix", paymentMethods: [{ method: "Dinheiro", amount: 6 }, { method: "Pix", amount: 4 }] }, "DINHEIRO+PIX"],
+];
+for (const [nome, p, esperado] of casos) confere(`caixa: ${nome}`, caixa(p), esperado);
+
+const turno: Pedido[] = [
+  { source: "IFOOD", status: "FINALIZADO", createdAt: "2026-10-09T22:00:00Z", totalAmount: 40, paymentMethod: "Cartão (Pago Online)", ganho: 5 },
+  { source: "IFOOD", status: "FINALIZADO", createdAt: "2026-10-09T22:10:00Z", totalAmount: 30, paymentMethod: "PIX", ganho: 5 },
+  { source: "IFOOD", status: "FINALIZADO", createdAt: "2026-10-09T22:20:00Z", totalAmount: 25, paymentMethod: "Pix", ganho: 5 },
+  { source: "ONLINE", status: "FINALIZADO", createdAt: "2026-10-09T22:30:00Z", totalAmount: 20, paymentMethod: null, ganho: 5 },
+  // Dividido: R$ 30 em dinheiro com nota de 50, R$ 20 no Pix.
+  { source: "IFOOD", status: "FINALIZADO", createdAt: "2026-10-09T22:40:00Z", totalAmount: 50, changeAmount: 50, paymentMethod: "Dinheiro + Pix", paymentMethods: [{ method: "Dinheiro", amount: 30 }, { method: "Pix", amount: 20 }], ganho: 5 },
+];
+const r = resumoDasEntregas(turno, tz);
+confere("turno: pago online só o do app", [r.onlineTotal, r.onlineCount], [70, 2]);
+confere("turno: maquininha vazia", r.cardPosTotal, 0);
+confere("turno: Pix na entrega (trocado + parte)", [r.pixTotal, r.pixCount], [45, 2]);
+confere("turno: forma não identificada", [r.naoIdentificadoTotal, r.naoIdentificadoCount], [20, 1]);
+confere("turno: dinheiro da parte com a nota de 50", [r.cashCollectedSum, r.changeGivenSum, r.cashOrdersValueSum], [50, 20, 30]);
+// Toda entrega cai em alguma caixa: as caixas somam o valor dos pedidos.
+const somaDasCaixas = Math.round((r.cashOrdersValueSum + r.cardPosTotal + r.pixTotal + r.onlineTotal + r.fiadoTotal + r.naoIdentificadoTotal) * 100) / 100;
+confere("turno: caixas = valor dos pedidos", somaDasCaixas, r.valorDosPedidos);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

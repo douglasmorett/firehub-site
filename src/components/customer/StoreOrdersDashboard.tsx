@@ -293,6 +293,15 @@ export const isIfoodMotoboy = (order: any): boolean => {
   return getPartnerDeliveryInfo(order).isPartner;
 };
 
+/**
+ * O pedido vai por entregador — quem ganha o seletor de motoboy no card e
+ * quem entra no "🛵 Entregador" das ações em massa. Retirada, balcão, totem
+ * (TAKEOUT) e mesa ficam de fora: o porquê está no card (`recebeMotoboy`).
+ */
+export const vaiPorEntregador = (order: any): boolean =>
+  (order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || !order.deliveryType || order.source === "IFOOD" || order.source === "99FOOD") &&
+  order.deliveryType !== "RETIRADA" && order.deliveryType !== "TAKEOUT" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA";
+
 const getItemEffectivePrice = (item: any, allItems: any[] = [], orderTotalAmount: number = 0, deliveryFee: number = 0, discountTotal: number = 0): number => {
   if (item?.price && item.price > 0) return item.price;
 
@@ -722,9 +731,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   // entregador levar maquininha para um pedido já pago no totem — cobrança em
   // dobro. O resto do arquivo já tratava TAKEOUT como retirada (faixa "🏪
   // Retirada no local", botão de rota, filtro de canal); só esta linha divergia.
-  const recebeMotoboy =
-    (order.deliveryType === "DELIVERY" || order.deliveryType === "ENTREGA" || !order.deliveryType || order.source === "IFOOD" || order.source === "99FOOD") &&
-    order.deliveryType !== "RETIRADA" && order.deliveryType !== "TAKEOUT" && order.deliveryType !== "BALCAO" && order.deliveryType !== "MESA";
+  // A regra mora em `vaiPorEntregador`, que as ações em massa também usam.
+  const recebeMotoboy = vaiPorEntregador(order);
   const puxouPeloApp = Boolean((order as any).motoboyPuxadoEm && order.motoboyId);
 
   // ── PAINEL CLEAN ─────────────────────────────────────────────────────────
@@ -737,6 +745,26 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   // completo de sempre, com todos os botões; outro clique fecha.
   if (compacto && !expanded) {
     const total = Number(order.totalAmount || 0);
+    // ── QUEM ESTÁ COM O PEDIDO ──────────────────────────────────────────
+    // O nome do entregador, pequeno, ao lado de "Entrega" — o que a loja
+    // despachou ou o que puxou pelo QR no app. Na hora de selecionar vários
+    // para despachar, o olho separa os que já têm dono dos que não têm
+    // (Fellipe, Delícia de Casa, 10/10/2026). Só mostra: trocar é abrindo o
+    // pedido, senão o card clean deixaria de ser pequeno (Douglas).
+    const nomeInteiro: string | null = order.motoboyId
+      ? ((order as any).motoboy?.name || motoboys?.find((m: any) => m.id === order.motoboyId)?.name || "Entregador")
+      : null;
+    // O primeiro nome cabe na coluna estreita; com dois de mesmo nome na
+    // loja, vai a inicial do sobrenome ("Guilherme S."). O inteiro fica no title.
+    const entregadorDaLoja = (() => {
+      if (!nomeInteiro) return null;
+      const [primeiro, ...resto] = nomeInteiro.trim().split(/\s+/);
+      if (resto.length === 0) return primeiro;
+      const temXara = (motoboys || []).some((m: any) =>
+        m.id !== order.motoboyId && String(m.name || "").trim().split(/\s+/)[0].toLowerCase() === primeiro.toLowerCase());
+      return temXara ? `${primeiro} ${resto[resto.length - 1][0]}.` : primeiro;
+    })();
+    const parceiroQueEntrega = !entregadorDaLoja && recebeMotoboy ? getPartnerDeliveryInfo(order) : null;
     return (
       <div
         draggable={canDrag}
@@ -781,8 +809,37 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flexShrink: 1 }}>
             {rotuloDoCanal(order)}
             {" · "}
-            {ehMesa ? "🍽️ Mesa" : isTakeoutOrder ? "🏪 Retirada" : order.deliveryType === "BALCAO" ? "🧾 Balcão" : "🛵 Entrega"}
+            {entregadorDaLoja || parceiroQueEntrega?.isPartner
+              ? null
+              : ehMesa ? "🍽️ Mesa" : isTakeoutOrder ? "🏪 Retirada" : order.deliveryType === "BALCAO" ? "🧾 Balcão" : "🛵 Entrega"}
           </span>
+          {/* Com entregador, o nome entra no lugar de "Entrega" e NÃO
+              encolhe: em coluna estreita quem perde letras é o canal. */}
+          {entregadorDaLoja ? (
+            <span
+              title={puxouPeloApp
+                ? `Entregador: ${nomeInteiro} — puxou pelo app às ${new Date((order as any).motoboyPuxadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}. Para trocar, abra o pedido.`
+                : `Entregador: ${nomeInteiro}. Para trocar, abra o pedido.`}
+              style={{
+                flexShrink: 0, maxWidth: "62%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                background: PALETA.okClaro, color: PALETA.ok, border: `1px solid ${PALETA.okBorda}`,
+                borderRadius: 999, padding: "0 7px", fontWeight: 800, fontSize: "0.7rem", lineHeight: "16px",
+              }}
+            >
+              🛵 {entregadorDaLoja}
+            </span>
+          ) : parceiroQueEntrega?.isPartner ? (
+            <span
+              title={`Quem entrega é o motoboy do ${parceiroQueEntrega.partnerName} — não precisa de motoboy da loja.`}
+              style={{
+                flexShrink: 0, maxWidth: "62%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                color: PALETA.areiaTinta, border: `1px dashed ${PALETA.areiaBorda}`,
+                borderRadius: 999, padding: "0 7px", fontWeight: 700, fontSize: "0.68rem", lineHeight: "16px",
+              }}
+            >
+              🛵 {parceiroQueEntrega.partnerName}
+            </span>
+          ) : null}
           {/* O tempo curto: "-58min atrasado" inteiro cortava na borda do card estreito. */}
           <span title={timerLabel} style={{ marginLeft: "auto", whiteSpace: "nowrap", fontWeight: 800, color: timerColor, flexShrink: 0 }}>
             {isFinished || remainingMins === null
@@ -1854,6 +1911,88 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     } finally {
       setBulkUpdating(false);
     }
+  };
+
+  // ── ENTREGADOR EM MASSA ────────────────────────────────────────────────────
+  //
+  // Seleciona o #1, o #2 e o #3, escolhe o motoboy, um clique (Fellipe,
+  // Delícia de Casa, 10/10/2026). Cada pedido passa pela MESMA rota do seletor
+  // do card (assign-motoboy): o WhatsApp e o aviso no app do entregador saem
+  // por pedido, como sairiam um a um, e o histórico registra a troca.
+  //
+  // Fica de fora o que não vai por motoboy da loja: retirada/balcão/mesa,
+  // entrega feita pelo iFood/99 (marcar a coluna inteira pegaria esses
+  // também, e o acerto do motoboy contaria uma corrida que não foi dele) e
+  // cancelado. Quem já está com o escolhido é pulado — sem repetir o WhatsApp.
+  // A seleção continua marcada: o passo seguinte costuma ser "Coluna → Saiu
+  // para Entrega" nos mesmos pedidos.
+  const SEM_ENTREGADOR = "__sem_entregador__";
+  const [bulkMotoboyId, setBulkMotoboyId] = useState<string>("");
+  const [bulkAtribuindo, setBulkAtribuindo] = useState<string | null>(null);
+
+  /** Os selecionados que vão por motoboy da loja, e quantos ficaram de fora e por quê. */
+  const selecionadosParaEntregador = () => {
+    const fora = { semEntrega: 0, parceiro: 0, cancelado: 0, parceiros: new Set<string>() };
+    const cabem: any[] = [];
+    for (const o of orders) {
+      if (!selectedOrderIds.has(o.id)) continue;
+      const parceiro = getPartnerDeliveryInfo(o);
+      if (String(o.status || "").toUpperCase().startsWith("CANCEL")) fora.cancelado++;
+      else if (!vaiPorEntregador(o)) fora.semEntrega++;
+      else if (parceiro.isPartner) { fora.parceiro++; fora.parceiros.add(parceiro.partnerName); }
+      else cabem.push(o);
+    }
+    return { cabem, fora };
+  };
+
+  /** "1 retirada/balcão, 2 com motoboy iFood" — o que ficou de fora, e por quê. */
+  const textoDoQueFicouDeFora = (fora: ReturnType<typeof selecionadosParaEntregador>["fora"]) =>
+    [
+      fora.semEntrega ? `${fora.semEntrega} retirada/balcão` : "",
+      fora.parceiro ? `${fora.parceiro} com motoboy ${Array.from(fora.parceiros).join("/")}` : "",
+      fora.cancelado ? `${fora.cancelado} cancelado${fora.cancelado > 1 ? "s" : ""}` : "",
+    ].filter(Boolean).join(", ");
+
+  const handleBulkMotoboy = async () => {
+    if (!bulkMotoboyId || selectedOrderIds.size === 0 || bulkAtribuindo) return;
+    const tirar = bulkMotoboyId === SEM_ENTREGADOR;
+    const novoId = tirar ? null : bulkMotoboyId;
+    const nome = tirar ? "" : (motoboys.find((m: any) => m.id === bulkMotoboyId)?.name || "Entregador");
+    const { cabem, fora } = selecionadosParaEntregador();
+    const aMudar = cabem.filter((o) => (o.motoboyId || null) !== novoId);
+    const jaEstavam = cabem.length - aMudar.length;
+
+    const deuCerto: any[] = [];
+    let falhou = 0;
+    for (let i = 0; i < aMudar.length; i++) {
+      const o = aMudar[i];
+      setBulkAtribuindo(`${i + 1}/${aMudar.length}`);
+      try {
+        const res = await fetch("/api/customer-order/assign-motoboy", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: o.id, motoboyId: novoId, firehubOrderNumber: getDisplayOrderNumber(o) }),
+        });
+        if (res.ok) deuCerto.push(o); else falhou++;
+      } catch { falhou++; }
+    }
+    setBulkAtribuindo(null);
+
+    if (deuCerto.length > 0) {
+      const ids = new Set(deuCerto.map((o) => o.id));
+      const motoboy = novoId ? motoboys.find((m: any) => m.id === novoId) || null : null;
+      setOrders(prev => prev.map(o => ids.has(o.id) ? { ...o, motoboyId: novoId, motoboy, motoboyPuxadoEm: null } : o));
+    }
+    const numeros = deuCerto.map((o) => `#${getDisplayOrderNumber(o)}`).join(", ");
+    const pedidos = (n: number) => `${n} pedido${n === 1 ? "" : "s"}`;
+    const partes: string[] = [];
+    if (deuCerto.length > 0) partes.push(tirar ? `Entregador tirado de ${pedidos(deuCerto.length)}: ${numeros}.` : `🛵 ${nome} ficou com ${pedidos(deuCerto.length)}: ${numeros}.`);
+    if (jaEstavam > 0) partes.push(`${pedidos(jaEstavam)} já ${jaEstavam === 1 ? "estava" : "estavam"} assim.`);
+    const deFora = textoDoQueFicouDeFora(fora);
+    if (deFora) partes.push(`Ficaram de fora: ${deFora}.`);
+    if (falhou > 0) partes.push(`${pedidos(falhou)} não ${falhou === 1 ? "foi" : "foram"} — tente de novo.`);
+    showToast(partes.join(" ") || "Nenhum pedido selecionado vai por motoboy.", falhou > 0 || deuCerto.length === 0 ? "#B45309" : "#0F766E");
+    if (deuCerto.length > 0) setBulkMotoboyId("");
   };
 
   // ===== ALTA DEMANDA (Surge Pricing) =====
@@ -6653,7 +6792,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <span style={{ fontSize: "0.9rem", fontWeight: 600 }}>Ações em Massa:</span>
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+              {/* Dois grupos, cada um com o nome do que faz: a COLUNA e o
+                  ENTREGADOR. Lado a lado, quem bate o olho lê "Coluna: Mudar
+                  para…" e "Entregador: Pôr Jobson em 3 pedidos" — um não se
+                  confunde com o outro. */}
+              <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", background: "rgba(255,255,255,0.05)", border: "1px solid #334155", borderRadius: 10, padding: "5px 8px" }}>
+              <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#CBD5E1", textTransform: "uppercase", letterSpacing: "0.03em" }}>📋 Coluna</span>
               <select
                 value={bulkTargetStatus}
                 onChange={(e) => setBulkTargetStatus(e.target.value)}
@@ -6709,6 +6854,65 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               >
                 {bulkUpdating ? "Atualizando..." : "Mudar todos selecionados →"}
               </button>
+              </div>
+
+              {motoboys.length > 0 && (() => {
+                const { cabem, fora } = selecionadosParaEntregador();
+                const tirar = bulkMotoboyId === SEM_ENTREGADOR;
+                const escolhido = motoboys.find((m: any) => m.id === bulkMotoboyId);
+                // Mesmo nome curto do card clean: "Guilherme", ou "Guilherme L."
+                // quando a loja tem dois Guilhermes.
+                const [primeiro = "", ...sobrenome] = String(escolhido?.name || "").trim().split(/\s+/);
+                const temXara = sobrenome.length > 0 && motoboys.some((m: any) =>
+                  m.id !== bulkMotoboyId && String(m.name || "").trim().split(/\s+/)[0].toLowerCase() === primeiro.toLowerCase());
+                const primeiroNome = temXara ? `${primeiro} ${sobrenome[sobrenome.length - 1][0]}.` : primeiro;
+                const deFora = textoDoQueFicouDeFora(fora);
+                const pronto = Boolean(bulkMotoboyId) && cabem.length > 0 && !bulkAtribuindo;
+                const qtd = `${cabem.length} pedido${cabem.length === 1 ? "" : "s"}`;
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", background: "rgba(255,255,255,0.05)", border: "1px solid #334155", borderRadius: 10, padding: "5px 8px" }}>
+                    <span style={{ fontSize: "0.7rem", fontWeight: 800, color: "#CBD5E1", textTransform: "uppercase", letterSpacing: "0.03em" }}>🛵 Entregador</span>
+                    <select
+                      value={bulkMotoboyId}
+                      onChange={(e) => setBulkMotoboyId(e.target.value)}
+                      disabled={!!bulkAtribuindo}
+                      title="Escolha o motoboy que vai levar os pedidos marcados"
+                      style={{
+                        background: "#334155", color: "#fff", border: "1px solid #475569",
+                        padding: "8px 14px", borderRadius: "8px", fontSize: "0.85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit",
+                      }}
+                    >
+                      <option value="">Escolher motoboy...</option>
+                      {motoboys.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      <option value={SEM_ENTREGADOR}>✖ Tirar o entregador</option>
+                    </select>
+                    <button
+                      onClick={handleBulkMotoboy}
+                      disabled={!pronto}
+                      title={cabem.length === 0 ? "Nenhum pedido marcado vai por motoboy da loja (retirada, balcão, mesa ou entrega do iFood/99)." : undefined}
+                      style={{
+                        background: pronto ? PALETA.ok : "#64748B",
+                        color: "#fff", border: "none", padding: "8px 16px",
+                        borderRadius: "8px", fontWeight: 700, fontSize: "0.85rem",
+                        cursor: pronto ? "pointer" : "not-allowed", fontFamily: "inherit",
+                      }}
+                    >
+                      {bulkAtribuindo
+                        ? `Colocando... ${bulkAtribuindo}`
+                        : !bulkMotoboyId
+                          ? "Pôr nos marcados →"
+                          : tirar
+                            ? `Tirar de ${qtd} →`
+                            : `Pôr ${primeiroNome} em ${qtd} →`}
+                    </button>
+                    {deFora && (
+                      <span title="Esses não vão por motoboy da loja" style={{ fontSize: "0.72rem", color: "#CBD5E1", fontWeight: 600 }}>
+                        (ficam de fora: {deFora})
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
 
               <button
                 onClick={() => setSelectedOrderIds(new Set())}

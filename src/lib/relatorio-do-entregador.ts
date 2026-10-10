@@ -26,7 +26,7 @@ import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { ganhoDoPedido as calcularGanho, lerAcerto, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
 import { prisma } from "@/lib/prisma";
 import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, getInstantUTC } from "@/lib/timezone";
-import { resumoDasEntregas, ehCancelado, ehDinheiro, trocoParaDoPedido } from "@/lib/resumo-do-entregador";
+import { resumoDasEntregas, ehCancelado, partesDaEntrega } from "@/lib/resumo-do-entregador";
 import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
@@ -99,6 +99,11 @@ export async function montarRelatorioDosEntregadores(opts: {
       // precisa da divisão e da prova de pago online (podeTrocarPagamento).
       paymentMethods: true,
       gatewayPaymentId: true,
+      // A régua do caixa (lib/resumo-do-entregador.ts, `partesDaEntrega`): o
+      // Pix/cartão pago pelo site tem o texto igual ao da porta, e é o carimbo
+      // do gateway que diz que foi online.
+      paymentPaidAt: true,
+      gatewayProvider: true,
       // O rastro das edições: a linha marca "editado" e o "Ver pedido" mostra.
       editHistory: true,
       changeAmount: true,
@@ -223,13 +228,14 @@ export async function montarRelatorioDosEntregadores(opts: {
         })),
       },
       orders: orders.map(o => {
-        const isCash = ehDinheiro(o.paymentMethod);
-        const orderTotal = Number(o.totalAmount || 0);
-        const changeFor = isCash ? trocoParaDoPedido(o) : null;
+        // O dinheiro desta entrega pelas MESMAS partes que somam o quadrado
+        // (a régua do caixa) — no pagamento dividido, só a parte em dinheiro.
+        const emDinheiro = partesDaEntrega(o).filter((p) => p.caixa === "DINHEIRO");
+        const changeFor = emDinheiro.find((p) => p.trocoPara)?.trocoPara ?? null;
         // Cancelado: a corrida conta, o dinheiro não — ninguém pagou o pedido.
         const cancelado = ehCancelado(o.status);
-        const cashToDeliver = isCash && !cancelado ? (changeFor || orderTotal) : 0;
-        const changeGiven = isCash && !cancelado && changeFor ? (changeFor - orderTotal) : 0;
+        const cashToDeliver = cancelado ? 0 : Math.round(emDinheiro.reduce((s, p) => s + (p.trocoPara ?? p.valor), 0) * 100) / 100;
+        const changeGiven = cancelado ? 0 : Math.round(emDinheiro.reduce((s, p) => s + (p.trocoPara ? p.trocoPara - p.valor : 0), 0) * 100) / 100;
 
         return {
           id: o.id,
@@ -266,10 +272,17 @@ export async function montarRelatorioDosEntregadores(opts: {
           paymentMethod: o.paymentMethod,
           paymentMethods: o.paymentMethods,
           gatewayPaymentId: o.gatewayPaymentId,
+          // A tela refaz a soma (filtro de integração) e marca a caixa de cada
+          // linha com `partesDaEntrega` — que lê estes três.
+          paymentPaidAt: o.paymentPaidAt,
+          gatewayProvider: o.gatewayProvider,
+          openDeliveryChannel: o.openDeliveryChannel,
           tableSessionId: o.tableSessionId,
           deliveryType: "DELIVERY",
           /** Quantas vezes o pedido foi mexido depois de lançado (editHistory). */
           edicoes: Array.isArray(o.editHistory) ? o.editHistory.length : 0,
+          /** O "Ver pedido" (janela na própria tela) lista o que foi mexido. */
+          editHistory: o.editHistory,
           status: o.status,
           /** Conta na corrida, sai do dinheiro — as telas marcam "CANCELADO". */
           cancelado,
