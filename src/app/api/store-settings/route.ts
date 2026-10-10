@@ -309,7 +309,10 @@ export async function PUT(req: Request) {
   if (body.storeDeliveryOnly !== undefined) data.storeDeliveryOnly = body.storeDeliveryOnly;
   if (body.showAddressOnMenu !== undefined) data.showAddressOnMenu = Boolean(body.showAddressOnMenu);
   if (body.showReviewsOnMenu !== undefined) data.showReviewsOnMenu = Boolean(body.showReviewsOnMenu);
-  if (body.autoAcceptOrders !== undefined) data.autoAcceptOrders = Boolean(body.autoAcceptOrders);
+  // O aceite automático é da LOJA: o site (api/customer-order) e o painel de
+  // todo aparelho leem a linha do dono. Gravado na linha do funcionário que
+  // clicou, não valia para nada (api/store-settings/aceite-automatico).
+  if (body.autoAcceptOrders !== undefined) daLoja.autoAcceptOrders = Boolean(body.autoAcceptOrders);
   if (body.allowScheduledOrders !== undefined) data.allowScheduledOrders = Boolean(body.allowScheduledOrders);
   if (body.storeAlertSound !== undefined) data.storeAlertSound = body.storeAlertSound;
   // A sincronização do tempo com o iFood está DESLIGADA (ver o fim desta

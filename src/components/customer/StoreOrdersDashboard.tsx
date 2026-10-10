@@ -1617,7 +1617,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   );
 });
 
-export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys, activeStoreId, lojasDeOrigem = [] }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[]; activeStoreId?: string; lojasDeOrigem?: LojaDeOrigem[] }) {
+export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys, activeStoreId, lojasDeOrigem = [], aceiteAutomaticoDaLoja = false }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[]; activeStoreId?: string; lojasDeOrigem?: LojaDeOrigem[]; aceiteAutomaticoDaLoja?: boolean }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1677,10 +1677,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [ifoodDriverQuote, setIfoodDriverQuote] = useState<any>(null);
   const [ifoodDriverLoading, setIfoodDriverLoading] = useState(false);
   const [ifoodDriverError, setIfoodDriverError] = useState("");
-  const [autoAccept, setAutoAccept] = useState(() => {
-    if (typeof window !== "undefined") return localStorage.getItem("autoAcceptOrders") === "true";
-    return false;
-  });
+  // O "Aceitar automático" é da LOJA (User.autoAcceptOrders), igual em todo
+  // aparelho — ver api/store-settings/aceite-automatico. Morava no
+  // localStorage, não era por loja, e o celular dizia DESLIGADO enquanto o PC
+  // aceitava tudo (Serpa Pizzaria, 09/10/2026).
+  const [autoAccept, setAutoAccept] = useState<boolean>(aceiteAutomaticoDaLoja);
   const [receiptPaperSize, setReceiptPaperSize] = useState<"58mm" | "80mm">("80mm");
   const [dueDateExtraMinutes, setDueDateExtraMinutes] = useState<number>(10);
   const [dueDateReason, setDueDateReason] = useState<string>("OUT_FOR_DELIVERY");
@@ -2910,22 +2911,29 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       body: JSON.stringify({ autoAcceptOrders: valor }),
     }).catch(() => {});
 
-  // Quem ja tinha o aceite ligado neste navegador nao pode perder a escolha:
-  // na primeira montagem o valor local sobe para o servidor uma vez. Sem isto,
-  // a coluna ficaria false ate o lojista desligar e religar o botao.
-  const aceiteMigradoRef = useRef(false);
+  // A "migração" que subia o valor deste navegador para a loja a cada vez que
+  // o painel abria saiu: era ela que religava o aceite que o dono desligou no
+  // celular. Agora o caminho é o contrário — a tela segue a loja, e relê a
+  // cada 30 s para um aparelho saber o que o outro mudou.
   useEffect(() => {
-    if (aceiteMigradoRef.current) return;
-    aceiteMigradoRef.current = true;
-    if (autoAccept) gravarAceiteAutomatico(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Quem guardou o aceite no navegador (o jeito antigo): limpa, para não confundir.
+    try { localStorage.removeItem("autoAcceptOrders"); } catch { /* sem storage */ }
+    let vivo = true;
+    const ler = () =>
+      fetch("/api/store-settings/aceite-automatico", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (vivo && d && typeof d.ligado === "boolean") setAutoAccept(d.ligado); })
+        .catch(() => {});
+    const t = setInterval(ler, 30_000);
+    const aoVoltar = () => { if (document.visibilityState === "visible") ler(); };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => { vivo = false; clearInterval(t); document.removeEventListener("visibilitychange", aoVoltar); };
   }, []);
 
   // Toggle auto accept
   const toggleAutoAccept = () => {
     const next = !autoAccept;
     setAutoAccept(next);
-    localStorage.setItem("autoAcceptOrders", next.toString());
     gravarAceiteAutomatico(next);
   };
 
@@ -2939,7 +2947,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     salvarBarraConfig({ ...barraConfig, [chave]: ligar });
     if (chave === "colunaNovos" && !ligar && !autoAccept) {
       setAutoAccept(true);
-      localStorage.setItem("autoAcceptOrders", "true");
       gravarAceiteAutomatico(true);
     }
     setConfirmandoColuna(null);

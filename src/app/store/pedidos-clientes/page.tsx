@@ -80,6 +80,13 @@ export default async function FranchiseeCustomerOrdersPage() {
     (user as any).accountGroupId || null,
   ).catch(() => []);
 
+  // O "Aceitar automático" da LOJA, que é o que vale em todo aparelho
+  // (api/store-settings/aceite-automatico). Começa já, junto com o resto.
+  const aceiteDaLojaP = prisma.user
+    .findUnique({ where: { id: targetFranchiseeId }, select: { autoAcceptOrders: true } })
+    .then((l) => l?.autoAcceptOrders === true)
+    .catch(() => false);
+
   // === MULTI-LOJAS: Resolver IDs das lojas ativas ===
   const cookieStore = await cookies();
   const activeStore = cookieStore.get('firehub_active_store')?.value;
@@ -232,6 +239,7 @@ export default async function FranchiseeCustomerOrdersPage() {
         initialCashSessionOpenedAt={activeCashSessionOpenedAt}
         initialMotoboys={motoboys}
         activeStoreId={activeStore || targetFranchiseeId}
+        aceiteAutomaticoDaLoja={await aceiteDaLojaP}
       />
     </>
   );
