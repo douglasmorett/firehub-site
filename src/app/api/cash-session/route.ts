@@ -444,7 +444,7 @@ export async function PUT(req: Request) {
     // avaliação (conferência de 09/10/2026, Douglas). Mas fechar o caixa às 6h
     // não pode acordar ninguém com "seu pedido foi entregue" de ontem: só o
     // pedido que saiu nas últimas 3 h, e só entre 8h e 23h no horário de
-    // Brasília. Um por vez, com folga entre eles: rajada é o que o antispam do
+    // Brasília. Um a cada 10 s (Douglas, 09/10): rajada é o que o antispam do
     // WhatsApp procura.
     const horaAgora = Number(new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", hour12: false, timeZone: "America/Sao_Paulo" }).format(new Date()));
     const recentes = saiamNaRua.filter((o) => Date.now() - new Date(o.updatedAt).getTime() < threeHoursAgoMs);
@@ -453,7 +453,7 @@ export async function PUT(req: Request) {
         .then(async ({ sendOrderNotification }) => {
           for (const o of recentes) {
             await sendOrderNotification(o.id, "ENTREGUE").catch(() => {});
-            await new Promise((r) => setTimeout(r, 4000));
+            await new Promise((r) => setTimeout(r, 10000));
           }
         })
         .catch(() => {});
