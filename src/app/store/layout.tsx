@@ -22,6 +22,7 @@ import TutorialDaTela from "@/components/TutorialDaTela";
 import { TutoriaisEnviados } from "@/components/TutoriaisEnviados";
 import { tutoriaisEnviados } from "@/lib/tutoriais-no-servidor";
 import AceiteDosTermos from "@/components/termos/AceiteDosTermos";
+import SairDaConta from "@/components/SairDaConta";
 import { aceitouVersaoAtual } from "@/lib/termos-de-uso";
 import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
 
@@ -326,10 +327,13 @@ export default async function StoreLayout({ children }: { children: React.ReactN
 
         {/* Tela de Bloqueio por Inadimplência — permite o login, mas bloqueia o uso até pagar */}
         {isBlocked && (
+          // A tela INTEIRA: com top 60 a barra vermelha seguia clicável — dava
+          // para ligar "Site aberto", abrir Integrações (Douglas, 09/10/2026:
+          // "não deixa ele usar mais nada"). Sair da conta mora aqui dentro.
           <div style={{
-            position: "fixed", top: 60, left: 0, right: 0, bottom: 0,
-            background: "rgba(15, 23, 42, 0.85)", backdropFilter: "blur(8px)",
-            zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem"
+            position: "fixed", inset: 0,
+            background: "rgba(15, 23, 42, 0.88)", backdropFilter: "blur(8px)",
+            zIndex: 100000, display: "flex", alignItems: "center", justifyContent: "center", padding: "1.5rem", overflowY: "auto"
           }}>
             <div style={{ background: "#fff", borderRadius: 20, padding: "2.5rem", maxWidth: 500, width: "100%", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)" }}>
               <div style={{ fontSize: "3.5rem", marginBottom: "0.75rem" }}>🔒</div>
@@ -346,12 +350,31 @@ export default async function StoreLayout({ children }: { children: React.ReactN
               </div>
 
               <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-                <a href="/store/financeiro#fatura" style={{ width: "100%", background: "#C92E09", color: "#fff", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, textDecoration: "none", display: "inline-block" }}>
+                {/* Abre a FATURA do Asaas (boleto, Pix e cartão) em outra aba.
+                    Levava a /store/financeiro#fatura — que fica debaixo deste
+                    mesmo bloqueio e nem tem a seção: a loja clicava em pagar e
+                    continuava presa, sem ver o boleto (09/10/2026). */}
+                <a
+                  href={pendingPayment!.url || "/store/financeiro"}
+                  target={pendingPayment!.url ? "_blank" : undefined}
+                  rel="noopener noreferrer"
+                  style={{ width: "100%", background: "#C92E09", color: "#fff", padding: "14px", borderRadius: 12, fontSize: "1rem", fontWeight: 800, textDecoration: "none", display: "inline-block" }}
+                >
                   ⚡ Pagar e Liberar Conta →
+                </a>
+                <p style={{ margin: 0, fontSize: "0.8rem", color: "#475569", lineHeight: 1.5 }}>
+                  Pagando por <strong>Pix</strong> na fatura, o sistema libera sozinho em poucos minutos.
+                  Boleto leva de 1 a 3 dias úteis para o banco compensar.
+                </p>
+                <a href="/store" style={{ color: "#0F766E", fontSize: "0.85rem", fontWeight: 700, textDecoration: "underline" }}>
+                  Já paguei — conferir de novo
                 </a>
                 <a href="https://wa.me/5522998851680?text=Preciso+de+ajuda+com+minha+conta+bloqueada" target="_blank" rel="noopener noreferrer" style={{ color: "#64748B", fontSize: "0.85rem", textDecoration: "underline" }}>
                   Falar com suporte via WhatsApp
                 </a>
+                <SairDaConta style={{ color: "#94A3B8", fontSize: "0.8rem", textDecoration: "underline", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit" }}>
+                  Sair da conta
+                </SairDaConta>
               </div>
             </div>
           </div>
