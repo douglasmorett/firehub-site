@@ -113,6 +113,23 @@ export async function POST(req: NextRequest) {
           isRoutePriority: false, // Pedido saiu da cozinha!
         },
       });
+      // ── O CLIENTE SABE QUE SAIU ────────────────────────────────────────
+      // O botão "Saiu" do painel, o app do motoboy e o despacho pelo WhatsApp
+      // avisam o cliente; a roteirização punha a rota inteira em SAIU_ENTREGA
+      // calada (conferência de 09/10/2026, pedido do Douglas: todo aviso em
+      // toda modalidade). Só o que mudou AGORA: o que já estava na rua já foi
+      // avisado. A própria função pula iFood/99 (telefone 0800) e a loja que
+      // desligou os avisos.
+      const sairamAgora = pedidosDaRota.filter(
+        (o) => !([...STATUS_FINALIZADOS, ...STATUS_CANCELADOS, "SAIU_ENTREGA"] as string[]).includes(o.status),
+      );
+      if (sairamAgora.length > 0) {
+        import("@/lib/order-notifications")
+          .then(({ sendOrderNotification }) => {
+            for (const o of sairamAgora) sendOrderNotification(o.id, "SAIU_ENTREGA").catch(() => {});
+          })
+          .catch(() => {});
+      }
       // NFC-e na SAÍDA (lib/fiscal-momento decide se é a hora): sem esta linha a nota da rota só saía pela varredura do cron.
       import("@/lib/fiscal-automatico").then((m) => m.emitirNfceDosPedidos({ id: { in: idsDaRota } })).catch(() => {});
 
@@ -228,18 +245,11 @@ export async function POST(req: NextRequest) {
     })();
 
 
-    // 3. Notifica cada cliente via WhatsApp que o pedido saiu para entrega
-    for (const ord of pedidosDaRota) {
-      if (ord.customerPhone) {
-        const phoneDigits = ord.customerPhone.replace(/\D/g, "");
-        if (phoneDigits) {
-          const formattedPhone = phoneDigits.startsWith("55") ? phoneDigits : `55${phoneDigits}`;
-          const displayNum = (ord as any).dailyOrderNumber ? `#${(ord as any).dailyOrderNumber}` : (ord.ifoodReference || ord.openDeliveryReference || "");
-          const msg = `🚨 *Seu Pedido ${displayNum} Saiu para Entrega!*\n\n🛵 Entregador: *${motoboy.name}*\nO seu pedido já está a caminho com a nossa rota. Bom apetite! 🚀`;
-          sendEvolutionMessage(targetFranchiseeId, formattedPhone, msg).catch(() => {});
-        }
-      }
-    }
+    // 3. O aviso ao cliente saiu daqui: é o `sendOrderNotification` lá em
+    // cima (só o que saiu agora, com o filtro de telefone de verdade e a
+    // chave da loja). Este laço mandava para todo pedido da rota — inclusive
+    // o 0800 do iFood e o que já estava na rua — e ignorava a loja que
+    // desligou os avisos.
 
     // 4. Monta o link da rota completa no Google Maps para o motoboy
     if (motoboy.phone) {

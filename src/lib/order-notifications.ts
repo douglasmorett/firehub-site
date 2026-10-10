@@ -5,6 +5,22 @@ import { inicioDoExpedienteDaLoja } from "./fuso";
 import { telefoneDeVerdade, paraEnvioWhatsApp } from "./telefone";
 import { ehRetirada } from "./status-para-o-cliente";
 import { linkDeAvaliacaoNoGoogle } from "./avaliacao-no-google";
+import { comandaDoRobo } from "./comanda-do-robo";
+import { previsaoDaEntrega } from "./previsao-da-entrega";
+import { formaCanonica } from "./pagamento-na-entrega";
+
+/**
+ * A forma de pagamento como o cliente lê: o site grava "CARTAO_CREDITO",
+ * "DINHEIRO", "VOUCHER_<bandeira>"; a comanda diz "Cartão Crédito".
+ */
+export function formaDePagamentoParaOCliente(pedido: { paymentMethod?: string | null; gatewayProvider?: string | null; gatewayPaymentId?: string | null }): string {
+  const cru = String(pedido.paymentMethod || "").trim();
+  if (!cru) return "";
+  const forma = formaCanonica(cru.replace(/_/g, " ")) || cru;
+  if (pedido.gatewayProvider || pedido.gatewayPaymentId) return `${forma} (pago online)`;
+  // "PIX_ENTREGA": o Pix é na porta — só "Pix" pareceria já pago.
+  return forma === "Pix" && /entrega|cobrar/i.test(cru) ? "Pix na entrega" : forma;
+}
 
 /**
  * `EM_PREPARO` é novo. A promessa feita ao cliente no "Pedido Recebido" é
@@ -13,6 +29,40 @@ import { linkDeAvaliacaoNoGoogle } from "./avaliacao-no-google";
  * que o cliente liga para a loja perguntando se o pedido caiu.
  */
 export type OrderNotificationType = "CREATED" | "EM_PREPARO" | "SAIU_ENTREGA" | "PRONTO_RETIRADA" | "CANCELADO" | "ENTREGUE";
+
+/**
+ * O "pedido recebido" de qualquer canal: a comanda inteira, com os valores
+ * gravados (ver o comentário no case "CREATED" de sendOrderNotification).
+ * Exportada para o teste montar a mensagem sem mandar nada.
+ */
+export function comandaDoPedidoRecebido(order: any, numero: string | number | null): string {
+  const previsao = previsaoDaEntrega(order);
+  const cashbackUsado = Number(order.cashbackUsed) || 0;
+  return comandaDoRobo({
+    numero,
+    status: order.status,
+    cliente: order.customerName,
+    itens: (order.items || []).map((item: any) => ({
+      quantity: item.quantity,
+      productName: item.productName || item.menuProduct?.name || "Item",
+      price: Number(item.price) || 0,
+      comboSelections: (item.comboSelections as any) ?? null,
+      notes: item.notes,
+    })),
+    formaDePagamento: formaDePagamentoParaOCliente(order),
+    trocoPara: order.changeAmount,
+    entrega: String(order.deliveryType || "").toUpperCase() === "DELIVERY",
+    taxaDeEntrega: Number(order.deliveryFee) || 0,
+    endereco: order.customerAddress,
+    previsao: previsao ? new Date(previsao.em) : null,
+    fuso: order.franchisee?.storeTimezone,
+    // O cashback já está somado no discountTotal (lib/cashback.ts).
+    desconto: Math.max(0, (Number(order.discountTotal) || 0) - cashbackUsado),
+    cashbackUsado,
+    cashbackGerado: Number(order.cashbackEarned) || 0,
+    total: Number(order.totalAmount) || 0,
+  });
+}
 
 /**
  * Envia notificação automática do status do pedido para o cliente via WhatsApp (Evolution API).
@@ -31,6 +81,9 @@ export async function sendOrderNotification(
             menuProduct: { select: { name: true } }
           }
         },
+        // O nome do entregador no "saiu para entrega" (a roteirização já o
+        // dizia; agora vale para todo caminho que despacha).
+        motoboy: { select: { name: true } },
         franchisee: {
           select: {
             id: true,
@@ -38,6 +91,7 @@ export async function sendOrderNotification(
             // Sem o slug o link da avaliação saía "/loja/loja/avaliar/<id>".
             slug: true,
             chatbotConfig: true,
+            storeTimezone: true,
             accountGroupId: true,
           }
         }
@@ -111,28 +165,23 @@ export async function sendOrderNotification(
     const shortId = refNum || (order as any).dailyOrderNumber || dailySeqNumber || order.id.slice(-4).toUpperCase();
     const storeName = order.franchisee?.storeName || "Nossa Loja";
 
-    // Formata o resumo dos itens
-    const itemsSummary = order.items.map(item => {
-      const name = item.menuProduct?.name || "Item";
-      return `• ${item.quantity}x ${name}`;
-    }).join("\n");
-
     let message = "";
 
     switch (type) {
-      case "CREATED":
-        message = `🎉 *Pedido Recebido com Sucesso!*
-
-Olá, *${order.customerName}*! Recebemos o seu pedido em *${storeName}*!
-
-📋 *Itens do Pedido:*
-${itemsSummary}
-
-💰 *Total:* R$ ${order.totalAmount.toFixed(2).replace(".", ",")}
-🛵 *Modalidade:* ${order.deliveryType === "DELIVERY" ? "Entrega no Endereço" : "Retirada no Local"}
-
-Seu pedido já está em processamento. Te avisaremos sobre cada atualização por aqui! 😊`;
+      case "CREATED": {
+        // ── O "PEDIDO RECEBIDO" É A COMANDA INTEIRA ──────────────────────
+        //
+        // China pow (Flávio, 09/10/2026): o pedido do robô chegava ao cliente
+        // com a comanda completa (lib/comanda-do-robo.ts) — itens com preço,
+        // pagamento, taxa, endereço, previsão e total —, e é esse texto que
+        // ele repassa no grupo dos entregadores. O pedido do SITE chegava com
+        // o resumo curto ("Itens do Pedido / Total / Modalidade"), sem preço,
+        // sem endereço e sem pagamento. Agora todo canal (site, balcão, o
+        // rascunho do robô aceito pela loja) recebe a mesma comanda, montada
+        // com os valores GRAVADOS — o que o cliente lê é o que vai ser cobrado.
+        message = comandaDoPedidoRecebido(order as any, shortId);
         break;
+      }
 
       case "EM_PREPARO":
         message = `👨‍🍳 *Seu pedido entrou na cozinha!*
@@ -147,7 +196,8 @@ ${order.deliveryType === "DELIVERY" ? "Assim que sair para entrega, a gente te a
 
 Olá, *${order.customerName}*! O seu pedido *#${shortId}* de *${storeName}* acabou de sair com nosso entregador e está a caminho!
 
-📍 *Endereço:* ${order.customerAddress || "Endereço cadastrado"}
+📍 *Endereço:* ${order.customerAddress || "Endereço cadastrado"}${(order as any).motoboy?.name ? `
+🛵 *Entregador:* ${(order as any).motoboy.name}` : ""}
 
 Muito obrigado pela preferência! Fique atento para receber o entregador. 
 

@@ -395,11 +395,11 @@ export async function PUT(req: Request) {
 
   // 🔧 Auto-finalizar pedidos travados em SAIU_ENTREGA com mais de 3h
   // Isso limpa pedidos que nunca foram confirmados como entregues pelo motoboy
-  const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  const threeHoursAgoMs = 3 * 60 * 60 * 1000;
+  const threeHoursAgo = new Date(Date.now() - threeHoursAgoMs);
   let finalizadosNoFechamento = 0;
   try {
-    const stuckResult = await prisma.customerOrder.updateMany({
-      where: {
+    const naRua = {
         franchiseeId: user.targetId,
         status: "SAIU_ENTREGA",
         // ── TODOS, e não só os de mais de 3h ─────────────────────────────
@@ -427,10 +427,37 @@ export async function PUT(req: Request) {
         // fecha (lib/esperado-do-turno.ts), e é o fechamento dela que dá os
         // pedidos por entregues (table-sessions/[id]/close).
         tableSessionId: null,
-      },
+      };
+    // Quem estava na rua, antes de virar ENTREGUE: o aviso de entregue sai
+    // para os que saíram há pouco (logo abaixo).
+    const saiamNaRua = await prisma.customerOrder.findMany({ where: naRua, select: { id: true, updatedAt: true } });
+    const stuckResult = await prisma.customerOrder.updateMany({
+      where: naRua,
       data: { status: "ENTREGUE", updatedAt: new Date() },
     });
     finalizadosNoFechamento = stuckResult.count;
+
+    // ── O "ENTREGUE, AVALIE" DE QUEM SÓ FOI DADO POR ENTREGUE AQUI ─────────
+    //
+    // Loja que não clica "Entregue" pedido a pedido fecha o turno com tudo na
+    // rua, e esses clientes nunca recebiam o agradecimento com o link da
+    // avaliação (conferência de 09/10/2026, Douglas). Mas fechar o caixa às 6h
+    // não pode acordar ninguém com "seu pedido foi entregue" de ontem: só o
+    // pedido que saiu nas últimas 3 h, e só entre 8h e 23h no horário de
+    // Brasília. Um por vez, com folga entre eles: rajada é o que o antispam do
+    // WhatsApp procura.
+    const horaAgora = Number(new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", hour12: false, timeZone: "America/Sao_Paulo" }).format(new Date()));
+    const recentes = saiamNaRua.filter((o) => Date.now() - new Date(o.updatedAt).getTime() < threeHoursAgoMs);
+    if (recentes.length > 0 && horaAgora >= 8 && horaAgora < 23) {
+      import("@/lib/order-notifications")
+        .then(async ({ sendOrderNotification }) => {
+          for (const o of recentes) {
+            await sendOrderNotification(o.id, "ENTREGUE").catch(() => {});
+            await new Promise((r) => setTimeout(r, 4000));
+          }
+        })
+        .catch(() => {});
+    }
     if (stuckResult.count > 0) {
       console.log(`[CashSession Close] ✅ ${stuckResult.count} pedidos que estavam na rua foram dados como entregues junto com o caixa`);
     }

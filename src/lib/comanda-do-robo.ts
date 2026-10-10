@@ -51,6 +51,13 @@ export type DadosDaComanda = {
   cupom?: { code: string; desconto: number; freteGratis: boolean } | null;
   /** Motivo de um cupom que o cliente pediu e o sistema recusou. */
   cupomRecusado?: string | null;
+  /**
+   * Desconto que não é cupom do robô nem cashback (cupom do site, desconto da
+   * loja): sem esta linha, Subtotal + Taxa não fechava com o Total.
+   */
+  desconto?: number;
+  /** Nome do cliente: o aviso de "pedido recebido" do site e do balcão o mostra. */
+  cliente?: string | null;
   cashbackUsado?: number;
   /** O que este pedido gera, liberado quando for entregue. */
   cashbackGerado?: number;
@@ -105,7 +112,10 @@ function titulo(d: DadosDaComanda): string {
 export function comandaDoRobo(d: DadosDaComanda): string {
   const linhas: string[] = [titulo(d), ""];
 
-  if (d.numero != null && d.numero !== "") linhas.push(`🧾 *Pedido nº ${d.numero}*`, "");
+  if (d.numero != null && d.numero !== "") linhas.push(`🧾 *Pedido nº ${d.numero}*`);
+  const cliente = String(d.cliente || "").trim();
+  if (cliente) linhas.push(`👤 *Cliente:* ${cliente}`);
+  if ((d.numero != null && d.numero !== "") || cliente) linhas.push("");
 
   linhas.push("*Itens:*");
   let subtotal = 0;
@@ -151,10 +161,12 @@ export function comandaDoRobo(d: DadosDaComanda): string {
   // Os valores, na ordem em que a conta é feita.
   const descontoDoCupom = d.cupom && !d.cupom.freteGratis ? d.cupom.desconto : 0;
   const usado = Number(d.cashbackUsado) || 0;
-  const temAbatimento = descontoDoCupom > 0 || usado > 0 || (d.entrega && d.taxaDeEntrega > 0);
+  const outroDesconto = Math.max(0, Number(d.desconto) || 0);
+  const temAbatimento = descontoDoCupom > 0 || usado > 0 || outroDesconto > 0 || (d.entrega && d.taxaDeEntrega > 0);
   if (temAbatimento) linhas.push(`Subtotal: ${reais(subtotal)}`);
   if (d.entrega && d.taxaDeEntrega > 0) linhas.push(`Taxa de entrega: ${reais(d.taxaDeEntrega)}`);
   if (descontoDoCupom > 0) linhas.push(`🎟️ Cupom ${d.cupom!.code}: -${reais(descontoDoCupom)}`);
+  if (outroDesconto > 0) linhas.push(`🎟️ Desconto: -${reais(outroDesconto)}`);
   if (usado > 0) linhas.push(`💰 Cashback (desconto): -${reais(usado)}`);
   linhas.push(`*Total: ${reais(d.total)}*`);
 
