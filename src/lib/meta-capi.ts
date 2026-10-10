@@ -66,6 +66,12 @@ function telefoneParaHash(bruto: string | null | undefined): string | undefined 
   return undefined;
 }
 
+// As mesmas regras de hash e de telefone para o StartTrial do próprio FireHub
+// (lib/meta-firehub): normalizar igual é o que faz o hash casar.
+export const hashParaMeta = hash;
+export const telefoneParaHashMeta = telefoneParaHash;
+export const VERSAO_DA_GRAPH_API = VERSAO_API;
+
 export type EventoDeCompra = {
   /** Pixel da loja. Sem ele não há para onde mandar. */
   pixelId: string;

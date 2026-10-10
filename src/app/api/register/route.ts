@@ -10,6 +10,7 @@ import { cpfValido } from "@/lib/fiscal-validacao";
 import { registrarAceite } from "@/lib/termos-de-uso";
 import { VERSAO_DOS_TERMOS } from "@/lib/termos-versao";
 import { aoCadastrarLoja } from "@/lib/crm/contatos";
+import { avisarMetaTrialIniciado, cookiesDoMeta, idsDosEventosDoTrial } from "@/lib/meta-firehub";
 
 // CORS headers for cross-origin requests from firehubfood.com.br
 export async function OPTIONS(req: NextRequest) {
@@ -232,6 +233,25 @@ export async function POST(req: NextRequest) {
       id: user.id, storePhone: user.storePhone, email: user.email, storeName: user.storeName, name: user.name, city: user.city,
     });
 
+    // O "Iniciar período de teste" vai à Meta PELO SERVIDOR também (lib/meta-firehub):
+    // com telefone, e-mail e nome em hash a Meta casa o cadastro com quem clicou
+    // no anúncio em outro aparelho — o evento só do navegador dava zero
+    // resultado na campanha. Mesmo event_id do fbq da tela: não conta em dobro.
+    // Nunca segura o cadastro: roda sem await e o erro vai para o log.
+    const metaCookies = cookiesDoMeta(req.headers.get("cookie"));
+    void avisarMetaTrialIniciado({
+      userId: user.id,
+      nome: name,
+      email: user.email,
+      telefone: user.storePhone,
+      cidade: user.city,
+      origem: "website",
+      fbp: metaCookies.fbp,
+      fbc: metaCookies.fbc,
+      ip: getClientIp(req),
+      userAgent: req.headers.get("user-agent"),
+    }).catch((err) => console.error("[Meta FireHub] StartTrial:", err));
+
     return NextResponse.json({
       success: true,
       message: "Conta criada com sucesso!",
@@ -239,6 +259,8 @@ export async function POST(req: NextRequest) {
       slug: user.slug,
       email: user.email,
       storeName: user.storeName,
+      // A tela repete estes ids no fbq (eventID) para a Meta deduplicar.
+      metaEventIds: idsDosEventosDoTrial(user.id),
     }, { headers: getCorsHeaders(req) });
   } catch (error: unknown) {
     console.error("Register error:", error);

@@ -195,10 +195,13 @@ export default function CadastroPage() {
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Erro ao criar conta."); return; }
       
-      // Dispara o Pixel do Facebook
+      // Dispara o Pixel do Facebook. O servidor manda os mesmos eventos pela
+      // API de Conversões (lib/meta-firehub) com o mesmo eventID: a Meta
+      // junta os dois e conta uma vez só.
       if (typeof window !== "undefined" && (window as any).fbq) {
-        (window as any).fbq("track", "StartTrial", { currency: "BRL", value: 0 });
-        (window as any).fbq("track", "CompleteRegistration");
+        const ids = data.metaEventIds || {};
+        (window as any).fbq("track", "StartTrial", { currency: "BRL", value: 0 }, ids.startTrial ? { eventID: ids.startTrial } : undefined);
+        (window as any).fbq("track", "CompleteRegistration", {}, ids.completeRegistration ? { eventID: ids.completeRegistration } : undefined);
       }
 
       setCreatedStore(storeName);
