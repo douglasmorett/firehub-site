@@ -3,12 +3,14 @@
 // Regra de todo roteiro: a fala só afirma o que a tela faz DE VERDADE nesta
 // gravação. Se a frase descreve um clique, o clique acontece na imagem.
 import { dormir } from "../motor/palco.mjs";
-import { chegarPedidoNovo } from "../ambiente/semente.mjs";
+import { chegarPedidoNovo, encherOQuadro } from "../ambiente/semente.mjs";
 
 const cartao = (p, n) => p.locator("[draggable]").filter({ hasText: `#${n} — ` }).first();
 const coluna = (p, id) => p.locator(`[data-droppable="${id}"]`);
 const cabecalho = (p, id) => coluna(p, id).locator("h3").first();
-const contador = (p, id) => coluna(p, id).locator("[data-column-count]").first();
+// O contador é o último selo do cabeçalho da coluna (o data-column-count saiu
+// do painel: a extensão de prazo lê um span escondido no topo).
+const contador = (p, id) => coluna(p, id).locator(":scope > div").first().locator("span").last();
 /** Nome + contador da coluna, para o destaque pegar os dois. */
 const topoDaColuna = (p, id) => [cabecalho(p, id), contador(p, id)];
 /** O cartão já dentro de uma coluna específica (o mesmo pedido muda de coluna durante o vídeo). */
@@ -285,13 +287,20 @@ export default {
     },
     {
       capitulo: "Cancelar um pedido",
-      fala: "Para cancelar um pedido, segure o cartão e arraste até a coluna Cancelado.",
+      fala: "Para cancelar, segure o cartão e arraste até a coluna Cancelado. Escolha o motivo e confirme.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         const c = cartao(p, 7);
         await palco.rolarAte(c.getByText("#7 — Fernanda Lima"), { bloco: "center" });
-        await ctx.ate(0.25);
+        await ctx.ate(0.15);
         await palco.arrastar(c.getByText("#7 — Fernanda Lima"), coluna(p, "col-cancelados"));
+        // Desde 09/10/2026 cancelar pede o motivo (vai para o fechamento do caixa).
+        const motivo = p.getByRole("button", { name: "Cliente desistiu" });
+        await motivo.waitFor({ state: "visible", timeout: 10_000 });
+        await ctx.ate(0.55);
+        await palco.clicar(motivo);
+        await ctx.ate(0.72);
+        await palco.clicar(p.getByRole("button", { name: "Sim, cancelar" }));
         await coluna(p, "col-cancelados").getByText("#7 — Fernanda Lima").waitFor({ state: "visible", timeout: 10_000 });
         await palco.destacar(cartaoEm(p, "col-cancelados", 7), { folga: 6 });
         await ctx.ate(1);
@@ -332,6 +341,9 @@ export default {
       fala: "E o Resumo das vendas mostra quanto a loja vendeu até agora, etapa por etapa.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
+        // A noite enche agora: os pedidos chegam na próxima consulta da tela,
+        // a tempo do capítulo do Painel clean.
+        await encherOQuadro(ctx.prisma);
         await palco.clicar(p.getByRole("button", { name: "Resumo das vendas" }));
         const total = p.getByText("TOTAL ATE O MOMENTO");
         await total.waitFor({ state: "visible", timeout: 8000 });
@@ -342,6 +354,52 @@ export default {
         await dormir(900);
         await palco.clicar(fechar);
         await palco.cameraAberta();
+      },
+    },
+    {
+      capitulo: "Painel clean",
+      fala: "Em noite de movimento, ligue o Painel clean, aqui na barra: cada pedido vira um cartão pequeno, com o cliente, o valor e o tempo, e cabem muito mais pedidos na tela.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        await palco.rolarPagina(0);
+        const interruptor = p.getByRole("switch", { name: /Painel clean/ });
+        await coluna(p, "col-preparo").getByText("Leonardo Prado").first().waitFor({ state: "visible", timeout: 20_000 });
+        await palco.destacar(interruptor, { folga: 6 });
+        await palco.mover(interruptor, { ms: 700 });
+        await ctx.ate(0.2);
+        await palco.apagarDestaque();
+        await palco.clicar(interruptor);
+        await p.locator('button[role="switch"][aria-checked="true"]').waitFor({ timeout: 8000 });
+        const pequeno = coluna(p, "col-preparo").locator("[draggable]").first();
+        await ctx.ate(0.4);
+        await palco.camera(pequeno, { zoomMax: 1.9, margem: 30 });
+        await palco.mover(pequeno, { ms: 600 });
+        await ctx.ate(0.72);
+        await palco.cameraAberta();
+        await palco.destacar(coluna(p, "col-preparo"), { folga: 4 });
+        await ctx.ate(1);
+        await palco.apagarDestaque();
+      },
+    },
+    {
+      fala: "Clique num pedido e ele abre completo, com todos os botões. Para voltar aos cartões grandes, desligue no mesmo botão.",
+      acao: async (palco, ctx) => {
+        const p = palco.pagina;
+        const c = coluna(p, "col-preparo").locator("[draggable]").filter({ hasText: "Leonardo Prado" }).first();
+        await palco.rolarAte(c, { bloco: "center" });
+        await ctx.ate(0.08);
+        await palco.clicar(c);
+        await c.getByRole("button", { name: "Marcar como Pronto Cozinha" }).waitFor({ state: "visible", timeout: 8000 });
+        await palco.camera(c, { zoomMax: 1.5, margem: 40 });
+        await ctx.ate(0.45);
+        await palco.cameraAberta();
+        await palco.clicar(c.getByText("Leonardo Prado").first());
+        await palco.rolarPagina(0);
+        const interruptor = p.getByRole("switch", { name: /Painel clean/ });
+        await ctx.ate(0.75);
+        await palco.clicar(interruptor);
+        await p.locator('button[role="switch"][aria-checked="false"]').waitFor({ timeout: 8000 });
+        await ctx.ate(1);
       },
     },
     {

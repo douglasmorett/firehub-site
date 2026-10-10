@@ -72,6 +72,14 @@ export async function semear(prisma) {
   });
   const L = loja.id;
 
+  // A loja já aceitou os Termos de Uso da versão atual: sem isto a janela de
+  // aceite (AceiteDosTermos, desde 04/10/2026) cobre o painel na gravação.
+  // A versão é lida do próprio código, para não envelhecer quando mudar.
+  const versaoDosTermos = fs.readFileSync(path.join(process.cwd(), "src/lib/termos-versao.ts"), "utf8").match(/VERSAO_DOS_TERMOS = "([^"]+)"/)?.[1];
+  if (versaoDosTermos) {
+    await prisma.aceiteDosTermos.create({ data: { userId: L, versao: versaoDosTermos, origem: "PAINEL", email: LOJA.email, nome: LOJA.nome } });
+  }
+
   await prisma.menuCategory.createMany({
     data: [
       { franchiseeId: L, name: "Lanches", emoji: "🍔", sortOrder: 0 },
@@ -152,6 +160,37 @@ export async function semear(prisma) {
     });
   }
   return { loja, produtos, motoboys: { carlos, rafael }, haMin };
+}
+
+/**
+ * Uma noite cheia: mais pedidos fictícios em produção, para o capítulo do
+ * Painel clean mostrar o que ele resolve (muitos pedidos na tela sem rolar).
+ * Números a partir de 20, para não esbarrar nos pedidos das outras cenas.
+ */
+export async function encherOQuadro(prisma) {
+  const loja = await prisma.user.findUnique({ where: { email: LOJA.email } });
+  const lista = await prisma.menuProduct.findMany({ where: { franchiseeId: loja.id } });
+  const nomes = ["Ana Souza", "Bruno Lima", "Camila Rocha", "Daniel Alves", "Eduarda Nunes", "Felipe Costa", "Gabriela Dias", "Henrique Melo", "Isabela Cardoso", "João Pedro", "Karina Ferraz", "Leonardo Prado"];
+  for (const [i, nome] of nomes.entries()) {
+    const p1 = lista[i % lista.length], p2 = lista[(i * 3 + 1) % lista.length];
+    const entrega = i % 3 !== 2;
+    const taxa = entrega ? 6 : 0;
+    await prisma.customerOrder.create({
+      data: {
+        franchiseeId: loja.id, source: "ONLINE", dailyOrderNumber: 20 + i, status: i % 2 ? "ACEITO" : "PREPARANDO",
+        customerName: nome, customerPhone: `1197778${String(1000 + i)}`,
+        deliveryType: entrega ? "DELIVERY" : "RETIRADA", deliveryFee: taxa, motoboyFee: taxa,
+        customerAddress: entrega ? `Rua das Flores, ${300 + i * 7} - Centro` : null,
+        paymentMethod: ["PIX", "Dinheiro", "Crédito"][i % 3],
+        totalAmount: taxa + p1.price + p2.price,
+        createdAt: haMin(4 + i * 2), acceptedAt: haMin(3 + i * 2),
+        items: { create: [
+          { menuProductId: p1.id, productName: p1.name, quantity: 1, price: p1.price },
+          { menuProductId: p2.id, productName: p2.name, quantity: 1, price: p2.price },
+        ] },
+      },
+    });
+  }
 }
 
 /** O pedido que "chega" durante a gravação — é o que mostra a tela se atualizando sozinha. */

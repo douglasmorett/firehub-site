@@ -775,10 +775,12 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             R$ {total.toFixed(2).replace(".", ",")}
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, paddingLeft: 21, fontSize: "0.72rem", color: "#64748B", fontWeight: 600, minWidth: 0 }}>
-          <span style={{ whiteSpace: "nowrap" }}>{rotuloDoCanal(order)}</span>
-          <span aria-hidden>·</span>
-          <span style={{ whiteSpace: "nowrap" }}>
+        {/* Em coluna estreita (tela de 1366 px) o canal e o tipo encolhem com
+            "…" e o tempo fica sempre inteiro — é ele que diz o que fazer. */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, paddingLeft: 21, fontSize: "0.72rem", color: "#64748B", fontWeight: 600, minWidth: 0, overflow: "hidden" }}>
+          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flexShrink: 1 }}>
+            {rotuloDoCanal(order)}
+            {" · "}
             {ehMesa ? "🍽️ Mesa" : isTakeoutOrder ? "🏪 Retirada" : order.deliveryType === "BALCAO" ? "🧾 Balcão" : "🛵 Entrega"}
           </span>
           {/* O tempo curto: "-58min atrasado" inteiro cortava na borda do card estreito. */}
