@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { consultaDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
 import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import {
   ROTULO_DO_DESTINO,
@@ -13,6 +14,9 @@ import {
 
 /**
  * "Trocar tipo" — no lápis do card (aba Editar itens), acima da edição.
+ *
+ * Balcão/retirada que vira ENTREGA (Lapastine, 09/10/2026): endereço + taxa,
+ * a taxa sugerida pela cotação do balcão.
  *
  * Delivery que vira mesa ou balcão: o cliente está no salão e pediu pelo
  * cardápio do delivery (Ragnar, 01/10/2026). Mesa → escolhe a mesa (livre
@@ -62,6 +66,36 @@ export default function TrocarTipoDoPedidoPainel({
   const [mesaId, setMesaId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoDaTroca | null>(null);
+  // Virar ENTREGA: o endereço e a taxa. A taxa vem da mesma cotação do balcão
+  // (/api/delivery-fee) e a loja pode mudar.
+  const [endereco, setEndereco] = useState<string>(String(pedido?.customerAddress || ""));
+  const [taxaTexto, setTaxaTexto] = useState("");
+  const [cotando, setCotando] = useState(false);
+  const [avisoDaTaxa, setAvisoDaTaxa] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (destino !== "DELIVERY") return;
+    const texto = endereco.trim();
+    if (texto.length < 6) { setAvisoDaTaxa(null); return; }
+    let vivo = true;
+    const controle = new AbortController();
+    setCotando(true);
+    const agendado = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/delivery-fee?${consultaDoBalcao(texto)}`, { signal: controle.signal });
+        const d = await res.json().catch(() => null);
+        if (!vivo) return;
+        const lida = lerCotacaoNoBalcao(res.ok ? d : null, d?.message);
+        if (lida.taxa != null) setTaxaTexto(String(lida.taxa).replace(".", ","));
+        setAvisoDaTaxa(lida.texto || null);
+      } catch {
+        if (vivo) setAvisoDaTaxa("Não consegui calcular a taxa. Digite o valor na mão.");
+      } finally {
+        if (vivo) setCotando(false);
+      }
+    }, 600);
+    return () => { vivo = false; controle.abort(); clearTimeout(agendado); };
+  }, [destino, endereco]);
 
   // A tela não tem todos os campos (pagamento confirmado, saída); a avaliação
   // daqui só decide se o botão aparece. Quem decide de verdade é o GET.
@@ -72,7 +106,7 @@ export default function TrocarTipoDoPedidoPainel({
     return (
       <div style={caixaVerde}>
         <div style={{ fontWeight: 800, fontSize: "0.85rem", color: "#14532D" }}>
-          ✅ {resultado.mesa != null ? `Pedido na Mesa ${resultado.mesa}` : "Pedido no balcão"}
+          ✅ {resultado.mesa != null ? `Pedido na Mesa ${resultado.mesa}` : resultado.deliveryType === "DELIVERY" ? "Pedido virou entrega" : "Pedido no balcão"}
           {resultado.abriuAMesa ? " (mesa aberta no nome do cliente)" : ""}
         </div>
         <div style={{ fontSize: "0.78rem", color: "#166534", marginTop: 4 }}>
@@ -81,7 +115,9 @@ export default function TrocarTipoDoPedidoPainel({
         </div>
         {resultado.aviso && <div style={{ ...avisoAmarelo, marginTop: 6 }}>⚠️ {resultado.aviso}</div>}
         <div style={{ fontSize: "0.74rem", color: "#475569", marginTop: 6 }}>
-          A comanda que já saiu impressa ainda diz delivery. Reimprima pela aba Comanda se a cozinha precisar.
+          {resultado.deliveryType === "DELIVERY"
+            ? "A comanda que já saiu impressa ainda diz retirada. Reimprima pela aba Comanda e escolha o motoboy no card."
+            : "A comanda que já saiu impressa ainda diz delivery. Reimprima pela aba Comanda se a cozinha precisar."}
         </div>
         <div style={{ textAlign: "right", marginTop: 6 }}>
           <button type="button" style={botaoLeve} onClick={() => setResultado(null)}>OK</button>
@@ -142,7 +178,11 @@ export default function TrocarTipoDoPedidoPainel({
       const res = await fetch(`/api/store/orders/${encodeURIComponent(pedido.id)}/tipo`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ destino, tableId: destino === "MESA" ? mesaId : undefined }),
+        body: JSON.stringify({
+          destino,
+          tableId: destino === "MESA" ? mesaId : undefined,
+          ...(destino === "DELIVERY" ? { endereco: endereco.trim(), taxa: taxaNumero } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -176,7 +216,11 @@ export default function TrocarTipoDoPedidoPainel({
 
   const av = leitura?.avaliacao;
   const mesaEscolhida = leitura?.mesas.find((m) => m.id === mesaId) || null;
-  const prontoParaConfirmar = !!destino && (destino !== "MESA" || !!mesaEscolhida);
+  const taxaNumero = Number(String(taxaTexto).replace(",", ".").trim());
+  const taxaValida = String(taxaTexto).trim() !== "" && Number.isFinite(taxaNumero) && taxaNumero >= 0;
+  const prontoParaConfirmar = !!destino
+    && (destino !== "MESA" || !!mesaEscolhida)
+    && (destino !== "DELIVERY" || (endereco.trim().length >= 6 && taxaValida));
 
   return (
     <div style={caixaAberta}>
@@ -205,7 +249,7 @@ export default function TrocarTipoDoPedidoPainel({
                   onClick={() => { setDestino(d); setMesaId(null); }}
                   style={{ ...opcao(destino === d), ...(barrado ? { opacity: 0.45, cursor: "not-allowed" } : {}) }}
                 >
-                  {d === "MESA" ? ICONE.MESA : ICONE.BALCAO} {ROTULO_DO_DESTINO[d]}
+                  {ICONE[d]} {ROTULO_DO_DESTINO[d]}
                 </button>
               );
             })}
@@ -242,7 +286,40 @@ export default function TrocarTipoDoPedidoPainel({
             </div>
           )}
 
-          {destino && leitura && (
+          {destino === "DELIVERY" && (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+              <label style={{ fontSize: "0.74rem", fontWeight: 800, color: "#115E59" }}>
+                Endereço de entrega
+                <input
+                  value={endereco}
+                  onChange={(e) => setEndereco(e.target.value)}
+                  placeholder="Rua, número - Bairro (complemento)"
+                  autoFocus
+                  style={campoDeTexto}
+                />
+              </label>
+              <label style={{ fontSize: "0.74rem", fontWeight: 800, color: "#115E59" }}>
+                Taxa de entrega (R$)
+                <input
+                  value={taxaTexto}
+                  onChange={(e) => setTaxaTexto(e.target.value)}
+                  inputMode="decimal"
+                  placeholder={cotando ? "calculando…" : "0,00"}
+                  style={{ ...campoDeTexto, maxWidth: 140 }}
+                />
+              </label>
+              {(cotando || avisoDaTaxa) && (
+                <div style={{ fontSize: "0.72rem", color: "#475569" }}>{cotando ? "Calculando a taxa pela área de entrega…" : avisoDaTaxa}</div>
+              )}
+              {leitura && taxaValida && (
+                <div style={{ fontSize: "0.78rem", color: "#334155" }}>
+                  Total {dinheiro(leitura.totalAmount)} → <b>{dinheiro(Math.max(0, leitura.totalAmount - leitura.deliveryFee + taxaNumero))}</b>. Depois é só escolher o motoboy no card.
+                </div>
+              )}
+            </div>
+          )}
+
+          {destino && destino !== "DELIVERY" && leitura && (
             <div style={{ fontSize: "0.78rem", color: "#334155", marginTop: 10, lineHeight: 1.45 }}>
               {leitura.deliveryFee > 0 && (
                 <div>A taxa de entrega de <b>{dinheiro(leitura.deliveryFee)}</b> sai: total {dinheiro(leitura.totalAmount)} → <b>{dinheiro(leitura.totalDepois)}</b>.</div>
@@ -272,7 +349,7 @@ export default function TrocarTipoDoPedidoPainel({
                 cursor: prontoParaConfirmar && !salvando ? "pointer" : "not-allowed",
               }}
             >
-              {salvando ? "Trocando…" : destino === "MESA" && mesaEscolhida ? `Passar para a ${mesaEscolhida.label || `Mesa ${mesaEscolhida.number}`}` : destino === "BALCAO" ? "Passar para o balcão" : "Escolha acima"}
+              {salvando ? "Trocando…" : destino === "MESA" && mesaEscolhida ? `Passar para a ${mesaEscolhida.label || `Mesa ${mesaEscolhida.number}`}` : destino === "BALCAO" ? "Passar para o balcão" : destino === "DELIVERY" ? "Passar para entrega" : "Escolha acima"}
             </button>
           </div>
         </>
@@ -285,6 +362,10 @@ export default function TrocarTipoDoPedidoPainel({
 
 const caixa: React.CSSProperties = {
   marginBottom: 12, background: "#F8FAFC", padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0",
+};
+const campoDeTexto: React.CSSProperties = {
+  display: "block", width: "100%", marginTop: 4, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #99F6E4",
+  fontSize: "0.84rem", fontFamily: "inherit", color: "#0F172A", background: "#FFF", boxSizing: "border-box",
 };
 const caixaAberta: React.CSSProperties = { ...caixa, background: "#F0FDFA", border: "1.5px solid #99F6E4" };
 const caixaVerde: React.CSSProperties = { ...caixa, background: "#F0FDF4", border: "1.5px solid #86EFAC" };

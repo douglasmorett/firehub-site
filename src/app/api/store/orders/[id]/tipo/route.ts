@@ -16,6 +16,7 @@ import {
   avaliarTrocaDeTipo,
   etiquetaDaTroca,
   tipoAtualDoPedido,
+  totalComATaxa,
   totalSemATaxa,
   type TipoDeDestino,
 } from "@/lib/troca-de-tipo";
@@ -105,6 +106,99 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
+async function virarEntrega({ corpo, operador, lojaId, order, taxa, partesGravadas }: {
+  corpo: any;
+  operador: { name?: string | null; email?: string | null; role?: string | null };
+  lojaId: string;
+  order: any;
+  avaliacao: unknown;
+  taxa: number;
+  partesGravadas: unknown[];
+}) {
+  const endereco = String(corpo?.endereco || "").replace(/\s+/g, " ").trim();
+  if (endereco.length < 6) return NextResponse.json({ error: "Escreva o endereço de entrega (rua, número e bairro)." }, { status: 400 });
+  const taxaNova = Math.round(Number(corpo?.taxa) * 100) / 100;
+  if (!Number.isFinite(taxaNova) || taxaNova < 0 || taxaNova > 500) {
+    return NextResponse.json({ error: "Taxa de entrega inválida." }, { status: 400 });
+  }
+  // Pago dividido: as partes somam o total de hoje, e com a taxa deixariam de
+  // bater. Troque para uma forma só, mude o tipo e divida de novo.
+  if (taxaNova > 0 && partesGravadas.length > 0) {
+    return NextResponse.json(
+      { error: "Este pedido está pago dividido. Troque o pagamento para uma forma só, mude para entrega e depois divida de novo (Ver pedido → Trocar)." },
+      { status: 409 },
+    );
+  }
+
+  const totalDepois = totalComATaxa(order, taxaNova);
+  const de = ROTULO_DO_TIPO[tipoAtualDoPedido(order)];
+  const quem = nomeDoOperador(operador);
+  const partes = [`${de} → Entrega`, `endereço: ${endereco}`];
+  if (taxaNova !== taxa) partes.push(`taxa de entrega ${reais(taxa)} → ${reais(taxaNova)}`);
+
+  const registro = {
+    quando: new Date().toISOString(),
+    quem,
+    acao: "TIPO" as const,
+    descricao: partes.join("; "),
+    totalAntes: order.totalAmount || 0,
+    totalDepois,
+    tipoAntes: order.deliveryType,
+    tipoDepois: TIPO_GRAVADO.DELIVERY,
+    taxaAntes: taxa,
+    enderecoAntes: order.customerAddress || null,
+    pagamentoAntes: order.paymentMethod || null,
+  };
+  const notas = `${String(order.notes || "").trim()} ${etiquetaDaTroca(de, "Entrega")}`.trim();
+
+  const r = await prisma.customerOrder.updateMany({
+    where: {
+      id: order.id, franchiseeId: lojaId, tableSessionId: null,
+      status: { in: [...STATUS_QUE_TROCAM] }, dispatchedAt: null,
+      totalAmount: order.totalAmount, deliveryFee: order.deliveryFee, fiscalStatus: order.fiscalStatus,
+    },
+    data: {
+      deliveryType: TIPO_GRAVADO.DELIVERY,
+      customerAddress: endereco,
+      deliveryFee: taxaNova,
+      totalAmount: totalDepois,
+      // O ponto e a distância eram de outro lugar (ou de nenhum): o cron mede
+      // o endereço novo pelo texto, e o repasse do motoboy sai dele.
+      customerLatLng: Prisma.DbNull,
+      deliveryDistance: null,
+      motoboyFee: null,
+      notes: notas,
+      editHistory: empilharEdicao(order.editHistory, registro as unknown as RegistroDeEdicao) as any,
+    },
+  });
+  if (r.count !== 1) {
+    return NextResponse.json({ error: "O pedido mudou enquanto você trocava o tipo. Abra o pedido de novo e confira." }, { status: 409 });
+  }
+
+  const diferenca = Math.round((totalDepois - (order.totalAmount || 0)) * 100) / 100;
+  const aviso = avisoDaDiferencaDeTotal(diferenca, totalDepois, {
+    pagoOnline: ehPagoOnline(order as any),
+    finalizado: false,
+    pagamentoConfirmado: order.paymentPaidAt != null,
+    balcao: String(order.source || "").toUpperCase() === "PRESENCIAL",
+    dividido: partesGravadas.length > 0,
+  });
+
+  console.log(`[Troca de tipo] pedido ${order.id} (#${order.dailyOrderNumber ?? "—"}): ${registro.descricao}; total ${order.totalAmount} → ${totalDepois}; por ${quem}`);
+
+  return NextResponse.json({
+    success: true,
+    deliveryType: TIPO_GRAVADO.DELIVERY,
+    tableSessionId: null,
+    mesa: null,
+    abriuAMesa: false,
+    totalAmount: totalDepois,
+    deliveryFee: taxaNova,
+    descricao: registro.descricao,
+    aviso,
+  });
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const ctx = await contexto(params);
@@ -113,8 +207,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
     const corpo = await req.json().catch(() => ({}));
     const destino = String(corpo?.destino || "").toUpperCase() as TipoDeDestino;
-    if (destino !== "MESA" && destino !== "BALCAO") {
-      return NextResponse.json({ error: "Escolha mesa ou balcão." }, { status: 400 });
+    if (destino !== "MESA" && destino !== "BALCAO" && destino !== "DELIVERY") {
+      return NextResponse.json({ error: "Escolha mesa, balcão ou entrega." }, { status: 400 });
     }
 
     const avaliacao = avaliarTrocaDeTipo(order as any, operador);
@@ -126,8 +220,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (barrado) return NextResponse.json({ error: barrado }, { status: 403 });
 
     const taxa = Math.round((order.deliveryFee || 0) * 100) / 100;
-    const totalDepois = totalSemATaxa(order);
     const partesGravadas = lerPartes(order.paymentMethods);
+
+    // ── VIRAR ENTREGA (balcão/retirada → entrega) ──────────────────────────
+    // O atendente lançou "retirada no local" num pedido que era para o
+    // endereço do cliente (Lapastine, 09/10/2026). Entra o endereço e a taxa —
+    // a sugerida pela mesma regra do balcão (/api/delivery-fee), que a loja
+    // pode mudar — e o total sobe junto. A distância o cron mede pelo texto.
+    if (destino === "DELIVERY") {
+      return virarEntrega({ corpo, operador, lojaId, order, avaliacao, taxa, partesGravadas });
+    }
+
+    const totalDepois = totalSemATaxa(order);
     // Pago dividido em balcão: a soma das partes deixaria de bater com o total
     // sem a taxa. A correção de taxa já sabe redividir; aqui não repito a tela.
     if (destino === "BALCAO" && taxa > 0 && partesGravadas.length > 0) {

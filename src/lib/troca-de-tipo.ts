@@ -1,5 +1,6 @@
 /**
- * TROCAR O TIPO DE UM PEDIDO JÁ LANÇADO: delivery que vira mesa ou balcão.
+ * TROCAR O TIPO DE UM PEDIDO JÁ LANÇADO: delivery que vira mesa ou balcão,
+ * e balcão/retirada que vira entrega (com endereço e taxa).
  *
  * ── Por que existe ──────────────────────────────────────────────────────────
  *
@@ -48,12 +49,12 @@
 import { avaliarEdicao, type OperadorDaEdicao, type PedidoParaEdicao } from "@/lib/edicao-de-pedido";
 import { ehPagoOnline } from "@/lib/pagamento-na-entrega";
 
-export type TipoDeDestino = "MESA" | "BALCAO";
+export type TipoDeDestino = "MESA" | "BALCAO" | "DELIVERY";
 
 /** Como o tipo de cada destino vai para o banco. Balcão é RETIRADA, como no PDV. */
-export const TIPO_GRAVADO: Record<TipoDeDestino, string> = { MESA: "MESA", BALCAO: "RETIRADA" };
+export const TIPO_GRAVADO: Record<TipoDeDestino, string> = { MESA: "MESA", BALCAO: "RETIRADA", DELIVERY: "DELIVERY" };
 
-export const ROTULO_DO_DESTINO: Record<TipoDeDestino, string> = { MESA: "Mesa", BALCAO: "Balcão / retirada" };
+export const ROTULO_DO_DESTINO: Record<TipoDeDestino, string> = { MESA: "Mesa", BALCAO: "Balcão / retirada", DELIVERY: "Entrega" };
 
 /**
  * Status em que ainda dá para trocar: antes de o pedido sair. WHITELIST, como
@@ -110,7 +111,10 @@ export function avaliarTrocaDeTipo(pedido: PedidoParaTroca | null | undefined, o
   }
 
   const atual = tipoAtualDoPedido(pedido);
-  const destinos: TipoDeDestino[] = atual === "DELIVERY" ? ["MESA", "BALCAO"] : atual === "BALCAO" ? ["MESA"] : [];
+  // Balcão/retirada também vira ENTREGA: o atendente lançou "retirada no
+  // local" num pedido que era para o endereço do cliente (Lapastine,
+  // 09/10/2026: "não sei como editar para colocar o endereço do cara e a taxa").
+  const destinos: TipoDeDestino[] = atual === "DELIVERY" ? ["MESA", "BALCAO"] : atual === "BALCAO" ? ["DELIVERY", "MESA"] : [];
   if (destinos.length === 0) return { pode: false, motivo: "Este pedido já é de mesa." };
 
   const barrados: Partial<Record<TipoDeDestino, string>> = {};
@@ -129,6 +133,14 @@ const centavos = (n: number) => Math.round(n * 100) / 100;
  */
 export function totalSemATaxa(pedido: { totalAmount?: number | null; deliveryFee?: number | null }): number {
   return Math.max(0, centavos((pedido.totalAmount || 0) - (pedido.deliveryFee || 0)));
+}
+
+/**
+ * O total quando o pedido VIRA entrega: sai a taxa antiga (se houver) e entra
+ * a nova. Itens e desconto ficam como estão.
+ */
+export function totalComATaxa(pedido: { totalAmount?: number | null; deliveryFee?: number | null }, taxa: number): number {
+  return Math.max(0, centavos((pedido.totalAmount || 0) - (pedido.deliveryFee || 0) + (Number(taxa) || 0)));
 }
 
 /** A observação que fica no pedido, para a loja ver no card. */

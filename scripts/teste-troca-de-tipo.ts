@@ -2,7 +2,7 @@
  * A regra da troca de tipo (src/lib/troca-de-tipo.ts), sem banco:
  *   npx tsx scripts/teste-troca-de-tipo.ts
  */
-import { avaliarTrocaDeTipo, totalSemATaxa, tipoAtualDoPedido } from "../src/lib/troca-de-tipo";
+import { avaliarTrocaDeTipo, totalComATaxa, totalSemATaxa, tipoAtualDoPedido } from "../src/lib/troca-de-tipo";
 
 const dono = { role: "FRANCHISEE", permissions: "" };
 const funcionarioSem = { role: "STAFF", permissions: "pedidos" };
@@ -36,7 +36,10 @@ const mesa = avaliarTrocaDeTipo({ ...delivery, deliveryType: "MESA", tableSessio
 confere("mesa: não troca", !mesa.pode, mesa);
 
 const balcao = avaliarTrocaDeTipo({ ...delivery, deliveryType: "RETIRADA", deliveryFee: 0 }, dono);
-confere("balcão/retirada: só mesa", balcao.pode && balcao.destinos.join() === "MESA", balcao);
+// Lapastine, 09/10/2026: retirada lançada por engano vira entrega (endereço + taxa).
+confere("balcão/retirada: entrega ou mesa", balcao.pode && balcao.destinos.join() === "DELIVERY,MESA", balcao);
+confere("virar entrega: total ganha a taxa", totalComATaxa({ totalAmount: 50, deliveryFee: 0 }, 6) === 56);
+confere("virar entrega: taxa antiga sai, nova entra", totalComATaxa({ totalAmount: 56, deliveryFee: 6 }, 8.5) === 58.5);
 
 const cancelado = avaliarTrocaDeTipo({ ...delivery, status: "CANCELADO" }, dono);
 confere("cancelado: não troca", !cancelado.pode, cancelado);
