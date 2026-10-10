@@ -78,10 +78,32 @@ export function bloqueioDaMensalidade(yearMonth: string, fechadoEm: Date = new D
  * `dueDate`: os ciclos de setembro/2026 gravaram "fechamento + 10 dias" (11/10
  * às 00h28) e a faixa diria "pague até 11/10". O `dueDate` fica só como
  * registro. Sem `closedAt`, vale o calendário puro.
+ *
+ * `emailDaLoja` (o e-mail da conta dona do ciclo) só serve para o prazo dado
+ * à mão em `PRAZO_DADO_A_MAO`; sem ele vale a regra de sempre.
  */
-export function bloqueioDoCiclo(ciclo: { yearMonth: string; closedAt?: Date | string | null }): Date {
-  return bloqueioDaMensalidade(ciclo.yearMonth, ciclo.closedAt ? new Date(ciclo.closedAt) : new Date(0));
+export function bloqueioDoCiclo(
+  ciclo: { yearMonth: string; closedAt?: Date | string | null },
+  emailDaLoja?: string | null,
+): Date {
+  const doMes = bloqueioDaMensalidade(ciclo.yearMonth, ciclo.closedAt ? new Date(ciclo.closedAt) : new Date(0));
+  const email = emailDaLoja?.toLowerCase().replace(/\s+/g, "");
+  const ateODia = email ? PRAZO_DADO_A_MAO[`${email}:${ciclo.yearMonth}`] : undefined;
+  if (!ateODia) return doMes;
+  const dado = fimDoDia(ciclo.yearMonth, ateODia);
+  return dado > doMes ? dado : doMes;
 }
+
+/**
+ * Prazo dado à mão a uma loja: o painel dela trava no fim do dia indicado do
+ * mês seguinte (Brasília), em vez do dia 10. Vale só para aquele ciclo — no
+ * mês seguinte a loja volta à regra. O boleto não muda: continua vencido
+ * desde o dia 5, com juros. Chave: e-mail da conta + `yearMonth` do ciclo.
+ */
+const PRAZO_DADO_A_MAO: Record<string, number> = {
+  // Brazza Burguer, mensalidade de setembro/2026: dono liberou até quarta, 14/10 (pedido em 10/10/2026).
+  "jmingordo@gmail.com:2026-09": 14,
+};
 
 /** "2026-10-05" → "05/10". */
 export function diaEMes(isoDia: string): string {

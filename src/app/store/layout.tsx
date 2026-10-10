@@ -132,7 +132,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         // para a loja — o prazo é o dia 5, e depois dele o boleto já cobra
         // juros e multa (dono, 02/10/2026).
         const venc = vencimentoDoBoleto(closedCycle.yearMonth);
-        const bloqueio = bloqueioDoCiclo(closedCycle);
+        const bloqueio = bloqueioDoCiclo(closedCycle, userEmailClean);
         const now = new Date();
         const isOverdue = now >= bloqueio;
         const diasParaVencer = diasAte(venc.dia, now);
