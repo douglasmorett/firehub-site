@@ -2,7 +2,7 @@
   "pedidos": {
     "id": "pedidos",
     "titulo": "Como usar a tela de Pedidos",
-    "duracao": 174,
+    "duracao": 194,
     "capitulos": [
       {
         "em": 0,
@@ -17,7 +17,7 @@
         "titulo": "Pedido novo chegando"
       },
       {
-        "em": 35,
+        "em": 34.9,
         "titulo": "O cartão do pedido"
       },
       {
@@ -29,27 +29,31 @@
         "titulo": "Motoboy e saída para entrega"
       },
       {
-        "em": 104,
+        "em": 103.5,
         "titulo": "Concluir a entrega"
       },
       {
-        "em": 110.5,
+        "em": 110,
         "titulo": "Os botões menores do cartão"
       },
       {
-        "em": 131,
+        "em": 130.6,
         "titulo": "Cancelar um pedido"
       },
       {
-        "em": 138.6,
+        "em": 139,
         "titulo": "Busca, filtros e resumo"
       },
       {
-        "em": 164.4,
+        "em": 164.3,
+        "titulo": "Painel clean"
+      },
+      {
+        "em": 185.2,
         "titulo": "Para rever este vídeo"
       }
     ],
-    "versao": "287d5809"
+    "versao": "bd67b4e5"
   },
   "balcao": {
     "id": "balcao",
