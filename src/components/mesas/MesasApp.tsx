@@ -15,6 +15,7 @@ import type { PagamentoDaMesa } from "@/lib/pagamentos-da-mesa";
 import { printOrder } from "@/lib/print";
 import { impressorasDaContaDaMesa } from "@/lib/impressao-da-conta";
 import { impressorasDaContaNoAndar, lerAndares, numerosDaFaixa, type AndarDaMesa } from "@/lib/andares-da-mesa";
+import { ROXO_DA_CONTA } from "@/lib/mesa-em-fechamento";
 import { numeroDaMesa } from "@/lib/mesa-na-comanda";
 import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
@@ -42,6 +43,8 @@ interface TableItem {
     openedAt: string;
     totalAmount: number;
     orderCount: number;
+    /** Conta impressa e nada lançado depois: mesa em fechamento (lib/mesa-em-fechamento.ts). */
+    contaPedidaEm?: string | null;
   } | null;
 }
 
@@ -1036,6 +1039,8 @@ export default function MesasApp({
       showToast(saiuLocal
         ? `🧾 Conta impressa (taxa ${data?.taxaPct ?? "?"}%)`
         : `🧾 Conta enviada para a impressora do caixa (taxa ${data?.taxaPct ?? "?"}%)`);
+      // A mesa fica roxa (em fechamento) na grade já, sem esperar a próxima leitura.
+      fetchTables();
     } catch {
       showToast("❌ Erro de conexão");
     } finally {
@@ -1447,6 +1452,7 @@ export default function MesasApp({
 
   // ─── Computed ──────────────────────────────────────────────────────────────
   const occupiedTables = tables.filter(t => t.openSession);
+  const tablesFechando = tables.filter(t => t.openSession?.contaPedidaEm);
   const freeTables = tables.filter(t => !t.openSession);
   const totalConsumo = occupiedTables.reduce((s, t) => s + (t.openSession?.totalAmount || 0), 0);
 
@@ -1943,6 +1949,8 @@ export default function MesasApp({
     // O garçom também à vista (pedido do dono, 27/09/2026): de longe já se sabe
     // de quem é a mesa, sem tocar nela.
     const garcomDaMesa = (table.openSession?.waiterName || "").trim();
+    // Conta pedida: a mesa está para vagar e fica ROXA (lib/mesa-em-fechamento.ts).
+    const contaPedida = occupied ? table.openSession?.contaPedidaEm || null : null;
     return (
       <button
         key={table.id}
@@ -1959,10 +1967,12 @@ export default function MesasApp({
         style={{
           background: isSelected
             ? "linear-gradient(135deg, #475569, #334155)"
-            : occupied
-              ? hasValue ? "#FEF2F2" : "#FFF4EF"
-              : "#fff",
-          border: `2px solid ${isSelected ? "#475569" : occupied ? (hasValue ? "#FECACA" : "#FFD3C2") : "#E2E8F0"}`,
+            : contaPedida
+              ? ROXO_DA_CONTA.fundo
+              : occupied
+                ? hasValue ? "#FEF2F2" : "#FFF4EF"
+                : "#fff",
+          border: `2px solid ${isSelected ? "#475569" : contaPedida ? ROXO_DA_CONTA.forte : occupied ? (hasValue ? "#FECACA" : "#FFD3C2") : "#E2E8F0"}`,
           borderRadius: 16, padding: "14px 10px", cursor: "pointer",
           display: "flex", flexDirection: "column", alignItems: "center",
           // A linha da grade tem a altura do cartão mais alto dela (a mesa com
@@ -1981,13 +1991,21 @@ export default function MesasApp({
         {/* Number */}
         <span className="mesa-cartao-numero" style={{
           fontSize: 26, fontWeight: 900, letterSpacing: "-0.5px",
-          color: isSelected ? "#fff" : occupied ? "#C92E09" : "#334155",
+          color: isSelected ? "#fff" : contaPedida ? ROXO_DA_CONTA.texto : occupied ? "#C92E09" : "#334155",
         }}>
           {table.label || table.number.toString().padStart(2, "0")}
         </span>
 
         {/* Status indicator */}
-        <span style={{ fontSize: 18 }}>{occupied ? "🔴" : "🟢"}</span>
+        <span style={{ fontSize: 18 }}>{contaPedida ? "🟣" : occupied ? "🔴" : "🟢"}</span>
+        {contaPedida && (
+          <span style={{
+            fontSize: 11, fontWeight: 800, lineHeight: 1.2, borderRadius: 6, padding: "2px 6px",
+            background: isSelected ? "rgba(255,255,255,0.15)" : ROXO_DA_CONTA.forte, color: "#fff",
+          }}>
+            🧾 Conta pedida {new Date(contaPedida).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
+          </span>
+        )}
 
         {occupied ? (
           <>
@@ -2009,7 +2027,7 @@ export default function MesasApp({
             )}
             <span className="mesa-cartao-valor" style={{
               fontSize: 14, fontWeight: 800,
-              color: isSelected ? "#E7DDD3" : "#C92E09",
+              color: isSelected ? "#E7DDD3" : contaPedida ? ROXO_DA_CONTA.texto : "#C92E09",
             }}>
               {fmt(table.openSession!.totalAmount)}
             </span>
@@ -2109,6 +2127,7 @@ export default function MesasApp({
             <div className="mesa-topo-numeros" style={{ display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
               <span style={{ color: "#0F766E", fontWeight: 700 }}>🟢 {freeTables.length} livres</span>
               <span style={{ color: "#C92E09", fontWeight: 700 }}>🔴 {occupiedTables.length} ocupadas</span>
+              {tablesFechando.length > 0 && <span style={{ color: ROXO_DA_CONTA.texto, fontWeight: 700 }}>🟣 {tablesFechando.length} em fechamento</span>}
               {totalConsumo > 0 && <span style={{ color: "#B45309", fontWeight: 700 }}>{fmt(totalConsumo)} em consumo</span>}
             </div>
           </div>

@@ -36,6 +36,7 @@ import SelecionarItensParaImpressao from "@/components/mesas/SelecionarItensPara
 import { montarCardapioDaMesa, gruposDoProduto, type ItemDaMesa } from "@/lib/cardapio-da-mesa";
 import { numerosDaFaixa, type AndarDaMesa, lerAndares } from "@/lib/andares-da-mesa";
 import { caminhoParaAbrirOCaixa } from "@/lib/caixa-aberto";
+import { ROXO_DA_CONTA } from "@/lib/mesa-em-fechamento";
 
 // ─── Tipos (os mesmos que as rotas devolvem para a tela completa) ───────────
 interface Mesa {
@@ -52,6 +53,8 @@ interface Mesa {
     openedAt: string;
     totalAmount: number;
     orderCount: number;
+    /** Conta impressa e nada lançado depois: mesa em fechamento (lib/mesa-em-fechamento.ts). */
+    contaPedidaEm?: string | null;
   } | null;
 }
 
@@ -93,7 +96,7 @@ interface LinhaDoCarrinho {
 }
 
 type Tela = "mesas" | "mesa" | "cardapio" | "revisar";
-type Filtro = "todas" | "livres" | "ocupadas" | "minhas" | `andar:${string}`;
+type Filtro = "todas" | "livres" | "ocupadas" | "fechando" | "minhas" | `andar:${string}`;
 
 // ─── Ajudantes ──────────────────────────────────────────────────────────────
 const fmt = (v: number) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
@@ -208,6 +211,9 @@ const CSS = `
 .mc-mesa.ocupada { background:var(--ocupada); border-color:var(--ocupada); color:#fff; }
 .mc-mesa.ocupada small { color:#FFEDD5; }
 .mc-mesa small.mc-mesa-cliente { font-size:12px; font-weight:800; color:inherit; }
+/* Em fechamento: a conta foi pedida, a mesa está para vagar (lib/mesa-em-fechamento.ts). */
+.mc-mesa.ocupada.fechando { background:${ROXO_DA_CONTA.forte}; border-color:${ROXO_DA_CONTA.forte}; }
+.mc-mesa.ocupada.fechando small { color:#EDE9FE; }
 .mc-mesa.minha { box-shadow:0 0 0 3px #FDBA74; }
 .mc-mesa[aria-pressed="true"] { background:var(--ok); border-color:var(--ok); color:#fff; }
 .mc-mesa[aria-pressed="true"] small { color:#CCFBF1; }
@@ -686,7 +692,11 @@ export default function MesasCelular({
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) avisar("erro", "A conta não foi impressa", data?.error);
-      else avisar("ok", "Conta enviada para a impressora do caixa", `Taxa de serviço: ${data?.taxaPct ?? "?"}%`);
+      else {
+        avisar("ok", "Conta enviada para a impressora do caixa", `Taxa de serviço: ${data?.taxaPct ?? "?"}% · a mesa fica roxa: em fechamento`);
+        // A mesa fica roxa na grade já, sem esperar a próxima leitura.
+        carregarMesas();
+      }
     } catch {
       avisar("erro", "Sem conexão. A conta não foi impressa.");
     } finally {
@@ -785,6 +795,7 @@ export default function MesasCelular({
     const lista = [...mesas].sort((a, b) => a.number - b.number);
     if (filtro === "livres") return lista.filter((m) => !m.openSession);
     if (filtro === "ocupadas") return lista.filter((m) => m.openSession);
+    if (filtro === "fechando") return lista.filter((m) => m.openSession?.contaPedidaEm);
     if (filtro === "minhas") return lista.filter((m) => m.openSession?.waiterId && m.openSession.waiterId === minhasId);
     if (filtro.startsWith("andar:")) {
       const f = faixas.find((x) => x.id === filtro.slice(6));
@@ -793,6 +804,7 @@ export default function MesasCelular({
     return lista;
   }, [mesas, filtro, faixas, minhasId]);
   const ocupadas = mesas.filter((m) => m.openSession).length;
+  const fechando = mesas.filter((m) => m.openSession?.contaPedidaEm).length;
 
   /** Mesas livres para onde a conta pode ir, separadas por andar quando a loja tem. */
   const destinosPorAndar = useMemo(() => {
@@ -904,7 +916,7 @@ export default function MesasCelular({
         <>
           {topo(
             "Mesas",
-            `${ocupadas} ocupada${ocupadas === 1 ? "" : "s"} · ${mesas.length - ocupadas} livre${mesas.length - ocupadas === 1 ? "" : "s"}${garcom ? ` · ${garcom.name}` : ""}`,
+            `${ocupadas} ocupada${ocupadas === 1 ? "" : "s"} · ${mesas.length - ocupadas} livre${mesas.length - ocupadas === 1 ? "" : "s"}${fechando ? ` · ${fechando} fechando` : ""}${garcom ? ` · ${garcom.name}` : ""}`,
             false,
             <>
               <button className="mc-icone" onClick={() => { carregarMesas(); avisar("info", "Mesas atualizadas"); }} aria-label="Atualizar"><RefreshCw size={18} /></button>
@@ -924,6 +936,7 @@ export default function MesasCelular({
                 ["todas", `Todas ${mesas.length}`],
                 ["livres", `Livres ${mesas.length - ocupadas}`],
                 ["ocupadas", `Ocupadas ${ocupadas}`],
+                ...(fechando > 0 || filtro === "fechando" ? [["fechando", `Fechando ${fechando}`]] : []),
                 ...(ehGarcom ? [["minhas", "Minhas"]] : []),
                 ...faixas.map((f) => [`andar:${f.id}`, f.nome]),
               ] as [Filtro, string][]).map(([valor, rotulo]) => (
@@ -945,12 +958,13 @@ export default function MesasCelular({
                 {mesasFiltradas.map((m) => {
                   const s = m.openSession;
                   const minha = !!(s && minhasId && s.waiterId === minhasId);
+                  const emFechamento = !!s?.contaPedidaEm;
                   return (
                     <button
                       key={m.id}
-                      className={`mc-mesa${s ? " ocupada" : ""}${minha ? " minha" : ""}`}
+                      className={`mc-mesa${s ? " ocupada" : ""}${emFechamento ? " fechando" : ""}${minha ? " minha" : ""}`}
                       onClick={() => entrarNaMesa(m)}
-                      aria-label={`Mesa ${m.number}${s ? `, ocupada${s.customerName ? `, ${s.customerName}` : ""}${s.waiterName ? `, garçom ${s.waiterName}` : ""}, ${fmt(s.totalAmount)}` : ", livre"}`}
+                      aria-label={`Mesa ${m.number}${s ? `, ${emFechamento ? "em fechamento" : "ocupada"}${s.customerName ? `, ${s.customerName}` : ""}${s.waiterName ? `, garçom ${s.waiterName}` : ""}, ${fmt(s.totalAmount)}` : ", livre"}`}
                     >
                       <b>{String(m.number).padStart(2, "0")}</b>
                       {s ? (
@@ -965,10 +979,12 @@ export default function MesasCelular({
                           {mostrarTotais ? (
                             <>
                               <small style={{ fontWeight: 700, fontSize: 12 }}>{fmt(s.totalAmount)}</small>
-                              {!(s.customerName && s.waiterName) && <small>{tempoDesde(s.openedAt)}</small>}
+                              {!(s.customerName && s.waiterName) && (
+                                emFechamento ? <small style={{ fontWeight: 800 }}>🧾 conta pedida</small> : <small>{tempoDesde(s.openedAt)}</small>
+                              )}
                             </>
                           ) : (
-                            !s.customerName && !s.waiterName && <small>ocupada</small>
+                            !s.customerName && !s.waiterName && <small>{emFechamento ? "conta pedida" : "ocupada"}</small>
                           )}
                         </>
                       ) : (
@@ -1000,6 +1016,12 @@ export default function MesasCelular({
                 <Printer size={18} /> {imprimindo ? "..." : "Conta"}
               </button>
             </div>
+
+            {mesa.openSession.contaPedidaEm && (
+              <div className="mc-cartao" style={{ background: ROXO_DA_CONTA.fundo, borderColor: ROXO_DA_CONTA.borda, color: ROXO_DA_CONTA.texto, fontSize: 14, fontWeight: 700 }}>
+                🧾 Conta pedida às {new Date(mesa.openSession.contaPedidaEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} — mesa em fechamento. Lançar pedido novo tira a marca.
+              </div>
+            )}
 
             {mesa.openSession.notes && (
               <div className="mc-cartao" style={{ background: "#FFFBEB", borderColor: "#FDE68A", fontSize: 14 }}>

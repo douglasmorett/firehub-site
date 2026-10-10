@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { lerAndares } from "@/lib/andares-da-mesa";
+import { contaPedidaEm } from "@/lib/mesa-em-fechamento";
 
 export async function GET(req: NextRequest) {
   try {
@@ -27,6 +28,21 @@ export async function GET(req: NextRequest) {
       orderBy: { number: 'asc' }
     });
 
+    // Última conta impressa de cada mesa aberta: é a marca de "em fechamento"
+    // (lib/mesa-em-fechamento.ts). Uma leitura só, pelas sessões abertas.
+    const sessoesAbertas = tables.flatMap((t: any) => t.sessions.map((s: any) => s.id));
+    const contaImpressaPorSessao = new Map<string, Date>();
+    if (sessoesAbertas.length > 0) {
+      const contas = await prisma.printRequest.groupBy({
+        by: ["tableSessionId"],
+        where: { franchiseeId: targetFranchiseeId, kind: "CONTA_DA_MESA", tableSessionId: { in: sessoesAbertas } },
+        _max: { createdAt: true },
+      });
+      for (const c of contas) {
+        if (c.tableSessionId && c._max.createdAt) contaImpressaPorSessao.set(c.tableSessionId, c._max.createdAt);
+      }
+    }
+
     const formattedTables = tables.map((table: any) => {
       const activeSession = table.sessions[0] || null;
       let openSession = null;
@@ -49,6 +65,8 @@ export async function GET(req: NextRequest) {
           openedAt: activeSession.openedAt,
           totalAmount,
           orderCount: vivos.length,
+          // Conta pedida e nada lançado depois: a mesa fica roxa na grade.
+          contaPedidaEm: contaPedidaEm(contaImpressaPorSessao.get(activeSession.id), activeSession.orders),
         };
       }
 
