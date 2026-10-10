@@ -125,6 +125,31 @@ export default function EditarPedidoPainel({
   const [abrindoBusca, setAbrindoBusca] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState("");
+  // ── AJUSTAR O DESCONTO QUE O PEDIDO JÁ TEM ─────────────────────────────
+  // "Dar desconto" só soma; quem deu a mais não voltava (Divinos, 09/10/2026).
+  // Aqui o desconto TOTAL vira o valor digitado, até zero (rota /desconto).
+  const [ajusteAberto, setAjusteAberto] = useState(false);
+  const [ajusteTexto, setAjusteTexto] = useState("");
+  const [ajustando, setAjustando] = useState(false);
+  const ajustarDesconto = async () => {
+    setAjustando(true);
+    setErro("");
+    try {
+      const res = await fetch(`/api/store/orders/${encodeURIComponent(pedido.id)}/desconto`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ novo: Number(String(ajusteTexto).replace(",", ".").trim() || "0") }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setErro(data.error || "Não consegui ajustar o desconto."); return; }
+      setAjusteAberto(false);
+      aoSalvar({ soDesconto: true, totalAmount: data.totalAmount, desconto: data.discountTotal });
+    } catch {
+      setErro("Sem conexão. Tente de novo.");
+    } finally {
+      setAjustando(false);
+    }
+  };
   // Tirar item ou diminuir quantidade pede o motivo (lib/motivo-do-cancelamento.ts):
   // é o que o dono lê no fechamento do caixa.
   const [motivo, setMotivo] = useState("");
@@ -647,9 +672,51 @@ export default function EditarPedidoPainel({
             🏷️ <strong style={{ color: "#475569" }}>Sem desconto aqui:</strong> {podeDesconto.motivo}
           </div>
         ) : !descontoAberto ? (
-          <button type="button" onClick={() => setDescontoAberto(true)} style={{ ...botaoSecundario, marginBottom: 0 }}>
-            🏷️ Dar desconto
-          </button>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+            <button type="button" onClick={() => setDescontoAberto(true)} style={{ ...botaoSecundario, marginBottom: 0 }}>
+              🏷️ Dar desconto
+            </button>
+            {desconto > 0 && (!ajusteAberto ? (
+              <button
+                type="button"
+                onClick={() => { setAjusteAberto(true); setAjusteTexto(desconto.toFixed(2).replace(".", ",")); }}
+                style={{ ...botaoSecundario, marginBottom: 0 }}
+              >
+                ✏️ Ajustar o desconto do pedido ({fmt(desconto)}) — diminuir ou tirar
+              </button>
+            ) : (
+              <div style={{ border: "1px solid #FDE68A", background: "#FFFBEB", borderRadius: "10px", padding: "10px 12px" }}>
+                <div style={{ fontWeight: 800, fontSize: "0.84rem", color: "#92400E", marginBottom: "6px" }}>✏️ Desconto total do pedido</div>
+                <div style={{ fontSize: "0.76rem", color: "#78350F", marginBottom: "8px" }}>
+                  Hoje: {fmt(desconto)}. Digite quanto deve ficar (0 tira o desconto). O total muda junto e fica no histórico do pedido.
+                </div>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700, color: "#92400E" }}>R$</span>
+                  <input
+                    value={ajusteTexto}
+                    onChange={(e) => setAjusteTexto(e.target.value)}
+                    inputMode="decimal"
+                    style={{ width: 110, padding: "6px 8px", borderRadius: 8, border: "1.5px solid #FCD34D", fontSize: "0.9rem", fontFamily: "inherit" }}
+                  />
+                  <button
+                    type="button"
+                    disabled={ajustando}
+                    onClick={() => void ajustarDesconto()}
+                    style={{ padding: "7px 12px", borderRadius: 8, border: "none", background: "#B45309", color: "#fff", fontWeight: 800, fontSize: "0.8rem", cursor: ajustando ? "wait" : "pointer", fontFamily: "inherit" }}
+                  >
+                    {ajustando ? "Salvando…" : "Salvar desconto"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAjusteAberto(false)}
+                    style={{ border: "none", background: "none", color: "#92400E", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer", textDecoration: "underline", fontFamily: "inherit" }}
+                  >
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div style={{ border: "1px solid #FDE68A", background: "#FFFBEB", borderRadius: "10px", padding: "10px 12px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>

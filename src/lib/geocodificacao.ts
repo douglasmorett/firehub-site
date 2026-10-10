@@ -479,7 +479,19 @@ export const nomeDeRuaParecido = (a: string, b: string): boolean => {
   const x = limpa(a);
   const y = limpa(b);
   if (!x || !y) return true;
-  if (x === y || x.includes(y) || y.includes(x)) return true;
+  if (x === y) return true;
+  // ── UM NOME DENTRO DO OUTRO ────────────────────────────────────────────
+  // "getulio" × "getulio vargas" é a mesma rua escrita pela metade. Mas
+  // "marina" × "marina do canal palmer" não: era a "Rua Marina" do cliente do
+  // Divinos (Cabo Frio, 0,2 km da loja) e o mapa achou a Rua Marina do Canal
+  // Palmer a 2,9 km — a taxa saía R$ 15 em vez de R$ 5, em três pedidos
+  // (04, 05 e 09/10/2026). Uma palavra só dentro de um nome com várias a mais
+  // é outra rua; o resto segue para a comparação por pares de letras.
+  if (x.includes(y) || y.includes(x)) {
+    const [curto, longo] = x.length <= y.length ? [x, y] : [y, x];
+    const palavras = (t: string) => t.split(" ").filter(Boolean).length;
+    if (palavras(curto) >= 2 || palavras(longo) - palavras(curto) <= 1) return true;
+  }
   const bigramas = (t: string) => {
     const s = t.replace(/ /g, "");
     const out: string[] = [];

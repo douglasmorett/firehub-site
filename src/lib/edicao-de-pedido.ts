@@ -776,6 +776,40 @@ export function contaDoDescontoDaEdicao(entrada: {
 }
 
 /**
+ * AJUSTAR o desconto do pedido para um valor (em R$), para mais ou para menos.
+ *
+ * "Dar desconto" só SOMA: quem errou (Divinos, 09/10/2026: digitou 30 no %,
+ * deu R$ 28,80 em vez de R$ 2,20) não tinha como voltar. Aqui o desconto
+ * TOTAL do pedido vira `novo` — inclusive zero —, nunca negativo nem maior
+ * que os itens. `delta` (novo − atual) é o que o total cai (positivo) ou
+ * sobe (negativo); a parte da loja anda o mesmo `delta`
+ * (descontoDaLojaDepoisDaEdicao aceita negativo).
+ */
+export function ajusteDoDescontoDaEdicao(entrada: {
+  itens: { price: number; quantity: number }[];
+  discountTotal?: number | null;
+  deliveryFee?: number | null;
+  /** O total gravado: o novo é ele − delta (nada mais do total muda). */
+  totalAmount?: number | null;
+  novo: number;
+}): { atual: number; novo: number; delta: number; total: number; problema: string } {
+  const centavos = (n: number) => Math.round(n * 100) / 100;
+  const soma = centavos(entrada.itens.reduce((acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 0), 0));
+  const atual = centavos(Number(entrada.discountTotal || 0));
+  const novo = centavos(Number(entrada.novo));
+  let problema = "";
+  if (!Number.isFinite(novo) || novo < 0) problema = "Informe o desconto do pedido (zero para tirar).";
+  else if (novo > soma) problema = "O desconto é maior que o valor dos itens.";
+  else if (novo === atual) problema = "O desconto já é esse.";
+  const final = problema ? atual : novo;
+  const delta = centavos(final - atual);
+  const total = entrada.totalAmount != null
+    ? centavos(Math.max(0, Number(entrada.totalAmount) - delta))
+    : recalcularTotal({ itens: entrada.itens, deliveryFee: entrada.deliveryFee, discountTotal: final });
+  return { atual, novo: final, delta, total, problema };
+}
+
+/**
  * O `discountMerchant` do pedido depois de a loja dar `valor` de desconto na
  * edição. É dele que o fechamento de caixa tira a linha "Desconto" do bloco
  * (produtos + taxa − desconto = total, lib/apuracao-do-turno.ts) e o
