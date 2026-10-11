@@ -16,6 +16,8 @@ import {
   ArrowDownCircle, ArrowUpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Contact, Download, FileUp,
   MessageCircle, Plus, Search, Wallet, X,
 } from "lucide-react";
+import { haQuanto as haQuantoNaLoja } from "@/lib/clientes-da-loja-regras";
+import { FUSO_PADRAO } from "@/lib/fuso";
 
 type Filtro = "todos" | "com_saldo" | "pediram" | "nunca" | "sumidos";
 type Ordem = "recentes" | "pedidos" | "gasto" | "saldo" | "nome";
@@ -39,6 +41,10 @@ type Lista = {
   porPagina: number;
   resumo: { clientes: number; pediram: number; ativos30: number; sumidos: number; novos30: number; comSaldo: number; saldoTotal: number };
   cashback: RegraDoCashback;
+  /** O fuso da loja: as datas e o "hoje/ontem" são do dia dela. */
+  fuso?: string;
+  /** "Todas as lojas": a aba mostra só a loja da sessão, e a tela avisa. */
+  visao?: { todas: boolean; lojaAtual: string | null; outras: string[] };
 };
 
 type Movimento = {
@@ -60,7 +66,7 @@ type Detalhe = {
   clienteDesde: string | null;
   pedidos: { id: string; numero: number | null; em: string; status: string; total: number; tipo: string; canal: string; pagamento: string | null; cashbackGerado: number; cashbackUsado: number }[];
   enderecos: string[];
-  numeros: { pedidos: number; gasto: number; ticketMedio: number; primeiro: string | null; ultimo: string | null; cancelados: number };
+  numeros: { pedidos: number; gasto: number; ticketMedio: number; primeiro: string | null; ultimo: string | null; cancelados: number; naoConcluidos?: number };
   cashback: RegraDoCashback & { saldo: number; proximoVencimento: { valor: number; em: string } | null; movimentos: Movimento[]; aReceber: number };
 };
 
@@ -101,20 +107,14 @@ function AvisoNoTopo({ aviso, onFechar }: { aviso: Aviso | null; onFechar: () =>
 }
 
 // ── Formatos ─────────────────────────────────────────────────────────────────
+// As datas e o "hoje/ontem" são do relógio da LOJA (o fuso vem com a lista).
+// O "hoje/ontem" contava janelas de 24 h: o pedido de ontem às 22h, visto hoje
+// às 10h, era "hoje" ao lado da data de ontem (lib/clientes-da-loja-regras.ts).
 const fmt = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const FUSO = "America/Sao_Paulo";
-const data = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: FUSO }) : "—");
-const dataHora = (iso: string) =>
-  new Date(iso).toLocaleString("pt-BR", { timeZone: FUSO, day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
-function haQuanto(iso: string | null): string {
-  if (!iso) return "nunca pediu";
-  const dias = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
-  if (dias <= 0) return "hoje";
-  if (dias === 1) return "ontem";
-  if (dias < 30) return `há ${dias} dias`;
-  const meses = Math.floor(dias / 30);
-  return meses === 1 ? "há 1 mês" : meses < 12 ? `há ${meses} meses` : `há ${Math.floor(meses / 12)} ano${meses >= 24 ? "s" : ""}`;
-}
+const data = (iso: string | null, fuso: string) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: fuso }) : "—");
+const dataHora = (iso: string, fuso: string) =>
+  new Date(iso).toLocaleString("pt-BR", { timeZone: fuso, day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+const haQuanto = (iso: string | null, fuso: string) => haQuantoNaLoja(iso, new Date(), fuso);
 function telefoneBonito(t: string): string {
   const d = String(t || "").replace(/\D/g, "");
   if (d.length === 11) return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
@@ -146,9 +146,14 @@ const ROTULO_DO_MOVIMENTO: Record<Movimento["tipo"], string> = {
 };
 const STATUS: Record<string, string> = {
   NOVO: "Novo", PENDENTE: "Pendente", ACEITO: "Aceito", PREPARANDO: "Preparando", EM_PREPARO: "Em preparo",
-  PRONTO: "Pronto", SAIU_PARA_ENTREGA: "Saiu para entrega", EM_ROTA: "Saiu para entrega", ENTREGUE: "Entregue",
-  FINALIZADO: "Finalizado", CONCLUIDO: "Concluído", CANCELADO: "Cancelado", CANCELED: "Cancelado", RECUSADO: "Recusado",
+  PRONTO: "Pronto", SAIU_PARA_ENTREGA: "Saiu para entrega", SAIU_ENTREGA: "Saiu para entrega", EM_ROTA: "Saiu para entrega", ENTREGUE: "Entregue",
+  FINALIZADO: "Finalizado", CONCLUIDO: "Concluído", ENCERRADO: "Encerrado",
+  CANCELADO: "Cancelado", CANCELED: "Cancelado", CANCELLED: "Cancelado", RECUSADO: "Recusado",
+  // Não concluídos: aparecem na ficha, não contam como pedido (a régua dos relatórios).
+  CRIANDO_IA: "Rascunho do robô (não conta)", AGUARDANDO_PAGAMENTO: "Esperando pagamento (não conta)",
 };
+/** O pedido aparece apagado na ficha: cancelado ou não concluído — não conta como pedido nem como gasto. */
+const naoConta = (status: string) => /CANCEL|RECUS|REJEIT|CRIANDO_IA|AGUARDANDO_PAGAMENTO/.test(String(status).toUpperCase());
 const MOTIVOS_DE_DAR = ["Saldo do sistema antigo", "Cortesia", "Compensação de pedido", "Correção"];
 const MOTIVOS_DE_TIRAR = ["Usado no balcão", "Correção", "Lançado errado"];
 
@@ -213,6 +218,8 @@ export default function ClientesPage() {
   const paginas = lista ? Math.max(1, Math.ceil(lista.total / (lista.porPagina || 50))) : 1;
   const resumo = lista?.resumo;
   const regra = lista?.cashback;
+  const fuso = lista?.fuso || FUSO_PADRAO;
+  const visao = lista?.visao;
 
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto", fontFamily: "'Inter', sans-serif", color: corDoTexto }}>
@@ -240,6 +247,13 @@ export default function ClientesPage() {
           <p style={{ color: corSuave, fontSize: "0.88rem", margin: "4px 0 0", maxWidth: 620 }}>
             Quem já pediu na loja e quem veio de outro sistema, com o saldo de cashback de cada um. Clique no cliente para ver pedidos, extrato e dar ou tirar saldo.
           </p>
+          {/* O que fica fora da base, dito na tela (auditoria de 11/10/2026): sem isto o
+              dono via 3 clientes num dia de 40 pedidos do iFood e achava que a aba quebrou. */}
+          <p style={{ color: corSuave, fontSize: "0.78rem", margin: "6px 0 0", maxWidth: 620, lineHeight: 1.5 }}>
+            Entra quem deixou o telefone: site, robô do WhatsApp, balcão com telefone, 99Food, Brendi, Wabiz e JotaJá. Ficam fora o iFood
+            (o telefone é o 0800 do app), a mesa e o balcão sem telefone. O mesmo número com e sem o 9 é um cliente só, e pedido cancelado,
+            rascunho do robô e pedido esperando pagamento não contam como pedido nem como gasto.
+          </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => setNovoAberto(true)} style={botao("#fff", vermelho)}><Plus size={16} /> Lançar saldo</button>
@@ -255,6 +269,16 @@ export default function ClientesPage() {
           <strong>O cashback está desligado na loja.</strong> O saldo lançado aqui fica guardado, mas o cliente só consegue usar no cardápio
           depois que você ligar em{" "}
           <a href="/store/minha-loja#fidelidade" style={{ color: "#92400E", fontWeight: 800 }}>Minha loja → Fidelidade &amp; trilha</a>.
+        </div>
+      )}
+
+      {/* "Todas as lojas": a base e o cashback são de cada loja, e a sessão fica na
+          principal. A China Pow via 2 clientes aqui com 14 na Yakisoba, sem aviso. */}
+      {visao?.todas && (
+        <div role="status" style={{ background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: "0.86rem", color: "#1E3A8A" }}>
+          <strong>Você está em “Todas as lojas”, mas aqui aparecem só os clientes de {visao.lojaAtual || "uma loja"}.</strong>{" "}
+          A base de clientes e o cashback são de cada loja. Para ver os {visao.outras.length === 1 ? `da ${visao.outras[0]}` : `das outras lojas (${visao.outras.join(", ")})`},
+          escolha a loja em “Suas Lojas”.
         </div>
       )}
 
@@ -337,7 +361,7 @@ export default function ClientesPage() {
                     <td style={{ whiteSpace: "nowrap", color: "#334155" }}>{telefoneBonito(c.telefone)}</td>
                     <td className="cl-num">{c.pedidos || "—"}</td>
                     <td className="cl-num">{c.pedidos ? fmt(c.gasto) : "—"}</td>
-                    <td style={{ color: corSuave, whiteSpace: "nowrap" }}>{c.ultimo ? `${data(c.ultimo)} · ${haQuanto(c.ultimo)}` : "—"}</td>
+                    <td style={{ color: corSuave, whiteSpace: "nowrap" }}>{c.ultimo ? `${data(c.ultimo, fuso)} · ${haQuanto(c.ultimo, fuso)}` : "—"}</td>
                     <td className="cl-num" style={{ fontWeight: 800, color: c.saldo > 0 ? "#047857" : "#94A3B8" }}>{c.saldo > 0 ? fmt(c.saldo) : "—"}</td>
                   </tr>
                 ))}
@@ -356,7 +380,7 @@ export default function ClientesPage() {
                   </div>
                   <div style={{ fontSize: "0.82rem", color: "#334155", marginTop: 2 }}>{telefoneBonito(c.telefone)}</div>
                   <div style={{ fontSize: "0.78rem", color: corSuave, marginTop: 4 }}>
-                    {c.pedidos ? `${c.pedidos} ${c.pedidos === 1 ? "pedido" : "pedidos"} · ${fmt(c.gasto)} · último ${haQuanto(c.ultimo)}` : c.importado ? "Veio de outro sistema · nunca pediu aqui" : "Nunca pediu"}
+                    {c.pedidos ? `${c.pedidos} ${c.pedidos === 1 ? "pedido" : "pedidos"} · ${fmt(c.gasto)} · último ${haQuanto(c.ultimo, fuso)}` : c.importado ? "Veio de outro sistema · nunca pediu aqui" : "Nunca pediu"}
                   </div>
                 </button>
               ))}
@@ -387,6 +411,7 @@ export default function ClientesPage() {
       {aberto && (
         <FichaDoCliente
           telefone={aberto}
+          fuso={fuso}
           onFechar={() => setAberto(null)}
           onMudou={carregar}
           avisar={setAviso}
@@ -559,7 +584,7 @@ function FormularioDeSaldo({
 
 // ── Ficha do cliente ─────────────────────────────────────────────────────────
 
-function FichaDoCliente({ telefone, onFechar, onMudou, avisar }: { telefone: string; onFechar: () => void; onMudou: () => void; avisar: (a: Aviso) => void }) {
+function FichaDoCliente({ telefone, fuso, onFechar, onMudou, avisar }: { telefone: string; fuso: string; onFechar: () => void; onMudou: () => void; avisar: (a: Aviso) => void }) {
   const [d, setD] = useState<Detalhe | null>(null);
   const [erro, setErro] = useState("");
   const [operacao, setOperacao] = useState<"dar" | "tirar" | null>(null);
@@ -607,7 +632,7 @@ function FichaDoCliente({ telefone, onFechar, onMudou, avisar }: { telefone: str
             <div style={{ fontSize: "0.74rem", fontWeight: 700, color: "#047857", textTransform: "uppercase" }}>Saldo de cashback</div>
             <div style={{ fontSize: "2rem", fontWeight: 900, color: "#047857" }}>{fmt(cb.saldo)}</div>
             <div style={{ fontSize: "0.78rem", color: "#065F46", display: "grid", gap: 2 }}>
-              {cb.proximoVencimento && <span>{fmt(cb.proximoVencimento.valor)} vence em {data(cb.proximoVencimento.em)}</span>}
+              {cb.proximoVencimento && <span>{fmt(cb.proximoVencimento.valor)} vence em {data(cb.proximoVencimento.em, fuso)}</span>}
               {cb.aReceber > 0 && <span>+ {fmt(cb.aReceber)} a receber quando o pedido em andamento for entregue</span>}
               {cb.ativo ? (
                 <span>Usa no pedido pelo site: até {cb.maxResgatePct}% dos produtos.</span>
@@ -640,11 +665,11 @@ function FichaDoCliente({ telefone, onFechar, onMudou, avisar }: { telefone: str
 
           {/* Números */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginTop: 12 }}>
-            <Numero titulo="Pedidos" valor={String(d.numeros.pedidos)} detalhe={d.numeros.cancelados ? `${d.numeros.cancelados} cancelado(s)` : undefined} />
+            <Numero titulo="Pedidos" valor={String(d.numeros.pedidos)} detalhe={[d.numeros.cancelados ? `${d.numeros.cancelados} cancelado(s)` : "", d.numeros.naoConcluidos ? `${d.numeros.naoConcluidos} não concluído(s)` : ""].filter(Boolean).join(" · ") || undefined} />
             <Numero titulo="Gasto" valor={fmt(d.numeros.gasto)} />
             <Numero titulo="Ticket médio" valor={d.numeros.pedidos ? fmt(d.numeros.ticketMedio) : "—"} />
-            <Numero titulo="Último pedido" valor={d.numeros.ultimo ? haQuanto(d.numeros.ultimo) : "—"} detalhe={d.numeros.ultimo ? data(d.numeros.ultimo) : undefined} />
-            <Numero titulo="Cliente desde" valor={d.clienteDesde ? data(d.clienteDesde) : "—"} />
+            <Numero titulo="Último pedido" valor={d.numeros.ultimo ? haQuanto(d.numeros.ultimo, fuso) : "—"} detalhe={d.numeros.ultimo ? data(d.numeros.ultimo, fuso) : undefined} />
+            <Numero titulo="Cliente desde" valor={d.clienteDesde ? data(d.clienteDesde, fuso) : "—"} />
           </div>
 
           {/* Abas */}
@@ -670,7 +695,7 @@ function FichaDoCliente({ telefone, onFechar, onMudou, avisar }: { telefone: str
                       {ROTULO_DO_MOVIMENTO[m.tipo]}{m.pedidoNumero ? ` #${m.pedidoNumero}` : ""}
                     </div>
                     <div style={{ fontSize: "0.76rem", color: corSuave }}>
-                      {dataHora(m.em)}{m.motivo ? ` · ${m.motivo}` : ""}{m.criadoPor ? ` · por ${m.criadoPor}` : ""}
+                      {dataHora(m.em, fuso)}{m.motivo ? ` · ${m.motivo}` : ""}{m.criadoPor ? ` · por ${m.criadoPor}` : ""}
                     </div>
                   </div>
                   <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
@@ -685,7 +710,7 @@ function FichaDoCliente({ telefone, onFechar, onMudou, avisar }: { telefone: str
             <div style={{ marginTop: 10, display: "grid", gap: 6 }}>
               {d.pedidos.length === 0 && <Vazio texto="Este cliente ainda não pediu na loja." />}
               {d.pedidos.map((p) => {
-                const cancelado = /CANCEL|RECUS|REJEIT/.test(p.status.toUpperCase());
+                const cancelado = naoConta(p.status);
                 const aberto = pedidoAberto === p.id;
                 return (
                   <div key={p.id} style={{ background: "#fff", border: aberto ? `1.5px solid ${vermelho}` : borda, borderRadius: 10, opacity: cancelado && !aberto ? 0.6 : 1 }}>
@@ -699,7 +724,7 @@ function FichaDoCliente({ telefone, onFechar, onMudou, avisar }: { telefone: str
                           {p.numero ? `#${p.numero} · ` : ""}{p.canal} · {STATUS[p.status.toUpperCase()] || p.status}
                         </div>
                         <div style={{ fontSize: "0.76rem", color: corSuave }}>
-                          {dataHora(p.em)}{p.pagamento ? ` · ${p.pagamento}` : ""}
+                          {dataHora(p.em, fuso)}{p.pagamento ? ` · ${p.pagamento}` : ""}
                           {p.cashbackUsado > 0 ? ` · usou ${fmt(p.cashbackUsado)} de cashback` : ""}
                           {p.cashbackGerado > 0 ? ` · gerou ${fmt(p.cashbackGerado)}` : ""}
                         </div>
