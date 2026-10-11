@@ -17,54 +17,42 @@
  * Agora a tela vem com `inicioDaJanela()` em diante e só as colunas que o
  * painel mostra. "Período" que começa antes disso busca o resto pela API, e
  * só quando alguém pede.
+ *
+ * ── As colunas da régua (11/10/2026) ────────────────────────────────────────
+ *
+ * A tela passou a contar pela régua única de venda (src/lib/numeros-do-inicio.ts):
+ * a mesa (`tableSessionId`) e o acréscimo (`parentOrderId`) para as vendas e
+ * o ticket; o totem e o canal para o tipo de venda; o pagamento dividido e o
+ * carimbo de pago online para a forma de pagamento. Sem elas, a mesa de três
+ * rodadas eram três "pedidos" e o Pix pago no app do iFood era Pix da loja.
  */
 
 import { prisma } from "@/lib/prisma";
 import { nomeDoItem } from "@/lib/nome-do-item";
+import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
+import { inicioDoDiaOperacional, MAIOR_PERIODO_EM_DIAS, type PedidoDaTelaInicio } from "@/lib/numeros-do-inicio";
 
-const HORA = 60 * 60 * 1000;
-const DIA = 24 * HORA;
-
-/** Mais que isto num "Período" é relatório: ver /store/relatorios. */
-export const MAIOR_PERIODO_EM_DIAS = 93;
+export { MAIOR_PERIODO_EM_DIAS };
 
 /**
- * Desde quando a Início vem carregada: o começo do mês ou 15 dias atrás, o
- * que vier antes. 15 dias porque o "7 dias" se compara com os 7 anteriores.
- *
- * O servidor conta em UTC e a loja, no fuso dela (até UTC−5 no Acre): o mês
- * é o de seis horas atrás, para a madrugada do dia 1 em UTC — que ainda é o
- * dia 31 no Brasil — não pular o mês inteiro da loja.
+ * Desde quando a Início vem carregada: o começo do dia de operação do dia 1º
+ * do mês ou de 13 dias atrás, o que vier antes — no fuso da loja, que vira às
+ * 5h. 13 dias porque o "7 dias" (hoje e os 6 anteriores) se compara com os 7
+ * de antes. O "Mês" comparado com os dias de antes do dia 1º busca o resto
+ * pela API, quando alguém o escolhe.
  */
-export function inicioDaJanela(agora = new Date()): Date {
-  const noBrasil = new Date(agora.getTime() - 6 * HORA);
-  const inicioDoMes = Date.UTC(noBrasil.getUTCFullYear(), noBrasil.getUTCMonth(), 1);
-  return new Date(Math.min(inicioDoMes, agora.getTime() - 15 * DIA));
+export function inicioDaJanela(agora = new Date(), tz?: string | null): Date {
+  const hoje = hojeNaLoja(tz, agora);
+  const doMes = inicioDoDiaOperacional(`${hoje.slice(0, 7)}-01`, tz);
+  const dasDuasSemanas = inicioDoDiaOperacional(somarDias(hoje, -13), tz);
+  return new Date(Math.min(doMes.getTime(), dasDuasSemanas.getTime()));
 }
 
-export type PedidoDoInicio = {
-  id: string;
-  totalAmount: number;
-  status: string;
-  deliveryType: string;
-  paymentMethod?: string;
-  customerName: string;
-  customerPhone: string;
-  customerAddress?: string;
-  customerLatLng?: unknown;
-  ifoodReference?: string;
-  openDeliveryReference?: string;
-  source?: string;
-  notes?: string;
-  createdAt: string;
-  storeName?: string;
-  storeSlug?: string;
-  items: Array<{ id: string; quantity: number; price: number; name: string; cost: number | null; menuProduct: { name: string } }>;
-};
+export type PedidoDoInicio = PedidoDaTelaInicio;
 
 /**
  * Pedidos de uma loja (ou de todas, para o ADMIN com `franchiseeId` nulo)
- * entre `desde` e `ate`, mais novos primeiro.
+ * desde `desde` (e até `ate`, se vier), mais novos primeiro.
  */
 export async function pedidosDoInicio({
   franchiseeId,
@@ -87,10 +75,13 @@ export async function pedidosDoInicio({
     },
     orderBy: { createdAt: "desc" },
     select: {
-      id: true, totalAmount: true, status: true, deliveryType: true, paymentMethod: true,
+      id: true, franchiseeId: true, totalAmount: true, status: true, deliveryType: true,
+      paymentMethod: true, paymentMethods: true, paymentPaidAt: true, gatewayProvider: true,
       customerName: true, customerPhone: true, customerAddress: true, customerLatLng: true,
-      ifoodReference: true, openDeliveryReference: true, source: true, notes: true, createdAt: true,
-      franchisee: comLoja ? { select: { name: true, slug: true } } : undefined,
+      ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true, openDeliveryChannel: true,
+      source: true, notes: true, createdAt: true, dailyOrderNumber: true,
+      tableSessionId: true, parentOrderId: true, totemLicenseId: true,
+      franchisee: comLoja ? { select: { name: true, storeName: true, slug: true } } : undefined,
       items: {
         select: {
           id: true, quantity: true, price: true, productName: true, comboSelections: true,
@@ -102,22 +93,36 @@ export async function pedidosDoInicio({
 
   return pedidos.map((o: any) => ({
     id: o.id,
+    franchiseeId: o.franchiseeId,
     totalAmount: o.totalAmount,
     status: o.status,
     deliveryType: o.deliveryType,
     paymentMethod: o.paymentMethod || undefined,
+    // O dividido do balcão: a forma de pagamento entra pela parte de cada um.
+    paymentMethods: o.paymentMethods ?? undefined,
+    // Pago online (site/gateway): `foiPagoOnline` lê estes dois.
+    paymentPaidAt: o.paymentPaidAt ? o.paymentPaidAt.toISOString() : undefined,
+    gatewayProvider: o.gatewayProvider || undefined,
     customerName: o.customerName,
     customerPhone: o.customerPhone,
     customerAddress: o.customerAddress || undefined,
     // O ponto que o parceiro mandou com o pedido: o mapa de calor usa
     // direto, sem gastar uma busca de endereço. Ver StoreDashboardMap.
     customerLatLng: o.customerLatLng || undefined,
+    ifoodOrderId: o.ifoodOrderId || undefined,
     ifoodReference: o.ifoodReference || undefined,
+    openDeliveryOrderId: o.openDeliveryOrderId || undefined,
     openDeliveryReference: o.openDeliveryReference || undefined,
+    openDeliveryChannel: o.openDeliveryChannel || undefined,
     source: o.source || undefined,
     notes: o.notes || undefined,
     createdAt: o.createdAt.toISOString(),
-    ...(comLoja ? { storeName: o.franchisee?.name || "—", storeSlug: o.franchisee?.slug || "" } : {}),
+    dailyOrderNumber: o.dailyOrderNumber ?? undefined,
+    // A mesa conta uma vez; o acréscimo não é venda nova (régua única).
+    tableSessionId: o.tableSessionId || undefined,
+    parentOrderId: o.parentOrderId || undefined,
+    totemLicenseId: o.totemLicenseId || undefined,
+    ...(comLoja ? { storeName: o.franchisee?.storeName || o.franchisee?.name || "—", storeSlug: o.franchisee?.slug || "" } : {}),
     items: o.items.map((i: any) => {
       let itemName = nomeDoItem(i, "");
       if (!itemName || itemName === "Item de Integração" || itemName === "Produto excluído") {
