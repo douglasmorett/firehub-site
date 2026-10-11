@@ -2794,18 +2794,37 @@ export default function ChatbotHubClient() {
                 📄 Cardápio em Arquivo
               </h3>
               <p style={{ color: "#475569", fontSize: "0.88rem", margin: "0 0 20px", lineHeight: 1.6 }}>
-                Suba a foto ou o PDF do seu cardápio. Quando o cliente pedir o cardápio no WhatsApp,
-                o robô manda <strong style={{ color: "#0F766E" }}>primeiro o link do site</strong> (é lá que o pedido
-                cai sozinho, sem erro de digitação). Só se o cliente disser que prefere pedir pelo WhatsApp
-                mesmo é que ele envia este arquivo. Sem arquivo carregado, ele lista os itens por escrito,
-                como já faz hoje.
+                Suba a foto ou o PDF do seu cardápio. Sem arquivo carregado, o robô lista os itens por
+                escrito, como já faz hoje.
               </p>
 
-              <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: "12px", padding: "14px 16px", marginBottom: "20px" }}>
-                <div style={{ color: "#0F766E", fontSize: "0.8rem", fontWeight: 800, marginBottom: "6px" }}>ORDEM QUE O ROBÔ SEGUE</div>
-                <div style={{ color: "#0F766E", fontSize: "0.83rem", lineHeight: 1.8 }}>
-                  1️⃣ Manda o link do site &nbsp;→&nbsp; 2️⃣ Cliente recusa? Manda este arquivo &nbsp;→&nbsp; 3️⃣ Sem arquivo? Escreve os itens
-                </div>
+              {/* Quando o arquivo vai: a Serpa Pizzaria (10/10/2026) queria a foto logo de cara,
+                  porque muita gente abre o site e não termina. Cada loja escolhe; o padrão
+                  continua sendo o link primeiro. */}
+              <div style={{ color: "#0F172A", fontSize: "0.85rem", fontWeight: 800, marginBottom: "10px" }}>
+                Quando o robô manda o cardápio em arquivo?
+              </div>
+              <div style={{ display: "grid", gap: "10px", marginBottom: "20px" }}>
+                {([
+                  { valor: "RECUSA", titulo: "Só se o cliente recusar o link",
+                    texto: "Manda primeiro o link do site (o pedido cai sozinho, sem erro de digitação). Se o cliente disser que prefere pedir pelo WhatsApp, aí ele manda o arquivo." },
+                  { valor: "INICIO", titulo: "Logo de começo, junto com o link",
+                    texto: "Quando o cliente pede o cardápio ou quer fazer pedido, o robô manda o link e a foto/PDF na hora. O cliente escolhe olhando a foto e pode pedir ali mesmo no WhatsApp." },
+                ] as const).map((op) => {
+                  const marcado = (config.menuFileQuando === "INICIO" ? "INICIO" : "RECUSA") === op.valor;
+                  return (
+                    <button key={op.valor} type="button"
+                      onClick={() => { if (!marcado) handleSaveConfig({ menuFileQuando: op.valor }); }}
+                      style={{ textAlign: "left", padding: "12px 14px", borderRadius: "12px", cursor: "pointer",
+                        border: marcado ? "2px solid #0F766E" : "1px solid #E2E8F0",
+                        background: marcado ? "#F0FDFA" : "#fff" }}>
+                      <div style={{ color: marcado ? "#0F766E" : "#0F172A", fontWeight: 800, fontSize: "0.88rem" }}>
+                        {marcado ? "🔘" : "⚪"} {op.titulo}
+                      </div>
+                      <div style={{ color: "#475569", fontSize: "0.8rem", lineHeight: 1.5, marginTop: "4px" }}>{op.texto}</div>
+                    </button>
+                  );
+                })}
               </div>
 
               {config.menuFileUrl ? (

@@ -1208,6 +1208,7 @@ ${regrasDoRobo({
   // o bloco original tinha ~9 mil tokens, relidos a cada mensagem.
   storeLink,
   cardapioArquivoUrl: cardapioArquivoUrl || null,
+  cardapioArquivoNoInicio: chatbotConfig.menuFileQuando === "INICIO",
   temCupomParaCitar,
   regraDoPrazo: prazoDaLoja.regra,
   personalidade: personalityInstruction,

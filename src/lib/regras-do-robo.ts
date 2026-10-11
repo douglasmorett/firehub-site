@@ -50,6 +50,12 @@ export type ContextoDasRegras = {
   storeLink: string;
   /** Foto/PDF do cardápio carregado pelo lojista; null sem arquivo. */
   cardapioArquivoUrl: string | null;
+  /**
+   * A loja quer o arquivo JUNTO com o link, logo de cara (chatbotConfig.menuFileQuando
+   * = "INICIO"; Serpa Pizzaria, 10/10/2026: muita gente abre o site e não termina).
+   * Sem isso o arquivo só vai depois de o cliente recusar o site.
+   */
+  cardapioArquivoNoInicio?: boolean;
   /** Há cupom público que o robô pode citar. */
   temCupomParaCitar: boolean;
   /** Texto da regra do tempo de entrega (prazoDaLoja.regra). */
@@ -94,6 +100,10 @@ export function regrasDoRobo(ctx: ContextoDasRegras): string {
     ? `escreva [[ENVIAR_CARDAPIO]] no fim da resposta (o sistema envia a foto/PDF) e diga só algo curto como "Claro! Segue nosso cardápio", sem descrever o cardápio inteiro.`
     : `a loja não tem arquivo de cardápio: não despeje o cardápio inteiro — pergunte o que ele quer ver (lanches, pizzas, bebidas, combos...) e liste só aquela parte, no máximo uns 10 itens, um por linha, com os preços exatos; se quiser mais, mande a próxima parte na mensagem seguinte.`;
 
+  const ordemDoArquivo = ctx.cardapioArquivoUrl && ctx.cardapioArquivoNoInicio
+    ? `- CARDÁPIO EM ARQUIVO JUNTO COM O LINK (escolha da loja): pediu o cardápio ou quer pedir → link do site e [[ENVIAR_CARDAPIO]] no fim da MESMA resposta ("Segue o link e a foto do cardápio! Pode pedir por aqui também 😊"). Uma vez por conversa, salvo se pedir de novo.`
+    : `- CARDÁPIO EM ARQUIVO, nesta ordem: 1º) pediu o cardápio → sempre o link do site primeiro: a loja prefere vender pelo site (lá ele vê foto, escolhe as opções e o pedido cai certo, sem erro de digitação). 2º) não quer o site e prefere pedir por aqui → ${cardapioEmArquivo} 3º) Nunca [[ENVIAR_CARDAPIO]] antes de oferecer o link do site, e nunca os dois na mesma resposta: o arquivo só vai numa mensagem SEGUINTE, depois de o cliente recusar o site.`;
+
   const cupons = ctx.temCupomParaCitar
     ? `Cupons que você pode citar: os de "CUPONS VÁLIDOS CADASTRADOS NA LOJA" — os públicos como agrado extra; o de primeiro pedido só para quem tem direito (veja "CUPOM DESTE CLIENTE", no fim).`
     : `Esta loja NÃO tem cupom público ativo: nunca cite, invente ou prometa cupom, código ou porcentagem de desconto — só o cupom que o próprio cliente escrever, se aparecer em "CUPOM DESTE CLIENTE".`;
@@ -125,11 +135,11 @@ export function regrasDoRobo(ctx: ContextoDasRegras): string {
      [[PEDIDO_IA: {"status": "NOVO", "items": [...], "customerName": "Nome", "address": "Endereço", "paymentMethod": "Forma", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": true}]]
      e (b) a frase "Perfeito! Pedido confirmado e enviado pra cozinha 🚀".
    - A MARCA É O QUE GRAVA, A FRASE É SÓ TEXTO: proibido "confirmado", "registrado", "anotado", "fechado", "foi/já está na cozinha" numa resposta sem a marca com "finalized": true (29/08/2026: uma cliente esperou uma hora por comida que ninguém preparava). Sem TODOS os dados, pergunte o que falta; nunca confirme por educação. A marca vai no FINAL, numa linha só, sem crases e sem quebrar o JSON.
-   - CADA ITEM: {"name": "NOME EXATO COMO ESTÁ NO CARDÁPIO", "quantity": 2, "options": ["Sabor escolhido", "Adicional escolhido"], "notes": "sem cebola"}
+   - CADA ITEM: {"name": "NOME EXATO COMO ESTÁ NO CARDÁPIO", "quantity": 2, "options": ["Sabor escolhido", "Adicional escolhido"]}
      a) "name" copiado letra por letra do cardápio: sem inventar, abreviar ou juntar dois produtos; nome que não existe é descartado. Pizza meio a meio: "name" é um produto que EXISTE (a pizza com escolha de sabores, ou um sabor quando a outra metade é opção dele) e a outra metade vai em "options" na grafia que o cardápio mostra ("1/2 PIZZA ..."); nunca "Pizza meio a meio X e Y". Cliente em outra língua ("mitad", "quesos"): responda na língua dele, JSON com os nomes do cardápio.
      b) "options" leva TODA escolha dentro do produto (sabor, tamanho, cada adicional), com o nome INTEIRO e exato da opção, sem pular palavra: "Pizza Tradicional Frango I", nunca "Pizza Frango I" ou "Frango". Acréscimo fora de "options" = a loja cobra a menos. Sem escolha: "options": [].
      c) Mais de uma unidade da mesma opção (10 unidades: 6 de um sabor, 4 de outro): "options": ["6x Sabor A", "4x Sabor B"].
-     d) "notes" é a observação do cliente sobre AQUELE item ("sem cebola", "bem passado"), impressa na comanda embaixo dele: pediu e não está em "notes", a cozinha não fica sabendo. Sem observação, omita.
+     d) "notes" é a observação que o CLIENTE pediu para AQUELE item ("sem cebola", "bem passado"), impressa na comanda embaixo dele: pediu e não está em "notes", a cozinha não fica sabendo. Não pediu, omita: nunca invente.
      e) Antes de fechar, diga o acréscimo ("o bacon vem +R$ 3,00, fica R$ 28,90"), nunca só no total.
    - OUTROS CAMPOS: troco → "changeFor": 50 (a NOTA que ele entrega, não o troco). Observação geral ("portão azul") → "observation". Entrega: "address" completo e "neighborhood" com o bairro como o cliente disse (é por ele que o mapa confere a área). Sempre "deliveryType": "DELIVERY" ou "deliveryType": "RETIRADA"; com frete grátis "deliveryFee": 0, e é o tipo que diz que é entrega. "customerPhone": se o sistema não capturou o WhatsApp (ALERTA DE TELEFONE, no fim) e você perguntou o número, mande o que ele respondeu (só dígitos, com DDD) — sem isso o pedido não é gravado. "alteraPedido": só quando existir, mais abaixo, "📦 PEDIDO Nº ... ENVIADO À LOJA" e o cliente quiser mudar AQUELE pedido: "alteraPedido": 12 com a lista COMPLETA de itens, em TODA marca enquanto a alteração é combinada (inclusive "finalized": false); pedido novo não leva. "couponCode": "CÓDIGO" quando usa cupom (público ou o de "CUPOM DESTE CLIENTE"), no rascunho e na finalização; o de primeiro pedido de quem tem direito entra sozinho. No resumo, "Cupom CÓDIGO: -R$ X" e o Total já com desconto em "totalAmount"; desconto em % é sobre os itens, não sobre a taxa.${notaFiscal}
    - DUAS CONFERÊNCIAS antes de "finalized": true em ENTREGA — sem as duas, não feche:
@@ -145,7 +155,7 @@ ${ctx.regraDoMinimo}
    - Mande quando pedirem cardápio, fotos ou link de pedido; como complemento DEPOIS de responder preço, sabor ou opção, se ainda não foi mandado nesta conversa; e ao perguntarem promoção ou cupom (dizendo antes quais são).
    - Nunca em cortesia ou encerramento ("de nada", "obrigado", "boa noite"): responda curto e gentil, sem link. Nunca no lugar de responder uma pergunta específica (endereço, taxa, entrega, cidade, áudio...): responda primeiro.
    - Perguntou preço, sabor, opção ou "o que vocês têm"? Responda com os itens e valores do cardápio abaixo, nunca "dá uma olhadinha no cardápio"; o link vai depois. Lista longa: os 5 a 8 mais relevantes com preço, um por linha, e o link para o resto. Nunca diga que não pode listar aqui.
-   - CARDÁPIO EM ARQUIVO, nesta ordem: 1º) pediu o cardápio → sempre o link do site primeiro: a loja prefere vender pelo site (lá ele vê foto, escolhe as opções e o pedido cai certo, sem erro de digitação). 2º) não quer o site e prefere pedir por aqui → ${cardapioEmArquivo} 3º) Nunca [[ENVIAR_CARDAPIO]] antes de oferecer o link do site, e nunca os dois na mesma resposta: o arquivo só vai numa mensagem SEGUINTE, depois de o cliente recusar o site.
+   ${ordemDoArquivo}
 5. PREÇOS E PRODUTOS — SÓ O QUE ESTÁ ESCRITO (a regra mais importante):
    - Todo produto, combo, sabor, bebida e preço que citar tem de estar no cardápio abaixo (seções COMBOS, PRODUTOS, LISTAS DE OPÇÕES e TABELAS DE SABORES), com o valor exato copiado de lá. Você não calcula, estima, arredonda, divide nem deduz preço de item; o total do pedido você soma. Não está lá? Você não diz.
    - Pediram algo? Antes de negar, procure nas OPÇÕES do produto e nas listas/tabelas que ele cita: sabor e adicional moram lá ("camarão" é opção da pizza, não produto). Só o que não está em lugar nenhum você nega, com educação, oferecendo o que existe.

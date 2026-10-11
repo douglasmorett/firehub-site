@@ -144,6 +144,9 @@ export async function POST(req: NextRequest) {
       "outrosNumerosDoDono",
       // A chave Pix da loja, que o robô manda ao cliente (lib/pix-da-loja.ts).
       "pixDaLoja",
+      // Quando o robô manda o cardápio em arquivo: "RECUSA" (só se o cliente
+      // recusar o site, o padrão) ou "INICIO" (junto com o link, logo de cara).
+      "menuFileQuando",
     ] as const;
 
     const permitido: Record<string, any> = {};
@@ -173,6 +176,10 @@ export async function POST(req: NextRequest) {
     // que quem envia faz (lib/alertas-do-dono.ts).
     if ("outrosNumerosDoDono" in permitido) {
       permitido.outrosNumerosDoDono = lerOutrosNumerosDoDono({ outrosNumerosDoDono: permitido.outrosNumerosDoDono });
+    }
+    if ("menuFileQuando" in permitido && permitido.menuFileQuando !== "INICIO" && permitido.menuFileQuando !== "RECUSA") {
+      delete permitido.menuFileQuando;
+      recusados.push("menuFileQuando");
     }
     // A chave vai para o dinheiro do cliente: só entra reconhecida (CPF/CNPJ
     // com dígito certo, celular, e-mail, aleatória) e com o titular. Recusada,
