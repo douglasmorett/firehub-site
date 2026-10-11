@@ -196,7 +196,7 @@ export type ApuracaoDasVendas = {
   entregasProprias: EntregaPropria[];
   retrato: Pick<DetalheDoTurno,
     "vendas" | "porForma" | "porCanal" | "porTipo" | "cupomDaLoja" | "cupomDaPlataforma" | "onlinePorCanal" |
-    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador" | "cobradoPeloApp"> &
+    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador" | "cobradoPeloApp" | "dinheiroCobradoPeloApp"> &
     Required<Pick<DetalheDoTurno, "recebido" | "ponte" | "descontoNasMesas">>;
 };
 
@@ -272,6 +272,7 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
   const cupomDaLoja = { qtd: 0, c: 0, porCanal: new Map<string, Soma>() };
   const onlinePorCanal = new Map<string, Soma>();
   const cobradoPeloApp = new Map<string, Soma>();
+  let dinheiroCobradoPeloApp = 0;
   const taxaDeEntrega = { qtd: 0, c: 0 };
   const mesas = { servico: 0, servicoQtd: 0, gorjeta: 0, troco: 0, trocoQtd: 0 };
   const recebido = { qtd: 0, c: 0 };
@@ -603,6 +604,7 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
       if (peloEntregadorDoApp) {
         forma = COBRADO_PELO_APP;
         somarEm(cobradoPeloApp, canal, repasse);
+        if (chave === "DINHEIRO") dinheiroCobradoPeloApp += cent(valReal);
       } else {
         forma = PAGO_ONLINE;
         somarEm(onlinePorCanal, canal, repasse);
@@ -822,6 +824,7 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
         .sort((a, b) => b.valor - a.valor),
       onlinePorCanal: listar(onlinePorCanal),
       cobradoPeloApp: listar(cobradoPeloApp),
+      dinheiroCobradoPeloApp: reais(dinheiroCobradoPeloApp),
       taxaDeEntrega: { qtd: taxaDeEntrega.qtd, valor: reais(taxaDeEntrega.c) },
       mesas: { servico: reais(mesas.servico), servicoQtd: mesas.servicoQtd, gorjeta: reais(mesas.gorjeta), troco: reais(mesas.troco), trocoQtd: mesas.trocoQtd },
       fiado,

@@ -154,6 +154,8 @@ export type DetalheDoTurno = {
    * papel antigo.
    */
   cobradoPeloApp?: ParteDoRetrato[];
+  /** Do cobrado pelo entregador do app, o que foi em DINHEIRO (a gaveta antiga o cobrava). */
+  dinheiroCobradoPeloApp?: number;
   taxaDeEntrega: { qtd: number; valor: number };
   /**
    * `troco`: o que as contas de mesa receberam além de consumo + serviço +
@@ -766,16 +768,25 @@ function relatorioDoFechamento(
     // Na 2ª via as parcelas são apuradas de novo; o esperado é o gravado. Se
     // alguém mexeu num pedido do turno depois do fechamento, os dois divergem
     // — e o papel diz isso em vez de imprimir uma conta que não fecha. O
-    // caixa fechado antes de 11/10/2026 gravou o esperado com a nota inteira
-    // da mesa: a diferença é exatamente o troco, e o papel diz isso.
-    const regraAntigaDoTroco = trocoDasMesas > 0.01 && Math.abs(somaDasParcelas + trocoDasMesas - v.esperado.cash) <= 0.01;
+    // caixa fechado antes de 11/10/2026 gravou o esperado pela regra antiga:
+    // com a nota inteira da mesa (o troco) e com o dinheiro que o entregador
+    // do app recebeu na porta. Quando a diferença é exatamente isso, o papel
+    // diz que foi a regra que mudou, não o pedido.
+    const cobradoEmDinheiro = d.dinheiroCobradoPeloApp || 0;
+    const diferencaDoGravado = Math.round((v.esperado.cash - somaDasParcelas) * 100) / 100;
+    const pelaRegraAntiga = [
+      { valor: trocoDasMesas, texto: `${reais(trocoDasMesas)} de troco das mesas` },
+      { valor: cobradoEmDinheiro, texto: `${reais(cobradoEmDinheiro)} que o entregador do app recebeu` },
+    ].filter((p) => p.valor > 0.005);
+    const combinacoes = [pelaRegraAntiga, ...pelaRegraAntiga.map((p) => [p])];
+    const explicacao = combinacoes.find((c) => c.length > 0 && Math.abs(c.reduce((s, p) => s + p.valor, 0) - diferencaDoGravado) <= 0.01);
     linha(
       "= Dinheiro esperado",
       reais(v.esperado.cash),
-      Math.abs(somaDasParcelas - v.esperado.cash) <= 0.01
+      Math.abs(diferencaDoGravado) <= 0.01
         ? undefined
-        : regraAntigaDoTroco
-          ? `gravado pela regra antiga, que cobrava da gaveta os ${reais(trocoDasMesas)} de troco das mesas`
+        : explicacao
+          ? `gravado pela regra antiga, que cobrava da gaveta ${explicacao.map((p) => p.texto).join(" e ")}`
           : `as parcelas acima somam ${reais(somaDasParcelas)} hoje: algum pedido do turno mudou depois do fechamento`
     );
     if (!v.semConferencia && v.contado.cash != null) linha("Contado na gaveta", reais(v.contado.cash));
