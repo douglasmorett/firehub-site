@@ -10,7 +10,10 @@
  *   mapa", "área de risco".
  * - Taxa média cobrada ao lado da taxa da tabela de hoje: a área que cobra
  *   R$ 6,39 com a tabela em R$ 8,00 está dando desconto sem ninguém ter
- *   decidido (Frangoso, 17 a 23/09/2026).
+ *   decidido. Só nas entregas do site, do robô e do balcão, que cobram pela
+ *   tabela: o iFood e a 99 com entrega própria mandam taxa zero, e na Delícia
+ *   de Casa (90% iFood/99) todos os bairros acusavam desconto (auditoria de
+ *   11/10/2026; ver "A taxa média" em lib/relatorios/areas-de-entrega.ts).
  * - Entrega do parceiro (iFood/99 com entregador deles) numa tabela à parte:
  *   ali a área e a taxa são da plataforma.
  * - Comparação com o período anterior, cancelados por área e as áreas
@@ -44,6 +47,9 @@ const td: React.CSSProperties = { padding: "9px 0.8rem", textAlign: "right", fon
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const plural = (n: number, um: string, varios: string) => `${n.toLocaleString("pt-BR")} ${n === 1 ? um : varios}`;
+
+/** O que a coluna "Taxa média" mede (lib/relatorios/areas-de-entrega.ts, "A taxa média"). */
+const TEXTO_DA_TAXA_MEDIA = "Taxa de entrega cobrada, em média, nas entregas do site, do robô e do balcão — os canais que cobram pela tabela da loja (as sem taxa contam como zero). iFood, 99, Wabiz, Brendi e JotaJá cobram a taxa do app e não entram.";
 
 /** O selo da linha: só quando a linha NÃO é uma área cadastrada comum. */
 function Selo({ linha }: { linha: LinhaDaArea }) {
@@ -148,7 +154,7 @@ function TabelaDeAreas({
                 {cabeca("valor", "Valor", {}, "Total do pedido, com a taxa de entrega")}
                 {cabeca("pct", pctPor === "valor" ? "% valor" : "% pedidos", { minWidth: 120 }, "Participação no total de entregas (loja + parceiro)")}
                 {cabeca("ticketMedio", "Ticket médio")}
-                {cabeca("taxaMedia", "Taxa média", {}, "Taxa de entrega cobrada, em média, por entrega (as sem taxa contam como zero)")}
+                {cabeca("taxaMedia", "Taxa média", {}, TEXTO_DA_TAXA_MEDIA)}
                 {cabeca("distanciaMedia", "Distância", {}, "Distância média dos pedidos que têm distância")}
                 {comparar && cabeca("variacao", "vs. anterior", {}, `Variação ${pctPor === "valor" ? "do valor" : "dos pedidos"} contra o período anterior de mesmo tamanho`)}
               </tr>
@@ -162,9 +168,10 @@ function TabelaDeAreas({
                   // O acréscimo cancelado de um pedido entregue: não é entrega
                   // cancelada, mas o valor foi cancelado ali.
                   !l.cancelados && l.valorCancelado ? `${fmtReais(l.valorCancelado)} cancelado em acréscimo` : "",
-                  l.semTaxa && l.pedidos ? `${plural(l.semTaxa, "sem taxa", "sem taxa")}` : "",
+                  l.semTaxa ? `${plural(l.semTaxa, "sem taxa", "sem taxa")} no site, robô ou balcão` : "",
                 ].filter(Boolean);
-                const diferencaDaTabela = l.taxaDaArea != null && l.taxaMedia != null ? l.taxaMedia - l.taxaDaArea : 0;
+                // Só compara com a tabela quando há entrega dos canais que cobram por ela.
+                const diferencaDaTabela = l.taxaDaArea != null && l.taxaMedia != null && l.comTaxaDaLoja > 0 ? l.taxaMedia - l.taxaDaArea : 0;
                 return (
                   <tr key={l.chave} style={{ borderBottom: `1px solid ${PALETA.areia}` }}>
                     <td style={{ ...td, textAlign: "left", whiteSpace: "normal", minWidth: 220 }}>
@@ -189,15 +196,21 @@ function TabelaDeAreas({
                       </div>
                     </td>
                     <td style={td}>{l.ticketMedio === null ? "—" : fmtReais(l.ticketMedio)}</td>
-                    <td style={td}>
+                    <td style={td}
+                      title={l.comTaxaDaLoja
+                        ? `Média de ${plural(l.comTaxaDaLoja, "entrega", "entregas")} do site, do robô e do balcão${l.pedidos > l.comTaxaDaLoja ? ` — as outras ${l.pedidos - l.comTaxaDaLoja} são de apps, que cobram a taxa deles` : ""}`
+                        : l.pedidos ? "Nenhuma entrega do site, do robô ou do balcão aqui: nos apps (iFood, 99, Wabiz, Brendi, JotaJá) a taxa é a do app" : undefined}>
                       <div>{l.taxaMedia === null ? "—" : fmtReais(l.taxaMedia)}</div>
+                      {l.comTaxaDaLoja > 0 && l.comTaxaDaLoja < l.pedidos && (
+                        <div style={{ fontSize: "0.68rem", color: PALETA.areiaTinta }}>em {plural(l.comTaxaDaLoja, "entrega", "entregas")}</div>
+                      )}
                       {l.taxaDaArea != null && (
                         <div style={{ marginTop: 3 }}>
-                          <span title="A taxa desta área na configuração de hoje"
+                          <span title={Math.abs(diferencaDaTabela) >= 0.5 ? "A taxa desta área na configuração de hoje — a média cobrada no site, no robô e no balcão está diferente dela" : "A taxa desta área na configuração de hoje"}
                             style={{
                               fontSize: "0.68rem", fontWeight: 700, padding: "1px 6px", borderRadius: 999,
-                              background: Math.abs(diferencaDaTabela) >= 0.5 && l.pedidos ? PALETA.atencaoClaro : PALETA.areia,
-                              color: Math.abs(diferencaDaTabela) >= 0.5 && l.pedidos ? PALETA.atencao : PALETA.areiaTinta,
+                              background: Math.abs(diferencaDaTabela) >= 0.5 ? PALETA.atencaoClaro : PALETA.areia,
+                              color: Math.abs(diferencaDaTabela) >= 0.5 ? PALETA.atencao : PALETA.areiaTinta,
                             }}>
                             tabela {fmtReais(l.taxaDaArea)}
                           </span>
@@ -360,8 +373,10 @@ export default function AreasDeEntregaClient({ inicio }: { inicio: InicioDosFilt
           <Cartao rotulo="Valor das entregas" valor={fmtReais(dados.total.valor)}
             detalhe={temComparacao ? <Variacao atual={dados.total.valor} anterior={dados.anterior!.valor} /> : "Com a taxa de entrega"} />
           <Cartao rotulo="Ticket médio" valor={dados.total.ticketMedio === null ? "—" : fmtReais(dados.total.ticketMedio)} detalhe="Por entrega, com a taxa" />
-          <Cartao rotulo="Taxa média cobrada" valor={dados.total.taxaMedia === null ? "—" : fmtReais(dados.total.taxaMedia)}
-            detalhe={dados.total.semTaxa ? `${plural(dados.total.semTaxa, "entrega", "entregas")} sem taxa` : "Todas com taxa"} />
+          <Cartao rotulo="Taxa média (site, robô e balcão)" valor={dados.total.taxaMedia === null ? "—" : fmtReais(dados.total.taxaMedia)}
+            detalhe={dados.total.comTaxaDaLoja
+              ? `Em ${plural(dados.total.comTaxaDaLoja, "entrega", "entregas")} desses canais${dados.total.semTaxa ? ` · ${dados.total.semTaxa} sem taxa` : ""} — nos apps a taxa é a do app`
+              : "Nenhuma entrega do site, do robô ou do balcão — nos apps a taxa é a do app"} />
           <Cartao rotulo="Distância média" valor={dados.total.distanciaMedia === null ? "—" : `${fmtQtd(dados.total.distanciaMedia)} km`}
             detalhe={dados.total.comDistancia ? `Em ${dados.total.comDistancia} de ${dados.total.pedidos} entregas` : "Os pedidos não trazem distância nem o ponto do cliente"} />
           {maior && (
@@ -437,7 +452,10 @@ export default function AreasDeEntregaClient({ inicio }: { inicio: InicioDosFilt
         área desenhada, área de risco. Sem o ponto, pelo bairro escrito no endereço, casado com os bairros cadastrados.{" "}
         <strong>Deduzido</strong> é o pedido que não tinha o ponto e foi colocado pela distância gravada nele ou pelo nome do bairro achado no meio do endereço.
         {" "}O valor é o total do pedido, com a taxa de entrega. Cancelados não somam (aparecem na linha da área). O item acrescentado depois, no mesmo
-        endereço, soma o valor na área do pedido original e não conta como outra entrega.
+        endereço, soma o valor na área do pedido original e não conta como outra entrega.{" "}
+        <strong>Taxa média:</strong> só as entregas do site, do robô e do balcão, que cobram pela tabela da loja — é contra ela que a tabela de hoje é
+        comparada. No iFood, na 99, na Wabiz, na Brendi e no JotaJá a taxa é a configurada no app (no iFood e na 99 com entrega própria ela quase
+        sempre vem zerada) e não entra na média.
       </p>
     </ModeloDoRelatorio>
   );

@@ -103,7 +103,7 @@ export async function GET(req: NextRequest) {
 
   const titulosDasColunas = [
     "Área", ...(variasLojas ? ["Loja"] : []), "Situação", "Pedidos", "Valor", "%", "Ticket médio",
-    "Taxa média cobrada", "Taxa da área hoje", "Entregas sem taxa", "Distância média (km)", "Pedidos com distância",
+    "Taxa média (site, robô, balcão)", "Taxa da área hoje", "Entregas do site, robô e balcão", "Sem taxa (site, robô, balcão)", "Distância média (km)", "Pedidos com distância",
     "Decididos sem o ponto", "Cancelados", "Valor cancelado",
     ...(comparar ? ["Pedidos (período anterior)", "Valor (período anterior)"] : []),
     "Canais",
@@ -127,6 +127,7 @@ export async function GET(req: NextRequest) {
     n.ticketMedio === null ? "" : { v: n.ticketMedio, estilo: negrito ? "reaisNegrito" : "reais" },
     n.taxaMedia === null ? "" : { v: n.taxaMedia, estilo: negrito ? "reaisNegrito" : "reais" },
     n.taxaDaArea == null ? "" : { v: n.taxaDaArea, estilo: "reais" },
+    { v: n.comTaxaDaLoja, estilo: "qtd" },
     { v: n.semTaxa, estilo: "qtd" },
     n.distanciaMedia === null ? "" : { v: n.distanciaMedia, estilo: "qtd" },
     { v: n.comDistancia, estilo: "qtd" },
@@ -200,9 +201,10 @@ export async function GET(req: NextRequest) {
     { celulas: [{ v: "Valor = total do pedido, com a taxa de entrega. Cancelados não somam na venda (aparecem na coluna própria). Mesa, balcão e totem não entram: não têm entrega.", estilo: "suave" }] },
     { celulas: [{ v: "A área sai da mesma regra que cobra a taxa: ponto do cliente no mapa quando o pedido tem; senão o bairro escrito no endereço. \"Decididos sem o ponto\" = pela distância gravada no pedido ou pelo nome do bairro.", estilo: "suave" }] },
     { celulas: [{ v: "Acréscimo (item pedido depois, no mesmo endereço) soma o valor na área do pedido original e não conta como outra entrega.", estilo: "suave" }] },
+    { celulas: [{ v: "Taxa média: só as entregas do site, do robô e do balcão, que cobram pela tabela da loja — é contra ela que a 'Taxa da área hoje' se compara. No iFood, na 99, na Wabiz, na Brendi e no JotaJá a taxa é a configurada no app (no iFood e na 99 com entrega própria quase sempre vem zerada) e não entra.", estilo: "suave" }] },
   );
 
-  const larguras = [34, ...(variasLojas ? [22] : []), 24, 9, 13, 8, 12, 12, 12, 10, 12, 11, 11, 10, 13, ...(comparar ? [13, 14] : []), 36];
+  const larguras = [34, ...(variasLojas ? [22] : []), 24, 9, 13, 8, 12, 16, 12, 15, 14, 12, 11, 11, 10, 13, ...(comparar ? [13, 14] : []), 36];
   const buffer = montarPlanilha([{ nome: "Áreas de entrega", congelarLinhas: topo.length, larguras, linhas }]);
   return respostaDePlanilha(buffer, `areas-de-entrega_${ctx.filtros.de}_a_${ctx.filtros.ate}.xlsx`);
 }

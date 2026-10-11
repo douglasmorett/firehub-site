@@ -206,7 +206,10 @@ const linha = (lista: LinhaDaArea[], nome: string) => lista.find((l) => l.nome =
 const sob2 = linha(r.linhas, "Sobradinho 2");
 confere("iFood \"Sobradinho II\" + Wabiz \"SOBRADINHO 2\" numa linha só, com o nome mais comum", sob2 && [sob2.pedidos, sob2.valor], [3, 120]);
 confere("a linha é \"bairro do endereço\" (loja sem área cadastrada, sem marca de fora)", sob2?.situacao, "BAIRRO");
-confere("ticket médio e taxa média por entrega (a3 sem taxa conta como zero)", sob2 && [sob2.ticketMedio, sob2.taxaMedia, sob2.semTaxa], [40, 4, 1]);
+// A taxa média é só dos canais que cobram pela tabela da loja (site, robô,
+// balcão): o iFood e a Wabiz cobram a taxa do app (auditoria de 11/10/2026).
+confere("ticket médio por entrega; sem entrega do site, robô ou balcão, não há taxa média (iFood e Wabiz cobram a do app)",
+  sob2 && [sob2.ticketMedio, sob2.taxaMedia, sob2.comTaxaDaLoja, sob2.semTaxa], [40, null, 0, 0]);
 confere("distância média só de quem tem distância", sob2 && [sob2.distanciaMedia, sob2.comDistancia], [2, 1]);
 confere("canais da área", sob2?.canais, [{ nome: "Wabiz", pedidos: 2 }, { nome: "iFood", pedidos: 1 }]);
 confere("comparação: 2 pedidos / R$ 100 no período anterior (o cancelado de lá não conta)", sob2?.anterior, { pedidos: 2, valor: 100 });
@@ -335,6 +338,48 @@ confere("só retirada (fora do 100%): o total de entregas continua 0%", [rSoReti
 confere("com entrega: total 100%, e loja + parceiro fecham 100", [r.total.pct, Math.round(r.propria.pct + r.doParceiro.pct)], [100, 100]);
 confere("o % da loja é a soma das linhas dela (a menos do arredondamento de cada linha)",
   Math.abs(r.propria.pct - r.linhas.reduce((s, l) => s + l.pct, 0)) < 0.05, true);
+
+console.log("\n— taxa média só onde a loja cobra a taxa dela (auditoria de 11/10/2026) —");
+// Delícia de Casa, 11/09 a 10/10/2026: 2.318 das 2.343 entregas do iFood com
+// taxa zero; os 44 bairros mostravam "taxa média R$ 0,10 a 0,30" contra a
+// tabela de R$ 1,99 a 4,99 — todos com o destaque de desconto.
+const CASA: LojaParaAreas = {
+  id: "casa", nome: "Delícia de Casa", city: "Rio das Ostras", storeLatLng: LOJA, deliveryZoneType: "NEIGHBORHOOD",
+  deliveryZones: [{ name: "Centro", fee: 1.99 }, { name: "Recreio", fee: 2.99 }],
+};
+const IFOOD_PROPRIA = { source: "IFOOD", ifoodOrderId: "x", deliveryBy: "MERCHANT" };
+const entregaCasa = (bairro: string, x: Partial<PedidoParaAreas>) =>
+  pedido({ franchiseeId: "casa", totalAmount: 40, customerAddress: `Rua A, 1 - ${bairro} - Rio das Ostras`, ...x });
+const rCasa = vendasPorArea([
+  ...Array.from({ length: 9 }, (_, i) => entregaCasa("Centro", { ...IFOOD_PROPRIA, ifoodOrderId: `if${i}`, deliveryFee: 0 })),
+  entregaCasa("Centro", { source: "ONLINE", deliveryFee: 1.99 }),
+  entregaCasa("Centro", { source: "WHATSAPP_IA", deliveryFee: 1.99 }),
+  entregaCasa("Centro", { source: "PRESENCIAL", deliveryFee: 0 }), // balcão com entrega, sem taxa
+  entregaCasa("Centro", { source: "99FOOD", deliveryBy: "MERCHANT", deliveryFee: 0 }),
+  ...Array.from({ length: 5 }, (_, i) => entregaCasa("Recreio", { ...IFOOD_PROPRIA, ifoodOrderId: `ir${i}`, deliveryFee: 0 })),
+  // iFood com o entregador dele: a taxa é da plataforma.
+  entregaCasa("Recreio", { source: "IFOOD", ifoodOrderId: "p1", deliveryBy: "IFOOD", deliveryFee: 13.9 }),
+], [CASA]);
+const centro = linha(rCasa.linhas, "Centro")!;
+confere("Centro: 13 entregas; a taxa média é das 3 do site, robô e balcão (R$ 1,33), não das 13 (R$ 0,31)",
+  [centro.pedidos, centro.comTaxaDaLoja, centro.taxaMedia, centro.semTaxa, centro.taxaDaArea], [13, 3, 1.33, 1, 1.99]);
+const recreio = linha(rCasa.linhas, "Recreio")!;
+confere("Recreio só com iFood: sem taxa média (\"—\"), e não R$ 0,00 contra a tabela de R$ 2,99",
+  [recreio.pedidos, recreio.comTaxaDaLoja, recreio.taxaMedia, recreio.semTaxa], [5, 0, null, 0]);
+confere("o total da loja segue a mesma régua: 3 entregas com a taxa da loja, média R$ 1,33",
+  [rCasa.propria.pedidos, rCasa.propria.comTaxaDaLoja, rCasa.propria.taxaMedia, rCasa.total.taxaMedia], [18, 3, 1.33, 1.33]);
+confere("a entrega do parceiro não tem taxa média da loja (a taxa é do iFood)",
+  rCasa.parceiro.map((l) => [l.nome, l.pedidos, l.taxaMedia, l.comTaxaDaLoja]), [["Recreio", 1, null, 0]]);
+// O caso que o destaque existe para pegar continua aparecendo: o site
+// cobrando R$ 6,39 com a tabela em R$ 8,00 (Frangoso, 17 a 23/09/2026).
+const rSite = vendasPorArea([
+  pedido({ franchiseeId: "km", source: "ONLINE", customerLatLng: aoNorte(3), deliveryFee: 8 }),
+  pedido({ franchiseeId: "km", source: "ONLINE", customerLatLng: aoNorte(3), deliveryFee: 4.78 }),
+  pedido({ franchiseeId: "km", ...IFOOD_PROPRIA, customerLatLng: aoNorte(3), deliveryFee: 0 }),
+], [lojaKm]);
+const faixa24 = linha(rSite.linhas, "2 a 4 km")!;
+confere("desconto de verdade no site continua à vista: média R$ 6,39 contra a tabela de R$ 8,00 (o iFood não entra)",
+  [faixa24.pedidos, faixa24.comTaxaDaLoja, faixa24.taxaMedia, faixa24.taxaDaArea], [3, 2, 6.39, 8]);
 
 if (falhas) {
   console.log(`\n${falhas} falha(s).`);

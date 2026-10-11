@@ -10,17 +10,18 @@
  *
  * A conta está em lib/relatorios/tempos.ts (testada em scripts/teste-tempos.ts),
  * inclusive o porquê de cada régua — o aceite recarimbado, o pedido que a loja
- * aceita sozinha, o "entregue" que é a conclusão do iFood horas depois, os dois
- * totais, o agendado separado.
+ * aceita sozinha, o "entregue" que é a conclusão do iFood horas depois ou que
+ * foi dado em lote, os dois totais, o agendado separado, o prazo da entrega
+ * cumprido na chegada.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { cabecalhoDoRelatorio, contextoDoRelatorio, pedidosDoRelatorio } from "@/lib/relatorios/servidor";
+import { cabecalhoDoRelatorio, COLUNAS_DOS_FILTROS, contextoDoRelatorio, pedidosDoRelatorio } from "@/lib/relatorios/servidor";
 import { catalogoDoRelatorio } from "@/lib/relatorios/catalogo";
 import { canalDoRelatorio, DIAS_CURTOS, fmtDia, ROTULO_DO_TIPO, tipoDeVenda } from "@/lib/relatorios/base";
 import {
-  aceitoNaChegada, antesDoDado, DIA_DAS_BAIXAS_POR_TELA, DIA_DO_PRONTO_POR_ITEM, DIA_DOS_CARIMBOS, ETAPAS, limitesDoAlerta, ROTULO_DA_FAIXA, rotuloDoMedirAte,
-  temposDoRelatorio, TETO_DA_RUA_MIN,
+  aceitoNaChegada, antesDoDado, DIA_DAS_BAIXAS_POR_TELA, DIA_DO_PRONTO_POR_ITEM, DIA_DOS_CARIMBOS, ENTREGUES_PARA_LOTE, entreguesEmLote, ETAPAS,
+  JANELA_DO_LOTE_S, limitesDoAlerta, ROTULO_DA_FAIXA, rotuloDoMedirAte, temposDoRelatorio, TETO_DA_RUA_MIN,
   type ChaveDaEtapa, type ConfigDosTempos, type MedirAte, type NoDaProducao, type PedidoDaProducao, type PedidoParaTempos, type ResumoDoPrazo,
 } from "@/lib/relatorios/tempos";
 import { chaveDaTela, lerBaixas, lerTelasProntas } from "@/lib/kds-telas";
@@ -35,6 +36,8 @@ export const dynamic = "force-dynamic";
 /** Quantas linhas a TELA recebe na lista de pedidos. A planilha leva todas. */
 const LIMITE_DA_LISTA_NA_TELA = 1000;
 
+const DIA_MS = 24 * 60 * 60 * 1000;
+
 export async function GET(req: NextRequest) {
   const r = await contextoDoRelatorio(req);
   if (!r.ok) return r.resposta;
@@ -42,7 +45,7 @@ export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
   const planilha = sp.get("formato") === "xlsx";
 
-  const [pedidos, catalogo, dono, lojas] = await Promise.all([
+  const [pedidos, catalogo, dono, lojas, entregues] = await Promise.all([
     pedidosDoRelatorio(ctx, {
       select: {
         acceptedAt: true, readyAt: true, dispatchedAt: true, deliveredAt: true,
@@ -68,8 +71,27 @@ export async function GET(req: NextRequest) {
     // pedido do site, da Wabiz, do 99Food e do totem nasce ACEITO. E as
     // telas do KDS dela, para o "Medir até" da produção por produto.
     prisma.user.findMany({ where: { id: { in: ctx.lojaIds } }, select: { id: true, storeName: true, autoAcceptOrders: true, kdsScreens: true } }),
+    // Todo "entregue" das lojas em volta do período, SEM os filtros da tela:
+    // o lote (vários marcados de uma vez, o fechamento do caixa) é decidido
+    // sobre todas as entregas da loja — com o filtro de canal, um lote de
+    // iFood e site deixaria de ser lote (lib/relatorios/tempos.ts,
+    // entreguesEmLote). As margens pegam o pedido de ontem dado por entregue
+    // no mesmo fechamento.
+    prisma.customerOrder.findMany({
+      where: {
+        franchiseeId: { in: ctx.lojaIds },
+        createdAt: { gte: new Date(ctx.inicio.getTime() - 2 * DIA_MS), lt: new Date(ctx.fim.getTime() + DIA_MS) },
+        deliveredAt: { not: null },
+      },
+      select: { ...COLUNAS_DOS_FILTROS, deliveredAt: true },
+    }),
   ]);
   const aceitaSozinha = new Set(lojas.filter((l) => l.autoAcceptOrders).map((l) => l.id));
+  const emLote = entreguesEmLote(
+    entregues
+      .filter((p) => tipoDeVenda(p as any) === "DELIVERY")
+      .map((p) => ({ id: p.id, loja: p.franchiseeId, entregueEm: p.deliveredAt })),
+  );
 
   // Até onde a produção por produto mede: `medir=finalizacao` (o percurso
   // completo) ou `medir=tela:<chave>` (a baixa de uma tela do KDS); ausente =
@@ -107,6 +129,8 @@ export async function GET(req: NextRequest) {
       deliveryType: p.deliveryType,
       notes: p.notes,
       aceitoPelaLoja: aceitoNaChegada(canal, p.createdAt, aceitaSozinha.has(p.franchiseeId)),
+      loja: p.franchiseeId,
+      entregueEmLote: emLote.has(p.id),
       createdAt: p.createdAt,
       acceptedAt: p.acceptedAt, readyAt: p.readyAt, dispatchedAt: p.dispatchedAt, deliveredAt: p.deliveredAt,
       kdsProductionAt: p.kdsProductionAt, kdsFinishingAt: p.kdsFinishingAt, kdsFinishedAt: p.kdsFinishedAt,
@@ -152,6 +176,7 @@ export async function GET(req: NextRequest) {
     periodoAntesDoProntoPorItem: antesDoDado(ctx.filtros.de, DIA_DO_PRONTO_POR_ITEM),
     periodoAntesDasBaixas: antesDoDado(ctx.filtros.de, DIA_DAS_BAIXAS_POR_TELA),
     tetoDaRua: TETO_DA_RUA_MIN,
+    lote: { entregues: ENTREGUES_PARA_LOTE, segundos: JANELA_DO_LOTE_S },
   };
 
   if (!planilha) {
@@ -188,36 +213,40 @@ export async function GET(req: NextRequest) {
     { celulas: [{ v: `${titulo} — ${cabecalho.lojas.join(", ")}`, estilo: "titulo" }] },
     { celulas: [{ v: `Período: ${fmtDia(ctx.filtros.de)} a ${fmtDia(ctx.filtros.ate)} (o dia vira às 5h)`, estilo: "suave" }] },
     { celulas: [{ v: filtrosEmTexto ? `Filtros: ${filtrosEmTexto}` : "Filtros: nenhum (todas as vendas)", estilo: "suave" }] },
-    { celulas: [{ v: `Tempos em minutos. Prazo: o do cartão do painel — a hora prometida pela plataforma, senão 40 min (retirada, balcão, totem) ou 45 min (entrega e o pedido do site para retirar, que o cartão não reconhece como retirada); mesa não tem prazo. Alertas: ${alertas}.`, estilo: "suave" }] },
+    { celulas: [{ v: `Tempos em minutos. Prazo: o do cartão do painel — a hora prometida ao cliente pela plataforma (no iFood, a previsão de entrega), senão 40 min (retirada, balcão, totem) ou 45 min (entrega e o pedido do site para retirar, que o cartão não reconhece como retirada); mesa não tem prazo. Na entrega o prazo é cumprido na CHEGADA (a hora de entregue); na retirada, no balcão e no totem, no pronto. Alertas: ${alertas}.`, estilo: "suave" }] },
     { celulas: [] },
   ];
 
   // Aba 1 — as etapas e o prazo.
   const linhasDoPrazo = (p: ResumoDoPrazo): LinhaDaPlanilha[] => [
-    { celulas: ["Situação na saída", "Pedidos", "% dos medidos"], estilo: "cabecalho" },
-    { celulas: ["Saiu no prazo", qtd(p.noPrazo), pct(p.noPrazo, p.medidos)] },
+    { celulas: ["Situação no prazo do cliente (entrega: na chegada; os outros: no pronto)", "Pedidos", "% dos medidos"], estilo: "cabecalho" },
+    { celulas: ["No prazo", qtd(p.noPrazo), pct(p.noPrazo, p.medidos)] },
     { celulas: ["Alerta amarelo", qtd(p.amarelo), pct(p.amarelo, p.medidos)] },
     { celulas: ["Alerta vermelho (em cima da hora)", qtd(p.vermelho), pct(p.vermelho, p.medidos)] },
     { celulas: [{ v: "Estourou o prazo", estilo: "negrito" }, qtd(p.estourados, true), pct(p.estourados, p.medidos)] },
     { celulas: [{ v: "Medidos", estilo: "negrito" }, qtd(p.medidos, true), ""] },
-    { celulas: [{ v: "Sem hora de saída (não medidos)", estilo: "suave" }, qtd(p.semCarimbo), ""] },
-    { celulas: [{ v: "Fora da curva (finalizado horas depois, não medidos)", estilo: "suave" }, qtd(p.foraDaCurva), ""] },
+    ...(p.semEntrega ? [{ celulas: [{ v: `Entregas sem hora de entrega confiável (não medidas): ${p.semEntregaPorMotivo.semCarimbo} sem "entregue", ${p.semEntregaPorMotivo.emLote} com o "entregue" dado em lote, ${p.semEntregaPorMotivo.foraDaCurva} encerradas horas depois`, estilo: "suave" as const }, qtd(p.semEntrega), ""] }] : []),
+    ...(p.saiuAtrasado ? [{ celulas: [{ v: "   destas, saíram da loja já depois do prazo (atrasaram com certeza)", estilo: "suave" as const }, qtd(p.saiuAtrasado), ""] }] : []),
+    { celulas: [{ v: "Retirada, balcão e totem sem hora de pronto (não medidos)", estilo: "suave" }, qtd(p.semCarimbo), ""] },
+    { celulas: [{ v: "Fora da curva (pronto horas depois, não medidos)", estilo: "suave" }, qtd(p.foraDaCurva), ""] },
     ...(p.semPrazo ? [{ celulas: [{ v: "Mesa (sem prazo)", estilo: "suave" as const }, qtd(p.semPrazo), ""] }] : []),
     ...(p.estourados ? [{ celulas: ["Atraso mediano dos estourados (min)", min(p.atrasoMediano), ""] }, { celulas: ["Maior atraso (min)", min(p.maiorAtraso), ""] }] : []),
+    ...(p.saidaDasEntregas.medidas ? [{ celulas: [`Entregas que SAÍRAM da loja depois da hora prometida ao cliente (de ${p.saidaDasEntregas.medidas} com a hora de saída)`, qtd(p.saidaDasEntregas.depoisDoPrazo), pct(p.saidaDasEntregas.depoisDoPrazo, p.saidaDasEntregas.medidas)] }] : []),
   ];
   const abaEtapas: LinhaDaPlanilha[] = [
     ...topo("Tempo por etapa"),
-    { celulas: ["Etapa", "Vale para", "Pedidos", "Medidos", "Sem carimbo", "Fora da curva", "Carimbo reescrito", "Mínimo", "Mediana", "Média", "90% em até", "Máximo"], estilo: "cabecalho" },
+    { celulas: ["Etapa", "Vale para", "Pedidos", "Medidos", "Sem carimbo", "Fora da curva", "Carimbo reescrito", "Entregue em lote", "Mínimo", "Mediana", "Média", "90% em até", "Máximo"], estilo: "cabecalho" },
     ...resultado.etapas.map((e) => ({
       celulas: [
-        { v: e.titulo, estilo: "negrito" as const }, e.aplicaA, qtd(e.elegiveis), qtd(e.medidos), qtd(e.semCarimbo), qtd(e.foraDaCurva), qtd(e.reescritos),
+        { v: e.titulo, estilo: "negrito" as const }, e.aplicaA, qtd(e.elegiveis), qtd(e.medidos), qtd(e.semCarimbo), qtd(e.foraDaCurva), qtd(e.reescritos), qtd(e.emLote),
         min(e.minimo), min(e.mediana, true), min(e.media), min(e.p90), min(e.maximo),
       ],
     })),
     { celulas: [] },
     { celulas: [{ v: `Pedidos no período: ${resultado.pedidos} (cancelados não entram)${resultado.agendados ? ` · ${resultado.agendados} agendado(s), contados à parte` : ""}.`, estilo: "suave" }] },
     { celulas: [{ v: "Cada etapa conta só o pedido com os dois carimbos dela: falta de carimbo não vira zero. As etapas não somam o total (cada uma tem os seus pedidos medidos).", estilo: "suave" }] },
-    { celulas: [{ v: "Carimbo reescrito: o sistema guarda a ÚLTIMA vez que o pedido passou por 'aceito', e a baixa da cozinha e o 'pronto' do iFood regravam essa hora — nesses pedidos a espera pelo aceite não é conhecida. O pedido que a loja aceita sozinha (aceite automático ligado: site, Wabiz, 99Food, totem) não esperou aceite e não entra nessa etapa.", estilo: "suave" }] },
+    { celulas: [{ v: "Carimbo reescrito: o sistema guarda a ÚLTIMA vez que o pedido passou por 'aceito', e a baixa da cozinha, o 'pronto' do iFood e o despacho (na loja sem KDS, o aceite é regravado a menos de 1 min da saída) regravam essa hora — nesses pedidos a espera pelo aceite não é conhecida. O pedido que a loja aceita sozinha (aceite automático ligado: site, Wabiz, 99Food, totem) não esperou aceite e não entra nessa etapa.", estilo: "suave" }] },
+    { celulas: [{ v: `Entregue em lote: ${ENTREGUES_PARA_LOTE} ou mais entregas da loja marcadas 'entregue' em até ${JANELA_DO_LOTE_S} s, ou várias com a mesma hora (o fechamento do caixa dá por entregue tudo o que estava na rua). A hora é a do clique, não a da entrega: fica fora de 'na rua', do total da entrega e do prazo.`, estilo: "suave" }] },
     { celulas: [{ v: "Total da entrega: do pedido até o cliente receber em casa. Total na loja: do pedido até ficar pronto no balcão, na retirada, no totem e na mesa. São perguntas diferentes e ficam separadas — juntas, a mediana mudaria só com a mistura do dia.", estilo: "suave" }] },
     { celulas: [{ v: `Fora da curva: carimbos fora de ordem, mais de 4 h na etapa ou mais de ${TETO_DA_RUA_MIN} min na rua (é o pedido encerrado depois — pela conclusão automática do iFood ou pelo fechamento do caixa —, não a entrega).`, estilo: "suave" }] },
     ...(avisos.periodoAntesDosCarimbos ? [{ celulas: [{ v: `Os carimbos de etapa existem desde ${fmtDia(DIA_DOS_CARIMBOS)}: pedidos anteriores não têm medição.`, estilo: "suave" as const }] }] : []),
@@ -260,12 +289,13 @@ export async function GET(req: NextRequest) {
   // Aba 3 — todos os pedidos (a lista da tela sem o "só atrasados").
   const abaPedidos: LinhaDaPlanilha[] = [
     ...topo("Pedidos e prazo"),
-    { celulas: ["Dia", "Hora", "Nº", "Nº do parceiro", "Canal", "Tipo", "Agendado", "Prazo", "Saída", "Até sair (min)", "Situação", "Passou do prazo (min)", ...colunasDasEtapas.map((t) => `${t} (min)`)], estilo: "cabecalho" },
+    { celulas: ["Dia", "Hora", "Nº", "Nº do parceiro", "Canal", "Tipo", "Agendado", "Prazo", "Saída / pronto", "Entregue", "Até sair (min)", "Situação", "Passou do prazo (min)", ...colunasDasEtapas.map((t) => `${t} (min)`)], estilo: "cabecalho" },
     ...resultado.lista.map((l) => ({
       celulas: [
         fmtDia(l.dia), l.hora, l.numero ?? "", l.referencia ?? "", nomeDoCanal.get(l.canal) || l.canal, ROTULO_DO_TIPO[l.tipo], l.agendado ? "Sim" : "",
-        quando(l.prazo), quando(l.saida), min(l.tempoAteSaida), ROTULO_DA_FAIXA[l.faixa],
-        l.faixa === "estourado" ? min(l.excedeu, true) : "",
+        quando(l.prazo), quando(l.saida), quando(l.entregue), min(l.tempoAteSaida), ROTULO_DA_FAIXA[l.faixa],
+        // "Saiu depois do prazo": o quanto já tinha passado na saída (o atraso foi pelo menos isso).
+        l.faixa === "estourado" || l.faixa === "saiuAtrasado" ? min(l.excedeu, true) : "",
         ...ETAPAS.map((e) => min(l.etapas[e.chave as ChaveDaEtapa])),
       ] as Celula[],
     })),
@@ -317,9 +347,9 @@ export async function GET(req: NextRequest) {
   ];
 
   const buffer = montarPlanilha([
-    { nome: "Etapas", congelarLinhas: 6, larguras: [30, 44, 10, 10, 12, 13, 17, 10, 10, 10, 12, 10], linhas: abaEtapas },
+    { nome: "Etapas", congelarLinhas: 6, larguras: [30, 44, 10, 10, 12, 13, 17, 15, 10, 10, 10, 12, 10], linhas: abaEtapas },
     { nome: "Por dia", congelarLinhas: 6, larguras: [12, 13, 10, 17, 12, 13, 14, 22, 10, 16, 14, 17, 18, 13], linhas: abaPorDia },
-    { nome: "Pedidos", congelarLinhas: 6, larguras: [12, 7, 7, 15, 12, 10, 10, 13, 13, 14, 19, 20, 17, 12, 13, 14, 22, 10, 16, 14], linhas: abaPedidos },
+    { nome: "Pedidos", congelarLinhas: 6, larguras: [12, 7, 7, 15, 12, 10, 10, 13, 14, 13, 14, 26, 20, 17, 12, 13, 14, 22, 10, 16, 14], linhas: abaPedidos },
     { nome: "Produção por produto", congelarLinhas: 6, larguras: [44, 11, 24, 11, 12, 10, 10, 10, 12, 10], linhas: abaProducao },
     { nome: "Produção por hora", congelarLinhas: 6, larguras: [8, 10, 15, 30, 9, 30, 9, 10, 16, 12], linhas: abaPorHora },
   ]);

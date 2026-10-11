@@ -44,6 +44,20 @@
  * do pedido — memória "Taxa de entrega tem uma regra só"). Pagamento dividido
  * não muda nada: o pedido é um só, numa área só.
  *
+ * ── A taxa média ────────────────────────────────────────────────────────────
+ *
+ * A taxa média da área serve para comparar com a TABELA da loja (a taxa da
+ * área hoje) e pegar o desconto que ninguém decidiu. Só faz sentido nos
+ * canais que cobram por essa tabela — o site, o robô do WhatsApp e o balcão
+ * (`CANAIS_COM_A_TAXA_DA_LOJA`, os que passam pelo /api/delivery-fee). O iFood,
+ * a 99, a Wabiz, a Brendi e o JotaJá cobram a taxa configurada em cada app, e
+ * o iFood e a 99 com entrega própria quase sempre mandam zero: na Delícia de
+ * Casa (11/09 a 10/10/2026), 2.318 das 2.343 entregas do iFood vieram com taxa
+ * zero, e todos os 44 bairros mostravam "taxa média R$ 0,10 a 0,30" contra a
+ * tabela de R$ 1,99 a 4,99 — um alerta de desconto falso em todas as linhas.
+ * Então a taxa média, as entregas sem taxa e o destaque contra a tabela contam
+ * só esses canais; a área sem entrega deles fica sem taxa média ("—").
+ *
  * Cancelado não soma venda (STATUS_FORA_DA_VENDA, lib/relatorios/base.ts),
  * mas é CONTADO por área: área com muito cancelamento é área com problema
  * (endereço que o motoboy não acha, área de risco). Pedido esperando
@@ -142,10 +156,16 @@ export type NumerosDaArea = {
   /** Participação no total de entregas (loja + parceiro), 0 a 100, pela métrica escolhida. */
   pct: number;
   ticketMedio: number | null;
-  /** Soma e média da taxa de entrega cobrada (`deliveryFee`), por entrega. */
+  /**
+   * Entregas dos canais que cobram pela tabela da loja (site, robô, balcão —
+   * `CANAIS_COM_A_TAXA_DA_LOJA`). A taxa média e as sem taxa são só delas
+   * (ver "A taxa média" no topo).
+   */
+  comTaxaDaLoja: number;
+  /** Soma e média da taxa de entrega cobrada (`deliveryFee`) nessas entregas. */
   taxaTotal: number;
   taxaMedia: number | null;
-  /** Entregas com taxa zero (grátis, cupom de frete, canal que não mandou a taxa). */
+  /** Dessas entregas, as com taxa zero (grátis, cupom de frete). */
   semTaxa: number;
   /** Distância média, em km, dos pedidos que têm distância. */
   distanciaMedia: number | null;
@@ -418,6 +438,13 @@ export type AreaDoPedido = {
 const CANAIS_COM_CIDADE_NO_FIM = new Set(["IFOOD", "BRENDI", "JOTAJA"]);
 const NOME_DO_CANAL = new Map(canaisConhecidos().map((c) => [c.chave as string, c.nome]));
 
+/**
+ * Os canais que cobram a taxa pela tabela da loja (o /api/delivery-fee): o
+ * site, o robô do WhatsApp e o balcão (PDV). Nos apps a taxa é a de lá — ver
+ * "A taxa média" no topo.
+ */
+export const CANAIS_COM_A_TAXA_DA_LOJA: ReadonlySet<string> = new Set(["SITE", "WHATSAPP_IA", "PDV"]);
+
 function distanciaValida(km: unknown): number | null {
   const n = Number(km);
   return Number.isFinite(n) && n > 0 && n <= DISTANCIA_ABSURDA_KM ? n : null;
@@ -570,6 +597,8 @@ type Acumulador = {
   grafias: Map<string, number>;
   pedidos: number;
   valor: number;
+  /** Só as entregas dos canais com a taxa da loja (ver "A taxa média" no topo). */
+  comTaxaDaLoja: number;
   taxaTotal: number;
   semTaxa: number;
   distSoma: number;
@@ -583,7 +612,7 @@ type Acumulador = {
 function novoAcumulador(a: Pick<AreaDoPedido, "chave" | "situacao" | "parceiro" | "taxaDaArea" | "ordem">, lojaId: string): Acumulador {
   return {
     chave: a.chave, lojaId, situacao: a.situacao, parceiro: a.parceiro, taxaDaArea: a.taxaDaArea, ordem: a.ordem,
-    grafias: new Map(), pedidos: 0, valor: 0, taxaTotal: 0, semTaxa: 0, distSoma: 0, comDistancia: 0,
+    grafias: new Map(), pedidos: 0, valor: 0, comTaxaDaLoja: 0, taxaTotal: 0, semTaxa: 0, distSoma: 0, comDistancia: 0,
     aproximados: 0, cancelados: 0, valorCancelado: 0, canais: new Map(),
   };
 }
@@ -637,12 +666,18 @@ function somar(pedidos: PedidoParaAreas[], cfgs: Map<string, ConfigDaLoja>, vist
     }
     acc.valor += valor;
     acc.pedidos += 1;
-    const taxa = Number(p.deliveryFee) || 0;
-    acc.taxaTotal += taxa;
-    if (!(taxa > 0)) acc.semTaxa += 1;
+    const chaveDoCanal = canalDoRelatorio(p as any);
+    // A taxa só conta onde a loja cobra pela tabela dela (site, robô, balcão):
+    // a do iFood e da 99 com entrega própria vem zerada (ver o topo).
+    if (CANAIS_COM_A_TAXA_DA_LOJA.has(chaveDoCanal)) {
+      const taxa = Number(p.deliveryFee) || 0;
+      acc.comTaxaDaLoja += 1;
+      acc.taxaTotal += taxa;
+      if (!(taxa > 0)) acc.semTaxa += 1;
+    }
     if (area.distanciaKm != null) { acc.distSoma += area.distanciaKm; acc.comDistancia += 1; }
     if (area.aproximado) acc.aproximados += 1;
-    const canal = NOME_DO_CANAL.get(canalDoRelatorio(p as any)) || "Outro canal";
+    const canal = NOME_DO_CANAL.get(chaveDoCanal) || "Outro canal";
     acc.canais.set(canal, (acc.canais.get(canal) || 0) + 1);
   };
 
@@ -703,16 +738,19 @@ function somar(pedidos: PedidoParaAreas[], cfgs: Map<string, ConfigDaLoja>, vist
 
 function totais(accs: Acumulador[]): TotaisDasAreas {
   const t = accs.reduce((s, a) => ({
-    pedidos: s.pedidos + a.pedidos, valor: s.valor + a.valor, taxaTotal: s.taxaTotal + a.taxaTotal, semTaxa: s.semTaxa + a.semTaxa,
+    pedidos: s.pedidos + a.pedidos, valor: s.valor + a.valor,
+    comTaxaDaLoja: s.comTaxaDaLoja + a.comTaxaDaLoja, taxaTotal: s.taxaTotal + a.taxaTotal, semTaxa: s.semTaxa + a.semTaxa,
     distSoma: s.distSoma + a.distSoma, comDistancia: s.comDistancia + a.comDistancia, aproximados: s.aproximados + a.aproximados,
     cancelados: s.cancelados + a.cancelados, valorCancelado: s.valorCancelado + a.valorCancelado,
-  }), { pedidos: 0, valor: 0, taxaTotal: 0, semTaxa: 0, distSoma: 0, comDistancia: 0, aproximados: 0, cancelados: 0, valorCancelado: 0 });
+  }), { pedidos: 0, valor: 0, comTaxaDaLoja: 0, taxaTotal: 0, semTaxa: 0, distSoma: 0, comDistancia: 0, aproximados: 0, cancelados: 0, valorCancelado: 0 });
   return {
     pedidos: t.pedidos,
     valor: c2(t.valor),
     ticketMedio: t.pedidos ? c2(t.valor / t.pedidos) : null,
+    comTaxaDaLoja: t.comTaxaDaLoja,
     taxaTotal: c2(t.taxaTotal),
-    taxaMedia: t.pedidos ? c2(t.taxaTotal / t.pedidos) : null,
+    // A média das entregas que cobram pela tabela da loja — não de todas.
+    taxaMedia: t.comTaxaDaLoja ? c2(t.taxaTotal / t.comTaxaDaLoja) : null,
     semTaxa: t.semTaxa,
     distanciaMedia: t.comDistancia ? c2(t.distSoma / t.comDistancia) : null,
     comDistancia: t.comDistancia,

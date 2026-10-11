@@ -5,12 +5,13 @@
  *
  * O que a Saipos não mostra e esta tela mostra:
  * - QUANTOS pedidos cada tempo mediu e por que os outros ficaram de fora
- *   (sem carimbo, fora da curva, carimbo reescrito). Um "tempo médio de
- *   entrega: 4h20" sem essa linha é o lojista tomando a conclusão do iFood por
- *   entrega — era o que o número cru dizia na NIK;
+ *   (sem carimbo, fora da curva, carimbo reescrito, "entregue" dado em lote).
+ *   Um "tempo médio de entrega: 4h20" sem essa linha é o lojista tomando a
+ *   conclusão do iFood por entrega — era o que o número cru dizia na NIK;
  * - a MEDIANA e o "9 em cada 10 em até", que um pedido esquecido não arrasta;
- * - o prazo com as faixas de alerta que o próprio lojista configurou no painel,
- *   e a lista dos que estouraram com quanto passaram;
+ * - o prazo do CLIENTE com as faixas de alerta que o próprio lojista
+ *   configurou no painel — na entrega, cumprido na chegada, não na saída do
+ *   motoboy —, e a lista dos que estouraram com quanto passaram;
  * - o tempo de preparo por PRODUTO, que sai do pronto por item do KDS.
  */
 import React, { useMemo, useState } from "react";
@@ -52,6 +53,8 @@ type Resposta = {
     periodoAntesDoProntoPorItem: boolean;
     periodoAntesDasBaixas: boolean;
     tetoDaRua: number;
+    /** O lote de "entregue": tantas entregas em tantos segundos. */
+    lote: { entregues: number; segundos: number };
   };
 };
 
@@ -71,8 +74,10 @@ const COR_DA_FAIXA: Record<FaixaDoPrazo, { cor: string; fundo: string }> = {
   amarelo: { cor: PALETA.atencao, fundo: PALETA.atencaoClaro },
   vermelho: { cor: PALETA.marca, fundo: PALETA.brasaClaro },
   estourado: { cor: PALETA.grave, fundo: PALETA.graveClaro },
+  saiuAtrasado: { cor: PALETA.grave, fundo: PALETA.graveClaro },
   semPrazo: { cor: PALETA.areiaTinta, fundo: PALETA.areia },
   semCarimbo: { cor: PALETA.areiaTinta, fundo: PALETA.areia },
+  semEntrega: { cor: PALETA.areiaTinta, fundo: PALETA.areia },
   foraDaCurva: { cor: PALETA.areiaTinta, fundo: PALETA.areia },
 };
 
@@ -104,6 +109,7 @@ function Cobertura({ e }: { e: ResumoDaEtapa }) {
     e.semCarimbo ? `${e.semCarimbo} sem carimbo` : "",
     e.foraDaCurva ? `${e.foraDaCurva} fora da curva` : "",
     e.reescritos ? `${e.reescritos} com carimbo reescrito` : "",
+    e.emLote ? `${e.emLote} com o “entregue” dado em lote` : "",
   ].filter(Boolean);
   return (
     <span style={suave}>
@@ -161,11 +167,23 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
   const cozinha = dados?.etapas.find((e) => e.chave === "cozinha");
   const p = dados?.prazo;
   const noPrazoOuAlerta = p ? p.noPrazo + p.amarelo + p.vermelho : 0;
+  // O mesmo número aberto: a entrega (pela chegada) e o resto (pelo pronto).
+  // Na NIK, em 30 dias, os 76% do geral eram 47% na entrega.
+  const prazoPorParte = (() => {
+    const tipos = dados?.porTipo || [];
+    const soma = (lista: LinhaDoTipo[]) => lista.reduce((s, t) => ({ medidos: s.medidos + t.medidosNoPrazo, estourados: s.estourados + t.estourados }), { medidos: 0, estourados: 0 });
+    const parte = (rotulo: string, x: { medidos: number; estourados: number }) =>
+      x.medidos ? `${rotulo} ${fmtPct(((x.medidos - x.estourados) / x.medidos) * 100, 0)} de ${x.medidos.toLocaleString("pt-BR")}` : "";
+    return [
+      parte("entrega", soma(tipos.filter((t) => t.tipo === "DELIVERY"))),
+      parte("retirada e balcão", soma(tipos.filter((t) => t.tipo !== "DELIVERY" && t.tipo !== "MESA"))),
+    ].filter(Boolean);
+  })();
 
   return (
     <ModeloDoRelatorio
       titulo="Tempo por status e produção"
-      descricao="Quanto o pedido fica em cada etapa, quais saíram depois do prazo e quanto a cozinha leva em cada produto. Cada tempo conta só os pedidos com os dois carimbos da etapa — falta de carimbo não vira zero."
+      descricao="Quanto o pedido fica em cada etapa, quais passaram do prazo prometido ao cliente e quanto a cozinha leva em cada produto. Cada tempo conta só os pedidos com os dois carimbos da etapa — falta de carimbo não vira zero."
       slug="tempos" query={query} periodo={dados?.periodo} carregando={carregando} erro={erro} onRecarregar={recarregar}>
 
       <style>{`
@@ -191,15 +209,28 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
         <GradeDeCartoes>
           <Cartao rotulo="Na cozinha (mediana)" valor={fmtMin(cozinha?.mediana)}
             detalhe={cozinha && cozinha.medidos ? `9 em cada 10 em até ${fmtMin(cozinha.p90)} · ${cozinha.medidos} pedidos` : "Nenhum pedido com pronto no período"} />
+          {/* Auditoria de 11/10/2026: o detalhe dizia "hora de entregue confiável" e
+              contava o "entregue" dado em lote. Agora diz quantas entraram e por quê. */}
           {totalEntrega && totalEntrega.elegiveis > 0 && (
             <Cartao rotulo="Entrega: do pedido ao cliente" valor={fmtMin(totalEntrega.mediana)}
-              detalhe={totalEntrega.medidos ? `mediana de ${totalEntrega.medidos} entregas com hora de entregue confiável` : "Nenhuma entrega com hora de entregue confiável"} />
+              detalhe={totalEntrega.medidos
+                ? `mediana de ${totalEntrega.medidos.toLocaleString("pt-BR")} de ${totalEntrega.elegiveis.toLocaleString("pt-BR")} entregas — só as com o “entregue” marcado na hora (sem lote nem fechamento do caixa)`
+                : "Nenhuma entrega com o “entregue” marcado na hora — a loja não marca ou marca em lote"} />
           )}
-          <Cartao rotulo="Saíram no prazo" tom={p && p.medidos ? "ok" : "neutro"}
+          {/* O prazo é a hora que o CLIENTE espera: a entrega cumpre na chegada,
+              não na saída do motoboy ("saíram no prazo" dava 96% na NIK com
+              47% chegando no prazo). */}
+          <Cartao rotulo="No prazo do cliente" tom={p && p.medidos ? "ok" : "neutro"}
             valor={p && p.medidos ? fmtPct((noPrazoOuAlerta / p.medidos) * 100, 0) : "—"}
-            detalhe={p ? `${noPrazoOuAlerta} de ${p.medidos} pedidos com prazo medido` : undefined} />
-          <Cartao rotulo="Estouraram o prazo" tom={p && p.estourados ? "grave" : "neutro"} valor={p ? p.estourados.toLocaleString("pt-BR") : "—"}
-            detalhe={p && p.estourados ? `passaram ${fmtMin(p.atrasoMediano)} (mediana) · o pior, ${fmtMin(p.maiorAtraso)}` : "Nenhum pedido saiu depois do prazo"} />
+            detalhe={!p ? undefined : prazoPorParte.length > 1
+              ? `${prazoPorParte.join(" · ")} — a entrega pela hora de entregue, o resto pelo pronto`
+              : `${noPrazoOuAlerta.toLocaleString("pt-BR")} de ${p.medidos.toLocaleString("pt-BR")} medidos · a entrega pela hora de entregue, retirada e balcão pelo pronto`} />
+          <Cartao rotulo="Estouraram o prazo" tom={p && (p.estourados || p.saiuAtrasado) ? "grave" : "neutro"} valor={p ? p.estourados.toLocaleString("pt-BR") : "—"}
+            detalhe={!p ? undefined : [
+              p.estourados ? `passaram ${fmtMin(p.atrasoMediano)} (mediana) · o pior, ${fmtMin(p.maiorAtraso)}` : "Nenhum pedido medido passou do prazo",
+              p.saiuAtrasado === 1 ? "e mais 1 entrega sem hora de entrega que já saiu da loja atrasada" : "",
+              p.saiuAtrasado > 1 ? `e mais ${p.saiuAtrasado.toLocaleString("pt-BR")} entregas sem hora de entrega que já saíram da loja atrasadas` : "",
+            ].filter(Boolean).join(" · ")} />
         </GradeDeCartoes>
       )}
 
@@ -241,9 +272,10 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
             </div>
           )}
           <p style={{ ...suave, fontSize: "0.76rem", padding: "0.8rem 1rem", margin: 0, lineHeight: 1.5 }}>
-            <strong>Carimbo reescrito:</strong> o sistema guarda a última vez que o pedido passou por “aceito”, e a baixa da cozinha e o “pronto” do iFood regravam essa hora — nesses pedidos a espera pelo aceite não é conhecida.
+            <strong>Carimbo reescrito:</strong> o sistema guarda a última vez que o pedido passou por “aceito”, e a baixa da cozinha, o “pronto” do iFood e o despacho regravam essa hora (na loja sem KDS, o aceite colado na saída, a menos de 1 min dela) — nesses pedidos a espera pelo aceite não é conhecida.
             {" "}O pedido que a loja aceita sozinha (aceite automático ligado: site, Wabiz, 99Food, totem) não esperou aceite e não entra nessa etapa.
-            {" "}<strong>Fora da curva:</strong> carimbos fora de ordem, mais de 4 h na etapa, ou mais de {dados.avisos.tetoDaRua} min na rua (é o pedido encerrado depois — pela conclusão automática do iFood ou pelo fechamento do caixa —, não a entrega).
+            {" "}<strong>Fora da curva:</strong> carimbos fora de ordem, mais de 4 h na etapa, ou mais de {dados.avisos.tetoDaRua} min na rua (é o pedido encerrado depois — pela conclusão automática do iFood ou pelo fechamento do caixa horas depois —, não a entrega).
+            {" "}<strong>“Entregue” dado em lote:</strong> {dados.avisos.lote?.entregues ?? 3} ou mais entregas marcadas em até {dados.avisos.lote?.segundos ?? 90} s, ou várias com a mesma hora (o fechamento do caixa dá por entregue tudo o que estava na rua) — a hora é a do clique, não a da entrega, e fica fora de “na rua”, do total da entrega e do prazo. Para medir, o “entregue” tem que ser marcado na hora, pedido a pedido (o app do motoboy faz isso na porta do cliente).
             {" "}<strong>Dois totais:</strong> o da entrega vai até o cliente receber em casa; o “na loja” (balcão, retirada, totem e mesa), até ficar pronto — juntos, a mediana mudaria só com a mistura do dia.
             {" "}As etapas não somam o total: cada uma tem os seus pedidos medidos.
           </p>
@@ -284,15 +316,22 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
 
       {/* ── O PRAZO ── */}
       {dados && p && (
-        <Bloco titulo="Como os pedidos saíram" subtitulo={
-          `Folga até o prazo na hora da saída. Alertas: ${p.limites.amareloAtivo ? `amarelo com até ${p.limites.amareloMin} min` : "amarelo desligado"}, ${p.limites.vermelhoAtivo ? `vermelho com até ${p.limites.vermelhoMin} min` : "vermelho desligado"} — os Alertas de Produção do painel.`
+        <Bloco titulo="Prazo do cliente" subtitulo={
+          `Folga até a hora prometida quando o pedido chegou ao cliente (entrega) ou ficou pronto (retirada, balcão, totem). Alertas: ${p.limites.amareloAtivo ? `amarelo com até ${p.limites.amareloMin} min` : "amarelo desligado"}, ${p.limites.vermelhoAtivo ? `vermelho com até ${p.limites.vermelhoMin} min` : "vermelho desligado"} — os Alertas de Produção do painel.`
         }>
           <FaixasDoPrazo p={p} />
           <p style={{ ...suave, fontSize: "0.76rem", margin: "0.8rem 0 0", lineHeight: 1.5 }}>
-            O prazo é o do cartão do painel: a hora que a plataforma prometeu; sem ela, 40 min (retirada, balcão, totem) ou 45 min (entrega e o pedido do site para retirar, que o cartão não reconhece como retirada).
-            A saída é a do motoboy na entrega e o pronto nos outros. Mesa não tem prazo.
-            {p.semCarimbo + p.foraDaCurva > 0 && ` Sem medição: ${p.semCarimbo} sem hora de saída, ${p.foraDaCurva} fora da curva.`}
+            O prazo é o do cartão do painel: a hora que a plataforma prometeu ao cliente (no iFood, a previsão de entrega); sem ela, 40 min (retirada, balcão, totem) ou 45 min (entrega e o pedido do site para retirar, que o cartão não reconhece como retirada). Mesa não tem prazo.
+            {" "}<strong>Na entrega, o prazo vale para a chegada:</strong> conta a hora de entregue — sair da loja antes do prazo não é chegar antes dele.
+            {p.semEntrega > 0 && ` Sem medição: ${p.semEntrega.toLocaleString("pt-BR")} entrega${p.semEntrega > 1 ? "s" : ""} sem hora de entrega confiável (${p.semEntregaPorMotivo.semCarimbo} sem “entregue”, ${p.semEntregaPorMotivo.emLote} com o “entregue” dado em lote, ${p.semEntregaPorMotivo.foraDaCurva} encerradas horas depois)${p.saiuAtrasado === 1 ? " — 1 delas saiu da loja já depois do prazo e está na lista dos atrasados" : p.saiuAtrasado > 1 ? ` — ${p.saiuAtrasado.toLocaleString("pt-BR")} delas saíram da loja já depois do prazo e estão na lista dos atrasados` : ""}.`}
+            {p.semCarimbo + p.foraDaCurva > 0 && ` Retirada, balcão e totem sem medição: ${p.semCarimbo} sem hora de pronto, ${p.foraDaCurva} fora da curva.`}
           </p>
+          {p.saidaDasEntregas.medidas > 0 && (
+            <p style={{ fontSize: "0.82rem", color: PALETA.carvao2, margin: "0.6rem 0 0", lineHeight: 1.5 }}>
+              <strong>Na saída da loja:</strong> {p.saidaDasEntregas.depoisDoPrazo.toLocaleString("pt-BR")} de {p.saidaDasEntregas.medidas.toLocaleString("pt-BR")} entregas
+              ({fmtPct((p.saidaDasEntregas.depoisDoPrazo / p.saidaDasEntregas.medidas) * 100, 0)}) saíram depois da hora prometida ao cliente — atrasaram antes mesmo da rua.
+            </p>
+          )}
           {dados.agendados > 0 && (
             <div style={{ marginTop: "1rem", borderTop: `1px dashed ${PALETA.areiaBorda}`, paddingTop: "0.8rem" }}>
               <div style={{ fontWeight: 900, fontSize: "0.9rem", marginBottom: 6 }}>Agendados ({dados.agendados}) — o prazo é a hora marcada</div>
@@ -304,7 +343,7 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
 
       {dados && (
         <Bloco titulo={apenasAtrasados ? "Pedidos que estouraram o prazo" : "Todos os pedidos"}
-          subtitulo={apenasAtrasados ? "O pior primeiro" : "Na ordem em que chegaram"}
+          subtitulo={apenasAtrasados ? "O pior primeiro. Na entrega, os que chegaram depois do prazo e os que já saíram da loja depois dele" : "Na ordem em que chegaram"}
           acoes={
             <label style={caixa}>
               <input type="checkbox" checked={apenasAtrasados} onChange={(e) => mudarExtra("apenasAtrasados", e.target.checked ? "" : "0")} style={{ accentColor: PALETA.carvao }} />
@@ -312,14 +351,16 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
             </label>
           } semPadding>
           {dados.lista.length === 0 ? (
-            <Vazio texto={apenasAtrasados ? "Nenhum pedido saiu depois do prazo no período." : "Nenhum pedido no período e filtros escolhidos."} />
+            <Vazio texto={apenasAtrasados ? "Nenhum pedido passou do prazo no período (entre os que têm a hora medida)." : "Nenhum pedido no período e filtros escolhidos."} />
           ) : (
             <div style={{ overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem", minWidth: 980 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem", minWidth: 1060 }}>
                 <thead>
                   <tr style={cabecaDaTabela}>
                     <th style={th}>Pedido</th><th style={th}>Canal</th><th style={th}>Dia</th>
-                    <th style={{ ...th, ...num }}>Prazo</th><th style={{ ...th, ...num }}>Saída</th>
+                    <th style={{ ...th, ...num }} title="A hora prometida ao cliente">Prazo</th>
+                    <th style={{ ...th, ...num }} title="A saída do motoboy na entrega; o pronto na retirada, no balcão e no totem">Saída</th>
+                    <th style={{ ...th, ...num }} title="Entrega: a hora de entregue, quando foi marcada na hora (é ela que cumpre o prazo)">Entregue</th>
                     <th style={{ ...th, ...num }}>Até sair</th><th style={th}>Situação</th><th style={{ ...th, ...num }}>Passou</th>
                     <th style={{ ...th, ...num }}>Cozinha</th>
                     <th style={{ ...th, ...num }} title="Da entrada na cozinha até o último item ganhar o pronto da produção">Produção</th>
@@ -342,10 +383,14 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
                       <td style={{ ...td, whiteSpace: "nowrap" }}>{fmtDia(l.dia).slice(0, 5)} <span style={suave}>{l.hora}</span></td>
                       <td style={{ ...td, ...num }}>{hora(l.prazo, l.criadoEm)}</td>
                       <td style={{ ...td, ...num }}>{hora(l.saida, l.criadoEm)}</td>
+                      <td style={{ ...td, ...num }}>{hora(l.entregue, l.criadoEm)}</td>
                       <td style={{ ...td, ...num }}>{fmtMin(l.tempoAteSaida)}</td>
                       <td style={td}><Selo faixa={l.faixa} /></td>
-                      <td style={{ ...td, ...num, fontWeight: 800, color: l.faixa === "estourado" ? PALETA.grave : PALETA.areiaTinta }}>
-                        {l.faixa !== "estourado" ? "—" : (l.excedeu ?? 0) < 0.1 ? "+segundos" : `+${fmtMin(l.excedeu)}`}
+                      <td style={{ ...td, ...num, fontWeight: 800, color: l.faixa === "estourado" || l.faixa === "saiuAtrasado" ? PALETA.grave : PALETA.areiaTinta }}
+                        title={l.faixa === "saiuAtrasado" ? "Saiu da loja depois do prazo; sem a hora de entrega, o atraso foi pelo menos este" : undefined}>
+                        {l.faixa === "saiuAtrasado"
+                          ? `≥ +${fmtMin(l.excedeu)}`
+                          : l.faixa !== "estourado" ? "—" : (l.excedeu ?? 0) < 0.1 ? "+segundos" : `+${fmtMin(l.excedeu)}`}
                       </td>
                       <td style={{ ...td, ...num }}>{fmtMin(l.etapas.cozinha)}</td>
                       <td style={{ ...td, ...num }}>{fmtMin(l.etapas.producao)}</td>
@@ -505,14 +550,14 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
   );
 }
 
-/** As quatro faixas da saída, com a parte de cada uma. */
+/** As quatro faixas do prazo (na entrega, na chegada; nos outros, no pronto), com a parte de cada uma. */
 function FaixasDoPrazo({ p }: { p: ResumoDoPrazo }) {
-  if (!p.medidos) return <Vazio texto="Nenhum pedido com prazo e hora de saída no período." />;
+  if (!p.medidos) return <Vazio texto="Nenhum pedido com o prazo medido no período: a entrega precisa do “entregue” marcado na hora; a retirada e o balcão, do pronto." />;
   const faixas: { faixa: FaixaDoPrazo; n: number; detalhe: string }[] = [
     { faixa: "noPrazo", n: p.noPrazo, detalhe: p.limites.amareloAtivo ? `mais de ${p.limites.amareloMin} min de folga` : "antes do prazo" },
     { faixa: "amarelo", n: p.amarelo, detalhe: `até ${p.limites.amareloMin} min de folga` },
     { faixa: "vermelho", n: p.vermelho, detalhe: `em cima da hora (até ${p.limites.vermelhoMin} min)` },
-    { faixa: "estourado", n: p.estourados, detalhe: "saiu depois do prazo" },
+    { faixa: "estourado", n: p.estourados, detalhe: "chegou (ou ficou pronto) depois do prazo" },
   ];
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "0.6rem" }}>
