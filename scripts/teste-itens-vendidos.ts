@@ -78,6 +78,10 @@ const acha = (nos: NoDoRelatorio[] | null | undefined, nome: string): NoDoRelato
   }
   return undefined;
 };
+/** A soma do valor das linhas de cima (o que a tabela mostra, linha a linha). */
+const somaDe = (nos: NoDoRelatorio[] | null | undefined) => Math.round((nos || []).reduce((s, n) => s + (n.valor || 0), 0) * 100) / 100;
+/** A soma da quantidade das linhas de cima. */
+const qtdDe = (nos: NoDoRelatorio[] | null | undefined) => Math.round((nos || []).reduce((s, n) => s + n.quantidade, 0) * 1000) / 1000;
 
 console.log("\n1) A fração do sabor");
 confere("site, grupo de pizza: meio a meio = 0,5 de cada",
@@ -128,6 +132,34 @@ confere("% por valor: a pizza do site (69,90) sobre 198,80",
 console.log("\n6) Filtro de categoria vale para o item");
 const soBebidas = itensVendidos(PEDIDOS as any, conta, cfg({ categorias: new Set(["Bebidas"]) }));
 confere("só Bebidas: 2 Cocas, R$ 24", soBebidas.total, { quantidade: 2, valor: 24 });
+
+// O iFood #0272 da Hakim Centro (10/10/2026, 23h12): "Combo do Solteiro" com
+// "3x Frango c/ Catupiry" gravado a 7,44 — o TOTAL das três (2,48 cada), como
+// o iFood e o 99 gravam. A Brendi grava o unitário. O relatório mostrava
+// R$ 22,32 (7,44 × 3).
+console.log("\n7) Valor da opção com quantidade: iFood/99 gravam o total da linha, Brendi o unitário");
+const combo = (canal: string, preco: number, qtdItem = 1) => ({ franchiseeId: L, canal, items: [
+  { quantity: qtdItem, price: 37.34, productName: "Combo do Solteiro", menuProductId: "ifood-solteiro",
+    menuProduct: { id: "ifood-solteiro", name: "Combo do Solteiro", category: "iFood", active: false },
+    comboSelections: JSON.stringify([{ name: "Frango c/ Catupiry", quantity: 3, price: preco }, { name: "Guaravita", quantity: 1, price: 0 }]) },
+] });
+const valorDoFrango = (pedido: any) => acha(itensVendidos([pedido], conta, cfg({ opcoesPorProduto: true })).itens, "Frango c/ Catupiry");
+confere("iFood #0272: 3 Frango, R$ 7,44 (não R$ 22,32)",
+  [valorDoFrango(combo("IFOOD", 7.44))?.quantidade, valorDoFrango(combo("IFOOD", 7.44))?.valor], [3, 7.44]);
+confere("99Food: a mesma leitura do iFood", valorDoFrango(combo("99FOOD", 7.44))?.valor, 7.44);
+confere("Brendi grava o unitário (2,48): o mesmo R$ 7,44", valorDoFrango(combo("BRENDI", 2.48))?.valor, 7.44);
+confere("iFood com 2 combos: 6 Frango, R$ 14,88 (o gravado é por unidade do item)",
+  [valorDoFrango(combo("IFOOD", 7.44, 2))?.quantidade, valorDoFrango(combo("IFOOD", 7.44, 2))?.valor], [6, 14.88]);
+confere("o preço unitário guardado na escolha: 7,44 ÷ 3 no iFood, 2,48 na Brendi",
+  [escolhasDoItemComGrupo(combo("IFOOD", 7.44).items[0], grupos, { canal: "IFOOD" })[0].precoDoCanal,
+   escolhasDoItemComGrupo(combo("BRENDI", 2.48).items[0], grupos, { canal: "BRENDI" })[0].precoDoCanal],
+  [2.48, 2.48]);
+confere("`price: true` (Brendi até 19/09/2026) não vira R$ 1,00",
+  escolhasDoItemComGrupo({ quantity: 1, comboSelections: JSON.stringify([{ name: "Borda de Catupiry", quantity: 1, price: true }]) }, grupos, { canal: "BRENDI" })[0].precoDoCanal,
+  null);
+const tabelaDoIfood = itensVendidos([combo("IFOOD", 7.44)] as any, conta, cfg({ percentualPor: "valor" }));
+confere("tabela Opções pelo valor: o grupo vale R$ 7,44 e o total dos itens não muda (R$ 37,34)",
+  [somaDe(tabelaDoIfood.opcoes), tabelaDoIfood.total.valor], [7.44, 37.34]);
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

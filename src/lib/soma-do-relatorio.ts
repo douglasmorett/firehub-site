@@ -66,6 +66,10 @@ export function opcoesQueEntram<T extends OpcaoSomavel>(
   for (const op of item.opcoes || []) {
     if (f.produtos.size > 0 && !(op.id && f.produtos.has(op.id))) continue;
     if (f.categorias.size > 0 && !f.categorias.has(op.categoria)) continue;
+    // `preco` é UNITÁRIO e `quantidade` já vem multiplicada pelo item
+    // (lib/itens-do-relatorio.ts, opcoesDoItem). O do iFood/99 chega gravado
+    // como total da linha e é dividido lá, não aqui — multiplicar o gravado
+    // pela quantidade inflava o filtro de uma categoria de opção (+73% na Hakim).
     entram.push({ opcao: op, valor: !oItemEntrou && op.preco ? op.preco * op.quantidade : 0 });
   }
   return entram;

@@ -180,5 +180,29 @@ confere("filtro de categoria vale para o item",
   ] }] as any, so(["Pizzas"])).quantidade,
   0);
 
+// O preço gravado na opção tem duas leituras: o iFood e o 99 gravam o TOTAL DA
+// LINHA da opção (unitário × quantidade dela, por unidade do item); a Brendi e
+// o JotaJá gravam o unitário. Medido no banco em 11/10/2026 (iFood 911 × 0,
+// 99Food 27 × 0, Brendi 44 × 0, JotaJá 63 × 0). O Painel multiplicava o do
+// iFood pela quantidade de novo: +73% nas opções do iFood/99 da Hakim Centro.
+console.log("\n7) Opção com quantidade: o iFood e o 99 gravam o total da linha, a Brendi o unitário");
+const tresBordas = (preco: number, qtdItem = 1) => ({ quantity: qtdItem, menuProduct: PIZZA,
+  comboSelections: JSON.stringify([{ name: "Borda de Catupiry", quantity: 3, price: preco }]) });
+confere("iFood: 3 bordas gravadas a R$ 42 (o total) = R$ 14 cada",
+  precos(tresBordas(42), "IFOOD"), [["Borda de Catupiry", 3, 14]]);
+confere("99Food: a mesma leitura do iFood",
+  precos(tresBordas(42), "99FOOD"), [["Borda de Catupiry", 3, 14]]);
+confere("Brendi: 3 bordas gravadas a R$ 14 (o unitário) = R$ 14 cada — o mesmo dinheiro",
+  precos(tresBordas(14), "BRENDI"), [["Borda de Catupiry", 3, 14]]);
+confere("iFood com 2 itens: o preço gravado é POR UNIDADE do item (6 bordas a R$ 14)",
+  precos(tresBordas(42, 2), "IFOOD"), [["Borda de Catupiry", 6, 14]]);
+confere("o `price: true` da Brendi antiga não é R$ 1,00: vale o do cadastro (coluna delivery, R$ 15)",
+  precos({ quantity: 1, menuProduct: PIZZA, comboSelections: JSON.stringify([{ name: "Borda de Catupiry", quantity: 1, price: true }]) }, "BRENDI"),
+  [["Borda de Catupiry", 1, 15]]);
+const comTres = (canal: string, preco: number) => ({ id: canal, items: [item(98, 1, opcoesDoItem(tresBordas(preco), mapas, canal))] });
+const soBordas = somarVendas([comTres("IFOOD", 42), comTres("BRENDI", 14)] as any, so(["Bordas"]));
+confere("Painel, só Bordas: iFood R$ 42 + Brendi R$ 42 = R$ 84 (antes o iFood dava R$ 126)",
+  [soBordas.unidades, Math.round(soBordas.receita * 100) / 100], [6, 84]);
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

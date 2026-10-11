@@ -37,7 +37,7 @@
 import { chaveDoNome } from "@/lib/categoria-do-item";
 import { complementosDaOpcao } from "@/lib/complemento-da-opcao";
 import { precoDaOpcao } from "@/lib/preco-por-canal";
-import { canalDePrecoDo, categoriaDoItem, SEM_CATEGORIA, type MapasDaLoja } from "@/lib/itens-do-relatorio";
+import { canalDePrecoDo, categoriaDoItem, precoUnitarioDaOpcao, SEM_CATEGORIA, type MapasDaLoja } from "@/lib/itens-do-relatorio";
 import { c2 } from "@/lib/relatorios/base";
 
 // ── O QUE ENTRA ─────────────────────────────────────────────────────────────
@@ -109,12 +109,22 @@ export type EscolhaLida = {
   nome: string;
   /** Quantidade já multiplicada pelo item e pela fração do sabor. */
   quantidade: number;
-  /** Quantidade antes da fração — a que multiplica o preço mandado pelo canal. */
+  /** Quantidade antes da fração — a que multiplica o preço unitário da opção. */
   quantidadeInteira: number;
-  /** Preço unitário que o canal mandou (iFood, Wabiz, 99). */
+  /**
+   * Preço UNITÁRIO da opção pelo que o canal gravou, lido pela regra do canal
+   * (lib/itens-do-relatorio.ts, `precoUnitarioDaOpcao`): no iFood e no 99 o
+   * gravado é o total da linha da opção e se divide pela quantidade dela.
+   */
   precoDoCanal: number | null;
   /** Grupo do cadastro (formato do site), quando o pedido o guarda. */
   grupoId: string | null;
+};
+
+/** O que o relatório sabe do pedido e do item para ler as escolhas. */
+export type ContextoDasEscolhas = {
+  /** Chave do canal do pedido (lib/canal-do-pedido.ts): decide como se lê o preço gravado na opção. */
+  canal?: string | null;
 };
 
 const FRACAO_RE = /^\s*(\d+)\s*\/\s*(\d+)\s+/;
@@ -125,13 +135,15 @@ const FRACAO_RE = /^\s*(\d+)\s*\/\s*(\d+)\s+/;
  *
  * - site: { grupoId: { nome: qtd } } — o grupo vem; se o grupo é de sabor
  *   fracionado (pizza, com `priceRule`), cada sabor vale qtd ÷ total do grupo;
- * - iFood/99/Wabiz: [{ name, quantity, price }] — a meia vem no nome
- *   ("1/2 Portuguesa") e o preço é o daquela metade;
+ * - iFood/99/Wabiz/Brendi/JotaJá: [{ name, quantity, price }] — a meia vem no
+ *   nome ("1/2 Portuguesa") e o preço é o daquela metade (no iFood e no 99, o
+ *   total da linha da opção: `precoUnitarioDaOpcao` divide pela quantidade);
  * - balcão: [{ name, quantity }] ou texto — sem grupo e sem preço.
  */
 export function escolhasDoItemComGrupo(
   item: { quantity: number; comboSelections?: unknown },
   grupos: Map<string, GrupoDoCadastro>,
+  contexto: ContextoDasEscolhas = {},
 ): EscolhaLida[] {
   const qtdItem = Number(item.quantity) || 1;
   let bruto: any = item.comboSelections;
@@ -142,7 +154,7 @@ export function escolhasDoItemComGrupo(
     }
   }
   const saida: EscolhaLida[] = [];
-  const empurrar = (nomeBruto: string, qtd: number, preco: number | null, grupoId: string | null, fracaoDoGrupo = 1) => {
+  const empurrar = (nomeBruto: string, qtd: number, precoGravado: unknown, grupoId: string | null, fracaoDoGrupo = 1) => {
     const m = FRACAO_RE.exec(nomeBruto);
     const fracaoDoNome = m && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : 1;
     const nome = nomeBruto.replace(FRACAO_RE, "").trim();
@@ -152,7 +164,7 @@ export function escolhasDoItemComGrupo(
       nome,
       quantidade: inteira * fracaoDoNome * fracaoDoGrupo,
       quantidadeInteira: inteira,
-      precoDoCanal: preco !== null && Number.isFinite(preco) && preco >= 0 ? preco : null,
+      precoDoCanal: precoUnitarioDaOpcao(precoGravado, qtd, contexto.canal),
       grupoId,
     });
   };
@@ -183,8 +195,7 @@ export function escolhasDoItemComGrupo(
     } else if (e && typeof e === "object") {
       const nome = String(e.name || e.productName || e.label || e.description || "").trim();
       if (!nome) continue;
-      const preco = e.price != null && e.price !== "" ? Number(e.price) : null;
-      empurrar(nome, Number(e.quantity || e.qty || 1), preco, e.groupId ? String(e.groupId) : null);
+      empurrar(nome, Number(e.quantity || e.qty || 1), e.price, e.groupId ? String(e.groupId) : null);
     }
   }
   return saida;
@@ -294,7 +305,7 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
 
       // ── As opções do item ──
       const precoNoCadastro = produtoId ? mapas.precoNoCombo.get(produtoId) : undefined;
-      for (const e of escolhasDoItemComGrupo(item, conta.grupos)) {
+      for (const e of escolhasDoItemComGrupo(item, conta.grupos, { canal: pedido.canal })) {
         // Casa com o cadastro: borda, sabor, adicional. Uma opção pode juntar
         // duas coisas ("Massa Tradicional + Borda Catupiry"); cada uma vira linha.
         const casados = complementosDaOpcao(e.nome, mapas.complementos);

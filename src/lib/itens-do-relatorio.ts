@@ -41,10 +41,11 @@ export type OpcaoDoRelatorio = {
   /** Já multiplicada pela quantidade do item: 2 pizzas com borda = 2 bordas. */
   quantidade: number;
   /**
-   * Preço por unidade. O que o CANAL mandou (iFood, Wabiz, 99 — zero é borda
-   * grátis) ou, quando o pedido não guarda preço de opção (balcão, site, totem),
-   * o da opção NO GRUPO DESTE PRODUTO no cadastro, no preço daquele canal.
-   * null = não deu para saber.
+   * Preço por UNIDADE da opção. O que o CANAL gravou, lido pela regra do canal
+   * (`precoUnitarioDaOpcao`: no iFood e no 99 o gravado é o total da linha da
+   * opção; zero é borda grátis) ou, quando o pedido não guarda preço de opção
+   * (balcão, site, totem), o da opção NO GRUPO DESTE PRODUTO no cadastro, no
+   * preço daquele canal. null = não deu para saber.
    */
   preco: number | null;
   custo: number;
@@ -60,6 +61,61 @@ export function canalDePrecoDo(canal: string | null | undefined): CanalDePreco {
   if (c === "PDV" || c === "MESA") return "salao";
   if (c === "TOTEM") return "totem";
   return "delivery";
+}
+
+// ── O PREÇO GRAVADO NA OPÇÃO, CANAL POR CANAL ───────────────────────────────
+//
+// A mesma palavra, "preço da opção", tem duas leituras conforme o canal, e
+// nada no banco diz qual. O iFood e o 99 gravam o TOTAL DA LINHA da opção —
+// unitário × quantidade da opção, por unidade do item: "3x Frango c/
+// Catupiry" de R$ 2,48 chega com price 7,44 (lib/ifood-itens.ts grava o
+// `price` do iFood, que já é unitPrice × quantity; lib/food99-pedido.ts grava
+// o `total_price`). A Brendi e o JotaJá gravam o UNITÁRIO. Medido no banco em
+// 11/10/2026, a mesma opção da mesma loja com quantidade 1 e com 2 ou mais:
+// iFood 911 casos "total da linha" × 0 "unitário"; 99Food 27 × 0 (e 2 × 0 no
+// 99 antigo, pelo Open Delivery); Brendi 44 "unitário" × 0; JotaJá 63 × 0. A
+// Wabiz não teve caso para comparar e continua lida como unitário. Balcão,
+// mesa e site não gravam preço na opção.
+//
+// Lido como unitário, o do iFood/99 era multiplicado DUAS vezes pela
+// quantidade da opção: Hakim Centro, 30 dias até 11/10/2026, as opções do
+// iFood/99 somavam R$ 3.884,25 no Itens vendidos contra R$ 2.245,09 cobrados
+// (+73%), e o iFood #0272 de 10/10 ("3x Frango c/ Catupiry", R$ 7,44)
+// aparecia como R$ 22,32. A gravação não muda aqui: o relatório lê cada canal
+// do jeito que ele grava. O total dos itens nunca dependeu disto (o dinheiro
+// está no preço do item); mudam o valor da linha da opção e o "% pelo valor".
+
+/** Os canais (lib/canal-do-pedido.ts) que gravam no `price` da opção o total da linha. */
+export const CANAIS_COM_PRECO_DA_LINHA: ReadonlySet<string> = new Set(["IFOOD", "99FOOD"]);
+
+/**
+ * O preço UNITÁRIO de uma opção, a partir do que o pedido gravou nela.
+ * `quantidadeDaOpcao` é a de UMA unidade do item ("3x Frango" = 3), sem a do
+ * item. null = o pedido não diz o preço: campo ausente, vazio, não numérico,
+ * negativo, ou o `true` que a Brendi gravava até 19/09/2026 (a bandeira "é uma
+ * adição" no lugar do valor; `Number(true)` é 1 e virava R$ 1,00 — 110 opções
+ * assim nos pedidos de 11/09 a 11/10/2026).
+ */
+export function precoUnitarioDaOpcao(precoGravado: unknown, quantidadeDaOpcao: number, canal: string | null | undefined): number | null {
+  if (precoGravado === null || precoGravado === undefined || precoGravado === "" || typeof precoGravado === "boolean") return null;
+  const preco = Number(precoGravado);
+  if (!Number.isFinite(preco) || preco < 0) return null;
+  const q = Number(quantidadeDaOpcao);
+  if (CANAIS_COM_PRECO_DA_LINHA.has(String(canal || "").toUpperCase()) && Number.isFinite(q) && q > 1) return preco / q;
+  return preco;
+}
+
+/**
+ * O comboSelections com o `price: true` da Brendi antiga apagado, para o
+ * parseComboSelections (que faz Number(true) = 1) não inventar R$ 1,00.
+ */
+function semPrecoDeBandeira(bruto: unknown): unknown {
+  let dados: any = bruto;
+  if (typeof dados === "string") {
+    try { dados = JSON.parse(dados); } catch { return bruto; }
+  }
+  if (!Array.isArray(dados)) return dados;
+  return dados.map((o: any) => (o && typeof o === "object" && typeof o.price === "boolean" ? { ...o, price: undefined } : o));
 }
 
 type ProdutoDoCadastro = {
@@ -219,13 +275,15 @@ export function categoriaDoItem(item: ItemDoPedido, mapas: MapasDaLoja): string 
  *
  * ── De onde sai o preço ─────────────────────────────────────────────────────
  *
- * iFood, Wabiz e 99 mandam o preço de cada opção no pedido ("Massa
- * Tradicional + Borda Catupiry", R$ 14,00), e ele vale como veio — inclusive o
- * ZERO, que é a borda tradicional grátis. O balcão, o site e o totem não
- * guardam: o comboSelections do caixa é só `{name, quantity}`. Aí vale o preço
- * da opção no grupo DESTE produto no cadastro, pela coluna do canal. Conferido
- * nas 5 bordas do balcão da NIK em 23/09/2026: Calabresa meio a meio com Frango
- * Catupiry cobrada R$ 74,90 = (56,90 + 68,90) / 2 + 12,00 da Borda de Catupiry,
+ * iFood, Wabiz, 99, Brendi e JotaJá mandam o preço de cada opção no pedido
+ * ("Massa Tradicional + Borda Catupiry", R$ 14,00), e ele vale — inclusive o
+ * ZERO, que é a borda tradicional grátis —, lido pela regra do canal
+ * (`precoUnitarioDaOpcao`: o do iFood e o do 99 é o total da linha da opção e
+ * se divide pela quantidade dela). O balcão, o site e o totem não guardam: o
+ * comboSelections do caixa é só `{name, quantity}`. Aí vale o preço da opção no
+ * grupo DESTE produto no cadastro, pela coluna do canal. Conferido nas 5 bordas
+ * do balcão da NIK em 23/09/2026: Calabresa meio a meio com Frango Catupiry
+ * cobrada R$ 74,90 = (56,90 + 68,90) / 2 + 12,00 da Borda de Catupiry,
  * exatamente o +12 do cadastro.
  *
  * Opção que junta dois complementos ("Borda X + Bacon") traz UM preço para os
@@ -235,16 +293,18 @@ export function opcoesDoItem(item: ItemDoPedido, mapas: MapasDaLoja, canal?: str
   const opcoes: OpcaoDoRelatorio[] = [];
   const canalDePreco = canalDePrecoDo(canal);
   const doProduto = item.menuProduct?.id ? mapas.precoNoCombo.get(item.menuProduct.id) : undefined;
-  for (const op of parseComboSelections(item.comboSelections, item.quantity)) {
+  // Lidas por UNIDADE do item (a quantidade da opção é a que divide o preço do
+  // iFood/99) e multiplicadas pelo item depois — o mesmo total de antes.
+  for (const op of parseComboSelections(semPrecoDeBandeira(item.comboSelections), 1)) {
     const casados = complementosDaOpcao(op.name, mapas.complementos);
     for (const c of casados) {
-      const doCanal = casados.length === 1 && typeof op.price === "number" && Number.isFinite(op.price) && op.price >= 0 ? op.price : null;
+      const doCanal = casados.length === 1 ? precoUnitarioDaOpcao(op.price, op.quantity, canal) : null;
       const noCadastro = c.id ? doProduto?.get(c.id) : undefined;
       opcoes.push({
         id: c.id,
         nome: c.nome,
         categoria: c.categoria,
-        quantidade: op.quantity,
+        quantidade: op.quantity * item.quantity,
         preco: doCanal ?? (noCadastro ? precoDaOpcao(noCadastro, canalDePreco) : null),
         custo: c.custo,
       });
