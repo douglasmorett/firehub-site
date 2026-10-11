@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { mandarParaOsNumerosDoDono, numerosDoDono } from "@/lib/alertas-do-dono";
+import { avisoDoTrocoDaAbertura } from "@/lib/troco-da-abertura";
 import { FUSO_PADRAO } from "@/lib/fuso";
 // Só o fechamento imprime sozinho. O cupom de abertura continua em
 // lib/cupom-do-caixa, para o botão "imprimir de novo" do histórico.
@@ -212,6 +213,15 @@ export async function POST(req: Request) {
 
   let encerradaSemConferencia: { esperadoTotal: number; esperadoCash: number; abertoEm: string } | null = null;
 
+  // O último fechamento DE VERDADE, antes de esta abertura encerrar alguma
+  // coisa: é contra o dinheiro contado nele que o troco de agora se confere
+  // (lib/troco-da-abertura.ts).
+  const ultimoFechado = await prisma.cashSession.findFirst({
+    where: { franchiseeId: user.targetId, status: "CLOSED", closedAt: { not: null } },
+    orderBy: { closedAt: "desc" },
+    select: { closingCash: true, closedAt: true, closedBy: true },
+  });
+
   if (abertaAntes) {
     try {
       const d = await calcularEsperadoDoTurno(user.targetId, abertaAntes);
@@ -284,7 +294,14 @@ export async function POST(req: Request) {
   const numerosDoAviso = numerosDoDono(ownerInfo?.notificationPhone, ownerInfo?.chatbotConfig);
   if (ownerInfo && numerosDoAviso.length > 0) {
     const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
-    const msg = `🟢 *Caixa Aberto*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *ABERTO* às ${timeStr} com R$ ${Number(openingAmount).toFixed(2).replace('.', ',')} de troco.\n\n_Ass: Seu Assistente FireHub 🔥_`;
+    // Douglas, 11/10/2026: fechou com um valor e abriu com outro, quer saber.
+    const trocoNaoBate = avisoDoTrocoDaAbertura({
+      anterior: ultimoFechado?.closedAt ? { closingCash: ultimoFechado.closingCash, closedAt: ultimoFechado.closedAt, closedBy: ultimoFechado.closedBy } : null,
+      haviaCaixaAberto: Boolean(abertaAntes),
+      troco: Number(openingAmount),
+      tz: ownerInfo.storeTimezone || FUSO_PADRAO,
+    });
+    const msg = `🟢 *Caixa Aberto*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *ABERTO* às ${timeStr} com R$ ${Number(openingAmount).toFixed(2).replace('.', ',')} de troco.${trocoNaoBate ? `\n\n${trocoNaoBate}` : ""}\n\n_Ass: Seu Assistente FireHub 🔥_`;
     mandarParaOsNumerosDoDono(user.targetId, numerosDoAviso, msg).catch(() => 0);
   }
 
