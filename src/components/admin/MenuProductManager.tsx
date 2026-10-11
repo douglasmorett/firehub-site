@@ -330,6 +330,9 @@ export default function MenuProductManager({
   // servidor copia do original o que a tela não mostra (dados fiscais, ficha
   // técnica) — ver `duplicadoDe` em api/admin/menu-products.
   const [duplicandoDe, setDuplicandoDe] = useState<{ id: string; name: string } | null>(null);
+  // A cópia recém-criada fica em destaque por uns segundos, com a tela rolada
+  // até ela: sem isso, o lojista clica em "Criar cópia" e não vê onde foi parar.
+  const [copiaRecemCriada, setCopiaRecemCriada] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"all" | "items" | "combos">("all");
   // "Novo Item" pergunta antes se é pizza ou outro item (components/admin/CadastroDePizza):
@@ -1211,10 +1214,23 @@ export default function MenuProductManager({
   /** Mesmo formulário da edição, já preenchido, mas salvando como item novo. */
   const openDuplicate = (p: any) => {
     openEdit(p);
+    // Abre o passo curto (foto, nome, descrição, preço), não o formulário.
+    setShowForm(false);
     setEditingId(null);
     setName(`${p.name} (cópia)`);
     setDuplicandoDe({ id: p.id, name: p.name });
   };
+
+  // A cópia só existe na lista depois do router.refresh(): espera ela chegar,
+  // rola até ela e tira o destaque depois de alguns segundos.
+  useEffect(() => {
+    if (!copiaRecemCriada) return;
+    const el = document.getElementById(`produto-${copiaRecemCriada}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = setTimeout(() => setCopiaRecemCriada(null), 5000);
+    return () => clearTimeout(t);
+  }, [copiaRecemCriada, products]);
 
   /**
    * A PROMOÇÃO DIGITADA AGORA — usada pela tela e pelo salvamento.
@@ -1279,7 +1295,14 @@ export default function MenuProductManager({
           ...(duplicandoDe && !editingId ? { duplicadoDe: duplicandoDe.id } : {}),
         })
       });
-      if (res.ok) { resetForm(); router.refresh(); }
+      if (res.ok) {
+        if (duplicandoDe && !editingId) {
+          const criado = await res.json().catch(() => null);
+          if (criado?.id) setCopiaRecemCriada(criado.id);
+          showToast("📄 Cópia criada, logo abaixo do original");
+        }
+        resetForm(); router.refresh();
+      }
       else {
         // A rota diz o motivo (promoção mais cara que o preço de venda, por
         // exemplo). Engolir a mensagem deixava o lojista sem o que corrigir.
@@ -2108,6 +2131,105 @@ export default function MenuProductManager({
           onSalvo={() => router.refresh()}
           criarCategoria={criarCategoriaDaPizza}
         />
+      )}
+
+      {/* DUPLICAR — o passo curto: foto, nome, descrição e preço da cópia, que
+          é o que muda entre dois itens parecidos. O resto (categoria, canais,
+          perguntas do combo, ficha técnica, fiscal) já vem igual ao original;
+          quem quiser mexer em mais coisa abre o formulário completo. */}
+      {duplicandoDe && !showForm && (
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget && !loading) resetForm(); }}
+          style={{ position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15, 23, 42, 0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}
+        >
+          <div style={{ background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "480px", maxHeight: "92vh", overflowY: "auto", boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.4)", padding: "1.4rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", marginBottom: "1rem" }}>
+              <div style={{ minWidth: 0 }}>
+                <h2 style={{ margin: 0, fontSize: "1.2rem", fontWeight: 800, color: "#0F172A" }}>📄 Duplicar {isCombo ? "combo" : "item"}</h2>
+                <p style={{ margin: "4px 0 0", fontSize: "0.82rem", color: "#64748B", lineHeight: 1.45 }}>
+                  Cópia de <strong style={{ color: "#0F172A" }}>{duplicandoDe.name}</strong>. Ajuste o que for diferente e crie: ela entra logo abaixo do original.
+                </p>
+              </div>
+              <button type="button" onClick={resetForm} disabled={loading} title="Fechar"
+                style={{ width: "34px", height: "34px", flexShrink: 0, borderRadius: "50%", background: "#F1F5F9", border: "none", color: "#64748B", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Foto: clicar na própria foto troca; sem foto, o quadrado convida. */}
+            <div style={{ display: "flex", gap: "14px", alignItems: "center", marginBottom: "1rem" }}>
+              <label style={{ position: "relative", width: "96px", height: "96px", flexShrink: 0, borderRadius: "14px", overflow: "hidden", border: "1.5px solid #E2E8F0", background: "#F1F5F9", cursor: uploadingImage ? "wait" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}
+                title="Trocar a foto">
+                {imageUrl
+                  // eslint-disable-next-line @next/next/no-img-element
+                  ? <img src={imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : <ImageIcon size={28} color="#94A3B8" />}
+                <input type="file" accept="image/*" onChange={handleFileChange} disabled={uploadingImage} style={{ display: "none" }} />
+              </label>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-start" }}>
+                <label className="btn btn-outline" style={{ padding: "8px 12px", fontSize: "0.8rem", borderRadius: "10px", cursor: uploadingImage ? "wait" : "pointer" }}>
+                  <ImageIcon size={14} /> {uploadingImage ? "Enviando foto..." : imageUrl ? "Trocar foto" : "Pôr foto"}
+                  <input type="file" accept="image/*" onChange={handleFileChange} disabled={uploadingImage} style={{ display: "none" }} />
+                </label>
+                {imageUrl && !uploadingImage && (
+                  <button type="button" onClick={() => setImageUrl("")} style={{ background: "none", border: "none", padding: 0, fontSize: "0.76rem", color: "#64748B", textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" }}>
+                    Ficar sem foto
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>Nome</label>
+            <input
+              className="input"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              // Abre com o " (cópia)" selecionado: digitar troca só o final
+              // ("Combo Churrascão Família"); apagar volta ao nome do original.
+              ref={(el) => {
+                if (!el || el.dataset.marcado) return;
+                el.dataset.marcado = "1";
+                el.focus();
+                const fim = el.value.lastIndexOf(" (cópia)");
+                if (fim >= 0) el.setSelectionRange(fim, el.value.length);
+              }}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.95rem", fontFamily: "inherit", marginBottom: "12px" }}
+            />
+
+            <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>Descrição</label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={3}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontFamily: "inherit", resize: "vertical", marginBottom: "12px" }}
+            />
+
+            <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>Preço (R$)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              style={{ width: "140px", padding: "10px 12px", borderRadius: "10px", border: "1.5px solid #CBD5E1", fontSize: "0.95rem", fontFamily: "inherit", marginBottom: "14px" }}
+            />
+
+            <p style={{ margin: "0 0 14px", padding: "10px 12px", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", fontSize: "0.76rem", color: "#475569", lineHeight: 1.5 }}>
+              Vem igual ao original: categoria, canais, horários{isCombo || comboGroups.length > 0 ? ", perguntas e opções" : ""}, ficha técnica e dados fiscais.
+            </p>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+              <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={loading || uploadingImage || !name.trim()}
+                style={{ padding: "11px 18px", fontSize: "0.92rem", borderRadius: "12px", flex: "1 1 180px", justifyContent: "center" }}>
+                <Copy size={16} /> {loading ? "Criando..." : "Criar cópia"}
+              </button>
+              <button type="button" onClick={() => setShowForm(true)} disabled={loading}
+                style={{ background: "none", border: "none", padding: "8px 4px", fontSize: "0.82rem", fontWeight: 700, color: "#334155", textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" }}>
+                Mexer em mais coisas
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* FORM MODAL OVERLAY */}
@@ -3746,14 +3868,15 @@ export default function MenuProductManager({
                           {catProds.map(p => (
                             <div
                               key={p.id}
+                              id={`produto-${p.id}`}
                               style={{
                                 display: "flex",
                                 alignItems: "center",
                                 justifyContent: "space-between",
                                 padding: "10px 14px",
-                                background: p.active ? "#FFFFFF" : "#F8FAFC",
+                                background: p.id === copiaRecemCriada ? "#F0FDFA" : p.active ? "#FFFFFF" : "#F8FAFC",
                                 borderRadius: "12px",
-                                border: !p.active ? "1.5px dashed #C92E09" : "1px solid #E2E8F0",
+                                border: p.id === copiaRecemCriada ? "2px solid #0F766E" : !p.active ? "1.5px dashed #C92E09" : "1px solid #E2E8F0",
                                 opacity: p.active ? 1 : 0.65,
                                 gap: "12px",
                                 flexWrap: "wrap",

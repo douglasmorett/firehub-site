@@ -508,6 +508,33 @@ export async function POST(req: NextRequest) {
     }
   });
 
+  // A cópia entra LOGO ABAIXO do original, como o lojista espera ver. Repetir
+  // o sortOrder não basta: no empate vale o nome, e "Combo Família" cairia em
+  // outro lugar da categoria. Então a ordem da categoria é regravada com a
+  // cópia encaixada depois do original — a mesma gravação da tela de reordenar.
+  if (original && duplicadoDe) {
+    try {
+      const naCategoria = await prisma.menuProduct.findMany({
+        where: { franchiseeId, category: { equals: product.category, mode: "insensitive" }, id: { not: product.id } },
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: { id: true, sortOrder: true },
+      });
+      const pos = naCategoria.findIndex(p => p.id === String(duplicadoDe));
+      if (pos >= 0) {
+        const ordem = [...naCategoria.slice(0, pos + 1), { id: product.id, sortOrder: -1 }, ...naCategoria.slice(pos + 1)];
+        await prisma.$transaction(
+          ordem
+            .map((p, idx) => ({ ...p, idx }))
+            .filter(p => p.sortOrder !== p.idx)
+            .map(p => prisma.menuProduct.update({ where: { id: p.id }, data: { sortOrder: p.idx } }))
+        );
+      }
+    } catch (err) {
+      // A cópia já existe; fora do lugar é melhor do que um erro na tela.
+      console.error("[menu-products] Erro ao pôr a cópia abaixo do original:", err);
+    }
+  }
+
   if (fichaDoOriginal.length > 0) {
     await prisma.productRecipe.createMany({
       data: fichaDoOriginal.map(r => ({ menuProductId: product.id, stockItemId: r.stockItemId, quantityConsumed: r.quantityConsumed })),
