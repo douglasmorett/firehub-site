@@ -373,10 +373,12 @@ export default function StoreDashboard({ orders: ordersDaTela, carregadoDesde = 
         {erroDaAtualizacao && <span role="alert" style={{ marginLeft: 6, color: "#B45309", fontWeight: 600 }}>{erroDaAtualizacao}</span>}
       </p>
 
-      {/* OS CARTÕES — pela régua: valor vendido, vendas (a mesa conta uma vez), ticket = valor ÷ vendas */}
+      {/* OS CARTÕES — pela régua: faturamento = valor vendido (a Receita Bruta do DRE e o "Valor vendido"
+          dos Relatórios), vendas (a mesa conta uma vez), ticket = valor ÷ vendas. "PEDIDOS" virou "VENDAS"
+          porque o número é de vendas; o roteiro do vídeo (tutoriais/roteiros/inicio.mjs) procura estes títulos. */}
       <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: "1.25rem" }}>
-        <Card title="VALOR VENDIDO" value={formatBRL(vendas.valor)} icon={DollarSign} color="#0F766E" trend={tendenciaValor}
-          subtitle="Total dos pedidos, sem cancelados" />
+        <Card title="FATURAMENTO" value={formatBRL(vendas.valor)} icon={DollarSign} color="#0F766E" trend={tendenciaValor}
+          subtitle="Valor vendido: total dos pedidos, sem cancelados" />
         <Card title="VENDAS" value={fmtInt(vendas.vendas)} icon={ShoppingCart} color="#1C1917" trend={tendenciaVendas}
           subtitle={<>
             {vendas.lancamentos !== vendas.vendas ? `${fmtInt(vendas.lancamentos)} lançamentos (a mesa conta uma vez)` : "A mesa conta uma vez"}
