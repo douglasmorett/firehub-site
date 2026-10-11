@@ -851,15 +851,21 @@ export default function RelatoriosClient({
     const pct = (n: number) => (medidos > 0 ? (n / medidos) * 100 : 0);
     const amareloMin = pz.limites?.amareloMin ?? 10;
     const vermelhoMin = pz.limites?.vermelhoMin ?? 5;
+    // A rota mede o prazo do CLIENTE: na entrega, a hora em que chegou (só as
+    // com o "entregue" marcado na hora); na retirada e no balcão, o pronto.
+    // Medir pela saída dava 93,5% "no prazo" na NIK com 46,5% chegando no
+    // prazo (o prazo do iFood é a hora prometida de chegada).
     return {
       medidos,
       limites: { amareloMin, vermelhoMin },
       atrasoMediano: pz.atrasoMediano ?? null,
+      semEntrega: Number(pz.semEntrega) || 0,
+      saida: pz.saidaDasEntregas || null,
       faixas: [
-        { chave: "noPrazo", titulo: "Saiu no prazo", n: pz.noPrazo || 0, pct: pct(pz.noPrazo || 0), cor: "#0F766E", fundo: "#F0FDFA", detalhe: `Mais de ${amareloMin} min de folga` },
-        { chave: "amarelo", titulo: "Alerta amarelo", n: pz.amarelo || 0, pct: pct(pz.amarelo || 0), cor: "#B45309", fundo: "#FFF7E6", detalhe: `Saiu com ${vermelhoMin} a ${amareloMin} min de folga` },
-        { chave: "vermelho", titulo: "Alerta vermelho", n: pz.vermelho || 0, pct: pct(pz.vermelho || 0), cor: "#C92E09", fundo: "#FEE2E2", detalhe: `Saiu em cima da hora (até ${vermelhoMin} min)` },
-        { chave: "estourado", titulo: "Prazo estourado", n: pz.estourados || 0, pct: pct(pz.estourados || 0), cor: "#B71C1C", fundo: "#FECACA", detalhe: "Já tinha passado do prazo prometido" },
+        { chave: "noPrazo", titulo: "No prazo", n: pz.noPrazo || 0, pct: pct(pz.noPrazo || 0), cor: "#0F766E", fundo: "#F0FDFA", detalhe: `Com mais de ${amareloMin} min de folga` },
+        { chave: "amarelo", titulo: "Alerta amarelo", n: pz.amarelo || 0, pct: pct(pz.amarelo || 0), cor: "#B45309", fundo: "#FFF7E6", detalhe: `Com ${vermelhoMin} a ${amareloMin} min de folga` },
+        { chave: "vermelho", titulo: "Alerta vermelho", n: pz.vermelho || 0, pct: pct(pz.vermelho || 0), cor: "#C92E09", fundo: "#FEE2E2", detalhe: `Em cima da hora (até ${vermelhoMin} min)` },
+        { chave: "estourado", titulo: "Prazo estourado", n: pz.estourados || 0, pct: pct(pz.estourados || 0), cor: "#B71C1C", fundo: "#FECACA", detalhe: "Depois da hora prometida ao cliente" },
       ],
     };
   }, [tempos.dados]);
@@ -1400,10 +1406,10 @@ export default function RelatoriosClient({
       <div style={CARD_SECAO}>
         <div style={{ marginBottom: "1rem" }}>
           <h2 style={{ margin: 0, fontWeight: 900, fontSize: "1rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 8 }}>
-            <Bike size={18} color="#0F766E" /> Como os pedidos saíram para entrega
+            <Bike size={18} color="#0F766E" /> No prazo do cliente
           </h2>
           <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
-            Quanto tempo ainda faltava para o prazo prometido na hora em que o pedido saiu.
+            Na entrega, se o pedido chegou ao cliente até a hora prometida; na retirada e no balcão, se ficou pronto até o prazo.
             {saidas && <>Usa os mesmos limites dos Alertas de Produção: amarelo em {saidas.limites.amareloMin} min, vermelho em {saidas.limites.vermelhoMin} min.</>}
           </p>
         </div>
@@ -1440,6 +1446,12 @@ export default function RelatoriosClient({
               {saidas.medidos} saída{saidas.medidos !== 1 ? "s" : ""} medida{saidas.medidos !== 1 ? "s" : ""} no período
               {saidas.atrasoMediano !== null && (
                 <> · quem estourou passou, na mediana, <strong style={{ color: "#C92E09" }}>{fmtMin(saidas.atrasoMediano)}</strong> do prazo</>
+              )}
+              {saidas.saida && saidas.saida.medidas > 0 && (
+                <><br />Na saída da loja: <strong>{saidas.saida.depoisDoPrazo}</strong> de {saidas.saida.medidas} entregas já saíram depois da hora prometida.</>
+              )}
+              {saidas.semEntrega > 0 && (
+                <><br />{saidas.semEntrega} {saidas.semEntrega === 1 ? "entrega ficou" : "entregas ficaram"} fora: sem a hora de entrega marcada na hora (ex.: "entregue" dado em lote) — detalhes no Tempo por status.</>
               )}
             </p>
           </>
