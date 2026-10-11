@@ -97,6 +97,16 @@ export default function DREClient({
     }
   }, []);
 
+  // A página só manda o período pronto quando abre numa aba que o usa; nas
+  // outras (Mensalidade, a padrão) ele é buscado na primeira vez que o
+  // lojista abre o DRE, o Extrato, o Relatório, os Custos Fixos ou as
+  // Configurações.
+  const usaPeriodo = ABAS_COM_PERIODO.has(aba) || aba === "configuracoes";
+  useEffect(() => {
+    if (usaPeriodo && !dados && !carregando && !erro) carregar(periodo.de, periodo.ate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usaPeriodo]);
+
   const mudarPeriodo = (de: string, ate: string) => {
     const p = lerPeriodo(de, ate, hoje);
     setPeriodo(p);

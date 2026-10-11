@@ -13,6 +13,8 @@ import { somarDias } from "@/lib/relatorios/base";
 export const dynamic = "force-dynamic";
 
 const ABAS = ["mensalidade", "extrato", "relatorio", "configuracoes", "dre", "custosfix", "pagamentos", "contasapagar", "notascompras"] as const;
+/** As abas que mostram números do período (as mesmas do DREClient, mais Configurações, que mostra as vendas de cada app). */
+const ABAS_COM_PERIODO = new Set<string>(["dre", "extrato", "relatorio", "pagamentos", "custosfix", "configuracoes"]);
 
 export default async function StoreFinanceiroPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   // De qual loja é o dinheiro: a do dono (funcionário → a loja do dono; ADMIN
@@ -38,13 +40,18 @@ export default async function StoreFinanceiroPage({ searchParams }: { searchPara
     return null;
   });
 
+  // Os números do período só quando a aba aberta usa o período. A aba padrão
+  // (Mensalidade — para onde o aviso do topo manda) não usa: a tela busca o
+  // período quando o lojista abre o DRE, o Extrato ou o Relatório.
   let dados: DadosDoPeriodo | null = null;
   let erroDoPeriodo: string | null = null;
-  try {
-    dados = await dadosDoPeriodoDoFinanceiro({ lojaId, tz: ctx.tz, hoje: ctx.hoje, de, ate, isenta: ctx.isenta, visaoDoCiclo });
-  } catch (err) {
-    console.error("[Financeiro] Erro ao montar o período:", err);
-    erroDoPeriodo = "Não foi possível carregar os números do período. Tente de novo.";
+  if (ABAS_COM_PERIODO.has(aba)) {
+    try {
+      dados = await dadosDoPeriodoDoFinanceiro({ lojaId, tz: ctx.tz, hoje: ctx.hoje, de, ate, isenta: ctx.isenta, visaoDoCiclo });
+    } catch (err) {
+      console.error("[Financeiro] Erro ao montar o período:", err);
+      erroDoPeriodo = "Não foi possível carregar os números do período. Tente de novo.";
+    }
   }
 
   let produtosSemCusto: { id: string; name: string | null }[] = [];
