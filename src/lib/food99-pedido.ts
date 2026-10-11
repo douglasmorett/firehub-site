@@ -25,6 +25,101 @@ export function centavosParaReais(v: unknown): number {
   return Number.isFinite(n) ? n / 100 : 0;
 }
 
+/** Um campo do `price` em centavos inteiros; ausente ou lixo vira 0. */
+function emCentavos(v: unknown): number {
+  const n = typeof v === "number" ? v : parseInt(String(v ?? 0), 10);
+  return Number.isFinite(n) ? Math.round(n) : 0;
+}
+
+/**
+ * O que o 99Food cobra DO CLIENTE além dos itens e da entrega, em centavos —
+ * o `price.others_fees`.
+ *
+ * - `service_price`: a taxa de serviço do app (fica com o 99).
+ * - `meal_top_up_price`: o complemento até o PEDIDO MÍNIMO da loja. Nos 13
+ *   pedidos em que veio até 11/10/2026, ele leva o valor dos itens a um número
+ *   redondo: R$ 24,90 + 4,10 = R$ 29,00 na Showrrascão, R$ 39,90 + 10,10 =
+ *   R$ 50,00 na Pizzaria 17. Ficar fora da conta era a diferença inteira entre
+ *   o total montado e o `real_pay_price` (R$ 23,90 na Showrrascão e R$ 2,30
+ *   na NIK, no mês).
+ * - `small_order_price` e `total_tip_money`: nunca vieram diferentes de zero,
+ *   mas são cobrança ao cliente pelo nome e entram na conta igual.
+ *
+ * `others_fees.coupon_discount` NÃO entra: é a parte da LOJA nas promoções
+ * (bate com a soma do `shop_subside_price` em 396 de 500 pedidos), e esse
+ * dinheiro já está dentro de `items_discount`/`delivery_discount`. Somá-lo
+ * descontaria o mesmo cupom duas vezes.
+ */
+export function taxasDoCliente99(preco: unknown): { servico: number; complementoMinimo: number; pedidoPequeno: number; gorjeta: number } {
+  const p = preco && typeof preco === "object" ? (preco as Record<string, unknown>) : {};
+  const o = p.others_fees && typeof p.others_fees === "object" ? (p.others_fees as Record<string, unknown>) : {};
+  return {
+    servico: emCentavos(o.service_price),
+    complementoMinimo: emCentavos(o.meal_top_up_price),
+    pedidoPequeno: emCentavos(o.small_order_price),
+    gorjeta: emCentavos(o.total_tip_money),
+  };
+}
+
+/**
+ * O desconto do pedido, em centavos: o MAIOR entre os campos do `price`
+ * (`items_discount` + `delivery_discount` + `coupon_discount`) e a soma das
+ * promoções (`promotions[].promo_discount`).
+ *
+ * Os dois são o mesmo número em 777 de 778 pedidos com promoção. O que
+ * difere é o da NIK de 26/09/2026: `items_discount` 24,83 e duas promoções do
+ * 99 de 20,00 + 5,00 — e o cliente pagou com R$ 25,00 abatidos (o
+ * `real_pay_price` só fecha com 25,00). Os R$ 0,17 do cupom de R$ 5 que não
+ * couberam nos itens caíram fora dos campos, mas saíram do bolso do 99.
+ */
+export function descontoDoPreco99(preco: unknown, promocoes: unknown): number {
+  const p = preco && typeof preco === "object" ? (preco as Record<string, unknown>) : {};
+  const pelosCampos = emCentavos(p.items_discount) + emCentavos(p.delivery_discount) + emCentavos(p.coupon_discount);
+  const lista = Array.isArray(promocoes) ? promocoes : [];
+  const pelasPromocoes = lista.reduce((s: number, pr: any) => s + Math.max(0, emCentavos(pr?.promo_discount)), 0);
+  return Math.max(0, pelosCampos, pelasPromocoes);
+}
+
+/**
+ * O que o CLIENTE pagou, em centavos — o "Total do pedido" da nota do 99.
+ *
+ * ── Quando o 99 não manda o total ──────────────────────────────────────────
+ *
+ * `real_pay_price` (e o gêmeo `customer_need_paying_money`, igual em 500 de
+ * 500 pedidos) é o total depois de cupom e promoção. Só que o `order/detail`
+ * NÃO o manda quando quem entrega é o motoboy do 99 (`delivery_type` 1):
+ * faltou em 328 de 328 pedidos de entrega do 99 até 11/10/2026, e veio em 500
+ * de 500 de entrega da loja. Junto somem `real_price` e `delivery_price`.
+ *
+ * O código caía então em `order_price` — os itens CHEIOS, sem desconto, sem
+ * entrega e sem taxa do app. O pedido gravava o que o cliente NÃO pagou, e o
+ * caixa, que soma `totalAmount` + a parte do 99 (`discountIfood`), contava o
+ * subsídio do 99 duas vezes: na Brazza, 146 pedidos em 30 dias gravaram
+ * R$ 8.815,80 contra R$ 6.125,98 pagos; o cmv3axi01020trq013j1ullg6 gravou
+ * R$ 39,80 com o cliente pagando R$ 25,20, e a nota dizia "a loja recebe
+ * R$ 56,39" (eram R$ 41,79). Na semana de 05/10, 177 dos 349 pedidos do 99.
+ *
+ * Sem o total pronto, ele é montado pelas partes, na conta que bate no
+ * centavo com o `real_pay_price` nos 500 pedidos que trazem os dois:
+ *
+ *   itens (order_price) − desconto + entrega cobrada + taxas ao cliente
+ *
+ * `real_price` NÃO serve de reserva: é o total SEM a parte que o 99 bancou
+ * (diferente do pago em todo pedido com cupom do 99).
+ */
+export function totalPagoDoPreco99(preco: unknown, promocoes: unknown): { centavos: number; calculado: boolean } {
+  const p = preco && typeof preco === "object" ? (preco as Record<string, unknown>) : {};
+  if (p.real_pay_price != null) return { centavos: emCentavos(p.real_pay_price), calculado: false };
+  if (p.customer_need_paying_money != null) return { centavos: emCentavos(p.customer_need_paying_money), calculado: false };
+  if (p.order_price == null) return { centavos: 0, calculado: false };
+  const t = taxasDoCliente99(p);
+  const entrega = emCentavos(p.store_charged_delivery_price ?? p.delivery_price);
+  const centavos =
+    emCentavos(p.order_price) - descontoDoPreco99(p, promocoes) + entrega +
+    t.servico + t.complementoMinimo + t.pedidoPequeno + t.gorjeta;
+  return { centavos: Math.max(0, centavos), calculado: true };
+}
+
 /**
  * pay_type do 99Food → texto de forma de pagamento do FireHub.
  *
@@ -43,7 +138,18 @@ export function formaDePagamento99(payType: unknown): { texto: string; pagoOnlin
     case 3:
       return { texto: "Cartão na maquininha (cobrar na entrega)", pagoOnline: false };
     default:
-      return { texto: "99Food", pagoOnline: false };
+      // Tipo que o 99 não documenta: a forma é DESCONHECIDA, e o texto tem de
+      // dizer isso. Era "99Food", e o "food" do nome fazia o caixa
+      // (apuracao-do-turno.ts) e o relatório Formas de pagamento
+      // (formaDoTexto) lerem VALE-REFEIÇÃO — o pedido da NIK de 26/09/2026
+      // (R$ 195,29) entrou no vale de um caixa que não recebeu vale nenhum. E
+      // a NFC-e sairia com "99Food" como meio de pagamento (tPag 99).
+      // "Não informado" é o rótulo que o resto do sistema já reconhece como
+      // forma desconhecida: o caixa põe em "não identificada", o relatório em
+      // "Outros / Não identificado" e a nota fiscal pede que a loja defina a
+      // forma antes de emitir (fiscal-emissao.ts, formaDaNota). Sem "food" e
+      // sem parêntese no texto, de propósito: os dois desfazem essa leitura.
+      return { texto: "Não informado", pagoOnline: false };
   }
 }
 
@@ -215,6 +321,19 @@ export interface PedidoTraduzido {
      */
     taxaServico: number;
     /**
+     * Complemento até o pedido mínimo da loja (`others_fees.meal_top_up_price`),
+     * em reais: o cliente paga, entra no total e não é item, entrega nem taxa
+     * do app. Guardado para a nota poder explicar a diferença — ver
+     * `taxasDoCliente99`.
+     */
+    complementoMinimo: number;
+    /**
+     * O total foi MONTADO pelas partes (o 99 não mandou `real_pay_price`, o que
+     * acontece em todo pedido entregue pelo motoboy do 99) — ver
+     * `totalPagoDoPreco99`.
+     */
+    totalCalculado: boolean;
+    /**
      * Quem bancou o desconto — a separação que faltava.
      *
      * O 99Food manda `promotions[]` com `promo_discount` (o desconto) e
@@ -301,11 +420,12 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     );
   }
 
-  // `real_pay_price` é o total do pedido depois de descontos e cupom — é o
-  // número que a nota do 99Food chama de "Total do pedido". Os outros dois
-  // são reserva para app antigo que não mande esse campo.
-  const totalCentavos =
-    preco.real_pay_price ?? preco.customer_need_paying_money ?? preco.real_price ?? preco.order_price ?? 0;
+  const promocoes = Array.isArray(o.promotions) ? o.promotions : [];
+
+  // O que o cliente pagou: `real_pay_price` quando o 99 manda; montado pelas
+  // partes quando não manda (todo pedido entregue pelo motoboy do 99). Antes a
+  // reserva era `order_price`, os itens cheios — ver `totalPagoDoPreco99`.
+  const pago = totalPagoDoPreco99(preco, promocoes);
 
   // Os três descontos que o swagger separa no `price`: `items_discount`
   // (promoção de item), `delivery_discount` (na entrega) e `coupon_discount`
@@ -316,15 +436,16 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
   // A taxa de serviço que o 99 cobra do cliente entra no `real_pay_price` mas
   // não é item, não é entrega e não é desconto. Sem carregá-la, a nota do
   // painel não fecha (Frangoso, 17/09/2026: sobrava exatamente o service_price).
-  const outrasTaxas = (preco.others_fees ?? {}) as Record<string, unknown>;
-  const taxaServico = centavosParaReais(outrasTaxas.service_price);
-  const descontoTotal = Math.round((descontoItens + descontoEntrega + descontoCupom) * 100) / 100;
+  const taxas = taxasDoCliente99(preco);
+  const taxaServico = centavosParaReais(taxas.servico);
+  // O desconto que o total abate — o mesmo número da conta de cima, para
+  // "itens − desconto + entrega + taxas = total" fechar na nota.
+  const descontoTotal = centavosParaReais(descontoDoPreco99(preco, promocoes));
 
   // Quem bancou: a LOJA paga `shop_subside_price` de cada promoção; o resto é
   // o 99Food. A conta mora em lib/desconto-99food.ts — a MESMA que o recibo e
   // a comanda usam para pedido antigo, que não tem as colunas gravadas.
-  const promocoes = Array.isArray(o.promotions) ? o.promotions : [];
-  const totalPago = centavosParaReais(totalCentavos);
+  const totalPago = centavosParaReais(pago.centavos);
   const reparticao = repartirDesconto99({ descontoTotal, promocoes, taxaServico, totalPago });
 
   const descontos = {
@@ -334,6 +455,8 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     cupom: descontoCupom,
     promocoes,
     taxaServico,
+    complementoMinimo: centavosParaReais(taxas.complementoMinimo),
+    totalCalculado: pago.calculado,
     loja: reparticao.loja,
     plataforma: reparticao.plataforma,
     recebeLoja: reparticao.recebeLoja,
@@ -364,7 +487,7 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     pagamento: formaDePagamento99(o.pay_type),
     entreguePor,
     codigoDeColeta,
-    total: centavosParaReais(totalCentavos),
+    total: totalPago,
     // `store_charged_delivery_price` é o que a LOJA cobrou de entrega; é sobre
     // ele que o `delivery_discount` (frete grátis) incide. `delivery_price`
     // vinha 0 nos pedidos do Frangoso enquanto a loja cobrava R$ 8,00 e dava

@@ -231,10 +231,13 @@ export async function GET(req: NextRequest) {
     cab("Onde o desconto caiu", "Valor", "% do desconto", ""),
     ...resultado.porAlvo.map((a) => ({ celulas: [a.rotulo, R(a.valor), P(a.pct)] })),
     { celulas: [] },
-    cab("À parte (fora do total de desconto)", "Valor", "Pedidos", ""),
-    { celulas: ["Cashback usado pelos clientes", R(resultado.cashback.usado), Q(resultado.cashback.pedidosQueUsaram)] },
-    { celulas: ["Cashback gerado para os clientes", R(resultado.cashback.gerado), Q(resultado.cashback.pedidosQueGeraram)] },
-    { celulas: ["Entrega grátis por regra da loja (valor mínimo, área)", R(resultado.entregaGratisForaDoDesconto.valor), Q(resultado.entregaGratisForaDoDesconto.pedidos)] },
+    // O cashback USADO está dentro do total (o checkout o soma no desconto do
+    // pedido — a origem "Cashback usado"); o GERADO e a entrega grátis por
+    // regra ficam fora. Até 11/10/2026 os três saíam "fora do total".
+    cab("Cashback e entrega grátis por regra", "Valor", "Pedidos", ""),
+    { celulas: ["Cashback usado pelos clientes (já está no total de desconto)", R(resultado.cashback.usado), Q(resultado.cashback.pedidosQueUsaram)] },
+    { celulas: ["Cashback gerado para os clientes (fora do total: crédito a usar)", R(resultado.cashback.gerado), Q(resultado.cashback.pedidosQueGeraram)] },
+    { celulas: ["Entrega grátis por regra da loja (fora do total; valor mínimo, área)", R(resultado.entregaGratisForaDoDesconto.valor), Q(resultado.entregaGratisForaDoDesconto.pedidos)] },
   ];
 
   const porCanal: LinhaDaPlanilha[] = [
@@ -259,7 +262,7 @@ export async function GET(req: NextRequest) {
   ];
 
   const origensAba: LinhaDaPlanilha[] = [
-    ...topo("Campanhas, cupons e motivos", "Cada desconto do pedido separado pela origem: campanha da plataforma, cupom, desconto manual (com o motivo), conta da mesa."),
+    ...topo("Campanhas, cupons e motivos", "Cada desconto do pedido separado pela origem: campanha da plataforma, cupom, desconto manual (com o motivo), % do pagamento pelo site, cashback, conta da mesa."),
     cab("Tipo", "Canal", "Nome", "Onde caiu", "Pedidos", "Valor", "Loja", "Plataforma", "Não identificado", "% do desconto"),
     ...resultado.origens.map((o) => ({
       celulas: [ROTULO_DA_FATIA[o.tipo], o.canalNome, o.nome, o.alvo, Q(o.usos), R(o.valor), R(o.loja), R(o.plataforma), R(o.naoIdentificado), P(o.pctDoDesconto)],

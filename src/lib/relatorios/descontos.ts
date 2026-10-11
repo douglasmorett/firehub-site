@@ -29,6 +29,11 @@
  * - Canal próprio (site, balcão, mesa, totem, Wabiz, robô): só a loja pode ter
  *   dado o desconto — é o app/o caixa dela. A Wabiz é o app com a MARCA do
  *   restaurante (lib/wabiz-traducao.ts): cupom e fidelidade de lá são da loja.
+ * - Brendi e Jotajá gravam na COLUNA só a parte da loja (`discountMerchant`);
+ *   a da plataforma fica no detalhe (`platform` de cada benefício). Coluna
+ *   vazia lê o detalhe: era o que fazia a parte que a Brendi pagou virar "não
+ *   identificado" (Garagem e Musa, out/2026: 5 pedidos, R$ 24,25 — a
+ *   observação do próprio pedido dizia "Plataforma: R$ 5,00").
  * - O que sobra entre o total do desconto e loja + plataforma é "não
  *   identificado", nunca é empurrado para um dos lados.
  *
@@ -57,10 +62,22 @@
  * - MANUAL: o desconto que o atendente deu no PDV (balcão, ou mesa lançada no
  *   caixa), "[Desconto: 10% (R$ 2,83) — Cliente fiel]" (lib/desconto-manual.ts,
  *   notaDoDesconto).
+ * - PAGAMENTO pelo site: o % que a loja dá a quem paga Pix ou cartão pelo site
+ *   (lib/desconto-pagamento-online.ts), gravado na observação como
+ *   "[Desconto Pix pelo site (5%): -R$ 1,69]".
  * - MESA: ver abaixo.
  * - FIDELIDADE: a Trilha Premiada do site (`trilhaPremio.valorAplicado`, quando
- *   o prêmio é desconto ou frete) e a "Troca de fidelidade" da Wabiz.
+ *   o prêmio é desconto ou frete), o CASHBACK usado (`cashbackUsed`) e a
+ *   "Troca de fidelidade" da Wabiz.
  * - O que o pedido não explica vira "Sem detalhe" — a diferença aparece.
+ *
+ * Num pedido do site o desconto gravado é UM número (`discountTotal`) com tudo
+ * dentro: cupom, prêmio da Trilha, % do Pix/cartão e cashback. Cada parte que
+ * tem valor próprio sai antes, e o cupom fica com o que sobra. Até 11/10/2026 o
+ * cupom ficava com tudo: na Showrrascão (02 a 11/10/2026) o PRIMEIROPEDIDO,
+ * que é o frete grátis, saía com R$ 661,31 em 105 pedidos — R$ 121,31 eram o
+ * 5% do Pix/cartão de 47 deles —, e 24 pedidos sem cupom iam inteiros para
+ * "Sem detalhe" (R$ 203,51: R$ 76,41 do 5% e R$ 127,10 de cashback).
  *
  * ── A MESA ─────────────────────────────────────────────────────────────────
  *
@@ -159,10 +176,13 @@
  *   valor impossível (R$ 1 milhão ou mais, VALOR_IMPOSSIVEL da régua), que
  *   também fica fora do valor vendido. Aqui só o total decide (a rota não traz
  *   os itens); em 24/09/2026 o único caso em produção é cancelado.
- * - Cashback (`cashbackEarned`/`cashbackUsed`): mostrado À PARTE. O checkout
- *   do site não grava o cashback usado no desconto do pedido; somar os dois
- *   misturaria dinheiro de campanhas diferentes. (Em 24/09/2026 nenhum pedido
- *   em produção tinha cashback gravado.)
+ * - Cashback GERADO (`cashbackEarned`): é crédito prometido ao cliente, não
+ *   desconto dado — vai à parte. O cashback USADO está DENTRO do total: o
+ *   checkout do site (desde 02/10/2026) e o robô somam o resgate no
+ *   `discountTotal` (os 22 pedidos com cashback em produção, em 11/10/2026),
+ *   e aqui ele é a fatia "Cashback usado". Até 11/10/2026 a tela o mostrava
+ *   "à parte (fora do total)" estando dentro — contado duas vezes para quem
+ *   somava.
  * - Entrega grátis por regra da loja ("pedido acima de R$ 60"): `entregaGratis`
  *   sem desconto — mostrada à parte, porque a taxa zerada nunca entrou no
  *   total do pedido. A entrega grátis de CUPOM já está no desconto (o checkout
@@ -262,12 +282,13 @@ export const ROTULO_DE_QUEM: Record<QuemBancou, string> = {
   NAO_IDENTIFICADO: "Não identificado",
 };
 
-export type TipoDaFatia = "cupom" | "campanha" | "manual" | "mesa" | "fidelidade" | "outro";
+export type TipoDaFatia = "cupom" | "campanha" | "manual" | "pagamento" | "mesa" | "fidelidade" | "outro";
 
 export const ROTULO_DA_FATIA: Record<TipoDaFatia, string> = {
   cupom: "Cupom",
   campanha: "Campanha da plataforma",
   manual: "Desconto manual",
+  pagamento: "Desconto no pagamento pelo site",
   mesa: "Desconto na conta da mesa",
   fidelidade: "Fidelidade",
   outro: "Sem detalhe",
@@ -462,6 +483,25 @@ export function cupomDasNotas(notes: string | null | undefined, canal: string): 
   return null;
 }
 
+// "[Desconto Pix pelo site (5%): -R$ 1,69]" / "[Desconto Cartão pelo site (2,5%): -R$ 3,10]":
+// o rótulo de lib/desconto-pagamento-online.ts (`descontoDoPagamentoOnline`)
+// com o valor, como o checkout (api/customer-order) grava na observação.
+const RE_DESCONTO_PELO_SITE = /\[(Desconto (Pix|Cart[aã]o) pelo site \(\s*([\d.,]+)\s*%\s*\))\s*:\s*-\s*R\$\s*(\d[\d.]*(?:,\d{1,2})?)\s*\]/i;
+
+/**
+ * O desconto que a loja dá a quem paga Pix ou cartão PELO SITE, lido da
+ * observação do pedido — ou null quando o pedido não teve. `rotulo` é o texto
+ * do checkout ("Desconto Pix pelo site (5%)").
+ */
+export function descontoDoPagamentoPeloSite(notes: string | null | undefined): { rotulo: string; forma: "PIX" | "CARTAO"; valor: number } | null {
+  const m = RE_DESCONTO_PELO_SITE.exec(String(notes || ""));
+  if (!m) return null;
+  const bruto = m[4].includes(",") ? m[4].replace(/\./g, "").replace(",", ".") : m[4];
+  const valor = Math.round(Number(bruto) * 100) / 100;
+  if (!Number.isFinite(valor) || valor <= 0) return null;
+  return { rotulo: m[1].replace(/\s+/g, " ").trim(), forma: /^pix$/i.test(m[2]) ? "PIX" : "CARTAO", valor };
+}
+
 /** O motivo do desconto manual do balcão ("Cliente fiel"), ou "" quando não foi dado. */
 export function motivoDoDescontoManual(notes: string | null | undefined): string | null {
   const m = RE_DESCONTO_MANUAL.exec(String(notes || ""));
@@ -526,6 +566,11 @@ export function descontoDoPedido(p: PedidoParaDescontos, canal: string = canalDo
   let total = positivo(p.discountTotal);
   let loja = 0, plataforma = 0;
   const colunas = tem(p.discountMerchant) || tem(p.discountIfood);
+  // O que cada benefício do detalhe (iFood, Brendi, Jotajá) diz que é da loja e da plataforma.
+  const doDetalhe = listaDeDetalhes.reduce(
+    (s, d) => ({ loja: s.loja + positivo(d?.merchant), plataforma: s.plataforma + positivo(d?.ifood ?? d?.platform) }),
+    { loja: 0, plataforma: 0 },
+  );
 
   if (canal === "99FOOD") {
     if (!total) total = positivo(objDeDetalhes.total);
@@ -539,14 +584,13 @@ export function descontoDoPedido(p: PedidoParaDescontos, canal: string = canalDo
       plataforma = r.plataforma;
     }
   } else if (colunas) {
-    loja = positivo(p.discountMerchant);
-    plataforma = positivo(p.discountIfood);
+    // Coluna vazia lê o detalhe: a Brendi e a Jotajá gravam só a parte da
+    // loja na coluna, e a parte que a plataforma pagou ficava "não
+    // identificada" (ver o topo). No iFood, que grava as duas, não muda nada.
+    loja = tem(p.discountMerchant) ? positivo(p.discountMerchant) : doDetalhe.loja;
+    plataforma = tem(p.discountIfood) ? positivo(p.discountIfood) : doDetalhe.plataforma;
   } else if (total > 0) {
     // Sem as colunas: o detalhe gravado diz, senão o canal próprio só pode ser a loja.
-    const doDetalhe = listaDeDetalhes.reduce(
-      (s, d) => ({ loja: s.loja + positivo(d?.merchant), plataforma: s.plataforma + positivo(d?.ifood ?? d?.platform) }),
-      { loja: 0, plataforma: 0 },
-    );
     if (doDetalhe.loja + doDetalhe.plataforma > 0) {
       loja = doDetalhe.loja;
       plataforma = doDetalhe.plataforma;
@@ -612,6 +656,22 @@ export function descontoDoPedido(p: PedidoParaDescontos, canal: string = canalDo
         fatias.push(fatia("fidelidade", canal, `Trilha Premiada${premio.descricao ? `: ${premio.descricao}` : ""}`, premio.tipo === "frete" ? "ENTREGA" : "PEDIDO", valor, { chave: `fidelidade:${canal}:trilha` }));
         restante -= valor;
       }
+    }
+    // O % de quem paga Pix/cartão pelo site e o cashback usado têm valor
+    // próprio e estão DENTRO do `discountTotal`: saem antes do cupom, que fica
+    // só com o que é dele (ver o topo — o PRIMEIROPEDIDO da Showrrascão).
+    const peloSite = descontoDoPagamentoPeloSite(p.notes);
+    if (peloSite && restante > 0.004) {
+      // A base do % são os itens depois do cupom (a taxa de entrega fica fora).
+      const valor = Math.min(restante, peloSite.valor);
+      fatias.push(fatia("pagamento", canal, peloSite.rotulo, "ITENS", valor));
+      restante -= valor;
+    }
+    const cashbackUsado = positivo(p.cashbackUsed);
+    if (cashbackUsado > 0 && restante > 0.004) {
+      const valor = Math.min(restante, cashbackUsado);
+      fatias.push(fatia("fidelidade", canal, "Cashback usado", "PEDIDO", valor, { chave: `fidelidade:${canal}:cashback` }));
+      restante -= valor;
     }
     if (restante > 0.004) {
       const cupom = cupomDasNotas(p.notes, canal);
@@ -719,6 +779,8 @@ function rotuloDaFatia(f: FatiaDoDesconto): string {
   // com o mesmo desconto — 11 pedidos com 10% em 16/09/2026 —, e "Balcão" numa
   // linha de tipo Mesa parecia erro.
   if (f.tipo === "manual") return `Desconto manual: ${f.nome}`;
+  // "Desconto Pix pelo site (5%)": o nome já diz tudo — "(itens)" depois do "(5%)" só atrapalha.
+  if (f.tipo === "pagamento") return f.nome;
   if (f.tipo === "mesa") return "Desconto na conta da mesa";
   const detalhe = [rotuloDoAlvo(f.alvo), (f.vezes || 1) > 1 ? `${f.vezes}×` : ""].filter(Boolean).join(", ");
   return detalhe ? `${f.nome} (${detalhe})` : f.nome;

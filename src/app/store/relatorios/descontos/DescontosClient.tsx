@@ -255,7 +255,7 @@ export default function DescontosClient({ inicio }: { inicio: InicioDosFiltros }
   return (
     <ModeloDoRelatorio
       titulo="Cupons e descontos"
-      descricao="Quanto de desconto foi dado, quem pagou (a loja ou a plataforma) e de onde veio: cupom, campanha do iFood/99, desconto manual ou conta da mesa."
+      descricao="Quanto de desconto foi dado, quem pagou (a loja ou a plataforma) e de onde veio: cupom, campanha do iFood/99, desconto manual, % do pagamento pelo site, cashback ou conta da mesa."
       slug="descontos" query={query} periodo={dados?.periodo} carregando={carregando} erro={erro}
       onRecarregar={() => { recarregar(); lista.recarregar(); }}>
 
@@ -271,7 +271,7 @@ export default function DescontosClient({ inicio }: { inicio: InicioDosFiltros }
                 (Pastel, 13/09/2026, Mesa, 18h43–18h44: só o fechamento da Mesa 55). */}
             <Cartao rotulo="Do bolso da loja" valor={fmtReais(r.loja)}
               detalhe={<>{r.vendas > 0 ? <>{fmtPct(r.pctLojaSobreVendas)} das vendas · </> : null}<Variacao atual={r.loja} anterior={dados.anterior.loja} menorEhMelhor /></>} />
-            <Cartao rotulo="Pago pelas plataformas" valor={fmtReais(r.plataforma)} detalhe="iFood/99 pagam e repassam à loja" />
+            <Cartao rotulo="Pago pelas plataformas" valor={fmtReais(r.plataforma)} detalhe="iFood, 99 e Brendi pagam e repassam à loja" />
             {/* A base é o valor vendido da régua única — o MESMO número do Vendas
                 por período. Sem venda no recorte (só uma mesa que fechou nele),
                 não há percentual: "—", não "0%". O valor vendido já vem sem o
@@ -417,22 +417,31 @@ export default function DescontosClient({ inicio }: { inicio: InicioDosFiltros }
           )}
 
           {daLoja.length > 0 && (
-            <Bloco titulo="Descontos manuais, mesa e fidelidade" semPadding
-              subtitulo="O desconto dado no PDV (com o motivo), na conta da mesa e em troca de fidelidade — todos da loja.">
+            <Bloco titulo="Descontos da loja: manual, pagamento pelo site, fidelidade e mesa" semPadding
+              subtitulo="O desconto dado no PDV (com o motivo), o % de quem paga Pix ou cartão pelo site, o cashback e o prêmio da Trilha usados, a troca de fidelidade e o desconto na conta da mesa — todos da loja.">
               <TabelaDeOrigens linhas={daLoja} verPedidos={verPedidos} comPlataforma={false} />
             </Bloco>
           )}
 
-          <Bloco titulo="À parte (fora do total de desconto)">
+          {/* O cashback USADO está dentro do total (o checkout soma o resgate no
+              desconto do pedido, e ele aparece na linha "Cashback usado" acima).
+              Até 11/10/2026 este bloco dizia "fora do total" para os dois. */}
+          <Bloco titulo="Cashback e entrega grátis por regra">
             <ul style={{ margin: 0, paddingLeft: "1.1rem", display: "flex", flexDirection: "column", gap: 6, fontSize: "0.84rem", lineHeight: 1.5 }}>
               <li>
-                <strong>Cashback:</strong>{" "}
-                {dados.cashback.usado > 0 || dados.cashback.gerado > 0
-                  ? <>clientes usaram {fmtReais(dados.cashback.usado)} em {dados.cashback.pedidosQueUsaram} pedido(s); foram gerados {fmtReais(dados.cashback.gerado)} em {dados.cashback.pedidosQueGeraram} pedido(s).</>
-                  : <span style={{ color: PALETA.areiaTinta }}>nenhum cashback registrado nos pedidos do período.</span>}
+                <strong>Cashback usado</strong> (já está no total de desconto, na linha “Cashback usado”, da loja):{" "}
+                {dados.cashback.usado > 0
+                  ? <>{fmtReais(dados.cashback.usado)} em {dados.cashback.pedidosQueUsaram} pedido(s).</>
+                  : <span style={{ color: PALETA.areiaTinta }}>nenhum no período.</span>}
               </li>
               <li>
-                <strong>Entrega grátis por regra da loja</strong> (pedido acima do mínimo, área):{" "}
+                <strong>Cashback gerado</strong> (fora do total — é crédito que os clientes ganharam; só vira desconto quando for usado):{" "}
+                {dados.cashback.gerado > 0
+                  ? <>{fmtReais(dados.cashback.gerado)} em {dados.cashback.pedidosQueGeraram} pedido(s).</>
+                  : <span style={{ color: PALETA.areiaTinta }}>nenhum no período.</span>}
+              </li>
+              <li>
+                <strong>Entrega grátis por regra da loja</strong> (fora do total; pedido acima do mínimo, área):{" "}
                 {dados.entregaGratisForaDoDesconto.pedidos > 0
                   ? <>{fmtReais(dados.entregaGratisForaDoDesconto.valor)} em {dados.entregaGratisForaDoDesconto.pedidos} pedido(s) — a taxa que deixou de ser cobrada.</>
                   : <span style={{ color: PALETA.areiaTinta }}>nenhuma no período.</span>}
