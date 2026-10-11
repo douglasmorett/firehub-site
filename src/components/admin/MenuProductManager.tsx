@@ -7,7 +7,7 @@ import { pizzasJaMontadas } from "@/lib/pizza-por-tamanho";
 import { precoMinimoDoProduto } from "@/lib/preco-combo";
 import CadastroDePizza, { EscolhaDoNovoItem, type PizzaJaMontada } from "@/components/admin/CadastroDePizza";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles } from "lucide-react";
+import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles, Copy } from "lucide-react";
 
 const CHANNELS = [
   { key: "activePDV",      label: "PDV",      icon: "🖥️",  color: "#1C1917", desc: "Atendimento no balcão/caixa" },
@@ -325,6 +325,11 @@ export default function MenuProductManager({
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  // DUPLICAR: o formulário abre preenchido com o item de origem, mas como
+  // cadastro NOVO (editingId nulo). Nada é gravado até o lojista salvar; o
+  // servidor copia do original o que a tela não mostra (dados fiscais, ficha
+  // técnica) — ver `duplicadoDe` em api/admin/menu-products.
+  const [duplicandoDe, setDuplicandoDe] = useState<{ id: string; name: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [tab, setTab] = useState<"all" | "items" | "combos">("all");
   // "Novo Item" pergunta antes se é pizza ou outro item (components/admin/CadastroDePizza):
@@ -1115,7 +1120,7 @@ export default function MenuProductManager({
     setAvailableDaysMode("all"); setSelectedDays([]);
     setHorarioMode("all"); setHorarioDe("09:00"); setHorarioAte("14:00");
     setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
-    setShowForm(false); setEditingId(null);
+    setShowForm(false); setEditingId(null); setDuplicandoDe(null);
   };
 
   const openEdit = (p: any) => {
@@ -1200,7 +1205,15 @@ export default function MenuProductManager({
       );
     } else { setComboGroups([]); setPrecosCanalNoCombo(false); }
     setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
-    setEditingId(p.id); setShowForm(true);
+    setEditingId(p.id); setDuplicandoDe(null); setShowForm(true);
+  };
+
+  /** Mesmo formulário da edição, já preenchido, mas salvando como item novo. */
+  const openDuplicate = (p: any) => {
+    openEdit(p);
+    setEditingId(null);
+    setName(`${p.name} (cópia)`);
+    setDuplicandoDe({ id: p.id, name: p.name });
   };
 
   /**
@@ -1262,7 +1275,8 @@ export default function MenuProductManager({
           activePDV, activeDelivery, activeTotem, activeGarcom,
           // Pergunta não é exclusividade de combo: pastel com sabor e
           // refrigerante com tamanho têm pergunta e não são combo.
-          comboGroups: comboGroups.map(({ fixo: _fixo, ...g }) => g)
+          comboGroups: comboGroups.map(({ fixo: _fixo, ...g }) => g),
+          ...(duplicandoDe && !editingId ? { duplicadoDe: duplicandoDe.id } : {}),
         })
       });
       if (res.ok) { resetForm(); router.refresh(); }
@@ -2114,10 +2128,10 @@ export default function MenuProductManager({
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", borderBottom: "1px solid #F1F5F9", paddingBottom: "1rem" }}>
               <div>
                 <span style={{ fontSize: "0.72rem", background: editandoOpcao ? "#FAF6F2" : "#FEF2F2", color: editandoOpcao ? "#1C1917" : "#C92E09", fontWeight: 800, padding: "3px 10px", borderRadius: "20px", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  {editandoOpcao ? "🧩 Editar Opção de Combo" : editingId ? (isCombo ? "✏️ Editar Combo" : "✏️ Editar Produto") : (isCombo ? "📦 Novo Combo" : "✨ Novo Produto")}
+                  {editandoOpcao ? "🧩 Editar Opção de Combo" : editingId ? (isCombo ? "✏️ Editar Combo" : "✏️ Editar Produto") : duplicandoDe ? (isCombo ? "📄 Duplicar Combo" : "📄 Duplicar Produto") : (isCombo ? "📦 Novo Combo" : "✨ Novo Produto")}
                 </span>
                 <h2 style={{ fontSize: "1.4rem", fontWeight: 800, color: "#0F172A", margin: "6px 0 0", letterSpacing: "-0.5px" }}>
-                  {editingId ? (name || "Editar Produto") : (isCombo ? "Novo Combo" : "Novo Produto")}
+                  {editingId || duplicandoDe ? (name || "Editar Produto") : (isCombo ? "Novo Combo" : "Novo Produto")}
                 </h2>
               </div>
               <button
@@ -2156,7 +2170,17 @@ export default function MenuProductManager({
             {/* COMBO: só pelo botão Novo Combo (Douglas, 02/10/2026: "se eu quiser
                 combo, eu vou clicar em novo combo"). Item e combo são cadastros
                 diferentes, e o formulário não oferece trocar um pelo outro. */}
-            {isCombo && !editandoOpcao && !editingId && (
+            {duplicandoDe && !editingId && (
+              <div style={{ marginBottom: "1.25rem", padding: "12px 14px", background: "#EFF6FF", border: "1.5px solid #BFDBFE", borderRadius: "12px" }}>
+                <p style={{ margin: 0, fontWeight: 800, fontSize: "0.9rem", color: "#1E3A8A" }}>📄 Cópia de “{duplicandoDe.name}”</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "#1E3A8A", lineHeight: 1.55 }}>
+                  Tudo veio preenchido igual ao original{isCombo ? ", inclusive as perguntas e opções do combo" : ""}. Troque o que for diferente (nome, foto, preço)
+                  e clique em <strong>Cadastrar cópia</strong>. O item original não muda.
+                </p>
+              </div>
+            )}
+
+            {isCombo && !editandoOpcao && !editingId && !duplicandoDe && (
               <div style={{ marginBottom: "1.25rem", padding: "12px 14px", background: "#F0FDFA", border: "1.5px solid #99F6E4", borderRadius: "12px" }}>
                 <p style={{ margin: 0, fontWeight: 800, fontSize: "0.9rem", color: "#0F766E" }}>📦 Como funciona o combo</p>
                 <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "#134E4A", lineHeight: 1.55 }}>
@@ -3514,7 +3538,7 @@ export default function MenuProductManager({
                   opacity: loading ? 0.7 : 1, boxShadow: "0 4px 14px rgba(232,54,12,0.35)"
                 }}
               >
-                {loading ? "Salvando Alterações..." : (editingId ? "✓ Salvar Alterações" : "✓ Cadastrar Produto")}
+                {loading ? "Salvando Alterações..." : (editingId ? "✓ Salvar Alterações" : duplicandoDe ? "✓ Cadastrar cópia" : "✓ Cadastrar Produto")}
               </button>
             </div>
           </div>
@@ -3900,6 +3924,15 @@ export default function MenuProductManager({
                                   title="Editar produto"
                                 >
                                   <Edit3 size={12} />
+                                </button>
+
+                                <button
+                                  onClick={() => openDuplicate(p)}
+                                  className="btn btn-outline"
+                                  style={{ padding: "4px 8px", fontSize: "0.72rem", borderRadius: "8px", display: "inline-flex", alignItems: "center", gap: "3px" }}
+                                  title="Duplicar: abre uma cópia deste item para você trocar foto, nome ou preço e cadastrar como item novo"
+                                >
+                                  <Copy size={12} /> Duplicar
                                 </button>
 
                                 <button

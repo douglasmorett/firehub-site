@@ -459,10 +459,25 @@ export async function POST(req: NextRequest) {
   // franchiseeId NUNCA vem do corpo para franqueado/funcionário: é sempre a loja
   // da sessão. Antes, um corpo malicioso podia cadastrar produto direto dentro
   // do cardápio de outra franquia. ADMIN mantém o poder de escolher a loja.
-  const { id, comboGroups, franchiseeId: bodyFranchiseeId, ...rest } = data;
+  const { id, comboGroups, franchiseeId: bodyFranchiseeId, duplicadoDe, ...rest } = data;
   const franchiseeId: string = scope.isAdmin
     ? (bodyFranchiseeId || scope.adminStoreId || scope.storeId)
     : scope.storeId;
+
+  // DUPLICAR (MenuProductManager → "Duplicar"): o formulário já trouxe o que
+  // a tela edita; daqui vem o que ela NÃO mostra e a cópia precisa levar —
+  // sem o NCM a nota fiscal do item novo sai errada, e sem a ficha técnica o
+  // CMV some. Só da própria loja: o id vem do corpo.
+  const original = duplicadoDe
+    ? await prisma.menuProduct.findFirst({
+        where: { id: String(duplicadoDe), franchiseeId },
+        select: {
+          ncm: true, cest: true, cfop: true, origem: true, csosn: true, pis: true, cofins: true,
+          fiscalBreakdown: true, comboConfig: true, apenasEmCombo: true, sortOrder: true,
+          recipeItems: { select: { stockItemId: true, quantityConsumed: true } },
+        },
+      })
+    : null;
 
   const erroPromo = saneiaPromocao(rest);
   if (erroPromo) return NextResponse.json({ error: erroPromo }, { status: 400 });
@@ -474,8 +489,15 @@ export async function POST(req: NextRequest) {
   await normalizarImagem(rest);
   const safeComboGroups = await keepOwnComboItems(comboGroups, franchiseeId);
 
+  const { recipeItems: fichaDoOriginal, fiscalBreakdown, comboConfig, ...copiaDoOriginal } = original || { recipeItems: [] };
+
   const product = await prisma.menuProduct.create({
     data: {
+      ...copiaDoOriginal,
+      // Json nulo não entra como `null` no Prisma; ausente = nulo no banco.
+      ...(fiscalBreakdown != null ? { fiscalBreakdown } : {}),
+      // Pergunta no formato antigo só vale se a cópia não trouxe as novas.
+      ...(comboConfig != null && !(Array.isArray(comboGroups) && comboGroups.length > 0) ? { comboConfig } : {}),
       ...rest,
       tags: rest.tags ? JSON.stringify(rest.tags) : null,
       availableDays: rest.availableDays ? JSON.stringify(rest.availableDays) : null,
@@ -485,6 +507,13 @@ export async function POST(req: NextRequest) {
       } : undefined
     }
   });
+
+  if (fichaDoOriginal.length > 0) {
+    await prisma.productRecipe.createMany({
+      data: fichaDoOriginal.map(r => ({ menuProductId: product.id, stockItemId: r.stockItemId, quantityConsumed: r.quantityConsumed })),
+      skipDuplicates: true,
+    });
+  }
 
   return NextResponse.json(product);
 }
