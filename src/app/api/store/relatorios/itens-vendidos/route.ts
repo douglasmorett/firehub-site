@@ -17,6 +17,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { cabecalhoDoRelatorio, contextoDoRelatorio, pedidosDoRelatorio } from "@/lib/relatorios/servidor";
 import { catalogoDoRelatorio } from "@/lib/relatorios/catalogo";
 import { itensVendidos, type NoDoRelatorio } from "@/lib/relatorios/itens-vendidos";
+import { atendimentosDaVenda, temValorImpossivel } from "@/lib/relatorios/regua-da-venda";
 import { canalDoRelatorio, fmtDia, ROTULO_DO_TIPO } from "@/lib/relatorios/base";
 import { montarPlanilha, respostaDePlanilha, type AbaDaPlanilha, type LinhaDaPlanilha } from "@/lib/planilha-xlsx";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
@@ -44,9 +45,11 @@ export async function GET(req: NextRequest) {
   // Na Saipos "apenas produtos" e "opções por produto" não andam juntos.
   if (cfg.apenasProdutos) cfg.opcoesPorProduto = false;
 
-  const [pedidos, catalogo] = await Promise.all([
+  const [lidos, catalogo] = await Promise.all([
     pedidosDoRelatorio(ctx, {
       select: {
+        // O acréscimo (parentOrderId) não abre venda nova — a régua das vendas.
+        parentOrderId: true,
         items: {
           select: {
             quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true,
@@ -57,16 +60,33 @@ export async function GET(req: NextRequest) {
     }),
     catalogoDoRelatorio(ctx.lojaIds),
   ]);
+  // A régua única (lib/relatorios/regua-da-venda.ts): pedido de R$ 1 milhão ou
+  // mais é erro de cadastro, fica fora de toda soma — como no Vendas por
+  // período, com quem este relatório confere o total dos itens.
+  const pedidos = lidos.filter((p) => !temValorImpossivel(p));
+  // VENDAS são atendimentos: a mesa de três rodadas é UMA venda (três
+  // lançamentos). O cartão dizia "Pedidos" e contava lançamento — Ragnar, 01 a
+  // 11/10/2026: 2.075 "pedidos" contra 1.695 vendas no Vendas por período (393
+  // mesas com 773 lançamentos).
+  const atendimentos = atendimentosDaVenda(pedidos);
 
   const resultado = itensVendidos(
     pedidos.map((p) => ({ franchiseeId: p.franchiseeId, canal: canalDoRelatorio(p), items: p.items || [] })),
-    { mapasDe: catalogo.mapasDe, grupos: catalogo.grupos, vendaveisDe: catalogo.vendaveisDe },
+    { mapasDe: catalogo.mapasDe, grupos: catalogo.grupos, vendaveisDe: catalogo.vendaveisDe, gruposDoItem: catalogo.gruposDoItem },
     cfg,
   );
   const cabecalho = cabecalhoDoRelatorio(ctx);
 
   if (sp.get("formato") !== "xlsx") {
-    return NextResponse.json({ ...cabecalho, pedidos: pedidos.length, ...resultado });
+    return NextResponse.json({
+      ...cabecalho,
+      vendas: atendimentos.vendas,
+      lancamentos: atendimentos.lancamentos,
+      /** O mesmo que `lancamentos` (nome antigo, mantido para a tela que ainda estiver aberta). */
+      pedidos: atendimentos.lancamentos,
+      valoresImpossiveis: lidos.length - pedidos.length,
+      ...resultado,
+    });
   }
 
   // ── A PLANILHA ──────────────────────────────────────────────────────────
@@ -127,6 +147,9 @@ export async function GET(req: NextRequest) {
       { celulas: [{ v: "TOTAL", estilo: "negrito" }, "", "", "", { v: resultado.total.quantidade, estilo: "qtdNegrito" }, { v: resultado.total.valor, estilo: "reaisNegrito" }, { v: 1, estilo: "pctNegrito" }] },
       { celulas: [] },
       { celulas: [{ v: "O valor do produto já inclui as opções escolhidas nele. Pedidos cancelados não entram. Meia pizza conta 0,5 de cada sabor.", estilo: "suave" }] },
+      ...(cfg.apenasProdutos
+        ? [{ celulas: [{ v: `Agrupar apenas produtos: a quantidade inclui o produto escolhido dentro de outro item (a Coca do combo conta como Coca${resultado.dentroDeOutros ? ` — ${resultado.dentroDeOutros} unidade(s) assim` : ""}); o filtro de categoria vale pela categoria dele; o valor é só o dos itens.`, estilo: "suave" as const }] }]
+        : []),
     ],
   }];
   if (resultado.opcoes) {

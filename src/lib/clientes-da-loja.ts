@@ -15,8 +15,21 @@
  * consegue usar.
  *
  * O telefone está gravado de qualquer jeito ("(22) 99276-1161",
- * "5522992761161"): o SQL normaliza com a classe '[^0-9]' (a mesma de
- * api/store/clientes/buscar — '\D' não limpava a máscara no Postgres).
+ * "5522992761161", "+55 (91) 8106-0960", "+55 22999642452 (ramal 23163674)"):
+ * o SQL tira o ramal do 99Food, normaliza com a classe '[^0-9]' (a mesma de
+ * api/store/clientes/buscar — '\D' não limpava a máscara no Postgres) e junta
+ * pela chave DDD + 8 últimos dígitos (lib/clientes-da-loja-regras.ts): o robô
+ * grava sem o nono dígito, o site com ele, e é a mesma pessoa.
+ *
+ * ── O que é pedido do cliente ───────────────────────────────────────────────
+ *
+ * A régua única dos relatórios (lib/relatorios/base.ts, STATUS_FORA_DA_VENDA):
+ * cancelado (nas três grafias), o rascunho do robô e o pedido esperando
+ * pagamento não contam como pedido, gasto, último nem PRIMEIRO pedido. Até
+ * 11/10/2026 a lista conferia só 'CANCELADO'/'CANCELED' (sem 'CANCELLED'),
+ * contava o rascunho do robô como pedido e pegava o primeiro pedido de
+ * qualquer status — na Pizzaria 17, "Pediram em 30 dias: 71 · 94 pela
+ * primeira vez", mais estreantes que clientes ativos.
  */
 import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
@@ -29,8 +42,20 @@ import { nomeDoCanal } from "@/lib/canal-do-pedido";
 import { telefoneNacional } from "@/lib/lote-de-saldo";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { parseComboSelections } from "@/lib/parse-combo";
+import { STATUS_FORA_DA_VENDA } from "@/lib/relatorios/base";
+import { lojasDoGrupo } from "@/lib/loja-ativa";
+import { FUSO_PADRAO } from "@/lib/fuso";
+import { chaveDoCliente, numerosDoCliente } from "@/lib/clientes-da-loja-regras";
 
-export type SessaoDosClientes = { lojaId: string; quem: string; storeLoyalty: unknown };
+export type SessaoDosClientes = {
+  lojaId: string;
+  quem: string;
+  storeLoyalty: unknown;
+  /** O fuso da loja: "hoje/ontem", as datas e o nome do arquivo exportado são do dia DELA. */
+  fuso?: string;
+  /** O papel de quem abriu (FRANCHISEE, STAFF, ADMIN): "Todas as lojas" é visão de dono. */
+  papel?: string;
+};
 
 /**
  * A loja de quem está logado — e só se pode ver a aba. O proxy barra a TELA
@@ -48,8 +73,33 @@ export async function sessaoDosClientes(): Promise<SessaoDosClientes | null> {
   if (!u) return null;
   if (u.role === "STAFF" && !funcionarioAbre("/store/clientes", u.permissions)) return null;
   const lojaId = u.ownerId || u.id;
-  const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { storeLoyalty: true } });
-  return { lojaId, quem: u.name || u.email, storeLoyalty: loja?.storeLoyalty ?? null };
+  const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { storeLoyalty: true, storeTimezone: true } });
+  return {
+    lojaId, quem: u.name || u.email, storeLoyalty: loja?.storeLoyalty ?? null,
+    fuso: loja?.storeTimezone || FUSO_PADRAO, papel: String(u.role || ""),
+  };
+}
+
+/**
+ * "Todas as lojas" (multiloja): a sessão fica na loja PRINCIPAL e a aba mostra
+ * só os clientes dela — o cashback e a base são de cada loja, e somar o grupo
+ * misturaria saldos e lançamentos. A China Pow via 2 clientes na principal com
+ * 14 na Yakisoba, sem aviso nenhum. Aqui a tela recebe as outras lojas para
+ * dizer isso e mandar escolher a loja.
+ */
+export async function visaoDasLojas(
+  sessao: SessaoDosClientes,
+  cookieDaLoja: string | null | undefined,
+): Promise<{ todas: boolean; lojaAtual: string | null; outras: string[] }> {
+  if (cookieDaLoja !== "all" || String(sessao.papel || "").toUpperCase() === "STAFF") return { todas: false, lojaAtual: null, outras: [] };
+  const grupo = await lojasDoGrupo(sessao.lojaId).catch(() => []);
+  if (grupo.length <= 1) return { todas: false, lojaAtual: null, outras: [] };
+  const nome = (l: { storeName: string | null; slug: string | null }) => l.storeName?.trim() || l.slug || "Loja";
+  return {
+    todas: true,
+    lojaAtual: nome(grupo.find((l) => l.id === sessao.lojaId) || { storeName: null, slug: null }),
+    outras: grupo.filter((l) => l.id !== sessao.lojaId).map(nome),
+  };
 }
 
 export type FiltroDeClientes = "todos" | "com_saldo" | "pediram" | "nunca" | "sumidos";
@@ -82,53 +132,88 @@ export type ResumoDosClientes = {
   saldoTotal: number;
 };
 
-const CANCELADO = Prisma.sql`upper(COALESCE("status", '')) IN ('CANCELADO', 'CANCELED', 'RECUSADO', 'REJEITADO')`;
+/** Fora da venda (lib/relatorios/base.ts): cancelado nas três grafias, rascunho do robô e pedido esperando pagamento. */
+const FORA_DA_VENDA = Prisma.sql`upper(COALESCE("status", '')) IN (${Prisma.join([...STATUS_FORA_DA_VENDA])})`;
 
-/** O telefone da coluna como DDD+número: só dígitos, sem o 55 da frente. */
-const nacional = (coluna: Prisma.Sql) => Prisma.sql`
-  (CASE WHEN length(regexp_replace(${coluna}, '[^0-9]', '', 'g')) IN (12, 13)
-          AND left(regexp_replace(${coluna}, '[^0-9]', '', 'g'), 2) = '55'
-        THEN substr(regexp_replace(${coluna}, '[^0-9]', '', 'g'), 3)
-        ELSE regexp_replace(${coluna}, '[^0-9]', '', 'g') END)`;
+/**
+ * O telefone da coluna como DDD+número: sem o ramal do 99Food, só dígitos, sem
+ * o 55 da frente. A mesma conta de `telefoneDoCliente` (o filtro de tamanho e
+ * do zero vem depois, em `validos`).
+ */
+const nacional = (coluna: Prisma.Sql) => {
+  const digitos = Prisma.sql`regexp_replace(regexp_replace(COALESCE(${coluna}, ''), '[(]?[[:space:]]*ramal[^0-9]*[0-9]*[[:space:]]*[)]?', ' ', 'gi'), '[^0-9]', '', 'g')`;
+  return Prisma.sql`
+  (CASE WHEN length(${digitos}) IN (12, 13) AND left(${digitos}, 2) = '55'
+        THEN substr(${digitos}, 3)
+        ELSE ${digitos} END)`;
+};
+
+/** Telefone de cliente: 10 ou 11 dígitos, sem o zero do 0800 e do "00000000000" do balcão. */
+const telefoneValido = (tel: Prisma.Sql) => Prisma.sql`length(${tel}) BETWEEN 10 AND 11 AND left(${tel}, 1) <> '0'`;
+
+/** A chave do cliente: DDD + 8 últimos dígitos (`chaveDoCliente`). */
+const chave = (tel: Prisma.Sql) => Prisma.sql`left(${tel}, 2) || right(${tel}, 8)`;
 
 const COM_ACENTO = "áàâãäéèêëíìîïóòôõöúùûüç";
 const SEM_ACENTO = "aaaaaeeeeiiiiooooouuuuc";
 const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-/** As CTEs da base: um cliente por telefone, com o que os pedidos dizem dele. */
-function base(lojaId: string, chaves: string[], saldos: number[]) {
+/**
+ * As CTEs da base: UM cliente por chave (DDD + 8 últimos dígitos), com o que
+ * os pedidos dizem dele. O telefone mostrado é a forma mais longa que ele
+ * usou (com o 9). Exportada para a prova e o teste rodarem a MESMA consulta.
+ */
+export function sqlDaBaseDeClientes(lojaId: string, chaves: string[], saldos: number[]) {
+  const tel = Prisma.sql`tel`;
   return Prisma.sql`
-    WITH ped AS (
-      SELECT ${nacional(Prisma.sql`"customerPhone"`)} AS tel,
-             count(*) FILTER (WHERE NOT ${CANCELADO})::int AS pedidos,
-             COALESCE(sum("totalAmount") FILTER (WHERE NOT ${CANCELADO}), 0)::float8 AS gasto,
-             max("createdAt") FILTER (WHERE NOT ${CANCELADO}) AS ultimo,
-             min("createdAt") AS primeiro,
-             (array_agg("customerName" ORDER BY "createdAt" DESC))[1] AS nome
-      FROM "CustomerOrder"
-      WHERE "franchiseeId" = ${lojaId}
-        AND "tableSessionId" IS NULL
-        AND "ifoodOrderId" IS NULL
-      GROUP BY 1
+    WITH ped0 AS (
+      SELECT tel, ${chave(tel)} AS chave, "createdAt", "totalAmount", "customerName", venda
+      FROM (
+        SELECT ${nacional(Prisma.sql`"customerPhone"`)} AS tel, "createdAt", "totalAmount", "customerName",
+               NOT (${FORA_DA_VENDA}) AS venda
+        FROM "CustomerOrder"
+        WHERE "franchiseeId" = ${lojaId}
+          AND "tableSessionId" IS NULL
+          AND "ifoodOrderId" IS NULL
+      ) o
+      WHERE ${telefoneValido(tel)}
+    ),
+    ped AS (
+      SELECT chave,
+             (array_agg(tel ORDER BY length(tel) DESC, "createdAt" DESC))[1] AS tel,
+             count(*) FILTER (WHERE venda)::int AS pedidos,
+             COALESCE(sum("totalAmount") FILTER (WHERE venda), 0)::float8 AS gasto,
+             max("createdAt") FILTER (WHERE venda) AS ultimo,
+             min("createdAt") FILTER (WHERE venda) AS primeiro,
+             (array_agg("customerName" ORDER BY "createdAt" DESC) FILTER (WHERE btrim(COALESCE("customerName", '')) <> ''))[1] AS nome
+      FROM ped0
+      GROUP BY chave
     ),
     cad AS (
-      SELECT DISTINCT ON (tel) tel, nome
+      SELECT chave, (array_agg(tel ORDER BY length(tel) DESC))[1] AS tel, (array_agg(nome ORDER BY "createdAt"))[1] AS nome
       FROM (
-        SELECT ${nacional(Prisma.sql`"phone"`)} AS tel, "name" AS nome, "createdAt"
-        FROM "StoreCustomer" WHERE "lojaDeOrigemId" = ${lojaId}
-      ) x
-      ORDER BY tel, "createdAt"
+        SELECT tel, ${chave(tel)} AS chave, nome, "createdAt"
+        FROM (SELECT ${nacional(Prisma.sql`"phone"`)} AS tel, "name" AS nome, "createdAt" FROM "StoreCustomer" WHERE "lojaDeOrigemId" = ${lojaId}) x
+        WHERE ${telefoneValido(tel)}
+      ) y
+      GROUP BY chave
     ),
     aj AS (
-      SELECT DISTINCT ON ("telefone") "telefone" AS tel, "nome"
-      FROM "CashbackAjuste" WHERE "lojaId" = ${lojaId}
-      ORDER BY "telefone", "createdAt" DESC
+      SELECT chave, (array_agg(tel ORDER BY length(tel) DESC))[1] AS tel,
+             (array_agg(nome ORDER BY "createdAt" DESC) FILTER (WHERE btrim(COALESCE(nome, '')) <> ''))[1] AS nome
+      FROM (
+        SELECT tel, ${chave(tel)} AS chave, nome, "createdAt"
+        FROM (SELECT ${nacional(Prisma.sql`"telefone"`)} AS tel, "nome" AS nome, "createdAt" FROM "CashbackAjuste" WHERE "lojaId" = ${lojaId}) x
+        WHERE ${telefoneValido(tel)}
+      ) y
+      GROUP BY chave
     ),
     sal AS (
       SELECT * FROM unnest(${chaves}::text[], ${saldos}::float8[]) AS s(chave, saldo)
     ),
     junta AS (
-      SELECT COALESCE(ped.tel, cad.tel, aj.tel) AS tel,
+      SELECT COALESCE(ped.chave, cad.chave, aj.chave) AS chave,
+             (SELECT t FROM unnest(ARRAY[ped.tel, cad.tel, aj.tel]) AS t WHERE t IS NOT NULL ORDER BY length(t) DESC LIMIT 1) AS tel,
              -- "Cliente"/"Balcão" do pedido perde para o nome do cadastro.
              CASE WHEN ped.nome IS NULL OR btrim(ped.nome) = ''
                        OR ped.nome ~* '^(cliente|consumidor|balc[aã]o|sem nome|n[aã]o informado)$'
@@ -137,17 +222,47 @@ function base(lojaId: string, chaves: string[], saldos: number[]) {
              COALESCE(ped.pedidos, 0) AS pedidos,
              COALESCE(ped.gasto, 0)::float8 AS gasto,
              ped.ultimo, ped.primeiro,
-             (cad.tel IS NOT NULL) AS importado
+             (cad.chave IS NOT NULL) AS importado
       FROM ped
-      FULL OUTER JOIN cad ON cad.tel = ped.tel
-      FULL OUTER JOIN aj ON aj.tel = COALESCE(ped.tel, cad.tel)
+      FULL OUTER JOIN cad ON cad.chave = ped.chave
+      FULL OUTER JOIN aj ON aj.chave = COALESCE(ped.chave, cad.chave)
     ),
     clientes AS (
       SELECT j.*, COALESCE(sal.saldo, 0)::float8 AS saldo
       FROM junta j
       LEFT JOIN sal ON sal.chave = right(j.tel, 8)
-      WHERE length(j.tel) BETWEEN 10 AND 11 AND left(j.tel, 1) <> '0'
     )`;
+}
+
+/**
+ * Os pedidos de UM cliente (a ficha): a mesma chave da lista (DDD + 8 últimos
+ * dígitos) — o pedido do robô sem o 9 e o do site com ele são do mesmo
+ * cliente; o de outro DDD com o mesmo final, não. Fora a mesa e o iFood, como
+ * na lista. Exportada para o teste.
+ */
+export function sqlDosPedidosDoCliente(lojaId: string, chaveDoTelefone: string) {
+  const tel = nacional(Prisma.sql`"customerPhone"`);
+  return Prisma.sql`
+    SELECT "id" FROM "CustomerOrder"
+    WHERE "franchiseeId" = ${lojaId}
+      AND "tableSessionId" IS NULL
+      AND "ifoodOrderId" IS NULL
+      AND ${telefoneValido(tel)}
+      AND ${chave(tel)} = ${chaveDoTelefone}
+    ORDER BY "createdAt" DESC
+    LIMIT 300`;
+}
+
+/** O resumo dos cartões (exportado para a prova e o teste). `limite` = agora − 30 dias. */
+export function sqlDoResumoDeClientes(lojaId: string, chaves: string[], saldos: number[], limite: Date) {
+  return Prisma.sql`
+    ${sqlDaBaseDeClientes(lojaId, chaves, saldos)}
+    SELECT count(*)::int AS clientes,
+           count(*) FILTER (WHERE c.pedidos > 0)::int AS pediram,
+           count(*) FILTER (WHERE c.ultimo >= ${horaEmUtc(limite)})::int AS ativos30,
+           count(*) FILTER (WHERE c.pedidos > 0 AND c.ultimo < ${horaEmUtc(limite)})::int AS sumidos,
+           count(*) FILTER (WHERE c.primeiro >= ${horaEmUtc(limite)})::int AS novos30
+    FROM clientes c`;
 }
 
 export type ConsultaDaLista = {
@@ -188,7 +303,11 @@ export async function listarClientes(
   const digitos = q.replace(/\D/g, "");
   if (q && digitos.length >= 3 && !/\p{L}/u.test(q)) {
     const semPais = digitos.length >= 12 && digitos.startsWith("55") ? digitos.slice(2) : digitos;
-    condicoes.push(Prisma.sql`c.tel LIKE ${"%" + semPais + "%"}`);
+    // O número inteiro digitado com ou sem o 9 acha a mesma linha (pela chave).
+    const chaveDaBusca = chaveDoCliente(semPais);
+    condicoes.push(chaveDaBusca
+      ? Prisma.sql`(c.tel LIKE ${"%" + semPais + "%"} OR c.chave = ${chaveDaBusca})`
+      : Prisma.sql`c.tel LIKE ${"%" + semPais + "%"}`);
   } else if (q && /\p{L}/u.test(q)) {
     condicoes.push(Prisma.sql`translate(lower(COALESCE(c.nome, '')), ${COM_ACENTO}, ${SEM_ACENTO}) LIKE ${"%" + semAcento(q) + "%"}`);
   }
@@ -210,21 +329,14 @@ export async function listarClientes(
 
   const [linhas, [resumo]] = await Promise.all([
     prisma.$queryRaw<Linha[]>(Prisma.sql`
-      ${base(sessao.lojaId, chaves, valores)}
+      ${sqlDaBaseDeClientes(sessao.lojaId, chaves, valores)}
       SELECT c.tel, c.nome, c.pedidos, c.gasto, c.ultimo, c.primeiro, c.importado, c.saldo,
              count(*) OVER()::int AS total
       FROM clientes c
       WHERE ${Prisma.join(condicoes, " AND ")}
       ORDER BY ${ordenar}
       LIMIT ${porPagina} OFFSET ${(pagina - 1) * porPagina}`),
-    prisma.$queryRaw<LinhaDoResumo[]>(Prisma.sql`
-      ${base(sessao.lojaId, chaves, valores)}
-      SELECT count(*)::int AS clientes,
-             count(*) FILTER (WHERE c.pedidos > 0)::int AS pediram,
-             count(*) FILTER (WHERE c.ultimo >= ${horaEmUtc(limite)})::int AS ativos30,
-             count(*) FILTER (WHERE c.pedidos > 0 AND c.ultimo < ${horaEmUtc(limite)})::int AS sumidos,
-             count(*) FILTER (WHERE c.primeiro >= ${horaEmUtc(limite)})::int AS novos30
-      FROM clientes c`),
+    prisma.$queryRaw<LinhaDoResumo[]>(sqlDoResumoDeClientes(sessao.lojaId, chaves, valores, limite)),
   ]);
 
   return {
@@ -273,19 +385,30 @@ export type DetalheDoCliente = {
     cashbackUsado: number;
   }[];
   enderecos: string[];
-  numeros: { pedidos: number; gasto: number; ticketMedio: number; primeiro: string | null; ultimo: string | null; cancelados: number };
+  numeros: {
+    /** Pedidos que contam (a régua: sem cancelado, rascunho do robô e esperando pagamento). */
+    pedidos: number;
+    gasto: number;
+    ticketMedio: number;
+    /** O primeiro pedido que CONTA — cancelado não faz ninguém cliente. */
+    primeiro: string | null;
+    ultimo: string | null;
+    cancelados: number;
+    /** Rascunho do robô e pedido esperando pagamento: aparecem na lista, não contam. */
+    naoConcluidos: number;
+  };
   cashback: ExtratoDoCashback & { ativo: boolean; validadeDias: number; taxa: number; maxResgatePct: number };
 };
 
-const CANCELADOS = new Set(["CANCELADO", "CANCELED", "RECUSADO", "REJEITADO"]);
-
 /** O nome dado no lançamento — o do cliente que só tem o saldo trazido de outro sistema. */
-async function nomeDoLancamento(lojaId: string, final: string): Promise<string | null> {
+async function nomeDoLancamento(lojaId: string, chaveDoTelefone: string): Promise<string | null> {
   try {
-    const [l] = await prisma.$queryRaw<{ nome: string }[]>`
+    const tel = nacional(Prisma.sql`"telefone"`);
+    const [l] = await prisma.$queryRaw<{ nome: string }[]>(Prisma.sql`
       SELECT "nome" FROM "CashbackAjuste"
-      WHERE "lojaId" = ${lojaId} AND "telefone" LIKE ${"%" + final} AND "nome" IS NOT NULL
-      ORDER BY "createdAt" DESC LIMIT 1`;
+      WHERE "lojaId" = ${lojaId} AND ${telefoneValido(tel)} AND ${chave(tel)} = ${chaveDoTelefone}
+        AND "nome" IS NOT NULL AND btrim("nome") <> ''
+      ORDER BY "createdAt" DESC LIMIT 1`);
     return l?.nome || null;
   } catch {
     return null;
@@ -301,15 +424,12 @@ async function nomeDoLancamento(lojaId: string, final: string): Promise<string |
 export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto: string, agora = new Date()): Promise<DetalheDoCliente | null> {
   const tel = telefoneNacional(telefoneBruto);
   if (!tel) return null;
-  const final = tel.slice(-8);
+  // A mesma chave da lista (DDD + 8 últimos dígitos): o pedido do robô sem o 9
+  // e o do site com ele são do mesmo cliente; o de outro DDD com o mesmo final,
+  // não. Fora a mesa e o iFood, como na lista.
+  const chaveDoTel = chaveDoCliente(tel)!;
 
-  const ids = await prisma.$queryRaw<{ id: string }[]>`
-    SELECT "id" FROM "CustomerOrder"
-    WHERE "franchiseeId" = ${sessao.lojaId}
-      AND "tableSessionId" IS NULL
-      AND regexp_replace(COALESCE("customerPhone", ''), '[^0-9]', '', 'g') LIKE ${"%" + final}
-    ORDER BY "createdAt" DESC
-    LIMIT 300`;
+  const ids = await prisma.$queryRaw<{ id: string }[]>(sqlDosPedidosDoCliente(sessao.lojaId, chaveDoTel));
   const [pedidos, extrato] = await Promise.all([
     ids.length
       ? prisma.customerOrder.findMany({
@@ -328,9 +448,10 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
 
   const idsDeCadastro = [...new Set(pedidos.map((p) => p.customerId).filter(Boolean))] as string[];
   type Cadastro = { name: string | null; birthDate: string | null; createdAt: Date; lojaDeOrigemId: string | null };
+  const telDoCadastro = nacional(Prisma.sql`"phone"`);
   const [cadastro] = await prisma.$queryRaw<Cadastro[]>(Prisma.sql`
     SELECT "name", "birthDate", "createdAt", "lojaDeOrigemId" FROM "StoreCustomer"
-    WHERE ("lojaDeOrigemId" = ${sessao.lojaId} AND right(regexp_replace("phone", '[^0-9]', '', 'g'), 8) = ${final})
+    WHERE ("lojaDeOrigemId" = ${sessao.lojaId} AND ${telefoneValido(telDoCadastro)} AND ${chave(telDoCadastro)} = ${chaveDoTel})
        ${idsDeCadastro.length ? Prisma.sql`OR "id" IN (${Prisma.join(idsDeCadastro)})` : Prisma.empty}
     ORDER BY ("lojaDeOrigemId" = ${sessao.lojaId}) DESC NULLS LAST, "createdAt" ASC
     LIMIT 1`);
@@ -341,13 +462,14 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
   if (!pedidos.length && !cadastro && !extrato.movimentos.length) {
     return {
       encontrado: false, telefone: tel, nome: null, aniversario: null, importado: false, clienteDesde: null,
-      pedidos: [], enderecos: [], numeros: { pedidos: 0, gasto: 0, ticketMedio: 0, primeiro: null, ultimo: null, cancelados: 0 },
+      pedidos: [], enderecos: [], numeros: { pedidos: 0, gasto: 0, ticketMedio: 0, primeiro: null, ultimo: null, cancelados: 0, naoConcluidos: 0 },
       cashback,
     };
   }
 
-  const validos = pedidos.filter((p) => !CANCELADOS.has(String(p.status || "").toUpperCase()));
-  const gasto = Math.round(validos.reduce((t, p) => t + (Number(p.totalAmount) || 0), 0) * 100) / 100;
+  // A régua única (lib/relatorios/regua-da-venda.ts): só a venda conta — e o
+  // primeiro pedido é o primeiro que CONTA (cancelado não faz ninguém cliente).
+  const numeros = numerosDoCliente(pedidos);
   const generico = /^(cliente|consumidor|balc[aã]o|sem nome|n[aã]o informado)$/i;
   const nomeDoPedido = pedidos.find((p) => p.customerName && !generico.test(p.customerName.trim()))?.customerName ?? null;
   const enderecos: string[] = [];
@@ -357,9 +479,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
     if (!enderecos.some((x) => x.toLowerCase() === e.toLowerCase())) enderecos.push(e);
     if (enderecos.length >= 5) break;
   }
-  const primeiro = pedidos.length ? pedidos[pedidos.length - 1].createdAt : null;
-  const ultimo = validos.length ? validos[0].createdAt : null;
-  const desde = [primeiro, cadastro?.lojaDeOrigemId === sessao.lojaId ? cadastro.createdAt : null]
+  const desde = [numeros.primeiro, cadastro?.lojaDeOrigemId === sessao.lojaId ? cadastro.createdAt : null]
     .filter(Boolean)
     .map((d) => new Date(d as Date).getTime())
     .sort((a, b) => a - b)[0];
@@ -367,7 +487,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
   return {
     encontrado: true,
     telefone: tel,
-    nome: nomeDoPedido || cadastro?.name || (await nomeDoLancamento(sessao.lojaId, final)),
+    nome: nomeDoPedido || cadastro?.name || (await nomeDoLancamento(sessao.lojaId, chaveDoTel)),
     aniversario: cadastro?.birthDate || null,
     importado: cadastro?.lojaDeOrigemId === sessao.lojaId,
     clienteDesde: desde ? new Date(desde).toISOString() : null,
@@ -384,14 +504,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
       cashbackUsado: Number(p.cashbackUsed) || 0,
     })),
     enderecos,
-    numeros: {
-      pedidos: validos.length,
-      gasto,
-      ticketMedio: validos.length ? Math.round((gasto / validos.length) * 100) / 100 : 0,
-      primeiro: primeiro ? new Date(primeiro).toISOString() : null,
-      ultimo: ultimo ? new Date(ultimo).toISOString() : null,
-      cancelados: pedidos.length - validos.length,
-    },
+    numeros,
     cashback,
   };
 }

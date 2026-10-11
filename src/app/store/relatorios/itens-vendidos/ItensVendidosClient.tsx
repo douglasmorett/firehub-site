@@ -20,12 +20,18 @@ import { useFiltros, useOpcoesDosFiltros, useRelatorio, type InicioDosFiltros } 
 type Resposta = {
   lojas: string[];
   periodo: { de: string; ate: string };
+  /** Vendas = atendimentos (lib/relatorios/regua-da-venda.ts): a mesa conta uma vez. */
+  vendas?: number;
+  /** Os pedidos lançados (cada rodada de mesa é um). */
+  lancamentos?: number;
   pedidos: number;
   linhas: number;
   itens: NoDaArvore[];
   opcoes: NoDaArvore[] | null;
   total: { quantidade: number; valor: number };
   gruposDeOpcao: { chave: string; nome: string; quantidade: number }[];
+  /** "Agrupar apenas produtos": das unidades do total, as escolhidas dentro de outro item. */
+  dentroDeOutros?: number;
 };
 
 const caixa: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.86rem", fontWeight: 600, cursor: "pointer", color: PALETA.carvao };
@@ -124,9 +130,16 @@ export default function ItensVendidosClient({ inicio }: { inicio: InicioDosFiltr
 
       {dados && (
         <GradeDeCartoes>
-          <Cartao rotulo="Itens vendidos" valor={fmtQtd(dados.total.quantidade)} detalhe={`${produtos} produto${produtos === 1 ? "" : "s"} diferente${produtos === 1 ? "" : "s"}`} />
+          <Cartao rotulo="Itens vendidos" valor={fmtQtd(dados.total.quantidade)}
+            detalhe={`${produtos} produto${produtos === 1 ? "" : "s"} diferente${produtos === 1 ? "" : "s"}`
+              + (apenasProdutos && (dados.dentroDeOutros || 0) > 0 ? ` · ${fmtQtd(dados.dentroDeOutros || 0)} escolhido${dados.dentroDeOutros === 1 ? "" : "s"} dentro de combos` : "")} />
           <Cartao rotulo="Total dos itens" valor={fmtReais(dados.total.valor)} detalhe="Produtos + opções, sem taxa de entrega e sem desconto" />
-          <Cartao rotulo="Pedidos" valor={dados.pedidos.toLocaleString("pt-BR")} detalhe="Cancelados não entram" />
+          {/* Vendas = atendimentos, o mesmo número do Vendas por período: a mesa de três
+              rodadas é uma venda e três lançamentos (lib/relatorios/regua-da-venda.ts). */}
+          <Cartao rotulo="Vendas" valor={(dados.vendas ?? dados.pedidos).toLocaleString("pt-BR")}
+            detalhe={(dados.lancamentos ?? dados.pedidos) !== (dados.vendas ?? dados.pedidos)
+              ? `${(dados.lancamentos ?? dados.pedidos).toLocaleString("pt-BR")} lançamentos (cada rodada de mesa é um) · cancelados não entram`
+              : "Cancelados não entram"} />
         </GradeDeCartoes>
       )}
 
@@ -151,7 +164,8 @@ export default function ItensVendidosClient({ inicio }: { inicio: InicioDosFiltr
       <p style={{ fontSize: "0.78rem", color: PALETA.areiaTinta, marginTop: "1rem", lineHeight: 1.5 }}>
         Meia pizza conta <strong>0,5</strong> de cada sabor. O percentual é {pctPorValor ? "pelo valor" : "pela quantidade"}, dentro do nível de cima
         (a categoria no total, o produto na categoria, a opção entre as opções do produto). As opções não se somam aos itens: o valor delas já está no produto.
-        O total confere com o total dos itens de <Link href={`/store/relatorios/vendas?${query}`} style={{ color: PALETA.marca, fontWeight: 700 }}>Vendas por período</Link>.
+        {apenasProdutos && " Em “Agrupar apenas produtos”, a quantidade inclui o produto escolhido dentro de outro item (a Coca do combo conta como Coca), e o filtro de categoria vale pela categoria dele; o valor continua só o dos itens."}
+        {" "}O {apenasProdutos ? "valor" : "total"} confere com o total dos itens de <Link href={`/store/relatorios/vendas?${query}`} style={{ color: PALETA.marca, fontWeight: 700 }}>Vendas por período</Link>.
       </p>
     </ModeloDoRelatorio>
   );

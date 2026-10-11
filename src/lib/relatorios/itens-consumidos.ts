@@ -66,10 +66,18 @@
  * Cada lançamento de mesa é um pedido, que baixa na hora do lançamento
  * (api/store/table-sessions/[id]/add-order) e devolve quando é cancelado — o
  * consumo da mesa entra como qualquer outro (com a ressalva da edição parcial,
- * acima). No faturamento, o que conta é o `totalAmount` do lançamento (o valor
- * dos itens), NÃO o `totalPaid` da TableSession: os 10% de serviço e a gorjeta
- * não são venda de produto (vão para o garçom) e inflariam o denominador — o
- * CMV da mesa sairia menor do que é.
+ * acima). No denominador entra o valor dos ITENS do lançamento, NÃO o
+ * `totalPaid` da TableSession: os 10% de serviço e a gorjeta não são venda de
+ * produto (vão para o garçom) e inflariam o denominador — o CMV da mesa sairia
+ * menor do que é.
+ *
+ * ── A base do CMV: os itens, não o total do pedido ──────────────────────────
+ *
+ * O CMV é o custo sobre o total dos ITENS vendidos (preço × quantidade), não
+ * sobre o Σ totalAmount. Até 11/10/2026 o cartão principal dividia pelo total
+ * do pedido, que traz a taxa de entrega: a mesma comida, com mais entrega,
+ * mostrava CMV menor. A taxa de entrega paga o motoboy, não o insumo. O mesmo
+ * vale para o CMV de cada dia.
  *
  * ── E o que a Saipos não mostra ─────────────────────────────────────────────
  *
@@ -419,7 +427,12 @@ export function oQueFazerSemFicha(p: Pick<ProdutoSemFicha, "origem" | "temNoCard
   return { texto: "A ficha vai no produto de mesmo nome do cardápio — a baixa acha por ele.", alerta: false };
 }
 
-export type DiaDoConsumo = { dia: string; custo: number; faturamento: number; cmvPct: number | null };
+/**
+ * Um dia do consumo. `cmvPct` é o custo sobre os ITENS vendidos no dia (preço ×
+ * quantidade), a mesma base do CMV do período; `faturamento` (Σ totalAmount,
+ * com a taxa de entrega) fica só como informação.
+ */
+export type DiaDoConsumo = { dia: string; custo: number; faturamento: number; itens: number; cmvPct: number | null };
 
 export type ResultadoDoConsumo = {
   insumos: LinhaDeInsumo[];
@@ -451,8 +464,13 @@ export type ResultadoDoConsumo = {
     /** Pedidos que baixaram estoque sem nenhum item com ficha hoje: ficha apagada ou trocada depois da venda. */
     pedidosComBaixaSemFichaHoje: number;
   };
-  /** Percentuais 0 a 100; null quando não há base. */
-  cmv: { sobreFaturamento: number | null; sobreItens: number | null; sobreItensComBaixa: number | null };
+  /**
+   * Percentuais 0 a 100; null quando não há base. A base é o total dos ITENS
+   * (preço × quantidade): o "faturamento" (Σ totalAmount) traz a taxa de
+   * entrega, que não é venda de comida, e baixava o CMV — na loja de delivery,
+   * quanto mais entrega, menor o CMV que a tela mostrava.
+   */
+  cmv: { sobreItens: number | null; sobreItensComBaixa: number | null };
   semFicha: { produtos: ProdutoSemFicha[]; quantidade: number; valor: number };
   /** Baixas feitas no período que não entraram, por quê (em pedidos). */
   foraDaConta: { cancelados: number; foraDaVenda: number; antesDoPeriodo: number; foraDosFiltros: number; semPedido: number };
@@ -586,6 +604,7 @@ export function itensConsumidos(entrada: {
   let faturamento = 0, totalDosItens = 0, valorComBaixa = 0, valorComFichaSemBaixa = 0;
   let pedidosComFichaSemBaixa = 0, pedidosComBaixaSemFichaHoje = 0;
   const faturamentoPorDia = new Map<string, number>();
+  const itensPorDia = new Map<string, number>();
   const semFicha = new Map<string, Omit<ProdutoSemFicha, "oQueFazer" | "alerta"> & { canaisSet: Set<string> }>();
   let qtdSemFicha = 0, valorSemFicha = 0;
   for (const p of vendas) {
@@ -605,6 +624,7 @@ export function itensConsumidos(entrada: {
     if (!baixou && algumComFicha) pedidosComFichaSemBaixa++;
     for (const { item, qtd, valor, como } of itens) {
       totalDosItens += valor;
+      itensPorDia.set(dia, (itensPorDia.get(dia) || 0) + valor);
       // Pedido que baixou: o item com ficha hoje é o que baixou. Se nenhum tem
       // ficha hoje (apagada, ou a receita saiu do combo e foi para opções que
       // este pedido não escolheu), a baixa é de algum deles e não dá para
@@ -662,10 +682,11 @@ export function itensConsumidos(entrada: {
   const porDia: DiaDoConsumo[] = [...dias].sort().map((dia) => {
     const custo = custoPorDia.get(dia) || 0;
     const fat = faturamentoPorDia.get(dia) || 0;
+    const itensDoDia = itensPorDia.get(dia) || 0;
     // Dia sem baixa nenhuma não tem CMV de 0%: tem ficha faltando (ou loja
-    // fechada). A MESMA regra do CMV do período (custo > 0), para o dia e o
-    // cartão não dizerem coisas diferentes.
-    return { dia, custo: c2(custo), faturamento: c2(fat), cmvPct: custo > 0 ? pct(custo, fat) : null };
+    // fechada). A MESMA regra do CMV do período (custo > 0, sobre os itens),
+    // para o dia e o cartão não dizerem coisas diferentes.
+    return { dia, custo: c2(custo), faturamento: c2(fat), itens: c2(itensDoDia), cmvPct: custo > 0 ? pct(custo, itensDoDia) : null };
   });
 
   return {
@@ -691,10 +712,9 @@ export function itensConsumidos(entrada: {
     // Sem baixa nenhuma não existe CMV para mostrar: "0,0%" num cartão leria
     // como "a comida sai de graça", quando o que falta é a ficha técnica.
     cmv: custoTotal > 0 ? {
-      sobreFaturamento: pct(custoTotal, faturamento),
       sobreItens: pct(custoTotal, totalDosItens),
       sobreItensComBaixa: pct(custoTotal, valorComBaixa),
-    } : { sobreFaturamento: null, sobreItens: null, sobreItensComBaixa: null },
+    } : { sobreItens: null, sobreItensComBaixa: null },
     semFicha: {
       produtos: [...semFicha.values()]
         .map(({ canaisSet, ...s }): ProdutoSemFicha => {
