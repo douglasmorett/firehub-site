@@ -28,11 +28,12 @@
  */
 
 import { prisma } from "@/lib/prisma";
-import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, MES_DOS_2_POR_CENTO, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
+import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, percentualDaVenda, MES_DOS_2_POR_CENTO, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { getAsaasKey } from "@/lib/asaas";
 import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
-import { bloqueioDaMensalidade, JUROS_AO_MES_PCT, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
+import { bloqueioDaMensalidade, bloqueioDoCiclo, JUROS_AO_MES_PCT, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
 import { ganhaComoVendedor } from "@/lib/vendedores";
+import { fimDoTeste } from "@/lib/fim-do-teste";
 
 /**
  * Teto de comissão que pode sair de uma mensalidade, somando os dois níveis do
@@ -321,11 +322,13 @@ export function inicioDaCobranca(
   monthEnd: Date,
   trialEndsAt: Date | string | null | undefined
 ): Date | null {
-  if (!trialEndsAt) return monthStart;
-  const fimDoTeste = new Date(trialEndsAt);
-  if (isNaN(fimDoTeste.getTime())) return monthStart;
-  if (fimDoTeste >= monthEnd) return null;
-  return fimDoTeste > monthStart ? fimDoTeste : monthStart;
+  // A leitura do fim do teste é a MESMA da faixa do topo do painel
+  // (lib/fim-do-teste.ts): sem `trialEndsAt` válido não há teste e a venda
+  // conta desde o começo do mês. O topo inventava 15 dias desde o cadastro.
+  const fim = fimDoTeste(trialEndsAt);
+  if (!fim) return monthStart;
+  if (fim >= monthEnd) return null;
+  return fim > monthStart ? fim : monthStart;
 }
 
 /**
@@ -586,6 +589,49 @@ export async function garantirCiclosDoMes(yearMonth: string) {
 }
 
 /**
+ * As lojas ADICIONAIS de marketplace na mesma conta: a primeira loja de cada
+ * app (iFood, 99Food) é gratuita e cada adicional custa EXTRA_STORE_FEE por mês.
+ *
+ * É a conta do fechamento (`closeBillingCycle`), tirada de lá sem mudar nada —
+ * a mesma contagem, a mesma ordem das linhas do boleto — para a aba
+ * Mensalidade mostrar o que o boleto vai cobrar. A tela ficava sem estes
+ * R$ 50 por loja: auditoria de 11/10/2026, Ragnar (3 lojas no iFood) via
+ * R$ 400 e recebeu boleto de R$ 500; Frangoso via R$ 400 com R$ 600 previstos;
+ * Brazza via R$ 162,65 com R$ 262,65 previstos.
+ */
+export async function lojasExtrasDeMarketplace(
+  franchiseeId: string,
+  loja: { ifoodConnected?: boolean | null; food99Connected?: boolean | null } | null | undefined,
+): Promise<{ lojasIfood: number; lojas99: number; extraIfood: number; extra99: number; total: number; linhas: string[] }> {
+  const linhas: string[] = [];
+
+  const ifoodIntegCount = await prisma.ifoodIntegration.count({
+    where: { userId: franchiseeId, active: true },
+  });
+  const legacyIfood = loja?.ifoodConnected ? 1 : 0;
+  const lojasIfood = Math.max(ifoodIntegCount, legacyIfood);
+  const extraIfood = Math.max(0, lojasIfood - 1) * FIREHUB_PLAN.EXTRA_STORE_FEE;
+  if (extraIfood > 0) linhas.push(`iFood +${lojasIfood - 1} loja(s) R$${extraIfood.toFixed(2)}`);
+
+  // 99Food segue a mesma regra do iFood: a primeira é grátis, cada adicional
+  // custa EXTRA_STORE_FEE por mês.
+  //
+  // Até 26/08/2026 esta conta dava SEMPRE zero: `lojas99` vinha do booleano
+  // `food99Connected`, que nunca passa de 1. A regra existia no código e nunca
+  // cobrou ninguém. Agora conta as linhas de `Food99Store`.
+  //
+  // `contarLojas99` cai no booleano antigo quando a tabela está vazia — e
+  // isso importa mais aqui do que em qualquer outro lugar: contar 0 numa
+  // conta que já é cobrada apagaria a cobrança dela.
+  const { contarLojas99 } = await import("@/lib/food99-lojas");
+  const lojas99 = await contarLojas99(franchiseeId, !!loja?.food99Connected);
+  const extra99 = Math.max(0, lojas99 - 1) * FIREHUB_PLAN.EXTRA_STORE_FEE;
+  if (extra99 > 0) linhas.push(`99Food +${lojas99 - 1} loja(s) R$${extra99.toFixed(2)}`);
+
+  return { lojasIfood, lojas99, extraIfood, extra99, total: extraIfood + extra99, linhas };
+}
+
+/**
  * Fecha o mês de um franqueado e gera cobrança Asaas pelo valor pendente.
  * Chamado automaticamente no último dia do mês (ou via API de fechamento).
  */
@@ -685,35 +731,12 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   let taxasExtras = 0;
   const linhasExtras: string[] = [];
 
+  // A conta mora em `lojasExtrasDeMarketplace` (acima), a mesma que a aba
+  // Mensalidade usa para mostrar o que este boleto vai cobrar.
   if (!isSpecialStore && !isentoPorTeste) {
-    const ifoodIntegCount = await prisma.ifoodIntegration.count({
-      where: { userId: franchiseeId, active: true },
-    });
-    const legacyIfood = cycle.franchisee?.ifoodConnected ? 1 : 0;
-    const lojasIfood = Math.max(ifoodIntegCount, legacyIfood);
-    const extraIfood = Math.max(0, lojasIfood - 1) * FIREHUB_PLAN.EXTRA_STORE_FEE;
-    if (extraIfood > 0) {
-      taxasExtras += extraIfood;
-      linhasExtras.push(`iFood +${lojasIfood - 1} loja(s) R$${extraIfood.toFixed(2)}`);
-    }
-
-    // 99Food segue a mesma regra do iFood: a primeira é grátis, cada adicional
-    // custa EXTRA_STORE_FEE por mês.
-    //
-    // Até 26/08/2026 esta conta dava SEMPRE zero: `lojas99` vinha do booleano
-    // `food99Connected`, que nunca passa de 1. A regra existia no código e nunca
-    // cobrou ninguém. Agora conta as linhas de `Food99Store`.
-    //
-    // `contarLojas99` cai no booleano antigo quando a tabela está vazia — e
-    // isso importa mais aqui do que em qualquer outro lugar: contar 0 numa
-    // conta que já é cobrada apagaria a cobrança dela.
-    const { contarLojas99 } = await import("@/lib/food99-lojas");
-    const lojas99 = await contarLojas99(franchiseeId, !!cycle.franchisee?.food99Connected);
-    const extra99 = Math.max(0, lojas99 - 1) * FIREHUB_PLAN.EXTRA_STORE_FEE;
-    if (extra99 > 0) {
-      taxasExtras += extra99;
-      linhasExtras.push(`99Food +${lojas99 - 1} loja(s) R$${extra99.toFixed(2)}`);
-    }
+    const extras = await lojasExtrasDeMarketplace(franchiseeId, cycle.franchisee);
+    taxasExtras += extras.total;
+    linhasExtras.push(...extras.linhas);
   }
 
   // Taxas acumuladas no ciclo por outros módulos (tráfego pago, totens).
@@ -938,35 +961,90 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
 }
 
 /**
+ * As faturas de meses FECHADOS que a loja ainda não pagou (boleto emitido,
+ * `amountPending` > 0) — a mesma consulta da faixa "Mensalidade de R$ X vence
+ * em…" do topo do painel (app/store/layout.tsx). O "Ver Fatura" daquela faixa
+ * abria a aba Mensalidade mostrando só o mês em andamento: a loja com o boleto
+ * de setembro em aberto (Taurus R$ 400, Brazza R$ 332,99, Pastel R$ 107,46…)
+ * não achava a fatura que a faixa mandava pagar.
+ */
+async function faturasEmAbertoDaLoja(franchiseeId: string) {
+  const ciclos = await prisma.franchiseeBillingCycle.findMany({
+    where: { franchiseeId, status: "CLOSED", amountPending: { gt: 0 } },
+    orderBy: { yearMonth: "asc" },
+    select: { yearMonth: true, amountPending: true, asaasBoletoUrl: true, closedAt: true },
+  });
+  const agora = new Date();
+  return ciclos.map((c) => {
+    const venc = vencimentoDoBoleto(c.yearMonth);
+    return {
+      yearMonth: c.yearMonth,
+      valor: c.amountPending,
+      /** "2026-10-05" — o vencimento impresso no boleto. */
+      venceEm: venc.dia,
+      vencida: agora >= venc.vencidoDepoisDe,
+      /** Quando o painel trava (fim do dia 10), lib/prazo-da-mensalidade.ts. */
+      bloqueiaEm: bloqueioDoCiclo(c).toISOString(),
+      boletoUrl: c.asaasBoletoUrl,
+    };
+  });
+}
+
+export type FaturaEmAberto = Awaited<ReturnType<typeof faturasEmAbertoDaLoja>>[number];
+
+/**
  * Retorna o ciclo atual do franqueado para exibir no painel.
  * Se não existe, retorna dados zerados (sem criar no banco).
+ *
+ * É a MESMA conta do fechamento (`closeBillingCycle`): mensalidade sobre as
+ * vendas depois do teste (1% no que veio antes de 04/10/2026), as taxas de
+ * serviço do ciclo (tráfego pago, totem) e as lojas extras de marketplace
+ * (`lojasExtrasDeMarketplace`). Cada parte vem separada para a tela mostrar de
+ * onde sai o total — "por que o boleto deu R$ 500 se a tela dizia R$ 400?"
+ * tem que ter resposta antes do boleto.
  */
 export async function getCurrentCycleView(franchiseeId: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true },
+    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true, ifoodConnected: true, food99Connected: true },
   });
 
   const isExempt = lojaIsenta(user);
   const tz = user?.storeTimezone || "America/Sao_Paulo";
   const yearMonth = getCurrentYearMonth(0, tz);
+  const trialEndsAt = user?.trialEndsAt ? new Date(user.trialEndsAt).toISOString() : null;
 
-  const cycle = await prisma.franchiseeBillingCycle.findUnique({
-    where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },
-  });
+  const [cycle, faturasEmAberto] = await Promise.all([
+    prisma.franchiseeBillingCycle.findUnique({
+      where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },
+    }),
+    faturasEmAbertoDaLoja(franchiseeId),
+  ]);
+
+  const semLojasExtras = { lojasIfood: 0, lojas99: 0, valor: 0, linhas: [] as string[] };
 
   if (isExempt) {
     return {
       yearMonth,
       totalSales: cycle?.totalSales || 0,
+      vendasA1PorCento: 0,
       amountDue: 0,
       amountOffset: 0,
       amountPending: 0,
+      mensalidadePrevista: 0,
       // Mesma forma em todos os retornos, para o painel nunca ter que testar se
       // o campo existe.
-      taxas: { trafegoPago: 0, totem: 0 },
+      taxas: { trafegoPago: 0, totem: 0, lojasExtras: 0 },
+      lojasExtras: semLojasExtras,
       status: "PAID",
       isExempt: true,
+      emTeste: false,
+      cobrancaPorUso: null as { valor: number; motivos: string[] } | null,
+      cobrancaDesde: null as string | null,
+      trialEndsAt,
+      asaasBoletoUrl: null as string | null,
+      asaasBoletoCode: null as string | null,
+      faturasEmAberto,
     };
   }
 
@@ -994,11 +1072,14 @@ export async function getCurrentCycleView(franchiseeId: string) {
       })
     : null;
   const vendasDoMes = aggVendas ? faturamentoBruto(aggVendas._sum) : 0;
+  // A parte das vendas cobrada a 1% (só outubro/2026, de 01 a 03/10). A tela
+  // dizia "2% sobre isto" ao lado da base inteira — Brazza, R$ 10.347,84 com
+  // R$ 4.430,44 a 1%.
+  const vendasA1PorCento = inicio ? await vendasAntesDaVirada(franchiseeId, yearMonth, inicio, monthEnd) : 0;
 
   // Nada cobrável ainda: teste cobrindo o mês inteiro, ou ainda em curso.
   const emTeste = inicio === null || inicio > new Date();
   const cobrancaDesde = inicio ? inicio.toISOString() : null;
-  const trialEndsAt = user?.trialEndsAt ? new Date(user.trialEndsAt).toISOString() : null;
   let previsaoPorUso: { valor: number; motivos: string[] } | null = null;
   if (vendasDoMes === 0 && !emTeste) {
     const uso = await detectarUsoDaLoja(franchiseeId, inicio ?? monthStart, monthEnd);
@@ -1009,24 +1090,38 @@ export async function getCurrentCycleView(franchiseeId: string) {
 
   // Mesma conta do fechamento, para o painel bater com o boleto.
   const previsaoPorVendas = (vendasDoMes > 0 && !emTeste)
-    ? calcMensalidade(vendasDoMes, true, yearMonth, inicio ? await vendasAntesDaVirada(franchiseeId, yearMonth, inicio, monthEnd) : 0).mensalidade
+    ? calcMensalidade(vendasDoMes, true, yearMonth, vendasA1PorCento).mensalidade
     : 0;
   const devidoAgora = emTeste ? 0 : Math.max(previsaoPorVendas, previsaoPorUso?.valor || 0);
+
+  // Lojas extras de marketplace: o fechamento cobra sempre que o teste NÃO
+  // cobre o mês inteiro (`isentoPorTeste` lá é `inicio === null`) — inclusive
+  // no mês em que o teste termina no meio.
+  const extras = inicio !== null ? await lojasExtrasDeMarketplace(franchiseeId, user) : null;
+  const lojasExtras = extras
+    ? { lojasIfood: extras.lojasIfood, lojas99: extras.lojas99, valor: extras.total, linhas: extras.linhas }
+    : semLojasExtras;
 
   // Loja que só recebe pedido de marketplace nunca passa por `ensureCycle`, e
   // por isso pode não ter linha de ciclo no meio do mês. O valor previsto tem
   // que aparecer do mesmo jeito.
   if (!cycle) {
+    const total = parseFloat((devidoAgora + lojasExtras.valor).toFixed(2));
     return {
-      yearMonth, totalSales: vendasDoMes,
-      amountDue: devidoAgora,
+      yearMonth, totalSales: vendasDoMes, vendasA1PorCento,
+      amountDue: total,
       amountOffset: 0,
-      amountPending: devidoAgora,
-      taxas: { trafegoPago: 0, totem: 0 },
-      status: "OPEN", isExempt: false,
+      amountPending: total,
+      mensalidadePrevista: devidoAgora,
+      taxas: { trafegoPago: 0, totem: 0, lojasExtras: lojasExtras.valor },
+      lojasExtras,
+      status: "OPEN", isExempt: false, emTeste,
       cobrancaPorUso: previsaoPorUso,
       cobrancaDesde,
       trialEndsAt,
+      asaasBoletoUrl: null as string | null,
+      asaasBoletoCode: null as string | null,
+      faturasEmAberto,
     };
   }
 
@@ -1040,7 +1135,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // que é justamente o que o comentário acima promete que não acontece mais.
   const trafegoPago = cycle.metaAdsFee ?? 0;
   const totem = cycle.totemFee ?? 0;
-  const taxasDoCiclo = trafegoPago + totem;
+  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor;
 
   const mensalidadePrevista = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   // O abatimento de pagamentos online desconta a MENSALIDADE, não as taxas —
@@ -1050,15 +1145,18 @@ export async function getCurrentCycleView(franchiseeId: string) {
   return {
     yearMonth: cycle.yearMonth,
     totalSales: vendasDoMes,
+    vendasA1PorCento,
     amountDue: parseFloat((mensalidadePrevista + taxasDoCiclo).toFixed(2)),
     amountOffset: cycle.amountOffset,
     amountPending: parseFloat((mensalidadePendente + taxasDoCiclo).toFixed(2)),
     // Discriminado para o painel poder mostrar a linha em vez de só inflar o
     // total — "por que subiu R$ 200?" tem que ter resposta na tela.
     mensalidadePrevista,
-    taxas: { trafegoPago, totem },
+    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor },
+    lojasExtras,
     status: cycle.status,
     isExempt: false,
+    emTeste,
     asaasBoletoUrl: cycle.asaasBoletoUrl,
     asaasBoletoCode: cycle.asaasBoletoCode,
     cobrancaPorUso: previsaoPorUso,
@@ -1067,5 +1165,52 @@ export async function getCurrentCycleView(franchiseeId: string) {
     // mostrar um valor que não bate com as vendas do mês.
     cobrancaDesde,
     trialEndsAt,
+    faturasEmAberto,
+  };
+}
+
+export type VisaoDoCiclo = Awaited<ReturnType<typeof getCurrentCycleView>>;
+
+/**
+ * Os pedidos que formam a base da mensalidade do mês corrente — a MESMA
+ * janela (`inicioDaCobranca` até o fim do mês) e o mesmo filtro
+ * (VENDAS_QUE_CONTAM) de `getCurrentCycleView`: somados pelo bruto, dão o
+ * `totalSales` que a aba Mensalidade mostra.
+ *
+ * A janela "Detalhes da Cobrança" listava os pedidos do PERÍODO do DRE e
+ * chamava isso de "Vendas registradas no ciclo" (Ragnar, 11/10/2026:
+ * R$ 67.904,20 na janela × R$ 128.121,52 no cartão da mesma tela).
+ */
+export async function pedidosDoCicloAtual(franchiseeId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { storeTimezone: true, trialEndsAt: true },
+  });
+  const tz = user?.storeTimezone || "America/Sao_Paulo";
+  const yearMonth = getCurrentYearMonth(0, tz);
+  const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
+  const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
+  if (!inicio) return { yearMonth, desde: null as string | null, pedidos: [] };
+
+  const pedidos = await prisma.customerOrder.findMany({
+    where: { franchiseeId, ...VENDAS_QUE_CONTAM, createdAt: { gte: inicio, lt: monthEnd } },
+    select: {
+      id: true, createdAt: true, status: true, totalAmount: true, discountTotal: true,
+      customerName: true, paymentMethod: true, dailyOrderNumber: true, ifoodReference: true,
+      openDeliveryReference: true, source: true, ifoodOrderId: true, openDeliveryChannel: true, openDeliveryOrderId: true,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  return {
+    yearMonth,
+    desde: inicio.toISOString() as string | null,
+    pedidos: pedidos.map((p) => ({
+      ...p,
+      createdAt: p.createdAt.toISOString(),
+      // A base da mensalidade é o BRUTO (faturamentoBruto, acima).
+      bruto: faturamentoBruto(p),
+      // 1% antes de 04/10/2026, 2% depois (lib/firehub-billing.ts).
+      percentual: percentualDaVenda(p.createdAt),
+    })),
   };
 }

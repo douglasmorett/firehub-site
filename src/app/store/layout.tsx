@@ -7,7 +7,7 @@ import { ehLojaDeDemonstracao } from "@/lib/pedidos-simulados";
 import StoreSidebar from "@/components/customer/StoreSidebar";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
-import { FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { diasDeTesteRestantes } from "@/lib/fim-do-teste";
 import { bloqueioDoCiclo, diaEMes, diasAte, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
 import HideOnCompras from "@/components/HideOnCompras";
 import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
@@ -80,22 +80,14 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   const isFranqueado = user?.role === "FRANCHISEE" || user?.role === "STAFF";
   const isAdmin = user?.role === "ADMIN";
 
-  // === TRIAL / BENEFÍCIO: calcular dias restantes baseado na conta proprietária ===
-  let trialDaysLeft = 0;
-  let isInTrial = false;
+  // === TRIAL / BENEFÍCIO: dias restantes da conta proprietária ===
+  // A MESMA leitura da cobrança (lib/fim-do-teste.ts, usada por
+  // lib/billing.ts): sem `trialEndsAt` gravado não há teste. A faixa inventava
+  // 15 dias a partir do cadastro e dizia "Teste grátis — 6 dias restantes" a
+  // uma loja que já estava pagando o mês inteiro (Yakisoba do san, 11/10/2026).
   const ownerCreatedAt = storeOwner?.createdAt || user?.createdAt;
-  const ownerTrialEndsAt = storeOwner?.trialEndsAt || user?.trialEndsAt;
-
-  if (ownerTrialEndsAt) {
-    const trialMsLeft = new Date(ownerTrialEndsAt).getTime() - Date.now();
-    trialDaysLeft = Math.max(0, Math.ceil(trialMsLeft / (1000 * 60 * 60 * 24)));
-    isInTrial = trialDaysLeft > 0;
-  } else if (ownerCreatedAt) {
-    const diffMs = Date.now() - new Date(ownerCreatedAt).getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    trialDaysLeft = Math.max(0, FIREHUB_PLAN.TRIAL_DAYS - diffDays);
-    isInTrial = trialDaysLeft > 0;
-  }
+  const trialDaysLeft = diasDeTesteRestantes(storeOwner?.trialEndsAt);
+  const isInTrial = trialDaysLeft > 0;
 
   // === PAGAMENTO: verificar ciclo pendente da loja proprietária ===
   let pendingPayment: {
@@ -311,7 +303,10 @@ export default async function StoreLayout({ children }: { children: React.ReactN
                   <>venceu em <strong>{pendingPayment.venceEm}</strong> e já está com juros e multa. Pague agora para evitar o bloqueio do sistema.</>
                 )}
               </span>
-              <a href="/store/financeiro#fatura" style={{ ...BOTAO_DA_FAIXA, background: "#fff", color: "#1D4ED8" }}>
+              {/* A aba Mensalidade abre com a fatura FECHADA em aberto no topo
+                  (seção #fatura). Abria o mês em andamento, sem a fatura que
+                  esta faixa manda pagar. */}
+              <a href="/store/financeiro?tab=mensalidade#fatura" style={{ ...BOTAO_DA_FAIXA, background: "#fff", color: "#1D4ED8" }}>
                 Ver Fatura
               </a>
               {pendingPayment.url && (
