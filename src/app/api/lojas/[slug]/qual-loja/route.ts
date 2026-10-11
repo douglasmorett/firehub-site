@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { avaliarEntrega } from "@/lib/area-de-entrega";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
-import { lojasDoGrupoPeloSlug } from "@/lib/vitrine-do-grupo";
+import { lojasVisiveisDoGrupo } from "@/lib/vitrine-do-grupo";
 import { distanciaRetaKm, escolherLoja, type ResultadoDaLoja } from "@/lib/escolha-de-loja-do-grupo";
 
 /**
@@ -14,7 +14,9 @@ import { distanciaRetaKm, escolherLoja, type ResultadoDaLoja } from "@/lib/escol
  * buscas contam no teto do IP e de cada loja (lib/geocodificacao-servidor.ts).
  */
 
-const LIMITE_POR_IP = { windowMs: 60_000, maxRequests: 20 };
+// No celular muita gente sai pelo mesmo IP da operadora (CGNAT); a busca no
+// mapa já tem o teto próprio por IP e por loja na fila do servidor.
+const LIMITE_POR_IP = { windowMs: 60_000, maxRequests: 60 };
 /** As lojas são avaliadas juntas; o cliente não espera o prazo inteiro do checkout. */
 const PRAZO_MS = 9000;
 
@@ -38,7 +40,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     return NextResponse.json({ error: "Diga o bairro, o endereço ou use a localização." }, { status: 400 });
   }
 
-  const lojas = await lojasDoGrupoPeloSlug(slug);
+  // Loja que o dono escondeu da página não é escolhida por ela.
+  const lojas = (await lojasVisiveisDoGrupo(slug))?.lojas;
   if (!lojas || lojas.length === 0) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
 
   const resultados: ResultadoDaLoja[] = await Promise.all(

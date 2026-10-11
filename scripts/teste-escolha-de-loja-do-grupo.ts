@@ -6,7 +6,7 @@
  *
  * O caso: Pizzaria 17 (Cavaleiros) e Pizzaria 17 Aeroporto, Macaé, 10/10/2026.
  */
-import { bairrosDoGrupo, escolherLoja, type ResultadoDaLoja } from "../src/lib/escolha-de-loja-do-grupo";
+import { bairroDoEndereco, bairrosDoGrupo, escolherLoja, type ResultadoDaLoja } from "../src/lib/escolha-de-loja-do-grupo";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -20,19 +20,27 @@ const r = (lojaId: string, resultado: "ATENDE" | "FORA" | "DESCONHECIDO", taxa: 
 
 confere("só a do Aeroporto atende → Aeroporto",
   escolherLoja([r("p17", "FORA", null, null), r("aero", "ATENDE", 5, 30)]),
-  { tipo: "ATENDE", lojaId: "aero", tambemAtendem: [] });
+  { tipo: "ATENDE", lojaId: "aero", tambemAtendem: [], porDistancia: false });
 
-confere("as duas atendem o Centro → a mais barata, a outra como 'também'",
+confere("as duas atendem o Centro, só pelo bairro → a mais barata primeiro, a outra também aparece",
   escolherLoja([r("aero", "ATENDE", 8, 45), r("p17", "ATENDE", 7, 40)]),
-  { tipo: "ATENDE", lojaId: "p17", tambemAtendem: ["aero"] });
+  { tipo: "ATENDE", lojaId: "p17", tambemAtendem: ["aero"], porDistancia: false });
+
+confere("as duas atendem e o GPS dá a distância → a mais perto primeiro, mesmo mais cara",
+  escolherLoja([r("p17", "ATENDE", 7, 40, 3.8), r("aero", "ATENDE", 8, 45, 1.2)]),
+  { tipo: "ATENDE", lojaId: "aero", tambemAtendem: ["p17"], porDistancia: true });
+
+confere("distância de uma só → não ordena por distância (volta para a taxa)",
+  escolherLoja([r("p17", "ATENDE", 7, 40, null), r("aero", "ATENDE", 8, 45, 1.2)]),
+  { tipo: "ATENDE", lojaId: "p17", tambemAtendem: ["aero"], porDistancia: false });
 
 confere("mesma taxa → a mais rápida",
   escolherLoja([r("p17", "ATENDE", 6, 45), r("aero", "ATENDE", 6, 30)]),
-  { tipo: "ATENDE", lojaId: "aero", tambemAtendem: ["p17"] });
+  { tipo: "ATENDE", lojaId: "aero", tambemAtendem: ["p17"], porDistancia: false });
 
 confere("taxa desconhecida perde para taxa conhecida",
   escolherLoja([r("p17", "ATENDE", null, null), r("aero", "ATENDE", 9, 50)]),
-  { tipo: "ATENDE", lojaId: "aero", tambemAtendem: ["p17"] });
+  { tipo: "ATENDE", lojaId: "aero", tambemAtendem: ["p17"], porDistancia: false });
 
 confere("FORA das duas → nenhuma (não chuta loja que recusou)",
   escolherLoja([r("p17", "FORA", null, null, 2), r("aero", "FORA", null, null, 3)]),
@@ -63,6 +71,13 @@ confere("bairro igual em cidades diferentes fica nas duas",
     { cidade: "Barra de São João", bairros: ["Centro"] },
   ]).map((b) => `${b.nome}/${b.cidade}`),
   ["Centro/Barra de São João", "Centro/Rio das Ostras"]);
+
+confere("bairro da loja pelo endereço — Pizzaria 17 (real)",
+  bairroDoEndereco("Avenida W 24 - Lagomar, Macaé - Rio de Janeiro"), "Lagomar");
+confere("bairro da loja pelo endereço — Aeroporto (real)",
+  bairroDoEndereco("R. Dr. Bezerra Menezes, 55 - Jardim Aeroporto, Macaé - RJ, 27950-140"), "Jardim Aeroporto");
+confere("endereço sem ' - ' não inventa bairro", bairroDoEndereco("Rua A, 10, Macaé"), null);
+confere("endereço vazio", bairroDoEndereco(null), null);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo");
 process.exit(falhas ? 1 : 0);

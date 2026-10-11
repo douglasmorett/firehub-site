@@ -1,25 +1,27 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Bike, Clock, Loader2, MapPin, Navigation, Phone, Search, Store, ChevronRight } from "lucide-react";
 import type { LojaNaVitrine, VitrineDoGrupo } from "@/lib/vitrine-do-grupo";
 import type { Escolha, ResultadoDaLoja } from "@/lib/escolha-de-loja-do-grupo";
 import s from "./EscolhaDaLojaDoGrupo.module.css";
 
 /**
- * A tela da página de entrada do grupo (/lojas/[slug]). O cliente diz onde
- * está — bairro da lista, endereço/CEP ou GPS — e o servidor responde qual
- * loja entrega ali (api/lojas/[slug]/qual-loja). Quem vai retirar escolhe a
- * loja direto na lista.
+ * A tela da página das suas lojas (/lojas/[slug]). O cliente diz onde está —
+ * bairro da lista, endereço/CEP ou GPS — e o servidor responde quais lojas
+ * entregam ali (api/lojas/[slug]/qual-loja). Uma só: ela. Mais de uma: as
+ * duas lado a lado e o cliente escolhe. Quem vai retirar escolhe direto.
  */
 
 type Resposta = { escolha: Escolha; resultados: ResultadoDaLoja[]; ondeTexto: string };
 
 const brl = (n: number) => (n === 0 ? "Grátis" : `R$ ${n.toFixed(2).replace(".", ",")}`);
+const kmBr = (n: number) => `${String(n).replace(".", ",")} km`;
 const sem = (t: string) => t.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "");
 const CHAVE_ULTIMA = (slug: string) => `firehub-grupo-${slug}`;
 
 export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; vitrine: VitrineDoGrupo }) {
+  const fazRetirada = vitrine.lojas.some((l) => !l.soDelivery);
   const [modo, setModo] = useState<"entrega" | "retirada">("entrega");
   const [busca, setBusca] = useState("");
   const [endereco, setEndereco] = useState("");
@@ -62,7 +64,7 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
       const dados = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(dados?.error || "Não deu para consultar agora.");
       setResposta({ ...dados, ondeTexto });
-      requestAnimationFrame(() => document.getElementById("resultado")?.scrollIntoView({ behavior: "smooth", block: "center" }));
+      requestAnimationFrame(() => document.getElementById("resultado")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (e: any) {
       setErro(e?.message || "Não deu para consultar agora. Tente de novo.");
     } finally {
@@ -93,11 +95,12 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
   }
 
   const lojasDeRetirada = vitrine.lojas.filter((l) => !l.soDelivery);
+  const estiloDaCor = (vitrine.cor ? { "--cor": vitrine.cor } : {}) as CSSProperties;
 
   return (
-    <div className={s.pagina}>
+    <div className={s.pagina} style={estiloDaCor}>
       <header className={s.topo}>
-        {vitrine.capa && <img className={s.capa} src={vitrine.capa} alt="" />}
+        <Capa imagem={vitrine.capa} video={vitrine.capaVideo} className={s.capa} tocar />
         <div className={s.veu} />
         <div className={s.topoConteudo}>
           {vitrine.logo ? (
@@ -107,7 +110,7 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
           )}
           <h1 className={s.titulo}>{vitrine.nomeDoGrupo}</h1>
           <p className={s.subtitulo}>
-            {vitrine.lojas.length} lojas para te atender · peça na mais perto de você
+            {vitrine.frase || `${vitrine.lojas.length} lojas para te atender · peça na mais perto de você`}
           </p>
         </div>
       </header>
@@ -124,19 +127,21 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
         )}
 
         <section className={s.painel} aria-label="Escolha da loja">
-          <div className={s.abas} role="tablist">
-            <button role="tab" aria-selected={modo === "entrega"} className={modo === "entrega" ? s.abaAtiva : s.aba} onClick={() => setModo("entrega")}>
-              <Bike size={16} /> Entrega
-            </button>
-            <button role="tab" aria-selected={modo === "retirada"} className={modo === "retirada" ? s.abaAtiva : s.aba} onClick={() => setModo("retirada")}>
-              <Store size={16} /> Retirar na loja
-            </button>
-          </div>
+          {fazRetirada && (
+            <div className={s.abas} role="tablist">
+              <button role="tab" aria-selected={modo === "entrega"} className={modo === "entrega" ? s.abaAtiva : s.aba} onClick={() => setModo("entrega")}>
+                <Bike size={16} /> Entrega
+              </button>
+              <button role="tab" aria-selected={modo === "retirada"} className={modo === "retirada" ? s.abaAtiva : s.aba} onClick={() => setModo("retirada")}>
+                <Store size={16} /> Retirar na loja
+              </button>
+            </div>
+          )}
 
           {modo === "entrega" ? (
             <div className={s.entrega}>
               <h2 className={s.pergunta}>Onde você está?</h2>
-              <p className={s.ajuda}>A gente encontra a loja que entrega no seu endereço.</p>
+              <p className={s.ajuda}>A gente mostra a loja que entrega no seu endereço.</p>
 
               <button className={s.botaoGps} onClick={usarLocalizacao} disabled={!!consultando}>
                 {consultando === "gps" ? <Loader2 size={18} className={s.gira} /> : <Navigation size={18} />}
@@ -204,12 +209,18 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
 
               {erro && <p className={s.erro}>{erro}</p>}
 
-              {resposta && <Resultado resposta={resposta} porId={porId} onEscolher={lembrar} onRetirar={() => setModo("retirada")} />}
+              {resposta && (
+                <Resultado
+                  resposta={resposta}
+                  porId={porId}
+                  onEscolher={lembrar}
+                  onRetirar={fazRetirada ? () => setModo("retirada") : null}
+                />
+              )}
             </div>
           ) : (
             <div className={s.retirada}>
               <h2 className={s.pergunta}>Em qual loja você vai buscar?</h2>
-              {lojasDeRetirada.length === 0 && <p className={s.ajuda}>As lojas trabalham só com entrega.</p>}
               <div className={s.listaRetirada}>
                 {lojasDeRetirada.map((l) => (
                   <a key={l.id} className={s.itemRetirada} href={`/loja/${l.slug}`} onClick={() => lembrar(l)}>
@@ -233,10 +244,50 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
           </div>
         </section>
 
-        <footer className={s.rodape}>Pedidos online por <a href="https://firehub.app" target="_blank" rel="noreferrer">FireHub</a></footer>
+        <footer className={s.rodape}>Pedidos online por <a href="https://firehubfood.com.br" target="_blank" rel="noreferrer">FireHub</a></footer>
       </main>
     </div>
   );
+}
+
+/**
+ * A capa de uma loja: a foto e, se houver, o vídeo. A Pizzaria 17 só tem o
+ * vídeo. Mesmas regras do CapaDaLoja do cardápio: o vídeo só toca depois de
+ * o React assumir (o `muted` precisa ir antes do play) e quem pediu menos
+ * movimento ou economia de dados fica parado no primeiro quadro.
+ * `tocar` = false (cartões) mostra só o quadro, sem baixar o vídeo inteiro.
+ */
+function Capa({ imagem, video, className, tocar = false }: { imagem: string | null; video: string | null; className: string; tocar?: boolean }) {
+  const el = useRef<HTMLVideoElement>(null);
+  const [falhou, setFalhou] = useState(false);
+  useEffect(() => {
+    const v = el.current;
+    if (!tocar || !v) return;
+    const menosMovimento = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    const economia = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
+    if (menosMovimento || economia) return;
+    v.muted = true;
+    v.play().catch(() => { /* autoplay recusado: fica o primeiro quadro */ });
+  }, [tocar]);
+
+  if (video && !falhou) {
+    return (
+      <video
+        ref={el}
+        className={className}
+        src={tocar ? video : `${video}#t=0.5`}
+        poster={imagem || undefined}
+        muted
+        loop
+        playsInline
+        preload={tocar ? "auto" : "metadata"}
+        aria-hidden
+        onError={() => setFalhou(true)}
+      />
+    );
+  }
+  if (imagem) return <img className={className} src={imagem} alt="" />;
+  return null;
 }
 
 function Situacao({ loja }: { loja: LojaNaVitrine }) {
@@ -253,89 +304,116 @@ function Resultado({
   resposta: Resposta;
   porId: Map<string, LojaNaVitrine>;
   onEscolher: (l: LojaNaVitrine) => void;
-  onRetirar: () => void;
+  onRetirar: (() => void) | null;
 }) {
   const { escolha, resultados, ondeTexto } = resposta;
   if (escolha.tipo === "NENHUMA") {
     return (
       <div id="resultado" className={s.resultadoVazio}>
         <strong>Ainda não entregamos em {ondeTexto}.</strong>
-        <p>Você pode retirar o pedido numa das lojas.</p>
-        <button className={s.botaoSecundario} onClick={onRetirar}><Store size={16} /> Ver lojas para retirar</button>
+        {onRetirar ? (
+          <>
+            <p>Você pode retirar o pedido numa das lojas.</p>
+            <button className={s.botaoSecundario} onClick={onRetirar}><Store size={16} /> Ver lojas para retirar</button>
+          </>
+        ) : (
+          <p>Confira o bairro ou digite o endereço completo. Se precisar, fale com a loja pelo WhatsApp lá embaixo.</p>
+        )}
       </div>
     );
   }
-  const loja = porId.get(escolha.lojaId);
-  if (!loja) return null;
-  const r = resultados.find((x) => x.lojaId === loja.id);
-  const v = r?.veredicto;
-  const outras = escolha.tipo === "ATENDE" ? escolha.tambemAtendem.map((id) => porId.get(id)).filter(Boolean) as LojaNaVitrine[] : [];
+
+  const ids = escolha.tipo === "ATENDE" ? [escolha.lojaId, ...escolha.tambemAtendem] : [escolha.lojaId];
+  const opcoes = ids.map((id) => porId.get(id)).filter(Boolean) as LojaNaVitrine[];
+  if (opcoes.length === 0) return null;
+  const dado = (id: string) => resultados.find((x) => x.lojaId === id);
+
+  // Selo da primeira só quando ele diz algo verdadeiro: a mais perto (com
+  // distância de todas) ou a entrega mais barata (taxas diferentes).
+  let selo: string | null = null;
+  if (escolha.tipo === "ATENDE" && opcoes.length > 1) {
+    const taxas = opcoes.map((o) => dado(o.id)?.veredicto.taxa);
+    if (escolha.porDistancia) selo = "Mais perto de você";
+    else if (taxas[0] != null && taxas.slice(1).every((t) => t != null && t > taxas[0]!)) selo = "Entrega mais barata";
+  }
+
+  const titulo =
+    escolha.tipo === "MAIS_PERTO" ? "Loja mais perto de você"
+    : opcoes.length > 1 ? `${opcoes.length} lojas entregam em ${ondeTexto}. Escolha uma:`
+    : `Entrega em ${ondeTexto}`;
 
   return (
-    <div id="resultado" className={s.resultado}>
-      <span className={s.selo}>{escolha.tipo === "ATENDE" ? `Entrega em ${ondeTexto}` : "Loja mais perto de você"}</span>
-      <div className={s.resultadoLoja}>
-        {loja.capa ? <img src={loja.capa} alt="" /> : <div className={s.resultadoSemCapa}><Store size={22} /></div>}
-        <div>
-          <strong>{loja.nome}</strong>
-          <Situacao loja={loja} />
-        </div>
+    <div id="resultado" className={s.resultadoBloco}>
+      <span className={s.selo}>{titulo}</span>
+      <div className={opcoes.length > 1 ? s.opcoes : undefined}>
+        {opcoes.map((loja, i) => {
+          const r = dado(loja.id);
+          const v = r?.veredicto;
+          return (
+            <div key={loja.id} className={s.resultado}>
+              {i === 0 && selo && <span className={s.seloOpcao}>{selo}</span>}
+              <div className={s.resultadoLoja}>
+                <div className={s.resultadoFoto}>
+                  {/* A logo identifica a loja num quadrado pequeno; a capa só se não houver logo. */}
+                  {loja.logo ? <img src={loja.logo} alt="" className={s.resultadoCapa} />
+                    : loja.capa || loja.capaVideo ? <Capa imagem={loja.capa} video={loja.capaVideo} className={s.resultadoCapa} />
+                    : <Store size={22} />}
+                </div>
+                <div>
+                  <strong>{loja.nome}</strong>
+                  {loja.bairro && <span className={s.ficaEm}><MapPin size={13} /> Fica em {loja.bairro}</span>}
+                  <Situacao loja={loja} />
+                </div>
+              </div>
+              {escolha.tipo === "ATENDE" && v && (
+                <div className={s.numeros}>
+                  {v.taxa != null && <span><Bike size={15} /> Entrega {brl(v.taxa)}</span>}
+                  {v.tempoMin != null && <span><Clock size={15} /> {v.tempoMin}–{v.tempoMin + 15} min</span>}
+                  {r?.distanciaRetaKm != null && <span><MapPin size={15} /> {kmBr(r.distanciaRetaKm)}</span>}
+                </div>
+              )}
+              {escolha.tipo === "MAIS_PERTO" && (
+                <p className={s.ajuda}>Confirme o endereço no cardápio: a loja calcula a taxa na hora de fechar o pedido.</p>
+              )}
+              <a className={i === 0 ? s.botaoCardapio : s.botaoCardapioOutra} href={`/loja/${loja.slug}`} onClick={() => onEscolher(loja)}>
+                {opcoes.length > 1 ? "Pedir nesta loja" : "Ver cardápio e pedir"} <ChevronRight size={18} />
+              </a>
+            </div>
+          );
+        })}
       </div>
-      {escolha.tipo === "ATENDE" && v && (
-        <div className={s.numeros}>
-          {v.taxa != null && <span><Bike size={15} /> Entrega {brl(v.taxa)}</span>}
-          {v.tempoMin != null && <span><Clock size={15} /> {v.tempoMin}–{v.tempoMin + 15} min</span>}
-          {r?.distanciaRetaKm != null && <span><MapPin size={15} /> {String(r.distanciaRetaKm).replace(".", ",")} km</span>}
-        </div>
-      )}
-      {escolha.tipo === "MAIS_PERTO" && (
-        <p className={s.ajuda}>Confirme o endereço no cardápio: a loja calcula a taxa na hora de fechar o pedido.</p>
-      )}
-      <a className={s.botaoCardapio} href={`/loja/${loja.slug}`} onClick={() => onEscolher(loja)}>
-        Ver cardápio e pedir <ChevronRight size={18} />
-      </a>
-      {outras.length > 0 && (
-        <p className={s.outras}>
-          Também entrega aí:{" "}
-          {outras.map((o, i) => {
-            const t = resultados.find((x) => x.lojaId === o.id)?.veredicto.taxa;
-            return (
-              <span key={o.id}>
-                {i > 0 && ", "}
-                <a href={`/loja/${o.slug}`} onClick={() => onEscolher(o)}>{o.nome}</a>{t != null && ` (${brl(t)})`}
-              </span>
-            );
-          })}
-        </p>
-      )}
     </div>
   );
 }
 
 function CartaoDaLoja({ loja, onEscolher }: { loja: LojaNaVitrine; onEscolher: (l: LojaNaVitrine) => void }) {
   const zap = loja.telefone ? loja.telefone.replace(/\D/g, "") : "";
-  const mapa = loja.ponto
-    ? `https://www.google.com/maps/search/?api=1&query=${loja.ponto.lat},${loja.ponto.lng}`
-    : loja.endereco ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loja.endereco)}` : null;
+  // "Como chegar" só faz sentido em loja que recebe o cliente.
+  const mapa = loja.soDelivery
+    ? null
+    : loja.ponto
+      ? `https://www.google.com/maps/search/?api=1&query=${loja.ponto.lat},${loja.ponto.lng}`
+      : loja.endereco ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(loja.endereco)}` : null;
   return (
     <article className={s.cartao}>
       <div className={s.cartaoCapa}>
-        {loja.capa ? <img src={loja.capa} alt="" /> : <div className={s.cartaoSemCapa} />}
+        {loja.capa || loja.capaVideo ? <Capa imagem={loja.capa} video={loja.capaVideo} className={s.cartaoImagem} /> : <div className={s.cartaoSemCapa} />}
         {loja.logo && <img className={s.cartaoLogo} src={loja.logo} alt="" />}
       </div>
       <div className={s.cartaoCorpo}>
         <strong>{loja.nome}</strong>
         <Situacao loja={loja} />
         {loja.endereco && <p className={s.cartaoEndereco}><MapPin size={14} /> {loja.endereco}</p>}
+        {loja.soDelivery && <p className={s.cartaoEndereco}><Bike size={14} /> Só entrega</p>}
         <div className={s.cartaoAcoes}>
           <a className={s.botaoPequeno} href={`/loja/${loja.slug}`} onClick={() => onEscolher(loja)}>Cardápio</a>
           {zap.length >= 10 && (
-            <a className={s.botaoIcone} href={`https://wa.me/${zap.length <= 11 ? "55" + zap : zap}`} target="_blank" rel="noreferrer" aria-label="WhatsApp">
+            <a className={s.botaoIcone} href={`https://wa.me/${zap.length <= 11 ? "55" + zap : zap}`} target="_blank" rel="noreferrer" aria-label={`WhatsApp da ${loja.nome}`}>
               <Phone size={16} />
             </a>
           )}
           {mapa && (
-            <a className={s.botaoIcone} href={mapa} target="_blank" rel="noreferrer" aria-label="Como chegar">
+            <a className={s.botaoIcone} href={mapa} target="_blank" rel="noreferrer" aria-label={`Como chegar na ${loja.nome}`}>
               <Navigation size={16} />
             </a>
           )}

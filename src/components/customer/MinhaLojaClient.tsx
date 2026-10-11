@@ -3,17 +3,18 @@ import { useState, useEffect } from "react";
 import {
   Store, Clock, Truck, CreditCard, Tag, Gift, ArrowLeft,
   Settings, Image, Phone, MapPin, ChevronRight,
-  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users, UtensilsCrossed, Star, BellRing
+  User, Lock, Save, CheckCircle, ShieldCheck, Eye, EyeOff, Users, UtensilsCrossed, Star, BellRing, Link2
 } from "lucide-react";
 import StoreSettingsForm from "@/components/customer/StoreSettingsForm";
 import BalcaoConfigManager from "@/components/customer/BalcaoConfigManager";
+import PaginaDasLojasEditor from "@/components/customer/PaginaDasLojasEditor";
 import LoyaltyConfigForm from "@/components/LoyaltyConfigForm";
 import StoreTeamManager from "@/components/customer/StoreTeamManager";
 import StoreReviewsManager from "@/components/customer/StoreReviewsManager";
 import { StoreApiManager } from "@/components/customer/StoreApiManager";
 import { updatePassword } from "@/app/actions/updatePassword";
 
-type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe" | "api" | "balcao";
+type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe" | "api" | "balcao" | "lojas";
 
 const SECTIONS = [
   {
@@ -115,6 +116,16 @@ const SECTIONS = [
   },
 ];
 
+/** Só entra no menu de quem tem mais de uma loja (MinhaLojaClient decide). */
+const SECAO_DAS_LOJAS = {
+  id: "lojas" as Section,
+  icon: <Link2 size={28} />,
+  color: "#C2410C",
+  bg: "#FFF7ED",
+  title: "Página das suas lojas",
+  desc: "Um link só para todas as lojas: o cliente diz o bairro e cai na loja certa",
+};
+
 const SECTION_TAB_MAP: Record<string, string> = {
   info: "info",
   hours: "hours",
@@ -143,6 +154,8 @@ const HASH_TO_SECTION: Record<string, Section> = {
   conta: "conta",
   balcao: "balcao",
   pager: "balcao",
+  lojas: "lojas",
+  "pagina-das-lojas": "lojas",
 };
 
 export default function MinhaLojaClient({ user }: { user: any }) {
@@ -162,6 +175,20 @@ export default function MinhaLojaClient({ user }: { user: any }) {
     window.addEventListener("hashchange", irParaOHash);
     return () => window.removeEventListener("hashchange", irParaOHash);
   }, []);
+
+  // ── PÁGINA DAS SUAS LOJAS ──────────────────────────────────────────────
+  // Só para quem tem mais de uma loja (e é o dono): o link único do grupo
+  // aparece em destaque no topo, e o cartão leva ao editor. A rota responde
+  // 403 para funcionário — aí nada aparece.
+  const [linkDoGrupo, setLinkDoGrupo] = useState<string | null>(null);
+  const [linkDoGrupoCopiado, setLinkDoGrupoCopiado] = useState(false);
+  useEffect(() => {
+    fetch("/api/store/pagina-do-grupo")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d?.multiloja && d.caminho) setLinkDoGrupo(`${window.location.origin}${d.caminho}`); })
+      .catch(() => {});
+  }, []);
+  const secoes = linkDoGrupo ? [SECAO_DAS_LOJAS, ...SECTIONS] : SECTIONS;
 
   async function saveLoyalty(config: any) {
     await fetch("/api/store-settings", {
@@ -197,9 +224,34 @@ export default function MinhaLojaClient({ user }: { user: any }) {
           </a>
         )}
 
+        {/* O link de todas as lojas: o que o dono multiloja mais divulga */}
+        {linkDoGrupo && (
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: "12px 16px", background: "linear-gradient(135deg, #FFF7ED 0%, #FFFFFF 80%)", border: "1px solid #FED7AA", borderRadius: 14, marginBottom: "1.5rem" }}>
+            <Link2 size={18} color="#C2410C" />
+            <div style={{ flex: "1 1 200px", minWidth: 0 }}>
+              <div style={{ fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>Link de todas as suas lojas</div>
+              <div style={{ fontSize: "0.78rem", color: "#9A3412", wordBreak: "break-all" }}>{linkDoGrupo.replace(/^https?:\/\//, "")}</div>
+            </div>
+            <button
+              type="button"
+              onClick={async () => {
+                try { await navigator.clipboard.writeText(linkDoGrupo); } catch { /* o link está visível ao lado */ }
+                setLinkDoGrupoCopiado(true);
+                setTimeout(() => setLinkDoGrupoCopiado(false), 1500);
+              }}
+              style={{ padding: "7px 12px", borderRadius: 9, border: "none", background: linkDoGrupoCopiado ? "#0F766E" : "#C2410C", color: "#fff", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}
+            >
+              {linkDoGrupoCopiado ? "Copiado!" : "Copiar"}
+            </button>
+            <button type="button" onClick={() => setSection("lojas")} style={{ padding: "7px 12px", borderRadius: 9, border: "1px solid #FDBA74", background: "#fff", color: "#9A3412", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}>
+              Personalizar
+            </button>
+          </div>
+        )}
+
         {/* Grid de seções */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "1rem" }}>
-          {SECTIONS.map((s) => (
+          {secoes.map((s) => (
             <button
               key={s.id}
               onClick={() => (s as any).link ? (window.location.href = (s as any).link) : setSection(s.id)}
@@ -246,6 +298,16 @@ export default function MinhaLojaClient({ user }: { user: any }) {
           initialConfig={user.storeLoyalty || {}}
           onSave={saveLoyalty}
         />
+      </div>
+    );
+  }
+
+  // ── Seção Página das suas lojas ─────────────────────────────────────────────
+  if (section === "lojas") {
+    return (
+      <div style={{ maxWidth: 1150, margin: "0 auto", padding: "1.5rem 1rem" }}>
+        <BackBtn onClick={() => setSection("menu")} title="🔗 Página das suas lojas" />
+        <PaginaDasLojasEditor />
       </div>
     );
   }

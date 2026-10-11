@@ -20,9 +20,14 @@ import type { VeredictoDeEntrega } from "@/lib/area-de-entrega";
  * Nada de cadastro novo: cada loja do grupo JÁ tem a área de entrega dela
  * (bairros, raio em km ou desenho no mapa). A página pergunta onde o cliente
  * está (bairro da lista, endereço/CEP ou GPS) e passa a resposta pela MESMA
- * `avaliarEntrega` do checkout, loja por loja. A que atende ganha; se as duas
- * atendem, a mais barata e depois a mais rápida. Assim a escolha da página
+ * `avaliarEntrega` do checkout, loja por loja. Assim a escolha da página
  * nunca discorda da taxa que o cardápio vai cobrar.
+ *
+ * Quando MAIS DE UMA atende, a página mostra todas e o cliente escolhe
+ * (Douglas, 10/10/2026: "mostrar as duas e deixar a pessoa escolher"). A
+ * primeira, com o selo, é a mais perto quando a distância de todas é
+ * conhecida (GPS ou endereço); só com o bairro não há ponto do cliente, e aí
+ * vem a de entrega mais barata e depois a mais rápida.
  */
 
 export type ResultadoDaLoja = {
@@ -33,7 +38,8 @@ export type ResultadoDaLoja = {
 };
 
 export type Escolha =
-  | { tipo: "ATENDE"; lojaId: string; tambemAtendem: string[] }
+  /** `lojaId` é a primeira da lista; `tambemAtendem`, as outras que também entregam ali. `porDistancia` diz o critério da ordem. */
+  | { tipo: "ATENDE"; lojaId: string; tambemAtendem: string[]; porDistancia: boolean }
   /** Nenhuma área respondeu com certeza (mapa fora, loja sem área): a mais perto em linha reta. */
   | { tipo: "MAIS_PERTO"; lojaId: string }
   | { tipo: "NENHUMA" };
@@ -42,15 +48,18 @@ const infinito = (n: number | null | undefined) => (n == null || !Number.isFinit
 
 /** Qual loja do grupo fica com o cliente. Pura: o servidor e o teste chamam a mesma. */
 export function escolherLoja(resultados: ResultadoDaLoja[]): Escolha {
-  const atendem = resultados
-    .filter((r) => r.veredicto.resultado === "ATENDE")
-    .sort((a, b) =>
-      infinito(a.veredicto.taxa) - infinito(b.veredicto.taxa) ||
-      infinito(a.veredicto.tempoMin) - infinito(b.veredicto.tempoMin) ||
-      infinito(a.veredicto.distanciaKm ?? a.distanciaRetaKm) - infinito(b.veredicto.distanciaKm ?? b.distanciaRetaKm),
-    );
+  const distancia = (r: ResultadoDaLoja) => r.distanciaRetaKm ?? r.veredicto.distanciaKm ?? null;
+  const atendem = resultados.filter((r) => r.veredicto.resultado === "ATENDE");
+  // Distância só ordena quando TODAS têm: misturar "a 2 km" com "sem
+  // distância" poria na frente uma loja só porque a outra não tem pino.
+  const porDistancia = atendem.length > 1 && atendem.every((r) => distancia(r) != null);
+  atendem.sort((a, b) =>
+    (porDistancia ? infinito(distancia(a)) - infinito(distancia(b)) : 0) ||
+    infinito(a.veredicto.taxa) - infinito(b.veredicto.taxa) ||
+    infinito(a.veredicto.tempoMin) - infinito(b.veredicto.tempoMin),
+  );
   if (atendem.length > 0) {
-    return { tipo: "ATENDE", lojaId: atendem[0].lojaId, tambemAtendem: atendem.slice(1).map((r) => r.lojaId) };
+    return { tipo: "ATENDE", lojaId: atendem[0].lojaId, tambemAtendem: atendem.slice(1).map((r) => r.lojaId), porDistancia };
   }
 
   // FORA de todas é resposta: nenhuma loja entrega ali. Só a dúvida (mapa
@@ -93,4 +102,17 @@ export function bairrosDoGrupo(lojas: { cidade: string | null; bairros: string[]
     }
   }
   return [...vistos.values()].sort((a, b) => a.cidade.localeCompare(b.cidade, "pt-BR") || a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+/**
+ * O bairro onde a LOJA fica, tirado do endereço dela ("Rua X, 55 - Jardim
+ * Aeroporto, Macaé - RJ" → "Jardim Aeroporto"). Quando duas lojas entregam no
+ * mesmo bairro, é o que ajuda o cliente a escolher a mais perto sem mapa.
+ * Nulo quando o endereço não segue o formato "rua - bairro, cidade".
+ */
+export function bairroDoEndereco(endereco: string | null | undefined): string | null {
+  const partes = String(endereco || "").split(" - ");
+  if (partes.length < 2) return null;
+  const bairro = partes[1].split(",")[0].trim();
+  return bairro && !/^\d/.test(bairro) && bairro.length <= 60 ? bairro : null;
 }

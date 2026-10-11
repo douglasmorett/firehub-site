@@ -1,11 +1,13 @@
 .pagina {
   --cor: #e4472b;
-  --cor-escura: #b8321b;
   --tinta: #1d1a17;
   --tinta-2: #5f5852;
   --linha: #ebe5df;
   --fundo: #f7f3ef;
   --verde: #1f9d55;
+  /* A cor pode vir do dono (style --cor): a escura e a sombra saem dela. */
+  --cor-escura: color-mix(in srgb, var(--cor) 78%, black);
+  --cor-sombra: color-mix(in srgb, var(--cor) 30%, transparent);
   min-height: 100vh;
   background: var(--fundo);
   color: var(--tinta);
@@ -28,7 +30,6 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  transform: scale(1.06);
   filter: saturate(1.1);
 }
 .veu {
@@ -180,7 +181,7 @@
   color: #fff;
   background: var(--cor);
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(228, 71, 43, 0.3);
+  box-shadow: 0 8px 20px var(--cor-sombra);
   transition: transform 0.12s ease, background 0.18s ease;
 }
 .botaoGps:hover { background: var(--cor-escura); }
@@ -312,23 +313,49 @@
 @keyframes gira { to { transform: rotate(360deg); } }
 
 /* ── Resultado ────────────────────────────────────────────────────────── */
-.resultado,
-.resultadoVazio {
-  margin-top: 18px;
-  border-radius: 18px;
-  padding: 16px;
-  border: 1.5px solid #f4c9bd;
-  background: linear-gradient(180deg, #fff8f5 0%, #fff 100%);
+.resultadoBloco {
+  margin-top: 20px;
+  scroll-margin-top: 16px;
   animation: surge 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.resultadoVazio { border-color: var(--linha); background: var(--fundo); }
+.opcoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-top: 12px;
+}
+.resultado,
+.resultadoVazio {
+  position: relative;
+  margin-top: 10px;
+  border-radius: 18px;
+  padding: 16px;
+  border: 1.5px solid color-mix(in srgb, var(--cor) 30%, white);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cor) 5%, white) 0%, #fff 100%);
+}
+.resultadoVazio { margin-top: 18px; border-color: var(--linha); background: var(--fundo); animation: surge 0.28s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.opcoes .resultado { margin-top: 0; display: flex; flex-direction: column; }
+.opcoes .resultado .botaoCardapio,
+.opcoes .resultado .botaoCardapioOutra { margin-top: auto; }
+.opcoes .resultado .numeros { margin-bottom: 14px; }
+.seloOpcao {
+  position: absolute;
+  top: -10px;
+  right: 12px;
+  background: var(--cor);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
 .resultadoVazio p { margin: 6px 0 12px; color: var(--tinta-2); font-size: 14px; }
 @keyframes surge {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .resultado, .resultadoVazio { animation: none; }
+  .resultadoBloco, .resultadoVazio { animation: none; }
 }
 .selo {
   display: inline-block;
@@ -344,19 +371,30 @@
   gap: 12px;
   margin-top: 10px;
 }
-.resultadoLoja img,
-.resultadoSemCapa {
+.resultadoFoto {
   width: 64px;
   height: 64px;
   border-radius: 14px;
-  object-fit: cover;
+  overflow: hidden;
   flex-shrink: 0;
-}
-.resultadoSemCapa {
   display: grid;
   place-items: center;
   background: var(--fundo);
   color: var(--tinta-2);
+}
+.resultadoCapa {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.ficaEm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--tinta-2);
+  margin-bottom: 3px;
 }
 .resultadoLoja strong {
   display: block;
@@ -394,6 +432,21 @@
   color: #fff;
   background: var(--verde);
   box-shadow: 0 8px 20px rgba(31, 157, 85, 0.28);
+}
+.botaoCardapioOutra {
+  margin-top: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  text-decoration: none;
+  border-radius: 14px;
+  padding: 13px;
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--verde);
+  background: #fff;
+  border: 2px solid var(--verde);
 }
 .botaoSecundario {
   display: inline-flex;
@@ -485,7 +538,7 @@
   position: relative;
   height: 104px;
 }
-.cartaoCapa > img:first-child,
+.cartaoImagem,
 .cartaoSemCapa {
   width: 100%;
   height: 100%;
