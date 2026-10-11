@@ -200,7 +200,12 @@ export type DetalheDoTurno = {
 
 export type ValoresDoFechamento = {
   esperado: { cash: number; debit: number; credit: number; pix: number; voucher: number; total: number };
-  contado: { cash: number; debit: number; credit: number; pix: number; voucher: number };
+  /**
+   * O que foi contado. `null` = a forma NÃO foi conferida (ficou em branco na
+   * tela, desde 11/10/2026): fica fora da diferença e o papel diz isso, em vez
+   * de imprimir "R$ 0,00 | falta" do tamanho do esperado.
+   */
+  contado: { cash: number | null; debit: number | null; credit: number | null; pix: number | null; voucher: number | null };
   diferenca: number;
   /** Vendas já pagas fora da gaveta — entram no total, não na conferência. */
   online?: { ifood?: number; food99?: number };
@@ -216,6 +221,13 @@ export type ValoresDoFechamento = {
    * mentira.
    */
   semConferencia?: boolean;
+  /**
+   * Por que não houve conferência (lib/conferencia-do-caixa.ts): o caixa que
+   * se encerrou sozinho ao abrir outro (ABRIU_OUTRO, o padrão), o fechado sem
+   * ninguém digitar a contagem (SEM_CONTAGEM) e o caixa antigo gravado com as
+   * cinco formas em zero (TUDO_ZERO).
+   */
+  motivoSemConferencia?: "ABRIU_OUTRO" | "SEM_CONTAGEM" | "TUDO_ZERO" | null;
   movimentacoes?: { entradas: number; saidas: number };
   /** Venda do turno que sai da conferência de propósito (fiado, mesa aberta…). */
   foraDaConferencia?: { fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas?: number; mesasAbertasQtd?: number };
@@ -378,20 +390,16 @@ export function cupomDeFechamentoDeCaixa(entrada: {
   // Cada forma vira uma LINHA com o esperado na observação: o Assistente
   // imprime `notes` embaixo do item, então o lado a lado cabe no papel estreito
   // sem depender de coluna nova.
-  const formas: [string, number, number][] = [
-    ["Dinheiro", v.esperado.cash, v.contado.cash],
-    ["Debito", v.esperado.debit, v.contado.debit],
-    ["Credito", v.esperado.credit, v.contado.credit],
-    ["Pix", v.esperado.pix, v.contado.pix],
-    ["Vale-refeicao", v.esperado.voucher, v.contado.voucher],
-  ];
+  const formas = formasDaConferencia(v);
+  const conferido = conferidoDasFormas(formas);
 
   const items: LinhaDoCaixa[] = [];
-  for (const [nome, esperado, contado] of formas) {
-    if (Math.abs(esperado) < 0.01 && Math.abs(contado) < 0.01) continue;
-    // Sem conferência não há contado: o item leva o esperado, dito como tal.
-    if (v.semConferencia) {
-      items.push({ name: nome, qty: 1, price: esperado, notes: "esperado | ninguem conferiu" });
+  for (const { nome, esperado, contado } of formas) {
+    if (Math.abs(esperado) < 0.01 && (contado == null || Math.abs(contado) < 0.01)) continue;
+    // Sem conferência (ou a forma em branco) não há contado: o item leva o
+    // esperado, dito como tal.
+    if (v.semConferencia || contado == null) {
+      items.push({ name: nome, qty: 1, price: esperado, notes: v.semConferencia ? "esperado | ninguem conferiu" : "esperado | nao conferido (em branco)" });
       continue;
     }
     const d = Number((contado - esperado).toFixed(2));
@@ -421,7 +429,9 @@ export function cupomDeFechamentoDeCaixa(entrada: {
 
   const rodapeLinhas = [
     `Aberto em ${entrada.abertoEm.toLocaleString("pt-BR", { timeZone: entrada.fuso, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} com ${reais(entrada.trocoInicial)} de troco`,
-    `ESPERADO ${reais(v.esperado.total)}  |  DIFERENCA ${reais(v.diferenca)} ${rotuloDaDiferenca(v.diferenca)}`,
+    v.semConferencia
+      ? `ESPERADO ${reais(v.esperado.total)}  |  SEM CONFERENCIA`
+      : `ESPERADO NAS FORMAS CONTADAS ${reais(conferido.esperado)}  |  DIFERENCA ${reais(v.diferenca)} ${rotuloDaDiferenca(v.diferenca)}`,
   ];
   if (v.finalizadosNoFechamento && v.finalizadosNoFechamento > 0) {
     rodapeLinhas.push(
@@ -430,7 +440,7 @@ export function cupomDeFechamentoDeCaixa(entrada: {
   }
   if (v.justificativa) rodapeLinhas.push(`Justificativa: ${v.justificativa}`);
 
-  const contadoTotal = v.contado.cash + v.contado.debit + v.contado.credit + v.contado.pix + v.contado.voucher + online;
+  const contadoTotal = conferido.contado + online;
 
   // ── AS LINHAS QUE FALTAVAM CHEGAR AO PAPEL ──────────────────────────────
   //
@@ -438,11 +448,13 @@ export function cupomDeFechamentoDeCaixa(entrada: {
   // rodapé nunca era impresso (ver o comentário do bloco CAIXA no Assistente).
   // Entram na lista de itens também, para o Assistente antigo — que não sabe
   // ler `relatorio` — passar a imprimi-las a partir de hoje.
-  items.push({ name: "TOTAL ESPERADO", qty: 1, price: Number(v.esperado.total.toFixed(2)) });
   if (v.semConferencia) {
-    items.push({ name: "SEM CONFERENCIA", qty: 1, price: 0, notes: "Caixa encerrado sozinho quando outro foi aberto" });
+    items.push({ name: "TOTAL ESPERADO", qty: 1, price: Number(v.esperado.total.toFixed(2)) });
+    items.push({ name: "SEM CONFERENCIA", qty: 1, price: 0, notes: textoDoSemConferencia(v.motivoSemConferencia) });
   } else {
-    items.push({ name: "TOTAL CONTADO", qty: 1, price: Number(contadoTotal.toFixed(2)) });
+    // Igual com igual: o esperado e o contado das formas contadas.
+    items.push({ name: "ESPERADO (FORMAS CONTADAS)", qty: 1, price: conferido.esperado });
+    items.push({ name: "TOTAL CONTADO", qty: 1, price: conferido.contado });
     items.push({
       name: `DIFERENCA ${rotuloDaDiferenca(v.diferenca)}`,
       qty: 1,
@@ -549,6 +561,32 @@ function linhasDoBloco(L: LinhaDoRelatorio[], b: BlocoDoTipo, totalRecebido: num
   }
 }
 
+/** As cinco formas da conferência, com o contado (null = não conferida). */
+function formasDaConferencia(v: ValoresDoFechamento): { nome: string; esperado: number; contado: number | null }[] {
+  return [
+    { nome: "Dinheiro", esperado: v.esperado.cash, contado: v.contado.cash },
+    { nome: "Debito", esperado: v.esperado.debit, contado: v.contado.debit },
+    { nome: "Credito", esperado: v.esperado.credit, contado: v.contado.credit },
+    { nome: "Pix", esperado: v.esperado.pix, contado: v.contado.pix },
+    { nome: "Vale-refeicao", esperado: v.esperado.voucher, contado: v.contado.voucher },
+  ].map((f) => ({ ...f, esperado: Number(f.esperado || 0), contado: f.contado == null ? null : Number(f.contado) }));
+}
+
+/** O esperado e o contado só das formas contadas, e a diferença delas. */
+function conferidoDasFormas(formas: { esperado: number; contado: number | null }[]) {
+  const contadas = formas.filter((f) => f.contado != null);
+  const esperado = Math.round(contadas.reduce((s, f) => s + f.esperado, 0) * 100) / 100;
+  const contado = Math.round(contadas.reduce((s, f) => s + (f.contado as number), 0) * 100) / 100;
+  return { esperado, contado, diferenca: Math.round((contado - esperado) * 100) / 100 };
+}
+
+/** Por que ninguém conferiu (ASCII: o papel sai sem acento). */
+function textoDoSemConferencia(motivo: ValoresDoFechamento["motivoSemConferencia"]): string {
+  if (motivo === "SEM_CONTAGEM") return "Fechado sem conferir: ninguem digitou a contagem da gaveta.";
+  if (motivo === "TUDO_ZERO") return "As cinco formas foram gravadas em zero: ninguem digitou a contagem, e a falta gravada nao aconteceu.";
+  return "Ninguem conferiu esta gaveta: o caixa foi encerrado sozinho quando outro caixa foi aberto.";
+}
+
 function rotuloDaDiferenca(d: number) {
   return d < -0.01 ? "(FALTA)" : d > 0.01 ? "(SOBRA)" : "(confere)";
 }
@@ -611,60 +649,58 @@ function relatorioDoFechamento(
   linha("Duracao", `${Math.floor(minutos / 60)}h${String(minutos % 60).padStart(2, "0")}`);
 
   // ── CONFERÊNCIA ─────────────────────────────────────────────────────────
+  //
+  // Forma por forma, o contado ao lado do esperado. A forma que ninguém contou
+  // (em branco na tela, desde 11/10/2026) diz "nao conferido" e fica FORA da
+  // diferença: antes ela saía "R$ 0,00 | falta" do tamanho do esperado. O pago
+  // online é travado (o mesmo valor dos dois lados) e fica fora da conta da
+  // diferença; o total do turno com ele vem por último, como informação.
   titulo("Conferencia da gaveta");
-  const formas: [string, number, number][] = [
-    ["Dinheiro", v.esperado.cash, v.contado.cash],
-    ["Debito", v.esperado.debit, v.contado.debit],
-    ["Credito", v.esperado.credit, v.contado.credit],
-    ["Pix", v.esperado.pix, v.contado.pix],
-    ["Vale-refeicao", v.esperado.voucher, v.contado.voucher],
-  ];
+  const formas = formasDaConferencia(v);
   const onlineEsperado = v.onlineEsperado ?? online;
+  const linhasDoOnline = () => {
+    if (onlineEsperado <= 0.01) return;
+    linha("Pago online (nao se conta)", reais(onlineEsperado), "o app repassa; travado nos dois lados");
+    // Um canal por linha: cada um se confere contra o extrato DELE. O valor é
+    // o que o app repassa: com o cupom que ele pagou e sem a taxa de serviço
+    // dele (itens + entrega − desconto da loja, antes da comissão).
+    if (d && d.onlinePorCanal.length > 0) {
+      for (const c of d.onlinePorCanal) linha(`- ${c.nome} (${c.qtd})`, reais(c.valor));
+    }
+    // O que o entregador do app cobrou na porta (dinheiro ou a maquininha
+    // DELE): o app acerta no repasse, e a gaveta não tem esse dinheiro.
+    const cobrado = d?.cobradoPeloApp || [];
+    for (const c of cobrado) linha(`- ${c.nome}: entregador do app cobrou (${c.qtd})`, reais(c.valor), "nao veio para a gaveta");
+    if (d && (d.onlinePorCanal.length > 0 || cobrado.length > 0)) {
+      texto("O que o app repassa: com o cupom que ele pagou, sem a taxa de servico dele.");
+    }
+  };
   if (v.semConferencia) {
     // Não houve contagem: só o que o sistema esperava. Sem "confere", sem
     // diferença — zero ali seria dizer que alguém conferiu e bateu.
-    texto("Ninguem conferiu esta gaveta: o caixa foi encerrado sozinho quando outro caixa foi aberto. Abaixo, so o que o sistema esperava.");
-    for (const [nome, esperado] of formas) {
-      if (Math.abs(esperado) >= 0.01) linha(nome, reais(esperado), "esperado");
+    texto(`${textoDoSemConferencia(v.motivoSemConferencia)} Abaixo, so o que o sistema esperava.`);
+    for (const f of formas) {
+      if (Math.abs(f.esperado) >= 0.01) linha(f.nome, reais(f.esperado), "esperado");
     }
-    if (onlineEsperado > 0.01) linha("Pago online", reais(onlineEsperado), "esperado | nao se conta na gaveta");
+    linhasDoOnline();
     L.push({ tipo: "separador" });
     L.push({ tipo: "destaque", texto: "ESPERADO", valor: reais(v.esperado.total), nota: "sem contagem, sem diferenca" });
   } else {
-    for (const [nome, esperado, contado] of formas) {
-      if (Math.abs(esperado) < 0.01 && Math.abs(contado) < 0.01) continue;
-      const dif = Number((contado - esperado).toFixed(2));
+    for (const f of formas) {
+      if (Math.abs(f.esperado) < 0.01 && (f.contado == null || Math.abs(f.contado) < 0.01)) continue;
+      if (f.contado == null) {
+        linha(f.nome, "nao conferido", `esperado ${reais(f.esperado)} | ficou em branco, fora da diferenca`);
+        continue;
+      }
+      const dif = Number((f.contado - f.esperado).toFixed(2));
       linha(
-        nome,
-        reais(contado),
-        `esperado ${reais(esperado)}` +
+        f.nome,
+        reais(f.contado),
+        `esperado ${reais(f.esperado)}` +
           (Math.abs(dif) > 0.01 ? ` | ${dif > 0 ? "sobra" : "falta"} ${reais(Math.abs(dif))}` : " | confere")
       );
     }
-    // O pago online entra no total dos dois lados — e por isso precisa estar
-    // na lista: sem ele, as linhas de cima não somam o total de baixo.
-    if (online > 0.01 || onlineEsperado > 0.01) {
-      const dif = Number((online - onlineEsperado).toFixed(2));
-      linha(
-        "Pago online (nao se conta)",
-        reais(online),
-        `esperado ${reais(onlineEsperado)}` +
-          (Math.abs(dif) > 0.01 ? ` | ${dif > 0 ? "sobra" : "falta"} ${reais(Math.abs(dif))}` : " | confere")
-      );
-      // Um canal por linha: cada um se confere contra o extrato DELE. O valor
-      // é o que o app repassa: com o cupom que ele pagou e sem a taxa de
-      // serviço dele (itens + entrega − desconto da loja, antes da comissão).
-      if (d && d.onlinePorCanal.length > 0) {
-        for (const c of d.onlinePorCanal) linha(`- ${c.nome} (${c.qtd})`, reais(c.valor));
-      }
-      // O que o entregador do app cobrou na porta (dinheiro ou a maquininha
-      // DELE): o app acerta no repasse, e a gaveta não tem esse dinheiro.
-      const cobrado = d?.cobradoPeloApp || [];
-      for (const c of cobrado) linha(`- ${c.nome}: entregador do app cobrou (${c.qtd})`, reais(c.valor), "nao veio para a gaveta");
-      if (d && (d.onlinePorCanal.length > 0 || cobrado.length > 0)) {
-        texto("O que o app repassa: com o cupom que ele pagou, sem a taxa de servico dele.");
-      }
-    }
+    linhasDoOnline();
     // Sem o retrato, o troco não aparece na gaveta lá embaixo: fica aqui,
     // como sempre ficou. O operador conta a gaveta inteira e precisa saber
     // que aquela parte não é venda.
@@ -672,15 +708,29 @@ function relatorioDoFechamento(
       linha("Troco deixado na abertura", reais(entrada.trocoInicial), "ja esta somado dentro do esperado em dinheiro");
     }
 
+    // Igual com igual: o esperado e o contado das formas CONTADAS.
+    const conferido = conferidoDasFormas(formas);
     L.push({ tipo: "separador" });
-    linha("Total esperado", reais(v.esperado.total));
-    linha("Total contado", reais(contadoTotal));
+    linha("Esperado nas formas contadas", reais(conferido.esperado));
+    linha("Contado", reais(conferido.contado));
     L.push({
       tipo: "destaque",
       texto: `DIFERENCA ${rotuloDaDiferenca(v.diferenca)}`,
       valor: reais(v.diferenca),
       nota: v.justificativa ? `Justificativa: ${v.justificativa}` : undefined,
     });
+    const emBranco = formas.filter((f) => f.contado == null && Math.abs(f.esperado) >= 0.01);
+    if (emBranco.length > 0) {
+      texto(`Nao conferido (em branco, fora da diferenca): ${emBranco.map((f) => `${f.nome} ${reais(f.esperado)}`).join(", ")}.`);
+    }
+    // Caixa antigo fechado com a tela desatualizada: a diferença gravada levou
+    // o online que entrou depois de a tela abrir. O papel diz quanto.
+    if (Math.abs(v.diferenca - conferido.diferenca) > 0.01) {
+      texto(`A diferenca gravada tem ${reais(v.diferenca - conferido.diferenca)} do pago online: a tela de quem fechou estava desatualizada.`);
+    }
+    if (onlineEsperado > 0.01 || Math.abs(v.esperado.total - conferido.esperado) > 0.01) {
+      linha("Total do turno com o online", reais(v.esperado.total), "troco inicial, sangrias e o que o app repassa");
+    }
   }
 
   // ── DINHEIRO NA GAVETA ──────────────────────────────────────────────────

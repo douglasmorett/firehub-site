@@ -21,6 +21,7 @@ import { FUSO_PADRAO } from "@/lib/fuso";
 import { cupomDeAberturaDeCaixa, cupomDeFechamentoDeCaixa } from "@/lib/cupom-do-caixa";
 import { enfileirarCupomDoCaixa, assistenteOuvindoAFila } from "@/lib/imprimir-caixa";
 import { calcularEsperadoDoTurno } from "@/lib/esperado-do-turno";
+import { conferenciaGravada } from "@/lib/conferencia-do-caixa";
 import type { CashSession } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -107,25 +108,20 @@ async function segundaViaDoFechamento(
     voucher: Number(caixa.expectedVoucher || 0),
     total: Number(caixa.expectedTotal || 0),
   };
-  const contado = {
-    cash: Number(caixa.closingCash || 0),
-    debit: Number(caixa.closingDebit || 0),
-    credit: Number(caixa.closingCredit || 0),
-    pix: Number(caixa.closingPix || 0),
-    voucher: Number(caixa.closingVoucher || 0),
-  };
-  // Caixa encerrado sozinho ao abrir outro: `difference` fica NULO de
-  // propósito (ninguém contou). A 2ª via imprimia "DIFERENCA R$ 0,00
-  // (confere)" — um caixa que ninguém conferiu, impresso como conferido.
-  const semConferencia = caixa.difference == null;
+  // A conferência como foi gravada, lida pela mesma função do Histórico
+  // (lib/conferencia-do-caixa.ts). Caixa encerrado sozinho ao abrir outro, ou
+  // fechado sem ninguém digitar a contagem: `difference` NULO — a 2ª via
+  // imprimia "DIFERENCA R$ 0,00 (confere)". Forma deixada em branco: contado
+  // nulo, "nao conferido". E o caixa antigo com as cinco formas em zero (ninguém
+  // contou; a "falta" gravada não aconteceu) sai como sem conferência também.
+  const conf = conferenciaGravada(caixa as unknown as Record<string, unknown>);
+  const semConferencia = conf.situacao === "SEM_CONFERENCIA";
+  const contadoDe = (chave: "cash" | "debit" | "credit" | "pix" | "voucher") => conf.linhas.find((l) => l.chave === chave)?.contado ?? null;
+  const contado = { cash: contadoDe("cash"), debit: contadoDe("debit"), credit: contadoDe("credit"), pix: contadoDe("pix"), voucher: contadoDe("voucher") };
 
-  // O pago online não tem coluna na sessão. Ele sai da própria conta que o
-  // fechamento gravou: diferença = (contado na gaveta + online) − esperado.
-  // O esperado online é o que sobra do total depois das cinco formas.
-  const noGaveta = contado.cash + contado.debit + contado.credit + contado.pix + contado.voucher;
-  const nasFormas = esperado.cash + esperado.debit + esperado.credit + esperado.pix + esperado.voucher;
-  const onlineEsperado = Math.max(0, centavos(esperado.total - nasFormas));
-  const onlineContado = semConferencia ? 0 : Math.max(0, centavos(Number(caixa.difference) + esperado.total - noGaveta));
+  // O pago online não tem coluna na sessão: é o que o total esperado tem além
+  // das cinco formas. Ele é travado — o mesmo valor dos dois lados.
+  const onlineEsperado = Math.max(0, centavos(conf.online));
 
   let doTurno: Awaited<ReturnType<typeof calcularEsperadoDoTurno>> | null = null;
   try {
@@ -143,9 +139,10 @@ async function segundaViaDoFechamento(
     valores: {
       esperado,
       contado,
-      diferenca: Number(caixa.difference || 0),
+      diferenca: Number(conf.diferenca ?? 0),
       semConferencia,
-      online: { ifood: onlineContado },
+      motivoSemConferencia: conf.motivo,
+      online: { ifood: onlineEsperado },
       onlineEsperado,
       justificativa: caixa.justification || null,
       ...(doTurno
