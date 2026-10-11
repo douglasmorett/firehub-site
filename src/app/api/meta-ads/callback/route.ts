@@ -31,7 +31,7 @@ import { prisma } from "@/lib/prisma";
 import {
   exchangeCodeForToken,
   getMetaAccounts,
-  descobrirPixelDaConta,
+  garantirPixelDaConta,
   escolherMelhorContaDeAnuncios,
   escolherMelhorPagina,
   listarTodasAsContasDeAnuncio,
@@ -139,9 +139,16 @@ export async function GET(req: NextRequest) {
           : "")
     );
 
-    // Descobre o Pixel na hora da conexão. Sem ele não há medição de pedido, e
-    // pedir para o lojista achar o ID sozinho é atrito que a maioria não vence.
-    const pixel = adAccountId ? await descobrirPixelDaConta(adAccountId, accessToken) : null;
+    // Pixel na hora da conexão: usa o da conta ou CRIA um. Sem ele nenhum
+    // pedido vindo do anúncio é contado, e pedir para o lojista criar no
+    // Gerenciador de Eventos é atrito que a maioria não vence.
+    const lojaDoPixel = await prisma.user.findUnique({
+      where: { id: lojaDaSessao },
+      select: { storeName: true, name: true },
+    });
+    const pixel = adAccountId
+      ? await garantirPixelDaConta(adAccountId, accessToken, lojaDoPixel?.storeName || lojaDoPixel?.name || "")
+      : null;
 
     // Sem conta de anúncios — ou sem Página — não há como veicular. Guarda o
     // token (a conta pode ser trocada depois em /api/meta-ads/escolher-conta)
@@ -165,7 +172,7 @@ export async function GET(req: NextRequest) {
         // gastando o cartão do lojista sem ninguém acompanhando. Desligar é
         // atribuição do cron, que já faz isso quando o token de fato morre.
         ...(adAccountId && pageId ? { metaAdsEnabled: true } : {}),
-        // Só grava o pixel se descobriu algum — não apaga o que o lojista já
+        // Só grava o pixel se achou ou criou um — não apaga o que o lojista já
         // tenha configurado à mão na tela de Integrações.
         ...(pixel?.id ? { metaPixelId: pixel.id } : {}),
       },

@@ -332,6 +332,30 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
     } catch { /* a tela não pode travar por causa da consulta de prontidão */ }
   }, []);
 
+  /* Pixel: sem ele nenhum pedido vindo do anúncio é contado. `undefined` =
+     status ainda não chegou (não trava nada enquanto carrega). */
+  const pixelDaLoja: string | null | undefined = contaMeta?.conectado ? (contaMeta?.pixelId ?? null) : undefined;
+  const semPixel = pixelDaLoja === null;
+  const [criandoPixel, setCriandoPixel] = useState(false);
+  const criarPixel = async () => {
+    if (criandoPixel) return;
+    setCriandoPixel(true);
+    try {
+      const r = await fetch("/api/meta-ads/pixel", { method: "POST" });
+      const d = await r.json().catch(() => ({} as any));
+      if (!r.ok) {
+        setNotification({ type: "error", message: d?.error || "Não consegui criar o pixel agora. Tente de novo." });
+      } else {
+        setNotification({ type: "success", message: d?.criado ? "✅ Pixel criado e instalado no seu cardápio." : "✅ Pixel da sua conta conectado ao seu cardápio." });
+        await atualizarProntidao();
+      }
+    } catch {
+      setNotification({ type: "error", message: "Falha de conexão ao criar o pixel. Tente de novo." });
+    } finally {
+      setCriandoPixel(false);
+    }
+  };
+
   useEffect(() => {
     if (step !== "dashboard" && step !== "creative") return;
     void atualizarProntidao();
@@ -1315,6 +1339,32 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
       {/* ── Quem vai ver ── */}
       <QuemVaiVerOAnuncio local={localDaLoja} publico={publico} onChange={setPublico} />
 
+      {/* ── Pixel: o que conta os pedidos vindos do anúncio ── */}
+      {pixelDaLoja !== undefined && (
+        <div style={{ background: semPixel ? "#FFF7E6" : "#F0FDFA", border: `1.5px solid ${semPixel ? "#FDE68A" : "#99F6E4"}`, borderRadius: 16, padding: "1.1rem 1.25rem", marginBottom: "1.5rem" }}>
+          <div style={{ fontWeight: 800, fontSize: "0.95rem", color: semPixel ? "#92400E" : "#0F766E", marginBottom: 4 }}>
+            {semPixel ? "⚠️ Falta o pixel do Facebook" : "✓ Contagem de pedidos ligada (Pixel do Facebook)"}
+          </div>
+          <div style={{ fontSize: "0.8rem", color: semPixel ? "#92400E" : "#0F766E", lineHeight: 1.5 }}>
+            {semPixel ? (
+              <>
+                O pixel é o que conta quantos pedidos vieram do anúncio. Sem ele o anúncio roda, mas o
+                painel mostraria zero pedidos e o Facebook não aprende quem compra. Criamos e instalamos no
+                seu cardápio com um toque — você não precisa abrir o Facebook.
+              </>
+            ) : (
+              <>Os pedidos feitos no seu cardápio por quem veio do anúncio são contados aqui no painel. Pixel {pixelDaLoja}.</>
+            )}
+          </div>
+          {semPixel && (
+            <button type="button" onClick={() => { void criarPixel(); }} disabled={criandoPixel}
+              style={{ marginTop: 10, background: "#C92E09", color: "#fff", border: "none", padding: "10px 18px", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: criandoPixel ? "wait" : "pointer", fontFamily: "inherit" }}>
+              {criandoPixel ? "Criando o pixel..." : "Criar o pixel agora"}
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Imagem ── */}
       <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
         <div style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "1rem", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1547,14 +1597,16 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
       {/* `bloqueioDaConta` entra no disabled: o botão que lança a cobrança não
           pode ficar clicável quando o servidor já respondeu que a conta não
           veicula — seria cobrar por um anúncio que nunca apareceria. */}
-      <button onClick={handleCreateCampaign} disabled={creatingCampaign || Boolean(bloqueioDaConta) || semLocalDaLoja || (!selectedImage && !uploadPreview) || !adCopy.trim()}
-        style={{ width: "100%", background: (bloqueioDaConta || semLocalDaLoja || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#E2E8F0" : "#C92E09", color: (bloqueioDaConta || semLocalDaLoja || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#94A3B8" : "#fff", border: "none", padding: "16px", borderRadius: 12, fontSize: "1.1rem", fontWeight: 800, cursor: (bloqueioDaConta || semLocalDaLoja || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }}>
+      <button onClick={handleCreateCampaign} disabled={creatingCampaign || Boolean(bloqueioDaConta) || semLocalDaLoja || semPixel || (!selectedImage && !uploadPreview) || !adCopy.trim()}
+        style={{ width: "100%", background: (bloqueioDaConta || semLocalDaLoja || semPixel || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#E2E8F0" : "#C92E09", color: (bloqueioDaConta || semLocalDaLoja || semPixel || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#94A3B8" : "#fff", border: "none", padding: "16px", borderRadius: 12, fontSize: "1.1rem", fontWeight: 800, cursor: (bloqueioDaConta || semLocalDaLoja || semPixel || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }}>
         {creatingCampaign ? (
           <><RefreshCw size={18} style={{ animation: "spin 1s linear infinite" }} /> Criando campanha...</>
         ) : bloqueioDaConta ? (
           <>Resolva a pendência da conta para publicar</>
         ) : semLocalDaLoja ? (
           <>Marque sua loja no mapa para publicar</>
+        ) : semPixel ? (
+          <>Crie o pixel acima para publicar</>
         ) : (
           <>🚀 Publicar campanha</>
         )}

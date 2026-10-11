@@ -53,8 +53,13 @@ export async function GET() {
       metaAdAccountId: true,
       metaFbPageId: true,
       metaAdsEnabled: true,
+      metaPixelId: true,
+      facebookPixelId: true,
     },
   });
+  // Pixel que o cardápio instala (o de Integrações tem prioridade lá). A tela
+  // usa para dizer se os pedidos vindos do anúncio vão ser contados.
+  const pixelId = loja?.facebookPixelId || loja?.metaPixelId || null;
 
   if (!loja?.metaFbAccessToken || !loja.metaAdAccountId) {
     return NextResponse.json({
@@ -70,6 +75,7 @@ export async function GET() {
   if (!prontidao.pronta) {
     return NextResponse.json({
       conectado: true,
+      pixelId,
       pronto: false,
       proximoPasso: prontidao.motivo,
       mensagem: EXPLICACAO[prontidao.motivo || "erro"] ?? EXPLICACAO.erro,
@@ -84,6 +90,7 @@ export async function GET() {
   if (!loja.metaFbPageId) {
     return NextResponse.json({
       conectado: true,
+      pixelId,
       pronto: false,
       proximoPasso: "sem_pagina",
       mensagem:
@@ -106,6 +113,7 @@ export async function GET() {
 
   return NextResponse.json({
     conectado: true,
+    pixelId,
     // Qual conta está valendo hoje. A tela usa para mostrar o seletor já na
     // conta certa e para não oferecer "trocar" para a que já está em uso.
     adAccountId: loja.metaAdAccountId,

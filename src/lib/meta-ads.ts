@@ -919,6 +919,32 @@ export async function descobrirPixelDaConta(
   }
 }
 
+/**
+ * Garante que a conta de anúncios TENHA um pixel: usa o que já existe ou cria
+ * um ("FireHub — <loja>") pela própria API (POST /act_…/adspixels, coberto por
+ * ads_management). O lojista não precisa abrir o Gerenciador de Eventos.
+ *
+ * Antes, conta sem pixel seguia calada: a campanha rodava, nenhum pedido era
+ * contado e o painel mostrava retorno zero para sempre — dado errado para o
+ * cliente. Com o id gravado em `metaPixelId`, o cardápio da loja já instala o
+ * pixel sozinho (CustomerStorePage) e a venda vai também pelo servidor (CAPI).
+ */
+export async function garantirPixelDaConta(
+  adAccountId: string,
+  accessToken: string,
+  nomeDaLoja: string
+): Promise<{ id: string; nome: string; criado: boolean } | null> {
+  const existente = await descobrirPixelDaConta(adAccountId, accessToken);
+  if (existente) return { ...existente, criado: false };
+  try {
+    const nome = `FireHub — ${(nomeDaLoja || "Minha loja").trim()}`.slice(0, 60);
+    const r = await metaPost(`/${adAccountId}/adspixels`, accessToken, { name: nome });
+    return r?.id ? { id: String(r.id), nome, criado: true } : null;
+  } catch {
+    return null;
+  }
+}
+
 export type CarteiraDaConta = {
   moeda: string;
   /**

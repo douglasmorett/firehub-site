@@ -19,7 +19,7 @@ import { prisma } from "@/lib/prisma";
 import {
   listarTodasAsContasDeAnuncio,
   verificarProntidaoDaConta,
-  descobrirPixelDaConta,
+  garantirPixelDaConta,
 } from "@/lib/meta-ads";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
 
   const loja = await prisma.user.findUnique({
     where: { id: lojaId },
-    select: { metaFbAccessToken: true, metaPixelId: true },
+    select: { metaFbAccessToken: true, metaPixelId: true, storeName: true, name: true },
   });
   if (!loja?.metaFbAccessToken) {
     return NextResponse.json(
@@ -60,9 +60,9 @@ export async function POST(req: NextRequest) {
   // travar aqui deixaria o lojista sem saída num caso que se resolve em horas.
   const prontidao = await verificarProntidaoDaConta(adAccountId, loja.metaFbAccessToken);
 
-  // O pixel é da conta — trocou de conta, o pixel de antes não vale mais. Só
-  // sobrescreve se achar um novo, para não apagar o que o lojista configurou.
-  const pixel = await descobrirPixelDaConta(adAccountId, loja.metaFbAccessToken);
+  // O pixel é da conta — trocou de conta, o pixel de antes não vale mais. Usa
+  // o da conta nova ou cria um; só sobrescreve se tiver um id na mão.
+  const pixel = await garantirPixelDaConta(adAccountId, loja.metaFbAccessToken, loja.storeName || loja.name || "");
 
   await prisma.user.update({
     where: { id: lojaId },

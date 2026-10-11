@@ -17,6 +17,7 @@ import {
   lerCarteiraDaConta,
   linkDeCobrancaDoMeta,
   linkDeRecargaDoMeta,
+  garantirPixelDaConta,
 } from "@/lib/meta-ads";
 import { segredoOpcional } from "@/lib/segredos";
 import { percentualDoMes } from "@/lib/firehub-billing";
@@ -283,6 +284,29 @@ export async function POST(req: NextRequest) {
           "Sem esse ponto o anúncio seria exibido para gente que não consegue receber seu pedido.",
         proximoPasso: "sem_localizacao",
         linkParaResolver: "/store/minha-loja",
+      },
+      { status: 409 }
+    );
+  }
+
+  // Sem pixel nenhum pedido vindo do anúncio é contado: o lojista pagaria a
+  // campanha e veria retorno zero, dado errado. Tenta criar (a conexão já
+  // tenta); sem conseguir, não publica — a tela tem o botão de criar.
+  let pixelDaLoja = user.facebookPixelId || user.metaPixelId || null;
+  if (!pixelDaLoja) {
+    const criado = await garantirPixelDaConta(adAccountId, accessToken, user.storeName ?? user.name ?? "");
+    if (criado) {
+      await prisma.user.update({ where: { id: franchiseeId }, data: { metaPixelId: criado.id } });
+      pixelDaLoja = criado.id;
+    }
+  }
+  if (!pixelDaLoja) {
+    return NextResponse.json(
+      {
+        error:
+          "Falta o pixel do Facebook da sua loja — é ele que conta os pedidos que vêm do anúncio. " +
+          "Toque em \"Criar o pixel agora\" nesta tela e publique de novo. Nada foi cobrado.",
+        proximoPasso: "sem_pixel",
       },
       { status: 409 }
     );
