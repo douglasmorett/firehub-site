@@ -6,7 +6,7 @@
  *
  * O caso: Pizzaria 17 (Cavaleiros) e Pizzaria 17 Aeroporto, Macaé, 10/10/2026.
  */
-import { bairroDoEndereco, bairrosDoGrupo, escolherLoja, type ResultadoDaLoja } from "../src/lib/escolha-de-loja-do-grupo";
+import { bairroDoEndereco, bairrosDoGrupo, escolherLoja, nomeDoBairroConfere, ordemPelaDistancia, type ResultadoDaLoja } from "../src/lib/escolha-de-loja-do-grupo";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -94,6 +94,24 @@ confere("bairro da loja pelo endereço — Aeroporto (real)",
   bairroDoEndereco("R. Dr. Bezerra Menezes, 55 - Jardim Aeroporto, Macaé - RJ, 27950-140"), "Jardim Aeroporto");
 confere("endereço sem ' - ' não inventa bairro", bairroDoEndereco("Rua A, 10, Macaé"), null);
 confere("endereço vazio", bairroDoEndereco(null), null);
+
+// Nomes que o mapa devolveu para os bairros da Pizzaria 17 (Nominatim, 11/10/2026)
+confere("'bairro aeroporto' é o Aeroporto", nomeDoBairroConfere("Aeroporto", "bairro aeroporto"), true);
+confere("'Vila Fronteira' é Fronteira", nomeDoBairroConfere("Fronteira", "Vila Fronteira"), true);
+confere("'Loteamento Atlântico Norte' é Atlântico Norte", nomeDoBairroConfere("Atlântico Norte", "Loteamento Atlântico Norte"), true);
+confere("'Jardim Carioca I' é Jardim Carioca 1", nomeDoBairroConfere("Jardim Carioca 1", "Jardim Carioca I"), true);
+confere("'Jardim Carioca I' NÃO é Jardim Carioca 2", nomeDoBairroConfere("Jardim Carioca 2", "Jardim Carioca I"), false);
+confere("'Águas Maravilhosas' NÃO é Barra de Macaé", nomeDoBairroConfere("Barra de Macaé", "Águas Maravilhosas"), false);
+confere("'Centro' é Centro", nomeDoBairroConfere("Centro", "Centro"), true);
+confere("'Jardim Carioca 12' NÃO é Jardim Carioca 1", nomeDoBairroConfere("Jardim Carioca 1", "Jardim Carioca 12"), false);
+
+const pinos = { p17: { lat: -22.3023, lng: -41.7091 }, aero: { lat: -22.3396, lng: -41.7589 } };
+confere("centro do bairro Centro de Macaé → Aeroporto (4,6 km) antes da Pizzaria 17 (10,9 km)",
+  ordemPelaDistancia(["p17", "aero"], pinos, { lat: -22.3769, lng: -41.7869 })?.ids, ["aero", "p17"]);
+confere("loja sem pino → sem ordem por distância",
+  ordemPelaDistancia(["p17", "aero"], { p17: pinos.p17, aero: null }, { lat: -22.37, lng: -41.78 }), null);
+confere("centro do bairro em outra cidade (a 150 km) → ignora",
+  ordemPelaDistancia(["p17", "aero"], pinos, { lat: -22.9068, lng: -43.1729 }), null);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo");
 process.exit(falhas ? 1 : 0);

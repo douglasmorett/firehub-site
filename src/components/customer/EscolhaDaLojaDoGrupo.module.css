@@ -538,6 +538,9 @@
   position: relative;
   height: 104px;
 }
+/* Fundo escuro por baixo do vídeo: enquanto o quadro não pinta (ou se o
+   vídeo falhar), o cartão nunca fica branco. */
+.cartaoCapa { background: linear-gradient(135deg, #4a2a1d, #1b120e); }
 .cartaoImagem,
 .cartaoSemCapa {
   width: 100%;

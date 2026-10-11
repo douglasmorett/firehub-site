@@ -147,3 +147,64 @@ export function bairroDoEndereco(endereco: string | null | undefined): string | 
   const bairro = partes[1].split(",")[0].trim();
   return bairro && !/^\d/.test(bairro) && bairro.length <= 60 ? bairro : null;
 }
+
+// ── A MAIS PERTO QUANDO SÓ SE SABE O BAIRRO ─────────────────────────────
+//
+// Bairro da lista atendido por duas lojas (Pizzaria 17: 18 dos 22): sem o
+// ponto do cliente, a ordem era a da taxa — e as taxas são iguais. Douglas
+// (11/10/2026): "mostra a mais próxima primeiro, mas o cliente pode escolher
+// as duas". O centro do bairro sai do mapa (no navegador) e só ORDENA: nunca
+// tira loja da lista, nunca muda taxa. O mapa erra nome de bairro com
+// frequência — "Barra de Macaé" voltou "Águas Maravilhosas", "Jardim Carioca
+// 2" voltou "Jardim Carioca I" — então só vale área cujo NOME confere.
+
+const PREFIXOS_DE_AREA = /^(bairro|loteamento|conjunto|residencial|condominio)\s+/;
+const ROMANOS: Record<string, string> = { i: "1", ii: "2", iii: "3", iv: "4", v: "5" };
+
+function nomeLimpo(t: string): string {
+  return String(t || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(PREFIXOS_DE_AREA, "")
+    .split(" ")
+    .map((p) => ROMANOS[p] ?? p)
+    .join(" ");
+}
+
+/** O nome que o mapa deu para a área é o bairro cadastrado? ("bairro aeroporto" = "Aeroporto"; "Jardim Carioca I" ≠ "Jardim Carioca 2"). */
+export function nomeDoBairroConfere(cadastrado: string, doMapa: string | null | undefined): boolean {
+  const a = nomeLimpo(cadastrado);
+  const b = nomeLimpo(doMapa || "");
+  if (!a || !b) return false;
+  if (a === b) return true;
+  // "Fronteira" × "Vila Fronteira", "Atlântico Norte" × "Loteamento Atlântico
+  // Norte": um contém o outro em palavras inteiras, e o menor tem 2+ letras
+  // de verdade. Número no fim tem que ser igual (Carioca 1 × Carioca 12).
+  const [curto, longo] = a.length <= b.length ? [a, b] : [b, a];
+  if (curto.length < 4) return false;
+  return ` ${longo} `.includes(` ${curto} `) && (curto.match(/\d+$/)?.[0] ?? "") === (longo.match(/\d+$/)?.[0] ?? "");
+}
+
+/** Os tipos de lugar do mapa que são área (bairro), e não rua, praia ou aeroporto. */
+export const TIPOS_DE_AREA_NO_MAPA = ["suburb", "neighbourhood", "quarter", "city_district", "residential", "hamlet", "village", "borough"];
+
+/**
+ * As lojas em ordem de distância de um ponto (o centro do bairro). Nulo
+ * quando alguma não tem pino (aí a ordem seria um chute) ou quando o ponto
+ * está longe de todas (bairro homônimo de outra cidade).
+ */
+export function ordemPelaDistancia(
+  ids: string[],
+  pontos: Record<string, { lat: number; lng: number } | null | undefined>,
+  ponto: { lat: number; lng: number },
+): { ids: string[]; km: Record<string, number> } | null {
+  if (ids.length < 2 || ids.some((id) => !pontos[id])) return null;
+  const km: Record<string, number> = {};
+  for (const id of ids) km[id] = Math.round(distanciaRetaKm(pontos[id]!, ponto) * 10) / 10;
+  if (Math.min(...Object.values(km)) > LIMITE_DO_BAIRRO_HOMONIMO_KM) return null;
+  return { ids: [...ids].sort((a, b) => km[a] - km[b]), km };
+}

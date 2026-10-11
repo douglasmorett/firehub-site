@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Bike, Clock, Loader2, MapPin, Navigation, Phone, Search, Store, ChevronRight } from "lucide-react";
 import type { LojaNaVitrine, VitrineDoGrupo } from "@/lib/vitrine-do-grupo";
-import type { Escolha, ResultadoDaLoja } from "@/lib/escolha-de-loja-do-grupo";
+import { TIPOS_DE_AREA_NO_MAPA, nomeDoBairroConfere, ordemPelaDistancia, type Escolha, type ResultadoDaLoja } from "@/lib/escolha-de-loja-do-grupo";
 import { enderecoDoReverso } from "@/lib/entrega-no-checkout";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import s from "./EscolhaDaLojaDoGrupo.module.css";
@@ -15,7 +15,50 @@ import s from "./EscolhaDaLojaDoGrupo.module.css";
  * duas lado a lado e o cliente escolhe. Quem vai retirar escolhe direto.
  */
 
-type Resposta = { escolha: Escolha; resultados: ResultadoDaLoja[]; ondeTexto: string; via: "gps" | "bairro" | "endereco" };
+type Resposta = {
+  escolha: Escolha;
+  resultados: ResultadoDaLoja[];
+  ondeTexto: string;
+  via: "gps" | "bairro" | "endereco";
+  /** Bairro da lista atendido por mais de uma loja: a ordem pelo centro do bairro, quando o mapa o conhece. */
+  ordemPeloBairro?: { ids: string[]; km: Record<string, number> } | null;
+};
+
+type Ponto = { lat: number; lng: number };
+const CHAVE_DO_BAIRRO = (nome: string, cidade: string) => `firehub-bairro-${sem(cidade)}-${sem(nome)}`;
+const SETE_DIAS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * O centro de um bairro pelo mapa (Nominatim, no navegador, como o "Minha
+ * localização" do checkout). Só área cujo nome confere — o mapa devolve rua,
+ * praia, aeroporto e bairro vizinho com nome parecido. Guardado no aparelho
+ * por 7 dias (também o "não achei"), para não perguntar ao mapa a cada toque.
+ * Nulo = não conhece: a página mostra as lojas sem ordem por distância.
+ */
+async function centroDoBairro(nome: string, cidade: string): Promise<Ponto | null> {
+  const chave = CHAVE_DO_BAIRRO(nome, cidade);
+  try {
+    const guardado = JSON.parse(localStorage.getItem(chave) || "null");
+    if (guardado && Date.now() - guardado.em < SETE_DIAS) return guardado.ponto ?? null;
+  } catch { /* sem armazenamento: pergunta ao mapa */ }
+  try {
+    const prazo = typeof (AbortSignal as any).timeout === "function" ? (AbortSignal as any).timeout(3500) as AbortSignal : undefined;
+    const r = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&countrycodes=br&q=${encodeURIComponent(`${nome}, ${cidade}`)}`,
+      { headers: { "Accept-Language": "pt-BR" }, signal: prazo },
+    );
+    if (!r.ok) return null;
+    const lista: any[] = await r.json();
+    const area = lista.find((x) =>
+      TIPOS_DE_AREA_NO_MAPA.includes(String(x?.addresstype || "")) &&
+      (nomeDoBairroConfere(nome, x?.name) || nomeDoBairroConfere(nome, enderecoDoReverso(x?.address).bairro)));
+    const ponto = area && Number.isFinite(+area.lat) && Number.isFinite(+area.lon) ? { lat: +area.lat, lng: +area.lon } : null;
+    try { localStorage.setItem(chave, JSON.stringify({ em: Date.now(), ponto })); } catch { /* idem */ }
+    return ponto;
+  } catch {
+    return null; // mapa fora ou lento: segue sem a ordem por distância
+  }
+}
 
 /** "Aberta agora, até as 23:40." — o mesmo texto que o servidor monta (vitrine-do-grupo.ts). */
 function estadoAgora(l: LojaNaVitrine): { aberta: boolean; estado: string } {
@@ -80,7 +123,18 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
       });
       const dados = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(dados?.error || "Não deu para consultar agora.");
-      setResposta({ ...dados, ondeTexto, via });
+      // Duas lojas no bairro da lista e sem distância do cliente: a mais perto
+      // do CENTRO DO BAIRRO vem primeiro. As duas continuam na tela.
+      let ordemPeloBairro: Resposta["ordemPeloBairro"] = null;
+      const e: Escolha = dados?.escolha;
+      if (via === "bairro" && e?.tipo === "ATENDE" && e.tambemAtendem.length > 0 && !e.porDistancia) {
+        const centro = await centroDoBairro(String(corpo.bairro || ""), String(corpo.cidade || ""));
+        if (centro) {
+          const pontos = Object.fromEntries(lojas.map((l) => [l.id, l.ponto]));
+          ordemPeloBairro = ordemPelaDistancia([e.lojaId, ...e.tambemAtendem], pontos, centro);
+        }
+      }
+      setResposta({ ...dados, ondeTexto, via, ordemPeloBairro });
       requestAnimationFrame(() => document.getElementById("resultado")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (e: any) {
       setErro(e?.message || "Não deu para consultar agora. Tente de novo.");
@@ -314,17 +368,32 @@ function Capa({ imagem, video, className, tocar = false }: { imagem: string | nu
     v.play().catch(() => { /* autoplay recusado: fica o primeiro quadro */ });
   }, [tocar]);
 
+  // Parado (cartões): salta para meio segundo para pintar um quadro de
+  // verdade. O vídeo pode ter carregado ANTES de o React assumir a página —
+  // aí o onLoadedData não dispara de novo, por isso a conferência do estado.
+  useEffect(() => {
+    const v = el.current;
+    if (tocar || !v) return;
+    const saltar = () => { try { if (v.currentTime < 0.5) v.currentTime = 0.5; } catch { /* fica o 1º quadro */ } };
+    if (v.readyState >= 2) saltar();
+    else v.addEventListener("loadeddata", saltar, { once: true });
+    return () => v.removeEventListener("loadeddata", saltar);
+  }, [tocar, video]);
+
   if (video && !falhou) {
     return (
       <video
         ref={el}
         className={className}
-        src={tocar ? video : `${video}#t=0.5`}
+        src={video}
         poster={imagem || undefined}
         muted
         loop
         playsInline
-        preload={tocar ? "auto" : "metadata"}
+        // Parado (cartões): o "#t=0.5" com preload de metadados não pinta o
+        // quadro em todo navegador — o cartão da Aeroporto ficou em branco no
+        // Chrome do Douglas. Carrega inteiro e salta (efeito acima).
+        preload="auto"
         aria-hidden
         onError={() => setFalhou(true)}
       />
@@ -404,7 +473,8 @@ function Resultado({
     );
   }
 
-  const ids = escolha.tipo === "ATENDE" ? [escolha.lojaId, ...escolha.tambemAtendem] : [escolha.lojaId];
+  const peloBairro = escolha.tipo === "ATENDE" ? resposta.ordemPeloBairro : null;
+  const ids = peloBairro ? peloBairro.ids : escolha.tipo === "ATENDE" ? [escolha.lojaId, ...escolha.tambemAtendem] : [escolha.lojaId];
   const opcoes = ids.map((id) => porId.get(id)).filter(Boolean) as LojaNaVitrine[];
   if (opcoes.length === 0) return null;
   const dado = (id: string) => resultados.find((x) => x.lojaId === id);
@@ -415,6 +485,7 @@ function Resultado({
   if (escolha.tipo === "ATENDE" && opcoes.length > 1) {
     const taxas = opcoes.map((o) => dado(o.id)?.veredicto.taxa);
     if (escolha.porDistancia) selo = "Mais perto de você";
+    else if (peloBairro) selo = `Mais perto de ${ondeTexto}`;
     else if (taxas[0] != null && taxas.slice(1).every((t) => t != null && t > taxas[0]!)) selo = "Entrega mais barata";
   }
 
@@ -450,7 +521,8 @@ function Resultado({
                 <div className={s.numeros}>
                   {v.taxa != null && <span><Bike size={15} /> Entrega {brl(v.taxa)}</span>}
                   {v.tempoMin != null && <span><Clock size={15} /> {v.tempoMin}–{v.tempoMin + 15} min</span>}
-                  {r?.distanciaRetaKm != null && <span><MapPin size={15} /> {kmBr(r.distanciaRetaKm)}</span>}
+                  {r?.distanciaRetaKm != null ? <span><MapPin size={15} /> {kmBr(r.distanciaRetaKm)}</span>
+                    : peloBairro?.km[loja.id] != null && <span><MapPin size={15} /> ~{kmBr(peloBairro.km[loja.id])} do bairro</span>}
                 </div>
               )}
               {escolha.tipo === "MAIS_PERTO" && (
