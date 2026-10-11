@@ -1,8 +1,9 @@
 "use client";
 
 /**
- * Relatório de mesas da loja — a taxa de serviço arrecadada (total e por
- * garçom) e as vendas separadas por origem: balcão, mesa, delivery e retirada.
+ * Relatório de mesas da loja — as mesas fechadas no período (consumo, taxa de
+ * serviço, gorjeta e desconto no fechamento, total e por garçom) e as vendas
+ * separadas por origem: balcão, mesa, delivery e retirada.
  *
  * Mora no módulo de garçons porque foi de lá que o dono pediu (17/09/2026):
  * "no módulo garçom ter a opção de relatório de mesas, informando quanto foi
@@ -10,59 +11,61 @@
  * tem que ter separado quanto vendeu balcão, mesa e delivery".
  *
  * A tela só desenha o que /api/store/mesas/relatorio devolve. Nenhuma conta
- * mora aqui: se a régua de origem ou o dia operacional mudarem, mudam num
- * lugar só (o servidor), e a tela continua certa.
+ * mora aqui (estão em lib/relatorios/relatorio-de-mesas.ts, pela régua única):
+ * se a régua ou o dia operacional mudarem, mudam num lugar só, e a tela
+ * continua certa. Nem o "hoje": "Hoje" e "Ontem" vão como atalho e o servidor
+ * resolve no dia operacional da LOJA (vira às 5h) — às 2h da manhã, "Hoje"
+ * ainda é o dia anterior, que é o turno que está aberto.
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ArrowLeft, Loader2, UtensilsCrossed, Store, Bike, ShoppingBag } from "lucide-react";
+import { fmtDia, hojeNaLoja } from "@/lib/relatorios/base";
+import { fusoDoNavegador } from "@/lib/relatorios/relatorio-de-mesas";
+
+type LinhaDeOrigem = { valor: number; vendas: number; lancamentos: number };
 
 type Relatorio = {
-  periodo: { de: string; ate: string };
+  periodo: { de: string; ate: string; hoje: string };
   mesas: {
     fechadas: number;
     consumo: number;
     taxaServico: number;
     gorjetas: number;
-    totalPago: number;
-    porGarcom: { waiterId: string | null; nome: string; mesas: number; taxaServico: number; gorjetas: number; consumo: number }[];
+    descontoNoFechamento: number;
+    mesasComDesconto: number;
+    porGarcom: { waiterId: string | null; nome: string; mesas: number; taxaServico: number; gorjetas: number; consumo: number; desconto: number; mesasComDesconto: number }[];
   };
   vendas: {
     total: number;
-    porOrigem: Record<"MESA" | "BALCAO" | "DELIVERY" | "RETIRADA", { valor: number; pedidos: number }>;
-    deliveryPorCanal: { canal: string; valor: number; pedidos: number }[];
+    vendas: number;
+    lancamentos: number;
+    porOrigem: Record<"MESA" | "BALCAO" | "DELIVERY" | "RETIRADA", LinhaDeOrigem>;
+    deliveryPorCanal: (LinhaDeOrigem & { canal: string })[];
   };
 };
 
 const fmt = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
-
-/** "YYYY-MM-DD" do relógio deste navegador — o PC da loja está no fuso dela. */
-function diaLocal(deslocamentoDias = 0): string {
-  const d = new Date();
-  d.setDate(d.getDate() + deslocamentoDias);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-}
+const fmtQtd = (n: number) => (n || 0).toLocaleString("pt-BR");
 
 export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void }) {
   const [filtro, setFiltro] = useState<"hoje" | "ontem" | "periodo">("hoje");
-  const [de, setDe] = useState(diaLocal());
-  const [ate, setAte] = useState(diaLocal());
+  // O dia OPERACIONAL (vira às 5h), não o do calendário: o `diaLocal()` de
+  // antes, às 2h da manhã, já dava o dia seguinte — que nem tinha começado.
+  const [de, setDe] = useState(() => hojeNaLoja(fusoDoNavegador()));
+  const [ate, setAte] = useState(() => hojeNaLoja(fusoDoNavegador()));
   const [dados, setDados] = useState<Relatorio | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState("");
 
-  const janela = useMemo(() => {
-    if (filtro === "hoje") return { de: diaLocal(), ate: diaLocal() };
-    if (filtro === "ontem") return { de: diaLocal(-1), ate: diaLocal(-1) };
-    return { de, ate };
-  }, [filtro, de, ate]);
+  // "Hoje" e "Ontem" são do dia operacional da LOJA: quem resolve é o servidor.
+  const consulta = filtro === "periodo" ? `de=${de}&ate=${ate}` : `atalho=${filtro}`;
 
   useEffect(() => {
     let vivo = true;
     setCarregando(true);
     setErro("");
-    fetch(`/api/store/mesas/relatorio?de=${janela.de}&ate=${janela.ate}`)
+    fetch(`/api/store/mesas/relatorio?${consulta}`)
       .then(async (r) => {
         const j = await r.json().catch(() => ({}));
         if (!vivo) return;
@@ -72,11 +75,25 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
       .catch(() => vivo && setErro("Sem conexão. Tente de novo."))
       .finally(() => vivo && setCarregando(false));
     return () => { vivo = false; };
-  }, [janela.de, janela.ate]);
+  }, [consulta]);
+
+  const escolherFiltro = (chave: typeof filtro) => {
+    // O "Período" abre no período que está na tela, já resolvido pelo servidor.
+    if (chave === "periodo" && filtro !== "periodo" && dados?.periodo) {
+      setDe(dados.periodo.de);
+      setAte(dados.periodo.ate);
+    }
+    setFiltro(chave);
+  };
 
   const origem = dados?.vendas.porOrigem;
   const total = dados?.vendas.total || 0;
   const pct = (v: number) => (total > 0 ? `${((v / total) * 100).toFixed(0)}%` : "—");
+  const desconto = dados?.mesas.descontoNoFechamento || 0;
+  const temDesconto = desconto > 0;
+  const periodoNaTela = dados?.periodo
+    ? dados.periodo.de === dados.periodo.ate ? fmtDia(dados.periodo.de) : `${fmtDia(dados.periodo.de)} a ${fmtDia(dados.periodo.ate)}`
+    : "";
 
   // Pedido do Fabiano (Ragnar Burger, 06/10/2026), sobre ESTA tabela:
   // ticket médio e percentual de vendas por garçom.
@@ -98,12 +115,14 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
   const botaoFiltro = (chave: typeof filtro, rotulo: string) => (
     <button
       key={chave}
-      onClick={() => setFiltro(chave)}
+      onClick={() => escolherFiltro(chave)}
       style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: filtro === chave ? "#fff" : "transparent", color: filtro === chave ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: filtro === chave ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}
     >
       {rotulo}
     </button>
   );
+
+  const colunasPorGarcom = temDesconto ? 8 : 7;
 
   return (
     <>
@@ -131,7 +150,9 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
               <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #E2E8F0", fontFamily: "inherit", color: "#1E293B" }} />
             </div>
           )}
-          <span style={{ marginLeft: "auto", fontSize: 12, color: "#94A3B8" }}>
+          <span style={{ marginLeft: "auto", fontSize: 12, color: "#94A3B8", textAlign: "right" }}>
+            {/* O período que o servidor resolveu: às 2h, "Hoje" mostra a data de ontem — o turno aberto. */}
+            {!carregando && periodoNaTela && <strong style={{ color: "#475569" }}>{periodoNaTela} · </strong>}
             O dia vira às 5h da manhã: mesa fechada de madrugada conta no dia anterior.
           </span>
         </div>
@@ -142,7 +163,7 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
           </div>
         )}
 
-        {/* ── Números das mesas ── */}
+        {/* ── Números das mesas fechadas ── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
           <div style={{ background: "#FAF6F2", padding: 20, borderRadius: 12, border: "1px solid #E0D4FF" }}>
             <div style={{ fontSize: 13, color: "#334155", fontWeight: 700, marginBottom: 4 }}>Mesas fechadas</div>
@@ -151,6 +172,7 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
           <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
             <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Consumo nas mesas</div>
             <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{carregando ? "…" : fmt(dados?.mesas.consumo || 0)}</div>
+            <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>O lançado nas contas, sem taxa, gorjeta e troco</div>
           </div>
           <div style={{ background: "#F0FDFA", padding: 20, borderRadius: 12, border: "1px solid #99F6E4" }}>
             <div style={{ fontSize: 13, color: "#0F766E", fontWeight: 900, marginBottom: 4 }}>Taxa de serviço arrecadada</div>
@@ -160,6 +182,17 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
             <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Gorjetas extras</div>
             <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{carregando ? "…" : fmt(dados?.mesas.gorjetas || 0)}</div>
           </div>
+          {/* O desconto dado ao fechar a conta, À PARTE: não sai do consumo
+              (régua única). Só aparece quando houve. */}
+          {!carregando && temDesconto && (
+            <div style={{ background: "#FFF7ED", padding: 20, borderRadius: 12, border: "1px solid #FED7AA" }}>
+              <div style={{ fontSize: 13, color: "#9A3412", fontWeight: 700, marginBottom: 4 }}>Desconto no fechamento</div>
+              <div style={{ fontSize: 24, fontWeight: 900, color: "#7C2D12" }}>{fmt(desconto)}</div>
+              <div style={{ fontSize: 11, color: "#9A3412", marginTop: 4 }}>
+                Em {fmtQtd(dados!.mesas.mesasComDesconto)} {dados!.mesas.mesasComDesconto === 1 ? "conta" : "contas"} · à parte, não sai do consumo
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -173,16 +206,17 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Mesas</th>
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Consumo</th>
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Ticket médio</th>
-              <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>% das vendas</th>
+              <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>% do consumo</th>
+              {temDesconto && <th style={{ padding: "14px 16px", color: "#9A3412", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Desconto</th>}
               <th style={{ padding: "14px 16px", color: "#1E293B", fontWeight: 800, fontSize: 13, textAlign: "right" }}>Taxa de serviço</th>
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Gorjetas</th>
             </tr>
           </thead>
           <tbody>
             {carregando ? (
-              <tr><td colSpan={7} style={{ padding: 40, textAlign: "center" }}><Loader2 className="animate-spin mx-auto text-slate-400" size={32} /></td></tr>
+              <tr><td colSpan={colunasPorGarcom} style={{ padding: 40, textAlign: "center" }}><Loader2 className="animate-spin mx-auto text-slate-400" size={32} /></td></tr>
             ) : !dados || dados.mesas.porGarcom.length === 0 ? (
-              <tr><td colSpan={7} style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>Nenhuma mesa fechada no período.</td></tr>
+              <tr><td colSpan={colunasPorGarcom} style={{ padding: 40, textAlign: "center", color: "#94A3B8" }}>Nenhuma mesa fechada no período.</td></tr>
             ) : (
               <>
                 {dados.mesas.porGarcom.map((g) => (
@@ -199,6 +233,7 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569" }}>{fmt(g.consumo)}</td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569", fontWeight: 600 }}>{ticket(g.consumo, g.mesas)}</td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#64748B", fontWeight: 700 }}>{pctDoSalao(g.consumo)}</td>
+                    {temDesconto && <td style={{ padding: "14px 16px", textAlign: "right", color: "#9A3412", fontWeight: 600 }}>{g.desconto > 0 ? fmt(g.desconto) : "—"}</td>}
                     <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#0F766E" }}>{fmt(g.taxaServico)}</td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#B45309", fontWeight: 700 }}>{g.gorjetas > 0 ? fmt(g.gorjetas) : "—"}</td>
                   </tr>
@@ -209,6 +244,7 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>{fmt(dados.mesas.consumo)}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>{ticket(dados.mesas.consumo, dados.mesas.fechadas)}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#64748B" }}>{dados.mesas.consumo > 0 ? "100%" : "—"}</td>
+                  {temDesconto && <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#9A3412" }}>{fmt(desconto)}</td>}
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 900, color: "#134E4A" }}>{fmt(dados.mesas.taxaServico)}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#B45309" }}>{dados.mesas.gorjetas > 0 ? fmt(dados.mesas.gorjetas) : "—"}</td>
                 </tr>
@@ -225,7 +261,7 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
           <thead>
             <tr style={{ background: "#F8FAFC", borderBottom: "2px solid #E2E8F0", textAlign: "left" }}>
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13 }}>Origem</th>
-              <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Pedidos</th>
+              <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Vendas</th>
               <th style={{ padding: "14px 16px", color: "#1E293B", fontWeight: 800, fontSize: 13, textAlign: "right" }}>Vendido</th>
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>% do total</th>
             </tr>
@@ -241,33 +277,43 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
                   ["DELIVERY", "Delivery", <Bike key="d" size={16} color="#1C1917" />, "#FAF6F2"],
                   ["RETIRADA", "Retirada (site / app)", <ShoppingBag key="r" size={16} color="#0F766E" />, "#F0FDFA"],
                 ] as const).map(([chave, rotulo, icone, fundo]) => (
-                  <tr key={chave} style={{ borderBottom: "1px solid #E2E8F0" }}>
+                  <Fragment key={chave}>
+                  <tr style={{ borderBottom: "1px solid #E2E8F0" }}>
                     <td style={{ padding: "14px 16px", fontWeight: 700, color: "#1E293B" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                         <div style={{ width: 30, height: 30, borderRadius: 8, background: fundo, display: "flex", alignItems: "center", justifyContent: "center" }}>{icone}</div>
                         {rotulo}
                       </div>
                     </td>
-                    <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569", fontWeight: 600 }}>{origem[chave].pedidos}</td>
+                    <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569", fontWeight: 600 }}>
+                      {fmtQtd(origem[chave].vendas)}
+                      {/* A mesa é UMA venda, por mais rodadas que tenha: as
+                          rodadas ficam como detalhe, nunca no lugar das mesas. */}
+                      {chave === "MESA" && origem.MESA.lancamentos > 0 && (
+                        <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600 }}>
+                          {origem.MESA.vendas === 1 ? "mesa" : "mesas"} · {fmtQtd(origem.MESA.lancamentos)} {origem.MESA.lancamentos === 1 ? "rodada" : "rodadas"}
+                        </div>
+                      )}
+                    </td>
                     <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#1E293B" }}>{fmt(origem[chave].valor)}</td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#64748B", fontWeight: 700 }}>{pct(origem[chave].valor)}</td>
                   </tr>
-                ))}
-                {/* O delivery aberto por plataforma: iFood, 99Food, site… É o que
-                    o lojista precisa para comparar com o repasse de cada uma. */}
-                {dados!.vendas.deliveryPorCanal.map((c) => (
-                  <tr key={c.canal} style={{ borderBottom: "1px solid #F1F5F9", background: "#FAFBFF" }}>
-                    <td style={{ padding: "8px 16px 8px 56px", color: "#64748B", fontSize: 13 }}>↳ {c.canal}</td>
-                    <td style={{ padding: "8px 16px", textAlign: "right", color: "#94A3B8", fontSize: 13 }}>{c.pedidos}</td>
-                    <td style={{ padding: "8px 16px", textAlign: "right", color: "#475569", fontSize: 13, fontWeight: 600 }}>{fmt(c.valor)}</td>
-                    <td style={{ padding: "8px 16px", textAlign: "right", color: "#94A3B8", fontSize: 13 }}>{pct(c.valor)}</td>
-                  </tr>
+                  {/* O delivery aberto por plataforma: iFood, 99Food, site… É o que
+                      o lojista precisa para comparar com o repasse de cada uma. Logo
+                      abaixo do Delivery — embaixo da Retirada, lia-se "Retirada: iFood". */}
+                  {chave === "DELIVERY" && dados!.vendas.deliveryPorCanal.map((c) => (
+                    <tr key={c.canal} style={{ borderBottom: "1px solid #F1F5F9", background: "#FAFBFF" }}>
+                      <td style={{ padding: "8px 16px 8px 56px", color: "#64748B", fontSize: 13 }}>↳ {c.canal}</td>
+                      <td style={{ padding: "8px 16px", textAlign: "right", color: "#94A3B8", fontSize: 13 }}>{fmtQtd(c.vendas)}</td>
+                      <td style={{ padding: "8px 16px", textAlign: "right", color: "#475569", fontSize: 13, fontWeight: 600 }}>{fmt(c.valor)}</td>
+                      <td style={{ padding: "8px 16px", textAlign: "right", color: "#94A3B8", fontSize: 13 }}>{pct(c.valor)}</td>
+                    </tr>
+                  ))}
+                  </Fragment>
                 ))}
                 <tr style={{ background: "#F8FAFC", borderTop: "2px solid #E2E8F0" }}>
                   <td style={{ padding: "14px 16px", fontWeight: 900, color: "#1E293B" }}>Total vendido</td>
-                  <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>
-                    {Object.values(origem).reduce((s, o) => s + o.pedidos, 0)}
-                  </td>
+                  <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>{fmtQtd(dados!.vendas.vendas)}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 900, color: "#1E293B", fontSize: 16 }}>{fmt(total)}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#64748B" }}>100%</td>
                 </tr>
@@ -278,8 +324,15 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
       </div>
 
       <p style={{ margin: "12px 4px 0", fontSize: 12, color: "#94A3B8", lineHeight: 1.5 }}>
-        Mesa: o que entrou pelas mesas fechadas no período, já sem taxa de serviço e gorjeta (é o consumo). Balcão, delivery e retirada: pedidos não cancelados criados no período.
-        A taxa de serviço não entra em "Vendido" — é cobrada à parte; quanto dela vai para cada garçom está no relatório dele (comissão).
+        Mesas fechadas, consumo, taxa de serviço e gorjeta: as contas fechadas no período (a mesa liberada sem consumo também conta como
+        fechada). O consumo é o que foi lançado na conta, sem taxa de serviço, gorjeta e troco; o desconto dado ao fechar a conta aparece à
+        parte e não sai do consumo.
+      </p>
+      <p style={{ margin: "6px 4px 0", fontSize: 12, color: "#94A3B8", lineHeight: 1.5 }}>
+        Vendas por origem: pela hora do pedido, os mesmos números do relatório Vendas por período — por isso a linha Mesa inclui mesa
+        ainda aberta e pode diferir do consumo das mesas fechadas. Cada pedido é uma venda; a mesa conta como uma venda só, por mais
+        rodadas que tenha. A taxa de serviço não entra em &quot;Vendido&quot; — é cobrada à parte; quanto dela vai para cada garçom está no
+        relatório dele (comissão).
       </p>
     </>
   );
