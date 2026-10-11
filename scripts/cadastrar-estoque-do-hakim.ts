@@ -26,7 +26,8 @@
  */
 import { prisma } from "@/lib/prisma";
 
-type Insumo = { nome: string; unidade: "g" | "ml" | "un"; local: string; diaria?: boolean; foraDoCmv?: boolean };
+/** `custo`: o preço que o Douglas passou, só para o insumo que ainda não tem custo (a compra lançada manda depois). */
+type Insumo = { nome: string; unidade: "g" | "ml" | "un"; local: string; diaria?: boolean; foraDoCmv?: boolean; custo?: number };
 type Preparo = Insumo & { rende: number; receita: [string, number][] };
 
 const INSUMOS: Insumo[] = [
@@ -81,6 +82,11 @@ const INSUMOS: Insumo[] = [
   { nome: "Água com gás", unidade: "un", local: "Bebidas" },
   { nome: "Água sem gás", unidade: "un", local: "Bebidas" },
   { nome: "Nugget", unidade: "un", local: "Freezer" },
+  // Acompanhamentos (respostas do Douglas, 11/10 à tarde)
+  { nome: "Batata frita congelada", unidade: "g", local: "Freezer" },
+  { nome: "Salsicha", unidade: "un", local: "Geladeira" },
+  { nome: "Maionese da casa (porção)", unidade: "un", local: "Geladeira", custo: 0.7 },
+  { nome: "Pastel de nata (pronto)", unidade: "un", local: "Freezer", custo: 1.8 },
   { nome: "Brinde Panda", unidade: "un", local: "Estoque seco" },
 ];
 
@@ -137,11 +143,12 @@ async function main() {
       if (achado.unit !== i.unidade) console.log(`⚠️  ${i.nome}: já existe em "${achado.unit}", a ficha usa "${i.unidade}". Mantido como está — confira.`);
       console.log(`=  ${i.nome} (já existe) → ${preparo ? `preparo, rende ${(i as Preparo).rende} ${i.unidade}` : "insumo"}, ${i.local}${i.diaria ? ", conta todo dia" : ""}`);
       if (gravar) await prisma.stockItem.update({ where: { id: achado.id }, data: { ...dados, active: true } });
+      if (gravar && i.custo != null) await prisma.stockItem.updateMany({ where: { id: achado.id, unitCost: null }, data: { unitCost: i.custo } });
       ids.set(i.nome, achado.id);
     } else {
       console.log(`+  ${i.nome} (${i.unidade}) → ${preparo ? `preparo, rende ${(i as Preparo).rende} ${i.unidade}` : "insumo"}, ${i.local}${i.diaria ? ", conta todo dia" : ""}`);
       if (gravar) {
-        const novo = await prisma.stockItem.create({ data: { franchiseeId: loja.id, name: i.nome, unit: i.unidade, quantity: 0, ...dados } });
+        const novo = await prisma.stockItem.create({ data: { franchiseeId: loja.id, name: i.nome, unit: i.unidade, quantity: 0, unitCost: i.custo ?? null, ...dados } });
         ids.set(i.nome, novo.id);
       }
     }

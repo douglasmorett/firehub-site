@@ -41,11 +41,11 @@ const FICHAS: Record<string, Linha[]> = {
   "Esfirra de Bacon c/ Catupiry": [MASSA, ["Mussarela", 20], ["Bacon limpo", 8], ["Catupiry", 15]],
   "Esfirra de Bacon c/ Cheddar": [MASSA, ["Mussarela", 20], ["Bacon limpo", 8], ["Cheddar", 15]],
   "Esfirra de 4 queijos": [MASSA, ["Mistura de 3 queijos", 20], ["Catupiry", 15]],
-  // EM ABERTO: 6 g + 6 g (tabela de produção) ou 15 g de cada?
-  "Esfirra 5 Queijos": [MASSA, ["Mistura de 3 queijos", 20], ["Catupiry", 6], ["Cheddar", 6]],
-  // EM ABERTO: o peso das 3 rodelas de peperoni (o Douglas vai pesar).
-  "Esfirra de Peperoni": [MASSA, ["Mussarela", 20]],
-  "Esfirra Peperoni c/ Catupiry": [MASSA, ["Mussarela", 20], ["Catupiry", 15]],
+  // Duas listras de catupiry (10 g) e uma de cheddar (5 g).
+  "Esfirra 5 Queijos": [MASSA, ["Mistura de 3 queijos", 20], ["Catupiry", 10], ["Cheddar", 5]],
+  // 3 rodelas de peperoni Seara: 9 fatias = 40 g na embalagem → ~4,4 g a rodela → 13 g.
+  "Esfirra de Peperoni": [MASSA, ["Mussarela", 20], ["Peperoni", 13]],
+  "Esfirra Peperoni c/ Catupiry": [MASSA, ["Mussarela", 20], ["Peperoni", 13], ["Catupiry", 15]],
   // ── Doces ──
   "Esfirra de Chocolate ao Leite": [MASSA, ["Chocolate ao leite", 25]],
   "Esfirra de Chocolate Branco": [MASSA, ["Chocolate branco", 25]],
@@ -65,6 +65,12 @@ const FICHAS: Record<string, Linha[]> = {
   "Guaravita 280ml": [["Guaravita 280ml", 1]],
   "Água c/ Gás": [["Água com gás", 1]],
   "Água sem gás": [["Água sem gás", 1]],
+  "Batata Frita": [["Batata frita congelada", 150]],
+  "Doguinho": [MASSA, ["Salsicha", 1], ["Mussarela", 10]],
+  "Maionese Da casa Ervas Finas": [["Maionese da casa (porção)", 1]],
+  "Pastel de Nata": [["Pastel de nata (pronto)", 1]],
+  // Um limão em quatro: ~25 g a porção (limão de ~100 g).
+  "limão": [["Limão", 25]],
   "6 Nuggets": [["Nugget", 6]],
   "15 Nuggets": [["Nugget", 15]],
   "40 Nuggets": [["Nugget", 40]],
@@ -79,11 +85,6 @@ const FICHAS: Record<string, Linha[]> = {
 /** Produtos que ficam sem ficha de propósito, com o motivo. */
 const SEM_FICHA_PORQUE: Record<string, string> = {
   "Nugget": "é a pergunta de quantidade; a ficha está nas opções (6, 15, 40)",
-  "Batata Frita": "falta a porção em gramas",
-  "Doguinho": "falta a receita",
-  "Maionese Da casa Ervas Finas": "falta a porção",
-  "Pastel de Nata": "falta saber se é comprado pronto (1 un) ou feito na loja",
-  "limão": "falta a porção",
 };
 
 async function main() {
