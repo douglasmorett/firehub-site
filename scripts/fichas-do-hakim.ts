@@ -21,6 +21,9 @@ import { prisma } from "@/lib/prisma";
 type Linha = [insumo: string, quantidade: number];
 
 const MASSA: Linha = ["Massa de esfirra (bolinha)", 1];
+const G = "Embalagem G personalizada";
+const P = "Embalagem P personalizada";
+const KRAFT = "Saco kraft";
 
 /** Nome do produto (sem diferenciar caixa) → ficha, na unidade do insumo. */
 const FICHAS: Record<string, Linha[]> = {
@@ -65,12 +68,38 @@ const FICHAS: Record<string, Linha[]> = {
   "Guaravita 280ml": [["Guaravita 280ml", 1]],
   "Água c/ Gás": [["Água com gás", 1]],
   "Água sem gás": [["Água sem gás", 1]],
-  "Batata Frita": [["Batata frita congelada", 150]],
+  "Batata Frita": [["Batata frita congelada", 150], ["Caixinha de batata", 1]],
   "Doguinho": [MASSA, ["Salsicha", 1], ["Mussarela", 10]],
   "Maionese Da casa Ervas Finas": [["Maionese da casa (porção)", 1]],
   "Pastel de Nata": [["Pastel de nata (pronto)", 1]],
   // Um limão em quatro: ~25 g a porção (limão de ~100 g).
   "limão": [["Limão", 25]],
+  // ── Embalagem dos combos (Douglas, 11/10). A esfirra escolhida dentro do
+  // combo baixa a ficha dela; aqui entra só o que o COMBO gasta de caixa e
+  // saco. A esfirra avulsa vai na caixa G (4 a 6 por pedido), mas a caixa não
+  // pode ir na ficha do sabor: o sabor também é opção dos combos e a caixa
+  // sairia duas vezes. A da avulsa aparece pela contagem diária da caixa G.
+  "10 Esfirras Premium": [[G, 2], [KRAFT, 1]],
+  "20 Esfihas do Sábio": [[G, 4], [KRAFT, 2]],
+  // Quase nunca sai sozinha (fica abaixo do pedido mínimo): meio kraft.
+  "3 Esfirras Doces": [[G, 1], [KRAFT, 0.5]],
+  "4 Esfirras de Calabresa": [[G, 1], [KRAFT, 1]],
+  "4 Esfirras de Carne": [[G, 1], [KRAFT, 1]],
+  "4 Esfirras de Queijo Temperado": [[G, 1], [KRAFT, 1]],
+  "4 Pasteis de Nata": [[G, 1], [KRAFT, 1]],
+  "Combo 10 Esfirras Simples": [[G, 2], [KRAFT, 1]],
+  "Combo 6 Esfirras Premium": [[G, 1], [KRAFT, 1]],
+  "Combo Imperial": [[G, 1], [KRAFT, 1]],
+  "Combo do Solteiro": [[G, 1], [P, 1], [KRAFT, 1]],
+  "Monte seu Combo (8 itens Variados)": [[G, 1], [KRAFT, 1]],
+  // EM ABERTO: o Douglas não citou; igual aos de 4 esfirras.
+  "Pedido do Rei": [[G, 1], [KRAFT, 1]],
+  "Rodizio do Sábio": [[G, 2], [KRAFT, 1]],
+  // A caixinha da batata está na ficha da batata (o acompanhamento escolhido).
+  "Trio Hk": [[G, 1], [KRAFT, 1]],
+  // O brinde (R$ 8) e a bebida entram pelas opções escolhidas.
+  "Hakim Kids": [[G, 1], [P, 1], [KRAFT, 1]],
+  "Oferta Hk - 5 Itens a partir de 29,90": [[G, 1], [P, 1], [KRAFT, 1]],
   "6 Nuggets": [["Nugget", 6]],
   "15 Nuggets": [["Nugget", 15]],
   "40 Nuggets": [["Nugget", 40]],

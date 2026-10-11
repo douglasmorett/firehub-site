@@ -69,9 +69,10 @@ const INSUMOS: Insumo[] = [
   { nome: "Morango", unidade: "un", local: "Geladeira" },
   { nome: "Banana", unidade: "un", local: "Bancada" },
   // Embalagens (entram no CMV)
-  { nome: "Embalagem P personalizada", unidade: "un", local: "Embalagens" },
-  { nome: "Embalagem G personalizada", unidade: "un", local: "Embalagens", diaria: true },
-  { nome: "Saco kraft", unidade: "un", local: "Embalagens" },
+  { nome: "Embalagem P personalizada", unidade: "un", local: "Embalagens", custo: 0.5 },
+  { nome: "Embalagem G personalizada", unidade: "un", local: "Embalagens", diaria: true, custo: 1 },
+  { nome: "Saco kraft", unidade: "un", local: "Embalagens", custo: 0.7 },
+  { nome: "Caixinha de batata", unidade: "un", local: "Embalagens" },
   // Revenda: bebidas, nugget e o brinde do Hakim Kids (1 un por venda)
   { nome: "Coca-Cola lata", unidade: "un", local: "Bebidas" },
   { nome: "Coca-Cola Zero lata", unidade: "un", local: "Bebidas" },
@@ -87,7 +88,7 @@ const INSUMOS: Insumo[] = [
   { nome: "Salsicha", unidade: "un", local: "Geladeira" },
   { nome: "Maionese da casa (porção)", unidade: "un", local: "Geladeira", custo: 0.7 },
   { nome: "Pastel de nata (pronto)", unidade: "un", local: "Freezer", custo: 1.8 },
-  { nome: "Brinde Panda", unidade: "un", local: "Estoque seco" },
+  { nome: "Brinde Panda", unidade: "un", local: "Estoque seco", custo: 8 },
 ];
 
 /**
