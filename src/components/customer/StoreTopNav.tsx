@@ -1528,7 +1528,7 @@ export default function StoreTopNav({
                         pedido pago no app está no online acima; o do pedido
                         pago na porta não está em linha nenhuma — o app o paga
                         à loja no repasse. Informação: não se conta. */}
-                    {!lojaDeDemonstracao && cuponsDoApp.filter(c => c.valor > 0.005).map(c => {
+                    {cuponsDoApp.filter(c => c.valor > 0.005).map(c => {
                       const noOnline = Math.min(c.valor, c.noOnline || 0);
                       const fora = Math.round((c.valor - noOnline) * 100) / 100;
                       return (
