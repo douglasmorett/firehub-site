@@ -20,14 +20,21 @@ import {
 } from "@/lib/meta-ads";
 import { segredoOpcional } from "@/lib/segredos";
 import { percentualDoMes } from "@/lib/firehub-billing";
+import {
+  RAIO_MINIMO_KM,
+  RAIO_MAXIMO_KM,
+  FAIXAS_DE_IDADE,
+  GENEROS,
+  lerCoordenadaDaLoja,
+  raioSugerido,
+  type FaixaDeIdade,
+  type GeneroDoPublico,
+} from "@/lib/publico-do-anuncio";
 
 /** Piso do Meta: abaixo de ~R$ 10/dia o conjunto de anúncios nem é aceito. */
 const INVESTIMENTO_MINIMO = 70;
 /** Teto de sanidade: um zero a mais digitado não pode virar verba de verdade. */
 const INVESTIMENTO_MAXIMO = 20_000;
-const RAIO_MINIMO_KM = 1;
-const RAIO_MAXIMO_KM = 50;
-const RAIO_PADRAO_KM = 3;
 /**
  * Status intermediário, gravado ANTES de falar com a Meta. É a reserva que
  * impede duas requisições concorrentes de criarem duas campanhas ao vivo.
@@ -55,45 +62,6 @@ const CONTA_NAO_PRONTA: Record<string, string> = {
     "Não conseguimos falar com o Facebook agora para conferir sua conta. Tente de novo em " +
     "alguns instantes — nada foi criado nem cobrado.",
 };
-
-/**
- * Coordenada da loja, tolerante ao formato.
- *
- * `storeLatLng` é Json? e o único escritor é o mapa de zona de entrega, mas
- * geocoding.ts registra que o campo pode ter sido gravado como STRING JSON em
- * dados antigos. Lido só como objeto, `?.lat` dava undefined e a campanha caía
- * no fallback mesmo para quem tinha preenchido o mapa.
- */
-function lerCoordenadaDaLoja(valor: unknown): { lat: number; lng: number } | null {
-  let bruto: any = valor;
-  if (typeof bruto === "string") {
-    try {
-      bruto = JSON.parse(bruto);
-    } catch {
-      return null;
-    }
-  }
-  const lat = Number(bruto?.lat);
-  const lng = Number(bruto?.lng);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  // (0,0) é o Atlântico: dado de teste, não loja.
-  if (lat === 0 && lng === 0) return null;
-  return { lat, lng };
-}
-
-/**
- * Maior raio que a loja realmente entrega, a partir das zonas já desenhadas
- * em Minha Loja. Zonas por bairro não têm raio — nesse caso devolve null e o
- * chamador usa o padrão.
- */
-function raioDasZonasDeEntrega(zonas: unknown): number | null {
-  if (!Array.isArray(zonas)) return null;
-  const raios = zonas
-    .map((z: any) => Number(z?.km ?? z?.radius))
-    .filter((n) => Number.isFinite(n) && n > 0);
-  if (!raios.length) return null;
-  return Math.max(...raios);
-}
 
 /**
  * Traduz a falha da Meta para uma frase que um dono de restaurante entende.
@@ -234,6 +202,19 @@ export async function POST(req: NextRequest) {
     raioPedido = r;
   }
 
+  // Idade e gênero: só valem as opções que a tela oferece. Valor fora da lista
+  // é recusado (não "corrigido" calado): a tela mostraria um público e a Meta
+  // veicularia outro.
+  const faixaDeIdade: FaixaDeIdade = body?.faixaDeIdade ?? "todas";
+  const genero: GeneroDoPublico = body?.genero ?? "todos";
+  if (!Object.prototype.hasOwnProperty.call(FAIXAS_DE_IDADE, faixaDeIdade) ||
+      !Object.prototype.hasOwnProperty.call(GENEROS, genero)) {
+    return NextResponse.json(
+      { error: "Não entendi o público escolhido. Recarregue a página e escolha de novo." },
+      { status: 400 }
+    );
+  }
+
   const adCopy = typeof body?.adCopy === "string" && body.adCopy.trim() ? body.adCopy.trim() : undefined;
   const adDescription =
     typeof body?.adDescription === "string" && body.adDescription.trim() ? body.adDescription.trim() : undefined;
@@ -303,8 +284,10 @@ export async function POST(req: NextRequest) {
   // O raio nasce da área que a loja REALMENTE entrega. Fixo em 3 km, quem
   // entrega em 10 km pagava CPM de um público artificialmente pequeno e quem
   // entrega em 1,5 km pagava cliques de quem está fora da área.
-  const raioBruto = raioPedido ?? raioDasZonasDeEntrega(user.deliveryZones) ?? RAIO_PADRAO_KM;
-  const radiusKm = Math.min(RAIO_MAXIMO_KM, Math.max(RAIO_MINIMO_KM, Math.ceil(raioBruto)));
+  // Quem escolhe agora é o lojista, no mapa — a tela já abre nesse valor.
+  const radiusKm = raioPedido != null
+    ? Math.min(RAIO_MAXIMO_KM, Math.max(RAIO_MINIMO_KM, Math.ceil(raioPedido)))
+    : raioSugerido(user.deliveryZones);
 
   // ── A CONTA CONSEGUE VEICULAR AGORA? ─────────────────────────────────────
   // Esta era a falha que mais custava caro: sem forma de pagamento (ou
@@ -430,6 +413,8 @@ export async function POST(req: NextRequest) {
       lat: coordenada.lat,
       lng: coordenada.lng,
       radiusKm,
+      faixaDeIdade,
+      genero,
       weeklyBudgetBRL: weeklyBudget,
       adCopy: adCopy ?? `🍔 Peça agora em ${user.storeName ?? user.name}! Entrega rápida, cardápio completo. Clique e aproveite!`,
       adDescription,

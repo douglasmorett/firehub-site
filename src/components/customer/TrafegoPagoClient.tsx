@@ -7,6 +7,8 @@ import {
   AlertTriangle, CheckCircle, Settings, ExternalLink, Upload, ImageIcon,
   Sparkles, Edit3, Eye, Bot, Wifi
 } from "lucide-react";
+import QuemVaiVerOAnuncio, { type LocalDaLoja } from "@/components/customer/QuemVaiVerOAnuncio";
+import { descreverPublico, type PublicoDoAnuncio } from "@/lib/publico-do-anuncio";
 
 /* ── Dados de social proof ── */
 const SOCIAL_PROOF = [
@@ -72,8 +74,16 @@ const ROTULO_DE_STATUS: Record<string, string> = {
   CREATING: "⏳ Criando...",
 };
 
-export default function TrafegoPagoPage({ user }: { user: any }) {
+export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; localDaLoja: LocalDaLoja }) {
   const searchParams = useSearchParams();
+  /* Quem vê o anúncio. Nasce marcado: loja no centro, raio da área de
+     entrega, público aberto — quem não quer mexer só confere e publica. */
+  const [publico, setPublico] = useState<PublicoDoAnuncio>({
+    radiusKm: localDaLoja.raioSugerido,
+    faixaDeIdade: "todas",
+    genero: "todos",
+  });
+  const semLocalDaLoja = !localDaLoja.centro;
   const [step, setStep] = useState<Step>("hero");
   const [investment, setInvestment] = useState(100);
   const [agreed, setAgreed] = useState(false);
@@ -575,6 +585,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           // ao criativo do anúncio.
           adDescription: adDescription.trim() || undefined,
           adImageUrl: selectedImage || uploadPreview,
+          radiusKm: publico.radiusKm,
+          faixaDeIdade: publico.faixaDeIdade,
+          genero: publico.genero,
         }),
       });
       const data = await res.json().catch(() => ({} as any));
@@ -1263,7 +1276,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           no dashboard vazio. O passo anterior real do criativo é o investimento. */}
       <button onClick={() => setStep("invest")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#64748B", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
       <h2 style={{ fontSize: "1.6rem", fontWeight: 900, marginBottom: "0.25rem" }}>Configure seu anúncio</h2>
-      <p style={{ color: "#64748B", marginBottom: "2rem", fontSize: "0.9rem" }}>Escolha a imagem e confirme o texto. A IA já sugeriu um texto otimizado para você.</p>
+      <p style={{ color: "#64748B", marginBottom: "2rem", fontSize: "0.9rem" }}>Confira quem vai ver, escolha a imagem e confirme o texto. Já deixamos tudo sugerido — mude só o que quiser.</p>
 
       {/* ── A CONTA CONSEGUE VEICULAR? ────────────────────────────────────────
           Esta checagem só existia no painel — DEPOIS de publicar e DEPOIS de os
@@ -1298,6 +1311,9 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
           </div>
         </div>
       )}
+
+      {/* ── Quem vai ver ── */}
+      <QuemVaiVerOAnuncio local={localDaLoja} publico={publico} onChange={setPublico} />
 
       {/* ── Imagem ── */}
       <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.5rem", marginBottom: "1.5rem" }}>
@@ -1512,6 +1528,7 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
 
       {/* ── Resumo + Publicar ── */}
       <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 12, padding: "1rem", marginBottom: "1rem", fontSize: "0.85rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, paddingBottom: 8, borderBottom: "1px solid #99F6E4" }}><span>👥 Quem vai ver:</span><strong style={{ textAlign: "right" }}>{descreverPublico(publico)}</strong></div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span>💰 Investimento semanal:</span><strong>R$ {investment}</strong></div>
         <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}><span>🔧 Taxa de gestão FireHub:</span><strong>R$ 50/semana</strong></div>
         <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #99F6E4", paddingTop: 8, marginTop: 4 }}><span style={{ fontWeight: 700 }}>Total semanal:</span><strong style={{ color: "#0F766E" }}>R$ {investment + 50}</strong></div>
@@ -1530,12 +1547,14 @@ export default function TrafegoPagoPage({ user }: { user: any }) {
       {/* `bloqueioDaConta` entra no disabled: o botão que lança a cobrança não
           pode ficar clicável quando o servidor já respondeu que a conta não
           veicula — seria cobrar por um anúncio que nunca apareceria. */}
-      <button onClick={handleCreateCampaign} disabled={creatingCampaign || Boolean(bloqueioDaConta) || (!selectedImage && !uploadPreview) || !adCopy.trim()}
-        style={{ width: "100%", background: (bloqueioDaConta || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#E2E8F0" : "#C92E09", color: (bloqueioDaConta || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#94A3B8" : "#fff", border: "none", padding: "16px", borderRadius: 12, fontSize: "1.1rem", fontWeight: 800, cursor: (bloqueioDaConta || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }}>
+      <button onClick={handleCreateCampaign} disabled={creatingCampaign || Boolean(bloqueioDaConta) || semLocalDaLoja || (!selectedImage && !uploadPreview) || !adCopy.trim()}
+        style={{ width: "100%", background: (bloqueioDaConta || semLocalDaLoja || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#E2E8F0" : "#C92E09", color: (bloqueioDaConta || semLocalDaLoja || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "#94A3B8" : "#fff", border: "none", padding: "16px", borderRadius: 12, fontSize: "1.1rem", fontWeight: 800, cursor: (bloqueioDaConta || semLocalDaLoja || (!selectedImage && !uploadPreview) || !adCopy.trim()) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, transition: "all 0.2s" }}>
         {creatingCampaign ? (
           <><RefreshCw size={18} style={{ animation: "spin 1s linear infinite" }} /> Criando campanha...</>
         ) : bloqueioDaConta ? (
           <>Resolva a pendência da conta para publicar</>
+        ) : semLocalDaLoja ? (
+          <>Marque sua loja no mapa para publicar</>
         ) : (
           <>🚀 Publicar campanha</>
         )}

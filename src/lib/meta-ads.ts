@@ -38,6 +38,7 @@ const META_OAUTH_VERSION = "v25.0";
 
 import { segredoObrigatorio } from "./segredos";
 import { criarState } from "./meta-oauth-state";
+import { segmentacaoDaMeta, type FaixaDeIdade, type GeneroDoPublico } from "./publico-do-anuncio";
 
 export type MetaCampaignConfig = {
   adAccountId: string;    // act_XXXXX
@@ -48,6 +49,9 @@ export type MetaCampaignConfig = {
   lat: number;
   lng: number;
   radiusKm: number;
+  /** Idade e gênero escolhidos na tela. Sem eles: público aberto. */
+  faixaDeIdade?: FaixaDeIdade;
+  genero?: GeneroDoPublico;
   weeklyBudgetBRL: number;   // Em REAIS. A Meta cobra na moeda da conta (BRL).
   semanasDeVeiculacao?: number; // Padrão 4. Define o teto de gasto e a data de fim.
   adCopy: string;
@@ -149,6 +153,11 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
       status:        "PAUSED",
       spend_cap:     tetoCentavos,
       special_ad_categories: [],
+      // Obrigatório desde a v24 quando o orçamento mora no CONJUNTO (é o
+      // caso: daily_budget no ad set). Sem ele a Meta recusa a campanha com o
+      // erro 4834011 — e nenhum lojista conseguia publicar. false: há um
+      // conjunto só por campanha, não há com quem dividir verba.
+      is_adset_budget_sharing_enabled: false,
     });
     campaignId = campaignRes.id;
 
@@ -180,21 +189,17 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
       // ler este end_time, porque a CAMPANHA continua "ACTIVE" para sempre.
       end_time:       new Date(Date.now() + semanas * 7 * 24 * 60 * 60 * 1000).toISOString(),
       status:         "PAUSED",
-      targeting: {
-        geo_locations: {
-          custom_locations: [{
-            latitude:  config.lat,
-            longitude: config.lng,
-            radius:    config.radiusKm,
-            distance_unit: "kilometer",
-          }],
+      // Raio em volta da loja + idade e gênero que o lojista escolheu. A regra
+      // (inclusive o advantage_audience obrigatório) mora em
+      // lib/publico-do-anuncio.ts, a mesma que a tela usa.
+      targeting: segmentacaoDaMeta(
+        {
+          radiusKm: config.radiusKm,
+          faixaDeIdade: config.faixaDeIdade ?? "todas",
+          genero: config.genero ?? "todos",
         },
-        age_min: 18,
-        age_max: 65,
-        publisher_platforms: ["facebook", "instagram"],
-        facebook_positions: ["feed", "story"],
-        instagram_positions: ["stream", "story"],
-      },
+        { lat: config.lat, lng: config.lng },
+      ),
     });
     const adSetId = adSetRes.id;
 
