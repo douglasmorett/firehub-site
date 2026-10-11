@@ -1,1898 +1,270 @@
 "use client";
-import { useState, useMemo, useCallback, useEffect } from "react";
-import { useSession } from "next-auth/react";
-import {
-  TrendingUp, TrendingDown, DollarSign, ShoppingBag,
-  BarChart2, ArrowUpRight, ArrowDownRight, Download, Filter,
-  Package, Truck, CreditCard, Percent, Users, Plus, Trash2, Building2
-} from "lucide-react";
-import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, percentualDaVenda, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
-import { isExemptAccount } from "@/lib/billing";
+/**
+ * A tela do Financeiro: período, abas e o estado que as abas dividem (custos
+ * fixos, despesas lançadas, comissão dos apps). As contas moram em
+ * lib/financeiro/dre.ts; cada aba desenha num arquivo próprio.
+ *
+ * ── O período (auditoria de 11/10/2026) ─────────────────────────────────────
+ *
+ * Era o relógio do NAVEGADOR sobre 365 dias de pedidos mandados inteiros:
+ * "7 dias" = as últimas 168 horas, "Hoje" desde a meia-noite (às 08:51 ainda
+ * mostrava a madrugada de ontem) e o personalizado terminava às 23:59:00.
+ * Ragnar, "7 dias": DRE R$ 67.904,20 × Relatórios R$ 54.867,76. Agora é o
+ * período dos Relatórios — os mesmos atalhos, o dia operacional da loja (vira
+ * às 5h, no fuso dela) — e o servidor manda só a janela pedida. Um período só
+ * para o DRE, o Extrato e o Relatório: o Extrato tinha botões próprios que não
+ * desligavam o personalizado.
+ */
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import InvoicesClient from "@/components/InvoicesClient";
-import ContasAPagarClient, { type PayableDTO } from "./ContasAPagarClient";
 import AjudaModulo from "@/components/AjudaModulo";
-import DespesasLancadas, { type DespesaDTO } from "./DespesasLancadas";
+import ContasAPagarClient, { type PayableDTO } from "./ContasAPagarClient";
+import type { DespesaDTO } from "./DespesasLancadas";
+import AbaDRE from "./AbaDRE";
+import AbaMensalidade from "./AbaMensalidade";
+import { AbaExtrato, AbaRelatorio } from "./AbaExtrato";
+import AbaConfiguracoes from "./AbaConfiguracoes";
+import AbaCustosFixos from "./AbaCustosFixos";
+import type { VisaoDoCiclo } from "@/lib/billing";
+import {
+  ATALHOS_DO_FINANCEIRO, atalhoDoFinanceiro, calcularDRE, diaCurto, lerPeriodo, periodoDoFinanceiro,
+  type ComissoesDosApps, type CustoFixo, type DadosDoPeriodo,
+} from "@/lib/financeiro/dre";
 
-type BillingCycle = {
-  yearMonth: string; totalSales: number; amountDue: number;
-  amountOffset: number; amountPending: number; status: string;
-  // Vindos de getCurrentCycleView (lib/billing.ts): de onde a base começa a
-  // contar (fim do teste no meio do mês), o fim do teste, o boleto e o mínimo
-  // por uso. Opcionais porque a resposta antiga não os tinha.
-  cobrancaDesde?: string | null;
-  trialEndsAt?: string | null;
-  mensalidadePrevista?: number;
-  taxas?: { trafegoPago: number; totem: number };
-  cobrancaPorUso?: { valor: number; motivos: string[] } | null;
-  isExempt?: boolean;
-  asaasBoletoUrl?: string | null; asaasBoletoCode?: string | null;
-};
+type Aba = "mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos" | "contasapagar" | "notascompras";
 
-type FixedCost = { id: string; label: string; value: number };
+/** As abas em que o período vale (as outras não dependem dele). */
+const ABAS_COM_PERIODO = new Set<Aba>(["dre", "extrato", "relatorio", "pagamentos", "custosfix"]);
 
-type OrderItem = { quantity: number; price: number; cost: number; name: string };
-type Order = {
-  id: string; totalAmount: number; deliveryFee: number; motoboyFee: number;
-  deliveryDistance: number; status: string; deliveryType: string;
-  paymentMethod: string; source: string; createdAt: string;
-  items: OrderItem[]; motoboy: any;
-  // Prova de que o dinheiro entrou pelo gateway (vêm de page.tsx).
-  gatewayProvider?: string | null;
-  gatewayPaymentId?: string | null;
-  pagarmeOrderId?: string | null;
-  paymentPaidAt?: string | null;
-  /** Desconto total do pedido (cupom da loja + do marketplace). A cobrança é sobre o bruto. */
-  discountTotal?: number | null;
-};
-
-// Configura taxa por forma de pagamento (padrão FireHub)
-const DEFAULT_GATEWAY_FEES: Record<string, number> = {
-  PIX: 0.5, CREDITO: 2.99, DEBITO: 1.5, DINHEIRO: 0, VOUCHER: 5.0
-};
-
-// Plataforma FireHub — Pay as You Grow
-// 2% do faturamento (mín R$100 · teto R$400) — ver lib/firehub-billing.ts
-function calcPlatformFee(total: number): number {
-  return calcMensalidade(total).mensalidade;
-}
-
-function getOrderDisplayNumber(o: any): string {
-  if (!o) return "—";
-  if (o.dailyOrderNumber != null && o.dailyOrderNumber !== "") return String(o.dailyOrderNumber);
-  if (o.ifoodReference) return String(o.ifoodReference);
-  if (o.openDeliveryReference) return String(o.openDeliveryReference);
-  if (o.orderNumber) return String(o.orderNumber);
-  if (o.displayId) return String(o.displayId);
-  return String(o.id || "").slice(-4).toUpperCase();
-}
-
-const PERIOD_PRESETS = [
-  { label: "Hoje", days: 0 },
-  { label: "7 dias", days: 7 },
-  { label: "15 dias", days: 15 },
-  { label: "30 dias", days: 30 },
-  { label: "90 dias", days: 90 },
-  { label: "Este mês", days: -1 },
-];
-
-function getRange(preset: number): { from: Date; to: Date } {
-  const to = new Date();
-  if (preset === 0) {
-    const from = new Date(to); from.setHours(0, 0, 0, 0);
-    return { from, to };
-  }
-  if (preset === -1) {
-    const from = new Date(to.getFullYear(), to.getMonth(), 1);
-    return { from, to };
-  }
-  const from = new Date(to); from.setDate(to.getDate() - preset);
-  return { from, to };
-}
-
-// `minimumFractionDigits: 2` sozinho deixa o MÁXIMO em 3 (padrão do Intl), e aí
-// 286.0005 vira "R$ 286,001" e 51.2314 vira "R$ 51,231" — foi o que fez um saldo
-// de R$ 286,00 parecer R$ 286 mil na tela. Contas percentuais (comissão,
-// cashback, desconto) produzem essas dízimas o tempo todo.
-function fmtR(v: number) {
-  return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-}
-function fmtPct(v: number) { return `${v.toFixed(1)}%`; }
-
-function KPICard({ icon, label, value, sub, color, trend }: any) {
-  return (
-    <div style={{
-      background: "#fff", borderRadius: "16px", padding: "20px 22px",
-      boxShadow: "0 2px 12px rgba(0,0,0,0.06)", border: "1px solid #F1F5F9",
-      display: "flex", flexDirection: "column", gap: "8px"
-    }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div style={{ width: 40, height: 40, borderRadius: "10px", background: color + "15", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          {icon}
-        </div>
-        {trend !== undefined && (
-          <span style={{ fontSize: "0.75rem", fontWeight: 700, color: trend >= 0 ? "#0F766E" : "#C92E09", display: "flex", alignItems: "center", gap: "2px" }}>
-            {trend >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-            {Math.abs(trend).toFixed(1)}%
-          </span>
-        )}
-      </div>
-      <div>
-        <p style={{ fontSize: "0.78rem", color: "#64748B", margin: 0 }}>{label}</p>
-        <p style={{ fontSize: "1.35rem", fontWeight: 800, color: "#0F172A", margin: 0 }}>{value}</p>
-        {sub && <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: 0 }}>{sub}</p>}
-      </div>
-    </div>
-  );
-}
-
-function DRERow({ label, value, indent = 0, bold = false, color = "#0F172A", border = false }: any) {
-  return (
-    <div style={{
-      display: "flex", justifyContent: "space-between", alignItems: "center",
-      padding: `${border ? "12px" : "8px"} ${16 + indent * 16}px`,
-      borderTop: border ? "2px solid #E2E8F0" : "1px solid #F1F5F9",
-      fontWeight: bold ? 800 : 400, fontSize: bold ? "0.95rem" : "0.87rem"
-    }}>
-      <span style={{ color: "#475569" }}>{label}</span>
-      <span style={{ color, fontWeight: bold ? 800 : 600 }}>{typeof value === "number" ? fmtR(value) : value}</span>
-    </div>
-  );
-}
-
-export default function DREClient({ orders, paymentFees, storeName, storeCreatedAt, produtosSemCusto = [], initialFixedCosts = [], initialGoals = {}, initialRepasseConfig = {}, payables = [], initialDespesas = [] }: {
-  orders: Order[];
-  paymentFees: any;
+export default function DREClient({
+  inicio, dadosIniciais, erroInicial, cicloInicial, papel, paymentFees, storeName, produtosSemCusto = [],
+  initialFixedCosts = [], comissoesIniciais = {}, initialRepasseConfig = {}, payables = [], initialDespesas = [],
+}: {
+  /** Período, "hoje" e fuso decididos NO SERVIDOR (o dia operacional da loja). */
+  inicio: { de: string; ate: string; hoje: string; tz: string; aba: Aba };
+  dadosIniciais: DadosDoPeriodo | null;
+  erroInicial: string | null;
+  cicloInicial: VisaoDoCiclo | null;
+  papel: string;
+  paymentFees: unknown;
   storeName: string;
-  storeCreatedAt?: string;
   produtosSemCusto?: { id: string; name: string }[];
-  initialFixedCosts?: FixedCost[];
-  initialGoals?: Record<string, any>;
+  initialFixedCosts?: CustoFixo[];
+  comissoesIniciais?: ComissoesDosApps;
   initialRepasseConfig?: any;
   payables?: PayableDTO[];
   initialDespesas?: DespesaDTO[];
 }) {
-  const { data: session } = useSession();
-  const userEmailClean = session?.user?.email;
-
-  const [preset, setPreset] = useState(1); // 7 dias default
-  const [customFrom, setCustomFrom] = useState("");
-  const [customTo, setCustomTo] = useState("");
-  const [useCustom, setUseCustom] = useState(false);
-  const [activeTab, setActiveTab] = useState<"mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "custosfix" | "pagamentos" | "contasapagar" | "notascompras">("mensalidade");
-
-  // ===== REPASSE & SAQUE PIX =====
-  const [repasseConfig, setRepasseConfig] = useState<any>(initialRepasseConfig || {});
-  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
-  const [withdrawAmount, setWithdrawAmount] = useState("");
-  const [withdrawChavePix, setWithdrawChavePix] = useState(initialRepasseConfig?.chavePix || "");
-  const [withdrawTitular, setWithdrawTitular] = useState(initialRepasseConfig?.titular || "");
-  const [withdrawLoading, setWithdrawLoading] = useState(false);
-  const [withdrawFeedback, setWithdrawFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const tab = params.get("tab");
-      if (tab && ["mensalidade", "extrato", "relatorio", "configuracoes", "dre", "custosfix", "pagamentos", "contasapagar", "notascompras"].includes(tab)) {
-        setActiveTab(tab as any);
-      }
-    }
-  }, []);
-  const [showAllSemCusto, setShowAllSemCusto] = useState(false);
-  const [showFaturaModal, setShowFaturaModal] = useState(false);
-
-  // ===== CICLO DE FATURAMENTO REAL (API) =====
-  const [billingCycle, setBillingCycle] = useState<BillingCycle | null>(null);
-  useEffect(() => {
-    fetch("/api/billing/cycle")
-      .then(r => r.json())
-      .then(d => { if (!d.error) setBillingCycle(d); })
-      .catch(() => {});
-  }, []);
-
-  // `status === "PAID"` NÃO é isenção: é boleto quitado. Tratar como isento
-  // fazia a loja que pagou o mês ler "Conta VIP — Isenção Ativa" na tela.
-  const isExempt = isExemptAccount(userEmailClean) || billingCycle?.isExempt === true || (billingCycle as any)?.status === "ISENTO";
-
-  // ===== CUSTOS FIXOS =====
-  const [fixedCosts, setFixedCosts] = useState<FixedCost[]>(initialFixedCosts);
-  const [newLabel, setNewLabel] = useState("");
-  const [newValue, setNewValue] = useState("");
-  const [savingFC, setSavingFC] = useState(false);
-  const [savedFC, setSavedFC] = useState(false);
-
-  const totalFixedCosts = fixedCosts.reduce((s, c) => s + c.value, 0);
-
-  const saveFixedCosts = useCallback(async (costs: FixedCost[]) => {
-    setSavingFC(true);
-    try {
-      await fetch("/api/store/fixed-costs", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fixedCosts: costs }),
-      });
-      setSavedFC(true);
-      setTimeout(() => setSavedFC(false), 2000);
-    } finally { setSavingFC(false); }
-  }, []);
-
-  const addFixedCost = () => {
-    const val = parseFloat(newValue.replace(",", "."));
-    if (!newLabel.trim() || isNaN(val) || val <= 0) return;
-    const updated = [...fixedCosts, { id: Date.now().toString(), label: newLabel.trim(), value: val }];
-    setFixedCosts(updated);
-    setNewLabel("");
-    setNewValue("");
-    saveFixedCosts(updated);
-  };
-
-  const removeFixedCost = (id: string) => {
-    const updated = fixedCosts.filter(c => c.id !== id);
-    setFixedCosts(updated);
-    saveFixedCosts(updated);
-  };
-
-  const handleRequestWithdraw = async () => {
-    const val = parseFloat(withdrawAmount.replace(",", "."));
-    if (isNaN(val) || val <= 0) {
-      setWithdrawFeedback({ type: "error", message: "Informe um valor de saque válido." });
-      return;
-    }
-    if (!withdrawChavePix.trim()) {
-      setWithdrawFeedback({ type: "error", message: "Informe sua Chave Pix para receber a transferência." });
-      return;
-    }
-
-    setWithdrawLoading(true);
-    setWithdrawFeedback(null);
-    try {
-      const res = await fetch("/api/store/repasse/solicitar", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: val,
-          chavePix: withdrawChavePix.trim(),
-          titular: withdrawTitular.trim(),
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setWithdrawFeedback({
-          type: "error",
-          message: [data.error, data.detalhe].filter(Boolean).join(" ") || "Erro ao solicitar saque.",
-        });
-        return;
-      }
-      setWithdrawFeedback({ type: "success", message: data.message });
-      setTimeout(() => {
-        setShowWithdrawModal(false);
-        setWithdrawFeedback(null);
-        setWithdrawAmount("");
-      }, 3500);
-    } catch (err: any) {
-      setWithdrawFeedback({ type: "error", message: err.message || "Erro de conexão ao solicitar saque." });
-    } finally {
-      setWithdrawLoading(false);
-    }
-  };
-
-  const { from, to } = useMemo(() => {
-    if (useCustom && customFrom && customTo) {
-      return { from: new Date(customFrom + "T00:00"), to: new Date(customTo + "T23:59") };
-    }
-    return getRange(PERIOD_PRESETS[preset].days);
-  }, [preset, useCustom, customFrom, customTo]);
-
-  const filtered = useMemo(() =>
-    orders.filter(o => {
-      const d = new Date(o.createdAt);
-      return d >= from && d <= to && o.status !== "CANCELADO";
-    }), [orders, from, to]);
-
-  // Os pedidos que entram na MENSALIDADE — não é a receita do DRE (`filtered`).
-  // Desde 04/10/2026 o cancelado também conta (passou pelo sistema e gerou
-  // custo); a regra do servidor é VENDAS_QUE_CONTAM em lib/billing.ts.
-  const pedidosDaCobranca = useMemo(() =>
-    orders.filter(o => {
-      const d = new Date(o.createdAt);
-      if (d < from || d > to || o.status === "CRIANDO_IA") return false;
-      return o.status !== "CANCELADO" || d >= VIRADA_DOS_2_POR_CENTO;
-    }), [orders, from, to]);
-
-  // ===== DESPESAS LANÇADAS À MÃO =====
-  // O dia é texto "YYYY-MM-DD"; o período vira texto no fuso do navegador, que
-  // é o mesmo em que a loja escolheu a data da despesa.
+  const [aba, setAba] = useState<Aba>(inicio.aba === "pagamentos" ? "relatorio" : inicio.aba);
+  const [periodo, setPeriodo] = useState({ de: inicio.de, ate: inicio.ate });
+  const [hoje, setHoje] = useState(inicio.hoje);
+  const [dados, setDados] = useState<DadosDoPeriodo | null>(dadosIniciais);
+  const [carregando, setCarregando] = useState(false);
+  const [erro, setErro] = useState<string | null>(erroInicial);
+  const [custos, setCustos] = useState<CustoFixo[]>(initialFixedCosts);
   const [despesas, setDespesas] = useState<DespesaDTO[]>(initialDespesas);
-  const despesasDoPeriodo = useMemo(() => {
-    const dia = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-    const de = dia(from), ate = dia(to);
-    return despesas.filter(d => d.dia >= de && d.dia <= ate);
-  }, [despesas, from, to]);
-  const despesasPorCategoria = useMemo(() => {
-    const g: Record<string, number> = {};
-    for (const d of despesasDoPeriodo) g[d.categoria] = (g[d.categoria] || 0) + d.valor;
-    return Object.entries(g).sort((a, b) => b[1] - a[1]);
-  }, [despesasDoPeriodo]);
+  const [comissoes, setComissoes] = useState<ComissoesDosApps>(comissoesIniciais);
+  const ultimoPedido = useRef(0);
 
-  const cancelled = useMemo(() => orders.filter(o => {
-    const d = new Date(o.createdAt); return d >= from && d <= to && o.status === "CANCELADO";
-  }), [orders, from, to]);
+  // O período e a aba vão para a URL: recarregar ou mandar o link abre a
+  // MESMA tela. Sem navegação (replaceState): a tela não remonta.
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      sp.set("tab", aba);
+      sp.set("de", periodo.de);
+      sp.set("ate", periodo.ate);
+      const hash = aba === "mensalidade" ? window.location.hash : "";
+      window.history.replaceState(null, "", `${window.location.pathname}?${sp.toString()}${hash}`);
+    } catch { /* navegador sem history: nada a fazer */ }
+  }, [aba, periodo]);
 
-  const allInRange = useMemo(() => orders.filter(o => {
-    const d = new Date(o.createdAt); return d >= from && d <= to;
-  }), [orders, from, to]);
+  const carregar = useCallback(async (de: string, ate: string) => {
+    const id = ++ultimoPedido.current;
+    setCarregando(true);
+    setErro(null);
+    try {
+      const res = await fetch(`/api/store/financeiro/periodo?de=${de}&ate=${ate}`, { cache: "no-store" });
+      const j = await res.json().catch(() => null);
+      if (id !== ultimoPedido.current) return; // chegou outro pedido depois deste
+      if (!res.ok || !j || j.error) { setErro(j?.error || "Não foi possível carregar o período. Tente de novo."); return; }
+      setDados(j as DadosDoPeriodo);
+      if (j.hoje) setHoje(j.hoje);
+    } catch {
+      if (id === ultimoPedido.current) setErro("Sem conexão. Tente de novo.");
+    } finally {
+      if (id === ultimoPedido.current) setCarregando(false);
+    }
+  }, []);
 
-  // ===== CÁLCULOS EXTRATO & RELATÓRIO BRENDI =====
-  const extratoCalc = useMemo(() => {
-    let pixTotal = 0;
-    let cardTotal = 0;
-    let countPix = 0;
-    let countCard = 0;
-    let reembolsos = 0;
-    let faturamentoTotalSemFiltro = 0;
-    const lancamentos: any[] = [];
+  // A página só manda o período pronto quando abre numa aba que o usa; nas
+  // outras (Mensalidade, a padrão) ele é buscado na primeira vez que o
+  // lojista abre o DRE, o Extrato, o Relatório, os Custos Fixos ou as
+  // Configurações.
+  const usaPeriodo = ABAS_COM_PERIODO.has(aba) || aba === "configuracoes";
+  useEffect(() => {
+    if (usaPeriodo && !dados && !carregando && !erro) carregar(periodo.de, periodo.ate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usaPeriodo]);
 
-    allInRange.forEach(o => {
-      const isCancelled = o.status === "CANCELADO";
-      const pm = (o.paymentMethod || "").toUpperCase();
-      const src = (o.source || "").toUpperCase();
-      const gross = (o.totalAmount || 0) + ((o as any).discountIfood || 0);
+  const mudarPeriodo = (de: string, ate: string) => {
+    const p = lerPeriodo(de, ate, hoje);
+    setPeriodo(p);
+    carregar(p.de, p.ate);
+  };
 
-      faturamentoTotalSemFiltro += gross;
+  // Os campos de data são texto até a data estar completa: o Chrome solta
+  // "0002-10-05" enquanto se digita o ano, e cada passo virava uma carga de
+  // até 400 dias (o período era cortado e o campo pulava no meio da
+  // digitação). Só aplica data de 2020 em diante, depois de uma pausa.
+  const [textoDe, setTextoDe] = useState(inicio.de);
+  const [textoAte, setTextoAte] = useState(inicio.ate);
+  useEffect(() => { setTextoDe(periodo.de); setTextoAte(periodo.ate); }, [periodo.de, periodo.ate]);
+  useEffect(() => {
+    const completa = (d: string) => /^20[2-9]\d-\d{2}-\d{2}$/.test(d);
+    if (!completa(textoDe) || !completa(textoAte)) return;
+    if (textoDe === periodo.de && textoAte === periodo.ate) return;
+    const t = setTimeout(() => mudarPeriodo(textoDe, textoAte), 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textoDe, textoAte]);
 
-      // Identify if payment was processed strictly through Store's Mercado Pago / Celcoin Gateway
-      const isIfood = src === "IFOOD" || pm.includes("IFOOD");
-      const isJotaja = src === "JOTAJA" || pm.includes("JOTAJA") || src === "OPEN_DELIVERY";
-      const isPresencial = src === "PRESENCIAL" || pm.includes("DINHEIRO") || pm.includes("MAQUININHA") || pm.includes("ENTREGA");
+  const dre = useMemo(
+    () => (dados ? calcularDRE({ dados, custosFixos: custos, despesas, comissoes, paymentFees }) : null),
+    [dados, custos, despesas, comissoes, paymentFees],
+  );
 
-      // ── SÓ CONTA DINHEIRO QUE ENTROU DE VERDADE ─────────────────────────
-      // Antes bastava o pedido se CHAMAR "Pix" ou "Crédito" e ter vindo do
-      // cardápio para virar saldo sacável. O filtro de cima (allInRange) só
-      // exclui data fora do período, e o laço só trata CANCELADO — então
-      // pedido com status AGUARDANDO_PAGAMENTO, que o cliente nunca pagou,
-      // entrava como "disponível para sacar".
-      //
-      // Foi o que produziu o saldo fantasma na Hakim Centro: 8 pedidos de Pix
-      // e 1 de crédito, TODOS em AGUARDANDO_PAGAMENTO, viraram R$ 342,35
-      // disponíveis e R$ 49,82 a liberar. A loja nunca teve uma transação
-      // por gateway — no sistema inteiro, 4.562 pedidos, nenhum tem
-      // gatewayProvider nem paymentPaidAt.
-      //
-      // Agora exige-se PROVA de pagamento: um identificador do gateway E a
-      // marca de pago. Nome de forma de pagamento não é prova de nada.
-      const temIdentificadorDeGateway =
-        Boolean(o.gatewayProvider) ||
-        Boolean(o.gatewayPaymentId) ||
-        Boolean(o.pagarmeOrderId);
-      const foiPagoDeVerdade = Boolean(o.paymentPaidAt);
+  const atalhoAtivo = atalhoDoFinanceiro(periodo.de, periodo.ate, hoje);
+  const mostraPeriodo = ABAS_COM_PERIODO.has(aba);
 
-      // Pix pelo site na conta Asaas DA LOJA (lib/pix-online.ts): o dinheiro
-      // já caiu na conta da loja no Asaas — não é saldo guardado aqui, não tem
-      // saque por aqui e a tarifa é a do Asaas (R$ 1,99 + 1% do FireHub), não a
-      // do Mercado Pago. Entra como venda da loja, com a origem certa.
-      const isAsaasDaLoja = o.gatewayProvider === "asaas" && foiPagoDeVerdade;
-
-      const isMercadoPagoGateway =
-        !isIfood && !isJotaja && !isPresencial && !isAsaasDaLoja &&
-        temIdentificadorDeGateway && foiPagoDeVerdade;
-
-      const displayOrderNum = getOrderDisplayNumber(o);
-
-      if (isCancelled) {
-        if (isMercadoPagoGateway) reembolsos += gross;
-        lancamentos.push({
-          id: o.id,
-          tipo: "Estorno",
-          horario: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-          descricao: `Cancelamento Pedido #${displayOrderNum}`,
-          formaPagamento: isIfood ? "iFood Pago Online" : isJotaja ? "Jotajá Pago Online" : (o.paymentMethod || "Online"),
-          origem: isIfood ? "iFood (Repasse)" : isJotaja ? "Jotajá (Repasse)" : isMercadoPagoGateway ? "Gateway Mercado Pago" : "Loja",
-          isGateway: isMercadoPagoGateway,
-          sourceChannel: isIfood ? "IFOOD" : isJotaja ? "JOTAJA" : isMercadoPagoGateway ? "GATEWAY" : "LOJA",
-          status: "Cancelado",
-          dataLiberacao: "—",
-          valorBruto: -gross,
-          taxa: 0,
-          valorLiquido: -gross
-        });
-        return;
-      }
-
-      const isPix = pm.includes("PIX");
-      const isCard = pm.includes("CREDITO") || pm.includes("CARD") || pm.includes("ONLINE");
-
-      let fee = 0;
-      if (isMercadoPagoGateway) {
-        if (isPix) {
-          pixTotal += gross;
-          countPix++;
-          fee = gross * 0.005 + 0.40;
-        } else if (isCard) {
-          cardTotal += gross;
-          countCard++;
-          fee = gross * 0.0399;
-        } else {
-          fee = gross * 0.01;
-        }
-      }
-
-      const net = Math.max(0, gross - fee);
-
-      lancamentos.push({
-        id: o.id,
-        tipo: isMercadoPagoGateway ? "Venda Online (Mercado Pago)" : isAsaasDaLoja ? "Venda Pix pelo site" : isIfood ? "Venda iFood" : isJotaja ? "Venda Jotajá" : "Venda Presencial",
-        horario: new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }),
-        descricao: `Pedido #${displayOrderNum}`,
-        formaPagamento: o.paymentMethod || "Online",
-        origem: isMercadoPagoGateway ? "Gateway Mercado Pago" : isAsaasDaLoja ? "Sua conta Asaas" : isIfood ? "Repasse Direto iFood" : isJotaja ? "Repasse Direto Jotajá" : "Loja (Entrega)",
-        isGateway: isMercadoPagoGateway,
-        sourceChannel: isIfood ? "IFOOD" : isJotaja ? "JOTAJA" : isMercadoPagoGateway ? "GATEWAY" : "LOJA",
-        status: "Aprovado",
-        dataLiberacao: isAsaasDaLoja ? "Na hora, na sua conta Asaas" : !isMercadoPagoGateway ? "Repasse Externo" : isPix ? "Imediato (D+0)" : "30 dias (D+30)",
-        valorBruto: gross,
-        taxa: fee,
-        valorLiquido: net
-      });
-    });
-
-    const receitaBruta = pixTotal + cardTotal;
-    const taxasPix = pixTotal * 0.005 + countPix * 0.40;
-    const taxasCard = cardTotal * 0.0399;
-    const taxasOperacionais = taxasPix + taxasCard;
-    const mensalidadeVal = isExempt ? 0 : calcPlatformFee(faturamentoTotalSemFiltro);
-    const receitaLiquida = Math.max(0, receitaBruta - taxasOperacionais - reembolsos);
-    const saldoDisponivel = Math.max(0, pixTotal - taxasPix);
-    const saldoALiberar = Math.max(0, cardTotal - taxasCard);
-
-    return {
-      pixTotal,
-      cardTotal,
-      receitaBruta,
-      taxasPix,
-      taxasCard,
-      taxasOperacionais,
-      mensalidade: mensalidadeVal,
-      reembolsos,
-      receitaLiquida,
-      saldoDisponivel,
-      saldoALiberar,
-      faturamentoOnline: receitaBruta,
-      lancamentos
-    };
-  }, [allInRange]);
-
-  // ===== CÁLCULOS DRE =====
-  const dre = useMemo(() => {
-    const receitaBruta = filtered.reduce((s, o) => s + o.totalAmount, 0);
-    const totalFrete = filtered.reduce((s, o) => s + (o.deliveryFee || 0), 0);
-    const receitaSemFrete = receitaBruta - totalFrete;
-
-    // CMV (custo dos produtos)
-    const cmv = filtered.reduce((s, o) =>
-      s + o.items.reduce((si, i) => si + (i.cost || 0) * i.quantity, 0), 0);
-
-    // Taxa de gateway por forma de pagamento
-    const taxaGateway = filtered.reduce((s, o) => {
-      const pm = (o.paymentMethod || "DINHEIRO").toUpperCase();
-      const fees = paymentFees || {};
-      let rate = 0;
-      if (fees[pm] && typeof fees[pm] === "object") rate = fees[pm].rate || 0;
-      else rate = DEFAULT_GATEWAY_FEES[pm] || 0;
-      return s + (o.totalAmount * (rate / 100));
-    }, 0);
-
-    // Custo de motoboy
-    const custoMotoboy = filtered
-      .filter(o => o.deliveryType === "DELIVERY")
-      .reduce((s, o) => s + (o.motoboyFee || 0), 0);
-
-    // Taxa FireHub (Pay as You Grow) — Zerada se a conta for isenta
-    const taxaFireHub = isExempt ? 0 : calcPlatformFee(receitaBruta);
-
-    // Proporção dos custos fixos mensais no período selecionado
-    // (ex: 7 dias = 7/30 dos custos fixos mensais)
-    const diasNoPeriodo = Math.max(1, Math.round((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)));
-    const proporcaoPeriodo = Math.min(1, diasNoPeriodo / 30);
-    const custosFixosPeriodo = totalFixedCosts * proporcaoPeriodo;
-
-    // DRE
-    const lucro1 = receitaSemFrete - cmv;  // Lucro Bruto
-    // Despesas lançadas à mão: valor real do período, sem proporção.
-    const despesasLancadas = despesasDoPeriodo.reduce((s, d) => s + d.valor, 0);
-    const despesasOp = taxaGateway + custoMotoboy + despesasLancadas;
-    const ebitda = lucro1 - despesasOp;
-    const lucroAntesFixos = ebitda - taxaFireHub;
-    const lucroLiquido = lucroAntesFixos - custosFixosPeriodo; // ← impacto dos custos fixos
-
-    // Totais
-    const totalPedidos = filtered.length;
-    const ticketMedio = totalPedidos > 0 ? receitaBruta / totalPedidos : 0;
-    const delivery = filtered.filter(o => o.deliveryType === "DELIVERY").length;
-    const retirada = filtered.filter(o => o.deliveryType === "RETIRADA").length;
-    const margemLiquida = receitaBruta > 0 ? (lucroLiquido / receitaBruta) * 100 : 0;
-    const margemCMV = receitaSemFrete > 0 ? (cmv / receitaSemFrete) * 100 : 0;
-
-    return {
-      receitaBruta, totalFrete, receitaSemFrete, cmv, taxaGateway,
-      custoMotoboy, despesasLancadas, taxaFireHub, lucro1, despesasOp, ebitda,
-      lucroAntesFixos, custosFixosPeriodo, lucroLiquido,
-      totalPedidos, ticketMedio, delivery, retirada, margemLiquida, margemCMV,
-      cancelados: cancelled.length, diasNoPeriodo, proporcaoPeriodo
-    };
-  }, [filtered, cancelled, paymentFees, totalFixedCosts, from, to, despesasDoPeriodo]);
-
-  // Grupos por forma de pagamento
-  const paymentGroups = useMemo(() => {
-    const g: Record<string, { count: number; total: number }> = {};
-    allInRange.forEach(o => {
-      const pm = o.paymentMethod || "Não informado";
-      if (!g[pm]) g[pm] = { count: 0, total: 0 };
-      g[pm].count++;
-      g[pm].total += o.totalAmount;
-    });
-    return Object.entries(g).sort((a, b) => b[1].total - a[1].total);
-  }, [allInRange]);
-
-
-  const tabStyle = (tab: typeof activeTab) => ({
-    padding: "8px 20px", borderRadius: "10px", border: "none", cursor: "pointer",
+  const tabStyle = (tab: Aba, cor = "#0F172A") => ({
+    padding: "8px 16px", borderRadius: "10px", border: "none", cursor: "pointer",
     fontWeight: 700, fontSize: "0.85rem", fontFamily: "inherit",
-    background: activeTab === tab ? "#0F172A" : "transparent",
-    color: activeTab === tab ? "#fff" : "#64748B",
-    transition: "all 0.2s"
+    background: aba === tab ? cor : "transparent",
+    color: aba === tab ? "#fff" : "#64748B",
+    transition: "all 0.2s",
   });
+
+  const semDados = (
+    <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, padding: "2rem", textAlign: "center", color: "#64748B" }}>
+      {carregando ? "Carregando o período…" : (erro || "Sem dados do período.")}
+      {!carregando && (
+        <div style={{ marginTop: 12 }}>
+          <button onClick={() => carregar(periodo.de, periodo.ate)} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff", cursor: "pointer", fontWeight: 700, fontFamily: "inherit" }}>
+            Tentar de novo
+          </button>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div style={{ fontFamily: "'Inter', sans-serif", background: "#F8FAFC", minHeight: "100vh" }}>
-      {/* HEADER */}
       <div style={{ background: "#fff", borderBottom: "1px solid #E2E8F0", padding: "1rem 1.5rem" }}>
         <div style={{ maxWidth: 1200, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
             <div>
-              <h1 style={{ fontWeight: 800, fontSize: "1.4rem", margin: 0 }}>📊 DRE — Demonstrativo de Resultado</h1>
+              <h1 style={{ fontWeight: 800, fontSize: "1.4rem", margin: 0 }}>📊 Financeiro</h1>
               <p style={{ fontSize: "0.8rem", color: "#64748B", margin: 0 }}>{storeName}</p>
             </div>
-            {/* FILTROS DE PERÍODO */}
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
-              {PERIOD_PRESETS.map((p, i) => (
-                <button key={i}
-                  onClick={() => { setPreset(i); setUseCustom(false); }}
-                  style={{
-                    padding: "6px 14px", borderRadius: "10px", border: "none", cursor: "pointer",
-                    fontWeight: 700, fontSize: "0.8rem", fontFamily: "inherit",
-                    background: !useCustom && preset === i ? "#0F172A" : "#F1F5F9",
-                    color: !useCustom && preset === i ? "#fff" : "#475569",
-                    transition: "all 0.2s"
-                  }}>
-                  {p.label}
-                </button>
-              ))}
-              <div style={{ display: "flex", gap: "4px", alignItems: "center" }}>
-                <input type="date" value={customFrom} onChange={e => { setCustomFrom(e.target.value); setUseCustom(true); }}
-                  style={{ padding: "5px 8px", borderRadius: "8px", border: "1.5px solid #E2E8F0", fontSize: "0.78rem" }} />
-                <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>até</span>
-                <input type="date" value={customTo} onChange={e => { setCustomTo(e.target.value); setUseCustom(true); }}
-                  style={{ padding: "5px 8px", borderRadius: "8px", border: "1.5px solid #E2E8F0", fontSize: "0.78rem" }} />
-              </div>
-            </div>
-          </div>
 
-          {/* TABS BRENDI STYLE */}
-          <div style={{ display: "flex", gap: "6px", marginTop: "1rem", background: "#F1F5F9", borderRadius: "12px", padding: "4px", width: "fit-content", flexWrap: "wrap" }}>
-            <button style={tabStyle("mensalidade")} onClick={() => setActiveTab("mensalidade")}>Mensalidade</button>
-            <button style={tabStyle("extrato")} onClick={() => setActiveTab("extrato")}>Extrato</button>
-            <button style={tabStyle("relatorio")} onClick={() => setActiveTab("relatorio")}>Relatório</button>
-            <button style={tabStyle("configuracoes")} onClick={() => setActiveTab("configuracoes")}>Configurações</button>
-            <button style={tabStyle("dre")} onClick={() => setActiveTab("dre")}>📊 DRE Geral</button>
-            <button
-              style={{
-                ...tabStyle("contasapagar"),
-                background: activeTab === "contasapagar" ? "#C92E09" : "transparent",
-                color: activeTab === "contasapagar" ? "#fff" : "#64748B",
-              }}
-              onClick={() => setActiveTab("contasapagar")}
-            >
-              🤖 Contas a Pagar (IA)
+            {mostraPeriodo && (
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                {ATALHOS_DO_FINANCEIRO.map((a) => (
+                  <button key={a.chave}
+                    onClick={() => { const p = periodoDoFinanceiro(a.chave, hoje); mudarPeriodo(p.de, p.ate); }}
+                    style={{
+                      padding: "6px 12px", borderRadius: 10, border: "none", cursor: "pointer",
+                      fontWeight: 700, fontSize: "0.78rem", fontFamily: "inherit",
+                      background: atalhoAtivo === a.chave ? "#0F172A" : "#F1F5F9",
+                      color: atalhoAtivo === a.chave ? "#fff" : "#475569",
+                    }}>
+                    {a.rotulo}
+                  </button>
+                ))}
+                <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                  <input type="date" value={textoDe} min="2020-01-01" max={hoje} aria-label="De"
+                    onChange={(e) => setTextoDe(e.target.value)}
+                    style={{ padding: "5px 8px", borderRadius: 8, border: `1.5px solid ${atalhoAtivo ? "#E2E8F0" : "#0F172A"}`, fontSize: "0.78rem" }} />
+                  <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>até</span>
+                  <input type="date" value={textoAte} min="2020-01-01" max={hoje} aria-label="Até"
+                    onChange={(e) => setTextoAte(e.target.value)}
+                    style={{ padding: "5px 8px", borderRadius: 8, border: `1.5px solid ${atalhoAtivo ? "#E2E8F0" : "#0F172A"}`, fontSize: "0.78rem" }} />
+                </div>
+              </div>
+            )}
+          </div>
+          {mostraPeriodo && (
+            <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "6px 0 0" }}>
+              {carregando ? "Carregando… " : ""}
+              {diaCurto(periodo.de, true)} a {diaCurto(periodo.ate, true)} · o dia vira às 5h da manhã, como no caixa e nos Relatórios
+            </p>
+          )}
+
+          <div style={{ display: "flex", gap: 6, marginTop: "1rem", background: "#F1F5F9", borderRadius: 12, padding: 4, width: "fit-content", maxWidth: "100%", flexWrap: "wrap" }}>
+            <button style={tabStyle("mensalidade")} onClick={() => setAba("mensalidade")}>Mensalidade</button>
+            <button style={tabStyle("dre")} onClick={() => setAba("dre")}>📊 DRE Geral</button>
+            <button style={tabStyle("extrato")} onClick={() => setAba("extrato")}>Extrato</button>
+            <button style={tabStyle("relatorio")} onClick={() => setAba("relatorio")}>Relatório</button>
+            <button style={tabStyle("contasapagar", "#C92E09")} onClick={() => setAba("contasapagar")}>🤖 Contas a Pagar (IA)</button>
+            <button style={tabStyle("notascompras", "#1C1917")} onClick={() => setAba("notascompras")}>🧾 Notas de Compras</button>
+            <button style={tabStyle("custosfix", "#475569")} onClick={() => setAba("custosfix")}>
+              🏢 Custos Fixos {custos.length > 0 && <span style={{ background: "#475569", color: "#fff", borderRadius: 20, padding: "1px 7px", fontSize: "0.72rem", marginLeft: 4 }}>{custos.length}</span>}
             </button>
-            <button
-              style={{
-                ...tabStyle("notascompras"),
-                background: activeTab === "notascompras" ? "#1C1917" : "transparent",
-                color: activeTab === "notascompras" ? "#fff" : "#64748B",
-              }}
-              onClick={() => setActiveTab("notascompras")}
-            >
-              🧾 Notas de Compras
-            </button>
-            <button
-              style={{
-                ...tabStyle("custosfix"),
-                background: activeTab === "custosfix" ? "#475569" : (fixedCosts.length > 0 ? "#FAF6F2" : "transparent"),
-                color: activeTab === "custosfix" ? "#fff" : (fixedCosts.length > 0 ? "#475569" : "#64748B"),
-              }}
-              onClick={() => setActiveTab("custosfix")}
-            >
-              🏢 Custos Fixos {fixedCosts.length > 0 && <span style={{ background: "#475569", color: "#fff", borderRadius: 20, padding: "1px 7px", fontSize: "0.72rem", marginLeft: 4 }}>{fixedCosts.length}</span>}
-            </button>
+            <button style={tabStyle("configuracoes")} onClick={() => setAba("configuracoes")}>Configurações</button>
           </div>
         </div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem" }}>
-        {/* ===== ABA MENSALIDADE FIREHUB ===== */}
-        {activeTab === "mensalidade" && (() => {
-          // A fatura de verdade é o ciclo do servidor (/api/billing/cycle): a
-          // mesma conta do boleto, com o período de teste descontado e as taxas
-          // somadas. Antes o valor era o percentual da receita do período filtrado no
-          // DRE — ignorava teste, abatimento e taxas —, e o botão "Pagar
-          // agora (PIX)" só abria um alert dizendo "código gerado".
-          const ciclo = billingCycle;
-          const agora = new Date();
-          const testeAte = ciclo?.trialEndsAt ? new Date(ciclo.trialEndsAt) : null;
-          const emTeste = !!testeAte && testeAte > agora;
-          const cobraDesde = ciclo?.cobrancaDesde ? new Date(ciclo.cobrancaDesde) : null;
-          const dataCurta = (d: Date) => d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
-          const baseVendas = ciclo ? ciclo.totalSales : dre.receitaBruta;
-          // A taxa é a do mês do ciclo: o boleto de setembro/2026 ainda é 1%.
-          const pctDoCiclo = percentualDoMes(ciclo?.yearMonth);
-          const valFatura = isExempt ? 0 : (ciclo ? ciclo.amountPending : calcMensalidade(dre.receitaBruta).mensalidade);
-          const statusCiclo = ciclo?.status || "OPEN";
-          const boletoUrl = ciclo?.asaasBoletoUrl || null;
-          const situacao = isExempt
-            ? "✨ Conta isenta"
-            : emTeste
-              ? (cobraDesde
-                ? `🧪 Em teste até ${dataCurta(testeAte!)} · a partir daí as vendas entram na cobrança`
-                : `🧪 Em teste até ${dataCurta(testeAte!)} · sem cobrança neste mês`)
-              : statusCiclo === "OPEN"
-                ? "⏳ Acumulando · o boleto sai no fechamento do mês (dia 1)"
-                : statusCiclo === "CLOSED"
-                  ? "📄 Boleto emitido"
-                  : "✅ Fatura paga";
-          return (
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
-              {/* Card Principal de Fatura Atual */}
-              <div style={{
-                background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)",
-                borderRadius: "20px", padding: "1.75rem", color: "#FFFFFF",
-                boxShadow: "0 10px 30px rgba(0,0,0,0.15)", border: isExempt ? "1.5px solid #0F766E" : "1px solid #334155"
-              }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "1rem", marginBottom: isExempt ? 0 : "1.25rem" }}>
-                  <div>
-                    <span style={{ background: isExempt ? "#F0FDFA" : "#FFF7E6", color: isExempt ? "#0F766E" : "#92400E", padding: "4px 12px", borderRadius: "20px", fontSize: "0.78rem", fontWeight: 900, display: "inline-flex", alignItems: "center", gap: 4 }}>
-                      {isExempt ? "✨ Conta VIP / Loja Oficial — Isenção Ativa" : situacao}
-                    </span>
-                    <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>
-                      {isExempt ? "Mensalidade FireHub Pro (Isento)" : "Mensalidade FireHub Pro"}
-                    </h2>
-                    <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>
-                      {isExempt
-                        ? "Esta conta é isenta de mensalidade e de comissão da plataforma."
-                        : `Plano: ${pctDoCiclo}% sobre o valor cheio das vendas (antes de cupons) · mínimo R$ ${FIREHUB_PLAN.MIN_MONTHLY},00 · teto R$ ${FIREHUB_PLAN.MAX_MONTHLY},00/mês`}
-                      {!isExempt && cobraDesde && !emTeste && (
-                        <> · Teste terminou em {dataCurta(cobraDesde)}: só as vendas a partir daí entram na conta.</>
-                      )}
-                      {!isExempt && ciclo?.cobrancaPorUso && (
-                        <> · Mínimo por uso do sistema ({ciclo.cobrancaPorUso.motivos.join(", ")}).</>
-                      )}
-                    </p>
-                  </div>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1.5rem", opacity: carregando && mostraPeriodo ? 0.55 : 1, transition: "opacity .15s" }}>
+        {erro && dados && mostraPeriodo && (
+          <div role="alert" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#B71C1C", borderRadius: 12, padding: "10px 14px", marginBottom: "1rem", fontSize: "0.84rem", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span>{erro} Os números abaixo ainda são de {diaCurto(dados.de, true)} a {diaCurto(dados.ate, true)}.</span>
+            <button onClick={() => carregar(periodo.de, periodo.ate)} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #FECACA", background: "#fff", color: "#B71C1C", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              Tentar de novo
+            </button>
+          </div>
+        )}
 
-                  <div style={{ textAlign: "right", background: isExempt ? "#064E3B" : "#1E293B", padding: "12px 18px", borderRadius: "14px", border: isExempt ? "1px solid #0F766E" : "1px solid #334155" }}>
-                    <div style={{ fontSize: "0.75rem", color: isExempt ? "#99F6E4" : "#94A3B8", fontWeight: 700 }}>
-                      {statusCiclo === "OPEN" ? "ACUMULADO ATÉ AGORA" : "VALOR DA FATURA"}
-                    </div>
-                    <div style={{ fontSize: "1.8rem", fontWeight: 900, color: isExempt ? "#5EEAD4" : "#A8A29E", marginTop: 2 }}>
-                      {isExempt ? "R$ 0,00 (ISENTO)" : fmtR(valFatura)}
-                    </div>
-                  </div>
-                </div>
+        {aba === "mensalidade" && <AbaMensalidade ciclo={cicloInicial} tz={inicio.tz} />}
 
-                {/* Botões de Ação de Pagamento */}
-                {!isExempt && (
-                  <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", borderTop: "1px solid #334155", paddingTop: "1.25rem" }}>
-                    {boletoUrl ? (
-                      <a
-                        href={boletoUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        style={{
-                          background: "linear-gradient(135deg, #0F766E, #0F766E)", color: "#FFFFFF",
-                          textDecoration: "none", padding: "12px 22px", borderRadius: "12px", fontSize: "0.92rem",
-                          fontWeight: 900, cursor: "pointer", display: "flex", alignItems: "center", gap: 8,
-                          boxShadow: "0 4px 14px rgba(15, 118, 110, 0.4)", fontFamily: "inherit"
-                        }}
-                      >
-                        ⚡ Abrir boleto / pagar
-                      </a>
-                    ) : (
-                      <span style={{ alignSelf: "center", fontSize: "0.82rem", color: "#94A3B8" }}>
-                        O boleto é gerado no fechamento do mês e aparece aqui.
-                      </span>
-                    )}
-                    <button
-                      onClick={() => setShowFaturaModal(true)}
-                      style={{
-                        background: "#334155", color: "#F8FAFC", border: "1px solid #475569",
-                        padding: "12px 18px", borderRadius: "12px", fontSize: "0.88rem",
-                        fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
-                        display: "flex", alignItems: "center", gap: 6
-                      }}
-                    >
-                      📄 Detalhes da Cobrança
-                    </button>
-                  </div>
-                )}
-              </div>
+        {aba === "dre" && (dre && dados
+          ? <AbaDRE dre={dre} de={dados.de} ate={dados.ate} comissoes={comissoes} produtosSemCusto={produtosSemCusto}
+              despesas={despesas} onDespesas={setDespesas} irPara={(a) => setAba(a)} />
+          : semDados)}
 
-              {/* Grid com Destaques Financeiros da Mensalidade */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
-                <div style={{ background: "#FFFFFF", borderRadius: "16px", padding: "1.25rem", border: "1px solid #E2E8F0", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
-                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B" }}>📈 Vendas na base de cálculo</div>
-                  <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#0F172A", marginTop: 4 }}>
-                    {fmtR(baseVendas)}
-                  </div>
-                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#64748B" }}>
-                    {emTeste
-                      ? "Nada ainda: as vendas passam a contar quando o teste terminar"
-                      : cobraDesde && cobraDesde.getDate() !== 1
-                        ? `Vendas desde ${dataCurta(cobraDesde)} (fim do teste), valor cheio antes de cupons`
-                        : `Vendas do mês, valor cheio antes de cupons · ${pctDoCiclo}% sobre isto`}
-                  </p>
-                </div>
+        {aba === "extrato" && (dados ? <AbaExtrato dados={dados} comissoes={comissoes} repasseConfig={initialRepasseConfig} /> : semDados)}
 
-                <div style={{ background: "#F0FDFA", borderRadius: "16px", padding: "1.25rem", border: "1px solid #99F6E4", boxShadow: "0 2px 10px rgba(15, 118, 110,0.05)" }}>
-                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#0F766E" }}>💚 Economia Estimada (vs iFood)</div>
-                  <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#0F766E", marginTop: 4 }}>
-                    {fmtR(dre.receitaBruta * 0.26)}
-                  </div>
-                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#0F766E" }}>
-                    Sua loja economizou ~26% pedindo direto no FireHub
-                  </p>
-                </div>
+        {(aba === "relatorio" || aba === "pagamentos") && (dados && dre ? <AbaRelatorio dados={dados} dre={dre} /> : semDados)}
 
-                <div style={{ background: "#FAF6F2", borderRadius: "16px", padding: "1.25rem", border: "1px solid #E7DDD3" }}>
-                  <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#1C1917" }}>💳 Status do Ciclo</div>
-                  <div style={{ fontSize: "1.4rem", fontWeight: 900, color: "#1C1917", marginTop: 4 }}>
-                    {isExempt ? "Isento" : emTeste ? "Em teste" : statusCiclo === "OPEN" ? "Aberto" : statusCiclo === "CLOSED" ? "Boleto emitido" : "Pago"}
-                  </div>
-                  <p style={{ margin: "4px 0 0", fontSize: "0.76rem", color: "#1C1917" }}>
-                    {isExempt
-                      ? "Sem cobrança"
-                      : emTeste
-                        ? `Teste até ${dataCurta(testeAte!)}`
-                        : statusCiclo === "OPEN"
-                          ? "Fecha no dia 1 · o boleto aparece aqui"
-                          : statusCiclo === "CLOSED" ? "Pague pelo boleto acima" : "Tudo certo neste mês"}
-                  </p>
-                </div>
-              </div>
-            </div>
-          );
-        })()}
+        {aba === "configuracoes" && (
+          <AbaConfiguracoes comissoes={comissoes} onComissoes={setComissoes} dre={dre} repasseConfig={initialRepasseConfig} />
+        )}
 
-        {/* ===== ALERTA CMV + KPIs — visíveis apenas na aba DRE ===== */}
-        {activeTab === "dre" && (
-          <>
+        {aba === "custosfix" && <AbaCustosFixos custos={custos} onCustos={setCustos} dre={dre} />}
+
+        {/* Antes esta aba tinha só o <FinanceForm />: o lojista lançava a conta e
+            não via nada. Quem manda é o ContasAPagarClient (atrasadas / hoje /
+            futuras), no fuso da loja. */}
+        {aba === "contasapagar" && <ContasAPagarClient payables={payables} fuso={inicio.tz} />}
+
+        {aba === "notascompras" && (
+          <div style={{ maxWidth: 1200, margin: "0 auto" }}>
             <AjudaModulo
-              icone="📊"
-              titulo="DRE — o resultado da sua loja"
-              oQueE="Mostra, no período escolhido, quanto entrou de venda, quanto saiu de custo e o que sobrou no bolso."
-              paraQueServe="É a resposta para “trabalhei o mês todo, mas ganhei dinheiro?”."
-              aviso="O lucro só fica correto se os produtos tiverem o custo cadastrado. Produto sem custo o sistema conta como se fosse de graça, e o lucro aparece maior do que é."
+              icone="🧾"
+              titulo="Notas de Compras"
+              oQueE="É o arquivo das notas e cupons de tudo o que a sua loja COMPRA — carne, embalagem, bebida, material de limpeza."
+              paraQueServe="Guardando as notas aqui, você tem o histórico do que comprou, de quem e por quanto, para conferir preço de fornecedor e achar o comprovante quando precisar."
+              aviso="As notas NÃO entram no DRE: o custo do DRE vem do custo cadastrado em cada produto do cardápio (CMV) e das despesas lançadas. Somar as compras também contaria o mesmo gasto duas vezes. O boleto que ainda vai vencer entra na aba Contas a Pagar."
               passos={[
-                { titulo: "Escolha o período", texto: "use os botões de data no topo (7 dias, 30 dias ou um intervalo seu)." },
-                { titulo: "Olhe a margem", texto: "é o que sobra de cada R$ 100 vendidos, depois de pagar produto, taxa e entrega." },
-                { titulo: "Caiu a margem?", texto: "confira o CMV. Quase sempre é preço de fornecedor que subiu e o cardápio não acompanhou." },
+                { titulo: "Tire a foto", texto: "fotografe a nota ou o cupom direto do celular, ainda no balcão de recebimento da mercadoria." },
+                { titulo: "A IA lê sozinha", texto: "ela identifica o valor e a categoria da compra. Você só confere se ficou certo." },
+                { titulo: "Confirme", texto: "conferida, a nota fica guardada no histórico de compras da loja." },
               ]}
             />
-            {/* ALERTA PRODUTOS SEM CUSTO */}
-            {produtosSemCusto.length > 0 && (
-              <div style={{
-                background: "#FFF7E6", border: "2px solid #B45309", borderRadius: "14px",
-                padding: "16px 20px", marginBottom: "1.5rem",
-                display: "flex", gap: "14px", alignItems: "flex-start"
-              }}>
-                <div style={{ fontSize: "1.6rem", flexShrink: 0 }}>⚠️</div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ fontWeight: 800, color: "#92400E", margin: "0 0 4px", fontSize: "0.95rem" }}>
-                    Dados de CMV incompletos — {produtosSemCusto.length} {produtosSemCusto.length === 1 ? "produto sem" : "produtos sem"} custo cadastrado
-                  </p>
-                  <p style={{ color: "#78350F", fontSize: "0.82rem", margin: "0 0 10px", lineHeight: 1.5 }}>
-                    O <strong>Custo dos Produtos Vendidos (CMV)</strong> e a <strong>margem de lucro</strong> exibidos abaixo estão <strong>incorretos</strong>.
-                    Clique em cada produto para cadastrar o custo direto no cardápio.
-                  </p>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "10px" }}>
-                    {(showAllSemCusto ? produtosSemCusto : produtosSemCusto.slice(0, 10)).map(p => (
-                      <a
-                        key={p.id}
-                        href="/store/cardapio"
-                        title={`Clique para cadastrar custo de ${p.name}`}
-                        style={{
-                          background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: "6px",
-                          padding: "3px 10px", fontSize: "0.78rem", fontWeight: 600, color: "#92400E",
-                          textDecoration: "none", cursor: "pointer", transition: "background 0.15s",
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "#FDE68A")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "#FFF7E6")}
-                      >
-                        {p.name}
-                      </a>
-                    ))}
-                    {produtosSemCusto.length > 10 && (
-                      <button
-                        onClick={() => setShowAllSemCusto(v => !v)}
-                        style={{
-                          fontSize: "0.78rem", color: "#92400E", fontWeight: 700,
-                          background: "none", border: "1px dashed #FDE68A", borderRadius: "6px",
-                          padding: "3px 10px", cursor: "pointer", alignSelf: "center"
-                        }}
-                      >
-                        {showAllSemCusto ? "▲ Ver menos" : `▼ Ver mais ${produtosSemCusto.length - 10} produtos`}
-                      </button>
-                    )}
-                  </div>
-                  <a
-                    href="/store/cardapio"
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: "6px",
-                      background: "#B45309", color: "#fff", padding: "8px 16px",
-                      borderRadius: "8px", fontWeight: 700, fontSize: "0.82rem", textDecoration: "none"
-                    }}
-                  >
-                    📦 Abrir cardápio e cadastrar custos
-                  </a>
-                </div>
-              </div>
-            )}
-
-            {/* KPIs */}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
-              <KPICard icon={<DollarSign size={18} color="#0F766E" />} label="Receita Bruta" value={fmtR(dre.receitaBruta)} sub={`${dre.totalPedidos} pedidos`} color="#0F766E" />
-              <KPICard icon={<TrendingUp size={18} color="#1C1917" />} label="Lucro Líquido" value={fmtR(dre.lucroLiquido)} sub={`Margem: ${fmtPct(dre.margemLiquida)}`} color="#1C1917" />
-              <KPICard icon={<ShoppingBag size={18} color="#64748B" />} label="Ticket Médio" value={fmtR(dre.ticketMedio)} sub={`Delivery: ${dre.delivery} | Retirada: ${dre.retirada}`} color="#64748B" />
-              <KPICard icon={<Package size={18} color="#B45309" />} label="CMV (Custo Produto)" value={fmtR(dre.cmv)} sub={`${fmtPct(dre.margemCMV)} da receita`} color="#B45309" />
-              <KPICard icon={<Truck size={18} color="#0D9488" />} label="Custo Motoboy" value={fmtR(dre.custoMotoboy)} sub={`${dre.delivery} entregas`} color="#0D9488" />
-              <KPICard icon={<Users size={18} color="#C92E09" />} label="Cancelamentos" value={`${dre.cancelados}`} sub="pedidos cancelados" color="#C92E09" />
-            </div>
-          </>
-        )}
-
-        {/* ===== ABA DRE ===== */}
-        {activeTab === "dre" && (
-          <div style={{ background: "#fff", borderRadius: "16px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-            <div style={{ padding: "20px 24px", borderBottom: "1px solid #F1F5F9", display: "flex", alignItems: "center", gap: "8px" }}>
-              <BarChart2 size={20} color="#0F172A" />
-              <h2 style={{ fontWeight: 800, fontSize: "1.05rem", margin: 0 }}>
-                Demonstrativo de Resultado — {from.toLocaleDateString("pt-BR")} a {to.toLocaleDateString("pt-BR")}
-              </h2>
-            </div>
-
-            {/* RECEITAS */}
-            <div style={{ padding: "12px 24px 4px", background: "#F0FDFA" }}>
-              <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#0F766E", letterSpacing: 1 }}>RECEITAS</span>
-            </div>
-            <DRERow label="(+) Receita Bruta Total" value={dre.receitaBruta} bold />
-            <DRERow label="    Receita de Produtos" value={dre.receitaSemFrete} indent={1} />
-            <DRERow label="    Taxa de Entrega Cobrada" value={dre.totalFrete} indent={1} />
-
-            {/* CMV */}
-            <div style={{ padding: "12px 24px 4px", background: "#FFF4EF" }}>
-              <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#E8590C", letterSpacing: 1 }}>CUSTO DOS PRODUTOS VENDIDOS</span>
-            </div>
-            <DRERow label="(-) CMV — Custo das Mercadorias" value={-dre.cmv} color={dre.cmv > 0 ? "#C92E09" : "#0F172A"} />
-            <DRERow label="(=) LUCRO BRUTO" value={dre.lucro1} bold color={dre.lucro1 >= 0 ? "#0F766E" : "#C92E09"} border />
-
-            {/* DESPESAS OPERACIONAIS */}
-            <div style={{ padding: "12px 24px 4px", background: "#FFF1F2" }}>
-              <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#E11D48", letterSpacing: 1 }}>DESPESAS OPERACIONAIS</span>
-            </div>
-            <DRERow label="(-) Taxa de Pagamento (Gateway)" value={-dre.taxaGateway} color="#C92E09" />
-            <DRERow label="(-) Custo de Entrega (Motoboy)" value={-dre.custoMotoboy} color="#C92E09" />
-            {despesasPorCategoria.length > 0 && (
-              <>
-                <DRERow label="(-) Despesas lançadas" value={-dre.despesasLancadas} color="#C92E09" />
-                {despesasPorCategoria.map(([categoria, total]) => (
-                  <DRERow key={categoria} label={categoria} value={-total} color="#C92E09" indent={1} />
-                ))}
-              </>
-            )}
-            <DespesasLancadas todas={despesas} doPeriodo={despesasDoPeriodo} onMudou={setDespesas} />
-            <DRERow label="(=) EBITDA" value={dre.ebitda} bold color={dre.ebitda >= 0 ? "#0F766E" : "#C92E09"} border />
-
-            {/* TAXA FIREHUB */}
-            <div style={{ padding: "12px 24px 4px", background: "#FAF6F2" }}>
-              <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#1C1917", letterSpacing: 1 }}>PLATAFORMA FIREHUB</span>
-            </div>
-            <DRERow label={`(-) Mensalidade FireHub (${FIREHUB_PLAN.PERCENT_RATE}% · mín R$${FIREHUB_PLAN.MIN_MONTHLY} · teto R$${FIREHUB_PLAN.MAX_MONTHLY})`} value={-dre.taxaFireHub} color="#1C1917" />
-            <div style={{ padding: "6px 24px 10px", background: "#FAF6F2" }}>
-              <span style={{ fontSize: "0.72rem", color: "#1C1917" }}>
-                {dre.receitaBruta >= FIREHUB_PLAN.THRESHOLD
-                  ? `✅ Teto atingido — R$${FIREHUB_PLAN.MAX_MONTHLY} fixo (faturamento ≥ R$${FIREHUB_PLAN.THRESHOLD.toLocaleString("pt-BR")})`
-                  : `📊 ${FIREHUB_PLAN.PERCENT_RATE}% de R$${dre.receitaBruta.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} — aumenta até R$${FIREHUB_PLAN.MAX_MONTHLY} teto`
-                }
-              </span>
-            </div>
-            <div style={{ background: dre.lucroAntesFixos >= 0 ? "#F0FDFA" : "#FFF1F2", borderTop: "2px solid #E2E8F0" }}>
-              <DRERow label="(=) LUCRO ANTES DOS CUSTOS FIXOS" value={dre.lucroAntesFixos} bold color={dre.lucroAntesFixos >= 0 ? "#0F766E" : "#C92E09"} />
-            </div>
-
-            {/* CUSTOS FIXOS */}
-            {fixedCosts.length > 0 && (
-              <>
-                <div style={{ padding: "12px 24px 4px", background: "#F8FAFC" }}>
-                  <span style={{ fontSize: "0.72rem", fontWeight: 800, color: "#475569", letterSpacing: 1 }}>
-                    CUSTOS FIXOS MENSAIS
-                    {dre.proporcaoPeriodo < 1 && (
-                      <span style={{ fontWeight: 400, marginLeft: 8 }}>
-                        (proporcional: {dre.diasNoPeriodo} dias = {Math.round(dre.proporcaoPeriodo * 100)}% do mês)
-                      </span>
-                    )}
-                  </span>
-                </div>
-                {fixedCosts.map(c => (
-                  <DRERow key={c.id} label={`(-) ${c.label}`} value={-(c.value * dre.proporcaoPeriodo)} color="#475569" indent={1} />
-                ))}
-                <DRERow label="(-) Total Custos Fixos (período)" value={-dre.custosFixosPeriodo} color="#475569" />
-              </>
-            )}
-
-            {fixedCosts.length === 0 && (
-              <div style={{ padding: "10px 24px", background: "#FAFAFA", borderTop: "1px solid #F1F5F9" }}>
-                <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>
-                  💡 Nenhum custo fixo cadastrado —{" "}
-                  <button onClick={() => setActiveTab("custosfix")} style={{ background: "none", border: "none", color: "#475569", cursor: "pointer", fontWeight: 700, fontSize: "0.75rem", padding: 0, fontFamily: "inherit" }}>
-                    clique aqui para cadastrar aluguel, funcionários, etc.
-                  </button>
-                </span>
-              </div>
-            )}
-
-            <div style={{ background: dre.lucroLiquido >= 0 ? "#F0FDFA" : "#FFF1F2", borderTop: "2px solid #E2E8F0" }}>
-              <DRERow label="(=) LUCRO LÍQUIDO FINAL" value={dre.lucroLiquido} bold color={dre.lucroLiquido >= 0 ? "#0F766E" : "#C92E09"} />
-            </div>
-
-            {/* Margem visual */}
-            <div style={{ padding: "20px 24px", borderTop: "1px solid #F1F5F9" }}>
-              <div style={{ display: "flex", gap: "2rem", flexWrap: "wrap" }}>
-                {[
-                  { label: "Margem Bruta", val: dre.receitaBruta > 0 ? (dre.lucro1 / dre.receitaBruta) * 100 : 0, color: "#B45309" },
-                  { label: "Margem EBITDA", val: dre.receitaBruta > 0 ? (dre.ebitda / dre.receitaBruta) * 100 : 0, color: "#1C1917" },
-                  { label: "Margem Líquida", val: dre.margemLiquida, color: "#0F766E" },
-                ].map((m, i) => (
-                  <div key={i} style={{ flex: 1, minWidth: 160 }}>
-                    <p style={{ fontSize: "0.75rem", color: "#64748B", margin: "0 0 4px" }}>{m.label}</p>
-                    <div style={{ background: "#F1F5F9", borderRadius: "6px", height: "8px", overflow: "hidden" }}>
-                      <div style={{ width: `${Math.min(100, Math.max(0, m.val))}%`, height: "100%", background: m.color, borderRadius: "6px", transition: "width 0.5s" }} />
-                    </div>
-                    <p style={{ fontSize: "0.85rem", fontWeight: 800, color: m.color, margin: "4px 0 0" }}>{fmtPct(m.val)}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
+            <InvoicesClient role={papel || "FRANCHISEE"} canSeePersonal={false} />
           </div>
         )}
-
-        {/* ===== ABA EXTRATO (ESTILO BRENDI) ===== */}
-        {activeTab === "extrato" && (
-          <div>
-            <AjudaModulo
-              icone="💳"
-              titulo="Extrato dos pagamentos online"
-              oQueE="Mostra o dinheiro das vendas pagas por Pix e cartão pelo site: o que já está liberado e o que ainda está a caminho."
-              paraQueServe="Serve para saber quanto você tem para sacar hoje."
-              aviso="Venda no cartão não cai na hora — a operadora segura por alguns dias. Por isso o “a liberar” costuma ser maior que o “disponível”."
-              passos={[
-                { titulo: "Disponível", texto: "já é seu, pode transferir." },
-                { titulo: "A liberar", texto: "vendas confirmadas que a operadora ainda vai repassar." },
-                { titulo: "Para receber automático", texto: "cadastre sua chave Pix na aba Configurações." },
-              ]}
-            />
-            {/* Cards do Topo: Saldo Disponível (Esq) vs Resumo Financeiro (Dir) */}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.5rem", marginBottom: "1.5rem" }}>
-              {/* Esquerda: Saldo Disponível e Saldo a Liberar */}
-              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#1C1917", fontSize: "0.88rem", fontWeight: 800 }}>
-                    <span>💳 Saldo Gateway da Loja (Mercado Pago / Pix Centralizado)</span>
-                  </div>
-                  <span style={{ background: "#FAF6F2", color: "#1C1917", padding: "2px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800 }}>
-                    Vendas Online Próprias
-                  </span>
-                </div>
-
-                <p style={{ fontSize: "2.1rem", fontWeight: 900, color: "#0F766E", margin: "4px 0 6px" }}>
-                  {fmtR(extratoCalc.saldoDisponivel)}
-                </p>
-
-                {/* Status do Repasse Automático */}
-                {repasseConfig?.chavePix ? (
-                  <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: "10px", padding: "8px 12px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
-                    <div>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#0F766E", display: "block" }}>🔑 Chave Pix cadastrada para repasse</span>
-                      <span style={{ fontSize: "0.72rem", color: "#0F766E" }}>
-                        Chave: <strong>{repasseConfig.chavePix}</strong> · O repasse automático ainda não está ativo — está sendo implementado junto com o pagamento online.
-                      </span>
-                    </div>
-                    <a href="/store/minha-loja" style={{ fontSize: "0.72rem", color: "#0F766E", fontWeight: 700, textDecoration: "underline" }}>Alterar</a>
-                  </div>
-                ) : (
-                  <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: "10px", padding: "8px 12px", marginBottom: "14px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "6px" }}>
-                    <div>
-                      <span style={{ fontSize: "0.75rem", fontWeight: 800, color: "#B71C1C", display: "block" }}>⚪ Repasse Automático Não Configurado</span>
-                      <span style={{ fontSize: "0.72rem", color: "#B71C1C" }}>Cadastre sua chave Pix para receber os repasses automaticamente.</span>
-                    </div>
-                    <a href="/store/minha-loja" style={{ fontSize: "0.72rem", color: "#C92E09", fontWeight: 800, textDecoration: "underline" }}>Configurar Pix</a>
-                  </div>
-                )}
-
-                {/* Botões de Ação: Solicitar Saque e Programar */}
-                <div style={{ display: "flex", gap: "8px", marginBottom: "16px", flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => {
-                      setWithdrawAmount(extratoCalc.saldoDisponivel > 0 ? extratoCalc.saldoDisponivel.toFixed(2) : "");
-                      setWithdrawChavePix(repasseConfig?.chavePix || "");
-                      setWithdrawTitular(repasseConfig?.titular || "");
-                      setWithdrawFeedback(null);
-                      setShowWithdrawModal(true);
-                    }}
-                    style={{
-                      flex: 1,
-                      minWidth: "160px",
-                      padding: "11px 16px",
-                      borderRadius: "10px",
-                      border: "none",
-                      background: "linear-gradient(135deg, #0F766E, #0F766E)",
-                      color: "#fff",
-                      fontWeight: 800,
-                      fontSize: "0.88rem",
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "6px",
-                      boxShadow: "0 4px 12px rgba(15, 118, 110, 0.25)",
-                      fontFamily: "inherit"
-                    }}
-                  >
-                    ⏳ Saque indisponível (em implantação)
-                  </button>
-                  <a
-                    href="/store/minha-loja"
-                    style={{
-                      padding: "11px 14px",
-                      borderRadius: "10px",
-                      border: "1.5px solid #CBD5E1",
-                      background: "#fff",
-                      color: "#475569",
-                      fontWeight: 700,
-                      fontSize: "0.82rem",
-                      textDecoration: "none",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: "4px",
-                      fontFamily: "inherit"
-                    }}
-                  >
-                    ⚙️ Programar Repasse
-                  </a>
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#64748B", fontSize: "0.82rem", fontWeight: 700 }}>
-                  <span>🔒 Saldo a Liberar (Crédito D+30)</span>
-                </div>
-                <p style={{ fontSize: "1.3rem", fontWeight: 800, color: "#334155", margin: "2px 0 14px" }}>
-                  {fmtR(extratoCalc.saldoALiberar)}
-                </p>
-
-                <div style={{ fontSize: "0.75rem", color: "#64748B", background: "#F8FAFC", padding: "8px 12px", borderRadius: "8px", border: "1px solid #E2E8F0", marginBottom: "12px" }}>
-                  💡 <strong>Nota Importante:</strong> Vendas do iFood e Jotajá não são depositadas neste saldo — elas são repassadas diretamente pelas próprias plataformas para a conta bancária da sua loja.
-                </div>
-
-                {/* Box Azul de taxas operacionais */}
-                <div style={{ background: "#FAF6F2", border: "1px solid #E7DDD3", borderRadius: "12px", padding: "1rem", fontSize: "0.76rem", color: "#1C1917", lineHeight: 1.7 }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
-                    <div>• <strong>Taxa do pix:</strong> 0,5% + R$ 0,40</div>
-                    <div>• <strong>Taxa do crédito:</strong> 3,99% por pedido</div>
-                    <div>• <strong>Taxa de adiantamento:</strong> 1,7% (D+0)</div>
-                    <div>• <strong>Taxa de transferência:</strong> R$ 0,40</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Direita: Resumo Financeiro */}
-              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", boxShadow: "0 2px 10px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", justifyContent: "space-between" }}>
-                <div>
-                  <h3 style={{ fontWeight: 800, fontSize: "1rem", color: "#0F172A", margin: "0 0 16px" }}>📋 Resumo Financeiro</h3>
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px", fontSize: "0.86rem" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
-                      <span style={{ color: "#475569" }}>Receita Bruta ℹ️</span>
-                      <strong style={{ color: "#0F766E" }}>+ {fmtR(extratoCalc.receitaBruta)}</strong>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
-                      <span style={{ color: "#475569" }}>Taxas Operacionais ℹ️</span>
-                      <strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.taxasOperacionais)}</strong>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
-                      <span style={{ color: "#475569" }}>Investimentos e Mensalidade ℹ️</span>
-                      <strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.mensalidade)}</strong>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, borderBottom: "1px solid #F1F5F9" }}>
-                      <span style={{ color: "#475569" }}>Reembolsos ℹ️</span>
-                      <strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.reembolsos)}</strong>
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 6, fontSize: "0.95rem" }}>
-                      <strong style={{ color: "#0F172A" }}>Receita Líquida</strong>
-                      <strong style={{ color: "#0F766E" }}>= {fmtR(extratoCalc.receitaLiquida)}</strong>
-                    </div>
-                  </div>
-                </div>
-
-                <button onClick={() => setActiveTab("relatorio")} style={{ marginTop: "16px", width: "100%", padding: "10px", borderRadius: "10px", border: "1.5px solid #C92E09", background: "#fff", color: "#C92E09", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                  Ver demonstrativo completo
-                </button>
-              </div>
-            </div>
-
-            {/* Ações e Filtros de Data */}
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem", flexWrap: "wrap", gap: "10px" }}>
-              <div style={{ display: "flex", gap: "8px" }}>
-                {PERIOD_PRESETS.map((p, i) => (
-                  <button key={i} onClick={() => setPreset(i)} style={{ padding: "6px 14px", borderRadius: "8px", border: preset === i ? "2px solid #C92E09" : "1px solid #CBD5E1", background: preset === i ? "#FEF2F2" : "#fff", color: preset === i ? "#C92E09" : "#475569", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button onClick={() => setActiveTab("configuracoes")} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #C92E09", background: "#fff", color: "#C92E09", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>↩️ Ver último repasse</button>
-                <button onClick={() => alert("📥 Relatório exportado com sucesso!")} style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #C92E09", background: "#fff", color: "#C92E09", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer" }}>📥 Exportar transações</button>
-              </div>
-            </div>
-
-            {/* Tabela de Lançamentos */}
-            <div style={{ background: "#fff", borderRadius: "14px", border: "1px solid #E2E8F0", overflow: "hidden" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
-                <thead>
-                  <tr style={{ background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", color: "#475569", textAlign: "left" }}>
-                    <th style={{ padding: "10px 14px" }}>Tipo</th>
-                    <th style={{ padding: "10px 14px" }}>Horário</th>
-                    <th style={{ padding: "10px 14px" }}>Descrição</th>
-                    <th style={{ padding: "10px 14px" }}>Canal / Origem</th>
-                    <th style={{ padding: "10px 14px" }}>Forma de pagamento</th>
-                    <th style={{ padding: "10px 14px" }}>Status</th>
-                    <th style={{ padding: "10px 14px" }}>Data de liberação</th>
-                    <th style={{ padding: "10px 14px" }}>Valor bruto</th>
-                    <th style={{ padding: "10px 14px" }}>Taxa</th>
-                    <th style={{ padding: "10px 14px" }}>Valor líquido</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {extratoCalc.lancamentos.length === 0 ? (
-                    <tr>
-                      <td colSpan={10} style={{ padding: "2.5rem", textAlign: "center", color: "#64748B" }}>
-                        ⚠️ Sem dados disponíveis para o período selecionado.
-                      </td>
-                    </tr>
-                  ) : (
-                    extratoCalc.lancamentos.map((l: any, i: number) => {
-                      const isMp = l.sourceChannel === "GATEWAY";
-                      const isIf = l.sourceChannel === "IFOOD";
-                      const isJt = l.sourceChannel === "JOTAJA";
-                      return (
-                        <tr key={l.id || i} style={{ borderBottom: "1px solid #F1F5F9", background: isMp ? "#F0FDFA" : "#FFFFFF" }}>
-                          <td style={{ padding: "10px 14px", fontWeight: 700 }}>{l.tipo}</td>
-                          <td style={{ padding: "10px 14px" }}>{l.horario}</td>
-                          <td style={{ padding: "10px 14px" }}>{l.descricao}</td>
-                          <td style={{ padding: "10px 14px" }}>
-                            <span style={{
-                              padding: "2px 8px", borderRadius: 6, fontSize: "0.72rem", fontWeight: 800,
-                              background: isMp ? "#FAF6F2" : isIf ? "#FEE2E2" : isJt ? "#FFF4EF" : "#F1F5F9",
-                              color: isMp ? "#1C1917" : isIf ? "#B71C1C" : isJt ? "#9A3412" : "#475569"
-                            }}>
-                              {l.origem}
-                            </span>
-                          </td>
-                          <td style={{ padding: "10px 14px" }}>{l.formaPagamento}</td>
-                          <td style={{ padding: "10px 14px" }}>
-                            <span style={{ padding: "2px 8px", borderRadius: 99, background: l.status === "Aprovado" ? "#E6F4EA" : "#FFF7E6", color: l.status === "Aprovado" ? "#137333" : "#92400E", fontSize: "0.72rem", fontWeight: 700 }}>
-                              {l.status}
-                            </span>
-                          </td>
-                          <td style={{ padding: "10px 14px" }}>{l.dataLiberacao}</td>
-                          <td style={{ padding: "10px 14px", color: "#0F766E", fontWeight: 700 }}>{fmtR(l.valorBruto)}</td>
-                          <td style={{ padding: "10px 14px", color: "#C92E09" }}>- {fmtR(l.taxa)}</td>
-                          <td style={{ padding: "10px 14px", fontWeight: 800 }}>{fmtR(l.valorLiquido)}</td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* ===== ABA RELATÓRIO (ESTILO BRENDI) ===== */}
-        {activeTab === "relatorio" && (
-          <div>
-            <AjudaModulo
-              icone="📈"
-              titulo="Relatório de faturamento"
-              oQueE="O total que a loja vendeu no período, separado por forma de pagamento e canal."
-              paraQueServe="Use para comparar semanas e enxergar de onde vem a maior parte do seu dinheiro."
-              passos={[
-                { titulo: "Compare períodos", texto: "veja esta semana contra a passada para saber se a loja está crescendo." },
-                { titulo: "Olhe o canal", texto: "se o iFood traz mais que o seu site, lembre que no site a comissão é bem menor." },
-              ]}
-            />
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
-              <div>
-                <span style={{ fontSize: "0.82rem", color: "#64748B", fontWeight: 700 }}>Faturamento Online</span>
-                <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#0F766E", margin: 0 }}>{fmtR(extratoCalc.faturamentoOnline)}</h2>
-              </div>
-              <div style={{ background: "#fff", border: "1px solid #CBD5E1", borderRadius: "10px", padding: "8px 14px", fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>
-                📅 Período: {from.toLocaleDateString("pt-BR")} - {to.toLocaleDateString("pt-BR")}
-              </div>
-            </div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
-              {/* Card 1: Demonstrativo de Receita Online */}
-              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
-                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Demonstrativo de Receita Online</h4>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>PIX (Online)</span><strong style={{ color: "#0F766E" }}>{fmtR(extratoCalc.pixTotal)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Cartão de Crédito (Online)</span><strong style={{ color: "#0F766E" }}>{fmtR(extratoCalc.cardTotal)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Programa de Indicação</span><strong style={{ color: "#0F766E" }}>R$ 0,00</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Reembolsos Recebidos</span><strong style={{ color: "#0F766E" }}>R$ 0,00</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Receita Bruta</strong><strong style={{ color: "#0F766E" }}>{fmtR(extratoCalc.receitaBruta)}</strong></div>
-                </div>
-              </div>
-
-              {/* Card 2: Taxas Operacionais */}
-              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
-                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Taxas Operacionais</h4>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxas PIX</span><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.taxasPix)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxas Cartão</span><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.taxasCard)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Taxa de Repasse</span><strong style={{ color: "#C92E09" }}>- R$ 0,00</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Taxas</strong><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.taxasOperacionais)}</strong></div>
-                </div>
-              </div>
-
-              {/* Card 3: Investimentos e Mensalidade */}
-              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
-                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Investimentos e Mensalidade</h4>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Investimento em Tráfego Pago</span><strong style={{ color: "#C92E09" }}>- R$ 0,00</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Mensalidade FireHub</span><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.mensalidade)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Investimentos</strong><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.mensalidade)}</strong></div>
-                </div>
-              </div>
-
-              {/* Card 4: Reembolsos a Clientes */}
-              <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.25rem" }}>
-                <h4 style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", margin: "0 0 12px" }}>Reembolsos a Clientes</h4>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "0.84rem" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}><span style={{ color: "#475569" }}>Reembolsos a Clientes</span><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.reembolsos)}</strong></div>
-                  <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #F1F5F9", paddingTop: 8 }}><strong style={{ color: "#0F172A" }}>Total Reembolsos</strong><strong style={{ color: "#C92E09" }}>- {fmtR(extratoCalc.reembolsos)}</strong></div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===== ABA CONFIGURAÇÕES (CONFIGURAÇÕES DE REPASSE BRENDI) ===== */}
-        {activeTab === "configuracoes" && (
-          <div>
-            <AjudaModulo
-              icone="⚙️"
-              titulo="Para onde vai o seu dinheiro"
-              oQueE="Aqui você cadastra a chave Pix da loja para receber automaticamente o que os clientes pagaram online."
-              paraQueServe="Sem essa chave o dinheiro fica parado no sistema esperando você pedir."
-              aviso="A chave precisa ser da conta da loja e estar no mesmo CNPJ/CPF do cadastro, senão o banco recusa o repasse."
-              passos={[
-                { titulo: "Escolha o tipo", texto: "CNPJ, CPF, telefone, e-mail ou chave aleatória." },
-                { titulo: "Confira o titular", texto: "o nome tem que bater com o do cadastro da loja." },
-                { titulo: "Salve", texto: "os próximos repasses caem sozinhos nessa conta." },
-              ]}
-            />
-            <h3 style={{ fontWeight: 900, fontSize: "1.15rem", color: "#0F172A", marginBottom: "0.5rem" }}>Configurações financeiras de repasse</h3>
-            <p style={{ fontSize: "0.82rem", color: "#64748B", marginBottom: "1.5rem" }}>
-              Se você aceita pagamentos online (Pix e Cartão), cadastre a sua chave Pix/conta de repasse para receber o valor automaticamente sem ficar com o saldo retido.
-            </p>
-
-            <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "1.5rem", maxWidth: "650px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: "1rem" }}>
-                <Building2 size={22} color="#0F766E" />
-                <h4 style={{ fontWeight: 800, fontSize: "1rem", margin: 0, color: "#0F172A" }}>Conta de repasse</h4>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-                <div>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Chave Pix para repasse</label>
-                  <input
-                    type="text"
-                    placeholder="Digite sua Chave Pix..."
-                    defaultValue=""
-                    style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem" }}
-                  />
-                </div>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-                  <div>
-                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Frequência do repasse</label>
-                    <select
-                      defaultValue="DAILY"
-                      style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem" }}
-                    >
-                      <option value="DAILY">Todos os dias</option>
-                      <option value="WEEKLY">Uma vez por semana</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>Horário do repasse</label>
-                    <select
-                      defaultValue="03:00"
-                      style={{ width: "100%", padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.88rem" }}
-                    >
-                      <option value="03:00">03:00 (Madrugada)</option>
-                      <option value="06:00">06:00 (Manhã)</option>
-                      <option value="12:00">12:00 (Meio-dia)</option>
-                      <option value="18:00">18:00 (Fim de Tarde)</option>
-                    </select>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => alert("✅ Configurações de repasse salvas com sucesso!")}
-                  style={{ marginTop: "10px", padding: "12px", borderRadius: "10px", border: "none", background: "#C92E09", color: "#fff", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
-                >
-                  Salvar Conta de Repasse
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===== ABA PAGAMENTOS ===== */}
-        {activeTab === "pagamentos" && (
-          <div style={{ background: "#fff", borderRadius: "16px", boxShadow: "0 2px 12px rgba(0,0,0,0.06)", overflow: "hidden" }}>
-            <div style={{ padding: "16px 24px", borderBottom: "1px solid #F1F5F9" }}>
-              <h2 style={{ fontWeight: 800, fontSize: "1rem", margin: 0 }}>💳 Breakdown por Forma de Pagamento</h2>
-            </div>
-            {paymentGroups.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "3rem", color: "#94A3B8" }}>Nenhum dado neste período.</div>
-            ) : (
-              <div style={{ padding: "16px 24px", display: "flex", flexDirection: "column", gap: "12px" }}>
-                {paymentGroups.map(([pm, g], i) => {
-                  const totalBruto = allInRange.reduce((s, o) => s + o.totalAmount, 0);
-                  const pct = totalBruto > 0 ? (g.total / totalBruto) * 100 : 0;
-                  const PM_COLORS: Record<string, string> = {
-                    PIX: "#0D9488", DINHEIRO: "#0D9488", CREDITO: "#44403C",
-                    DEBITO: "#2196F3", VOUCHER: "#E8590C"
-                  };
-                  const color = PM_COLORS[(pm || "").toUpperCase()] || "#64748B";
-                  return (
-                    <div key={i}>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "6px" }}>
-                        <span style={{ fontWeight: 700, fontSize: "0.88rem" }}>{pm || "Não informado"}</span>
-                        <div style={{ textAlign: "right" }}>
-                          <span style={{ fontWeight: 800, color }}>{fmtR(g.total)}</span>
-                          <span style={{ fontSize: "0.75rem", color: "#94A3B8", marginLeft: "8px" }}>{g.count} pedidos · {fmtPct(pct)}</span>
-                        </div>
-                      </div>
-                      <div style={{ background: "#F1F5F9", borderRadius: "6px", height: "8px", overflow: "hidden" }}>
-                        <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: "6px", transition: "width 0.5s" }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-      {/* ===== ABA CUSTOS FIXOS ===== */}
-      {activeTab === "custosfix" && (
-        <div style={{ maxWidth: 700, margin: "0 auto", padding: "1.5rem" }}>
-          <AjudaModulo
-            icone="🏢"
-            titulo="Custos fixos"
-            oQueE="São as contas que você paga todo mês vendendo muito ou vendendo pouco: aluguel, salários, luz, internet, contador."
-            paraQueServe="Com eles cadastrados, o sistema calcula quanto você precisa vender só para não ter prejuízo."
-            aviso="Cadastre o valor do MÊS inteiro, não do dia. O sistema divide sozinho quando precisa."
-            passos={[
-              { titulo: "Liste tudo", texto: "aluguel, folha, energia, água, internet, contador, sistema, taxas." },
-              { titulo: "Salve", texto: "o DRE passa a descontar esses custos e o lucro que aparece vira o lucro de verdade." },
-              { titulo: "Revise a cada mudança", texto: "contratou alguém ou o aluguel subiu? Atualize aqui." },
-            ]}
-          />
-          <div style={{ background: "linear-gradient(135deg,#475569,#334155)", borderRadius: 16, padding: "1.5rem", color: "#fff", marginBottom: "1.5rem" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-              <Building2 size={24} />
-              <h2 style={{ fontWeight: 900, fontSize: "1.2rem", margin: 0 }}>Custos Fixos Mensais</h2>
-            </div>
-            <p style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.8)", margin: 0 }}>
-              Cadastre aluguel, funcionários, energia, internet e outros. Eles são descontados proporcionalmente do lucro líquido no DRE.
-            </p>
-            {fixedCosts.length > 0 && (
-              <div style={{ marginTop: 12, background: "rgba(255,255,255,0.15)", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: "0.85rem", fontWeight: 700 }}>Total mensal cadastrado:</span>
-                <span style={{ fontSize: "1.1rem", fontWeight: 900 }}>R$ {totalFixedCosts.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Formulário para adicionar */}
-          <div style={{ background: "#fff", borderRadius: 16, padding: "1.25rem", border: "1px solid #E2E8F0", marginBottom: "1.25rem" }}>
-            <h3 style={{ fontWeight: 800, fontSize: "0.95rem", margin: "0 0 1rem" }}>➕ Adicionar custo fixo</h3>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <input
-                value={newLabel}
-                onChange={e => setNewLabel(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && addFixedCost()}
-                placeholder="Descrição (ex: Aluguel, Salário João, Energia...)"
-                style={{ flex: 2, minWidth: 180, padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", fontFamily: "inherit" }}
-              />
-              <div style={{ position: "relative", flex: 1, minWidth: 120 }}>
-                <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748B", fontSize: "0.85rem", fontWeight: 700 }}>R$</span>
-                <input
-                  value={newValue}
-                  onChange={e => setNewValue(e.target.value)}
-                  onKeyDown={e => e.key === "Enter" && addFixedCost()}
-                  placeholder="0,00"
-                  type="text"
-                  inputMode="decimal"
-                  style={{ width: "100%", padding: "10px 14px 10px 34px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", fontFamily: "inherit", boxSizing: "border-box" }}
-                />
-              </div>
-              <button
-                onClick={addFixedCost}
-                disabled={!newLabel.trim() || !newValue}
-                style={{ padding: "10px 20px", borderRadius: 10, background: (!newLabel.trim() || !newValue) ? "#E2E8F0" : "#475569", color: (!newLabel.trim() || !newValue) ? "#94A3B8" : "#fff", border: "none", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, fontFamily: "inherit" }}
-              >
-                <Plus size={16} /> Adicionar
-              </button>
-            </div>
-            <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "8px 0 0" }}>
-              💡 Pressione Enter para adicionar rapidamente. Salvo automaticamente.
-            </p>
-          </div>
-
-          {/* Lista */}
-          {fixedCosts.length === 0 ? (
-            <div style={{ background: "#fff", borderRadius: 16, padding: "2.5rem", textAlign: "center", border: "1.5px dashed #E2E8F0" }}>
-              <Building2 size={40} color="#CBD5E1" style={{ marginBottom: 12 }} />
-              <p style={{ fontWeight: 700, color: "#64748B", margin: "0 0 6px" }}>Nenhum custo fixo cadastrado</p>
-              <p style={{ fontSize: "0.82rem", color: "#94A3B8", margin: 0 }}>Adicione aluguel, salários, energia, internet, etc.</p>
-            </div>
-          ) : (
-            <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #E2E8F0", overflow: "hidden" }}>
-              <div style={{ padding: "12px 16px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0", display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>DESCRIÇÃO</span>
-                <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>VALOR / MÊS</span>
-              </div>
-              {fixedCosts.map((c, i) => (
-                <div key={c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px", borderTop: i === 0 ? "none" : "1px solid #F1F5F9" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#475569", flexShrink: 0 }} />
-                    <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>{c.label}</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                    <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#475569" }}>
-                      R$ {c.value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                    </span>
-                    <button onClick={() => removeFixedCost(c.id)} style={{ padding: 6, borderRadius: 8, background: "#FEF2F2", border: "none", cursor: "pointer" }}>
-                      <Trash2 size={14} color="#C92E09" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-              <div style={{ padding: "14px 16px", background: "#F8FAFC", borderTop: "2px solid #E2E8F0", display: "flex", justifyContent: "space-between" }}>
-                <span style={{ fontWeight: 800, color: "#475569" }}>Total mensal</span>
-                <span style={{ fontWeight: 900, fontSize: "1.05rem", color: "#475569" }}>
-                  R$ {totalFixedCosts.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Impacto */}
-          {fixedCosts.length > 0 && (
-            <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: 14, padding: "1rem 1.25rem", marginTop: "1.25rem" }}>
-              <p style={{ fontWeight: 800, fontSize: "0.88rem", color: "#92400E", margin: "0 0 8px" }}>📊 Impacto no período atual ({dre.diasNoPeriodo} dias)</p>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#78350F", marginBottom: 4 }}>
-                <span>Custo proporcional do período:</span>
-                <strong>- R$ {dre.custosFixosPeriodo.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", color: "#78350F" }}>
-                <span>Lucro líquido resultante:</span>
-                <strong style={{ color: dre.lucroLiquido >= 0 ? "#0F766E" : "#C92E09" }}>
-                  R$ {dre.lucroLiquido.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                </strong>
-              </div>
-            </div>
-          )}
-          {savedFC && <div style={{ marginTop: 12, textAlign: "center", color: "#0F766E", fontWeight: 700 }}>✅ Custos salvos!</div>}
-        </div>
-      )}
-
-      {/* ===== ABA CONTAS A PAGAR =====
-           Antes esta aba tinha só o <FinanceForm />: o lojista lançava a conta e
-           não via nada, porque nunca existiu listagem. Agora quem manda é o
-           ContasAPagarClient, que traz as filas de atrasadas / hoje / futuras
-           no mesmo formato do Portal Hakim. */}
-      {activeTab === "contasapagar" && <ContasAPagarClient payables={payables} />}
-
-      {/* ===== ABA NOTAS DE COMPRAS ===== */}
-      {activeTab === "notascompras" && (
-        <div style={{ maxWidth: 1200, margin: "0 auto", padding: "1rem" }}>
-          <AjudaModulo
-            icone="🧾"
-            titulo="Notas de Compras"
-            oQueE="É o arquivo das notas e cupons de tudo o que a sua loja COMPRA — carne, embalagem, bebida, material de limpeza."
-            paraQueServe="Guardando as notas aqui, o sistema sabe quanto você gastou de verdade e o lucro do DRE para de ser chute."
-            aviso="Nota de compra é diferente de conta a pagar. Aqui é o comprovante do que você comprou; o boleto que ainda vai vencer entra na aba Contas a Pagar."
-            passos={[
-              { titulo: "Tire a foto", texto: "fotografe a nota ou o cupom direto do celular, ainda no balcão de recebimento da mercadoria." },
-              { titulo: "A IA lê sozinha", texto: "ela identifica o valor e a categoria da compra. Você só confere se ficou certo." },
-              { titulo: "Confirme", texto: "conferido, o gasto entra no seu custo do mês e aparece no DRE." },
-            ]}
-          />
-          <InvoicesClient role={(session?.user as any)?.role || "FRANCHISEE"} canSeePersonal={false} />
-        </div>
-      )}
-
-      {/* ===== MODAL DE EXTRATO DETALHADO DA COBRANÇA ===== */}
-      {showFaturaModal && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)",
-          backdropFilter: "blur(6px)", zIndex: 99999, display: "flex",
-          alignItems: "center", justifyContent: "center", padding: "1.5rem"
-        }}>
-          <div style={{
-            background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "820px",
-            maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden",
-            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)", border: "1px solid #E2E8F0"
-          }}>
-            {/* Header */}
-            <div style={{
-              background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", padding: "1.25rem 1.5rem",
-              color: "#FFFFFF", display: "flex", justifyContent: "space-between", alignItems: "center"
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ background: "rgba(255,255,255,0.1)", padding: "8px 12px", borderRadius: "10px", fontSize: "1.2rem" }}>
-                  📄
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 900, color: "#F8FAFC" }}>
-                    Extrato Detalhado da Cobrança — FireHub Pro
-                  </h3>
-                  <p style={{ margin: 0, fontSize: "0.78rem", color: "#94A3B8" }}>
-                    Detalhamento de todos os pedidos e cálculo transparente da comissão oficial de {percentualDoMes(billingCycle?.yearMonth)}%
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowFaturaModal(false)}
-                style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", fontSize: "1.2rem", fontWeight: 900 }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Content Body */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "1.5rem" }}>
-              {/* Card Resumo da taxa */}
-              <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "14px", padding: "1.25rem", marginBottom: "1.25rem" }}>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
-                  <div>
-                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>VENDAS REGISTRADAS NO CICLO</span>
-                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#0F172A", marginTop: 2 }}>
-                      {fmtR(dre.receitaBruta)}
-                    </div>
-                  </div>
-
-                  <div>
-                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>TAXA OFICIAL APLICADA</span>
-                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#0F766E", marginTop: 2, display: "flex", alignItems: "center", gap: 6 }}>
-                      {percentualDoMes(billingCycle?.yearMonth).toFixed(1).replace(".", ",")}% <span style={{ fontSize: "0.7rem", color: "#0F766E", background: "#F0FDFA", padding: "2px 6px", borderRadius: 4, fontWeight: 800 }}>Promessa Landing Page</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B" }}>VALOR DA MENSALIDADE</span>
-                    <div style={{ fontSize: "1.3rem", fontWeight: 900, color: "#1C1917", marginTop: 2 }}>
-                      {fmtR(isExempt ? 0 : billingCycle ? billingCycle.amountPending : calcMensalidade(dre.receitaBruta).mensalidade)}
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ marginTop: "1rem", paddingTop: "0.75rem", borderTop: "1px solid #E2E8F0", fontSize: "0.78rem", color: "#475569", lineHeight: 1.5 }}>
-                  💡 <strong>Regra Oficial do Plano FireHub:</strong> A comissão é de exatamente <strong>{percentualDoMes(billingCycle?.yearMonth)}% sobre o faturamento do mês</strong> (respeitando o piso mínimo de R$ 100,00 e o teto máximo fixo de R$ 400,00/mês).
-                </div>
-              </div>
-
-              {/* Tabela de Pedidos Integrantes */}
-              <h4 style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A", marginBottom: "0.75rem" }}>
-                📦 Pedidos Integrantes da Cobrança ({pedidosDaCobranca.length} pedidos)
-              </h4>
-
-              <div style={{ border: "1px solid #E2E8F0", borderRadius: "12px", overflow: "hidden" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-                  <thead>
-                    <tr style={{ background: "#F1F5F9", color: "#475569", textAlign: "left" }}>
-                      <th style={{ padding: "10px 12px" }}>Pedido</th>
-                      <th style={{ padding: "10px 12px" }}>Data / Hora</th>
-                      <th style={{ padding: "10px 12px" }}>Cliente</th>
-                      <th style={{ padding: "10px 12px" }}>Forma de Pagam.</th>
-                      <th style={{ padding: "10px 12px" }}>Valor bruto</th>
-                      <th style={{ padding: "10px 12px" }}>Comissão ({percentualDoMes(billingCycle?.yearMonth)}%)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pedidosDaCobranca.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} style={{ padding: "2rem", textAlign: "center", color: "#94A3B8" }}>
-                          Nenhum pedido no período selecionado.
-                        </td>
-                      </tr>
-                    ) : (
-                      pedidosDaCobranca.slice(0, 50).map((o: any) => {
-                        // A comissão é sobre o BRUTO (o que o cliente pagou +
-                        // cupom da loja + cupom do marketplace) — a mesma base
-                        // que lib/billing.ts usa. Mostrar o líquido aqui fazia
-                        // a soma das linhas não bater com o topo do extrato.
-                        const bruto = (o.totalAmount || 0) + (o.discountTotal || 0);
-                        // Pela data do pedido: em outubro/2026, até o dia 3 é 1%.
-                        const comissaoPedido = bruto * percentualDaVenda(o.createdAt) / 100;
-                        return (
-                          <tr key={o.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
-                            <td style={{ padding: "10px 12px", fontWeight: 800, color: "#0F172A" }}>
-                              #{getOrderDisplayNumber(o)}
-                              {o.status === "CANCELADO" && (
-                                <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "#B91C1C" }}>cancelado</div>
-                              )}
-                            </td>
-                            <td style={{ padding: "10px 12px", color: "#64748B" }}>
-                              {new Date(o.createdAt).toLocaleDateString("pt-BR")} {new Date(o.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
-                            </td>
-                            <td style={{ padding: "10px 12px" }}>{o.customerName}</td>
-                            <td style={{ padding: "10px 12px" }}>{o.paymentMethod || "Online"}</td>
-                            <td style={{ padding: "10px 12px", fontWeight: 700, color: "#0F172A" }}>
-                              {fmtR(bruto)}
-                              {(o.discountTotal || 0) > 0 && (
-                                <div style={{ fontSize: "0.7rem", fontWeight: 500, color: "#64748B" }}>
-                                  pago {fmtR(o.totalAmount)} + cupom {fmtR(o.discountTotal)}
-                                </div>
-                              )}
-                            </td>
-                            <td style={{ padding: "10px 12px", fontWeight: 800, color: "#1C1917" }}>{fmtR(comissaoPedido)}</td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-                {pedidosDaCobranca.length > 50 && (
-                  <div style={{ padding: "8px 12px", textAlign: "center", background: "#F8FAFC", fontSize: "0.75rem", color: "#64748B" }}>
-                    Mostrando os primeiros 50 pedidos de {pedidosDaCobranca.length} no ciclo.
-                  </div>
-                )}
-              </div>
-
-            </div>
-
-            {/* Footer */}
-            <div style={{ background: "#F8FAFC", borderTop: "1px solid #E2E8F0", padding: "1rem 1.5rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <button
-                onClick={() => window.print()}
-                style={{ background: "#FFFFFF", border: "1px solid #CBD5E1", borderRadius: "8px", padding: "8px 14px", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", color: "#334155" }}
-              >
-                🖨️ Imprimir / Salvar Extrato (PDF)
-              </button>
-
-              <div style={{ display: "flex", gap: "8px" }}>
-                <button
-                  onClick={() => setShowFaturaModal(false)}
-                  style={{ background: "#E2E8F0", border: "none", borderRadius: "8px", padding: "8px 14px", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", color: "#475569" }}
-                >
-                  Fechar
-                </button>
-                {/* O botão de PIX daqui só mostrava um alert "código copiado":
-                    não havia código nenhum. O pagamento é pelo boleto que o
-                    fechamento gera no Asaas — quando existe, o link vai aqui. */}
-                {billingCycle?.asaasBoletoUrl && (
-                  <a
-                    href={billingCycle.asaasBoletoUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ background: "linear-gradient(135deg, #0F766E, #0F766E)", textDecoration: "none", borderRadius: "8px", padding: "8px 16px", fontSize: "0.82rem", fontWeight: 900, color: "#FFFFFF", cursor: "pointer" }}
-                  >
-                    ⚡ Abrir boleto / pagar
-                  </a>
-                )}
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* ===== MODAL DE SOLICITAÇÃO DE SAQUE PIX ===== */}
-      {showWithdrawModal && (
-        <div style={{
-          position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.75)",
-          backdropFilter: "blur(6px)", zIndex: 99999, display: "flex",
-          alignItems: "center", justifyContent: "center", padding: "1.5rem"
-        }}>
-          <div style={{
-            background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "520px",
-            boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)", border: "1px solid #E2E8F0",
-            overflow: "hidden"
-          }}>
-            {/* Header */}
-            <div style={{
-              background: "linear-gradient(135deg, #0F766E 0%, #0F766E 100%)",
-              padding: "1.25rem 1.5rem", color: "#FFFFFF",
-              display: "flex", justifyContent: "space-between", alignItems: "center"
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                <div style={{ background: "rgba(255,255,255,0.2)", padding: "8px 10px", borderRadius: "10px", fontSize: "1.2rem" }}>
-                  💰
-                </div>
-                <div>
-                  <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 900, color: "#FFFFFF" }}>
-                    Solicitar Saque via Pix
-                  </h3>
-                  <p style={{ margin: 0, fontSize: "0.78rem", color: "rgba(255,255,255,0.85)" }}>
-                    Transfira seu saldo de vendas online diretamente para sua conta
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowWithdrawModal(false)}
-                style={{ background: "none", border: "none", color: "#fff", fontSize: "1.2rem", cursor: "pointer", padding: "4px" }}
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Body */}
-            <div style={{ padding: "1.5rem" }}>
-              {/* Card Saldo Disponível */}
-              <div style={{
-                background: "#F0FDFA", border: "1.5px solid #99F6E4",
-                borderRadius: "14px", padding: "14px", marginBottom: "16px",
-                display: "flex", justifyContent: "space-between", alignItems: "center"
-              }}>
-                <div>
-                  <span style={{ fontSize: "0.75rem", fontWeight: 700, color: "#0F766E" }}>Saldo Disponível</span>
-                  <div style={{ fontSize: "1.6rem", fontWeight: 900, color: "#0F766E" }}>
-                    {fmtR(extratoCalc.saldoDisponivel)}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setWithdrawAmount(extratoCalc.saldoDisponivel.toFixed(2))}
-                  style={{
-                    background: "#0F766E", color: "#fff", border: "none",
-                    borderRadius: "8px", padding: "8px 14px", fontSize: "0.8rem",
-                    fontWeight: 800, cursor: "pointer", fontFamily: "inherit"
-                  }}
-                >
-                  Sacar Tudo
-                </button>
-              </div>
-
-              {/* Feedback messages */}
-              {withdrawFeedback && (
-                <div style={{
-                  background: withdrawFeedback.type === "success" ? "#F0FDFA" : "#FEF2F2",
-                  border: `1px solid ${withdrawFeedback.type === "success" ? "#99F6E4" : "#FECACA"}`,
-                  color: withdrawFeedback.type === "success" ? "#0F766E" : "#B71C1C",
-                  borderRadius: "10px", padding: "10px 14px", marginBottom: "14px",
-                  fontSize: "0.84rem", fontWeight: 700
-                }}>
-                  {withdrawFeedback.type === "success" ? "✅ " : "❌ "}
-                  {withdrawFeedback.message}
-                </div>
-              )}
-
-              {/* Form Fields */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                <div>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
-                    Valor a Sacar (R$)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="1"
-                    placeholder="0.00"
-                    value={withdrawAmount}
-                    onChange={e => setWithdrawAmount(e.target.value)}
-                    style={{
-                      width: "100%", padding: "11px 14px", borderRadius: "10px",
-                      border: "1.5px solid #CBD5E1", fontSize: "1rem", fontWeight: 800,
-                      color: "#0F172A", outline: "none", boxSizing: "border-box"
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
-                    Chave Pix de Destino
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="CPF, CNPJ, Telefone, E-mail ou Chave Aleatória"
-                    value={withdrawChavePix}
-                    onChange={e => setWithdrawChavePix(e.target.value)}
-                    style={{
-                      width: "100%", padding: "10px 14px", borderRadius: "10px",
-                      border: "1.5px solid #CBD5E1", fontSize: "0.88rem",
-                      color: "#0F172A", outline: "none", boxSizing: "border-box"
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
-                    Nome do Titular da Conta
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Nome completo ou Razão Social"
-                    value={withdrawTitular}
-                    onChange={e => setWithdrawTitular(e.target.value)}
-                    style={{
-                      width: "100%", padding: "10px 14px", borderRadius: "10px",
-                      border: "1.5px solid #CBD5E1", fontSize: "0.88rem",
-                      color: "#0F172A", outline: "none", boxSizing: "border-box"
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-                <button
-                  type="button"
-                  onClick={() => setShowWithdrawModal(false)}
-                  style={{
-                    flex: 1, padding: "12px", borderRadius: "10px",
-                    border: "1.5px solid #CBD5E1", background: "#fff",
-                    color: "#475569", fontWeight: 700, cursor: "pointer",
-                    fontSize: "0.88rem", fontFamily: "inherit"
-                  }}
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRequestWithdraw}
-                  disabled={withdrawLoading || !withdrawAmount || Number(withdrawAmount) <= 0 || !withdrawChavePix.trim()}
-                  style={{
-                    flex: 2, padding: "12px", borderRadius: "10px",
-                    border: "none",
-                    background: withdrawLoading || !withdrawAmount || Number(withdrawAmount) <= 0 || !withdrawChavePix.trim()
-                      ? "#94A3B8"
-                      : "linear-gradient(135deg, #0F766E, #0F766E)",
-                    color: "#fff", fontWeight: 800, cursor: withdrawLoading ? "not-allowed" : "pointer",
-                    fontSize: "0.88rem", fontFamily: "inherit",
-                    boxShadow: "0 4px 14px rgba(15, 118, 110, 0.3)"
-                  }}
-                >
-                  {withdrawLoading ? "Processando..." : "Confirmar Solicitação de Saque"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       </div>
     </div>
   );

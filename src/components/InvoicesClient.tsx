@@ -335,9 +335,13 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
             </h4>
             <p style={{ margin: "0 0 16px", fontSize: "0.86rem", color: "#64748B", lineHeight: 1.6 }}>
               Toda vez que chegar mercadoria — carne, embalagem, bebida, limpeza —
-              fotografe a nota aqui. Leva 10 segundos e é o que faz o
-              <strong style={{ color: "#334155" }}> lucro do seu DRE virar o lucro real</strong>,
-              em vez de uma conta só com o que entrou.
+              fotografe a nota aqui. Leva 10 segundos e deixa guardado
+              <strong style={{ color: "#334155" }}> o que você comprou, de quem e por quanto</strong>,
+              para conferir preço de fornecedor e achar o comprovante quando precisar.
+              {/* As notas NÃO entram no DRE (o custo de lá é o custo cadastrado em
+                  cada produto, e somar compras contaria o gasto duas vezes). O
+                  texto prometia "lucro do seu DRE virar o lucro real" — auditoria
+                  de 11/10/2026. */}
             </p>
             <div style={{
               background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12,
@@ -346,7 +350,8 @@ export default function InvoicesClient({ role, canSeePersonal = false }: { role:
             }}>
               <strong style={{ color: "#0F172A" }}>Comece assim:</strong> clique em
               “Nova Nota” acima, tire a foto do cupom e confira o valor que a IA leu.
-              Pronto — o gasto já entra no custo do mês.
+              Pronto — a compra fica no histórico da loja. (O DRE não soma as notas:
+              o custo dele vem do custo cadastrado em cada produto do cardápio.)
             </div>
           </div>
         ) : (

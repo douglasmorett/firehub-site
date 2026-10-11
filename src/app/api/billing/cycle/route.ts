@@ -1,20 +1,26 @@
 /**
  * GET /api/billing/cycle
- * Retorna o ciclo de faturamento atual do franqueado logado.
- * Usado para exibir o widget de mensalidade no painel financeiro.
+ * O ciclo de faturamento atual da LOJA (não de quem está logado), as faturas
+ * fechadas que ainda estão em aberto e — com `?pedidos=1` — os pedidos que
+ * formam a base da mensalidade do mês (a janela "Detalhes da Cobrança").
+ *
+ * Usava o id da SESSÃO: o funcionário com acesso ao Financeiro via a
+ * mensalidade calculada sobre a conta dele, que não vende nada (auditoria de
+ * 11/10/2026). A loja sai de lib/financeiro/contexto.ts, a mesma da página.
  */
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { getCurrentCycleView } from "@/lib/billing";
+import { NextRequest, NextResponse } from "next/server";
+import { getCurrentCycleView, pedidosDoCicloAtual } from "@/lib/billing";
+import { contextoDoFinanceiro } from "@/lib/financeiro/contexto";
 
-export async function GET() {
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+export const dynamic = "force-dynamic";
 
-  const franchiseeId = (session.user as any).id;
-  if (!franchiseeId) return NextResponse.json({ error: "ID não encontrado" }, { status: 400 });
+export async function GET(req: NextRequest) {
+  const r = await contextoDoFinanceiro(req.cookies.get("firehub_active_store")?.value);
+  if (!r.ok) return NextResponse.json({ error: r.erro }, { status: r.status });
+  const lojaId = r.valor.donoId;
 
-  const cycle = await getCurrentCycleView(franchiseeId);
-  return NextResponse.json(cycle);
+  if (req.nextUrl.searchParams.get("pedidos") === "1") {
+    return NextResponse.json(await pedidosDoCicloAtual(lojaId));
+  }
+  return NextResponse.json(await getCurrentCycleView(lojaId));
 }

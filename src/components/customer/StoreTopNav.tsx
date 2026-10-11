@@ -1666,6 +1666,40 @@ export default function StoreTopNav({
               </button>
               {menuCardapio && (
                 <div style={{ position:"absolute", top:"calc(100% + 8px)", right:0, background:"#fff", border:"1px solid #E2E8F0", borderRadius:14, boxShadow:"0 8px 32px rgba(0,0,0,0.18)", minWidth:250, zIndex:500, overflow:"hidden" }}>
+                  {/* O link de TODAS as lojas (/lojas/<principal>): quem tem mais de
+                      uma loja divulga este, e cada cliente cai na loja que entrega
+                      para ele. Vem antes do link desta loja de propósito. */}
+                  {linksDasLojas && linksDasLojas.length > 1 && (() => {
+                    const caminhoDoGrupo = `/lojas/${linksDasLojas[0].slug}`;
+                    const copiadoGrupo = linkDaLojaCopiado === "grupo";
+                    return (
+                      <div style={{ padding:"0.7rem 1rem", background:"linear-gradient(135deg, #FFF7ED 0%, #FFFFFF 90%)", borderBottom:"1.5px solid #FED7AA" }}>
+                        <div style={{ fontSize:"0.68rem", fontWeight:800, color:"#C2410C", textTransform:"uppercase", letterSpacing:"0.04em" }}>🔗 Link de todas as lojas</div>
+                        <div style={{ fontSize:"0.72rem", color:"#9A3412", wordBreak:"break-all", margin:"3px 0 8px" }}>
+                          {typeof window !== "undefined" ? `${window.location.host}${caminhoDoGrupo}` : caminhoDoGrupo}
+                        </div>
+                        <div style={{ display:"flex", gap:6 }}>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await copiarTexto(`${window.location.origin}${caminhoDoGrupo}`);
+                              setLinkDaLojaCopiado("grupo");
+                              setTimeout(() => setLinkDaLojaCopiado((v) => (v === "grupo" ? null : v)), 1400);
+                            }}
+                            style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"6px 10px", borderRadius:8, border:"none", background: copiadoGrupo ? "#0F766E" : "#C2410C", color:"#fff", fontWeight:700, fontSize:"0.74rem", cursor:"pointer", fontFamily:"inherit" }}
+                          >
+                            {copiadoGrupo ? <Check size={13} /> : <Copy size={13} />} {copiadoGrupo ? "Copiado" : "Copiar"}
+                          </button>
+                          <a href={caminhoDoGrupo} target="_blank" rel="noreferrer" style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"6px 10px", borderRadius:8, border:"1px solid #FDBA74", background:"#fff", color:"#9A3412", fontWeight:700, fontSize:"0.74rem", textDecoration:"none" }}>
+                            <ExternalLink size={13} /> Abrir
+                          </a>
+                          <a href="/store/minha-loja#lojas" onClick={() => setMenuCardapio(false)} style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"6px 10px", borderRadius:8, border:"1px solid #FDBA74", background:"#fff", color:"#9A3412", fontWeight:700, fontSize:"0.74rem", textDecoration:"none" }}>
+                            Personalizar
+                          </a>
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div style={{ padding:"0.6rem 1rem", borderBottom:"1px solid #F1F5F9", fontSize:"0.7rem", color:"#64748B", wordBreak:"break-all" }}>
                     {typeof window !== "undefined" ? `${window.location.host}${storeUrl}` : storeUrl}
                   </div>

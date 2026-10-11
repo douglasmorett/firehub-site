@@ -264,6 +264,11 @@ model User {
   // Nulo = nada obrigatório, que é como toda loja nasce.
   balcaoConfig        Json?
 
+  // === PÁGINA DAS SUAS LOJAS (/lojas/[slug]) ===
+  // Só na loja PRINCIPAL do grupo: título, frase, cor, capa, ordem e lojas
+  // ocultas — lib/pagina-do-grupo-config.ts. Nulo = página padrão.
+  paginaDoGrupo       Json?
+
   // === CONTA FUNCIONÁRIO (FIADO) ===
   employeeAccountEnabled Boolean @default(false)
   storeEmployees        StoreEmployee[]

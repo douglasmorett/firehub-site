@@ -1,125 +1,82 @@
 import { prisma } from "@/lib/prisma";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import DREClient from "./DREClient";
 import { garantirEstruturaDeDespesas } from "@/lib/garantir-colunas";
+import { contextoDoFinanceiro } from "@/lib/financeiro/contexto";
+import { dadosDoPeriodoDoFinanceiro } from "@/lib/financeiro/periodo-do-financeiro";
+import { lerComissoesDosApps, lerPeriodo, MAX_DIAS_DO_FINANCEIRO, type DadosDoPeriodo } from "@/lib/financeiro/dre";
+import { getCurrentCycleView, type VisaoDoCiclo } from "@/lib/billing";
+import { dataDaLoja } from "@/lib/fuso";
+import { somarDias } from "@/lib/relatorios/base";
 
 export const dynamic = "force-dynamic";
 
-export default async function StoreFinanceiroPage() {
-  // Auth FORA de try/catch — redirect() não pode ser capturado
-  const session = await getServerSession(authOptions).catch((err) => {
-    console.error("[Financeiro] Erro ao obter sessão:", err);
+const ABAS = ["mensalidade", "extrato", "relatorio", "configuracoes", "dre", "custosfix", "pagamentos", "contasapagar", "notascompras"] as const;
+/** As abas que mostram números do período (as mesmas do DREClient, mais Configurações, que mostra as vendas de cada app). */
+const ABAS_COM_PERIODO = new Set<string>(["dre", "extrato", "relatorio", "pagamentos", "custosfix", "configuracoes"]);
+
+export default async function StoreFinanceiroPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
+  // De qual loja é o dinheiro: a do dono (funcionário → a loja do dono; ADMIN
+  // → a loja ativa do seletor). Antes taxas, custos fixos e metas vinham da
+  // linha de quem estava logado (lib/financeiro/contexto.ts).
+  const r = await contextoDoFinanceiro((await cookies()).get("firehub_active_store")?.value);
+  if (!r.ok) redirect(r.status === 401 ? "/login" : "/store");
+  const ctx = r.valor;
+  const lojaId = ctx.donoId;
+
+  const sp = await searchParams;
+  const um = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
+  // O período é o dos Relatórios: dia operacional da loja, no fuso dela.
+  const { de, ate } = lerPeriodo(um(sp.de), um(sp.ate), ctx.hoje);
+  const abaPedida = um(sp.tab);
+  const aba = (ABAS as readonly string[]).includes(abaPedida || "") ? (abaPedida as (typeof ABAS)[number]) : "mensalidade";
+
+  // A mensalidade (aba Mensalidade e a linha do DRE) é a do ciclo do servidor —
+  // a mesma conta do boleto (lib/billing.ts). Vai pronta: a seção "#fatura",
+  // para onde o aviso do topo manda, existe já no primeiro desenho da tela.
+  const visaoDoCiclo: VisaoDoCiclo | null = await getCurrentCycleView(lojaId).catch((err) => {
+    console.error("[Financeiro] Erro ao montar o ciclo da mensalidade:", err);
     return null;
   });
-  if (!session) redirect("/login");
 
-  const role = (session.user as any)?.role;
-  if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/login");
-
-  // Busca do usuário FORA de try/catch
-  const user = await prisma.user.findUnique({
-    where: { email: session.user?.email || "" },
-    select: {
-      id: true, paymentFees: true, storeName: true,
-      storeOrderCount: true, createdAt: true,
-      fixedCosts: true, financialGoals: true, role: true, ownerId: true,
-      repasseConfig: true,
+  // Os números do período só quando a aba aberta usa o período. A aba padrão
+  // (Mensalidade — para onde o aviso do topo manda) não usa: a tela busca o
+  // período quando o lojista abre o DRE, o Extrato ou o Relatório.
+  let dados: DadosDoPeriodo | null = null;
+  let erroDoPeriodo: string | null = null;
+  if (ABAS_COM_PERIODO.has(aba)) {
+    try {
+      dados = await dadosDoPeriodoDoFinanceiro({ lojaId, tz: ctx.tz, hoje: ctx.hoje, de, ate, isenta: ctx.isenta, visaoDoCiclo });
+    } catch (err) {
+      console.error("[Financeiro] Erro ao montar o período:", err);
+      erroDoPeriodo = "Não foi possível carregar os números do período. Tente de novo.";
     }
-  }).catch((err) => {
-    console.error("[Financeiro] Erro ao buscar usuário:", err);
-    return null;
-  });
-  if (!user) redirect("/login");
-
-  const targetFranchiseeId = (user as any).ownerId || user.id;
-
-  const since = new Date();
-  since.setDate(since.getDate() - 365);
-
-  // ADMIN vê tudo, FRANCHISEE / STAFF vê os produtos da sua loja
-  const franchiseeFilter = user.role === "ADMIN"
-    ? { createdAt: { gte: since } }
-    : { franchiseeId: targetFranchiseeId, createdAt: { gte: since } };
-
-  let orders: any[] = [];
-  let produtosSemCusto: any[] = [];
-
-  try {
-    orders = await prisma.customerOrder.findMany({
-      where: franchiseeFilter,
-      include: {
-        items: { include: { menuProduct: { select: { name: true, cost: true } } } },
-        motoboy: { select: { name: true, paymentType: true, perDeliveryRate: true, dailyRate: true, perKmRate: true } }
-      },
-      orderBy: { createdAt: "desc" }
-    });
-
-    // Produtos sem custo filtrados por franqueado
-    const produtoFilter = user.role === "ADMIN"
-      ? { OR: [{ cost: null }, { cost: 0 }] }
-      : { franchiseeId: targetFranchiseeId, OR: [{ cost: null }, { cost: 0 }] };
-
-    produtosSemCusto = await prisma.menuProduct.findMany({
-      where: produtoFilter,
-      select: { name: true, id: true }
-    });
-  } catch (err) {
-    console.error("[Financeiro] Erro ao buscar dados:", err);
-    orders = [];
-    produtosSemCusto = [];
   }
 
-  const serialized = orders.map(o => ({
-    id: o.id,
-    totalAmount: o.totalAmount,
-    deliveryFee: o.deliveryFee || 0,
-    motoboyFee: o.motoboyFee || 0,
-    deliveryDistance: o.deliveryDistance || 0,
-    status: o.status,
-    deliveryType: o.deliveryType,
-    paymentMethod: o.paymentMethod || "",
-    pagarmeMethod: (o as any).pagarmeMethod || null,
-    // Prova de pagamento pelo gateway. Sem estes quatro campos aqui, a regra
-    // de saldo do DREClient vira um `false` fixo: ela os lê no navegador e
-    // eles chegariam sempre undefined, então o painel mostraria R$ 0,00 mesmo
-    // com dinheiro real no gateway — sem erro nenhum para diagnosticar.
-    gatewayProvider: (o as any).gatewayProvider || null,
-    gatewayPaymentId: (o as any).gatewayPaymentId || null,
-    pagarmeOrderId: (o as any).pagarmeOrderId || null,
-    paymentPaidAt: (o as any).paymentPaidAt ? (o as any).paymentPaidAt.toISOString() : null,
-    source: o.source || "ONLINE",
-    createdAt: o.createdAt.toISOString(),
-    items: o.items.map((i: any) => ({
-      quantity: i.quantity,
-      price: i.price,
-      cost: i.menuProduct?.cost || 0,
-      name: i.menuProduct?.name || "Produto"
-    })),
-    motoboy: o.motoboy ? {
-      name: o.motoboy.name,
-      paymentType: o.motoboy.paymentType,
-      perDeliveryRate: o.motoboy.perDeliveryRate || 0,
-    } : null
-  }));
-
-  const fixedCosts = Array.isArray(user.fixedCosts) ? (user.fixedCosts as any[]) : [];
-  const financialGoals = (user.financialGoals as any) || {};
+  let produtosSemCusto: { id: string; name: string | null }[] = [];
+  try {
+    produtosSemCusto = await prisma.menuProduct.findMany({
+      where: { franchiseeId: lojaId, active: true, OR: [{ cost: null }, { cost: 0 }] },
+      select: { name: true, id: true },
+    });
+  } catch (err) {
+    console.error("[Financeiro] Erro ao buscar produtos sem custo:", err);
+  }
 
   // ── CONTAS A PAGAR ────────────────────────────────────────────────────────
-  //
-  // A aba existia só com o formulário: o lojista lançava a conta, via
-  // "registrado com sucesso" e nada aparecia — não havia consulta nenhuma no
-  // servidor, então não existia lista para mostrar. É isto que traz os dados.
   //
   // As datas viajam como "YYYY-MM-DD" já recortado, e não como ISO completo,
   // porque o vencimento é uma DATA, não um instante: mandar o timestamp faz o
   // navegador em UTC-3 exibir "vence dia 09" numa conta gravada para o dia 10.
+  //
+  // O "pago em" é diferente: é o INSTANTE do clique em "Já paguei" e vira dia
+  // no fuso da LOJA. Recortado em UTC, a conta paga em 06/10 às 23:05 aparecia
+  // "Pago em 07/10" (auditoria de 11/10/2026).
   let payables: any[] = [];
   try {
     payables = await prisma.payable.findMany({
-      where: { franchiseeId: targetFranchiseeId },
+      where: { franchiseeId: lojaId },
       orderBy: { dueDate: "asc" },
       select: {
         id: true, supplierName: true, value: true, status: true,
@@ -141,17 +98,17 @@ export default async function StoreFinanceiroPage() {
     barcode: p.barcode || null,
     dueDate: p.dueDate.toISOString().slice(0, 10),
     receivedDate: p.receivedDate ? p.receivedDate.toISOString().slice(0, 10) : null,
-    paidDate: p.paidDate ? p.paidDate.toISOString().slice(0, 10) : null,
+    paidDate: p.paidDate ? dataDaLoja(ctx.tz, p.paidDate) : null,
   }));
 
   // ── DESPESAS LANÇADAS À MÃO ───────────────────────────────────────────────
   // O que não nasce do pedido nem é custo fixo (gás, embalagem, conserto). O
-  // dia já é texto "YYYY-MM-DD", então o recorte do ano compara texto.
+  // dia já é texto "YYYY-MM-DD"; vêm as do maior período que a tela aceita.
   let despesas: { id: string; dia: string; categoria: string; descricao: string | null; valor: number }[] = [];
   try {
     if (await garantirEstruturaDeDespesas()) {
       despesas = await prisma.despesaLancada.findMany({
-        where: { franchiseeId: targetFranchiseeId, dia: { gte: since.toISOString().slice(0, 10) } },
+        where: { franchiseeId: lojaId, dia: { gte: somarDias(ctx.hoje, -MAX_DIAS_DO_FINANCEIRO) } },
         orderBy: [{ dia: "desc" }, { createdAt: "desc" }],
         select: { id: true, dia: true, categoria: true, descricao: true, valor: true },
       });
@@ -160,16 +117,23 @@ export default async function StoreFinanceiroPage() {
     console.error("[Financeiro] Erro ao buscar despesas lançadas:", err);
   }
 
+  const fixedCosts = (Array.isArray(ctx.dono.fixedCosts) ? (ctx.dono.fixedCosts as any[]) : [])
+    .map((c) => ({ id: String(c?.id ?? ""), label: String(c?.label ?? ""), value: Number(c?.value) || 0 }))
+    .filter((c) => c.label);
+
   return (
     <DREClient
-      orders={serialized}
-      paymentFees={(user.paymentFees as any) || {}}
-      storeName={user.storeName || "Minha Loja"}
-      storeCreatedAt={user.createdAt.toISOString()}
-      produtosSemCusto={produtosSemCusto.map(p => ({ id: p.id, name: p.name || "Sem nome" }))}
+      inicio={{ de, ate, hoje: ctx.hoje, tz: ctx.tz, aba }}
+      dadosIniciais={dados}
+      erroInicial={erroDoPeriodo}
+      cicloInicial={visaoDoCiclo}
+      papel={ctx.papel}
+      paymentFees={(ctx.dono.paymentFees as any) || {}}
+      storeName={ctx.dono.storeName || "Minha Loja"}
+      produtosSemCusto={produtosSemCusto.map((p) => ({ id: p.id, name: p.name || "Sem nome" }))}
       initialFixedCosts={fixedCosts}
-      initialGoals={financialGoals}
-      initialRepasseConfig={(user.repasseConfig as any) || {}}
+      comissoesIniciais={lerComissoesDosApps(ctx.dono.financialGoals)}
+      initialRepasseConfig={(ctx.dono.repasseConfig as any) || {}}
       payables={payablesSerialized}
       initialDespesas={despesas}
     />

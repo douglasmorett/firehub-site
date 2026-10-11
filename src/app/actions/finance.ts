@@ -39,7 +39,13 @@ export async function createPayable(data: {
     return { error: "Data de vencimento é obrigatória." };
   }
 
-  const receivedDate = data.receivedDate ? new Date(data.receivedDate) : new Date();
+  // Recebimento e vencimento são DATAS: o campo "AAAA-MM-DD" vira meia-noite
+  // UTC, e a tela recorta o texto de volta. Vazio = hoje NO FUSO DA LOJA, do
+  // mesmo jeito — `new Date()` era o instante, e depois das 21h de Brasília o
+  // recorte em UTC já dizia "amanhã".
+  const receivedDate = data.receivedDate
+    ? new Date(data.receivedDate)
+    : new Date(`${dataDaLoja(await fusoDaLoja(targetFranchiseeId))}T00:00:00.000Z`);
   const dueDate = new Date(data.dueDate);
 
   try {
