@@ -59,12 +59,20 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
     );
   }
 
+  const faturas = ciclo.faturasEmAberto || [];
+
+  // Loja isenta HOJE pode ter boleto de antes em aberto (virou parceira, teve o
+  // percentual zerado): a fatura aparece primeiro, como para qualquer loja —
+  // a faixa do topo cobra e trava pelo mesmo boleto.
   if (ciclo.isExempt) {
     return (
-      <div id="fatura" style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", borderRadius: 20, padding: "1.75rem", color: "#fff", border: "1.5px solid #0F766E" }}>
-        <span style={{ background: "#F0FDFA", color: "#0F766E", padding: "4px 12px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 900 }}>✨ Conta isenta</span>
-        <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>Mensalidade FireHub (isenta)</h2>
-        <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>Esta loja não paga mensalidade nem comissão da plataforma.</p>
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+        {faturas.length > 0 && <FaturasEmAberto faturas={faturas} />}
+        <div id={faturas.length === 0 ? "fatura" : undefined} style={{ background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", borderRadius: 20, padding: "1.75rem", color: "#fff", border: "1.5px solid #0F766E" }}>
+          <span style={{ background: "#F0FDFA", color: "#0F766E", padding: "4px 12px", borderRadius: 20, fontSize: "0.78rem", fontWeight: 900 }}>✨ Conta isenta</span>
+          <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>Mensalidade FireHub (isenta)</h2>
+          <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>Esta loja não paga mensalidade nem comissão da plataforma.</p>
+        </div>
       </div>
     );
   }
@@ -104,54 +112,10 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
     </div>
   );
 
-  const faturas = ciclo.faturasEmAberto || [];
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
       {/* ── FATURA FECHADA EM ABERTO (para onde o aviso do topo manda) ──── */}
-      {faturas.length > 0 && (
-        <div id="fatura" style={{ display: "flex", flexDirection: "column", gap: 12, scrollMarginTop: 80 }}>
-          {faturas.map((f) => {
-            const dias = diasAte(f.venceEm);
-            return (
-              <div key={f.yearMonth} style={{
-                background: f.vencida ? "#FEF2F2" : "#EFF6FF", border: `2px solid ${f.vencida ? "#C92E09" : "#1D4ED8"}`,
-                borderRadius: 18, padding: "1.25rem 1.5rem", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", justifyContent: "space-between",
-              }}>
-                <div>
-                  <div style={{ fontSize: "0.78rem", fontWeight: 900, color: f.vencida ? "#C92E09" : "#1D4ED8", letterSpacing: 0.5 }}>
-                    {f.vencida ? "FATURA VENCIDA" : "FATURA EM ABERTO"}
-                  </div>
-                  <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#0F172A", marginTop: 2 }}>
-                    Mensalidade de {mesPorExtenso(f.yearMonth)} · {fmtR(f.valor)}
-                  </div>
-                  <div style={{ fontSize: "0.84rem", color: "#475569", marginTop: 4 }}>
-                    {dias > 0
-                      ? <>Vence em <strong>{diaEMes(f.venceEm)}</strong> ({dias === 1 ? "falta 1 dia" : `faltam ${dias} dias`}).</>
-                      : dias === 0
-                        ? <>Vence <strong>hoje ({diaEMes(f.venceEm)})</strong>.</>
-                        // `bloqueiaEm` é o INSTANTE da trava (00h do dia 11): o último dia
-                        // de uso é o anterior a ele.
-                        : <>Venceu em <strong>{diaEMes(f.venceEm)}</strong> e já está com juros e multa. Sem o pagamento, o sistema trava depois do dia {new Date(new Date(f.bloqueiaEm).getTime() - 1).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}.</>}
-                  </div>
-                </div>
-                {f.boletoUrl ? (
-                  <a href={f.boletoUrl} target="_blank" rel="noreferrer" style={{
-                    background: f.vencida ? "#C92E09" : "#1D4ED8", color: "#fff", textDecoration: "none", padding: "12px 22px",
-                    borderRadius: 12, fontSize: "0.92rem", fontWeight: 900, whiteSpace: "nowrap",
-                  }}>
-                    ⚡ Pagar (boleto, Pix ou cartão)
-                  </a>
-                ) : (
-                  <span style={{ fontSize: "0.82rem", color: "#475569" }}>
-                    O link do boleto não ficou gravado. Fale com o suporte pelo WhatsApp para receber a fatura.
-                  </span>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      {faturas.length > 0 && <FaturasEmAberto faturas={faturas} />}
 
       {/* ── O MÊS EM ANDAMENTO ─────────────────────────────────────────── */}
       <div id={faturas.length === 0 ? "fatura" : undefined} style={{
@@ -235,6 +199,53 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
       </div>
 
       {verDetalhes && <DetalhesDaCobranca ciclo={ciclo} tz={tz} onFechar={() => setVerDetalhes(false)} />}
+    </div>
+  );
+}
+
+/** As faturas FECHADAS em aberto, a mais antiga primeiro (seção #fatura). */
+function FaturasEmAberto({ faturas }: { faturas: VisaoDoCiclo["faturasEmAberto"] }) {
+  return (
+    <div id="fatura" style={{ display: "flex", flexDirection: "column", gap: 12, scrollMarginTop: 80 }}>
+      {faturas.map((f) => {
+        const dias = diasAte(f.venceEm);
+        return (
+          <div key={f.yearMonth} style={{
+            background: f.vencida ? "#FEF2F2" : "#EFF6FF", border: `2px solid ${f.vencida ? "#C92E09" : "#1D4ED8"}`,
+            borderRadius: 18, padding: "1.25rem 1.5rem", display: "flex", flexWrap: "wrap", gap: 16, alignItems: "center", justifyContent: "space-between",
+          }}>
+            <div>
+              <div style={{ fontSize: "0.78rem", fontWeight: 900, color: f.vencida ? "#C92E09" : "#1D4ED8", letterSpacing: 0.5 }}>
+                {f.vencida ? "FATURA VENCIDA" : "FATURA EM ABERTO"}
+              </div>
+              <div style={{ fontSize: "1.25rem", fontWeight: 900, color: "#0F172A", marginTop: 2 }}>
+                Mensalidade de {mesPorExtenso(f.yearMonth)} · {fmtR(f.valor)}
+              </div>
+              <div style={{ fontSize: "0.84rem", color: "#475569", marginTop: 4 }}>
+                {dias > 0
+                  ? <>Vence em <strong>{diaEMes(f.venceEm)}</strong> ({dias === 1 ? "falta 1 dia" : `faltam ${dias} dias`}).</>
+                  : dias === 0
+                    ? <>Vence <strong>hoje ({diaEMes(f.venceEm)})</strong>.</>
+                    // `bloqueiaEm` é o INSTANTE da trava (00h do dia 11): o último dia
+                    // de uso é o anterior a ele.
+                    : <>Venceu em <strong>{diaEMes(f.venceEm)}</strong> e já está com juros e multa. Sem o pagamento, o sistema trava depois do dia {new Date(new Date(f.bloqueiaEm).getTime() - 1).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}.</>}
+              </div>
+            </div>
+            {f.boletoUrl ? (
+              <a href={f.boletoUrl} target="_blank" rel="noreferrer" style={{
+                background: f.vencida ? "#C92E09" : "#1D4ED8", color: "#fff", textDecoration: "none", padding: "12px 22px",
+                borderRadius: 12, fontSize: "0.92rem", fontWeight: 900, whiteSpace: "nowrap",
+              }}>
+                ⚡ Pagar (boleto, Pix ou cartão)
+              </a>
+            ) : (
+              <span style={{ fontSize: "0.82rem", color: "#475569" }}>
+                O link do boleto não ficou gravado. Fale com o suporte pelo WhatsApp para receber a fatura.
+              </span>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

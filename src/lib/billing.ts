@@ -1172,6 +1172,50 @@ export async function getCurrentCycleView(franchiseeId: string) {
 export type VisaoDoCiclo = Awaited<ReturnType<typeof getCurrentCycleView>>;
 
 /**
+ * O que o fechamento de um mês QUE JÁ ACABOU vai cobrar, sem gravar nada — a
+ * conta de `closeBillingCycle` (mesma base, mesmo uso, mesmas lojas extras e
+ * taxas do ciclo). Serve para o DRE no intervalo entre o fim do mês e o cron
+ * de fechamento (madrugada do dia 1): o `amountDue` gravado só é refeito nos
+ * fluxos próprios e sem o mínimo por uso, e loja só de marketplace pode nem
+ * ter a linha do ciclo ainda.
+ */
+export async function previsaoDoFechamento(franchiseeId: string, yearMonth: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true, ifoodConnected: true, food99Connected: true },
+  });
+  const cycle = await prisma.franchiseeBillingCycle.findUnique({
+    where: { franchiseeId_yearMonth: { franchiseeId, yearMonth } },
+    select: { metaAdsFee: true, totemFee: true },
+  });
+  const nada = { mensalidade: 0, lojasExtras: 0, outrosServicos: 0, custo: 0, isenta: false, totalSales: 0 };
+  if (lojaIsenta(user)) return { ...nada, isenta: true };
+
+  const tz = user?.storeTimezone || "America/Sao_Paulo";
+  const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
+  const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
+  const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0);
+  if (inicio === null) {
+    // Teste no mês inteiro: mensalidade e lojas extras perdoadas; tráfego e
+    // totem são serviço prestado e o fechamento cobra.
+    return { ...nada, outrosServicos, custo: parseFloat(outrosServicos.toFixed(2)) };
+  }
+  const agg = await prisma.customerOrder.aggregate({
+    where: { franchiseeId, ...VENDAS_QUE_CONTAM, createdAt: { gte: inicio, lt: monthEnd } },
+    _sum: CAMPOS_DO_BRUTO,
+  });
+  const totalSales = faturamentoBruto(agg._sum);
+  const hasUsage = totalSales > 0 || (await detectarUsoDaLoja(franchiseeId, inicio, monthEnd)).usou;
+  const antes = await vendasAntesDaVirada(franchiseeId, yearMonth, inicio, monthEnd);
+  const mensalidade = hasUsage ? calcMensalidade(totalSales, hasUsage, yearMonth, antes).mensalidade : 0;
+  const lojasExtras = (await lojasExtrasDeMarketplace(franchiseeId, user)).total;
+  const custo = mensalidade + lojasExtras + outrosServicos;
+  // Abaixo de R$ 1 o fechamento não emite boleto (ver closeBillingCycle).
+  if (custo < 1) return { ...nada, totalSales };
+  return { mensalidade, lojasExtras, outrosServicos, custo: parseFloat(custo.toFixed(2)), isenta: false, totalSales };
+}
+
+/**
  * Os pedidos que formam a base da mensalidade do mês corrente — a MESMA
  * janela (`inicioDaCobranca` até o fim do mês) e o mesmo filtro
  * (VENDAS_QUE_CONTAM) de `getCurrentCycleView`: somados pelo bruto, dão o

@@ -113,6 +113,22 @@ export default function DREClient({
     carregar(p.de, p.ate);
   };
 
+  // Os campos de data são texto até a data estar completa: o Chrome solta
+  // "0002-10-05" enquanto se digita o ano, e cada passo virava uma carga de
+  // até 400 dias (o período era cortado e o campo pulava no meio da
+  // digitação). Só aplica data de 2020 em diante, depois de uma pausa.
+  const [textoDe, setTextoDe] = useState(inicio.de);
+  const [textoAte, setTextoAte] = useState(inicio.ate);
+  useEffect(() => { setTextoDe(periodo.de); setTextoAte(periodo.ate); }, [periodo.de, periodo.ate]);
+  useEffect(() => {
+    const completa = (d: string) => /^20[2-9]\d-\d{2}-\d{2}$/.test(d);
+    if (!completa(textoDe) || !completa(textoAte)) return;
+    if (textoDe === periodo.de && textoAte === periodo.ate) return;
+    const t = setTimeout(() => mudarPeriodo(textoDe, textoAte), 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textoDe, textoAte]);
+
   const dre = useMemo(
     () => (dados ? calcularDRE({ dados, custosFixos: custos, despesas, comissoes, paymentFees }) : null),
     [dados, custos, despesas, comissoes, paymentFees],
@@ -167,12 +183,12 @@ export default function DREClient({
                   </button>
                 ))}
                 <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                  <input type="date" value={periodo.de} max={hoje} aria-label="De"
-                    onChange={(e) => e.target.value && mudarPeriodo(e.target.value, periodo.ate)}
+                  <input type="date" value={textoDe} min="2020-01-01" max={hoje} aria-label="De"
+                    onChange={(e) => setTextoDe(e.target.value)}
                     style={{ padding: "5px 8px", borderRadius: 8, border: `1.5px solid ${atalhoAtivo ? "#E2E8F0" : "#0F172A"}`, fontSize: "0.78rem" }} />
                   <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>até</span>
-                  <input type="date" value={periodo.ate} max={hoje} aria-label="Até"
-                    onChange={(e) => e.target.value && mudarPeriodo(periodo.de, e.target.value)}
+                  <input type="date" value={textoAte} min="2020-01-01" max={hoje} aria-label="Até"
+                    onChange={(e) => setTextoAte(e.target.value)}
                     style={{ padding: "5px 8px", borderRadius: 8, border: `1.5px solid ${atalhoAtivo ? "#E2E8F0" : "#0F172A"}`, fontSize: "0.78rem" }} />
                 </div>
               </div>

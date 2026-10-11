@@ -94,7 +94,7 @@ async function main() {
       console.log(`\n  ── ${p.rotulo} (${p.de} a ${p.ate}) · ${dados.pedidos.length} pedidos lidos em ${ms} ms`);
       console.log(`  ${bate("valor vendido DRE × Relatórios (R$)", dre.valorVendido, rel.totalPedidos)} · ${bate("vendas", dre.vendas, rel.atendimentos, 0)} · ${bate("ticket (R$)", dre.ticketMedio, rel.ticketMedio)}`);
       console.log(`  vendas por tipo: ${dre.porTipo.map((t) => `${t.rotulo} ${t.vendas}`).join(" · ")} · lançamentos ${dre.lancamentos} (mesas ${dre.mesasAtendidas})`);
-      console.log(`  frete: loja ${R(dre.freteDaLoja)} · corridas do app ${R(dre.freteDoApp)} (${dre.entregasDoApp}) · desconto no fechamento da mesa ${R(dre.descontoNaMesa)} (${dre.mesasComDesconto} mesas) · cupom do app ${R(dre.cupomDoApp)}`);
+      console.log(`  frete: loja ${R(dre.freteDaLoja)} · corridas do app ${R(dre.freteDoApp)} (${dre.entregasDoApp}) · taxa de serviço do app ${R(dre.taxaDoApp)} (${dre.pedidosComTaxaDoApp}) · desconto no fechamento da mesa ${R(dre.descontoNaMesa)} (${dre.mesasComDesconto} mesas) · cupom do app ${R(dre.cupomDoApp)}`);
       console.log(`  receita da loja ${R(dre.receitaDaLoja)} · CMV ${R(dre.cmv)} (custo cadastrado em ${(dre.cobertura * 100).toFixed(1)}% do valor dos itens) · lucro bruto ${R(dre.lucroBruto)}`);
       console.log(`  comissões: ${dre.comissoes.map((c) => `${c.nome} ${c.pct === null ? "NÃO CONFIGURADA" : `${c.pct}% = ${R(c.valor)}`} (itens ${R(c.base)})`).join(" · ") || "sem venda de app"}`);
       console.log(`  taxas de pagamento ${R(dre.totalTaxas)}: ${dre.taxas.map((t) => `${t.rotulo} ${t.configurada ? `${t.pct}% (${t.comoFoi})` : "NÃO CADASTRADA"} sobre ${R(t.base)} = ${R(t.valor)}`).join(" · ")}`);

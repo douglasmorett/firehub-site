@@ -31,8 +31,10 @@
  *    dos pedidos que são venda (`entraNaVenda`). VENDAS = atendimentos (a mesa
  *    conta uma vez), ticket = valor ÷ vendas. É o mesmo número dos Relatórios.
  * 3. RECEITA DA LOJA = valor vendido − taxa de entrega das corridas feitas
- *    pelo app (fica com o app) − desconto dado no fechamento da mesa + cupom
- *    que o app bancou (o app repassa à loja).
+ *    pelo app (fica com o app) − taxa de serviço que o app cobra do cliente
+ *    (a sobra da conta do pedido de app: total − itens − entrega + desconto)
+ *    − desconto dado no fechamento da mesa + cupom que o app bancou (o app
+ *    repassa à loja).
  * 4. CUSTOS que andam com a venda (margem de contribuição): CMV pelo custo
  *    cadastrado, comissão dos apps pelo percentual que A LOJA cadastra, taxa
  *    de pagamento pela forma do caixa (`formaDoPedido`) e pela média das
@@ -52,6 +54,7 @@
 import { atendimentosDaVenda, cent, reais, situacaoDoPedido, ticketMedio } from "@/lib/relatorios/regua-da-venda";
 import { ROTULO_DO_TIPO, TIPOS_DE_VENDA, diasNoPeriodo, periodoDoAtalho, somarDias, type AtalhoDePeriodo, type TipoDeVenda } from "@/lib/relatorios/base";
 import { canaisConhecidos, type ChaveDeCanal } from "@/lib/canal-do-pedido";
+import { calcMensalidade, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import type { ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 
 // ── PERÍODO ─────────────────────────────────────────────────────────────────
@@ -188,6 +191,14 @@ export type PedidoDoFinanceiro = {
   taxaOnline: number;
   /** Cupom que o app bancou (formas-de-pagamento.ts, cupomDaPlataforma): o app repassa à loja. */
   cupomDoApp: number;
+  /**
+   * Pedido de app: o que o cliente pagou além de itens + entrega − desconto
+   * (lib/relatorios/vendas.ts, outrasTaxasDoPedido, só a parte positiva) — a
+   * taxa de serviço do app (R$ 0,99 a 2,49 no iFood), que fica com o app. No
+   * 99Food gravado pelo preço cheio, é o desconto que entrou em dobro no
+   * total. Zero nos outros canais.
+   */
+  taxaDoApp: number;
   // O que o Extrato mostra: o texto do pagamento, se foi Pix ou cartão pelo
   // site e quando o pagamento online foi confirmado.
   paymentMethod: string;
@@ -228,7 +239,12 @@ export type ResumoDasMesas = {
   erro?: string | null;
 };
 
-export type SituacaoDoCiclo = "fechado" | "pago" | "previsto" | "isento" | "teste" | "sem-cobranca";
+/**
+ * fechado/pago = mês fechado (o boleto); projetado = mês em andamento (a
+ * previsão do mês inteiro pelo ritmo de vendas); previsto = mês que acabou e
+ * o fechamento ainda não rodou (a conta do fechamento).
+ */
+export type SituacaoDoCiclo = "fechado" | "pago" | "projetado" | "previsto" | "isento" | "teste" | "sem-cobranca";
 
 /** Um mês da mensalidade que o período toca. */
 export type CicloNoPeriodo = {
@@ -353,6 +369,9 @@ export type ResultadoDoDRE = {
   produtos: number;
   freteDaLoja: number;
   freteDoApp: number;
+  /** Taxa de serviço (e sobras) que o app cobra do cliente e fica com ele. */
+  taxaDoApp: number;
+  pedidosComTaxaDoApp: number;
   cupomDoApp: number;
   descontoNaMesa: number;
   mesasComDesconto: number;
@@ -416,7 +435,7 @@ export function calcularDRE(e: {
   const dias = diasNoPeriodo(de, ate);
 
   // ── RECEITA (a régua única) ────────────────────────────────────────────
-  let cValor = 0, cFrete = 0, cFreteApp = 0, cCupomApp = 0;
+  let cValor = 0, cFrete = 0, cFreteApp = 0, cCupomApp = 0, cTaxaApp = 0, nTaxaApp = 0;
   let cItens = 0, cItensComCusto = 0, cCusto = 0;
   let nCanc = 0, cCanc = 0;
   let entregasDaLoja = 0, entregasSemEntregador = 0, entregasDoApp = 0;
@@ -443,6 +462,7 @@ export function calcularDRE(e: {
     cFrete += frete;
     if (p.entregaDoApp) cFreteApp += frete;
     cCupomApp += cent(p.cupomDoApp);
+    if (p.taxaDoApp > 0) { cTaxaApp += cent(p.taxaDoApp); nTaxaApp++; }
     cItens += cent(p.itens);
     cItensComCusto += cent(p.itensComCusto);
     cCusto += cent(p.custo);
@@ -497,7 +517,7 @@ export function calcularDRE(e: {
 
   const valorVendido = reais(cValor);
   const descontoNaMesa = dados.mesas.descontoNoFechamento;
-  const receitaDaLoja = reais(cValor - cFreteApp - cent(descontoNaMesa) + cCupomApp);
+  const receitaDaLoja = reais(cValor - cFreteApp - cTaxaApp - cent(descontoNaMesa) + cCupomApp);
 
   // ── CMV ────────────────────────────────────────────────────────────────
   const cmv = reais(cCusto);
@@ -620,8 +640,11 @@ export function calcularDRE(e: {
   if (entregadores.semDistancia > 0) {
     avisos.push(`${entregadores.semDistancia} ${entregadores.semDistancia === 1 ? "corrida paga" : "corridas pagas"} por distância sem distância medida entraram como R$ 0,00 (como no fechamento dos motoboys)`);
   }
+  if (mesesDaMensalidade.some((m) => m.situacao === "projetado")) {
+    avisos.push("a mensalidade do mês em andamento é projetada para o mês inteiro pelo ritmo de vendas até agora (o valor final sai no fechamento) e entra pelos dias do período");
+  }
   if (mesesDaMensalidade.some((m) => m.situacao === "previsto")) {
-    avisos.push("a mensalidade do mês em andamento é a previsão até agora — o valor final sai no fechamento do mês");
+    avisos.push("o mês que acabou ainda não foi fechado: a mensalidade dele é a conta do fechamento refeita agora");
   }
 
   return {
@@ -638,6 +661,8 @@ export function calcularDRE(e: {
     produtos: reais(cValor - cFrete),
     freteDaLoja: reais(cFrete - cFreteApp),
     freteDoApp: reais(cFreteApp),
+    taxaDoApp: reais(cTaxaApp),
+    pedidosComTaxaDoApp: nTaxaApp,
     cupomDoApp: reais(cCupomApp),
     descontoNaMesa,
     mesasComDesconto: dados.mesas.mesasComDesconto,
@@ -671,6 +696,52 @@ export function calcularDRE(e: {
     avisos,
     completo: pendencias.length === 0,
   };
+}
+
+// ── MENSALIDADE DO MÊS EM ANDAMENTO ────────────────────────────────────────
+
+const DIA_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * A mensalidade do MÊS EM ANDAMENTO projetada para o mês inteiro pelo ritmo
+ * de vendas até agora, para o DRE ratear por dia do mesmo jeito que faz com o
+ * mês fechado (o boleto inteiro × dias do período ÷ dias do mês).
+ *
+ * A previsão da aba Mensalidade é "até agora" — a porcentagem das vendas que
+ * já aconteceram. Ratear ESSA previsão pelos dias do mês dividia duas vezes:
+ * Brazza, 11/10/2026, R$ 162,65 de previsão + R$ 100 de lojas extras, e o
+ * "Este mês" do DRE mostrava R$ 93,20 de mensalidade em vez de ~R$ 177.
+ *
+ * O ritmo conta do começo da base (fim do teste ou dia 1) até agora, com no
+ * mínimo um dia. Em outubro/2026 a parte a 1% (01 a 03/10) já está completa
+ * e não se projeta; projeta-se só o que corre a 2%. Mínimo e teto valem sobre
+ * o mês projetado (calcMensalidade). Nunca abaixo da previsão até agora.
+ */
+export function projetarMensalidadeDoMes(e: {
+  yearMonth: string;
+  /** Vendas na base até agora (o `totalSales` da visão do ciclo). */
+  vendas: number;
+  /** A parte delas cobrada a 1% (antes de 04/10/2026). */
+  vendasA1PorCento: number;
+  /** Começo da base: fim do teste no meio do mês, ou o começo do mês. */
+  desde: Date;
+  /** Fim do mês (instante, lib/billing.ts intervaloDoMes). */
+  fimDoMes: Date;
+  agora: Date;
+  /** O mínimo por uso do sistema sem venda (cobrancaPorUso.valor), ou 0. */
+  minimoPorUso: number;
+  /** A previsão até agora (mensalidadePrevista): o piso. */
+  previstaAteAgora: number;
+}): number {
+  const a1 = Math.max(0, Math.min(e.vendasA1PorCento, e.vendas));
+  const aParteA1Acabou = a1 > 0 && e.agora > VIRADA_DOS_2_POR_CENTO && VIRADA_DOS_2_POR_CENTO > e.desde;
+  const inicioDoRitmo = aParteA1Acabou ? VIRADA_DOS_2_POR_CENTO : e.desde;
+  const noRitmo = aParteA1Acabou ? e.vendas - a1 : e.vendas;
+  const decorrido = Math.max(DIA_MS, e.agora.getTime() - inicioDoRitmo.getTime());
+  const restanteTotal = Math.max(decorrido, e.fimDoMes.getTime() - inicioDoRitmo.getTime());
+  const projetado = (aParteA1Acabou ? a1 : 0) + noRitmo * (restanteTotal / decorrido);
+  const doMes = projetado > 0 ? calcMensalidade(projetado, true, e.yearMonth, a1).mensalidade : Math.max(0, e.minimoPorUso);
+  return Math.max(e.previstaAteAgora, Math.round(doMes * 100) / 100);
 }
 
 // ── DE ONDE O DINHEIRO CHEGA (abas Extrato e Relatório) ─────────────────────

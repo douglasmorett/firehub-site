@@ -21,7 +21,8 @@ const corDoValor = (v: number) => (v >= 0 ? verde : vermelho);
 const ROTULO_DA_SITUACAO: Record<string, string> = {
   fechado: "boleto emitido",
   pago: "pago",
-  previsto: "previsão",
+  projetado: "projeção do mês",
+  previsto: "fechamento a rodar",
   isento: "isento",
   teste: "em teste",
   "sem-cobranca": "sem cobrança",
@@ -92,7 +93,7 @@ export default function AbaDRE({
       {/* ── CARTÕES ────────────────────────────────────────────────────── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "1rem", marginBottom: "1.5rem" }}>
         <KPICard icon={<DollarSign size={18} color={verde} />} label="Valor vendido" value={fmtR(dre.valorVendido)}
-          sub={`${fmtNum(dre.vendas)} ${dre.vendas === 1 ? "venda" : "vendas"} · o mesmo valor dos Relatórios`} color={verde} />
+          sub={`${fmtNum(dre.vendas)} ${dre.vendas === 1 ? "venda" : "vendas"} · o mesmo valor dos Relatórios desta loja`} color={verde} />
         {dre.completo ? (
           <KPICard icon={<TrendingUp size={18} color="#1C1917" />} label="Resultado do período (DRE)" value={<span style={{ color: corDoValor(dre.resultado) }}>{fmtR(dre.resultado)}</span>}
             sub={`${fmtPct(dre.margens.resultado)} da receita da loja`} color="#1C1917" />
@@ -153,13 +154,17 @@ export default function AbaDRE({
 
         <TituloDaSecao cor={verde} fundo="#F0FDFA">RECEITAS</TituloDaSecao>
         <DRERow label="(+) Valor vendido" value={dre.valorVendido} bold
-          detalhe={`${fmtNum(dre.vendas)} vendas (${fmtNum(dre.lancamentos)} lançamentos; a mesa conta uma vez) · o mesmo valor dos Relatórios`} />
+          detalhe={`${fmtNum(dre.vendas)} vendas (${fmtNum(dre.lancamentos)} lançamentos; a mesa conta uma vez) · o mesmo valor dos Relatórios desta loja`} />
         <DRERow label="Pedidos sem a taxa de entrega" value={dre.produtos} indent={1} />
         <DRERow label="Taxa de entrega — entregas da loja" value={dre.freteDaLoja} indent={1} />
         {dre.freteDoApp > 0 && <DRERow label="Taxa de entrega — corridas do entregador do app" value={dre.freteDoApp} indent={1} />}
         {dre.freteDoApp > 0 && (
           <DRERow label="(-) Taxa de entrega que fica com o app" value={-dre.freteDoApp} color={vermelho}
             detalhe={`${fmtNum(dre.entregasDoApp)} corridas feitas pelo entregador do app: o cliente paga a taxa, mas ela não é da loja`} />
+        )}
+        {dre.taxaDoApp > 0 && (
+          <DRERow label="(-) Taxa de serviço do app (fica com o app)" value={-dre.taxaDoApp} color={vermelho}
+            detalhe={`${fmtNum(dre.pedidosComTaxaDoApp)} pedidos de app: a diferença entre o total do pedido e itens + entrega − desconto, que fica com o app (a taxa de serviço; no 99Food gravado pelo preço cheio, o desconto que entrou em dobro no total)`} />
         )}
         {dre.descontoNaMesa > 0 && (
           <DRERow label="(-) Desconto dado no fechamento das mesas" value={-dre.descontoNaMesa} color={vermelho}
@@ -206,7 +211,9 @@ export default function AbaDRE({
 
         <TituloDaSecao cor="#1C1917" fundo="#FAF6F2">PLATAFORMA FIREHUB</TituloDaSecao>
         <DRERow label="(-) Mensalidade FireHub" value={-dre.mensalidade.total} color="#1C1917"
-          detalhe={dre.mensalidade.isenta ? "loja isenta de mensalidade" : "o valor do ciclo de cobrança de cada mês (o do boleto), dividido pelos dias do período"} />
+          detalhe={dre.mensalidade.isenta
+            ? "loja isenta de mensalidade"
+            : "o boleto de cada mês (o mês em andamento projetado pelo ritmo de vendas até agora), pela parte dos dias do mês que cai no período"} />
         {!dre.mensalidade.isenta && dre.mensalidade.meses.map((m) => (
           <DRERow key={m.mes} indent={1}
             label={`${nomeDoMes(m.mes)} (${ROTULO_DA_SITUACAO[m.situacao || ""] || ""}): ${fmtR(m.valorDoMes)} × ${m.dias}/${m.diasDoMes} dias`}

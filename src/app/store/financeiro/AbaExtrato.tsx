@@ -141,7 +141,7 @@ export function AbaExtrato({ dados, comissoes, repasseConfig }: { dados: DadosDo
           <div style={{ fontSize: "0.86rem", fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>📋 Para onde foi o dinheiro das vendas</div>
           {[
             { rotulo: "Recebido na loja (caixa)", valor: receb.naLoja.total },
-            { rotulo: "Pago no app (chega pelo repasse do app)", valor: receb.noApp.total },
+            { rotulo: "Pago no app (total pago pelo cliente; o repasse vem sem a comissão e as taxas do app)", valor: receb.noApp.total },
             { rotulo: "Pago online pelo site (conta Asaas)", valor: receb.site.total },
           ].map((l) => (
             <div key={l.rotulo} style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #F1F5F9", fontSize: "0.86rem" }}>
@@ -270,11 +270,12 @@ export function AbaRelatorio({ dados, dre }: { dados: DadosDoPeriodo; dre: Resul
           <Linha rotulo="Total recebido na loja" valor={fmtR(receb.naLoja.total)} forte />
         </Cartao>
 
-        <Cartao titulo="Pago no app (repasse do app)">
+        <Cartao titulo="Pago no app (total pago pelo cliente)">
           {receb.noApp.linhas.length === 0 ? <span style={{ color: "#94A3B8" }}>Nenhum pedido pago no app no período.</span> : receb.noApp.linhas.map((l) => (
             <Linha key={l.canal} rotulo={l.nome} valor={fmtR(l.valor)} />
           ))}
           <Linha rotulo="Total pago no app" valor={fmtR(receb.noApp.total)} forte />
+          <span style={{ fontSize: "0.74rem", color: "#94A3B8" }}>O repasse do app vem sem a comissão e sem a taxa de serviço que ele cobra do cliente (veja o DRE).</span>
         </Cartao>
 
         <Cartao titulo="Pago online pelo site (conta Asaas)">

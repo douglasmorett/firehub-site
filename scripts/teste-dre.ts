@@ -15,7 +15,7 @@
  */
 import {
   ATALHOS_DO_FINANCEIRO, atalhoDoFinanceiro, calcularDRE, economiaNosCanaisProprios, entraNoDRE, lerComissoesDosApps,
-  lerPeriodo, mesesDoPeriodo, periodoDoFinanceiro, pontoDeEquilibrio, recebimentosDoPeriodo, taxaDaForma,
+  lerPeriodo, mesesDoPeriodo, periodoDoFinanceiro, pontoDeEquilibrio, projetarMensalidadeDoMes, recebimentosDoPeriodo, taxaDaForma,
   type CicloNoPeriodo, type DadosDoPeriodo, type PedidoDoFinanceiro,
 } from "../src/lib/financeiro/dre";
 import { naLoja, tipoDeVenda } from "../src/lib/relatorios/base";
@@ -88,7 +88,7 @@ async function main() {
     id: `p${++seq}`, numero: String(seq), status: "ENTREGUE", deliveryFee: 0,
     tipo: "DELIVERY", canal: "SITE", marketplace: false, entregaDoApp: false, temEntregador: true,
     tableSessionId: null, parentOrderId: null, itens: p.totalAmount - (p.deliveryFee || 0), itensComCusto: 0, custo: 0,
-    impossivel: false, pagamentos: [{ forma: "DINHEIRO", valor: p.totalAmount }], taxaOnline: 0, cupomDoApp: 0,
+    impossivel: false, pagamentos: [{ forma: "DINHEIRO", valor: p.totalAmount }], taxaOnline: 0, cupomDoApp: 0, taxaDoApp: 0,
     paymentMethod: "Dinheiro", pagarmeMethod: null, paymentPaidAt: null,
     ...p,
   });
@@ -98,7 +98,8 @@ async function main() {
     pedido({ criadoEm: "2026-10-05T22:30:00Z", totalAmount: 60, tipo: "MESA", canal: "MESA", tableSessionId: "s1", pagamentos: [], itens: 60, itensComCusto: 60, custo: 18 }),
     pedido({ criadoEm: "2026-10-05T23:00:00Z", totalAmount: 40, tipo: "MESA", canal: "MESA", tableSessionId: "s1", pagamentos: [], itens: 40, itensComCusto: 40, custo: 12 }),
     // iFood com entregador do iFood: a taxa de R$ 8 fica com o app (E1).
-    pedido({ criadoEm: "2026-10-06T23:00:00Z", totalAmount: 108, deliveryFee: 8, canal: "IFOOD", marketplace: true, entregaDoApp: true, temEntregador: false, itens: 100, itensComCusto: 100, custo: 30, pagamentos: [{ forma: "ONLINE", valor: 108 }], cupomDoApp: 10, paymentMethod: "Pago Online" }),
+    // E a taxa de serviço do iFood (R$ 0,99), que o cliente paga ao app.
+    pedido({ criadoEm: "2026-10-06T23:00:00Z", totalAmount: 108, deliveryFee: 8, canal: "IFOOD", marketplace: true, entregaDoApp: true, temEntregador: false, itens: 100, itensComCusto: 100, custo: 30, pagamentos: [{ forma: "ONLINE", valor: 108 }], cupomDoApp: 10, taxaDoApp: 0.99, paymentMethod: "Pago Online" }),
     // iFood com entrega da loja, pago na entrega no crédito (taxa da maquininha).
     pedido({ criadoEm: "2026-10-07T23:00:00Z", totalAmount: 55, deliveryFee: 5, canal: "IFOOD", marketplace: true, itens: 50, itensComCusto: 50, custo: 15, pagamentos: [{ forma: "CREDITO", valor: 55 }], paymentMethod: "Crédito (Cobrar na Entrega)" }),
     // 99Food sem comissão cadastrada → pendência.
@@ -137,7 +138,8 @@ async function main() {
   confere("ticket = valor ÷ vendas", dre.ticketMedio, Math.round((somaValida / 7) * 100) / 100);
   confere("por tipo: Entrega/Mesa/Retirada", dre.porTipo.map((t) => [t.rotulo, t.vendas]), [["Entrega", 5], ["Retirada", 1], ["Mesa", 1]]);
   confere("frete da corrida do app sai da receita", [dre.freteDoApp, dre.freteDaLoja], [8, 17]);
-  confere("receita da loja = valor − frete do app − desconto da mesa + cupom do app", dre.receitaDaLoja, somaValida - 8 - 15 + 10);
+  confere("receita da loja = valor − frete do app − taxa de serviço do app − desconto da mesa + cupom do app", dre.receitaDaLoja, Math.round((somaValida - 8 - 0.99 - 15 + 10) * 100) / 100);
+  confere("taxa de serviço do app em linha própria", [dre.taxaDoApp, dre.pedidosComTaxaDoApp], [0.99, 1]);
   confere("CMV pelo custo cadastrado", dre.cmv, 15 + 18 + 12 + 30 + 15 + 12 + 30 + 9 + 12);
   confere("cobertura de custo = 100%", dre.cobertura, 1);
   confere("comissão do iFood = 20% dos itens; 99Food sem percentual", dre.comissoes.map((c) => [c.canal, c.base, c.pct, c.valor]), [["IFOOD", 150, 20, 30], ["99FOOD", 40, null, 0]]);
@@ -227,6 +229,32 @@ async function main() {
   });
   confere("Divinos em teste: mensalidade do DRE = R$ 0", divinos.mensalidade.total, 0);
   confere("loja isenta: R$ 0", calcularDRE({ dados: { ...dados, isenta: true, ciclos: [] }, custosFixos: [], despesas: [], comissoes: {}, paymentFees: {} }).mensalidade.total, 0);
+
+  // Mês em andamento: a previsão "até agora" não pode ser rateada pelos dias do
+  // mês (dividia duas vezes). Brazza, 11/10 às 10h: R$ 4.430,44 a 1% (01–03/10)
+  // + R$ 5.917,40 a 2% em 7,4 dias → o mês projetado passa do teto (R$ 400).
+  const projetadaBrazza = projetarMensalidadeDoMes({
+    yearMonth: "2026-10", vendas: 10347.84, vendasA1PorCento: 4430.44,
+    desde: new Date("2026-10-01T03:00:00Z"), fimDoMes: new Date("2026-11-01T03:00:00Z"), agora: new Date("2026-10-11T13:00:00Z"),
+    minimoPorUso: 0, previstaAteAgora: 162.65,
+  });
+  confere("Brazza: mensalidade do mês projetada pelo ritmo (teto)", projetadaBrazza, 400);
+  confere("Brazza 'Este mês' no DRE: (400 + 100 de lojas extras) × 11/31 (antes R$ 93,20)",
+    calcularDRE({ dados: { ...dados, de: "2026-10-01", ate: "2026-10-11", pedidos: [], mesas: { ...dados.mesas, pagamentos: [], descontoNoFechamento: 0 },
+      ciclos: [{ mes: "2026-10", mensalidade: projetadaBrazza, lojasExtras: 100, outrosServicos: 0, custo: projetadaBrazza + 100, situacao: "projetado" }] },
+      custosFixos: [], despesas: [], comissoes: {}, paymentFees: {} }).mensalidade.total, 177.42);
+  confere("ritmo baixo: o mínimo do mês (não a previsão rateada duas vezes)", projetarMensalidadeDoMes({
+    yearMonth: "2026-11", vendas: 1000, vendasA1PorCento: 0, desde: new Date("2026-11-01T03:00:00Z"), fimDoMes: new Date("2026-12-01T03:00:00Z"),
+    agora: new Date("2026-11-11T03:00:00Z"), minimoPorUso: 0, previstaAteAgora: 100 }), 100);
+  confere("ritmo médio: 2% do mês projetado", projetarMensalidadeDoMes({
+    yearMonth: "2026-11", vendas: 5000, vendasA1PorCento: 0, desde: new Date("2026-11-01T03:00:00Z"), fimDoMes: new Date("2026-12-01T03:00:00Z"),
+    agora: new Date("2026-11-11T03:00:00Z"), minimoPorUso: 0, previstaAteAgora: 100 }), 300);
+  confere("sem venda e com uso: o mínimo por uso", projetarMensalidadeDoMes({
+    yearMonth: "2026-11", vendas: 0, vendasA1PorCento: 0, desde: new Date("2026-11-01T03:00:00Z"), fimDoMes: new Date("2026-12-01T03:00:00Z"),
+    agora: new Date("2026-11-02T03:00:00Z"), minimoPorUso: 100, previstaAteAgora: 100 }), 100);
+  confere("teste acabou no meio do mês: o ritmo conta do fim do teste", projetarMensalidadeDoMes({
+    yearMonth: "2026-11", vendas: 2000, vendasA1PorCento: 0, desde: new Date("2026-11-21T03:00:00Z"), fimDoMes: new Date("2026-12-01T03:00:00Z"),
+    agora: new Date("2026-11-26T03:00:00Z"), minimoPorUso: 0, previstaAteAgora: 100 }), 100);
 
   // ── 9. O QUE A TELA MOSTRA EM VOLTA (E13/E14) ───────────────────────────
   console.log("\n— Economia e recebimentos —");

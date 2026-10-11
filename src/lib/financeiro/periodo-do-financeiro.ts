@@ -14,23 +14,35 @@ import { prisma } from "@/lib/prisma";
 import { janelaDoPeriodo, type ContextoDoRelatorio } from "@/lib/relatorios/servidor";
 import { mesasFechadasDoPeriodo } from "@/lib/relatorios/mesas-do-periodo";
 import { canalDoRelatorio, tipoDeVenda } from "@/lib/relatorios/base";
-import { servicoDasMesas, temValorImpossivel } from "@/lib/relatorios/regua-da-venda";
-import { cupomDaPlataforma, formaDoTexto, precisaDoDetalheDoCupom } from "@/lib/relatorios/formas-de-pagamento";
+import { servicoDasMesas, situacaoDoPedido, temValorImpossivel } from "@/lib/relatorios/regua-da-venda";
+import { cupomDaPlataforma, formaDoTexto, precisaDoDetalheDoCupom, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
+import { outrasTaxasDoPedido, precisaDoDetalheDoDesconto } from "@/lib/relatorios/vendas";
 import { partesDaEntrega } from "@/lib/resumo-do-entregador";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 import { infoDaEntrega } from "@/lib/entrega-parceira";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
 import { montarRelatorioDosEntregadores } from "@/lib/relatorio-do-entregador";
+import { mesSeguinte } from "@/lib/prazo-da-mensalidade";
 import {
-  getCurrentCycleView, getCurrentYearMonth, inicioDaCobranca, intervaloDoMes, lojasExtrasDeMarketplace, type VisaoDoCiclo,
+  getCurrentCycleView, getCurrentYearMonth, inicioDaCobranca, intervaloDoMes, lojasExtrasDeMarketplace, previsaoDoFechamento,
+  type VisaoDoCiclo,
 } from "@/lib/billing";
 import {
-  mesesDoPeriodo,
+  mesesDoPeriodo, projetarMensalidadeDoMes,
   type CicloNoPeriodo, type DadosDoPeriodo, type PedidoDoFinanceiro, type ResumoDosEntregadores,
 } from "@/lib/financeiro/dre";
 
 const MARKETPLACES = new Set<string>(canaisConhecidos().filter((c) => c.ehMarketplace).map((c) => c.chave));
 const c2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Estados do split em que o 1% do FireHub saiu de fato da cobrança do Asaas
+ * (lib/pix-online-pedido.ts). RECUSADO, SEM_CARTEIRA e MESMA_CONTA (gravados
+ * na criação) e CANCELLED/REFUSED/BLOCKED_* (da conferência) são cobranças que
+ * saíram SEM a taxa — contar o 1% nelas tirava da loja um dinheiro que ficou
+ * com ela.
+ */
+const SPLIT_COBRADO = new Set(["ENVIADO", "PENDING", "AWAITING_CREDIT", "PROCESSING", "DONE"]);
 
 /** As colunas do pedido que o DRE e o Extrato leem. Nunca `include` sem select. */
 const COLUNAS = {
@@ -98,9 +110,10 @@ async function entregadoresDoPeriodo(lojaId: string, inicio: Date, fim: Date, tz
  *
  *   • mês fechado: o valor do boleto (sem a multa de atraso) + o que o
  *     abatimento de pagamento online já tinha quitado;
- *   • mês corrente: a previsão da aba Mensalidade (getCurrentCycleView);
- *   • mês anterior ainda não fechado: a mensalidade recalculada do ciclo +
- *     taxas + lojas extras (a conta do fechamento).
+ *   • mês corrente: a previsão da aba Mensalidade (getCurrentCycleView),
+ *     com a mensalidade projetada para o mês inteiro pelo ritmo de vendas;
+ *   • mês que acabou e ainda não foi fechado: a conta do fechamento refeita
+ *     sem gravar (previsaoDoFechamento).
  */
 async function ciclosDoPeriodo(
   lojaId: string, de: string, ate: string, tz: string, isenta: boolean, visao?: VisaoDoCiclo | null,
@@ -126,18 +139,47 @@ async function ciclosDoPeriodo(
   for (const mes of meses) {
     if (mes === atual) {
       const v = visao ?? await getCurrentCycleView(lojaId);
-      const mensalidade = v.mensalidadePrevista ?? 0;
+      if (v.isExempt) { saida.push({ mes, ...zero, situacao: "isento" }); continue; }
+      // A previsão da aba é "até agora"; o DRE rateia o MÊS INTEIRO por dia,
+      // então a mensalidade é projetada pelo ritmo de vendas (dre.ts,
+      // projetarMensalidadeDoMes). Lojas extras, tráfego e totem já são do mês.
+      const { monthStart, monthEnd } = intervaloDoMes(mes, tz);
+      const mensalidade = v.emTeste ? 0 : projetarMensalidadeDoMes({
+        yearMonth: mes,
+        vendas: v.totalSales,
+        vendasA1PorCento: v.vendasA1PorCento ?? 0,
+        desde: v.cobrancaDesde ? new Date(v.cobrancaDesde) : monthStart,
+        fimDoMes: monthEnd,
+        agora: new Date(),
+        minimoPorUso: v.cobrancaPorUso?.valor ?? 0,
+        previstaAteAgora: v.mensalidadePrevista ?? 0,
+      });
       const lojasExtras = v.taxas?.lojasExtras ?? 0;
       const outros = (v.taxas?.trafegoPago ?? 0) + (v.taxas?.totem ?? 0);
       const custo = c2(mensalidade + lojasExtras + outros);
       saida.push({
         mes, mensalidade, lojasExtras, outrosServicos: c2(outros), custo,
-        situacao: v.isExempt ? "isento" : v.emTeste && custo === 0 ? "teste" : "previsto",
+        situacao: v.emTeste && custo === 0 ? "teste" : "projetado",
       });
       continue;
     }
     const c = doMes.get(mes);
-    if (!c || mes > atual || c.status === "FORGIVEN") { saida.push({ mes, ...zero, situacao: "sem-cobranca" }); continue; }
+    if (mes > atual || c?.status === "FORGIVEN") { saida.push({ mes, ...zero, situacao: "sem-cobranca" }); continue; }
+    if (!c || c.status === "OPEN") {
+      // Mês que já acabou e o fechamento ainda não rodou (madrugada do dia 1):
+      // a conta do fechamento refeita agora, sem gravar (lib/billing.ts). SEM
+      // a linha do ciclo, só o mês logo anterior e só com venda: é o caso em
+      // que o cron (garantirCiclosDoMes) ainda vai criar o ciclo e fechar. Mês
+      // mais antigo sem ciclo, ou sem venda, não vira boleto nenhum.
+      const podeVirarBoleto = !!c || mesSeguinte(mes) === atual;
+      const p = podeVirarBoleto ? await previsaoDoFechamento(lojaId, mes) : null;
+      if (!p || (!c && p.totalSales <= 0)) { saida.push({ mes, ...zero, situacao: "sem-cobranca" }); continue; }
+      saida.push({
+        mes, mensalidade: p.mensalidade, lojasExtras: p.lojasExtras, outrosServicos: c2(p.outrosServicos), custo: p.custo,
+        situacao: p.isenta ? "isento" : p.custo === 0 ? "sem-cobranca" : "previsto",
+      });
+      continue;
+    }
 
     const outros = c2((c.metaAdsFee || 0) + (c.totemFee || 0));
     const { monthStart, monthEnd } = intervaloDoMes(mes, tz);
@@ -179,13 +221,8 @@ async function ciclosDoPeriodo(
       continue;
     }
 
-    // Mês que já acabou e o fechamento ainda não rodou: a conta do fechamento.
-    const extras = testeNoMesInteiro ? 0 : (await lojasExtrasDeMarketplace(lojaId, loja)).total;
-    const mensalidade = devido;
-    saida.push({
-      mes, mensalidade, lojasExtras: extras, outrosServicos: outros, custo: c2(mensalidade + extras + outros),
-      situacao: "previsto",
-    });
+    // Outro estado de ciclo que não cobra nada.
+    saida.push({ mes, ...zero, situacao: "sem-cobranca" });
   }
   return saida;
 }
@@ -217,7 +254,11 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
   // O cupom que o app bancou às vezes só está na observação ou no detalhe do
   // desconto (99Food antigo). Só esses pedidos buscam os campos pesados — a
   // mesma economia do relatório Formas de pagamento.
-  const precisam = brutos.filter((o) => precisaDoDetalheDoCupom(o as any)).map((o) => o.id);
+  // O mesmo detalhe decide de quem é o desconto do pedido de app sem as
+  // colunas (lib/relatorios/vendas.ts, descontoDoPedido) — e daí a taxa do app.
+  const precisam = brutos
+    .filter((o) => precisaDoDetalheDoCupom(o as any) || (MARKETPLACES.has(canalDoRelatorio(o as any)) && precisaDoDetalheDoDesconto(o)))
+    .map((o) => o.id);
   const detalhes = new Map<string, { notes: string | null; discountDetails: unknown }>();
   for (let i = 0; i < precisam.length; i += 500) {
     const lote = await prisma.customerOrder.findMany({
@@ -261,8 +302,10 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
       custo: cCusto / 100,
       impossivel: temValorImpossivel(o),
       pagamentos: o.tableSessionId ? [] : partesDaEntrega(o).map((p) => ({ forma: p.caixa, valor: p.valor })),
-      taxaOnline: pago ? Number((o.taxaOnline as any)?.valor) || 0 : 0,
+      // O 1% do FireHub só quando o split saiu de fato (SPLIT_COBRADO).
+      taxaOnline: pago && SPLIT_COBRADO.has(String((o.taxaOnline as any)?.split || "").toUpperCase()) ? Number((o.taxaOnline as any)?.valor) || 0 : 0,
       cupomDoApp: marketplace ? cupomDaPlataforma({ ...o, notes: extra?.notes ?? null, discountDetails: extra?.discountDetails ?? null } as any) : 0,
+      taxaDoApp: marketplace ? Math.max(0, outrasTaxasDoPedido({ ...o, discountDetails: extra?.discountDetails ?? null } as any)) : 0,
       paymentMethod: o.paymentMethod || "",
       pagarmeMethod: o.pagarmeMethod,
       paymentPaidAt: o.paymentPaidAt ? o.paymentPaidAt.toISOString() : null,
@@ -292,23 +335,32 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
   const servico = servicoDasMesas(mesasFechadas);
 
   // As baixas das mesas, sem o TROCO: a baixa grava a nota que o cliente
-  // entregou (R$ 50 numa conta de R$ 13,90). O que passou de consumo + serviço
-  // + gorjeta sai do dinheiro daquela conta — a regra do relatório Formas de
-  // pagamento (lib/relatorios/formas-de-pagamento.ts, "O TROCO").
+  // entregou (R$ 50 numa conta de R$ 13,90). A conta é a do relatório Formas
+  // de pagamento (lib/relatorios/formas-de-pagamento.ts, "O TROCO"), linha a
+  // linha: consumo pelos pedidos que são venda (valor impossível fora), taxa e
+  // gorjeta como gravadas (a taxa negativa antiga era desconto), conta antiga
+  // com total pago e sem baixas em "não identificado", e o que passou do
+  // devido sai do dinheiro desta conta, da maior nota para a menor.
   const pagamentosDasMesas = mesasFechadas.flatMap((m) => {
-    const partes = lerPagamentos(m.pagamentos).map((p) => ({ forma: formaDoTexto(p.method), centavos: Math.round(p.amount * 100) }));
-    const consumo = (m.pedidos || [])
-      .filter((o) => !["CANCELADO", "CANCELLED", "CANCELED", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"].includes(String(o.status || "").toUpperCase()))
-      .reduce((s, o) => s + Math.round((Number(o.totalAmount) || 0) * 100), 0);
-    const devido = consumo + Math.round(Math.max(0, Number(m.serviceFee) || 0) * 100) + Math.round(Math.max(0, Number(m.waiterTip) || 0) * 100);
-    let troco = Math.max(0, partes.reduce((s, p) => s + p.centavos, 0) - devido);
-    for (const p of [...partes].filter((x) => x.forma === "DINHEIRO").sort((a, b) => b.centavos - a.centavos)) {
-      if (troco <= 0) break;
-      const tira = Math.min(troco, p.centavos);
-      p.centavos -= tira;
-      troco -= tira;
+    const cent = (v: unknown) => Math.round((Number(v) || 0) * 100);
+    const servico = cent(m.serviceFee), gorjeta = cent(m.waiterTip);
+    let consumo = 0;
+    for (const o of m.pedidos || []) {
+      if (situacaoDoPedido(o.status) !== "venda" || temValorImpossivel(o)) continue;
+      consumo += cent(o.totalAmount);
     }
-    return partes.filter((p) => p.centavos > 0).map((p) => ({ forma: p.forma, valor: p.centavos / 100 }));
+    const baixas: { forma: ChaveDaForma; centavos: number }[] = lerPagamentos(m.pagamentos).map((b) => ({ forma: formaDoTexto(b.method), centavos: cent(b.amount) }));
+    if (baixas.length === 0 && cent(m.pago) > 0) baixas.push({ forma: "OUTROS", centavos: cent(m.pago) });
+    const entregue = baixas.reduce((soma, b) => soma + b.centavos, 0);
+    const aMais = Math.max(0, entregue - servico - gorjeta - consumo);
+    let troco = 0;
+    for (const b of baixas.filter((x) => x.forma === "DINHEIRO").sort((x, y) => y.centavos - x.centavos)) {
+      if (troco >= aMais) break;
+      const sai = Math.min(b.centavos, aMais - troco);
+      b.centavos -= sai;
+      troco += sai;
+    }
+    return baixas.filter((b) => b.centavos > 0).map((b) => ({ forma: b.forma, valor: b.centavos / 100 }));
   });
 
   return {

@@ -28,7 +28,7 @@ const pedido = (p: Partial<PedidoDoFinanceiro> & { criadoEm: string; totalAmount
   id: `p${++seq}`, numero: String(seq), status: "ENTREGUE", deliveryFee: 0,
   tipo: "DELIVERY", canal: "SITE", marketplace: false, entregaDoApp: false, temEntregador: true,
   tableSessionId: null, parentOrderId: null, itens: p.totalAmount - (p.deliveryFee || 0), itensComCusto: 0, custo: 0,
-  impossivel: false, pagamentos: [{ forma: "DINHEIRO", valor: p.totalAmount }], taxaOnline: 0, cupomDoApp: 0,
+  impossivel: false, pagamentos: [{ forma: "DINHEIRO", valor: p.totalAmount }], taxaOnline: 0, cupomDoApp: 0, taxaDoApp: 0,
   paymentMethod: "Dinheiro", pagarmeMethod: null, paymentPaidAt: null,
   ...p,
 });
@@ -38,13 +38,13 @@ const dados: DadosDoPeriodo = {
   pedidos: [
     pedido({ criadoEm: "2026-10-05T22:00:00Z", totalAmount: 50, tipo: "MESA", canal: "MESA", tableSessionId: "s1", pagamentos: [] }),
     pedido({ criadoEm: "2026-10-05T22:30:00Z", totalAmount: 60, tipo: "MESA", canal: "MESA", tableSessionId: "s1", pagamentos: [] }),
-    pedido({ criadoEm: "2026-10-06T23:00:00Z", totalAmount: 108, deliveryFee: 8, canal: "IFOOD", marketplace: true, entregaDoApp: true, temEntregador: false, itens: 100, pagamentos: [{ forma: "ONLINE", valor: 108 }], cupomDoApp: 10, paymentMethod: "Pago Online" }),
+    pedido({ criadoEm: "2026-10-06T23:00:00Z", totalAmount: 108, deliveryFee: 8, canal: "IFOOD", marketplace: true, entregaDoApp: true, temEntregador: false, itens: 100, pagamentos: [{ forma: "ONLINE", valor: 108 }], cupomDoApp: 10, taxaDoApp: 0.99, paymentMethod: "Pago Online" }),
     pedido({ criadoEm: "2026-10-09T23:00:00Z", totalAmount: 100, deliveryFee: 7, pagamentos: [{ forma: "ONLINE", valor: 100 }], taxaOnline: 1, paymentPaidAt: "2026-10-09T23:01:00Z", pagarmeMethod: "pix", paymentMethod: "Pix (pago online)" }),
     pedido({ criadoEm: "2026-10-10T23:30:00Z", totalAmount: 70, status: "CANCELADO" }),
   ],
   entregadores: { porEntrega: 20, diarias: 60, total: 80, corridas: 4, corridasCanceladas: 0, diasDeDiaria: 1, semDistancia: 0, pelaTaxaDoCliente: 0, erro: null },
   mesas: { fechadas: 1, descontoNoFechamento: 15, mesasComDesconto: 1, taxaDeServico: 11, gorjeta: 0, pagamentos: [{ forma: "CREDITO", valor: 106 }] },
-  ciclos: [{ mes: "2026-10", mensalidade: 400, lojasExtras: 100, outrosServicos: 0, custo: 500, situacao: "previsto" }],
+  ciclos: [{ mes: "2026-10", mensalidade: 400, lojasExtras: 100, outrosServicos: 0, custo: 500, situacao: "projetado" }],
   isenta: false,
 };
 
@@ -88,8 +88,10 @@ confere("as lojas extras aparecem e somam na previsão", mensal.includes("2 loja
 confere("sem o 'Economia vs iFood' de 26% de tudo na Mensalidade", !mensal.includes("Economia Estimada"));
 const semFatura = tela("mensalidade", { cicloInicial: { ...ciclo, faturasEmAberto: [] } });
 confere("sem fatura em aberto, o #fatura é o mês corrente", semFatura.includes('id="fatura"') && !semFatura.includes("FATURA VENCIDA"));
-const isenta = tela("mensalidade", { cicloInicial: { ...ciclo, isExempt: true } });
+const isenta = tela("mensalidade", { cicloInicial: { ...ciclo, isExempt: true, faturasEmAberto: [] } });
 confere("loja isenta: sem cobrança", isenta.includes("Conta isenta") && !isenta.includes("PREVISÃO DO BOLETO"));
+const isentaComBoleto = tela("mensalidade", { cicloInicial: { ...ciclo, isExempt: true } });
+confere("loja isenta com boleto antigo em aberto: a fatura aparece primeiro", isentaComBoleto.includes("FATURA VENCIDA") && isentaComBoleto.indexOf("FATURA VENCIDA") < isentaComBoleto.indexOf("Conta isenta"));
 
 // ── DRE ──────────────────────────────────────────────────────────────────
 const dre = tela("dre");
@@ -100,7 +102,8 @@ confere("desconto dado no fechamento da mesa sai da receita", dre.includes("Desc
 confere("cupom pago pelo app entra", dre.includes("Cupom pago pelo app"));
 confere("comissão do iFood pelo percentual da loja", dre.includes("iFood — 20% sobre os itens"));
 confere("entregadores pela conta do fechamento", dre.includes("a mesma conta do Motoboys → Relatório"));
-confere("mensalidade pelo ciclo, rateada", dre.includes("out/2026 (previsão): R$ 500,00 × 7/31 dias"));
+confere("mensalidade pelo ciclo (mês corrente projetado), rateada", dre.includes("out/2026 (projeção do mês): R$ 500,00 × 7/31 dias"));
+confere("taxa de serviço do app sai da receita", dre.includes("Taxa de serviço do app (fica com o app)"));
 confere("custos fixos rateados mês a mês", dre.includes("7/31 de out/2026"));
 confere("sem 'EBITDA' (vem antes do aluguel): margem de contribuição", !dre.includes("EBITDA") && dre.includes("MARGEM DE CONTRIBUIÇÃO"));
 confere("sem 'Lucro Líquido' (o Início usa o nome para outra conta)", !dre.includes("LUCRO LÍQUIDO") && !dre.includes("Lucro Líquido"));
