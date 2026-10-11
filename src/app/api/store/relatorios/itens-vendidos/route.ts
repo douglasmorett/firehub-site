@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
 
   const resultado = itensVendidos(
     pedidos.map((p) => ({ franchiseeId: p.franchiseeId, canal: canalDoRelatorio(p), items: p.items || [] })),
-    { mapasDe: catalogo.mapasDe, grupos: catalogo.grupos, vendaveisDe: catalogo.vendaveisDe },
+    { mapasDe: catalogo.mapasDe, grupos: catalogo.grupos, vendaveisDe: catalogo.vendaveisDe, gruposDoItem: catalogo.gruposDoItem },
     cfg,
   );
   const cabecalho = cabecalhoDoRelatorio(ctx);

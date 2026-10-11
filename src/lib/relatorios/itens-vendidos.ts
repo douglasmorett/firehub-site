@@ -58,8 +58,65 @@ export type PedidoParaItens = {
   items: ItemParaRelatorio[];
 };
 
-/** Um grupo de opção do cadastro: o título, e se é de sabor fracionado (pizza). */
-export type GrupoDoCadastro = { id: string; titulo: string; fracionado: boolean };
+/**
+ * Um grupo de opção do cadastro: o título, se é de sabor FRACIONADO (os sabores
+ * escolhidos nele dividem UMA pizza — `grupoDeSaborDePizza`) e as opções dele
+ * (chaveDoNome), para achar o grupo da escolha que o pedido gravou sem ele.
+ */
+export type GrupoDoCadastro = { id: string; titulo: string; fracionado: boolean; opcoes?: string[] };
+
+// ── QUANDO O SABOR É FRAÇÃO ─────────────────────────────────────────────────
+//
+// Meia pizza conta 0,5 de cada sabor (como na Saipos). Até 11/10/2026 só
+// fracionava o grupo com regra de preço de pizza (`priceRule`, "cobra o mais
+// caro"/"média") ou o sabor com "1/2" no nome — e a pizza de dois sabores
+// cadastrada sem a regra contava como duas: Pizzaria 17, "COMBO 1 — Pizza G:
+// escolha 2 sabores" {Calabresa, Bacon c/ Ovos} saía 1 + 1 (57 itens do site
+// em 30 dias); no balcão e na mesa, que gravam a escolha sem o grupo, nem o
+// `priceRule` valia (331 itens de pizza/combo em 30 dias, só 2 com "1/2").
+//
+// O critério, explícito, para o grupo SEM regra de preço: o título fala de
+// sabor (ou de metade, meio a meio) e a pizza aparece no título — ou, título
+// genérico ("Escolha até 2 sabores"), no nome ou na categoria do produto. E
+// NÃO é fração, cada sabor é uma unidade inteira: rodízio (no título, no
+// produto ou na categoria: o "Rodizio em casa" da Showrrascão mora na
+// categoria Pizza), "mini" no título (ou no produto, quando o título não fala
+// de pizza: a caixa de mini pizzas), título que nomeia outra coisa (esfiha,
+// pastel, salgado, bebida… — o combo "Pizza + 4 Esfirras" tem as duas
+// perguntas) e grupo de mais de 4 sabores (pizza tem até 4; caixa tem mais).
+
+const semAcento = (s: unknown) => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+const FALA_DE_SABOR = /\bsabor(es)?\b|\bmetades?\b|\bmeio a meio\b/;
+const FALA_DE_PIZZA = /\bpizzas?\b/;
+const RODIZIO = /\brodizios?\b/;
+const MINI = /\bmini\b/;
+const OUTRA_COISA = /\b(esfi(h|rr)as?|pastel|pasteis|salgad\w*|coxinhas?|refri\w*|bebidas?|sucos?|aguas?|cervejas?|acai|sorvetes?|milk ?shakes?|hamburguer\w*|burgers?|lanches?|calzones?|batatas?|porcao|porcoes)\b/;
+
+/** O produto é pizza (pelo nome ou pela categoria) — e não rodízio nem mini. */
+export function produtoDePizza(nome: string | null | undefined, categoria?: string | null): boolean {
+  const n = semAcento(nome), c = semAcento(categoria);
+  if (RODIZIO.test(n) || RODIZIO.test(c) || MINI.test(n)) return false;
+  return FALA_DE_PIZZA.test(n) || FALA_DE_PIZZA.test(c);
+}
+
+/**
+ * O grupo vale UMA pizza dividida entre os sabores escolhidos nele? Com
+ * `priceRule` sempre (é a pergunta de sabores da pizza); sem ela, pelo
+ * critério do topo desta seção.
+ */
+export function grupoDeSaborDePizza(
+  grupo: { titulo: string; priceRule?: string | null; maxQty?: number | null },
+  produto: { nome?: string | null; categoria?: string | null } = {},
+): boolean {
+  if (String(grupo.priceRule || "").trim()) return true;
+  const titulo = semAcento(grupo.titulo), nome = semAcento(produto.nome), categoria = semAcento(produto.categoria);
+  if (!FALA_DE_SABOR.test(titulo)) return false;
+  if (RODIZIO.test(titulo) || RODIZIO.test(nome) || RODIZIO.test(categoria) || MINI.test(titulo)) return false;
+  if (grupo.maxQty != null && Number(grupo.maxQty) > 4) return false;
+  if (FALA_DE_PIZZA.test(titulo)) return true;
+  if (OUTRA_COISA.test(titulo) || MINI.test(nome) || MINI.test(categoria)) return false;
+  return FALA_DE_PIZZA.test(nome) || FALA_DE_PIZZA.test(categoria);
+}
 
 export type ConfigDosItens = {
   porCategoria: boolean;
@@ -125,20 +182,41 @@ export type EscolhaLida = {
 export type ContextoDasEscolhas = {
   /** Chave do canal do pedido (lib/canal-do-pedido.ts): decide como se lê o preço gravado na opção. */
   canal?: string | null;
+  /**
+   * Os grupos do produto do item — ou, no espelho do iFood/99/Brendi, os do
+   * produto do cardápio de mesmo nome. Acham o grupo da escolha que o pedido
+   * gravou sem ele (balcão, mesa, marketplace): é o grupo que diz se o sabor é
+   * fração.
+   */
+  gruposDoProduto?: GrupoDoCadastro[];
+  /** O item é pizza (`produtoDePizza`): vale o grupo "Sabor - " que a Brendi põe no nome da escolha. */
+  ehPizza?: boolean;
 };
 
 const FRACAO_RE = /^\s*(\d+)\s*\/\s*(\d+)\s+/;
+/** A Brendi manda o grupo no nome da escolha: "Sabor - Calabresa" (Pizzaria Supimpa, set/2026). */
+const GRUPO_SABOR_NO_NOME = /^\s*sabor(es)?\s*[-–:]\s*\S/i;
 
 /**
  * As escolhas do item, com o grupo quando o pedido o guarda e com a FRAÇÃO do
  * sabor. Três formatos, os mesmos de lib/parse-combo.ts:
  *
- * - site: { grupoId: { nome: qtd } } — o grupo vem; se o grupo é de sabor
- *   fracionado (pizza, com `priceRule`), cada sabor vale qtd ÷ total do grupo;
- * - iFood/99/Wabiz/Brendi/JotaJá: [{ name, quantity, price }] — a meia vem no
- *   nome ("1/2 Portuguesa") e o preço é o daquela metade (no iFood e no 99, o
- *   total da linha da opção: `precoUnitarioDaOpcao` divide pela quantidade);
- * - balcão: [{ name, quantity }] ou texto — sem grupo e sem preço.
+ * - site: { grupoId: { nome: qtd } } — o grupo vem;
+ * - iFood/99/Wabiz/Brendi/JotaJá: [{ name, quantity, price }] — a meia pode vir
+ *   no nome ("1/2 Portuguesa") e o preço é o daquela metade (no iFood e no 99,
+ *   o total da linha da opção: `precoUnitarioDaOpcao` divide pela quantidade);
+ * - balcão e mesa: [{ name, quantity }] ou texto — sem grupo e sem preço.
+ *
+ * A fração: "1/2 " no nome vale o que diz. Sem ela, o GRUPO decide: no grupo
+ * de sabor de pizza (`grupoDeSaborDePizza`) cada sabor vale qtd ÷ total
+ * escolhido no grupo — dois sabores de 1 = 0,5 cada; o mesmo sabor 2× = 1. O
+ * grupo é o gravado (site, ou `groupId` na lista) ou, quando o pedido não o
+ * grava — ou grava um grupo que o cardápio já apagou —, o grupo do produto que
+ * tem uma opção com aquele nome. Se o nome está
+ * em dois grupos de sabor (COMBO 4 da P17: "1ª Pizza M" e "2ª Pizza M", com
+ * os mesmos 10 sabores), os sabores repartem as DUAS pizzas: 4 sabores = 0,5
+ * cada. Nome em dois grupos que não são ambos de sabor: não dá para saber, e
+ * a escolha conta inteira, como antes.
  */
 export function escolhasDoItemComGrupo(
   item: { quantity: number; comboSelections?: unknown },
@@ -153,52 +231,81 @@ export function escolhasDoItemComGrupo(
       bruto = bruto.split(/[\n|;]/).map((s: string) => s.trim()).filter(Boolean);
     }
   }
-  const saida: EscolhaLida[] = [];
-  const empurrar = (nomeBruto: string, qtd: number, precoGravado: unknown, grupoId: string | null, fracaoDoGrupo = 1) => {
-    const m = FRACAO_RE.exec(nomeBruto);
-    const fracaoDoNome = m && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : 1;
-    const nome = nomeBruto.replace(FRACAO_RE, "").trim();
-    if (!nome) return;
-    const inteira = qtd * qtdItem;
-    saida.push({
-      nome,
-      quantidade: inteira * fracaoDoNome * fracaoDoGrupo,
-      quantidadeInteira: inteira,
-      precoDoCanal: precoUnitarioDaOpcao(precoGravado, qtd, contexto.canal),
-      grupoId,
-    });
-  };
 
+  // 1. As escolhas cruas: nome, quantidade da opção, preço gravado, grupo gravado.
+  type Crua = { nome: string; qtd: number; precoGravado: unknown; grupoId: string | null; fracaoDoNome: number | null; fracao: { chave: string; pizzas: number } | null };
+  const cruas: Crua[] = [];
+  const ler = (nomeBruto: string, qtd: number, precoGravado: unknown, grupoId: string | null) => {
+    const m = FRACAO_RE.exec(nomeBruto);
+    const nome = nomeBruto.replace(FRACAO_RE, "").trim();
+    if (!nome || !(qtd > 0)) return;
+    cruas.push({ nome, qtd, precoGravado, grupoId, fracaoDoNome: m && Number(m[2]) > 0 ? Number(m[1]) / Number(m[2]) : null, fracao: null });
+  };
   if (bruto && !Array.isArray(bruto) && typeof bruto === "object") {
     for (const [grupoId, escolhas] of Object.entries(bruto as Record<string, any>)) {
       if (!escolhas || typeof escolhas !== "object" || Array.isArray(escolhas)) continue;
-      const pares = Object.entries(escolhas as Record<string, any>)
-        .map(([nome, q]) => [nome, Number(q)] as const)
-        .filter(([nome, q]) => nome && Number.isFinite(q) && q > 0);
-      const doGrupo = grupos.get(grupoId);
-      const totalDoGrupo = pares.reduce((s, [, q]) => s + q, 0);
-      for (const [nome, q] of pares) {
-        const fracao = doGrupo?.fracionado && totalDoGrupo > 0 ? 1 / totalDoGrupo : 1;
-        // No sabor fracionado a fração já está no "1 ÷ total": a quantidade do
-        // sabor é q × (1 ÷ total) — dois sabores de 1 = 0,5 cada.
-        empurrar(nome, q, null, grupoId, fracao);
+      for (const [nome, q] of Object.entries(escolhas as Record<string, any>)) {
+        const n = Number(q);
+        if (nome && Number.isFinite(n) && n > 0) ler(nome, n, null, grupoId);
       }
     }
-    return saida;
+  } else if (Array.isArray(bruto)) {
+    for (const e of bruto) {
+      if (typeof e === "string") {
+        const m = e.match(/^(\d+)x?\s+(.+)$/i);
+        if (m) ler(m[2].trim(), Number(m[1]), null, null);
+        else if (e.trim()) ler(e.trim(), 1, null, null);
+      } else if (e && typeof e === "object") {
+        const nome = String(e.name || e.productName || e.label || e.description || "").trim();
+        if (nome) ler(nome, Number(e.quantity || e.qty || 1), e.price, e.groupId ? String(e.groupId) : null);
+      }
+    }
+  } else {
+    return [];
   }
-  if (!Array.isArray(bruto)) return [];
-  for (const e of bruto) {
-    if (typeof e === "string") {
-      const m = e.match(/^(\d+)x?\s+(.+)$/i);
-      if (m) empurrar(m[2].trim(), Number(m[1]), null, null);
-      else if (e.trim()) empurrar(e.trim(), 1, null, null);
-    } else if (e && typeof e === "object") {
-      const nome = String(e.name || e.productName || e.label || e.description || "").trim();
-      if (!nome) continue;
-      empurrar(nome, Number(e.quantity || e.qty || 1), e.price, e.groupId ? String(e.groupId) : null);
+
+  // 2. O grupo de FRAÇÃO de cada escolha (só os de sabor de pizza importam).
+  const doProduto = contexto.gruposDoProduto || [];
+  for (const c of cruas) {
+    if (c.fracaoDoNome !== null) continue;
+    const chave = chaveDoNome(c.nome);
+    const candidatos = chave ? doProduto.filter((g) => g.opcoes?.includes(chave)) : [];
+    if (c.grupoId) {
+      const g = grupos.get(c.grupoId);
+      if (g) {
+        if (g.fracionado) c.fracao = { chave: `g:${g.id}`, pizzas: 1 };
+        continue;
+      }
+      // O grupo gravado não existe mais: salvar o cardápio recria os grupos
+      // com outro id (Deeds, 30 dias até 11/10/2026: 117 de 162 itens do site
+      // apontavam para grupo apagado; Serpa 26 de 43). O grupo de HOJE com a
+      // opção de mesmo nome diz se é sabor de pizza; a divisão continua pelo
+      // grupo gravado, que é uma pizza só.
+      if (candidatos.length && candidatos.every((x) => x.fracionado)) c.fracao = { chave: `g:${c.grupoId}`, pizzas: 1 };
+      continue;
+    }
+    if (candidatos.length && candidatos.every((g) => g.fracionado)) {
+      c.fracao = { chave: `g:${candidatos.map((g) => g.id).sort().join("+")}`, pizzas: candidatos.length };
+    } else if (!candidatos.length && contexto.ehPizza && GRUPO_SABOR_NO_NOME.test(c.nome)) {
+      c.fracao = { chave: "nome:sabor", pizzas: 1 };
     }
   }
-  return saida;
+  const totalDaFracao = new Map<string, number>();
+  for (const c of cruas) if (c.fracao) totalDaFracao.set(c.fracao.chave, (totalDaFracao.get(c.fracao.chave) || 0) + c.qtd);
+
+  // 3. A quantidade: × item × fração (a do nome, ou pizzas ÷ sabores do grupo).
+  return cruas.map((c) => {
+    const inteira = c.qtd * qtdItem;
+    const total = c.fracao ? totalDaFracao.get(c.fracao.chave) || 0 : 0;
+    const fracao = c.fracaoDoNome ?? (c.fracao && total > 0 ? c.fracao.pizzas / total : 1);
+    return {
+      nome: c.nome,
+      quantidade: inteira * fracao,
+      quantidadeInteira: inteira,
+      precoDoCanal: precoUnitarioDaOpcao(c.precoGravado, c.qtd, contexto.canal),
+      grupoId: c.grupoId,
+    };
+  });
 }
 
 // ── A CONTA ─────────────────────────────────────────────────────────────────
@@ -266,6 +373,13 @@ export type ContextoDaConta = {
    * produtos": a Coca do combo soma na Coca avulsa. Por loja.
    */
   vendaveisDe: (lojaId: string) => Map<string, { id: string; nome: string; categoria: string }>;
+  /**
+   * Os grupos de opção do produto do item (lib/relatorios/catalogo.ts) — no
+   * espelho do marketplace, os do produto do cardápio de mesmo nome. Acham o
+   * grupo do sabor que o balcão, a mesa e o marketplace gravam sem ele. Sem
+   * isto, só o grupo gravado no pedido decide a fração.
+   */
+  gruposDoItem?: (lojaId: string, item: ItemParaRelatorio) => GrupoDoCadastro[];
 };
 
 /**
@@ -305,7 +419,12 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
 
       // ── As opções do item ──
       const precoNoCadastro = produtoId ? mapas.precoNoCombo.get(produtoId) : undefined;
-      for (const e of escolhasDoItemComGrupo(item, conta.grupos, { canal: pedido.canal })) {
+      const escolhas = escolhasDoItemComGrupo(item, conta.grupos, {
+        canal: pedido.canal,
+        gruposDoProduto: conta.gruposDoItem?.(pedido.franchiseeId, item),
+        ehPizza: produtoDePizza(nome, categoria),
+      });
+      for (const e of escolhas) {
         // Casa com o cadastro: borda, sabor, adicional. Uma opção pode juntar
         // duas coisas ("Massa Tradicional + Borda Catupiry"); cada uma vira linha.
         const casados = complementosDaOpcao(e.nome, mapas.complementos);
