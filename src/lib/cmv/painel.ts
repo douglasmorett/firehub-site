@@ -70,7 +70,14 @@ export type Painel = {
   cmo: CmoDoPeriodo & { pct: number | null; zona: ZonaDoCmv };
   custoPrimario: { valor: number; pct: number | null; de: string; ate: string } | null;
   consumo: { nome: string; unidade: string; quantidade: number; valor: number }[];
-  perdas: { valor: number; itens: { nome: string; unidade: string; quantidade: number; valor: number }[] };
+  perdas: {
+    valor: number;
+    itens: { nome: string; unidade: string; quantidade: number; valor: number }[];
+    firecheck: {
+      total: number; semFicha: number; valorSemFicha: number;
+      ultimos: { item: string; quantidade: number | null; unidade: string | null; situacao: string; casouCom: string | null; valor: number | null; funcionario: string | null; motivo: string | null; quando: string }[];
+    };
+  };
   contagens: { ultima: { dia: string; tipo: string } | null; total: number; marcadosNoDia: number };
   avisos: Aviso[];
   pendencias: Pendencia[];
@@ -238,6 +245,21 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
   }
   const perdasItens = [...perdasPorItem.values()].map((p) => ({ ...p, quantidade: Math.round(p.quantidade * 1000) / 1000, valor: r2(p.valor) })).sort((a, b) => b.valor - a.valor);
 
+  // Descartes do FireCheck ligado (lib/cmv/firecheck.ts). Os que casaram já
+  // estão acima, como WASTE dos insumos; os sem correspondência só têm o valor
+  // que o funcionário estimou, e entram no total por ele.
+  const descartesFc = await prisma.descarteDoFirecheck.findMany({
+    where: { franchiseeId: lojaId, registradoEm: { gte: p0, lt: p1 } },
+    orderBy: { registradoEm: "desc" },
+    select: { item: true, quantidade: true, unidade: true, situacao: true, casouCom: true, valor: true, valorEstimado: true, funcionario: true, motivo: true, registradoEm: true },
+  });
+  const semFichaFc = descartesFc.filter((d) => d.situacao === "SEM_CORRESPONDENCIA");
+  const valorSemFichaFc = r2(semFichaFc.reduce((s, d) => s + (Number(d.valorEstimado) || 0), 0));
+  if (semFichaFc.length) {
+    const nomes = [...new Set(semFichaFc.map((d) => d.item))];
+    avisos.push({ tipo: "atencao", texto: `${semFichaFc.length} descarte(s) do FireCheck não casaram com produto nem insumo (${nomes.slice(0, 5).join(", ")}${nomes.length > 5 ? "…" : ""}): não baixaram do estoque. Use no FireCheck o nome igual ao do cardápio, ou dê ficha técnica ao produto.` });
+  }
+
   const marcadosNoDia = await prisma.stockItem.count({ where: { franchiseeId: lojaId, NOT: { active: false }, contagemDiaria: true } });
   if (janela.falta === "NENHUMA_CONTAGEM") {
     avisos.unshift({ tipo: "info", texto: "Ainda não há contagem fechada. Faça a primeira contagem completa em Estoque › Contagem: ela é o estoque inicial, e o CMV real aparece a partir da contagem seguinte." });
@@ -283,7 +305,20 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
     cmo: { ...cmoPeriodo, pct: cmoPct, zona: zonaDoCmv(cmoPct, metaCmo) },
     custoPrimario,
     consumo,
-    perdas: { valor: r2(perdasItens.reduce((s, p) => s + p.valor, 0)), itens: perdasItens.slice(0, 10) },
+    perdas: {
+      valor: r2(perdasItens.reduce((s, p) => s + p.valor, 0) + valorSemFichaFc),
+      itens: perdasItens.slice(0, 10),
+      firecheck: {
+        total: descartesFc.length,
+        semFicha: semFichaFc.length,
+        valorSemFicha: valorSemFichaFc,
+        ultimos: descartesFc.slice(0, 15).map((d) => ({
+          item: d.casouCom || d.item, quantidade: d.quantidade, unidade: d.unidade, situacao: d.situacao, casouCom: d.casouCom,
+          valor: d.situacao === "SEM_CORRESPONDENCIA" ? d.valorEstimado : d.valor,
+          funcionario: d.funcionario, motivo: d.motivo, quando: d.registradoEm.toISOString(),
+        })),
+      },
+    },
     contagens: { ultima: ultima ? { dia: ultima.dia, tipo: ultima.tipo } : null, total: contagens.length, marcadosNoDia },
     avisos,
     pendencias,

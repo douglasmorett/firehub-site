@@ -32,6 +32,12 @@ model User {
   /// ou economia de dados. A COLUNA nasce em garantir-colunas.ts.
   storeBannerVideo String?
   storeHours      Json?
+  /// A ligação desta loja com o FireCheck dela (lib/cmv/firecheck.ts):
+  /// { chave, store, storeName, email, conectadoEm, conectadoPor }. Nulo =
+  /// sem FireCheck. A chave é o segredo que o FireCheck manda de volta em cada
+  /// descarte; a senha do FireCheck nunca é guardada.
+  /// Coluna criada no boot por src/lib/cmv/estrutura-no-banco.ts.
+  firecheckIntegracao Json?
   /// Loja que NÃO aceita retirada no balcão. Nasce `false` — retirada é o
   /// padrão, e quem não atende é que desmarca.
   ///
@@ -1909,6 +1915,35 @@ model ContagemItem {
 
   @@unique([contagemId, stockItemId])
   @@index([stockItemId])
+}
+
+/// Descarte lançado no app do FireCheck da loja ligada, recebido pelo FireHub
+/// (api/integracoes/firecheck/descarte). Vira perda no estoque pela ficha do
+/// produto ou direto no insumo; sem correspondência, fica só com o valor
+/// estimado que o funcionário informou. Único por (loja, id do FireCheck): o
+/// FireCheck reenvia o que falhou e a segunda chegada não dobra a perda.
+model DescarteDoFirecheck {
+  id             String   @id @default(cuid())
+  franchiseeId   String
+  idExterno      String
+  item           String
+  quantidade     Float?
+  unidade        String?
+  valorEstimado  Float?
+  motivo         String?
+  funcionario    String?
+  foto           String?
+  registradoEm   DateTime
+  /// "PRODUTO" | "INSUMO" | "SEM_CORRESPONDENCIA"
+  situacao       String
+  /// O que casou: nome do produto ou do insumo.
+  casouCom       String?
+  /// R$ da perda pela ficha/custo (nulo sem correspondência ou sem custo).
+  valor          Float?
+  createdAt      DateTime @default(now())
+
+  @@unique([franchiseeId, idExterno])
+  @@index([franchiseeId, registradoEm])
 }
 
 /// Quem trabalha na loja e quanto custa por mês: a base do CMO.

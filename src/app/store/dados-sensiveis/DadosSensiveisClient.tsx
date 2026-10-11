@@ -219,7 +219,7 @@ function PainelDoCmv({ dados, carregando }: { dados: Painel; carregando: boolean
           <Cartao rotulo="Custo primário" valor={dados.custoPrimario?.pct != null ? fmtPct(dados.custoPrimario.pct) : "—"}
             tom={dados.custoPrimario?.pct == null ? "neutro" : dados.custoPrimario.pct <= metas.cmv + metas.cmo ? "ok" : dados.custoPrimario.pct <= metas.cmv + metas.cmo + 5 ? "atencao" : "grave"}
             detalhe={dados.custoPrimario ? <>CMV + CMO de {ddmm(dados.custoPrimario.de)} a {ddmm(dados.custoPrimario.ate)} · meta {metas.cmv + metas.cmo}%</> : "aparece com o CMV"} />
-          <Cartao rotulo="Perdas registradas" valor={fmtReais(dados.perdas.valor)} tom={dados.perdas.valor > 0 ? "atencao" : "neutro"} detalhe="lançadas em Estoque › Movimentar › Perda" />
+          <Cartao rotulo="Perdas registradas" valor={fmtReais(dados.perdas.valor)} tom={dados.perdas.valor > 0 ? "atencao" : "neutro"} detalhe={dados.perdas.firecheck?.total ? `Estoque › Perda e ${dados.perdas.firecheck.total} descarte(s) do FireCheck` : "lançadas em Estoque › Movimentar › Perda"} />
           <Cartao rotulo="Última contagem" valor={dados.contagens.ultima ? ddmm(dados.contagens.ultima.dia) : "—"}
             detalhe={dados.contagens.ultima ? `${tipoDaContagem(dados.contagens.ultima.tipo)} · ${dados.contagens.marcadosNoDia} itens na contagem do dia` : "nenhuma ainda"} />
         </div>
@@ -254,6 +254,19 @@ function PainelDoCmv({ dados, carregando }: { dados: Painel; carregando: boolean
         {dados.perdas.itens.length > 0 && (
           <Bloco titulo="Perdas registradas" subtitulo="O que foi lançado como perda no período.">
             <Tabela colunas={["Insumo", "Qtd.", "R$"]} linhas={dados.perdas.itens.map((p) => [p.nome, `${fmtQtd(p.quantidade)} ${p.unidade}`, fmtReais(p.valor)])} />
+          </Bloco>
+        )}
+        {(dados.perdas.firecheck?.ultimos.length ?? 0) > 0 && (
+          <Bloco titulo="Descartes do FireCheck" subtitulo="Lançados pela equipe no FireCheck da loja. O que casou com o cardápio baixou do estoque pela ficha.">
+            <Tabela
+              colunas={["Item", "Qtd.", "Quem", "R$"]}
+              linhas={dados.perdas.firecheck!.ultimos.map((d) => [
+                d.situacao === "SEM_CORRESPONDENCIA" ? `${d.item} · sem ficha` : d.item,
+                d.quantidade != null ? `${fmtQtd(d.quantidade)} ${d.unidade || ""}`.trim() : "—",
+                d.funcionario || "—",
+                d.valor != null ? fmtReais(d.valor) : "—",
+              ])}
+            />
           </Bloco>
         )}
       </div>

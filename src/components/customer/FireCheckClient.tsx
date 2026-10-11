@@ -6,6 +6,7 @@ import {
   ExternalLink, Bot, MessageSquare, Smartphone, Camera, 
   MapPin, Check, ArrowRight, Award, Lock, Monitor
 } from "lucide-react";
+import ConexaoDoFirecheck from "@/components/cmv/ConexaoDoFirecheck";
 
 export default function FireCheckClient({ user }: { user: { id: string; storeName?: string | null; email: string } }) {
   const [billingCycle, setBillingCycle] = useState<"anual" | "mensal">("anual");
@@ -134,6 +135,8 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
           </button>
         </div>
       </div>
+
+      <ConexaoDoFirecheck />
 
       {activeTab === "presentation" ? (
         <>

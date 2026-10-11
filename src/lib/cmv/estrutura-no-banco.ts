@@ -123,6 +123,29 @@ const INSTRUCOES = [
   // vale-transporte separado dos benefícios, com o desconto no salário (11/10/2026)
   `ALTER TABLE "PessoaDaFolha" ADD COLUMN IF NOT EXISTS "valeTransporte" DOUBLE PRECISION`,
   `ALTER TABLE "PessoaDaFolha" ADD COLUMN IF NOT EXISTS "descontoVtPct" DOUBLE PRECISION`,
+
+  // ── FireCheck: a ligação da loja e os descartes recebidos ────────────────
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "firecheckIntegracao" JSONB`,
+  `CREATE TABLE IF NOT EXISTS "DescarteDoFirecheck" (
+     "id" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "idExterno" TEXT NOT NULL,
+     "item" TEXT NOT NULL,
+     "quantidade" DOUBLE PRECISION,
+     "unidade" TEXT,
+     "valorEstimado" DOUBLE PRECISION,
+     "motivo" TEXT,
+     "funcionario" TEXT,
+     "foto" TEXT,
+     "registradoEm" TIMESTAMP(3) NOT NULL,
+     "situacao" TEXT NOT NULL,
+     "casouCom" TEXT,
+     "valor" DOUBLE PRECISION,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "DescarteDoFirecheck_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "DescarteDoFirecheck_franchiseeId_idExterno_key" ON "DescarteDoFirecheck"("franchiseeId", "idExterno")`,
+  `CREATE INDEX IF NOT EXISTS "DescarteDoFirecheck_franchiseeId_registradoEm_idx" ON "DescarteDoFirecheck"("franchiseeId", "registradoEm")`,
 ];
 
 /** As colunas em tabelas que JÁ existem: sem elas o estoque e as contas a pagar quebram. */
@@ -131,9 +154,9 @@ const COLUNAS_ESPERADAS = [
   "StockTransaction.unitCost", "StockTransaction.stockInvoiceId",
   "StockInvoice.dia", "StockInvoice.origem", "StockInvoice.valorNoEstoque", "StockInvoice.criadoPor", "StockInvoice.canceladaEm",
   "Payable.stockInvoiceId",
-  "PessoaDaFolha.valeTransporte", "PessoaDaFolha.descontoVtPct",
+  "PessoaDaFolha.valeTransporte", "PessoaDaFolha.descontoVtPct", "User.firecheckIntegracao",
 ];
-const TABELAS_ESPERADAS = ["ComponenteDoPreparo", "ContagemDeEstoque", "ContagemItem", "PessoaDaFolha"];
+const TABELAS_ESPERADAS = ["ComponenteDoPreparo", "ContagemDeEstoque", "ContagemItem", "PessoaDaFolha", "DescarteDoFirecheck"];
 
 let ok = false;
 
@@ -154,12 +177,12 @@ export async function garantirEstruturaDoCmv(): Promise<boolean> {
       const cols = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
         SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
         WHERE table_schema = current_schema()
-          AND table_name IN ('StockItem', 'StockTransaction', 'StockInvoice', 'Payable', 'PessoaDaFolha')
+          AND table_name IN ('StockItem', 'StockTransaction', 'StockInvoice', 'Payable', 'PessoaDaFolha', 'User')
       `;
       const tabs = await prisma.$queryRaw<{ t: string }[]>`
         SELECT table_name AS t FROM information_schema.tables
         WHERE table_schema = current_schema()
-          AND table_name IN ('ComponenteDoPreparo', 'ContagemDeEstoque', 'ContagemItem', 'PessoaDaFolha')
+          AND table_name IN ('ComponenteDoPreparo', 'ContagemDeEstoque', 'ContagemItem', 'PessoaDaFolha', 'DescarteDoFirecheck')
       `;
       const tem = new Set(cols.map((c) => `${c.tabela}.${c.coluna}`));
       const temTab = new Set(tabs.map((t) => t.t));
