@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useMemo, useCallback } from "react";
+import React, { useState, useMemo, useCallback, useEffect } from "react";
 import Link from "next/link";
 import { minutosEntre } from "@/lib/order-stages";
 import FiltroMultiplo from "@/components/customer/FiltroMultiplo";
@@ -66,7 +66,7 @@ export function periodoDoPainel(atalho: AtalhoDoPainel, hoje: string, escolhido?
 // Formatação
 const fmtR = (v: number) =>
   `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const fmtPct = (v: number) => `${v.toFixed(1)}%`;
+const fmtPct = (v: number) => `${(Number.isFinite(v) ? v : 0).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
 
 // ── OPERAÇÃO ────────────────────────────────────────────────────────────────
 // Tudo daqui para baixo lê os marcos de tempo do pedido (acceptedAt,
@@ -95,40 +95,21 @@ const PLATAFORMAS: Record<string, { label: string; cor: string }> = {
 const plataformaDe = (chave: string) =>
   PLATAFORMAS[String(chave || "").toUpperCase()] || { label: chave || "Outro canal", cor: "#94A3B8" };
 
-// Prazo do pedido — MESMA regra que pinta o card no painel de pedidos
-// (StoreOrdersDashboard): agendamento de verdade manda; senão, 40 min para
-// retirada e 45 min para entrega. Se a regra mudar lá, muda aqui também, ou o
-// relatório passa a contar atraso que a tela não mostrou.
-const MIN_PADRAO_RETIRADA = 40;
-const MIN_PADRAO_ENTREGA = 45;
-
-// PICKUP (retirada pelo site) e BALCAO também: sem eles, os 277 PICKUP do site
-// em 60 dias ganhavam o prazo e o tempo de saída de uma entrega.
-function ehRetirada(o: any) {
-  const t = String(o.deliveryType || "").toUpperCase();
-  return t === "RETIRADA" || t === "TAKEOUT" || t === "PICKUP" || t === "BALCAO" || t.includes("RETIRADA");
-}
-
 /** Saiu para a rua. Mesa e balcão não contam como entrega. */
 function ehEntrega(o: any) {
   return String(o.deliveryType || "").toUpperCase() === "DELIVERY";
 }
 
-function prazoDoPedido(o: any): number {
-  const criado = new Date(o.createdAt).getTime();
-  const agendado = o.scheduledDatetime ? new Date(o.scheduledDatetime).getTime() : 0;
-  const agendamentoReal = agendado > criado + 2 * 60000;
-  if (agendamentoReal) return agendado;
-  return criado + (ehRetirada(o) ? MIN_PADRAO_RETIRADA : MIN_PADRAO_ENTREGA) * 60000;
-}
-
-// Momento em que o pedido saiu das mãos da loja: para entrega é a saída do
-// motoboy; para retirada, a hora em que o cliente levou.
-function momentoDaSaida(o: any): string | null {
-  return o.dispatchedAt || (ehRetirada(o) ? o.deliveredAt : null);
-}
-
-const media = (v: number[]) => (v.length ? v.reduce((a, b) => a + b, 0) / v.length : null);
+// Os tempos e "como os pedidos saíram" vêm prontos da rota do relatório Tempo
+// por status (lib/relatorios/tempos.ts), pelo período e filtros desta tela. Até
+// 11/10/2026 o painel fazia uma conta própria com o carimbo cru: misturava mesa
+// e balcão com entrega, contava o aceite regravado na saída e o "entregue"
+// marcado em lote — a NIK via 42,4 min de tempo total aqui e 60,0 min de entrega
+// no relatório; a Delícias da Maria, 0,6 min.
+const COR_DA_ETAPA: Record<string, string> = {
+  aceite: "#1C1917", cozinha: "#B45309", esperandoSaida: "#64748B", rua: "#0F766E",
+  totalEntrega: "#0F172A", totalNaLoja: "#44403C",
+};
 
 // A MEDIANA E O NUMERO HONESTO AQUI.
 //
@@ -195,7 +176,7 @@ export function vendaDaRegua(pedidos: PedidoDaRegua[]) {
 export function cartaoDeVendas(pedidos: PedidoDoPainel[], filtro: FiltroDeItens, receitaDosItens: number) {
   if (!perguntouPorItem(filtro)) {
     const r = vendaDaRegua(pedidos);
-    return { vendas: r.vendas, lancamentos: r.lancamentos, ticket: r.ticket, dosItens: false };
+    return { valor: r.valor, vendas: r.vendas, lancamentos: r.lancamentos, ticket: r.ticket, dosItens: false };
   }
   // Os pedidos com algum item (ou opção) no filtro — a regra de somarVendas,
   // repetida aqui só para saber QUAIS são, porque a mesa se agrupa pelo pedido.
@@ -204,7 +185,47 @@ export function cartaoDeVendas(pedidos: PedidoDoPainel[], filtro: FiltroDeItens,
     return entrou || opcoesQueEntram(i, filtro, entrou).length > 0;
   }));
   const at = atendimentosDaVenda(comAlgoNoFiltro);
-  return { vendas: at.vendas, lancamentos: at.lancamentos, ticket: ticketDaRegua(receitaDosItens, at.vendas), dosItens: true };
+  return { valor: receitaDosItens, vendas: at.vendas, lancamentos: at.lancamentos, ticket: ticketDaRegua(receitaDosItens, at.vendas), dosItens: true };
+}
+
+// ── O CUSTO CADASTRADO COBRE O QUE FOI VENDIDO? ─────────────────────────────
+//
+// "Margem 100%" e "Lucro Líquido" igual ao faturamento: em 11/10/2026 nenhuma
+// das lojas conferidas (Ragnar, NIK, Delícia de Casa, Frangoso, Divinos) tinha
+// custo cadastrado — só 15 lojas do sistema têm algum. Produto sem custo
+// contava como se fosse de graça, e o cartão afirmava um lucro que ninguém tem.
+//
+// Agora a margem só aparece quando o custo cadastrado cobre a maior parte do
+// que foi vendido (COBERTURA_MINIMA), e é calculada só sobre o que tem custo.
+// E é BRUTA: o custo do produto, sem comissão de app, entrega e taxas.
+export const COBERTURA_MINIMA = 0.8;
+
+export function coberturaDoCusto(pedidos: { id: string; items: ItemDoPainel[] }[], f: FiltroDeItens) {
+  let receita = 0, receitaComCusto = 0, custo = 0;
+  for (const o of pedidos) {
+    for (const item of o.items) {
+      const entrou = itemEntra(item, f);
+      if (entrou) {
+        const r = item.price * item.quantity;
+        receita += r;
+        if ((item.productCost || 0) > 0) { receitaComCusto += r; custo += item.productCost * item.quantity; }
+      }
+      for (const { opcao, valor } of opcoesQueEntram(item, f, entrou)) {
+        receita += valor;
+        if ((opcao.custo || 0) > 0) { receitaComCusto += valor; custo += (opcao.custo || 0) * opcao.quantidade; }
+      }
+    }
+  }
+  const cobertura = receita > 0 ? receitaComCusto / receita : 0;
+  return {
+    receita,
+    receitaComCusto,
+    custo,
+    cobertura,
+    lucroBruto: receitaComCusto - custo,
+    margem: receitaComCusto > 0 ? ((receitaComCusto - custo) / receitaComCusto) * 100 : null,
+    suficiente: receita > 0 && cobertura >= COBERTURA_MINIMA,
+  };
 }
 
 // ── O RESUMO DA OPERAÇÃO POR TIPO ───────────────────────────────────────────
@@ -486,8 +507,12 @@ export default function RelatoriosClient({
     // R$ 50, e o painel dava outro ticket que o Vendas por período. O ticket
     // sem filtro de item é o da régua; com filtro, o dos itens (cartaoDeVendas).
     const cartao = cartaoDeVendas(dateFilteredOrders as PedidoDoPainel[], filtroDeItens, soma.receita);
+    const custo = coberturaDoCusto(dateFilteredOrders as PedidoDoPainel[], filtroDeItens);
 
     return {
+      /** Sem filtro de item: o valor vendido da régua. Com filtro: os itens marcados. */
+      valorDoCartao: cartao.valor,
+      custo,
       revenue: soma.receita,
       cmv: soma.cmv,
       profit: totalProfit,
@@ -680,16 +705,21 @@ export default function RelatoriosClient({
   // contada à parte, não como zero. Somar null como zero afirmaria que aquela
   // entrega saiu de graça — e é justamente o contrário: é a que ninguém sabe
   // quanto custou.
+  // A entrega feita pelo entregador do app (iFood/99, `deliveryBy`) não custa
+  // nada à loja e não tem entregador dela para atribuir: na Ragnar, 1.197 das
+  // "1.229 entregas sem entregador atribuído" eram do iFood.
   const entregas = useMemo(() => {
-    let quantidade = 0, custo = 0, semCusto = 0;
+    let quantidade = 0, custo = 0, semCusto = 0, doApp = 0;
     for (const o of dateFilteredOrders) {
       if (!ehEntrega(o)) continue;
+      if ((o as any).entregaDoApp) { doApp++; continue; }
       quantidade++;
       const c = (o as any).custoDaEntrega;
       if (typeof c === "number") custo += c; else semCusto++;
     }
     return {
       quantidade,
+      doApp,
       custo: Math.round(custo * 100) / 100,
       semCusto,
       apuradas: quantidade - semCusto,
@@ -709,15 +739,16 @@ export default function RelatoriosClient({
   // produtos listados" — o número tem que carregar o próprio recorte, senão
   // vira mais um total para o lojista conferir contra os outros.
   const totalDoRanking = useMemo(() => {
-    let qty = 0, revenue = 0, cost = 0, profit = 0, comVenda = 0;
+    let qty = 0, revenue = 0, cost = 0, profit = 0, comVenda = 0, semCusto = 0;
     for (const p of productRanking) {
       qty += p.qty;
       revenue += p.revenue;
       cost += p.cost;
       profit += p.profit;
       if (p.qty > 0) comVenda++;
+      if (p.revenue > 0 && p.cost <= 0) semCusto++;
     }
-    return { qty, revenue, cost, profit, comVenda, listados: productRanking.length };
+    return { qty, revenue, cost, profit, comVenda, semCusto, listados: productRanking.length };
   }, [productRanking]);
 
   // Produto Campeão (Top 1)
@@ -742,11 +773,14 @@ export default function RelatoriosClient({
       if (!stats[source]) stats[source] = { count: 0, total: 0, vendas: 0 };
       stats[source].count++;
       if (abre.has(o.id)) stats[source].vendas++;
+      if (!entraNaVenda(o)) return;
       stats[source].total += o.totalAmount;
       totalRevenue += o.totalAmount;
     });
 
-    const totalPedidos = dateFilteredOrders.length;
+    // A fatia é de VENDAS (a mesa conta uma vez): pelas rodadas, o iFood da
+    // Ragnar aparecia com 60,7% "dos pedidos" e era 74,3% das vendas.
+    const totalVendas = abre.size;
 
     return Object.entries(stats).map(([key, value]) => {
       const plat = plataformaDe(key);
@@ -760,122 +794,75 @@ export default function RelatoriosClient({
         ticket: value.vendas > 0 ? value.total / value.vendas : 0,
         // pctQtd e a fatia do grafico: o lojista pergunta "quantos por cento
         // dos meus pedidos vem do iFood", nao quanto por cento do dinheiro.
-        pctQtd: totalPedidos > 0 ? (value.count / totalPedidos) * 100 : 0,
+        pctQtd: totalVendas > 0 ? (value.vendas / totalVendas) * 100 : 0,
         pct: totalRevenue > 0 ? (value.total / totalRevenue) * 100 : 0,
       };
-    }).sort((a, b) => b.count - a.count);
+    }).sort((a, b) => b.vendas - a.vendas || b.total - a.total);
   }, [dateFilteredOrders]);
 
-  // 5. Formas de Pagamento
-  const paymentStats = useMemo(() => {
-    const stats: Record<string, { count: number; total: number }> = {};
-    let totalRevenue = 0;
+  // 5–7. FORMAS DE PAGAMENTO E TEMPOS: os relatórios de verdade, pelo mesmo
+  // período e filtros desta tela.
+  //
+  // O bloco de pagamentos daqui agrupava o texto cru: a mesa (que paga no
+  // fechamento da conta, não no pedido) virava "N/A" — 48% do dinheiro da
+  // Ragnar —, e "Pix", "PIX", "Pix (Pago Online)" eram três linhas. A rota de
+  // Formas de pagamento já lê a forma pela régua do caixa e a mesa pela conta.
+  const consulta = useMemo(() => {
+    const q = new URLSearchParams({ de, ate });
+    if (selectedPlataformas.length) q.set("canais", selectedPlataformas.join(","));
+    if (selectedLojas.length) q.set("marcas", selectedLojas.join(","));
+    return q;
+  }, [de, ate, selectedPlataformas, selectedLojas]);
 
-    dateFilteredOrders.forEach((o) => {
-      const method = o.paymentMethod || "Outros";
-      if (!stats[method]) stats[method] = { count: 0, total: 0 };
-      stats[method].count++;
-      stats[method].total += o.totalAmount;
-      totalRevenue += o.totalAmount;
-    });
+  const [formas, setFormas] = useState<{ carregando: boolean; erro?: string; dados?: any }>({ carregando: true });
+  useEffect(() => {
+    const ctrl = new AbortController();
+    setFormas({ carregando: true });
+    fetch(`/api/store/relatorios/formas-de-pagamento?${consulta}`, { signal: ctrl.signal, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((dados) => setFormas({ carregando: false, dados }))
+      .catch((e) => { if (e?.name !== "AbortError") setFormas({ carregando: false, erro: "Não deu para carregar as formas de pagamento agora." }); });
+    return () => ctrl.abort();
+  }, [consulta]);
 
-    const PM_COLORS: Record<string, string> = {
-      PIX: "#0D9488",
-      DINHEIRO: "#0D9488",
-      CREDITO: "#44403C",
-      DEBITO: "#2196F3",
-      VOUCHER: "#E8590C"
-    };
+  const [tempos, setTempos] = useState<{ carregando: boolean; erro?: string; dados?: any }>({ carregando: true });
+  useEffect(() => {
+    const ctrl = new AbortController();
+    const q = new URLSearchParams(consulta);
+    if (selectedCategories.length) q.set("categorias", selectedCategories.join(","));
+    if (selectedProducts.length) q.set("produtos", selectedProducts.join(","));
+    setTempos({ carregando: true });
+    fetch(`/api/store/relatorios/tempos?${q}`, { signal: ctrl.signal, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((dados) => setTempos({ carregando: false, dados }))
+      .catch((e) => { if (e?.name !== "AbortError") setTempos({ carregando: false, erro: "Não deu para carregar os tempos agora." }); });
+    return () => ctrl.abort();
+  }, [consulta, selectedCategories, selectedProducts]);
 
-    return Object.entries(stats).map(([key, value]) => ({
-      key,
-      count: value.count,
-      total: value.total,
-      pct: totalRevenue > 0 ? (value.total / totalRevenue) * 100 : 0,
-      color: PM_COLORS[key.toUpperCase()] || "#64748B",
-    })).sort((a, b) => b.total - a.total);
-  }, [dateFilteredOrders]);
+  const etapasDosTempos = useMemo(() => {
+    const etapas: any[] = Array.isArray(tempos.dados?.etapas) ? tempos.dados.etapas : [];
+    return etapas.filter((e) => !e.dentroDaCozinha && (e.medidos || 0) > 0);
+  }, [tempos.dados]);
 
-  // 6. TEMPOS MEDIOS DE CADA TELA
-  // So entra na conta o pedido que TEM os dois carimbos da etapa. Pedido
-  // anterior a medicao fica de fora em vez de virar zero -- media com zero
-  // fantasma e pior que media sobre menos pedidos.
-  const tempos = useMemo(() => {
-    const fila: number[] = [];
-    const cozinha: number[] = [];
-    const esperandoSaida: number[] = [];
-    const naRua: number[] = [];
-    const total: number[] = [];
-    const kdsMontagem: number[] = [];
-
-    const junta = (destino: number[], v: number | null) => { if (v !== null) destino.push(v); };
-
-    dateFilteredOrders.forEach((o) => {
-      junta(fila, minutosEntre(o.createdAt, o.acceptedAt));
-      junta(cozinha, minutosEntre(o.acceptedAt, o.readyAt || o.dispatchedAt || (ehRetirada(o) ? o.deliveredAt : null)));
-      junta(esperandoSaida, minutosEntre(o.readyAt, o.dispatchedAt));
-      junta(naRua, minutosEntre(o.dispatchedAt, o.deliveredAt));
-      junta(total, minutosEntre(o.createdAt, o.deliveredAt));
-      junta(kdsMontagem, minutosEntre(o.kdsProductionAt, o.kdsFinishingAt));
-    });
-
-    const etapas = [
-      { chave: "fila", titulo: "Esperando aceite", legenda: "Da hora que o pedido caiu ate alguem aceitar", cor: "#1C1917", dados: fila },
-      { chave: "cozinha", titulo: "Na cozinha", legenda: "Do aceite ate o pedido ficar pronto ou sair", cor: "#B45309", dados: cozinha },
-      { chave: "esperandoSaida", titulo: "Pronto esperando motoboy", legenda: "Do PRONTO ate sair para entrega", cor: "#64748B", dados: esperandoSaida },
-      { chave: "naRua", titulo: "Na rua", legenda: "Da saida ate a entrega no cliente", cor: "#0F766E", dados: naRua },
-      { chave: "kds", titulo: "Finalizacao no KDS", legenda: "Da producao ate a montagem terminar", cor: "#44403C", dados: kdsMontagem },
-      { chave: "total", titulo: "Tempo total", legenda: "Do pedido ate o cliente receber", cor: "#0F172A", dados: total },
-    ].map((e) => ({ ...e, media: media(e.dados), mediana: mediana(e.dados), medidos: e.dados.length }));
-
-    const comDados = etapas.filter((e) => e.medidos > 0);
-
-    return { etapas, comDados, temAlgumaMedicao: comDados.length > 0 };
-  }, [dateFilteredOrders]);
-
-  // 7. COMO OS PEDIDOS SAIRAM (faixa de alerta no momento da saida)
-  // Mesma regua do painel: sobra de tempo ate o prazo. Vermelho e amarelo sao
-  // os limites que o lojista configurou nos Alertas de Producao.
   const saidas = useMemo(() => {
-    const cfg = {
-      yellowEnabled: timeAlertConfig?.yellowEnabled ?? true,
-      yellowMinutes: Number(timeAlertConfig?.yellowMinutes ?? 10),
-      redEnabled: timeAlertConfig?.redEnabled ?? true,
-      redMinutes: Number(timeAlertConfig?.redMinutes ?? 5),
-    };
-    const amareloAtivo = cfg.yellowEnabled && cfg.yellowMinutes > 0;
-    const vermelhoAtivo = cfg.redEnabled && cfg.redMinutes > 0;
-
-    let noPrazo = 0, amarelo = 0, vermelho = 0, estourado = 0, medidos = 0;
-    let somaFolga = 0;
-
-    dateFilteredOrders.forEach((o) => {
-      const saida = momentoDaSaida(o);
-      if (!saida) return;
-      const folga = (prazoDoPedido(o) - new Date(saida).getTime()) / 60000;
-      if (!Number.isFinite(folga)) return;
-      medidos++;
-      somaFolga += folga;
-      if (folga < 0) estourado++;
-      else if (vermelhoAtivo && folga <= cfg.redMinutes) vermelho++;
-      else if (amareloAtivo && folga <= cfg.yellowMinutes) amarelo++;
-      else noPrazo++;
-    });
-
+    const pz = tempos.dados?.prazo;
+    if (!pz) return null;
+    const medidos = Number(pz.medidos) || 0;
     const pct = (n: number) => (medidos > 0 ? (n / medidos) * 100 : 0);
-
+    const amareloMin = pz.limites?.amareloMin ?? 10;
+    const vermelhoMin = pz.limites?.vermelhoMin ?? 5;
     return {
       medidos,
-      folgaMedia: medidos > 0 ? somaFolga / medidos : null,
-      limites: cfg,
+      limites: { amareloMin, vermelhoMin },
+      atrasoMediano: pz.atrasoMediano ?? null,
       faixas: [
-        { chave: "noPrazo", titulo: "Saiu no prazo", n: noPrazo, pct: pct(noPrazo), cor: "#0F766E", fundo: "#F0FDFA", detalhe: "Mais de " + cfg.yellowMinutes + " min de folga" },
-        { chave: "amarelo", titulo: "Alerta amarelo", n: amarelo, pct: pct(amarelo), cor: "#B45309", fundo: "#FFF7E6", detalhe: "Saiu com " + cfg.redMinutes + " a " + cfg.yellowMinutes + " min de folga" },
-        { chave: "vermelho", titulo: "Alerta vermelho", n: vermelho, pct: pct(vermelho), cor: "#C92E09", fundo: "#FEE2E2", detalhe: "Saiu em cima da hora (ate " + cfg.redMinutes + " min)" },
-        { chave: "estourado", titulo: "Prazo estourado", n: estourado, pct: pct(estourado), cor: "#B71C1C", fundo: "#FECACA", detalhe: "Ja tinha passado do prazo prometido" },
+        { chave: "noPrazo", titulo: "Saiu no prazo", n: pz.noPrazo || 0, pct: pct(pz.noPrazo || 0), cor: "#0F766E", fundo: "#F0FDFA", detalhe: `Mais de ${amareloMin} min de folga` },
+        { chave: "amarelo", titulo: "Alerta amarelo", n: pz.amarelo || 0, pct: pct(pz.amarelo || 0), cor: "#B45309", fundo: "#FFF7E6", detalhe: `Saiu com ${vermelhoMin} a ${amareloMin} min de folga` },
+        { chave: "vermelho", titulo: "Alerta vermelho", n: pz.vermelho || 0, pct: pct(pz.vermelho || 0), cor: "#C92E09", fundo: "#FEE2E2", detalhe: `Saiu em cima da hora (até ${vermelhoMin} min)` },
+        { chave: "estourado", titulo: "Prazo estourado", n: pz.estourados || 0, pct: pct(pz.estourados || 0), cor: "#B71C1C", fundo: "#FECACA", detalhe: "Já tinha passado do prazo prometido" },
       ],
     };
-  }, [dateFilteredOrders, timeAlertConfig]);
+  }, [tempos.dados]);
 
   // 8. MOVIMENTO: hora do dia, dia da semana, entrega x retirada, cancelamentos
   const movimento = useMemo(() => {
@@ -911,6 +898,11 @@ export default function RelatoriosClient({
     });
 
     const picoHora = porHora.reduce((a, b) => (b.count > a.count ? b : a), porHora[0]);
+    // Quantos dias o período tem até hoje (desde o primeiro pedido da loja):
+    // o pico é a SOMA do período, e a média diz quanto é num dia.
+    const iniDosDias = primeiroDia && primeiroDia > de ? primeiroDia : de;
+    const fimDosDias = ate > hoje ? hoje : ate;
+    const diasDoPeriodo = fimDosDias >= iniDosDias ? diasNoPeriodo(iniDosDias, fimDosDias).reduce((a, b) => a + b, 0) : 0;
     const maxHora = Math.max(1, ...porHora.map((h) => h.count));
     const totalValidos = dateFilteredOrders.length;
     // O ticket do período é valor ÷ VENDAS (a régua única), como no Vendas por
@@ -927,7 +919,7 @@ export default function RelatoriosClient({
     const regua = vendaDaRegua(dateFilteredOrders);
 
     return {
-      porHora, maxHora, picoHora, semana, operacao,
+      porHora, maxHora, picoHora, semana, operacao, diasDoPeriodo,
       totalValidos, receitaTotal: regua.valor, vendas: regua.vendas,
       ticketMedio: regua.ticket,
       cancelados,
@@ -962,7 +954,7 @@ export default function RelatoriosClient({
       }
       nome = `itens_vendidos_${periodo}.csv`;
     } else {
-      linhas = [["Rank", "Produto", "Categoria", "Preço Base", "Quantidade Vendida", "Dentro de outro item", "Faturamento", "Custo Total", "Lucro Líquido"]];
+      linhas = [["Rank", "Produto", "Categoria", "Preço Base", "Quantidade Vendida", "Dentro de outro item", "Valor dos itens", "Custo cadastrado", "Lucro bruto (só o custo do produto)"]];
       productRanking.forEach((p, index) => linhas.push([
         index + 1,
         texto(p.name),
@@ -971,13 +963,27 @@ export default function RelatoriosClient({
         p.qty,
         p.dentro,
         reais(p.revenue),
-        reais(p.cost),
-        reais(p.profit),
+        p.revenue > 0 && p.cost <= 0 ? "sem custo" : reais(p.cost),
+        p.revenue > 0 && p.cost <= 0 ? "" : reais(p.profit),
       ]));
       nome = `relatorio_vendas_${periodo}.csv`;
     }
 
-    const blob = new Blob(["\uFEFF" + linhas.map((l) => l.join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
+    // O arquivo diz de onde veio: sem isto, a planilha aberta dias depois não
+    // tinha período nem filtro.
+    const filtrosEscritos = [
+      selectedPlataformas.length ? `plataformas: ${selectedPlataformas.map((c) => plataformaDe(c).label).join(", ")}` : "",
+      selectedCategories.length ? `categorias: ${selectedCategories.join(", ")}` : "",
+      selectedProducts.length ? `${selectedProducts.length} produto(s) marcado(s)` : "",
+      selectedLojas.length ? `${selectedLojas.length} loja(s) marcada(s)` : "",
+    ].filter(Boolean).join(" · ") || "nenhum";
+    const cabecalho = [
+      [texto(`Painel de vendas — ${storeName}`)],
+      [texto(`Período: ${fmtDia(de)} a ${fmtDia(ate)} (o dia vira às 5h)`)],
+      [texto(`Filtros: ${filtrosEscritos}`)],
+      [],
+    ];
+    const blob = new Blob(["\uFEFF" + [...cabecalho, ...linhas].map((l) => l.join(";")).join("\r\n")], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1159,13 +1165,23 @@ export default function RelatoriosClient({
               <DollarSign size={18} color="#0F766E" />
             </div>
             <span style={{ fontSize: "0.7rem", color: "#0F766E", background: "rgba(15, 118, 110,0.12)", padding: "3px 8px", borderRadius: 12, fontWeight: 700 }}>
-              Faturamento
+              Vendas
             </span>
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Valor Vendido</p>
-            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{fmtR(processedData.revenue)}</p>
-            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Exclui taxas de entrega</p>
+            {/* Sem filtro de item é o VALOR VENDIDO da régua — o mesmo do Vendas por
+                período. Até 11/10/2026 este cartão somava os itens a preço de
+                cardápio, antes dos descontos (Ragnar: R$ 114.277,35 aqui ×
+                R$ 101.159,87 vendidos). Com filtro, são os itens marcados. */}
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>
+              {processedData.ticketDosItens ? "Valor dos itens do filtro" : "Valor vendido"}
+            </p>
+            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{fmtR(processedData.valorDoCartao)}</p>
+            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8", lineHeight: 1.4 }}>
+              {processedData.ticketDosItens
+                ? "Os itens marcados, pelo preço de venda (antes dos descontos do pedido)"
+                : "O que os clientes pagaram: itens, menos descontos, mais a taxa de entrega"}
+            </p>
           </div>
         </div>
 
@@ -1205,12 +1221,12 @@ export default function RelatoriosClient({
             </span>
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Pedidos Entregues</p>
-            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{entregas.quantidade}</p>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Entregas</p>
+            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>{movimento.operacao.entrega.vendas}</p>
             <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>
-              {movimento.totalValidos > 0
-                ? `${fmtPct((entregas.quantidade / movimento.totalValidos) * 100)} dos pedidos do período`
-                : "Pedidos que saíram para a rua"}
+              {movimento.vendas > 0
+                ? `${fmtPct(movimento.operacao.entrega.pct)} das vendas do período (a mesa conta uma vez)`
+                : "Vendas que saíram para a rua"}
             </p>
           </div>
         </div>
@@ -1243,6 +1259,9 @@ export default function RelatoriosClient({
                       {entregas.semCusto} {entregas.semCusto === 1 ? "entrega sem entregador atribuído" : "entregas sem entregador atribuído"} — fora desta conta
                     </span></>
                   )}
+                  {entregas.doApp > 0 && (
+                    <><br /><span>{entregas.doApp} {entregas.doApp === 1 ? "entrega feita" : "entregas feitas"} pelo entregador do app — sem custo para a loja</span></>
+                  )}
                 </p>
               </>
             ) : (
@@ -1250,8 +1269,8 @@ export default function RelatoriosClient({
                 <p style={{ margin: "2px 0 0", fontSize: "1.1rem", fontWeight: 800, color: "#94A3B8" }}>Sem apuração</p>
                 <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#B45309", fontWeight: 600, lineHeight: 1.45 }}>
                   {entregas.quantidade === 0
-                    ? "Nenhuma entrega no período."
-                    : `As ${entregas.quantidade} entregas do período não têm entregador atribuído, então não dá para saber quanto custaram. Atribua o entregador no pedido para este número aparecer.`}
+                    ? (entregas.doApp > 0 ? `As ${entregas.doApp} entregas do período foram feitas pelo entregador do app — sem custo para a loja.` : "Nenhuma entrega no período.")
+                    : `As ${entregas.quantidade} entregas próprias do período não têm entregador atribuído, então não dá para saber quanto custaram. Atribua o entregador no pedido para este número aparecer.`}
                 </p>
               </>
             )}
@@ -1300,11 +1319,27 @@ export default function RelatoriosClient({
             </span>
           </div>
           <div>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Margem Estimada (Lucro)</p>
-            <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>
-              {fmtPct(processedData.margin)}
-            </p>
-            <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>Lucro Líquido: {fmtR(processedData.profit)}</p>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B", fontWeight: 600 }}>Margem bruta estimada</p>
+            {processedData.custo.suficiente && processedData.custo.margem !== null ? (
+              <>
+                <p style={{ margin: "2px 0 0", fontSize: "1.4rem", fontWeight: 900, color: "#0F172A" }}>
+                  {fmtPct(processedData.custo.margem)}
+                </p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#94A3B8", lineHeight: 1.4 }}>
+                  Lucro bruto: {fmtR(processedData.custo.lucroBruto)} — só o custo dos produtos; não desconta comissão de app, entrega e taxas
+                  {processedData.custo.cobertura < 0.995 && ` · custo cadastrado em ${fmtPct(processedData.custo.cobertura * 100)} do que vendeu`}
+                </p>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: "2px 0 0", fontSize: "1.1rem", fontWeight: 800, color: "#94A3B8" }}>Sem custo cadastrado</p>
+                <p style={{ margin: "4px 0 0", fontSize: "0.7rem", color: "#B45309", fontWeight: 600, lineHeight: 1.45 }}>
+                  {processedData.custo.receita > 0
+                    ? `O custo cadastrado cobre ${fmtPct(processedData.custo.cobertura * 100)} do que vendeu no período. Cadastre o custo dos produtos no Cardápio para ver a margem.`
+                    : "Nenhum item vendido no período."}
+                </p>
+              </>
+            )}
           </div>
         </div>
 
@@ -1323,27 +1358,41 @@ export default function RelatoriosClient({
           </div>
         </div>
 
-        {!tempos.temAlgumaMedicao ? (
+        {tempos.carregando ? (
+          <div style={{ background: "#F8FAFC", border: "1px dashed #CBD5E1", borderRadius: 14, padding: "1.25rem", textAlign: "center", color: "#94A3B8", fontSize: "0.82rem" }}>
+            Carregando os tempos do período…
+          </div>
+        ) : tempos.erro ? (
+          <div style={{ background: "#FFF7ED", border: "1px solid #FED7AA", borderRadius: 14, padding: "1rem", color: "#9A3412", fontSize: "0.82rem" }}>
+            {tempos.erro} <Link href={`/store/relatorios/tempos?${consulta}`} style={{ color: "#9A3412", fontWeight: 800 }}>Abrir o relatório Tempo por status →</Link>
+          </div>
+        ) : etapasDosTempos.length === 0 ? (
           <div style={{ background: "#F8FAFC", border: "1px dashed #CBD5E1", borderRadius: 14, padding: "1.25rem", textAlign: "center", color: "#64748B", fontSize: "0.85rem" }}>
             <Clock size={22} style={{ opacity: 0.4 }} />
-            <p style={{ margin: "8px 0 0", fontWeight: 700, color: "#475569" }}>Ainda não há pedido medido neste período</p>
-            <p style={{ margin: "4px 0 0", fontSize: "0.78rem" }}>
-              A marcação de horário em cada tela começou agora. Pedidos antigos não têm esse registro —
-              os tempos aparecem conforme a operação for rodando.
-            </p>
+            <p style={{ margin: "8px 0 0", fontWeight: 700, color: "#475569" }}>Nenhum pedido medido neste período</p>
           </div>
         ) : (
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.85rem" }}>
-            {tempos.comDados.map((e) => (
-              <div key={e.chave} style={{ border: "1px solid #E2E8F0", borderRadius: 14, padding: "0.9rem 1rem", background: "#fff", borderTop: `4px solid ${e.cor}` }}>
-                <p style={{ margin: 0, fontSize: "0.78rem", fontWeight: 800, color: "#334155" }}>{e.titulo}</p>
-                <p style={{ margin: "6px 0 0", fontSize: "1.5rem", fontWeight: 900, color: e.cor, lineHeight: 1 }}>{fmtMin(e.mediana)}</p>
-                <p style={{ margin: "3px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>metade dos pedidos leva até isso</p>
-                <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#94A3B8", lineHeight: 1.35 }}>{e.legenda}</p>
-                <p style={{ margin: "6px 0 0", fontSize: "0.7rem", color: "#CBD5E1", fontWeight: 700 }}>{e.medidos} pedido{e.medidos !== 1 ? "s" : ""} medido{e.medidos !== 1 ? "s" : ""} · média {fmtMin(e.media)}</p>
-              </div>
-            ))}
-          </div>
+          <>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "0.85rem" }}>
+              {etapasDosTempos.map((e: any) => {
+                const cor = COR_DA_ETAPA[e.chave] || "#334155";
+                return (
+                  <div key={e.chave} style={{ border: "1px solid #E2E8F0", borderRadius: 14, padding: "0.9rem 1rem", background: "#fff", borderTop: `4px solid ${cor}` }}>
+                    <p style={{ margin: 0, fontSize: "0.78rem", fontWeight: 800, color: "#334155" }}>{e.titulo}</p>
+                    <p style={{ margin: "6px 0 0", fontSize: "1.5rem", fontWeight: 900, color: cor, lineHeight: 1 }}>{fmtMin(e.mediana)}</p>
+                    <p style={{ margin: "3px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>metade dos pedidos leva até isso</p>
+                    <p style={{ margin: "6px 0 0", fontSize: "0.72rem", color: "#94A3B8", lineHeight: 1.35 }}>{e.legenda}</p>
+                    <p style={{ margin: "6px 0 0", fontSize: "0.7rem", color: "#94A3B8", fontWeight: 700 }}>{e.medidos} pedido{e.medidos !== 1 ? "s" : ""} medido{e.medidos !== 1 ? "s" : ""} · média {fmtMin(e.media)}</p>
+                  </div>
+                );
+              })}
+            </div>
+            <p style={{ margin: "10px 0 0", fontSize: "0.74rem", color: "#64748B" }}>
+              Os mesmos números do relatório{" "}
+              <Link href={`/store/relatorios/tempos?${consulta}`} style={{ color: "#0F766E", fontWeight: 800 }}>Tempo por status →</Link>
+              {" "}— lá aparecem os pedidos que ficaram de fora e por quê.
+            </p>
+          </>
         )}
       </div>
 
@@ -1355,13 +1404,13 @@ export default function RelatoriosClient({
           </h2>
           <p style={{ margin: "4px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
             Quanto tempo ainda faltava para o prazo prometido na hora em que o pedido saiu.
-            Usa os mesmos limites dos Alertas de Produção: amarelo em {saidas.limites.yellowMinutes} min, vermelho em {saidas.limites.redMinutes} min.
+            {saidas && <>Usa os mesmos limites dos Alertas de Produção: amarelo em {saidas.limites.amareloMin} min, vermelho em {saidas.limites.vermelhoMin} min.</>}
           </p>
         </div>
 
-        {saidas.medidos === 0 ? (
+        {!saidas || saidas.medidos === 0 ? (
           <div style={{ background: "#F8FAFC", border: "1px dashed #CBD5E1", borderRadius: 14, padding: "1.25rem", textAlign: "center", color: "#64748B", fontSize: "0.82rem" }}>
-            Nenhuma saída medida neste período.
+            {tempos.carregando ? "Carregando…" : tempos.erro ? tempos.erro : "Nenhuma saída medida neste período."}
           </div>
         ) : (
           <>
@@ -1389,10 +1438,8 @@ export default function RelatoriosClient({
             </div>
             <p style={{ margin: "10px 0 0", fontSize: "0.75rem", color: "#94A3B8" }}>
               {saidas.medidos} saída{saidas.medidos !== 1 ? "s" : ""} medida{saidas.medidos !== 1 ? "s" : ""} no período
-              {saidas.folgaMedia !== null && (
-                <> · folga média na saída: <strong style={{ color: saidas.folgaMedia < 0 ? "#C92E09" : "#0F766E" }}>
-                  {saidas.folgaMedia < 0 ? `${fmtMin(Math.abs(saidas.folgaMedia))} depois do prazo` : `${fmtMin(saidas.folgaMedia)} antes do prazo`}
-                </strong></>
+              {saidas.atrasoMediano !== null && (
+                <> · quem estourou passou, na mediana, <strong style={{ color: "#C92E09" }}>{fmtMin(saidas.atrasoMediano)}</strong> do prazo</>
               )}
             </p>
           </>
@@ -1405,14 +1452,14 @@ export default function RelatoriosClient({
           <PieChart size={18} color="#475569" /> De onde vêm os pedidos
         </h2>
         <p style={{ margin: "0 0 1rem", fontSize: "0.78rem", color: "#64748B" }}>
-          Quantidade e porcentagem por plataforma, e quanto cada uma faturou.
+          Vendas por plataforma (a mesa conta uma vez), a porcentagem e quanto cada uma vendeu.
         </p>
 
         {sourceStats.length === 0 ? (
           <p style={{ margin: 0, fontSize: "0.82rem", color: "#94A3B8" }}>Sem pedidos no período.</p>
         ) : (
           <div style={{ display: "flex", gap: "1.5rem", alignItems: "center", flexWrap: "wrap" }}>
-            {/* Rosca: cada fatia é a porcentagem de PEDIDOS da plataforma */}
+            {/* Rosca: cada fatia é a porcentagem de VENDAS da plataforma */}
             <svg width={160} height={160} viewBox="0 0 160 160" style={{ flexShrink: 0 }}>
               <g transform="rotate(-90 80 80)">
                 <circle cx={80} cy={80} r={56} fill="none" stroke="#F1F5F9" strokeWidth={22} />
@@ -1434,8 +1481,8 @@ export default function RelatoriosClient({
                   });
                 })()}
               </g>
-              <text x={80} y={76} textAnchor="middle" style={{ fontSize: 24, fontWeight: 900, fill: "#0F172A" }}>{movimento.totalValidos}</text>
-              <text x={80} y={94} textAnchor="middle" style={{ fontSize: 10, fontWeight: 800, fill: "#94A3B8", letterSpacing: 1 }}>PEDIDOS</text>
+              <text x={80} y={76} textAnchor="middle" style={{ fontSize: 24, fontWeight: 900, fill: "#0F172A" }}>{movimento.vendas}</text>
+              <text x={80} y={94} textAnchor="middle" style={{ fontSize: 10, fontWeight: 800, fill: "#94A3B8", letterSpacing: 1 }}>VENDAS</text>
             </svg>
 
             <div style={{ flex: 1, minWidth: 260, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -1447,14 +1494,14 @@ export default function RelatoriosClient({
                       {f.label}
                     </span>
                     <span style={{ color: "#64748B", whiteSpace: "nowrap" }}>
-                      <strong style={{ color: "#0F172A" }}>{f.count} ped.</strong> · <strong style={{ color: f.color }}>{fmtPct(f.pctQtd)}</strong> · {fmtR(f.total)}
+                      <strong style={{ color: "#0F172A" }}>{f.vendas} {f.vendas === 1 ? "venda" : "vendas"}</strong> · <strong style={{ color: f.color }}>{fmtPct(f.pctQtd)}</strong> · {fmtR(f.total)}
                     </span>
                   </div>
                   <div style={{ background: "#F1F5F9", height: 7, borderRadius: 4, overflow: "hidden" }}>
                     <div style={{ background: f.color, height: "100%", width: `${f.pctQtd}%`, borderRadius: 4 }} />
                   </div>
                   <p style={{ margin: "3px 0 0", fontSize: "0.7rem", color: "#94A3B8" }}>
-                    Ticket médio: {fmtR(f.ticket)}{f.vendas !== f.count ? ` por venda (${f.vendas} vendas — a mesa conta uma vez)` : ""}
+                    Ticket médio: {fmtR(f.ticket)}{f.vendas !== f.count ? ` · ${f.count} lançamentos (cada rodada da mesa é um)` : ""}
                   </p>
                 </div>
               ))}
@@ -1472,7 +1519,8 @@ export default function RelatoriosClient({
             <Clock size={16} color="#B45309" /> Horários de pico
           </h3>
           <p style={{ margin: "0 0 1rem", fontSize: "0.76rem", color: "#64748B" }}>
-            Pedidos por hora do dia. Pico às <strong>{String(movimento.picoHora.hora).padStart(2, "0")}h</strong> com {movimento.picoHora.count} pedidos.
+            Pedidos lançados por hora (cada rodada de mesa é um — é o ritmo da cozinha). Pico às <strong>{String(movimento.picoHora.hora).padStart(2, "0")}h</strong>: {movimento.picoHora.count} no período
+            {movimento.diasDoPeriodo > 1 && <>, média de <strong>{(movimento.picoHora.count / movimento.diasDoPeriodo).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</strong> por dia</>}.
           </p>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 120 }}>
             {movimento.porHora.map((h) => (
@@ -1557,11 +1605,11 @@ export default function RelatoriosClient({
               <strong style={{ color: "#0F172A" }}>{fmtR(movimento.ticketMedio)}</strong>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
-              <span style={{ color: "#64748B", fontWeight: 600 }}>Faturamento com taxas</span>
+              <span style={{ color: "#64748B", fontWeight: 600 }}>Valor vendido</span>
               <strong style={{ color: "#0F172A" }}>{fmtR(movimento.receitaTotal)}</strong>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0" }}>
-              <span style={{ color: "#64748B", fontWeight: 600 }}>Pedidos cancelados</span>
+              <span style={{ color: "#64748B", fontWeight: 600 }}>Pedidos cancelados (dos lançados)</span>
               <strong style={{ color: movimento.taxaCancelamento > 5 ? "#C92E09" : "#0F172A" }}>
                 {movimento.cancelados} ({fmtPct(movimento.taxaCancelamento)})
               </strong>
@@ -1619,19 +1667,27 @@ export default function RelatoriosClient({
                   <span style={{ color: "#64748B" }}>Faturamento Gerado:</span>
                   <strong style={{ color: "#0F766E" }}>{fmtR(championProduct.revenue)}</strong>
                 </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
-                  <span style={{ color: "#64748B" }}>Custo Total (CMV):</span>
-                  <strong style={{ color: "#C92E09" }}>{fmtR(championProduct.cost)}</strong>
-                </div>
-                <div style={{ height: "1px", background: "#E2E8F0", margin: "4px 0" }} />
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 800 }}>
-                  <span style={{ color: "#475569" }}>Lucro Líquido:</span>
-                  <span style={{ color: "#FF6B35" }}>{fmtR(championProduct.profit)}</span>
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "#94A3B8" }}>
-                  <span>Margem no item:</span>
-                  <span>{championProduct.revenue > 0 ? fmtPct((championProduct.profit / championProduct.revenue) * 100) : "0.0%"}</span>
-                </div>
+                {championProduct.cost > 0 ? (
+                  <>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.8rem" }}>
+                      <span style={{ color: "#64748B" }}>Custo cadastrado:</span>
+                      <strong style={{ color: "#C92E09" }}>{fmtR(championProduct.cost)}</strong>
+                    </div>
+                    <div style={{ height: "1px", background: "#E2E8F0", margin: "4px 0" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", fontWeight: 800 }}>
+                      <span style={{ color: "#475569" }}>Lucro bruto:</span>
+                      <span style={{ color: "#FF6B35" }}>{fmtR(championProduct.profit)}</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.72rem", color: "#94A3B8" }}>
+                      <span>Margem bruta no item:</span>
+                      <span>{championProduct.revenue > 0 ? fmtPct((championProduct.profit / championProduct.revenue) * 100) : "—"}</span>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ fontSize: "0.74rem", color: "#B45309", fontWeight: 600, lineHeight: 1.4 }}>
+                    Sem custo cadastrado — cadastre o custo no Cardápio para ver o lucro deste produto.
+                  </div>
+                )}
               </div>
 
             </div>
@@ -1654,24 +1710,38 @@ export default function RelatoriosClient({
           
           {/* Formas de Pagamento */}
           <div>
-            <h3 style={{ margin: "0 0 10px", fontWeight: 900, fontSize: "0.88rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 6 }}>
-              <PieChart size={15} /> Meios de Pagamento (Breakdown)
+            <h3 style={{ margin: "0 0 4px", fontWeight: 900, fontSize: "0.88rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 6 }}>
+              <PieChart size={15} /> Formas de pagamento
             </h3>
-            {paymentStats.length === 0 ? (
-              <p style={{ margin: 0, fontSize: "0.78rem", color: "#94A3B8" }}>Sem dados no período.</p>
+            <p style={{ margin: "0 0 10px", fontSize: "0.72rem", color: "#64748B", lineHeight: 1.4 }}>
+              Pela mesma leitura do fechamento de caixa. A mesa entra pela forma em que a conta foi paga, sem o troco.
+            </p>
+            {formas.carregando ? (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "#94A3B8" }}>Carregando…</p>
+            ) : formas.erro ? (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "#9A3412" }}>{formas.erro}</p>
+            ) : !(formas.dados?.formas || []).some((f: any) => f.valor > 0) ? (
+              <p style={{ margin: 0, fontSize: "0.78rem", color: "#94A3B8" }}>Sem pagamentos no período.</p>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {paymentStats.map((item) => (
-                  <div key={item.key}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", marginBottom: 3 }}>
-                      <span style={{ fontWeight: 600 }}>{item.key}</span>
-                      <strong>{fmtR(item.total)} <span style={{ fontWeight: 400, color: "#94A3B8", marginLeft: 4 }}>({item.count} ped. · {fmtPct(item.pct)})</span></strong>
+                {(formas.dados.formas as any[]).filter((f) => f.valor > 0).sort((a, b) => b.valor - a.valor).map((f) => {
+                  const cor = f.grupo === "ONLINE" ? "#2563EB" : f.grupo === "SEM_DINHEIRO" ? "#94A3B8" : "#0D9488";
+                  return (
+                    <div key={f.chave}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.78rem", marginBottom: 3, gap: 8 }}>
+                        <span style={{ fontWeight: 600 }}>{f.rotulo}</span>
+                        <strong style={{ whiteSpace: "nowrap" }}>{fmtR(f.valor)} <span style={{ fontWeight: 400, color: "#94A3B8", marginLeft: 4 }}>({f.contas} {f.contas === 1 ? "conta" : "contas"} · {fmtPct(f.pct)})</span></strong>
+                      </div>
+                      <div style={{ background: "#F1F5F9", height: 6, borderRadius: 3, overflow: "hidden" }}>
+                        <div style={{ background: cor, height: "100%", width: `${f.pct}%`, borderRadius: 3 }} />
+                      </div>
                     </div>
-                    <div style={{ background: "#F1F5F9", height: 6, borderRadius: 3, overflow: "hidden" }}>
-                      <div style={{ background: item.color, height: "100%", width: `${item.pct}%`, borderRadius: 3 }} />
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
+                <p style={{ margin: "4px 0 0", fontSize: "0.72rem", color: "#64748B" }}>
+                  Total pago: <strong>{fmtR(formas.dados.total?.valor || 0)}</strong> ·{" "}
+                  <Link href={`/store/relatorios/formas-de-pagamento?${consulta}`} style={{ color: "#0F766E", fontWeight: 800 }}>ver o relatório completo →</Link>
+                </p>
               </div>
             )}
           </div>
@@ -1850,8 +1920,8 @@ export default function RelatoriosClient({
                 <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right" }}>Preço Base</th>
                 <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right" }}>Qtd. Vendida</th>
                 <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right" }}>Receita total</th>
-                <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right" }}>CMV Total</th>
-                <th style={{ padding: "12px 1.25rem", fontWeight: 700, textAlign: "right" }}>Lucro estimado</th>
+                <th style={{ padding: "12px 1rem", fontWeight: 700, textAlign: "right" }}>Custo cadastrado</th>
+                <th style={{ padding: "12px 1.25rem", fontWeight: 700, textAlign: "right" }} title="Valor dos itens menos o custo cadastrado. Não desconta comissão de app, entrega e taxas.">Lucro bruto</th>
               </tr>
             </thead>
             <tbody>
@@ -1912,10 +1982,10 @@ export default function RelatoriosClient({
                           : fmtR(p.revenue)}
                       </td>
                       <td style={{ padding: "12px 1rem", textAlign: "right", color: isZero ? "#94A3B8" : "#C92E09" }}>
-                        {fmtR(p.cost)}
+                        {p.revenue > 0 && p.cost <= 0 ? <span style={{ fontSize: "0.72rem", color: "#94A3B8", fontWeight: 600 }}>sem custo</span> : fmtR(p.cost)}
                       </td>
                       <td style={{ padding: "12px 1.25rem", textAlign: "right", fontWeight: 800, color: isZero ? "#94A3B8" : "#FF6B35" }}>
-                        {fmtR(p.profit)}
+                        {p.revenue > 0 && p.cost <= 0 ? <span style={{ color: "#CBD5E1" }}>—</span> : fmtR(p.profit)}
                       </td>
                     </tr>
                   );
@@ -1949,8 +2019,9 @@ export default function RelatoriosClient({
                   <td style={{ padding: "14px 1rem", textAlign: "right", fontWeight: 800, color: "#C92E09" }}>
                     {fmtR(totalDoRanking.cost)}
                   </td>
-                  <td style={{ padding: "14px 1.25rem", textAlign: "right", fontWeight: 900, color: "#E8590C" }}>
-                    {fmtR(totalDoRanking.profit)}
+                  <td style={{ padding: "14px 1.25rem", textAlign: "right", fontWeight: 900, color: "#E8590C" }}
+                    title={totalDoRanking.semCusto > 0 ? `${totalDoRanking.semCusto} produto(s) com venda e sem custo cadastrado: o lucro do total ficaria inflado.` : undefined}>
+                    {totalDoRanking.semCusto > 0 ? <span style={{ fontSize: "0.72rem", color: "#9A3412", fontWeight: 700 }}>{totalDoRanking.semCusto} sem custo</span> : fmtR(totalDoRanking.profit)}
                   </td>
                 </tr>
               </tfoot>
