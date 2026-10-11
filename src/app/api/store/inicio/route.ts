@@ -9,11 +9,18 @@ import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 export const dynamic = "force-dynamic";
 
 /**
- * GET /api/store/inicio?de=<ISO>&ate=<ISO>[&loja=<id>] — os pedidos de um
- * "Período" da tela Início que começa antes do que veio com a tela.
+ * GET /api/store/inicio?de=<ISO>[&ate=<ISO>][&loja=<id>] — os pedidos da tela
+ * Início:
+ *   - de um "Período" que começa antes do que veio com a tela (`de` e `ate`);
+ *   - da ATUALIZAÇÃO da tela, sem `ate`: tudo desde `de` até agora. A Início
+ *     carregava uma vez e o "Hoje" ficava parado na hora em que a tela abriu.
  *
- * As datas chegam já em ISO, calculadas no navegador: o "dia" é o do fuso da
- * loja, e quem sabe o fuso é a tela. `loja` só vale para o ADMIN; sem ela, o
+ * `geradoEm` é o instante do servidor ANTES da consulta: a tela compara o
+ * "Hoje" com o ontem até este mesmo instante, e a próxima atualização relê a
+ * partir de um pouco antes dele — nada gravado durante a leitura se perde.
+ *
+ * As datas chegam já em ISO, calculadas no navegador pelo dia de operação da
+ * loja (src/lib/numeros-do-inicio.ts). `loja` só vale para o ADMIN; sem ela, o
  * ADMIN vê todas. Ver src/lib/pedidos-do-inicio.ts.
  */
 export async function GET(req: NextRequest) {
@@ -33,13 +40,15 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Sem acesso" }, { status: 403 });
   }
 
+  const geradoEm = new Date();
   const p = req.nextUrl.searchParams;
   const de = new Date(p.get("de") || "");
-  const ate = new Date(p.get("ate") || "");
-  if (isNaN(de.getTime()) || isNaN(ate.getTime()) || de > ate) {
+  const ateBruto = p.get("ate");
+  const ate = ateBruto ? new Date(ateBruto) : null;
+  if (isNaN(de.getTime()) || (ate && (isNaN(ate.getTime()) || de > ate))) {
     return NextResponse.json({ error: "Período inválido" }, { status: 400 });
   }
-  if (ate.getTime() - de.getTime() > (MAIOR_PERIODO_EM_DIAS + 1) * 24 * 60 * 60 * 1000) {
+  if ((ate || geradoEm).getTime() - de.getTime() > (MAIOR_PERIODO_EM_DIAS + 1) * 24 * 60 * 60 * 1000) {
     return NextResponse.json({ error: `Período maior que ${MAIOR_PERIODO_EM_DIAS} dias` }, { status: 400 });
   }
 
@@ -52,6 +61,6 @@ export async function GET(req: NextRequest) {
     franchiseeId = (await lojasDaVisao(usuario, req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value)).lojaIds;
   }
 
-  const pedidos = await pedidosDoInicio({ franchiseeId, desde: de, ate });
-  return NextResponse.json({ pedidos });
+  const pedidos = await pedidosDoInicio({ franchiseeId, desde: de, ate: ate || undefined });
+  return NextResponse.json({ pedidos, geradoEm: geradoEm.toISOString() });
 }

@@ -2,7 +2,9 @@
  * GET /api/cron/pedidos-atrasados
  *
  * Avisa o dono, pelo WhatsApp, quando um pedido passou do prazo e AINDA NÃO
- * saiu para entrega.
+ * saiu da loja: a entrega que não saiu para entrega, a retirada (e o balcão)
+ * que não ficou pronta. Mesa não tem prazo e não entra — o lançamento dela
+ * fica "Aceito" até a conta fechar (lib/painel-do-dono.ts, `pedidosAtrasados`).
  *
  * ── Por que "ainda não saiu" é o corte ──────────────────────────────────────
  * Depois que o motoboy pega, o atraso vira estrada — a loja não controla e o
@@ -22,7 +24,8 @@ import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { avisarDono } from "@/lib/alertas-do-dono";
 import { ehLojaDeDemonstracao } from "@/lib/pedidos-simulados";
-import { pedidosAtrasados, prazoDeEntregaMin, horaLocal } from "@/lib/painel-do-dono";
+import { pedidosAtrasados, prazoDeEntregaMin } from "@/lib/painel-do-dono";
+import { mensagemDosAtrasados } from "@/lib/resumo-do-dono";
 
 export const dynamic = "force-dynamic";
 
@@ -31,9 +34,6 @@ const INTERVALO_ENTRE_AVISOS_MS = 60 * 60 * 1000;
 
 /** Onde os carimbos moram dentro de `User.chatbotConfig`. */
 const CHAVE_AVISOS = "lateOrderAlerts";
-
-/** No máximo isso de pedido listado; o resto vira "+ N pedido(s)". */
-const MAX_NA_MENSAGEM = 8;
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
@@ -74,21 +74,9 @@ export async function GET(req: NextRequest) {
       );
       if (novos.length === 0) continue;
 
-      const listados = novos.slice(0, MAX_NA_MENSAGEM);
-      const linhas = listados.map(
-        (p) =>
-          `• *${p.numero}* — ${p.cliente}\n` +
-          `  entrou ${horaLocal(p.entrouEm, loja.storeTimezone)} · prazo ${p.prazoMin} min · ` +
-          `já são ${p.minutosDeVida} min (*${p.minutosDeAtraso} min além do prazo*)`
-      );
-      const sobra = novos.length - listados.length;
-
-      const mensagem =
-        `⏰ *${novos.length === 1 ? "Pedido atrasado" : `${novos.length} pedidos atrasados`}* — ` +
-        `${loja.storeName || "sua loja"}\n\n` +
-        linhas.join("\n") +
-        (sobra > 0 ? `\n\n+ ${sobra} pedido(s) também atrasado(s).` : "") +
-        `\n\nNenhum deles saiu para entrega ainda.`;
+      // Mesa não entra (pedidosAtrasados), a retirada tem o prazo e a frase
+      // dela — a mensagem e o fecho moram em lib/resumo-do-dono.ts.
+      const mensagem = mensagemDosAtrasados(loja.storeName, novos, loja.storeTimezone);
 
       const enviou = await avisarDono(loja.id, "pedido_atrasado", mensagem);
       if (!enviou) continue;

@@ -7,6 +7,7 @@ import { lojaNoMapaPorId } from "@/lib/ponto-da-loja-servidor";
 import { inicioDaJanela, pedidosDoInicio } from "@/lib/pedidos-do-inicio";
 import { cookies } from "next/headers";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
+import { FUSO_PADRAO } from "@/lib/fuso";
 
 export const dynamic = "force-dynamic";
 
@@ -23,20 +24,25 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
 
   const resolvedParams = await searchParams;
 
-  // Só o que os filtros rápidos usam; "Período" mais antigo vem pela API.
-  // Ver src/lib/pedidos-do-inicio.ts.
-  const desde = inicioDaJanela();
+  // O instante dos dados, tirado ANTES da consulta: a tela compara o "Hoje"
+  // com o ontem até este mesmo instante e diz "atualizado às HH:MM".
+  const carregadoEm = new Date();
 
   // ── ADMIN: acessa TODAS as lojas ─────────────────────────────────────────
   if (role === "ADMIN") {
     try {
       const franchisees = await prisma.user.findMany({
         where: { role: "FRANCHISEE" },
-        select: { id: true, name: true, slug: true, storeLogo: true },
+        select: { id: true, name: true, slug: true, storeLogo: true, storeTimezone: true },
         orderBy: { name: "asc" },
       });
 
       const selectedId = resolvedParams.loja || "todas";
+      // O dia de operação é o da loja escolhida; em "todas", o de Brasília.
+      const tz = (selectedId !== "todas" && franchisees.find((f) => f.id === selectedId)?.storeTimezone) || FUSO_PADRAO;
+      // Só o que os filtros rápidos usam; "Período" mais antigo vem pela API.
+      // Ver src/lib/pedidos-do-inicio.ts.
+      const desde = inicioDaJanela(carregadoEm, tz);
 
       const serialized = await pedidosDoInicio({
         franchiseeId: selectedId === "todas" ? null : selectedId,
@@ -57,7 +63,8 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         <StoreDashboard
           orders={serialized}
           carregadoDesde={desde.toISOString()}
-          paymentFees={{}}
+          carregadoEm={carregadoEm.toISOString()}
+          tz={tz}
           completedOnboardingSteps={["logo", "hours", "payment", "delivery", "first_order", "menu"]}
           isAdmin={true}
           storeList={storeList}
@@ -76,7 +83,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
     select: {
-      id: true, slug: true, ownerId: true,
+      id: true, slug: true, ownerId: true, storeTimezone: true,
       storeLogo: true, storeBanner: true, storeHours: true,
       paymentFees: true, deliveryZones: true, storeOrderCount: true,
     }
@@ -93,6 +100,15 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
     { id: user.id, ownerId: (user as any).ownerId, role: (session.user as any)?.role },
     (await cookies()).get(COOKIE_DA_LOJA_ATIVA)?.value,
   );
+
+  // O dia de operação (vira às 5h) é o do fuso da LOJA — o do funcionário é o
+  // do dono —, não o do computador: a mesma régua dos Relatórios.
+  const tz = (user.ownerId
+    ? (await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { storeTimezone: true } }).catch(() => null))?.storeTimezone
+    : user.storeTimezone) || FUSO_PADRAO;
+  // Só o que os filtros rápidos usam; "Período" mais antigo vem pela API.
+  // Ver src/lib/pedidos-do-inicio.ts.
+  const desde = inicioDaJanela(carregadoEm, tz);
 
   try {
     // Independentes entre si: em paralelo, cada ida ao banco a menos é
@@ -145,7 +161,8 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         <StoreDashboard
           orders={serialized}
           carregadoDesde={desde.toISOString()}
-          paymentFees={(user.paymentFees as any) || {}}
+          carregadoEm={carregadoEm.toISOString()}
+          tz={tz}
           completedOnboardingSteps={completedSteps}
           pontoDaLoja={noMapa.ponto}
           cidadeDaLoja={noMapa.cidade}

@@ -14,9 +14,29 @@
  *
  * Tudo é lido de uma vez, em paralelo, porque isto roda no caminho da resposta
  * ao WhatsApp — o dono está esperando a mensagem.
+ *
+ * ── As vendas são as dos Relatórios (11/10/2026) ────────────────────────────
+ * O "hoje" começava à meia-noite, contava rascunho do robô como venda, a mesa
+ * de três rodadas como três pedidos e o canal com o código cru do banco. Ragnar
+ * Burger, domingo 01h30: o robô diria R$ 1.103,86 / 23 pedidos / ticket
+ * R$ 47,99; o turno era R$ 14.642,88 / 243 vendas / R$ 60,26. Agora é o dia de
+ * operação (desde as 5h, no fuso da loja) pelo `resumoDeVendas` do "Vendas por
+ * período" (src/lib/resumo-do-dono.ts).
  */
 import { prisma } from "@/lib/prisma";
 import { inicioDoDiaDaLoja, inicioDoExpedienteDaLoja } from "@/lib/fuso";
+import { hojeNaLoja } from "@/lib/relatorios/base";
+import { inicioDoDiaOperacional } from "@/lib/numeros-do-inicio";
+import { nomeDoCanal as nomeDoCanalDoPedido } from "@/lib/canal-do-pedido";
+import {
+  horaLocal, inicioDoDiaEmTexto, linhasEmTexto, prazoDoAtraso, reaisEmTexto, situacaoDoAtraso, tipoDoAtraso, vendasDoDiaDoDono,
+  type TipoDoAtraso, type VendasDoDiaDoDono,
+} from "@/lib/resumo-do-dono";
+import { PRAZO_PADRAO_RETIRADA_MIN } from "@/lib/relatorios/tempos";
+
+// `horaLocal` mora em lib/resumo-do-dono.ts (puro); o aviso de impressão
+// parada (api/cron/impressao-parada) continua importando daqui.
+export { horaLocal };
 
 /**
  * Status que significam "ainda está na loja".
@@ -27,6 +47,15 @@ import { inicioDoDiaDaLoja, inicioDoExpedienteDaLoja } from "@/lib/fuso";
  * atraso é estrada, e a loja não tem o que fazer com o aviso.
  */
 export const STATUS_EM_ABERTO = ["NOVO", "ACEITO", "PREPARANDO"];
+
+/**
+ * A MESA não é pedido "em aberto" nem atrasado: o lançamento de mesa nasce
+ * ACEITO e só vira ENTREGUE quando a conta fecha. Com ela no filtro, Map Grill,
+ * Quiosque e Pizzaria lá casa receberam 11 alertas de "pedido atrasado" por
+ * mesa com gente comendo (08–09/10/2026). Fora a de conta (sessão) e a do PDV
+ * antigo (deliveryType MESA, sem sessão).
+ */
+const SEM_MESA = { tableSessionId: null, deliveryType: { not: "MESA" } } as const;
 
 /** Prazo padrão quando a loja não cadastrou zona nenhuma. */
 export const PRAZO_PADRAO_MIN = 45;
@@ -55,15 +84,23 @@ export type PedidoAtrasado = {
   prazoMin: number;
   minutosDeAtraso: number;
   status: string;
+  /** Nome do canal como nos Relatórios ("iFood", "PDV", "Online"…). */
   canal: string;
+  /** Entrega (prazo da área de entrega) ou retirada/balcão/totem (prazo de 40 min). */
+  tipo: TipoDoAtraso;
 };
 
 /**
- * Pedidos que passaram do prazo e ainda NÃO saíram para entrega.
+ * Pedidos que passaram do prazo e ainda NÃO saíram da loja: a entrega que não
+ * saiu para entrega e a retirada que não ficou pronta. Mesa não tem prazo.
  *
  * "Não saiu" é o corte certo: depois que o motoboy pega, o atraso vira estrada,
  * que a loja não controla e sobre a qual o alerta não ajudaria em nada. Antes
  * disso é cozinha, e cozinha tem quem resolva.
+ *
+ * O prazo da ENTREGA é `prazoMin` (a área de entrega mais longa); o da
+ * RETIRADA (e do balcão e do totem) é o do cartão do painel, 40 min — antes
+ * ela era cobrada pelo prazo da entrega.
  *
  * Só conta o EXPEDIENTE corrente (vira às 5h, igual ao aviso de cancelamento).
  * Pedido de um turno que já acabou e ainda está em NOVO/ACEITO não é atraso de
@@ -77,13 +114,16 @@ export async function pedidosAtrasados(
   agora: Date = new Date(),
   timezone?: string | null
 ): Promise<PedidoAtrasado[]> {
-  const limite = new Date(agora.getTime() - prazoMin * 60_000);
+  // O menor dos dois prazos busca; cada pedido é julgado pelo prazo do tipo dele.
+  const menorPrazo = Math.min(prazoMin, PRAZO_PADRAO_RETIRADA_MIN);
+  const limite = new Date(agora.getTime() - menorPrazo * 60_000);
   const inicioDoExpediente = inicioDoExpedienteDaLoja(timezone, agora);
 
   const pedidos = await prisma.customerOrder.findMany({
     where: {
       franchiseeId,
       status: { in: STATUS_EM_ABERTO },
+      ...SEM_MESA,
       createdAt: { lt: limite, gte: inicioDoExpediente },
       // Agendado para mais tarde não está atrasado: o cliente pediu assim.
       OR: [{ scheduledDatetime: null }, { scheduledDatetime: { lt: agora } }],
@@ -91,14 +131,20 @@ export async function pedidosAtrasados(
     select: {
       id: true, dailyOrderNumber: true, customerName: true, createdAt: true,
       status: true, source: true, ifoodReference: true, openDeliveryReference: true,
+      deliveryType: true, tableSessionId: true, ifoodOrderId: true, openDeliveryOrderId: true, openDeliveryChannel: true,
     },
     orderBy: { createdAt: "asc" },
     take: 30,
   });
 
-  return pedidos.map((p) => {
+  const atrasados: PedidoAtrasado[] = [];
+  for (const p of pedidos) {
+    const tipo = tipoDoAtraso(p);
+    if (!tipo) continue;
+    const prazo = prazoDoAtraso(tipo, prazoMin);
     const minutosDeVida = Math.floor((agora.getTime() - p.createdAt.getTime()) / 60_000);
-    return {
+    if (minutosDeVida <= prazo) continue;
+    atrasados.push({
       id: p.id,
       numero: p.dailyOrderNumber
         ? `#${p.dailyOrderNumber}`
@@ -106,33 +152,22 @@ export async function pedidosAtrasados(
       cliente: p.customerName || "Sem nome",
       entrouEm: p.createdAt,
       minutosDeVida,
-      prazoMin,
-      minutosDeAtraso: minutosDeVida - prazoMin,
+      prazoMin: prazo,
+      minutosDeAtraso: minutosDeVida - prazo,
       status: p.status,
-      canal: p.source || "SITE",
-    };
-  });
-}
-
-/** Hora local da loja, para o dono ler "20:15" e não um UTC qualquer. */
-export function horaLocal(data: Date, timezone?: string | null): string {
-  try {
-    return new Intl.DateTimeFormat("pt-BR", {
-      hour: "2-digit", minute: "2-digit",
-      timeZone: timezone || "America/Sao_Paulo",
-    }).format(data);
-  } catch {
-    return new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" }).format(data);
+      canal: nomeDoCanalDoPedido(p),
+      tipo,
+    });
   }
+  return atrasados;
 }
 
 export type ResumoGerencial = {
   prazoMin: number;
   caixaAberto: boolean;
-  faturamentoHoje: number;
-  pedidosHoje: number;
-  ticketMedio: number;
-  porCanal: Record<string, number>;
+  /** As vendas do DIA DE OPERAÇÃO (desde as 5h), pela régua dos Relatórios. */
+  vendasDoDia: VendasDoDiaDoDono;
+  /** Entrega e retirada ainda na loja (mesa não conta). */
   emAberto: number;
   atrasados: PedidoAtrasado[];
   contasVencidas: { qtd: number; total: number };
@@ -152,12 +187,17 @@ export async function montarResumoGerencial(
   opts: { deliveryZones?: unknown; caixaAberto?: boolean; timezone?: string | null } = {}
 ): Promise<ResumoGerencial> {
   const agora = new Date();
-  // Meia-noite DA LOJA, não do container (UTC). Com setHours(0,0,0,0) o "hoje"
-  // do dono virava às 21:00 de Brasília: o faturamento zerava no meio do
-  // jantar e as contas que vencem hoje já apareciam como vencidas.
+  // Meia-noite DA LOJA, não do container (UTC), para as CONTAS A PAGAR: o
+  // vencimento é uma data do calendário. Com setHours(0,0,0,0) o "hoje" do
+  // dono virava às 21:00 de Brasília e as contas que vencem hoje já apareciam
+  // como vencidas.
   const inicioDoDia = inicioDoDiaDaLoja(opts.timezone, agora);
   const fimDoDia = new Date(inicioDoDia.getTime() + 24 * 60 * 60_000 - 1);
   const daquiUmaSemana = new Date(agora.getTime() + 7 * 24 * 60 * 60_000);
+  // As VENDAS são do dia de operação, que vira às 5h — o do caixa e dos
+  // Relatórios: à 1h30 de domingo, "hoje" ainda é o sábado desde as 5h.
+  const diaDeOperacao = hojeNaLoja(opts.timezone, agora);
+  const inicioDoTurno = inicioDoDiaOperacional(diaDeOperacao, opts.timezone);
 
   const prazoMin = prazoDeEntregaMin(opts.deliveryZones);
   // "Em aberto" no mesmo recorte do atraso: pedido esquecido de outro turno não
@@ -166,12 +206,18 @@ export async function montarResumoGerencial(
 
   const [pedidosDoDia, emAberto, atrasados, vencidas, hojeVence, naSemana, insumos] =
     await Promise.all([
+      // Com cancelados e rascunhos: o resumoDeVendas põe cada um na sua situação.
       prisma.customerOrder.findMany({
-        where: { franchiseeId, createdAt: { gte: inicioDoDia }, status: { not: "CANCELADO" } },
-        select: { totalAmount: true, source: true },
+        where: { franchiseeId, createdAt: { gte: inicioDoTurno, lte: agora } },
+        select: {
+          id: true, franchiseeId: true, createdAt: true, status: true, totalAmount: true,
+          deliveryType: true, source: true, tableSessionId: true, parentOrderId: true, totemLicenseId: true,
+          ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryChannel: true,
+          items: { select: { quantity: true, price: true } },
+        },
       }),
       prisma.customerOrder.count({
-        where: { franchiseeId, status: { in: STATUS_EM_ABERTO }, createdAt: { gte: inicioDoExpediente } },
+        where: { franchiseeId, status: { in: STATUS_EM_ABERTO }, ...SEM_MESA, createdAt: { gte: inicioDoExpediente } },
       }),
       pedidosAtrasados(franchiseeId, prazoMin, agora, opts.timezone),
       prisma.payable.aggregate({
@@ -192,20 +238,10 @@ export async function montarResumoGerencial(
       }),
     ]);
 
-  const faturamentoHoje = pedidosDoDia.reduce((acc, o) => acc + (o.totalAmount || 0), 0);
-  const porCanal: Record<string, number> = {};
-  for (const p of pedidosDoDia) {
-    const canal = p.source || "SITE";
-    porCanal[canal] = (porCanal[canal] || 0) + 1;
-  }
-
   return {
     prazoMin,
     caixaAberto: Boolean(opts.caixaAberto),
-    faturamentoHoje,
-    pedidosHoje: pedidosDoDia.length,
-    ticketMedio: pedidosDoDia.length > 0 ? faturamentoHoje / pedidosDoDia.length : 0,
-    porCanal,
+    vendasDoDia: vendasDoDiaDoDono(pedidosDoDia, diaDeOperacao, inicioDoTurno),
     emAberto,
     atrasados,
     contasVencidas: { qtd: vencidas._count || 0, total: vencidas._sum.value || 0 },
@@ -223,26 +259,23 @@ export async function montarResumoGerencial(
   };
 }
 
-const real = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
-
 /**
  * O resumo em texto, do jeito que entra no prompt.
  *
  * Escrito como fato consumado e sem rodeio: o modelo copia número, não
- * interpreta. Cada linha existe porque é uma pergunta que o dono faz.
+ * interpreta. Cada linha existe porque é uma pergunta que o dono faz. As
+ * palavras são as dos Relatórios: "valor vendido", "vendas" (a mesa conta uma
+ * vez), "lançamentos", "ticket médio" = valor ÷ vendas.
  */
 export function resumoEmTexto(r: ResumoGerencial, timezone?: string | null): string {
-  const canais = Object.entries(r.porCanal)
-    .map(([canal, qtd]) => `${canal} ${qtd}`)
-    .join(", ") || "nenhum";
-
+  const v = r.vendasDoDia;
   const listaAtrasados = r.atrasados.length === 0
     ? "  - Nenhum pedido atrasado neste momento."
     : r.atrasados
         .map(
           (p) =>
-            `  - ${p.numero} (${p.cliente}, ${p.canal}): entrou ${horaLocal(p.entrouEm, timezone)}, ` +
-            `prazo ${p.prazoMin} min, já são ${p.minutosDeVida} min — ${p.minutosDeAtraso} min ALÉM do prazo. Status: ${p.status}.`
+            `  - ${p.numero} (${p.cliente}, ${p.canal}, ${p.tipo === "ENTREGA" ? "entrega" : "retirada"}): entrou ${horaLocal(p.entrouEm, timezone)}, ` +
+            `prazo ${p.prazoMin} min, já são ${p.minutosDeVida} min — ${p.minutosDeAtraso} min ALÉM do prazo; ${situacaoDoAtraso(p.tipo)}. Status: ${p.status}.`
         )
         .join("\n");
 
@@ -253,19 +286,22 @@ export function resumoEmTexto(r: ResumoGerencial, timezone?: string | null): str
         .join("\n");
 
   return `
-DADOS AO VIVO DA LOJA (fonte: banco de dados, medidos agora):
+DADOS AO VIVO DA LOJA (fonte: banco de dados, medidos agora, ${horaLocal(new Date(), timezone)}):
 - Caixa físico: ${r.caixaAberto ? "ABERTO 🟢" : "FECHADO 🔴"}
-- Prazo de entrega prometido no cardápio: ${r.prazoMin} minutos
-- Faturamento de hoje: ${real(r.faturamentoHoje)}
-- Pedidos de hoje: ${r.pedidosHoje} (ticket médio ${real(r.ticketMedio)})
-- Por canal hoje: ${canais}
-- Pedidos em aberto agora (ainda não saíram para entrega): ${r.emAberto}
+- "Hoje" é o DIA DE OPERAÇÃO: ${inicioDoDiaEmTexto(v, timezone)} até agora (o dia vira às 5h da manhã, como no caixa e nos Relatórios). Os números de venda abaixo são deste dia e são os mesmos de Relatórios › Vendas por período.
+- Valor vendido hoje: ${reaisEmTexto(v.valor)} (sem cancelados, sem rascunho do robô e sem pedido esperando pagamento)
+- Vendas hoje: ${v.vendas} (a mesa conta uma vez; ${v.lancamentos} lançamentos) — ticket médio ${reaisEmTexto(v.ticket)} (valor vendido ÷ vendas)
+- Cancelados hoje: ${v.cancelados.pedidos} pedido(s), ${reaisEmTexto(v.cancelados.valor)} (fora do valor vendido)
+- Por canal hoje: ${linhasEmTexto(v.porCanal)}
+- Por tipo de venda hoje: ${linhasEmTexto(v.porTipo)}
+- Prazo prometido: entrega ${r.prazoMin} minutos (a área de entrega mais longa); retirada e balcão ${PRAZO_PADRAO_RETIRADA_MIN} minutos (o do painel de pedidos); mesa não tem prazo
+- Pedidos ainda na loja agora (entrega que não saiu e retirada que não ficou pronta; mesa não conta): ${r.emAberto}
 - PEDIDOS ATRASADOS (${r.atrasados.length}):
 ${listaAtrasados}
 - CONTAS A PAGAR em aberto:
-  - Vencidas: ${r.contasVencidas.qtd} conta(s), ${real(r.contasVencidas.total)}
-  - Vencem hoje: ${r.contasHoje.qtd} conta(s), ${real(r.contasHoje.total)}
-  - Próximos 7 dias: ${r.contasSemana.qtd} conta(s), ${real(r.contasSemana.total)}
+  - Vencidas: ${r.contasVencidas.qtd} conta(s), ${reaisEmTexto(r.contasVencidas.total)}
+  - Vencem hoje: ${r.contasHoje.qtd} conta(s), ${reaisEmTexto(r.contasHoje.total)}
+  - Próximos 7 dias: ${r.contasSemana.qtd} conta(s), ${reaisEmTexto(r.contasSemana.total)}
 - INSUMOS ABAIXO DO MÍNIMO (${r.insumosAbaixoDoMinimo.length}):
 ${listaInsumos}
 `.trim();

@@ -14,6 +14,8 @@ import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
 import { inicioDoExpedienteDaLoja, inicioDoDiaDaLoja } from "@/lib/fuso";
+import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
+import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
 import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 import { avaliarEdicao, podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { edicoesDosItens, lerHistorico, quandoFoi, ROTULO_DA_EDICAO } from "@/lib/historico-do-pedido";
@@ -2159,12 +2161,34 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
   // Drag state
   const [draggedOrderId, setDraggedOrderId] = useState<string | null>(null);
-  // Default date — will be overridden by cash session openedAt if available
-  const _now = new Date();
-  const _ref = _now;
-  const todayStr = `${_ref.getFullYear()}-${String(_ref.getMonth() + 1).padStart(2, "0")}-${String(_ref.getDate()).padStart(2, "0")}`;
-  const [dateFrom, setDateFrom] = useState(todayStr + "T00:00");
-  const [dateTo, setDateTo] = useState(todayStr + "T23:59");
+  // ── O PERÍODO PADRÃO É O DIA DE OPERAÇÃO DA LOJA ─────────────────────────
+  //
+  // Era o dia do CALENDÁRIO do computador em que a tela abriu (00:00–23:59), e
+  // não virava nunca: o pedido da 0h30 entregue sumia do quadro (e do Resumo
+  // das vendas) e a tela aberta de um dia para o outro ficava no dia velho.
+  // Agora é o dia de operação no fuso da loja, das 5h às 5h — o do caixa e dos
+  // Relatórios — e vira sozinho às 5h, se ninguém mexeu nas datas (data
+  // escolhida à mão fica como está).
+  const periodoDoDiaDeOperacao = (dia: string) => ({ de: `${dia}T05:00`, ate: `${somarDias(dia, 1)}T04:59` });
+  const diaDeOperacaoAgora = () => hojeNaLoja(user?.storeTimezone);
+  const [dateFrom, setDateFrom] = useState(() => periodoDoDiaDeOperacao(diaDeOperacaoAgora()).de);
+  const [dateTo, setDateTo] = useState(() => periodoDoDiaDeOperacao(diaDeOperacaoAgora()).ate);
+  const diaPadraoRef = useRef(diaDeOperacaoAgora());
+  useEffect(() => {
+    const t = setInterval(() => {
+      const dia = diaDeOperacaoAgora();
+      if (dia === diaPadraoRef.current) return;
+      const antigo = periodoDoDiaDeOperacao(diaPadraoRef.current);
+      diaPadraoRef.current = dia;
+      const { from, to } = periodoRef.current;
+      if (from !== antigo.de || to !== antigo.ate) return;
+      const novo = periodoDoDiaDeOperacao(dia);
+      setDateFrom(novo.de);
+      setDateTo(novo.ate);
+    }, 60_000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // O período que a tela mostra agora viaja junto do poll, para o servidor
   // devolver só esses pedidos em vez dos 200 mais recentes da loja. Vai por ref
@@ -4008,40 +4032,54 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     }
   }, [pedidosNaCozinha]);
 
-  // Resumo de vendas
-  // MESMA regra do quadro: a venda pertence ao dia em que o pedido entrou.
-  // Com a previsão de entrega no lugar da criação, todo pedido das últimas
-  // horas da noite migrava o faturamento dele para o dia seguinte.
-  const allInRange = orders.filter(o => { const d = dataDoPedido(o); return d >= fromDate && d <= toDate; });
-  const resumo = {
-    pendentes: allInRange.filter(o => o.status === "AGUARDANDO_PAGAMENTO"),
-    novos: allInRange.filter(o => o.status === "NOVO"),
-    preparo: allInRange.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO"),
-    transporte: allInRange.filter(o => o.status === "SAIU_ENTREGA"),
-    entregues: allInRange.filter(o => o.status === "ENTREGUE" || o.status === "ENCERRADO"),
-    cancelados: allInRange.filter(o => o.status === "CANCELADO"),
-    // Pendente de pagamento fica FORA do total. Enquanto o feed escondia esse
-    // status a linha "PAGAMENTOS PENDENTES" marcava zero para sempre e o total
-    // não sentia nada; agora que o pendente chega de verdade, somá-lo aqui
-    // inflaria o resumo de vendas com dinheiro que ninguém entregou — o mesmo
-    // erro que o DRE já tinha corrigido. Ele tem a linha dele logo acima.
-    total: allInRange.filter(o => o.status !== "CANCELADO" && o.status !== "AGUARDANDO_PAGAMENTO"),
-  };
-
-  const getChannelDiscount = (o: any): number => {
-    if (typeof o.discountIfood === "number" && o.discountIfood > 0) return o.discountIfood;
-    const totDisc = Number(o.discountTotal || 0);
-    const merchDisc = Number(o.discountMerchant || 0);
-    if (totDisc > merchDisc) return totDisc - merchDisc;
-    if (o.notes) {
-      const match = o.notes.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i);
-      if (match && match[1]) return parseFloat(match[1].replace(",", "."));
-    }
-    return 0;
-  };
-
-  const sumVal = (arr: any[]) => arr.reduce((s, o) => s + (Number(o.totalAmount) || 0) + getChannelDiscount(o), 0);
-  const fmtR = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
+  // ── RESUMO DAS VENDAS ────────────────────────────────────────────────────
+  //
+  // Contado no SERVIDOR pela régua dos Relatórios (api/store/inicio/resumo-das-vendas,
+  // lib/resumo-das-vendas.ts). Era somado aqui, com o que o quadro tinha na
+  // mão, e errava de quatro jeitos (auditoria de 11/10/2026): o TOTAL somava o
+  // cupom pago pelo iFood/99 — e o cupom da própria loja no site — a cada
+  // pedido (Ragnar, 10/10: R$ 15.773,66 × R$ 14.096,90 vendidos); o rascunho do
+  // robô entrava no total; PRONTO não tinha linha (as linhas não somavam o
+  // total); e o feed traz no máximo 200 pedidos, menos que um sábado da
+  // Ragnar. O período é o do quadro: o dia de operação (padrão) vai como `dia`
+  // — a janela dos Relatórios, no fuso da loja; a data escolhida à mão vai
+  // como instante. Com o resumo aberto, ele relê a cada 30 s.
+  type RespostaDoResumo = { de: string; ate: string; dia: string | null; geradoEm: string; tz: string; resumo: ResumoDasVendas };
+  const [resumoDoServidor, setResumoDoServidor] = useState<{ chave: string; dados: RespostaDoResumo } | null>(null);
+  const [erroDoResumo, setErroDoResumo] = useState("");
+  const consultaDoResumo = (() => {
+    const dia = dateFrom.slice(0, 10);
+    const padrao = periodoDoDiaDeOperacao(dia);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dia) && dateFrom === padrao.de && dateTo === padrao.ate) return `dia=${dia}`;
+    const de = new Date(dateFrom).getTime();
+    // "Até 23:59" vale o minuto inteiro.
+    const ate = new Date(dateTo).getTime() + 59_999;
+    if (!Number.isFinite(de) || !Number.isFinite(ate) || de >= ate) return "";
+    return `de=${encodeURIComponent(new Date(de).toISOString())}&ate=${encodeURIComponent(new Date(ate).toISOString())}`;
+  })();
+  useEffect(() => {
+    if (!showResumo || !consultaDoResumo) return;
+    let vivo = true;
+    const buscar = async () => {
+      try {
+        const r = await fetch(`/api/store/inicio/resumo-das-vendas?${consultaDoResumo}`, { cache: "no-store" });
+        const j = await r.json().catch(() => ({}));
+        if (!vivo) return;
+        if (!r.ok) { setErroDoResumo(j.error || "Não consegui calcular o resumo agora. Tente de novo."); return; }
+        setResumoDoServidor({ chave: consultaDoResumo, dados: j });
+        setErroDoResumo("");
+      } catch {
+        if (vivo) setErroDoResumo("Sem conexão com o servidor. Tente de novo.");
+      }
+    };
+    buscar();
+    const t = setInterval(buscar, 30_000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [showResumo, consultaDoResumo]);
+  const resumoAberto = resumoDoServidor?.chave === consultaDoResumo ? resumoDoServidor.dados : null;
+  const fmtR = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const lancamentosEmTexto = (n: number) => `${n.toLocaleString("pt-BR")} ${n === 1 ? "lançamento" : "lançamentos"}`;
+  const dataHoraDoResumo = (iso: string, tz: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
 
 
 
@@ -5807,22 +5845,54 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <h3 style={{ fontWeight: 800, fontSize: "1.1rem" }}>Resumo das vendas</h3>
               <button onClick={() => setShowResumo(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2rem" }}>x</button>
             </div>
-            {[
-              { label: `PAGAMENTOS PENDENTES (${resumo.pendentes.length})`, val: sumVal(resumo.pendentes), bold: false, red: false },
-              { label: `NOVOS PEDIDOS (${resumo.novos.length})`, val: sumVal(resumo.novos), bold: false, red: false },
-              { label: `EM PREPARO (${resumo.preparo.length})`, val: sumVal(resumo.preparo), bold: false, red: false },
-              { label: `EM TRANSPORTE (${resumo.transporte.length})`, val: sumVal(resumo.transporte), bold: false, red: false },
-              { label: `ENTREGUES (${resumo.entregues.length})`, val: sumVal(resumo.entregues), bold: false, red: false },
-              { label: `TOTAL ATE O MOMENTO (${resumo.total.length})`, val: sumVal(resumo.total), bold: true, red: false },
-              { label: `CANCELADOS (${resumo.cancelados.length})`, val: sumVal(resumo.cancelados), bold: true, red: true },
-            ].map((row, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>
-                <span style={{ fontWeight: row.bold ? 700 : 400, color: row.red ? "#C92E09" : "#1C1917" }}>{row.label}</span>
-                <span style={{ fontWeight: row.bold ? 700 : 400, color: row.red ? "#C92E09" : "#1C1917" }}>{fmtR(row.val)}</span>
-              </div>
-            ))}
-            <div style={{ marginTop: "16px", padding: "10px", background: "#F8FAFC", borderRadius: "8px", fontSize: "0.78rem", color: "#64748B" }}>
-              <div>• O periodo e de {new Date(dateFrom).toLocaleString("pt-BR")} ate {new Date(dateTo).toLocaleString("pt-BR")}.</div>
+            {!consultaDoResumo ? (
+              <p style={{ color: "#B45309", fontSize: "0.85rem", fontWeight: 600 }}>Escolha as datas De e Até do quadro para ver o resumo.</p>
+            ) : !resumoAberto ? (
+              <p role={erroDoResumo ? "alert" : "status"} style={{ color: erroDoResumo ? "#C92E09" : "#64748B", fontSize: "0.85rem", fontWeight: 600 }}>{erroDoResumo || "Calculando o resumo…"}</p>
+            ) : (() => {
+              const r = resumoAberto.resumo;
+              // Cada venda está em UMA linha: NOVOS … ENTREGUES (+ mesas, + outros) somam o TOTAL.
+              const linhas: { label: string; detalhe?: string; val: number; bold?: boolean; red?: boolean; suave?: boolean }[] = [
+                { label: `PAGAMENTOS PENDENTES (${lancamentosEmTexto(r.pendentes.lancamentos)})`, detalhe: "esperando o pagamento cair — fora do total", val: r.pendentes.valor, suave: true },
+                ...r.linhas.map((l) => ({
+                  label: `${l.rotulo} (${lancamentosEmTexto(l.lancamentos)}${l.chave === "MESAS" && l.contas ? ` · ${l.contas} ${l.contas === 1 ? "conta" : "contas"}` : ""})`,
+                  detalhe: l.chave === "MESAS" ? "a rodada da mesa fica aberta até a conta fechar" : undefined,
+                  val: l.valor,
+                })),
+                {
+                  label: `TOTAL ATÉ O MOMENTO (${lancamentosEmTexto(r.total.lancamentos)} · ${r.total.vendas.toLocaleString("pt-BR")} ${r.total.vendas === 1 ? "venda" : "vendas"})`,
+                  detalhe: `valor vendido, o mesmo de Relatórios › Vendas por período · ticket médio ${fmtR(r.total.ticket)}`,
+                  val: r.total.valor, bold: true,
+                },
+                ...(r.cupomDaPlataforma.valor > 0 ? [{
+                  label: `CUPONS PAGOS PELO IFOOD/99 (${r.cupomDaPlataforma.pedidos.toLocaleString("pt-BR")} ${r.cupomDaPlataforma.pedidos === 1 ? "pedido" : "pedidos"})`,
+                  detalhe: "não entram no total: o app banca o desconto e repassa à loja",
+                  val: r.cupomDaPlataforma.valor, suave: true,
+                }] : []),
+                { label: `CANCELADOS (${lancamentosEmTexto(r.cancelados.lancamentos)})`, detalhe: "fora do total", val: r.cancelados.valor, bold: true, red: true },
+              ];
+              return linhas.map((row, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 16, padding: "8px 0", borderBottom: "1px solid #F1F5F9" }}>
+                  <span style={{ fontWeight: row.bold ? 700 : 400, color: row.red ? "#C92E09" : row.suave ? "#64748B" : "#1C1917" }}>
+                    {row.label}
+                    {row.detalhe && <span style={{ display: "block", fontSize: "0.72rem", fontWeight: 400, color: "#94A3B8" }}>{row.detalhe}</span>}
+                  </span>
+                  <span style={{ fontWeight: row.bold ? 700 : 400, color: row.red ? "#C92E09" : row.suave ? "#64748B" : "#1C1917", whiteSpace: "nowrap" }}>{fmtR(row.val)}</span>
+                </div>
+              ));
+            })()}
+            <div style={{ marginTop: "16px", padding: "10px", background: "#F8FAFC", borderRadius: "8px", fontSize: "0.78rem", color: "#64748B", lineHeight: 1.5 }}>
+              {resumoAberto ? (
+                <>
+                  <div>• O período é de {dataHoraDoResumo(resumoAberto.de, resumoAberto.tz)} até {dataHoraDoResumo(new Date(new Date(resumoAberto.ate).getTime() - 1).toISOString(), resumoAberto.tz)}{resumoAberto.dia ? " — o dia de operação, que vira às 5h" : ""}, pela hora em que o pedido entrou.</div>
+                  <div>• Todos os pedidos do período, de todos os canais e tipos (os filtros da tela não mudam o resumo).</div>
+                  {resumoAberto.resumo.rascunhos > 0 && <div>• {resumoAberto.resumo.rascunhos} rascunho{resumoAberto.resumo.rascunhos === 1 ? "" : "s"} do robô ainda não {resumoAberto.resumo.rascunhos === 1 ? "virou" : "viraram"} pedido: fora de todas as linhas.</div>}
+                  {resumoAberto.resumo.valoresImpossiveis > 0 && <div style={{ color: "#C92E09", fontWeight: 700 }}>• {resumoAberto.resumo.valoresImpossiveis} pedido{resumoAberto.resumo.valoresImpossiveis === 1 ? "" : "s"} com valor impossível (R$ 1 milhão ou mais) ficou fora de todas as somas. Confira o cadastro.</div>}
+                  <div>• Atualizado às {new Date(resumoAberto.geradoEm).toLocaleTimeString("pt-BR", { timeZone: resumoAberto.tz, hour: "2-digit", minute: "2-digit" })}; com esta janela aberta, ele se atualiza sozinho.</div>
+                </>
+              ) : (
+                <div>• O período é o das datas De e Até do quadro.</div>
+              )}
             </div>
             <button onClick={() => setShowResumo(false)} style={{ marginTop: "16px", width: "100%", padding: "10px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "#F8FAFC", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Fechar</button>
           </div>
