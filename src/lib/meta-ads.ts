@@ -185,6 +185,11 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
       campaign_id:    campaignId,
       billing_event:  "IMPRESSIONS",
       optimization_goal: "LANDING_PAGE_VIEWS",
+      // Sem estratégia explícita a Meta cai numa que exige valor de lance e
+      // recusa o conjunto ("Valor ou restrições de lance obrigatórios" — teste
+      // real na Hakim Centro, 11/10/2026). Menor custo sem teto: a Meta gasta o
+      // orçamento diário buscando o clique mais barato, sem pedir lance.
+      bid_strategy:   "LOWEST_COST_WITHOUT_CAP",
       daily_budget:   dailyBudgetCents,
       // Data de término: mais uma trava. Se ninguém mexer, a veiculação acaba
       // sozinha em vez de gastar indefinidamente.
