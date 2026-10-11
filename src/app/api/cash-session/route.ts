@@ -13,6 +13,8 @@ import { enfileirarCupomDoCaixa, assistenteOuvindoAFila } from "@/lib/imprimir-c
 import { calcularEsperadoDoTurno } from "@/lib/esperado-do-turno";
 import { secoesDoFechamento } from "@/lib/secoes-do-fechamento";
 import { conferirFechamento, lerContado, mensagemDoCaixaFechado } from "@/lib/conferencia-do-caixa";
+import { formaDoPedido, formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
+import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -78,15 +80,18 @@ export async function GET() {
           status: { notIn: ["CANCELADO", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
           createdAt: { gt: anterior.closedAt, lt: openSession.openedAt },
         },
-        select: { totalAmount: true, paymentMethod: true, source: true, paymentPaidAt: true, gatewayProvider: true },
+        select: { totalAmount: true, paymentMethod: true, paymentMethods: true, source: true, paymentPaidAt: true, gatewayProvider: true, openDeliveryChannel: true },
       });
       for (const o of orfaos) {
-        const pm = (o.paymentMethod || "").toLowerCase();
         foraDoTurno.valor += o.totalAmount || 0;
         foraDoTurno.quantidade += 1;
-        if ((pm.includes("dinheiro") || pm.includes("cash")) && !pm.includes("online")) {
-          foraDoTurno.dinheiro += o.totalAmount || 0;
-        }
+        // O dinheiro pela régua do caixa e do relatório (lib/relatorios/
+        // formas-de-pagamento.ts): o pago online e o "CASH" do iFood não se
+        // confundem, e o dividido conta só a parte em dinheiro.
+        const partes = lerPagamentos(o.paymentMethods);
+        foraDoTurno.dinheiro += partes.length > 0
+          ? partes.filter((p) => formaDoTexto(p.method) === "DINHEIRO").reduce((s, p) => s + p.amount, 0)
+          : formaDoPedido(o) === "DINHEIRO" ? o.totalAmount || 0 : 0;
       }
       foraDoTurno.desde = anterior.closedAt.toISOString();
     }
