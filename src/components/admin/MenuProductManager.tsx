@@ -3832,18 +3832,25 @@ export default function MenuProductManager({
                                 </div>
                               </div>
 
-                              {/* Canais */}
-                              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                                <ChannelBadges product={p} onToggle={(key, val) => handleChannelToggle(p.id, key, val)} />
-                              </div>
+                              {/* Canais, estoque, preço e botões numa coluna só: soltos, os
+                                  botões quebravam para uma segunda linha e a foto ficava
+                                  presa no alto do card. Em coluna, foto e nome centralizam
+                                  na altura do card inteiro. */}
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px", marginLeft: "auto", minWidth: 0, maxWidth: "100%" }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px", flexWrap: "wrap" }}>
+                                {/* Canais */}
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <ChannelBadges product={p} onToggle={(key, val) => handleChannelToggle(p.id, key, val)} />
+                                </div>
 
-                              {/* Estoque disponível: abate a cada venda; zerou, pausa (ou não) */}
-                              <div style={{ display: "flex", alignItems: "center" }}>
-                                <EstoqueDoItem product={p} onSalvar={(dados) => handleEstoque(p.id, dados)} />
+                                {/* Estoque disponível: abate a cada venda; zerou, pausa (ou não) */}
+                                <div style={{ display: "flex", alignItems: "center" }}>
+                                  <EstoqueDoItem product={p} onSalvar={(dados) => handleEstoque(p.id, dados)} />
+                                </div>
                               </div>
 
                               {/* Preço e Botões */}
-                              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginLeft: "auto" }}>
+                              <div className="acoes-do-item" style={{ display: "flex", alignItems: "center", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap" }}>
                                 {/* Em promoção a lista mostra o mesmo par que o cliente vê:
                                     o preço de venda riscado e o promocional em destaque.
                                     Sem isso, o lojista olha a lista, lê o preço cheio e
@@ -3943,6 +3950,7 @@ export default function MenuProductManager({
                                 >
                                   <Trash2 size={12} />
                                 </button>
+                              </div>
                               </div>
 
                               {complementosAbertos[p.id] && p.comboGroups?.length > 0 && (

@@ -127,3 +127,8 @@
   outline-offset: 1px;
   border-color: var(--fh-marca-topo, #E8360C);
 }
+
+/* ── BOTÕES DE CADA ITEM DO CARDÁPIO ───────────────────────────────────────
+   No celular o site público estica .btn-outline a 100% (globals.css), e na
+   linha de ações do item (MenuProductManager) cada botão virava uma linha. */
+.fh-painel .acoes-do-item .btn { width: auto; }
