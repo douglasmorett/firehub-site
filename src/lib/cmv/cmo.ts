@@ -5,7 +5,8 @@
  *           estava na folha dentro do período
  *         + diárias e extras lançados nas despesas no período
  *
- * Custo mensal = salário × (1 + encargos %) + benefícios. Assim a semana leva
+ * Custo mensal = salário × (1 + encargos %) + benefícios + (vale-transporte − o
+ * desconto dele no salário, 6% por padrão). Assim a semana leva
  * 7/30 (ou 7/31) do mês, e quem entrou na quarta só conta a partir de quarta.
  *
  * Entregador não entra: é custo de entrega, que tem relatório próprio.
@@ -21,6 +22,8 @@ export type PessoaParaCmo = {
   salario: number;
   encargosPct: number;
   beneficios: number;
+  valeTransporte?: number | null;
+  descontoVtPct?: number | null;
   desde: string;
   ate: string | null;
 };
@@ -35,11 +38,25 @@ export function ehMaoDeObra(categoria: string | null | undefined): boolean {
   return CATEGORIAS_DE_MAO_DE_OBRA.includes(c);
 }
 
-export function custoMensal(p: Pick<PessoaParaCmo, "salario" | "encargosPct" | "beneficios">): number {
+/** O desconto do VT que a lei permite tirar do salário, quando a loja não diz outro. */
+export const DESCONTO_VT_PADRAO = 6;
+
+/**
+ * O que o vale-transporte custa para a loja: o que ela compra menos o que sai do
+ * salário (o % do salário, e nunca mais que o próprio VT).
+ */
+export function custoDoVt(p: Pick<PessoaParaCmo, "salario" | "valeTransporte" | "descontoVtPct">): number {
+  const vt = Number(p.valeTransporte) || 0;
+  if (vt <= 0) return 0;
+  const pct = p.descontoVtPct == null ? DESCONTO_VT_PADRAO : Number(p.descontoVtPct) || 0;
+  return vt - Math.min(vt, (Number(p.salario) || 0) * (pct / 100));
+}
+
+export function custoMensal(p: Pick<PessoaParaCmo, "salario" | "encargosPct" | "beneficios" | "valeTransporte" | "descontoVtPct">): number {
   const s = Number(p.salario) || 0;
   const e = Number(p.encargosPct) || 0;
   const b = Number(p.beneficios) || 0;
-  return s * (1 + e / 100) + b;
+  return s * (1 + e / 100) + b + custoDoVt(p);
 }
 
 function diasNoMes(dia: string): number {

@@ -14,13 +14,14 @@
  * A conta é do servidor (lib/cmv/painel.ts). Aqui só se mostra, e a tela se
  * atualiza sozinha a cada minuto — fechou a contagem do dia, o ponteiro anda.
  */
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ClipboardCheck, Info, Pencil, Plus, RefreshCw, ShoppingCart, Trash2, X } from "lucide-react";
 import { PALETA } from "@/lib/paleta-brasa";
 import { Bloco, Cartao, GradeDeCartoes, Vazio } from "@/components/relatorios/ModeloDoRelatorio";
 import Ponteiro from "@/components/cmv/Ponteiro";
 import { fmtPct, fmtReais, fmtQtd, somarDias } from "@/lib/relatorios/base";
+import { custoDoVt, DESCONTO_VT_PADRAO } from "@/lib/cmv/cmo";
 import { inicioDaSemanaDoCmv, NOMES_DOS_DIAS_DA_SEMANA } from "@/lib/cmv/semana-do-cmv";
 import type { Painel } from "@/lib/cmv/painel";
 import AbaCustosFixos from "@/app/store/financeiro/AbaCustosFixos";
@@ -415,8 +416,15 @@ function AbaCustoFixo({ onSalvo }: { onSalvo: () => void }) {
 
 // ── EQUIPE (CMO) ───────────────────────────────────────────────────────────
 
-type Pessoa = { id: string; nome: string; funcao: string | null; salario: number; encargosPct: number; beneficios: number; desde: string; ate: string | null; custoMensal: number };
-const VAZIA = { nome: "", funcao: "", salario: "", encargosPct: "", beneficios: "", desde: "", ate: "" };
+type Pessoa = { id: string; nome: string; funcao: string | null; salario: number; encargosPct: number; beneficios: number; valeTransporte: number | null; descontoVtPct: number | null; desde: string; ate: string | null; custoMensal: number };
+// Editar e Apagar com área de clique folgada e longe um do outro.
+const BOTAO_DA_LINHA: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 5, minHeight: 32, padding: "0.3rem 0.65rem",
+  border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 8, background: "#fff", cursor: "pointer",
+  color: PALETA.carvao, fontWeight: 700, fontSize: "0.8rem",
+};
+
+const VAZIA = { nome: "", funcao: "", salario: "", encargosPct: "", beneficios: "", valeTransporte: "", descontoVtPct: String(DESCONTO_VT_PADRAO), desde: "", ate: "" };
 
 function AbaEquipe({ periodo }: { periodo: { de: string; ate: string } }) {
   const [pessoas, setPessoas] = useState<Pessoa[]>([]);
@@ -426,6 +434,12 @@ function AbaEquipe({ periodo }: { periodo: { de: string; ate: string } }) {
   const [aberto, setAberto] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
+  // O formulário abre no topo da lista: ao editar alguém lá embaixo, a tela vai até ele
+  // (o Douglas clicava no lápis e achava que nada acontecia, 11/10/2026).
+  const formRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (aberto) formRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [aberto, editando]);
 
   const carregar = useCallback(async () => {
     const r = await fetch("/api/store/dados-sensiveis/equipe", { cache: "no-store" });
@@ -485,18 +499,23 @@ function AbaEquipe({ periodo }: { periodo: { de: string; ate: string } }) {
         </button>
       )}>
         {aberto && (
-          <div style={{ border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 12, padding: "0.9rem", marginBottom: "1rem", background: PALETA.areia }}>
+          <div ref={formRef} style={{ border: `1px solid ${editando ? PALETA.brasa : PALETA.areiaBorda}`, borderRadius: 12, padding: "0.9rem", marginBottom: "1rem", background: PALETA.areia }}>
+            <div style={{ fontWeight: 800, fontSize: "0.9rem", color: PALETA.carvao, marginBottom: "0.6rem" }}>
+              {editando ? `Editando ${pessoas.find((p) => p.id === editando)?.nome || ""}` : "Nova pessoa"}
+            </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "0.7rem" }}>
               {campo("nome", "Nome")}
               {campo("funcao", "Função", { placeholder: "Pizzaiolo, atendente..." })}
               {campo("salario", "Salário mensal (R$)", { inputMode: "decimal" })}
               {campo("encargosPct", "Encargos e provisões (%)", { inputMode: "decimal", placeholder: "ex.: 20" })}
-              {campo("beneficios", "Benefícios por mês (R$)", { inputMode: "decimal", placeholder: "VT, VR" })}
+              {campo("beneficios", "Benefícios por mês (R$)", { inputMode: "decimal", placeholder: "cesta básica, VR" })}
+              {campo("valeTransporte", "Vale-transporte por mês (R$)", { inputMode: "decimal", placeholder: "0 se não dá" })}
+              {campo("descontoVtPct", "Desconto do VT no salário (%)", { inputMode: "decimal", placeholder: "6" })}
               {campo("desde", "Desde", { type: "date" })}
               {campo("ate", "Saiu em (se saiu)", { type: "date" })}
             </div>
             <p style={{ fontSize: "0.76rem", color: PALETA.areiaTinta, margin: "0.6rem 0 0" }}>
-              Encargos: FGTS, INSS, férias e 13º, em % do salário. CLT no Simples costuma ficar perto de 20%; confirme com o contador. Diarista e MEI: 0%.
+              Encargos: FGTS, INSS, férias e 13º, em % do salário. CLT no Simples costuma ficar perto de 20%; confirme com o contador. Diarista e MEI: 0%. Vale-transporte: a loja paga o VT menos o que desconta do salário (até 6% do salário).
             </p>
             {erro && <Alerta tipo="erro" texto={erro} />}
             <div style={{ display: "flex", gap: 8, marginTop: "0.7rem" }}>
@@ -509,19 +528,20 @@ function AbaEquipe({ periodo }: { periodo: { de: string; ate: string } }) {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.86rem" }}>
               <thead>
-                <tr>{["Pessoa", "Salário", "Encargos", "Benefícios", "Custo/mês", "Período", ""].map((c, i) => (
-                  <th key={i} style={{ textAlign: i === 0 || i === 5 ? "left" : "right", padding: "0.35rem 0.4rem", fontSize: "0.72rem", textTransform: "uppercase", color: PALETA.areiaTinta, borderBottom: `1px solid ${PALETA.areiaBorda}` }}>{c}</th>
+                <tr>{["Pessoa", "Salário", "Encargos", "Benefícios", "Vale-transporte", "Custo/mês", "Período", ""].map((c, i) => (
+                  <th key={i} style={{ textAlign: i === 0 || i === 6 ? "left" : "right", padding: "0.35rem 0.4rem", fontSize: "0.72rem", textTransform: "uppercase", color: PALETA.areiaTinta, borderBottom: `1px solid ${PALETA.areiaBorda}` }}>{c}</th>
                 ))}</tr>
               </thead>
               <tbody>
                 {pessoas.map((p) => {
                   const saiu = Boolean(p.ate && p.ate < hoje);
                   return (
-                    <tr key={p.id} style={{ opacity: saiu ? 0.55 : 1 }}>
+                    <tr key={p.id} style={{ opacity: saiu ? 0.55 : 1, background: editando === p.id ? PALETA.brasaClaro : undefined }}>
                       <td style={{ padding: "0.45rem 0.4rem", fontWeight: 800 }}>{p.nome}{p.funcao && <span style={{ fontWeight: 500, color: PALETA.areiaTinta }}> · {p.funcao}</span>}</td>
                       <td style={{ textAlign: "right", padding: "0.45rem 0.4rem" }}>{fmtReais(p.salario)}</td>
                       <td style={{ textAlign: "right", padding: "0.45rem 0.4rem" }}>{fmtPct(p.encargosPct, 0)}</td>
                       <td style={{ textAlign: "right", padding: "0.45rem 0.4rem" }}>{fmtReais(p.beneficios)}</td>
+                      <td style={{ textAlign: "right", padding: "0.45rem 0.4rem" }}>{p.valeTransporte ? <>{fmtReais(custoDoVt(p))}<br /><span style={{ fontSize: "0.72rem", color: PALETA.areiaTinta }}>{fmtReais(p.valeTransporte)} − {fmtPct(p.descontoVtPct ?? DESCONTO_VT_PADRAO, 0)} do salário</span></> : "—"}</td>
                       <td style={{ textAlign: "right", padding: "0.45rem 0.4rem", fontWeight: 800 }}>{fmtReais(p.custoMensal)}</td>
                       <td style={{ padding: "0.45rem 0.4rem", fontSize: "0.8rem", color: PALETA.areiaTinta }}>desde {ddmm(p.desde)}{p.ate ? ` · saiu ${ddmm(p.ate)}` : ""}</td>
                       <td style={{ textAlign: "right", padding: "0.45rem 0.4rem", whiteSpace: "nowrap" }}>
@@ -532,13 +552,13 @@ function AbaEquipe({ periodo }: { periodo: { de: string; ate: string } }) {
                             <button type="button" aria-label="Não apagar" onClick={() => setApagando(null)} style={{ border: "none", background: "none", cursor: "pointer" }}><X size={14} /></button>
                           </span>
                         ) : (
-                          <>
+                          <span style={{ display: "inline-flex", gap: 12, alignItems: "center" }}>
                             <button type="button" aria-label={`Editar ${p.nome}`} onClick={() => {
-                              setForm({ nome: p.nome, funcao: p.funcao || "", salario: String(p.salario), encargosPct: String(p.encargosPct), beneficios: String(p.beneficios), desde: p.desde, ate: p.ate || "" });
-                              setEditando(p.id); setAberto(true);
-                            }} style={{ border: "none", background: "none", cursor: "pointer", color: PALETA.areiaTinta }}><Pencil size={15} /></button>
-                            <button type="button" aria-label={`Apagar ${p.nome}`} onClick={() => setApagando(p.id)} style={{ border: "none", background: "none", cursor: "pointer", color: PALETA.areiaTinta }}><Trash2 size={15} /></button>
-                          </>
+                              setForm({ nome: p.nome, funcao: p.funcao || "", salario: String(p.salario), encargosPct: String(p.encargosPct), beneficios: String(p.beneficios), valeTransporte: p.valeTransporte == null ? "" : String(p.valeTransporte), descontoVtPct: String(p.descontoVtPct ?? DESCONTO_VT_PADRAO), desde: p.desde, ate: p.ate || "" });
+                              setErro(null); setEditando(p.id); setAberto(true);
+                            }} style={BOTAO_DA_LINHA}><Pencil size={14} /> Editar</button>
+                            <button type="button" aria-label={`Apagar ${p.nome}`} onClick={() => setApagando(p.id)} style={{ ...BOTAO_DA_LINHA, color: PALETA.grave }}><Trash2 size={14} /> Apagar</button>
+                          </span>
                         )}
                       </td>
                     </tr>

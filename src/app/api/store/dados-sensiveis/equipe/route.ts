@@ -2,7 +2,7 @@
  * /api/store/dados-sensiveis/equipe — a folha da loja, base do CMO.
  *
  *   GET            a lista (quem está e quem saiu)
- *   POST           { nome, funcao?, salario, encargosPct?, beneficios?, desde, ate? }
+ *   POST           { nome, funcao?, salario, encargosPct?, beneficios?, valeTransporte?, descontoVtPct?, desde, ate? }
  *   PUT    ?id=    os mesmos campos
  *   DELETE ?id=    apaga. Quem SAIU não se apaga: põe a data de saída em `ate`,
  *                  senão o CMO dos meses em que a pessoa trabalhou muda.
@@ -29,10 +29,14 @@ function ler(body: any, hoje: string): { ok: true; dados: any } | { ok: false; e
   if (!Number.isFinite(encargosPct) || encargosPct < 0 || encargosPct > 200) return { ok: false, erro: "Encargos devem ficar entre 0% e 200%." };
   const beneficios = body?.beneficios === "" || body?.beneficios == null ? 0 : n(body.beneficios);
   if (!Number.isFinite(beneficios) || beneficios < 0) return { ok: false, erro: "Benefícios inválidos." };
+  const valeTransporte = body?.valeTransporte === "" || body?.valeTransporte == null ? null : n(body.valeTransporte);
+  if (valeTransporte != null && (!Number.isFinite(valeTransporte) || valeTransporte < 0)) return { ok: false, erro: "Vale-transporte inválido." };
+  const descontoVtPct = body?.descontoVtPct === "" || body?.descontoVtPct == null ? null : n(body.descontoVtPct);
+  if (descontoVtPct != null && (!Number.isFinite(descontoVtPct) || descontoVtPct < 0 || descontoVtPct > 100)) return { ok: false, erro: "O desconto do VT deve ficar entre 0% e 100% do salário." };
   const desde = DIA_RE.test(String(body?.desde || "")) ? String(body.desde) : hoje;
   const ate = DIA_RE.test(String(body?.ate || "")) ? String(body.ate) : null;
   if (ate && ate < desde) return { ok: false, erro: "A saída não pode ser antes da entrada." };
-  return { ok: true, dados: { nome, funcao: String(body?.funcao || "").trim().slice(0, 60) || null, salario, encargosPct, beneficios, desde, ate } };
+  return { ok: true, dados: { nome, funcao: String(body?.funcao || "").trim().slice(0, 60) || null, salario, encargosPct, beneficios, valeTransporte, descontoVtPct, desde, ate } };
 }
 
 const comCusto = (p: any) => ({ ...p, custoMensal: Math.round(custoMensal(p) * 100) / 100 });

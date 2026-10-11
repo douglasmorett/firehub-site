@@ -120,6 +120,9 @@ const INSTRUCOES = [
      CONSTRAINT "PessoaDaFolha_pkey" PRIMARY KEY ("id")
    )`,
   `CREATE INDEX IF NOT EXISTS "PessoaDaFolha_franchiseeId_idx" ON "PessoaDaFolha"("franchiseeId")`,
+  // vale-transporte separado dos benefícios, com o desconto no salário (11/10/2026)
+  `ALTER TABLE "PessoaDaFolha" ADD COLUMN IF NOT EXISTS "valeTransporte" DOUBLE PRECISION`,
+  `ALTER TABLE "PessoaDaFolha" ADD COLUMN IF NOT EXISTS "descontoVtPct" DOUBLE PRECISION`,
 ];
 
 /** As colunas em tabelas que JÁ existem: sem elas o estoque e as contas a pagar quebram. */
@@ -128,6 +131,7 @@ const COLUNAS_ESPERADAS = [
   "StockTransaction.unitCost", "StockTransaction.stockInvoiceId",
   "StockInvoice.dia", "StockInvoice.origem", "StockInvoice.valorNoEstoque", "StockInvoice.criadoPor", "StockInvoice.canceladaEm",
   "Payable.stockInvoiceId",
+  "PessoaDaFolha.valeTransporte", "PessoaDaFolha.descontoVtPct",
 ];
 const TABELAS_ESPERADAS = ["ComponenteDoPreparo", "ContagemDeEstoque", "ContagemItem", "PessoaDaFolha"];
 
@@ -150,7 +154,7 @@ export async function garantirEstruturaDoCmv(): Promise<boolean> {
       const cols = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
         SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
         WHERE table_schema = current_schema()
-          AND table_name IN ('StockItem', 'StockTransaction', 'StockInvoice', 'Payable')
+          AND table_name IN ('StockItem', 'StockTransaction', 'StockInvoice', 'Payable', 'PessoaDaFolha')
       `;
       const tabs = await prisma.$queryRaw<{ t: string }[]>`
         SELECT table_name AS t FROM information_schema.tables

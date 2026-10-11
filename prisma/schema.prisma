@@ -1923,8 +1923,12 @@ model PessoaDaFolha {
   salario      Float
   /// Encargos e provisões (FGTS, INSS, férias, 13º) em % do salário.
   encargosPct  Float    @default(0)
-  /// Benefícios por mês em R$ (vale-transporte, alimentação).
+  /// Benefícios por mês em R$ (cesta básica, alimentação). O vale-transporte é à parte.
   beneficios   Float    @default(0)
+  /// Vale-transporte que a loja compra por mês, em R$.
+  valeTransporte Float?
+  /// Quanto do VT sai do salário, em % do salário (a lei permite até 6%; nulo = 6).
+  descontoVtPct  Float?
   /// "YYYY-MM-DD": desde quando conta e até quando (saiu).
   desde        String
   ate          String?

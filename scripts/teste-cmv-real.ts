@@ -15,7 +15,7 @@
 import { custosNoDia, explodirPreparo, ultimaCompraAte, type InsumoParaCusto } from "../src/lib/cmv/custo-do-insumo";
 import { entraNoCarregado, fecharContagem } from "../src/lib/cmv/contagem";
 import { cmvEntre, janelaDoPeriodo, lerMeta, trechosDaJanela, zonaDoCmv, type ContagemFechada, type DiaDoCmv } from "../src/lib/cmv/cmv-real";
-import { cmoDoPeriodo, custoMensal, ehMaoDeObra } from "../src/lib/cmv/cmo";
+import { cmoDoPeriodo, custoDoVt, custoMensal, ehMaoDeObra } from "../src/lib/cmv/cmo";
 import { lerNumeroBr } from "../src/lib/cmv/numero";
 import { diaQueAContagemFecha, inicioDaSemanaDoCmv, lerSemanaDoCmv, semanaDoCmv } from "../src/lib/cmv/semana-do-cmv";
 
@@ -171,6 +171,11 @@ confere("meta lida com vírgula, padrão sem meta", [lerMeta({ cmvPct: "31,5" },
 
 // ── CMO ──────────────────────────────────────────────────────────────────
 confere("custo mensal = salário × (1 + encargos) + benefícios", custoMensal({ salario: 2000, encargosPct: 20, beneficios: 300 }), 2700);
+// VT à parte: a loja paga o VT menos o desconto no salário (6% por padrão, nunca mais que o VT)
+confere("VT de R$ 220 com 6% de R$ 1.850 = 220 − 111", custoDoVt({ salario: 1850, valeTransporte: 220, descontoVtPct: null }), 109);
+confere("VT menor que 6% do salário não custa nada", custoDoVt({ salario: 3000, valeTransporte: 150, descontoVtPct: 6 }), 0);
+confere("sem desconto, a loja paga o VT inteiro", custoDoVt({ salario: 1850, valeTransporte: 220, descontoVtPct: 0 }), 220);
+confere("cesta de R$ 200 + VT entram juntos no custo", custoMensal({ salario: 1850, encargosPct: 40, beneficios: 200, valeTransporte: 220, descontoVtPct: 6 }), 1850 * 1.4 + 200 + 109);
 const cmo = cmoDoPeriodo(
   [
     { id: "a", nome: "Ana", salario: 3100, encargosPct: 0, beneficios: 0, desde: "2026-01-01", ate: null },
