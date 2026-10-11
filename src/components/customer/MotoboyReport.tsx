@@ -2,7 +2,7 @@
 import { useState, useCallback, useRef } from "react";
 import { Calendar, Download, Filter, Bike, TrendingUp, DollarSign, MapPin, Loader2, X } from "lucide-react";
 import type { ChaveDeCanal } from "@/lib/canal-do-pedido";
-import { CAIXAS_DO_ACERTO, partesDaEntrega, resumoDasEntregas } from "@/lib/resumo-do-entregador";
+import { CAIXAS_DO_ACERTO, composicaoDoGanho, partesDaEntrega, resumoDasEntregas } from "@/lib/resumo-do-entregador";
 import type { ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import { podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
@@ -38,8 +38,10 @@ const ROTULO_DA_CAIXA = new Map(CAIXAS_DO_ACERTO.map((c) => [c.chave, c]));
  */
 function quadradosDaConferencia(st: any): { chave: ChaveDaForma; valor: number; qtd: number; nota?: string }[] {
   const todos: { chave: ChaveDaForma; valor: number; qtd: number; sempre?: boolean; nota?: string }[] = [
+    // O dinheiro a entregar é a nota inteira: os pedidos MAIS o troco que ele
+    // levou da loja para o cliente que pagou com nota grande (ele devolve).
     { chave: "DINHEIRO", valor: st.cashCollectedSum || 0, qtd: st.cashOrdersCount || 0, sempre: true,
-      nota: (st.changeGivenSum || 0) > 0 ? `${fmt(st.cashOrdersValueSum || 0)} ped. + ${fmt(st.changeGivenSum || 0)} troco` : undefined },
+      nota: (st.changeGivenSum || 0) > 0 ? `pedidos ${fmt(st.cashOrdersValueSum || 0)} + troco levado ${fmt(st.changeGivenSum || 0)}` : undefined },
     { chave: "DEBITO", valor: st.debitTotal || 0, qtd: st.debitCount || 0, sempre: true },
     { chave: "CREDITO", valor: st.creditTotal || 0, qtd: st.creditCount || 0, sempre: true },
     { chave: "VALE", valor: st.voucherTotal || 0, qtd: st.voucherCount || 0, sempre: true },
@@ -299,19 +301,30 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
     const semDistancia = filtrado
       ? visiveis.filter((o: any) => o.origemDoGanho === "SEM_DISTANCIA").length
       : r.motoboy.entregasSemDistancia ?? 0;
+    // Canceladas DEPOIS de sair (a corrida conta) e ANTES de sair (sem corrida).
     const cancelados = filtrado
-      ? (() => { const lista = visiveis.filter((o: any) => o.cancelado); return { qtd: lista.length, lista }; })()
+      ? (() => { const lista = visiveis.filter((o: any) => o.cancelado && o.corrida !== false); return { qtd: lista.length, lista }; })()
       : r.cancelados;
+    const canceladosSemCorrida = filtrado
+      ? (() => { const lista = visiveis.filter((o: any) => o.cancelado && o.corrida === false); return { qtd: lista.length, lista }; })()
+      : (r.canceladosSemCorrida || { qtd: 0, lista: [] });
+    // A composição do pagamento por origem do valor (lib/resumo-do-entregador.ts).
+    const composicao = filtrado || !r.composicao ? composicaoDoGanho(visiveis) : r.composicao;
     const porCanal = new Map<string, number>();
     for (const o of r.orders) porCanal.set(o.canal, (porCanal.get(o.canal) || 0) + 1);
     const botoes = CANAIS_DO_FILTRO.filter((c) => c.sempre || porCanal.has(c.chave));
-    return { r, st, visiveis, filtrado, ocultos, semDistancia, cancelados, porCanal, botoes };
+    return { r, st, visiveis, filtrado, ocultos, semDistancia, cancelados, canceladosSemCorrida, composicao, porCanal, botoes };
   });
 
   const getMotoboyPay = (st: any) => calcMode === "fee_only" ? st.totalFeeOnly : st.totalWithDaily;
   const totalPay = cards.reduce((s, c) => s + getMotoboyPay(c.st), 0);
   const totalDeliveries = cards.reduce((s, c) => s + c.st.totalDeliveries, 0);
   const totalCanceladas = cards.reduce((s, c) => s + (c.st.canceladasCount || 0), 0);
+  const totalEntregues = cards.reduce((s, c) => s + (c.st.entreguesCount ?? 0), 0);
+  const totalEmAndamento = cards.reduce((s, c) => s + (c.st.emAndamentoCount || 0), 0);
+  const totalCanceladasComCorrida = cards.reduce((s, c) => s + (c.st.canceladasComCorridaCount || 0), 0);
+  const totalDinheiroDosPedidos = cards.reduce((s, c) => s + (c.st.cashOrdersValueSum || 0), 0);
+  const totalTrocoLevado = cards.reduce((s, c) => s + (c.st.changeGivenSum || 0), 0);
   const totalValorDosPedidos = cards.reduce((s, c) => s + (c.st.valorDosPedidos || 0), 0);
   const totalCashCollected = cards.reduce((s, c) => s + (c.st.cashCollectedSum || 0), 0);
   const totalCardPos = cards.reduce((s, c) => s + (c.st.cardPosTotal || 0), 0);
@@ -416,9 +429,20 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
           {/* Totais */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
             {[
-              { label: "Total Entregas", value: totalDeliveries.toString(), icon: Bike, color: "#1C1917", nota: totalCanceladas > 0 ? `${totalDeliveries - totalCanceladas} entregues · ${totalCanceladas} cancelada${totalCanceladas > 1 ? "s" : ""}` : undefined },
-              { label: "Valor dos Pedidos", value: fmt(totalValorDosPedidos), icon: TrendingUp, color: "#1D4ED8", nota: "entregues, todas as formas" },
-              { label: "Dinheiro a Entregar", value: fmt(totalCashCollected), icon: DollarSign, color: "#0F766E" },
+              // "Entregues" são as que chegaram ao cliente; a que está na rua ou
+              // em preparo não é entregue ainda, e a cancelada antes de sair nem
+              // corrida é (lib/resumo-do-entregador.ts).
+              { label: "Total Entregas", value: totalDeliveries.toString(), icon: Bike, color: "#1C1917",
+                nota: [
+                  `${totalEntregues} entregue${totalEntregues === 1 ? "" : "s"}`,
+                  totalEmAndamento > 0 ? `${totalEmAndamento} na rua/em preparo` : "",
+                  totalCanceladasComCorrida > 0 ? `${totalCanceladasComCorrida} cancelada${totalCanceladasComCorrida > 1 ? "s" : ""} depois de sair` : "",
+                  totalCanceladas - totalCanceladasComCorrida > 0 ? `+ ${totalCanceladas - totalCanceladasComCorrida} cancelada${totalCanceladas - totalCanceladasComCorrida > 1 ? "s" : ""} antes de sair (sem corrida)` : "",
+                ].filter(Boolean).join(" · ") },
+              { label: "Valor dos Pedidos", value: fmt(totalValorDosPedidos), icon: TrendingUp, color: "#1D4ED8", nota: "não cancelados, todas as formas" },
+              // O dinheiro a entregar leva o troco que o motoboy levou da loja.
+              { label: "Dinheiro a Entregar", value: fmt(totalCashCollected), icon: DollarSign, color: "#0F766E",
+                nota: totalTrocoLevado > 0.005 ? `pedidos ${fmt(totalDinheiroDosPedidos)} + troco levado ${fmt(totalTrocoLevado)}` : "pedidos em dinheiro" },
               { label: "Maquininhas Cartão", value: fmt(totalCardPos), icon: DollarSign, color: "#334155" },
               { label: "Taxas/Diárias (Motoboy)", value: fmt(totalPay), icon: DollarSign, color: "#C92E09" },
             ].map(card => (
@@ -441,7 +465,7 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
               <Bike size={40} style={{ margin: "0 auto 10px" }} color="#CBD5E1" />
               <p>Nenhuma entrega encontrada no período.</p>
             </div>
-          ) : cards.map(({ r, st, visiveis, filtrado, ocultos, semDistancia, cancelados, porCanal, botoes }) => {
+          ) : cards.map(({ r, st, visiveis, filtrado, ocultos, semDistancia, cancelados, canceladosSemCorrida, composicao, porCanal, botoes }) => {
             const payAmount = getMotoboyPay(st);
             return (
               <div key={r.motoboy.id} style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: 20, marginBottom: 14 }}>
@@ -530,11 +554,19 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                     09/10/2026). */}
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginBottom: 8 }}>
                   {[
-                    { label: "Entregas", value: String(st.totalDeliveries), cor: "#1E293B", fundo: "#F8FAFC", borda: "#E2E8F0" },
-                    { label: "Entregues", value: String(st.entreguesCount ?? st.totalDeliveries), cor: "#0F766E", fundo: "#F0FDFA", borda: "#99F6E4" },
+                    { label: "Entregas", value: String(st.totalDeliveries), cor: "#1E293B", fundo: "#F8FAFC", borda: "#E2E8F0", nota: "corridas" },
+                    // Só o que CHEGOU ao cliente; na rua ou em preparo fica na nota.
+                    { label: "Entregues", value: String(st.entreguesCount ?? st.totalDeliveries), cor: "#0F766E", fundo: "#F0FDFA", borda: "#99F6E4",
+                      nota: (st.emAndamentoCount || 0) > 0 ? `+ ${st.emAndamentoCount} na rua/em preparo` : undefined },
                     { label: "Canceladas", value: String(st.canceladasCount || 0), cor: (st.canceladasCount || 0) > 0 ? "#B91C1C" : "#94A3B8", fundo: (st.canceladasCount || 0) > 0 ? "#FEF2F2" : "#F8FAFC", borda: (st.canceladasCount || 0) > 0 ? "#FECACA" : "#E2E8F0",
-                      nota: (st.canceladasCount || 0) > 0 ? `${fmt(st.canceladasValor || 0)} — fora do valor` : undefined },
-                    { label: "Valor dos pedidos", value: fmt(st.valorDosPedidos || 0), cor: "#1D4ED8", fundo: "#EFF6FF", borda: "#BFDBFE", nota: "entregues, todas as formas" },
+                      nota: (st.canceladasCount || 0) > 0
+                        ? [
+                            (st.canceladasComCorridaCount || 0) > 0 ? `${st.canceladasComCorridaCount} depois de sair (corrida conta)` : "",
+                            (st.canceladasSemCorridaCount || 0) > 0 ? `${st.canceladasSemCorridaCount} antes de sair` : "",
+                            `${fmt(st.canceladasValor || 0)} fora do valor`,
+                          ].filter(Boolean).join(" · ")
+                        : undefined },
+                    { label: "Valor dos pedidos", value: fmt(st.valorDosPedidos || 0), cor: "#1D4ED8", fundo: "#EFF6FF", borda: "#BFDBFE", nota: "não cancelados, todas as formas" },
                   ].map(s => (
                     <div key={s.label} style={{ textAlign: "center", background: s.fundo, border: `1.5px solid ${s.borda}`, borderRadius: 10, padding: "10px 8px" }}>
                       <div style={{ fontWeight: 900, fontSize: "1.15rem", color: s.cor, fontVariantNumeric: "tabular-nums" }}>{s.value}</div>
@@ -556,8 +588,13 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                       📋 CONFERÊNCIA DO MOTOBOY ({st.totalDeliveries} entregas)
                     </span>
                     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      {/* "Pedidos R$ X + troco levado R$ Y = entregar R$ Z": a
+                          mesma conta no papel do fechamento de caixa. */}
                       <span style={{ fontSize: "0.78rem", fontWeight: 800, color: COR_DA_CAIXA.DINHEIRO.texto, background: COR_DA_CAIXA.DINHEIRO.fundo, padding: "4px 10px", borderRadius: 20 }}>
                         💵 Entregar Dinheiro: {fmt(st.cashCollectedSum || 0)}
+                        {(st.changeGivenSum || 0) > 0.005 && (
+                          <span style={{ fontWeight: 600 }}> (pedidos {fmt(st.cashOrdersValueSum || 0)} + troco levado {fmt(st.changeGivenSum || 0)})</span>
+                        )}
                       </span>
                       <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#334155", background: "#FAF6F2", padding: "4px 10px", borderRadius: 20 }}>
                         💳 Total Maquininha: {fmt(st.cardPosTotal || 0)}
@@ -620,31 +657,28 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                         </div>
                       );
                     })()}
-                    {/* ── A LINHA DAS TAXAS ─────────────────────────────────
-                        Ela lia `perDeliveryTotal` e `perKmTotal`, que a API
-                        nunca devolveu: o campo chama `feeTotal`. Resultado —
-                        R$ 18,00 apareciam dentro do TOTAL sem nenhuma linha
-                        explicando de onde vinham, e a composição não fechava
-                        com o total logo abaixo dela. */}
-                    {st.feeTotal > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", gap: 10 }}>
-                        {/* O rótulo tem de dizer o acerto DELE. Escrito fixo
-                            como "Por entrega", ele anunciava R$ 2,00/entrega
-                            num entregador pago por faixa de km — que é como o
-                            Lucas descobriu, em 15/09/2026, que o fechamento
-                            não seguia o que ele tinha cadastrado. */}
-                        <span>
-                          {r.motoboy.paymentType === "FAIXA_KM"
-                            ? `Por faixa de distância (${st.totalDeliveries} entregas, ${st.totalDistance.toFixed(1)} km no total)`
-                            : r.motoboy.paymentType === "PER_KM"
-                            ? `Por km: ${fmt(r.motoboy.perKmRate || 0)} × ${st.totalDistance.toFixed(1)} km`
-                            : r.motoboy.usandoTaxaDoCliente
-                              ? `Taxa de entrega dos pedidos (${st.totalDeliveries})`
-                              : `Por entrega: ${fmt(r.motoboy.perDeliveryRate || 0)} × ${st.totalDeliveries} entregas`}
-                        </span>
-                        <span style={{ fontWeight: 700 }}>{fmt(st.feeTotal)}</span>
-                      </div>
-                    )}
+                    {/* ── AS LINHAS DAS TAXAS, UMA POR ORIGEM ──────────────────
+                        O rótulo saía do TIPO do motoboy, não de onde o valor
+                        veio: "Por entrega: R$ 0,00 × 10 entregas = R$ 40,00"
+                        num "Diária + Entrega" sem valor por entrega cadastrado,
+                        cujo ganho vinha da tabela da loja. Agora cada linha é
+                        uma origem (lib/ganho-do-entregador.ts), com a conta que
+                        fecha — "R$ X × N" só quando todas valem o mesmo — e a
+                        soma das linhas é o total das taxas. */}
+                    {composicao.filter((c: any) => c.valor > 0.005 || c.qtd > 0).map((c: any) => {
+                      const entregas = `${c.qtd} ${c.qtd === 1 ? "entrega" : "entregas"}`;
+                      const conta =
+                        c.origem === "POR_KM" && r.motoboy.perKmRate ? `${c.rotulo}: ${fmt(r.motoboy.perKmRate)}/km × ${c.km.toFixed(1).replace(".", ",")} km (${entregas})`
+                        : c.origem === "FAIXA_DELE" ? `${c.rotulo} (${entregas}, ${c.km.toFixed(1).replace(".", ",")} km)`
+                        : c.cadaUma != null && c.cadaUma > 0 ? `${c.rotulo}: ${fmt(c.cadaUma)} × ${entregas}`
+                        : `${c.rotulo} (${entregas})`;
+                      return (
+                        <div key={c.origem} style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", gap: 10, opacity: c.valor > 0.005 ? 1 : 0.6 }}>
+                          <span>{conta}</span>
+                          <span style={{ fontWeight: 700 }}>{fmt(c.valor)}</span>
+                        </div>
+                      );
+                    })}
 
                     {/* Sem valor por entrega cadastrado, a conta cai na taxa
                         que o CLIENTE pagou ao marketplace — que no 99Food já
@@ -668,13 +702,27 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                         O endereço é medido automaticamente em alguns minutos — se continuar assim, confira o endereço desses pedidos.
                       </div>
                     )}
-                    {/* Cancelado com o motoboy CONTA na corrida e não no
-                        dinheiro (lib/relatorio-do-entregador.ts). A linha diz
-                        quais foram, para ninguém estranhar o número. */}
+                    {/* Cancelado DEPOIS de sair conta na corrida e não no
+                        dinheiro; cancelado ANTES de sair não é corrida — a
+                        mesma regra do fechamento de caixa
+                        (lib/resumo-do-entregador.ts). A linha diz quais foram,
+                        para ninguém estranhar o número. */}
                     {(cancelados?.qtd ?? 0) > 0 && (
                       <div style={{ fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45 }}>
-                        {cancelados.qtd} pedido{cancelados.qtd > 1 ? "s" : ""} cancelado{cancelados.qtd > 1 ? "s" : ""} com este motoboy
+                        {cancelados.qtd} pedido{cancelados.qtd > 1 ? "s" : ""} cancelado{cancelados.qtd > 1 ? "s" : ""} depois de sair com este motoboy
                         ({cancelados.lista.map((c: any) => `#${c.dailyOrderNumber ?? c.ifoodReference ?? c.openDeliveryReference ?? "—"}`).join(", ")}) — a corrida conta, sem dinheiro a prestar contas.
+                      </div>
+                    )}
+                    {(canceladosSemCorrida?.qtd ?? 0) > 0 && (
+                      <div style={{ fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45 }}>
+                        {canceladosSemCorrida.qtd} pedido{canceladosSemCorrida.qtd > 1 ? "s" : ""} cancelado{canceladosSemCorrida.qtd > 1 ? "s" : ""} antes de sair
+                        ({canceladosSemCorrida.lista.map((c: any) => `#${c.dailyOrderNumber ?? c.ifoodReference ?? c.openDeliveryReference ?? "—"}`).join(", ")}) — não é corrida.
+                      </div>
+                    )}
+                    {(r.entregasDoApp?.qtd ?? 0) > 0 && (
+                      <div style={{ fontSize: "0.74rem", color: "#64748B", lineHeight: 1.45 }}>
+                        {r.entregasDoApp.qtd} pedido{r.entregasDoApp.qtd > 1 ? "s" : ""} marcado{r.entregasDoApp.qtd > 1 ? "s" : ""} com este motoboy foi levado pelo entregador do app
+                        ({r.entregasDoApp.lista.map((c: any) => `#${c.dailyOrderNumber ?? c.ifoodReference ?? c.openDeliveryReference ?? "—"}`).join(", ")}) — fora do acerto.
                       </div>
                     )}
                     <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: "0.95rem", borderTop: "2px solid #1E293B", paddingTop: 6, marginTop: 4 }}>
@@ -744,8 +792,10 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                         const trocavel = podeTrocarPagamento(o, { pelaLoja: true });
                         return (
                           <div key={o.id}>
-                          <div style={{ display: "grid", gridTemplateColumns: "85px 1fr auto auto auto auto auto auto", gap: 8, padding: "8px 10px", background: acabou ? "#F0FDFA" : "#F8FAFC", outline: acabou ? "1.5px solid #99F6E4" : trocando ? "1.5px solid #FDE68A" : "none", borderRadius: 8, fontSize: "0.78rem", alignItems: "center", transition: "background 0.3s" }}>
-                            <span style={{ color: "#64748B" }}>{dateStr ? new Date(dateStr).toLocaleDateString("pt-BR") : "-"}</span>
+                          <div style={{ display: "grid", gridTemplateColumns: "96px 1fr auto auto auto auto auto auto", gap: 8, padding: "8px 10px", background: acabou ? "#F0FDFA" : "#F8FAFC", outline: acabou ? "1.5px solid #99F6E4" : trocando ? "1.5px solid #FDE68A" : "none", borderRadius: 8, fontSize: "0.78rem", alignItems: "center", transition: "background 0.3s" }}>
+                            {/* Data E hora, no relógio da loja: só a data não
+                                diz qual das entregas do dia é qual. */}
+                            <span style={{ color: "#64748B" }}>{dateStr ? new Date(dateStr).toLocaleString("pt-BR", { timeZone: tzLoja, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}</span>
                             <span style={{ fontWeight: 600 }}>
                               {numDisplay ? <strong style={{ color: "#0F172A", marginRight: 4 }}>{numDisplay}</strong> : null}
                               {o.customerName} {o.customerAddress ? `— ${o.customerAddress.substring(0, 20)}...` : ""}
@@ -768,8 +818,8 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                             </span>
                             <span>
                               {o.cancelado ? (
-                                <span title="A corrida conta para o motoboy; o pedido não foi pago" style={{ background: "#FEE2E2", color: "#B91C1C", padding: "2px 6px", borderRadius: 4, fontWeight: 800, fontSize: "0.7rem" }}>
-                                  ✕ CANCELADO — sem dinheiro
+                                <span title={o.corrida === false ? "Cancelado antes de o motoboy sair: não é corrida" : "Cancelado depois de sair: a corrida conta para o motoboy; o pedido não foi pago"} style={{ background: "#FEE2E2", color: "#B91C1C", padding: "2px 6px", borderRadius: 4, fontWeight: 800, fontSize: "0.7rem" }}>
+                                  {o.corrida === false ? "✕ CANCELADO antes de sair — sem corrida" : "✕ CANCELADO depois de sair — sem dinheiro"}
                                 </span>
                               ) : (
                                 <button

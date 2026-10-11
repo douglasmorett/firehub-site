@@ -51,6 +51,12 @@ const casos: [string, Parameters<typeof formaDoPedido>[0], string][] = [
   ["Wabiz 'A combinar' não é dinheiro", { source: "WABIZ", paymentMethod: "A combinar (Cobrar na Entrega)" }, "OUTROS"],
   ["99Food pago online", { source: "99FOOD", paymentMethod: "Pago Online (99Food)" }, "ONLINE"],
   ["99Food carteira DiDi", { source: "99FOOD", paymentMethod: "Carteira DiDi (99Food Pago Online)" }, "ONLINE"],
+  // pay_type desconhecido do 99 (lib/food99-pedido.ts grava "99Food"): o
+  // "food" da régua do vale o mandava para o VALE (1 pedido, R$ 195,29, 90 dias).
+  ["99Food de forma desconhecida não é vale", { source: "99FOOD", paymentMethod: "99Food" }, "OUTROS"],
+  ["'FOOD_VOUCHER' continua vale (por 'voucher')", { source: "PRESENCIAL", paymentMethod: "FOOD_VOUCHER" }, "VALE"],
+  ["'Cartão Alimentação' é vale (o caixa dizia crédito)", { source: "WABIZ", paymentMethod: "Cartão Alimentação (Cobrar na Entrega)" }, "VALE"],
+  ["'Cartão Refeição' é vale", { source: "WABIZ", paymentMethod: "Cartão Refeição Sodexo (Cobrar na Entrega)" }, "VALE"],
   ["Balcão PIX", { source: "PRESENCIAL", paymentMethod: "PIX" }, "PIX"],
   ["Balcão cartão débito", { source: "PRESENCIAL", paymentMethod: "Cartão Débito" }, "DEBITO"],
   ["Balcão dinheiro", { source: "PRESENCIAL", paymentMethod: "Dinheiro" }, "DINHEIRO"],

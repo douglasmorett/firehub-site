@@ -10,20 +10,41 @@
  * por tipo (Delivery, Retirada, Balcão, Mesas, Totem — pedido da Delícia de
  * Casa): a conta nova tinha de ser provada com casos de verdade
  * (scripts/teste-caixa-por-tipo.ts), e o arquivo de lá importa o Prisma, que
- * não carrega sem banco. O que mudou de lugar não mudou de regra: a cascata
- * de formas, o pago online, o fiado, o cupom da plataforma e as baixas da mesa
- * são os mesmos, linha por linha.
+ * não carrega sem banco.
+ *
+ * ── UMA RÉGUA DE FORMAS, A DO RELATÓRIO (11/10/2026) ────────────────────────
+ *
+ * Até aqui o caixa tinha a sua cascata de palavras e o relatório Formas de
+ * pagamento a dele, "a mesma, com quatro correções que o caixa ainda não
+ * tem". Na auditoria de 11/10/2026, em 30 dias, 30 pedidos e R$ 2.625,93 caíam
+ * numa forma no caixa e noutra no relatório: a Wabiz grava o débito como
+ * "Cartão Deb Master (Cobrar na Entrega)" e o caixa contava CRÉDITO (NIK, 27
+ * pedidos, R$ 2.412,96 — o débito sobrava e o crédito faltava todo dia);
+ * "Cartão Alimentação/Refeição" virava crédito; o "CASH" cru do iFood ia para
+ * o pago online. Agora o caixa lê pelas MESMAS funções do relatório
+ * (`formaDoTexto`, `foiPagoOnline`, `formaDoPedido`, `cupomDaPlataforma`, em
+ * lib/relatorios/formas-de-pagamento.ts) e o acerto do motoboy também
+ * (lib/resumo-do-entregador.ts): mudou a régua, muda nos três.
  */
 import { cupomBancadoPelo99, ehDo99Food } from "@/lib/cupom-do-parceiro";
+import { ehEntregaDaLoja, partesDaEntrega } from "@/lib/resumo-do-entregador";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
-import { ehFormaInformadaPelaLoja } from "@/lib/pagamento-na-entrega";
 import { tipoDeVenda, type TipoDeVenda } from "@/lib/relatorios/base";
-import { situacaoDoPedido, temValorImpossivel, totalDosItens } from "@/lib/relatorios/regua-da-venda";
+import {
+  atendimentosDaVenda, descontoNoFechamento, entraNaVenda, situacaoDoPedido, temValorImpossivel, ticketMedio, totalDosItens,
+} from "@/lib/relatorios/regua-da-venda";
+import { cupomDaPlataforma as cupomPagoPelaPlataforma, formaDoPedido, formaDoTexto, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import type { BlocoDoTipo, DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do-caixa";
 
 /** A forma de quem já pagou pelo app ou pelo site. No papel ela leva o canal junto. */
 export const PAGO_ONLINE = "Pago online";
+/**
+ * O que o entregador do APP (iFood/99) cobrou na porta: o cliente pagou em
+ * dinheiro ou na maquininha DELE, e o app acerta com a loja no repasse. Não
+ * passa pela gaveta nem pela maquininha da loja.
+ */
+export const COBRADO_PELO_APP = "Cobrado pelo entregador";
 export const NAO_IDENTIFICADA = "Forma nao identificada";
 export const CUPOM_DA_PLATAFORMA = "Cupom da plataforma";
 
@@ -120,30 +141,37 @@ export function trocoDaConta(e: { formas: Forma[]; consumo: number; servico: num
 }
 
 /**
- * A cascata de palavras da conferência para UMA parte de pagamento (balcão
- * dividido ou baixa da mesa): online → … nunca entra aqui; a parte é sempre
- * dinheiro, débito, crédito, pix, vale, cartão genérico (= crédito) ou não
- * identificada. Devolve a chave do esperado e o nome no papel.
+ * A forma, como o papel a escreve (ASCII: o Assistente imprime sem acento), e a
+ * linha da conferência que ela cobra. A forma vem da régua do relatório
+ * (`formaDoTexto`/`formaDoPedido`); aqui só se dá nome e lugar a ela.
  */
-type ChaveDoEsperado = "cash" | "debit" | "credit" | "pix" | "voucher" | null;
-function formaDaParte(metodo: string): { chave: ChaveDoEsperado; nome: string } {
-  const m = metodo.toLowerCase();
-  if (m.includes("dinheiro") || m.includes("cash")) return { chave: "cash", nome: "Dinheiro" };
-  if (m.includes("débito") || m.includes("debito") || m.includes("debit")) return { chave: "debit", nome: "Debito" };
-  if (m.includes("crédito") || m.includes("credito") || m.includes("credit")) return { chave: "credit", nome: "Credito" };
-  if (m.includes("pix")) return { chave: "pix", nome: "Pix" };
-  if (m.includes("voucher") || m.includes("vale") || m.includes("meal") || m.includes("food")) return { chave: "voucher", nome: "Vale-refeicao" };
-  if (m.includes("cart") || m.includes("maquin")) return { chave: "credit", nome: "Credito" };
-  return { chave: null, nome: NAO_IDENTIFICADA };
-}
+type ChaveDoEsperado = "cash" | "debit" | "credit" | "pix" | "voucher";
+const NOME_DA_FORMA: Record<ChaveDaForma, string> = {
+  DINHEIRO: "Dinheiro",
+  DEBITO: "Debito",
+  CREDITO: "Credito",
+  PIX: "Pix",
+  VALE: "Vale-refeicao",
+  ONLINE: PAGO_ONLINE,
+  FIADO: "Fiado",
+  OUTROS: NAO_IDENTIFICADA,
+};
+const LINHA_DA_CONFERENCIA: Partial<Record<ChaveDaForma, ChaveDoEsperado>> = {
+  DINHEIRO: "cash", DEBITO: "debit", CREDITO: "credit", PIX: "pix", VALE: "voucher",
+};
 
 /** Uma conta de mesa FECHADA no turno, como esperado-do-turno a busca. */
 export type MesaDoTurno = {
+  /** Sem o id, a mesa ainda aberta sai pelo status do pedido, não pela conta. */
+  id?: string;
   paymentMethods: unknown;
   serviceFee: number | null;
   waiterTip: number | null;
+  /** O que a conta recebeu (com o troco) e quando fechou: o desconto do fechamento (`descontoNoFechamento`). */
+  totalPaid?: number | null;
+  closedAt?: Date | string | null;
   /** Os pedidos da conta, para o consumo (troco e desconto). Sem eles, o bloco não separa troco. */
-  orders?: { status: string | null; totalAmount: number | null; discountTotal?: number | null }[];
+  orders?: { id?: string; status: string | null; totalAmount: number | null; discountTotal?: number | null }[];
 };
 
 export type EntregaPropria = {
@@ -151,6 +179,8 @@ export type EntregaPropria = {
   formas: Forma[];
   pedido: { motoboyFee: number | null; deliveryFee: number | null; deliveryDistance: number | null };
   ehMarketplace: boolean;
+  /** O troco que o motoboy levou da loja para a nota do cliente ("troco para 100"): ele devolve junto. */
+  trocoLevado: number;
 };
 
 export type Esperado = { cash: number; debit: number; credit: number; pix: number; voucher: number; ifoodOnline: number; ifoodCoupons: number; food99Online: number; food99Coupons: number; total: number };
@@ -166,7 +196,8 @@ export type ApuracaoDasVendas = {
   entregasProprias: EntregaPropria[];
   retrato: Pick<DetalheDoTurno,
     "vendas" | "porForma" | "porCanal" | "porTipo" | "cupomDaLoja" | "cupomDaPlataforma" | "onlinePorCanal" |
-    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador">;
+    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador" | "cobradoPeloApp" | "dinheiroCobradoPeloApp"> &
+    Required<Pick<DetalheDoTurno, "recebido" | "ponte" | "descontoNasMesas">>;
 };
 
 /** O acumulador de um bloco de tipo, em centavos. */
@@ -174,6 +205,10 @@ type Bloco = {
   qtd: number; c: number; formas: Map<string, Soma>; canais: Map<string, Soma>;
   produtos: number; taxa: number; taxaQtd: number; servico: number; servicoQtd: number; gorjeta: number;
   desconto: number; descontoQtd: number; troco: number; trocoQtd: number;
+  /** O cupom que a plataforma pagou nas vendas deste tipo: abate dos produtos, fora do total. */
+  cupom: number; cupomQtd: number;
+  /** Do que sobra para a conta fechar, a parte dos pedidos de marketplace (a taxa de serviço do app). */
+  ajustesDoApp: number;
 };
 
 export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]): ApuracaoDasVendas {
@@ -212,20 +247,42 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
   // Nada disto entra em conta nenhuma: é o que o papel do fechamento precisa
   // para o lojista entender o turno sem abrir o sistema.
   //
-  // A base é a mesma da conferência: pedido sem mesa e já pago (ou fiado),
-  // mais as contas de mesa FECHADAS no turno, pelas baixas. Pedido aguardando
-  // pagamento, mesa ainda aberta e cancelado ficam de fora — cada um volta em
-  // linha própria. Com a mesma base, a soma das formas, a soma dos canais e a
-  // soma dos tipos dão o MESMO total faturado, e o papel não se contradiz.
+  // Duas bases, cada uma com o seu nome:
+  //
+  //   • RECEBIDO — a mesma base da conferência: pedido sem mesa e já pago (ou
+  //     fiado), mais as contas de mesa FECHADAS no turno, pelas baixas (sem o
+  //     troco). A soma das formas, a dos canais e a dos tipos dão o mesmo
+  //     TOTAL RECEBIDO, e o papel não se contradiz.
+  //   • FATURADO — a régua única dos relatórios (lib/relatorios/regua-da-venda.ts):
+  //     Σ `totalAmount` dos pedidos do turno que são venda, a mesa pelo lançado
+  //     (aberta ou fechada), sem o cupom que a plataforma pagou; vendas =
+  //     atendimentos (a mesa conta uma vez). Até 11/10/2026 o "TOTAL FATURADO"
+  //     do caixa era o recebido MAIS o cupom da plataforma: Hakim, 10/10,
+  //     R$ 2.347,27 no papel × R$ 1.883,53 nos relatórios (R$ 463,74 de cupom
+  //     do iFood). O lojista que confere o papel contra o relatório desconfia
+  //     dos dois.
+  //
+  // A diferença entre os dois é explicada linha a linha (`ponte`): taxa de
+  // serviço e gorjeta das mesas, desconto no fechamento, mesa ainda aberta,
+  // lançamento de antes do caixa abrir, pago a mais e centavos do dividido.
   const porForma = new Map<string, Soma>();
   const porCanal = new Map<string, { qtd: number; c: number; formas: Map<string, Soma> }>();
   const porTipo = new Map<TipoDeVenda, Bloco>();
-  const cupomDaPlataforma = new Map<string, Soma>();
+  const cupomDaPlataforma = new Map<string, Soma & { noOnline: number; qtdNoOnline: number }>();
   const cupomDaLoja = { qtd: 0, c: 0, porCanal: new Map<string, Soma>() };
   const onlinePorCanal = new Map<string, Soma>();
+  const cobradoPeloApp = new Map<string, Soma>();
+  let dinheiroCobradoPeloApp = 0;
   const taxaDeEntrega = { qtd: 0, c: 0 };
   const mesas = { servico: 0, servicoQtd: 0, gorjeta: 0, troco: 0, trocoQtd: 0 };
-  const vendas = { qtd: 0, c: 0 };
+  const recebido = { qtd: 0, c: 0 };
+  // A régua única: o valor vendido do turno e o lançado em cada conta de mesa.
+  let faturadoC = 0;
+  const lancadoNaConta = new Map<string, number>();
+  let centavosDoDividido = 0;
+  // As contas fechadas neste caixa. Sem os ids (quem chama não mandou), a mesa
+  // aberta sai pelo status do pedido, como era.
+  const idsFechadas = mesasFechadas.every((m) => m.id) ? new Set(mesasFechadas.map((m) => m.id as string)) : null;
   const fiado: DetalheDoTurno["fiado"] = [];
   const entregaParceira = { qtd: 0, c: 0 };
   const semEntregador = { qtd: 0, c: 0 };
@@ -234,26 +291,28 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
   const blocoDo = (tipo: TipoDeVenda): Bloco => {
     let b = porTipo.get(tipo);
     if (!b) {
-      b = { qtd: 0, c: 0, formas: new Map(), canais: new Map(), produtos: 0, taxa: 0, taxaQtd: 0, servico: 0, servicoQtd: 0, gorjeta: 0, desconto: 0, descontoQtd: 0, troco: 0, trocoQtd: 0 };
+      b = { qtd: 0, c: 0, formas: new Map(), canais: new Map(), produtos: 0, taxa: 0, taxaQtd: 0, servico: 0, servicoQtd: 0, gorjeta: 0, desconto: 0, descontoQtd: 0, troco: 0, trocoQtd: 0, cupom: 0, cupomQtd: 0, ajustesDoApp: 0 };
       porTipo.set(tipo, b);
     }
     return b;
   };
 
   /**
-   * Uma venda no retrato. O canal e o tipo contam a VENDA uma vez; cada parte
-   * do pagamento conta na sua forma. O cupom que a plataforma pagou entra como
-   * se fosse mais uma forma: é dinheiro que ela repassa, e sem ele a soma do
-   * canal não bate com o que o parceiro mostra no portal.
+   * Uma venda no RECEBIDO. O canal e o tipo contam a venda uma vez; cada parte
+   * do pagamento conta na sua forma. O cupom que a plataforma pagou NÃO entra
+   * no valor (desde 11/10/2026): ele vai para a linha própria "cupom pago pela
+   * plataforma", com quanto dele já está dentro do pago online da conferência
+   * (`noOnline`) — no pedido pago na porta, ninguém o vê na gaveta: o app o
+   * repassa depois.
    *
    * Devolve o bloco do tipo, para quem chamou somar os produtos, as taxas e o
    * desconto daquela venda.
    */
   const registrarVenda = (canal: string, tipo: TipoDeVenda, formas: Forma[], cupom: number): Bloco => {
-    const cCupom = cent(cupom);
-    const valor = formas.reduce((s, f) => s + cent(f.valor), 0) + Math.max(0, cCupom);
-    vendas.qtd += 1;
-    vendas.c += valor;
+    const cCupom = Math.max(0, cent(cupom));
+    const valor = formas.reduce((s, f) => s + cent(f.valor), 0);
+    recebido.qtd += 1;
+    recebido.c += valor;
     const b = blocoDo(tipo);
     b.qtd += 1;
     b.c += valor;
@@ -263,13 +322,23 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     c.c += valor;
     for (const f of formas) {
       somarEm(c.formas, f.forma, cent(f.valor));
-      somarEm(b.formas, f.forma === PAGO_ONLINE ? `${PAGO_ONLINE} ${canal}` : f.forma, cent(f.valor));
-      somarEm(porForma, f.forma === PAGO_ONLINE ? `${PAGO_ONLINE} ${canal}` : f.forma, cent(f.valor));
+      // O pago no app e o cobrado pelo entregador do app levam o canal no
+      // nome: cada um se confere contra o extrato DAQUELE app.
+      const nome = f.forma === PAGO_ONLINE || f.forma === COBRADO_PELO_APP ? `${f.forma} ${canal}` : f.forma;
+      somarEm(b.formas, nome, cent(f.valor));
+      somarEm(porForma, nome, cent(f.valor));
     }
     if (cCupom > 0) {
-      somarEm(c.formas, CUPOM_DA_PLATAFORMA, cCupom);
-      somarEm(b.formas, CUPOM_DA_PLATAFORMA, cCupom);
-      somarEm(cupomDaPlataforma, canal, cCupom);
+      b.cupom += cCupom;
+      b.cupomQtd += 1;
+      // Pago no app ou cobrado pelo entregador do app: o repasse da linha
+      // travada já leva o que o app pagou de cupom.
+      const noOnline = formas.some((f) => f.forma === PAGO_ONLINE || f.forma === COBRADO_PELO_APP);
+      const atual = cupomDaPlataforma.get(canal) || { qtd: 0, c: 0, noOnline: 0, qtdNoOnline: 0 };
+      atual.qtd += 1;
+      atual.c += cCupom;
+      if (noOnline) { atual.noOnline += cCupom; atual.qtdNoOnline += 1; }
+      cupomDaPlataforma.set(canal, atual);
     }
     porCanal.set(canal, c);
     return b;
@@ -295,9 +364,18 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     }
     // O valor dos produtos é o dos ITENS (preço × quantidade, a régua do Itens
     // vendidos). Pedido sem itens gravados não inventa nada: os produtos são o
-    // que sobra do total depois da taxa e do desconto, e o ajuste fica zero.
+    // que sobra do total depois da taxa e dos descontos, e o ajuste fica zero.
+    const cCupom = Math.max(0, cent(cupom));
     const itens = Array.isArray(o.items) && o.items.length > 0 ? cent(totalDosItens(o)) : null;
-    bloco.produtos += itens ?? (valor + Math.max(0, cent(cupom)) - taxa + Math.max(0, daLoja));
+    const produtos = itens ?? (valor + cCupom - taxa + Math.max(0, daLoja));
+    bloco.produtos += produtos;
+    // O que sobra para a conta deste pedido fechar. No pedido de marketplace é
+    // a taxa de serviço do app (iFood/99, varia — a-conta-do-pedido-nao-fecha-
+    // sozinha); no da loja é o acréscimo do vale ou da maquininha do balcão
+    // (venda-presencial soma "Taxa de vale (5%)" ao total) e centavos do
+    // dividido. Separados, cada um com o seu nome no papel — o "taxa de serviço
+    // do app" no bloco Balcão era o acréscimo do VR.
+    if (canalDoPedido(o).ehMarketplace) bloco.ajustesDoApp += valor - (produtos + taxa - Math.max(0, daLoja) - cCupom);
     const fiadoDoPedido = formas.filter((f) => f.forma === "Fiado").reduce((s, f) => s + cent(f.valor), 0);
     if (fiadoDoPedido > 0) {
       fiado.push({
@@ -309,17 +387,24 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     }
     if (tipo === "DELIVERY") {
       // Entrega parceira (iFood/99 mandaram o entregador deles) não é do
-      // motoboy da loja: nem prestação de contas, nem taxa a pagar.
-      const quemEntrega = String(o.deliveryBy || "").toUpperCase();
-      if (quemEntrega && quemEntrega !== "MERCHANT") {
+      // motoboy da loja: nem prestação de contas, nem taxa a pagar. A régua é
+      // a do acerto do motoboy (`ehEntregaDaLoja`, lib/resumo-do-entregador.ts):
+      // o caixa olhava só `deliveryBy` e o acerto não olhava nada.
+      if (!ehEntregaDaLoja(o)) {
         entregaParceira.qtd += 1;
         entregaParceira.c += valor;
       } else if (o.motoboyId) {
+        // O troco levado: a nota do cliente menos o pedido, nas partes em
+        // dinheiro (a mesma conta do acerto do motoboy, `partesDaEntrega`).
+        const trocoLevado = partesDaEntrega(o)
+          .filter((p) => p.caixa === "DINHEIRO" && p.trocoPara)
+          .reduce((s, p) => s + cent((p.trocoPara as number) - p.valor), 0);
         entregasProprias.push({
           motoboyId: o.motoboyId,
           formas,
           pedido: { motoboyFee: o.motoboyFee ?? null, deliveryFee: o.deliveryFee ?? null, deliveryDistance: o.deliveryDistance ?? null },
           ehMarketplace: canalDoPedido(o).ehMarketplace,
+          trocoLevado: reais(trocoLevado),
         });
       } else {
         semEntregador.qtd += 1;
@@ -328,25 +413,57 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     }
   };
 
-  // Uma parte de pagamento (do balcão dividido ou da baixa da mesa) na sua
-  // forma. Devolve o nome da forma para o retrato contar a parte onde a
-  // conferência contou.
-  const somarParte = (metodo: string, v: number): string => {
-    const { chave, nome } = formaDaParte(metodo);
-    if (chave) {
-      expected[chave] += v;
-      expected.total += v;
+  // ── O QUE O APP REPASSA POR UM PEDIDO ─────────────────────────────────────
+  //
+  // Era `totalAmount + cupom da plataforma`. Só que o `totalAmount` do iFood e
+  // do 99 leva a TAXA DE SERVIÇO DO APP (o `service_price` do 99, os R$ 0,99 a
+  // R$ 2,49 do iFood), que o cliente paga e o app guarda — a linha do online
+  // dizia que a loja receberia o que não recebe (Brazza, pedido do 99: R$ 43,11
+  // na linha × R$ 41,79 a receber). O devido à loja é o que ELA vendeu: itens +
+  // taxa de entrega − o desconto que ELA deu (antes da comissão do app, que
+  // nenhum pedido grava). Sem os itens gravados, fica a conta antiga. Canal
+  // próprio (site, robô) não tem taxa de app: o gateway cobra o total.
+  const repasseDoApp = (o: any, valReal: number, cupom: number): number => {
+    const bruto = cent(valReal) + Math.max(0, cent(cupom));
+    if (!canalDoPedido(o).ehMarketplace) return bruto;
+    const itens = Array.isArray(o.items) && o.items.length > 0 ? cent(totalDosItens(o)) : null;
+    if (itens == null) return bruto;
+    return itens + cent(o.deliveryFee) - Math.max(0, cent(o.discountMerchant));
+  };
+
+  // A conferência soma em CENTAVOS e só vira reais no fim: o total é a soma
+  // das linhas por construção — antes ele somava o `totalAmount` do dividido
+  // e a parte fiada ou não identificada dele entrava no total sem estar em
+  // linha nenhuma (falta que nenhuma linha explicava).
+  const esp = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, food99Online: 0 };
+  let fiadoC = 0, naoIdentificadoC = 0;
+
+  // Uma parte de pagamento feita na loja (do balcão dividido, da baixa da mesa
+  // ou o pedido inteiro) na linha da conferência da forma dela. Devolve o nome
+  // da forma para o retrato contar a parte onde a conferência contou.
+  const conferirParte = (chave: ChaveDaForma, v: number): string => {
+    const linha = LINHA_DA_CONFERENCIA[chave];
+    if (linha) {
+      esp[linha] += cent(v);
+    } else if (chave === "FIADO") {
+      // Fiado: consumo da equipe e venda anotada. Tem ficha própria e é
+      // acertado depois — nunca passa pela gaveta no fechamento do dia. Na
+      // parte do dividido e na baixa da mesa ele era "não identificado".
+      fiadoC += cent(v);
+      foraDaConferencia.fiadoQtd += 1;
     } else {
-      foraDaConferencia.naoIdentificado += v;
+      // Antes: `expected.cash += val`. Jogar o desconhecido na gaveta é
+      // exatamente o que produz falta sem causa — o pedido de mesa com "N/A",
+      // o "Pendente" do robô, o "99Food" de forma desconhecida, o rótulo que a
+      // próxima integração inventar. Fica visível numa linha própria, fora da
+      // conferência, até alguém identificar o que é.
+      naoIdentificadoC += cent(v);
       foraDaConferencia.naoIdentificadoQtd += 1;
     }
-    return nome;
+    return NOME_DA_FORMA[chave];
   };
 
   for (const o of pedidos) {
-    const pm = (o.paymentMethod || "").toLowerCase();
-    const src = (o.source || "").toUpperCase();
-
     // ── PEDIDO DE MESA: O DINHEIRO ESTÁ NA MESA, NÃO NO PEDIDO ──────────
     //
     // O pedido de mesa nasce com paymentMethod "N/A" e nunca recebe a forma
@@ -360,9 +477,16 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     // pelas baixas da sessão, por forma, no bloco logo depois do laço. Mesa
     // ainda ABERTA: ninguém pagou nada ainda; vira a linha "mesas abertas",
     // informação para o lojista saber que existe conta em andamento.
+    //
+    // ABERTA é a CONTA que não fechou neste caixa — não o pedido com status
+    // diferente de entregue: o pedido da conta já paga que ficou "PRONTO" no
+    // KDS aparecia como "mesa aberta" e, ao mesmo tempo, dentro do pago.
+    if (entraNaVenda(o)) faturadoC += cent(o.totalAmount);
     if (o.tableSessionId) {
-      const fechado = o.status === "ENTREGUE" || o.status === "ENCERRADO";
-      if (!fechado) {
+      const venda = entraNaVenda(o);
+      if (venda) lancadoNaConta.set(o.tableSessionId, (lancadoNaConta.get(o.tableSessionId) || 0) + cent(o.totalAmount));
+      const aberta = idsFechadas ? !idsFechadas.has(o.tableSessionId) : !(o.status === "ENTREGUE" || o.status === "ENCERRADO");
+      if (aberta && venda) {
         foraDaConferencia.mesasAbertas += o.totalAmount || 0;
         foraDaConferencia.mesasAbertasQtd += 1;
       }
@@ -372,33 +496,11 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     const canal = canalNoPapel(o);
     const tipo = tipoDeVenda(o);
 
-    // ── PAGAMENTO DIVIDIDO (BALCÃO) ─────────────────────────────────────
-    //
-    // Metade no Pix, metade em dinheiro: cada parte vai para a SUA linha da
-    // conferência. Ler o `paymentMethod` de texto ("Dividido: Pix R$ 20,00 +
-    // Dinheiro R$ 15,00") pela régua de palavras jogaria o pedido inteiro na
-    // primeira forma que casasse.
-    //
-    // (O `expected.total` soma o totalAmount, e não as partes: é como sempre
-    // foi; as partes do balcão somam o total, a tela de divisão não deixa
-    // gravar diferente.)
-    const partes = lerPagamentos(o.paymentMethods);
-    if (partes.length > 0) {
-      const antes = expected.total;
-      const formas = partes.map((p) => ({ forma: somarParte(p.method, p.amount), valor: p.amount }));
-      expected.total = antes + (o.totalAmount || 0);
-      const bloco = registrarVenda(canal, tipo, formas, 0);
-      registrarPedido(o, canal, tipo, formas, bloco, 0);
-      continue;
-    }
-
-    const channelDisc = (o.discountIfood && o.discountIfood > 0)
-      ? o.discountIfood
-      : (o.discountTotal && o.discountMerchant && o.discountTotal > o.discountMerchant
-          ? o.discountTotal - o.discountMerchant
-          : (o.notes?.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i)?.[1]
-              ? parseFloat(o.notes.match(/(?:iFood|Plataforma):\s*R\$\s*(\d+[.,]\d{2})/i)![1].replace(",", "."))
-              : 0));
+    // O cupom que a PLATAFORMA pagou neste pedido — a conta do relatório
+    // Formas de pagamento (`cupomDaPlataforma`): o campo do iFood (e do 99 desde
+    // 17/09/2026), o total menos a loja, o "iFood: R$" das observações e, no
+    // 99Food antigo, as promoções gravadas (lib/cupom-do-parceiro.ts).
+    const channelDisc = cupomPagoPelaPlataforma(o);
     // -- O CUPOM DA PLATAFORMA NAO ENTRA NA GAVETA -----------------------
     //
     // Era `val = totalAmount + channelDisc` para TODAS as linhas: o desconto
@@ -410,11 +512,10 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     // que e cupom.
     //
     // `valReal` e o que a pessoa entrega -- e ele que vai para as linhas
-    // conferiveis. `valRepasse` so existe na linha do iFood pago online, que
-    // e informativa e travada na tela: ali o cupom faz parte do que a
-    // plataforma repassa.
+    // conferiveis. O repasse (`repasseDoApp`) so existe na linha do pago
+    // online, que e informativa e travada na tela: ali o cupom faz parte do
+    // que a plataforma repassa, e a taxa de servico do app nao.
     const valReal = o.totalAmount || 0;
-    const valRepasse = valReal + channelDisc;
 
     // ── PEDIDO SEM PAGAMENTO NÃO É DINHEIRO NA GAVETA ───────────────────
     //
@@ -446,122 +547,78 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
       continue;
     }
 
-    // ── VENDA DE SALÃO NÃO É PAGAMENTO ONLINE ───────────────────────────
+    // ── PAGAMENTO DIVIDIDO (BALCÃO) ─────────────────────────────────────
     //
-    // `paymentPaidAt` diz que o pedido FOI PAGO — não diz por onde o dinheiro
-    // entrou. Ele sozinho ligava `isOnlinePayment` e, como o único source
-    // isento era "PDV", toda venda do totem caía em `expected.ifoodOnline`,
-    // a linha travada de "iFood (Pago Online)" que a tela de fechamento soma
-    // sozinha no total. O estrago era duplo e acontecia todo dia:
-    //
-    //   • cartão passado na Point DA PRÓPRIA LOJA sumia de crédito/débito.
-    //     Ficava impossível conferir contra o extrato da adquirente e, quando
-    //     o operador digitava esse extrato, o valor era contado duas vezes —
-    //     sobra fantasma do tamanho exato das vendas do totem no cartão;
-    //   • dinheiro vivo do "pagar no caixa" (que o atendente confirma e vira
-    //     "Dinheiro (recebido por ...)") saía do esperado em dinheiro, porque
-    //     este teste vem ANTES do `pm.includes("dinheiro")`. A gaveta fechava
-    //     "certinha" faltando exatamente esse valor — e é justamente essa
-    //     conferência que existe para pegar furo.
-    //
-    // O totem é venda de salão igual ao PDV: o cliente está aqui dentro e o
-    // cartão passa na maquininha da loja. A exceção de "PDV" já provava que
-    // o autor sabia disso; só faltou o totem entrar na mesma lista. Para
-    // venda de salão quem manda é a forma de pagamento, não o carimbo de pago.
-    const ehVendaDeSalao = src === "PDV" || src === "TOTEM";
-
-    // Identificar pagamentos ON-LINE (iFood Pago Online, PIX Online, Crédito Online via App)
-    // Pagamentos Online NÃO passam pelas maquininhas da loja nem dinheiro de motoboy!
-    const isOnlinePayment =
-      pm.includes("online") ||
-      pm.includes("prepaid") ||
-      pm.includes("ifood") ||
-      pm.includes("pago_online") ||
-      (!ehVendaDeSalao && !!(o.paymentPaidAt || o.gatewayProvider)) ||
-      // Forma trocada na entrega ("Pix", "Vale-refeição") é pagamento na
-      // porta, mesmo sem "cobrar" no texto (ver ehFormaInformadaPelaLoja).
-      (src === "IFOOD" && !ehFormaInformadaPelaLoja(o.paymentMethod) && !pm.includes("dinheiro") && !pm.includes("debito") && !pm.includes("débito") && !pm.includes("credito") && !pm.includes("crédito") && !pm.includes("maquininha") && !pm.includes("cobrar"));
-
-    // Fiado: consumo da equipe e venda anotada. Tem ficha propria e e
-    // acertado depois -- nunca passa pela gaveta no fechamento do dia.
-    const ehFiado = pm.includes("funcion") || pm.includes("fiado");
-
-    // A forma que o retrato conta é a MESMA que a conferência cobrou: cada
-    // ramo abaixo diz as duas coisas, e não há uma segunda régua para errar.
-    let forma: string;
-    if (ehDo99Food(o) && isOnlinePayment) {
-      // Linha propria: o lojista confere o repasse do 99Food contra o extrato
-      // DELES, nao contra o do iFood. Somados, os dois numeros nao conferem
-      // com nenhum dos dois extratos.
-      expected.food99Online += valRepasse;
-      expected.total += valRepasse;
-      forma = PAGO_ONLINE;
-    } else if (src === "IFOOD" && isOnlinePayment) {
-      expected.ifoodOnline += valRepasse;
-      expected.total += valRepasse;
-      forma = PAGO_ONLINE;
-    } else if (isOnlinePayment && !ehVendaDeSalao) {
-      expected.ifoodOnline += valRepasse;
-      expected.total += valRepasse;
-      forma = PAGO_ONLINE;
-    } else if (ehFiado) {
-      foraDaConferencia.fiado += valReal;
-      foraDaConferencia.fiadoQtd += 1;
-      forma = "Fiado";
-    } else if (pm.includes("dinheiro") || pm.includes("cash")) {
-      expected.cash += valReal;
-      expected.total += valReal;
-      forma = "Dinheiro";
-    } else if (pm.includes("débito") || pm.includes("debito") || pm.includes("debit")) {
-      expected.debit += valReal;
-      expected.total += valReal;
-      forma = "Debito";
-    } else if (pm.includes("crédito") || pm.includes("credito") || pm.includes("credit")) {
-      expected.credit += valReal;
-      expected.total += valReal;
-      forma = "Credito";
-    } else if (pm.includes("pix")) {
-      expected.pix += valReal;
-      expected.total += valReal;
-      forma = "Pix";
-    } else if (pm.includes("voucher") || pm.includes("vale") || pm.includes("meal") || pm.includes("food")) {
-      expected.voucher += valReal;
-      expected.total += valReal;
-      forma = "Vale-refeicao";
-    } else if (pm.includes("maquininha") || pm.includes("cartão") || pm.includes("cartao")) {
-      // Cartão sem o tipo: o Mercado Pago Point não devolve se foi crédito ou
-      // débito, então o pedido do totem fica com o genérico "Cartão
-      // (Maquininha)" e nenhuma das faixas acima o reconhecia. Cair no `else`
-      // abaixo era o pior destino possível — venda de cartão exigida da
-      // gaveta em espécie. Vai para crédito, que é onde a maioria dessas
-      // passagens de fato cai e, principalmente, é uma linha que o operador
-      // consegue conferir contra o extrato da adquirente.
-      // (Quando o app da maquininha informa o tipo, o paymentMethod já vem
-      // "Cartão CRÉDITO/DÉBITO (maquininha)" e as faixas acima o pegam antes.)
-      expected.credit += valReal;
-      expected.total += valReal;
-      forma = "Credito";
-    } else {
-      // Antes: `expected.cash += val`. Jogar o desconhecido na gaveta e
-      // exatamente o que produz falta sem causa -- o pedido de mesa com
-      // "N/A", o "Pendente" do robo, o rotulo que a proxima integracao
-      // inventar. Fica visivel numa linha propria, fora da conferencia, ate
-      // alguem identificar o que e.
-      foraDaConferencia.naoIdentificado += valReal;
-      foraDaConferencia.naoIdentificadoQtd += 1;
-      forma = NAO_IDENTIFICADA;
+    // Metade no Pix, metade em dinheiro: cada parte vai para a SUA linha da
+    // conferência, pela forma escrita nela (`formaDoTexto`, a régua do
+    // relatório). Ler o `paymentMethod` de texto ("Dividido: Pix R$ 20,00 +
+    // Dinheiro R$ 15,00") jogaria o pedido inteiro na primeira forma que
+    // casasse. A parte "Fiado" vai para o fiado (era "não identificada").
+    const divisao = lerPagamentos(o.paymentMethods);
+    if (divisao.length > 0) {
+      const formas = divisao.map((p) => ({ forma: conferirParte(formaDoTexto(p.method), p.amount), valor: p.amount }));
+      // As partes fecham com o total com 2 centavos de tolerância
+      // (lib/pagamento-dividido.ts): a diferença vai para a ponte.
+      centavosDoDividido += formas.reduce((s, f) => s + cent(f.valor), 0) - cent(o.totalAmount);
+      const bloco = registrarVenda(canal, tipo, formas, 0);
+      registrarPedido(o, canal, tipo, formas, bloco, 0);
+      continue;
     }
-    if (forma === PAGO_ONLINE) somarEm(onlinePorCanal, canal, cent(valRepasse));
-    if (forma === PAGO_ONLINE && !canalDoPedido(o).ehMarketplace) onlineProprio += valRepasse;
+
+    // ── A FORMA DO PEDIDO: A RÉGUA DO RELATÓRIO ─────────────────────────
+    //
+    // `formaDoPedido` = foi pago online (`foiPagoOnline`)? Senão, a cascata do
+    // texto (`formaDoTexto`). Os casos que já custaram diferença de caixa
+    // moram lá, num lugar só, e valem igual aqui, no relatório e no acerto:
+    //   • venda de salão (PDV, totem) não é pago online pelo carimbo de pago —
+    //     o cartão passa na maquininha da loja, e o dinheiro do "pagar no
+    //     caixa" é da gaveta (o totem caía inteiro no "iFood (Pago Online)");
+    //   • a forma trocada na entrega ("Pix", "Vale-refeição") é pagamento na
+    //     porta (pix-trocado-na-entrega-nao-e-online), e o "CASH" cru do iFood
+    //     é dinheiro — aqui ele ia para o pago online;
+    //   • "Cartão Deb Master" (Wabiz) é débito e "Cartão Alimentação/Refeição"
+    //     é vale — aqui viravam crédito; o cartão sem o tipo (o Mercado Pago
+    //     Point não devolve) continua crédito, a linha que se confere contra o
+    //     extrato da adquirente;
+    //   • o que ninguém reconhece ("N/A", "Pendente", "99Food" de pay_type
+    //     desconhecido) fica "não identificado", nunca na gaveta nem no vale.
+    const chave = formaDoPedido(o);
+    // ── A ENTREGA DO APP COBRADA NA PORTA NÃO É DA GAVETA ───────────────
+    //
+    // Pedido do 99 (ou do iFood) entregue pelo entregador DELES e pago na
+    // porta — "Dinheiro (cobrar na entrega)", "Débito (Cobrar na Entrega)": quem
+    // recebe é o entregador do app, e o app acerta com a loja no repasse. A
+    // gaveta cobrava esse dinheiro da loja: em 60 dias, 42 pedidos do 99
+    // (R$ 2.796,31) e 43 do iFood (24 no débito, 14 no crédito, 5 em
+    // dinheiro). Vai para a linha travada do app, com o seu nome.
+    const peloEntregadorDoApp = chave !== "ONLINE" && chave !== "FIADO" && chave !== "OUTROS" && !ehEntregaDaLoja(o);
+    let forma: string;
+    if (chave === "ONLINE" || peloEntregadorDoApp) {
+      // Pago no app ou no site: não passa pela gaveta nem pela maquininha. O
+      // 99Food em linha própria: o lojista confere o repasse do 99 contra o
+      // extrato DELES — somados ao do iFood, os dois números não conferem com
+      // nenhum dos dois extratos.
+      const repasse = repasseDoApp(o, valReal, channelDisc);
+      if (ehDo99Food(o)) esp.food99Online += repasse;
+      else esp.ifoodOnline += repasse;
+      if (peloEntregadorDoApp) {
+        forma = COBRADO_PELO_APP;
+        somarEm(cobradoPeloApp, canal, repasse);
+        if (chave === "DINHEIRO") dinheiroCobradoPeloApp += cent(valReal);
+      } else {
+        forma = PAGO_ONLINE;
+        somarEm(onlinePorCanal, canal, repasse);
+        if (!canalDoPedido(o).ehMarketplace) onlineProprio += reais(repasse);
+      }
+    } else {
+      forma = conferirParte(chave, valReal);
+    }
 
     // O cupom que a plataforma pagou NESTE pedido, no retrato. É o mesmo
-    // `channelDisc` que a conferência somou no repasse do pago online — com
-    // uma exceção: pedido do 99Food anterior a 17/09/2026 não tem o campo, e
-    // a conta sai das promoções gravadas (lib/cupom-do-parceiro.ts).
-    const cupomDoPedido = ehDo99Food(o) ? (channelDisc || cupomBancadoPelo99(o)) : channelDisc;
+    // `channelDisc` que a conferência somou no repasse do pago online.
     const formas = [{ forma, valor: valReal }];
-    const bloco = registrarVenda(canal, tipo, formas, cupomDoPedido);
-    registrarPedido(o, canal, tipo, formas, bloco, cupomDoPedido);
+    const bloco = registrarVenda(canal, tipo, formas, channelDisc);
+    registrarPedido(o, canal, tipo, formas, bloco, channelDisc);
 
     // Desconto custeado pela PLATAFORMA — informativo, nunca entra na gaveta.
     //
@@ -593,63 +650,107 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
   // nenhum, só na sessão). O critério é a mesa ter FECHADO depois de o caixa
   // abrir: uma mesa aberta às 20h e paga às 23h é dinheiro deste turno, e a
   // data do pedido não diz isso — a do fechamento diz.
+  // O que a ponte RECEBIDO → FATURADO precisa das contas, em centavos.
+  const ponteDaMesa = { servico: 0, servicoQtd: 0, gorjeta: 0, gorjetaQtd: 0, desconto: 0, descontoQtd: 0, aMais: 0, aMaisQtd: 0, aMenos: 0, aMenosQtd: 0, deAntes: 0, deAntesQtd: 0 };
   for (const mesa of mesasFechadas) {
-    const formas: Forma[] = [];
-    for (const p of lerPagamentos(mesa.paymentMethods)) {
-      // Forma que a mesa gravou e o caixa não soube ler: continua visível,
-      // fora da conferência, em vez de sumir na gaveta (somarParte).
-      formas.push({ forma: somarParte(p.method, p.amount), valor: p.amount });
-    }
+    const baixas: { chave: ChaveDaForma; forma: string; valor: number }[] = lerPagamentos(mesa.paymentMethods)
+      .map((p) => { const chave = formaDoTexto(p.method); return { chave, forma: NOME_DA_FORMA[chave], valor: p.amount }; });
     const servico = Number(mesa.serviceFee || 0);
     const gorjeta = Number(mesa.waiterTip || 0);
     if (servico > 0) { mesas.servico += cent(servico); mesas.servicoQtd += 1; }
     mesas.gorjeta += cent(gorjeta);
-    // Uma conta de mesa é UMA venda no retrato, com as baixas nas formas.
-    if (formas.length === 0) continue;
 
-    // ── NO RETRATO, A MESA ENTRA SEM O TROCO ─────────────────────────────
+    // ── A MESA ENTRA SEM O TROCO — NO RETRATO E NA CONFERÊNCIA ───────────
     //
-    // A conferência acima soma a baixa como foi digitada — a NOTA que o
-    // cliente entregou. O retrato (faturamento, canal, bloco "Mesas") conta o
-    // que ficou na loja: sem o troco, que voltou para o cliente (trocoDaConta).
-    // Sem os pedidos da conta não há consumo para comparar, e aí a baixa vai
-    // inteira, como sempre foi.
-    const consumo = mesa.orders
-      ? mesa.orders
-          .filter((o) => situacaoDoPedido(o.status) === "venda" && !temValorImpossivel(o))
-          .reduce((s, o) => s + cent(o.totalAmount), 0)
-      : null;
+    // A baixa grava a NOTA que o cliente entregou (pago-da-mesa-inclui-troco);
+    // o que passou de consumo + serviço + gorjeta voltou como troco, DESTA
+    // gaveta. Até 11/10/2026 só o retrato tirava o troco: a conferência
+    // cobrava a nota inteira, e a falta do tamanho do troco aparecia todo dia
+    // sem explicação — 32 turnos e R$ 3.113,52 em 30 dias (Delícias da Maria,
+    // R$ 1.916,50; Mesa 3 de 10/10 consumiu R$ 7 e a baixa "Dinheiro 100"
+    // fazia a gaveta esperar R$ 100). Agora a conferência recebe as baixas já
+    // sem o troco (trocoDaConta, a mesma regra do relatório Formas de
+    // pagamento). Sem os pedidos da conta não há consumo para comparar, e a
+    // baixa vai inteira.
+    const validos = mesa.orders ? mesa.orders.filter((o) => situacaoDoPedido(o.status) === "venda" && !temValorImpossivel(o)) : null;
+    const consumo = validos ? validos.reduce((s, o) => s + cent(o.totalAmount), 0) : null;
+    // Conta fechada sem pagamento nenhum e sem consumo não é venda de ninguém.
+    // Sem pagamento COM consumo é a cortesia (desconto de 100%): entra, com o
+    // desconto à vista no bloco.
+    if (baixas.length === 0 && !(consumo && consumo > 0)) continue;
     const { formas: semTroco, troco } = consumo != null
-      ? trocoDaConta({ formas, consumo: reais(consumo), servico, gorjeta })
-      : { formas, troco: 0 };
-    const bloco = registrarVenda("Mesa", "MESA", semTroco, 0);
+      ? trocoDaConta({ formas: baixas, consumo: reais(consumo), servico, gorjeta })
+      : { formas: baixas as Forma[], troco: 0 };
+    // Forma que a mesa gravou e o caixa não soube ler: continua visível, fora
+    // da conferência, em vez de sumir na gaveta (conferirParte).
+    const chaveDoNome = new Map(baixas.map((b) => [b.forma, b.chave]));
+    const formas: Forma[] = semTroco.map((f) => ({ forma: conferirParte(chaveDoNome.get(f.forma) ?? "OUTROS", f.valor), valor: f.valor }));
+    // Uma conta de mesa é UMA venda no recebido, com as baixas nas formas.
+    const bloco = registrarVenda("Mesa", "MESA", formas, 0);
     const servicoCobrado = Math.max(0, cent(servico));
     const gorjetaCobrada = Math.max(0, cent(gorjeta));
-    if (servicoCobrado > 0) { bloco.servico += servicoCobrado; bloco.servicoQtd += 1; }
+    if (servicoCobrado > 0) { bloco.servico += servicoCobrado; bloco.servicoQtd += 1; ponteDaMesa.servico += servicoCobrado; ponteDaMesa.servicoQtd += 1; }
+    if (gorjetaCobrada > 0) { ponteDaMesa.gorjeta += gorjetaCobrada; ponteDaMesa.gorjetaQtd += 1; }
     bloco.gorjeta += gorjetaCobrada;
     if (cent(troco) > 0) {
       bloco.troco += cent(troco); bloco.trocoQtd += 1;
       mesas.troco += cent(troco); mesas.trocoQtd += 1;
     }
-    const recebido = semTroco.reduce((s, f) => s + cent(f.valor), 0);
+    const recebidoDaConta = formas.reduce((s, f) => s + cent(f.valor), 0);
     if (consumo != null) {
       bloco.produtos += consumo;
-      // A conta fechada ABAIXO de consumo + serviço + gorjeta é desconto no
-      // fechamento (ele não é gravado; a taxa negativa das contas antigas cai
-      // aqui também). Acima, sem troco a devolver, é pago a mais no cartão ou
-      // no Pix: fica nos ajustes, que o bloco calcula sozinho.
-      const resto = recebido - consumo - servicoCobrado - gorjetaCobrada;
-      if (resto < -1) { bloco.desconto += -resto; bloco.descontoQtd += 1; }
+      // ── O DESCONTO DO FECHAMENTO É O DA RÉGUA ──────────────────────────
+      //
+      // `descontoNoFechamento` (lib/relatorios/regua-da-venda.ts) é o desconto
+      // que o relatório Cupons e descontos e o Vendas por período mostram:
+      // consumo − (pago − serviço − gorjeta), nas contas fechadas desde
+      // 13/09/2026, nunca mais que o consumo. O papel dizia "Desconto no
+      // fechamento R$ 879" no bloco das mesas e o "Pago pela loja" não o
+      // somava (Ragnar, 10/10: R$ 1.984,55 no papel × R$ 2.863,55 no
+      // relatório). Agora é o mesmo número nos três lugares. O que a conta
+      // recebeu acima disso (pago a mais no cartão/Pix) ou abaixo sem ser
+      // desconto fica nos ajustes, cada um com o seu nome.
+      const desconto = cent(descontoNoFechamento({
+        id: mesa.id || "", serviceFee: servico, waiterTip: gorjeta, fechadaEm: mesa.closedAt ?? null,
+        pago: mesa.totalPaid ?? baixas.reduce((s, b) => s + b.valor, 0), pedidos: mesa.orders,
+      }));
+      if (desconto > 0) {
+        bloco.desconto += desconto; bloco.descontoQtd += 1;
+        ponteDaMesa.desconto += desconto; ponteDaMesa.descontoQtd += 1;
+      }
+      const resto = recebidoDaConta - consumo - servicoCobrado - gorjetaCobrada + desconto;
+      if (resto > 0) { ponteDaMesa.aMais += resto; ponteDaMesa.aMaisQtd += 1; }
+      else if (resto < 0) { ponteDaMesa.aMenos += resto; ponteDaMesa.aMenosQtd += 1; }
+      // O consumo de antes deste caixa: a conta fechou agora com pedidos
+      // lançados antes de ele abrir (estão no recebido, não no faturado).
+      const lancadoAgora = mesa.id ? (lancadoNaConta.get(mesa.id) ?? 0) : consumo;
+      if (consumo - lancadoAgora !== 0) { ponteDaMesa.deAntes += consumo - lancadoAgora; ponteDaMesa.deAntesQtd += 1; }
     } else {
-      bloco.produtos += recebido - servicoCobrado - gorjetaCobrada;
+      bloco.produtos += recebidoDaConta - servicoCobrado - gorjetaCobrada;
     }
   }
+
+  // A conferência em reais. O total é a soma das linhas, por construção.
+  expected.cash = reais(esp.cash);
+  expected.debit = reais(esp.debit);
+  expected.credit = reais(esp.credit);
+  expected.pix = reais(esp.pix);
+  expected.voucher = reais(esp.voucher);
+  expected.ifoodOnline = reais(esp.ifoodOnline);
+  expected.food99Online = reais(esp.food99Online);
+  expected.total = reais(esp.cash + esp.debit + esp.credit + esp.pix + esp.voucher + esp.ifoodOnline + esp.food99Online);
+  expected.ifoodCoupons = reais(cent(expected.ifoodCoupons));
+  expected.food99Coupons = reais(cent(expected.food99Coupons));
+  foraDaConferencia.fiado = reais(fiadoC);
+  foraDaConferencia.naoIdentificado = reais(naoIdentificadoC);
+  foraDaConferencia.mesasAbertas = reais(cent(foraDaConferencia.mesasAbertas));
 
   const blocos: BlocoDoTipo[] = ORDEM_DOS_TIPOS.filter((t) => porTipo.has(t)).map((t) => {
     const b = porTipo.get(t)!;
     // O ajuste é o que sobra para a conta do bloco fechar — calculado, nunca
-    // estimado: produtos + taxa + serviço + gorjeta − desconto + ajustes = total.
-    const ajustes = b.c - b.produtos - b.taxa - b.servico - b.gorjeta + b.desconto;
+    // estimado: produtos + taxa + serviço + gorjeta − desconto − cupom da
+    // plataforma + ajustes = total.
+    const ajustes = b.c - b.produtos - b.taxa - b.servico - b.gorjeta + b.desconto + b.cupom;
     return {
       chave: t,
       nome: NOME_DO_TIPO[t],
@@ -662,10 +763,43 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
       servico: { qtd: b.servicoQtd, valor: reais(b.servico) },
       gorjeta: reais(b.gorjeta),
       desconto: { qtd: b.descontoQtd, valor: reais(b.desconto) },
+      cupomDaPlataforma: { qtd: b.cupomQtd, valor: reais(b.cupom) },
       ajustes: Math.abs(ajustes) > 0 ? reais(ajustes) : 0,
+      ajustesDoApp: t === "MESA" ? 0 : reais(b.ajustesDoApp),
       troco: { qtd: b.trocoQtd, valor: reais(b.troco) },
     };
   });
+
+  // ── O FATURADO, PELA RÉGUA ÚNICA ──────────────────────────────────────────
+  // Vendas = atendimentos (a mesa uma vez, o acréscimo com o pai no turno não
+  // abre venda nova); ticket = valor ÷ vendas. O MESMO número do Vendas por
+  // período e do Faturamento por dia, para a mesma janela.
+  const at = atendimentosDaVenda(pedidos.map((o, i) => ({
+    id: String(o.id ?? `sem-id-${i}`), createdAt: o.createdAt, status: o.status, totalAmount: o.totalAmount,
+    tableSessionId: o.tableSessionId ?? null, parentOrderId: o.parentOrderId ?? null, items: o.items,
+  })));
+
+  // ── A PONTE: POR QUE O RECEBIDO NÃO É O FATURADO ──────────────────────────
+  // Cada linha é dinheiro que está num e não no outro; a última, se aparecer,
+  // é o que nenhuma explica (e não devia existir).
+  let abertas = 0, abertasQtd = 0;
+  for (const [sessao, c] of lancadoNaConta) {
+    if (idsFechadas && !idsFechadas.has(sessao)) { abertas += c; abertasQtd += 1; }
+  }
+  const ponte: NonNullable<DetalheDoTurno["ponte"]> = [];
+  const naPonte = (chave: string, rotulo: string, qtd: number, centavos: number) => {
+    if (centavos !== 0) ponte.push({ chave, rotulo, qtd, valor: reais(centavos) });
+  };
+  naPonte("SERVICO", "Taxa de servico das mesas", ponteDaMesa.servicoQtd, ponteDaMesa.servico);
+  naPonte("GORJETA", "Gorjeta das mesas", ponteDaMesa.gorjetaQtd, ponteDaMesa.gorjeta);
+  naPonte("DESCONTO_MESA", "Desconto no fechamento das mesas", ponteDaMesa.descontoQtd, -ponteDaMesa.desconto);
+  naPonte("MESA_ABERTA", "Lancado em mesa ainda aberta", abertasQtd, -abertas);
+  naPonte("MESA_DE_ANTES", "Lancado antes deste caixa, conta fechada nele", ponteDaMesa.deAntesQtd, ponteDaMesa.deAntes);
+  naPonte("SOBRA", "Pago a mais nas mesas (cartao ou Pix)", ponteDaMesa.aMaisQtd, ponteDaMesa.aMais);
+  naPonte("MESA_A_MENOS", "Mesa fechada recebendo menos que a conta", ponteDaMesa.aMenosQtd, ponteDaMesa.aMenos);
+  naPonte("DIVIDIDO", "Centavos do pagamento dividido", 0, centavosDoDividido);
+  const explicado = ponte.reduce((s, l) => s + cent(l.valor), 0);
+  naPonte("OUTROS", "Outras diferencas", 0, recebido.c - faturadoC - explicado);
 
   return {
     expected,
@@ -675,15 +809,22 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     onlineProprio,
     entregasProprias,
     retrato: {
-      vendas: { qtd: vendas.qtd, valor: reais(vendas.c) },
+      vendas: { qtd: at.vendas, valor: reais(faturadoC), ticketMedio: ticketMedio(reais(faturadoC), at.vendas), lancamentos: at.lancamentos, mesas: at.mesas },
+      recebido: { qtd: recebido.qtd, valor: reais(recebido.c) },
+      ponte,
       porForma: listar(porForma),
       porCanal: [...porCanal.entries()]
         .map(([nome, c]) => ({ nome, qtd: c.qtd, valor: reais(c.c), formas: listar(c.formas) }))
         .sort((a, b) => b.valor - a.valor),
       porTipo: blocos,
       cupomDaLoja: { qtd: cupomDaLoja.qtd, valor: reais(cupomDaLoja.c), porCanal: listar(cupomDaLoja.porCanal) },
-      cupomDaPlataforma: listar(cupomDaPlataforma),
+      descontoNasMesas: { qtd: ponteDaMesa.descontoQtd, valor: reais(ponteDaMesa.desconto) },
+      cupomDaPlataforma: [...cupomDaPlataforma.entries()]
+        .map(([nome, s]) => ({ nome, qtd: s.qtd, valor: reais(s.c), noOnline: reais(s.noOnline), qtdNoOnline: s.qtdNoOnline }))
+        .sort((a, b) => b.valor - a.valor),
       onlinePorCanal: listar(onlinePorCanal),
+      cobradoPeloApp: listar(cobradoPeloApp),
+      dinheiroCobradoPeloApp: reais(dinheiroCobradoPeloApp),
       taxaDeEntrega: { qtd: taxaDeEntrega.qtd, valor: reais(taxaDeEntrega.c) },
       mesas: { servico: reais(mesas.servico), servicoQtd: mesas.servicoQtd, gorjeta: reais(mesas.gorjeta), troco: reais(mesas.troco), trocoQtd: mesas.trocoQtd },
       fiado,

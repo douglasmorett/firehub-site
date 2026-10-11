@@ -74,7 +74,7 @@ export default function FormasDePagamentoClient({ inicio }: { inicio: InicioDosF
   return (
     <ModeloDoRelatorio
       titulo="Vendas por forma de pagamento"
-      descricao="Quanto entrou em dinheiro, Pix, crédito, débito e vale — separado do que foi pago no app e vem pelo repasse. A leitura das formas é a mesma do fechamento de caixa."
+      descricao="Quanto entrou em dinheiro, Pix, crédito, débito e vale — separado do que foi pago no app e vem pelo repasse. A leitura das formas é a mesma do fechamento de caixa — as mesmas funções, com o troco das mesas fora do dinheiro nos dois. Só o que o entregador do app cobrou na porta fica aqui na forma em que foi pago e, no caixa, fora da gaveta."
       slug="formas-de-pagamento" query={query} periodo={dados?.periodo} carregando={carregando} erro={erro} onRecarregar={recarregar}>
 
       {/* Na tela estreita some o ticket médio, a barrinha e a explicação da faixa, e o respiro das células encolhe:

@@ -3,7 +3,7 @@
  * relatório faz no servidor e que a tela refaz quando o lojista filtra o
  * cartão do motoboy por integração. Rodar: npx tsx scripts/teste-resumo-do-entregador.ts
  */
-import { resumoDasEntregas, partesDaEntrega, type EntregaDoResumo } from "../src/lib/resumo-do-entregador";
+import { resumoDasEntregas, partesDaEntrega, composicaoDoGanho, canceladoComCorrida, type EntregaDoResumo } from "../src/lib/resumo-do-entregador";
 import { chaveDoCanal } from "../src/lib/canal-do-pedido";
 
 let falhas = 0;
@@ -17,35 +17,40 @@ const tz = "America/Sao_Paulo";
 type Pedido = EntregaDoResumo & { source?: string; openDeliveryChannel?: string };
 const pedidos: Pedido[] = [
   // iFood pago no app: nada a prestar contas, corrida conta
-  { source: "IFOOD", status: "FINALIZADO", createdAt: "2026-10-01T22:00:00Z", deliveryDistance: 2.5, totalAmount: 58.9, paymentMethod: "Pago Online", ganho: 6 },
+  { source: "IFOOD", status: "ENTREGUE", createdAt: "2026-10-01T22:00:00Z", deliveryDistance: 2.5, totalAmount: 58.9, paymentMethod: "Pago Online", ganho: 6 },
   // 99Food em dinheiro com troco para 50
-  { source: "99FOOD", status: "FINALIZADO", createdAt: "2026-10-01T23:10:00Z", deliveryDistance: 3, totalAmount: 41.5, paymentMethod: "Dinheiro", changeAmount: 50, ganho: 7 },
+  { source: "99FOOD", status: "ENTREGUE", createdAt: "2026-10-01T23:10:00Z", deliveryDistance: 3, totalAmount: 41.5, paymentMethod: "Dinheiro", changeAmount: 50, ganho: 7 },
   // Site próprio, débito na maquininha
-  { source: "SITE", status: "FINALIZADO", createdAt: "2026-10-02T00:30:00Z", deliveryDistance: 1.2, totalAmount: 35, paymentMethod: "Cartão de Débito", ganho: 5 },
+  { source: "SITE", status: "ENTREGUE", createdAt: "2026-10-02T00:30:00Z", deliveryDistance: 1.2, totalAmount: 35, paymentMethod: "Cartão de Débito", ganho: 5 },
   // Balcão, troco escrito na observação — madrugada (01h40 de 02/10 em Brasília
-  // = mesmo expediente de 01/10, que vira às 5h)
-  { source: "PRESENCIAL", status: "FINALIZADO", createdAt: "2026-10-02T04:40:00Z", deliveryDistance: 4, totalAmount: 30, paymentMethod: "Dinheiro", notes: "Troco p/ R$ 100,00", ganho: 8 },
-  // iFood cancelado com o motoboy: corrida conta, dinheiro não
-  { source: "IFOOD", status: "CANCELADO", createdAt: "2026-10-02T20:00:00Z", deliveryDistance: 2, totalAmount: 20, paymentMethod: "Dinheiro", ganho: 6 },
+  // = mesmo expediente de 01/10, que vira às 5h). Ainda na rua.
+  { source: "PRESENCIAL", status: "SAIU_ENTREGA", createdAt: "2026-10-02T04:40:00Z", deliveryDistance: 4, totalAmount: 30, paymentMethod: "Dinheiro", notes: "Troco p/ R$ 100,00", ganho: 8 },
+  // iFood cancelado DEPOIS de o motoboy sair: a corrida conta, o dinheiro não.
+  { source: "IFOOD", status: "CANCELADO", createdAt: "2026-10-02T20:00:00Z", dispatchedAt: "2026-10-02T20:20:00Z", cancelledAt: "2026-10-02T20:40:00Z", deliveryDistance: 2, totalAmount: 20, paymentMethod: "Dinheiro", ganho: 6 },
+  // iFood cancelado ANTES de sair (03/10): não é corrida — nem entrega, nem dia, nem ganho.
+  { source: "IFOOD", status: "CANCELADO", createdAt: "2026-10-03T20:00:00Z", cancelledAt: "2026-10-03T20:05:00Z", deliveryDistance: 5, totalAmount: 33, paymentMethod: "Pago Online", ganho: 9 },
 ];
 
-confere("canais", pedidos.map((p) => chaveDoCanal(p as any)), ["IFOOD", "99FOOD", "SITE", "PDV", "IFOOD"]);
+confere("canais", pedidos.map((p) => chaveDoCanal(p as any)), ["IFOOD", "99FOOD", "SITE", "PDV", "IFOOD", "IFOOD"]);
+confere("cancelado depois de sair é corrida; antes, não", [canceladoComCorrida(pedidos[4]), canceladoComCorrida(pedidos[5])], [true, false]);
 
 const tudo = resumoDasEntregas(pedidos, tz);
-confere("tudo: entregas", tudo.totalDeliveries, 5);
-confere("tudo: dias (expediente das 5h)", tudo.uniqueDays, 2);
+confere("tudo: entregas = corridas (5: 4 não canceladas + 1 cancelada depois de sair)", tudo.totalDeliveries, 5);
+confere("tudo: dias (expediente das 5h; o cancelado antes de sair não conta dia)", tudo.uniqueDays, 2);
+confere("tudo: km só das corridas", tudo.totalDistance, 12.7);
 confere("tudo: dinheiro a entregar", tudo.cashCollectedSum, 150);
 confere("tudo: troco levado", tudo.changeGivenSum, 78.5);
 confere("tudo: débito", [tudo.debitTotal, tudo.debitCount], [35, 1]);
 confere("tudo: pago online", [tudo.onlineTotal, tudo.onlineCount], [58.9, 1]);
-confere("tudo: ganho (cancelado conta)", tudo.feeTotal, 32);
-confere("tudo: 4 entregues + 1 cancelada", [tudo.entreguesCount, tudo.canceladasCount, tudo.canceladasValor], [4, 1, 20]);
+confere("tudo: ganho (o cancelado depois de sair conta; o de antes não)", tudo.feeTotal, 32);
+confere("tudo: 3 entregues, 1 na rua, 2 canceladas (1 depois de sair, 1 antes)",
+  [tudo.entreguesCount, tudo.emAndamentoCount, tudo.canceladasCount, tudo.canceladasComCorridaCount, tudo.canceladasSemCorridaCount, tudo.canceladasValor], [3, 1, 2, 1, 1, 53]);
 // Valor dos pedidos: todas as formas (online, dinheiro, débito), sem o troco e sem o cancelado.
 confere("tudo: valor dos pedidos", tudo.valorDosPedidos, 165.4);
 
 const so = (canal: string) => resumoDasEntregas(pedidos.filter((p) => chaveDoCanal(p as any) === canal), tz);
 const ifood = so("IFOOD"), noventaENove = so("99FOOD"), site = so("SITE"), balcao = so("PDV");
-confere("só iFood: 2 entregas, 1 online, sem dinheiro", [ifood.totalDeliveries, ifood.onlineCount, ifood.cashCollectedSum, ifood.feeTotal], [2, 1, 0, 12]);
+confere("só iFood: 2 corridas, 1 online, sem dinheiro", [ifood.totalDeliveries, ifood.onlineCount, ifood.cashCollectedSum, ifood.feeTotal], [2, 1, 0, 12]);
 confere("só 99: dinheiro 50 com troco 8,50", [noventaENove.cashCollectedSum, noventaENove.changeGivenSum], [50, 8.5]);
 confere("só balcão: troco da observação", [balcao.cashCollectedSum, balcao.changeGivenSum], [100, 70]);
 
@@ -100,6 +105,22 @@ confere("turno: dinheiro da parte com a nota de 50", [r.cashCollectedSum, r.chan
 // Toda entrega cai em alguma caixa: as caixas somam o valor dos pedidos.
 const somaDasCaixas = Math.round((r.cashOrdersValueSum + r.cardPosTotal + r.pixTotal + r.onlineTotal + r.fiadoTotal + r.naoIdentificadoTotal) * 100) / 100;
 confere("turno: caixas = valor dos pedidos", somaDasCaixas, r.valorDosPedidos);
+
+// ── A COMPOSIÇÃO DO PAGAMENTO POR ORIGEM ─────────────────────────────────────
+// "Por entrega: R$ 0,00 × 10 entregas = R$ 40,00" (Diária + Entrega sem valor
+// por entrega cadastrado, ganho vindo da tabela da loja): cada linha é uma
+// origem, e "R$ X × N" só quando todas valem o mesmo.
+const comp = composicaoDoGanho([
+  ...Array.from({ length: 10 }, () => ({ origemDoGanho: "REGRA_DA_LOJA", ganhoDoMotoboy: 4, deliveryDistance: 2, corrida: true })),
+  { origemDoGanho: "POR_ENTREGA", ganhoDoMotoboy: 5, deliveryDistance: 1, corrida: true },
+  { origemDoGanho: "POR_ENTREGA", ganhoDoMotoboy: 5, deliveryDistance: 1, corrida: true },
+  { origemDoGanho: "TAXA_DO_CLIENTE", ganhoDoMotoboy: 6.99, deliveryDistance: 3, corrida: true },
+  { origemDoGanho: "TAXA_DO_CLIENTE", ganhoDoMotoboy: 4.5, deliveryDistance: 3, corrida: true },
+  { origemDoGanho: "REGRA_DA_LOJA", ganhoDoMotoboy: 0, deliveryDistance: 9, corrida: false },
+]);
+confere("composição: uma linha por origem, na ordem", comp.map((c) => [c.origem, c.qtd, c.valor, c.cadaUma]),
+  [["POR_ENTREGA", 2, 10, 5], ["REGRA_DA_LOJA", 10, 40, 4], ["TAXA_DO_CLIENTE", 2, 11.49, null]]);
+confere("composição: a soma das linhas é o total das taxas", Math.round(comp.reduce((s, c) => s + c.valor, 0) * 100) / 100, 61.49);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

@@ -34,10 +34,72 @@ import { toLocalISODate } from "@/lib/timezone";
 import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 import { formaDoPedido, formaDoTexto, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
+import { infoDaEntrega } from "@/lib/entrega-parceira";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
 
 export const ehCancelado = (status: string | null | undefined) => String(status || "").toUpperCase().includes("CANCEL");
+
+/** Chegou ao cliente: ENTREGUE ou ENCERRADO (lib/status-pedido.ts, STATUS_FINALIZADOS). */
+export const foiEntregue = (status: string | null | undefined) => {
+  const s = String(status || "").toUpperCase();
+  return s === "ENTREGUE" || s === "ENCERRADO";
+};
+
+// ── CANCELADO SÓ É CORRIDA SE O MOTOBOY SAIU ──────────────────────────────────
+//
+// Até 11/10/2026 o acerto contava TODO pedido cancelado com o motoboy como
+// corrida (cancelado-com-motoboy-conta), e o fechamento de caixa não contava
+// nenhum: o mesmo entregador, no mesmo turno, com dois números (77 cancelados
+// com motoboy em 60 dias; na Delícia de Casa, em 30 dias, Ian 8, Jobson 6,
+// guilherme 5). A regra única é a frase do Douglas (02/10/2026), "se ele puxou
+// o pedido, vai ficar na conta": SAIU com o pedido (`dispatchedAt`, o carimbo de
+// SAIU_ENTREGA) antes do cancelamento → a corrida conta. Cancelado antes de
+// sair → não houve corrida. Das 77, 57 tinham saído; nenhuma saiu depois de
+// cancelada. Pedido anterior a 29/08/2026 não tem o carimbo e fica sem corrida.
+
+type PedidoDaCorrida = { status?: string | null; dispatchedAt?: Date | string | null; cancelledAt?: Date | string | null };
+
+/** Cancelado DEPOIS de o motoboy sair com ele: a corrida conta (e o dinheiro não). */
+export function canceladoComCorrida(o: PedidoDaCorrida): boolean {
+  if (!ehCancelado(o.status) || !o.dispatchedAt) return false;
+  const saiu = new Date(o.dispatchedAt).getTime();
+  const cancelou = o.cancelledAt ? new Date(o.cancelledAt).getTime() : NaN;
+  return !Number.isFinite(cancelou) || saiu <= cancelou;
+}
+
+/** A entrega vira corrida do motoboy: não cancelada, ou cancelada depois de sair. */
+export const contaComoCorrida = (o: PedidoDaCorrida) => !ehCancelado(o.status) || canceladoComCorrida(o);
+
+// ── É ENTREGA DA LOJA? ────────────────────────────────────────────────────────
+//
+// Uma régua para o acerto do motoboy e o fechamento de caixa. O caixa olhava
+// só `deliveryBy` ("tem e não é MERCHANT" = parceira), o acerto não olhava nada
+// e a tela de Áreas usa `infoDaEntrega` (lib/entrega-parceira.ts) — a régua do
+// painel e da comanda, que é a base daqui.
+//
+// Uma exceção, de dado velho: até 17/09/2026 o app do motoboy da loja carimbava
+// `ifoodDriverStatus = "DELIVERED"` ao conferir o código da entrega PRÓPRIA (ver
+// o comentário de ESTADOS_DE_ENTREGADOR_IFOOD). Em 60 dias são 15 pedidos da
+// Frangoso, todos com o motoboy da loja e sem `deliveryBy` — dois deles
+// "Crédito (Cobrar na Entrega)", cobrados na porta pelo motoboy da loja. Pela
+// régua do painel eles viram "entregador do iFood" e sumiriam do acerto de
+// setembro. Com motoboy da loja atribuído, "DELIVERED" sozinho (sem `deliveryBy`
+// de parceiro) não prova entrega parceira. Desde 18/09 não há nenhum caso assim.
+export function ehEntregaDaLoja(o: {
+  motoboyId?: string | null;
+  deliveryBy?: string | null;
+  ifoodDriverStatus?: string | null;
+  ifoodDriverName?: string | null;
+  [k: string]: unknown;
+}): boolean {
+  const info = infoDaEntrega(o);
+  if (!info.parceira) return true;
+  const por = String(o.deliveryBy || "").toUpperCase().trim();
+  const soOCarimboDoApp =
+    Boolean(o.motoboyId) && !por && !o.ifoodDriverName && String(o.ifoodDriverStatus || "").toUpperCase() === "DELIVERED";
+  return soOCarimboDoApp;
+}
 
 type PedidoDoDinheiro = {
   paymentMethod?: string | null;
@@ -122,23 +184,31 @@ export type EntregaDoResumo = EntregaParaCaixa & {
   deliveryDistance?: number | null;
   deliveryFee?: number | null;
   motoboyFee?: number | null;
-  /** O que o motoboy ganha nesta entrega (lib/ganho-do-entregador). */
+  /** Saiu para a entrega (SAIU_ENTREGA) e foi cancelado: o cancelado só é corrida se saiu antes. */
+  dispatchedAt?: Date | string | null;
+  cancelledAt?: Date | string | null;
+  /** O que o motoboy ganha nesta entrega (lib/ganho-do-entregador). Só conta se for corrida. */
   ganho: number;
 };
 
 export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
-  const totalDeliveries = orders.length;
-  const totalDistance = orders.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
+  // ── AS CORRIDAS ───────────────────────────────────────────────────────────
+  // Entrega não cancelada, ou cancelada DEPOIS de o motoboy sair com ela
+  // (canceladoComCorrida). O cancelado antes de sair não é corrida: não conta
+  // entrega, km, dia nem ganho — a mesma regra do fechamento de caixa.
+  const corridas = orders.filter(contaComoCorrida);
+  const totalDeliveries = corridas.length;
+  const totalDistance = corridas.reduce((s, o) => s + (o.deliveryDistance || 0), 0);
 
   // Dias trabalhados = EXPEDIENTES, no fuso da loja. É o que paga a diária:
   // pelo calendário, o turno das 18h às 2h contava dois dias.
-  const uniqueDays = orders.length > 0
-    ? new Set(orders.map((o) => toLocalISODate(new Date(new Date(o.createdAt).getTime() - VIRADA_MS), tz))).size
+  const uniqueDays = corridas.length > 0
+    ? new Set(corridas.map((o) => toLocalISODate(new Date(new Date(o.createdAt).getTime() - VIRADA_MS), tz))).size
     : 0;
 
   // Soma das taxas dos pedidos
-  const deliveryFeeSum = orders.reduce((s, o) => s + (o.deliveryFee || o.motoboyFee || 0), 0);
-  const motoboyFeeSum = orders.reduce((s, o) => s + (o.motoboyFee || 0), 0);
+  const deliveryFeeSum = corridas.reduce((s, o) => s + (o.deliveryFee || o.motoboyFee || 0), 0);
+  const motoboyFeeSum = corridas.reduce((s, o) => s + (o.motoboyFee || 0), 0);
 
   // Classificação de pagamentos recebidos pelo motoboy na entrega vs online
   let cashCollectedSum = 0, cashOrdersCount = 0, changeGivenSum = 0, cashOrdersValueSum = 0;
@@ -152,13 +222,15 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
   let fiadoTotal = 0, fiadoCount = 0;
   let naoIdentificadoTotal = 0, naoIdentificadoCount = 0;
 
-  // ── ENTREGUES, CANCELADAS E O VALOR DOS PEDIDOS ───────────────────────────
+  // ── ENTREGUES, NA RUA, CANCELADAS E O VALOR DOS PEDIDOS ───────────────────
   // "Jobson 30 notas, e o valor dos pedidos das 30 do lado" (Delícia de Casa,
-  // 09/10/2026). As entregas contam o cancelado (a corrida é dele); o lojista
-  // precisa ver quantas daquelas foram canceladas, e o valor dos pedidos é só
-  // o das entregues, em qualquer forma de pagamento — ninguém pagou o
-  // cancelado.
+  // 09/10/2026). "Entregues" são as que CHEGARAM (ENTREGUE/ENCERRADO): antes
+  // era "todas menos as canceladas", e o pedido ainda na rua ou em preparo
+  // aparecia como entregue. O valor dos pedidos é o das não canceladas, em
+  // qualquer forma de pagamento — ninguém pagou o cancelado.
+  let entreguesCount = 0, emAndamentoCount = 0;
   let canceladasCount = 0, canceladasValor = 0;
+  let canceladasComCorridaCount = 0, canceladasSemCorridaCount = 0;
   let valorDosPedidos = 0;
 
   for (const o of orders) {
@@ -166,15 +238,22 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
     if (ehCancelado(o.status)) { // Pedido cancelado: não cobrar prestação de contas do motoboy
       canceladasCount++;
       canceladasValor += total;
+      if (canceladoComCorrida(o)) canceladasComCorridaCount++;
+      else canceladasSemCorridaCount++;
       continue;
     }
+    if (foiEntregue(o.status)) entreguesCount++;
+    else emAndamentoCount++;
     valorDosPedidos += total;
 
     for (const parte of partesDaEntrega(o)) {
       const v = parte.valor;
       switch (parte.caixa) {
         case "DINHEIRO":
-          // O valor que o motoboy recebe fisicamente do cliente e entrega para a loja
+          // O valor que o motoboy recebe fisicamente do cliente e entrega
+          // para a loja: a nota inteira. Ele saiu com o troco DA LOJA (a nota
+          // menos o pedido) e o devolve junto — por isso o "entregar" é
+          // pedidos + troco levado, e os dois aparecem separados na tela.
           cashCollectedSum += parte.trocoPara ?? v;
           cashOrdersCount++;
           changeGivenSum += parte.trocoPara ? parte.trocoPara - v : 0;
@@ -194,9 +273,17 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
   const centavos = (v: number) => Math.round(v * 100) / 100;
 
   return {
+    /** Corridas: as não canceladas + as canceladas depois de o motoboy sair. */
     totalDeliveries,
-    entreguesCount: totalDeliveries - canceladasCount,
+    /** Chegaram ao cliente (ENTREGUE/ENCERRADO). */
+    entreguesCount,
+    /** Ainda na rua ou em preparo, sem cancelamento. */
+    emAndamentoCount,
     canceladasCount,
+    /** Das canceladas, as que ele já tinha levado (a corrida conta). */
+    canceladasComCorridaCount,
+    /** Das canceladas, as que nem saíram (sem corrida). */
+    canceladasSemCorridaCount,
     canceladasValor: centavos(canceladasValor),
     /** Soma do total das entregas que não foram canceladas, de todas as formas. */
     valorDosPedidos: centavos(valorDosPedidos),
@@ -204,9 +291,12 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
     uniqueDays,
     deliveryFeeSum,
     motoboyFeeSum,
+    /** O dinheiro a entregar: pedidos em dinheiro + o troco que ele levou da loja. */
     cashCollectedSum: centavos(cashCollectedSum),
     cashOrdersCount,
+    /** Dos pedidos em dinheiro, o valor deles (sem o troco). */
     cashOrdersValueSum: centavos(cashOrdersValueSum),
+    /** O troco levado da loja (a nota do cliente menos o pedido), que volta junto. */
     changeGivenSum: centavos(changeGivenSum),
     cardPosTotal: centavos(debitTotal + creditTotal + voucherTotal),
     cardPosCount: debitCount + creditCount + voucherCount,
@@ -224,6 +314,52 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
     fiadoCount,
     naoIdentificadoTotal: centavos(naoIdentificadoTotal),
     naoIdentificadoCount,
-    feeTotal: Math.round(orders.reduce((s, o) => s + o.ganho, 0) * 100) / 100,
+    feeTotal: Math.round(corridas.reduce((s, o) => s + o.ganho, 0) * 100) / 100,
   };
+}
+
+/**
+ * A "Composição do pagamento" do acerto: uma linha por ORIGEM do valor
+ * (lib/ganho-do-entregador.ts, `origemDoGanho`), com a conta que fecha.
+ *
+ * O rótulo saía do TIPO do motoboy: "Por entrega: R$ 0,00 × 10 entregas =
+ * R$ 40,00" num "Diária + Entrega" sem valor por entrega cadastrado, cujo
+ * ganho tinha vindo da tabela da loja. Pela origem, cada linha diz de onde
+ * veio o dinheiro — e "R$ X × N" só aparece quando todas valem o mesmo.
+ */
+export function composicaoDoGanho(entregas: { origemDoGanho?: string | null; ganhoDoMotoboy?: number | null; deliveryDistance?: number | null; corrida?: boolean }[]) {
+  const ROTULO: Record<string, string> = {
+    GRAVADO: "Valor gravado na venda",
+    FAIXA_DELE: "Faixa de km do entregador",
+    POR_KM: "Km rodado",
+    POR_ENTREGA: "Valor por entrega",
+    REGRA_DA_LOJA: "Tabela de repasse da loja",
+    TAXA_DO_CLIENTE: "Taxa de entrega do pedido",
+    SO_DIARIA: "Só diária (sem valor por entrega)",
+    SEM_DISTANCIA: "Sem distância medida (R$ 0,00)",
+  };
+  const ORDEM = ["POR_ENTREGA", "FAIXA_DELE", "POR_KM", "REGRA_DA_LOJA", "TAXA_DO_CLIENTE", "GRAVADO", "SEM_DISTANCIA", "SO_DIARIA"];
+  const grupos = new Map<string, { qtd: number; c: number; km: number; valores: Set<number> }>();
+  for (const e of entregas) {
+    if (e.corrida === false) continue;
+    const origem = e.origemDoGanho || "GRAVADO";
+    const g = grupos.get(origem) || { qtd: 0, c: 0, km: 0, valores: new Set<number>() };
+    const c = Math.round((Number(e.ganhoDoMotoboy) || 0) * 100);
+    g.qtd += 1;
+    g.c += c;
+    g.km += Number(e.deliveryDistance) || 0;
+    g.valores.add(c);
+    grupos.set(origem, g);
+  }
+  return [...grupos.entries()]
+    .sort((a, b) => ORDEM.indexOf(a[0]) - ORDEM.indexOf(b[0]))
+    .map(([origem, g]) => ({
+      origem,
+      rotulo: ROTULO[origem] || origem,
+      qtd: g.qtd,
+      valor: g.c / 100,
+      km: Math.round(g.km * 10) / 10,
+      /** Todas valem o mesmo: a linha pode dizer "R$ X × N". */
+      cadaUma: g.valores.size === 1 ? [...g.valores][0] / 100 : null,
+    }));
 }

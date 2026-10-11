@@ -33,8 +33,13 @@ export async function GET(req: Request) {
   if (!caixa) return NextResponse.json({ error: "Caixa não encontrado." }, { status: 404 });
 
   const d = await calcularEsperadoDoTurno(lojaId, caixa, { ate: caixa.closedAt || new Date() });
+  // O faturado (régua dos relatórios), o recebido (a soma dos tipos) e a ponte
+  // entre os dois: o mesmo rodapé do fechamento (VendasPorTipoDoCaixa).
   return NextResponse.json({
     vendas: d.detalhe.vendas,
+    recebido: d.detalhe.recebido,
+    ponte: d.detalhe.ponte,
+    cupomDaPlataforma: d.detalhe.cupomDaPlataforma,
     porTipo: d.detalhe.porTipo,
     trocoDasMesas: { valor: d.detalhe.mesas.troco || 0, qtd: d.detalhe.mesas.trocoQtd || 0 },
   });

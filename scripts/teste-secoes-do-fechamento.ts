@@ -59,7 +59,7 @@ const caso = (nome: string, f: () => void) => { f(); ok++; console.log(`  ✓ ${
 
 const completo = papel();
 const TITULO_DA_SECAO: Record<string, RegExp> = {
-  gaveta: /^Dinheiro na gaveta$/, porTipo: /^Vendas Delivery$/, porCanal: /^Vendas por canal$/, cupons: /^Cupons e descontos$/,
+  gaveta: /^Dinheiro na gaveta$/, porTipo: /^Vendas Delivery$/, porCanal: /^Recebido por canal$/, cupons: /^Cupons e descontos$/,
   fiado: /^Fiado/, entregadores: /^Entregadores$/, cancelados: /^Cancelados$/, deFora: /^Ficou de fora/, maisVendidos: /^Mais vendidos$/,
 };
 

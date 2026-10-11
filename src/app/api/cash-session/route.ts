@@ -12,6 +12,9 @@ import { enfileirarCupomDoCaixa, assistenteOuvindoAFila } from "@/lib/imprimir-c
 // (api/cash-session/imprimir) também precisa deles, e rota não exporta função.
 import { calcularEsperadoDoTurno } from "@/lib/esperado-do-turno";
 import { secoesDoFechamento } from "@/lib/secoes-do-fechamento";
+import { conferirFechamento, lerContado, mensagemDoCaixaFechado } from "@/lib/conferencia-do-caixa";
+import { formaDoPedido, formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
+import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -77,15 +80,18 @@ export async function GET() {
           status: { notIn: ["CANCELADO", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
           createdAt: { gt: anterior.closedAt, lt: openSession.openedAt },
         },
-        select: { totalAmount: true, paymentMethod: true, source: true, paymentPaidAt: true, gatewayProvider: true },
+        select: { totalAmount: true, paymentMethod: true, paymentMethods: true, source: true, paymentPaidAt: true, gatewayProvider: true, openDeliveryChannel: true },
       });
       for (const o of orfaos) {
-        const pm = (o.paymentMethod || "").toLowerCase();
         foraDoTurno.valor += o.totalAmount || 0;
         foraDoTurno.quantidade += 1;
-        if ((pm.includes("dinheiro") || pm.includes("cash")) && !pm.includes("online")) {
-          foraDoTurno.dinheiro += o.totalAmount || 0;
-        }
+        // O dinheiro pela régua do caixa e do relatório (lib/relatorios/
+        // formas-de-pagamento.ts): o pago online e o "CASH" do iFood não se
+        // confundem, e o dividido conta só a parte em dinheiro.
+        const partes = lerPagamentos(o.paymentMethods);
+        foraDoTurno.dinheiro += partes.length > 0
+          ? partes.filter((p) => formaDoTexto(p.method) === "DINHEIRO").reduce((s, p) => s + p.amount, 0)
+          : formaDoPedido(o) === "DINHEIRO" ? o.totalAmount || 0 : 0;
       }
       foraDoTurno.desde = anterior.closedAt.toISOString();
     }
@@ -94,11 +100,16 @@ export async function GET() {
   // Quanto foi contado na gaveta no último fechamento: é a sugestão de troco
   // de abertura do próximo turno. Abrir com zero enquanto a gaveta tem o
   // dinheiro do turno anterior é o que fabrica "sobra" no fechamento.
-  const ultimoFechamento = await prisma.cashSession.findFirst({
-    where: { franchiseeId: user.targetId, status: "CLOSED", closingCash: { not: null } },
+  //
+  // O ÚLTIMO caixa fechado, contado ou não: desde 11/10/2026 o dinheiro deixado
+  // em branco grava `closingCash` nulo, e pular o caixa sem contagem (como a
+  // consulta fazia) sugeriria o troco de um fechamento de dias atrás.
+  const ultimoCaixa = await prisma.cashSession.findFirst({
+    where: { franchiseeId: user.targetId, status: "CLOSED", closedAt: { not: null } },
     orderBy: { closedAt: "desc" },
     select: { closingCash: true, closedAt: true },
   });
+  const ultimoFechamento = ultimoCaixa?.closingCash != null ? ultimoCaixa : null;
 
   return NextResponse.json({
     session: openSession,
@@ -142,11 +153,23 @@ export async function GET() {
     ultimoFechamento: ultimoFechamento
       ? { cash: ultimoFechamento.closingCash || 0, em: ultimoFechamento.closedAt?.toISOString() || null }
       : null,
+    // Para a tela do fechamento dizer quanto do dinheiro esperado é o troco de
+    // abertura (antes ela não dizia, e o operador procurava venda que não houve).
+    trocoInicial: openSession ? Number(openSession.openingAmount || 0) : 0,
+    // O pago online por canal e o cobrado pelo entregador do app: uma linha
+    // travada para cada (a tela somava site, Brendi e Wabiz no "iFood").
+    onlinePorCanal: detalhe ? detalhe.onlinePorCanal : [],
+    cobradoPeloApp: detalhe ? detalhe.cobradoPeloApp || [] : [],
+    // Os cupons pagos pelas plataformas, com quanto já está dentro do online.
+    cupomDaPlataforma: detalhe ? detalhe.cupomDaPlataforma : [],
     // Só informação, como no papel: a soma dos tipos é o total faturado
     // (vendas.valor), não o esperado da conferência — o esperado tem o troco
     // de abertura e as movimentações, e não tem o fiado.
     vendasPorTipo: detalhe
-      ? { vendas: detalhe.vendas, porTipo: detalhe.porTipo, trocoDasMesas: { valor: detalhe.mesas.troco || 0, qtd: detalhe.mesas.trocoQtd || 0 } }
+      ? {
+          vendas: detalhe.vendas, recebido: detalhe.recebido, ponte: detalhe.ponte, cupomDaPlataforma: detalhe.cupomDaPlataforma,
+          porTipo: detalhe.porTipo, trocoDasMesas: { valor: detalhe.mesas.troco || 0, qtd: detalhe.mesas.trocoQtd || 0 },
+        }
       : null,
     // Os cancelamentos do turno, um a um, com quem e o motivo — o pedido
     // cancelado inteiro e o item tirado (lib/cancelamentos-do-turno.ts). Só
@@ -276,10 +299,24 @@ export async function PUT(req: Request) {
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const body = await req.json();
-  const { closingCash, closingDebit, closingCredit, closingPix, closingVoucher,
-    closingIfoodOnline, closingIfoodCoupons,
-    closingFood99Online, closingFood99Coupons,
-    justification } = body;
+  const { justification } = body;
+  // ── FORMA EM BRANCO NÃO É "CONTEI ZERO" ─────────────────────────────────
+  //
+  // A tela mandava `Number("") || 0`: a forma deixada em branco chegava aqui
+  // como R$ 0,00 contado e virava falta do tamanho do esperado dela — 67 de
+  // 270 caixas em 30 dias com as cinco linhas em zero, −R$ 108.653 de "falta"
+  // gravada e avisada ao dono (auditoria de 11/10/2026). Agora a tela manda
+  // `null` no branco: a forma fica NÃO CONFERIDA (fora da diferença) e, sem
+  // nenhuma contada, o caixa fecha SEM CONFERÊNCIA (diferença nula), como o
+  // que se encerra sozinho ao abrir outro (lib/conferencia-do-caixa.ts). A
+  // tela antiga, sem F5, ainda manda 0 — e continua valendo como zero.
+  const contado = {
+    cash: lerContado(body.closingCash),
+    debit: lerContado(body.closingDebit),
+    credit: lerContado(body.closingCredit),
+    pix: lerContado(body.closingPix),
+    voucher: lerContado(body.closingVoucher),
+  };
 
   // O que a TELA achava que era o esperado. Não entra na conta — serve só para
   // registrar no log quando ela estiver desatualizada (ver abaixo).
@@ -288,37 +325,24 @@ export async function PUT(req: Request) {
     total: Number(body.expectedTotal || 0),
   };
 
-  // ── O CONFERIDO PRECISA FALAR A MESMA LÍNGUA DO ESPERADO ────────────────
+  // ── O CONFERIDO FALA A MESMA LÍNGUA DO ESPERADO ─────────────────────────
   //
-  // `expectedTotal` inclui as vendas já pagas online (iFood e cupons), que o
-  // operador NÃO conta na gaveta — não há cédula para conferir. O conferido
-  // somava só o que ele digitou, e a subtração acusava uma falta exatamente do
-  // tamanho do online do dia: a tela mostrava "fecha certinho" (ela já somava
-  // os dois) e o `difference` gravado na CashSession — o mesmo que vai no aviso
-  // ao dono — dizia que faltou dinheiro. Loja com iFood fechava o caixa no
-  // vermelho todo santo dia, sem ter perdido um centavo.
-  //
-  // `closingIfoodCoupons` saiu da soma: o cupom ja esta DENTRO do valor de cada
-  // pedido que a plataforma pagou (entra em `ifoodOnline` pelo `valRepasse` do
-  // GET). Soma-lo de novo aqui criava sobra falsa do tamanho dos cupons do dia
-  // -- R$ 528,11 no turno de 27/08. A linha continua na tela como informacao;
-  // ela so nao pode entrar na conta duas vezes.
-  //
-  // `closingFood99Online` entra pelo MESMO motivo do iFood, e esquecer isto
-  // reproduziria o bug inteiro: o `expectedTotal` ja soma o online do 99Food,
-  // entao deixa-lo de fora do conferido acusaria falta do tamanho exato do
-  // que o 99 pagou no dia. `closingFood99Coupons` fica de fora pela mesma
-  // razao dos cupons do iFood: o cupom ja esta DENTRO do valor do pedido.
-  const totalInformed = (closingCash || 0) + (closingDebit || 0) + (closingCredit || 0) +
-    (closingPix || 0) + (closingVoucher || 0) +
-    (closingIfoodOnline || 0) + (closingFood99Online || 0);
+  // `expectedTotal` inclui o pago online (e o que o entregador do app cobrou),
+  // que ninguém CONTA na gaveta. Até 19/09 o conferido somava só o digitado e
+  // acusava falta do tamanho do online; depois a tela passou a mandar o online
+  // dela para os dois lados empatarem — e, com a tela velha, o online que
+  // entrou depois de ela abrir virava falta. Agora a diferença é só das formas
+  // CONTADAS contra o esperado delas, apurado aqui (conferirFechamento): o
+  // online fica fora dos dois lados, e os cupons nunca entraram.
 
   const openSession = await prisma.cashSession.findFirst({
     where: { franchiseeId: user.targetId, status: "OPEN" },
     orderBy: { openedAt: "desc" },
   });
 
-  let difference = 0;
+  let difference: number | null = 0;
+  let semConferencia = false;
+  let naoConferidas: { nome: string; esperado: number }[] = [];
   // O que o cupom do fechamento precisa. Preenchido dentro do if, impresso
   // depois de os pedidos da rua serem finalizados — o papel diz quantos foram.
   let paraOCupom: {
@@ -353,7 +377,13 @@ export async function PUT(req: Request) {
     const expectedPix = Number(doServidor.expected.pix.toFixed(2));
     const expectedVoucher = Number(doServidor.expected.voucher.toFixed(2));
     const expectedTotal = Number(doServidor.expected.total.toFixed(2));
-    difference = Number((totalInformed - expectedTotal).toFixed(2));
+    const conferencia = conferirFechamento(
+      { cash: expectedCash, debit: expectedDebit, credit: expectedCredit, pix: expectedPix, voucher: expectedVoucher },
+      contado,
+    );
+    difference = conferencia.diferenca;
+    semConferencia = conferencia.semConferencia;
+    naoConferidas = conferencia.naoConferidas;
     paraOCupom = {
       esperado: { cash: expectedCash, debit: expectedDebit, credit: expectedCredit, pix: expectedPix, voucher: expectedVoucher, total: expectedTotal },
       abertoEm: openSession.openedAt,
@@ -375,11 +405,12 @@ export async function PUT(req: Request) {
       where: { id: openSession.id },
       data: {
         status: "CLOSED", closedAt: new Date(),
-        closingCash: Number(closingCash || 0),
-        closingDebit: Number(closingDebit || 0),
-        closingCredit: Number(closingCredit || 0),
-        closingPix: Number(closingPix || 0),
-        closingVoucher: Number(closingVoucher || 0),
+        // null = a forma não foi contada (o Histórico mostra "não conferido").
+        closingCash: contado.cash,
+        closingDebit: contado.debit,
+        closingCredit: contado.credit,
+        closingPix: contado.pix,
+        closingVoucher: contado.voucher,
         expectedCash: Number(expectedCash || 0),
         expectedDebit: Number(expectedDebit || 0),
         expectedCredit: Number(expectedCredit || 0),
@@ -389,6 +420,13 @@ export async function PUT(req: Request) {
         difference,
         justification: justification || null,
         closedBy: session.user?.name || session.user?.email || "",
+        // O que ficou sem contar, por escrito: o Histórico e a 2ª via leem do
+        // contado nulo, mas quem abre o banco lê a nota.
+        notes: semConferencia
+          ? "Fechado sem conferir a gaveta: ninguém digitou a contagem. Sem falta nem sobra gravada."
+          : naoConferidas.length > 0
+            ? `Não conferido no fechamento (fora da diferença): ${naoConferidas.map((l) => `${l.nome} (esperado R$ ${l.esperado.toFixed(2).replace(".", ",")})`).join(", ")}.`
+            : null,
       },
     });
   }
@@ -514,13 +552,13 @@ export async function PUT(req: Request) {
         trocoInicial: paraOCupom.trocoInicial,
         valores: {
           esperado: paraOCupom.esperado,
-          contado: {
-            cash: Number(closingCash || 0), debit: Number(closingDebit || 0),
-            credit: Number(closingCredit || 0), pix: Number(closingPix || 0),
-            voucher: Number(closingVoucher || 0),
-          },
-          diferenca: difference,
-          online: { ifood: Number(closingIfoodOnline || 0), food99: Number(closingFood99Online || 0) },
+          // null = forma não conferida; sem nenhuma, o papel diz "sem conferência".
+          contado,
+          diferenca: difference ?? 0,
+          semConferencia,
+          motivoSemConferencia: semConferencia ? "SEM_CONTAGEM" : null,
+          // O online é travado: o mesmo valor (o do servidor) dos dois lados.
+          online: { ifood: paraOCupom.doServidor.expected.ifoodOnline, food99: paraOCupom.doServidor.expected.food99Online },
           onlineEsperado: Number((paraOCupom.doServidor.expected.ifoodOnline + paraOCupom.doServidor.expected.food99Online).toFixed(2)),
           movimentacoes: {
             entradas: paraOCupom.doServidor.movimentacaoEntradas,
@@ -541,10 +579,26 @@ export async function PUT(req: Request) {
     }
   }
 
+  // ── O AVISO AO DONO DIZ O QUE ACONTECEU ───────────────────────────────
+  // Era "Diferença no caixa: R$ -274,32": sem faltou/sobrou, sem o esperado e
+  // o contado, e o caixa que ninguém contou chegava como falta do tamanho do
+  // esperado. Agora: faltou/sobrou/conferiu (ou "fechado SEM conferir"), o
+  // esperado e o contado das formas contadas, o que ficou em branco e as
+  // vendas do turno (lib/conferencia-do-caixa.ts).
   const numerosDoAviso = numerosDoDono(ownerInfo?.notificationPhone, ownerInfo?.chatbotConfig);
-  if (ownerInfo && numerosDoAviso.length > 0) {
-    const timeStr = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: ownerInfo.storeTimezone || FUSO_PADRAO });
-    const msg = `🔴 *Caixa Fechado*\n\nOlá chefe! O caixa da loja *${ownerInfo.storeName || 'sua loja'}* acabou de ser *FECHADO* às ${timeStr}.\n\nDiferença no caixa: R$ ${difference.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}\n\n_Ass: Seu Assistente FireHub 🔥_`;
+  if (ownerInfo && numerosDoAviso.length > 0 && paraOCupom) {
+    const fuso = ownerInfo.storeTimezone || FUSO_PADRAO;
+    const hora = (d: Date) => d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", timeZone: fuso });
+    const msg = mensagemDoCaixaFechado({
+      loja: ownerInfo.storeName || "",
+      fechadoAs: hora(new Date()),
+      abertoAs: hora(paraOCupom.abertoEm),
+      esperado: paraOCupom.esperado,
+      contado,
+      trocoInicial: paraOCupom.trocoInicial,
+      online: paraOCupom.doServidor.expected.ifoodOnline + paraOCupom.doServidor.expected.food99Online,
+      vendas: paraOCupom.doServidor.detalhe.vendas,
+    });
     mandarParaOsNumerosDoDono(user.targetId, numerosDoAviso, msg).catch(() => 0);
   }
 

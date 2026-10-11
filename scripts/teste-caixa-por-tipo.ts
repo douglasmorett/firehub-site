@@ -19,16 +19,18 @@
  *     com desconto, mesa ainda aberta e um cancelado. Cada bloco fecha
  *     (produtos + taxas − desconto + ajustes = total = Σ formas), e a soma dos
  *     blocos é o total faturado.
- *  2. A CONFERÊNCIA NÃO MUDOU: o esperado de cada forma, o fora da
- *     conferência e os pendentes saem iguais aos da versão do origin/master,
- *     carregada do git com o Prisma trocado por um falso que devolve os
- *     mesmos pedidos. A única diferença no retrato é a de propósito — o troco
- *     da mesa sai do Dinheiro.
+ *  2. A CONFERÊNCIA DO TURNO (lib/esperado-do-turno.ts, com o Prisma trocado
+ *     por um falso que devolve os mesmos pedidos): o esperado de cada forma
+ *     conferido à mão — com o troco da mesa FORA do dinheiro desde 11/10/2026
+ *     (antes a gaveta cobrava a nota inteira e o troco virava falta) —, o
+ *     troco de abertura, a sangria e o reforço, e o total como soma das
+ *     linhas. Até 11/10 esta seção comparava com a versão do origin/master
+ *     carregada do git; como o arquivo velho importava a apuração NOVA, a
+ *     comparação não provava nada, e depois do merge falhava sozinha.
  *  3. O PAPEL: o cupom do fechamento passa pelo MESMO buildEscPos do
  *     Assistente (recortado do server.js, como scripts/teste-cupom-do-caixa.js)
  *     e o texto que sairia na impressora é mostrado aqui.
  */
-import { execSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -97,6 +99,11 @@ const pedidos: any[] = [
   { ...base, dailyOrderNumber: 14, createdAt: h("20:10"), status: "ENTREGUE", source: "PRESENCIAL", deliveryType: "MESA", tableSessionId: "mesa-7", paymentMethod: "N/A", totalAmount: 100, items: [item(50, 2)] },
   // 15. Mesa ainda aberta.
   { ...base, dailyOrderNumber: 15, createdAt: h("21:30"), status: "EM_PREPARO", source: "PRESENCIAL", deliveryType: "MESA", tableSessionId: "mesa-9", paymentMethod: "N/A", totalAmount: 30, items: [item(30)] },
+  // 16. Site, entrega com o Carlos, cancelada DEPOIS de ele sair (o cliente
+  //     desistiu na porta): a corrida conta no papel, o dinheiro não.
+  { ...base, dailyOrderNumber: 16, createdAt: h("21:00"), status: "CANCELADO", source: "ONLINE", deliveryType: "DELIVERY", paymentMethod: "Dinheiro",
+    totalAmount: 40, deliveryFee: 6, items: [item(34)], motoboyId: "mb1", deliveryBy: "MERCHANT", deliveryDistance: 1.8,
+    dispatchedAt: h("21:05"), cancelledAt: h("21:20"), cancelledBy: "CUSTOMER", cancelReason: "Desistiu na porta" },
 ];
 
 const mesas: (MesaDoTurno & { id: string; closedAt: Date })[] = [
@@ -119,11 +126,17 @@ const porChave = new Map(d.porTipo.map((b) => [b.chave, b]));
 const B = (k: string) => porChave.get(k) as BlocoDoTipo;
 
 // A conferência, à mão (sem troco de abertura e sem sangria: isso é do esperado-do-turno).
-exigir("dinheiro esperado = 57,90 + 15 (dividido) + 100 (mesa 4, a nota inteira) + 20 (mesa 7)", igual(a.expected.cash, 57.9 + 15 + 100 + 20), a.expected.cash);
+// A mesa 4 entregou uma nota de R$ 100 numa conta de R$ 69,95: o troco de
+// R$ 30,05 saiu da gaveta e não é cobrado dela (C1 da auditoria de 11/10/2026).
+exigir("dinheiro esperado = 57,90 + 15 (dividido) + 69,95 (mesa 4, sem o troco) + 20 (mesa 7)", igual(a.expected.cash, 57.9 + 15 + 69.95 + 20), a.expected.cash);
+exigir("o total da conferência é a soma das linhas", igual(a.expected.total,
+  a.expected.cash + a.expected.debit + a.expected.credit + a.expected.pix + a.expected.voucher + a.expected.ifoodOnline + a.expected.food99Online), a.expected);
 exigir("pix esperado = 46,98 (Pix trocado na entrega) + 32 + 20", igual(a.expected.pix, 46.98 + 32 + 20), a.expected.pix);
 exigir("crédito esperado = 48 (retirada) + 27,50 (totem) + 80 (mesa 7)", igual(a.expected.credit, 48 + 27.5 + 80), a.expected.credit);
-exigir("iFood online = 44,98 + 10 de cupom (o repasse)", igual(a.expected.ifoodOnline, 54.98), a.expected.ifoodOnline);
-exigir("99Food online = 30 + 5 de cupom", igual(a.expected.food99Online, 35), a.expected.food99Online);
+// O repasse do app é o que a loja vendeu: itens + entrega − desconto da loja,
+// sem a taxa de serviço do app (os R$ 0,99 do iFood e R$ 1,00 do 99 ficam com eles).
+exigir("iFood online = 50 + 5,99 − 2 (o repasse, sem a taxa do app)", igual(a.expected.ifoodOnline, 53.99), a.expected.ifoodOnline);
+exigir("99Food online = 30 + 4 (o repasse, sem a taxa do app)", igual(a.expected.food99Online, 34), a.expected.food99Online);
 exigir("fiado fora da conferência (1, R$ 18)", a.foraDaConferencia.fiadoQtd === 1 && igual(a.foraDaConferencia.fiado, 18));
 exigir("mesa aberta fora (1 pedido, R$ 30)", a.foraDaConferencia.mesasAbertasQtd === 1 && igual(a.foraDaConferencia.mesasAbertas, 30));
 exigir("totem abandonado em pendentes (1, R$ 25)", a.pendentesQuantidade === 1 && igual(a.pendentesValor, 25));
@@ -131,16 +144,30 @@ exigir("totem abandonado em pendentes (1, R$ 25)", a.pendentesQuantidade === 1 &
 exigir("tipos na ordem Delivery, Retirada, Balcão, Mesas, Totem", d.porTipo.map((b) => b.chave).join(",") === "DELIVERY,RETIRADA,BALCAO,MESA,TOTEM", d.porTipo.map((b) => b.chave));
 exigir("cancelado não entra (nenhum bloco tem os R$ 70)", !d.porTipo.some((b) => b.formas.some((f) => igual(f.valor, 70))));
 
+// O RECEBIDO (o que entrou, forma por forma) fecha com os tipos, as formas e os canais.
 const somaDosTipos = d.porTipo.reduce((s, b) => s + c(b.valor), 0);
-exigir(`a soma dos tipos é o TOTAL FATURADO (${(somaDosTipos / 100).toFixed(2)} = ${d.vendas.valor.toFixed(2)})`, somaDosTipos === c(d.vendas.valor));
-exigir("a soma das formas é o TOTAL FATURADO", d.porForma.reduce((s, f) => s + c(f.valor), 0) + d.cupomDaPlataforma.reduce((s, f) => s + c(f.valor), 0) === c(d.vendas.valor));
-exigir("a soma dos canais é o TOTAL FATURADO", d.porCanal.reduce((s, x) => s + c(x.valor), 0) === c(d.vendas.valor));
-exigir("vendas = soma das vendas dos blocos", d.porTipo.reduce((s, b) => s + b.qtd, 0) === d.vendas.qtd);
+exigir(`a soma dos tipos é o TOTAL RECEBIDO (${(somaDosTipos / 100).toFixed(2)} = ${d.recebido.valor.toFixed(2)})`, somaDosTipos === c(d.recebido.valor));
+exigir("a soma das formas é o TOTAL RECEBIDO (o cupom da plataforma não é forma)", d.porForma.reduce((s, f) => s + c(f.valor), 0) === c(d.recebido.valor));
+exigir("a soma dos canais é o TOTAL RECEBIDO", d.porCanal.reduce((s, x) => s + c(x.valor), 0) === c(d.recebido.valor));
+exigir("pagamentos = soma dos blocos", d.porTipo.reduce((s, b) => s + b.qtd, 0) === d.recebido.qtd);
+// O FATURADO é a régua única dos relatórios: Σ dos pedidos que são venda (a
+// mesa pelo lançado, inclusive a ainda aberta), sem o cupom da plataforma;
+// vendas = atendimentos (9 pedidos sem mesa + 3 contas de mesa).
+exigir("TOTAL FATURADO = Σ dos pedidos-venda do turno (533,95), sem o cupom do app", igual(d.vendas.valor, 533.95), d.vendas);
+exigir("vendas = 12 atendimentos (as rodadas da mesa 4 são uma venda)", d.vendas.qtd === 12, d.vendas);
+exigir("ticket médio = 533,95 ÷ 12", igual(d.vendas.ticketMedio || 0, 44.5), d.vendas);
+// A ponte: do faturado ao recebido, linha a linha, fechando no centavo.
+const ponte = Object.fromEntries(d.ponte.map((p) => [p.chave, p.valor]));
+exigir("ponte: + taxa de serviço das mesas 16,36", igual(ponte.SERVICO || 0, 16.36), d.ponte);
+exigir("ponte: − desconto no fechamento da mesa 7 (R$ 10)", igual(ponte.DESCONTO_MESA || 0, -10), d.ponte);
+exigir("ponte: − lançado na mesa 9, ainda aberta (R$ 30)", igual(ponte.MESA_ABERTA || 0, -30), d.ponte);
+exigir("ponte fecha: faturado + linhas = recebido, sem 'outras diferenças'", !ponte.OUTROS && d.ponte.reduce((s, p) => s + c(p.valor), 0) === c(d.recebido.valor) - c(d.vendas.valor), d.ponte);
+exigir("desconto das mesas para o 'Pago pela loja' (1 mesa, R$ 10)", d.descontoNasMesas.qtd === 1 && igual(d.descontoNasMesas.valor, 10), d.descontoNasMesas);
 for (const b of d.porTipo) {
   const formas = b.formas.reduce((s, f) => s + c(f.valor), 0);
-  const conta = c(b.produtos) + c(b.taxaDeEntrega.valor) + c(b.servico.valor) + c(b.gorjeta) - c(b.desconto.valor) + c(b.ajustes);
+  const conta = c(b.produtos) + c(b.taxaDeEntrega.valor) + c(b.servico.valor) + c(b.gorjeta) - c(b.desconto.valor) - c(b.cupomDaPlataforma?.valor || 0) + c(b.ajustes);
   exigir(`${b.nome}: Σ formas = total (${b.valor.toFixed(2)})`, formas === c(b.valor), formas / 100);
-  exigir(`${b.nome}: produtos + taxas − desconto + ajustes = total`, conta === c(b.valor), conta / 100);
+  exigir(`${b.nome}: produtos + taxas − desconto − cupom da plataforma + ajustes = total`, conta === c(b.valor), conta / 100);
 }
 
 // Os casos, um a um.
@@ -148,8 +175,10 @@ exigir("Delivery: 4 vendas (site, iFood, iFood/Pix, 99)", B("DELIVERY").qtd === 
 exigir("Delivery: produtos = 50 + 50 + 40 + 30", igual(B("DELIVERY").produtos, 170));
 exigir("Delivery: taxa de entrega = 7,90 + 5,99 + 5,99 + 4", igual(B("DELIVERY").taxaDeEntrega.valor, 23.88) && B("DELIVERY").taxaDeEntrega.qtd === 4);
 exigir("Delivery: desconto da loja = R$ 2 do iFood", igual(B("DELIVERY").desconto.valor, 2));
-exigir("Delivery: cupom das plataformas (10 + 5) entra como forma", igual(B("DELIVERY").formas.find((f) => f.nome === "Cupom da plataforma")?.valor || 0, 15));
+exigir("Delivery: o cupom das plataformas (10 + 5) abate dos produtos e não é forma", igual(B("DELIVERY").cupomDaPlataforma?.valor || 0, 15) && !B("DELIVERY").formas.some((f) => f.nome === "Cupom da plataforma"));
 exigir("Delivery: ajustes = taxa do app do iFood (0,99) + 99 (1,00) + iFood/Pix (0,99)", igual(B("DELIVERY").ajustes, 0.99 + 1 + 0.99), B("DELIVERY").ajustes);
+exigir("Delivery: os ajustes são todos do app (pedidos de marketplace)", igual(B("DELIVERY").ajustesDoApp || 0, 2.98), B("DELIVERY"));
+exigir("cupom da plataforma por canal, com o que já está no pago online", JSON.stringify(d.cupomDaPlataforma.map((x) => [x.nome, x.valor, x.noOnline])) === JSON.stringify([["iFood", 10, 10], ["99Food", 5, 5]]), d.cupomDaPlataforma);
 exigir("Delivery: Pix trocado na entrega é Pix, não pago online", igual(B("DELIVERY").formas.find((f) => f.nome === "Pix")?.valor || 0, 46.98));
 exigir("Delivery: canais separados (Site, iFood, 99Food)", B("DELIVERY").canais.length === 3);
 exigir("Retirada: o pedido do site com crédito na retirada", B("RETIRADA").qtd === 1 && igual(B("RETIRADA").valor, 48));
@@ -173,8 +202,8 @@ exigir("troco: R$ 12,80 sai da nota de 50", igual(t1.troco, 12.8) && igual(t1.fo
 const t2 = trocoDaConta({ formas: [{ forma: "Credito", valor: 60 }, { forma: "Dinheiro", valor: 5 }], consumo: 50, servico: 5, gorjeta: 0 });
 exigir("troco: a nota de R$ 5 que vira troco inteira some; os R$ 5 a mais no cartão ficam", igual(t2.troco, 5) && t2.formas.length === 1 && igual(t2.formas[0].valor, 60));
 
-// ── 2. A CONFERÊNCIA NÃO MUDOU ──────────────────────────────────────────────
-console.log("\n== 2. A conferência é a mesma do origin/master ==");
+// ── 2. A CONFERÊNCIA DO TURNO ───────────────────────────────────────────────
+console.log("\n== 2. A conferência do turno ==");
 const pasta = join(tmpdir(), "teste-caixa-por-tipo");
 mkdirSync(pasta, { recursive: true });
 const falsoPrisma = join(pasta, "prisma-falso.js");
@@ -211,46 +240,34 @@ const jitiCom = (raiz: string) => createJiti(__filename, {
   moduleCache: false,
   fsCache: false,
 });
-// A versão de antes, tirada do git para uma pasta que espelha src/lib.
-const velha = join(pasta, "velho");
-mkdirSync(join(velha, "src", "lib"), { recursive: true });
-let temVelha = true;
-try {
-  writeFileSync(join(velha, "src", "lib", "esperado-do-turno.ts"), execSync("git show origin/master:src/lib/esperado-do-turno.ts", { cwd: RAIZ }).toString());
-} catch {
-  temVelha = false;
-}
 const turno = { id: "caixa-1", openedAt: h("18:00"), openingAmount: 150 };
 
 async function provarConferencia() {
-  if (!temVelha) { exigir("versão do origin/master disponível no git", false); return null; }
-  // O arquivo velho importa "@/lib/…" — os vizinhos vêm do src atual, que não mudou (só ele e o cupom mudaram).
-  const jVelho = createJiti(__filename, {
-    alias: { "@/lib/prisma": falsoPrisma, "@/lib/garantir-colunas": falsoColunas, "@": join(RAIZ, "src") },
-    interopDefault: true, moduleCache: false, fsCache: false,
-  });
-  const antes = await jVelho.import(join(velha, "src", "lib", "esperado-do-turno.ts")) as any;
   const agora = await jitiCom(RAIZ).import(join(RAIZ, "src", "lib", "esperado-do-turno.ts")) as any;
-  const v = await antes.calcularEsperadoDoTurno("loja", turno, { retrato: true });
   const n = await agora.calcularEsperadoDoTurno("loja", turno, { retrato: true });
-  for (const k of Object.keys(v.expected)) exigir(`esperado.${k} igual (${Number(v.expected[k]).toFixed(2)})`, igual(v.expected[k], n.expected[k]), { antes: v.expected[k], agora: n.expected[k] });
-  exigir("fora da conferência igual", JSON.stringify(v.foraDaConferencia) === JSON.stringify(n.foraDaConferencia), { antes: v.foraDaConferencia, agora: n.foraDaConferencia });
-  exigir("pendentes iguais", v.pendentesValor === n.pendentesValor && v.pendentesQuantidade === n.pendentesQuantidade);
-  exigir("sangria/reforço iguais", v.movimentacaoEntradas === n.movimentacaoEntradas && v.movimentacaoSaidas === n.movimentacaoSaidas);
-  exigir("vendas em dinheiro da gaveta iguais (a conferência ainda conta a nota da mesa)", igual(v.detalhe.gaveta.vendasEmDinheiro, n.detalhe.gaveta.vendasEmDinheiro));
-  exigir("cancelados iguais (1, R$ 70)", n.detalhe.cancelados.qtd === 1 && v.detalhe.cancelados.qtd === 1);
-  exigir("entregadores iguais", JSON.stringify(v.detalhe.entregadores) === JSON.stringify(n.detalhe.entregadores), { antes: v.detalhe.entregadores, agora: n.detalhe.entregadores });
-  const dif = c(v.detalhe.vendas.valor) - c(n.detalhe.vendas.valor);
-  exigir(`a única diferença no faturado é o troco da mesa (${(dif / 100).toFixed(2)})`, dif === c(30.05), { antes: v.detalhe.vendas.valor, agora: n.detalhe.vendas.valor });
-  const dinheiroAntes = v.detalhe.porForma.find((f: any) => f.nome === "Dinheiro")?.valor || 0;
-  const dinheiroAgora = n.detalhe.porForma.find((f: any) => f.nome === "Dinheiro")?.valor || 0;
-  exigir("o Dinheiro do faturamento caiu exatamente o troco", c(dinheiroAntes) - c(dinheiroAgora) === c(30.05));
-  exigir("o resto do faturamento por forma não mudou",
-    JSON.stringify(v.detalhe.porForma.filter((f: any) => f.nome !== "Dinheiro")) === JSON.stringify(n.detalhe.porForma.filter((f: any) => f.nome !== "Dinheiro")));
+  const e = n.expected;
+  // Gaveta: troco de abertura 150 + vendas em dinheiro (57,90 + 15 + 69,95 + 20)
+  // − sangria 60 + reforço 50. A mesa 4 entra com R$ 69,95, não com a nota.
+  exigir("esperado.cash = 150 + 162,85 − 60 + 50 (mesa sem o troco)", igual(e.cash, 302.85), e.cash);
+  exigir("esperado.pix = 46,98 + 32 + 20", igual(e.pix, 98.98), e.pix);
+  exigir("esperado.credit = 48 + 27,50 + 80", igual(e.credit, 155.5), e.credit);
+  exigir("esperado.debit e voucher zerados", igual(e.debit, 0) && igual(e.voucher, 0), e);
+  exigir("online iFood 53,99 e 99Food 34 (o que repassam: com o cupom, sem a taxa do app)", igual(e.ifoodOnline, 53.99) && igual(e.food99Online, 34), e);
+  exigir("o total é a soma das linhas (com troco de abertura e movimentações)", igual(e.total, e.cash + e.debit + e.credit + e.pix + e.voucher + e.ifoodOnline + e.food99Online), e);
+  exigir("fora da conferência: fiado R$ 18 e mesa aberta R$ 30", igual(n.foraDaConferencia.fiado, 18) && igual(n.foraDaConferencia.mesasAbertas, 30), n.foraDaConferencia);
+  exigir("pendentes: o totem abandonado (1, R$ 25)", n.pendentesQuantidade === 1 && igual(n.pendentesValor, 25));
+  exigir("sangria 60 e reforço 50", igual(n.movimentacaoSaidas, 60) && igual(n.movimentacaoEntradas, 50));
+  exigir("vendas em dinheiro da gaveta = 162,85 (sem o troco da mesa)", igual(n.detalhe.gaveta.vendasEmDinheiro, 162.85), n.detalhe.gaveta);
+  exigir("o Dinheiro do faturamento é o mesmo da gaveta", igual(n.detalhe.porForma.find((f: any) => f.nome === "Dinheiro")?.valor || 0, n.detalhe.gaveta.vendasEmDinheiro));
+  exigir("troco das mesas à vista no retrato (1 conta, R$ 30,05)", igual(n.detalhe.mesas.troco || 0, 30.05) && n.detalhe.mesas.trocoQtd === 1);
+  exigir("cancelados (2, R$ 110)", n.detalhe.cancelados.qtd === 2 && igual(n.detalhe.cancelados.valor, 110));
+  // O acerto e o papel com a mesma régua: a cancelada depois de sair é corrida.
+  const carlos = n.detalhe.entregadores[0];
+  exigir("entregadores: Carlos com 3 corridas (2 entregas + 1 cancelada depois de sair)", n.detalhe.entregadores.length === 1 && carlos.entregas === 3 && carlos.canceladasComCorrida === 1, n.detalhe.entregadores);
+  exigir("entregadores: dinheiro 57,90 + troco levado 42,10 (nota de 100)", igual(carlos.dinheiro, 57.9) && igual(carlos.trocoLevado || 0, 42.1), carlos);
   return n;
 }
 
-// ── 3. O PAPEL ──────────────────────────────────────────────────────────────
 function recortarFuncao(fonte: string, assinatura: string) {
   const inicio = fonte.indexOf(assinatura);
   if (inicio < 0) throw new Error("não achei no server.js: " + assinatura);
@@ -291,7 +308,8 @@ const colunas = Number(process.argv[2] || 48);
     abertoEm: turno.openedAt, fechadoEm: h("23:30"), trocoInicial: turno.openingAmount,
     valores: {
       esperado: { cash: r2(esperado.cash), debit: r2(esperado.debit), credit: r2(esperado.credit), pix: r2(esperado.pix), voucher: r2(esperado.voucher), total: r2(esperado.total) },
-      // Contou a gaveta sem o troco que voltou para a mesa 4: a falta é o troco.
+      // Contou a gaveta R$ 30,05 a menos: a falta é só isso (o troco da mesa
+      // 4 já não é cobrado da gaveta).
       contado: { cash: r2(esperado.cash - 30.05), debit: r2(esperado.debit), credit: r2(esperado.credit), pix: r2(esperado.pix), voucher: 0 },
       diferenca: -30.05,
       online: { ifood: r2(esperado.ifoodOnline), food99: r2(esperado.food99Online) },
@@ -303,6 +321,8 @@ const colunas = Number(process.argv[2] || 48);
     },
   });
   const saida = papel(buildEscPos(cupom, "Delicia de Casa", colunas, "safe"));
+  // Em 32 colunas rótulo e nota quebram de linha: as provas novas leem o texto corrido.
+  const corrido = saida.replace(/\s+/g, " ");
   console.log(saida);
   exigir("papel: bloco VENDAS DELIVERY", /VENDAS DELIVERY/.test(saida));
   exigir("papel: bloco VENDAS RETIRADA", /VENDAS RETIRADA/.test(saida));
@@ -311,9 +331,17 @@ const colunas = Number(process.argv[2] || 48);
   exigir("papel: bloco VENDAS TOTEM", /VENDAS TOTEM/.test(saida));
   exigir("papel: valor dos produtos por bloco", (saida.match(/Valor dos produtos/g) || []).length === 5);
   exigir("papel: total do bloco Mesas", /TOTAL MESAS \(2\)\s+R\$ 169,95/.test(saida));
-  exigir("papel: a soma dos tipos confere com o total faturado", /Soma dos tipos \(5\)/.test(saida) && /igual ao TOTAL FATURADO/.test(saida));
-  exigir("papel: o troco da mesa aparece na gaveta", /Troco das mesas \(1\)/.test(saida));
+  exigir("papel: a soma dos tipos confere com o total recebido", /Soma dos tipos \(5\)/.test(saida) && /igual ao total recebido/.test(saida));
+  exigir("papel: TOTAL FATURADO pela régua (12 vendas, R$ 533,95)", /TOTAL FATURADO\s+R\$ 533,95\s+12 vendas \| ticket medio R\$ 44,50/.test(corrido));
+  exigir("papel: do faturado ao recebido, linha a linha", /\+ Taxa de servico das mesas \(2\)/.test(corrido) && /- Lancado em mesa ainda aberta \(1\)/.test(corrido) && /= Total recebido \(11\)\s+R\$ 510,31/.test(corrido));
+  exigir("papel: o cupom do app fica fora do faturado", /Cupom pago pelas plataformas \(2\)\s+R\$ 15,00/.test(corrido));
+  exigir("papel: 'Pago pela loja' soma o desconto da mesa", /Pago pela loja \(3\)\s+R\$ 17,00/.test(corrido) && /No fechamento das mesas \(1\)\s+R\$ 10,00/.test(corrido));
+  exigir("papel: o bloco diz 'media por pedido', não 'ticket medio'", /media R\$ [\d.,]+ por pedido/.test(corrido) && /media R\$ [\d.,]+ por conta/.test(corrido));
+  exigir("papel: a gaveta diz que as vendas em dinheiro já vêm sem o troco da mesa", /sem os R\$ 30,05 de troco das mesas \(1\)/.test(corrido));
+  exigir("papel: não há mais a linha '+ Troco das mesas' (que virava falta)", !/\+ Troco das mesas/.test(saida));
   exigir("papel: conferência continua (DIFERENCA)", /DIFERENCA/.test(saida));
+  exigir("papel: o motoboy entrega pedidos + troco levado (a conta do acerto)", /- Dinheiro a entregar R\$ 100,00 pedidos R\$ 57,90 \+ troco levado R\$ 42,10/.test(corrido));
+  exigir("papel: a cancelada depois de sair aparece no entregador", /Inclui 1 cancelada depois de sair/.test(corrido));
   // A gaveta continua fechando com o esperado gravado.
   exigir("papel: as parcelas da gaveta somam o dinheiro esperado (sem aviso)", !/as parcelas acima somam/.test(saida));
 

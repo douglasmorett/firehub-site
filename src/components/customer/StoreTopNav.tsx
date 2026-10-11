@@ -361,6 +361,22 @@ export default function StoreTopNav({
   // As vendas do turno por tipo (Delivery, Retirada, Balcão, Mesas, Totem).
   const [vendasPorTipo, setVendasPorTipo] = useState<VendasPorTipo | null>(null);
   const [cancelamentos, setCancelamentos] = useState<CancelamentosDoTurno | null>(null);
+  // O que a conferência explica ao lado das linhas (GET /api/cash-session): o
+  // troco de abertura dentro do dinheiro esperado, o pago online POR CANAL (a
+  // tela somava site, Brendi e Wabiz no "iFood"), o que o entregador do app
+  // cobrou na porta e os cupons que as plataformas pagaram.
+  const [trocoInicial, setTrocoInicial] = useState(0);
+  const [onlinePorCanal, setOnlinePorCanal] = useState<{ nome: string; qtd: number; valor: number }[]>([]);
+  const [cobradoPeloApp, setCobradoPeloApp] = useState<{ nome: string; qtd: number; valor: number }[]>([]);
+  const [cuponsDoApp, setCuponsDoApp] = useState<{ nome: string; qtd: number; valor: number; noOnline?: number; qtdNoOnline?: number }[]>([]);
+  // Nenhuma forma contada: a pergunta "fechar sem conferir?", e a resposta.
+  const [showSemConferenciaWarn, setShowSemConferenciaWarn] = useState(false);
+  const [fechandoSemConferencia, setFechandoSemConferencia] = useState(false);
+  // Os avisos já respondidos neste fechamento. Antes cada um só olhava se ELE
+  // estava aberto: com pedido na rua E forma em branco, confirmar um reabria o
+  // outro, sem fim.
+  const [jaAvisouPendentes, setJaAvisouPendentes] = useState(false);
+  const [jaAvisouBranco, setJaAvisouBranco] = useState(false);
   const [aviso, setAviso] = useState<Aviso | null>(null);
   const fecharAviso = useCallback(() => setAviso(null), []);
 
@@ -522,6 +538,8 @@ export default function StoreTopNav({
   // Fetch expected values and pending orders when opening close modal
   useEffect(() => {
     if (!showCloseModal) return;
+    setJaAvisouPendentes(false);
+    setJaAvisouBranco(false);
     carregarMovs();
     fetch("/api/cash-session").then(r => r.json()).then(d => {
       if (d.expected) setExpected(d.expected);
@@ -532,6 +550,10 @@ export default function StoreTopNav({
       if (d.ultimoFechamento !== undefined) setUltimoFechamento(d.ultimoFechamento);
       setVendasPorTipo(d.vendasPorTipo || null);
       setCancelamentos(d.cancelamentos || null);
+      setTrocoInicial(Number(d.trocoInicial) || 0);
+      setOnlinePorCanal(Array.isArray(d.onlinePorCanal) ? d.onlinePorCanal : []);
+      setCobradoPeloApp(Array.isArray(d.cobradoPeloApp) ? d.cobradoPeloApp : []);
+      setCuponsDoApp(Array.isArray(d.cupomDaPlataforma) ? d.cupomDaPlataforma : []);
     });
     // Buscar pedidos pendentes em SAIU_ENTREGA
     fetch("/api/customer-order/pending-count").then(r => r.json()).then(d => {
@@ -584,37 +606,49 @@ export default function StoreTopNav({
   };
 
   // ── CLOSE CASH ──────────────────────────────────────────────────
-  // O cupom do iFood NAO entra aqui: ele ja esta dentro do valor de cada
-  // pedido pago online, que e somado logo acima. Somar a linha de cupons de
-  // novo criava sobra falsa do tamanho dos cupons do dia (R$ 528,11 no turno
-  // de 27/08 da Hakim Centro). A linha continua na tabela como informacao.
-  // O online do 99Food entra no total pelo mesmo motivo do iFood: e dinheiro
-  // do turno que a loja nao conta na gaveta, mas confere no extrato.
-  const totalActual = METHODS.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) + (expected.ifoodOnline || 0) + (expected.food99Online || 0);
-
+  //
   // ── CAMPO EM BRANCO NÃO É ZERO CONTADO ──────────────────────────
   //
   // `Number("") || 0` fazia toda linha não preenchida valer R$ 0,00 CONFERIDO,
   // e a diferença acusava uma falta do tamanho exato do esperado daquela
-  // linha. Medido na Hakim Centro em 30/08/2026: débito, crédito e pix ficaram
-  // em branco e o fechamento gravou falta de R$ 1.339,25 — R$ 1.028,95 só
-  // dessas três linhas, dinheiro que passou na maquininha e ninguém tinha
-  // perdido.
+  // linha (Hakim Centro, 30/08/2026: R$ 1.028,95 de "falta" só de débito,
+  // crédito e pix em branco). O aviso "Faltou preencher" não bastou: em 30
+  // dias, 67 de 270 caixas fecharam com as cinco linhas em zero (−R$ 108.653
+  // de "falta" no WhatsApp do dono) e 17 com cartões em branco. Agora:
+  //   • forma DIGITADA (mesmo 0) é contada e entra na diferença;
+  //   • forma EM BRANCO é "não conferida": fora da diferença, dos dois lados;
+  //   • nenhuma contada = o caixa fecha SEM CONFERÊNCIA (diferença nula).
+  // O online é travado (ninguém conta) e fica fora da diferença dos dois
+  // lados; o cupom das plataformas nunca entrou.
+  const digitada = (k: string) => String(actual[k] ?? "").trim() !== "";
+  const contadas = METHODS.filter(m => digitada(m.key));
+  const esperadoConferido = Math.round(contadas.reduce((s, m) => s + (expected[m.key] || 0), 0) * 100) / 100;
+  const contadoConferido = Math.round(contadas.reduce((s, m) => s + (Number(actual[m.key]) || 0), 0) * 100) / 100;
+  const diferencaConferida = Math.round((contadoConferido - esperadoConferido) * 100) / 100;
   const linhasEmBranco = METHODS.filter(
-    m => (expected[m.key] || 0) > 0.01 && String(actual[m.key] ?? "").trim() === ""
+    m => Math.abs(expected[m.key] || 0) > 0.01 && !digitada(m.key)
   );
+  const esperadoEmBranco = Math.round(linhasEmBranco.reduce((s, m) => s + (expected[m.key] || 0), 0) * 100) / 100;
+  const nadaContado = linhasEmBranco.length > 0 &&
+    !contadas.some(m => Math.abs(expected[m.key] || 0) > 0.01 || Math.abs(Number(actual[m.key]) || 0) > 0.01);
+  const onlineTravado = (expected.ifoodOnline || 0) + (expected.food99Online || 0);
 
-  const tryClose = () => {
+  const tryClose = (respondido: { pendentes?: boolean; branco?: boolean } = {}) => {
     // Verificar se há pedidos em SAIU_ENTREGA antes de fechar
-    if (pendingDeliveryCount > 0 && !showPendingWarn) {
+    if (pendingDeliveryCount > 0 && !(respondido.pendentes || jaAvisouPendentes)) {
       setShowPendingWarn(true);
       return;
     }
-    if (linhasEmBranco.length > 0 && !showBlankWarn) {
+    if (nadaContado) {
+      setShowSemConferenciaWarn(true);
+      return;
+    }
+    if (linhasEmBranco.length > 0 && !(respondido.branco || jaAvisouBranco)) {
       setShowBlankWarn(true);
       return;
     }
-    const d = totalActual - expected.total;
+    setFechandoSemConferencia(false);
+    const d = diferencaConferida;
     setDiff(d);
     if (Math.abs(d) > 0.01) { setCloseWarn(true); return; }
     // Último passo antes de encerrar: perguntar se imprime. Vem depois dos
@@ -629,11 +663,14 @@ export default function StoreTopNav({
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        closingCash: Number(actual.cash) || 0,
-        closingDebit: Number(actual.debit) || 0,
-        closingCredit: Number(actual.credit) || 0,
-        closingPix: Number(actual.pix) || 0,
-        closingVoucher: Number(actual.voucher) || 0,
+        // Em branco vai `null`: a forma não foi conferida (o servidor a deixa
+        // fora da diferença e grava "não conferido").
+        closingCash: digitada("cash") ? Number(actual.cash) || 0 : null,
+        closingDebit: digitada("debit") ? Number(actual.debit) || 0 : null,
+        closingCredit: digitada("credit") ? Number(actual.credit) || 0 : null,
+        closingPix: digitada("pix") ? Number(actual.pix) || 0 : null,
+        closingVoucher: digitada("voucher") ? Number(actual.voucher) || 0 : null,
+        semConferencia: fechandoSemConferencia,
         expectedCash: expected.cash, expectedDebit: expected.debit,
         expectedCredit: expected.credit, expectedPix: expected.pix,
         expectedVoucher: expected.voucher, expectedTotal: expected.total,
@@ -674,6 +711,8 @@ export default function StoreTopNav({
     setCloseWarn(false);
     setShowPendingWarn(false);
     setShowBlankWarn(false);
+    setShowSemConferenciaWarn(false);
+    setFechandoSemConferencia(false);
     setPerguntarImpressao(false);
     setActual({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
     // Idem ao fechar: o Balcão e as Mesas travam na hora (e, se o fechamento
@@ -1147,7 +1186,7 @@ export default function StoreTopNav({
       )}
 
       {showCloseModal && (
-        <div style={overlay} onClick={() => !closeWarn && !showPendingWarn && !perguntarImpressao && setShowCloseModal(false)}>
+        <div style={overlay} onClick={() => !closeWarn && !showPendingWarn && !perguntarImpressao && !showSemConferenciaWarn && !showBlankWarn && setShowCloseModal(false)}>
           <div style={{ ...card, maxWidth: 560 }} onClick={e => e.stopPropagation()}>
             {perguntarImpressao ? (
               /* ── IMPRIME O FECHAMENTO? ──────────────────────────────────
@@ -1164,17 +1203,32 @@ export default function StoreTopNav({
                   Sai a conferência forma por forma, a diferença e o total faturado, mais as
                   seções que você escolher logo abaixo.
                 </p>
+                {/* Igual com igual: o esperado e o contado das formas CONTADAS. */}
                 <div style={{ background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:12, padding:"12px 14px", margin:"0 0 14px", textAlign:"left", fontSize:"0.84rem", color:"#475569", lineHeight:1.6 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between" }}>
-                    <span>Esperado</span><strong style={{ color:"#0F172A" }}>{fmt(expected.total)}</strong>
-                  </div>
-                  <div style={{ display:"flex", justifyContent:"space-between" }}>
-                    <span>Contado</span><strong style={{ color:"#0F172A" }}>{fmt(totalActual)}</strong>
-                  </div>
-                  <div style={{ display:"flex", justifyContent:"space-between", borderTop:"1px dashed #E2E8F0", marginTop:6, paddingTop:6 }}>
-                    <span>Diferença</span>
-                    <strong style={{ color: Math.abs(diff) < 0.01 ? "#0F766E" : diff < 0 ? "#C92E09" : "#B45309" }}>{fmt(diff)}</strong>
-                  </div>
+                  {fechandoSemConferencia ? (
+                    <div style={{ color:"#475569" }}>
+                      <strong style={{ color:"#0F172A" }}>Sem conferência.</strong> O caixa fecha sem falta nem sobra registrada, e o dono
+                      recebe "fechado sem conferir". O sistema esperava <strong>{fmt(esperadoEmBranco)}</strong> em dinheiro, cartões e Pix.
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ display:"flex", justifyContent:"space-between" }}>
+                        <span>Esperado nas formas contadas</span><strong style={{ color:"#0F172A" }}>{fmt(esperadoConferido)}</strong>
+                      </div>
+                      <div style={{ display:"flex", justifyContent:"space-between" }}>
+                        <span>Contado</span><strong style={{ color:"#0F172A" }}>{fmt(contadoConferido)}</strong>
+                      </div>
+                      <div style={{ display:"flex", justifyContent:"space-between", borderTop:"1px dashed #E2E8F0", marginTop:6, paddingTop:6 }}>
+                        <span>{Math.abs(diff) < 0.01 ? "Diferença" : diff < 0 ? "Faltou" : "Sobrou"}</span>
+                        <strong style={{ color: Math.abs(diff) < 0.01 ? "#0F766E" : diff < 0 ? "#C92E09" : "#B45309" }}>{Math.abs(diff) < 0.01 ? "confere" : fmt(Math.abs(diff))}</strong>
+                      </div>
+                      {linhasEmBranco.length > 0 && (
+                        <div style={{ fontSize:"0.76rem", color:"#94A3B8", marginTop:4 }}>
+                          Não conferido (em branco): {linhasEmBranco.map(m => `${m.label.replace(/^\S+\s/, "")} ${fmt(expected[m.key] || 0)}`).join(", ")}.
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
                 {/* Papel comprido demais (Divinos, 09/10/2026): a loja escolhe as seções. */}
                 <SecoesDoFechamentoNoPapel />
@@ -1218,13 +1272,47 @@ export default function StoreTopNav({
                   <button onClick={() => { setShowPendingWarn(false); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     ← Voltar
                   </button>
-                  <button onClick={() => { setShowPendingWarn(false); tryClose(); }} disabled={closing} style={{ flex:1, padding:"11px", background:"#C92E09", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => { setShowPendingWarn(false); setJaAvisouPendentes(true); tryClose({ pendentes: true }); }} disabled={closing} style={{ flex:1, padding:"11px", background:"#C92E09", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     Encerrar mesmo assim
                   </button>
                 </div>
               </div>
+            ) : showSemConferenciaWarn ? (
+              /* ── NADA CONTADO: FECHAR SEM CONFERIR? ─────────────────────
+                 Em 30 dias, 67 de 270 caixas fecharam com as cinco linhas em
+                 branco — gravadas como R$ 0,00 contado e avisadas ao dono como
+                 falta do tamanho do esperado (Ragnar, 10/10: −R$ 7.369,37).
+                 Fechar sem contar continua possível, mas com o nome certo: SEM
+                 CONFERÊNCIA, sem falta nem sobra registrada. */
+              <div style={{ textAlign:"center" }}>
+                <div style={{ fontSize:"3rem", marginBottom:8 }}>📋</div>
+                <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#334155" }}>Nenhuma forma foi contada</h2>
+                <p style={{ margin:"0 0 10px", fontSize:"0.9rem", color:"#334155", lineHeight:1.5 }}>
+                  Você não digitou a contagem de nenhuma forma de pagamento. O sistema esperava:
+                </p>
+                <div style={{ background:"#F8FAFC", border:"1px solid #E2E8F0", borderRadius:12, padding:"12px 14px", margin:"0 0 12px", textAlign:"left" }}>
+                  {linhasEmBranco.map(m => (
+                    <div key={m.key} style={{ display:"flex", justifyContent:"space-between", fontSize:"0.86rem", padding:"4px 0", color:"#334155" }}>
+                      <span style={{ fontWeight:700 }}>{m.label}</span>
+                      <span>esperado <strong>{fmt(expected[m.key] || 0)}</strong></span>
+                    </div>
+                  ))}
+                </div>
+                <p style={{ margin:"0 0 1rem", fontSize:"0.8rem", color:"#475569", lineHeight:1.5 }}>
+                  Fechando assim, o caixa fica registrado como <strong>sem conferência</strong>: não grava falta nem sobra, e o
+                  dono recebe "fechado sem conferir". Para conferir, volte e digite o que contou (0 se não passou nada).
+                </p>
+                <div style={{ display:"flex", gap:8 }}>
+                  <button onClick={() => setShowSemConferenciaWarn(false)} style={{ flex:1, padding:"11px", background:"#0F766E", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    ← Voltar e contar
+                  </button>
+                  <button onClick={() => { setShowSemConferenciaWarn(false); setFechandoSemConferencia(true); setDiff(0); setPerguntarImpressao(true); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    Fechar sem conferir
+                  </button>
+                </div>
+              </div>
             ) : showBlankWarn ? (
-              /* ── AVISO: LINHA NÃO PREENCHIDA VIRA FALTA ── */
+              /* ── AVISO: FORMA EM BRANCO FICA SEM CONFERIR ── */
               <div style={{ textAlign:"center" }}>
                 <div style={{ fontSize:"3rem", marginBottom:8 }}>✋</div>
                 <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#B45309" }}>Faltou preencher</h2>
@@ -1240,18 +1328,19 @@ export default function StoreTopNav({
                     </div>
                   ))}
                   <div style={{ borderTop:"1px dashed #FDE68A", marginTop:8, paddingTop:8, fontSize:"0.84rem", color:"#92400E" }}>
-                    Fechando assim, isto vira <strong>falta de {fmt(linhasEmBranco.reduce((t, m) => t + (expected[m.key] || 0), 0))}</strong> no relatório do dia.
+                    Fechando assim, {linhasEmBranco.length === 1 ? "ela fica" : "elas ficam"} como <strong>não conferida{linhasEmBranco.length === 1 ? "" : "s"}</strong>:
+                    {" "}{fmt(esperadoEmBranco)} fora da diferença, e o histórico e o aviso ao dono dizem que ninguém contou.
                   </div>
                 </div>
                 <p style={{ margin:"0 0 1rem", fontSize:"0.78rem", color:"#94A3B8", lineHeight:1.5 }}>
-                  Campo vazio é lido como <strong>R$ 0,00 contado</strong>. Se de fato não passou nada nessa forma, digite 0.
+                  Campo vazio é <strong>não conferido</strong>, não R$ 0,00. Se de fato não passou nada nessa forma, digite 0.
                 </p>
                 <div style={{ display:"flex", gap:8 }}>
                   <button onClick={() => setShowBlankWarn(false)} style={{ flex:1, padding:"11px", background:"#0F766E", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
                     ← Voltar e preencher
                   </button>
-                  <button onClick={() => { setShowBlankWarn(false); tryClose(); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
-                    Fechar assim mesmo
+                  <button onClick={() => { setShowBlankWarn(false); setJaAvisouBranco(true); tryClose({ pendentes: true, branco: true }); }} style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.9rem", cursor:"pointer", fontFamily:"inherit" }}>
+                    Fechar sem conferir {linhasEmBranco.length === 1 ? "essa" : "essas"}
                   </button>
                 </div>
               </div>
@@ -1321,18 +1410,33 @@ export default function StoreTopNav({
                     <tr style={{ background:"#F8FAFC" }}>
                       <th style={{ padding:"8px 10px", textAlign:"left", fontWeight:700, color:"#334155", borderBottom:"2px solid #E2E8F0" }}>Pagamento</th>
                       <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#334155", borderBottom:"2px solid #E2E8F0" }}>Sistema espera</th>
-                      <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#334155", borderBottom:"2px solid #E2E8F0" }}>Você contou</th>
+                      <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, color:"#334155", borderBottom:"2px solid #E2E8F0" }}>
+                        Você contou
+                        <span style={{ display:"block", fontSize:"0.66rem", fontWeight:500, color:"#94A3B8" }}>em branco = não conferido</span>
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {METHODS.map(m => (
                       <tr key={m.key} style={{ borderBottom:"1px solid #F1F5F9" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#334155" }}>{m.label}</td>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#334155" }}>
+                          {m.label}
+                          {/* O dinheiro esperado leva o troco de abertura (e as
+                              sangrias e reforços): sem dizer, o operador procurava
+                              uma venda do tamanho do troco. */}
+                          {m.key === "cash" && (trocoInicial > 0.005 || movTotais.entradas > 0 || movTotais.saidas > 0) && (
+                            <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#64748B" }}>
+                              {trocoInicial > 0.005 ? `inclui ${fmt(trocoInicial)} de troco inicial` : "inclui"}
+                              {movTotais.entradas > 0 ? ` + ${fmt(movTotais.entradas)} de reforço` : ""}
+                              {movTotais.saidas > 0 ? ` − ${fmt(movTotais.saidas)} de sangria` : ""}
+                            </span>
+                          )}
+                        </td>
                         <td style={{ padding:"8px 10px", textAlign:"right", color:"#64748B" }}>{fmt(expected[m.key] || 0)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right" }}>
                           <input
                             type="number" min="0" step="0.01"
-                            placeholder="0,00"
+                            placeholder="—"
                             value={actual[m.key]}
                             onChange={e => setActual(prev => ({ ...prev, [m.key]: e.target.value }))}
                             style={{ width:90, padding:"5px 8px", borderRadius:8, border:"1.5px solid #E2E8F0", fontSize:"0.85rem", textAlign:"right", outline:"none", fontFamily:"inherit" }}
@@ -1367,57 +1471,81 @@ export default function StoreTopNav({
                         ))}
                       </>
                     )}
-                    {!lojaDeDemonstracao && (expected.ifoodOnline || 0) > 0 && (
-                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF6F2" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#1C1917" }}>🔴 iFood (Pago Online)</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#1C1917", fontWeight:700 }}>{fmt(expected.ifoodOnline)}</td>
+                    {/* ── O PAGO ONLINE, UMA LINHA POR CANAL ────────────────
+                        Era uma linha só, "🔴 iFood (Pago Online)", que somava
+                        o site, a Brendi e a Wabiz (NIK, 30 dias: R$ 20.828,86
+                        de Wabiz dentro do "iFood"; Garagem e Point da Esfiha,
+                        100% Brendi). Cada canal se confere contra o extrato
+                        DELE, e o valor é o que o app repassa: com o cupom que
+                        ele pagou, sem a taxa de serviço dele. */}
+                    {!lojaDeDemonstracao && onlinePorCanal.map(c => (
+                      <tr key={`online-${c.nome}`} style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF6F2" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#1C1917" }}>
+                          ⚡ {c.nome} — pago online
+                          <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#78716C" }}>
+                            {c.qtd} {c.qtd === 1 ? "pedido" : "pedidos"} · não passa pela gaveta
+                          </span>
+                        </td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#1C1917", fontWeight:700 }}>{fmt(c.valor)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right" }}>
                           <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#E7DDD3", border:"1.5px solid #7DD3FC", fontSize:"0.78rem", textAlign:"center", color:"#1C1917", fontWeight:700 }}>
-                            🔒 {fmt(expected.ifoodOnline)}
+                            🔒 {fmt(c.valor)}
                           </span>
                         </td>
                       </tr>
-                    )}
-                    {(expected.ifoodCoupons || 0) > 0 && (
-                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF4EF" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#E8590C" }}>🔴 iFood (Cupons)</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#E8590C", fontWeight:700 }}>{fmt(expected.ifoodCoupons)}</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#9A3412" }}>—</td>
-                      </tr>
-                    )}
-
-                    {/* ── 99FOOD EM LINHA PRÓPRIA ───────────────────────────
-                        O dinheiro pago online no 99Food somava dentro da linha
-                        do iFood: o lojista conferia um número contra o extrato
-                        do iFood e ele nunca batia, porque metade era do 99.
-
-                        E o cupom do 99 não aparecia em lugar nenhum — eles não
-                        mandam campo como o `discountIfood`. O número sai da
-                        conta das promoções, onde cada uma diz quanto a LOJA
-                        bancou (lib/cupom-do-parceiro.ts). */}
-                    {!lojaDeDemonstracao && (expected.food99Online || 0) > 0 && (
-                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FEFCE8" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#B45309" }}>🟡 99Food (Pago Online)</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#B45309", fontWeight:700 }}>{fmt(expected.food99Online)}</td>
+                    ))}
+                    {/* O que o entregador do APP cobrou na porta: o dinheiro (ou
+                        a maquininha) era dele, e o app acerta no repasse. A
+                        gaveta cobrava isso da loja (99: 42 pedidos em 60 dias). */}
+                    {!lojaDeDemonstracao && cobradoPeloApp.map(c => (
+                      <tr key={`cobrado-${c.nome}`} style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF6F2" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#1C1917" }}>
+                          🛵 {c.nome} — o entregador do app cobrou
+                          <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#78716C" }}>
+                            {c.qtd} {c.qtd === 1 ? "pedido pago" : "pedidos pagos"} na porta · o app repassa
+                          </span>
+                        </td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#1C1917", fontWeight:700 }}>{fmt(c.valor)}</td>
                         <td style={{ padding:"8px 10px", textAlign:"right" }}>
-                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#FEF08A", border:"1.5px solid #FDE047", fontSize:"0.78rem", textAlign:"center", color:"#92400E", fontWeight:700 }}>
-                            🔒 {fmt(expected.food99Online)}
+                          <span style={{ display:"inline-block", width:90, padding:"5px 8px", borderRadius:8, background:"#E7DDD3", border:"1.5px solid #7DD3FC", fontSize:"0.78rem", textAlign:"center", color:"#1C1917", fontWeight:700 }}>
+                            🔒 {fmt(c.valor)}
                           </span>
                         </td>
                       </tr>
-                    )}
-                    {(expected.food99Coupons || 0) > 0 && (
-                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FEFCE8" }}>
-                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#B45309" }}>
-                          🟡 99Food (Cupons do 99)
-                          <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#B45309", opacity:0.8 }}>
-                            Desconto que o 99Food bancou — não passou pela loja
-                          </span>
-                        </td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#B45309", fontWeight:700 }}>{fmt(expected.food99Coupons)}</td>
-                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#92400E" }}>—</td>
+                    ))}
+                    {/* Tela aberta antes da atualização do servidor (sem as
+                        linhas por canal): o online numa linha só, como era. */}
+                    {!lojaDeDemonstracao && onlinePorCanal.length === 0 && cobradoPeloApp.length === 0 && onlineTravado > 0.005 && (
+                      <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#FAF6F2" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#1C1917" }}>⚡ Pago online (apps e site)</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#1C1917", fontWeight:700 }}>{fmt(onlineTravado)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.78rem", color:"#1C1917", fontWeight:700 }}>🔒 {fmt(onlineTravado)}</td>
                       </tr>
                     )}
+                    {/* ── OS CUPONS DAS PLATAFORMAS, EXPLICADOS ───────────────
+                        A linha "iFood (Cupons)" ficava ao lado do online sem
+                        dizer que parte dela já estava lá dentro. O cupom do
+                        pedido pago no app está no online acima; o do pedido
+                        pago na porta não está em linha nenhuma — o app o paga
+                        à loja no repasse. Informação: não se conta. */}
+                    {cuponsDoApp.filter(c => c.valor > 0.005).map(c => {
+                      const noOnline = Math.min(c.valor, c.noOnline || 0);
+                      const fora = Math.round((c.valor - noOnline) * 100) / 100;
+                      return (
+                        <tr key={`cupom-${c.nome}`} style={{ borderBottom:"1px solid #F1F5F9", background:"#FFF4EF" }}>
+                          <td style={{ padding:"8px 10px", fontWeight:600, color:"#9A3412" }}>
+                            🎟️ Cupons pagos pelo {c.nome}
+                            <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#9A3412", opacity:0.85, lineHeight:1.4 }}>
+                              {noOnline > 0.005 && <>{fmt(noOnline)} já estão no repasse do {c.nome} acima. </>}
+                              {fora > 0.005 && <>{fmt(fora)} são de pedidos pagos na porta: o {c.nome} repassa depois. </>}
+                              Não se conta na gaveta.
+                            </span>
+                          </td>
+                          <td style={{ padding:"8px 10px", textAlign:"right", color:"#9A3412", fontWeight:700 }}>{fmt(c.valor)}</td>
+                          <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#9A3412" }}>—</td>
+                        </tr>
+                      );
+                    })}
                     {/* Pedidos que ninguém pagou (totem abandonado, cartão
                         recusado, senha do "pagar no caixa" que nunca voltou ao
                         balcão). Ficam FORA da conferência de propósito — antes
@@ -1481,30 +1609,56 @@ export default function StoreTopNav({
                       </tr>
                     )}
                   </tbody>
+                  {/* ── O TOTAL, IGUAL COM IGUAL ────────────────────────────
+                      Era "TOTAL: esperado (com o online e o troco) × contado
+                      (com o online)". Agora a conferência é só das formas que
+                      você CONTOU, dos dois lados: a forma em branco fica fora
+                      (não conferida) e o online, travado, também. */}
                   <tfoot>
-                    <tr style={{ background: Math.abs(totalActual - expected.total) < 0.01 ? "#F0FDFA" : "#FEF2F2" }}>
-                      <td style={{ padding:"10px", fontWeight:900, fontSize:"0.95rem" }}>TOTAL</td>
-                      <td style={{ padding:"10px", textAlign:"right", fontWeight:700, color:"#334155" }}>{fmt(expected.total)}</td>
+                    <tr style={{ background: contadas.length === 0 ? "#F8FAFC" : Math.abs(diferencaConferida) < 0.01 ? "#F0FDFA" : "#FEF2F2" }}>
+                      <td style={{ padding:"10px", fontWeight:900, fontSize:"0.9rem" }}>
+                        CONFERIDO
+                        <span style={{ display:"block", fontSize:"0.68rem", fontWeight:500, color:"#64748B" }}>as formas que você contou</span>
+                      </td>
+                      <td style={{ padding:"10px", textAlign:"right", fontWeight:700, color:"#334155" }}>{contadas.length === 0 ? "—" : fmt(esperadoConferido)}</td>
                       <td style={{ padding:"10px", textAlign:"right", fontWeight:900, fontSize:"1rem",
-                        color: Math.abs(totalActual - expected.total) < 0.01 ? "#0F766E" : "#C92E09" }}>
-                        {fmt(totalActual)}
+                        color: contadas.length === 0 ? "#94A3B8" : Math.abs(diferencaConferida) < 0.01 ? "#0F766E" : "#C92E09" }}>
+                        {contadas.length === 0 ? "—" : fmt(contadoConferido)}
                       </td>
                     </tr>
-                    {Math.abs(totalActual - expected.total) >= 0.01 && (
+                    {contadas.length > 0 && (
                       <tr>
                         <td colSpan={3} style={{ padding:"6px 10px", textAlign:"center", fontSize:"0.78rem",
-                          color: totalActual < expected.total ? "#C92E09" : "#B45309", fontWeight:700 }}>
-                          {totalActual < expected.total
-                            ? `⚠️ Faltam ${fmt(expected.total - totalActual)} em caixa`
-                            : `⚠️ Sobram ${fmt(totalActual - expected.total)} em caixa`}
+                          color: Math.abs(diferencaConferida) < 0.01 ? "#0F766E" : diferencaConferida < 0 ? "#C92E09" : "#B45309", fontWeight:700 }}>
+                          {Math.abs(diferencaConferida) < 0.01
+                            ? "✓ Confere"
+                            : diferencaConferida < 0
+                              ? `⚠️ Faltam ${fmt(-diferencaConferida)} em caixa`
+                              : `⚠️ Sobram ${fmt(diferencaConferida)} em caixa`}
                         </td>
                       </tr>
                     )}
+                    {linhasEmBranco.length > 0 && (
+                      <tr>
+                        <td colSpan={3} style={{ padding:"4px 10px", textAlign:"center", fontSize:"0.74rem", color:"#64748B" }}>
+                          {contadas.length === 0
+                            ? `Nada contado ainda: o sistema espera ${fmt(esperadoEmBranco)} nas formas acima.`
+                            : `Em branco (não conferido, fora da diferença): ${linhasEmBranco.map(m => `${m.label.replace(/^\S+\s/, "")} ${fmt(expected[m.key] || 0)}`).join(", ")}.`}
+                        </td>
+                      </tr>
+                    )}
+                    <tr>
+                      <td colSpan={3} style={{ padding:"4px 10px", textAlign:"center", fontSize:"0.72rem", color:"#94A3B8" }}>
+                        Total do turno com o online e o troco inicial: {fmt(expected.total || 0)}
+                        {onlineTravado > 0.005 ? ` (o online, ${fmt(onlineTravado)}, não se conta)` : ""}
+                      </td>
+                    </tr>
                   </tfoot>
                 </table>
                 {/* As vendas do turno separadas por tipo — informação, não
-                    conferência: a soma dos tipos é o total faturado, que não é
-                    o esperado acima (este tem troco e sangrias; aquele, fiado). */}
+                    conferência: o faturado (a régua dos relatórios) e o
+                    recebido (a soma dos tipos), que não são o esperado acima
+                    (este tem troco e sangrias; aqueles, fiado). */}
                 <VendasPorTipoDoCaixa dados={vendasPorTipo} />
                 {/* Pedido cancelado e item tirado, com quem e o motivo — a
                     conferência que o dono faz antes de fechar. */}
@@ -1519,7 +1673,7 @@ export default function StoreTopNav({
                   <a href="/store/caixa/historico" style={{ flex:1, padding:"11px", background:"#F1F5F9", color:"#334155", border:"none", borderRadius:12, fontWeight:700, fontSize:"0.85rem", cursor:"pointer", textAlign:"center", textDecoration:"none", display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                     <History size={15} /> Histórico
                   </a>
-                  <button onClick={tryClose} disabled={closing} style={{ flex:2, padding:"11px", background:"#C92E09", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.95rem", cursor:"pointer", fontFamily:"inherit" }}>
+                  <button onClick={() => tryClose()} disabled={closing} style={{ flex:2, padding:"11px", background:"#C92E09", color:"#fff", border:"none", borderRadius:12, fontWeight:900, fontSize:"0.95rem", cursor:"pointer", fontFamily:"inherit" }}>
                     {closing ? "Encerrando..." : "🔒 Encerrar Caixa"}
                   </button>
                 </div>
@@ -1530,8 +1684,13 @@ export default function StoreTopNav({
                 <AlertTriangle size={48} color="#B45309" style={{ margin:"0 auto 12px" }} />
                 <h2 style={{ margin:"0 0 8px", fontSize:"1.15rem", fontWeight:900, color:"#92400E" }}>Atenção! Caixa com diferença</h2>
                 <p style={{ margin:"0 0 6px", fontSize:"0.9rem", color:"#334155" }}>
-                  O sistema esperava <strong>{fmt(expected.total)}</strong> mas você informou <strong>{fmt(totalActual)}</strong>.
+                  Nas formas que você contou, o sistema esperava <strong>{fmt(esperadoConferido)}</strong> e você informou <strong>{fmt(contadoConferido)}</strong>.
                 </p>
+                {linhasEmBranco.length > 0 && (
+                  <p style={{ margin:"0 0 6px", fontSize:"0.78rem", color:"#64748B" }}>
+                    Ficaram em branco (não conferidas, fora desta conta): {linhasEmBranco.map(m => m.label.replace(/^\S+\s/, "")).join(", ")}.
+                  </p>
+                )}
                 <div style={{ background: diff < 0 ? "#FEF2F2" : "#FFF7E6", border:`1px solid ${diff < 0 ? "#FECACA" : "#FDE68A"}`, borderRadius:12, padding:"12px", margin:"12px 0", fontSize:"1.1rem", fontWeight:900, color: diff < 0 ? "#C92E09" : "#B45309" }}>
                   {diff < 0 ? `Faltando ${fmt(Math.abs(diff))}` : `Sobrando ${fmt(diff)}`}
                 </div>
