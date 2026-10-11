@@ -177,17 +177,17 @@ export async function GET(req: NextRequest) {
   const totais = resultado.vendas;
   const resumo: LinhaDaPlanilha[] = [
     { celulas: [] },
-    { celulas: [{ v: "Faturamento do período (total das vendas)", estilo: "negrito" }, "", "", "", { v: totais.faturamento, estilo: "reaisNegrito" }, "", { v: totais.pedidos, estilo: "qtd" }] },
-    { celulas: ["Total dos itens vendidos (sem taxa de entrega e desconto)", "", "", "", { v: totais.totalDosItens, estilo: "reais" }] },
+    { celulas: [{ v: "Total dos itens vendidos (sem taxa de entrega e desconto) — a base do CMV", estilo: "negrito" }, "", "", "", { v: totais.totalDosItens, estilo: "reaisNegrito" }, "", { v: totais.pedidos, estilo: "qtd" }] },
+    { celulas: ["Total dos pedidos (com taxa de entrega, menos desconto) — só informação", "", "", "", { v: totais.faturamento, estilo: "reais" }] },
     { celulas: ["Itens vendidos que BAIXARAM estoque (a base do CMV das vendas com baixa)", "", "", "", { v: totais.valorComBaixa, estilo: "reais" }, pctOuVazio(totais.coberturaPct, "pct")] },
     { celulas: ["Itens com ficha técnica hoje, vendidos sem baixa (ficha cadastrada depois da venda)", "", "", "", { v: totais.valorComFichaSemBaixa, estilo: "reais" }] },
     { celulas: ["Itens sem ficha técnica (aba \"Sem ficha técnica\")", "", "", "", { v: resultado.semFicha.valor, estilo: "reais" }] },
-    { celulas: [{ v: "CMV sobre o faturamento", estilo: "negrito" }, "", "", "", "", pctOuVazio(resultado.cmv.sobreFaturamento)] },
-    { celulas: ["CMV sobre o total dos itens", "", "", "", "", pctOuVazio(resultado.cmv.sobreItens)] },
+    { celulas: [{ v: "CMV sobre os itens vendidos", estilo: "negrito" }, "", "", "", "", pctOuVazio(resultado.cmv.sobreItens)] },
     { celulas: [{ v: "CMV das vendas que baixaram estoque", estilo: "negrito" }, "", "", "", "", pctOuVazio(resultado.cmv.sobreItensComBaixa)] },
     { celulas: [] },
     { celulas: [{ v: "Consumo = baixas automáticas do estoque pela ficha técnica, menos as devoluções, no dia do pedido. Pedido cancelado não entra. Perda, entrada de nota e ajuste manual não entram.", estilo: "suave" }] },
-    { celulas: [{ v: "Item vendido sem ficha técnica não gera consumo: o CMV sobre o faturamento fica menor que o real. Veja a aba \"Sem ficha técnica\".", estilo: "suave" }] },
+    { celulas: [{ v: "O CMV é o custo sobre os itens vendidos, não sobre o total do pedido: a taxa de entrega não é venda de comida e baixaria o CMV.", estilo: "suave" }] },
+    { celulas: [{ v: "Item vendido sem ficha técnica não gera consumo: o CMV sobre os itens fica menor que o real. Veja a aba \"Sem ficha técnica\".", estilo: "suave" }] },
     { celulas: [{ v: "Mesa: tirar item de um lançamento pelo painel de mesas não devolve o insumo (só cancelar o lançamento inteiro devolve) — o consumo da mesa editada fica maior que o vendido.", estilo: "suave" }] },
     ...(totais.pedidosComFichaSemBaixa
       ? [{ celulas: [{ v: `${totais.pedidosComFichaSemBaixa} pedido(s) com item de ficha técnica não tiveram baixa (ficha cadastrada depois da venda, pedido ainda não aceito, ou baixa que falhou). Ficam fora do CMV das vendas com baixa.`, estilo: "suave" as const }] }]
@@ -239,9 +239,9 @@ export async function GET(req: NextRequest) {
       larguras: [14, 18, 18, 10],
       linhas: [
         ...topo("Consumo por dia"),
-        { celulas: ["Dia", "Custo dos insumos", "Faturamento", "CMV %"], estilo: "cabecalho" },
+        { celulas: ["Dia", "Custo dos insumos", "Itens vendidos", "CMV %"], estilo: "cabecalho" },
         ...resultado.porDia.map((d) => ({
-          celulas: [fmtDia(d.dia), { v: d.custo, estilo: "reais" as const }, { v: d.faturamento, estilo: "reais" as const }, pctOuVazio(d.cmvPct, "pct")],
+          celulas: [fmtDia(d.dia), { v: d.custo, estilo: "reais" as const }, { v: d.itens, estilo: "reais" as const }, pctOuVazio(d.cmvPct, "pct")],
         })),
       ],
     },

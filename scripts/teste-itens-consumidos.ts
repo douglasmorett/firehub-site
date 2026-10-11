@@ -198,14 +198,14 @@ const dia19 = itensConsumidos({
   movimentos: EDITADO, insumos: INSUMOS, situacaoDe: new Map(), vendas: [pedidoEditado], fichas: FICHAS, tz: TZ, periodo: { de: "2026-09-19", ate: "2026-09-19" },
 });
 confere("relatório do dia 19 (a edição do dia 20 lida na folga): a versão que valeu, 100 g, no dia do pedido",
-  [dia19.insumos.map((i) => [i.nome, i.quantidade, i.custo]), dia19.porDia], [[["Mussarela", 100, 5]], [{ dia: "2026-09-19", custo: 5, faturamento: 50, cmvPct: 10 }]]);
+  [dia19.insumos.map((i) => [i.nome, i.quantidade, i.custo]), dia19.porDia], [[["Mussarela", 100, 5]], [{ dia: "2026-09-19", custo: 5, faturamento: 50, itens: 50, cmvPct: 10 }]]);
 const dia20 = itensConsumidos({
   movimentos: EDITADO.slice(1), insumos: INSUMOS, situacaoDe: new Map([["ped-e", "antesDoPeriodo"]]), fichas: FICHAS, tz: TZ,
   vendas: [pedido("ped-f", "PDV", 50, [], "2026-09-20T18:00:00Z")], periodo: { de: "2026-09-20", ate: "2026-09-20" },
 });
 confere("relatório do dia 20: sem mussarela −200 g nem custo negativo — a edição é do pedido do dia 19",
-  [dia20.insumos, dia20.total.custo, dia20.cmv.sobreFaturamento, dia20.porDia, dia20.foraDaConta.antesDoPeriodo],
-  [[], 0, null, [{ dia: "2026-09-20", custo: 0, faturamento: 50, cmvPct: null }], 1]);
+  [dia20.insumos, dia20.total.custo, dia20.cmv.sobreItens, dia20.porDia, dia20.foraDaConta.antesDoPeriodo],
+  [[], 0, null, [{ dia: "2026-09-20", custo: 0, faturamento: 50, itens: 0, cmvPct: null }], 1]);
 const devolucaoSemBaixa = itensConsumidos({
   movimentos: [devolucao("ped-e", "mus", 300, "2026-09-19T19:00:00Z")], insumos: INSUMOS, situacaoDe: new Map(), vendas: [pedidoEditado], fichas: FICHAS, tz: TZ,
 });
@@ -216,7 +216,7 @@ const madrugada = itensConsumidos({
   periodo: { de: "2026-09-19", ate: "2026-09-20" },
 });
 confere("pedido das 4h58 aceito às 5h02: custo e faturamento no mesmo dia (o do pedido)",
-  madrugada.porDia, [{ dia: "2026-09-19", custo: 5, faturamento: 50, cmvPct: 10 }, { dia: "2026-09-20", custo: 0, faturamento: 0, cmvPct: null }]);
+  madrugada.porDia, [{ dia: "2026-09-19", custo: 5, faturamento: 50, itens: 50, cmvPct: 10 }, { dia: "2026-09-20", custo: 0, faturamento: 0, itens: 0, cmvPct: null }]);
 const cancelado = itensConsumidos({ movimentos: [baixa("ped-3", "mus", 300, undefined, false)], insumos: INSUMOS, situacaoDe: SITUACAO, vendas: [], fichas: FICHAS, tz: TZ });
 confere("cancelado amanhã: a baixa de hoje já sai do relatório de hoje (pelo status)", [cancelado.insumos.length, cancelado.foraDaConta.cancelados], [0, 1]);
 
@@ -226,7 +226,11 @@ confere("faturamento = Σ totalAmount (mesa pelo lançamento); total dos itens; 
 confere("as três partes fecham o total dos itens (220 + 18 + 130 = 368)",
   r.vendas.valorComBaixa + r.vendas.valorComFichaSemBaixa + r.semFicha.valor, r.vendas.totalDosItens);
 confere("cobertura: 220 de 368 dos itens baixaram estoque", r.vendas.coberturaPct, 59.78);
-confere("CMV sobre o faturamento, sobre os itens e sobre o que baixou", r.cmv, { sobreFaturamento: 12.8, sobreItens: 13.15, sobreItensComBaixa: 22 });
+confere("CMV sobre os itens (48,40 ÷ 368) e sobre o que baixou (48,40 ÷ 220)", r.cmv, { sobreItens: 13.15, sobreItensComBaixa: 22 });
+// Auditoria de 11/10/2026: o cartão dividia pelo total dos pedidos, que traz a
+// taxa de entrega (378 aqui, R$ 10 de entrega): CMV de 12,80% em vez de 13,15%.
+confere("a base do CMV é a dos itens, sem a taxa de entrega (o total dos pedidos dava 12,80%)",
+  [r.vendas.faturamento - r.vendas.totalDosItens, Math.round((r.total.custo / r.vendas.faturamento) * 10000) / 100, r.cmv.sobreItens], [10, 12.8, 13.15]);
 confere("pedido com item de ficha e sem baixa (ficha cadastrada depois da venda)",
   [r.vendas.pedidosComFichaSemBaixa, r.vendas.pedidosComBaixaSemFichaHoje], [1, 0]);
 
@@ -310,16 +314,16 @@ confere("nomes que a baixa não junta ficam em linhas separadas: só o da Wabiz 
 console.log("\n11) Por dia operacional");
 confere("o pedido da 01:28 de 20/09 é do dia 19; o dia sem nada aparece zerado",
   r.porDia, [
-    { dia: "2026-09-19", custo: 42.4, faturamento: 328, cmvPct: 12.93 },
-    { dia: "2026-09-20", custo: 6, faturamento: 50, cmvPct: 12 },
-    { dia: "2026-09-21", custo: 0, faturamento: 0, cmvPct: null },
+    { dia: "2026-09-19", custo: 42.4, faturamento: 328, itens: 318, cmvPct: 13.33 },
+    { dia: "2026-09-20", custo: 6, faturamento: 50, itens: 50, cmvPct: 12 },
+    { dia: "2026-09-21", custo: 0, faturamento: 0, itens: 0, cmvPct: null },
   ]);
 
 console.log("\n12) Nada cadastrado (a realidade de hoje na maioria das lojas)");
 const nada = itensConsumidos({ movimentos: [], insumos: [], situacaoDe: new Map(), vendas: VENDAS.slice(6, 8), fichas: montarFichas([], [], []), tz: TZ });
 confere("sem consumo não há CMV (nem 0%); com venda e sem baixa, a cobertura é 0% de verdade; tudo vai para a lista de cadastrar",
   [nada.total.custo, nada.cmv, nada.vendas.coberturaPct, nada.semFicha.produtos.length],
-  [0, { sobreFaturamento: null, sobreItens: null, sobreItensComBaixa: null }, 0, 3]);
+  [0, { sobreItens: null, sobreItensComBaixa: null }, 0, 3]);
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

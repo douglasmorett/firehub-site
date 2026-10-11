@@ -139,8 +139,10 @@ export default function ItensConsumidosClient({ inicio }: { inicio: InicioDosFil
         <GradeDeCartoes>
           <Cartao rotulo="Custo dos insumos" valor={fmtReais(dados.total.custo)}
             detalhe={temConsumo ? `${dados.total.insumos} insumo${dados.total.insumos === 1 ? "" : "s"} · ${dados.total.pedidosComBaixa} pedido${dados.total.pedidosComBaixa === 1 ? "" : "s"} com baixa` : "Nenhuma baixa no período"} />
-          <Cartao rotulo="CMV sobre o faturamento" valor={dados.cmv.sobreFaturamento === null ? "—" : fmtPct(dados.cmv.sobreFaturamento)}
-            detalhe={`Faturamento ${fmtReais(dados.vendas.faturamento)} · ${dados.vendas.pedidos.toLocaleString("pt-BR")} pedido${dados.vendas.pedidos === 1 ? "" : "s"}`} />
+          {/* A base é o total dos ITENS, não o do pedido: a taxa de entrega não é
+              venda de comida e baixava o CMV (lib/relatorios/itens-consumidos.ts). */}
+          <Cartao rotulo="CMV sobre os itens vendidos" valor={dados.cmv.sobreItens === null ? "—" : fmtPct(dados.cmv.sobreItens)}
+            detalhe={`Itens ${fmtReais(dados.vendas.totalDosItens)} (sem taxa de entrega) · ${dados.vendas.pedidos.toLocaleString("pt-BR")} pedido${dados.vendas.pedidos === 1 ? "" : "s"}`} />
           <Cartao rotulo="CMV das vendas com baixa" valor={dados.cmv.sobreItensComBaixa === null ? "—" : fmtPct(dados.cmv.sobreItensComBaixa)}
             detalhe="O custo sobre o que baixou estoque — o número que vale enquanto nem tudo tem ficha" />
           <Cartao rotulo="Vendas que baixaram estoque" valor={cobertura === null ? "—" : fmtPct(cobertura, 0)} tom={tomDaCobertura}
@@ -153,7 +155,7 @@ export default function ItensConsumidosClient({ inicio }: { inicio: InicioDosFil
           {dados.semFicha.valor > 0 && (
             <Aviso>
               <strong>{pctSemFicha < 1 ? "Menos de 1%" : fmtPct(pctSemFicha, 0)} do que foi vendido não tem ficha técnica</strong> ({fmtReais(dados.semFicha.valor)}):
-              essas vendas não tiram insumo do estoque, e o CMV sobre o faturamento sai menor que o real. A lista está abaixo.
+              essas vendas não tiram insumo do estoque, e o CMV sobre os itens vendidos sai menor que o real. A lista está abaixo.
             </Aviso>
           )}
           {dados.vendas.pedidosComFichaSemBaixa > 0 && (
@@ -254,7 +256,7 @@ export default function ItensConsumidosClient({ inicio }: { inicio: InicioDosFil
       )}
 
       {dados && temConsumo && dados.porDia.length > 1 && dados.porDia.length <= 62 && (
-        <Bloco titulo="Por dia" subtitulo="Custo dos insumos das vendas de cada dia e o CMV sobre o faturamento do mesmo dia (o dia do pedido; vira às 5h).">
+        <Bloco titulo="Por dia" subtitulo="Custo dos insumos das vendas de cada dia e o CMV sobre os itens vendidos no mesmo dia (o dia do pedido; vira às 5h).">
           <div style={{ display: "grid", gap: 6 }}>
             <div style={{ display: "grid", gridTemplateColumns: "44px 1fr 96px 56px", gap: 10, fontSize: "0.68rem", fontWeight: 800, color: PALETA.areiaTinta, textTransform: "uppercase", letterSpacing: "0.03em" }}>
               <span>Dia</span><span /><span style={{ textAlign: "right" }}>Custo</span><span style={{ textAlign: "right" }}>CMV</span>
@@ -325,12 +327,15 @@ export default function ItensConsumidosClient({ inicio }: { inicio: InicioDosFil
           Pedido cancelado não entra (nem a baixa, nem a devolução). Pedido editado pela tela de pedidos conta a versão que valeu, porque a edição devolve e baixa de novo;
           na mesa não: tirar item de um lançamento pelo painel de mesas não devolve o insumo (só cancelar o lançamento inteiro devolve), e o consumo da mesa editada fica maior que o vendido.
           Perda, entrada de nota e ajuste manual não são consumo de venda e ficam no Estoque.
-          O faturamento é o total dos pedidos do período; na mesa, o valor dos lançamentos, sem os 10% de serviço e a gorjeta.
+          O CMV é o custo sobre o total dos itens vendidos (preço × quantidade, antes do desconto): sem a taxa de entrega, que não é venda de comida, e, na mesa, sem os 10% de serviço e a gorjeta.
           {(dados.foraDaConta.cancelados + dados.foraDaConta.foraDosFiltros + dados.foraDaConta.foraDaVenda + dados.foraDaConta.antesDoPeriodo + dados.foraDaConta.semPedido) > 0 && (
             <> Baixas feitas no período que ficaram de fora, em pedidos: {[
               dados.foraDaConta.cancelados && `${dados.foraDaConta.cancelados} cancelado(s)`,
               dados.foraDaConta.foraDosFiltros && `${dados.foraDaConta.foraDosFiltros} fora dos filtros`,
-              dados.foraDaConta.foraDaVenda && `${dados.foraDaConta.foraDaVenda} ainda não pago(s)`,
+              // "Fora da venda" é o rascunho que o robô ainda monta (CRIANDO_IA) e o
+              // pedido esperando o pagamento (totem/Pix) — dizia "ainda não pago",
+              // o que não descreve o rascunho do robô.
+              dados.foraDaConta.foraDaVenda && `${dados.foraDaConta.foraDaVenda} não concluído(s) — rascunho do robô ou esperando o pagamento`,
               dados.foraDaConta.antesDoPeriodo && `${dados.foraDaConta.antesDoPeriodo} feito(s) antes do período (contam no dia do pedido)`,
               dados.foraDaConta.semPedido && `${dados.foraDaConta.semPedido} apagado(s)`,
             ].filter(Boolean).join(", ")}.</>
