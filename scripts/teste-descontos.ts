@@ -17,11 +17,16 @@
  * pedidos e mesas. As seções 14 a 16 são da revisão de 24/09/2026: o "% dos
  * pedidos" sem a conta de mesa no numerador, o nome da mesa igual ao do Vendas
  * e a base do percentual líquida de todo desconto.
+ *
+ * Auditoria de 11/10/2026: a seção 17 separa do cupom o % do Pix/cartão pelo
+ * site e o cashback usado (os dois DENTRO do desconto gravado), com os
+ * pedidos da Showrrascão; a 18, a parte que a Brendi pagou, que virava "não
+ * identificado" quando a loja também pagava uma parte.
  */
 import { cupomDoMarketplace } from "../src/lib/cupom-do-parceiro";
 import { lerCupons } from "../src/lib/cupons";
 import {
-  cupomDasNotas, descontoDaMesa, descontoDoPedido, descontosDoPeriodo, detalheDosPedidosComDesconto, motivoDoDescontoManual, paginar,
+  cupomDasNotas, descontoDaMesa, descontoDoPagamentoPeloSite, descontoDoPedido, descontosDoPeriodo, detalheDosPedidosComDesconto, motivoDoDescontoManual, paginar,
   rotuloDaMesa, type ConfigDosDescontos, type ContaDeMesa, type CupomCadastrado, type PedidoParaDescontos,
 } from "../src/lib/relatorios/descontos";
 import { descontoNoFechamento } from "../src/lib/relatorios/regua-da-venda";
@@ -119,10 +124,13 @@ const WABIZ_2 = pedido({
   source: "WABIZ", openDeliveryChannel: "WABIZ", openDeliveryReference: "3683", deliveryType: "DELIVERY", totalAmount: 143.48,
   discountTotal: 25.32, discountMerchant: 25.32, notes: "Pedido Wabiz #3683\n🏷️ Cupom BEMVINDO15: -R$25.32\n📝 OBS: Comer no local",
 });
-// Balcão: desconto manual com e sem motivo.
+// Balcão: desconto manual com e sem motivo. (Até 11/10/2026 este pedido levava
+// `cashbackUsed: 2` FORA do desconto, para provar o "à parte" — o PDV nunca
+// gravou cashback, e o site e o robô gravam o resgate DENTRO do desconto: ver
+// a seção 17.)
 const BALCAO_MOTIVO = pedido({
   source: "PRESENCIAL", deliveryType: "PICKUP", totalAmount: 25.47, discountTotal: 2.83, discountMerchant: 2.83,
-  notes: "[Desconto: 10% (R$ 2,83) — Cliente fiel]", cashbackUsed: 2,
+  notes: "[Desconto: 10% (R$ 2,83) — Cliente fiel]",
 });
 const BALCAO_SEM_MOTIVO = pedido({
   source: "PRESENCIAL", deliveryType: "PICKUP", totalAmount: 7.2, discountTotal: 0.8, discountMerchant: 0.8, notes: "[Desconto: 10% (R$ 0,80)]",
@@ -271,8 +279,8 @@ confere("balcão agrupa por motivo", [origem("Cliente fiel")?.tipo, origem("Sem 
 confere("a mesa aparece como origem própria", [origem("Desconto na conta da mesa")?.tipo, origem("Desconto na conta da mesa")?.valor], ["mesa", 10]);
 confere("origens somam o total", Math.round(r.origens.reduce((s, o) => s + o.valor, 0) * 100) / 100, r.resumo.desconto);
 
-console.log("\n7) À parte: cashback e entrega grátis por regra");
-confere("cashback somado à parte, fora do desconto", r.cashback, { gerado: 4.5, usado: 2, pedidosQueGeraram: 1, pedidosQueUsaram: 1 });
+console.log("\n7) Cashback gerado e entrega grátis por regra (o cashback USADO está na seção 17)");
+confere("cashback gerado contado à parte (é crédito, não desconto)", r.cashback, { gerado: 4.5, usado: 0, pedidosQueGeraram: 1, pedidosQueUsaram: 0 });
 confere("entrega grátis por valor mínimo fica fora do desconto (a de cupom não entra aqui)", r.entregaGratisForaDoDesconto, { valor: 7, pedidos: 1 });
 
 console.log("\n8) A lista de pedidos");
@@ -463,6 +471,85 @@ const CHEIO = pedido({ source: "IFOOD", ifoodOrderId: "if-cheio", deliveryType: 
 const rs = descontosDoPeriodo([SUBSIDIADO, CHEIO], [], cfg({ cupons: [] }));
 confere("pedido 100% pago pelo iFood: R$ 30 de desconto sobre R$ 70 vendidos = 42,857% (sobre o preço cheio seriam 30%)",
   [rs.resumo.vendas, rs.resumo.desconto, rs.resumo.plataforma, rs.resumo.pctSobreVendas, rs.resumo.pctLojaSobreVendas], [70, 30, 30, 42.857, 0]);
+
+console.log("\n17) Site: o % do Pix/cartão e o cashback saem do cupom (estão DENTRO do desconto gravado)");
+// Os pedidos da Showrrascão de 10 e 11/10/2026, como o checkout grava: um
+// `discountTotal` só, com tudo dentro, e cada parte escrita na observação. O
+// cupom PRIMEIROPEDIDO é o frete (R$ 5); o resto é o 5% do Pix ou o cashback.
+// Antes o cupom ficava com o desconto inteiro (02 a 11/10: R$ 661,31 em 105
+// pedidos, R$ 121,31 deles do Pix/cartão) e o pedido sem cupom ia para "Sem
+// detalhe" (24 pedidos, R$ 203,51 — Pix/cartão e cashback).
+const siteShow = (x: Partial<PedidoParaDescontos>) => pedido({ source: "ONLINE", deliveryType: "DELIVERY", createdAt: noite("2026-10-10"), ...x });
+const PIX_E_PRIMEIRO = siteShow({
+  totalAmount: 27.11, discountTotal: 6.69, discountMerchant: 6.69, cashbackEarned: 1.36,
+  notes: "[Desconto Pix pelo site (5%): -R$ 1,69] [Cupom: PRIMEIROPEDIDO] Sem salada", entregaGratis: { valor: 5, motivo: "Cupom PRIMEIROPEDIDO" },
+});
+const SO_PIX = siteShow({ totalAmount: 53.16, discountTotal: 2.54, discountMerchant: 2.54, cashbackEarned: 2.41, notes: "[Desconto Pix pelo site (5%): -R$ 2,54]" });
+const CASHBACK_E_PIX = siteShow({
+  totalAmount: 51.99, discountTotal: 5.71, discountMerchant: 5.71, cashbackUsed: 3.07, cashbackEarned: 2.35,
+  notes: "[Cashback usado: R$ 3,07] [Desconto Pix pelo site (5%): -R$ 2,64]",
+});
+const SO_CASHBACK = siteShow({
+  totalAmount: 95, discountTotal: 95, discountMerchant: 95, cashbackUsed: 95, cashbackEarned: 4.75,
+  notes: "[Cashback usado: R$ 95,00] [Frete Grátis (Pedido >= R$ 100,00) — Taxa ref: R$ 5,00]", entregaGratis: { valor: 5, motivo: "Pedido acima de R$ 100,00" },
+});
+const CARTAO_PELO_SITE = siteShow({ totalAmount: 120.9, discountTotal: 3.1, discountMerchant: 3.1, notes: "[Desconto Cartão pelo site (2,5%): -R$ 3,10]" });
+confere("lê o desconto do Pix pelo site da observação", descontoDoPagamentoPeloSite(PIX_E_PRIMEIRO.notes), { rotulo: "Desconto Pix pelo site (5%)", forma: "PIX", valor: 1.69 });
+confere("…e o do cartão, com o % de vírgula", descontoDoPagamentoPeloSite(CARTAO_PELO_SITE.notes), { rotulo: "Desconto Cartão pelo site (2,5%)", forma: "CARTAO", valor: 3.1 });
+confere("sem o desconto pelo site: null (o '[Desconto: ...]' do balcão não é ele)", descontoDoPagamentoPeloSite(BALCAO_MOTIVO.notes), null);
+confere("Pix + PRIMEIROPEDIDO: R$ 1,69 do Pix (itens) e R$ 5,00 do cupom (entrega) — antes, R$ 6,69 de cupom",
+  descontoDoPedido(PIX_E_PRIMEIRO).fatias.map((f) => [f.tipo, f.nome, f.alvo, f.valor, f.loja]),
+  [["pagamento", "Desconto Pix pelo site (5%)", "ITENS", 1.69, 1.69], ["cupom", "PRIMEIROPEDIDO", "ENTREGA", 5, 5]]);
+confere("só o 5% do Pix: a fatia do Pix, e nada em 'Sem detalhe'",
+  descontoDoPedido(SO_PIX).fatias.map((f) => [f.tipo, f.valor]), [["pagamento", 2.54]]);
+confere("cashback + Pix: as duas fatias, e o cashback é fidelidade da loja",
+  descontoDoPedido(CASHBACK_E_PIX).fatias.map((f) => [f.tipo, f.nome, f.valor, f.loja]),
+  [["pagamento", "Desconto Pix pelo site (5%)", 2.64, 2.64], ["fidelidade", "Cashback usado", 3.07, 3.07]]);
+const rSite = descontosDoPeriodo([PIX_E_PRIMEIRO, SO_PIX, CASHBACK_E_PIX, SO_CASHBACK, CARTAO_PELO_SITE], [],
+  cfg({ de: "2026-10-10", ate: "2026-10-10", hoje: "2026-10-11", cupons: [], mostrarCuponsSemUso: false }));
+confere("o total de desconto é o gravado nos pedidos — o cashback não entra uma segunda vez",
+  rSite.resumo.desconto, Math.round((6.69 + 2.54 + 5.71 + 95 + 3.1) * 100) / 100);
+confere("PRIMEIROPEDIDO no ranking: 1 uso, R$ 5,00 (o cupom é o frete)", rSite.cupons.map((c) => [c.codigo, c.usos, c.desconto]), [["PRIMEIROPEDIDO", 1, 5]]);
+confere("origens: o Pix e o cartão pelo site, o cashback usado e o cupom — sem 'Sem detalhe'",
+  rSite.origens.map((o) => [o.tipo, o.nome, o.usos, o.valor]).sort(),
+  [["cupom", "PRIMEIROPEDIDO", 1, 5], ["fidelidade", "Cashback usado", 2, 98.07], ["pagamento", "Desconto Cartão pelo site (2,5%)", 1, 3.1], ["pagamento", "Desconto Pix pelo site (5%)", 3, 6.87]].sort());
+confere("cashback usado: R$ 98,07 em 2 pedidos (dentro do total); gerado: R$ 10,87 em 4 (fora)",
+  rSite.cashback, { gerado: 10.87, usado: 98.07, pedidosQueGeraram: 4, pedidosQueUsaram: 2 });
+confere("na lista, o pedido diz as duas origens", rSite.lista.find((l) => l.id === PIX_E_PRIMEIRO.id)?.origem, "Desconto Pix pelo site (5%) + Cupom PRIMEIROPEDIDO");
+confere("…e o do cashback", rSite.lista.find((l) => l.id === CASHBACK_E_PIX.id)?.origem, "Desconto Pix pelo site (5%) + Cashback usado (pedido)");
+confere("tudo da loja, nada sem dono", [rSite.resumo.loja, rSite.resumo.plataforma, rSite.resumo.naoIdentificado], [rSite.resumo.desconto, 0, 0]);
+confere("a entrega grátis do pedido de R$ 100 (regra da loja) continua fora do total", rSite.entregaGratisForaDoDesconto, { valor: 5, pedidos: 1 });
+
+console.log("\n18) Brendi: a parte que a plataforma pagou não é 'não identificado'");
+// Musa Doces e Açaí, 10/10/2026: cupom de R$ 12,99, R$ 7,99 da loja e R$ 5,00
+// da Brendi. A integração grava só a parte da loja na coluna
+// (`discountMerchant`); a da Brendi fica no detalhe — e a observação diz
+// "Plataforma: R$5.00". Garagem Burger, 06/10: cupom ALMOCO5 da loja + frete
+// grátis da Brendi. Os 5 pedidos assim (R$ 24,25) saíam "não identificado".
+const MUSA = pedido({
+  source: "BRENDI", openDeliveryChannel: "BRENDI", deliveryType: "DELIVERY", totalAmount: 27.99, discountTotal: 12.99, discountMerchant: 7.99, discountIfood: null,
+  discountDetails: [{ value: 12.99, target: "CART", merchant: 7.99, platform: 5, description: "Cupom IFOOD_STORE_STORE_VOUCHER" }],
+  notes: "Pedido Brendi #0925\n🏷️ Cupom IFOOD_STORE_STORE_VOUCHER: -R$12.99 (Plataforma: R$5.00 | Loja: R$7.99)",
+});
+const GARAGEM = pedido({
+  source: "BRENDI", openDeliveryChannel: "BRENDI", deliveryType: "DELIVERY", totalAmount: 71.97, discountTotal: 10, discountMerchant: 5, discountIfood: null,
+  discountDetails: [
+    { value: 5, target: "CART", merchant: 5, platform: 0, description: "Cupom ALMOCO5" },
+    { value: 5, target: "DELIVERY_FEE", merchant: 0, platform: 5, description: "Cupom FREE_DELIVERY" },
+  ],
+  notes: "Pedido Brendi #2061\n🏷️ Cupom ALMOCO5: -R$10.00 (Plataforma: R$5.00 | Loja: R$5.00)",
+});
+const dMusa = descontoDoPedido(MUSA), dGaragem = descontoDoPedido(GARAGEM);
+confere("Musa: loja 7,99 + Brendi 5,00, nada sem dono (antes: 5,00 'não identificado')",
+  [dMusa.total, dMusa.loja, dMusa.plataforma, dMusa.naoIdentificado], [12.99, 7.99, 5, 0]);
+confere("Garagem: cupom ALMOCO5 da loja, frete grátis da Brendi",
+  [dGaragem.loja, dGaragem.plataforma, dGaragem.naoIdentificado, dGaragem.fatias.map((f) => [f.codigo, f.loja, f.plataforma])],
+  [5, 5, 0, [["ALMOCO5", 5, 0], ["FREE_DELIVERY", 0, 5]]]);
+const rBrendi = descontosDoPeriodo([MUSA, GARAGEM], [], cfg({ cupons: [], mostrarCuponsSemUso: false }));
+confere("no relatório: R$ 10,00 pagos pela Brendi, R$ 0 sem dono, e a linha diz 'Loja + Brendi'",
+  [rBrendi.resumo.plataforma, rBrendi.resumo.naoIdentificado, rBrendi.lista.map((l) => l.quem)], [10, 0, ["Loja + Brendi", "Loja + Brendi"]]);
+confere("iFood com só a coluna da loja e o detalhe sem parte do iFood: continua 'não identificado' (nada inventado)",
+  [d3.loja, d3.plataforma, d3.naoIdentificado], [7, 0, 3]);
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);
