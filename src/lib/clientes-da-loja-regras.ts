@@ -59,6 +59,32 @@ export function contaComoPedido(status: string | null | undefined): boolean {
   return situacaoDoPedido(status) === "venda";
 }
 
+export type PedidoParaNumeros = { status?: string | null; totalAmount?: number | null; createdAt: Date | string };
+
+/**
+ * Os números da ficha do cliente, pela régua: pedidos e gasto só do que conta;
+ * o primeiro e o último pedido também (cancelado não faz ninguém cliente); os
+ * cancelados e os não concluídos (rascunho do robô, esperando pagamento) à
+ * parte. Os pedidos podem vir em qualquer ordem.
+ */
+export function numerosDoCliente(pedidos: PedidoParaNumeros[]): {
+  pedidos: number; gasto: number; ticketMedio: number; primeiro: string | null; ultimo: string | null; cancelados: number; naoConcluidos: number;
+} {
+  const quando = (p: PedidoParaNumeros) => new Date(p.createdAt).getTime();
+  const validos = pedidos.filter((p) => contaComoPedido(p.status)).sort((a, b) => quando(a) - quando(b));
+  const cancelados = pedidos.filter((p) => situacaoDoPedido(p.status) === "cancelado").length;
+  const gasto = Math.round(validos.reduce((t, p) => t + (Number(p.totalAmount) || 0), 0) * 100) / 100;
+  return {
+    pedidos: validos.length,
+    gasto,
+    ticketMedio: validos.length ? Math.round((gasto / validos.length) * 100) / 100 : 0,
+    primeiro: validos.length ? new Date(validos[0].createdAt).toISOString() : null,
+    ultimo: validos.length ? new Date(validos[validos.length - 1].createdAt).toISOString() : null,
+    cancelados,
+    naoConcluidos: pedidos.length - validos.length - cancelados,
+  };
+}
+
 /** Quantos dias de CALENDÁRIO, no relógio da loja, separam o instante de agora (0 = hoje). */
 export function diasAtras(iso: string | Date, agora: Date = new Date(), fuso: string | null | undefined = FUSO_PADRAO): number {
   const dia = (d: Date) => Date.parse(`${dataDaLoja(fuso || FUSO_PADRAO, d)}T12:00:00Z`);

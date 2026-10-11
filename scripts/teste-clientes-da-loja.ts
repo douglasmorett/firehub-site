@@ -21,9 +21,9 @@
 import { existsSync } from "fs";
 import { pathToFileURL } from "url";
 import {
-  chaveDoCliente, contaComoPedido, dataNaLoja, diasAtras, haQuanto, nomeDoArquivoDeClientes, semRamal, telefoneDoCliente,
+  chaveDoCliente, contaComoPedido, dataNaLoja, diasAtras, haQuanto, nomeDoArquivoDeClientes, numerosDoCliente, semRamal, telefoneDoCliente,
 } from "../src/lib/clientes-da-loja-regras";
-import { sqlDaBaseDeClientes, sqlDoResumoDeClientes } from "../src/lib/clientes-da-loja";
+import { sqlDaBaseDeClientes, sqlDosPedidosDoCliente, sqlDoResumoDeClientes } from "../src/lib/clientes-da-loja";
 import { Prisma } from "@prisma/client";
 
 let falhas = 0;
@@ -48,6 +48,21 @@ console.log("\n2) O que conta como pedido (a régua dos relatórios)");
 confere("entregue e novo contam; cancelado (3 grafias), rascunho do robô e esperando pagamento, não",
   ["ENTREGUE", "NOVO", "CANCELADO", "CANCELLED", "CANCELED", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"].map(contaComoPedido),
   [true, true, false, false, false, false, false]);
+
+console.log("\n2b) Os números da ficha (o Erik da Ragnar)");
+const pedidosDoErik = [
+  { status: "ENTREGUE", totalAmount: 64.9, createdAt: "2026-10-10T23:47:37Z" },
+  { status: "ENTREGUE", totalAmount: 71.9, createdAt: "2026-09-27T22:18:35Z" },
+  { status: "ENTREGUE", totalAmount: 76.9, createdAt: "2026-09-26T00:04:20Z" },
+  { status: "CANCELADO", totalAmount: 65.9, createdAt: "2026-09-25T23:52:44Z" },
+  { status: "CRIANDO_IA", totalAmount: 30, createdAt: "2026-10-11T10:00:00Z" },
+];
+confere("3 pedidos, R$ 213,70, ticket R$ 71,23; primeiro = 26/09 (não o cancelado de 25/09); 1 cancelado, 1 não concluído",
+  numerosDoCliente(pedidosDoErik),
+  { pedidos: 3, gasto: 213.7, ticketMedio: 71.23, primeiro: "2026-09-26T00:04:20.000Z", ultimo: "2026-10-10T23:47:37.000Z", cancelados: 1, naoConcluidos: 1 });
+confere("quem só tem cancelado e rascunho: 0 pedido e sem primeiro pedido",
+  numerosDoCliente([{ status: "CANCELLED", totalAmount: 10, createdAt: "2026-10-01T10:00:00Z" }, { status: "AGUARDANDO_PAGAMENTO", totalAmount: 5, createdAt: "2026-10-02T10:00:00Z" }]),
+  { pedidos: 0, gasto: 0, ticketMedio: 0, primeiro: null, ultimo: null, cancelados: 1, naoConcluidos: 1 });
 
 console.log("\n3) Hoje, ontem e o arquivo — pelo dia da LOJA");
 // Pedido de 10/10 às 22h (Brasília) visto em 11/10 às 10h: 12 horas depois.
@@ -133,6 +148,10 @@ if (!db) {
   confere("Bia: o 'CANCELLED' (em inglês) não conta — 1 pedido, R$ 30, último em 01/08",
     [linha("2299990002")?.pedidos, linha("2299990002")?.gasto, String(linha("2299990002")?.ultimo).slice(0, 10)], [1, 30, "2026-08-01"]);
   confere("Caio do 99Food entra pelo número sem o ramal", [linha("2191385491")?.tel, linha("2191385491")?.pedidos], ["21991385491", 1]);
+  confere("a ficha do Erik acha os 4 pedidos dele (com e sem o 9), não o do Erik de SP nem o da outra loja",
+    (await rodar(sqlDosPedidosDoCliente(L, chaveDoCliente("91981060960")!))).map((r) => r.id), ["e4", "e3", "e2", "e1"]);
+  confere("a ficha do Caio (99Food) acha o pedido pelo número sem o ramal",
+    (await rodar(sqlDosPedidosDoCliente(L, chaveDoCliente("21991385491")!))).map((r) => r.id), ["c1"]);
   const [resumo] = await rodar(sqlDoResumoDeClientes(L, [], [], limite));
   confere("resumo: 6 clientes, 4 pediram, 3 em 30 dias, 1 sumido, 3 pela primeira vez (nunca mais estreantes que ativos)",
     resumo, { clientes: 6, pediram: 4, ativos30: 3, sumidos: 1, novos30: 3 });

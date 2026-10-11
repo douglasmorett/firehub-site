@@ -43,10 +43,9 @@ import { telefoneNacional } from "@/lib/lote-de-saldo";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { STATUS_FORA_DA_VENDA } from "@/lib/relatorios/base";
-import { situacaoDoPedido } from "@/lib/relatorios/regua-da-venda";
 import { lojasDoGrupo } from "@/lib/loja-ativa";
 import { FUSO_PADRAO } from "@/lib/fuso";
-import { chaveDoCliente } from "@/lib/clientes-da-loja-regras";
+import { chaveDoCliente, numerosDoCliente } from "@/lib/clientes-da-loja-regras";
 
 export type SessaoDosClientes = {
   lojaId: string;
@@ -235,6 +234,25 @@ export function sqlDaBaseDeClientes(lojaId: string, chaves: string[], saldos: nu
     )`;
 }
 
+/**
+ * Os pedidos de UM cliente (a ficha): a mesma chave da lista (DDD + 8 últimos
+ * dígitos) — o pedido do robô sem o 9 e o do site com ele são do mesmo
+ * cliente; o de outro DDD com o mesmo final, não. Fora a mesa e o iFood, como
+ * na lista. Exportada para o teste.
+ */
+export function sqlDosPedidosDoCliente(lojaId: string, chaveDoTelefone: string) {
+  const tel = nacional(Prisma.sql`"customerPhone"`);
+  return Prisma.sql`
+    SELECT "id" FROM "CustomerOrder"
+    WHERE "franchiseeId" = ${lojaId}
+      AND "tableSessionId" IS NULL
+      AND "ifoodOrderId" IS NULL
+      AND ${telefoneValido(tel)}
+      AND ${chave(tel)} = ${chaveDoTelefone}
+    ORDER BY "createdAt" DESC
+    LIMIT 300`;
+}
+
 /** O resumo dos cartões (exportado para a prova e o teste). `limite` = agora − 30 dias. */
 export function sqlDoResumoDeClientes(lojaId: string, chaves: string[], saldos: number[], limite: Date) {
   return Prisma.sql`
@@ -410,17 +428,8 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
   // e o do site com ele são do mesmo cliente; o de outro DDD com o mesmo final,
   // não. Fora a mesa e o iFood, como na lista.
   const chaveDoTel = chaveDoCliente(tel)!;
-  const telDoPedido = nacional(Prisma.sql`"customerPhone"`);
 
-  const ids = await prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
-    SELECT "id" FROM "CustomerOrder"
-    WHERE "franchiseeId" = ${sessao.lojaId}
-      AND "tableSessionId" IS NULL
-      AND "ifoodOrderId" IS NULL
-      AND ${telefoneValido(telDoPedido)}
-      AND ${chave(telDoPedido)} = ${chaveDoTel}
-    ORDER BY "createdAt" DESC
-    LIMIT 300`);
+  const ids = await prisma.$queryRaw<{ id: string }[]>(sqlDosPedidosDoCliente(sessao.lojaId, chaveDoTel));
   const [pedidos, extrato] = await Promise.all([
     ids.length
       ? prisma.customerOrder.findMany({
@@ -458,10 +467,9 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
     };
   }
 
-  // A régua única (lib/relatorios/regua-da-venda.ts): só a venda conta.
-  const validos = pedidos.filter((p) => situacaoDoPedido(p.status) === "venda");
-  const cancelados = pedidos.filter((p) => situacaoDoPedido(p.status) === "cancelado").length;
-  const gasto = Math.round(validos.reduce((t, p) => t + (Number(p.totalAmount) || 0), 0) * 100) / 100;
+  // A régua única (lib/relatorios/regua-da-venda.ts): só a venda conta — e o
+  // primeiro pedido é o primeiro que CONTA (cancelado não faz ninguém cliente).
+  const numeros = numerosDoCliente(pedidos);
   const generico = /^(cliente|consumidor|balc[aã]o|sem nome|n[aã]o informado)$/i;
   const nomeDoPedido = pedidos.find((p) => p.customerName && !generico.test(p.customerName.trim()))?.customerName ?? null;
   const enderecos: string[] = [];
@@ -471,10 +479,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
     if (!enderecos.some((x) => x.toLowerCase() === e.toLowerCase())) enderecos.push(e);
     if (enderecos.length >= 5) break;
   }
-  // O primeiro pedido que CONTA: o cancelado não faz ninguém cliente.
-  const primeiro = validos.length ? validos[validos.length - 1].createdAt : null;
-  const ultimo = validos.length ? validos[0].createdAt : null;
-  const desde = [primeiro, cadastro?.lojaDeOrigemId === sessao.lojaId ? cadastro.createdAt : null]
+  const desde = [numeros.primeiro, cadastro?.lojaDeOrigemId === sessao.lojaId ? cadastro.createdAt : null]
     .filter(Boolean)
     .map((d) => new Date(d as Date).getTime())
     .sort((a, b) => a - b)[0];
@@ -499,15 +504,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
       cashbackUsado: Number(p.cashbackUsed) || 0,
     })),
     enderecos,
-    numeros: {
-      pedidos: validos.length,
-      gasto,
-      ticketMedio: validos.length ? Math.round((gasto / validos.length) * 100) / 100 : 0,
-      primeiro: primeiro ? new Date(primeiro).toISOString() : null,
-      ultimo: ultimo ? new Date(ultimo).toISOString() : null,
-      cancelados,
-      naoConcluidos: pedidos.length - validos.length - cancelados,
-    },
+    numeros,
     cashback,
   };
 }
