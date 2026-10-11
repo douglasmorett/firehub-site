@@ -18,6 +18,7 @@ export const STORE_MODULES = [
   { key: "minha_loja",       label: "🏪 Configurações da Loja",            desc: "Horários, dados da loja e cadastro de equipe" },
   { key: "editar_pedidos",   label: "✏️ Editar pedidos já lançados",        desc: "Tirar item, mudar quantidade e acrescentar item em pedido que já entrou" },
   { key: "dados_sensiveis",  label: "🔒 Dados sensíveis (CMV, CMO, folha)", desc: "Ver CMV real, custo de mão de obra, salários e o valor do estoque em R$" },
+  { key: "editar_caixa",     label: "🏦 Corrigir caixa já fechado",         desc: "Corrigir a contagem no Histórico de caixas (fica registrado quem corrigiu e como estava antes)" },
 ];
 
 /**
@@ -35,7 +36,7 @@ export const STORE_MODULES = [
  * contém a chave nova, então `includes` devolve false sozinho. O cuidado aqui é
  * só com os dois caminhos que preenchem a lista inteira como atalho.
  */
-export const PERMISSOES_QUE_NASCEM_DESMARCADAS = ["editar_pedidos", "dados_sensiveis"];
+export const PERMISSOES_QUE_NASCEM_DESMARCADAS = ["editar_pedidos", "dados_sensiveis", "editar_caixa"];
 
 /** Os módulos marcados por padrão: tudo, menos os que exigem escolha do dono. */
 export const MODULOS_PADRAO = STORE_MODULES

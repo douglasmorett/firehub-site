@@ -1596,8 +1596,40 @@ model CashSession {
   /// fechamento era só "pedidos em dinheiro + troco inicial", e toda saída de
   /// caixa virava uma falta inexplicada no fechamento.
   movimentacoes   CashMovement[]
+  /// Correções feitas DEPOIS do fechamento (Histórico de caixas → Corrigir).
+  edicoes         CashSessionEdicao[]
 
   @@index([franchiseeId])
+}
+
+/// Uma correção da contagem de um caixa JÁ FECHADO — com o antes e o depois.
+///
+/// O operador fecha errado ("o valor do cartão de crédito lançaram errado",
+/// Nik Esfirraria, 11/10/2026) e até aqui não havia volta: o caixa ficava com
+/// a falta que não aconteceu. Corrigir pode; corrigir CALADO não. Cada
+/// correção grava quem, quando e como estava antes, e o Histórico mostra.
+/// Só o CONTADO muda: o esperado é o que o sistema apurou no fechamento.
+///
+/// A TABELA É CRIADA NO BOOT por src/lib/garantir-colunas.ts, no mesmo commit
+/// deste model.
+model CashSessionEdicao {
+  id            String      @id @default(cuid())
+  cashSessionId String
+  franchiseeId  String
+  /// Nome (ou e-mail) de quem corrigiu, como a sessão diz.
+  editadoPor    String
+  editadoPorEmail String?
+  /// Preenchido quando foi o suporte do FireHub entrando como a loja.
+  suporte       String?
+  motivo        String?
+  /// { closingCash, closingDebit, closingCredit, closingPix, closingVoucher, difference, justification, notes }
+  antes         Json
+  depois        Json
+  createdAt     DateTime    @default(now())
+  cashSession   CashSession @relation(fields: [cashSessionId], references: [id], onDelete: Cascade)
+
+  @@index([cashSessionId])
+  @@index([franchiseeId, createdAt])
 }
 
 /// Dinheiro que entrou ou saiu do caixa DURANTE o turno — sangria e reforço.

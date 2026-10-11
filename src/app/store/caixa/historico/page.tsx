@@ -1,6 +1,8 @@
 import BotaoImprimirCaixa from "@/components/customer/BotaoImprimirCaixa";
+import CorrigirCaixaFechado from "@/components/customer/CorrigirCaixaFechado";
 import { VendasPorTipoDoHistorico } from "@/components/customer/VendasPorTipoDoCaixa";
-import { conferenciaGravada, porQueSemConferencia } from "@/lib/conferencia-do-caixa";
+import { FORMAS_DA_CONFERENCIA, conferenciaGravada, porQueSemConferencia } from "@/lib/conferencia-do-caixa";
+import { formasAlteradas, podeEditarCaixa, type RetratoDoContado } from "@/lib/edicao-do-caixa";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -37,6 +39,10 @@ export const metadata = { title: "Histórico de Caixas — FireHub" };
  *     Agora é igual com igual: as formas contadas dos dois lados; o online à parte.
  *  4. "Caixa #N" era a posição na lista (mudava toda semana). O nome agora é a
  *     data e a hora em que o turno abriu.
+ *
+ * CORREÇÃO DO CAIXA FECHADO (11/10/2026, Nik Esfirraria): quem tem a permissão
+ * corrige o contado aqui (lib/edicao-do-caixa.ts). O caixa corrigido diz isso
+ * no topo — quando e quem — e guarda como estava antes de cada correção.
  * A leitura da conferência é a de lib/conferencia-do-caixa.ts — a mesma da 2ª
  * via do papel.
  */
@@ -49,7 +55,7 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
   const session = await getServerSession(authOptions);
   if (!session) redirect("/login");
 
-  const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" }, select: { id: true, ownerId: true, role: true, storeTimezone: true } });
+  const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" }, select: { id: true, ownerId: true, role: true, permissions: true, storeTimezone: true } });
   if (!user) redirect("/login");
   // O caixa é da LOJA: o funcionário vê os caixas do dono.
   const lojaId = user.ownerId || user.id;
@@ -65,6 +71,26 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
     orderBy: { closedAt: "desc" },
     take: 60,
   });
+
+  // As correções feitas depois do fechamento. Consulta à parte e protegida:
+  // se a tabela ainda não existir (boot que falhou), o histórico abre igual.
+  type Edicao = { id: string; cashSessionId: string; editadoPor: string; suporte: string | null; motivo: string | null; antes: RetratoDoContado; depois: RetratoDoContado; createdAt: Date };
+  const edicoesPorCaixa = new Map<string, Edicao[]>();
+  try {
+    const edicoes = await prisma.cashSessionEdicao.findMany({
+      where: { cashSessionId: { in: sessions.map((s) => s.id) } },
+      orderBy: { createdAt: "asc" },
+    });
+    for (const e of edicoes) {
+      const lista = edicoesPorCaixa.get(e.cashSessionId) || [];
+      lista.push(e as unknown as Edicao);
+      edicoesPorCaixa.set(e.cashSessionId, lista);
+    }
+  } catch (err: any) {
+    console.warn("[Histórico de caixas] Correções não carregadas:", err?.message);
+  }
+  const podeCorrigir = podeEditarCaixa(user);
+  const fmtDif = (d: number | null) => d == null ? "sem conferência" : Math.abs(d) < 0.01 ? "confere" : d < 0 ? `faltou ${fmt(-d)}` : `sobrou ${fmt(d)}`;
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", padding: "1.5rem 1rem", fontFamily: "'Inter', sans-serif" }}>
@@ -85,6 +111,8 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
         const confere = !semConferencia && Math.abs(dif) < 0.01;
         const cor = semConferencia ? { fundo: "#F8FAFC", forte: "#475569" } : confere ? { fundo: "#F0FDFA", forte: "#0F766E" } : { fundo: "#FEF2F2", forte: "#C92E09" };
         const linhas = conf.linhas.filter((l) => Math.abs(l.esperado) > 0.005 || (l.contado != null && Math.abs(l.contado) > 0.005));
+        const edicoes = edicoesPorCaixa.get(s.id) || [];
+        const ultima = edicoes[edicoes.length - 1];
         return (
           <div key={s.id} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, marginBottom: 12, overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
             {/* Header */}
@@ -100,6 +128,12 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
                     Fechado: {s.closedAt ? fmtHora(s.closedAt) : "—"} {s.closedAt ? `• Duração: ${fmtDur(s.openedAt, s.closedAt)}` : ""}
                     {s.closedBy ? ` • Encerrado por: ${s.closedBy}` : ""}
                   </div>
+                  {ultima && (
+                    <div style={{ display: "inline-block", marginTop: 4, padding: "2px 8px", borderRadius: 6, background: "#FEF3C7", color: "#92400E", fontSize: "0.72rem", fontWeight: 800 }}>
+                      ✏️ Corrigido em {fmtDate(ultima.createdAt)} por {ultima.editadoPor}{ultima.suporte ? ` (${ultima.suporte})` : ""}
+                      {edicoes.length > 1 ? ` • ${edicoes.length} correções` : ""}
+                    </div>
+                  )}
                 </div>
               </div>
               <div style={{ textAlign: "right" }}>
@@ -184,6 +218,50 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
               </table>
             )}
 
+            {/* Como estava antes: cada correção com quem, quando, o motivo e
+                o antes → depois de cada forma. A 1ª mostra o fechamento original. */}
+            {edicoes.length > 0 && (
+              <details style={{ padding: "8px 16px", borderTop: "1px solid #F1F5F9", background: "#FFFBEB" }}>
+                <summary style={{ cursor: "pointer", fontSize: "0.78rem", fontWeight: 800, color: "#92400E" }}>
+                  Ver como estava antes da correção{edicoes.length > 1 ? ` (${edicoes.length} correções)` : ""}
+                </summary>
+                {edicoes.map((e, i) => {
+                  const mudou = formasAlteradas(e.antes, e.depois);
+                  return (
+                    <div key={e.id} style={{ marginTop: 10, fontSize: "0.78rem", color: "#334155" }}>
+                      <div style={{ fontWeight: 800 }}>
+                        {i === 0 ? "Fechamento original" : `Antes da ${i + 1}ª correção`} → corrigido em {fmtDate(e.createdAt)} por {e.editadoPor}{e.suporte ? ` (${e.suporte})` : ""}
+                      </div>
+                      {e.motivo && <div style={{ color: "#64748B", marginTop: 2 }}>Motivo: {e.motivo}</div>}
+                      <table style={{ borderCollapse: "collapse", marginTop: 6, fontSize: "0.78rem" }}>
+                        <thead>
+                          <tr>
+                            <th style={{ padding: "3px 12px 3px 0", textAlign: "left", color: "#64748B" }}>Forma</th>
+                            <th style={{ padding: "3px 12px", textAlign: "right", color: "#64748B" }}>Antes</th>
+                            <th style={{ padding: "3px 12px", textAlign: "right", color: "#64748B" }}>Depois</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {mudou.map((l) => (
+                            <tr key={l.chave}>
+                              <td style={{ padding: "3px 12px 3px 0", fontWeight: 600 }}>{l.nome}</td>
+                              <td style={{ padding: "3px 12px", textAlign: "right", textDecoration: "line-through", color: "#94A3B8" }}>{l.antes == null ? "não conferido" : fmt(l.antes)}</td>
+                              <td style={{ padding: "3px 12px", textAlign: "right", fontWeight: 700 }}>{l.depois == null ? "não conferido" : fmt(l.depois)}</td>
+                            </tr>
+                          ))}
+                          <tr>
+                            <td style={{ padding: "3px 12px 3px 0", fontWeight: 600 }}>Resultado</td>
+                            <td style={{ padding: "3px 12px", textAlign: "right", color: "#94A3B8" }}>{fmtDif(e.antes.difference)}</td>
+                            <td style={{ padding: "3px 12px", textAlign: "right", fontWeight: 700 }}>{fmtDif(e.depois.difference)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })}
+              </details>
+            )}
+
             <div style={{ padding: "8px 16px", borderTop: "1px solid #F1F5F9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
               <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>
                 Abertura: {fmt(s.openingAmount || 0)} em troco inicial (dentro do dinheiro esperado)
@@ -191,7 +269,25 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
               </span>
               {/* Segunda via: papel some, e a conferência do dinheiro não pode
                   depender de alguém transcrever a tela à mão. */}
-              <BotaoImprimirCaixa sessionId={s.id} />
+              <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 auto" }}>
+                <BotaoImprimirCaixa sessionId={s.id} />
+                {podeCorrigir && (
+                  <CorrigirCaixaFechado
+                    sessionId={s.id}
+                    formas={FORMAS_DA_CONFERENCIA.map((f) => {
+                      const raw = s as unknown as Record<string, unknown>;
+                      const contado = raw[f.contado];
+                      return {
+                        chave: f.chave,
+                        nome: f.nome,
+                        esperado: Number(raw[f.esperado] || 0),
+                        // O caixa sem conferência começa em branco; o resto, com o que foi digitado.
+                        contado: semConferencia || contado == null ? null : Number(contado),
+                      };
+                    })}
+                  />
+                )}
+              </div>
             </div>
             {/* O extrato do caixa por tipo de venda (Delivery, Retirada,
                 Balcão, Mesas, Totem), apurado só quando o lojista pede — o

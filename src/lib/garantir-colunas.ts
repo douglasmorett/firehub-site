@@ -590,6 +590,27 @@ const INSTRUCOES_CAIXA = [
      ALTER TABLE "CashMovement" ADD CONSTRAINT "CashMovement_cashSessionId_fkey"
        FOREIGN KEY ("cashSessionId") REFERENCES "CashSession"("id") ON DELETE CASCADE ON UPDATE CASCADE;
    EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
+  // Correção do contado de um caixa já fechado, com o antes e o depois
+  // (lib/edicao-do-caixa.ts).
+  `CREATE TABLE IF NOT EXISTS "CashSessionEdicao" (
+     "id" TEXT NOT NULL,
+     "cashSessionId" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "editadoPor" TEXT NOT NULL,
+     "editadoPorEmail" TEXT,
+     "suporte" TEXT,
+     "motivo" TEXT,
+     "antes" JSONB NOT NULL,
+     "depois" JSONB NOT NULL,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "CashSessionEdicao_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE INDEX IF NOT EXISTS "CashSessionEdicao_cashSessionId_idx" ON "CashSessionEdicao"("cashSessionId")`,
+  `CREATE INDEX IF NOT EXISTS "CashSessionEdicao_franchiseeId_createdAt_idx" ON "CashSessionEdicao"("franchiseeId", "createdAt")`,
+  `DO $$ BEGIN
+     ALTER TABLE "CashSessionEdicao" ADD CONSTRAINT "CashSessionEdicao_cashSessionId_fkey"
+       FOREIGN KEY ("cashSessionId") REFERENCES "CashSession"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+   EXCEPTION WHEN duplicate_object THEN NULL; END $$`,
 ];
 
 let caixaOk = false;
@@ -610,10 +631,10 @@ export async function garantirEstruturaDeCaixa(): Promise<void> {
     }
     const rows = await prisma.$queryRaw<{ tabela: string }[]>`
       SELECT table_name AS tabela FROM information_schema.tables
-      WHERE table_schema = current_schema() AND table_name = 'CashMovement'
+      WHERE table_schema = current_schema() AND table_name IN ('CashMovement', 'CashSessionEdicao')
     `;
-    if (rows.length === 0) {
-      console.error("[Boot] 🛑 Tabela CashMovement ausente mesmo após o CREATE TABLE.");
+    if (rows.length < 2) {
+      console.error("[Boot] 🛑 Tabela CashMovement ou CashSessionEdicao ausente mesmo após o CREATE TABLE.");
       return;
     }
     caixaOk = true;
