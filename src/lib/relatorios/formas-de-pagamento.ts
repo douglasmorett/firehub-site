@@ -13,35 +13,31 @@
  * "crédito" que ninguém somava; e a mesa aparecia como "N/A", porque o pedido
  * de mesa nunca recebe a forma — ela é gravada na CONTA da mesa.
  *
- * "Forma de pagamento" no FireHub é texto livre de seis origens. Quem já sabe
- * ler esse texto é o fechamento de caixa (lib/esperado-do-turno.ts): é a conta
- * que o operador confere contra a gaveta e o extrato da maquininha todo dia, e
- * cada caso esquisito já custou uma diferença de caixa e virou uma linha lá.
- * Este relatório usa a MESMA cascata, na mesma ordem — para "Crédito: R$ X"
- * aqui ser o mesmo crédito que o caixa cobrou.
- *
- * ── As diferenças para o caixa, de propósito ───────────────────────────────
- *
- * A cascata do caixa mora dentro de uma função com banco (não dá para importar
- * pura), então está repetida aqui, linha a linha, com quatro correções que o
- * caixa ainda não tem:
+ * "Forma de pagamento" no FireHub é texto livre de seis origens. Quem primeiro
+ * aprendeu a ler esse texto foi o fechamento de caixa: é a conta que o
+ * operador confere contra a gaveta e o extrato da maquininha todo dia, e cada
+ * caso esquisito já custou uma diferença de caixa. Este relatório nasceu com a
+ * cascata de lá, na mesma ordem — para "Crédito: R$ X" aqui ser o mesmo
+ * crédito que o caixa cobrou — e com quatro correções:
  *
  * 1. "Cartão Deb Master (Cobrar na Entrega)" — como a Wabiz grava o débito da
- *    Mastercard — não tem "débito" por extenso, cai no "cartão genérico" do
- *    caixa e vira CRÉDITO. Na NIK foram 5 pedidos, R$ 352,44, em 17–23/09/2026.
- *    Aqui, antes de desistir para o cartão genérico, o texto passa por
- *    `formaCanonica` (lib/pagamento-na-entrega.ts, a régua da troca de
- *    pagamento), que reconhece "Deb", "espécie", "refeição", "card".
+ *    Mastercard — não tem "débito" por extenso e caía no "cartão genérico",
+ *    CRÉDITO. Na NIK foram 5 pedidos, R$ 352,44, em 17–23/09/2026. Aqui, antes
+ *    de desistir para o cartão genérico, o texto passa por `formaCanonica`
+ *    (lib/pagamento-na-entrega.ts, a régua da troca de pagamento), que
+ *    reconhece "Deb", "espécie", "refeição", "alimentação", "card".
  * 2. "Fiado"/"Conta funcionário" numa parte de pagamento dividido ou numa
  *    baixa de mesa vira FIADO, não "não identificado".
  * 3. Pedido do iFood gravado "CASH" (o código cru do iFood para dinheiro na
- *    porta) é DINHEIRO. O caixa só reconhece "dinheiro" por extenso nesse
- *    ramo e o leva para "pago online" — o dinheiro some da gaveta (1 pedido,
- *    R$ 5,89, nos 90 dias até 24/09/2026, em todas as lojas).
+ *    porta) é DINHEIRO, não "pago online" (1 pedido, R$ 5,89, nos 90 dias até
+ *    24/09/2026, em todas as lojas).
  * 4. O troco da mesa sai do dinheiro (ver "Mesa", abaixo).
  *
- * Mudou a cascata do caixa, mude aqui (e o teste scripts/teste-formas-de-
- * pagamento.ts diz o que cada texto real vira).
+ * Desde 11/10/2026 o fechamento de caixa (lib/apuracao-do-turno.ts) e o acerto
+ * do motoboy (lib/resumo-do-entregador.ts) leem a forma por ESTAS funções — a
+ * auditoria daquele dia achou, em 30 dias, 30 pedidos e R$ 2.625,93 numa forma
+ * no caixa e noutra aqui. Uma régua só: mudou aqui, muda nos três (e o teste
+ * scripts/teste-formas-de-pagamento.ts diz o que cada texto real vira).
  *
  * ── Mesa ────────────────────────────────────────────────────────────────────
  *
@@ -166,10 +162,10 @@ const DA_FORMA_CANONICA: Record<string, ChaveDaForma> = {
  * A forma de um texto de pagamento feito NA LOJA: uma parte do pagamento
  * dividido, uma baixa de mesa, ou o pedido que não foi pago online.
  *
- * A ordem é a do fechamento de caixa (esperado-do-turno.ts: `somarParte`, o
- * laço das mesas e a cascata do pedido): um texto com duas formas ("Crédito +
- * Débito") cai na primeira da ordem — débito, lá e aqui. As duas correções
- * estão no cabeçalho deste arquivo.
+ * É a régua do fechamento de caixa (lib/apuracao-do-turno.ts lê as partes do
+ * dividido, as baixas da mesa e o pedido por aqui) e do acerto do motoboy: um
+ * texto com duas formas ("Crédito + Débito") cai na primeira da ordem —
+ * débito. As correções estão no cabeçalho deste arquivo.
  */
 export function formaDoTexto(texto: string | null | undefined): ChaveDaForma {
   const m = String(texto || "").toLowerCase();
@@ -179,7 +175,12 @@ export function formaDoTexto(texto: string | null | undefined): ChaveDaForma {
   if (m.includes("débito") || m.includes("debito") || m.includes("debit")) return "DEBITO";
   if (m.includes("crédito") || m.includes("credito") || m.includes("credit")) return "CREDITO";
   if (m.includes("pix")) return "PIX";
-  if (m.includes("voucher") || m.includes("vale") || m.includes("meal") || m.includes("food")) return "VALE";
+  // Sem "food": ele só pegava o "99Food" que lib/food99-pedido.ts grava quando
+  // o pay_type do 99 é desconhecido (1 pedido em 90 dias, R$ 195,29), e o
+  // mandava para o VALE. Os códigos de vale do iFood (MEAL_VOUCHER,
+  // FOOD_VOUCHER) já casam por "voucher"; o "99Food" vai para "não
+  // identificado", que é o que ele é.
+  if (m.includes("voucher") || m.includes("vale") || m.includes("meal")) return "VALE";
   // Onde o caixa jogaria "cartão/maquininha" direto no crédito, a régua da
   // troca de pagamento lê antes o "Deb" abreviado da Wabiz. Ela mesma termina
   // em cartão/maquininha → crédito, que é o destino do caixa: o Mercado Pago
@@ -202,9 +203,9 @@ export type PedidoParaForma = {
 };
 
 /**
- * Foi pago no app ou no site? A leitura de `isOnlinePayment` do caixa, com
- * uma correção: o pedido do iFood gravado "CASH" (o código cru do iFood para
- * dinheiro na porta) não é online. O ramo do iFood diz "sem forma de entrega
+ * Foi pago no app ou no site? A leitura que era o `isOnlinePayment` do caixa
+ * (e que o caixa agora usa daqui), com uma correção: o pedido do iFood gravado
+ * "CASH" (o código cru do iFood para dinheiro na porta) não é online. O ramo do iFood diz "sem forma de entrega
  * no texto → pago no app", e só conhecia "dinheiro" por extenso — enquanto a
  * própria cascata (`formaDoTexto`, e o caixa) já lê "cash" como dinheiro.
  * Dinheiro não se paga no app. "Credit"/"debit" em inglês ficam como estão:

@@ -185,7 +185,7 @@ export async function GET(req: NextRequest) {
   resumo.push({ celulas: [] });
   resumo.push({ celulas: [{ v: "Mesa: a forma real está na conta da mesa (baixas do fechamento, com taxa de serviço e gorjeta), contada no dia em que a conta fechou. O pedido de mesa entra no total das vendas, nunca como pagamento.", estilo: "suave" }] });
   resumo.push({ celulas: [{ v: "A baixa da mesa grava o que o cliente entregou; o que passou da conta voltou como troco e sai do Dinheiro daquela conta.", estilo: "suave" }] });
-  resumo.push({ celulas: [{ v: "Pagamento dividido conta em cada forma pelo valor dela. A leitura das formas é a do fechamento de caixa.", estilo: "suave" }] });
+  resumo.push({ celulas: [{ v: "Pagamento dividido conta em cada forma pelo valor dela. A leitura das formas é a do fechamento de caixa (as mesmas funções; o troco das mesas sai do Dinheiro nos dois).", estilo: "suave" }] });
   resumo.push({ celulas: [{ v: "Contas pagas: pedidos e contas de mesa com pagamento na forma (a mesa no dia em que fechou; a cortesia de R$ 0 não tem pagamento). Não é o número de vendas nem o ticket médio — esses estão em \"Total das vendas\", iguais aos do Vendas por período e do Faturamento por dia.", estilo: "suave" }] });
 
   // Aba 2 — forma × dia.

@@ -122,8 +122,9 @@ export type DetalheDoTurno = {
   taxaDeEntrega: { qtd: number; valor: number };
   /**
    * `troco`: o que as contas de mesa receberam além de consumo + serviço +
-   * gorjeta e devolveram em dinheiro. O retrato já o tira do Dinheiro; a
-   * conferência da gaveta ainda conta a nota inteira (ver "Dinheiro na gaveta").
+   * gorjeta e devolveram em dinheiro. Sai do Dinheiro no retrato E na
+   * conferência da gaveta (desde 11/10/2026; antes, a conferência cobrava a
+   * nota inteira e o troco virava falta).
    */
   mesas: { servico: number; servicoQtd: number; gorjeta: number; troco?: number; trocoQtd?: number };
   gaveta: { vendasEmDinheiro: number; reforcosQtd: number; sangriasQtd: number };
@@ -636,38 +637,38 @@ function relatorioDoFechamento(
   if (d && mostra("gaveta")) {
     titulo("Dinheiro na gaveta");
     linha("Troco de abertura", reais(entrada.trocoInicial));
-    // ── O TROCO DA MESA, À VISTA ───────────────────────────────────────────
+    // ── O TROCO DA MESA ────────────────────────────────────────────────────
     //
-    // A conferência soma a baixa da mesa como foi digitada — a NOTA que o
-    // cliente entregou (pago-da-mesa-inclui-troco) —, e o faturamento lá
-    // embaixo já conta sem o troco. Sem separar aqui, o "Dinheiro" do
-    // faturamento e as "vendas em dinheiro" da gaveta diriam dois números, e a
-    // falta do tamanho do troco não teria explicação no papel.
+    // A baixa da mesa grava a NOTA que o cliente entregou
+    // (pago-da-mesa-inclui-troco), e o troco sai desta gaveta. Desde
+    // 11/10/2026 a conferência já conta a mesa sem o troco, como o faturamento:
+    // "vendas em dinheiro" é o que ficou. Antes ela cobrava a nota inteira e o
+    // papel mostrava "+ Troco das mesas … vira falta".
     const trocoDasMesas = d.mesas.troco || 0;
-    if (trocoDasMesas > 0.01) {
-      linha("+ Vendas em dinheiro", reais(d.gaveta.vendasEmDinheiro - trocoDasMesas));
-      linha(
-        `+ Troco das mesas (${d.mesas.trocoQtd || 0})`,
-        reais(trocoDasMesas),
-        "a conferencia conta a nota entregue na mesa; o troco que saiu daqui vira falta"
-      );
-    } else {
-      linha("+ Vendas em dinheiro", reais(d.gaveta.vendasEmDinheiro));
-    }
+    linha(
+      "+ Vendas em dinheiro",
+      reais(d.gaveta.vendasEmDinheiro),
+      trocoDasMesas > 0.01 ? `sem os ${reais(trocoDasMesas)} de troco das mesas (${d.mesas.trocoQtd || 0})` : undefined
+    );
     if (entradas > 0.01) linha(`+ Reforcos (${d.gaveta.reforcosQtd})`, reais(entradas));
     if (saidas > 0.01) linha(`- Sangrias (${d.gaveta.sangriasQtd})`, reais(saidas));
     const somaDasParcelas = Number((entrada.trocoInicial + d.gaveta.vendasEmDinheiro + entradas - saidas).toFixed(2));
     // Na 2ª via as parcelas são apuradas de novo; o esperado é o gravado. Se
     // alguém mexeu num pedido do turno depois do fechamento, os dois divergem
-    // — e o papel diz isso em vez de imprimir uma conta que não fecha.
+    // — e o papel diz isso em vez de imprimir uma conta que não fecha. O
+    // caixa fechado antes de 11/10/2026 gravou o esperado com a nota inteira
+    // da mesa: a diferença é exatamente o troco, e o papel diz isso.
+    const regraAntigaDoTroco = trocoDasMesas > 0.01 && Math.abs(somaDasParcelas + trocoDasMesas - v.esperado.cash) <= 0.01;
     linha(
       "= Dinheiro esperado",
       reais(v.esperado.cash),
-      Math.abs(somaDasParcelas - v.esperado.cash) > 0.01
-        ? `as parcelas acima somam ${reais(somaDasParcelas)} hoje: algum pedido do turno mudou depois do fechamento`
-        : undefined
+      Math.abs(somaDasParcelas - v.esperado.cash) <= 0.01
+        ? undefined
+        : regraAntigaDoTroco
+          ? `gravado pela regra antiga, que cobrava da gaveta os ${reais(trocoDasMesas)} de troco das mesas`
+          : `as parcelas acima somam ${reais(somaDasParcelas)} hoje: algum pedido do turno mudou depois do fechamento`
     );
-    if (!v.semConferencia) linha("Contado na gaveta", reais(v.contado.cash));
+    if (!v.semConferencia && v.contado.cash != null) linha("Contado na gaveta", reais(v.contado.cash));
     for (const m of d.movimentacoes) {
       const ehReforco = m.tipo === "ENTRADA";
       linha(`${hora(m.hora)} ${ehReforco ? "Reforco" : "Sangria"}`, `${ehReforco ? "" : "-"}${reais(m.valor)}`, m.descricao || undefined);

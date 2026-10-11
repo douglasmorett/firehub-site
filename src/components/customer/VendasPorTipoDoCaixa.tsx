@@ -149,8 +149,8 @@ export default function VendasPorTipoDoCaixa({ dados, abertoDeInicio = false }: 
       </div>
       {(dados.trocoDasMesas?.valor || 0) > 0.005 && (
         <div style={{ fontSize: "0.72rem", color: "#9A3412", marginTop: 6, lineHeight: 1.45 }}>
-          As mesas receberam {fmt(dados.trocoDasMesas!.valor)} de troco ({dados.trocoDasMesas!.qtd} {dados.trocoDasMesas!.qtd === 1 ? "conta" : "contas"}).
-          Aqui ele já está fora do dinheiro; na conferência acima, o dinheiro esperado ainda conta a nota que o cliente entregou.
+          As mesas devolveram {fmt(dados.trocoDasMesas!.valor)} de troco ({dados.trocoDasMesas!.qtd} {dados.trocoDasMesas!.qtd === 1 ? "conta" : "contas"}).
+          Ele já está fora do dinheiro — aqui e no dinheiro que a conferência espera.
         </div>
       )}
     </div>
