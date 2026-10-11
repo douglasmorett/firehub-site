@@ -98,8 +98,10 @@ export async function calcularEsperadoDoTurno(
     // cai em "Outro canal" no papel do fechamento. Os do fim (número, nome,
     // entrega, motoboy) são do retrato: fiado com nome e entregadores.
     // `totemLicenseId` e os itens são do bloco por tipo de venda: o totem se
-    // separa do balcão, e o "valor dos produtos" é o dos itens.
-    select: { status: true, paymentMethod: true, paymentMethods: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true, openDeliveryChannel: true, discountDetails: true,
+    // separa do balcão, e o "valor dos produtos" é o dos itens. `id` e
+    // `parentOrderId` são da régua única (as vendas = atendimentos, o acréscimo
+    // com o pai no turno não abre venda nova).
+    select: { id: true, parentOrderId: true, status: true, paymentMethod: true, paymentMethods: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true, openDeliveryChannel: true, discountDetails: true,
       ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true,
       createdAt: true, dailyOrderNumber: true, customerName: true, employeeName: true, deliveryType: true, deliveryBy: true, motoboyId: true, motoboyFee: true, deliveryDistance: true,
       totemLicenseId: true, items: { select: { price: true, quantity: true } } },
@@ -109,8 +111,10 @@ export async function calcularEsperadoDoTurno(
   //
   // O critério é a mesa ter FECHADO depois de o caixa abrir: uma mesa aberta
   // às 20h e paga às 23h é dinheiro deste turno, e a data do pedido não diz
-  // isso — a do fechamento diz. Os pedidos da conta vêm junto para o retrato
-  // tirar o troco e achar o desconto do fechamento (lib/apuracao-do-turno.ts).
+  // isso — a do fechamento diz. Os pedidos da conta vêm junto para tirar o
+  // troco e achar o desconto do fechamento (lib/apuracao-do-turno.ts); o id, o
+  // total pago e a hora do fechamento são da régua do desconto
+  // (`descontoNoFechamento`) e da mesa ainda aberta (a conta que não fechou).
   //
   // Envelopado em try/catch pelo mesmo motivo das movimentações: se por
   // qualquer razão isto falhar, o caixa continua fechando como antes.
@@ -122,7 +126,7 @@ export async function calcularEsperadoDoTurno(
         closedAt: janela,
         table: { franchiseeId: targetId },
       },
-      select: { paymentMethods: true, serviceFee: true, waiterTip: true, orders: { select: { status: true, totalAmount: true, discountTotal: true } } },
+      select: { id: true, paymentMethods: true, serviceFee: true, waiterTip: true, totalPaid: true, closedAt: true, orders: { select: { id: true, status: true, totalAmount: true, discountTotal: true } } },
     });
   } catch (e: any) {
     console.error("[Caixa] Não consegui somar as baixas das mesas do turno:", e?.message);

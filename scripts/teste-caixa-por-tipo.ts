@@ -137,16 +137,30 @@ exigir("totem abandonado em pendentes (1, R$ 25)", a.pendentesQuantidade === 1 &
 exigir("tipos na ordem Delivery, Retirada, Balcão, Mesas, Totem", d.porTipo.map((b) => b.chave).join(",") === "DELIVERY,RETIRADA,BALCAO,MESA,TOTEM", d.porTipo.map((b) => b.chave));
 exigir("cancelado não entra (nenhum bloco tem os R$ 70)", !d.porTipo.some((b) => b.formas.some((f) => igual(f.valor, 70))));
 
+// O RECEBIDO (o que entrou, forma por forma) fecha com os tipos, as formas e os canais.
 const somaDosTipos = d.porTipo.reduce((s, b) => s + c(b.valor), 0);
-exigir(`a soma dos tipos é o TOTAL FATURADO (${(somaDosTipos / 100).toFixed(2)} = ${d.vendas.valor.toFixed(2)})`, somaDosTipos === c(d.vendas.valor));
-exigir("a soma das formas é o TOTAL FATURADO", d.porForma.reduce((s, f) => s + c(f.valor), 0) + d.cupomDaPlataforma.reduce((s, f) => s + c(f.valor), 0) === c(d.vendas.valor));
-exigir("a soma dos canais é o TOTAL FATURADO", d.porCanal.reduce((s, x) => s + c(x.valor), 0) === c(d.vendas.valor));
-exigir("vendas = soma das vendas dos blocos", d.porTipo.reduce((s, b) => s + b.qtd, 0) === d.vendas.qtd);
+exigir(`a soma dos tipos é o TOTAL RECEBIDO (${(somaDosTipos / 100).toFixed(2)} = ${d.recebido.valor.toFixed(2)})`, somaDosTipos === c(d.recebido.valor));
+exigir("a soma das formas é o TOTAL RECEBIDO (o cupom da plataforma não é forma)", d.porForma.reduce((s, f) => s + c(f.valor), 0) === c(d.recebido.valor));
+exigir("a soma dos canais é o TOTAL RECEBIDO", d.porCanal.reduce((s, x) => s + c(x.valor), 0) === c(d.recebido.valor));
+exigir("pagamentos = soma dos blocos", d.porTipo.reduce((s, b) => s + b.qtd, 0) === d.recebido.qtd);
+// O FATURADO é a régua única dos relatórios: Σ dos pedidos que são venda (a
+// mesa pelo lançado, inclusive a ainda aberta), sem o cupom da plataforma;
+// vendas = atendimentos (9 pedidos sem mesa + 3 contas de mesa).
+exigir("TOTAL FATURADO = Σ dos pedidos-venda do turno (533,95), sem o cupom do app", igual(d.vendas.valor, 533.95), d.vendas);
+exigir("vendas = 12 atendimentos (as rodadas da mesa 4 são uma venda)", d.vendas.qtd === 12, d.vendas);
+exigir("ticket médio = 533,95 ÷ 12", igual(d.vendas.ticketMedio || 0, 44.5), d.vendas);
+// A ponte: do faturado ao recebido, linha a linha, fechando no centavo.
+const ponte = Object.fromEntries(d.ponte.map((p) => [p.chave, p.valor]));
+exigir("ponte: + taxa de serviço das mesas 16,36", igual(ponte.SERVICO || 0, 16.36), d.ponte);
+exigir("ponte: − desconto no fechamento da mesa 7 (R$ 10)", igual(ponte.DESCONTO_MESA || 0, -10), d.ponte);
+exigir("ponte: − lançado na mesa 9, ainda aberta (R$ 30)", igual(ponte.MESA_ABERTA || 0, -30), d.ponte);
+exigir("ponte fecha: faturado + linhas = recebido, sem 'outras diferenças'", !ponte.OUTROS && d.ponte.reduce((s, p) => s + c(p.valor), 0) === c(d.recebido.valor) - c(d.vendas.valor), d.ponte);
+exigir("desconto das mesas para o 'Pago pela loja' (1 mesa, R$ 10)", d.descontoNasMesas.qtd === 1 && igual(d.descontoNasMesas.valor, 10), d.descontoNasMesas);
 for (const b of d.porTipo) {
   const formas = b.formas.reduce((s, f) => s + c(f.valor), 0);
-  const conta = c(b.produtos) + c(b.taxaDeEntrega.valor) + c(b.servico.valor) + c(b.gorjeta) - c(b.desconto.valor) + c(b.ajustes);
+  const conta = c(b.produtos) + c(b.taxaDeEntrega.valor) + c(b.servico.valor) + c(b.gorjeta) - c(b.desconto.valor) - c(b.cupomDaPlataforma?.valor || 0) + c(b.ajustes);
   exigir(`${b.nome}: Σ formas = total (${b.valor.toFixed(2)})`, formas === c(b.valor), formas / 100);
-  exigir(`${b.nome}: produtos + taxas − desconto + ajustes = total`, conta === c(b.valor), conta / 100);
+  exigir(`${b.nome}: produtos + taxas − desconto − cupom da plataforma + ajustes = total`, conta === c(b.valor), conta / 100);
 }
 
 // Os casos, um a um.
@@ -154,8 +168,10 @@ exigir("Delivery: 4 vendas (site, iFood, iFood/Pix, 99)", B("DELIVERY").qtd === 
 exigir("Delivery: produtos = 50 + 50 + 40 + 30", igual(B("DELIVERY").produtos, 170));
 exigir("Delivery: taxa de entrega = 7,90 + 5,99 + 5,99 + 4", igual(B("DELIVERY").taxaDeEntrega.valor, 23.88) && B("DELIVERY").taxaDeEntrega.qtd === 4);
 exigir("Delivery: desconto da loja = R$ 2 do iFood", igual(B("DELIVERY").desconto.valor, 2));
-exigir("Delivery: cupom das plataformas (10 + 5) entra como forma", igual(B("DELIVERY").formas.find((f) => f.nome === "Cupom da plataforma")?.valor || 0, 15));
+exigir("Delivery: o cupom das plataformas (10 + 5) abate dos produtos e não é forma", igual(B("DELIVERY").cupomDaPlataforma?.valor || 0, 15) && !B("DELIVERY").formas.some((f) => f.nome === "Cupom da plataforma"));
 exigir("Delivery: ajustes = taxa do app do iFood (0,99) + 99 (1,00) + iFood/Pix (0,99)", igual(B("DELIVERY").ajustes, 0.99 + 1 + 0.99), B("DELIVERY").ajustes);
+exigir("Delivery: os ajustes são todos do app (pedidos de marketplace)", igual(B("DELIVERY").ajustesDoApp || 0, 2.98), B("DELIVERY"));
+exigir("cupom da plataforma por canal, com o que já está no pago online", JSON.stringify(d.cupomDaPlataforma.map((x) => [x.nome, x.valor, x.noOnline])) === JSON.stringify([["iFood", 10, 10], ["99Food", 5, 5]]), d.cupomDaPlataforma);
 exigir("Delivery: Pix trocado na entrega é Pix, não pago online", igual(B("DELIVERY").formas.find((f) => f.nome === "Pix")?.valor || 0, 46.98));
 exigir("Delivery: canais separados (Site, iFood, 99Food)", B("DELIVERY").canais.length === 3);
 exigir("Retirada: o pedido do site com crédito na retirada", B("RETIRADA").qtd === 1 && igual(B("RETIRADA").valor, 48));
@@ -295,6 +311,8 @@ const colunas = Number(process.argv[2] || 48);
     },
   });
   const saida = papel(buildEscPos(cupom, "Delicia de Casa", colunas, "safe"));
+  // Em 32 colunas rótulo e nota quebram de linha: as provas novas leem o texto corrido.
+  const corrido = saida.replace(/\s+/g, " ");
   console.log(saida);
   exigir("papel: bloco VENDAS DELIVERY", /VENDAS DELIVERY/.test(saida));
   exigir("papel: bloco VENDAS RETIRADA", /VENDAS RETIRADA/.test(saida));
@@ -303,8 +321,13 @@ const colunas = Number(process.argv[2] || 48);
   exigir("papel: bloco VENDAS TOTEM", /VENDAS TOTEM/.test(saida));
   exigir("papel: valor dos produtos por bloco", (saida.match(/Valor dos produtos/g) || []).length === 5);
   exigir("papel: total do bloco Mesas", /TOTAL MESAS \(2\)\s+R\$ 169,95/.test(saida));
-  exigir("papel: a soma dos tipos confere com o total faturado", /Soma dos tipos \(5\)/.test(saida) && /igual ao TOTAL FATURADO/.test(saida));
-  exigir("papel: a gaveta diz que as vendas em dinheiro já vêm sem o troco da mesa", /sem os R\$ 30,05 de troco das mesas \(1\)/.test(saida));
+  exigir("papel: a soma dos tipos confere com o total recebido", /Soma dos tipos \(5\)/.test(saida) && /igual ao total recebido/.test(saida));
+  exigir("papel: TOTAL FATURADO pela régua (12 vendas, R$ 533,95)", /TOTAL FATURADO\s+R\$ 533,95\s+12 vendas \| ticket medio R\$ 44,50/.test(corrido));
+  exigir("papel: do faturado ao recebido, linha a linha", /\+ Taxa de servico das mesas \(2\)/.test(corrido) && /- Lancado em mesa ainda aberta \(1\)/.test(corrido) && /= Total recebido \(11\)\s+R\$ 510,31/.test(corrido));
+  exigir("papel: o cupom do app fica fora do faturado", /Cupom pago pelas plataformas \(2\)\s+R\$ 15,00/.test(corrido));
+  exigir("papel: 'Pago pela loja' soma o desconto da mesa", /Pago pela loja \(3\)\s+R\$ 17,00/.test(corrido) && /No fechamento das mesas \(1\)\s+R\$ 10,00/.test(corrido));
+  exigir("papel: o bloco diz 'media por pedido', não 'ticket medio'", /media R\$ [\d.,]+ por pedido/.test(corrido) && /media R\$ [\d.,]+ por conta/.test(corrido));
+  exigir("papel: a gaveta diz que as vendas em dinheiro já vêm sem o troco da mesa", /sem os R\$ 30,05 de troco das mesas \(1\)/.test(corrido));
   exigir("papel: não há mais a linha '+ Troco das mesas' (que virava falta)", !/\+ Troco das mesas/.test(saida));
   exigir("papel: conferência continua (DIFERENCA)", /DIFERENCA/.test(saida));
   // A gaveta continua fechando com o esperado gravado.

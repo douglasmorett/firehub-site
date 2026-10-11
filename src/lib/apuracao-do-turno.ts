@@ -30,7 +30,9 @@ import { cupomBancadoPelo99, ehDo99Food } from "@/lib/cupom-do-parceiro";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { tipoDeVenda, type TipoDeVenda } from "@/lib/relatorios/base";
-import { situacaoDoPedido, temValorImpossivel, totalDosItens } from "@/lib/relatorios/regua-da-venda";
+import {
+  atendimentosDaVenda, descontoNoFechamento, entraNaVenda, situacaoDoPedido, temValorImpossivel, ticketMedio, totalDosItens,
+} from "@/lib/relatorios/regua-da-venda";
 import { cupomDaPlataforma as cupomPagoPelaPlataforma, formaDoPedido, formaDoTexto, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import type { BlocoDoTipo, DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do-caixa";
 
@@ -153,11 +155,16 @@ const LINHA_DA_CONFERENCIA: Partial<Record<ChaveDaForma, ChaveDoEsperado>> = {
 
 /** Uma conta de mesa FECHADA no turno, como esperado-do-turno a busca. */
 export type MesaDoTurno = {
+  /** Sem o id, a mesa ainda aberta sai pelo status do pedido, não pela conta. */
+  id?: string;
   paymentMethods: unknown;
   serviceFee: number | null;
   waiterTip: number | null;
+  /** O que a conta recebeu (com o troco) e quando fechou: o desconto do fechamento (`descontoNoFechamento`). */
+  totalPaid?: number | null;
+  closedAt?: Date | string | null;
   /** Os pedidos da conta, para o consumo (troco e desconto). Sem eles, o bloco não separa troco. */
-  orders?: { status: string | null; totalAmount: number | null; discountTotal?: number | null }[];
+  orders?: { id?: string; status: string | null; totalAmount: number | null; discountTotal?: number | null }[];
 };
 
 export type EntregaPropria = {
@@ -180,7 +187,8 @@ export type ApuracaoDasVendas = {
   entregasProprias: EntregaPropria[];
   retrato: Pick<DetalheDoTurno,
     "vendas" | "porForma" | "porCanal" | "porTipo" | "cupomDaLoja" | "cupomDaPlataforma" | "onlinePorCanal" |
-    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador">;
+    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador"> &
+    Required<Pick<DetalheDoTurno, "recebido" | "ponte" | "descontoNasMesas">>;
 };
 
 /** O acumulador de um bloco de tipo, em centavos. */
@@ -188,6 +196,10 @@ type Bloco = {
   qtd: number; c: number; formas: Map<string, Soma>; canais: Map<string, Soma>;
   produtos: number; taxa: number; taxaQtd: number; servico: number; servicoQtd: number; gorjeta: number;
   desconto: number; descontoQtd: number; troco: number; trocoQtd: number;
+  /** O cupom que a plataforma pagou nas vendas deste tipo: abate dos produtos, fora do total. */
+  cupom: number; cupomQtd: number;
+  /** Do que sobra para a conta fechar, a parte dos pedidos de marketplace (a taxa de serviço do app). */
+  ajustesDoApp: number;
 };
 
 export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]): ApuracaoDasVendas {
@@ -226,20 +238,40 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
   // Nada disto entra em conta nenhuma: é o que o papel do fechamento precisa
   // para o lojista entender o turno sem abrir o sistema.
   //
-  // A base é a mesma da conferência: pedido sem mesa e já pago (ou fiado),
-  // mais as contas de mesa FECHADAS no turno, pelas baixas. Pedido aguardando
-  // pagamento, mesa ainda aberta e cancelado ficam de fora — cada um volta em
-  // linha própria. Com a mesma base, a soma das formas, a soma dos canais e a
-  // soma dos tipos dão o MESMO total faturado, e o papel não se contradiz.
+  // Duas bases, cada uma com o seu nome:
+  //
+  //   • RECEBIDO — a mesma base da conferência: pedido sem mesa e já pago (ou
+  //     fiado), mais as contas de mesa FECHADAS no turno, pelas baixas (sem o
+  //     troco). A soma das formas, a dos canais e a dos tipos dão o mesmo
+  //     TOTAL RECEBIDO, e o papel não se contradiz.
+  //   • FATURADO — a régua única dos relatórios (lib/relatorios/regua-da-venda.ts):
+  //     Σ `totalAmount` dos pedidos do turno que são venda, a mesa pelo lançado
+  //     (aberta ou fechada), sem o cupom que a plataforma pagou; vendas =
+  //     atendimentos (a mesa conta uma vez). Até 11/10/2026 o "TOTAL FATURADO"
+  //     do caixa era o recebido MAIS o cupom da plataforma: Hakim, 10/10,
+  //     R$ 2.347,27 no papel × R$ 1.883,53 nos relatórios (R$ 463,74 de cupom
+  //     do iFood). O lojista que confere o papel contra o relatório desconfia
+  //     dos dois.
+  //
+  // A diferença entre os dois é explicada linha a linha (`ponte`): taxa de
+  // serviço e gorjeta das mesas, desconto no fechamento, mesa ainda aberta,
+  // lançamento de antes do caixa abrir, pago a mais e centavos do dividido.
   const porForma = new Map<string, Soma>();
   const porCanal = new Map<string, { qtd: number; c: number; formas: Map<string, Soma> }>();
   const porTipo = new Map<TipoDeVenda, Bloco>();
-  const cupomDaPlataforma = new Map<string, Soma>();
+  const cupomDaPlataforma = new Map<string, Soma & { noOnline: number; qtdNoOnline: number }>();
   const cupomDaLoja = { qtd: 0, c: 0, porCanal: new Map<string, Soma>() };
   const onlinePorCanal = new Map<string, Soma>();
   const taxaDeEntrega = { qtd: 0, c: 0 };
   const mesas = { servico: 0, servicoQtd: 0, gorjeta: 0, troco: 0, trocoQtd: 0 };
-  const vendas = { qtd: 0, c: 0 };
+  const recebido = { qtd: 0, c: 0 };
+  // A régua única: o valor vendido do turno e o lançado em cada conta de mesa.
+  let faturadoC = 0;
+  const lancadoNaConta = new Map<string, number>();
+  let centavosDoDividido = 0;
+  // As contas fechadas neste caixa. Sem os ids (quem chama não mandou), a mesa
+  // aberta sai pelo status do pedido, como era.
+  const idsFechadas = mesasFechadas.every((m) => m.id) ? new Set(mesasFechadas.map((m) => m.id as string)) : null;
   const fiado: DetalheDoTurno["fiado"] = [];
   const entregaParceira = { qtd: 0, c: 0 };
   const semEntregador = { qtd: 0, c: 0 };
@@ -248,26 +280,28 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
   const blocoDo = (tipo: TipoDeVenda): Bloco => {
     let b = porTipo.get(tipo);
     if (!b) {
-      b = { qtd: 0, c: 0, formas: new Map(), canais: new Map(), produtos: 0, taxa: 0, taxaQtd: 0, servico: 0, servicoQtd: 0, gorjeta: 0, desconto: 0, descontoQtd: 0, troco: 0, trocoQtd: 0 };
+      b = { qtd: 0, c: 0, formas: new Map(), canais: new Map(), produtos: 0, taxa: 0, taxaQtd: 0, servico: 0, servicoQtd: 0, gorjeta: 0, desconto: 0, descontoQtd: 0, troco: 0, trocoQtd: 0, cupom: 0, cupomQtd: 0, ajustesDoApp: 0 };
       porTipo.set(tipo, b);
     }
     return b;
   };
 
   /**
-   * Uma venda no retrato. O canal e o tipo contam a VENDA uma vez; cada parte
-   * do pagamento conta na sua forma. O cupom que a plataforma pagou entra como
-   * se fosse mais uma forma: é dinheiro que ela repassa, e sem ele a soma do
-   * canal não bate com o que o parceiro mostra no portal.
+   * Uma venda no RECEBIDO. O canal e o tipo contam a venda uma vez; cada parte
+   * do pagamento conta na sua forma. O cupom que a plataforma pagou NÃO entra
+   * no valor (desde 11/10/2026): ele vai para a linha própria "cupom pago pela
+   * plataforma", com quanto dele já está dentro do pago online da conferência
+   * (`noOnline`) — no pedido pago na porta, ninguém o vê na gaveta: o app o
+   * repassa depois.
    *
    * Devolve o bloco do tipo, para quem chamou somar os produtos, as taxas e o
    * desconto daquela venda.
    */
   const registrarVenda = (canal: string, tipo: TipoDeVenda, formas: Forma[], cupom: number): Bloco => {
-    const cCupom = cent(cupom);
-    const valor = formas.reduce((s, f) => s + cent(f.valor), 0) + Math.max(0, cCupom);
-    vendas.qtd += 1;
-    vendas.c += valor;
+    const cCupom = Math.max(0, cent(cupom));
+    const valor = formas.reduce((s, f) => s + cent(f.valor), 0);
+    recebido.qtd += 1;
+    recebido.c += valor;
     const b = blocoDo(tipo);
     b.qtd += 1;
     b.c += valor;
@@ -281,9 +315,14 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
       somarEm(porForma, f.forma === PAGO_ONLINE ? `${PAGO_ONLINE} ${canal}` : f.forma, cent(f.valor));
     }
     if (cCupom > 0) {
-      somarEm(c.formas, CUPOM_DA_PLATAFORMA, cCupom);
-      somarEm(b.formas, CUPOM_DA_PLATAFORMA, cCupom);
-      somarEm(cupomDaPlataforma, canal, cCupom);
+      b.cupom += cCupom;
+      b.cupomQtd += 1;
+      const noOnline = formas.some((f) => f.forma === PAGO_ONLINE);
+      const atual = cupomDaPlataforma.get(canal) || { qtd: 0, c: 0, noOnline: 0, qtdNoOnline: 0 };
+      atual.qtd += 1;
+      atual.c += cCupom;
+      if (noOnline) { atual.noOnline += cCupom; atual.qtdNoOnline += 1; }
+      cupomDaPlataforma.set(canal, atual);
     }
     porCanal.set(canal, c);
     return b;
@@ -309,9 +348,18 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     }
     // O valor dos produtos é o dos ITENS (preço × quantidade, a régua do Itens
     // vendidos). Pedido sem itens gravados não inventa nada: os produtos são o
-    // que sobra do total depois da taxa e do desconto, e o ajuste fica zero.
+    // que sobra do total depois da taxa e dos descontos, e o ajuste fica zero.
+    const cCupom = Math.max(0, cent(cupom));
     const itens = Array.isArray(o.items) && o.items.length > 0 ? cent(totalDosItens(o)) : null;
-    bloco.produtos += itens ?? (valor + Math.max(0, cent(cupom)) - taxa + Math.max(0, daLoja));
+    const produtos = itens ?? (valor + cCupom - taxa + Math.max(0, daLoja));
+    bloco.produtos += produtos;
+    // O que sobra para a conta deste pedido fechar. No pedido de marketplace é
+    // a taxa de serviço do app (iFood/99, varia — a-conta-do-pedido-nao-fecha-
+    // sozinha); no da loja é o acréscimo do vale ou da maquininha do balcão
+    // (venda-presencial soma "Taxa de vale (5%)" ao total) e centavos do
+    // dividido. Separados, cada um com o seu nome no papel — o "taxa de serviço
+    // do app" no bloco Balcão era o acréscimo do VR.
+    if (canalDoPedido(o).ehMarketplace) bloco.ajustesDoApp += valor - (produtos + taxa - Math.max(0, daLoja) - cCupom);
     const fiadoDoPedido = formas.filter((f) => f.forma === "Fiado").reduce((s, f) => s + cent(f.valor), 0);
     if (fiadoDoPedido > 0) {
       fiado.push({
@@ -388,9 +436,16 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     // pelas baixas da sessão, por forma, no bloco logo depois do laço. Mesa
     // ainda ABERTA: ninguém pagou nada ainda; vira a linha "mesas abertas",
     // informação para o lojista saber que existe conta em andamento.
+    //
+    // ABERTA é a CONTA que não fechou neste caixa — não o pedido com status
+    // diferente de entregue: o pedido da conta já paga que ficou "PRONTO" no
+    // KDS aparecia como "mesa aberta" e, ao mesmo tempo, dentro do pago.
+    if (entraNaVenda(o)) faturadoC += cent(o.totalAmount);
     if (o.tableSessionId) {
-      const fechado = o.status === "ENTREGUE" || o.status === "ENCERRADO";
-      if (!fechado) {
+      const venda = entraNaVenda(o);
+      if (venda) lancadoNaConta.set(o.tableSessionId, (lancadoNaConta.get(o.tableSessionId) || 0) + cent(o.totalAmount));
+      const aberta = idsFechadas ? !idsFechadas.has(o.tableSessionId) : !(o.status === "ENTREGUE" || o.status === "ENCERRADO");
+      if (aberta && venda) {
         foraDaConferencia.mesasAbertas += o.totalAmount || 0;
         foraDaConferencia.mesasAbertasQtd += 1;
       }
@@ -462,6 +517,9 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     const divisao = lerPagamentos(o.paymentMethods);
     if (divisao.length > 0) {
       const formas = divisao.map((p) => ({ forma: conferirParte(formaDoTexto(p.method), p.amount), valor: p.amount }));
+      // As partes fecham com o total com 2 centavos de tolerância
+      // (lib/pagamento-dividido.ts): a diferença vai para a ponte.
+      centavosDoDividido += formas.reduce((s, f) => s + cent(f.valor), 0) - cent(o.totalAmount);
       const bloco = registrarVenda(canal, tipo, formas, 0);
       registrarPedido(o, canal, tipo, formas, bloco, 0);
       continue;
@@ -536,6 +594,8 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
   // nenhum, só na sessão). O critério é a mesa ter FECHADO depois de o caixa
   // abrir: uma mesa aberta às 20h e paga às 23h é dinheiro deste turno, e a
   // data do pedido não diz isso — a do fechamento diz.
+  // O que a ponte RECEBIDO → FATURADO precisa das contas, em centavos.
+  const ponteDaMesa = { servico: 0, servicoQtd: 0, gorjeta: 0, gorjetaQtd: 0, desconto: 0, descontoQtd: 0, aMais: 0, aMaisQtd: 0, aMenos: 0, aMenosQtd: 0, deAntes: 0, deAntesQtd: 0 };
   for (const mesa of mesasFechadas) {
     const baixas: { chave: ChaveDaForma; forma: string; valor: number }[] = lerPagamentos(mesa.paymentMethods)
       .map((p) => { const chave = formaDoTexto(p.method); return { chave, forma: NOME_DA_FORMA[chave], valor: p.amount }; });
@@ -543,8 +603,6 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     const gorjeta = Number(mesa.waiterTip || 0);
     if (servico > 0) { mesas.servico += cent(servico); mesas.servicoQtd += 1; }
     mesas.gorjeta += cent(gorjeta);
-    // Uma conta de mesa é UMA venda no retrato, com as baixas nas formas.
-    if (baixas.length === 0) continue;
 
     // ── A MESA ENTRA SEM O TROCO — NO RETRATO E NA CONFERÊNCIA ───────────
     //
@@ -558,11 +616,12 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     // sem o troco (trocoDaConta, a mesma regra do relatório Formas de
     // pagamento). Sem os pedidos da conta não há consumo para comparar, e a
     // baixa vai inteira.
-    const consumo = mesa.orders
-      ? mesa.orders
-          .filter((o) => situacaoDoPedido(o.status) === "venda" && !temValorImpossivel(o))
-          .reduce((s, o) => s + cent(o.totalAmount), 0)
-      : null;
+    const validos = mesa.orders ? mesa.orders.filter((o) => situacaoDoPedido(o.status) === "venda" && !temValorImpossivel(o)) : null;
+    const consumo = validos ? validos.reduce((s, o) => s + cent(o.totalAmount), 0) : null;
+    // Conta fechada sem pagamento nenhum e sem consumo não é venda de ninguém.
+    // Sem pagamento COM consumo é a cortesia (desconto de 100%): entra, com o
+    // desconto à vista no bloco.
+    if (baixas.length === 0 && !(consumo && consumo > 0)) continue;
     const { formas: semTroco, troco } = consumo != null
       ? trocoDaConta({ formas: baixas, consumo: reais(consumo), servico, gorjeta })
       : { formas: baixas as Forma[], troco: 0 };
@@ -570,26 +629,48 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     // da conferência, em vez de sumir na gaveta (conferirParte).
     const chaveDoNome = new Map(baixas.map((b) => [b.forma, b.chave]));
     const formas: Forma[] = semTroco.map((f) => ({ forma: conferirParte(chaveDoNome.get(f.forma) ?? "OUTROS", f.valor), valor: f.valor }));
+    // Uma conta de mesa é UMA venda no recebido, com as baixas nas formas.
     const bloco = registrarVenda("Mesa", "MESA", formas, 0);
     const servicoCobrado = Math.max(0, cent(servico));
     const gorjetaCobrada = Math.max(0, cent(gorjeta));
-    if (servicoCobrado > 0) { bloco.servico += servicoCobrado; bloco.servicoQtd += 1; }
+    if (servicoCobrado > 0) { bloco.servico += servicoCobrado; bloco.servicoQtd += 1; ponteDaMesa.servico += servicoCobrado; ponteDaMesa.servicoQtd += 1; }
+    if (gorjetaCobrada > 0) { ponteDaMesa.gorjeta += gorjetaCobrada; ponteDaMesa.gorjetaQtd += 1; }
     bloco.gorjeta += gorjetaCobrada;
     if (cent(troco) > 0) {
       bloco.troco += cent(troco); bloco.trocoQtd += 1;
       mesas.troco += cent(troco); mesas.trocoQtd += 1;
     }
-    const recebido = formas.reduce((s, f) => s + cent(f.valor), 0);
+    const recebidoDaConta = formas.reduce((s, f) => s + cent(f.valor), 0);
     if (consumo != null) {
       bloco.produtos += consumo;
-      // A conta fechada ABAIXO de consumo + serviço + gorjeta é desconto no
-      // fechamento (ele não é gravado; a taxa negativa das contas antigas cai
-      // aqui também). Acima, sem troco a devolver, é pago a mais no cartão ou
-      // no Pix: fica nos ajustes, que o bloco calcula sozinho.
-      const resto = recebido - consumo - servicoCobrado - gorjetaCobrada;
-      if (resto < -1) { bloco.desconto += -resto; bloco.descontoQtd += 1; }
+      // ── O DESCONTO DO FECHAMENTO É O DA RÉGUA ──────────────────────────
+      //
+      // `descontoNoFechamento` (lib/relatorios/regua-da-venda.ts) é o desconto
+      // que o relatório Cupons e descontos e o Vendas por período mostram:
+      // consumo − (pago − serviço − gorjeta), nas contas fechadas desde
+      // 13/09/2026, nunca mais que o consumo. O papel dizia "Desconto no
+      // fechamento R$ 879" no bloco das mesas e o "Pago pela loja" não o
+      // somava (Ragnar, 10/10: R$ 1.984,55 no papel × R$ 2.863,55 no
+      // relatório). Agora é o mesmo número nos três lugares. O que a conta
+      // recebeu acima disso (pago a mais no cartão/Pix) ou abaixo sem ser
+      // desconto fica nos ajustes, cada um com o seu nome.
+      const desconto = cent(descontoNoFechamento({
+        id: mesa.id || "", serviceFee: servico, waiterTip: gorjeta, fechadaEm: mesa.closedAt ?? null,
+        pago: mesa.totalPaid ?? baixas.reduce((s, b) => s + b.valor, 0), pedidos: mesa.orders,
+      }));
+      if (desconto > 0) {
+        bloco.desconto += desconto; bloco.descontoQtd += 1;
+        ponteDaMesa.desconto += desconto; ponteDaMesa.descontoQtd += 1;
+      }
+      const resto = recebidoDaConta - consumo - servicoCobrado - gorjetaCobrada + desconto;
+      if (resto > 0) { ponteDaMesa.aMais += resto; ponteDaMesa.aMaisQtd += 1; }
+      else if (resto < 0) { ponteDaMesa.aMenos += resto; ponteDaMesa.aMenosQtd += 1; }
+      // O consumo de antes deste caixa: a conta fechou agora com pedidos
+      // lançados antes de ele abrir (estão no recebido, não no faturado).
+      const lancadoAgora = mesa.id ? (lancadoNaConta.get(mesa.id) ?? 0) : consumo;
+      if (consumo - lancadoAgora !== 0) { ponteDaMesa.deAntes += consumo - lancadoAgora; ponteDaMesa.deAntesQtd += 1; }
     } else {
-      bloco.produtos += recebido - servicoCobrado - gorjetaCobrada;
+      bloco.produtos += recebidoDaConta - servicoCobrado - gorjetaCobrada;
     }
   }
 
@@ -611,8 +692,9 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
   const blocos: BlocoDoTipo[] = ORDEM_DOS_TIPOS.filter((t) => porTipo.has(t)).map((t) => {
     const b = porTipo.get(t)!;
     // O ajuste é o que sobra para a conta do bloco fechar — calculado, nunca
-    // estimado: produtos + taxa + serviço + gorjeta − desconto + ajustes = total.
-    const ajustes = b.c - b.produtos - b.taxa - b.servico - b.gorjeta + b.desconto;
+    // estimado: produtos + taxa + serviço + gorjeta − desconto − cupom da
+    // plataforma + ajustes = total.
+    const ajustes = b.c - b.produtos - b.taxa - b.servico - b.gorjeta + b.desconto + b.cupom;
     return {
       chave: t,
       nome: NOME_DO_TIPO[t],
@@ -625,10 +707,43 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
       servico: { qtd: b.servicoQtd, valor: reais(b.servico) },
       gorjeta: reais(b.gorjeta),
       desconto: { qtd: b.descontoQtd, valor: reais(b.desconto) },
+      cupomDaPlataforma: { qtd: b.cupomQtd, valor: reais(b.cupom) },
       ajustes: Math.abs(ajustes) > 0 ? reais(ajustes) : 0,
+      ajustesDoApp: t === "MESA" ? 0 : reais(b.ajustesDoApp),
       troco: { qtd: b.trocoQtd, valor: reais(b.troco) },
     };
   });
+
+  // ── O FATURADO, PELA RÉGUA ÚNICA ──────────────────────────────────────────
+  // Vendas = atendimentos (a mesa uma vez, o acréscimo com o pai no turno não
+  // abre venda nova); ticket = valor ÷ vendas. O MESMO número do Vendas por
+  // período e do Faturamento por dia, para a mesma janela.
+  const at = atendimentosDaVenda(pedidos.map((o, i) => ({
+    id: String(o.id ?? `sem-id-${i}`), createdAt: o.createdAt, status: o.status, totalAmount: o.totalAmount,
+    tableSessionId: o.tableSessionId ?? null, parentOrderId: o.parentOrderId ?? null, items: o.items,
+  })));
+
+  // ── A PONTE: POR QUE O RECEBIDO NÃO É O FATURADO ──────────────────────────
+  // Cada linha é dinheiro que está num e não no outro; a última, se aparecer,
+  // é o que nenhuma explica (e não devia existir).
+  let abertas = 0, abertasQtd = 0;
+  for (const [sessao, c] of lancadoNaConta) {
+    if (idsFechadas && !idsFechadas.has(sessao)) { abertas += c; abertasQtd += 1; }
+  }
+  const ponte: NonNullable<DetalheDoTurno["ponte"]> = [];
+  const naPonte = (chave: string, rotulo: string, qtd: number, centavos: number) => {
+    if (centavos !== 0) ponte.push({ chave, rotulo, qtd, valor: reais(centavos) });
+  };
+  naPonte("SERVICO", "Taxa de servico das mesas", ponteDaMesa.servicoQtd, ponteDaMesa.servico);
+  naPonte("GORJETA", "Gorjeta das mesas", ponteDaMesa.gorjetaQtd, ponteDaMesa.gorjeta);
+  naPonte("DESCONTO_MESA", "Desconto no fechamento das mesas", ponteDaMesa.descontoQtd, -ponteDaMesa.desconto);
+  naPonte("MESA_ABERTA", "Lancado em mesa ainda aberta", abertasQtd, -abertas);
+  naPonte("MESA_DE_ANTES", "Lancado antes deste caixa, conta fechada nele", ponteDaMesa.deAntesQtd, ponteDaMesa.deAntes);
+  naPonte("SOBRA", "Pago a mais nas mesas (cartao ou Pix)", ponteDaMesa.aMaisQtd, ponteDaMesa.aMais);
+  naPonte("MESA_A_MENOS", "Mesa fechada recebendo menos que a conta", ponteDaMesa.aMenosQtd, ponteDaMesa.aMenos);
+  naPonte("DIVIDIDO", "Centavos do pagamento dividido", 0, centavosDoDividido);
+  const explicado = ponte.reduce((s, l) => s + cent(l.valor), 0);
+  naPonte("OUTROS", "Outras diferencas", 0, recebido.c - faturadoC - explicado);
 
   return {
     expected,
@@ -638,14 +753,19 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     onlineProprio,
     entregasProprias,
     retrato: {
-      vendas: { qtd: vendas.qtd, valor: reais(vendas.c) },
+      vendas: { qtd: at.vendas, valor: reais(faturadoC), ticketMedio: ticketMedio(reais(faturadoC), at.vendas), lancamentos: at.lancamentos, mesas: at.mesas },
+      recebido: { qtd: recebido.qtd, valor: reais(recebido.c) },
+      ponte,
       porForma: listar(porForma),
       porCanal: [...porCanal.entries()]
         .map(([nome, c]) => ({ nome, qtd: c.qtd, valor: reais(c.c), formas: listar(c.formas) }))
         .sort((a, b) => b.valor - a.valor),
       porTipo: blocos,
       cupomDaLoja: { qtd: cupomDaLoja.qtd, valor: reais(cupomDaLoja.c), porCanal: listar(cupomDaLoja.porCanal) },
-      cupomDaPlataforma: listar(cupomDaPlataforma),
+      descontoNasMesas: { qtd: ponteDaMesa.descontoQtd, valor: reais(ponteDaMesa.desconto) },
+      cupomDaPlataforma: [...cupomDaPlataforma.entries()]
+        .map(([nome, s]) => ({ nome, qtd: s.qtd, valor: reais(s.c), noOnline: reais(s.noOnline), qtdNoOnline: s.qtdNoOnline }))
+        .sort((a, b) => b.valor - a.valor),
       onlinePorCanal: listar(onlinePorCanal),
       taxaDeEntrega: { qtd: taxaDeEntrega.qtd, valor: reais(taxaDeEntrega.c) },
       mesas: { servico: reais(mesas.servico), servicoQtd: mesas.servicoQtd, gorjeta: reais(mesas.gorjeta), troco: reais(mesas.troco), trocoQtd: mesas.trocoQtd },

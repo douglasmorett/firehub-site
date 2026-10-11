@@ -11,12 +11,20 @@ import type { BlocoDoTipo, ParteDoRetrato } from "@/lib/cupom-do-caixa";
  * do caixa, sair de forma separada: mesas, vendas balcão… no fechamento do
  * caixa e no extrato de fechamento também". Os números vêm prontos do servidor
  * (lib/apuracao-do-turno.ts), a mesma apuração do papel: a tela não soma nada,
- * só mostra — e a última linha prova que os tipos somam o total faturado.
+ * só mostra — e o rodapé prova a conta: os tipos somam o total RECEBIDO, e do
+ * TOTAL FATURADO (a régua dos relatórios) se chega a ele linha a linha.
  *
  * Usado no modal de fechamento (StoreTopNav) e no Histórico de caixas.
  */
 export type VendasPorTipo = {
-  vendas: { qtd: number; valor: number };
+  /** O faturado pela régua única (o número dos relatórios); `qtd` = vendas. */
+  vendas: { qtd: number; valor: number; ticketMedio?: number };
+  /** O que entrou, forma por forma — a soma dos tipos. Ausente na resposta antiga: aí os tipos somam `vendas`. */
+  recebido?: { qtd: number; valor: number };
+  /** Do faturado ao recebido, só as linhas que existem. */
+  ponte?: { chave: string; rotulo: string; qtd: number; valor: number }[];
+  /** O cupom que o app pagou: fora dos dois totais. */
+  cupomDaPlataforma?: { nome: string; qtd: number; valor: number }[];
   porTipo: BlocoDoTipo[];
   trocoDasMesas?: { valor: number; qtd: number };
 };
@@ -38,6 +46,14 @@ const nomeDaForma = (nome: string) =>
     .replace(/^Credito$/, "Crédito")
     .replace(/^Vale-refeicao$/, "Vale-refeição")
     .replace(/^Forma nao identificada$/, "Forma não identificada");
+
+// A ponte vem do servidor em ASCII (é o mesmo texto do papel); a tela fala com acento.
+const nomeDaPonte = (rotulo: string) =>
+  rotulo
+    .replace("servico", "serviço")
+    .replace("Lancado", "Lançado")
+    .replace("cartao", "cartão")
+    .replace("diferencas", "diferenças");
 
 // A ordem da conferência: o dinheiro sempre na primeira linha.
 const ORDEM = ["Dinheiro", "Debito", "Credito", "Pix", "Vale-refeicao"];
@@ -65,11 +81,17 @@ function Linha({ rotulo, valor, fraco, forte, nota }: { rotulo: string; valor: n
 
 function Bloco({ b, total }: { b: BlocoDoTipo; total: number }) {
   const pct = total > 0 ? Math.round((b.valor / total) * 100) : 0;
+  // Contas de mesa e pedidos — "vendas" é a palavra da régua (atendimentos), e
+  // aqui é o recebido: a mesa pela conta fechada.
+  const contagem = b.chave === "MESA" ? (b.qtd === 1 ? "conta" : "contas") : (b.qtd === 1 ? "pedido" : "pedidos");
+  const cupom = b.cupomDaPlataforma?.valor || 0;
+  const doApp = b.chave === "MESA" ? 0 : (b.ajustesDoApp ?? (b.chave === "DELIVERY" || b.chave === "RETIRADA" ? b.ajustes : 0));
+  const daLoja = Math.round((b.ajustes - doApp) * 100) / 100;
   return (
     <div style={{ border: "1px solid #E2E8F0", borderRadius: 12, padding: "10px 12px", background: "#fff" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
         <span style={{ fontWeight: 900, fontSize: "0.92rem", color: "#0F172A" }}>{ROTULO[b.chave] || b.nome}</span>
-        <span style={{ fontSize: "0.72rem", color: "#64748B" }}>{b.qtd} {b.qtd === 1 ? "venda" : "vendas"} · {pct}%</span>
+        <span style={{ fontSize: "0.72rem", color: "#64748B" }}>{b.qtd} {contagem} · {pct}% do recebido</span>
       </div>
       {naOrdem(b.formas).map((f) => (
         <Linha key={f.nome} rotulo={`${nomeDaForma(f.nome)} (${f.qtd})`} valor={f.valor}
@@ -83,9 +105,18 @@ function Bloco({ b, total }: { b: BlocoDoTipo; total: number }) {
       {b.desconto.valor > 0.005 && (
         <Linha rotulo={`− ${b.chave === "MESA" ? "Desconto no fechamento" : "Desconto da loja"} (${b.desconto.qtd})`} valor={-b.desconto.valor} fraco />
       )}
-      {Math.abs(b.ajustes) > 0.005 && (
-        <Linha rotulo={`${b.ajustes > 0 ? "+" : "−"} Outras taxas e ajustes`} valor={b.ajustes} fraco
-               nota={b.chave === "MESA" ? "pago a mais no cartão ou no Pix" : "taxa de serviço do app e outros ajustes do pedido"} />
+      {cupom > 0.005 && (
+        <Linha rotulo={`− Cupom pago pela plataforma (${b.cupomDaPlataforma!.qtd})`} valor={-cupom} fraco nota="o app repassa à loja — fora do total" />
+      )}
+      {b.chave === "MESA" && Math.abs(b.ajustes) > 0.005 && (
+        <Linha rotulo={`${b.ajustes > 0 ? "+" : "−"} Outros ajustes das mesas`} valor={b.ajustes} fraco
+               nota={b.ajustes > 0 ? "pago a mais no cartão ou no Pix" : "conta fechada recebendo menos (não é desconto)"} />
+      )}
+      {b.chave !== "MESA" && Math.abs(doApp) > 0.005 && (
+        <Linha rotulo={`${doApp > 0 ? "+" : "−"} Taxa de serviço do app`} valor={doApp} fraco nota="iFood/99 cobram do cliente; varia por pedido" />
+      )}
+      {b.chave !== "MESA" && Math.abs(daLoja) > 0.005 && (
+        <Linha rotulo={`${daLoja > 0 ? "+" : "−"} Acréscimos e ajustes da loja`} valor={daLoja} fraco nota="acréscimo do vale ou da maquininha, centavos do dividido" />
       )}
       <div style={{ borderTop: "1px solid #E2E8F0", margin: "6px 0 2px" }} />
       <Linha rotulo={`Total ${ROTULO[b.chave]?.replace(/^\S+\s/, "") || b.nome}`} valor={b.valor} forte />
@@ -108,8 +139,12 @@ function Bloco({ b, total }: { b: BlocoDoTipo; total: number }) {
 export default function VendasPorTipoDoCaixa({ dados, abertoDeInicio = false }: { dados: VendasPorTipo | null; abertoDeInicio?: boolean }) {
   const [aberto, setAberto] = useState(abertoDeInicio);
   if (!dados || dados.porTipo.length === 0) return null;
+  const recebido = dados.recebido ?? dados.vendas;
   const soma = Math.round(dados.porTipo.reduce((s, b) => s + b.valor * 100, 0)) / 100;
-  const bate = Math.abs(soma - dados.vendas.valor) < 0.005;
+  const bate = Math.abs(soma - recebido.valor) < 0.005;
+  const ponte = dados.ponte || [];
+  const cupom = (dados.cupomDaPlataforma || []).reduce((s, c) => ({ qtd: s.qtd + c.qtd, valor: s.valor + c.valor }), { qtd: 0, valor: 0 });
+  const ticket = dados.vendas.ticketMedio ?? (dados.vendas.qtd > 0 ? dados.vendas.valor / dados.vendas.qtd : 0);
 
   return (
     <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 12, padding: "10px 12px", marginBottom: "1rem", textAlign: "left" }}>
@@ -134,19 +169,38 @@ export default function VendasPorTipoDoCaixa({ dados, abertoDeInicio = false }: 
 
       {aberto && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 8, marginTop: 10 }}>
-          {dados.porTipo.map((b) => <Bloco key={b.chave} b={b} total={dados.vendas.valor} />)}
+          {dados.porTipo.map((b) => <Bloco key={b.chave} b={b} total={recebido.valor} />)}
         </div>
       )}
 
+      {/* O faturado é o número dos relatórios (régua única); o recebido é a
+          soma dos tipos. Entre os dois, só as linhas que existem. */}
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 8, paddingTop: 8, borderTop: "1px dashed #E2E8F0", fontSize: "0.8rem" }}>
         <span style={{ color: "#475569" }}>
           Total faturado ({dados.vendas.qtd} {dados.vendas.qtd === 1 ? "venda" : "vendas"})
-          <span style={{ display: "block", fontSize: "0.7rem", color: bate ? "#0F766E" : "#B45309" }}>
-            {bate ? "✓ a soma dos tipos fecha com o total" : `a soma dos tipos dá ${fmt(soma)}`}
+          <span style={{ display: "block", fontSize: "0.7rem", color: "#64748B" }}>
+            ticket médio {fmt(ticket)} — o mesmo número dos relatórios
           </span>
         </span>
         <strong style={{ color: "#0F172A", whiteSpace: "nowrap" }}>{fmt(dados.vendas.valor)}</strong>
       </div>
+      {ponte.map((p) => (
+        <Linha key={p.chave} rotulo={`${p.valor >= 0 ? "+" : "−"} ${nomeDaPonte(p.rotulo)}${p.qtd > 0 ? ` (${p.qtd})` : ""}`} valor={p.valor} fraco />
+      ))}
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4, fontSize: "0.8rem" }}>
+        <span style={{ color: "#475569" }}>
+          {ponte.length > 0 ? "= " : ""}Total recebido ({recebido.qtd} {recebido.qtd === 1 ? "pagamento" : "pagamentos"})
+          <span style={{ display: "block", fontSize: "0.7rem", color: bate ? "#0F766E" : "#B45309" }}>
+            {bate ? `✓ a soma dos tipos fecha com o recebido${ponte.length === 0 ? " — igual ao faturado" : ""}` : `a soma dos tipos dá ${fmt(soma)}`}
+          </span>
+        </span>
+        <strong style={{ color: "#0F172A", whiteSpace: "nowrap" }}>{fmt(recebido.valor)}</strong>
+      </div>
+      {cupom.valor > 0.005 && (
+        <div style={{ fontSize: "0.72rem", color: "#475569", marginTop: 6, lineHeight: 1.45 }}>
+          Cupom pago pelas plataformas: <strong>{fmt(cupom.valor)}</strong> ({cupom.qtd} {cupom.qtd === 1 ? "pedido" : "pedidos"}) — fora dos dois totais: o app repassa à loja.
+        </div>
+      )}
       {(dados.trocoDasMesas?.valor || 0) > 0.005 && (
         <div style={{ fontSize: "0.72rem", color: "#9A3412", marginTop: 6, lineHeight: 1.45 }}>
           As mesas devolveram {fmt(dados.trocoDasMesas!.valor)} de troco ({dados.trocoDasMesas!.qtd} {dados.trocoDasMesas!.qtd === 1 ? "conta" : "contas"}).

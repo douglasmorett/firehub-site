@@ -71,11 +71,11 @@ export type ParteDoRetrato = { nome: string; qtd: number; valor: number };
  *
  * Pedido do Douglas a partir da Delícia de Casa (02/10/2026), com a foto do
  * papel de outro sistema: o lojista quer ver o salão separado da entrega no
- * mesmo fechamento. `valor` é o total do bloco e fecha por construção:
+ * mesmo fechamento. `valor` é o total RECEBIDO do bloco e fecha por construção:
  *
- *   produtos + taxa de entrega + serviço + gorjeta − desconto + ajustes = valor
- *   Σ formas (com o cupom da plataforma) = valor
- *   Σ valor dos blocos = vendas.valor (o TOTAL FATURADO do papel)
+ *   produtos + taxa de entrega + serviço + gorjeta − desconto − cupom da plataforma + ajustes = valor
+ *   Σ formas = valor (o cupom da plataforma NÃO é forma desde 11/10/2026)
+ *   Σ valor dos blocos = recebido.valor (o TOTAL RECEBIDO do papel)
  */
 export type BlocoDoTipo = ParteDoRetrato & {
   /** DELIVERY | RETIRADA | BALCAO | MESA | TOTEM — a régua dos relatórios (lib/relatorios/base.ts). */
@@ -87,14 +87,21 @@ export type BlocoDoTipo = ParteDoRetrato & {
   taxaDeEntrega: { qtd: number; valor: number };
   servico: { qtd: number; valor: number };
   gorjeta: number;
-  /** Na entrega/balcão, o `discountMerchant`; na mesa, o que a conta fechou abaixo do consumo. */
+  /** Na entrega/balcão, o `discountMerchant`; na mesa, o desconto do fechamento pela régua (`descontoNoFechamento`). */
   desconto: { qtd: number; valor: number };
+  /**
+   * O cupom que a plataforma pagou nas vendas deste tipo. Abate dos produtos e
+   * fica fora do total: o app repassa depois. Ausente no papel antigo.
+   */
+  cupomDaPlataforma?: { qtd: number; valor: number };
   /**
    * O que sobra para a conta fechar: a taxa de serviço do app (iFood/99, varia
    * por pedido — ver a-conta-do-pedido-nao-fecha-sozinha), cupom sem dono, o
    * pago a mais no cartão/Pix da mesa. Nunca um valor fixo inventado.
    */
   ajustes: number;
+  /** Dos ajustes, a parte dos pedidos de marketplace (a taxa de serviço do app); o resto é da loja (acréscimo do vale, centavos). */
+  ajustesDoApp?: number;
   /** Só mesa: o troco devolvido, já tirado do Dinheiro deste bloco. */
   troco: { qtd: number; valor: number };
 };
@@ -107,16 +114,35 @@ export type BlocoDoTipo = ParteDoRetrato & {
  * faturado. É o que deixa o papel ser conferido contra ele mesmo.
  */
 export type DetalheDoTurno = {
-  /** Pedidos sem mesa já pagos (ou fiados) + contas de mesa fechadas no turno. */
-  vendas: { qtd: number; valor: number };
+  /**
+   * O FATURADO, pela régua única dos relatórios (lib/relatorios/regua-da-venda.ts):
+   * Σ `totalAmount` dos pedidos do turno que são venda — a mesa pelo lançado,
+   * aberta ou fechada —, sem o cupom da plataforma; `qtd` = vendas
+   * (atendimentos: a mesa uma vez). Até 11/10/2026 era o recebido + o cupom.
+   */
+  vendas: { qtd: number; valor: number; ticketMedio?: number; lancamentos?: number; mesas?: number };
+  /**
+   * O RECEBIDO no turno: pedidos sem mesa já pagos (ou fiados) + contas de mesa
+   * fechadas no turno, pelas baixas sem o troco. Σ formas = Σ canais = Σ tipos.
+   * Ausente no papel montado à mão (testes antigos): aí os tipos somam `vendas`.
+   */
+  recebido?: { qtd: number; valor: number };
+  /** Por que o recebido não é o faturado, linha a linha (só as que não são zero). */
+  ponte?: { chave: string; rotulo: string; qtd: number; valor: number }[];
+  /** O desconto dado no fechamento das mesas (régua: `descontoNoFechamento`) — a loja pagou. */
+  descontoNasMesas?: { qtd: number; valor: number };
   porForma: ParteDoRetrato[];
   porCanal: (ParteDoRetrato & { formas: ParteDoRetrato[] })[];
   /** Um bloco por tipo de venda, na ordem Delivery, Retirada, Balcão, Mesas, Totem. Tipo sem venda não vem. */
   porTipo: BlocoDoTipo[];
   /** Desconto que saiu do bolso da loja — cupom da casa, desconto no balcão. */
   cupomDaLoja: { qtd: number; valor: number; porCanal: ParteDoRetrato[] };
-  /** Cupom que a plataforma pagou, por canal. Ela repassa: é venda da loja. */
-  cupomDaPlataforma: ParteDoRetrato[];
+  /**
+   * Cupom que a plataforma pagou, por canal — fora do faturado e do recebido: o
+   * app repassa à loja. `noOnline`: quanto dele já está dentro do "pago online"
+   * da conferência (pedido pago no app); o resto é de pedido pago na porta.
+   */
+  cupomDaPlataforma: (ParteDoRetrato & { noOnline?: number; qtdNoOnline?: number })[];
   /** O pago online da conferência, por canal (já com o cupom da plataforma). */
   onlinePorCanal: ParteDoRetrato[];
   taxaDeEntrega: { qtd: number; valor: number };
@@ -458,7 +484,7 @@ const naOrdemDosTipos = (l: BlocoDoTipo[]) =>
  * e o TOTAL do tipo em destaque. Linha zerada não sai — tipo sem taxa de
  * entrega não precisa dizer "Taxa de entrega R$ 0,00".
  */
-function linhasDoBloco(L: LinhaDoRelatorio[], b: BlocoDoTipo, totalFaturado: number) {
+function linhasDoBloco(L: LinhaDoRelatorio[], b: BlocoDoTipo, totalRecebido: number) {
   const linha = (texto: string, valor: string, nota?: string) => L.push({ tipo: "linha", texto, valor, nota });
   L.push({ tipo: "titulo", texto: `Vendas ${b.nome}` });
   for (const f of naOrdemDasFormas(b.formas)) {
@@ -477,20 +503,33 @@ function linhasDoBloco(L: LinhaDoRelatorio[], b: BlocoDoTipo, totalFaturado: num
   if (b.desconto.valor > 0.005) {
     linha(`- ${b.chave === "MESA" ? "Desconto no fechamento" : "Desconto da loja"} (${b.desconto.qtd})`, reais(-b.desconto.valor));
   }
+  // O cupom que o app pagou abate do preço que o cliente viu e fica fora do
+  // total: o app repassa à loja depois (linha à parte no faturamento).
+  const cupom = b.cupomDaPlataforma?.valor || 0;
+  if (cupom > 0.005) linha(`- Cupom pago pela plataforma (${b.cupomDaPlataforma!.qtd})`, reais(-cupom), "o app repassa a loja");
   if (Math.abs(b.ajustes) > 0.005) {
     // Nunca um valor fixo: a taxa de serviço do app varia por pedido
-    // (a-conta-do-pedido-nao-fecha-sozinha). O papel diz o que costuma ser.
-    const nota = b.chave === "MESA"
-      ? "pago a mais no cartao ou no Pix"
-      : "taxa de servico do app e outros ajustes do pedido";
-    linha(`${b.ajustes > 0 ? "+" : "-"} Outras taxas e ajustes`, reais(b.ajustes), nota);
+    // (a-conta-do-pedido-nao-fecha-sozinha). E cada sobra com o seu nome: no
+    // balcão ela é o acréscimo do vale (VR 5%), não "taxa do app".
+    const sinal = (v: number) => (v > 0 ? "+" : "-");
+    if (b.chave === "MESA") {
+      linha(`${sinal(b.ajustes)} Outros ajustes das mesas`, reais(b.ajustes), b.ajustes > 0 ? "pago a mais no cartao ou no Pix" : "conta fechada recebendo menos (nao e desconto)");
+    } else {
+      const doApp = b.ajustesDoApp ?? (b.chave === "DELIVERY" || b.chave === "RETIRADA" ? b.ajustes : 0);
+      const daLoja = Math.round((b.ajustes - doApp) * 100) / 100;
+      if (Math.abs(doApp) > 0.005) linha(`${sinal(doApp)} Taxa de servico do app`, reais(doApp), "iFood/99: varia por pedido");
+      if (Math.abs(daLoja) > 0.005) linha(`${sinal(daLoja)} Acrescimos e ajustes da loja`, reais(daLoja), "acrescimo do vale ou da maquininha, centavos");
+    }
   }
-  const pct = totalFaturado > 0 ? Math.round((b.valor / totalFaturado) * 100) : 0;
+  const pct = totalRecebido > 0 ? Math.round((b.valor / totalRecebido) * 100) : 0;
+  // "Ticket médio" é palavra da régua única (faturado ÷ vendas); aqui é a
+  // média do que cada pedido (ou conta de mesa) pagou, com esse nome.
+  const porCada = b.chave === "MESA" ? "por conta" : "por pedido";
   L.push({
     tipo: "destaque",
     texto: `TOTAL ${b.nome.toUpperCase()} (${b.qtd})`,
     valor: reais(b.valor),
-    nota: `${pct}% do faturado | ticket medio ${reais(b.qtd > 0 ? b.valor / b.qtd : 0)}`,
+    nota: `${pct}% do recebido | media ${reais(b.qtd > 0 ? b.valor / b.qtd : 0)} ${porCada}`,
   });
   if (b.troco.valor > 0.005) linha(`Troco devolvido (${b.troco.qtd})`, reais(b.troco.valor), "ja tirado do Dinheiro acima");
   // Por canal só quando há mais de um: "Delivery: iFood (5), Site (7)". Um
@@ -682,28 +721,51 @@ function relatorioDoFechamento(
   }
 
   // ── FATURAMENTO ─────────────────────────────────────────────────────────
-  if (d.vendas.qtd > 0) {
+  //
+  // Dois números, cada um com o seu nome (lib/apuracao-do-turno.ts):
+  //   • TOTAL FATURADO — a régua única dos relatórios: Σ dos pedidos do turno,
+  //     a mesa pelo lançado, sem o cupom da plataforma; vendas = atendimentos.
+  //     É o número que o lojista confere contra o Vendas por período. Até
+  //     11/10/2026 ele somava o cupom do app (Hakim, 10/10: R$ 2.347,27 no papel
+  //     × R$ 1.883,53 nos relatórios).
+  //   • Total recebido — o que entrou, forma por forma (a base da conferência).
+  // Entre os dois, só as linhas que existem: taxa de serviço e gorjeta das
+  // mesas, desconto no fechamento, mesa ainda aberta… — do faturado se chega
+  // ao recebido somando-as, e o papel prova a conta.
+  const recebido = d.recebido ?? { qtd: d.vendas.qtd, valor: d.vendas.valor };
+  if (d.vendas.qtd > 0 || recebido.qtd > 0) {
     titulo("Faturamento");
-    if (mostra("faturamento")) for (const f of naOrdemDasFormas(d.porForma)) {
-      const nota = f.nome === "Fiado" ? "acertado fora do caixa" : f.nome === "Forma nao identificada" ? "vale conferir o que e" : undefined;
-      linha(`${f.nome} (${f.qtd})`, reais(f.valor), nota);
-    }
-    const cuponsDasPlataformas = d.cupomDaPlataforma.reduce((s, c) => ({ qtd: s.qtd + c.qtd, valor: s.valor + c.valor }), { qtd: 0, valor: 0 });
-    if (mostra("faturamento") && cuponsDasPlataformas.valor > 0.01) {
-      linha(`Cupom pago pelas plataformas (${cuponsDasPlataformas.qtd})`, reais(cuponsDasPlataformas.valor), "elas repassam para a loja");
-    }
-    if (mostra("faturamento")) L.push({ tipo: "separador" });
     L.push({
       tipo: "destaque",
       texto: "TOTAL FATURADO",
       valor: reais(d.vendas.valor),
-      nota: `${vezes(d.vendas.qtd, "venda", "vendas")} | ticket medio ${reais(d.vendas.valor / d.vendas.qtd)}`,
+      nota: `${vezes(d.vendas.qtd, "venda", "vendas")} | ticket medio ${reais(d.vendas.ticketMedio ?? (d.vendas.qtd > 0 ? d.vendas.valor / d.vendas.qtd : 0))} | o mesmo dos relatorios`,
     });
     if (mostra("faturamento") && d.taxaDeEntrega.valor > 0.01) linha(`Incluso: taxa de entrega (${d.taxaDeEntrega.qtd})`, reais(d.taxaDeEntrega.valor));
-    if (d.mesas.servico > 0.01) linha(`Incluso: taxa de servico (${vezes(d.mesas.servicoQtd, "mesa", "mesas")})`, reais(d.mesas.servico));
-    if (d.mesas.gorjeta > 0.01) linha("Incluso: gorjeta", reais(d.mesas.gorjeta));
+    const cuponsDasPlataformas = d.cupomDaPlataforma.reduce((s, c) => ({ qtd: s.qtd + c.qtd, valor: s.valor + c.valor }), { qtd: 0, valor: 0 });
+    if (cuponsDasPlataformas.valor > 0.01) {
+      linha(`Cupom pago pelas plataformas (${cuponsDasPlataformas.qtd})`, reais(cuponsDasPlataformas.valor), "fora do faturado: o app repassa a loja");
+    }
+    const ponte = d.ponte || [];
+    if (mostra("faturamento")) {
+      if (ponte.length > 0) {
+        for (const p of ponte) {
+          linha(`${p.valor >= 0 ? "+" : "-"} ${p.rotulo}${p.qtd > 0 ? ` (${p.qtd})` : ""}`, reais(p.valor));
+        }
+        linha(`= Total recebido (${recebido.qtd})`, reais(recebido.valor), "o que entrou, forma por forma abaixo");
+      }
+      L.push({ tipo: "titulo", texto: "Recebido por forma" });
+      for (const f of naOrdemDasFormas(d.porForma)) {
+        const nota = f.nome === "Fiado" ? "acertado fora do caixa" : f.nome === "Forma nao identificada" ? "vale conferir o que e" : undefined;
+        linha(`${f.nome} (${f.qtd})`, reais(f.valor), nota);
+      }
+      L.push({ tipo: "separador" });
+      linha(`Total recebido (${recebido.qtd})`, reais(recebido.valor), ponte.length === 0 ? "igual ao TOTAL FATURADO" : undefined);
+    } else if (ponte.length > 0) {
+      linha(`Total recebido (${recebido.qtd})`, reais(recebido.valor), "difere do faturado: taxa/desconto das mesas");
+    }
     if ((d.mesas.troco || 0) > 0.01) {
-      linha(`Troco devolvido nas mesas (${d.mesas.trocoQtd || 0})`, reais(d.mesas.troco || 0), "ja tirado do Dinheiro acima");
+      linha(`Troco devolvido nas mesas (${d.mesas.trocoQtd || 0})`, reais(d.mesas.troco || 0), "ja tirado do Dinheiro");
     }
   } else {
     titulo("Faturamento");
@@ -717,22 +779,24 @@ function relatorioDoFechamento(
   // "VENDAS RETIRADA / DINHEIRO / VALOR DOS PRODUTOS / TOTAL" — e o Douglas
   // pediu igual: o salão separado da entrega, cada um com o que entrou em
   // cada forma. Tudo sai da mesma apuração (lib/apuracao-do-turno.ts), e a
-  // última linha prova que a soma dos blocos é o TOTAL FATURADO.
+  // última linha prova que a soma dos blocos é o total RECEBIDO.
   if (d.porTipo.length > 0 && mostra("porTipo")) {
-    for (const b of naOrdemDosTipos(d.porTipo)) linhasDoBloco(L, b, d.vendas.valor);
+    for (const b of naOrdemDosTipos(d.porTipo)) linhasDoBloco(L, b, recebido.valor);
     const soma = Number(d.porTipo.reduce((s, b) => s + b.valor, 0).toFixed(2));
-    const bate = Math.abs(soma - d.vendas.valor) < 0.005;
+    const bate = Math.abs(soma - recebido.valor) < 0.005;
     L.push({ tipo: "separador" });
     linha(
       `Soma dos tipos (${d.porTipo.length})`,
       reais(soma),
-      bate ? "igual ao TOTAL FATURADO" : `difere do TOTAL FATURADO (${reais(d.vendas.valor)})`
+      bate ? "igual ao total recebido" : `difere do total recebido (${reais(recebido.valor)})`
     );
   }
 
   // ── POR CANAL, COM O PAGAMENTO DE CADA UM ───────────────────────────────
+  // O que entrou por canal (a mesa pelas contas fechadas). O cupom que o app
+  // pagou não está aqui: é a linha "Pago pelo …" dos cupons.
   if (d.porCanal.length > 0 && mostra("porCanal")) {
-    titulo("Vendas por canal");
+    titulo("Recebido por canal");
     for (const c of d.porCanal) {
       linha(`${c.nome} (${c.qtd})`, reais(c.valor));
       for (const f of naOrdemDasFormas(c.formas)) linha(`- ${f.nome} (${f.qtd})`, reais(f.valor));
@@ -744,10 +808,23 @@ function relatorioDoFechamento(
   // Sempre impresso quando houve venda, mesmo zerado: "quanto foi de cupom da
   // loja e quanto do iFood" é pergunta que o dono faz todo dia, e linha que
   // some quando é zero obriga a adivinhar se foi zero ou se não foi contado.
-  if (d.vendas.qtd > 0 && mostra("cupons")) {
+  //
+  // O desconto dado no FECHAMENTO DA MESA também saiu do bolso da loja. Ele
+  // não estava aqui: Ragnar, 10/10/2026, "Pago pela loja R$ 1.984,55" no papel
+  // × R$ 2.863,55 no relatório Cupons e descontos — R$ 879 em 20 mesas. A
+  // conta é a mesma do relatório (descontoNoFechamento).
+  if ((d.vendas.qtd > 0 || recebido.qtd > 0) && mostra("cupons")) {
     titulo("Cupons e descontos");
-    linha(`Pago pela loja (${d.cupomDaLoja.qtd})`, reais(d.cupomDaLoja.valor), d.cupomDaLoja.valor > 0.01 ? "saiu do bolso da loja" : undefined);
-    if (d.cupomDaLoja.porCanal.length > 1) {
+    const daMesa = d.descontoNasMesas || { qtd: 0, valor: 0 };
+    const pelaLoja = { qtd: d.cupomDaLoja.qtd + daMesa.qtd, valor: Math.round((d.cupomDaLoja.valor + daMesa.valor) * 100) / 100 };
+    linha(`Pago pela loja (${pelaLoja.qtd})`, reais(pelaLoja.valor), pelaLoja.valor > 0.01 ? "saiu do bolso da loja" : undefined);
+    if (daMesa.valor > 0.01) {
+      linha(`- Nos pedidos (${d.cupomDaLoja.qtd})`, reais(d.cupomDaLoja.valor));
+      if (d.cupomDaLoja.porCanal.length > 1) {
+        for (const c of d.cupomDaLoja.porCanal) linha(`  - ${c.nome} (${c.qtd})`, reais(c.valor));
+      }
+      linha(`- No fechamento das mesas (${daMesa.qtd})`, reais(daMesa.valor));
+    } else if (d.cupomDaLoja.porCanal.length > 1) {
       for (const c of d.cupomDaLoja.porCanal) linha(`- ${c.nome} (${c.qtd})`, reais(c.valor));
     }
     // O iFood e o 99Food aparecem sempre que venderam no turno; outra

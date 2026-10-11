@@ -153,6 +153,8 @@ const cupom = cupomDeFechamentoDeCaixa({
           desconto: { qtd: 0, valor: 0 }, ajustes: 0, troco: { qtd: 0, valor: 0 } },
       ],
       cupomDaLoja: { qtd: 3, valor: 45.0, porCanal: [{ nome: "Site", qtd: 2, valor: 30.0 }, { nome: "iFood", qtd: 1, valor: 15.0 }] },
+      // O desconto dado no fechamento das mesas também é da loja (Ragnar, 10/10/2026: R$ 879 fora do papel).
+      descontoNasMesas: { qtd: 2, valor: 25.0 },
       cupomDaPlataforma: [{ nome: "iFood", qtd: 5, valor: 80.0 }, { nome: "99Food", qtd: 2, valor: 25.0 }],
       onlinePorCanal: [{ nome: "iFood", qtd: 12, valor: 900.0 }, { nome: "99Food", qtd: 2, valor: 100.0 }],
       taxaDeEntrega: { qtd: 30, valor: 210.0 },
@@ -193,6 +195,9 @@ console.log(papel(buildEscPos(cupom, "Hakim Centro", colunas, "safe")));
 
 /* ── A prova ───────────────────────────────────────────────────────────── */
 const saida = papel(buildEscPos(cupom, "Hakim Centro", colunas, "safe"));
+// O papel de 32 colunas quebra rótulo e nota em duas linhas: as provas de
+// "rótulo … valor" leem o texto corrido.
+const corrido = saida.replace(/\s+/g, " ");
 let ok = 0, falhou = 0;
 const exigir = (nome, condicao) => {
   if (condicao) { ok++; console.log("  ok     " + nome); }
@@ -210,11 +215,14 @@ if (!fingirAntigo) {
   exigir("sangria com hora e motivo aparece", /deposito no banco/.test(saida));
   exigir("cancelados aparecem, um a um", /Total cancelado \(3\)/.test(saida) && /#4035/.test(saida));
   exigir("fiado com o nome de quem comprou", /#12 Joao/.test(saida) && /Joao R\$ 45,00/.test(saida));
-  exigir("cupom da loja, do iFood e do 99 separados",
-    /Pago pela loja \(3\)/.test(saida) && /Pago pelo iFood \(5\)/.test(saida) && /Pago pelo 99Food \(2\)/.test(saida));
+  exigir("cupom da loja (pedidos + fechamento das mesas), do iFood e do 99 separados",
+    /Pago pela loja \(5\) R\$ 70,00/.test(corrido) && /No fechamento das mesas \(2\) R\$ 25,00/.test(corrido) &&
+    /Pago pelo iFood \(5\)/.test(saida) && /Pago pelo 99Food \(2\)/.test(saida));
   exigir("canal com as formas de pagamento", /- Pago online \(12\)/.test(saida));
   exigir("entregador com o que recebe", /A pagar ao entregador/.test(saida));
-  exigir("um bloco por tipo de venda, com total e ticket", /VENDAS DELIVERY/.test(saida) && /TOTAL DELIVERY \(26\)/.test(saida) && /ticket medio/.test(saida));
+  exigir("um bloco por tipo de venda, com total e a media por pedido (ticket e palavra da regua)",
+    /VENDAS DELIVERY/.test(saida) && /TOTAL DELIVERY \(26\)/.test(saida) && /% do recebido \| media R\$ [\d.,]+ por pedido/.test(corrido));
+  exigir("o TOTAL FATURADO leva vendas e o ticket medio da regua", /TOTAL FATURADO R\$ 3\.500,00 42 vendas \| ticket medio R\$ 83,33/.test(corrido));
   exigir("bloco com valor dos produtos e taxa de servico da mesa", /Valor dos produtos/.test(saida) && /Taxa de servico \(4\)/.test(saida));
   exigir("total faturado", /TOTAL FATURADO/.test(saida));
   exigir("mesas abertas aparecem", /Mesas ainda abertas/.test(saida));

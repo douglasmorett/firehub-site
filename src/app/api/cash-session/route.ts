@@ -146,7 +146,10 @@ export async function GET() {
     // (vendas.valor), não o esperado da conferência — o esperado tem o troco
     // de abertura e as movimentações, e não tem o fiado.
     vendasPorTipo: detalhe
-      ? { vendas: detalhe.vendas, porTipo: detalhe.porTipo, trocoDasMesas: { valor: detalhe.mesas.troco || 0, qtd: detalhe.mesas.trocoQtd || 0 } }
+      ? {
+          vendas: detalhe.vendas, recebido: detalhe.recebido, ponte: detalhe.ponte, cupomDaPlataforma: detalhe.cupomDaPlataforma,
+          porTipo: detalhe.porTipo, trocoDasMesas: { valor: detalhe.mesas.troco || 0, qtd: detalhe.mesas.trocoQtd || 0 },
+        }
       : null,
     // Os cancelamentos do turno, um a um, com quem e o motivo — o pedido
     // cancelado inteiro e o item tirado (lib/cancelamentos-do-turno.ts). Só
