@@ -161,8 +161,10 @@ console.log("\n6) pay_type desconhecido: 'Não informado', e não 'Vale'");
 // relatório Formas de pagamento, e a NFC-e sairia com "99Food" como meio.
 const forma = formaDePagamento99(7);
 confere("tipo fora de 1–4 grava 'Não informado' (antes: '99Food')", forma, { texto: "Não informado", pagoOnline: false });
-confere("relatório Formas de pagamento: 'Outros / Não identificado' (o '99Food' antigo caía em VALE)",
-  [formaDoTexto(forma.texto), formaDoTexto("99Food")], ["OUTROS", "VALE"]);
+// Depois da régua única do caixa (fix/caixa-e-acerto), o "food" saiu do vale:
+// até o "99Food" já gravado (o NIK de 26/09) deixa de ser vale.
+confere("relatório Formas de pagamento: 'Outros / Não identificado' — inclusive o '99Food' já gravado",
+  [formaDoTexto(forma.texto), formaDoTexto("99Food")], ["OUTROS", "OUTROS"]);
 const nikNoCaixa = (paymentMethod: string) => apurarVendasDoTurno([{
   id: "n1", status: "ENTREGUE", source: "99FOOD", openDeliveryChannel: "99FOOD", deliveryType: "DELIVERY",
   paymentMethod, totalAmount: 195.29, discountTotal: 25, discountIfood: 25, createdAt: new Date("2026-09-26T00:29:43Z"), items: [],
@@ -170,7 +172,7 @@ const nikNoCaixa = (paymentMethod: string) => apurarVendasDoTurno([{
 const agora = nikNoCaixa(forma.texto), antes = nikNoCaixa("99Food");
 confere("caixa: fora da conferência, em 'não identificada' — nenhum vale cobrado da gaveta",
   [agora.expected.voucher, r2(agora.foraDaConferencia.naoIdentificado)], [0, 195.29]);
-confere("…era assim antes: R$ 195,29 exigidos no vale", r2(antes.expected.voucher), 195.29);
+confere("…e o '99Food' já gravado também não cobra vale da gaveta (antes: R$ 195,29 no vale)", r2(antes.expected.voucher), 0);
 confere("NFC-e: sem forma, a nota pede que a loja defina (antes: '99Food' como meio de pagamento)",
   [formaDaNota(forma.texto, { canal: "99FOOD" }), formaDaNota("99Food", { canal: "99FOOD" })?.descricao], [null, "99Food"]);
 confere("as quatro formas conhecidas não mudam", [1, 2, 3, 4].map((t) => formaDePagamento99(t).texto),
