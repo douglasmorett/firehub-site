@@ -14,7 +14,7 @@
  */
 import { custosNoDia, explodirPreparo, ultimaCompraAte, type InsumoParaCusto } from "../src/lib/cmv/custo-do-insumo";
 import { entraNoCarregado, fecharContagem } from "../src/lib/cmv/contagem";
-import { cmvEntre, janelaDoPeriodo, lerMeta, trechosDaJanela, zonaDoCmv, type ContagemFechada, type DiaDoCmv } from "../src/lib/cmv/cmv-real";
+import { cmvEntre, janelaCompletaDoPeriodo, janelaDoPeriodo, lerMeta, trechosDaJanela, zonaDoCmv, type ContagemFechada, type DiaDoCmv } from "../src/lib/cmv/cmv-real";
 import { cmoDoPeriodo, custoDoVt, custoMensal, ehMaoDeObra } from "../src/lib/cmv/cmo";
 import { lerNumeroBr } from "../src/lib/cmv/numero";
 import { diaQueAContagemFecha, inicioDaSemanaDoCmv, lerSemanaDoCmv, semanaDoCmv } from "../src/lib/cmv/semana-do-cmv";
@@ -211,6 +211,21 @@ const HORAS = [
 confere("terça 15h, antes de abrir: a contagem fecha segunda", diaQueAContagemFecha(new Date("2026-10-13T18:00:00Z"), "America/Sao_Paulo", HORAS), "2026-10-12");
 confere("terça 23h50, depois de abrir: fecha terça", diaQueAContagemFecha(new Date("2026-10-14T02:50:00Z"), "America/Sao_Paulo", HORAS), "2026-10-13");
 confere("quarta 1h da manhã: ainda fecha terça", diaQueAContagemFecha(new Date("2026-10-14T04:00:00Z"), "America/Sao_Paulo", HORAS), "2026-10-13");
+
+// ── A janela do DRE: só entre contagens COMPLETAS, dentro do período ───────
+const CF = (dia: string, tipo: string, valorTotal = 1000): ContagemFechada => ({ id: dia, dia, tipo, valorTotal });
+const CONTAGENS_DO_HAKIM = [CF("2026-10-05", "COMPLETA"), CF("2026-10-10", "RAPIDA"), CF("2026-10-12", "COMPLETA"), CF("2026-10-15", "RAPIDA"), CF("2026-10-19", "COMPLETA")];
+const jc = (de: string, ate: string) => {
+  const j = janelaCompletaDoPeriodo(CONTAGENS_DO_HAKIM, de, ate);
+  return [j.abertura?.dia ?? null, j.fechamento?.dia ?? null, j.falta];
+};
+confere("semana do CMV (terça 13 a segunda 19): abre na completa da véspera e fecha na do dia 19", jc("2026-10-13", "2026-10-19"), ["2026-10-12", "2026-10-19", null]);
+confere("período que termina numa rápida: a rápida não fecha o R$ do DRE", jc("2026-10-13", "2026-10-18"), ["2026-10-12", null, "SO_UMA_CONTAGEM"]);
+confere("sem completa na véspera: abre na primeira completa dentro do período", jc("2026-10-10", "2026-10-19"), ["2026-10-12", "2026-10-19", null]);
+confere("a completa de dias antes da véspera não abre o período (o R$ levaria dias de fora)", jc("2026-10-14", "2026-10-19"), ["2026-10-19", null, "SO_UMA_CONTAGEM"]);
+confere("duas semanas: da completa da véspera à última", jc("2026-10-06", "2026-10-19"), ["2026-10-05", "2026-10-19", null]);
+confere("a completa do dia 19 abre a semana seguinte; falta a próxima", jc("2026-10-20", "2026-10-26"), ["2026-10-19", null, "SO_UMA_CONTAGEM"]);
+confere("nenhuma completa no período", jc("2026-10-01", "2026-10-03"), [null, null, "NENHUMA_CONTAGEM"]);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 if (falhas) process.exit(1);

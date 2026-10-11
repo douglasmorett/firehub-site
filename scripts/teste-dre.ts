@@ -16,8 +16,10 @@
 import {
   ATALHOS_DO_FINANCEIRO, atalhoDoFinanceiro, calcularDRE, economiaNosCanaisProprios, entraNoDRE, lerComissoesDosApps,
   lerPeriodo, mesesDoPeriodo, periodoDoFinanceiro, pontoDeEquilibrio, projetarMensalidadeDoMes, recebimentosDoPeriodo, taxaDaForma,
-  type CicloNoPeriodo, type DadosDoPeriodo, type PedidoDoFinanceiro,
+  type CicloNoPeriodo, type CmvDoServidor, type CmvRealDoPeriodo, type DadosDoPeriodo, type PedidoDoFinanceiro,
 } from "../src/lib/financeiro/dre";
+import { custoDoInsumoNoDia, custoDoItem, lerEscolhas, montarCatalogo, type ItemParaCusto, type ProdutoParaCusto } from "../src/lib/financeiro/custo-pela-ficha";
+import { custosNoDia, type InsumoParaCusto } from "../src/lib/cmv/custo-do-insumo";
 import { naLoja, tipoDeVenda } from "../src/lib/relatorios/base";
 import { resumoDeVendas, type PedidoParaVendas } from "../src/lib/relatorios/vendas";
 import { calcMensalidade } from "../src/lib/firehub-billing";
@@ -285,6 +287,145 @@ async function main() {
   confere("cobrança: teste no meio do mês, cobra do fim do teste", inicioDaCobranca(monthStart, monthEnd, "2026-10-13T12:00:00Z")?.toISOString(), "2026-10-13T12:00:00.000Z");
   confere("cobrança: teste cobre o mês, nada a cobrar", inicioDaCobranca(monthStart, monthEnd, "2026-11-20T00:00:00Z"), null);
   confere("cobrança: data inválida = sem teste", inicioDaCobranca(monthStart, monthEnd, "xx")?.toISOString(), monthStart.toISOString());
+
+  // ── 11. CMV: CONTAGEM → FICHA TÉCNICA → CUSTO DO PRODUTO ────────────────
+  console.log("\n— Custo do item pela ficha técnica × custo do insumo no dia —");
+  const insumo = (id: string, x: Partial<InsumoParaCusto & { entraNoCmv: boolean }> = {}) => ({
+    id, nome: id, unidade: "g", tipo: null, rendimento: null, unitCost: null, componentes: [], entraNoCmv: true, ...x,
+  });
+  const INSUMOS = [
+    insumo("Massa", { unidade: "un" }), insumo("Recheio de carne"), insumo("Mussarela"), insumo("Catupiry"),
+    insumo("Coca lata", { unidade: "un" }), insumo("Caixa G", { unidade: "un" }), insumo("Kraft", { unidade: "un" }),
+    insumo("Guardanapo", { unidade: "un", unitCost: 0.1, entraNoCmv: false }),
+    insumo("Frango"), insumo("Sal"),
+    // 1 kg de frango + 10 g de sal rendem 800 g de recheio.
+    insumo("Recheio de frango", { tipo: "PREPARO", rendimento: 800, componentes: [{ insumoId: "Frango", quantidade: 1000 }, { insumoId: "Sal", quantidade: 10 }] }),
+  ];
+  const compra = (id: string, dia: string, unitCost: number, custoAnterior?: number | null) => ({ stockItemId: id, dia, em: Date.parse(`${dia}T20:00:00Z`), unitCost, custoAnterior });
+  const ENTRADAS = [
+    compra("Massa", "2026-10-01", 0.5), compra("Recheio de carne", "2026-10-01", 0.04),
+    // A carne subiu na compra do dia 12: a venda do 13 já sai pelo custo novo.
+    compra("Recheio de carne", "2026-10-12", 0.06, 0.04),
+    // A primeira compra de mussarela foi no dia 12: antes disso ela não tinha custo.
+    compra("Mussarela", "2026-10-12", 0.05, null),
+    compra("Coca lata", "2026-10-01", 3), compra("Caixa G", "2026-10-01", 1), compra("Kraft", "2026-10-01", 0.7),
+    compra("Frango", "2026-10-01", 0.02),
+    // Catupiry e Sal: nenhuma compra, nenhum custo no cadastro.
+  ];
+  const ficha = (...l: [string, number][]) => l.map(([insumoId, quantidade]) => ({ insumoId, nome: insumoId, quantidade }));
+  const prod = (id: string, nome: string, x: Partial<ProdutoParaCusto> = {}): ProdutoParaCusto => ({ id, nome, ativo: true, custo: null, combo: false, ficha: [], grupos: [], ...x });
+  const CATALOGO = montarCatalogo([
+    prod("p-carne", "Esfirra de Carne", { ficha: ficha(["Massa", 1], ["Recheio de carne", 25]) }),
+    prod("p-carne-promo", "Esfirra de Carne (Promo)", { ficha: ficha(["Massa", 1], ["Recheio de carne", 25]) }),
+    prod("p-queijo", "Esfirra de Queijo Temperado", { ficha: ficha(["Massa", 1], ["Mussarela", 20]) }),
+    prod("p-catupiry", "Esfirra de Carne c/ Catupiry", { ficha: ficha(["Massa", 1], ["Recheio de carne", 25], ["Catupiry", 15]) }),
+    prod("p-frango", "Esfirra de Frango", { ficha: ficha(["Massa", 1], ["Recheio de frango", 10]) }),
+    prod("p-coca", "Coca-Cola lata", { ficha: ficha(["Coca lata", 1]) }),
+    prod("p-combo", "Combo Imperial", { combo: true, ficha: ficha(["Caixa G", 1], ["Kraft", 1], ["Guardanapo", 2]),
+      grupos: [{ id: "g1", opcoes: [{ id: "o1", produtoId: "p-carne" }, { id: "o2", produtoId: "p-queijo" }, { id: "o3", produtoId: "p-coca" }] }] }),
+    prod("p-xtudo", "X-Tudo", { custo: 8 }),
+    prod("p-suco", "Suco"),
+    // Os espelhos do iFood: inativos, categoria "iFood", sem ficha.
+    prod("ifood-123", "Combo Imperial", { ativo: false }),
+    prod("ifood-9", "esfirra de queijo temperado", { ativo: false }),
+    prod("ifood-77", "Combo Imperial Mix", { ativo: false }),
+    prod("ifood-55", "Esfirra de Carne (Promo)", { ativo: false }),
+  ]);
+  const noDia = (dia: string) => custoDoInsumoNoDia(INSUMOS, custosNoDia(INSUMOS, ENTRADAS, dia));
+  const item = (x: Partial<ItemParaCusto>, dia = "2026-10-13") => custoDoItem({ produtoId: null, nome: null, quantidade: 1, preco: 10, escolhas: null, ...x }, CATALOGO, noDia(dia));
+
+  // Combo do iFood: o espelho casa com o "Combo Imperial" do cardápio pelo nome;
+  // as opções vêm em lista e o preço do item (R$ 45) JÁ tem o acréscimo da Coca (R$ 3).
+  const comboIfood = item({ produtoId: "ifood-123", nome: "Combo Imperial", quantidade: 2, preco: 45,
+    escolhas: [{ name: "Esfirra de Carne", quantity: 3, price: 0 }, { name: "esfirra de queijo temperado", quantity: 2, price: 0 }, { name: "Coca-Cola lata", quantity: 1, price: 3 }] });
+  // Por combo: caixa 1,00 + kraft 0,70 (guardanapo não entra no CMV) + 3 × (0,50 + 25 × 0,06) + 2 × (0,50 + 20 × 0,05) + 3,00 = 13,70.
+  confere("combo do iFood: ficha do combo + cada opção × quantidade, pelo custo do dia", [comboIfood.custo, comboIfood.fonte, comboIfood.faltas], [27.4, "FICHA", []]);
+  confere("combo do iFood: o valor é preço × quantidade (o acréscimo já está no preço; não soma de novo)", comboIfood.valor, 90);
+  const comboSite = item({ produtoId: "p-combo", nome: "Combo Imperial", quantidade: 1, preco: 40, escolhas: { g1: { "Esfirra de Carne": 2, "Coca-Cola lata": 1 } } });
+  confere("combo do site no formato { grupo: { nome: qtd } }", comboSite.custo, 1.7 + 2 * 2 + 3);
+  confere("item-espelho do iFood casa pelo nome sem diferenciar caixa", item({ produtoId: "ifood-9", nome: "esfirra de queijo temperado", quantidade: 4, preco: 6 }).custo, 6);
+  confere("“(Promo)” é produto do cardápio e casa pelo nome", item({ produtoId: "ifood-55", nome: "Esfirra de Carne (Promo)" }).custo, 2);
+  confere("o custo do insumo é o do DIA da venda (carne a 0,04 antes da compra do dia 12)", item({ produtoId: "p-carne" }, "2026-10-11").custo, 1.5);
+  confere("insumo sem compra lançada: SEM custo (nunca R$ 0)", item({ produtoId: "p-catupiry" }), { nome: "Esfirra de Carne c/ Catupiry", valor: 10, custo: null, fonte: null, faltas: [{ motivo: "INSUMO_SEM_CUSTO", nome: "Catupiry" }] });
+  confere("antes da primeira compra, a mussarela não tem custo", item({ produtoId: "p-queijo" }, "2026-10-11").faltas, [{ motivo: "INSUMO_SEM_CUSTO", nome: "Mussarela" }]);
+  confere("preparo com componente sem custo: falta o componente (o sal), não o recheio", item({ produtoId: "p-frango" }).faltas, [{ motivo: "INSUMO_SEM_CUSTO", nome: "Sal" }]);
+  confere("combo com uma opção sem custo: o combo inteiro fica sem custo",
+    item({ produtoId: "p-combo", nome: "Combo Imperial", escolhas: { g1: { "Esfirra de Carne": 1, "Esfirra de Carne c/ Catupiry": 1 } } }).custo, null);
+  confere("só o custo digitado (sem ficha): fonte 3", [item({ produtoId: "p-xtudo", quantidade: 2 }).custo, item({ produtoId: "p-xtudo" }).fonte], [16, "CADASTRO"]);
+  confere("sem ficha e sem custo digitado", item({ produtoId: "p-suco" }).faltas, [{ motivo: "SEM_FICHA", nome: "Suco" }]);
+  confere("nome do iFood que não existe no cardápio", item({ produtoId: "ifood-77", nome: "Combo Imperial Mix" }).faltas, [{ motivo: "NOME_NAO_CASA", nome: "Combo Imperial Mix" }]);
+  confere("modificador sem preço (“Sem cebola”) não tira o custo da esfirra", item({ produtoId: "p-carne", escolhas: [{ name: "Sem cebola", quantity: 1, price: 0 }] }).custo, 2);
+  confere("adicional pago que não é produto: sem custo", item({ produtoId: "p-carne", escolhas: [{ name: "Bacon extra", quantity: 1, price: 2 }] }).faltas, [{ motivo: "OPCAO_SEM_FICHA", nome: "Bacon extra" }]);
+  confere("opção de combo que não é produto: sem custo", item({ produtoId: "ifood-123", nome: "Combo Imperial", escolhas: [{ name: "Esfirra Misteriosa", quantity: 2, price: 0 }] }).faltas, [{ motivo: "OPCAO_SEM_FICHA", nome: "Esfirra Misteriosa" }]);
+  confere("“5 Queijos” como texto não vira 5 × Queijos", lerEscolhas(["5 Queijos", "2x Esfirra de Carne"]).map((e) => [e.nome, e.qtd]), [["5 Queijos", 1], ["Esfirra de Carne", 2]]);
+  const ambiguo = montarCatalogo([prod("a", "Esfirra", { ficha: ficha(["Massa", 1]) }), prod("b", "esfirra", { ficha: ficha(["Massa", 2]) })]);
+  confere("dois produtos ativos com o mesmo nome e fichas diferentes: não chuta", ambiguo.porNome.get("esfirra"), null);
+
+  console.log("\n— CMV do DRE: contagem → ficha → custo do produto —");
+  const SEMANA_DO_HAKIM = { diaDaContagem: 2, fecha: 1, comecaEm: 2 }; // contagem na terça antes de abrir: semana de terça a segunda
+  const trechoReal = { de: "2026-10-13", ate: "2026-10-19", estoqueInicial: 5000, compras: 3000, estoqueFinal: 4500, cmv: 3500, vendas: 0, pct: null, tipoDoFechamento: "COMPLETA" };
+  const real = (x: Partial<CmvRealDoPeriodo> = {}): CmvRealDoPeriodo => ({ contagens: 8, ultimaCompleta: "2026-10-19", abertura: "2026-10-12", trecho: trechoReal, falta: null, semCustoNaContagem: [], ...x });
+  const cmvDo = (x: Partial<CmvDoServidor> = {}): CmvDoServidor => ({ real: real(), usaFicha: true, usaEstoque: true, semana: SEMANA_DO_HAKIM, semCustoPorDia: {}, ...x });
+  // Vendas do site no dinheiro: nada de comissão, maquininha ou entregador a pendurar.
+  const venda = (dia: string, x: Partial<PedidoDoFinanceiro> = {}) => pedido({ criadoEm: `${dia}T23:00:00Z`, totalAmount: 100, tipo: "RETIRADA", itens: 100, ...x });
+  const semanaHakim = (pedidos: PedidoDoFinanceiro[], cmv: CmvDoServidor | undefined, de = "2026-10-13", ate = "2026-10-19") => calcularDRE({
+    dados: { ...dados, de, ate, hoje: "2026-10-20", pedidos, ciclos: [], mesas: { ...dados.mesas, pagamentos: [], descontoNoFechamento: 0 }, entregadores: { ...dados.entregadores, erro: null }, cmv },
+    custosFixos: [], despesas: [], comissoes: {}, paymentFees: {},
+  });
+
+  const soContagem = semanaHakim([venda("2026-10-13"), venda("2026-10-15"), venda("2026-10-19", { deliveryFee: 10, totalAmount: 110 })], cmvDo());
+  confere("só contagem: CMV = estoque inicial + compras − estoque final", [soContagem.cmv, soContagem.cmvDetalhe.fonte], [3500, "CONTAGEM"]);
+  confere("só contagem: diz de onde veio", soContagem.cmvDetalhe.titulo, "CMV real pela contagem do estoque de 13/10 a 19/10");
+  confere("só contagem: completo, sem pendência de custo, cobertura 100%", [soContagem.completo, soContagem.pendencias, soContagem.cobertura], [true, [], 1]);
+  confere("só contagem: % sobre as vendas desses dias sem a taxa de entrega", [soContagem.cmvDetalhe.real?.vendas, soContagem.cmvDetalhe.real?.pct], [300, 1166.7]);
+
+  // O DRE de 12/10 a 19/10: a contagem cobre 13 a 19; o dia 12 vai pela ficha.
+  const parcialBoa = semanaHakim([venda("2026-10-12", { itensComCusto: 90, custo: 30, itensPelaFicha: 90, custoPelaFicha: 30 }), venda("2026-10-14")], cmvDo(), "2026-10-12", "2026-10-19");
+  confere("contagem parcial: dias cobertos pelo real + o dia de fora pela ficha", [parcialBoa.cmv, parcialBoa.cmvDetalhe.fonte], [3530, "CONTAGEM_E_FICHA"]);
+  confere("contagem parcial: o título diz as duas fontes", parcialBoa.cmvDetalhe.titulo, "CMV real pela contagem do estoque de 13/10 a 19/10; nos outros dias, pela ficha técnica e o custo das compras");
+  confere("contagem parcial: o dia de fora com 90% de custo → completo", [parcialBoa.completo, parcialBoa.cmvDetalhe.coberturaFora], [true, 0.9]);
+  confere("contagem parcial: a tela aponta a semana do CMV (terça a segunda)", parcialBoa.avisos.some((a) => a.includes("escolha a semana do CMV (de terça a segunda)")), true);
+  // O dia de fora só com metade do valor coberto: incompleto, mesmo com 6 dias de contagem.
+  const parcialRuim = semanaHakim([venda("2026-10-12", { itensComCusto: 50, custo: 20, itensPelaFicha: 50, custoPelaFicha: 20 }), venda("2026-10-14")],
+    cmvDo({ semCustoPorDia: {
+      "2026-10-12": [{ nome: "Esfirra de Carne c/ Catupiry", valor: 50, faltas: [{ motivo: "INSUMO_SEM_CUSTO", nome: "Catupiry" }] }],
+      // Dia coberto pela contagem: o que estiver sem ficha lá não pesa.
+      "2026-10-14": [{ nome: "Suco", valor: 100, faltas: [{ motivo: "SEM_FICHA", nome: "Suco" }] }],
+    } }), "2026-10-12", "2026-10-19");
+  confere("contagem parcial: a cobertura de fora se mede só nos dias de fora", parcialRuim.pendencias, ["nos dias fora da contagem do estoque, 50% do valor dos itens vendidos está sem custo (insumo sem compra lançada)"]);
+  confere("contagem parcial: o que falta e para onde ir (só o dia de fora)", parcialRuim.cmvDetalhe.faltas.map((f) => [f.chave, f.href, f.bloqueia]), [["COMPRAS", "/store/estoque/compras", true]]);
+  confere("contagem parcial: a cobertura geral conta os dias da contagem como cobertos", parcialRuim.cobertura, 0.75);
+
+  const soFicha = semanaHakim([venda("2026-10-13", { itensComCusto: 100, custo: 32, itensPelaFicha: 100, custoPelaFicha: 32 })], cmvDo({ real: real({ trecho: null, falta: "NENHUMA_CONTAGEM", contagens: 0, abertura: null, ultimaCompleta: null }) }));
+  confere("só ficha: CMV pela ficha × custo das compras", [soFicha.cmv, soFicha.cmvDetalhe.fonte, soFicha.cmvDetalhe.titulo], [32, "FICHA", "CMV pela ficha técnica e o custo das compras"]);
+  confere("só ficha: completo; a contagem aparece como próximo passo, sem travar", [soFicha.completo, soFicha.cmvDetalhe.faltas.map((f) => [f.chave, f.bloqueia])], [true, [["CONTAGEM", false]]]);
+  confere("só ficha: a contagem diz o dia da contagem completa da loja", soFicha.cmvDetalhe.faltas[0].texto.includes("toda terça"), true);
+  const umaContagem = semanaHakim([venda("2026-10-13", { itensComCusto: 100, custo: 32, itensPelaFicha: 100, custoPelaFicha: 32 })], cmvDo({ real: real({ trecho: null, falta: "SO_UMA_CONTAGEM", contagens: 1, abertura: "2026-10-12" }) }));
+  confere("uma contagem só: diz que falta a próxima", umaContagem.cmvDetalhe.faltas[0].texto, "A contagem completa de 12/10 abre o período; falta a próxima (toda terça) para o CMV real fechar.");
+
+  const soDigitado = semanaHakim([venda("2026-10-13", { itensComCusto: 100, custo: 40 })], cmvDo({ real: null, usaFicha: false, usaEstoque: false }));
+  confere("só custo digitado: fonte 3, sem falar de contagem para loja sem estoque", [soDigitado.cmv, soDigitado.cmvDetalhe.fonte, soDigitado.cmvDetalhe.faltas.length, soDigitado.completo], [40, "CADASTRO", 0, true]);
+
+  const nadaSemFicha = semanaHakim([venda("2026-10-13")], cmvDo({ real: null, usaFicha: false, usaEstoque: false,
+    semCustoPorDia: { "2026-10-13": [{ nome: "X-Tudo", valor: 100, faltas: [{ motivo: "SEM_FICHA", nome: "X-Tudo" }] }] } }));
+  confere("nada: incompleto com a pendência certa", [nadaSemFicha.completo, nadaSemFicha.pendencias], [false, ["100% do valor dos itens vendidos está sem custo (produto sem custo)"]]);
+  confere("nada, loja sem ficha: o botão é “Cadastrar custos no cardápio”", nadaSemFicha.cmvDetalhe.faltas.map((f) => [f.chave, f.rotulo, f.href]), [["CUSTO_NO_PRODUTO", "Cadastrar custos no cardápio", "/store/cardapio"]]);
+  confere("nada: diz que não há fonte", nadaSemFicha.cmvDetalhe.fonte, "NENHUMA");
+  const nadaComFicha = semanaHakim([venda("2026-10-13")], cmvDo({ real: real({ trecho: null, falta: "NENHUMA_CONTAGEM", contagens: 0, abertura: null, ultimaCompleta: null }),
+    semCustoPorDia: { "2026-10-13": [
+      { nome: "Suco", valor: 60, faltas: [{ motivo: "SEM_FICHA", nome: "Suco" }] },
+      { nome: "Combo Imperial Mix", valor: 40, faltas: [{ motivo: "NOME_NAO_CASA", nome: "Combo Imperial Mix" }] },
+    ] } }));
+  confere("nada, loja com ficha: ficha técnica e nome do app (não “custos no cardápio”)", nadaComFicha.cmvDetalhe.faltas.map((f) => [f.chave, f.rotulo]),
+    [["FICHA", "Fazer as fichas técnicas"], ["NOME_DO_APP", "Abrir o cardápio"], ["CONTAGEM", "Contar o estoque"]]);
+  confere("nada, loja com ficha: a pendência resume os motivos", nadaComFicha.pendencias, ["100% do valor dos itens vendidos está sem custo (produto sem ficha técnica e nome do app que não existe no cardápio)"]);
+
+  const contagemSemCusto = semanaHakim([venda("2026-10-13")], cmvDo({ real: real({ semCustoNaContagem: ["Catupiry", "Sal"] }) }));
+  confere("insumo contado sem custo: o CMV real não é completo", [contagemSemCusto.completo, contagemSemCusto.pendencias], [false, ["2 insumos contados sem custo na contagem do estoque (entram com R$ 0 no CMV real)"]]);
+  const negativo = semanaHakim([venda("2026-10-13")], cmvDo({ real: real({ trecho: { ...trechoReal, estoqueFinal: 9000, cmv: -1000 } }) }));
+  confere("CMV da contagem negativo: pendência, não lucro", negativo.completo, false);
+  const erroNoCmv = semanaHakim([venda("2026-10-13", { itensComCusto: 100, custo: 30 })], cmvDo({ real: null, erro: "falhou" }));
+  confere("contagem/fichas não lidas: pendência", erroNoCmv.pendencias, ["o custo dos produtos (contagem do estoque, fichas técnicas e custo digitado) não pôde ser lido agora — recarregue a página"]);
 
   console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
   process.exit(falhas === 0 ? 0 : 1);

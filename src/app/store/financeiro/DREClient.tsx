@@ -37,7 +37,7 @@ type Aba = "mensalidade" | "extrato" | "relatorio" | "configuracoes" | "dre" | "
 const ABAS_COM_PERIODO = new Set<Aba>(["dre", "extrato", "relatorio", "pagamentos", "custosfix"]);
 
 export default function DREClient({
-  inicio, dadosIniciais, erroInicial, cicloInicial, papel, paymentFees, storeName, produtosSemCusto = [],
+  inicio, dadosIniciais, erroInicial, cicloInicial, papel, paymentFees, storeName,
   initialFixedCosts = [], comissoesIniciais = {}, initialRepasseConfig = {}, payables = [], initialDespesas = [],
 }: {
   /** Período, "hoje" e fuso decididos NO SERVIDOR (o dia operacional da loja). */
@@ -48,7 +48,6 @@ export default function DREClient({
   papel: string;
   paymentFees: unknown;
   storeName: string;
-  produtosSemCusto?: { id: string; name: string }[];
   initialFixedCosts?: CustoFixo[];
   comissoesIniciais?: ComissoesDosApps;
   initialRepasseConfig?: any;
@@ -229,7 +228,7 @@ export default function DREClient({
         {aba === "mensalidade" && <AbaMensalidade ciclo={cicloInicial} tz={inicio.tz} />}
 
         {aba === "dre" && (dre && dados
-          ? <AbaDRE dre={dre} de={dados.de} ate={dados.ate} comissoes={comissoes} produtosSemCusto={produtosSemCusto}
+          ? <AbaDRE dre={dre} de={dados.de} ate={dados.ate} comissoes={comissoes}
               despesas={despesas} onDespesas={setDespesas} irPara={(a) => setAba(a)} />
           : semDados)}
 
@@ -255,7 +254,7 @@ export default function DREClient({
               titulo="Notas de Compras"
               oQueE="É o arquivo das notas e cupons de tudo o que a sua loja COMPRA — carne, embalagem, bebida, material de limpeza."
               paraQueServe="Guardando as notas aqui, você tem o histórico do que comprou, de quem e por quanto, para conferir preço de fornecedor e achar o comprovante quando precisar."
-              aviso="As notas NÃO entram no DRE: o custo do DRE vem do custo cadastrado em cada produto do cardápio (CMV) e das despesas lançadas. Somar as compras também contaria o mesmo gasto duas vezes. O boleto que ainda vai vencer entra na aba Contas a Pagar."
+              aviso="As notas daqui NÃO entram no DRE: o custo dos produtos (CMV) vem da contagem do estoque com as compras lançadas em Estoque › Compras, da ficha técnica ou do custo digitado no produto; o resto vem das despesas lançadas. Somar estas notas também contaria o mesmo gasto duas vezes. O boleto que ainda vai vencer entra na aba Contas a Pagar."
               passos={[
                 { titulo: "Tire a foto", texto: "fotografe a nota ou o cupom direto do celular, ainda no balcão de recebimento da mercadoria." },
                 { titulo: "A IA lê sozinha", texto: "ela identifica o valor e a categoria da compra. Você só confere se ficou certo." },

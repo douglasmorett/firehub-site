@@ -4,6 +4,10 @@
  * servidor sabe — o acerto dos entregadores, as mesas fechadas e os ciclos da
  * mensalidade. A conta em si é de lib/financeiro/dre.ts (pura).
  *
+ * O custo de cada item (ficha técnica × custo do insumo no dia, ou o custo
+ * digitado no produto) e o CMV pela contagem do estoque vêm de
+ * lib/financeiro/cmv-do-financeiro.ts; a ordem das fontes está em dre.ts ("O CMV").
+ *
  * ── O que mudou em relação à página antiga ─────────────────────────────────
  *
  * A página mandava 365 dias de pedidos com TODAS as ~90 colunas (e os itens)
@@ -13,7 +17,7 @@
 import { prisma } from "@/lib/prisma";
 import { janelaDoPeriodo, type ContextoDoRelatorio } from "@/lib/relatorios/servidor";
 import { mesasFechadasDoPeriodo } from "@/lib/relatorios/mesas-do-periodo";
-import { canalDoRelatorio, tipoDeVenda } from "@/lib/relatorios/base";
+import { canalDoRelatorio, naLoja, tipoDeVenda } from "@/lib/relatorios/base";
 import { servicoDasMesas, situacaoDoPedido, temValorImpossivel } from "@/lib/relatorios/regua-da-venda";
 import { cupomDaPlataforma, formaDoTexto, precisaDoDetalheDoCupom, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import { outrasTaxasDoPedido, precisaDoDetalheDoDesconto } from "@/lib/relatorios/vendas";
@@ -29,8 +33,10 @@ import {
 } from "@/lib/billing";
 import {
   mesesDoPeriodo, projetarMensalidadeDoMes,
-  type CicloNoPeriodo, type DadosDoPeriodo, type PedidoDoFinanceiro, type ResumoDosEntregadores,
+  type CicloNoPeriodo, type CmvRealDoPeriodo, type DadosDoPeriodo, type ItemSemCusto, type PedidoDoFinanceiro, type ResumoDosEntregadores,
 } from "@/lib/financeiro/dre";
+import { cmvRealDoPeriodo, prepararCustoDosItens, type CustoDosItens } from "@/lib/financeiro/cmv-do-financeiro";
+import { lerSemanaDoCmv } from "@/lib/cmv/semana-do-cmv";
 
 const MARKETPLACES = new Set<string>(canaisConhecidos().filter((c) => c.ehMarketplace).map((c) => c.chave));
 const c2 = (n: number) => Math.round(n * 100) / 100;
@@ -56,7 +62,9 @@ const COLUNAS = {
   pagarmeOrderId: true, pagarmeMethod: true, changeAmount: true, taxaOnline: true,
   // Quem entregou (lib/entrega-parceira.ts): a taxa da corrida do app fica com o app.
   deliveryBy: true, ifoodDriverName: true, ifoodDriverStatus: true,
-  items: { select: { quantity: true, price: true, menuProduct: { select: { cost: true } } } },
+  // O custo de cada item (lib/financeiro/custo-pela-ficha.ts): o produto, o
+  // nome gravado (o espelho do iFood casa pelo nome) e as escolhas do combo.
+  items: { select: { quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true } },
 } as const;
 
 /** O número que o lojista vê no pedido — o do dia, o do iFood, o do parceiro. */
@@ -268,15 +276,50 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
     for (const d of lote) detalhes.set(d.id, { notes: d.notes, discountDetails: d.discountDetails });
   }
 
+  // ── O CMV: a contagem do período e o custo de cada item (fontes 2 e 3) ──
+  // Falhar aqui não derruba o DRE: o custo fica de fora e a tela avisa.
+  let custos: CustoDosItens | null = null;
+  let cmvReal: CmvRealDoPeriodo | null = null;
+  let erroDoCmv: string | null = null;
+  let goals: unknown = null;
+  try {
+    [custos, cmvReal, goals] = await Promise.all([
+      prepararCustoDosItens(lojaId, tz),
+      cmvRealDoPeriodo(lojaId, de, ate),
+      prisma.user.findUnique({ where: { id: lojaId }, select: { financialGoals: true } }).then((u) => u?.financialGoals ?? null),
+    ]);
+  } catch (err: any) {
+    console.error("[Financeiro] Erro ao ler a contagem e as fichas para o CMV:", err);
+    erroDoCmv = String(err?.message || err);
+    custos = null;
+    cmvReal = null;
+  }
+  const semCustoPorDia = new Map<string, Map<string, ItemSemCusto>>();
+
   const pedidos: PedidoDoFinanceiro[] = brutos.map((o) => {
-    let cItens = 0, cComCusto = 0, cCusto = 0;
+    let cItens = 0, cComCusto = 0, cCusto = 0, cItensFicha = 0, cCustoFicha = 0;
+    const dia = naLoja(o.createdAt, tz).dia;
+    const contaNaVenda = situacaoDoPedido(o.status) === "venda" && !temValorImpossivel(o);
     for (const i of o.items) {
       const q = Number(i.quantity) || 0;
       if (q <= 0) continue;
       const v = Math.round((Number(i.price) || 0) * q * 100);
       cItens += v;
-      const custo = Number(i.menuProduct?.cost) || 0;
-      if (custo > 0) { cComCusto += v; cCusto += Math.round(custo * q * 100); }
+      // Cancelado não entra no CMV: nem precisa da conta.
+      if (!custos || !contaNaVenda) continue;
+      const c = custos.custoDoItem({ produtoId: i.menuProductId, nome: i.productName, quantidade: q, preco: Number(i.price) || 0, escolhas: i.comboSelections }, dia);
+      if (c.custo != null) {
+        cComCusto += v;
+        cCusto += Math.round(c.custo * 100);
+        if (c.fonte === "FICHA") { cItensFicha += v; cCustoFicha += Math.round(c.custo * 100); }
+      } else if (v > 0) {
+        const doDia = semCustoPorDia.get(dia) || new Map<string, ItemSemCusto>();
+        const atual = doDia.get(c.nome) || { nome: c.nome, valor: 0, faltas: [] };
+        atual.valor = Math.round((atual.valor * 100 + v)) / 100;
+        for (const f of c.faltas) if (!atual.faltas.some((g) => g.motivo === f.motivo && g.nome === f.nome)) atual.faltas.push(f);
+        doDia.set(c.nome, atual);
+        semCustoPorDia.set(dia, doDia);
+      }
     }
     const canal = canalDoRelatorio(o as any);
     const tipo = tipoDeVenda(o as any);
@@ -300,6 +343,8 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
       itens: cItens / 100,
       itensComCusto: cComCusto / 100,
       custo: cCusto / 100,
+      itensPelaFicha: cItensFicha / 100,
+      custoPelaFicha: cCustoFicha / 100,
       impossivel: temValorImpossivel(o),
       pagamentos: o.tableSessionId ? [] : partesDaEntrega(o).map((p) => ({ forma: p.caixa, valor: p.valor })),
       // O 1% do FireHub só quando o split saiu de fato (SPLIT_COBRADO).
@@ -378,5 +423,13 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
     },
     ciclos,
     isenta,
+    cmv: {
+      real: cmvReal,
+      usaFicha: custos?.usaFicha ?? false,
+      usaEstoque: custos?.usaEstoque ?? false,
+      semana: (({ comecaEm, fecha, diaDaContagem }) => ({ comecaEm, fecha, diaDaContagem }))(lerSemanaDoCmv(goals)),
+      semCustoPorDia: Object.fromEntries([...semCustoPorDia].map(([dia, m]) => [dia, [...m.values()]])),
+      erro: erroDoCmv,
+    },
   };
 }

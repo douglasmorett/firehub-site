@@ -35,8 +35,9 @@
  *    (a sobra da conta do pedido de app: total − itens − entrega + desconto)
  *    − desconto dado no fechamento da mesa + cupom que o app bancou (o app
  *    repassa à loja).
- * 4. CUSTOS que andam com a venda (margem de contribuição): CMV pelo custo
- *    cadastrado, comissão dos apps pelo percentual que A LOJA cadastra, taxa
+ * 4. CUSTOS que andam com a venda (margem de contribuição): CMV pela contagem
+ *    do estoque, senão pela ficha técnica, senão pelo custo digitado (ver "O
+ *    CMV", mais abaixo), comissão dos apps pelo percentual que A LOJA cadastra, taxa
  *    de pagamento pela forma do caixa (`formaDoPedido`) e pela média das
  *    bandeiras ativas, entregadores pelo acerto de cada um mais as diárias.
  * 5. Depois: mensalidade FireHub (o ciclo de verdade, rateado por dia),
@@ -52,10 +53,12 @@
  *    loja com muito cupom do iFood passava de 100%.
  */
 import { atendimentosDaVenda, cent, reais, situacaoDoPedido, ticketMedio } from "@/lib/relatorios/regua-da-venda";
-import { ROTULO_DO_TIPO, TIPOS_DE_VENDA, diasNoPeriodo, periodoDoAtalho, somarDias, type AtalhoDePeriodo, type TipoDeVenda } from "@/lib/relatorios/base";
+import { ROTULO_DO_TIPO, TIPOS_DE_VENDA, diasNoPeriodo, naLoja, periodoDoAtalho, somarDias, type AtalhoDePeriodo, type TipoDeVenda } from "@/lib/relatorios/base";
 import { canaisConhecidos, type ChaveDeCanal } from "@/lib/canal-do-pedido";
 import { calcMensalidade, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import type { ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
+import type { CmvDoTrecho } from "@/lib/cmv/cmv-real";
+import type { FaltaDoItem, MotivoSemCusto } from "@/lib/financeiro/custo-pela-ficha";
 
 // ── PERÍODO ─────────────────────────────────────────────────────────────────
 
@@ -179,10 +182,16 @@ export type PedidoDoFinanceiro = {
   parentOrderId: string | null;
   /** Valor dos itens (preço × quantidade, a régua do Itens vendidos). */
   itens: number;
-  /** Quanto desse valor é de item cujo produto tem custo cadastrado. */
+  /**
+   * Quanto desse valor tem custo pelas fontes 2 e 3 do CMV (ficha técnica ×
+   * custo do insumo no dia, ou o custo digitado no produto). Ver "O CMV".
+   */
   itensComCusto: number;
-  /** Σ custo × quantidade. */
+  /** Σ custo desses itens (ficha + custo digitado). */
   custo: number;
+  /** A parte de `itensComCusto`/`custo` que saiu da ficha técnica. Ausente = tudo pelo custo digitado. */
+  itensPelaFicha?: number;
+  custoPelaFicha?: number;
   /** Total ou item ≥ R$ 1 milhão (regua-da-venda.ts, temValorImpossivel): fora de toda soma. */
   impossivel: boolean;
   /** As partes do pagamento pela régua do caixa (lib/resumo-do-entregador.ts, partesDaEntrega). */
@@ -260,6 +269,38 @@ export type CicloNoPeriodo = {
   situacao: SituacaoDoCiclo;
 };
 
+/** Um item vendido sem custo e o que falta para ter (lib/financeiro/custo-pela-ficha.ts). */
+export type ItemSemCusto = { nome: string; valor: number; faltas: FaltaDoItem[] };
+
+/** O CMV pela contagem do estoque no período (lib/financeiro/cmv-do-financeiro.ts). */
+export type CmvRealDoPeriodo = {
+  /** Contagens fechadas até o fim do período, de qualquer tipo. */
+  contagens: number;
+  ultimaCompleta: string | null;
+  /** A contagem completa que abre o período, quando há (com ou sem a que fecha). */
+  abertura: string | null;
+  /** Entre duas contagens COMPLETAS dentro do período (lib/cmv/cmv-real.ts, janelaCompletaDoPeriodo). */
+  trecho: CmvDoTrecho | null;
+  falta: null | "NENHUMA_CONTAGEM" | "SO_UMA_CONTAGEM";
+  /** Insumos contados (quantidade > 0) sem custo nas duas contagens: entram com R$ 0. */
+  semCustoNaContagem: string[];
+};
+
+/** O que o servidor manda para o CMV. Ausente (dado antigo) = só o custo que veio em cada pedido. */
+export type CmvDoServidor = {
+  real: CmvRealDoPeriodo | null;
+  /** A loja tem ficha técnica gravada em algum produto. */
+  usaFicha: boolean;
+  /** A loja tem insumos no estoque. */
+  usaEstoque: boolean;
+  /** A semana do CMV da loja (lib/cmv/semana-do-cmv.ts): o dia da semana em que começa e o que ela fecha. */
+  semana: { comecaEm: number; fecha: number; diaDaContagem: number };
+  /** Os itens sem custo de cada dia operacional, juntados pelo nome. */
+  semCustoPorDia: Record<string, ItemSemCusto[]>;
+  /** Não deu para ler a contagem ou as fichas: o CMV fica só com o que veio no pedido. */
+  erro?: string | null;
+};
+
 export type DadosDoPeriodo = {
   de: string;
   ate: string;
@@ -270,6 +311,7 @@ export type DadosDoPeriodo = {
   mesas: ResumoDasMesas;
   ciclos: CicloNoPeriodo[];
   isenta: boolean;
+  cmv?: CmvDoServidor;
 };
 
 export type CustoFixo = { id: string; label: string; value: number };
@@ -379,9 +421,12 @@ export type ResultadoDoDRE = {
   // CMV
   cmv: number;
   valorDosItens: number;
+  /** Valor dos itens com custo: os dos dias da contagem + os que têm ficha ou custo digitado. */
   valorDosItensComCusto: number;
-  /** 0 a 1: quanto do valor dos itens tem custo cadastrado. */
+  /** 0 a 1: quanto do valor dos itens tem custo (por qualquer das três fontes). */
   cobertura: number;
+  /** De onde o CMV saiu e o que falta. */
+  cmvDetalhe: CmvDoDRE;
   lucroBruto: number;
   // CUSTOS QUE ANDAM COM A VENDA
   comissoes: LinhaDeComissao[];
@@ -414,6 +459,235 @@ export const COBERTURA_MINIMA = 0.8;
 /** Acima desta fração de entregas da loja sem entregador, o custo das entregas é incompleto. */
 const ENTREGAS_SEM_ENTREGADOR_MAXIMO = 0.2;
 
+// ── O CMV ───────────────────────────────────────────────────────────────────
+//
+// O DRE abria "Resultado incompleto — 100% do valor dos itens vendidos está
+// sem custo cadastrado" no Hakim Centro (11/10/2026): só sabia ler o custo
+// digitado em cada produto (`MenuProduct.cost`), que ninguém preenche. A loja
+// já conta o estoque e lança as compras (CMV real, lib/cmv) e tem as fichas
+// técnicas. O Douglas: "não quero CMV teórico" e "só preciso que os números
+// deem certo". A ordem das fontes, dia a dia:
+//
+//   1. CONTAGEM (o real): estoque da contagem completa que abre + compras −
+//      estoque da que fecha (lib/cmv/cmv-real.ts, janelaCompletaDoPeriodo).
+//      Vale para os dias entre as duas contagens, inteiros.
+//   2. FICHA TÉCNICA × custo do insumo no dia (lib/financeiro/custo-pela-ficha.ts),
+//      item a item, nos dias que a contagem não cobre.
+//   3. CUSTO DIGITADO no produto, só onde não há ficha.
+//
+// COBERTURA PARCIAL (a regra mais conservadora, decidida aqui): a contagem
+// vale só para os dias que ela cobre por inteiro — o trecho entre duas
+// contagens COMPLETAS que caem dentro do período. Nada de ratear o CMV de uma
+// semana de contagem entre os dias de dentro e de fora do período: isso seria
+// uma estimativa vestida de número real. Os outros dias vão pelas fontes 2 e
+// 3, e o resultado só é completo se ELAS cobrirem ≥ 80% do valor dos itens
+// DESSES dias (COBERTURA_MINIMA) — medido só sobre os dias de fora, para um
+// dia sem custo nenhum não se esconder atrás de seis dias de contagem. Para o
+// período inteiro sair da contagem, ele tem de ser a semana do CMV da loja
+// (lib/cmv/semana-do-cmv.ts): a tela diz qual é.
+//
+// Sem custo nunca é R$ 0 calado: o item fica "sem custo", conta contra a
+// cobertura e a tela diz o nome e o que fazer (lançar a compra do insumo,
+// fazer a ficha, digitar o custo, acertar o nome que o app manda).
+
+export type FonteDoCmv = "CONTAGEM" | "CONTAGEM_E_FICHA" | "FICHA" | "CADASTRO" | "NENHUMA";
+
+/** O que falta, com o lugar de resolver. `bloqueia` = sem isso o resultado não é o lucro. */
+export type FaltaDoCmv = {
+  chave: "CONTAGEM" | "CONTAGEM_SEM_CUSTO" | "COMPRAS" | "FICHA" | "CUSTO_NO_PRODUTO" | "NOME_DO_APP";
+  texto: string;
+  href: string;
+  rotulo: string;
+  bloqueia: boolean;
+};
+
+export type CmvDoDRE = {
+  fonte: FonteDoCmv;
+  /** "CMV real pela contagem de 13/10 a 19/10", "pela ficha técnica e o custo das compras"... */
+  titulo: string;
+  real: null | {
+    de: string; ate: string;
+    /** O dia que a contagem de abertura fecha (véspera do primeiro dia coberto). */
+    abertura: string;
+    estoqueInicial: number; compras: number; estoqueFinal: number; cmv: number;
+    /** Valor vendido sem a taxa de entrega nos dias da contagem. */
+    vendas: number;
+    pct: number | null;
+  };
+  ficha: { custo: number; itens: number };
+  cadastro: { custo: number; itens: number };
+  /** Valor dos itens dos dias que a contagem não cobre (todos, sem contagem). */
+  itensFora: number;
+  /** 0 a 1: quanto desse valor tem custo pela ficha ou pelo produto. */
+  coberturaFora: number;
+  semCusto: { valor: number; itens: ItemSemCusto[] };
+  faltas: FaltaDoCmv[];
+  completo: boolean;
+};
+
+const DIAS_DA_SEMANA = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+const listaCurta = (nomes: string[], n = 5) => (nomes.length <= n ? listaPt(nomes) : `${nomes.slice(0, n).join(", ")} e mais ${nomes.length - n}`);
+
+function cmvDoPeriodo(validos: PedidoDoFinanceiro[], dados: DadosDoPeriodo): {
+  detalhe: CmvDoDRE; cCmv: number; cComCusto: number; pendencias: string[]; avisos: string[];
+} {
+  const info = dados.cmv;
+  const real = info?.real ?? null;
+  const trecho = real?.trecho ?? null;
+  const dentro = (dia: string) => trecho != null && dia >= trecho.de && dia <= trecho.ate;
+
+  let cItensReal = 0, cVendasReal = 0, cItensFora = 0, cComCustoFora = 0, cCustoFora = 0, cItensFicha = 0, cCustoFicha = 0;
+  for (const p of validos) {
+    const dia = naLoja(p.criadoEm, dados.tz).dia;
+    if (dentro(dia)) {
+      cItensReal += cent(p.itens);
+      cVendasReal += cent(p.totalAmount) - cent(p.deliveryFee);
+      continue;
+    }
+    cItensFora += cent(p.itens);
+    cComCustoFora += cent(p.itensComCusto);
+    cCustoFora += cent(p.custo);
+    cItensFicha += cent(p.itensPelaFicha || 0);
+    cCustoFicha += cent(p.custoPelaFicha || 0);
+  }
+  const cReal = trecho ? cent(trecho.cmv) : 0;
+  const coberturaFora = cItensFora > 0 ? cComCustoFora / cItensFora : 1;
+
+  // Os sem custo dos dias de fora, juntados pelo nome.
+  const juntos = new Map<string, ItemSemCusto>();
+  for (const [dia, itens] of Object.entries(info?.semCustoPorDia || {})) {
+    if (dia < dados.de || dia > dados.ate || dentro(dia)) continue;
+    for (const i of itens) {
+      const atual = juntos.get(i.nome);
+      if (!atual) { juntos.set(i.nome, { nome: i.nome, valor: i.valor, faltas: [...i.faltas] }); continue; }
+      atual.valor = reais(cent(atual.valor) + cent(i.valor));
+      for (const f of i.faltas) if (!atual.faltas.some((g) => g.motivo === f.motivo && g.nome === f.nome)) atual.faltas.push(f);
+    }
+  }
+  const semCustoItens = [...juntos.values()].sort((a, b) => b.valor - a.valor);
+  const nomesDo = (motivos: MotivoSemCusto[]) => {
+    const peso = new Map<string, number>();
+    for (const i of semCustoItens) for (const f of i.faltas) if (motivos.includes(f.motivo)) peso.set(f.nome, (peso.get(f.nome) || 0) + i.valor);
+    return [...peso.entries()].sort((a, b) => b[1] - a[1]).map(([n]) => n);
+  };
+
+  const faltaCobertura = cItensFora > 0 && coberturaFora < COBERTURA_MINIMA;
+  const faltas: FaltaDoCmv[] = [];
+  const pendencias: string[] = [];
+  const avisos: string[] = [];
+  const motivosCurtos: string[] = [];
+
+  // ── O que falta nos itens (fontes 2 e 3) ─────────────────────────────────
+  const insumos = nomesDo(["INSUMO_SEM_CUSTO"]);
+  if (insumos.length) {
+    motivosCurtos.push("insumo sem compra lançada");
+    faltas.push({
+      chave: "COMPRAS", bloqueia: faltaCobertura, href: "/store/estoque/compras", rotulo: "Lançar compras",
+      texto: `${insumos.length === 1 ? "Insumo" : "Insumos"} da ficha técnica sem custo (nenhuma compra lançada): ${listaCurta(insumos)}. Lance a compra em Estoque › Compras — ou ponha o custo no cadastro do insumo.`,
+    });
+  }
+  const semFicha = nomesDo(["SEM_FICHA", "OPCAO_SEM_FICHA"]);
+  if (semFicha.length) {
+    if (info?.usaFicha) {
+      motivosCurtos.push("produto sem ficha técnica");
+      faltas.push({
+        chave: "FICHA", bloqueia: faltaCobertura, href: "/store/estoque", rotulo: "Fazer as fichas técnicas",
+        texto: `${semFicha.length === 1 ? "Produto vendido" : "Produtos vendidos"} sem ficha técnica e sem custo: ${listaCurta(semFicha)}. Monte a ficha em Estoque › Fichas técnicas (ou digite o custo do produto no cardápio).`,
+      });
+    } else {
+      motivosCurtos.push("produto sem custo");
+      faltas.push({
+        chave: "CUSTO_NO_PRODUTO", bloqueia: faltaCobertura, href: "/store/cardapio", rotulo: "Cadastrar custos no cardápio",
+        texto: `${semFicha.length === 1 ? "Produto vendido" : "Produtos vendidos"} sem custo: ${listaCurta(semFicha)}. Digite quanto custa cada um no cardápio — ou monte a ficha técnica no Estoque.`,
+      });
+    }
+  }
+  const nomes = nomesDo(["NOME_NAO_CASA"]);
+  if (nomes.length) {
+    motivosCurtos.push("nome do app que não existe no cardápio");
+    faltas.push({
+      chave: "NOME_DO_APP", bloqueia: faltaCobertura, href: "/store/cardapio", rotulo: "Abrir o cardápio",
+      texto: `${nomes.length === 1 ? "Item vendido" : "Itens vendidos"} com nome que não existe no cardápio: ${listaCurta(nomes.map((n) => `“${n}”`))}. O custo vem do produto de MESMO nome: deixe o nome igual no app e no cardápio.`,
+    });
+  }
+
+  // ── A contagem (fonte 1) ─────────────────────────────────────────────────
+  const semana = info?.semana;
+  const nomeDoDia = semana ? DIAS_DA_SEMANA[semana.diaDaContagem] : "semana";
+  const semanaDoCmv = semana ? `de ${DIAS_DA_SEMANA[semana.comecaEm]} a ${DIAS_DA_SEMANA[semana.fecha]}` : "";
+  if (info?.usaEstoque && !trecho) {
+    const texto = !real || real.contagens === 0
+      ? `Ainda não há contagem do estoque fechada. Com a contagem completa toda ${nomeDoDia}, o CMV sai real — o que de fato saiu do estoque —, sem depender de ficha nem de custo digitado.`
+      : real.falta === "SO_UMA_CONTAGEM" && real.abertura
+        ? `A contagem completa de ${diaCurto(real.abertura)} abre o período; falta a próxima (toda ${nomeDoDia}) para o CMV real fechar.`
+        : `Nenhuma contagem completa cobre este período${real.ultimaCompleta ? ` (a última foi em ${diaCurto(real.ultimaCompleta)})` : ""}. Com duas contagens completas dentro dele, o CMV sai real.`;
+    faltas.push({ chave: "CONTAGEM", bloqueia: false, href: "/store/estoque/contagem", rotulo: "Contar o estoque", texto });
+  }
+  if (trecho && cItensFora > 0) {
+    avisos.push(`o CMV real cobre de ${diaCurto(trecho.de)} a ${diaCurto(trecho.ate)} (entre as contagens completas do período); os outros dias vão pela ficha técnica ou pelo custo do produto${semanaDoCmv ? ` — para o período inteiro sair da contagem, escolha a semana do CMV (${semanaDoCmv})` : ""}`);
+  }
+  if (trecho && real && real.semCustoNaContagem.length) {
+    const n = real.semCustoNaContagem.length;
+    pendencias.push(`${n} ${n === 1 ? "insumo contado" : "insumos contados"} sem custo na contagem do estoque (entram com R$ 0 no CMV real)`);
+    faltas.push({
+      chave: "CONTAGEM_SEM_CUSTO", bloqueia: true, href: "/store/estoque/compras", rotulo: "Lançar compras",
+      texto: `Na contagem, ${n === 1 ? "este insumo foi contado" : "estes insumos foram contados"} sem custo e ${n === 1 ? "entrou" : "entraram"} com R$ 0: ${listaCurta(real.semCustoNaContagem)}. Lance a compra deles (ou o custo no cadastro do insumo) e feche a contagem de novo.`,
+    });
+  }
+  if (trecho && trecho.cmv < 0) {
+    pendencias.push("o CMV pela contagem deu negativo (o estoque final vale mais que o inicial mais as compras): quase sempre é compra que entrou sem ser lançada, ou contagem com quantidade errada");
+  }
+  if (info?.erro) pendencias.push("o custo dos produtos (contagem do estoque, fichas técnicas e custo digitado) não pôde ser lido agora — recarregue a página");
+
+  if (faltaCobertura) {
+    const p = Math.round((1 - coberturaFora) * 100);
+    const porque = motivosCurtos.length ? ` (${listaPt(motivosCurtos)})` : info ? "" : " cadastrado";
+    pendencias.unshift(trecho
+      ? `nos dias fora da contagem do estoque, ${p}% do valor dos itens vendidos está sem custo${porque}`
+      : `${p}% do valor dos itens vendidos está sem custo${porque}`);
+  }
+
+  // ── De onde veio ─────────────────────────────────────────────────────────
+  const cCadastro = cCustoFora - cCustoFicha;
+  const cItensCadastro = cComCustoFora - cItensFicha;
+  const restoTem = [cItensFicha > 0 ? "pela ficha técnica e o custo das compras" : "", cItensCadastro > 0 ? "pelo custo cadastrado no produto" : ""].filter(Boolean);
+  let fonte: FonteDoCmv;
+  let titulo: string;
+  if (trecho) {
+    fonte = cItensFora > 0 ? "CONTAGEM_E_FICHA" : "CONTAGEM";
+    titulo = `CMV real pela contagem do estoque de ${diaCurto(trecho.de)} a ${diaCurto(trecho.ate)}`
+      + (cItensFora > 0 ? `; nos outros dias, ${restoTem.length ? listaPt(restoTem) : "sem custo"}` : "");
+  } else if (cItensFicha > 0) {
+    fonte = "FICHA";
+    titulo = `CMV ${listaPt(restoTem)}`;
+  } else if (cComCustoFora > 0) {
+    fonte = "CADASTRO";
+    titulo = "CMV pelo custo cadastrado no produto";
+  } else {
+    fonte = "NENHUMA";
+    titulo = "Sem custo: nenhuma contagem do estoque, ficha técnica ou custo cadastrado cobre os itens vendidos";
+  }
+
+  const detalhe: CmvDoDRE = {
+    fonte,
+    titulo,
+    real: trecho ? {
+      de: trecho.de, ate: trecho.ate, abertura: somarDias(trecho.de, -1),
+      estoqueInicial: trecho.estoqueInicial, compras: trecho.compras, estoqueFinal: trecho.estoqueFinal, cmv: trecho.cmv,
+      vendas: reais(cVendasReal),
+      pct: cVendasReal > 0 ? Math.round((cReal / cVendasReal) * 1000) / 10 : null,
+    } : null,
+    ficha: { custo: reais(cCustoFicha), itens: reais(cItensFicha) },
+    cadastro: { custo: reais(cCadastro), itens: reais(cItensCadastro) },
+    itensFora: reais(cItensFora),
+    coberturaFora,
+    semCusto: { valor: reais(cItensFora - cComCustoFora), itens: semCustoItens },
+    faltas,
+    completo: !faltaCobertura && !(trecho && real && real.semCustoNaContagem.length) && !(trecho && trecho.cmv < 0) && !info?.erro,
+  };
+  return { detalhe, cCmv: cReal + cCustoFora, cComCusto: cItensReal + cComCustoFora, pendencias, avisos };
+}
+
 const pct = (parte: number, todo: number) => (todo > 0 ? Math.round((parte / todo) * 10000) / 100 : 0);
 const FORMAS_COM_TAXA: FormaComTaxa[] = ["CREDITO", "DEBITO", "VALE", "PIX", "DINHEIRO"];
 const listaPt = (l: string[]) => (l.length <= 1 ? l.join("") : `${l.slice(0, -1).join(", ")} e ${l[l.length - 1]}`);
@@ -436,7 +710,7 @@ export function calcularDRE(e: {
 
   // ── RECEITA (a régua única) ────────────────────────────────────────────
   let cValor = 0, cFrete = 0, cFreteApp = 0, cCupomApp = 0, cTaxaApp = 0, nTaxaApp = 0;
-  let cItens = 0, cItensComCusto = 0, cCusto = 0;
+  let cItens = 0;
   let nCanc = 0, cCanc = 0;
   let entregasDaLoja = 0, entregasSemEntregador = 0, entregasDoApp = 0;
   const validos: PedidoDoFinanceiro[] = [];
@@ -464,8 +738,6 @@ export function calcularDRE(e: {
     cCupomApp += cent(p.cupomDoApp);
     if (p.taxaDoApp > 0) { cTaxaApp += cent(p.taxaDoApp); nTaxaApp++; }
     cItens += cent(p.itens);
-    cItensComCusto += cent(p.itensComCusto);
-    cCusto += cent(p.custo);
 
     const c = porCanal.get(p.canal) || { pedidos: 0, c: 0, cItens: 0 };
     c.pedidos++;
@@ -519,10 +791,11 @@ export function calcularDRE(e: {
   const descontoNaMesa = dados.mesas.descontoNoFechamento;
   const receitaDaLoja = reais(cValor - cFreteApp - cTaxaApp - cent(descontoNaMesa) + cCupomApp);
 
-  // ── CMV ────────────────────────────────────────────────────────────────
-  const cmv = reais(cCusto);
-  const cobertura = cItens > 0 ? cItensComCusto / cItens : 1;
-  const lucroBruto = reais(cent(receitaDaLoja) - cCusto);
+  // ── CMV (contagem → ficha técnica → custo do produto; ver cmvDoPeriodo) ─
+  const doCmv = cmvDoPeriodo(validos, dados);
+  const cmv = reais(doCmv.cCmv);
+  const cobertura = cItens > 0 ? doCmv.cComCusto / cItens : 1;
+  const lucroBruto = reais(cent(receitaDaLoja) - doCmv.cCmv);
 
   // ── COMISSÃO DOS APPS ──────────────────────────────────────────────────
   const comissoes: LinhaDeComissao[] = [];
@@ -622,9 +895,8 @@ export function calcularDRE(e: {
   // ── O QUE FALTA PARA SER LUCRO DE VERDADE ─────────────────────────────
   const pendencias: string[] = [];
   const avisos: string[] = [];
-  if (cItens > 0 && cobertura < COBERTURA_MINIMA) {
-    pendencias.push(`${Math.round((1 - cobertura) * 100)}% do valor dos itens vendidos está sem custo cadastrado`);
-  }
+  pendencias.push(...doCmv.pendencias);
+  avisos.push(...doCmv.avisos);
   const semComissao = comissoes.filter((c) => c.pct === null).map((c) => c.nome);
   if (semComissao.length > 0) pendencias.push(`comissão ${semComissao.length === 1 ? "do" : "dos apps"} ${listaPt(semComissao)} não configurada`);
   const semTaxa = taxas.filter((t) => !t.configurada).map((t) => t.rotulo.toLowerCase());
@@ -669,8 +941,9 @@ export function calcularDRE(e: {
     receitaDaLoja,
     cmv,
     valorDosItens: reais(cItens),
-    valorDosItensComCusto: reais(cItensComCusto),
+    valorDosItensComCusto: reais(doCmv.cComCusto),
     cobertura,
+    cmvDetalhe: doCmv.detalhe,
     lucroBruto,
     comissoes,
     totalComissoes,

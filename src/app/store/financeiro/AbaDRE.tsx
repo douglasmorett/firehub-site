@@ -11,8 +11,14 @@ import DespesasLancadas, { type DespesaDTO } from "./DespesasLancadas";
 import { DRERow, KPICard, TituloDaSecao, fmtNum, fmtPct, fmtR } from "./ui";
 import {
   COBERTURA_MINIMA, diaCurto, economiaNosCanaisProprios, nomeDoMes,
-  type ComissoesDosApps, type ResultadoDoDRE,
+  type ComissoesDosApps, type FaltaDoCmv, type ResultadoDoDRE,
 } from "@/lib/financeiro/dre";
+
+/** Um botão por lugar de resolver (duas faltas podem levar à mesma tela). */
+function botoesDasFaltas(faltas: FaltaDoCmv[]): FaltaDoCmv[] {
+  const vistos = new Set<string>();
+  return faltas.filter((f) => (vistos.has(f.href) ? false : (vistos.add(f.href), true)));
+}
 
 const vermelho = "#C92E09";
 const verde = "#0F766E";
@@ -29,13 +35,12 @@ const ROTULO_DA_SITUACAO: Record<string, string> = {
 };
 
 export default function AbaDRE({
-  dre, de, ate, comissoes, produtosSemCusto, despesas, onDespesas, irPara,
+  dre, de, ate, comissoes, despesas, onDespesas, irPara,
 }: {
   dre: ResultadoDoDRE;
   de: string;
   ate: string;
   comissoes: ComissoesDosApps;
-  produtosSemCusto: { id: string; name: string }[];
   despesas: DespesaDTO[];
   onDespesas: (d: DespesaDTO[]) => void;
   irPara: (aba: "configuracoes" | "custosfix") => void;
@@ -45,6 +50,9 @@ export default function AbaDRE({
   const economia = economiaNosCanaisProprios(dre, comissoes);
   const porTipo = dre.porTipo.filter((t) => t.vendas > 0).map((t) => `${t.rotulo} ${fmtNum(t.vendas)}`).join(" · ");
   const percentualDoCmv = dre.valorDosItens > 0 ? (dre.cmv / dre.valorDosItens) * 100 : 0;
+  const c = dre.cmvDetalhe;
+  const faltasQueBloqueiam = botoesDasFaltas(c.faltas.filter((f) => f.bloqueia));
+  const semCustoVisiveis = verTodosSemCusto ? c.semCusto.itens : c.semCusto.itens.slice(0, 12);
 
   return (
     <>
@@ -53,7 +61,7 @@ export default function AbaDRE({
         titulo="DRE — o resultado da sua loja"
         oQueE="Mostra, no período escolhido, quanto entrou de venda, quanto saiu de custo e o que sobrou."
         paraQueServe="É a resposta para “trabalhei o mês todo, mas ganhei dinheiro?”."
-        aviso="O resultado só vira lucro de verdade com o custo dos produtos cadastrado no cardápio, a comissão de cada app cadastrada na aba Configurações e as taxas da maquininha em Minha Loja. Enquanto faltar alguma delas, o DRE mostra “resultado incompleto” e diz o que falta — ele não inventa o número."
+        aviso="O resultado só vira lucro de verdade com o custo dos produtos (pela contagem do estoque, pela ficha técnica com as compras lançadas ou pelo custo digitado no produto), a comissão de cada app cadastrada na aba Configurações e as taxas da maquininha em Minha Loja. Enquanto faltar alguma delas, o DRE mostra “resultado incompleto” e diz o que falta — ele não inventa o número."
         passos={[
           { titulo: "Escolha o período", texto: "os botões do topo são os mesmos dos Relatórios, e o dia vira às 5h da manhã, como no caixa." },
           { titulo: "Olhe a margem de contribuição", texto: "é o que sobra de cada venda depois do produto, da comissão do app, da taxa do cartão e do entregador." },
@@ -71,11 +79,12 @@ export default function AbaDRE({
             {dre.pendencias.map((p) => <li key={p}>{p.charAt(0).toUpperCase() + p.slice(1)}.</li>)}
           </ul>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {dre.cobertura < COBERTURA_MINIMA && (
-              <a href="/store/cardapio" style={{ background: "#B45309", color: "#fff", padding: "7px 14px", borderRadius: 8, fontWeight: 700, fontSize: "0.8rem", textDecoration: "none" }}>
-                📦 Cadastrar custos no cardápio
+            {/* O botão do CMV é o do que de fato falta: compra, ficha, custo no cardápio ou o nome do app. */}
+            {faltasQueBloqueiam.map((f) => (
+              <a key={f.href} href={f.href} style={{ background: "#B45309", color: "#fff", padding: "7px 14px", borderRadius: 8, fontWeight: 700, fontSize: "0.8rem", textDecoration: "none" }}>
+                📦 {f.rotulo}
               </a>
-            )}
+            ))}
             {dre.comissoes.some((c) => c.pct === null) && (
               <button onClick={() => irPara("configuracoes")} style={{ background: "#fff", color: "#92400E", border: "1.5px solid #B45309", padding: "6px 14px", borderRadius: 8, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}>
                 ⚙️ Cadastrar a comissão dos apps
@@ -103,10 +112,10 @@ export default function AbaDRE({
         )}
         <KPICard icon={<ShoppingBag size={18} color="#64748B" />} label="Ticket médio" value={fmtR(dre.ticketMedio)}
           sub={porTipo || "sem vendas"} color="#64748B" />
-        <KPICard icon={<Package size={18} color="#B45309" />} label="CMV (custo dos produtos)" value={fmtR(dre.cmv)}
-          alerta={dre.valorDosItens > 0 && dre.cobertura < COBERTURA_MINIMA}
-          sub={dre.valorDosItens > 0
-            ? `${fmtPct(percentualDoCmv)} do valor dos itens · custo cadastrado em ${fmtPct(dre.cobertura * 100, 0)} dele`
+        <KPICard icon={<Package size={18} color="#B45309" />} label={c.real ? "CMV real (custo dos produtos)" : "CMV (custo dos produtos)"} value={fmtR(dre.cmv)}
+          alerta={!c.completo}
+          sub={dre.valorDosItens > 0 || c.real
+            ? <>{fmtPct(percentualDoCmv)} do valor dos itens · {c.titulo.replace(/^CMV /, "")}{c.semCusto.valor > 0 ? ` · ${fmtR(c.semCusto.valor)} em itens sem custo` : ""}</>
             : "sem itens no período"} color="#B45309" />
         <KPICard icon={<Truck size={18} color="#0D9488" />} label="Entregadores" value={dre.entregadores.erro ? "Não apurado" : fmtR(dre.entregadores.total)}
           alerta={Boolean(dre.entregadores.erro)}
@@ -115,28 +124,41 @@ export default function AbaDRE({
           sub={`${fmtR(dre.cancelados.valor)} em pedidos cancelados`} color={vermelho} />
       </div>
 
-      {/* ── PRODUTOS SEM CUSTO ─────────────────────────────────────────── */}
-      {produtosSemCusto.length > 0 && (
+      {/* ── O QUE FALTA NO CMV ──────────────────────────────────────────── */}
+      {c.faltas.length > 0 && (
         <div style={{ background: "#fff", border: "1px solid #FDE68A", borderRadius: 14, padding: "14px 18px", marginBottom: "1.5rem" }}>
           <p style={{ fontWeight: 800, color: "#92400E", margin: "0 0 4px", fontSize: "0.9rem" }}>
-            {produtosSemCusto.length} {produtosSemCusto.length === 1 ? "produto ativo sem" : "produtos ativos sem"} custo cadastrado
+            {c.completo ? "Para o custo dos produtos ficar ainda mais certo" : "O que falta para o custo dos produtos (CMV)"}
           </p>
           <p style={{ color: "#78350F", fontSize: "0.8rem", margin: "0 0 10px", lineHeight: 1.5 }}>
-            Item sem custo entra no CMV como R$ 0,00. Hoje {fmtPct(dre.cobertura * 100, 0)} do valor dos itens vendidos no período tem custo cadastrado
-            {dre.cobertura < COBERTURA_MINIMA ? ` — abaixo de ${fmtPct(COBERTURA_MINIMA * 100, 0)}, o DRE não chama o resultado de lucro.` : "."}
+            {c.titulo}.{" "}
+            {c.itensFora > 0 && (c.real
+              ? <>Nos dias fora da contagem, {fmtPct(c.coberturaFora * 100, 0)} do valor dos itens tem custo.</>
+              : <>{fmtPct(c.coberturaFora * 100, 0)} do valor dos itens vendidos tem custo.</>)}
+            {c.semCusto.valor > 0 && <> Item sem custo não entra como R$ 0,00 escondido: fica de fora e conta contra o mínimo de {fmtPct(COBERTURA_MINIMA * 100, 0)} — abaixo dele, o DRE não chama o resultado de lucro.</>}
           </p>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-            {(verTodosSemCusto ? produtosSemCusto : produtosSemCusto.slice(0, 12)).map((p) => (
-              <a key={p.id} href="/store/cardapio" style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 6, padding: "3px 10px", fontSize: "0.76rem", fontWeight: 600, color: "#92400E", textDecoration: "none" }}>
-                {p.name}
-              </a>
+          <ul style={{ margin: "0 0 10px", paddingLeft: 18, color: "#78350F", fontSize: "0.8rem", lineHeight: 1.55 }}>
+            {c.faltas.map((f) => (
+              <li key={f.chave} style={{ marginBottom: 6 }}>
+                {f.texto}{" "}
+                <a href={f.href} style={{ color: "#B45309", fontWeight: 700 }}>{f.rotulo} →</a>
+              </li>
             ))}
-            {produtosSemCusto.length > 12 && (
-              <button onClick={() => setVerTodosSemCusto((v) => !v)} style={{ fontSize: "0.76rem", color: "#92400E", fontWeight: 700, background: "none", border: "1px dashed #FDE68A", borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>
-                {verTodosSemCusto ? "▲ Ver menos" : `▼ Ver mais ${produtosSemCusto.length - 12}`}
-              </button>
-            )}
-          </div>
+          </ul>
+          {c.semCusto.itens.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {semCustoVisiveis.map((i) => (
+                <span key={i.nome} title={i.faltas.map((f) => f.nome).join(", ")} style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: 6, padding: "3px 10px", fontSize: "0.76rem", fontWeight: 600, color: "#92400E" }}>
+                  {i.nome} · {fmtR(i.valor)}
+                </span>
+              ))}
+              {c.semCusto.itens.length > 12 && (
+                <button onClick={() => setVerTodosSemCusto((v) => !v)} style={{ fontSize: "0.76rem", color: "#92400E", fontWeight: 700, background: "none", border: "1px dashed #FDE68A", borderRadius: 6, padding: "3px 10px", cursor: "pointer" }}>
+                  {verTodosSemCusto ? "▲ Ver menos" : `▼ Ver mais ${c.semCusto.itens.length - 12}`}
+                </button>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -177,10 +199,26 @@ export default function AbaDRE({
         <DRERow label="(=) RECEITA DA LOJA" value={dre.receitaDaLoja} bold border color={corDoValor(dre.receitaDaLoja)} />
 
         <TituloDaSecao cor="#E8590C" fundo="#FFF4EF">CUSTO DOS PRODUTOS VENDIDOS</TituloDaSecao>
-        <DRERow label="(-) CMV — custo cadastrado dos itens" value={-dre.cmv} color={dre.cmv > 0 ? vermelho : "#0F172A"}
-          detalhe={dre.valorDosItens > 0
-            ? `custo cadastrado em ${fmtPct(dre.cobertura * 100, 0)} do valor dos itens (${fmtR(dre.valorDosItensComCusto)} de ${fmtR(dre.valorDosItens)})${dre.cobertura < COBERTURA_MINIMA ? " — o resto entra como custo zero" : ""}`
+        <DRERow label="(-) CMV — custo dos produtos vendidos" value={-dre.cmv} color={dre.cmv > 0 ? vermelho : "#0F172A"}
+          detalhe={dre.valorDosItens > 0 || c.real
+            ? `${c.titulo} · com custo: ${fmtPct(dre.cobertura * 100, 0)} do valor dos itens (${fmtR(dre.valorDosItensComCusto)} de ${fmtR(dre.valorDosItens)})`
             : undefined} />
+        {c.real && (
+          <DRERow indent={1} label={`Pela contagem do estoque — ${diaCurto(c.real.de)} a ${diaCurto(c.real.ate)}`} value={-c.real.cmv} color={vermelho}
+            detalhe={`estoque no fim de ${diaCurto(c.real.abertura)} ${fmtR(c.real.estoqueInicial)} + compras que entraram ${fmtR(c.real.compras)} − estoque no fim de ${diaCurto(c.real.ate)} ${fmtR(c.real.estoqueFinal)}${c.real.pct != null ? ` · ${fmtPct(c.real.pct)} das vendas desses dias (${fmtR(c.real.vendas)}, sem a taxa de entrega)` : ""}`} />
+        )}
+        {c.ficha.itens > 0 && (
+          <DRERow indent={1} label={c.real ? "Outros dias — pela ficha técnica × custo das compras" : "Pela ficha técnica × custo das compras"} value={-c.ficha.custo} color={vermelho}
+            detalhe={`${fmtR(c.ficha.itens)} em itens; o insumo vale o custo da última compra lançada até o dia da venda`} />
+        )}
+        {c.cadastro.itens > 0 && (
+          <DRERow indent={1} label={c.real ? "Outros dias — pelo custo digitado no produto" : "Pelo custo digitado no produto"} value={-c.cadastro.custo} color={vermelho}
+            detalhe={`${fmtR(c.cadastro.itens)} em itens sem ficha técnica`} />
+        )}
+        {c.semCusto.valor > 0 && (
+          <DRERow indent={1} label="Itens sem custo (ficam de fora do CMV)" value={<span style={{ color: "#B45309", fontWeight: 700 }}>{fmtR(c.semCusto.valor)} em itens</span>}
+            detalhe={c.coberturaFora < COBERTURA_MINIMA ? "abaixo do mínimo: o resultado fica incompleto — veja o que falta no topo" : "dentro do mínimo; o que falta está no topo"} />
+        )}
         <DRERow label="(=) LUCRO BRUTO" value={dre.lucroBruto} bold border color={corDoValor(dre.lucroBruto)} />
 
         <TituloDaSecao cor="#E11D48" fundo="#FFF1F2">CUSTOS QUE ANDAM COM A VENDA</TituloDaSecao>

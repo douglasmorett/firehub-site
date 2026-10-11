@@ -68,7 +68,6 @@ const tela = (aba: string, extra: Record<string, unknown> = {}) => renderToStati
     papel="FRANCHISEE"
     paymentFees={{ CREDITO: { rate: 0, brands: [{ name: "Visa", rate: 3, active: true }, { name: "Elo", rate: 3.5, active: true }] }, PIX: { rate: 0 } }}
     storeName="Loja de Teste"
-    produtosSemCusto={[{ id: "x", name: "X-Tudo" }]}
     initialFixedCosts={[{ id: "a", label: "Aluguel", value: 3100 }]}
     comissoesIniciais={{ IFOOD: 20 }}
     initialRepasseConfig={{}}
@@ -111,6 +110,25 @@ confere("margens sobre uma base só", dre.includes("Margens sobre a receita da l
 confere("sem custo cadastrado: resultado incompleto, não lucro", dre.includes("Resultado incompleto") && dre.includes("RESULTADO PARCIAL"));
 confere("vendas por tipo no ticket (mesa entra)", dre.includes("Mesa 1"));
 confere("economia só dos canais próprios", dre.includes("Vendas pelos seus canais próprios") && dre.includes("Balcão, mesa e as vendas que já são do app não entram"));
+
+// ── CMV: de onde veio e o botão do que falta ─────────────────────────────
+const semana = { diaDaContagem: 2, fecha: 1, comecaEm: 2 };
+const comCmv = (cmv: DadosDoPeriodo["cmv"]) => tela("dre", { dadosIniciais: { ...dados, cmv } });
+const lojaSemFicha = comCmv({ real: null, usaFicha: false, usaEstoque: false, semana,
+  semCustoPorDia: { "2026-10-06": [{ nome: "X-Tudo", valor: 100, faltas: [{ motivo: "SEM_FICHA", nome: "X-Tudo" }] }] } });
+confere("loja sem ficha e sem custo: botão “Cadastrar custos no cardápio”", lojaSemFicha.includes("Cadastrar custos no cardápio") && lojaSemFicha.includes("X-Tudo"));
+const lojaComFicha = comCmv({ real: { contagens: 0, ultimaCompleta: null, abertura: null, trecho: null, falta: "NENHUMA_CONTAGEM", semCustoNaContagem: [] }, usaFicha: true, usaEstoque: true, semana,
+  semCustoPorDia: { "2026-10-06": [{ nome: "Esfirra de Carne c/ Catupiry", valor: 100, faltas: [{ motivo: "INSUMO_SEM_CUSTO", nome: "Catupiry" }] }] } });
+confere("loja com ficha e insumo sem compra: o botão é lançar compras, não “custos no cardápio”",
+  lojaComFicha.includes("Lançar compras") && lojaComFicha.includes("Catupiry") && !lojaComFicha.includes("Cadastrar custos no cardápio"));
+confere("loja com estoque sem contagem: chama para contar", lojaComFicha.includes("Contar o estoque") && lojaComFicha.includes("toda terça"));
+const lojaComContagem = comCmv({ real: { contagens: 2, ultimaCompleta: "2026-10-11", abertura: "2026-10-04",
+  trecho: { de: "2026-10-05", ate: "2026-10-11", estoqueInicial: 5000, compras: 3000, estoqueFinal: 4500, cmv: 3500, vendas: 0, pct: null, tipoDoFechamento: "COMPLETA" },
+  falta: null, semCustoNaContagem: [] }, usaFicha: true, usaEstoque: true, semana, semCustoPorDia: {} });
+confere("contagem cobrindo o período: “CMV real pela contagem” no cartão e no demonstrativo",
+  lojaComContagem.includes("CMV real (custo dos produtos)") && lojaComContagem.includes("CMV real pela contagem do estoque de 05/10 a 11/10")
+  && lojaComContagem.includes("Pela contagem do estoque — 05/10 a 11/10") && lojaComContagem.includes("R$ 3.500,00"));
+confere("contagem cobrindo o período: sem botão de cadastrar custo", !lojaComContagem.includes("Cadastrar custos no cardápio"));
 
 // ── Extrato e Relatório ──────────────────────────────────────────────────
 const extrato = tela("extrato");

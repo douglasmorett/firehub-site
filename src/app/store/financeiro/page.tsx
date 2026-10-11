@@ -54,15 +54,10 @@ export default async function StoreFinanceiroPage({ searchParams }: { searchPara
     }
   }
 
-  let produtosSemCusto: { id: string; name: string | null }[] = [];
-  try {
-    produtosSemCusto = await prisma.menuProduct.findMany({
-      where: { franchiseeId: lojaId, active: true, OR: [{ cost: null }, { cost: 0 }] },
-      select: { name: true, id: true },
-    });
-  } catch (err) {
-    console.error("[Financeiro] Erro ao buscar produtos sem custo:", err);
-  }
+  // A lista "produtos sem custo" saía daqui (todo produto ativo sem
+  // `MenuProduct.cost`, mesmo com ficha técnica). Agora o que falta no CMV é o
+  // que foi VENDIDO sem custo no período, e vem com o período
+  // (lib/financeiro/periodo-do-financeiro.ts → dre.ts, cmvDetalhe).
 
   // ── CONTAS A PAGAR ────────────────────────────────────────────────────────
   //
@@ -130,7 +125,6 @@ export default async function StoreFinanceiroPage({ searchParams }: { searchPara
       papel={ctx.papel}
       paymentFees={(ctx.dono.paymentFees as any) || {}}
       storeName={ctx.dono.storeName || "Minha Loja"}
-      produtosSemCusto={produtosSemCusto.map((p) => ({ id: p.id, name: p.name || "Sem nome" }))}
       initialFixedCosts={fixedCosts}
       comissoesIniciais={lerComissoesDosApps(ctx.dono.financialGoals)}
       initialRepasseConfig={(ctx.dono.repasseConfig as any) || {}}

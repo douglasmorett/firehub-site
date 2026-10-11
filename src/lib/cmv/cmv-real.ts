@@ -80,6 +80,24 @@ export function janelaDoPeriodo(contagens: ContagemFechada[], de: string, ate: s
   return { abertura, fechamento, parcial, falta: null };
 }
 
+/**
+ * A janela que o DRE do Financeiro usa: só contagens COMPLETAS e só dentro do
+ * período (a abertura na véspera do primeiro dia, ou depois).
+ *
+ * Por que não a de cima (`janelaDoPeriodo`) direto:
+ *   • a de cima abre na última contagem ATÉ a véspera, que pode ser de semanas
+ *     antes — o painel mostra a % sobre as vendas da janela inteira, mas o DRE
+ *     soma R$ no período e levaria o consumo de dias de fora;
+ *   • na contagem RÁPIDA o item não contado carrega da anterior SEM a venda
+ *     (lib/cmv/contagem.ts): o consumo dele só aparece na próxima completa. O
+ *     ponteiro do dia aguenta isso; o R$ do DRE terminado numa rápida sairia
+ *     menor. Entre duas COMPLETAS a soma fecha (as rápidas do meio se anulam).
+ */
+export function janelaCompletaDoPeriodo(contagens: ContagemFechada[], de: string, ate: string): JanelaDoCmv {
+  const vespera = somarDias(de, -1);
+  return janelaDoPeriodo(contagens.filter((c) => c.tipo === "COMPLETA" && c.dia >= vespera && c.dia <= ate), de, ate);
+}
+
 /** CMV entre duas contagens, com as compras e vendas dos dias do meio. */
 export function cmvEntre(abertura: ContagemFechada, fechamento: ContagemFechada, dias: DiaDoCmv[]): CmvDoTrecho {
   let compras = 0, vendas = 0;
