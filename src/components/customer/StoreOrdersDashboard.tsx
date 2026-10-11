@@ -4047,10 +4047,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // total); e o feed traz no máximo 200 pedidos, menos que um sábado da
   // Ragnar. O período é o do quadro: o dia de operação (padrão) vai como `dia`
   // — a janela dos Relatórios, no fuso da loja; a data escolhida à mão vai
-  // como instante. Com o resumo aberto, ele relê a cada 30 s.
+  // como instante.
+  //
+  // CLICOU, ABRE COM OS NÚMEROS (Douglas, 11/10/2026: "sempre que a pessoa
+  // clica no resumo, ela abre o resumo"). Só buscar ao abrir deixou a Hakim
+  // presa em "Calculando o resumo…" — a chamada não voltava naquele
+  // computador, sem prazo nenhum, e a tela esperava para sempre. Agora o quadro
+  // já traz o resumo do período desde que abre (a cada 2 min; com a janela
+  // aberta, a cada 30 s), o clique mostra o último que chegou enquanto o novo
+  // vem, a chamada que passa de 15 s é cortada e refeita, e falha nunca vira
+  // mensagem de erro: tenta de novo em 3 s ("melhor ficar carregando do que
+  // dar erro").
   type RespostaDoResumo = { de: string; ate: string; dia: string | null; geradoEm: string; tz: string; resumo: ResumoDasVendas };
   const [resumoDoServidor, setResumoDoServidor] = useState<{ chave: string; dados: RespostaDoResumo } | null>(null);
-  const [erroDoResumo, setErroDoResumo] = useState("");
   const consultaDoResumo = (() => {
     const dia = dateFrom.slice(0, 10);
     const padrao = periodoDoDiaDeOperacao(dia);
@@ -4059,26 +4068,41 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // "Até 23:59" vale o minuto inteiro.
     const ate = new Date(dateTo).getTime() + 59_999;
     if (!Number.isFinite(de) || !Number.isFinite(ate) || de >= ate) return "";
+    // O teto da rota (93 dias): mais que isso ela recusa, e a janela ficaria
+    // calculando para sempre.
+    if (ate - de > 94 * 24 * 60 * 60 * 1000) return "";
     return `de=${encodeURIComponent(new Date(de).toISOString())}&ate=${encodeURIComponent(new Date(ate).toISOString())}`;
   })();
   useEffect(() => {
-    if (!showResumo || !consultaDoResumo) return;
+    if (!consultaDoResumo) return;
     let vivo = true;
+    let proxima: ReturnType<typeof setTimeout> | undefined;
     const buscar = async () => {
+      const corte = new AbortController();
+      const prazo = setTimeout(() => corte.abort(), 15_000);
+      let chegou = false;
+      let recusou = false;
       try {
-        const r = await fetch(`/api/store/inicio/resumo-das-vendas?${consultaDoResumo}`, { cache: "no-store" });
-        const j = await r.json().catch(() => ({}));
-        if (!vivo) return;
-        if (!r.ok) { setErroDoResumo(j.error || "Não consegui calcular o resumo agora. Tente de novo."); return; }
-        setResumoDoServidor({ chave: consultaDoResumo, dados: j });
-        setErroDoResumo("");
+        const r = await fetch(`/api/store/inicio/resumo-das-vendas?${consultaDoResumo}`, { cache: "no-store", signal: corte.signal });
+        // 4xx não melhora em 3 s (sessão caída, período recusado): espera mais.
+        recusou = r.status >= 400 && r.status < 500 && r.status !== 408 && r.status !== 429;
+        const j = await r.json().catch(() => null);
+        // Só a resposta com o resumo inteiro conta: um 200 sem ele (página de
+        // login no lugar do JSON, por exemplo) quebraria a janela.
+        if (vivo && r.ok && j?.resumo?.total) {
+          setResumoDoServidor({ chave: consultaDoResumo, dados: j });
+          chegou = true;
+        }
       } catch {
-        if (vivo) setErroDoResumo("Sem conexão com o servidor. Tente de novo.");
+        // Sem conexão ou cortada no prazo: segue carregando e tenta de novo.
+      } finally {
+        clearTimeout(prazo);
       }
+      if (!vivo) return;
+      proxima = setTimeout(buscar, recusou ? 30_000 : !chegou ? 3_000 : showResumo ? 30_000 : 120_000);
     };
     buscar();
-    const t = setInterval(buscar, 30_000);
-    return () => { vivo = false; clearInterval(t); };
+    return () => { vivo = false; clearTimeout(proxima); };
   }, [showResumo, consultaDoResumo]);
   const resumoAberto = resumoDoServidor?.chave === consultaDoResumo ? resumoDoServidor.dados : null;
   const fmtR = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -5850,9 +5874,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <button onClick={() => setShowResumo(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.2rem" }}>x</button>
             </div>
             {!consultaDoResumo ? (
-              <p style={{ color: "#B45309", fontSize: "0.85rem", fontWeight: 600 }}>Escolha as datas De e Até do quadro para ver o resumo.</p>
+              <p style={{ color: "#B45309", fontSize: "0.85rem", fontWeight: 600 }}>Escolha as datas De e Até do quadro para ver o resumo (até 93 dias; mais que isso é em Relatórios › Vendas por período).</p>
             ) : !resumoAberto ? (
-              <p role={erroDoResumo ? "alert" : "status"} style={{ color: erroDoResumo ? "#C92E09" : "#64748B", fontSize: "0.85rem", fontWeight: 600 }}>{erroDoResumo || "Calculando o resumo…"}</p>
+              <p role="status" style={{ color: "#64748B", fontSize: "0.85rem", fontWeight: 600 }}>Calculando o resumo…</p>
             ) : (() => {
               const r = resumoAberto.resumo;
               // Cada venda está em UMA linha: NOVOS … ENTREGUES (+ mesas, + outros) somam o TOTAL.
