@@ -270,6 +270,28 @@ confere("'Sabor - ' fora de pizza não fraciona (suco de dois sabores = 2)",
     menuProduct: { id: "brendi-s", name: "Suco 500ml", category: "Brendi", active: false },
     comboSelections: JSON.stringify([{ name: "Sabor - Laranja", quantity: 1 }, { name: "Sabor - Uva", quantity: 1 }]) }, "supimpa"),
   [["Sabor - Laranja", 1], ["Sabor - Uva", 1]]);
+// "Agrupar apenas produtos" com filtro (auditoria de 11/10/2026): o filtro de
+// categoria descartava o combo antes de olharem a Coca dentro dele (Coca 3 sem
+// filtro, 2 com "Bebidas"), e a Coca do combo não entrava na linha TOTAL
+// (TOTAL 3, linhas somando 4).
+console.log("\n10) Agrupar apenas produtos: o filtro vale pela categoria da Coca, o TOTAL soma as linhas");
+const apenas = itensVendidos(PEDIDOS as any, conta, cfg({ apenasProdutos: true }));
+confere("sem filtro: TOTAL = soma das linhas (6: 2 pizzas, o combo, 3 Cocas) e o valor é o dos itens (198,80)",
+  [apenas.total.quantidade, qtdDe(apenas.itens), apenas.total.valor], [6, 6, 198.8]);
+confere("das 6, 1 veio de dentro do combo (o cartão diz isso); fora do modo, 0",
+  [apenas.dentroDeOutros, itensVendidos(PEDIDOS as any, conta, cfg()).dentroDeOutros], [1, 0]);
+const apenasBebidas = itensVendidos(PEDIDOS as any, conta, cfg({ apenasProdutos: true, categorias: new Set(["Bebidas"]) }));
+confere("com 'Bebidas': a Coca do combo conta (3), o combo não; TOTAL 3 Cocas, R$ 24",
+  [acha(apenasBebidas.itens, "Coca Cola 1,5l")?.quantidade, acha(apenasBebidas.itens, "Combo 1"), apenasBebidas.total],
+  [3, undefined, { quantidade: 3, valor: 24 }]);
+confere("com 'Bebidas': a soma das linhas bate com o TOTAL", qtdDe(apenasBebidas.itens), apenasBebidas.total.quantidade);
+const apenasPorCategoria = itensVendidos(PEDIDOS as any, conta, cfg({ apenasProdutos: true, porCategoria: true, categorias: new Set(["Bebidas"]) }));
+confere("agrupado por categoria: Bebidas = 3, e é a única", apenasPorCategoria.itens.map((c) => [c.nome, c.quantidade]), [["Bebidas", 3]]);
+const apenasACoca = itensVendidos(PEDIDOS as any, conta, cfg({ apenasProdutos: true, produtos: new Set(["coca"]) }));
+confere("filtro de PRODUTO (a Coca): 3, com a do combo", [acha(apenasACoca.itens, "Coca Cola 1,5l")?.quantidade, apenasACoca.total.quantidade], [3, 3]);
+const semApenas = itensVendidos(PEDIDOS as any, conta, cfg({ categorias: new Set(["Bebidas"]) }));
+confere("sem 'apenas produtos', o filtro continua só no item (2 Cocas avulsas)", semApenas.total, { quantidade: 2, valor: 24 });
+
 const totalDoCombo1 = itensVendidos([{ franchiseeId: P17, canal: "SITE", items: [item17("c1", { c1s: { Calabresa: 1, "Bacon c/ Ovos": 1 } })] }] as any, conta17, cfg());
 confere("o total dos itens não muda com a fração (1 combo, R$ 80)", totalDoCombo1.total, { quantidade: 1, valor: 80 });
 

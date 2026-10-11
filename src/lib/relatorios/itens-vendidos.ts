@@ -13,7 +13,10 @@
  * - "Agrupar opções por produto": uma tabela só, produto → o que foi escolhido
  *   NELE. Com a de cima: categoria → produto → opções (a tela do vídeo da NIK).
  * - "Agrupar apenas produtos": a Coca escolhida dentro do combo soma na linha
- *   da Coca vendida sozinha — "quantas Cocas saíram", sem as opções.
+ *   da Coca vendida sozinha — "quantas Cocas saíram", sem as opções. O filtro
+ *   de categoria vale pela categoria da Coca (o combo pode estar fora), e a
+ *   linha TOTAL é a soma das linhas (a Coca do combo é uma unidade a mais; o
+ *   dinheiro dela fica no combo).
  * - Quantidade da meia pizza é FRAÇÃO: meio a meio = 0,5 de cada sabor, como
  *   na Saipos ("4 sabores em 1 pizza = 0,25 de cada").
  * - Percentual pela QUANTIDADE, relativo ao nível de cima (a categoria no total,
@@ -157,6 +160,11 @@ export type ResultadoDosItens = {
   gruposDeOpcao: { chave: string; nome: string; quantidade: number }[];
   /** Quantas vendas de itens entraram (linhas de pedido). */
   linhas: number;
+  /**
+   * "Agrupar apenas produtos": das unidades do TOTAL, quantas vieram escolhidas
+   * dentro de outro item (a Coca do combo). 0 nos outros modos.
+   */
+  dentroDeOutros: number;
 };
 
 // ── AS ESCOLHAS DE UM ITEM ──────────────────────────────────────────────────
@@ -393,7 +401,7 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
   // Tabela "Opções" (visão padrão): grupo → opção.
   const tabelaOpcoes = new Map<string, Acumulado>();
   const gruposVistos = new Map<string, { chave: string; nome: string; quantidade: number }>();
-  let totalQtd = 0, totalValor = 0, linhas = 0;
+  let totalQtd = 0, totalValor = 0, linhas = 0, dentroDeOutros = 0;
 
   for (const pedido of pedidos) {
     const mapas = conta.mapasDe(pedido.franchiseeId);
@@ -403,19 +411,26 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
       if (qtd <= 0) continue;
       const categoria = categoriaDoItem(item as any, mapas) || SEM_CATEGORIA;
       const produtoId = item.menuProductId || item.menuProduct?.id || "";
-      if (cfg.categorias.size && !cfg.categorias.has(categoria)) continue;
-      if (cfg.produtos.size && !cfg.produtos.has(produtoId)) continue;
+      // O filtro de categoria e de produto vale para o ITEM. No "Agrupar apenas
+      // produtos" vale TAMBÉM para o produto escolhido dentro dele, pela
+      // categoria desse produto: com "Bebidas" marcada, a Coca do combo conta
+      // mesmo com o combo fora do filtro. Antes o combo era descartado antes de
+      // olharem a Coca dentro dele — sem filtro, Coca 3; com "Bebidas", 2.
+      const itemEntra = (!cfg.categorias.size || cfg.categorias.has(categoria)) && (!cfg.produtos.size || cfg.produtos.has(produtoId));
+      if (!itemEntra && !cfg.apenasProdutos) continue;
 
       const nome = nomeDoProduto(item);
-      const valorDoItem = (Number(item.price) || 0) * qtd;
-      linhas++;
-      totalQtd += qtd;
-      totalValor += valorDoItem;
-
-      const pai: Map<string, Acumulado> | Acumulado = cfg.porCategoria ? filho(raiz, `c:${categoria}`, categoria, "categoria") : raiz;
-      if (!(pai instanceof Map)) somar(pai, qtd, valorDoItem);
-      const noProduto = filho(pai, chaveDoProduto(item, nome, categoria, cfg.juntarMesmoNome), nome, "produto");
-      somar(noProduto, qtd, valorDoItem);
+      let noProduto: Acumulado | null = null;
+      if (itemEntra) {
+        const valorDoItem = (Number(item.price) || 0) * qtd;
+        linhas++;
+        totalQtd += qtd;
+        totalValor += valorDoItem;
+        const pai: Map<string, Acumulado> | Acumulado = cfg.porCategoria ? filho(raiz, `c:${categoria}`, categoria, "categoria") : raiz;
+        if (!(pai instanceof Map)) somar(pai, qtd, valorDoItem);
+        noProduto = filho(pai, chaveDoProduto(item, nome, categoria, cfg.juntarMesmoNome), nome, "produto");
+        somar(noProduto, qtd, valorDoItem);
+      }
 
       // ── As opções do item ──
       const precoNoCadastro = produtoId ? mapas.precoNoCombo.get(produtoId) : undefined;
@@ -448,9 +463,11 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
             ? `grupo:${chaveDoNome(parte.categoriaDoComplemento)}`
             : doCadastro ? `grupo:${chaveDoNome(doCadastro.titulo)}`
             : vendavelDaOpcao ? `grupo:${chaveDoNome(vendavelDaOpcao.categoria)}` : SEM_GRUPO;
-          const g = gruposVistos.get(grupoChave) || { chave: grupoChave, nome: grupoNome, quantidade: 0 };
-          g.quantidade += e.quantidade;
-          gruposVistos.set(grupoChave, g);
+          if (itemEntra) {
+            const g = gruposVistos.get(grupoChave) || { chave: grupoChave, nome: grupoNome, quantidade: 0 };
+            g.quantidade += e.quantidade;
+            gruposVistos.set(grupoChave, g);
+          }
 
           // O valor da opção: o que o canal mandou, senão o preço dela no grupo
           // DESTE produto no cadastro, senão desconhecido.
@@ -462,20 +479,24 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
           // do combo, a esfiha do combo) soma na linha desse produto e some
           // como opção. Complemento (borda, sabor) não é produto: fica de fora.
           if (cfg.apenasProdutos) {
-            if (parte.categoriaDoComplemento) continue;
-            const vendavel = conta.vendaveisDe(pedido.franchiseeId).get(chaveDoNome(parte.nome));
-            if (!vendavel) continue;
-            if (cfg.categorias.size && !cfg.categorias.has(vendavel.categoria)) continue;
-            if (cfg.produtos.size && !cfg.produtos.has(vendavel.id)) continue;
-            const paiV: Map<string, Acumulado> | Acumulado = cfg.porCategoria ? filho(raiz, `c:${vendavel.categoria}`, vendavel.categoria, "categoria") : raiz;
+            if (vendavelDaOpcao === undefined) continue;
+            if (cfg.categorias.size && !cfg.categorias.has(vendavelDaOpcao.categoria)) continue;
+            if (cfg.produtos.size && !cfg.produtos.has(vendavelDaOpcao.id)) continue;
+            const paiV: Map<string, Acumulado> | Acumulado = cfg.porCategoria ? filho(raiz, `c:${vendavelDaOpcao.categoria}`, vendavelDaOpcao.categoria, "categoria") : raiz;
             if (!(paiV instanceof Map)) somar(paiV, e.quantidade, 0);
             const chaveV = cfg.juntarMesmoNome
-              ? `p:${vendavel.categoria}:${chaveDoNome(vendavel.nome)}`
-              : `p:${vendavel.id}`;
-            somar(filho(paiV, chaveV, vendavel.nome, "produto"), e.quantidade, 0);
+              ? `p:${vendavelDaOpcao.categoria}:${chaveDoNome(vendavelDaOpcao.nome)}`
+              : `p:${vendavelDaOpcao.id}`;
+            somar(filho(paiV, chaveV, vendavelDaOpcao.nome, "produto"), e.quantidade, 0);
+            // A linha TOTAL é a soma das linhas: a Coca do combo é uma Coca a
+            // mais (o dinheiro dela está no combo). Antes o total ficava só
+            // com os itens — TOTAL 3, linhas somando 4.
+            totalQtd += e.quantidade;
+            dentroDeOutros += e.quantidade;
             continue;
           }
 
+          if (!noProduto) continue;
           if (cfg.gruposOcultos.has(grupoChave)) continue;
           const chaveDaOpcao = parte.id ? `o:${parte.id}` : `o:${chaveDoNome(parte.nome)}`;
           if (cfg.opcoesPorProduto) {
@@ -498,5 +519,6 @@ export function itensVendidos(pedidos: PedidoParaItens[], conta: ContextoDaConta
       .map((g) => ({ ...g, quantidade: Math.round(g.quantidade * 1000) / 1000 }))
       .sort((a, b) => b.quantidade - a.quantidade),
     linhas,
+    dentroDeOutros: Math.round(dentroDeOutros * 1000) / 1000,
   };
 }

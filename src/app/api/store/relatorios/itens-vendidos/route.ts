@@ -127,6 +127,9 @@ export async function GET(req: NextRequest) {
       { celulas: [{ v: "TOTAL", estilo: "negrito" }, "", "", "", { v: resultado.total.quantidade, estilo: "qtdNegrito" }, { v: resultado.total.valor, estilo: "reaisNegrito" }, { v: 1, estilo: "pctNegrito" }] },
       { celulas: [] },
       { celulas: [{ v: "O valor do produto já inclui as opções escolhidas nele. Pedidos cancelados não entram. Meia pizza conta 0,5 de cada sabor.", estilo: "suave" }] },
+      ...(cfg.apenasProdutos
+        ? [{ celulas: [{ v: `Agrupar apenas produtos: a quantidade inclui o produto escolhido dentro de outro item (a Coca do combo conta como Coca${resultado.dentroDeOutros ? ` — ${resultado.dentroDeOutros} unidade(s) assim` : ""}); o filtro de categoria vale pela categoria dele; o valor é só o dos itens.`, estilo: "suave" as const }] }]
+        : []),
     ],
   }];
   if (resultado.opcoes) {
