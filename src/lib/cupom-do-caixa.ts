@@ -143,8 +143,17 @@ export type DetalheDoTurno = {
    * da conferência (pedido pago no app); o resto é de pedido pago na porta.
    */
   cupomDaPlataforma: (ParteDoRetrato & { noOnline?: number; qtdNoOnline?: number })[];
-  /** O pago online da conferência, por canal (já com o cupom da plataforma). */
+  /**
+   * O pago online da conferência, por canal: o que o app repassa — com o cupom
+   * que ele pagou e SEM a taxa de serviço dele (desde 11/10/2026).
+   */
   onlinePorCanal: ParteDoRetrato[];
+  /**
+   * Pagamento na porta de entrega feita pelo entregador do APP: ele cobrou, o
+   * app repassa. Fora da gaveta, dentro da linha travada do online. Ausente no
+   * papel antigo.
+   */
+  cobradoPeloApp?: ParteDoRetrato[];
   taxaDeEntrega: { qtd: number; valor: number };
   /**
    * `troco`: o que as contas de mesa receberam além de consumo + serviço +
@@ -462,6 +471,7 @@ function posicaoDaForma(nome: string): number {
   const i = ORDEM_DAS_FORMAS.indexOf(nome);
   if (i >= 0) return i;
   if (nome.startsWith("Pago online")) return 10;
+  if (nome.startsWith("Cobrado pelo entregador")) return 11;
   if (nome === "Cupom da plataforma") return 20;
   if (nome === "Fiado") return 30;
   return 40;
@@ -642,10 +652,17 @@ function relatorioDoFechamento(
           (Math.abs(dif) > 0.01 ? ` | ${dif > 0 ? "sobra" : "falta"} ${reais(Math.abs(dif))}` : " | confere")
       );
       // Um canal por linha: cada um se confere contra o extrato DELE. O valor
-      // já leva o cupom que a plataforma pagou — é o que ela repassa.
+      // é o que o app repassa: com o cupom que ele pagou e sem a taxa de
+      // serviço dele (itens + entrega − desconto da loja, antes da comissão).
       if (d && d.onlinePorCanal.length > 0) {
         for (const c of d.onlinePorCanal) linha(`- ${c.nome} (${c.qtd})`, reais(c.valor));
-        if (d.cupomDaPlataforma.length > 0) texto("Online ja com o cupom que a plataforma paga.");
+      }
+      // O que o entregador do app cobrou na porta (dinheiro ou a maquininha
+      // DELE): o app acerta no repasse, e a gaveta não tem esse dinheiro.
+      const cobrado = d?.cobradoPeloApp || [];
+      for (const c of cobrado) linha(`- ${c.nome}: entregador do app cobrou (${c.qtd})`, reais(c.valor), "nao veio para a gaveta");
+      if (d && (d.onlinePorCanal.length > 0 || cobrado.length > 0)) {
+        texto("O que o app repassa: com o cupom que ele pagou, sem a taxa de servico dele.");
       }
     }
     // Sem o retrato, o troco não aparece na gaveta lá embaixo: fica aqui,

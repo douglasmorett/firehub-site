@@ -27,6 +27,7 @@
  * (lib/resumo-do-entregador.ts): mudou a régua, muda nos três.
  */
 import { cupomBancadoPelo99, ehDo99Food } from "@/lib/cupom-do-parceiro";
+import { ehEntregaDaLoja, partesDaEntrega } from "@/lib/resumo-do-entregador";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { tipoDeVenda, type TipoDeVenda } from "@/lib/relatorios/base";
@@ -38,6 +39,12 @@ import type { BlocoDoTipo, DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do
 
 /** A forma de quem já pagou pelo app ou pelo site. No papel ela leva o canal junto. */
 export const PAGO_ONLINE = "Pago online";
+/**
+ * O que o entregador do APP (iFood/99) cobrou na porta: o cliente pagou em
+ * dinheiro ou na maquininha DELE, e o app acerta com a loja no repasse. Não
+ * passa pela gaveta nem pela maquininha da loja.
+ */
+export const COBRADO_PELO_APP = "Cobrado pelo entregador";
 export const NAO_IDENTIFICADA = "Forma nao identificada";
 export const CUPOM_DA_PLATAFORMA = "Cupom da plataforma";
 
@@ -172,6 +179,8 @@ export type EntregaPropria = {
   formas: Forma[];
   pedido: { motoboyFee: number | null; deliveryFee: number | null; deliveryDistance: number | null };
   ehMarketplace: boolean;
+  /** O troco que o motoboy levou da loja para a nota do cliente ("troco para 100"): ele devolve junto. */
+  trocoLevado: number;
 };
 
 export type Esperado = { cash: number; debit: number; credit: number; pix: number; voucher: number; ifoodOnline: number; ifoodCoupons: number; food99Online: number; food99Coupons: number; total: number };
@@ -187,7 +196,7 @@ export type ApuracaoDasVendas = {
   entregasProprias: EntregaPropria[];
   retrato: Pick<DetalheDoTurno,
     "vendas" | "porForma" | "porCanal" | "porTipo" | "cupomDaLoja" | "cupomDaPlataforma" | "onlinePorCanal" |
-    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador"> &
+    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador" | "cobradoPeloApp"> &
     Required<Pick<DetalheDoTurno, "recebido" | "ponte" | "descontoNasMesas">>;
 };
 
@@ -262,6 +271,7 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
   const cupomDaPlataforma = new Map<string, Soma & { noOnline: number; qtdNoOnline: number }>();
   const cupomDaLoja = { qtd: 0, c: 0, porCanal: new Map<string, Soma>() };
   const onlinePorCanal = new Map<string, Soma>();
+  const cobradoPeloApp = new Map<string, Soma>();
   const taxaDeEntrega = { qtd: 0, c: 0 };
   const mesas = { servico: 0, servicoQtd: 0, gorjeta: 0, troco: 0, trocoQtd: 0 };
   const recebido = { qtd: 0, c: 0 };
@@ -311,8 +321,11 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     c.c += valor;
     for (const f of formas) {
       somarEm(c.formas, f.forma, cent(f.valor));
-      somarEm(b.formas, f.forma === PAGO_ONLINE ? `${PAGO_ONLINE} ${canal}` : f.forma, cent(f.valor));
-      somarEm(porForma, f.forma === PAGO_ONLINE ? `${PAGO_ONLINE} ${canal}` : f.forma, cent(f.valor));
+      // O pago no app e o cobrado pelo entregador do app levam o canal no
+      // nome: cada um se confere contra o extrato DAQUELE app.
+      const nome = f.forma === PAGO_ONLINE || f.forma === COBRADO_PELO_APP ? `${f.forma} ${canal}` : f.forma;
+      somarEm(b.formas, nome, cent(f.valor));
+      somarEm(porForma, nome, cent(f.valor));
     }
     if (cCupom > 0) {
       b.cupom += cCupom;
@@ -371,23 +384,48 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     }
     if (tipo === "DELIVERY") {
       // Entrega parceira (iFood/99 mandaram o entregador deles) não é do
-      // motoboy da loja: nem prestação de contas, nem taxa a pagar.
-      const quemEntrega = String(o.deliveryBy || "").toUpperCase();
-      if (quemEntrega && quemEntrega !== "MERCHANT") {
+      // motoboy da loja: nem prestação de contas, nem taxa a pagar. A régua é
+      // a do acerto do motoboy (`ehEntregaDaLoja`, lib/resumo-do-entregador.ts):
+      // o caixa olhava só `deliveryBy` e o acerto não olhava nada.
+      if (!ehEntregaDaLoja(o)) {
         entregaParceira.qtd += 1;
         entregaParceira.c += valor;
       } else if (o.motoboyId) {
+        // O troco levado: a nota do cliente menos o pedido, nas partes em
+        // dinheiro (a mesma conta do acerto do motoboy, `partesDaEntrega`).
+        const trocoLevado = partesDaEntrega(o)
+          .filter((p) => p.caixa === "DINHEIRO" && p.trocoPara)
+          .reduce((s, p) => s + cent((p.trocoPara as number) - p.valor), 0);
         entregasProprias.push({
           motoboyId: o.motoboyId,
           formas,
           pedido: { motoboyFee: o.motoboyFee ?? null, deliveryFee: o.deliveryFee ?? null, deliveryDistance: o.deliveryDistance ?? null },
           ehMarketplace: canalDoPedido(o).ehMarketplace,
+          trocoLevado: reais(trocoLevado),
         });
       } else {
         semEntregador.qtd += 1;
         semEntregador.c += valor;
       }
     }
+  };
+
+  // ── O QUE O APP REPASSA POR UM PEDIDO ─────────────────────────────────────
+  //
+  // Era `totalAmount + cupom da plataforma`. Só que o `totalAmount` do iFood e
+  // do 99 leva a TAXA DE SERVIÇO DO APP (o `service_price` do 99, os R$ 0,99 a
+  // R$ 2,49 do iFood), que o cliente paga e o app guarda — a linha do online
+  // dizia que a loja receberia o que não recebe (Brazza, pedido do 99: R$ 43,11
+  // na linha × R$ 41,79 a receber). O devido à loja é o que ELA vendeu: itens +
+  // taxa de entrega − o desconto que ELA deu (antes da comissão do app, que
+  // nenhum pedido grava). Sem os itens gravados, fica a conta antiga. Canal
+  // próprio (site, robô) não tem taxa de app: o gateway cobra o total.
+  const repasseDoApp = (o: any, valReal: number, cupom: number): number => {
+    const bruto = cent(valReal) + Math.max(0, cent(cupom));
+    if (!canalDoPedido(o).ehMarketplace) return bruto;
+    const itens = Array.isArray(o.items) && o.items.length > 0 ? cent(totalDosItens(o)) : null;
+    if (itens == null) return bruto;
+    return itens + cent(o.deliveryFee) - Math.max(0, cent(o.discountMerchant));
   };
 
   // A conferência soma em CENTAVOS e só vira reais no fim: o total é a soma
@@ -471,11 +509,10 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     // que e cupom.
     //
     // `valReal` e o que a pessoa entrega -- e ele que vai para as linhas
-    // conferiveis. `valRepasse` so existe na linha do iFood pago online, que
-    // e informativa e travada na tela: ali o cupom faz parte do que a
-    // plataforma repassa.
+    // conferiveis. O repasse (`repasseDoApp`) so existe na linha do pago
+    // online, que e informativa e travada na tela: ali o cupom faz parte do
+    // que a plataforma repassa, e a taxa de servico do app nao.
     const valReal = o.totalAmount || 0;
-    const valRepasse = valReal + channelDisc;
 
     // ── PEDIDO SEM PAGAMENTO NÃO É DINHEIRO NA GAVETA ───────────────────
     //
@@ -543,17 +580,32 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     //   • o que ninguém reconhece ("N/A", "Pendente", "99Food" de pay_type
     //     desconhecido) fica "não identificado", nunca na gaveta nem no vale.
     const chave = formaDoPedido(o);
+    // ── A ENTREGA DO APP COBRADA NA PORTA NÃO É DA GAVETA ───────────────
+    //
+    // Pedido do 99 (ou do iFood) entregue pelo entregador DELES e pago na
+    // porta — "Dinheiro (cobrar na entrega)", "Débito (Cobrar na Entrega)": quem
+    // recebe é o entregador do app, e o app acerta com a loja no repasse. A
+    // gaveta cobrava esse dinheiro da loja: em 60 dias, 42 pedidos do 99
+    // (R$ 2.796,31) e 43 do iFood (24 no débito, 14 no crédito, 5 em
+    // dinheiro). Vai para a linha travada do app, com o seu nome.
+    const peloEntregadorDoApp = chave !== "ONLINE" && chave !== "FIADO" && chave !== "OUTROS" && !ehEntregaDaLoja(o);
     let forma: string;
-    if (chave === "ONLINE") {
+    if (chave === "ONLINE" || peloEntregadorDoApp) {
       // Pago no app ou no site: não passa pela gaveta nem pela maquininha. O
       // 99Food em linha própria: o lojista confere o repasse do 99 contra o
       // extrato DELES — somados ao do iFood, os dois números não conferem com
       // nenhum dos dois extratos.
-      if (ehDo99Food(o)) esp.food99Online += cent(valRepasse);
-      else esp.ifoodOnline += cent(valRepasse);
-      forma = PAGO_ONLINE;
-      somarEm(onlinePorCanal, canal, cent(valRepasse));
-      if (!canalDoPedido(o).ehMarketplace) onlineProprio += valRepasse;
+      const repasse = repasseDoApp(o, valReal, channelDisc);
+      if (ehDo99Food(o)) esp.food99Online += repasse;
+      else esp.ifoodOnline += repasse;
+      if (peloEntregadorDoApp) {
+        forma = COBRADO_PELO_APP;
+        somarEm(cobradoPeloApp, canal, repasse);
+      } else {
+        forma = PAGO_ONLINE;
+        somarEm(onlinePorCanal, canal, repasse);
+        if (!canalDoPedido(o).ehMarketplace) onlineProprio += reais(repasse);
+      }
     } else {
       forma = conferirParte(chave, valReal);
     }
@@ -767,6 +819,7 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
         .map(([nome, s]) => ({ nome, qtd: s.qtd, valor: reais(s.c), noOnline: reais(s.noOnline), qtdNoOnline: s.qtdNoOnline }))
         .sort((a, b) => b.valor - a.valor),
       onlinePorCanal: listar(onlinePorCanal),
+      cobradoPeloApp: listar(cobradoPeloApp),
       taxaDeEntrega: { qtd: taxaDeEntrega.qtd, valor: reais(taxaDeEntrega.c) },
       mesas: { servico: reais(mesas.servico), servicoQtd: mesas.servicoQtd, gorjeta: reais(mesas.gorjeta), troco: reais(mesas.troco), trocoQtd: mesas.trocoQtd },
       fiado,

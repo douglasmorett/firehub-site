@@ -34,10 +34,72 @@ import { toLocalISODate } from "@/lib/timezone";
 import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 import { formaDoPedido, formaDoTexto, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
+import { infoDaEntrega } from "@/lib/entrega-parceira";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
 
 export const ehCancelado = (status: string | null | undefined) => String(status || "").toUpperCase().includes("CANCEL");
+
+/** Chegou ao cliente: ENTREGUE ou ENCERRADO (lib/status-pedido.ts, STATUS_FINALIZADOS). */
+export const foiEntregue = (status: string | null | undefined) => {
+  const s = String(status || "").toUpperCase();
+  return s === "ENTREGUE" || s === "ENCERRADO";
+};
+
+// ── CANCELADO SÓ É CORRIDA SE O MOTOBOY SAIU ──────────────────────────────────
+//
+// Até 11/10/2026 o acerto contava TODO pedido cancelado com o motoboy como
+// corrida (cancelado-com-motoboy-conta), e o fechamento de caixa não contava
+// nenhum: o mesmo entregador, no mesmo turno, com dois números (77 cancelados
+// com motoboy em 60 dias; na Delícia de Casa, em 30 dias, Ian 8, Jobson 6,
+// guilherme 5). A regra única é a frase do Douglas (02/10/2026), "se ele puxou
+// o pedido, vai ficar na conta": SAIU com o pedido (`dispatchedAt`, o carimbo de
+// SAIU_ENTREGA) antes do cancelamento → a corrida conta. Cancelado antes de
+// sair → não houve corrida. Das 77, 57 tinham saído; nenhuma saiu depois de
+// cancelada. Pedido anterior a 29/08/2026 não tem o carimbo e fica sem corrida.
+
+type PedidoDaCorrida = { status?: string | null; dispatchedAt?: Date | string | null; cancelledAt?: Date | string | null };
+
+/** Cancelado DEPOIS de o motoboy sair com ele: a corrida conta (e o dinheiro não). */
+export function canceladoComCorrida(o: PedidoDaCorrida): boolean {
+  if (!ehCancelado(o.status) || !o.dispatchedAt) return false;
+  const saiu = new Date(o.dispatchedAt).getTime();
+  const cancelou = o.cancelledAt ? new Date(o.cancelledAt).getTime() : NaN;
+  return !Number.isFinite(cancelou) || saiu <= cancelou;
+}
+
+/** A entrega vira corrida do motoboy: não cancelada, ou cancelada depois de sair. */
+export const contaComoCorrida = (o: PedidoDaCorrida) => !ehCancelado(o.status) || canceladoComCorrida(o);
+
+// ── É ENTREGA DA LOJA? ────────────────────────────────────────────────────────
+//
+// Uma régua para o acerto do motoboy e o fechamento de caixa. O caixa olhava
+// só `deliveryBy` ("tem e não é MERCHANT" = parceira), o acerto não olhava nada
+// e a tela de Áreas usa `infoDaEntrega` (lib/entrega-parceira.ts) — a régua do
+// painel e da comanda, que é a base daqui.
+//
+// Uma exceção, de dado velho: até 17/09/2026 o app do motoboy da loja carimbava
+// `ifoodDriverStatus = "DELIVERED"` ao conferir o código da entrega PRÓPRIA (ver
+// o comentário de ESTADOS_DE_ENTREGADOR_IFOOD). Em 60 dias são 15 pedidos da
+// Frangoso, todos com o motoboy da loja e sem `deliveryBy` — dois deles
+// "Crédito (Cobrar na Entrega)", cobrados na porta pelo motoboy da loja. Pela
+// régua do painel eles viram "entregador do iFood" e sumiriam do acerto de
+// setembro. Com motoboy da loja atribuído, "DELIVERED" sozinho (sem `deliveryBy`
+// de parceiro) não prova entrega parceira. Desde 18/09 não há nenhum caso assim.
+export function ehEntregaDaLoja(o: {
+  motoboyId?: string | null;
+  deliveryBy?: string | null;
+  ifoodDriverStatus?: string | null;
+  ifoodDriverName?: string | null;
+  [k: string]: unknown;
+}): boolean {
+  const info = infoDaEntrega(o);
+  if (!info.parceira) return true;
+  const por = String(o.deliveryBy || "").toUpperCase().trim();
+  const soOCarimboDoApp =
+    Boolean(o.motoboyId) && !por && !o.ifoodDriverName && String(o.ifoodDriverStatus || "").toUpperCase() === "DELIVERED";
+  return soOCarimboDoApp;
+}
 
 type PedidoDoDinheiro = {
   paymentMethod?: string | null;

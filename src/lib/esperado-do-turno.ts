@@ -104,6 +104,9 @@ export async function calcularEsperadoDoTurno(
     select: { id: true, parentOrderId: true, status: true, paymentMethod: true, paymentMethods: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true, openDeliveryChannel: true, discountDetails: true,
       ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true,
       createdAt: true, dailyOrderNumber: true, customerName: true, employeeName: true, deliveryType: true, deliveryBy: true, motoboyId: true, motoboyFee: true, deliveryDistance: true,
+      // Quem entregou (a régua `ehEntregaDaLoja`, a mesma do acerto do motoboy) e
+      // a nota do cliente no dinheiro (o troco que o motoboy levou e devolve).
+      ifoodDriverStatus: true, ifoodDriverName: true, changeAmount: true,
       totemLicenseId: true, items: { select: { price: true, quantity: true } } },
   });
 

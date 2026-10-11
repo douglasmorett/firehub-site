@@ -61,6 +61,7 @@ const posicao = (n: string) => {
   const i = ORDEM.indexOf(n);
   if (i >= 0) return i;
   if (n.startsWith("Pago online")) return 10;
+  if (n.startsWith("Cobrado pelo entregador")) return 11;
   if (n === "Cupom da plataforma") return 20;
   if (n === "Fiado") return 30;
   return 40;

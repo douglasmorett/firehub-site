@@ -128,8 +128,10 @@ exigir("o total da conferência é a soma das linhas", igual(a.expected.total,
   a.expected.cash + a.expected.debit + a.expected.credit + a.expected.pix + a.expected.voucher + a.expected.ifoodOnline + a.expected.food99Online), a.expected);
 exigir("pix esperado = 46,98 (Pix trocado na entrega) + 32 + 20", igual(a.expected.pix, 46.98 + 32 + 20), a.expected.pix);
 exigir("crédito esperado = 48 (retirada) + 27,50 (totem) + 80 (mesa 7)", igual(a.expected.credit, 48 + 27.5 + 80), a.expected.credit);
-exigir("iFood online = 44,98 + 10 de cupom (o repasse)", igual(a.expected.ifoodOnline, 54.98), a.expected.ifoodOnline);
-exigir("99Food online = 30 + 5 de cupom", igual(a.expected.food99Online, 35), a.expected.food99Online);
+// O repasse do app é o que a loja vendeu: itens + entrega − desconto da loja,
+// sem a taxa de serviço do app (os R$ 0,99 do iFood e R$ 1,00 do 99 ficam com eles).
+exigir("iFood online = 50 + 5,99 − 2 (o repasse, sem a taxa do app)", igual(a.expected.ifoodOnline, 53.99), a.expected.ifoodOnline);
+exigir("99Food online = 30 + 4 (o repasse, sem a taxa do app)", igual(a.expected.food99Online, 34), a.expected.food99Online);
 exigir("fiado fora da conferência (1, R$ 18)", a.foraDaConferencia.fiadoQtd === 1 && igual(a.foraDaConferencia.fiado, 18));
 exigir("mesa aberta fora (1 pedido, R$ 30)", a.foraDaConferencia.mesasAbertasQtd === 1 && igual(a.foraDaConferencia.mesasAbertas, 30));
 exigir("totem abandonado em pendentes (1, R$ 25)", a.pendentesQuantidade === 1 && igual(a.pendentesValor, 25));
@@ -245,7 +247,7 @@ async function provarConferencia() {
   exigir("esperado.pix = 46,98 + 32 + 20", igual(e.pix, 98.98), e.pix);
   exigir("esperado.credit = 48 + 27,50 + 80", igual(e.credit, 155.5), e.credit);
   exigir("esperado.debit e voucher zerados", igual(e.debit, 0) && igual(e.voucher, 0), e);
-  exigir("online iFood 54,98 e 99Food 35 (com o cupom que repassam)", igual(e.ifoodOnline, 54.98) && igual(e.food99Online, 35), e);
+  exigir("online iFood 53,99 e 99Food 34 (o que repassam: com o cupom, sem a taxa do app)", igual(e.ifoodOnline, 53.99) && igual(e.food99Online, 34), e);
   exigir("o total é a soma das linhas (com troco de abertura e movimentações)", igual(e.total, e.cash + e.debit + e.credit + e.pix + e.voucher + e.ifoodOnline + e.food99Online), e);
   exigir("fora da conferência: fiado R$ 18 e mesa aberta R$ 30", igual(n.foraDaConferencia.fiado, 18) && igual(n.foraDaConferencia.mesasAbertas, 30), n.foraDaConferencia);
   exigir("pendentes: o totem abandonado (1, R$ 25)", n.pendentesQuantidade === 1 && igual(n.pendentesValor, 25));
