@@ -62,7 +62,14 @@ export const ROTULO_DA_ORIGEM: Record<OrigemDoGanho, string> = {
 export const usaDiaria = (t?: string | null) =>
   t === "DAILY_RATE" || t === "BOTH" || t === "DAILY_PLUS_FEE" || t === "FAIXA_KM";
 export const usaPorEntrega = (t?: string | null) => t === "PER_DELIVERY" || t === "BOTH";
-export const usaPorKm = (t?: string | null) => t === "PER_KM" || t === "BOTH";
+// BOTH é "Diária + Por Entrega" (o rótulo do cadastro, a validação de
+// modelos-de-pagamento.ts e o que o lojista combinou). Até 11/10/2026 ele
+// também entrava aqui, e o R$/km passava na frente do valor por entrega: na
+// Brazza Burguer 34 entregas de diária + R$ 5 saíram a R$ 0,00 (sem R$/km
+// cadastrado = SEM_DISTANCIA), e na R&D Pizzaria um "R$ 60/km" digitado no
+// campo que o formulário mostrava indevidamente virou R$ 1.166,40 em 13
+// entregas de R$ 5. Regressão do 1da55c6a (15/09).
+export const usaPorKm = (t?: string | null) => t === "PER_KM";
 
 export type AcertoDoEntregador = {
   paymentType?: string | null;

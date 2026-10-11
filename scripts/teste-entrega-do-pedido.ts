@@ -701,6 +701,22 @@ console.log("\n11) Acerto do entregador (lib/ganho-do-entregador.ts)");
       { valor: 4, origem: "REGRA_DA_LOJA" }));
   conferir("só diária continua só diária",
     igual(ganhoDoPedido({ acerto: lerAcerto({ paymentType: "DAILY_RATE", dailyRate: 50 }), pedido: { motoboyFee: 4 } }), { valor: 0, origem: "SO_DIARIA" }));
+
+  // "Diária + Por Entrega" (BOTH) paga o valor POR ENTREGA, com ou sem distância
+  // medida. Até 11/10/2026 o R$/km passava na frente: Brazza Burguer (diária
+  // R$ 60 + R$ 5) teve 34 entregas a R$ 0,00 (SEM_DISTANCIA/POR_KM sem R$/km).
+  const diariaMaisEntrega = lerAcerto({ paymentType: "BOTH", dailyRate: 60, perDeliveryRate: 5 });
+  conferir("BOTH com 3,2 km medidos → R$ 5 por entrega (não km × R$/km)",
+    igual(ganhoDoPedido({ acerto: diariaMaisEntrega, pedido: { deliveryDistance: 3.2, deliveryFee: 8 } }), { valor: 5, origem: "POR_ENTREGA" }));
+  conferir("BOTH sem distância → R$ 5 por entrega (não R$ 0 'sem distância')",
+    igual(ganhoDoPedido({ acerto: diariaMaisEntrega, pedido: { deliveryDistance: null, deliveryFee: 8 } }), { valor: 5, origem: "POR_ENTREGA" }));
+  // R&D Pizzaria: R$ 60/km digitado no campo que o formulário mostrava para BOTH.
+  const comKmDigitado = lerAcerto({ paymentType: "BOTH", dailyRate: 60, perDeliveryRate: 5, perKmRate: 60 });
+  conferir("BOTH ignora o R$/km que ficou gravado (R&D: R$ 60/km × 2 km = R$ 120)",
+    igual(ganhoDoPedido({ acerto: comKmDigitado, pedido: { deliveryDistance: 2 } }), { valor: 5, origem: "POR_ENTREGA" }));
+  conferir("BOTH não é 'pago por distância' (o cron não geocodifica à toa)", diariaMaisEntrega.pagoPorDistancia === false && diariaMaisEntrega.perKmRate === 0);
+  conferir("PER_KM continua por km (2 km × R$ 2 = R$ 4)",
+    igual(ganhoDoPedido({ acerto: lerAcerto({ paymentType: "PER_KM", perKmRate: 2 }), pedido: { deliveryDistance: 2 } }), { valor: 4, origem: "POR_KM" }));
 }
 
 console.log(`\n${ok} ok, ${falhas} falharam`);
