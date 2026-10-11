@@ -116,14 +116,20 @@ export async function createMetaCampaign(config: MetaCampaignConfig) {
   // invisível para o FireHub. Um adimage não custa nada nem cria objeto de
   // veiculação: subindo a foto antes, imagem ruim falha sem sujar nada.
   //
-  // A Meta BAIXA a imagem da URL — "/uploads/..." relativa não existe para ela.
+  // A foto vai em BYTES (base64), não por endereço. Mandar `{ url }` para o
+  // /adimages é "copiar de URL", capacidade que o app não tem: a Meta
+  // respondia "(#3) Application does not have the capability to make this API
+  // call" e nenhuma campanha nascia (teste real na Hakim Centro, 11/10/2026).
+  // O servidor baixa a foto do próprio site e converte para JPG — as fotos do
+  // cardápio são .webp, e o JPG é o formato que o /adimages sempre aceita.
   const imagemAbsoluta = /^https?:\/\//i.test(config.adImageUrl)
     ? config.adImageUrl
     : `${site}${config.adImageUrl.startsWith("/") ? "" : "/"}${config.adImageUrl}`;
 
   let imageHash = "";
   try {
-    const imgRes = await metaPost(`/${acct}/adimages`, token, { url: imagemAbsoluta });
+    const bytes = await imagemEmJpegBase64(imagemAbsoluta);
+    const imgRes = await metaPost(`/${acct}/adimages`, token, { bytes });
     imageHash = Object.values(imgRes.images as Record<string, any>)[0]?.hash ?? "";
   } catch (e: any) {
     throw new Error(
@@ -1289,6 +1295,28 @@ async function apagarObjetoNaMeta(id: string, token: string): Promise<void> {
   } catch {
     // Limpeza é melhor-esforço: o erro que importa para o lojista é o original.
   }
+}
+
+/** Teto da foto baixada: um arquivo gigante derrubaria a memória do container. */
+const LIMITE_DA_FOTO_BYTES = 15 * 1024 * 1024;
+
+/**
+ * Baixa a foto do anúncio e devolve em JPG base64 (até 1080 px no lado
+ * maior), que é o que o /adimages recebe em `bytes`. Ver createMetaCampaign.
+ */
+async function imagemEmJpegBase64(url: string): Promise<string> {
+  const r = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_META_MS) });
+  if (!r.ok) throw new Error(`não consegui baixar a foto (${r.status})`);
+  const original = Buffer.from(await r.arrayBuffer());
+  if (!original.length) throw new Error("a foto veio vazia");
+  if (original.length > LIMITE_DA_FOTO_BYTES) throw new Error("a foto passa de 15 MB");
+  const sharp = (await import("sharp")).default;
+  const jpg = await sharp(original)
+    .rotate()
+    .resize(1080, 1080, { fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 88 })
+    .toBuffer();
+  return jpg.toString("base64");
 }
 
 async function metaPost(path: string, token: string, body: object) {
