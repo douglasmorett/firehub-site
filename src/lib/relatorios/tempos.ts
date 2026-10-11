@@ -39,6 +39,16 @@
  * E balcão e mesa não esperam aceite: nascem ACEITO (api/store/orders/
  * presencial, api/store/table-sessions/[id]/add-order).
  *
+ * "Antes" quer dizer mais de um minuto antes. A loja que não usa o KDS não tem
+ * baixa da cozinha: a primeira baixa dela é a SAÍDA, e despachar o pedido do
+ * iFood passa pelo "em preparo" décimos de segundo antes do "saiu" — o aceite
+ * é regravado ali. Delícia de Casa, 11/09 a 10/10/2026: 928 dos 2.579 aceites
+ * "medidos" estavam a menos de 60 s da saída (833 deles a até 0,2 s), e o
+ * "esperando aceite" desses pedidos era o tempo até o motoboy sair (mediana
+ * de 41 min; a média da etapa caía de 19,8 para 2,2 min sem eles). O pedido
+ * do iFood que espera mais de alguns minutos é cancelado pelo próprio iFood:
+ * aceite colado na saída é regravação, não espera.
+ *
  * O pedido que a LOJA aceita sozinha também nasce ACEITO: com o aceite
  * automático ligado (User.autoAcceptOrders), o site, a Wabiz, o 99Food e o
  * totem gravam ACEITO na chegada — ou no pagamento, quando ele é online
@@ -68,6 +78,32 @@
  * "entregue"). O teto geral de 4 h (lib/order-stages.ts) cai no meio desse
  * monte; "na rua" tem teto próprio de 2 h.
  *
+ * ── O "entregue" dado em lote ───────────────────────────────────────────────
+ *
+ * O teto de 2 h não pega o "entregue" marcado em LOTE: o operador que, na
+ * volta do motoboy ou no fim do turno, marca vários pedidos de uma vez, e o
+ * fechamento do caixa (api/cash-session), que dá por entregue tudo o que
+ * estava na rua num updateMany só — o mesmo instante, até o milésimo, em
+ * todos. A hora é a do clique, não a da entrega. NIK, 05/10/2026: 8 pedidos
+ * de 3 motoboys "entregues" entre 19:59:18 e 19:59:34, com "na rua" de 15,9 a
+ * 67,3 min; Point da esfiha, 10/10: 11 pedidos em 21 s; Hakim Centro: grupos
+ * de até 29 pedidos com o mesmo `deliveredAt`, do fechamento do caixa. Em 30
+ * dias (11/09 a 10/10), a mediana "na rua" da NIK caía de 34,8 para 28,0 min
+ * sem os lotes, e a da Point da esfiha de 31,8 para 6,0.
+ *
+ * Lote (`entreguesEmLote`): o mesmo instante em mais de uma entrega da loja,
+ * ou 3 ou mais entregas da mesma loja marcadas em até 90 s — um motoboy não
+ * entrega em três endereços em um minuto e meio. Conta só ENTREGA (a mesa
+ * fechada e o balcão finalizado no mesmo minuto não fazem lote com o
+ * motoboy), e a rota calcula sobre TODAS as entregas da loja, não só as do
+ * filtro: o lote não pode mudar com o canal escolhido. O entregue em lote sai
+ * de "na rua", do "total da entrega" e da chegada no prazo como "marcado em
+ * lote". O custo: entregas de verdade confirmadas no mesmo minuto e meio
+ * também saem — o iFood que conclui três pedidos na mesma leitura de eventos.
+ * Na Hakim Centro, em 30 dias, a regra tirou 51 dos 432 "na rua" medidos: 40
+ * do fechamento do caixa (o mesmo instante), 7 com outro "entregue" a menos de
+ * 10 s e 4 mais espaçados — estes, com cara de entrega de verdade.
+ *
  * ── Dois totais, não um ─────────────────────────────────────────────────────
  *
  * O total da entrega vai até o cliente receber em casa (~45 min); o do
@@ -86,11 +122,30 @@
  * — o iFood, a Wabiz e a Brendi mandam a previsão de entrega aí), senão 40 min
  * quando o cartão reconhece retirada (deliveryType RETIRADA/TAKEOUT ou o
  * marcador de retirada na observação) e 45 min no resto. Mesa não tem prazo
- * (gente comendo não é atraso). O pedido cumpriu o prazo se SAIU da loja até a
- * hora: na entrega, a saída do motoboy; nos outros, o pronto. As faixas de
- * alerta são as do lojista (User.timeAlertConfig, "Alertas de Produção" do
- * painel), comparadas como o cartão compara: os minutos restantes ARREDONDADOS
- * PARA BAIXO (6 min 40 s de folga = "6 min restantes").
+ * (gente comendo não é atraso).
+ *
+ * O prazo é a hora em que o CLIENTE espera ter o pedido: na entrega, a
+ * CHEGADA — o iFood grava ali o `delivery.deliveryDateTime`, a Brendi o
+ * `deliveryDeadline`, a Wabiz e o JotaJá o pedido + 50 min (ver
+ * lib/previsao-da-entrega.ts, que imprime essa hora na comanda) —; na
+ * retirada, no balcão e no totem, o pronto. Até 11/10/2026 o relatório
+ * comparava a SAÍDA do motoboy com a hora de chegada, e o "saíram no prazo"
+ * ficava alto com o cliente recebendo atrasado: em 30 dias, 96% das entregas
+ * da NIK saíram antes do prazo, e só 47% das que têm hora de entregue
+ * confiável CHEGARAM antes dele (Hakim Centro: 81% e 26%).
+ *
+ * Então, na entrega, o prazo é cumprido na hora de ENTREGUE — a mesma régua
+ * do "total da entrega": sem lote, sem conclusão horas depois. A entrega sem
+ * essa hora fica "sem hora de entrega confiável" e não entra na conta, com uma
+ * exceção que não depende dela: a que SAIU da loja já depois do prazo chegou
+ * atrasada com certeza ("saiu depois do prazo", fora da porcentagem, na lista
+ * dos atrasados). A saída de todas as entregas contra o prazo continua à vista
+ * (`saidaDasEntregas`): quantas a loja já soltou atrasadas.
+ *
+ * As faixas de alerta são as do lojista (User.timeAlertConfig, "Alertas de
+ * Produção" do painel), comparadas como o cartão compara: os minutos
+ * restantes ARREDONDADOS PARA BAIXO (6 min 40 s de folga = "6 min
+ * restantes"), na hora em que o prazo foi cumprido.
  *
  * O cartão não reconhece o PICKUP do site como retirada e dá 45 min a ele
  * (62 pedidos desde 29/08/2026, nenhum com hora prometida). O relatório segue
@@ -148,6 +203,11 @@ const PROMESSA_MINIMA_MIN = 2;
 export const AGENDAMENTO_DE_VERDADE_MIN = 180;
 /** Entrega de mais de 2 h na rua é pedido encerrado depois, não entrega (ver o topo). */
 export const TETO_DA_RUA_MIN = 120;
+/** Lote: esta quantidade de entregas da mesma loja com o "entregue" dentro da janela (ver o topo). */
+export const ENTREGUES_PARA_LOTE = 3;
+export const JANELA_DO_LOTE_S = 90;
+/** Aceite a menos disto da primeira baixa (a saída, na loja sem KDS) é regravação (ver o topo). */
+export const ACEITE_COLADO_NA_BAIXA_S = 60;
 
 /**
  * Os canais em que o FireHub grava o status de chegada pela coluna
@@ -247,6 +307,14 @@ export type PedidoParaTempos = {
    * (a rota decide com `aceitoNaChegada`).
    */
   aceitoPelaLoja?: boolean;
+  /** A loja do pedido (franchiseeId): o lote de "entregue" é por loja. */
+  loja?: string;
+  /**
+   * O "entregue" foi dado em lote (`entreguesEmLote`). A rota calcula sobre
+   * todas as entregas da loja; sem o campo, `temposDoRelatorio` calcula sobre
+   * os pedidos que recebeu.
+   */
+  entregueEmLote?: boolean;
   createdAt: Date | string;
   acceptedAt?: Instante;
   readyAt?: Instante;
@@ -299,14 +367,15 @@ export const ETAPAS: { chave: ChaveDaEtapa; titulo: string; legenda: string; apl
   { chave: "esperandoSaida", titulo: "Pronto esperando saída", legenda: "Do pronto até o entregador sair.",
     aplicaA: "Entrega." },
   { chave: "rua", titulo: "Na rua", legenda: "Da saída até a entrega no cliente.",
-    aplicaA: "Entrega. Mais de 2 h na rua não é entrega (é o pedido encerrado depois) e não entra." },
+    aplicaA: "Entrega com o \"entregue\" marcado na hora. Mais de 2 h na rua (o pedido encerrado depois) e o \"entregue\" dado em lote (vários de uma vez, ou o fechamento do caixa) não entram." },
   { chave: "totalEntrega", titulo: "Total da entrega", legenda: "Do pedido até o cliente receber em casa (a hora de entregue).",
-    aplicaA: "Entrega." },
+    aplicaA: "Entrega com o \"entregue\" marcado na hora (a mesma régua de \"na rua\")." },
   { chave: "totalNaLoja", titulo: "Total na loja", legenda: "Do pedido até ficar pronto para o cliente que está na loja ou vem buscar.",
     aplicaA: "Balcão, retirada, totem e mesa." },
 ];
 
-export type MotivoDeFora = "semCarimbo" | "foraDaCurva" | "reescrito";
+/** Por que a etapa não foi medida. `emLote`: o "entregue" foi dado em lote (ver o topo). */
+export type MotivoDeFora = "semCarimbo" | "foraDaCurva" | "reescrito" | "emLote";
 
 /** Uma etapa de um pedido: não se aplica, medida, ou não medida (com o motivo). */
 export type MedidaDaEtapa = { aplica: false } | { aplica: true; minutos: number } | { aplica: true; minutos: null; motivo: MotivoDeFora };
@@ -325,17 +394,28 @@ export type ResumoDaEtapa = Estatistica & {
   semCarimbo: number;
   foraDaCurva: number;
   reescritos: number;
+  /** "Entregue" dado em lote (só na rua e no total da entrega). */
+  emLote: number;
 };
 
-export type FaixaDoPrazo = "noPrazo" | "amarelo" | "vermelho" | "estourado" | "semPrazo" | "semCarimbo" | "foraDaCurva";
+/**
+ * Onde o pedido ficou em relação ao prazo, na hora em que o prazo é cumprido
+ * (a chegada na entrega, o pronto nos outros — ver o topo).
+ *   semEntrega    entrega sem hora de entregue confiável (sem "entregue", em lote, encerrada horas depois)
+ *   saiuAtrasado  entrega sem essa hora, mas que SAIU da loja já depois do prazo: atrasou com certeza
+ *   semCarimbo    retirada, balcão ou totem sem a hora do pronto
+ */
+export type FaixaDoPrazo = "noPrazo" | "amarelo" | "vermelho" | "estourado" | "saiuAtrasado" | "semPrazo" | "semCarimbo" | "semEntrega" | "foraDaCurva";
 
 export const ROTULO_DA_FAIXA: Record<FaixaDoPrazo, string> = {
   noPrazo: "No prazo",
   amarelo: "Alerta amarelo",
   vermelho: "Alerta vermelho",
   estourado: "Estourou o prazo",
+  saiuAtrasado: "Saiu depois do prazo",
   semPrazo: "Mesa (sem prazo)",
-  semCarimbo: "Sem hora de saída",
+  semCarimbo: "Sem hora de pronto",
+  semEntrega: "Sem hora de entrega confiável",
   foraDaCurva: "Fora da curva",
 };
 
@@ -343,15 +423,27 @@ export type ResumoDoPrazo = {
   limites: LimitesDeAlerta;
   /** Pedidos com prazo (mesa não tem). */
   comPrazo: number;
-  /** Com prazo e com a hora da saída conhecida. */
+  /** Com prazo e com a hora em que ele foi cumprido conhecida (a chegada na entrega, o pronto nos outros). */
   medidos: number;
   noPrazo: number;
   amarelo: number;
   vermelho: number;
   estourados: number;
+  /** Retirada, balcão e totem sem a hora do pronto. */
   semCarimbo: number;
   foraDaCurva: number;
   semPrazo: number;
+  /** Entregas sem hora de entregue confiável, e por quê (fora dos medidos). */
+  semEntrega: number;
+  semEntregaPorMotivo: { semCarimbo: number; emLote: number; foraDaCurva: number };
+  /** Entregas sem essa hora que saíram da loja já depois do prazo: atrasaram com certeza (fora dos medidos). */
+  saiuAtrasado: number;
+  /**
+   * A SAÍDA de todas as entregas contra o prazo do cliente: quantas tinham a
+   * hora de saída e quantas a loja soltou já depois dele (estas chegaram
+   * atrasadas, medidas ou não).
+   */
+  saidaDasEntregas: { medidas: number; depoisDoPrazo: number };
   /** Mediana e máximo de quanto passou do prazo, entre os estourados (min). */
   atrasoMediano: number | null;
   maiorAtraso: number | null;
@@ -369,10 +461,17 @@ export type LinhaDoPedido = {
   criadoEm: string;
   agendado: boolean;
   prazo: string | null;
+  /** A saída do motoboy na entrega; o pronto nos outros. */
   saida: string | null;
+  /** Entrega: a hora de entregue, quando é confiável (é ela que cumpre o prazo). */
+  entregue: string | null;
   /** Do pedido até sair (min). No agendado, null: ele espera de propósito. */
   tempoAteSaida: number | null;
-  /** Quanto passou do prazo (min, > 0), ou quanto sobrou (< 0). null = não medido. */
+  /**
+   * Quanto passou do prazo (min, > 0), ou quanto sobrou (< 0), na hora em que
+   * ele foi cumprido. Em "saiu depois do prazo", quanto já tinha passado na
+   * saída (o atraso foi pelo menos esse). null = não medido.
+   */
   excedeu: number | null;
   faixa: FaixaDoPrazo;
   etapas: Record<ChaveDaEtapa, number | null>;
@@ -514,9 +613,55 @@ function medir(de: Instante, ate: Instante, teto = TETO_DE_MINUTOS_MEDIDOS): Med
 
 const NAO_SE_APLICA: MedidaDaEtapa = { aplica: false };
 
+/** A medida que termina no "entregue": se ele foi dado em lote, não é a hora da entrega. */
+function medidaDoEntregue(m: MedidaDaEtapa, p: Pick<PedidoParaTempos, "entregueEmLote">): MedidaDaEtapa {
+  return m.aplica && m.minutos !== null && p.entregueEmLote ? { aplica: true, minutos: null, motivo: "emLote" } : m;
+}
+
 /** Um registro com uma entrada por etapa. */
 function porEtapa<T>(f: (k: ChaveDaEtapa) => T): Record<ChaveDaEtapa, T> {
   return Object.fromEntries(ETAPAS.map((e) => [e.chave, f(e.chave)])) as Record<ChaveDaEtapa, T>;
+}
+
+// ── O "ENTREGUE" EM LOTE ────────────────────────────────────────────────────
+
+/** Uma entrega com o "entregue" marcado, para achar os lotes. */
+export type EntregueParaLote = { id: string; loja?: string | null; entregueEm: Instante };
+
+/**
+ * Os pedidos cujo "entregue" foi dado em LOTE (ver o topo): o mesmo instante,
+ * até o milésimo, em mais de uma entrega da loja (um updateMany: o fechamento
+ * do caixa), ou ENTREGUES_PARA_LOTE entregas da mesma loja marcadas dentro de
+ * JANELA_DO_LOTE_S segundos (a baixa em massa no painel). Passe só ENTREGAS —
+ * a mesa fechada não faz lote com o motoboy — e todas as da loja, não só as do
+ * filtro.
+ */
+export function entreguesEmLote(entregas: EntregueParaLote[]): Set<string> {
+  const porLoja = new Map<string, { id: string; t: number }[]>();
+  for (const e of entregas) {
+    const t = ms(e.entregueEm);
+    if (t === null) continue;
+    const loja = String(e.loja ?? "");
+    let lista = porLoja.get(loja);
+    if (!lista) { lista = []; porLoja.set(loja, lista); }
+    lista.push({ id: e.id, t });
+  }
+  const lote = new Set<string>();
+  const janela = JANELA_DO_LOTE_S * 1000;
+  for (const lista of porLoja.values()) {
+    lista.sort((a, b) => a.t - b.t);
+    for (let i = 0; i < lista.length; i++) {
+      // O mesmo instante em dois pedidos: gravados juntos.
+      if ((i > 0 && lista[i - 1].t === lista[i].t) || (i + 1 < lista.length && lista[i + 1].t === lista[i].t)) lote.add(lista[i].id);
+    }
+    // Janela deslizante: toda janela de 90 s com 3 ou mais marca todos os dela.
+    for (let ini = 0, fim = 0; ini < lista.length; ini++) {
+      if (fim < ini) fim = ini;
+      while (fim + 1 < lista.length && lista[fim + 1].t - lista[ini].t <= janela) fim++;
+      if (fim - ini + 1 >= ENTREGUES_PARA_LOTE) for (let k = ini; k <= fim; k++) lote.add(lista[k].id);
+    }
+  }
+  return lote;
 }
 
 // ── UM PEDIDO ───────────────────────────────────────────────────────────────
@@ -657,23 +802,19 @@ export function prazoDoPedido(p: Pick<PedidoParaTempos, "createdAt" | "scheduled
   return c + (retiradaNoCartao(p) ? PRAZO_PADRAO_RETIRADA_MIN : PRAZO_PADRAO_ENTREGA_MIN) * 60000;
 }
 
-/** A hora em que o pedido saiu das mãos da loja: a saída do motoboy, ou o pronto. */
-function horaDaSaida(p: PedidoParaTempos): Instante {
-  return p.tipo === "DELIVERY" ? p.dispatchedAt || null : horaDoPronto(p);
-}
-
 /** As etapas de um pedido "para agora" (agendado não passa por aqui). */
 export function etapasDoPedido(p: PedidoParaTempos): Record<ChaveDaEtapa, MedidaDaEtapa> {
   const entrega = p.tipo === "DELIVERY";
   const pronto = horaDoPronto(p);
 
-  // Aceite: só o carimbo que veio ANTES da primeira baixa (ver o topo).
+  // Aceite: só o carimbo que veio mais de um minuto ANTES da primeira baixa
+  // (ver o topo) — colado nela (na loja sem KDS, a saída) é regravação.
   let aceite: MedidaDaEtapa = NAO_SE_APLICA;
   if (!nasceAceito(p)) {
     const aceito = ms(p.acceptedAt);
     const baixa = primeiraBaixa(p);
     if (aceito === null) aceite = { aplica: true, minutos: null, motivo: "semCarimbo" };
-    else if (baixa !== null && aceito >= baixa) aceite = { aplica: true, minutos: null, motivo: "reescrito" };
+    else if (baixa !== null && aceito > baixa - ACEITE_COLADO_NA_BAIXA_S * 1000) aceite = { aplica: true, minutos: null, motivo: "reescrito" };
     else aceite = medir(p.createdAt, p.acceptedAt);
   }
 
@@ -690,56 +831,125 @@ export function etapasDoPedido(p: PedidoParaTempos): Record<ChaveDaEtapa, Medida
   const finalizacao = passouPeloKds ? medir(ultimoDaProducao, pronto) : NAO_SE_APLICA;
 
   const esperandoSaida = entrega ? medir(p.readyAt || p.kdsFinishedAt, p.dispatchedAt) : NAO_SE_APLICA;
-  const rua = entrega ? medir(p.dispatchedAt, p.deliveredAt, TETO_DA_RUA_MIN) : NAO_SE_APLICA;
+  // O "entregue" dado em lote não é a hora da entrega (ver o topo).
+  const rua = entrega ? medidaDoEntregue(medir(p.dispatchedAt, p.deliveredAt, TETO_DA_RUA_MIN), p) : NAO_SE_APLICA;
 
   // Total da entrega: se a perna da rua é o pedido encerrado horas depois, o
-  // total herda o mesmo lixo — fora da curva também.
+  // total herda o mesmo lixo — fora da curva também. E o lote, como na rua.
   let totalEntrega: MedidaDaEtapa = NAO_SE_APLICA;
   if (entrega) {
     if (rua.aplica && rua.minutos === null && (rua as { motivo: MotivoDeFora }).motivo === "foraDaCurva") {
       totalEntrega = { aplica: true, minutos: null, motivo: "foraDaCurva" };
-    } else totalEntrega = medir(p.createdAt, p.deliveredAt);
+    } else totalEntrega = medidaDoEntregue(medir(p.createdAt, p.deliveredAt), p);
   }
   const totalNaLoja = entrega ? NAO_SE_APLICA : medir(p.createdAt, pronto);
 
   return { aceite, cozinha, producao, finalizacao, esperandoSaida, rua, totalEntrega, totalNaLoja };
 }
 
-/** Onde a saída caiu em relação ao prazo, com as faixas de alerta do lojista. */
-export function faixaDoPrazo(
-  p: PedidoParaTempos, limites: LimitesDeAlerta,
-): { faixa: FaixaDoPrazo; prazo: number | null; saida: number | null; excedeu: number | null } {
-  const prazo = prazoDoPedido(p);
-  if (prazo === null) return { faixa: "semPrazo", prazo: null, saida: null, excedeu: null };
-  const saida = ms(horaDaSaida(p));
-  if (saida === null) return { faixa: "semCarimbo", prazo, saida: null, excedeu: null };
-  // O pedido que "saiu" dias depois foi finalizado no painel depois, não saiu:
-  // mesmo teto das etapas. No agendado a régua é a distância ao horário marcado.
-  const referencia = ehAgendado(p) ? prazo : ms(p.createdAt)!;
-  const distancia = (saida - referencia) / 60000;
-  if ((!ehAgendado(p) && distancia < 0) || Math.abs(distancia) > TETO_DE_MINUTOS_MEDIDOS) {
-    return { faixa: "foraDaCurva", prazo, saida, excedeu: null };
-  }
-  const folga = (prazo - saida) / 60000;
+/** Como o pedido ficou diante do prazo (`faixaDoPrazo`). */
+export type SituacaoNoPrazo = {
+  faixa: FaixaDoPrazo;
+  prazo: number | null;
+  /** A saída do motoboy (entrega) ou o pronto (os outros), como foi gravada. */
+  saida: number | null;
+  /** A saída cai a uma distância plausível do pedido (não é o "finalizado" dias depois). */
+  saidaPlausivel: boolean;
+  /** Entrega: a hora de entregue confiável — é ela que cumpre o prazo. */
+  entregue: number | null;
+  /** Quanto passou do prazo (> 0) ou sobrou (< 0); em "saiu depois do prazo", quanto já tinha passado na saída. */
+  excedeu: number | null;
+  /** Entrega com saída plausível: saiu da loja depois do prazo do cliente? null = sem saída. */
+  saiuDepoisDoPrazo: boolean | null;
+  /** Entrega sem hora de entregue confiável: por quê. */
+  semEntregaPor: "semCarimbo" | "emLote" | "foraDaCurva" | null;
+};
+
+/**
+ * O instante está a uma distância plausível do pedido? O pedido "pronto" ou
+ * "entregue" dias depois foi finalizado no painel depois: o mesmo teto das
+ * etapas. No agendado a régua é a distância ao horário marcado.
+ */
+function plausivelNoPrazo(p: PedidoParaTempos, t: number, prazo: number): boolean {
+  const agendado = ehAgendado(p);
+  const distancia = (t - (agendado ? prazo : ms(p.createdAt)!)) / 60000;
+  return !((!agendado && distancia < 0) || Math.abs(distancia) > TETO_DE_MINUTOS_MEDIDOS);
+}
+
+/**
+ * A hora em que o cliente recebeu, quando dá para confiar nela — a mesma
+ * régua de "na rua" e do "total da entrega": existe, a rua fica entre 0 e 2 h,
+ * não é a conclusão horas depois e não foi dada em lote.
+ */
+function chegadaConfiavel(p: PedidoParaTempos, prazo: number): { em: number } | { motivo: "semCarimbo" | "emLote" | "foraDaCurva" } {
+  const entregue = ms(p.deliveredAt);
+  if (entregue === null) return { motivo: "semCarimbo" };
+  const saida = ms(p.dispatchedAt);
+  if (saida !== null && (entregue < saida || entregue - saida > TETO_DA_RUA_MIN * 60000)) return { motivo: "foraDaCurva" };
+  if (!plausivelNoPrazo(p, entregue, prazo)) return { motivo: "foraDaCurva" };
+  if (p.entregueEmLote) return { motivo: "emLote" };
+  return { em: entregue };
+}
+
+/** A faixa pela folga que sobrava quando o prazo foi cumprido, com os alertas do lojista. */
+function faixaDaFolga(prazo: number, quando: number, limites: LimitesDeAlerta): { faixa: FaixaDoPrazo; excedeu: number } {
+  const folga = (prazo - quando) / 60000;
   const excedeu = r1(-folga);
   // Como o cartão: os minutos restantes arredondados para baixo. Com 5 min
   // 40 s de folga ele mostra "5 min restantes" e já pinta o vermelho de 5;
   // comparar a folga com fração dava amarelo aqui e vermelho lá.
   const restantes = Math.floor(folga);
-  if (restantes < 0) return { faixa: "estourado", prazo, saida, excedeu };
-  if (limites.vermelhoAtivo && restantes <= limites.vermelhoMin) return { faixa: "vermelho", prazo, saida, excedeu };
-  if (limites.amareloAtivo && restantes <= limites.amareloMin) return { faixa: "amarelo", prazo, saida, excedeu };
-  return { faixa: "noPrazo", prazo, saida, excedeu };
+  if (restantes < 0) return { faixa: "estourado", excedeu };
+  if (limites.vermelhoAtivo && restantes <= limites.vermelhoMin) return { faixa: "vermelho", excedeu };
+  if (limites.amareloAtivo && restantes <= limites.amareloMin) return { faixa: "amarelo", excedeu };
+  return { faixa: "noPrazo", excedeu };
+}
+
+/**
+ * Onde o pedido ficou em relação ao prazo do CLIENTE (ver o topo): na entrega,
+ * a hora de entregue confiável; na retirada, no balcão e no totem, o pronto.
+ */
+export function faixaDoPrazo(p: PedidoParaTempos, limites: LimitesDeAlerta): SituacaoNoPrazo {
+  const prazo = prazoDoPedido(p);
+  const vazio = { saida: null, saidaPlausivel: false, entregue: null, excedeu: null, saiuDepoisDoPrazo: null, semEntregaPor: null };
+  if (prazo === null) return { ...vazio, faixa: "semPrazo", prazo: null };
+
+  if (p.tipo !== "DELIVERY") {
+    const pronto = ms(horaDoPronto(p));
+    if (pronto === null) return { ...vazio, faixa: "semCarimbo", prazo };
+    if (!plausivelNoPrazo(p, pronto, prazo)) return { ...vazio, faixa: "foraDaCurva", prazo, saida: pronto };
+    return { ...vazio, ...faixaDaFolga(prazo, pronto, limites), prazo, saida: pronto, saidaPlausivel: true };
+  }
+
+  // A entrega cumpre o prazo na CHEGADA. A saída fica à vista: sair depois do
+  // prazo é atraso certo, com ou sem a hora de entregue.
+  const saida = ms(p.dispatchedAt);
+  const saidaPlausivel = saida !== null && plausivelNoPrazo(p, saida, prazo);
+  const saiuDepoisDoPrazo = saidaPlausivel ? saida! > prazo : null;
+  const base = { prazo, saida, saidaPlausivel, saiuDepoisDoPrazo };
+  const chegada = chegadaConfiavel(p, prazo);
+  if ("em" in chegada) {
+    return { ...base, ...faixaDaFolga(prazo, chegada.em, limites), entregue: chegada.em, semEntregaPor: null };
+  }
+  if (saiuDepoisDoPrazo) {
+    return { ...base, faixa: "saiuAtrasado", entregue: null, excedeu: r1((saida! - prazo) / 60000), semEntregaPor: chegada.motivo };
+  }
+  return { ...base, faixa: "semEntrega", entregue: null, excedeu: null, semEntregaPor: chegada.motivo };
 }
 
 // ── O RELATÓRIO ─────────────────────────────────────────────────────────────
 
-function resumoDoPrazo(limites: LimitesDeAlerta, faixas: { faixa: FaixaDoPrazo; excedeu: number | null }[]): ResumoDoPrazo {
+function resumoDoPrazo(limites: LimitesDeAlerta, faixas: SituacaoNoPrazo[]): ResumoDoPrazo {
   const conta = (f: FaixaDoPrazo) => faixas.filter((x) => x.faixa === f).length;
   const atrasos = faixas.filter((x) => x.faixa === "estourado").map((x) => x.excedeu!);
   const est = estatistica(atrasos);
   const semPrazo = conta("semPrazo");
   const noPrazo = conta("noPrazo"), amarelo = conta("amarelo"), vermelho = conta("vermelho"), estourados = conta("estourado");
+  // A entrega sem hora de entregue confiável — com a que saiu atrasada, que
+  // também não tem a chegada medida.
+  const semEntrega = faixas.filter((x) => x.faixa === "semEntrega" || x.faixa === "saiuAtrasado");
+  const porMotivo = (m: "semCarimbo" | "emLote" | "foraDaCurva") => semEntrega.filter((x) => x.semEntregaPor === m).length;
+  const comSaida = faixas.filter((x) => x.saiuDepoisDoPrazo !== null);
   return {
     limites,
     comPrazo: faixas.length - semPrazo,
@@ -748,6 +958,10 @@ function resumoDoPrazo(limites: LimitesDeAlerta, faixas: { faixa: FaixaDoPrazo; 
     semCarimbo: conta("semCarimbo"),
     foraDaCurva: conta("foraDaCurva"),
     semPrazo,
+    semEntrega: semEntrega.length,
+    semEntregaPorMotivo: { semCarimbo: porMotivo("semCarimbo"), emLote: porMotivo("emLote"), foraDaCurva: porMotivo("foraDaCurva") },
+    saiuAtrasado: conta("saiuAtrasado"),
+    saidaDasEntregas: { medidas: comSaida.length, depoisDoPrazo: comSaida.filter((x) => x.saiuDepoisDoPrazo).length },
     atrasoMediano: est.mediana,
     maiorAtraso: est.maximo,
   };
@@ -774,12 +988,19 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
   const itemPassa = (i: ItemParaTempos) =>
     (!categorias.size || categorias.has(i.categoria)) && (!produtos.size || (i.produtoId !== null && produtos.has(i.produtoId)));
 
-  const pedidos = pedidosBrutos.filter((p) => !ehCancelado(p.status) && (!comFiltroDeItem || p.itens.some(itemPassa)));
+  // O "entregue" em lote: a rota já marca cada pedido (calculado sobre todas
+  // as entregas da loja); sem a marca, sai daqui, das entregas recebidas.
+  const lote = pedidosBrutos.some((p) => p.entregueEmLote === undefined)
+    ? entreguesEmLote(pedidosBrutos.filter((p) => p.tipo === "DELIVERY").map((p) => ({ id: p.id, loja: p.loja, entregueEm: p.deliveredAt })))
+    : null;
+  const pedidos = pedidosBrutos
+    .filter((p) => !ehCancelado(p.status) && (!comFiltroDeItem || p.itens.some(itemPassa)))
+    .map((p) => (p.entregueEmLote === undefined ? { ...p, entregueEmLote: lote!.has(p.id) } : p));
 
   const valores = porEtapa((): number[] => []);
-  const naoMedidos = porEtapa((): Record<MotivoDeFora, number> => ({ semCarimbo: 0, foraDaCurva: 0, reescrito: 0 }));
-  const faixasParaAgora: { faixa: FaixaDoPrazo; excedeu: number | null }[] = [];
-  const faixasAgendados: { faixa: FaixaDoPrazo; excedeu: number | null }[] = [];
+  const naoMedidos = porEtapa((): Record<MotivoDeFora, number> => ({ semCarimbo: 0, foraDaCurva: 0, reescrito: 0, emLote: 0 }));
+  const faixasParaAgora: SituacaoNoPrazo[] = [];
+  const faixasAgendados: SituacaoNoPrazo[] = [];
 
   // O mesmo acumulador serve ao dia e ao tipo de venda.
   type AcumGrupo = { pedidos: number; etapas: Record<ChaveDaEtapa, number[]>; medidosNoPrazo: number; estourados: number; diaSemana: number };
@@ -904,7 +1125,8 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
       agendado,
       prazo: iso(prazo.prazo),
       saida: iso(prazo.saida),
-      tempoAteSaida: !agendado && prazo.saida !== null && prazo.faixa !== "foraDaCurva" ? r1((prazo.saida - c) / 60000) : null,
+      entregue: iso(prazo.entregue),
+      tempoAteSaida: !agendado && prazo.saida !== null && prazo.saidaPlausivel ? r1((prazo.saida - c) / 60000) : null,
       excedeu: prazo.excedeu,
       faixa: prazo.faixa,
       etapas: porEtapa((k) => minutos(etapas[k])),
@@ -917,8 +1139,8 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
     const est = estatistica(valores[e.chave]);
     return {
       ...e, ...est,
-      elegiveis: est.medidos + n.semCarimbo + n.foraDaCurva + n.reescrito,
-      semCarimbo: n.semCarimbo, foraDaCurva: n.foraDaCurva, reescritos: n.reescrito,
+      elegiveis: est.medidos + n.semCarimbo + n.foraDaCurva + n.reescrito + n.emLote,
+      semCarimbo: n.semCarimbo, foraDaCurva: n.foraDaCurva, reescritos: n.reescrito, emLote: n.emLote,
     };
   });
 
@@ -937,8 +1159,10 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
   });
 
   // ── A lista ──
-  // Só atrasados: o pior primeiro. Todos: na ordem em que chegaram.
-  const atrasado = (l: LinhaDoPedido) => l.faixa === "estourado";
+  // Só atrasados: o pior primeiro. Todos: na ordem em que chegaram. A entrega
+  // que saiu da loja depois do prazo atrasou com certeza, mesmo sem a hora de
+  // entregue: entra na lista (com o quanto já tinha passado na saída).
+  const atrasado = (l: LinhaDoPedido) => l.faixa === "estourado" || l.faixa === "saiuAtrasado";
   const filtrada = cfg.apenasAtrasados ? linhas.filter(atrasado) : linhas;
   const ordenada = cfg.apenasAtrasados
     ? [...filtrada].sort((a, b) => (b.excedeu ?? 0) - (a.excedeu ?? 0) || a.criadoEm.localeCompare(b.criadoEm))
