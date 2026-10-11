@@ -51,6 +51,13 @@ export default async function StoreRelatoriosPage() {
     ? lojaAtivaDoAdmin
     : (user as any).ownerId || user.id;
 
+  // O fuso da loja VISTA (o admin olha a loja do seletor): os dias da semana
+  // contam pelo dia operacional dela (lib/relatorios/base.ts, naLoja).
+  const fusoDaLoja = await prisma.user
+    .findUnique({ where: { id: targetFranchiseeId }, select: { storeTimezone: true } })
+    .then((l) => l?.storeTimezone || "America/Sao_Paulo")
+    .catch(() => "America/Sao_Paulo");
+
   const since = new Date();
   since.setDate(since.getDate() - 365); // Últimos 365 dias
 
@@ -290,6 +297,7 @@ export default async function StoreRelatoriosPage() {
       storeName={user.storeName || "Minha Loja"}
       timeAlertConfig={(user as any).timeAlertConfig || null}
       lojasDeOrigem={lojasDeOrigem}
+      fusoDaLoja={fusoDaLoja}
     />
   );
 }

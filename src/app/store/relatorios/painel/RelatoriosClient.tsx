@@ -11,6 +11,7 @@ import {
   atendimentosDaVenda, cent, entraNaVenda, reais, ticketMedio as ticketDaRegua, type PedidoDaRegua,
 } from "@/lib/relatorios/regua-da-venda";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
+import { HORA_DA_VIRADA, naLoja, somarDias, hojeNaLoja } from "@/lib/relatorios/base";
 import {
   TrendingUp,
   TrendingDown,
@@ -118,9 +119,11 @@ const plataformaDe = (chave: string) =>
 const MIN_PADRAO_RETIRADA = 40;
 const MIN_PADRAO_ENTREGA = 45;
 
+// PICKUP (retirada pelo site) e BALCAO também: sem eles, os 277 PICKUP do site
+// em 60 dias ganhavam o prazo e o tempo de saída de uma entrega.
 function ehRetirada(o: any) {
   const t = String(o.deliveryType || "").toUpperCase();
-  return t === "RETIRADA" || t === "TAKEOUT" || t.includes("RETIRADA");
+  return t === "RETIRADA" || t === "TAKEOUT" || t === "PICKUP" || t === "BALCAO" || t.includes("RETIRADA");
 }
 
 /** Saiu para a rua. Mesa e balcão não contam como entrega. */
@@ -221,6 +224,129 @@ export function cartaoDeVendas(pedidos: PedidoDoPainel[], filtro: FiltroDeItens,
   return { vendas: at.vendas, lancamentos: at.lancamentos, ticket: ticketDaRegua(receitaDosItens, at.vendas), dosItens: true };
 }
 
+// ── O RESUMO DA OPERAÇÃO POR TIPO ───────────────────────────────────────────
+//
+// Até 11/10/2026 o cartão tinha só "Entrega" e "Retirada", e o que não era
+// retirada caía em Entrega: a MESA, o PICKUP do site e o TAKEOUT do totem.
+// Ragnar Burger, 01–11/10/2026: "Entrega 2063 — 99,4% dos pedidos" num
+// restaurante de salão cheio; o certo era 1.288 entregas, 393 mesas (773
+// rodadas) e 14 retiradas. O lojista leu, com razão, que o relatório "não
+// reflete a realidade".
+//
+// Agora são três tipos e a conta é de VENDAS, a régua da tela (a mesa conta
+// uma vez, pelo pedido que a abre — `atendimentosDaVenda().abre`). Os três
+// somam exatamente as vendas do "Ticket médio do período" logo abaixo. O valor
+// de cada tipo é a soma dos pedidos dele que entram na venda (cada rodada da
+// mesa soma no valor da mesa).
+
+export type TipoDaOperacao = "ENTREGA" | "MESA" | "RETIRADA";
+
+/** Entrega = saiu para a rua. Mesa = salão. O resto (retirada, PICKUP, TAKEOUT, balcão) o cliente levou. */
+export function tipoDaOperacao(o: { deliveryType?: string | null; tableSessionId?: string | null }): TipoDaOperacao {
+  const t = String(o.deliveryType || "").trim().toUpperCase();
+  if (o.tableSessionId || t === "MESA" || t === "SALAO" || t === "DINE_IN") return "MESA";
+  if (t === "DELIVERY") return "ENTREGA";
+  return "RETIRADA";
+}
+
+type PedidoComTipo = PedidoDaRegua & { deliveryType?: string | null };
+
+export function resumoDaOperacao(pedidos: PedidoComTipo[]) {
+  const { abre, vendas } = atendimentosDaVenda(pedidos);
+  const base = () => ({ vendas: 0, lancamentos: 0, valorCent: 0 });
+  const por: Record<TipoDaOperacao, ReturnType<typeof base>> = { ENTREGA: base(), MESA: base(), RETIRADA: base() };
+  for (const p of pedidos) {
+    if (!entraNaVenda(p)) continue;
+    const t = tipoDaOperacao(p);
+    por[t].lancamentos++;
+    por[t].valorCent += cent(p.totalAmount);
+    if (abre.has(p.id)) por[t].vendas++;
+  }
+  const tipo = (t: TipoDaOperacao) => ({
+    vendas: por[t].vendas,
+    lancamentos: por[t].lancamentos,
+    valor: reais(por[t].valorCent),
+    pct: vendas > 0 ? (por[t].vendas / vendas) * 100 : 0,
+  });
+  return { vendas, entrega: tipo("ENTREGA"), mesa: tipo("MESA"), retirada: tipo("RETIRADA") };
+}
+
+// ── DIAS DA SEMANA: MÉDIA POR DIA, NÃO SOMA ─────────────────────────────────
+//
+// Somar os pedidos de cada dia da semana mente quando o período não tem o
+// mesmo número de cada dia. "Este mês" de 01 a 11/10/2026 tem 2 quintas, 2
+// sextas e 2 sábados, mas 1 segunda, 1 terça e 1 quarta: o sábado aparecia
+// quatro vezes mais forte que a quarta (609 × 143) quando a média dele por dia
+// era o dobro. E contava cada rodada de mesa como um pedido.
+//
+// Agora cada dia da semana mostra a MÉDIA por dia (valor ÷ quantos daquele dia
+// o período teve) e as vendas da régua. Os dias contados começam no primeiro
+// pedido que a loja tem no relatório: "Tudo (365 dias)" numa loja de um mês
+// não divide por 52 sábados que ela não existia. O dia é o do navegador, como
+// sempre foi nesta tela.
+
+/** Quantos domingos, segundas… há de `de` a `ate` ("YYYY-MM-DD", dias operacionais, os dois inclusos). */
+export function diasNoPeriodo(de: string, ate: string): number[] {
+  const conta = [0, 0, 0, 0, 0, 0, 0];
+  let d = de;
+  for (let guarda = 0; d <= ate && guarda < 4000; guarda++) {
+    conta[new Date(`${d}T12:00:00Z`).getUTCDay()]++;
+    d = somarDias(d, 1);
+  }
+  return conta;
+}
+
+/**
+ * As vendas por dia da semana entre os dias operacionais `de` e `ate`, no fuso
+ * da loja. Pedido fora desses dias não entra (quem chama tira o "hoje" que
+ * ainda não acabou: um domingo que mal começou puxava a média do domingo).
+ */
+export function vendasPorDiaDaSemana(pedidos: PedidoDaRegua[], de: string, ate: string, fuso: string | null | undefined) {
+  const dentro = pedidos.filter((p) => {
+    const dia = naLoja(p.createdAt, fuso).dia;
+    return dia >= de && dia <= ate;
+  });
+  const { abre } = atendimentosDaVenda(dentro);
+  const ocorrencias = diasNoPeriodo(de, ate);
+  const linhas = Array.from({ length: 7 }, (_, dia) => ({ dia, dias: ocorrencias[dia], vendas: 0, valorCent: 0 }));
+  for (const p of dentro) {
+    if (!entraNaVenda(p)) continue;
+    const dia = naLoja(p.createdAt, fuso).diaSemana;
+    linhas[dia].valorCent += cent(p.totalAmount);
+    if (abre.has(p.id)) linhas[dia].vendas++;
+  }
+  const dias = linhas.map((l) => ({
+    dia: l.dia,
+    dias: l.dias,
+    vendas: l.vendas,
+    valor: reais(l.valorCent),
+    mediaValor: l.dias > 0 ? reais(Math.round(l.valorCent / l.dias)) : 0,
+    mediaVendas: l.dias > 0 ? l.vendas / l.dias : 0,
+  }));
+  const comDia = dias.filter((d) => d.dias > 0);
+  const pico = comDia.length ? comDia.reduce((a, b) => (b.mediaValor > a.mediaValor ? b : a)) : null;
+  const maxMedia = Math.max(0.01, ...dias.map((d) => d.mediaValor));
+  return { dias, pico: pico && pico.mediaValor > 0 ? pico : null, maxMedia };
+}
+
+/**
+ * Os dias operacionais que a média usa: do maior entre o início do período e o
+ * primeiro pedido da loja, até o fim do período — sem o dia de hoje, que ainda
+ * não acabou (a não ser que o período seja só hoje).
+ */
+export function diasDaMedia(inicio: Date, fim: Date, primeiroPedido: Date | null, fuso: string | null | undefined, agora = new Date()) {
+  const hoje = hojeNaLoja(fuso, agora);
+  // O período desta tela começa à meia-noite; para o dia operacional, 00h ainda
+  // é ontem (vira às 5h). O dia do início é o da data escolhida.
+  const comeco = primeiroPedido && primeiroPedido > inicio ? primeiroPedido : new Date(inicio.getTime() + HORA_DA_VIRADA * 3600000);
+  let de = naLoja(comeco, fuso).dia;
+  let ate = naLoja(fim < agora ? fim : agora, fuso).dia;
+  let semHoje = false;
+  if (ate === hoje && de < hoje) { ate = somarDias(hoje, -1); semHoje = true; }
+  if (ate < de) de = ate;
+  return { de, ate, semHoje };
+}
+
 export default function RelatoriosClient({
   orders,
   products,
@@ -228,6 +354,7 @@ export default function RelatoriosClient({
   storeName,
   timeAlertConfig,
   lojasDeOrigem,
+  fusoDaLoja,
 }: {
   orders: any[];
   products: any[];
@@ -236,6 +363,8 @@ export default function RelatoriosClient({
   storeName: string;
   /** Vazia quando a conta não tem o que separar (lib/lojas-de-origem-da-conta.ts). */
   lojasDeOrigem?: LojaDeOrigem[];
+  /** Fuso da loja vista: os dias da semana contam pelo dia operacional dela. */
+  fusoDaLoja?: string | null;
   timeAlertConfig?: { yellowEnabled?: boolean; yellowMinutes?: number; redEnabled?: boolean; redMinutes?: number } | null;
 }) {
   const [preset, setPreset] = useState(2); // 7 dias padrão
@@ -763,18 +892,28 @@ export default function RelatoriosClient({
 
   // 8. MOVIMENTO: hora do dia, dia da semana, entrega x retirada, cancelamentos
   const movimento = useMemo(() => {
+    // Por hora são PEDIDOS (cada rodada de mesa é um): é o ritmo da cozinha.
+    // Só os que entram na venda — o cancelado em inglês e o valor impossível
+    // ficavam no gráfico e fora do faturamento.
     const porHora = Array.from({ length: 24 }, (_, h) => ({ hora: h, count: 0, total: 0 }));
-    const porDia = Array.from({ length: 7 }, (_, d) => ({ dia: d, count: 0, total: 0 }));
-    let entrega = 0, retirada = 0;
-
     dateFilteredOrders.forEach((o) => {
+      if (!entraNaVenda(o)) return;
       const d = new Date(o.createdAt);
       porHora[d.getHours()].count++;
       porHora[d.getHours()].total += o.totalAmount;
-      porDia[d.getDay()].count++;
-      porDia[d.getDay()].total += o.totalAmount;
-      if (ehRetirada(o)) retirada++; else entrega++;
     });
+
+    // Dias da semana: média por dia operacional (vira às 5h, no fuso da loja),
+    // desde o primeiro pedido que a loja tem no relatório e sem o hoje, que
+    // ainda não acabou (diasDaMedia).
+    let primeiroPedido = Infinity;
+    for (const o of orders) {
+      const t = new Date(o.createdAt).getTime();
+      if (t < primeiroPedido) primeiroPedido = t;
+    }
+    const janela = diasDaMedia(from, to, Number.isFinite(primeiroPedido) ? new Date(primeiroPedido) : null, fusoDaLoja);
+    const semana = { ...vendasPorDiaDaSemana(dateFilteredOrders as PedidoDaRegua[], janela.de, janela.ate, fusoDaLoja), semHoje: janela.semHoje };
+    const operacao = resumoDaOperacao(dateFilteredOrders as PedidoComTipo[]);
 
     // Cancelados ficam de fora de dateFilteredOrders -- para a taxa, contamos
     // de novo direto do periodo. Os filtros de PLATAFORMA e LOJA valem aqui
@@ -791,9 +930,7 @@ export default function RelatoriosClient({
     });
 
     const picoHora = porHora.reduce((a, b) => (b.count > a.count ? b : a), porHora[0]);
-    const picoDia = porDia.reduce((a, b) => (b.count > a.count ? b : a), porDia[0]);
     const maxHora = Math.max(1, ...porHora.map((h) => h.count));
-    const maxDia = Math.max(1, ...porDia.map((h) => h.count));
     const totalValidos = dateFilteredOrders.length;
     // O ticket do período é valor ÷ VENDAS (a régua única), como no Vendas por
     // período: a mesa conta uma vez. Os gráficos de hora e dia continuam
@@ -809,14 +946,14 @@ export default function RelatoriosClient({
     const regua = vendaDaRegua(dateFilteredOrders);
 
     return {
-      porHora, porDia, maxHora, maxDia, picoHora, picoDia,
-      entrega, retirada, totalValidos, receitaTotal: regua.valor, vendas: regua.vendas,
+      porHora, maxHora, picoHora, semana, operacao,
+      totalValidos, receitaTotal: regua.valor, vendas: regua.vendas,
       ticketMedio: regua.ticket,
       cancelados,
       brutoNoPeriodo,
       taxaCancelamento: brutoNoPeriodo > 0 ? (cancelados / brutoNoPeriodo) * 100 : 0,
     };
-  }, [dateFilteredOrders, orders, from, to, passaNaOrigem]);
+  }, [dateFilteredOrders, orders, from, to, passaNaOrigem, fusoDaLoja]);
 
   // Exportar dados como CSV
   //
@@ -1377,18 +1514,25 @@ export default function RelatoriosClient({
           <h3 style={{ margin: "0 0 4px", fontWeight: 900, fontSize: "0.92rem", color: "#0F172A", display: "flex", alignItems: "center", gap: 7 }}>
             <Calendar size={16} color="#1C1917" /> Dias da semana
           </h3>
-          <p style={{ margin: "0 0 1rem", fontSize: "0.76rem", color: "#64748B" }}>
-            Dia mais forte: <strong>{DIAS_SEMANA[movimento.picoDia.dia]}</strong> com {movimento.picoDia.count} pedidos.
+          <p style={{ margin: "0 0 1rem", fontSize: "0.76rem", color: "#64748B", lineHeight: 1.45 }}>
+            Média vendida <strong>por dia</strong>, porque o período pode ter mais sábados que quartas{movimento.semana.semHoje ? " (hoje entra quando o dia acabar)" : ""}.
+            {movimento.semana.pico && (
+              <> Dia mais forte: <strong>{DIAS_SEMANA[movimento.semana.pico.dia]}</strong>, {fmtR(movimento.semana.pico.mediaValor)} por dia.</>
+            )}
           </p>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-            {movimento.porDia.map((d) => (
+            {movimento.semana.dias.map((d) => (
               <div key={d.dia} style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ width: 34, fontSize: "0.74rem", fontWeight: 800, color: "#475569", flexShrink: 0 }}>{DIAS_SEMANA[d.dia]}</span>
                 <div style={{ flex: 1, background: "#F1F5F9", height: 16, borderRadius: 5, overflow: "hidden" }}>
-                  <div style={{ width: `${(d.count / movimento.maxDia) * 100}%`, height: "100%", background: d.dia === movimento.picoDia.dia ? "#1C1917" : "#E7DDD3", borderRadius: 5 }} />
+                  <div style={{ width: `${(d.mediaValor / movimento.semana.maxMedia) * 100}%`, height: "100%", background: movimento.semana.pico && d.dia === movimento.semana.pico.dia ? "#1C1917" : "#E7DDD3", borderRadius: 5 }} />
                 </div>
-                <span style={{ width: 74, textAlign: "right", fontSize: "0.72rem", color: "#64748B", flexShrink: 0 }}>
-                  <strong style={{ color: "#0F172A" }}>{d.count}</strong> · {fmtR(d.total)}
+                <span style={{ width: 96, textAlign: "right", fontSize: "0.72rem", color: "#64748B", flexShrink: 0, lineHeight: 1.25 }}>
+                  <strong style={{ color: "#0F172A" }}>{fmtR(d.mediaValor)}</strong>/dia
+                  <br />
+                  <span style={{ fontSize: "0.66rem" }}>
+                    {d.dias === 0 ? "nenhum no período" : `${d.dias} ${d.dias === 1 ? "dia" : "dias"} · ${d.vendas} ${d.vendas === 1 ? "venda" : "vendas"}`}
+                  </span>
                 </span>
               </div>
             ))}
@@ -1401,26 +1545,33 @@ export default function RelatoriosClient({
             <StoreIcon size={16} color="#0F172A" /> Resumo da operação
           </h3>
 
-          <div style={{ display: "flex", gap: 10, marginBottom: "1rem" }}>
-            <div style={{ flex: 1, background: "#FAF6F2", borderRadius: 12, padding: "0.8rem" }}>
-              <p style={{ margin: 0, fontSize: "0.72rem", fontWeight: 800, color: "#1C1917" }}>🛵 Entrega</p>
-              <p style={{ margin: "4px 0 0", fontSize: "1.35rem", fontWeight: 900, color: "#0F172A" }}>{movimento.entrega}</p>
-              <p style={{ margin: 0, fontSize: "0.7rem", color: "#64748B" }}>
-                {fmtPct(movimento.totalValidos ? (movimento.entrega / movimento.totalValidos) * 100 : 0)} dos pedidos
-              </p>
-            </div>
-            <div style={{ flex: 1, background: "#FFF4EF", borderRadius: 12, padding: "0.8rem" }}>
-              <p style={{ margin: 0, fontSize: "0.72rem", fontWeight: 800, color: "#9A3412" }}>🏃 Retirada</p>
-              <p style={{ margin: "4px 0 0", fontSize: "1.35rem", fontWeight: 900, color: "#0F172A" }}>{movimento.retirada}</p>
-              <p style={{ margin: 0, fontSize: "0.7rem", color: "#64748B" }}>
-                {fmtPct(movimento.totalValidos ? (movimento.retirada / movimento.totalValidos) * 100 : 0)} dos pedidos
-              </p>
-            </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8, marginBottom: "0.5rem" }}>
+            {([
+              { chave: "entrega", rotulo: "🛵 Entrega", fundo: "#FAF6F2", cor: "#1C1917", detalhe: null },
+              { chave: "mesa", rotulo: "🍽️ Mesa", fundo: "#F0FDFA", cor: "#0F766E",
+                detalhe: movimento.operacao.mesa.lancamentos > movimento.operacao.mesa.vendas
+                  ? `${movimento.operacao.mesa.lancamentos} rodadas` : null },
+              { chave: "retirada", rotulo: "🏃 Retirada/balcão", fundo: "#FFF4EF", cor: "#9A3412", detalhe: null },
+            ] as const).map((c) => {
+              const t = movimento.operacao[c.chave];
+              return (
+                <div key={c.chave} style={{ background: c.fundo, borderRadius: 12, padding: "0.7rem", minWidth: 0 }}>
+                  <p style={{ margin: 0, fontSize: "0.7rem", fontWeight: 800, color: c.cor, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.rotulo}</p>
+                  <p style={{ margin: "4px 0 0", fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>{t.vendas}</p>
+                  <p style={{ margin: 0, fontSize: "0.68rem", color: "#64748B" }}>{fmtPct(t.pct)} das vendas</p>
+                  <p style={{ margin: "2px 0 0", fontSize: "0.68rem", color: "#475569", fontWeight: 700 }}>{fmtR(t.valor)}</p>
+                  {c.detalhe && <p style={{ margin: "2px 0 0", fontSize: "0.64rem", color: "#64748B" }}>{c.detalhe}</p>}
+                </div>
+              );
+            })}
           </div>
+          <p style={{ margin: "0 0 0.8rem", fontSize: "0.68rem", color: "#94A3B8", lineHeight: 1.4 }}>
+            Cada mesa conta como uma venda, por mais rodadas que tenha. As três somam as {movimento.vendas} vendas do ticket abaixo.
+          </p>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 8, fontSize: "0.8rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
-              <span style={{ color: "#64748B", fontWeight: 600 }}>Ticket médio do período{movimento.vendas !== movimento.totalValidos ? ` (${movimento.vendas} vendas)` : ""}</span>
+              <span style={{ color: "#64748B", fontWeight: 600 }}>Ticket médio do período ({movimento.vendas} {movimento.vendas === 1 ? "venda" : "vendas"})</span>
               <strong style={{ color: "#0F172A" }}>{fmtR(movimento.ticketMedio)}</strong>
             </div>
             <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
