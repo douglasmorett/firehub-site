@@ -16,8 +16,9 @@
  * no cartão × R$ 55,00 no Movimento e no Vendas por período; Pastel da
  * Paulista, 67,99 × 70,16.
  */
-import { cartaoDeVendas, vendaDaRegua, resumoDaOperacao, tipoDaOperacao, diasNoPeriodo, vendasPorDiaDaSemana, diasDaMedia, type PedidoDoPainel } from "../src/app/store/relatorios/painel/RelatoriosClient";
+import { cartaoDeVendas, vendaDaRegua, resumoDaOperacao, tipoDaOperacao, diasNoPeriodo, vendasPorDiaDaSemana, diasDaMedia, periodoDoPainel, type PedidoDoPainel } from "../src/app/store/relatorios/painel/RelatoriosClient";
 import { resumoDeVendas, type PedidoParaVendas } from "../src/lib/relatorios/vendas";
+import { hojeNaLoja } from "../src/lib/relatorios/base";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -131,13 +132,22 @@ confere("mesa de 3 rodadas no sábado: 1 venda, R$ 60 no dia (média 30 em 2 sá
 const madrugada = vendasPorDiaDaSemana([pedido({ createdAt: "2026-10-03T04:30:00.000Z", totalAmount: 50, items: [item("Lanches", 50)] } as any)] as any, "2026-10-01", "2026-10-10", SP);
 confere("pedido de 01h30 do sábado conta na sexta (dia operacional)", [madrugada.dias[5].vendas, madrugada.dias[6].vendas], [1, 0]);
 confere("período invertido/vazio não divide por zero", vendasPorDiaDaSemana([], "2026-10-11", "2026-10-01", SP).pico, null);
-// Domingo 11/10, 08h40 (11:40 UTC): o "Este mês" vai até sábado na média.
-const janela = diasDaMedia(new Date("2026-10-01T03:00:00Z"), new Date("2026-10-12T02:59:59Z"), new Date("2026-09-03T01:00:00Z"), SP, new Date("2026-10-11T11:40:00Z"));
-confere("este mês às 08h40 de domingo: de 01/10 a 10/10, sem hoje", janela, { de: "2026-10-01", ate: "2026-10-10", semHoje: true });
-const soHoje = diasDaMedia(new Date("2026-10-11T03:00:00Z"), new Date("2026-10-12T02:59:59Z"), null, SP, new Date("2026-10-11T23:00:00Z"));
-confere("período só de hoje: hoje mesmo", soHoje, { de: "2026-10-11", ate: "2026-10-11", semHoje: false });
-const lojaNova = diasDaMedia(new Date("2025-10-11T03:00:00Z"), new Date("2026-10-12T02:59:59Z"), new Date("2026-09-03T15:00:00Z"), SP, new Date("2026-10-11T11:40:00Z"));
-confere("Tudo (365 dias) numa loja de setembro: começa no primeiro pedido", lojaNova.de, "2026-09-03");
+// Domingo 11/10 (hoje): o "Este mês" vai até sábado na média.
+confere("este mês no domingo 11/10: de 01/10 a 10/10, sem hoje", diasDaMedia("2026-10-01", "2026-10-11", "2026-09-03", "2026-10-11"), { de: "2026-10-01", ate: "2026-10-10", semHoje: true });
+confere("período só de hoje: hoje mesmo", diasDaMedia("2026-10-11", "2026-10-11", null, "2026-10-11"), { de: "2026-10-11", ate: "2026-10-11", semHoje: false });
+confere("Tudo (365 dias) numa loja de setembro: começa no primeiro pedido", diasDaMedia("2025-10-12", "2026-10-11", "2026-09-03", "2026-10-11").de, "2026-09-03");
+
+console.log("\n8) Período: os atalhos e o dia operacional dos relatórios");
+// Até 11/10/2026: "Últimos 7 dias" = hoje−7 até agora (8 dias), pela meia-noite do navegador.
+confere("7 dias = hoje e os 6 anteriores", periodoDoPainel("7d", "2026-10-11"), { de: "2026-10-05", ate: "2026-10-11" });
+confere("ontem", periodoDoPainel("ontem", "2026-10-11"), { de: "2026-10-10", ate: "2026-10-10" });
+confere("este mês", periodoDoPainel("mes", "2026-10-11"), { de: "2026-10-01", ate: "2026-10-11" });
+confere("tudo (365 dias)", periodoDoPainel("365d", "2026-10-11"), { de: "2025-10-12", ate: "2026-10-11" });
+confere("datas escolhidas, invertidas, viram de/até", periodoDoPainel("7d", "2026-10-11", { de: "2026-10-09", ate: "2026-10-01" }), { de: "2026-10-01", ate: "2026-10-09" });
+confere("data incompleta cai no atalho", periodoDoPainel("ontem", "2026-10-11", { de: "2026-10-01", ate: "" }), { de: "2026-10-10", ate: "2026-10-10" });
+// Domingo 11/10 às 01:30 em Belém (04:30 UTC): o turno de sábado ainda está aberto — "hoje" é sábado.
+confere("hoje às 01h30 de domingo ainda é sábado (dia operacional)", hojeNaLoja("America/Belem", new Date("2026-10-11T04:30:00Z")), "2026-10-10");
+confere("hoje às 08h40 de domingo é domingo", hojeNaLoja("America/Belem", new Date("2026-10-11T11:40:00Z")), "2026-10-11");
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

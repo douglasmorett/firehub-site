@@ -11,7 +11,7 @@ import {
   atendimentosDaVenda, cent, entraNaVenda, reais, ticketMedio as ticketDaRegua, type PedidoDaRegua,
 } from "@/lib/relatorios/regua-da-venda";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
-import { HORA_DA_VIRADA, naLoja, somarDias, hojeNaLoja } from "@/lib/relatorios/base";
+import { ATALHOS, ehCancelado, fmtDia, naLoja, periodoDoAtalho, somarDias, hojeNaLoja, type AtalhoDePeriodo } from "@/lib/relatorios/base";
 import {
   TrendingUp,
   TrendingDown,
@@ -38,46 +38,29 @@ import {
   Store as StoreIcon
 } from "lucide-react";
 
-// Presets de período
-const PERIOD_PRESETS = [
-  { label: "Hoje", days: 0 },
-  { label: "Ontem", days: 1 },
-  { label: "Últimos 7 dias", days: 7 },
-  { label: "Últimos 15 dias", days: 15 },
-  { label: "Últimos 30 dias", days: 30 },
-  { label: "Este mês", days: -1 },
-  { label: "Tudo (365 dias)", days: 365 },
+// ── O PERÍODO É O DOS RELATÓRIOS ────────────────────────────────────────────
+//
+// Até 11/10/2026 o painel tinha atalhos próprios: a meia-noite do NAVEGADOR e
+// "Últimos 7 dias" de hoje−7 até agora — oito dias. Na abertura (o padrão é 7
+// dias) o painel mostrava de 20% a 48% a mais que o Vendas por período: Ragnar
+// R$ 68.741,88 × R$ 54.867,76; Divinos R$ 6.148,86 × R$ 4.136,68. E "Hoje" às
+// 8h de domingo mostrava a madrugada da noite de sábado.
+//
+// Agora são os atalhos e o dia operacional dos relatórios (lib/relatorios/
+// base.ts): o dia vira às 5h, no fuso da loja, e "7 dias" são hoje e os seis
+// anteriores. "Tudo (365 dias)" é o que a página carrega.
+export type AtalhoDoPainel = AtalhoDePeriodo | "365d";
+const ATALHOS_DO_PAINEL: { chave: AtalhoDoPainel; rotulo: string }[] = [
+  ...ATALHOS,
+  { chave: "365d", rotulo: "Tudo (365 dias)" },
 ];
 
-function getRange(presetDays: number): { from: Date; to: Date } {
-  const to = new Date();
-  const from = new Date();
-  
-  if (presetDays === 0) {
-    from.setHours(0, 0, 0, 0);
-    to.setHours(23, 59, 59, 999);
-    return { from, to };
-  }
-  
-  if (presetDays === 1) {
-    from.setDate(to.getDate() - 1);
-    from.setHours(0, 0, 0, 0);
-    
-    const tempTo = new Date(from);
-    tempTo.setHours(23, 59, 59, 999);
-    return { from, to: tempTo };
-  }
-  
-  if (presetDays === -1) {
-    // Este mês
-    const startOfMonth = new Date(to.getFullYear(), to.getMonth(), 1);
-    startOfMonth.setHours(0, 0, 0, 0);
-    return { from: startOfMonth, to };
-  }
-  
-  from.setDate(to.getDate() - presetDays);
-  from.setHours(0, 0, 0, 0);
-  return { from, to };
+/** O período ("YYYY-MM-DD", dias operacionais) do atalho ou das datas escolhidas. */
+export function periodoDoPainel(atalho: AtalhoDoPainel, hoje: string, escolhido?: { de?: string; ate?: string } | null): { de: string; ate: string } {
+  const de = escolhido?.de || "", ate = escolhido?.ate || "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(de) && /^\d{4}-\d{2}-\d{2}$/.test(ate)) return de <= ate ? { de, ate } : { de: ate, ate: de };
+  if (atalho === "365d") return { de: somarDias(hoje, -364), ate: hoje };
+  return periodoDoAtalho(atalho, hoje);
 }
 
 // Formatação
@@ -331,20 +314,16 @@ export function vendasPorDiaDaSemana(pedidos: PedidoDaRegua[], de: string, ate: 
 
 /**
  * Os dias operacionais que a média usa: do maior entre o início do período e o
- * primeiro pedido da loja, até o fim do período — sem o dia de hoje, que ainda
- * não acabou (a não ser que o período seja só hoje).
+ * primeiro dia com pedido da loja, até o fim do período — sem o dia de hoje,
+ * que ainda não acabou (a não ser que o período seja só hoje).
  */
-export function diasDaMedia(inicio: Date, fim: Date, primeiroPedido: Date | null, fuso: string | null | undefined, agora = new Date()) {
-  const hoje = hojeNaLoja(fuso, agora);
-  // O período desta tela começa à meia-noite; para o dia operacional, 00h ainda
-  // é ontem (vira às 5h). O dia do início é o da data escolhida.
-  const comeco = primeiroPedido && primeiroPedido > inicio ? primeiroPedido : new Date(inicio.getTime() + HORA_DA_VIRADA * 3600000);
-  let de = naLoja(comeco, fuso).dia;
-  let ate = naLoja(fim < agora ? fim : agora, fuso).dia;
+export function diasDaMedia(de: string, ate: string, primeiroDia: string | null, hoje: string) {
+  let ini = primeiroDia && primeiroDia > de ? primeiroDia : de;
+  let fim = ate > hoje ? hoje : ate;
   let semHoje = false;
-  if (ate === hoje && de < hoje) { ate = somarDias(hoje, -1); semHoje = true; }
-  if (ate < de) de = ate;
-  return { de, ate, semHoje };
+  if (fim === hoje && ini < hoje) { fim = somarDias(hoje, -1); semHoje = true; }
+  if (fim < ini) ini = fim;
+  return { de: ini, ate: fim, semHoje };
 }
 
 export default function RelatoriosClient({
@@ -367,7 +346,7 @@ export default function RelatoriosClient({
   fusoDaLoja?: string | null;
   timeAlertConfig?: { yellowEnabled?: boolean; yellowMinutes?: number; redEnabled?: boolean; redMinutes?: number } | null;
 }) {
-  const [preset, setPreset] = useState(2); // 7 dias padrão
+  const [atalho, setAtalho] = useState<AtalhoDoPainel>("7d");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [useCustom, setUseCustom] = useState(false);
@@ -423,24 +402,32 @@ export default function RelatoriosClient({
     [categories],
   );
 
-  // Intervalo de datas selecionado
-  const { from, to } = useMemo(() => {
-    if (useCustom && customFrom && customTo) {
-      return {
-        from: new Date(customFrom + "T00:00:00"),
-        to: new Date(customTo + "T23:59:59"),
-      };
-    }
-    return getRange(PERIOD_PRESETS[preset].days);
-  }, [preset, useCustom, customFrom, customTo]);
+  // "Hoje" no dia operacional da loja, e o dia operacional de cada pedido — uma
+  // vez só (a página traz 365 dias de pedidos).
+  const hoje = useMemo(() => hojeNaLoja(fusoDaLoja), [fusoDaLoja]);
+  const diaDoPedido = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of orders) m.set(o.id, naLoja(o.createdAt, fusoDaLoja).dia);
+    return m;
+  }, [orders, fusoDaLoja]);
+  const primeiroDia = useMemo(() => {
+    let menor: string | null = null;
+    for (const d of diaDoPedido.values()) if (!menor || d < menor) menor = d;
+    return menor;
+  }, [diaDoPedido]);
 
-  // 1. Filtrar pedidos por data
-  const noPeriodo = useMemo(() => {
-    return orders.filter((o) => {
-      const d = new Date(o.createdAt);
-      return d >= from && d <= to && o.status !== "CANCELADO";
-    });
-  }, [orders, from, to]);
+  // O período selecionado (dias operacionais)
+  const { de, ate } = useMemo(
+    () => periodoDoPainel(atalho, hoje, useCustom ? { de: customFrom, ate: customTo } : null),
+    [atalho, hoje, useCustom, customFrom, customTo],
+  );
+  const noDia = useCallback((o: any) => {
+    const d = diaDoPedido.get(o.id) || "";
+    return d >= de && d <= ate;
+  }, [diaDoPedido, de, ate]);
+
+  // 1. Filtrar pedidos por data (o cancelado fica para a taxa de cancelamento)
+  const noPeriodo = useMemo(() => orders.filter((o) => noDia(o) && !ehCancelado(o.status)), [orders, noDia]);
 
   // ── DE QUAL PLATAFORMA E DE QUAL LOJA ────────────────────────────────────
   //
@@ -898,20 +885,15 @@ export default function RelatoriosClient({
     const porHora = Array.from({ length: 24 }, (_, h) => ({ hora: h, count: 0, total: 0 }));
     dateFilteredOrders.forEach((o) => {
       if (!entraNaVenda(o)) return;
-      const d = new Date(o.createdAt);
-      porHora[d.getHours()].count++;
-      porHora[d.getHours()].total += o.totalAmount;
+      const h = naLoja(o.createdAt, fusoDaLoja).hora;
+      porHora[h].count++;
+      porHora[h].total += o.totalAmount;
     });
 
     // Dias da semana: média por dia operacional (vira às 5h, no fuso da loja),
     // desde o primeiro pedido que a loja tem no relatório e sem o hoje, que
     // ainda não acabou (diasDaMedia).
-    let primeiroPedido = Infinity;
-    for (const o of orders) {
-      const t = new Date(o.createdAt).getTime();
-      if (t < primeiroPedido) primeiroPedido = t;
-    }
-    const janela = diasDaMedia(from, to, Number.isFinite(primeiroPedido) ? new Date(primeiroPedido) : null, fusoDaLoja);
+    const janela = diasDaMedia(de, ate, primeiroDia, hoje);
     const semana = { ...vendasPorDiaDaSemana(dateFilteredOrders as PedidoDaRegua[], janela.de, janela.ate, fusoDaLoja), semHoje: janela.semHoje };
     const operacao = resumoDaOperacao(dateFilteredOrders as PedidoComTipo[]);
 
@@ -922,11 +904,10 @@ export default function RelatoriosClient({
     // recorte.
     let cancelados = 0, brutoNoPeriodo = 0;
     orders.forEach((o) => {
-      const d = new Date(o.createdAt);
-      if (d < from || d > to) return;
+      if (!noDia(o)) return;
       if (!passaNaOrigem(o)) return;
       brutoNoPeriodo++;
-      if (o.status === "CANCELADO") cancelados++;
+      if (ehCancelado(o.status)) cancelados++;
     });
 
     const picoHora = porHora.reduce((a, b) => (b.count > a.count ? b : a), porHora[0]);
@@ -953,7 +934,7 @@ export default function RelatoriosClient({
       brutoNoPeriodo,
       taxaCancelamento: brutoNoPeriodo > 0 ? (cancelados / brutoNoPeriodo) * 100 : 0,
     };
-  }, [dateFilteredOrders, orders, from, to, passaNaOrigem, fusoDaLoja]);
+  }, [dateFilteredOrders, orders, noDia, de, ate, primeiroDia, hoje, passaNaOrigem, fusoDaLoja]);
 
   // Exportar dados como CSV
   //
@@ -964,7 +945,7 @@ export default function RelatoriosClient({
   const handleExportCSV = () => {
     const texto = (v: string) => `"${String(v).replace(/"/g, '""')}"`;
     const reais = (v: number) => v.toFixed(2).replace(".", ",");
-    const periodo = `${from.toISOString().split("T")[0]}_a_${to.toISOString().split("T")[0]}`;
+    const periodo = `${de}_a_${ate}`;
 
     let linhas: (string | number)[][];
     let nome: string;
@@ -1057,11 +1038,11 @@ export default function RelatoriosClient({
         {/* Filtros de Período Rápido */}
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <span style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.5px", marginRight: 6 }}>Período:</span>
-          {PERIOD_PRESETS.map((p, i) => (
+          {ATALHOS_DO_PAINEL.map((p) => (
             <button
-              key={i}
+              key={p.chave}
               onClick={() => {
-                setPreset(i);
+                setAtalho(p.chave);
                 setUseCustom(false);
               }}
               style={{
@@ -1071,12 +1052,12 @@ export default function RelatoriosClient({
                 fontWeight: 700,
                 fontSize: "0.8rem",
                 cursor: "pointer",
-                background: !useCustom && preset === i ? "#E8360C" : "#F1F5F9",
-                color: !useCustom && preset === i ? "#fff" : "#475569",
+                background: !useCustom && atalho === p.chave ? "#E8360C" : "#F1F5F9",
+                color: !useCustom && atalho === p.chave ? "#fff" : "#475569",
                 transition: "all 0.15s"
               }}
             >
-              {p.label}
+              {p.rotulo}
             </button>
           ))}
           <div style={{ display: "flex", gap: 5, alignItems: "center", marginLeft: "auto" }}>
@@ -1162,9 +1143,10 @@ export default function RelatoriosClient({
       {/* ── BANNER DO PERÍODO ── */}
       <div style={{ background: "linear-gradient(135deg, #1E293B, #0F172A)", border: "1px solid #334155", color: "white", padding: "10px 1.5rem", borderRadius: 14, textAlign: "center", fontSize: "0.82rem", fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginBottom: "1.5rem" }}>
         <span>📅 Visualizando dados de</span>
-        <strong>{from.toLocaleDateString("pt-BR")}</strong>
+        <strong>{fmtDia(de)}</strong>
         <span>até</span>
-        <strong>{to.toLocaleDateString("pt-BR")}</strong>
+        <strong>{fmtDia(ate)}</strong>
+        <span style={{ opacity: 0.7, fontWeight: 500 }}>· o dia vira às 5h</span>
       </div>
 
       {/* ── KPIs CARDS ── */}
