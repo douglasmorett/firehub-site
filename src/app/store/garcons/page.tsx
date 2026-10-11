@@ -4,6 +4,8 @@ import { useEffect, useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Users, DollarSign, Loader2, ArrowLeft, Calendar, FileText, CheckCircle2, XCircle, Link2, Copy, Check, KeyRound, Eye, EyeOff, ExternalLink, Percent } from "lucide-react";
 import { useSession } from "next-auth/react";
 import RelatorioDeMesas from "./RelatorioDeMesas";
+import { fmtDia, hojeNaLoja } from "@/lib/relatorios/base";
+import { fusoDoNavegador, totaisDoGarcom, type MesaDoGarcom } from "@/lib/relatorios/relatorio-de-mesas";
 
 interface Waiter {
   id: string;
@@ -41,16 +43,19 @@ const PERMISSOES_DO_LINK: { campo: "podeFecharConta" | "podeDarDesconto" | "pode
   { campo: "podeRemoverItem", titulo: "Pode remover item já lançado pelo link do garçom", ajuda: "Desmarcado, ele só acrescenta: não remove item, não diminui quantidade nem cancela pedido da mesa. Ajuste é com o caixa." },
 ];
 
-interface TableSessionData {
+/**
+ * Uma mesa do relatório do garçom, como /api/store/waiters/[id]/report
+ * devolve: a conta já pela régua única (consumo, desconto, totalDaConta).
+ * `totalPaid` é a nota que o cliente ENTREGOU (com troco) — não é o total da
+ * conta e não aparece na tela.
+ */
+interface TableSessionData extends MesaDoGarcom {
   id: string;
   tableNumber: number;
   tableLabel: string | null;
   openedAt: string;
   closedAt: string;
   totalPaid: number;
-  serviceFee: number;
-  waiterTip: number;
-  waiterCommission: number;
 }
 
 export default function GarconsPage() {
@@ -110,9 +115,13 @@ export default function GarconsPage() {
   const [viewingWaiter, setViewingWaiter] = useState<Waiter | null>(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportSessions, setReportSessions] = useState<TableSessionData[]>([]);
+  /** O período que o servidor resolveu (dia operacional da loja) — o que está na tela. */
+  const [reportPeriodo, setReportPeriodo] = useState<{ de: string; ate: string; hoje: string } | null>(null);
   const [dateFilter, setDateFilter] = useState("hoje"); // hoje, ontem, periodo
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  // O dia OPERACIONAL (vira às 5h): o `toISOString()` de antes dava o dia UTC,
+  // e depois das 21h o "Período" já abria no dia seguinte, vazio.
+  const [startDate, setStartDate] = useState(() => hojeNaLoja(fusoDoNavegador()));
+  const [endDate, setEndDate] = useState(() => hojeNaLoja(fusoDoNavegador()));
 
   // Load waiters
   useEffect(() => {
@@ -147,59 +156,48 @@ export default function GarconsPage() {
     }
   };
 
-  const fetchReport = async (waiterId: string, filter: string, start: string, end: string) => {
-    setReportLoading(true);
-    try {
-      let queryStart = "";
-      let queryEnd = "";
-
-      if (filter === "hoje") {
-        const today = new Date();
-        today.setHours(0,0,0,0);
-        queryStart = today.toISOString();
-        const endOfDay = new Date(today);
-        endOfDay.setHours(23,59,59,999);
-        queryEnd = endOfDay.toISOString();
-      } else if (filter === "ontem") {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        yesterday.setHours(0,0,0,0);
-        queryStart = yesterday.toISOString();
-        const endOfDay = new Date(yesterday);
-        endOfDay.setHours(23,59,59,999);
-        queryEnd = endOfDay.toISOString();
-      } else if (filter === "periodo") {
-        const sd = new Date(start);
-        sd.setHours(0,0,0,0);
-        queryStart = sd.toISOString();
-        const ed = new Date(end);
-        ed.setHours(23,59,59,999);
-        queryEnd = ed.toISOString();
-      }
-
-      const res = await fetch(`/api/store/waiters/${waiterId}/report?startDate=${queryStart}&endDate=${queryEnd}`);
-      if (res.ok) {
-        const data = await res.json();
-        setReportSessions(data.sessions || []);
-      }
-    } catch {
-      setReportSessions([]);
-    } finally {
-      setReportLoading(false);
-    }
-  };
-
-  const openReport = (w: Waiter) => {
-    setViewingWaiter(w);
-    setDateFilter("hoje");
-    fetchReport(w.id, "hoje", startDate, endDate);
-  };
+  // O período vai como dia ("YYYY-MM-DD") ou atalho, e o SERVIDOR monta a
+  // janela no dia operacional da loja (vira às 5h, fuso do dono). Antes a
+  // janela era montada aqui: `new Date("2026-10-10")` é meia-noite UTC, e com
+  // o `setHours` local o "Período" de 10/10 consultava 09/10; "Hoje" e
+  // "Ontem" viravam à meia-noite do navegador (a mesa fechada à 1h ia para o
+  // dia seguinte).
+  const idDoGarcom = viewingWaiter?.id || null;
+  const consultaDoRelatorio = dateFilter === "periodo" ? `de=${startDate}&ate=${endDate}` : `atalho=${dateFilter}`;
 
   useEffect(() => {
-    if (viewingWaiter) {
-      fetchReport(viewingWaiter.id, dateFilter, startDate, endDate);
+    if (!idDoGarcom) return;
+    let vivo = true;
+    setReportLoading(true);
+    fetch(`/api/store/waiters/${idDoGarcom}/report?${consultaDoRelatorio}`)
+      .then(async (res) => {
+        const data = res.ok ? await res.json().catch(() => null) : null;
+        if (!vivo) return;
+        setReportSessions(data?.sessions || []);
+        setReportPeriodo(data?.periodo || null);
+      })
+      .catch(() => { if (vivo) setReportSessions([]); })
+      .finally(() => { if (vivo) setReportLoading(false); });
+    return () => { vivo = false; };
+  }, [idDoGarcom, consultaDoRelatorio]);
+
+  const openReport = (w: Waiter) => {
+    // Sem isso, o relatório do garçom anterior aparece por um instante.
+    setReportSessions([]);
+    setReportPeriodo(null);
+    setReportLoading(true);
+    setViewingWaiter(w);
+    setDateFilter("hoje");
+  };
+
+  const escolherFiltro = (filtro: string) => {
+    // O "Período" abre no período que está na tela, já resolvido pelo servidor.
+    if (filtro === "periodo" && dateFilter !== "periodo" && reportPeriodo) {
+      setStartDate(reportPeriodo.de);
+      setEndDate(reportPeriodo.ate);
     }
-  }, [dateFilter, startDate, endDate]);
+    setDateFilter(filtro);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -284,16 +282,14 @@ export default function GarconsPage() {
   const fmt = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
   const fmtDate = (iso: string) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-  const reportTotals = useMemo(() => {
-    return reportSessions.reduce((acc, curr) => {
-      acc.totalTables++;
-      acc.totalPaid += curr.totalPaid;
-      acc.totalServiceFee += curr.serviceFee;
-      acc.totalTip += curr.waiterTip;
-      acc.totalCommission += curr.waiterCommission;
-      return acc;
-    }, { totalTables: 0, totalPaid: 0, totalServiceFee: 0, totalTip: 0, totalCommission: 0 });
-  }, [reportSessions]);
+  // Os cartões são a soma das linhas da tabela (lib/relatorios/relatorio-de-mesas.ts).
+  // "Total gasto" era a soma do `totalPaid` — a nota entregue, com o troco.
+  const reportTotals = useMemo(() => totaisDoGarcom(reportSessions), [reportSessions]);
+  // Loja que não cobra taxa de serviço (0%): mesa sem taxa é o normal, não "Não pagou".
+  const lojaCobraTaxa = taxaDaLoja === null || taxaDaLoja > 0;
+  const periodoDoRelatorio = reportPeriodo
+    ? reportPeriodo.de === reportPeriodo.ate ? fmtDia(reportPeriodo.de) : `${fmtDia(reportPeriodo.de)} a ${fmtDia(reportPeriodo.ate)}`
+    : "";
 
   return (
     <div style={{ padding: 20, maxWidth: viewingWaiter || verRelatorioDeMesas ? 1200 : 1000, margin: "0 auto" }}>
@@ -484,9 +480,9 @@ export default function GarconsPage() {
           <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #E2E8F0", padding: 24, marginBottom: 24 }}>
             <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap", marginBottom: 24 }}>
               <div style={{ display: "flex", gap: 8, background: "#F8FAFC", padding: 4, borderRadius: 10, border: "1px solid #E2E8F0" }}>
-                <button onClick={() => setDateFilter("hoje")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "hoje" ? "#fff" : "transparent", color: dateFilter === "hoje" ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "hoje" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Hoje</button>
-                <button onClick={() => setDateFilter("ontem")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "ontem" ? "#fff" : "transparent", color: dateFilter === "ontem" ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "ontem" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Ontem</button>
-                <button onClick={() => setDateFilter("periodo")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "periodo" ? "#fff" : "transparent", color: dateFilter === "periodo" ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "periodo" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Período</button>
+                <button onClick={() => escolherFiltro("hoje")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "hoje" ? "#fff" : "transparent", color: dateFilter === "hoje" ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "hoje" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Hoje</button>
+                <button onClick={() => escolherFiltro("ontem")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "ontem" ? "#fff" : "transparent", color: dateFilter === "ontem" ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "ontem" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Ontem</button>
+                <button onClick={() => escolherFiltro("periodo")} style={{ padding: "8px 16px", borderRadius: 6, border: "none", background: dateFilter === "periodo" ? "#fff" : "transparent", color: dateFilter === "periodo" ? "#475569" : "#64748B", fontWeight: 700, cursor: "pointer", boxShadow: dateFilter === "periodo" ? "0 2px 4px rgba(0,0,0,0.05)" : "none" }}>Período</button>
               </div>
 
               {dateFilter === "periodo" && (
@@ -496,29 +492,40 @@ export default function GarconsPage() {
                   <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #E2E8F0", fontFamily: "inherit", color: "#1E293B" }} />
                 </div>
               )}
+
+              <span style={{ marginLeft: "auto", fontSize: 12, color: "#94A3B8", textAlign: "right" }}>
+                {/* O período que o servidor resolveu: às 2h, "Hoje" mostra a data de ontem — o turno aberto. */}
+                {!reportLoading && periodoDoRelatorio && <strong style={{ color: "#475569" }}>{periodoDoRelatorio} · </strong>}
+                O dia vira às 5h da manhã: mesa fechada de madrugada conta no dia anterior.
+              </span>
             </div>
 
             {/* Metrics */}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 16 }}>
               <div style={{ background: "#FAF6F2", padding: 20, borderRadius: 12, border: "1px solid #E0D4FF" }}>
                 <div style={{ fontSize: 13, color: "#334155", fontWeight: 700, marginBottom: 4 }}>Mesas Atendidas</div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: "#0F172A" }}>{reportTotals.totalTables}</div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: "#0F172A" }}>{reportTotals.mesas}</div>
               </div>
               <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Total Gasto nas Mesas</div>
-                <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{fmt(reportTotals.totalPaid)}</div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{fmt(reportTotals.totalDasContas)}</div>
+                {/* A soma do "Total da Conta" das linhas: consumo − desconto + taxa + gorjeta, sem troco. */}
+                <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>
+                  Soma das contas, sem o troco
+                  {reportTotals.desconto > 0 ? ` · já com ${fmt(reportTotals.desconto)} de desconto` : ""}
+                </div>
               </div>
               <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Taxa de Serviço Cobrada</div>
-                <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{fmt(reportTotals.totalServiceFee)}</div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{fmt(reportTotals.taxaServico)}</div>
               </div>
               <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
                 <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Gorjetas Extras</div>
-                <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{fmt(reportTotals.totalTip)}</div>
+                <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{fmt(reportTotals.gorjetas)}</div>
               </div>
               <div style={{ background: "#F0FDFA", padding: 20, borderRadius: 12, border: "1px solid #99F6E4" }}>
                 <div style={{ fontSize: 13, color: "#0F766E", fontWeight: 900, marginBottom: 4 }}>Comissão Final (A Receber)</div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: "#134E4A" }}>{fmt(reportTotals.totalCommission)}</div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: "#134E4A" }}>{fmt(reportTotals.comissao)}</div>
               </div>
             </div>
           </div>
@@ -548,16 +555,27 @@ export default function GarconsPage() {
                         Mesa {s.tableNumber}
                       </td>
                       <td style={{ padding: "14px 16px", color: "#64748B", fontSize: 14 }}>{fmtDate(s.closedAt)}</td>
-                      <td style={{ padding: "14px 16px", fontWeight: 600, color: "#1E293B" }}>{fmt(s.totalPaid)}</td>
+                      {/* O total da conta (consumo − desconto + taxa + gorjeta), não o
+                          `totalPaid`: este é a nota entregue, e a mesa de R$ 7 paga com
+                          R$ 100 aparecia aqui como R$ 100. */}
+                      <td style={{ padding: "14px 16px", fontWeight: 600, color: "#1E293B" }}>
+                        {fmt(s.totalDaConta)}
+                        {s.desconto > 0 && (
+                          <div style={{ fontSize: 11, color: "#9A3412", fontWeight: 600 }}>com {fmt(s.desconto)} de desconto</div>
+                        )}
+                      </td>
                       <td style={{ padding: "14px 16px" }}>
                         {s.serviceFee > 0 ? (
                           <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#0F766E", fontWeight: 700, fontSize: 14 }}>
                             <CheckCircle2 size={16} /> {fmt(s.serviceFee)}
                           </div>
-                        ) : (
+                        ) : lojaCobraTaxa ? (
                           <div style={{ display: "flex", alignItems: "center", gap: 4, color: "#C92E09", fontWeight: 600, fontSize: 14 }}>
                             <XCircle size={16} /> Não pagou
                           </div>
+                        ) : (
+                          // A loja não cobra taxa de serviço (0%): não há o que pagar.
+                          <span style={{ color: "#94A3B8", fontSize: 14 }} title="A loja não cobra taxa de serviço">—</span>
                         )}
                       </td>
                       <td style={{ padding: "14px 16px", color: "#B45309", fontWeight: 700 }}>
