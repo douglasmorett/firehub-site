@@ -330,7 +330,9 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     if (cCupom > 0) {
       b.cupom += cCupom;
       b.cupomQtd += 1;
-      const noOnline = formas.some((f) => f.forma === PAGO_ONLINE);
+      // Pago no app ou cobrado pelo entregador do app: o repasse da linha
+      // travada já leva o que o app pagou de cupom.
+      const noOnline = formas.some((f) => f.forma === PAGO_ONLINE || f.forma === COBRADO_PELO_APP);
       const atual = cupomDaPlataforma.get(canal) || { qtd: 0, c: 0, noOnline: 0, qtdNoOnline: 0 };
       atual.qtd += 1;
       atual.c += cCupom;

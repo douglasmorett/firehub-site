@@ -1536,7 +1536,7 @@ export default function StoreTopNav({
                           <td style={{ padding:"8px 10px", fontWeight:600, color:"#9A3412" }}>
                             🎟️ Cupons pagos pelo {c.nome}
                             <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#9A3412", opacity:0.85, lineHeight:1.4 }}>
-                              {noOnline > 0.005 && <>{fmt(noOnline)} já estão no pago online acima. </>}
+                              {noOnline > 0.005 && <>{fmt(noOnline)} já estão no repasse do {c.nome} acima. </>}
                               {fora > 0.005 && <>{fmt(fora)} são de pedidos pagos na porta: o {c.nome} repassa depois. </>}
                               Não se conta na gaveta.
                             </span>
