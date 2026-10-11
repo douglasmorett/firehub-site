@@ -8,6 +8,8 @@ import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { lerAcerto, ganhoDoPedido } from "@/lib/ganho-do-entregador";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { canalDoPedido, chaveDoCanal } from "@/lib/canal-do-pedido";
+import { canalDoRelatorio } from "@/lib/relatorios/base";
+import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import {
   categoriaDoItem, categoriaDoProduto, categoriasDoFiltro, escolhasDoItem, montarMapasDoRelatorio, opcoesDoItem,
 } from "@/lib/itens-do-relatorio";
@@ -51,6 +53,21 @@ export default async function StoreRelatoriosPage() {
     ? lojaAtivaDoAdmin
     : (user as any).ownerId || user.id;
 
+  // O dono de grupo em "Todas as lojas" vê o grupo inteiro, como no Início e
+  // nos outros relatórios (lib/loja-ativa.ts, lojasDaVisao). Até 11/10/2026 o
+  // painel mostrava só a principal: Pizzaria 17 com 296 pedidos e a filial do
+  // Aeroporto, com 138, fora da conta.
+  const lojaIds = user.role === "ADMIN"
+    ? [targetFranchiseeId]
+    : (await lojasDaVisao(user as any, (await cookies()).get(COOKIE_DA_LOJA_ATIVA)?.value).catch(() => ({ lojaIds: [targetFranchiseeId] }))).lojaIds;
+
+  // O fuso da loja VISTA (o admin olha a loja do seletor): os dias da semana
+  // contam pelo dia operacional dela (lib/relatorios/base.ts, naLoja).
+  const fusoDaLoja = await prisma.user
+    .findUnique({ where: { id: targetFranchiseeId }, select: { storeTimezone: true } })
+    .then((l) => l?.storeTimezone || "America/Sao_Paulo")
+    .catch(() => "America/Sao_Paulo");
+
   const since = new Date();
   since.setDate(since.getDate() - 365); // Últimos 365 dias
 
@@ -59,7 +76,7 @@ export default async function StoreRelatoriosPage() {
   // cancelamentos. O pedido do totem esperando pagamento e o rascunho do robô
   // não são venda nem cancelamento — contavam como venda aqui.
   const franchiseeFilter = {
-    franchiseeId: targetFranchiseeId,
+    franchiseeId: { in: lojaIds },
     createdAt: { gte: since },
     status: { notIn: ["AGUARDANDO_PAGAMENTO", "CRIANDO_IA"] },
   };
@@ -81,6 +98,8 @@ export default async function StoreRelatoriosPage() {
         // (lib/relatorios/regua-da-venda.ts, atendimentosDaVenda) — a mesa de
         // três rodadas é uma venda, e o acréscimo é do pedido-pai.
         deliveryType: true, paymentMethod: true, source: true, tableSessionId: true, parentOrderId: true,
+        // Entrega feita pelo entregador do app (iFood/99): sem custo para a loja.
+        deliveryBy: true,
         ifoodStoreMerchant: true, food99AppShopId: true, food99ShopId: true,
         ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryChannel: true, openDeliveryReference: true,
         motoboyId: true, motoboyFee: true, deliveryDistance: true,
@@ -106,7 +125,7 @@ export default async function StoreRelatoriosPage() {
       orderBy: { createdAt: "desc" }
     });
 
-    const menuFilter = { franchiseeId: targetFranchiseeId };
+    const menuFilter = { franchiseeId: { in: lojaIds } };
 
     products = await prisma.menuProduct.findMany({
       where: menuFilter,
@@ -161,12 +180,12 @@ export default async function StoreRelatoriosPage() {
   // zonas da loja — dados que não devem viajar para o navegador.
   let custoPorPedido = new Map<string, number | null>();
   try {
-    const dono = await prisma.user.findUnique({
-      where: { id: targetFranchiseeId },
-      select: { deliveryConfig: true, deliveryZones: true },
+    const donos = await prisma.user.findMany({
+      where: { id: { in: lojaIds } },
+      select: { id: true, deliveryConfig: true, deliveryZones: true },
     });
-    const regraDeRepasse = lerRegraDeRepasse(dono?.deliveryConfig);
-    const entregadores = await prisma.motoboy.findMany({ where: { franchiseeId: targetFranchiseeId } });
+    const daLoja = new Map(donos.map((d) => [d.id, { regra: lerRegraDeRepasse(d.deliveryConfig), zonas: d.deliveryZones }]));
+    const entregadores = await prisma.motoboy.findMany({ where: { franchiseeId: { in: lojaIds } } });
     const acertoDe = new Map(entregadores.map((m) => [m.id, lerAcerto(m as any)]));
 
     for (const o of orders) {
@@ -175,11 +194,12 @@ export default async function StoreRelatoriosPage() {
       // custou nada. Ver o cartão de entregas no cliente.
       const acerto = o.motoboyId ? acertoDe.get(o.motoboyId) : null;
       if (!acerto) { custoPorPedido.set(o.id, null); continue; }
+      const loja = daLoja.get(o.franchiseeId);
       custoPorPedido.set(o.id, ganhoDoPedido({
         acerto,
         pedido: o,
-        regraDaLoja: regraDeRepasse,
-        zonas: dono?.deliveryZones,
+        regraDaLoja: loja?.regra,
+        zonas: loja?.zonas,
         ehMarketplace: canalDoPedido(o).ehMarketplace,
       }).valor);
     }
@@ -208,7 +228,11 @@ export default async function StoreRelatoriosPage() {
     // A plataforma pela régua do sistema inteiro (lib/canal-do-pedido.ts) — a
     // mesma do selo do painel e da comanda. Só o `source` errava o pedido do
     // Open Delivery antigo e o de iFood gravado com outro rótulo.
-    canal: chaveDoCanal(o),
+    // `canalDoRelatorio`: a de cima com a MESA separada — sem ela o lançamento
+    // de mesa (source PRESENCIAL) saía como "Balcão": Ragnar, 01–11/10/2026,
+    // "Balcão 779 pedidos" eram 773 rodadas de 393 mesas e 6 de balcão.
+    canal: canalDoRelatorio(o as any),
+    entregaDoApp: ["IFOOD", "99FOOD"].includes(String((o as any).deliveryBy || "").toUpperCase()),
     // ── DE QUAL LOJA VEIO ────────────────────────────────────────────────
     // As chaves que lib/loja-de-origem.ts lê para dizer se este pedido é da
     // Ragnar Pizza ou da Ragnar Burguer. São os MESMOS campos que o painel e
@@ -290,6 +314,7 @@ export default async function StoreRelatoriosPage() {
       storeName={user.storeName || "Minha Loja"}
       timeAlertConfig={(user as any).timeAlertConfig || null}
       lojasDeOrigem={lojasDeOrigem}
+      fusoDaLoja={fusoDaLoja}
     />
   );
 }

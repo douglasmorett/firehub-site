@@ -16,8 +16,9 @@
  * no cartão × R$ 55,00 no Movimento e no Vendas por período; Pastel da
  * Paulista, 67,99 × 70,16.
  */
-import { cartaoDeVendas, vendaDaRegua, type PedidoDoPainel } from "../src/app/store/relatorios/painel/RelatoriosClient";
+import { cartaoDeVendas, vendaDaRegua, resumoDaOperacao, tipoDaOperacao, diasNoPeriodo, vendasPorDiaDaSemana, diasDaMedia, periodoDoPainel, type PedidoDoPainel } from "../src/app/store/relatorios/painel/RelatoriosClient";
 import { resumoDeVendas, type PedidoParaVendas } from "../src/lib/relatorios/vendas";
+import { hojeNaLoja } from "../src/lib/relatorios/base";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -97,6 +98,56 @@ const SEM_ITENS = pedido({ totalAmount: 12, items: [] });
 confere("pedido sem item, sem filtro de item: é venda (como no Vendas por período)",
   [cartaoDeVendas([BALCAO, SEM_ITENS], SEM_FILTRO, 40).vendas, vendaDaRegua([BALCAO, SEM_ITENS]).valor], [2, 52]);
 confere("sem venda nenhuma: ticket zero, sem dividir por zero", vendaDaRegua([]), { valor: 0, vendas: 0, lancamentos: 0, ticket: 0 });
+
+console.log("\n6) Resumo da operação: mesa não é entrega, PICKUP não é entrega");
+// Ragnar Burger, 01–11/10/2026: a tela dizia "Entrega 2063 — 99,4%"; tudo que
+// não era RETIRADA caía em Entrega, inclusive a mesa.
+confere("tipos", ["DELIVERY", "MESA", "RETIRADA", "PICKUP", "TAKEOUT", "BALCAO", ""].map((t) => tipoDaOperacao({ deliveryType: t })),
+  ["ENTREGA", "MESA", "RETIRADA", "RETIRADA", "RETIRADA", "RETIRADA", "RETIRADA"]);
+confere("rodada de mesa com sessão é MESA mesmo com outro deliveryType", tipoDaOperacao({ deliveryType: "DELIVERY", tableSessionId: "s9" }), "MESA");
+const ENT = pedido({ totalAmount: 60, deliveryType: "DELIVERY", items: [item("Lanches", 60)] } as any);
+const PICK = pedido({ totalAmount: 30, deliveryType: "PICKUP", items: [item("Lanches", 30)] } as any);
+const MESA3 = [40, 25, 15].map((v) => pedido({ totalAmount: v, deliveryType: "MESA", tableSessionId: "s7", items: [item("Lanches", v)] } as any));
+const CANC = pedido({ totalAmount: 99, deliveryType: "DELIVERY", status: "CANCELADO", items: [item("Lanches", 99)] } as any);
+const op = resumoDaOperacao([ENT, PICK, ...MESA3, CANC] as any);
+confere("1 entrega, 1 mesa (3 rodadas, R$ 80), 1 retirada; cancelado fora",
+  [op.vendas, op.entrega.vendas, op.mesa.vendas, op.mesa.lancamentos, op.mesa.valor, op.retirada.vendas, op.entrega.valor],
+  [3, 1, 1, 3, 80, 1, 60]);
+confere("os três tipos somam as vendas da régua", op.entrega.vendas + op.mesa.vendas + op.retirada.vendas, vendaDaRegua([ENT, PICK, ...MESA3, CANC]).vendas);
+
+console.log("\n7) Dias da semana: média por dia operacional, não soma");
+// 01/10/2026 é quinta. De 01 a 11/10: 2 qui, 2 sex, 2 sáb, 2 dom, 1 seg, 1 ter, 1 qua.
+const SP = "America/Sao_Paulo";
+confere("ocorrências de 01 a 11/10/2026 (Dom..Sáb)", diasNoPeriodo("2026-10-01", "2026-10-11"), [2, 1, 1, 1, 2, 2, 2]);
+// Horário de Brasília (UTC-3): 20h do dia X = 23h UTC.
+const noDia = (dia: number, v: number, horaUtc = 23) => pedido({ createdAt: `2026-10-${String(dia).padStart(2, "0")}T${String(horaUtc).padStart(2, "0")}:00:00.000Z`, totalAmount: v, items: [item("Lanches", v)] } as any);
+// Dois sábados de R$ 100 e uma quarta de R$ 150: somando, o sábado (200) ganha; pela média, a quarta (150 × 100).
+const sem = vendasPorDiaDaSemana([noDia(3, 100), noDia(10, 100), noDia(7, 150)] as any, "2026-10-01", "2026-10-10", SP);
+confere("sábado: 2 dias, 2 vendas, média R$ 100; quarta: média R$ 150 e é o dia mais forte",
+  [sem.dias[6].dias, sem.dias[6].vendas, sem.dias[6].mediaValor, sem.dias[3].mediaValor, sem.pico?.dia], [2, 2, 100, 150, 3]);
+const mesaNoSabado = [10, 20, 30].map((v, k) => pedido({ createdAt: `2026-10-03T23:0${k}:00.000Z`, totalAmount: v, tableSessionId: "s8", items: [item("Lanches", v)] } as any));
+const sem2 = vendasPorDiaDaSemana(mesaNoSabado as any, "2026-10-01", "2026-10-10", SP);
+confere("mesa de 3 rodadas no sábado: 1 venda, R$ 60 no dia (média 30 em 2 sábados)", [sem2.dias[6].vendas, sem2.dias[6].valor, sem2.dias[6].mediaValor], [1, 60, 30]);
+// Sábado 03/10, 01h30 em Brasília = 04:30 UTC: ainda é a SEXTA operacional (vira às 5h).
+const madrugada = vendasPorDiaDaSemana([pedido({ createdAt: "2026-10-03T04:30:00.000Z", totalAmount: 50, items: [item("Lanches", 50)] } as any)] as any, "2026-10-01", "2026-10-10", SP);
+confere("pedido de 01h30 do sábado conta na sexta (dia operacional)", [madrugada.dias[5].vendas, madrugada.dias[6].vendas], [1, 0]);
+confere("período invertido/vazio não divide por zero", vendasPorDiaDaSemana([], "2026-10-11", "2026-10-01", SP).pico, null);
+// Domingo 11/10 (hoje): o "Este mês" vai até sábado na média.
+confere("este mês no domingo 11/10: de 01/10 a 10/10, sem hoje", diasDaMedia("2026-10-01", "2026-10-11", "2026-09-03", "2026-10-11"), { de: "2026-10-01", ate: "2026-10-10", semHoje: true });
+confere("período só de hoje: hoje mesmo", diasDaMedia("2026-10-11", "2026-10-11", null, "2026-10-11"), { de: "2026-10-11", ate: "2026-10-11", semHoje: false });
+confere("Tudo (365 dias) numa loja de setembro: começa no primeiro pedido", diasDaMedia("2025-10-12", "2026-10-11", "2026-09-03", "2026-10-11").de, "2026-09-03");
+
+console.log("\n8) Período: os atalhos e o dia operacional dos relatórios");
+// Até 11/10/2026: "Últimos 7 dias" = hoje−7 até agora (8 dias), pela meia-noite do navegador.
+confere("7 dias = hoje e os 6 anteriores", periodoDoPainel("7d", "2026-10-11"), { de: "2026-10-05", ate: "2026-10-11" });
+confere("ontem", periodoDoPainel("ontem", "2026-10-11"), { de: "2026-10-10", ate: "2026-10-10" });
+confere("este mês", periodoDoPainel("mes", "2026-10-11"), { de: "2026-10-01", ate: "2026-10-11" });
+confere("tudo (365 dias)", periodoDoPainel("365d", "2026-10-11"), { de: "2025-10-12", ate: "2026-10-11" });
+confere("datas escolhidas, invertidas, viram de/até", periodoDoPainel("7d", "2026-10-11", { de: "2026-10-09", ate: "2026-10-01" }), { de: "2026-10-01", ate: "2026-10-09" });
+confere("data incompleta cai no atalho", periodoDoPainel("ontem", "2026-10-11", { de: "2026-10-01", ate: "" }), { de: "2026-10-10", ate: "2026-10-10" });
+// Domingo 11/10 às 01:30 em Belém (04:30 UTC): o turno de sábado ainda está aberto — "hoje" é sábado.
+confere("hoje às 01h30 de domingo ainda é sábado (dia operacional)", hojeNaLoja("America/Belem", new Date("2026-10-11T04:30:00Z")), "2026-10-10");
+confere("hoje às 08h40 de domingo é domingo", hojeNaLoja("America/Belem", new Date("2026-10-11T11:40:00Z")), "2026-10-11");
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);
