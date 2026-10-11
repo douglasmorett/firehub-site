@@ -304,7 +304,8 @@ export function opcoesDoItem(item: ItemDoPedido, mapas: MapasDaLoja, canal?: str
         id: c.id,
         nome: c.nome,
         categoria: c.categoria,
-        quantidade: op.quantity * item.quantity,
+        // O mesmo de antes: parseComboSelections(raw, item.quantity), padrão 1.
+        quantidade: op.quantity * (item.quantity === undefined ? 1 : item.quantity),
         preco: doCanal ?? (noCadastro ? precoDaOpcao(noCadastro, canalDePreco) : null),
         custo: c.custo,
       });
