@@ -402,11 +402,11 @@ confere("sem o registro: a tela de produção mede pelo pronto do item, só nas 
 confere("o rótulo do 'medir até'", [rotuloDoMedirAte(undefined), rotuloDoMedirAte({ tipo: "finalizacao" }), rotuloDoMedirAte(fornoEsfiha)],
   ["o pronto da produção", "a finalização do pedido (o percurso completo)", "a baixa da tela «Forno Esfiha»"]);
 
-console.log("\n15) O 'entregue' dado em lote (auditoria de 11/10/2026)");
+console.log("\n16) O 'entregue' dado em lote (auditoria de 11/10/2026)");
 // NIK, 05/10/2026, 19:59:18 a 19:59:34: 8 pedidos de 3 motoboys "entregues"
 // em 15 s, com "na rua" de 15,9 a 67,3 min. Ninguém entrega em 8 endereços em
 // 15 segundos: é o operador marcando de uma vez.
-const c15 = h("2026-10-05 19:00");
+const cLote = h("2026-10-05 19:00");
 const ruasDoLote = [15.9, 22.4, 30.1, 38.7, 44.2, 51.6, 59.8, 67.3];
 const fimDoLote = new Date(h("2026-10-05 19:59").getTime() + 18000); // 19:59:18
 const doLote = ruasDoLote.map((rua, i) => {
@@ -417,7 +417,7 @@ const doLote = ruasDoLote.map((rua, i) => {
   });
 });
 // A entrega de verdade, marcada pelo motoboy na porta do cliente, longe do lote.
-const naHora = pedido({ canal: "IFOOD", createdAt: c15, dispatchedAt: mais(c15, 20), deliveredAt: mais(c15, 46), loja: "nik" });
+const naHora = pedido({ canal: "IFOOD", createdAt: cLote, dispatchedAt: mais(cLote, 20), deliveredAt: mais(cLote, 46), loja: "nik" });
 const ids = (s: Set<string>) => [...s].sort();
 confere("os 8 em 15 s são lote; a entrega marcada na hora não",
   ids(entreguesEmLote([...doLote, naHora].map((p) => ({ id: p.id, loja: p.loja, entregueEm: p.deliveredAt })))), doLote.map((p) => p.id).sort());
@@ -439,7 +439,7 @@ const fechamento = h("2026-10-05 23:40");
 const doCaixa = [12, 31].map((rua) => pedido({ createdAt: mais(fechamento, -(rua + 25)), dispatchedAt: mais(fechamento, -rua), deliveredAt: fechamento, loja: "hakim" }));
 confere("dois 'entregues' no mesmo instante (fechamento do caixa) são lote",
   ids(entreguesEmLote(doCaixa.map((p) => ({ id: p.id, loja: p.loja, entregueEm: p.deliveredAt })))), doCaixa.map((p) => p.id).sort());
-const em = (s: number) => new Date(c15.getTime() + s * 1000);
+const em = (s: number) => new Date(cLote.getTime() + s * 1000);
 const lote = (marcas: { loja?: string; s: number }[]) =>
   [...entreguesEmLote(marcas.map((m, i) => ({ id: `e${i}`, loja: m.loja ?? "a", entregueEm: em(m.s) })))].sort();
 confere("dois em 90 s não são lote (dois motoboys podem voltar juntos)", lote([{ s: 0 }, { s: 30 }]), []);
@@ -448,40 +448,40 @@ confere("a janela anda: 0, 80, 160 e 170 s — só os três últimos (80 a 170) 
   lote([{ s: 0 }, { s: 80 }, { s: 160 }, { s: 170 }]), ["e1", "e2", "e3"]);
 confere("lojas diferentes não fazem lote juntas", lote([{ loja: "a", s: 0 }, { loja: "b", s: 10 }, { loja: "a", s: 20 }]), []);
 confere("a mesa fechada no mesmo minuto não entra: o relatório só passa entregas",
-  temposDoRelatorio([naHora, pedido({ tipo: "MESA", canal: "MESA", createdAt: c15, deliveredAt: mais(c15, 46), loja: "nik" }),
-    pedido({ tipo: "MESA", canal: "MESA", createdAt: c15, deliveredAt: mais(c15, 46.2), loja: "nik" })], cfg()).etapas.find((e) => e.chave === "rua")!.medidos, 1);
+  temposDoRelatorio([naHora, pedido({ tipo: "MESA", canal: "MESA", createdAt: cLote, deliveredAt: mais(cLote, 46), loja: "nik" }),
+    pedido({ tipo: "MESA", canal: "MESA", createdAt: cLote, deliveredAt: mais(cLote, 46.2), loja: "nik" })], cfg()).etapas.find((e) => e.chave === "rua")!.medidos, 1);
 // A rota calcula o lote sobre TODAS as entregas da loja (não muda com o filtro)
 // e manda pronto em cada pedido: a marca dela vale.
 confere("a marca da rota vale: 'não é lote' mantém a medida, 'é lote' tira",
   [temposDoRelatorio(doLote.map((p) => ({ ...p, entregueEmLote: false })), cfg()).etapas.find((e) => e.chave === "rua")!.medidos,
     temposDoRelatorio([{ ...naHora, entregueEmLote: true }], cfg()).etapas.find((e) => e.chave === "rua")!.emLote], [8, 1]);
 
-console.log("\n16) Aceite regravado colado na saída (loja sem KDS, auditoria de 11/10/2026)");
+console.log("\n17) Aceite regravado colado na saída (loja sem KDS, auditoria de 11/10/2026)");
 // Delícia de Casa: despachar o pedido do iFood passa pelo "em preparo" 0,1 s
 // antes do "saiu", e o aceite é regravado ali. Sem KDS, a primeira baixa é a
 // própria saída, e "aceito antes da primeira baixa" não pegava: o "esperando
 // aceite" virava o tempo até o motoboy sair (36 min).
-const c16 = h("2026-10-08 19:00");
-const regravado = pedido({ canal: "IFOOD", createdAt: c16, acceptedAt: new Date(mais(c16, 36).getTime() - 100), dispatchedAt: mais(c16, 36), deliveredAt: mais(c16, 58) });
+const cAceite = h("2026-10-08 19:00");
+const regravado = pedido({ canal: "IFOOD", createdAt: cAceite, acceptedAt: new Date(mais(cAceite, 36).getTime() - 100), dispatchedAt: mais(cAceite, 36), deliveredAt: mais(cAceite, 58) });
 confere("aceite 0,1 s antes da saída = carimbo reescrito, não 36 min de espera", etapasDoPedido(regravado).aceite, { aplica: true, minutos: null, motivo: "reescrito" });
-const aceitoAntes = (s: number) => etapasDoPedido(pedido({ canal: "IFOOD", createdAt: c16, acceptedAt: new Date(mais(c16, 36).getTime() - s * 1000), dispatchedAt: mais(c16, 36) })).aceite;
+const aceitoAntes = (s: number) => etapasDoPedido(pedido({ canal: "IFOOD", createdAt: cAceite, acceptedAt: new Date(mais(cAceite, 36).getTime() - s * 1000), dispatchedAt: mais(cAceite, 36) })).aceite;
 const comoFicou = (m: ReturnType<typeof aceitoAntes>) => (!m.aplica ? "não se aplica" : m.minutos === null ? (m as { motivo: string }).motivo : Math.round(m.minutos * 100) / 100);
 confere("59 s antes da saída ainda é regravação; 61 s antes já é aceite de verdade (34,98 min)",
   [comoFicou(aceitoAntes(59)), comoFicou(aceitoAntes(61))], ["reescrito", 34.98]);
-const deVerdade = pedido({ canal: "IFOOD", createdAt: c16, acceptedAt: mais(c16, 1.5), dispatchedAt: mais(c16, 36) });
+const deVerdade = pedido({ canal: "IFOOD", createdAt: cAceite, acceptedAt: mais(cAceite, 1.5), dispatchedAt: mais(cAceite, 36) });
 confere("o aceite de 1,5 min, longe da saída, continua medido", etapasDoPedido(deVerdade).aceite, { aplica: true, minutos: 1.5 });
 const relAceite = temposDoRelatorio([regravado, deVerdade], cfg()).etapas.find((e) => e.chave === "aceite")!;
 confere("no relatório: 1 medido (1,5 min) e 1 reescrito", [relAceite.medidos, relAceite.mediana, relAceite.reescritos], [1, 1.5, 1]);
 
-console.log("\n17) Saiu no prazo, chegou atrasado (o prazo da entrega é a chegada)");
+console.log("\n18) Saiu no prazo, chegou atrasado (o prazo da entrega é a chegada)");
 // NIK, 30 dias até 10/10/2026: 96% das entregas SAÍRAM antes do prazo, e só
 // 47% das que têm hora de entregue confiável CHEGARAM antes dele. O iFood
 // grava em scheduledDatetime o delivery.deliveryDateTime: a hora em que o
 // cliente espera RECEBER.
-const c17 = h("2026-10-09 20:00");
-const promessa = mais(c17, 45);
+const cChegada = h("2026-10-09 20:00");
+const promessa = mais(cChegada, 45);
 const viagem = (saida: number, chegada: number | null) =>
-  pedido({ canal: "IFOOD", createdAt: c17, scheduledDatetime: promessa, dispatchedAt: mais(c17, saida), deliveredAt: chegada === null ? null : mais(c17, chegada) });
+  pedido({ canal: "IFOOD", createdAt: cChegada, scheduledDatetime: promessa, dispatchedAt: mais(cChegada, saida), deliveredAt: chegada === null ? null : mais(cChegada, chegada) });
 const viagens = [viagem(25, 40), viagem(30, 52), viagem(38, 61), viagem(44, 70), viagem(47, null), viagem(20, null)];
 const r17 = temposDoRelatorio(viagens, cfg());
 confere("chegada: 4 medidas — 1 no prazo, 3 estouradas (+7, +16, +25)",
