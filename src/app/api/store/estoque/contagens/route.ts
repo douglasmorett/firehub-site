@@ -12,7 +12,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exigirEstoque } from "@/lib/cmv/acesso";
 import { ContagemRecusadaError, abrirContagem } from "@/lib/cmv/contagem-no-banco";
-import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
+import { hojeNaLoja, naLoja, somarDias } from "@/lib/relatorios/base";
+import { NOMES_DOS_DIAS_DA_SEMANA, diaQueAContagemFecha, lerSemanaDoCmv } from "@/lib/cmv/semana-do-cmv";
 
 export const dynamic = "force-dynamic";
 const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -20,7 +21,7 @@ const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
 export async function GET() {
   const r = await exigirEstoque();
   if (!r.ok) return r.resposta;
-  const { lojaId, tz, veDadosSensiveis } = r.acesso;
+  const { lojaId, tz, veDadosSensiveis, goals, storeHours } = r.acesso;
 
   const [contagens, marcadosNoDia, totalDeInsumos] = await Promise.all([
     prisma.contagemDeEstoque.findMany({
@@ -33,12 +34,19 @@ export async function GET() {
     prisma.stockItem.count({ where: { franchiseeId: lojaId, NOT: { active: false } } }),
   ]);
 
-  const hoje = hojeNaLoja(tz);
+  const agora = new Date();
+  const hoje = hojeNaLoja(tz, agora);
+  const semana = lerSemanaDoCmv(goals);
+  // Dia da semana pelo relógio (não pelo dia operacional): terça às 15h é terça.
+  const diaDoRelogio = naLoja(agora, tz).hora < 5 ? somarDias(hoje, 1) : hoje;
+  const diaDaSemanaAgora = new Date(`${diaDoRelogio}T12:00:00Z`).getUTCDay();
   return NextResponse.json({
     hoje,
-    // O dia que a contagem de agora fecha: antes das 5h ainda é o expediente
-    // de ontem; de manhã, antes de abrir, o que se conta é o que sobrou ontem.
-    diaSugerido: somarDias(hoje, -1),
+    // O dia que a contagem de agora fecha: antes de abrir, o que está na
+    // prateleira é o que sobrou de ontem (lib/cmv/semana-do-cmv.ts).
+    diaSugerido: diaQueAContagemFecha(agora, tz, storeHours),
+    diaDaCompleta: NOMES_DOS_DIAS_DA_SEMANA[semana.diaDaContagem],
+    hojeEDiaDaCompleta: diaDaSemanaAgora === semana.diaDaContagem,
     veDadosSensiveis,
     marcadosNoDia,
     totalDeInsumos,

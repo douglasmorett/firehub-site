@@ -20,7 +20,7 @@ import { fmtReais, fmtQtd } from "@/lib/relatorios/base";
 import { lerNumeroBr } from "@/lib/cmv/numero";
 
 type Resumo = { id: string; dia: string; tipo: string; status: string; itens: number; contados: number; valorTotal: number | null };
-type Lista = { hoje: string; diaSugerido: string; veDadosSensiveis: boolean; marcadosNoDia: number; totalDeInsumos: number; contagens: Resumo[] };
+type Lista = { hoje: string; diaSugerido: string; diaDaCompleta: string; hojeEDiaDaCompleta: boolean; veDadosSensiveis: boolean; marcadosNoDia: number; totalDeInsumos: number; contagens: Resumo[] };
 type Item = {
   stockItemId: string; nome: string; unidade: string; local: string; preparo: boolean; contado: number | null;
   quantidade?: number | null; origem?: string | null; saldoSistema?: number | null; diferenca?: number | null; valor?: number | null; foraDoCmv?: boolean;
@@ -51,7 +51,8 @@ export default function ContagemClient() {
     const j = await r.json();
     if (!r.ok) { setErro(j.error); return; }
     setLista(j);
-    setDia((d) => d || (new Date().getHours() >= 15 ? j.hoje : j.diaSugerido));
+    // O servidor sabe o horário da loja: antes de abrir, vale o fim de ontem.
+    setDia((d) => d || j.diaSugerido);
   }, []);
 
   const abrirDetalhe = useCallback(async (id: string) => {
@@ -114,13 +115,16 @@ export default function ContagemClient() {
           <input type="date" value={dia} max={lista?.hoje} onChange={(e) => setDia(e.target.value)} style={{ border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 8, padding: "0.55rem", fontSize: "1rem", maxWidth: 220 }} />
           <span style={{ fontWeight: 500 }}>{dia ? <>É o que sobrou no fim do expediente de <strong>{nomeDoDia(dia)}</strong>.</> : null}</span>
         </label>
+        {lista?.hojeEDiaDaCompleta && (
+          <p style={{ margin: "0.8rem 0 0", fontSize: "0.86rem", fontWeight: 800, color: PALETA.marca }}>Hoje é {lista.diaDaCompleta}: dia da contagem completa.</p>
+        )}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "0.6rem", marginTop: "0.9rem" }}>
-          <button type="button" disabled={abrindo || !dia} onClick={() => comecar("RAPIDA")} className="btn btn-primary" style={{ padding: "0.8rem", fontSize: "0.95rem" }}>
+          <button type="button" disabled={abrindo || !dia} onClick={() => comecar("RAPIDA")} className={lista?.hojeEDiaDaCompleta ? "btn btn-outline" : "btn btn-primary"} style={{ padding: "0.8rem", fontSize: "0.95rem", order: lista?.hojeEDiaDaCompleta ? 2 : 1 }}>
             Contagem do dia (rápida)
             <div style={{ fontSize: "0.75rem", fontWeight: 500, opacity: 0.9 }}>{lista ? `${lista.marcadosNoDia} itens marcados "contar todo dia"` : "…"}</div>
           </button>
-          <button type="button" disabled={abrindo || !dia} onClick={() => comecar("COMPLETA")} className="btn btn-outline" style={{ padding: "0.8rem", fontSize: "0.95rem" }}>
-            Contagem completa (semanal)
+          <button type="button" disabled={abrindo || !dia} onClick={() => comecar("COMPLETA")} className={lista?.hojeEDiaDaCompleta ? "btn btn-primary" : "btn btn-outline"} style={{ padding: "0.8rem", fontSize: "0.95rem", order: lista?.hojeEDiaDaCompleta ? 1 : 2 }}>
+            Contagem completa (toda {lista?.diaDaCompleta || "semana"})
             <div style={{ fontSize: "0.75rem", fontWeight: 500 }}>{lista ? `todos os ${lista.totalDeInsumos} insumos` : "…"}</div>
           </button>
         </div>

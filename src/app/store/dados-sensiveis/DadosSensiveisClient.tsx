@@ -21,7 +21,7 @@ import { PALETA } from "@/lib/paleta-brasa";
 import { Bloco, Cartao, GradeDeCartoes, Vazio } from "@/components/relatorios/ModeloDoRelatorio";
 import Ponteiro from "@/components/cmv/Ponteiro";
 import { fmtPct, fmtReais, fmtQtd, somarDias } from "@/lib/relatorios/base";
-import { segundaDaSemana } from "@/lib/cmv/cmv-real";
+import { inicioDaSemanaDoCmv, NOMES_DOS_DIAS_DA_SEMANA } from "@/lib/cmv/semana-do-cmv";
 import type { Painel } from "@/lib/cmv/painel";
 
 type Aba = "painel" | "equipe" | "metas";
@@ -32,8 +32,9 @@ const diaCurto = (dia: string) => `${DIAS[new Date(`${dia}T12:00:00Z`).getUTCDay
 const ddmm = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
 const tipoDaContagem = (t: string) => (t === "RAPIDA" ? "rápida" : "completa");
 
-function periodoDo(atalho: Atalho, hoje: string): { de: string; ate: string } | null {
-  const seg = segundaDaSemana(hoje);
+/** `comecaEm`: o dia da semana em que a semana do CMV começa (segue o dia da contagem completa). */
+function periodoDo(atalho: Atalho, hoje: string, comecaEm = 1): { de: string; ate: string } | null {
+  const seg = inicioDaSemanaDoCmv(hoje, comecaEm);
   switch (atalho) {
     case "semana": return { de: seg, ate: somarDias(seg, 6) };
     case "semanaPassada": return { de: somarDias(seg, -7), ate: somarDias(seg, -1) };
@@ -68,7 +69,10 @@ const tomDaZona = (z: string): "ok" | "atencao" | "grave" | "neutro" => (z === "
 export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: string; nomeDaLoja: string }) {
   const [aba, setAba] = useState<Aba>("painel");
   const [atalho, setAtalho] = useState<Atalho>("semana");
-  const [periodo, setPeriodo] = useState(() => periodoDo("semana", hoje)!);
+  // Nulo até a primeira resposta: a semana da loja (segue o dia da contagem
+  // completa) vem do servidor, e o primeiro pedido vai sem período.
+  const [periodo, setPeriodo] = useState<{ de: string; ate: string } | null>(null);
+  const [comecaEm, setComecaEm] = useState(1);
   const [dados, setDados] = useState<Painel | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -77,10 +81,12 @@ export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: strin
   const carregar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCarregando(true);
     try {
-      const r = await fetch(`/api/store/dados-sensiveis?de=${periodo.de}&ate=${periodo.ate}`, { cache: "no-store" });
+      const r = await fetch(`/api/store/dados-sensiveis${periodo ? `?de=${periodo.de}&ate=${periodo.ate}` : ""}`, { cache: "no-store" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Não deu para carregar os números.");
       setDados(j);
+      if (j.semana) setComecaEm(j.semana.comecaEm);
+      if (!periodo) setPeriodo(j.periodo);
       setErro(null);
       setAtualizadoEm(new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
     } catch (e: any) {
@@ -88,7 +94,7 @@ export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: strin
     } finally {
       setCarregando(false);
     }
-  }, [periodo.de, periodo.ate]);
+  }, [periodo?.de, periodo?.ate]);
 
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -100,7 +106,7 @@ export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: strin
 
   const escolher = (a: Atalho) => {
     setAtalho(a);
-    const p = periodoDo(a, hoje);
+    const p = periodoDo(a, hoje, comecaEm);
     if (p) setPeriodo(p);
   };
 
@@ -145,10 +151,10 @@ export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: strin
               </button>
             ))}
             <span style={{ display: "inline-flex", gap: 6, alignItems: "center", fontSize: "0.8rem" }}>
-              <input aria-label="De" type="date" value={periodo.de} max={periodo.ate} onChange={(e) => { if (e.target.value) { setAtalho("outro"); setPeriodo((p) => ({ ...p, de: e.target.value })); } }}
+              <input aria-label="De" type="date" value={periodo?.de || ""} max={periodo?.ate} onChange={(e) => { if (e.target.value && periodo) { setAtalho("outro"); setPeriodo({ ...periodo, de: e.target.value }); } }}
                 style={{ border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 8, padding: "0.3rem 0.4rem" }} />
               a
-              <input aria-label="Até" type="date" value={periodo.ate} min={periodo.de} onChange={(e) => { if (e.target.value) { setAtalho("outro"); setPeriodo((p) => ({ ...p, ate: e.target.value })); } }}
+              <input aria-label="Até" type="date" value={periodo?.ate || ""} min={periodo?.de} onChange={(e) => { if (e.target.value && periodo) { setAtalho("outro"); setPeriodo({ ...periodo, ate: e.target.value }); } }}
                 style={{ border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 8, padding: "0.3rem 0.4rem" }} />
             </span>
             <button type="button" onClick={() => carregar()} title="Atualizar agora"
@@ -163,8 +169,8 @@ export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: strin
         </>
       )}
 
-      {aba === "equipe" && <AbaEquipe periodo={periodo} />}
-      {aba === "metas" && <AbaMetas metas={dados?.metas} onSalvo={() => carregar(true)} />}
+      {aba === "equipe" && periodo && <AbaEquipe periodo={periodo} />}
+      {aba === "metas" && <AbaMetas metas={dados?.metas} semana={dados?.semana} onSalvo={() => carregar(true)} />}
     </div>
   );
 }
@@ -485,18 +491,24 @@ function AbaEquipe({ periodo }: { periodo: { de: string; ate: string } }) {
 
 // ── METAS ──────────────────────────────────────────────────────────────────
 
-function AbaMetas({ metas, onSalvo }: { metas?: Painel["metas"]; onSalvo: () => void }) {
+function AbaMetas({ metas, semana, onSalvo }: { metas?: Painel["metas"]; semana?: Painel["semana"]; onSalvo: () => void }) {
   const [cmv, setCmv] = useState(metas ? String(metas.cmv) : "");
   const [cmo, setCmo] = useState(metas ? String(metas.cmo) : "");
+  const [diaDaContagem, setDiaDaContagem] = useState(semana ? String(semana.diaDaContagem) : "0");
+  const [momento, setMomento] = useState<string>(semana?.momento || "DEPOIS_DE_FECHAR");
+  useEffect(() => { if (semana) { setDiaDaContagem(String(semana.diaDaContagem)); setMomento(semana.momento); } }, [semana]);
+  const dia = Number(diaDaContagem);
+  const fecha = momento === "ANTES_DE_ABRIR" ? (dia + 6) % 7 : dia;
+  const comeca = (fecha + 1) % 7;
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
   useEffect(() => { if (metas) { setCmv(String(metas.cmv)); setCmo(String(metas.cmo)); } }, [metas]);
 
   const previa = useMemo(() => Number(cmv.replace(",", ".")) || 33, [cmv]);
 
   const salvar = async () => {
-    const r = await fetch("/api/store/dados-sensiveis/metas", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmvPct: cmv, cmoPct: cmo }) });
+    const r = await fetch("/api/store/dados-sensiveis/metas", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmvPct: cmv, cmoPct: cmo, semanaDoCmv: { diaDaContagem: dia, momento } }) });
     const j = await r.json();
-    setMsg(r.ok ? { ok: true, texto: "Metas salvas." } : { ok: false, texto: j.error });
+    setMsg(r.ok ? { ok: true, texto: "Salvo." } : { ok: false, texto: j.error });
     if (r.ok) onSalvo();
   };
 
@@ -514,8 +526,23 @@ function AbaMetas({ metas, onSalvo }: { metas?: Painel["metas"]; onSalvo: () => 
             <input value={cmo} onChange={(e) => setCmo(e.target.value)} inputMode="decimal" style={{ border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 8, padding: "0.55rem 0.6rem", fontSize: "1rem", fontWeight: 700, maxWidth: 160 }} />
             <span style={{ fontWeight: 500 }}>Mão de obra sobre as vendas. CMV + CMO juntos são o custo primário.</span>
           </label>
+          <fieldset style={{ border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 10, padding: "0.6rem 0.8rem", margin: 0 }}>
+            <legend style={{ fontSize: "0.8rem", fontWeight: 800, color: PALETA.areiaTinta, padding: "0 4px" }}>Contagem completa</legend>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <select aria-label="Dia da contagem completa" value={diaDaContagem} onChange={(e) => setDiaDaContagem(e.target.value)} style={{ border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 8, padding: "0.5rem" }}>
+                {NOMES_DOS_DIAS_DA_SEMANA.map((n, i) => <option key={n} value={i}>toda {n}</option>)}
+              </select>
+              <select aria-label="Quando" value={momento} onChange={(e) => setMomento(e.target.value)} style={{ border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 8, padding: "0.5rem" }}>
+                <option value="ANTES_DE_ABRIR">antes de abrir</option>
+                <option value="DEPOIS_DE_FECHAR">depois de fechar</option>
+              </select>
+            </div>
+            <span style={{ display: "block", fontSize: "0.8rem", color: PALETA.areiaTinta, marginTop: 6 }}>
+              Ela vale o fim de <strong>{NOMES_DOS_DIAS_DA_SEMANA[fecha]}</strong>, então a semana do CMV vai de <strong>{NOMES_DOS_DIAS_DA_SEMANA[comeca]}</strong> a <strong>{NOMES_DOS_DIAS_DA_SEMANA[fecha]}</strong>.
+            </span>
+          </fieldset>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button type="button" className="btn btn-primary" onClick={salvar}>Salvar metas</button>
+            <button type="button" className="btn btn-primary" onClick={salvar}>Salvar</button>
             {msg && <span style={{ fontSize: "0.82rem", fontWeight: 700, color: msg.ok ? PALETA.ok : PALETA.grave }}>{msg.texto}</span>}
           </div>
         </div>

@@ -71,7 +71,26 @@ const INSUMOS: Insumo[] = [
   { nome: "Embalagem P personalizada", unidade: "un", local: "Embalagens" },
   { nome: "Embalagem G personalizada", unidade: "un", local: "Embalagens", diaria: true },
   { nome: "Saco kraft", unidade: "un", local: "Embalagens" },
+  // Revenda: bebidas, nugget e o brinde do Hakim Kids (1 un por venda)
+  { nome: "Coca-Cola lata", unidade: "un", local: "Bebidas" },
+  { nome: "Coca-Cola Zero lata", unidade: "un", local: "Bebidas" },
+  { nome: "Coca-Cola 2L", unidade: "un", local: "Bebidas" },
+  { nome: "Fanta Laranja lata", unidade: "un", local: "Bebidas" },
+  { nome: "Fanta Uva lata", unidade: "un", local: "Bebidas" },
+  { nome: "Guaravita 280ml", unidade: "un", local: "Bebidas" },
+  { nome: "Água com gás", unidade: "un", local: "Bebidas" },
+  { nome: "Água sem gás", unidade: "un", local: "Bebidas" },
+  { nome: "Nugget", unidade: "un", local: "Freezer" },
+  { nome: "Brinde Panda", unidade: "un", local: "Estoque seco" },
 ];
+
+/**
+ * Os 4 insumos que estavam na loja antes (11/10/2026) são de demonstração:
+ * "Mussarela fatiada" e "Carne moída temperada" em kg, "bola 45g", balde de
+ * requeijão — nenhum ligado a ficha. Arquivados (some da lista, histórico fica)
+ * para a contagem não ter item duplicado com o cadastro de verdade.
+ */
+const ARQUIVAR = ["Massa de esfirra (bola 45g)", "Mussarela fatiada", "Carne moída temperada", "Requeijão cremoso (balde 3,6kg)"];
 
 const PREPAROS: Preparo[] = [
   { nome: "Massa de esfirra (bolinha)", unidade: "un", local: "Geladeira", diaria: true, rende: 200,
@@ -82,7 +101,7 @@ const PREPAROS: Preparo[] = [
     receita: [["Frango (peito)", 1000], ["Sal", 8], ["Colorau", 8], ["Pasta de alho", 20], ["Sazón galinha", 8], ["Óleo", 10], ["Molho de tomate", 200]] },
   { nome: "Recheio de calabresa", unidade: "g", local: "Geladeira", diaria: true, rende: 1000,
     receita: [["Calabresa", 700], ["Mussarela", 300]] },
-  { nome: "Queijo temperado", unidade: "g", local: "Geladeira", rende: 1000,
+  { nome: "Queijo temperado", unidade: "g", local: "Geladeira", diaria: true, rende: 1000,
     receita: [["Mussarela", 1000], ["Cheiro-verde (maço)", 0.5]] },
   { nome: "Mistura de 3 queijos", unidade: "g", local: "Geladeira", rende: 1000,
     receita: [["Mussarela", 700], ["Parmesão", 150], ["Provolone", 150]] },
@@ -126,6 +145,13 @@ async function main() {
         ids.set(i.nome, novo.id);
       }
     }
+  }
+
+  for (const nome of ARQUIVAR) {
+    const velho = porNome.get(nome.toLowerCase());
+    if (!velho || velho.active === false) continue;
+    console.log(`-  ${nome} (demonstração) → arquivado`);
+    if (gravar) await prisma.stockItem.update({ where: { id: velho.id }, data: { active: false } });
   }
 
   console.log("");

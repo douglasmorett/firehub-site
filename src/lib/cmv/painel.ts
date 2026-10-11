@@ -21,6 +21,7 @@ import {
   type CmvDoTrecho, type ContagemFechada, type DiaDoCmv, type ZonaDoCmv,
 } from "@/lib/cmv/cmv-real";
 import { cmoDoPeriodo, ehMaoDeObra, type CmoDoPeriodo } from "@/lib/cmv/cmo";
+import { NOMES_DOS_DIAS_DA_SEMANA, lerSemanaDoCmv, type SemanaDoCmv } from "@/lib/cmv/semana-do-cmv";
 
 export { segundaDaSemana } from "@/lib/cmv/cmv-real";
 
@@ -35,6 +36,8 @@ export type Painel = {
   hoje: string;
   periodo: { de: string; ate: string };
   metas: { cmv: number; cmo: number; faixa: number };
+  /** A semana do CMV da loja (segue o dia da contagem completa). */
+  semana: SemanaDoCmv;
   cmv: {
     abertura: { dia: string; tipo: string } | null;
     fechamento: { dia: string; tipo: string } | null;
@@ -226,12 +229,19 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
     avisos.push({ tipo: "info", texto: "Nenhum insumo marcado para a contagem do dia. Marque os 10 a 20 que mais pesam (queijo, carne, calabresa, farinha, caixas): com eles contados no fechamento, o CMV da semana atualiza a cada dia." });
   }
 
+  const semana = lerSemanaDoCmv(e.goals);
+  const ultimaCompleta = [...contagens].reverse().find((c) => c.tipo === "COMPLETA");
+  if (contagens.length > 0 && (!ultimaCompleta || ultimaCompleta.dia < somarDias(e.hoje, -8))) {
+    avisos.push({ tipo: "atencao", texto: `${ultimaCompleta ? `A última contagem completa foi em ${br(ultimaCompleta.dia)}.` : "Ainda não houve contagem completa."} Ela é toda ${NOMES_DOS_DIAS_DA_SEMANA[semana.diaDaContagem]}: é ela que acerta os itens que não entram na contagem do dia.` });
+  }
+
   const ultima = contagens.length ? contagens[contagens.length - 1] : null;
   return {
     loja: e.nomeDaLoja,
     hoje: e.hoje,
     periodo: { de, ate },
     metas: { cmv: metaCmv, cmo: metaCmo, faixa: FAIXA_DE_ATENCAO },
+    semana,
     cmv: {
       abertura: janela.abertura ? { dia: janela.abertura.dia, tipo: janela.abertura.tipo } : null,
       fechamento: janela.fechamento ? { dia: janela.fechamento.dia, tipo: janela.fechamento.tipo } : null,

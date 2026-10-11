@@ -17,6 +17,7 @@ import { entraNoCarregado, fecharContagem } from "../src/lib/cmv/contagem";
 import { cmvEntre, janelaDoPeriodo, lerMeta, trechosDaJanela, zonaDoCmv, type ContagemFechada, type DiaDoCmv } from "../src/lib/cmv/cmv-real";
 import { cmoDoPeriodo, custoMensal, ehMaoDeObra } from "../src/lib/cmv/cmo";
 import { lerNumeroBr } from "../src/lib/cmv/numero";
+import { diaQueAContagemFecha, inicioDaSemanaDoCmv, lerSemanaDoCmv, semanaDoCmv } from "../src/lib/cmv/semana-do-cmv";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -187,6 +188,24 @@ const cmo = cmoDoPeriodo(
 confere("CMO: folha proporcional + diária", [cmo.folha, cmo.diarias, cmo.total], [1100, 120, 1220]);
 confere("CMO por pessoa (quem saiu antes não aparece)", cmo.porPessoa.map((p) => [p.nome, p.dias, p.valor]), [["Ana", 7, 700], ["Bia", 4, 400]]);
 confere("diária é mão de obra, gás não", [ehMaoDeObra("Diária / ajudante"), ehMaoDeObra("Gás")], [true, false]);
+
+// ── Semana do CMV pelo dia da contagem completa ─────────────────────────
+// Hakim: terça antes de abrir → vale o fim de segunda → semana de terça a segunda.
+const hakim = semanaDoCmv(2, "ANTES_DE_ABRIR");
+confere("terça antes de abrir fecha segunda; semana começa na terça", [hakim.fecha, hakim.comecaEm], [1, 2]);
+confere("terça depois de fechar: semana de quarta a terça", semanaDoCmv(2, "DEPOIS_DE_FECHAR").comecaEm, 3);
+confere("sem nada gravado: domingo depois de fechar (segunda a domingo)", [lerSemanaDoCmv({}).fecha, lerSemanaDoCmv(null).comecaEm], [0, 1]);
+confere("lê o gravado", lerSemanaDoCmv({ semanaDoCmv: { diaDaContagem: 2, momento: "ANTES_DE_ABRIR" } }).comecaEm, 2);
+// domingo 11/10/2026: a semana do Hakim começou na terça 06; na terça 13 começa outra.
+confere("início da semana do CMV", [inicioDaSemanaDoCmv("2026-10-11", 2), inicioDaSemanaDoCmv("2026-10-13", 2), inicioDaSemanaDoCmv("2026-10-12", 1)], ["2026-10-06", "2026-10-13", "2026-10-12"]);
+// Hakim abre 17h30 na terça. Horários em UTC (−03).
+const HORAS = [
+  { day: "Terça", open: "17:30", close: "23:30", active: true, shifts: [{ open: "17:30", close: "23:30" }] },
+  { day: "Quarta", open: "10:30", close: "23:30", active: true, shifts: [{ open: "10:30", close: "23:30" }] },
+];
+confere("terça 15h, antes de abrir: a contagem fecha segunda", diaQueAContagemFecha(new Date("2026-10-13T18:00:00Z"), "America/Sao_Paulo", HORAS), "2026-10-12");
+confere("terça 23h50, depois de abrir: fecha terça", diaQueAContagemFecha(new Date("2026-10-14T02:50:00Z"), "America/Sao_Paulo", HORAS), "2026-10-13");
+confere("quarta 1h da manhã: ainda fecha terça", diaQueAContagemFecha(new Date("2026-10-14T04:00:00Z"), "America/Sao_Paulo", HORAS), "2026-10-13");
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 if (falhas) process.exit(1);

@@ -30,6 +30,7 @@ export type AcessoDoCmv = {
   /** Conta estoque e lança compra. */
   mexeNoEstoque: boolean;
   goals: unknown;
+  storeHours: unknown;
 };
 
 type Resultado = { ok: true; acesso: AcessoDoCmv } | { ok: false; resposta: NextResponse };
@@ -57,7 +58,7 @@ export async function acessoDoCmv(): Promise<Resultado> {
   const lojaId = usuario.ownerId || usuario.id;
   const loja = await prisma.user.findUnique({
     where: { id: lojaId },
-    select: { storeName: true, name: true, storeTimezone: true, financialGoals: true },
+    select: { storeName: true, name: true, storeTimezone: true, financialGoals: true, storeHours: true },
   });
   if (!loja) return negar(404, "Loja não encontrada");
 
@@ -73,6 +74,7 @@ export async function acessoDoCmv(): Promise<Resultado> {
       veDadosSensiveis: !ehFuncionario || temPermissao(usuario.permissions, PERMISSAO_DADOS_SENSIVEIS),
       mexeNoEstoque: !ehFuncionario || funcionarioAbre("/store/estoque", usuario.permissions),
       goals: loja.financialGoals,
+      storeHours: loja.storeHours,
     },
   };
 }
