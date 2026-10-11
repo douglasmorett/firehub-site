@@ -34,7 +34,8 @@ type Permissao =
   | "relatorios"
   | "ifood"
   | "impressoras"
-  | "minha_loja";
+  | "minha_loja"
+  | "dados_sensiveis";
 
 /** Livre para qualquer funcionário: a conta dele mesmo (senha, nome). */
 const LIVRE = "livre" as const;
@@ -64,6 +65,9 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/funcionarios", abre: ["financeiro"] },
   { prefixo: "/store/notas-compras", abre: ["financeiro"] },
   { prefixo: "/store/relatorios", abre: ["relatorios", "financeiro"] },
+  // CMV real, CMO e folha: só com a caixinha própria, que nasce desmarcada
+  // (lib/cmv/acesso.ts). Quem tem Financeiro não ganha isto de carona.
+  { prefixo: "/store/dados-sensiveis", abre: ["dados_sensiveis"] },
 
   { prefixo: "/store/estoque", abre: ["estoque"] },
   { prefixo: "/store/etiquetas", abre: ["estoque"] },

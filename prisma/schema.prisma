@@ -411,6 +411,9 @@ model Payable {
   updatedAt          DateTime          @updatedAt
   creditCard         CreditCard?       @relation(fields: [creditCardId], references: [id])
   recurringPayable   RecurringPayable? @relation(fields: [recurringPayableId], references: [id], onDelete: SetNull)
+  /// A compra do Estoque que gerou esta conta (src/lib/cmv/lancar-compra.ts).
+  /// Criada no boot por src/lib/cmv/estrutura-no-banco.ts.
+  stockInvoiceId     String?
 
   @@index([franchiseeId])
   @@index([franchiseeId, status])
@@ -1775,7 +1778,128 @@ model StockItem {
   /// num clique. Agora some da lista sem levar o passado.
   active        Boolean            @default(true)
 
+  /// "INSUMO" (comprado; nulo conta como insumo) ou "PREPARO" (feito na
+  /// cozinha a partir de outros insumos: massa, recheio). O preparo não tem
+  /// preço de nota: o custo dele sai dos componentes ÷ rendimento
+  /// (src/lib/cmv/custo-do-insumo.ts).
+  /// As colunas daqui para baixo são criadas no boot por src/lib/cmv/estrutura-no-banco.ts.
+  tipo            String?
+  /// Preparo: quanto UM lote rende, na unidade do preparo (200 un de massa,
+  /// 1.315 g de recheio de carne).
+  rendimento      Float?
+  /// Onde fica na cozinha ("Freezer", "Geladeira", "Estoque seco"): a lista
+  /// da contagem segue esse caminho, para ninguém andar de um lado para o outro.
+  local           String?
+  /// Entra na contagem rápida do fechamento do dia: os itens que pesam no CMV.
+  contagemDiaria  Boolean?
+  /// false = fora do CMV (material de limpeza, gás): é despesa, não custo de
+  /// mercadoria. Nulo conta como dentro.
+  entraNoCmv      Boolean?
+  componentes     ComponenteDoPreparo[] @relation("PreparoDoComponente")
+  usadoEmPreparos ComponenteDoPreparo[] @relation("InsumoDoComponente")
+  contagens       ContagemItem[]
+
   @@unique([franchiseeId, name])
+}
+
+/// Um componente da receita de um PREPARO: quanto deste insumo entra num LOTE
+/// do preparo, na unidade do insumo. Componentes ÷ rendimento dão o custo por
+/// grama do recheio pronto, e é assim que a contagem valoriza o que está
+/// pronto na geladeira.
+model ComponenteDoPreparo {
+  id         String    @id @default(cuid())
+  preparoId  String
+  insumoId   String
+  quantidade Float
+  preparo    StockItem @relation("PreparoDoComponente", fields: [preparoId], references: [id], onDelete: Cascade)
+  insumo     StockItem @relation("InsumoDoComponente", fields: [insumoId], references: [id], onDelete: Cascade)
+
+  @@unique([preparoId, insumoId])
+  @@index([insumoId])
+}
+
+/// A CONTAGEM DE ESTOQUE, a base do CMV real.
+///
+/// CMV real entre duas contagens = estoque da primeira + compras no meio −
+/// estoque da segunda (src/lib/cmv/cmv-real.ts). Cada contagem FECHA um dia
+/// operacional: "contagem do dia 12" é o que sobrou no fim do expediente de 12,
+/// antes de abrir o 13. A COMPLETA conta tudo; a RAPIDA, do fechamento do dia,
+/// só os itens marcados com `contagemDiaria`. Os outros seguem a última
+/// quantidade conhecida mais as compras desde então, e o consumo deles aparece
+/// na próxima completa.
+///
+/// Fechada, ela congela quantidade e custo de cada item: o CMV da semana
+/// passada não muda porque o queijo subiu hoje.
+model ContagemDeEstoque {
+  id           String         @id @default(cuid())
+  franchiseeId String
+  /// O dia operacional que ela fecha ("YYYY-MM-DD").
+  dia          String
+  /// "COMPLETA" | "RAPIDA"
+  tipo         String         @default("COMPLETA")
+  /// "ABERTA" (contando) | "FECHADA"
+  status       String         @default("ABERTA")
+  valorTotal   Float?
+  observacao   String?
+  criadoPor    String?
+  fechadaPor   String?
+  fechadaEm    DateTime?
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  itens        ContagemItem[]
+
+  @@unique([franchiseeId, dia])
+  @@index([franchiseeId, status])
+}
+
+model ContagemItem {
+  id            String            @id @default(cuid())
+  contagemId    String
+  stockItemId   String
+  /// O que a pessoa contou, na unidade do insumo. Nulo = não contado.
+  contado       Float?
+  /// A quantidade que vale no fechamento: a contada, ou a carregada da
+  /// contagem anterior + compras (ver `origem`).
+  quantidade    Float?
+  /// "CONTADO" | "CARREGADO" | "SISTEMA"
+  origem        String?
+  /// Nome, unidade e custo congelados no fechamento.
+  nome          String
+  unidade       String
+  custoUnitario Float?
+  valor         Float?
+  /// O que o sistema dizia na hora do fechamento. A diferença vira o ajuste.
+  saldoSistema  Float?
+  atualizadoPor String?
+  updatedAt     DateTime          @updatedAt
+  contagem      ContagemDeEstoque @relation(fields: [contagemId], references: [id], onDelete: Cascade)
+  stockItem     StockItem         @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@unique([contagemId, stockItemId])
+  @@index([stockItemId])
+}
+
+/// Quem trabalha na loja e quanto custa por mês: a base do CMO.
+/// CMO do período = custo mensal de cada pessoa ativa × dias dela no período ÷
+/// dias do mês, mais as diárias lançadas nas despesas (src/lib/cmv/cmo.ts).
+model PessoaDaFolha {
+  id           String   @id @default(cuid())
+  franchiseeId String
+  nome         String
+  funcao       String?
+  /// Salário mensal bruto.
+  salario      Float
+  /// Encargos e provisões (FGTS, INSS, férias, 13º) em % do salário.
+  encargosPct  Float    @default(0)
+  /// Benefícios por mês em R$ (vale-transporte, alimentação).
+  beneficios   Float    @default(0)
+  /// "YYYY-MM-DD": desde quando conta e até quando (saiu).
+  desde        String
+  ate          String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([franchiseeId])
 }
 
 model StockTransaction {
@@ -1806,9 +1930,17 @@ model StockTransaction {
   /// vez de dobrar a baixa.
   sourceRef     String?     @unique
 
+  /// R$ por unidade do insumo NA HORA do movimento. `StockItem.unitCost` é
+  /// sobrescrito a cada nota; sem isto a compra da semana passada era
+  /// revalorizada pelo preço de hoje. Nulo nos movimentos antigos.
+  unitCost       Float?
+  /// A compra (StockInvoice) de onde a entrada veio.
+  stockInvoiceId String?
+
   @@index([stockItemId])
   @@index([stockLotId])
   @@index([franchiseeId])
+  @@index([stockInvoiceId])
 }
 
 /// Um LOTE é o que a etiqueta identifica e o que o QR resolve.
@@ -1916,6 +2048,18 @@ model StockInvoice {
   processedData Json?              // JSON com itens detectados pela IA
   createdAt     DateTime           @default(now())
   user          User               @relation(fields: [franchiseeId], references: [id])
+
+  /// Dia operacional em que a mercadoria ENTROU ("YYYY-MM-DD"). É ele que põe
+  /// a compra numa semana do CMV, não a data de emissão nem a do pagamento.
+  /// Colunas criadas no boot por src/lib/cmv/estrutura-no-banco.ts.
+  dia            String?
+  /// "NFE" (lida da foto da nota) | "SEM_NOTA" (mercado, feira).
+  origem         String?
+  /// Soma do que entrou no estoque por esta compra (sem os itens ignorados).
+  valorNoEstoque Float?
+  criadoPor      String?
+  /// Compra desfeita: entradas estornadas e contas não pagas apagadas.
+  canceladaEm    DateTime?
 
   @@index([franchiseeId])
 }

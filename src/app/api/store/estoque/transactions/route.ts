@@ -112,7 +112,12 @@ export async function POST(req: Request) {
           stockItemId,
           quantity: finalQuantity,
           type,
-          notes: notes || null
+          notes: notes || null,
+          // Loja, quem lançou e o custo daquela hora: a perda vira R$ no
+          // painel de dados sensíveis e o histórico diz quem mexeu.
+          franchiseeId,
+          userId: user.id,
+          unitCost: stockItem.unitCost ?? null,
         }
       });
 

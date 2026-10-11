@@ -10,6 +10,16 @@ import {
 } from "lucide-react";
 import TrilhaDoQr from "@/components/estoque/TrilhaDoQr";
 import EscanearQrModal from "@/components/estoque/EscanearQrModal";
+import Link from "next/link";
+import EditarInsumo, { type InsumoEditavel } from "@/components/cmv/EditarInsumo";
+import PagamentoDaCompra, { pagamentoInicial, pagamentoParaApi, type EstadoDoPagamento } from "@/components/cmv/PagamentoDaCompra";
+
+/** Hoje no dia operacional (vira às 5h), no relógio de quem está lançando. */
+function hojeOperacional(): string {
+  const d = new Date();
+  if (d.getHours() < 5) d.setDate(d.getDate() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 interface EstoqueClientProps {
   userName: string;
@@ -28,6 +38,13 @@ interface StockItem {
   minQuantity: number | null;
   unitCost: number | null;
   supplier: string | null;
+  /** CMV real (lib/cmv): preparo, local, contagem do dia, fora do CMV. */
+  tipo?: string | null;
+  rendimento?: number | null;
+  local?: string | null;
+  contagemDiaria?: boolean | null;
+  entraNoCmv?: boolean | null;
+  componentes?: { insumoId: string; quantidade: number }[];
 }
 
 interface Transaction {
@@ -127,6 +144,11 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   const [nfeScanResult, setNfeScanResult] = useState<any>(null);
   const [nfeItems, setNfeItems] = useState<NfeItem[]>([]);
   const [nfeConfirming, setNfeConfirming] = useState(false);
+  // A nota é a compra inteira: o dia em que chegou (semana do CMV) e como foi
+  // paga (vira conta a pagar). lib/cmv/lancar-compra.ts.
+  const [nfeDia, setNfeDia] = useState<string>(() => hojeOperacional());
+  const [nfePagamento, setNfePagamento] = useState<EstadoDoPagamento>(pagamentoInicial());
+  const [editando, setEditando] = useState<StockItem | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -167,8 +189,10 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     if (q.get("scan") === "1") setMostrarScanner(true);
-    const aba = q.get("tab");
+    const aba = q.get("tab") || q.get("aba");
     if (aba === "lotes") setActiveTab("lotes");
+    // Compras › "Nota com foto" manda para cá.
+    if (aba === "nfe") setActiveTab("nfe");
     const filtro = q.get("filtro");
     if (filtro && ["todos", "aguardando", "geladeira", "vencendo", "vencidos"].includes(filtro)) {
       setFiltroDeLote(filtro as any);
@@ -487,15 +511,19 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
             valorTotal: nfeScanResult.valorTotal,
           } : null,
           imageUrl: nfeImage,
+          dia: nfeDia,
+          pagamento: pagamentoParaApi(nfePagamento),
         })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Erro ao confirmar NF-e");
       
-      alert("Nota fiscal processada e estoque atualizado com sucesso!");
+      alert(data.message || "Nota lançada no estoque.");
       setNfeImage(null);
       setNfeScanResult(null);
       setNfeItems([]);
+      setNfePagamento(pagamentoInicial());
+      setNfeDia(hojeOperacional());
       setActiveTab("items");
       loadData();
     } catch (err: any) {
@@ -513,6 +541,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
       case "WASTE": return <span className="badge badge-warning">Desperdício</span>;
       case "SALE": return <span className="badge badge-sale">Venda</span>;
       case "NFE": return <span className="badge badge-nfe">NF-e</span>;
+      case "AJUSTE": return <span className="badge badge-nfe">Contagem</span>;
+      case "ESTORNO": return <span className="badge badge-error">Compra desfeita</span>;
       default: return <span className="badge">{type}</span>;
     }
   };
@@ -590,6 +620,13 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           </p>
         </div>
         <div className="fh-cabecalho__acoes">
+          {/* CMV real: a contagem e as compras (lib/cmv). */}
+          <Link href="/store/estoque/contagem" className="fh-btn fh-btn--secundario" style={{ textDecoration: "none" }}>
+            <ClipboardList size={18} /> Contagem
+          </Link>
+          <Link href="/store/estoque/compras" className="fh-btn fh-btn--secundario" style={{ textDecoration: "none" }}>
+            <FileText size={18} /> Compras
+          </Link>
           <button className="fh-btn fh-btn--secundario" onClick={() => setMostrarScanner(true)}>
             <ScanLine size={18} /> Escanear etiqueta
           </button>
@@ -606,6 +643,15 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
       <TrilhaDoQr fluxo={fluxo} aoEscanear={() => setMostrarScanner(true)} />
 
       <EscanearQrModal aberto={mostrarScanner} aoFechar={() => setMostrarScanner(false)} />
+
+      {editando && (
+        <EditarInsumo
+          item={editando as InsumoEditavel}
+          todos={items as InsumoEditavel[]}
+          onFechar={() => setEditando(null)}
+          onSalvo={() => { setEditando(null); loadData(); }}
+        />
+      )}
 
       {/* No celular, o botão de escanear do cabeçalho fica longe depois de
           rolar a lista — e escanear é justamente o que se faz de pé, com a
@@ -923,7 +969,12 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
 
                         return (
                           <tr key={item.id} className={`${isNegative ? "negative-stock-tr" : ""} ${isLow ? "low-stock-tr" : ""}`}>
-                            <td className="name-col">{item.name}</td>
+                            <td className="name-col">
+                              {item.name}
+                              {String(item.tipo || "").toUpperCase() === "PREPARO" && <span className="badge badge-nfe" style={{ marginLeft: 6 }}>Preparo</span>}
+                              {item.contagemDiaria && <span className="badge badge-success" style={{ marginLeft: 6 }}>Conta todo dia</span>}
+                              {item.entraNoCmv === false && <span className="badge" style={{ marginLeft: 6 }}>Fora do CMV</span>}
+                            </td>
                             <td className="qty-col">{formatQuantity(item.quantity, item.unit)}</td>
                             <td>{item.minQuantity !== null ? formatQuantity(item.minQuantity, item.unit) : "—"}</td>
                             <td>{unitCost > 0 ? formatCurrency(unitCost) : "—"}</td>
@@ -948,6 +999,12 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                                   onClick={() => { setSelectedItem(item); setShowMoveModal(true); }}
                                 >
                                   Movimentar
+                                </button>
+                                <button
+                                  className="btn-action btn-move"
+                                  onClick={() => setEditando(item)}
+                                >
+                                  Editar
                                 </button>
                                 <button 
                                   className="btn-action btn-delete" 
@@ -1053,6 +1110,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                               >
                                 <option value="">⚠️ Selecionar Insumo...</option>
                                 <option value="NEW">+ Criar novo insumo</option>
+                                <option value="IGNORAR">Não é insumo (fica fora do estoque)</option>
                                 <optgroup label="Insumos Existentes">
                                   {items.map(it => (
                                     <option key={it.id} value={it.id}>{it.name} ({it.unit})</option>
@@ -1088,6 +1146,21 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                     </table>
                   </div>
                   
+                  <div style={{ display: "grid", gap: "0.8rem", margin: "1rem 0" }}>
+                    <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: "0.8rem", fontWeight: 800, maxWidth: 260 }}>
+                      A mercadoria chegou em
+                      <input type="date" value={nfeDia} max={hojeOperacional()} onChange={(e) => setNfeDia(e.target.value)}
+                        style={{ border: "1px solid #E7DDD3", borderRadius: 8, padding: "0.5rem", fontSize: "0.95rem" }} />
+                      <span style={{ fontWeight: 500, fontSize: "0.76rem" }}>É este dia que põe a compra na semana do CMV.</span>
+                    </label>
+                    <PagamentoDaCompra
+                      valor={nfePagamento}
+                      onChange={setNfePagamento}
+                      dia={nfeDia}
+                      total={Number(nfeScanResult.valorTotal) > 0 ? Number(nfeScanResult.valorTotal) : nfeItems.reduce((s, it) => s + (Number(it.valorTotal) || 0), 0)}
+                    />
+                  </div>
+
                   <div className="nfe-confirm-bar">
                     <button 
                       className="btn-submit" 
@@ -1115,6 +1188,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                     <option value="SALE">Venda</option>
                     <option value="WASTE">Desperdício</option>
                     <option value="NFE">NF-e</option>
+                    <option value="AJUSTE">Contagem</option>
+                    <option value="ESTORNO">Compra desfeita</option>
                   </select>
                 </div>
                 <div className="form-group mb-0 flex-1">
@@ -1375,6 +1450,11 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                     🗑️ Perda
                   </label>
                 </div>
+                {moveType === "INPUT" && (
+                  <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#B45309", fontWeight: 600 }}>
+                    Foi compra? Lance em <Link href="/store/estoque/compras">Compras</Link>: entrada daqui não tem valor e deixa o CMV mais baixo do que o real.
+                  </p>
+                )}
               </div>
 
               <div className="form-row">
@@ -1400,7 +1480,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                 <label>Observação / Justificativa</label>
                 <input 
                   type="text" 
-                  placeholder="Ex: Compra quinzenal, Perda por validade" 
+                  placeholder="Ex: Perda por validade, devolução ao fornecedor"
                   value={moveNotes}
                   onChange={e => setMoveNotes(e.target.value)}
                 />

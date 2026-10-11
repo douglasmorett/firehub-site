@@ -70,6 +70,9 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       { href: "/store/financeiro", label: "Financeiro", icone: "BarChart2" },
       { href: "/store/antecipacao", label: "Antecipação", icone: "Zap", somenteCom: "antecipacao" },
       { href: "/store/relatorios", label: "Relatórios", icone: "LineChart" },
+      // CMV real, CMO e folha (lib/cmv). Funcionário só vê com a caixinha
+      // "Dados sensíveis", que nasce desmarcada (lib/permissao-da-tela.ts).
+      { href: "/store/dados-sensiveis", label: "Dados sensíveis", icone: "Gauge" },
       { href: "/store/fiscal", label: "Fiscal", icone: "Receipt" },
       { href: "/store/estoque", label: "Estoque", icone: "Package" },
       { href: "/store/etiquetas", label: "Validade & etiquetas", icone: "Tag" },

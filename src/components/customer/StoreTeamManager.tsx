@@ -17,6 +17,7 @@ export const STORE_MODULES = [
   { key: "impressoras",      label: "🖨️ Configuração de Impressoras",     desc: "Vínculo e vias de impressão de cupons" },
   { key: "minha_loja",       label: "🏪 Configurações da Loja",            desc: "Horários, dados da loja e cadastro de equipe" },
   { key: "editar_pedidos",   label: "✏️ Editar pedidos já lançados",        desc: "Tirar item, mudar quantidade e acrescentar item em pedido que já entrou" },
+  { key: "dados_sensiveis",  label: "🔒 Dados sensíveis (CMV, CMO, folha)", desc: "Ver CMV real, custo de mão de obra, salários e o valor do estoque em R$" },
 ];
 
 /**
@@ -24,7 +25,8 @@ export const STORE_MODULES = [
  * cadastro antigo que ficou sem lista salva.
  *
  * `editar_pedidos` deixa apagar item de uma venda que já entrou, e isso mexe no
- * que o caixa espera na gaveta no fim do dia. Quem decide é o dono, funcionário
+ * que o caixa espera na gaveta no fim do dia. `dados_sensiveis` mostra CMV,
+ * CMO e o salário dos colegas (lib/cmv/acesso.ts): também é escolha do dono. Quem decide é o dono, funcionário
  * por funcionário (decisão dele em 15/09/2026). Se entrasse na marcação
  * automática, as lojas em operação acordariam com todo atendente podendo apagar
  * venda sem ninguém ter escolhido isso.
@@ -33,7 +35,7 @@ export const STORE_MODULES = [
  * contém a chave nova, então `includes` devolve false sozinho. O cuidado aqui é
  * só com os dois caminhos que preenchem a lista inteira como atalho.
  */
-export const PERMISSOES_QUE_NASCEM_DESMARCADAS = ["editar_pedidos"];
+export const PERMISSOES_QUE_NASCEM_DESMARCADAS = ["editar_pedidos", "dados_sensiveis"];
 
 /** Os módulos marcados por padrão: tudo, menos os que exigem escolha do dono. */
 export const MODULOS_PADRAO = STORE_MODULES

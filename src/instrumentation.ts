@@ -62,6 +62,11 @@ export async function register() {
   // Clientes e relatórios do Acompanhamento iFood (aba do admin). Tabelas
   // próprias; se faltarem, só essa aba para.
   await garantirEstruturaDeAcompanhamento();
+  // CMV real: contagem, preparos, custo por movimento, compra ligada à conta a
+  // pagar e folha (lib/cmv/estrutura-no-banco.ts). Colunas novas em StockItem,
+  // StockTransaction, StockInvoice e Payable: faltando, o estoque serve 500.
+  const { garantirEstruturaDoCmv } = await import("./lib/cmv/estrutura-no-banco");
+  await garantirEstruturaDoCmv();
   // Lançamentos de cashback à mão (aba Clientes). Tabela própria por SQL cru;
   // se faltar, o saldo segue o dos pedidos e só o lançamento falha.
   const { garantirTabelaDeAjustes } = await import("./lib/cashback-no-banco");
