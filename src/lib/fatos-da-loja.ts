@@ -49,11 +49,31 @@ export function minimoDeRetirada(deliveryConfig: unknown): number {
   return n > 0 ? n : 0;
 }
 
-/** As duas linhas de "DADOS DA LOJA" sobre pedido mínimo. */
-export function linhasDoMinimoNosDados(o: { minimoEntrega: number; minimoRetirada: number; aceitaRetirada: boolean }): string {
-  const entrega = o.minimoEntrega > 0
+/**
+ * O que o robô sabe do pedido mínimo. `bairrosComMinimo`: bairros com mínimo
+ * próprio para entrega, que vale NO LUGAR do geral (lib/minimo-do-bairro.ts).
+ */
+export type FatosDoMinimo = {
+  minimoEntrega: number;
+  minimoRetirada: number;
+  aceitaRetirada: boolean;
+  bairrosComMinimo?: { name: string; minimo: number }[];
+};
+
+const listaDeMinimosPorBairro = (b: { name: string; minimo: number }[]) =>
+  b.map((x) => (x.minimo > 0 ? `${x.name} R$ ${brl(x.minimo)}` : `${x.name} sem mínimo`)).join("; ");
+
+/** As duas linhas de "DADOS DA LOJA" sobre pedido mínimo (três, com mínimo por bairro). */
+export function linhasDoMinimoNosDados(o: FatosDoMinimo): string {
+  const proprios = o.bairrosComMinimo ?? [];
+  let entrega = o.minimoEntrega > 0
     ? `- ⚠️ PEDIDO MÍNIMO PARA ENTREGA: R$ ${brl(o.minimoEntrega)} (subtotal dos itens, SEM a taxa de entrega)`
-    : `- PEDIDO MÍNIMO PARA ENTREGA: NÃO HÁ — qualquer valor fecha. NUNCA diga ao cliente que existe um valor mínimo.`;
+    : proprios.length > 0
+      ? `- PEDIDO MÍNIMO PARA ENTREGA: não há, a não ser nos bairros da linha abaixo.`
+      : `- PEDIDO MÍNIMO PARA ENTREGA: NÃO HÁ — qualquer valor fecha. NUNCA diga ao cliente que existe um valor mínimo.`;
+  if (proprios.length > 0) {
+    entrega += `\n- ⚠️ PEDIDO MÍNIMO POR BAIRRO (vale NO LUGAR do mínimo geral, para entrega nesses bairros; subtotal dos itens): ${listaDeMinimosPorBairro(proprios)}`;
+  }
   if (!o.aceitaRetirada) return entrega;
   const retirada = o.minimoRetirada > 0
     ? `- ⚠️ PEDIDO MÍNIMO PARA RETIRADA NO BALCÃO: R$ ${brl(o.minimoRetirada)}`
@@ -68,11 +88,22 @@ export function linhasDoMinimoNosDados(o: { minimoEntrega: number; minimoRetirad
  * modelo nunca vê dois mínimos diferentes no mesmo prompt — e fala em "mais
  * alguma coisa", não no produto de uma loja específica.
  */
-export function regraDoPedidoMinimo(o: { minimoEntrega: number; minimoRetirada: number; aceitaRetirada: boolean }): string {
+export function regraDoPedidoMinimo(o: FatosDoMinimo): string {
+  const proprios = o.bairrosComMinimo ?? [];
+  // Bairro com mínimo próprio: o geral não vale para ele, nem para mais nem para menos.
+  const porBairro = proprios.length > 0
+    ? `\n       - MÍNIMO POR BAIRRO: para ENTREGA em ${listaDeMinimosPorBairro(proprios)}, o mínimo é o do bairro, NO
+         LUGAR do geral. Saiba o bairro do cliente antes de falar em mínimo; o sistema confere pelo bairro e
+         recusa o fechamento abaixo dele.`
+    : "";
   if (!(o.minimoEntrega > 0)) {
     const retirada = o.aceitaRetirada && o.minimoRetirada > 0
       ? `\n       Só a RETIRADA NO BALCÃO tem mínimo nesta loja: R$ ${brl(o.minimoRetirada)} de subtotal dos itens.`
       : "";
+    if (proprios.length > 0) {
+      return `    A) PEDIDO MÍNIMO — esta loja não tem mínimo geral para entrega; só os bairros abaixo têm.
+       Fora deles, qualquer valor fecha: não fale em mínimo.${porBairro}${retirada}`;
+    }
     return `    A) PEDIDO MÍNIMO — esta loja NÃO tem pedido mínimo para entrega: qualquer valor fecha.
        NUNCA diga ao cliente que existe um valor mínimo, nem segure o pedido por causa disso.${retirada}`;
   }
@@ -107,7 +138,7 @@ export function regraDoPedidoMinimo(o: { minimoEntrega: number; minimoRetirada: 
          "Ficou ${brl(exemplo)} reais em itens, e o mínimo pra entrega aqui é ${brl(min)} reais 😊
           Faltam ${brl(falta)} reais — quer incluir mais alguma coisa pra fechar?"
          (troque os valores pelos reais do pedido e sugira um item DO CARDÁPIO DESTA LOJA).
-${saidaPelaRetirada}
+${saidaPelaRetirada}${porBairro}
        - Já aconteceu de o robô montar um pedido abaixo do mínimo e ir pedir confirmação para
          mandar para a cozinha. É isto que esta regra impede.`;
 }

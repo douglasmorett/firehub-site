@@ -99,6 +99,14 @@ export type ModoDeEdicao =
    * cai quando o cliente paga na porta. Ver `avisoDoDinheiro`.
    */
   | "MARKETPLACE"
+  /**
+   * Rodada de uma mesa ABERTA, editada pelo lápis do quadro de Pedidos: tira
+   * item e muda quantidade, pela regra da tela de Mesas
+   * (lib/edicao-na-mesa.ts). Não acrescenta (item novo é rodada nova, lançada
+   * na mesa) e não dá desconto (o desconto da mesa é da CONTA, no
+   * fechamento). Só `avaliarEdicaoDaMesa` devolve este modo.
+   */
+  | "MESA"
   /** Não edita aqui. `motivo` diz o que o lojista tem que fazer. */
   | "BLOQUEADO";
 
@@ -140,6 +148,12 @@ export type PedidoParaEdicao = {
   fiscalInfo?: unknown;
   /** Pagamento dividido (lib/pagamento-dividido.ts) — trava o desconto, ver `descontoNaEdicao`. */
   paymentMethods?: unknown;
+  /**
+   * A conta da mesa, quando o feed a traz (MESA_DO_QUADRO em
+   * lib/mesa-na-comanda.ts). Só `avaliarEdicaoDaMesa` lê: mesa fechada não
+   * edita. Ausente = não se sabe, e quem decide é o servidor.
+   */
+  tableSession?: { status?: string | null; table?: { number?: number | string | null } | null } | null;
 };
 
 type PedidoComNotaFiscal = {
@@ -627,6 +641,83 @@ export function avaliarEdicao(
 }
 
 /**
+ * O lápis do quadro de Pedidos num pedido de MESA (Victor, 09/10/2026: "editar
+ * o pedido só clicando no lápis, igual ao do pedido do cliente").
+ *
+ * `avaliarEdicao` continua dizendo BLOQUEADO para mesa, e é de propósito: a
+ * troca de tipo, a taxa de entrega e o desconto leem aquela função, e nenhum
+ * deles vale para uma rodada de mesa. Esta é a régua SÓ do lápis e da aba
+ * "Editar itens", e a gravação não é a do delivery — é a mesma da tela de
+ * Mesas (lib/edicao-na-mesa.ts): o total da rodada é refeito dos itens e a
+ * conta da mesa, que soma as rodadas, acompanha sozinha.
+ *
+ * Quem pode: quem pode editar pedidos (`podeEditarPedidos`, a mesma caixinha
+ * do lápis do delivery). A permissão "remover item" do garçom é do link do
+ * garçom, que não abre o quadro de Pedidos; ela continua valendo na rota da
+ * mesa.
+ */
+export function avaliarEdicaoDaMesa(
+  pedido: PedidoParaEdicao | null | undefined,
+  operador: OperadorDaEdicao
+): Avaliacao {
+  if (!pedido) return { modo: "BLOQUEADO", motivo: "Pedido não encontrado." };
+  if (!pedido.tableSessionId) return avaliarEdicao(pedido, operador);
+
+  if (!podeEditarPedidos(operador)) {
+    return {
+      modo: "BLOQUEADO",
+      motivo: "Você não tem permissão para editar pedidos. O dono da loja libera em Configurações → Equipe.",
+    };
+  }
+
+  const status = (pedido.status || "").toUpperCase();
+  if ((STATUS_CANCELADOS as readonly string[]).includes(status)) {
+    return { modo: "BLOQUEADO", motivo: "Este pedido já foi cancelado." };
+  }
+
+  // Mesa fechada: a conta já virou pagamento. Corrigir agora é estorno — a
+  // mesma frase da rota da mesa. Sem o status (feed antigo), o servidor decide.
+  const statusDaMesa = String(pedido.tableSession?.status || "").toUpperCase();
+  if (statusDaMesa && statusDaMesa !== "OPEN") {
+    return {
+      modo: "BLOQUEADO",
+      motivo: "Esta mesa já foi fechada — a conta virou pagamento. Ajustes agora são estorno, fale com o caixa.",
+    };
+  }
+
+  // A rota da mesa recusa qualquer EMITTED (a nota da conta inteira sai no
+  // fechamento); a trava geral cobre a nota em processamento.
+  if (pedido.fiscalStatus === "EMITTED") {
+    return {
+      modo: "BLOQUEADO",
+      motivo: "Este pedido já tem nota fiscal emitida — cancele a nota na tela Fiscal antes de mexer nele.",
+    };
+  }
+  const trava = travaDaNotaFiscal(pedido, "editar os itens");
+  if (trava) return { modo: "BLOQUEADO", motivo: trava };
+
+  const numero = pedido.tableSession?.table?.number;
+  const mesa = numero != null && String(numero).trim() ? `Mesa ${numero}` : "mesa";
+  return {
+    modo: "MESA",
+    totalMuda: true,
+    motivo: `Rodada da ${mesa}. O que mudar aqui muda a conta da ${mesa}, que soma as rodadas e é paga no fechamento.`,
+  };
+}
+
+/**
+ * O que o quadro de Pedidos usa para o lápis e a aba "Editar itens": mesa pela
+ * régua da mesa, o resto pela do delivery. A API de itens
+ * (api/store/orders/[id]/itens) decide pela MESMA função.
+ */
+export function avaliarEdicaoNoPainel(
+  pedido: PedidoParaEdicao | null | undefined,
+  operador: OperadorDaEdicao
+): Avaliacao {
+  return pedido?.tableSessionId ? avaliarEdicaoDaMesa(pedido, operador) : avaliarEdicao(pedido, operador);
+}
+
+/**
  * O total do pedido depois da edição.
  *
  * `itens - desconto + taxa` é a mesma conta que monta `finalTotal` no
@@ -730,6 +821,12 @@ export function descontoNaEdicao(
 ): { pode: true } | { pode: false; motivo: string } {
   if (!pedido || avaliacao.modo === "BLOQUEADO") {
     return { pode: false, motivo: (pedido && avaliacao.motivo) || "Pedido não encontrado." };
+  }
+  // Desconto de mesa é da CONTA: dado no fechamento, sobre o consumo da mesa
+  // inteira, e a taxa de serviço vem depois dele (lib/conta-da-mesa.ts).
+  // Desconto numa rodada somaria por baixo daquele e ninguém veria na conta.
+  if (avaliacao.modo === "MESA") {
+    return { pode: false, motivo: "Desconto de mesa é na conta, no fechamento da mesa — vale para a conta inteira." };
   }
   if (avaliacao.totalMuda === false) {
     const canal = avaliacao.canal || "parceiro";

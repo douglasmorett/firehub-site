@@ -604,6 +604,10 @@ function LinhaDaLoja({
       : `a mensalidade de ${mesExtenso(ab.maisAntigo)} da ${l.nome} (${brl(ab.valor)}) ${ab.vencida ? "venceu e ainda está em aberto" : "vence no dia 5"}`;
     mensagem = `${ola} Passando para lembrar que ${oQue}. Consegue ver para mim?${ab.boletoUrl ? ` O boleto está aqui: ${ab.boletoUrl}` : ""}`;
     rotuloDoWhats = ab.vencida ? "Cobrar" : "Lembrar";
+  } else if (podeMarcar && l.carteira) {
+    // Loja da carteira do vendedor: ele se apresenta como gerente de contas e acompanha a loja.
+    const vendedor = primeiroNome(quem.split(",")[0]);
+    mensagem = `Oi${dono ? `, ${dono}` : ""}! Eu sou ${vendedor}, gerente de contas da FireHub. E aí, tá gostando do sistema? Tá precisando de alguma ajuda? Vou te acompanhar nesse processo. 😊`;
   } else if (l.carteira?.atendimento === "AGUARDANDO") {
     mensagem = `${ola} Vou acompanhar a ${l.nome} por aqui. Posso te ajudar a deixar tudo pronto para vender pelo sistema?`;
   } else if (l.uso.situacao === "PARADA" && l.uso.diasSemPedido) {
@@ -694,7 +698,14 @@ function LinhaDaLoja({
       {/* Ações */}
       <div className="pp-c-acoes" role="cell">
         {whats ? (
-          <a className={`pp-botao ${l.emAberto?.vencida ? "cobrar" : "whats"}`} href={whats} target="_blank" rel="noreferrer">
+          <a
+            className={`pp-botao ${l.emAberto?.vencida ? "cobrar" : "whats"}`}
+            href={whats}
+            target="_blank"
+            rel="noreferrer"
+            // Abrir a conversa com a loja da carteira já conta como atendimento.
+            onClick={() => { if (podeMarcar && l.carteira?.atendimento === "AGUARDANDO" && !salvando) aoMarcar(l, "ATENDIDO"); }}
+          >
             <MessageCircle size={15} aria-hidden /> {rotuloDoWhats}
           </a>
         ) : (

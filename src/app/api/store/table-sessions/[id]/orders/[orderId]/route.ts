@@ -14,6 +14,11 @@
  * DELETE → cancela o pedido inteiro e DEVOLVE o estoque baixado (a devolução
  *          usa as baixas registradas, não a ficha técnica de hoje).
  *
+ * A regra mora em lib/edicao-na-mesa.ts desde 09/10/2026: o lápis do card de
+ * mesa no quadro de Pedidos (api/store/orders/[id]/itens) edita a mesma
+ * rodada, e as duas telas têm de fazer a mesma conta. Esta rota só resolve
+ * QUEM está operando (painel ou garçom pelo link) e a permissão do garçom.
+ *
  * Guardas, nesta ordem: sessão do painel → mesa da MINHA loja → sessão ainda
  * OPEN → pedido DESTA sessão → pedido não cancelado e sem nota fiscal
  * emitida. Mesa fechada não se edita: a conta já virou pagamento; corrigir
@@ -31,14 +36,11 @@
  * devolve insumo — cancelar o pedido devolve tudo. Está documentado na tela.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import { resolverOperadorDaMesa, rotuloDoOperador, type OperadorDaMesa } from "@/lib/garcom-auth";
-import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
-import { empilharEdicao, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
-import { STATUS_CANCELADOS } from "@/lib/status-pedido";
-import { conferirEstoque } from "@/lib/estoque-restante";
+import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
+import { carregarRodadaDaMesa, editarRodadaDaMesa, cancelarRodadaDaMesa } from "@/lib/edicao-na-mesa";
+import { motivoDoCorpo } from "@/lib/motivo-do-cancelamento";
 
-async function contexto(req: NextRequest, params: Promise<{ id: string; orderId: string }>) {
+async function contexto(params: Promise<{ id: string; orderId: string }>) {
   // Sessão do painel OU cookie do garçom pelo link (src/lib/garcom-auth.ts):
   // corrigir o que acabou de lançar na mesa é trabalho do garçom.
   const operador = await resolverOperadorDaMesa();
@@ -46,42 +48,14 @@ async function contexto(req: NextRequest, params: Promise<{ id: string; orderId:
   const lojaId = operador.franchiseeId;
 
   const { id, orderId } = await params;
-  const tableSession = await prisma.tableSession.findUnique({
-    where: { id },
-    select: { id: true, status: true, franchiseeId: true, table: { select: { number: true } } },
-  });
-  if (!tableSession || tableSession.franchiseeId !== lojaId) {
-    return { erro: NextResponse.json({ error: "Mesa não encontrada" }, { status: 404 }) };
-  }
-  if (tableSession.status !== "OPEN") {
-    return { erro: NextResponse.json({ error: "Esta mesa já foi fechada — a conta virou pagamento. Ajustes agora são estorno, fale com o caixa." }, { status: 409 }) };
+  const carregado = await carregarRodadaDaMesa(lojaId, orderId, id);
+  if ("erro" in carregado) {
+    return { erro: NextResponse.json(carregado.erro.corpo, { status: carregado.erro.status }) };
   }
 
-  const order = await prisma.customerOrder.findFirst({
-    where: { id: orderId, tableSessionId: id, franchiseeId: lojaId },
-    include: { items: { select: { id: true, quantity: true, price: true, menuProductId: true, productName: true, menuProduct: { select: { name: true } } } } },
-  });
-  if (!order) return { erro: NextResponse.json({ error: "Pedido não encontrado nesta mesa" }, { status: 404 }) };
-  if ((STATUS_CANCELADOS as readonly string[]).includes(order.status)) {
-    return { erro: NextResponse.json({ error: "Este pedido já foi cancelado" }, { status: 409 }) };
-  }
-  // ── "FINALIZADO" COM A MESA ABERTA NÃO É CONTA FECHADA ─────────────────
-  //
-  // Pedido de mesa só se encerra de verdade quando a MESA fecha: é ali que o
-  // dinheiro entra e que os pedidos viram ENTREGUE. Um pedido finalizado com
-  // a mesa ainda aberta foi finalizado por fora — o fechamento do caixa o
-  // levava junto com os "na rua", o quadro de Pedidos o conclui — e ninguém
-  // pagou nada ainda. Recusar aqui prendia a mesa para sempre: Hakim Centro,
-  // mesa 4, 459 h aberta com "Este pedido já foi finalizado" a cada tentativa
-  // de cancelar. A guarda que vale é a de cima (mesa fechada = estorno).
-  //
-  // O que continua barrado é nota fiscal já emitida: aí cancelar é na tela
-  // Fiscal, senão a nota fica valendo para um pedido que deixou de existir.
-  if (order.fiscalStatus === "EMITTED") {
-    return { erro: NextResponse.json({ error: "Este pedido já tem nota fiscal emitida — cancele a nota na tela Fiscal antes de mexer nele." }, { status: 409 }) };
-  }
-
-  return { lojaId, order, operador };
+  // Garçom sem "pode remover item" (cadastro): só aumenta quantidade.
+  const podeRemoverItem = operador.tipo !== "garcom" || !!operador.garcom.podeRemoverItem;
+  return { lojaId, rodada: carregado.rodada, operador, podeRemoverItem };
 }
 
 export async function PATCH(
@@ -89,111 +63,18 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string; orderId: string }> }
 ) {
   try {
-    const ctx = await contexto(req, params);
+    const ctx = await contexto(params);
     if ("erro" in ctx) return ctx.erro;
-    const { order } = ctx;
 
     const body = await req.json().catch(() => ({} as any));
-    const itens: { itemId: string; quantity: number }[] = Array.isArray(body?.itens) ? body.itens : [];
-    const removerItemIds: string[] = Array.isArray(body?.removerItemIds) ? body.removerItemIds.map(String) : [];
-
-    if (itens.length === 0 && removerItemIds.length === 0) {
-      return NextResponse.json({ error: "Nada para alterar" }, { status: 400 });
-    }
-
-    // Só itens DESTE pedido — id de item de outro pedido no corpo não pode
-    // alcançar nada.
-    const idsDoPedido = new Set(order.items.map((i) => i.id));
-    const remover = removerItemIds.filter((rid) => idsDoPedido.has(rid));
-    const mudar = itens
-      .filter((m) => m && idsDoPedido.has(String(m.itemId)) && !remover.includes(String(m.itemId)))
-      .map((m) => ({ itemId: String(m.itemId), quantity: Math.floor(Number(m.quantity)) }))
-      .filter((m) => Number.isFinite(m.quantity) && m.quantity >= 1 && m.quantity <= 99);
-
-    // Garçom sem "pode remover item" (cadastro): só acrescenta. Remover item
-    // ou diminuir quantidade é tirar dinheiro da conta — trabalho do caixa.
-    if (ctx.operador.tipo === "garcom" && !ctx.operador.garcom.podeRemoverItem) {
-      const diminui = mudar.some((m) => m.quantity < (order.items.find((i) => i.id === m.itemId)?.quantity ?? 0));
-      if (remover.length > 0 || diminui) {
-        return NextResponse.json({ error: "Este garçom não remove item lançado. Peça ao caixa para ajustar pelo painel." }, { status: 403 });
-      }
-    }
-
-    // O estado final que o pedido terá — calculado ANTES de escrever, porque
-    // "sobrou zero item" muda a operação inteira (vira cancelamento).
-    const finais = order.items
-      .filter((i) => !remover.includes(i.id))
-      .map((i) => ({ ...i, quantity: mudar.find((m) => m.itemId === i.id)?.quantity ?? i.quantity }));
-
-    if (finais.length === 0) {
-      // Removeu tudo = cancelou o pedido. Mesma via do DELETE, com devolução
-      // de estoque — um pedido sem itens não pode continuar valendo dinheiro.
-      return cancelarPedido(order, ctx.operador, motivoDoCorpo(body));
-    }
-
-    // Estoque disponível: aumentar a quantidade é vender mais. Só o AUMENTO
-    // é conferido — o que o item já tinha já está contado como vendido.
-    const aumentos = order.items
-      .map((i: any) => ({ i, m: mudar.find((x) => x.itemId === i.id) }))
-      .filter(({ i, m }) => m && i.menuProductId && m.quantity > i.quantity)
-      .map(({ i, m }) => ({ menuProductId: i.menuProductId as string, quantity: m!.quantity - i.quantity }));
-    if (aumentos.length > 0) {
-      const estoque = await conferirEstoque(ctx.lojaId, aumentos);
-      if (!estoque.ok) return NextResponse.json({ error: estoque.mensagem }, { status: 409 });
-    }
-
-    const novoTotal = finais.reduce((s, i) => s + Number(i.price) * i.quantity, 0);
-
-    // ── O QUE SAIU DA CONTA, COM O MOTIVO ─────────────────────────────────
-    // Remover e diminuir tiram dinheiro da mesa: sem motivo, não passa. O
-    // aumento de quantidade não pede nada.
-    const retirados: ItemRetirado[] = [
-      ...order.items.filter((i) => remover.includes(i.id)).map((i) => itemRetirado(i, i.quantity)),
-      ...mudar
-        .map((m) => ({ m, i: order.items.find((x) => x.id === m.itemId)! }))
-        .filter(({ m, i }) => i && m.quantity < i.quantity)
-        .map(({ m, i }) => itemRetirado(i, i.quantity - m.quantity)),
-    ];
-    const motivo = motivoDoCorpo(body);
-    if (retirados.length > 0 && !motivo) {
-      return NextResponse.json({ error: MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, precisaDeMotivo: true }, { status: 400 });
-    }
-    const descricao = [
-      ...order.items.filter((i) => remover.includes(i.id)).map((i) => `−${nomeDoItem(i)}`),
-      ...mudar.map((m) => {
-        const i = order.items.find((x) => x.id === m.itemId)!;
-        return `${nomeDoItem(i)} ${i.quantity}x → ${m.quantity}x`;
-      }),
-    ].join(", ");
-    const registro: RegistroDeEdicao = {
-      quando: new Date().toISOString(),
+    const r = await editarRodadaDaMesa({
+      lojaId: ctx.lojaId,
+      rodada: ctx.rodada,
+      pedido: { itens: body?.itens, removerItemIds: body?.removerItemIds, motivo: motivoDoCorpo(body) },
       quem: rotuloDoOperador(ctx.operador),
-      acao: remover.length > 0 ? "REMOVEU" : "MUDOU_QTD",
-      descricao,
-      totalAntes: Number(order.totalAmount) || 0,
-      totalDepois: novoTotal,
-      ...(motivo ? { motivo } : {}),
-      ...(retirados.length > 0 ? { itensRetirados: retirados } : {}),
-    };
-
-    await prisma.$transaction(async (tx) => {
-      for (const rid of remover) {
-        await tx.customerOrderItem.delete({ where: { id: rid } });
-      }
-      for (const m of mudar) {
-        await tx.customerOrderItem.update({ where: { id: m.itemId }, data: { quantity: m.quantity } });
-      }
-      await tx.customerOrder.update({
-        where: { id: order.id },
-        data: { totalAmount: novoTotal, editHistory: empilharEdicao((order as any).editHistory, registro) as any },
-      });
+      podeRemoverItem: ctx.podeRemoverItem,
     });
-
-    console.log(
-      `[Mesa Editar] pedido ${order.id}: ${remover.length} item(ns) removido(s), ` +
-      `${mudar.length} quantidade(s) alterada(s), total ${order.totalAmount} → ${novoTotal}`
-    );
-    return NextResponse.json({ success: true, totalAmount: novoTotal });
+    return NextResponse.json(r.corpo, { status: r.status });
   } catch (error: any) {
     console.error("[Table Session Order PATCH]", error);
     return NextResponse.json({ error: "Erro ao editar o pedido" }, { status: 500 });
@@ -205,69 +86,20 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; orderId: string }> }
 ) {
   try {
-    const ctx = await contexto(req, params);
+    const ctx = await contexto(params);
     if ("erro" in ctx) return ctx.erro;
     // Cancelar o pedido inteiro é remover todos os itens: mesma permissão.
-    if (ctx.operador.tipo === "garcom" && !ctx.operador.garcom.podeRemoverItem) {
+    if (!ctx.podeRemoverItem) {
       return NextResponse.json({ error: "Este garçom não cancela pedido lançado. Peça ao caixa para ajustar pelo painel." }, { status: 403 });
     }
     // O motivo vem no corpo do DELETE ({ motivo }) ou, para quem não manda
     // corpo em DELETE, em ?motivo=.
     const body = await req.json().catch(() => ({} as any));
     const motivo = motivoDoCorpo(body) || motivoDoCorpo({ motivo: req.nextUrl.searchParams.get("motivo") });
-    return cancelarPedido(ctx.order, ctx.operador, motivo);
+    const r = await cancelarRodadaDaMesa({ rodada: ctx.rodada, quem: rotuloDoOperador(ctx.operador), motivo });
+    return NextResponse.json(r.corpo, { status: r.status });
   } catch (error: any) {
     console.error("[Table Session Order DELETE]", error);
     return NextResponse.json({ error: "Erro ao cancelar o pedido" }, { status: 500 });
   }
-}
-
-type ItemDaMesa = { id: string; quantity: number; price: number; productName?: string | null; menuProduct?: { name?: string | null } | null };
-
-const nomeDoItem = (i: ItemDaMesa) => String(i.productName || i.menuProduct?.name || "item").trim() || "item";
-
-function itemRetirado(i: ItemDaMesa, quantidade: number): ItemRetirado {
-  return { nome: nomeDoItem(i), quantidade, valor: Math.round(Number(i.price || 0) * quantidade * 100) / 100 };
-}
-
-async function cancelarPedido(
-  order: { id: string; totalAmount?: number | null; editHistory?: unknown; items: ItemDaMesa[] },
-  operador: OperadorDaMesa,
-  motivo: string
-) {
-  if (!motivo) return NextResponse.json({ error: MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, precisaDeMotivo: true }, { status: 400 });
-  const orderId = order.id;
-  const registro: RegistroDeEdicao = {
-    quando: new Date().toISOString(),
-    quem: rotuloDoOperador(operador),
-    acao: "CANCELOU",
-    descricao: "Pedido cancelado na mesa",
-    totalAntes: Number(order.totalAmount) || 0,
-    totalDepois: 0,
-    motivo,
-    itensRetirados: (order.items || []).map((i) => itemRetirado(i, i.quantity)),
-  };
-  // A grafia é CANCELADO — a que o resto do sistema grava e filtra. O motivo
-  // é o que a pessoa escreveu: é ele que sai no fechamento do caixa.
-  await prisma.customerOrder.update({
-    where: { id: orderId },
-    data: {
-      status: "CANCELADO",
-      cancelledBy: "LOJA",
-      cancelReason: motivo,
-      editHistory: empilharEdicao(order.editHistory, registro) as any,
-    },
-  });
-
-  // Devolve o insumo baixado no lançamento. Usa as BAIXAS registradas do
-  // pedido — nunca a ficha técnica de hoje, que pode ter mudado desde então.
-  try {
-    const { restoreStockForOrder } = await import("@/lib/stock");
-    restoreStockForOrder(orderId).catch((e: any) =>
-      console.error(`[Mesa Editar] devolução de estoque falhou para ${orderId}:`, e?.message)
-    );
-  } catch {}
-
-  console.log(`[Mesa Editar] pedido ${orderId} cancelado pelo painel de mesas`);
-  return NextResponse.json({ success: true, cancelado: true });
 }

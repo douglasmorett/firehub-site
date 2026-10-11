@@ -63,6 +63,7 @@ import { precoDoCanal, aplicarPrecoDoCanalComCombo, type CanalDePreco } from "@/
 import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import {
   avaliarEdicao,
+  avaliarEdicaoDaMesa,
   recalcularTotal,
   empilharEdicao,
   descontoNaEdicao,
@@ -72,6 +73,7 @@ import {
 } from "@/lib/edicao-de-pedido";
 import { descontoDoCorpo, descreverDesconto, notaDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
+import { carregarRodadaDaMesa, editarRodadaDaMesa, cancelarRodadaDaMesa } from "@/lib/edicao-na-mesa";
 
 /** Os campos do pedido que a decisão e o recálculo precisam. */
 const CAMPOS_DO_PEDIDO = {
@@ -132,7 +134,13 @@ async function contexto(params: Promise<{ id: string }>) {
   });
   if (!order) return { erro: NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 }) };
 
-  const avaliacao = avaliarEdicao(order as any, operador);
+  // Rodada de mesa: a régua do lápis do card de mesa (avaliarEdicaoDaMesa) e,
+  // na gravação, a regra da tela de Mesas (lib/edicao-na-mesa.ts) — nunca a
+  // conta do delivery. `avaliarEdicao` continua BLOQUEANDO mesa para a troca
+  // de tipo, a taxa e o desconto, que leem aquela função.
+  const avaliacao = order.tableSessionId
+    ? avaliarEdicaoDaMesa(order as any, operador)
+    : avaliarEdicao(order as any, operador);
   if (avaliacao.modo === "BLOQUEADO") {
     // 403 e não 400: o pedido existe, a escrita é que não é permitida. A tela
     // mostra `error` direto para o lojista, então ele já vem escrito para ele.
@@ -200,6 +208,38 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!pode.pode) return NextResponse.json({ error: pode.motivo }, { status: 403 });
     }
 
+    // ── Mesa: tirar e mudar quantidade, pela regra da tela de Mesas ──────
+    //
+    // Acrescentar não: item novo na mesa é RODADA nova, lançada pela tela de
+    // Mesas (lib/lancar-na-mesa.ts), que imprime na cozinha e cai na conta.
+    if (avaliacao.modo === "MESA") {
+      if (acrescentar.length > 0) {
+        return NextResponse.json(
+          { error: "Para acrescentar item numa mesa, lance uma rodada nova pela tela de Mesas." },
+          { status: 400 }
+        );
+      }
+      // Desconto também não: o da mesa é dado na conta, ao fechar.
+      if (desconto) {
+        return NextResponse.json(
+          { error: "Desconto em mesa é dado na conta, ao fechar a mesa pela tela de Mesas." },
+          { status: 400 }
+        );
+      }
+      const carregado = await carregarRodadaDaMesa(lojaId, order.id);
+      if ("erro" in carregado) return NextResponse.json(carregado.erro.corpo, { status: carregado.erro.status });
+      const r = await editarRodadaDaMesa({
+        lojaId,
+        rodada: carregado.rodada,
+        pedido: { itens, removerItemIds, motivo },
+        quem: nomeDoOperador(operador),
+        // A caixinha do garçom vale no link do garçom; no painel, quem passou
+        // por `podeEditarPedidos` tira item como no delivery.
+        podeRemoverItem: true,
+      });
+      return NextResponse.json(r.corpo, { status: r.status });
+    }
+
     // ── Marketplace: as duas metades, cada uma no seu lugar ──────────────
     //
     // Mexer nos itens originais passa (é o pedido do lojista: o cliente ligou
@@ -264,6 +304,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     // O motivo vem no corpo ({ motivo }) ou em ?motivo=.
     const body = await req.json().catch(() => ({}) as any);
     const motivo = motivoDoCorpo(body) || motivoDoCorpo({ motivo: req.nextUrl.searchParams.get("motivo") });
+    // Rodada de mesa: sai da conta pela regra da mesa (lib/edicao-na-mesa.ts).
+    if (ctx.avaliacao.modo === "MESA") {
+      const carregado = await carregarRodadaDaMesa(ctx.lojaId, ctx.order.id);
+      if ("erro" in carregado) return NextResponse.json(carregado.erro.corpo, { status: carregado.erro.status });
+      const r = await cancelarRodadaDaMesa({ rodada: carregado.rodada, quem: nomeDoOperador(ctx.operador), motivo });
+      return NextResponse.json(r.corpo, { status: r.status });
+    }
     return await cancelarPedido(ctx.order, ctx.operador, motivo);
   } catch (error: any) {
     console.error("[Editar Pedido DELETE]", error);

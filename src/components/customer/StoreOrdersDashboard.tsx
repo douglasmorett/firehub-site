@@ -17,7 +17,7 @@ import { inicioDoExpedienteDaLoja, inicioDoDiaDaLoja } from "@/lib/fuso";
 import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
 import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
 import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
-import { avaliarEdicao, podeEditarPedidos } from "@/lib/edicao-de-pedido";
+import { avaliarEdicaoNoPainel, podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { edicoesDosItens, lerHistorico, quandoFoi, ROTULO_DA_EDICAO } from "@/lib/historico-do-pedido";
 import { podeTerReposicao } from "@/lib/reposicao";
 import { aguardandoFimDoKds, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
@@ -1494,18 +1494,22 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 quem não pode editar não vê o lápis, em vez de ver um lápis que
                 abre uma tela dizendo "não pode". No marketplace o lápis é de
                 outra cor: tirar item ali mexe no pedido do parceiro só do lado
-                de cá, e a tela avisa o que acontece com o dinheiro. */}
+                de cá, e a tela avisa o que acontece com o dinheiro.
+                Na rodada de MESA aberta o lápis também aparece (Victor,
+                09/10/2026), pela régua da mesa (avaliarEdicaoDaMesa): tira e
+                muda quantidade, e a conta da mesa acompanha. */}
             {onOpenEditModal && (() => {
-              const avaliacao = avaliarEdicao(order, operador || {});
+              const avaliacao = avaliarEdicaoNoPainel(order, operador || {});
               if (avaliacao.modo === "BLOQUEADO") return null;
               const ehMarketplace = avaliacao.modo === "MARKETPLACE";
+              const ehMesa = avaliacao.modo === "MESA";
               return (
                 <button
                   onClick={e => {
                     e.stopPropagation();
                     onOpenEditModal(order.id);
                   }}
-                  title={ehMarketplace ? `Editar itens (o ${avaliacao.canal || "parceiro"} não muda)` : "Editar itens do pedido"}
+                  title={ehMarketplace ? `Editar itens (o ${avaliacao.canal || "parceiro"} não muda)` : ehMesa ? "Editar itens da rodada (a conta da mesa acompanha)" : "Editar itens do pedido"}
                   // Proposta B: branco com borda como os outros ícones; no
                   // marketplace o lápis fica âmbar (aviso), sem virar botão cheio.
                   style={{ ...BOTAO_ICONE, color: ehMarketplace ? "var(--fh-atencao-tinta, #B45309)" : BOTAO_ICONE.color }}
@@ -4642,7 +4646,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   API consulta — senão existiria aba que o servidor recusa. */}
               {(() => {
                 const operadorDaAba = { role: user?.role, permissions: user?.permissions };
-                const avaliacao = avaliarEdicao(order, operadorDaAba);
+                const avaliacao = avaliarEdicaoNoPainel(order, operadorDaAba);
                 // "Faltou item": só nas colunas Saiu e Finalizado (lib/reposicao.ts). Não
                 // depende da trava da nota — a reposição não mexe no pedido
                 // nem no dinheiro dele, é um pedido novo de R$ 0,00.

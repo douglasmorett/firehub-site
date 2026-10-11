@@ -46,6 +46,17 @@ export const MESA_DA_COMANDA = {
   },
 } as const;
 
+/**
+ * O mesmo pedaço, mais o STATUS da conta, para o quadro de Pedidos (feed do
+ * poll e a primeira carga da página). O lápis do card de mesa só aparece com a
+ * mesa aberta: mesa fechada já virou pagamento (avaliarEdicaoDaMesa, em
+ * lib/edicao-de-pedido.ts). A fila do Assistente segue com o MESA_DA_COMANDA,
+ * que não precisa disso.
+ */
+export const MESA_DO_QUADRO = {
+  select: { ...MESA_DA_COMANDA.select, status: true },
+} as const;
+
 export type PedidoComMesa = {
   deliveryType?: string | null;
   customerAddress?: string | null;
