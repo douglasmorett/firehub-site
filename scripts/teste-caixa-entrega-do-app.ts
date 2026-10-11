@@ -83,5 +83,13 @@ confere("DELIVERED sem motoboy da loja: parceira", ehEntregaDaLoja({ source: "IF
 const frangoso = so({ source: "IFOOD", ifoodOrderId: "if-4", motoboyId: "mb1", ifoodDriverStatus: "DELIVERED", paymentMethod: "Crédito (Cobrar na Entrega)", totalAmount: 79.48 });
 confere("o crédito cobrado pelo motoboy da Frangoso continua da maquininha da loja", [r2(frangoso.expected.credit), frangoso.entregasProprias.length], [79.48, 1]);
 
+console.log("\n— 4. O acréscimo do vale no balcão não é 'taxa do app' (M7) —");
+// venda-presencial soma "Taxa de vale (5%)" ao total: itens 40 + 2 = 42 no Voucher/Vale.
+const vale = so({ source: "PRESENCIAL", deliveryType: "RETIRADA", paymentMethod: "Voucher/Vale", totalAmount: 42, items: [{ price: 40, quantity: 1 }] });
+const balcao = vale.retrato.porTipo[0];
+confere("o bloco Balcão tem R$ 2 de ajuste, todo da loja (nenhum do app)", [balcao.chave, balcao.ajustes, balcao.ajustesDoApp], ["BALCAO", 2, 0]);
+// E o iFood: a sobra é a taxa do app.
+confere("no iFood, a sobra é a taxa de serviço do app", [ifood.retrato.porTipo[0].ajustes, ifood.retrato.porTipo[0].ajustesDoApp], [0.99, 0.99]);
+
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);
