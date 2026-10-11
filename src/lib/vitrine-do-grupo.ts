@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { slugAtualDeUmAntigo } from "@/lib/slug-da-loja";
 import { bairrosAtendidos, modoDaArea } from "@/lib/area-de-entrega";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
@@ -55,8 +56,15 @@ export type LojaNaVitrine = {
   estado: string;
   soDelivery: boolean;
   principal: boolean;
-  /** Para o "fica a X km de você" quando o cliente usa o GPS (o ponto é o mesmo do mapa público). */
+  /** Para o "Como chegar". Nulo quando a loja esconde o endereço no cardápio. */
   ponto: { lat: number; lng: number } | null;
+  /**
+   * O que o navegador precisa para recalcular "Aberta/Fechada" na hora: a
+   * página fica 60 s em cache e a primeira visita depois do prazo recebe a
+   * versão velha (o texto das 2h da manhã às 19h). Horário já é público no
+   * cardápio.
+   */
+  horario: { storeHours: unknown; storePause: unknown; storeOpen: boolean | null; timezone: string | null };
 };
 
 export type VitrineDoGrupo = {
@@ -109,6 +117,17 @@ export async function lojasVisiveisDoGrupo(slug: string) {
   return { principal, config, lojas: visiveis };
 }
 
+/**
+ * O slug que vale hoje para um slug pedido: ele mesmo, ou o atual de uma loja
+ * que trocou de nome (o link do grupo impresso no QR não pode morrer quando o
+ * dono corrige o nome — mesma regra do /loja/[slug]). Nulo se não existe.
+ */
+export async function slugValido(slug: string): Promise<string | null> {
+  const existe = await prisma.user.findUnique({ where: { slug }, select: { id: true } });
+  if (existe) return slug;
+  return slugAtualDeUmAntigo(prisma as any, slug);
+}
+
 /** As lojas do grupo de quem tem este slug — principal primeiro. Nulo se a loja não existe. */
 export async function lojasDoGrupoPeloSlug(slug: string) {
   const loja = await prisma.user.findUnique({ where: { slug }, select: { id: true, accountGroupId: true, role: true } });
@@ -149,7 +168,8 @@ export async function carregarVitrineDoGrupo(slug: string): Promise<VitrineDoGru
       estado: estado.texto.replace(/^A loja está /, "").replace(/^./, (c) => c.toUpperCase()),
       soDelivery: !!l.storeDeliveryOnly,
       principal: l.id === principal.id,
-      ponto: lerPontoDaLoja(l.storeLatLng),
+      ponto: l.showAddressOnMenu === false ? null : lerPontoDaLoja(l.storeLatLng),
+      horario: { storeHours: l.storeHours ?? null, storePause: l.storePause ?? null, storeOpen: l.storeOpen, timezone: l.storeTimezone },
     };
   });
 

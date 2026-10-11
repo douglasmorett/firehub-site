@@ -28,15 +28,17 @@ async function dono() {
   return { principalId: principalDoGrupo(user) };
 }
 
+/** As mesmas lojas da página pública (vitrine-do-grupo.ts): com slug e só conta de loja. */
 async function lojasDoGrupo(principalId: string) {
-  return prisma.user.findMany({
+  const lojas = await prisma.user.findMany({
     where: { OR: [{ id: principalId }, { accountGroupId: principalId }], slug: { not: null } },
     orderBy: [{ isPrimaryStore: "desc" }, { createdAt: "asc" }],
     select: {
       id: true, slug: true, storeName: true, name: true, storeLogo: true, storeBanner: true, storeBannerVideo: true, accountGroupId: true,
-      deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, city: true,
+      deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, city: true, role: true,
     },
   });
+  return lojas.filter((l) => !l.role || l.role === "FRANCHISEE");
 }
 
 export async function GET() {

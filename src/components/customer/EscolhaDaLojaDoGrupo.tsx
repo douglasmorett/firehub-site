@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { Bike, Clock, Loader2, MapPin, Navigation, Phone, Search, Store, ChevronRight } from "lucide-react";
 import type { LojaNaVitrine, VitrineDoGrupo } from "@/lib/vitrine-do-grupo";
 import type { Escolha, ResultadoDaLoja } from "@/lib/escolha-de-loja-do-grupo";
+import { enderecoDoReverso } from "@/lib/entrega-no-checkout";
+import { estadoDaLoja } from "@/lib/loja-aberta";
 import s from "./EscolhaDaLojaDoGrupo.module.css";
 
 /**
@@ -13,7 +15,13 @@ import s from "./EscolhaDaLojaDoGrupo.module.css";
  * duas lado a lado e o cliente escolhe. Quem vai retirar escolhe direto.
  */
 
-type Resposta = { escolha: Escolha; resultados: ResultadoDaLoja[]; ondeTexto: string };
+type Resposta = { escolha: Escolha; resultados: ResultadoDaLoja[]; ondeTexto: string; via: "gps" | "bairro" | "endereco" };
+
+/** "Aberta agora, até as 23:40." — o mesmo texto que o servidor monta (vitrine-do-grupo.ts). */
+function estadoAgora(l: LojaNaVitrine): { aberta: boolean; estado: string } {
+  const e = estadoDaLoja({ storeHours: l.horario.storeHours, storePause: l.horario.storePause, storeOpen: l.horario.storeOpen, timezone: l.horario.timezone });
+  return { aberta: e.aberta, estado: e.texto.replace(/^A loja está /, "").replace(/^./, (c) => c.toUpperCase()) };
+}
 
 const brl = (n: number) => (n === 0 ? "Grátis" : `R$ ${n.toFixed(2).replace(".", ",")}`);
 const kmBr = (n: number) => `${String(n).replace(".", ",")} km`;
@@ -31,7 +39,16 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
   const [resposta, setResposta] = useState<Resposta | null>(null);
   const [ultima, setUltima] = useState<LojaNaVitrine | null>(null);
 
-  const porId = useMemo(() => new Map(vitrine.lojas.map((l) => [l.id, l])), [vitrine.lojas]);
+  // A página vem do cache (até 60 s, ou mais numa página pouco visitada):
+  // "Aberta/Fechada" é recalculado aqui, ao abrir e a cada minuto.
+  const [lojas, setLojas] = useState(vitrine.lojas);
+  useEffect(() => {
+    const recalcular = () => setLojas(vitrine.lojas.map((l) => ({ ...l, ...estadoAgora(l) })));
+    recalcular();
+    const t = setInterval(recalcular, 60_000);
+    return () => clearInterval(t);
+  }, [vitrine.lojas]);
+  const porId = useMemo(() => new Map(lojas.map((l) => [l.id, l])), [lojas]);
 
   useEffect(() => {
     try {
@@ -51,8 +68,8 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
     try { localStorage.setItem(CHAVE_ULTIMA(slug), loja.id); } catch { /* idem */ }
   }
 
-  async function consultar(corpo: Record<string, unknown>, ondeTexto: string, via: "gps" | "texto") {
-    setConsultando(via);
+  async function consultar(corpo: Record<string, unknown>, ondeTexto: string, via: Resposta["via"]) {
+    setConsultando(via === "gps" ? "gps" : "texto");
     setErro(null);
     setResposta(null);
     try {
@@ -63,7 +80,7 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
       });
       const dados = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(dados?.error || "Não deu para consultar agora.");
-      setResposta({ ...dados, ondeTexto });
+      setResposta({ ...dados, ondeTexto, via });
       requestAnimationFrame(() => document.getElementById("resultado")?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (e: any) {
       setErro(e?.message || "Não deu para consultar agora. Tente de novo.");
@@ -80,7 +97,29 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
     setConsultando("gps");
     setErro(null);
     navigator.geolocation.getCurrentPosition(
-      (p) => consultar({ lat: p.coords.latitude, lng: p.coords.longitude }, "sua localização", "gps"),
+      async (p) => {
+        const lat = p.coords.latitude;
+        const lng = p.coords.longitude;
+        // Loja que entrega por BAIRRO não sabe o que fazer com uma coordenada:
+        // o bairro sai do mapa, no navegador, igual ao "Minha localização" do
+        // checkout (CustomerStorePage, preencherPeloPonto) — a mesma leitura
+        // que o cardápio vai fazer depois. Mapa fora: segue só com o ponto.
+        let bairro = "";
+        let endereco = "";
+        try {
+          const prazo = typeof (AbortSignal as any).timeout === "function" ? (AbortSignal as any).timeout(4000) as AbortSignal : undefined;
+          const rev = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&addressdetails=1`, {
+            headers: { "Accept-Language": "pt-BR" },
+            signal: prazo,
+          });
+          if (rev.ok) {
+            const e = enderecoDoReverso((await rev.json())?.address);
+            bairro = e.bairro;
+            endereco = [[e.rua, e.numero].filter(Boolean).join(", "), e.bairro].filter(Boolean).join(" - ");
+          }
+        } catch { /* sem o bairro do mapa: o servidor decide pelo ponto */ }
+        consultar({ lat, lng, bairro, endereco }, bairro || "sua localização", "gps");
+      },
       () => {
         setConsultando(null);
         setErro("Não conseguimos sua localização. Escolha o bairro ou digite o endereço.");
@@ -89,12 +128,13 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
     );
   }
 
-  function escolherBairro(nome: string) {
+  function escolherBairro(nome: string, cidade: string) {
     setBusca(nome);
-    consultar({ bairro: nome }, nome, "texto");
+    // A cidade vai junto: "Centro" de uma cidade não é o de outra.
+    consultar({ bairro: nome, cidade }, nome, "bairro");
   }
 
-  const lojasDeRetirada = vitrine.lojas.filter((l) => !l.soDelivery);
+  const lojasDeRetirada = lojas.filter((l) => !l.soDelivery);
   const estiloDaCor = (vitrine.cor ? { "--cor": vitrine.cor } : {}) as CSSProperties;
 
   return (
@@ -167,7 +207,7 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
                     <ul className={s.sugestoes}>
                       {sugestoes.map((b) => (
                         <li key={`${b.cidade}|${b.nome}`}>
-                          <button onClick={() => escolherBairro(b.nome)}>
+                          <button onClick={() => escolherBairro(b.nome, b.cidade)}>
                             <MapPin size={15} />
                             <span>{b.nome}</span>
                             {variasCidades && <small>{b.cidade}</small>}
@@ -190,7 +230,7 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
                   className={s.campoBairro}
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (endereco.trim().length >= 4) consultar({ endereco: endereco.trim() }, endereco.trim(), "texto");
+                    if (endereco.trim().length >= 4) consultar({ endereco: endereco.trim() }, endereco.trim(), "endereco");
                   }}
                 >
                   <label className={s.rotulo} htmlFor="endereco">Endereço ou CEP</label>
@@ -215,6 +255,10 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
                   porId={porId}
                   onEscolher={lembrar}
                   onRetirar={fazRetirada ? () => setModo("retirada") : null}
+                  temListaDeBairros={vitrine.bairros.length > 0}
+                  onUsarLista={() => { setDigitarEndereco(false); setResposta(null); }}
+                  lojas={lojas}
+                  onEscolherLoja={lembrar}
                 />
               )}
             </div>
@@ -240,7 +284,7 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
         <section className={s.nossas}>
           <h2 className={s.secao}>Nossas lojas</h2>
           <div className={s.grade}>
-            {vitrine.lojas.map((l) => <CartaoDaLoja key={l.id} loja={l} onEscolher={lembrar} />)}
+            {lojas.map((l) => <CartaoDaLoja key={l.id} loja={l} onEscolher={lembrar} />)}
           </div>
         </section>
 
@@ -299,14 +343,46 @@ function Situacao({ loja }: { loja: LojaNaVitrine }) {
 }
 
 function Resultado({
-  resposta, porId, onEscolher, onRetirar,
+  resposta, porId, onEscolher, onRetirar, temListaDeBairros, onUsarLista, lojas, onEscolherLoja,
 }: {
   resposta: Resposta;
   porId: Map<string, LojaNaVitrine>;
   onEscolher: (l: LojaNaVitrine) => void;
   onRetirar: (() => void) | null;
+  temListaDeBairros: boolean;
+  onUsarLista: () => void;
+  lojas: LojaNaVitrine[];
+  onEscolherLoja: (l: LojaNaVitrine) => void;
 }) {
-  const { escolha, resultados, ondeTexto } = resposta;
+  const { escolha, resultados } = resposta;
+  // O nome do bairro como a loja cadastrou ("Aeroporto"), não como o mapa
+  // escreveu ("bairro aeroporto").
+  const ondeTexto = (escolha.tipo === "ATENDE" && resultados.find((r) => r.lojaId === escolha.lojaId)?.veredicto.bairro) || resposta.ondeTexto;
+  // Não deu para confirmar (mapa fora, endereço que o mapa não achou): não é
+  // "não entregamos". Pede o bairro da lista ou deixa escolher a loja.
+  if (escolha.tipo === "DUVIDA") {
+    return (
+      <div id="resultado" className={s.resultadoVazio}>
+        <strong>Não conseguimos confirmar a entrega em {ondeTexto} agora.</strong>
+        <p>{temListaDeBairros ? "Escolha o seu bairro na lista, ou peça direto na loja mais perto de você:" : "Peça direto na loja mais perto de você:"}</p>
+        {temListaDeBairros && resposta.via !== "bairro" && (
+          <button className={s.botaoSecundario} onClick={onUsarLista} style={{ marginBottom: 10 }}><MapPin size={16} /> Escolher o bairro na lista</button>
+        )}
+        <div className={s.listaRetirada}>
+          {lojas.map((l) => (
+            <a key={l.id} className={s.itemRetirada} href={`/loja/${l.slug}`} onClick={() => onEscolherLoja(l)}>
+              <div>
+                <strong>{l.nome}</strong>
+                {l.bairro && <span>Fica em {l.bairro}</span>}
+              </div>
+              <ChevronRight size={18} />
+            </a>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
   if (escolha.tipo === "NENHUMA") {
     return (
       <div id="resultado" className={s.resultadoVazio}>
@@ -315,6 +391,11 @@ function Resultado({
           <>
             <p>Você pode retirar o pedido numa das lojas.</p>
             <button className={s.botaoSecundario} onClick={onRetirar}><Store size={16} /> Ver lojas para retirar</button>
+          </>
+        ) : resposta.via === "endereco" && temListaDeBairros ? (
+          <>
+            <p>Se o endereço não tinha o bairro, procure o seu bairro na lista.</p>
+            <button className={s.botaoSecundario} onClick={onUsarLista}><MapPin size={16} /> Escolher o bairro na lista</button>
           </>
         ) : (
           <p>Confira o bairro ou digite o endereço completo. Se precisar, fale com a loja pelo WhatsApp lá embaixo.</p>

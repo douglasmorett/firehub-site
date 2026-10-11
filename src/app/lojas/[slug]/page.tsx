@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { carregarVitrineDoGrupo } from "@/lib/vitrine-do-grupo";
+import { carregarVitrineDoGrupo, slugValido } from "@/lib/vitrine-do-grupo";
 import EscolhaDaLojaDoGrupo from "@/components/customer/EscolhaDaLojaDoGrupo";
 
 /**
@@ -25,7 +25,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default async function PaginaDoGrupo({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const vitrine = await carregarVitrineDoGrupo(slug);
-  if (!vitrine) notFound();
+  if (!vitrine) {
+    // Loja que trocou de nome: o link antigo (QR, Instagram) leva ao novo.
+    const atual = await slugValido(slug);
+    if (atual && atual !== slug) redirect(`/lojas/${atual}`);
+    notFound();
+  }
   // Loja sem filial: não há o que escolher.
   if (vitrine.lojas.length === 1) redirect(`/loja/${vitrine.lojas[0].slug}`);
   return <EscolhaDaLojaDoGrupo slug={slug} vitrine={vitrine} />;

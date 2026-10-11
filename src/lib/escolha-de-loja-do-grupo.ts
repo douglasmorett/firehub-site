@@ -42,14 +42,42 @@ export type Escolha =
   | { tipo: "ATENDE"; lojaId: string; tambemAtendem: string[]; porDistancia: boolean }
   /** Nenhuma área respondeu com certeza (mapa fora, loja sem área): a mais perto em linha reta. */
   | { tipo: "MAIS_PERTO"; lojaId: string }
+  /**
+   * Não deu para saber (mapa fora, limite de buscas, endereço que o mapa não
+   * achou, loja sem área) e não há ponto do cliente para medir. NÃO é "não
+   * entregamos": a tela pede o bairro ou deixa o cliente escolher a loja.
+   */
+  | { tipo: "DUVIDA" }
+  /** Todas as lojas responderam com certeza que não entregam ali. */
   | { tipo: "NENHUMA" };
+
+/**
+ * Até onde a "mais perto em linha reta" vale quando nenhuma área responde
+ * com certeza. Sem teto, um cliente em outra cidade (GPS ligado na viagem)
+ * seria mandado para a loja "mais perto" a 150 km.
+ */
+export const LIMITE_DA_MAIS_PERTO_KM = 25;
+
+/**
+ * Loja que "atende" pelo NOME do bairro mas está mais longe que isto do
+ * cliente casou um bairro homônimo de outra cidade: o GPS no Rio de Janeiro
+ * dá "Centro", e o Centro cadastrado em Macaé respondia que entregava a 158 km
+ * (teste de 10/10/2026). Mesma ordem de grandeza da regra do bairro homônimo
+ * em lib/area-de-entrega.ts (30 km). Só vale com o ponto do cliente; pelo
+ * bairro da lista não há distância.
+ */
+export const LIMITE_DO_BAIRRO_HOMONIMO_KM = 30;
 
 const infinito = (n: number | null | undefined) => (n == null || !Number.isFinite(n) ? Number.POSITIVE_INFINITY : n);
 
 /** Qual loja do grupo fica com o cliente. Pura: o servidor e o teste chamam a mesma. */
 export function escolherLoja(resultados: ResultadoDaLoja[]): Escolha {
   const distancia = (r: ResultadoDaLoja) => r.distanciaRetaKm ?? r.veredicto.distanciaKm ?? null;
-  const atendem = resultados.filter((r) => r.veredicto.resultado === "ATENDE");
+  const atendem = resultados.filter((r) => {
+    if (r.veredicto.resultado !== "ATENDE") return false;
+    const km = r.distanciaRetaKm;
+    return !(km != null && km > LIMITE_DO_BAIRRO_HOMONIMO_KM);
+  });
   // Distância só ordena quando TODAS têm: misturar "a 2 km" com "sem
   // distância" poria na frente uma loja só porque a outra não tem pino.
   const porDistancia = atendem.length > 1 && atendem.every((r) => distancia(r) != null);
@@ -66,10 +94,13 @@ export function escolherLoja(resultados: ResultadoDaLoja[]): Escolha {
   // não achou, loja sem área) cai na mais perto — chutar uma loja que disse
   // "não entrego aí" mandaria o cliente para um checkout que vai recusar.
   const emDuvida = resultados
-    .filter((r) => r.veredicto.resultado === "DESCONHECIDO" && r.distanciaRetaKm != null && Number.isFinite(r.distanciaRetaKm))
+    .filter((r) => r.veredicto.resultado === "DESCONHECIDO" && r.distanciaRetaKm != null && Number.isFinite(r.distanciaRetaKm) && r.distanciaRetaKm <= LIMITE_DA_MAIS_PERTO_KM)
     .sort((a, b) => infinito(a.distanciaRetaKm) - infinito(b.distanciaRetaKm));
   if (emDuvida.length > 0) return { tipo: "MAIS_PERTO", lojaId: emDuvida[0].lojaId };
-  return { tipo: "NENHUMA" };
+  // Dúvida sem distância usável: só vira "não entregamos" se ninguém ficou
+  // em dúvida. Dúvida LONGE (além do teto) é resposta: está fora.
+  const duvidaSemMedida = resultados.some((r) => r.veredicto.resultado === "DESCONHECIDO" && r.distanciaRetaKm == null);
+  return duvidaSemMedida ? { tipo: "DUVIDA" } : { tipo: "NENHUMA" };
 }
 
 /** Distância em linha reta (haversine), em km. */

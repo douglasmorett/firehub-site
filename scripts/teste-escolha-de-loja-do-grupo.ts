@@ -50,9 +50,25 @@ confere("dúvida nas duas (mapa fora) → a mais perto em linha reta",
   escolherLoja([r("p17", "DESCONHECIDO", null, null, 6.2), r("aero", "DESCONHECIDO", null, null, 1.4)]),
   { tipo: "MAIS_PERTO", lojaId: "aero" });
 
-confere("dúvida sem ponto do cliente → nenhuma",
-  escolherLoja([r("p17", "DESCONHECIDO", null, null), r("aero", "DESCONHECIDO", null, null)]),
+confere("GPS no Rio dá 'Centro' e o Centro de Macaé 'atende' a 158 km → nenhuma (bairro homônimo)",
+  escolherLoja([r("p17", "ATENDE", 10, 45, 161), r("aero", "ATENDE", 10, 45, 158)]),
   { tipo: "NENHUMA" });
+
+confere("a 5 km com o bairro certo continua valendo",
+  escolherLoja([r("p17", "ATENDE", 7, 45, 5), r("aero", "FORA", null, null, 9)]),
+  { tipo: "ATENDE", lojaId: "p17", tambemAtendem: [], porDistancia: false });
+
+confere("dúvida e o cliente a 150 km (GPS em outra cidade) → nenhuma, não manda para longe",
+  escolherLoja([r("p17", "DESCONHECIDO", null, null, 150), r("aero", "DESCONHECIDO", null, null, 148)]),
+  { tipo: "NENHUMA" });
+
+confere("dúvida sem ponto do cliente (mapa fora) → DÚVIDA, não 'não entregamos'",
+  escolherLoja([r("p17", "DESCONHECIDO", null, null), r("aero", "DESCONHECIDO", null, null)]),
+  { tipo: "DUVIDA" });
+
+confere("uma FORA com certeza e outra em dúvida sem ponto → DÚVIDA",
+  escolherLoja([r("p17", "FORA", null, null), r("aero", "DESCONHECIDO", null, null)]),
+  { tipo: "DUVIDA" });
 
 confere("uma FORA e outra em dúvida → a em dúvida",
   escolherLoja([r("p17", "FORA", null, null, 0.5), r("aero", "DESCONHECIDO", null, null, 4)]),
