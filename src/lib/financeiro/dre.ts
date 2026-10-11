@@ -91,12 +91,18 @@ export const ATALHO_PADRAO: AtalhoDoFinanceiro = "7d";
 
 const DIA_RE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** O período pedido na URL; torto ou ausente vira o padrão, nunca erro. */
+/**
+ * O período pedido na URL; torto ou ausente vira o padrão, nunca erro. Não
+ * passa de hoje: dia que ainda não aconteceu só somaria custo fixo e
+ * mensalidade sem venda nenhuma.
+ */
 export function lerPeriodo(de: string | null | undefined, ate: string | null | undefined, hoje: string): { de: string; ate: string } {
   if (!de || !DIA_RE.test(de)) return periodoDoFinanceiro(ATALHO_PADRAO, hoje);
   let fim = ate && DIA_RE.test(ate) ? ate : de;
   let ini = de;
   if (ini > fim) [ini, fim] = [fim, ini];
+  if (fim > hoje) fim = hoje;
+  if (ini > fim) ini = fim;
   if (diasNoPeriodo(ini, fim) > MAX_DIAS_DO_FINANCEIRO) ini = somarDias(fim, -(MAX_DIAS_DO_FINANCEIRO - 1));
   return { de: ini, ate: fim };
 }
@@ -218,6 +224,8 @@ export type ResumoDasMesas = {
   gorjeta: number;
   /** As baixas das contas (a forma de pagamento da mesa mora na conta, não no pedido). */
   pagamentos: ParteDoPagamento[];
+  /** Não deu para ler as mesas (erro no servidor): o desconto e as baixas ficam de fora. */
+  erro?: string | null;
 };
 
 export type SituacaoDoCiclo = "fechado" | "pago" | "previsto" | "isento" | "teste" | "sem-cobranca";
@@ -602,6 +610,7 @@ export function calcularDRE(e: {
   const semTaxa = taxas.filter((t) => !t.configurada).map((t) => t.rotulo.toLowerCase());
   if (semTaxa.length > 0) pendencias.push(`taxa da maquininha não cadastrada (${listaPt(semTaxa)})`);
   if (entregadores.erro) pendencias.push("o custo dos entregadores não pôde ser apurado");
+  if (dados.mesas.erro) pendencias.push("as mesas fechadas não puderam ser lidas (desconto no fechamento e pagamento das mesas)");
   if (entregasSemEntregador > 0) {
     const fracao = entregasDaLoja > 0 ? entregasSemEntregador / entregasDaLoja : 0;
     const frase = `${entregasSemEntregador} ${entregasSemEntregador === 1 ? "entrega da loja ficou" : "entregas da loja ficaram"} sem entregador atribuído — o custo delas não entra aqui`;

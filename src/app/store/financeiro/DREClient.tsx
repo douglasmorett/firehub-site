@@ -161,7 +161,7 @@ export default function DREClient({
                     onChange={(e) => e.target.value && mudarPeriodo(e.target.value, periodo.ate)}
                     style={{ padding: "5px 8px", borderRadius: 8, border: `1.5px solid ${atalhoAtivo ? "#E2E8F0" : "#0F172A"}`, fontSize: "0.78rem" }} />
                   <span style={{ fontSize: "0.75rem", color: "#94A3B8" }}>até</span>
-                  <input type="date" value={periodo.ate} aria-label="Até"
+                  <input type="date" value={periodo.ate} max={hoje} aria-label="Até"
                     onChange={(e) => e.target.value && mudarPeriodo(periodo.de, e.target.value)}
                     style={{ padding: "5px 8px", borderRadius: 8, border: `1.5px solid ${atalhoAtivo ? "#E2E8F0" : "#0F172A"}`, fontSize: "0.78rem" }} />
                 </div>

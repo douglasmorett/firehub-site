@@ -47,6 +47,8 @@ async function main() {
   confere("sem período na URL = 7 dias", lerPeriodo(null, null, hoje), { de: "2026-10-05", ate: "2026-10-11" });
   confere("período invertido é desvirado", lerPeriodo("2026-10-11", "2026-10-01", hoje), { de: "2026-10-01", ate: "2026-10-11" });
   confere("período acima de 400 dias é cortado", lerPeriodo("2024-01-01", "2026-10-11", hoje).de, "2025-09-07");
+  confere("período não passa de hoje (dia futuro só somaria custo fixo)", lerPeriodo("2026-10-05", "2026-10-31", hoje), { de: "2026-10-05", ate: "2026-10-11" });
+  confere("período todo no futuro vira hoje", lerPeriodo("2026-11-01", "2026-11-05", hoje), { de: "2026-10-11", ate: "2026-10-11" });
   // O pedido das 04:30 de 11/10 (Brasília) é do expediente de 10/10: às 08:51
   // o "Hoje" antigo começava à meia-noite e mostrava a madrugada de ontem.
   confere("04:30 de 11/10 é do dia operacional 10/10", naLoja(new Date("2026-10-11T07:30:00Z"), TZ).dia, "2026-10-10");
@@ -191,6 +193,8 @@ async function main() {
   confere("crédito vendido sem taxa cadastrada: pendência", semMaquininha.pendencias, ["taxa da maquininha não cadastrada (crédito (maquininha))"]);
   const comErro = calcularDRE({ dados: { ...dados, entregadores: { ...dados.entregadores, erro: "falhou" } }, custosFixos, despesas, comissoes: { IFOOD: 20, "99FOOD": 12 }, paymentFees: feesPorBandeira });
   confere("entregadores não apurados: pendência", comErro.completo, false);
+  const semMesas = calcularDRE({ dados: { ...dados, mesas: { ...dados.mesas, erro: "falhou" } }, custosFixos, despesas, comissoes: { IFOOD: 20, "99FOOD": 12 }, paymentFees: feesPorBandeira });
+  confere("mesas não lidas: pendência (não zero calado)", semMesas.pendencias, ["as mesas fechadas não puderam ser lidas (desconto no fechamento e pagamento das mesas)"]);
   confere("comissão gravada é lida; percentual inválido descartado", lerComissoesDosApps({ faturamento: 25000, comissaoDosApps: { IFOOD: 23, "99FOOD": 120, BRENDI: "", WABIZ: "5" } }), { IFOOD: 23, WABIZ: 5 });
 
   // ── 7. CUSTOS FIXOS DA PASTEL EM 90 DIAS (E12) ──────────────────────────

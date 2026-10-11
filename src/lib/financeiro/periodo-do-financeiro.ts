@@ -277,9 +277,13 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
     filtros: { de, ate, horaDe: "", horaAte: "", tipos: [], canais: [], marcas: [], lojas: [], categorias: [], produtos: [] },
     lojaIds: [lojaId], inicio, fim,
   };
+  let erroDasMesas: string | null = null;
   const [mesasFechadas, entregadores, ciclos] = await Promise.all([
     mesasFechadasDoPeriodo(ctxDasMesas, { inicio, fim }, { comPagamentos: true }).catch((err) => {
+      // Sem as mesas, o desconto no fechamento e as baixas ficam de fora: o
+      // DRE avisa (pendência) em vez de mostrar zero como se fosse verdade.
       console.error("[Financeiro] Erro ao buscar as mesas fechadas:", err);
+      erroDasMesas = String(err?.message || err);
       return [];
     }),
     entregadoresDoPeriodo(lojaId, inicio, fim, tz),
@@ -318,6 +322,7 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
       taxaDeServico: servico.taxa,
       gorjeta: servico.gorjeta,
       pagamentos: pagamentosDasMesas,
+      erro: erroDasMesas,
     },
     ciclos,
     isenta,
