@@ -13,20 +13,27 @@
  * entrou às 18h do dia 1 e saiu às 2h do dia 2. Sem hora, o DIA é o
  * expediente, das 5h às 5h do dia seguinte (lib/fuso.ts).
  *
- * ── Cancelado com o motoboy conta ───────────────────────────────────────────
- * Pedido cancelado que estava com o entregador CONTA como entrega e soma o
- * ganho: ele saiu, e o costume é receber a corrida (o Douglas, 02/10/2026 —
- * "se ele puxou o pedido, vai ficar na conta"). O que muda é a informação:
- * vem marcado como cancelado na lista e contado em `cancelados`, para nenhum
- * dos dois lados estranhar o número. Dinheiro a prestar contas, não: ninguém
- * pagou o pedido cancelado.
+ * ── Cancelado conta se o motoboy saiu com ele ───────────────────────────────
+ * "Se ele puxou o pedido, vai ficar na conta" (o Douglas, 02/10/2026). Até
+ * 11/10/2026 isso valia para TODO cancelado com motoboy atribuído, inclusive o
+ * que nem saiu da loja — e o fechamento de caixa não contava nenhum: o mesmo
+ * entregador, no mesmo turno, com dois números (77 cancelados com motoboy em
+ * 60 dias; 57 tinham saído). Agora a regra é uma, nas duas telas
+ * (lib/resumo-do-entregador.ts, `canceladoComCorrida`): cancelado DEPOIS de
+ * sair (`dispatchedAt`) é corrida — entrega, dia e ganho —, marcado na lista;
+ * cancelado antes de sair não é corrida e aparece à parte. Dinheiro a prestar
+ * contas, nunca: ninguém pagou o pedido cancelado.
+ *
+ * ── Entrega do app não é do motoboy da loja ─────────────────────────────────
+ * O pedido que o entregador do iFood/99 levou (`ehEntregaDaLoja`, a mesma
+ * régua do fechamento de caixa) sai do acerto, mesmo com o motoboy marcado.
  */
 import { canalDoPedido, chaveDoCanal } from "@/lib/canal-do-pedido";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { ganhoDoPedido as calcularGanho, lerAcerto, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
 import { prisma } from "@/lib/prisma";
 import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, getInstantUTC } from "@/lib/timezone";
-import { resumoDasEntregas, ehCancelado, partesDaEntrega } from "@/lib/resumo-do-entregador";
+import { resumoDasEntregas, ehCancelado, partesDaEntrega, canceladoComCorrida, contaComoCorrida, ehEntregaDaLoja, composicaoDoGanho } from "@/lib/resumo-do-entregador";
 import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
@@ -118,6 +125,13 @@ export async function montarRelatorioDosEntregadores(opts: {
       openDeliveryChannel: true,
       openDeliveryOrderId: true,
       tableSessionId: true,
+      // A régua da corrida (saiu antes de cancelar?) e a de quem entregou (o
+      // entregador do app tira o pedido do acerto) — as mesmas do caixa.
+      dispatchedAt: true,
+      cancelledAt: true,
+      deliveryBy: true,
+      ifoodDriverStatus: true,
+      ifoodDriverName: true,
     },
     orderBy: { createdAt: "asc" },
   });
@@ -135,10 +149,13 @@ export async function montarRelatorioDosEntregadores(opts: {
 
   // Mapear motoboys em memória sem chamadas adicionais ao banco
   const report = motoboys.map((mb) => {
-    // Cancelado com o motoboy CONTA (entrega, dia e ganho) — ver o cabeçalho.
-    // Só não entra no dinheiro a prestar contas, logo abaixo.
-    const orders = ordersByMotoboy[mb.id] || [];
-    const cancelados = orders.filter((o) => ehCancelado(o.status));
+    // O que o entregador do APP levou sai do acerto (ver o cabeçalho).
+    const marcados = ordersByMotoboy[mb.id] || [];
+    const doApp = marcados.filter((o) => !ehEntregaDaLoja(o));
+    const orders = marcados.filter((o) => ehEntregaDaLoja(o));
+    // Cancelado DEPOIS de sair conta (entrega, dia e ganho); antes, não.
+    const cancelados = orders.filter((o) => canceladoComCorrida(o));
+    const canceladosSemCorrida = orders.filter((o) => ehCancelado(o.status) && !canceladoComCorrida(o));
 
     // Só vale o que o TIPO escolhido usa — a regra mora em
     // lib/ganho-do-entregador.ts, junto com a conta que a usa.
@@ -170,10 +187,18 @@ export async function montarRelatorioDosEntregadores(opts: {
         ehMarketplace: canalDoPedido(o).ehMarketplace,
       });
 
-    const ganhos = orders.map((o) => ({ pedido: o, ...ganhoDoPedido(o) }));
-    const quantosDe = (origem: OrigemDoGanho) => ganhos.filter((g) => g.origem === origem).length;
-    /** Caiu mesmo na taxa do cliente — não é suposição pela configuração. */
-    const usandoTaxaDoCliente = quantosDe("TAXA_DO_CLIENTE") > 0;
+    // O ganho só existe na corrida: o cancelado antes de sair rende zero.
+    const ganhos = orders.map((o) => {
+      const g = ganhoDoPedido(o);
+      return { pedido: o, origem: g.origem, valor: contaComoCorrida(o) ? g.valor : 0 };
+    });
+    const quantosDe = (origem: OrigemDoGanho) => ganhos.filter((g) => g.origem === origem && contaComoCorrida(g.pedido)).length;
+    /**
+     * Caiu mesmo na taxa do cliente — não é suposição pela configuração. No
+     * "Diária + Taxa do Pedido" (DAILY_PLUS_FEE) a taxa do pedido É o combinado:
+     * o aviso "não tem valor por entrega cadastrado" ali era falso.
+     */
+    const usandoTaxaDoCliente = tipo !== "DAILY_PLUS_FEE" && quantosDe("TAXA_DO_CLIENTE") > 0;
     /** Entregas que a escada/km não conseguiu precificar por falta de distância. */
     const entregasSemDistancia = quantosDe("SEM_DISTANCIA");
 
@@ -215,6 +240,8 @@ export async function montarRelatorioDosEntregadores(opts: {
         totalWithDaily,
         totalFeeOnly,
       },
+      // As canceladas DEPOIS de sair (a corrida conta). O app do motoboy lê
+      // este campo e diz "a corrida conta" — por isso só elas.
       cancelados: {
         qtd: cancelados.length,
         lista: cancelados.map((o) => ({
@@ -227,6 +254,21 @@ export async function montarRelatorioDosEntregadores(opts: {
           totalAmount: o.totalAmount,
         })),
       },
+      /** Canceladas antes de sair: não são corrida. */
+      canceladosSemCorrida: {
+        qtd: canceladosSemCorrida.length,
+        lista: canceladosSemCorrida.map((o) => ({
+          id: o.id, createdAt: o.createdAt, dailyOrderNumber: o.dailyOrderNumber, ifoodReference: o.ifoodReference,
+          openDeliveryReference: o.openDeliveryReference, customerName: o.customerName, totalAmount: o.totalAmount,
+        })),
+      },
+      /** Marcadas com ele, mas levadas pelo entregador do app: fora do acerto. */
+      entregasDoApp: {
+        qtd: doApp.length,
+        lista: doApp.map((o) => ({ id: o.id, createdAt: o.createdAt, dailyOrderNumber: o.dailyOrderNumber, ifoodReference: o.ifoodReference, openDeliveryReference: o.openDeliveryReference, totalAmount: o.totalAmount })),
+      },
+      /** A composição do pagamento por ORIGEM do valor (a tela monta as linhas daqui). */
+      composicao: composicaoDoGanho(ganhos.map((g) => ({ origemDoGanho: g.origem, ganhoDoMotoboy: g.valor, deliveryDistance: g.pedido.deliveryDistance, corrida: contaComoCorrida(g.pedido) }))),
       orders: orders.map(o => {
         // O dinheiro desta entrega pelas MESMAS partes que somam o quadrado
         // (a régua do caixa) — no pagamento dividido, só a parte em dinheiro.
@@ -245,7 +287,7 @@ export async function montarRelatorioDosEntregadores(opts: {
           // soma o total. É o que faz a lista detalhada bater com o valor a
           // pagar — antes ela mostrava a taxa que o cliente pagou ao
           // marketplace, que não tem relação com o acerto da loja.
-          ganhoDoMotoboy: Math.round(ganhoDoPedido(o).valor * 100) / 100,
+          ganhoDoMotoboy: contaComoCorrida(o) ? Math.round(ganhoDoPedido(o).valor * 100) / 100 : 0,
           // De onde saiu esse valor: a linha da lista pode dizer "faixa de
           // 4 km" ou "sem distância" em vez de deixar o lojista adivinhar.
           origemDoGanho: ganhoDoPedido(o).origem,
@@ -284,8 +326,12 @@ export async function montarRelatorioDosEntregadores(opts: {
           /** O "Ver pedido" (janela na própria tela) lista o que foi mexido. */
           editHistory: o.editHistory,
           status: o.status,
-          /** Conta na corrida, sai do dinheiro — as telas marcam "CANCELADO". */
+          /** Sai do dinheiro — as telas marcam "CANCELADO". */
           cancelado,
+          /** É corrida (não cancelada, ou cancelada depois de sair): conta entrega, dia e ganho. */
+          corrida: contaComoCorrida(o),
+          dispatchedAt: o.dispatchedAt,
+          cancelledAt: o.cancelledAt,
           notes: o.notes,
           items: o.items,
           dailyOrderNumber: o.dailyOrderNumber,

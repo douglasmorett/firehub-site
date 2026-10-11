@@ -26,6 +26,7 @@ import { temEstruturaDeCaixa } from "@/lib/garantir-colunas";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { ganhoDoPedido, lerAcerto } from "@/lib/ganho-do-entregador";
+import { canceladoComCorrida, ehEntregaDaLoja } from "@/lib/resumo-do-entregador";
 // A apuração das vendas (forma de cada venda, conferência e retrato por forma,
 // canal e TIPO) é pura e mora em lib/apuracao-do-turno.ts, para o teste
 // provar a conta sem banco (scripts/teste-caixa-por-tipo.ts). Aqui fica o que
@@ -81,6 +82,9 @@ export async function calcularEsperadoDoTurno(
   let cancelados: DetalheDoTurno["cancelados"] = { qtd: 0, valor: 0, lista: [] };
   let itensCancelados: NonNullable<DetalheDoTurno["itensCancelados"]> = [];
   let entregadores: DetalheDoTurno["entregadores"] = [];
+  // As entregas canceladas DEPOIS de o motoboy sair: são corrida (a régua do
+  // acerto, lib/resumo-do-entregador.ts) e vão para o "a pagar" do papel.
+  let corridasCanceladas: { motoboyId: string; pedido: { motoboyFee: number | null; deliveryFee: number | null; deliveryDistance: number | null }; ehMarketplace: boolean }[] = [];
   let maisVendidos: ParteDoRetrato[] = [];
 
   const orders = await prisma.customerOrder.findMany({
@@ -195,9 +199,19 @@ export async function calcularEsperadoDoTurno(
     const lista = await prisma.customerOrder.findMany({
       where: { franchiseeId: targetId, status: "CANCELADO", createdAt: janela },
       select: { createdAt: true, dailyOrderNumber: true, totalAmount: true, cancelReason: true, cancelledBy: true, editHistory: true,
-        source: true, openDeliveryChannel: true, ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true, tableSessionId: true },
+        source: true, openDeliveryChannel: true, ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true, tableSessionId: true,
+        // A corrida do cancelado: com motoboy da loja e saído antes de cancelar.
+        status: true, deliveryType: true, motoboyId: true, dispatchedAt: true, cancelledAt: true, deliveryBy: true, ifoodDriverStatus: true, ifoodDriverName: true,
+        motoboyFee: true, deliveryFee: true, deliveryDistance: true },
       orderBy: { createdAt: "asc" },
     });
+    corridasCanceladas = lista
+      .filter((o) => o.motoboyId && o.deliveryType === "DELIVERY" && canceladoComCorrida(o) && ehEntregaDaLoja(o))
+      .map((o) => ({
+        motoboyId: o.motoboyId as string,
+        pedido: { motoboyFee: o.motoboyFee ?? null, deliveryFee: o.deliveryFee ?? null, deliveryDistance: o.deliveryDistance ?? null },
+        ehMarketplace: canalDoPedido(o as any).ehMarketplace,
+      }));
     cancelados = {
       qtd: lista.length,
       valor: centavos(lista.reduce((s, o) => s + (o.totalAmount || 0), 0)),
@@ -265,9 +279,9 @@ export async function calcularEsperadoDoTurno(
   // contas) e quanto a loja deve a ele. A taxa de cada entrega sai de
   // lib/ganho-do-entregador.ts — a MESMA conta do relatório de entregadores
   // e do cartão "Hoje" da lista, para o papel nunca discordar da tela.
-  if (opcoes.retrato && entregasProprias.length > 0) {
+  if (opcoes.retrato && (entregasProprias.length > 0 || corridasCanceladas.length > 0)) {
     try {
-      const ids = [...new Set(entregasProprias.map((e) => e.motoboyId))];
+      const ids = [...new Set([...entregasProprias, ...corridasCanceladas].map((e) => e.motoboyId))];
       const [motoboys, loja] = await Promise.all([
         prisma.motoboy.findMany({
           where: { id: { in: ids }, franchiseeId: targetId },
@@ -283,9 +297,12 @@ export async function calcularEsperadoDoTurno(
         const atual = acumulado.get(e.motoboyId) || {
           nome: mb?.name || "Entregador removido",
           entregas: 0, dinheiro: 0, cartao: 0, pix: 0, online: 0, outros: 0,
-          taxas: 0, diaria: 0, semDistancia: 0, pelaTaxaDoCliente: 0,
+          taxas: 0, diaria: 0, semDistancia: 0, pelaTaxaDoCliente: 0, trocoLevado: 0, canceladasComCorrida: 0,
         };
         atual.entregas += 1;
+        // O troco que ele levou da loja para a nota do cliente: volta junto
+        // com o dinheiro (o acerto mostra o mesmo, pedido a pedido).
+        atual.trocoLevado = (atual.trocoLevado || 0) + (e.trocoLevado || 0);
         for (const f of e.formas) {
           if (f.forma === "Dinheiro") atual.dinheiro += f.valor;
           else if (f.forma === "Debito" || f.forma === "Credito" || f.forma === "Vale-refeicao") atual.cartao += f.valor;
@@ -304,11 +321,35 @@ export async function calcularEsperadoDoTurno(
         }
         acumulado.set(e.motoboyId, atual);
       }
+      // ── O CANCELADO DEPOIS DE SAIR É CORRIDA ──────────────────────────
+      // Até 11/10/2026 o papel não contava nenhum cancelado e o acerto contava
+      // todos: o mesmo motoboy com dois números. A regra é a do acerto
+      // (canceladoComCorrida): saiu antes de cancelar → conta entrega e taxa,
+      // sem dinheiro.
+      for (const e of corridasCanceladas) {
+        const mb = porId.get(e.motoboyId);
+        const atual = acumulado.get(e.motoboyId) || {
+          nome: mb?.name || "Entregador removido",
+          entregas: 0, dinheiro: 0, cartao: 0, pix: 0, online: 0, outros: 0,
+          taxas: 0, diaria: 0, semDistancia: 0, pelaTaxaDoCliente: 0, trocoLevado: 0, canceladasComCorrida: 0,
+        };
+        atual.entregas += 1;
+        atual.canceladasComCorrida = (atual.canceladasComCorrida || 0) + 1;
+        if (mb) {
+          const acerto = lerAcerto(mb as any);
+          const g = ganhoDoPedido({ acerto, pedido: e.pedido, regraDaLoja, zonas: loja?.deliveryZones, ehMarketplace: e.ehMarketplace });
+          atual.taxas += g.valor;
+          if (g.origem === "SEM_DISTANCIA") atual.semDistancia += 1;
+          if (g.origem === "TAXA_DO_CLIENTE") atual.pelaTaxaDoCliente += 1;
+          atual.diaria = acerto.dailyRate;
+        }
+        acumulado.set(e.motoboyId, atual);
+      }
       entregadores = [...acumulado.values()]
         .map((m) => ({
           ...m,
           dinheiro: centavos(m.dinheiro), cartao: centavos(m.cartao), pix: centavos(m.pix),
-          online: centavos(m.online), outros: centavos(m.outros), taxas: centavos(m.taxas),
+          online: centavos(m.online), outros: centavos(m.outros), taxas: centavos(m.taxas), trocoLevado: centavos(m.trocoLevado || 0),
         }))
         .sort((a, b) => b.entregas - a.entregas);
     } catch (e: any) {

@@ -99,6 +99,11 @@ const pedidos: any[] = [
   { ...base, dailyOrderNumber: 14, createdAt: h("20:10"), status: "ENTREGUE", source: "PRESENCIAL", deliveryType: "MESA", tableSessionId: "mesa-7", paymentMethod: "N/A", totalAmount: 100, items: [item(50, 2)] },
   // 15. Mesa ainda aberta.
   { ...base, dailyOrderNumber: 15, createdAt: h("21:30"), status: "EM_PREPARO", source: "PRESENCIAL", deliveryType: "MESA", tableSessionId: "mesa-9", paymentMethod: "N/A", totalAmount: 30, items: [item(30)] },
+  // 16. Site, entrega com o Carlos, cancelada DEPOIS de ele sair (o cliente
+  //     desistiu na porta): a corrida conta no papel, o dinheiro não.
+  { ...base, dailyOrderNumber: 16, createdAt: h("21:00"), status: "CANCELADO", source: "ONLINE", deliveryType: "DELIVERY", paymentMethod: "Dinheiro",
+    totalAmount: 40, deliveryFee: 6, items: [item(34)], motoboyId: "mb1", deliveryBy: "MERCHANT", deliveryDistance: 1.8,
+    dispatchedAt: h("21:05"), cancelledAt: h("21:20"), cancelledBy: "CUSTOMER", cancelReason: "Desistiu na porta" },
 ];
 
 const mesas: (MesaDoTurno & { id: string; closedAt: Date })[] = [
@@ -255,8 +260,11 @@ async function provarConferencia() {
   exigir("vendas em dinheiro da gaveta = 162,85 (sem o troco da mesa)", igual(n.detalhe.gaveta.vendasEmDinheiro, 162.85), n.detalhe.gaveta);
   exigir("o Dinheiro do faturamento é o mesmo da gaveta", igual(n.detalhe.porForma.find((f: any) => f.nome === "Dinheiro")?.valor || 0, n.detalhe.gaveta.vendasEmDinheiro));
   exigir("troco das mesas à vista no retrato (1 conta, R$ 30,05)", igual(n.detalhe.mesas.troco || 0, 30.05) && n.detalhe.mesas.trocoQtd === 1);
-  exigir("cancelados (1, R$ 70)", n.detalhe.cancelados.qtd === 1 && igual(n.detalhe.cancelados.valor, 70));
-  exigir("entregadores: Carlos com 2 entregas da loja", n.detalhe.entregadores.length === 1 && n.detalhe.entregadores[0].entregas === 2, n.detalhe.entregadores);
+  exigir("cancelados (2, R$ 110)", n.detalhe.cancelados.qtd === 2 && igual(n.detalhe.cancelados.valor, 110));
+  // O acerto e o papel com a mesma régua: a cancelada depois de sair é corrida.
+  const carlos = n.detalhe.entregadores[0];
+  exigir("entregadores: Carlos com 3 corridas (2 entregas + 1 cancelada depois de sair)", n.detalhe.entregadores.length === 1 && carlos.entregas === 3 && carlos.canceladasComCorrida === 1, n.detalhe.entregadores);
+  exigir("entregadores: dinheiro 57,90 + troco levado 42,10 (nota de 100)", igual(carlos.dinheiro, 57.9) && igual(carlos.trocoLevado || 0, 42.1), carlos);
   return n;
 }
 
@@ -332,6 +340,8 @@ const colunas = Number(process.argv[2] || 48);
   exigir("papel: a gaveta diz que as vendas em dinheiro já vêm sem o troco da mesa", /sem os R\$ 30,05 de troco das mesas \(1\)/.test(corrido));
   exigir("papel: não há mais a linha '+ Troco das mesas' (que virava falta)", !/\+ Troco das mesas/.test(saida));
   exigir("papel: conferência continua (DIFERENCA)", /DIFERENCA/.test(saida));
+  exigir("papel: o motoboy entrega pedidos + troco levado (a conta do acerto)", /- Dinheiro a entregar R\$ 100,00 pedidos R\$ 57,90 \+ troco levado R\$ 42,10/.test(corrido));
+  exigir("papel: a cancelada depois de sair aparece no entregador", /Inclui 1 cancelada depois de sair/.test(corrido));
   // A gaveta continua fechando com o esperado gravado.
   exigir("papel: as parcelas da gaveta somam o dinheiro esperado (sem aviso)", !/as parcelas acima somam/.test(saida));
 

@@ -192,6 +192,10 @@ export type DetalheDoTurno = {
     diaria: number;
     semDistancia: number;
     pelaTaxaDoCliente: number;
+    /** O troco que ele levou da loja para a nota do cliente — volta junto com o dinheiro. Ausente no papel antigo. */
+    trocoLevado?: number;
+    /** Das entregas, as canceladas depois de ele sair (a corrida conta, o dinheiro não). */
+    canceladasComCorrida?: number;
   }[];
   entregaParceira: { qtd: number; valor: number };
   semEntregador: { qtd: number; valor: number };
@@ -930,7 +934,17 @@ function relatorioDoFechamento(
       // os pedidos que ele levou, de todas as formas — as linhas abaixo abrem.
       const valorDosPedidos = m.dinheiro + m.cartao + m.pix + m.online + m.outros;
       linha(`${m.nome} (${vezes(m.entregas, "entrega", "entregas")})`, reais(valorDosPedidos), "valor dos pedidos");
-      if (m.dinheiro > 0.01) linha("- Dinheiro recebido", reais(m.dinheiro), "prestar contas no caixa");
+      if ((m.canceladasComCorrida || 0) > 0) texto(`Inclui ${vezes(m.canceladasComCorrida || 0, "cancelada", "canceladas")} depois de sair: a corrida conta, o dinheiro nao.`);
+      // "Pedidos R$ X + troco levado R$ Y = entregar R$ Z" — a mesma conta do
+      // acerto do motoboy. O papel dizia só o valor dos pedidos ("Dinheiro
+      // recebido R$ 84,95") e o acerto, a nota com o troco (R$ 170,00): o
+      // mesmo Marlon com dois números.
+      const troco = m.trocoLevado || 0;
+      if (m.dinheiro > 0.01 && troco > 0.005) {
+        linha("- Dinheiro a entregar", reais(m.dinheiro + troco), `pedidos ${reais(m.dinheiro)} + troco levado ${reais(troco)}`);
+      } else if (m.dinheiro > 0.01) {
+        linha("- Dinheiro a entregar", reais(m.dinheiro), "pedidos em dinheiro; prestar contas no caixa");
+      }
       if (m.cartao > 0.01) linha("- Cartao na maquininha", reais(m.cartao));
       if (m.pix > 0.01) linha("- Pix", reais(m.pix));
       if (m.online > 0.01) linha("- Ja pago online", reais(m.online));
