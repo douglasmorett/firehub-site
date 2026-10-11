@@ -25,6 +25,7 @@ import { useRouter } from "next/navigation";
 import { markPayableAsPaid, deletePayable, setPayableCategory } from "@/app/actions/finance";
 import FinanceForm from "@/components/FinanceForm";
 import { categoriaDaConta, sugestoesComAsDaLoja, CATEGORIA_MAX } from "@/lib/categoria-da-conta";
+import { dataDaLoja } from "@/lib/fuso";
 
 /** Filtro "sem categoria": as contas antigas e as lançadas sem escolher uma. */
 const SEM_CATEGORIA = "__sem_categoria__";
@@ -55,7 +56,7 @@ const fmtData = (iso: string) => {
 const diasEntre = (a: string, b: string) =>
   Math.round((Date.parse(b + "T12:00:00") - Date.parse(a + "T12:00:00")) / 86400000);
 
-export default function ContasAPagarClient({ payables }: { payables: PayableDTO[] }) {
+export default function ContasAPagarClient({ payables, fuso }: { payables: PayableDTO[]; fuso?: string | null }) {
   const router = useRouter();
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [mostrarForm, setMostrarForm] = useState(false);
@@ -83,7 +84,8 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
     [payables, filtroValido],
   );
 
-  const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+  // "Hoje" no fuso DA LOJA (User.storeTimezone), não fixo em São Paulo.
+  const hoje = dataDaLoja(fuso);
 
   const { atrasadas, hojeLista, futuras, pagas, totalAberto } = useMemo(() => {
     const pend = visiveis.filter((p) => p.status === "PENDING");
@@ -378,7 +380,7 @@ export default function ContasAPagarClient({ payables }: { payables: PayableDTO[
 
         {mostrarForm && (
           <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid #F1F5F9" }}>
-            <FinanceForm category="BUSINESS" categorias={sugestoes} onSaved={() => { setMostrarForm(false); router.refresh(); }} />
+            <FinanceForm category="BUSINESS" categorias={sugestoes} fuso={fuso} onSaved={() => { setMostrarForm(false); router.refresh(); }} />
           </div>
         )}
       </div>

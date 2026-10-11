@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import DREClient from "./DREClient";
 import { garantirEstruturaDeDespesas } from "@/lib/garantir-colunas";
+import { dataDaLoja } from "@/lib/fuso";
+import { fusoDaLoja } from "@/lib/fuso-da-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -131,6 +133,10 @@ export default async function StoreFinanceiroPage() {
     console.error("[Financeiro] Erro ao buscar contas a pagar:", err);
   }
 
+  // O "pago em" é o INSTANTE do clique em "Já paguei" e vira dia no fuso da
+  // LOJA. Recortado em UTC, a conta paga em 06/10 às 23:05 aparecia "Pago em
+  // 07/10" (auditoria de 11/10/2026, Ragnar).
+  const fuso = await fusoDaLoja(targetFranchiseeId);
   const payablesSerialized = payables.map((p) => ({
     id: p.id,
     supplierName: p.supplierName,
@@ -141,7 +147,7 @@ export default async function StoreFinanceiroPage() {
     barcode: p.barcode || null,
     dueDate: p.dueDate.toISOString().slice(0, 10),
     receivedDate: p.receivedDate ? p.receivedDate.toISOString().slice(0, 10) : null,
-    paidDate: p.paidDate ? p.paidDate.toISOString().slice(0, 10) : null,
+    paidDate: p.paidDate ? dataDaLoja(fuso, p.paidDate) : null,
   }));
 
   // ── DESPESAS LANÇADAS À MÃO ───────────────────────────────────────────────

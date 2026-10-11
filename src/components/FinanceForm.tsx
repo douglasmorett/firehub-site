@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import { createPayable } from "@/app/actions/finance";
+import { dataDaLoja } from "@/lib/fuso";
 import BarcodeScanner from "./BarcodeScanner";
 import { Camera, ScanLine, Loader2, FileText, PenLine, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -32,11 +33,13 @@ const emReais = (n: number) => n.toFixed(2).replace(".", ",");
  * "registrada com sucesso" e a lista continuava a mesma até um F5 — que era
  * exatamente a impressão de que o lançamento não tinha funcionado.
  */
-export default function FinanceForm({ category = "BUSINESS", categorias, onSaved }: {
+export default function FinanceForm({ category = "BUSINESS", categorias, onSaved, fuso }: {
   category?: string;
   /** Sugestões do campo Categoria; sem elas o campo não aparece. */
   categorias?: string[];
   onSaved?: () => void;
+  /** Fuso da loja (User.storeTimezone); sem ele, Brasília. */
+  fuso?: string | null;
 }) {
   const [categoria, setCategoria] = useState("");
   const [loading, setLoading] = useState(false);
@@ -160,7 +163,9 @@ export default function FinanceForm({ category = "BUSINESS", categorias, onSaved
     }
   };
 
-  const todayStr = new Date().toISOString().split("T")[0];
+  // Hoje NO FUSO DA LOJA. `toISOString()` é o dia em UTC: das 21h à meia-noite
+  // de Brasília o exemplo já mostrava o dia seguinte.
+  const todayStr = dataDaLoja(fuso);
 
   return (
     <>
