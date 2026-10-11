@@ -55,7 +55,7 @@ const FICHAS: Record<string, Linha[]> = {
   "Esfirra Duo": [MASSA, ["Chocolate branco", 13], ["Chocolate ao leite", 13]],
   "Esfirra de Nutella": [MASSA, ["Nutella", 25]],
   "Esfirra de Romeu e Julieta": [MASSA, ["Mussarela", 20], ["Goiabada", 10]],
-  "Esfirra de Banana Nevada": [MASSA, ["Banana", 0.5], ["Chocolate branco", 20]],
+  "Esfirra de Banana Nevada": [MASSA, ["Banana", 0.5], ["Chocolate branco", 25]], // 25 g por cima da banana (Douglas, 11/10/2026)
   // EM ABERTO: 20 g ou 25 g de chocolate? 8 M&M's ≈ 7 g.
   "Esfirra de M&M": [MASSA, ["Chocolate ao leite", 20], ["M&M's", 7]],
   "Esfirra de Kitkat": [MASSA, ["Chocolate ao leite", 20], ["Kit Kat (barra de 4 palitos)", 0.25]],
