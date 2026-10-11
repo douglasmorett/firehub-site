@@ -130,7 +130,9 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
                       ? <>Vence em <strong>{diaEMes(f.venceEm)}</strong> ({dias === 1 ? "falta 1 dia" : `faltam ${dias} dias`}).</>
                       : dias === 0
                         ? <>Vence <strong>hoje ({diaEMes(f.venceEm)})</strong>.</>
-                        : <>Venceu em <strong>{diaEMes(f.venceEm)}</strong> e já está com juros e multa. O sistema bloqueia depois de {new Date(f.bloqueiaEm).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}.</>}
+                        // `bloqueiaEm` é o INSTANTE da trava (00h do dia 11): o último dia
+                        // de uso é o anterior a ele.
+                        : <>Venceu em <strong>{diaEMes(f.venceEm)}</strong> e já está com juros e multa. Sem o pagamento, o sistema trava depois do dia {new Date(new Date(f.bloqueiaEm).getTime() - 1).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo" })}.</>}
                   </div>
                 </div>
                 {f.boletoUrl ? (
