@@ -20,6 +20,10 @@ import { useFiltros, useOpcoesDosFiltros, useRelatorio, type InicioDosFiltros } 
 type Resposta = {
   lojas: string[];
   periodo: { de: string; ate: string };
+  /** Vendas = atendimentos (lib/relatorios/regua-da-venda.ts): a mesa conta uma vez. */
+  vendas?: number;
+  /** Os pedidos lançados (cada rodada de mesa é um). */
+  lancamentos?: number;
   pedidos: number;
   linhas: number;
   itens: NoDaArvore[];
@@ -130,7 +134,12 @@ export default function ItensVendidosClient({ inicio }: { inicio: InicioDosFiltr
             detalhe={`${produtos} produto${produtos === 1 ? "" : "s"} diferente${produtos === 1 ? "" : "s"}`
               + (apenasProdutos && (dados.dentroDeOutros || 0) > 0 ? ` · ${fmtQtd(dados.dentroDeOutros || 0)} escolhido${dados.dentroDeOutros === 1 ? "" : "s"} dentro de combos` : "")} />
           <Cartao rotulo="Total dos itens" valor={fmtReais(dados.total.valor)} detalhe="Produtos + opções, sem taxa de entrega e sem desconto" />
-          <Cartao rotulo="Pedidos" valor={dados.pedidos.toLocaleString("pt-BR")} detalhe="Cancelados não entram" />
+          {/* Vendas = atendimentos, o mesmo número do Vendas por período: a mesa de três
+              rodadas é uma venda e três lançamentos (lib/relatorios/regua-da-venda.ts). */}
+          <Cartao rotulo="Vendas" valor={(dados.vendas ?? dados.pedidos).toLocaleString("pt-BR")}
+            detalhe={(dados.lancamentos ?? dados.pedidos) !== (dados.vendas ?? dados.pedidos)
+              ? `${(dados.lancamentos ?? dados.pedidos).toLocaleString("pt-BR")} lançamentos (cada rodada de mesa é um) · cancelados não entram`
+              : "Cancelados não entram"} />
         </GradeDeCartoes>
       )}
 
