@@ -73,6 +73,13 @@ const CONTA_NAO_PRONTA: Record<string, string> = {
  */
 function erroDaMetaEmPortugues(mensagemTecnica: string): string {
   const t = mensagemTecnica.toLowerCase();
+  // (#3) é o APP sem permissão para a chamada — vem antes do teste de "imagem"
+  // porque a falha do /adimages chega embrulhada em "A Meta não aceitou a
+  // imagem…" e virava "envie outra foto" (11/10/2026, Hakim Centro): o
+  // lojista trocaria de foto para sempre sem nada mudar.
+  if (t.includes("(#3)") || t.includes("does not have the capability")) {
+    return "O Facebook ainda não liberou a criação de anúncios pelo FireHub. Não é a sua foto nem a sua conta — fale com o suporte do FireHub. Nada foi criado nem cobrado.";
+  }
   if (t.includes("imagem")) {
     return "O Facebook não aceitou a foto do anúncio. Envie outra imagem (JPG ou PNG, boa resolução) e tente de novo. Nada foi cobrado.";
   }
