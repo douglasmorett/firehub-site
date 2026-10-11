@@ -22,6 +22,9 @@ import {
 } from "@/lib/cmv/cmv-real";
 import { cmoDoPeriodo, ehMaoDeObra, type CmoDoPeriodo } from "@/lib/cmv/cmo";
 import { NOMES_DOS_DIAS_DA_SEMANA, lerSemanaDoCmv, type SemanaDoCmv } from "@/lib/cmv/semana-do-cmv";
+import { entradasComCusto, insumosParaCusto } from "@/lib/cmv/contagem-no-banco";
+import { custosNoDia } from "@/lib/cmv/custo-do-insumo";
+import { lerComissoesDosApps } from "@/lib/financeiro/dre";
 
 export { segundaDaSemana } from "@/lib/cmv/cmv-real";
 
@@ -30,6 +33,21 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
 const pct = (parte: number, todo: number) => (todo > 0 ? r1((parte / todo) * 100) : null);
 
 export type Aviso = { tipo: "erro" | "atencao" | "info"; texto: string };
+
+/**
+ * O que falta preencher para os números da loja serem reais. A tela mostra no
+ * topo, com o botão que leva direto ao lugar de preencher.
+ */
+export type Pendencia = {
+  chave: string;
+  ok: boolean;
+  titulo: string;
+  detalhe: string;
+  /** Tela para abrir, ou aba desta tela. */
+  href?: string;
+  aba?: "equipe" | "custofixo" | "metas";
+  rotulo: string;
+};
 
 export type Painel = {
   loja: string;
@@ -55,6 +73,7 @@ export type Painel = {
   perdas: { valor: number; itens: { nome: string; unidade: string; quantidade: number; valor: number }[] };
   contagens: { ultima: { dia: string; tipo: string } | null; total: number; marcadosNoDia: number };
   avisos: Aviso[];
+  pendencias: Pendencia[];
 };
 
 export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: string; goals: unknown; hoje: string; de: string; ate: string }): Promise<Painel> {
@@ -236,6 +255,10 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
   }
 
   const ultima = contagens.length ? contagens[contagens.length - 1] : null;
+  const pendencias = await pendenciasDaLoja({
+    lojaId, tz, hoje: e.hoje, goals: e.goals, semana, contagens, marcadosNoDia, pessoas: pessoas.length,
+    inicioDoPeriodo: t0, fimDoPeriodo: t1,
+  });
   return {
     loja: e.nomeDaLoja,
     hoje: e.hoje,
@@ -263,7 +286,96 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
     perdas: { valor: r2(perdasItens.reduce((s, p) => s + p.valor, 0)), itens: perdasItens.slice(0, 10) },
     contagens: { ultima: ultima ? { dia: ultima.dia, tipo: ultima.tipo } : null, total: contagens.length, marcadosNoDia },
     avisos,
+    pendencias,
   };
+}
+
+async function pendenciasDaLoja(e: {
+  lojaId: string; tz: string; hoje: string; goals: unknown; semana: SemanaDoCmv; contagens: ContagemFechada[];
+  marcadosNoDia: number; pessoas: number; inicioDoPeriodo: Date; fimDoPeriodo: Date;
+}): Promise<Pendencia[]> {
+  const { lojaId, hoje } = e;
+  const nomeDoDia = NOMES_DOS_DIAS_DA_SEMANA[e.semana.diaDaContagem];
+  const lista = (nomes: string[], n = 4) => nomes.slice(0, n).join(", ") + (nomes.length > n ? ` e mais ${nomes.length - n}` : "");
+
+  const [loja, comprasRecentes, produtos, pedidosDeApp, insumos, entradas] = await Promise.all([
+    prisma.user.findUnique({ where: { id: lojaId }, select: { fixedCosts: true } }),
+    prisma.stockInvoice.count({ where: { franchiseeId: lojaId, canceladaEm: null, dia: { gte: somarDias(hoje, -7) } } }),
+    prisma.menuProduct.findMany({
+      where: { franchiseeId: lojaId, active: true, isCombo: false, recipeItems: { none: {} } },
+      select: { name: true }, orderBy: { name: "asc" }, take: 200,
+    }),
+    prisma.customerOrder.count({
+      where: { franchiseeId: lojaId, createdAt: { gte: e.inicioDoPeriodo, lt: e.fimDoPeriodo }, OR: [{ ifoodOrderId: { not: null } }, { openDeliveryOrderId: { not: null } }] },
+    }),
+    insumosParaCusto(lojaId),
+    entradasComCusto(lojaId, e.tz),
+  ]);
+
+  const custos = custosNoDia(insumos, entradas, hoje);
+  const semCusto = insumos.filter((i) => i.entraNoCmv && custos.get(i.id)?.custo == null).map((i) => i.nome);
+  const ultimaCompleta = [...e.contagens].reverse().find((c) => c.tipo === "COMPLETA");
+  const contouOntem = e.contagens.some((c) => c.dia >= somarDias(hoje, -1));
+  const fixos = Array.isArray(loja?.fixedCosts) ? (loja!.fixedCosts as any[]).length : 0;
+  const comissoes = Object.keys(lerComissoesDosApps(e.goals)).length;
+  const goals = e.goals && typeof e.goals === "object" ? (e.goals as Record<string, unknown>) : {};
+
+  return [
+    {
+      chave: "completa", ok: Boolean(ultimaCompleta && ultimaCompleta.dia >= somarDias(hoje, -8)),
+      titulo: `Contagem completa (toda ${nomeDoDia})`,
+      detalhe: ultimaCompleta ? `Última em ${br(ultimaCompleta.dia)}.` : "Ainda não foi feita: é o estoque que abre e fecha a semana do CMV.",
+      href: "/store/estoque/contagem", rotulo: "Contar",
+    },
+    {
+      chave: "diaria", ok: e.marcadosNoDia > 0 && contouOntem,
+      titulo: "Contagem do fim do dia",
+      detalhe: e.marcadosNoDia === 0 ? "Nenhum insumo marcado para contar todo dia." : contouOntem ? `${e.marcadosNoDia} itens no fechamento de cada dia.` : `${e.marcadosNoDia} itens marcados, mas ontem não teve contagem: o ponteiro só anda com ela.`,
+      href: "/store/estoque/contagem", rotulo: "Contar",
+    },
+    {
+      chave: "compras", ok: comprasRecentes > 0,
+      titulo: "Compras lançadas",
+      detalhe: comprasRecentes > 0 ? `${comprasRecentes} compra(s) nos últimos 7 dias.` : "Nenhuma compra lançada nos últimos 7 dias. Sem compra, o CMV sai menor do que é.",
+      href: "/store/estoque/compras", rotulo: "Lançar",
+    },
+    {
+      chave: "custos", ok: semCusto.length === 0,
+      titulo: "Custo de cada insumo",
+      detalhe: semCusto.length === 0 ? "Todos os insumos têm custo." : `${semCusto.length} sem custo (entram com R$ 0 na contagem): ${lista(semCusto)}. Lance uma compra deles.`,
+      href: "/store/estoque/compras", rotulo: "Lançar compra",
+    },
+    {
+      chave: "fichas", ok: produtos.length === 0,
+      titulo: "Ficha técnica dos produtos",
+      detalhe: produtos.length === 0 ? "Todos os produtos têm ficha." : `${produtos.length} produto(s) sem ficha: ${lista(produtos.map((p) => p.name))}. A ficha não muda o CMV real; ela mostra onde está a perda.`,
+      href: "/store/estoque", rotulo: "Fichas",
+    },
+    {
+      chave: "equipe", ok: e.pessoas > 0,
+      titulo: "Equipe (CMO)",
+      detalhe: e.pessoas > 0 ? `${e.pessoas} pessoa(s) na folha.` : "Ninguém cadastrado: sem isso não há CMO.",
+      aba: "equipe", rotulo: "Cadastrar",
+    },
+    {
+      chave: "custofixo", ok: fixos > 0,
+      titulo: "Custos fixos",
+      detalhe: fixos > 0 ? `${fixos} custo(s) fixo(s) lançado(s).` : "Aluguel, energia, gás, internet, contador: sem eles não dá para saber o lucro.",
+      aba: "custofixo", rotulo: "Lançar",
+    },
+    ...(pedidosDeApp > 0 ? [{
+      chave: "comissao", ok: comissoes > 0,
+      titulo: "Comissão dos apps",
+      detalhe: comissoes > 0 ? "Comissão dos apps cadastrada." : "Tem venda de iFood/99 no período e a comissão (com taxas e antecipação) não está cadastrada.",
+      href: "/store/financeiro?tab=configuracoes", rotulo: "Cadastrar",
+    }] : []),
+    {
+      chave: "metas", ok: goals.cmvPct != null,
+      titulo: "Meta de CMV",
+      detalhe: goals.cmvPct != null ? `Meta de ${goals.cmvPct}%.` : "Sem meta, o ponteiro usa 33% (a planilha do Hakim).",
+      aba: "metas", rotulo: "Definir",
+    },
+  ];
 }
 
 function fmt(n: number) {

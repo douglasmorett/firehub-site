@@ -23,8 +23,10 @@ import Ponteiro from "@/components/cmv/Ponteiro";
 import { fmtPct, fmtReais, fmtQtd, somarDias } from "@/lib/relatorios/base";
 import { inicioDaSemanaDoCmv, NOMES_DOS_DIAS_DA_SEMANA } from "@/lib/cmv/semana-do-cmv";
 import type { Painel } from "@/lib/cmv/painel";
+import AbaCustosFixos from "@/app/store/financeiro/AbaCustosFixos";
+import type { CustoFixo } from "@/lib/financeiro/dre";
 
-type Aba = "painel" | "equipe" | "metas";
+type Aba = "painel" | "equipe" | "custofixo" | "metas";
 type Atalho = "semana" | "semanaPassada" | "hoje" | "ontem" | "mes" | "mesPassado" | "outro";
 
 const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -131,7 +133,7 @@ export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: strin
       </header>
 
       <nav role="tablist" aria-label="Seções" style={{ display: "flex", gap: 6, borderBottom: `1px solid ${PALETA.areiaBorda}`, marginBottom: "1rem", overflowX: "auto" }}>
-        {([["painel", "Painel"], ["equipe", "Equipe (CMO)"], ["metas", "Metas"]] as [Aba, string][]).map(([k, r]) => (
+        {([["painel", "Painel"], ["equipe", "Equipe (CMO)"], ["custofixo", "Custo fixo"], ["metas", "Metas"]] as [Aba, string][]).map(([k, r]) => (
           <button key={k} role="tab" aria-selected={aba === k} type="button" onClick={() => setAba(k)}
             style={{ border: "none", background: "none", padding: "0.6rem 0.9rem", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer",
               color: aba === k ? PALETA.marca : PALETA.areiaTinta, borderBottom: `3px solid ${aba === k ? PALETA.marca : "transparent"}`, whiteSpace: "nowrap" }}>
@@ -165,11 +167,13 @@ export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: strin
 
           {erro && <Alerta tipo="erro" texto={erro} />}
           {!dados && carregando && <Vazio texto="Carregando os números da loja…" />}
+          {dados && <OQueFalta pendencias={dados.pendencias || []} irPara={setAba} />}
           {dados && <PainelDoCmv dados={dados} carregando={carregando} />}
         </>
       )}
 
       {aba === "equipe" && periodo && <AbaEquipe periodo={periodo} />}
+      {aba === "custofixo" && <AbaCustoFixo onSalvo={() => carregar(true)} />}
       {aba === "metas" && <AbaMetas metas={dados?.metas} semana={dados?.semana} onSalvo={() => carregar(true)} />}
     </div>
   );
@@ -346,6 +350,66 @@ function Alerta({ tipo, texto }: { tipo: "erro" | "atencao" | "info"; texto: str
       <Icone size={18} style={{ flexShrink: 0, marginTop: 1 }} />
       <span>{texto}</span>
     </div>
+  );
+}
+
+// ── O QUE FALTA ────────────────────────────────────────────────────────────
+
+/** O checklist do topo: o que falta preencher para os números serem reais. */
+function OQueFalta({ pendencias, irPara }: { pendencias: Painel["pendencias"]; irPara: (a: Aba) => void }) {
+  const [aberto, setAberto] = useState(false);
+  const faltam = pendencias.filter((p) => !p.ok);
+  if (!pendencias.length) return null;
+  const mostrar = aberto || faltam.length > 0 ? (aberto ? pendencias : faltam) : [];
+  return (
+    <section className="fh-relatorio-bloco" style={{ background: "#fff", border: `1.5px solid ${faltam.length ? PALETA.atencaoBorda : PALETA.okBorda}`, borderRadius: 16, padding: "0.9rem 1rem", marginBottom: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <h2 style={{ margin: 0, fontSize: "1rem", fontWeight: 900, color: faltam.length ? PALETA.atencao : PALETA.ok }}>
+          {faltam.length ? `Falta ${faltam.length} ${faltam.length === 1 ? "coisa" : "coisas"} para os seus números serem reais` : "Tudo preenchido: os números são reais ✓"}
+        </h2>
+        <button type="button" onClick={() => setAberto((a) => !a)} style={{ border: "none", background: "none", color: PALETA.areiaTinta, fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
+          {aberto ? "Mostrar só o que falta" : `Ver os ${pendencias.length} itens`}
+        </button>
+      </div>
+      {mostrar.length > 0 && (
+        <ul style={{ listStyle: "none", margin: "0.7rem 0 0", padding: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+          {mostrar.map((p) => (
+            <li key={p.chave} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "0.5rem 0.6rem", borderRadius: 10, background: p.ok ? PALETA.okClaro : PALETA.atencaoClaro }}>
+              <span aria-hidden style={{ fontWeight: 900, color: p.ok ? PALETA.ok : PALETA.atencao, width: 18 }}>{p.ok ? "✓" : "!"}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <strong style={{ fontSize: "0.88rem" }}>{p.titulo}</strong>
+                <span style={{ display: "block", fontSize: "0.8rem", color: PALETA.areiaTinta }}>{p.detalhe}</span>
+              </span>
+              {!p.ok && (p.href ? (
+                <Link href={p.href} className="btn btn-outline" style={{ textDecoration: "none", padding: "0.3rem 0.7rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}>{p.rotulo}</Link>
+              ) : p.aba ? (
+                <button type="button" className="btn btn-outline" onClick={() => irPara(p.aba as Aba)} style={{ padding: "0.3rem 0.7rem", fontSize: "0.8rem", whiteSpace: "nowrap" }}>{p.rotulo}</button>
+              ) : null)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+// ── CUSTO FIXO (a mesma lista do Financeiro) ───────────────────────────────
+
+function AbaCustoFixo({ onSalvo }: { onSalvo: () => void }) {
+  const [custos, setCustos] = useState<CustoFixo[] | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  useEffect(() => {
+    fetch("/api/store/fixed-costs", { cache: "no-store" })
+      .then(async (r) => { const j = await r.json(); if (!r.ok) throw new Error(j?.error || "Não deu para carregar os custos fixos."); setCustos(Array.isArray(j) ? j : []); })
+      .catch((e) => setErro(e.message));
+  }, []);
+  if (erro) return <Alerta tipo="erro" texto={erro} />;
+  if (!custos) return <Vazio texto="Carregando os custos fixos…" />;
+  return (
+    <>
+      <Alerta tipo="info" texto="É a mesma lista do Financeiro › Custos Fixos: lançou aqui, aparece lá, e vice-versa. Lance os custos que não mudam com a venda (aluguel, energia, gás, internet, contador, sistema)." />
+      <AbaCustosFixos custos={custos} onCustos={(c) => { setCustos(c); onSalvo(); }} dre={null} />
+    </>
   );
 }
 
