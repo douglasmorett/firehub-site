@@ -14,7 +14,7 @@ import type { DiaDeAgendamento } from "@/lib/agendamento";
 export type Quando = "AGORA" | "AGENDAR";
 
 export default function QuandoReceber({
-  dias, podeAgora, quando, onQuando, escolhido, onEscolher, ehEntrega, motivoSemAgora,
+  dias, podeAgora, quando, onQuando, escolhido, onEscolher, ehEntrega, motivoSemAgora, soCalendario = false,
 }: {
   dias: DiaDeAgendamento[];
   podeAgora: boolean;
@@ -25,6 +25,8 @@ export default function QuandoReceber({
   ehEntrega: boolean;
   /** Por que não dá para agora ("A loja está fechada agora", "Só encomenda"). */
   motivoSemAgora?: string;
+  /** Só o calendário (a janela "Agendar pedido" do topo já é de agendamento). */
+  soCalendario?: boolean;
 }) {
   const agendando = !podeAgora || quando === "AGENDAR";
   const diaDoEscolhido = escolhido ? dias.find((d) => d.horarios.some((h) => h.iso === escolhido))?.data : undefined;
@@ -47,6 +49,7 @@ export default function QuandoReceber({
 
   return (
     <div>
+      {!soCalendario && <>
       <label className="checkout-label">Quando? *</label>
       <div className="checkout-type-row">
         {podeAgora && (
@@ -61,9 +64,10 @@ export default function QuandoReceber({
       {!podeAgora && motivoSemAgora && (
         <p style={{ fontSize: "0.78rem", color: "#64748B", margin: "6px 0 0" }}>{motivoSemAgora}</p>
       )}
+      </>}
 
       {agendando && (
-        <div style={{ marginTop: 10, padding: 12, borderRadius: 12, border: "1px solid #E2E8F0", background: "#F8FAFC" }}>
+        <div style={{ marginTop: soCalendario ? 0 : 10, padding: 12, borderRadius: 12, border: "1px solid #E2E8F0", background: "#F8FAFC" }}>
           <div style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 6 }}>
             {ehEntrega ? "Dia e horário da entrega" : "Dia e horário para retirar"}
           </div>

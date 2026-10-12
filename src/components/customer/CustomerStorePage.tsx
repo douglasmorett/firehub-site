@@ -47,7 +47,7 @@ import {
   type CotacaoNaTela, type EnderecoDigitado, type Ponto, type PontoDoCliente,
 } from "@/lib/entrega-no-checkout";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
-import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto } from "@/lib/cardapio-interno";
+import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto, motivoForaDoCardapio } from "@/lib/cardapio-interno";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/TrilhaDoCliente";
 import FileiraDeDestaques from "./FileiraDeDestaques";
@@ -63,7 +63,8 @@ import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReco
 import { bandeirasDeValeLigadas, formaLigada } from "@/lib/formas-do-cardapio";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import QuandoReceber, { type Quando } from "./QuandoReceber";
-import { aceitaAgendamentoPara, horariosParaAgendar, lerConfigDeAgendamento } from "@/lib/agendamento";
+import AgendarNoCardapio from "./AgendarNoCardapio";
+import { aceitaAgendamentoPara, horariosParaAgendar, lerConfigDeAgendamento, textoDoAgendamento } from "@/lib/agendamento";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
 function formatarCpf(v: string): string {
@@ -722,9 +723,18 @@ export default function CustomerStorePage({
     return c === "jotajá" || c === "jotaja" || c === "jota já" || c === "ifood" || c === "99food" || c.includes("jotajá") || c.includes("jotaja") || c.includes("ifood") || c.includes("99food");
   };
 
+  // Pedido AGENDADO: a vitrine é a do instante escolhido (dia e horário do
+  // produto conferidos naquele momento, no fuso da loja) — a mesma conta que a
+  // rota do pedido faz. Sem agendamento, a de agora, como sempre.
+  const instanteDoCardapio = vaiAgendar && horarioAgendado ? horarioAgendado : null;
   const activeTodayProducts = useMemo(() => {
-    return menuProducts.filter(p => isAvailableToday(p, currentDayCode) && !isIntegrationCategory(p.category));
-  }, [menuProducts, currentDayCode, minutoDoRelogio]);
+    return menuProducts.filter(p =>
+      (instanteDoCardapio
+        ? motivoForaDoCardapio(p as any, franchisee.storeTimezone, new Date(instanteDoCardapio)) === null
+        : isAvailableToday(p, currentDayCode))
+      && !isIntegrationCategory(p.category));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [menuProducts, currentDayCode, minutoDoRelogio, instanteDoCardapio]);
 
   const categories = useMemo(() => {
     const activeCats = Array.from(new Set(activeTodayProducts.map(p => (p.category || "").trim()).filter(c => c.length > 0 && !isIntegrationCategory(c))));
@@ -2263,6 +2273,23 @@ export default function CustomerStorePage({
     if (vaiAgendar && !horarioAgendado) {
       avisar({ tipo: "falta", titulo: "Escolha o horário", texto: "Em “Quando?”, escolha o dia e o horário do seu pedido." });
       return;
+    }
+    // Item que não sai no horário do pedido (trocou o horário, ou voltou para
+    // "agora" com a marmita do almoço na sacola): avisa antes do servidor recusar.
+    {
+      const quando = vaiAgendar && horarioAgendado ? new Date(horarioAgendado) : new Date();
+      const foraDoHorario = cart
+        .map((i) => menuProducts.find((m: any) => m.id === idDoProduto(i)))
+        .filter((m: any) => m && motivoForaDoCardapio(m, franchisee.storeTimezone, quando))
+        .map((m: any) => m.name);
+      if (foraDoHorario.length > 0) {
+        avisar({
+          tipo: "falta",
+          titulo: vaiAgendar ? "Item fora do horário agendado" : "Item fora do horário",
+          texto: `${[...new Set(foraDoHorario)].join(", ")} não ${foraDoHorario.length > 1 ? "estão disponíveis" : "está disponível"} ${vaiAgendar ? "no horário que você escolheu" : "agora"}. Tire da sacola ou escolha outro horário.`,
+        });
+        return;
+      }
     }
     if (storeMinOrder > 0 && cartTotal < storeMinOrder) {
       const qual = deliveryType === "PICKUP"
@@ -4551,6 +4578,39 @@ export default function CustomerStorePage({
           </div>
         </div>
       </div>
+
+      {/* AGENDAR PEDIDO: dia e hora primeiro, depois o cardápio daquele horário */}
+      {!mesa && configDoAgendamento.ativo && (
+        <AgendarNoCardapio
+          dias={diasParaAgendar}
+          tiposAceitos={[
+            ...(configDoAgendamento.entrega ? (["DELIVERY"] as const) : []),
+            ...(configDoAgendamento.retirada && !franchisee.storeDeliveryOnly ? (["PICKUP"] as const) : []),
+          ]}
+          tipoAtual={deliveryType === "PICKUP" ? "PICKUP" : "DELIVERY"}
+          horarioTexto={vaiAgendar && horarioAgendado ? textoDoAgendamento(horarioAgendado, franchisee.storeTimezone) : null}
+          podeAgora={podePedirAgora}
+          lojaFechada={lojaFechadaAgora}
+          onAgora={() => { setQuandoReceber("AGORA"); setHorarioAgendado(null); }}
+          onConfirmar={(tipo, iso) => {
+            if (tipo !== deliveryType) {
+              setDeliveryType(tipo);
+              if (tipo === "PICKUP") {
+                esquecerCotacaoDaEntrega();
+                setDeliveryFee(0);
+                setDeliveryFeeCalculated(true);
+                setDeliveryAvailable(true);
+                setDeliveryMessage("Retirada no balcão selecionada.");
+              } else {
+                setDeliveryFee(null);
+                setDeliveryFeeCalculated(false);
+              }
+            }
+            setQuandoReceber("AGENDAR");
+            setHorarioAgendado(iso);
+          }}
+        />
+      )}
 
       {/* SEARCH BAR */}
       <div className="store-search-bar">

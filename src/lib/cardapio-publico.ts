@@ -16,6 +16,7 @@ import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { filtroDoCardapio, minimoDeEstrelas } from "@/lib/avaliacoes-no-cardapio";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido } from "@/lib/fiscal-modo";
+import { lerConfigDeAgendamento } from "@/lib/agendamento";
 
 export const SELECT_DA_LOJA_NO_CARDAPIO = {
   id: true,
@@ -245,7 +246,13 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
   // em que importar o dela, o espelho sai sozinho.
   const menuSemEspelho = semEspelho.length > 0 ? semEspelho : (menuProducts as any[]);
 
-  const menuDoDia = menuSemEspelho.filter((p) => disponivelAgora(p, franchisee.storeTimezone));
+  // Com o AGENDAMENTO ligado (lib/agendamento.ts), o cliente pode montar o
+  // pedido de outro dia/horário — a marmita das 10h–14h agendada à noite para
+  // amanhã ao meio-dia. Aí o cardápio vai inteiro e a TELA filtra pelo
+  // instante escolhido (ou por agora, sem agendamento), com a mesma
+  // `motivoForaDoCardapio` que a rota do pedido usa para conferir.
+  const agendaNoSite = canal === "delivery" && lerConfigDeAgendamento((franchisee as any).agendamentoConfig).ativo;
+  const menuDoDia = agendaNoSite ? menuSemEspelho : menuSemEspelho.filter((p) => disponivelAgora(p, franchisee.storeTimezone));
 
   // Estoque disponível: o que esgotou fecha, igual ao iFood. O que ainda tem
   // leva o restante junto, para o carrinho não deixar pedir mais do que há —
