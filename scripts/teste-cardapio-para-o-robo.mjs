@@ -292,5 +292,21 @@ console.log("\n5) Indisponíveis agrupados");
   conferir("sem combo nem produto", texto.includes("COMBOS\n- nenhum combo cadastrado") && texto.includes("PRODUTOS\n- nenhum item avulso cadastrado"));
 }
 
+console.log("\nCasa da Massa: \"Pizza Grande\" com o mesmo nome em Clássicas, Premium e Doces (12/10/2026)");
+{
+  const produtos = [
+    produto("Pizza Grande", "Pizzas - Clássicas da Casa", 0, [grupo("Escolha até 2 sabores", 1, 2, [opcao("Calabresa C/ Cebola", 49.9), opcao("Mussarela", 47.9)], "MEDIA")]),
+    produto("Pizza Grande", "Pizzas Premium", 0, [grupo("Escolha até 2 sabores", 1, 2, [opcao("4 Queijos", 59.9), opcao("Strogonoff de Carne", 62.9)], "MEDIA")]),
+    produto("Pizza Grande", "Pizzas Doces", 0, [grupo("Escolha até 2 sabores", 1, 2, [opcao("Chocolate", 45.9), opcao("Banana Nevada", 45.9)], "MEDIA")]),
+    produto("Coca-Cola 2L", "Bebidas", 16),
+    produto("Coca-Cola 2L", "Bebidas", 16),
+  ];
+  const { texto } = cardapioParaORobo(produtos, ctx);
+  conferir("sabor Premium aparece", texto.includes("4 Queijos") && texto.includes("Strogonoff de Carne"));
+  conferir("sabor Doce aparece", texto.includes("Banana Nevada"));
+  conferir("sabor Clássico continua", texto.includes("Calabresa C/ Cebola"));
+  igual("produto repetido de verdade (mesmo nome, preço e opções) sai uma vez", vezes(texto, "Coca-Cola 2L"), 1);
+}
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);
