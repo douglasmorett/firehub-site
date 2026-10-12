@@ -116,5 +116,22 @@ confere(
   { nome: "Daniel Importado", telefone: "(22) 99264-0361", endereco: "", bairro: "" },
 );
 
+console.log("\n— O cadastro editado pela loja (Editar cadastro, 11/10/2026) —");
+const editados = [
+  // A Jessica (sem o 9 no robô) com endereço principal; o 99264 importado ganhou nome.
+  { telefone: "2292150443", nome: "Jessica T. (vizinha)", endereco: "Rua Nova, 50 - Centro (casa 2)" },
+  { telefone: "22992640361", nome: "Daniel Souza", endereco: null },
+  // Corrigido sem pedido nem cadastro na busca: entra como cadastro.
+  { telefone: "22981112222", nome: "Joao do Balcao", endereco: null },
+];
+const comEdicao = sugerirClientes({ digitos: "2299", nome: "" }, pedidos, cadastros, editados);
+confere("o nome corrigido vence o dos pedidos (a chave junta com e sem o 9)",
+  comEdicao.map((c) => c.nome), ["Flavio Teixeira", "Jessica T. (vizinha)", "Daniel Souza", ""]);
+confere("o endereço principal vence o da última entrega", comEdicao[1].endereco?.texto, "Rua Nova, 50 - Centro · casa 2");
+confere("sem endereço na correção, fica o dos pedidos", comEdicao[0].endereco?.texto, "Rua das Casuarinas, 20 - Âncora · Ap 201");
+confere("busca pelo nome corrigido acha o cliente", sugerirClientes({ digitos: "", nome: "vizinha" }, pedidos, cadastros, editados).map((c) => [c.nome, c.pedidos]), [["Jessica T. (vizinha)", 2]]);
+confere("o nome antigo dos pedidos não acha mais quem foi renomeado", sugerirClientes({ digitos: "", nome: "Jessica Teixeira" }, pedidos, cadastros, editados).length, 0);
+confere("correção sem pedido aparece como cadastro", sugerirClientes({ digitos: "", nome: "joao" }, pedidos, cadastros, editados).map((c) => [c.nome, c.telefone, c.pedidos]), [["Joao do Balcao", "22981112222", 0]]);
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

@@ -14,7 +14,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDownCircle, ArrowUpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Contact, Download, FileUp,
-  MessageCircle, Plus, Search, Wallet, X,
+  MessageCircle, Pencil, Plus, Search, Wallet, X,
 } from "lucide-react";
 import { haQuanto as haQuantoNaLoja } from "@/lib/clientes-da-loja-regras";
 import { FUSO_PADRAO } from "@/lib/fuso";
@@ -62,12 +62,24 @@ type Detalhe = {
   telefone: string;
   nome: string | null;
   aniversario: string | null;
+  /** O que a loja corrigiu no "Editar cadastro" (lib/cadastro-do-cliente.ts). */
+  cadastro?: CadastroEditado | null;
+  original?: { nome: string | null; aniversario: string | null };
   importado: boolean;
   clienteDesde: string | null;
   pedidos: { id: string; numero: number | null; em: string; status: string; total: number; tipo: string; canal: string; pagamento: string | null; cashbackGerado: number; cashbackUsado: number }[];
   enderecos: string[];
   numeros: { pedidos: number; gasto: number; ticketMedio: number; primeiro: string | null; ultimo: string | null; cancelados: number; naoConcluidos?: number };
   cashback: RegraDoCashback & { saldo: number; proximoVencimento: { valor: number; em: string } | null; movimentos: Movimento[]; aReceber: number };
+};
+
+type CadastroEditado = {
+  nome: string | null;
+  aniversario: string | null;
+  endereco: string | null;
+  observacao: string | null;
+  atualizadoPor: string | null;
+  atualizadoEm: string | null;
 };
 
 type LinhaDoLote = { linha: number; texto: string; telefone: string | null; valor: number | null; nome: string | null; erro: string | null };
@@ -582,12 +594,91 @@ function FormularioDeSaldo({
   );
 }
 
+// ── Editar cadastro ──────────────────────────────────────────────────────────
+// Pedido do Flavio (Showrrascão, 11/10/2026). A correção é desta loja
+// (lib/cadastro-do-cliente.ts): vence o que os pedidos dizem na lista, na
+// ficha e na busca do balcão. Campo vazio volta ao que veio dos pedidos.
+
+function EditarCadastro({ d, onSalvou, onCancelar, avisar }: { d: Detalhe; onSalvou: () => void; onCancelar: () => void; avisar: (a: Aviso) => void }) {
+  const original = d.original || { nome: d.nome, aniversario: d.aniversario };
+  const [nome, setNome] = useState(d.cadastro?.nome || d.nome || "");
+  const [aniversario, setAniversario] = useState(d.cadastro?.aniversario || d.aniversario || "");
+  const [endereco, setEndereco] = useState(d.cadastro?.endereco || "");
+  const [observacao, setObservacao] = useState(d.cadastro?.observacao || "");
+  const [gravando, setGravando] = useState(false);
+  const enderecoDosPedidos = d.enderecos.find((e) => e !== d.cadastro?.endereco) || "";
+
+  const salvar = async () => {
+    setGravando(true);
+    try {
+      // O que ficou igual ao que veio dos pedidos não vira correção: o nome
+      // novo que o cliente der no próximo pedido continua aparecendo.
+      const igual = (a: string, b: string | null | undefined) => a.trim().toLowerCase() === String(b || "").trim().toLowerCase();
+      const r = await fetch("/api/store/clientes/cadastro", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          telefone: d.telefone,
+          nome: !d.cadastro?.nome && igual(nome, original.nome) ? "" : nome,
+          aniversario: !d.cadastro?.aniversario && igual(aniversario, original.aniversario) ? "" : aniversario,
+          endereco,
+          observacao,
+        }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Não foi possível salvar.");
+      avisar({ tipo: "ok", titulo: "Cadastro salvo" });
+      onSalvou();
+    } catch (e: any) {
+      avisar({ tipo: "erro", titulo: "Não salvou", detalhe: e?.message });
+    } finally {
+      setGravando(false);
+    }
+  };
+
+  const rotulo: React.CSSProperties = { fontSize: "0.78rem", fontWeight: 700, color: corSuave, display: "block", marginTop: 10 };
+  const dica: React.CSSProperties = { fontSize: "0.74rem", color: corSuave, marginTop: 3 };
+  return (
+    <div style={{ background: "#fff", border: `1.5px solid ${corDoTexto}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+      <div style={{ fontWeight: 800, marginBottom: 2 }}>Editar cadastro</div>
+      <div style={dica}>Vale só nesta loja. O telefone não muda — é ele que liga os pedidos e o saldo.</div>
+
+      <label style={rotulo}>Nome</label>
+      <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} maxLength={80} placeholder="Nome do cliente" style={{ ...campo, marginTop: 4 }} />
+      {d.cadastro?.nome && original.nome && !nome.trim() && <div style={dica}>Vazio volta para “{original.nome}”, o nome dos pedidos.</div>}
+
+      <label style={rotulo}>Aniversário</label>
+      <input value={aniversario} onChange={(e) => setAniversario(e.target.value)} maxLength={10} placeholder="dia/mês — ex.: 15/03 ou 15/03/1990" inputMode="numeric" style={{ ...campo, marginTop: 4 }} />
+
+      <label style={rotulo}>Endereço principal</label>
+      <input value={endereco} onChange={(e) => setEndereco(e.target.value)} maxLength={200} placeholder={enderecoDosPedidos || "Rua, número - Bairro (complemento)"} style={{ ...campo, marginTop: 4 }} />
+      <div style={dica}>Vai primeiro na lista de endereços e é o que o balcão preenche ao escolher o cliente.</div>
+
+      <label style={rotulo}>Observação (só a loja vê)</label>
+      <textarea value={observacao} onChange={(e) => setObservacao(e.target.value)} maxLength={500} rows={3} placeholder="Ex.: prefere sem cebola; portão azul; paga só no Pix" style={{ ...campo, marginTop: 4, resize: "vertical", fontFamily: "inherit" }} />
+
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <button onClick={salvar} disabled={gravando} style={botao("#fff", vermelho, { opacity: gravando ? 0.6 : 1 })}>
+          {gravando ? "Salvando…" : "Salvar"}
+        </button>
+        <button onClick={onCancelar} style={botao(corSuave, "#F1F5F9")}>Cancelar</button>
+      </div>
+      {d.cadastro?.atualizadoEm && (
+        <div style={{ ...dica, marginTop: 10 }}>
+          Editado por último{d.cadastro.atualizadoPor ? ` por ${d.cadastro.atualizadoPor}` : ""} em {new Date(d.cadastro.atualizadoEm).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Ficha do cliente ─────────────────────────────────────────────────────────
 
 function FichaDoCliente({ telefone, fuso, onFechar, onMudou, avisar }: { telefone: string; fuso: string; onFechar: () => void; onMudou: () => void; avisar: (a: Aviso) => void }) {
   const [d, setD] = useState<Detalhe | null>(null);
   const [erro, setErro] = useState("");
   const [operacao, setOperacao] = useState<"dar" | "tirar" | null>(null);
+  const [editando, setEditando] = useState(false);
   const [aba, setAba] = useState<"extrato" | "pedidos" | "enderecos">("extrato");
   const [pedidoAberto, setPedidoAberto] = useState<string | null>(null);
 
@@ -623,9 +714,29 @@ function FichaDoCliente({ telefone, fuso, onFechar, onMudou, avisar }: { telefon
             <a href={linkDoWhatsApp(d.telefone)} target="_blank" rel="noreferrer" style={{ ...botao("#fff", "#16A34A"), textDecoration: "none" }}>
               <MessageCircle size={16} /> WhatsApp
             </a>
+            {d.encontrado && !editando && (
+              <button onClick={() => setEditando(true)} style={botao(corDoTexto, "#F1F5F9")}>
+                <Pencil size={15} /> Editar cadastro
+              </button>
+            )}
             {d.importado && <span style={{ ...selo("#EFF6FF", "#1D4ED8"), alignSelf: "center", marginTop: 0 }}>veio de outro sistema</span>}
             {d.aniversario && <span style={{ ...selo("#FDF2F8", "#BE185D"), alignSelf: "center", marginTop: 0 }}>🎂 {d.aniversario}</span>}
           </div>
+
+          {editando && (
+            <EditarCadastro
+              d={d}
+              avisar={avisar}
+              onCancelar={() => setEditando(false)}
+              onSalvou={() => { setEditando(false); carregar(); onMudou(); }}
+            />
+          )}
+          {!editando && d.cadastro?.observacao && (
+            <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "10px 12px", marginBottom: 12, fontSize: "0.86rem", color: "#78350F", whiteSpace: "pre-wrap" }}>
+              <div style={{ fontSize: "0.72rem", fontWeight: 800, textTransform: "uppercase", color: "#92400E", marginBottom: 2 }}>Observação da loja</div>
+              {d.cadastro.observacao}
+            </div>
+          )}
 
           {/* Carteira */}
           <div style={{ background: "linear-gradient(135deg, #ECFDF5, #F0FDFA)", border: "1.5px solid #A7F3D0", borderRadius: 14, padding: 14 }}>

@@ -21,7 +21,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { lerConsulta, sugerirClientes, type CadastroParaBusca, type PedidoParaBusca } from "@/lib/busca-de-clientes";
+import { digitosNacionais, lerConsulta, sugerirClientes, type CadastroParaBusca, type PedidoParaBusca } from "@/lib/busca-de-clientes";
+import { edicoesParaBusca } from "@/lib/cadastro-do-cliente";
 
 export const dynamic = "force-dynamic";
 
@@ -80,11 +81,41 @@ export async function GET(req: Request) {
       buscarCadastros(lojas, filtroCadastro, numeroInteiro ? consulta.digitos : null),
     ]);
 
-    return NextResponse.json({ clientes: sugerirClientes(consulta, pedidos, cadastros) }, { headers: semCache });
+    // O "Editar cadastro" da loja: o nome e o endereço corrigidos vencem. Na
+    // busca por nome, o "Cliente" que virou "João" aparece pelo nome novo —
+    // com os pedidos dele, que a busca pelo nome antigo não trouxe.
+    const chaves = [...new Set([...pedidos.map((p) => p.customerPhone), ...cadastros.map((c) => c.phone)]
+      .map((t) => digitosNacionais(t))
+      .filter((t) => t.length >= 10)
+      .map((t) => t.slice(0, 2) + t.slice(-8)))];
+    const editados = await edicoesParaBusca(ids, chaves.slice(0, 200), consulta.nome || null);
+    const deFora = editados.filter((e) => !chaves.includes(e.chave)).map((e) => e.chave);
+    if (deFora.length) pedidos.push(...(await pedidosPorChave(lojas, deFora)));
+
+    return NextResponse.json({ clientes: sugerirClientes(consulta, pedidos, cadastros, editados) }, { headers: semCache });
   } catch (e: any) {
     // A busca é conforto do atendente: sem ela, ele digita como sempre.
     console.warn(`[clientes/buscar] falhou: ${e?.message || e}`);
     return NextResponse.json({ clientes: [], erro: true }, { headers: semCache });
+  }
+}
+
+/** Os pedidos da loja dos clientes achados pelo nome corrigido (chave = DDD + 8 últimos dígitos). */
+async function pedidosPorChave(lojas: Prisma.Sql, chaves: string[]): Promise<PedidoParaBusca[]> {
+  try {
+    const tel = nacional(Prisma.sql`"customerPhone"`);
+    return await prisma.$queryRaw<PedidoParaBusca[]>(Prisma.sql`
+      SELECT "customerName", "customerPhone", "customerAddress", "customerLatLng", "deliveryType", "createdAt"
+      FROM "CustomerOrder"
+      WHERE "franchiseeId" IN (${lojas})
+        AND "tableSessionId" IS NULL
+        AND length(${tel}) BETWEEN 10 AND 11
+        AND left(${tel}, 2) || right(${tel}, 8) IN (${Prisma.join(chaves)})
+      ORDER BY "createdAt" DESC
+      LIMIT 120`);
+  } catch (e: any) {
+    console.warn(`[clientes/buscar] pedidos pelo nome corrigido falharam: ${e?.message || e}`);
+    return [];
   }
 }
 

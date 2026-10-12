@@ -102,6 +102,7 @@ if (!db) {
       "totalAmount" double precision, "createdAt" timestamp(3), "tableSessionId" text, "ifoodOrderId" text);
     CREATE TABLE "StoreCustomer" ("phone" text, "name" text, "lojaDeOrigemId" text, "createdAt" timestamp(3));
     CREATE TABLE "CashbackAjuste" ("lojaId" text, "telefone" text, "nome" text, "createdAt" timestamp(3));
+    CREATE TABLE "ClienteDaLoja" ("lojaId" text, "chave" text, "nome" text);
   `);
   const L = "loja";
   const pedidos: [string, string, string, string, number, string, string | null, string | null][] = [
@@ -152,6 +153,14 @@ if (!db) {
     (await rodar(sqlDosPedidosDoCliente(L, chaveDoCliente("91981060960")!))).map((r) => r.id), ["e4", "e3", "e2", "e1"]);
   confere("a ficha do Caio (99Food) acha o pedido pelo número sem o ramal",
     (await rodar(sqlDosPedidosDoCliente(L, chaveDoCliente("21991385491")!))).map((r) => r.id), ["c1"]);
+  // O "Editar cadastro" (lib/cadastro-do-cliente.ts): o nome corrigido vence.
+  await db.query(`INSERT INTO "ClienteDaLoja" VALUES ($1, '9181060960', 'Erik (corrigido)'), ($1, '2299990002', '  '), ('outra', '2191385491', 'Caio da outra loja')`, [L]);
+  const corrigidas = await rodar(Prisma.sql`${sqlDaBaseDeClientes(L, ["81060960"], [12.5], true)}
+    SELECT c.chave, c.nome, c.pedidos, c.saldo FROM clientes c ORDER BY c.chave`);
+  confere("com a edição: Erik com o nome corrigido; nome em branco não apaga a Bia; a correção de outra loja não vale aqui",
+    corrigidas.map((l) => l.nome), ["Erik de SP", "Caio", "Ana", "Bia", "Dani", "Erik (corrigido)"]);
+  confere("a edição não duplica linha nem mexe em pedidos e saldo",
+    [corrigidas.length, corrigidas.find((l) => l.chave === "9181060960")?.pedidos, corrigidas.find((l) => l.chave === "9181060960")?.saldo], [6, 3, 12.5]);
   const [resumo] = await rodar(sqlDoResumoDeClientes(L, [], [], limite));
   confere("resumo: 6 clientes, 4 pediram, 3 em 30 dias, 1 sumido, 3 pela primeira vez (nunca mais estreantes que ativos)",
     resumo, { clientes: 6, pediram: 4, ativos30: 3, sumidos: 1, novos30: 3 });

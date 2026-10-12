@@ -67,6 +67,13 @@ export type CadastroParaBusca = {
   address?: string | null;
 };
 
+/** O que a loja corrigiu no "Editar cadastro" (lib/cadastro-do-cliente.ts): vence o resto. */
+export type EdicaoParaBusca = {
+  telefone: string;
+  nome?: string | null;
+  endereco?: string | null;
+};
+
 export const MINIMO_DE_DIGITOS = 3;
 export const MINIMO_DE_LETRAS = 2;
 export const MAXIMO_DE_SUGESTOES = 8;
@@ -129,6 +136,9 @@ const instante = (d: Date | string | null | undefined): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/** DDD + 8 últimos dígitos: com ou sem o 9 é a mesma pessoa (lib/clientes-da-loja-regras.ts). */
+const chaveDe = (tel: string) => (tel.length >= 10 ? tel.slice(0, 2) + tel.slice(-8) : tel);
+
 const NOME_GENERICO = /^(cliente|consumidor|balc[aã]o|mesa\b.*|sem nome|n[aã]o informado|func\. .*)$/i;
 
 /**
@@ -140,6 +150,7 @@ export function sugerirClientes(
   consulta: ConsultaDeClientes,
   pedidos: readonly PedidoParaBusca[],
   cadastros: readonly CadastroParaBusca[],
+  editados: readonly EdicaoParaBusca[] = [],
 ): ClienteSugerido[] {
   const porTelefone = new Map<string, ClienteSugerido & { _em: number }>();
 
@@ -196,6 +207,33 @@ export function sugerirClientes(
       ultimoPedido: null,
       _em: 0,
     });
+  }
+
+  // A correção da loja vence o nome e o endereço de todas as formas do número.
+  for (const e of editados) {
+    const tel = digitosNacionais(e.telefone);
+    if (!tel) continue;
+    const nome = texto(e.nome, 80);
+    const enderecoBruto = texto(e.endereco, 200);
+    const lido = enderecoBruto ? lerEnderecoGravado(enderecoBruto) : null;
+    const corrigir = (c: ClienteSugerido) => {
+      if (nome.length >= 2) c.nome = nome;
+      if (enderecoBruto) {
+        c.enderecoTexto = enderecoBruto;
+        c.endereco = lido ? { ...lido, texto: textoDoEndereco(lido) } : null;
+      }
+    };
+    const iguais = [...porTelefone.values()].filter((c) => chaveDe(c.telefone) === chaveDe(tel));
+    if (iguais.length) {
+      iguais.forEach(corrigir);
+      continue;
+    }
+    const novo = {
+      nome: "", telefone: tel, telefoneBonito: telefoneBonito(tel), endereco: null, enderecoTexto: "",
+      pedidos: 0, ultimoPedido: null, _em: 0,
+    };
+    corrigir(novo);
+    porTelefone.set(tel, novo);
   }
 
   return [...porTelefone.values()]

@@ -46,6 +46,7 @@ import { STATUS_FORA_DA_VENDA } from "@/lib/relatorios/base";
 import { lojasDoGrupo } from "@/lib/loja-ativa";
 import { FUSO_PADRAO } from "@/lib/fuso";
 import { chaveDoCliente, numerosDoCliente } from "@/lib/clientes-da-loja-regras";
+import { aniversarioBonito, cadastroEditado, garantirTabelaDoCadastro, type CadastroEditado } from "@/lib/cadastro-do-cliente";
 
 export type SessaoDosClientes = {
   lojaId: string;
@@ -162,8 +163,11 @@ const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLo
  * As CTEs da base: UM cliente por chave (DDD + 8 últimos dígitos), com o que
  * os pedidos dizem dele. O telefone mostrado é a forma mais longa que ele
  * usou (com o 9). Exportada para a prova e o teste rodarem a MESMA consulta.
+ *
+ * `comEdicoes`: o nome que a loja corrigiu no "Editar cadastro"
+ * (lib/cadastro-do-cliente.ts, tabela ClienteDaLoja) vence o dos pedidos.
  */
-export function sqlDaBaseDeClientes(lojaId: string, chaves: string[], saldos: number[]) {
+export function sqlDaBaseDeClientes(lojaId: string, chaves: string[], saldos: number[], comEdicoes = false) {
   const tel = Prisma.sql`tel`;
   return Prisma.sql`
     WITH ped0 AS (
@@ -228,9 +232,13 @@ export function sqlDaBaseDeClientes(lojaId: string, chaves: string[], saldos: nu
       FULL OUTER JOIN aj ON aj.chave = COALESCE(ped.chave, cad.chave)
     ),
     clientes AS (
-      SELECT j.*, COALESCE(sal.saldo, 0)::float8 AS saldo
+      SELECT j.chave, j.tel,
+             ${comEdicoes ? Prisma.sql`COALESCE(NULLIF(btrim(ed."nome"), ''), j.nome)` : Prisma.sql`j.nome`} AS nome,
+             j.pedidos, j.gasto, j.ultimo, j.primeiro, j.importado,
+             COALESCE(sal.saldo, 0)::float8 AS saldo
       FROM junta j
       LEFT JOIN sal ON sal.chave = right(j.tel, 8)
+      ${comEdicoes ? Prisma.sql`LEFT JOIN "ClienteDaLoja" ed ON ed."lojaId" = ${lojaId} AND ed."chave" = j.chave` : Prisma.empty}
     )`;
 }
 
@@ -279,6 +287,7 @@ export async function listarClientes(
   agora = new Date(),
 ): Promise<{ clientes: ClienteDaLista[]; total: number; resumo: ResumoDosClientes }> {
   await garantirTabelaDeAjustes();
+  const comEdicoes = await garantirTabelaDoCadastro();
   const mapa = await saldosDaLoja(sessao.lojaId, sessao.storeLoyalty, agora);
   const chaves: string[] = [];
   const valores: number[] = [];
@@ -329,7 +338,7 @@ export async function listarClientes(
 
   const [linhas, [resumo]] = await Promise.all([
     prisma.$queryRaw<Linha[]>(Prisma.sql`
-      ${sqlDaBaseDeClientes(sessao.lojaId, chaves, valores)}
+      ${sqlDaBaseDeClientes(sessao.lojaId, chaves, valores, comEdicoes)}
       SELECT c.tel, c.nome, c.pedidos, c.gasto, c.ultimo, c.primeiro, c.importado, c.saldo,
              count(*) OVER()::int AS total
       FROM clientes c
@@ -370,6 +379,10 @@ export type DetalheDoCliente = {
   telefone: string;
   nome: string | null;
   aniversario: string | null;
+  /** O que a loja corrigiu no "Editar cadastro" (vence o resto), ou null. */
+  cadastro: CadastroEditado | null;
+  /** O nome e o aniversário de antes da correção — o "voltar ao original" da tela. */
+  original: { nome: string | null; aniversario: string | null };
   importado: boolean;
   clienteDesde: string | null;
   pedidos: {
@@ -445,6 +458,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
       : Promise.resolve([]),
     extratoDoCliente(sessao.lojaId, sessao.storeLoyalty, tel, agora),
   ]);
+  const editado = await cadastroEditado(sessao.lojaId, tel);
 
   const idsDeCadastro = [...new Set(pedidos.map((p) => p.customerId).filter(Boolean))] as string[];
   type Cadastro = { name: string | null; birthDate: string | null; createdAt: Date; lojaDeOrigemId: string | null };
@@ -459,9 +473,10 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
   const regra = lerCashback(sessao.storeLoyalty);
   const cashback = { ...extrato, ativo: regra.ativo, validadeDias: regra.validadeDias, taxa: regra.taxa, maxResgatePct: regra.maxResgatePct };
 
-  if (!pedidos.length && !cadastro && !extrato.movimentos.length) {
+  if (!pedidos.length && !cadastro && !extrato.movimentos.length && !editado) {
     return {
-      encontrado: false, telefone: tel, nome: null, aniversario: null, importado: false, clienteDesde: null,
+      encontrado: false, telefone: tel, nome: null, aniversario: null, cadastro: null, original: { nome: null, aniversario: null },
+      importado: false, clienteDesde: null,
       pedidos: [], enderecos: [], numeros: { pedidos: 0, gasto: 0, ticketMedio: 0, primeiro: null, ultimo: null, cancelados: 0, naoConcluidos: 0 },
       cashback,
     };
@@ -472,23 +487,28 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
   const numeros = numerosDoCliente(pedidos);
   const generico = /^(cliente|consumidor|balc[aã]o|sem nome|n[aã]o informado)$/i;
   const nomeDoPedido = pedidos.find((p) => p.customerName && !generico.test(p.customerName.trim()))?.customerName ?? null;
-  const enderecos: string[] = [];
+  // O endereço principal que a loja gravou vai na frente dos que vieram nos pedidos.
+  const enderecos: string[] = editado?.endereco ? [editado.endereco] : [];
   for (const p of pedidos) {
     const e = String(p.customerAddress || "").replace(/\s+/g, " ").trim();
     if (!e || String(p.deliveryType || "").toUpperCase() !== "DELIVERY") continue;
     if (!enderecos.some((x) => x.toLowerCase() === e.toLowerCase())) enderecos.push(e);
-    if (enderecos.length >= 5) break;
+    if (enderecos.length >= (editado?.endereco ? 6 : 5)) break;
   }
   const desde = [numeros.primeiro, cadastro?.lojaDeOrigemId === sessao.lojaId ? cadastro.createdAt : null]
     .filter(Boolean)
     .map((d) => new Date(d as Date).getTime())
     .sort((a, b) => a - b)[0];
 
+  const nomeOriginal = nomeDoPedido || cadastro?.name || (await nomeDoLancamento(sessao.lojaId, chaveDoTel));
+  const aniversarioOriginal = aniversarioBonito(cadastro?.birthDate);
   return {
     encontrado: true,
     telefone: tel,
-    nome: nomeDoPedido || cadastro?.name || (await nomeDoLancamento(sessao.lojaId, chaveDoTel)),
-    aniversario: cadastro?.birthDate || null,
+    nome: editado?.nome || nomeOriginal,
+    aniversario: editado?.aniversario || aniversarioOriginal,
+    cadastro: editado ? { nome: editado.nome, aniversario: editado.aniversario, endereco: editado.endereco, observacao: editado.observacao, atualizadoPor: editado.atualizadoPor, atualizadoEm: editado.atualizadoEm } : null,
+    original: { nome: nomeOriginal, aniversario: aniversarioOriginal },
     importado: cadastro?.lojaDeOrigemId === sessao.lojaId,
     clienteDesde: desde ? new Date(desde).toISOString() : null,
     pedidos: pedidos.slice(0, 50).map((p) => ({
