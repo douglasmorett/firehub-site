@@ -1495,5 +1495,57 @@
       }
     ],
     "versao": "f25d7878"
+  },
+  "trafego-pago": {
+    "id": "trafego-pago",
+    "titulo": "Tráfego Pago: anúncios no Facebook e Instagram",
+    "duracao": 196,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é o Tráfego Pago"
+      },
+      {
+        "em": 17.3,
+        "titulo": "Os termos e a cobrança"
+      },
+      {
+        "em": 49.6,
+        "titulo": "Acompanhada ou sozinho"
+      },
+      {
+        "em": 59.3,
+        "titulo": "Investimento semanal"
+      },
+      {
+        "em": 72.3,
+        "titulo": "Conectar o Facebook"
+      },
+      {
+        "em": 90.4,
+        "titulo": "Quem vê o anúncio"
+      },
+      {
+        "em": 109.2,
+        "titulo": "Contagem de pedidos"
+      },
+      {
+        "em": 121.4,
+        "titulo": "A foto do anúncio"
+      },
+      {
+        "em": 143.5,
+        "titulo": "Resumo e publicar"
+      },
+      {
+        "em": 152.8,
+        "titulo": "O painel da campanha"
+      },
+      {
+        "em": 188.5,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "7e8789aa"
   }
 }
