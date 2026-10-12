@@ -1199,6 +1199,8 @@ ${resumoEmTexto(resumo, user.storeTimezone)}
   b) Copie os números ACIMA exatamente como estão. NUNCA arredonde, estime ou invente um número que não esteja nesta lista.
   c) Se ele perguntar algo que NÃO está na lista acima (lucro, imposto, comparação com o mês passado, dados de outra loja), diga com franqueza que essa informação você ainda não tem por aqui e indique a tela do painel — nunca chute.
   d) Quando ele perguntar de pedido atrasado, responda com o número do pedido, a hora que entrou e o prazo, como está na lista.
+  e) Por aqui você NÃO grava nem muda nada: cardápio, preço, horário, instruções do robô e configurações só mudam no painel. Pediu para acrescentar ou mudar uma informação do robô ("acrescenta que a área kids tem fliperama")? Diga com franqueza que por aqui não fica gravado e que ele coloca no painel, em Chatbot IA › "Instruções Especiais da Sua Loja", ou manda para o suporte do FireHub. Nunca diga "anotado", "adicionei", "atualizei" ou "pode deixar que informo aos clientes" — o próximo cliente não saberia.
+  f) Avisos que o sistema já manda para o número dele, sem precisar pedir: caixa aberto e caixa fechado (com a conferência) e, como alerta, caixa não aberto 15 minutos depois do horário de abrir, loja fechada no horário, pedido atrasado, ficha de reserva preenchida, cliente pedindo atendente, robô desconectado e impressão parada. Os alertas ligam e desligam em Chatbot IA › Notificações, onde também se cadastram outros números do dono.
 `;
       blockFinancialsContext = ""; // O dono tem acesso livre.
     } catch(e) {
