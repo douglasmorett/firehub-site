@@ -65,6 +65,7 @@ import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco"
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
 import { lerRespostasProntas, blocoDasRespostasProntas, textoDasRespostasProntas, extrairMarcasDeRespostaPronta, envioDasRespostasProntas, extrairFichaPreenchida, regraDaReservaPelaFicha } from "./respostas-prontas";
+import { feriadoLocal, linhaDoFeriadoParaORobo } from "./holidays";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -604,6 +605,15 @@ export async function processChatbotAI(
 
   const { code: currentDayCode, name: currentDayName } = getBrazilDayCode(0);
   const { code: tomorrowDayCode, name: tomorrowDayName } = getBrazilDayCode(1);
+
+  // Feriado de hoje e de amanhã (nacional, da Páscoa ou do município), pelas
+  // tabelas locais: sem rede, e a linha só existe no prompt em dia de feriado.
+  const dataNaLoja = (offsetDias: number) => {
+    const d = new Date();
+    if (offsetDias) d.setDate(d.getDate() + offsetDias);
+    return d.toLocaleDateString("en-CA", { timeZone: tz });
+  };
+  const linhaDoFeriado = linhaDoFeriadoParaORobo(feriadoLocal(dataNaLoja(0), user.city), feriadoLocal(dataNaLoja(1), user.city));
 
   const parseAvailableDays = (val: any): string[] => {
     if (!val) return [];
@@ -1199,7 +1209,7 @@ ${resumoEmTexto(resumo, user.storeTimezone)}
   b) Copie os números ACIMA exatamente como estão. NUNCA arredonde, estime ou invente um número que não esteja nesta lista.
   c) Se ele perguntar algo que NÃO está na lista acima (lucro, imposto, comparação com o mês passado, dados de outra loja), diga com franqueza que essa informação você ainda não tem por aqui e indique a tela do painel — nunca chute.
   d) Quando ele perguntar de pedido atrasado, responda com o número do pedido, a hora que entrou e o prazo, como está na lista.
-  e) Por aqui você NÃO grava nem muda nada: cardápio, preço, horário, instruções do robô e configurações só mudam no painel. Pediu para acrescentar ou mudar uma informação do robô ("acrescenta que a área kids tem fliperama")? Diga com franqueza que por aqui não fica gravado e que ele coloca no painel, em Chatbot IA › "Instruções Especiais da Sua Loja", ou manda para o suporte do FireHub. Nunca diga "anotado", "adicionei", "atualizei" ou "pode deixar que informo aos clientes" — o próximo cliente não saberia.
+  e) Por aqui você NÃO grava nem muda nada. Pediu para acrescentar ou mudar uma informação ou o seu jeito de atender ("acrescenta que a área kids tem fliperama")? Avise com franqueza, nestas palavras: "Por aqui eu não consigo gravar. Para gravar alguma informação no meu comportamento, fale com o atendimento do FireHub no WhatsApp (22) 98111-8514." Nunca diga "anotado", "adicionei", "atualizei" ou "pode deixar que informo aos clientes": o próximo cliente não saberia, e o dono ficaria iludido.
   f) Avisos que o sistema já manda para o número dele, sem precisar pedir: caixa aberto e caixa fechado (com a conferência) e, como alerta, caixa não aberto 15 minutos depois do horário de abrir, loja fechada no horário, pedido atrasado, ficha de reserva preenchida, cliente pedindo atendente, robô desconectado e impressão parada. Os alertas ligam e desligam em Chatbot IA › Notificações, onde também se cadastram outros números do dono.
 `;
       blockFinancialsContext = ""; // O dono tem acesso livre.
@@ -1264,7 +1274,7 @@ DADOS DA LOJA:
 - Aceita Retirada no Balcão: ${aceitaRetirada ? "SIM" : "NÃO"}
 ${linhasDoMinimoNosDados(fatosDoMinimo)}
 - Horário de Funcionamento Cadastrado: ${linhaDoHorarioDeHoje({ fraseDeHoje: nowStatusText, temQuadro: hoursText !== HORARIO_NAO_CADASTRADO })}
-- Quadro Geral de Horários:
+${linhaDoFeriado}- Quadro Geral de Horários:
 ${hoursText}
 
 TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO:

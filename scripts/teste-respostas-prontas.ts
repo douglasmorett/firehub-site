@@ -7,7 +7,7 @@ import {
   extrairFichaPreenchida, textoDoAvisoDaFicha, regraDaReservaPelaFicha,
 } from "../src/lib/respostas-prontas";
 import { regrasDoRobo } from "../src/lib/regras-do-robo";
-import { RESPOSTAS, LINHA_DO_SALAO, LINHA_DOS_COMBOS, LINHA_DA_AREA_KIDS, instrucoesDaLoja, regrasDaPrincipal } from "./respostas-prontas-pizzaria-17";
+import { RESPOSTAS, LINHA_DO_SALAO, LINHA_DOS_COMBOS, LINHA_DA_AREA_KIDS, LINHA_DO_RODIZIO, NOME_DO_ATENDENTE, instrucoesDaLoja, regrasDaPrincipal } from "./respostas-prontas-pizzaria-17";
 
 let falhas = 0;
 const confere = (oQue: string, ok: boolean, obtido?: unknown) => {
@@ -71,8 +71,10 @@ confere("regra de reserva sem ficha: igual a antes", /Me diz o dia, o horário e
 const assuntoDaReserva = lista.find((r) => r.id === "reserva-festa")?.assunto || "";
 confere("a reserva cobre as palavras do Antonio", ["reserva", "reservar mesa", "agendar", "comemorar", "aniversário", "faz reserva"].every((p) => assuntoDaReserva.includes(p)), assuntoDaReserva);
 confere("a linha do salão diz 120 lugares nas duas lojas e nunca só delivery", /120 lugares cada/.test(LINHA_DO_SALAO) && /Lagomar/.test(LINHA_DO_SALAO) && /Aeroporto/.test(LINHA_DO_SALAO) && /Nunca diga que somos só delivery/.test(LINHA_DO_SALAO));
-const soAsLinhas = `${LINHA_DO_SALAO}\n\n${LINHA_DOS_COMBOS}\n\n${LINHA_DA_AREA_KIDS}`;
-confere("instruções vazias ganham só as linhas do salão, dos combos e da área kids", instrucoesDaLoja("") === soAsLinhas && instrucoesDaLoja(undefined) === soAsLinhas);
+const soAsLinhas = `${LINHA_DO_SALAO}\n\n${LINHA_DOS_COMBOS}\n\n${LINHA_DA_AREA_KIDS}\n\n${LINHA_DO_RODIZIO}`;
+confere("instruções vazias ganham só as linhas do salão, dos combos, da área kids e do rodízio", instrucoesDaLoja("") === soAsLinhas && instrucoesDaLoja(undefined) === soAsLinhas);
+confere("rodízio: segunda a quinta, nunca em feriado, oferece os combos", /segunda a quinta/.test(LINHA_DO_RODIZIO) && /NÃO funciona em feriado/.test(LINHA_DO_RODIZIO) && /combos/.test(LINHA_DO_RODIZIO));
+confere("o atendente se apresenta como Yasmim, sem 'bot'", NOME_DO_ATENDENTE === "Yasmim");
 confere("a área kids diz o que o Antonio contou ao robô", ["100% gratuita", "monitora", "climatizada", "fliperama", "cineminha", "1,30 m"].every((s) => LINHA_DA_AREA_KIDS.includes(s)));
 const daLoja = "Promoção de terça: borda grátis.";
 const umaVez = instrucoesDaLoja(daLoja);
