@@ -31,13 +31,26 @@ export function pastaDosTutoriais(): string | null {
 }
 
 /**
+ * Os vídeos do FireCheck moram neste mesmo volume (o FireCheck fica na
+ * Vercel, que não guarda vídeo): `tutoriais/firecheck-<tela>/<versao>/`. As
+ * fichas deles ficam no app do FireCheck (src/tutoriais/fichas.json de lá), então
+ * aqui só se confere o FORMATO — o id com o prefixo e a versão de 8 letras
+ * hexadecimais que o publicar.mjs de lá gera —, nunca um caminho livre.
+ */
+const ID_DO_FIRECHECK = /^firecheck-[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const VERSAO = /^[0-9a-f]{8}$/;
+export const ehTutorialDoFirecheck = (id: string, versao: string) => id.length <= 60 && ID_DO_FIRECHECK.test(id) && VERSAO.test(versao);
+
+/**
  * Onde gravar um arquivo de tutorial. Só aceita a versão ATUAL de um tutorial
- * que existe e os três arquivos dele — nunca um caminho escolhido por quem envia.
+ * que existe (ou um vídeo do FireCheck, pelo formato) e os três arquivos dele —
+ * nunca um caminho escolhido por quem envia.
  */
 export function caminhoDoArquivoDoTutorial(id: string, versao: string, arquivo: string): string | null {
   const pasta = pastaDosTutoriais();
   const ficha = FICHAS[id];
-  if (!pasta || !ficha || ficha.versao !== versao) return null;
+  if (!pasta) return null;
+  if (!(ficha && ficha.versao === versao) && !ehTutorialDoFirecheck(id, versao)) return null;
   if (!(ARQUIVOS_DO_TUTORIAL as readonly string[]).includes(arquivo)) return null;
   return path.join(/*turbopackIgnore: true*/ pasta, id, versao, arquivo);
 }

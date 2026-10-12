@@ -68,8 +68,18 @@ async function arquivoLegivel(caminho: string): Promise<boolean> {
  * fica no pôster. E ler 9 MB com readFile a cada visita, num servidor de 2 GB,
  * é memória que as outras rotas precisam.
  */
-function servirVideo(req: NextRequest, caminho: string, tamanho: number, tipo: string): Response {
+/**
+ * Os tutoriais em vídeo também tocam no FireCheck (outro site e o app do
+ * celular), com `crossOrigin` no <video> para a legenda funcionar: sem estes
+ * cabeçalhos o navegador recusa o vídeo e a legenda. Só a pasta tutoriais/ —
+ * conteúdo público, igual para todo mundo; foto de loja e de produto continuam
+ * sem eles.
+ */
+const DE_QUALQUER_SITE = { "Access-Control-Allow-Origin": "*", "Cross-Origin-Resource-Policy": "cross-origin" };
+
+function servirVideo(req: NextRequest, caminho: string, tamanho: number, tipo: string, extras: Record<string, string> = {}): Response {
   const cabecalhos: Record<string, string> = {
+    ...extras,
     "Content-Type": tipo,
     "Accept-Ranges": "bytes",
     "Cache-Control": "public, max-age=31536000, immutable",
@@ -112,15 +122,17 @@ export async function GET(
 
   // Raiz nova (volume persistente) primeiro; public/uploads fica como legado,
   // para as imagens que foram enviadas antes desta mudança continuarem no ar.
+  const extras = partes[0] === "tutoriais" ? DE_QUALQUER_SITE : {};
   for (const raiz of [UPLOADS_ROOT, LEGACY_PUBLIC_ROOT]) {
     const caminho = resolverDentroDe(raiz, partes);
     if (!caminho || !(await arquivoLegivel(caminho))) continue;
 
-    if (tipo.startsWith("video/")) return servirVideo(req, caminho, (await stat(caminho)).size, tipo);
+    if (tipo.startsWith("video/")) return servirVideo(req, caminho, (await stat(caminho)).size, tipo, extras);
 
     const conteudo = await readFile(caminho);
     return new NextResponse(new Uint8Array(conteudo), {
       headers: {
+        ...extras,
         "Content-Type": tipo,
         "Content-Length": String(conteudo.length),
         // O nome carrega timestamp + hash aleatório, então nunca é reaproveitado:
