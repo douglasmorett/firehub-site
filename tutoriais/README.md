@@ -75,7 +75,7 @@ cena** — é o aviso de que aquele tutorial ficou velho.
 - **Nada que saia da loja fictícia:** não clicar em aceitar/despachar pedido de iFood, não mandar
   WhatsApp, não emitir nota. O ambiente local nem tem as chaves, de propósito.
 - **Fora dos vídeos:** Checklist e ponto (é o FireCheck, produto à parte) e telas "EM TESTES"
-  (Totem, Tráfego pago) até estabilizarem.
+  (Totem) até estabilizarem. O Tráfego pago ganhou vídeo em 12/10/2026, a pedido de lojista.
 
 ## 4. Ligar o vídeo à tela
 
@@ -125,8 +125,9 @@ Os 28 vídeos foram aprovados pelo Douglas em 02/10/2026.
 | 27 | Config. | Impressoras: o Assistente e o que cada uma imprime (`impressoras`) | Impressoras |
 | 28 | Config. | Integrações: conectar iFood e 99Food (`integracoes`) | Integrações |
 | 30 | Config. | Prazo automático no iFood: a extensão do Chrome (`extensao-ifood`, 03/10/2026) | Extensão iFood |
+| 31 | Vendas | Tráfego Pago: anúncios no Facebook e Instagram (`trafego-pago`, 12/10/2026; a conta da Meta é simulada no navegador, ver o roteiro) | Tráfego pago |
 
-Fora dos vídeos: Totem e Tráfego pago (EM TESTES) e Checklist e ponto (FireCheck).
+Fora dos vídeos: Totem (EM TESTES) e Checklist e ponto (FireCheck).
 
 ## 6. O ambiente de gravação
 
