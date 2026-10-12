@@ -1074,11 +1074,23 @@ async function criarSocket(instanceName) {
       // dado que decide a taxa de quem cobra por km.
       const localizacao = saude.localizacaoDaMensagem(msg.message);
 
+      // Botão tocado numa mensagem da loja ("Quero pedir" da promoção pela API
+      // oficial, Disparo oficial do FireHub). Chega sem `conversation`, e o
+      // `continue` abaixo jogava fora justo o cliente que quer pedir. Vai para
+      // o FireHub como texto comum.
+      const textoDoBotao =
+        conteudo.templateButtonReplyMessage?.selectedDisplayText ||
+        conteudo.buttonsResponseMessage?.selectedDisplayText ||
+        conteudo.interactiveResponseMessage?.body?.text ||
+        conteudo.listResponseMessage?.title ||
+        "";
+
       const textMessage =
         conteudo.conversation ||
         conteudo.extendedTextMessage?.text ||
         conteudo.imageMessage?.caption ||
         conteudo.videoMessage?.caption ||
+        textoDoBotao ||
         (localizacao ? `📍 localização (${localizacao.lat.toFixed(5)}, ${localizacao.lng.toFixed(5)})` : "") ||
         (isAudio ? "O cliente enviou a mensagem de áudio em anexo." : "");
 
@@ -1124,6 +1136,7 @@ async function criarSocket(instanceName) {
       // de números no JSON) e com o conteúdo fora do envelope temporário: o
       // FireHub lê `message.conversation`, `message.locationMessage` etc. direto.
       let payloadMessage = saude.mensagemParaOWebhook(conteudo);
+      if (textoDoBotao && !payloadMessage.conversation) payloadMessage.conversation = textoDoBotao;
 
       if (isAudio) {
         try {
