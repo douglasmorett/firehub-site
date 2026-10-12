@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
+import { avisarOApp } from "@/lib/app-da-loja/ponte";
 import { CheckCircle, Clock, ChefHat, Bike, Package, X, Phone, ArrowLeft, Star } from "lucide-react";
 import Link from "next/link";
 
@@ -63,6 +64,12 @@ export default function OrderTrackingClient({
       }
     } catch {}
   }, [orderId, status]);
+
+  // Volta do pagamento (Asaas/Mercado Pago) cai aqui, não na tela do cardápio:
+  // o app próprio da loja também precisa saber deste pedido (lib/app-da-loja/ponte.ts).
+  useEffect(() => {
+    avisarOApp({ tipo: "PEDIDO_FEITO", pedidoId: orderId, slug });
+  }, [orderId, slug]);
 
   useEffect(() => {
     if (status === "ENTREGUE" || status === "CANCELADO") return;

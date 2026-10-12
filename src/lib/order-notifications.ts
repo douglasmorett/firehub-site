@@ -8,6 +8,7 @@ import { linkDeAvaliacaoNoGoogle } from "./avaliacao-no-google";
 import { comandaDoRobo } from "./comanda-do-robo";
 import { previsaoDaEntrega } from "./previsao-da-entrega";
 import { formaCanonica } from "./pagamento-na-entrega";
+import { avisarAparelhosDoPedido } from "./app-da-loja/aparelhos";
 
 /**
  * A forma de pagamento como o cliente lê: o site grava "CARTAO_CREDITO",
@@ -122,6 +123,22 @@ export async function sendOrderNotification(
     // caminho. A correção mora aqui para valer para todos eles
     // (lib/status-para-o-cliente.ts).
     if (type === "SAIU_ENTREGA" && ehRetirada(order.deliveryType)) type = "PRONTO_RETIRADA";
+
+    // ── APP PRÓPRIO DA LOJA ──────────────────────────────────────────────
+    // Quem pediu pelo app recebe o aviso no celular, com ou sem WhatsApp
+    // conectado e mesmo com os avisos de WhatsApp desligados: é o próprio app
+    // da loja falando com o cliente dela (lib/app-da-loja/aparelhos.ts).
+    avisarAparelhosDoPedido(
+      {
+        id: order.id,
+        dailyOrderNumber: order.dailyOrderNumber ?? null,
+        loja: order.franchisee?.storeName ?? null,
+        slug: order.franchisee?.slug ?? null,
+        entregador: order.motoboy?.name ?? null,
+      },
+      type,
+      extra?.cancelReason ?? null,
+    ).catch(() => {});
 
     // Verificar se a loja desativou notificações automáticas de pedido nas configurações
     const chatbotConfig = (order.franchisee?.chatbotConfig as any) || {};
