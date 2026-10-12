@@ -2544,6 +2544,9 @@ model WhatsappOficial {
   limite        String?
   erro          String?
   contatosSincronizadosEm DateTime?
+  /// O token do cadastro incorporado vence em 60 dias (a configuração da Meta
+  /// não oferece "nunca"); o cron renova a cada 30 (servidor.renovarTokens).
+  tokenRenovadoEm DateTime?
   conectadoEm   DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }

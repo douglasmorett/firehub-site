@@ -70,6 +70,7 @@ export async function conectarLoja(args: { franchiseeId: string; codigo: string;
     numero: numero.display_phone_number ? String(numero.display_phone_number).replace(/\D/g, "") : null,
     nomeExibido: numero.verified_name || null,
     tokenCifrado: cifrar(token),
+    tokenRenovadoEm: new Date(),
     status: "CONECTADO",
     qualidade: numero.quality_rating || null,
     erro: null,
@@ -125,6 +126,41 @@ export async function atualizarNumero(franchiseeId: string) {
     const leitura = lerErroDaMeta(e?.codigo, e?.message);
     return db.whatsappOficial.update({ where: { franchiseeId }, data: { status: leitura.pararCampanha ? "ERRO" : conexao.status, erro: leitura.motivo } });
   }
+}
+
+const RENOVAR_DEPOIS_DE_MS = 30 * 24 * 60 * 60 * 1000;
+const ultimaTentativaDeRenovar = new Map<string, number>();
+
+/**
+ * Renova os tokens com 30 dias ou mais (vencem com 60). Falhou: tenta de novo
+ * na próxima rodada; com 55 dias sem renovar, a tela pede para conectar de novo.
+ */
+export async function renovarTokens(): Promise<number> {
+  const limite = new Date(Date.now() - RENOVAR_DEPOIS_DE_MS);
+  const vencendo = await db.whatsappOficial.findMany({
+    where: { status: { in: ["CONECTADO", "ERRO"] }, OR: [{ tokenRenovadoEm: null }, { tokenRenovadoEm: { lt: limite } }] },
+    take: 20,
+  });
+  let renovados = 0;
+  for (const c of vencendo) {
+    const token = tokenDa(c);
+    // Falhou há menos de 1 h: espera (o cron roda de minuto em minuto).
+    if (!token || Date.now() - (ultimaTentativaDeRenovar.get(c.id) || 0) < 60 * 60 * 1000) continue;
+    ultimaTentativaDeRenovar.set(c.id, Date.now());
+    try {
+      const novo = await meta.renovarToken(token);
+      await db.whatsappOficial.update({ where: { id: c.id }, data: { tokenCifrado: cifrar(novo), tokenRenovadoEm: new Date() } });
+      renovados++;
+    } catch (e: any) {
+      const desde = new Date(c.tokenRenovadoEm || c.conectadoEm).getTime();
+      const quaseVencendo = Date.now() - desde > 55 * 24 * 60 * 60 * 1000;
+      console.error(`[Disparo oficial] Não renovei o token de ${c.franchiseeId}: ${e?.message}`);
+      if (quaseVencendo) {
+        await db.whatsappOficial.update({ where: { id: c.id }, data: { status: "ERRO", erro: "A conexão com a Meta vai vencer — conecte de novo com o Facebook" } });
+      }
+    }
+  }
+  return renovados;
 }
 
 export async function desconectarLoja(franchiseeId: string) {
@@ -596,7 +632,7 @@ export async function processarFila(): Promise<{ enviados: number; falhas: numbe
 const hmacSha256 = (segredo: string, corpo: string) => createHmac("sha256", segredo).update(corpo, "utf8").digest("hex");
 
 export function webhookAutentico(corpoCru: string, assinatura: string | null): boolean {
-  const segredo = process.env.META_APP_SECRET?.trim() || "";
+  const segredo = meta.segredoDoAppDoWhatsapp() || "";
   return assinaturaConfere(corpoCru, assinatura, segredo, hmacSha256);
 }
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cron-auth";
-import { atualizarModelosPendentes, conferirRecargasPendentes, processarFila } from "@/lib/disparo-oficial/servidor";
+import { atualizarModelosPendentes, conferirRecargasPendentes, processarFila, renovarTokens } from "@/lib/disparo-oficial/servidor";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -21,7 +21,8 @@ export async function GET(req: NextRequest) {
     const fila = await processarFila();
     const pagas = await conferirRecargasPendentes().catch(() => 0);
     await atualizarModelosPendentes().catch(() => {});
-    return NextResponse.json({ ok: true, ...fila, recargasPagas: pagas });
+    const tokensRenovados = await renovarTokens().catch(() => 0);
+    return NextResponse.json({ ok: true, ...fila, recargasPagas: pagas, tokensRenovados });
   } catch (err: any) {
     console.error(`[Disparo oficial] Cron falhou: ${err?.message}`);
     return NextResponse.json({ ok: false, error: err?.message }, { status: 500 });

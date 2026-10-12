@@ -2,9 +2,9 @@
  * lib/disparo-oficial/meta.ts — as chamadas à Graph API do WhatsApp (Cloud API)
  * que o Disparo oficial faz. Uma função por chamada, sem estado.
  *
- * O app é o MESMO app da Meta do FireHub (META_APP_ID / META_APP_SECRET, já
- * usado pelo Tráfego pago), com o produto WhatsApp e o cadastro incorporado
- * (Embedded Signup) na configuração WHATSAPP_ES_CONFIG_ID.
+ * O app é o "FireHub Cloud API" (1926992894663462, portfólio Fire Delivery),
+ * separado do app de anúncios: WHATSAPP_APP_ID / WHATSAPP_APP_SECRET, e o
+ * cadastro incorporado (Embedded Signup) na configuração WHATSAPP_ES_CONFIG_ID.
  *
  * Versão da Graph: a mesma do resto do que fala com a Meta (lib/meta-capi.ts).
  */
@@ -12,6 +12,16 @@ import { segredoObrigatorio, segredoOpcional } from "@/lib/segredos";
 import { VERSAO_DA_GRAPH_API } from "@/lib/meta-capi";
 
 const GRAPH = `https://graph.facebook.com/${VERSAO_DA_GRAPH_API}`;
+
+/** Id do app do WhatsApp (o público vai para a tela). */
+export function appIdDoWhatsapp(): string | null {
+  return segredoOpcional("WHATSAPP_APP_ID");
+}
+
+/** Chave secreta do app do WhatsApp: troca do código e assinatura do webhook. */
+export function segredoDoAppDoWhatsapp(): string | null {
+  return segredoOpcional("WHATSAPP_APP_SECRET");
+}
 
 export class ErroDaMeta extends Error {
   constructor(public codigo: number | null, public titulo: string, public status: number) {
@@ -40,9 +50,9 @@ async function graph<T = any>(caminho: string, opcoes: { token: string; metodo?:
 
 /** O que a tela precisa para abrir o cadastro incorporado. Null = falta configurar no servidor. */
 export function configDoCadastro(): { appId: string; configId: string; versao: string } | null {
-  const appId = segredoOpcional("META_APP_ID");
+  const appId = appIdDoWhatsapp();
   const configId = segredoOpcional("WHATSAPP_ES_CONFIG_ID");
-  if (!appId || !configId) return null;
+  if (!appId || !configId || !segredoDoAppDoWhatsapp()) return null;
   return { appId, configId, versao: VERSAO_DA_GRAPH_API };
 }
 
@@ -52,14 +62,34 @@ export function configDoCadastro(): { appId: string; configId: string; versao: s
  * manda assim que o Facebook devolve.
  */
 export async function trocarCodigoPorToken(codigo: string): Promise<string> {
-  const appId = segredoObrigatorio("META_APP_ID");
-  const segredo = segredoObrigatorio("META_APP_SECRET");
+  const appId = segredoObrigatorio("WHATSAPP_APP_ID");
+  const segredo = segredoObrigatorio("WHATSAPP_APP_SECRET");
   const url = `${GRAPH}/oauth/access_token?client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(segredo)}&code=${encodeURIComponent(codigo)}`;
   const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
   const dados: any = await res.json().catch(() => ({}));
   if (!res.ok || !dados?.access_token) {
     const e = dados?.error || {};
     throw new ErroDaMeta(Number(e?.code) || null, String(e?.message || "A Meta não devolveu o token"), res.status);
+  }
+  return String(dados.access_token);
+}
+
+/**
+ * Renova o token da loja por mais 60 dias. O token do cadastro incorporado
+ * vence em 60 dias (a configuração da Meta não deixa escolher "nunca"); o
+ * antigo continua valendo até a data dele.
+ */
+export async function renovarToken(token: string): Promise<string> {
+  const appId = segredoObrigatorio("WHATSAPP_APP_ID");
+  const segredo = segredoObrigatorio("WHATSAPP_APP_SECRET");
+  const url =
+    `${GRAPH}/oauth/access_token?grant_type=fb_exchange_token&set_token_expires_in_60_days=true` +
+    `&client_id=${encodeURIComponent(appId)}&client_secret=${encodeURIComponent(segredo)}&fb_exchange_token=${encodeURIComponent(token)}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
+  const dados: any = await res.json().catch(() => ({}));
+  if (!res.ok || !dados?.access_token) {
+    const e = dados?.error || {};
+    throw new ErroDaMeta(Number(e?.code) || null, String(e?.message || "A Meta não renovou o token"), res.status);
   }
   return String(dados.access_token);
 }
