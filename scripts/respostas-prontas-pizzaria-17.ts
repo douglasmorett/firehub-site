@@ -33,8 +33,17 @@ export const LINHA_DO_SALAO = `${MARCA_DO_SALAO} a Pizzaria 17 não é só deliv
 const MARCA_DOS_COMBOS = "SABORES DOS COMBOS PROMOCIONAIS:";
 export const LINHA_DOS_COMBOS = `${MARCA_DOS_COMBOS} nos combos promocionais (COMBO 1 ao COMBO 7) só entram estes sabores, como diz a foto dos sabores — pizzas salgadas: Mussarela, Marguerita, Presunto, Calabresa, Bacon ovos, Milho bacon e Brasileira; pizzas doces: Banana canela, Banana leite condensado e Brigadeiro; refrigerantes: Sukita uva 2l, Sukita laranja 2l, Guaraná Antártica 1,5l e Pepsi 1,5l. O cliente pediu outro sabor ou refrigerante num desses combos? Diga com educação que esse não entra no combo e diga quais entram.`;
 
-const LINHAS_DA_LOJA = [LINHA_DO_SALAO, LINHA_DOS_COMBOS];
-const MARCAS = [MARCA_DO_SALAO, MARCA_DOS_COMBOS];
+/**
+ * O Antonio contou ao robô, pelo número dele, às 17h38 de 12/10/2026: "nossa
+ * área kids tem fliperama, tem cineminha, é climatizada e tem monitora, 100%
+ * gratuito" — e o robô respondeu "Anotado, adicionei", sem gravar nada (o robô
+ * não grava instrução). A altura e o menor de 3 anos vêm do texto de reserva.
+ */
+const MARCA_DA_AREA_KIDS = "ÁREA KIDS:";
+export const LINHA_DA_AREA_KIDS = `${MARCA_DA_AREA_KIDS} a Pizzaria 17 tem área kids 100% gratuita, com monitora, climatizada, com fliperama e cineminha. No parquinho, criança de até 1,30 m de altura; menores de 3 anos brincam com um responsável. Perguntou da área kids, do espaço das crianças ou se dá para levar criança: responda com isso.`;
+
+const LINHAS_DA_LOJA = [LINHA_DO_SALAO, LINHA_DOS_COMBOS, LINHA_DA_AREA_KIDS];
+const MARCAS = [MARCA_DO_SALAO, MARCA_DOS_COMBOS, MARCA_DA_AREA_KIDS];
 
 export function instrucoesDaLoja(atual: unknown): string {
   const linhas = (typeof atual === "string" ? atual : "").split("\n").filter((l) => !MARCAS.some((m) => l.trim().startsWith(m)));
