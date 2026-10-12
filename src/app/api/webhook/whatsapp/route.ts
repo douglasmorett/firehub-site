@@ -1512,6 +1512,30 @@ async function handleIncomingMessage(body: any, instance: string) {
         }
       }
 
+      // Respostas prontas da loja (lib/respostas-prontas.ts): o texto e as fotos
+      // oficiais, depois da resposta, na ordem. Foto SEM legenda: o eco volta
+      // sem texto e não conta como atendente assumindo (loop-guard); o texto
+      // vai por replyToCustomer, que registra o eco como do robô.
+      const prontasDaIa = Array.isArray(aiResponse.respostasProntas) ? aiResponse.respostasProntas : [];
+      if (prontasDaIa.length && enviou && !silenciarResposta) {
+        const { sendEvolutionMediaUrl } = await import("@/lib/whatsapp-evolution");
+        for (const p of prontasDaIa) {
+          if (typeof p?.texto === "string" && p.texto && await replyToCustomer(user.id, remoteJid, p.texto, recipientTarget)) {
+            trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
+          }
+          for (const imagem of Array.isArray(p?.imagens) ? p.imagens : []) {
+            if (await sendEvolutionMediaUrl(user.id, recipientTarget, String(imagem), "", "image")) {
+              trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
+            } else {
+              console.warn(`[WhatsApp Webhook] 🖼️ Resposta pronta "${p?.id}": a foto não saiu (${String(imagem).slice(0, 80)}).`);
+            }
+          }
+          if (typeof p?.textoDepois === "string" && p.textoDepois && await replyToCustomer(user.id, remoteJid, p.textoDepois, recipientTarget)) {
+            trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: recipientTarget });
+          }
+        }
+      }
+
       // O arquivo vai DEPOIS do texto, nunca como legenda: no WhatsApp a legenda
       // de mídia fica escondida atrás do "ver mais" e o cliente não lê. Se o envio
       // falhar, não deixamos a conversa no vácuo — a IA já prometeu o cardápio,

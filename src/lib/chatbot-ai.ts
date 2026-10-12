@@ -64,6 +64,7 @@ import { itensEmTexto, mensagemDoAcrescimoEnviado, pedidoAtivoParaOPrompt } from
 import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco";
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
+import { lerRespostasProntas, blocoDasRespostasProntas, textoDasRespostasProntas, extrairMarcasDeRespostaPronta, envioDasRespostasProntas } from "./respostas-prontas";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -523,6 +524,8 @@ export async function processChatbotAI(
     : DOCUMENTO_NAO_PEDIDO;
   const personality = chatbotConfig.personality || "SIMPATICO";
   const customPrompt = (chatbotConfig.customPrompt || chatbotConfig.customInstructions || "").trim();
+  // Texto e fotos oficiais da loja para assuntos certos (lib/respostas-prontas.ts).
+  const respostasProntas = lerRespostasProntas(chatbotConfig);
   // Nome do atendente sai da configuração do chatbot da própria loja. Sem nome
   // cadastrado o robô atende igual, só não se apresenta — antes o padrão era
   // "Hakim" para as lojas da rede e "Atendente" para o resto, e "Atendente" é
@@ -1328,7 +1331,7 @@ ${availableCouponsText || "NENHUM CUPOM DISPONÍVEL NO MOMENTO."}
 
 NOSSO CARDÁPIO COMPLETO DA LOJA:
 ${catalogSummary}
-${customPrompt ? `\nINSTRUÇÕES EXTRAS E PROMOÇÕES DA LOJA: ${customPrompt}\n` : ""}
+${customPrompt ? `\nINSTRUÇÕES EXTRAS E PROMOÇÕES DA LOJA: ${customPrompt}\n` : ""}${blocoDasRespostasProntas(respostasProntas)}
 COMO LER A CONVERSA: a primeira mensagem do usuário é um bloco "════ CONTEXTO DESTA CONVERSA ════" montado pelo sistema (situação da loja agora, dados do cliente, pedidos dele, memória do pedido em andamento, validação do endereço no mapa) — não é fala do cliente. É a fonte da verdade sobre ele: use-o, mas NUNCA o repita, cite ou mencione, e não o trate como novidade: o que o histórico mostra que você já disse (nome, cupom, link, horário) não se diz de novo. Depois vem a conversa de verdade, e a última mensagem é o que o cliente acabou de dizer.`;
 
       // ── O QUE É DA LOJA FICA NO SISTEMA; O QUE É DESTA CONVERSA VAI NA MENSAGEM ──
@@ -1609,6 +1612,10 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         // A chave Pix também: a limpeza tiraria o "_" e a rede de segurança, o resto.
         const modeloPediuPix = generatedText.search(MARCA_ENVIAR_PIX) >= 0;
         generatedText = generatedText.replace(MARCA_ATENDENTE, "").replace(MARCA_CARDAPIO, "").replace(MARCA_ENVIAR_PIX, "");
+        // [[RESPOSTA_PRONTA:id]] também sai antes da limpeza (o "_" seria comido);
+        // quem manda o texto e as fotos é o webhook (lib/respostas-prontas.ts).
+        const marcasProntas = extrairMarcasDeRespostaPronta(generatedText, respostasProntas);
+        generatedText = marcasProntas.texto;
 
         let cleanText = generatedText
           .replace(/^(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|RESPONSE|RESPOSTA|PLAN|STEPS):\s*/gi, "")
@@ -1733,7 +1740,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
               : (chatbotConfig as any).fazReservaDeMesa === false
                 ? "A loja não faz reserva de mesa."
                 : "";
-          const fonteDosFatos = [storeName, user.storeAddress, catalogSummary, customPrompt, fatoDaReserva].filter(Boolean).join("\n");
+          const fonteDosFatos = [storeName, user.storeAddress, catalogSummary, customPrompt, fatoDaReserva, textoDasRespostasProntas(respostasProntas)].filter(Boolean).join("\n");
           const semFonte = servicosSemFonte(semMarcas, fonteDosFatos, { soDelivery: chatbotConfig.storeType !== "PHYSICAL" });
           if (semFonte.length > 0) {
             console.warn(`[Chatbot AI] 🚫 Resposta afirmava sem fonte (${semFonte.join(", ")}) — troquei por "não sei" e chamei o atendente. Era: ${semMarcas.slice(0, 200)}`);
@@ -2081,10 +2088,16 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         // pedido não existe" só aparecia relendo log cru do Coolify — e o
         // rastro guarda 60 entradas, então o incidente já tinha rolado para
         // fora da janela quando alguém ia investigar.
+        // Respostas prontas: se o modelo escreveu SÓ a marca, o texto da loja
+        // vira a própria resposta (envioDasRespostasProntas).
+        const semMarcas = cleanText.replace(/\[\[[\s\S]*?\]\]/g, "").trim();
+        const prontas = envioDasRespostasProntas(marcasProntas.ids, respostasProntas, semMarcas);
+        if (prontas.envios.length && !semMarcas) cleanText = `${prontas.resposta}\n${cleanText}`.trim();
         return {
           reply: cleanText,
           // A chave Pix da loja, para o webhook mandar sozinha depois da resposta.
           ...(enviarChavePix && pixDaLoja ? { chavePix: pixDaLoja.chave } : {}),
+          ...(prontas.envios.length ? { respostasProntas: prontas.envios } : {}),
           pedido: resultadoDoSync
             ? (resultadoDoSync.gravado
                 ? { ok: true as const, id: resultadoDoSync.orderId, numero: resultadoDoSync.numero, finalizado: resultadoDoSync.finalizado, itens: resultadoDoSync.itens }
