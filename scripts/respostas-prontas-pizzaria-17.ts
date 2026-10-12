@@ -42,8 +42,19 @@ export const LINHA_DOS_COMBOS = `${MARCA_DOS_COMBOS} nos combos promocionais (CO
 const MARCA_DA_AREA_KIDS = "ÁREA KIDS:";
 export const LINHA_DA_AREA_KIDS = `${MARCA_DA_AREA_KIDS} a Pizzaria 17 tem área kids 100% gratuita, com monitora, climatizada, com fliperama e cineminha. No parquinho, criança de até 1,30 m de altura; menores de 3 anos brincam com um responsável. Perguntou da área kids, do espaço das crianças ou se dá para levar criança: responda com isso.`;
 
-const LINHAS_DA_LOJA = [LINHA_DO_SALAO, LINHA_DOS_COMBOS, LINHA_DA_AREA_KIDS];
-const MARCAS = [MARCA_DO_SALAO, MARCA_DOS_COMBOS, MARCA_DA_AREA_KIDS];
+/**
+ * 12/10/2026 (feriado, segunda): o robô mandou o rodízio e a equipe corrigiu —
+ * "hoje feriado não estamos funcionando com o rodízio". O robô sabe do feriado
+ * pela linha FERIADO dos DADOS DA LOJA (lib/holidays.ts).
+ */
+const MARCA_DO_RODIZIO = "RODÍZIO:";
+export const LINHA_DO_RODIZIO = `${MARCA_DO_RODIZIO} só de segunda a quinta e NÃO funciona em feriado (veja FERIADO em DADOS DA LOJA). Perguntaram do rodízio num feriado? Diga que hoje, por ser feriado, não tem rodízio e ofereça os combos promocionais; para outro dia, mande a resposta pronta do rodízio.`;
+
+const LINHAS_DA_LOJA = [LINHA_DO_SALAO, LINHA_DOS_COMBOS, LINHA_DA_AREA_KIDS, LINHA_DO_RODIZIO];
+const MARCAS = [MARCA_DO_SALAO, MARCA_DOS_COMBOS, MARCA_DA_AREA_KIDS, MARCA_DO_RODIZIO];
+
+/** O nome com que o robô se apresenta (Douglas, 12/10/2026: "Yasmim-bot" → "Yasmim"). */
+export const NOME_DO_ATENDENTE = "Yasmim";
 
 export function instrucoesDaLoja(atual: unknown): string {
   const linhas = (typeof atual === "string" ? atual : "").split("\n").filter((l) => !MARCAS.some((m) => l.trim().startsWith(m)));
@@ -176,11 +187,11 @@ async function main() {
       const loja = await prisma.user.findFirst({ where: { slug }, select: { id: true, storeName: true, chatbotConfig: true } });
       if (!loja) throw new Error(`Loja ${slug} não encontrada.`);
       const atual = comoObjeto(loja.chatbotConfig);
-      if (i === 0) regras = regrasDaPrincipal(atual);
-      const mudaRegra = i === 0 ? [] : Object.keys(regras).filter((k) => JSON.stringify(atual[k]) !== JSON.stringify(regras[k]));
+      if (i === 0) regras = { ...regrasDaPrincipal(atual), agentName: NOME_DO_ATENDENTE };
+      const mudaRegra = Object.keys(regras).filter((k) => JSON.stringify(atual[k]) !== JSON.stringify(regras[k]));
       console.log(`${loja.storeName} (${loja.id}): ${Array.isArray(atual.respostasProntas) ? (atual.respostasProntas as unknown[]).length : 0} → ${validas.length} respostas prontas`);
       console.log(`  instruções da loja: ${instrucoesDaLoja(atual.customPrompt) === atual.customPrompt ? "já estão certas" : "ganham as linhas do salão e dos combos"}`);
-      if (i > 0) console.log(`  regras da principal: ${mudaRegra.length ? mudaRegra.map((k) => `${k} ${JSON.stringify(atual[k])} → ${JSON.stringify(regras[k])}`).join("; ") : "já iguais"}`);
+      console.log(`  regras do robô: ${mudaRegra.length ? mudaRegra.map((k) => `${k} ${JSON.stringify(atual[k])} → ${JSON.stringify(regras[k])}`).join("; ") : "já iguais"}`);
       if (!gravar) continue;
       // Relê na hora de gravar e só troca estas chaves: conexão e o resto ficam.
       const fresca = await prisma.user.findUnique({ where: { id: loja.id }, select: { chatbotConfig: true } });
@@ -190,7 +201,7 @@ async function main() {
         data: {
           chatbotConfig: {
             ...base,
-            ...(i === 0 ? {} : regras),
+            ...regras,
             respostasProntas: validas,
             customPrompt: instrucoesDaLoja(base.customPrompt),
           } as object,
