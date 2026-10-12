@@ -58,7 +58,10 @@
  *     e pela descrição, e nunca a do dono.
  *   • 99Food e Keeta: o FireHub não tem como fechar a loja nesses canais
  *     (food99-api.ts `setShopStatus` só põe ONLINE, de propósito; a Keeta não
- *     tem chamada de status de loja aqui). O aviso ao dono diz isso.
+ *     tem chamada de status de loja aqui). O pedido deles (e da Wabiz) deixa
+ *     de nascer ACEITO enquanto durar a queda (`aceitaSozinhoAgora`, em
+ *     lib/loja-sem-conexao-no-banco.ts): fica Novo, esperando a loja. O aviso
+ *     ao dono diz isso.
  *   • Aviso ao dono (lib/alertas-do-dono.ts, "loja_sem_conexao"), na queda e
  *     na volta. Loja que pisca não vira enxurrada: entre dois avisos de queda
  *     passam pelo menos 20 min.
@@ -619,7 +622,7 @@ export function mensagemDeQueda(o: {
     falharam.length > 0 ? `iFood${nomes(falharam)}: não consegui pausar agora, tento de novo a cada 2 minutos.` : null,
     semAcesso.length > 0 ? `iFood${nomes(semAcesso)}: o FireHub não tem permissão para pausar. Se a queda demorar, pause pelo Gestor de Pedidos.` : null,
     o.semPausaAutomatica && o.semPausaAutomatica.length > 0
-      ? `⚠️ ${listaEmTexto(o.semPausaAutomatica)} não ${o.semPausaAutomatica.length > 1 ? "têm" : "tem"} pausa automática: os pedidos de lá continuam entrando. Se a queda demorar, pause pelo app.`
+      ? `⚠️ ${listaEmTexto(o.semPausaAutomatica)} não ${o.semPausaAutomatica.length > 1 ? "têm" : "tem"} pausa automática: os pedidos de lá continuam entrando, mas *sem aceite automático* — ficam como Novo esperando vocês. Se a queda demorar, pause pelo app.`
       : null,
     ``,
     `Quando o Assistente ou um painel voltar a falar com o FireHub, *tudo é reaberto sozinho* e você recebe outro aviso.`,
