@@ -1,0 +1,16 @@
+{
+  "name": "firehub-contingencia-supervisor",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Supervisor do Modo Contingência: roda no computador da loja (Node 22), mantém a cópia, percebe a queda e sobe o FireHub local.",
+  "scripts": {
+    "build": "esbuild index.ts --bundle --platform=node --target=node22 --outfile=dist/supervisor.js --log-level=warning"
+  },
+  "dependencies": {
+    "pg": "8.13.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.11.10",
+    "esbuild": "0.24.2"
+  }
+}

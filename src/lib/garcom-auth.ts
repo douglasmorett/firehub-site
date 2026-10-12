@@ -30,10 +30,10 @@ import { encode, decode } from "next-auth/jwt";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "./auth";
 import { prisma } from "./prisma";
+import { COOKIE_SEGURO } from "./modo-local";
 
 /** Nome do cookie. O prefixo __Secure- exige HTTPS, que é o caso em produção. */
-export const COOKIE_DO_GARCOM =
-  process.env.NODE_ENV === "production" ? "__Secure-firehub_garcom" : "firehub_garcom";
+export const COOKIE_DO_GARCOM = COOKIE_SEGURO ? "__Secure-firehub_garcom" : "firehub_garcom";
 
 /** Muda o salt e TODO garçom precisa entrar de novo. Não mexer sem motivo. */
 const SALT_DO_GARCOM = "firehub-garcom-v1";
@@ -85,7 +85,7 @@ export function opcoesDoCookieDoGarcom(maxAge: number = DURACAO_DA_SESSAO_S) {
   return {
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    secure: COOKIE_SEGURO,
     path: "/",
     maxAge,
   };

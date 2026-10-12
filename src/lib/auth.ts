@@ -2,6 +2,7 @@ import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
+import { COOKIE_SEGURO } from "./modo-local";
 import { decode } from "next-auth/jwt";
 import {
   verificarFreioDeLogin,
@@ -246,12 +247,13 @@ export const authOptions: NextAuthOptions = {
   },
   cookies: {
     sessionToken: {
-      name: process.env.NODE_ENV === "production" ? `__Secure-next-auth.session-token` : `next-auth.session-token`,
+      // No computador da loja (modo contingência) o endereço é http: cookie comum.
+      name: COOKIE_SEGURO ? `__Secure-next-auth.session-token` : `next-auth.session-token`,
       options: {
         httpOnly: true,
         sameSite: "lax",
         path: "/",
-        secure: process.env.NODE_ENV === "production",
+        secure: COOKIE_SEGURO,
       },
     },
   },

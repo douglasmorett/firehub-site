@@ -9,6 +9,13 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.NEXT_PHASE === "phase-production-build") return;
 
+  // Computador da loja (modo contingência): nada sai para fora — antes do DDL
+  // e do primeiro request (lib/modo-local.ts).
+  if (process.env.FIREHUB_LOCAL === "1") {
+    const { instalarBloqueioDeSaida } = await import("./lib/modo-local");
+    instalarBloqueioDeSaida();
+  }
+
   const {
     garantirColunasDePreco,
     garantirColunasDoSchema,
@@ -85,4 +92,9 @@ export async function register() {
   // boot, e não na primeira mensagem de um cliente.
   const { garantirColunaDaMemoria } = await import("./lib/memoria-da-conversa-no-banco");
   await garantirColunaDaMemoria();
+  // Modo Contingência: as tabelas e o diário da cópia das lojas ativadas
+  // (lib/contingencia/estrutura-no-banco.ts). Nunca lança e não roda no
+  // computador da loja.
+  const { garantirEstruturaDaContingencia } = await import("./lib/contingencia/estrutura-no-banco");
+  await garantirEstruturaDaContingencia();
 }

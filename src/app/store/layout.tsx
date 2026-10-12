@@ -16,6 +16,7 @@ import AvisoCaixaAberto24h from "@/components/customer/AvisoCaixaAberto24h";
 import AvisoImpressaoParada from "@/components/customer/AvisoImpressaoParada";
 import { AvisoDispensavel, BotaoNaoVerMais } from "@/components/customer/NaoVerMais";
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
+import TrocaDeContingencia from "@/components/contingencia/TrocaDeContingencia";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
 import CentralDeTutoriais from "@/components/CentralDeTutoriais";
 import TutorialDaTela from "@/components/TutorialDaTela";
@@ -105,7 +106,10 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   const isHakimStore = storeOwner?.isFranqueadoHakim === true || user?.isFranqueadoHakim === true || userEmailClean === "contatohakim@gmail.com";
   const isSpecialStore = isHakimStore || userEmailClean === "viniciusmenezes.ofc@gmail.com";
 
-  if (isFranqueado && targetFranchiseeId && !isSpecialStore) {
+  // No computador da loja (modo contingência) a mensalidade nunca trava nem
+  // aparece: a loja está sem internet, e travar o caixa no meio da queda é o
+  // contrário do que a contingência existe para fazer (lib/modo-local.ts).
+  if (isFranqueado && targetFranchiseeId && !isSpecialStore && process.env.FIREHUB_LOCAL !== "1") {
     try {
       const closedCycle = await prisma.franchiseeBillingCycle.findFirst({
         where: {
@@ -159,7 +163,9 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   // que entrou pelo "Acessar" do admin não aceita pela loja. Ver
   // lib/termos-de-uso.ts — erro de banco ali responde "já aceitou".
   const ehDonoDaConta = user?.role === "FRANCHISEE" && !user?.ownerId && !(session.user as any)?.impersonatedBy;
-  const precisaAceitarTermos = ehDonoDaConta && user?.id ? !(await aceitouVersaoAtual(user.id)) : false;
+  // Na contingência (computador da loja) os termos não interrompem a operação:
+  // o aceite é gravado na nuvem e não faz parte da cópia.
+  const precisaAceitarTermos = ehDonoDaConta && user?.id && process.env.FIREHUB_LOCAL !== "1" ? !(await aceitouVersaoAtual(user.id)) : false;
   // Conta criada depois desta versão (pelo robô ou pelo admin) nunca viu termo
   // nenhum: o título não pode dizer "atualizamos".
   const contaNovaParaOsTermos = !!user?.createdAt && new Date(user.createdAt) >= new Date(`${VERSAO_DOS_TERMOS}T00:00:00-03:00`);
@@ -168,6 +174,9 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     <CartProvider>
       <TutoriaisEnviados ids={tutoriaisEnviados()}>
       <GlobalPrintListener />
+      {/* Modo Contingência: guarda o bilhete e pula para o computador da loja
+          quando a nuvem cai (components/contingencia/TrocaDeContingencia.tsx). */}
+      <TrocaDeContingencia tipo="painel" />
       {/* O aviso de cancelamento e disputa NÃO mora aqui: montado no layout,
           ele abria em cima do KDS e de qualquer outra tela. Fica só na tela
           de pedidos (app/store/pedidos-clientes/page.tsx). */}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { MODO_LOCAL } from "@/lib/modo-local";
 import { prisma } from "@/lib/prisma";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { getServerSession } from "next-auth/next";
@@ -870,7 +871,10 @@ export async function GET(req: NextRequest) {
 
     const targetFranchiseeId = user.ownerId || user.id;
 
-    try {
+    // No computador da loja (modo contingência) o poll NÃO consulta os
+    // parceiros: com internet, ele consumiria e daria ack em eventos do iFood
+    // que a nuvem nunca veria (lib/modo-local.ts).
+    if (!MODO_LOCAL) try {
       await Promise.allSettled([
         pollIfoodEvents(targetFranchiseeId),
         pollJotajaEvents(targetFranchiseeId),

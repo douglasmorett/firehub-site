@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import TrocaDeContingencia from "@/components/contingencia/TrocaDeContingencia";
 
 export const metadata: Metadata = {
   title: "Acesso do Garçom — FireHub",
@@ -19,5 +20,12 @@ export const viewport: Viewport = {
 };
 
 export default function GarcomLayout({ children }: { children: React.ReactNode }) {
-  return <>{children}</>;
+  // Modo Contingência: o celular do garçom também pula para o computador da
+  // loja quando a nuvem cai (components/contingencia/TrocaDeContingencia.tsx).
+  return (
+    <>
+      <TrocaDeContingencia tipo="garcom" />
+      {children}
+    </>
+  );
 }

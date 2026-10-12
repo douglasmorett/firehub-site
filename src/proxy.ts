@@ -147,8 +147,11 @@ export async function proxy(request: NextRequest) {
   const ehChamadaLocal =
     /^(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$/.test(hostDaRequisicao);
 
+  // No computador da loja (modo contingência) a TV e o garçom chegam por
+  // http://<ip-do-computador>: não existe https para onde mandar.
   if (
     process.env.NODE_ENV === "production" &&
+    process.env.FIREHUB_LOCAL !== "1" &&
     request.headers.get("x-forwarded-proto") === "http" &&
     !ehChamadaLocal
   ) {
