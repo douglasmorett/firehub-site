@@ -2619,6 +2619,7 @@ async function syncAiOrderToDatabase({
   const itensDescartados: string[] = [];
   /** "Produto: sabor que não casou" de pergunta OBRIGATÓRIA que ficou incompleta (lib/item-do-robo.ts). */
   const saboresSemCasar: string[] = [];
+  const maximosPassados: Array<{ produto: string; pergunta: string; maximo: number; escolhas: string[] }> = [];
   const orderItemsData = (payload.items || [])
     .map((it: any) => {
       const pedido = chaveDeNome(it.name);
@@ -2680,6 +2681,7 @@ async function syncAiOrderToDatabase({
       // já leem: comboSelections, notes e productName.
       const doItem = escolhasDoItem(it, matchedProduct as any);
       if (doItem.grupoIncompleto) saboresSemCasar.push(`${matchedProduct.name}: ${doItem.naoCasadas.join(", ")}`);
+      if (doItem.passouDoMaximo) maximosPassados.push({ produto: matchedProduct.name, ...doItem.passouDoMaximo });
       if (doItem.naoCasadas.length > 0) {
         console.warn(
           `[Chatbot AI] opções sem correspondência em "${matchedProduct.name}": ${doItem.naoCasadas.join(", ")} — não cobradas; foram para a observação do item.`
@@ -2934,6 +2936,25 @@ async function syncAiOrderToDatabase({
       mensagemParaOCliente:
         `Anotei seu pedido! 📝 Só não achei no cardápio exatamente "${saboresSemCasar.map((s) => s.split(": ")[1]).join(", ")}", ` +
         `então a loja vai conferir o sabor e o valor com você por aqui antes de mandar pra cozinha — não precisa repetir nada! 😊`,
+    };
+  }
+
+  // ── PERGUNTA COM MAIS ESCOLHAS QUE O MÁXIMO ──────────────────────────────
+  // Divinos, 11/10/2026: "Cobertura" aceita 1, o cliente pediu chocomenta e o
+  // robô anotou Menta + Chocolate; a comanda saiu com 2 coberturas. O site não
+  // deixa passar do máximo, a tag do robô também não. Mesma regra da pausa:
+  // só no pedido ainda não enviado, e o cliente ouve o limite e escolhe.
+  if (isFinal && maximosPassados.length > 0 && (!existingDraft || String(existingDraft.status).toUpperCase() === "CRIANDO_IA")) {
+    const { produto, pergunta, maximo, escolhas } = maximosPassados[0];
+    const motivo = `"${pergunta}" em "${produto}" aceita até ${maximo} e veio com ${escolhas.join(", ")}`;
+    console.warn(`[Chatbot AI Order Sync] 🔢 Pedido recusado — ${motivo}. Loja=${franchiseeId}`);
+    return {
+      gravado: false,
+      motivo,
+      regraDeNegocio: true,
+      mensagemParaOCliente:
+        `No ${produto}, "${pergunta}" é só ${maximo === 1 ? "1 opção" : `até ${maximo} opções`} 😊 ` +
+        `Anotei ${escolhas.join(" e ")}. Qual ${maximo === 1 ? "você prefere" : `${maximo} você prefere`}?`,
     };
   }
 

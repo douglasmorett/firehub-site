@@ -71,6 +71,13 @@ export type EscolhasDoItem = {
    * cobrar errado, então quem chama segura o pedido para a loja.
    */
   grupoIncompleto: string | null;
+  /**
+   * Pergunta que recebeu MAIS escolhas do que o máximo dela, ou null. Divinos,
+   * 11/10/2026: "Cobertura" aceita 1, o cliente pediu chocomenta e o robô
+   * anotou Menta + Chocolate — saiu na comanda com 2. Quem chama recusa a tag
+   * e o cliente escolhe (ou a loja cadastra a opção que faltava).
+   */
+  passouDoMaximo: { pergunta: string; maximo: number; escolhas: string[] } | null;
   /** Nome para `productName`: o do cadastro, com as escolhas entre parênteses. */
   productName: string;
   /** Texto para `notes` do item, ou null. */
@@ -347,11 +354,28 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
     }
   }
 
+  let passouDoMaximo: EscolhasDoItem["passouDoMaximo"] = null;
+  for (const grupo of produto.comboGroups || []) {
+    if (!grupo || !selecoes[grupo.id]) continue;
+    const maximo = Number(grupo.maxQty) || 0;
+    if (maximo < 1) continue;
+    const escolhidas = Object.values(selecoes[grupo.id]).reduce((s, q) => s + q, 0);
+    if (escolhidas > maximo) {
+      passouDoMaximo = {
+        pergunta: String(grupo.title || "").trim() || "opções",
+        maximo,
+        escolhas: Object.entries(selecoes[grupo.id]).map(([n, q]) => (q > 1 ? `${n} x${q}` : n)),
+      };
+      break;
+    }
+  }
+
   return {
     comboSelections: Object.keys(selecoes).length > 0 ? selecoes : null,
     somaDasOpcoes: Math.round(somaDasOpcoes * 100) / 100,
     naoCasadas,
     grupoIncompleto,
+    passouDoMaximo,
     productName: resumo.length > 0 ? `${produto.name} (${resumo.join(", ")})` : produto.name,
     notes,
   };

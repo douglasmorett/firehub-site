@@ -237,5 +237,17 @@ console.log("\n7) Mesmo nome em duas perguntas (SP Pizza, 09/10/2026)");
     escolhasDoItem({ options: ["CALABRESA", "adicional de mussarela"] }, fogazza).comboSelections, { ingr: { CALABRESA: 1 }, pagos: { MUSSARELA: 1 } });
 }
 
+console.log("\n8) Pergunta com mais escolhas que o máximo (Divinos, 11/10/2026)");
+const acai = { name: "Açaí 400ml", comboGroups: [
+  { id: "g_cob", title: "Cobertura", minQty: 0, maxQty: 1, items: [
+    { additionalPrice: 0, menuProduct: { name: "Menta" } }, { additionalPrice: 0, menuProduct: { name: "Chocolate" } }, { additionalPrice: 0, menuProduct: { name: "Morango" } }] },
+  { id: "g_comp", title: "Complementos", minQty: 0, maxQty: 3, items: [
+    { additionalPrice: 0, menuProduct: { name: "Paçoca" } }, { additionalPrice: 0, menuProduct: { name: "Leite em pó" } }, { additionalPrice: 0, menuProduct: { name: "Granola" } }] },
+] };
+igual("Menta + Chocolate em cobertura de 1 passa do máximo", escolhasDoItem({ options: ["Menta", "Chocolate", "Paçoca", "Leite em pó"] }, acai).passouDoMaximo, { pergunta: "Cobertura", maximo: 1, escolhas: ["Menta", "Chocolate"] });
+igual("1 cobertura e 2 complementos estão dentro", escolhasDoItem({ options: ["Morango", "Paçoca", "Leite em pó"] }, acai).passouDoMaximo, null);
+igual("opção repetida conta: 2x Menta em cobertura de 1", escolhasDoItem({ options: ["2x Menta"] }, acai).passouDoMaximo?.escolhas, ["Menta x2"]);
+igual("opção que não casou não conta para o máximo", escolhasDoItem({ options: ["Chocomenta", "Menta"] }, acai).passouDoMaximo, null);
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);
