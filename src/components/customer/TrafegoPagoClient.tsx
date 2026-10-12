@@ -28,12 +28,24 @@ const SOCIAL_PROOF = [
   { name: "Pastelaria Mineira", invested: 100, earned: 430, stars: 4 },
 ];
 
+/* Dinheiro e ROAS no jeito do Brasil. O cartão da campanha mostrava "R$ 0.00"
+   (toFixed) embaixo do topo em "R$ 0,00", e sem gasto o ROAS saía "—x". */
+const reais = (v: number) => `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const vezes = (gasto: number, receita: number) =>
+  gasto > 0 ? `${(receita / gasto).toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}x` : "—";
+
+const AVISO_TEXTO_PADRAO = "Este é um texto padrão, não uma sugestão feita pela IA. Vale a pena editar antes de publicar.";
+
+/* O módulo não tem otimização própria: a IA escreve o texto, o FireHub publica
+   e acompanha (meta-ads-sync confere se veicula), e quem decide para quem e
+   quando mostrar é a entrega do Facebook (menor custo + público Advantage).
+   "100% automático" e "IA otimiza 24h" prometiam o que não existe. */
 const FEATURES = [
-  { icon: Zap, label: "100% automático", desc: "IA cria e otimiza os anúncios" },
+  { icon: Zap, label: "Pronto em minutos", desc: "A IA escreve o texto do anúncio" },
   { icon: Target, label: "Só sua cidade", desc: "Raio de entrega exato" },
   { icon: BarChart2, label: "Painel em tempo real", desc: "ROI, pedidos e investimento" },
   { icon: MapPin, label: "Seus criativos", desc: "Fotos do seu cardápio" },
-  { icon: Clock, label: "Otimização contínua", desc: "IA melhora toda semana" },
+  { icon: Clock, label: "Acompanhamento", desc: "O FireHub confere se o anúncio está rodando" },
   { icon: Shield, label: "Sem surpresas", desc: "Você define o valor" },
 ];
 
@@ -137,6 +149,11 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
   const [cardapioCarregado, setCardapioCarregado] = useState(false);
   const [adCopy, setAdCopy] = useState("");
   const [adDescription, setAdDescription] = useState("");
+  /* A rota avisa quando o texto é o de reserva (a IA não rodou) e quando fotos
+     do cardápio ficaram de fora por serem pequenas. A tela descartava os dois:
+     o lojista publicava o texto padrão achando que a IA tinha escrito. */
+  const [avisoDoTexto, setAvisoDoTexto] = useState("");
+  const [avisoDasFotos, setAvisoDasFotos] = useState("");
   const [generatingCopy, setGeneratingCopy] = useState(false);
   const [creatingCampaign, setCreatingCampaign] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -421,12 +438,16 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
           message: data?.error || "Não consegui gerar o texto agora. Escreva o seu ou tente de novo.",
         });
         setCardapioCarregado(true);
-        if (!adCopy.trim()) setAdCopy(textoFallback);
+        if (!adCopy.trim()) { setAdCopy(textoFallback); setAvisoDoTexto(AVISO_TEXTO_PADRAO); }
         return;
       }
-      if (data.adCopy && !(preservarTexto && adCopy.trim())) setAdCopy(data.adCopy);
+      if (data.adCopy && !(preservarTexto && adCopy.trim())) {
+        setAdCopy(data.adCopy);
+        setAvisoDoTexto(data.avisoCopy || "");
+      }
       if (data.adDescription && !(preservarTexto && adDescription.trim())) setAdDescription(data.adDescription);
       if (data.productImages?.length > 0) setProductImages(data.productImages);
+      setAvisoDasFotos(data.avisoImagens || "");
       // Marca que a busca terminou: é o que distingue "ainda não carreguei" de
       // "carreguei e o cardápio não tem foto nenhuma".
       setCardapioCarregado(true);
@@ -436,7 +457,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
         message: "Não consegui falar com o servidor para gerar o texto. Confira a internet e tente de novo.",
       });
       setCardapioCarregado(true);
-      if (!adCopy.trim()) setAdCopy(textoFallback);
+      if (!adCopy.trim()) { setAdCopy(textoFallback); setAvisoDoTexto(AVISO_TEXTO_PADRAO); }
       if (!adDescription.trim()) setAdDescription("Delivery rápido com cardápio completo. Peça pelo nosso site!");
     } finally {
       setGeneratingCopy(false);
@@ -853,10 +874,10 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
         <span style={{ background: "#C92E09", color: "#fff", fontSize: "0.7rem", fontWeight: 800, padding: "4px 12px", borderRadius: 99, letterSpacing: 1 }}>TRÁFEGO PAGO + FIREHUB</span>
       </div>
       <h1 style={{ textAlign: "center", fontSize: "clamp(1.6rem,4vw,2.5rem)", fontWeight: 900, lineHeight: 1.2, marginBottom: "0.75rem", animation: "fadeInUp 0.6s ease" }}>
-        Conecte, invista e a IA<br />cuida do resto
+        Conecte, invista e a IA<br />monta o anúncio
       </h1>
       <p style={{ textAlign: "center", color: "#64748B", fontSize: "1rem", marginBottom: "2rem", lineHeight: 1.6 }}>
-        Anúncios no <strong>Facebook</strong> e <strong>Instagram</strong> 100% automáticos.<br />
+        Anúncios no <strong>Facebook</strong> e <strong>Instagram</strong> prontos em minutos.<br />
         Você não precisa entender nada de marketing. <strong>Só receba os pedidos.</strong>
       </p>
 
@@ -865,7 +886,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
         {[
           { step: "1", emoji: "📱", title: "Conecte o Facebook", desc: "Login em 1 clique. Sem complicação.", color: "#1877F2" },
           { step: "2", emoji: "💰", title: "Escolha o investimento", desc: "A partir de R$100/semana. Você decide.", color: "#0F766E" },
-          { step: "3", emoji: "🤖", title: "IA faz tudo por você", desc: "Cria, publica e otimiza os anúncios.", color: "#C92E09" },
+          { step: "3", emoji: "🤖", title: "IA monta o anúncio", desc: "Escreve o texto e publica para quem está perto.", color: "#C92E09" },
         ].map((s, i) => (
           <div key={i} style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.25rem", textAlign: "center", position: "relative", animation: `fadeInUp ${0.4 + i * 0.15}s ease` }}>
             <div style={{ position: "absolute", top: -12, left: "50%", transform: "translateX(-50%)", background: s.color, color: "#fff", width: 24, height: 24, borderRadius: "50%", fontSize: "0.72rem", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>{s.step}</div>
@@ -954,7 +975,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
 
         <div ref={termsBoxRef} style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "1.5rem", maxHeight: 400, overflowY: "auto", marginBottom: "1.5rem", fontSize: "0.88rem", lineHeight: 1.8, color: "#334155" }}>
           <h3 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "0.75rem" }}>1. Taxa de Gestão</h3>
-          <p>O módulo de Tráfego Pago cobra <strong>R$ 50,00/semana</strong> pelo <strong>serviço de gestão de campanhas</strong> (criação, otimização e monitoramento dos seus anúncios).</p>
+          <p>O módulo de Tráfego Pago cobra <strong>R$ 50,00/semana</strong> pelo <strong>serviço de gestão de campanhas</strong> (criação, publicação e acompanhamento dos seus anúncios).</p>
 
           <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 10, padding: "0.85rem", margin: "0.75rem 0" }}>
             <strong style={{ color: "#B71C1C" }}>🔴 IMPORTANTE:</strong>
@@ -1146,7 +1167,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
       <Banner />
       <button onClick={() => setStep("method")} style={{ background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, color: "#64748B", marginBottom: "1.5rem", fontSize: "0.9rem" }}><ArrowLeft size={16} /> Voltar</button>
       <h2 style={{ fontSize: "1.4rem", fontWeight: 900, marginBottom: "0.25rem" }}>Investimento semanal</h2>
-      <p style={{ color: "#64748B", marginBottom: "2rem" }}>Quanto você quer investir por semana? A IA otimiza cada real.</p>
+      <p style={{ color: "#64748B", marginBottom: "2rem" }}>Quanto você quer investir por semana? Dá para mudar ou pausar quando quiser.</p>
       <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 16, padding: "2rem", textAlign: "center", marginBottom: "1.5rem" }}>
         <div style={{ marginBottom: "0.25rem", color: "#64748B", fontSize: "0.85rem" }}>Investimento semanal em anúncios</div>
         <div style={{ fontSize: "3rem", fontWeight: 900, color: "#111", marginBottom: "1rem" }}>R$ <span>{investment}</span></div>
@@ -1197,7 +1218,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
         </div>
       </div>
       <div style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 12, padding: "0.85rem 1rem", marginBottom: "1.5rem", fontSize: "0.82rem", color: "#B71C1C", lineHeight: 1.6 }}>
-        🔴 <strong>Taxa de gestão:</strong> R$ 50/semana pelo serviço de criação, otimização e monitoramento. <strong>Ativou = cobra</strong>, independente do retorno em vendas.
+        🔴 <strong>Taxa de gestão:</strong> R$ 50/semana pelo serviço de criação, publicação e acompanhamento. <strong>Ativou = cobra</strong>, independente do retorno em vendas.
       </div>
       {/* Duas correções nesta porta:
           1. O gate era `connected` — presença de token na coluna. Quem fez o
@@ -1425,6 +1446,12 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
                 Carregando fotos...
               </div>
             ) : (
+              <>
+              {avisoDasFotos && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
+                  <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} /> {avisoDasFotos}
+                </div>
+              )}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(120px,1fr))", gap: 8 }}>
                 {productImages.map((p, i) => (
                   <div key={i} onClick={() => { setSelectedImage(p.imageUrl); setUploadPreview(""); }}
@@ -1439,6 +1466,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
                   </div>
                 ))}
               </div>
+              </>
             )}
           </div>
         )}
@@ -1538,7 +1566,13 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
         </div>
         <div style={{ marginBottom: "1rem" }}>
           <label style={{ fontSize: "0.78rem", color: "#64748B", fontWeight: 600, display: "block", marginBottom: 4 }}>Texto principal</label>
-          <textarea value={adCopy} onChange={e => setAdCopy(e.target.value)} rows={3}
+          {avisoDoTexto && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10, padding: "8px 12px", marginBottom: 8, fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
+              <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 2 }} /> {avisoDoTexto}
+            </div>
+          )}
+          {/* Editou, o texto passa a ser dele: o aviso de "texto padrão" sai. */}
+          <textarea value={adCopy} onChange={e => { setAdCopy(e.target.value); setAvisoDoTexto(""); }} rows={3}
             placeholder="Ex: 🍔 Peça agora! Entrega rápida na sua região..."
             style={{ width: "100%", border: "1px solid #E2E8F0", borderRadius: 10, padding: "10px 12px", fontSize: "0.9rem", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
         </div>
@@ -1621,7 +1655,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
   const totalOrders = campaigns.reduce((s, c) => s + (c.ordersGenerated ?? 0), 0);
   const totalRevenue = campaigns.reduce((s, c) => s + (c.revenue ?? 0), 0);
   const roasNum = totalSpend > 0 ? totalRevenue / totalSpend : 0;
-  const overallRoas = totalSpend > 0 ? roasNum.toFixed(1) : "—";
+  const overallRoas = vezes(totalSpend, totalRevenue);
   const roasBarPct = Math.min(roasNum / 6 * 100, 100); // 6x = barra cheia
 
   return (
@@ -1705,7 +1739,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
           { label: "Total investido", value: `R$ ${totalSpend.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "#1C1917", icon: DollarSign },
           { label: "Pedidos gerados", value: totalOrders.toLocaleString("pt-BR"), color: "#0F766E", icon: CheckCircle },
           { label: "Receita atribuída", value: `R$ ${totalRevenue.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, color: "#64748B", icon: TrendingUp },
-          { label: "ROAS geral", value: `${overallRoas}x`, color: "#C92E09", icon: BarChart2 },
+          { label: "ROAS geral", value: overallRoas, color: "#C92E09", icon: BarChart2 },
         ].map(k => (
           <div key={k.label} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1rem" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
@@ -1723,7 +1757,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
             <span style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155" }}>💰 Retorno sobre Investimento (ROAS)</span>
             <span style={{ fontSize: "0.82rem", fontWeight: 800, color: roasNum >= 2 ? "#0F766E" : roasNum >= 1 ? "#B45309" : "#C92E09" }}>
-              {overallRoas}x {roasNum >= 3 ? "🔥" : roasNum >= 1 ? "📈" : "⏳"}
+              {overallRoas} {roasNum >= 3 ? "🔥" : roasNum >= 1 ? "📈" : "⏳"}
             </span>
           </div>
           <div style={{ background: "#F1F5F9", borderRadius: 8, height: 12, overflow: "hidden", position: "relative" }}>
@@ -1735,7 +1769,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.65rem", color: "#94A3B8", marginTop: 4 }}>
             <span>0x</span>
-            <span>Investiu R${totalSpend.toFixed(0)} → Faturou R${totalRevenue.toFixed(0)}</span>
+            <span>Investiu {reais(totalSpend)} → Faturou {reais(totalRevenue)}</span>
             <span>6x+</span>
           </div>
         </div>
@@ -1938,8 +1972,8 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
           const spend = c.spend ?? 0;
           const orders = c.ordersGenerated ?? 0;
           const revenue = c.revenue ?? 0;
-          const roas = spend > 0 ? (revenue / spend).toFixed(1) : "—";
-          const cpo = orders > 0 ? `R$ ${(spend / orders).toFixed(2)}` : "—";
+          const roas = vezes(spend, revenue);
+          const cpo = orders > 0 ? reais(spend / orders) : "—";
 
           return (
             <div key={c.id} style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1.25rem", marginBottom: "0.75rem" }}>
@@ -2029,11 +2063,11 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
               {/* Métricas */}
               <div className="dash-campaign-metrics" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: "0.5rem" }}>
                 {[
-                  { label: "Investido", value: `R$ ${spend.toFixed(2)}`, color: "#1C1917" },
+                  { label: "Investido", value: reais(spend), color: "#1C1917" },
                   { label: "Impressões", value: (c.impressions ?? 0).toLocaleString("pt-BR"), color: "#64748B" },
                   { label: "Cliques", value: (c.clicks ?? 0).toLocaleString("pt-BR"), color: "#B45309" },
                   { label: "Pedidos", value: orders.toString(), color: "#0F766E" },
-                  { label: "ROAS", value: `${roas}x`, color: "#C92E09" },
+                  { label: "ROAS", value: roas, color: "#C92E09" },
                 ].map(m => (
                   <div key={m.label} style={{ background: "#F8FAFC", borderRadius: 8, padding: "8px", textAlign: "center" }}>
                     <div style={{ fontSize: "0.65rem", color: "#64748B", textTransform: "uppercase", marginBottom: 2 }}>{m.label}</div>
@@ -2046,7 +2080,7 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
               {orders > 0 && (
                 <div style={{ marginTop: 8, display: "flex", gap: "1rem", fontSize: "0.78rem", color: "#64748B" }}>
                   <span>📊 Custo/pedido: <strong style={{ color: "#111" }}>{cpo}</strong></span>
-                  {revenue > spend && <span>💚 Lucro estimado: <strong style={{ color: "#0F766E" }}>R$ {(revenue - spend).toFixed(2)}</strong></span>}
+                  {revenue > spend && <span>💚 Lucro estimado: <strong style={{ color: "#0F766E" }}>{reais(revenue - spend)}</strong></span>}
                 </div>
               )}
 
@@ -2072,9 +2106,9 @@ export default function TrafegoPagoPage({ user, localDaLoja }: { user: any; loca
           </div>
         </div>
         <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 12, padding: "1rem" }}>
-          <div style={{ fontSize: "0.82rem", color: "#0F766E", fontWeight: 700, marginBottom: 6 }}>🤖 Tudo automático</div>
+          <div style={{ fontSize: "0.82rem", color: "#0F766E", fontWeight: 700, marginBottom: 6 }}>🤖 O que fica por nossa conta</div>
           <div style={{ fontSize: "0.78rem", color: "#0F766E", lineHeight: 1.5 }}>
-            A IA cria, otimiza e monitora seus anúncios 24h. Sem precisar fazer nada.
+            A IA escreve o texto e o FireHub publica e acompanha a campanha. O Facebook escolhe para quem mostrar dentro do seu raio.
           </div>
         </div>
       </div>
