@@ -106,10 +106,19 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
+    // Campanhas, recuperação de 7/15/30 dias e cupons são do robô da LOJA:
+    // qualquer login dela vê e grava o mesmo (o da equipe lia e gravava o
+    // próprio registro — Pizzaria 17, 12/10/2026).
+    const quemPediu = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true, chatbotConfig: true },
+      select: { id: true, ownerId: true },
     });
+    const user = quemPediu
+      ? await prisma.user.findUnique({
+          where: { id: quemPediu.ownerId || quemPediu.id },
+          select: { id: true, ownerId: true, chatbotConfig: true },
+        })
+      : null;
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
@@ -458,10 +467,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
+    // A loja, não o login (ver o GET).
+    const quemPediu = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true, chatbotConfig: true, slug: true, name: true },
+      select: { id: true, ownerId: true },
     });
+    const user = quemPediu
+      ? await prisma.user.findUnique({
+          where: { id: quemPediu.ownerId || quemPediu.id },
+          select: { id: true, ownerId: true, chatbotConfig: true, slug: true, name: true },
+        })
+      : null;
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });

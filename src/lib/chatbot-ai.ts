@@ -200,6 +200,10 @@ export async function processChatbotAI(
   // taxas. O robô era carregado pelo usuário da instância; numa conta de
   // funcionário isso lia o horário e a área do FUNCIONÁRIO e gravava o pedido
   // no DONO — duas lojas diferentes na mesma conversa.
+  // As REGRAS do robô também (chatbotConfig): a Pizzaria 17 (12/10/2026) teve o
+  // WhatsApp conectado no login da caixa e o robô respondia com o config vazio
+  // dela — "somos só delivery", sem as respostas prontas. Qualquer login da
+  // loja, a mesma regra. O envio continua pela instância que recebeu.
   if (user.ownerId) {
     const dono = await prisma.user.findUnique({
       where: { id: user.ownerId },
@@ -207,6 +211,7 @@ export async function processChatbotAI(
         storeName: true, storePhone: true, storeAddress: true, storeLatLng: true, storeTimezone: true, city: true, slug: true,
         storeHours: true, storePause: true, storeOpen: true, storeDeliveryOnly: true,
         deliveryConfig: true, deliveryZones: true, deliveryZoneType: true, storeCoupons: true, storeLoyalty: true,
+        chatbotConfig: true, notificationPhone: true,
       },
     });
     if (dono) Object.assign(user, dono);

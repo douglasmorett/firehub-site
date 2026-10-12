@@ -19,15 +19,48 @@ import { lerRespostasProntas, type RespostaPronta } from "../src/lib/respostas-p
 const LOJAS = ["pizzaria-17", "pizzaria-17-aeroporto"];
 
 /**
- * Uma linha só, começando pela marca: rodar de novo troca a linha antiga e
- * mantém o que a loja escreveu nas instruções.
+ * Linhas das instruções da loja (customPrompt), uma linha cada, começando pela
+ * marca: rodar de novo troca as linhas antigas e mantém o que a loja escreveu.
  */
 const MARCA_DO_SALAO = "SALÃO E RESERVAS:";
 export const LINHA_DO_SALAO = `${MARCA_DO_SALAO} a Pizzaria 17 não é só delivery. As duas lojas têm salão para comer no local, com 120 lugares cada: Pizzaria 17 Lagomar (Avenida W 24 - Lagomar, Macaé) e Pizzaria 17 Aeroporto (R. Dr. Bezerra Menezes, 55 - Jardim Aeroporto, Macaé). Fazemos reserva de mesa e de festa: sempre que o cliente falar em reserva, reservar, reservar mesa, agendar ou marcar mesa/dia/horário, comemorar aniversário, festa, evento ou vir com um grupo, mande a resposta pronta de reserva (regras, fotos e ficha) e siga a ficha. Agendar um PEDIDO de delivery ou retirada não é reserva: aí vale o horário da loja. Nunca diga que somos só delivery ou que não temos salão.`;
 
-export function instrucoesComOSalao(atual: unknown): string {
-  const linhas = (typeof atual === "string" ? atual : "").split("\n").filter((l) => !l.trim().startsWith(MARCA_DO_SALAO));
-  return [linhas.join("\n").trim(), LINHA_DO_SALAO].filter(Boolean).join("\n\n");
+/**
+ * O robô manda a foto dos sabores dos combos, mas não enxerga o que ela diz:
+ * "ele fala que o sabor não entra, mas não fala qual que entra" (Antonio,
+ * 12/10/2026). A lista é a da foto public/robo/pizzaria-17/sabores-dos-combos.jpg.
+ */
+const MARCA_DOS_COMBOS = "SABORES DOS COMBOS PROMOCIONAIS:";
+export const LINHA_DOS_COMBOS = `${MARCA_DOS_COMBOS} nos combos promocionais (COMBO 1 ao COMBO 7) só entram estes sabores, como diz a foto dos sabores — pizzas salgadas: Mussarela, Marguerita, Presunto, Calabresa, Bacon ovos, Milho bacon e Brasileira; pizzas doces: Banana canela, Banana leite condensado e Brigadeiro; refrigerantes: Sukita uva 2l, Sukita laranja 2l, Guaraná Antártica 1,5l e Pepsi 1,5l. O cliente pediu outro sabor ou refrigerante num desses combos? Diga com educação que esse não entra no combo e diga quais entram.`;
+
+const LINHAS_DA_LOJA = [LINHA_DO_SALAO, LINHA_DOS_COMBOS];
+const MARCAS = [MARCA_DO_SALAO, MARCA_DOS_COMBOS];
+
+export function instrucoesDaLoja(atual: unknown): string {
+  const linhas = (typeof atual === "string" ? atual : "").split("\n").filter((l) => !MARCAS.some((m) => l.trim().startsWith(m)));
+  return [linhas.join("\n").trim(), ...LINHAS_DA_LOJA].filter(Boolean).join("\n\n");
+}
+
+/**
+ * As REGRAS do robô das duas lojas são as mesmas (Douglas, 12/10/2026:
+ * "qualquer acesso das duas lojas tem que ser a mesma regra para o robô"): a
+ * Aeroporto recebe da principal tudo o que diz COMO o robô atende. Fica de
+ * fora o que é de cada loja: conexão, número, endereço de retirada, a escolha
+ * de loja do grupo (só a principal) e o que o sistema grava sozinho.
+ */
+export const REGRAS_DO_ROBO = [
+  "active", "storeType", "fazReservaDeMesa", "acceptsPickup", "aiOrderingEnabled", "conferirPedidoDoRobo",
+  "autoAcceptOrders", "stopOnHumanRequest", "escalateOnComplaint", "personality", "agentName",
+  "sendOrderConfirmation", "googleReviewUrl", "pixDaLoja", "menuFileQuando", "externalMenuUrl",
+  "instantCouponEnabled", "instantCouponCode", "instantCouponDiscount",
+  "autoRecuperation7d", "autoRecuperation15d", "autoRecuperation30d", "msg7d", "msg15d", "msg30d",
+  "img7d", "img15d", "img30d", "coupon7d", "coupon15d", "coupon30d",
+] as const;
+
+export function regrasDaPrincipal(principal: Record<string, unknown>): Record<string, unknown> {
+  const regras: Record<string, unknown> = {};
+  for (const k of REGRAS_DO_ROBO) if (k in principal) regras[k] = principal[k];
+  return regras;
 }
 
 export const RESPOSTAS: RespostaPronta[] = [
@@ -98,7 +131,11 @@ XGG- 45cm (16 fatias) até 4 Sabores`,
 
 -Área Kids 100% gratuita com Monitora, Crianças para entrar no parquinho devem ter até 1,30 altura, devido a estrutura do brinquedo passadas pelo fabricante menores de 3 anos pode brincar com um responsável.`,
     imagens: ["/robo/pizzaria-17/decoracao-festa-1.jpg", "/robo/pizzaria-17/decoracao-festa-2.jpg"],
-    textoDepois: `Deixe aqui algumas informações:
+    // A última regra do texto completo que o Antonio mandou às 11h33 — vem
+    // DEPOIS das fotos, porque "esse modelo acima" são elas.
+    textoDepois: `-O tamanho da decoração permitida é esse modelo acima
+
+Deixe aqui algumas informações:
 
 Nome completo:
 2 Telefone para contato:
@@ -122,20 +159,33 @@ async function main() {
   if (validas.length !== RESPOSTAS.length) throw new Error(`Só ${validas.length} de ${RESPOSTAS.length} respostas são válidas.`);
 
   const prisma = new PrismaClient();
+  const comoObjeto = (c: unknown) => (c && typeof c === "object" ? c : {}) as Record<string, unknown>;
   try {
-    for (const slug of LOJAS) {
+    // LOJAS[0] é a principal: as regras dela valem para as duas.
+    let regras: Record<string, unknown> = {};
+    for (const [i, slug] of LOJAS.entries()) {
       const loja = await prisma.user.findFirst({ where: { slug }, select: { id: true, storeName: true, chatbotConfig: true } });
       if (!loja) throw new Error(`Loja ${slug} não encontrada.`);
-      const atual = (loja.chatbotConfig && typeof loja.chatbotConfig === "object" ? loja.chatbotConfig : {}) as Record<string, unknown>;
+      const atual = comoObjeto(loja.chatbotConfig);
+      if (i === 0) regras = regrasDaPrincipal(atual);
+      const mudaRegra = i === 0 ? [] : Object.keys(regras).filter((k) => JSON.stringify(atual[k]) !== JSON.stringify(regras[k]));
       console.log(`${loja.storeName} (${loja.id}): ${Array.isArray(atual.respostasProntas) ? (atual.respostasProntas as unknown[]).length : 0} → ${validas.length} respostas prontas`);
-      console.log(`  instruções da loja: ${String(atual.customPrompt || "").includes(LINHA_DO_SALAO) ? "já têm o salão" : "ganham a linha do salão"}`);
+      console.log(`  instruções da loja: ${instrucoesDaLoja(atual.customPrompt) === atual.customPrompt ? "já estão certas" : "ganham as linhas do salão e dos combos"}`);
+      if (i > 0) console.log(`  regras da principal: ${mudaRegra.length ? mudaRegra.map((k) => `${k} ${JSON.stringify(atual[k])} → ${JSON.stringify(regras[k])}`).join("; ") : "já iguais"}`);
       if (!gravar) continue;
-      // Relê na hora de gravar e só troca as duas chaves: nada do resto do robô muda.
+      // Relê na hora de gravar e só troca estas chaves: conexão e o resto ficam.
       const fresca = await prisma.user.findUnique({ where: { id: loja.id }, select: { chatbotConfig: true } });
-      const base = (fresca?.chatbotConfig && typeof fresca.chatbotConfig === "object" ? fresca.chatbotConfig : {}) as Record<string, unknown>;
+      const base = comoObjeto(fresca?.chatbotConfig);
       await prisma.user.update({
         where: { id: loja.id },
-        data: { chatbotConfig: { ...base, respostasProntas: validas, customPrompt: instrucoesComOSalao(base.customPrompt) } as object },
+        data: {
+          chatbotConfig: {
+            ...base,
+            ...(i === 0 ? {} : regras),
+            respostasProntas: validas,
+            customPrompt: instrucoesDaLoja(base.customPrompt),
+          } as object,
+        },
       });
       console.log("  gravado.");
     }

@@ -7,7 +7,7 @@ import {
   extrairFichaPreenchida, textoDoAvisoDaFicha, regraDaReservaPelaFicha,
 } from "../src/lib/respostas-prontas";
 import { regrasDoRobo } from "../src/lib/regras-do-robo";
-import { RESPOSTAS, LINHA_DO_SALAO, instrucoesComOSalao } from "./respostas-prontas-pizzaria-17";
+import { RESPOSTAS, LINHA_DO_SALAO, LINHA_DOS_COMBOS, instrucoesDaLoja, regrasDaPrincipal } from "./respostas-prontas-pizzaria-17";
 
 let falhas = 0;
 const confere = (oQue: string, ok: boolean, obtido?: unknown) => {
@@ -71,11 +71,39 @@ confere("regra de reserva sem ficha: igual a antes", /Me diz o dia, o horário e
 const assuntoDaReserva = lista.find((r) => r.id === "reserva-festa")?.assunto || "";
 confere("a reserva cobre as palavras do Antonio", ["reserva", "reservar mesa", "agendar", "comemorar", "aniversário", "faz reserva"].every((p) => assuntoDaReserva.includes(p)), assuntoDaReserva);
 confere("a linha do salão diz 120 lugares nas duas lojas e nunca só delivery", /120 lugares cada/.test(LINHA_DO_SALAO) && /Lagomar/.test(LINHA_DO_SALAO) && /Aeroporto/.test(LINHA_DO_SALAO) && /Nunca diga que somos só delivery/.test(LINHA_DO_SALAO));
-confere("instruções vazias ganham só a linha do salão", instrucoesComOSalao("") === LINHA_DO_SALAO && instrucoesComOSalao(undefined) === LINHA_DO_SALAO);
+const soAsDuas = `${LINHA_DO_SALAO}\n\n${LINHA_DOS_COMBOS}`;
+confere("instruções vazias ganham só as linhas do salão e dos combos", instrucoesDaLoja("") === soAsDuas && instrucoesDaLoja(undefined) === soAsDuas);
 const daLoja = "Promoção de terça: borda grátis.";
-const umaVez = instrucoesComOSalao(daLoja);
-confere("o que a loja escreveu fica, e a linha entra uma vez só", umaVez.startsWith(daLoja) && umaVez.split("SALÃO E RESERVAS:").length === 2 && instrucoesComOSalao(umaVez) === umaVez, umaVez);
-confere("linha antiga do salão é trocada pela nova", instrucoesComOSalao(`${daLoja}\n\nSALÃO E RESERVAS: texto velho`) === umaVez);
+const umaVez = instrucoesDaLoja(daLoja);
+confere(
+  "o que a loja escreveu fica, e cada linha entra uma vez só",
+  umaVez.startsWith(daLoja) && umaVez.split("SALÃO E RESERVAS:").length === 2 && umaVez.split("SABORES DOS COMBOS PROMOCIONAIS:").length === 2 && instrucoesDaLoja(umaVez) === umaVez,
+  umaVez,
+);
+confere(
+  "linhas antigas são trocadas pelas novas",
+  instrucoesDaLoja(`${daLoja}\n\nSALÃO E RESERVAS: texto velho\n\nSABORES DOS COMBOS PROMOCIONAIS: velho`) === umaVez,
+);
+
+// ── Combos: o robô não enxerga a foto dos sabores (Antonio: "não fala qual que entra") ──
+confere(
+  "a linha dos combos traz os sabores e refrigerantes da foto",
+  ["Mussarela", "Marguerita", "Presunto", "Calabresa", "Bacon ovos", "Milho bacon", "Brasileira", "Banana canela", "Banana leite condensado", "Brigadeiro", "Sukita uva 2l", "Sukita laranja 2l", "Guaraná Antártica 1,5l", "Pepsi 1,5l"].every((s) => LINHA_DOS_COMBOS.includes(s)) && /diga quais entram/.test(LINHA_DOS_COMBOS),
+);
+const combos = lista.find((r) => r.id === "combos");
+confere("combo: foto dos combos, foto dos sabores e o aviso", combos?.imagens?.length === 2 && /combos-promocionais/.test(combos.imagens[0]) && /sabores-dos-combos/.test(combos.imagens[1]) && /somente para os sabores/.test(combos.textoDepois || ""));
+
+// ── Reserva: a última regra do texto completo das 11h33 vem depois das fotos ──
+const reserva = lista.find((r) => r.id === "reserva-festa");
+confere("reserva: 'o tamanho da decoração' vem depois das fotos, antes da ficha", /^-O tamanho da decoração permitida é esse modelo acima\n\nDeixe aqui algumas informações:/.test(reserva?.textoDepois || ""), reserva?.textoDepois);
+
+// ── As duas lojas com as mesmas regras do robô; a conexão de cada uma fica ──
+const daPrincipal = regrasDaPrincipal({ storeType: "PHYSICAL", acceptsPickup: true, agentName: "Yasmim-bot", instanceName: "firehub_x", connected: true, phone: "+55", pickupAddress: "Lagomar", escolherLojaAoAceitar: true });
+confere(
+  "regras da principal: copia o comportamento, não a conexão nem o endereço",
+  daPrincipal.storeType === "PHYSICAL" && daPrincipal.acceptsPickup === true && daPrincipal.agentName === "Yasmim-bot" && !("instanceName" in daPrincipal) && !("connected" in daPrincipal) && !("phone" in daPrincipal) && !("pickupAddress" in daPrincipal) && !("escolherLojaAoAceitar" in daPrincipal),
+  daPrincipal,
+);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 if (falhas) process.exit(1);

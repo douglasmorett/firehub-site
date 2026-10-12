@@ -6,14 +6,31 @@ import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
 import { lerOutrosNumerosDoDono } from "@/lib/numeros-do-dono";
 import { limparPixDaLoja } from "@/lib/pix-da-loja";
 
+/**
+ * A configuração do robô é da LOJA: qualquer login dela (dono ou equipe) vê e
+ * grava a mesma (Douglas, 12/10/2026: "se é a mesma loja, qualquer login tem
+ * que dar a mesma configuração"). As duas rotas liam e gravavam o registro de
+ * quem estava logado: no login da caixa da Pizzaria 17 a tela mostrava um robô
+ * em branco ("só delivery", sem reserva) e o que ela salvasse ficava na conta
+ * dela, onde o robô da loja nunca lê.
+ */
+async function idDaLoja(email: string): Promise<string | null> {
+  const quemPediu = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, ownerId: true },
+  });
+  return quemPediu ? quemPediu.ownerId || quemPediu.id : null;
+}
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
+  const lojaId = await idDaLoja(session.user.email);
+  const user = lojaId ? await prisma.user.findUnique({
+    where: { id: lojaId },
     select: {
       id: true,
       ownerId: true,
@@ -28,7 +45,7 @@ export async function GET() {
       storeCoupons: true,
       notificationPhone: true,
     },
-  });
+  }) : null;
 
   if (!user) {
     return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
@@ -81,10 +98,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, chatbotConfig: true },
-  });
+  const lojaId = await idDaLoja(session.user.email);
+  const user = lojaId
+    ? await prisma.user.findUnique({
+        where: { id: lojaId },
+        select: { id: true, chatbotConfig: true },
+      })
+    : null;
 
   if (!user) {
     return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
