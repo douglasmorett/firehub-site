@@ -6,6 +6,7 @@ import ToggleFranqueadoHakim from "@/components/ToggleFranqueadoHakim";
 import AmbassadorsTab from "./AmbassadorsTab";
 import InscricoesEmbaixadorTab from "./InscricoesEmbaixadorTab";
 import AdminCostsTab from "./AdminCostsTab";
+import ProjecaoTab from "./ProjecaoTab";
 import VendedoresTab from "./VendedoresTab";
 import AcompanhamentoIfoodTab from "./AcompanhamentoIfoodTab";
 import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
@@ -50,8 +51,8 @@ type Vendedor = { id: string; name: string; active: boolean };
 type Embaixador = { id: string; name: string; code: string; active: boolean };
 
 type StatusFilter = "todos" | "trial" | "assinantes" | "pendencia" | "mes" | "usando" | "inativos" | "nunca";
-type Tab = "overview" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda" | "acompanhamento";
-const ABAS: Tab[] = ["overview", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda", "acompanhamento"];
+type Tab = "overview" | "projecao" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda" | "acompanhamento";
+const ABAS: Tab[] = ["overview", "projecao", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda", "acompanhamento"];
 
 type KPIs = {
   totalLojistas: number; emTrial: number; assinantes: number;
@@ -63,6 +64,7 @@ type KPIs = {
 
 const TITULOS: Record<Tab, string> = {
   overview: "Visão Geral",
+  projecao: "Projeção do mês",
   lojistas: "Lojistas",
   financeiro: "Faturamento",
   vendedores: "Vendedores",
@@ -556,6 +558,7 @@ export default function AdminDashboardClient({
 
   const navItens: { key: Tab; icone: string; rotulo: string }[] = [
     { key: "overview", icone: "📊", rotulo: "Visão Geral" },
+    { key: "projecao", icone: "📈", rotulo: "Projeção" },
     { key: "lojistas", icone: "🏪", rotulo: "Lojistas" },
     { key: "financeiro", icone: "💵", rotulo: "Faturamento" },
     { key: "vendedores", icone: "💼", rotulo: "Vendedores" },
@@ -930,6 +933,7 @@ export default function AdminDashboardClient({
           {tab === "agenda" && <AgendaDaEquipe modo="ADMIN" aoAbrirConversa={abrirConversa} />}
           {tab === "ambassadors" && <AmbassadorsTab />}
           {tab === "inscricoes" && <InscricoesEmbaixadorTab />}
+          {tab === "projecao" && <ProjecaoTab />}
           {tab === "custos" && <AdminCostsTab />}
           {tab === "acompanhamento" && <AcompanhamentoIfoodTab />}
 
