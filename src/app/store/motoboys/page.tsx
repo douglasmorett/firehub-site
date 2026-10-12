@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import MotoboyDashboard from "@/components/customer/MotoboyDashboard";
+import { LOJAS_COM_LANCHE_DA_EQUIPE } from "@/lib/lanche-da-equipe-regras";
 
 export default async function MotoboysPage() {
   const session = await getServerSession(authOptions);
@@ -18,7 +19,7 @@ export default async function MotoboysPage() {
   // A regra do pagamento em pedido de app é da LOJA — em conta de funcionário,
   // vem do dono, não de quem está logado.
   const dono = (user as any).ownerId
-    ? await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { deliveryConfig: true } }).catch(() => null)
+    ? await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { deliveryConfig: true, slug: true, storeName: true } }).catch(() => null)
     : null;
 
   const motoboys = await prisma.motoboy.findMany({
@@ -39,6 +40,10 @@ export default async function MotoboysPage() {
         // Quem está logado — não o dono: trocar a forma de pagamento pelo
         // relatório segue a permissão de editar pedidos de cada funcionário.
         operador={{ role: user.role, permissions: (user as any).permissions }}
+        // O lanche dos motoboys: aba só nas lojas que têm a tela (lib/lanche-da-equipe.ts).
+        lanche={LOJAS_COM_LANCHE_DA_EQUIPE.has(targetFranchiseeId)
+          ? { slug: (dono as any)?.slug || (user as any).slug || "", loja: (dono as any)?.storeName || (user as any).storeName || "" }
+          : null}
       />
     </div>
   );

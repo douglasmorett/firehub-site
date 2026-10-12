@@ -252,6 +252,26 @@ export type MesaDoQr = {
   numero: number | null;
   rotulo: string | null;
   mesas: { id: string; numero: number; rotulo: string | null }[];
+  /** O lanche dos motoboys (components/lanche/LancheDaEquipe.tsx): o modo mesa com outro envio. */
+  equipe?: EquipeNoCardapio | null;
+};
+
+/**
+ * O lanche dos motoboys pelo QR da parede (lib/lanche-da-equipe.ts). Usa o
+ * modo mesa (sem entrega, pagamento, cupom nem cashback) e troca o envio, o
+ * formulário e a faixa do topo.
+ */
+export type EquipeNoCardapio = {
+  nome: string;
+  limite: number;
+  usadoHoje: number;
+  enviar: (p: {
+    itens: { menuProductId: string; quantity: number; comboSelections: unknown; notes: string }[];
+    levar: boolean;
+    observacao: string;
+  }) => Promise<{ ok: true; numero: number | null; excedente: number; restante: number } | { ok: false; erro: string }>;
+  /** A faixa do topo (quem é, quanto resta hoje, Meus lanches, Sair). */
+  topo?: React.ReactNode;
 };
 
 type StoreRating = {
@@ -288,7 +308,7 @@ export default function CustomerStorePage({
   // cardápio muda; e quem manda no valor final é sempre o servidor).
   // A sacola da MESA é outra: preço do salão, e o que ficou no delivery não
   // pode aparecer na mesa (nem o contrário).
-  const cartStorageKey = `fh_cart_${mesa ? "mesa_" : ""}${franchisee.slug || franchisee.id}`;
+  const cartStorageKey = `fh_cart_${mesa?.equipe ? "equipe_" : mesa ? "mesa_" : ""}${franchisee.slug || franchisee.id}`;
   const cartHydrated = useRef(false);
   useEffect(() => {
     try {
@@ -2635,6 +2655,8 @@ export default function CustomerStorePage({
   // Lidos depois de montar (no servidor não há storage: ler no useState daria
   // uma tela no servidor e outra no navegador).
   const [mesaEscolhida, setMesaEscolhida] = useState("");
+  /** Lanche da equipe: comer na loja (false) ou levar (true). */
+  const [levarLanche, setLevarLanche] = useState(false);
   const [nomeNaMesa, setNomeNaMesa] = useState("");
   const [obsDaMesa, setObsDaMesa] = useState("");
   useEffect(() => {
@@ -2840,7 +2862,48 @@ export default function CustomerStorePage({
   const mesaDoPedido = mesa ? (mesa.mesaId ? { id: mesa.mesaId, numero: mesa.numero, rotulo: mesa.rotulo } : mesa.mesas.find((m) => m.id === mesaEscolhida) || null) : null;
   const nomeDaMesa = (m: { numero: number | null; rotulo: string | null } | null) => (m ? (m.rotulo ? `Mesa ${m.numero} · ${m.rotulo}` : `Mesa ${m.numero}`) : "");
 
+  // ── LANCHE DA EQUIPE ───────────────────────────────────────────────────
+  // O total e a divisão no limite (a mesma conta do servidor,
+  // lib/lanche-da-equipe-regras.ts) — o motoboy vê ANTES de enviar quanto vai
+  // ser descontado dele.
+  const equipe = mesa?.equipe || null;
+  const totalDoLanche = equipe ? Math.round(cartTotal * 100) / 100 : 0;
+  const livreNoLanche = equipe ? Math.max(0, Math.round((equipe.limite - equipe.usadoHoje) * 100) / 100) : 0;
+  const cobertoNoLanche = Math.min(livreNoLanche, totalDoLanche);
+  const excedenteDoLanche = Math.round((totalDoLanche - cobertoNoLanche) * 100) / 100;
+  const reaisDoLanche = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+
+  const enviarLancheDaEquipe = async () => {
+    if (!equipe || loading) return;
+    setLoading(true);
+    try {
+      const r = await equipe.enviar({
+        itens: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
+        levar: levarLanche,
+        observacao: obsDaMesa.trim(),
+      });
+      if (!r.ok) {
+        avisar({ tipo: "erro", titulo: "O lanche não foi enviado", texto: r.erro });
+        return;
+      }
+      clearCart();
+      setObsDaMesa("");
+      setLevarLanche(false);
+      setIsCheckout(false);
+      setMobileCartOpen(false);
+      avisar({
+        tipo: "sucesso",
+        titulo: "Lanche enviado para a cozinha!",
+        texto: `Pedido #${r.numero ?? "—"}. ${r.excedente > 0 ? `${reaisDoLanche(r.excedente)} passaram do combinado e vão ser descontados no seu acerto.` : `Ficou no combinado. Ainda restam ${reaisDoLanche(r.restante)} hoje.`}`,
+        botao: "OK",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const enviarPedidoDaMesa = async () => {
+    if (equipe) return enviarLancheDaEquipe();
     if (!mesa || loading) return;
     if (!mesaDoPedido) {
       avisar({ titulo: "Qual é a sua mesa?", texto: "Escolha o número da mesa onde você está.", campo: "mesa-escolha" });
@@ -2886,7 +2949,62 @@ export default function CustomerStorePage({
     }
   };
 
-  const formDaMesaJSX = mesa ? (
+  const formDaEquipeJSX = equipe ? (
+    <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+      <div>
+        <label className="checkout-label">Vai comer na loja ou levar? *</label>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+          {([[false, "🍽️ Comer na loja", "come aqui"], [true, "🥡 Levar", "leva embora"]] as const).map(([valor, rotulo, detalhe]) => (
+            <button
+              key={String(valor)}
+              type="button"
+              onClick={() => setLevarLanche(valor)}
+              aria-pressed={levarLanche === valor}
+              style={{
+                padding: "12px 10px", borderRadius: 12, cursor: "pointer", fontFamily: "inherit", textAlign: "center",
+                border: levarLanche === valor ? "2px solid #C2410C" : "1.5px solid #E2E8F0",
+                background: levarLanche === valor ? "#FFF7ED" : "#fff", color: "#0F172A",
+              }}
+            >
+              <div style={{ fontWeight: 900 }}>{rotulo}</div>
+              <div style={{ fontSize: "0.76rem", color: "#64748B", marginTop: 2 }}>{detalhe}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div>
+        <label className="checkout-label" htmlFor="equipe-obs">Observação (opcional)</label>
+        <textarea id="equipe-obs" value={obsDaMesa} onChange={(e) => setObsDaMesa(e.target.value)} maxLength={300} rows={2} placeholder="Ex.: sem cebola" className="checkout-input" style={{ width: "100%", resize: "vertical" }} />
+      </div>
+      <div style={{ borderTop: "1px solid #E2E8F0", paddingTop: "0.75rem", display: "flex", flexDirection: "column", gap: 4, fontSize: "0.84rem", color: "#475569" }}>
+        {cart.map((i, k) => (
+          <div key={k} style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+            <span>{i.quantity}× {i.name}</span>
+            <span style={{ fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap" }}>{reaisDoLanche(i.price * i.quantity)}</span>
+          </div>
+        ))}
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, color: "#0F172A", fontSize: "1rem", marginTop: 4, paddingTop: 6, borderTop: "1px dashed #E2E8F0" }}>
+          <span>Total do lanche</span>
+          <span>{reaisDoLanche(totalDoLanche)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between", color: "#047857", fontWeight: 700 }}>
+          <span>No combinado de hoje (restam {reaisDoLanche(livreNoLanche)})</span>
+          <span>{reaisDoLanche(cobertoNoLanche)}</span>
+        </div>
+      </div>
+      {excedenteDoLanche > 0 ? (
+        <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "0.75rem 0.9rem", fontSize: "0.88rem", color: "#991B1B", lineHeight: 1.45 }}>
+          <strong>{reaisDoLanche(excedenteDoLanche)} passam do combinado</strong> e vão ser <strong>descontados no seu acerto</strong>. Se enviar, você concorda com o desconto.
+        </div>
+      ) : (
+        <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 12, padding: "0.75rem 0.9rem", fontSize: "0.85rem", color: "#166534" }}>
+          Tudo dentro do combinado — não é descontado nada.
+        </div>
+      )}
+    </div>
+  ) : null;
+
+  const formDaMesaJSX = equipe ? formDaEquipeJSX : mesa ? (
     <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
       <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 12, padding: "0.75rem 0.9rem", fontSize: "0.85rem", color: "#166534", lineHeight: 1.45 }}>
         <strong>🍽️ {mesaDoPedido ? nomeDaMesa(mesaDoPedido) : "Pedido na mesa"}</strong><br />
@@ -3010,7 +3128,7 @@ export default function CustomerStorePage({
                   clique de comprar de novo. Quem tem pedido carregado repete
                   direto; quem não está identificado recebe o convite para
                   entrar, em vez de um vazio sem saída. */}
-              {ultimoPedido ? (
+              {mesa?.equipe ? null : ultimoPedido ? (
                 <div style={{ marginTop: 20, borderTop: "1px dashed #E2E8F0", paddingTop: 18 }}>
                   <p style={{ fontSize: "0.8rem", color: "#475569", margin: "0 0 10px", lineHeight: 1.5 }}>
                     Seu último pedido foi<br />
@@ -4259,7 +4377,9 @@ export default function CustomerStorePage({
                   gap: "6px"
                 }}
               >
-                {mesa
+                {equipe
+                  ? (loading ? "Enviando para a cozinha..." : excedenteDoLanche > 0 ? `🍔 Pedir (descontar ${reaisDoLanche(excedenteDoLanche)})` : `🍔 Pedir meu lanche • ${reaisDoLanche(totalDoLanche)}`)
+                  : mesa
                   ? (loading ? "Enviando para a cozinha..." : `🍽️ Enviar para a cozinha • R$ ${cartTotal.toFixed(2).replace(".", ",")}`)
                   : semComoPedir
                   ? soPeloAgendamento
@@ -4303,8 +4423,11 @@ export default function CustomerStorePage({
         <GoogleAnalytics measurementId={gaMeasurementId} gtmId={gtmContainerId} />
       )}
 
+      {/* O lanche da equipe: quem é, quanto resta hoje, Meus lanches. */}
+      {equipe?.topo}
+
       {/* A MESA: quem escaneou o QR sabe onde está pedindo, e que não paga agora. */}
-      {mesa && (
+      {mesa && !equipe && (
         <div style={{ background: "linear-gradient(135deg,#065F46,#059669)", color: "#fff", padding: "0.8rem 1.25rem", textAlign: "center" }}>
           <p style={{ fontWeight: 900, fontSize: "1.05rem", margin: 0 }}>
             🍽️ {mesaDoPedido ? `Você está na ${nomeDaMesa(mesaDoPedido)}` : "Pedido na mesa"}
@@ -4373,9 +4496,12 @@ export default function CustomerStorePage({
               <div className="store-address"><MapPin size={13} /><span>{franchisee.storeAddress}</span></div>
             )}
             <div className="store-meta">
+              {/* No lanche da equipe quem manda é o caixa aberto, não o horário do site. */}
+              {!mesa?.equipe && (
               <span className={`store-status ${storeStatus.open ? "open" : "closed"}`}>
                 <Clock size={12} /> {storeStatus.text}
               </span>
+              )}
 
               {/* AVALIAÇÕES CLICÁVEIS */}
               {storeRating && storeRating.count > 0 && (
@@ -4812,8 +4938,8 @@ export default function CustomerStorePage({
 
         {/* ===== DESKTOP SIDEBAR ===== */}
         <div className={`desk-cart${isCheckout ? " checkout-aberto" : ""}`} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-          {/* CARD DINÂMICO DE BENEFÍCIOS, VIP, CARIMBOS E INDIQUE & GANHE */}
-          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #E2E8F0", padding: "1.1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: "flex", flexDirection: "column", gap: "10px" }}>
+          {/* CARD DINÂMICO DE BENEFÍCIOS, VIP, CARIMBOS E INDIQUE & GANHE (fora do lanche da equipe) */}
+          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #E2E8F0", padding: "1.1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: mesa?.equipe ? "none" : "flex", flexDirection: "column", gap: "10px" }}>
             {/* Header Geral de Benefícios */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -5522,7 +5648,7 @@ export default function CustomerStorePage({
       )}
 
       {/* CONTACT WIDGET */}
-      {franchisee.ifoodWidgetId && franchisee.ifoodMerchantId && (
+      {!mesa?.equipe && franchisee.ifoodWidgetId && franchisee.ifoodMerchantId && (
         <FloatingContactWidget
           ifoodWidgetId={franchisee.ifoodWidgetId}
           ifoodMerchantId={franchisee.ifoodMerchantId}

@@ -40,5 +40,7 @@ export const TELAS_SEM_WIDGET = [
 
 export function ehTelaSemWidget(pathname: string | null | undefined): boolean {
   if (!pathname) return false;
+  // O lanche dos motoboys (/loja/<slug>/equipe): o botão tapava o "Pedir meu lanche".
+  if (/^\/loja\/[^/]+\/equipe(\/|$)/.test(pathname)) return true;
   return TELAS_SEM_WIDGET.some((rota) => pathname.startsWith(rota));
 }

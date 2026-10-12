@@ -100,6 +100,8 @@ export function chaveDoCanal(pedido: PedidoParaCanal | null | undefined): ChaveD
   // caía em DESCONHECIDO e o selo dizia "Outro canal" — e a comanda de um
   // balcão pré-pago imprimia "Pago via Outro canal (NÃO COBRAR)".
   if (src === "PDV" || src === "PRESENCIAL" || src === "BALCAO" || src === "MANUAL" || src === "CAIXA") return "PDV";
+  // O lanche dos motoboys (lib/lanche-da-equipe.ts) é feito no balcão.
+  if (src === "EQUIPE") return "PDV";
   if (src === "TOTEM") return "TOTEM";
   if (pedido.tableNumber != null && String(pedido.tableNumber) !== "") return "MESA";
   if (src === "SITE" || src === "" || src === "WEB" || src === "ONLINE") return "SITE";

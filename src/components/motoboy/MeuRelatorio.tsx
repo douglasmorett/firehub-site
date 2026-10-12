@@ -27,7 +27,7 @@ function diaDoExpediente(deslocarDias = 0): string {
 type Resposta = {
   period: { from: string; to: string };
   stats: null | {
-    totalDeliveries: number; uniqueDays: number; feeTotal: number; dailyTotal: number; totalWithDaily: number;
+    totalDeliveries: number; uniqueDays: number; feeTotal: number; dailyTotal: number; totalWithDaily: number; lancheDescontado?: number;
     cashCollectedSum: number; cashOrdersCount: number; changeGivenSum: number;
   };
   motoboy?: { dailyRate: number; entregasSemDistancia: number };
@@ -135,6 +135,11 @@ export default function MeuRelatorio({ motoboyId, storeId, aoFechar }: { motoboy
                 </div>
               ))}
             </div>
+            {s && (s.lancheDescontado || 0) > 0.005 && (
+              <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: 10, fontSize: "0.85rem", color: "#B91C1C", fontWeight: 700, marginBottom: 12 }}>
+                🍔 Lanche acima do combinado: − {reais(s.lancheDescontado)} (já tirado do A RECEBER). O detalhe de cada lanche está no QR do lanche, em "Meus lanches".
+              </div>
+            )}
             {s && s.cashOrdersCount > 0 && (
               <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 12, padding: 10, fontSize: "0.85rem", color: "#92400E", fontWeight: 700, marginBottom: 12 }}>
                 Dinheiro para entregar na loja: {reais(s.cashCollectedSum)} ({s.cashOrdersCount} pedido{s.cashOrdersCount > 1 ? "s" : ""}

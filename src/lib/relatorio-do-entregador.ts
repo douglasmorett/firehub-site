@@ -35,6 +35,7 @@ import { prisma } from "@/lib/prisma";
 import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, getInstantUTC } from "@/lib/timezone";
 import { resumoDasEntregas, ehCancelado, partesDaEntrega, canceladoComCorrida, contaComoCorrida, ehEntregaDaLoja, composicaoDoGanho } from "@/lib/resumo-do-entregador";
 import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
+import { configDaLoja, descontoDoAcerto, lanchesDoPeriodo, type LancheDoHistorico } from "@/lib/lanche-da-equipe";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
 
@@ -138,6 +139,14 @@ export async function montarRelatorioDosEntregadores(opts: {
     orderBy: { createdAt: "asc" },
   });
 
+  // O lanche dos motoboys (lib/lanche-da-equipe.ts): o que passou do
+  // combinado do dia sai do acerto. Só nas lojas que têm a tela.
+  const lanchesPorMotoboy = new Map<string, LancheDoHistorico[]>();
+  if ((await configDaLoja(lojaId).catch(() => null))?.disponivel) {
+    const lanches = await lanchesDoPeriodo({ lojaId, motoboyId, de: fromDate, ate: toDate }).catch(() => []);
+    for (const l of lanches) lanchesPorMotoboy.set(l.motoboyId, [...(lanchesPorMotoboy.get(l.motoboyId) || []), l]);
+  }
+
   // Agrupar pedidos em memória por motoboyId
   const ordersByMotoboy: Record<string, typeof allOrders> = {};
   for (const o of allOrders) {
@@ -214,8 +223,11 @@ export async function montarRelatorioDosEntregadores(opts: {
     const dailyTotal = resumo.uniqueDays * dailyRate;
     const feeTotal = resumo.feeTotal;
 
-    const totalWithDaily = dailyTotal + feeTotal;
-    const totalFeeOnly = feeTotal;
+    // O lanche acima do combinado é descontado do que a loja paga.
+    const lanches = lanchesPorMotoboy.get(mb.id) || [];
+    const lancheDescontado = descontoDoAcerto(lanches);
+    const totalWithDaily = Math.round((dailyTotal + feeTotal - lancheDescontado) * 100) / 100;
+    const totalFeeOnly = Math.round((feeTotal - lancheDescontado) * 100) / 100;
 
     return {
       motoboy: {
@@ -241,7 +253,14 @@ export async function montarRelatorioDosEntregadores(opts: {
         feeTotal,
         totalWithDaily,
         totalFeeOnly,
+        /** Lanche acima do combinado do dia, já tirado dos dois totais acima. */
+        lancheDescontado,
       },
+      /** Os lanches do período (o motoboy confere dia, itens e o que foi descontado). */
+      lanches: lanches.filter((l) => !l.cancelado).map((l) => ({
+        pedidoId: l.pedidoId, numero: l.numero, dia: l.dia, em: l.em, levar: l.levar,
+        valor: l.valor, coberto: l.coberto, excedente: l.excedente, itens: l.itens,
+      })),
       // As canceladas DEPOIS de sair (a corrida conta). O app do motoboy lê
       // este campo e diz "a corrida conta" — por isso só elas.
       cancelados: {

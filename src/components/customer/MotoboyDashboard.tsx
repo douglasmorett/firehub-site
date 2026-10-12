@@ -4,9 +4,14 @@ import MotoboyManager from "./MotoboyManager";
 import RegraDoPagamentoDoApp from "./RegraDoPagamentoDoApp";
 import MotoboyReport from "./MotoboyReport";
 import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
+import LancheDaEquipePainel from "@/components/lanche/LancheDaEquipePainel";
 
-export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliveryConfig, operador }: { initialMotoboys: any[], storeTimezone?: string, deliveryConfig?: unknown, operador: OperadorDaEdicao }) {
-  const [tab, setTab] = useState<"cadastro" | "relatorio">("cadastro");
+export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliveryConfig, operador, lanche = null }: {
+  initialMotoboys: any[], storeTimezone?: string, deliveryConfig?: unknown, operador: OperadorDaEdicao,
+  /** O lanche dos motoboys (lib/lanche-da-equipe.ts): só nas lojas que têm a tela. */
+  lanche?: { slug: string; loja: string } | null,
+}) {
+  const [tab, setTab] = useState<"cadastro" | "relatorio" | "lanche">("cadastro");
   const [motoboys, setMotoboys] = useState(initialMotoboys);
 
   const TAB_STYLE = (active: boolean) => ({
@@ -26,6 +31,11 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
         <button style={TAB_STYLE(tab === "relatorio")} onClick={() => setTab("relatorio")}>
           📊 Relatório de Pagamentos
         </button>
+        {lanche && (
+          <button style={TAB_STYLE(tab === "lanche")} onClick={() => setTab("lanche")}>
+            🍔 Lanche dos motoboys
+          </button>
+        )}
       </div>
 
       {tab === "cadastro" && (
@@ -39,6 +49,7 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
       {tab === "relatorio" && (
         <MotoboyReport motoboys={motoboys} storeTimezone={storeTimezone} operador={operador} />
       )}
+      {tab === "lanche" && lanche && <LancheDaEquipePainel slug={lanche.slug} loja={lanche.loja} />}
     </div>
   );
 }

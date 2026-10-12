@@ -680,6 +680,31 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                       );
                     })}
 
+                    {/* O lanche dos motoboys (lib/lanche-da-equipe.ts): o que
+                        passou do combinado do dia sai do acerto. Fora do
+                        filtro de integração (o lanche não é do iFood nem do 99). */}
+                    {(r.stats.lancheDescontado || 0) > 0.005 && !filtrado && (
+                      <details style={{ fontSize: "0.85rem" }}>
+                        <summary style={{ display: "flex", justifyContent: "space-between", cursor: "pointer", listStyle: "none", color: "#B91C1C" }}>
+                          <span>🍔 Lanche acima do combinado ({(r.lanches || []).filter((l: any) => l.excedente > 0).length}) · ver</span>
+                          <span style={{ fontWeight: 700 }}>− {fmt(r.stats.lancheDescontado)}</span>
+                        </summary>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, margin: "6px 0 2px", fontSize: "0.76rem", color: "#475569" }}>
+                          {(r.lanches || []).map((l: any) => (
+                            <div key={l.pedidoId} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderBottom: "1px dashed #F1F5F9", paddingBottom: 3 }}>
+                              <span>
+                                {new Date(l.em).toLocaleString("pt-BR", { timeZone: tzLoja, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                {l.numero ? ` · #${l.numero}` : ""} · {l.itens.map((i: any) => `${i.qtd}× ${i.nome}`).join(", ")}{l.levar ? " · para levar" : ""}
+                              </span>
+                              <span style={{ whiteSpace: "nowrap", fontWeight: 700, color: l.excedente > 0 ? "#B91C1C" : "#64748B" }}>
+                                {fmt(l.valor)}{l.excedente > 0 ? ` (− ${fmt(l.excedente)})` : ""}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+
                     {/* Sem valor por entrega cadastrado, a conta cai na taxa
                         que o CLIENTE pagou ao marketplace — que no 99Food já
                         vem descontada pelo cupom deles. Precisa estar escrito,
