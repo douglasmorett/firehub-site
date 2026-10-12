@@ -315,6 +315,10 @@ export default function Home() {
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", opacity: 0.9 }}>
               <img src="/images/logos/99.svg" alt="99" style={{ height: "35px", objectFit: "contain" }} />
             </div>
+            {/* Keeta */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <img src="/images/logos/keeta.png" alt="Keeta" style={{ height: "36px", objectFit: "contain" }} />
+            </div>
             {/* Jotajá */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
               <img src="/images/logos/jotaja.png" alt="Jotajá" style={{ height: "40px", objectFit: "contain" }} />

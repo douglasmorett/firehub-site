@@ -41,7 +41,7 @@ export default function IntegracoesHubClient({
   initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
-  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | null>(null);
+  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | "keeta" | null>(null);
 
   // ── ASAAS (Pix e cartão pelo site na conta da loja) ──
   // O estado vem de /api/store/asaas; o cartão da lista mostra o que é
@@ -62,6 +62,92 @@ export default function IntegracoesHubClient({
   useEffect(() => {
     if (openModal === null) lerAsaas();
   }, [openModal]);
+
+  // ── KEETA (autoatendimento pelo link oficial da Keeta) ──
+  // O lojista clica em Conectar, entra na Keeta com a conta dele, marca a loja
+  // e confirma; a Keeta devolve para /api/store/integracoes/keeta/retorno, que
+  // liga a loja e volta aqui com ?integracao=keeta&keeta=ok|erro|escolher.
+  type LojaKeetaTela = { nome: string | null; keetaMerchantId: string };
+  const [kt, setKt] = useState<{
+    carregando: boolean;
+    disponivel: boolean;
+    conectada: boolean;
+    loja: LojaKeetaTela | null;
+    autorizadas: { id: number; nome: string; endereco: string }[];
+    authId: string;
+    erro: string;
+    salvando: boolean;
+  }>({ carregando: true, disponivel: false, conectada: false, loja: null, autorizadas: [], authId: "", erro: "", salvando: false });
+  const lerKeeta = (authId?: string) =>
+    fetch(`/api/store/integracoes/keeta${authId ? `?authId=${encodeURIComponent(authId)}` : ""}`)
+      .then((r) => r.json())
+      .then((d) =>
+        setKt((k) => ({
+          ...k,
+          carregando: false,
+          disponivel: !!d.disponivel,
+          conectada: !!d.conectada,
+          loja: d.loja || null,
+          autorizadas: Array.isArray(d.autorizadas) ? d.autorizadas : k.autorizadas,
+          erro: d.erro || k.erro,
+        }))
+      )
+      .catch(() => setKt((k) => ({ ...k, carregando: false })));
+  useEffect(() => {
+    let authId = "";
+    try {
+      const q = new URLSearchParams(window.location.search);
+      if (q.get("integracao") === "keeta") {
+        setOpenModal("keeta");
+        const r = q.get("keeta");
+        if (r === "erro") setKt((k) => ({ ...k, erro: q.get("motivo") || "Não deu para conectar. Tente de novo." }));
+        if (r === "escolher") {
+          authId = q.get("authId") || "";
+          setKt((k) => ({ ...k, authId }));
+        }
+        // Tira os parâmetros da barra: um F5 não refaz a escolha nem repete o aviso.
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    } catch { /* sem window */ }
+    lerKeeta(authId || undefined);
+  }, []);
+  const conectarKeeta = async () => {
+    setKt((k) => ({ ...k, salvando: true, erro: "" }));
+    try {
+      const r = await fetch("/api/store/integracoes/keeta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "conectar" }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.url) {
+        // Mesma aba: a Keeta devolve para cá quando o lojista confirmar.
+        window.location.href = d.url;
+        return;
+      }
+      setKt((k) => ({ ...k, salvando: false, erro: d.error || "A Keeta não respondeu. Tente de novo." }));
+    } catch {
+      setKt((k) => ({ ...k, salvando: false, erro: "Sem conexão com o servidor. Tente de novo." }));
+    }
+  };
+  const escolherLojaKeeta = async (keetaMerchantId: number) => {
+    setKt((k) => ({ ...k, salvando: true, erro: "" }));
+    try {
+      const r = await fetch("/api/store/integracoes/keeta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "escolher", authId: kt.authId, keetaMerchantId }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) {
+        setKt((k) => ({ ...k, salvando: false, conectada: true, loja: d.loja || null, autorizadas: [], authId: "" }));
+        showToast("✅ Keeta conectada! Os pedidos já chegam no painel.", "#0F766E");
+      } else {
+        setKt((k) => ({ ...k, salvando: false, erro: d.error || "Não deu para ligar essa loja." }));
+      }
+    } catch {
+      setKt((k) => ({ ...k, salvando: false, erro: "Sem conexão com o servidor. Tente de novo." }));
+    }
+  };
+  const desconectarKeeta = async () => {
+    if (!window.confirm(`Desconectar ${kt.loja?.nome || "a Keeta"}? Os pedidos da Keeta param de entrar no FireHub.`)) return;
+    setKt((k) => ({ ...k, salvando: true }));
+    await fetch("/api/store/integracoes/keeta", { method: "DELETE" }).catch(() => null);
+    setKt((k) => ({ ...k, salvando: false, conectada: false, loja: null }));
+    showToast("Keeta desconectada.", "#475569");
+  };
 
   // Meta Pixel state
   const [pixelId, setPixelId] = useState(initialFacebookPixelId || "");
@@ -1196,6 +1282,21 @@ export default function IntegracoesHubClient({
       gradient: "linear-gradient(135deg, #B45309, #B45309)",
       badge: food99Connected ? { text: "🟢 Conectado & Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Integração direta com o 99Food para captura e gerenciamento automático de pedidos.",
+    },
+    {
+      id: "keeta" as const,
+      category: "channels",
+      title: "Keeta",
+      subtitle: "Integração oficial Open Delivery",
+      icon: "🟨",
+      logo: "/images/logos/keeta.png",
+      gradient: "linear-gradient(135deg, #1F2937, #111827)",
+      badge: kt.conectada
+        ? { text: "🟢 Conectado & Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" }
+        : !kt.carregando && !kt.disponivel
+          ? { text: "⏳ Em liberação", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" }
+          : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Pedidos da Keeta caem direto no FireHub e o status volta sozinho para o app. Conecte em um clique, com a sua conta da Keeta.",
     },
     {
       id: "brendi" as const,
@@ -2560,6 +2661,126 @@ export default function IntegracoesHubClient({
                       style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #B45309, #B45309)", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: food99Disponivel ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", boxShadow: "0 4px 12px rgba(245,158,11,0.3)", opacity: food99Saving || !food99Disponivel ? 0.7 : 1 }}
                     >
                       <Save size={16} /> {food99Saving ? "Abrindo…" : "Conectar com o 99Food"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* 🟨 MODAL: KEETA */}
+            {openModal === "keeta" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "#fff", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", padding: "6px" }}>
+                    <img src="/images/logos/keeta.png" alt="Keeta" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Keeta</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração oficial Keeta (Open Delivery)</span>
+                  </div>
+                </div>
+
+                {kt.carregando ? (
+                  <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#475569" }}>Consultando a Keeta…</div>
+                  </div>
+                ) : kt.conectada ? (
+                  <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#0F766E" }}>Status da Conexão:</div>
+                    {/* Dizer QUAL loja da Keeta está ligada — é como o lojista confere que ligou a certa. */}
+                    <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#0F766E" }}>
+                      🟢 {kt.loja?.nome ? `${kt.loja.nome} — conectada na Keeta` : "Loja conectada na Keeta"}
+                    </div>
+                    {kt.loja?.keetaMerchantId && (
+                      <div style={{ fontSize: "0.73rem", color: "#0F766E", marginTop: 3, opacity: 0.9, fontFamily: "monospace" }}>ID {kt.loja.keetaMerchantId}</div>
+                    )}
+                    <div style={{ fontSize: "0.78rem", color: "#0F766E", marginTop: 6, lineHeight: 1.5 }}>
+                      Os pedidos chegam sozinhos no painel e o FireHub <b>confirma na Keeta na hora</b> — a Keeta cancela
+                      pedido que ninguém confirma em 5 minutos e fecha a loja por um tempo. Pronto, saiu e entregue
+                      voltam para o app do cliente quando você muda o status aqui.
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.75rem", color: "#B45309" }}>Status da Conexão:</div>
+                    <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#B45309" }}>⚪ Loja ainda não conectada</div>
+                  </div>
+                )}
+
+                {kt.erro && (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "12px", borderRadius: "12px", marginBottom: "16px", fontSize: "0.8rem", color: "#B71C1C", lineHeight: 1.5 }}>
+                    {kt.erro}
+                  </div>
+                )}
+
+                {/* Mais de uma loja na conta da Keeta: quem aponta qual é ESTA loja é o
+                    lojista — adivinhar seria pedido na cozinha errada. */}
+                {kt.autorizadas.length > 0 && !kt.conectada && (
+                  <div style={{ background: "#FAF6F2", border: "1px solid #E7DDD3", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#1C1917", marginBottom: 8 }}>Qual destas lojas da Keeta é esta loja?</div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {kt.autorizadas.map((l) => (
+                        <button
+                          key={l.id}
+                          onClick={() => escolherLojaKeeta(l.id)}
+                          disabled={kt.salvando}
+                          style={{ textAlign: "left", background: "#fff", border: "1px solid #E7DDD3", borderRadius: 10, padding: "10px 12px", cursor: "pointer", fontFamily: "inherit" }}
+                        >
+                          <div style={{ fontSize: "0.88rem", fontWeight: 800, color: "#0F172A" }}>{l.nome || `Loja ${l.id}`}</div>
+                          <div style={{ fontSize: "0.72rem", color: "#64748B" }}>{l.endereco ? `${l.endereco} · ` : ""}<span style={{ fontFamily: "monospace" }}>ID {l.id}</span></div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {!kt.conectada && kt.autorizadas.length === 0 && (
+                  <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>Como conectar (leva menos de um minuto)</div>
+                    <ol style={{ margin: 0, paddingLeft: 18, fontSize: "0.82rem", color: "#475569", lineHeight: 1.7 }}>
+                      <li>Clique em <b>Conectar com a Keeta</b> — abre o site da Keeta.</li>
+                      <li>Entre com a <b>mesma conta da Keeta onde você vê os pedidos</b>, marque a sua loja e confirme.</li>
+                      <li>A Keeta te traz de volta para cá, já conectado.</li>
+                    </ol>
+                    <div style={{ fontSize: "0.76rem", color: "#64748B", marginTop: 10 }}>
+                      Você não precisa de código, App ID nem senha. A autorização é feita na sua própria conta da Keeta.
+                    </div>
+                    <div style={{ fontSize: "0.76rem", color: "#B45309", marginTop: 8, lineHeight: 1.5 }}>
+                      ⚠️ Conecte pelo painel <b>desta loja</b>. A conexão vale para a loja que está aberta aqui.
+                    </div>
+                  </div>
+                )}
+
+                {!kt.carregando && !kt.disponivel && (
+                  <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "12px", borderRadius: "12px", marginBottom: "16px", fontSize: "0.8rem", color: "#92400E", lineHeight: 1.5 }}>
+                    ⏳ A Keeta está liberando o FireHub como sistema parceiro. Assim que a liberação sair, o botão abaixo
+                    funciona — não precisa fazer nada agora.
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  {kt.conectada && (
+                    <button
+                      onClick={desconectarKeeta}
+                      disabled={kt.salvando}
+                      style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#B71C1C", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                    >
+                      {kt.loja?.nome ? `Desconectar ${kt.loja.nome}` : "Desconectar Keeta"}
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Fechar
+                  </button>
+                  {!kt.conectada && (
+                    <button
+                      onClick={conectarKeeta}
+                      disabled={kt.salvando || !kt.disponivel}
+                      style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "#111827", color: "#FACC15", fontWeight: 800, fontSize: "0.85rem", cursor: kt.disponivel ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", opacity: kt.salvando || !kt.disponivel ? 0.6 : 1 }}
+                    >
+                      <ExternalLink size={16} /> {kt.salvando ? "Abrindo a Keeta…" : kt.autorizadas.length > 0 ? "Conectar de novo" : "Conectar com a Keeta"}
                     </button>
                   )}
                 </div>

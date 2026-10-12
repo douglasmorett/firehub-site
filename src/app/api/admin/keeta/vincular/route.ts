@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { keetaConfigurada, onboardingDaLoja } from "@/lib/keeta/api";
-import { gravarVinculo, desligarVinculo, lojaKeetaDoFranqueado, merchantIdDaLoja } from "@/lib/keeta/lojas";
+import { keetaConfigurada } from "@/lib/keeta/api";
+import { desligarVinculo, lojaKeetaDoFranqueado, merchantIdDaLoja } from "@/lib/keeta/lojas";
+import { urlBaseDoFireHub, vincularLojaNaKeeta } from "@/lib/keeta/vinculo";
 
 /**
  * /api/admin/keeta/vincular — liga uma loja do FireHub a uma loja da Keeta (só ADMIN).
@@ -29,11 +30,6 @@ async function soAdmin() {
   return { email: String(session.user.email) };
 }
 
-function urlDoWebhook(req: NextRequest): string {
-  const base = (process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || `https://${req.headers.get("host")}`).replace(/\/+$/, "");
-  return `${base}/api/keeta/webhook`;
-}
-
 export async function GET(req: NextRequest) {
   const a = await soAdmin();
   if (a.erro) return a.erro;
@@ -56,20 +52,16 @@ export async function POST(req: NextRequest) {
   const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { id: true, storeName: true } });
   if (!loja) return NextResponse.json({ error: "Loja do FireHub não encontrada." }, { status: 404 });
 
-  const v = await gravarVinculo(lojaId, keetaMerchantId, corpo?.nome ? String(corpo.nome).slice(0, 200) : null, a.email!);
+  const v = await vincularLojaNaKeeta({
+    lojaId,
+    keetaMerchantId,
+    nome: corpo?.nome ? String(corpo.nome).slice(0, 200) : null,
+    quem: a.email!,
+    urlBase: urlBaseDoFireHub(req.headers.get("host")),
+  });
   if (!v.ok) return NextResponse.json({ error: v.motivo }, { status: 409 });
-
-  if (v.novo) {
-    const r = await onboardingDaLoja(v.loja!.merchantId, keetaMerchantId, urlDoWebhook(req));
-    if (!r.ok) {
-      // Sem onboarding a Keeta não manda evento nenhum: vínculo pela metade só
-      // engana ("Ativa" dos dois lados e nenhum pedido — a Pastel no iFood).
-      await desligarVinculo({ franchiseeId: lojaId });
-      return NextResponse.json({ error: `A Keeta recusou o registro da loja: ${r.erro}` }, { status: 502 });
-    }
-  }
-  console.log(`[Keeta] 🔗 ${loja.storeName || lojaId} ligada à loja ${keetaMerchantId} da Keeta por ${a.email}${v.novo ? " (onboarding feito)" : " (reativada)"}`);
-  return NextResponse.json({ ok: true, vinculo: v.loja, onboarding: v.novo });
+  console.log(`[Keeta] 🔗 ${loja.storeName || lojaId} ligada à loja ${keetaMerchantId} da Keeta por ${a.email}${v.onboarding ? " (onboarding feito)" : " (reativada)"}`);
+  return NextResponse.json({ ok: true, vinculo: v.loja, onboarding: v.onboarding });
 }
 
 export async function DELETE(req: NextRequest) {

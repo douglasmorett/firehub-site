@@ -257,6 +257,33 @@ export function onboardingDaLoja(merchantId: string, keetaMerchantId: number, or
   });
 }
 
+/**
+ * O link oficial para o lojista autorizar o FireHub (fluxo "self-serve com
+ * redirect" da Keeta): ele entra na Keeta, escolhe a(s) loja(s), confirma, e a
+ * Keeta o devolve para `redirectUri?authId=…`. A rota não exige token nem
+ * assinatura.
+ */
+export async function linkDeAutorizacao(redirectUri: string): Promise<ResultadoKeeta<string>> {
+  if (!keetaConfigurada()) return { ok: false, status: 0, erro: "Keeta não configurada no servidor" };
+  const qs = new URLSearchParams({ clientId: process.env.KEETA_CLIENT_ID || "", redirectUri }).toString();
+  try {
+    const r = await fetch(`${base()}/oauth/authorization/url?${qs}`, { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(TEMPO_MS) });
+    const texto = await r.text();
+    const j = (() => {
+      try {
+        return JSON.parse(texto);
+      } catch {
+        return null;
+      }
+    })();
+    const url = j?.merchantAuthorizationUrl;
+    if (!r.ok || typeof url !== "string" || !/^https?:\/\//.test(url)) return { ok: false, status: r.status, erro: `${r.status} ${texto.slice(0, 200)}` };
+    return { ok: true, status: r.status, dados: url };
+  } catch (e: any) {
+    return { ok: false, status: 0, erro: `rede: ${e?.message || e}`, repetir: true };
+  }
+}
+
 export function lojasAutorizadas(authId: string, pagina = 1) {
   return chamarKeeta("GET", `/oauth/authorized/${encodeURIComponent(authId)}/merchantInfo`, {
     query: { pageNum: String(pagina), pageSize: "100" },
