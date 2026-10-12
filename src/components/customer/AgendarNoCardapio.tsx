@@ -44,7 +44,9 @@ export default function AgendarNoCardapio({
 
   return (
     <>
-      <div style={{ margin: "10px 16px 0", padding: "10px 12px", borderRadius: 12, border: `1px solid ${horarioTexto ? "#A7F3D0" : "#E2E8F0"}`, background: horarioTexto ? "#ECFDF5" : "#F8FAFC", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      {/* Mesma largura da busca (store-search-inner: 1200px, 20px nas laterais). */}
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "10px 20px 0", boxSizing: "border-box" }}>
+      <div style={{ padding: "10px 12px", borderRadius: 12, border: `1px solid ${horarioTexto ? "#A7F3D0" : "#E2E8F0"}`, background: horarioTexto ? "#ECFDF5" : "#F8FAFC", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 200px", fontSize: "0.85rem", color: horarioTexto ? "#065F46" : "#334155", fontWeight: 700 }}>
           {horarioTexto
             ? <>📅 Pedido agendado para <strong>{horarioTexto}</strong><div style={{ fontSize: "0.74rem", fontWeight: 600, opacity: 0.85 }}>O cardápio abaixo é o desse horário.</div></>
@@ -62,6 +64,7 @@ export default function AgendarNoCardapio({
             Pedir para agora
           </button>
         )}
+      </div>
       </div>
 
       {aberto && (
