@@ -90,6 +90,8 @@ export async function montarRelatorioDosEntregadores(opts: {
       createdAt: true,
       totalAmount: true,
       deliveryFee: true,
+      // Entrega grátis: o valor cheio que o motoboy recebe (taxaDaCorrida).
+      entregaGratis: true,
       motoboyFee: true,
       discountTotal: true,
       discountIfood: true,

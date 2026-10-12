@@ -102,7 +102,7 @@ export default async function StoreRelatoriosPage() {
         deliveryBy: true,
         ifoodStoreMerchant: true, food99AppShopId: true, food99ShopId: true,
         ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryChannel: true, openDeliveryReference: true,
-        motoboyId: true, motoboyFee: true, deliveryDistance: true,
+        motoboyId: true, motoboyFee: true, deliveryDistance: true, entregaGratis: true,
         acceptedAt: true, readyAt: true, dispatchedAt: true, deliveredAt: true,
         kdsProductionAt: true, kdsFinishingAt: true, scheduledDatetime: true,
         items: {

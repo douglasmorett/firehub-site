@@ -27,6 +27,7 @@
 
 import { lerFaixasDoMotoboy, valorDaFaixa, type FaixaDoMotoboy } from "./faixas-do-motoboy";
 import { repasseDoPedido, type RegraDeRepasse } from "./repasse-do-entregador";
+import { lerEntregaGratis } from "./entrega-gratis";
 
 /** De onde saiu o valor deste pedido — para a tela explicar em vez de o lojista adivinhar. */
 export type OrigemDoGanho =
@@ -107,8 +108,25 @@ export type PedidoParaGanho = {
   motoboyFee?: number | null;
   deliveryFee?: number | null;
   deliveryDistance?: number | null;
+  /** {valor, motivo} da entrega que o cliente não pagou (lib/entrega-gratis.ts). */
+  entregaGratis?: unknown;
   [k: string]: any;
 };
+
+/**
+ * A taxa da entrega para a conta do entregador.
+ *
+ * Entrega grátis (pedido acima do mínimo, cupom de frete, prêmio da Trilha)
+ * grava `deliveryFee: 0` — quem deixou de pagar foi o CLIENTE; o motoboy rodou
+ * do mesmo jeito. Hakim Centro #72 (12/10/2026): Pix pelo site com entrega
+ * grátis, e o acerto pela taxa do pedido pagou R$ 0,00. O valor cheio fica em
+ * `entregaGratis` justamente para isso.
+ */
+export function taxaDaCorrida(pedido: PedidoParaGanho): number {
+  const cobrada = Number(pedido.deliveryFee || 0);
+  if (cobrada > 0) return cobrada;
+  return lerEntregaGratis(pedido.entregaGratis)?.valor ?? 0;
+}
 
 /**
  * Quanto ESTE pedido rende, e por quê.
@@ -160,7 +178,7 @@ export function ganhoDoPedido(args: {
       regra: regraDaLoja,
       zonas,
       km: pedido.deliveryDistance,
-      taxaDaEntrega: pedido.deliveryFee,
+      taxaDaEntrega: taxaDaCorrida(pedido),
       ehMarketplace,
     });
     if (daRegra != null) return { valor: centavos(daRegra), origem: "REGRA_DA_LOJA" };
@@ -177,7 +195,7 @@ export function ganhoDoPedido(args: {
     return km === 0 ? { valor: 0, origem: "POR_KM" } : { valor: 0, origem: "SEM_DISTANCIA" };
   }
 
-  return { valor: centavos(Number(pedido.deliveryFee || 0)), origem: "TAXA_DO_CLIENTE" };
+  return { valor: centavos(taxaDaCorrida(pedido)), origem: "TAXA_DO_CLIENTE" };
 }
 
 /** Número >= 0 gravado no pedido, ou null. Vazio, texto e negativo são "não gravado". */
