@@ -8,6 +8,7 @@ import { linkDeAvaliacaoNoGoogle } from "./avaliacao-no-google";
 import { comandaDoRobo } from "./comanda-do-robo";
 import { previsaoDaEntrega } from "./previsao-da-entrega";
 import { formaCanonica } from "./pagamento-na-entrega";
+import { lojaQueEnviaOAviso } from "./remetente-do-aviso";
 
 /**
  * A forma de pagamento como o cliente lê: o site grava "CARTAO_CREDITO",
@@ -100,19 +101,27 @@ export async function sendOrderNotification(
 
     if (!order || !order.customerPhone) return;
 
-    // ── QUEM MANDA O AVISO: A LOJA DO PEDIDO OU A PRINCIPAL DO GRUPO ────────
-    // A filial que recebe um pedido aceito pela principal (Pizzaria 17 →
-    // Aeroporto, 09/10/2026) não tem WhatsApp conectado: mandar por ela dava
-    // 503 no gateway e o cliente ficava sem "em preparo" e "saiu para
-    // entrega". Sem conexão própria, o aviso sai pela principal do grupo —
-    // que é o número em que o cliente fez o pedido.
-    let lojaQueEnvia = order.franchiseeId;
+    // ── QUEM MANDA O AVISO: cada loja pelo próprio número ───────────────────
+    // A principal do grupo só fala pela filial no pedido que nasceu na
+    // conversa do robô dela (Pizzaria 17 → Aeroporto). Regra e o caso da
+    // Yakisoba do San em lib/remetente-do-aviso.ts.
     const configDaLoja = (order.franchisee?.chatbotConfig as any) || {};
-    if (configDaLoja.connected !== true && order.franchisee?.accountGroupId) {
-      const principal = await prisma.user
-        .findUnique({ where: { id: order.franchisee.accountGroupId }, select: { id: true, chatbotConfig: true } })
-        .catch(() => null);
-      if ((principal?.chatbotConfig as any)?.connected === true) lojaQueEnvia = principal!.id;
+    const principalId = order.franchisee?.accountGroupId || null;
+    const principal = principalId && configDaLoja.connected !== true
+      ? await prisma.user
+          .findUnique({ where: { id: principalId }, select: { chatbotConfig: true } })
+          .catch(() => null)
+      : null;
+    const lojaQueEnvia = lojaQueEnviaOAviso({
+      lojaDoPedido: order.franchiseeId,
+      lojaConectada: configDaLoja.connected === true,
+      origemDoPedido: order.source,
+      principalDoGrupo: principalId,
+      principalConectada: (principal?.chatbotConfig as any)?.connected === true,
+    });
+    if (!lojaQueEnvia) {
+      console.log(`[Notificação] Pedido ${orderId} (${type}): a loja não tem WhatsApp conectado ao FireHub; aviso não enviado.`);
+      return;
     }
 
     // Pedido que o cliente vem BUSCAR nunca "saiu para entrega". A rota de
