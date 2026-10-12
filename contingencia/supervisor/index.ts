@@ -69,15 +69,25 @@ async function principal(): Promise<void> {
   let ultimaFotoDeClientes = 0;
   let tique = 0;
   let ultimoErro = "";
+  /** "Testar agora" (tela do módulo → Assistente): até esta hora, a nuvem conta como fora. */
+  let simularQuedaAte = 0;
 
   // Pronta = a foto foi feita neste esquema. (O cursor pode ser "0" com a
   // cópia pronta: loja recém-ativada ainda sem nada no diário.)
   const copiaPronta = () => !!estado.fotoEm && !!estado.esquema;
+
+  async function sair(): Promise<void> {
+    registro("Supervisor encerrando…");
+    await local.desligar();
+    await banco.desligar();
+    process.exit(0);
+  }
   const emContingencia = () => modo === "contingencia" || modo === "voltando";
 
   const estadoPublico = () => ({
     modo,
     pronta: copiaPronta() && local.pronto(),
+    testando: Date.now() < simularQuedaAte,
     copiaPronta: copiaPronta(),
     porta: PORTAS.loja,
     nuvem: cfg.nuvem,
@@ -100,6 +110,35 @@ async function principal(): Promise<void> {
   const decidir = (req: http.IncomingMessage): DecisaoDaPorta => {
     const url = req.url || "/";
     if (url.startsWith("/__contingencia/estado")) return { tipo: "responder", status: 200, corpo: estadoPublico() };
+
+    // "Testar agora": só do próprio computador (o Assistente pede, a tela do
+    // módulo manda). A nuvem passa a contar como fora por 2 minutos, e o ciclo
+    // inteiro roda de verdade — a queda, as telas, a volta e a subida.
+    if (url.startsWith("/__contingencia/testar")) {
+      const remoto = req.socket.remoteAddress || "";
+      const daqui = remoto === "127.0.0.1" || remoto === "::1" || remoto === "::ffff:127.0.0.1";
+      if (!daqui || req.method !== "POST") return { tipo: "responder", status: 403, corpo: { error: "Só do computador da loja." } };
+      if (!copiaPronta()) return { tipo: "responder", status: 409, corpo: { error: "A cópia da loja ainda está sendo preparada." } };
+      simularQuedaAte = Date.now() + 2 * 60_000;
+      registro("Teste da contingência: nuvem tratada como fora por 2 minutos.");
+      return { tipo: "responder", status: 200, corpo: { ok: true, ate: new Date(simularQuedaAte).toISOString() } };
+    }
+
+    // Parar com cuidado (o Assistente pede antes de atualizar ou desativar):
+    // desliga o FireHub local e o banco, sem deixar processo órfão.
+    if (url.startsWith("/__contingencia/parar")) {
+      const remoto = req.socket.remoteAddress || "";
+      const daqui = remoto === "127.0.0.1" || remoto === "::1" || remoto === "::ffff:127.0.0.1";
+      if (!daqui || req.method !== "POST") return { tipo: "responder", status: 403, corpo: { error: "Só do computador da loja." } };
+      setTimeout(() => void sair(), 100);
+      return { tipo: "responder", status: 200, corpo: { ok: true, pendentes } };
+    }
+
+    // Endereço curto para digitar no controle da TV: leva ao KDS — na nuvem
+    // quando ela está de pé, aqui quando caiu.
+    if (url === "/tv" || url === "/tv/") {
+      return { tipo: "redirecionar", para: `${emContingencia() ? "" : cfg.nuvem}/store/kds/tela` };
+    }
 
     if (emContingencia() || liberadoSempre(url)) return local.pronto() ? { tipo: "repassar" } : { tipo: "esperar" };
 
@@ -175,7 +214,7 @@ async function principal(): Promise<void> {
     rodando = true;
     tique++;
     try {
-      const ok = await nuvem.deEstaDePe();
+      const ok = Date.now() < simularQuedaAte ? false : await nuvem.deEstaDePe();
       if (ok) { sucessos++; falhas = 0; } else { falhas++; sucessos = 0; }
       pendentes = await pendentesNaSaida(pool);
 
@@ -261,12 +300,6 @@ async function principal(): Promise<void> {
   await ciclo();
   setInterval(ciclo, 3000);
 
-  const sair = async () => {
-    registro("Supervisor encerrando…");
-    await local.desligar();
-    await banco.desligar();
-    process.exit(0);
-  };
   process.on("SIGINT", sair);
   process.on("SIGTERM", sair);
 }

@@ -23,6 +23,7 @@
  * Loja sem contingência: não guarda bilhete e não confere nada — custo zero.
  */
 import { useEffect, useRef, useState } from "react";
+import { fetchAssistente } from "@/lib/print";
 
 const CHAVE = "firehub_contingencia";
 const VOLTOU_EM = "firehub_contingencia_voltou_em";
@@ -41,6 +42,22 @@ function lerGuardado(): Guardado | null {
   }
 }
 
+/**
+ * A rede de segurança (public/sw-contingencia.js): só na loja com
+ * contingência ativada, só no /store e no /garcom. Desativou, sai.
+ */
+function cuidarDaRedeDeSeguranca(ativa: boolean, tipo: "painel" | "garcom"): void {
+  if (!("serviceWorker" in navigator)) return;
+  const escopo = tipo === "garcom" ? "/garcom/" : "/store/";
+  if (ativa) {
+    navigator.serviceWorker.register("/sw-contingencia.js", { scope: escopo }).catch(() => {});
+    return;
+  }
+  navigator.serviceWorker.getRegistrations().then((lista) => {
+    for (const r of lista) if ((r.active?.scriptURL || "").endsWith("/sw-contingencia.js")) r.unregister();
+  }).catch(() => {});
+}
+
 function aqui(): string {
   return `${window.location.pathname}${window.location.search}`;
 }
@@ -55,19 +72,35 @@ async function comPrazo(url: string, ms: number, init?: RequestInit): Promise<Re
   }
 }
 
-/** No computador do caixa, o Assistente sabe se a contingência está pronta e em que porta. */
-async function enderecoPeloAssistente(): Promise<string | null> {
+type EstadoNoAssistente = { endereco: string | null; testando: boolean };
+
+/**
+ * No computador do caixa, o Assistente sabe se a contingência está pronta, em
+ * que porta, e se há um "Testar agora" em andamento (a nuvem está de pé, mas
+ * este computador age como se tivesse caído).
+ */
+let semAssistenteAte = 0;
+
+async function perguntarAoAssistente(): Promise<EstadoNoAssistente | null> {
+  // Aparelho sem Assistente (a maioria das abas que não são o caixa): não
+  // pergunta de novo por 1 minuto.
+  if (Date.now() < semAssistenteAte) return null;
   for (const porta of PORTAS_DO_ASSISTENTE) {
     try {
-      const r = await comPrazo(`http://127.0.0.1:${porta}/contingencia/estado`, 1500, { targetAddressSpace: "loopback" } as any);
+      const c = new AbortController();
+      const t = setTimeout(() => c.abort(), 1500);
+      const r = await fetchAssistente(`http://127.0.0.1:${porta}/contingencia/estado`, { cache: "no-store", signal: c.signal }).finally(() => clearTimeout(t));
       if (!r.ok) continue;
       const e = await r.json();
-      if (e?.pronta && e?.porta) return `http://127.0.0.1:${e.porta}`;
-      return null;
+      return {
+        endereco: e?.pronta && e?.porta ? `http://127.0.0.1:${e.porta}` : null,
+        testando: e?.testando === true,
+      };
     } catch {
       /* próxima porta */
     }
   }
+  semAssistenteAte = Date.now() + 60_000;
   return null;
 }
 
@@ -95,6 +128,7 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
           if (!vivo || !d) return;
           if (d.ativo) localStorage.setItem(CHAVE, JSON.stringify(d));
           else localStorage.removeItem(CHAVE);
+          cuidarDaRedeDeSeguranca(!!d.ativo, tipo);
         })
         .catch(() => { /* sem conexão: fica o bilhete que já estava guardado */ });
     };
@@ -106,15 +140,23 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
       if (!guardado || indo.current) return;
       const voltouEm = Number(sessionStorage.getItem(VOLTOU_EM) || 0);
       if (Date.now() - voltouEm < 60_000) return; // acabou de voltar: não pular de novo
-      try {
-        const r = await comPrazo("/api/contingencia/sinal", 4000);
-        falhas.current = r.ok ? 0 : falhas.current + 1;
-      } catch {
-        falhas.current += 1;
+      // "Testar agora" neste computador: pula sem esperar a nuvem cair. O
+      // celular do garçom nunca é o computador do caixa: nem pergunta (o
+      // Chrome do celular pediria permissão de rede local à toa).
+      const noAssistente = tipo === "painel" ? await perguntarAoAssistente() : null;
+      if (noAssistente?.testando && noAssistente.endereco) {
+        falhas.current = 3;
+      } else {
+        try {
+          const r = await comPrazo("/api/contingencia/sinal", 4000);
+          falhas.current = r.ok ? 0 : falhas.current + 1;
+        } catch {
+          falhas.current += 1;
+        }
       }
       if (falhas.current < 3) return;
       indo.current = true;
-      const destino = (await enderecoPeloAssistente()) || guardado.enderecos[0];
+      const destino = noAssistente?.endereco || guardado.enderecos[0];
       if (!destino) { indo.current = false; return; }
       const fragmento = new URLSearchParams({ bilhete: guardado.bilhete, volta: aqui(), tipo }).toString();
       window.location.href = `${destino}/contingencia/entrar#${fragmento}`;
@@ -154,12 +196,14 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
   return (
     <div
       role="status"
+      // Embaixo, no meio, sem pegar clique: em cima ela cobria a barra do
+      // painel (caixa, site aberto, impressora) — visto na prova de 12/10.
       style={{
-        position: "fixed", top: 0, left: 0, right: 0, zIndex: 2147483000,
-        background: voltando ? "#166534" : "#92400e", color: "#fff",
-        fontFamily: "system-ui, sans-serif", fontSize: 13, fontWeight: 700,
-        textAlign: "center", padding: "4px 12px", pointerEvents: "none",
-        boxShadow: "0 1px 6px rgba(0,0,0,.25)",
+        position: "fixed", bottom: 12, left: "50%", transform: "translateX(-50%)", zIndex: 2147483000,
+        maxWidth: "calc(100vw - 24px)", background: voltando ? "#166534" : "#92400e", color: "#fff",
+        fontFamily: "system-ui, sans-serif", fontSize: 13, fontWeight: 700, lineHeight: 1.35,
+        textAlign: "center", padding: "8px 14px", borderRadius: 999, pointerEvents: "none",
+        boxShadow: "0 4px 16px rgba(0,0,0,.3)",
       }}
     >
       {voltando

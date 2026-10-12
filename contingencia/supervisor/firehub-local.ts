@@ -8,7 +8,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, execFile, type ChildProcess } from "node:child_process";
 
 export type AmbienteDoFireHub = {
   appDir: string;
@@ -21,6 +21,16 @@ export type AmbienteDoFireHub = {
   loja: string;
   pasta: string;
 };
+
+/** Os PIDs que escutam nesta porta, pelo `netstat -ano` do Windows. */
+export function pidsNaPorta(saidaDoNetstat: string, porta: number): string[] {
+  const pids = new Set<string>();
+  for (const linha of saidaDoNetstat.split("\n")) {
+    const m = linha.trim().split(/\s+/);
+    if (m.length >= 5 && m[1]?.endsWith(`:${porta}`) && /LISTEN/i.test(m[3] || "") && /^\d+$/.test(m[4])) pids.add(m[4]);
+  }
+  return [...pids];
+}
 
 export class FireHubLocal {
   private processo: ChildProcess | null = null;
@@ -49,8 +59,26 @@ export class FireHubLocal {
     }
   }
 
+  /**
+   * Um FireHub local de uma execução anterior do supervisor (fechado à força,
+   * sem desligar o filho) segura a porta e faria o novo morrer com
+   * EADDRINUSE. Só o processo que escuta NA NOSSA porta é encerrado.
+   */
+  private async encerrarOrfao(): Promise<void> {
+    if (process.platform !== "win32" || !(await this.responde())) return;
+    const saida: string = await new Promise((ok) =>
+      execFile("netstat", ["-ano", "-p", "TCP"], { windowsHide: true }, (_e, out) => ok(String(out || ""))),
+    );
+    for (const pid of pidsNaPorta(saida, this.amb.porta)) {
+      if (pid === String(process.pid)) continue;
+      await new Promise((ok) => execFile("taskkill", ["/PID", pid, "/T", "/F"], { windowsHide: true }, () => ok(null)));
+      this.registro(`FireHub local antigo (PID ${pid}) encerrado.`);
+    }
+  }
+
   async ligar(): Promise<void> {
     if (this.processo) return this.subindo ?? undefined;
+    await this.encerrarOrfao();
     const servidor = path.join(this.amb.appDir, "server.js");
     if (!fs.existsSync(servidor)) throw new Error(`FireHub local não encontrado em ${servidor}.`);
     const log = fs.openSync(path.join(this.amb.pasta, "firehub-local.log"), "a");

@@ -16,7 +16,8 @@ export async function GET() {
     const linha = await prisma.$queryRawUnsafe<
       { ativadaEm: Date; ativadaPor: string | null; ultimoContato: Date | null; relato: any }[]
     >(`SELECT "ativadaEm", "ativadaPor", "ultimoContato", "relato" FROM "Contingencia" WHERE "lojaId" = $1`, quem.lojaId);
-    if (!linha[0]) return NextResponse.json({ ativada: false, dono: quem.dono || quem.suporte });
+    const loja = await prisma.user.findUnique({ where: { id: quem.lojaId }, select: { slug: true } });
+    if (!linha[0]) return NextResponse.json({ ativada: false, dono: quem.dono || quem.suporte, slug: loja?.slug || null });
     const episodios = await prisma.$queryRawUnsafe<any[]>(
       `SELECT "id", "inicio", "fim", "subiuEm", "linhas", "pedidos", "conflitos" FROM "ContingenciaEpisodio"
         WHERE "lojaId" = $1 ORDER BY "subiuEm" DESC LIMIT 5`,
@@ -30,6 +31,7 @@ export async function GET() {
     return NextResponse.json({
       ativada: true,
       dono: quem.dono || quem.suporte,
+      slug: loja?.slug || null,
       ativadaEm: linha[0].ativadaEm,
       ativadaPor: linha[0].ativadaPor,
       ultimoContato: linha[0].ultimoContato,
