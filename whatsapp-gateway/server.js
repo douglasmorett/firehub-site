@@ -1070,6 +1070,10 @@ async function criarSocket(instanceName) {
         msg.message.pttMessage
       );
 
+      // 📷 Foto do cliente: o robô da loja passou a ver imagem (12/10/2026).
+      // Sem legenda ela era descartada logo abaixo (não é texto nem áudio).
+      const isImage = Boolean(conteudo.imageMessage) && !isAudio;
+
       // 📎 → Localização. Ia para o lixo aqui (não é texto nem áudio), e é o
       // dado que decide a taxa de quem cobra por km.
       const localizacao = saude.localizacaoDaMensagem(msg.message);
@@ -1094,7 +1098,7 @@ async function criarSocket(instanceName) {
         (localizacao ? `📍 localização (${localizacao.lat.toFixed(5)}, ${localizacao.lng.toFixed(5)})` : "") ||
         (isAudio ? "O cliente enviou a mensagem de áudio em anexo." : "");
 
-      if (!textMessage.trim() && !isAudio) continue;
+      if (!textMessage.trim() && !isAudio && !isImage) continue;
 
       // O cooldown existe para não disparar a IA em rajada. Mensagem que SAI do
       // número da loja não chama IA nenhuma — ela é o sinal de que o lojista
@@ -1125,7 +1129,8 @@ async function criarSocket(instanceName) {
         const chaveDoCooldown = `${instanceName}|${remoteJid}`;
         const lastReply = replyCooldowns.get(chaveDoCooldown) || 0;
         // Localização também nunca é descartada: é um dado, não uma rajada.
-        if (!isAudio && !localizacao && now - lastReply < 1000) {
+        // Foto também não: álbum chega em rajada e cada uma é conteúdo.
+        if (!isAudio && !isImage && !localizacao && now - lastReply < 1000) {
           console.log(`[WhatsApp Gateway] ⏳ Ignorando mensagem de ${remoteJid} (repetição em menos de 1s)`);
           continue;
         }
@@ -1152,9 +1157,30 @@ async function criarSocket(instanceName) {
         }
       }
 
+      // A foto vai com os bytes, como o áudio: é aqui que a mensagem decifra
+      // inteira (a chave de mídia não sobrevive ao JSON do webhook). Só a do
+      // cliente — a que sai do aparelho da loja não chama a IA. Até 5 MB.
+      if (isImage && !isFromMe) {
+        const tamanho = Number(conteudo.imageMessage?.fileLength || 0);
+        if (tamanho > 5 * 1024 * 1024) {
+          console.warn(`[WhatsApp Gateway] 📷 Foto de ${remoteJid} grande demais (${tamanho} bytes): vai sem os bytes.`);
+        } else {
+          try {
+            const buffer = await downloadMediaMessage(msg, "buffer", {});
+            if (payloadMessage.imageMessage) {
+              delete payloadMessage.imageMessage.jpegThumbnail;
+              payloadMessage.imageMessage.base64 = buffer.toString("base64");
+            }
+            console.log(`[WhatsApp Gateway] 📷 Foto de ${remoteJid} baixada (${buffer.length} bytes)`);
+          } catch (imgErr) {
+            console.error(`[WhatsApp Gateway] ❌ Erro ao baixar a foto de ${remoteJid}:`, imgErr?.message || imgErr);
+          }
+        }
+      }
+
       // Com a instância e o fromMe: sem eles, "de qual loja é esta mensagem?"
       // exigia cruzar o log com o banco.
-      console.log(`[WhatsApp Gateway] 💬 ${instanceName}: mensagem ${isFromMe ? "ENVIADA pelo aparelho da loja para" : "recebida de"} ${remoteJid}: "${textMessage}" (isAudio: ${isAudio})`);
+      console.log(`[WhatsApp Gateway] 💬 ${instanceName}: mensagem ${isFromMe ? "ENVIADA pelo aparelho da loja para" : "recebida de"} ${remoteJid}: "${textMessage}" (isAudio: ${isAudio}${isImage ? ", foto" : ""})`);
 
       // Conversa endereçada por LID: descobrir o telefone AQUI e mandar junto.
       // O FireHub já procura `senderAlt` entre os candidatos e pontua telefone
