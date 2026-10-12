@@ -277,7 +277,14 @@ export async function processChatbotAI(
         link: linkDaSaudacao,
         personalidade: cfg.personality,
         cupomDePrimeiroPedido: cupomDoPrimeiroPedido,
-      }),
+      }) + (
+        // A loja que escolheu o cardápio em arquivo "logo de começo, junto com
+        // o link" (menuFileQuando = "INICIO") quer a foto também no "oi". Serpa,
+        // 12/10/2026: os primeiros clientes recebiam link + foto, quem abria com
+        // "boa noite" caía aqui e recebia só o link. A marca é a mesma do modelo:
+        // o webhook troca por envio do arquivo.
+        cfg.menuFileQuando === "INICIO" && String(cfg.menuFileUrl || "").trim() ? "\n[[ENVIAR_CARDAPIO]]" : ""
+      ),
       saudacaoDoDia: true as const,
     };
   }
