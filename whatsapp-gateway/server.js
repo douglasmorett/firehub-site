@@ -16,6 +16,8 @@ const {
   USyncUser,
 } = require("@whiskeysockets/baileys");
 const saude = require("./saude-do-vinculo");
+// O mesmo upsert duas vezes não vira duas respostas (mensagem-repetida.js).
+const jaVista = require("./mensagem-repetida").criarFiltroDeRepetidas();
 
 // Saúde do vínculo de cada loja (retransmissões pedidas por contatos, aparelho
 // hospedado, pareamento com número pessoal). Ver saude-do-vinculo.js.
@@ -1052,6 +1054,14 @@ async function criarSocket(instanceName) {
             console.warn(linha);
           }
         }
+        continue;
+      }
+
+      // A mesma mensagem duas vezes (Pizzaria 17, 12/10/2026: a ficha de reserva
+      // e as fotos saíram em dobro). Só a que tem conteúdo marca o id: a que não
+      // decifrou, acima, ainda pode voltar decifrada com o mesmo id.
+      if (jaVista(instanceName, msg)) {
+        console.log(`[WhatsApp Gateway] ♻️ ${instanceName}: mensagem repetida ignorada (${msg.key?.id}) de ${remoteJid}`);
         continue;
       }
 
