@@ -1711,6 +1711,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     jotaja: boolean;
     brendi: boolean;
     wabiz: boolean;
+    keeta: boolean;
     site: boolean;
   }>({
     ifood: true,
@@ -1718,6 +1719,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     jotaja: true,
     brendi: true,
     wabiz: true,
+    keeta: true,
     site: true,
   });
   const [selectedTypes, setSelectedTypes] = useState<{
@@ -1730,7 +1732,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     setSelectedTypes(prev => ({ ...prev, [t]: !prev[t] }));
   };
 
-  const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "brendi" | "wabiz" | "site") => {
+  const toggleChannel = (ch: "ifood" | "99food" | "jotaja" | "brendi" | "wabiz" | "keeta" | "site") => {
     setSelectedChannels(prev => ({
       ...prev,
       [ch]: !prev[ch]
@@ -3373,6 +3375,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
         // E a Brendi — a falha dela só ia para o log (levantamento de 27/09/2026).
         if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
+        if (data?.avisoKeeta) showToast(`⚠️ Keeta não acompanhou: ${data.avisoKeeta}`, "#B45309");
         // Pix pelo site: estorno que não saiu na hora (sem saldo no Asaas,
         // esperando autorização no app). Também vai para o WhatsApp do dono.
         if (data?.avisoEstorno) showToast(`⚠️ Estorno do Pix: ${data.avisoEstorno}`, "#B45309");
@@ -3512,6 +3515,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (data?.avisoIfood) showToast(`⚠️ iFood não acompanhou: ${data.avisoIfood}`, "#B45309");
         if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
         if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
+        if (data?.avisoKeeta) showToast(`⚠️ Keeta não acompanhou: ${data.avisoKeeta}`, "#B45309");
         if (data?.avisoEstorno) showToast(`⚠️ Estorno do Pix: ${data.avisoEstorno}`, "#B45309");
       } else {
         const erro = await res.json().catch(() => null);
@@ -3765,20 +3769,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const is99Food = o.source === "99FOOD" || o.openDeliveryChannel === "99FOOD" || (o.source === "OPEN_DELIVERY" && String(o.openDeliveryChannel).includes("99"));
     const isBrendi = o.source === "BRENDI" || o.openDeliveryChannel === "BRENDI";
     const isWabiz = o.source === "WABIZ" || o.openDeliveryChannel === "WABIZ";
+    const isKeeta = o.source === "KEETA" || o.openDeliveryChannel === "KEETA";
     // O JotaJá era o "resto" do Open Delivery (todo pedido com
     // openDeliveryOrderId que não fosse 99Food) — com a Brendi gravando o id
     // dela no MESMO campo, o pedido dela cairia aqui e o filtro Brendi do
     // usuário não teria efeito nenhum. Canal decide; presença de campo não.
-    const isJotaja = !isBrendi && !isWabiz && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
+    const isJotaja = !isBrendi && !isWabiz && !isKeeta && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
     // "Loja" é tudo que não veio de marketplace: site, robô do WhatsApp,
     // balcão, mesa, totem. Retirada saiu daqui — ela é TIPO, não origem, e
     // mora no filtro ao lado.
-    const isSite = !isIfood && !is99Food && !isBrendi && !isWabiz && !isJotaja;
+    const isSite = !isIfood && !is99Food && !isBrendi && !isWabiz && !isKeeta && !isJotaja;
 
     if (isIfood && selectedChannels.ifood) return true;
     if (is99Food && selectedChannels["99food"]) return true;
     if (isBrendi && selectedChannels.brendi) return true;
     if (isWabiz && selectedChannels.wabiz) return true;
+    if (isKeeta && selectedChannels.keeta) return true;
     if (isJotaja && selectedChannels.jotaja) return true;
     if (isSite && selectedChannels.site) return true;
 
@@ -6294,6 +6300,30 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   }}
                 >
                   <img src="/images/logos/99.svg" alt="99Food" style={{ height: "17px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
+                </button>
+
+                {/* Keeta */}
+                <button
+                  type="button"
+                  onClick={() => toggleChannel("keeta")}
+                  title={selectedChannels.keeta ? "Keeta: Ativo (Clique para filtrar)" : "Keeta: Oculto (Clique para exibir)"}
+                  style={{
+                    height: "26px",
+                    flexShrink: 0,
+                    padding: "2px 5px",
+                    borderRadius: "6px",
+                    border: selectedChannels.keeta ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
+                    background: selectedChannels.keeta ? "#FFFFFF" : PALETA.areia,
+                    filter: selectedChannels.keeta ? "none" : "grayscale(100%) opacity(0.35)",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    boxShadow: selectedChannels.keeta ? "0 1px 3px rgba(250,204,21,0.25)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <img src="/images/logos/keeta.png" alt="Keeta" style={{ height: "16px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
                 </button>
 
                 {/* Jotajá */}

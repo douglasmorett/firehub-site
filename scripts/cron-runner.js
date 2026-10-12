@@ -59,6 +59,15 @@ const jobs = [
     intervalMs: 30_000, // 30 segundos
   },
   {
+    // Keeta (Open Delivery dela): rede de segurança do webhook e a fila das
+    // chamadas à Keeta que falharam. A Keeta permite 2 pollings por minuto por
+    // token — 30 s é o teto, não mexer para baixo. Sem KEETA_CLIENT_ID/SECRET
+    // no servidor a rota responde na hora sem tocar no banco — custo zero.
+    name: 'keeta-poll',
+    path: '/api/cron/keeta-poll',
+    intervalMs: 30_000, // 30 segundos
+  },
+  {
     // Mantem a loja ABERTA no 99Food sem ninguem abrir o gestor deles.
     //
     // O lojista fechava o app do 99Food e a loja ficava offline la. O swagger
