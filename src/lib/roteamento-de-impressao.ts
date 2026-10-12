@@ -51,6 +51,11 @@ export type ImpressoraConfigurada = {
    * Ausente = qualquer pedido do módulo. Ver `impressorasPeloTipoDoPedido`.
    */
   soPedidoDeMesa?: boolean | null;
+  /**
+   * Não recebe comanda automática de pedido nenhum: só a conta da mesa e o que
+   * for mandado para ela no botão Imprimir. Ver `impressorasPeloTipoDoPedido`.
+   */
+  semComandaAutomatica?: boolean | null;
   /** true = uma linha por unidade no papel desta impressora. */
   separarItens?: boolean | null;
   /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
@@ -437,6 +442,12 @@ export function impressorasPeloPedidoSoDeBebida<P extends ImpressoraConfigurada>
  * sai daqui não conta para o resgate do módulo (senão voltaria) e, com a
  * mesma impressora física em duas linhas, a outra linha segue valendo.
  *
+ * Sai também a marcada "Só conta e impressão manual" (`semComandaAutomatica`),
+ * em qualquer pedido: Pizzaria 17 (12/10/2026) desistiu da bebida no caixa, mas
+ * o caixa segue tirando a conta da mesa e o que a moça mandar imprimir. Quem
+ * escolhe a impressora no botão Imprimir (alvo, "Todas") e a conta da mesa não
+ * passam por aqui.
+ *
  * Sobrou nenhuma = a lista inteira: comanda que não sai é prejuízo, comanda a
  * mais é papel (a loja com uma impressora só, marcada por engano).
  */
@@ -445,8 +456,8 @@ export function impressorasPeloTipoDoPedido<P extends ImpressoraConfigurada>(
   pedido: { tableSessionId?: unknown; deliveryType?: unknown } | null | undefined
 ): P[] {
   const lista = impressoras || [];
-  if (ehPedidoDeMesa(pedido)) return lista;
-  const ficam = lista.filter((p) => p?.soPedidoDeMesa !== true);
+  const mesa = ehPedidoDeMesa(pedido);
+  const ficam = lista.filter((p) => p?.semComandaAutomatica !== true && (mesa || p?.soPedidoDeMesa !== true));
   return ficam.length > 0 ? ficam : lista;
 }
 

@@ -205,6 +205,8 @@ export type PrinterEntry = {
   pedidoComBebida?: boolean;
   /** Só pedido de mesa (lib/roteamento-de-impressao.ts → impressorasPeloTipoDoPedido). Ausente = qualquer. */
   soPedidoDeMesa?: boolean;
+  /** Só conta da mesa e o botão Imprimir: nenhuma comanda automática (impressorasPeloTipoDoPedido). */
+  semComandaAutomatica?: boolean;
   /** true = uma linha por unidade ("1x X-Bacon" cinco vezes). Ausente = agrupado. */
   separarItens?: boolean;
   /* Quais mundos esta impressora atende: salao, delivery, ou os dois.

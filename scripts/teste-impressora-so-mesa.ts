@@ -108,6 +108,14 @@ console.log("\n— Via do entregador —");
 const VIA_NO_CAIXA = [COZINHA, { ...CAIXA, somenteBebidas: false, viaDoEntregador: true, soPedidoDeMesa: true }];
 confere("delivery do site: a linha só de mesa não tira a via", impressoraDaViaDoEntregador(VIA_NO_CAIXA, { ...DELIVERY_PDV, source: "ONLINE" } as any)?.name ?? null, null);
 
+console.log("\n— Só conta e impressão manual (Pizzaria 17, 12/10/2026: sem bebida no caixa) —");
+const SO_CONTA = [COZINHA, { ...CAIXA, somenteBebidas: false, soPedidoDeMesa: false, semComandaAutomatica: true }];
+confere("mesa: só a cozinha, com o pedido inteiro", destinosDoPedido(SO_CONTA, MESA).map((d) => [d.impressora.name, d.itens.length]), [["COZINHA", 2]]);
+confere("aba Mesa do PDV: só a cozinha", onde(SO_CONTA, MESA_DO_PDV), ["COZINHA"]);
+confere("retirada do PDV: só a cozinha", onde(SO_CONTA, RETIRADA_PDV), ["COZINHA"]);
+confere("iFood: só a cozinha", onde(SO_CONTA, IFOOD), ["COZINHA"]);
+confere("a única impressora marcada por engano continua imprimindo", onde([{ ...COZINHA, semComandaAutomatica: true }], MESA), ["COZINHA"]);
+
 // ── O PAINEL (lib/print.ts) com um Assistente falso ─────────────────────────
 async function painel() {
   console.log("\n— Painel (GlobalPrintListener / tela de pedidos): o que chega ao Assistente —");

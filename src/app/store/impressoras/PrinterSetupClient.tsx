@@ -74,6 +74,8 @@ type PrinterEntry = {
   // So pedido de MESA: balcao, retirada e delivery (inclusive os do PDV) nao
   // saem nesta linha. Ausente = qualquer pedido (lib/roteamento-de-impressao.ts).
   soPedidoDeMesa?: boolean;
+  // Nenhuma comanda automatica: so a conta da mesa e o botao Imprimir.
+  semComandaAutomatica?: boolean;
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
@@ -1158,6 +1160,30 @@ export default function PrinterSetupClient({
                   <strong>+ Adicionar impressora</strong>, escolhendo a mesma no Windows e sem esta opção.
                 </p>
               )}
+
+              {/* ── Só conta e impressão manual ──
+                  Pizzaria 17 (12/10/2026): a bebida no caixa não funcionou na
+                  correria; o caixa continua com a conta da mesa e com o que a
+                  moça mandar imprimir, mas não tira comanda sozinho
+                  (lib/roteamento-de-impressao.ts → impressorasPeloTipoDoPedido). */}
+              <button
+                onClick={() => updatePrinter(printer.id, { semComandaAutomatica: !printer.semComandaAutomatica })}
+                style={{
+                  width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                  padding: "10px 12px", borderRadius: 12, marginTop: 8,
+                  border: printer.semComandaAutomatica ? "2px solid #1C1917" : "1.5px solid #E2E8F0",
+                  background: printer.semComandaAutomatica ? "#FAF6F2" : "#fff",
+                  color: printer.semComandaAutomatica ? "#1C1917" : "#64748B",
+                }}
+              >
+                <div style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                  {printer.semComandaAutomatica ? "✓" : "○"} 🧾 Só conta e impressão manual
+                </div>
+                <div style={{ fontSize: "0.72rem", fontWeight: 500, marginTop: 2, lineHeight: 1.35, opacity: 0.9 }}>
+                  Marcado, nenhum pedido sai aqui sozinho. Só a conta da mesa e o que você mandar pelo botão
+                  Imprimir, escolhendo esta impressora.
+                </div>
+              </button>
             </div>
 
             {/* ── COMO OS ITENS SAEM NESTA IMPRESSORA ──
