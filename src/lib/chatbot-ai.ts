@@ -141,9 +141,16 @@ export async function processChatbotAI(
    *   a esta (ms). Vem do anti-loop do webhook (`mensagemAnteriorEm`); null =
    *   nunca falou, undefined = não se sabe (simulador do painel). Decide se esta
    *   é a primeira mensagem do dia (lib/saudacao-do-dia.ts).
+   * - `imagem`: a foto que o cliente mandou NESTA mensagem. Vai ao modelo uma
+   *   vez; o que ele viu volta em [[TRANSCRICAO]] para o histórico.
    */
-  extras?: { localizacao?: LocalizacaoVigente | null; ultimaMensagemDoClienteEm?: number | null }
+  extras?: {
+    localizacao?: LocalizacaoVigente | null;
+    ultimaMensagemDoClienteEm?: number | null;
+    imagem?: { base64: string; mimeType: string };
+  }
 ) {
+  const imagem = extras?.imagem?.base64 ? extras.imagem : undefined;
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -236,7 +243,7 @@ export async function processChatbotAI(
       inicioDoDia: inicioDoExpedienteDaLoja(user.storeTimezone),
     });
   const linkDaSaudacao = linkDoCardapioDaLoja(user);
-  if (primeiraMensagemDoDia && linkDaSaudacao && !audioData && ehSoUmaSaudacao(message)) {
+  if (primeiraMensagemDoDia && linkDaSaudacao && !audioData && !imagem && ehSoUmaSaudacao(message)) {
     const cfg = (user.chatbotConfig as any) || {};
     // O cupom de primeiro pedido vai junto do "oi" — só se a loja tem um
     // cadastrado, ativo e no prazo, e este número nunca pediu (a mesma régua do
@@ -1408,6 +1415,14 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           },
         });
       }
+      if (imagem?.base64) {
+        userParts.push({
+          inlineData: {
+            data: imagem.base64.includes(";base64,") ? imagem.base64.split(";base64,")[1].trim() : imagem.base64.trim(),
+            mimeType: imagem.mimeType || "image/jpeg",
+          },
+        });
+      }
       if (message) {
         userParts.push({ text: message });
       } else if (audioData?.base64) {
@@ -1454,7 +1469,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
       for (let idx = 0; idx < modelNames.length; idx++) {
         const mName = modelNames[idx];
         const ehOBarato = mName === MODELO_BARATO;
-        const baseTimeout = audioData?.base64 ? 35000 : 12000;
+        const baseTimeout = audioData?.base64 ? 35000 : imagem ? 20000 : 12000;
         // O Lite responde em ~1,2 s (A/B de 03/10/2026): 8 s parado é falha, e
         // o 3.6 que vem depois dele precisa do prazo cheio (~4,5 s pensando).
         const modelTimeout = ehOBarato
@@ -1716,10 +1731,11 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           .replace(/\[\[(?!TRANSCRICAO|CHAMAR_ATENDENTE|ENVIAR_CARDAPIO)[\s\S]*?\]\]/g, "")
           .replace(/[ \t]{2,}/g, " ")
           .trim();
-        // A transcrição só existe para ÁUDIO. Depois de uma sequência de áudios
-        // o Lite punha a marca também na mensagem de texto (A/B de 09/10/2026):
-        // o webhook trocaria o texto do cliente pela "transcrição" dele mesmo.
-        if (!audioData?.base64) cleanText = cleanText.replace(/\[\[TRANSCRICAO[\s\S]*?\]\]\s*/g, "").trim();
+        // A transcrição só existe para ÁUDIO e FOTO. Depois de uma sequência de
+        // áudios o Lite punha a marca também na mensagem de texto (A/B de
+        // 09/10/2026): o webhook trocaria o texto do cliente pela
+        // "transcrição" dele mesmo.
+        if (!audioData?.base64 && !imagem) cleanText = cleanText.replace(/\[\[TRANSCRICAO[\s\S]*?\]\]\s*/g, "").trim();
 
         // As marcas que o modelo escreveu voltam aqui, na grafia que o webhook lê.
         if (modeloMandouCardapio) cleanText = `${cleanText}\n[[ENVIAR_CARDAPIO]]`.trim();

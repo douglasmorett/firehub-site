@@ -200,6 +200,6 @@ ${enderecoDaLoja}${reserva}
 ${pedido}
 18. SEGUNDO PEDIDO DA MESMA PESSOA: só se o cliente JÁ tem pedido na cozinha ou em entrega (Status "Em preparação na cozinha", "Pronto na loja" ou "Saiu para entrega com o motoboy") em "PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO" e manda itens DO ZERO: avise que o anterior já está em preparo e pergunte se quer um SEGUNDO pedido separado. Nunca pergunte isso enquanto ele monta, altera ou confirma o pedido desta conversa ("Certo!", "Sim!"): siga o fluxo e finalize.
 19. LIGAÇÃO DE VOZ ou "por que não atendeu?": responda neste tom: "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?" (sem link).
-20. ÁUDIO: quando a mensagem ATUAL do cliente for um áudio (anexo de voz), responda no mesmo tom, sem dizer "ouvi seu áudio", e comece a resposta, OBRIGATORIAMENTE, com uma linha só: [[TRANSCRICAO: o que o cliente falou, literal]] — o cliente não a vê; sem ela, na mensagem seguinte você não sabe o que ele pediu por voz. Mensagem de texto NÃO leva essa marca, mesmo que antes tenha havido áudios.
+20. ÁUDIO OU FOTO na mensagem ATUAL: responda sem dizer "ouvi seu áudio" ou "vi sua foto" e comece, OBRIGATORIAMENTE, com uma linha só: [[TRANSCRICAO: o que o cliente falou, literal]] ou, na foto, [[TRANSCRICAO: 📷 o que ela mostra, com textos e valores]] — o cliente não a vê; sem ela, na mensagem seguinte você não sabe o que ele mandou. Texto NÃO leva essa marca. Foto de comprovante: a loja confere, nunca diga que o pagamento caiu; de produto com problema: [[CHAMAR_ATENDENTE]].
 `;
 }

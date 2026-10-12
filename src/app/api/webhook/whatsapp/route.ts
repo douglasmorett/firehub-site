@@ -760,6 +760,34 @@ async function handleIncomingMessage(body: any, instance: string) {
   // O gateway do FireHub já manda desembrulhado; a Evolution oficial não.
   const conteudo = desembrulharMensagem(data.message) || {};
 
+  // ── 📷 FOTO DO CLIENTE ────────────────────────────────────────────────────
+  // O robô das lojas não via imagem: foto sem legenda nem chegava (o gateway a
+  // descartava) e, com legenda, só a legenda era lida. Comprovante de Pix,
+  // print de pedido, foto do produto que veio errado — tudo ficava sem
+  // resposta (Douglas, 12/10/2026: "o deles tem que ter também"). A foto vai
+  // ao modelo uma vez, na mensagem em que chega, e ele devolve o que viu em
+  // [[TRANSCRICAO]] para o histórico, como no áudio. Custa ~R$ 0,005 de
+  // entrada por foto, além da resposta.
+  const imagemObj = !(isAudioMessage || audioObj) ? conteudo.imageMessage : undefined;
+  let imagemData: { base64: string; mimeType: string } | undefined = undefined;
+  if (imagemObj) {
+    // O gateway já manda os bytes (é lá que a mensagem decifra inteira); a
+    // busca pela Evolution é só a reserva, a mesma do áudio.
+    let base64Imagem: string | null = imagemObj.base64 || null;
+    if (!base64Imagem && key.id) {
+      try {
+        const { getEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
+        base64Imagem = await getEvolutionAudioBase64(instance || user.id, key, data);
+      } catch (err) {
+        console.error("[WhatsApp Webhook] Erro ao buscar a foto via Evolution API:", err);
+      }
+    }
+    if (base64Imagem) {
+      const mime = String(imagemObj.mimetype || "image/jpeg").split(";")[0].trim();
+      imagemData = { base64: base64Imagem, mimeType: mime.startsWith("image/") ? mime : "image/jpeg" };
+    }
+  }
+
   const rawText =
     conteudo.conversation ||
     conteudo.extendedTextMessage?.text ||
@@ -857,6 +885,15 @@ async function handleIncomingMessage(body: any, instance: string) {
         "Ops, tentei ouvir o seu áudio mas deu uma instabilidade no sinal! 😅\n\nVocê pode me mandar em texto ou gravar um novo áudio para eu te ajudar?"
       ).catch(() => {});
       return;
+    }
+  }
+
+  if (imagemObj) {
+    textoDoClienteParaOPainel = rawText || "📷 Foto do cliente";
+    if (imagemData) {
+      textMessage = (rawText ? rawText + "\n\n" : "") + "[O cliente mandou a foto em anexo.]";
+    } else {
+      console.warn(`[WhatsApp Webhook] 📷 Foto de ${remoteJid} sem bytes (gateway e Evolution); ${rawText ? "segue só a legenda" : "sem legenda, fica sem resposta"}.`);
     }
   }
 
@@ -1485,7 +1522,8 @@ async function handleIncomingMessage(body: any, instance: string) {
       let transcription = "";
       const transcriptionMatch = replyText.match(/\[\[TRANSCRICAO:\s*([\s\S]*?)\]\]/i);
       if (transcriptionMatch) {
-        transcription = transcriptionMatch[1].trim();
+        // "| 📷 ..." — o separador da regra escapava na marca da foto sem legenda.
+        transcription = transcriptionMatch[1].replace(/^\s*\|\s*/, "").trim();
         replyText = replyText.replace(/\[\[TRANSCRICAO:[\s\S]*?\]\]/gi, "").trim();
         // O que o cliente DISSE no áudio: é isto que a loja lê no painel, no
         // lugar do rótulo genérico.
@@ -1710,7 +1748,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       await new Promise(r => setTimeout(r, readingDelay));
     }
 
-    const aiTimeout = audioData ? 45000 : 25000;
+    const aiTimeout = audioData ? 45000 : imagemData ? 35000 : 25000;
     const iaInicio = Date.now();
     /** Quem já falou por esta mensagem depois do prazo. Um só fala. */
     let desfecho: "aberto" | "respondida" | "desistiu" = "aberto";
@@ -1725,6 +1763,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       // carimbou "agora", então só o valor de ANTES serve.
       processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName, {
         localizacao,
+        imagem: imagemData,
         ultimaMensagemDoClienteEm: guard.action === "allow" ? guard.mensagemAnteriorEm ?? null : undefined,
       }),
       aiTimeout,
