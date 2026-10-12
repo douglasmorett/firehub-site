@@ -64,7 +64,7 @@ import { itensEmTexto, mensagemDoAcrescimoEnviado, pedidoAtivoParaOPrompt } from
 import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco";
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
-import { lerRespostasProntas, blocoDasRespostasProntas, textoDasRespostasProntas, extrairMarcasDeRespostaPronta, envioDasRespostasProntas } from "./respostas-prontas";
+import { lerRespostasProntas, blocoDasRespostasProntas, textoDasRespostasProntas, extrairMarcasDeRespostaPronta, envioDasRespostasProntas, extrairFichaPreenchida, regraDaReservaPelaFicha } from "./respostas-prontas";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -1228,6 +1228,7 @@ ${regrasDoRobo({
   lojaFisica: chatbotConfig.storeType === "PHYSICAL",
   enderecoDaLoja: user.storeAddress || user.city || null,
   fazReservaDeMesa: typeof (chatbotConfig as any).fazReservaDeMesa === "boolean" ? (chatbotConfig as any).fazReservaDeMesa : null,
+  regraDaReserva: regraDaReservaPelaFicha(respostasProntas),
   modoDaArea: modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO" || modoDaAreaDaLoja === "BAIRRO" ? modoDaAreaDaLoja : "SEM_AREA",
   ehRota,
   regraDoPix: regraDoPixNoPrompt(pixDaLoja, aiOrderingEnabled),
@@ -1616,6 +1617,10 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         // quem manda o texto e as fotos é o webhook (lib/respostas-prontas.ts).
         const marcasProntas = extrairMarcasDeRespostaPronta(generatedText, respostasProntas);
         generatedText = marcasProntas.texto;
+        // A ficha que o cliente devolveu preenchida (reserva de festa): sai do
+        // texto aqui e o webhook passa a conversa para a equipe com os dados.
+        const fichaDoCliente = extrairFichaPreenchida(generatedText, respostasProntas);
+        generatedText = fichaDoCliente.texto;
 
         let cleanText = generatedText
           .replace(/^(?:TRAIN OF THOUGHT|THOUGHTS|RACIOCÍNIO|THINKING|PENSAMENTO|RESPONSE|RESPOSTA|PLAN|STEPS):\s*/gi, "")
@@ -2098,6 +2103,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           // A chave Pix da loja, para o webhook mandar sozinha depois da resposta.
           ...(enviarChavePix && pixDaLoja ? { chavePix: pixDaLoja.chave } : {}),
           ...(prontas.envios.length ? { respostasProntas: prontas.envios } : {}),
+          ...(fichaDoCliente.ficha ? { fichaPreenchida: fichaDoCliente.ficha } : {}),
           pedido: resultadoDoSync
             ? (resultadoDoSync.gravado
                 ? { ok: true as const, id: resultadoDoSync.orderId, numero: resultadoDoSync.numero, finalizado: resultadoDoSync.finalizado, itens: resultadoDoSync.itens }
