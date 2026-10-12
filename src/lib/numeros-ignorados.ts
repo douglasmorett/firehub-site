@@ -41,6 +41,22 @@ export function mesmoNumero(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * A equipe do FireHub, que o robô de NENHUMA loja responde (Douglas, 11/10/2026:
+ * "às vezes atrapalha muito a gente falar com eles"). Quem fala com o lojista
+ * por esses números é o suporte, não um cliente querendo cardápio.
+ */
+export const NUMEROS_DA_EQUIPE_FIREHUB = [
+  "5522998851680", // Douglas (pessoal)
+  "5522981118514", // número do FireHub (atendimento)
+  "5521972947120", // Victor
+];
+
+/** O telefone é de alguém da equipe do FireHub? */
+export function numeroDaEquipeDoFireHub(telefone: unknown): boolean {
+  return NUMEROS_DA_EQUIPE_FIREHUB.some((n) => mesmoNumero(telefone, n));
+}
+
+/**
  * O telefone está na lista de quem o robô não responde?
  *
  * `lista` vem de `chatbotConfig.numerosIgnorados` e pode ser qualquer coisa —

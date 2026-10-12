@@ -15,7 +15,7 @@ import {
   conversaEstaComHumano,
 } from '@/lib/loop-guard';
 import { detectarProblemaNoPedido, FRASE_DE_TRANSFERENCIA } from '@/lib/problema-no-pedido';
-import { numeroEstaNaListaDeIgnorados } from '@/lib/numeros-ignorados';
+import { numeroEstaNaListaDeIgnorados, numeroDaEquipeDoFireHub } from '@/lib/numeros-ignorados';
 import { ehConversaDeCliente, conversaOriginalEhDeCliente, tipoDoJid } from '@/lib/jid-de-cliente';
 import { contaOficialDoWhatsApp } from '@/lib/contas-oficiais-whatsapp';
 import { descartavelNoCooldown, desembrulharMensagem, localizacaoDoPayload, semLinhaDaLocalizacao, textoDaLocalizacao } from '@/lib/localizacao-do-whatsapp';
@@ -909,6 +909,19 @@ async function handleIncomingMessage(body: any, instance: string) {
   if (numeroEstaNaListaDeIgnorados(cleanPhone, chatbotConfig.numerosIgnorados)) {
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🔕 ${mascararTelefone(remoteJid)} está na lista de números que o robô não responde.`);
     registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "numero-ignorado" });
+    return;
+  }
+
+  // ── A EQUIPE DO FIREHUB ──────────────────────────────────────────────────
+  // Douglas, o número do FireHub e o Victor falam com o lojista pelo WhatsApp
+  // da loja para dar suporte; o robô respondendo no meio atrapalha. Exceção: o
+  // número é o dono cadastrado DESTA loja (a Hakim do Douglas) — aí é o dono.
+  if (
+    numeroDaEquipeDoFireHub(cleanPhone) &&
+    !ehNumeroDoDono((user as any).notificationPhone, chatbotConfig, cleanPhone)
+  ) {
+    console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🔕 ${mascararTelefone(remoteJid)} é da equipe do FireHub: o robô não responde.`);
+    registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "numero-ignorado", detalhe: "equipe do FireHub" });
     return;
   }
 
