@@ -1920,6 +1920,12 @@ export default function ChatbotHubClient() {
                 titulo: "Loja fechada no iFood dentro do horário",
                 detalhe: "O iFood está com a loja fechada enquanto o seu horário diz aberto (pausa, loja desconectada, horário diferente lá): pedido de lá não entra. Conferido a cada 5 minutos; um aviso por fechamento.",
               },
+              // Sai do cron api/cron/loja-sem-conexao (lib/loja-sem-conexao.ts).
+              {
+                id: "loja_sem_conexao",
+                titulo: "A loja ficou sem conexão",
+                detalhe: "No horário de funcionamento, o computador da loja (Assistente de Impressão) parou de falar com o FireHub e não há painel aberto: avisa o que foi pausado e, quando a conexão volta, o que foi reaberto.",
+              },
             ];
             const alertas = config.alertas || {};
             const ligado = (id: string) => (typeof alertas[id] === "boolean" ? alertas[id] : true);
@@ -2166,6 +2172,43 @@ export default function ChatbotHubClient() {
                       </label>
                     ))}
                   </div>
+                </div>
+
+                {/* 2b. LOJA SEM CONEXÃO (lib/loja-sem-conexao.ts): a proteção
+                    nasce ligada; `protecaoSemConexao` ausente conta como sim. */}
+                <div style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", border: "1px solid #E2E8F0" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "0.75rem" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "10px", background: "#E0F2FE", color: "#0369A1", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <ShieldCheck size={20} />
+                    </div>
+                    <div>
+                      <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.05rem", color: "#0F172A" }}>Loja sem conexão</h3>
+                      <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Caiu a internet da loja no horário? Ninguém pede sem ninguém ver o pedido</p>
+                    </div>
+                  </div>
+                  <label
+                    style={{
+                      display: "flex", alignItems: "flex-start", gap: "10px", padding: "10px 12px",
+                      borderRadius: "10px", border: "1px solid #E2E8F0",
+                      background: config.protecaoSemConexao !== false ? "#FAF6F2" : "#F8FAFC", cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={config.protecaoSemConexao !== false}
+                      onChange={(e) => handleSaveConfig({ protecaoSemConexao: e.target.checked })}
+                      style={{ marginTop: 3, width: 16, height: 16, cursor: "pointer" }}
+                    />
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: "0.84rem", color: "#0F172A" }}>Pausar iFood, site e robô sozinho quando a loja ficar sem conexão</div>
+                      <div style={{ fontSize: "0.75rem", color: "#64748B", lineHeight: 1.45 }}>
+                        Se o computador da loja (Assistente de Impressão) parar de falar com o FireHub por 2 minutos no horário de
+                        funcionamento, sem nenhum painel aberto, o FireHub pausa o iFood e o site, e o robô passa a dizer
+                        &quot;estamos com instabilidade, volte em alguns minutos&quot;. Quando a conexão volta, tudo é reaberto sozinho.
+                        99Food e Keeta não têm pausa automática. Loja sem o Assistente instalado não é afetada.
+                      </div>
+                    </div>
+                  </label>
                 </div>
 
                 {/* 3. NÚMEROS QUE O ROBÔ NÃO ATENDE */}

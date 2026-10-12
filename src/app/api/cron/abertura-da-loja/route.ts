@@ -18,6 +18,7 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 import { estadoDaLoja, turnoAgora, FUSO_PADRAO } from "@/lib/loja-aberta";
 import { alertaLigado, avisarDono, numerosDoDono, type TipoDeAlerta } from "@/lib/alertas-do-dono";
 import { disponibilidadeNoIfood } from "@/lib/ifood-disponibilidade";
+import { lojasEmQueda } from "@/lib/loja-sem-conexao-no-banco";
 import {
   avisosDevidos, consultarIfoodAgora, decidirAbertura, decidirIfood, limparIfoodForaDoTurno, marcarAviso,
   mensagemCaixa, mensagemIfoodFechado, mensagemLojaFechada,
@@ -70,6 +71,15 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    // Lojas SEM CONEXÃO agora (api/cron/loja-sem-conexao): o "Site aberto"
+    // está desligado e o iFood pausado PELO FIREHUB, que desfaz tudo quando a
+    // loja volta. Aqui elas não são reabertas (pausaria de novo um minuto
+    // depois, e a loja receberia pedido sem ninguém ver no meio) nem geram
+    // "loja fechada no horário" ou "fechada no iFood": o dono já recebeu o
+    // aviso da queda, que diz o que foi pausado. Falha na leitura = conjunto
+    // vazio = o comportamento de sempre.
+    const emQueda = await lojasEmQueda();
+
     for (const loja of lojas) {
       // Sem horário cadastrado não há "devia estar aberta": o padrão de
       // normalizeStoreHours (18h–23h) seria um horário que a loja nunca escolheu.
@@ -87,9 +97,12 @@ export async function GET(req: NextRequest) {
       let estado: EstadoDaAbertura = salvo;
       let storeOpen = loja.storeOpen;
       let novoStoreOpen: boolean | undefined;
+      const semConexao = emQueda.has(loja.id);
 
       // ── 1. Abertura automática ─────────────────────────────────────────
-      if (loja.aberturaAutomatica) {
+      // Em queda, nada: nem abre nem carimba o turno. Na volta o site é
+      // religado pela proteção, e a próxima rodada daqui segue como sempre.
+      if (loja.aberturaAutomatica && !semConexao) {
         const d = decidirAbertura({ turno, storeOpen, emPausa, estado });
         estado = d.estado;
         if (d.storeOpen !== undefined) {
@@ -110,7 +123,9 @@ export async function GET(req: NextRequest) {
           ? (await prisma.cashSession.count({ where: { franchiseeId: loja.id, status: "OPEN" } })) > 0
           : true;
 
-        const r = avisosDevidos({ turno, agora, storeOpen, emPausa, caixaAberto, estado });
+        // Em queda o site está fechado pela proteção, não pelo dono: não é
+        // "loja fechada no horário".
+        const r = avisosDevidos({ turno, agora, storeOpen: semConexao ? true : storeOpen, emPausa, caixaAberto, estado });
         estado = r.estado;
         for (const tipo of r.devidos) {
           if (!turno) break;
@@ -127,10 +142,11 @@ export async function GET(req: NextRequest) {
           estado = marcarAviso(estado, tipo, turno, saiu, agora);
         }
 
-        // iFood: só dentro do turno, a cada 5 min, e só com o aviso ligado.
+        // iFood: só dentro do turno, a cada 5 min, e só com o aviso ligado. Em
+        // queda o iFood está pausado por nós: não é consultado.
         if (!turno) {
           estado = limparIfoodForaDoTurno(estado);
-        } else if (alertaLigado(config, "ifood_fechado") && Date.now() - inicio < PRAZO_MS) {
+        } else if (!semConexao && alertaLigado(config, "ifood_fechado") && Date.now() - inicio < PRAZO_MS) {
           const integracoes = await prisma.ifoodIntegration.findMany({
             where: { userId: loja.id, active: true },
             select: { merchantId: true, label: true },

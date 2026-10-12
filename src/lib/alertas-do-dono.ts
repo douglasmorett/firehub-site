@@ -79,6 +79,13 @@ export type TipoDeAlerta =
   /** A loja está fechada no iFood dentro do horário da loja: pedido de lá não entra. */
   | "ifood_fechado"
   /**
+   * A internet da loja caiu no horário: o Assistente de Impressão sumiu e não
+   * há painel aberto. O FireHub pausa iFood, site e robô, avisa, e na volta
+   * desfaz tudo e avisa de novo (lib/loja-sem-conexao.ts). Sem isto o pedido
+   * aceito sozinho na nuvem ficava esperando numa loja que não o via.
+   */
+  | "loja_sem_conexao"
+  /**
    * Pix pelo site (conta Asaas da loja, lib/pix-online.ts): ligado, estorno
    * que ficou pendente ou falhou, Pix pago depois do cancelamento, chave do
    * Asaas desativada. É dinheiro de cliente — a loja precisa saber na hora.
@@ -102,6 +109,8 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   loja_fechada_no_horario: true,
   caixa_nao_aberto: true,
   ifood_fechado: true,
+  // Ligado: é o único jeito de o dono saber que o FireHub pausou os canais.
+  loja_sem_conexao: true,
   pix_online: true,
 };
 
@@ -118,6 +127,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   loja_fechada_no_horario: "Passou do horário de abrir e a loja está fechada (site e robô sem receber pedido)",
   caixa_nao_aberto: "Passou do horário de abrir e o caixa não foi aberto",
   ifood_fechado: "A loja está fechada no iFood dentro do horário de funcionamento",
+  loja_sem_conexao: "A loja ficou sem conexão no horário (iFood, site e robô pausados) e quando a conexão voltou",
   pix_online: "Pix pelo site: estorno pendente, Pix pago em pedido cancelado, chave do Asaas desativada",
 };
 

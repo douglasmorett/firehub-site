@@ -167,6 +167,9 @@ export async function POST(req: NextRequest) {
       // Quando o robô manda o cardápio em arquivo: "RECUSA" (só se o cliente
       // recusar o site, o padrão) ou "INICIO" (junto com o link, logo de cara).
       "menuFileQuando",
+      // Pausar iFood, site e robô quando a loja fica sem conexão
+      // (lib/loja-sem-conexao.ts). Ausente = ligada.
+      "protecaoSemConexao",
     ] as const;
 
     const permitido: Record<string, any> = {};
@@ -200,6 +203,10 @@ export async function POST(req: NextRequest) {
     if ("menuFileQuando" in permitido && permitido.menuFileQuando !== "INICIO" && permitido.menuFileQuando !== "RECUSA") {
       delete permitido.menuFileQuando;
       recusados.push("menuFileQuando");
+    }
+    if ("protecaoSemConexao" in permitido && typeof permitido.protecaoSemConexao !== "boolean") {
+      delete permitido.protecaoSemConexao;
+      recusados.push("protecaoSemConexao");
     }
     // A chave vai para o dinheiro do cliente: só entra reconhecida (CPF/CNPJ
     // com dígito certo, celular, e-mail, aleatória) e com o titular. Recusada,

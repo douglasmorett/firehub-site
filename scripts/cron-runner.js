@@ -161,6 +161,17 @@ const jobs = [
     intervalMs: 60_000, // 1 minuto
   },
   {
+    // Loja sem conexao: a internet da loja caiu no horario (Assistente mudo e
+    // nenhum painel aberto) -> pausa iFood, site e robo e avisa o dono; quando
+    // volta, desfaz o que fez e avisa de novo (src/lib/loja-sem-conexao.ts).
+    // A cada minuto porque a queda e medida em minutos. Rodada que ainda fala
+    // com o iFood nao ganha outra por cima.
+    name: 'loja-sem-conexao',
+    path: '/api/cron/loja-sem-conexao',
+    intervalMs: 60_000, // 1 minuto
+    exclusivo: true,
+  },
+  {
     // Pix pelo site (conta Asaas da loja): expira o Pix nao pago em 30 min,
     // confirma o que o webhook perdeu, estorna Pix pago depois do cancelamento
     // e usa a chave de cada loja uma vez por dia (o Asaas desativa chave parada).

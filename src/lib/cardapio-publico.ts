@@ -17,6 +17,7 @@ import { filtroDoCardapio, minimoDeEstrelas } from "@/lib/avaliacoes-no-cardapio
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido } from "@/lib/fiscal-modo";
 import { lerConfigDeAgendamento } from "@/lib/agendamento";
+import { lojaFechadaPelaQueda } from "@/lib/loja-sem-conexao-no-banco";
 
 export const SELECT_DA_LOJA_NO_CARDAPIO = {
   id: true,
@@ -73,6 +74,11 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
   // `franchisee` do select de cima vai inteiro para o HTML.
   const fiscal = await prisma.user.findUnique({ where: { id: franchisee.id }, select: { fiscalConfig: true } }).catch(() => null);
   const notaFiscal = documentoNoPedido(normalizarConfigFiscal(fiscal?.fiscalConfig));
+
+  // "Site aberto" desligado pela proteção de LOJA SEM CONEXÃO
+  // (lib/loja-sem-conexao.ts): o cardápio diz "instabilidade, volte em alguns
+  // minutos" em vez de "fechada". Só se pergunta com o interruptor desligado.
+  const semConexao = franchisee.storeOpen === false ? await lojaFechadaPelaQueda(franchisee.id) : false;
 
   const showReviews = (franchisee as any).showReviewsOnMenu !== false;
   const avaliacoesQueEntram = filtroDoCardapio(minimoDeEstrelas((franchisee as any).reviewsMinStars));
@@ -271,6 +277,7 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
       // código continua valendo o dele.
       storeCoupons: cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty),
       notaFiscal,
+      semConexao,
     } as any,
     menuProducts: menuComPrecoDoCanal as any,
     storeCategories: storeCategories as any,

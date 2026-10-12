@@ -9,6 +9,7 @@ import { ehEventoDeCodigo, marcarExigeCodigo } from "@/lib/ifood-logistics";
 import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from "@/lib/filtro-do-feed";
+import { marcarPainelAberto } from "@/lib/sinais-da-loja";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -893,6 +894,11 @@ export async function GET(req: NextRequest) {
       user.ownerId,
       ...(visao.todas ? visao.lojaIds : []),
     ].filter(Boolean))) as string[];
+
+    // Sinal de vida para a LOJA SEM CONEXÃO (lib/loja-sem-conexao.ts): há um
+    // painel aberto vendo estas lojas — a da sessão, ou o grupo em "Todas".
+    // Só memória, sem banco: este feed roda a cada ~5 s por aba.
+    marcarPainelAberto(validFranchiseeIds);
 
     // ── O FEED SÓ DEVOLVE O QUE A TELA DESENHA ───────────────────────────────
     //

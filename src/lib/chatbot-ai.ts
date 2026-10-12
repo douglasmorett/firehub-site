@@ -1,5 +1,6 @@
 import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
 import { estadoDaLoja, instrucaoDeHorario } from "@/lib/loja-aberta";
+import { lojaFechadaPelaQueda } from "@/lib/loja-sem-conexao-no-banco";
 import { avaliarEntrega, bairroCadastrado, bairrosAtendidos, descreverVeredicto, minimoDaZona, modoDaArea, type LojaParaEntrega, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { bairrosComMinimoProprio, minimoDaEntregaNoBairro } from "@/lib/minimo-do-bairro";
 import { limitesDeAtendimento } from "@/lib/limite-de-atendimento";
@@ -694,6 +695,10 @@ export async function processChatbotAI(
     storePause: (user as any).storePause,
     storeOpen: (user as any).storeOpen,
     timezone: user.storeTimezone,
+    // "Site aberto" desligado pela proteção de LOJA SEM CONEXÃO: o cliente
+    // ouve "instabilidade, volte em alguns minutos", não "fechado". Só se
+    // pergunta com o interruptor desligado (lib/loja-sem-conexao-no-banco.ts).
+    semConexao: (user as any).storeOpen === false ? await lojaFechadaPelaQueda(targetFranchiseeId) : false,
   });
 
   // ── LOJA SEM HORÁRIO CADASTRADO NÃO TEM HORA PARA DIZER ───────────────────
@@ -704,7 +709,7 @@ export async function processChatbotAI(
   // O que sai são as HORAS: "abre hoje às 18:00" é um horário que a loja nunca
   // informou, e o robô o repetia como fato enquanto o resto do prompt dizia
   // "horário não cadastrado".
-  const estadoAtualDaLoja = hoursText === HORARIO_NAO_CADASTRADO
+  const estadoAtualDaLoja = hoursText === HORARIO_NAO_CADASTRADO && !estadoBrutoDaLoja.instabilidade
     ? {
         ...estadoBrutoDaLoja,
         fechaAs: undefined,
@@ -1931,6 +1936,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                   minimumOrderValuePickup,
                   lojaAberta: estadoAtualDaLoja.aberta,
                   textoDoHorario: estadoAtualDaLoja.texto,
+                  lojaSemConexao: estadoAtualDaLoja.instabilidade === true,
                   loja: user,
                   aceitaRetirada,
                   // O ponto do aparelho do cliente e se o robô já pediu por ele:
@@ -2374,6 +2380,7 @@ async function syncAiOrderToDatabase({
   minimumOrderValuePickup,
   lojaAberta,
   textoDoHorario,
+  lojaSemConexao,
   loja,
   aceitaRetirada,
   coordsDoCliente,
@@ -2400,6 +2407,8 @@ async function syncAiOrderToDatabase({
   lojaAberta?: boolean;
   /** Frase pronta para explicar ao cliente quando a loja volta a atender. */
   textoDoHorario?: string;
+  /** Fechada pela proteção de loja sem conexão (lib/loja-sem-conexao.ts): "instabilidade", não "fechado". */
+  lojaSemConexao?: boolean;
   /** Área de entrega da loja (zonas, tipo, pino no mapa). Sem isto, não há regra de área. */
   loja?: LojaParaEntrega;
   /** A loja aceita retirada no balcão? Muda o que se oferece a quem está fora da área. */
@@ -2443,9 +2452,21 @@ async function syncAiOrderToDatabase({
   const querFinalizar = payload?.finalized === true || statusDoPayload === "NOVO" || statusDoPayload === "ACEITO" || statusDoPayload === "FINALIZADO";
   if (lojaAberta === false && querFinalizar) {
     console.warn(
-      `[Chatbot AI Order Sync] 🕐 Pedido recusado: loja FECHADA. ` +
+      `[Chatbot AI Order Sync] 🕐 Pedido recusado: loja ${lojaSemConexao ? "SEM CONEXÃO" : "FECHADA"}. ` +
       `Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
     );
+    // Sem conexão a loja está no horário: "estamos fechados, volte no
+    // horário" mandaria embora quem pode pedir daqui a cinco minutos.
+    if (lojaSemConexao) {
+      return {
+        gravado: false,
+        motivo: "a loja está sem conexão agora (instabilidade no sistema)",
+        regraDeNegocio: true,
+        mensagemParaOCliente:
+          `Estamos com uma instabilidade no sistema agora e não consigo registrar o pedido. 🙏\n\n` +
+          `Volte em alguns minutos, por favor, que eu anoto certinho! 😊`,
+      };
+    }
     return {
       gravado: false,
       motivo: textoDoHorario
