@@ -4,6 +4,12 @@
  * Os textos são os que a loja já usava no WhatsApp, copiados como vieram;
  * as fotos estão em public/robo/pizzaria-17/.
  *
+ * Também grava, nas instruções da loja (customPrompt), a linha do SALÃO: o
+ * Antonio testou às 14h41 de 12/10 e ouviu "somos só delivery, não fazemos
+ * reserva" ("preciso que ele entenda que somos salão também, e temos 120
+ * lugares em cada loja"; "reserva, reservar a mesa, comemorar o aniversário,
+ * agendar... sempre que tiver essas palavras, mandar as mensagens de reserva").
+ *
  *   npx tsx scripts/respostas-prontas-pizzaria-17.ts            mostra o que gravaria
  *   npx tsx scripts/respostas-prontas-pizzaria-17.ts --gravar   grava (mescla no chatbotConfig)
  */
@@ -11,6 +17,18 @@ import { PrismaClient } from "@prisma/client";
 import { lerRespostasProntas, type RespostaPronta } from "../src/lib/respostas-prontas";
 
 const LOJAS = ["pizzaria-17", "pizzaria-17-aeroporto"];
+
+/**
+ * Uma linha só, começando pela marca: rodar de novo troca a linha antiga e
+ * mantém o que a loja escreveu nas instruções.
+ */
+const MARCA_DO_SALAO = "SALÃO E RESERVAS:";
+export const LINHA_DO_SALAO = `${MARCA_DO_SALAO} a Pizzaria 17 não é só delivery. As duas lojas têm salão para comer no local, com 120 lugares cada: Pizzaria 17 Lagomar (Avenida W 24 - Lagomar, Macaé) e Pizzaria 17 Aeroporto (R. Dr. Bezerra Menezes, 55 - Jardim Aeroporto, Macaé). Fazemos reserva de mesa e de festa: sempre que o cliente falar em reserva, reservar, reservar mesa, agendar ou marcar mesa/dia/horário, comemorar aniversário, festa, evento ou vir com um grupo, mande a resposta pronta de reserva (regras, fotos e ficha) e siga a ficha. Agendar um PEDIDO de delivery ou retirada não é reserva: aí vale o horário da loja. Nunca diga que somos só delivery ou que não temos salão.`;
+
+export function instrucoesComOSalao(atual: unknown): string {
+  const linhas = (typeof atual === "string" ? atual : "").split("\n").filter((l) => !l.trim().startsWith(MARCA_DO_SALAO));
+  return [linhas.join("\n").trim(), LINHA_DO_SALAO].filter(Boolean).join("\n\n");
+}
 
 export const RESPOSTAS: RespostaPronta[] = [
   {
@@ -65,7 +83,9 @@ XGG- 45cm (16 fatias) até 4 Sabores`,
   },
   {
     id: "reserva-festa",
-    assunto: "o cliente quer fazer uma reserva para festa, aniversário, comemoração ou evento, ou pergunta das regras de reserva, decoração, o que pode levar (bolo, doces, salgados, bebidas), duração da festa ou área kids",
+    // Era só "festa, aniversário, comemoração ou evento": "vcs fazem reserva?"
+    // e "quero reservar" não caíam aqui (Antonio, 12/10/2026).
+    assunto: "o cliente quer reservar ou agendar mesa, lugar no salão, festa, aniversário, comemoração, evento ou mesa para um grupo (fala em reserva, reservar, reservar mesa, agendar ou marcar mesa/dia/horário, comemorar), ou pergunta se a loja faz reserva, das regras de reserva, decoração, o que pode levar (bolo, doces, salgados, bebidas), duração da festa ou área kids",
     texto: `Olá, para reservas temos as seguintes regras:
 
 -Reservas durante a semana tem horário flexível, aos finais de semana somente para as 18h, com duração máxima de 2h30 (até as 20h30), com tolerância de 15 minutinhos após o horário marcado , sugerimos que coloque 30 minutos antes no convite.
@@ -90,7 +110,8 @@ Horário:
 Unidade desejada :
 Ornamentação:`,
     // Ficha preenchida → a conversa vai para a equipe com os dados no aviso.
-    fichaParaALoja: "Reserva de festa",
+    // "Reserva", não "Reserva de festa": mesa para 6 também chega por aqui.
+    fichaParaALoja: "Reserva",
   },
 ];
 
@@ -107,11 +128,15 @@ async function main() {
       if (!loja) throw new Error(`Loja ${slug} não encontrada.`);
       const atual = (loja.chatbotConfig && typeof loja.chatbotConfig === "object" ? loja.chatbotConfig : {}) as Record<string, unknown>;
       console.log(`${loja.storeName} (${loja.id}): ${Array.isArray(atual.respostasProntas) ? (atual.respostasProntas as unknown[]).length : 0} → ${validas.length} respostas prontas`);
+      console.log(`  instruções da loja: ${String(atual.customPrompt || "").includes(LINHA_DO_SALAO) ? "já têm o salão" : "ganham a linha do salão"}`);
       if (!gravar) continue;
-      // Relê na hora de gravar e só troca a chave: nada do resto do robô muda.
+      // Relê na hora de gravar e só troca as duas chaves: nada do resto do robô muda.
       const fresca = await prisma.user.findUnique({ where: { id: loja.id }, select: { chatbotConfig: true } });
       const base = (fresca?.chatbotConfig && typeof fresca.chatbotConfig === "object" ? fresca.chatbotConfig : {}) as Record<string, unknown>;
-      await prisma.user.update({ where: { id: loja.id }, data: { chatbotConfig: { ...base, respostasProntas: validas } as object } });
+      await prisma.user.update({
+        where: { id: loja.id },
+        data: { chatbotConfig: { ...base, respostasProntas: validas, customPrompt: instrucoesComOSalao(base.customPrompt) } as object },
+      });
       console.log("  gravado.");
     }
     if (!gravar) console.log("(nada gravado: rode com --gravar)");

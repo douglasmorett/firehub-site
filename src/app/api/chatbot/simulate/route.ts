@@ -15,7 +15,7 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true },
+      select: { id: true, ownerId: true },
     });
 
     if (!user) {
@@ -27,7 +27,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Mensagem vazia" }, { status: 400 });
     }
 
-    const res = await processChatbotAI(user.id, message, history);
+    // O robô é da LOJA: no login do funcionário, simular com o id dele usava um
+    // chatbotConfig vazio ("somos só delivery" na Pizzaria 17, 12/10/2026).
+    const res = await processChatbotAI(user.ownerId || user.id, message, history);
     return NextResponse.json(res);
   } catch (err: any) {
     console.error("[Simulate Chatbot Error]", err);

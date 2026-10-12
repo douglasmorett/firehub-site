@@ -7,7 +7,7 @@ import {
   extrairFichaPreenchida, textoDoAvisoDaFicha, regraDaReservaPelaFicha,
 } from "../src/lib/respostas-prontas";
 import { regrasDoRobo } from "../src/lib/regras-do-robo";
-import { RESPOSTAS } from "./respostas-prontas-pizzaria-17";
+import { RESPOSTAS, LINHA_DO_SALAO, instrucoesComOSalao } from "./respostas-prontas-pizzaria-17";
 
 let falhas = 0;
 const confere = (oQue: string, ok: boolean, obtido?: unknown) => {
@@ -42,20 +42,20 @@ confere("reserva: regras, 2 fotos e a ficha", !!s4.envios[0].texto && s4.envios[
 confere("a régua de fonte enxerga rodízio e área kids", /RODÍZIO DA 17/.test(textoDasRespostasProntas(lista)) && /Área Kids/.test(textoDasRespostasProntas(lista)));
 
 // ── Ficha preenchida vai para a equipe (12/10/2026) ──
-confere("a reserva leva ficha para a equipe", lista.find((r) => r.id === "reserva-festa")?.fichaParaALoja === "Reserva de festa");
+confere("a reserva leva ficha para a equipe", lista.find((r) => r.id === "reserva-festa")?.fichaParaALoja === "Reserva");
 confere("o prompt ensina a marca da ficha", /FICHA PREENCHIDA VAI PARA A EQUIPE/.test(bloco) && /\[\[FICHA_PARA_A_LOJA:/.test(bloco));
 confere("loja sem ficha: o prompt não fala de ficha", !/FICHA PREENCHIDA/.test(blocoDasRespostasProntas(lista.filter((r) => !r.fichaParaALoja))));
 const f1 = extrairFichaPreenchida(
   "Recebi tudo! 😊 Já passei para a equipe, eles confirmam com você por aqui. [[FICHA_PARA_A_LOJA:reserva-festa| Nome: Ana Souza ; Telefone: 22 99999-0000 ; Pessoas: 20 ; Data: 25/10 ; Horário: 18h ; Unidade: Aeroporto ; Ornamentação: sim]]",
   lista,
 );
-confere("ficha sai do texto com os campos", !/\[\[/.test(f1.texto) && f1.ficha?.titulo === "Reserva de festa" && f1.ficha?.dados.split("\n").length === 7 && /Pessoas: 20/.test(f1.ficha?.dados || ""), f1);
+confere("ficha sai do texto com os campos", !/\[\[/.test(f1.texto) && f1.ficha?.titulo === "Reserva" && f1.ficha?.dados.split("\n").length === 7 && /Pessoas: 20/.test(f1.ficha?.dados || ""), f1);
 const f2 = extrairFichaPreenchida("Ok [[ficha para a loja: combos | Nome: X]]", lista);
 confere("marca de resposta sem ficha: some e não chama ninguém", f2.ficha === null && f2.texto.trim() === "Ok", f2);
 const f3 = extrairFichaPreenchida("Recebi! [[FICHA_PARA_A_LOJA:reserva-festa]]", lista);
 confere("ficha sem dados ainda chama a equipe", f3.ficha?.id === "reserva-festa" && f3.ficha?.dados === "", f3);
 const aviso = textoDoAvisoDaFicha(f1.ficha!, { nome: "Ana", telefone: "5522999990000" });
-confere("aviso ao dono: título, cliente sem 55 e os dados", /Reserva de festa: para a equipe confirmar/.test(aviso) && /Ana \(22999990000\)/.test(aviso) && /Data: 25\/10/.test(aviso), aviso);
+confere("aviso ao dono: título, cliente sem 55 e os dados", /Reserva: para a equipe confirmar/.test(aviso) && /Ana \(22999990000\)/.test(aviso) && /Data: 25\/10/.test(aviso), aviso);
 
 const ctxBase: any = {
   storeLink: "x", cardapioArquivoUrl: null, cardapioArquivoNoInicio: false, temCupomParaCitar: false, diaDeHoje: "segunda", codigoDoDia: "SEG",
@@ -66,6 +66,16 @@ const comFicha = regrasDoRobo({ ...ctxBase, regraDaReserva: regraDaReservaPelaFi
 const semFicha = regrasDoRobo(ctxBase);
 confere("regra de reserva com ficha: manda a ficha e não chama antes", /\[\[RESPOSTA_PRONTA:reserva-festa\]\]/.test(comFicha) && /FICHA PREENCHIDA/.test(comFicha) && /NÃO chame a equipe antes/.test(bloco) && !/Me diz o dia, o horário e quantas pessoas/.test(comFicha));
 confere("regra de reserva sem ficha: igual a antes", /Me diz o dia, o horário e quantas pessoas/.test(semFicha) && !/RESPOSTA_PRONTA:reserva/.test(semFicha));
+
+// ── "Somos salão também" (Antonio, 12/10/2026 14h41: "vcs fazem reserva?" → "somos só delivery") ──
+const assuntoDaReserva = lista.find((r) => r.id === "reserva-festa")?.assunto || "";
+confere("a reserva cobre as palavras do Antonio", ["reserva", "reservar mesa", "agendar", "comemorar", "aniversário", "faz reserva"].every((p) => assuntoDaReserva.includes(p)), assuntoDaReserva);
+confere("a linha do salão diz 120 lugares nas duas lojas e nunca só delivery", /120 lugares cada/.test(LINHA_DO_SALAO) && /Lagomar/.test(LINHA_DO_SALAO) && /Aeroporto/.test(LINHA_DO_SALAO) && /Nunca diga que somos só delivery/.test(LINHA_DO_SALAO));
+confere("instruções vazias ganham só a linha do salão", instrucoesComOSalao("") === LINHA_DO_SALAO && instrucoesComOSalao(undefined) === LINHA_DO_SALAO);
+const daLoja = "Promoção de terça: borda grátis.";
+const umaVez = instrucoesComOSalao(daLoja);
+confere("o que a loja escreveu fica, e a linha entra uma vez só", umaVez.startsWith(daLoja) && umaVez.split("SALÃO E RESERVAS:").length === 2 && instrucoesComOSalao(umaVez) === umaVez, umaVez);
+confere("linha antiga do salão é trocada pela nova", instrucoesComOSalao(`${daLoja}\n\nSALÃO E RESERVAS: texto velho`) === umaVez);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 if (falhas) process.exit(1);

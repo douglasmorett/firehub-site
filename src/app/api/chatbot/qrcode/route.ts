@@ -17,16 +17,36 @@ function semAvisosDoVinculo(config: any) {
   return resto;
 }
 
+/**
+ * A loja da sessão: funcionário conecta (e desconecta) a loja em que
+ * trabalha, nunca uma conta dele — como o código de pareamento e o status da
+ * conexão, que já liam `ownerId || id`. Esta rota lia o LOGIN: na Pizzaria 17
+ * (12/10/2026) a caixa clicou em "Religar" na faixa vermelha, leu o QR, e o
+ * WhatsApp da loja foi parar em `firehub_<id do login dela>`. Quem respondia
+ * os clientes era um robô sem a configuração da loja ("somos só delivery, não
+ * fazemos reserva"), e o painel, que lê a loja, seguia "desconectado".
+ */
+async function idDaLoja(email: string): Promise<string | null> {
+  const quemPediu = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, ownerId: true },
+  });
+  return quemPediu ? quemPediu.ownerId || quemPediu.id : null;
+}
+
 export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, chatbotConfig: true, storePhone: true },
-  });
+  const lojaId = await idDaLoja(session.user.email);
+  const user = lojaId
+    ? await prisma.user.findUnique({
+        where: { id: lojaId },
+        select: { id: true, chatbotConfig: true, storePhone: true },
+      })
+    : null;
 
   if (!user) {
     return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
@@ -105,10 +125,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, chatbotConfig: true },
-  });
+  const lojaId = await idDaLoja(session.user.email);
+  const user = lojaId
+    ? await prisma.user.findUnique({
+        where: { id: lojaId },
+        select: { id: true, chatbotConfig: true },
+      })
+    : null;
 
   if (!user) {
     return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
@@ -166,10 +189,13 @@ export async function DELETE() {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  const user = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, chatbotConfig: true },
-  });
+  const lojaId = await idDaLoja(session.user.email);
+  const user = lojaId
+    ? await prisma.user.findUnique({
+        where: { id: lojaId },
+        select: { id: true, chatbotConfig: true },
+      })
+    : null;
 
   if (!user) {
     return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
