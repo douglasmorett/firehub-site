@@ -1,0 +1,27 @@
+{
+  "id": "hakim",
+  "nome": "Hakim",
+  "nomeNaLoja": "Hakim Delivery",
+  "bundleId": "br.com.hakimriodasostras.app",
+  "esquema": "hakim",
+  "site": "https://firehubfood.com.br",
+  "paginaInicial": "/lojas/hakim-contato",
+  "logo": "https://firehubfood.com.br/uploads/lojas/1788309120096-c91f2883-1785446390286-ChatGPTImage21demar.de202621_20_18.webp",
+  "dominiosDaLoja": [
+    "firehubfood.com.br",
+    "www.firehubfood.com.br",
+    "hakimriodasostras.com.br",
+    "www.hakimriodasostras.com.br"
+  ],
+  "cor": "#DC2626",
+  "corDoTexto": "#FFFFFF",
+  "corDoIconeAndroid": "#F5B301",
+  "contato": {
+    "whatsapp": "5522981118514",
+    "telefone": "",
+    "instagram": "",
+    "endereco": "Rua São Francisco, 209 — Parque Zabulão, Rio das Ostras/RJ"
+  },
+  "privacidade": "https://firehubfood.com.br/privacidade",
+  "easProjectId": ""
+}
