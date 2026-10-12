@@ -161,6 +161,14 @@ const jobs = [
     intervalMs: 2 * 60_000, // 2 minutos
   },
   {
+    // Disparo oficial (API da Meta): manda a fila das campanhas (~45 s por
+    // rodada), devolve o credito do que expirou e confere as recargas por Pix
+    // que o webhook do Asaas nao avisou (lib/disparo-oficial/servidor.ts).
+    name: 'disparo-oficial',
+    path: '/api/cron/disparo-oficial',
+    intervalMs: 60_000, // 1 minuto
+  },
+  {
     // A cada 5 minutos porque atraso pede reacao rapida — e quem segura a
     // repeticao e a propria rota: um aviso por PEDIDO a cada hora.
     name: 'pedidos-atrasados',

@@ -1,0 +1,31 @@
+import { NextRequest, NextResponse } from "next/server";
+import { verifyCronAuth } from "@/lib/cron-auth";
+import { atualizarModelosPendentes, conferirRecargasPendentes, processarFila } from "@/lib/disparo-oficial/servidor";
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
+/**
+ * A cada minuto (scripts/cron-runner.js): manda a fila das campanhas do
+ * Disparo oficial (~45 s por rodada, ~14 mensagens por segundo), devolve o
+ * crédito do que expirou e confere no Asaas as recargas que o webhook não
+ * avisou. Sem campanha nem recarga pendente, são três consultas e acabou.
+ */
+let rodando = false;
+
+export async function GET(req: NextRequest) {
+  if (!verifyCronAuth(req)) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (rodando) return NextResponse.json({ ok: true, pulou: "rodada anterior ainda enviando" });
+  rodando = true;
+  try {
+    const fila = await processarFila();
+    const pagas = await conferirRecargasPendentes().catch(() => 0);
+    await atualizarModelosPendentes().catch(() => {});
+    return NextResponse.json({ ok: true, ...fila, recargasPagas: pagas });
+  } catch (err: any) {
+    console.error(`[Disparo oficial] Cron falhou: ${err?.message}`);
+    return NextResponse.json({ ok: false, error: err?.message }, { status: 500 });
+  } finally {
+    rodando = false;
+  }
+}

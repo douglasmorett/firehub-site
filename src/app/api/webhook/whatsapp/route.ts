@@ -5,6 +5,7 @@ import { hospedadoVaiParaOGatewayNovo, levarHospedadoAoGatewayNovo } from '@/lib
 import { sendEvolutionMessage } from '@/lib/whatsapp-evolution';
 import { processChatbotAI } from '@/lib/chatbot-ai';
 import { trackWhatsAppMessage } from '@/lib/usage-tracker';
+import { ehPararPromocoes, MENSAGEM_DE_DESCADASTRO } from '@/lib/disparo-oficial/regras';
 import { registrarTrace, mascararTelefone } from '@/lib/webhook-trace';
 import {
   evaluateLoopGuard,
@@ -763,6 +764,12 @@ async function handleIncomingMessage(body: any, instance: string) {
     conteudo.extendedTextMessage?.text ||
     conteudo.imageMessage?.caption ||
     conteudo.videoMessage?.caption ||
+    // Botão tocado numa mensagem da loja ("Quero pedir" da promoção pela API
+    // oficial — lib/disparo-oficial). O gateway de Baileys 7 já manda como
+    // `conversation`; isto cobre os outros caminhos.
+    conteudo.templateButtonReplyMessage?.selectedDisplayText ||
+    conteudo.buttonsResponseMessage?.selectedDisplayText ||
+    conteudo.interactiveResponseMessage?.body?.text ||
     data.body ||
     data.text ||
     (localizacao ? textoDaLocalizacao(localizacao) : "") ||
@@ -801,6 +808,22 @@ async function handleIncomingMessage(body: any, instance: string) {
       "Desculpe, não conseguimos atender ligações por aqui! 😅 Como posso te ajudar?"
     ).catch(() => {});
     return;
+  }
+
+  // "Parar promoções" (botão da promoção pela API oficial, lib/disparo-oficial):
+  // o webhook da API tira o cliente da lista; a confirmação sai daqui, pelo
+  // robô, sem passar pela IA. Pela API ela voltaria a este webhook como
+  // mensagem da loja e o robô entenderia "atendente assumiu". Só para loja com
+  // a API conectada — nas outras a frase segue o caminho normal.
+  if (ehPararPromocoes(rawText)) {
+    const oficial = await (prisma as any).whatsappOficial
+      ?.findUnique({ where: { franchiseeId: user.id }, select: { status: true } })
+      .catch(() => null);
+    if (oficial?.status === "CONECTADO") {
+      console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🔕 ${remoteJid} pediu para parar as promoções.`);
+      await replyToCustomer(user.id, remoteJid, MENSAGEM_DE_DESCADASTRO).catch(() => {});
+      return;
+    }
   }
 
   let textMessage = rawText;

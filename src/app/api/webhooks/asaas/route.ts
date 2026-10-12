@@ -36,6 +36,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, mensalidade: resultado });
     }
 
+    // Recarga do Disparo oficial (lib/disparo-oficial/servidor.ts, "disparo:<id>").
+    if (String(payment.externalReference || "").startsWith("disparo:")) {
+      const { registrarPagamentoDaRecarga } = await import("@/lib/disparo-oficial/servidor");
+      const resultado = await registrarPagamentoDaRecarga(payment, event);
+      console.log(`[webhook/asaas] Recarga de disparos ${payment.externalReference}: ${resultado} (${event})`);
+      return NextResponse.json({ success: true, recarga: resultado });
+    }
+
     // Procurar o pedido: primeiro por asaasPaymentId, depois por externalReference (orderId)
     let order = await prisma.order.findFirst({
       where: { asaasPaymentId: payment.id }

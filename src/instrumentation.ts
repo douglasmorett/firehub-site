@@ -67,6 +67,10 @@ export async function register() {
   // StockTransaction, StockInvoice e Payable: faltando, o estoque serve 500.
   const { garantirEstruturaDoCmv } = await import("./lib/cmv/estrutura-no-banco");
   await garantirEstruturaDoCmv();
+  // Disparo oficial (API da Meta, lib/disparo-oficial). Tabelas próprias; se
+  // faltarem, só essa tela para.
+  const { garantirEstruturaDoDisparoOficial } = await import("./lib/disparo-oficial/estrutura-no-banco");
+  await garantirEstruturaDoDisparoOficial();
   // Lançamentos de cashback à mão (aba Clientes). Tabela própria por SQL cru;
   // se faltar, o saldo segue o dos pedidos e só o lançamento falha.
   const { garantirTabelaDeAjustes } = await import("./lib/cashback-no-banco");

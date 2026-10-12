@@ -302,6 +302,12 @@ export default function MarketingHubClient() {
                   <strong>O que continua funcionando:</strong> o robô responde normalmente quem
                   manda mensagem para a loja. O que saiu do ar é só o envio para uma lista.
                 </p>
+                <a
+                  href="/store/disparo-oficial"
+                  style={{ display: "inline-block", marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "#0F766E", color: "#fff", fontWeight: 800, fontSize: "0.88rem", textDecoration: "none" }}
+                >
+                  📣 Disparo oficial: promoção pela API oficial da Meta →
+                </a>
               </div>
             )}
 

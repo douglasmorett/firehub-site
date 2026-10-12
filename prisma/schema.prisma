@@ -2521,3 +2521,128 @@ model AceiteDosTermos {
 
   @@index([userId, versao])
 }
+
+// ── DISPARO OFICIAL (API oficial da Meta, coexistência) ─────────────────────
+// lib/disparo-oficial/. Tabelas próprias, criadas no boot por
+// lib/disparo-oficial/estrutura-no-banco.ts; sem chave estrangeira para o User.
+
+/// O número da loja ligado à Cloud API em coexistência (o celular e o robô
+/// continuam). Uma linha por loja. O token é do cadastro incorporado (Embedded
+/// Signup) e fica cifrado (lib/cofre.ts).
+model WhatsappOficial {
+  id            String    @id @default(cuid())
+  franchiseeId  String    @unique
+  wabaId        String
+  phoneNumberId String
+  businessId    String?
+  numero        String?
+  nomeExibido   String?
+  tokenCifrado  String
+  /// CONECTADO · DESCONECTADO · ERRO
+  status        String    @default("CONECTADO")
+  qualidade     String?
+  limite        String?
+  erro          String?
+  contatosSincronizadosEm DateTime?
+  conectadoEm   DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+/// Crédito comprado (Pix do Asaas do FireHub) ou dado à mão pelo FireHub
+/// (AJUSTE). O saldo é a soma das PAGAS menos os envios que contam
+/// (lib/disparo-oficial/saldo.ts).
+model DisparoRecarga {
+  id              String    @id @default(cuid())
+  franchiseeId    String
+  disparos        Int
+  valor           Float
+  precoPorDisparo Float
+  /// PIX · AJUSTE
+  tipo            String    @default("PIX")
+  /// PENDENTE · PAGA · CANCELADA
+  status          String    @default("PENDENTE")
+  asaasPaymentId  String?   @unique
+  pixCopiaECola   String?
+  descricao       String?
+  criadoPor       String?
+  createdAt       DateTime  @default(now())
+  pagaEm          DateTime?
+
+  @@index([franchiseeId, status])
+}
+
+/// Modelo de mensagem (template de MARKETING) aprovado pela Meta.
+model DisparoModelo {
+  id             String   @id @default(cuid())
+  franchiseeId   String
+  /// Nome na Meta (minúsculas, único por WABA).
+  nome           String
+  titulo         String
+  texto          String
+  botaoPedir     Boolean  @default(true)
+  idioma         String   @default("pt_BR")
+  metaTemplateId String?
+  /// PENDENTE · APROVADO · REJEITADO · PAUSADO · DESATIVADO
+  status         String   @default("PENDENTE")
+  motivo         String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([franchiseeId])
+}
+
+model DisparoCampanha {
+  id           String    @id @default(cuid())
+  franchiseeId String
+  modeloId     String
+  nome         String
+  publico      Json?
+  total        Int       @default(0)
+  /// ENVIANDO · CONCLUIDA · CANCELADA · PAUSADA
+  status       String    @default("ENVIANDO")
+  motivo       String?
+  criadoPor    String?
+  createdAt    DateTime  @default(now())
+  concluidaEm  DateTime?
+
+  @@index([franchiseeId, createdAt])
+  @@index([status])
+}
+
+/// Um destinatário de uma campanha. É ele que gasta o crédito: conta enquanto
+/// está na fila/enviado e depois de entregue; FALHOU, EXPIRADO e CANCELADO
+/// devolvem (a Meta só cobra o entregue).
+model DisparoEnvio {
+  id           String    @id @default(cuid())
+  campanhaId   String
+  franchiseeId String
+  telefone     String
+  nome         String?
+  /// FILA · ENVIADO · ENTREGUE · LIDO · FALHOU · EXPIRADO · CANCELADO
+  status       String    @default("FILA")
+  /// A Meta disse que não cobrou (pricing.billable = false): devolve o crédito.
+  gratis       Boolean   @default(false)
+  wamid        String?   @unique
+  erro         String?
+  tentativas   Int       @default(0)
+  enviadoEm    DateTime?
+  entregueEm   DateTime?
+  lidoEm       DateTime?
+  respondeuEm  DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@unique([campanhaId, telefone])
+  @@index([franchiseeId, status])
+  @@index([status, createdAt])
+  @@index([franchiseeId, telefone])
+}
+
+/// Quem tocou em "Parar promoções": nunca mais entra num disparo desta loja.
+model DisparoDescadastro {
+  id           String   @id @default(cuid())
+  franchiseeId String
+  telefone     String
+  createdAt    DateTime @default(now())
+
+  @@unique([franchiseeId, telefone])
+}
