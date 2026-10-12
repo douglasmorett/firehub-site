@@ -140,3 +140,33 @@ export async function lojaFechadaPelaQueda(lojaId: string | null | undefined): P
     return false;
   }
 }
+
+/**
+ * A loja está EM QUEDA agora (lib/loja-sem-conexao.ts)? Nunca lança: na
+ * dúvida, "não".
+ */
+export async function lojaEmQueda(lojaId: string | null | undefined): Promise<boolean> {
+  if (!lojaId) return false;
+  try {
+    if (!(await garantirColunaDaLojaSemConexao())) return false;
+    const linhas = await prisma.$queryRaw<{ emQueda: boolean | null }[]>`
+      SELECT jsonb_typeof("semConexaoEstado"->'episodio') = 'object' AS "emQueda" FROM "User" WHERE "id" = ${lojaId} LIMIT 1
+    `;
+    return linhas[0]?.emQueda === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * O aceite automático que vale AGORA para o pedido que chega de um canal que
+ * o FireHub não consegue pausar (99Food, Keeta, Wabiz). Com a loja em queda,
+ * o pedido nasce NOVO em vez de ACEITO: aceito sozinho, ele esperaria numa
+ * loja que não o vê. NOVO, ele toca no painel quando a loja voltar — ou o
+ * canal cancela no prazo dele e avisa o cliente, o que é melhor do que o
+ * cliente esperar um pedido que ninguém está fazendo.
+ */
+export async function aceitaSozinhoAgora(loja: { id: string; autoAcceptOrders?: boolean | null }): Promise<boolean> {
+  if (!loja.autoAcceptOrders) return false;
+  return !(await lojaEmQueda(loja.id));
+}

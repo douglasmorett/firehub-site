@@ -24,6 +24,7 @@ import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import type { WabizPedido } from "@/lib/wabiz-api";
 import { texto, traduzirPedidoWabiz } from "@/lib/wabiz-traducao";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 
 export interface ResultadoWabizPedido {
   action: "created" | "exists" | "error";
@@ -68,7 +69,8 @@ export async function processWabizOrder(
   if (!loja) return { action: "error", message: `loja ${franchiseeId} não encontrada` };
 
   const fuso = await fusoDaLoja(franchiseeId);
-  const { dados, items } = traduzirPedidoWabiz(pedido, { lojaId: loja.id, fuso, autoAcceptOrders: !!loja.autoAcceptOrders });
+  // Loja SEM CONEXÃO: o pedido não nasce aceito (lib/loja-sem-conexao-no-banco.ts).
+  const { dados, items } = traduzirPedidoWabiz(pedido, { lojaId: loja.id, fuso, autoAcceptOrders: await aceitaSozinhoAgora(loja) });
 
   // ── O FORMATO DAS OPÇÕES, NO LOG, ENQUANTO ELE NÃO FOR CERTEZA ───────────
   //

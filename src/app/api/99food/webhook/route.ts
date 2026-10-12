@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 import { registrar99Food } from "@/lib/webhook-99food-log";
 import { parseJson99Food } from "@/lib/json-ids-longos";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
@@ -544,6 +545,10 @@ export async function POST(req: NextRequest) {
           // loja): o que não é o cliente não vai para customerLatLng.
           const doParceiro = await pontoEDistanciaDoParceiro(franchisee.id, p.coordenadas);
           const distanciaDaEntrega = doParceiro.km;
+          // Com a loja SEM CONEXÃO (lib/loja-sem-conexao.ts) o pedido não
+          // nasce aceito: o 99Food não tem pausa pelo FireHub, e aceito sozinho
+          // ele esperaria numa loja que não o vê.
+          const aceitaSozinho = await aceitaSozinhoAgora(franchisee);
 
           try {
             await (prisma.customerOrder as any).create({
@@ -562,7 +567,7 @@ export async function POST(req: NextRequest) {
                 // ligado o pedido ja nasce ACEITO e e confirmado no 99Food logo
                 // abaixo; desligado, nasce NOVO e fica tocando no painel para o
                 // lojista aceitar, exatamente como sempre foi.
-                status: franchisee.autoAcceptOrders ? "ACEITO" : "NOVO",
+                status: aceitaSozinho ? "ACEITO" : "NOVO",
                 paymentMethod: p.pagamento.texto,
                 totalAmount: p.total,
                 deliveryFee: p.taxaEntrega,
@@ -633,7 +638,7 @@ export async function POST(req: NextRequest) {
             //
             // Sem `await`: a resposta ao webhook corre contra 6 segundos, e o
             // ACK nao pode esperar a ida ao 99Food.
-            if (franchisee.autoAcceptOrders) {
+            if (aceitaSozinho) {
               sincronizar99Food(
                 {
                   openDeliveryOrderId: String(orderId),
