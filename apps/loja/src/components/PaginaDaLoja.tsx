@@ -120,7 +120,6 @@ export function PaginaDaLoja({ url, aoFazerPedido }: { url: string; aoFazerPedid
         javaScriptEnabled
         mediaPlaybackRequiresUserAction
         allowsInlineMediaPlayback
-        decelerationRate="normal"
         style={{ flex: 1, backgroundColor: "#fff" }}
       />
       {carregando && (
