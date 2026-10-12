@@ -157,6 +157,7 @@ export async function POST(req: NextRequest) {
       const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
       const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
       const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
+      const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
       for (const ord of pedidosDaRota) {
         // ── Sync Brendi ──
         //
@@ -220,7 +221,14 @@ export async function POST(req: NextRequest) {
           );
         }
         // ── Sync Jotajá (Open Delivery) ──
-        if (ord.openDeliveryOrderId && !ehPedido99Food(ord) && !ehPedidoWabiz(ord) && !ehPedidoBrendi(ord)) {
+        // ── Sync Keeta ──
+        if (ehPedidoKeeta(ord)) {
+          await sincronizarKeeta(
+            { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status, deliveryBy: ord.deliveryBy, deliveryType: (ord as any).deliveryType },
+            "SAIU_ENTREGA"
+          ).catch((err: any) => console.warn(`[Route Dispatch → Keeta] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
+        }
+        if (ord.openDeliveryOrderId && !ehPedido99Food(ord) && !ehPedidoWabiz(ord) && !ehPedidoBrendi(ord) && !ehPedidoKeeta(ord)) {
           try {
             const { jotajaMutate } = await import("@/lib/jotaja-api");
             const odId = ord.openDeliveryOrderId;

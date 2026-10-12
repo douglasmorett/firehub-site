@@ -119,8 +119,15 @@ export async function POST(req: NextRequest) {
           const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
           const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
           const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
+          const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
           for (const ord of orders) {
-            if (ehPedidoWabiz(ord)) {
+            // Keeta antes de tudo: fora desta cadeia ela cairia no ramo do JotaJá.
+            if (ehPedidoKeeta(ord)) {
+              await sincronizarKeeta(
+                { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status, deliveryBy: ord.deliveryBy, deliveryType: (ord as any).deliveryType },
+                "SAIU_ENTREGA"
+              ).catch((err: any) => console.warn(`[Motoboy Dispatch → Keeta] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
+            } else if (ehPedidoWabiz(ord)) {
               await sincronizarWabiz(
                 {
                   openDeliveryOrderId: ord.openDeliveryOrderId!,

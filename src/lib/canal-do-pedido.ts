@@ -26,6 +26,7 @@ export type ChaveDeCanal =
   | "BRENDI"
   | "WABIZ"
   | "JOTAJA"
+  | "KEETA"
   | "WHATSAPP_IA"
   | "PDV"
   | "TOTEM"
@@ -58,6 +59,9 @@ const CORES: Record<ChaveDeCanal, { nome: string; emoji: string; fundo: string; 
   // verde do site próprio.
   WABIZ:       { nome: "Wabiz",   emoji: "🟢", fundo: "#ECFCCB", texto: "#3F6212", marketplace: true },
   JOTAJA:      { nome: "Jotajá",  emoji: "🔵", fundo: "#DBEAFE", texto: "#1D4ED8", marketplace: true },
+  // Preto com amarelo, as cores da Keeta — e o que a separa do amarelo-claro
+  // do 99 num relance.
+  KEETA:       { nome: "Keeta",   emoji: "🟨", fundo: "#1F2937", texto: "#FACC15", marketplace: true },
   WHATSAPP_IA: { nome: "IA Whats", emoji: "🤖", fundo: "#F3E8FF", texto: "#7C3AED", marketplace: false },
   PDV:         { nome: "PDV",     emoji: "🧾", fundo: "#E0E7FF", texto: "#4338CA", marketplace: false },
   TOTEM:       { nome: "Totem",   emoji: "🖥️", fundo: "#CFFAFE", texto: "#0E7490", marketplace: false },
@@ -89,6 +93,9 @@ export function chaveDoCanal(pedido: PedidoParaCanal | null | undefined): ChaveD
   if (src === "BRENDI" || od === "BRENDI") return "BRENDI";
   if (src === "WABIZ" || od === "WABIZ") return "WABIZ";
   if (src === "JOTAJA" || od === "JOTAJA") return "JOTAJA";
+  // Antes do "todo openDeliveryOrderId é JotaJá" lá embaixo: a Keeta também
+  // grava openDeliveryOrderId (lib/open-delivery/traducao.ts).
+  if (src === "KEETA" || od === "KEETA") return "KEETA";
   // OPEN_DELIVERY é o rótulo genérico antigo: o canal fino vem no
   // openDeliveryChannel, e sem ele o resto do Open Delivery era o JotaJá.
   if (src === "OPEN_DELIVERY") return od.includes("99") ? "99FOOD" : od === "BRENDI" ? "BRENDI" : "JOTAJA";

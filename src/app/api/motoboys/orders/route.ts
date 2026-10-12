@@ -455,8 +455,13 @@ export async function POST(req: NextRequest) {
             const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
             const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
             const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
+            const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
             const base = { openDeliveryOrderId: String(pedido.openDeliveryOrderId), franchiseeId: pedido.franchiseeId, status: pedido.status, deliveryBy: pedido.deliveryBy };
-            if (ehPedido99Food(pedido)) {
+            if (ehPedidoKeeta(pedido)) {
+              // Keeta antes de tudo: fora desta cadeia ela cairia no ramo do JotaJá.
+              const r = await sincronizarKeeta({ ...base, deliveryType: pedido.deliveryType }, "SAIU_ENTREGA");
+              if (r.erros.length > 0) console.error(`[${rotulo} Keeta] ${pedido.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+            } else if (ehPedido99Food(pedido)) {
               // O 99Food quer saber quem leva: o mesmo entregador que puxou.
               const entregador = await prisma.motoboy
                 .findUnique({ where: { id: mb.id }, select: { id: true, name: true, phone: true } })
@@ -922,7 +927,20 @@ export async function PATCH(req: NextRequest) {
           const { ehPedido99Food, sincronizar99Food } = await import("@/lib/food99-status");
           const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
           const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
-          if (ehPedidoWabiz(order as any)) {
+          const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
+          // Keeta antes de tudo: fora desta cadeia ela cairia no ramo do JotaJá.
+          if (ehPedidoKeeta(order as any)) {
+            await sincronizarKeeta(
+              {
+                openDeliveryOrderId: (order as any).openDeliveryOrderId,
+                franchiseeId: order.franchiseeId,
+                status: order.status,
+                deliveryBy: (order as any).deliveryBy,
+                deliveryType: (order as any).deliveryType,
+              },
+              "ENTREGUE"
+            );
+          } else if (ehPedidoWabiz(order as any)) {
             await sincronizarWabiz(
               {
                 openDeliveryOrderId: (order as any).openDeliveryOrderId,

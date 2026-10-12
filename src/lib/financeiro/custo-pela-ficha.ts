@@ -88,7 +88,7 @@ export type ItemParaCusto = {
 };
 
 /** Produto-espelho de marketplace (lib/ifood-itens.ts, food99-pedido.ts, processBrendiEvent.ts, processJotajaEvent.ts, wabiz-traducao.ts). */
-export const ehEspelho = (id: string) => /^(ifood-|99food_|brendi-|jotaja-|wabiz-)/i.test(id);
+export const ehEspelho = (id: string) => /^(ifood-|99food_|brendi-|jotaja-|wabiz-|keeta-)/i.test(id);
 
 const chave = (s: string) => s.trim().replace(/\s+/g, " ").toLowerCase();
 const r2 = (n: number) => Math.round(n * 100) / 100;

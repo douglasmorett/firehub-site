@@ -3373,6 +3373,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
         // E a Brendi — a falha dela só ia para o log (levantamento de 27/09/2026).
         if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
+        if (data?.avisoKeeta) showToast(`⚠️ Keeta não acompanhou: ${data.avisoKeeta}`, "#B45309");
         // Pix pelo site: estorno que não saiu na hora (sem saldo no Asaas,
         // esperando autorização no app). Também vai para o WhatsApp do dono.
         if (data?.avisoEstorno) showToast(`⚠️ Estorno do Pix: ${data.avisoEstorno}`, "#B45309");
@@ -3512,6 +3513,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (data?.avisoIfood) showToast(`⚠️ iFood não acompanhou: ${data.avisoIfood}`, "#B45309");
         if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
         if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
+        if (data?.avisoKeeta) showToast(`⚠️ Keeta não acompanhou: ${data.avisoKeeta}`, "#B45309");
         if (data?.avisoEstorno) showToast(`⚠️ Estorno do Pix: ${data.avisoEstorno}`, "#B45309");
       } else {
         const erro = await res.json().catch(() => null);

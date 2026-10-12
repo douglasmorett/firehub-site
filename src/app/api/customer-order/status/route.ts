@@ -6,6 +6,7 @@ import { trackSaleForBilling } from "@/lib/billing";
 import { ehPedido99Food, sincronizar99Food } from "@/lib/food99-status";
 import { ehPedidoBrendi, sincronizarBrendi } from "@/lib/brendi-status";
 import { ehPedidoWabiz, sincronizarWabiz } from "@/lib/wabiz-status";
+import { ehPedidoKeeta, sincronizarKeeta } from "@/lib/keeta/status";
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR } from "@/lib/motivo-do-cancelamento";
 import { empilharEdicao } from "@/lib/edicao-de-pedido";
 
@@ -305,6 +306,7 @@ export async function PUT(req: Request) {
   let aviso99Food: string | null = null;
   // E o mesmo para a Brendi: a falha ia só para o log, a tela dizia "pronto".
   let avisoBrendi: string | null = null;
+  let avisoKeeta: string | null = null;
   if (order.ifoodOrderId) {
     try {
       const { acaoNoPedidoIfood, despacharNoIfood } = await import("@/lib/ifood-pedido");
@@ -456,7 +458,32 @@ export async function PUT(req: Request) {
   // Decisão por CANAL: o JotaJá é o "resto" do Open Delivery só depois de
   // excluir 99Food, Brendi e Wabiz — presença de openDeliveryOrderId não diz
   // de quem o pedido é.
-  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order) && !ehPedidoWabiz(order)) {
+  // ── Sync with Keeta ─────────────────────────────────────────────────────
+  // Também usa `openDeliveryOrderId` (keeta_<id>): entra ANTES do ramo JotaJá
+  // e é excluída dele — o furo que cada canal novo teve (lib/keeta/status.ts).
+  if (ehPedidoKeeta(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarKeeta(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+        deliveryType: (order as any).deliveryType,
+      },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[Keeta Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      avisoKeeta = r.erros[0].replace(/^[^:]+:\s*/, "");
+    }
+  }
+
+  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order) && !ehPedidoWabiz(order) && !ehPedidoKeeta(order)) {
     const syncErrors: string[] = [];
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");
@@ -725,7 +752,7 @@ export async function PUT(req: Request) {
   const pedido = saiDoRascunhoDoRobo
     ? { dailyOrderNumber: updateData.dailyOrderNumber, createdAt: updateData.createdAt, printedAt: null, notes: updateData.notes }
     : undefined;
-  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoEstorno, ...(pedido ? { pedido } : {}) });
+  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoKeeta, avisoEstorno, ...(pedido ? { pedido } : {}) });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });
