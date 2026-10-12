@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processarWebhook, webhookAutentico } from "@/lib/disparo-oficial/servidor";
+import { tokenDeVerificacao } from "@/lib/disparo-oficial/meta";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,12 +15,13 @@ export const maxDuration = 60;
  * antigo /api/webhook/whatsapp-cloud responde com o robô; não é o deste app.)
  *
  * Configurar no app da Meta: URL de callback = .../api/webhook/whatsapp-oficial,
- * token = WHATSAPP_OFICIAL_VERIFY_TOKEN, campos messages,
+ * token = tokenDeVerificacao() (lib/disparo-oficial/meta.ts), campos messages,
  * message_template_status_update, phone_number_quality_update e account_update.
+ * Quem cadastra é o servidor: POST /api/admin/disparo-oficial {acao:"webhook"}.
  */
 export async function GET(req: NextRequest) {
   const sp = req.nextUrl.searchParams;
-  const esperado = (process.env.WHATSAPP_OFICIAL_VERIFY_TOKEN || "").trim();
+  const esperado = tokenDeVerificacao() || "";
   if (esperado && sp.get("hub.mode") === "subscribe" && sp.get("hub.verify_token") === esperado) {
     return new NextResponse(sp.get("hub.challenge") || "", { status: 200 });
   }

@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { custoMeta, lojaLiberada, precoPorDisparo } from "@/lib/disparo-oficial/regras";
 import { ajustarCredito, garantirEstruturaDoDisparoOficial, saldoDaLoja } from "@/lib/disparo-oficial/servidor";
+import { assinarWebhookDoApp, webhookDoApp } from "@/lib/disparo-oficial/meta";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,8 @@ export const dynamic = "force-dynamic";
  *
  * GET: lojas conectadas, saldo, vendido e entregue no mês (o que a Meta vai
  * cobrar). POST { lojaId, disparos, motivo }: crédito à mão (teste na Hakim,
- * cortesia, acerto); negativo tira.
+ * cortesia, acerto); negativo tira. POST { acao: "webhook" }: cadastra o
+ * webhook do app na Meta pelo servidor (a chave secreta não sai daqui).
  */
 async function exigirAdmin() {
   const session = await getServerSession(authOptions);
@@ -60,6 +62,22 @@ export async function POST(req: NextRequest) {
   const session = await exigirAdmin();
   if (!session) return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
   const body: any = await req.json().catch(() => ({}));
+  if (body?.acao === "webhook") {
+    try {
+      const url = `${(process.env.NEXTAUTH_URL || "https://firehubfood.com.br").replace(/\/+$/, "")}/api/webhook/whatsapp-oficial`;
+      const r = await assinarWebhookDoApp(url);
+      return NextResponse.json({ ok: true, resposta: r, cadastrado: await webhookDoApp() });
+    } catch (e: any) {
+      return NextResponse.json({ error: e?.message || "A Meta recusou" }, { status: 400 });
+    }
+  }
+  if (body?.acao === "ver-webhook") {
+    try {
+      return NextResponse.json({ ok: true, cadastrado: await webhookDoApp() });
+    } catch (e: any) {
+      return NextResponse.json({ error: e?.message }, { status: 400 });
+    }
+  }
   const lojaId = String(body?.lojaId || "");
   const loja = lojaId ? await prisma.user.findUnique({ where: { id: lojaId }, select: { id: true } }) : null;
   if (!loja) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });

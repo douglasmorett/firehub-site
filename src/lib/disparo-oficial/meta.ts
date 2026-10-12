@@ -8,6 +8,7 @@
  *
  * Versão da Graph: a mesma do resto do que fala com a Meta (lib/meta-capi.ts).
  */
+import { createHmac } from "crypto";
 import { segredoObrigatorio, segredoOpcional } from "@/lib/segredos";
 import { VERSAO_DA_GRAPH_API } from "@/lib/meta-capi";
 
@@ -21,6 +22,57 @@ export function appIdDoWhatsapp(): string | null {
 /** Chave secreta do app do WhatsApp: troca do código e assinatura do webhook. */
 export function segredoDoAppDoWhatsapp(): string | null {
   return segredoOpcional("WHATSAPP_APP_SECRET");
+}
+
+/**
+ * O token que a Meta manda no GET de verificação do webhook. Sem
+ * WHATSAPP_OFICIAL_VERIFY_TOKEN, sai da chave secreta do app — fica só no
+ * servidor, e quem cadastra o webhook é o próprio servidor
+ * (assinarWebhookDoApp), então ninguém precisa digitá-lo.
+ */
+export function tokenDeVerificacao(): string | null {
+  const definido = segredoOpcional("WHATSAPP_OFICIAL_VERIFY_TOKEN");
+  if (definido) return definido;
+  const segredo = segredoDoAppDoWhatsapp();
+  return segredo ? createHmac("sha256", segredo).update("firehub-disparo-oficial-webhook").digest("hex").slice(0, 32) : null;
+}
+
+export const CAMPOS_DO_WEBHOOK = ["messages", "message_template_status_update", "phone_number_quality_update", "account_update"];
+
+/**
+ * Cadastra (ou atualiza) o webhook do app na Meta: URL, token e campos. Usa o
+ * token do APP (id|chave), que só o servidor tem. A Meta chama o GET de
+ * verificação na hora — o site tem de estar no ar com as variáveis.
+ */
+export async function assinarWebhookDoApp(callbackUrl: string): Promise<{ success?: boolean }> {
+  const appId = segredoObrigatorio("WHATSAPP_APP_ID");
+  const segredo = segredoObrigatorio("WHATSAPP_APP_SECRET");
+  const verify = tokenDeVerificacao();
+  if (!verify) throw new Error("Sem token de verificação.");
+  const corpo = new URLSearchParams({
+    object: "whatsapp_business_account",
+    callback_url: callbackUrl,
+    verify_token: verify,
+    fields: CAMPOS_DO_WEBHOOK.join(","),
+    include_values: "true",
+    access_token: `${appId}|${segredo}`,
+  });
+  const res = await fetch(`${GRAPH}/${appId}/subscriptions`, { method: "POST", body: corpo, signal: AbortSignal.timeout(30000) });
+  const dados: any = await res.json().catch(() => ({}));
+  if (!res.ok || dados?.error) {
+    const e = dados?.error || {};
+    throw new ErroDaMeta(Number(e?.code) || null, String(e?.error_user_msg || e?.message || `HTTP ${res.status}`), res.status);
+  }
+  return dados;
+}
+
+/** O que a Meta tem cadastrado de webhook para o app (sem segredos). */
+export async function webhookDoApp(): Promise<unknown> {
+  const appId = segredoObrigatorio("WHATSAPP_APP_ID");
+  const segredo = segredoObrigatorio("WHATSAPP_APP_SECRET");
+  const res = await fetch(`${GRAPH}/${appId}/subscriptions?access_token=${encodeURIComponent(`${appId}|${segredo}`)}`, { signal: AbortSignal.timeout(20000) });
+  const dados: any = await res.json().catch(() => ({}));
+  return (dados?.data || []).map((s: any) => ({ object: s.object, callback_url: s.callback_url, active: s.active, fields: (s.fields || []).map((f: any) => f.name) }));
 }
 
 export class ErroDaMeta extends Error {
