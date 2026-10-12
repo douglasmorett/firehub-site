@@ -28,6 +28,11 @@ export type TipoDeAlerta =
   | "problema_no_pedido"
   /** Cliente pediu atendente com todas as letras. */
   | "pedido_de_atendente"
+  /**
+   * O cliente devolveu preenchida a ficha de uma resposta pronta (reserva de
+   * festa): o aviso leva os dados, e a equipe confirma (lib/respostas-prontas.ts).
+   */
+  | "ficha_preenchida"
   /** O robô caiu / desconectou do WhatsApp. */
   | "robo_desconectado"
   /** Pedido passou do prazo e ainda não saiu para entrega. */
@@ -83,6 +88,7 @@ export type TipoDeAlerta =
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
   pedido_de_atendente: true,
+  ficha_preenchida: true,
   robo_desconectado: true,
   pedido_atrasado: true,
   "99food_desconectado": true,
@@ -102,6 +108,7 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   problema_no_pedido: "Cliente com problema no pedido (atraso, item faltando, reclamação)",
   pedido_de_atendente: "Cliente pediu para falar com atendente",
+  ficha_preenchida: "Cliente preencheu a ficha de reserva (vem com os dados para a equipe confirmar)",
   robo_desconectado: "Robô desconectou do WhatsApp",
   pedido_atrasado: "Pedido atrasado que ainda não saiu para entrega",
   "99food_desconectado": "Loja perdeu a conexão com o 99Food (pedidos de lá param de entrar)",

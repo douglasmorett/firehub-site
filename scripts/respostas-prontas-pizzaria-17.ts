@@ -89,6 +89,8 @@ Horário:
 
 Unidade desejada :
 Ornamentação:`,
+    // Ficha preenchida → a conversa vai para a equipe com os dados no aviso.
+    fichaParaALoja: "Reserva de festa",
   },
 ];
 

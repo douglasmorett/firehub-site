@@ -74,6 +74,11 @@ export type ContextoDasRegras = {
   enderecoDaLoja: string | null;
   /** true faz, false não faz, null não disse (vira "não sei"). */
   fazReservaDeMesa: boolean | null;
+  /**
+   * A linha de reserva quando a loja tem a FICHA de reserva pronta
+   * (regraDaReservaPelaFicha, lib/respostas-prontas.ts): vence as duas abaixo.
+   */
+  regraDaReserva?: string;
   modoDaArea: "KM" | "POLIGONO" | "BAIRRO" | "SEM_AREA";
   /** A distância é o percurso pelas ruas, não o raio. */
   ehRota: boolean;
@@ -114,11 +119,11 @@ export function regrasDoRobo(ctx: ContextoDasRegras): string {
 
   // A frase-modelo não usa a palavra "reserva": a rede servicosSemFonte a
   // barra quando ela não está na fonte dos fatos (ver pendência no cabeçalho).
-  const reserva = ctx.fazReservaDeMesa === true
+  const reserva = ctx.regraDaReserva || (ctx.fazReservaDeMesa === true
     ? `\n   - RESERVA DE MESA — a loja faz: pediu reserva (mesa, aniversário, grupo)? Diga com alegria que sim, pergunte dia, horário e quantas pessoas se ainda não disse, e avise que vai chamar alguém da equipe para confirmar, com [[CHAMAR_ATENDENTE]] no final: "Fazemos sim! 😊 Me diz o dia, o horário e quantas pessoas que eu chamo alguém da equipe pra confirmar." Nunca diga que não faz nem confirme sozinho: quem confirma é a equipe.`
     : ctx.fazReservaDeMesa === false
     ? `\n   - RESERVA DE MESA — a loja não faz: diga com educação que não trabalha com reserva${ctx.lojaFisica ? ", mas o salão está aberto nos horários de funcionamento (informe o de hoje)" : ""}.`
-    : "";
+    : "");
 
   const notaFiscal = nota
     ? `\n   - CPF/CNPJ NA NOTA: esta loja emite nota fiscal de cada pedido. Junto com o que falta para fechar, pergunte "Quer CPF ou CNPJ na nota?".${nota.obrigatorioNaEntrega

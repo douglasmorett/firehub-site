@@ -21,6 +21,7 @@ import { ehConversaDeCliente, conversaOriginalEhDeCliente, tipoDoJid } from '@/l
 import { contaOficialDoWhatsApp } from '@/lib/contas-oficiais-whatsapp';
 import { descartavelNoCooldown, desembrulharMensagem, localizacaoDoPayload, semLinhaDaLocalizacao, textoDaLocalizacao } from '@/lib/localizacao-do-whatsapp';
 import { avisarDono, avisarAdminDoSistema, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
+import { textoDoAvisoDaFicha, type FichaPreenchida } from '@/lib/respostas-prontas';
 import { mesmoTelefone } from '@/lib/telefone';
 import { ehNumeroDoDono } from '@/lib/numeros-do-dono';
 import { detectarPedidoDeAtendente, FRASE_DE_CHAMAR_ATENDENTE } from '@/lib/pedido-de-atendente';
@@ -1444,6 +1445,23 @@ async function handleIncomingMessage(body: any, instance: string) {
         if (!replyText) replyText = FRASE_DE_CHAMAR_ATENDENTE;
       }
 
+      // A ficha que o cliente devolveu preenchida (reserva de festa da Pizzaria
+      // 17, lib/respostas-prontas.ts): quem confirma é a equipe, então a conversa
+      // vai para ela — com os dados no aviso do dono, para ninguém precisar
+      // rolar a conversa para saber dia, horário e quantas pessoas.
+      const fichaPreenchida: FichaPreenchida | undefined = (aiResponse as any).fichaPreenchida;
+      let motivoDoRobo = "Robô chamou atendente";
+      if (fichaPreenchida && !falhaDaIa && !donoNaQueda) {
+        callHuman = true;
+        motivoDoRobo = `${fichaPreenchida.titulo}: confirmar`;
+        avisarDono(
+          user.id,
+          "ficha_preenchida",
+          textoDoAvisoDaFicha(fichaPreenchida, { nome: data.pushName || cleanPhone, telefone: cleanPhone })
+        ).catch(() => {});
+        donoJaAvisado = true;
+      }
+
       // O cliente recusou o site e quer ver o cardápio aqui mesmo: a IA marca a
       // resposta e nós mandamos o arquivo que o lojista subiu. A marca sai do
       // texto antes de qualquer coisa — cliente nenhum pode ver "[[...]]".
@@ -1604,10 +1622,10 @@ async function handleIncomingMessage(body: any, instance: string) {
         // gravava a de memória e não avisava ninguém: quando era a IA que decidia
         // chamar a equipe, com o painel fechado a loja simplesmente não ficava
         // sabendo — e um deploy devolvia o robô à conversa.
-        const motivoDaTransferencia = falhaDaIa ? MOTIVO_IA_FORA_DO_AR : "Robô chamou atendente";
+        const motivoDaTransferencia = falhaDaIa ? MOTIVO_IA_FORA_DO_AR : motivoDoRobo;
         if (!falhaDaIa) {
           pausarRobo(user.id, remoteJid);
-          await passarParaAtendimentoHumano(user.id, remoteJid, "robô chamou atendente", now);
+          await passarParaAtendimentoHumano(user.id, remoteJid, fichaPreenchida ? "ficha preenchida pelo cliente" : "robô chamou atendente", now);
         }
         // Com a IA FORA DO AR não há pausa nem trava no banco, de propósito: a
         // conversa é da equipe só ENQUANTO a IA estiver fora. Cada mensagem tenta

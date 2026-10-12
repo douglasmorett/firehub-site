@@ -1874,6 +1874,11 @@ export default function ChatbotHubClient() {
                 detalhe: "Quando o cliente escreve que quer falar com uma pessoa.",
               },
               {
+                id: "ficha_preenchida",
+                titulo: "Cliente preencheu a ficha de reserva",
+                detalhe: "O robô mandou as regras e a ficha da reserva, o cliente devolveu preenchida: vem com nome, data, horário e quantas pessoas, para a equipe confirmar.",
+              },
+              {
                 id: "pedido_atrasado",
                 titulo: "Pedido atrasado que ainda não saiu",
                 detalhe: "Passou do prazo de entrega e continua na loja. Vem com o número do pedido, a hora que entrou e o prazo. Um aviso por pedido a cada hora.",
