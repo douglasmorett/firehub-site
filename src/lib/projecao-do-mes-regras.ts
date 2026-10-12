@@ -26,7 +26,7 @@ export function faixaDaVenda(vendaDoMes: number): Faixa {
  * PAGANDO: já saiu do teste antes de hoje.
  * TESTE_ACABA: o teste termina dentro do mês (ainda vai virar cobrança).
  * SO_USO: não vendeu nada cobrável, mas o fechamento cobra o mínimo por uso
- * (produto no cardápio, robô, integração… — detectarUsoDaLoja).
+ * (robô respondeu, IA, caixa, contas, notas, totem, Meta Ads — detectarUsoDaLoja).
  */
 export type Situacao = "PAGANDO" | "TESTE_ACABA" | "SO_USO";
 

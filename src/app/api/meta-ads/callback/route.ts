@@ -160,10 +160,9 @@ export async function GET(req: NextRequest) {
         metaAdAccountId: adAccountId,
         metaFbPageId: pageId,
         // Liga o módulo só quando existem AS DUAS pontas — conta e Página.
-        // `metaAdsEnabled` não é enfeite de tela: `detectarUsoDaLoja`
-        // (lib/billing.ts) conta "Meta Ads" como uso da loja no fechamento do
-        // mês. Ligar uma loja sem Página é cobrar mensalidade por um módulo que
-        // não consegue nem criar o criativo.
+        // Ligar uma loja sem Página é prometer um módulo que não consegue nem
+        // criar o criativo. (O fechamento do mês já não conta `metaAdsEnabled`
+        // como uso — só campanha cobrada no ciclo; ver detectarUsoDaLoja.)
         //
         // E aqui NUNCA se desliga: `metaAdsEnabled` é o filtro do cron que
         // renova o token da loja (api/cron/meta-ads-sync). Se uma reconexão

@@ -130,6 +130,20 @@ function faturamentoBruto(soma: { totalAmount: number | null; discountTotal: num
  * com o robô atendendo e a cobrança cega. Por isso o consumo de IA registrado
  * no UsageLog entra aqui: é prova de que o robô trabalhou, não promessa.
  *
+ * Uso é ATIVIDADE dentro da janela cobrada, não configuração que ficou
+ * salva. Regra do dono (12/10/2026): "se saiu do teste e não vendeu nada, nem
+ * usou robô nem nenhuma função, não cobrar". Antes contavam robô marcado como
+ * conectado, iFood/99/Jotajá ligados, impressora/KDS/fiscal/repasse
+ * configurados, produto no cardápio e item de estoque — tudo estado que
+ * sobrevive à loja abandonada. Em 12/10 seis lojas que só testaram e pararam
+ * (Forno Doro, Vinhedos, Predileta, Nostra, Oii, L&M) iam receber boleto de
+ * R$ 100 por isso, sem nenhum pedido e sem o robô responder ninguém.
+ *
+ * Contam: o robô/IA trabalhou (resposta enviada ou consumo de IA no
+ * UsageLog — mensagem só RECEBIDA não conta), conta a pagar, caixa aberto,
+ * nota de compra, totem ativo e campanha de Meta Ads cobrada no mês. Integração
+ * ligada sem pedido não é uso: pedido que entrasse por ela seria venda.
+ *
  * Devolve também o motivo, que fica no `notes` do ciclo — quando o lojista
  * perguntar "por que estou pagando se não vendi?", a resposta está gravada.
  */
@@ -139,50 +153,29 @@ export async function detectarUsoDaLoja(
   monthEnd: Date
 ): Promise<{ usou: boolean; motivos: string[] }> {
   const motivos: string[] = [];
-
-  const user = await prisma.user.findUnique({
-    where: { id: franchiseeId },
-    select: {
-      chatbotConfig: true, ifoodConnected: true, jotajaConnected: true,
-      food99Connected: true, metaAdsEnabled: true, fiscalConfig: true,
-      printerConfig: true, kdsScreens: true, repasseConfig: true,
-    },
-  });
-
-  const chatbot = (user?.chatbotConfig as any) || {};
-  // `active !== false` porque o robô responde nesse estado — é o mesmo critério
-  // que o webhook usa para decidir se atende. Cobrança e atendimento não podem
-  // discordar sobre o que é "estar ligado".
-  if (chatbot.connected === true || (chatbot.instanceName && chatbot.active !== false)) {
-    motivos.push("robô de WhatsApp conectado");
-  }
-  if (user?.ifoodConnected) motivos.push("integração iFood");
-  if (user?.jotajaConnected) motivos.push("integração Jotajá");
-  if (user?.food99Connected) motivos.push("integração 99Food");
-  if (user?.metaAdsEnabled) motivos.push("Meta Ads");
-  if (user?.fiscalConfig) motivos.push("módulo fiscal");
-  if (user?.printerConfig || user?.kdsScreens) motivos.push("impressão/KDS");
-  if (user?.repasseConfig) motivos.push("repasse automático");
-
   const noMes = { gte: monthStart, lt: monthEnd };
+  const mesDoCiclo = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit" })
+    .format(new Date(monthEnd.getTime() - 1));
 
-  const [produtos, consumoIA, contas, caixa, notas, estoque, totem] = await Promise.all([
-    prisma.menuProduct.count({ where: { franchiseeId } }),
-    prisma.usageLog.count({ where: { franchiseeId, createdAt: noMes } }),
+  const [robo, ia, contas, caixa, notas, totem, anuncio] = await Promise.all([
+    prisma.usageLog.count({
+      where: { franchiseeId, createdAt: noMes, category: "WHATSAPP_MSG", metadata: { path: ["direction"], equals: "OUTBOUND" } },
+    }),
+    prisma.usageLog.count({ where: { franchiseeId, createdAt: noMes, category: { in: ["GEMINI_CHAT", "GEMINI_VISION"] } } }),
     prisma.payable.count({ where: { franchiseeId, createdAt: noMes } }),
     prisma.cashSession.count({ where: { franchiseeId, createdAt: noMes } }),
     prisma.purchaseInvoice.count({ where: { franchiseeId, createdAt: noMes } }),
-    prisma.stockItem.count({ where: { franchiseeId } }),
     prisma.totemLicense.count({ where: { franchiseeId, active: true } }),
+    prisma.franchiseeBillingCycle.count({ where: { franchiseeId, yearMonth: mesDoCiclo, metaAdsFee: { gt: 0 } } }),
   ]);
 
-  if (produtos > 0) motivos.push(`${produtos} produto(s) no cardápio`);
-  if (consumoIA > 0) motivos.push(`${consumoIA} uso(s) de IA no mês`);
+  if (robo > 0) motivos.push(`robô de WhatsApp respondeu (${robo} mensagem(ns))`);
+  if (ia > 0) motivos.push(`${ia} uso(s) de IA no mês`);
   if (contas > 0) motivos.push("financeiro (contas a pagar)");
   if (caixa > 0) motivos.push("controle de caixa");
   if (notas > 0) motivos.push("notas de compra");
-  if (estoque > 0) motivos.push("controle de estoque");
   if (totem > 0) motivos.push("totem de autoatendimento");
+  if (anuncio > 0) motivos.push("campanha de Meta Ads");
 
   return { usou: motivos.length > 0, motivos };
 }
