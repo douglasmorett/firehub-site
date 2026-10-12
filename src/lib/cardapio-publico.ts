@@ -58,6 +58,9 @@ export const SELECT_DA_LOJA_NO_CARDAPIO = {
   reviewsMinStars: true,
   showAddressOnMenu: true,
   allowScheduledOrders: true,
+  // Pedido agendado (lib/agendamento.ts): só dias, horários e antecedência —
+  // nada sensível; o checkout monta os horários com isto.
+  agendamentoConfig: true,
 } as const;
 
 export type CanalDoCardapio = "delivery" | "salao";

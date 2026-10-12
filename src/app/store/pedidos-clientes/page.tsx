@@ -87,6 +87,12 @@ export default async function FranchiseeCustomerOrdersPage() {
     .then((l) => l?.autoAcceptOrders === true)
     .catch(() => false);
 
+  // O agendamento também é da LOJA (lib/agendamento.ts): o modal Agendamentos
+  // mostra e salva a config do dono, não a do funcionário logado.
+  const agendamentoDaLojaP = prisma.user
+    .findUnique({ where: { id: targetFranchiseeId }, select: { agendamentoConfig: true, allowScheduledOrders: true, storeHours: true, storePause: true, storeTimezone: true } })
+    .catch(() => null);
+
   // === MULTI-LOJAS: Resolver IDs das lojas ativas ===
   const cookieStore = await cookies();
   const activeStore = cookieStore.get('firehub_active_store')?.value;
@@ -240,6 +246,8 @@ export default async function FranchiseeCustomerOrdersPage() {
         initialMotoboys={motoboys}
         activeStoreId={activeStore || targetFranchiseeId}
         aceiteAutomaticoDaLoja={await aceiteDaLojaP}
+        agendamentoConfigDaLoja={(await agendamentoDaLojaP)?.agendamentoConfig ?? null}
+        horarioDaLoja={await agendamentoDaLojaP}
       />
     </>
   );

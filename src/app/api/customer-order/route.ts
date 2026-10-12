@@ -6,6 +6,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { motivoForaDoCardapio, textoDoHorario } from "@/lib/cardapio-interno";
+import { conferirAgendamento, lerConfigDeAgendamento, textoDoAgendamento } from "@/lib/agendamento";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
 import { opcoesBloqueadasEscolhidas } from "@/lib/preco-combo";
@@ -79,6 +80,8 @@ export async function POST(req: Request) {
       select: {
         id: true, slug: true, storeName: true, storeOpen: true, storePause: true, storeHours: true, storeTimezone: true,
         autoAcceptOrders: true, allowScheduledOrders: true, storeCoupons: true, deliveryConfig: true,
+        // Pedido agendado no site (lib/agendamento.ts): dias, horários, antecedência.
+        agendamentoConfig: true,
         // O cupom da campanha "converter para site próprio" mora aqui
         // (lib/campanha-converter.ts) e é conferido como os demais.
         storeLoyalty: true,
@@ -156,13 +159,36 @@ export async function POST(req: Request) {
       );
     }
 
-    // Validar se agendamento está desativado
-    if ((body.scheduledDatetime || body.scheduledDate || body.isScheduled) && franchisee.allowScheduledOrders === false) {
-      return NextResponse.json({ error: "Esta loja não está aceitando pedidos agendados no momento." }, { status: 400 });
+    // ── PEDIDO AGENDADO (lib/agendamento.ts) ───────────────────────────────
+    //
+    // O cliente escolheu "📅 Agendar" no checkout. O horário é conferido pela
+    // MESMA regra que montou a lista na tela (dia aceito, horário, antecedência,
+    // dias à frente, férias, entrega/retirada): um POST direto ou uma aba
+    // velha não agenda para fora do que a loja aceita. Antes desta trava o
+    // `scheduledDatetime` do corpo era simplesmente descartado.
+    const configDoAgendamento = lerConfigDeAgendamento(franchisee.agendamentoConfig);
+    const pediuAgendamento = Boolean(body.agendado === true || body.scheduledDatetime || body.scheduledDate || body.isScheduled);
+    let instanteAgendado: Date | null = null;
+    if (pediuAgendamento) {
+      const erroDoAgendamento = conferirAgendamento({
+        config: configDoAgendamento,
+        deliveryType,
+        instante: body.scheduledDatetime,
+        storeHours: franchisee.storeHours,
+        storePause: franchisee.storePause,
+        timezone: franchisee.storeTimezone,
+      });
+      if (erroDoAgendamento) return NextResponse.json({ error: erroDoAgendamento }, { status: 400 });
+      instanteAgendado = new Date(body.scheduledDatetime);
+    } else if (configDoAgendamento.ativo && configDoAgendamento.soAgendado) {
+      // Loja que só trabalha por encomenda: não existe pedido "para agora".
+      return NextResponse.json({ error: "Esta loja só aceita pedido agendado. Escolha o dia e o horário em “Agendar”." }, { status: 400 });
     }
 
-    // Verificar se loja está operando
-    if (franchisee.storeOpen === false) {
+    // Verificar se loja está operando. A loja FECHADA ainda recebe encomenda:
+    // o agendado é para quando ela estiver aberta (e o horário já foi
+    // conferido acima contra o funcionamento ou o horário do agendamento).
+    if (franchisee.storeOpen === false && !instanteAgendado) {
       return NextResponse.json({ error: "Loja fechada no momento." }, { status: 400 });
     }
 
@@ -181,7 +207,7 @@ export async function POST(req: Request) {
     // "Aberta" porque o navegador do cliente está no fuso certo; só o POST
     // recusava. `estadoDaLoja` é a peça feita para o servidor: usa
     // `storeTimezone` e ainda entende o turno de ontem que atravessa a madrugada.
-    const ehAgendado = Boolean(body.scheduledDatetime || body.scheduledDate || body.isScheduled);
+    const ehAgendado = Boolean(instanteAgendado);
     if (!ehAgendado) {
       const estadoAgora = estadoDaLoja({
         storeHours: franchisee.storeHours,
@@ -199,8 +225,10 @@ export async function POST(req: Request) {
     // com data: `new Date("AAAA-MM-DDT00:00")` era meia-noite do container
     // (UTC), então a pausa começava às 21:00 da véspera e voltava a aceitar
     // pedido às 21:00 do último dia de férias.
+    // O AGENDADO já teve a pausa conferida pela data DELE (conferirAgendamento):
+    // o cliente pode encomendar durante as férias para depois delas.
     const pause = franchisee.storePause as any;
-    if (pause?.active && pause.from && pause.to) {
+    if (!ehAgendado && pause?.active && pause.from && pause.to) {
       const hoje = dataDaLoja(franchisee.storeTimezone);
       if (hoje >= pause.from && hoje <= pause.to) {
         const [a, m, d] = String(pause.to).split("-");
@@ -371,13 +399,17 @@ export async function POST(req: Request) {
       // direto na rota — ainda mandava a esfirra de segunda no domingo, pelo
       // preço de promoção. Mesma regra do totem (api/totem/order). O horário
       // do produto (a marmita das 9h às 14h) entra na mesma conferência.
-      const foraDoCardapio = motivoForaDoCardapio(product as any, franchisee.storeTimezone);
+      // No AGENDADO, o dia e a hora que valem são os do agendamento: a marmita
+      // das 10h às 14h pode ser encomendada à noite para amanhã ao meio-dia.
+      const foraDoCardapio = motivoForaDoCardapio(product as any, franchisee.storeTimezone, instanteAgendado || new Date());
       if (foraDoCardapio) {
         throw Object.assign(
           new Error(
             foraDoCardapio === "horario"
               ? `"${product.name}" só é vendido ${textoDoHorario((product as any).availableHours)}.`
-              : `"${product.name}" só está disponível em dias específicos e hoje não é um deles.`
+              : instanteAgendado
+                ? `"${product.name}" não está disponível no dia agendado.`
+                : `"${product.name}" só está disponível em dias específicos e hoje não é um deles.`
           ),
           { statusCode: 400 }
         );
@@ -749,6 +781,10 @@ export async function POST(req: Request) {
     if (notaDaArea) {
       orderNotes = `${orderNotes}${notaDaArea}`.trim();
     }
+    if (instanteAgendado) {
+      // Na comanda, no painel e para o robô: o pedido é para DEPOIS.
+      orderNotes = `[📅 AGENDADO para ${textoDoAgendamento(instanteAgendado, franchisee.storeTimezone)}] ${orderNotes}`.trim();
+    }
     const finalNotes = orderNotes || null;
 
     // ── O QUE A ENTREGA DEIXA GRAVADO (R7) ────────────────────────────────
@@ -825,6 +861,9 @@ export async function POST(req: Request) {
         status: initialStatus,
         kdsStage: initialKdsStage,
         kdsProductionAt: initialKdsProductionAt,
+        // O horário que o cliente escolheu e a marca de que foi ele que agendou
+        // (lib/agendamento.ts). Fica em Agendamentos até a hora de liberar.
+        ...(instanteAgendado ? { scheduledDatetime: instanteAgendado, agendado: true } : {}),
         // O PONTO QUE DECIDIU A TAXA FICA NO PEDIDO — o pino/GPS do cliente,
         // ou o ponto que o mapa achou para o endereço digitado.
         //

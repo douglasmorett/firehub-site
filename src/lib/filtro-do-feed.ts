@@ -58,6 +58,17 @@ export function filtroDoFeed({
         // Agendado para o período, ainda que criado antes dele. Continua
         // valendo para o agendamento distante, que não tem teto de idade.
         { scheduledDatetime: { gte: from, lte: to } },
+        // A ENCOMENDA do site (lib/agendamento.ts) em andamento fica visível
+        // em Pedidos › Agendamentos até ser feita, mesmo criada há mais de 7
+        // dias (o cliente pode agendar até 60 dias à frente). O teto passa a
+        // ser a HORA MARCADA, não a criação.
+        {
+          AND: [
+            { status: { in: ACTIVE_STATUSES } },
+            { agendado: true },
+            { scheduledDatetime: { gte: ATIVO_SEM_PERIODO_DESDE } },
+          ],
+        },
       ],
     },
     // Pedido pelo site cancelado sem nunca ter sido pago não é cancelamento

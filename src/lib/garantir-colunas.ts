@@ -85,6 +85,12 @@ const INSTRUCOES = [
   // HORÁRIO DO PRODUTO (a marmita das 9h às 14h): JSON {"de","ate"} no
   // relógio da loja. Nulo = o dia todo, como todo produto continua.
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "availableHours" TEXT`,
+  // PEDIDO AGENDADO NO SITE (lib/agendamento.ts): a configuração da loja —
+  // dias, horários, antecedência — e a marca do pedido que o cliente agendou.
+  // Nulo/false = como toda loja e todo pedido continuam (agendamento
+  // desligado; o "agendado de verdade" dos parceiros segue a regra das 3 h).
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "agendamentoConfig" JSONB`,
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "agendado" BOOLEAN NOT NULL DEFAULT false`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -110,6 +116,8 @@ const ESPERADAS = [
   "User.storeBannerVideo",
   "User.reviewsMinStars",
   "MenuProduct.availableHours",
+  "User.agendamentoConfig",
+  "CustomerOrder.agendado",
 ];
 
 /**
@@ -192,7 +200,9 @@ export async function garantirColunasDePreco(): Promise<void> {
             'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem',
             'trilhaPremio', 'entregaGratis', 'faixasDeKm',
             'modeloDePagamento', 'modelosDePagamento', 'kdsConfig',
-            'estoqueQtd', 'estoqueDesde', 'estoquePausar'
+            'estoqueQtd', 'estoqueDesde', 'estoquePausar',
+            'storeBannerVideo', 'reviewsMinStars', 'availableHours',
+            'agendamentoConfig', 'agendado'
           )
       `;
       const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));

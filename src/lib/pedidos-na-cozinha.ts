@@ -40,11 +40,13 @@ type PedidoDaContagem = {
 };
 
 /** A data que o quadro usa para o pedido: o agendamento, se for de verdade. */
-export function dataDoPedido(o: { createdAt: Date | string; scheduledDatetime?: Date | string | null }): Date {
+export function dataDoPedido(o: { createdAt: Date | string; scheduledDatetime?: Date | string | null; agendado?: boolean | null }): Date {
   const criado = new Date(o.createdAt);
   if (!o.scheduledDatetime) return criado;
   const agendado = new Date(o.scheduledDatetime);
   if (!Number.isFinite(agendado.getTime())) return criado;
+  // O cliente que AGENDOU no site (lib/agendamento.ts) vale com qualquer folga.
+  if (o.agendado === true) return agendado;
   return agendado.getTime() - criado.getTime() > AGENDAMENTO_DE_VERDADE_MS ? agendado : criado;
 }
 

@@ -62,6 +62,8 @@ import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/clien
 import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReconhecido } from "@/lib/cliente-reconhecido";
 import { bandeirasDeValeLigadas, formaLigada } from "@/lib/formas-do-cardapio";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
+import QuandoReceber, { type Quando } from "./QuandoReceber";
+import { aceitaAgendamentoPara, horariosParaAgendar, lerConfigDeAgendamento } from "@/lib/agendamento";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
 function formatarCpf(v: string): string {
@@ -233,6 +235,8 @@ type Franchisee = {
    * regra pública — a config fiscal da loja NUNCA vem para o cardápio.
    */
   notaFiscal?: DocumentoNoPedido;
+  /** Pedido agendado no site (lib/agendamento.ts). Nulo = desligado. */
+  agendamentoConfig?: unknown;
 };
 
 /**
@@ -629,6 +633,36 @@ export default function CustomerStorePage({
   // Na mesa não vale: o site pode estar fechado com o salão funcionando —
   // quem decide é o caixa aberto, no servidor (api/loja/mesa/pedido).
   const lojaFechadaAgora = !mesa && (!storeStatus.open || franchisee.storeOpen === false);
+
+  // ── PEDIDO AGENDADO (lib/agendamento.ts) ─────────────────────────────────
+  // Com o agendamento ligado, o checkout pergunta "Quando?" (⚡ Agora ou
+  // 📅 Agendar). Loja fechada ou "só encomenda": só Agendar — é assim que a
+  // loja fechada continua recebendo encomenda. Os horários são recalculados a
+  // cada minuto (o 19:00 some quando passa da antecedência).
+  const configDoAgendamento = useMemo(() => lerConfigDeAgendamento(franchisee.agendamentoConfig), [franchisee.agendamentoConfig]);
+  const [tiqueDoAgendamento, setTiqueDoAgendamento] = useState(0);
+  useEffect(() => {
+    if (!configDoAgendamento.ativo || mesa) return;
+    const t = setInterval(() => setTiqueDoAgendamento((x) => x + 1), 60_000);
+    return () => clearInterval(t);
+  }, [configDoAgendamento.ativo, mesa]);
+  const diasParaAgendar = useMemo(
+    () => (mesa ? [] : horariosParaAgendar({ config: configDoAgendamento, storeHours: franchisee.storeHours, storePause: franchisee.storePause, timezone: franchisee.storeTimezone })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [configDoAgendamento, franchisee.storeHours, franchisee.storePause, franchisee.storeTimezone, mesa, tiqueDoAgendamento],
+  );
+  const [quandoReceber, setQuandoReceber] = useState<Quando>("AGORA");
+  const [horarioAgendado, setHorarioAgendado] = useState<string | null>(null);
+  const agendaNesteTipo = !mesa && aceitaAgendamentoPara(configDoAgendamento, deliveryType) && diasParaAgendar.length > 0;
+  const soPeloAgendamento = configDoAgendamento.ativo && configDoAgendamento.soAgendado;
+  const podePedirAgora = !lojaFechadaAgora && !soPeloAgendamento;
+  const vaiAgendar = agendaNesteTipo && (quandoReceber === "AGENDAR" || !podePedirAgora);
+  // Nem agora nem agendado: loja fechada (ou só encomenda) sem horário para ESTE tipo.
+  const semComoPedir = !mesa && !podePedirAgora && !agendaNesteTipo;
+  // O horário escolhido sumiu (passou da antecedência, trocou o tipo): escolhe de novo.
+  useEffect(() => {
+    if (horarioAgendado && !diasParaAgendar.some((d) => d.horarios.some((h) => h.iso === horarioAgendado))) setHorarioAgendado(null);
+  }, [diasParaAgendar, horarioAgendado]);
 
   // Verificar pausa programada
   const isPaused = (() => {
@@ -2215,12 +2249,19 @@ export default function CustomerStorePage({
     if (cart.length === 0) return;
     // Primeiro de tudo: fechou, não cria pedido — com o motivo e o horário,
     // não um "Loja fechada.." genérico depois do formulário inteiro.
-    if (lojaFechadaAgora) {
+    if (semComoPedir) {
+      const outroTipo = deliveryType === "DELIVERY" ? configDoAgendamento.retirada && !franchisee.storeDeliveryOnly : configDoAgendamento.entrega;
       avisar({
         tipo: "fechada",
-        titulo: "A loja está fechada agora",
-        texto: `${!storeStatus.open && storeStatus.text ? `${storeStatus.text}. ` : ""}Seus itens ficam na sacola para quando abrir.`,
+        titulo: soPeloAgendamento ? "Esta loja trabalha só com pedido agendado" : "A loja está fechada agora",
+        texto: configDoAgendamento.ativo && outroTipo
+          ? `Para ${deliveryType === "DELIVERY" ? "entrega" : "retirada"} não há horário para agendar. Escolha ${deliveryType === "DELIVERY" ? "“Retirar no Balcão”" : "“Entrega”"} e o horário.`
+          : `${!storeStatus.open && storeStatus.text ? `${storeStatus.text}. ` : ""}Seus itens ficam na sacola para quando abrir.`,
       });
+      return;
+    }
+    if (vaiAgendar && !horarioAgendado) {
+      avisar({ tipo: "falta", titulo: "Escolha o horário", texto: "Em “Quando?”, escolha o dia e o horário do seu pedido." });
       return;
     }
     if (storeMinOrder > 0 && cartTotal < storeMinOrder) {
@@ -2369,6 +2410,8 @@ export default function CustomerStorePage({
           customerNumber: customerNumber || null,
           customerNeighborhood: customerNeighborhood || null,
           deliveryType, paymentMethod, notes,
+          // Agendado: o servidor confere o horário pela mesma regra (lib/agendamento.ts).
+          ...(vaiAgendar && horarioAgendado ? { agendado: true, scheduledDatetime: horarioAgendado } : {}),
           // CPF de quem paga (Pix pelo site exige; também vai na nota fiscal).
           customerCpfCnpj: pagaPeloAsaas
             ? cpfDoPagador.replace(/\D/g, "") || null
@@ -3404,6 +3447,20 @@ export default function CustomerStorePage({
               </div>
             </div>
 
+            {/* QUANDO: agora ou agendado (lib/agendamento.ts) */}
+            {agendaNesteTipo && (
+              <QuandoReceber
+                dias={diasParaAgendar}
+                podeAgora={podePedirAgora}
+                quando={quandoReceber}
+                onQuando={setQuandoReceber}
+                escolhido={horarioAgendado}
+                onEscolher={setHorarioAgendado}
+                ehEntrega={deliveryType === "DELIVERY"}
+                motivoSemAgora={lojaFechadaAgora ? "A loja está fechada agora, mas você pode agendar." : soPeloAgendamento ? "Esta loja trabalha com pedido agendado." : undefined}
+              />
+            )}
+
             {/* SEU NOME */}
             <div>
               {clienteLembrado && customerName && (
@@ -4157,18 +4214,18 @@ export default function CustomerStorePage({
               <button
                 type="button"
                 onClick={mesa ? enviarPedidoDaMesa : handleCheckout}
-                disabled={loading || lojaFechadaAgora}
+                disabled={loading || semComoPedir}
                 style={{
                   width: "100%",
                   padding: "13px",
                   borderRadius: "12px",
                   border: "none",
-                  background: lojaFechadaAgora ? "#E2E8F0" : "linear-gradient(135deg, #059669, #047857)",
-                  color: lojaFechadaAgora ? "#64748B" : "#FFFFFF",
+                  background: semComoPedir ? "#E2E8F0" : "linear-gradient(135deg, #059669, #047857)",
+                  color: semComoPedir ? "#64748B" : "#FFFFFF",
                   fontWeight: 900,
                   fontSize: "0.95rem",
-                  cursor: loading || lojaFechadaAgora ? "not-allowed" : "pointer",
-                  boxShadow: lojaFechadaAgora ? "none" : "0 4px 14px rgba(5, 150, 105, 0.35)",
+                  cursor: loading || semComoPedir ? "not-allowed" : "pointer",
+                  boxShadow: semComoPedir ? "none" : "0 4px 14px rgba(5, 150, 105, 0.35)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -4177,10 +4234,14 @@ export default function CustomerStorePage({
               >
                 {mesa
                   ? (loading ? "Enviando para a cozinha..." : `🍽️ Enviar para a cozinha • R$ ${cartTotal.toFixed(2).replace(".", ",")}`)
-                  : lojaFechadaAgora
-                  ? `🔴 Loja fechada${!storeStatus.open && storeStatus.text ? ` • ${storeStatus.text}` : ""}`
+                  : semComoPedir
+                  ? soPeloAgendamento
+                    ? "📅 Só pedido agendado"
+                    : `🔴 Loja fechada${!storeStatus.open && storeStatus.text ? ` • ${storeStatus.text}` : ""}`
                   : loading
                     ? "Enviando pedido..."
+                    : vaiAgendar
+                      ? `📅 Agendar pedido • R$ ${finalTotal.toFixed(2).replace(".", ",")}`
                     : paymentMethod === "PIX" && pixPeloSite
                       ? `⚡ Finalizar e pagar com Pix • R$ ${finalTotal.toFixed(2).replace(".", ",")}`
                       : paymentMethod === "CREDITO_ONLINE" && cartaoPeloAsaas
@@ -4245,7 +4306,7 @@ export default function CustomerStorePage({
       {/* Loja manualmente fechada */}
       {!mesa && !isPaused && franchisee.storeOpen === false && (
         <div style={{ background: "#374151", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
-          🔴 Loja fechada no momento · Em breve voltamos!
+          🔴 Loja fechada no momento · {configDoAgendamento.ativo && diasParaAgendar.length > 0 ? "Você pode agendar o seu pedido." : "Em breve voltamos!"}
         </div>
       )}
 

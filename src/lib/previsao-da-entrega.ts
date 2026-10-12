@@ -64,6 +64,8 @@ export function previsaoDaEntrega(pedido: {
   tempoEntregaMin?: unknown;
   deliveryType?: unknown;
   kind?: unknown;
+  /** O cliente agendou no site (lib/agendamento.ts): é AGENDADO com qualquer folga. */
+  agendado?: unknown;
 } | null | undefined): PrevisaoNaComanda | null {
   if (!pedido) return null;
   // A conta da mesa e a rodada da mesa não têm entrega nenhuma.
@@ -75,7 +77,7 @@ export function previsaoDaEntrega(pedido: {
 
   const agendado = data(pedido.scheduledDatetime);
   if (agendado && agendado.getTime() >= criado.getTime() - FOLGA_DO_RELOGIO_MS) {
-    const tipo: TipoDaPrevisao = agendado.getTime() - criado.getTime() > AGENDAMENTO_DE_VERDADE_MS
+    const tipo: TipoDaPrevisao = pedido.agendado === true || agendado.getTime() - criado.getTime() > AGENDAMENTO_DE_VERDADE_MS
       ? "AGENDADO"
       : ehEntrega ? "ENTREGA" : "RETIRADA";
     return { em: agendado.toISOString(), tipo };

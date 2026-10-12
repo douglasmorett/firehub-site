@@ -48,6 +48,8 @@ import { pedidoComAcrescimos } from "@/lib/acrescimo-na-comanda";
 import { ehDisputaParcial, lerCancelamentosParciais } from "@/lib/cancelamento-parcial";
 import { origemDaVenda } from "@/lib/origem-da-venda";
 import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
+import ConfigDoAgendamento from "@/components/customer/ConfigDoAgendamento";
+import { lerConfigDeAgendamento, textoDoAgendamento, type ConfigDeAgendamento } from "@/lib/agendamento";
 import { motivoValido, MENSAGEM_SEM_MOTIVO, SUGESTOES_DE_MOTIVO } from "@/lib/motivo-do-cancelamento";
 
 const BOTAO_ACAO: React.CSSProperties = {
@@ -627,6 +629,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   const rawSchedTime = order.scheduledDatetime ? new Date(order.scheduledDatetime).getTime() : 0;
   // Um agendamento verdadeiro de data futura deve ser superior ao horário de criação (+ 2 min)
   const isRealScheduled = rawSchedTime > createdTime + 2 * 60000;
+  // Agendado de verdade: o cliente agendou no site, ou o parceiro mandou um
+  // horário com mais de 3 h de folga (a mesma regra de lib/pedidos-na-cozinha).
+  const ehAgendadoDeVerdade = Boolean(rawSchedTime) && (order.agendado === true || rawSchedTime - createdTime > 3 * 60 * 60 * 1000);
 
   const isTakeoutOrder =
     order.deliveryType === "RETIRADA" ||
@@ -1063,6 +1068,13 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             <span style={{ padding: "1px 7px", borderRadius: 6, background: PALETA.areia, color: PALETA.areiaTinta, border: `1px solid ${PALETA.areiaBorda}`, fontWeight: 600, whiteSpace: "nowrap" }}>
               Chegou <b style={{ fontWeight: 800, color: PALETA.carvao }}>{new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>
             </span>
+            {/* Pedido AGENDADO diz para QUANDO, com o dia: "Entregar até 19:30"
+                sozinho não diz se é hoje ou sábado. No relógio deste PC (o da loja). */}
+            {ehAgendadoDeVerdade && (
+              <span style={{ padding: "1px 7px", borderRadius: 6, fontWeight: 800, whiteSpace: "nowrap", background: "#EEF2FF", color: "#3730A3", border: "1px solid #C7D2FE" }}>
+                📅 Agendado: {textoDoAgendamento(order.scheduledDatetime, Intl.DateTimeFormat().resolvedOptions().timeZone)}
+              </span>
+            )}
             {deadline && !isFinished && (
               <span style={{
                 padding: "1px 7px", borderRadius: 6, fontWeight: 600, whiteSpace: "nowrap",
@@ -1680,7 +1692,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   );
 });
 
-export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys, activeStoreId, lojasDeOrigem = [], aceiteAutomaticoDaLoja = false }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[]; activeStoreId?: string; lojasDeOrigem?: LojaDeOrigem[]; aceiteAutomaticoDaLoja?: boolean }) {
+export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys, activeStoreId, lojasDeOrigem = [], aceiteAutomaticoDaLoja = false, agendamentoConfigDaLoja = null, horarioDaLoja = null }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[]; activeStoreId?: string; lojasDeOrigem?: LojaDeOrigem[]; aceiteAutomaticoDaLoja?: boolean; agendamentoConfigDaLoja?: unknown; horarioDaLoja?: { storeHours?: unknown; storePause?: unknown; storeTimezone?: string | null } | null }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -2083,36 +2095,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       setSalvandoBarra(false);
     }
   };
-  const [scheduleLeadHours, setScheduleLeadHours] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("scheduleLeadHours");
-      return saved ? Number(saved) : 1;
+  // ── PEDIDO AGENDADO (lib/agendamento.ts) ────────────────────────────────
+  // A config é da LOJA (Pedidos › Agendamentos). "Quanto tempo antes vai para
+  // a cozinha" morava só no localStorage de cada navegador: o caixa via o
+  // pedido em Novos e o PC da cozinha não. Agora é da loja; o valor antigo do
+  // navegador só vale enquanto a loja nunca salvou a configuração nova.
+  const [agendamentoCfg, setAgendamentoCfg] = useState<ConfigDeAgendamento>(() => lerConfigDeAgendamento(agendamentoConfigDaLoja));
+  const scheduleLeadHours = (() => {
+    if (agendamentoConfigDaLoja == null && typeof window !== "undefined") {
+      try {
+        const antigo = Number(localStorage.getItem("scheduleLeadHours"));
+        if (antigo > 0) return antigo;
+      } catch {}
     }
-    return 1;
-  });
-  const [allowScheduledOrders, setAllowScheduledOrders] = useState<boolean>(() => {
-    return (user as any)?.allowScheduledOrders ?? true;
-  });
-
-  const toggleAllowScheduledOrders = async (newValue: boolean) => {
-    setAllowScheduledOrders(newValue);
-    try {
-      const res = await fetch("/api/store-settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ allowScheduledOrders: newValue }),
-      });
-      if (res.ok) {
-        showToast(newValue ? "🟢 Agendamentos ATIVADOS no site próprio!" : "🔴 Agendamentos DESATIVADOS no site próprio!", newValue ? "#0F766E" : "#C92E09");
-      } else {
-        setAllowScheduledOrders(!newValue);
-        showToast("❌ Falha ao atualizar configuração de agendamentos", "#C92E09");
-      }
-    } catch {
-      setAllowScheduledOrders(!newValue);
-      showToast("❌ Erro de conexão ao salvar", "#C92E09");
-    }
-  };
+    return agendamentoCfg.liberarAntesMin / 60;
+  })();
   const [scheduleLeadInput, setScheduleLeadInput] = useState("");
   const [toastMsg, setToastMsg] = useState<{ text: string; color: string } | null>(null);
   const [printSelectOrderId, setPrintSelectOrderId] = useState<string | null>(null);
@@ -3288,7 +3285,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     if (!o.scheduledDatetime) return false;
     const deadline = new Date(o.scheduledDatetime);
     const diffMs = deadline.getTime() - new Date(o.createdAt).getTime();
-    const isFutureScheduled = diffMs > 3 * 60 * 60 * 1000;
+    // Agendado no site (marca `agendado`) vale com qualquer folga; o dos
+    // parceiros segue a regra das 3 h (o horário que eles mandam pode ser só o prazo).
+    const isFutureScheduled = o.agendado === true || diffMs > 3 * 60 * 60 * 1000;
     const isNotStarted = o.status === "NOVO" || o.status === "ACEITO";
     const stillWaiting = deadline.getTime() - now.getTime() > leadMs;
     return isFutureScheduled && isNotStarted && stillWaiting;
@@ -3881,7 +3880,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // ativas: quem está esperando no balcão há mais tempo é o próximo.
   const aguardandoPagamento = filteredOrders.filter(o => o.status === "AGUARDANDO_PAGAMENTO").sort(sortByOrderNumberAsc);
   const novos = filteredOrders.filter(o => (o.status === "NOVO" || o.status === "CRIANDO_IA") && !scheduledOrderIds.has(o.id)).sort(sortByOrderNumberAsc);
-  const preparoBase = filteredOrders.filter(o => o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO"));
+  // O agendado ACEITO (aceite automático) também espera em Agendamentos: antes
+  // ele ia direto para Em Produção, dias antes da hora.
+  const preparoBase = filteredOrders.filter(o => (o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")) && !scheduledOrderIds.has(o.id));
   // Coluna Prontos ligada: o que já saiu da cozinha muda de coluna em vez de
   // ficar em Em Produção com o selo. Desligada (o padrão): tudo como hoje.
   const prontos = colProntos ? preparoBase.filter(prontoNaCozinha).sort(sortByOrderNumberAsc) : [];
@@ -6052,67 +6053,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <button onClick={() => setShowAgendamentos(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8", lineHeight: 1 }}>×</button>
             </div>
 
-            {/* Bloco de Ativar / Desativar Agendamentos */}
-            <div style={{ marginBottom: "16px", padding: "14px 16px", background: allowScheduledOrders ? "#F0FDFA" : "#FEF2F2", borderRadius: "14px", border: `1.5px solid ${allowScheduledOrders ? "#99F6E4" : "#FECACA"}`, display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px" }}>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: "0.9rem", color: allowScheduledOrders ? "#0F766E" : "#B71C1C", display: "flex", alignItems: "center", gap: "6px" }}>
-                  {allowScheduledOrders ? "🟢 Aceitar Agendamentos no Site" : "🔴 Agendamentos Desativados"}
-                </div>
-                <div style={{ fontSize: "0.76rem", color: allowScheduledOrders ? "#0F766E" : "#B71C1C", marginTop: "2px" }}>
-                  {allowScheduledOrders ? "Clientes podem escolher data/horário para agendar no seu site próprio." : "Seu site próprio aceitará apenas pedidos para entrega imediata."}
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => toggleAllowScheduledOrders(!allowScheduledOrders)}
-                style={{
-                  position: "relative",
-                  width: "52px",
-                  height: "28px",
-                  borderRadius: "20px",
-                  background: allowScheduledOrders ? "#0F766E" : "#CBD5E1",
-                  border: "none",
-                  cursor: "pointer",
-                  transition: "all 0.25s ease",
-                  flexShrink: 0,
-                  boxShadow: "inset 0 2px 4px rgba(0,0,0,0.1)",
-                }}
-              >
-                <div
-                  style={{
-                    position: "absolute",
-                    top: "3px",
-                    left: allowScheduledOrders ? "27px" : "3px",
-                    width: "22px",
-                    height: "22px",
-                    borderRadius: "50%",
-                    background: "#fff",
-                    boxShadow: "0 2px 4px rgba(0,0,0,0.2)",
-                    transition: "all 0.25s ease",
-                  }}
-                />
-              </button>
-            </div>
-
-            {/* Configuração de antecedência */}
-            <div style={{ marginBottom: "16px", padding: "14px", background: "#F8FAFC", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
-              <label style={{ fontSize: "0.82rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: "8px" }}>
-                ⏰ Quantas horas antes do horário agendado você quer que o pedido vá para Novos Pedidos?
-              </label>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                  {[0.5, 1, 1.5, 2, 3].map(h => (
-                    <button key={h} onClick={() => { setScheduleLeadHours(h); localStorage.setItem("scheduleLeadHours", String(h)); }}
-                      style={{ padding: "6px 14px", borderRadius: "8px", border: `2px solid ${scheduleLeadHours === h ? "#475569" : "#E2E8F0"}`, background: scheduleLeadHours === h ? "#F1F5F9" : "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.82rem", color: scheduleLeadHours === h ? "#475569" : "#64748B", fontFamily: "inherit" }}>
-                      {h === 0.5 ? "30min" : `${h}h`}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <p style={{ fontSize: "0.72rem", color: "#64748B", margin: "8px 0 0" }}>
-                ✅ Configurado: pedidos entram em Novos Pedidos <strong>{scheduleLeadHours === 0.5 ? "30 minutos" : `${scheduleLeadHours} hora${scheduleLeadHours > 1 ? "s" : ""}`}</strong> antes do horário agendado.
-              </p>
-            </div>
+            {/* O que a loja aceita de agendamento no site (lib/agendamento.ts). */}
+            <ConfigDoAgendamento
+              inicial={agendamentoConfigDaLoja}
+              storeHours={horarioDaLoja?.storeHours ?? (user as any)?.storeHours}
+              storePause={horarioDaLoja?.storePause}
+              timezone={horarioDaLoja?.storeTimezone ?? (user as any)?.storeTimezone}
+              onSalvo={setAgendamentoCfg}
+              onAviso={showToast}
+            />
 
             <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
               {scheduledOrders.length === 0 ? (

@@ -72,6 +72,8 @@ model User {
   facebookPixelId String?         // ID do Pixel do Facebook/Meta Ads
   autoAcceptOrders Boolean        @default(false) // Auto-aceitar pedidos online
   allowScheduledOrders Boolean     @default(true)  // Permitir agendamento de pedidos no site próprio
+  /// Pedido agendado no site próprio: dias, horários, antecedência… (lib/agendamento.ts). Nulo = desligado.
+  agendamentoConfig    Json?
   storeAlertSound  String?        @default("bell") // Som de alerta: bell | chime | beep | none
   storeTimezone    String?        @default("America/Sao_Paulo") // Fuso horário regional do restaurante
   storeLoyalty    Json?           // { type: cashback|points, rate: 2, active: true }
@@ -919,6 +921,8 @@ model CustomerOrder {
   food99AppShopId     String?
   food99ShopId        String?
   scheduledDatetime   DateTime?          // Cen1: Data/hora agendada (SCHEDULED orders)
+  /// O cliente AGENDOU no site próprio (lib/agendamento.ts). Os parceiros seguem a regra das 3 h.
+  agendado            Boolean            @default(false)
   changeAmount        Float?             // Cen5: Valor do troco (pagamento em dinheiro)
   customerCpfCnpj     String?            // Cen5: CPF/CNPJ do cliente para NF
   cancelledBy         String?            // Cen4: quem cancelou: RESTAURANT | IFOOD | CUSTOMER

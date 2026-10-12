@@ -313,7 +313,17 @@ export async function PUT(req: Request) {
   // todo aparelho leem a linha do dono. Gravado na linha do funcionário que
   // clicou, não valia para nada (api/store-settings/aceite-automatico).
   if (body.autoAcceptOrders !== undefined) daLoja.autoAcceptOrders = Boolean(body.autoAcceptOrders);
-  if (body.allowScheduledOrders !== undefined) data.allowScheduledOrders = Boolean(body.allowScheduledOrders);
+  // Pedido agendado também é da LOJA (o site e a rota do pedido leem o dono).
+  // A config entra sempre limpa e completa (lib/agendamento.ts); o liga/desliga
+  // antigo acompanha o `ativo` para as duas chaves nunca discordarem.
+  if (body.agendamentoConfig !== undefined) {
+    const { lerConfigDeAgendamento } = await import("@/lib/agendamento");
+    const cfg = lerConfigDeAgendamento(body.agendamentoConfig);
+    daLoja.agendamentoConfig = cfg;
+    daLoja.allowScheduledOrders = cfg.ativo;
+  } else if (body.allowScheduledOrders !== undefined) {
+    daLoja.allowScheduledOrders = Boolean(body.allowScheduledOrders);
+  }
   if (body.storeAlertSound !== undefined) data.storeAlertSound = body.storeAlertSound;
   // A sincronização do tempo com o iFood está DESLIGADA (ver o fim desta
   // rota): o campo só aceita ser desligado.

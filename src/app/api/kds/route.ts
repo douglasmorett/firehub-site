@@ -17,6 +17,7 @@ import {
   tirarBaixa,
   type TelaDoKds,
 } from "@/lib/kds-telas";
+import { lerConfigDeAgendamento } from "@/lib/agendamento";
 
 /**
  * GET /api/kds?stage=production|finishing
@@ -109,10 +110,25 @@ export async function GET(req: NextRequest) {
       ];
     }
 
+    // ── PEDIDO AGENDADO NO SITE (lib/agendamento.ts) ──────────────────────
+    // Fica fora da cozinha até faltar `liberarAntesMin` para o horário, e
+    // entra pela HORA MARCADA, não pela criação: a encomenda feita na quarta
+    // para sábado tem mais de 48 h e o corte abaixo a esconderia para sempre.
+    const configDaLoja = user
+      ? await prisma.user
+          .findUnique({ where: { id: user.ownerId || user.id }, select: { agendamentoConfig: true } })
+          .catch(() => null)
+      : null;
+    const liberarAntesMin = lerConfigDeAgendamento(configDaLoja?.agendamentoConfig).liberarAntesMin;
+    const liberadoAte = new Date(Date.now() + liberarAntesMin * 60_000);
+
     let where: any = {
       franchiseeId: { in: userStoreIds },
       status: { notIn: ["CANCELADO", "ENTREGUE", "ENCERRADO", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"] },
-      createdAt: { gte: safeCutoff },
+      AND: [
+        { OR: [{ createdAt: { gte: safeCutoff } }, { agendado: true, scheduledDatetime: { gte: safeCutoff } }] },
+        { OR: [{ agendado: false }, { scheduledDatetime: null }, { scheduledDatetime: { lte: liberadoAte } }] },
+      ],
     };
 
     if (stage === "finishing") {
