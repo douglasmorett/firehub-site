@@ -292,5 +292,19 @@ console.log("\n5) Indisponíveis agrupados");
   conferir("sem combo nem produto", texto.includes("COMBOS\n- nenhum combo cadastrado") && texto.includes("PRODUTOS\n- nenhum item avulso cadastrado"));
 }
 
+// ── 6) O MESMO NOME COMO SABOR E COMO ADICIONAL (SP Pizza, 12/10/2026) ─────────
+console.log("\n6) Nome que é sabor e adicional");
+{
+  const sabores = grupo("Escolha até 2 sabores", 1, 2, [opcao("CALABRESA", 55), opcao("FILÉ MIAU", 83), opcao("MUSSARELA", 50)], "MAIOR");
+  const adicionais = grupo("Adicionais", 0, 11, [opcao("CALABRESA", 12), opcao("CATUPIRY", 8)]);
+  const soAdicionais = grupo("Adicionais", 0, 11, [opcao("CATUPIRY", 8), opcao("CHEDDAR", 8)]);
+  const grande = produto("Pizza Grande (8 pedaços)", "Pizzas", 0, [adicionais, sabores]);
+  const lanche = produto("X-Burguer", "Lanches", 20, [soAdicionais]);
+  const { texto } = cardapioParaORobo([grande, lanche], ctx);
+  conferir("a pergunta de adicionais da pizza manda escrever 'Adicional NOME'", texto.includes(`Adicionais (até 11, opcional; nome que também é sabor vai na tag como "Adicional NOME")`), texto);
+  conferir("a de sabores não leva o aviso", !/Escolha até 2 sabores \([^)]*Adicional NOME/.test(texto));
+  conferir("lanche sem sabor com o mesmo nome: sem aviso", vezes(texto, "Adicional NOME") === 1);
+}
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

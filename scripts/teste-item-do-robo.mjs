@@ -205,6 +205,36 @@ console.log("\n7) Mesmo nome em duas perguntas (SP Pizza, 09/10/2026)");
     escolhasDoItem({ options: ["1/2 filé miau", "1/2 Calabresa"] }, sp).comboSelections, { sab: { "filé miau": 1, "CALABRESA": 1 } });
   igual("sabores cheios: o que sobra vai ao adicional",
     escolhasDoItem({ options: ["filé miau", "muçarela", "CALABRESA"] }, sp).comboSelections, { sab: { "filé miau": 1, "muçarela": 1 }, adic: { "CALABRESA": 1 } });
+
+  // 12/10/2026: o Renato avisou que continuava errado (a correção acima não tinha subido)
+  // — e ela sozinha erraria o contrário: "muçarela com adicional de calabresa" viraria
+  // meio a meio. Quando o cliente DIZ, vale o que ele disse.
+  igual("'Adicional CALABRESA' com 1 sabor: é adicional, não a 2ª metade",
+    escolhasDoItem({ options: ["muçarela", "Adicional CALABRESA"] }, sp).comboSelections, { sab: { "muçarela": 1 }, adic: { "CALABRESA": 1 } });
+  igual("'adicional de calabresa' (minúsculo, com 'de')",
+    escolhasDoItem({ options: ["filé miau", "adicional de calabresa"] }, sp).comboSelections, { sab: { "filé miau": 1 }, adic: { "CALABRESA": 1 } });
+  igual("'calabresa extra' e 'muçarela a mais'",
+    escolhasDoItem({ options: ["filé miau", "calabresa extra", "muçarela a mais"] }, sp).comboSelections, { sab: { "filé miau": 1 }, adic: { "CALABRESA": 1, "muçarela": 1 } });
+  igual("'meia calabresa' é sabor mesmo com o adicional antes na ordem do banco",
+    escolhasDoItem({ options: ["meia filé miau", "meia calabresa"] }, sp).comboSelections, { sab: { "filé miau": 1, "CALABRESA": 1 } });
+  const naoExiste = escolhasDoItem({ options: ["muçarela", "adicional de catupiry"] }, sp);
+  igual("adicional que o cadastro não tem: não vira sabor, vai para conferir", [naoExiste.comboSelections, naoExiste.naoCasadas], [{ sab: { "muçarela": 1 } }, ["adicional de catupiry"]]);
+
+  // Fogazza: "ingredientes" (até 3, no preço) e "adicionais pagos" com os mesmos nomes.
+  const ingredientes = { id: "ingr", title: "ingredientes", maxQty: 3, minQty: 1, priceRule: null, sortOrder: 1, items: [
+    { additionalPrice: 0, menuProduct: { name: "CALABRESA" } }, { additionalPrice: 0, menuProduct: { name: "MUSSARELA" } },
+    { additionalPrice: 0, menuProduct: { name: "CEBOLA" } }, { additionalPrice: 0, menuProduct: { name: "TOMATE" } },
+  ] };
+  const pagos = { id: "pagos", title: "adicionais pagos fogazza", maxQty: 3, minQty: 0, priceRule: null, sortOrder: 2, items: [
+    { additionalPrice: 8, menuProduct: { name: "CALABRESA" } }, { additionalPrice: 8, menuProduct: { name: "MUSSARELA" } },
+  ] };
+  const fogazza = { name: "Fogazza (até 3 ingredientes)", comboGroups: [pagos, ingredientes] };
+  igual("fogazza: ingredientes primeiro, mesmo com os pagos antes na ordem do banco",
+    escolhasDoItem({ options: ["CALABRESA", "MUSSARELA"] }, fogazza).comboSelections, { ingr: { CALABRESA: 1, MUSSARELA: 1 } });
+  igual("fogazza: o 4º ingrediente vai para os pagos",
+    escolhasDoItem({ options: ["CEBOLA", "TOMATE", "CALABRESA", "MUSSARELA"] }, fogazza).comboSelections, { ingr: { CEBOLA: 1, TOMATE: 1, CALABRESA: 1 }, pagos: { MUSSARELA: 1 } });
+  igual("fogazza: 'adicional de mussarela' é pago mesmo com vaga nos ingredientes",
+    escolhasDoItem({ options: ["CALABRESA", "adicional de mussarela"] }, fogazza).comboSelections, { ingr: { CALABRESA: 1 }, pagos: { MUSSARELA: 1 } });
 }
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");

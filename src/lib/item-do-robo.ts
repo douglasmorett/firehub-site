@@ -99,6 +99,31 @@ const LIMITE_DA_OBSERVACAO = 500;
 /** "1/2 ", "meia ", "metade de " na frente do sabor — já na chave (sem acento, "1/2" vira "1 2"). */
 const FRACAO_DA_PIZZA = /^(?:1 [234]|meia|meio|metade)\s+(?:(?:de|da|do)\s+)?/;
 
+/**
+ * "Adicional de bacon", "bacon extra", "bacon a mais": o cliente quis o
+ * ADICIONAL. Na SP Pizza (12/10/2026) BACON, CALABRESA e mais seis nomes são
+ * sabor E adicional na mesma pizza — só o nome não diz qual dos dois ele quis,
+ * e o cardápio do robô manda escrever o adicional assim (lib/cardapio-para-o-robo.ts).
+ */
+const TEM_MARCA_DE_ADICIONAL = /\b(?:adicional|adicionais|extra|extras|acrescimo|acrescimos)\b|\ba mais\b/;
+const MARCAS_DE_ADICIONAL = /\b(?:adicional|adicionais|extra|extras|acrescimo|acrescimos)\b|\ba mais\b/g;
+
+/** O nome sem a marca de adicional ("adicional de bacon" → "bacon"); null quando não há marca. */
+function nomeSemMarcaDeAdicional(chave: string): string | null {
+  if (!TEM_MARCA_DE_ADICIONAL.test(chave)) return null;
+  const nome = chave
+    .replace(MARCAS_DE_ADICIONAL, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(?:de|da|do|com)\s+/, "")
+    .replace(/\s+(?:de|da|do)$/, "")
+    .trim();
+  return nome || null;
+}
+
+/** A pergunta é de adicional pelo título: "Adicionais", "adicionais pagos fogazza", "Extras", "Acréscimos". */
+const ehPerguntaDeAdicional = (g: GrupoDoProduto) => /adicion|extra|pago|acresc/.test(chaveDeNome(g.title));
+
 /** Teto de bom senso: pedido de 30 unidades da mesma opção é erro do modelo. */
 const MAXIMO_POR_OPCAO = 30;
 
@@ -170,15 +195,35 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
     return ordenada[0];
   };
 
+  /**
+   * Quando o cliente DISSE o que queria, vale o que ele disse: "1/2 calabresa"
+   * é sabor; "adicional de calabresa" é adicional (a pergunta com título de
+   * adicional, senão a que não é de sabores). Sem dizer, a `preferida`.
+   */
+  type Intencao = "sabor" | "adicional" | null;
+  const pelaIntencao = <T extends { grupo: GrupoDoProduto }>(lista: T[], intencao: Intencao): T | null => {
+    if (lista.length > 1 && intencao === "adicional") {
+      const porTitulo = lista.filter((a) => ehPerguntaDeAdicional(a.grupo));
+      if (porTitulo.length) return preferida(porTitulo);
+      const foraDosSabores = lista.filter((a) => !a.grupo.priceRule);
+      if (foraDosSabores.length) return preferida(foraDosSabores);
+    }
+    if (lista.length > 1 && intencao === "sabor") {
+      const sabores = lista.filter((a) => !!a.grupo.priceRule);
+      if (sabores.length) return preferida(sabores);
+    }
+    return preferida(lista);
+  };
+
   /** A opção com este nome exato no cadastro do produto; null quando não existe. */
-  const exata = (chave: string) => {
+  const exata = (chave: string, intencao: Intencao = null) => {
     const achados: Array<{ grupo: GrupoDoProduto; opcao: NonNullable<NonNullable<GrupoDoProduto["items"]>[number]> }> = [];
     for (const grupo of produto.comboGroups || []) {
       if (!grupo) continue;
       const opcao = (grupo.items || []).find((gi) => gi && chaveDeNome(gi.menuProduct?.name) === chave);
       if (opcao) achados.push({ grupo, opcao });
     }
-    return preferida(achados);
+    return pelaIntencao(achados, intencao);
   };
 
   /**
@@ -217,15 +262,17 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
     const direto = exata(chave);
     if (direto) return direto;
     const semFracao = chave.replace(FRACAO_DA_PIZZA, "").trim();
-    if (semFracao && semFracao !== chave) {
-      const achado = exata(semFracao);
+    const doAdicional = nomeSemMarcaDeAdicional(semFracao || chave);
+    const intencao: Intencao = doAdicional ? "adicional" : semFracao && semFracao !== chave ? "sabor" : null;
+    const pedido = doAdicional || semFracao || chave;
+    if (pedido !== chave) {
+      const achado = exata(pedido, intencao);
       if (achado) return achado;
     }
-    const pedido = semFracao || chave;
     const alvo = ` ${pedido} `;
     const contem = todasAsOpcoes().filter((c) => ` ${chaveDeNome(c.opcao.menuProduct?.name)} `.includes(alvo));
     const nomesQueContem = new Set(contem.map((c) => chaveDeNome(c.opcao.menuProduct?.name)));
-    if (nomesQueContem.size === 1) return preferida(contem);
+    if (nomesQueContem.size === 1) return pelaIntencao(contem, intencao);
 
     const palavras = pedido.split(" ").filter(Boolean);
     if (palavras.length === 0) return null;
@@ -241,7 +288,7 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
     if (porNome.size === 0) return null;
     const menor = Math.min(...[...porNome.values()].map((v) => v.tamanho));
     const curtas = [...porNome.values()].filter((v) => v.tamanho === menor);
-    return curtas.length === 1 ? preferida(curtas[0].cs) : null;
+    return curtas.length === 1 ? pelaIntencao(curtas[0].cs, intencao) : null;
   };
 
   for (const bruta of brutas) {
