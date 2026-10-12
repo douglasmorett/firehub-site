@@ -65,6 +65,7 @@ import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import QuandoReceber, { type Quando } from "./QuandoReceber";
 import AgendarNoCardapio from "./AgendarNoCardapio";
 import { aceitaAgendamentoPara, horariosParaAgendar, lerConfigDeAgendamento, textoDoAgendamento } from "@/lib/agendamento";
+import { avisarOApp } from "@/lib/app-da-loja/ponte";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
 function formatarCpf(v: string): string {
@@ -332,6 +333,11 @@ export default function CustomerStorePage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cart]);
   const [orderSuccess, setOrderSuccess] = useState<string | null>(null);
+  // Dentro do app próprio da loja, o app liga o celular a este pedido para
+  // avisar "saiu para entrega" (lib/app-da-loja/ponte.ts). No navegador, nada.
+  useEffect(() => {
+    if (orderSuccess) avisarOApp({ tipo: "PEDIDO_FEITO", pedidoId: orderSuccess, slug: franchisee.slug || "" });
+  }, [orderSuccess, franchisee.slug]);
   const [loading, setLoading] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [searchTerm, setSearchTerm] = useState("");

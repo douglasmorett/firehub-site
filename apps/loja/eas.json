@@ -1,0 +1,33 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "base": {
+      "channel": "production"
+    },
+    "teste-hakim": {
+      "extends": "base",
+      "distribution": "internal",
+      "env": {
+        "MARCA": "hakim"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "environment": "preview"
+    },
+    "producao-hakim": {
+      "extends": "base",
+      "autoIncrement": true,
+      "env": {
+        "MARCA": "hakim"
+      },
+      "environment": "production"
+    }
+  },
+  "submit": {
+    "producao-hakim": {}
+  }
+}
