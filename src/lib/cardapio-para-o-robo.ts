@@ -510,7 +510,16 @@ export function cardapioParaORobo(produtos: any[], ctx: ContextoDoCardapio): { t
       notaDeEstoque = ` [últimas ${estoque.restam} unid., não anotar mais que isso]`;
     }
 
-    const chave = `${nome.toLowerCase()}_${p.price}`;
+    // Mesmo nome e preço só é REPETIDO se as opções também forem as mesmas.
+    // Casa da Massa, 12/10/2026: "Pizza Grande" (base R$ 0) em Clássicas,
+    // Premium e Doces, cada uma com os seus sabores — a chave só com nome e
+    // preço deixava só a das Clássicas, e o robô dizia que não tinha Premium
+    // nem Doce.
+    const opcoesDoProduto = (p.comboGroups || [])
+      .flatMap((g: any) => (g?.items || []).map((i: any) => String(i?.menuProduct?.name || "").toLowerCase()))
+      .sort()
+      .join("|");
+    const chave = `${nome.toLowerCase()}_${p.price}_${opcoesDoProduto}`;
     const dias = diasDoProduto(p.availableDays);
     const hojeVale = dias.length === 0 || dias.includes(hoje);
     const amanhaVale = dias.length === 0 || dias.includes(amanha);

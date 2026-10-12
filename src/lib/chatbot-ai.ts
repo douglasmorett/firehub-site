@@ -2637,7 +2637,18 @@ async function syncAiOrderToDatabase({
       // e apenas se houver um único candidato. Dois ou mais é ambiguidade real
       // ("pastel" com vinte sabores), e aí não se adivinha: o item é recusado
       // e a loja confere na tela em vez de mandar a coisa errada para a cozinha.
-      const exato = storeProducts.filter((sp) => chaveDeNome(sp.name) === pedido);
+      let exato = storeProducts.filter((sp) => chaveDeNome(sp.name) === pedido);
+      // O cardápio do robô rotula "Pizza Grande (Pizzas Premium)": quando o
+      // modelo copia o rótulo, a categoria entre parênteses escolhe o produto.
+      if (exato.length === 0) {
+        const rotulo = String(it.name || "").match(/^(.*)\(([^()]+)\)\s*$/);
+        if (rotulo) {
+          const base = chaveDeNome(rotulo[1]);
+          const doNome = storeProducts.filter((sp) => chaveDeNome(sp.name) === base);
+          const daCategoria = doNome.filter((sp) => chaveDeNome(sp.category || "") === chaveDeNome(rotulo[2]));
+          exato = daCategoria.length > 0 ? daCategoria : doNome;
+        }
+      }
       let candidatos = exato;
       if (candidatos.length === 0) {
         candidatos = storeProducts.filter((sp) => {
@@ -2645,7 +2656,16 @@ async function syncAiOrderToDatabase({
           return nome.startsWith(pedido + " ") || nome.includes(" " + pedido + " ") || nome.endsWith(" " + pedido);
         });
       }
-      const matchedProduct = candidatos.length === 1 ? candidatos[0] : exato[0];
+      // Vários produtos com o MESMO nome (Casa da Massa: "Pizza Grande" em
+      // Clássicas, Premium e Doces): vale o que tem as opções que o cliente
+      // escolheu. Era sempre o primeiro, e o sabor Premium caía em "conferir".
+      const matchedProduct =
+        candidatos.length === 1
+          ? candidatos[0]
+          : exato.length > 1
+            ? exato.reduce((melhor: any, sp: any) =>
+                escolhasDoItem(it, sp as any).naoCasadas.length < escolhasDoItem(it, melhor as any).naoCasadas.length ? sp : melhor)
+            : exato[0];
 
       // GUILHOTINA ANTI-ALUCINAÇÃO: produto que não existe (ou nome ambíguo)
       // não entra no pedido.
