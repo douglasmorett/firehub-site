@@ -227,7 +227,9 @@ confere("item sem menuProduct não explode", categoriaResolvida({ productName: "
     menuProduct: { id: "ifood-x", active: false, name: "GRANDE 2 SABORES (8 PEDAÇOS)", category: "iFood" },
   });
   confere("iFood \"1/2 Lombinho\" nas metades → a pizza", categoriaResolvida(ifood(["Massa Tradicional + Borda Tradicional", "1/2 Lombinho", "1/2 Moda da Casa"]), nik), "Pizzas Tradicionais");
-  confere("opção que não é metade não ganha tipo (\"Cheddar\" não vira adicional)", categoriaResolvida(ifood(["Cheddar"]), nik), "");
+  // A opção "Cheddar" não dá tipo (não vira adicional); quem decide é o tamanho
+  // no nome, que é de pizza (13/10/2026).
+  confere("opção que não é metade não ganha tipo; o tamanho manda para a pizza", categoriaResolvida(ifood(["Cheddar"]), nik), "Pizzas Especiais");
   const wabiz = { productName: "Calabacon Cremoso | Cheddar", comboSelections: JSON.stringify([{ name: "Cheddar", quantity: 1 }]), menuProduct: { id: "wabiz-x", active: false, name: "Calabacon Cremoso", category: "Pizzas Grande" } };
   confere("Wabiz \"Calabacon Cremoso | Cheddar\": o sabor do cabeçalho, não a borda", categoriaResolvida(wabiz, nik), "Pizzas Especiais");
 }
@@ -281,12 +283,14 @@ confere("item sem menuProduct não explode", categoriaResolvida({ productName: "
     categoriaResolvida(combo("Pizza 1/2 Portuguesa + 1/2 Moda do Chefe | Coca Cola Zero 1,5l", ["Coca Cola Zero 1,5l"]), nik),
     "Pizzas Tradicionais",
   );
-  // Combo cujo nome não diz nada e só a bebida casa: sem categoria (aparece em
-  // toda tela), nunca "Bebidas" (não aparece em nenhuma).
+  // Combo cujo nome é só o tamanho e só a bebida casa: nunca "Bebidas" (não
+  // apareceria na cozinha). Desde 13/10/2026 o tamanho diz que é pizza: vai
+  // para a categoria de pizza da loja, e não mais para toda tela (Douglas:
+  // "pedido do iFood tem que respeitar o filtro").
   confere(
-    "Combo mudo com só a bebida casando fica curinga",
+    "Combo só de tamanho com bebida vai para a pizza, nunca Bebidas",
     categoriaResolvida(combo("GRANDE 2 SABORES (8 PEDAÇOS)", ["Borda Cheddar", "Guaraná Mineiro 1,5L"]), nik),
-    "",
+    "Pizzas Especiais",
   );
   // O refrigerante vendido sozinho continua bebida.
   confere(
@@ -296,6 +300,27 @@ confere("item sem menuProduct não explode", categoriaResolvida({ productName: "
   );
 }
 
+
+// ── 13/10/2026: nome enfeitado do iFood casa pelas PALAVRAS (Ragnar Burger) ──
+{
+  const ragnar = montarMapa([
+    { id: "r1", name: "Baldur", category: "Burgers", active: true },
+    { id: "r2", name: "Combo Baldur", category: "Combos", active: true },
+    { id: "r3", name: "Pizza Calabresa Gd 35cm", category: "Pizzas Tradicionais", active: true },
+    { id: "r4", name: "Coca-Cola Lata 350ml", category: "Refrigerantes", active: true },
+    { id: "r5", name: "Bacon", category: "Adicionais Burger", active: true },
+    { id: "r6", name: "Parmegiana de Frango", category: "Pratos", active: true },
+    { id: "r7", name: "Coca-Cola 200ml", category: "Bebidas", active: true },
+  ]);
+  const doIfood = (nome: string) => ({ productName: nome, menuProduct: { id: "ifood-z", active: false, name: nome, category: "iFood" } });
+  confere("burger com enfeite → Burgers", categoriaResolvida(doIfood("Baldur Burger - ( Burguer Artesanal )"), ragnar), "Burgers");
+  confere("combo promo com o burger → Combos (o mais longo)", categoriaResolvida(doIfood("Combo Promo - Baldur Burger + Fritas"), ragnar), "Combos");
+  confere("pizza pelo tamanho → a pizza da loja", categoriaResolvida(doIfood("GRANDE 2 SABORES (8 PEDAÇOS)"), ragnar), "Pizzas Tradicionais");
+  confere("refri sozinho → Refrigerantes", categoriaResolvida(doIfood("Coca-Cola Original Lata 350ml"), ragnar), "Refrigerantes");
+  confere("prato + bebida grátis: comida primeiro", categoriaResolvida(doIfood("Parmegiana de Frango + Coca-Cola 200ml Grátis"), ragnar), "Pratos");
+  confere("categoria de opção (adicional) não decide", categoriaResolvida(doIfood("Bacon Extra"), ragnar), "");
+  confere("nome sem nada do cardápio continua curinga", categoriaResolvida(doIfood("Oferta Especial do Dia"), ragnar), "");
+}
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

@@ -506,7 +506,93 @@ export function categoriaResolvida(item: ItemComCategoria, mapa: MapaDeCategoria
     const peloSabor = porSaborSemTipo(n, mapa);
     if (peloSabor) return peloSabor;
   }
+  // Pizza pelo tamanho ("GRANDE 2 SABORES (8 PEDAÇOS)", "BROTO (4 PEDAÇOS)") sem
+  // sabor que diga o tipo: vai para a categoria de pizza da loja.
+  for (const n of nomes) {
+    const peloTamanho = porTamanhoDePizza(n, mapa);
+    if (peloTamanho) return peloTamanho;
+  }
+  // As palavras do produto real dentro do nome enfeitado do parceiro.
+  for (const n of nomes) {
+    const pelasPalavras = porPalavras(n, mapa);
+    if (pelasPalavras) return pelasPalavras;
+  }
   return "";
+}
+
+/**
+ * Palavras que não dizem o produto: ligação, embalagem e o enfeite que o
+ * parceiro põe no nome ("- ( Burguer Artesanal )", "Grátis", "Promo").
+ */
+const PALAVRAS_VAZIAS = new Set([
+  "de", "da", "do", "das", "dos", "e", "com", "c", "s", "sem", "a", "o", "em", "no", "na",
+  "refrigerante", "burguer", "artesanal", "lata", "garrafa", "descartavel", "unidades", "unid",
+  "un", "gratis", "promo", "oferta",
+]);
+
+function palavrasDoNome(nome: unknown): string[] {
+  return chaveDoNome(nome).split(" ").filter((w) => w && !PALAVRAS_VAZIAS.has(w));
+}
+
+/** Categoria só de opção (complemento, borda, molho): não é onde o prato é feito. */
+const CATEGORIA_DE_OPCAO = /complement|adiciona|acrescimo|acréscimo|finalizar|borda|molho|sache|sachê/i;
+
+/**
+ * O produto real cujas palavras estão TODAS no nome do item — o de nome mais
+ * longo vence, e precisa cobrir ao menos metade das palavras do item.
+ *
+ * Ragnar Burger, 13/10/2026: o cardápio dela não veio do iFood, nenhum nome
+ * casava, e todo pedido do iFood aparecia nas duas telas de produção (pizza e
+ * burger). "Combo Promo - Baldur Burger + Fritas + Bebida" contém "combo
+ * baldur" (Combos) e "baldur" (Burgers): vence Combos, o mais longo.
+ *
+ * COMIDA antes de BEBIDA: "Parmegiana de Frango + Coca-Cola 200ml Grátis" não
+ * pode ir para a tela/impressora da bebida só porque "coca cola 200ml" é o
+ * único produto real inteiro dentro do nome (Delícias de Casa). A bebida só
+ * decide quando nenhum produto de comida casa — e a exigência de cobrir
+ * metade do nome deixa o prato com bebida grátis sem decisão (curinga), que é
+ * o lado que não perde pedido. Empate entre categorias diferentes: não decide.
+ */
+function porPalavras(nome: unknown, mapa: MapaDeCategorias): string | null {
+  const ws = new Set(palavrasDoNome(nome));
+  if (ws.size === 0) return null;
+  const melhorDe = (bebida: boolean): string | null => {
+    let melhor = 0;
+    let cats = new Set<string>();
+    for (const [nomeReal, categoria] of mapa.porNome) {
+      if (CATEGORIA_DE_OPCAO.test(categoria) || isBeverageCategory(categoria) !== bebida) continue;
+      const doReal = palavrasDoNome(nomeReal);
+      if (doReal.length === 0 || doReal.length / ws.size < 0.5) continue;
+      if (!doReal.every((w) => ws.has(w))) continue;
+      const peso = doReal.join(" ").length;
+      if (peso < 4) continue;
+      if (peso > melhor) { melhor = peso; cats = new Set([categoria]); }
+      else if (peso === melhor) cats.add(categoria);
+    }
+    return cats.size === 1 ? [...cats][0] : null;
+  };
+  return melhorDe(false) ?? melhorDe(true);
+}
+
+const PIZZA_PELO_TAMANHO = /\b(grande|media|broto|pequena|gigante|familia)\b.*\(\s*\d+\s*(pedacos|fatias)\s*\)/;
+const CATEGORIA_DE_VITRINE = /sabor|combo|promo|mais pedid|escolhem|qualquer|oferta|destaque|doce|\+|r\$/i;
+
+/**
+ * "GRANDE 2 SABORES (8 PEDAÇOS)" sem sabor que o resto reconheça: a categoria
+ * de pizza da loja com mais produtos (fora vitrine, combo e pizza doce).
+ */
+function porTamanhoDePizza(nome: unknown, mapa: MapaDeCategorias): string | null {
+  const limpo = String(nome ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+  if (!PIZZA_PELO_TAMANHO.test(limpo)) return null;
+  const contagem = new Map<string, number>();
+  for (const categoria of mapa.porNome.values()) {
+    if (!/pizza/i.test(categoria) || CATEGORIA_DE_VITRINE.test(categoria)) continue;
+    contagem.set(categoria, (contagem.get(categoria) || 0) + 1);
+  }
+  let melhor: string | null = null;
+  let n = 0;
+  for (const [c, q] of contagem) if (q > n) { melhor = c; n = q; }
+  return melhor;
 }
 
 /**
