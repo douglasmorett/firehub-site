@@ -23,6 +23,7 @@ const SOLUTIONS = [
       // Era "Disparos em Massa": o disparo pelo WhatsApp da loja está desligado
       // desde 02/09/2026 (lib/disparo-em-massa.ts). No lugar, o tráfego pago.
       { t: "Tráfego Pago sem Gestor", d: "Anúncios no Instagram e Facebook pelo painel" },
+      { t: "Disparos pela API Oficial", d: "Promoção no WhatsApp sem risco de banimento" },
       { t: "Recuperação de Clientes", d: "Reconquiste inativos no automático" },
       { t: "Programa de Fidelidade", d: "Cashback e benefícios exclusivos" },
       { t: "Cupons Estratégicos", d: "Aumente conversão com descontos" },
@@ -74,6 +75,8 @@ const FAQ = [
   { q: "Como é o suporte?", a: "Humano, via WhatsApp, 7 dias por semana." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no painel, junto com cardápio digital e WhatsApp." },
   { q: "Preciso de um gestor de tráfego para anunciar?", a: "Não. No módulo de Tráfego Pago você escolhe quanto quer investir por semana, a IA escreve o texto e cria a imagem, e o FireHub publica o anúncio no Facebook e no Instagram para quem está na sua área de entrega. O módulo custa R$ 50 por semana de campanha ativa, e a verba do anúncio você paga direto à Meta." },
+  // Fatos em lib/disparo-oficial/regras.ts e components/ApresentacaoDisparoOficial.tsx.
+  { q: "Dá para disparar promoção sem perder o meu WhatsApp?", a: "Sim. O disparo sai pela API oficial da Meta, do mesmo número da loja: o WhatsApp Business continua no seu celular e o robô continua atendendo. Nada de disparador pelo QR Code, que é o que faz número ser banido. Custa R$ 0,46 por mensagem entregue, com crédito por Pix a partir de R$ 50 — mensagem que não chega volta para o saldo." },
   { q: "E se a internet da loja cair?", a: "Com o Modo Contingência ativado, o computador do caixa assume em uns 15 segundos: você continua lançando pedido, abrindo mesa e imprimindo. Quando a conexão volta, tudo sobe sozinho para o sistema, sem duplicar. Está incluído no plano, sem custo a mais." },
   { q: "Existe multa para cancelar?", a: "Absolutamente não. Você cancela quando quiser, sem burocracia, sem multa, sem surpresas." },
 ];
@@ -316,6 +319,79 @@ function AnuncioDemo() {
   );
 }
 
+// Disparo oficial: a promoção chega com os botões do template de verdade
+// (lib/disparo-oficial) e o relatório sobe. Números do relatório = exemplo.
+const RELATORIO_DEMO = [
+  { rotulo: "Entregues", valor: 487, cor: "#5EEAD4" },
+  { rotulo: "Lidas", valor: 352, cor: "#A7F3D0" },
+  { rotulo: "Responderam", valor: 41, cor: "#FDE68A" },
+];
+function DisparoDemo() {
+  const [ref, visto] = useNaTela<HTMLDivElement>(0.35);
+  // 0 nada, 1 promoção chegou, 2 cliente tocou em "Quero pedir", 3 robô respondeu
+  const [fase, setFase] = useState(0);
+  const [t, setT] = useState(0);
+  useEffect(() => {
+    if (!visto) return;
+    if (semMovimento()) { setFase(3); setT(1); return; }
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    let raf = 0;
+    const ciclo = () => {
+      setFase(0); setT(0);
+      timers.push(setTimeout(() => {
+        setFase(1);
+        const inicio = performance.now();
+        const passo = (agora: number) => {
+          const x = Math.min(1, (agora - inicio) / 2200);
+          setT(1 - Math.pow(1 - x, 3));
+          if (x < 1) raf = requestAnimationFrame(passo);
+        };
+        raf = requestAnimationFrame(passo);
+      }, 500));
+      timers.push(setTimeout(() => setFase(2), 2600));
+      timers.push(setTimeout(() => setFase(3), 3500));
+      timers.push(setTimeout(ciclo, 9000));
+    };
+    ciclo();
+    return () => { timers.forEach(clearTimeout); cancelAnimationFrame(raf); };
+  }, [visto]);
+  return (
+    <div ref={ref} className="lp-disp-cena" aria-label="Exemplo de promoção enviada pela API oficial do WhatsApp">
+      <div className="lp-zap">
+        <div className="lp-zap-topo">
+          <span className="lp-zap-av">🍕</span>
+          <span><b>Pizzaria do Bairro</b><small>conta comercial</small></span>
+        </div>
+        <div className="lp-zap-chat">
+          <div className={`lp-zap-msg ${fase >= 1 ? "on" : ""}`}>
+            <p>Oi, Ana! 🍕 Hoje tem <b>pizza grande com borda grátis</b> até as 23h. Bateu a fome?</p>
+            <span className="hora">19:02</span>
+            <div className="lp-zap-botoes">
+              <span className={fase >= 2 ? "tocado" : ""}>🛒 Quero pedir</span>
+              <span>🚫 Parar promoções</span>
+            </div>
+          </div>
+          <div className={`lp-zap-msg robo ${fase >= 3 ? "on" : ""}`}>
+            <p>Oba! 😄 Aqui está o cardápio. Me diz o sabor que eu já anoto o seu pedido.</p>
+            <span className="hora">19:03 · robô da loja</span>
+          </div>
+        </div>
+      </div>
+      <div className="lp-disp-rel">
+        <div className="lp-disp-rel-tit">📊 Relatório da campanha · 500 clientes</div>
+        {RELATORIO_DEMO.map((r) => (
+          <div key={r.rotulo} className="lp-disp-linha">
+            <span>{r.rotulo}</span>
+            <div className="barra"><i style={{ width: `${(r.valor / 500) * 100 * t}%`, background: r.cor }} /></div>
+            <b>{Math.round(r.valor * t)}</b>
+          </div>
+        ))}
+      </div>
+      <p className="lp-rotulo" style={{ color: "#5EEAD4", opacity: 0.75 }}>Exemplo ilustrativo — cliente e números fictícios.</p>
+    </div>
+  );
+}
+
 // Cena da contingência. Textos das faixas = os da tela de verdade
 // (components/contingencia/TrocaDeContingencia.tsx).
 const EVENTOS_QUEDA = [
@@ -423,7 +499,7 @@ export default function Home() {
           <a href="#funcionalidades">Funcionalidades</a>
           <a href="#trafego-pago">Tráfego Pago</a>
           <a href="#contingencia">Contingência</a>
-          <a href="#alerta-bebidas">Alerta Bebidas</a>
+          <a href="#disparos">Disparos</a>
           <a href="#planos">Planos</a>
           <a href="#faq">FAQ</a>
           {/* Era "🤝 Indique e Ganhe", aberto a qualquer lojista. O programa de
@@ -596,6 +672,41 @@ export default function Home() {
           <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem", background: "linear-gradient(135deg,#22C55E,#16A34A)", boxShadow: "0 6px 24px rgba(22,163,74,.28)" }}>💬 Testar o Robô Grátis</a>
         </>}
         visual={<Moldura src="/images/chatbot_ui.webp" alt="FireHub Chatbot Humanizado" borda="1px solid rgba(0,0,0,0.05)" sombra="0 20px 40px rgba(0,0,0,0.1)" fundo="#FFF" />}
+      />
+
+      {/* NOVO: DISPAROS PELA API OFICIAL — fatos em lib/disparo-oficial/regras.ts
+          (R$ 0,46 por entregue com o custo da Meta de out/2026, recarga mínima
+          R$ 50) e components/ApresentacaoDisparoOficial.tsx. O disparo pelo QR
+          Code está desligado (lib/disparo-em-massa.ts). */}
+      <Destaque
+        id="disparos"
+        inverter
+        tema={{
+          fundo: "linear-gradient(150deg,#042F2E 0%,#0F3D3A 55%,#134E4A 100%)", brilho: "rgba(45,212,191,0.20)", brilhoPos: { top: -140, left: -140 },
+          seloFundo: "rgba(45,212,191,0.14)", seloBorda: "rgba(45,212,191,0.4)", seloCor: "#5EEAD4",
+          titulo: "#FFF", texto: "#A7C4C0",
+          cardFundo: "rgba(255,255,255,0.05)", cardBorda: "rgba(45,212,191,0.22)", cardTitulo: "#FFF", cardTexto: "#A7C4C0",
+          nota: "#A7C4C0",
+        }}
+        novo
+        selo="✅ DISPAROS PELA API OFICIAL DA META"
+        titulo={<>Faça disparos <span style={{ color: "#5EEAD4" }}>sem perder o seu WhatsApp</span></>}
+        texto={<>Mande promoção para todos os seus clientes pelo <strong style={{ color: "#FFF" }}>canal oficial da Meta</strong>, do mesmo número da loja. Seu WhatsApp continua no celular, seu robô continua atendendo — e quem toca em “Quero pedir” já cai na conversa para fechar o pedido.</>}
+        cards={[
+          { t: "🛡️ Número Protegido", d: "Nada de disparador pelo QR Code, que é o que faz número ser banido" },
+          { t: "📱 Mesmo Número, Mesmo Robô", d: "Sem chip novo: o cliente responde onde sempre conversou com a loja" },
+          { t: "🛒 Botão “Quero Pedir”", d: "Um toque e o robô manda o cardápio e anota o pedido na hora" },
+          { t: "📊 Relatório de Verdade", d: "Quantos receberam, leram e responderam em cada campanha" },
+        ]}
+        acao={<>
+          <div className="lp-preco-modulo" style={{ width: "100%", marginBottom: 6, background: "rgba(255,255,255,.05)", borderColor: "rgba(94,234,212,.4)" }}>
+            <strong style={{ color: "#5EEAD4" }}>R$ 0,46<small style={{ color: "#99F6E4" }}> por mensagem entregue</small></strong>
+            <span style={{ color: "#A7C4C0" }}><b style={{ color: "#E6FFFA" }}>Crédito pré-pago por Pix</b>, a partir de R$ 50, sem mensalidade a mais. Mensagem que não chega volta para o seu saldo.</span>
+          </div>
+          <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem", background: "linear-gradient(135deg,#14B8A6,#0F766E)", boxShadow: "0 6px 24px rgba(20,184,166,.3)" }}>✅ Quero Disparar sem Risco</a>
+          <span className="nota" style={{ color: "#A7C4C0" }}>Inclui a recuperação automática de quem sumiu há 7, 15 e 30 dias</span>
+        </>}
+        visual={<DisparoDemo />}
       />
 
       {/* SEÇÃO INTEGRAÇÕES — só as que estão ligadas hoje. Keeta: código pronto,
@@ -910,7 +1021,7 @@ export default function Home() {
                 <a href={TRIAL} className="btn-primary btn-pulse" style={{width:"100%",justifyContent:"center",padding:16}}>🔥 Testar Grátis Agora</a>
               </div>
               <p className="pricing-note">Sem cartão de crédito · Cancele quando quiser · Sem multa</p>
-              <p className="pricing-note" style={{marginTop:6}}>Tráfego Pago é módulo à parte: R$ 50 por semana de campanha ativa.</p>
+              <p className="pricing-note" style={{marginTop:6}}>À parte: Tráfego Pago (R$ 50 por semana de campanha ativa) e Disparos pela API oficial (R$ 0,46 por mensagem entregue).</p>
             </div>
           </div>
         </div>
@@ -995,6 +1106,7 @@ export default function Home() {
               <a href="#funcionalidades">Funcionalidades</a>
               <a href="#trafego-pago">Tráfego Pago</a>
               <a href="#contingencia">Modo Contingência</a>
+              <a href="#disparos">Disparos pela API Oficial</a>
               <a href="#como-funciona">Como funciona</a>
               <a href="#planos">Planos</a>
               <a href="#faq">FAQ</a>
