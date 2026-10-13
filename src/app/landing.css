@@ -101,6 +101,13 @@
 .lp-marquee-trilho{display:flex;gap:4.5rem;width:max-content;align-items:center;animation:lpRola 28s linear infinite;padding:10px 0}
 .lp-marquee:hover .lp-marquee-trilho{animation-play-state:paused}
 @keyframes lpRola{to{transform:translateX(-50%)}}
+/* No computador os logos cabem na largura: ficam parados e centralizados. O
+   carrossel só roda em tela menor, onde a fileira não cabe. */
+@media(min-width:1024px){
+  .lp-marquee{-webkit-mask-image:none;mask-image:none}
+  .lp-marquee-trilho{animation:none;width:auto;justify-content:center;flex-wrap:wrap;padding:10px 24px}
+  .lp-marquee-trilho>[aria-hidden="true"]{display:none!important}
+}
 .lp-logo{height:48px;display:flex;align-items:center;filter:grayscale(.15);transition:filter .3s,transform .3s}
 .lp-logo:hover{filter:none;transform:scale(1.08)}
 .lp-logo img{height:100%;max-height:44px;width:auto;object-fit:contain}
