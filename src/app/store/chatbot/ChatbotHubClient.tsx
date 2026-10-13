@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import FaixaDoVinculo from "./FaixaDoVinculo";
 import ApresentacaoDisparoOficial from "@/components/ApresentacaoDisparoOficial";
+import { MOTIVO_RECUPERACAO_PAUSADA, RECUPERACAO_PELO_QR_LIGADA } from "@/lib/disparo-em-massa";
 import PixDaLojaNoRobo from "./PixDaLojaNoRobo";
 import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
 import {
@@ -1444,6 +1445,12 @@ export default function ChatbotHubClient() {
                     </div>
                   </div>
                 </div>
+                {/* Pausada desde 13/10/2026 (lib/disparo-em-massa.ts): saía pelo QR Code. */}
+                {!RECUPERACAO_PELO_QR_LIGADA && (
+                  <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 12, padding: "12px 14px", marginBottom: "1rem", fontSize: "0.86rem", color: "#92400E", lineHeight: 1.5 }}>
+                    <strong>⏸️ Pausada.</strong> {MOTIVO_RECUPERACAO_PAUSADA}
+                  </div>
+                )}
 
                 {/* CARD 7 DIAS */}
                 <div style={{ background: "#fff", padding: "1rem", borderRadius: "14px", border: "1px solid #CBD5E1", marginBottom: "1rem", boxShadow: "0 2px 4px rgba(0,0,0,0.02)" }}>

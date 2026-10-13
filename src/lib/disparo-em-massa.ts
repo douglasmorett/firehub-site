@@ -42,3 +42,18 @@ export const MOTIVO_DISPARO_DESLIGADO =
   "mensagem para quem não pediu, e o robô do FireHub conecta pelo QR Code — " +
   "um caminho não oficial, sem direito a recurso. Um número da casa já foi " +
   "perdido assim. A função volta quando o envio passar pela API oficial da Meta.";
+
+/**
+ * A recuperação automática de clientes sumidos (7, 15 e 30 dias —
+ * api/cron/recuperacao-clientes) também saía pelo QR Code: até 60 mensagens
+ * por loja por dia para quem não pediu. Desligada em 13/10/2026 junto com a
+ * central de disparos (Douglas: "desliga então e a gente refaz depois"). Volta
+ * pela API oficial, com crédito e modelo aprovado pela Meta (lib/disparo-oficial).
+ */
+export const RECUPERACAO_PELO_QR_LIGADA = false;
+
+export const MOTIVO_RECUPERACAO_PAUSADA =
+  "A recuperação automática está pausada: ela mandava as mensagens pelo QR Code, " +
+  "o mesmo caminho que põe o número da loja em risco de banimento. Ela volta em breve " +
+  "pela API oficial do WhatsApp, junto com o Disparo oficial. Até lá, nada é enviado, " +
+  "mesmo com os marcos ligados.";

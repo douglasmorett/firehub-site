@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
 import { telefoneDeVerdade, paraEnvioWhatsApp } from "@/lib/telefone";
+import { RECUPERACAO_PELO_QR_LIGADA } from "@/lib/disparo-em-massa";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -80,6 +81,10 @@ const dormir = (ms: number) => new Promise(r => setTimeout(r, ms));
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Pausada desde 13/10/2026: saía pelo QR Code (lib/disparo-em-massa.ts).
+  if (!RECUPERACAO_PELO_QR_LIGADA) {
+    return NextResponse.json({ ok: true, pausada: "recuperação pelo QR desligada — volta pela API oficial" });
   }
 
   const log: string[] = [];
