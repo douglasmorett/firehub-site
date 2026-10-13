@@ -6,6 +6,27 @@ import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * O pedido como o card da rota o mostra (aba ROTAS da roteirização).
+ *
+ * `dailyOrderNumber` faltava: o card e o COPIAR caíam no fim do id
+ * ("📦 3 Pedidos: X7KQ, 9B2M…") e o lojista não reconhecia os próprios
+ * pedidos na rota. `routeSequence` não entra — vive fora do schema.prisma.
+ */
+const CAMPOS_DO_PEDIDO_NA_ROTA = {
+  id: true,
+  status: true,
+  dailyOrderNumber: true,
+  customerName: true,
+  customerPhone: true,
+  customerAddress: true,
+  ifoodReference: true,
+  openDeliveryReference: true,
+  isRoutePriority: true,
+  totalAmount: true,
+  createdAt: true,
+} as const;
+
 // Helper para obter IDs da franquia vinculados
 async function getValidFranchiseeIds(userId: string) {
   const user = await prisma.user.findUnique({
@@ -63,23 +84,32 @@ export async function GET(req: NextRequest) {
         motoboy: {
           select: { id: true, name: true, phone: true },
         },
-        orders: {
-          select: {
-            id: true,
-            status: true,
-            customerName: true,
-            customerPhone: true,
-            customerAddress: true,
-            ifoodReference: true,
-            openDeliveryReference: true,
-            isRoutePriority: true,
-            totalAmount: true,
-            createdAt: true,
-          },
-        },
+        orders: { select: CAMPOS_DO_PEDIDO_NA_ROTA },
       },
       orderBy: { createdAt: "desc" },
     });
+
+    // ── AS PARADAS NA ORDEM EM QUE A LOJA MONTOU ──────────────────────────
+    //
+    // O `include` devolve os pedidos da rota na ordem que o banco quiser: o
+    // card, o COPIAR e a linha da rota no mapa saíam embaralhados, a linha
+    // indo e voltando pela cidade. A ordem é a `routeSequence` gravada na
+    // montagem — coluna fora do schema.prisma, daí o SQL cru (o mesmo de
+    // api/motoboys/orders). Sem a coluna, fica a ordem de antes.
+    const idsNasRotas = routes.flatMap((r) => r.orders.map((o) => o.id));
+    if (idsNasRotas.length > 0) {
+      try {
+        const linhas = await prisma.$queryRaw<{ id: string; routeSequence: number | null }[]>`
+          SELECT "id", "routeSequence" FROM "CustomerOrder"
+          WHERE "id" = ANY(${idsNasRotas}) AND "routeSequence" IS NOT NULL
+        `;
+        const posicao = new Map(linhas.map((l) => [l.id, Number(l.routeSequence)]));
+        const ordem = (id: string) => posicao.get(id) ?? Number.MAX_SAFE_INTEGER;
+        for (const r of routes) r.orders.sort((a, b) => ordem(a.id) - ordem(b.id));
+      } catch (e: any) {
+        console.warn("[Rotas] routeSequence não lida (coluna ausente?):", e?.message?.slice(0, 120));
+      }
+    }
 
     return NextResponse.json({ routes });
   } catch (err: any) {
@@ -148,17 +178,23 @@ export async function POST(req: NextRequest) {
       select: { id: true, status: true, motoboyId: true, dailyOrderNumber: true, customerAddress: true },
     });
 
-    for (const ord of ordersToUpdate) {
-      const isNotReady = ord.status !== "PRONTO" && ord.status !== "SAIU_ENTREGA" && ord.status !== "ENTREGUE";
-      await prisma.customerOrder.update({
-        where: { id: ord.id },
-        data: {
-          routeId: newRoute.id,
-          motoboyId: motoboyId || undefined,
-          isRoutePriority: isNotReady, // 🚨 Marca PRIORIDADE PARA ROTA no KDS se não estiver pronto!
-        },
-      });
-    }
+    // Uma gravação por pedido, como sempre — mas todas de uma vez, não uma
+    // esperando a outra. Em fila, cada pedido da rota somava uma ida e volta
+    // ao banco antes de a tela ouvir "rota criada" (e esta chamada é a
+    // primeira do botão "Despachar Rota agora").
+    await Promise.all(
+      ordersToUpdate.map((ord) => {
+        const isNotReady = ord.status !== "PRONTO" && ord.status !== "SAIU_ENTREGA" && ord.status !== "ENTREGUE";
+        return prisma.customerOrder.update({
+          where: { id: ord.id },
+          data: {
+            routeId: newRoute.id,
+            motoboyId: motoboyId || undefined,
+            isRoutePriority: isNotReady, // 🚨 Marca PRIORIDADE PARA ROTA no KDS se não estiver pronto!
+          },
+        });
+      }),
+    );
 
     // Rota montada já com entregador: os pedidos aparecem no app dele agora,
     // então o aviso no celular sai agora (lib/app-motoboy/aparelhos.ts).
@@ -180,23 +216,37 @@ export async function POST(req: NextRequest) {
     // /api/admin/coluna-sequencia-rota), daí o SQL cru — e o try/catch:
     // enquanto a coluna não existir, a rota continua funcionando sem
     // sequência, exatamente como sempre funcionou.
+    // A posição de cada parada é a do índice em `orderIds` — as gravações
+    // podem ir juntas, cada uma leva o seu número.
     try {
-      for (let i = 0; i < orderIds.length; i++) {
-        await prisma.$executeRaw`
-          UPDATE "CustomerOrder" SET "routeSequence" = ${i + 1} WHERE "id" = ${String(orderIds[i])}
-        `;
-      }
+      await Promise.all(
+        orderIds.map(
+          (id: unknown, i: number) => prisma.$executeRaw`
+            UPDATE "CustomerOrder" SET "routeSequence" = ${i + 1} WHERE "id" = ${String(id)}
+          `,
+        ),
+      );
     } catch (e: any) {
       console.warn("[Rotas] routeSequence não gravada (coluna ausente?):", e?.message?.slice(0, 120));
     }
 
+    // A rota volta com o que a roteirização mostra no card (o mesmo recorte
+    // do GET). Voltava com `orders: true` — todas as colunas de cada pedido,
+    // as de JSON inclusive — para a tela usar só o id.
     const fullRoute = await prisma.routeSchedule.findUnique({
       where: { id: newRoute.id },
       include: {
-        motoboy: true,
-        orders: true,
+        motoboy: { select: { id: true, name: true, phone: true } },
+        orders: { select: CAMPOS_DO_PEDIDO_NA_ROTA },
       },
     });
+    // Na ordem em que a loja montou (a mesma do GET): `orderIds` é a sequência.
+    if (fullRoute) {
+      const posicao = new Map(orderIds.map((id: unknown, i: number) => [String(id), i] as const));
+      fullRoute.orders.sort(
+        (a, b) => (posicao.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (posicao.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+      );
+    }
 
     return NextResponse.json({ success: true, route: fullRoute });
   } catch (err: any) {

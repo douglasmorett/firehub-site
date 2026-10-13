@@ -24,7 +24,53 @@ import {
   parseAddressDetails as parseEnderecoDaEntrega,
 } from "@/lib/geocodificacao";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
+import { rotaJaDespachada, rotasComLinha, pontosDaLinha, podarCoordenadas } from "@/lib/rotas-no-mapa";
 import TutorialDaTela from "@/components/TutorialDaTela";
+import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
+
+// ── Aviso que desce do topo (no lugar do alert()) ─────────────────────────
+// Mesma interface do components/AvisoNoTopo.tsx de outra frente, que ainda não
+// está no master (MesasCelular e StoreTopNav têm a mesma cópia): quando
+// estiver, troque este bloco pelo import. Aqui ele mora DENTRO da tela da
+// roteirização (que já é uma camada fixa por cima de tudo), por isso o
+// z-index alto: tem de ficar acima do modal de despacho.
+//
+// O alert() do despacho era o pior lugar para ele: o "OK" travava a página
+// inteira — mapa, listas e as consultas de 4 e 8 s, que disparavam todas
+// juntas ao fechar — e era o "aparece a mensagem em cima" do Lucas.
+type Aviso = { tipo: "ok" | "erro" | "atencao" | "info"; titulo: string; detalhe?: string };
+const COR_DO_AVISO: Record<Aviso["tipo"], { cor: string; fundo: string }> = {
+  ok: { cor: "#059669", fundo: "#ECFDF5" },
+  erro: { cor: "#DC2626", fundo: "#FEF2F2" },
+  atencao: { cor: "#D97706", fundo: "#FFFBEB" },
+  info: { cor: "#2563EB", fundo: "#EFF6FF" },
+};
+function AvisoNoTopo({ aviso, onFechar }: { aviso: Aviso | null; onFechar: () => void }) {
+  const [parado, setParado] = useState(false);
+  useEffect(() => {
+    if (!aviso || parado) return;
+    const t = setTimeout(onFechar, aviso.tipo === "erro" ? 12000 : 6000);
+    return () => clearTimeout(t);
+  }, [aviso, onFechar, parado]);
+  if (!aviso) return null;
+  const { cor, fundo } = COR_DO_AVISO[aviso.tipo];
+  return (
+    <div
+      role={aviso.tipo === "erro" ? "alert" : "status"}
+      onClick={onFechar}
+      onMouseEnter={() => setParado(true)}
+      onMouseLeave={() => setParado(false)}
+      style={{
+        position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 100002,
+        width: "min(440px, calc(100vw - 24px))", background: fundo, borderLeft: `4px solid ${cor}`,
+        borderRadius: 12, padding: "12px 14px", boxShadow: "0 10px 30px rgba(15,23,42,.18)", cursor: "pointer",
+      }}
+    >
+      <div style={{ fontWeight: 800, fontSize: 14, color: "#0F172A" }}>{aviso.titulo}</div>
+      {aviso.detalhe && <div style={{ fontSize: 13, color: "#475569", marginTop: 2 }}>{aviso.detalhe}</div>}
+    </div>
+  );
+}
 
 interface Motoboy {
   id: string;
@@ -198,6 +244,36 @@ interface RouteItem {
   status: string;
 }
 
+/**
+ * A rota como o servidor manda (GET e POST de /api/store/routes) → o card da
+ * aba ROTAS. Um lugar só: a lista que chega a cada 4 s e a rota recém-criada,
+ * que entra na lista na hora sem esperar a próxima consulta.
+ *
+ * O número do pedido (`dailyOrderNumber`, ou a referência do parceiro) não
+ * era repassado: o card e o COPIAR mostravam o fim do id.
+ */
+const rotaDaTela = (r: any): RouteItem => ({
+  id: r.id,
+  routeNumber: r.routeNumber,
+  motoboyName: r.motoboy?.name || "Aguardando Motoboy",
+  motoboyPhone: r.motoboy?.phone || "",
+  motoboyId: r.motoboyId || null,
+  color: r.color || "#1C1917",
+  orders: (r.orders || []).map((o: any) => ({
+    id: o.id,
+    dailyOrderNumber: o.dailyOrderNumber,
+    ifoodReference: o.ifoodReference,
+    openDeliveryReference: o.openDeliveryReference,
+    customerName: o.customerName || "Cliente",
+    customerPhone: o.customerPhone,
+    address: o.customerAddress,
+    status: o.status,
+    totalAmount: o.totalAmount,
+  })),
+  createdAt: new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+  status: r.status === "DISPATCHED" ? "🚀 Despachada" : "⏳ Aguardando Despacho",
+});
+
 interface RoteirizacaoModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -318,6 +394,22 @@ export default function RoteirizacaoModal({
   const [sendWhatsAppToMotoboy, setSendWhatsAppToMotoboy] = useState(true);
   const [isDispatching, setIsDispatching] = useState(false);
   const [copiedRouteId, setCopiedRouteId] = useState<string | null>(null);
+
+  // Retorno das ações (despachar, criar rota, trocar entregador…) no topo da
+  // tela, sem o alert() que travava a página — ver AvisoNoTopo acima.
+  const [aviso, setAviso] = useState<Aviso | null>(null);
+  const fecharAviso = useCallback(() => setAviso(null), []);
+
+  // Trava do despacho que vale JÁ no clique. O `isDispatching` é estado do
+  // React e só chega ao botão no próximo desenho — e na criação da rota ele
+  // nem era ligado: o botão seguia clicável e sem "carregando" durante a
+  // primeira chamada, o lojista apertava de novo, e cada clique criava uma
+  // rota com os mesmos pedidos (e o motoboy recebia duas mensagens).
+  const despachandoRef = useRef(false);
+
+  // A rota que o lojista pediu para ver no mapa ("Ver no mapa" no card).
+  // Rota despachada só vira linha assim — ver lib/rotas-no-mapa.ts.
+  const [rotaEmFoco, setRotaEmFoco] = useState<string | null>(null);
 
   // Resumo de Troco Total e Maquininha para a Rota Selecionada
   const routePaymentSummary = useMemo(() => {
@@ -441,12 +533,26 @@ export default function RoteirizacaoModal({
         const posPorId: Record<string, any> = {};
         (data.motoboys || []).forEach((m: any) => { posPorId[m.id] = m; });
         if (!vivo) return;
-        setMotoboys(prev => prev.map(mb => {
-          const pos = posPorId[(mb as any).id];
-          return pos
-            ? { ...mb, lastLat: pos.lastLat, lastLng: pos.lastLng, lastLocationUpdate: pos.lastLocationUpdate }
-            : mb;
-        }));
+        // Ninguém se mexeu → a MESMA lista. Lista nova a cada 10 s apagava e
+        // recriava todos os pinos do mapa (e fechava a caixa do pino aberta)
+        // sem nada ter mudado — e na loja que não usa o app do entregador (a
+        // Frangoso) nenhuma posição muda a noite inteira.
+        setMotoboys(prev => {
+          let mudou = false;
+          const proxima = prev.map(mb => {
+            const pos = posPorId[(mb as any).id];
+            if (!pos) return mb;
+            const atual = mb as any;
+            if (
+              atual.lastLat === pos.lastLat &&
+              atual.lastLng === pos.lastLng &&
+              atual.lastLocationUpdate === pos.lastLocationUpdate
+            ) return mb;
+            mudou = true;
+            return { ...mb, lastLat: pos.lastLat, lastLng: pos.lastLng, lastLocationUpdate: pos.lastLocationUpdate };
+          });
+          return mudou ? proxima : prev;
+        });
       } catch {}
     };
 
@@ -529,38 +635,60 @@ export default function RoteirizacaoModal({
     } catch (e) {}
   };
 
+  // ── A LISTA DE ROTAS SÓ MUDA QUANDO O SERVIDOR MUDA ─────────────────────
+  //
+  // A consulta roda a cada 4 s, e cada resposta virava uma lista NOVA mesmo
+  // igual à anterior: o mapa apagava e recriava todos os pinos de 4 em 4 s
+  // (e fechava a caixa do pino que o lojista estava lendo). Mesmo corpo de
+  // resposta → nada muda na tela (o mesmo cuidado do feed de pedidos em
+  // RoteirizacaoIndependente).
+  const ultimoCorpoDasRotas = useRef("");
+  // Uma rota criada ou despachada AQUI entra na lista na hora, sem esperar a
+  // consulta. A geração impede que uma resposta que saiu ANTES dessa mudança
+  // (e chega depois) apague a rota nova — os pedidos dela voltariam a
+  // aparecer como pendentes por alguns segundos.
+  const geracaoDasRotas = useRef(0);
+
   // Buscar rotas sincronizadas no banco de dados (multi-dispositivo)
   const fetchStoreRoutes = async () => {
+    const geracao = geracaoDasRotas.current;
     try {
       const res = await fetch("/api/store/routes");
       if (res.ok) {
-        const data = await res.json();
+        const corpo = await res.text();
+        if (geracao !== geracaoDasRotas.current) return;
+        if (corpo === ultimoCorpoDasRotas.current) return;
+        const data = JSON.parse(corpo);
         if (Array.isArray(data.routes)) {
-          const dbRoutes: RouteItem[] = data.routes.map((r: any) => ({
-            id: r.id,
-            routeNumber: r.routeNumber,
-            motoboyName: r.motoboy?.name || "Aguardando Motoboy",
-            motoboyPhone: r.motoboy?.phone || "",
-            motoboyId: r.motoboyId || null,
-            color: r.color || "#1C1917",
-            orders: (r.orders || []).map((o: any) => ({
-              id: o.id,
-              dailyOrderNumber: o.dailyOrderNumber,
-              customerName: o.customerName || "Cliente",
-              customerPhone: o.customerPhone,
-              address: o.customerAddress,
-              status: o.status,
-              totalAmount: o.totalAmount,
-            })),
-            createdAt: new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-            status: r.status === "DISPATCHED" ? "🚀 Despachada" : "⏳ Aguardando Despacho",
-          }));
-          setCreatedRoutes(dbRoutes);
+          ultimoCorpoDasRotas.current = corpo;
+          setCreatedRoutes(data.routes.map(rotaDaTela));
         }
       }
     } catch (err) {
       console.error("Erro ao buscar rotas da API:", err);
     }
+  };
+
+  /**
+   * A rota que acabou de ser criada/despachada nesta tela, já na lista: os
+   * pedidos dela saem dos pendentes no mesmo instante, e a próxima consulta
+   * (que traz a versão do servidor) é aceita mesmo que pareça igual. Rota
+   * que já estava na lista fica no mesmo lugar; rota nova entra no topo, como
+   * o servidor ordena (mais nova primeiro).
+   */
+  const colocarRotaNaLista = (rota: RouteItem) => {
+    geracaoDasRotas.current += 1;
+    ultimoCorpoDasRotas.current = "";
+    setCreatedRoutes((atual) =>
+      atual.some((r) => r.id === rota.id) ? atual.map((r) => (r.id === rota.id ? rota : r)) : [rota, ...atual],
+    );
+  };
+
+  /** Depois de mexer numa rota: só vale a resposta que sair daqui em diante. */
+  const recarregarRotas = () => {
+    geracaoDasRotas.current += 1;
+    ultimoCorpoDasRotas.current = "";
+    return fetchStoreRoutes();
   };
 
   useEffect(() => {
@@ -706,13 +834,13 @@ export default function RoteirizacaoModal({
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         desfazerPalpite();
-        alert(err?.error || "Não consegui marcar este pedido como pronto. Tente de novo.");
+        setAviso({ tipo: "erro", titulo: "O pedido não foi marcado como pronto", detalhe: err?.error || "Tente de novo." });
         return;
       }
       if (onRefreshOrders) onRefreshOrders();
     } catch (err: any) {
       desfazerPalpite();
-      alert("Não consegui marcar este pedido como pronto: " + (err?.message || err));
+      setAviso({ tipo: "erro", titulo: "O pedido não foi marcado como pronto", detalhe: err?.message || String(err) });
     } finally {
       setMarcandoPronto(null);
     }
@@ -982,6 +1110,24 @@ export default function RoteirizacaoModal({
     };
   }, [isOpen, deliveryOrders, storeCity, defaultCenter, temPontoDaLoja]);
 
+  // ── COORDENADA SÓ PARA QUEM TEM PINO ─────────────────────────────────────
+  //
+  // O mapa de coordenadas só crescia durante a noite: pedido entregue, rota
+  // que saiu da lista — o ponto ficava, e era nele que a linha da rota
+  // terminava, num lugar sem pino. Agora fica só a coordenada de pedido que
+  // ainda está no mapa (com ou sem o filtro "Mostrar Prontos"). Depende do
+  // próprio mapa porque a geocodificação acima grava a cópia que tinha ao
+  // começar, e ela pode trazer de volta o que já tinha saído.
+  useEffect(() => {
+    const ficam = new Set(baseDeliveryOrders.map((o) => o.id));
+    setGeocodedMap((atual) => podarCoordenadas(atual, ficam));
+  }, [baseDeliveryOrders, geocodedMap]);
+
+  // A rota em foco saiu da lista (passou das 24 h, foi desfeita): sem foco.
+  useEffect(() => {
+    if (rotaEmFoco && !createdRoutes.some((r) => r.id === rotaEmFoco)) setRotaEmFoco(null);
+  }, [rotaEmFoco, createdRoutes]);
+
 
   // Algoritmo TSP Nearest-Neighbor para Ordenação Inteligente do Trajeto a partir da Loja
   const optimizeRouteSequence = (
@@ -1032,7 +1178,7 @@ export default function RoteirizacaoModal({
   const handleAutoClusterRoutes = () => {
     const unrouted = filteredPendingOrders.filter((o) => geocodedMap[o.id]);
     if (unrouted.length === 0) {
-      alert("Nenhum pedido pendente mapeado no GPS para agrupar!");
+      setAviso({ tipo: "atencao", titulo: "Nenhum pedido pendente no mapa para agrupar", detalhe: "Espere os endereços aparecerem no mapa e tente de novo." });
       return;
     }
 
@@ -1176,6 +1322,34 @@ export default function RoteirizacaoModal({
     if (points.length > 0) {
       const bounds = L.latLngBounds(points);
       leafletMapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+    }
+  };
+
+  /**
+   * "Ver no mapa" do card da rota: a linha dela aparece (mesmo despachada) e
+   * o mapa vai até ela — aqui sim, porque foi o lojista que pediu. Clicou de
+   * novo, a linha sai e o mapa fica onde está.
+   */
+  const alternarFocoDaRota = (route: RouteItem) => {
+    if (rotaEmFoco === route.id) {
+      setRotaEmFoco(null);
+      return;
+    }
+    const pontos = pontosDaLinha(route, displayCoordinatesMap, temPontoDaLoja ? defaultCenter : null);
+    if (pontos.length === 0) {
+      setAviso({
+        tipo: "info",
+        titulo: `${route.routeNumber}: nada dela no mapa`,
+        detalhe: "Os pedidos desta rota já foram entregues ou ainda não têm o endereço localizado.",
+      });
+      return;
+    }
+    setRotaEmFoco(route.id);
+    const L = (window as any).L;
+    if (L && leafletMapRef.current) {
+      try {
+        leafletMapRef.current.fitBounds(L.latLngBounds(pontos), { padding: [50, 50], maxZoom: 16 });
+      } catch {}
     }
   };
 
@@ -1596,26 +1770,23 @@ export default function RoteirizacaoModal({
       }
     }
 
-    // 5. Draw Polylines for Existing Created Routes
-    if (activeTab === "ROTAS") {
-      createdRoutes.forEach(route => {
-        const points: [number, number][] = temPontoDaLoja ? [[defaultCenter.lat, defaultCenter.lng]] : [];
-        route.orders.forEach(ro => {
-          const coords = displayCoordinatesMap[ro.id] || geocodedMap[ro.id];
-          if (coords) points.push([coords.lat, coords.lng]);
-        });
-
-        if (points.length > 1) {
-          const routePoly = L.polyline(points, {
-            color: route.color || "#0F766E",
-            weight: 4,
-            opacity: 0.8,
-          }).addTo(map);
-          polylinesRef.current.push(routePoly);
-        }
-      });
-    }
-  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa, estaPronto]);
+    // 5. As linhas das rotas já criadas — só as que ainda não saíram e a que
+    // o lojista pediu para ver (lib/rotas-no-mapa.ts). Era uma linha para
+    // CADA rota das últimas 24 h, despachada ou não: "monte de linha, o
+    // pedido fica embolado" (Lucas, 13/10/2026). A linha liga só pinos que
+    // estão no mapa (`displayCoordinatesMap`), nunca ponto de pedido entregue.
+    rotasComLinha(createdRoutes, { aba: activeTab, rotaEmFoco }).forEach(route => {
+      const points = pontosDaLinha(route, displayCoordinatesMap, temPontoDaLoja ? defaultCenter : null);
+      if (points.length === 0) return;
+      const emFoco = route.id === rotaEmFoco;
+      const routePoly = L.polyline(points, {
+        color: route.color || "#0F766E",
+        weight: emFoco ? 6 : 4,
+        opacity: emFoco ? 0.95 : 0.8,
+      }).addTo(map);
+      polylinesRef.current.push(routePoly);
+    });
+  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, rotaEmFoco, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa, estaPronto]);
 
   // O pino verde do recém-entregue precisa SUMIR sozinho ao completar os 10 s.
   // Sem um tique, ele só sairia no próximo evento que redesenhasse o mapa — e
@@ -1654,41 +1825,90 @@ export default function RoteirizacaoModal({
     setShowDispatchModal(true);
   };
 
+  // ── DESPACHAR SEM TRAVAR A TELA ─────────────────────────────────────────
+  //
+  // "Seleciona os pedidos, coloca despachar, seleciona o motoboy, bota
+  // despachar — trava toda hora; quando dá ok aparece a mensagem em cima, ele
+  // atualiza e vai para aquele monte de rota" (Lucas, Frangoso, 13/10/2026).
+  // O botão fazia, em fila e sem soltar a tela: criar a rota (sem
+  // "carregando" e ainda clicável — o segundo clique criava outra rota com os
+  // mesmos pedidos), despachar, esperar a lista de rotas inteira voltar do
+  // servidor e um alert() que congelava a página até o OK. Depois do OK,
+  // buscava os pedidos de novo e trocava para a aba ROTAS, com uma linha por
+  // rota do dia.
+  //
+  // Agora: trava no primeiro clique (`despachandoRef`), "carregando" desde o
+  // início, a rota entra na lista com o que o próprio servidor devolveu, o
+  // aviso desce no topo sem bloquear nada, e a tela fica onde estava — a
+  // lista do servidor e os pedidos chegam por trás, sem ninguém esperar.
+
+  /** O fim de toda montagem: limpa a seleção e fecha o modal do despacho. */
+  const limparMontagem = () => {
+    setSelectedOrderIds([]);
+    setShowDispatchModal(false);
+    setSelectedMotoboyId("");
+    setCustomMotoboyName("");
+    setCustomMotoboyPhone("");
+  };
+
+  /** Rotas e pedidos frescos do servidor, em segundo plano. */
+  const atualizarEmSegundoPlano = () => {
+    void recarregarRotas();
+    if (onRefreshOrders) onRefreshOrders();
+  };
+
+  const nomeDoMotoboy = (id: string) => motoboys.find((m) => m.id === id)?.name || "";
+
+  /** POST /api/store/routes. Devolve a rota já na lista; lança com a frase do servidor. */
+  const criarRotaNoServidor = async (orderIds: string[], motoboyId: string | null): Promise<RouteItem> => {
+    const color = ROUTE_COLORS[createdRoutes.length % ROUTE_COLORS.length];
+    const res = await fetch("/api/store/routes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderIds, motoboyId, color }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.route?.id) throw new Error(data?.error || "Não consegui criar a rota agora.");
+    const rota = rotaDaTela(data.route);
+    colocarRotaNaLista(rota);
+    return rota;
+  };
+
+  /** POST /api/store/routes/dispatch. Lança com a frase do servidor. */
+  const despacharNoServidor = async (routeId: string, motoboyId: string): Promise<void> => {
+    const res = await fetch("/api/store/routes/dispatch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ routeId, motoboyId }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error || "Não consegui despachar a rota agora.");
+    }
+  };
+
   // Criar Rota no Banco de Dados (Com ou Sem Motoboy)
   const handleCreateRouteToDB = async (motoboyIdToAssign?: string) => {
-    if (selectedOrderIds.length === 0) return;
+    if (selectedOrderIds.length === 0 || despachandoRef.current) return;
+    despachandoRef.current = true;
     setIsDispatching(true);
 
     try {
-      const color = ROUTE_COLORS[createdRoutes.length % ROUTE_COLORS.length];
-      const res = await fetch("/api/store/routes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderIds: selectedOrderIds,
-          motoboyId: motoboyIdToAssign || selectedMotoboyId || null,
-          color,
-        }),
+      const rota = await criarRotaNoServidor([...selectedOrderIds], motoboyIdToAssign || selectedMotoboyId || null);
+      limparMontagem();
+      // Fica na aba em que estava (era jogado para ROTAS): quem cria rota sem
+      // motoboy costuma seguir montando a próxima.
+      setAviso({
+        tipo: "ok",
+        titulo: `${rota.routeNumber} criada, esperando o motoboy`,
+        detalhe: "Quando ele chegar, escolha o entregador no card da rota, na aba ROTAS.",
       });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        alert(errData.error || "Erro ao criar rota no servidor");
-        return;
-      }
-
-      await fetchStoreRoutes();
-      setSelectedOrderIds([]);
-      setShowDispatchModal(false);
-      setSelectedMotoboyId("");
-      setCustomMotoboyName("");
-      setActiveTab("ROTAS");
-
-      if (onRefreshOrders) onRefreshOrders();
+      atualizarEmSegundoPlano();
     } catch (err: any) {
       console.error("Erro ao criar rota no banco:", err);
-      alert("Erro ao criar rota: " + (err?.message || err));
+      setAviso({ tipo: "erro", titulo: "A rota não foi criada", detalhe: err?.message || String(err) });
     } finally {
+      despachandoRef.current = false;
       setIsDispatching(false);
     }
   };
@@ -1712,13 +1932,15 @@ export default function RoteirizacaoModal({
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        alert(err.error || "Não consegui trocar o entregador desta rota.");
+        setAviso({ tipo: "erro", titulo: "O entregador não foi trocado", detalhe: err.error || "Não consegui trocar o entregador desta rota." });
         return;
       }
-      await fetchStoreRoutes();
+      await recarregarRotas();
       if (onRefreshOrders) onRefreshOrders();
+      const nome = nomeDoMotoboy(novoMotoboyId);
+      setAviso({ tipo: "ok", titulo: nome ? `Rota agora com ${nome}` : "Entregador da rota trocado" });
     } catch (err: any) {
-      alert("Erro ao trocar o entregador: " + (err?.message || err));
+      setAviso({ tipo: "erro", titulo: "O entregador não foi trocado", detalhe: err?.message || String(err) });
     } finally {
       setIsDispatching(false);
     }
@@ -1728,35 +1950,29 @@ export default function RoteirizacaoModal({
   const handleDispatchExistingRoute = async (routeId: string, assignedMotoboyId?: string) => {
     const finalMbId = assignedMotoboyId || selectedMotoboyId;
     if (!finalMbId) {
-      alert("Por favor, selecione o motoboy para despachar a rota!");
+      setAviso({ tipo: "atencao", titulo: "Escolha o motoboy para despachar a rota" });
       return;
     }
-
+    if (despachandoRef.current) return;
+    despachandoRef.current = true;
     setIsDispatching(true);
 
     try {
-      const res = await fetch("/api/store/routes/dispatch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          routeId,
-          motoboyId: finalMbId,
-        }),
+      await despacharNoServidor(routeId, finalMbId);
+      const rota = createdRoutes.find((r) => r.id === routeId);
+      const nome = nomeDoMotoboy(finalMbId);
+      if (rota) colocarRotaNaLista({ ...rota, status: "🚀 Despachada", motoboyId: finalMbId, motoboyName: nome || rota.motoboyName });
+      setAviso({
+        tipo: "ok",
+        titulo: `🚀 ${rota?.routeNumber || "Rota"} despachada${nome ? ` com ${nome}` : ""}`,
+        detalhe: `Pedidos em "Saiu para entrega".`,
       });
-
-      if (!res.ok) {
-        const errData = await res.json();
-        alert(errData.error || "Erro ao despachar rota");
-        return;
-      }
-
-      await fetchStoreRoutes();
-      if (onRefreshOrders) onRefreshOrders();
-      alert("🚀 Rota despachada com sucesso! Pedidos movidos para 'Saiu para Entrega'.");
+      atualizarEmSegundoPlano();
     } catch (err: any) {
       console.error("Erro ao despachar rota:", err);
-      alert("Erro ao despachar rota: " + (err?.message || err));
+      setAviso({ tipo: "erro", titulo: "A rota não foi despachada", detalhe: err?.message || String(err) });
     } finally {
+      despachandoRef.current = false;
       setIsDispatching(false);
     }
   };
@@ -1771,62 +1987,78 @@ export default function RoteirizacaoModal({
       return;
     }
 
-    // Se escolheu motoboy, cria a rota e despacha imediatamente!
-    let motoboyId = selectedMotoboyId;
-    if (!motoboyId && customMotoboyName.trim()) {
-      // Se digitou nome de motoboy customizado, cria o motoboy se necessário
-      try {
-        const mbRes = await fetch("/api/motoboys", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name: customMotoboyName.trim(),
-            phone: customMotoboyPhone.trim(),
-          }),
-        });
-        if (mbRes.ok) {
-          const newMb = await mbRes.json();
-          motoboyId = newMb.id;
-        }
-      } catch (e) {}
-    }
+    if (despachandoRef.current) return;
+    despachandoRef.current = true;
+    setIsDispatching(true);
+
+    const idsDaRota = [...selectedOrderIds];
+    let rota: RouteItem | null = null;
 
     try {
-      // 1. Cria a rota no banco
-      const color = ROUTE_COLORS[createdRoutes.length % ROUTE_COLORS.length];
-      const createRes = await fetch("/api/store/routes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderIds: selectedOrderIds,
-          motoboyId: motoboyId || null,
-          color,
-        }),
-      });
-
-      if (!createRes.ok) {
-        const errData = await createRes.json();
-        alert(errData.error || "Erro ao criar rota");
-        return;
+      // Se escolheu motoboy, cria a rota e despacha imediatamente!
+      let motoboyId = selectedMotoboyId;
+      let nome = nomeDoMotoboy(motoboyId);
+      if (!motoboyId && customMotoboyName.trim()) {
+        // Se digitou nome de motoboy customizado, cria o motoboy se necessário
+        try {
+          const mbRes = await fetch("/api/motoboys", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: customMotoboyName.trim(),
+              phone: customMotoboyPhone.trim(),
+            }),
+          });
+          if (mbRes.ok) {
+            const newMb = await mbRes.json();
+            motoboyId = newMb.id;
+            nome = newMb.name || customMotoboyName.trim();
+          }
+        } catch (e) {}
       }
 
-      const { route } = await createRes.json();
+      // 1. Cria a rota no banco
+      rota = await criarRotaNoServidor(idsDaRota, motoboyId || null);
 
       // 2. Se informou motoboy, despacha a rota imediatamente
-      if (motoboyId && route?.id) {
-        await handleDispatchExistingRoute(route.id, motoboyId);
+      if (motoboyId) {
+        await despacharNoServidor(rota.id, motoboyId);
+        colocarRotaNaLista({ ...rota, status: "🚀 Despachada", motoboyId, motoboyName: nome || rota.motoboyName });
+        setAviso({
+          tipo: "ok",
+          titulo: `🚀 ${rota.routeNumber} despachada${nome ? ` com ${nome}` : ""}`,
+          detalhe: `${idsDaRota.length} pedido(s) em "Saiu para entrega".`,
+        });
+      } else {
+        // O entregador digitado não foi cadastrado: a rota existe, sem ele.
+        setAviso({
+          tipo: "atencao",
+          titulo: `${rota.routeNumber} criada sem motoboy`,
+          detalhe: "Não consegui cadastrar o entregador digitado. Escolha o motoboy no card da rota, na aba ROTAS.",
+        });
       }
 
-      setSelectedOrderIds([]);
-      setShowDispatchModal(false);
-      setCustomMotoboyName("");
-      setSelectedMotoboyId("");
-      setActiveTab("ROTAS");
-      if (onRefreshOrders) onRefreshOrders();
-    } catch (err) {
+      // A tela fica onde estava: mesma aba, mesmo mapa. Era aqui que ela
+      // pulava para ROTAS e desenhava uma linha para cada rota do dia.
+      limparMontagem();
+      atualizarEmSegundoPlano();
+    } catch (err: any) {
       console.error("Erro ao criar rota:", err);
-      alert("Erro ao despachar rota. Tente novamente!");
+      if (rota) {
+        // A rota nasceu mas não saiu: os pedidos já estão nela (saíram dos
+        // pendentes) e o despacho se refaz pelo card.
+        limparMontagem();
+        atualizarEmSegundoPlano();
+        setAviso({
+          tipo: "erro",
+          titulo: `${rota.routeNumber} foi criada, mas não saiu`,
+          detalhe: `${err?.message || err} Ela está na aba ROTAS, esperando o despacho.`,
+        });
+      } else {
+        setAviso({ tipo: "erro", titulo: "A rota não foi despachada", detalhe: err?.message || "Tente novamente." });
+      }
     } finally {
+      despachandoRef.current = false;
       setIsDispatching(false);
     }
   };
@@ -1837,41 +2069,30 @@ export default function RoteirizacaoModal({
     text += `🛵 *Motoboy:* ${route.motoboyName}\n`;
     text += `📦 *Total de Pedidos:* ${route.orders.length}\n\n`;
 
-    const mapsStops: string[] = [];
+    const enderecos: string[] = [];
 
     route.orders.forEach((o, idx) => {
       const addr = o.address || `${o.street || ""}, ${o.number || ""} - ${o.neighborhood || ""}`;
-      text += `*${idx + 1}º Parada:* Pedido #${o.orderNumber || o.displayId || o.id}\n`;
-      text += `👤 *Cliente:* ${o.customerName}\n`;
-      text += `📍 *Endereço:* ${addr}\n`;
-      if (o.customerPhone) text += `📞 *Tel:* ${o.customerPhone}\n`;
-      text += `------------------------------\n`;
-
-      const cleanAddr = addr
-        .replace(/(-?\s*Comp(?:lemento)?:.*)/gi, "")
-        .replace(/(-?\s*Ref(?:erencia)?:.*)/gi, "")
-        .trim();
-      // A cidade da LOJA, e só se ela estiver cadastrada. Era "Rio das Ostras"
-      // por padrão: numa loja sem cidade no cadastro, todo endereço da rota
-      // saía com ", Rio das Ostras" colado no fim — e o Google Maps do motoboy
-      // abria a 400 km do bairro certo.
-      const cityStr = (storeCity || "").trim();
-      const fullAddr =
-        !cityStr || cleanAddr.toLowerCase().includes(cityStr.toLowerCase()) ? cleanAddr : `${cleanAddr}, ${cityStr}`;
-      mapsStops.push(encodeURIComponent(fullAddr));
+      // O número que o lojista e o motoboy conhecem (#41, ou o do parceiro) —
+      // saía o id interno inteiro, que ninguém reconhece no balcão.
+      text += `*${idx + 1}º Parada:* Pedido #${getOrderDisplayNumber(o)}
+`;
+      text += `👤 *Cliente:* ${o.customerName}
+`;
+      text += `📍 *Endereço:* ${addr}
+`;
+      if (o.customerPhone) text += `📞 *Tel:* ${o.customerPhone}
+`;
+      text += `------------------------------
+`;
+      enderecos.push(addr);
     });
 
-    if (mapsStops.length > 0) {
-      let mapsUrl = "";
-      if (mapsStops.length === 1) {
-        mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${mapsStops[0]}`;
-      } else {
-        const lastStop = mapsStops[mapsStops.length - 1];
-        const waypoints = mapsStops.slice(0, -1).join("|");
-        mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${lastStop}&waypoints=${waypoints}`;
-      }
-      text += `🗺️ *GPS Rota no Google Maps:*\n${mapsUrl}`;
-    }
+    // O mesmo link do WhatsApp que o despacho manda ao motoboy (lib/link-da-rota.ts):
+    // cidade da LOJA só se cadastrada, sem ponto de partida fixo.
+    const mapsUrl = linkDaRotaNoMaps(enderecos, storeCity);
+    if (mapsUrl) text += `🗺️ *GPS Rota no Google Maps:*
+${mapsUrl}`;
 
     navigator.clipboard.writeText(text);
     setCopiedRouteId(route.id);
@@ -1890,14 +2111,15 @@ export default function RoteirizacaoModal({
         // 409 = rota já despachada: não se apaga, mas dá para trocar o
         // entregador. O servidor manda a frase pronta; a tela só mostra.
         const d = await res.json().catch(() => ({}));
-        alert(d?.error || "Não consegui desfazer esta rota agora.");
+        setAviso({ tipo: "atencao", titulo: "A rota não foi desfeita", detalhe: d?.error || "Não consegui desfazer esta rota agora." });
         return;
       }
-      await fetchStoreRoutes();
+      await recarregarRotas();
       if (onRefreshOrders) onRefreshOrders();
+      setAviso({ tipo: "ok", titulo: "Rota desfeita", detalhe: "Os pedidos voltaram para os pendentes." });
     } catch (e) {
       console.error("Erro ao deletar rota:", e);
-      alert("Não consegui desfazer esta rota agora. Tente de novo.");
+      setAviso({ tipo: "erro", titulo: "A rota não foi desfeita", detalhe: "Não consegui desfazer esta rota agora. Tente de novo." });
     }
   };
 
@@ -1907,6 +2129,7 @@ export default function RoteirizacaoModal({
       backdropFilter: "blur(4px)", display: isOpen ? "flex" : "none", alignItems: "center", justifyContent: "center",
       padding: modoIndependente ? 0 : "1rem"
     }}>
+      <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
       <div style={{
         background: "#F8FAFC", width: "100%", maxWidth: modoIndependente ? "none" : "1400px", height: modoIndependente ? "100vh" : "92vh",
         borderRadius: modoIndependente ? 0 : "16px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
@@ -2265,8 +2488,16 @@ export default function RoteirizacaoModal({
                     <p style={{ fontSize: "0.78rem" }}>Selecione os pedidos pendentes no mapa e clique em Criar Rota!</p>
                   </div>
                 ) : (
-                  createdRoutes.map(route => {
-                    const isDispatched = route.status?.includes("Despachada") || route.status === "DISPATCHED";
+                  <>
+                  {/* O que a linha no mapa quer dizer, escrito: "pra que serve
+                      a rota da roteirização? deixa a gente perdido" (Lucas,
+                      12/10/2026). */}
+                  <p style={{ margin: "0 0 0.6rem 0", fontSize: "0.74rem", color: "#64748B", lineHeight: 1.4 }}>
+                    No mapa, só as rotas esperando motoboy ganham linha. Para olhar uma que já saiu, toque em <b>🗺️ Ver no mapa</b>.
+                  </p>
+                  {createdRoutes.map(route => {
+                    const isDispatched = rotaJaDespachada(route);
+                    const emFoco = rotaEmFoco === route.id;
                     return (
                       <div
                         key={route.id}
@@ -2288,6 +2519,20 @@ export default function RoteirizacaoModal({
                             <span style={{ fontWeight: 900, fontSize: "1rem", color: "#0F172A" }}>
                               {route.routeNumber}
                             </span>
+                            {/* Ver a rota é escolha de quem olha, não o padrão da tela. */}
+                            <button
+                              type="button"
+                              onClick={() => alternarFocoDaRota(route)}
+                              title={emFoco ? "Tirar a linha desta rota do mapa" : "Mostrar a linha desta rota no mapa"}
+                              style={{
+                                padding: "3px 8px", borderRadius: "6px", fontFamily: "inherit",
+                                border: emFoco ? "1.5px solid #1C1917" : "1px solid #CBD5E1",
+                                background: emFoco ? "#1C1917" : "#FFFFFF", color: emFoco ? "#FFFFFF" : "#334155",
+                                fontSize: "0.72rem", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap",
+                              }}
+                            >
+                              🗺️ {emFoco ? "Esconder do mapa" : "Ver no mapa"}
+                            </button>
                           </div>
 
                           <span style={{
@@ -2341,6 +2586,7 @@ export default function RoteirizacaoModal({
                             <div style={{ marginTop: "6px", marginBottom: "8px" }}>
                               <select
                                 defaultValue={route.motoboyId || ""}
+                                disabled={isDispatching}
                                 onChange={(e) => {
                                   const val = e.target.value;
                                   if (val) {
@@ -2368,7 +2614,7 @@ export default function RoteirizacaoModal({
                               onClick={() => {
                                 const mbId = route.motoboyId || selectedMotoboyId;
                                 if (!mbId) {
-                                  alert("Selecione o motoboy para despachar a rota!");
+                                  setAviso({ tipo: "atencao", titulo: "Escolha o motoboy para despachar a rota" });
                                   return;
                                 }
                                 handleDispatchExistingRoute(route.id, mbId);
@@ -2415,7 +2661,8 @@ export default function RoteirizacaoModal({
 
                       </div>
                     );
-                  })
+                  })}
+                  </>
                 )}
               </div>
             )}
@@ -2692,7 +2939,7 @@ export default function RoteirizacaoModal({
                         <span style={{ background: "#1C1917", color: "#fff", width: "18px", height: "18px", borderRadius: "50%", fontSize: "0.7rem", fontWeight: 900, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
                           {idx + 1}
                         </span>
-                        <b>#{o.orderNumber || o.displayId || o.id.slice(-4)}</b> — {o.customerName} ({o.neighborhood || "Centro"})
+                        <b>#{getOrderDisplayNumber(o)}</b> — {o.customerName} ({o.neighborhood || "Centro"})
                       </div>
                       <span style={{ fontSize: "0.72rem", fontWeight: 700, color: pInfo.isCash ? "#C92E09" : pInfo.isCardOnDelivery ? "#1C1917" : "#0F766E" }}>
                         {pInfo.isCash ? `💵 Troco: R$ ${pInfo.changeNeeded.toFixed(2)}` : pInfo.isCardOnDelivery ? "💳 Cartão" : "✅ Pago Online"}
@@ -2796,17 +3043,20 @@ export default function RoteirizacaoModal({
                 Voltar
               </button>
 
+              {/* O "carregando" vale desde o clique (antes só aparecia na segunda
+                  das chamadas, e o botão seguia clicável na primeira). */}
               <button
                 onClick={handleConfirmDispatch}
                 disabled={isDispatching}
                 style={{
                   flex: 2, padding: "10px", background: "#1C1917", border: "none",
                   borderRadius: "8px", fontWeight: 800, fontSize: "0.88rem", color: "#FFFFFF",
-                  cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6
+                  cursor: isDispatching ? "wait" : "pointer", opacity: isDispatching ? 0.8 : 1,
+                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6
                 }}
               >
                 {isDispatching ? <Loader2 size={16} className="animate-spin" /> : <Navigation size={16} />}
-                Despachar Rota agora
+                {isDispatching ? "Despachando…" : "Despachar Rota agora"}
               </button>
             </div>
 
