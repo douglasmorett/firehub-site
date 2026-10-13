@@ -9,6 +9,7 @@ import { podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
 import { toLocalISODate } from "@/lib/timezone";
 import TrocaDePagamentoPainel from "./TrocaDePagamentoPainel";
 import VerPedidoDoAcerto from "./VerPedidoDoAcerto";
+import { acharPedidoNoAcerto } from "@/lib/achar-pedido-no-acerto";
 
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
@@ -152,6 +153,8 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
     if (r) { setCustomFrom(r.from); setCustomTo(r.to); }
   };
   const [selectedMotoboy, setSelectedMotoboy] = useState("all");
+  // "Qual motoboy entregou o 64?" sem sair do acerto (Allan, Delícias de Casa, 13/10/2026).
+  const [buscaPedido, setBuscaPedido] = useState("");
   const [calcMode, setCalcMode] = useState<"all" | "fee_only">("all");
   const [report, setReport] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -426,6 +429,40 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
       {/* Resultados */}
       {loaded && !loading && (
         <>
+          {/* Achar pedido: quem entregou, sem ir ao quadro de Pedidos */}
+          <div style={{ background: "#fff", border: "1.5px solid #E2E8F0", borderRadius: 14, padding: "12px 14px", marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontWeight: 800, fontSize: "0.85rem" }}>🔎 Achar pedido</span>
+              <input value={buscaPedido} onChange={(e) => setBuscaPedido(e.target.value)}
+                placeholder="Nº do pedido, nº do iFood/99 ou nome do cliente"
+                style={{ flex: "1 1 260px", padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", fontFamily: "inherit", outline: "none" }} />
+              <span style={{ fontSize: "0.72rem", color: "#64748B" }}>procura no período do relatório</span>
+            </div>
+            {buscaPedido.trim() !== "" && (() => {
+              const achados = acharPedidoNoAcerto(report, buscaPedido);
+              if (!achados.length) return <div style={{ marginTop: 10, fontSize: "0.8rem", color: "#64748B" }}>Nenhuma entrega com esse número ou nome neste período. Confira as datas do relatório.</div>;
+              return (
+                <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+                  {achados.map(({ pedido: o, entregador }) => {
+                    const dataDoPedido = o.createdAt || o.date;
+                    const num = o.dailyOrderNumber ? `#${o.dailyOrderNumber}` : o.ifoodReference ? `#${o.ifoodReference}` : o.openDeliveryReference ? `#${o.openDeliveryReference}` : "";
+                    const noApp = o.ifoodReference ? `iFood #${o.ifoodReference}` : o.openDeliveryReference ? `#${o.openDeliveryReference}` : "";
+                    return (
+                      <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", padding: "8px 10px", background: "#F8FAFC", borderRadius: 8, fontSize: "0.82rem" }}>
+                        <span style={{ color: "#64748B" }}>{dataDoPedido ? new Date(dataDoPedido as any).toLocaleString("pt-BR", { timeZone: tzLoja, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"}</span>
+                        <strong>{num}</strong>
+                        <span>{o.customerName}</span>
+                        {noApp && num !== `#${o.ifoodReference}` && <span style={{ color: "#64748B" }}>{noApp}</span>}
+                        <span style={{ fontWeight: 700 }}>{fmt(Number(o.totalAmount || 0))}</span>
+                        <span style={{ marginLeft: "auto", background: "#ECFDF5", color: "#047857", border: "1px solid #A7F3D0", borderRadius: 999, padding: "2px 10px", fontWeight: 800 }}>🛵 {entregador}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
           {/* Totais */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 20 }}>
             {[
