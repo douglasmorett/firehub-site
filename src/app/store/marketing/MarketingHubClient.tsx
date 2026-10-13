@@ -17,7 +17,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-import { DISPARO_EM_MASSA_LIBERADO, MOTIVO_DISPARO_DESLIGADO } from "@/lib/disparo-em-massa";
+import ApresentacaoDisparoOficial from "@/components/ApresentacaoDisparoOficial";
 
 export default function MarketingHubClient() {
   const [loading, setLoading] = useState(true);
@@ -220,7 +220,7 @@ export default function MarketingHubClient() {
       {/* NAVEGAÇÃO POR ABAS */}
       <div style={{ display: "flex", gap: "8px", marginBottom: "1.5rem", borderBottom: "2px solid #E2E8F0", paddingBottom: "8px" }}>
         {[
-          { id: "broadcast", label: "🚀 Disparo em Massa Anti-Ban", icon: Send },
+          { id: "broadcast", label: "📢 Disparos (API oficial)", icon: Send },
           { id: "automation", label: "🤖 Automação Recorrente (7d, 15d, 30d)", icon: Clock },
           { id: "database", label: "👥 Base de Clientes Cadastrados", icon: Users },
         ].map((tab) => {
@@ -252,142 +252,8 @@ export default function MarketingHubClient() {
         })}
       </div>
 
-      {/* ABA 1: DISPARO EM MASSA ANTI-BAN */}
-      {activeTab === "broadcast" && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1.5rem" }}>
-          <div style={{ background: "#fff", padding: "1.5rem", borderRadius: "16px", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
-            <h3 style={{ margin: "0 0 4px 0", fontWeight: 800, fontSize: "1.1rem", color: "#0F172A" }}>Criar Nova Campanha de Promoção</h3>
-            <p style={{ margin: "0 0 16px 0", fontSize: "0.78rem", color: "#64748B" }}>
-              Escreva sua mensagem. O sistema enviará cada mensagem com intervalo humano aleatório de 12 a 28 segundos e pausas de descanso em lote para proteger seu chip contra bloqueios do WhatsApp.
-            </p>
-
-            <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 700, color: "#334155", marginBottom: "6px" }}>
-              Texto da Promoção:
-            </label>
-            <textarea
-              value={broadcastMessage}
-              onChange={(e) => setBroadcastMessage(e.target.value)}
-              placeholder="Digite o texto da promoção..."
-              style={{
-                width: "100%",
-                height: "120px",
-                padding: "12px",
-                borderRadius: "12px",
-                border: "1.5px solid #CBD5E1",
-                fontSize: "0.88rem",
-                resize: "none",
-                marginBottom: "1rem",
-                boxSizing: "border-box",
-                outline: "none",
-              }}
-            />
-
-            {DISPARO_EM_MASSA_LIBERADO ? (
-              <div style={{ background: "#F0FDFA", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #99F6E4", color: "#0F766E", fontSize: "0.95rem" }}>
-                🛡️ <strong>Envio em ritmo humano:</strong> as mensagens saem uma a cada 12 a 28 segundos, com descanso de 45 a 75 segundos a cada dez. O disparo roda em segundo plano e leva alguns minutos.
-              </div>
-            ) : (
-              /* O aviso que estava aqui dizia "Proteção Anti-Ban Ativada" e dava a
-                 entender que o ritmo lento protegia o número. Ele não protege:
-                 mandar devagar não conserta mandar para quem não pediu. Um número
-                 da casa foi perdido com essa impressão de segurança. */
-              <div style={{ background: "#FEF2F2", padding: "18px", borderRadius: "14px", border: "2px solid #FCA5A5" }}>
-                <p style={{ margin: 0, fontWeight: 800, fontSize: "1rem", color: "#B71C1C", display: "flex", alignItems: "center", gap: 8 }}>
-                  🚫 Disparo de campanha desligado
-                </p>
-                <p style={{ margin: "8px 0 0", fontSize: "0.9rem", color: "#B71C1C", lineHeight: 1.6 }}>
-                  {MOTIVO_DISPARO_DESLIGADO}
-                </p>
-                <p style={{ margin: "10px 0 0", fontSize: "0.86rem", color: "#B71C1C", lineHeight: 1.6 }}>
-                  <strong>O que continua funcionando:</strong> o robô responde normalmente quem
-                  manda mensagem para a loja. O que saiu do ar é só o envio para uma lista.
-                </p>
-                <a
-                  href="/store/disparo-oficial"
-                  style={{ display: "inline-block", marginTop: 12, padding: "10px 14px", borderRadius: 10, background: "#0F766E", color: "#fff", fontWeight: 800, fontSize: "0.88rem", textDecoration: "none" }}
-                >
-                  📣 Disparo oficial: promoção pela API oficial da Meta →
-                </a>
-              </div>
-            )}
-
-            {selectedPhones.length > 150 && (
-              <div style={{ background: "#FEF2F2", padding: "16px", borderRadius: "12px", display: "flex", gap: "12px", border: "1px solid #FECACA", color: "#B71C1C", fontSize: "0.95rem", marginTop: "12px" }}>
-                ⚠️ <strong>Risco de Banimento Elevado:</strong> Você selecionou {selectedPhones.length} clientes. Recomendamos disparar para no máximo 100-150 pessoas por dia usando o QR Code para proteger o seu número de bloqueios do WhatsApp.
-              </div>
-            )}
-
-            <button
-              onClick={handleSendBroadcast}
-              disabled={sendingBroadcast || !DISPARO_EM_MASSA_LIBERADO}
-              style={{
-                width: "100%",
-                padding: "14px",
-                borderRadius: "12px",
-                border: "none",
-                background: DISPARO_EM_MASSA_LIBERADO
-                  ? "linear-gradient(135deg, #0F766E, #0F766E)"
-                  : "#E2E8F0",
-                color: DISPARO_EM_MASSA_LIBERADO ? "#fff" : "#94A3B8",
-                fontWeight: 800,
-                fontSize: "0.95rem",
-                cursor: DISPARO_EM_MASSA_LIBERADO ? "pointer" : "not-allowed",
-                boxShadow: DISPARO_EM_MASSA_LIBERADO ? "0 4px 14px rgba(15, 118, 110, 0.3)" : "none",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "8px",
-              }}
-            >
-              <Send size={18} />
-              {!DISPARO_EM_MASSA_LIBERADO
-                ? "Disparo desligado"
-                : sendingBroadcast
-                  ? "Enviando em segundo plano..."
-                  : `🚀 Disparar para ${selectedPhones.length} Cliente(s) Selecionados`}
-            </button>
-          </div>
-
-          {/* SELETOR DE DESTINATÁRIOS */}
-          <div style={{ background: "#fff", padding: "1.25rem", borderRadius: "16px", border: "1px solid #E2E8F0" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
-              <div style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A" }}>Destinatários ({selectedPhones.length})</div>
-              <button onClick={toggleSelectAll} style={{ background: "#F1F5F9", border: "none", padding: "4px 8px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#334155" }}>
-                {selectedPhones.length === filteredCustomers.length ? "Desmarcar Todos" : "Marcar Todos"}
-              </button>
-            </div>
-
-            <div style={{ maxHeight: "350px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "6px" }}>
-              {filteredCustomers.map((c) => {
-                const isChecked = selectedPhones.includes(c.phone);
-                return (
-                  <div
-                    key={c.id}
-                    onClick={() => toggleSelectPhone(c.phone)}
-                    style={{
-                      padding: "8px 10px",
-                      borderRadius: "8px",
-                      background: isChecked ? "#F0FDFA" : "#F8FAFC",
-                      border: `1px solid ${isChecked ? "#99F6E4" : "#E2E8F0"}`,
-                      cursor: "pointer",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      fontSize: "0.78rem",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 700, color: "#1E293B" }}>{c.name}</div>
-                      <div style={{ color: "#64748B", fontSize: "0.72rem" }}>{c.phone}</div>
-                    </div>
-                    <input type="checkbox" checked={isChecked} readOnly style={{ accentColor: "#0F766E" }} />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ABA 1: DISPARO — desde 13/10/2026 só pela API oficial da Meta (lib/disparo-oficial). */}
+      {activeTab === "broadcast" && <ApresentacaoDisparoOficial />}
 
       {/* ABA 2: AUTOMAÇÃO RECORRENTE (7d, 15d, 30d) */}
       {activeTab === "automation" && (

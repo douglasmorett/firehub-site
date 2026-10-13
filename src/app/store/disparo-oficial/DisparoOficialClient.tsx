@@ -7,7 +7,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { BadgeCheck, Coins, Megaphone, MessageSquareText, RefreshCw, Send, ShieldCheck, Smartphone, Users } from "lucide-react";
+import ApresentacaoDisparoOficial from "@/components/ApresentacaoDisparoOficial";
+import { BadgeCheck, Coins, Megaphone, MessageSquareText, RefreshCw, Send, Smartphone, Users } from "lucide-react";
 
 type Aviso = { tipo: "ok" | "erro" | "atencao" | "info"; titulo: string; detalhe?: string };
 const COR_DO_AVISO: Record<Aviso["tipo"], { cor: string; fundo: string }> = {
@@ -287,17 +288,8 @@ export default function DisparoOficialClient() {
 
   if (!dados.liberada) {
     return (
-      <div style={{ padding: "1.5rem", maxWidth: 900 }}>
-        {cabecalho}
-        <div style={cartao}>
-          <p style={titulo}>
-            <ShieldCheck size={18} color="#0F766E" /> Em breve na sua loja
-          </p>
-          <p style={{ ...sub, margin: 0 }}>
-            Estamos liberando o Disparo oficial aos poucos. Cada mensagem entregue sai por {reais(preco)}, com crédito pré-pago por Pix — e só
-            é cobrada a mensagem que chega no celular do cliente. Fale com o suporte do FireHub para entrar na lista.
-          </p>
-        </div>
+      <div style={{ padding: "1.5rem", maxWidth: 1100 }}>
+        <ApresentacaoDisparoOficial />
       </div>
     );
   }
@@ -318,6 +310,12 @@ export default function DisparoOficialClient() {
     <div style={{ padding: "1.5rem", maxWidth: 1100 }}>
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
       {cabecalho}
+
+      {!conectado && (
+        <div style={{ marginBottom: 16 }}>
+          <ApresentacaoDisparoOficial compacta aoComecar={() => document.getElementById("conectar-whatsapp")?.scrollIntoView({ behavior: "smooth" })} />
+        </div>
+      )}
 
       {/* ── SALDO ───────────────────────────────────────────────────────── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
@@ -343,7 +341,7 @@ export default function DisparoOficialClient() {
       </div>
 
       {/* ── 1. CONEXÃO ──────────────────────────────────────────────────── */}
-      <div style={{ ...cartao, marginBottom: 16 }}>
+      <div id="conectar-whatsapp" style={{ ...cartao, marginBottom: 16 }}>
         <p style={titulo}>
           <Smartphone size={18} color="#0F766E" /> 1. WhatsApp da loja na API oficial
         </p>
