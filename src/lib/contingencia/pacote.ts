@@ -1,86 +1,50 @@
 /**
  * O PACOTE do computador da loja (Modo Contingência): os arquivos do PRÓPRIO
  * deploy que está no ar — o FireHub (server.js, .next, node_modules) e o
- * supervisor —, listados por hash. O Assistente baixa só o hash que ainda
- * não tem: com vários deploys por dia, cada atualização traz poucos MB.
+ * supervisor —, listados por hash e ASSINADOS no build
+ * (scripts/contingencia/assinar-pacote.mjs, com a chave que só existe no
+ * segredo do GitHub).
  *
- * Servir o pacote daqui (e não de um build separado) garante que o
- * computador roda exatamente a versão da nuvem: a cópia, a subida e as telas
- * falam a mesma língua.
+ * Esta lib só serve o que o build gerou: `contingencia/pacote.json` (a lista,
+ * exatamente os bytes assinados) e `contingencia/pacote.assinatura`. O
+ * Assistente confere a assinatura com a chave pública embutida nele antes de
+ * baixar qualquer arquivo, e o sha256 de cada arquivo depois. Lista sem
+ * assinatura (build sem o segredo) não é aceita por nenhum Assistente.
  *
- * Fica de fora o que não roda no Windows ou não serve à loja: os binários de
- * Linux (o Windows usa o motor do Prisma de `binaryTargets = windows`), o
- * cache do build, os instaladores e os uploads.
+ * Servir o pacote daqui garante que o computador roda exatamente a versão da
+ * nuvem: a cópia, a subida e as telas falam a mesma língua.
  */
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 
 export type ArquivoDoPacote = { caminho: string; hash: string; tamanho: number };
-export type Pacote = { versao: string; arquivos: ArquivoDoPacote[]; total: number };
+export type PacoteAssinado = { conteudo: string; assinatura: string | null };
 
 const RAIZ = process.cwd();
 
-/** O que não entra no pacote (caminho relativo, com "/"). */
-export function ficaDeFora(rel: string): boolean {
-  if (rel.startsWith(".next/cache/")) return true;
-  if (rel.startsWith("public/downloads/") || rel.startsWith("public/uploads/")) return true;
-  if (rel.startsWith("uploads/") || rel.startsWith("scripts/") || rel.startsWith("prisma/")) return true;
-  if (rel.startsWith(".git/")) return true;
-  // Binário nativo de outro sistema: o Windows não carrega.
-  if (/\.(node|so(\.\d+)*)$/.test(rel) && /(linux|musl|darwin|debian|rhel|openssl-1)/i.test(rel)) return true;
-  if (/libquery_engine-(?!windows)/.test(rel)) return true;
-  return false;
-}
+let emCache: { assinado: PacoteAssinado; porHash: Map<string, string> } | null | undefined;
 
-function listar(dir: string, base: string, saida: string[]): void {
-  for (const nome of fs.readdirSync(dir)) {
-    const cheio = path.join(dir, nome);
-    const rel = path.relative(base, cheio).split(path.sep).join("/");
-    let st: fs.Stats;
-    try {
-      st = fs.lstatSync(cheio);
-    } catch {
-      continue;
-    }
-    if (st.isSymbolicLink()) continue;
-    if (st.isDirectory()) {
-      if (ficaDeFora(`${rel}/`)) continue;
-      listar(cheio, base, saida);
-    } else if (st.isFile() && !ficaDeFora(rel) && st.size < 80 * 1024 * 1024) {
-      saida.push(rel);
-    }
-  }
-}
-
-function hashDoArquivo(cheio: string): string {
-  return crypto.createHash("sha256").update(fs.readFileSync(cheio)).digest("hex");
-}
-
-let emCache: { pacote: Pacote; porHash: Map<string, string> } | null = null;
-
-/** O pacote desta versão (calculado uma vez por processo: os arquivos do deploy não mudam). */
-export function pacoteDaVersao(): { pacote: Pacote; porHash: Map<string, string> } {
-  if (emCache) return emCache;
-  let versao = "dev";
+/** O pacote desta versão, como o build gerou; `null` se esta imagem não tem pacote. */
+export function pacoteDaVersao(): { assinado: PacoteAssinado; porHash: Map<string, string> } | null {
+  if (emCache !== undefined) return emCache;
   try {
-    versao = fs.readFileSync(path.join(RAIZ, ".next", "BUILD_ID"), "utf8").trim();
+    const conteudo = fs.readFileSync(path.join(/*turbopackIgnore: true*/ RAIZ, "contingencia", "pacote.json"), "utf8");
+    let assinatura: string | null = null;
+    try {
+      assinatura = fs.readFileSync(path.join(/*turbopackIgnore: true*/ RAIZ, "contingencia", "pacote.assinatura"), "utf8").trim() || null;
+    } catch {
+      /* build sem o segredo */
+    }
+    const lista = JSON.parse(conteudo) as { arquivos: ArquivoDoPacote[] };
+    const porHash = new Map<string, string>();
+    for (const a of lista.arquivos || []) {
+      if (!/^[0-9a-f]{64}$/.test(a.hash) || porHash.has(a.hash)) continue;
+      const cheio = path.resolve(/*turbopackIgnore: true*/ RAIZ, a.caminho);
+      if (cheio.startsWith(path.resolve(/*turbopackIgnore: true*/ RAIZ) + path.sep)) porHash.set(a.hash, cheio);
+    }
+    emCache = { assinado: { conteudo, assinatura }, porHash };
   } catch {
-    /* fora do build */
+    emCache = null;
   }
-  const caminhos: string[] = [];
-  listar(RAIZ, RAIZ, caminhos);
-  const arquivos: ArquivoDoPacote[] = [];
-  const porHash = new Map<string, string>();
-  let total = 0;
-  for (const rel of caminhos.sort()) {
-    const cheio = path.join(RAIZ, rel);
-    const tamanho = fs.statSync(cheio).size;
-    const hash = hashDoArquivo(cheio);
-    arquivos.push({ caminho: rel, hash, tamanho });
-    if (!porHash.has(hash)) porHash.set(hash, cheio);
-    total += tamanho;
-  }
-  emCache = { pacote: { versao, arquivos, total }, porHash };
   return emCache;
 }

@@ -103,6 +103,36 @@ console.log("— A volta, linha a linha —");
   );
   confere("updatedAt nunca é conflito", d.tipo === "atualizar" && !(d as any).conflitos.length, d);
 }
+{
+  // A cada consulta da fila no computador da loja, o User ganha a hora da
+  // consulta: na volta isso não sobe nem vira conflito.
+  const pulso = decidir(
+    usuario,
+    saida({
+      tabela: "User",
+      antes: { id: "L", cashOpen: true, printQueuePolledAt: "10:00:00", updatedAt: "10:00:00" },
+      depois: { id: "L", cashOpen: true, printQueuePolledAt: "10:00:03", updatedAt: "10:00:03" },
+    }),
+    { id: "L", cashOpen: true, printQueuePolledAt: "09:58:00", updatedAt: "09:58:00" },
+    nada,
+  );
+  confere("só o pulso do Assistente mudou: nada sobe", pulso.tipo === "nada", pulso);
+  const junto = decidir(
+    usuario,
+    saida({
+      tabela: "User",
+      antes: { id: "L", cashOpen: true, printQueuePolledAt: "10:00:00", updatedAt: "10:00:00" },
+      depois: { id: "L", cashOpen: false, printQueuePolledAt: "10:00:03", updatedAt: "10:00:03" },
+    }),
+    { id: "L", cashOpen: true, printQueuePolledAt: "09:58:00", updatedAt: "09:58:00" },
+    nada,
+  );
+  confere(
+    "caixa fechado junto com o pulso: sobe o caixa, sem o pulso e sem conflito",
+    junto.tipo === "atualizar" && (junto as any).mudar.cashOpen === false && !("printQueuePolledAt" in (junto as any).mudar) && !(junto as any).conflitos.length,
+    junto,
+  );
+}
 confere("JSON com chaves em outra ordem é igual", iguais({ a: 1, b: [1, { c: 2, d: 3 }] }, { b: [1, { d: 3, c: 2 }], a: 1 }));
 
 console.log("\n— Catálogo e bilhete —");

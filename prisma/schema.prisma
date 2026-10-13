@@ -1,5 +1,8 @@
 generator client {
   provider = "prisma-client-js"
+  // "windows": o motor que o FireHub usa no computador da loja (Modo
+  // Contingência — o pacote leva o build desta imagem para o Windows).
+  binaryTargets = ["native", "windows"]
 }
 
 datasource db {

@@ -27,6 +27,7 @@
       "server.js",
       "instancias.js",
       "qr-code.js",
+      "contingencia.js",
       "package.json",
       "assets/**/*"
     ],

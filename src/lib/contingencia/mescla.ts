@@ -91,8 +91,12 @@ export function decidir(
   const antes = s.operacao === "INSERT" ? null : s.antes;
   const mudar: Record<string, unknown> = {};
   const conflitos: Conflito[] = [];
+  // O pulso do Assistente (User.printQueuePolledAt a cada consulta da fila) é
+  // do computador, não da loja: não sobe nem vira conflito.
+  const ignorar = new Set(t.ignorarMudancaDe || []);
   for (const [coluna, valorDaLoja] of Object.entries(depois)) {
     if (chave.has(coluna) || proibidas.has(coluna)) continue;
+    if (ignorar.has(coluna) && !SEM_CONFLITO.has(coluna)) continue;
     if (antes && iguais(antes[coluna], valorDaLoja)) continue; // a loja não mexeu
     const valorDaNuvem = naNuvem[coluna];
     if (iguais(valorDaNuvem, valorDaLoja)) continue; // os dois chegaram ao mesmo
@@ -113,5 +117,8 @@ export function decidir(
     conflitos.push({ coluna, valorDaLoja, valorDaNuvem, decisao: "a loja e a nuvem mudaram; valeu a loja" });
   }
   if (!Object.keys(mudar).length) return { tipo: "nada", motivo: "nada a mudar" };
+  // Sobrou só o updatedAt que a consulta da fila carimbou: centenas de linhas
+  // assim por queda, e nenhuma é mudança da loja.
+  if (Object.keys(mudar).every((c) => ignorar.has(c))) return { tipo: "nada", motivo: "só o pulso do Assistente" };
   return { tipo: "atualizar", mudar, conflitos };
 }

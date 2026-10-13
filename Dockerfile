@@ -34,6 +34,10 @@ ARG NEXTAUTH_SECRET
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npx next build
 
+# Modo Contingência: o supervisor que roda no computador da loja, num arquivo
+# só (contingencia/supervisor, pacote próprio com o driver do Postgres).
+RUN cd contingencia/supervisor && npm ci --no-audit --no-fund && npm run build
+
 # Step 3: Production runner (imagem final leve)
 FROM base AS runner
 RUN apk add --no-cache openssl
@@ -59,6 +63,18 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --chown=nextjs:nodejs scripts/cron-runner.js ./scripts/cron-runner.js
 COPY --chown=nextjs:nodejs scripts/entrypoint.sh ./scripts/entrypoint.sh
 RUN chmod +x ./scripts/entrypoint.sh
+
+# Modo Contingência: o supervisor e a lista ASSINADA do pacote que o
+# Assistente baixa para o computador das lojas
+# (scripts/contingencia/assinar-pacote.mjs). Por último, com tudo de /app já
+# no lugar: a lista confere arquivo por arquivo o que esta imagem serve. A
+# chave privada só existe no segredo do GitHub (CONTINGENCIA_CHAVE_PRIVADA) e
+# chega aqui pelo BuildKit, só nesta etapa — não fica na imagem. Sem ela, a
+# lista sai sem assinatura e nenhum Assistente instala a contingência.
+COPY --from=builder /app/contingencia/supervisor/dist/supervisor.js ./contingencia/supervisor.js
+COPY scripts/contingencia/assinar-pacote.mjs /tmp/assinar-pacote.mjs
+RUN --mount=type=secret,id=contingencia_chave,required=false \
+    node /tmp/assinar-pacote.mjs /app && rm /tmp/assinar-pacote.mjs
 
 # Raiz padrao dos uploads quando UPLOADS_DIR nao esta definido. Em producao a
 # variavel aponta para o volume do Coolify. Os dois diretorios precisam ser

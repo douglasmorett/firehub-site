@@ -17,6 +17,8 @@ export type EsquemaDoBanco = {
   restricoes: { tabela: string; nome: string; tipo: "p" | "u"; definicao: string }[];
   indices: { tabela: string; nome: string; definicao: string }[];
   sequencias: string[];
+  /** As tabelas cuja gravação sobe na volta (nuvem antiga não manda: vigia todas). */
+  tabelasQueSobem?: string[];
 };
 
 const q = (nome: string) => `"${nome.replace(/"/g, '""')}"`;
@@ -81,11 +83,19 @@ export async function aplicarEsquema(pool: pg.Pool, esquema: EsquemaDoBanco, reg
     }
   }
 
-  await garantirSaida(pool, porTabela);
+  await garantirSaida(pool, porTabela, esquema.tabelasQueSobem ? new Set(esquema.tabelasQueSobem) : null);
 }
 
-/** A tabela de saída e um gatilho em cada tabela que tem chave conhecida. */
-async function garantirSaida(pool: pg.Pool, porTabela: Map<string, EsquemaDoBanco["colunas"]>): Promise<void> {
+/**
+ * A tabela de saída e um gatilho em cada tabela que sobe na volta. Fora delas,
+ * o que o FireHub local grava (ex.: o CrmConfig que ele cria ao ligar) fica só
+ * no computador — subir seria recusado e viraria aviso falso para o dono.
+ */
+async function garantirSaida(
+  pool: pg.Pool,
+  porTabela: Map<string, EsquemaDoBanco["colunas"]>,
+  queSobem: Set<string> | null,
+): Promise<void> {
   await pool.query(`CREATE TABLE IF NOT EXISTS "_ContingenciaSaida" (
     "seq" BIGSERIAL PRIMARY KEY,
     "tabela" TEXT NOT NULL,
@@ -118,6 +128,10 @@ BEGIN
 END
 $fn$`);
   for (const [tabela, colunas] of porTabela) {
+    if (queSobem && !queSobem.has(tabela)) {
+      await pool.query(`DROP TRIGGER IF EXISTS "contingencia_saida" ON ${q(tabela)}`);
+      continue;
+    }
     const nomes = new Set(colunas.map((c) => c.coluna));
     let chave: string[] | null = null;
     if (nomes.has("id")) chave = ["id"];

@@ -198,6 +198,15 @@ export function tabelaDaCopia(nome: string): TabelaDaCopia | undefined {
   return TABELAS_DA_COPIA.find((t) => t.nome === nome);
 }
 
+/**
+ * O que a loja grava nesta tabela durante a queda sobe na volta
+ * (subida-no-banco.ts): toda tabela da cópia, menos as só de foto — exceto o
+ * cliente, que sobe só como cadastro novo.
+ */
+export function sobeNaVolta(t: TabelaDaCopia): boolean {
+  return !t.soPorFoto || t.nome === "StoreCustomer";
+}
+
 /** Identificador do registro na anotação de mudança: o id, ou a chave composta em JSON. */
 export function idDoRegistro(t: TabelaDaCopia, linha: Record<string, unknown>): string {
   if (t.chave.length === 1) return String(linha[t.chave[0]] ?? "");

@@ -215,7 +215,7 @@ export default function ModoContingenciaClient() {
 
       <Cartao titulo="O que você precisa">
         <ul style={{ margin: 0, paddingLeft: 20, lineHeight: 1.7, fontSize: 14 }}>
-          <li>Um <strong>computador Windows no caixa</strong>, ligado durante o expediente (4 GB de memória ou mais).</li>
+          <li>Um <strong>computador Windows no caixa</strong>, ligado durante o expediente (4 GB de memória ou mais e 1 GB livre no disco).</li>
           <li>O <strong>Assistente de Impressão</strong> do FireHub instalado e atualizado nesse computador.</li>
           <li><strong>Endereço fixo do computador no roteador</strong> (reserva de IP) — se precisar, a gente faz por acesso remoto.</li>
           <li>A <strong>TV da cozinha e os celulares dos garçons no Wi-Fi da loja</strong> (no 4G do garçom não alcança o computador).</li>
@@ -242,7 +242,7 @@ export default function ModoContingenciaClient() {
             ) : (
               <>
                 <p style={{ margin: "0 0 12px", fontSize: 14, lineHeight: 1.5 }}>
-                  Assistente encontrado neste computador. Ao ativar, ele baixa o FireHub (uns 150 MB na primeira vez) e faz a primeira cópia da loja.
+                  Assistente encontrado neste computador. Ao ativar, ele baixa o FireHub (uns 250 MB na primeira vez; depois, só o que mudar) e faz a primeira cópia da loja.
                 </p>
                 <button
                   disabled={!podeMexer || !!ocupado}
@@ -276,12 +276,33 @@ export default function ModoContingenciaClient() {
                 <div style={{ color: cor.suave, fontSize: 12 }}>versão {relato?.versao || "—"}</div>
               </div>
             </div>
-            {contingenciaAqui?.etapa && contingenciaAqui.etapa !== "pronta" && (
+            {contingenciaAqui?.ativa && contingenciaAqui.etapa && contingenciaAqui.etapa !== "pronta" && (
               <p style={{ margin: "10px 0 0", fontSize: 13 }}>
                 Neste computador: {contingenciaAqui.etapa}
                 {typeof contingenciaAqui.progresso === "number" ? ` (${Math.round(contingenciaAqui.progresso)}%)` : ""}
                 {contingenciaAqui.erro ? ` — ${contingenciaAqui.erro}` : ""}
               </p>
+            )}
+            {podeMexer && contingenciaAqui && !contingenciaAqui.ativa && (
+              // Troca de computador (PC novo no caixa, Windows formatado): a
+              // chave nova vale só para este; o anterior para de receber a cópia.
+              <div style={{ marginTop: 12, padding: 12, borderRadius: 12, background: cor.fundo, fontSize: 14, lineHeight: 1.5 }}>
+                A contingência está ativada em <strong>outro computador</strong>. Para usar este no lugar dele, ative aqui — o outro deixa de receber a cópia.
+                {relato?.pendentes ? (
+                  <div style={{ marginTop: 6, color: "#B91C1C" }}>
+                    O computador atual ainda tem {relato.pendentes} mudança(s) para subir. Espere subir antes de trocar.
+                  </div>
+                ) : null}
+                <div style={{ marginTop: 10 }}>
+                  <button
+                    disabled={!!ocupado || !!relato?.pendentes}
+                    onClick={ativar}
+                    style={{ background: cor.marca, color: "#fff", border: 0, borderRadius: 12, padding: "10px 16px", fontWeight: 800, cursor: "pointer", opacity: ocupado || relato?.pendentes ? 0.6 : 1 }}
+                  >
+                    {ocupado === "ativar" ? "Ativando…" : "🛟 Ativar neste computador"}
+                  </button>
+                </div>
+              </div>
             )}
             {relato?.ultimoErro && <p style={{ margin: "10px 0 0", fontSize: 13, color: "#B91C1C" }}>Último problema: {relato.ultimoErro}</p>}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>

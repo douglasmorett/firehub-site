@@ -6,23 +6,36 @@
  */
 import { NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { colunasQueNaoDescem, type TabelaDaCopia } from "./catalogo";
+import { colunasQueNaoDescem, sobeNaVolta, TABELAS_DA_COPIA, type TabelaDaCopia } from "./catalogo";
 import { hashDaChave } from "./chave";
 
 const q = (nome: string) => `"${nome.replace(/"/g, '""')}"`;
 
 export type LojaDaChave = { lojaId: string; segredoDoBilhete: string };
 
+/**
+ * Quem já se identificou há pouco: a primeira instalação baixa milhares de
+ * arquivos do pacote, e cada pedido iria ao banco. 1 minuto — desativar a
+ * contingência leva no máximo isso para valer em todos os pedidos.
+ */
+const chavesEmCache = new Map<string, { loja: LojaDaChave | null; em: number }>();
+
 /** A loja dona da chave (`Authorization: Bearer <chave>`), ou `null`. */
 export async function lojaDaChave(req: NextRequest): Promise<LojaDaChave | null> {
   const cabecalho = req.headers.get("authorization") || "";
   const chave = cabecalho.startsWith("Bearer ") ? cabecalho.slice(7).trim() : "";
   if (chave.length < 20) return null;
+  const hash = hashDaChave(chave);
+  const visto = chavesEmCache.get(hash);
+  if (visto && Date.now() - visto.em < 60_000) return visto.loja;
   const r = await prisma.$queryRawUnsafe<LojaDaChave[]>(
     `SELECT "lojaId", "segredoDoBilhete" FROM "Contingencia" WHERE "chaveHash" = $1`,
-    hashDaChave(chave),
+    hash,
   );
-  return r[0] || null;
+  const loja = r[0] || null;
+  if (chavesEmCache.size > 500) chavesEmCache.clear();
+  chavesEmCache.set(hash, { loja, em: Date.now() });
+  return loja;
 }
 
 const colunasEmCache = new Map<string, { colunas: string[]; em: number }>();
@@ -145,6 +158,8 @@ export type EsquemaDoBanco = {
   restricoes: { tabela: string; nome: string; tipo: "p" | "u"; definicao: string }[];
   indices: { tabela: string; nome: string; definicao: string }[];
   sequencias: string[];
+  /** Só nestas o computador anota o que a loja grava (o resto a volta recusaria). */
+  tabelasQueSobem: string[];
 };
 
 /**
@@ -178,5 +193,11 @@ export async function esquemaDoBanco(): Promise<EsquemaDoBanco> {
   const seq = await prisma.$queryRawUnsafe<{ nome: string }[]>(
     `SELECT sequencename AS nome FROM pg_sequences WHERE schemaname = 'public' AND sequencename NOT LIKE 'Contingencia%'`,
   );
-  return { colunas, restricoes, indices, sequencias: seq.map((s) => s.nome) };
+  return {
+    colunas,
+    restricoes,
+    indices,
+    sequencias: seq.map((s) => s.nome),
+    tabelasQueSobem: TABELAS_DA_COPIA.filter(sobeNaVolta).map((t) => t.nome),
+  };
 }

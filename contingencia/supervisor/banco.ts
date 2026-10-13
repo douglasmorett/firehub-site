@@ -62,7 +62,11 @@ export class BancoLocal {
     if (!(await this.responde())) {
       await this.garantirPasta();
       const log = fs.openSync(path.join(path.dirname(this.dados), "banco.log"), "a");
-      this.processo = spawn(this.exe("postgres"), ["-D", this.dados, "-p", String(this.porta), "-h", "127.0.0.1"], {
+      // UTC como a nuvem (Neon): sem isto o initdb pega o fuso do Windows e
+      // todo `now()` gravado em coluna TIMESTAMP pelo SQL do FireHub sairia
+      // 3 h deslocado na volta.
+      const args = ["-D", this.dados, "-p", String(this.porta), "-h", "127.0.0.1", "-c", "timezone=UTC", "-c", "log_timezone=UTC"];
+      this.processo = spawn(this.exe("postgres"), args, {
         stdio: ["ignore", log, log],
         windowsHide: true,
       });
@@ -80,7 +84,10 @@ export class BancoLocal {
     await admin.connect();
     try {
       const existe = await admin.query("SELECT 1 FROM pg_database WHERE datname = $1", [this.nomeDoBanco]);
-      if (!existe.rowCount) await admin.query(`CREATE DATABASE "${this.nomeDoBanco.replace(/"/g, "")}"`);
+      const nome = this.nomeDoBanco.replace(/"/g, "");
+      if (!existe.rowCount) await admin.query(`CREATE DATABASE "${nome}"`);
+      // Vale também para um Postgres que já estava de pé sem o -c acima.
+      await admin.query(`ALTER DATABASE "${nome}" SET timezone TO 'UTC'`);
     } finally {
       await admin.end();
     }
@@ -97,7 +104,9 @@ export class BancoLocal {
   async desligar(): Promise<void> {
     await this.pool?.end().catch(() => {});
     this.pool = null;
-    if (this.processo) {
+    // Também o Postgres que este supervisor só aproveitou (ficou de pé de um
+    // supervisor anterior): o pg_ctl acha o processo pela pasta do banco.
+    if (this.processo || fs.existsSync(path.join(this.dados, "postmaster.pid"))) {
       await executar(this.exe("pg_ctl"), ["stop", "-D", this.dados, "-m", "fast"], { windowsHide: true }).catch(() => {});
     }
   }

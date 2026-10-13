@@ -1,6 +1,7 @@
 /**
- * GET /api/contingencia/pacote/arquivo?hash=<sha256> — um arquivo do pacote
- * (lib/contingencia/pacote.ts). O Assistente confere o hash do que baixou.
+ * GET /api/contingencia/pacote/arquivo?hash=<sha256> — um arquivo da lista
+ * assinada (lib/contingencia/pacote.ts). O Assistente confere o sha256 do que
+ * baixou contra a lista que ele já conferiu pela assinatura.
  */
 import fs from "node:fs";
 import { Readable } from "node:stream";
@@ -14,10 +15,10 @@ export async function GET(req: NextRequest) {
   const loja = await lojaDaChave(req);
   if (!loja) return NextResponse.json({ error: "Chave inválida" }, { status: 401 });
   const hash = (req.nextUrl.searchParams.get("hash") || "").toLowerCase();
-  const caminho = /^[0-9a-f]{64}$/.test(hash) ? pacoteDaVersao().porHash.get(hash) : undefined;
+  const caminho = /^[0-9a-f]{64}$/.test(hash) ? pacoteDaVersao()?.porHash.get(hash) : undefined;
   if (!caminho) return NextResponse.json({ error: "Arquivo fora do pacote" }, { status: 404 });
-  const tamanho = fs.statSync(caminho).size;
-  const corpo = Readable.toWeb(fs.createReadStream(caminho)) as ReadableStream;
+  const tamanho = fs.statSync(/*turbopackIgnore: true*/ caminho).size;
+  const corpo = Readable.toWeb(fs.createReadStream(/*turbopackIgnore: true*/ caminho)) as ReadableStream;
   return new NextResponse(corpo, {
     headers: {
       "content-type": "application/octet-stream",

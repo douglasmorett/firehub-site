@@ -17,6 +17,7 @@
  * pergunta ali para saber de que fila imprimir.
  */
 import http from "node:http";
+import fs from "node:fs";
 import path from "node:path";
 import { lerConfig, lerEstado, gravarEstado, ipsDaRede, PORTAS, type EstadoGuardado } from "./config";
 import { BancoLocal } from "./banco";
@@ -37,6 +38,14 @@ function registro(linha: string): void {
 
 async function principal(): Promise<void> {
   const cfg = lerConfig();
+  // A versão do FireHub que este supervisor roda (o BUILD_ID do pacote): o
+  // Assistente reiniciado reconhece por ela o supervisor que segue de pé.
+  let versaoDoApp: string | null = null;
+  try {
+    versaoDoApp = fs.readFileSync(path.join(cfg.appDir, ".next", "BUILD_ID"), "utf8").trim() || null;
+  } catch {
+    /* pacote sem build do Next: não acontece na loja */
+  }
   const estado: EstadoGuardado = lerEstado(cfg);
   gravarEstado(cfg, estado);
 
@@ -62,13 +71,22 @@ async function principal(): Promise<void> {
   let modo: Modo = "iniciando";
   let falhas = 0;
   let sucessos = 0;
-  let copiaEm: string | null = null;
+  // Cópia já pronta de antes (supervisor reiniciado): conta da foto até o primeiro espelho.
+  let copiaEm: string | null = estado.fotoEm || null;
   let pendentes = await pendentesNaSaida(pool);
   let normalDesde = Date.now();
   let ultimoRelato = 0;
   let ultimaFotoDeClientes = 0;
   let tique = 0;
   let ultimoErro = "";
+  /** Falha ao ligar o FireHub local: fica até ele subir (o ciclo apaga o ultimoErro a cada volta). */
+  let erroDoLocal = "";
+  const ligarLocal = () => {
+    local.ligar().then(
+      () => { if (local.pronto()) erroDoLocal = ""; },
+      (e) => { erroDoLocal = `FireHub local: ${String(e?.message || e)}`; registro(erroDoLocal); },
+    );
+  };
   /** "Testar agora" (tela do módulo → Assistente): até esta hora, a nuvem conta como fora. */
   let simularQuedaAte = 0;
 
@@ -95,7 +113,8 @@ async function principal(): Promise<void> {
     copiaEm,
     pendentes,
     versao: VERSAO,
-    ultimoErro: ultimoErro || null,
+    app: versaoDoApp,
+    ultimoErro: ultimoErro || erroDoLocal || null,
   });
 
   // ── A porta da loja ────────────────────────────────────────────────────────
@@ -208,6 +227,14 @@ async function principal(): Promise<void> {
   };
 
   // ── O ciclo ────────────────────────────────────────────────────────────────
+  // A primeira vez que uma versão nova do FireHub local sobe neste computador
+  // leva quase 1 minuto (o antivírus do Windows examina os arquivos recém-
+  // baixados; depois sobe em ~4 s). Por isso ele é ligado uma vez assim que a
+  // cópia fica pronta — com a nuvem de pé — e desliga sozinho após 10 min
+  // estáveis. De quebra, se ele não subir, o problema aparece na tela do
+  // módulo antes de uma queda de verdade.
+  let aquecido = false;
+
   let rodando = false;
   const ciclo = async () => {
     if (rodando) return;
@@ -237,6 +264,10 @@ async function principal(): Promise<void> {
 
         case "normal":
           if (ok) {
+            if (!aquecido) {
+              aquecido = true;
+              ligarLocal();
+            }
             if (pendentes > 0) await subirSaida(pool, nuvem, null, registro);
             if (tique % 2 === 0) await espelhar();
             if (Date.now() - ultimaFotoDeClientes > 60 * 60_000) {
@@ -245,7 +276,7 @@ async function principal(): Promise<void> {
             }
             if (local.ligado() && Date.now() - normalDesde > 10 * 60_000) await local.desligar();
           } else {
-            if (falhas >= 1) local.ligar().catch((e) => { ultimoErro = String(e?.message || e); });
+            if (falhas >= 1) ligarLocal();
             if (falhas >= 4) {
               modo = "contingencia";
               estado.episodio = { inicio: new Date().toISOString(), fim: null };
@@ -256,7 +287,7 @@ async function principal(): Promise<void> {
           break;
 
         case "contingencia":
-          if (!local.ligado()) local.ligar().catch((e) => { ultimoErro = String(e?.message || e); });
+          if (!local.ligado()) ligarLocal();
           if (ok && sucessos >= 7) {
             modo = "voltando";
             if (estado.episodio) estado.episodio.fim = new Date().toISOString();

@@ -61,6 +61,12 @@ jobs:
           build-args: |
             DATABASE_URL=postgresql://montagem@127.0.0.1:5432/montagem
             NEXTAUTH_SECRET=so-para-a-montagem
+          # Modo Contingência: a chave que ASSINA o pacote que vai para o
+          # computador das lojas (scripts/contingencia/assinar-pacote.mjs).
+          # Entra só na etapa que assina, pelo BuildKit, e não fica na imagem.
+          # Sem o segredo, o pacote sai sem assinatura e nenhum Assistente o aceita.
+          secrets: |
+            contingencia_chave=${{ secrets.CONTINGENCIA_CHAVE_PRIVADA }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -29,6 +29,20 @@ app.use((req, res, next) => {
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: "5mb" }));
 
+/* ─── Modo Contingência (contingencia.js) ─────────────────────────────────────
+ * Dorme até a loja ativar pela tela "Modo Contingência" do painel. Se o módulo
+ * falhar ao carregar, a impressão segue exatamente como sempre — nada aqui
+ * pode derrubar o Assistente. */
+let contingencia = null;
+try {
+  contingencia = require("./contingencia");
+  contingencia.registrar(app);
+  contingencia.iniciar();
+} catch (e) {
+  contingencia = null;
+  console.error("[Contingência] Módulo não carregou:", e && e.message);
+}
+
 /* ─── Permissão de loopback no navegador (Chrome/Edge 142+) ──────────────────
  *
  * O Chrome novo NEGA por padrão, sem nem perguntar, que um site público
@@ -3222,6 +3236,9 @@ async function confirmarImpressos(fetchFn, base) {
 /* Onde mora a fila. FIREHUB_FILA_BASE so existe para o teste automatizado
    apontar para um servidor local; na loja e sempre o host configurado. */
 function baseDaFila() {
+  // Durante a queda (Modo Contingência), a fila é a do computador da loja.
+  const naContingencia = contingencia && contingencia.baseDaFilaNaContingencia();
+  if (naContingencia) return naContingencia;
   return process.env.FIREHUB_FILA_BASE || `https://${currentConfig.domain || "firehubfood.com.br"}`;
 }
 
