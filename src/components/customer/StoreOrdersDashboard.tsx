@@ -17,6 +17,7 @@ import { inicioDoExpedienteDaLoja, inicioDoDiaDaLoja } from "@/lib/fuso";
 import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
 import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
 import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
+import { corrigirPeriodo } from "@/lib/periodo-do-quadro";
 import { avaliarEdicaoNoPainel, podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { edicoesDosItens, lerHistorico, quandoFoi, ROTULO_DA_EDICAO } from "@/lib/historico-do-pedido";
 import { podeTerReposicao } from "@/lib/reposicao";
@@ -6232,9 +6233,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {/* Date range */}
             <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "#F8FAFC", padding: "4px 10px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
               <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>De</span>
-              <input type="datetime-local" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
+              <input type="datetime-local" value={dateFrom} onChange={e => setDateFrom(e.target.value)} onBlur={e => { const p = corrigirPeriodo(e.target.value, dateTo, "de"); if (p.ate !== dateTo) setDateTo(p.ate); }} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
               <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>Até</span>
-              <input type="datetime-local" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
+              <input type="datetime-local" value={dateTo} onChange={e => setDateTo(e.target.value)} onBlur={e => { const p = corrigirPeriodo(dateFrom, e.target.value, "ate"); if (p.ate !== e.target.value) setDateTo(p.ate); }} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
+              {/* Até antes do De = janela vazia: o pedido "some" sem aviso (Delícias de Casa, 13/10/2026). */}
+              {dateFrom && dateTo && dateTo <= dateFrom && (
+                <button type="button" onClick={() => setDateTo(corrigirPeriodo(dateFrom, dateTo, "ate").ate)}
+                  title="O fim do período está antes do começo — nenhum pedido aparece. Clique para corrigir."
+                  style={{ fontSize: "0.7rem", fontWeight: 800, color: "#B91C1C", background: "#FEE2E2", border: "1px solid #FCA5A5", borderRadius: "6px", padding: "2px 6px", cursor: "pointer" }}>
+                  ⚠ Até antes do De — corrigir
+                </button>
+              )}
             </div>
 
             {/* Filtro por integração (de onde o pedido veio) */}
