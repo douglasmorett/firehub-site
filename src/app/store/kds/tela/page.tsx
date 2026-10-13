@@ -1741,16 +1741,16 @@ export default function KDSTelaPage() {
                   {activeCategories.length > 0 && categoriasComDono && (() => {
                     const norm = (s: string) => String(s || "").toLowerCase().trim();
                     const donos = new Set([...categoriasComDono, ...activeCategories.map(norm)]);
-                    const soNaFinal = new Set((kdsConfig?.soNaFinalizacao || []).map(norm));
-                    const acompanham = allCategories
+                    // Desde 13/10/2026 a categoria sem tela não aparece em
+                    // lugar nenhum (lib/kds-telas.ts, pedidoNaTela).
+                    const foraDasTelas = allCategories
                       .map((c) => c.name)
-                      .filter((n) => !donos.has(norm(n)) && !(stage === "production" && soNaFinal.has(norm(n))));
-                    if (acompanham.length === 0) return null;
+                      .filter((n) => !donos.has(norm(n)));
+                    if (foraDasTelas.length === 0) return null;
                     return (
                       <div style={{ marginTop: 8, fontSize: 11.5, lineHeight: 1.45, color: "#94A3B8" }}>
-                        Também aparecem aqui, junto do pedido: <b style={{ color: "#E2E8F0" }}>{acompanham.join(", ")}</b>.
-                        Nenhuma tela as mostra, então elas acompanham o pedido em toda tela.
-                        Para tirar daqui, marque-as numa tela ou deixe-as <b style={{ color: "#E2E8F0" }}>só na finalização</b> no painel do KDS.
+                        Não aparecem em nenhuma tela com filtro: <b style={{ color: "#E2E8F0" }}>{foraDasTelas.join(", ")}</b>.
+                        Se alguém prepara, marque numa tela no painel do KDS.
                       </div>
                     );
                   })()}

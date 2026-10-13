@@ -38,14 +38,15 @@ const telaEsfirra = (p: { items: Item[] }) => naTela(pedidoNaTela(p, { filtroDes
 
 console.log("\n— Hakim Centro, Produção 1 filtrada por esfirras NA TELA —");
 confere("pedido de esfirra aparece", telaEsfirra(pedido(item("Carne", "Esfirras Salgadas"), item("Chocolate", "Esfirras Doces"))), ["Carne", "Chocolate"]);
-confere("esfirra + bebida: aparece, com a bebida acompanhando (ninguém a produz em outra tela)", telaEsfirra(pedido(item("Carne", "Esfirras Salgadas"), item("Coca", "Bebidas"))), ["Carne", "Coca"]);
-confere("pedido só de bebida continua aparecendo (senão não apareceria em tela nenhuma)", telaEsfirra(pedido(item("Coca", "Bebidas"))), ["Coca"]);
+// Desde 13/10/2026 (Douglas): categoria sem tela não aparece em lugar nenhum — a tela filtrada mostra só o filtro dela.
+confere("esfirra + bebida: só a esfirra (a bebida não está no filtro)", telaEsfirra(pedido(item("Carne", "Esfirras Salgadas"), item("Coca", "Bebidas"))), ["Carne"]);
+confere("pedido só de bebida não aparece na tela de esfirra", telaEsfirra(pedido(item("Coca", "Bebidas"))), "—");
 
 // Antes: os donos saíam só do que estava salvo — nada — e o filtro não contava.
 const donosAntes = new Set<string>();
 for (const t of hakim) if (t.stage === "production") for (const c of t.categoryFilter || []) donosAntes.add(c.toLowerCase());
 const antes = pedidoNaTela(pedido(item("Carne", "Esfirras Salgadas"), item("Coca", "Bebidas")), { filtroDestaTela: esfirras, donos: donosAntes, estagio: "production", config: null });
-confere("(antes: as esfirras eram 'sem dono' e o pedido saía inteiro pela regra do sem dono)", naTela(antes), ["Carne", "Coca"]);
+confere("(antes: as esfirras eram 'sem dono' e o pedido saía inteiro pela regra do sem dono)", naTela(antes), ["Carne"]);
 
 console.log("\n— Com outra tela reivindicando bebidas, ela sai da tela da esfirra —");
 const comBar: TelaDoKds[] = [...hakim.slice(0, 2), { id: "p2", name: "Bar", stage: "production", categoryFilter: ["Bebidas"] }, hakim[3]];
@@ -68,7 +69,10 @@ const donosNik = new Set([...categoriasComDono(nik, "production", nik[0]), ...["
 const telaEsfiha = (p: { items: Item[] }) => naTela(pedidoNaTela(p, { filtroDestaTela: nik[0].categoryFilter!, donos: donosNik, estagio: "production", config: null }));
 confere("pedido só de pizza não aparece na tela da esfiha", telaEsfiha(pedido(item("Calabresa", "Pizzas Tradicionais"))), "—");
 confere("esfiha + pizza: só a esfiha", telaEsfiha(pedido(item("Carne", "Esfihas Tradicionais"), item("Calabresa", "Pizzas Tradicionais"))), ["Carne"]);
-confere("só refrigerante (ninguém pediu): aparece", telaEsfiha(pedido(item("Guaraná", "Bebidas"))), ["Guaraná"]);
+confere("só refrigerante (categoria sem tela): não aparece", telaEsfiha(pedido(item("Guaraná", "Bebidas"))), "—");
+// Item de integração sem categoria achada ("" de lib/categoria-do-item.ts): nunca some, acompanha toda tela.
+confere("item do iFood sem categoria aparece na tela filtrada", telaEsfiha(pedido(item("Promo do Dia", ""))), ["Promo do Dia"]);
+confere("item do iFood sem categoria acompanha a esfiha", telaEsfiha(pedido(item("Carne", "Esfihas Tradicionais"), item("Promo do Dia", ""), item("Guaraná", "Bebidas"))), ["Carne", "Promo do Dia"]);
 confere("os donos são os mesmos de antes (união dos filtros salvos)", [...donosNik].sort(), ["combos esfihas", "esfihas tradicionais", "pizzas tradicionais", "sabores de pizza"]);
 
 console.log("\n— Finalização: cada tela com o que é dela (NIK, 29/09/2026) —");
@@ -87,11 +91,11 @@ const naFinalizacao = (tela: TelaDoKds, p: { items: Item[] }) =>
     config: configNik,
   }));
 const misto = pedido(item("Carne", "Esfihas Tradicionais"), item("Calabresa", "Pizzas Tradicionais"), item("Coca", "Bebidas"));
-confere("pedido misto na Finalização Esfihas: a esfiha e a bebida, sem a pizza", naFinalizacao(nikFim[0], misto), ["Carne", "Coca"]);
-confere("pedido misto na Finalização Pizza: a pizza e a bebida, sem a esfiha", naFinalizacao(nikFim[1], misto), ["Calabresa", "Coca"]);
+confere("pedido misto na Finalização Esfihas: só a esfiha", naFinalizacao(nikFim[0], misto), ["Carne"]);
+confere("pedido misto na Finalização Pizza: só a pizza", naFinalizacao(nikFim[1], misto), ["Calabresa"]);
 confere("só pizza: não aparece na Finalização Esfihas", naFinalizacao(nikFim[0], pedido(item("Calabresa", "Pizzas Tradicionais"))), "—");
-confere("a bebida que é 'só na finalização' aparece aqui (e não na produção)", naFinalizacao(nikFim[1], pedido(item("Calabresa", "Pizzas Tradicionais"), item("Guaraná", "Bebidas"))), ["Calabresa", "Guaraná"]);
-confere("só bebida: aparece inteiro (senão sumiria da cozinha)", naFinalizacao(nikFim[0], pedido(item("Coca", "Bebidas"))), ["Coca"]);
+confere("bebida fora do filtro da finalização não aparece (marque Bebidas na tela para ver)", naFinalizacao(nikFim[1], pedido(item("Calabresa", "Pizzas Tradicionais"), item("Guaraná", "Bebidas"))), ["Calabresa"]);
+confere("só bebida fora do filtro: não aparece", naFinalizacao(nikFim[0], pedido(item("Coca", "Bebidas"))), "—");
 confere("finalização SEM filtro continua vendo o pedido inteiro", naTela(pedidoNaTela(misto, { filtroDestaTela: [], donos: null, estagio: "finishing", config: configNik })), ["Carne", "Calabresa", "Coca"]);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");

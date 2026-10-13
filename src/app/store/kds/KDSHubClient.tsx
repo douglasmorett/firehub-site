@@ -22,16 +22,45 @@ export default function KDSHubClient() {
   // Categorias disponíveis (carregadas da API)
   const [allCategories, setAllCategories] = useState<{ id: string; name: string; emoji: string; color: string }[]>([]);
 
-  // Acompanhamentos que a loja tirou da produção (só aparecem na finalização).
-  // É regra da LOJA, não de uma tela: a bebida não é produzida em lugar nenhum,
-  // e uma tela nova não pode trazê-la de volta. Vive em `User.kdsConfig`.
-  const [soNaFinalizacao, setSoNaFinalizacao] = useState<string[]>([]);
+
+  // Itens do iFood/integrações que o KDS não soube em que tela pôr.
+  const [semCategoria, setSemCategoria] = useState<{ id: string; nome: string; plataforma: string }[]>([]);
+  const [categoriasDaLoja, setCategoriasDaLoja] = useState<string[]>([]);
+  const [verSemCategoria, setVerSemCategoria] = useState(false);
+  const [salvandoItem, setSalvandoItem] = useState<string | null>(null);
+
+  const carregarSemCategoria = () => {
+    fetch("/api/store/kds-sem-categoria")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        setSemCategoria(Array.isArray(d.itens) ? d.itens : []);
+        setCategoriasDaLoja(Array.isArray(d.categorias) ? d.categorias : []);
+      })
+      .catch(() => {});
+  };
+
+  const escolherCategoria = async (id: string, categoria: string) => {
+    setSalvandoItem(id);
+    try {
+      const r = await fetch("/api/store/kds-sem-categoria", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, categoria }),
+      });
+      if (r.ok) setSemCategoria((lista) => lista.filter((i) => i.id !== id));
+    } finally {
+      setSalvandoItem(null);
+    }
+  };
 
   // Form state
   const [formName, setFormName] = useState("");
   const [formStage, setFormStage] = useState<"production" | "finishing">("production");
   const [formFilter, setFormFilter] = useState<"all" | "odd" | "even">("all");
   const [formCategories, setFormCategories] = useState<string[]>([]); // categorias selecionadas
+
+  useEffect(() => { carregarSemCategoria(); }, []);
 
   useEffect(() => {
     let localScreens: KDSScreenConfig[] = [];
@@ -73,21 +102,7 @@ export default function KDSHubClient() {
       .then(data => { if (Array.isArray(data)) setAllCategories(data); })
       .catch(() => {});
 
-    // Regras da loja fora das telas
-    fetch("/api/store/kds-config")
-      .then(r => r.ok ? r.json() : null)
-      .then(cfg => { if (cfg && Array.isArray(cfg.soNaFinalizacao)) setSoNaFinalizacao(cfg.soNaFinalizacao.map(String)); })
-      .catch(() => {});
   }, []);
-
-  const saveSoNaFinalizacao = (lista: string[]) => {
-    setSoNaFinalizacao(lista);
-    fetch("/api/store/kds-config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ soNaFinalizacao: lista }),
-    }).catch(() => {});
-  };
 
   const save = (s: KDSScreenConfig[]) => {
     setScreens(s);
@@ -190,84 +205,91 @@ export default function KDSHubClient() {
         </div>
       )}
 
-      {/* ── ACOMPANHAMENTOS: O QUE NÃO É DE TELA NENHUMA ──────────────────────
-          A borda é feita junto com a pizza, o sachê vai na mesma sacola. Quem
-          divide as telas por categoria acaba deixando essas de fora — e o
-          lojista, vendo a bebida aparecer em toda tela, tenta "consertar"
-          colocando Bebidas numa delas. Isso faz o contrário do que ele quer:
-          a categoria passa a ter dono e some das outras. Este aviso existe
-          para que a regra seja lida antes de alguém consertar o que funciona.
-
-          A exceção é a bebida: acompanha, mas ninguém a produz. A NIK pediu
-          (22/09/2026) que ela não aparecesse na tela de pizza nem na de
-          esfiha — só na finalização. Por isso cada acompanhamento tem aqui a
-          escolha "produção e finalização" ou "só na finalização". */}
+      {/* ── CATEGORIA SEM TELA NÃO APARECE (13/10/2026) ───────────────────────
+          Até aqui a categoria que nenhuma tela listava acompanhava o pedido em
+          toda tela — e o chopp do salão caía na cozinha (Ragnar). Douglas:
+          "categoria sem tela aparece em lugar nenhum". Este aviso diz quais
+          categorias ficaram fora de todas as telas, para o lojista decidir. */}
       {(() => {
         const comFiltro = screens.filter((t) => (t.categoryFilter || []).length > 0);
         if (comFiltro.length === 0 || allCategories.length === 0) return null;
+        const temTelaSemFiltro = screens.some((t) => (t.categoryFilter || []).length === 0);
         const emAlgumaTela = new Set<string>();
         for (const t of comFiltro) {
           for (const c of t.categoryFilter || []) emAlgumaTela.add(String(c).toLowerCase().trim());
         }
-        const acompanhamentos = allCategories
-          .filter((c) => !emAlgumaTela.has(String(c.name).toLowerCase().trim()));
-        if (acompanhamentos.length === 0) return null;
-        const norm = (s: string) => String(s || "").toLowerCase().trim();
-        const foraDaProducao = (nome: string) => soNaFinalizacao.some((c) => norm(c) === norm(nome));
-        const alternar = (nome: string) => {
-          const lista = foraDaProducao(nome)
-            ? soNaFinalizacao.filter((c) => norm(c) !== norm(nome))
-            : [...soNaFinalizacao, nome];
-          saveSoNaFinalizacao(lista);
-        };
-        const nomes = acompanhamentos.map((c) => c.name);
+        const fora = allCategories.filter((c) => !emAlgumaTela.has(String(c.name).toLowerCase().trim()));
+        if (fora.length === 0) return null;
+        const nomes = fora.map((c) => c.name);
         return (
           <div style={{
             background: "#1C1917", border: "1px solid #292524", borderLeft: "4px solid #A8A29E",
             borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1rem",
           }}>
             <div style={{ color: "#A8A29E", fontWeight: 800, fontSize: "0.85rem", marginBottom: 6 }}>
-              🥤 Acompanhamentos
+              🚫 Categorias fora das telas
             </div>
             <div style={{ color: "#cbd5e1", fontSize: "0.82rem", lineHeight: 1.5 }}>
-              <b style={{ color: "#fff" }}>{nomes.join(", ")}</b> não {nomes.length === 1 ? "está" : "estão"} em nenhuma tela — e não some{nomes.length === 1 ? "" : "m"} por isso.
-              Categoria sem tela própria acompanha o pedido em <b>toda tela onde ele aparece</b>, na produção e na finalização.
-              É o certo para borda e sachê: são feitos junto com o pedido, não separados.
-              <br />
-              <span style={{ color: "#94a3b8" }}>
-                O que ninguém produz (a bebida, por exemplo) pode ficar <b>só na finalização</b>: some das telas de produção e continua na montagem da sacola.
-                Se você incluir uma delas numa tela, ela passa a ser produzida <b>só ali</b> — e deixa de acompanhar o resto do pedido.
-              </span>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginTop: "0.75rem" }}>
-              {acompanhamentos.map((c) => {
-                const fora = foraDaProducao(c.name);
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => alternar(c.name)}
-                    title={fora ? "Clique para voltar a mostrar na produção" : "Clique para tirar das telas de produção"}
-                    style={{
-                      display: "inline-flex", alignItems: "center", gap: "6px",
-                      padding: "6px 12px", borderRadius: "999px", cursor: "pointer", fontFamily: "inherit",
-                      fontSize: "0.78rem", fontWeight: 700,
-                      border: `1px solid ${fora ? "#64748B" : "#292524"}`,
-                      background: fora ? "rgba(139,92,246,0.18)" : "#12122a",
-                      color: fora ? "#CBD5E1" : "#cbd5e1",
-                    }}
-                  >
-                    <span>{c.emoji} {c.name}</span>
-                    <span style={{ color: fora ? "#94A3B8" : "#64748b", fontWeight: 600 }}>
-                      {fora ? "só na finalização" : "produção e finalização"}
-                    </span>
-                  </button>
-                );
-              })}
+              <b style={{ color: "#fff" }}>{nomes.join(", ")}</b> não {nomes.length === 1 ? "está" : "estão"} em nenhuma tela com filtro, então
+              {" "}<b>não {nomes.length === 1 ? "aparece" : "aparecem"} nessas telas</b>
+              {temTelaSemFiltro ? " (só nas telas sem filtro, que mostram tudo)" : ""}.
+              {" "}Se alguém prepara {nomes.length === 1 ? "ela" : "elas"}, marque numa tela — por exemplo, Cerveja e Drinks numa tela &quot;Bar&quot;.
             </div>
           </div>
         );
       })()}
+
+      {/* ── ITENS DAS INTEGRAÇÕES SEM CATEGORIA ───────────────────────────────
+          O item do iFood/99/Wabiz chega com o nome da plataforma. O sistema acha
+          a categoria pelo nome igual ao do cardápio, pelo tamanho da pizza e
+          pelas palavras; o que sobrar aparece em TODA tela filtrada (nunca
+          some da cozinha) até o lojista escolher a categoria aqui, uma vez. */}
+      {semCategoria.length > 0 && (
+        <div style={{
+          background: "#1C1917", border: "1px solid #7C2D12", borderLeft: "4px solid #F97316",
+          borderRadius: "12px", padding: "1rem 1.25rem", marginBottom: "1rem",
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <div style={{ color: "#FDBA74", fontWeight: 800, fontSize: "0.9rem" }}>
+              ⚠️ {semCategoria.length} {semCategoria.length === 1 ? "item" : "itens"} do iFood/integrações sem categoria
+            </div>
+            <button
+              type="button"
+              onClick={() => setVerSemCategoria((v) => !v)}
+              style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #F97316", background: "transparent", color: "#FDBA74", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+            >
+              {verSemCategoria ? "Fechar" : "Escolher categorias"}
+            </button>
+          </div>
+          <div style={{ color: "#cbd5e1", fontSize: "0.82rem", lineHeight: 1.5, marginTop: 6 }}>
+            Esses itens aparecem em <b>todas</b> as telas para não sumirem da cozinha. Escolha a categoria de cada um uma vez e eles passam a ir só para a tela certa.
+            <br />
+            <span style={{ color: "#94a3b8" }}>
+              Dica: o KDS separa sozinho quando o nome no iFood é igual ao do seu cardápio no FireHub. Mantendo os dois cardápios com os mesmos nomes, quase nada cai aqui.
+            </span>
+          </div>
+          {verSemCategoria && (
+            <div style={{ marginTop: "0.75rem", display: "grid", gap: 6 }}>
+              {semCategoria.map((it) => (
+                <div key={it.id} style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", background: "#0f0f1a", borderRadius: 8, padding: "8px 10px" }}>
+                  <span style={{ flex: "1 1 240px", color: "#fff", fontSize: "0.85rem" }}>
+                    {it.nome} <span style={{ color: "#64748b", fontSize: "0.72rem" }}>({it.plataforma})</span>
+                  </span>
+                  <select
+                    defaultValue=""
+                    disabled={salvandoItem === it.id}
+                    onChange={(e) => e.target.value && escolherCategoria(it.id, e.target.value)}
+                    style={{ padding: "6px 8px", borderRadius: 6, background: "#1C1917", color: "#e2e8f0", border: "1px solid #44403C", fontFamily: "inherit" }}
+                  >
+                    <option value="">Escolher categoria…</option>
+                    {categoriasDaLoja.map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Screen cards */}
       {screens.length > 0 && (

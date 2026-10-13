@@ -421,20 +421,28 @@ export function pedidoNaTela<I extends ItemParaTela, P extends { items: I[] }>(
   const ativos = (opts.filtroDestaTela || []).map(texto).filter(Boolean);
   if (ativos.length === 0) return pedido;
   const categoriaDoItem = (item: I) => texto(item?.menuProduct?.category || item?.category || "");
-  const semDono = (cat: string) => !cat || (!!opts.donos && !opts.donos.has(cat));
 
-  const cats = pedido.items.map(categoriaDoItem);
-  const temItemDesteFiltro = cats.some((c) => c && ativos.includes(c));
-  const pedidoTodoSemDono = cats.every(semDono);
-  if (!temItemDesteFiltro && !pedidoTodoSemDono) return null;
-  if (pedidoTodoSemDono) return pedido;
-  const naFinalizacao = texto(opts.estagio) === "finishing";
-
+  // ── A TELA FILTRADA MOSTRA SÓ O FILTRO DELA (13/10/2026) ────────────────
+  //
+  // Até aqui, categoria que nenhuma tela listava ("sem dono") acompanhava o
+  // pedido em toda tela, e o pedido feito SÓ dela aparecia inteiro em todas —
+  // para nada sumir da cozinha. Na prática era o contrário do que a loja quer:
+  // na Ragnar Burger o chopp do salão (categoria "Cerveja", sem tela) e todo
+  // pedido do iFood apareciam nas telas da pizza e do burger. Douglas:
+  // "categoria sem tela aparece em lugar nenhum". A tela filtrada mostra o que
+  // está no filtro dela e mais nada; a tela SEM filtro continua vendo tudo
+  // (linha acima). `donos` e `config` ficam na assinatura: quem chama ainda os
+  // passa, e a tela usa os donos para o aviso de categoria sem tela.
+  //
+  // A ÚNICA exceção é o item SEM categoria nenhuma: o item de integração
+  // (iFood, 99, Wabiz…) cuja categoria nem o nome, nem o tamanho da pizza,
+  // nem as palavras acharam (lib/categoria-do-item.ts devolve ""). Esse não
+  // pode sumir da cozinha por ser de plataforma — "isso aí tem que matar de
+  // vez" —, então acompanha toda tela filtrada até o lojista escolher a
+  // categoria dele em KDS › Itens das integrações sem categoria.
   const items = pedido.items.filter((item) => {
     const cat = categoriaDoItem(item);
-    if (ativos.includes(cat)) return true;
-    if (!semDono(cat)) return false;
-    return naFinalizacao || !categoriaSoNaFinalizacao(opts.config, cat, ativos);
+    return cat === "" || ativos.includes(cat);
   });
   return items.length > 0 ? { ...pedido, items } : null;
 }
