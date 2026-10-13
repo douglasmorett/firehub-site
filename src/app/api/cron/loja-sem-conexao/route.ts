@@ -49,6 +49,35 @@ declare global {
 
 type MerchantDaLoja = { merchantId: string; nome: string | null; integrada: boolean };
 
+/**
+ * Modo Contingência: o supervisor que o Assistente liga no computador da loja
+ * fala com a nuvem a cada 30 s (api/contingencia/relato → ultimoContato). Se
+ * ele fala, a internet da loja está de pé — mesmo com o painel e a fila
+ * trabalhando no computador (o "Testar agora", ou a volta depois de uma
+ * oscilação do nosso servidor). Conta como sinal do Assistente.
+ */
+async function contatoDosSupervisores(lojaIds: string[]): Promise<Map<string, number>> {
+  const mapa = new Map<string, number>();
+  if (!lojaIds.length) return mapa;
+  try {
+    const linhas = await prisma.$queryRawUnsafe<{ lojaId: string; ultimoContato: Date }[]>(
+      `SELECT "lojaId", "ultimoContato" FROM "Contingencia"
+        WHERE "lojaId" = ANY($1::text[]) AND "ultimoContato" > now() - interval '1 hour'`,
+      lojaIds,
+    );
+    for (const l of linhas) mapa.set(l.lojaId, new Date(l.ultimoContato).getTime());
+  } catch {
+    /* sem a tabela da contingência: só os sinais de sempre */
+  }
+  return mapa;
+}
+
+function maisRecente(a: number | null, b: number | null): number | null {
+  if (a === null) return b;
+  if (b === null) return a;
+  return Math.max(a, b);
+}
+
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
@@ -104,6 +133,7 @@ export async function GET(req: NextRequest) {
       : [];
 
     const bootEm = servidorSubiuEm(inicio);
+    const supervisores = await contatoDosSupervisores(lojas.map((l) => l.id));
 
     for (const loja of lojas) {
       resumo.lojas++;
@@ -125,7 +155,7 @@ export async function GET(req: NextRequest) {
           sinais: {
             agora, bootEm,
             assistenteNoBanco: loja.printQueuePolledAt ? loja.printQueuePolledAt.getTime() : null,
-            assistenteNaMemoria: assistenteVistoEm(loja.id),
+            assistenteNaMemoria: maisRecente(assistenteVistoEm(loja.id), supervisores.get(loja.id) ?? null),
             painelNaMemoria: painelVistoEm(loja.id),
           },
           loja: { turno: turno?.chave ?? null, emPausa, storeOpen: loja.storeOpen, protecaoLigada: protecaoLigada(config) },

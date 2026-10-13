@@ -315,7 +315,11 @@ async function principal(): Promise<void> {
           break;
       }
 
-      if (ok && Date.now() - ultimoRelato > 30_000) {
+      // O relato também prova à nuvem que a internet da loja está de pé — por
+      // isso segue durante o "Testar agora" (a queda é só de mentira): sem ele,
+      // a proteção "loja sem conexão" pausaria o iFood por causa do teste.
+      const testando = Date.now() < simularQuedaAte;
+      if ((ok || testando) && Date.now() - ultimoRelato > 30_000) {
         ultimoRelato = Date.now();
         await relatar();
       }
