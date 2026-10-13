@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { configDoCadastro } from "@/lib/disparo-oficial/meta";
-import { lerPublico, lojaLiberada, minimoDeDisparos, precoPorDisparo, previaDoTexto } from "@/lib/disparo-oficial/regras";
+import { TEXTO_SUGERIDO_DO_MARCO, lerAutomacao, lerPublico, lojaLiberada, minimoDeDisparos, precoPorDisparo, previaDoTexto } from "@/lib/disparo-oficial/regras";
 import {
   apagarModeloDaLoja,
   atualizarModelosPendentes,
@@ -15,6 +15,8 @@ import {
   criarModeloDaLoja,
   criarRecarga,
   desconectarLoja,
+  estimativaDaAutomacao,
+  salvarAutomacao,
   falhasDaCampanha,
   garantirEstruturaDoDisparoOficial,
   publicoDaLoja,
@@ -58,6 +60,9 @@ export async function GET(req: NextRequest) {
     const clientes = await publicoDaLoja(s.lojaId, lerPublico({ tipo: sp.get("publico"), dias: sp.get("dias"), telefone: sp.get("telefone") }));
     return NextResponse.json({ quantidade: clientes.length });
   }
+  if (sp.get("automacao")) {
+    return NextResponse.json({ estimativa: await estimativaDaAutomacao(s.lojaId).catch(() => null) });
+  }
   if (sp.get("falhas")) {
     return NextResponse.json({ falhas: await falhasDaCampanha(s.lojaId, String(sp.get("falhas"))) });
   }
@@ -92,6 +97,8 @@ export async function GET(req: NextRequest) {
           conectadoEm: conexao.conectadoEm,
         }
       : null,
+    automacao: conexao ? lerAutomacao(conexao.automacao) : null,
+    textosSugeridos: TEXTO_SUGERIDO_DO_MARCO,
     saldo,
     modelos: modelos.map((m: any) => ({ id: m.id, titulo: m.titulo, texto: m.texto, previa: previaDoTexto(m.texto), botaoPedir: m.botaoPedir, status: m.status, motivo: m.motivo, createdAt: m.createdAt })),
     campanhas,
@@ -136,6 +143,10 @@ export async function POST(req: NextRequest) {
         }
         const c = await criarCampanha(s.lojaId, { modeloId: String(body.modeloId || ""), publico: lerPublico(body.publico), nome: body.nome ? String(body.nome) : undefined, criadoPor: s.email });
         return NextResponse.json({ ok: true, campanha: { id: c.id, total: c.total } });
+      }
+      case "automacao": {
+        const a = await salvarAutomacao(s.lojaId, body.marcos || {});
+        return NextResponse.json({ ok: true, automacao: a });
       }
       case "cancelar-campanha": {
         const n = await cancelarCampanha(s.lojaId, String(body.campanhaId || ""));

@@ -30,6 +30,7 @@ const INSTRUCOES = [
    )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "WhatsappOficial_franchiseeId_key" ON "WhatsappOficial"("franchiseeId")`,
   `ALTER TABLE "WhatsappOficial" ADD COLUMN IF NOT EXISTS "tokenRenovadoEm" TIMESTAMP(3)`,
+  `ALTER TABLE "WhatsappOficial" ADD COLUMN IF NOT EXISTS "automacao" JSONB`,
 
   `CREATE TABLE IF NOT EXISTS "DisparoRecarga" (
      "id" TEXT NOT NULL,

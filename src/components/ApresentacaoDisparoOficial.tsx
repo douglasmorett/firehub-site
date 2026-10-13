@@ -22,6 +22,31 @@ const reais = (v: number) => (v || 0).toLocaleString("pt-BR", { style: "currency
 
 type Estado = { liberada: boolean; preco: number; conectado: boolean } | null;
 
+/**
+ * No lugar dos interruptores antigos da recuperação de 7, 15 e 30 dias (que
+ * mandavam pelo QR Code): o que mudou e onde configurar agora.
+ */
+export function ChamadaDaRecuperacaoOficial() {
+  return (
+    <div style={{ ...estilos.cartao, background: "linear-gradient(135deg,#F0FDFA,#ECFEFF)", borderColor: "#99F6E4" }}>
+      <div style={{ fontWeight: 900, color: "#0F766E", fontSize: "1.02rem", marginBottom: 6 }}>🔁 A recuperação automática agora é pela API oficial</div>
+      <p style={{ ...estilos.p, margin: "0 0 10px" }}>
+        A mensagem para quem sumiu há 7, 15 e 30 dias continua automática — só que agora sai pelo canal oficial do WhatsApp, sem risco para o número
+        da loja, com o botão “Quero pedir” e relatório de quem recebeu, leu e respondeu. Ela saía pelo QR Code e foi pausada para proteger o seu
+        número.
+      </p>
+      <ul style={{ margin: "0 0 12px", paddingLeft: 18, color: "#334155", fontSize: "0.84rem", lineHeight: 1.7 }}>
+        <li>Todo dia, a partir das 10h, quem completou o marco recebe a mensagem aprovada daquele marco.</li>
+        <li>Cada cliente recebe cada marco uma vez só; quem voltou a pedir ou tocou em “Parar” sai sozinho.</li>
+        <li>Usa o crédito dos disparos: só desconta a mensagem entregue.</li>
+      </ul>
+      <a href="/store/disparo-oficial#recuperacao" style={estilos.cta}>
+        Configurar a recuperação automática →
+      </a>
+    </div>
+  );
+}
+
 export default function ApresentacaoDisparoOficial({ compacta = false, aoComecar }: { compacta?: boolean; aoComecar?: () => void }) {
   const [estado, setEstado] = useState<Estado>(null);
   const [aberta, setAberta] = useState<number | null>(0);
@@ -145,6 +170,8 @@ export default function ApresentacaoDisparoOficial({ compacta = false, aoComecar
             { i: "💸", t: "Só paga o que chega", d: "Crédito pré-pago por Pix. Mensagem que não foi entregue volta para o seu saldo." },
             { i: "📊", t: "Relatório de verdade", d: "Quantos receberam, quantos leram e quantos responderam em cada campanha." },
             { i: "🙋", t: "Cliente feliz", d: "Quem não quer mais recebe o botão “Parar promoções” e sai da lista sozinho." },
+            { i: "🔁", t: "Recuperação automática", d: "Quem sumiu há 7, 15 ou 30 dias recebe a sua promoção sozinho, todo dia — liga uma vez e esquece." },
+            { i: "🧾", t: "Sem mensalidade a mais", d: "Crédito pré-pago: usou, pagou. Sem plano, sem fidelidade, sem taxa escondida." },
           ].map((b) => (
             <div key={b.t} style={estilos.beneficio}>
               <div style={{ fontSize: "1.6rem" }}>{b.i}</div>

@@ -449,3 +449,76 @@ export function lojaLiberada(franchiseeId: string, lista: string | undefined = p
   if (l.toLowerCase() === "todas") return true;
   return l.split(/[\s,;]+/).filter(Boolean).includes(franchiseeId);
 }
+
+// ── RECUPERAÇÃO AUTOMÁTICA (REMARKETING 7, 15 E 30 DIAS) ────────────────────
+//
+// Refeita pela API oficial em 13/10/2026 (a antiga, api/cron/recuperacao-
+// clientes, saía pelo QR e foi desligada). Todo dia, uma vez, a partir das
+// 10h no fuso da loja: quem fez o ÚLTIMO pedido exatamente há 7, 15 ou 30 dias
+// (pelo calendário da loja) recebe a mensagem aprovada daquele marco. Um dia
+// do calendário por rodada = cada cliente cai em cada marco uma vez só.
+
+export const MARCOS_DA_RECUPERACAO = [7, 15, 30] as const;
+export type Marco = (typeof MARCOS_DA_RECUPERACAO)[number];
+export const HORA_DA_RECUPERACAO = { de: 10, ate: 20 };
+/** Quem recebeu uma automática nestes dias não recebe outra (7 e 15 não colam). */
+export const RESPIRO_ENTRE_AUTOMATICAS_DIAS = 6;
+
+export type Automacao = {
+  marcos: Record<string, { ligado: boolean; modeloId: string | null }>;
+  ultimoDia: string | null;
+  ultimoResultado: Record<string, { enviados: number; foraPorSaldo: number; motivo?: string }> | null;
+};
+
+export function lerAutomacao(bruto: unknown): Automacao {
+  const b = (bruto && typeof bruto === "object" ? bruto : {}) as any;
+  const marcos: Automacao["marcos"] = {};
+  for (const m of MARCOS_DA_RECUPERACAO) {
+    const x = b?.marcos?.[String(m)] || {};
+    marcos[String(m)] = { ligado: x.ligado === true, modeloId: typeof x.modeloId === "string" && x.modeloId ? x.modeloId : null };
+  }
+  return {
+    marcos,
+    ultimoDia: typeof b.ultimoDia === "string" ? b.ultimoDia : null,
+    ultimoResultado: b.ultimoResultado && typeof b.ultimoResultado === "object" ? b.ultimoResultado : null,
+  };
+}
+
+/** "2026-10-13" menos N dias, no calendário (sem fuso: é só data). */
+export function diasAntes(dia: string, n: number): string {
+  const [a, m, d] = dia.split("-").map(Number);
+  const t = new Date(Date.UTC(a, m - 1, d) - n * 24 * 60 * 60 * 1000);
+  return t.toISOString().slice(0, 10);
+}
+
+/**
+ * Quem faz o marco hoje: o ÚLTIMO pedido do telefone caiu exatamente em
+ * `hoje − dias` (data da loja). Quem pediu depois não está aqui (o último
+ * pedido é mais novo); quem pediu para parar e quem recebeu uma automática há
+ * pouco também não.
+ */
+export function sumidosDoMarco(
+  pedidos: { customerPhone: string | null; customerName: string | null; createdAt: Date }[],
+  dias: number,
+  hoje: string,
+  dataLocal: (d: Date) => string,
+  fora: Set<string>
+): ClienteDaLoja[] {
+  const alvo = diasAntes(hoje, dias);
+  const ultimo = new Map<string, ClienteDaLoja>();
+  for (const p of pedidos) {
+    const tel = telefoneDaMeta(p.customerPhone);
+    if (!tel) continue;
+    const quando = new Date(p.createdAt);
+    const atual = ultimo.get(tel);
+    if (!atual || quando > atual.ultimoPedido) ultimo.set(tel, { telefone: tel, nome: p.customerName || atual?.nome || null, ultimoPedido: quando });
+  }
+  return [...ultimo.values()].filter((c) => !fora.has(c.telefone) && dataLocal(c.ultimoPedido) === alvo);
+}
+
+/** Textos prontos por marco — a loja ajusta e manda para aprovação. */
+export const TEXTO_SUGERIDO_DO_MARCO: Record<string, { titulo: string; texto: string }> = {
+  "7": { titulo: "Volta em 7 dias", texto: "Oi {nome}! Faz uma semaninha que você não pede com a gente. Que tal matar a saudade hoje? Toque em Quero pedir que a gente te atende rapidinho! 😋" },
+  "15": { titulo: "Volta em 15 dias", texto: "Oi {nome}, sentimos sua falta! 🧡 Preparamos tudo com carinho para o seu próximo pedido. Toque em Quero pedir e veja o cardápio de hoje." },
+  "30": { titulo: "Volta em 30 dias", texto: "Oi {nome}! Já faz um mês do seu último pedido e queremos você de volta. Toque em Quero pedir que tem coisa boa esperando por você! 🎁" },
+};

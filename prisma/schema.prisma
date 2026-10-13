@@ -2550,6 +2550,8 @@ model WhatsappOficial {
   /// O token do cadastro incorporado vence em 60 dias (a configuração da Meta
   /// não oferece "nunca"); o cron renova a cada 30 (servidor.renovarTokens).
   tokenRenovadoEm DateTime?
+  /// Recuperação automática (7, 15 e 30 dias): {marcos, ultimoDia, ultimoResultado} — regras.lerAutomacao.
+  automacao     Json?
   conectadoEm   DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 }

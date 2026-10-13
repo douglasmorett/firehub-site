@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cron-auth";
-import { atualizarModelosPendentes, conferirRecargasPendentes, processarFila, renovarTokens } from "@/lib/disparo-oficial/servidor";
+import { atualizarModelosPendentes, conferirRecargasPendentes, processarFila, renovarTokens, rodarRecuperacao } from "@/lib/disparo-oficial/servidor";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -18,11 +18,17 @@ export async function GET(req: NextRequest) {
   if (rodando) return NextResponse.json({ ok: true, pulou: "rodada anterior ainda enviando" });
   rodando = true;
   try {
+    // A recuperação automática (7, 15 e 30 dias) monta as campanhas do dia
+    // antes da fila, para elas já saírem nesta rodada.
+    const automaticas = await rodarRecuperacao().catch((e) => {
+      console.error(`[Disparo oficial] Recuperação automática: ${e?.message}`);
+      return 0;
+    });
     const fila = await processarFila();
     const pagas = await conferirRecargasPendentes().catch(() => 0);
     await atualizarModelosPendentes().catch(() => {});
     const tokensRenovados = await renovarTokens().catch(() => 0);
-    return NextResponse.json({ ok: true, ...fila, recargasPagas: pagas, tokensRenovados });
+    return NextResponse.json({ ok: true, ...fila, automaticas, recargasPagas: pagas, tokensRenovados });
   } catch (err: any) {
     console.error(`[Disparo oficial] Cron falhou: ${err?.message}`);
     return NextResponse.json({ ok: false, error: err?.message }, { status: 500 });

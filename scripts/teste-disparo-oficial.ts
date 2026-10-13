@@ -25,6 +25,9 @@ import {
   saldoDeDisparos,
   telefoneDaMeta,
   valorDaRecarga,
+  diasAntes,
+  lerAutomacao,
+  sumidosDoMarco,
 } from "../src/lib/disparo-oficial/regras";
 
 let falhas = 0;
@@ -178,6 +181,33 @@ confere("assinatura certa", assinaturaConfere(cru, "sha256=" + hmac("seg", cru),
 confere("assinatura errada", assinaturaConfere(cru, "sha256=" + hmac("outro", cru), "seg", hmac), false);
 confere("sem segredo recusa", assinaturaConfere(cru, "sha256=x", "", hmac), false);
 confere("sem cabeçalho recusa", assinaturaConfere(cru, null, "seg", hmac), false);
+
+
+// ── Recuperação automática (7, 15 e 30 dias) ────────────────────────────────
+confere("diasAntes vira o mês", diasAntes("2026-10-05", 7), "2026-09-28");
+confere("diasAntes vira o ano", diasAntes("2026-01-10", 15), "2025-12-26");
+const dataSP = (d: Date) => new Date(d.getTime() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10); // fuso -03
+const em = (dia: string, hora = "15:00") => new Date(`${dia}T${hora}:00-03:00`);
+const ped = [
+  { customerPhone: "22911110001", customerName: "Sete", createdAt: em("2026-10-06") },
+  { customerPhone: "22911110002", customerName: "Voltou", createdAt: em("2026-10-06") },
+  { customerPhone: "22911110002", customerName: "Voltou", createdAt: em("2026-10-11") },
+  { customerPhone: "22911110003", customerName: "Oito", createdAt: em("2026-10-05") },
+  { customerPhone: "22911110004", customerName: "Parou", createdAt: em("2026-10-06") },
+  { customerPhone: "22911110005", customerName: "Meia-noite", createdAt: em("2026-10-06", "23:50") },
+  { customerPhone: "22911110006", customerName: "Quinze", createdAt: em("2026-09-28") },
+];
+const foraAuto = new Set(["5522911110004"]);
+confere(
+  "7 dias: só quem tem o ÚLTIMO pedido em 06/10 (sem quem voltou, sem descadastro)",
+  sumidosDoMarco(ped, 7, "2026-10-13", dataSP, foraAuto).map((c) => c.nome).sort(),
+  ["Meia-noite", "Sete"]
+);
+confere("15 dias", sumidosDoMarco(ped, 15, "2026-10-13", dataSP, foraAuto).map((c) => c.nome), ["Quinze"]);
+confere("ninguém em 30", sumidosDoMarco(ped, 30, "2026-10-13", dataSP, foraAuto).length, 0);
+confere("amanhã o de 8 dias não entra no 7", sumidosDoMarco(ped, 7, "2026-10-14", dataSP, foraAuto).map((c) => c.nome), []);
+confere("lerAutomacao vazio: tudo desligado", lerAutomacao(null).marcos["7"], { ligado: false, modeloId: null });
+confere("lerAutomacao lê o marco", lerAutomacao({ marcos: { "15": { ligado: true, modeloId: "m1" } }, ultimoDia: "2026-10-13" }).marcos["15"], { ligado: true, modeloId: "m1" });
 
 // ── Liberação ────────────────────────────────────────────────────────────────
 confere("lista vazia: ninguém", lojaLiberada("a", ""), false);

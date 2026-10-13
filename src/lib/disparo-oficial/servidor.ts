@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { cifrar, decifrar } from "@/lib/cofre";
 import { getAsaasKey } from "@/lib/asaas";
 import { levarHospedadoAoGatewayNovo } from "@/lib/gateway-da-loja";
+import { FUSO_PADRAO, dataDaLoja, horaDaLoja } from "@/lib/fuso";
 import { garantirEstruturaDoDisparoOficial } from "./estrutura-no-banco";
 import * as meta from "./meta";
 import {
@@ -31,6 +32,13 @@ import {
   conferirTexto,
   corpoParaMeta,
   statusDoModelo,
+  HORA_DA_RECUPERACAO,
+  MARCOS_DA_RECUPERACAO,
+  RESPIRO_ENTRE_AUTOMATICAS_DIAS,
+  lerAutomacao,
+  lojaLiberada,
+  sumidosDoMarco,
+  type ClienteDaLoja,
 } from "./regras";
 
 const db = prisma as any;
@@ -428,24 +436,49 @@ export async function criarCampanha(franchiseeId: string, args: { modeloId: stri
     throw new Error(args.publico.tipo === "TESTE" ? "Digite um celular válido com DDD para o teste." : "Nenhum cliente neste público.");
   }
 
+  return gravarCampanha({ franchiseeId, modeloId: modelo.id, nome: String(args.nome || modelo.titulo), publico: args.publico, clientes, criadoPor: args.criadoPor || null, cortarNoSaldo: false });
+}
+
+/**
+ * Grava a campanha e os envios, reservando o crédito sob a trava da loja.
+ * `cortarNoSaldo`: a automática manda para quantos o saldo cobrir (e conta os
+ * que ficaram de fora); a manual recusa inteira, para o lojista decidir.
+ */
+async function gravarCampanha(args: {
+  franchiseeId: string;
+  modeloId: string;
+  nome: string;
+  publico: unknown;
+  clientes: ClienteDaLoja[];
+  criadoPor: string | null;
+  cortarNoSaldo: boolean;
+}): Promise<{ id: string; total: number; foraPorSaldo: number }> {
+  const { franchiseeId } = args;
   return prisma.$transaction(
     async (tx: any) => {
-      // Uma campanha por vez por loja: duas abas criando ao mesmo tempo não
-      // podem gastar o mesmo saldo duas vezes.
+      // Uma campanha por vez por loja: duas abas (ou a automática e a loja)
+      // criando ao mesmo tempo não podem gastar o mesmo saldo duas vezes.
       await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, `disparo:${franchiseeId}`);
       const { saldo } = await saldoDaLoja(franchiseeId, tx);
+      let clientes = args.clientes;
+      let foraPorSaldo = 0;
       if (saldo < clientes.length) {
-        throw new Error(`Saldo insuficiente: este público tem ${clientes.length.toLocaleString("pt-BR")} clientes e você tem ${saldo.toLocaleString("pt-BR")} disparos. Recarregue ou escolha um público menor.`);
+        if (!args.cortarNoSaldo) {
+          throw new Error(`Saldo insuficiente: este público tem ${clientes.length.toLocaleString("pt-BR")} clientes e você tem ${saldo.toLocaleString("pt-BR")} disparos. Recarregue ou escolha um público menor.`);
+        }
+        foraPorSaldo = clientes.length - saldo;
+        clientes = clientes.slice(0, saldo);
       }
+      if (clientes.length === 0) return { id: "", total: 0, foraPorSaldo };
       const campanha = await tx.disparoCampanha.create({
         data: {
           franchiseeId,
-          modeloId: modelo.id,
-          nome: String(args.nome || modelo.titulo).slice(0, 80),
+          modeloId: args.modeloId,
+          nome: args.nome.slice(0, 80),
           publico: args.publico as any,
           total: clientes.length,
           status: "ENVIANDO",
-          criadoPor: args.criadoPor || null,
+          criadoPor: args.criadoPor,
         },
       });
       for (let i = 0; i < clientes.length; i += 1000) {
@@ -454,7 +487,7 @@ export async function criarCampanha(franchiseeId: string, args: { modeloId: stri
           skipDuplicates: true,
         });
       }
-      return campanha;
+      return { id: campanha.id, total: clientes.length, foraPorSaldo };
     },
     { timeout: 60000, maxWait: 15000 }
   );
@@ -720,3 +753,121 @@ export async function processarWebhook(body: unknown) {
 }
 
 export { telefoneDaMeta };
+
+
+// ── RECUPERAÇÃO AUTOMÁTICA (7, 15 E 30 DIAS) ────────────────────────────────
+
+export async function salvarAutomacao(franchiseeId: string, marcos: Record<string, { ligado?: boolean; modeloId?: string | null }>) {
+  const conexao = await conexaoDaLoja(franchiseeId);
+  if (!conexao) throw new Error("Conecte o WhatsApp da loja à API oficial primeiro.");
+  const atual = lerAutomacao(conexao.automacao);
+  const ids = Object.values(marcos || {}).map((m) => m?.modeloId).filter(Boolean) as string[];
+  const validos = new Set<string>(
+    ids.length ? (await db.disparoModelo.findMany({ where: { franchiseeId, id: { in: ids } }, select: { id: true } })).map((m: any) => m.id) : []
+  );
+  for (const m of MARCOS_DA_RECUPERACAO) {
+    const novo = marcos?.[String(m)];
+    if (!novo) continue;
+    const modeloId = novo.modeloId && validos.has(novo.modeloId) ? novo.modeloId : null;
+    if (novo.ligado && !modeloId) throw new Error(`Escolha a mensagem do marco de ${m} dias antes de ligar.`);
+    atual.marcos[String(m)] = { ligado: !!novo.ligado, modeloId };
+  }
+  await db.whatsappOficial.update({ where: { franchiseeId }, data: { automacao: atual as any } });
+  return atual;
+}
+
+/** Pedidos dos últimos N+2 dias: o bastante para achar o último pedido de quem faz o marco hoje. */
+async function pedidosRecentes(franchiseeId: string, dias: number) {
+  return prisma.customerOrder.findMany({
+    where: { franchiseeId, customerPhone: { not: "" }, createdAt: { gte: new Date(Date.now() - (dias + 2) * 24 * 60 * 60 * 1000) } },
+    select: { customerPhone: true, customerName: true, createdAt: true },
+  });
+}
+
+/** Quem não entra hoje: pediu para parar ou recebeu uma automática há pouco. */
+async function foraDaAutomacao(franchiseeId: string): Promise<Set<string>> {
+  const desde = new Date(Date.now() - RESPIRO_ENTRE_AUTOMATICAS_DIAS * 24 * 60 * 60 * 1000);
+  const [descadastros, automaticas] = await Promise.all([
+    db.disparoDescadastro.findMany({ where: { franchiseeId }, select: { telefone: true } }),
+    db.disparoCampanha.findMany({ where: { franchiseeId, createdAt: { gte: desde }, publico: { path: ["tipo"], equals: "AUTOMATICA" } }, select: { id: true } }),
+  ]);
+  const fora = new Set<string>(descadastros.map((d: any) => d.telefone));
+  if (automaticas.length) {
+    const envios = await db.disparoEnvio.findMany({ where: { campanhaId: { in: automaticas.map((c: any) => c.id) } }, select: { telefone: true } });
+    for (const e of envios) fora.add(e.telefone);
+  }
+  return fora;
+}
+
+/** Quantos clientes fazem cada marco hoje — a tela mostra ao lado do interruptor. */
+export async function estimativaDaAutomacao(franchiseeId: string): Promise<Record<string, number>> {
+  const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { storeTimezone: true } });
+  const fuso = loja?.storeTimezone || FUSO_PADRAO;
+  const hoje = dataDaLoja(fuso);
+  const [pedidos, fora] = await Promise.all([pedidosRecentes(franchiseeId, 30), foraDaAutomacao(franchiseeId)]);
+  const r: Record<string, number> = {};
+  for (const m of MARCOS_DA_RECUPERACAO) r[String(m)] = sumidosDoMarco(pedidos as any, m, hoje, (d) => dataDaLoja(fuso, d), fora).length;
+  return r;
+}
+
+/**
+ * Uma vez por dia por loja, a partir das 10h dela: monta as campanhas
+ * automáticas dos marcos ligados. Quem manda é a fila de sempre
+ * (processarFila), na mesma rodada do cron.
+ */
+export async function rodarRecuperacao(): Promise<number> {
+  const conexoes = await db.whatsappOficial.findMany({ where: { status: "CONECTADO" } });
+  let campanhas = 0;
+  for (const c of conexoes) {
+    if (!lojaLiberada(c.franchiseeId)) continue;
+    const auto = lerAutomacao(c.automacao);
+    const ligados = MARCOS_DA_RECUPERACAO.filter((m) => auto.marcos[String(m)]?.ligado && auto.marcos[String(m)]?.modeloId);
+    if (ligados.length === 0) continue;
+    const loja = await prisma.user.findUnique({ where: { id: c.franchiseeId }, select: { storeTimezone: true } });
+    const fuso = loja?.storeTimezone || FUSO_PADRAO;
+    const hoje = dataDaLoja(fuso);
+    const hora = horaDaLoja(fuso);
+    if (auto.ultimoDia === hoje || hora < HORA_DA_RECUPERACAO.de || hora >= HORA_DA_RECUPERACAO.ate) continue;
+
+    // Marca o dia ANTES de montar: dois containers no mesmo minuto não dobram
+    // (só um acha a linha com o mesmo updatedAt).
+    const marcou = await db.whatsappOficial.updateMany({
+      where: { id: c.id, updatedAt: c.updatedAt },
+      data: { automacao: { ...auto, ultimoDia: hoje } as any },
+    });
+    if (marcou.count === 0) continue;
+
+    const resultado: Record<string, { enviados: number; foraPorSaldo: number; motivo?: string }> = {};
+    const [pedidos, fora] = await Promise.all([pedidosRecentes(c.franchiseeId, 30), foraDaAutomacao(c.franchiseeId)]);
+    for (const m of ligados) {
+      const modelo = await db.disparoModelo.findFirst({ where: { id: auto.marcos[String(m)].modeloId, franchiseeId: c.franchiseeId } });
+      if (!modelo || modelo.status !== "APROVADO") {
+        resultado[String(m)] = { enviados: 0, foraPorSaldo: 0, motivo: "A mensagem deste marco não está aprovada pela Meta" };
+        continue;
+      }
+      const clientes = sumidosDoMarco(pedidos as any, m, hoje, (d) => dataDaLoja(fuso, d), fora);
+      for (const cl of clientes) fora.add(cl.telefone); // não cai em dois marcos no mesmo dia
+      if (clientes.length === 0) {
+        resultado[String(m)] = { enviados: 0, foraPorSaldo: 0 };
+        continue;
+      }
+      try {
+        const g = await gravarCampanha({
+          franchiseeId: c.franchiseeId,
+          modeloId: modelo.id,
+          nome: `Volta em ${m} dias · ${hoje.slice(8, 10)}/${hoje.slice(5, 7)}`,
+          publico: { tipo: "AUTOMATICA", marco: m },
+          clientes,
+          criadoPor: "automático",
+          cortarNoSaldo: true,
+        });
+        if (g.total) campanhas++;
+        resultado[String(m)] = { enviados: g.total, foraPorSaldo: g.foraPorSaldo, ...(g.foraPorSaldo ? { motivo: "O saldo acabou" } : {}) };
+      } catch (e: any) {
+        resultado[String(m)] = { enviados: 0, foraPorSaldo: 0, motivo: e?.message || "Falhou" };
+      }
+    }
+    await db.whatsappOficial.update({ where: { id: c.id }, data: { automacao: { ...auto, ultimoDia: hoje, ultimoResultado: resultado } as any } });
+  }
+  return campanhas;
+}

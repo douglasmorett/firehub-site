@@ -123,6 +123,7 @@ export default function DisparoOficialClient() {
   const [aceite, setAceite] = useState(false);
   const [confirmando, setConfirmando] = useState(false);
   const [falhas, setFalhas] = useState<{ campanhaId: string; lista: any[] } | null>(null);
+  const [estimativa, setEstimativa] = useState<Record<string, number> | null>(null);
 
   const carregar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCarregando(true);
@@ -159,6 +160,16 @@ export default function DisparoOficialClient() {
       setAviso({ tipo: "ok", titulo: "Pix recebido!", detalhe: `${inteiro(r.disparos)} disparos entraram no seu saldo.` });
     }
   }, [dados, pix]);
+
+  // Quantos clientes fazem cada marco hoje (recuperação automática).
+  useEffect(() => {
+    if (!dados?.liberada || !dados?.conexao) return;
+    fetch("/api/store/disparo-oficial?automacao=1", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => d?.estimativa && setEstimativa(d.estimativa))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dados?.liberada, Boolean(dados?.conexao)]);
 
   // Contagem do público ao trocar o filtro (não a cada recarga da tela).
   const temConexao = Boolean(dados?.liberada && dados?.conexao);
@@ -516,7 +527,7 @@ export default function DisparoOficialClient() {
       </div>
 
       {/* ── 3. MENSAGENS ────────────────────────────────────────────────── */}
-      <div style={{ ...cartao, marginBottom: 16, opacity: conectado ? 1 : 0.55 }}>
+      <div id="mensagens" style={{ ...cartao, marginBottom: 16, opacity: conectado ? 1 : 0.55 }}>
         <p style={titulo}>
           <MessageSquareText size={18} color="#0F766E" /> 3. Mensagens
         </p>
@@ -692,7 +703,107 @@ export default function DisparoOficialClient() {
         )}
       </div>
 
-      {/* ── 5. CAMPANHAS ────────────────────────────────────────────────── */}
+
+      {/* ── 5. RECUPERAÇÃO AUTOMÁTICA ───────────────────────────────────── */}
+      <div id="recuperacao" style={{ ...cartao, marginBottom: 16, opacity: conectado ? 1 : 0.55 }}>
+        <p style={titulo}>
+          <RefreshCw size={18} color="#0F766E" /> 5. Recuperação automática (7, 15 e 30 dias)
+        </p>
+        <p style={sub}>
+          Traz de volta quem sumiu, sem você lembrar de disparar. Ligou, esquece: todo dia o FireHub manda sozinho a promoção para quem completou 7, 15
+          ou 30 dias sem pedir.
+        </p>
+        <div style={{ background: "#F0FDFA", border: "1px solid #99F6E4", borderRadius: 14, padding: "12px 14px", marginBottom: 14 }}>
+          <div style={{ fontWeight: 800, color: "#0F766E", marginBottom: 6, fontSize: "0.9rem" }}>Como funciona</div>
+          <ol style={{ margin: 0, paddingLeft: 18, color: "#334155", fontSize: "0.84rem", lineHeight: 1.7 }}>
+            <li>
+              <strong>Uma vez por dia, a partir das 10h</strong>, o FireHub olha quem fez o <strong>último pedido</strong> há exatamente 7, 15 ou 30 dias.
+            </li>
+            <li>
+              Cada um recebe a <strong>mensagem aprovada daquele marco</strong>, com o nome dele e o botão <strong>“Quero pedir”</strong> — quem toca cai na
+              conversa e o seu robô atende.
+            </li>
+            <li>
+              <strong>Ninguém recebe duas vezes</strong> o mesmo marco. Quem pediu de novo sai da conta sozinho (o último pedido muda), e quem tocou em
+              “Parar promoções” nunca mais recebe.
+            </li>
+            <li>
+              Usa o <strong>mesmo crédito</strong> dos disparos ({reais(preco)} por mensagem entregue). Se o saldo acabar, manda até onde der e avisa aqui.
+            </li>
+            <li>Cada dia vira uma campanha (“Volta em 7 dias · 13/10”) na lista de baixo, com entregues, lidas e respostas.</li>
+          </ol>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
+          {["7", "15", "30"].map((m) => {
+            const cfg = dados.automacao?.marcos?.[m] || { ligado: false, modeloId: null };
+            const res = dados.automacao?.ultimoResultado?.[m];
+            const sugerido = dados.textosSugeridos?.[m];
+            const cor = m === "7" ? "#E8590C" : m === "15" ? "#B45309" : "#475569";
+            const salvar = async (novo: { ligado?: boolean; modeloId?: string | null }) => {
+              try {
+                await acao("automacao", { marcos: { [m]: { ligado: novo.ligado ?? cfg.ligado, modeloId: novo.modeloId !== undefined ? novo.modeloId : cfg.modeloId } } });
+                await carregar(true);
+              } catch (e: any) {
+                setAviso({ tipo: "erro", titulo: "Não salvou", detalhe: e?.message });
+              }
+            };
+            return (
+              <div key={m} style={{ border: `1px solid ${cfg.ligado ? "#99F6E4" : "#E2E8F0"}`, background: cfg.ligado ? "#F0FDFA" : "#fff", borderRadius: 14, padding: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                  <div style={{ fontWeight: 900, color: cor }}>{m === "7" ? "🔥" : m === "15" ? "⏰" : "💤"} {m} dias sem pedir</div>
+                  <button
+                    disabled={!conectado || !!ocupado}
+                    onClick={() => salvar({ ligado: !cfg.ligado })}
+                    style={{ ...botaoLeve, padding: "4px 10px", background: cfg.ligado ? "#0F766E" : "#fff", color: cfg.ligado ? "#fff" : "#334155", borderColor: cfg.ligado ? "#0F766E" : "#CBD5E1" }}
+                  >
+                    {cfg.ligado ? "Ligado" : "Desligado"}
+                  </button>
+                </div>
+                <label style={rotulo}>Mensagem</label>
+                <select value={cfg.modeloId || ""} disabled={!conectado || !!ocupado} onChange={(e) => salvar({ modeloId: e.target.value || null })} style={campo}>
+                  <option value="">{modelosAprovados.length ? "Escolha uma aprovada…" : "Nenhuma aprovada ainda"}</option>
+                  {modelosAprovados.map((mo: any) => (
+                    <option key={mo.id} value={mo.id}>
+                      {mo.titulo}
+                    </option>
+                  ))}
+                </select>
+                {sugerido && (
+                  <button
+                    style={{ background: "none", border: "none", padding: 0, marginTop: 8, color: "#0F766E", cursor: "pointer", fontSize: "0.8rem", fontWeight: 700, textDecoration: "underline" }}
+                    onClick={() => {
+                      setMTitulo(sugerido.titulo);
+                      setMTexto(sugerido.texto);
+                      document.getElementById("mensagens")?.scrollIntoView({ behavior: "smooth" });
+                    }}
+                  >
+                    ✍️ Usar a mensagem pronta de {m} dias
+                  </button>
+                )}
+                <div style={{ fontSize: "0.8rem", color: "#475569", marginTop: 8 }}>
+                  {estimativa ? (
+                    <>
+                      Hoje <strong>{inteiro(estimativa[m] || 0)}</strong> cliente{estimativa[m] === 1 ? "" : "s"} completa{estimativa[m] === 1 ? "" : "m"} {m} dias sem pedir
+                      {estimativa[m] ? ` · ≈ ${reais((estimativa[m] || 0) * preco)}` : ""}
+                    </>
+                  ) : (
+                    "Contando…"
+                  )}
+                </div>
+                {res && dados.automacao?.ultimoDia && (
+                  <div style={{ fontSize: "0.76rem", color: res.motivo ? "#B45309" : "#64748B", marginTop: 4 }}>
+                    Último envio ({dados.automacao.ultimoDia.slice(8, 10)}/{dados.automacao.ultimoDia.slice(5, 7)}): {inteiro(res.enviados)} mensage{res.enviados === 1 ? "m" : "ns"}
+                    {res.foraPorSaldo ? ` · ${inteiro(res.foraPorSaldo)} ficaram de fora` : ""}
+                    {res.motivo ? ` — ${res.motivo}` : ""}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── CAMPANHAS ──────────────────────────────────────────────────── */}
       <div style={cartao}>
         <p style={titulo}>
           <BadgeCheck size={18} color="#0F766E" /> Campanhas

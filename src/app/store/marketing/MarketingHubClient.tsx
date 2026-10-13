@@ -17,8 +17,7 @@ import {
   RefreshCw,
 } from "lucide-react";
 
-import ApresentacaoDisparoOficial from "@/components/ApresentacaoDisparoOficial";
-import { MOTIVO_RECUPERACAO_PAUSADA, RECUPERACAO_PELO_QR_LIGADA } from "@/lib/disparo-em-massa";
+import ApresentacaoDisparoOficial, { ChamadaDaRecuperacaoOficial } from "@/components/ApresentacaoDisparoOficial";
 
 export default function MarketingHubClient() {
   const [loading, setLoading] = useState(true);
@@ -222,7 +221,7 @@ export default function MarketingHubClient() {
       <div style={{ display: "flex", gap: "8px", marginBottom: "1.5rem", borderBottom: "2px solid #E2E8F0", paddingBottom: "8px" }}>
         {[
           { id: "broadcast", label: "📢 Disparos (API oficial)", icon: Send },
-          { id: "automation", label: "🤖 Automação Recorrente (7d, 15d, 30d)", icon: Clock },
+          { id: "automation", label: "🔁 Recuperação 7, 15 e 30 dias (API oficial)", icon: Clock },
           { id: "database", label: "👥 Base de Clientes Cadastrados", icon: Users },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -256,131 +255,8 @@ export default function MarketingHubClient() {
       {/* ABA 1: DISPARO — desde 13/10/2026 só pela API oficial da Meta (lib/disparo-oficial). */}
       {activeTab === "broadcast" && <ApresentacaoDisparoOficial />}
 
-      {/* ABA 2: AUTOMAÇÃO RECORRENTE (7d, 15d, 30d) */}
-      {activeTab === "automation" && (
-        <div style={{ background: "#fff", padding: "1.5rem", borderRadius: "16px", border: "1px solid #E2E8F0", boxShadow: "0 4px 6px -1px rgba(0,0,0,0.03)" }}>
-          <div style={{ marginBottom: "1.5rem" }}>
-            <h3 style={{ margin: "0 0 4px 0", fontWeight: 800, fontSize: "1.1rem", color: "#0F172A" }}>
-              🤖 Automação Inteligente de Reciclagem de Clientes
-            </h3>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>
-              Configure mensagens com gatilhos automáticos baseados nos dias sem comprar. O robô enviará cupons de incentivo sem você precisar mover um dedo!
-            </p>
-          </div>
-          {/* Pausada desde 13/10/2026 (lib/disparo-em-massa.ts): saía pelo QR Code. */}
-          {!RECUPERACAO_PELO_QR_LIGADA && (
-            <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 12, padding: "12px 14px", marginBottom: "1rem", fontSize: "0.86rem", color: "#92400E", lineHeight: 1.5 }}>
-              <strong>⏸️ Pausada.</strong> {MOTIVO_RECUPERACAO_PAUSADA}
-            </div>
-          )}
-
-          <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem", marginBottom: "1.5rem" }}>
-            {/* GATILHO 7 DIAS */}
-            <div style={{ background: "#F8FAFC", padding: "1.25rem", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 800, color: "#1E293B" }}>
-                  <Flame size={18} color="#E8590C" /> 1º Incentivo — Cliente 7 Dias Sem Pedir
-                </div>
-                <button
-                  onClick={() => setAutoConfig({ ...autoConfig, autoRecuperation7d: !autoConfig.autoRecuperation7d })}
-                  style={{
-                    padding: "4px 12px",
-                    borderRadius: "6px",
-                    border: "none",
-                    background: autoConfig.autoRecuperation7d ? "#0F766E" : "#CBD5E1",
-                    color: "#fff",
-                    fontWeight: 800,
-                    fontSize: "0.75rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  {autoConfig.autoRecuperation7d ? "ATIVADO" : "DESATIVADO"}
-                </button>
-              </div>
-              <textarea
-                value={autoConfig.msg7d}
-                onChange={(e) => setAutoConfig({ ...autoConfig, msg7d: e.target.value })}
-                style={{ width: "100%", height: "60px", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", resize: "none" }}
-              />
-            </div>
-
-            {/* GATILHO 15 DIAS */}
-            <div style={{ background: "#F8FAFC", padding: "1.25rem", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 800, color: "#1E293B" }}>
-                  <Gift size={18} color="#1C1917" /> 2º Incentivo — Cliente 15 Dias Sem Pedir
-                </div>
-                <button
-                  onClick={() => setAutoConfig({ ...autoConfig, autoRecuperation15d: !autoConfig.autoRecuperation15d })}
-                  style={{
-                    padding: "4px 12px",
-                    borderRadius: "6px",
-                    border: "none",
-                    background: autoConfig.autoRecuperation15d ? "#0F766E" : "#CBD5E1",
-                    color: "#fff",
-                    fontWeight: 800,
-                    fontSize: "0.75rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  {autoConfig.autoRecuperation15d ? "ATIVADO" : "DESATIVADO"}
-                </button>
-              </div>
-              <textarea
-                value={autoConfig.msg15d}
-                onChange={(e) => setAutoConfig({ ...autoConfig, msg15d: e.target.value })}
-                style={{ width: "100%", height: "60px", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", resize: "none" }}
-              />
-            </div>
-
-            {/* GATILHO 30 DIAS */}
-            <div style={{ background: "#F8FAFC", padding: "1.25rem", borderRadius: "12px", border: "1px solid #E2E8F0" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "8px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontWeight: 800, color: "#1E293B" }}>
-                  <Sparkles size={18} color="#475569" /> 3º Incentivo — Cliente 30 Dias Sem Pedir (Super Cupom/Frete Grátis)
-                </div>
-                <button
-                  onClick={() => setAutoConfig({ ...autoConfig, autoRecuperation30d: !autoConfig.autoRecuperation30d })}
-                  style={{
-                    padding: "4px 12px",
-                    borderRadius: "6px",
-                    border: "none",
-                    background: autoConfig.autoRecuperation30d ? "#0F766E" : "#CBD5E1",
-                    color: "#fff",
-                    fontWeight: 800,
-                    fontSize: "0.75rem",
-                    cursor: "pointer",
-                  }}
-                >
-                  {autoConfig.autoRecuperation30d ? "ATIVADO" : "DESATIVADO"}
-                </button>
-              </div>
-              <textarea
-                value={autoConfig.msg30d}
-                onChange={(e) => setAutoConfig({ ...autoConfig, msg30d: e.target.value })}
-                style={{ width: "100%", height: "60px", padding: "10px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.82rem", resize: "none" }}
-              />
-            </div>
-          </div>
-
-          <button
-            onClick={handleSaveAutomation}
-            disabled={saving}
-            style={{
-              padding: "12px 24px",
-              borderRadius: "10px",
-              border: "none",
-              background: "#312E81",
-              color: "#fff",
-              fontWeight: 800,
-              fontSize: "0.9rem",
-              cursor: "pointer",
-            }}
-          >
-            {saving ? "Salvando Automações..." : "✓ Salvar Regras de Automação Automáticas"}
-          </button>
-        </div>
-      )}
+      {/* ABA 2: RECUPERAÇÃO 7, 15 E 30 DIAS — desde 13/10/2026 pela API oficial (lib/disparo-oficial). */}
+      {activeTab === "automation" && <ChamadaDaRecuperacaoOficial />}
 
       {/* ABA 3: BASE DE CLIENTES CADASTRAIS */}
       {activeTab === "database" && (
