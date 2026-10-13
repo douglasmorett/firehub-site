@@ -18,6 +18,8 @@ import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
 import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
 import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 import { corrigirPeriodo } from "@/lib/periodo-do-quadro";
+import { tempoNaEtapa, textoDoTempo, mesmosCarimbos } from "@/lib/tempo-na-etapa";
+import { carimboDeStatus } from "@/lib/order-stages";
 import { avaliarEdicaoNoPainel, podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { edicoesDosItens, lerHistorico, quandoFoi, ROTULO_DA_EDICAO } from "@/lib/historico-do-pedido";
 import { podeTerReposicao } from "@/lib/reposicao";
@@ -690,6 +692,17 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
         : decorrido;
   const timerColor = isLate ? PALETA.grave : isUrgent ? PALETA.atencao : PALETA.areiaTinta;
 
+  // ── HÁ QUANTO TEMPO NESTA ETAPA ──────────────────────────────────────────
+  // O relógio acima conta desde a CHEGADA. Este zera a cada troca de etapa —
+  // "Em produção (5 min)", "Saiu para entrega (3 min)" —, como na Saipos:
+  // na correria a equipe perdia a noção de há quanto tempo o motoboy tinha
+  // saído (Lucas, Frangoso, 13/10/2026). Conta e regras em
+  // lib/tempo-na-etapa.ts; sem o carimbo da etapa, não aparece.
+  const naEtapa = tempoNaEtapa(order, now);
+  const tituloDaEtapa = naEtapa
+    ? `${naEtapa.rotulo} desde as ${naEtapa.desde.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} — há ${textoDoTempo(naEtapa.minutos)}`
+    : undefined;
+
   // O finalizado também arrasta, mas só para Cancelado, e com trava
   // (handleDrop → janela de cancelamento).
   const canDrag = order.status !== "CANCELADO" && order.status !== "ENCERRADO";
@@ -848,8 +861,17 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               🛵 {parceiroQueEntrega.partnerName}
             </span>
           ) : null}
+          {/* A etapa com o tempo nela ("Saiu (3 min)"), colada no relógio. Na
+              coluna estreita ela cede antes de tudo: primeiro o nome vira "…",
+              depois o tempo — o entregador e o prazo continuam inteiros. */}
+          {naEtapa && (
+            <span title={tituloDaEtapa} style={{ marginLeft: "auto", display: "inline-flex", minWidth: 0, flexShrink: 1, overflow: "hidden", whiteSpace: "nowrap", fontWeight: 700, color: PALETA.areiaTinta }}>
+              <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>{naEtapa.curto}</span>
+              <span style={{ flexShrink: 0, color: PALETA.carvao, fontWeight: 800 }}>&nbsp;({textoDoTempo(naEtapa.minutos)})</span>
+            </span>
+          )}
           {/* O tempo curto: "-58min atrasado" inteiro cortava na borda do card estreito. */}
-          <span title={timerLabel} style={{ marginLeft: "auto", whiteSpace: "nowrap", fontWeight: 800, color: timerColor, flexShrink: 0 }}>
+          <span title={timerLabel} style={{ marginLeft: naEtapa ? undefined : "auto", whiteSpace: "nowrap", fontWeight: 800, color: timerColor, flexShrink: 0 }}>
             {isFinished || remainingMins === null
               ? (ehMesa ? `🍽️ ${decorrido}` : decorrido)
               : isLate ? `⚠ -${Math.abs(remainingMins)}min` : `⏱ ${remainingMins}min`}
@@ -1069,6 +1091,13 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             <span style={{ padding: "1px 7px", borderRadius: 6, background: PALETA.areia, color: PALETA.areiaTinta, border: `1px solid ${PALETA.areiaBorda}`, fontWeight: 600, whiteSpace: "nowrap" }}>
               Chegou <b style={{ fontWeight: 800, color: PALETA.carvao }}>{new Date(order.createdAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>
             </span>
+            {/* A etapa de agora e há quanto tempo o pedido está nela, logo
+                depois da chegada: lê-se como uma linha do tempo. */}
+            {naEtapa && (
+              <span title={tituloDaEtapa} style={{ padding: "1px 7px", borderRadius: 6, background: PALETA.areia, color: PALETA.areiaTinta, border: `1px solid ${PALETA.areiaBorda}`, fontWeight: 600, whiteSpace: "nowrap" }}>
+                {naEtapa.rotulo} <b style={{ fontWeight: 800, color: PALETA.carvao }}>({textoDoTempo(naEtapa.minutos)})</b>
+              </span>
+            )}
             {/* Pedido AGENDADO diz para QUANDO, com o dia: "Entregar até 19:30"
                 sozinho não diz se é hoje ou sábado. No relógio deste PC (o da loja). */}
             {ehAgendadoDeVerdade && (
@@ -1197,7 +1226,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                       body: JSON.stringify({ orderId: order.id, action: "finish_order" }),
                     });
                     if (res.ok) {
-                      setOrders((prev: any[]) => prev.map((o: any) => o.id === order.id ? { ...o, kdsStage: "FINISHED" } : o));
+                      // O `readyAt` local zera o relógio da etapa na hora ("Pronto (0 min)");
+                      // o do servidor substitui este no próximo poll.
+                      setOrders((prev: any[]) => prev.map((o: any) => o.id === order.id ? { ...o, kdsStage: "FINISHED", readyAt: new Date() } : o));
                     } else {
                       const d = await res.json();
                       alert("❌ " + (d.error || "Erro ao atualizar"));
@@ -1786,6 +1817,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         p.ifoodDriverStatus !== n.ifoodDriverStatus ||
         p.ifoodDriverName !== n.ifoodDriverName ||
         p.kdsStage !== n.kdsStage ||
+        // O relógio da etapa (lib/tempo-na-etapa.ts): o clique já trocou o
+        // status nesta tela, e o carimbo do servidor chega no poll seguinte
+        // sem mexer em nenhum campo acima.
+        !mesmosCarimbos(p, n) ||
         // A disputa chega SÓ no cancelDispute: nenhum dos campos acima muda.
         // Sem estas linhas a lista era dada como igual, a tela não redesenhava
         // e o modal de resposta só abria quando outro dado do pedido mudasse —
@@ -1921,7 +1956,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (res.ok) { successCount++; mudaram.add(orderId); }
       }
 
-      setOrders(prev => prev.map(o => mudaram.has(o.id) ? { ...o, status: bulkTargetStatus } : o));
+      // O carimbo local zera o relógio da etapa na hora — só em quem mudou
+      // de verdade de status; o do servidor chega no poll.
+      setOrders(prev => prev.map(o => mudaram.has(o.id)
+        ? { ...o, status: bulkTargetStatus, ...(o.status !== bulkTargetStatus ? carimboDeStatus(bulkTargetStatus) : null) }
+        : o));
       showToast(`${successCount} pedido(s) atualizados com sucesso!`, "#0F766E");
       setSelectedOrderIds(new Set());
       setBulkTargetStatus("");
@@ -2079,7 +2118,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ orderId, action: "finish_order" }),
       });
-      if (res.ok) setOrders(prev => prev.map(o => o.id === orderId ? { ...o, kdsStage: "FINISHED" } : o));
+      if (res.ok) setOrders(prev => prev.map(o => o.id === orderId ? { ...o, kdsStage: "FINISHED", readyAt: new Date() } : o));
     } catch { /* o card fica onde está */ }
   };
 
@@ -3043,7 +3082,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     novos.forEach(o => {
       autoAcceptedIdsRef.current.add(o.id);
       // Atualizar estado local imediatamente
-      setOrders(prev => prev.map(p => p.id === o.id ? { ...p, status: "ACEITO" } : p));
+      setOrders(prev => prev.map(p => p.id === o.id ? { ...p, status: "ACEITO", ...carimboDeStatus("ACEITO") } : p));
       // Disparar API sem router.refresh()
       fetch("/api/customer-order/status", {
         method: "PUT",
@@ -3363,7 +3402,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         // Rascunho do robô arrastado: o servidor deu o número do dia e a hora
         // (`data.pedido`). A comanda abaixo sai desta cópia — sem o número,
         // saía sem o QR do motoboy.
-        const mudou = { status: newStatus, ...(data?.pedido || {}) };
+        // O carimbo da etapa vai junto (lib/order-stages.ts, o mesmo que o
+        // servidor grava): o "(X min)" do cartão zera no clique, sem esperar o
+        // poll. Status repetido (`semMudanca`) não zera nada.
+        const mudou = { status: newStatus, ...(data?.semMudanca ? null : carimboDeStatus(newStatus)), ...(data?.pedido || {}) };
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...mudou } : o));
         router.refresh();
 

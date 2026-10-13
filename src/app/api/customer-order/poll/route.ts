@@ -1006,6 +1006,11 @@ export async function GET(req: NextRequest) {
         // precisa: a fila da nuvem já filtra por `printedAt`.
         printedAt: true,
         createdAt: true, updatedAt: true, scheduledDatetime: true,
+        // Os carimbos de etapa (lib/order-stages.ts): o "(5 min)" ao lado da
+        // etapa no cartão — há quanto tempo o pedido está em produção, pronto,
+        // na rua ou finalizado (lib/tempo-na-etapa.ts). Sem eles aqui, só a
+        // carga da página mostraria o relógio e o primeiro poll o apagaria.
+        kdsProductionAt: true, acceptedAt: true, readyAt: true, dispatchedAt: true, deliveredAt: true,
         // A PREVISÃO DE ENTREGA da comanda que este painel imprime
         // (lib/previsao-da-entrega.ts) — a mesma da fila da nuvem.
         tempoEntregaMin: true,
