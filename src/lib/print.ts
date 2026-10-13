@@ -1,6 +1,6 @@
 import { camposDeEntregaParaImpressao } from "./entrega-parceira";
 import { camposDoEnderecoParaImpressao } from "./endereco-impresso";
-import { comboParaImpressao } from "./parse-combo";
+import { comboParaImpressao, escolhasUmaPorUnidade } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
@@ -416,7 +416,12 @@ async function printToDevice(
           // online é gravado como `{ grupoId: { nome: qtd } }`, e o Assistente
           // só sabe ler array: descartava o objeto inteiro e a comanda saía com
           // o nome do combo e mais nada. Ver `comboParaImpressao`.
-          items: order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price, notes: i.notes, comboSelections: comboParaImpressao((i as any).comboSelections) })),
+          // Com "Separados", a escolha do combo também sai uma por linha
+          // ("2x BBQ Burguer" dentro do combo vira duas): `escolhasUmaPorUnidade`.
+          items: order.items.map(i => {
+            const escolhas = comboParaImpressao((i as any).comboSelections);
+            return { name: i.name, qty: i.qty, price: i.price, notes: i.notes, comboSelections: separarItens ? escolhasUmaPorUnidade(escolhas) : escolhas };
+          }),
           totalAmount: order.totalAmount,
           deliveryFee: order.deliveryFee,
           discountTotal: (order as any).discountTotal,

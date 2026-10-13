@@ -169,6 +169,47 @@ export function comboParaImpressao(raw: any, produto?: unknown): ComboItem[] | n
 }
 
 /**
+ * Com "Separados" na impressora, a escolha do combo também sai uma linha por
+ * unidade: "BBQ Burguer x2" vira duas linhas "- BBQ Burguer".
+ *
+ * O Assistente só separa o ITEM ("2x Combo" → duas linhas "1x Combo"). O
+ * "2 Burguers por R$ 32,99" chega com quantidade 1 e os dois lanches DENTRO
+ * dele, numa escolha de quantidade 2 — e saía "- 2x BBQ Burguer" numa linha
+ * só. A cozinha montava um e o pedido ia com um lanche a menos (Frangoso,
+ * 09–13/10/2026: 156 escolhas de quantidade 2 em 14 dias, quase todas lanche
+ * de combo). Desdobrar aqui, antes de enviar, conserta sem a loja instalar
+ * outro Assistente: ele desenha cada escolha como vem e não junta repetidas.
+ *
+ * O valor não muda: cada linha leva o preço unitário do adicional, e o
+ * Assistente multiplica pela quantidade da linha (1). Fração e quantidade
+ * que não seja inteira ficam como estão — mesma regra da separação do item.
+ */
+export function escolhasUmaPorUnidade<T extends { quantity?: number }>(lista: T[] | null | undefined): T[] | null {
+  if (!Array.isArray(lista)) return lista ?? null;
+  const saida: T[] = [];
+  for (const s of lista) {
+    const q = Number(s?.quantity ?? 1);
+    if (!Number.isInteger(q) || q < 2) { saida.push(s); continue; }
+    for (let i = 0; i < q; i++) saida.push({ ...s, quantity: 1 });
+  }
+  return saida;
+}
+
+/**
+ * Os itens de uma impressora com "Separados": cada escolha de combo
+ * desdobrada (ver `escolhasUmaPorUnidade`). Sem "Separados", a lista volta
+ * como veio.
+ */
+export function itensComEscolhasSeparadas<T extends { comboSelections?: any }>(itens: T[], separar: boolean): T[] {
+  if (!separar || !Array.isArray(itens)) return itens;
+  return itens.map((i) =>
+    Array.isArray(i?.comboSelections) && i.comboSelections.length > 0
+      ? { ...i, comboSelections: escolhasUmaPorUnidade(i.comboSelections) }
+      : i
+  );
+}
+
+/**
  * Preenche o `price` de cada adicional com o que ELE custou no pedido.
  *
  * Por que precisa disto: o combo do cardápio online é gravado como
