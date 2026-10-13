@@ -56,6 +56,8 @@ const TELAS: Record<string, string[]> = {
   "/store/motoboys": ["motoboys"],
   "/store/garcons": ["garcons"],
   "/store/marketing": ["marketing"],
+  // Um lojista perguntou como funciona o tráfego pago (12/10/2026). Sem ficha publicada, nada aparece.
+  "/store/meta-ads": ["trafego-pago"],
   "/store/estoque": ["estoque"],
   "/store/financeiro": ["financeiro"],
   "/store/relatorios": ["relatorios"],
@@ -89,6 +91,7 @@ const NOMES: Record<string, string> = {
   "/store/motoboys": "Motoboys",
   "/store/garcons": "Garçons",
   "/store/marketing": "Marketing",
+  "/store/meta-ads": "Tráfego Pago",
   "/store/estoque": "Estoque",
   "/store/financeiro": "Financeiro",
   "/store/relatorios": "Relatórios",
@@ -163,7 +166,7 @@ export function tutoriaisDaTela(pathname: string | null | undefined, enviados: T
 const GRUPOS: { titulo: string; ids: string[] }[] = [
   { titulo: "Operação", ids: ["inicio", "pedidos", "kds", "mesas", "balcao", "caixa", "roteirizacao"] },
   { titulo: "Cardápio", ids: ["cardapio-produto", "cardapio-pizza", "cardapio-combos", "cardapio-precos", "cardapio-organizar"] },
-  { titulo: "Vendas", ids: ["marketing", "chatbot"] },
+  { titulo: "Vendas", ids: ["marketing", "chatbot", "trafego-pago"] },
   { titulo: "Gestão", ids: ["financeiro", "relatorios", "fiscal", "estoque", "etiquetas"] },
   { titulo: "Equipe", ids: ["motoboys", "app-motoboy", "garcons", "fiado"] },
   { titulo: "Configurações", ids: ["horarios", "entrega", "pagamento", "equipe", "fidelidade", "impressoras", "integracoes", "extensao-ifood", "extensao-ifood-ao-vivo"] },
