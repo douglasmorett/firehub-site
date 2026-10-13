@@ -28,6 +28,14 @@
     }
   },
   "submit": {
-    "producao-hakim": {}
+    "producao-hakim": {
+      "ios": {
+        "ascAppId": "6822140388",
+        "appleTeamId": "5K9U9AF594",
+        "ascApiKeyPath": "C:/Users/Micro/.app-store/keys/AuthKey_V2UT6WUWQN.p8",
+        "ascApiKeyIssuerId": "7885a7b1-881b-43ad-9b18-3f85f70b1e80",
+        "ascApiKeyId": "V2UT6WUWQN"
+      }
+    }
   }
 }
