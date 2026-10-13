@@ -96,6 +96,41 @@ const MUNICIPAL_HOLIDAYS: Record<string, Record<string, string>> = {
   },
 };
 
+/**
+ * O feriado do dia SÓ pelas tabelas daqui (nacionais fixos, os da Páscoa e os
+ * municipais) — sem a brasilapi. É a do robô do WhatsApp, que roda a cada
+ * mensagem: a consulta de fora espera até 2 s quando falha, e a falha não fica
+ * em cache, então toda resposta atrasaria. `dateStr` é "AAAA-MM-DD" no fuso da
+ * loja; devolve o nome do feriado ou null.
+ */
+export function feriadoLocal(dateStr: string, city: string | null | undefined): string | null {
+  const [yearStr, monthStr, dayStr] = String(dateStr || "").split("-");
+  const year = parseInt(yearStr, 10);
+  if (!year || !monthStr || !dayStr) return null;
+  const mmDd = `${monthStr}-${dayStr}`;
+  if (NATIONAL_FIXED[mmDd]) return NATIONAL_FIXED[mmDd];
+  const moveable = getMoveableHolidays(year);
+  if (moveable[dateStr]) return moveable[dateStr];
+  if (city) {
+    const doMunicipio = MUNICIPAL_HOLIDAYS[normalizeString(city)];
+    if (doMunicipio?.[mmDd]) return doMunicipio[mmDd];
+  }
+  return null;
+}
+
+/**
+ * A linha de feriado dos DADOS DA LOJA no prompt do robô — vazia em dia comum,
+ * para não gastar nada. Pizzaria 17, 12/10/2026 (Nossa Senhora Aparecida,
+ * segunda-feira): o robô mandou o rodízio "de segunda a quinta" e a equipe teve
+ * de corrigir — "hoje feriado não estamos funcionando com o rodízio".
+ */
+export function linhaDoFeriadoParaORobo(feriadoDeHoje: string | null, feriadoDeAmanha: string | null): string {
+  const linhas: string[] = [];
+  if (feriadoDeHoje) linhas.push(`- FERIADO: hoje é feriado (${feriadoDeHoje}). O que a loja diz que não funciona em feriado, hoje não funciona.`);
+  if (feriadoDeAmanha) linhas.push(`- FERIADO: amanhã é feriado (${feriadoDeAmanha}).`);
+  return linhas.length ? `${linhas.join("\n")}\n` : "";
+}
+
 const cachedHolidays: Record<number, any[]> = {};
 
 async function fetchNationalHolidays(year: number): Promise<any[]> {

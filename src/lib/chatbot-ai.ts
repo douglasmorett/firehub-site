@@ -65,6 +65,7 @@ import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco"
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
 import { lerRespostasProntas, blocoDasRespostasProntas, textoDasRespostasProntas, extrairMarcasDeRespostaPronta, envioDasRespostasProntas, extrairFichaPreenchida, regraDaReservaPelaFicha } from "./respostas-prontas";
+import { feriadoLocal, linhaDoFeriadoParaORobo } from "./holidays";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -276,7 +277,14 @@ export async function processChatbotAI(
         link: linkDaSaudacao,
         personalidade: cfg.personality,
         cupomDePrimeiroPedido: cupomDoPrimeiroPedido,
-      }),
+      }) + (
+        // A loja que escolheu o cardápio em arquivo "logo de começo, junto com
+        // o link" (menuFileQuando = "INICIO") quer a foto também no "oi". Serpa,
+        // 12/10/2026: os primeiros clientes recebiam link + foto, quem abria com
+        // "boa noite" caía aqui e recebia só o link. A marca é a mesma do modelo:
+        // o webhook troca por envio do arquivo.
+        cfg.menuFileQuando === "INICIO" && String(cfg.menuFileUrl || "").trim() ? "\n[[ENVIAR_CARDAPIO]]" : ""
+      ),
       saudacaoDoDia: true as const,
     };
   }
@@ -381,6 +389,9 @@ export async function processChatbotAI(
             // no Camarão com Catupiry enquanto o robô dizia R$ 131,40 ao
             // cliente no WhatsApp, com o mesmo produto e a mesma função.
             id: true, title: true, maxQty: true, minQty: true, priceRule: true,
+            // Desempate quando o mesmo nome está em duas perguntas (sabor e
+            // adicional): ver `preferida` em lib/item-do-robo.ts.
+            sortOrder: true,
             // `additionalPriceDelivery` pelo mesmo motivo do `priceDelivery`
             // acima: nas lojas de cardápio no molde iFood/Anota AI o preço mora
             // na OPÇÃO de tamanho, não no produto — sem esta coluna o robô
@@ -604,6 +615,15 @@ export async function processChatbotAI(
 
   const { code: currentDayCode, name: currentDayName } = getBrazilDayCode(0);
   const { code: tomorrowDayCode, name: tomorrowDayName } = getBrazilDayCode(1);
+
+  // Feriado de hoje e de amanhã (nacional, da Páscoa ou do município), pelas
+  // tabelas locais: sem rede, e a linha só existe no prompt em dia de feriado.
+  const dataNaLoja = (offsetDias: number) => {
+    const d = new Date();
+    if (offsetDias) d.setDate(d.getDate() + offsetDias);
+    return d.toLocaleDateString("en-CA", { timeZone: tz });
+  };
+  const linhaDoFeriado = linhaDoFeriadoParaORobo(feriadoLocal(dataNaLoja(0), user.city), feriadoLocal(dataNaLoja(1), user.city));
 
   const parseAvailableDays = (val: any): string[] => {
     if (!val) return [];
@@ -1199,6 +1219,8 @@ ${resumoEmTexto(resumo, user.storeTimezone)}
   b) Copie os números ACIMA exatamente como estão. NUNCA arredonde, estime ou invente um número que não esteja nesta lista.
   c) Se ele perguntar algo que NÃO está na lista acima (lucro, imposto, comparação com o mês passado, dados de outra loja), diga com franqueza que essa informação você ainda não tem por aqui e indique a tela do painel — nunca chute.
   d) Quando ele perguntar de pedido atrasado, responda com o número do pedido, a hora que entrou e o prazo, como está na lista.
+  e) Por aqui você NÃO grava nem muda nada. Pediu para acrescentar ou mudar uma informação ou o seu jeito de atender ("acrescenta que a área kids tem fliperama")? Avise com franqueza, nestas palavras: "Por aqui eu não consigo gravar. Para gravar alguma informação no meu comportamento, fale com o atendimento do FireHub no WhatsApp (22) 98111-8514." Nunca diga "anotado", "adicionei", "atualizei" ou "pode deixar que informo aos clientes": o próximo cliente não saberia, e o dono ficaria iludido.
+  f) Avisos que o sistema já manda para o número dele, sem precisar pedir: caixa aberto e caixa fechado (com a conferência) e, como alerta, caixa não aberto 15 minutos depois do horário de abrir, loja fechada no horário, pedido atrasado, ficha de reserva preenchida, cliente pedindo atendente, robô desconectado e impressão parada. Os alertas ligam e desligam em Chatbot IA › Notificações, onde também se cadastram outros números do dono.
 `;
       blockFinancialsContext = ""; // O dono tem acesso livre.
     } catch(e) {
@@ -1262,7 +1284,7 @@ DADOS DA LOJA:
 - Aceita Retirada no Balcão: ${aceitaRetirada ? "SIM" : "NÃO"}
 ${linhasDoMinimoNosDados(fatosDoMinimo)}
 - Horário de Funcionamento Cadastrado: ${linhaDoHorarioDeHoje({ fraseDeHoje: nowStatusText, temQuadro: hoursText !== HORARIO_NAO_CADASTRADO })}
-- Quadro Geral de Horários:
+${linhaDoFeriado}- Quadro Geral de Horários:
 ${hoursText}
 
 TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO:
@@ -2604,6 +2626,7 @@ async function syncAiOrderToDatabase({
   const itensDescartados: string[] = [];
   /** "Produto: sabor que não casou" de pergunta OBRIGATÓRIA que ficou incompleta (lib/item-do-robo.ts). */
   const saboresSemCasar: string[] = [];
+  const maximosPassados: Array<{ produto: string; pergunta: string; maximo: number; escolhas: string[] }> = [];
   const orderItemsData = (payload.items || [])
     .map((it: any) => {
       const pedido = chaveDeNome(it.name);
@@ -2621,7 +2644,18 @@ async function syncAiOrderToDatabase({
       // e apenas se houver um único candidato. Dois ou mais é ambiguidade real
       // ("pastel" com vinte sabores), e aí não se adivinha: o item é recusado
       // e a loja confere na tela em vez de mandar a coisa errada para a cozinha.
-      const exato = storeProducts.filter((sp) => chaveDeNome(sp.name) === pedido);
+      let exato = storeProducts.filter((sp) => chaveDeNome(sp.name) === pedido);
+      // O cardápio do robô rotula "Pizza Grande (Pizzas Premium)": quando o
+      // modelo copia o rótulo, a categoria entre parênteses escolhe o produto.
+      if (exato.length === 0) {
+        const rotulo = String(it.name || "").match(/^(.*)\(([^()]+)\)\s*$/);
+        if (rotulo) {
+          const base = chaveDeNome(rotulo[1]);
+          const doNome = storeProducts.filter((sp) => chaveDeNome(sp.name) === base);
+          const daCategoria = doNome.filter((sp) => chaveDeNome(sp.category || "") === chaveDeNome(rotulo[2]));
+          exato = daCategoria.length > 0 ? daCategoria : doNome;
+        }
+      }
       let candidatos = exato;
       if (candidatos.length === 0) {
         candidatos = storeProducts.filter((sp) => {
@@ -2629,7 +2663,16 @@ async function syncAiOrderToDatabase({
           return nome.startsWith(pedido + " ") || nome.includes(" " + pedido + " ") || nome.endsWith(" " + pedido);
         });
       }
-      const matchedProduct = candidatos.length === 1 ? candidatos[0] : exato[0];
+      // Vários produtos com o MESMO nome (Casa da Massa: "Pizza Grande" em
+      // Clássicas, Premium e Doces): vale o que tem as opções que o cliente
+      // escolheu. Era sempre o primeiro, e o sabor Premium caía em "conferir".
+      const matchedProduct =
+        candidatos.length === 1
+          ? candidatos[0]
+          : exato.length > 1
+            ? exato.reduce((melhor: any, sp: any) =>
+                escolhasDoItem(it, sp as any).naoCasadas.length < escolhasDoItem(it, melhor as any).naoCasadas.length ? sp : melhor)
+            : exato[0];
 
       // GUILHOTINA ANTI-ALUCINAÇÃO: produto que não existe (ou nome ambíguo)
       // não entra no pedido.
@@ -2665,6 +2708,7 @@ async function syncAiOrderToDatabase({
       // já leem: comboSelections, notes e productName.
       const doItem = escolhasDoItem(it, matchedProduct as any);
       if (doItem.grupoIncompleto) saboresSemCasar.push(`${matchedProduct.name}: ${doItem.naoCasadas.join(", ")}`);
+      if (doItem.passouDoMaximo) maximosPassados.push({ produto: matchedProduct.name, ...doItem.passouDoMaximo });
       if (doItem.naoCasadas.length > 0) {
         console.warn(
           `[Chatbot AI] opções sem correspondência em "${matchedProduct.name}": ${doItem.naoCasadas.join(", ")} — não cobradas; foram para a observação do item.`
@@ -2919,6 +2963,25 @@ async function syncAiOrderToDatabase({
       mensagemParaOCliente:
         `Anotei seu pedido! 📝 Só não achei no cardápio exatamente "${saboresSemCasar.map((s) => s.split(": ")[1]).join(", ")}", ` +
         `então a loja vai conferir o sabor e o valor com você por aqui antes de mandar pra cozinha — não precisa repetir nada! 😊`,
+    };
+  }
+
+  // ── PERGUNTA COM MAIS ESCOLHAS QUE O MÁXIMO ──────────────────────────────
+  // Divinos, 11/10/2026: "Cobertura" aceita 1, o cliente pediu chocomenta e o
+  // robô anotou Menta + Chocolate; a comanda saiu com 2 coberturas. O site não
+  // deixa passar do máximo, a tag do robô também não. Mesma regra da pausa:
+  // só no pedido ainda não enviado, e o cliente ouve o limite e escolhe.
+  if (isFinal && maximosPassados.length > 0 && (!existingDraft || String(existingDraft.status).toUpperCase() === "CRIANDO_IA")) {
+    const { produto, pergunta, maximo, escolhas } = maximosPassados[0];
+    const motivo = `"${pergunta}" em "${produto}" aceita até ${maximo} e veio com ${escolhas.join(", ")}`;
+    console.warn(`[Chatbot AI Order Sync] 🔢 Pedido recusado — ${motivo}. Loja=${franchiseeId}`);
+    return {
+      gravado: false,
+      motivo,
+      regraDeNegocio: true,
+      mensagemParaOCliente:
+        `No ${produto}, "${pergunta}" é só ${maximo === 1 ? "1 opção" : `até ${maximo} opções`} 😊 ` +
+        `Anotei ${escolhas.join(" e ")}. Qual ${maximo === 1 ? "você prefere" : `${maximo} você prefere`}?`,
     };
   }
 

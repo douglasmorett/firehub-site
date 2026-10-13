@@ -34,6 +34,9 @@ export type GrupoDoProduto = {
   /** Quantas escolhas a pergunta exige: `minQty`, ou exatamente `maxQty` quando nulo (schema). */
   minQty?: number | null;
   maxQty?: number | null;
+  /** "MAIOR"/"MEDIA" na pergunta de sabores da pizza; nulo nas outras. */
+  priceRule?: string | null;
+  sortOrder?: number | null;
   items?: Array<{ additionalPrice?: number | null; menuProduct?: { name?: string | null } | null } | null> | null;
 };
 
@@ -68,6 +71,13 @@ export type EscolhasDoItem = {
    * cobrar errado, então quem chama segura o pedido para a loja.
    */
   grupoIncompleto: string | null;
+  /**
+   * Pergunta que recebeu MAIS escolhas do que o máximo dela, ou null. Divinos,
+   * 11/10/2026: "Cobertura" aceita 1, o cliente pediu chocomenta e o robô
+   * anotou Menta + Chocolate — saiu na comanda com 2. Quem chama recusa a tag
+   * e o cliente escolhe (ou a loja cadastra a opção que faltava).
+   */
+  passouDoMaximo: { pergunta: string; maximo: number; escolhas: string[] } | null;
   /** Nome para `productName`: o do cadastro, com as escolhas entre parênteses. */
   productName: string;
   /** Texto para `notes` do item, ou null. */
@@ -95,6 +105,31 @@ const LIMITE_DA_OBSERVACAO = 500;
 
 /** "1/2 ", "meia ", "metade de " na frente do sabor — já na chave (sem acento, "1/2" vira "1 2"). */
 const FRACAO_DA_PIZZA = /^(?:1 [234]|meia|meio|metade)\s+(?:(?:de|da|do)\s+)?/;
+
+/**
+ * "Adicional de bacon", "bacon extra", "bacon a mais": o cliente quis o
+ * ADICIONAL. Na SP Pizza (12/10/2026) BACON, CALABRESA e mais seis nomes são
+ * sabor E adicional na mesma pizza — só o nome não diz qual dos dois ele quis,
+ * e o cardápio do robô manda escrever o adicional assim (lib/cardapio-para-o-robo.ts).
+ */
+const TEM_MARCA_DE_ADICIONAL = /\b(?:adicional|adicionais|extra|extras|acrescimo|acrescimos)\b|\ba mais\b/;
+const MARCAS_DE_ADICIONAL = /\b(?:adicional|adicionais|extra|extras|acrescimo|acrescimos)\b|\ba mais\b/g;
+
+/** O nome sem a marca de adicional ("adicional de bacon" → "bacon"); null quando não há marca. */
+function nomeSemMarcaDeAdicional(chave: string): string | null {
+  if (!TEM_MARCA_DE_ADICIONAL.test(chave)) return null;
+  const nome = chave
+    .replace(MARCAS_DE_ADICIONAL, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(?:de|da|do|com)\s+/, "")
+    .replace(/\s+(?:de|da|do)$/, "")
+    .trim();
+  return nome || null;
+}
+
+/** A pergunta é de adicional pelo título: "Adicionais", "adicionais pagos fogazza", "Extras", "Acréscimos". */
+const ehPerguntaDeAdicional = (g: GrupoDoProduto) => /adicion|extra|pago|acresc/.test(chaveDeNome(g.title));
 
 /** Teto de bom senso: pedido de 30 unidades da mesma opção é erro do modelo. */
 const MAXIMO_POR_OPCAO = 30;
@@ -138,14 +173,64 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
   const naoCasadas: string[] = [];
   let somaDasOpcoes = 0;
 
+  /**
+   * O mesmo nome em mais de uma pergunta: qual delas o cliente quis.
+   *
+   * SP Pizza, 09/10/2026: "CALABRESA" é sabor (R$ 55, na pergunta de sabores
+   * com a regra do mais caro) e também adicional (+R$ 12). O cliente pediu meia
+   * filé, meia calabresa; a calabresa caiu nos Adicionais — a primeira pergunta
+   * na ordem em que o banco devolveu — e a pizza de R$ 83 saiu por R$ 95.
+   *
+   * Vence a pergunta que ainda tem vaga, e entre elas a de sabores (a que tem
+   * regra de preço: mais caro/média), depois a ordem do cardápio (sortOrder).
+   * Sem vaga em nenhuma, a primeira pela mesma ordem.
+   */
+  const preferida = <T extends { grupo: GrupoDoProduto }>(lista: T[]): T | null => {
+    if (lista.length <= 1) return lista[0] ?? null;
+    const temVaga = (g: GrupoDoProduto) => {
+      const maximo = Number(g.maxQty);
+      if (!Number.isFinite(maximo) || maximo <= 0) return true;
+      const usadas = Object.values(selecoes[g.id] || {}).reduce((s, q) => s + q, 0);
+      return usadas < maximo;
+    };
+    const ordem = (g: GrupoDoProduto) => (Number.isFinite(Number(g.sortOrder)) ? Number(g.sortOrder) : 0);
+    const ordenada = [...lista].sort((a, b) =>
+      Number(temVaga(b.grupo)) - Number(temVaga(a.grupo)) ||
+      Number(!!b.grupo.priceRule) - Number(!!a.grupo.priceRule) ||
+      ordem(a.grupo) - ordem(b.grupo)
+    );
+    return ordenada[0];
+  };
+
+  /**
+   * Quando o cliente DISSE o que queria, vale o que ele disse: "1/2 calabresa"
+   * é sabor; "adicional de calabresa" é adicional (a pergunta com título de
+   * adicional, senão a que não é de sabores). Sem dizer, a `preferida`.
+   */
+  type Intencao = "sabor" | "adicional" | null;
+  const pelaIntencao = <T extends { grupo: GrupoDoProduto }>(lista: T[], intencao: Intencao): T | null => {
+    if (lista.length > 1 && intencao === "adicional") {
+      const porTitulo = lista.filter((a) => ehPerguntaDeAdicional(a.grupo));
+      if (porTitulo.length) return preferida(porTitulo);
+      const foraDosSabores = lista.filter((a) => !a.grupo.priceRule);
+      if (foraDosSabores.length) return preferida(foraDosSabores);
+    }
+    if (lista.length > 1 && intencao === "sabor") {
+      const sabores = lista.filter((a) => !!a.grupo.priceRule);
+      if (sabores.length) return preferida(sabores);
+    }
+    return preferida(lista);
+  };
+
   /** A opção com este nome exato no cadastro do produto; null quando não existe. */
-  const exata = (chave: string) => {
+  const exata = (chave: string, intencao: Intencao = null) => {
+    const achados: Array<{ grupo: GrupoDoProduto; opcao: NonNullable<NonNullable<GrupoDoProduto["items"]>[number]> }> = [];
     for (const grupo of produto.comboGroups || []) {
       if (!grupo) continue;
       const opcao = (grupo.items || []).find((gi) => gi && chaveDeNome(gi.menuProduct?.name) === chave);
-      if (opcao) return { grupo, opcao };
+      if (opcao) achados.push({ grupo, opcao });
     }
-    return null;
+    return pelaIntencao(achados, intencao);
   };
 
   /**
@@ -184,29 +269,33 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
     const direto = exata(chave);
     if (direto) return direto;
     const semFracao = chave.replace(FRACAO_DA_PIZZA, "").trim();
-    if (semFracao && semFracao !== chave) {
-      const achado = exata(semFracao);
+    const doAdicional = nomeSemMarcaDeAdicional(semFracao || chave);
+    const intencao: Intencao = doAdicional ? "adicional" : semFracao && semFracao !== chave ? "sabor" : null;
+    const pedido = doAdicional || semFracao || chave;
+    if (pedido !== chave) {
+      const achado = exata(pedido, intencao);
       if (achado) return achado;
     }
-    const pedido = semFracao || chave;
     const alvo = ` ${pedido} `;
     const contem = todasAsOpcoes().filter((c) => ` ${chaveDeNome(c.opcao.menuProduct?.name)} `.includes(alvo));
     const nomesQueContem = new Set(contem.map((c) => chaveDeNome(c.opcao.menuProduct?.name)));
-    if (nomesQueContem.size === 1) return contem[0];
+    if (nomesQueContem.size === 1) return pelaIntencao(contem, intencao);
 
     const palavras = pedido.split(" ").filter(Boolean);
     if (palavras.length === 0) return null;
-    const porNome = new Map<string, { c: Achado; tamanho: number }>();
+    const porNome = new Map<string, { cs: Achado[]; tamanho: number }>();
     for (const c of todasAsOpcoes()) {
       const nome = chaveDeNome(c.opcao.menuProduct?.name);
       const daOpcao = nome.split(" ").filter(Boolean);
       if (!palavras.every((p) => daOpcao.includes(p))) continue;
-      if (!porNome.has(nome)) porNome.set(nome, { c, tamanho: daOpcao.length });
+      const ja = porNome.get(nome);
+      if (ja) ja.cs.push(c);
+      else porNome.set(nome, { cs: [c], tamanho: daOpcao.length });
     }
     if (porNome.size === 0) return null;
     const menor = Math.min(...[...porNome.values()].map((v) => v.tamanho));
     const curtas = [...porNome.values()].filter((v) => v.tamanho === menor);
-    return curtas.length === 1 ? curtas[0].c : null;
+    return curtas.length === 1 ? pelaIntencao(curtas[0].cs, intencao) : null;
   };
 
   for (const bruta of brutas) {
@@ -265,11 +354,28 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
     }
   }
 
+  let passouDoMaximo: EscolhasDoItem["passouDoMaximo"] = null;
+  for (const grupo of produto.comboGroups || []) {
+    if (!grupo || !selecoes[grupo.id]) continue;
+    const maximo = Number(grupo.maxQty) || 0;
+    if (maximo < 1) continue;
+    const escolhidas = Object.values(selecoes[grupo.id]).reduce((s, q) => s + q, 0);
+    if (escolhidas > maximo) {
+      passouDoMaximo = {
+        pergunta: String(grupo.title || "").trim() || "opções",
+        maximo,
+        escolhas: Object.entries(selecoes[grupo.id]).map(([n, q]) => (q > 1 ? `${n} x${q}` : n)),
+      };
+      break;
+    }
+  }
+
   return {
     comboSelections: Object.keys(selecoes).length > 0 ? selecoes : null,
     somaDasOpcoes: Math.round(somaDasOpcoes * 100) / 100,
     naoCasadas,
     grupoIncompleto,
+    passouDoMaximo,
     productName: resumo.length > 0 ? `${produto.name} (${resumo.join(", ")})` : produto.name,
     notes,
   };

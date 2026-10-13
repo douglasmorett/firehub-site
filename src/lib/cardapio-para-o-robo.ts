@@ -194,7 +194,20 @@ function prepararPergunta(g: any, original: any, produto: any, loja: Map<string,
   const quantas = min === 0 ? (max === 1 ? "opcional" : `até ${max}, opcional`) : min === max ? `${min} obrig.` : `${min} a ${max}`;
   const regraDePreco = regraDoGrupo(g);
   const umaPizza = max > 1 && regraDePreco !== "SOMA";
-  const regra = !umaPizza ? "" : regraDePreco === "MEDIA" ? "; é 1 pizza: vale a média dos sabores" : "; é 1 pizza: vale o sabor mais caro";
+  // O mesmo nome como SABOR e como ADICIONAL no mesmo produto (SP Pizza,
+  // 12/10/2026: CALABRESA, BACON, PALMITO... nas duas perguntas da Pizza
+  // Grande). Na tag só iria o nome, e não daria para saber qual dos dois o
+  // cliente quis: o adicional vai escrito "Adicional NOME" (lib/item-do-robo.ts).
+  const chaveSimples = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const nomesDosSabores = new Set<string>(
+    (produto?.comboGroups || [])
+      .filter((o: any) => o && o.id !== g?.id && regraDoGrupo(o) !== "SOMA")
+      .flatMap((o: any) => (o.items || []).map((i: any) => chaveSimples(nomeDaOpcao(i)))),
+  );
+  const nomeTambemESabor = regraDePreco === "SOMA" && itens.some((i: any) => nomesDosSabores.has(chaveSimples(nomeDaOpcao(i))));
+  const regra =
+    (!umaPizza ? "" : regraDePreco === "MEDIA" ? "; é 1 pizza: vale a média dos sabores" : "; é 1 pizza: vale o sabor mais caro") +
+    (nomeTambemESabor ? `; nome que também é sabor vai na tag como "Adicional NOME"` : "");
 
   // Pergunta de escolha única e obrigatória (Tamanho) vai com o preço
   // ABSOLUTO de cada opção, que é como o cliente pensa ("o Grande custa X");
@@ -497,7 +510,16 @@ export function cardapioParaORobo(produtos: any[], ctx: ContextoDoCardapio): { t
       notaDeEstoque = ` [últimas ${estoque.restam} unid., não anotar mais que isso]`;
     }
 
-    const chave = `${nome.toLowerCase()}_${p.price}`;
+    // Mesmo nome e preço só é REPETIDO se as opções também forem as mesmas.
+    // Casa da Massa, 12/10/2026: "Pizza Grande" (base R$ 0) em Clássicas,
+    // Premium e Doces, cada uma com os seus sabores — a chave só com nome e
+    // preço deixava só a das Clássicas, e o robô dizia que não tinha Premium
+    // nem Doce.
+    const opcoesDoProduto = (p.comboGroups || [])
+      .flatMap((g: any) => (g?.items || []).map((i: any) => String(i?.menuProduct?.name || "").toLowerCase()))
+      .sort()
+      .join("|");
+    const chave = `${nome.toLowerCase()}_${p.price}_${opcoesDoProduto}`;
     const dias = diasDoProduto(p.availableDays);
     const hojeVale = dias.length === 0 || dias.includes(hoje);
     const amanhaVale = dias.length === 0 || dias.includes(amanha);
