@@ -97,4 +97,10 @@ export async function register() {
   // computador da loja.
   const { garantirEstruturaDaContingencia } = await import("./lib/contingencia/estrutura-no-banco");
   await garantirEstruturaDaContingencia();
+  // Loja sem conexão (User.semConexaoEstado): o estado da queda e o que o
+  // FireHub pausou. O schema NÃO conhece a coluna de propósito — o acesso é por
+  // SQL cru e falha em silêncio (lib/loja-sem-conexao-no-banco.ts): sem ela, a
+  // proteção não age, como antes de existir.
+  const { garantirColunaDaLojaSemConexao } = await import("./lib/loja-sem-conexao-no-banco");
+  await garantirColunaDaLojaSemConexao();
 }

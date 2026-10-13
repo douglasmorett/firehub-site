@@ -23,6 +23,7 @@ import { guardarPayloadCru } from "@/lib/open-delivery/payload-cru";
 import { buscarPedidoKeeta, decifrar, metadataDoEvento, acaoNoPedidoKeeta, type EventoKeeta } from "./api";
 import { lojaDoMerchant } from "./lojas";
 import { registrarAcaoPendente } from "./acoes-pendentes";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 
 export const CANAL_KEETA: CanalOD = { chave: "KEETA", nome: "Keeta", prefixo: "keeta" };
 
@@ -111,7 +112,8 @@ async function importarPedido(evento: EventoKeeta, merchantDoCabecalho?: string 
   const traducao = traduzirPedidoOpenDelivery(pedido, {
     lojaId: dono.id,
     fuso: await fusoDaLoja(dono.id),
-    autoAcceptOrders: !!dono.autoAcceptOrders,
+    // Loja SEM CONEXÃO: o pedido não nasce aceito (lib/loja-sem-conexao-no-banco.ts).
+    autoAcceptOrders: await aceitaSozinhoAgora(dono),
     canal: CANAL_KEETA,
   });
   await guardarPayloadCru({ canal: "KEETA", tipo: "pedido", idNoParceiro: evento.orderId, franchiseeId: dono.id, payload: pedido, avisos: traducao.avisos });

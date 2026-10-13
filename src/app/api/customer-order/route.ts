@@ -10,7 +10,8 @@ import { conferirAgendamento, lerConfigDeAgendamento, textoDoAgendamento } from 
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
 import { opcoesBloqueadasEscolhidas } from "@/lib/preco-combo";
-import { estadoDaLoja } from "@/lib/loja-aberta";
+import { estadoDaLoja, TEXTO_DA_INSTABILIDADE } from "@/lib/loja-aberta";
+import { lojaFechadaPelaQueda } from "@/lib/loja-sem-conexao-no-banco";
 import { dataDaLoja } from "@/lib/fuso";
 import { avaliarEntrega, modoDaArea, taxaFixaDaLoja } from "@/lib/area-de-entrega";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
@@ -189,7 +190,17 @@ export async function POST(req: Request) {
     // o agendado é para quando ela estiver aberta (e o horário já foi
     // conferido acima contra o funcionamento ou o horário do agendamento).
     if (franchisee.storeOpen === false && !instanteAgendado) {
-      return NextResponse.json({ error: "Loja fechada no momento." }, { status: 400 });
+      // Fechada pela proteção de LOJA SEM CONEXÃO (lib/loja-sem-conexao.ts):
+      // quem chega aqui com a página aberta de antes lê "instabilidade, volte
+      // em alguns minutos", não "fechada".
+      const fechada = estadoDaLoja({
+        storeHours: franchisee.storeHours,
+        storePause: franchisee.storePause,
+        storeOpen: false,
+        timezone: franchisee.storeTimezone,
+        semConexao: await lojaFechadaPelaQueda(franchisee.id),
+      });
+      return NextResponse.json({ error: fechada.instabilidade ? TEXTO_DA_INSTABILIDADE : "Loja fechada no momento." }, { status: 400 });
     }
 
     // Fora do HORÁRIO de funcionamento também é fechada. Só o front avisava:

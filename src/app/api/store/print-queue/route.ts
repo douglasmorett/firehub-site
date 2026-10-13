@@ -25,6 +25,7 @@ import { pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
 import { lojasQueEstePcAtende } from "@/lib/lojas-no-mesmo-pc-no-banco";
 import { juntarJobsDasLojas } from "@/lib/lojas-no-mesmo-pc";
 import { chaveDoAssistente, registrarAssistente, trabalhosDoAssistente } from "@/lib/dono-da-impressora";
+import { marcarAssistente } from "@/lib/sinais-da-loja";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -180,6 +181,12 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     if (!franchiseeId) {
       return NextResponse.json({ jobs: [] });
     }
+
+    // Sinal de vida para a LOJA SEM CONEXÃO (lib/loja-sem-conexao.ts): o
+    // carimbo do banco (printQueuePolledAt, abaixo) é de minuto em minuto; a
+    // memória guarda esta consulta, e é ela que vê a volta em segundos. Vale
+    // também para a irmã servida por este PC — o carimbo dela é gravado aqui.
+    marcarAssistente(franchiseeId);
 
     // ── TETO DE 30 MINUTOS ────────────────────────────────────────────────
     //

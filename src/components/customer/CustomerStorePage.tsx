@@ -36,6 +36,7 @@ import { precoMinimoDoProduto, precoVariaPorEscolha, precoMinimoAntesDaPromocao 
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./GoogleAnalytics";
 import { isStoreOpen } from "@/lib/store-hours";
+import { TEXTO_DA_INSTABILIDADE } from "@/lib/loja-aberta";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
 import { menorMinimoDeEntrega, minimoDaEntregaNoBairro } from "@/lib/minimo-do-bairro";
 import { avisoDoCep, buscarCep, cepFormatado, digitosDoCep } from "@/lib/cep";
@@ -219,6 +220,12 @@ type Franchisee = {
   city: string | null;
   slug: string | null;
   storeOpen?: boolean;
+  /**
+   * O "Site aberto" foi desligado pela proteção de LOJA SEM CONEXÃO
+   * (lib/loja-sem-conexao.ts): a loja está no horário, só sem sistema agora.
+   * O cliente lê "instabilidade, volte em alguns minutos", não "fechada".
+   */
+  semConexao?: boolean;
   storePause?: any;
   facebookPixelId?: string | null;
   gaMeasurementId?: string | null;
@@ -660,6 +667,9 @@ export default function CustomerStorePage({
   // Na mesa não vale: o site pode estar fechado com o salão funcionando —
   // quem decide é o caixa aberto, no servidor (api/loja/mesa/pedido).
   const lojaFechadaAgora = !mesa && (!storeStatus.open || franchisee.storeOpen === false);
+  // Fechada pela proteção de loja sem conexão, dentro do horário: a frase é
+  // "instabilidade, volte em alguns minutos", não "fechada".
+  const semConexaoAgora = !mesa && franchisee.storeOpen === false && franchisee.semConexao === true && storeStatus.open;
 
   // ── PEDIDO AGENDADO (lib/agendamento.ts) ─────────────────────────────────
   // Com o agendamento ligado, o checkout pergunta "Quando?" (⚡ Agora ou
@@ -2286,6 +2296,10 @@ export default function CustomerStorePage({
     // Primeiro de tudo: fechou, não cria pedido — com o motivo e o horário,
     // não um "Loja fechada.." genérico depois do formulário inteiro.
     if (semComoPedir) {
+      if (semConexaoAgora && !soPeloAgendamento) {
+        avisar({ tipo: "fechada", titulo: "Estamos com instabilidade no sistema", texto: `${TEXTO_DA_INSTABILIDADE} Seus itens ficam na sacola.` });
+        return;
+      }
       const outroTipo = deliveryType === "DELIVERY" ? configDoAgendamento.retirada && !franchisee.storeDeliveryOnly : configDoAgendamento.entrega;
       avisar({
         tipo: "fechada",
@@ -3608,7 +3622,7 @@ export default function CustomerStorePage({
                 escolhido={horarioAgendado}
                 onEscolher={setHorarioAgendado}
                 ehEntrega={deliveryType === "DELIVERY"}
-                motivoSemAgora={lojaFechadaAgora ? "A loja está fechada agora, mas você pode agendar." : soPeloAgendamento ? "Esta loja trabalha com pedido agendado." : undefined}
+                motivoSemAgora={semConexaoAgora ? "Estamos com instabilidade no sistema agora, mas você pode agendar." : lojaFechadaAgora ? "A loja está fechada agora, mas você pode agendar." : soPeloAgendamento ? "Esta loja trabalha com pedido agendado." : undefined}
               />
             )}
 
@@ -4390,7 +4404,9 @@ export default function CustomerStorePage({
                   : semComoPedir
                   ? soPeloAgendamento
                     ? "📅 Só pedido agendado"
-                    : `🔴 Loja fechada${!storeStatus.open && storeStatus.text ? ` • ${storeStatus.text}` : ""}`
+                    : semConexaoAgora
+                      ? "⚠️ Instabilidade no sistema • volte em alguns minutos"
+                      : `🔴 Loja fechada${!storeStatus.open && storeStatus.text ? ` • ${storeStatus.text}` : ""}`
                   : loading
                     ? "Enviando pedido..."
                     : vaiAgendar
@@ -4459,11 +4475,18 @@ export default function CustomerStorePage({
         </div>
       )}
 
-      {/* Loja manualmente fechada */}
+      {/* Loja manualmente fechada — ou fechada pela proteção de loja sem
+          conexão, que no horário não é "fechada": é instabilidade passageira. */}
       {!mesa && !isPaused && franchisee.storeOpen === false && (
-        <div style={{ background: "#374151", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
-          🔴 Loja fechada no momento · {configDoAgendamento.ativo && diasParaAgendar.length > 0 ? "Você pode agendar o seu pedido." : "Em breve voltamos!"}
-        </div>
+        semConexaoAgora ? (
+          <div style={{ background: "#B45309", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
+            ⚠️ Estamos com instabilidade no sistema e não conseguimos receber pedidos agora. Volte em alguns minutos!
+          </div>
+        ) : (
+          <div style={{ background: "#374151", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
+            🔴 Loja fechada no momento · {configDoAgendamento.ativo && diasParaAgendar.length > 0 ? "Você pode agendar o seu pedido." : "Em breve voltamos!"}
+          </div>
+        )
       )}
 
       {/* PRÊMIO DA COMANDA (campanha "converter para site próprio") */}

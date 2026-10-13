@@ -48,7 +48,20 @@ export type EstadoDaLoja = {
   proximaAbertura?: { dia: string; hora: string; ehHoje: boolean; ehAmanha: boolean };
   /** Frase pronta, do jeito que o cliente entende. */
   texto: string;
+  /**
+   * Fechada pela proteção de LOJA SEM CONEXÃO (lib/loja-sem-conexao.ts), não
+   * pelo lojista: a loja está no horário, só sem sistema por alguns minutos.
+   */
+  instabilidade?: boolean;
 };
+
+/**
+ * O que o cliente lê enquanto a loja está sem conexão — no site, no checkout e
+ * na recusa do robô. Nada de "fechado" nem de "abrimos às 18h": a loja está
+ * aberta, e volta sozinha.
+ */
+export const TEXTO_DA_INSTABILIDADE =
+  "Estamos com uma instabilidade no sistema e não conseguimos receber pedidos agora. Volte em alguns minutos, por favor!";
 
 /**
  * O estado da loja, no fuso dela.
@@ -62,6 +75,12 @@ export function estadoDaLoja(opts: {
   storeOpen?: boolean | null;
   timezone?: string | null;
   agora?: Date;
+  /**
+   * O "Site aberto" foi desligado pela proteção de loja sem conexão
+   * (lib/loja-sem-conexao-no-banco.ts, `lojaFechadaPelaQueda`). Só muda a
+   * frase: a loja continua fechada para pedido.
+   */
+  semConexao?: boolean;
 }): EstadoDaLoja {
   const agora = opts.agora || new Date();
   const horas = normalizeStoreHours(opts.storeHours);
@@ -84,6 +103,14 @@ export function estadoDaLoja(opts: {
   // 2. Interruptor manual do painel. O lojista fecha na correria; se o robô
   //    continuasse vendendo, o pedido cairia numa loja que decidiu parar.
   if (opts.storeOpen === false) {
+    if (opts.semConexao) {
+      // Instabilidade só DENTRO do horário. Fora dele (a queda termina no
+      // minuto seguinte ao fechamento), a frase é a do horário: "abre amanhã
+      // às 18h" continua verdade.
+      const peloHorario = estadoDaLoja({ ...opts, storeOpen: true, semConexao: false });
+      if (!peloHorario.aberta) return peloHorario;
+      return { aberta: false, motivo: "fechada_manualmente", instabilidade: true, texto: TEXTO_DA_INSTABILIDADE };
+    }
     return {
       aberta: false,
       motivo: "fechada_manualmente",
@@ -236,6 +263,23 @@ function formatarData(iso: string): string {
 export function instrucaoDeHorario(estado: EstadoDaLoja): string {
   if (estado.aberta) {
     return `SITUAÇÃO DA LOJA AGORA: ABERTA${estado.fechaAs ? ` (fecha às ${estado.fechaAs})` : ""}. Pode anotar pedidos normalmente.`;
+  }
+
+  // Sem conexão (lib/loja-sem-conexao.ts): a loja está no horário, só sem
+  // sistema por alguns minutos. "Fechado, abrimos às 18h" mandaria embora um
+  // cliente que pode pedir daqui a cinco minutos.
+  if (estado.instabilidade) {
+    return `
+🟠 SITUAÇÃO DA LOJA AGORA: **SEM SISTEMA POR ALGUNS MINUTOS**. A loja está com uma instabilidade no sistema e não consegue receber pedidos neste momento; deve voltar em alguns minutos.
+REGRA OBRIGATÓRIA ENQUANTO DURAR:
+- É PROIBIDO anotar pedido, fechar pedido, somar total, pedir endereço ou forma de pagamento. NÃO mande o link do site para finalizar compra.
+- NUNCA diga "já vou anotar", "seu pedido foi registrado" ou "vai sair em X minutos".
+- NÃO diga que a loja está fechada e NÃO dê horário de abertura: ela está no horário, só sem sistema agora.
+- Avise da instabilidade UMA VEZ, na sua primeira resposta da conversa. Se isso já está no histórico, NÃO repita — só volte ao assunto se o cliente tentar fazer pedido. Cortesia ou encerramento ("obrigado", "valeu", "boa noite") e dúvida sobre um pedido que a loja já aceitou NÃO levam o aviso.
+- Fora isso, atenda normalmente: responda dúvidas de produto, preço e promoção.
+- Se o cliente insistir em pedir, peça com gentileza que tente de novo em alguns minutos.
+- Modelo de tom: "Estamos com uma instabilidade no sistema agora e não conseguimos registrar pedidos. Volte em alguns minutos, por favor! 🙏"
+`.trim();
   }
 
   const quando = estado.proximaAbertura
