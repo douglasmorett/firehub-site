@@ -18,26 +18,43 @@ const PAGINA = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <script>
 (function () {
   var m = document.getElementById("m");
-  var g = null;
+  var g = null, pc = null;
   try { g = JSON.parse(localStorage.getItem("firehub_contingencia") || "null"); } catch (e) {}
+  try { pc = localStorage.getItem("firehub_contingencia_pc"); } catch (e) {}
   var volta = location.pathname + location.search;
+  // Sem para onde ir: fica aqui e tenta a nuvem de novo a cada 15 s — quando
+  // ela voltar, a página de verdade abre sozinha (nunca presa num erro).
+  function depois(texto) {
+    m.textContent = texto;
+    setTimeout(function () { location.reload(); }, 15000);
+  }
   function ir(base) {
     var f = "bilhete=" + encodeURIComponent(g.bilhete) + "&volta=" + encodeURIComponent(volta);
     location.replace(base + "/contingencia/entrar#" + f);
   }
   if (!g || !g.bilhete || new Date(g.validoAte).getTime() < Date.now()) {
-    m.textContent = "Este aparelho não tem a contingência guardada. Tente de novo quando a internet voltar.";
-    setTimeout(function () { location.reload(); }, 15000);
+    depois("Este aparelho não tem a contingência guardada. Tentando de novo…");
     return;
   }
-  // No computador do caixa, o Assistente sabe o endereço; nos outros, o guardado.
+  // No computador do caixa, o Assistente sabe se o FireHub local está pronto.
+  // Nos outros aparelhos, vai só se o computador da loja estava vivo no último
+  // sinal da nuvem (TrocaDeContingencia guarda): desligado, a tela cairia num
+  // erro do navegador e ficaria lá.
   var portas = [7899, 7900, 7901, 7891], i = 0;
   function proximo() {
-    if (i >= portas.length) { if (g.enderecos && g.enderecos[0]) return ir(g.enderecos[0]); m.textContent = "Endereço do computador da loja desconhecido."; return; }
+    if (i >= portas.length) {
+      if (pc === "0") return depois("O computador da loja também não responde. Tentando de novo…");
+      if (g.enderecos && g.enderecos[0]) return ir(g.enderecos[0]);
+      return depois("Endereço do computador da loja desconhecido. Tentando de novo…");
+    }
     var porta = portas[i++];
     fetch("http://127.0.0.1:" + porta + "/contingencia/estado", { cache: "no-store" })
       .then(function (r) { return r.json(); })
-      .then(function (e) { if (e && e.porta && e.ativa) ir("http://127.0.0.1:" + e.porta); else proximo(); })
+      .then(function (e) {
+        if (!e || !e.ativa) return proximo();
+        if (e.pronta && e.porta) return ir("http://127.0.0.1:" + e.porta);
+        depois("O computador da loja está preparando a contingência…");
+      })
       .catch(proximo);
   }
   proximo();

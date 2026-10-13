@@ -24,9 +24,12 @@
  */
 import { useEffect, useRef, useState } from "react";
 import { fetchAssistente } from "@/lib/print";
+import { destinoDaTroca } from "@/lib/contingencia/troca";
 
 const CHAVE = "firehub_contingencia";
 const VOLTOU_EM = "firehub_contingencia_voltou_em";
+/** "1"/"0": o computador da loja estava vivo no último sinal (lib/contingencia/troca.ts). */
+const CHAVE_DO_PC = "firehub_contingencia_pc";
 const PORTA_DA_LOJA = "7890";
 const PORTAS_DO_ASSISTENTE = [7899, 7900, 7901, 7891];
 
@@ -48,7 +51,9 @@ function lerGuardado(): Guardado | null {
  */
 function cuidarDaRedeDeSeguranca(ativa: boolean, tipo: "painel" | "garcom"): void {
   if (!("serviceWorker" in navigator)) return;
-  const escopo = tipo === "garcom" ? "/garcom/" : "/store/";
+  // Sem a barra no fim: o escopo "/store/" deixava de fora o próprio /store (o
+  // painel principal) — visto na prova de 12/10, a página caía no erro do Chrome.
+  const escopo = tipo === "garcom" ? "/garcom" : "/store";
   if (ativa) {
     navigator.serviceWorker.register("/sw-contingencia.js", { scope: escopo }).catch(() => {});
     return;
@@ -72,7 +77,7 @@ async function comPrazo(url: string, ms: number, init?: RequestInit): Promise<Re
   }
 }
 
-type EstadoNoAssistente = { endereco: string | null; testando: boolean };
+type EstadoNoAssistente = { endereco: string | null; testando: boolean; ativa: boolean };
 
 /**
  * No computador do caixa, o Assistente sabe se a contingência está pronta, em
@@ -95,6 +100,7 @@ async function perguntarAoAssistente(): Promise<EstadoNoAssistente | null> {
       return {
         endereco: e?.pronta && e?.porta ? `http://127.0.0.1:${e.porta}` : null,
         testando: e?.testando === true,
+        ativa: e?.ativa === true,
       };
     } catch {
       /* próxima porta */
@@ -113,6 +119,8 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
   const [voltando, setVoltando] = useState(false);
   const falhas = useRef(0);
   const indo = useRef(false);
+  /** O último sinal da nuvem disse que o computador da loja está vivo (lib/contingencia/troca.ts). */
+  const pcVivo = useRef(true);
 
   // ── Na nuvem: guardar o bilhete e vigiar a conexão ─────────────────────────
   useEffect(() => {
@@ -121,6 +129,8 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
       return;
     }
     let vivo = true;
+    // O que o último sinal disse do computador da loja, de antes de esta tela abrir.
+    try { pcVivo.current = localStorage.getItem(CHAVE_DO_PC) !== "0"; } catch { /* sem armazenamento */ }
     const renovar = () => {
       fetch("/api/contingencia/bilhete", { cache: "no-store", headers: tipo === "garcom" ? { "x-operador": "garcom" } : {} })
         .then((r) => (r.ok ? r.json() : null))
@@ -148,16 +158,32 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
         falhas.current = 3;
       } else {
         try {
-          const r = await comPrazo("/api/contingencia/sinal", 4000);
-          falhas.current = r.ok ? 0 : falhas.current + 1;
+          const r = await comPrazo(`/api/contingencia/sinal?loja=${encodeURIComponent(guardado.loja)}`, 4000);
+          if (r.ok) {
+            falhas.current = 0;
+            const d = await r.json().catch(() => null);
+            const pcDisse = d?.pc !== false; // nuvem que não conta (versão antiga): como antes
+            if (pcDisse !== pcVivo.current) {
+              pcVivo.current = pcDisse;
+              // Para a rede de segurança (public/sw-contingencia.js), que roda sem este componente.
+              try { localStorage.setItem(CHAVE_DO_PC, pcDisse ? "1" : "0"); } catch { /* sem armazenamento */ }
+            }
+          } else {
+            falhas.current += 1;
+          }
         } catch {
           falhas.current += 1;
         }
       }
       if (falhas.current < 3) return;
+      const destino = destinoDaTroca({
+        contingenciaAqui: !!noAssistente?.ativa,
+        enderecoNoAssistente: noAssistente?.endereco ?? null,
+        pcVivo: pcVivo.current,
+        enderecos: guardado.enderecos,
+      });
+      if (!destino) return; // o computador da loja não está pronto: fica e confere de novo
       indo.current = true;
-      const destino = noAssistente?.endereco || guardado.enderecos[0];
-      if (!destino) { indo.current = false; return; }
       const fragmento = new URLSearchParams({ bilhete: guardado.bilhete, volta: aqui(), tipo }).toString();
       window.location.href = `${destino}/contingencia/entrar#${fragmento}`;
     };

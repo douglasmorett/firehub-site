@@ -9,6 +9,7 @@ import { decidir, iguais, type LinhaDaSaida } from "../src/lib/contingencia/mesc
 import { TABELAS_DA_COPIA, colunasQueNaoDescem, idDoRegistro, tabelaDaCopia } from "../src/lib/contingencia/catalogo";
 import { assinarBilhete, lerBilhete } from "../src/lib/contingencia/chave";
 import { sqlDaFuncao, tabelasComGatilho } from "../src/lib/contingencia/estrutura-no-banco";
+import { destinoDaTroca } from "../src/lib/contingencia/troca";
 
 let falhas = 0;
 const confere = (oQue: string, ok: boolean, obtido?: unknown) => {
@@ -134,6 +135,35 @@ console.log("— A volta, linha a linha —");
   );
 }
 confere("JSON com chaves em outra ordem é igual", iguais({ a: 1, b: [1, { c: 2, d: 3 }] }, { b: [1, { d: 3, c: 2 }], a: 1 }));
+
+console.log("\n— Para onde a tela vai quando a nuvem some —");
+{
+  const ips = ["http://192.168.0.10:7890"];
+  confere(
+    "TV com o computador da loja vivo: vai para ele",
+    destinoDaTroca({ contingenciaAqui: false, enderecoNoAssistente: null, pcVivo: true, enderecos: ips }) === ips[0],
+  );
+  confere(
+    "TV com o computador da loja desligado: fica (nada de página de erro presa)",
+    destinoDaTroca({ contingenciaAqui: false, enderecoNoAssistente: null, pcVivo: false, enderecos: ips }) === null,
+  );
+  confere(
+    "computador da loja com o FireHub local pronto: vai para o 127.0.0.1",
+    destinoDaTroca({ contingenciaAqui: true, enderecoNoAssistente: "http://127.0.0.1:7890", pcVivo: true, enderecos: ips }) === "http://127.0.0.1:7890",
+  );
+  confere(
+    "computador da loja ainda subindo o FireHub local: espera (não vai para o IP da rede)",
+    destinoDaTroca({ contingenciaAqui: true, enderecoNoAssistente: null, pcVivo: true, enderecos: ips }) === null,
+  );
+  confere(
+    "outro PC com Assistente, contingência em outro computador: vai pelo IP da rede",
+    destinoDaTroca({ contingenciaAqui: false, enderecoNoAssistente: null, pcVivo: true, enderecos: ips }) === ips[0],
+  );
+  confere(
+    "bilhete sem endereço: fica",
+    destinoDaTroca({ contingenciaAqui: false, enderecoNoAssistente: null, pcVivo: true, enderecos: [] }) === null,
+  );
+}
 
 console.log("\n— Catálogo e bilhete —");
 confere("toda tabela tem chave", TABELAS_DA_COPIA.every((t) => t.chave.length > 0));
