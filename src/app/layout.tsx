@@ -27,7 +27,7 @@ export const metadata: Metadata = {
   // porque é assim que o link da loja é divulgado (lib/campanha-converter.ts).
   metadataBase: new URL("https://firehubfood.com.br"),
   title: "FireHub — Simples, Rápido e Completo. Sistema para Restaurantes.",
-  description: "Tudo que o seu restaurante precisa em um só lugar. Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro e auditoria com IA. Teste grátis por 15 dias.",
+  description: "Tudo que o seu restaurante precisa em um só lugar. Cardápio digital, gestão de pedidos, chatbot WhatsApp, controle financeiro, tráfego pago e modo contingência. Teste grátis por 15 dias.",
   keywords: "sistema restaurante, cardápio digital, delivery, gestão restaurante, FireHub, sistema para delivery, chatbot whatsapp restaurante",
   appleWebApp: { capable: true, statusBarStyle: "default", title: "FireHub" },
   icons: {
