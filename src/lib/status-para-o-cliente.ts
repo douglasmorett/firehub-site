@@ -121,3 +121,24 @@ export function fraseDeStatusDeEmergencia(e: {
   }
   return null;
 }
+
+/**
+ * Em que etapa da linha do tempo "Acompanhe seu pedido" o cliente está
+ * (tela do cardápio e /loja/[slug]/pedido/[id]). A linha só conhece
+ * NOVO → ACEITO → PREPARANDO → SAIU_ENTREGA → ENTREGUE; os outros nomes de
+ * status caem na etapa certa. Na retirada, PRONTO já é a etapa "pronto para
+ * retirada" (a mesma do SAIU_ENTREGA) — na entrega, pronto ainda é cozinha.
+ */
+export function etapaDoAcompanhamento(
+  status: string | null | undefined,
+  deliveryType: string | null | undefined,
+): string {
+  const s = String(status || "").toUpperCase();
+  if (CANCELADO.has(s)) return "CANCELADO";
+  if (FINALIZADO.has(s)) return "ENTREGUE";
+  if (NA_RUA.has(s)) return "SAIU_ENTREGA";
+  if (s === "PRONTO") return ehRetirada(deliveryType) ? "SAIU_ENTREGA" : "PREPARANDO";
+  if (s === "PREPARANDO" || s === "EM_PREPARO" || s === "EM_ANDAMENTO") return "PREPARANDO";
+  if (s === "ACEITO" || s === "CONFIRMADO") return "ACEITO";
+  return "NOVO";
+}

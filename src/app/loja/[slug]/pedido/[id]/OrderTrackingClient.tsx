@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { avisarOApp } from "@/lib/app-da-loja/ponte";
+import { ehRetirada, etapaDoAcompanhamento } from "@/lib/status-para-o-cliente";
 import { CheckCircle, Clock, ChefHat, Bike, Package, X, Phone, ArrowLeft, Star } from "lucide-react";
 import Link from "next/link";
 
@@ -35,6 +36,11 @@ const STATUS_FLOW = [
   { key: "ENTREGUE",     label: "Pedido Entregue!",    icon: Package,     color: "#16A34A", emoji: "🎉", desc: "Bom apetite! Aproveite sua refeição 😋" },
   { key: "CANCELADO",    label: "Pedido Cancelado",    icon: X,           color: "#EF4444", emoji: "❌", desc: "Seu pedido foi cancelado" },
 ];
+
+const RETIRADA_NO_LUGAR: Record<string, { label: string; icon: typeof Package; emoji: string; desc: string }> = {
+  SAIU_ENTREGA: { label: "Pronto para Retirada", icon: Package, emoji: "🛍️", desc: "Seu pedido está pronto! É só vir buscar no balcão" },
+  ENTREGUE:     { label: "Pedido Retirado!",     icon: CheckCircle, emoji: "🎉", desc: "Bom apetite! Aproveite sua refeição 😋" },
+};
 
 function fmtR(v: number) { return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 
@@ -72,15 +78,20 @@ export default function OrderTrackingClient({
   }, [orderId, slug]);
 
   useEffect(() => {
-    if (status === "ENTREGUE" || status === "CANCELADO") return;
+    const fim = etapaDoAcompanhamento(status, deliveryType);
+    if (fim === "ENTREGUE" || fim === "CANCELADO") return;
     const iv = setInterval(pollStatus, 15000); // poll a cada 15s
     return () => clearInterval(iv);
   }, [pollStatus, status]);
 
-  const currentIdx = STATUS_FLOW.findIndex(s => s.key === status);
-  const currentStep = STATUS_FLOW[currentIdx] || STATUS_FLOW[0];
-  const isCanceled = status === "CANCELADO";
-  const isDelivered = status === "ENTREGUE";
+  // Na retirada não há entregador: a etapa do SAIU_ENTREGA é "pronto para retirada".
+  const retirada = ehRetirada(deliveryType);
+  const statusFlow = retirada ? STATUS_FLOW.map(s => RETIRADA_NO_LUGAR[s.key] ? { ...s, ...RETIRADA_NO_LUGAR[s.key] } : s) : STATUS_FLOW;
+  const etapa = etapaDoAcompanhamento(status, deliveryType);
+  const currentIdx = statusFlow.findIndex(s => s.key === etapa);
+  const currentStep = statusFlow[currentIdx] || statusFlow[0];
+  const isCanceled = etapa === "CANCELADO";
+  const isDelivered = etapa === "ENTREGUE";
 
   const submitRating = async () => {
     if (!ratingValue) return;
@@ -93,9 +104,9 @@ export default function OrderTrackingClient({
   };
 
   const estimatedTime = () => {
-    if (status === "NOVO" || status === "ACEITO") return deliveryType === "DELIVERY" ? "30-45 min" : "15-20 min";
-    if (status === "PREPARANDO") return deliveryType === "DELIVERY" ? "20-30 min" : "10-15 min";
-    if (status === "SAIU_ENTREGA") return "5-15 min";
+    if (etapa === "NOVO" || etapa === "ACEITO") return deliveryType === "DELIVERY" ? "30-45 min" : "15-20 min";
+    if (etapa === "PREPARANDO") return deliveryType === "DELIVERY" ? "20-30 min" : "10-15 min";
+    if (etapa === "SAIU_ENTREGA" && !retirada) return "5-15 min";
     return "";
   };
 
@@ -145,8 +156,8 @@ export default function OrderTrackingClient({
           <div style={{ background: "#fff", borderRadius: "16px", padding: "1.25rem 1.5rem", marginBottom: "1.25rem", border: "1px solid #F1F5F9", boxShadow: "0 2px 8px rgba(0,0,0,0.04)" }}>
             <h3 style={{ fontSize: "0.85rem", fontWeight: 700, color: "#475569", margin: "0 0 1rem" }}>🗺️ Acompanhe seu pedido</h3>
             <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-              {STATUS_FLOW.filter(s => s.key !== "CANCELADO").map((step, idx) => {
-                const stepIdx = STATUS_FLOW.findIndex(s => s.key === step.key);
+              {statusFlow.filter(s => s.key !== "CANCELADO").map((step, idx) => {
+                const stepIdx = statusFlow.findIndex(s => s.key === step.key);
                 const done = stepIdx <= currentIdx;
                 const active = stepIdx === currentIdx;
                 const Icon = step.icon;

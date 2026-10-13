@@ -67,6 +67,7 @@ import QuandoReceber, { type Quando } from "./QuandoReceber";
 import AgendarNoCardapio from "./AgendarNoCardapio";
 import { aceitaAgendamentoPara, horariosParaAgendar, lerConfigDeAgendamento, textoDoAgendamento } from "@/lib/agendamento";
 import { avisarOApp } from "@/lib/app-da-loja/ponte";
+import { ehRetirada, etapaDoAcompanhamento } from "@/lib/status-para-o-cliente";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
 function formatarCpf(v: string): string {
@@ -2696,12 +2697,16 @@ export default function CustomerStorePage({
 
   // ===== ORDER TRACKING =====
   const [trackingStatus, setTrackingStatus] = useState("NOVO");
+  // Na retirada não há entregador: a etapa do SAIU_ENTREGA é "pronto para retirada".
+  const trackingRetirada = ehRetirada(deliveryType);
   const STATUSES = [
     { key: "NOVO", label: "Pedido Enviado", icon: "📩", desc: "Aguardando confirmação da loja" },
     { key: "ACEITO", label: "Aceito", icon: "✅", desc: "A loja confirmou seu pedido" },
     { key: "PREPARANDO", label: "Preparando", icon: "👨‍🍳", desc: "Seu pedido está sendo preparado" },
-    { key: "SAIU_ENTREGA", label: "Saiu para Entrega", icon: "🛵", desc: "O entregador está a caminho" },
-    { key: "ENTREGUE", label: "Entregue", icon: "🎉", desc: "Pedido finalizado. Bom apetite!" },
+    trackingRetirada
+      ? { key: "SAIU_ENTREGA", label: "Pronto para Retirada", icon: "🛍️", desc: "Seu pedido está pronto! É só vir buscar no balcão" }
+      : { key: "SAIU_ENTREGA", label: "Saiu para Entrega", icon: "🛵", desc: "O entregador está a caminho" },
+    { key: "ENTREGUE", label: trackingRetirada ? "Retirado" : "Entregue", icon: "🎉", desc: "Pedido finalizado. Bom apetite!" },
     { key: "CANCELADO", label: "Cancelado", icon: "❌", desc: "Pedido cancelado pela loja" },
   ];
 
@@ -2716,7 +2721,8 @@ export default function CustomerStorePage({
           const d = await r.json();
           setTrackingStatus(d.status);
           // Estado final: nada mais vai mudar — para de consultar.
-          if (d.status === "ENTREGUE" || d.status === "CANCELADO") clearInterval(poll);
+          const fim = etapaDoAcompanhamento(d.status, null);
+          if (fim === "ENTREGUE" || fim === "CANCELADO") clearInterval(poll);
         }
       } catch {}
     }, 5000);
@@ -2724,15 +2730,16 @@ export default function CustomerStorePage({
   }, [orderSuccess]);
 
   if (orderSuccess) {
-    const currentIdx = STATUSES.findIndex(s => s.key === trackingStatus);
-    const isCancelled = trackingStatus === "CANCELADO";
-    const isDelivered = trackingStatus === "ENTREGUE";
+    const etapa = etapaDoAcompanhamento(trackingStatus, deliveryType);
+    const currentIdx = STATUSES.findIndex(s => s.key === etapa);
+    const isCancelled = etapa === "CANCELADO";
+    const isDelivered = etapa === "ENTREGUE";
 
     return (
       <div className="order-success-bg">
         <div className="order-success-card" style={{ maxWidth: "420px" }}>
           <div className="order-success-icon">{isCancelled ? "❌" : isDelivered ? "🎉" : "📦"}</div>
-          <h1 className="order-success-title">{isCancelled ? "Pedido Cancelado" : isDelivered ? "Pedido Entregue!" : "Acompanhe seu Pedido"}</h1>
+          <h1 className="order-success-title">{isCancelled ? "Pedido Cancelado" : isDelivered ? (trackingRetirada ? "Pedido Retirado!" : "Pedido Entregue!") : "Acompanhe seu Pedido"}</h1>
           <p className="order-success-sub">Pedido recebido por <strong>{storeName}</strong></p>
           <div className="order-code-box">
             <p className="order-code-label">Código do Pedido</p>
