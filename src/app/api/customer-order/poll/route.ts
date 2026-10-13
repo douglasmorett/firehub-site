@@ -11,6 +11,10 @@ import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from "@/lib/filtro-do-feed";
 import { marcarPainelAberto } from "@/lib/sinais-da-loja";
+import { LIMITE as LIMITE_DO_FEED } from "@/lib/feed-de-pedidos";
+
+/** Teto de pedidos por rodada do feed (ver o findMany abaixo); o navegador corta no MESMO número (lib/feed-de-pedidos.ts). */
+const TETO_DO_FEED = LIMITE_DO_FEED;
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -1054,7 +1058,12 @@ export async function GET(req: NextRequest) {
         motoboy: { select: { id: true, name: true, phone: true } },
       },
       orderBy: { createdAt: "desc" },
-      take: 200
+      // Era 200: a Delícias de Casa fez 214 pedidos em 12/10/2026 e, somados
+      // aos 67 ainda em aberto do dia seguinte, o #64 de 12h33 ficava de fora
+      // do corte — o filtro do dia 12 nunca o mostrava. O período já recorta a
+      // lista (e o modo `desde` manda só o que mudou); o teto é só a trava
+      // contra um período absurdo.
+      take: TETO_DO_FEED
     }));
 
     // Auto-repair zero-price items in existing orders

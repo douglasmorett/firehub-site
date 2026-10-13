@@ -10,7 +10,7 @@
  * troca, novo entra na ordem certa; resposta igual → mesmo texto.
  */
 import assert from "node:assert/strict";
-import { criarFeedDePedidos } from "../src/lib/feed-de-pedidos";
+import { criarFeedDePedidos, LIMITE } from "../src/lib/feed-de-pedidos";
 
 type Resp = { corpo: unknown; agora?: string; status?: number };
 let fila: Resp[] = [];
@@ -110,16 +110,17 @@ async function main() {
   assert.equal(desdeDe(urls.at(-1)!), null, "servidor sem o cabeçalho → sempre completa");
   assert.deepEqual(r.lista!.map((o) => o.id), ["A", "B"]);
 
-  // Corte de 200: o 201º mais antigo sai, como na completa
+  // Corte no LIMITE: o mais antigo sai, como na completa
   const grande = criarFeedDePedidos();
-  const muitos = Array.from({ length: 200 }, (_, i) => p("P" + i, 200 - i));
+  const muitos = Array.from({ length: LIMITE }, (_, i) => p("P" + i, LIMITE - i));
   fila.push({ corpo: muitos, agora: "2026-10-02T03:02:00.000Z" }); await grande.buscar("");
   relogio += 5000;
-  fila.push({ corpo: { pedidos: [p("NOVO", 999)], removidos: [], agora: "2026-10-02T03:02:05.000Z" } });
+  fila.push({ corpo: { pedidos: [p("NOVO", LIMITE + 999)], removidos: [], agora: "2026-10-02T03:02:05.000Z" } });
   r = await grande.buscar("");
-  assert.equal(r.lista!.length, 200);
+  assert.equal(r.lista!.length, LIMITE);
   assert.equal(r.lista![0].id, "NOVO");
-  assert.ok(!r.lista!.some((o) => o.id === "P199"), "o mais antigo saiu no corte");
+  assert.ok(!r.lista!.some((o) => o.id === "P" + (LIMITE - 1)), "o mais antigo saiu no corte");
+  assert.ok(LIMITE >= 1000, "dia cheio de loja grande (Delícias: 214 + 67 em aberto) cabe no feed");
 
   console.log("✓ lado do navegador: todas as verificações passaram");
 }

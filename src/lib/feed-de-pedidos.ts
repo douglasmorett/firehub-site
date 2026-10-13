@@ -13,7 +13,7 @@
  * Agora a primeira rodada é completa e as seguintes pedem `desde=<instante>`:
  * o servidor devolve só o pedido atualizado depois disso e os ids que saíram
  * do filtro. Este módulo guarda a lista, aplica a diferença e devolve a lista
- * INTEIRA, ordenada e cortada como o servidor faz (createdAt desc, 200). Quem
+ * INTEIRA, ordenada e cortada como o servidor faz (createdAt desc, LIMITE). Quem
  * chama continua recebendo exatamente o formato de antes.
  *
  * ── As três garantias ───────────────────────────────────────────────────────
@@ -29,7 +29,8 @@
 
 const COMPLETA_A_CADA_MS = 60_000;
 const FOLGA_MS = 30_000;
-const LIMITE = 200;
+/** O MESMO teto do servidor (TETO_DO_FEED em api/customer-order/poll). Era 200 e escondia os pedidos mais antigos de um dia cheio. */
+export const LIMITE = 1500;
 
 export type RodadaDoFeed = {
   ok: boolean;
@@ -54,7 +55,7 @@ function porCriacaoDesc(a: any, b: any): number {
 
 /**
  * Aplica uma resposta de "só o que mudou" à lista guardada e devolve a lista
- * inteira, como o servidor a mandaria: createdAt desc, até 200. Altera o mapa.
+ * inteira, como o servidor a mandaria: createdAt desc, até LIMITE. Altera o mapa.
  * Separada do `buscar` para o teste de equivalência usar exatamente esta conta
  * (scripts/teste-feed-so-o-que-mudou.ts).
  */
