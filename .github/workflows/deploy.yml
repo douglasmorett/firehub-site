@@ -50,6 +50,11 @@ jobs:
       # O Coolify procura a imagem pelo commit COMPLETO (40 caracteres) — é a
       # marca que ele mostra no log ("commit sha 4df02208a5d0...").
       - uses: docker/build-push-action@v6
+        env:
+          # A chave é um PEM de várias linhas: vai por variável de ambiente
+          # (secret-envs, abaixo). Na lista `secrets`, cada linha vira um item
+          # e o build receberia só a primeira linha do PEM (o cabeçalho).
+          CONTINGENCIA_CHAVE: ${{ secrets.CONTINGENCIA_CHAVE_PRIVADA }}
         with:
           context: .
           platforms: linux/amd64
@@ -65,8 +70,8 @@ jobs:
           # computador das lojas (scripts/contingencia/assinar-pacote.mjs).
           # Entra só na etapa que assina, pelo BuildKit, e não fica na imagem.
           # Sem o segredo, o pacote sai sem assinatura e nenhum Assistente o aceita.
-          secrets: |
-            contingencia_chave=${{ secrets.CONTINGENCIA_CHAVE_PRIVADA }}
+          secret-envs: |
+            contingencia_chave=CONTINGENCIA_CHAVE
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
