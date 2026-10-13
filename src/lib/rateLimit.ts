@@ -1,3 +1,4 @@
+import { ipRealDoSalto } from "./ip-do-cloudflare";
 /**
  * Rate limiter simples em memória para proteger rotas sensíveis.
  * Em produção com múltiplas instâncias, considerar Redis/KV.
@@ -69,7 +70,9 @@ export function getClientIp(req: Request): string {
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) {
     const saltos = forwarded.split(",").map(s => s.trim()).filter(Boolean);
-    if (saltos.length) return saltos[saltos.length - 1];
+    // Atrás do Cloudflare o último salto é a borda dele; aí o cliente de
+    // verdade vem no cf-connecting-ip (lib/ip-do-cloudflare.ts).
+    if (saltos.length) return ipRealDoSalto(saltos[saltos.length - 1], req.headers.get("cf-connecting-ip"));
   }
 
   const direto = req.headers.get("cf-connecting-ip") || req.headers.get("x-real-ip");

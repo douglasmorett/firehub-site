@@ -1,3 +1,4 @@
+import { ipRealDoSalto } from "./ip-do-cloudflare";
 /**
  * /src/lib/login-throttle.ts
  *
@@ -143,7 +144,8 @@ export function origemDaRequisicao(headers: { get?: (n: string) => string | null
   const encadeado = pegar("x-forwarded-for");
   if (encadeado) {
     const saltos = encadeado.split(",").map(s => s.trim()).filter(Boolean);
-    if (saltos.length) return saltos[saltos.length - 1];
+    // Atrás do Cloudflare o último salto é a borda dele (lib/ip-do-cloudflare.ts).
+    if (saltos.length) return ipRealDoSalto(saltos[saltos.length - 1], pegar("cf-connecting-ip"));
   }
 
   const direto = pegar("cf-connecting-ip") || pegar("x-real-ip");
