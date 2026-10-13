@@ -36,7 +36,9 @@ RUN npx next build
 
 # Modo Contingência: o supervisor que roda no computador da loja, num arquivo
 # só (contingencia/supervisor, pacote próprio com o driver do Postgres).
-RUN cd contingencia/supervisor && npm ci --no-audit --no-fund && npm run build
+# NODE_ENV=development como no `npm ci` do deps: o Coolify passa NODE_ENV=production
+# na montagem e o npm ci pulava o esbuild (devDependency) — "exit code 127".
+RUN cd contingencia/supervisor && NODE_ENV=development npm ci --no-audit --no-fund --include=dev && npm run build
 
 # Step 3: Production runner (imagem final leve)
 FROM base AS runner
