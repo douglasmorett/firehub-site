@@ -11,13 +11,14 @@
  * o histórico do que ele lançou.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, Square, Camera, Send, Package, Wallet, Receipt, Undo2, CheckCircle2, MessageCircle, Loader2, PauseCircle, Store } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import ConversaComOBill, { AVATAR_DO_BILL } from "@/components/bill/ConversaComOBill";
+import { EVENTO_BILL_LIGADO } from "@/components/bill/BillFlutuante";
+import { Mic, Camera, Package, Wallet, Receipt, Undo2, CheckCircle2, MessageCircle, PauseCircle, Store } from "lucide-react";
 
 type Estado = { ativo: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean };
 type Registro = { id: string; tipo: string; resumo: string; canal: string; desfeitoEm: string | null; criadoEm: string };
 type Dados = { estado: Estado; preco: number; diasDeTeste: number; numerosDoDono: string[]; numeroDoRobo: string | null; registros: Registro[] };
-type Fala = { de: "dono" | "assessor"; texto: string; detalhe?: string };
 type Aviso = { tipo: "ok" | "erro"; titulo: string; detalhe?: string };
 
 const VERDE = "#059669";
@@ -39,37 +40,6 @@ const ROTULO: Record<string, { texto: string; cor: string }> = {
   REATIVADO: { texto: "Reativado", cor: "#0891B2" },
   SITE: { texto: "Site", cor: "#475569" },
 };
-
-function paraBase64(blob: Blob): Promise<string> {
-  return new Promise((ok, erro) => {
-    const r = new FileReader();
-    r.onload = () => ok(String(r.result).split(",")[1] || "");
-    r.onerror = erro;
-    r.readAsDataURL(blob);
-  });
-}
-
-/** Foto do celular tem 4–8 MB: reduz para 1600 px em JPEG antes de mandar. */
-async function fotoReduzida(arquivo: File): Promise<{ base64: string; mimeType: string }> {
-  const url = URL.createObjectURL(arquivo);
-  try {
-    const img = await new Promise<HTMLImageElement>((ok, erro) => {
-      const i = new Image();
-      i.onload = () => ok(i);
-      i.onerror = erro;
-      i.src = url;
-    });
-    const escala = Math.min(1, 1600 / Math.max(img.width, img.height));
-    const c = document.createElement("canvas");
-    c.width = Math.round(img.width * escala);
-    c.height = Math.round(img.height * escala);
-    c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height);
-    const blob = await new Promise<Blob>((ok) => c.toBlob((b) => ok(b!), "image/jpeg", 0.85));
-    return { base64: await paraBase64(blob), mimeType: "image/jpeg" };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 export default function BillClient() {
   const [dados, setDados] = useState<Dados | null>(null);
@@ -105,6 +75,8 @@ export default function BillClient() {
       setAviso(ligar
         ? { tipo: "ok", titulo: "Bill ligado!", detalhe: "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica." }
         : { tipo: "ok", titulo: "Bill desligado.", detalhe: "Nada mais é cobrado a partir de hoje." });
+      // A carinha do Bill no canto aparece (ou some) sem atualizar a página.
+      window.dispatchEvent(new CustomEvent(EVENTO_BILL_LIGADO, { detail: ligar }));
       await carregar();
     } catch (e: any) {
       setAviso({ tipo: "erro", titulo: "Não deu certo", detalhe: e.message });
@@ -133,6 +105,7 @@ export default function BillClient() {
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+        <img src={AVATAR_DO_BILL} alt="" width={44} height={44} style={{ borderRadius: 999, border: "2px solid #22D3EE" }} />
         <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: 0 }}>Bill, seu assessor</h1>
         {estado.ativo && (
           <span style={{ fontSize: 12, fontWeight: 800, color: VERDE, background: "#ECFDF5", padding: "4px 10px", borderRadius: 999 }}>
@@ -147,7 +120,13 @@ export default function BillClient() {
       {!estado.ativo ? <Oferta dados={dados} salvando={salvando} onLigar={() => ligar(true)} /> : (
         <>
           <ComoUsar dados={dados} />
-          <Conversa onGravou={carregar} />
+          <div style={{ border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 22 }}>
+            <div style={{ background: "#0B1220", color: "white", padding: "10px 14px", fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", gap: 10 }}>
+              <img src={AVATAR_DO_BILL} alt="" width={30} height={30} style={{ borderRadius: 999, border: "1.5px solid #22D3EE" }} />
+              Converse com o Bill — a mesma conversa do WhatsApp (lança de verdade)
+            </div>
+            <ConversaComOBill altura={420} aoGravar={carregar} />
+          </div>
           <Historico registros={dados.registros} />
           <div style={{ marginTop: 28, padding: 16, border: "1px solid #E2E8F0", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 13, color: "#475569" }}>
@@ -230,131 +209,6 @@ function ComoUsar({ dados }: { dados: Dados }) {
           Falta o seu número: cadastre o WhatsApp do proprietário em <b>Minha Loja</b>. Enquanto isso, use a conversa aqui embaixo.
         </div>
       )}
-    </div>
-  );
-}
-
-function Conversa({ onGravou }: { onGravou: () => void }) {
-  const [falas, setFalas] = useState<Fala[]>([
-    { de: "assessor", texto: "Oi, chefe! Aqui é o Bill. Me fala o que chegou, o que pagou, o que acabou ou o que quer saber. Pode mandar áudio ou foto da nota." },
-  ]);
-  const [texto, setTexto] = useState("");
-  const [enviando, setEnviando] = useState(false);
-  const [gravando, setGravando] = useState(false);
-  const gravador = useRef<MediaRecorder | null>(null);
-  const pedacos = useRef<Blob[]>([]);
-  const fim = useRef<HTMLDivElement | null>(null);
-  const arquivo = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => { fim.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [falas]);
-
-  async function mandar(corpo: { texto?: string; audio?: any; imagem?: any }, rotulo: string) {
-    setFalas((f) => [...f, { de: "dono", texto: rotulo }]);
-    setEnviando(true);
-    try {
-      const r = await fetch("/api/store/assessor/conversar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
-      const j = await r.json();
-      if (!r.ok) throw new Error(j.error || "Erro");
-      setFalas((f) => {
-        const copia = [...f];
-        if (j.ouvi) copia[copia.length - 1] = { de: "dono", texto: rotulo, detalhe: `“${j.ouvi}”` };
-        return [...copia, { de: "assessor", texto: j.resposta }];
-      });
-      if (j.gravou) onGravou();
-    } catch (e: any) {
-      setFalas((f) => [...f, { de: "assessor", texto: `⚠️ ${e.message}` }]);
-    } finally {
-      setEnviando(false);
-    }
-  }
-
-  async function gravar() {
-    if (gravando) {
-      gravador.current?.stop();
-      return;
-    }
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const tipo = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
-      const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo } : undefined);
-      pedacos.current = [];
-      rec.ondataavailable = (e) => { if (e.data.size) pedacos.current.push(e.data); };
-      rec.onstop = async () => {
-        stream.getTracks().forEach((t) => t.stop());
-        setGravando(false);
-        const blob = new Blob(pedacos.current, { type: rec.mimeType || "audio/webm" });
-        if (blob.size < 1000) return;
-        await mandar({ audio: { base64: await paraBase64(blob), mimeType: (rec.mimeType || "audio/webm").split(";")[0] } }, "🎤 Áudio");
-      };
-      gravador.current = rec;
-      rec.start();
-      setGravando(true);
-    } catch {
-      setFalas((f) => [...f, { de: "assessor", texto: "⚠️ O navegador não liberou o microfone. Permita o microfone no cadeado da barra de endereço." }]);
-    }
-  }
-
-  async function foto(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    e.target.value = "";
-    if (!f) return;
-    const imagem = await fotoReduzida(f);
-    await mandar({ imagem, texto: texto.trim() || undefined }, `📷 Foto${texto.trim() ? `: ${texto.trim()}` : ""}`);
-    setTexto("");
-  }
-
-  function enviarTexto() {
-    const t = texto.trim();
-    if (!t || enviando) return;
-    setTexto("");
-    mandar({ texto: t }, t);
-  }
-
-  return (
-    <div style={{ border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 22, background: "#EFEAE2" }}>
-      <div style={{ background: "#075E54", color: "white", padding: "10px 14px", fontWeight: 800, fontSize: 14 }}>
-        Converse com o Bill aqui (o mesmo do WhatsApp — lança de verdade)
-      </div>
-      <div style={{ height: 380, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
-        {falas.map((f, i) => (
-          <div key={i} style={{
-            alignSelf: f.de === "dono" ? "flex-end" : "flex-start", maxWidth: "80%",
-            background: f.de === "dono" ? "#DCF8C6" : "white", borderRadius: 10, padding: "8px 11px",
-            fontSize: 14, color: "#0F172A", whiteSpace: "pre-wrap", boxShadow: "0 1px 1px rgba(0,0,0,.08)",
-          }}>
-            {/* *negrito* do WhatsApp vira negrito aqui também */}
-            {f.texto.split(/(\*[^*\n]+\*)/g).map((p, j) => p.startsWith("*") && p.endsWith("*") && p.length > 2 ? <b key={j}>{p.slice(1, -1)}</b> : p)}
-            {f.detalhe && <div style={{ fontSize: 12, color: "#475569", marginTop: 4, fontStyle: "italic" }}>{f.detalhe}</div>}
-          </div>
-        ))}
-        {enviando && (
-          <div style={{ alignSelf: "flex-start", background: "white", borderRadius: 10, padding: "8px 11px", fontSize: 13, color: "#64748B", display: "flex", gap: 6, alignItems: "center" }}>
-            <Loader2 size={14} className="animate-spin" /> lançando…
-          </div>
-        )}
-        <div ref={fim} />
-      </div>
-      <div style={{ display: "flex", gap: 8, padding: 10, background: "#F0F2F5", alignItems: "center" }}>
-        <input ref={arquivo} type="file" accept="image/*" capture="environment" onChange={foto} style={{ display: "none" }} />
-        <button title="Foto da nota ou do boleto" onClick={() => arquivo.current?.click()} disabled={enviando || gravando}
-          style={{ background: "white", border: 0, borderRadius: 999, width: 40, height: 40, display: "grid", placeItems: "center", cursor: "pointer" }}>
-          <Camera size={18} color="#475569" />
-        </button>
-        <input value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") enviarTexto(); }}
-          placeholder={gravando ? "Gravando… toque no quadrado para enviar" : "Ex.: comprei 10 coca lata, paguei 45"}
-          disabled={enviando || gravando}
-          style={{ flex: 1, border: 0, borderRadius: 999, padding: "10px 14px", fontSize: 14, outline: "none" }} />
-        {texto.trim() ? (
-          <button onClick={enviarTexto} disabled={enviando} style={{ background: "#00A884", border: 0, borderRadius: 999, width: 40, height: 40, display: "grid", placeItems: "center", cursor: "pointer" }}>
-            <Send size={18} color="white" />
-          </button>
-        ) : (
-          <button onClick={gravar} disabled={enviando} title={gravando ? "Parar e enviar" : "Gravar áudio"}
-            style={{ background: gravando ? "#DC2626" : "#00A884", border: 0, borderRadius: 999, width: 40, height: 40, display: "grid", placeItems: "center", cursor: "pointer" }}>
-            {gravando ? <Square size={16} color="white" /> : <Mic size={18} color="white" />}
-          </button>
-        )}
-      </div>
     </div>
   );
 }

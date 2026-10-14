@@ -1,6 +1,6 @@
 /**
- * As tabelas do Bill (prisma/schema.prisma: AssessorAssinatura e
- * AssessorRegistro).
+ * As tabelas do Bill (prisma/schema.prisma: AssessorAssinatura,
+ * AssessorRegistro e AssessorMensagem).
  *
  * Mesma categoria de src/lib/garantir-colunas.ts: `CREATE TABLE IF NOT EXISTS`,
  * idempotente. Tabelas próprias, sem coluna nova em tabela que já existe: se
@@ -33,6 +33,18 @@ const INSTRUCOES = [
      CONSTRAINT "AssessorRegistro_pkey" PRIMARY KEY ("id")
    )`,
   `CREATE INDEX IF NOT EXISTS "AssessorRegistro_franchiseeId_criadoEm_idx" ON "AssessorRegistro"("franchiseeId", "criadoEm")`,
+  `CREATE TABLE IF NOT EXISTS "AssessorMensagem" (
+     "id" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "papel" TEXT NOT NULL,
+     "texto" TEXT NOT NULL,
+     "canal" TEXT NOT NULL,
+     "autor" TEXT,
+     "ferramentas" TEXT,
+     "criadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "AssessorMensagem_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE INDEX IF NOT EXISTS "AssessorMensagem_franchiseeId_criadoEm_idx" ON "AssessorMensagem"("franchiseeId", "criadoEm")`,
 ];
 
 let pronto = false;

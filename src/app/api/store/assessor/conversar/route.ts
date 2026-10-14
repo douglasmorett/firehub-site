@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const texto = String(corpo?.texto || "").slice(0, 2000);
     if (!texto.trim() && !audio && !imagem) return NextResponse.json({ error: "Mande um texto, um áudio ou uma foto." }, { status: 400 });
     const r = await conversarComOAssessor(
-      { franchiseeId: s.franchiseeId, usuarioId: s.usuarioId, timezone: s.loja.storeTimezone, canal: "PAINEL", telefone: null },
+      { franchiseeId: s.franchiseeId, usuarioId: s.usuarioId, timezone: s.loja.storeTimezone, canal: "PAINEL", telefone: null, autor: s.nome },
       { texto, audio, imagem },
     );
     return NextResponse.json({ ok: true, resposta: r.resposta, ouvi: r.ouvi, gravou: r.gravou });

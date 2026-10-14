@@ -1745,6 +1745,26 @@ model AssessorRegistro {
   @@index([franchiseeId, criadoEm])
 }
 
+/// A CONVERSA com o Bill — UMA por loja, a mesma no WhatsApp e no painel:
+/// o que o dono disse num canal o Bill lembra no outro, e o balão do painel
+/// mostra as duas. `ferramentas` = o que ele executou nessa resposta (vai para
+/// o histórico do modelo; só o texto ensinava a "dizer que fez" sem fazer).
+model AssessorMensagem {
+  id           String   @id @default(cuid())
+  franchiseeId String
+  /// DONO ou BILL
+  papel        String
+  texto        String
+  /// WHATSAPP ou PAINEL
+  canal        String
+  /// Quem falou: nome de quem está no painel ou o telefone do WhatsApp.
+  autor        String?
+  ferramentas  String?
+  criadoEm     DateTime @default(now())
+
+  @@index([franchiseeId, criadoEm])
+}
+
 // ========== FATURAMENTO: USE FIRST, PAY LATER ==========
 // Ciclo mensal de cobrança por franqueado. 
 // O franqueado usa o sistema o mês todo, e paga no fechamento.

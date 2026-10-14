@@ -13,7 +13,7 @@ export async function lojaDoAssessorDaSessao() {
   if (!session?.user?.email) return null;
   const u = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true, role: true },
+    select: { id: true, ownerId: true, role: true, name: true },
   });
   if (!u || u.role === "STAFF") return null;
   const franchiseeId = u.ownerId || u.id;
@@ -22,5 +22,5 @@ export async function lojaDoAssessorDaSessao() {
     select: { id: true, notificationPhone: true, chatbotConfig: true, storeTimezone: true, storeName: true, name: true },
   });
   if (!loja) return null;
-  return { franchiseeId, usuarioId: u.id, loja };
+  return { franchiseeId, usuarioId: u.id, nome: (u.name || "").split(" ")[0] || null, loja };
 }

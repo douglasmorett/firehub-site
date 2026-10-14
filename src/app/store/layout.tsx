@@ -18,6 +18,8 @@ import { AvisoDispensavel, BotaoNaoVerMais } from "@/components/customer/NaoVerM
 import GlobalPrintListener from "@/components/customer/GlobalPrintListener";
 import TrocaDeContingencia from "@/components/contingencia/TrocaDeContingencia";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
+import BillFlutuante from "@/components/bill/BillFlutuante";
+import { assessorEstaLigado } from "@/lib/assessor/assinatura";
 import CentralDeTutoriais from "@/components/CentralDeTutoriais";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { TutoriaisEnviados } from "@/components/TutoriaisEnviados";
@@ -157,6 +159,12 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   }
 
   const isBlocked = pendingPayment?.isOverdue === true;
+
+  // Bill, seu assessor: a carinha no canto só para quem manda na loja (o dono
+  // ou o ADMIN dentro dela) e só com o serviço ligado. Funcionário não vê.
+  const billLigado = role !== "STAFF" && targetFranchiseeId && process.env.FIREHUB_LOCAL !== "1"
+    ? await assessorEstaLigado(targetFranchiseeId)
+    : false;
 
   // === TERMOS DE USO: o dono aceita a versão em vigor antes de usar o painel ===
   // Só o dono (sem ownerId): funcionário não assina pela empresa, e o suporte
@@ -392,6 +400,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         </main>
 
         <HumanSupportFloatingWidget />
+        {role !== "STAFF" && <BillFlutuante ligadoInicial={billLigado} />}
         </div>
       </div>
       </TutoriaisEnviados>

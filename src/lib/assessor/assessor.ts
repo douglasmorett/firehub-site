@@ -23,6 +23,8 @@ import { prisma } from "@/lib/prisma";
 import { trackGeminiUsage } from "@/lib/usage-tracker";
 import { montarResumoGerencial, resumoEmTexto } from "@/lib/painel-do-dono";
 import { hojeNaLoja, NOMES_DOS_DIAS } from "@/lib/relatorios/base";
+import { gravarFala, historicoParaOModelo } from "./conversa";
+import { oQueMudouNaLoja } from "./o-que-mudou";
 import { DECLARACOES_DO_ASSESSOR, FERRAMENTAS_QUE_GRAVAM, executarFerramentaDoAssessor, type ContextoDoAssessor } from "./ferramentas";
 
 export const MODELOS_DO_ASSESSOR = ["gemini-3.6-flash", "gemini-2.5-flash"];
@@ -31,24 +33,8 @@ export type MidiaDoDono = { base64: string; mimeType: string };
 export type AcaoDoAssessor = { nome: string; resultado: Record<string, unknown> };
 export type RespostaDoAssessor = { resposta: string; ouvi: string | null; acoes: AcaoDoAssessor[]; gravou: boolean };
 
-// ── Conversa curta em memória (por loja + número) ─────────────────────────
-// "Quanto pagou?" → "45" precisa da pergunta anterior. 30 min e 12 falas:
-// é um bate-papo de lançamento, não um histórico (o histórico é o
-// AssessorRegistro).
-type Fala = { papel: "user" | "model"; texto: string; em: number };
-const CONVERSAS: Map<string, Fala[]> = ((globalThis as any).__conversasDoAssessor ||= new Map());
-const VALIDADE_MS = 30 * 60 * 1000;
-
-function historico(chave: string): Fala[] {
-  const agora = Date.now();
-  return (CONVERSAS.get(chave) || []).filter((f) => agora - f.em < VALIDADE_MS);
-}
-function guardar(chave: string, falas: Fala[]) {
-  CONVERSAS.set(chave, falas.slice(-12));
-}
-export function esquecerConversaDoAssessor(chave: string) {
-  CONVERSAS.delete(chave);
-}
+// A conversa mora no banco (conversa.ts): uma por loja, a mesma no WhatsApp
+// e no painel.
 
 function apiKey() {
   return process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || "";
@@ -63,7 +49,7 @@ async function montarSistema(ctx: ContextoDoAssessor): Promise<string> {
   const hoje = hojeNaLoja(tz);
   const diaDaSemana = NOMES_DOS_DIAS[new Date(`${hoje}T12:00:00Z`).getUTCDay()];
 
-  const [insumos, categorias, resumo] = await Promise.all([
+  const [insumos, categorias, resumo, mudou] = await Promise.all([
     prisma.stockItem.findMany({
       where: { franchiseeId: ctx.franchiseeId, active: true },
       orderBy: { name: "asc" },
@@ -76,13 +62,14 @@ async function montarSistema(ctx: ContextoDoAssessor): Promise<string> {
     montarResumoGerencial(ctx.franchiseeId, { deliveryZones: loja?.deliveryZones, caixaAberto: Boolean(loja?.cashOpen), timezone: tz })
       .then((r) => resumoEmTexto(r, tz))
       .catch(() => "(resumo da loja indisponível agora)"),
+    oQueMudouNaLoja(ctx.franchiseeId, tz),
   ]);
 
   const listaDeInsumos = insumos.length
     ? insumos.map((i) => `${i.id} | ${i.name} | ${i.unit} | tem ${Number(i.quantity.toFixed(3))}`).join("\n")
     : "(nenhum item cadastrado ainda — todo item comprado será criado)";
 
-  return `Você é o BILL, o assessor do FireHub: o assistente do DONO da loja "${loja?.storeName || loja?.name || "loja"}" pelo WhatsApp. Ele está ocupado, manda áudio, texto curto ou foto. Seu trabalho é LANÇAR no sistema o que ele disser (estoque e financeiro), CONTROLAR a loja (pausar/reativar itens do cardápio, abrir/fechar o site) e responder o que ele perguntar.
+  return `Você é o BILL, o assessor do FireHub: o assistente do DONO da loja "${loja?.storeName || loja?.name || "loja"}", pelo WhatsApp e pelo balão do painel (a MESMA conversa: cada fala dele diz por onde veio). Ele está ocupado, manda áudio, texto curto ou foto. Seu trabalho é LANÇAR no sistema o que ele disser (estoque e financeiro), CONTROLAR a loja (pausar/reativar itens do cardápio, abrir/fechar o site) e responder o que ele perguntar.
 
 HOJE: ${diaDaSemana}, ${hoje.split("-").reverse().join("/")} (dia de operação da loja; vira às 5h).
 SITE DA LOJA AGORA: ${loja?.storeOpen ? "ABERTO (recebendo pedidos)" : "FECHADO"}.
@@ -110,7 +97,9 @@ COMO TRABALHAR:
 10. "Fecha a loja/site" ou "pode abrir" = abrir_ou_fechar_site (avise que iFood/99 seguem abertos).
 11. Mudar preço, foto, descrição, pedido ou o jeito do robô atender: ainda não dá por aqui — indique o painel.
 
-RESPOSTA (WhatsApp): curta, direta, sem enrolação. Depois de lançar, diga O QUE foi para ONDE, assim:
+12. As marcas entre colchetes no histórico ("[WhatsApp]", "[painel, Nome]", "[ferramentas desta resposta: …]") são do sistema, para você saber por onde ele falou e o que você já executou. NUNCA escreva essas marcas na resposta.
+
+RESPOSTA (WhatsApp ou painel): curta, direta, sem enrolação. Depois de lançar, diga O QUE foi para ONDE, assim:
 "✅ *Lançado*
 📦 Estoque: Coca-Cola Lata +10 un (agora 34 un)
 💰 Financeiro: R$ 45,00 pago hoje
@@ -122,7 +111,9 @@ CATEGORIAS DE DESPESA JÁ USADAS: ${categorias.map((c) => c.categoria).join(", "
 ESTOQUE DA LOJA (id | nome | unidade | quantidade atual):
 ${listaDeInsumos}
 
-${resumo}`;
+${resumo}
+
+${mudou}`;
 }
 
 /** A IA disse que gravou sem ter gravado? */
@@ -154,7 +145,7 @@ export async function conversarComOAssessor(
   ctx: ContextoDoAssessor,
   entrada: { texto?: string | null; audio?: MidiaDoDono | null; imagem?: MidiaDoDono | null },
 ): Promise<RespostaDoAssessor> {
-  const chave = `${ctx.franchiseeId}:${ctx.canal}:${ctx.telefone || ctx.usuarioId}`;
+  const deOnde = ctx.canal === "PAINEL" ? `painel${ctx.autor ? `, ${ctx.autor}` : ""}` : "WhatsApp";
   const acoes: AcaoDoAssessor[] = [];
   const key = apiKey();
   if (!key) return { resposta: "O assessor está fora do ar agora. Tente de novo em alguns minutos.", ouvi: null, acoes, gravou: false };
@@ -164,11 +155,11 @@ export async function conversarComOAssessor(
   const partes: Part[] = [];
   if (entrada.audio?.base64) partes.push({ inlineData: { data: entrada.audio.base64, mimeType: entrada.audio.mimeType || "audio/ogg" } });
   if (entrada.imagem?.base64) partes.push({ inlineData: { data: entrada.imagem.base64, mimeType: entrada.imagem.mimeType || "image/jpeg" } });
-  partes.push({ text: texto || (entrada.audio ? "(áudio do dono)" : entrada.imagem ? "(foto do dono, sem legenda)" : "") });
+  partes.push({ text: `[${deOnde}] ${texto || (entrada.audio ? "(áudio do dono)" : entrada.imagem ? "(foto do dono, sem legenda)" : "")}` });
 
-  const anteriores = historico(chave);
+  const anteriores = await historicoParaOModelo(ctx.franchiseeId);
   const conversa: Content[] = [
-    ...anteriores.map((f) => ({ role: f.papel, parts: [{ text: f.texto }] })),
+    ...anteriores.map((f) => ({ role: f.role, parts: [{ text: f.texto }] })),
     { role: "user", parts: partes },
   ];
 
@@ -252,16 +243,22 @@ export async function conversarComOAssessor(
   if (!resposta.trim() || (!gravou && DIZ_QUE_GRAVOU.test(resposta) && !/\?\s*$/.test(resposta.trim()))) {
     resposta = respostaDeReserva(acoes);
   }
-  resposta = resposta.replace(/\*\*(.+?)\*\*/g, "*$1*").trim();
+  // As marcas que o histórico leva ("[ferramentas desta resposta: …]",
+  // "[WhatsApp]") são do sistema; o modelo às vezes as repete.
+  resposta = resposta
+    .replace(/^\s*\[ferramentas desta resposta:[^\]]*\]\s*/gim, "")
+    .replace(/^\s*\[(WhatsApp|painel[^\]]*)\]\s*/i, "")
+    .replace(/\*\*(.+?)\*\*/g, "*$1*")
+    .trim();
+  if (!resposta) resposta = respostaDeReserva(acoes);
 
   // O histórico leva o que a ferramenta fez de verdade. Só com o texto ("⏸️
   // Pausado!"), o modelo aprendia que bastava escrever — e parava de chamar.
   const feitas = acoes.map((a) => `${a.nome}:${(a.resultado as any)?.ok ? "ok" : "erro"}`).join(", ");
-  guardar(chave, [
-    ...anteriores,
-    { papel: "user", texto: ouvi ? `(áudio) ${ouvi}` : texto || (entrada.imagem ? "(foto)" : "(áudio)"), em: Date.now() },
-    { papel: "model", texto: `[ferramentas desta resposta: ${feitas || "nenhuma — nada foi alterado"}]\n${resposta}`, em: Date.now() },
-  ]);
+  const autor = ctx.canal === "PAINEL" ? ctx.autor || null : ctx.telefone || null;
+  const falaDoDono = entrada.audio ? `🎤 ${ouvi || "Áudio"}` : entrada.imagem ? `📷 Foto${texto ? `: ${texto}` : ""}` : texto;
+  await gravarFala({ franchiseeId: ctx.franchiseeId, papel: "DONO", texto: falaDoDono, canal: ctx.canal, autor });
+  await gravarFala({ franchiseeId: ctx.franchiseeId, papel: "BILL", texto: resposta, canal: ctx.canal, autor, ferramentas: feitas || null });
 
   return { resposta, ouvi, acoes, gravou };
 }

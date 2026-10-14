@@ -34,6 +34,8 @@ export type ContextoDoAssessor = {
   timezone?: string | null;
   canal: "WHATSAPP" | "PAINEL";
   telefone?: string | null;
+  /** Nome de quem está no painel (a conversa mostra quem falou). */
+  autor?: string | null;
   /** Foto que veio na mensagem, já salva (vai para a compra). */
   imagemUrl?: string | null;
   /** A mensagem trouxe foto (a compra entra como "nota com foto"). */
