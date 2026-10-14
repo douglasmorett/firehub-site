@@ -98,6 +98,11 @@ export default function PrivacidadeDoApp() {
         </p>
 
         <h2 style={h2}>Como pedir a exclusão</h2>
+        <div style={caixa}>
+          <b>Se você criou uma conta:</b> no cardápio, toque em <b>Entrar</b> (ou no seu nome, se já estiver
+          logado) → <b>Excluir minha conta</b> → digite sua senha. Nome, telefone, endereço e cashback são
+          apagados na hora.
+        </div>
         <p style={p}>
           Fale com a loja ou escreva para{" "}
           <a href="mailto:contato@firehubfood.com.br" style={{ color: "#DC2626", fontWeight: 700 }}>contato@firehubfood.com.br</a>{" "}

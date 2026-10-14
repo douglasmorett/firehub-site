@@ -1591,6 +1591,30 @@ export default function CustomerStorePage({
     localStorage.removeItem("storeCustomer");
   };
 
+  // Excluir a conta pede a senha de novo: é irreversível, e a App Store e o
+  // Google Play exigem que dê para fazer isso dentro do app (api/store-customer).
+  const [excluirConta, setExcluirConta] = useState<"fechado" | "confirmando" | "excluida">("fechado");
+  const [senhaParaExcluir, setSenhaParaExcluir] = useState("");
+  const [erroAoExcluir, setErroAoExcluir] = useState("");
+  const [excluindo, setExcluindo] = useState(false);
+  const handleExcluirConta = async () => {
+    if (!customer?.phone || !senhaParaExcluir) return;
+    setExcluindo(true); setErroAoExcluir("");
+    try {
+      const res = await fetch("/api/store-customer", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "delete", phone: customer.phone, password: senhaParaExcluir }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { setErroAoExcluir(data.error || "Não foi possível excluir agora."); return; }
+      setSenhaParaExcluir("");
+      setExcluirConta("excluida");
+      setCustomer(null);
+      localStorage.removeItem("storeCustomer");
+    } catch { setErroAoExcluir("Erro de conexão."); }
+    finally { setExcluindo(false); }
+  };
+
   useEffect(() => {
     const saved = localStorage.getItem("storeCustomer");
     if (saved) {
@@ -5625,6 +5649,34 @@ export default function CustomerStorePage({
             <button onClick={handleLogout} style={{ width: "100%", padding: "8px", borderRadius: "10px", border: "1.5px solid #EF4444", background: "none", color: "#EF4444", fontWeight: 600, fontSize: "0.8rem", cursor: "pointer" }}>
               Sair da Conta
             </button>
+            {excluirConta === "fechado" ? (
+              <button onClick={() => { setExcluirConta("confirmando"); setErroAoExcluir(""); }} style={{ width: "100%", marginTop: "0.6rem", padding: "6px", background: "none", border: "none", color: "#94A3B8", fontSize: "0.75rem", textDecoration: "underline", cursor: "pointer" }}>
+                Excluir minha conta
+              </button>
+            ) : (
+              <div style={{ marginTop: "0.75rem", padding: "0.75rem", borderRadius: "10px", background: "#FEF2F2", border: "1px solid #FECACA" }}>
+                <p style={{ fontSize: "0.78rem", color: "#991B1B", marginBottom: "0.5rem", lineHeight: 1.4 }}>
+                  Seu nome, telefone, endereço e cashback serão apagados. Isso não pode ser desfeito. Digite sua senha para confirmar.
+                </p>
+                <input type="password" value={senhaParaExcluir} onChange={(e) => setSenhaParaExcluir(e.target.value)} placeholder="Sua senha" style={{ width: "100%", padding: "8px", borderRadius: "8px", border: "1px solid #FCA5A5", fontSize: "0.85rem", marginBottom: "0.5rem", boxSizing: "border-box" }} />
+                {erroAoExcluir && <p style={{ fontSize: "0.75rem", color: "#DC2626", marginBottom: "0.5rem" }}>{erroAoExcluir}</p>}
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button onClick={() => { setExcluirConta("fechado"); setSenhaParaExcluir(""); }} style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "1px solid #E2E8F0", background: "white", fontSize: "0.78rem", cursor: "pointer" }}>Cancelar</button>
+                  <button disabled={excluindo || !senhaParaExcluir} onClick={handleExcluirConta} style={{ flex: 1, padding: "8px", borderRadius: "8px", border: "none", background: "#DC2626", color: "white", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", opacity: excluindo || !senhaParaExcluir ? 0.6 : 1 }}>
+                    {excluindo ? "Excluindo…" : "Excluir conta"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      {excluirConta === "excluida" && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 9998, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={() => setExcluirConta("fechado")}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "white", borderRadius: "16px", padding: "1.5rem", maxWidth: "340px", width: "90%", textAlign: "center" }}>
+            <h3 style={{ fontWeight: 800, fontSize: "1rem", marginBottom: "0.5rem" }}>Conta excluída</h3>
+            <p style={{ fontSize: "0.85rem", color: "#555", marginBottom: "1rem" }}>Seus dados de cadastro foram apagados. Você ainda pode pedir sem conta quando quiser.</p>
+            <button onClick={() => setExcluirConta("fechado")} style={{ width: "100%", padding: "10px", borderRadius: "10px", border: "none", background: "#E63946", color: "white", fontWeight: 700, cursor: "pointer" }}>Ok</button>
           </div>
         </div>
       )}

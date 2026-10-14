@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cupons";
@@ -30,6 +31,34 @@ export async function POST(req: Request) {
   }
 
   const cleanPhone = phone.replace(/\D/g, "");
+
+  // ── EXCLUIR A CONTA ──────────────────────────────────────────────────
+  //
+  // A App Store (5.1.1(v)) e o Google Play exigem que quem cria conta possa
+  // apagá-la no próprio app; o app da loja (apps/loja) mostra esta página, então
+  // o botão mora aqui. Confere a senha e ANONIMIZA o cadastro em vez de apagar
+  // a linha: os pedidos guardam a própria cópia de nome e telefone (exigência
+  // fiscal — /privacidade-app), e a linha some de qualquer busca por telefone.
+  if (action === "delete") {
+    const conta = await prisma.storeCustomer.findUnique({ where: { phone: cleanPhone } });
+    const senhaConfere = !!conta && (conta.password || "").length >= 20 && (await bcrypt.compare(password, conta.password));
+    if (!conta || !senhaConfere) {
+      return NextResponse.json({ error: "Telefone ou senha incorretos." }, { status: 401 });
+    }
+    await prisma.storeCustomer.update({
+      where: { id: conta.id },
+      data: {
+        name: "Conta excluída",
+        phone: `excluida-${conta.id}`,
+        password: "",
+        address: null,
+        birthDate: null,
+        cashbackBalance: 0,
+        cashbackHistory: Prisma.DbNull,
+      },
+    });
+    return NextResponse.json({ success: true });
+  }
 
   if (action === "register") {
     if (!name) return NextResponse.json({ error: "Nome é obrigatório." }, { status: 400 });
