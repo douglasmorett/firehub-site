@@ -44,11 +44,11 @@ const VERMELHO = "#DC2626";
 
 // Posições em % da área do desenho (o SVG das linhas usa a mesma régua).
 const P = {
-  nuvem: { x: 50, y: 13 },
-  pc: { x: 50, y: 52 },
-  tv: { x: 14, y: 74 },
-  cel: { x: 86, y: 74 },
-  imp: { x: 50, y: 89 },
+  nuvem: { x: 50, y: 11 },
+  pc: { x: 50, y: 46 },
+  tv: { x: 14, y: 68 },
+  cel: { x: 86, y: 68 },
+  imp: { x: 50, y: 80 },
 };
 
 type Linha = { de: keyof typeof P; para: keyof typeof P; cor: string; fluxo?: "desce" | "sobe"; tracejada?: boolean; some?: boolean };
@@ -112,16 +112,16 @@ const ESTILO = `
 .fh-ct-aba .fh-ct-tempo{position:absolute;left:0;bottom:0;height:3px;background:${ROXO};width:0}
 .fh-ct-aba.ativa .fh-ct-tempo.corre{animation:fh-ct-tempo 6s linear forwards}
 @keyframes fh-ct-tempo{to{width:100%}}
-.fh-ct-palco{position:relative;height:290px;margin:6px 8px 0;background:radial-gradient(420px 200px at 50% 55%,#FAF7FF,transparent 70%)}
-.fh-ct-palco svg{position:absolute;inset:0;width:100%;height:100%}
+.fh-ct-palco{position:relative;height:310px;margin:6px 8px 0;background:radial-gradient(420px 200px at 50% 55%,#FAF7FF,transparent 70%)}
+.fh-ct-linhas{position:absolute;inset:0;width:100%;height:100%}
 .fh-ct-palco line{transition:stroke .5s ease,opacity .5s ease}
 .fh-ct-fluxo{stroke-dasharray:5 6;animation:fh-ct-fluxo .9s linear infinite}
 .fh-ct-fluxo.sobe{animation-direction:reverse}
 @keyframes fh-ct-fluxo{to{stroke-dashoffset:-22}}
-.fh-ct-no{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:4px;width:120px;text-align:center;transition:opacity .4s ease}
+.fh-ct-no{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;gap:4px;width:136px;text-align:center;transition:opacity .4s ease}
 .fh-ct-icone{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;transition:background .4s ease,color .4s ease,box-shadow .4s ease}
-.fh-ct-nome{font-size:12px;font-weight:800;color:#0F172A;line-height:1.15}
-.fh-ct-sub{font-size:11px;font-weight:700;line-height:1.15}
+.fh-ct-nome{font-size:12px;font-weight:800;color:#0F172A;line-height:1.15;background:rgba(255,255,255,.94);padding:1px 5px;border-radius:5px}
+.fh-ct-sub{font-size:11px;font-weight:700;line-height:1.15;background:rgba(255,255,255,.94);padding:1px 5px;border-radius:5px}
 .fh-ct-linha-faixa{height:30px;display:flex;justify-content:center;align-items:center;padding:0 8px}
 .fh-ct-faixa{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis;background:#92400e;color:#fff;font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:999px;box-shadow:0 4px 12px rgba(0,0,0,.2)}
 .fh-ct-faixa.volta{background:#166534}
@@ -129,7 +129,7 @@ const ESTILO = `
 .fh-ct-texto b{display:block;font-size:15px;color:#0F172A;margin-bottom:2px}
 .fh-ct-texto p{margin:0;font-size:14px;color:#475569;line-height:1.5}
 @media (max-width:520px){
-  .fh-ct-palco{height:250px}
+  .fh-ct-palco{height:280px}
   .fh-ct-no{width:86px}
   .fh-ct-icone{width:42px;height:42px;border-radius:12px}
   .fh-ct-nome{font-size:11px}
@@ -178,7 +178,7 @@ export default function IlustracaoDaContingencia() {
       </div>
 
       <div className="fh-ct-palco" aria-hidden>
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
+        <svg className="fh-ct-linhas" viewBox="0 0 100 100" preserveAspectRatio="none">
           {linhasDa(cena).map((l) => (
             <line
               key={`${l.de}-${l.para}`}
@@ -197,7 +197,7 @@ export default function IlustracaoDaContingencia() {
           onde={P.nuvem}
           icone={caiu ? <CloudOff size={26} /> : <Cloud size={26} />}
           nome="FireHub na internet"
-          sub={caiu ? "fora do ar" : cena === "voltou" ? "recebendo o que foi feito" : "no ar"}
+          sub={caiu ? "fora do ar" : cena === "voltou" ? "recebendo tudo" : "no ar"}
           cor={caiu ? VERMELHO : VERDE}
           fundo={caiu ? "#FEF2F2" : "#F0FDF4"}
         />

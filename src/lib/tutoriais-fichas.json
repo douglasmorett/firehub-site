@@ -1547,5 +1547,53 @@
       }
     ],
     "versao": "7e8789aa"
+  },
+  "contingencia": {
+    "id": "contingencia",
+    "titulo": "Modo Contingência: a loja não para quando a internet cai",
+    "duracao": 151,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é o Modo Contingência"
+      },
+      {
+        "em": 10,
+        "titulo": "Como funciona"
+      },
+      {
+        "em": 37.5,
+        "titulo": "O que você precisa"
+      },
+      {
+        "em": 45,
+        "titulo": "O passo a passo"
+      },
+      {
+        "em": 55.7,
+        "titulo": "Atualizar o Assistente"
+      },
+      {
+        "em": 70.4,
+        "titulo": "Ativar neste computador"
+      },
+      {
+        "em": 92.8,
+        "titulo": "O teste de 2 minutos"
+      },
+      {
+        "em": 116.2,
+        "titulo": "TV da cozinha e garçom"
+      },
+      {
+        "em": 125.4,
+        "titulo": "Durante a queda"
+      },
+      {
+        "em": 143.3,
+        "titulo": "Para rever este vídeo"
+      }
+    ],
+    "versao": "c114042d"
   }
 }

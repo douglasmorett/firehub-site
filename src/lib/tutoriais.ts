@@ -58,6 +58,8 @@ const TELAS: Record<string, string[]> = {
   "/store/marketing": ["marketing"],
   // Um lojista perguntou como funciona o tráfego pago (12/10/2026). Sem ficha publicada, nada aparece.
   "/store/meta-ads": ["trafego-pago"],
+  // Pedido do Douglas (13/10/2026): o dono ativa sozinho, sem chamar o suporte.
+  "/store/contingencia": ["contingencia"],
   "/store/estoque": ["estoque"],
   "/store/financeiro": ["financeiro"],
   "/store/relatorios": ["relatorios"],
@@ -92,6 +94,7 @@ const NOMES: Record<string, string> = {
   "/store/garcons": "Garçons",
   "/store/marketing": "Marketing",
   "/store/meta-ads": "Tráfego Pago",
+  "/store/contingencia": "Modo Contingência",
   "/store/estoque": "Estoque",
   "/store/financeiro": "Financeiro",
   "/store/relatorios": "Relatórios",
@@ -169,7 +172,7 @@ const GRUPOS: { titulo: string; ids: string[] }[] = [
   { titulo: "Vendas", ids: ["marketing", "chatbot", "trafego-pago"] },
   { titulo: "Gestão", ids: ["financeiro", "relatorios", "fiscal", "estoque", "etiquetas"] },
   { titulo: "Equipe", ids: ["motoboys", "app-motoboy", "garcons", "fiado"] },
-  { titulo: "Configurações", ids: ["horarios", "entrega", "pagamento", "equipe", "fidelidade", "impressoras", "integracoes", "extensao-ifood", "extensao-ifood-ao-vivo"] },
+  { titulo: "Configurações", ids: ["horarios", "entrega", "pagamento", "equipe", "fidelidade", "impressoras", "integracoes", "extensao-ifood", "extensao-ifood-ao-vivo", "contingencia"] },
 ];
 
 export function todosOsTutoriais(enviados: TutoriaisEnviados = null): { titulo: string; tutoriais: Tutorial[] }[] {
