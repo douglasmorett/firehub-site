@@ -854,7 +854,7 @@ export default function Home() {
           { t: "💰 Economia de Taxas", d: "Aproveite melhor sua equipe e evite idas e vindas desnecessárias" },
         ]}
         acao={<a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem", background: "linear-gradient(135deg,#3B82F6,#1D4ED8)", boxShadow: "0 6px 24px rgba(59,130,246,.3)" }}>🗺️ Organizar Minhas Entregas</a>}
-        visual={<Moldura src="/images/roteirizador_ui.webp" alt="FireHub Roteirizador" borda="1px solid rgba(255,255,255,0.15)" sombra="0 20px 40px rgba(0,0,0,0.8)" fundo="#000" />}
+        visual={<Moldura real src="/images/tela-roteirizacao.webp" alt="Tela do FireHub: roteirização com os pedidos no mapa" borda="1px solid rgba(255,255,255,0.15)" sombra="0 20px 40px rgba(0,0,0,0.8)" fundo="#FFF" />}
       />
 
       {/* SEÇÃO MÓDULO DE VALIDADE & ETIQUETAS — /store/etiquetas, do FireHub. */}
