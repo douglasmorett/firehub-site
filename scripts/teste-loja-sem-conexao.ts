@@ -400,6 +400,23 @@ console.log("\n— Mensagens ao dono —");
   });
   contem("queda sem permissão no iFood: diz para pausar pelo Gestor", falhou, "pause pelo Gestor de Pedidos");
   confere("duração em texto", [duracaoEmTexto(7 * MIN), duracaoEmTexto(60 * MIN), duracaoEmTexto(80 * MIN)], ["7 min", "1 h", "1 h 20 min"]);
+
+  // Modo Contingência (14/10/2026): a queda diz que o computador assumiu, a volta diz o que subiu.
+  const quedaCont = mensagemDeQueda({ loja: "Pizzaria 17", episodio: ep, tz: SP, contingencia: true });
+  contem("queda com contingência: o computador do caixa assumiu", quedaCont, "*Modo Contingência:* se o computador do caixa está ligado, ele já assumiu");
+  naoContem("queda sem contingência: não fala dela", queda, "Modo Contingência");
+  const comVolta = (subida: any) => mensagemDeVolta({ loja: "Pizzaria 17", episodio: ep, agora: T0 + 14 * MIN, tz: SP, contingencia: { subida } });
+  const subiu = comVolta({ quedas: 1, pedidos: 8, linhas: 31, conflitos: 0 });
+  contem("volta com contingência: quanto subiu", subiu, "8 pedidos e 31 mudanças subiram para o FireHub, sem duplicar");
+  naoContem("volta sem conflito: não fala de conflito", subiu, "nos dois lugares");
+  contem("volta com contingência: segue reabrindo o resto", subiu, "Já reabrimos:");
+  const conflito = comVolta({ quedas: 2, pedidos: 1, linhas: 1, conflitos: 1 });
+  contem("volta: singular", conflito, "1 pedido e 1 mudança subiram");
+  contem("volta com conflito: manda conferir", conflito, "1 mudança foi feita nos dois lugares ao mesmo tempo: confira em Modo Contingência › Últimas quedas");
+  contem("volta só com mudanças", comVolta({ quedas: 1, pedidos: 0, linhas: 4, conflitos: 0 }), "nenhum pedido novo e 4 mudanças subiram");
+  contem("volta sem nada lançado", comVolta({ quedas: 1, pedidos: 0, linhas: 0, conflitos: 0 }), "nada foi lançado nele durante a queda");
+  contem("volta antes da subida: avisa que sobe sozinho", comVolta(null), "sobe sozinho assim que ele tiver internet de novo");
+  naoContem("volta sem contingência: não fala dela", volta, "computador do caixa");
 }
 
 console.log("\n— Formatos e leitura —");

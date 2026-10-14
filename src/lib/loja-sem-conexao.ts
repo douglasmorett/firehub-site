@@ -71,6 +71,7 @@
  * User.semConexaoEstado (lib/loja-sem-conexao-no-banco.ts).
  * Teste: scripts/teste-loja-sem-conexao.ts.
  */
+import type { SubidaDaQueda } from "@/lib/contingencia/aviso-ao-dono";
 
 // ── Os tempos ───────────────────────────────────────────────────────────────
 
@@ -589,6 +590,33 @@ function nomes(lista: PausaNoIfood[]): string {
   return n.length > 0 ? ` (${n.join(", ")})` : "";
 }
 
+/** "1 pedido" / "8 pedidos". */
+function contagem(n: number, um: string, varios: string): string {
+  return `${n} ${n === 1 ? um : varios}`;
+}
+
+/**
+ * O que a volta conta do Modo Contingência (lib/contingencia/aviso-ao-dono.ts):
+ * o que o computador do caixa subiu na queda. Sem subida ainda (o painel do
+ * dono voltou antes do computador da loja, ou o computador estava desligado):
+ * só que o que ele registrou sobe sozinho.
+ */
+function linhasDaContingencia(c?: { subida: SubidaDaQueda | null }): string[] {
+  if (!c) return [];
+  const s = c.subida;
+  if (!s) return [`🛡️ O que o computador do caixa registrou durante a queda sobe sozinho assim que ele tiver internet de novo.`];
+  const pedidos = s.pedidos === 0 ? "nenhum pedido novo" : contagem(s.pedidos, "pedido", "pedidos");
+  const linhas = [
+    s.pedidos === 0 && s.linhas === 0
+      ? `🛡️ O computador do caixa ficou de prontidão, mas nada foi lançado nele durante a queda.`
+      : `🛡️ Enquanto a internet estava fora, o computador do caixa atendeu a loja: ${pedidos} e ${contagem(s.linhas, "mudança", "mudanças")} subiram para o FireHub, sem duplicar.`,
+  ];
+  if (s.conflitos > 0) {
+    linhas.push(`⚠️ ${contagem(s.conflitos, "mudança foi feita", "mudanças foram feitas")} nos dois lugares ao mesmo tempo: confira em Modo Contingência › Últimas quedas.`);
+  }
+  return linhas;
+}
+
 function listaEmTexto(itens: string[]): string {
   if (itens.length <= 1) return itens.join("");
   return `${itens.slice(0, -1).join(", ")} e ${itens[itens.length - 1]}`;
@@ -601,6 +629,8 @@ export function mensagemDeQueda(o: {
   tz: string;
   /** Canais ligados à loja que o FireHub não consegue pausar ("99Food", "Keeta", "Wabiz"). */
   semPausaAutomatica?: string[];
+  /** A loja tem o Modo Contingência ativado (lib/contingencia/aviso-ao-dono.ts). */
+  contingencia?: boolean;
 }): string {
   const ep = o.episodio;
   const pausadas = ep.ifood.filter((p) => p.situacao === "pausada");
@@ -616,6 +646,10 @@ export function mensagemDeQueda(o: {
     `📡 *${o.loja}: loja sem conexão*`,
     ``,
     `Desde as ${hhmm(ep.ultimoSinal, o.tz)} o FireHub não tem sinal do computador da loja (Assistente de Impressão) e não há nenhum painel aberto.`,
+    // A nuvem não sabe se o computador está ligado (desligado também é "sem sinal"): por isso o "se".
+    o.contingencia
+      ? `🛡️ *Modo Contingência:* se o computador do caixa está ligado, ele já assumiu — pedidos, balcão, mesas, cozinha e impressão seguem funcionando nele, e tudo sobe sozinho quando a internet voltar.`
+      : null,
     pausado.length > 0 ? `Para nenhum cliente pedir sem ninguém ver o pedido, pausamos:` : null,
     ...pausado,
     jaFechadas.length > 0 ? `iFood${nomes(jaFechadas)} já estava fechado: não mexemos.` : null,
@@ -639,6 +673,8 @@ export function mensagemDeVolta(o: {
   tz: string;
   /** Lojas do iFood cuja pausa nossa NÃO saiu (tenta de novo). */
   ifoodQueFicou?: string[];
+  /** Loja com o Modo Contingência: o que o computador do caixa subiu na queda (null = nada ainda). */
+  contingencia?: { subida: SubidaDaQueda | null };
 }): string {
   const ep = o.episodio;
   const ficou = new Set(o.ifoodQueFicou || []);
@@ -656,6 +692,7 @@ export function mensagemDeVolta(o: {
     `✅ *${o.loja}: a conexão voltou*`,
     ``,
     `A loja voltou às ${hhmm(o.agora, o.tz)}, depois de ${duracaoEmTexto(o.agora - ep.ultimoSinal)} sem conexão (desde as ${hhmm(ep.ultimoSinal, o.tz)}).`,
+    ...linhasDaContingencia(o.contingencia),
     reaberto.length > 0 ? `Já reabrimos:` : null,
     ...reaberto,
     ep.site === "dono_mexeu" ? `O site ficou do jeito que você deixou.` : null,
