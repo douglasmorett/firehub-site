@@ -1825,23 +1825,36 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   };
   const recusouBebidaNoItem = (item) => normalizarCombo(item && item.comboSelections).some(s => ehRecusaDeBebida(s.name));
 
-  const isBeverageName = (name) => {
+  // Quatro listas, iguais as do site (src/lib/beverage.ts). A lista unica
+  // antiga marcava prato como bebida: "Calzone Carne de SOL" saia com
+  // "<=== BEBIDA" e "!! CONTEM BEBIDA !!" (Esfirrao, 13/10/2026). As
+  // AMBIGUAS (sol, 51, vinho, cha, mate, ice, gin...) so valem com CONTEXTO
+  // no nome (lata, 600ml, garrafa...) ou com categoria de bebida.
+  const SOZINHAS = "bebida|bebidas|refrigerante|refrigerantes|refri|refris|suco|sucos|agua|guarana|guaravita|coca|coca-cola|fanta|sprite|pepsi|soda|h2oh|monster|red bull|redbull|energetico|long neck|longneck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|corona|smirnoff|tonica|schweppes|del valle|tampico|kapo|suffresh|feel good|kombucha|bravus|skol beats|pitu|velho barreiro|corote|vodka|whisky|whiskey|licor|espumante|champagne|chopp|cerveja|cervejas|tubaina|itubaina|kuat|sukita|poty|dolly|ades|toddynho|milk shake|milkshake|milk-shake|achocolatado|chocolate quente|cappuccino|capuccino|yakult|cachaca|pinga|aguardente|cha gelado|cha mate|mate leao|ice tea|1l|1,5l|1,5 l|1.5l";
+  const AMBIGUAS = "sol|51|vinho|ice|gin|cha|mate|tnt|vibe";
+  const CONTEXTO = "lata|latinha|garrafa|garrafinha|long neck|longneck|\\d+\\s?ml|\\d+\\s?l\\b|litro|litros|bebida|bebidas|cerveja|cervejas|refrigerante|drink|dose|gelada|gelado|tonica|destilado|chopp|adega|cachaca";
+  const CATEGORIAS_DE_BEBIDA = "bebida|bebidas|cerveja|cervejas|refrigerante|refrigerantes|suco|sucos|vinho|vinhos|destilado|destilados|drink|drinks|adega|bar|cha|chas|agua|aguas";
+  const reSozinhas = new RegExp(`\\b(${SOZINHAS})\\b`, "i");
+  const reAmbiguas = new RegExp(`\\b(${AMBIGUAS})\\b`, "i");
+  const reContexto = new RegExp(`\\b(${CONTEXTO})\\b`, "i");
+  const reCategoria = new RegExp(`\\b(${CATEGORIAS_DE_BEBIDA})\\b`, "i");
+
+  // A palavra da LOJA e lei — saida de emergencia para a marca regional.
+  const reCustom = (() => {
+    if (!customKeywords) return null;
+    const list = typeof customKeywords === "string" ? customKeywords.split(",") : customKeywords;
+    const cleanList = (Array.isArray(list) ? list : []).map(k => cleanAscii(String(k).trim())).filter(Boolean);
+    if (cleanList.length === 0) return null;
+    return new RegExp(`\\b(${cleanList.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})\\b`, "i");
+  })();
+
+  const isBeverageName = (name, categoriaEhDeBebida) => {
     if (!name || !autoBeverageTag) return false;
     const cleanName = cleanAscii(name);
     if (reRecusa.test(cleanName)) return false;
-    const defaultPattern = "bebida|bebidas|refrigerante|refrigerantes|suco|sucos|cerveja|cervejas|agua|guarana|guaravita|coca|fanta|sprite|pepsi|soda|h2oh|monster|red bull|redbull|energetico|cha|mate|lata|2l|600ml|350ml|long neck|heineken|stella|budweiser|skol|brahma|antarctica|amstel|eisenbahn|sol|corona|smirnoff|ice|tonica|schweppes|del valle|tampico|kapo|suffresh|feel good|kombucha|vibe|tnt|bravus|skol beats|51|pitu|velho barreiro|corote|vodka|gin|whisky|whiskey|licor|vinho|espumante|champagne|chopp";
-
-    let customPattern = "";
-    if (customKeywords) {
-      const list = typeof customKeywords === "string" ? customKeywords.split(",") : customKeywords;
-      const cleanList = (Array.isArray(list) ? list : []).map(k => cleanAscii(String(k).trim())).filter(Boolean);
-      if (cleanList.length > 0) {
-        customPattern = "|" + cleanList.map(k => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
-      }
-    }
-
-    const bevRegex = new RegExp(`\\b(${defaultPattern}${customPattern})\\b`, "i");
-    return bevRegex.test(cleanName);
+    if (reCustom && reCustom.test(cleanName)) return true;
+    if (reSozinhas.test(cleanName)) return true;
+    return reAmbiguas.test(cleanName) && (reContexto.test(cleanName) || categoriaEhDeBebida === true);
   };
 
   const isBeverageItem = (item) => {
@@ -1851,8 +1864,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
     // "Parmegiana + 2 Coca" com "Nao quero a bebida": o cliente recusou.
     if (recusouBebidaNoItem(item)) return false;
     const cat = String(item.category || item.menuProduct?.category || "");
-    const name = String(item.name || item.menuProduct?.name || "");
-    return isBeverageName(cat) || isBeverageName(name);
+    const name = String(item.name || item.productName || item.menuProduct?.name || "");
+    const catBebida = reCategoria.test(cleanAscii(cat));
+    if (catBebida && name) return true;
+    return isBeverageName(name, catBebida);
   };
 
   const hasBeverages = (order.items || []).some(item => {

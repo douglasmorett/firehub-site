@@ -58,5 +58,21 @@ confere("escolheu Coca: faixa continua", /POSSUI BEBIDA|CONTEM BEBIDA/i.test(esc
 const zero = texto(pedido([{ name: "Refrigerante sem Açúcar Coca-Cola 1,5l", quantity: 1, price: 12 }]));
 confere("'Refrigerante sem Acucar' continua bebida", /POSSUI BEBIDA|CONTEM BEBIDA/i.test(zero));
 
+// "Calzone Carne de SOL" saia como bebida (Esfirrao, 13/10/2026): "sol" so
+// e bebida com contexto (lata, ml...) ou categoria de bebida.
+const BEBIDA = /POSSUI BEBIDA|CONTEM BEBIDA/i;
+const calzone = texto(pedido([
+  { name: "Calzone carne de sol", quantity: 1, price: 14.5, category: "Calzones" },
+  { name: "Ka churrasco bovino", quantity: 1, price: 17.5, comboSelections: [{ name: "QUEIJO MUSSARELA", quantity: 1 }] },
+]));
+confere("calzone carne de sol: sem a faixa de bebida", !BEBIDA.test(calzone));
+confere("calzone carne de sol: sem a marca <=== BEBIDA", !/<===[^\n]*BEBIDA/.test(calzone));
+confere("'Cerveja Sol 600ml' continua bebida", BEBIDA.test(texto(pedido([{ name: "Cerveja Sol 600ml", quantity: 1, price: 12 }]))));
+confere("'Sol Lata' continua bebida", BEBIDA.test(texto(pedido([{ name: "Sol Lata", quantity: 1, price: 7 }]))));
+confere("'Sol' na categoria Bebidas e bebida", BEBIDA.test(texto(pedido([{ name: "Sol", quantity: 1, price: 7, category: "Bebidas" }]))));
+confere("'Marmitex Sol Nascente' nao e bebida", !BEBIDA.test(texto(pedido([{ name: "Marmitex Sol Nascente", quantity: 1, price: 20, category: "Marmitas" }]))));
+confere("palavra da loja continua valendo", BEBIDA.test(texto({ ...pedido([{ name: "Xodo do Sertao", quantity: 1, price: 9 }]), customBeverageKeywords: "xodo" })));
+confere("combo com 'Guarana 1L' continua bebida", BEBIDA.test(texto(pedido([{ name: "Combo Esfiha", quantity: 1, price: 30, comboSelections: [{ name: "Guarana 1L", quantity: 1 }] }]))));
+
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);
