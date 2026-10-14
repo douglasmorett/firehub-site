@@ -8,7 +8,7 @@
 import { decidir, iguais, type LinhaDaSaida } from "../src/lib/contingencia/mescla";
 import { TABELAS_DA_COPIA, colunasQueNaoDescem, idDoRegistro, tabelaDaCopia } from "../src/lib/contingencia/catalogo";
 import { assinarBilhete, lerBilhete, VALIDADE_DO_BILHETE_MS } from "../src/lib/contingencia/chave";
-import { conteudoDoAtalho } from "../contingencia/supervisor/atalho";
+import { conteudoDoAtalho, origensDaNuvem } from "../contingencia/supervisor/atalho";
 import { sqlDaFuncao, tabelasComGatilho } from "../src/lib/contingencia/estrutura-no-banco";
 import { destinoDaTroca } from "../src/lib/contingencia/troca";
 
@@ -195,6 +195,8 @@ const atalho = conteudoDoAtalho("https://firehubfood.com.br/store", icone);
 confere("atalho abre o FireHub de sempre (a nuvem), não o endereço local", atalho.includes("URL=https://firehubfood.com.br/store") && !atalho.includes("7890"));
 confere("atalho com o ícone do FireHub", atalho.includes(`IconFile=${icone}`));
 confere("atalho marcado como do FireHub (só ele é atualizado)", atalho.includes("[FireHub]") && atalho.startsWith("[InternetShortcut]\r\n"));
+confere("atalho aceita o endereço com e sem www", JSON.stringify(origensDaNuvem("https://firehubfood.com.br")) === JSON.stringify(["https://firehubfood.com.br", "https://www.firehubfood.com.br"]), origensDaNuvem("https://firehubfood.com.br"));
+confere("atalho não aceita endereço de fora", !origensDaNuvem("https://firehubfood.com.br").includes("https://firehubfood.com.br.evil.com"));
 
 console.log("\n— Gatilho da nuvem —");
 for (const t of tabelasComGatilho()) {

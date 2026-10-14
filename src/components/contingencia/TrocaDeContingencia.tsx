@@ -111,6 +111,22 @@ async function perguntarAoAssistente(): Promise<EstadoNoAssistente | null> {
   return null;
 }
 
+/**
+ * No computador do caixa, conta ao supervisor em que endereço esta tela usa o
+ * FireHub (com ou sem "www": cada um guarda a própria entrada). É o que o
+ * atalho da área de trabalho passa a abrir (contingencia/supervisor/atalho.ts).
+ * Fora do computador do caixa (sem Assistente com a contingência), não faz nada.
+ */
+async function avisarOEnderecoAoComputador(porta: number): Promise<void> {
+  const pc = await perguntarAoAssistente();
+  if (!pc?.ativa) return;
+  try {
+    await fetchAssistente(`http://127.0.0.1:${porta || 7890}/__contingencia/origem?de=${encodeURIComponent(window.location.origin)}`, { method: "POST" });
+  } catch {
+    /* supervisor de versão anterior ou desligado: na próxima renovação */
+  }
+}
+
 function naPortaDaLoja(): boolean {
   return window.location.protocol === "http:" && window.location.port === PORTA_DA_LOJA;
 }
@@ -140,6 +156,7 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
           if (d.ativo) {
             localStorage.setItem(CHAVE, JSON.stringify(d));
             cuidarDaRedeDeSeguranca(true, tipo);
+            if (tipo === "painel") void avisarOEnderecoAoComputador(Number(d.porta) || 7890);
             return;
           }
           // Esta conta não tem a contingência. Só desarma (apaga o bilhete e a

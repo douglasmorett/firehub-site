@@ -43,6 +43,22 @@ function areaDeTrabalho(): Promise<string | null> {
   });
 }
 
+/**
+ * Os endereços em que o painel pode estar: o da nuvem e o mesmo com/sem
+ * "www". Cada um guarda a própria entrada (bilhete e rede de segurança) — o
+ * atalho tem de abrir o que a loja usa (visto em 14/10/2026: o "www" não
+ * redireciona).
+ */
+export function origensDaNuvem(nuvem: string): string[] {
+  try {
+    const u = new URL(nuvem);
+    const outro = u.hostname.startsWith("www.") ? u.hostname.slice(4) : `www.${u.hostname}`;
+    return [`${u.protocol}//${u.host}`, `${u.protocol}//${outro}${u.port ? `:${u.port}` : ""}`];
+  } catch {
+    return [];
+  }
+}
+
 /** O conteúdo do atalho (.url: abre no navegador padrão, com o ícone do FireHub). */
 export function conteudoDoAtalho(endereco: string, icone: string | null): string {
   return [

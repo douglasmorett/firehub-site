@@ -23,7 +23,7 @@ export type DecisaoDaPorta =
   | { tipo: "repassar" }
   | { tipo: "redirecionar"; para: string }
   | { tipo: "esperar" }
-  | { tipo: "responder"; status: number; corpo: unknown };
+  | { tipo: "responder"; status: number; corpo: unknown; cabecalhos?: Record<string, string> };
 
 export type OpcoesDaPorta = {
   /** Onde a porta escuta. 0.0.0.0 = a rede da loja inteira. */
@@ -79,8 +79,9 @@ export function abrirPortaDaLoja(o: OpcoesDaPorta): http.Server {
         "content-type": "application/json; charset=utf-8",
         "cache-control": "no-store",
         "access-control-allow-origin": "*",
+        ...decisao.cabecalhos,
       });
-      res.end(JSON.stringify(decisao.corpo));
+      res.end(decisao.corpo === undefined ? undefined : JSON.stringify(decisao.corpo));
       return;
     }
     if (decisao.tipo === "redirecionar") {

@@ -76,6 +76,12 @@ export type EstadoGuardado = {
   fotoEm: string | null;
   /** A queda em andamento (para registrar o episódio na subida). */
   episodio: { inicio: string; fim: string | null } | null;
+  /**
+   * Em que endereço o painel deste computador usa o FireHub (com ou sem
+   * "www": cada um guarda a própria entrada). É o que o atalho da área de
+   * trabalho abre. Vem da tela do painel (TrocaDeContingencia).
+   */
+  origemDoPainel?: string | null;
 };
 
 export function arquivoDoEstado(cfg: Config): string {
@@ -96,6 +102,7 @@ export function lerEstado(cfg: Config): EstadoGuardado {
     loja: e.loja || "",
     fotoEm: e.fotoEm || null,
     episodio: e.episodio || null,
+    origemDoPainel: e.origemDoPainel || null,
   };
   if (estado.loja && estado.loja !== cfg.loja) {
     // Outra loja neste computador: nada da cópia anterior vale.

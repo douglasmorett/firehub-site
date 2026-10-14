@@ -27,7 +27,7 @@ import { esquecerColunas, fazerFoto, puxarEspelho } from "./copia";
 import { FireHubLocal } from "./firehub-local";
 import { subirSaida } from "./subida";
 import { abrirPortaDaLoja, type DecisaoDaPorta } from "./porta-da-loja";
-import { garantirAtalho } from "./atalho";
+import { garantirAtalho, origensDaNuvem } from "./atalho";
 
 const VERSAO = "0.1.0";
 
@@ -144,6 +144,33 @@ async function principal(): Promise<void> {
       return { tipo: "responder", status: 200, corpo: { ok: true, ate: new Date(simularQuedaAte).toISOString() } };
     }
 
+    // A tela do painel aberta NESTE computador conta em que endereço a loja usa
+    // o FireHub (com ou sem "www" — cada um guarda a própria entrada). O atalho
+    // da área de trabalho passa a abrir esse. Página https chamando a rede
+    // local: precisa da licença de CORS e de rede privada (Chrome).
+    if (url.startsWith("/__contingencia/origem")) {
+      const cors = {
+        "access-control-allow-origin": String(req.headers.origin || "*"),
+        "access-control-allow-methods": "POST, OPTIONS",
+        "access-control-allow-headers": "content-type",
+        "access-control-allow-private-network": "true",
+        vary: "origin",
+      };
+      if (req.method === "OPTIONS") return { tipo: "responder", status: 204, corpo: undefined, cabecalhos: cors };
+      const remoto = req.socket.remoteAddress || "";
+      const daqui = remoto === "127.0.0.1" || remoto === "::1" || remoto === "::ffff:127.0.0.1";
+      if (!daqui || req.method !== "POST") return { tipo: "responder", status: 403, corpo: { error: "Só do computador da loja." }, cabecalhos: cors };
+      const de = new URL(url, "http://loja").searchParams.get("de") || "";
+      if (!origensDaNuvem(cfg.nuvem).includes(de)) return { tipo: "responder", status: 400, corpo: { error: "Endereço desconhecido." }, cabecalhos: cors };
+      if (estado.origemDoPainel !== de) {
+        estado.origemDoPainel = de;
+        gravarEstado(cfg, estado);
+        registro(`O painel deste computador usa ${de}: o atalho passa a abrir esse endereço.`);
+        void garantirAtalho({ nuvem: de, appDir: cfg.appDir, pasta: cfg.pasta }, registro);
+      }
+      return { tipo: "responder", status: 200, corpo: { ok: true }, cabecalhos: cors };
+    }
+
     // Parar com cuidado (o Assistente pede antes de atualizar ou desativar):
     // desliga o FireHub local e o banco, sem deixar processo órfão.
     if (url.startsWith("/__contingencia/parar")) {
@@ -170,8 +197,9 @@ async function principal(): Promise<void> {
 
   abrirPortaDaLoja({ host: "0.0.0.0", porta: PORTAS.loja, destino: { host: "127.0.0.1", porta: PORTAS.firehub }, decidir });
   registro(`Porta da loja aberta em 0.0.0.0:${PORTAS.loja} (${ipsDaRede().join(", ") || "sem rede"}).`);
-  // O ícone "FireHub" na área de trabalho: o jeito de abrir que sempre dá certo (atalho.ts).
-  void garantirAtalho({ nuvem: cfg.nuvem, appDir: cfg.appDir, pasta: cfg.pasta }, registro);
+  // O ícone "FireHub" na área de trabalho: o jeito de abrir que sempre dá certo (atalho.ts),
+  // no endereço que o painel deste computador usa (com ou sem "www").
+  void garantirAtalho({ nuvem: estado.origemDoPainel || cfg.nuvem, appDir: cfg.appDir, pasta: cfg.pasta }, registro);
 
   // ── A cópia ────────────────────────────────────────────────────────────────
   const prepararCopia = async () => {
