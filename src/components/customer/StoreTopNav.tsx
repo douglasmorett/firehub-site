@@ -1,5 +1,6 @@
 "use client";
 import SairDaConta from "@/components/SairDaConta";
+import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -1939,6 +1940,16 @@ export default function StoreTopNav({
             </a>
           )}
           <span className="nav-user-label" style={{ color:"rgba(255,255,255,0.85)", fontSize:"0.72rem", padding:"0 0.2rem" }}>{userName} • {userCity}</span>
+          {/* Dono que também é vendedor/embaixador (o Victor, 14/10/2026): com o
+              menu em cima não há barra lateral, e o atalho de lá não aparecia.
+              Some sozinho para quem só tem a loja. */}
+          <AtalhoDoOutroPainel
+            tamanhoDoIcone={12}
+            style={{ display:"inline-flex", alignItems:"center", gap:4, padding:"0.38rem 0.6rem", borderRadius:8, background:"#fff", color:"#C92E09", fontWeight:700, fontSize:"0.72rem", border:"none", whiteSpace:"nowrap" }}
+            avisoAntes={cashOpen
+              ? "O caixa está aberto. Neste navegador, as telas da loja (pedidos, KDS e impressão) param de receber até você voltar para a loja."
+              : undefined}
+          />
           <SairDaConta
             caixaAberto={cashOpen}
             nomeDaLoja={userName}
