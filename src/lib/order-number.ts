@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { senhaDaPosicao } from "@/lib/senha-aleatoria";
 
 /**
  * Gera o próximo dailyOrderNumber sequencial para uma loja.
@@ -132,41 +133,92 @@ export async function chaveDoContador(
   return { dateKey: "sempre", desde: new Date(0) };
 }
 
+/**
+ * A loja pediu a numeração SORTEADA (Painel de senhas → Numeração dos pedidos)?
+ *
+ * Pelo MESMO cliente da transação, de propósito: ler por outra conexão de
+ * dentro da transação faz o pedido esperar uma segunda conexão do pool com a
+ * primeira presa — no pico, com o pool cheio, o pedido trava até o tempo da
+ * transação estourar (visto no teste com uma conexão só). A coluna nasce no
+ * boot (garantir-colunas.ts) antes do primeiro request, como as outras que
+ * esta rota lê.
+ */
+async function lojaNumeraSorteado(db: ClientePrisma, franchiseeId: string): Promise<boolean> {
+  const loja = await db.user.findUnique({
+    where: { id: franchiseeId },
+    select: { numeracaoAleatoria: true },
+  });
+  return loja?.numeracaoAleatoria === true;
+}
+
+/** Sufixo do contador da numeração sorteada — um contador por modo e por período. */
+const SUFIXO_SORTEADO = ":aleatoria";
+
 /** Mesma numeração, porém usando o client da transação em andamento. */
 export async function generateDailyOrderNumberTx(
   db: ClientePrisma,
   franchiseeId: string,
   ref: Date = new Date()
 ): Promise<number> {
-  const { dateKey, desde: startOfDay } = await chaveDoContador(db, franchiseeId, ref);
+  const { dateKey: periodo, desde: startOfDay } = await chaveDoContador(db, franchiseeId, ref);
+
+  // ── DOIS CONTADORES NO MESMO PERÍODO ────────────────────────────────────
+  // A contagem 1, 2, 3 usa a chave do período; a sorteada (lib/senha-aleatoria.ts)
+  // usa a mesma chave com ":aleatoria" e troca a POSIÇÃO pelo número embaralhado.
+  // Cada um continua atômico do jeito de sempre. O único jeito de repetir
+  // número é a loja TROCAR de modo no meio do período — o #150 da contagem e
+  // o 150 do sorteio —, e só nesse caso o número é conferido no banco.
+  const sorteado = await lojaNumeraSorteado(db, franchiseeId);
+  const chaveSequencial = periodo;
+  const chaveSorteada = `${periodo}${SUFIXO_SORTEADO}`;
+  const dateKey = sorteado ? chaveSorteada : chaveSequencial;
   const chave = { franchiseeId_dateKey: { franchiseeId, dateKey } };
 
-  // 1. Garante que o contador do dia existe, semeado com o maior número já usado.
-  const jaExiste = await db.dailyOrderCounter.findUnique({
-    where: chave,
-    select: { franchiseeId: true },
+  const contadores = await db.dailyOrderCounter.findMany({
+    where: { franchiseeId, dateKey: { in: [chaveSequencial, chaveSorteada] } },
+    select: { dateKey: true },
   });
+  const existe = new Set(contadores.map((c) => c.dateKey));
+  const outroModoNoPeriodo = existe.has(sorteado ? chaveSequencial : chaveSorteada);
 
-  if (!jaExiste) {
-    const semente = await calcularSemente(db, franchiseeId, startOfDay);
+  // 1. Garante que o contador do período existe.
+  if (!existe.has(dateKey)) {
+    // A contagem é semeada com o maior número já usado; o sorteio começa da
+    // posição 0. E a contagem que volta depois de um sorteio no mesmo período
+    // também começa do 0: semear pelo "maior número" pularia do sorteado
+    // 873 para o #874. A conferência abaixo pula o que já foi usado.
+    const semente = sorteado || existe.has(chaveSorteada) ? 0 : await calcularSemente(db, franchiseeId, startOfDay);
     try {
       await db.dailyOrderCounter.create({
         data: { franchiseeId, dateKey, lastNumber: semente },
       });
     } catch (err: any) {
-      // P2002 = outra requisição criou o contador entre o findUnique e o create.
+      // P2002 = outra requisição criou o contador entre a leitura e o create.
       // É o resultado esperado numa corrida; o incremento abaixo resolve.
       if (err?.code !== "P2002") throw err;
     }
   }
 
-  // 2. Incremento ATÔMICO. Vira UPDATE ... SET lastNumber = lastNumber + 1
-  //    RETURNING, que o Postgres serializa no lock da linha.
-  const linha = await db.dailyOrderCounter.update({
-    where: chave,
-    data: { lastNumber: { increment: 1 } },
-    select: { lastNumber: true },
-  });
+  // Repetição só importa perto no tempo (duas comandas iguais na cozinha). A
+  // loja que nunca fecha o caixa tem um período de meses, e lá todo número
+  // de 100 a 999 já existe em algum dia antigo.
+  const conferirDesde = new Date(Math.max(startOfDay.getTime(), Date.now() - 24 * 3600_000));
 
-  return linha.lastNumber;
+  for (let tentativa = 0; ; tentativa++) {
+    // 2. Incremento ATÔMICO. Vira UPDATE ... SET lastNumber = lastNumber + 1
+    //    RETURNING, que o Postgres serializa no lock da linha.
+    const linha = await db.dailyOrderCounter.update({
+      where: chave,
+      data: { lastNumber: { increment: 1 } },
+      select: { lastNumber: true },
+    });
+    const numero = sorteado ? senhaDaPosicao(linha.lastNumber, `${franchiseeId}:${periodo}`) : linha.lastNumber;
+
+    if (!outroModoNoPeriodo || tentativa >= 50) return numero;
+    const usado = await db.customerOrder.findFirst({
+      where: { franchiseeId, dailyOrderNumber: numero, createdAt: { gte: conferirDesde } },
+      select: { id: true },
+    });
+    if (!usado) return numero;
+  }
 }

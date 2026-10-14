@@ -29,6 +29,13 @@ const nextConfig: NextConfig = {
           source: "/E/:code",
           destination: "/e/:code",
         },
+        // ─── Painel de senhas: /TV digitado no controle remoto ───
+        // Teclado de TV costuma começar em maiúscula, e no Linux do servidor
+        // /TV não é /tv (o mesmo caso da etiqueta logo acima).
+        { source: "/TV", destination: "/tv" },
+        { source: "/Tv", destination: "/tv" },
+        { source: "/TV/:codigo", destination: "/tv/:codigo" },
+        { source: "/Tv/:codigo", destination: "/tv/:codigo" },
         // ─── Landing do evento FireHub Conect: URL limpa para divulgação ───
         // A página é um único HTML autocontido em public/conect.html (fotos
         // embutidas em data URI); o rewrite só tira o ".html" do link que vai

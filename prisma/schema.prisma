@@ -77,6 +77,12 @@ model User {
   allowScheduledOrders Boolean     @default(true)  // Permitir agendamento de pedidos no site próprio
   /// Pedido agendado no site próprio: dias, horários, antecedência… (lib/agendamento.ts). Nulo = desligado.
   agendamentoConfig    Json?
+  /// Painel de senhas na TV do salão: código da TV, o que aparece, som, mensagem
+  /// (lib/painel-de-senhas.ts). Nulo = nunca configurado. A COLUNA nasce em garantir-colunas.ts.
+  painelDeSenhas       Json?
+  /// O número do pedido sai sorteado (347, 812, 129) em vez de 1, 2, 3 — para
+  /// ninguém contar quanto a loja vende pela senha. Ver lib/order-number.ts.
+  numeracaoAleatoria   Boolean        @default(false)
   storeAlertSound  String?        @default("bell") // Som de alerta: bell | chime | beep | none
   storeTimezone    String?        @default("America/Sao_Paulo") // Fuso horário regional do restaurante
   storeLoyalty    Json?           // { type: cashback|points, rate: 2, active: true }

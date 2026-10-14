@@ -48,6 +48,8 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       { href: "/store", label: "Início", icone: "Home" },
       { href: "/store/pedidos-clientes", label: "Pedidos", icone: "ClipboardList", destaque: true },
       { href: "/store/kds", label: "KDS da cozinha", icone: "Monitor" },
+      // A TV do salão que chama a senha (lib/painel-de-senhas.ts).
+      { href: "/store/painel-de-senhas", label: "Painel de senhas", icone: "Tv", selo: "NOVO" },
       { href: "/store/mesas", label: "Mesas", icone: "UtensilsCrossed" },
       { href: "/store/venda-presencial", label: "Balcão", icone: "ShoppingBag" },
       { href: "/store/roteirizacao", label: "Roteirização", icone: "MapPin", novaAba: true },

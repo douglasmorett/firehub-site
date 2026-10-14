@@ -51,6 +51,9 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/pedidos-clientes", abre: ["orders"] },
   { prefixo: "/store/orders", abre: ["orders"] },
   { prefixo: "/store/kds", abre: ["kds"] },
+  // A TV de senhas é de quem cuida do salão e da cozinha; a troca da
+  // numeração dos pedidos, lá dentro, pede "Minha loja" (api/store/painel-de-senhas).
+  { prefixo: "/store/painel-de-senhas", abre: ["kds", "orders", "venda_presencial", "minha_loja"] },
   { prefixo: "/store/venda-presencial", abre: ["venda_presencial"] },
   { prefixo: "/store/mesas", abre: ["venda_presencial"] },
   { prefixo: "/store/caixa", abre: ["venda_presencial"] },

@@ -27,6 +27,8 @@ export const TELAS_SEM_WIDGET = [
   "/store/kds",
   /** Totem: é o CLIENTE na frente, e o widget é a venda do FireHub ao lojista. */
   "/totem",
+  /** Painel de senhas na TV do salão: ninguém clica, e a marca do FireHub já está no canto. */
+  "/tv",
   /**
    * A página de venda do FireHub Prazos. Aqui o motivo é outro: o widget
    * vende o FireHub (o sistema) no meio da venda de OUTRO produto, e é uma

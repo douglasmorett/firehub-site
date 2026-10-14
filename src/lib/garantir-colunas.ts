@@ -91,6 +91,11 @@ const INSTRUCOES = [
   // desligado; o "agendado de verdade" dos parceiros segue a regra das 3 h).
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "agendamentoConfig" JSONB`,
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "agendado" BOOLEAN NOT NULL DEFAULT false`,
+  // PAINEL DE SENHAS (TV do salão, lib/painel-de-senhas.ts) e a NUMERAÇÃO
+  // ALEATÓRIA do pedido (lib/order-number.ts). Nulo/false = sem painel e a
+  // contagem 1, 2, 3 de sempre.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "painelDeSenhas" JSONB`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "numeracaoAleatoria" BOOLEAN NOT NULL DEFAULT false`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -118,6 +123,8 @@ const ESPERADAS = [
   "MenuProduct.availableHours",
   "User.agendamentoConfig",
   "CustomerOrder.agendado",
+  "User.painelDeSenhas",
+  "User.numeracaoAleatoria",
 ];
 
 /**
@@ -202,7 +209,8 @@ export async function garantirColunasDePreco(): Promise<void> {
             'modeloDePagamento', 'modelosDePagamento', 'kdsConfig',
             'estoqueQtd', 'estoqueDesde', 'estoquePausar',
             'storeBannerVideo', 'reviewsMinStars', 'availableHours',
-            'agendamentoConfig', 'agendado'
+            'agendamentoConfig', 'agendado',
+            'painelDeSenhas', 'numeracaoAleatoria'
           )
       `;
       const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));

@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   BarChart2, Bike, PlayCircle, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
   Contact, Gauge, Home, LifeBuoy, LineChart, LogOut, MapPin, Menu, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
-  Send, ShoppingBag, Store, TabletSmartphone, Tag, Truck, UtensilsCrossed, Users, Wallet,
+  Send, ShoppingBag, Store, TabletSmartphone, Tag, Truck, Tv, UtensilsCrossed, Users, Wallet,
   X, Zap, type LucideIcon,
 } from "lucide-react";
 import { menuDaLoja, type ItemDoMenu } from "@/lib/menu-do-painel";
@@ -35,7 +35,7 @@ import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 const ICONES: Record<string, LucideIcon> = {
   BarChart2, Bike, BookOpen, Bot, CheckCircle2, ClipboardList, Contact, Gauge, Home, LifeBuoy, LineChart, MapPin,
   Monitor, Package, PieChart, Printer, Puzzle, Receipt, Send, ShoppingBag, Store,
-  TabletSmartphone, Tag, Truck, UtensilsCrossed, Users, Wallet, Zap,
+  TabletSmartphone, Tag, Truck, Tv, UtensilsCrossed, Users, Wallet, Zap,
 };
 
 const CHAVE_RECOLHIDA = "firehub_menu_recolhido";
