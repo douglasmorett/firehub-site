@@ -13,6 +13,12 @@
  * A tela pode chegar uns segundos ANTES de o computador declarar a
  * contingência (cada lado conta as falhas no seu relógio): espera a porta da
  * loja confirmar; se ela disser que a nuvem está de pé, volta para a nuvem.
+ *
+ * Sem bilhete (o FireHub local manda para cá quem chega sem sessão — a senha
+ * do painel não desce para o computador, então a tela de login local não
+ * serviria): o botão "Entrar" abre o MESMO endereço na nuvem. Sem internet, a
+ * rede de segurança do navegador (public/sw-contingencia.js) responde no lugar
+ * da nuvem e traz de volta com o bilhete guardado. (14/10/2026)
  */
 import { useEffect, useState } from "react";
 
@@ -23,17 +29,34 @@ function destinoSeguro(volta: string | null): string {
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/** O endereço da nuvem, pela porta da loja (o supervisor sabe); na falta, o de sempre. */
+async function enderecoDaNuvem(): Promise<string> {
+  try {
+    const e = await (await fetch("/__contingencia/estado", { cache: "no-store" })).json();
+    if (typeof e?.nuvem === "string" && /^https?:\/\//.test(e.nuvem)) return e.nuvem.replace(/\/+$/, "");
+  } catch {
+    /* sem a porta da loja: o endereço de sempre */
+  }
+  return "https://firehubfood.com.br";
+}
+
 export default function EntrarNaContingencia() {
   const [erro, setErro] = useState("");
   const [aviso, setAviso] = useState("Sem conexão com o FireHub. Entrando no computador da loja…");
+  /** Para onde o botão "Entrar" leva (o mesmo endereço, na nuvem), quando não há bilhete. */
+  const [entrarPor, setEntrarPor] = useState("");
 
   useEffect(() => {
     const parametros = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const bilhete = parametros.get("bilhete") || "";
-    const volta = destinoSeguro(parametros.get("volta"));
+    const volta = destinoSeguro(parametros.get("volta") || new URLSearchParams(window.location.search).get("volta"));
     history.replaceState(null, "", window.location.pathname);
+    const semBilhete = (texto: string) => {
+      setErro(texto);
+      enderecoDaNuvem().then((nuvem) => setEntrarPor(`${nuvem}${volta}`));
+    };
     if (!bilhete) {
-      setErro("Esta tela não trouxe a autorização da contingência.");
+      semBilhete("");
       return;
     }
     let vivo = true;
@@ -60,7 +83,7 @@ export default function EntrarNaContingencia() {
       });
       if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error || "Não foi possível entrar.");
       window.location.replace(volta);
-    })().catch((e) => vivo && setErro(e?.message || "Não foi possível entrar."));
+    })().catch((e) => vivo && semBilhete(e?.message || "Não foi possível entrar."));
     return () => {
       vivo = false;
     };
@@ -74,7 +97,26 @@ export default function EntrarNaContingencia() {
           <circle cx="12" cy="12" r="10" /><path d="m4.93 4.93 4.24 4.24" /><path d="m14.83 9.17 4.24-4.24" /><path d="m14.83 14.83 4.24 4.24" /><path d="m9.17 14.83-4.24 4.24" /><circle cx="12" cy="12" r="4" />
         </svg>
         <h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Modo Contingência</h1>
-        <p style={{ color: erro ? "#fca5a5" : "#cbd5e1", margin: 0 }}>{erro || aviso}</p>
+        {entrarPor ? (
+          <>
+            <p style={{ color: "#cbd5e1", margin: "0 0 16px", lineHeight: 1.5 }}>
+              Sem internet, o FireHub abre neste computador. Clique em <strong>Entrar</strong>: o navegador usa a entrada que guardou e
+              você continua de onde parou, sem senha.
+            </p>
+            <a
+              href={entrarPor}
+              style={{ display: "inline-block", background: "linear-gradient(135deg,#8B5CF6,#6D28D9)", color: "#fff", fontWeight: 800, fontSize: 16, padding: "12px 28px", borderRadius: 12, textDecoration: "none" }}
+            >
+              Entrar
+            </a>
+            <p style={{ color: "#94a3b8", fontSize: 13, margin: "16px 0 0", lineHeight: 1.5 }}>
+              Funciona em todo aparelho que já abriu o FireHub depois que o Modo Contingência foi ativado. O garçom entra pelo link dele, com a senha de sempre.
+              {erro ? <span style={{ display: "block", marginTop: 6, color: "#fca5a5" }}>{erro}</span> : null}
+            </p>
+          </>
+        ) : (
+          <p style={{ color: erro ? "#fca5a5" : "#cbd5e1", margin: 0 }}>{erro || aviso}</p>
+        )}
       </div>
     </main>
   );

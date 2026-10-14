@@ -27,6 +27,7 @@ import { esquecerColunas, fazerFoto, puxarEspelho } from "./copia";
 import { FireHubLocal } from "./firehub-local";
 import { subirSaida } from "./subida";
 import { abrirPortaDaLoja, type DecisaoDaPorta } from "./porta-da-loja";
+import { garantirAtalho } from "./atalho";
 
 const VERSAO = "0.1.0";
 
@@ -169,6 +170,8 @@ async function principal(): Promise<void> {
 
   abrirPortaDaLoja({ host: "0.0.0.0", porta: PORTAS.loja, destino: { host: "127.0.0.1", porta: PORTAS.firehub }, decidir });
   registro(`Porta da loja aberta em 0.0.0.0:${PORTAS.loja} (${ipsDaRede().join(", ") || "sem rede"}).`);
+  // O ícone "FireHub" na área de trabalho: o jeito de abrir que sempre dá certo (atalho.ts).
+  void garantirAtalho({ nuvem: cfg.nuvem, appDir: cfg.appDir, pasta: cfg.pasta }, registro);
 
   // ── A cópia ────────────────────────────────────────────────────────────────
   const prepararCopia = async () => {

@@ -12,7 +12,14 @@
  * assinado. Quando a internet cai, a tela vai para o computador da loja com
  * ele, e o FireHub local abre a sessão sem pedir senha — a senha do painel não
  * desce para o computador. Assinado com o segredo do bilhete da loja (nasce na
- * ativação, a nuvem e o computador guardam), vale 24 h e só para a loja dele.
+ * ativação, a nuvem e o computador guardam) e só vale para a loja dele.
+ *
+ * Validade de 1 ano, contada da última vez que a tela teve internet (com
+ * internet ela pede um novo a cada ~30 min). Era 24 h: um computador que
+ * passasse um dia desligado, ou uma queda de dias, deixava o dono trancado
+ * para fora do painel — a senha não desce, o bilhete é a única porta. Pedido
+ * do Douglas (14/10/2026): "ficou três dias sem internet, ele consegue entrar
+ * na loja dele e usar tudo". Ativar de novo troca o segredo e invalida todos.
  */
 import crypto from "node:crypto";
 
@@ -36,7 +43,7 @@ export type Bilhete = {
   exp: number;
 };
 
-export const VALIDADE_DO_BILHETE_MS = 24 * 60 * 60 * 1000;
+export const VALIDADE_DO_BILHETE_MS = 365 * 24 * 60 * 60 * 1000;
 
 function assinatura(corpo: string, segredo: string): string {
   return crypto.createHmac("sha256", segredo).update(corpo).digest("base64url");

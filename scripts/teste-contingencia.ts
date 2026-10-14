@@ -7,7 +7,8 @@
  */
 import { decidir, iguais, type LinhaDaSaida } from "../src/lib/contingencia/mescla";
 import { TABELAS_DA_COPIA, colunasQueNaoDescem, idDoRegistro, tabelaDaCopia } from "../src/lib/contingencia/catalogo";
-import { assinarBilhete, lerBilhete } from "../src/lib/contingencia/chave";
+import { assinarBilhete, lerBilhete, VALIDADE_DO_BILHETE_MS } from "../src/lib/contingencia/chave";
+import { conteudoDoAtalho } from "../contingencia/supervisor/atalho";
 import { sqlDaFuncao, tabelasComGatilho } from "../src/lib/contingencia/estrutura-no-banco";
 import { destinoDaTroca } from "../src/lib/contingencia/troca";
 
@@ -180,6 +181,20 @@ confere("bilhete com outro segredo não abre", lerBilhete(b, "outro", "L") === n
 confere("bilhete adulterado não abre", lerBilhete(b.replace(/^./, (c) => (c === "e" ? "f" : "e")), segredo, "L") === null);
 const vencido = assinarBilhete({ v: 1, loja: "L", tipo: "painel", email: "a@b.c", exp: Date.now() - 1 }, segredo);
 confere("bilhete vencido não abre", lerBilhete(vencido, segredo, "L") === null);
+// Dias sem internet (pedido do Douglas, 14/10/2026): o bilhete que a tela guardou
+// na última vez com internet continua abrindo a loja.
+const DIA = 24 * 60 * 60 * 1000;
+const guardado = assinarBilhete({ v: 1, loja: "L", tipo: "painel", email: "a@b.c", exp: Date.now() + VALIDADE_DO_BILHETE_MS }, segredo);
+confere("bilhete guardado abre depois de 3 dias sem internet", lerBilhete(guardado, segredo, "L", Date.now() + 3 * DIA)?.email === "a@b.c");
+confere("bilhete guardado abre depois de 300 dias sem internet", lerBilhete(guardado, segredo, "L", Date.now() + 300 * DIA)?.email === "a@b.c");
+confere("bilhete guardado vence depois de 1 ano sem internet", lerBilhete(guardado, segredo, "L", Date.now() + 366 * DIA) === null);
+
+console.log("\n— Atalho da área de trabalho —");
+const icone = String.raw`C:\Users\Loja\AppData\Roaming\FireHub\contingencia\FireHub.ico`;
+const atalho = conteudoDoAtalho("https://firehubfood.com.br/store", icone);
+confere("atalho abre o FireHub de sempre (a nuvem), não o endereço local", atalho.includes("URL=https://firehubfood.com.br/store") && !atalho.includes("7890"));
+confere("atalho com o ícone do FireHub", atalho.includes(`IconFile=${icone}`));
+confere("atalho marcado como do FireHub (só ele é atualizado)", atalho.includes("[FireHub]") && atalho.startsWith("[InternetShortcut]\r\n"));
 
 console.log("\n— Gatilho da nuvem —");
 for (const t of tabelasComGatilho()) {

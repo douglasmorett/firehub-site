@@ -47,13 +47,14 @@ function lerGuardado(): Guardado | null {
 
 /**
  * A rede de segurança (public/sw-contingencia.js): só na loja com
- * contingência ativada, só no /store e no /garcom. Desativou, sai.
+ * contingência ativada. No painel cobre o site inteiro ("/"), para quem abre a
+ * página inicial ou o login já sem internet; no garçom, o /garcom. Desativou, sai.
  */
 function cuidarDaRedeDeSeguranca(ativa: boolean, tipo: "painel" | "garcom"): void {
   if (!("serviceWorker" in navigator)) return;
   // Sem a barra no fim: o escopo "/store/" deixava de fora o próprio /store (o
   // painel principal) — visto na prova de 12/10, a página caía no erro do Chrome.
-  const escopo = tipo === "garcom" ? "/garcom" : "/store";
+  const escopo = tipo === "garcom" ? "/garcom" : "/";
   if (ativa) {
     navigator.serviceWorker.register("/sw-contingencia.js", { scope: escopo }).catch(() => {});
     return;

@@ -20,8 +20,12 @@ import { COOKIE_DO_GARCOM, emitirTokenDoGarcom, opcoesDoCookieDoGarcom } from "@
 
 export const dynamic = "force-dynamic";
 
-/** Sessão aberta pelo bilhete: um dia basta para atravessar a queda. */
-const DURACAO_S = 24 * 60 * 60;
+/**
+ * Sessão aberta pelo bilhete: 7 dias, como a da nuvem (lib/auth.ts), e o
+ * FireHub local renova enquanto a tela é usada. Era 1 dia — uma queda de dias
+ * derrubava a sessão no meio. Se ela vencer, o bilhete (1 ano) abre de novo.
+ */
+const DURACAO_S = 7 * 24 * 60 * 60;
 
 export async function POST(req: NextRequest) {
   if (!MODO_LOCAL) return NextResponse.json({ error: "Só no computador da loja." }, { status: 404 });

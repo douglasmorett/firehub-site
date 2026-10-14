@@ -160,6 +160,16 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(url, 301);
   }
 
+  // No computador da loja, a tela de login não abre o painel: a senha do dono
+  // não desce para a cópia (lib/contingencia/chave.ts). Quem chega aqui vai à
+  // porta de entrada da contingência, que entra com o bilhete guardado.
+  if (process.env.FIREHUB_LOCAL === "1" && pathname === "/login") {
+    const destino = request.nextUrl.searchParams.get("callbackUrl") || "/store";
+    const entrar = safeUrl("/contingencia/entrar", request.url);
+    entrar.searchParams.set("volta", destino.startsWith("/") && !destino.startsWith("//") ? destino : "/store");
+    return NextResponse.redirect(entrar);
+  }
+
   // ─── DOMÍNIO DA ICEBOX ────────────────────────────────────────────────────
   // iceboxdistribuidora.com.br era servido por um projeto Vercel PRÓPRIO, que
   // foi apagado. O domínio continuou na conta apontando para lugar nenhum, e
@@ -251,6 +261,13 @@ export async function proxy(request: NextRequest) {
     });
 
     if (!token) {
+      // Computador da loja sem sessão: a porta de entrada da contingência, não
+      // o login (que lá não serve para o painel — ver acima).
+      if (process.env.FIREHUB_LOCAL === "1") {
+        const entrar = safeUrl("/contingencia/entrar", request.url);
+        entrar.searchParams.set("volta", request.nextUrl.pathname + request.nextUrl.search);
+        return NextResponse.redirect(entrar);
+      }
       const loginUrl = safeUrl("/login", request.url);
       // Caminho RELATIVO, nunca `request.url`. Dentro do container o Next
       // resolve `request.url` com o host interno, e o redirect saía com

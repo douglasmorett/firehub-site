@@ -194,6 +194,8 @@ function Requisito({ icone, titulo, texto }: { icone: React.ReactNode; titulo: s
 }
 
 const DUVIDAS: { p: string; r: string }[] = [
+  { p: "Como abro o FireHub sem internet?", r: "Pelo ícone FireHub que aparece sozinho na área de trabalho do computador do caixa, ou pelo endereço de sempre. Sem internet, o navegador leva ao computador da loja já com você dentro, sem pedir senha." },
+  { p: "E se ficar dias sem internet?", r: "A loja continua funcionando: pedidos, balcão, mesas, cozinha, abrir e fechar o caixa e impressão. A entrada guardada vale por até um ano sem nenhuma conexão. Quando a internet voltar, tudo sobe sozinho." },
   { p: "Preciso fazer alguma coisa quando a internet cair?", r: "Não. Em uns 15 segundos as telas passam sozinhas para o computador do caixa, e voltam sozinhas quando a internet volta." },
   { p: "E se o computador do caixa estiver desligado?", r: "Aí não tem contingência. Com internet, a TV e o celular do garçom continuam funcionando normalmente pela nuvem." },
   { p: "Os pedidos feitos na queda duplicam?", r: "Não. Cada pedido sobe uma vez só. Se alguma coisa foi mudada nos dois lugares ao mesmo tempo, ela aparece em \"Últimas quedas\", nesta tela." },
@@ -351,7 +353,7 @@ export default function ModoContingenciaClient() {
       <Cartao
         titulo={daVez === null ? "Sua loja está protegida" : "Ative em 5 passos"}
         sub={daVez === null
-          ? "Está tudo pronto. Se a internet cair, ninguém precisa fazer nada."
+          ? "Está tudo pronto. Se a internet cair, ninguém precisa fazer nada. Para abrir o FireHub sem internet, use o ícone FireHub da área de trabalho."
           : "Esta lista acompanha o que você já fez. O passo da vez fica em roxo, com o botão dentro."}
         ancora="passos"
       >
