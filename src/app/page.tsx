@@ -264,9 +264,11 @@ function Destaque({ id, tema, selo, novo, titulo, texto, cards, acao, visual, in
   );
 }
 
-function Moldura({ src, alt, borda, sombra, fundo, children }: { src: string; alt: string; borda: string; sombra: string; fundo: string; children?: ReactNode }) {
+/** `real`: print de verdade do painel (dados de cliente trocados por exemplo). */
+function Moldura({ src, alt, borda, sombra, fundo, real, children }: { src: string; alt: string; borda: string; sombra: string; fundo: string; real?: boolean; children?: ReactNode }) {
   return (
-    <div className="lp-moldura" style={{ border: borda, boxShadow: sombra, background: fundo }}>
+    <div className={`lp-moldura ${real ? "lp-tela-real" : ""}`} style={{ border: borda, boxShadow: sombra, background: fundo }}>
+      {real && <span className="lp-selo-real">✓ Tela real do FireHub</span>}
       <img src={src} alt={alt} loading="lazy" decoding="async" />
       {children}
     </div>
@@ -646,7 +648,7 @@ export default function Home() {
           <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem" }}>🔥 Testar Tecnologia Exclusiva Grátis</a>
           <span className="nota" style={{ color: "#94A3B8" }}>Incluída sem custo adicional em todos os planos FireHub!</span>
         </>}
-        visual={<Moldura src="/images/ifood_eta_banner.webp" alt="FireHub Auto-ETA iFood Automation" borda="1px solid rgba(255,255,255,0.15)" sombra="0 20px 40px rgba(0,0,0,0.5)" fundo="#000" />}
+        visual={<Moldura real src="/images/tela-prazo-ifood.webp" alt="Tela do FireHub: o prazo do iFood muda sozinho conforme a fila da cozinha e os motoboys na casa" borda="1px solid rgba(255,255,255,0.15)" sombra="0 20px 40px rgba(0,0,0,0.5)" fundo="#FFF" />}
       />
 
       {/* SEÇÃO CHATBOT HUMANIZADO */}
@@ -863,7 +865,7 @@ export default function Home() {
           { t: "💰 100% Grátis e Incluso", d: "Sem cobrar mensalidade extra por módulo de etiquetas de validade" },
           { t: "♻️ Redução de Desperdício", d: "Alerta visual de validade de insumos para evitar descarte de estoque" },
         ]}
-        visual={<Moldura src="/images/etiquetas_validade_ui.webp" alt="FireHub Módulo de Validade e Impressão de Etiquetas de Cozinha" borda="1.5px solid rgba(234,88,12,0.25)" sombra="0 25px 50px rgba(234,88,12,0.12)" fundo="#FFF" />}
+        visual={<Moldura real src="/images/tela-etiqueta-de-validade.webp" alt="Tela do FireHub: etiqueta de validade com fabricação, validade e QR Code" borda="1.5px solid rgba(234,88,12,0.25)" sombra="0 25px 50px rgba(234,88,12,0.12)" fundo="#FFF" />}
       />
 
       {/* SEÇÃO ENGENHARIA DE CARDÁPIO E MÓDULO FISCAL — a economia depende do
@@ -887,7 +889,7 @@ export default function Home() {
           { t: "📉 Redução de PIS / COFINS", d: "Pague menos imposto sobre bebidas e itens monofásicos" },
           { t: "⚡ Emissão de NFC-e Automática", d: "Emitida sozinha no aceite ou na saída do pedido, sem intervenção manual" },
         ]}
-        visual={<Moldura src="/images/engenharia_fiscal_ui.webp" alt="FireHub Engenharia Fiscal e Imposto Reduzido" borda="1px solid rgba(16,185,129,0.3)" sombra="0 25px 50px rgba(0,0,0,0.9), 0 0 30px rgba(16,185,129,0.15)" fundo="#000" />}
+        visual={<Moldura real src="/images/tela-engenharia-de-combos.webp" alt="Tela do FireHub: engenharia fiscal do combo, com o valor de cada item na nota" borda="1px solid rgba(16,185,129,0.3)" sombra="0 25px 50px rgba(0,0,0,0.9), 0 0 30px rgba(16,185,129,0.15)" fundo="#FFF" />}
       />
 
       {/* SEÇÃO FINANCEIRO INTELIGENTE COM IA — a IA preenche, o lojista confere
@@ -910,7 +912,7 @@ export default function Home() {
           { t: "⚡ Código de Barras Automático", d: "Copia a linha digitável direto pro app do seu banco sem erro de digitação" },
           { t: "🔔 Vencimentos em Destaque", d: "Veja na hora o que vence hoje e o que está atrasado" },
         ]}
-        visual={<Moldura src="/images/financeiro_ia_ui.webp" alt="FireHub Leitura de Boletos e Contas com IA" borda="1.5px solid rgba(236,72,153,0.25)" sombra="0 25px 50px rgba(236,72,153,0.12)" fundo="#FFF" />}
+        visual={<Moldura real src="/images/tela-contas-a-pagar.webp" alt="Tela do FireHub: contas a pagar com leitura do boleto por foto (IA)" borda="1.5px solid rgba(236,72,153,0.25)" sombra="0 25px 50px rgba(236,72,153,0.12)" fundo="#FFF" />}
       />
 
       {/* COMO FUNCIONA */}

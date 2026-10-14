@@ -247,7 +247,7 @@ export default function FinanceForm({ category = "BUSINESS", categorias, onSaved
                   flexDirection: "column",
                   alignItems: "center",
                   gap: "0.5rem",
-                  backgroundColor: "var(--primary)",
+                  backgroundColor: "var(--primary, #DC2626)",
                   color: "white",
                   borderRadius: "0.75rem",
                   border: "none",

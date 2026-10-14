@@ -75,7 +75,7 @@ export function BarcodeDisplay({ barcode }: { barcode: string | null }) {
         onClick={handleCopy}
         title="Copiar código de barras"
         style={{
-          background: copied ? "var(--success)" : "var(--primary)",
+          background: copied ? "var(--success, #16A34A)" : "var(--primary, #DC2626)",
           color: "white",
           border: "none",
           borderRadius: "4px",

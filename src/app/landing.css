@@ -96,6 +96,9 @@
 .lp-moldura::after{content:"";position:absolute;inset:0;background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.18) 45%,transparent 60%);transform:translateX(-120%);transition:transform 1.1s cubic-bezier(.16,1,.3,1);pointer-events:none}
 .lp-visual:hover .lp-moldura::after{transform:translateX(120%)}
 
+.lp-selo-real{position:absolute;bottom:12px;right:12px;z-index:2;background:rgba(17,24,39,.82);color:#fff;font-size:.72rem;font-weight:800;padding:5px 10px;border-radius:20px;backdrop-filter:blur(6px);letter-spacing:.2px;box-shadow:0 4px 12px rgba(0,0,0,.2)}
+.lp-tela-real img{border-radius:inherit}
+
 /* ── integrações em carrossel ── */
 .lp-marquee{overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);margin-bottom:3rem}
 .lp-marquee-trilho{display:flex;gap:4.5rem;width:max-content;align-items:center;animation:lpRola 28s linear infinite;padding:10px 0}
