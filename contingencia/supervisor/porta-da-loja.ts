@@ -63,7 +63,7 @@ export const PAGINA_DE_ESPERA = `<!doctype html><html lang="pt-BR"><head><meta c
 <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="3">
 <title>FireHub da loja</title></head>
 <body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#0f172a;color:#f8fafc;font-family:system-ui,sans-serif;text-align:center;padding:24px">
-<div><div style="font-size:40px">🛟</div><h1 style="font-size:20px;margin:8px 0">Modo Contingência</h1>
+<div><svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24"/><path d="m14.83 9.17 4.24-4.24"/><path d="m14.83 14.83 4.24 4.24"/><path d="m9.17 14.83-4.24 4.24"/><circle cx="12" cy="12" r="4"/></svg><h1 style="font-size:20px;margin:8px 0">Modo Contingência</h1>
 <p style="color:#cbd5e1;margin:0">Ligando o FireHub no computador da loja… esta tela atualiza sozinha.</p></div></body></html>`;
 
 export function abrirPortaDaLoja(o: OpcoesDaPorta): http.Server {

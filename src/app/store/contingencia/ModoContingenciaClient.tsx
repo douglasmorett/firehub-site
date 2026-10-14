@@ -32,6 +32,8 @@ import IlustracaoDaContingencia from "./IlustracaoDaContingencia";
 const PORTAS_DO_ASSISTENTE = [7899, 7900, 7901, 7891];
 /** Teste feito neste navegador: só para o passo 5 aparecer como feito. */
 const CHAVE_TESTOU = "firehub_contingencia_testou";
+/** Erro de rede do download, que o Assistente resolve sozinho na próxima tentativa. */
+const ERRO_PASSAGEIRO = /→ \d{3}|fetch failed|timeout|timed out|ECONN|ETIMEDOUT|aborted|socket|network|incompleto/i;
 
 type EstadoDaNuvem = {
   ativada: boolean;
@@ -439,7 +441,22 @@ export default function ModoContingenciaClient() {
                     }}
                   />
                 </div>
-                {contingenciaAqui.erro && <p style={{ margin: "0 0 6px", color: "#B91C1C" }}>Problema: {contingenciaAqui.erro}</p>}
+                {contingenciaAqui.erro && (
+                  // Falha de rede no download (deploy trocando de servidor, internet
+                  // piscando) se resolve sozinha: o Assistente tenta de novo a cada
+                  // minuto e só baixa o que falta (contingencia.js, manter()). Visto
+                  // na Hakim Centro em 14/10: o "→ 404" cru assustava.
+                  ERRO_PASSAGEIRO.test(contingenciaAqui.erro) ? (
+                    <p style={{ margin: "0 0 6px", color: "#92400E" }}>
+                      A conexão piscou no meio do download. O Assistente tenta de novo sozinho em até 1 minuto, continuando de onde parou.
+                      <span style={{ display: "block", fontSize: 11.5, color: cor.suave, wordBreak: "break-all" }}>Detalhe: {contingenciaAqui.erro}</span>
+                    </p>
+                  ) : (
+                    <p style={{ margin: "0 0 6px", color: "#B91C1C" }}>
+                      Problema: {contingenciaAqui.erro}. Se continuar, chame o suporte pelo WhatsApp.
+                    </p>
+                  )
+                )}
               </>
             ) : (
               <p style={{ margin: "0 0 8px" }}>O computador do caixa está preparando a cópia da loja. Para acompanhar a porcentagem, abra esta tela nele.</p>
