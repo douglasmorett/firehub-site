@@ -53,6 +53,8 @@ export default function AbaDRE({
   const c = dre.cmvDetalhe;
   const faltasQueBloqueiam = botoesDasFaltas(c.faltas.filter((f) => f.bloqueia));
   const semCustoVisiveis = verTodosSemCusto ? c.semCusto.itens : c.semCusto.itens.slice(0, 12);
+  // Ausente em dado antigo (página aberta antes do deploy).
+  const desp = c.desperdicio;
 
   return (
     <>
@@ -218,6 +220,16 @@ export default function AbaDRE({
         {c.semCusto.valor > 0 && (
           <DRERow indent={1} label="Itens sem custo (ficam de fora do CMV)" value={<span style={{ color: "#B45309", fontWeight: 700 }}>{fmtR(c.semCusto.valor)} em itens</span>}
             detalhe={c.coberturaFora < COBERTURA_MINIMA ? "abaixo do mínimo: o resultado fica incompleto — veja o que falta no topo" : "dentro do mínimo; o que falta está no topo"} />
+        )}
+        {/* Desperdício: o que foi para o lixo é custo sem venda. Nos dias da
+            contagem ele já está no CMV real; nos outros entra somado aqui. */}
+        {desp && (desp.cancelados.pedidos > 0 || desp.lancado.valor > 0) && (
+          <>
+            <DRERow indent={1} label="Desperdício de pedidos cancelados (já produzidos)" value={-desp.cancelados.noCmv} color={vermelho}
+              detalhe={`${fmtNum(desp.cancelados.pedidos)} ${desp.cancelados.pedidos === 1 ? "pedido cancelado" : "pedidos cancelados"} depois de sair da produção, de ficar pronto ou de sair para entrega (cancelado antes disso não conta) · ${fmtR(desp.cancelados.valor)} pelo custo dos itens${desp.cancelados.semCusto > 0 ? ` · ${fmtR(desp.cancelados.semCusto)} em itens sem custo ficam de fora` : ""}${desp.naContagem > 0 ? " · nos dias da contagem do estoque já está dentro do CMV real" : ""}`} />
+            <DRERow indent={1} label="Desperdício lançado (produtos, insumos, FireCheck)" value={-desp.lancado.noCmv} color={vermelho}
+              detalhe={`${fmtR(desp.lancado.valor)} lançados em Estoque › Desperdício, Movimentar › Perda e no FireCheck${desp.naContagem > 0 ? " · nos dias da contagem do estoque já está dentro do CMV real" : ""}`} />
+          </>
         )}
         <DRERow label="(=) LUCRO BRUTO" value={dre.lucroBruto} bold border color={corDoValor(dre.lucroBruto)} />
 

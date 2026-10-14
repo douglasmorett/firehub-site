@@ -735,15 +735,10 @@ export async function PUT(req: Request) {
     );
   }
 
-  // Cancelou depois do ACEITO: o insumo já saiu do saldo, mas continua na
-  // prateleira. Devolve o que a baixa consumiu — a própria função ignora
-  // pedido que nunca chegou a baixar e não devolve duas vezes.
-  if (status === "CANCELADO") {
-    const { restoreStockForOrder } = await import("@/lib/stock");
-    restoreStockForOrder(orderId).catch(err =>
-      console.error("[Stock] Erro ao devolver estoque:", err)
-    );
-  }
+  // Cancelou: o estoque (devolver o insumo, ou marcar desperdício se o pedido
+  // já tinha sido produzido) é da extensão do Prisma em lib/prisma.ts, que vale
+  // para todo caminho de cancelamento — chamar aqui também faria duas decisões
+  // em paralelo para o mesmo pedido.
 
   // `avisoIfood` vem preenchido quando o iFood recusou a ação: o status local
   // mudou, mas o lojista precisa saber que o iFood não acompanhou.

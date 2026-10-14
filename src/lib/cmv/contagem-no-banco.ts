@@ -67,6 +67,17 @@ export async function entradasComCusto(lojaId: string, tz: string): Promise<Entr
   return saida;
 }
 
+/**
+ * Quanto vale cada insumo da loja num dia (padrão: hoje no dia operacional):
+ * última compra até o dia, senão o cadastro, e o preparo pelos componentes.
+ * É o custo que a perda grava em `StockTransaction.unitCost` — o descarte do
+ * FireCheck, o desperdício lançado no Estoque e o cancelado já produzido.
+ */
+export async function custosDoDiaNaLoja(lojaId: string, tz: string, dia?: string) {
+  const [insumos, entradas] = await Promise.all([insumosParaCusto(lojaId), entradasComCusto(lojaId, tz)]);
+  return custosNoDia(insumos, entradas, dia || naLoja(new Date(), tz).dia);
+}
+
 /** Abre a contagem do dia (ou devolve a que já está aberta). */
 export async function abrirContagem(e: { lojaId: string; usuarioId: string; dia: string; tipo: "COMPLETA" | "RAPIDA" }) {
   const existente = await prisma.contagemDeEstoque.findUnique({ where: { franchiseeId_dia: { franchiseeId: e.lojaId, dia: e.dia } } });

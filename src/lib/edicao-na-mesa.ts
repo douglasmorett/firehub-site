@@ -349,14 +349,9 @@ export async function cancelarRodadaDaMesa(entrada: { rodada: RodadaDaMesa; quem
     },
   });
 
-  // Devolve o insumo baixado no lançamento. Usa as BAIXAS registradas do
-  // pedido — nunca a ficha técnica de hoje, que pode ter mudado desde então.
-  try {
-    const { restoreStockForOrder } = await import("@/lib/stock");
-    restoreStockForOrder(rodada.id).catch((e: any) =>
-      console.error(`[Mesa Editar] devolução de estoque falhou para ${rodada.id}:`, e?.message)
-    );
-  } catch {}
+  // O estoque do lançamento cancelado (devolver o insumo, ou desperdício se a
+  // cozinha já tinha feito) é da extensão do Prisma em lib/prisma.ts, pelas
+  // BAIXAS registradas do pedido — nunca pela ficha técnica de hoje.
 
   console.log(`[Mesa Editar] pedido ${rodada.id} cancelado por ${quem}`);
   return { status: 200, corpo: { success: true, cancelado: true } };

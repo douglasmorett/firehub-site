@@ -980,14 +980,9 @@ async function cancelarPedido(order: any, operador: any, motivo: string) {
     },
   });
 
-  // Devolve o insumo baixado. Usa as BAIXAS registradas do pedido, nunca a
-  // ficha técnica de hoje, que pode ter mudado desde então.
-  try {
-    const { restoreStockForOrder } = await import("@/lib/stock");
-    restoreStockForOrder(order.id).catch((e: any) =>
-      console.error(`[Editar Pedido] devolução de estoque falhou para ${order.id}:`, e?.message)
-    );
-  } catch {}
+  // O estoque do cancelamento (devolver o insumo, ou desperdício se já foi
+  // produzido) é da extensão do Prisma em lib/prisma.ts, pelas BAIXAS
+  // registradas do pedido — nunca pela ficha técnica de hoje.
 
   console.log(`[Editar Pedido] pedido ${order.id} cancelado por ${registro.quem}`);
   return NextResponse.json({ success: true, cancelado: true });

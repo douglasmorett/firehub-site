@@ -25,6 +25,8 @@ import { NOMES_DOS_DIAS_DA_SEMANA, lerSemanaDoCmv, type SemanaDoCmv } from "@/li
 import { entradasComCusto, insumosParaCusto } from "@/lib/cmv/contagem-no-banco";
 import { custosNoDia } from "@/lib/cmv/custo-do-insumo";
 import { lerComissoesDosApps } from "@/lib/financeiro/dre";
+import { pedidoDaMarca } from "@/lib/desperdicio-do-cancelado";
+import { PREFIXO_DO_FIREHUB } from "@/lib/cmv/desperdicio";
 
 export { segundaDaSemana } from "@/lib/cmv/cmv-real";
 
@@ -72,6 +74,10 @@ export type Painel = {
   consumo: { nome: string; unidade: string; quantidade: number; valor: number }[];
   perdas: {
     valor: number;
+    /** Pedidos cancelados depois de sair da produção (lib/desperdicio-do-cancelado.ts): a baixa virou desperdício. */
+    cancelados: { valor: number; pedidos: number };
+    /** Lançado na aba Desperdício do Estoque (produto pela ficha, produto pelo custo digitado, insumo). */
+    lancadoNoEstoque: { valor: number; lancamentos: number };
     itens: { nome: string; unidade: string; quantidade: number; valor: number }[];
     firecheck: {
       total: number; semFicha: number; valorSemFicha: number;
@@ -232,12 +238,18 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
   const { inicio: p0, fim: p1 } = janelaDeDatas(de, ate, tz);
   const perdasTs = await prisma.stockTransaction.findMany({
     where: { franchiseeId: lojaId, type: "WASTE", createdAt: { gte: p0, lt: p1 } },
-    select: { quantity: true, unitCost: true, stockItem: { select: { name: true, unit: true, unitCost: true } } },
+    select: { quantity: true, unitCost: true, notes: true, stockItem: { select: { name: true, unit: true, unitCost: true } } },
   });
   const perdasPorItem = new Map<string, { nome: string; unidade: string; quantidade: number; valor: number }>();
+  // O cancelado já produzido fica também à parte: é desperdício, mas o
+  // lojista precisa ver quanto veio de pedido que voltou depois de feito.
+  let valorDosCancelados = 0;
+  const pedidosCancelados = new Set<string>();
   for (const t of perdasTs) {
     const q = Math.abs(t.quantity);
     const v = q * (Number(t.unitCost ?? t.stockItem.unitCost) || 0);
+    const pedido = pedidoDaMarca(t.notes);
+    if (pedido) { valorDosCancelados += v; pedidosCancelados.add(pedido); }
     const atual = perdasPorItem.get(t.stockItem.name) || { nome: t.stockItem.name, unidade: t.stockItem.unit, quantidade: 0, valor: 0 };
     atual.quantidade += q;
     atual.valor += v;
@@ -245,15 +257,20 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
   }
   const perdasItens = [...perdasPorItem.values()].map((p) => ({ ...p, quantidade: Math.round(p.quantidade * 1000) / 1000, valor: r2(p.valor) })).sort((a, b) => b.valor - a.valor);
 
-  // Descartes do FireCheck ligado (lib/cmv/firecheck.ts). Os que casaram já
-  // estão acima, como WASTE dos insumos; os sem correspondência só têm o valor
-  // que o funcionário estimou, e entram no total por ele.
-  const descartesFc = await prisma.descarteDoFirecheck.findMany({
+  // Descartes do FireCheck ligado (lib/cmv/firecheck.ts) e os lançados na aba
+  // Desperdício do Estoque (lib/cmv/desperdicio.ts, idExterno "firehub:"). Os
+  // que baixaram insumo já estão acima, como WASTE; o sem correspondência do
+  // FireCheck só tem o valor que o funcionário estimou, e o produto sem ficha
+  // do Estoque, o custo digitado — os dois entram no total por esse valor.
+  const descartes = await prisma.descarteDoFirecheck.findMany({
     where: { franchiseeId: lojaId, registradoEm: { gte: p0, lt: p1 } },
     orderBy: { registradoEm: "desc" },
-    select: { item: true, quantidade: true, unidade: true, situacao: true, casouCom: true, valor: true, valorEstimado: true, funcionario: true, motivo: true, registradoEm: true },
+    select: { idExterno: true, item: true, quantidade: true, unidade: true, situacao: true, casouCom: true, valor: true, valorEstimado: true, funcionario: true, motivo: true, registradoEm: true },
   });
+  const descartesFc = descartes.filter((d) => !d.idExterno.startsWith(PREFIXO_DO_FIREHUB));
+  const doEstoque = descartes.filter((d) => d.idExterno.startsWith(PREFIXO_DO_FIREHUB));
   const semFichaFc = descartesFc.filter((d) => d.situacao === "SEM_CORRESPONDENCIA");
+  const valorPeloCustoDoProduto = r2(doEstoque.filter((d) => d.situacao === "CUSTO_DO_PRODUTO").reduce((s, d) => s + (Number(d.valor) || 0), 0));
   const valorSemFichaFc = r2(semFichaFc.reduce((s, d) => s + (Number(d.valorEstimado) || 0), 0));
   if (semFichaFc.length) {
     const nomes = [...new Set(semFichaFc.map((d) => d.item))];
@@ -306,7 +323,9 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
     custoPrimario,
     consumo,
     perdas: {
-      valor: r2(perdasItens.reduce((s, p) => s + p.valor, 0) + valorSemFichaFc),
+      valor: r2(perdasItens.reduce((s, p) => s + p.valor, 0) + valorSemFichaFc + valorPeloCustoDoProduto),
+      cancelados: { valor: r2(valorDosCancelados), pedidos: pedidosCancelados.size },
+      lancadoNoEstoque: { valor: r2(doEstoque.reduce((s, d) => s + (Number(d.valor) || 0), 0)), lancamentos: doEstoque.length },
       itens: perdasItens.slice(0, 10),
       firecheck: {
         total: descartesFc.length,

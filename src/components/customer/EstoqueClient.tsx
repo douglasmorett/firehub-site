@@ -13,6 +13,7 @@ import EscanearQrModal from "@/components/estoque/EscanearQrModal";
 import Link from "next/link";
 import EditarInsumo, { type InsumoEditavel } from "@/components/cmv/EditarInsumo";
 import PagamentoDaCompra, { pagamentoInicial, pagamentoParaApi, type EstadoDoPagamento } from "@/components/cmv/PagamentoDaCompra";
+import DesperdicioDoEstoque from "@/components/estoque/DesperdicioDoEstoque";
 
 /** Hoje no dia operacional (vira às 5h), no relógio de quem está lançando. */
 function hojeOperacional(): string {
@@ -88,7 +89,7 @@ interface NfeItem {
 }
 
 export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 0, recebidos: 0, baixas: 0, disponivel: false } }: EstoqueClientProps) {
-  const [activeTab, setActiveTab] = useState<"items" | "lotes" | "nfe" | "history" | "recipes">("items");
+  const [activeTab, setActiveTab] = useState<"items" | "lotes" | "nfe" | "history" | "recipes" | "desperdicio">("items");
   const [mostrarScanner, setMostrarScanner] = useState(false);
   const [lotes, setLotes] = useState<any[]>([]);
   const [contadoresDeLote, setContadoresDeLote] = useState<any>({ aguardando: 0, geladeira: 0, vencendo: 0, vencidos: 0 });
@@ -193,6 +194,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
     if (aba === "lotes") setActiveTab("lotes");
     // Compras › "Nota com foto" manda para cá.
     if (aba === "nfe") setActiveTab("nfe");
+    if (aba === "desperdicio") setActiveTab("desperdicio");
     const filtro = q.get("filtro");
     if (filtro && ["todos", "aguardando", "geladeira", "vencendo", "vencidos"].includes(filtro)) {
       setFiltroDeLote(filtro as any);
@@ -211,6 +213,18 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
     carregarLotes("todos");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Depois de um desperdício: o saldo e o histórico mudaram. Sem o spinner da
+  // tela inteira, que desmontaria a aba aberta.
+  const recarregarSaldos = async () => {
+    try {
+      const [itemsRes, transRes] = await Promise.all([fetch("/api/store/estoque/items"), fetch("/api/store/estoque/transactions")]);
+      const itemsData = await itemsRes.json();
+      const transData = await transRes.json();
+      if (itemsData.success) setItems(itemsData.items);
+      if (transData.success) setTransactions(transData.transactions);
+    } catch {}
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -816,6 +830,13 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           <ClipboardList size={16} />
           Fichas Técnicas
         </button>
+        <button 
+          className={`tab-link ${activeTab === "desperdicio" ? "active" : ""}`}
+          onClick={() => setActiveTab("desperdicio")}
+        >
+          <Trash2 size={16} />
+          Desperdício
+        </button>
       </div>
 
       {/* LOADING STATE */}
@@ -1250,6 +1271,10 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
             </>
           )}
 
+          {/* TAB DESPERDÍCIO: produto do cardápio (pela ficha) ou insumo, e os
+              pedidos cancelados já produzidos (components/estoque/DesperdicioDoEstoque). */}
+          {activeTab === "desperdicio" && <DesperdicioDoEstoque onLancou={recarregarSaldos} />}
+
           {/* TAB 4: RECIPES */}
           {activeTab === "recipes" && (
             <>
@@ -1450,6 +1475,11 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                     🗑️ Perda
                   </label>
                 </div>
+                {moveType === "WASTE" && (
+                  <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#B45309", fontWeight: 600 }}>
+                    Foi um produto pronto (pizza, lanche)? Lance na aba <button type="button" onClick={() => { setShowMoveModal(false); setActiveTab("desperdicio"); }} style={{ background: "none", border: "none", padding: 0, color: "#B45309", fontWeight: 800, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Desperdício</button>: ela baixa todos os insumos pela ficha técnica.
+                  </p>
+                )}
                 {moveType === "INPUT" && (
                   <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#B45309", fontWeight: 600 }}>
                     Foi compra? Lance em <Link href="/store/estoque/compras">Compras</Link>: entrada daqui não tem valor e deixa o CMV mais baixo do que o real.

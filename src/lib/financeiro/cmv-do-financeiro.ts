@@ -13,7 +13,8 @@
  *     cada insumo dia a dia (lib/cmv/custo-do-insumo.ts).
  */
 import { prisma } from "@/lib/prisma";
-import { somarDias } from "@/lib/relatorios/base";
+import { naLoja, somarDias } from "@/lib/relatorios/base";
+import { pedidoDaMarca } from "@/lib/desperdicio-do-cancelado";
 import { cmvEntre, janelaCompletaDoPeriodo, type ContagemFechada, type DiaDoCmv } from "@/lib/cmv/cmv-real";
 import { custosNoDia } from "@/lib/cmv/custo-do-insumo";
 import { entradasComCusto, insumosParaCusto } from "@/lib/cmv/contagem-no-banco";
@@ -110,4 +111,39 @@ export async function prepararCustoDosItens(lojaId: string, tz: string): Promise
     usaFicha: catalogo.usaFicha,
     usaEstoque: insumos.length > 0,
   };
+}
+
+/**
+ * O desperdício LANÇADO de cada dia operacional (o do cancelado já produzido o
+ * DRE conta pelo pedido, pela mesma conta dos itens vendidos):
+ *   - baixa WASTE no estoque (aba Desperdício, Movimentar › Perda, QR, FireCheck
+ *     que casou), pelo custo gravado na hora, senão o do cadastro — menos as do
+ *     cancelado (marca "desperdicio id:") e as de insumo fora do CMV;
+ *   - o que não baixou insumo: produto sem ficha pelo custo digitado (aba
+ *     Desperdício) e o descarte do FireCheck sem correspondência pelo valor
+ *     que o funcionário estimou.
+ */
+export async function desperdicioLancadoPorDia(lojaId: string, tz: string, inicio: Date, fim: Date): Promise<Map<string, number>> {
+  const [movimentos, semBaixa] = await Promise.all([
+    prisma.stockTransaction.findMany({
+      where: { franchiseeId: lojaId, type: "WASTE", createdAt: { gte: inicio, lt: fim } },
+      select: { quantity: true, unitCost: true, notes: true, createdAt: true, stockItem: { select: { unitCost: true, entraNoCmv: true } } },
+    }),
+    prisma.descarteDoFirecheck.findMany({
+      where: { franchiseeId: lojaId, registradoEm: { gte: inicio, lt: fim }, situacao: { in: ["CUSTO_DO_PRODUTO", "SEM_CORRESPONDENCIA"] } },
+      select: { situacao: true, valor: true, valorEstimado: true, registradoEm: true },
+    }),
+  ]);
+  const porDia = new Map<string, number>();
+  const somar = (quando: Date, valor: number) => {
+    if (!(valor > 0)) return;
+    const dia = naLoja(quando, tz).dia;
+    porDia.set(dia, (porDia.get(dia) || 0) + valor);
+  };
+  for (const t of movimentos) {
+    if (pedidoDaMarca(t.notes) || t.stockItem.entraNoCmv === false) continue;
+    somar(t.createdAt, Math.abs(t.quantity) * (Number(t.unitCost ?? t.stockItem.unitCost) || 0));
+  }
+  for (const d of semBaixa) somar(d.registradoEm, Number(d.situacao === "CUSTO_DO_PRODUTO" ? d.valor : d.valorEstimado) || 0);
+  return porDia;
 }

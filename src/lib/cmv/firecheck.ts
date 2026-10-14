@@ -23,9 +23,8 @@ import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { cifrar, decifrar } from "@/lib/cofre";
-import { hojeNaLoja } from "@/lib/relatorios/base";
-import { custosNoDia } from "./custo-do-insumo";
-import { insumosParaCusto, entradasComCusto } from "./contagem-no-banco";
+import { custosDoDiaNaLoja } from "./contagem-no-banco";
+import { baixasDaFicha, gravarPerda, valorDasBaixas } from "./desperdicio";
 
 // ── A ligação ─────────────────────────────────────────────────────────────
 
@@ -204,22 +203,18 @@ export type ResultadoDoDescarte = {
   baixas: number;
 };
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
-
 export async function registrarDescarte(loja: { id: string; tz: string }, d: DescarteRecebido): Promise<ResultadoDoDescarte> {
   const jaVeio = await prisma.descarteDoFirecheck.findUnique({ where: { franchiseeId_idExterno: { franchiseeId: loja.id, idExterno: d.idExterno } } });
   if (jaVeio) return { repetido: true, situacao: jaVeio.situacao as ResultadoDoDescarte["situacao"], casouCom: jaVeio.casouCom, valor: jaVeio.valor, baixas: 0 };
 
-  const [produtos, insumosDb, insumos, entradas] = await Promise.all([
+  const [produtos, insumosDb, custos] = await Promise.all([
     prisma.menuProduct.findMany({
       where: { franchiseeId: loja.id, active: true, NOT: { id: { startsWith: "ifood-" } }, recipeItems: { some: {} } },
       select: { id: true, name: true, recipeItems: { select: { stockItemId: true, quantityConsumed: true } } },
     }),
     prisma.stockItem.findMany({ where: { franchiseeId: loja.id, NOT: { active: false } }, select: { id: true, name: true, unit: true } }),
-    insumosParaCusto(loja.id),
-    entradasComCusto(loja.id, loja.tz),
+    custosDoDiaNaLoja(loja.id, loja.tz),
   ]);
-  const custos = custosNoDia(insumos, entradas, hojeNaLoja(loja.tz));
   const casou = casarItem(
     d.item,
     produtos.map((p) => ({ id: p.id, nome: p.name, ficha: p.recipeItems.map((r) => ({ stockItemId: r.stockItemId, quantidade: r.quantityConsumed })) })),
@@ -233,7 +228,7 @@ export async function registrarDescarte(loja: { id: string; tz: string }, d: Des
   if (casou.tipo === "PRODUTO" && d.quantidade != null) {
     situacao = "PRODUTO";
     casouCom = casou.produto.nome;
-    baixas = casou.produto.ficha.map((f) => ({ stockItemId: f.stockItemId, quantidade: f.quantidade * d.quantidade! }));
+    baixas = baixasDaFicha(casou.produto.ficha, d.quantidade);
   } else if (casou.tipo === "INSUMO" && d.quantidade != null) {
     const q = naUnidadeDoInsumo(d.quantidade, d.unidade, casou.insumo.unidade);
     if (q != null) {
@@ -244,11 +239,7 @@ export async function registrarDescarte(loja: { id: string; tz: string }, d: Des
   }
   baixas = baixas.filter((b) => b.quantidade > 0);
 
-  let valor: number | null = null;
-  if (situacao !== "SEM_CORRESPONDENCIA") {
-    const semCusto = baixas.some((b) => custos.get(b.stockItemId)?.custo == null);
-    valor = semCusto ? null : r2(baixas.reduce((s, b) => s + b.quantidade * (custos.get(b.stockItemId)!.custo as number), 0));
-  }
+  const valor = situacao !== "SEM_CORRESPONDENCIA" ? valorDasBaixas(baixas, custos) : null;
 
   const nota = [
     `Descarte do FireCheck: ${d.quantidade != null ? `${d.quantidade} ${d.unidade || ""} `.replace(/\s+/g, " ") : ""}${d.item}`.trim(),
@@ -257,31 +248,15 @@ export async function registrarDescarte(loja: { id: string; tz: string }, d: Des
   ].filter(Boolean).join(" · ").slice(0, 500);
 
   try {
-    await prisma.$transaction(async (tx) => {
-      // A linha do descarte vai primeiro: duas chegadas ao mesmo tempo batem no
-      // unique aqui, antes de qualquer baixa.
-      const linha = await tx.descarteDoFirecheck.create({
-        data: {
-          franchiseeId: loja.id, idExterno: d.idExterno, item: d.item, quantidade: d.quantidade, unidade: d.unidade,
-          valorEstimado: d.valorEstimado, motivo: d.motivo, funcionario: d.funcionario, foto: d.foto,
-          registradoEm: d.registradoEm, situacao, casouCom, valor,
-        },
-        select: { id: true },
-      });
-      for (const b of baixas) {
-        await tx.stockTransaction.create({
-          data: {
-            stockItemId: b.stockItemId,
-            franchiseeId: loja.id,
-            quantity: -b.quantidade,
-            type: "WASTE",
-            notes: nota,
-            unitCost: custos.get(b.stockItemId)?.custo ?? null,
-            sourceRef: `firecheck:${linha.id}:${b.stockItemId}`,
-          },
-        });
-        await tx.stockItem.update({ where: { id: b.stockItemId }, data: { quantity: { decrement: b.quantidade } } });
-      }
+    // A linha e as baixas juntas — a mesma gravação do desperdício lançado no
+    // Estoque (lib/cmv/desperdicio.ts).
+    await gravarPerda({
+      lojaId: loja.id, baixas, custos, nota, prefixo: "firecheck",
+      linha: {
+        idExterno: d.idExterno, item: d.item, quantidade: d.quantidade, unidade: d.unidade,
+        valorEstimado: d.valorEstimado, motivo: d.motivo, funcionario: d.funcionario, foto: d.foto,
+        registradoEm: d.registradoEm, situacao, casouCom, valor,
+      },
     });
   } catch (e) {
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {

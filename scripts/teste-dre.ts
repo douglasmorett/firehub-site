@@ -427,6 +427,24 @@ async function main() {
   const erroNoCmv = semanaHakim([venda("2026-10-13", { itensComCusto: 100, custo: 30 })], cmvDo({ real: null, erro: "falhou" }));
   confere("contagem/fichas não lidas: pendência", erroNoCmv.pendencias, ["o custo dos produtos (contagem do estoque, fichas técnicas e custo digitado) não pôde ser lido agora — recarregue a página"]);
 
+  console.log("\n— Desperdício no CMV do DRE (cancelado já produzido e lançado) —");
+  // 12/10 fora da contagem (vai pela ficha) e 14/10 dentro dela (13 a 19).
+  const desperdicioPorDia = {
+    "2026-10-12": { cancelados: 18, pedidosCancelados: 2, canceladosSemCusto: 5, lancado: 7 },
+    "2026-10-14": { cancelados: 30, pedidosCancelados: 1, canceladosSemCusto: 0, lancado: 4 },
+    "2026-10-25": { cancelados: 99, pedidosCancelados: 9, canceladosSemCusto: 0, lancado: 99 }, // fora do período
+  };
+  const comDesperdicio = semanaHakim([venda("2026-10-12", { itensComCusto: 100, custo: 30, itensPelaFicha: 100, custoPelaFicha: 30 }), venda("2026-10-14")],
+    cmvDo({ desperdicioPorDia }), "2026-10-12", "2026-10-19");
+  confere("desperdício fora da contagem soma no CMV; o dos dias da contagem já está nela", comDesperdicio.cmv, 3500 + 30 + 18 + 7);
+  confere("desperdício: cancelados e lançado separados, com a parte do CMV e a da contagem", comDesperdicio.cmvDetalhe.desperdicio,
+    { cancelados: { valor: 48, pedidos: 3, semCusto: 5, noCmv: 18 }, lancado: { valor: 11, noCmv: 7 }, naContagem: 34 });
+  confere("desperdício entra no lucro bruto", comDesperdicio.lucroBruto, Math.round((comDesperdicio.receitaDaLoja - comDesperdicio.cmv) * 100) / 100);
+  const soFichaComDesperdicio = semanaHakim([venda("2026-10-13", { itensComCusto: 100, custo: 32, itensPelaFicha: 100, custoPelaFicha: 32 })],
+    cmvDo({ real: real({ trecho: null, falta: "NENHUMA_CONTAGEM", contagens: 0, abertura: null, ultimaCompleta: null }), desperdicioPorDia: { "2026-10-13": { cancelados: 12.5, pedidosCancelados: 1, canceladosSemCusto: 0, lancado: 0 } } }));
+  confere("sem contagem: o cancelado já produzido soma inteiro no CMV", [soFichaComDesperdicio.cmv, soFichaComDesperdicio.cmvDetalhe.desperdicio.cancelados.noCmv], [44.5, 12.5]);
+  confere("sem desperdício: tudo zero", soContagem.cmvDetalhe.desperdicio, { cancelados: { valor: 0, pedidos: 0, semCusto: 0, noCmv: 0 }, lancado: { valor: 0, noCmv: 0 }, naContagem: 0 });
+
   console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
   process.exit(falhas === 0 ? 0 : 1);
 }

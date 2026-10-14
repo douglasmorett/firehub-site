@@ -19,13 +19,76 @@ function comCarimbos<T>(data: T): T {
   return { ...d, ...carimbo } as T
 }
 
+// ── O ESTOQUE DO CANCELAMENTO, EM TODO CAMINHO ──────────────────────────────
+//
+// O cancelamento chega por uns quinze caminhos (painel, mesa, iFood, 99,
+// Brendi, Keeta, robô, Pix vencido, disputa). Só três devolviam o insumo, e
+// devolviam sempre — até a pizza que já tinha saído para entrega. Pelo mesmo
+// motivo dos carimbos, a decisão mora aqui: toda gravação que põe o pedido em
+// cancelado chama `tratarEstoqueDoCancelamento` (lib/stock.ts), que devolve o
+// insumo se o pedido não foi feito e marca desperdício se foi
+// (lib/desperdicio-do-cancelado.ts).
+//
+// Depois da gravação e fora dela: a gravação pode estar numa transação ainda
+// aberta, então a função relê o pedido e, se ele ainda não aparece cancelado,
+// tenta de novo mais tarde. Transação desfeita = pedido não cancelado = nada.
+const STATUS_DE_CANCELAMENTO = new Set(['CANCELADO', 'CANCELLED', 'CANCELED'])
+const ESPERAS_DO_ESTOQUE_MS = [1_500, 6_000, 20_000]
+
+function cancela(data: unknown): boolean {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false
+  const status = (data as Record<string, unknown>).status
+  return typeof status === 'string' && STATUS_DE_CANCELAMENTO.has(status.toUpperCase())
+}
+
+function estoqueDoCancelamento(ids: string[], tentativa = 0) {
+  if (typeof window !== 'undefined' || ids.length === 0) return
+  const espera = ESPERAS_DO_ESTOQUE_MS[tentativa]
+  if (espera == null) return
+  setTimeout(() => {
+    import('./stock')
+      .then(async ({ tratarEstoqueDoCancelamento }) => {
+        const pendentes: string[] = []
+        for (const id of ids) {
+          const r = await tratarEstoqueDoCancelamento(id).catch((e) => {
+            console.error(`[Stock] Erro no estoque do cancelamento ${id}:`, e?.message || e)
+            return null
+          })
+          if (r === 'NAO_CANCELADO') pendentes.push(id)
+        }
+        estoqueDoCancelamento(pendentes, tentativa + 1)
+      })
+      .catch((e) => console.error('[Stock] Erro ao carregar o estoque do cancelamento:', e?.message || e))
+  }, espera)
+}
+
 function criarClient() {
-  return new PrismaClient().$extends({
+  const base = new PrismaClient()
+  return base.$extends({
     query: {
       customerOrder: {
         create({ args, query }) { args.data = comCarimbos(args.data); return query(args) },
-        update({ args, query }) { args.data = comCarimbos(args.data); return query(args) },
-        updateMany({ args, query }) { args.data = comCarimbos(args.data); return query(args) },
+        async update({ args, query }) {
+          args.data = comCarimbos(args.data)
+          const resultado = await query(args)
+          if (cancela(args.data)) {
+            const id = typeof args.where?.id === 'string' ? args.where.id : (resultado as { id?: unknown })?.id
+            if (typeof id === 'string') estoqueDoCancelamento([id])
+          }
+          return resultado
+        },
+        async updateMany({ args, query }) {
+          args.data = comCarimbos(args.data)
+          // Os ids saem ANTES da gravação: o where costuma ser "ainda não
+          // cancelado", e depois dela não acharia mais ninguém.
+          const ids = cancela(args.data) && args.where
+            ? await base.customerOrder.findMany({ where: args.where, select: { id: true }, take: 200 })
+                .then((l) => l.map((p) => p.id)).catch(() => [] as string[])
+            : []
+          const resultado = await query(args)
+          if (ids.length) estoqueDoCancelamento(ids)
+          return resultado
+        },
         upsert({ args, query }) {
           args.create = comCarimbos(args.create)
           args.update = comCarimbos(args.update)

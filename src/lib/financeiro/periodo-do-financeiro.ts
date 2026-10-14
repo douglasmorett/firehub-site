@@ -33,9 +33,10 @@ import {
 } from "@/lib/billing";
 import {
   mesesDoPeriodo, projetarMensalidadeDoMes,
-  type CicloNoPeriodo, type CmvRealDoPeriodo, type DadosDoPeriodo, type ItemSemCusto, type PedidoDoFinanceiro, type ResumoDosEntregadores,
+  type CicloNoPeriodo, type CmvRealDoPeriodo, type DadosDoPeriodo, type DesperdicioDoDia, type ItemSemCusto, type PedidoDoFinanceiro, type ResumoDosEntregadores,
 } from "@/lib/financeiro/dre";
-import { cmvRealDoPeriodo, prepararCustoDosItens, type CustoDosItens } from "@/lib/financeiro/cmv-do-financeiro";
+import { cmvRealDoPeriodo, desperdicioLancadoPorDia, prepararCustoDosItens, type CustoDosItens } from "@/lib/financeiro/cmv-do-financeiro";
+import { canceladoViraDesperdicio } from "@/lib/desperdicio-do-cancelado";
 import { lerSemanaDoCmv } from "@/lib/cmv/semana-do-cmv";
 
 const MARKETPLACES = new Set<string>(canaisConhecidos().filter((c) => c.ehMarketplace).map((c) => c.chave));
@@ -64,7 +65,9 @@ const COLUNAS = {
   deliveryBy: true, ifoodDriverName: true, ifoodDriverStatus: true,
   // O custo de cada item (lib/financeiro/custo-pela-ficha.ts): o produto, o
   // nome gravado (o espelho do iFood casa pelo nome) e as escolhas do combo.
-  items: { select: { quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true } },
+  items: { select: { quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true, prontoEm: true } },
+  // O cancelado só é desperdício se saiu da produção (lib/desperdicio-do-cancelado.ts).
+  cancelledAt: true, dispatchedAt: true, deliveredAt: true, readyAt: true, kdsFinishedAt: true, kdsStage: true,
 } as const;
 
 /** O número que o lojista vê no pedido — o do dia, o do iFood, o do parceiro. */
@@ -282,11 +285,17 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
   let cmvReal: CmvRealDoPeriodo | null = null;
   let erroDoCmv: string | null = null;
   let goals: unknown = null;
+  let lancadoPorDia = new Map<string, number>();
   try {
-    [custos, cmvReal, goals] = await Promise.all([
+    [custos, cmvReal, goals, lancadoPorDia] = await Promise.all([
       prepararCustoDosItens(lojaId, tz),
       cmvRealDoPeriodo(lojaId, de, ate),
       prisma.user.findUnique({ where: { id: lojaId }, select: { financialGoals: true } }).then((u) => u?.financialGoals ?? null),
+      // Sem o lançado, o CMV segue e o desperdício lançado fica de fora (log).
+      desperdicioLancadoPorDia(lojaId, tz, inicio, fim).catch((err) => {
+        console.error("[Financeiro] Erro ao ler o desperdício lançado:", err);
+        return new Map<string, number>();
+      }),
     ]);
   } catch (err: any) {
     console.error("[Financeiro] Erro ao ler a contagem e as fichas para o CMV:", err);
@@ -295,17 +304,33 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
     cmvReal = null;
   }
   const semCustoPorDia = new Map<string, Map<string, ItemSemCusto>>();
+  const desperdicioPorDia = new Map<string, DesperdicioDoDia>();
+  const doDiaDoDesperdicio = (dia: string) => {
+    let d = desperdicioPorDia.get(dia);
+    if (!d) { d = { cancelados: 0, pedidosCancelados: 0, canceladosSemCusto: 0, lancado: 0 }; desperdicioPorDia.set(dia, d); }
+    return d;
+  };
+  for (const [dia, valor] of lancadoPorDia) doDiaDoDesperdicio(dia).lancado = c2(valor);
 
   const pedidos: PedidoDoFinanceiro[] = brutos.map((o) => {
     let cItens = 0, cComCusto = 0, cCusto = 0, cItensFicha = 0, cCustoFicha = 0;
     const dia = naLoja(o.createdAt, tz).dia;
     const contaNaVenda = situacaoDoPedido(o.status) === "venda" && !temValorImpossivel(o);
+    // Cancelado depois de produzido: o custo dos itens é desperdício (dre.ts, "O DESPERDÍCIO").
+    const desperdicio = !contaNaVenda && custos && !temValorImpossivel(o) && canceladoViraDesperdicio(o) ? doDiaDoDesperdicio(dia) : null;
+    if (desperdicio) desperdicio.pedidosCancelados++;
     for (const i of o.items) {
       const q = Number(i.quantity) || 0;
       if (q <= 0) continue;
       const v = Math.round((Number(i.price) || 0) * q * 100);
       cItens += v;
-      // Cancelado não entra no CMV: nem precisa da conta.
+      if (desperdicio && custos) {
+        const c = custos.custoDoItem({ produtoId: i.menuProductId, nome: i.productName, quantidade: q, preco: Number(i.price) || 0, escolhas: i.comboSelections }, dia);
+        if (c.custo != null) desperdicio.cancelados = c2(desperdicio.cancelados + c.custo);
+        else desperdicio.canceladosSemCusto = c2(desperdicio.canceladosSemCusto + v / 100);
+        continue;
+      }
+      // Cancelado antes de sair da produção não entra no CMV: nem precisa da conta.
       if (!custos || !contaNaVenda) continue;
       const c = custos.custoDoItem({ produtoId: i.menuProductId, nome: i.productName, quantidade: q, preco: Number(i.price) || 0, escolhas: i.comboSelections }, dia);
       if (c.custo != null) {
@@ -429,6 +454,7 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
       usaEstoque: custos?.usaEstoque ?? false,
       semana: (({ comecaEm, fecha, diaDaContagem }) => ({ comecaEm, fecha, diaDaContagem }))(lerSemanaDoCmv(goals)),
       semCustoPorDia: Object.fromEntries([...semCustoPorDia].map(([dia, m]) => [dia, [...m.values()]])),
+      desperdicioPorDia: Object.fromEntries(desperdicioPorDia),
       erro: erroDoCmv,
     },
   };

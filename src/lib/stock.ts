@@ -1,4 +1,7 @@
 import { prisma } from "./prisma";
+import {
+  ROTULO_DA_ETAPA, ehPedidoCancelado, etapaAntesDoCancelamento, marcaDoDesperdicio, type EtapaDoDesperdicio,
+} from "./desperdicio-do-cancelado";
 
 /**
  * Uma escolha de combo já normalizada.
@@ -221,6 +224,23 @@ export async function deductStockForOrder(orderId: string) {
 
     // Verificar idempotência com transação atômica
     const result = await prisma.$transaction(async (tx) => {
+      // Cancelado já produzido e depois REABERTO: a baixa virou desperdício
+      // (`marcarBaixaComoDesperdicio`) e o insumo continua fora do saldo. Ela
+      // volta a ser venda e a baixa abaixo vê que já existe — sem isto o
+      // pedido reaberto baixaria de novo o que já saiu. A busca nas
+      // movimentações só roda para quem já foi cancelado alguma vez
+      // (`cancelledAt`), para não pesar em todo pedido.
+      const situacao = await tx.customerOrder.findUnique({
+        where: { id: orderId },
+        select: { status: true, cancelledAt: true },
+      });
+      if (situacao?.cancelledAt && !ehPedidoCancelado(situacao.status)) {
+        await tx.stockTransaction.updateMany({
+          where: { type: "WASTE", notes: { contains: marcaDoDesperdicio(orderId) } },
+          data: { type: "SALE", notes: `Baixa automática - Pedido #${orderId.slice(-6)} (id: ${orderId})` },
+        });
+      }
+
       // A devolução por cancelamento desfaz a baixa, então a venda antiga
       // sozinha não prova mais que o insumo está fora do saldo: o pedido
       // cancelado e depois reaceito (a tela de pedidos deixa voltar de
@@ -663,6 +683,11 @@ export async function restoreStockForOrder(orderId: string) {
             quantity: amountToRestore,
             type: "INPUT",
             notes: `Devolução por cancelamento - Pedido #${orderId.slice(-6)} (cancel id: ${orderId})`,
+            // Uma devolução por baixa, garantida pelo índice: o mesmo
+            // cancelamento chega por mais de um caminho ao mesmo tempo (painel
+            // e marketplace), e duas transações em paralelo passariam juntas
+            // pela leitura da última devolução lá em cima.
+            sourceRef: `devolucao:${sale.id}`,
           },
         });
 
@@ -696,7 +721,111 @@ export async function restoreStockForOrder(orderId: string) {
     } else {
       console.log(`[Stock] Devolução concluída para pedido #${orderId.slice(-6)} (${result.restored} insumo(s))`);
     }
-  } catch (error) {
+  } catch (error: any) {
+    // A outra chamada do mesmo cancelamento já devolveu (sourceRef único).
+    if (String(error?.code) === "P2002") {
+      console.log(`[Stock] Devolução do pedido ${orderId} já estava registrada (corrida evitada).`);
+      return;
+    }
     console.error(`[Stock] Erro ao devolver estoque do pedido ${orderId}:`, error);
   }
+}
+
+/**
+ * O pedido cancelado DEPOIS de produzido: o insumo saiu e foi para o lixo. A
+ * baixa da venda fica fora do saldo e passa a ser desperdício (WASTE), com o
+ * custo do insumo no dia — é o que o painel do CMV e o Estoque mostram como
+ * "Desperdício de pedidos cancelados (já produzidos)".
+ *
+ * Usa as BAIXAS do pedido (as posteriores à última devolução, como a
+ * devolução), nunca a ficha de hoje. Idempotente: a segunda chamada não acha
+ * venda nova. A `sourceRef` da baixa fica: se o pedido for reaberto,
+ * `deductStockForOrder` devolve a linha para SALE em vez de baixar de novo.
+ */
+export async function marcarBaixaComoDesperdicio(orderId: string, etapa: EtapaDoDesperdicio) {
+  try {
+    const pedido = await prisma.customerOrder.findUnique({
+      where: { id: orderId },
+      select: { franchiseeId: true, dailyOrderNumber: true, franchisee: { select: { storeTimezone: true } } },
+    });
+    if (!pedido) return;
+
+    // O custo do insumo hoje; sem ele a linha fica sem `unitCost` e o painel
+    // usa o custo do cadastro — melhor que perder o desperdício por isso.
+    let custos: Map<string, { custo: number | null }> | null = null;
+    try {
+      const { custosDoDiaNaLoja } = await import("@/lib/cmv/contagem-no-banco");
+      custos = await custosDoDiaNaLoja(pedido.franchiseeId, pedido.franchisee?.storeTimezone || "America/Sao_Paulo");
+    } catch (e: any) {
+      console.warn(`[Stock] Sem o custo do dia para o desperdício do pedido ${orderId}:`, e?.message || e);
+    }
+
+    const numero = pedido.dailyOrderNumber != null ? `#${pedido.dailyOrderNumber}` : `#${orderId.slice(-6)}`;
+    const nota =
+      `Desperdício: pedido ${numero} cancelado — ${ROTULO_DA_ETAPA[etapa]} ` +
+      `(id: ${orderId}) (${marcaDoDesperdicio(orderId)})`;
+
+    const marcadas = await prisma.$transaction(async (tx) => {
+      const ultimaDevolucao = await tx.stockTransaction.findFirst({
+        where: { type: "INPUT", notes: { contains: `cancel id: ${orderId}` } },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      });
+      const vendas = await tx.stockTransaction.findMany({
+        where: {
+          type: "SALE",
+          notes: { contains: `id: ${orderId}` },
+          ...(ultimaDevolucao ? { createdAt: { gt: ultimaDevolucao.createdAt } } : {}),
+        },
+        select: { id: true, stockItemId: true },
+      });
+      let n = 0;
+      for (const v of vendas) {
+        // `type: "SALE"` no where: a outra chamada do mesmo cancelamento que
+        // chegou antes já marcou, e esta não regrava.
+        const r = await tx.stockTransaction.updateMany({
+          where: { id: v.id, type: "SALE" },
+          data: { type: "WASTE", notes: nota, unitCost: custos?.get(v.stockItemId)?.custo ?? undefined },
+        });
+        n += r.count;
+      }
+      return n;
+    });
+
+    if (marcadas > 0) {
+      console.log(`[Stock] Pedido ${numero} cancelado depois de produzido: ${marcadas} baixa(s) viraram desperdício.`);
+    }
+  } catch (error) {
+    console.error(`[Stock] Erro ao marcar desperdício do pedido ${orderId}:`, error);
+  }
+}
+
+/**
+ * O que o cancelamento faz no estoque — a regra de lib/desperdicio-do-cancelado.ts:
+ *   - cancelado antes de sair da produção → devolve o insumo (não foi feito);
+ *   - cancelado depois (produção, pronto ou saiu para entrega) → a baixa fica
+ *     e vira desperdício.
+ *
+ * Chamado pela extensão do Prisma (lib/prisma.ts) em toda gravação de status
+ * cancelado, venha do painel, da mesa, do iFood, do 99, do Brendi ou do robô.
+ * Devolve "NAO_CANCELADO" quando o pedido ainda não aparece cancelado — a
+ * gravação pode estar numa transação que não terminou, e quem chamou tenta
+ * de novo.
+ */
+export async function tratarEstoqueDoCancelamento(orderId: string): Promise<"DESPERDICIO" | "DEVOLVIDO" | "NAO_CANCELADO"> {
+  const pedido = await prisma.customerOrder.findUnique({
+    where: { id: orderId },
+    select: {
+      status: true, cancelledAt: true, dispatchedAt: true, deliveredAt: true, readyAt: true,
+      kdsFinishedAt: true, kdsStage: true, items: { select: { prontoEm: true } },
+    },
+  });
+  if (!pedido || !ehPedidoCancelado(pedido.status)) return "NAO_CANCELADO";
+  const etapa = etapaAntesDoCancelamento(pedido);
+  if (etapa) {
+    await marcarBaixaComoDesperdicio(orderId, etapa);
+    return "DESPERDICIO";
+  }
+  await restoreStockForOrder(orderId);
+  return "DEVOLVIDO";
 }

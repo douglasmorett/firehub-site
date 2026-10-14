@@ -219,7 +219,10 @@ function PainelDoCmv({ dados, carregando }: { dados: Painel; carregando: boolean
           <Cartao rotulo="Custo primário" valor={dados.custoPrimario?.pct != null ? fmtPct(dados.custoPrimario.pct) : "—"}
             tom={dados.custoPrimario?.pct == null ? "neutro" : dados.custoPrimario.pct <= metas.cmv + metas.cmo ? "ok" : dados.custoPrimario.pct <= metas.cmv + metas.cmo + 5 ? "atencao" : "grave"}
             detalhe={dados.custoPrimario ? <>CMV + CMO de {ddmm(dados.custoPrimario.de)} a {ddmm(dados.custoPrimario.ate)} · meta {metas.cmv + metas.cmo}%</> : "aparece com o CMV"} />
-          <Cartao rotulo="Perdas registradas" valor={fmtReais(dados.perdas.valor)} tom={dados.perdas.valor > 0 ? "atencao" : "neutro"} detalhe={dados.perdas.firecheck?.total ? `Estoque › Perda e ${dados.perdas.firecheck.total} descarte(s) do FireCheck` : "lançadas em Estoque › Movimentar › Perda"} />
+          <Cartao rotulo="Perdas registradas" valor={fmtReais(dados.perdas.valor)} tom={dados.perdas.valor > 0 ? "atencao" : "neutro"} detalhe={[
+            (dados.perdas.cancelados?.pedidos ?? 0) > 0 ? `${fmtReais(dados.perdas.cancelados.valor)} de ${dados.perdas.cancelados.pedidos} pedido(s) cancelado(s) já produzido(s)` : null,
+            dados.perdas.firecheck?.total ? `${dados.perdas.firecheck.total} descarte(s) do FireCheck` : null,
+          ].filter(Boolean).join(" · ") || "lançadas em Estoque › Desperdício"} />
           <Cartao rotulo="Última contagem" valor={dados.contagens.ultima ? ddmm(dados.contagens.ultima.dia) : "—"}
             detalhe={dados.contagens.ultima ? `${tipoDaContagem(dados.contagens.ultima.tipo)} · ${dados.contagens.marcadosNoDia} itens na contagem do dia` : "nenhuma ainda"} />
         </div>
@@ -251,8 +254,14 @@ function PainelDoCmv({ dados, carregando }: { dados: Painel; carregando: boolean
             <Tabela colunas={["Pessoa", "Dias", "R$"]} linhas={dados.cmo.porPessoa.map((p) => [p.funcao ? `${p.nome} · ${p.funcao}` : p.nome, String(p.dias), fmtReais(p.valor)])} />
           ) : <Vazio texto="Cadastre a equipe na aba Equipe (CMO)." />}
         </Bloco>
+        {(dados.perdas.cancelados?.pedidos ?? 0) > 0 && (
+          <Bloco titulo="Desperdício de pedidos cancelados (já produzidos)" subtitulo="Cancelados depois de sair da produção do KDS, de ficar prontos ou de sair para entrega: o insumo foi para o lixo. Cancelado antes disso volta para o estoque e não entra aqui.">
+            <Tabela colunas={["Pedidos", "R$"]} linhas={[[String(dados.perdas.cancelados.pedidos), fmtReais(dados.perdas.cancelados.valor)]]} />
+            <p style={{ fontSize: "0.78rem", margin: "8px 0 0" }}><Link href="/store/estoque?aba=desperdicio">Ver pedido a pedido em Estoque › Desperdício →</Link></p>
+          </Bloco>
+        )}
         {dados.perdas.itens.length > 0 && (
-          <Bloco titulo="Perdas registradas" subtitulo="O que foi lançado como perda no período.">
+          <Bloco titulo="Perdas registradas" subtitulo="O que saiu do estoque como perda no período, por insumo (desperdício lançado, FireCheck e pedidos cancelados já produzidos).">
             <Tabela colunas={["Insumo", "Qtd.", "R$"]} linhas={dados.perdas.itens.map((p) => [p.nome, `${fmtQtd(p.quantidade)} ${p.unidade}`, fmtReais(p.valor)])} />
           </Bloco>
         )}

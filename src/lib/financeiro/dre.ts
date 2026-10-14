@@ -297,8 +297,24 @@ export type CmvDoServidor = {
   semana: { comecaEm: number; fecha: number; diaDaContagem: number };
   /** Os itens sem custo de cada dia operacional, juntados pelo nome. */
   semCustoPorDia: Record<string, ItemSemCusto[]>;
+  /** O desperdício de cada dia operacional (ver "O DESPERDÍCIO" em cmvDoPeriodo). Ausente = dado antigo. */
+  desperdicioPorDia?: Record<string, DesperdicioDoDia>;
   /** Não deu para ler a contagem ou as fichas: o CMV fica só com o que veio no pedido. */
   erro?: string | null;
+};
+
+/**
+ * O desperdício de um dia: pedidos cancelados DEPOIS de sair da produção
+ * (lib/desperdicio-do-cancelado.ts), pelo custo dos itens (ficha × custo do
+ * insumo no dia, senão o custo digitado — a mesma conta dos vendidos), e o
+ * lançado no estoque (aba Desperdício, Movimentar › Perda, FireCheck).
+ */
+export type DesperdicioDoDia = {
+  cancelados: number;
+  pedidosCancelados: number;
+  /** Valor (preço) dos itens dos cancelados já produzidos que ficaram sem custo. */
+  canceladosSemCusto: number;
+  lancado: number;
 };
 
 export type DadosDoPeriodo = {
@@ -521,6 +537,16 @@ export type CmvDoDRE = {
   /** 0 a 1: quanto desse valor tem custo pela ficha ou pelo produto. */
   coberturaFora: number;
   semCusto: { valor: number; itens: ItemSemCusto[] };
+  /**
+   * O desperdício do período. `noCmv` é a parte somada ao CMV acima (dias
+   * fora da contagem); `naContagem` já está dentro do CMV pela contagem — o
+   * que foi para o lixo saiu do estoque contado.
+   */
+  desperdicio: {
+    cancelados: { valor: number; pedidos: number; semCusto: number; noCmv: number };
+    lancado: { valor: number; noCmv: number };
+    naContagem: number;
+  };
   faltas: FaltaDoCmv[];
   completo: boolean;
 };
@@ -552,6 +578,24 @@ function cmvDoPeriodo(validos: PedidoDoFinanceiro[], dados: DadosDoPeriodo): {
   }
   const cReal = trecho ? cent(trecho.cmv) : 0;
   const coberturaFora = cItensFora > 0 ? cComCustoFora / cItensFora : 1;
+
+  // ── O DESPERDÍCIO ────────────────────────────────────────────────────────
+  // Pedido cancelado depois de produzido e o que foi lançado como perda são
+  // custo de mercadoria sem venda. Nos dias da contagem ele já está no CMV
+  // real (saiu do estoque contado); nos outros, o CMV vem dos itens VENDIDOS
+  // (ficha ou custo digitado) e o desperdício entra somado a ele.
+  let cDespCancelados = 0, cDespSemCusto = 0, cDespLancado = 0, cDespNaContagem = 0, pedidosDesp = 0;
+  let cCanceladosNoCmv = 0, cLancadoNoCmv = 0;
+  for (const [dia, d] of Object.entries(info?.desperdicioPorDia || {})) {
+    if (dia < dados.de || dia > dados.ate) continue;
+    const c = cent(d.cancelados), l = cent(d.lancado);
+    cDespCancelados += c;
+    cDespLancado += l;
+    cDespSemCusto += cent(d.canceladosSemCusto);
+    pedidosDesp += d.pedidosCancelados || 0;
+    if (dentro(dia)) cDespNaContagem += c + l;
+    else { cCanceladosNoCmv += c; cLancadoNoCmv += l; }
+  }
 
   // Os sem custo dos dias de fora, juntados pelo nome.
   const juntos = new Map<string, ItemSemCusto>();
@@ -682,10 +726,15 @@ function cmvDoPeriodo(validos: PedidoDoFinanceiro[], dados: DadosDoPeriodo): {
     itensFora: reais(cItensFora),
     coberturaFora,
     semCusto: { valor: reais(cItensFora - cComCustoFora), itens: semCustoItens },
+    desperdicio: {
+      cancelados: { valor: reais(cDespCancelados), pedidos: pedidosDesp, semCusto: reais(cDespSemCusto), noCmv: reais(cCanceladosNoCmv) },
+      lancado: { valor: reais(cDespLancado), noCmv: reais(cLancadoNoCmv) },
+      naContagem: reais(cDespNaContagem),
+    },
     faltas,
     completo: !faltaCobertura && !(trecho && real && real.semCustoNaContagem.length) && !(trecho && trecho.cmv < 0) && !info?.erro,
   };
-  return { detalhe, cCmv: cReal + cCustoFora, cComCusto: cItensReal + cComCustoFora, pendencias, avisos };
+  return { detalhe, cCmv: cReal + cCustoFora + cCanceladosNoCmv + cLancadoNoCmv, cComCusto: cItensReal + cComCustoFora, pendencias, avisos };
 }
 
 const pct = (parte: number, todo: number) => (todo > 0 ? Math.round((parte / todo) * 10000) / 100 : 0);
