@@ -2412,14 +2412,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       if (!vivo) return;
       const vistas = new Set<string>();
       const lista: { nome: string; rotulo: string }[] = [];
+      const soManual: string[] = [];
       for (const p of Array.isArray(c?.printers) ? c.printers : []) {
         const nome = String(p?.name || "").trim();
         // A mesma impressora em duas linhas vale uma vez (a primeira, como a fila).
         if (!nome || vistas.has(nome)) continue;
         vistas.add(nome);
         lista.push({ nome, rotulo: String(p?.label || "").trim() || nome });
+        if (p?.semComandaAutomatica) soManual.push(nome);
       }
       setImpressorasDoModal(lista);
+      // A impressora "Só conta e impressão manual" existe para isto: o
+      // reimprimir do balcão. Sendo uma só, ela já vem marcada em vez de
+      // "Todas" (NIK, 14/10/2026: a moça do caixa trocava toda vez).
+      if (soManual.length === 1) setImpressoraDaReimpressao(soManual[0]);
     });
     return () => { vivo = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
