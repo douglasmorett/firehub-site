@@ -8,12 +8,12 @@
  * Totem e o Tráfego pago.
  *
  * A regra é a do termo que o dono aceita ao ligar (lib/assessor/termo.ts):
- * - ficou ativo em algum momento do mês = R$ 29,90 do mês inteiro, uma vez só,
- *   mesmo desligando e religando no mesmo dia;
+ * - a PRIMEIRA ativação da loja ganha 7 dias grátis (`testeAte`). Desligar e
+ *   religar não dá outro período: "senão a pessoa fica saindo e entrando e
+ *   pegando 7 dias" (Douglas, 14/10/2026);
+ * - depois do teste, ficou ativo em algum momento do mês = R$ 29,90 do mês
+ *   inteiro, uma vez só, mesmo desligando e religando no mesmo dia;
  * - desligou: o mês seguinte não é cobrado (a não ser que ligue de novo).
- * Não há teste grátis (a primeira versão, de 14/10 cedo, tinha 7 dias e
- * cobrava proporcional; nunca foi publicada). `testeAte` continua no banco e na
- * conta só por compatibilidade.
  *
  * Loja isenta (parceiro, conta da casa) não paga: a regra é a mesma da
  * mensalidade (lojaIsenta, em billing.ts).
@@ -23,6 +23,8 @@ import { garantirEstruturaDoAssessor } from "./estrutura-no-banco";
 import { VERSAO_DO_TERMO_DO_BILL } from "./termo";
 
 export const PRECO_DO_ASSESSOR = 29.9;
+export const DIAS_DE_TESTE_DO_ASSESSOR = 7;
+const DIA_MS = 24 * 60 * 60 * 1000;
 
 export type AceiteDoTermo = { versao: string; em: string; email: string | null; ip: string | null; userAgent: string | null };
 /** Um trecho ligado. `aceite` = o termo aceito ao ligar este trecho. */
@@ -30,8 +32,13 @@ export type Periodo = { de: string; ate: string | null; aceite?: AceiteDoTermo }
 
 export type EstadoDoAssessor = {
   ativo: boolean;
-  /** O mês corrente já entra no boleto (ficou ativo em algum momento dele). */
+  /** O mês corrente já entra no boleto (ficou ativo em algum momento dele, fora do teste). */
   cobradoEsteMes: boolean;
+  /** Fim dos 7 dias grátis (só existe depois da primeira ativação). */
+  testeAte: string | null;
+  emTeste: boolean;
+  /** Já usou o teste: religar não dá outro. */
+  jaTestou: boolean;
   periodos: Periodo[];
 };
 
@@ -44,7 +51,7 @@ function lerPeriodos(bruto: unknown): Periodo[] {
 
 /**
  * Quanto o Bill custa no mês [inicio, fim). Puro, para o teste.
- * Ativo em qualquer instante do mês (fora de um teste antigo) = o mês inteiro.
+ * Ativo em qualquer instante do mês depois dos 7 dias grátis = o mês inteiro.
  */
 export function valorDoAssessorNoMes(
   periodos: Periodo[],
@@ -74,7 +81,7 @@ async function mesCorrente(franchiseeId: string, agora: Date) {
 }
 
 export async function estadoDoAssessor(franchiseeId: string, agora: Date = new Date()): Promise<EstadoDoAssessor> {
-  const vazio: EstadoDoAssessor = { ativo: false, cobradoEsteMes: false, periodos: [] };
+  const vazio: EstadoDoAssessor = { ativo: false, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, periodos: [] };
   if (!(await garantirEstruturaDoAssessor())) return vazio;
   const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId } });
   if (!a) return vazio;
@@ -84,7 +91,14 @@ export async function estadoDoAssessor(franchiseeId: string, agora: Date = new D
     const { monthStart, monthEnd } = await mesCorrente(franchiseeId, agora);
     cobradoEsteMes = valorDoAssessorNoMes(periodos, a.testeAte, monthStart, monthEnd, agora) > 0;
   } catch {}
-  return { ativo: a.ativo, cobradoEsteMes, periodos };
+  return {
+    ativo: a.ativo,
+    cobradoEsteMes,
+    testeAte: a.testeAte ? a.testeAte.toISOString() : null,
+    emTeste: Boolean(a.ativo && a.testeAte && a.testeAte.getTime() > agora.getTime()),
+    jaTestou: Boolean(a.testeAte),
+    periodos,
+  };
 }
 
 /** Só a coluna `ativo`: roda em toda mensagem do dono e em toda página do painel. */
@@ -121,10 +135,12 @@ export async function ligarOuDesligarAssessor(
       throw new TermoNaoAceitoError("Para ativar o Bill é preciso aceitar o termo de contratação.");
     }
     periodos.push({ de: iso, ate: null, aceite: { ...aceite, em: iso } });
+    // Só a primeira ativação ganha os 7 dias; depois o `testeAte` fica como está.
+    const testeAte = atual?.testeAte ?? new Date(agora.getTime() + DIAS_DE_TESTE_DO_ASSESSOR * DIA_MS);
     await prisma.assessorAssinatura.upsert({
       where: { franchiseeId },
-      create: { franchiseeId, ativo: true, periodos: periodos as any },
-      update: { ativo: true, periodos: periodos as any },
+      create: { franchiseeId, ativo: true, testeAte, periodos: periodos as any },
+      update: { ativo: true, testeAte, periodos: periodos as any },
     });
   } else {
     if (!atual?.ativo) return estadoDoAssessor(franchiseeId, agora);

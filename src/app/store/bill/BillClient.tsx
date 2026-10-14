@@ -18,9 +18,9 @@ import { EVENTO_BILL_LIGADO } from "@/components/bill/BillFlutuante";
 import { VERSAO_DO_TERMO_DO_BILL, TITULO_DO_TERMO_DO_BILL, CLAUSULAS_DO_TERMO_DO_BILL } from "@/lib/assessor/termo";
 import { Mic, Camera, Package, Wallet, Receipt, Undo2, CheckCircle2, MessageCircle, PauseCircle, Store } from "lucide-react";
 
-type Estado = { ativo: boolean; cobradoEsteMes: boolean };
+type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean };
 type Registro = { id: string; tipo: string; resumo: string; canal: string; desfeitoEm: string | null; criadoEm: string };
-type Dados = { estado: Estado; preco: number; numerosDoDono: string[]; numeroDoRobo: string | null; registros: Registro[] };
+type Dados = { estado: Estado; preco: number; diasDeTeste: number; numerosDoDono: string[]; numeroDoRobo: string | null; registros: Registro[] };
 type Aviso = { tipo: "ok" | "erro"; titulo: string; detalhe?: string };
 
 const VERDE = "#059669";
@@ -81,7 +81,7 @@ export default function BillClient() {
       if (!r.ok) throw new Error(j.error || "Erro");
       setAviso(ligar
         ? { tipo: "ok", titulo: "Bill ligado!", detalhe: "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica." }
-        : { tipo: "ok", titulo: "Bill desligado.", detalhe: "O mês que vem não é cobrado. Este mês continua no boleto (ele já foi ativado)." });
+        : { tipo: "ok", titulo: "Bill desligado.", detalhe: "O mês que vem não é cobrado. Se este mês já passou dos dias grátis, ele continua no boleto." });
       setTermoAberto(false);
       // A carinha do Bill no canto aparece (ou some) sem atualizar a página.
       window.dispatchEvent(new CustomEvent(EVENTO_BILL_LIGADO, { detail: ligar }));
@@ -117,7 +117,7 @@ export default function BillClient() {
         <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: 0 }}>Bill, seu assessor</h1>
         {estado.ativo && (
           <span style={{ fontSize: 12, fontWeight: 800, color: VERDE, background: "#ECFDF5", padding: "4px 10px", borderRadius: 999 }}>
-            LIGADO
+            {estado.emTeste && estado.testeAte ? `GRÁTIS até ${new Date(estado.testeAte).toLocaleDateString("pt-BR")}` : "LIGADO"}
           </span>
         )}
       </div>
@@ -140,8 +140,10 @@ export default function BillClient() {
           <Historico registros={dados.registros} />
           <div style={{ marginTop: 28, padding: 16, border: "1px solid #E2E8F0", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 13, color: "#475569" }}>
-              <b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub — o mês em que o Bill fica ativo é cobrado inteiro.
-              {estado.cobradoEsteMes && <> Este mês já está no boleto.</>} Desligando, o mês seguinte não é cobrado.
+              {estado.emTeste && estado.testeAte
+                ? <>Grátis até <b>{new Date(estado.testeAte).toLocaleDateString("pt-BR")}</b>. Depois, <b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub (o mês em que fica ativo é cobrado inteiro).</>
+                : <><b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub — o mês em que o Bill fica ativo é cobrado inteiro.{estado.cobradoEsteMes && <> Este mês já está no boleto.</>}</>}
+              {" "}Desligando, o mês seguinte não é cobrado.
             </div>
             <button disabled={salvando} onClick={() => { if (confirmarDesligar) ligar(false); else setConfirmarDesligar(true); }}
               onBlur={() => setConfirmarDesligar(false)}
@@ -175,10 +177,12 @@ function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean;
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" }}>
           <button onClick={onLigar} disabled={salvando} style={{ background: "#FACC15", color: "#0F172A", border: 0, borderRadius: 10, padding: "12px 20px", fontWeight: 900, fontSize: 15, cursor: "pointer" }}>
-            {salvando ? "Ligando…" : `Ativar o Bill por ${fmtR(dados.preco)}/mês`}
+            {salvando ? "Ligando…" : dados.estado.jaTestou ? `Ativar o Bill por ${fmtR(dados.preco)}/mês` : `Testar ${dados.diasDeTeste} dias grátis`}
           </button>
           <div style={{ fontSize: 13, opacity: 0.9 }}>
-            <b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub. Desligou, o mês seguinte não é cobrado.
+            {dados.estado.jaTestou
+              ? <><b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub (os 7 dias grátis já foram usados). Desligou, o mês seguinte não é cobrado.</>
+              : <>Depois, <b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub. Os 7 dias grátis valem só na primeira ativação.</>}
           </div>
         </div>
       </div>
@@ -264,7 +268,7 @@ function Termo({ preco, salvando, onCancelar, onAceitar }: { preco: number; salv
           <img src={AVATAR_DO_BILL} alt="" width={40} height={40} style={{ borderRadius: 999, border: "2px solid #22D3EE" }} />
           <div>
             <div style={{ fontWeight: 900, fontSize: 17, color: "#0F172A" }}>{TITULO_DO_TERMO_DO_BILL}</div>
-            <div style={{ fontSize: 13, color: "#475569" }}>{fmtR(preco)} por mês · versão {VERSAO_DO_TERMO_DO_BILL.split("-").reverse().join("/")}</div>
+            <div style={{ fontSize: 13, color: "#475569" }}>{fmtR(preco)} por mês · versão de {VERSAO_DO_TERMO_DO_BILL.slice(0, 10).split("-").reverse().join("/")}</div>
           </div>
         </div>
         <ol style={{ margin: 0, padding: "16px 20px 4px 40px", display: "grid", gap: 10, fontSize: 14, color: "#1E293B", lineHeight: 1.5 }}>

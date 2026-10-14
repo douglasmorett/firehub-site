@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { lojaDoAssessorDaSessao } from "@/lib/assessor/loja-da-sessao";
-import { estadoDoAssessor, ligarOuDesligarAssessor, PRECO_DO_ASSESSOR, TermoNaoAceitoError } from "@/lib/assessor/assinatura";
+import { estadoDoAssessor, ligarOuDesligarAssessor, PRECO_DO_ASSESSOR, DIAS_DE_TESTE_DO_ASSESSOR, TermoNaoAceitoError } from "@/lib/assessor/assinatura";
 import { garantirEstruturaDoAssessor } from "@/lib/assessor/estrutura-no-banco";
 import { numerosDoDono } from "@/lib/numeros-do-dono";
 
@@ -27,8 +27,9 @@ export async function GET() {
     : [];
   const cfg = (s.loja.chatbotConfig || {}) as any;
   return NextResponse.json({
-    estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes },
+    estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou },
     preco: PRECO_DO_ASSESSOR,
+    diasDeTeste: DIAS_DE_TESTE_DO_ASSESSOR,
     numerosDoDono: numerosDoDono(s.loja.notificationPhone, cfg),
     numeroDoRobo: String(cfg?.phone || "").replace(/\D/g, "") || null,
     registros,
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
   }
   try {
     const estado = await ligarOuDesligarAssessor(s.franchiseeId, corpo.ligar, aceite);
-    return NextResponse.json({ ok: true, estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes } });
+    return NextResponse.json({ ok: true, estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou } });
   } catch (err: any) {
     if (err instanceof TermoNaoAceitoError) return NextResponse.json({ error: err.message, precisaDoTermo: true }, { status: 400 });
     return NextResponse.json({ error: err?.message || "Erro ao salvar." }, { status: 503 });
