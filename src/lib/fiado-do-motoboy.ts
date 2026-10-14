@@ -49,10 +49,11 @@ async function membrosDaEquipe(franchiseeIds: string[]): Promise<Membro[]> {
   ].filter((m) => m.name?.trim());
 }
 
-// O espelho que entrou no ar em 14/10/2026 casava só pelo nome inteiro e pode
-// ter criado "Jefinho" ao lado do "Jefinho Motoboy" que a loja já tinha.
-// Duplicata VAZIA criada por ele (sem pedido nem baixa) sai da lista.
-const INICIO_DO_ESPELHO = new Date("2026-10-14T03:00:00Z");
+// Mesma pessoa com mais de um cadastro no fiado (o espelho de 14/10/2026
+// casava só pelo nome inteiro e criou "Jefinho" ao lado de "Jefinho
+// Motoboy"; e há loja com o mesmo motoboy lançado duas vezes à mão): os
+// cadastros VAZIOS (sem lançamento nem baixa) saem e ficam os que têm
+// histórico — ou só o mais antigo, se todos estão vazios.
 const CARGO_DO_ESPELHO: Record<OrigemNaEquipe, string> = { MOTOBOY: "Motoboy", GARCOM: "Garçom" };
 
 /**
@@ -87,16 +88,13 @@ export async function sincronizarEquipeNoFiado(franchiseeIds: string[]): Promise
         }
         continue;
       }
-      // Mais de um cadastro para a mesma pessoa: o vazio que o espelho criou sai.
+      // Mais de um cadastro para a mesma pessoa: os vazios saem.
       let ficam = deles;
       if (deles.length > 1) {
-        const vazioDoEspelho = (c: (typeof deles)[number]) =>
-          c.createdAt >= INICIO_DO_ESPELHO && c.role === CARGO_DO_ESPELHO[m.origem] && c._count.orders === 0 && c._count.payments === 0;
-        const reais = deles.filter((c) => !vazioDoEspelho(c));
-        if (reais.length > 0) {
-          for (const c of deles) if (vazioDoEspelho(c)) desativar.add(c.id);
-          ficam = reais;
-        }
+        const vazio = (c: (typeof deles)[number]) => c._count.orders === 0 && c._count.payments === 0;
+        const comHistorico = deles.filter((c) => !vazio(c));
+        ficam = comHistorico.length > 0 ? comHistorico : [deles[0]]; // deles vem do mais antigo
+        for (const c of deles) if (!ficam.includes(c)) desativar.add(c.id);
       }
       for (const c of ficam) {
         if (!c.active) ativar.push(c.id);
