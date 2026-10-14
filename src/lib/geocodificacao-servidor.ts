@@ -27,8 +27,10 @@ import {
   estadoPeloEndereco,
   dicionarioDeBairro,
   isPointInSea,
+  type ItemGeocodificavel,
   type Ponto,
 } from "@/lib/geocodificacao";
+import { buscarCep, cidadeComparavel, digitosDoCep, type ConsultaDoCep } from "@/lib/cep";
 import {
   geocodeAddress,
   geocodeStreetStructured,
@@ -90,6 +92,106 @@ export function chaveDeCache(endereco: string, cidade: string): string {
       .replace(/[^a-z0-9]+/g, " ")
       .trim();
   return `${limpa(cidade)}|${limpa(endereco)}`.slice(0, 400);
+}
+
+// ── O CEP ANTES DO TEXTO ─────────────────────────────────────────────────────
+//
+// NIK Esfihas (Brasília, 14/10/2026): o pedido da Wabiz chegou sem ponto e com
+// "Quadra 2 conjunto B2 bloco B, 601 - Edifício Kona ap 601 - QUADRA 2 -
+// Brasília/DF - CEP 73015217". O texto vira bairro "Brasília/DF" — o centro do
+// Plano Piloto — e o pino da roteirização caiu na Asa Sul; o CEP é da Quadra 2
+// Conjunto B-2 Bloco B de SOBRADINHO. Mesma lição do "CEP sozinho vira rua" da
+// cotação (lib/area-de-entrega.ts): o mapa não conhece CEP, os Correios
+// conhecem. Com CEP válido no texto, rua, bairro, cidade e UF saem do ViaCEP;
+// o texto cru só entra quando o CEP não resolve.
+
+/** O CEP escrito no endereço: "CEP 73015217", "CEP: 73.015-217", "73015-217" ou o CEP sozinho. */
+export function cepDoEndereco(endereco: unknown): string | null {
+  const t = String(endereco ?? "");
+  const m =
+    t.match(/\bcep[:\s.]*(\d{2}\.?\d{3}-?\d{3})(?!\d)/i) ||
+    t.match(/(?<!\d)(\d{5}-\d{3})(?!\d)/) ||
+    t.match(/^\s*(\d{8})\s*$/);
+  if (!m) return null;
+  const d = digitosDoCep(m[1]);
+  return d.length === 8 ? d : null;
+}
+
+/**
+ * A chave do cache. Endereço com CEP ganha chave própria: o ponto que o texto
+ * cru já deixou no cache (a Asa Sul do caso acima) não pode voltar a valer.
+ */
+export function chaveDaBusca(endereco: string, cidade: string): string {
+  const base = chaveDeCache(endereco, cidade);
+  return cepDoEndereco(endereco) ? `cep|${base}` : base;
+}
+
+export type BuscaPreparada = {
+  /** Cidade e UF da busca: as do CEP quando ele resolveu; senão as da loja. */
+  cidade: string;
+  estado: string | null;
+  item: Omit<ItemGeocodificavel, "idx">;
+  /** Rua/bairro/cidade vieram do CEP (vai na origem do ponto). */
+  peloCep: boolean;
+  /** O ViaCEP não respondeu: o ponto do texto não entra no cache (a próxima vez tenta o CEP de novo). */
+  cepFalhou: boolean;
+};
+
+/**
+ * Os campos que a cascata do mapa recebe. CEP que o ViaCEP conhece e traz a
+ * rua ou o bairro: rua, bairro, cidade e UF dos Correios, e o número da casa
+ * do texto. CEP da cidade toda (sem rua nem bairro), CEP que não existe ou
+ * ViaCEP fora: o texto, como sempre foi.
+ */
+export async function prepararBusca(
+  endereco: string,
+  loja: { cidade: string; estado: string | null; centro: Ponto },
+  consultarCep: (cep: string) => Promise<ConsultaDoCep> = (cep) => buscarCep(cep, { prazoMs: 4000 }),
+): Promise<BuscaPreparada> {
+  const paraBuscar = semRabichoDepoisDaUF(endereco);
+  const doTexto = parseAddressDetails(paraBuscar, loja.cidade);
+  const peloTexto = (cepFalhou: boolean): BuscaPreparada => ({
+    cidade: loja.cidade,
+    estado: loja.estado,
+    item: {
+      neighborhood: doTexto.neighborhood,
+      streetName: doTexto.streetName,
+      houseNumber: doTexto.houseNumber,
+      cleanedStreet: cleanAddressForGeocoding(paraBuscar),
+      dictFallback: dicionarioDeBairro(doTexto.neighborhood, loja.centro),
+    },
+    peloCep: false,
+    cepFalhou,
+  });
+
+  const cep = cepDoEndereco(endereco);
+  if (!cep) return peloTexto(false);
+  const consulta = await consultarCep(cep).catch((): ConsultaDoCep => ({ ok: false, motivo: "falhou" }));
+  if (!consulta.ok) return peloTexto(consulta.motivo === "falhou");
+  const { rua, bairro, cidade, uf } = consulta.endereco;
+  if (!rua && !bairro) return peloTexto(false);
+
+  // CEP de cidade vizinha vale: é onde o cliente mora. A UF do ViaCEP entra
+  // na busca mesmo quando o endereço da loja não tem UF.
+  const mesmaCidade = !!loja.cidade && cidadeComparavel(cidade) === cidadeComparavel(loja.cidade);
+  // "Quadra 2 Conjunto B-2 Bloco B": o bloco é o PRÉDIO, e o mapa não acha a
+  // rua com ele no nome (sem ele, acha o conjunto em Sobradinho; com ele, o
+  // Photon casava a "Quadra 14 Conjunto B2 Bloco 4", a 3 km).
+  const streetName = rua.replace(/\s+bloco\s+\S+\s*$/i, "").trim() || doTexto.streetName;
+  const neighborhood = bairro || (mesmaCidade ? doTexto.neighborhood : "");
+  return {
+    cidade: mesmaCidade ? loja.cidade : cidade,
+    estado: uf || loja.estado,
+    item: {
+      neighborhood,
+      streetName,
+      houseNumber: doTexto.houseNumber,
+      cleanedStreet: [streetName, doTexto.houseNumber].filter(Boolean).join(", "),
+      dictFallback: mesmaCidade ? dicionarioDeBairro(neighborhood, loja.centro) : undefined,
+    },
+    peloCep: true,
+    cepFalhou: false,
+  };
 }
 
 let tabelaPronta = false;
@@ -317,7 +419,7 @@ export async function geocodificarNoServidor(
   });
 
   const cidade = loja.cidade || "";
-  const chaves = pedidos.map((p) => chaveDeCache(p.endereco, cidade));
+  const chaves = pedidos.map((p) => chaveDaBusca(p.endereco, cidade));
 
   // 1. o que já está no banco
   const noCache = new Map<string, { lat: number; lng: number; origem: string | null }>();
@@ -360,16 +462,27 @@ export async function geocodificarNoServidor(
   // sai do lote — o ponto dele seria de um degrau pior da cascata, e o
   // navegador resolve sozinho, como fazia quando a fila recusava o item todo.
   let recusadaNesteItem = false;
-  const geo = criarGeocodificador({
-    storeCity: cidade,
-    estado,
-    centroDaLoja: loja.centro,
-    vez: (chamada) =>
-      naFila(chamada, prazo, { prioridade: "lote" }).catch((e) => {
-        if (e instanceof RecusaDaFila) recusadaNesteItem = true;
-        throw e;
-      }),
-  });
+  // Um geocodificador por cidade/UF da busca: o CEP pode ser da cidade
+  // vizinha, ou trazer a UF que o endereço da loja não tem.
+  const geocodificadores = new Map<string, ReturnType<typeof criarGeocodificador>>();
+  const geocodificadorDe = (cidadeDaBusca: string, estadoDaBusca: string | null) => {
+    const k = `${cidadeDaBusca}|${estadoDaBusca || ""}`;
+    let g = geocodificadores.get(k);
+    if (!g) {
+      g = criarGeocodificador({
+        storeCity: cidadeDaBusca,
+        estado: estadoDaBusca,
+        centroDaLoja: loja.centro,
+        vez: (chamada) =>
+          naFila(chamada, prazo, { prioridade: "lote" }).catch((e) => {
+            if (e instanceof RecusaDaFila) recusadaNesteItem = true;
+            throw e;
+          }),
+      });
+      geocodificadores.set(k, g);
+    }
+    return g;
+  };
 
   for (let i = 0; i < pedidos.length; i++) {
     if (Date.now() > prazo && !noCache.has(chaves[i])) {
@@ -383,13 +496,17 @@ export async function geocodificarNoServidor(
       saida.push({ id: p.id, lat: achado.lat, lng: achado.lng, origem: achado.origem || "cache", doCache: true });
       continue;
     }
-    const paraBuscar = semRabichoDepoisDaUF(p.endereco);
-    const { neighborhood, streetName, houseNumber } = parseAddressDetails(paraBuscar, cidade);
-    const cleanedStreet = cleanAddressForGeocoding(paraBuscar);
-    const dictFallback = dicionarioDeBairro(neighborhood, loja.centro);
     try {
+      const busca = await prepararBusca(p.endereco, { cidade, estado, centro: loja.centro }, (cep) =>
+        buscarCep(cep, { prazoMs: Math.max(1000, Math.min(4000, prazo - Date.now() - 1000)) }),
+      );
+      const { neighborhood } = busca.item;
       recusadaNesteItem = false;
-      const { coords, origem } = await geo.geocodificarItem({ idx: i, neighborhood, streetName, houseNumber, cleanedStreet, dictFallback });
+      const achou = await geocodificadorDe(busca.cidade, busca.estado).geocodificarItem({ idx: i, ...busca.item });
+      const coords = achou.coords;
+      // O sufixo, e não prefixo: origemDaGeocodificacao (lib/entrega-do-pedido)
+      // lê o COMEÇO para saber se foi o bairro.
+      const origem = busca.peloCep ? `${achou.origem} (pelo CEP)` : achou.origem;
       if (recusadaNesteItem) {
         console.warn(`[Geocodificação] endereço ${resumoDaConsulta(p.endereco)} ficou para o navegador: a fila recusou uma das buscas`);
         continue;
@@ -401,7 +518,7 @@ export async function geocodificarNoServidor(
       //
       // Só entra o que veio de fonte de verdade. "Caiu na loja" é ausência de
       // resposta; guardar isso congelaria o erro para sempre.
-      if (!/loja \(endereço não localizado\)/.test(origem)) {
+      if (!/loja \(endereço não localizado\)/.test(origem) && !busca.cepFalhou) {
         await gravarNoCache({ chave, lat: coords.lat, lng: coords.lng, origem, bairro: neighborhood, cidade });
       }
     } catch (e: any) {

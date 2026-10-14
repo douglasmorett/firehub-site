@@ -593,7 +593,14 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
           // conferir o NOME do bairro, e não só a distância.
           const a = data[0].address || {};
           const bairro = a.suburb || a.neighbourhood || a.city_district || a.quarter || a.residential || a.village || "";
-          return { lat, lng, bairro: String(bairro) };
+          // Todos os níveis de bairro do ponto, do menor ao maior. No DF o
+          // `suburb` é a vila ("Vila Dnocs") e o bairro dos Correios é a
+          // região administrativa ("Sobradinho", que o OSM põe em `town`):
+          // conferir só o primeiro recusava a rua certa (NIK, 14/10/2026).
+          // `city` fica de fora: é o município, não bairro.
+          const bairros = [a.neighbourhood, a.residential, a.quarter, a.suburb, a.city_district, a.borough, a.village, a.town]
+            .filter((v: unknown) => typeof v === "string" && v.trim()) as string[];
+          return { lat, lng, bairro: String(bairro), bairros };
         }
       }
     } catch (e: any) {
@@ -656,12 +663,15 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
   const normalizaBairro = (t: string) =>
     (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
       .replace(/^(bairro|jardim|jd|residencial|res|parque|pq|vila|vl)\s+/, "").trim();
-  const bairroConfere = (res: { bairro?: string } | null, esperado: string) => {
+  const bairroConfere = (res: { bairro?: string; bairros?: string[] } | null, esperado: string) => {
     if (!res || !esperado || !res.bairro) return true;
-    const a = normalizaBairro(res.bairro);
     const b = normalizaBairro(esperado);
-    if (!a || !b) return true;
-    return a === b || a.includes(b) || b.includes(a);
+    if (!b) return true;
+    const confere = (nome: string) => {
+      const a = normalizaBairro(nome);
+      return !a || a === b || a.includes(b) || b.includes(a);
+    };
+    return confere(res.bairro) || (res.bairros || []).some(confere);
   };
 
   /**

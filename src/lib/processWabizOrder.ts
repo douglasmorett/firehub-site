@@ -25,6 +25,8 @@ import type { WabizPedido } from "@/lib/wabiz-api";
 import { texto, traduzirPedidoWabiz } from "@/lib/wabiz-traducao";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
 import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
+import { guardarPayloadCru } from "@/lib/open-delivery/payload-cru";
+import { chavesDoEndereco } from "@/lib/coordenadas-do-parceiro";
 
 export interface ResultadoWabizPedido {
   action: "created" | "exists" | "error";
@@ -126,6 +128,25 @@ export async function processWabizOrder(
   // Quantos km — só quando a Wabiz mandou o ponto do cliente. É o que a escada
   // de km do entregador compara no fechamento (lib/distancia-da-entrega.ts).
   // O ponto passa pelo corte do R8: longe demais da loja não é o cliente.
+  // ── ENTREGA SEM PONTO: O PAYLOAD FICA GUARDADO ───────────────────────────
+  //
+  // NIK (14/10/2026): o #15 chegou sem coordenada e o pino caiu a ~20 km. A
+  // doc da Wabiz não declara lat/lng, e o leitor tolerante já procura nos
+  // nomes conhecidos em `service.delivery` e no pedido inteiro — mas o pedido
+  // pendente some da Wabiz depois da confirmação, e não havia como conferir se
+  // o campo veio com outro nome. Fica uma linha por entrega sem ponto (30
+  // dias, lib/open-delivery/payload-cru.ts), com as chaves do endereço no aviso.
+  if (dados.deliveryType === "DELIVERY" && !dados.customerLatLng) {
+    await guardarPayloadCru({
+      canal: "WABIZ",
+      tipo: "pedido",
+      idNoParceiro: internalKey,
+      franchiseeId: loja.id,
+      payload: pedido,
+      avisos: [`entrega sem coordenada — chaves de service.delivery: ${chavesDoEndereco(pedido?.service?.delivery)}`],
+    });
+  }
+
   const doParceiro = await pontoEDistanciaDoParceiro(loja.id, dados.customerLatLng);
   if (doParceiro.ponto) dados.customerLatLng = doParceiro.ponto;
   else delete dados.customerLatLng;
