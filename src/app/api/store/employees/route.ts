@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { limiteDeDia } from "@/lib/timezone";
+import { trazerMotoboysParaOFiado } from "@/lib/fiado-do-motoboy";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -43,6 +44,10 @@ export async function GET(req: NextRequest) {
   if (fimDoPeriodo) dateFilter.lte = fimDoPeriodo;
 
   const hasDateFilter = Object.keys(dateFilter).length > 0;
+
+  // Motoboy também compra fiado: cada motoboy ativo aparece na lista
+  // (lib/fiado-do-motoboy.ts).
+  await trazerMotoboysParaOFiado(validFranchiseeIds);
 
   // Busca todos os funcionários ativos da loja/grupo
   const employees = await prisma.storeEmployee.findMany({

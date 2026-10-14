@@ -1329,7 +1329,7 @@ export default function VendaPresencialPage() {
           {paymentMethod === "Conta Funcionário" && (
             <div style={{ marginBottom: 6, background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 8, padding: "8px" }}>
               <label style={{ fontSize: "0.72rem", fontWeight: 800, color: "#B71C1C", display: "block", marginBottom: 4 }}>
-                Selecione o Funcionário *
+                Selecione o funcionário ou motoboy *
               </label>
               {employees.length === 0 ? (
                 <div style={{ fontSize: "0.75rem", color: "#B71C1C" }}>

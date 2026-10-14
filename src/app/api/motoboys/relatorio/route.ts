@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
         entregasSemDistancia: meu.motoboy.entregasSemDistancia,
       },
       stats: meu.stats,
+      fiado: meu.fiado,
       cancelados: meu.cancelados,
       orders: meu.orders.map((o) => ({
         id: o.id,

@@ -31,6 +31,7 @@ type Resposta = {
     cashCollectedSum: number; cashOrdersCount: number; changeGivenSum: number;
   };
   motoboy?: { dailyRate: number; entregasSemDistancia: number };
+  fiado?: null | { totalNoPeriodo: number; saldoEmAberto: number; lancamentos: { id: string; em: string; valor: number; descricao: string }[] };
   cancelados: { qtd: number };
   orders: {
     id: string; createdAt: string; dailyOrderNumber: number | null; ifoodReference: string | null;
@@ -138,6 +139,17 @@ export default function MeuRelatorio({ motoboyId, storeId, aoFechar }: { motoboy
             {s && (s.lancheDescontado || 0) > 0.005 && (
               <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: 10, fontSize: "0.85rem", color: "#B91C1C", fontWeight: 700, marginBottom: 12 }}>
                 🍔 Lanche acima do combinado: − {reais(s.lancheDescontado)} (já tirado do A RECEBER). O detalhe de cada lanche está no QR do lanche, em "Meus lanches".
+              </div>
+            )}
+            {dados?.fiado && (
+              <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 12, padding: 10, fontSize: "0.85rem", color: "#5B21B6", fontWeight: 700, marginBottom: 12 }}>
+                📒 Fiado no período: {reais(dados.fiado.totalNoPeriodo)} ({dados.fiado.lancamentos.length} lançamento{dados.fiado.lancamentos.length === 1 ? "" : "s"}) · em aberto: {reais(dados.fiado.saldoEmAberto)}
+                {dados.fiado.lancamentos.map((l) => (
+                  <div key={l.id} style={{ fontSize: "0.76rem", fontWeight: 500, color: "#475569", display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+                    <span>{new Date(l.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · {l.descricao}</span>
+                    <span style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{reais(l.valor)}</span>
+                  </div>
+                ))}
               </div>
             )}
             {s && s.cashOrdersCount > 0 && (

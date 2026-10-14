@@ -742,6 +742,30 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                       </details>
                     )}
 
+                    {/* O fiado do motoboy (lib/fiado-do-motoboy.ts): aparece
+                        para conferir no acerto, mas não sai do total — a
+                        baixa da dívida continua na tela Fiado. */}
+                    {r.fiado && !filtrado && (
+                      <details style={{ fontSize: "0.85rem" }}>
+                        <summary style={{ display: "flex", justifyContent: "space-between", cursor: "pointer", listStyle: "none", color: "#6D28D9" }}>
+                          <span>📒 Fiado no período ({r.fiado.lancamentos.length}) · em aberto {fmt(r.fiado.saldoEmAberto)} · ver</span>
+                          <span style={{ fontWeight: 700 }}>{fmt(r.fiado.totalNoPeriodo)}</span>
+                        </summary>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, margin: "6px 0 2px", fontSize: "0.76rem", color: "#475569" }}>
+                          {r.fiado.lancamentos.map((l: any) => (
+                            <div key={l.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, borderBottom: "1px dashed #F1F5F9", paddingBottom: 3 }}>
+                              <span>
+                                {new Date(l.em).toLocaleString("pt-BR", { timeZone: tzLoja, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                                {l.numero ? ` · #${l.numero}` : ""} · {l.descricao}
+                              </span>
+                              <span style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{fmt(l.valor)}</span>
+                            </div>
+                          ))}
+                          <div style={{ color: "#64748B" }}>Não descontado do total — dê baixa na tela Fiado.</div>
+                        </div>
+                      </details>
+                    )}
+
                     {/* Sem valor por entrega cadastrado, a conta cai na taxa
                         que o CLIENTE pagou ao marketplace — que no 99Food já
                         vem descontada pelo cupom deles. Precisa estar escrito,
