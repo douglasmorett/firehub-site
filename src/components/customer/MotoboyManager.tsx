@@ -11,6 +11,7 @@ import {
 // Que campos cada tipo de pagamento usa — a MESMA regra do fechamento, para a
 // tela nunca mostrar (nem salvar) um campo que a conta ignora, e vice-versa.
 import { usaDiaria, usaPorEntrega, usaPorKm } from "@/lib/ganho-do-entregador";
+import { avisoDoFiadoAoExcluir } from "@/lib/aviso-do-fiado";
 
 type Motoboy = {
   // password só existe na ida (definir/redefinir). A API não devolve mais o
@@ -189,7 +190,8 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
   };
 
   const remove = async (id: string) => {
-    if (!confirm("Remover motoboy?")) return;
+    // Excluir o motoboy tira ele do fiado: avisa se ainda deve (lib/aviso-do-fiado.ts).
+    if (!confirm("Remover motoboy?" + (await avisoDoFiadoAoExcluir(id)))) return;
     const res = await fetch(`/api/motoboys/${id}`, { method: "DELETE" });
     if (res.ok) setMotoboys(prev => prev.filter(m => m.id !== id));
   };

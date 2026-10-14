@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { hashDeSenha } from "@/lib/motoboy-senha";
+import { renomearNoFiado, tirarDoFiado } from "@/lib/fiado-do-motoboy";
 
 // PUT - atualizar motoboy
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -47,6 +48,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     },
   });
 
+  // O fiado espelha a equipe (lib/fiado-do-motoboy.ts). Pausar não tira do
+  // fiado — só excluir.
+  await renomearNoFiado(existing, motoboy);
+
   return NextResponse.json({ ...motoboy, password: undefined });
 }
 
@@ -67,5 +72,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   if (!existing) return NextResponse.json({ error: "Motoboy não encontrado" }, { status: 404 });
 
   await prisma.motoboy.delete({ where: { id } });
+  // Saiu da equipe, sai do fiado (o histórico fica) — lib/fiado-do-motoboy.ts.
+  await tirarDoFiado(existing);
   return NextResponse.json({ success: true });
 }

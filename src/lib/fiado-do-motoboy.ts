@@ -1,11 +1,15 @@
 /**
- * O FIADO DO MOTOBOY — pedido da Delícia de Casa (14/10/2026).
+ * O FIADO DA EQUIPE — pedido da Delícia de Casa (14/10/2026).
  *
- * A conta funcionário (fiado) mora em StoreEmployee; o motoboy, em Motoboy.
- * Para o motoboy aparecer na escolha do fiado sem ninguém cadastrar de novo,
- * cada motoboy ativo ganha um cadastro "Motoboy" no fiado
- * (`trazerMotoboysParaOFiado`, chamado pela lista do fiado). A ligação entre
- * os dois é pelo nome ou pelo telefone, na mesma loja — sem coluna nova.
+ * A conta funcionário (fiado) mora em StoreEmployee; a equipe, em Motoboy e
+ * Waiter (o grupo "Equipe" do menu). O cadastro da equipe é a fonte: todo
+ * motoboy e garçom ativo aparece no fiado sozinho, e lá NÃO tem Excluir — para
+ * tirar, exclui (ou desativa) em Motoboys/Garçons, que avisa a dívida e tira
+ * do fiado (o histórico fica). "As informações conversam" (Douglas).
+ *
+ * A ligação é pelo nome (sem a palavra "motoboy"/"garçom", que as lojas
+ * costumam pôr no fiado: "Jefinho Motoboy" = motoboy "Jefinho") ou pelo
+ * telefone, na mesma loja — sem coluna nova.
  *
  * O relatório do motoboy (lib/relatorio-do-entregador.ts) mostra o que ele
  * pegou no fiado no período e o saldo em aberto. NÃO desconta do acerto: a
@@ -15,9 +19,16 @@ import { prisma } from "@/lib/prisma";
 
 const centavos = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 const soDigitos = (s: string | null | undefined) => (s || "").replace(/\D/g, "");
-const nomeLimpo = (s: string | null | undefined) => (s || "").trim().toLowerCase().replace(/\s+/g, " ");
+const PALAVRAS_DO_CARGO = new Set(["motoboy", "moto", "entregador", "garcom", "garconete"]);
+const nomeLimpo = (s: string | null | undefined) => {
+  const palavras = (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const semCargo = palavras.filter((p) => !PALAVRAS_DO_CARGO.has(p));
+  return (semCargo.length ? semCargo : palavras).join(" ");
+};
 
 type Pessoa = { franchiseeId: string; name: string | null; phone: string | null };
+export type OrigemNaEquipe = "MOTOBOY" | "GARCOM";
+type Membro = Pessoa & { id: string; origem: OrigemNaEquipe; active: boolean };
 
 /** O cadastro do fiado é desta pessoa? Mesma loja e mesmo nome ou telefone. */
 export function ehAMesmaPessoa(a: Pessoa, b: Pessoa): boolean {
@@ -27,33 +38,126 @@ export function ehAMesmaPessoa(a: Pessoa, b: Pessoa): boolean {
   return fone.length >= 8 && fone === soDigitos(b.phone);
 }
 
+async function membrosDaEquipe(franchiseeIds: string[]): Promise<Membro[]> {
+  const [motoboys, garcons] = await Promise.all([
+    prisma.motoboy.findMany({ where: { franchiseeId: { in: franchiseeIds } }, select: { id: true, franchiseeId: true, name: true, phone: true, active: true } }),
+    prisma.waiter.findMany({ where: { franchiseeId: { in: franchiseeIds } }, select: { id: true, franchiseeId: true, name: true, phone: true, active: true } }),
+  ]);
+  return [
+    ...motoboys.map((m) => ({ ...m, origem: "MOTOBOY" as const })),
+    ...garcons.map((g) => ({ ...g, origem: "GARCOM" as const })),
+  ].filter((m) => m.name?.trim());
+}
+
+// O espelho que entrou no ar em 14/10/2026 casava só pelo nome inteiro e pode
+// ter criado "Jefinho" ao lado do "Jefinho Motoboy" que a loja já tinha.
+// Duplicata VAZIA criada por ele (sem pedido nem baixa) sai da lista.
+const INICIO_DO_ESPELHO = new Date("2026-10-14T03:00:00Z");
+const CARGO_DO_ESPELHO: Record<OrigemNaEquipe, string> = { MOTOBOY: "Motoboy", GARCOM: "Garçom" };
+
 /**
- * Cada motoboy ativo da loja ganha um cadastro "Motoboy" no fiado. Casa
- * também com cadastro desativado, para quem a loja tirou da lista não voltar.
+ * Deixa o fiado igual à equipe: todo membro tem cadastro ativo no fiado
+ * (cria para quem está ativo; reativa e liga quem já tem, mesmo pausado —
+ * pausar não tira do fiado). Quem sai da equipe sai do fiado na hora em que é
+ * EXCLUÍDO (`tirarDoFiado`, nas rotas de Motoboys e Garçons).
+ * Devolve, por id do cadastro do fiado, de que membro da equipe ele é.
  */
-export async function trazerMotoboysParaOFiado(franchiseeIds: string[]) {
+export async function sincronizarEquipeNoFiado(franchiseeIds: string[]): Promise<Map<string, { origem: OrigemNaEquipe; membroId: string }>> {
+  const ligados = new Map<string, { origem: OrigemNaEquipe; membroId: string }>();
   try {
-    const motoboys = await prisma.motoboy.findMany({
-      where: { franchiseeId: { in: franchiseeIds }, active: true },
-      select: { franchiseeId: true, name: true, phone: true },
-    });
-    if (motoboys.length === 0) return;
+    const membros = await membrosDaEquipe(franchiseeIds);
+    if (membros.length === 0) return ligados;
 
-    const jaCadastrados: Pessoa[] = await prisma.storeEmployee.findMany({
+    const cadastros = await prisma.storeEmployee.findMany({
       where: { franchiseeId: { in: franchiseeIds } },
-      select: { franchiseeId: true, name: true, phone: true },
+      select: { id: true, franchiseeId: true, name: true, phone: true, role: true, active: true, createdAt: true, _count: { select: { orders: true, payments: true } } },
+      orderBy: { createdAt: "asc" },
     });
 
+    const ativar: string[] = [];
+    const desativar = new Set<string>();
     const novos: { franchiseeId: string; name: string; role: string; phone: string | null; active: boolean }[] = [];
-    for (const m of motoboys) {
-      const nome = m.name?.trim();
-      if (!nome) continue;
-      if ([...jaCadastrados, ...novos].some((e) => ehAMesmaPessoa(m, e))) continue;
-      novos.push({ franchiseeId: m.franchiseeId, name: nome, role: "Motoboy", phone: m.phone?.trim() || null, active: true });
+
+    for (const m of membros) {
+      const deles = cadastros.filter((c) => !desativar.has(c.id) && ehAMesmaPessoa(m, c));
+      if (deles.length === 0) {
+        // Pausado sem cadastro no fiado (ex-motoboy antigo) não ganha um.
+        if (m.active && !novos.some((n) => ehAMesmaPessoa(m, n))) {
+          novos.push({ franchiseeId: m.franchiseeId, name: m.name!.trim(), role: CARGO_DO_ESPELHO[m.origem], phone: m.phone?.trim() || null, active: true });
+        }
+        continue;
+      }
+      // Mais de um cadastro para a mesma pessoa: o vazio que o espelho criou sai.
+      let ficam = deles;
+      if (deles.length > 1) {
+        const vazioDoEspelho = (c: (typeof deles)[number]) =>
+          c.createdAt >= INICIO_DO_ESPELHO && c.role === CARGO_DO_ESPELHO[m.origem] && c._count.orders === 0 && c._count.payments === 0;
+        const reais = deles.filter((c) => !vazioDoEspelho(c));
+        if (reais.length > 0) {
+          for (const c of deles) if (vazioDoEspelho(c)) desativar.add(c.id);
+          ficam = reais;
+        }
+      }
+      for (const c of ficam) {
+        if (!c.active) ativar.push(c.id);
+        ligados.set(c.id, { origem: m.origem, membroId: m.id });
+      }
     }
+
     if (novos.length > 0) await prisma.storeEmployee.createMany({ data: novos });
+    if (ativar.length > 0) await prisma.storeEmployee.updateMany({ where: { id: { in: ativar } }, data: { active: true } });
+    if (desativar.size > 0) await prisma.storeEmployee.updateMany({ where: { id: { in: [...desativar] } }, data: { active: false } });
+
+    if (novos.length > 0) {
+      const criados = await prisma.storeEmployee.findMany({
+        where: { franchiseeId: { in: franchiseeIds }, active: true, createdAt: { gte: new Date(Date.now() - 60_000) } },
+        select: { id: true, franchiseeId: true, name: true, phone: true },
+      });
+      for (const c of criados) {
+        const m = membros.find((x) => ehAMesmaPessoa(x, c));
+        if (m) ligados.set(c.id, { origem: m.origem, membroId: m.id });
+      }
+    }
   } catch (err) {
-    console.error("[fiado] não trouxe os motoboys para o fiado:", err);
+    console.error("[fiado] não sincronizou a equipe com o fiado:", err);
+  }
+  return ligados;
+}
+
+/**
+ * O membro saiu da equipe (excluído em Motoboys/Garçons): o cadastro dele sai
+ * do fiado. Desativa, não apaga — o histórico do fiado fica.
+ */
+export async function tirarDoFiado(membro: Pessoa) {
+  try {
+    const cadastros = await prisma.storeEmployee.findMany({
+      where: { franchiseeId: membro.franchiseeId, active: true },
+      select: { id: true, franchiseeId: true, name: true, phone: true },
+    });
+    const ids = cadastros.filter((c) => ehAMesmaPessoa(membro, c)).map((c) => c.id);
+    if (ids.length > 0) await prisma.storeEmployee.updateMany({ where: { id: { in: ids } }, data: { active: false } });
+  } catch (err) {
+    console.error("[fiado] não tirou do fiado:", err);
+  }
+}
+
+/**
+ * O nome mudou em Motoboys/Garçons: o cadastro do fiado acompanha, senão a
+ * ligação (que é pelo nome) se perderia e nasceria um cadastro novo.
+ */
+export async function renomearNoFiado(antes: Pessoa, depois: { name: string | null; phone: string | null }) {
+  try {
+    if (!depois.name?.trim() || (nomeLimpo(antes.name) === nomeLimpo(depois.name) && soDigitos(antes.phone) === soDigitos(depois.phone))) return;
+    const cadastros = await prisma.storeEmployee.findMany({
+      where: { franchiseeId: antes.franchiseeId },
+      select: { id: true, franchiseeId: true, name: true, phone: true },
+    });
+    const ids = cadastros.filter((c) => ehAMesmaPessoa(antes, c)).map((c) => c.id);
+    if (ids.length > 0) {
+      await prisma.storeEmployee.updateMany({ where: { id: { in: ids } }, data: { name: depois.name.trim(), phone: depois.phone?.trim() || null } });
+    }
+  } catch (err) {
+    console.error("[fiado] não renomeou no fiado:", err);
   }
 }
 

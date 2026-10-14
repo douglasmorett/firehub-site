@@ -13,6 +13,8 @@ type Employee = {
   cpf: string | null;
   creditLimit: number | null;
   active: boolean;
+  /** Veio de Motoboys/Garçons: só sai do fiado excluindo lá. */
+  equipe?: { origem: "MOTOBOY" | "GARCOM"; membroId: string } | null;
   currentDebt: number;
   totalOrdersAmount: number;
   totalPaymentsAmount: number;
@@ -679,7 +681,9 @@ export default function FuncionariosPage() {
                   value={empForm.name}
                   onChange={(e) => setEmpForm({ ...empForm, name: e.target.value })}
                   placeholder="Ex: João Silva"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", outline: "none" }}
+                  // O nome de quem é da equipe muda em Motoboys/Garçons (o fiado acompanha).
+                  disabled={Boolean(editingEmp?.equipe)}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.88rem", outline: "none", background: editingEmp?.equipe ? "#F8FAFC" : undefined }}
                 />
               </div>
 
@@ -741,7 +745,12 @@ export default function FuncionariosPage() {
                 {savingEmp ? "Salvar..." : "Salvar Funcionário"}
               </button>
             </div>
-            {editingEmp && (
+            {editingEmp?.equipe ? (
+              <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 10, background: "#F8FAFC", border: "1px solid #E2E8F0", color: "#475569", fontSize: "0.78rem", lineHeight: 1.45 }}>
+                Este cadastro vem de <strong>{editingEmp.equipe.origem === "MOTOBOY" ? "Motoboys" : "Garçons"}</strong>. Para tirar do fiado,
+                exclua lá em <a href={editingEmp.equipe.origem === "MOTOBOY" ? "/store/motoboys" : "/store/garcons"} style={{ color: "#C92E09", fontWeight: 700 }}>{editingEmp.equipe.origem === "MOTOBOY" ? "Motoboys" : "Garçons"}</a>.
+              </div>
+            ) : editingEmp && (
               <button
                 onClick={() => handleDeleteEmp(editingEmp)}
                 style={{ width: "100%", marginTop: 10, padding: "9px", borderRadius: 10, border: "1.5px solid #FECACA", background: "#FEF2F2", color: "#B91C1C", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}

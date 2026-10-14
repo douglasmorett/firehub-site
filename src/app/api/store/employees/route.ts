@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { limiteDeDia } from "@/lib/timezone";
-import { trazerMotoboysParaOFiado } from "@/lib/fiado-do-motoboy";
+import { sincronizarEquipeNoFiado } from "@/lib/fiado-do-motoboy";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -45,9 +45,9 @@ export async function GET(req: NextRequest) {
 
   const hasDateFilter = Object.keys(dateFilter).length > 0;
 
-  // Motoboy também compra fiado: cada motoboy ativo aparece na lista
-  // (lib/fiado-do-motoboy.ts).
-  await trazerMotoboysParaOFiado(validFranchiseeIds);
+  // A equipe (motoboys e garçons) aparece no fiado sozinha e só sai quando
+  // sai da equipe (lib/fiado-do-motoboy.ts).
+  const daEquipe = await sincronizarEquipeNoFiado(validFranchiseeIds);
 
   // Busca todos os funcionários ativos da loja/grupo
   const employees = await prisma.storeEmployee.findMany({
@@ -109,6 +109,8 @@ export async function GET(req: NextRequest) {
 
       return {
         ...emp,
+        /** Veio de Motoboys/Garçons: no fiado não tem Excluir. */
+        equipe: daEquipe.get(emp.id) || null,
         currentDebt,
         totalOrdersAmount,
         totalPaymentsAmount,

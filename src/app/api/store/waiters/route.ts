@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { CAMPOS_DO_GARCOM, FORMATO_DO_LOGIN, normalizarLogin } from "@/lib/garcom-auth";
+import { renomearNoFiado, tirarDoFiado } from "@/lib/fiado-do-motoboy";
 
 async function getFranchiseeId() {
   const session = await getServerSession(authOptions);
@@ -158,7 +159,7 @@ export async function PUT(req: Request) {
 
     const atual = await prisma.waiter.findFirst({
       where: { id: data.id, franchiseeId },
-      select: { id: true, login: true, passwordHash: true },
+      select: { id: true, login: true, passwordHash: true, franchiseeId: true, name: true, phone: true },
     });
     if (!atual) return NextResponse.json({ error: "Garçom não encontrado" }, { status: 404 });
 
@@ -183,6 +184,9 @@ export async function PUT(req: Request) {
       },
       select: CAMPOS_DO_GARCOM,
     });
+    // O fiado espelha a equipe (lib/fiado-do-motoboy.ts). Desativar não tira
+    // do fiado — só excluir.
+    await renomearNoFiado(atual, { name: data.name ?? atual.name, phone: data.phone ?? atual.phone });
     return NextResponse.json(waiter);
   } catch (error: any) {
     if (ehLoginDuplicado(error)) {
@@ -202,9 +206,12 @@ export async function DELETE(req: Request) {
     const id = searchParams.get("id");
     if (!id) return NextResponse.json({ error: "ID is required" }, { status: 400 });
 
+    const garcom = await prisma.waiter.findFirst({ where: { id, franchiseeId }, select: { franchiseeId: true, name: true, phone: true } });
     await prisma.waiter.delete({
       where: { id, franchiseeId },
     });
+    // Saiu da equipe, sai do fiado (o histórico fica) — lib/fiado-do-motoboy.ts.
+    if (garcom) await tirarDoFiado(garcom);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     console.error("DELETE Waiter Error:", error);

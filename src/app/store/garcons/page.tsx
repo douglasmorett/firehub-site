@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import RelatorioDeMesas from "./RelatorioDeMesas";
 import { fmtDia, hojeNaLoja } from "@/lib/relatorios/base";
 import { fusoDoNavegador, totaisDoGarcom, type MesaDoGarcom } from "@/lib/relatorios/relatorio-de-mesas";
+import { avisoDoFiadoAoExcluir } from "@/lib/aviso-do-fiado";
 
 interface Waiter {
   id: string;
@@ -257,7 +258,8 @@ export default function GarconsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja remover este garçom?")) return;
+    // Excluir o garçom tira ele do fiado: avisa se ainda deve (lib/aviso-do-fiado.ts).
+    if (!confirm("Tem certeza que deseja remover este garçom?" + (await avisoDoFiadoAoExcluir(id)))) return;
     const res = await fetch(`/api/store/waiters?id=${id}`, { method: "DELETE" });
     if (res.ok) fetchWaiters();
   };

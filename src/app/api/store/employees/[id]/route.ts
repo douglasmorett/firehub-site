@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { sincronizarEquipeNoFiado } from "@/lib/fiado-do-motoboy";
 
 export async function PATCH(
   req: NextRequest,
@@ -90,6 +91,12 @@ export async function DELETE(
   if (_usuario.role !== "ADMIN" && _funcionario.franchiseeId !== _lojaDaSessao) {
     console.warn(`[employees] 🚫 ${_usuario.id} tentou acessar funcionário de outra loja (${_funcionario.franchiseeId}).`);
     return NextResponse.json({ error: "Este cadastro não é desta loja" }, { status: 403 });
+  }
+
+  // Quem é da equipe (Motoboys/Garçons) só sai do fiado excluindo lá.
+  const daEquipe = await sincronizarEquipeNoFiado([_funcionario.franchiseeId]);
+  if (daEquipe.has(id)) {
+    return NextResponse.json({ error: "Este cadastro vem da equipe. Para tirar do fiado, exclua em Motoboys ou Garçons." }, { status: 400 });
   }
 
   // Desativa o funcionário (soft delete para preservar histórico financeiro)
