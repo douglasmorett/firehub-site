@@ -20,8 +20,11 @@
  * Ao fechar a que abriu sozinha, uma seta aponta o botão "Tutorial" da barra
  * do topo e o destaca: a pessoa sai sabendo onde a ajuda fica.
  *
- * Não abre sozinha no Totem (quem está na frente é o cliente da loja) nem na
- * tela cheia da cozinha (tablet de parede, ninguém ali está aprendendo o painel).
+ * Não abre sozinha no Totem (quem está na frente é o cliente da loja) nem em
+ * nenhuma tela do KDS (TV ou tablet de parede, ninguém ali está aprendendo o
+ * painel). Era só a tela cheia; na TV de 24" do KDS a central geral abria na
+ * escolha das telas e atrapalhava (Douglas, 14/10/2026). Se ela abriu no
+ * Início e a pessoa segue para o KDS, ela fecha sozinha.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -35,7 +38,8 @@ import {
   arquivosDoTutorial, CHAVE_CENTRAL_NAO_MOSTRAR, duracaoEmMinutos, MARCA_CENTRAL_FECHADA, relogio, todosOsTutoriais,
 } from "@/lib/tutoriais";
 
-const SEM_ABRIR_SOZINHA = ["/store/totem", "/store/kds/tela"];
+const SEM_ABRIR_SOZINHA = ["/store/totem", "/store/kds"];
+const semAbrirSozinha = (rota: string | null) => SEM_ABRIR_SOZINHA.some((r) => (rota || "").startsWith(r));
 
 const ESTILO_CENTRAL = `
 .fh-central-janela{width:min(1180px,100%)}
@@ -164,7 +168,7 @@ export default function CentralDeTutoriais({
   // Abre sozinha uma vez, quando o painel monta depois do login.
   useEffect(() => {
     if (!abrirSozinha || !lista.length || !usuarioId) return;
-    if (SEM_ABRIR_SOZINHA.some((r) => (pathname || "").startsWith(r))) return;
+    if (semAbrirSozinha(pathname)) return;
     let calada = false;
     try {
       calada = localStorage.getItem(CHAVE_CENTRAL_NAO_MOSTRAR + usuarioId) === "1";
@@ -190,6 +194,13 @@ export default function CentralDeTutoriais({
     setAberto(false);
     if (abriuSozinha.current) requestAnimationFrame(() => setSeta(medirSeta()));
   }, [usuarioId]);
+
+  // Abriu sozinha no Início e a pessoa foi para o KDS (montando a TV da cozinha): fecha, sem a seta.
+  useEffect(() => {
+    if (!aberto || !abriuSozinha.current || !semAbrirSozinha(pathname)) return;
+    abriuSozinha.current = false;
+    fechar(false);
+  }, [aberto, pathname, fechar]);
 
   useEffect(() => {
     if (!aberto) return;
