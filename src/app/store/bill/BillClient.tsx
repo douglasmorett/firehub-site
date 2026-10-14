@@ -1,7 +1,9 @@
 "use client";
 
 /**
- * Meu Assessor — a tela do dono.
+ * Bill, seu assessor — a tela do dono. Não se chama "Bill": essa marca
+ * é da Tittanium (Felipe Titto) no INPI, processos 939197650 (classe 9) e
+ * 939133610 (classe 42). "Bill" é o mesmo assistente do FireCheck.
  *
  * Desligado: a oferta (o que faz, exemplos, R$ 29,90/mês, 7 dias grátis).
  * Ligado: de quais números falar, a conversa de teste (texto, áudio gravado
@@ -10,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Mic, Square, Camera, Send, Package, Wallet, Receipt, Undo2, CheckCircle2, MessageCircle, Loader2 } from "lucide-react";
+import { Mic, Square, Camera, Send, Package, Wallet, Receipt, Undo2, CheckCircle2, MessageCircle, Loader2, PauseCircle, Store } from "lucide-react";
 
 type Estado = { ativo: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean };
 type Registro = { id: string; tipo: string; resumo: string; canal: string; desfeitoEm: string | null; criadoEm: string };
@@ -33,6 +35,9 @@ const ROTULO: Record<string, { texto: string; cor: string }> = {
   DESPESA: { texto: "Despesa", cor: "#DC2626" },
   CONTA: { texto: "Conta a pagar", cor: "#7C3AED" },
   CONTA_PAGA: { texto: "Conta paga", cor: VERDE },
+  PAUSADO: { texto: "Pausado", cor: "#B45309" },
+  REATIVADO: { texto: "Reativado", cor: "#0891B2" },
+  SITE: { texto: "Site", cor: "#475569" },
 };
 
 function paraBase64(blob: Blob): Promise<string> {
@@ -66,7 +71,7 @@ async function fotoReduzida(arquivo: File): Promise<{ base64: string; mimeType: 
   }
 }
 
-export default function MeuAssessorClient() {
+export default function BillClient() {
   const [dados, setDados] = useState<Dados | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
@@ -98,8 +103,8 @@ export default function MeuAssessorClient() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Erro");
       setAviso(ligar
-        ? { tipo: "ok", titulo: "Meu Assessor ligado!", detalhe: "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica." }
-        : { tipo: "ok", titulo: "Meu Assessor desligado.", detalhe: "Nada mais é cobrado a partir de hoje." });
+        ? { tipo: "ok", titulo: "Bill ligado!", detalhe: "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica." }
+        : { tipo: "ok", titulo: "Bill desligado.", detalhe: "Nada mais é cobrado a partir de hoje." });
       await carregar();
     } catch (e: any) {
       setAviso({ tipo: "erro", titulo: "Não deu certo", detalhe: e.message });
@@ -128,7 +133,7 @@ export default function MeuAssessorClient() {
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: 0 }}>Meu Assessor</h1>
+        <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: 0 }}>Bill, seu assessor</h1>
         {estado.ativo && (
           <span style={{ fontSize: 12, fontWeight: 800, color: VERDE, background: "#ECFDF5", padding: "4px 10px", borderRadius: 999 }}>
             {estado.emTeste ? `TESTE GRÁTIS até ${new Date(estado.testeAte!).toLocaleDateString("pt-BR")}` : "LIGADO"}
@@ -136,7 +141,7 @@ export default function MeuAssessorClient() {
         )}
       </div>
       <p style={{ color: "#475569", margin: "0 0 20px", fontSize: 15 }}>
-        Seu estoque e seu financeiro pelo WhatsApp. Mande um áudio, um texto ou a foto da nota — eu lanço no sistema na hora.
+        Eu sou o Bill: cuido do seu estoque, do seu financeiro e do seu cardápio pelo WhatsApp. Mande um áudio, um texto ou a foto da nota — eu lanço no sistema na hora.
       </p>
 
       {!estado.ativo ? <Oferta dados={dados} salvando={salvando} onLigar={() => ligar(true)} /> : (
@@ -165,10 +170,12 @@ export default function MeuAssessorClient() {
 function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean; onLigar: () => void }) {
   const exemplos = [
     { icone: Mic, titulo: "Manda um áudio", fala: "“Comprei 10 Coca lata no Atacadão, paguei 45 no Pix.”", resultado: "📦 +10 Coca-Cola Lata no estoque\n💰 R$ 45,00 no financeiro" },
+    { icone: PauseCircle, titulo: "Controla o cardápio", fala: "“Acabou a esfirra de frango, pausa. E me diz o que está pausado.”", resultado: "⏸️ Pausada no site, robô, balcão, totem e combos\n📋 Lista dos itens pausados" },
     { icone: Camera, titulo: "Tira foto da nota", fala: "Foto da nota do fornecedor", resultado: "📦 Todos os itens no estoque, com custo\n💰 Conta paga ou a prazo" },
     { icone: Wallet, titulo: "Fala do gasto", fala: "“Paguei o gás, 130 reais.”", resultado: "💰 Despesa Gás R$ 130,00 no DRE" },
     { icone: Receipt, titulo: "Boleto e conta", fala: "“Paguei o boleto da Enel.”", resultado: "✅ Conta marcada como paga" },
     { icone: Package, titulo: "Perda e consumo", fala: "“Joguei fora 2 kg de queijo, estragou.”", resultado: "📦 Saída de 2 kg (perda) com o valor perdido" },
+    { icone: Store, titulo: "Abre e fecha a loja", fala: "“Tô sem motoboy, fecha o site.”", resultado: "🏪 Site e robô param de aceitar pedido" },
     { icone: MessageCircle, titulo: "Pergunta o que quiser", fala: "“Quanto tem de Coca? Quanto vendi hoje?”", resultado: "Resposta com o número do sistema" },
   ];
   return (
@@ -176,7 +183,7 @@ function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean;
       <div style={{ background: "linear-gradient(135deg,#064E3B,#065F46)", color: "white", borderRadius: 16, padding: "24px 22px", marginBottom: 20 }}>
         <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 6 }}>Você cuida da loja. Eu cuido da papelada.</div>
         <div style={{ fontSize: 14, opacity: 0.9, maxWidth: 620 }}>
-          Chegou mercadoria? Pagou uma conta? Fala com o WhatsApp da sua loja, do seu número, como falaria com um gerente. A quantidade vai para o estoque e o valor vai para o financeiro — numa mensagem só.
+          Chegou mercadoria? Pagou uma conta? Acabou um sabor? Fala com o WhatsApp da sua loja, do seu número, como falaria com um gerente. A quantidade vai para o estoque, o valor vai para o financeiro e o que acabou sai do cardápio — numa mensagem só.
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" }}>
           <button onClick={onLigar} disabled={salvando} style={{ background: "#FACC15", color: "#0F172A", border: 0, borderRadius: 10, padding: "12px 20px", fontWeight: 900, fontSize: 15, cursor: "pointer" }}>
@@ -201,7 +208,7 @@ function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean;
       </div>
       {dados.numerosDoDono.length === 0 && (
         <p style={{ marginTop: 16, fontSize: 13, color: "#B45309" }}>
-          ⚠️ Cadastre o seu WhatsApp em <b>Minha Loja</b> (WhatsApp do proprietário): é por ele que o assessor sabe que é você.
+          ⚠️ Cadastre o seu WhatsApp em <b>Minha Loja</b> (WhatsApp do proprietário): é por ele que o Bill sabe que é você.
         </p>
       )}
     </div>
@@ -229,7 +236,7 @@ function ComoUsar({ dados }: { dados: Dados }) {
 
 function Conversa({ onGravou }: { onGravou: () => void }) {
   const [falas, setFalas] = useState<Fala[]>([
-    { de: "assessor", texto: "Oi, chefe! Me fala o que chegou, o que pagou ou o que quer saber. Pode mandar áudio ou foto da nota." },
+    { de: "assessor", texto: "Oi, chefe! Aqui é o Bill. Me fala o que chegou, o que pagou, o que acabou ou o que quer saber. Pode mandar áudio ou foto da nota." },
   ]);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
@@ -306,7 +313,7 @@ function Conversa({ onGravou }: { onGravou: () => void }) {
   return (
     <div style={{ border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 22, background: "#EFEAE2" }}>
       <div style={{ background: "#075E54", color: "white", padding: "10px 14px", fontWeight: 800, fontSize: 14 }}>
-        Converse aqui (o mesmo assessor do WhatsApp — lança de verdade)
+        Converse com o Bill aqui (o mesmo do WhatsApp — lança de verdade)
       </div>
       <div style={{ height: 380, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
         {falas.map((f, i) => (
@@ -355,7 +362,7 @@ function Conversa({ onGravou }: { onGravou: () => void }) {
 function Historico({ registros }: { registros: Registro[] }) {
   return (
     <div>
-      <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: 8, fontSize: 16 }}>O que o assessor lançou</div>
+      <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: 8, fontSize: 16 }}>O que o Bill lançou</div>
       {registros.length === 0 ? (
         <div style={{ color: "#64748B", fontSize: 14, padding: 14, border: "1px dashed #CBD5E1", borderRadius: 12 }}>
           Nada ainda. Os lançamentos aparecem aqui e também em Estoque e Financeiro, como se você tivesse digitado.

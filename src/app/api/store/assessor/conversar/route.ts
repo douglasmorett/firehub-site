@@ -23,9 +23,9 @@ function midia(m: any, tipo: "audio" | "image") {
  */
 export async function POST(req: Request) {
   const s = await lojaDoAssessorDaSessao();
-  if (!s) return NextResponse.json({ error: "Só o dono da loja usa o Meu Assessor." }, { status: 403 });
+  if (!s) return NextResponse.json({ error: "Só o dono da loja usa o Bill." }, { status: 403 });
   if (!(await assessorEstaLigado(s.franchiseeId))) {
-    return NextResponse.json({ error: "Ligue o Meu Assessor para conversar com ele.", desligado: true }, { status: 402 });
+    return NextResponse.json({ error: "Ligue o Bill para conversar com ele.", desligado: true }, { status: 402 });
   }
   let corpo: any = {};
   try { corpo = await req.json(); } catch {}

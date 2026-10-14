@@ -1709,7 +1709,7 @@ model DespesaLancada {
   @@index([franchiseeId, dia])
 }
 
-/// MEU ASSESSOR — o dono lança estoque e financeiro pelo WhatsApp da loja
+/// BILL, SEU ASSESSOR — o dono lança estoque e financeiro pelo WhatsApp da loja
 /// (áudio, texto ou foto). Serviço pago à parte: R$ 29,90/mês no boleto da
 /// mensalidade (src/lib/assessor/assinatura.ts). Uma linha por loja.
 /// AS TABELAS SÃO CRIADAS NO BOOT por src/lib/assessor/estrutura-no-banco.ts,

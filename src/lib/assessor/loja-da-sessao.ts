@@ -1,5 +1,5 @@
 /**
- * A loja de quem está no painel, para as rotas do Meu Assessor.
+ * A loja de quem está no painel, para as rotas do Bill.
  *
  * Ligar o serviço cobra no boleto e lançar mexe no financeiro: só o titular
  * (ou o ADMIN na loja que ele abriu) — funcionário não liga nem conversa.

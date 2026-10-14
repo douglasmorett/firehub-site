@@ -1,5 +1,5 @@
 /**
- * A ASSINATURA DO MEU ASSESSOR — R$ 29,90 por mês, no boleto da mensalidade.
+ * A ASSINATURA DO BILL, SEU ASSESSOR — R$ 29,90 por mês, no boleto da mensalidade.
  *
  * Douglas, 14/10/2026: "esse modo aí do meu assessor pode ser cobrado. A gente
  * já entrega muita funcionalidade sem cobrar". Cobrar no Asaas pelo boleto que
@@ -91,7 +91,7 @@ export async function assessorEstaLigado(franchiseeId: string): Promise<boolean>
 
 /** Liga (abre um trecho) ou desliga (fecha o trecho aberto). */
 export async function ligarOuDesligarAssessor(franchiseeId: string, ligar: boolean, agora: Date = new Date()): Promise<EstadoDoAssessor> {
-  if (!(await garantirEstruturaDoAssessor())) throw new Error("O Meu Assessor ainda não está disponível. Tente de novo em alguns minutos.");
+  if (!(await garantirEstruturaDoAssessor())) throw new Error("O Bill ainda não está disponível. Tente de novo em alguns minutos.");
   const atual = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId } });
   const periodos = lerPeriodos(atual?.periodos);
   const iso = agora.toISOString();

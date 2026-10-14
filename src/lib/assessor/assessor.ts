@@ -1,5 +1,5 @@
 /**
- * MEU ASSESSOR — o dono fala com o WhatsApp da própria loja (áudio, texto ou
+ * BILL, SEU ASSESSOR — o dono fala com o WhatsApp da própria loja (áudio, texto ou
  * foto) e o sistema GRAVA: "comprei 10 Coca lata, paguei 45" vira entrada no
  * estoque e saída no financeiro numa mensagem só.
  *
@@ -57,7 +57,7 @@ function apiKey() {
 async function montarSistema(ctx: ContextoDoAssessor): Promise<string> {
   const loja = await prisma.user.findUnique({
     where: { id: ctx.franchiseeId },
-    select: { name: true, storeName: true, deliveryZones: true, cashOpen: true, storeTimezone: true } as any,
+    select: { name: true, storeName: true, deliveryZones: true, cashOpen: true, storeTimezone: true, storeOpen: true } as any,
   }) as any;
   const tz = ctx.timezone || loja?.storeTimezone || "America/Sao_Paulo";
   const hoje = hojeNaLoja(tz);
@@ -82,9 +82,10 @@ async function montarSistema(ctx: ContextoDoAssessor): Promise<string> {
     ? insumos.map((i) => `${i.id} | ${i.name} | ${i.unit} | tem ${Number(i.quantity.toFixed(3))}`).join("\n")
     : "(nenhum item cadastrado ainda — todo item comprado será criado)";
 
-  return `Você é o MEU ASSESSOR do FireHub: o assistente do DONO da loja "${loja?.storeName || loja?.name || "loja"}" pelo WhatsApp. Ele está ocupado, manda áudio, texto curto ou foto. Seu trabalho é LANÇAR no sistema o que ele disser (estoque e financeiro) e responder o que ele perguntar.
+  return `Você é o BILL, o assessor do FireHub: o assistente do DONO da loja "${loja?.storeName || loja?.name || "loja"}" pelo WhatsApp. Ele está ocupado, manda áudio, texto curto ou foto. Seu trabalho é LANÇAR no sistema o que ele disser (estoque e financeiro), CONTROLAR a loja (pausar/reativar itens do cardápio, abrir/fechar o site) e responder o que ele perguntar.
 
 HOJE: ${diaDaSemana}, ${hoje.split("-").reverse().join("/")} (dia de operação da loja; vira às 5h).
+SITE DA LOJA AGORA: ${loja?.storeOpen ? "ABERTO (recebendo pedidos)" : "FECHADO"}.
 
 COMO TRABALHAR:
 1. Informação completa → CHAME A FERRAMENTA na hora, sem pedir confirmação. Ele confirma lendo a sua resposta e, se errou, manda "desfaz".
@@ -103,7 +104,11 @@ COMO TRABALHAR:
 6. ÁUDIO: entenda o áudio direto. Comece a resposta final com [[OUVI: o que ele disse, em uma linha]].
 7. Perguntas sobre vendas, caixa, pedidos atrasados, contas e estoque baixo: responda com os DADOS AO VIVO abaixo, copiando os números exatos. Quantidade de um item: consultar_estoque. Nunca invente número.
 8. NUNCA diga "lancei", "registrei", "anotei" ou "dei entrada" sem a ferramenta ter respondido ok:true. Se a ferramenta deu erro, explique o erro em uma frase.
-9. Você só lança estoque e financeiro. Mudar cardápio, preço, pedido ou o jeito do robô atender: diga que por aqui ainda não dá e indique o painel.
+9. CARDÁPIO: "acabou X", "pausa X", "tira X" = buscar_no_cardapio e depois pausar_ou_reativar_itens (ativo=false). "Voltou X", "abre X", "reativa X" = ativo=true. "O que está pausado?" = listar_itens_pausados.
+   - Pause o item que ele nomeou. Se a busca trouxer sabores DIFERENTES parecidos (ex.: "Esfirra de Frango" e "Esfirra de Frango c/ Catupiry"), pause o que bate com o que ele disse e pergunte dos outros numa frase. "Tudo de frango" = pause todos os que têm frango.
+   - Na resposta, diga os itens exatos e lembre que o iFood se pausa pelo app do iFood.
+10. "Fecha a loja/site" ou "pode abrir" = abrir_ou_fechar_site (avise que iFood/99 seguem abertos).
+11. Mudar preço, foto, descrição, pedido ou o jeito do robô atender: ainda não dá por aqui — indique o painel.
 
 RESPOSTA (WhatsApp): curta, direta, sem enrolação. Depois de lançar, diga O QUE foi para ONDE, assim:
 "✅ *Lançado*
@@ -122,16 +127,24 @@ ${resumo}`;
 
 /** A IA disse que gravou sem ter gravado? */
 // Primeira pessoa e o ✅: "não há nada registrado hoje" é resposta honesta.
-const DIZ_QUE_GRAVOU = /\b(lancei|registrei|anotei|gravei|dei entrada|dei baixa|marquei como pag[oa]|desfiz)\b|✅/i;
+const DIZ_QUE_GRAVOU = /\b(lancei|registrei|anotei|gravei|dei entrada|dei baixa|marquei como pag[oa]|desfiz|pausei|reativei|fechei|reabri)\b|✅/i;
+/**
+ * Cara de ação feita ("foram fechados", "⏸️ Pausado"). Só vale quando NENHUMA
+ * ferramenta rodou: aí o modelo ganha outra chance. Não apaga resposta — a
+ * lista de pausados usa ⏸ com toda a razão.
+ */
+const AFIRMA_ACAO = /\b(lançad|registrad|pausad|reativad|fechad|reabert|desfeit|cancelad|atualizad|alterad)[oa]s?\b|⏸|▶️|🔒|🔓|↩️/i;
 
 function respostaDeReserva(acoes: AcaoDoAssessor[]): string {
   const feitas = acoes.filter((a) => FERRAMENTAS_QUE_GRAVAM.has(a.nome) && (a.resultado as any)?.ok);
-  if (!feitas.length) return "Não consegui entender. Pode mandar de novo? Ex.: *comprei 10 Coca lata, paguei 45*.";
+  if (!feitas.length) return "Não consegui fazer isso agora — nada foi alterado no sistema. Pode mandar de novo? Ex.: *comprei 10 Coca lata, paguei 45*.";
   const linhas = feitas.map((a) => {
     const r = a.resultado as any;
     if (a.nome === "registrar_compra") return `📦 ${(r.estoque || []).join("; ")}\n💰 ${r.financeiro}`;
     if (a.nome === "registrar_saida") return `📦 ${r.item}: saiu ${r.saiu} (agora ${r.agora})`;
     if (a.nome === "desfazer_ultimo_registro") return `↩️ Desfeito: ${r.desfeito}`;
+    if (a.nome === "pausar_ou_reativar_itens") return r.pausados ? `⏸️ Pausado: ${r.pausados.join(", ")}` : `▶️ Reativado: ${(r.reativados || []).join(", ")}`;
+    if (a.nome === "abrir_ou_fechar_site") return `🏪 Site ${String(r.site || "").toLowerCase()}`;
     return `💰 ${r.lancado}`;
   });
   return `✅ *Lançado*\n${linhas.join("\n")}\nErrou? Manda *desfaz*.`;
@@ -165,41 +178,56 @@ export async function conversarComOAssessor(
   let modeloUsado = MODELOS_DO_ASSESSOR[0];
   const uso = { entrada: 0, saida: 0, pensamento: 0, cache: 0 };
 
+  /** Uma rodada: o modelo chama ferramentas até escrever a resposta. */
+  async function rodar(modelo: string): Promise<string> {
+    for (let volta = 0; volta < 6; volta++) {
+      const r = await ai.models.generateContent({
+        model: modelo,
+        contents: conversa,
+        config: {
+          systemInstruction: sistema,
+          temperature: 0.2,
+          tools: [{ functionDeclarations: DECLARACOES_DO_ASSESSOR as any }],
+          ...(modelo.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}),
+        },
+      });
+      const u = r.usageMetadata;
+      uso.entrada += u?.promptTokenCount || 0;
+      uso.saida += u?.candidatesTokenCount || 0;
+      uso.pensamento += u?.thoughtsTokenCount || 0;
+      uso.cache += u?.cachedContentTokenCount || 0;
+
+      const chamadas = r.functionCalls || [];
+      if (chamadas.length === 0) return r.text || "";
+      const doModelo = r.candidates?.[0]?.content;
+      if (doModelo) conversa.push(doModelo);
+      const respostas: Part[] = [];
+      for (const chamada of chamadas) {
+        const resultado = await executarFerramentaDoAssessor(chamada.name || "", chamada.args || {}, ctx);
+        acoes.push({ nome: chamada.name || "", resultado });
+        respostas.push({ functionResponse: { id: chamada.id, name: chamada.name, response: resultado } });
+      }
+      conversa.push({ role: "user", parts: respostas });
+    }
+    return "";
+  }
+
   for (const modelo of MODELOS_DO_ASSESSOR) {
     modeloUsado = modelo;
     try {
-      resposta = "";
-      for (let volta = 0; volta < 6; volta++) {
-        const r = await ai.models.generateContent({
-          model: modelo,
-          contents: conversa,
-          config: {
-            systemInstruction: sistema,
-            temperature: 0.2,
-            tools: [{ functionDeclarations: DECLARACOES_DO_ASSESSOR as any }],
-            ...(modelo.startsWith("gemini-3") ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}),
-          },
+      resposta = await rodar(modelo);
+      // ── AFIRMOU SEM FAZER ─────────────────────────────────────────────────
+      // Teste de 14/10/2026: "tô sem motoboy, fecha a loja" → "🔒 Loja/Site
+      // fechado!" sem chamar ferramenta nenhuma; o site continuou aberto. Sem
+      // nenhuma ferramenta na rodada e com cara de ação feita, o modelo ouve
+      // que nada mudou e tem mais uma chance de fazer de verdade.
+      if (acoes.length === 0 && (AFIRMA_ACAO.test(resposta) || DIZ_QUE_GRAVOU.test(resposta))) {
+        conversa.push({ role: "model", parts: [{ text: resposta }] });
+        conversa.push({
+          role: "user",
+          parts: [{ text: "[SISTEMA] Você respondeu como se tivesse feito uma ação, mas NENHUMA ferramenta foi chamada: nada mudou no sistema. Se o dono pediu uma ação, chame a ferramenta agora. Se não pediu, responda de novo sem afirmar que fez." }],
         });
-        const u = r.usageMetadata;
-        uso.entrada += u?.promptTokenCount || 0;
-        uso.saida += u?.candidatesTokenCount || 0;
-        uso.pensamento += u?.thoughtsTokenCount || 0;
-        uso.cache += u?.cachedContentTokenCount || 0;
-
-        const chamadas = r.functionCalls || [];
-        if (chamadas.length === 0) {
-          resposta = r.text || "";
-          break;
-        }
-        const doModelo = r.candidates?.[0]?.content;
-        if (doModelo) conversa.push(doModelo);
-        const respostas: Part[] = [];
-        for (const chamada of chamadas) {
-          const resultado = await executarFerramentaDoAssessor(chamada.name || "", chamada.args || {}, ctx);
-          acoes.push({ nome: chamada.name || "", resultado });
-          respostas.push({ functionResponse: { id: chamada.id, name: chamada.name, response: resultado } });
-        }
-        conversa.push({ role: "user", parts: respostas });
+        resposta = await rodar(modelo);
       }
       break;
     } catch (err: any) {
@@ -210,7 +238,7 @@ export async function conversarComOAssessor(
   }
 
   if (uso.entrada + uso.saida > 0) {
-    trackGeminiUsage(ctx.franchiseeId, modeloUsado, uso.entrada, uso.saida, { origem: "meu_assessor", canal: ctx.canal }, { thoughtsTokens: uso.pensamento, cachedTokens: uso.cache });
+    trackGeminiUsage(ctx.franchiseeId, modeloUsado, uso.entrada, uso.saida, { origem: "assessor_bill", canal: ctx.canal }, { thoughtsTokens: uso.pensamento, cachedTokens: uso.cache });
   }
 
   let ouvi: string | null = null;
@@ -226,10 +254,13 @@ export async function conversarComOAssessor(
   }
   resposta = resposta.replace(/\*\*(.+?)\*\*/g, "*$1*").trim();
 
+  // O histórico leva o que a ferramenta fez de verdade. Só com o texto ("⏸️
+  // Pausado!"), o modelo aprendia que bastava escrever — e parava de chamar.
+  const feitas = acoes.map((a) => `${a.nome}:${(a.resultado as any)?.ok ? "ok" : "erro"}`).join(", ");
   guardar(chave, [
     ...anteriores,
     { papel: "user", texto: ouvi ? `(áudio) ${ouvi}` : texto || (entrada.imagem ? "(foto)" : "(áudio)"), em: Date.now() },
-    { papel: "model", texto: resposta, em: Date.now() },
+    { papel: "model", texto: `[ferramentas desta resposta: ${feitas || "nenhuma — nada foi alterado"}]\n${resposta}`, em: Date.now() },
   ]);
 
   return { resposta, ouvi, acoes, gravou };

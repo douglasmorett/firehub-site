@@ -1,5 +1,5 @@
 /**
- * O QUE O MEU ASSESSOR SABE FAZER — cada ferramenta grava pelo MESMO caminho
+ * O QUE O BILL, SEU ASSESSOR SABE FAZER — cada ferramenta grava pelo MESMO caminho
  * da tela do painel, nunca por um atalho próprio:
  *
  *   registrar_compra        → lib/cmv/lancar-compra.ts (estoque com custo +
@@ -25,6 +25,7 @@ import { converter, normalizarUnidade } from "@/lib/unidades";
 import { lerNumeroBr } from "@/lib/cmv/numero";
 import { hojeNaLoja } from "@/lib/relatorios/base";
 import { garantirEstruturaDeDespesas } from "@/lib/garantir-colunas";
+import { buscarNoCardapio, pausarOuReativar, listarPausados, abrirOuFecharSite, desfazerNoCardapio } from "./cardapio";
 
 export type ContextoDoAssessor = {
   franchiseeId: string;
@@ -171,6 +172,33 @@ export const DECLARACOES_DO_ASSESSOR = [
     },
   },
   {
+    name: "buscar_no_cardapio",
+    description: "Acha itens do cardápio da loja pelo nome (com id e se está à venda ou pausado). Use antes de pausar/reativar.",
+    parameters: { type: Type.OBJECT, properties: { busca: { type: Type.STRING, description: "palavras do nome: 'esfirra frango', 'coca 2l'" } }, required: ["busca"] },
+  },
+  {
+    name: "pausar_ou_reativar_itens",
+    description: "Pausa (acabou, tira do cardápio) ou reativa (voltou, abre de novo) itens do cardápio — some/volta no site, robô, balcão, totem e dentro dos combos.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        produtoIds: { type: Type.ARRAY, items: { type: Type.STRING }, description: "ids vindos de buscar_no_cardapio" },
+        ativo: { type: Type.BOOLEAN, description: "false = pausar; true = reativar" },
+      },
+      required: ["produtoIds", "ativo"],
+    },
+  },
+  {
+    name: "listar_itens_pausados",
+    description: "Lista o que está pausado no cardápio, por categoria.",
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: "abrir_ou_fechar_site",
+    description: "Abre ou fecha o site/robô da loja para pedidos ('fecha a loja', 'tô sem motoboy, fecha', 'pode abrir').",
+    parameters: { type: Type.OBJECT, properties: { aberto: { type: Type.BOOLEAN } }, required: ["aberto"] },
+  },
+  {
     name: "desfazer_ultimo_registro",
     description: "Desfaz o último lançamento feito pelo assessor ('desfaz', 'errei', 'cancela isso').",
     parameters: { type: Type.OBJECT, properties: {} },
@@ -180,6 +208,7 @@ export const DECLARACOES_DO_ASSESSOR = [
 /** Ferramentas que gravam: a resposta da IA sem nenhuma delas não pode dizer "lancei". */
 export const FERRAMENTAS_QUE_GRAVAM = new Set([
   "registrar_compra", "registrar_saida", "registrar_despesa", "registrar_conta_a_pagar", "marcar_conta_paga", "desfazer_ultimo_registro",
+  "pausar_ou_reativar_itens", "abrir_ou_fechar_site",
 ]);
 
 // ── Execução ──────────────────────────────────────────────────────────────
@@ -195,6 +224,10 @@ export async function executarFerramentaDoAssessor(nome: string, args: any, ctx:
       case "marcar_conta_paga": return await marcarContaPaga(args, ctx);
       case "consultar_estoque": return await consultarEstoque(args, ctx);
       case "desfazer_ultimo_registro": return await desfazerUltimo(ctx);
+      case "buscar_no_cardapio": return await buscarNoCardapio(args, ctx);
+      case "pausar_ou_reativar_itens": return await pausarOuReativar(args, ctx);
+      case "listar_itens_pausados": return await listarPausados(args, ctx);
+      case "abrir_ou_fechar_site": return await abrirOuFecharSite(args, ctx);
       default: return { ok: false, erro: `Ferramenta desconhecida: ${nome}` };
     }
   } catch (err: any) {
@@ -323,7 +356,7 @@ async function registrarSaida(args: any, ctx: ContextoDoAssessor) {
   const motivo = String(args?.motivo || "OUTRO");
   const type = motivo === "PERDA" ? "WASTE" : "OUTPUT";
   const rotulo = motivo === "PERDA" ? "Perda" : motivo === "USO" ? "Consumo interno" : "Saída";
-  const notes = `${rotulo} pelo ${ctx.canal === "PAINEL" ? "painel" : "WhatsApp"} (Meu Assessor)${args?.observacao ? ` — ${String(args.observacao).slice(0, 150)}` : ""}`;
+  const notes = `${rotulo} pelo ${ctx.canal === "PAINEL" ? "painel" : "WhatsApp"} (Bill)${args?.observacao ? ` — ${String(args.observacao).slice(0, 150)}` : ""}`;
 
   const { mov, item } = await prisma.$transaction(async (tx) => {
     const mov = await tx.stockTransaction.create({
@@ -348,7 +381,7 @@ async function registrarDespesa(args: any, ctx: ContextoDoAssessor) {
   // "Gás (Gás)" não diz nada: descrição igual à categoria fica vazia.
   const descricao = bruta && bruta.toLowerCase() !== categoria.toLowerCase() ? bruta : null;
   const d = await prisma.despesaLancada.create({
-    data: { franchiseeId: ctx.franchiseeId, dia, categoria, descricao, valor: r2(valor), criadoPor: `Meu Assessor (${ctx.canal === "PAINEL" ? "painel" : "WhatsApp"})` },
+    data: { franchiseeId: ctx.franchiseeId, dia, categoria, descricao, valor: r2(valor), criadoPor: `Bill (${ctx.canal === "PAINEL" ? "painel" : "WhatsApp"})` },
   });
   const resumo = `Despesa ${categoria}${descricao ? ` (${descricao})` : ""}: ${reais(r2(valor))}`;
   await registrar(ctx, "DESPESA", resumo, { despesaId: d.id });
@@ -452,10 +485,12 @@ async function desfazerUltimo(ctx: ContextoDoAssessor) {
     // e o histórico continua mostrando o que aconteceu.
     await prisma.$transaction(async (tx) => {
       await tx.stockTransaction.create({
-        data: { stockItemId: refs.stockItemId, franchiseeId: ctx.franchiseeId, userId: ctx.usuarioId, quantity: refs.quantidade, type: refs.type, notes: "Saída desfeita (Meu Assessor)" },
+        data: { stockItemId: refs.stockItemId, franchiseeId: ctx.franchiseeId, userId: ctx.usuarioId, quantity: refs.quantidade, type: refs.type, notes: "Saída desfeita (Bill)" },
       });
       await tx.stockItem.updateMany({ where: { id: refs.stockItemId, franchiseeId: ctx.franchiseeId }, data: { quantity: { increment: refs.quantidade } } });
     });
+  } else if (ultimo.tipo === "PAUSADO" || ultimo.tipo === "REATIVADO" || ultimo.tipo === "SITE") {
+    await desfazerNoCardapio(ultimo.tipo, refs, ctx);
   } else {
     return { ok: false, erro: "Esse lançamento não se desfaz por aqui." };
   }

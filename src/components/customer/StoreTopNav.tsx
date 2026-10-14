@@ -33,8 +33,8 @@ const NAV_ITEMS = [
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "IA" },
-  // Estoque e financeiro pelo WhatsApp do dono (R$ 29,90/mês — lib/assessor).
-  { href: "/store/meu-assessor", label: "Meu Assessor", icon: Mic, badge: "NOVO" },
+  // Bill, seu assessor: estoque e financeiro pelo WhatsApp do dono (R$ 29,90/mês — lib/assessor).
+  { href: "/store/bill", label: "Bill, seu assessor", icon: Mic, badge: "NOVO" },
   // A pagina SEMPRE morou em /store/meta-ads — e o callback do OAuth do Meta
   // (api/meta-ads/callback) e o checklist de onboarding mandam para la. Este
   // link apontava para /store/trafego, endereco que nunca existiu: quem clicava

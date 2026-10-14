@@ -175,7 +175,7 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
           )}
           {(ciclo.taxas?.trafegoPago || 0) > 0 && linha("Gestão de tráfego pago (FireHub)", fmtR(ciclo.taxas.trafegoPago), "R$ 50 por semana de campanha ativa")}
           {(ciclo.taxas?.totem || 0) > 0 && linha("Totem de autoatendimento", fmtR(ciclo.taxas.totem))}
-          {(ciclo.taxas?.assessor || 0) > 0 && linha("Meu Assessor (estoque e financeiro pelo WhatsApp)", fmtR(ciclo.taxas.assessor || 0), "R$ 29,90 por mês, proporcional aos dias ligados")}
+          {(ciclo.taxas?.assessor || 0) > 0 && linha("Bill, seu assessor (estoque e financeiro pelo WhatsApp)", fmtR(ciclo.taxas.assessor || 0), "R$ 29,90 por mês, proporcional aos dias ligados")}
           {(ciclo.amountOffset || 0) > 0 && linha("Já abatido por pagamentos online", `- ${fmtR(Math.min(ciclo.amountOffset, mensalidade))}`)}
           {linha("Previsão do boleto até agora", fmtR(ciclo.amountPending), "muda até o fim do mês conforme as vendas; o valor final sai no fechamento", true)}
         </div>

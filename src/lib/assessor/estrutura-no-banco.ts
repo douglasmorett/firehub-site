@@ -1,5 +1,5 @@
 /**
- * As tabelas do Meu Assessor (prisma/schema.prisma: AssessorAssinatura e
+ * As tabelas do Bill (prisma/schema.prisma: AssessorAssinatura e
  * AssessorRegistro).
  *
  * Mesma categoria de src/lib/garantir-colunas.ts: `CREATE TABLE IF NOT EXISTS`,
@@ -46,9 +46,9 @@ export async function garantirEstruturaDoAssessor(): Promise<boolean> {
   try {
     for (const sql of INSTRUCOES) await prisma.$executeRawUnsafe(sql);
     pronto = true;
-    console.log("[Boot] ✅ Tabelas do Meu Assessor garantidas.");
+    console.log("[Boot] ✅ Tabelas do Bill garantidas.");
   } catch (err: any) {
-    console.error(`[Boot] 🛑 Estrutura do Meu Assessor falhou: ${err?.message}`);
+    console.error(`[Boot] 🛑 Estrutura do Bill falhou: ${err?.message}`);
   }
   return pronto;
 }

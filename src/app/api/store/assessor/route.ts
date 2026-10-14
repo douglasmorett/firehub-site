@@ -6,12 +6,12 @@ import { garantirEstruturaDoAssessor } from "@/lib/assessor/estrutura-no-banco";
 import { numerosDoDono } from "@/lib/numeros-do-dono";
 
 /**
- * GET  — o estado do Meu Assessor, os números que falam com ele e os últimos lançamentos.
+ * GET  — o estado do Bill, os números que falam com ele e os últimos lançamentos.
  * POST { ligar: boolean } — liga (7 dias grátis na primeira vez) ou desliga.
  */
 export async function GET() {
   const s = await lojaDoAssessorDaSessao();
-  if (!s) return NextResponse.json({ error: "Só o dono da loja abre o Meu Assessor." }, { status: 403 });
+  if (!s) return NextResponse.json({ error: "Só o dono da loja abre o Bill." }, { status: 403 });
 
   const estado = await estadoDoAssessor(s.franchiseeId);
   const registros = (await garantirEstruturaDoAssessor())
@@ -35,7 +35,7 @@ export async function GET() {
 
 export async function POST(req: Request) {
   const s = await lojaDoAssessorDaSessao();
-  if (!s) return NextResponse.json({ error: "Só o dono da loja liga ou desliga o Meu Assessor." }, { status: 403 });
+  if (!s) return NextResponse.json({ error: "Só o dono da loja liga ou desliga o Bill." }, { status: 403 });
   let corpo: any = {};
   try { corpo = await req.json(); } catch {}
   if (typeof corpo?.ligar !== "boolean") return NextResponse.json({ error: "Informe ligar: true ou false." }, { status: 400 });

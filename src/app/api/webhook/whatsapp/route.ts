@@ -1286,7 +1286,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     return;
   }
 
-  // ── MEU ASSESSOR: O DONO LANÇA ESTOQUE E FINANCEIRO POR AQUI ──────────────
+  // ── BILL, SEU ASSESSOR: O DONO LANÇA ESTOQUE E FINANCEIRO POR AQUI ──────────────
   // Com o serviço ligado (R$ 29,90/mês, lib/assessor/assinatura.ts), a
   // mensagem do dono — áudio, texto ou foto — não vai para o robô de vendas:
   // vai para o assessor, que grava ("comprei 10 Coca lata, paguei 45" →
@@ -1306,10 +1306,10 @@ async function handleIncomingMessage(body: any, instance: string) {
         await replyToCustomer(user.id, remoteJid, r.resposta, remoteJid || data.from || "");
         registrarTrace({
           instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
-          estagio: "meu-assessor", detalhe: r.acoes.map((a) => `${a.nome}:${(a.resultado as any)?.ok ? "ok" : "erro"}`).join(",") || "conversa",
+          estagio: "assessor-bill", detalhe: r.acoes.map((a) => `${a.nome}:${(a.resultado as any)?.ok ? "ok" : "erro"}`).join(",") || "conversa",
         });
       } catch (err: any) {
-        console.error(`[WhatsApp Webhook] Meu Assessor falhou para ${mascararTelefone(remoteJid)}:`, err?.message || err);
+        console.error(`[WhatsApp Webhook] Bill (assessor) falhou para ${mascararTelefone(remoteJid)}:`, err?.message || err);
         await replyToCustomer(user.id, remoteJid, "Não consegui processar agora. Manda de novo em 1 minuto? Se tiver lançado algo, confira no painel antes de repetir.", remoteJid || data.from || "").catch(() => {});
       }
       return;
