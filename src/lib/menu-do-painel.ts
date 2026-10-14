@@ -111,9 +111,9 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       },
       { href: "/store/impressoras", label: "Impressoras", icone: "Printer" },
       { href: "/store/integracoes", label: "Integrações", icone: "Puzzle" },
-      // A loja continua trabalhando no computador quando a internet ou o
-      // FireHub cai (app/store/contingencia). Opcional; o selo chama atenção.
-      { href: "/store/contingencia", label: "Modo Contingência", icone: "LifeBuoy", selo: "NOVO" },
+      // O Modo Contingência não mora aqui: é o botão roxo logo abaixo de
+      // "Tutoriais em vídeo" (StoreSidebar). No fim de Configurações ninguém
+      // achava (Douglas, 13/10/2026).
     ],
   },
 ];

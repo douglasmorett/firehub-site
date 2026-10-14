@@ -25,6 +25,7 @@ import {
   X, Zap, type LucideIcon,
 } from "lucide-react";
 import { menuDaLoja, type ItemDoMenu } from "@/lib/menu-do-painel";
+import { funcionarioAbre } from "@/lib/permissao-da-tela";
 import StoreSelector from "./StoreSelector";
 import { ABRIR_CENTRAL } from "@/components/TutorialDaTela";
 import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
@@ -295,6 +296,25 @@ export default function StoreSidebar({
           </button>
         )}
 
+        {/* Modo Contingência: a loja segue no computador do caixa quando a
+            internet ou o FireHub cai (app/store/contingencia). Fica em roxo
+            logo abaixo dos tutoriais porque, no fim de Configurações, nenhum
+            dono achava (Douglas, 13/10/2026). Funcionário só vê com a
+            permissão de Minha loja, a mesma que abre a tela. */}
+        {(permissoesDoFuncionario == null || funcionarioAbre("/store/contingencia", permissoesDoFuncionario)) && (
+          <Link
+            href="/store/contingencia"
+            {...navegarNoAperto("/store/contingencia")}
+            className={`fh-menu-contingencia${enxuta ? " enxuta" : ""}${pathname?.startsWith("/store/contingencia") ? " ativo" : ""}`}
+            title="Modo Contingência"
+          >
+            <LifeBuoy size={16} />
+            {!enxuta && <span>Modo Contingência</span>}
+            {!enxuta && <span className="fh-menu-contingencia-selo">NOVO</span>}
+            <SinalDoClique />
+          </Link>
+        )}
+
         <nav className="fh-menu-lista">
           {grupos.map((grupo) => (
             <div key={grupo.titulo} className="fh-menu-grupo">
@@ -513,6 +533,20 @@ const ESTILO = `
 }
 .fh-menu-tutoriais:hover{ filter:brightness(1.08); }
 .fh-menu-tutoriais.enxuta{ margin:0 10px 10px; padding:9px 0; }
+
+.fh-menu-contingencia{
+  position:relative; margin:0 12px 10px; display:flex; align-items:center; justify-content:center; gap:7px;
+  padding:8px 10px; border-radius:9px; text-decoration:none;
+  font-size:.78rem; font-weight:800; color:#fff; white-space:nowrap;
+  background:linear-gradient(135deg,#8B5CF6,#6D28D9); box-shadow:0 4px 14px rgba(109,40,217,.4);
+}
+.fh-menu-contingencia:hover{ filter:brightness(1.1); }
+.fh-menu-contingencia.ativo{ outline:2px solid #C4B5FD; outline-offset:1px; }
+.fh-menu-contingencia.enxuta{ margin:0 10px 10px; padding:9px 0; }
+.fh-menu-contingencia-selo{
+  font-size:.58rem; font-weight:800; letter-spacing:.04em; padding:1px 5px; border-radius:5px;
+  background:#fff; color:#6D28D9;
+}
 
 /* O rodapé não rola com a lista: quem tem flex:1 é a lista, então o que vem
    depois dela encosta no fim da barra e fica sempre visível. */
