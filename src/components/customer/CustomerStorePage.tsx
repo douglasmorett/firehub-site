@@ -4248,7 +4248,7 @@ export default function CustomerStorePage({
 
             <div>
               <label className="checkout-label">Observações do Pedido</label>
-              <textarea rows={2} className="checkout-input" style={{ resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ex: Sem cebola, caprichar no molho..." />
+              <textarea rows={2} className="checkout-input" style={{ resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ex.: ponto de referência, embalar separado..." />
             </div>
 
             {/* Resumo no Checkout */}

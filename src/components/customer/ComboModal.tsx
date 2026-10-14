@@ -855,7 +855,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
               <textarea
                 value={notes}
                 onChange={e => setNotes(e.target.value.slice(0, 140))}
-                placeholder="Ex: Sem cebola, molho à parte, bem passado..."
+                placeholder="Ex.: tirar algum ingrediente, mandar algo à parte..."
                 rows={2}
                 style={{
                   width: "100%",
