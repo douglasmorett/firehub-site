@@ -249,6 +249,56 @@ export default function KDSTelaPage() {
       localStorage.setItem("kds-rotacao", String(proxima));
     } catch {}
   };
+  // ── 🔔 AVISO SONORO DE PEDIDO NOVO ───────────────────────────────────────
+  // A tela do KDS era muda: o pedido novo só aparecia, e a cozinha de costas
+  // para a TV não via (Ragnar Burger, 13/10/2026: "tem como colocar um aviso
+  // sonoro no KDS quando chega pedido?"). É do APARELHO, como a rotação: cada
+  // TV liga o seu (localStorage `kds-som`). O navegador só deixa tocar som
+  // depois de um toque na página — o próprio clique no botão libera, e
+  // qualquer toque depois de um F5 também (o contexto de áudio é retomado).
+  const [somLigado, setSomLigado] = useState(false);
+  const audioRef = useRef<AudioContext | null>(null);
+  const pedidosVistos = useRef<Set<string> | null>(null);
+  // Só depois da primeira resposta do servidor a tela sabe o que "já estava lá".
+  const [primeiraCargaFeita, setPrimeiraCargaFeita] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("kds-som") === "1") setSomLigado(true);
+    } catch {}
+    const liberar = () => {
+      try { audioRef.current?.resume(); } catch {}
+    };
+    document.addEventListener("pointerdown", liberar);
+    return () => document.removeEventListener("pointerdown", liberar);
+  }, []);
+  const tocarSino = useCallback(() => {
+    try {
+      if (!audioRef.current) audioRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const ctx = audioRef.current;
+      if (ctx.state === "suspended") ctx.resume().catch(() => {});
+      // Dois toques de sino (880 → 440 Hz), o mesmo timbre do painel de pedidos.
+      [0, 0.45].forEach((atraso) => {
+        const osc = ctx.createOscillator();
+        const ganho = ctx.createGain();
+        osc.connect(ganho);
+        ganho.connect(ctx.destination);
+        osc.type = "sine";
+        const t = ctx.currentTime + atraso;
+        osc.frequency.setValueAtTime(880, t);
+        osc.frequency.exponentialRampToValueAtTime(440, t + 0.4);
+        ganho.gain.setValueAtTime(0.35, t);
+        ganho.gain.exponentialRampToValueAtTime(0.01, t + 0.6);
+        osc.start(t);
+        osc.stop(t + 0.6);
+      });
+    } catch {}
+  }, []);
+  const alternarSom = () => {
+    const ligar = !somLigado;
+    setSomLigado(ligar);
+    try { localStorage.setItem("kds-som", ligar ? "1" : "0"); } catch {}
+    if (ligar) tocarSino();
+  };
   const [salvandoPrioridade, setSalvandoPrioridade] = useState(false);
   /** Esta tela existe no painel do KDS (achada pelo id do link ou pelo nome)? */
   const temTelaSalva = useRef(false);
@@ -598,6 +648,7 @@ export default function KDSTelaPage() {
         if (newDataStr !== lastJsonRef.current) {
           lastJsonRef.current = newDataStr;
           setOrders(validOrders);
+          setPrimeiraCargaFeita(true);
           setHasEnteredIds((prev) => {
             const next = new Set(prev);
             validOrders.forEach((o) => next.add(o.id));
@@ -801,6 +852,24 @@ export default function KDSTelaPage() {
 
     return result;
   }, [orders, filter, activeCategories, categoriasComDono, kdsConfig, stage]);
+
+  // Toca quando aparece NESTA tela um pedido que ela ainda não tinha mostrado.
+  // A primeira carga só anota o que já estava lá (abrir a tela não apita).
+  useEffect(() => {
+    if (!primeiraCargaFeita) return;
+    // A tela filtrada ainda sem as outras telas carregadas muda de lista logo
+    // em seguida; anotar antes disso faria apitar o que já estava lá.
+    if (pedidosVistos.current === null && activeCategories.length > 0 && categoriasComDono === null) return;
+    const ids = filteredOrders.map((o: any) => String(o.id));
+    if (pedidosVistos.current === null) {
+      pedidosVistos.current = new Set(ids);
+      return;
+    }
+    const vistos = pedidosVistos.current;
+    const novos = ids.filter((id) => !vistos.has(id));
+    novos.forEach((id) => vistos.add(id));
+    if (novos.length > 0 && somLigado) tocarSino();
+  }, [filteredOrders, primeiraCargaFeita, somLigado, tocarSino, activeCategories.length, categoriasComDono]);
 
   const exitingOrderIdsRef = useRef<Set<string>>(new Set());
   const completedOrderIdsRef = useRef<Set<string>>(new Set());
@@ -1454,6 +1523,25 @@ export default function KDSTelaPage() {
                 }}
               >
                 ⟳
+              </button>
+
+              <button
+                onClick={alternarSom}
+                title={somLigado ? "Som ligado: toca quando chega pedido nesta tela" : "Ligar o som de pedido novo nesta TV"}
+                style={{
+                  padding: "6px 14px",
+                  borderRadius: 10,
+                  border: "1px solid #44403C",
+                  background: somLigado ? "#15803D" : "#1C1917",
+                  color: "#fff",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: "pointer",
+                  fontFamily: FONT,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {somLigado ? "🔔 Som ligado" : "🔕 Som"}
               </button>
 
               {/* ── ⏩ PRIORIDADE NA COZINHA ─────────────────────────────────
