@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { chaveDaCategoria, planoDeApagar, planoDeRenomear, renomearNasConfigs } from "@/lib/categoria-renomear";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes: PUT e DELETE já conferiam o dono, mas o PATCH
@@ -122,32 +123,123 @@ export async function POST(req: NextRequest) {
   return NextResponse.json(category);
 }
 
-// PUT — editar categoria
+// PUT — editar categoria. Com `name` é renomear, e vale por id real OU, para a
+// categoria virtual (só existe no texto do produto), por `nomeAntigo`. Antes o
+// id virtual dava 404 e o id real deixava os produtos com o nome velho
+// (Pizzou153, 14/10/2026) — ver lib/categoria-renomear.ts.
 export async function PUT(req: NextRequest) {
   const { scope, error } = await getScope(req);
   if (!scope) return error;
 
-  const { id, name, emoji, color, sortOrder, imageUrl } = await req.json();
-  if (!id) return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
+  const { id, nomeAntigo, name, emoji, color, sortOrder, imageUrl } = await req.json();
+  const idReal = id && !String(id).startsWith("virtual-") ? String(id) : null;
+  if (!idReal && !String(nomeAntigo ?? "").trim()) {
+    return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
+  }
 
-  const existing = await prisma.menuCategory.findUnique({ where: { id } });
-  if (!existing) return NextResponse.json({ error: "Categoria não encontrada" }, { status: 404 });
-  if (!canTouch(scope, existing.franchiseeId)) {
+  const existing = idReal ? await prisma.menuCategory.findUnique({ where: { id: idReal } }) : null;
+  if (idReal && !existing) return NextResponse.json({ error: "Categoria não encontrada" }, { status: 404 });
+  if (existing && !canTouch(scope, existing.franchiseeId)) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
-  const updated = await prisma.menuCategory.update({
-    where: { id },
-    data: {
-      ...(name !== undefined && { name: name.trim() }),
-      ...(emoji !== undefined && { emoji }),
-      ...(color !== undefined && { color }),
-      ...(imageUrl !== undefined && { imageUrl }),
-      ...(sortOrder !== undefined && { sortOrder }),
-    },
+  const visual = {
+    ...(emoji !== undefined && { emoji }),
+    ...(color !== undefined && { color }),
+    ...(imageUrl !== undefined && { imageUrl }),
+    ...(sortOrder !== undefined && { sortOrder }),
+  };
+
+  // Sem nome novo: só emoji/cor/foto/ordem da linha, como sempre foi.
+  if (name === undefined) {
+    if (!existing) return NextResponse.json({ error: "Categoria não encontrada" }, { status: 404 });
+    const updated = await prisma.menuCategory.update({ where: { id: existing.id }, data: visual });
+    return NextResponse.json(updated);
+  }
+
+  const loja = existing?.franchiseeId ?? writeFranchiseeId(scope);
+  if (!loja) {
+    // ADMIN sem loja ativa numa categoria global: não há produto de uma loja
+    // só para levar junto — renomeia só a linha, como antes.
+    if (!existing) return NextResponse.json({ error: "Escolha a loja antes de renomear" }, { status: 400 });
+    const nome = String(name ?? "").trim();
+    if (!nome) return NextResponse.json({ error: "Nome da categoria é obrigatório" }, { status: 400 });
+    const updated = await prisma.menuCategory.update({ where: { id: existing.id }, data: { ...visual, name: nome } });
+    return NextResponse.json(updated);
+  }
+
+  const categorias = await prisma.menuCategory.findMany({
+    where: { franchiseeId: loja },
+    select: { id: true, name: true },
+  });
+  // "Virtual" que já ganhou linha (a tela estava velha): usa a linha.
+  const atual =
+    existing ?? categorias.find((c) => chaveDaCategoria(c.name) === chaveDaCategoria(nomeAntigo)) ?? null;
+
+  const plano = planoDeRenomear({ atual, nomeAntigo, nomeNovo: name, categorias });
+  if (plano.erro !== undefined) return NextResponse.json({ error: plano.erro }, { status: plano.status });
+
+  const ids = await produtosDaCategoria(loja, plano.nomeAntigo);
+
+  const categoria = await prisma.$transaction(async (tx) => {
+    if (ids.length > 0) {
+      await tx.menuProduct.updateMany({ where: { id: { in: ids }, franchiseeId: loja }, data: { category: plano.nomeFinal } });
+    }
+    await renomearNasConfigsDaLoja(tx, loja, plano.nomeAntigo, plano.nomeFinal);
+
+    if (plano.juntarEm) {
+      if (plano.apagarId) await tx.menuCategory.delete({ where: { id: plano.apagarId } });
+      return tx.menuCategory.findUnique({ where: { id: plano.juntarEm } });
+    }
+    if (plano.renomearId) {
+      return tx.menuCategory.update({ where: { id: plano.renomearId }, data: { ...visual, name: plano.nomeFinal } });
+    }
+    // Virtual: nasce a linha, no lugar em que a tela já mostrava a categoria.
+    return tx.menuCategory.create({
+      data: {
+        name: plano.nomeFinal,
+        emoji: emoji || "🍽️",
+        color: color || "#64748B",
+        imageUrl: imageUrl ?? null,
+        sortOrder: typeof sortOrder === "number" ? sortOrder : categorias.length,
+        franchiseeId: loja,
+      },
+    });
   });
 
-  return NextResponse.json(updated);
+  return NextResponse.json({
+    ...categoria,
+    juntou: !!plano.juntarEm,
+    removidaId: plano.apagarId,
+    produtos: ids.length,
+  });
+}
+
+// Ids dos produtos da loja nesta categoria. A comparação é sem maiúscula e sem
+// espaço nas pontas, como a tela agrupa — o `equals insensitive` do Prisma não
+// apara espaço, e o produto importado com "Pizzas " ficaria para trás.
+async function produtosDaCategoria(loja: string, nome: string): Promise<string[]> {
+  const produtos = await prisma.menuProduct.findMany({
+    where: { franchiseeId: loja },
+    select: { id: true, category: true },
+  });
+  const chave = chaveDaCategoria(nome);
+  return produtos.filter((p) => chaveDaCategoria(p.category) === chave).map((p) => p.id);
+}
+
+// Impressora por categoria, telas do KDS e "só na finalização" guardam a
+// categoria pelo NOME: sem isto, renomear tirava a categoria da impressora e
+// da tela da cozinha sem ninguém perceber.
+async function renomearNasConfigsDaLoja(tx: any, loja: string, antigo: string, novo: string) {
+  if (antigo.trim() === novo.trim()) return;
+  const dono = await tx.user.findUnique({
+    where: { id: loja },
+    select: { printerConfig: true, kdsScreens: true, kdsConfig: true },
+  });
+  if (!dono) return;
+  const mudou = renomearNasConfigs(dono, antigo, novo);
+  if (Object.keys(mudou).length === 0) return;
+  await tx.user.update({ where: { id: loja }, data: mudou });
 }
 
 // PATCH — reordenar categorias em lote
@@ -254,20 +346,58 @@ export async function PATCH(req: NextRequest) {
   return NextResponse.json({ error: "orderedCategories ou orderedIds é obrigatório" }, { status: 400 });
 }
 
-// DELETE — excluir categoria
+// DELETE — excluir categoria, por id real ou pelo nome (virtual). Produto
+// nunca é apagado junto: antes a linha sumia e os produtos voltavam como
+// categoria virtual. Com produto dentro, ou vem `destino` (nome da categoria
+// que recebe os produtos) ou a resposta é 409 com a contagem.
 export async function DELETE(req: NextRequest) {
   const { scope, error } = await getScope(req);
   if (!scope) return error;
 
-  const { id } = await req.json();
-  if (!id) return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
+  const { id, name, destino } = await req.json();
+  const idReal = id && !String(id).startsWith("virtual-") ? String(id) : null;
+  if (!idReal && !String(name ?? "").trim()) {
+    return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
+  }
 
-  const existing = await prisma.menuCategory.findUnique({ where: { id } });
-  if (!existing) return NextResponse.json({ error: "Categoria não encontrada" }, { status: 404 });
-  if (!canTouch(scope, existing.franchiseeId)) {
+  const existing = idReal ? await prisma.menuCategory.findUnique({ where: { id: idReal } }) : null;
+  if (idReal && !existing) return NextResponse.json({ error: "Categoria não encontrada" }, { status: 404 });
+  if (existing && !canTouch(scope, existing.franchiseeId)) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 
-  await prisma.menuCategory.delete({ where: { id } });
-  return NextResponse.json({ success: true });
+  const loja = existing?.franchiseeId ?? writeFranchiseeId(scope);
+  if (!loja) {
+    // ADMIN sem loja ativa numa categoria global: só a linha, como antes.
+    if (!existing) return NextResponse.json({ error: "Escolha a loja antes de excluir" }, { status: 400 });
+    await prisma.menuCategory.delete({ where: { id: existing.id } });
+    return NextResponse.json({ success: true });
+  }
+
+  const nome = String(existing?.name ?? name).trim();
+  const categorias = await prisma.menuCategory.findMany({ where: { franchiseeId: loja }, select: { id: true, name: true } });
+  const linha = existing ?? categorias.find((c) => chaveDaCategoria(c.name) === chaveDaCategoria(nome)) ?? null;
+  const ids = await produtosDaCategoria(loja, nome);
+
+  // O destino pode ser virtual também; se tiver linha, vale o nome dela.
+  const nomeDestino = String(destino ?? "").trim();
+  const destinoNaLoja = nomeDestino
+    ? categorias.find((c) => chaveDaCategoria(c.name) === chaveDaCategoria(nomeDestino)) ?? { id: "", name: nomeDestino }
+    : null;
+
+  const plano = planoDeApagar({ nome, produtos: ids.length, destino: destinoNaLoja });
+  if (plano.erro !== undefined) {
+    return NextResponse.json({ error: plano.erro, produtos: plano.produtos }, { status: plano.status });
+  }
+  const moverPara = plano.moverPara;
+
+  await prisma.$transaction(async (tx) => {
+    if (moverPara) {
+      await tx.menuProduct.updateMany({ where: { id: { in: ids }, franchiseeId: loja }, data: { category: moverPara } });
+      await renomearNasConfigsDaLoja(tx, loja, nome, moverPara);
+    }
+    if (linha) await tx.menuCategory.delete({ where: { id: linha.id } });
+  });
+
+  return NextResponse.json({ success: true, movidos: moverPara ? ids.length : 0, moverPara });
 }

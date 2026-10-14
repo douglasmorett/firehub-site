@@ -646,24 +646,41 @@ export default function MenuProductManager({
     }
   };
 
-  const handleDeleteCategory = async (catId: string, catName: string) => {
-    if (!confirm(`Tem certeza que deseja excluir a categoria "${catName}"?`)) return;
+  /**
+   * Categoria com produto dentro não é excluída às cegas: o servidor responde
+   * 409 com a contagem e esta janela pergunta para onde os produtos vão. O nome
+   * vai junto porque a categoria virtual (só no texto do produto) não tem id —
+   * antes era 404 e "Erro ao excluir" (Pizzou153, 14/10/2026).
+   */
+  const [apagarCategoria, setApagarCategoria] = useState<{ id: string; name: string; produtos: number; destino: string } | null>(null);
+
+  const handleDeleteCategory = async (catId: string, catName: string, destino?: string) => {
+    if (!destino && !confirm(`Tem certeza que deseja excluir a categoria "${catName}"?`)) return;
     setDeletingCatId(catId);
     try {
       const res = await fetch("/api/admin/categories", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: catId }),
+        body: JSON.stringify({ id: catId, name: catName, ...(destino ? { destino } : {}) }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setDynCategories(prev => prev.filter(c => c.id !== catId));
         if (category === catName) {
-          const nextCat = dynCategories.find(c => c.id !== catId)?.name || "";
+          const nextCat = data.moverPara || dynCategories.find(c => c.id !== catId)?.name || "";
           setCategory(nextCat);
         }
-        showToast(`🗑️ Categoria "${catName}" excluída!`);
+        if (selectedCategoryFilter === catName) setSelectedCategoryFilter("TODAS");
+        setApagarCategoria(null);
+        showToast(data.movidos
+          ? `🗑️ Categoria "${catName}" excluída — ${data.movidos} produto(s) foram para "${data.moverPara}"`
+          : `🗑️ Categoria "${catName}" excluída!`);
+        if (data.movidos) router.refresh();
+      } else if (res.status === 409 && typeof data.produtos === "number") {
+        const outra = dynCategories.find(c => c.id !== catId && !isIntegrationCategory(c.name));
+        setApagarCategoria({ id: catId, name: catName, produtos: data.produtos, destino: outra?.name || "" });
       } else {
-        showToast("Erro ao excluir categoria", "#C92E09");
+        showToast(data.error || "Erro ao excluir categoria", "#C92E09");
       }
     } catch {
       showToast("Erro ao excluir categoria", "#C92E09");
@@ -885,20 +902,40 @@ export default function MenuProductManager({
 
   const handleRenameCategory = async () => {
     if (!editingCat || !editingCat.name.trim()) return;
+    const atual = dynCategories.find(c => c.id === editingCat.id);
     setSavingRename(true);
     try {
       const res = await fetch("/api/admin/categories", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: editingCat.id, name: editingCat.name.trim() }),
+        // A virtual (só no texto do produto) não tem id no banco: vai o nome de
+        // hoje, e o servidor leva os produtos junto (Pizzou153, 14/10/2026).
+        body: JSON.stringify({
+          id: editingCat.id,
+          name: editingCat.name.trim(),
+          ...(editingCat.id.startsWith("virtual-") && atual ? { nomeAntigo: atual.name, sortOrder: dynCategories.indexOf(atual) } : {}),
+        }),
       });
+      const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setDynCategories(prev => prev.map(c => c.id === editingCat.id ? { ...c, name: editingCat.name.trim() } : c));
+        const nomeFinal = data.name || editingCat.name.trim();
+        const chave = nomeFinal.toLowerCase().trim();
+        const fica = data.id || editingCat.id;
+        setDynCategories(prev => (data.juntou
+          // Renomear para um nome que já existe junta as duas: a antiga sai da lista.
+          ? prev.filter(c => c.id !== editingCat.id)
+          : prev.map(c => c.id === editingCat.id ? { ...c, ...(data.id ? { id: data.id } : {}), name: nomeFinal } : c))
+          // E a virtual de mesmo nome, se havia, vira esta mesma categoria.
+          .filter(c => c.id === fica || !(c.id?.startsWith("virtual-") && (c.name || "").toLowerCase().trim() === chave)));
+        if (atual && category === atual.name) setCategory(nomeFinal);
+        if (atual && selectedCategoryFilter === atual.name) setSelectedCategoryFilter(nomeFinal);
         setEditingCat(null);
-        showToast("✅ Categoria renomeada com sucesso!");
+        showToast(data.juntou
+          ? `✅ Categoria juntada com "${nomeFinal}"`
+          : "✅ Categoria renomeada com sucesso!");
         router.refresh();
       } else {
-        showToast("Erro ao renomear", "#C92E09");
+        showToast(data.error || "Erro ao renomear", "#C92E09");
       }
     } catch {
       showToast("Erro ao renomear", "#C92E09");
@@ -4491,6 +4528,47 @@ export default function MenuProductManager({
         </div>
         );
       })()}
+
+      {/* MODAL: EXCLUIR CATEGORIA COM PRODUTOS — para onde eles vão */}
+      {apagarCategoria && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.65)", backdropFilter: "blur(6px)", zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}>
+          <div role="dialog" aria-modal="true" aria-label="Excluir categoria"
+            style={{ background: "#FFFFFF", borderRadius: "20px", width: "100%", maxWidth: "420px", padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.3)" }}>
+            <h3 style={{ margin: "0 0 0.5rem", fontSize: "1.15rem", fontWeight: 800, color: "#0F172A" }}>
+              🗑️ Excluir &quot;{apagarCategoria.name}&quot;
+            </h3>
+            <p style={{ margin: "0 0 1rem", fontSize: "0.88rem", color: "#475569", lineHeight: 1.5 }}>
+              Esta categoria tem {apagarCategoria.produtos} produto{apagarCategoria.produtos === 1 ? "" : "s"}. Escolha para qual categoria eles vão — nenhum produto é apagado.
+            </p>
+            <label style={{ fontSize: "0.8rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: "6px" }}>
+              Mover os produtos para
+            </label>
+            <select className="input-field" value={apagarCategoria.destino}
+              onChange={e => setApagarCategoria({ ...apagarCategoria, destino: e.target.value })}
+              style={{ width: "100%", height: "44px", boxSizing: "border-box" }}>
+              <option value="">Escolha a categoria…</option>
+              {dynCategories
+                .filter(c => c.id !== apagarCategoria.id && !isIntegrationCategory(c.name))
+                .map(c => <option key={c.id} value={c.name}>{c.emoji} {c.name}</option>)}
+            </select>
+            <div style={{ display: "flex", gap: "10px", marginTop: "1.5rem" }}>
+              <button
+                onClick={() => setApagarCategoria(null)}
+                style={{ flex: 1, padding: "10px", borderRadius: "10px", border: "1.5px solid #CBD5E1", background: "#FFF", fontWeight: 700, color: "#64748B", cursor: "pointer" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => handleDeleteCategory(apagarCategoria.id, apagarCategoria.name, apagarCategoria.destino)}
+                disabled={!apagarCategoria.destino || deletingCatId === apagarCategoria.id}
+                style={{ flex: 1.5, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #E8360C, #C92E09)", color: "#FFF", fontWeight: 800, cursor: !apagarCategoria.destino ? "not-allowed" : "pointer", opacity: !apagarCategoria.destino ? 0.6 : 1 }}
+              >
+                {deletingCatId === apagarCategoria.id ? "Movendo..." : "Mover e excluir"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MODAL: RENOMEAR CATEGORIA */}
       {editingCat && (
