@@ -102,7 +102,8 @@ export default function FuncionariosPage() {
       const res = await fetch(`/api/store/employees${query}`);
       if (res.ok) {
         const data = await res.json();
-        setEmployees(data.employees || []);
+        // Excluído (desativado) some da tela; o histórico dele fica no banco.
+        setEmployees((data.employees || []).filter((e: Employee) => e.active !== false));
       }
     } catch (e) {
       console.error(e);
@@ -245,11 +246,18 @@ export default function FuncionariosPage() {
     setSavingAddDebt(false);
   };
 
-  // Desativar cliente
-  const handleDeleteEmp = async (id: string, name: string) => {
-    if (!confirm(`Tem certeza que deseja desativar o cliente fiado ${name}?`)) return;
+  // Excluir da lista (desativa: o histórico do fiado fica guardado)
+  const handleDeleteEmp = async (emp: Employee) => {
+    const deve = emp.currentDebt || 0;
+    const aviso = deve > 0.005
+      ? `${emp.name} ainda deve ${fmt(deve)}. Excluir mesmo assim? Ele sai da lista e o histórico fica guardado.`
+      : `Excluir ${emp.name} da lista do fiado? O histórico fica guardado.`;
+    if (!confirm(aviso)) return;
     try {
-      await fetch(`/api/store/employees/${id}`, { method: "DELETE" });
+      await fetch(`/api/store/employees/${emp.id}`, { method: "DELETE" });
+      setShowAddModal(false);
+      setEditingEmp(null);
+      setEmpForm({ name: "", role: "", phone: "", cpf: "", creditLimit: "" });
       fetchEmployees();
     } catch (e) {
       console.error(e);
@@ -733,6 +741,14 @@ export default function FuncionariosPage() {
                 {savingEmp ? "Salvar..." : "Salvar Funcionário"}
               </button>
             </div>
+            {editingEmp && (
+              <button
+                onClick={() => handleDeleteEmp(editingEmp)}
+                style={{ width: "100%", marginTop: 10, padding: "9px", borderRadius: 10, border: "1.5px solid #FECACA", background: "#FEF2F2", color: "#B91C1C", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer" }}
+              >
+                Excluir funcionário
+              </button>
+            )}
           </div>
         </div>
       )}

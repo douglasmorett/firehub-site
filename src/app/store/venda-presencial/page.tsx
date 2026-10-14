@@ -195,7 +195,7 @@ export default function VendaPresencialPage() {
     fetch("/api/admin/menu-products?canal=salao").then(r => r.json()).then(d => Array.isArray(d) && setProducts(d));
     fetch("/api/store-settings/payment").then(r => r.ok ? r.json() : null).then(d => d && setPaymentConfig(d.paymentFees));
     fetch("/api/store-settings/employee-account").then(r => r.ok ? r.json() : null).then(d => d && setEmployeeAccountEnabled(Boolean(d.employeeAccountEnabled)));
-    fetch("/api/store/employees").then(r => r.ok ? r.json() : null).then(d => d?.employees && setEmployees(d.employees));
+    fetch("/api/store/employees").then(r => r.ok ? r.json() : null).then(d => d?.employees && setEmployees(d.employees.filter((e: any) => e.active !== false)));
     // Falha aqui deixa a tela no padrão (nada obrigatório): a venda não pode
     // parar porque uma configuração não carregou. Quem tem a palavra final é
     // a rota do pedido, que lê a mesma regra do banco.
