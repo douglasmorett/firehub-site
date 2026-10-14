@@ -234,7 +234,7 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
     >
       {voltando
         ? "✅ Conexão voltou — tudo foi enviado. Voltando ao FireHub…"
-        : "🛟 Sem conexão com o FireHub — trabalhando no computador da loja. Tudo será enviado quando voltar."}
+        : "⚠️ Sem conexão com o FireHub — trabalhando no computador da loja. Tudo será enviado quando voltar."}
     </div>
   );
 }

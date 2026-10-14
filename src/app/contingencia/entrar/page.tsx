@@ -69,7 +69,10 @@ export default function EntrarNaContingencia() {
   return (
     <main style={{ minHeight: "100vh", display: "grid", placeItems: "center", background: "#0f172a", color: "#f8fafc", fontFamily: "system-ui, sans-serif", padding: 24 }}>
       <div style={{ maxWidth: 420, textAlign: "center" }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>🛟</div>
+        {/* Desenho no lugar do emoji 🛟: o Windows 10 não tem esse emoji e mostrava um quadrado. */}
+        <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginBottom: 12 }} aria-hidden>
+          <circle cx="12" cy="12" r="10" /><path d="m4.93 4.93 4.24 4.24" /><path d="m14.83 9.17 4.24-4.24" /><path d="m14.83 14.83 4.24 4.24" /><path d="m9.17 14.83-4.24 4.24" /><circle cx="12" cy="12" r="4" />
+        </svg>
         <h1 style={{ fontSize: 20, margin: "0 0 8px" }}>Modo Contingência</h1>
         <p style={{ color: erro ? "#fca5a5" : "#cbd5e1", margin: 0 }}>{erro || aviso}</p>
       </div>
