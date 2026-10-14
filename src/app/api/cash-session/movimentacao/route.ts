@@ -4,6 +4,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { temEstruturaDeCaixa, garantirEstruturaDeCaixa } from "@/lib/garantir-colunas";
 import { imprimirMovimentacaoDoCaixa } from "@/lib/imprimir-caixa";
+// A mesma leitura do valor do lançamento esquecido no caixa fechado.
+import { lerValorEmReais } from "@/lib/lancamento-tardio-do-caixa";
 
 /**
  * Sangria e reforço de caixa.
@@ -31,18 +33,6 @@ async function lojaDaSessao() {
 const TIPOS = ["ENTRADA", "SAIDA"] as const;
 
 /** GET — as movimentações do turno aberto, mais os totais que a tela mostra. */
-function lerValorEmReais(bruto: unknown): number {
-  if (typeof bruto === "number") return bruto;
-  const limpo = String(bruto ?? "").trim().replace(/[^\d.,]/g, "");
-  if (!limpo) return NaN;
-  if (limpo.includes(",")) return Number(limpo.replace(/\./g, "").replace(",", "."));
-  const partes = limpo.split(".");
-  if (partes.length === 1) return Number(limpo);
-  const ultimo = partes[partes.length - 1];
-  if (partes.length > 2 || ultimo.length === 3) return Number(partes.join(""));
-  return Number(partes.slice(0, -1).join("") + "." + ultimo);
-}
-
 export async function GET() {
   const loja = await lojaDaSessao();
   if (!loja) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });

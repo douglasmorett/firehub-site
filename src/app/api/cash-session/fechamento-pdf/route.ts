@@ -63,7 +63,7 @@ export async function GET(req: Request) {
   });
 
   // Nulo só quando a tabela não pôde ser lida; caixa sem nenhuma = lista vazia.
-  const porCaixa = await movimentacoesDosCaixas(lojaId, [caixa.id]);
+  const porCaixa = await movimentacoesDosCaixas(lojaId, [caixa]);
   const movimentos = porCaixa ? porCaixa.get(caixa.id) || [] : null;
 
   // As vendas por tipo: apuradas de novo, como no "Vendas por tipo" do

@@ -1,4 +1,5 @@
 import { composicaoDoDinheiroEsperado, resumoDasMovimentacoes, type MovimentoDoCaixa } from "@/lib/resumo-das-movimentacoes";
+import { ExcluirLancamentoTardio, LancamentosTardiosDoCaixa, LancarMovimentoEsquecido } from "@/components/customer/LancamentoTardioDoCaixa";
 
 /**
  * "Entradas e retiradas do caixa" no Histórico de caixas: sangria por
@@ -11,6 +12,10 @@ import { composicaoDoDinheiroEsperado, resumoDasMovimentacoes, type MovimentoDoC
  * Componente de servidor: não tem estado, só mostra o que a página leu
  * (lib/movimentacoes-do-caixa.ts). `movimentos` nulo = não deu para ler a
  * tabela, e aí o bloco não aparece (dizer "nenhuma" sem ter olhado é mentir).
+ *
+ * Quem pode corrigir caixa fechado (`podeLancar`) lança aqui a entrada ou a
+ * retirada esquecida, e exclui só essas (lib/lancamento-tardio-do-caixa.ts).
+ * O lançado com o caixa aberto continua sem exclusão: já foi conferido.
  */
 const fmt = (v: number) => `${v < -0.004 ? "−" : ""}R$ ${Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -19,11 +24,18 @@ export default function MovimentacoesDoCaixaFechado({
   esperadoEmDinheiro,
   trocoInicial,
   fuso,
+  sessionId,
+  caixaDe,
+  podeLancar,
 }: {
   movimentos: MovimentoDoCaixa[] | null;
   esperadoEmDinheiro: number;
   trocoInicial: number;
   fuso: string | null | undefined;
+  sessionId: string;
+  /** "12/10, 18:00" — o nome do caixa no aviso de lançado. */
+  caixaDe: string;
+  podeLancar: boolean;
 }) {
   if (!movimentos) return null;
   const resumo = resumoDasMovimentacoes(movimentos);
@@ -47,44 +59,72 @@ export default function MovimentacoesDoCaixaFechado({
     </div>
   );
 
+  const lancar = podeLancar ? (
+    <div style={{ marginTop: 8 }}>
+      <LancarMovimentoEsquecido sessionId={sessionId} caixaDe={caixaDe} />
+    </div>
+  ) : null;
+
   if (movimentos.length === 0) {
     return (
-      <div style={{ padding: "8px 16px", borderTop: "1px solid #F1F5F9" }}>
-        <div style={{ fontSize: "0.75rem", color: "#94A3B8" }}>Nenhuma entrada ou retirada neste caixa.</div>
-        {regra}
-      </div>
+      <LancamentosTardiosDoCaixa>
+        <div style={{ padding: "8px 16px", borderTop: "1px solid #F1F5F9" }}>
+          <div style={{ fontSize: "0.75rem", color: "#94A3B8" }}>Nenhuma entrada ou retirada neste caixa.</div>
+          {regra}
+          {lancar}
+        </div>
+      </LancamentosTardiosDoCaixa>
     );
   }
 
   return (
-    <div style={{ padding: "10px 16px", borderTop: "1px solid #F1F5F9" }}>
-      <div style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.06em", color: "#64748B", textTransform: "uppercase", marginBottom: 6 }}>
-        Entradas e retiradas do caixa
-      </div>
-      {movimentos.map((m) => {
-        const entrada = m.tipo === "ENTRADA";
-        return (
-          <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, padding: "5px 0", borderBottom: "1px dashed #F1F5F9", fontSize: "0.8rem" }}>
-            <span style={{ minWidth: 0, color: "#334155" }}>
-              <span style={{ color: "#64748B", fontVariantNumeric: "tabular-nums" }}>{quando(m.em)}</span>
-              {" · "}
-              <strong>{entrada ? "Entrada (suprimento)" : "Retirada (sangria)"}</strong>
-              <span style={{ display: "block", fontSize: "0.72rem", color: "#64748B" }}>
-                {m.descricao || "sem motivo informado"}
-                {m.quem ? ` • por ${m.quem}` : ""}
+    <LancamentosTardiosDoCaixa>
+      <div style={{ padding: "10px 16px", borderTop: "1px solid #F1F5F9" }}>
+        <div style={{ fontSize: "0.72rem", fontWeight: 800, letterSpacing: "0.06em", color: "#64748B", textTransform: "uppercase", marginBottom: 6 }}>
+          Entradas e retiradas do caixa
+        </div>
+        {movimentos.map((m) => {
+          const entrada = m.tipo === "ENTRADA";
+          return (
+            <div key={m.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, padding: "5px 0", borderBottom: "1px dashed #F1F5F9", fontSize: "0.8rem" }}>
+              <span style={{ minWidth: 0, color: "#334155", flex: "1 1 auto" }}>
+                {/* A hora do esquecido é a do lançamento, não a da saída do
+                    dinheiro: ela vai no selo, e não na frente como as outras. */}
+                {!m.depoisDoFechamento && (
+                  <>
+                    <span style={{ color: "#64748B", fontVariantNumeric: "tabular-nums" }}>{quando(m.em)}</span>
+                    {" · "}
+                  </>
+                )}
+                <strong>{entrada ? "Entrada (suprimento)" : "Retirada (sangria)"}</strong>
+                <span style={{ display: "block", fontSize: "0.72rem", color: "#64748B" }}>
+                  {m.descricao || "sem motivo informado"}
+                  {m.quem && !m.depoisDoFechamento ? ` • por ${m.quem}` : ""}
+                </span>
+                {m.depoisDoFechamento && (
+                  <span style={{ display: "inline-block", marginTop: 3, padding: "1px 7px", borderRadius: 6, background: "#FEF3C7", color: "#92400E", fontSize: "0.68rem", fontWeight: 800 }}>
+                    lançado depois do fechamento{m.quem ? ` por ${m.quem}` : ""} em {quando(m.em)}
+                  </span>
+                )}
+                {m.depoisDoFechamento && podeLancar && (
+                  <span style={{ display: "block", marginTop: 4 }}>
+                    <ExcluirLancamentoTardio movimentoId={m.id} rotulo={entrada ? "Entrada" : "Retirada"} />
+                  </span>
+                )}
               </span>
-            </span>
-            <span style={{ whiteSpace: "nowrap", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: entrada ? "#0F766E" : "#C92E09" }}>
-              {entrada ? "+" : "−"}{fmt(m.valor)}
-            </span>
-          </div>
-        );
-      })}
-      <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "4px 16px", marginTop: 6, fontSize: "0.78rem", fontWeight: 700, color: "#334155" }}>
-        <span>Entradas ({resumo.entradas.qtd}): <span style={{ color: "#0F766E" }}>+{fmt(resumo.entradas.valor)}</span></span>
-        <span>Retiradas ({resumo.retiradas.qtd}): <span style={{ color: "#C92E09" }}>−{fmt(resumo.retiradas.valor)}</span></span>
+              <span style={{ whiteSpace: "nowrap", fontWeight: 800, fontVariantNumeric: "tabular-nums", color: entrada ? "#0F766E" : "#C92E09" }}>
+                {entrada ? "+" : "−"}{fmt(m.valor)}
+              </span>
+            </div>
+          );
+        })}
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: "4px 16px", marginTop: 6, fontSize: "0.78rem", fontWeight: 700, color: "#334155" }}>
+          <span>Entradas ({resumo.entradas.qtd}): <span style={{ color: "#0F766E" }}>+{fmt(resumo.entradas.valor)}</span></span>
+          <span>Retiradas ({resumo.retiradas.qtd}): <span style={{ color: "#C92E09" }}>−{fmt(resumo.retiradas.valor)}</span></span>
+        </div>
+        {regra}
+        {lancar}
       </div>
-      {regra}
-    </div>
+    </LancamentosTardiosDoCaixa>
   );
 }

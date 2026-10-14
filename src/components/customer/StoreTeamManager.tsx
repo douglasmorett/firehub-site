@@ -18,7 +18,7 @@ export const STORE_MODULES = [
   { key: "minha_loja",       label: "🏪 Configurações da Loja",            desc: "Horários, dados da loja e cadastro de equipe" },
   { key: "editar_pedidos",   label: "✏️ Editar pedidos já lançados",        desc: "Tirar item, mudar quantidade e acrescentar item em pedido que já entrou" },
   { key: "dados_sensiveis",  label: "🔒 Dados sensíveis (CMV, CMO, folha)", desc: "Ver CMV real, custo de mão de obra, salários e o valor do estoque em R$" },
-  { key: "editar_caixa",     label: "🏦 Corrigir caixa já fechado",         desc: "Corrigir a contagem no Histórico de caixas (fica registrado quem corrigiu e como estava antes)" },
+  { key: "editar_caixa",     label: "🏦 Corrigir caixa já fechado",         desc: "Corrigir a contagem e lançar entrada/retirada esquecida no Histórico de caixas (fica registrado quem corrigiu e como estava antes)" },
 ];
 
 /**

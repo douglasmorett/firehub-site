@@ -166,7 +166,8 @@ export type DetalheDoTurno = {
   mesas: { servico: number; servicoQtd: number; gorjeta: number; troco?: number; trocoQtd?: number };
   gaveta: { vendasEmDinheiro: number; reforcosQtd: number; sangriasQtd: number };
   /** `quem`: quem lançou (o e-mail gravado). Ausente no papel montado à mão (testes antigos). */
-  movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date | string; quem?: string | null }[];
+  /** `depoisDoFechamento`: a esquecida, lançada no Histórico com o caixa já fechado (a hora é a do lançamento). */
+  movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date | string; quem?: string | null; depoisDoFechamento?: boolean }[];
   fiado: { hora: Date | string; numero: string; nome: string; valor: number }[];
   cancelados: {
     qtd: number;
@@ -795,7 +796,7 @@ function relatorioDoFechamento(
       const ehReforco = m.tipo === "ENTRADA";
       // O motivo e quem lançou na linha de baixo: "Sangria R$ 200" sem dono
       // vira palavra contra palavra na conferência.
-      const nota = [m.descricao || "", m.quem ? `por ${m.quem}` : ""].filter(Boolean).join(" | ");
+      const nota = [m.descricao || "", m.quem ? `por ${m.quem}` : "", m.depoisDoFechamento ? "lancada depois do fechamento" : ""].filter(Boolean).join(" | ");
       linha(`${hora(m.hora)} ${ehReforco ? "Reforco" : "Sangria"}`, `${ehReforco ? "" : "-"}${reais(m.valor)}`, nota || undefined);
     }
   }

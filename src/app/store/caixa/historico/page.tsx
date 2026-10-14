@@ -45,6 +45,9 @@ export const metadata = { title: "Histórico de Caixas — FireHub" };
  * CORREÇÃO DO CAIXA FECHADO (11/10/2026, Nik Esfirraria): quem tem a permissão
  * corrige o contado aqui (lib/edicao-do-caixa.ts). O caixa corrigido diz isso
  * no topo — quando e quem — e guarda como estava antes de cada correção.
+ * A entrada ou retirada esquecida (Pizzaria 17, 14/10/2026) se lança no bloco
+ * "Entradas e retiradas", com a mesma permissão e o mesmo registro: ela conta
+ * neste caixa e refaz o dinheiro esperado e a diferença gravados.
  * A leitura da conferência é a de lib/conferencia-do-caixa.ts — a mesma da 2ª
  * via do papel.
  */
@@ -76,7 +79,10 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
 
   // As correções feitas depois do fechamento. Consulta à parte e protegida:
   // se a tabela ainda não existir (boot que falhou), o histórico abre igual.
-  type Edicao = { id: string; cashSessionId: string; editadoPor: string; suporte: string | null; motivo: string | null; antes: RetratoDoContado; depois: RetratoDoContado; createdAt: Date };
+  // O lançamento esquecido (lib/lancamento-tardio-do-caixa.ts) grava também o
+  // dinheiro esperado no antes e no depois; a correção de contagem, não.
+  type ComEsperado = RetratoDoContado & { expectedCash?: number | null };
+  type Edicao = { id: string; cashSessionId: string; editadoPor: string; suporte: string | null; motivo: string | null; antes: ComEsperado; depois: ComEsperado; createdAt: Date };
   const edicoesPorCaixa = new Map<string, Edicao[]>();
   try {
     const edicoes = await prisma.cashSessionEdicao.findMany({
@@ -94,7 +100,7 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
   // As entradas e retiradas de cada caixa (Pizzaria 17, 14/10/2026: "as
   // sangrias não aparecem no relatório"). Uma consulta para os 60; nula se a
   // tabela não puder ser lida — o bloco some em vez de dizer "nenhuma".
-  const movimentosPorCaixa = await movimentacoesDosCaixas(lojaId, sessions.map((s) => s.id));
+  const movimentosPorCaixa = await movimentacoesDosCaixas(lojaId, sessions);
   const podeCorrigir = podeEditarCaixa(user);
   const fmtDif = (d: number | null) => d == null ? "sem conferência" : Math.abs(d) < 0.01 ? "confere" : d < 0 ? `faltou ${fmt(-d)}` : `sobrou ${fmt(d)}`;
 
@@ -231,6 +237,9 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
               esperadoEmDinheiro={Number(s.expectedCash || 0)}
               trocoInicial={Number(s.openingAmount || 0)}
               fuso={fuso}
+              sessionId={s.id}
+              caixaDe={fmtHora(s.openedAt)}
+              podeLancar={podeCorrigir}
             />
 
             {/* Como estava antes: cada correção com quem, quando, o motivo e
@@ -257,6 +266,13 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
                           </tr>
                         </thead>
                         <tbody>
+                          {e.antes.expectedCash != null && e.depois.expectedCash != null && Math.abs(e.antes.expectedCash - e.depois.expectedCash) > 0.004 && (
+                            <tr>
+                              <td style={{ padding: "3px 12px 3px 0", fontWeight: 600 }}>Dinheiro esperado</td>
+                              <td style={{ padding: "3px 12px", textAlign: "right", textDecoration: "line-through", color: "#94A3B8" }}>{fmt(e.antes.expectedCash)}</td>
+                              <td style={{ padding: "3px 12px", textAlign: "right", fontWeight: 700 }}>{fmt(e.depois.expectedCash)}</td>
+                            </tr>
+                          )}
                           {mudou.map((l) => (
                             <tr key={l.chave}>
                               <td style={{ padding: "3px 12px 3px 0", fontWeight: 600 }}>{l.nome}</td>

@@ -15,6 +15,7 @@
 import { prisma } from "@/lib/prisma";
 import { temEstruturaDeCaixa } from "@/lib/garantir-colunas";
 import { resumoDasMovimentacoes, type MovimentoDoCaixa } from "@/lib/resumo-das-movimentacoes";
+import { lancadoDepoisDoFechamento } from "@/lib/lancamento-tardio-do-caixa";
 
 export { resumoDasMovimentacoes, type MovimentoDoCaixa };
 
@@ -26,10 +27,16 @@ export { resumoDasMovimentacoes, type MovimentoDoCaixa };
  * que não houve sangria sem ter conseguido olhar seria mentir.
  *
  * Uma consulta para todos os caixas (o Histórico lista 60) e uma para os nomes.
+ * O `closedAt` de cada caixa marca o que foi lançado depois do fechamento.
  */
-export async function movimentacoesDosCaixas(lojaId: string, caixas: string[]): Promise<Map<string, MovimentoDoCaixa[]> | null> {
+export async function movimentacoesDosCaixas(
+  lojaId: string,
+  caixasComFechamento: { id: string; closedAt: Date | null }[],
+): Promise<Map<string, MovimentoDoCaixa[]> | null> {
   const porCaixa = new Map<string, MovimentoDoCaixa[]>();
-  if (caixas.length === 0) return porCaixa;
+  if (caixasComFechamento.length === 0) return porCaixa;
+  const caixas = caixasComFechamento.map((c) => c.id);
+  const fechadoEm = new Map(caixasComFechamento.map((c) => [c.id, c.closedAt]));
   try {
     if (!(await temEstruturaDeCaixa())) return null;
     const movs = await prisma.cashMovement.findMany({
@@ -62,6 +69,7 @@ export async function movimentacoesDosCaixas(lojaId: string, caixas: string[]): 
         descricao: m.descricao?.trim() || null,
         quem: m.criadoPor ? nomes.get(m.criadoPor) || m.criadoPor : null,
         em: m.createdAt,
+        depoisDoFechamento: lancadoDepoisDoFechamento(m.createdAt, fechadoEm.get(m.cashSessionId)),
       });
       porCaixa.set(m.cashSessionId, lista);
     }

@@ -14,6 +14,12 @@ export type MovimentoDoCaixa = {
   /** Nome de quem lançou (ou o e-mail, quando não é da equipe da loja). */
   quem: string | null;
   em: Date;
+  /**
+   * Lançado no Histórico DEPOIS de o caixa fechar (a sangria esquecida,
+   * lib/lancamento-tardio-do-caixa.ts): `em` é quando foi lançado, não quando
+   * o dinheiro saiu. Ausente = lançado com o caixa aberto.
+   */
+  depoisDoFechamento?: boolean;
 };
 
 const c2 = (n: number) => Math.round(n * 100) / 100;

@@ -78,7 +78,7 @@ export async function calcularEsperadoDoTurno(
   let vendasEmDinheiro = 0;
   let reforcosQtd = 0;
   let sangriasQtd = 0;
-  let movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date; quem: string | null }[] = [];
+  let movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date; quem: string | null; depoisDoFechamento?: boolean }[] = [];
   let cancelados: DetalheDoTurno["cancelados"] = { qtd: 0, valor: 0, lista: [] };
   let itensCancelados: NonNullable<DetalheDoTurno["itensCancelados"]> = [];
   let entregadores: DetalheDoTurno["entregadores"] = [];
@@ -181,7 +181,12 @@ export async function calcularEsperadoDoTurno(
       for (const m of movs) {
         if (m.tipo === "ENTRADA") { movimentacaoEntradas += m.valor; expected.cash += m.valor; reforcosQtd += 1; }
         else { movimentacaoSaidas += m.valor; expected.cash -= m.valor; sangriasQtd += 1; }
-        movimentacoes.push({ tipo: m.tipo, valor: m.valor, descricao: m.descricao || null, hora: m.createdAt, quem: m.criadoPor || null });
+        movimentacoes.push({
+          tipo: m.tipo, valor: m.valor, descricao: m.descricao || null, hora: m.createdAt, quem: m.criadoPor || null,
+          // A esquecida, lançada no Histórico depois de fechar (a 2ª via passa
+          // o `closedAt` em `ate`): ela conta igual, e o papel diz que foi depois.
+          ...(opcoes.ate && m.createdAt > opcoes.ate ? { depoisDoFechamento: true } : {}),
+        });
       }
       expected.total += movimentacaoEntradas - movimentacaoSaidas;
     }

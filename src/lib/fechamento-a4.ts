@@ -148,7 +148,7 @@ export function htmlDoFechamentoA4(d: DadosDoFechamentoA4): string {
   if (d.observacoes) avisos.push(`Observações: ${esc(d.observacoes)}`);
   if (d.correcoes.ultima) {
     avisos.push(
-      `Contagem corrigida em ${esc(dataHora(d.correcoes.ultima.em))} por ${esc(d.correcoes.ultima.por)}` +
+      `Fechamento corrigido em ${esc(dataHora(d.correcoes.ultima.em))} por ${esc(d.correcoes.ultima.por)}` +
         (d.correcoes.qtd > 1 ? ` (${d.correcoes.qtd} correções)` : "") +
         ` — o histórico guarda como estava antes.`
     );
@@ -192,7 +192,10 @@ export function htmlDoFechamentoA4(d: DadosDoFechamentoA4): string {
       for (const m of d.movimentos) {
         const entrada = m.tipo === "ENTRADA";
         p.push(
-          `<tr><td class="num" style="text-align:left">${esc(hora(m.em))}</td><td>${entrada ? "Entrada (suprimento)" : "Retirada (sangria)"}</td>` +
+          `<tr><td class="num" style="text-align:left">${esc(hora(m.em))}</td><td>${entrada ? "Entrada (suprimento)" : "Retirada (sangria)"}` +
+            // A esquecida, lançada no Histórico: a hora é a do lançamento.
+            (m.depoisDoFechamento ? `<br><span class="nota">lançada depois do fechamento</span>` : "") +
+            `</td>` +
             `<td>${m.descricao ? esc(m.descricao) : `<span class="nota">não informado</span>`}</td><td>${esc(m.quem || "—")}</td>` +
             `<td class="num">${entrada ? "+" : "−"}${esc(fmt(m.valor))}</td></tr>`
         );
