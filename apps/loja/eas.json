@@ -25,6 +25,16 @@
         "MARCA": "hakim"
       },
       "environment": "production"
+    },
+    "simulador-hakim": {
+      "extends": "base",
+      "env": {
+        "MARCA": "hakim"
+      },
+      "environment": "production",
+      "ios": {
+        "simulator": true
+      }
     }
   },
   "submit": {
