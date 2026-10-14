@@ -5,7 +5,7 @@ import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import TutorialDaTela from "@/components/TutorialDaTela";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode, Mic } from "lucide-react";
 import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
 import SimularPedidos from "./SimularPedidos";
@@ -33,6 +33,8 @@ const NAV_ITEMS = [
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "IA" },
+  // Estoque e financeiro pelo WhatsApp do dono (R$ 29,90/mês — lib/assessor).
+  { href: "/store/meu-assessor", label: "Meu Assessor", icon: Mic, badge: "NOVO" },
   // A pagina SEMPRE morou em /store/meta-ads — e o callback do OAuth do Meta
   // (api/meta-ads/callback) e o checklist de onboarding mandam para la. Este
   // link apontava para /store/trafego, endereco que nunca existiu: quem clicava

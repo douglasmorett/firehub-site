@@ -66,6 +66,10 @@ export async function register() {
   await acertarLojasExtrasUmaVez();
   // Despesas lançadas à mão no DRE. Se faltar, só o lançamento manual some.
   await garantirEstruturaDeDespesas();
+  // Meu Assessor (estoque e financeiro pelo WhatsApp do dono). Tabelas
+  // próprias; se faltarem, só o assessor para.
+  const { garantirEstruturaDoAssessor } = await import("./lib/assessor/estrutura-no-banco");
+  await garantirEstruturaDoAssessor();
   // Clientes e relatórios do Acompanhamento iFood (aba do admin). Tabelas
   // próprias; se faltarem, só essa aba para.
   await garantirEstruturaDeAcompanhamento();

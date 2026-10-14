@@ -1709,6 +1709,42 @@ model DespesaLancada {
   @@index([franchiseeId, dia])
 }
 
+/// MEU ASSESSOR — o dono lança estoque e financeiro pelo WhatsApp da loja
+/// (áudio, texto ou foto). Serviço pago à parte: R$ 29,90/mês no boleto da
+/// mensalidade (src/lib/assessor/assinatura.ts). Uma linha por loja.
+/// AS TABELAS SÃO CRIADAS NO BOOT por src/lib/assessor/estrutura-no-banco.ts,
+/// no mesmo commit destes models.
+model AssessorAssinatura {
+  id           String    @id @default(cuid())
+  franchiseeId String    @unique
+  ativo        Boolean   @default(false)
+  /// Fim dos 7 dias grátis — só a primeira ativação ganha.
+  testeAte     DateTime?
+  /// Cada trecho ligado: [{ de, ate }] em ISO; `ate` nulo = ainda ligado.
+  /// A cobrança do mês é proporcional a estes trechos, fora do teste.
+  periodos     Json      @default("[]")
+  criadoEm     DateTime  @default(now())
+  atualizadoEm DateTime  @updatedAt
+}
+
+/// O que o assessor gravou, para o dono ver no painel e para "desfaz" saber o
+/// que desfazer. `refs` guarda os ids criados (compra, despesa, conta, movimento).
+model AssessorRegistro {
+  id           String    @id @default(cuid())
+  franchiseeId String
+  /// COMPRA | DESPESA | CONTA | CONTA_PAGA | SAIDA
+  tipo         String
+  resumo       String
+  refs         Json?
+  /// WHATSAPP ou PAINEL
+  canal        String    @default("WHATSAPP")
+  telefone     String?
+  desfeitoEm   DateTime?
+  criadoEm     DateTime  @default(now())
+
+  @@index([franchiseeId, criadoEm])
+}
+
 // ========== FATURAMENTO: USE FIRST, PAY LATER ==========
 // Ciclo mensal de cobrança por franqueado. 
 // O franqueado usa o sistema o mês todo, e paga no fechamento.

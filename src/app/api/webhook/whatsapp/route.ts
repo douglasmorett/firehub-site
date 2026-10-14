@@ -1286,6 +1286,36 @@ async function handleIncomingMessage(body: any, instance: string) {
     return;
   }
 
+  // ── MEU ASSESSOR: O DONO LANÇA ESTOQUE E FINANCEIRO POR AQUI ──────────────
+  // Com o serviço ligado (R$ 29,90/mês, lib/assessor/assinatura.ts), a
+  // mensagem do dono — áudio, texto ou foto — não vai para o robô de vendas:
+  // vai para o assessor, que grava ("comprei 10 Coca lata, paguei 45" →
+  // estoque + financeiro) e responde relatório. Sem o serviço, segue o modo
+  // dono de sempre (só leitura), que oferece o assessor quando ele pede para
+  // gravar algo. Depois da porteira acima: "atendente assumiu" vale para ele também.
+  if (ehODono) {
+    const lojaDoAssessor = (user as any).ownerId || user.id;
+    const { assessorEstaLigado } = await import("@/lib/assessor/assinatura");
+    if (await assessorEstaLigado(lojaDoAssessor)) {
+      try {
+        const { conversarComOAssessor } = await import("@/lib/assessor/assessor");
+        const r = await conversarComOAssessor(
+          { franchiseeId: lojaDoAssessor, usuarioId: lojaDoAssessor, canal: "WHATSAPP", telefone: cleanPhone },
+          { texto: rawText, audio: audioData?.base64 ? audioData : null, imagem: imagemData?.base64 ? imagemData : null },
+        );
+        await replyToCustomer(user.id, remoteJid, r.resposta, remoteJid || data.from || "");
+        registrarTrace({
+          instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+          estagio: "meu-assessor", detalhe: r.acoes.map((a) => `${a.nome}:${(a.resultado as any)?.ok ? "ok" : "erro"}`).join(",") || "conversa",
+        });
+      } catch (err: any) {
+        console.error(`[WhatsApp Webhook] Meu Assessor falhou para ${mascararTelefone(remoteJid)}:`, err?.message || err);
+        await replyToCustomer(user.id, remoteJid, "Não consegui processar agora. Manda de novo em 1 minuto? Se tiver lançado algo, confira no painel antes de repetir.", remoteJid || data.from || "").catch(() => {});
+      }
+      return;
+    }
+  }
+
   if (guard.action === "degrade") {
     // Não silenciamos: mandamos UMA frase fixa e passamos para o humano. O
     // cliente nunca fica sem resposta, e frase enlatada não dá assunto para o

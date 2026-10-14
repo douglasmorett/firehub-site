@@ -751,6 +751,15 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += cycle.totemFee;
       linhasExtras.push(`Totem R$${cycle.totemFee.toFixed(2)}`);
     }
+    // Meu Assessor: R$ 29,90/mês, proporcional aos dias ligados fora dos 7
+    // dias grátis (lib/assessor/assinatura.ts). Serviço contratado, como o
+    // totem: entra mesmo no mês em teste da mensalidade.
+    const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
+    const assessor = await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd);
+    if (assessor > 0) {
+      taxasExtras += assessor;
+      linhasExtras.push(`Meu Assessor R$${assessor.toFixed(2)}`);
+    }
   }
 
   const ifoodExtraCharge = taxasExtras;
@@ -1128,7 +1137,12 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // que é justamente o que o comentário acima promete que não acontece mais.
   const trafegoPago = cycle.metaAdsFee ?? 0;
   const totem = cycle.totemFee ?? 0;
-  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor;
+  // Meu Assessor até agora no mês (proporcional, fora do teste) — a mesma
+  // conta que o fechamento põe no boleto.
+  const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
+  const intervaloDoCiclo = intervaloDoMes(cycle.yearMonth, tz);
+  const assessor = await cobrancaDoAssessorNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
+  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor;
 
   const mensalidadePrevista = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   // O abatimento de pagamentos online desconta a MENSALIDADE, não as taxas —
@@ -1145,7 +1159,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     // Discriminado para o painel poder mostrar a linha em vez de só inflar o
     // total — "por que subiu R$ 200?" tem que ter resposta na tela.
     mensalidadePrevista,
-    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor },
+    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor },
     lojasExtras,
     status: cycle.status,
     isExempt: false,
@@ -1187,7 +1201,8 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
   const tz = user?.storeTimezone || "America/Sao_Paulo";
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
   const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
-  const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0);
+  const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
+  const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0) + (await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd));
   if (inicio === null) {
     // Teste no mês inteiro: mensalidade e lojas extras perdoadas; tráfego e
     // totem são serviço prestado e o fechamento cobra.
