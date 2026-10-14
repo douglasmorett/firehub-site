@@ -56,6 +56,11 @@ export type ImpressoraConfigurada = {
    * for mandado para ela no botão Imprimir. Ver `impressorasPeloTipoDoPedido`.
    */
   semComandaAutomatica?: boolean | null;
+  /**
+   * Pedido com item desta impressora E de outra: esta imprime o pedido
+   * inteiro. Sem item dela, a regra de sempre. Ver `itensDaImpressora`.
+   */
+  comandaInteiraNoMisto?: boolean | null;
   /** true = uma linha por unidade no papel desta impressora. */
   separarItens?: boolean | null;
   /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
@@ -276,6 +281,18 @@ export function itensDaImpressora<T extends ItemDoPedido>(
     for (const op of item.opcoesParaImpressao || []) {
       if (categorias.some((c) => texto(c) === texto(op.category))) dasOpcoes.push(linhaDaOpcao(item, op));
     }
+  }
+
+  // ── PEDIDO MISTO: A COMANDA INTEIRA ──
+  //
+  // NIK (14/10/2026): impressora "Pizza" e impressora "Esfiha". O pedido com
+  // pizza e esfiha saía dividido, cada uma com a sua parte; a loja quer o
+  // pedido completo nas duas, para cada cozinha ver o que sai junto. Com a
+  // opção, tendo item desta impressora (ou a escolha do combo da categoria
+  // dela), vai tudo. Sem item dela, a regra de sempre — o pedido só de pizza
+  // não sai na Esfiha.
+  if (impressora.comandaInteiraNoMisto === true && (filtrados.length > 0 || dasOpcoes.length > 0)) {
+    return itens as T[];
   }
 
   if (filtrados.length > 0) {

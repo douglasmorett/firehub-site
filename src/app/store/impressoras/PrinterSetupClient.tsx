@@ -76,6 +76,8 @@ type PrinterEntry = {
   soPedidoDeMesa?: boolean;
   // Nenhuma comanda automatica: so a conta da mesa e o botao Imprimir.
   semComandaAutomatica?: boolean;
+  // Pedido com item desta e de outra impressora: esta imprime o pedido inteiro.
+  comandaInteiraNoMisto?: boolean;
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
@@ -1576,6 +1578,30 @@ export default function PrinterSetupClient({
                 <p style={{ fontSize: "0.72rem", color: "#94A3B8", margin: "6px 0 0" }}>
                   💡 Ex: Impressora "Cozinha" recebe só Lanches e Pizzas; impressora "Bar" recebe só Bebidas.
                 </p>
+
+                {/* ── Pedido misto: comanda inteira ──
+                    NIK (14/10/2026): pizza e esfiha no mesmo pedido saem
+                    completas nas duas; o só de pizza segue só na Pizza
+                    (lib/roteamento-de-impressao.ts → itensDaImpressora). */}
+                {printer.categories.length > 0 && (
+                  <button
+                    onClick={() => updatePrinter(printer.id, { comandaInteiraNoMisto: !printer.comandaInteiraNoMisto })}
+                    style={{
+                      width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                      padding: "10px 12px", borderRadius: 12, marginTop: 8,
+                      border: printer.comandaInteiraNoMisto ? "2px solid #1C1917" : "1.5px solid #E2E8F0",
+                      background: printer.comandaInteiraNoMisto ? "#FAF6F2" : "#fff",
+                      color: printer.comandaInteiraNoMisto ? "#1C1917" : "#64748B",
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                      {printer.comandaInteiraNoMisto ? "✓" : "○"} Pedido misto: comanda inteira
+                    </div>
+                    <div style={{ fontSize: "0.72rem", fontWeight: 500, marginTop: 2, lineHeight: 1.35, opacity: 0.9 }}>
+                      Quando o pedido tem item desta impressora e de outra, esta imprime o pedido completo.
+                    </div>
+                  </button>
+                )}
               </div>
             )}
 
