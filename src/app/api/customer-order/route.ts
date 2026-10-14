@@ -57,7 +57,7 @@ import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 import { acharCupom, avaliarCupom } from "@/lib/cupons";
 import { fatosDoCupom } from "@/lib/cupons-no-banco";
 import { descontoDoPagamentoOnline } from "@/lib/desconto-pagamento-online";
-import { formaDesligada } from "@/lib/formas-do-cardapio";
+import { ehPedidoDeEntrega, formaDesligada, formaRecusadaNaEntrega, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
 
 export async function POST(req: Request) {
   try {
@@ -113,6 +113,15 @@ export async function POST(req: Request) {
     if (formaFora) {
       return NextResponse.json(
         { error: `Esta loja não está aceitando ${formaFora} agora. Escolha outra forma de pagamento.` },
+        { status: 400 },
+      );
+    }
+    // "Na entrega, só pagamento online" (Minha Loja → Formas de Pagamento): o
+    // pedido de ENTREGA pago na porta não entra. A retirada segue com tudo.
+    const recebePeloSite = Boolean(franchisee.asaasChaveCifrada) && (franchisee.pixOnlineAtivo || franchisee.cartaoOnlineAtivo);
+    if (formaRecusadaNaEntrega(franchisee.paymentFees, paymentMethod, deliveryType, recebePeloSite)) {
+      return NextResponse.json(
+        { error: `${TEXTO_ENTREGA_SO_ONLINE}: Pix ou cartão pelo site. Escolha pagar pelo site ou retire no balcão.` },
         { status: 400 },
       );
     }
@@ -265,10 +274,9 @@ export async function POST(req: Request) {
     //
     // Agora a lista fechada é a da RETIRADA. O que não for retirada é entrega,
     // e entrega passa pela área. Palavra desconhecida cai no lado seguro.
-    const RETIRADA = ["PICKUP", "TAKEOUT", "RETIRADA", "BALCAO", "BALCÃO", "MESA"];
-    const canalNormalizado = String(deliveryType || "").trim().toUpperCase();
-    const ehRetirada = RETIRADA.includes(canalNormalizado);
-    const ehEntrega = !ehRetirada;
+    // A lista mora em lib/formas-do-cardapio.ts (`ehPedidoDeEntrega`): a regra
+    // "na entrega, só online" lá em cima pergunta a mesma coisa.
+    const ehEntrega = ehPedidoDeEntrega(deliveryType);
 
     // ── A ENTREGA DESTE PEDIDO: A COTAÇÃO QUE O CLIENTE VIU, OU O MAPA ─────
     //

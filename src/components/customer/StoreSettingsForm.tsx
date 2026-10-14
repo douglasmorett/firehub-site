@@ -1079,6 +1079,47 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
           );
         })()}
 
+        {/* ── NA ENTREGA, SÓ PAGAMENTO ONLINE (paymentFees.entregaSoOnline) ──
+            Holy Top, 14/10/2026: o motoboy não leva maquininha nem troco. O
+            cardápio e o servidor leem a mesma regra (lib/formas-do-cardapio.ts,
+            formaRecusadaNaEntrega). Sem Pix/cartão pelo site ligado a opção não
+            vale — barraria a entrega inteira —, então só liga com o Asaas ativo;
+            desligar fica sempre liberado. */}
+        {(() => {
+          const online = user.pagamentoOnline || { conectado: false, pix: false, cartao: false };
+          const recebePeloSite = online.conectado && (online.pix || online.cartao);
+          const marcada = paymentConfig.entregaSoOnline === true;
+          const podeMexer = recebePeloSite || marcada;
+          return (
+            <div style={{ borderRadius: "12px", border: `1.5px solid ${marcada && recebePeloSite ? "#05966940" : "#E2E8F0"}`, background: marcada && recebePeloSite ? "#F0FDF4" : "#F8FAFC", padding: "0.75rem 1rem", marginBottom: "1.5rem" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 700, fontSize: "0.92rem", color: "#0F172A", display: "block" }}>Na entrega, só pagamento online</span>
+                  <span style={{ fontSize: "0.75rem", color: "#64748B", lineHeight: 1.45, display: "block" }}>
+                    Pedido para ENTREGA só aceita Pix/cartão pelo site. Na retirada e no balcão continuam todas as formas ligadas.
+                  </span>
+                  {!recebePeloSite && (
+                    <span style={{ fontSize: "0.75rem", color: "#B45309", fontWeight: 700, display: "block", marginTop: 4 }}>
+                      {marcada
+                        ? "Sem efeito agora: conecte o Asaas em Integrações para receber pelo site."
+                        : "Conecte o Asaas em Integrações para receber pelo site."}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  disabled={!podeMexer}
+                  title={podeMexer ? undefined : "Conecte o Asaas em Integrações para receber pelo site"}
+                  onClick={() => { setPaymentConfig((p: any) => ({ ...p, entregaSoOnline: !(p.entregaSoOnline === true) })); setDirtyPayment(true); }}
+                  style={{ background: "none", border: "none", cursor: podeMexer ? "pointer" : "not-allowed", opacity: podeMexer ? 1 : 0.5 }}
+                >
+                  {marcada ? <ToggleRight size={32} color="#059669" /> : <ToggleLeft size={32} color="#CBD5E1" />}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── SEÇÃO PAGAMENTO NA ENTREGA ── */}
         <h4 style={{ fontWeight: 800, fontSize: "0.9rem", color: "#0F172A", marginBottom: "0.85rem" }}>Pagamento na entrega (Maquininha / Dinheiro)</h4>
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>

@@ -61,7 +61,7 @@ import { MINUTOS_PARA_PAGAR } from "@/lib/pix-online";
 import { descontoDoPagamentoOnline, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
 import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/cliente-lembrado";
 import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReconhecido } from "@/lib/cliente-reconhecido";
-import { bandeirasDeValeLigadas, formaLigada } from "@/lib/formas-do-cardapio";
+import { bandeirasDeValeLigadas, ehFormaPeloSite, entregaSoOnlineMarcada, formaLigada, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import QuandoReceber, { type Quando } from "./QuandoReceber";
 import AgendarNoCardapio from "./AgendarNoCardapio";
@@ -1672,6 +1672,11 @@ export default function CustomerStorePage({
     };
   }, [mobileCartOpen]);
 
+  // A loja marcou "Na entrega, só pagamento online" (lib/formas-do-cardapio.ts)
+  // e recebe pelo site: o pedido de entrega só fecha pago aqui. Retirada e mesa
+  // seguem com todas as formas.
+  const soOnlineNaEntrega = !mesa && deliveryType === "DELIVERY" &&
+    entregaSoOnlineMarcada(franchisee.paymentFees) && (franchisee.pixOnlineAtivo === true || cartaoPeloAsaas);
   const paymentOptions = (() => {
     const base: { k: string; l: string }[] = [];
     // "· 5% off" no botão: o desconto só vale para quem paga pelo site.
@@ -1709,6 +1714,9 @@ export default function CustomerStorePage({
       if (bandeiras.length > 0) bandeiras.forEach((nome) => base.push({ k: `VOUCHER_${nome}`, l: `🎟️ ${nome}` }));
       else base.push({ k: "VOUCHER", l: "🎟️ Voucher" });
     }
+    // "Na entrega, só pagamento online": na ENTREGA ficam só as formas pagas
+    // pelo site; o servidor recusa as outras pela mesma regra.
+    if (soOnlineNaEntrega) return base.filter((p) => ehFormaPeloSite(p.k));
     return base;
   })();
   // A forma escolhida tem de estar na lista: o padrão é "DINHEIRO", e a loja
@@ -4153,6 +4161,11 @@ export default function CustomerStorePage({
 
             <div>
               <label className="checkout-label">Forma de Pagamento</label>
+              {soOnlineNaEntrega && (
+                <p style={{ fontSize: "0.78rem", color: "#065F46", margin: "0 0 6px", lineHeight: 1.4 }}>
+                  {TEXTO_ENTREGA_SO_ONLINE}.{pickupAvailable ? " Para pagar de outro jeito, escolha “Retirar no Balcão”." : ""}
+                </p>
+              )}
               <div className="checkout-type-row" style={{ flexWrap: "wrap" }}>
                 {paymentOptions.map(pm => (
                   <button key={pm.k} type="button" onClick={() => setPaymentMethod(pm.k)} className={`checkout-type-btn ${paymentMethod === pm.k ? "active" : ""}`} style={{ flex: "1 1 30%", fontSize: "0.78rem", minHeight: "44px" }}>{pm.l}</button>

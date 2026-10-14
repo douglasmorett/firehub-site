@@ -53,3 +53,48 @@ export function formaDesligada(paymentFees: unknown, paymentMethod: unknown): st
   }
   return null;
 }
+
+// ── "NA ENTREGA, SÓ PAGAMENTO ONLINE" (paymentFees.entregaSoOnline) ─────────
+//
+// Pedido da Holy Top (açaí, 14/10/2026): na entrega o motoboy não quer levar
+// maquininha nem troco, então o pedido para ENTREGA só fecha pago pelo site.
+// Na retirada (e na mesa/balcão) o cliente paga na loja, de qualquer forma.
+// Mora em `paymentFees` como a chave `descontoOnline`: não é forma, e ninguém
+// percorre as chaves de paymentFees.
+
+/** Mesma lista fechada do servidor do pedido: o que não é retirada é entrega. */
+const TIPOS_DE_RETIRADA = ["PICKUP", "TAKEOUT", "RETIRADA", "BALCAO", "BALCÃO", "MESA"];
+
+export function ehPedidoDeEntrega(deliveryType: unknown): boolean {
+  return !TIPOS_DE_RETIRADA.includes(String(deliveryType || "").trim().toUpperCase());
+}
+
+/** Pago na hora, pelo site (Asaas; o "PIX" cru é o do site, o da porta é PIX_ENTREGA). */
+export function ehFormaPeloSite(paymentMethod: unknown): boolean {
+  const pm = String(paymentMethod || "").toUpperCase().trim();
+  return pm === "PIX" || pm === "PIX_ONLINE" || pm === "CREDITO_ONLINE" || pm === "CARTAO_ONLINE";
+}
+
+/** A loja marcou "Na entrega, só pagamento online"? */
+export function entregaSoOnlineMarcada(paymentFees: unknown): boolean {
+  return (paymentFees as any)?.entregaSoOnline === true;
+}
+
+export const TEXTO_ENTREGA_SO_ONLINE = "Para entrega, esta loja aceita só pagamento online";
+
+/**
+ * Este pedido deve ser recusado pela regra "na entrega, só online"? Só quando a
+ * loja marcou a opção, o pedido é de entrega, a forma não é paga pelo site E a
+ * loja recebe pelo site agora. Sem Pix/cartão pelo site ligado a opção não vale:
+ * barrar seria fechar a entrega inteira (Asaas desconectado depois de marcar).
+ */
+export function formaRecusadaNaEntrega(
+  paymentFees: unknown,
+  paymentMethod: unknown,
+  deliveryType: unknown,
+  recebePeloSite: boolean,
+): boolean {
+  if (!recebePeloSite || !entregaSoOnlineMarcada(paymentFees)) return false;
+  if (!ehPedidoDeEntrega(deliveryType)) return false;
+  return !ehFormaPeloSite(paymentMethod);
+}
