@@ -751,8 +751,8 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += cycle.totemFee;
       linhasExtras.push(`Totem R$${cycle.totemFee.toFixed(2)}`);
     }
-    // Bill: R$ 29,90/mês, proporcional aos dias ligados fora dos 7
-    // dias grátis (lib/assessor/assinatura.ts). Serviço contratado, como o
+    // Bill, seu assessor: R$ 29,90 no mês em que ficou ativo, inteiro (termo
+    // aceito ao ligar — lib/assessor/termo.ts). Serviço contratado, como o
     // totem: entra mesmo no mês em teste da mensalidade.
     const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
     const assessor = await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd);
@@ -1137,7 +1137,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // que é justamente o que o comentário acima promete que não acontece mais.
   const trafegoPago = cycle.metaAdsFee ?? 0;
   const totem = cycle.totemFee ?? 0;
-  // Bill até agora no mês (proporcional, fora do teste) — a mesma
+  // Bill neste mês (ativo em algum momento = R$ 29,90) — a mesma
   // conta que o fechamento põe no boleto.
   const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
   const intervaloDoCiclo = intervaloDoMes(cycle.yearMonth, tz);

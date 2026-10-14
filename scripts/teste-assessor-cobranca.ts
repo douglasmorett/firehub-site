@@ -1,30 +1,36 @@
 /**
- * A conta do Meu Assessor no boleto (lib/assessor/assinatura.ts → valorDoAssessorNoMes).
- * Roda sem banco: npx tsx scripts/teste-assessor-cobranca.ts
+ * A conta do Bill, seu assessor, no boleto (lib/assessor/assinatura.ts → valorDoAssessorNoMes).
+ * Regra do termo (lib/assessor/termo.ts): ativo em algum momento do mês = R$ 29,90 do mês
+ * inteiro, uma vez só; desligou, o mês seguinte não é cobrado.
+ * Roda sem banco: DATABASE_URL=postgresql://x@localhost:1/x npx tsx scripts/teste-assessor-cobranca.ts
  */
 import assert from "node:assert/strict";
-import { valorDoAssessorNoMes } from "../src/lib/assessor/assinatura";
+import { valorDoAssessorNoMes, PRECO_DO_ASSESSOR } from "../src/lib/assessor/assinatura";
 
 const ini = new Date("2026-11-01T03:00:00Z"); // 1º/11 00h em Brasília
-const fim = new Date("2026-12-01T03:00:00Z"); // novembro: 30 dias
+const fim = new Date("2026-12-01T03:00:00Z");
 const agora = new Date("2026-12-05T12:00:00Z");
 const d = (s: string) => new Date(s).toISOString();
 
-// Ligado o mês inteiro, teste já acabou: R$ 29,90.
-assert.equal(valorDoAssessorNoMes([{ de: d("2026-10-01T12:00:00Z"), ate: null }], "2026-10-08T12:00:00Z", ini, fim, agora), 29.9);
-// Ligou em 14/10, teste até 21/10: outubro cobra só depois do dia 21 (10 dias de 31 → 9,65).
-const out = valorDoAssessorNoMes([{ de: d("2026-10-14T15:00:00Z"), ate: null }], "2026-10-21T15:00:00Z",
-  new Date("2026-10-01T03:00:00Z"), new Date("2026-11-01T03:00:00Z"), agora);
-assert.equal(out, Math.round((29.9 * 11 / 31) * 100) / 100, `outubro deu ${out}`);
-// Teste cobre o mês inteiro: zero.
-assert.equal(valorDoAssessorNoMes([{ de: d("2026-11-01T12:00:00Z"), ate: null }], "2026-12-10T00:00:00Z", ini, fim, agora), 0);
-// Desligado no dia 10 (9 dias ligado): 9/30.
-assert.equal(valorDoAssessorNoMes([{ de: d("2026-10-01T12:00:00Z"), ate: d("2026-11-10T03:00:00Z") }], "2026-10-08T00:00:00Z", ini, fim, agora), 8.97);
-// Liga-desliga duas vezes no mesmo mês: soma os trechos, nunca passa do preço.
+// Ligado o mês inteiro: R$ 29,90.
+assert.equal(valorDoAssessorNoMes([{ de: d("2026-10-01T12:00:00Z"), ate: null }], null, ini, fim, agora), PRECO_DO_ASSESSOR);
+// Ligou no dia 29: mês inteiro, sem proporção.
+assert.equal(valorDoAssessorNoMes([{ de: d("2026-11-29T15:00:00Z"), ate: null }], null, ini, fim, agora), PRECO_DO_ASSESSOR);
+// Ligou e desligou no mesmo dia, duas vezes: cobra uma vez só, o mês inteiro.
 assert.equal(valorDoAssessorNoMes([
-  { de: d("2026-10-01T12:00:00Z"), ate: d("2026-11-20T03:00:00Z") },
-  { de: d("2026-11-20T04:00:00Z"), ate: null },
-], "2026-10-08T00:00:00Z", ini, fim, agora), 29.9);
+  { de: d("2026-11-10T13:00:00Z"), ate: d("2026-11-10T14:00:00Z") },
+  { de: d("2026-11-10T15:00:00Z"), ate: d("2026-11-10T15:30:00Z") },
+], null, ini, fim, agora), PRECO_DO_ASSESSOR);
+// Desligou em outubro: novembro não é cobrado.
+assert.equal(valorDoAssessorNoMes([{ de: d("2026-10-01T12:00:00Z"), ate: d("2026-10-20T12:00:00Z") }], null, ini, fim, agora), 0);
+// Ligado até o último instante de outubro (desligou 1º/11 02h59 Brasília = ainda outubro): novembro zero.
+assert.equal(valorDoAssessorNoMes([{ de: d("2026-10-01T12:00:00Z"), ate: d("2026-11-01T02:59:00Z") }], null, ini, fim, agora), 0);
+// Desligou em 1º/11 às 10h: novembro cobrado (ficou ativo em novembro).
+assert.equal(valorDoAssessorNoMes([{ de: d("2026-10-01T12:00:00Z"), ate: d("2026-11-01T13:00:00Z") }], null, ini, fim, agora), PRECO_DO_ASSESSOR);
+// Ligou em dezembro: novembro zero.
+assert.equal(valorDoAssessorNoMes([{ de: d("2026-12-02T12:00:00Z"), ate: null }], null, ini, fim, agora), 0);
+// Fechamento do mês corrido (cron do dia 1º, ainda ligado): cobra.
+assert.equal(valorDoAssessorNoMes([{ de: d("2026-11-15T12:00:00Z"), ate: null }], null, ini, fim, new Date("2026-12-01T06:00:00Z")), PRECO_DO_ASSESSOR);
 // Nunca ligado: zero.
 assert.equal(valorDoAssessorNoMes([], null, ini, fim, agora), 0);
-console.log("✅ cobrança do Meu Assessor: 6 casos ok");
+console.log("✅ cobrança do Bill: 9 casos ok");
