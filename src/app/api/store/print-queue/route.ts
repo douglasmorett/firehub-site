@@ -26,6 +26,7 @@ import { lojasQueEstePcAtende } from "@/lib/lojas-no-mesmo-pc-no-banco";
 import { juntarJobsDasLojas } from "@/lib/lojas-no-mesmo-pc";
 import { chaveDoAssistente, registrarAssistente, trabalhosDoAssistente } from "@/lib/dono-da-impressora";
 import { marcarAssistente } from "@/lib/sinais-da-loja";
+import { bebidaDecididaPeloServidor } from "@/lib/bebida-para-o-assistente";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -1041,7 +1042,11 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       };
     });
 
-    return NextResponse.json({ jobs: [...jobs, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe] });
+    // A bebida do papel decidida pela regra do site quando a lista antiga do
+    // Assistente erraria ("carne de SOL <=== BEBIDA", lib/bebida-para-o-assistente.ts).
+    // Na dúvida, o job segue como veio.
+    const comBebidaCerta = (job: any) => { try { return bebidaDecididaPeloServidor(job); } catch { return job; } };
+    return NextResponse.json({ jobs: [...jobs, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe].map(comBebidaCerta) });
   } catch (err: any) {
     // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
     // arquivo do servidor e nome de coluna) não pode sair para quem chamar.
