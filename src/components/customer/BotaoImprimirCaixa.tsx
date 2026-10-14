@@ -11,8 +11,14 @@ import { useState } from "react";
  * Manda para a FILA (o mesmo caminho da abertura e do fechamento), então sai
  * nas impressoras que a loja marcou para papel de caixa, esteja o navegador
  * aberto ou não.
+ *
+ * `comPdf` (Histórico de caixas): o "Gerar PDF" ao lado, para mandar o
+ * fechamento à contabilidade (Victor, Pizzaria 17, 14/10/2026). Abre o
+ * fechamento em A4 numa aba nova (api/cash-session/fechamento-pdf) e a janela
+ * de impressão do navegador, onde se escolhe "Salvar como PDF". Sem biblioteca
+ * de PDF: o projeto não tem nenhuma, e o navegador já faz isso bem.
  */
-export default function BotaoImprimirCaixa({ sessionId }: { sessionId: string }) {
+export default function BotaoImprimirCaixa({ sessionId, comPdf = false }: { sessionId: string; comPdf?: boolean }) {
   const [estado, setEstado] = useState<"parado" | "enviando" | "ok" | "semAssistente" | "erro">("parado");
   const [erro, setErro] = useState("");
 
@@ -59,6 +65,13 @@ export default function BotaoImprimirCaixa({ sessionId }: { sessionId: string })
       <button type="button" style={botao} disabled={estado === "enviando"} onClick={() => imprimir("FECHAMENTO")}>
         🖨️ {estado === "enviando" ? "Enviando…" : "Imprimir fechamento"}
       </button>
+      {comPdf && (
+        <a href={`/api/cash-session/fechamento-pdf?sessionId=${encodeURIComponent(sessionId)}`} target="_blank" rel="noopener"
+           style={{ ...botao, textDecoration: "none", display: "inline-block" }}
+           title="Abre o fechamento em A4; na janela de impressão, escolha Salvar como PDF">
+          📄 Gerar PDF
+        </a>
+      )}
       <button type="button" style={botao} disabled={estado === "enviando"} onClick={() => imprimir("ABERTURA")}>
         🖨️ Abertura
       </button>

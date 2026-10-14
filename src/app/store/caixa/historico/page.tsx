@@ -1,8 +1,10 @@
 import BotaoImprimirCaixa from "@/components/customer/BotaoImprimirCaixa";
 import CorrigirCaixaFechado from "@/components/customer/CorrigirCaixaFechado";
+import MovimentacoesDoCaixaFechado from "@/components/customer/MovimentacoesDoCaixaFechado";
 import { VendasPorTipoDoHistorico } from "@/components/customer/VendasPorTipoDoCaixa";
 import { FORMAS_DA_CONFERENCIA, conferenciaGravada, porQueSemConferencia } from "@/lib/conferencia-do-caixa";
 import { formasAlteradas, podeEditarCaixa, type RetratoDoContado } from "@/lib/edicao-do-caixa";
+import { movimentacoesDosCaixas } from "@/lib/movimentacoes-do-caixa";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -89,6 +91,10 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
   } catch (err: any) {
     console.warn("[Histórico de caixas] Correções não carregadas:", err?.message);
   }
+  // As entradas e retiradas de cada caixa (Pizzaria 17, 14/10/2026: "as
+  // sangrias não aparecem no relatório"). Uma consulta para os 60; nula se a
+  // tabela não puder ser lida — o bloco some em vez de dizer "nenhuma".
+  const movimentosPorCaixa = await movimentacoesDosCaixas(lojaId, sessions.map((s) => s.id));
   const podeCorrigir = podeEditarCaixa(user);
   const fmtDif = (d: number | null) => d == null ? "sem conferência" : Math.abs(d) < 0.01 ? "confere" : d < 0 ? `faltou ${fmt(-d)}` : `sobrou ${fmt(d)}`;
 
@@ -218,6 +224,15 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
               </table>
             )}
 
+            {/* Sangria por sangria, reforço por reforço — e a regra do
+                dinheiro esperado escrita, para ninguém descontar duas vezes. */}
+            <MovimentacoesDoCaixaFechado
+              movimentos={movimentosPorCaixa ? movimentosPorCaixa.get(s.id) || [] : null}
+              esperadoEmDinheiro={Number(s.expectedCash || 0)}
+              trocoInicial={Number(s.openingAmount || 0)}
+              fuso={fuso}
+            />
+
             {/* Como estava antes: cada correção com quem, quando, o motivo e
                 o antes → depois de cada forma. A 1ª mostra o fechamento original. */}
             {edicoes.length > 0 && (
@@ -270,7 +285,7 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
               {/* Segunda via: papel some, e a conferência do dinheiro não pode
                   depender de alguém transcrever a tela à mão. */}
               <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 auto" }}>
-                <BotaoImprimirCaixa sessionId={s.id} />
+                <BotaoImprimirCaixa sessionId={s.id} comPdf />
                 {podeCorrigir && (
                   <CorrigirCaixaFechado
                     sessionId={s.id}

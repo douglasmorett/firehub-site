@@ -78,7 +78,7 @@ export async function calcularEsperadoDoTurno(
   let vendasEmDinheiro = 0;
   let reforcosQtd = 0;
   let sangriasQtd = 0;
-  let movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date }[] = [];
+  let movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date; quem: string | null }[] = [];
   let cancelados: DetalheDoTurno["cancelados"] = { qtd: 0, valor: 0, lista: [] };
   let itensCancelados: NonNullable<DetalheDoTurno["itensCancelados"]> = [];
   let entregadores: DetalheDoTurno["entregadores"] = [];
@@ -173,13 +173,15 @@ export async function calcularEsperadoDoTurno(
         // `descricao` e `createdAt` entram para o papel do fechamento poder
         // listar sangria por sangria, com hora e motivo. O total sozinho
         // ("Sangrias R$ 800,00") não deixa ninguém conferir nada.
-        select: { tipo: true, valor: true, descricao: true, createdAt: true },
+        // `criadoPor`: quem lançou, no papel ao lado do motivo (Pizzaria 17,
+        // 14/10/2026) — o mesmo e-mail que o comprovante da sangria imprime.
+        select: { tipo: true, valor: true, descricao: true, createdAt: true, criadoPor: true },
         orderBy: { createdAt: "asc" },
       });
       for (const m of movs) {
         if (m.tipo === "ENTRADA") { movimentacaoEntradas += m.valor; expected.cash += m.valor; reforcosQtd += 1; }
         else { movimentacaoSaidas += m.valor; expected.cash -= m.valor; sangriasQtd += 1; }
-        movimentacoes.push({ tipo: m.tipo, valor: m.valor, descricao: m.descricao || null, hora: m.createdAt });
+        movimentacoes.push({ tipo: m.tipo, valor: m.valor, descricao: m.descricao || null, hora: m.createdAt, quem: m.criadoPor || null });
       }
       expected.total += movimentacaoEntradas - movimentacaoSaidas;
     }
