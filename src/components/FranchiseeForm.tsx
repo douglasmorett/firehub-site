@@ -178,7 +178,7 @@ export function ImpersonateButton({ id }: { id: string }) {
   };
 
   return (
-    <button onClick={handleImpersonate} className="btn" disabled={loading} style={{ color: "var(--primary)", padding: "0.25rem 0.5rem", fontSize: "0.85rem", fontWeight: "bold", border: "1px solid var(--primary)" }}>
+    <button onClick={handleImpersonate} className="btn" disabled={loading} style={{ color: "var(--primary, #DC2626)", padding: "0.25rem 0.5rem", fontSize: "0.85rem", fontWeight: "bold", border: "1px solid var(--primary, #DC2626)" }}>
       {loading ? "Acessando..." : "Acessar Conta"}
     </button>
   );

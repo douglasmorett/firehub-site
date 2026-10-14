@@ -214,7 +214,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
           {/* Banner de Entrega */}
           <div style={{
             backgroundColor: "var(--primary-light)",
-            borderLeft: "4px solid var(--primary)",
+            borderLeft: "4px solid var(--primary, #DC2626)",
             padding: "1rem 1.5rem",
             borderRadius: "var(--radius-md)",
             marginBottom: "2rem",
@@ -222,11 +222,11 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
             alignItems: "center",
             gap: "1rem"
           }}>
-            <Clock color="var(--primary)" size={24} />
+            <Clock color="var(--primary, #DC2626)" size={24} />
             <div style={{ flex: 1 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem" }}>
                 <div>
-                  <h3 style={{ color: "var(--primary)", fontWeight: "bold", display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                  <h3 style={{ color: "var(--primary, #DC2626)", fontWeight: "bold", display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     Atenção ao prazo de entrega
                   </h3>
                   <p style={{ color: "var(--text-main)", fontSize: "0.95rem" }}>
@@ -234,7 +234,7 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
                   </p>
                 </div>
                 {now && (
-                  <div style={{ backgroundColor: "white", padding: "0.5rem 1rem", borderRadius: "8px", fontWeight: "bold", color: "var(--primary)", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>
+                  <div style={{ backgroundColor: "white", padding: "0.5rem 1rem", borderRadius: "8px", fontWeight: "bold", color: "var(--primary, #DC2626)", boxShadow: "0 2px 4px rgba(0,0,0,0.05)" }}>
                     Hora Atual: {now.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                   </div>
                 )}
@@ -262,8 +262,8 @@ export default function ProductGrid({ products, deliveryInfo, isLoggedIn = true,
               {categories.map(cat => (
                 <button key={cat} onClick={() => setSelectedCategory(cat)} style={{
                   padding: "0.4rem 1rem", borderRadius: "20px", fontSize: "0.9rem", fontWeight: "600", cursor: "pointer",
-                  border: "1px solid", borderColor: selectedCategory === cat ? "var(--primary)" : "var(--border-color)",
-                  backgroundColor: selectedCategory === cat ? "var(--primary)" : "transparent",
+                  border: "1px solid", borderColor: selectedCategory === cat ? "var(--primary, #DC2626)" : "var(--border-color)",
+                  backgroundColor: selectedCategory === cat ? "var(--primary, #DC2626)" : "transparent",
                   color: selectedCategory === cat ? "white" : "var(--text-main)", transition: "all 0.2s"
                 }}>{cat}</button>
               ))}

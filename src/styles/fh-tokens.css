@@ -105,6 +105,29 @@
   --fh-in:cubic-bezier(0,0,.38,.9);
   --fh-out:cubic-bezier(.2,0,1,.9);
   --fh-move:cubic-bezier(.2,0,.38,.9);
+
+  /* ── LEGADO — nomes do tema antigo, que saiu sem os componentes saírem ───
+        ~40 componentes ainda pedem var(--danger), var(--success),
+        var(--surface)… e NENHUM desses nomes estava definido: fundo virava
+        transparente e borda sumia. Com letra branca por cima, o botão some —
+        "✓ Já paguei" do Contas a Pagar, aprovar/recusar emergência, o balão
+        do chat de IA. Aqui eles apontam para as cores do guia (nenhum hex
+        novo). Componente novo usa os --fh-*, não estes. (14/10/2026) */
+  --danger:var(--fh-grave);
+  --success:var(--fh-ok);
+  --warning:var(--fh-atencao);
+  --border-color:var(--fh-linha);
+  --text-main:var(--fh-t1);
+  --text-muted:var(--fh-t4);
+  --surface:var(--fh-n1);
+  --surface-1:var(--fh-n1);
+  --surface-2:var(--fh-n3);
+  --bg-body:var(--fh-n0);
+  --bg-color:var(--fh-n1);
+  --bg-card:var(--fh-n1);
+  --radius-sm:6px;
+  --radius-md:10px;
+  --shadow-sm:0 1px 2px rgba(15,23,42,.06);
 }
 
 /* ── ENXERTO DA DIREÇÃO 2, e é o mais importante do pacote ────────────────

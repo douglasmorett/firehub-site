@@ -253,7 +253,7 @@ export default function ProductsClient({ products }: { products: any[] }) {
                     <div style={{ flex: 1 }}>
                       <h3 className="font-semibold">{product.name}</h3>
                       <p className="text-muted" style={{ fontSize: "0.85rem", marginBottom: "0.2rem" }}>{product.category || "Sem categoria"}</p>
-                      <p className="font-bold" style={{ fontSize: "0.95rem", color: "var(--primary)" }}>R$ {product.price.toFixed(2)}</p>
+                      <p className="font-bold" style={{ fontSize: "0.95rem", color: "var(--primary, #DC2626)" }}>R$ {product.price.toFixed(2)}</p>
                     </div>
                     <div style={{ display: "flex", gap: "0.5rem" }}>
                       <button 

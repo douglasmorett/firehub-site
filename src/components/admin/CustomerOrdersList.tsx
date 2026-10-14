@@ -73,7 +73,7 @@ export default function CustomerOrdersList({ orders, isAdmin = false }: { orders
               </div>
 
               <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-                <span className="font-extrabold" style={{ color: "var(--primary)" }}>R$ {order.totalAmount.toFixed(2)}</span>
+                <span className="font-extrabold" style={{ color: "var(--primary, #DC2626)" }}>R$ {order.totalAmount.toFixed(2)}</span>
                 <span style={{ 
                   padding: "0.3rem 0.8rem", borderRadius: "20px", fontSize: "0.75rem", fontWeight: "bold",
                   backgroundColor: `${statusInfo.color}15`, color: statusInfo.color, border: `1px solid ${statusInfo.color}30`

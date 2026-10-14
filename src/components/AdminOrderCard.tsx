@@ -76,7 +76,7 @@ export default function AdminOrderCard({ order, deliveryInfo }: { order: any, de
 
         <div style={{ display: "flex", flexDirection: "column", gap: "0.25rem" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
-            <MapPin size={16} color="var(--primary)" />
+            <MapPin size={16} color="var(--primary, #DC2626)" />
             <div>
               <p className="font-bold" style={{ fontSize: "0.9rem" }}>{order.user.city || "Sem Rota"}</p>
               <p className="text-muted" style={{ fontSize: "0.8rem", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "150px" }}>{order.user.name}</p>
@@ -166,7 +166,7 @@ export default function AdminOrderCard({ order, deliveryInfo }: { order: any, de
                 ) : (
                   <ul style={{ listStyle: "none", padding: 0, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
                     {order.history.map((h: any) => (
-                      <li key={h.id} style={{ borderLeft: "2px solid var(--primary)", paddingLeft: "8px" }}>
+                      <li key={h.id} style={{ borderLeft: "2px solid var(--primary, #DC2626)", paddingLeft: "8px" }}>
                         <div>
                           <strong>{h.actionBy}</strong> alterou para <strong>{getStatusLabel(h.statusTo)}</strong>
                         </div>

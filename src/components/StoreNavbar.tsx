@@ -28,13 +28,13 @@ export default function StoreNavbar({ userName, userCity }: { userName: string, 
         </div>
 
         <div className="flex items-center gap-4">
-          <Link href="/store" className="btn btn-outline" style={{ border: "none", color: "var(--primary)" }}>
+          <Link href="/store" className="btn btn-outline" style={{ border: "none", color: "var(--primary, #DC2626)" }}>
             Início
           </Link>
           <Link href="/store/orders" className="btn btn-outline" style={{ border: "none" }}>
             Meus Pedidos
           </Link>
-          <Link href="/store/cardapio" className="btn btn-outline" style={{ border: "none", color: "var(--primary)" }}>
+          <Link href="/store/cardapio" className="btn btn-outline" style={{ border: "none", color: "var(--primary, #DC2626)" }}>
             🍽️ Cardápio Digital
           </Link>
           <Link href="/store/minha-loja" className="btn btn-outline" style={{ border: "none" }}>
@@ -50,7 +50,7 @@ export default function StoreNavbar({ userName, userCity }: { userName: string, 
                 position: "absolute",
                 top: "-8px",
                 right: "-8px",
-                backgroundColor: "var(--primary)",
+                backgroundColor: "var(--primary, #DC2626)",
                 color: "white",
                 borderRadius: "50%",
                 width: "24px",

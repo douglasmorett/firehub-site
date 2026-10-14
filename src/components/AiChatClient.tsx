@@ -160,7 +160,7 @@ export default function AiChatClient() {
             {/* Bubble */}
             <div style={{ 
               maxWidth: "75%", padding: "14px 18px", borderRadius: "16px",
-              backgroundColor: msg.role === "user" ? "var(--primary)" : "var(--bg-color)",
+              backgroundColor: msg.role === "user" ? "var(--primary, #DC2626)" : "var(--bg-color)",
               color: msg.role === "user" ? "white" : "var(--text-main)",
               border: msg.role === "user" ? "none" : "1px solid var(--border-color)",
               fontSize: "0.95rem", lineHeight: "1.6",
@@ -206,7 +206,7 @@ export default function AiChatClient() {
               color: "var(--text-muted)", cursor: "pointer",
               transition: "all 0.2s"
             }}
-            onMouseOver={e => { e.currentTarget.style.borderColor = "var(--primary)"; e.currentTarget.style.color = "var(--primary)"; }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = "var(--primary, #DC2626)"; e.currentTarget.style.color = "var(--primary, #DC2626)"; }}
             onMouseOut={e => { e.currentTarget.style.borderColor = "var(--border-color)"; e.currentTarget.style.color = "var(--text-muted)"; }}
             >
               {s.icon} {s.text}
