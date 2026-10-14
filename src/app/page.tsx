@@ -1116,7 +1116,7 @@ export default function Home() {
               <p>Simples, rápido e completo. Tudo que o seu restaurante precisa em um só lugar.</p>
             </div>
             <div className="footer-col">
-              <h4>Links</h4>
+              <h3>Links</h3>
               <a href="#funcionalidades">Funcionalidades</a>
               <a href="#trafego-pago">Tráfego Pago</a>
               <a href="#contingencia">Modo Contingência</a>
@@ -1130,7 +1130,7 @@ export default function Home() {
               <a href="/prazos">🔥 FireHub Prazos (extensão)</a>
             </div>
             <div className="footer-col">
-              <h4>Contato</h4>
+              <h3>Contato</h3>
               <a href={WA} target="_blank" rel="noopener">📱 WhatsApp</a>
               <a href="mailto:contato@firehubfood.com.br">✉️ contato@firehubfood.com.br</a>
             </div>
