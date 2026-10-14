@@ -22,9 +22,9 @@ const SOLUTIONS = [
     items: [
       // Era "Disparos em Massa": o disparo pelo WhatsApp da loja está desligado
       // desde 02/09/2026 (lib/disparo-em-massa.ts). No lugar, o tráfego pago.
-      { t: "Tráfego Pago sem Gestor", d: "Anúncios no Instagram e Facebook pelo painel" },
-      { t: "Disparos pela API Oficial", d: "Promoção no WhatsApp sem risco de banimento" },
-      { t: "Recuperação de Clientes", d: "Reconquiste inativos no automático" },
+      { t: "Tráfego Pago sem Gestor", d: "Anúncios no Instagram e Facebook pelo painel (módulo à parte)" },
+      { t: "Disparos pela API Oficial", d: "Promoção no WhatsApp sem risco de banimento (por mensagem)" },
+      { t: "Recuperação de Clientes", d: "Quem sumiu há 7, 15 e 30 dias recebe sua oferta sozinho (pelos Disparos)" },
       { t: "Programa de Fidelidade", d: "Cashback e benefícios exclusivos" },
       { t: "Cupons Estratégicos", d: "Aumente conversão com descontos" },
     ]
@@ -43,7 +43,7 @@ const SOLUTIONS = [
 ];
 
 const STEPS = [
-  { n: "01", t: "Cadastre-se grátis", d: "Menos de 2 min. Cardápio no ar na hora." },
+  { n: "01", t: "Cadastre-se grátis", d: "Menos de 2 min. Link do cardápio na hora — e a gente copia seu cardápio grátis." },
   { n: "02", t: "Personalize tudo", d: "Logo, banner, produtos, preços e pagamentos." },
   { n: "03", t: "Receba pedidos", d: "Cardápio, WhatsApp, mesas ou balcão." },
   { n: "04", t: "Gerencie e cresça", d: "Relatórios e IA para vender mais." },
@@ -54,10 +54,10 @@ const COMPARE = [
   ["Delivery, Mesas e Balcão", true, true, false],
   ["Chatbot WhatsApp com IA", true, true, false],
   ["Alerta de bebida na comanda (zero esquecimento) 🏆", true, false, false],
-  ["Controle financeiro completo 🏆", true, false, false],
-  ["Leitura de notas por IA 🏆", true, false, false],
-  ["Estoque automático 🏆", true, false, false],
-  ["CMV automático 🏆", true, false, false],
+  ["Controle financeiro completo", true, true, false],
+  ["Leitura de boletos e notas por IA", true, false, false],
+  ["Estoque automático", true, true, false],
+  ["CMV automático", true, true, false],
   ["Integração iFood / 99Food", true, true, false],
 ];
 
@@ -65,14 +65,14 @@ const COMPARE = [
 const calcPrice = (rev: number) => rev === 0 ? 0 : Math.max(100, Math.min(400, rev * 0.02));
 
 const FAQ = [
-  { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades durante o período de teste." },
+  { q: "Como funciona o teste grátis?", a: "15 dias completos sem cobrar nada. Sem cartão de crédito. Sem compromisso. Você tem acesso a todas as funcionalidades do plano durante o teste (Tráfego Pago e Disparos são cobrados à parte, só se você usar)." },
   // A regra do mínimo está em lib/billing.ts: conta como uso o robô ou a IA
   // respondendo, caixa aberto, contas a pagar, nota de compra, totem e tráfego
   // pago. Integração ligada sem pedido NÃO conta.
   { q: "E se eu não usar a plataforma?", a: "Se você não vender nada e não usar nenhuma funcionalidade no mês, você não paga nada. Se você usar a plataforma ativamente (robô atendendo, caixa aberto, contas a pagar) sem faturar, aplica-se apenas a mensalidade mínima." },
-  { q: "Como funciona a cobrança?", a: "Cobramos apenas 2% de tudo que você fatura dentro do FireHub — cardápio digital, WhatsApp, mesa, balcão, iFood, 99Food e Jotajá entram na mesma conta. Mínimo de R$ 100 e máximo de R$ 400 por mês — a partir de R$ 20 mil de faturamento você não paga mais nada a mais. Sem taxa por pedido, sem surpresas." },
+  { q: "Como funciona a cobrança?", a: "Cobramos apenas 2% do valor dos pedidos que passam pelo FireHub — cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, Jotajá, Brendi e Wabiz entram na mesma conta (valor cheio do pedido, como está nos Termos de Uso). Mínimo de R$ 100 e máximo de R$ 400 por mês — a partir de R$ 20 mil de faturamento você não paga mais nada a mais. Sem taxa por pedido, sem surpresas." },
   { q: "Precisa instalar algum aplicativo?", a: "Não! O FireHub funciona no navegador. Celular, tablet ou computador — em qualquer lugar, a qualquer momento. Para imprimir as comandas, você instala o Assistente de Impressão no computador da loja." },
-  { q: "Como é o suporte?", a: "Humano, via WhatsApp, 7 dias por semana." },
+  { q: "Como é o suporte?", a: "Pelo WhatsApp e pelo chat do painel, 7 dias por semana, com a nossa equipe." },
   { q: "Integra com iFood?", a: "Sim! Receba pedidos do iFood direto no painel, junto com cardápio digital e WhatsApp." },
   { q: "Preciso de um gestor de tráfego para anunciar?", a: "Não. No módulo de Tráfego Pago você escolhe quanto quer investir por semana, a IA escreve o texto e cria a imagem, e o FireHub publica o anúncio no Facebook e no Instagram para quem está na sua área de entrega. O módulo custa R$ 50 por semana de campanha ativa, e a verba do anúncio você paga direto à Meta." },
   // Fatos em lib/disparo-oficial/regras.ts e components/ApresentacaoDisparoOficial.tsx.
@@ -121,7 +121,19 @@ function useRevelar() {
       else if (r.top < window.innerHeight) requestAnimationFrame(() => requestAnimationFrame(() => a.classList.add("lp-visivel")));
       else obs.observe(a);
     });
-    return () => { obs.disconnect(); raiz.classList.remove("lp-js"); };
+    // Rede de segurança: rolagem muito rápida (dedo no celular, atalho de
+    // teclado) pode pular o aviso do observador. A cada rolagem, o que já
+    // entrou na tela ou ficou para trás aparece — o preço nunca fica escondido.
+    let quadro = 0;
+    const conferir = () => {
+      quadro = 0;
+      document.querySelectorAll<HTMLElement>("[data-revela]:not(.lp-visivel)").forEach((a) => {
+        if (a.getBoundingClientRect().top < window.innerHeight * 0.92) { a.classList.add("lp-visivel"); obs.unobserve(a); }
+      });
+    };
+    const aoRolar = () => { if (!quadro) quadro = requestAnimationFrame(conferir); };
+    window.addEventListener("scroll", aoRolar, { passive: true });
+    return () => { obs.disconnect(); window.removeEventListener("scroll", aoRolar); cancelAnimationFrame(quadro); raiz.classList.remove("lp-js"); };
   }, []);
 }
 
@@ -201,7 +213,7 @@ function QuadroDePedidos() {
 
 /** Número que sobe de 0 até o valor quando aparece na tela. */
 function NumeroQueSobe({ valor }: { valor: string }) {
-  const [ref, visto] = useNaTela<HTMLHeadingElement>(0.5);
+  const [ref, visto] = useNaTela<HTMLDivElement>(0.5);
   const m = valor.match(/^([\d.]+)(.*)$/);
   const alvo = m ? parseFloat(m[1]) : NaN;
   const casas = m && m[1].includes(".") ? m[1].split(".")[1].length : 0;
@@ -219,8 +231,8 @@ function NumeroQueSobe({ valor }: { valor: string }) {
     raf = requestAnimationFrame(passo);
     return () => cancelAnimationFrame(raf);
   }, [visto, alvo]);
-  if (!m || valor.includes("/")) return <h3 ref={ref}>{valor}</h3>;
-  return <h3 ref={ref}>{visto ? atual.toFixed(casas) : (0).toFixed(casas)}{m[2]}</h3>;
+  if (!m || valor.includes("/")) return <div ref={ref} className="stat-num">{valor}</div>;
+  return <div ref={ref} className="stat-num">{visto ? atual.toFixed(casas) : (0).toFixed(casas)}{m[2]}</div>;
 }
 
 type Tema = {
@@ -484,7 +496,7 @@ export default function Home() {
   const Cross = () => <span style={{color:"#EF4444"}}>❌</span>;
 
   return (
-    <div>
+    <main>
       <div className="lp-progresso" ref={progresso} />
 
       {/* NAV */}
@@ -543,7 +555,7 @@ export default function Home() {
             <div className="hero-btns" data-revela style={{justifyContent:"center","--atraso":"520ms"} as CSSProperties}>
               <a href={TRIAL} className="btn-primary btn-pulse" style={{padding:"18px 48px",fontSize:"1.15rem"}}>🔥 Testar Grátis por 15 Dias</a>
             </div>
-            <p className="hero-note" data-revela style={{marginTop:16,"--atraso":"580ms"} as CSSProperties}>✓ Sem compromisso &nbsp;·&nbsp; ✓ Sem multa &nbsp;·&nbsp; ✓ Migração fácil</p>
+            <p className="hero-note" data-revela style={{marginTop:16,"--atraso":"580ms"} as CSSProperties}>✓ Sem compromisso &nbsp;·&nbsp; ✓ Sem multa para cancelar &nbsp;·&nbsp; ✓ Migração fácil</p>
             <div className="hero-badges" data-revela style={{justifyContent:"center",marginTop:24,"--atraso":"640ms"} as CSSProperties}>
               <div className="badge"><span>📋</span> Delivery</div>
               <div className="badge"><span>🍽️</span> Mesas</div>
@@ -620,7 +632,7 @@ export default function Home() {
             <span><b style={{ color: "#374151" }}>Módulo à parte</b>, cobrado só nas semanas com campanha ativa. A verba do anúncio você paga direto à Meta — o FireHub não fica com nada dela.</span>
           </div>
           <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem", background: "linear-gradient(135deg,#E1306C,#C13584)", boxShadow: "0 6px 24px rgba(225,48,108,.3)" }}>🔥 Quero Anunciar sem Gestor</a>
-          <span className="nota" style={{ color: "#64748B" }}>Conecte o Facebook e publique em minutos</span>
+          <span className="nota" style={{ color: "#64748B" }}>A gente conecta o seu Facebook junto com você</span>
         </>}
         visual={<AnuncioDemo />}
       />
@@ -637,12 +649,12 @@ export default function Home() {
         }}
         selo="⚡ INOVAÇÃO EXCLUSIVA FIREHUB"
         titulo={<>Automação Inteligente do Tempo de Entrega no <span style={{ color: "#EA1D2C" }}>iFood</span></>}
-        texto={<>Chega de ter que parar o atendimento para ficar ajustando o iFood manualmente no meio da correria. O FireHub é a <strong style={{ color: "#FFF" }}>primeira tecnologia do Brasil</strong> que lê a carga real do seu KDS e a quantidade de motoboys na casa para atualizar os prazos no iFood 100% no automático!</>}
+        texto={<>Chega de ter que parar o atendimento para ficar ajustando o iFood manualmente no meio da correria. O FireHub é a <strong style={{ color: "#FFF" }}>primeira tecnologia do Brasil</strong> que lê a fila real da sua cozinha e os motoboys que você informa para atualizar os prazos no iFood 100% no automático!</>}
         cards={[
           { t: "🤖 100% Silencioso", d: "Atualiza os prazos nos bastidores sem fechar a tela do caixa" },
           { t: "🛡️ Alerta de Estouro", d: "Avisa na hora quando a cozinha passa do limite de pedidos" },
-          { t: "🛵 Cálculo por Motoboy", d: "Ajusta os prazos conforme a quantidade de motoboys ativos" },
-          { t: "⭐ Zero Avaliações 1 Estrela", d: "Elimine reclamações de atrasos e cancelamentos de pedidos" },
+          { t: "🛵 Cálculo por Motoboy", d: "Ajusta os prazos conforme os motoboys que estão na casa" },
+          { t: "⭐ Menos Avaliações 1 Estrela", d: "Menos reclamação de atraso e menos pedido cancelado" },
         ]}
         acao={<>
           <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem" }}>🔥 Testar Tecnologia Exclusiva Grátis</a>
@@ -693,7 +705,7 @@ export default function Home() {
         novo
         selo="✅ DISPAROS PELA API OFICIAL DA META"
         titulo={<>Faça disparos <span style={{ color: "#5EEAD4" }}>sem perder o seu WhatsApp</span></>}
-        texto={<>Mande promoção para todos os seus clientes pelo <strong style={{ color: "#FFF" }}>canal oficial da Meta</strong>, do mesmo número da loja. Seu WhatsApp continua no celular, seu robô continua atendendo — e quem toca em “Quero pedir” já cai na conversa para fechar o pedido.</>}
+        texto={<>Mande promoção para os seus clientes pelo <strong style={{ color: "#FFF" }}>canal oficial da Meta</strong>, do mesmo número da loja. Seu WhatsApp continua no celular, seu robô continua atendendo — e quem toca em “Quero pedir” já cai na conversa para fechar o pedido.</>}
         cards={[
           { t: "🛡️ Número Protegido", d: "Nada de disparador pelo QR Code, que é o que faz número ser banido" },
           { t: "📱 Mesmo Número, Mesmo Robô", d: "Sem chip novo: o cliente responde onde sempre conversou com a loja" },
@@ -706,7 +718,7 @@ export default function Home() {
             <span style={{ color: "#A7C4C0" }}><b style={{ color: "#E6FFFA" }}>Crédito pré-pago por Pix</b>, a partir de R$ 50, sem mensalidade a mais. Mensagem que não chega volta para o seu saldo.</span>
           </div>
           <a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem", background: "linear-gradient(135deg,#14B8A6,#0F766E)", boxShadow: "0 6px 24px rgba(20,184,166,.3)" }}>✅ Quero Disparar sem Risco</a>
-          <span className="nota" style={{ color: "#A7C4C0" }}>Inclui a recuperação automática de quem sumiu há 7, 15 e 30 dias</span>
+          <span className="nota" style={{ color: "#A7C4C0" }}>Estamos liberando loja por loja — a gente ativa a sua pelo WhatsApp</span>
         </>}
         visual={<DisparoDemo />}
       />
@@ -718,7 +730,7 @@ export default function Home() {
         <div className="w">
           <div style={{ textAlign: "center", marginBottom: "2rem" }} data-revela>
             <h2 style={{ fontSize: "2rem", fontWeight: 900, color: "#0F172A", margin: "0 0 16px", letterSpacing: "-0.5px" }}>
-              Integramos com os maiores marketplaces do Brasil
+              Integramos com os maiores apps de pedido do Brasil
             </h2>
           </div>
         </div>
@@ -778,7 +790,7 @@ export default function Home() {
         visual={<>
           <ContingenciaDemo />
           <div className="lp-requisitos">
-            <b>Como funciona na prática:</b> com internet, tudo segue como hoje e o computador do caixa guarda uma cópia da loja (cardápio, mesas, pedidos e caixa). A TV da cozinha e o celular do garçom no Wi-Fi da loja trocam sozinhos para ele. Durante a queda o iFood fica pausado e reabre sozinho na volta.
+            <b>Como funciona na prática:</b> com internet, tudo segue como hoje e o computador do caixa guarda uma cópia da loja (cardápio, mesas, pedidos e caixa). A TV da cozinha e o celular do garçom no Wi-Fi da loja, depois de preparados uma vez, trocam sozinhos para ele. Se a internet da loja cair, o iFood fica pausado e reabre sozinho na volta.
           </div>
         </>}
       />
@@ -814,7 +826,7 @@ export default function Home() {
                 <span style={{ fontSize: "1.2rem" }}>🖨️</span>
                 <div>
                   <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#FFF" }}>Impressão Térmica com Tag de Bebida</div>
-                  <div style={{ fontSize: "0.72rem", color: "#38BDF8" }}>Identificação visual automática em 100% dos cupons</div>
+                  <div style={{ fontSize: "0.72rem", color: "#38BDF8" }}>Identificação automática pelo nome da bebida</div>
                 </div>
               </div>
               <span style={{ background: "#0284C7", color: "#FFF", fontSize: "0.7rem", fontWeight: 800, padding: "4px 8px", borderRadius: 6 }}>Exclusivo</span>
@@ -863,7 +875,7 @@ export default function Home() {
           { t: "🏷️ Impressão em 1 Clique", d: "Etiquetas prontas para insumos fracionados, molhos, carnes e massas" },
           { t: "🛡️ Validade Sempre à Vista", d: "Data de preparo e de vencimento em cada pote da sua cozinha" },
           { t: "💰 100% Grátis e Incluso", d: "Sem cobrar mensalidade extra por módulo de etiquetas de validade" },
-          { t: "♻️ Redução de Desperdício", d: "Alerta visual de validade de insumos para evitar descarte de estoque" },
+          { t: "♻️ Redução de Desperdício", d: "Validade impressa em cada pote: usa o que vence primeiro e joga menos fora" },
         ]}
         visual={<Moldura real src="/images/tela-etiqueta-de-validade.webp" alt="Tela do FireHub: etiqueta de validade com fabricação, validade e QR Code" borda="1.5px solid rgba(234,88,12,0.25)" sombra="0 25px 50px rgba(234,88,12,0.12)" fundo="#FFF" />}
       />
@@ -887,7 +899,7 @@ export default function Home() {
           { t: "🍔 Decomposição de Combos", d: "Defina o preço individual de bebidas e acompanhamentos isentos na nota fiscal" },
           { t: "⚖️ 100% Dentro da Lei", d: "A mesma separação de itens que as grandes redes usam na nota" },
           { t: "📉 Redução de PIS / COFINS", d: "Pague menos imposto sobre bebidas e itens monofásicos" },
-          { t: "⚡ Emissão de NFC-e Automática", d: "Emitida sozinha no aceite ou na saída do pedido, sem intervenção manual" },
+          { t: "⚡ Emissão de NFC-e Automática", d: "Sai sozinha no aceite ou na saída do pedido (na entrega, quando o cliente informa o CPF)" },
         ]}
         visual={<Moldura real src="/images/tela-engenharia-de-combos.webp" alt="Tela do FireHub: engenharia fiscal do combo, com o valor de cada item na nota" borda="1px solid rgba(16,185,129,0.3)" sombra="0 25px 50px rgba(0,0,0,0.9), 0 0 30px rgba(16,185,129,0.15)" fundo="#FFF" />}
       />
@@ -1015,7 +1027,7 @@ export default function Home() {
                 <li><span className="ck">✓</span> Cardápio digital, robô no WhatsApp e quadro de pedidos</li>
                 <li><span className="ck">✓</span> iFood, 99Food, Jotajá, Brendi e Wabiz no mesmo painel</li>
                 <li><span className="ck">✓</span> Cozinha, impressão com alerta de bebida e roteirizador</li>
-                <li><span className="ck">✓</span> Caixa, financeiro, estoque e NFC-e</li>
+                <li><span className="ck">✓</span> Caixa, financeiro, estoque e NFC-e (Simples Nacional e MEI)</li>
                 <li><span className="ck">✓</span> Modo Contingência — a loja não para se a internet cair</li>
               </ul>
 
@@ -1058,7 +1070,7 @@ export default function Home() {
               </tbody>
             </table>
           </div>
-          <p style={{textAlign:"center",color:"#9CA3AF",fontSize:".8rem",marginTop:12}}>🏆 Funcionalidades exclusivas que nenhum concorrente oferece</p>
+          <p style={{textAlign:"center",color:"#6B7280",fontSize:".8rem",marginTop:12}}>🏆 Funcionalidade exclusiva do FireHub</p>
         </div>
       </section>
 
@@ -1086,7 +1098,7 @@ export default function Home() {
         <div className="w" style={{ position: "relative" }}>
           <div className="cta-content" data-revela="zoom">
             <h2>Pronto para vender mais?</h2>
-            <p>Comece agora com 15 dias grátis. Sem cartão, sem compromisso, sem multa.</p>
+            <p>Comece agora com 15 dias grátis. Sem cartão, sem compromisso, sem multa para cancelar.</p>
             <div className="cta-buttons">
               <a href={TRIAL} className="btn-white">🔥 Começar Teste Grátis</a>
               <a href={WA} target="_blank" rel="noopener" className="btn-ghost">💬 Falar no WhatsApp</a>
@@ -1137,6 +1149,6 @@ export default function Home() {
         <small><b>15 dias grátis</b><br />Sem cartão · 2%, máx. R$ 400/mês</small>
         <a href={TRIAL} className="btn-primary">🔥 Testar Grátis</a>
       </div>
-    </div>
+    </main>
   );
 }
