@@ -291,7 +291,12 @@ export function itensDaImpressora<T extends ItemDoPedido>(
   // opção, tendo item desta impressora (ou a escolha do combo da categoria
   // dela), vai tudo. Sem item dela, a regra de sempre — o pedido só de pizza
   // não sai na Esfiha.
-  if (impressora.comandaInteiraNoMisto === true && (filtrados.length > 0 || dasOpcoes.length > 0)) {
+  //
+  // Bebida não conta como "item desta impressora" aqui: a NIK deixa Bebidas
+  // na Cozinha (esfiha + bebida juntas), e a Coca de um pedido de pizza
+  // puxava a comanda inteira da pizza para a Cozinha.
+  const daCozinha = filtrados.filter((item) => !itemEhBebida(item, pedido?.source));
+  if (impressora.comandaInteiraNoMisto === true && (daCozinha.length > 0 || dasOpcoes.length > 0)) {
     return itens as T[];
   }
 
