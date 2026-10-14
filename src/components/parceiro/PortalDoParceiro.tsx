@@ -18,6 +18,7 @@ import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
 import RelatorioDoParceiro from "@/components/parceiro/RelatorioDoParceiro";
+import { OcultarValoresProvider, OlhoDosValores } from "@/components/parceiro/ValoresOcultos";
 import type { Papel } from "@/lib/parceiro/regras";
 import type { RelatorioDoParceiro as Relatorio } from "@/lib/parceiro/relatorio";
 
@@ -71,6 +72,9 @@ export default function PortalDoParceiro({
   const pausado = <div className="pp-faixa pp-faixa-erro">Sua conta de vendedor está pausada. Fale com o administrador.</div>;
 
   return (
+    // O parceiro abre com o dinheiro escondido (ver ValoresOcultos); o admin,
+    // que confere o relatório no PC, já abre vendo.
+    <OcultarValoresProvider inicioOculto={modo === "PARCEIRO"}>
     <div className="pp">
       <style>{ESTILO_DO_PORTAL}</style>
 
@@ -92,6 +96,7 @@ export default function PortalDoParceiro({
                 </span>
               );
             })}
+            <OlhoDosValores className="pp-olho" />
             {modo === "ADMIN" ? (
               <a className="pp-sair" href={voltarPara}>
                 <ArrowLeft size={15} aria-hidden /> Voltar ao admin
@@ -137,6 +142,7 @@ export default function PortalDoParceiro({
         <main className="pp-largo">{p.ativo ? <AgendaDaEquipe modo="VENDEDOR" aoAbrirConversa={abrirConversa} /> : pausado}</main>
       )}
     </div>
+    </OcultarValoresProvider>
   );
 }
 
@@ -179,6 +185,8 @@ const ESTILO_DO_PORTAL = `
 .pp-topo-papel.emb i { background: #A78BFA; } .pp-topo-papel.rede i { background: #E879F9; } .pp-topo-papel.vend i { background: #60A5FA; }
 .pp-sair { background: #2A2622; color: #FAFAF9 !important; border: 1px solid #3A3531; border-radius: 8px; padding: 7px 12px; font-weight: 700; font-size: 0.8rem; display: inline-flex; gap: 6px; align-items: center; text-decoration: none; }
 .pp-sair:hover { background: #3A3531; }
+.pp-olho { background: #2A2622; color: #FAFAF9; border: 1px solid #3A3531; border-radius: 8px; width: 36px; height: 34px; display: inline-grid; place-items: center; cursor: pointer; padding: 0; }
+.pp-olho:hover { background: #3A3531; }
 
 .pp-abas { background: var(--pp-papel); border-bottom: 1px solid var(--pp-linha); }
 .pp-abas-dentro { max-width: 1240px; margin: 0 auto; padding: 0 8px; display: flex; gap: 2px; overflow-x: auto; }
@@ -382,7 +390,8 @@ const ESTILO_DO_PORTAL = `
   .pp-regra { margin: 6px 14px 14px; }
   .pp-rede { padding: 4px 14px 14px; }
   .pp-topo-dir { width: 100%; }
-  .pp-topo-dir .pp-sair { margin-left: auto; }
+  .pp-topo-dir .pp-olho { margin-left: auto; }
+  .pp-topo-dir .pp-olho ~ .pp-sair { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { .pp * { transition: none !important; scroll-behavior: auto !important; } }
 `;

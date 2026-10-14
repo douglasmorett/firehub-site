@@ -18,9 +18,12 @@ import {
 } from "lucide-react";
 import type { LojaDoRelatorio, Papel, Repasse } from "@/lib/parceiro/regras";
 import type { RelatorioDoParceiro } from "@/lib/parceiro/relatorio";
+import { useDinheiro } from "@/components/parceiro/ValoresOcultos";
 
 // ─── Formatos ───────────────────────────────────────────────────────────────
 
+// Na tela, valor em R$ sai por useDinheiro() (o olho do topo pode escondê-lo);
+// este aqui é só para o texto que vai à loja no WhatsApp, que leva o valor real.
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const mesExtenso = (ym: string) => MESES[Number(ym.slice(5, 7)) - 1] || ym;
@@ -97,6 +100,7 @@ export default function RelatorioDoParceiro({
   const [busca, setBusca] = useState("");
   const [ordem, setOrdem] = useState<Ordem>("ATENCAO");
   const [salvando, setSalvando] = useState<string | null>(null);
+  const dinheiro = useDinheiro();
 
   const quem = modo === "ADMIN" ? "a equipe da FireHub" : `${primeiroNome(parceiro.nome)}, da FireHub`;
   const papeis = parceiro.papeis.length ? parceiro.papeis : (["EMBAIXADOR"] as Papel[]);
@@ -183,14 +187,14 @@ export default function RelatorioDoParceiro({
           <h2 id="pp-extrato-titulo" className="pp-h2">
             {Mes(meses.atual)} até agora <span className="pp-quando">atualizado em {hoje}</span>
           </h2>
-          <p className="pp-total pp-num">{brl(resumo.mesAtual.comissao)}</p>
+          <p className="pp-total pp-num">{dinheiro(resumo.mesAtual.comissao)}</p>
           <p className="pp-legenda">
             de comissão sobre as mensalidades de {mesExtenso(meses.atual)}. O mês fecha no dia 1º, o boleto vence no dia 5 e a sua parte cai
             no Asaas quando cada loja pagar.
           </p>
           {resumo.mesAtual.semRepasse > 0 && !semRepasseGeral && (
             <p className="pp-aviso-linha">
-              <Info size={15} aria-hidden /> Mais {brl(resumo.mesAtual.semRepasse)} que a conta daria não caem — veja as lojas com o aviso de repasse.
+              <Info size={15} aria-hidden /> Mais {dinheiro(resumo.mesAtual.semRepasse)} que a conta daria não caem — veja as lojas com o aviso de repasse.
             </p>
           )}
 
@@ -202,18 +206,18 @@ export default function RelatorioDoParceiro({
           <ul className="pp-razao">
             <li className="pp-razao-linha ok">
               <span className="pp-razao-rotulo"><CircleCheck size={16} aria-hidden /> Recebido</span>
-              <strong className="pp-num">{brl(ant.recebido)}</strong>
+              <strong className="pp-num">{dinheiro(ant.recebido)}</strong>
               <span className="pp-razao-sub">{plural(ant.lojas.pagas, "loja pagou", "lojas pagaram")}</span>
             </li>
             <li className="pp-razao-linha">
               <span className="pp-razao-rotulo"><Clock size={16} aria-hidden /> A vencer</span>
-              <strong className="pp-num">{brl(ant.aVencer)}</strong>
+              <strong className="pp-num">{dinheiro(ant.aVencer)}</strong>
               <span className="pp-razao-sub">{plural(ant.lojas.aVencer, "loja", "lojas")} · o boleto vence no dia 5</span>
             </li>
             <li>
               <button type="button" className="pp-razao-linha erro clicavel" onClick={() => filtrar("TODOS", "ATRASADAS")} disabled={ant.lojas.vencidas === 0}>
                 <span className="pp-razao-rotulo"><TriangleAlert size={16} aria-hidden /> Atrasado</span>
-                <strong className="pp-num">{brl(ant.atrasado)}</strong>
+                <strong className="pp-num">{dinheiro(ant.atrasado)}</strong>
                 <span className="pp-razao-sub">{plural(ant.lojas.vencidas, "loja", "lojas")}{ant.lojas.vencidas ? " · ver e cobrar" : ""}</span>
               </button>
             </li>
@@ -221,7 +225,7 @@ export default function RelatorioDoParceiro({
               <li>
                 <button type="button" className="pp-razao-linha alerta clicavel" onClick={() => filtrar("TODOS", "SEM_BOLETO")}>
                   <span className="pp-razao-rotulo"><FileWarning size={16} aria-hidden /> Sem boleto</span>
-                  <strong className="pp-num">{brl(ant.semBoleto)}</strong>
+                  <strong className="pp-num">{dinheiro(ant.semBoleto)}</strong>
                   <span className="pp-razao-sub">{plural(ant.lojas.semBoleto, "loja", "lojas")} · a cobrança não saiu</span>
                 </button>
               </li>
@@ -235,18 +239,18 @@ export default function RelatorioDoParceiro({
           )}
           <p className="pp-razao-rodape">
             {ant.lojas.semCobranca > 0 && <>{plural(ant.lojas.semCobranca, "loja não teve", "lojas não tiveram")} cobrança (teste, isenta ou sem venda). </>}
-            {resumo.recebidoEsteMes > 0 && <>Entrou em {mesExtenso(meses.atual)}: <strong className="pp-num">{brl(resumo.recebidoEsteMes)}</strong>. </>}
+            {resumo.recebidoEsteMes > 0 && <>Entrou em {mesExtenso(meses.atual)}: <strong className="pp-num">{dinheiro(resumo.recebidoEsteMes)}</strong>. </>}
           </p>
           <div className="pp-media">
             <div>
               <span className="pp-rotulo">Média dos últimos {resumo.media.meses.length} meses</span>
-              <strong className="pp-num">{brl(resumo.media.valor)}</strong>
+              <strong className="pp-num">{dinheiro(resumo.media.valor)}</strong>
             </div>
             <ol className="pp-media-meses">
               {resumo.media.meses.map((m) => (
                 <li key={m.yearMonth}>
                   <span>{mesCurto(m.yearMonth)}</span>
-                  <b className="pp-num">{brl(m.valor)}</b>
+                  <b className="pp-num">{dinheiro(m.valor)}</b>
                 </li>
               ))}
             </ol>
@@ -304,7 +308,7 @@ export default function RelatorioDoParceiro({
                       <button type="button" className={`pp-celula ${r.emTeste === 0 ? "zero" : ""}`} onClick={() => filtrar(p, "TESTE")} disabled={r.emTeste === 0}>{r.emTeste}</button>
                     </td>
                     {celula(r.atrasadas, "ATRASADAS", "erro")}
-                    <td className="pp-num pp-dinheiro">{brl(r.comissaoMes)}</td>
+                    <td className="pp-num pp-dinheiro">{dinheiro(r.comissaoMes)}</td>
                   </tr>
                 );
               })}
@@ -317,7 +321,7 @@ export default function RelatorioDoParceiro({
                   <td className="pp-num">{resumo.estrutura.TOTAL.nuncaVenderam}</td>
                   <td className="pp-num pp-divisa">{resumo.estrutura.TOTAL.emTeste}</td>
                   <td className="pp-num">{resumo.estrutura.TOTAL.atrasadas}</td>
-                  <td className="pp-num pp-dinheiro">{brl(resumo.estrutura.TOTAL.comissaoMes)}</td>
+                  <td className="pp-num pp-dinheiro">{dinheiro(resumo.estrutura.TOTAL.comissaoMes)}</td>
                 </tr>
               )}
             </tbody>
@@ -468,6 +472,7 @@ function Composicao({
   percentuais: Record<Papel, number>;
   aoFiltrar: (p: Papel) => void;
 }) {
+  const dinheiro = useDinheiro();
   const total = papeis.reduce((s, p) => s + resumo.mesAtual.porPapel[p].comissao, 0);
   return (
     <div className="pp-composicao">
@@ -495,7 +500,7 @@ function Composicao({
                   {plural(r.lojas, "loja", "lojas")}
                   {r.lojas > 0 ? ` · ${r.cobraveis} com mensalidade` : ""}
                 </span>
-                <strong className="pp-num">{brl(r.comissao)}</strong>
+                <strong className="pp-num">{dinheiro(r.comissao)}</strong>
               </button>
             </li>
           );
@@ -514,13 +519,14 @@ function Atencao({
   meses: RelatorioDoParceiro["meses"];
   aoFiltrar: (s: FiltroDeSituacao) => void;
 }) {
+  const dinheiro = useDinheiro();
   const a = resumo.atencao;
   const itens: { chave: FiltroDeSituacao; classe: string; Icone: typeof Handshake; titulo: string; texto: string; acao: string }[] = [];
   if (a.atrasadas)
     itens.push({
       chave: "ATRASADAS", classe: "erro", Icone: TriangleAlert,
       titulo: `${plural(a.atrasadas, "loja", "lojas")} com mensalidade atrasada`,
-      texto: a.comissaoParada > 0 ? `${brl(a.comissaoParada)} da sua comissão estão esperando elas pagarem.` : "A comissão só cai quando a loja paga.",
+      texto: a.comissaoParada > 0 ? `${dinheiro(a.comissaoParada)} da sua comissão estão esperando elas pagarem.` : "A comissão só cai quando a loja paga.",
       acao: "Ver e cobrar",
     });
   if (a.aguardandoContato)
@@ -590,6 +596,7 @@ function LinhaDaLoja({
   aoMarcar: (l: LojaDoRelatorio, status: "ATENDIDO" | "AGUARDANDO") => void;
   percentualVendedor: number;
 }) {
+  const dinheiro = useDinheiro();
   const meta = PAPEL[l.papel];
   const dono = primeiroNome(l.dono);
   const ola = `Olá${dono ? `, ${dono}` : ""}! Aqui é ${quem}.`;
@@ -672,8 +679,8 @@ function LinhaDaLoja({
           <span className="pp-mini">loja isenta — não paga mensalidade</span>
         ) : atual.valor > 0 ? (
           <>
-            <span className="pp-sua-parte pp-num">{brl(atual.comissao)}</span>
-            <span className="pp-mini pp-num">de {brl(atual.valor)} de mensalidade</span>
+            <span className="pp-sua-parte pp-num">{dinheiro(atual.comissao)}</span>
+            <span className="pp-mini pp-num">de {dinheiro(atual.valor)} de mensalidade</span>
           </>
         ) : l.teste.ativo ? (
           <span className="pp-mini">em teste até {dataCurta(l.teste.ate)} — sem mensalidade ainda</span>
@@ -687,11 +694,11 @@ function LinhaDaLoja({
         <SituacaoDaMensalidade l={l} />
         {ant.valor > 0 && ant.situacao !== "SEM_COBRANCA" && (
           <span className="pp-mini pp-num">
-            {brl(ant.valor)} · sua parte {brl(ant.comissao)}
+            {dinheiro(ant.valor)} · sua parte {dinheiro(ant.comissao)}
           </span>
         )}
         {l.emAberto && l.emAberto.meses > 1 && (
-          <span className="pp-mini erro pp-num">{brl(l.emAberto.valor)} em aberto em {l.emAberto.meses} meses</span>
+          <span className="pp-mini erro pp-num">{dinheiro(l.emAberto.valor)} em aberto em {l.emAberto.meses} meses</span>
         )}
       </div>
 
