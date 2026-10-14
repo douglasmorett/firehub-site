@@ -96,6 +96,11 @@ export function textoDoAviso(
         titulo: `🛵 Seu pedido${n} saiu para entrega`,
         corpo: p.entregador ? `${p.entregador} está a caminho.` : "Já está a caminho.",
       };
+    case "CHEGANDO":
+      return {
+        titulo: `📍 Seu pedido${n} está chegando`,
+        corpo: `${p.entregador ? p.entregador.split(/\s+/)[0] : "O entregador"} está bem perto. Toque para ver no mapa.`,
+      };
     case "PRONTO_RETIRADA":
       return { titulo: `🛍️ Pedido${n} pronto`, corpo: `Pode vir buscar na ${loja}.` };
     case "ENTREGUE":

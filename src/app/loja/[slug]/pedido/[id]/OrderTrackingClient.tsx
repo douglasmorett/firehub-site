@@ -4,6 +4,8 @@ import { avisarOApp } from "@/lib/app-da-loja/ponte";
 import { ehRetirada, etapaDoAcompanhamento } from "@/lib/status-para-o-cliente";
 import { CheckCircle, Clock, ChefHat, Bike, Package, X, Phone, ArrowLeft, Star } from "lucide-react";
 import Link from "next/link";
+import MapaDaEntrega from "./MapaDaEntrega";
+import type { EntregaAoVivo } from "@/lib/entrega-ao-vivo";
 
 type Item = { name: string; opcoes?: string[]; qty: number; price: number; imageUrl: string | null };
 
@@ -59,6 +61,8 @@ export default function OrderTrackingClient({
   const [ratingComment, setRatingComment] = useState("");
   const [ratingDone, setRatingDone] = useState(false);
   const [showItems, setShowItems] = useState(false);
+  // O entregador no mapa enquanto o pedido está na rua (lib/entrega-ao-vivo.ts).
+  const [aoVivo, setAoVivo] = useState<EntregaAoVivo | null>(null);
 
   const pollStatus = useCallback(async () => {
     try {
@@ -66,6 +70,7 @@ export default function OrderTrackingClient({
       if (res.ok) {
         const data = await res.json();
         if (data.status !== status) setStatus(data.status);
+        setAoVivo(data.aoVivo ?? null);
         setLastCheck(new Date());
       }
     } catch {}
@@ -80,7 +85,11 @@ export default function OrderTrackingClient({
   useEffect(() => {
     const fim = etapaDoAcompanhamento(status, deliveryType);
     if (fim === "ENTREGUE" || fim === "CANCELADO") return;
-    const iv = setInterval(pollStatus, 15000); // poll a cada 15s
+    // Na rua o mapa anda: 10 s (o GPS do entregador chega a cada ~12 s).
+    // A primeira consulta é na hora — quem abre pelo aviso de "saiu" já quer o mapa.
+    const naRua = fim === "SAIU_ENTREGA" && !ehRetirada(deliveryType);
+    if (naRua) pollStatus();
+    const iv = setInterval(pollStatus, naRua ? 10000 : 15000);
     return () => clearInterval(iv);
   }, [pollStatus, status]);
 
@@ -150,6 +159,8 @@ export default function OrderTrackingClient({
             </p>
           )}
         </div>
+
+        {aoVivo && etapa === "SAIU_ENTREGA" && !retirada && <MapaDaEntrega aoVivo={aoVivo} />}
 
         {/* Timeline de progresso */}
         {!isCanceled && (

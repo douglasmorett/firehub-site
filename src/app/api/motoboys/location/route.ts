@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { avisarSeEstaChegando } from "@/lib/entrega-ao-vivo";
 
 // POST: Motoboy envia sua localização em tempo real
 //
@@ -64,6 +65,10 @@ export async function POST(req: NextRequest) {
     if (r.count === 0) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
+
+    // "Seu pedido está chegando" — sem esperar: o app só precisa do GPS gravado
+    // (lib/entrega-ao-vivo.ts).
+    void avisarSeEstaChegando(String(motoboyId), latitude, longitude);
 
     // Sem nome e sem coordenada de volta: quem mandou já sabe onde está.
     return NextResponse.json({ success: true });

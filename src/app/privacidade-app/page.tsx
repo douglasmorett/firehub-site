@@ -16,7 +16,7 @@ export const metadata: Metadata = {
  *   "usar minha localização" no endereço.
  */
 
-const ATUALIZADO = "12 de outubro de 2026";
+const ATUALIZADO = "14 de outubro de 2026";
 
 export default function PrivacidadeDoApp() {
   const secao: React.CSSProperties = { maxWidth: 780, margin: "0 auto", padding: "0 1.25rem" };
@@ -53,7 +53,7 @@ export default function PrivacidadeDoApp() {
 
         <h2 style={h2}>Avisos do pedido</h2>
         <div style={caixa}>
-          <b>Para quê:</b> avisar no seu celular quando o pedido é aceito, sai para entrega, fica pronto,
+          <b>Para quê:</b> avisar no seu celular quando o pedido é aceito, sai para entrega, está chegando, fica pronto,
           é entregue ou é cancelado.
           <br /><br />
           <b>Como:</b> se você permitir os avisos, o app gera um identificador do aparelho para notificações
@@ -69,6 +69,11 @@ export default function PrivacidadeDoApp() {
           O app só usa a sua localização quando você toca em “usar minha localização” para preencher o
           endereço ou achar a unidade que atende você. Ela não é rastreada nem guardada depois disso, e o app
           não usa localização em segundo plano.
+        </p>
+        <p style={p}>
+          Enquanto o pedido está a caminho, a página do pedido mostra no mapa onde está o <b>entregador</b>
+          (a posição dele, não a sua) e o ponto do endereço de entrega. Quando ele chega perto, o app avisa
+          “seu pedido está chegando”.
         </p>
 
         <h2 style={h2}>O que fica no seu celular</h2>

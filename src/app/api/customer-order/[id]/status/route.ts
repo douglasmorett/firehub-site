@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { entregaAoVivo } from "@/lib/entrega-ao-vivo";
 
 export async function GET(
   _req: NextRequest,
@@ -17,9 +18,16 @@ export async function GET(
 
   const order = await prisma.customerOrder.findUnique({
     where: { id },
-    select: { status: true, updatedAt: true },
+    select: {
+      status: true,
+      updatedAt: true,
+      deliveryType: true,
+      customerLatLng: true,
+      motoboy: { select: { name: true, lastLat: true, lastLng: true, lastLocationUpdate: true } },
+    },
   });
   if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ status: order.status, updatedAt: order.updatedAt });
+  // O entregador no mapa, só enquanto o pedido está na rua (lib/entrega-ao-vivo.ts).
+  return NextResponse.json({ status: order.status, updatedAt: order.updatedAt, aoVivo: entregaAoVivo(order) });
 
 }

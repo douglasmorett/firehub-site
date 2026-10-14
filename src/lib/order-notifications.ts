@@ -30,7 +30,8 @@ export function formaDePagamentoParaOCliente(pedido: { paymentMethod?: string | 
  * saiu-para-entrega havia um silêncio de meia hora — justamente a janela em
  * que o cliente liga para a loja perguntando se o pedido caiu.
  */
-export type OrderNotificationType = "CREATED" | "EM_PREPARO" | "SAIU_ENTREGA" | "PRONTO_RETIRADA" | "CANCELADO" | "ENTREGUE";
+/** CHEGANDO: o entregador está a 500 m do cliente (lib/entrega-ao-vivo.ts). */
+export type OrderNotificationType = "CREATED" | "EM_PREPARO" | "SAIU_ENTREGA" | "CHEGANDO" | "PRONTO_RETIRADA" | "CANCELADO" | "ENTREGUE";
 
 /**
  * O "pedido recebido" de qualquer canal: a comanda inteira, com os valores
@@ -229,6 +230,20 @@ Muito obrigado pela preferência! Fique atento para receber o entregador.
 
 Bom apetite e uma ótima refeição! 😋✨`;
         break;
+
+      case "CHEGANDO": {
+        const rawSlug = (order.franchisee as any)?.slug;
+        const storeSlug = rawSlug && rawSlug !== "minha-loja" ? rawSlug : "loja";
+        const baseUrl = (process.env.NEXTAUTH_URL || "https://firehubfood.com.br").replace(/\/$/, "");
+        const entregador = (order as any).motoboy?.name ? String((order as any).motoboy.name).trim().split(/\s+/)[0] : "O entregador";
+        message = `📍 *Seu pedido está chegando!*
+
+Olá, *${order.customerName}*! ${entregador} já está bem perto com o seu pedido *#${shortId}* de *${storeName}*.
+
+Fique de olho na porta. 🛵
+Acompanhe no mapa: ${baseUrl}/loja/${storeSlug}/pedido/${order.id}`;
+        break;
+      }
 
       case "PRONTO_RETIRADA":
         message = `🛍️ *Pedido PRONTO para Retirada!*

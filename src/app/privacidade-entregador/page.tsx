@@ -15,7 +15,7 @@ export const metadata: Metadata = {
  * ÚLTIMA posição do entregador (Motoboy.lastLat/lastLng) — não há histórico.
  */
 
-const ATUALIZADO = "9 de outubro de 2026";
+const ATUALIZADO = "14 de outubro de 2026";
 
 export default function PrivacidadeEntregador() {
   const secao: React.CSSProperties = { maxWidth: 780, margin: "0 auto", padding: "0 1.25rem" };
@@ -64,7 +64,10 @@ export default function PrivacidadeEntregador() {
           substitui o anterior; não guardamos o trajeto. A posição na hora de confirmar uma entrega
           segue a mesma regra.
           <br /><br />
-          <b>Quem vê:</b> só a loja para a qual o entregador trabalha.
+          <b>Quem vê:</b> a loja para a qual o entregador trabalha e, <b>só durante a entrega</b>, o
+          cliente daquele pedido, na página de acompanhamento (o primeiro nome do entregador e o pino no
+          mapa, como nos apps de delivery). Quando o pedido é entregue ou o envio fica parado por alguns
+          minutos, o cliente deixa de ver a posição.
         </div>
         <p style={p}>
           O app pede a permissão de localização "durante o uso". Ele não pede a permissão "o tempo
@@ -90,7 +93,8 @@ export default function PrivacidadeEntregador() {
 
         <h2 style={h2}>Com quem compartilhamos</h2>
         <p style={p}>
-          Com a loja para a qual o entregador trabalha. Quando o pedido é de uma plataforma (iFood ou
+          Com a loja para a qual o entregador trabalha e, durante cada entrega, a posição com o cliente
+          daquele pedido. Quando o pedido é de uma plataforma (iFood ou
           99Food), o código de entrega é enviado a ela para a conferência. Não vendemos, não alugamos e
           não cedemos esses dados a mais ninguém.
         </p>
