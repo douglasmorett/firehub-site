@@ -129,12 +129,12 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a2e}
 .footer-brand .logo-text{font-size:1.3rem;font-weight:900;margin-bottom:10px}
 .footer-brand .logo-text .fire{color:#EF4444}
 .footer-brand .logo-text .hub{color:#6B7280}
-.footer-brand p{color:#6B7280;font-size:.85rem;line-height:1.6;max-width:280px}
-.footer-col h4{color:#D1D5DB;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px}
-.footer-col a{display:block;color:#6B7280;font-size:.85rem;text-decoration:none;margin-bottom:10px;transition:color .2s}
+.footer-brand p{color:#9CA3AF;font-size:.85rem;line-height:1.6;max-width:280px}
+.footer-col h3,.footer-col h4{color:#D1D5DB;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:16px}
+.footer-col a{display:block;color:#9CA3AF;font-size:.85rem;text-decoration:none;margin-bottom:10px;transition:color .2s}
 .footer-col a:hover{color:#EF4444}
 .footer-bottom{border-top:1px solid #1F2937;padding-top:24px;display:flex;justify-content:space-between;align-items:center}
-.footer-bottom p{color:#4B5563;font-size:.78rem}
+.footer-bottom p{color:#9CA3AF;font-size:.78rem}
 .footer-social{display:flex;gap:12px}
 .footer-social a{color:#6B7280;font-size:1.1rem;transition:color .2s;text-decoration:none}
 .footer-social a:hover{color:#EF4444}
