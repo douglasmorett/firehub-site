@@ -109,13 +109,19 @@ const nextConfig: NextConfig = {
         `ws://127.0.0.1:${porta}`,
       ])
       .join(" ");
+    // A porta da loja do Modo Contingência (contingencia/supervisor, 7890): o
+    // painel aberto no computador do caixa avisa por ela em que endereço usa o
+    // FireHub (com ou sem "www"), e o atalho da área de trabalho abre esse.
+    // Fora dela o CSP barrava o aviso calado (visto em 14/10/2026). Mesma
+    // máquina, como o Assistente.
+    const portaDaLoja = "http://localhost:7890 http://127.0.0.1:7890";
     const csp = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com https://*.mercadopago.com https://connect.facebook.net https://*.googletagmanager.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https://fonts.gstatic.com",
-      `connect-src 'self' https: ${origensDoAssistente}`,
+      `connect-src 'self' https: ${origensDoAssistente} ${portaDaLoja}`,
       // ── O mapa da entrega precisa do Google no frame-src ─────────────────
       //
       // O modal "Informacoes da Entrega" (a motinha no card do pedido) desenha
