@@ -137,9 +137,23 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
         .then((r) => (r.ok ? r.json() : null))
         .then((d) => {
           if (!vivo || !d) return;
-          if (d.ativo) localStorage.setItem(CHAVE, JSON.stringify(d));
-          else localStorage.removeItem(CHAVE);
-          cuidarDaRedeDeSeguranca(!!d.ativo, tipo);
+          if (d.ativo) {
+            localStorage.setItem(CHAVE, JSON.stringify(d));
+            cuidarDaRedeDeSeguranca(true, tipo);
+            return;
+          }
+          // Esta conta não tem a contingência. Só desarma (apaga o bilhete e a
+          // rede de segurança) se o bilhete guardado for DESTA loja — ela
+          // desativou. De outra loja, fica: o dono de duas lojas que troca de
+          // loja no computador do caixa, ou o suporte que volta ao admin, não
+          // pode desarmar a contingência da loja deste computador (visto em
+          // 14/10/2026: o "Voltar ao admin" apagava tudo).
+          let lojaGuardada: string | null = null;
+          try { lojaGuardada = JSON.parse(localStorage.getItem(CHAVE) || "null")?.loja || null; } catch { /* guardado ilegível */ }
+          if (!lojaGuardada || !d.loja || lojaGuardada === d.loja) {
+            localStorage.removeItem(CHAVE);
+            cuidarDaRedeDeSeguranca(false, tipo);
+          }
         })
         .catch(() => { /* sem conexão: fica o bilhete que já estava guardado */ });
     };

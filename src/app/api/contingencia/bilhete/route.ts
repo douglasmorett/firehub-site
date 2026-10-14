@@ -39,7 +39,9 @@ export async function GET() {
       `SELECT "segredoDoBilhete", "relato" FROM "Contingencia" WHERE "lojaId" = $1`,
       quem.lojaId,
     );
-    if (!r[0]) return NextResponse.json({ ativo: false });
+    // `loja` vai junto: a tela só apaga o bilhete guardado se ele for desta
+    // loja (TrocaDeContingencia) — outra conta não desarma a do computador.
+    if (!r[0]) return NextResponse.json({ ativo: false, loja: quem.lojaId });
     const exp = Date.now() + VALIDADE_DO_BILHETE_MS;
     const bilhete = assinarBilhete({ v: 1, loja: quem.lojaId, exp, ...quem.corpo }, r[0].segredoDoBilhete);
     const relato = r[0].relato || {};
@@ -55,6 +57,6 @@ export async function GET() {
     });
   } catch {
     // Estrutura ainda não criada (boot antigo): é o mesmo que não ativada.
-    return NextResponse.json({ ativo: false });
+    return NextResponse.json({ ativo: false, loja: quem.lojaId });
   }
 }
