@@ -24,7 +24,7 @@ type OpcaoDeCombo = {
   id: string;
   comboGroupId: string;
   menuProductId: string;
-  comboGroup: { menuProductId: string };
+  comboGroup: { menuProductId: string; priceRule?: string | null };
   menuProduct: {
     name: string;
     recipeItems: {
@@ -46,6 +46,12 @@ type IndiceDeOpcoes = {
    */
   porChave: Map<string, OpcaoDeCombo | null>;
 };
+
+/** Grupo de sabores de pizza: cada escolha é uma fração da mesma pizza (preco-combo.ts). */
+export function ehGrupoDeFracao(priceRule: unknown): boolean {
+  const r = String(priceRule || "").trim().toUpperCase();
+  return r === "MAIOR" || r === "MEDIA";
+}
 
 function chaveNormalizada(valor: string): string {
   return valor.trim().toLowerCase();
@@ -318,7 +324,7 @@ export async function deductStockForOrder(orderId: string) {
             id: true,
             comboGroupId: true,
             menuProductId: true,
-            comboGroup: { select: { menuProductId: true } },
+            comboGroup: { select: { menuProductId: true, priceRule: true } },
             menuProduct: {
               select: {
                 name: true,
@@ -461,6 +467,7 @@ export async function deductStockForOrder(orderId: string) {
             }
 
             const naoResolvidas: string[] = [];
+            const resolvidas: { escolha: EscolhaDeCombo; opcao: OpcaoDeCombo }[] = [];
 
             for (const escolha of escolhas) {
               const opcao = acharOpcaoDoCombo(indice, escolha);
@@ -468,7 +475,28 @@ export async function deductStockForOrder(orderId: string) {
                 naoResolvidas.push(escolha.rotulo);
                 continue;
               }
+              resolvidas.push({ escolha, opcao });
+            }
 
+            // ── O SABOR DA PIZZA É FRAÇÃO ─────────────────────────────────
+            //
+            // No grupo de sabores (regra de preço MAIOR ou MÉDIA, a da pizza
+            // meio a meio) cada sabor ocupa uma fração da MESMA pizza. A ficha
+            // técnica do sabor é da pizza inteira — a do Jeová Jireh (15/10/2026)
+            // diz "250 g de muçarela" por sabor — e somar inteira dava, na meia
+            // calabresa / meia frango, 500 g de queijo numa pizza que leva 250.
+            // Aqui cada sabor entra com a sua parte: qtd ÷ total do grupo. Grupo
+            // de SOMA (adicionais, esfirras do combo) segue somando inteiro.
+            const totalDoGrupo = new Map<string, number>();
+            for (const { escolha, opcao } of resolvidas) {
+              if (!ehGrupoDeFracao(opcao.comboGroup.priceRule)) continue;
+              totalDoGrupo.set(opcao.comboGroupId, (totalDoGrupo.get(opcao.comboGroupId) || 0) + escolha.qtd);
+            }
+
+            for (const { escolha, opcao } of resolvidas) {
+              const total = totalDoGrupo.get(opcao.comboGroupId);
+              const fator = total && total > 0 ? escolha.qtd / total : escolha.qtd;
+              const rotulo = total && total > 1 ? `${escolha.qtd}/${total} ${opcao.menuProduct.name}` : `${escolha.qtd}x ${opcao.menuProduct.name}`;
               // A quantidade da escolha é POR unidade do combo; a do item entra
               // depois, quando a linha vira transação.
               for (const recipeItem of opcao.menuProduct.recipeItems) {
@@ -476,8 +504,8 @@ export async function deductStockForOrder(orderId: string) {
                   recipeItem.stockItemId,
                   recipeItem.stockItem.name,
                   recipeItem.stockItem.unit,
-                  recipeItem.quantityConsumed * escolha.qtd,
-                  `${escolha.qtd}x ${opcao.menuProduct.name}`
+                  recipeItem.quantityConsumed * fator,
+                  rotulo
                 );
               }
             }
