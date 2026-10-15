@@ -18,6 +18,17 @@ export async function GET() {
   }
   return NextResponse.json({
     ok: true,
-    garcom: { id: auth.garcom.id, name: auth.garcom.name, commissionRate: auth.garcom.commissionRate },
+    garcom: {
+      id: auth.garcom.id,
+      name: auth.garcom.name,
+      commissionRate: auth.garcom.commissionRate,
+      // O app da maquininha esconde o que o garçom não pode fazer (o servidor
+      // continua barrando com 403; isto é só para não oferecer o botão).
+      podeFecharConta: auth.garcom.podeFecharConta,
+      podeDarDesconto: auth.garcom.podeDarDesconto,
+      podeLiberarMesa: auth.garcom.podeLiberarMesa,
+      podeTirarTaxa: auth.garcom.podeTirarTaxa,
+      podeRemoverItem: auth.garcom.podeRemoverItem,
+    },
   });
 }
