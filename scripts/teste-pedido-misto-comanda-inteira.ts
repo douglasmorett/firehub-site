@@ -65,9 +65,9 @@ confere(
   { PIZZA: ["Pizza Calabresa G"] }
 );
 confere(
-  "ligada nas duas, pizza + Coca: a Esfiha segue a regra de hoje (o resgate da Coca, que ninguém pediu)",
+  "ligada nas duas, pizza + Coca: a Pizza leva inteiro e a Esfiha não tira papel só com a Coca (NIK, 14/10)",
   fila([inteira(PIZZA), inteira(ESFIHA)], PIZZA_E_COCA),
-  { PIZZA: ["Pizza Calabresa G", "Coca-Cola 2L"], ESFIHA: ["Coca-Cola 2L"] }
+  { PIZZA: ["Pizza Calabresa G", "Coca-Cola 2L"] }
 );
 confere(
   "ligada nas duas, só esfiha: só a Esfiha",

@@ -4,7 +4,7 @@ import { comboParaImpressao, escolhasUmaPorUnidade } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
-import { categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, impressorasPeloTipoDoPedido, itensQueContamParaAVia, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR, umaPorImpressora } from "./roteamento-de-impressao";
+import { bebidaQueOutraJaLeva, categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, impressorasPeloTipoDoPedido, itensQueContamParaAVia, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR, umaPorImpressora } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import {
@@ -709,6 +709,8 @@ export async function printOrder(
     // Nada deste pedido é desta impressora: o bar não recebe a comanda do
     // burger. (Antes saía o pedido inteiro — ver roteamento-de-impressao.ts.)
     if (daImpressora === null && !reimpressao) continue;
+    // Só a bebida de um pedido que outra impressora leva inteiro (pedido misto).
+    if (daImpressora && bebidaQueOutraJaLeva(printer, daImpressora, uniquePrinters, pedidoParaRotear, pedidas)) continue;
     const itemsToPrint = daImpressora ? daImpressora.map(i => i.item) : order.items;
     receberam.push({ nome: printer.name, itens: itensQueContamParaAVia(itemsToPrint) });
 

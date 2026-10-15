@@ -580,10 +580,35 @@ export function destinosDoPedido<T extends ItemDoPedido>(
   for (const imp of atendem) {
     const itens = itensDaImpressora(imp, pedido, pedidas);
     if (itens === null) continue;
+    if (bebidaQueOutraJaLeva(imp, itens, atendem, pedido, pedidas)) continue;
     destinos.push({ impressora: imp, itens });
   }
 
   return destinos;
+}
+
+/**
+ * Esta impressora ficou só com a BEBIDA de um pedido que outra impressora,
+ * com "Pedido misto: comanda inteira", já leva inteiro (NIK, 14/10/2026): a
+ * Cozinha tem Bebidas para esfiha + bebida e para o pedido só de bebida, mas
+ * no pedido de pizza + Coca a Pizza já sai com a Coca e a Cozinha imprimia um
+ * papel só com o refrigerante. Pedido só de bebida não entra aqui.
+ */
+export function bebidaQueOutraJaLeva<T extends ItemDoPedido>(
+  impressora: ImpressoraConfigurada,
+  itens: T[],
+  impressoras: ImpressoraConfigurada[],
+  pedido: { source?: unknown; items?: T[] | null },
+  pedidas?: Set<string>
+): boolean {
+  const todos = pedido?.items || [];
+  if (itens.length === 0 || !itens.every((i) => itemEhBebida(i, pedido?.source))) return false;
+  if (todos.every((i) => itemEhBebida(i, pedido?.source))) return false;
+  return impressoras.some((outra) => {
+    if (outra === impressora || outra.comandaInteiraNoMisto !== true) return false;
+    const dela = itensDaImpressora(outra, pedido, pedidas);
+    return !!dela && dela.length === todos.length;
+  });
 }
 
 /** O sufixo do id da via do entregador (ver `viaDoEntregador`). */
