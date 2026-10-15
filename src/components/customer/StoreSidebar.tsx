@@ -20,7 +20,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import {
   BarChart2, Bike, PlayCircle, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
-  Contact, Gauge, Home, LifeBuoy, LineChart, LogOut, MapPin, Menu, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
+  Contact, Gauge, Home, LifeBuoy, LineChart, LogOut, MapPin, Menu, Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
   Send, ShoppingBag, Store, TabletSmartphone, Tag, Truck, Tv, UtensilsCrossed, Users, Wallet,
   X, Zap, type LucideIcon,
 } from "lucide-react";
@@ -34,7 +34,7 @@ import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 
 const ICONES: Record<string, LucideIcon> = {
   BarChart2, Bike, BookOpen, Bot, CheckCircle2, ClipboardList, Contact, Gauge, Home, LifeBuoy, LineChart, MapPin,
-  Monitor, Package, PieChart, Printer, Puzzle, Receipt, Send, ShoppingBag, Store,
+  Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt, Send, ShoppingBag, Store,
   TabletSmartphone, Tag, Truck, Tv, UtensilsCrossed, Users, Wallet, Zap,
 };
 
