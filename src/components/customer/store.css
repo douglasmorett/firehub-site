@@ -1146,3 +1146,25 @@
 .store-banner-video.tocando {
   opacity: 1;
 }
+
+/* Vídeo em faixa, mais largo que a capa (CapaDaLoja.tsx): inteiro na altura,
+   andando de uma ponta à outra e parando um pouco em cada uma. */
+.store-banner-video.passeando {
+  right: auto;
+  width: auto;
+  max-width: none;
+  object-fit: fill;
+  animation: capa-passeio var(--passeio-s, 16s) ease-in-out infinite alternate;
+  will-change: transform;
+}
+
+@keyframes capa-passeio {
+  0%, 12% { transform: translateX(0); }
+  88%, 100% { transform: translateX(var(--passeio, 0px)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .store-banner-video.passeando {
+    animation: none;
+  }
+}
