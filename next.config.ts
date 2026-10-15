@@ -44,6 +44,13 @@ const nextConfig: NextConfig = {
           source: "/conect",
           destination: "/conect.html",
         },
+        // ─── Tutoriais em vídeo: pela rota, não como arquivo de public/ ───
+        // Servidos como arquivo estático, saíam sem CORS e sem Range, e o app
+        // do FireCheck no iPhone não tocava (src/app/arquivos-dos-tutoriais).
+        {
+          source: "/uploads/tutoriais/:path*",
+          destination: "/arquivos-dos-tutoriais/:path*",
+        },
         // ─── Icebox: raiz → catálogo Icebox independente ───
         {
           source: "/",

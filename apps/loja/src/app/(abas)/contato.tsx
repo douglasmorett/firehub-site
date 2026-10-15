@@ -12,6 +12,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { estadoDosAvisos, tokenDoAparelho, type EstadoDosAvisos } from "@/lib/avisos";
+import { logoDaMarca } from "@/lib/logo-da-marca";
 import { marca } from "@/lib/marca";
 
 function Linha({ icone, titulo, detalhe, aoTocar }: { icone: keyof typeof Ionicons.glyphMap; titulo: string; detalhe?: string; aoTocar: () => void }) {
@@ -59,7 +60,7 @@ export default function Contato() {
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#F6F6F7" }} contentContainerStyle={{ paddingBottom: 32 }}>
       <View style={[estilos.topo, { paddingTop: topo + 24, backgroundColor: marca.cor }]}>
-        {!!marca.logo && <Image source={{ uri: marca.logo }} style={estilos.logo} contentFit="cover" />}
+        {!!logoDaMarca && <Image source={logoDaMarca} style={estilos.logo} contentFit="cover" />}
         <Text style={[estilos.nome, { color: marca.corDoTexto }]}>{marca.nome}</Text>
         {!!endereco && <Text style={[estilos.endereco, { color: marca.corDoTexto }]}>{endereco}</Text>}
       </View>
