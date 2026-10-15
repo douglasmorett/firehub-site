@@ -5,6 +5,7 @@ import { ehPagoOnline } from "./pagamento-na-entrega";
 import { separacaoDoDesconto99 } from "./desconto-99food";
 import { documentoDeVerdade } from "./documento-do-cliente";
 import { infoDaEntrega } from "./entrega-parceira";
+import { valorDoAcrescimoGravado } from "./acrescimo-no-credito";
 
 // Reexportado para quem já importava daqui.
 export { ratearEmCentavos };
@@ -298,6 +299,9 @@ export function pedidoParaNota(
     valorTotal: Number(pedido.totalAmount) || 0,
     taxaEntrega: Number(pedido.deliveryFee) || 0,
     desconto: Number(pedido.discountTotal) || 0,
+    // O acréscimo no crédito do cardápio (etiqueta nas observações), que já
+    // está no totalAmount: vai em vOutro (lib/fiscal-emissao → valoresDaNota).
+    acrescimo: valorDoAcrescimoGravado({ notes: typeof pedido.notes === "string" ? pedido.notes : null }),
     descontoDaPlataforma,
     descontosDetalhados: lerDescontosDetalhados(pedido.discountDetails),
     formaDePagamento: String(pedido.paymentMethod ?? ""),

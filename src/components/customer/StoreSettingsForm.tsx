@@ -9,6 +9,7 @@ import { DAYS, DAY_MAP, normalizeStoreHours, defaultHours } from "@/lib/store-ho
 import { FUSOS_DO_BRASIL, fusoPorEndereco, rotuloDoFuso } from "@/lib/fuso-por-endereco";
 import { DICA_DO_VIDEO, MAX_VIDEO_BYTES } from "@/lib/video-enviado";
 import { DESCONTO_ONLINE_MAXIMO, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
+import { ACRESCIMO_NO_CREDITO_MAXIMO, percentualDoAcrescimoNoCredito } from "@/lib/acrescimo-no-credito";
 
 /**
  * O cupom como fica gravado em `storeCoupons`. A régua que lê isto é
@@ -37,7 +38,7 @@ type Coupon = {
  * O % de desconto do pagamento pelo site. Texto próprio enquanto digita:
  * campo numérico controlado engolia o "2," de "2,5".
  */
-function CampoDePercentual({ valor, onMudar }: { valor: number; onMudar: (n: number) => void }) {
+function CampoDePercentual({ valor, onMudar, maximo = DESCONTO_ONLINE_MAXIMO }: { valor: number; onMudar: (n: number) => void; maximo?: number }) {
   const [texto, setTexto] = useState(valor ? String(valor).replace(".", ",") : "");
   return (
     <input
@@ -46,10 +47,10 @@ function CampoDePercentual({ valor, onMudar }: { valor: number; onMudar: (n: num
         const t = e.target.value.replace(/[^\d,.]/g, "").slice(0, 5);
         setTexto(t);
         const n = Number(t.replace(",", "."));
-        if (Number.isFinite(n)) onMudar(Math.max(0, Math.min(DESCONTO_ONLINE_MAXIMO, n)));
+        if (Number.isFinite(n)) onMudar(Math.max(0, Math.min(maximo, n)));
       }}
       onBlur={() => {
-        const n = Math.max(0, Math.min(DESCONTO_ONLINE_MAXIMO, Number(texto.replace(",", ".")) || 0));
+        const n = Math.max(0, Math.min(maximo, Number(texto.replace(",", ".")) || 0));
         setTexto(n ? String(n).replace(".", ",") : "");
       }}
       style={{ width: 70, padding: "6px 8px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", textAlign: "center" }}
@@ -1263,6 +1264,37 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                         <button onClick={addBrand} style={{ padding: '0.5rem 1rem', borderRadius: '8px', background: "#C92E09", color: '#fff', border: 'none', cursor: 'pointer', fontSize: '0.82rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}><Plus size={14} /> Adicionar</button>
                       </div>
                     )}
+
+                    {/* ── ACRÉSCIMO PARA O CLIENTE NO CRÉDITO ───────────────
+                        lib/acrescimo-no-credito.ts. NÃO é a taxa da bandeira
+                        (o que a maquininha cobra da loja, para o lucro): é o
+                        que o CLIENTE paga a mais, em linha própria no
+                        cardápio, no painel e na comanda. 0 = desligado. */}
+                    {pm.key === "CREDITO" && (() => {
+                      const pct = percentualDoAcrescimoNoCredito(paymentConfig);
+                      return (
+                        <div style={{ marginTop: "0.95rem", padding: "10px 14px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 10 }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: "0.82rem", fontWeight: 700, color: "#92400E" }}>
+                            Acréscimo para o cliente no crédito
+                            <CampoDePercentual
+                              valor={pct}
+                              maximo={ACRESCIMO_NO_CREDITO_MAXIMO}
+                              onMudar={(n) => {
+                                setPaymentConfig((p: any) => ({ ...p, CREDITO: { ...(p.CREDITO || {}), acrescimo: n } }));
+                                setDirtyPayment(true);
+                              }}
+                            />
+                            %
+                          </label>
+                          <p style={{ fontSize: "0.74rem", color: "#92400E", marginTop: 6, lineHeight: 1.45 }}>
+                            Cobrado do cliente que pede pelo cardápio online e paga no crédito da maquininha (entrega ou retirada),
+                            sobre itens + entrega. O cardápio mostra a linha &quot;Acréscimo no crédito&quot; e o total já com ele antes de
+                            finalizar; o painel e a comanda saem com a mesma linha. É diferente da taxa que a maquininha cobra de você
+                            (essa fica só no relatório de lucro). Deixe 0 para não cobrar. Cartão pelo site não leva acréscimo.
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>

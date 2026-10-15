@@ -1,4 +1,5 @@
 import { camposDeEntregaParaImpressao } from "./entrega-parceira";
+import { camposDoAcrescimoParaImpressao } from "./acrescimo-no-credito";
 import { camposDoEnderecoParaImpressao } from "./endereco-impresso";
 import { comboParaImpressao, escolhasUmaPorUnidade } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
@@ -398,6 +399,10 @@ async function printToDevice(
           // Detalhe do desconto (ex.: "Cupom HAKIM10 (-10%)") para a comanda
           // dizer POR QUE o total ficou menor que a soma dos itens.
           discountDetails: (order as any).discountDetails,
+          // Acréscimo no crédito do cardápio: lido da etiqueta nas observações
+          // e mandado em serviceFee/serviceFeeLabel, que o Assistente soma na
+          // conta e imprime em linha própria (lib/acrescimo-no-credito.ts).
+          ...camposDoAcrescimoParaImpressao(order as any),
           changeAmount: (order as any).changeAmount,
           ifoodReference: (order as any).ifoodReference,
           // DE QUAL loja iFood veio, quando a conta tem mais de uma. Sem isto a

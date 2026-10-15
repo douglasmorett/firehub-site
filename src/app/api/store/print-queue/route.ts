@@ -1,4 +1,5 @@
 import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
+import { camposDoAcrescimoParaImpressao } from "@/lib/acrescimo-no-credito";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { destinosDoPedido, impressoraDaViaDoEntregador, itensQueContamParaAVia, pedidoEhSoBebida, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR } from "@/lib/roteamento-de-impressao";
@@ -646,6 +647,9 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
         // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.
         ...camposDeDesconto99ParaImpressao(order),
+        // Acréscimo no crédito do cardápio: linha própria na comanda, no campo
+        // da taxa de serviço que o Assistente já soma (lib/acrescimo-no-credito.ts).
+        ...camposDoAcrescimoParaImpressao(order as any),
         ...(qrEmTodas ? qr : {}),
         ...campanhaSemDestino,
         ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
@@ -882,6 +886,8 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
           // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.
           ...camposDeDesconto99ParaImpressao(order),
+          // Acréscimo no crédito do cardápio (lib/acrescimo-no-credito.ts).
+          ...camposDoAcrescimoParaImpressao(order as any),
           ...(qrEmTodas ? qr : {}),
           ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
           ...(avisosDaComanda ? { avisos: avisosDaComanda } : {}),

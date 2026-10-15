@@ -44,6 +44,7 @@ import AvisosDaFoody from "@/components/customer/AvisosDaFoody";
 import { esperandoConferencia, motivoDeAguardarLoja } from "@/lib/finalizar-rascunho";
 import AvisoPedidoDoRoboParaConferir from "@/components/customer/AvisoPedidoDoRoboParaConferir";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
+import { acrescimoGravadoNoPedido, camposDoAcrescimoParaImpressao } from "@/lib/acrescimo-no-credito";
 import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
 import NotaFiscalDoPedido, { NotaFiscalDaLojaProvider, useNotaFiscalDaLoja } from "@/components/customer/NotaFiscalDoPedido";
@@ -2558,6 +2559,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       // 99Food: loja x plataforma pela régua única, também em pedido antigo;
       // a parte do 99 vai em discountPlatform (lib/desconto-99food.ts).
       ...camposDeDesconto99ParaImpressao(order),
+      // Acréscimo no crédito do cardápio, na linha da taxa de serviço do
+      // Assistente (lib/acrescimo-no-credito.ts).
+      ...camposDoAcrescimoParaImpressao(order as any),
       changeAmount: order.changeAmount,
       ifoodReference: order.ifoodReference,
       ifoodPickupCode: order.ifoodPickupCode,
@@ -5293,6 +5297,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       <div style={{ display: "flex", justifyContent: "space-between" }}>
                         <span>Taxa de serviço ({nomeDoCanal(order)}):</span>
                         <span>R$ {taxaServico.toFixed(2).replace('.', ',')}</span>
+                      </div>
+                    );
+                  })()}
+
+                  {/* ── ACRÉSCIMO NO CRÉDITO (lib/acrescimo-no-credito.ts) ────
+                      O % que a loja cobra de quem paga no crédito, já somado
+                      no total pelo servidor. Sem a linha, Subtotal + Entrega
+                      não chegava no Total e o atendente cobrava a diferença
+                      como erro. Só aparece quando o pedido tem. */}
+                  {(() => {
+                    const acrescimo = acrescimoGravadoNoPedido(order as any);
+                    if (!acrescimo) return null;
+                    return (
+                      <div style={{ display: "flex", justifyContent: "space-between", color: "#B45309", fontWeight: 700 }}>
+                        <span>{acrescimo.rotulo}:</span>
+                        <span>+R$ {acrescimo.valor.toFixed(2).replace('.', ',')}</span>
                       </div>
                     );
                   })()}

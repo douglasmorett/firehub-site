@@ -71,6 +71,7 @@ import {
   descontoDaLojaDepoisDaEdicao,
   type RegistroDeEdicao,
 } from "@/lib/edicao-de-pedido";
+import { valorDoAcrescimoGravado } from "@/lib/acrescimo-no-credito";
 import { descontoDoCorpo, descreverDesconto, notaDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
 import { carregarRodadaDaMesa, editarRodadaDaMesa, cancelarRodadaDaMesa } from "@/lib/edicao-na-mesa";
@@ -401,6 +402,8 @@ async function editarPedidoProprio(entrada: {
         itens: finais,
         deliveryFee: order.deliveryFee,
         discountTotal: order.discountTotal,
+        // O acréscimo no crédito do cardápio fica de pé (lib/acrescimo-no-credito.ts).
+        acrescimo: valorDoAcrescimoGravado(order),
       });
 
   const nomeDoItem = (id: string) => {
@@ -521,6 +524,7 @@ function gravacaoDoDesconto(
     itens: itensFinais,
     discountTotal: order.discountTotal,
     deliveryFee: order.deliveryFee,
+    acrescimo: valorDoAcrescimoGravado(order),
     desconto,
   });
   if (conta.problema) return { erro: conta.problema };
@@ -625,6 +629,7 @@ async function editarItensDoMarketplace(entrada: {
           itens: finais,
           deliveryFee: order.deliveryFee,
           discountTotal: order.discountTotal,
+          acrescimo: valorDoAcrescimoGravado(order),
         })
       : Number(order.totalAmount) || 0;
 

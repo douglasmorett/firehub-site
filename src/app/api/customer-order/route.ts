@@ -58,6 +58,7 @@ import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 import { acharCupom, avaliarCupom } from "@/lib/cupons";
 import { fatosDoCupom } from "@/lib/cupons-no-banco";
 import { descontoDoPagamentoOnline } from "@/lib/desconto-pagamento-online";
+import { acrescimoNoCredito, etiquetaDoAcrescimo } from "@/lib/acrescimo-no-credito";
 import { ehPedidoDeEntrega, formaDesligada, formaRecusadaNaEntrega, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
 
 export async function POST(req: Request) {
@@ -780,7 +781,21 @@ export async function POST(req: Request) {
     // e era esse número que ia para o banco (`totalAmount Float`) e daí cru como
     // `transaction_amount` para o gateway — que recusa moeda com mais de 2 casas.
     const centavos = (n: number) => Math.round(n * 100) / 100;
-    const finalTotal = centavos(Math.max(0, totalAmount - discount + fee));
+    const totalAntesDoAcrescimo = centavos(Math.max(0, totalAmount - discount + fee));
+    // ── ACRÉSCIMO NO CRÉDITO (lib/acrescimo-no-credito.ts) ───────────────
+    //
+    // O % que a loja repassa a quem paga no crédito da maquininha, sobre o
+    // que o cliente ia passar no cartão (itens − descontos + entrega). É o
+    // ÚLTIMO passo de propósito: cupom, prêmio, cashback e desconto do site
+    // já saíram, e a maquininha cobra sobre o valor passado. Calculado AQUI,
+    // da config da loja — o corpo não manda acréscimo nenhum, e o cardápio
+    // mostra a mesma conta antes de o cliente finalizar.
+    const acrescimoCredito = acrescimoNoCredito({
+      paymentFees: franchisee.paymentFees,
+      paymentMethod,
+      base: totalAntesDoAcrescimo,
+    });
+    const finalTotal = centavos(totalAntesDoAcrescimo + (acrescimoCredito?.valor || 0));
     // A taxa é gravada ao lado do total e entra em relatório; arredondar só o
     // total deixaria os dois divergindo em frações de centavo.
     fee = centavos(fee);
@@ -791,6 +806,12 @@ export async function POST(req: Request) {
     if (descontoOnline) {
       // Na comanda e no painel: sem isto o total parece errado para a loja.
       orderNotes = `[${descontoOnline.rotulo}: -R$ ${descontoOnline.valor.toFixed(2).replace(".", ",")}] ${orderNotes}`.trim();
+    }
+    if (acrescimoCredito) {
+      // A etiqueta é o REGISTRO do acréscimo: o painel, a comanda (linha
+      // própria via camposDoAcrescimoParaImpressao), a edição de itens e a
+      // NFC-e leem o valor de volta dela. Sem coluna nova no banco.
+      orderNotes = `${etiquetaDoAcrescimo(acrescimoCredito)} ${orderNotes}`.trim();
     }
     if (freeShippingNote) {
       orderNotes = `${orderNotes} ${freeShippingNote}`.trim();

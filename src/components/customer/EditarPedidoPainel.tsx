@@ -37,6 +37,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { avaliarEdicaoNoPainel, contaDoDescontoDaEdicao, descontoNaEdicao, type ModoDeEdicao } from "@/lib/edicao-de-pedido";
+import { valorDoAcrescimoGravado } from "@/lib/acrescimo-no-credito";
 import { MOTIVOS_COMUNS, type DescontoManual, type TipoDeDesconto } from "@/lib/desconto-manual";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import ComboModal from "@/components/customer/ComboModal";
@@ -214,6 +215,9 @@ export default function EditarPedidoPainel({
   const itensOriginais: ItemDoPedido[] = pedido.items || [];
   const taxa = Number(pedido.deliveryFee) || 0;
   const desconto = Number(pedido.discountTotal) || 0;
+  // O acréscimo no crédito do cardápio fica de pé em reais, como no servidor
+  // (recalcularTotal com `acrescimo`).
+  const acrescimoNoCredito = valorDoAcrescimoGravado(pedido as any);
 
   // A conta do desconto novo é a do servidor (contaDoDescontoDaEdicao), sobre
   // os itens que FICAM no pedido. No marketplace o acréscimo vira pedido
@@ -229,9 +233,9 @@ export default function EditarPedidoPainel({
       .filter((i) => !removidos.has(i.id))
       .map((i) => ({ price: i.price, quantity: quantidades[i.id] ?? i.quantity }));
     const novos = modo === "MARKETPLACE" ? [] : acrescimos.map((a) => ({ price: a.precoUnitario, quantity: a.quantity }));
-    return contaDoDescontoDaEdicao({ itens: [...ficam, ...novos], discountTotal: desconto, deliveryFee: taxa, desconto: descontoNovo });
+    return contaDoDescontoDaEdicao({ itens: [...ficam, ...novos], discountTotal: desconto, deliveryFee: taxa, acrescimo: acrescimoNoCredito, desconto: descontoNovo });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [descontoNovo?.tipo, descontoNovo?.valor, descontoNovo?.motivo, itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo]);
+  }, [descontoNovo?.tipo, descontoNovo?.valor, descontoNovo?.motivo, itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo, acrescimoNoCredito]);
   const descontoValido = !!contaDoDesconto && !contaDoDesconto.problema && contaDoDesconto.valor > 0;
 
   // O mesmo `itens - desconto + taxa` do servidor. Repetido aqui de propósito e
@@ -247,8 +251,8 @@ export default function EditarPedidoPainel({
       return Math.round(somaNovos * 100) / 100;
     }
     if (descontoValido) return contaDoDesconto!.total;
-    return Math.round(Math.max(0, somaOriginais + somaNovos - desconto + taxa) * 100) / 100;
-  }, [itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo, descontoValido, contaDoDesconto]);
+    return Math.round((Math.max(0, somaOriginais + somaNovos - desconto + taxa) + acrescimoNoCredito) * 100) / 100;
+  }, [itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo, descontoValido, contaDoDesconto, acrescimoNoCredito]);
 
   /** O total do PEDIDO depois de tirar item — só existe quando ele acompanha. */
   const totalDoPedidoPrevisto = useMemo(() => {
@@ -256,8 +260,8 @@ export default function EditarPedidoPainel({
       .filter((i) => !removidos.has(i.id))
       .reduce((s, i) => s + i.price * (quantidades[i.id] ?? i.quantity), 0);
     if (descontoValido) return contaDoDesconto!.total;
-    return Math.round(Math.max(0, soma - desconto + taxa) * 100) / 100;
-  }, [itensOriginais, removidos, quantidades, desconto, taxa, descontoValido, contaDoDesconto]);
+    return Math.round((Math.max(0, soma - desconto + taxa) + acrescimoNoCredito) * 100) / 100;
+  }, [itensOriginais, removidos, quantidades, desconto, taxa, descontoValido, contaDoDesconto, acrescimoNoCredito]);
 
   const totalAtual = Number(pedido.totalAmount) || 0;
   const sobrouAlgum = itensOriginais.some((i) => !removidos.has(i.id));

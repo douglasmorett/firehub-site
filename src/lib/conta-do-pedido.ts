@@ -25,6 +25,8 @@
  * dizendo valores diferentes do mesmo pedido é pior que os dois errados juntos.
  */
 
+import { acrescimoGravadoNoPedido } from "./acrescimo-no-credito";
+
 export type LinhaDaConta = { rotulo: string; valor: number };
 
 export type ContaDoPedido = {
@@ -45,6 +47,8 @@ type PedidoParaConta = {
   discountIfood?: number | null;
   discountMerchant?: number | null;
   source?: string | null;
+  /** Onde mora a etiqueta do acréscimo no crédito (lib/acrescimo-no-credito.ts). */
+  notes?: string | null;
 };
 
 const cent = (v: number) => Math.round(v * 100) / 100;
@@ -64,7 +68,13 @@ export function contaDoPedido(pedido: PedidoParaConta | null | undefined): Conta
     return { subtotal: total, ajustes: [], taxaEntrega, total, fecha: true };
   }
 
-  const precisaAbater = cent(subtotal + taxaEntrega - total);
+  // ACRÉSCIMO NO CRÉDITO: soma no total como a entrega, em linha própria — no
+  // Assistente ele vai em `serviceFee`, que entra na mesma conta lá.
+  const acrescimo = acrescimoGravadoNoPedido(p);
+  const linhaDoAcrescimo: LinhaDaConta[] = acrescimo ? [{ rotulo: acrescimo.rotulo, valor: acrescimo.valor }] : [];
+  const comAcrescimo = (c: ContaDoPedido): ContaDoPedido => ({ ...c, ajustes: [...c.ajustes, ...linhaDoAcrescimo] });
+
+  const precisaAbater = cent(subtotal + taxaEntrega + (acrescimo?.valor || 0) - total);
 
   const partes: LinhaDaConta[] = [];
   const doIfood = Number(p.discountIfood || 0);
@@ -77,17 +87,17 @@ export function contaDoPedido(pedido: PedidoParaConta | null | undefined): Conta
   const somaDasPartes = cent(partes.reduce((s, x) => s - x.valor, 0));
 
   if (Math.abs(somaDasPartes - precisaAbater) < 0.01) {
-    return { subtotal, ajustes: partes, taxaEntrega, total, fecha: true };
+    return comAcrescimo({ subtotal, ajustes: partes, taxaEntrega, total, fecha: true });
   }
   if (precisaAbater > 0.005) {
-    return { subtotal, ajustes: [{ rotulo: "Desconto", valor: -precisaAbater }], taxaEntrega, total, fecha: true };
+    return comAcrescimo({ subtotal, ajustes: [{ rotulo: "Desconto", valor: -precisaAbater }], taxaEntrega, total, fecha: true });
   }
   if (precisaAbater < -0.005) {
     // Total maior que subtotal + taxa: taxa de serviço ou embalagem do
     // parceiro, que não chega em campo próprio.
-    return { subtotal, ajustes: [{ rotulo: "Outros valores do pedido", valor: -precisaAbater }], taxaEntrega, total, fecha: true };
+    return comAcrescimo({ subtotal, ajustes: [{ rotulo: "Outros valores do pedido", valor: -precisaAbater }], taxaEntrega, total, fecha: true });
   }
-  return { subtotal, ajustes: [], taxaEntrega, total, fecha: true };
+  return comAcrescimo({ subtotal, ajustes: [], taxaEntrega, total, fecha: true });
 }
 
 export function emReais(v?: number | null): string {

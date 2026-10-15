@@ -120,6 +120,14 @@ export type PedidoParaNota = {
   taxaEntrega?: number;
   /** Desconto total do pedido (loja + plataforma). */
   desconto?: number;
+  /**
+   * Acréscimo no crédito cobrado do cliente (lib/acrescimo-no-credito.ts),
+   * já somado no `valorTotal`. NÃO é produto: vai em "outras despesas
+   * acessórias" (vOutro), junto da taxa de entrega e rateado nos itens do
+   * mesmo jeito — é o campo do layout para encargo cobrado do comprador
+   * (acréscimo financeiro, juros de cartão) que não é mercadoria.
+   */
+  acrescimo?: number;
   formaDePagamento: string;
   documentoDoCliente?: string | null;
   nomeDoCliente?: string | null;
@@ -785,6 +793,11 @@ export function valoresDaNota(pedido: PedidoParaNota): ValoresDaNota {
     descontoNosItens += -outrasDespesas;
     outrasDespesas = 0;
   }
+  // O acréscimo no crédito soma DEPOIS de a taxa ser abatida: ele é do
+  // pedido inteiro, e um cupom de frete grátis não pode comê-lo. Sem esta
+  // linha a conferência abaixo ("o total da nota TEM de ser o que o cliente
+  // pagou") parava a emissão de todo pedido no crédito com acréscimo.
+  outrasDespesas += Math.max(0, centavos(pedido.acrescimo));
 
   // DESCONTO MAIOR QUE OS PRODUTOS. Acontece de verdade: cupom de frete grátis
   // gravado como desconto do pedido. Rateado entre os itens, isso daria a algum

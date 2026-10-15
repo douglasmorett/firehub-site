@@ -60,6 +60,7 @@ import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPed
 import { mascararDocumentoDigitado, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { MINUTOS_PARA_PAGAR } from "@/lib/pix-online";
 import { descontoDoPagamentoOnline, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
+import { acrescimoNoCredito, percentualDoAcrescimoNoCredito } from "@/lib/acrescimo-no-credito";
 import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/cliente-lembrado";
 import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReconhecido } from "@/lib/cliente-reconhecido";
 import { bandeirasDeValeLigadas, ehFormaPeloSite, entregaSoOnlineMarcada, formaLigada, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
@@ -1124,7 +1125,24 @@ export default function CustomerStorePage({
   // Na mesa o total é o dos itens a preço do salão: cupom, cashback, prêmio
   // e taxa de entrega não existem na conta da mesa (lib/lancar-na-mesa.ts).
   const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha - descontoDoPagamento);
-  const finalTotal = mesa ? cartTotal : itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
+  const totalAntesDoAcrescimo = mesa ? cartTotal : itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
+  // ── ACRÉSCIMO NO CRÉDITO ───────────────────────────────────────────────
+  //
+  // Espelho de exibição da conta do servidor (lib/acrescimo-no-credito.ts,
+  // aplicada em /api/customer-order): o % que a loja repassa a quem paga no
+  // crédito da maquininha, sobre o que vai passar no cartão. O cliente vê a
+  // linha e o total com ela ANTES de finalizar — total que sobe depois de
+  // confirmar é exatamente a reclamação que isto evita.
+  const acrescimoCredito = mesa
+    ? null
+    : acrescimoNoCredito({
+        paymentFees: franchisee.paymentFees,
+        paymentMethod,
+        base: Math.round(totalAntesDoAcrescimo * 100) / 100,
+      });
+  const finalTotal = acrescimoCredito
+    ? Math.round((Math.round(totalAntesDoAcrescimo * 100) / 100 + acrescimoCredito.valor) * 100) / 100
+    : totalAntesDoAcrescimo;
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
 
   // ── ESTOQUE DISPONÍVEL ─────────────────────────────────────────────────
@@ -1714,7 +1732,10 @@ export default function CustomerStorePage({
     if (formaLigada(fees, "PIX")) base.push({ k: "PIX_ENTREGA", l: "💰 Pix (na entrega)" });
     if (formaLigada(fees, "DINHEIRO")) base.push({ k: "DINHEIRO", l: "💵 Dinheiro" });
     if (formaLigada(fees, "DEBITO")) base.push({ k: "DEBITO", l: "💳 Débito (Entrega)" });
-    if (formaLigada(fees, "CREDITO")) base.push({ k: "CREDITO", l: "💳 Crédito (Entrega)" });
+    // Com acréscimo no crédito, o botão já avisa ("+ 3,86%"), como o "% off"
+    // do pagamento pelo site: o cliente não descobre o acréscimo só no total.
+    const pctCredito = percentualDoAcrescimoNoCredito(fees);
+    if (formaLigada(fees, "CREDITO")) base.push({ k: "CREDITO", l: `💳 Crédito (Entrega)${pctCredito > 0 ? ` · +${String(pctCredito).replace(".", ",")}%` : ""}` });
     if (formaLigada(fees, "VOUCHER")) {
       const bandeiras = bandeirasDeValeLigadas(fees);
       if (bandeiras.length > 0) bandeiras.forEach((nome) => base.push({ k: `VOUCHER_${nome}`, l: `🎟️ ${nome}` }));
@@ -3623,6 +3644,12 @@ export default function CustomerStorePage({
                     <span style={{ fontWeight: 700 }}>- R$ {descontoOnline.valor.toFixed(2).replace(".", ",")}</span>
                   </div>
                 )}
+                {acrescimoCredito && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#B45309" }}>
+                    <span>{acrescimoCredito.rotulo}</span>
+                    <span style={{ fontWeight: 700 }}>+ R$ {acrescimoCredito.valor.toFixed(2).replace(".", ",")}</span>
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "space-between", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A", marginTop: "4px", paddingTop: "6px", borderTop: "1px dashed #E2E8F0" }}>
                   <span>Total</span>
                   <span>R$ {finalTotal.toFixed(2).replace(".", ",")}</span>
@@ -4385,6 +4412,13 @@ export default function CustomerStorePage({
                       ? `- R$ ${descontoDaTrilha.toFixed(2).replace(".", ",")}`
                       : nomeDoPremio(premioDaTrilha)}
                   </span>
+                </div>
+              )}
+              {/* Por último, logo acima do total: é sobre tudo o que vem antes. */}
+              {acrescimoCredito && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#B45309", fontWeight: 700 }}>
+                  <span>{acrescimoCredito.rotulo}:</span>
+                  <span>+ R$ {acrescimoCredito.valor.toFixed(2).replace(".", ",")}</span>
                 </div>
               )}
               <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 900, color: "#0F172A", fontSize: "0.92rem", marginTop: "4px", paddingTop: "4px", borderTop: "1px dashed #CBD5E1" }}>

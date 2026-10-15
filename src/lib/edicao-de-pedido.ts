@@ -737,15 +737,22 @@ export function recalcularTotal(entrada: {
   itens: { price: number; quantity: number }[];
   deliveryFee?: number | null;
   discountTotal?: number | null;
+  /**
+   * O acréscimo no crédito que o pedido já tinha (lib/acrescimo-no-credito.ts,
+   * `valorDoAcrescimoGravado`). Preservado EM REAIS, pelo mesmo motivo do
+   * desconto acima: recalcular o % sobre o que sobrou mudaria o preço na mão
+   * do cliente no meio da ligação. Sem ele, tirar uma Coca de um pedido no
+   * crédito derrubava o total além do preço da Coca.
+   */
+  acrescimo?: number | null;
 }): number {
   const centavos = (n: number) => Math.round(n * 100) / 100;
   const soma = entrada.itens.reduce(
     (acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 0),
     0
   );
-  return centavos(
-    Math.max(0, soma - Number(entrada.discountTotal || 0) + Number(entrada.deliveryFee || 0))
-  );
+  const base = Math.max(0, soma - Number(entrada.discountTotal || 0) + Number(entrada.deliveryFee || 0));
+  return centavos(base + Math.max(0, Number(entrada.acrescimo) || 0));
 }
 
 /** Uma linha do rastro gravado em `CustomerOrder.editHistory`. */
@@ -859,6 +866,8 @@ export function contaDoDescontoDaEdicao(entrada: {
   itens: { price: number; quantity: number }[];
   discountTotal?: number | null;
   deliveryFee?: number | null;
+  /** Acréscimo no crédito já gravado — fica de pé, em reais (ver `recalcularTotal`). */
+  acrescimo?: number | null;
   desconto: DescontoManual;
 }): { base: number; valor: number; discountTotal: number; total: number; problema: string } {
   const centavos = (n: number) => Math.round(n * 100) / 100;
@@ -868,7 +877,7 @@ export function contaDoDescontoDaEdicao(entrada: {
   const problema = problemaDoDesconto(entrada.desconto, base);
   const valor = problema ? 0 : valorDoDesconto(entrada.desconto, base);
   const discountTotal = centavos(descontoAtual + valor);
-  const total = recalcularTotal({ itens: entrada.itens, deliveryFee: entrada.deliveryFee, discountTotal });
+  const total = recalcularTotal({ itens: entrada.itens, deliveryFee: entrada.deliveryFee, discountTotal, acrescimo: entrada.acrescimo });
   return { base, valor, discountTotal, total, problema };
 }
 
