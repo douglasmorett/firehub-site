@@ -145,7 +145,10 @@ export function assistenteImprimeDanfe(estado: unknown): boolean {
 /** O `kind` do PrintRequest do DANFE NFC-e (lib/nfce/impressao-do-danfe.ts). */
 export const KIND_DANFE_NFCE = "DANFE_NFCE";
 
-export type EscPosProfile = "full" | "safe" | "legacy";
+/** "windows" (Assistente 1.2.39+): imprime pelo DRIVER do Windows, não RAW —
+ *  para impressora que não fala ESC/POS (ex.: Diebold em "Comandos Padrão").
+ *  Assistente mais antigo não conhece e imprime como "safe". */
+export type EscPosProfile = "full" | "safe" | "legacy" | "windows";
 
 export type PrinterEntry = {
   id: string;

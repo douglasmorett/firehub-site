@@ -13,6 +13,8 @@ const path = require("path");
 const os = require("os");
 // O QR do DANFE NFC-e como imagem, no perfil "legacy" (ver buildDanfeEscPos).
 const { matrizDoQrCode } = require("./qr-code");
+// Perfil "windows" (1.2.39): a comanda sai pelo DRIVER do Windows, nao RAW.
+const impressaoWindows = require("./impressao-windows");
 
 const PORT = 7891;
 const app = express();
@@ -75,7 +77,7 @@ try {
         "latin1",
       );
       // ESC @ (reinicia) + texto + avanço + GS V 66 0 (corte parcial).
-      await rawPrint(alvo, Buffer.concat([Buffer.from([0x1b, 0x40]), corpo, Buffer.from([0x1d, 0x56, 0x42, 0x00])]));
+      await enviarParaImpressora(alvo, Buffer.concat([Buffer.from([0x1b, 0x40]), corpo, Buffer.from([0x1d, 0x56, 0x42, 0x00])]), resolvePrinterProfile(alvo, {}));
     },
   });
   setImmediate(() => tef.iniciar());
@@ -730,6 +732,39 @@ function rawPrint(printerName, dataBuffer) {
       }
     });
   });
+}
+
+/* ─── Perfil "windows": pelo driver, nao RAW ──────────────────────────────
+ *
+ * A impressora que nao fala ESC/POS (Diebold IM453H em "Comandos Padrao",
+ * Bistro Burguer, 15/10/2026) imprimia os bytes RAW picotados, e o Bloco de
+ * Notas saia perfeito pelo driver. Neste perfil os mesmos bytes que o
+ * buildEscPos montou sao traduzidos para uma pagina de texto monoespacado
+ * (impressao-windows.js) e impressos pelo Electron no driver da impressora.
+ * O corte e do driver, no fim do trabalho.
+ *
+ * Fora do Electron (`npm run start:server`) nao ha como imprimir pelo driver:
+ * cai no RAW de sempre, com aviso no log.
+ */
+let avisouSemElectron = false;
+function enviarParaImpressora(printerName, dataBuffer, perfil) {
+  if (perfil && perfil.profile === "windows") {
+    if (rodandoDentroDoElectron()) {
+      const html = impressaoWindows.htmlDaComanda(dataBuffer, { columns: perfil.columns, paperWidth: perfil.paperWidth });
+      return impressaoWindows.imprimirPeloDriver(printerName, html, { prazoMs: Math.max(PRAZO_IMPRESSAO_MS, 30_000) });
+    }
+    if (!avisouSemElectron) {
+      avisouSemElectron = true;
+      console.warn(`[Print] ⚠️ ${printerName} esta no perfil "windows" (pelo driver), mas o Assistente roda sem o Electron: vai RAW.`);
+    }
+  }
+  return rawPrint(printerName, dataBuffer);
+}
+
+/** O perfil com que os BYTES sao montados. "windows" monta como "safe" (com
+ *  o QR em GS ( k, que o tradutor desenha) e so troca o envio. */
+function perfilDosBytes(profile) {
+  return profile === "windows" ? "safe" : profile;
 }
 
 /* ─── ESC/POS builder ─────────────────────────────────────── */
@@ -3251,7 +3286,7 @@ async function processPrintQueue() {
       let data;
       if (ehDanfe) {
         try {
-          data = buildDanfeEscPos(order.danfe, cols, perfil.profile);
+          data = buildDanfeEscPos(order.danfe, cols, perfilDosBytes(perfil.profile));
         } catch (e) {
           // DANFE que nao sai com o QR NAO sai (o QR e obrigatorio). O trabalho
           // FALHA com o motivo, como a impressora que recusou: fica pendente
@@ -3262,7 +3297,7 @@ async function processPrintQueue() {
           throw e;
         }
       } else {
-        data = buildEscPos(order || {}, storeName || "FIREHUB", cols, perfil.profile);
+        data = buildEscPos(order || {}, storeName || "FIREHUB", cols, perfilDosBytes(perfil.profile));
       }
       if (ehDanfe && !data) {
         // Payload sem via imprimivel (nao deveria acontecer: o site monta).
@@ -3289,7 +3324,7 @@ async function processPrintQueue() {
       // para a cozinha nao viram dois cupons fiscais).
       const vezes = ehDanfe ? 1 : copies;
       for (let i = 0; i < vezes; i++) {
-        await rawPrint(targetPrinter, data);
+        await enviarParaImpressora(targetPrinter, data, perfil);
       }
       ultimaImpressaoEm = Date.now();
 
@@ -3645,7 +3680,8 @@ app.post("/print-raw", async (req, res) => {
     }
     if (!targetPrinter || !data) return res.status(400).json({ error: "Dados ou impressora faltando" });
     const buf = Buffer.from(data, "base64");
-    for (let i = 0; i < copies; i++) await rawPrint(targetPrinter, buf);
+    const perfil = resolvePrinterProfile(targetPrinter, {});
+    for (let i = 0; i < copies; i++) await enviarParaImpressora(targetPrinter, buf, perfil);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -3677,8 +3713,8 @@ app.post("/print-test", async (req, res) => {
       totalAmount: 35.00,
       notes: `Impressão de Teste FireHub (${perfil.paperWidth} / ${cols} colunas)`,
     };
-    const data = buildEscPos(dummyOrder, storeName || "FIREHUB TESTE", cols, perfil.profile);
-    await rawPrint(targetPrinter, data);
+    const data = buildEscPos(dummyOrder, storeName || "FIREHUB TESTE", cols, perfilDosBytes(perfil.profile));
+    await enviarParaImpressora(targetPrinter, data, perfil);
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

@@ -60,7 +60,7 @@ type PrinterEntry = {
   copies: number;
   paperWidth?: "58mm" | "80mm"; // 58mm (32 colunas) ou 80mm (48 colunas)
   columns?: number;             // largura REAL medida pela regua (vazio = padrao da bobina)
-  escposProfile?: "full" | "safe" | "legacy"; // perfil de preambulo ESC/POS
+  escposProfile?: "full" | "safe" | "legacy" | "windows"; // perfil ESC/POS; "windows" = pelo driver (Assistente 1.2.39+)
   // Quais mundos esta impressora atende. Ausente ou vazio = os dois, que e
   // como toda loja configurada antes desta opcao continua funcionando.
   modulos?: ModuloDePedido[];
@@ -1081,6 +1081,34 @@ export default function PrinterSetupClient({
                   colunas reais — manda mais que o botão acima (vazio = usa o botão)
                 </span>
               </div>
+            </div>
+
+            {/* ── Modo de impressão (escposProfile) ─────────────────────
+                A Diebold IM453H da Bistrô Burguer (15/10/2026), com o firmware
+                em "Comandos Padrão", não fala ESC/POS: a comanda saía picotada,
+                e o Bloco de Notas saía perfeito pelo driver. "Pelo driver do
+                Windows" faz o Assistente (1.2.39+) imprimir como o Bloco de
+                Notas. Vazio = padrão ("safe"), que é o de todas as outras. */}
+            <div style={{ marginBottom: "1rem" }}>
+              <label style={{ fontSize: "0.75rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>MODO DE IMPRESSÃO</label>
+              <select
+                value={printer.escposProfile && printer.escposProfile !== "safe" ? printer.escposProfile : ""}
+                onChange={e => {
+                  const v = e.target.value as PrinterEntry["escposProfile"] | "";
+                  updatePrinter(printer.id, { escposProfile: v ? v : undefined });
+                }}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", fontWeight: 600, fontFamily: "inherit", background: "#fff" }}
+              >
+                <option value="">Padrão (ESC/POS) — a maioria das impressoras térmicas</option>
+                <option value="legacy">Compatível (ESC/POS antigo, sem QR Code)</option>
+                {printer.escposProfile === "full" && <option value="full">Completo (ESC/POS calibrado)</option>}
+                <option value="windows">Pelo driver do Windows (impressoras que não falam ESC/POS, ex.: Diebold)</option>
+              </select>
+              {printer.escposProfile === "windows" && (
+                <span style={{ display: "block", marginTop: 4, fontSize: "0.72rem", color: "#64748B" }}>
+                  Imprime como o Bloco de Notas, pelo driver da impressora. Precisa do Assistente 1.2.39 ou mais novo — o antigo imprime no modo padrão.
+                </span>
+              )}
             </div>
 
             {/* Cópias */}
