@@ -127,6 +127,11 @@ async function main() {
   confere("tasklist: outro pid", c.pidEhNode(saida, 432), false);
   confere("tasklist: outro programa no pid", c.pidEhNode('"chrome.exe","4321","Console","1","45.000 K"', 4321), false);
   confere("tasklist: nenhum (pt-BR)", c.pidEhNode("INFORMAÇÕES: Não há tarefas em execução que correspondam aos critérios especificados.", 4321), false);
+  // Pid reaproveitado por outro programa em Node: não é o supervisor (não derruba).
+  const nodeDaPasta = "C:\\Users\\Loja\\AppData\\Roaming\\FireHub\\contingencia\\runtime\\node-v22.15.1-win-x64\\node.exe";
+  confere("pid: o node.exe do runtime da contingência", c.ehONodeDoSupervisor(`${nodeDaPasta.toUpperCase()}\r\n`, nodeDaPasta), true);
+  confere("pid: outro node.exe (pid reaproveitado)", c.ehONodeDoSupervisor("C:\\Program Files\\nodejs\\node.exe\r\n", nodeDaPasta), false);
+  confere("pid: sem caminho (sem permissão ou já saiu)", [c.ehONodeDoSupervisor("", nodeDaPasta), c.ehONodeDoSupervisor(null, nodeDaPasta)], [false, false]);
 
   // ── De verdade: montar e apagar sem travar o processo ───────────────
   const n = process.argv.includes("--cheio") ? 9170 : 3000;

@@ -578,12 +578,35 @@ function pidEhNode(saida, pid) {
   return new RegExp(`^"node\\.exe","${Number(pid)}"`, "im").test(String(saida || ""));
 }
 
-function supervisorAnotadoDePe(pid) {
+/**
+ * O supervisor roda com o node.exe do runtime DESTA pasta. O Windows reaproveita
+ * números de pid: um pid anotado que sobrou (o supervisor morreu longe deste
+ * Assistente) pode ser hoje outro programa em Node — e o taskkill /T /F
+ * derrubaria a árvore dele. Por isso, além do nome, confere o executável.
+ */
+const NODE_DO_SUPERVISOR = path.join(PASTA, "runtime", NODE.pasta, "node.exe");
+function ehONodeDoSupervisor(caminho, esperado = NODE_DO_SUPERVISOR) {
+  const limpo = String(caminho || "").trim();
+  return !!limpo && limpo.toLowerCase() === esperado.toLowerCase();
+}
+
+function caminhoDoProcesso(pid) {
+  const comando = `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; (Get-Process -Id ${Number(pid)} -ErrorAction SilentlyContinue).Path`;
   return new Promise((ok) =>
+    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", comando], { windowsHide: true, timeout: 15_000, encoding: "utf8" }, (e, saida) =>
+      ok(e ? null : String(saida || "")),
+    ),
+  );
+}
+
+async function supervisorAnotadoDePe(pid) {
+  const ehNode = await new Promise((ok) =>
     execFile("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { windowsHide: true, timeout: 10_000 }, (e, saida) =>
       ok(!e && pidEhNode(saida, pid)),
     ),
   );
+  // Sem saber o caminho, não é o nosso: nem espera por ele nem o derruba.
+  return ehNode && ehONodeDoSupervisor(await caminhoDoProcesso(pid));
 }
 
 /** Encerra à força (com a árvore: FireHub local e Postgres) o supervisor do pid anotado. */
@@ -651,6 +674,10 @@ async function ligarSupervisor(dir) {
     erro = "O pacote desta versão não tem o supervisor da contingência.";
     return;
   }
+  // De novo DEPOIS do último await: o "religa em N s" do exit e o ciclo de 1 min
+  // podem estar aqui ao mesmo tempo, e dois supervisores brigariam pelo mesmo
+  // Postgres. Daqui até o spawn não há mais espera nenhuma.
+  if (filho || adotado || !pareamento) return;
   const arquivoDeLog = path.join(PASTA, "supervisor.log");
   try {
     if (fs.existsSync(arquivoDeLog) && fs.statSync(arquivoDeLog).size > 5 * 1024 * 1024) {
@@ -1025,6 +1052,7 @@ module.exports = {
   hashDoEsquemaNaLista,
   objetosQueSobram,
   pidEhNode,
+  ehONodeDoSupervisor,
   montarVersao,
   tirarDoCaminho,
   apagarArvore,
