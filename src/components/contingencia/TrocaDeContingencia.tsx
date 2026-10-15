@@ -7,27 +7,37 @@
  * NA NUVEM (https://firehubfood.com.br), loja com contingência ativada:
  *   - guarda o bilhete desta tela (GET /api/contingencia/bilhete) e o
  *     endereço do computador da loja, renovados a cada 30 min;
- *   - confere a nuvem a cada 5 s (/api/contingencia/sinal). Três falhas
- *     seguidas (~15 s) e a tela vai para o computador da loja, levando o
- *     bilhete — a NAVEGAÇÃO de https para http da rede local é permitida; o
- *     que o navegador bloqueia é o fetch misto, por isso não dá para "testar"
- *     o endereço antes. No próprio computador do caixa, quem diz o endereço
- *     é o Assistente (127.0.0.1:7899), que já é alcançável daqui.
+ *   - confere a nuvem a cada 5 s (/api/contingencia/sinal), uma conferência
+ *     por vez (a próxima só começa 5 s depois de a anterior acabar: com o
+ *     setInterval, duas rodadas somavam falha juntas). Com ~45 s de queda
+ *     seguida (QUEDA_ANTES_DE_PULAR_MS — decisão do Douglas depois da noite
+ *     de 14/10) a tela vai para o computador da loja, levando o bilhete — a
+ *     NAVEGAÇÃO de https para http da rede local é permitida; o que o
+ *     navegador bloqueia é o fetch misto, por isso não dá para "testar" o
+ *     endereço antes. No próprio computador do caixa, quem diz o endereço e a
+ *     hora é o Assistente (127.0.0.1:7899), que já é alcançável daqui — e
+ *     esse computador nunca vira "outro aparelho" (lib/contingencia/troca.ts);
+ *   - ao voltar do computador da loja, lê a marca do fragmento
+ *     (#fh-voltou=<ms>&n=<pulos>), guarda no localStorage DESTA origem e não
+ *     pula de novo por 1, 3, 10 min (a nuvem firme por 2 min zera a conta).
  *
  * NO COMPUTADOR DA LOJA (http://<ip>:7890, a porta da loja):
  *   - mostra a faixa "Sem conexão — trabalhando no computador da loja";
  *   - pergunta à porta da loja (/__contingencia/estado) a cada 5 s. Quando a
- *     nuvem voltou e tudo subiu (modo "normal"), volta para a mesma tela na
- *     nuvem — o cookie de lá continua, não pede senha.
+ *     nuvem voltou e tudo subiu (modo "normal") e ESTE aparelho alcança a
+ *     nuvem, volta para a mesma tela, no mesmo endereço (com ou sem www) de
+ *     onde saiu, com a marca de volta — o cookie de lá continua, não pede senha.
  *
  * Loja sem contingência: não guarda bilhete e não confere nada — custo zero.
  */
 import { useEffect, useRef, useState } from "react";
 import { fetchAssistente } from "@/lib/print";
-import { destinoDaTroca } from "@/lib/contingencia/troca";
+import {
+  CHAVE_DA_ORIGEM, CHAVE_DA_VOLTA, CHAVE_DOS_PULOS, CHAVE_SOU_O_PC, NUVEM_FIRME_MS, armazenamentoLocal, destinoDaTroca, esperaDepoisDaVolta,
+  gravarPreferencias, lerMarcaDeVolta, lerPreferencias, lerVoltaGuardada, origemValida, urlDeVolta, type MarcaDeVolta,
+} from "@/lib/contingencia/troca";
 
 const CHAVE = "firehub_contingencia";
-const VOLTOU_EM = "firehub_contingencia_voltou_em";
 /** "1"/"0": o computador da loja estava vivo no último sinal (lib/contingencia/troca.ts). */
 const CHAVE_DO_PC = "firehub_contingencia_pc";
 const PORTA_DA_LOJA = "7890";
@@ -78,7 +88,7 @@ async function comPrazo(url: string, ms: number, init?: RequestInit): Promise<Re
   }
 }
 
-type EstadoNoAssistente = { endereco: string | null; testando: boolean; ativa: boolean };
+type EstadoNoAssistente = { endereco: string | null; testando: boolean; ativa: boolean; modo: string | null };
 
 /**
  * No computador do caixa, o Assistente sabe se a contingência está pronta, em
@@ -87,10 +97,17 @@ type EstadoNoAssistente = { endereco: string | null; testando: boolean; ativa: b
  */
 let semAssistenteAte = 0;
 
+function souOPc(): boolean {
+  try { return !!localStorage.getItem(CHAVE_SOU_O_PC); } catch { return false; }
+}
+
 async function perguntarAoAssistente(): Promise<EstadoNoAssistente | null> {
   // Aparelho sem Assistente (a maioria das abas que não são o caixa): não
-  // pergunta de novo por 1 minuto.
-  if (Date.now() < semAssistenteAte) return null;
+  // pergunta de novo por 1 minuto. O computador do caixa (já viu o Assistente
+  // com a contingência) pergunta sempre: o Assistente lento numa troca de
+  // versão não pode transformá-lo em "outro aparelho" por 1 minuto.
+  const doCaixa = souOPc();
+  if (!doCaixa && Date.now() < semAssistenteAte) return null;
   for (const porta of PORTAS_DO_ASSISTENTE) {
     try {
       const c = new AbortController();
@@ -98,16 +115,23 @@ async function perguntarAoAssistente(): Promise<EstadoNoAssistente | null> {
       const r = await fetchAssistente(`http://127.0.0.1:${porta}/contingencia/estado`, { cache: "no-store", signal: c.signal }).finally(() => clearTimeout(t));
       if (!r.ok) continue;
       const e = await r.json();
+      const ativa = e?.ativa === true;
+      // Este navegador é (ou deixou de ser) o do computador do caixa.
+      try {
+        if (ativa) localStorage.setItem(CHAVE_SOU_O_PC, String(porta));
+        else localStorage.removeItem(CHAVE_SOU_O_PC);
+      } catch { /* sem armazenamento */ }
       return {
         endereco: e?.pronta && e?.porta ? `http://127.0.0.1:${e.porta}` : null,
         testando: e?.testando === true,
-        ativa: e?.ativa === true,
+        ativa,
+        modo: typeof e?.modo === "string" ? e.modo : null,
       };
     } catch {
       /* próxima porta */
     }
   }
-  semAssistenteAte = Date.now() + 60_000;
+  if (!doCaixa) semAssistenteAte = Date.now() + 60_000;
   return null;
 }
 
@@ -134,7 +158,12 @@ function naPortaDaLoja(): boolean {
 export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom" }) {
   const [naLoja, setNaLoja] = useState(false);
   const [voltando, setVoltando] = useState(false);
-  const falhas = useRef(0);
+  /** A loja voltou ao normal, mas este aparelho não alcança a nuvem (Wi-Fi dele). */
+  const [semNuvemAqui, setSemNuvemAqui] = useState(false);
+  /** Desde quando a nuvem falha sem parar (null = respondeu na última). */
+  const quedaDesde = useRef<number | null>(null);
+  /** Desde quando a nuvem responde sem parar (zera a conta de pulos). */
+  const firmeDesde = useRef<number | null>(null);
   const indo = useRef(false);
   /** O último sinal da nuvem disse que o computador da loja está vivo (lib/contingencia/troca.ts). */
   const pcVivo = useRef(true);
@@ -146,6 +175,18 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
       return;
     }
     let vivo = true;
+    // Voltou do computador da loja: a marca vem no fragmento (o armazenamento
+    // de lá é de outra origem). Guarda aqui — a página do service worker
+    // também lê — e limpa o fragmento sem tocar na query (?stage=… do KDS) nem
+    // no estado do Next.
+    const marca = lerMarcaDeVolta(window.location.hash);
+    if (marca) {
+      try {
+        localStorage.setItem(CHAVE_DA_VOLTA, JSON.stringify({ em: marca.em, n: marca.n }));
+        gravarPreferencias(armazenamentoLocal(), marca.preferencias);
+      } catch { /* sem armazenamento */ }
+      history.replaceState(history.state, "", `${window.location.pathname}${window.location.search}`);
+    }
     // O que o último sinal disse do computador da loja, de antes de esta tela abrir.
     try { pcVivo.current = localStorage.getItem(CHAVE_DO_PC) !== "0"; } catch { /* sem armazenamento */ }
     const renovar = () => {
@@ -180,19 +221,17 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
     const conferir = async () => {
       const guardado = lerGuardado();
       if (!guardado || indo.current) return;
-      const voltouEm = Number(sessionStorage.getItem(VOLTOU_EM) || 0);
-      if (Date.now() - voltouEm < 60_000) return; // acabou de voltar: não pular de novo
       // "Testar agora" neste computador: pula sem esperar a nuvem cair. O
       // celular do garçom nunca é o computador do caixa: nem pergunta (o
       // Chrome do celular pediria permissão de rede local à toa).
       const noAssistente = tipo === "painel" ? await perguntarAoAssistente() : null;
-      if (noAssistente?.testando && noAssistente.endereco) {
-        falhas.current = 3;
-      } else {
+      if (!vivo) return;
+      if (!(noAssistente?.testando && noAssistente.endereco)) {
+        let ok = false;
         try {
           const r = await comPrazo(`/api/contingencia/sinal?loja=${encodeURIComponent(guardado.loja)}`, 4000);
           if (r.ok) {
-            falhas.current = 0;
+            ok = true;
             const d = await r.json().catch(() => null);
             const pcDisse = d?.pc !== false; // nuvem que não conta (versão antiga): como antes
             if (pcDisse !== pcVivo.current) {
@@ -200,30 +239,62 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
               // Para a rede de segurança (public/sw-contingencia.js), que roda sem este componente.
               try { localStorage.setItem(CHAVE_DO_PC, pcDisse ? "1" : "0"); } catch { /* sem armazenamento */ }
             }
-          } else {
-            falhas.current += 1;
           }
         } catch {
-          falhas.current += 1;
+          /* sem resposta no prazo: conta como falha */
         }
+        const agora = Date.now();
+        if (ok) {
+          quedaDesde.current = null;
+          firmeDesde.current ??= agora;
+          // A nuvem firme por 2 min: a próxima queda recomeça a conta de pulos.
+          if (agora - firmeDesde.current >= NUVEM_FIRME_MS) {
+            try { localStorage.removeItem(CHAVE_DA_VOLTA); } catch { /* sem armazenamento */ }
+          }
+          return;
+        }
+        firmeDesde.current = null;
+        quedaDesde.current ??= agora;
       }
-      if (falhas.current < 3) return;
+      let ultimaVolta: MarcaDeVolta | null = null;
+      try { ultimaVolta = lerVoltaGuardada(localStorage); } catch { /* sem armazenamento */ }
       const destino = destinoDaTroca({
         contingenciaAqui: !!noAssistente?.ativa,
         enderecoNoAssistente: noAssistente?.endereco ?? null,
         pcVivo: pcVivo.current,
         enderecos: guardado.enderecos,
+        quedaHaMs: quedaDesde.current ? Date.now() - quedaDesde.current : 0,
+        souOPc: souOPc(),
+        online: navigator.onLine,
+        modoNoAssistente: noAssistente?.modo ?? null,
+        testando: !!noAssistente?.testando,
+        esperaDaVoltaMs: esperaDepoisDaVolta(ultimaVolta),
       });
-      if (!destino) return; // o computador da loja não está pronto: fica e confere de novo
+      if (!destino) return; // fica e confere de novo
       indo.current = true;
-      const fragmento = new URLSearchParams({ bilhete: guardado.bilhete, volta: aqui(), tipo }).toString();
-      window.location.href = `${destino}/contingencia/entrar#${fragmento}`;
+      const fragmento = new URLSearchParams({
+        bilhete: guardado.bilhete,
+        volta: aqui(),
+        tipo,
+        n: String((ultimaVolta?.n || 0) + 1),
+        origem: window.location.origin,
+      });
+      // O som e a posição do KDS só existem nesta origem: vão junto.
+      const prefs = lerPreferencias(armazenamentoLocal());
+      if (Object.keys(prefs).length) fragmento.set("p", JSON.stringify(prefs));
+      window.location.href = `${destino}/contingencia/entrar#${fragmento.toString()}`;
     };
-    const relogio = setInterval(conferir, 5000);
+    // Uma conferência por vez: a próxima começa 5 s depois de a anterior acabar.
+    let relogio: ReturnType<typeof setTimeout> | null = null;
+    const rodar = async () => {
+      try { await conferir(); } catch { /* a próxima confere */ }
+      if (vivo && !indo.current) relogio = setTimeout(rodar, 5000);
+    };
+    relogio = setTimeout(rodar, 5000);
     return () => {
       vivo = false;
       clearInterval(relogioDoBilhete);
-      clearInterval(relogio);
+      if (relogio) clearTimeout(relogio);
     };
   }, [tipo]);
 
@@ -231,23 +302,62 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
   useEffect(() => {
     if (!naLoja) return;
     let vivo = true;
-    const conferir = async () => {
+    let relogio: ReturnType<typeof setTimeout> | null = null;
+    let nuvemOk = 0;
+    const conferir = async (): Promise<boolean> => {
       try {
         const r = await comPrazo("/__contingencia/estado", 3000);
         const e = await r.json();
-        if (!vivo) return;
-        if (e?.modo === "normal" && e?.nuvem) {
-          setVoltando(true);
-          sessionStorage.setItem(VOLTOU_EM, String(Date.now()));
-          setTimeout(() => { window.location.href = `${e.nuvem}${aqui()}`; }, 1500);
+        if (!vivo || e?.modo !== "normal" || !e?.nuvem) {
+          nuvemOk = 0;
+          if (vivo) setSemNuvemAqui(false);
+          return false;
         }
+        // De onde a tela saiu (com ou sem www), validado pela lista fixa e
+        // pelas origens que o supervisor conhece; na falta, a do painel dele.
+        let saiuDe: string | null = null;
+        let pulos = 1;
+        try {
+          saiuDe = sessionStorage.getItem(CHAVE_DA_ORIGEM) || localStorage.getItem(CHAVE_DA_ORIGEM);
+          pulos = Number(sessionStorage.getItem(CHAVE_DOS_PULOS) || localStorage.getItem(CHAVE_DOS_PULOS)) || 1;
+        } catch { /* sem armazenamento */ }
+        const extras: unknown[] = Array.isArray(e?.origensDaNuvem) ? e.origensDaNuvem : [e.nuvem];
+        const origem = origemValida(saiuDe, extras) || origemValida(e?.origemDoPainel, extras) || origemValida(e.nuvem, [e.nuvem]);
+        // Só volta se ESTE aparelho alcança a nuvem (duas respostas seguidas):
+        // a TV com o Wi-Fi ruim voltaria para uma página que não abre.
+        try {
+          const s = await comPrazo(`${origem || String(e.nuvem).replace(/\/+$/, "")}/api/contingencia/sinal`, 4000);
+          nuvemOk = s.ok ? nuvemOk + 1 : 0;
+        } catch {
+          nuvemOk = 0;
+        }
+        if (!vivo) return false;
+        setSemNuvemAqui(nuvemOk === 0);
+        if (nuvemOk < 2) return false;
+        setVoltando(true);
+        const destino = urlDeVolta({
+          origem,
+          volta: aqui(),
+          em: Date.now(),
+          n: pulos,
+          reserva: e.nuvem,
+          extras,
+          preferencias: lerPreferencias(armazenamentoLocal()),
+        });
+        setTimeout(() => { window.location.href = destino; }, 1500);
+        return true;
       } catch {
         /* a porta da loja reiniciando: tenta de novo */
+        return false;
       }
     };
-    conferir();
-    const relogio = setInterval(conferir, 5000);
-    return () => { vivo = false; clearInterval(relogio); };
+    // Uma conferência por vez (setTimeout encadeado).
+    const rodar = async () => {
+      const foi = await conferir();
+      if (vivo && !foi) relogio = setTimeout(rodar, 5000);
+    };
+    void rodar();
+    return () => { vivo = false; if (relogio) clearTimeout(relogio); };
   }, [naLoja]);
 
   if (!naLoja) return null;
@@ -266,7 +376,9 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
     >
       {voltando
         ? "✅ Conexão voltou — tudo foi enviado. Voltando ao FireHub…"
-        : "⚠️ Sem conexão com o FireHub — trabalhando no computador da loja. Tudo será enviado quando voltar."}
+        : semNuvemAqui
+          ? "⚠️ Trabalhando no computador da loja. A loja já tem internet, mas este aparelho não alcança o FireHub — confira o Wi-Fi dele."
+          : "⚠️ Sem conexão com o FireHub — trabalhando no computador da loja. Tudo será enviado quando voltar."}
     </div>
   );
 }

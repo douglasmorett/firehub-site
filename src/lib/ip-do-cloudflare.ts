@@ -44,7 +44,7 @@ const FAIXAS_V6 = [
   "2c0f:f248::/32",
 ];
 
-function v4ParaNumero(ip: string): number | null {
+export function v4ParaNumero(ip: string): number | null {
   const partes = ip.split(".");
   if (partes.length !== 4) return null;
   let n = 0;
@@ -58,7 +58,7 @@ function v4ParaNumero(ip: string): number | null {
 }
 
 /** IPv6 em 8 grupos de 16 bits (aceita "::"). */
-function v6ParaGrupos(ip: string): number[] | null {
+export function v6ParaGrupos(ip: string): number[] | null {
   if (!/^[0-9a-f:]+$/i.test(ip)) return null;
   const metades = ip.split("::");
   if (metades.length > 2) return null;

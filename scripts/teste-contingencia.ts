@@ -10,7 +10,10 @@ import { TABELAS_DA_COPIA, colunasQueNaoDescem, idDoRegistro, tabelaDaCopia } fr
 import { assinarBilhete, lerBilhete, VALIDADE_DO_BILHETE_MS } from "../src/lib/contingencia/chave";
 import { conteudoDoAtalho, origensDaNuvem } from "../contingencia/supervisor/atalho";
 import { sqlDaFuncao, tabelasComGatilho } from "../src/lib/contingencia/estrutura-no-banco";
-import { destinoDaTroca } from "../src/lib/contingencia/troca";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { QUEDA_ANTES_DE_PULAR_MS, computadorRecebeTelas, destinoDaTroca, type SituacaoDaTroca } from "../src/lib/contingencia/troca";
+import { alertaDeRede, anotarTela } from "../src/lib/contingencia/rede-da-loja";
 
 let falhas = 0;
 const confere = (oQue: string, ok: boolean, obtido?: unknown) => {
@@ -140,30 +143,100 @@ confere("JSON com chaves em outra ordem é igual", iguais({ a: 1, b: [1, { c: 2,
 console.log("\n— Para onde a tela vai quando a nuvem some —");
 {
   const ips = ["http://192.168.0.10:7890"];
-  confere(
-    "TV com o computador da loja vivo: vai para ele",
-    destinoDaTroca({ contingenciaAqui: false, enderecoNoAssistente: null, pcVivo: true, enderecos: ips }) === ips[0],
-  );
+  const caiu = QUEDA_ANTES_DE_PULAR_MS; // queda de 45 s seguidos
+  const tv = (o: Partial<SituacaoDaTroca> = {}): SituacaoDaTroca => ({
+    contingenciaAqui: false, enderecoNoAssistente: null, pcVivo: true, enderecos: ips, quedaHaMs: caiu, ...o,
+  });
+  const caixa = (o: Partial<SituacaoDaTroca> = {}): SituacaoDaTroca => ({
+    contingenciaAqui: true, enderecoNoAssistente: "http://127.0.0.1:7890", pcVivo: true, enderecos: ips, quedaHaMs: 5_000, souOPc: true, modoNoAssistente: "contingencia", ...o,
+  });
+  confere("a queda que a tela espera é de 45 s (decisão do Douglas, 14/10)", QUEDA_ANTES_DE_PULAR_MS === 45_000, QUEDA_ANTES_DE_PULAR_MS);
+  confere("TV com o computador da loja vivo e 45 s de queda: vai para ele", destinoDaTroca(tv()) === ips[0]);
+  confere("TV com 44 s de queda: ainda fica (um 502 de deploy ou do Cloudflare não tira a tela)", destinoDaTroca(tv({ quedaHaMs: caiu - 1_000 })) === null);
+  confere("TV com a nuvem respondendo agora: fica", destinoDaTroca(tv({ quedaHaMs: 0 })) === null);
   confere(
     "TV com o computador da loja desligado: fica (nada de página de erro presa)",
-    destinoDaTroca({ contingenciaAqui: false, enderecoNoAssistente: null, pcVivo: false, enderecos: ips }) === null,
+    destinoDaTroca(tv({ pcVivo: false })) === null,
+  );
+  confere("TV sem rede (navigator.onLine=false): fica — o PC também não estaria lá", destinoDaTroca(tv({ online: false })) === null);
+  confere("TV com rede (onLine=true): vai", destinoDaTroca(tv({ online: true })) === ips[0]);
+  confere("TV que acabou de voltar do computador da loja: espera antes de pular de novo", destinoDaTroca(tv({ esperaDaVoltaMs: 30_000 })) === null);
+  confere("bilhete sem endereço: fica", destinoDaTroca(tv({ enderecos: [] })) === null);
+  confere(
+    "outro PC com Assistente, contingência em outro computador: vai pelo IP da rede depois de 45 s",
+    destinoDaTroca(tv({ contingenciaAqui: false, souOPc: false })) === ips[0],
+  );
+
+  // O computador do caixa: vale o que o Assistente diz.
+  confere("PC do caixa com o FireHub local pronto e a queda declarada: vai para o 127.0.0.1", destinoDaTroca(caixa()) === "http://127.0.0.1:7890");
+  confere("PC do caixa: não espera os 45 s quando o supervisor já declarou", destinoDaTroca(caixa({ quedaHaMs: 1 })) === "http://127.0.0.1:7890");
+  confere(
+    "PC do caixa ainda subindo o FireHub local: espera (não vai para o IP da rede)",
+    destinoDaTroca(caixa({ enderecoNoAssistente: null })) === null,
+  );
+  confere("PC do caixa com a nuvem respondendo a ele: fica", destinoDaTroca(caixa({ quedaHaMs: 0 })) === null);
+  confere(
+    "PC do caixa com o supervisor em modo normal e 10 s de falha: fica (soluço só do navegador)",
+    destinoDaTroca(caixa({ modoNoAssistente: "normal", quedaHaMs: 10_000 })) === null,
   );
   confere(
-    "computador da loja com o FireHub local pronto: vai para o 127.0.0.1",
-    destinoDaTroca({ contingenciaAqui: true, enderecoNoAssistente: "http://127.0.0.1:7890", pcVivo: true, enderecos: ips }) === "http://127.0.0.1:7890",
+    "PC do caixa com o supervisor normal e 45 s sem a nuvem só no navegador: vai",
+    destinoDaTroca(caixa({ modoNoAssistente: "normal", quedaHaMs: caiu })) === "http://127.0.0.1:7890",
   );
+  confere("PC do caixa no \"Testar agora\": vai sem esperar", destinoDaTroca(caixa({ modoNoAssistente: "normal", quedaHaMs: 0, testando: true })) === "http://127.0.0.1:7890");
+  confere("PC do caixa sem Wi-Fi: o 127.0.0.1 não depende da rede, vai", destinoDaTroca(caixa({ online: false })) === "http://127.0.0.1:7890");
   confere(
-    "computador da loja ainda subindo o FireHub local: espera (não vai para o IP da rede)",
-    destinoDaTroca({ contingenciaAqui: true, enderecoNoAssistente: null, pcVivo: true, enderecos: ips }) === null,
+    "PC do caixa com o Assistente sem resposta (souOPc): fica e confere de novo — nunca o IP da rede",
+    destinoDaTroca(tv({ souOPc: true, contingenciaAqui: false, enderecoNoAssistente: null })) === null,
   );
-  confere(
-    "outro PC com Assistente, contingência em outro computador: vai pelo IP da rede",
-    destinoDaTroca({ contingenciaAqui: false, enderecoNoAssistente: null, pcVivo: true, enderecos: ips }) === ips[0],
-  );
-  confere(
-    "bilhete sem endereço: fica",
-    destinoDaTroca({ contingenciaAqui: false, enderecoNoAssistente: null, pcVivo: true, enderecos: [] }) === null,
-  );
+}
+
+console.log("\n— O computador da loja recebe telas? (sinal da nuvem) —");
+{
+  const agora = Date.now();
+  confere("relatou há 30 s com a cópia pronta: recebe", computadorRecebeTelas(agora - 30_000, { copiaPronta: true, modo: "normal" }, agora));
+  confere("modo normal com pronta=false mas copiaPronta=true: recebe (pronta é sempre false em modo normal)", computadorRecebeTelas(agora - 30_000, { copiaPronta: true, modo: "normal", pronta: false } as any, agora));
+  confere("cópia ainda não pronta: não recebe", !computadorRecebeTelas(agora - 30_000, { copiaPronta: false }, agora));
+  confere("copiaPronta lida do banco como texto \"false\": não recebe", !computadorRecebeTelas(agora - 30_000, { copiaPronta: "false" }, agora));
+  confere("supervisor avisou que está parando: não recebe", !computadorRecebeTelas(agora - 30_000, { copiaPronta: true, modo: "parando" }, agora));
+  confere("supervisor com parando=true: não recebe", !computadorRecebeTelas(agora - 30_000, { copiaPronta: true, parando: true }, agora));
+  confere("supervisor antigo (sem copiaPronta): recebe como antes", computadorRecebeTelas(agora - 30_000, { modo: "normal" }, agora));
+  confere("sem notícia há 90 s: não recebe", !computadorRecebeTelas(agora - 90_000, { copiaPronta: true }, agora));
+  confere("nunca relatou: não recebe", !computadorRecebeTelas(null, null, agora));
+}
+
+console.log("\n— O computador da contingência está na internet da loja? —");
+{
+  const agora = Date.now();
+  const em = (ms: number) => new Date(agora - ms).toISOString();
+  const telas = { "189.1.2.3": { em: em(60_000), n: 40 }, "2804:14c:1:2:aaaa::1": { em: em(60_000), n: 30 } };
+  confere("computador na mesma internet das telas: sem alerta", alertaDeRede("189.1.2.3", telas, null, agora) === null);
+  const longe = alertaDeRede("177.9.9.9", telas, null, agora);
+  confere("computador em outra internet (o PC de casa): alerta com o IP das telas", !!longe && longe.outras.length === 1 && longe.outras[0].ip === "189.1.2.3", longe);
+  confere("IPv6 compara pelo /64 (endereço temporário muda no fim)", alertaDeRede("2804:14c:1:2:bbbb::9", telas, null, agora) === null);
+  confere("IPv6 de outro /64: alerta", !!alertaDeRede("2804:14c:9:9::1", telas, null, agora));
+  confere("computador só em IPv4 e telas só em IPv6: não dá para comparar, sem alerta", alertaDeRede("177.9.9.9", { "2804:14c:1:2::1": { em: em(1000), n: 3 } }, null, agora) === null);
+  confere("tela vista há 3 h não conta", alertaDeRede("177.9.9.9", { "189.1.2.3": { em: em(3 * 60 * 60_000), n: 3 } }, null, agora) === null);
+  confere("sem IP do computador (supervisor antigo): sem alerta", alertaDeRede(undefined, telas, null, agora) === null);
+  const meu = alertaDeRede("177.9.9.9", telas, "189.1.2.3", agora);
+  confere("marca qual IP é o do aparelho de quem olha (o dono em casa entende)", !!meu && meu.outras[0].esteAparelho === true, meu);
+  const primeira = anotarTela(null, "189.1.2.3", agora);
+  confere("primeira tela anota o IP", !!primeira && primeira["189.1.2.3"]?.n === 1, primeira);
+  confere("mesmo IP em menos de 5 min: nada a gravar", anotarTela(primeira, "189.1.2.3", agora + 60_000) === null);
+  const depois = anotarTela(primeira, "189.1.2.3", agora + 6 * 60_000);
+  confere("mesmo IP depois de 5 min: conta de novo", depois?.["189.1.2.3"]?.n === 2, depois);
+  confere("IP inválido não entra", anotarTela(null, "unknown", agora) === null);
+  let muitas: any = null;
+  for (let i = 0; i < 20; i++) muitas = anotarTela(muitas, `10.0.0.${i}`, agora + i * 1000) || muitas;
+  confere("guarda só os 8 IPs mais recentes", Object.keys(muitas).length === 8 && !!muitas["10.0.0.19"] && !muitas["10.0.0.0"], Object.keys(muitas));
+}
+
+console.log("\n— A rede de segurança (service worker) usa a mesma queda —");
+{
+  const sw = readFileSync(join(__dirname, "..", "public", "sw-contingencia.js"), "utf8");
+  confere(`public/sw-contingencia.js: QUEDA_MS = ${QUEDA_ANTES_DE_PULAR_MS}`, sw.includes(`const QUEDA_MS = ${QUEDA_ANTES_DE_PULAR_MS};`));
+  confere("a página de troca não tem barra invertida (a string entre crases engole)", !sw.slice(sw.indexOf("const PAGINA"), sw.indexOf("</script>")).includes("\\"));
+  confere("a página de troca respeita a volta recente e o PC do caixa", sw.includes("firehub_contingencia_voltou") && sw.includes("firehub_contingencia_sou_o_pc"));
 }
 
 console.log("\n— Catálogo e bilhete —");
