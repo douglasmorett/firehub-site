@@ -17,6 +17,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import dgram from "node:dgram";
 
 export const PORTAS = {
   /** O Postgres da cópia — só no próprio computador. */
@@ -122,15 +123,108 @@ export function gravarEstado(cfg: Config, estado: EstadoGuardado): void {
   fs.renameSync(temporario, destino);
 }
 
-/** Os IPs deste computador na rede da loja (para a TV e o garçom chegarem). */
-export function ipsDaRede(): string[] {
-  const ips: string[] = [];
-  for (const placas of Object.values(os.networkInterfaces())) {
-    for (const p of placas || []) {
-      if (p.family !== "IPv4" || p.internal) continue;
+// ── Os IPs da rede da loja ───────────────────────────────────────────────────
+//
+// A TV e o service worker vão só para o PRIMEIRO endereço do bilhete
+// (troca.ts, sw-contingencia.js). Num PC com VPN (Tailscale 100.64/10, Radmin
+// 26.x, Hamachi 25.x), Hyper-V/WSL (vEthernet 172.x) ou VirtualBox
+// (192.168.56.x), a ordem do os.networkInterfaces() podia pôr o IP virtual na
+// frente: a TV pulava para um endereço que ela não alcança e parava no erro do
+// Chrome. Agora vem primeiro o IP da placa da ROTA PADRÃO (a que sai para o
+// roteador da loja), as placas virtuais e as faixas de VPN saem, e o resto vai
+// na ordem das redes de loja (192.168, 10, 172.16-31).
+
+/** Nomes de placa que não são a rede da loja. */
+const PLACA_VIRTUAL = /vEthernet|Hyper-V|WSL|VirtualBox|VMware|VMnet|Tailscale|ZeroTier|Radmin|Hamachi|OpenVPN|WireGuard|TAP-|Npcap|Docker|\bVPN\b/i;
+
+function octetos(ip: string): number[] {
+  return ip.split(".").map((n) => Number(n));
+}
+
+/** Faixas de VPN: CGNAT/Tailscale (100.64.0.0/10), Radmin (26/8) e Hamachi (25/8). */
+export function faixaDeVpn(ip: string): boolean {
+  const [a, b] = octetos(ip);
+  return (a === 100 && b >= 64 && b <= 127) || a === 26 || a === 25;
+}
+
+/** Ordem das redes de loja: 192.168 (menos a 192.168.56 do VirtualBox), 10, 172.16-31, o resto. */
+function ordemDaRede(ip: string): number {
+  const [a, b, c] = octetos(ip);
+  if (a === 192 && b === 168) return c === 56 ? 3 : 0;
+  if (a === 10) return 1;
+  if (a === 172 && b >= 16 && b <= 31) return 2;
+  return 4;
+}
+
+type Placa = { family: string | number; internal: boolean; address: string };
+
+/**
+ * A regra, sem rede de verdade (scripts/teste-ips-da-rede.ts). `ipDaRota` é o
+ * IP da placa que sai para a internet, quando se sabe; ele vem primeiro mesmo
+ * numa placa de nome "virtual" (o switch externo do Hyper-V põe o IP da loja
+ * numa "vEthernet"), desde que não seja faixa de VPN.
+ */
+export function escolherIpsDaRede(placas: Record<string, Placa[] | undefined>, ipDaRota: string | null): string[] {
+  const todos: { ip: string; virtual: boolean }[] = [];
+  for (const [nome, lista] of Object.entries(placas)) {
+    for (const p of lista || []) {
+      if ((p.family !== "IPv4" && p.family !== 4) || p.internal) continue;
       if (p.address.startsWith("169.254.")) continue; // sem DHCP: não é a rede da loja
-      ips.push(p.address);
+      if (faixaDeVpn(p.address)) continue;
+      todos.push({ ip: p.address, virtual: PLACA_VIRTUAL.test(nome) });
     }
   }
-  return ips;
+  const daLoja = todos.filter((x) => !x.virtual);
+  // Só placa "virtual": melhor um endereço duvidoso do que nenhum.
+  const candidatos = (daLoja.length ? daLoja : todos).map((x) => x.ip);
+  const ordenados = candidatos
+    .map((ip, i) => ({ ip, i }))
+    .sort((a, b) => ordemDaRede(a.ip) - ordemDaRede(b.ip) || a.i - b.i)
+    .map((x) => x.ip);
+  const daRota = ipDaRota && todos.some((x) => x.ip === ipDaRota) ? [ipDaRota] : [];
+  return [...new Set([...daRota, ...ordenados])];
+}
+
+let ipDaRotaPadrao: string | null = null;
+let rotaConferidaEm = 0;
+
+/**
+ * Qual IP local sai para a internet: um socket UDP "conectado" a 8.8.8.8 —
+ * connect em UDP não manda pacote nenhum, só pergunta a rota ao Windows. Sem
+ * rota (cabo fora), fica sem. Assíncrono: vale a partir da próxima chamada.
+ */
+function conferirRotaPadrao(): void {
+  if (Date.now() - rotaConferidaEm < 30_000) return;
+  rotaConferidaEm = Date.now();
+  try {
+    const s = dgram.createSocket("udp4");
+    s.unref();
+    const fechar = () => {
+      try {
+        s.close();
+      } catch {
+        /* já fechado */
+      }
+    };
+    s.on("error", () => {
+      ipDaRotaPadrao = null;
+      fechar();
+    });
+    s.connect(53, "8.8.8.8", (err?: Error | null) => {
+      try {
+        ipDaRotaPadrao = err ? null : s.address().address;
+      } catch {
+        ipDaRotaPadrao = null;
+      }
+      fechar();
+    });
+  } catch {
+    ipDaRotaPadrao = null;
+  }
+}
+
+/** Os IPs deste computador na rede da loja (para a TV e o garçom chegarem), o da rota padrão primeiro. */
+export function ipsDaRede(): string[] {
+  conferirRotaPadrao();
+  return escolherIpsDaRede(os.networkInterfaces(), ipDaRotaPadrao);
 }

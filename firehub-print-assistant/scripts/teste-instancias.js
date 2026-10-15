@@ -18,7 +18,7 @@ const path = require("path");
 const { spawn, execFileSync } = require("child_process");
 const {
   APP_ID, compararVersoes, oQueFazerComAOutra, pidNaSaidaDoNetstat,
-  outrasCopiasNoAr, derrubarPeloPid, arquivoDaVigia,
+  outrasCopiasNoAr, derrubarPeloPid, arquivoDaVigia, respondeEmAlgumaTentativa,
 } = require("../instancias");
 
 let falhas = 0;
@@ -62,6 +62,20 @@ async function main() {
   confere("netstat: IPv6 7900 → 8765", pidNaSaidaDoNetstat(saida, 7900, 1), 8765);
   confere("netstat: 7899 não casa com 17899", pidNaSaidaDoNetstat(saida.replace(/.*:7899 .*LISTENING.*\r\n/, ""), 7899, 1), null);
   confere("netstat: o próprio pid não conta", pidNaSaidaDoNetstat(saida, 7899, 4321), null);
+
+  // ── Cópia presa só depois de 3 perguntas (14/10: a vigia derrubou um Assistente só ocupado) ──
+  const esperas = [];
+  const semEsperar = { tentativas: 3, intervaloMs: 10_000, esperar: async (ms) => { esperas.push(ms); } };
+  let perguntas = 0;
+  confere("respondeu na 3ª pergunta: não está presa", await respondeEmAlgumaTentativa(async () => (++perguntas === 3 ? 7899 : null), semEsperar), 7899);
+  confere("…perguntou 3 vezes, com 10 s entre elas", [perguntas, esperas], [3, [10_000, 10_000]]);
+  perguntas = 0;
+  esperas.length = 0;
+  confere("nenhuma resposta em 3 perguntas: presa", await respondeEmAlgumaTentativa(async () => { perguntas++; return null; }, semEsperar), null);
+  confere("…e não pergunta uma 4ª", perguntas, 3);
+  perguntas = 0;
+  esperas.length = 0;
+  confere("respondeu de primeira: não espera nada", [await respondeEmAlgumaTentativa(async () => { perguntas++; return 7900; }, semEsperar), perguntas, esperas.length], [7900, 1, 0]);
 
   // ── De verdade: dois Assistentes falsos, cada um no seu processo ────
   const portas = [];
