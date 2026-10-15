@@ -82,9 +82,12 @@ function servirVideo(req: NextRequest, caminho: string, tamanho: number, tipo: s
     ...extras,
     "Content-Type": tipo,
     "Accept-Ranges": "bytes",
-    // no-transform: sem ele o Next comprime o vídeo em gzip quando o Cloudflare
-    // pede com Accept-Encoding — some o Content-Length, o Range vira 200 inteiro
-    // e o iPhone não toca (visto em produção, 14/10/2026).
+    // O Cloudflare busca o vídeo INTEIRO (sem Range) para guardar em cache, e o
+    // proxy do Coolify (Traefik, gzip ligado) comprimia essa resposta: o cache
+    // ficava sem Content-Length, todo Range virava 200 inteiro e o iPhone não
+    // tocava (visto em produção, 14/10/2026). O Traefik não comprime resposta
+    // que já declara Content-Encoding; no-transform pede o mesmo a quem respeita.
+    "Content-Encoding": "identity",
     "Cache-Control": "public, max-age=31536000, immutable, no-transform",
     "X-Content-Type-Options": "nosniff",
     // Aberto direto na barra, o vídeo nunca vira página com script.
