@@ -470,6 +470,11 @@ export type KdsConfig = {
   soNaFinalizacao: string[];
   /** Tipos de pedido que entram na frente da fila (ver `TIPOS_DE_PRIORIDADE`). */
   prioridade: TipoDePrioridade[];
+  /**
+   * A prioridade das telas de FINALIZAÇÃO, quando a loja separou da produção.
+   * `null` = a mesma da produção (como sempre foi). Ver `prioridadeDaEtapa`.
+   */
+  prioridadeNaFinalizacao?: TipoDePrioridade[] | null;
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -510,10 +515,52 @@ export function lerKdsConfig(bruto: unknown): KdsConfig {
   const obj = bruto && typeof bruto === "object" && !Array.isArray(bruto) ? (bruto as any) : {};
   const lista = Array.isArray(obj.soNaFinalizacao) ? obj.soNaFinalizacao : [];
   const prioridade = Array.isArray(obj.prioridade) ? obj.prioridade : [];
+  const tipos = (lista: unknown[]) => TIPOS_DE_PRIORIDADE.filter((t) => lista.map((v: unknown) => String(v ?? "").toUpperCase()).includes(t));
   return {
     soNaFinalizacao: [...new Set(lista.map((v: unknown) => String(v ?? "").trim()).filter(Boolean))] as string[],
-    prioridade: TIPOS_DE_PRIORIDADE.filter((t) => prioridade.map((v: unknown) => String(v ?? "").toUpperCase()).includes(t)),
+    prioridade: tipos(prioridade),
+    prioridadeNaFinalizacao: Array.isArray(obj.prioridadeNaFinalizacao) ? tipos(obj.prioridadeNaFinalizacao) : null,
   };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   A PRIORIDADE É DE CADA ETAPA
+
+   Pizzaria 17 (15/10/2026): a mesa e o balcão furam a fila na PRODUÇÃO — é lá
+   que se decide o que vai primeiro para o forno. Na FINALIZAÇÃO a ordem tem de
+   ser a de chegada nela: "a ordem que entra no forno é a ordem que sai do
+   forno". Com uma lista só, a mesa montada depois de um delivery passava na
+   frente dele também na finalização, e desmarcar lá desmarcava na produção.
+
+   Cada etapa tem a sua lista. A finalização sem lista própria (`null`) segue
+   a da produção — nenhuma loja muda até separar. Com lista própria, quem não
+   fura a fila sai na ordem em que chegou na finalização: a PRIMEIRA baixa da
+   produção (`prontoEm` do item), e não a hora do pedido.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export type EtapaDoKds = "production" | "finishing";
+
+/** A config com a prioridade valendo NESTA etapa (a lista que a tela mostra e edita). */
+export function prioridadeDaEtapa(config: KdsConfig | null | undefined, etapa: string | null | undefined): TipoDePrioridade[] {
+  if (etapa === "finishing" && config?.prioridadeNaFinalizacao) return config.prioridadeNaFinalizacao;
+  return config?.prioridade || [];
+}
+
+/** A finalização desta loja tem prioridade própria (e portanto ordem de chegada nela)? */
+export function finalizacaoSeparada(config: KdsConfig | null | undefined): boolean {
+  return Array.isArray(config?.prioridadeNaFinalizacao);
+}
+
+/** Quando o pedido chegou na finalização: a primeira baixa de item da produção. */
+export function chegadaNaFinalizacao(pedido: { items?: { prontoEm?: Date | string | null }[] | null; createdAt?: Date | string | null }): number {
+  let menor = Infinity;
+  for (const i of pedido?.items || []) {
+    const ms = i?.prontoEm ? new Date(i.prontoEm as any).getTime() : NaN;
+    if (Number.isFinite(ms) && ms < menor) menor = ms;
+  }
+  if (Number.isFinite(menor)) return menor;
+  const ms = new Date(pedido?.createdAt as any).getTime();
+  return Number.isFinite(ms) ? ms : 0;
 }
 
 /**
@@ -524,11 +571,14 @@ export function lerKdsConfig(bruto: unknown): KdsConfig {
  * entrou — que é a ordem que a consulta e `juntarPedidosDaProducao` já dão.
  */
 export function ordenarPelaPrioridade<
-  T extends { isRoutePriority?: boolean | null; prioridadeNaCozinha?: boolean | null; deliveryType?: string | null; source?: string | null; createdAt?: Date | string | null },
->(pedidos: T[], config: KdsConfig | null | undefined): T[] {
-  const marcados = new Set(config?.prioridade || []);
-  if (marcados.size === 0) return pedidos;
+  T extends { isRoutePriority?: boolean | null; prioridadeNaCozinha?: boolean | null; deliveryType?: string | null; source?: string | null; createdAt?: Date | string | null; items?: { prontoEm?: Date | string | null }[] | null },
+>(pedidos: T[], config: KdsConfig | null | undefined, etapa?: string | null): T[] {
+  const marcados = new Set(prioridadeDaEtapa(config, etapa));
+  // Finalização separada: a ordem de chegada NELA, mesmo sem tipo marcado.
+  const pelaChegadaNaFinalizacao = etapa === "finishing" && finalizacaoSeparada(config);
+  if (marcados.size === 0 && !pelaChegadaNaFinalizacao) return pedidos;
   const quando = (p: T) => {
+    if (pelaChegadaNaFinalizacao) return chegadaNaFinalizacao(p);
     const ms = new Date(p?.createdAt as any).getTime();
     return Number.isFinite(ms) ? ms : 0;
   };
@@ -542,8 +592,8 @@ export function ordenarPelaPrioridade<
 }
 
 /** Este pedido está na frente por ser de um tipo prioritário da loja? (o selo no card) */
-export function furaAFila(pedido: { deliveryType?: string | null; source?: string | null }, config: KdsConfig | null | undefined): boolean {
-  return (config?.prioridade || []).includes(tipoNaFila(pedido));
+export function furaAFila(pedido: { deliveryType?: string | null; source?: string | null }, config: KdsConfig | null | undefined, etapa?: string | null): boolean {
+  return prioridadeDaEtapa(config, etapa).includes(tipoNaFila(pedido));
 }
 
 /**

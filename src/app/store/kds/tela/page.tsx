@@ -11,6 +11,7 @@ import {
   categoriasComDono as donosDaEtapa,
   furaAFila,
   lerKdsConfig,
+  prioridadeDaEtapa,
   tipoNaFila,
   pedidoNaTela,
   type KdsConfig,
@@ -1626,7 +1627,7 @@ export default function KDSTelaPage() {
                     padding: "6px 14px",
                     borderRadius: 10,
                     border: "1px solid #44403C",
-                    background: (kdsConfig?.prioridade.length || 0) > 0 ? "#B45309" : "#1C1917",
+                    background: prioridadeDaEtapa(kdsConfig, stage).length > 0 ? "#B45309" : "#1C1917",
                     color: "#fff",
                     fontWeight: 700,
                     fontSize: 13,
@@ -1639,9 +1640,9 @@ export default function KDSTelaPage() {
                   }}
                 >
                   ⏩ Prioridade
-                  {(kdsConfig?.prioridade.length || 0) > 0 && (
+                  {prioridadeDaEtapa(kdsConfig, stage).length > 0 && (
                     <span style={{ fontSize: 11, fontWeight: 800, opacity: 0.95 }}>
-                      {kdsConfig!.prioridade
+                      {prioridadeDaEtapa(kdsConfig, stage)
                         .map((t) => ({ MESA: "Mesa", BALCAO: "Balcão", RETIRADA: "Retirada", DELIVERY: "Delivery" } as const)[t])
                         .join(" · ")}
                     </span>
@@ -1666,7 +1667,12 @@ export default function KDSTelaPage() {
                     }}
                   >
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #292524", paddingBottom: 8 }}>
-                      <span style={{ fontWeight: 800, fontSize: 13, color: "#94A3B8" }}>ENTRAM NA FRENTE</span>
+                      <span style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span style={{ fontWeight: 800, fontSize: 13, color: "#94A3B8" }}>ENTRAM NA FRENTE</span>
+                        <span style={{ fontSize: 11, color: "#78716C" }}>
+                          {stage === "finishing" ? "Só nas telas de finalização. O resto sai na ordem em que chegou aqui." : "Só nas telas de produção."}
+                        </span>
+                      </span>
                       <button
                         onClick={() => setShowPrioridade(false)}
                         style={{ background: "none", border: "none", color: "#94A3B8", fontSize: 16, cursor: "pointer" }}
@@ -1681,7 +1687,10 @@ export default function KDSTelaPage() {
                       { id: "RETIRADA", rotulo: "🛍️ Retirada", dica: "site, app ou WhatsApp, cliente vem buscar" },
                       { id: "DELIVERY", rotulo: "🛵 Delivery", dica: "para entregar" },
                     ] as const).map((t) => {
-                      const atual = kdsConfig?.prioridade || [];
+                      // A lista DESTA etapa: a finalização edita a dela, sem
+                      // mexer na da produção (lib/kds-telas.ts, prioridadeDaEtapa).
+                      const atual = prioridadeDaEtapa(kdsConfig, stage);
+                      const campo = stage === "finishing" ? "prioridadeNaFinalizacao" : "prioridade";
                       const on = atual.includes(t.id);
                       return (
                         <button
@@ -1690,14 +1699,18 @@ export default function KDSTelaPage() {
                           onClick={async () => {
                             const antes = kdsConfig;
                             const nova = on ? atual.filter((x) => x !== t.id) : [...atual, t.id];
-                            setKdsConfig({ soNaFinalizacao: antes?.soNaFinalizacao || [], prioridade: nova });
+                            setKdsConfig({
+                              soNaFinalizacao: antes?.soNaFinalizacao || [],
+                              prioridade: campo === "prioridade" ? nova : antes?.prioridade || [],
+                              prioridadeNaFinalizacao: campo === "prioridadeNaFinalizacao" ? nova : antes?.prioridadeNaFinalizacao ?? null,
+                            });
                             setSalvandoPrioridade(true);
                             try {
                               const r = await fetch("/api/store/kds-config", {
                                 method: "PUT",
                                 headers: { "Content-Type": "application/json" },
                                 credentials: "include",
-                                body: JSON.stringify({ prioridade: nova }),
+                                body: JSON.stringify({ [campo]: nova }),
                               });
                               if (!r.ok) throw new Error(String(r.status));
                               const salvo = await r.json().catch(() => null);
@@ -2041,7 +2054,7 @@ export default function KDSTelaPage() {
                   accent={accent}
                   isExiting={exitingOrderIds.has(order.id)}
                   tick={tick}
-                  prioridadeDaLoja={furaAFila(order, kdsConfig)}
+                  prioridadeDaLoja={furaAFila(order, kdsConfig, stage)}
                   onMarkPronto={() => markAsPronto(order)}
                 />
               ))}
