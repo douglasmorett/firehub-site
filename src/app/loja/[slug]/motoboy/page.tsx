@@ -354,6 +354,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     // 10s, então o excesso é invisível para quem olha. 12s entre envios cobre.
     let ultimoEnvio = 0;
     const sendLocation = (lat: number, lng: number) => {
+      // GPS que chega depois do "Sair" (o getCurrentPosition demora) não pode
+      // pôr o capacete de volta no mapa da loja.
+      if (sessaoRef.current !== session.motoboyId) return;
       const agora = Date.now();
       if (agora - ultimoEnvio < 12_000) return;
       ultimoEnvio = agora;
@@ -517,6 +520,25 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
 
   // Logout
   const handleLogout = () => {
+    // Some do mapa da loja na hora (DELETE /api/motoboys/location), antes de
+    // apagar a sessão — o token sai do localStorage, que vale mesmo quando
+    // quem chama ficou com um `session` velho na closure. Sem esperar e com
+    // freio de 5s: sair nunca trava por causa disto, e sessão vencida só
+    // devolve "nada a apagar".
+    try {
+      const salvo = JSON.parse(localStorage.getItem(`firehub_motoboy_session_${slug}`) || "null");
+      const token = salvo?.token || session?.token;
+      if (token) {
+        const controle = new AbortController();
+        const relogio = setTimeout(() => controle.abort(), 5000);
+        fetch("/api/motoboys/location", {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${token}` },
+          keepalive: true,
+          signal: controle.signal,
+        }).catch(() => {}).finally(() => clearTimeout(relogio));
+      }
+    } catch {}
     sessaoRef.current = null;
     limparDadosDeSessao();
     setSession(null);
@@ -680,6 +702,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
+          if (sessaoRef.current !== session.motoboyId) return; // já saiu do app
           fetch("/api/motoboys/location", {
             method: "POST",
             headers: { "Content-Type": "application/json" },

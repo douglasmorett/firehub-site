@@ -71,7 +71,13 @@ export function SessaoProvider({ children }: { children: ReactNode }) {
   const sair = useCallback(async (motivo?: string) => {
     const atual = await lerSessao();
     await desligarGps();
-    if (atual) await esquecerAvisos(atual.token);
+    if (atual) {
+      // Some do mapa da loja na hora (DELETE /api/motoboys/location) — depois
+      // de desligar o GPS, para nenhuma posição atrasada pôr o capacete de
+      // volta. Sessão vencida ou sem rede: sai do mesmo jeito.
+      await chamar("/api/motoboys/location", { metodo: "DELETE", token: atual.token, limite: 5_000 }).catch(() => {});
+      await esquecerAvisos(atual.token);
+    }
     await gravarSessao(null);
     setAvisoDeSaida(motivo ?? null);
     setSessao(null);

@@ -78,6 +78,23 @@ export async function POST(req: NextRequest) {
   }
 }
 
+// DELETE: o entregador apertou "Sair" — some do mapa da loja na hora
+// (lib/motoboy-sair-do-mapa.ts). Quem sai é SEMPRE o da sessão assinada, nunca
+// um id do corpo: senão qualquer um apagava o entregador de outra loja do mapa.
+// Sessão vencida não é erro para quem está saindo — o app sai de qualquer jeito.
+export async function DELETE(req: NextRequest) {
+  try {
+    const { exigirMotoboy } = await import("@/lib/motoboy-sessao");
+    const { tirarMotoboyDoMapa } = await import("@/lib/motoboy-sair-do-mapa");
+    const mb = await exigirMotoboy(req);
+    const saiu = await tirarMotoboyDoMapa(prisma, mb);
+    return NextResponse.json({ success: true, saiuDoMapa: saiu });
+  } catch (err) {
+    console.error("[Motoboy Location DELETE Error]", err);
+    return NextResponse.json({ error: "Erro ao tirar do mapa" }, { status: 500 });
+  }
+}
+
 // GET: Painel de Roteirização consulta motoboys ativos da loja
 //
 // ⚠️ O atalho `?storeId=` foi REMOVIDO. Com ele presente, a sessão era pulada
