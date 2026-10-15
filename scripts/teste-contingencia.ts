@@ -228,6 +228,27 @@ console.log("\n— A linha que a nuvem não aceita (volta-1) —");
   confere("erro do pg: código direto", e2.codigo === "23502", e2);
   const e3 = erroDoBanco(Object.assign(new Error("Raw query failed. Code: `23505`. Message: `duplicate key`"), { code: "P2010" }));
   confere("P2010 sem meta: o código vem da mensagem, não do Prisma", e3.codigo === "23505", e3);
+  // O Prisma junta o DETAIL do Postgres, que traz os valores da linha: não pode ir para o log.
+  const comDetalhe = erroDoPrisma(
+    "23502",
+    'null value in column "status" of relation "CustomerOrder" violates not-null constraint\nDETAIL: Failing row contains (p2, L, Maria da Silva, 11987654321, Rua das Flores 10).',
+  );
+  const e4 = erroDoBanco(comDetalhe);
+  confere(
+    "a mensagem do erro não leva os valores da linha (nome, telefone, endereço)",
+    e4.codigo === "23502" && e4.mensagem.includes("not-null") && !/Maria|11987654321|Flores|DETAIL/.test(e4.mensagem),
+    e4.mensagem,
+  );
+  const e5 = erroDoBanco(erroDoPrisma("23505", 'duplicate key value violates unique constraint "X_phone_key" Key (phone)=(11987654321) already exists.'));
+  confere("valor da chave no texto do erro sai como (…)", !e5.mensagem.includes("11987654321") && e5.mensagem.includes("(phone)=(…)"), e5.mensagem);
+  const fkComDetalhe = erroDoPrisma(
+    "23503",
+    'insert or update on table "CustomerOrder" violates foreign key constraint "X"\nDETAIL: Key (routeId)=(r-sumiu) is not present in table "RouteSchedule".',
+  );
+  confere(
+    "sem o valor na mensagem, a coluna da FK ainda é achada pelo DETAIL",
+    oQueFazerComOErro(pedido, saida({ operacao: "INSERT", depois: { id: "p1", routeId: "r-sumiu" } }), fkComDetalhe).tipo === "anular",
+  );
   const p2003 = Object.assign(new Error("Foreign key constraint violated"), { code: "P2003", meta: { field_name: "CustomerOrder_routeId_fkey (index)" } });
   confere("P2003 (chave estrangeira traduzida pelo Prisma) também esvazia a coluna", oQueFazerComOErro(pedido, saida({ operacao: "INSERT", depois: { id: "p1", routeId: "r" } }), p2003).tipo === "anular");
 
@@ -247,7 +268,10 @@ console.log("\n— A linha que a nuvem não aceita (volta-1) —");
   const o7 = oQueFazerComOErro(pedido, saida({ operacao: "INSERT", depois: { id: "p1", motoboyId: "m1" } }), { code: "23503", detail: 'Key (motoboyId)=(m1) is not present in table "Motoboy".' });
   confere("FK pelo detalhe do Postgres (Key (coluna)=): esvazia essa coluna", o7.tipo === "anular" && o7.coluna === "motoboyId", o7);
   const vazia = comColunaVazia(comRota, "routeId");
-  confere("a linha esvaziada não mexe na original", vazia.depois!.routeId === null && comRota.depois!.routeId === "r-sumiu");
+  confere(
+    "a coluna sai da linha (não vira null) e a original não muda",
+    !!vazia.depois && !("routeId" in vazia.depois) && comRota.depois!.routeId === "r-sumiu",
+  );
 }
 
 console.log("\n— O supervisor no modo voltando —");
@@ -404,6 +428,20 @@ async function subidaNoPostgres(): Promise<void> {
     "a mudança que só punha a rota que sumiu fica anotada, sem gravar nada",
     r3.aplicadas === 0 && r3.conflitos === 1 && r3.aplicadoAte === "7" && anotado.length === 1 && anotado[0].coluna === "routeId",
     { r3, anotado },
+  );
+  // O pedido que estava na rota r1 (boa, na nuvem) e a loja passou para uma
+  // rota que não subiu, mudando também o status: o status sobe, a rota boa fica.
+  const trocouDeRota = [linha(8, {
+    operacao: "UPDATE", registro: "p3",
+    antes: { id: "p3", franchiseeId: "L", status: "PRONTO", routeId: "r1" },
+    depois: { id: "p3", franchiseeId: "L", status: "SAIU", routeId: "r-sumiu-3" },
+  })];
+  const r4 = await pg.transaction((tx: any) => aplicarLote(banco(tx), "L", "banco-1", trocouDeRota, null, true));
+  const p3 = (await pg.query(`SELECT status, "routeId" FROM "CustomerOrder" WHERE id = 'p3'`)).rows[0] as { status: string; routeId: string | null };
+  confere(
+    "a troca para a rota que não subiu não apaga a rota boa da nuvem (o resto da mudança sobe)",
+    r4.aplicadas === 1 && r4.conflitos === 1 && p3?.status === "SAIU" && p3?.routeId === "r1",
+    { r4, p3 },
   );
   await pg.close();
 }

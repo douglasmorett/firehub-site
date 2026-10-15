@@ -149,8 +149,23 @@ export function erroDoBanco(e: unknown): { codigo: string | null; mensagem: stri
     sqlstate(x.meta?.code) ?? sqlstate(x.code) ?? /Code: `([0-9A-Z]{5})`/.exec(texto)?.[1] ?? (x.code === "P2003" ? "23503" : null);
   // A mensagem do Prisma começa com "Invalid `prisma.$executeRawUnsafe()` invocation": o que interessa é a do Postgres.
   const doPostgres = /Message: `(?:ERROR: )?([^`]+)`/.exec(texto)?.[1];
-  const mensagem = (doPostgres || textos[0] || texto).replace(/\s+/g, " ").trim().slice(0, 300);
+  const mensagem = semDadoDoCliente((doPostgres || textos[0] || texto).replace(/\s+/g, " ").trim()).slice(0, 300);
   return { codigo, mensagem, texto };
+}
+
+/**
+ * A `mensagem` vai para o log da nuvem (Coolify), o log do computador e o
+ * painel. O Prisma junta o DETAIL do Postgres na mensagem, e o DETAIL traz os
+ * VALORES da linha: "Failing row contains (… nome, telefone, endereço …)" no
+ * NOT NULL, "Key (phone)=(119…)" no único. Fica só o que o banco disse, sem
+ * os valores. (O `texto` inteiro segue só para achar a coluna da chave
+ * estrangeira, e não é gravado em lugar nenhum.)
+ */
+function semDadoDoCliente(m: string): string {
+  return m
+    .replace(/\s*\b(DETAIL|HINT|Failing row contains)\b[\s\S]*$/, "")
+    .replace(/\)=\([^)]*\)/g, ")=(…)")
+    .trim();
 }
 
 /** 23503 = chave estrangeira violada (a linha-pai não existe na nuvem). */
@@ -187,7 +202,17 @@ export function oQueFazerComOErro(
   return { tipo: "recusar", motivo };
 }
 
-/** A mesma linha da saída com a coluna vazia (a tentativa seguinte de `oQueFazerComOErro`). */
+/**
+ * A mesma linha da saída SEM a coluna (a tentativa seguinte de
+ * `oQueFazerComOErro`). Tirar, e não pôr null: na linha nova a coluna fica
+ * vazia do mesmo jeito (o INSERT só grava as colunas que vieram); na linha que
+ * a nuvem já tem, `decidir` não mexe nela e o valor da nuvem fica — com null,
+ * o pedido que a loja trocou para a rota que não subiu perderia também a rota
+ * boa que tinha na nuvem.
+ */
 export function comColunaVazia(s: LinhaDaSaida, coluna: string): LinhaDaSaida {
-  return { ...s, depois: s.depois ? { ...s.depois, [coluna]: null } : s.depois };
+  if (!s.depois) return s;
+  const depois = { ...s.depois };
+  delete depois[coluna];
+  return { ...s, depois };
 }

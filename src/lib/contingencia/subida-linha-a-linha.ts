@@ -288,7 +288,7 @@ export async function aplicarLote(
             coluna: o.coluna,
             valorDaLoja: s.depois?.[o.coluna] ?? null,
             valorDaNuvem: null,
-            decisao: "a linha-pai não está na nuvem: subiu com a coluna vazia",
+            decisao: "a linha-pai não está na nuvem: a mudança desta coluna ficou de fora (vazia na linha nova)",
           });
           s = comColunaVazia(s, o.coluna);
           continue;
