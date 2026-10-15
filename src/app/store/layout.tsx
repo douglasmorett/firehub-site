@@ -20,6 +20,7 @@ import TrocaDeContingencia from "@/components/contingencia/TrocaDeContingencia";
 import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget";
 import BillFlutuante from "@/components/bill/BillFlutuante";
 import { assessorEstaLigado } from "@/lib/assessor/assinatura";
+import { lojaAtivaDoAdmin } from "@/lib/assessor/loja-da-sessao";
 import CentralDeTutoriais from "@/components/CentralDeTutoriais";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { TutoriaisEnviados } from "@/components/TutoriaisEnviados";
@@ -162,8 +163,10 @@ export default async function StoreLayout({ children }: { children: React.ReactN
 
   // Bill, seu assessor: a carinha no canto só para quem manda na loja (o dono
   // ou o ADMIN dentro dela) e só com o serviço ligado. Funcionário não vê.
-  const billLigado = role !== "STAFF" && targetFranchiseeId && process.env.FIREHUB_LOCAL !== "1"
-    ? await assessorEstaLigado(targetFranchiseeId)
+  // O ADMIN vê o Bill da loja que abriu (a mesma regra das rotas do Bill).
+  const lojaDoBill = role === "ADMIN" ? await lojaAtivaDoAdmin() : targetFranchiseeId;
+  const billLigado = role !== "STAFF" && lojaDoBill && process.env.FIREHUB_LOCAL !== "1"
+    ? await assessorEstaLigado(lojaDoBill)
     : false;
 
   // === TERMOS DE USO: o dono aceita a versão em vigor antes de usar o painel ===
