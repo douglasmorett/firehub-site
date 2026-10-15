@@ -26,6 +26,18 @@ function getCorsHeaders(request: NextRequest): Record<string, string> {
   };
 }
 
+/**
+ * Rotas que montam o próprio CORS — o proxy não põe o dele por cima.
+ *
+ * /api/contingencia/sinal responde `*` de propósito: quem pergunta "a nuvem
+ * voltou?" é a tela que está no computador da loja (http://<ip>:7890), que
+ * não é este domínio. O Next mantém o cabeçalho que o proxy pôs e descarta o
+ * da rota; com o `https://firehubfood.com.br` daqui, o navegador recusava a
+ * resposta e a tela nunca voltava para a nuvem (revisão de 14/10/2026,
+ * components/contingencia/TrocaDeContingencia.tsx).
+ */
+const ROTAS_COM_CORS_PROPRIO = new Set(["/api/contingencia/sinal"]);
+
 // ─── Security headers applied to every response ───
 const SECURITY_HEADERS: Record<string, string> = {
   "X-Frame-Options": "DENY",
@@ -207,7 +219,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // ─── CORS preflight for API routes ───
-  if (pathname.startsWith("/api")) {
+  if (pathname.startsWith("/api") && !ROTAS_COM_CORS_PROPRIO.has(pathname)) {
     if (request.method === "OPTIONS") {
       return new NextResponse(null, {
         status: 204,
@@ -309,7 +321,7 @@ export async function proxy(request: NextRequest) {
   }
 
   // Add CORS headers for API routes
-  if (pathname.startsWith("/api")) {
+  if (pathname.startsWith("/api") && !ROTAS_COM_CORS_PROPRIO.has(pathname)) {
     const corsHeaders = getCorsHeaders(request);
     for (const [key, value] of Object.entries(corsHeaders)) {
       response.headers.set(key, value);

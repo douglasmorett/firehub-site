@@ -8,6 +8,11 @@
  *
  * O computador apaga da saída só até `aplicadoAte`. Se a conexão cair no meio,
  * ele manda de novo e o que já entrou é pulado — nada duplica.
+ *
+ * A linha que o banco da nuvem não aceita NÃO derruba o lote (era o 500 que
+ * prendia a loja na cópia): ela volta em `recusadas` e vira conflito
+ * "recusada" no painel. O 500 fica para o que impede a subida inteira
+ * (contingência desativada, banco fora, transação vencida).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { lojaDaChave } from "@/lib/contingencia/servidor";
@@ -30,7 +35,9 @@ export async function POST(req: NextRequest) {
       : null;
   try {
     const r = await aplicarSubida(loja.lojaId, banco, lote, episodio, corpo?.final === true);
-    if (r.recusadas.length) console.warn(`[Contingência] Subida da loja ${loja.lojaId}: ${r.recusadas.length} recusada(s).`, r.recusadas.slice(0, 5));
+    if (r.recusadas.length) {
+      console.warn(`[Contingência] Subida da loja ${loja.lojaId}: ${r.recusadas.length} recusada(s) (o resto do lote subiu).`, r.recusadas.slice(0, 5));
+    }
     return NextResponse.json(r);
   } catch (e: any) {
     console.error(`[Contingência] Subida da loja ${loja.lojaId} falhou:`, e?.message);

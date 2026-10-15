@@ -60,7 +60,7 @@ const fs = require("fs");
 const os = require("os");
 const { execFile } = require("child_process");
 const {
-  APP_ID, oQueFazerComAOutra, outrasCopiasNoAr, derrubarPeloPid, arquivoDaVigia,
+  APP_ID, oQueFazerComAOutra, outrasCopiasNoAr, derrubarPeloPid, arquivoDaVigia, respondeEmAlgumaTentativa,
 } = require("./instancias");
 
 const PASTA_DADOS = path.join(process.env.APPDATA || os.homedir(), "FireHub");
@@ -114,10 +114,10 @@ const INICIADO_EM = Date.now();
 const SOU_A_VIGIA = process.argv.includes("--vigia");
 const souOPrimeiro = SOU_A_VIGIA ? null : app.requestSingleInstanceLock();
 
-async function outroAssistenteRespondendo() {
+async function outroAssistenteRespondendo(prazoMs = 2000) {
   for (const porta of PORTAS) {
     try {
-      const res = await fetch(`http://127.0.0.1:${porta}/status`, { signal: AbortSignal.timeout(2000) });
+      const res = await fetch(`http://127.0.0.1:${porta}/status`, { signal: AbortSignal.timeout(prazoMs) });
       if (!res.ok) continue;
       const info = await res.json();
       if (info && info.app === APP_ID && info.pid !== process.pid) return porta;
@@ -141,8 +141,22 @@ function derrubarOsOutros() {
   });
 }
 
+/* "Presa" só depois de 3 perguntas sem resposta em ~30 s (instancias.js,
+ * respondeEmAlgumaTentativa). A cópia viva pode estar só ocupada por alguns
+ * segundos — em 14/10, apagando a cópia da contingência — e derrubá-la por
+ * uma pergunta perdida deixou a loja ~5 min sem imprimir. */
+const TENTATIVAS_ANTES_DE_DERRUBAR = 3;
+const ENTRE_TENTATIVAS_MS = 10_000;
+const PRAZO_DE_CADA_TENTATIVA_MS = 4000;
+
 async function segundaCopia() {
-  const porta = await outroAssistenteRespondendo();
+  const porta = await respondeEmAlgumaTentativa(
+    async (i) => {
+      if (i > 0) log(`A cópia que está no ar não respondeu /status; perguntando de novo (${i + 1}/${TENTATIVAS_ANTES_DE_DERRUBAR}).`);
+      return outroAssistenteRespondendo(PRAZO_DE_CADA_TENTATIVA_MS);
+    },
+    { tentativas: TENTATIVAS_ANTES_DE_DERRUBAR, intervaloMs: ENTRE_TENTATIVAS_MS },
+  );
   if (porta) {
     if (!SOU_A_VIGIA) log(`Já existe um Assistente vivo na porta ${porta}. Esta cópia sai para não imprimir em dobro.`);
     app.exit(0);
@@ -153,7 +167,7 @@ async function segundaCopia() {
     app.exit(0);
     return;
   }
-  log("Existe uma cópia presa (não responde em /status). Derrubando e assumindo o lugar dela.");
+  log(`Existe uma cópia presa (não respondeu /status em ${TENTATIVAS_ANTES_DE_DERRUBAR} tentativas, ~30 s). Derrubando e assumindo o lugar dela.`);
   await derrubarOsOutros();
   app.relaunch({ args: process.argv.slice(1).concat(["--assumindo"]) });
   app.exit(0);

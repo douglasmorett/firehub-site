@@ -25,20 +25,9 @@ type LojaDoPainel = {
   ambassadorAccount?: { id: string; code: string } | null;
 };
 
-type SubEmbaixador = {
-  id: string;
-  name: string;
-  code: string;
-  active: boolean;
-  commissionPercent: number;
-  _count?: { referredStores: number };
-};
-
 type AmbassadorWithStores = Ambassador & {
-  _count?: { referredStores: number, subAmbassadors: number },
+  _count?: { referredStores: number },
   referredStores?: LojaIndicada[],
-  parentAmbassador?: { id: string, name: string, code: string, level2Percent: number } | null,
-  subAmbassadors?: SubEmbaixador[]
 };
 
 export default function AmbassadorsTab() {
@@ -56,8 +45,6 @@ export default function AmbassadorsTab() {
   const [commissionPercent, setCommissionPercent] = useState(20);
   const [asaasWalletId, setAsaasWalletId] = useState("");
   const [pixKey, setPixKey] = useState("");
-  const [parentAmbassadorId, setParentAmbassadorId] = useState("");
-  const [level2Percent, setLevel2Percent] = useState(3);
 
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
@@ -69,7 +56,7 @@ export default function AmbassadorsTab() {
   const [promoteWallet, setPromoteWallet] = useState("");
   const [promoteCommission, setPromoteCommission] = useState(20);
   const [promoting, setPromoting] = useState(false);
-  const [promoteResult, setPromoteResult] = useState<{ nome: string; code: string; senha: string; link: string; pai: string | null } | null>(null);
+  const [promoteResult, setPromoteResult] = useState<{ nome: string; code: string; senha: string; link: string } | null>(null);
 
   useEffect(() => {
     fetchAmbassadors();
@@ -93,7 +80,7 @@ export default function AmbassadorsTab() {
     setEditingId(null);
     setName(""); setEmail(""); setPhone(""); setCode("");
     setCommissionPercent(20); setAsaasWalletId(""); setPixKey("");
-    setParentAmbassadorId(""); setLevel2Percent(3);
+
     setIsModalOpen(true);
   }
 
@@ -101,7 +88,6 @@ export default function AmbassadorsTab() {
     setEditingId(amb.id);
     setName(amb.name); setEmail(amb.email); setPhone(amb.phone || ""); setCode(amb.code);
     setCommissionPercent(amb.commissionPercent); setAsaasWalletId(amb.asaasWalletId || ""); setPixKey(amb.pixKey || "");
-    setParentAmbassadorId(amb.parentAmbassadorId || ""); setLevel2Percent(amb.level2Percent ?? 3);
     setIsModalOpen(true);
   }
 
@@ -109,8 +95,6 @@ export default function AmbassadorsTab() {
     e.preventDefault();
     const payload = {
       name, email, phone, code, commissionPercent, asaasWalletId, pixKey,
-      level2Percent,
-      parentAmbassadorId: parentAmbassadorId || null,
     };
     
     try {
@@ -166,8 +150,7 @@ export default function AmbassadorsTab() {
         createdAt: new Date(loja.createdAt),
         ambassadorAccount: loja.ambassadorAccount || null,
       },
-      // A loja pode não ter vindo de embaixador nenhum: aí a promoção entra sem
-      // indicador e ninguém recebe nível 2 sobre a rede dela.
+      // A loja pode não ter vindo de embaixador nenhum.
       ambassadors.find(a => a.id === loja.ambassadorId) || null
     );
   }
@@ -204,7 +187,6 @@ export default function AmbassadorsTab() {
         code: data.ambassador.code,
         senha: data.senhaTemporaria,
         link: data.inviteLink,
-        pai: data.ambassador.parentAmbassador?.name || null,
       });
       fetchAmbassadors();
     } catch (err) {
@@ -286,20 +268,10 @@ export default function AmbassadorsTab() {
                       {amb.commissionPercent}% recorrente
                     </span>
                     {amb.asaasWalletId && <div style={{ fontSize:"0.75rem", color:"#1C1917", marginTop:4 }}>Asaas Split Ativo</div>}
-                    {amb.parentAmbassador && (
-                      <div style={{ fontSize:"0.75rem", color:"#475569", marginTop:4 }}>
-                        Indicado por <strong>{amb.parentAmbassador.name}</strong> · leva {amb.parentAmbassador.level2Percent}%
-                      </div>
-                    )}
                   </td>
                   <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1E293B", cursor: "pointer" }} onClick={() => setExpandedId(expandedId === amb.id ? null : amb.id)}>
                     {amb._count?.referredStores || 0} lojas
                     <span style={{ marginLeft: 4, fontSize: "0.7rem", color: "#64748B" }}>{expandedId === amb.id ? "▲" : "▼"}</span>
-                    {!!amb._count?.subAmbassadors && (
-                      <div style={{ fontSize: "0.75rem", fontWeight: 600, color: "#475569", marginTop: 4 }}>
-                        + {amb._count.subAmbassadors} embaixador{amb._count.subAmbassadors > 1 ? "es" : ""} na rede
-                      </div>
-                    )}
                   </td>
                   <td style={{ padding: "12px 16px" }}>
                     <span style={{ 
@@ -338,33 +310,9 @@ export default function AmbassadorsTab() {
                     </button>
                   </td>
                 </tr>
-                {expandedId === amb.id && ((amb.referredStores?.length ?? 0) > 0 || (amb.subAmbassadors?.length ?? 0) > 0) && (
+                {expandedId === amb.id && (amb.referredStores?.length ?? 0) > 0 && (
                   <tr key={`${amb.id}-stores`} style={{ background: "#F8FAFC" }}>
                     <td colSpan={6} style={{ padding: "16px 24px", borderBottom: "1px solid #E2E8F0" }}>
-                      {(amb.subAmbassadors?.length ?? 0) > 0 && (
-                        <div style={{ marginBottom: "16px" }}>
-                          <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>
-                            Rede — nível 2 ({amb.level2Percent ?? 3}% das lojas destes embaixadores):
-                          </div>
-                          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                            {amb.subAmbassadors!.map((sub) => (
-                              <div key={sub.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "#FFF", padding: "10px 16px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                                <div>
-                                  <div style={{ fontWeight: 600, color: "#334155" }}>
-                                    {sub.name} {!sub.active && <span style={{ fontSize: "0.7rem", color: "#B71C1C" }}>(inativo)</span>}
-                                  </div>
-                                  <div style={{ fontSize: "0.75rem", color: "#64748B" }}>
-                                    Código: <strong style={{ color: "#475569" }}>{sub.code}</strong> · leva {sub.commissionPercent}% das lojas dele
-                                  </div>
-                                </div>
-                                <span style={{ fontSize: "0.8rem", fontWeight: 700, color: "#334155" }}>
-                                  {sub._count?.referredStores || 0} lojas
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                       <div style={{ fontSize: "0.85rem", fontWeight: 700, color: "#1E293B", marginBottom: "8px" }}>Lojas Indicadas:</div>
                       <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                         {(amb.referredStores ?? []).map((store: any) => (
@@ -462,35 +410,6 @@ export default function AmbassadorsTab() {
                 </p>
               </div>
 
-              <div style={{ background: "#F8FAFC", padding: "12px", borderRadius: "8px", border: "1px solid #E2E8F0" }}>
-                <h4 style={{ fontSize: "0.9rem", fontWeight: 700, color: "#334155", marginBottom: "10px" }}>Rede (nível 2)</h4>
-
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 100px", gap: "12px", alignItems: "end" }}>
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#475569", marginBottom: 4 }}>Indicado por</label>
-                    <select
-                      value={parentAmbassadorId}
-                      onChange={e => setParentAmbassadorId(e.target.value)}
-                      style={{ width: "100%", padding: "8px 12px", border: "1px solid #CBD5E1", borderRadius: "6px", background: "#FFF" }}
-                    >
-                      <option value="">Ninguém (entrou direto)</option>
-                      {ambassadors
-                        .filter(a => a.id !== editingId)
-                        .map(a => <option key={a.id} value={a.id}>{a.name} ({a.code})</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, color: "#475569", marginBottom: 4 }}>Nível 2 %</label>
-                    <input type="number" step="0.1" min="0" max="40" value={level2Percent} onChange={e=>setLevel2Percent(parseFloat(e.target.value))} style={{ width: "100%", padding: "8px 12px", border: "1px solid #CBD5E1", borderRadius: "6px", fontWeight: 700 }} />
-                  </div>
-                </div>
-                <p style={{ fontSize: "0.75rem", color: "#64748B", marginTop: "8px", lineHeight: "1.4" }}>
-                  <strong>Indicado por</strong>: quem trouxe este embaixador — recebe o nível 2 das lojas que ele indicar.
-                  <strong> Nível 2 %</strong>: o que ESTE embaixador recebe das lojas dos embaixadores que ele trouxer (padrão 3%).
-                  O programa para aqui — não existe terceiro nível.
-                </p>
-              </div>
-
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", marginTop: "16px" }}>
                 <button type="button" onClick={() => setIsModalOpen(false)} style={{ padding: "8px 16px", border: "1px solid #CBD5E1", background: "#FFF", borderRadius: "6px", cursor: "pointer", fontWeight: 600 }}>Cancelar</button>
                 <button type="submit" style={{ padding: "8px 16px", border: "none", background: "#EA1D2C", color: "#FFF", borderRadius: "6px", cursor: "pointer", fontWeight: 700 }}>Salvar Embaixador</button>
@@ -506,7 +425,7 @@ export default function AmbassadorsTab() {
           <div style={{ background: "#FFF", width: "100%", maxWidth: "560px", maxHeight: "80vh", borderRadius: "12px", padding: "24px", boxShadow: "0 10px 25px rgba(0,0,0,0.2)", display: "flex", flexDirection: "column" }}>
             <h3 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: "4px", color: "#1E293B" }}>Promover lojista a embaixador</h3>
             <p style={{ fontSize: "0.82rem", color: "#64748B", margin: "0 0 12px 0" }}>
-              Escolha a loja. Quem indicou ela vira o indicador dele e passa a receber o nível 2.
+              Escolha a loja. Ele entra no portal com o mesmo e-mail da loja.
             </p>
             <input
               autoFocus
@@ -564,11 +483,6 @@ export default function AmbassadorsTab() {
                 <h3 style={{ fontSize: "1.2rem", fontWeight: 800, marginBottom: "8px", color: "#0F766E" }}>
                   {promoteResult.nome} agora é embaixador
                 </h3>
-                <p style={{ fontSize: "0.85rem", color: "#475569", marginBottom: "16px", lineHeight: 1.5 }}>
-                  {promoteResult.pai
-                    ? <>Continua na linha de <strong>{promoteResult.pai}</strong>, que passa a receber o nível 2 das lojas que ele indicar.</>
-                    : <>Entrou sem indicador — ninguém recebe nível 2 sobre a rede dele.</>}
-                </p>
 
                 <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "8px", padding: "12px", display: "flex", flexDirection: "column", gap: "10px" }}>
                   <div>
@@ -616,11 +530,10 @@ Seu link: ${promoteResult.link}`); }}
                   {promoteStore.indicadaPor ? (
                     <>
                       A loja <strong>continua na linha de {promoteStore.indicadaPor.name}</strong>: ele segue recebendo
-                      {" "}{promoteStore.indicadaPor.commissionPercent}% da mensalidade dela e passa a receber
-                      {" "}{promoteStore.indicadaPor.level2Percent ?? 3}% das lojas que ela indicar.
+                      {" "}{promoteStore.indicadaPor.commissionPercent}% da mensalidade dela. Das lojas que ela indicar, só ela recebe.
                     </>
                   ) : (
-                    <>Esta loja não veio de embaixador nenhum — ninguém recebe nível 2 sobre a rede dela.</>
+                    <>Esta loja não veio de embaixador nenhum.</>
                   )}
                 </p>
 

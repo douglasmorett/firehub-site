@@ -2,14 +2,20 @@
  * GET /api/contingencia/estado — o que a tela "Modo Contingência" mostra:
  * ativada ou não, o computador (último contato e relato dele), as últimas
  * quedas e os conflitos recentes.
+ *
+ * `redeDaLoja`: há tela do painel abrindo o FireHub por outra internet que
+ * não a do computador da contingência (lib/contingencia/rede-da-loja.ts) —
+ * a tela mostra um alerta. Só alerta.
  */
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { quemPede } from "@/lib/contingencia/sessao";
+import { getClientIp } from "@/lib/rateLimit";
+import { alertaDeRede } from "@/lib/contingencia/rede-da-loja";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(req: Request) {
   const quem = await quemPede();
   if (!quem) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   try {
@@ -36,6 +42,7 @@ export async function GET() {
       ativadaPor: linha[0].ativadaPor,
       ultimoContato: linha[0].ultimoContato,
       relato: linha[0].relato,
+      redeDaLoja: alertaDeRede(linha[0].relato?.ipPublico, linha[0].relato?.abas, getClientIp(req)),
       episodios,
       conflitos,
     });

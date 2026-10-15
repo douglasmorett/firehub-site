@@ -76,6 +76,23 @@ async function outrasCopiasNoAr(portas, { meuPid = process.pid, buscar = fetch, 
 }
 
 /**
+ * Pergunta de novo antes de dar a cópia viva como presa (main.js, segunda
+ * cópia e vigia). Um /status sem resposta UMA vez não é cópia presa: em 14/10
+ * o Assistente ficou ~10 s surdo apagando a cópia da contingência, a vigia
+ * perguntou uma vez, derrubou todos e a impressão ficou ~5 min fora. Agora são
+ * `tentativas` perguntas, `intervaloMs` entre elas (~30 s no total); devolve a
+ * primeira resposta boa, ou null se todas falharem.
+ */
+async function respondeEmAlgumaTentativa(perguntar, { tentativas = 3, intervaloMs = 10_000, esperar = (ms) => new Promise((r) => setTimeout(r, ms)) } = {}) {
+  for (let i = 0; i < tentativas; i++) {
+    if (i > 0) await esperar(intervaloMs);
+    const resposta = await perguntar(i);
+    if (resposta) return resposta;
+  }
+  return null;
+}
+
+/**
  * Derruba pelo PID, nunca pelo nome: o executável de outra instalação pode ter
  * outro nome, e um `taskkill /IM` com o nome desta pegaria esta junto.
  */
@@ -162,6 +179,7 @@ module.exports = {
   pidNaSaidaDoNetstat,
   outrasCopiasNoAr,
   derrubarPeloPid,
+  respondeEmAlgumaTentativa,
   xmlDaVigia,
   arquivoDaVigia,
 };

@@ -36,18 +36,23 @@ const deOutro: LojaNasRegras = { ambassadorId: "ana", ambassador: { ...ana, pare
 console.log("\n— Papel: indicação vence carteira —");
 confere("indicou e acompanha = EMBAIXADOR 30%, também na carteira", papelNaLoja(victor, indicouEAcompanha), { papel: "EMBAIXADOR", percentual: 30, tambemNaCarteira: true });
 confere("só indicou = EMBAIXADOR 30%", papelNaLoja(victor, soIndicou), { papel: "EMBAIXADOR", percentual: 30, tambemNaCarteira: false });
-confere("rede e acompanha = REDE 3%, também na carteira", papelNaLoja(victor, daRedeEAcompanha), { papel: "REDE", percentual: 3, tambemNaCarteira: true });
+// Nível 2 acabou em 15/10/2026: a loja da Ana que o Victor acompanha é só carteira dele.
+confere("loja da Ana (trazida por ele) e acompanha = VENDEDOR 3%", papelNaLoja(victor, daRedeEAcompanha), { papel: "VENDEDOR", percentual: 3, tambemNaCarteira: false });
+confere("loja da Ana sem carteira dele = null (sem nível 2)", papelNaLoja(victor, { ...daRedeEAcompanha, vendedorId: "bia", vendedor: outroVendedor }), null);
 confere("só carteira = VENDEDOR 3%", papelNaLoja(victor, soCarteira), { papel: "VENDEDOR", percentual: 3, tambemNaCarteira: false });
 confere("loja de outro = null", papelNaLoja(victor, deOutro), null);
 confere("fora da equipe não tem carteira", papelNaLoja({ ...victor, isVendedor: false }, soCarteira), null);
 
 console.log("\n— O split do fechamento: os 3% não somam em cima da indicação —");
 confere("ganhaComoVendedor na própria indicação", ganhaComoVendedor("victor", indicouEAcompanha), false);
-confere("ganhaComoVendedor na rede dele", ganhaComoVendedor("victor", daRedeEAcompanha), false);
+confere("ganhaComoVendedor na loja da Ana (nível 2 acabou)", ganhaComoVendedor("victor", daRedeEAcompanha), true);
 confere("split: indicou e acompanha = só 30%", splitDaLoja(indicouEAcompanha).linhas, [{ parceiroId: "victor", papel: "EMBAIXADOR", percentual: 30 }]);
-confere("split: rede e acompanha = Ana 20% + Victor 3%", splitDaLoja(daRedeEAcompanha).linhas, [
+confere("split: loja da Ana que o Victor acompanha = Ana 20% + Victor 3% de vendedor", splitDaLoja(daRedeEAcompanha).linhas, [
   { parceiroId: "ana", papel: "EMBAIXADOR", percentual: 20 },
-  { parceiroId: "victor", papel: "REDE", percentual: 3 },
+  { parceiroId: "victor", papel: "VENDEDOR", percentual: 3 },
+]);
+confere("split: sem vendedor, a loja da Ana não paga nível 2", splitDaLoja({ ...daRedeEAcompanha, vendedorId: null, vendedor: null }).linhas, [
+  { parceiroId: "ana", papel: "EMBAIXADOR", percentual: 20 },
 ]);
 confere("split: indicou, outra vendedora = 30% + 3% da Bia", splitDaLoja(soIndicou).total, 33);
 

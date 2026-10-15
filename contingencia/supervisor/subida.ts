@@ -9,6 +9,10 @@ import { idDoBanco } from "./esquema";
 
 const LOTE = 200;
 
+// A regra da volta mora em regras.ts (sem "pg"): o build do site tipa os
+// testes de scripts/, e lá não existe o node_modules do supervisor.
+export { FALHAS_DA_SUBIDA_ATE_DESISTIR, passoDaVolta, type PassoDaVolta } from "./regras";
+
 export type ResultadoDaVolta = { subiram: number; conflitos: number; recusadas: number; restam: number };
 
 export async function subirSaida(
@@ -26,7 +30,12 @@ export async function subirSaida(
     );
     if (!r.rowCount) break;
     const final = r.rowCount < LOTE;
-    const resposta = await nuvem.enviar<{ aplicadoAte: string; aplicadas: number; conflitos: number; recusadas: unknown[] }>(
+    const resposta = await nuvem.enviar<{
+      aplicadoAte: string;
+      aplicadas: number;
+      conflitos: number;
+      recusadas: { tabela: string; registro?: string; motivo: string }[];
+    }>(
       "/api/contingencia/subida",
       { banco, lote: r.rows, episodio, final },
       120_000,
@@ -35,6 +44,9 @@ export async function subirSaida(
     total.subiram += resposta.aplicadas;
     total.conflitos += resposta.conflitos;
     total.recusadas += resposta.recusadas.length;
+    // A linha recusada não volta mais (a nuvem já avançou o cursor): fica
+    // registrada aqui e no painel do módulo, como conflito "recusada".
+    for (const r of resposta.recusadas.slice(0, 5)) registro(`Volta: recusada ${r.tabela}${r.registro ? ` ${r.registro}` : ""} — ${r.motivo}`);
     if (final) break;
   }
   const resto = await pool.query(`SELECT COUNT(*)::int AS n FROM "_ContingenciaSaida"`);

@@ -15,8 +15,8 @@
  *
  * MAS SÓ EM LOJA QUE NÃO É DELE (regra do dono, 27/09/2026): os 3% pagam
  * quem cuida de um cliente que a FireHub conseguiu. Se o vendedor é o
- * embaixador que indicou a loja — ou está acima de quem indicou, na rede —
- * ele já ganha os 20/30% (ou os 3% de nível 2) dela e só acompanha, sem o +3%.
+ * embaixador que indicou a loja, ele já ganha os 20/30% dela e só acompanha,
+ * sem o +3%.
  * Ver `ganhaComoVendedor`.
  */
 import { randomInt } from "crypto";
@@ -24,7 +24,7 @@ import { prisma } from "@/lib/prisma";
 
 /**
  * O vendedor leva `sellerPercent` desta loja? Não quando já ganha nela como
- * embaixador: indicou a loja (nível 1) ou trouxe quem indicou (nível 2). Mora
+ * embaixador, por ter indicado a loja. Mora
  * em lib/parceiro/regras.ts, junto com o resto das regras do parceiro que o
  * portal mostra — o split do fechamento e o portal leem a mesma função.
  */
@@ -33,7 +33,6 @@ export { ganhaComoVendedor } from "@/lib/parceiro/regras";
 /** Campos da loja que `ganhaComoVendedor` precisa, para os `select` da carteira. */
 export const SELECT_DO_EMBAIXADOR_DA_LOJA = {
   ambassadorId: true,
-  ambassador: { select: { parentAmbassadorId: true } },
 } as const;
 
 export type StatusDoAtendimento = "AGUARDANDO" | "ATENDIDO";

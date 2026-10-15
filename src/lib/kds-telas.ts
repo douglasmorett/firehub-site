@@ -689,3 +689,45 @@ export function tirarBaixa(baixas: unknown, chave: string, estagio: EstagioDaBai
   const c = String(chave ?? "").trim();
   return lerBaixas(baixas).filter((b) => b.estagio !== estagio || (c !== "" && b.tela !== c));
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   DE QUEM SÃO AS TELAS
+
+   As telas (`User.kdsScreens`) e as regras (`User.kdsConfig`) moram na conta
+   do DONO da loja: é onde o painel grava (api/store/kds-screens, `ownerId ||
+   id`). O /api/kds lia as telas da conta LOGADA — TV logada como funcionário
+   (ou com o bilhete de funcionário na contingência) ficava sem tela, e a
+   produção perdia o filtro e os pedidos que outra tela adiantou (o pedido de
+   pizza sumia quando a esfiha dava baixa, o defeito da NIK de 26/09).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * O id da conta onde estão as telas e as regras do KDS desta loja: o dono
+ * quando quem está logado é funcionário, o próprio usuário quando é o dono, e
+ * a primeira loja da lista quando não há usuário (o mesmo de antes).
+ */
+export function contaDasTelas(
+  user: { id?: string | null; ownerId?: string | null } | null | undefined,
+  lojas: string[] = [],
+): string | undefined {
+  return user?.ownerId || user?.id || lojas[0] || undefined;
+}
+
+/**
+ * Id de tela nova. `crypto.randomUUID` só existe em endereço seguro (https ou
+ * localhost): no endereço da loja na rede (http://192.168.x.x:7890, a cópia
+ * da contingência) ele é `undefined`, e o "+ Adicionar Tela" quebrava calado —
+ * nada salvo, nenhum aviso. Sem ele, o id sai do relógio + sorteio, que basta
+ * para as poucas telas de uma loja (o id só precisa ser único entre elas).
+ */
+export function novoIdDaTela(
+  cripto: { randomUUID?: () => string } | null | undefined = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto,
+): string {
+  try {
+    const uuid = typeof cripto?.randomUUID === "function" ? cripto.randomUUID() : "";
+    if (uuid) return uuid;
+  } catch {
+    // Alguns navegadores expõem a função e lançam fora do endereço seguro.
+  }
+  return `tela-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}

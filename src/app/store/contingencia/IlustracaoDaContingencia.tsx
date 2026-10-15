@@ -28,7 +28,7 @@ const CENAS: { id: Cena; rotulo: string; titulo: string; texto: string }[] = [
     id: "caiu",
     rotulo: "2. A internet caiu",
     titulo: "O computador do caixa assume",
-    texto: "Em uns 15 segundos as telas passam para o computador da loja, com um aviso embaixo. A TV e o celular do garçom chegam nele pelo Wi-Fi. Você continua lançando pedido e imprimindo.",
+    texto: "Em menos de 1 minuto as telas passam para o computador da loja, com um aviso embaixo. A TV e o celular do garçom chegam nele pelo Wi-Fi. Você continua lançando pedido e imprimindo.",
   },
   {
     id: "voltou",

@@ -803,7 +803,7 @@ function ComoFunciona({ percentuais, papeis, temCarteira }: { percentuais: Recor
           <li key={p}><strong>{PAPEL[p].nome}:</strong> {PAPEL[p].explica(percentuais[p])}.</li>
         ))}
         {papeis.includes("VENDEDOR") && (papeis.includes("EMBAIXADOR") || papeis.includes("REDE")) && (
-          <li>Loja que você indicou (ou é da sua rede) e também acompanha como vendedor conta <strong>só como indicação</strong> — os {percentuais.VENDEDOR}% de vendedor não somam.</li>
+          <li>Loja que você indicou e também acompanha como vendedor conta <strong>só como indicação</strong> — os {percentuais.VENDEDOR}% de vendedor não somam.</li>
         )}
         <li>Nos dias de teste grátis a loja não paga mensalidade — por isso ainda não gera comissão.</li>
         <li>No dia 1º o mês fecha e o boleto sai com vencimento no dia 5. A sua parte cai {temCarteira ? "na sua carteira Asaas" : "na carteira Asaas cadastrada"} quando a loja paga. O que ainda não foi pago aparece pelo valor do boleto; no pagamento o Asaas desconta a tarifa dele antes de dividir, então o que cai é alguns centavos menor.</li>

@@ -76,14 +76,42 @@ export class FireHubLocal {
     }
   }
 
+  /** Esperando ele responder pela primeira vez (o processo pode estar vivo e ainda não pronto). */
+  subindoAgora(): boolean {
+    return this.subindo !== null;
+  }
+
+  /**
+   * Liga — ou, com o processo vivo e sem resposta, volta a esperar por ele
+   * (antes, passados 90 s, ninguém mais perguntava: o processo ficava vivo,
+   * nunca "pronto", e a loja passava a queda inteira na página de espera).
+   */
   async ligar(): Promise<void> {
-    if (this.processo) return this.subindo ?? undefined;
-    await this.encerrarOrfao();
+    if (this.subindo) return this.subindo;
+    if (this.processo && this.respondeu) return;
+    const vivo = this.processo;
+    // Uma subida por vez: o ciclo e a porta da loja chamam ligar() juntos, e
+    // os dois passariam pela faxina do órfão e subiriam dois processos.
+    this.subindo = (async () => {
+      let filho = vivo;
+      if (!filho) {
+        await this.encerrarOrfao();
+        filho = this.lancar();
+      }
+      await this.esperarPronto(filho);
+    })().finally(() => {
+      this.subindo = null;
+    });
+    return this.subindo;
+  }
+
+  /** Sobe o processo. O filho fica no closure: o exit de um processo antigo não apaga o novo. */
+  private lancar(): ChildProcess {
     const servidor = path.join(this.amb.appDir, "server.js");
     if (!fs.existsSync(servidor)) throw new Error(`FireHub local não encontrado em ${servidor}.`);
     const log = fs.openSync(path.join(this.amb.pasta, "firehub-local.log"), "a");
     this.respondeu = false;
-    this.processo = spawn(this.amb.node, [servidor], {
+    const filho = spawn(this.amb.node, [servidor], {
       cwd: this.amb.appDir,
       stdio: ["ignore", log, log],
       windowsHide: true,
@@ -103,34 +131,79 @@ export class FireHubLocal {
         CONTINGENCIA_CHAVE: "",
       },
     });
+    // O processo filho já tem a própria cópia do arquivo de registro.
+    try { fs.closeSync(log); } catch { /* já fechado */ }
+    this.processo = filho;
     this.registro("FireHub local subindo…");
-    this.processo.on("exit", (codigo) => {
+    filho.on("exit", (codigo) => {
       this.registro(`FireHub local parou (código ${codigo}).`);
+      if (this.processo === filho) {
+        this.processo = null;
+        this.respondeu = false;
+      }
+    });
+    // Sem isto, um node que não abre (caminho errado) derrubava o supervisor inteiro.
+    filho.on("error", (e) => {
+      this.registro(`FireHub local não abriu: ${e.message}`);
+      if (this.processo === filho) {
+        this.processo = null;
+        this.respondeu = false;
+      }
+    });
+    return filho;
+  }
+
+  /**
+   * Espera o FireHub responder. Passados 90 s, avisa e continua perguntando
+   * (a primeira subida de uma versão nova chega a ~1 min, com o antivírus
+   * examinando os arquivos). Passados ~180 s, mata e sobe de novo, uma vez.
+   */
+  private async esperarPronto(primeiro: ChildProcess): Promise<void> {
+    let filho = primeiro;
+    let inicio = Date.now();
+    let avisou = false;
+    let reiniciou = false;
+    while (this.processo === filho && !(await this.responde())) {
+      const passou = Date.now() - inicio;
+      if (passou > 90_000 && !avisou) {
+        avisou = true;
+        this.registro("O FireHub local não respondeu em 90 s: segue esperando.");
+      }
+      if (passou > 180_000) {
+        if (reiniciou) throw new Error("O FireHub local não respondeu em 3 min, nem depois de reiniciar.");
+        reiniciou = true;
+        this.registro("O FireHub local não respondeu em 3 min: reiniciando.");
+        await this.matar(filho);
+        if (this.processo !== null) return; // alguém já subiu outro
+        filho = this.lancar();
+        inicio = Date.now();
+        avisou = false;
+        continue;
+      }
+      await new Promise((r) => setTimeout(r, avisou ? 2000 : 500));
+    }
+    if (this.processo === filho) {
+      this.respondeu = true;
+      this.registro("FireHub local pronto.");
+    }
+  }
+
+  /** Encerra este processo e espera ele sair (até ~3 s): a porta fica livre para o próximo. */
+  private async matar(filho: ChildProcess): Promise<void> {
+    if (this.processo === filho) {
       this.processo = null;
       this.respondeu = false;
-    });
-    this.subindo = (async () => {
-      const limite = Date.now() + 90_000;
-      while (this.processo && !(await this.responde())) {
-        if (Date.now() > limite) throw new Error("O FireHub local não respondeu em 90 s.");
-        await new Promise((r) => setTimeout(r, 500));
-      }
-      if (this.processo) {
-        this.respondeu = true;
-        this.registro("FireHub local pronto.");
-      }
-    })().finally(() => {
-      this.subindo = null;
-    });
-    return this.subindo;
+    }
+    if (filho.exitCode !== null || filho.signalCode !== null) return;
+    const saiu = new Promise<void>((ok) => filho.once("exit", () => ok()));
+    filho.kill();
+    await Promise.race([saiu, new Promise((r) => setTimeout(r, 3000))]);
   }
 
   async desligar(): Promise<void> {
     const p = this.processo;
     if (!p) return;
-    this.processo = null;
-    this.respondeu = false;
-    p.kill();
+    await this.matar(p);
     this.registro("FireHub local desligado (nuvem estável).");
   }
 }

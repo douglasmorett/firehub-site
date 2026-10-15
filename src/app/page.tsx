@@ -77,7 +77,7 @@ const FAQ = [
   { q: "Preciso de um gestor de tráfego para anunciar?", a: "Não. No módulo de Tráfego Pago você escolhe quanto quer investir por semana, a IA escreve o texto e cria a imagem, e o FireHub publica o anúncio no Facebook e no Instagram para quem está na sua área de entrega. O módulo custa R$ 50 por semana de campanha ativa, e a verba do anúncio você paga direto à Meta." },
   // Fatos em lib/disparo-oficial/regras.ts e components/ApresentacaoDisparoOficial.tsx.
   { q: "Dá para disparar promoção sem perder o meu WhatsApp?", a: "Sim. O disparo sai pela API oficial da Meta, do mesmo número da loja: o WhatsApp Business continua no seu celular e o robô continua atendendo. Nada de disparador pelo QR Code, que é o que faz número ser banido. Custa R$ 0,46 por mensagem entregue, com crédito por Pix a partir de R$ 50 — mensagem que não chega volta para o saldo." },
-  { q: "E se a internet da loja cair?", a: "Com o Modo Contingência ativado, o computador do caixa assume em uns 15 segundos: você continua lançando pedido, abrindo mesa e imprimindo. Quando a conexão volta, tudo sobe sozinho para o sistema, sem duplicar. Está incluído no plano, sem custo a mais." },
+  { q: "E se a internet da loja cair?", a: "Com o Modo Contingência ativado, o computador do caixa assume em menos de 1 minuto: você continua lançando pedido, abrindo mesa e imprimindo. Quando a conexão volta, tudo sobe sozinho para o sistema, sem duplicar. Está incluído no plano, sem custo a mais." },
   { q: "Existe multa para cancelar?", a: "Absolutamente não. Você cancela quando quiser, sem burocracia, sem multa, sem surpresas." },
 ];
 
@@ -778,7 +778,7 @@ export default function Home() {
         titulo={<>A internet caiu? <span style={{ color: "#4ADE80" }}>Sua loja não para.</span></>}
         texto={<>Instale o FireHub no computador do caixa. Se a internet da loja ou o próprio FireHub cair, <strong style={{ color: "#FFF" }}>as telas passam sozinhas para esse computador</strong>: você continua lançando pedido, abrindo e fechando mesa e imprimindo, como se nada tivesse acontecido.</>}
         cards={[
-          { t: "⚡ Troca Sozinha", d: "Em uns 15 segundos as telas vão para o computador da loja" },
+          { t: "⚡ Troca Sozinha", d: "Em menos de 1 minuto as telas vão para o computador da loja" },
           { t: "🖨️ Mesmas Telas e Impressão", d: "Balcão, mesas, cozinha e caixa seguem iguais, com comanda saindo" },
           { t: "🔄 Sobe Tudo Sozinho", d: "Quando a conexão volta, tudo vai para o sistema, sem duplicar" },
           { t: "💰 Incluído no Plano", d: "Sem custo a mais — você ativa no painel quando quiser" },
@@ -854,7 +854,7 @@ export default function Home() {
           { t: "💰 Economia de Taxas", d: "Aproveite melhor sua equipe e evite idas e vindas desnecessárias" },
         ]}
         acao={<a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem", background: "linear-gradient(135deg,#3B82F6,#1D4ED8)", boxShadow: "0 6px 24px rgba(59,130,246,.3)" }}>🗺️ Organizar Minhas Entregas</a>}
-        visual={<Moldura src="/images/roteirizador_ui.webp" alt="FireHub Roteirizador" borda="1px solid rgba(255,255,255,0.15)" sombra="0 20px 40px rgba(0,0,0,0.8)" fundo="#000" />}
+        visual={<Moldura real src="/images/tela-roteirizacao.webp" alt="Tela do FireHub: roteirização com os pedidos no mapa" borda="1px solid rgba(255,255,255,0.15)" sombra="0 20px 40px rgba(0,0,0,0.8)" fundo="#FFF" />}
       />
 
       {/* SEÇÃO MÓDULO DE VALIDADE & ETIQUETAS — /store/etiquetas, do FireHub. */}
@@ -1116,7 +1116,7 @@ export default function Home() {
               <p>Simples, rápido e completo. Tudo que o seu restaurante precisa em um só lugar.</p>
             </div>
             <div className="footer-col">
-              <h4>Links</h4>
+              <h3>Links</h3>
               <a href="#funcionalidades">Funcionalidades</a>
               <a href="#trafego-pago">Tráfego Pago</a>
               <a href="#contingencia">Modo Contingência</a>
@@ -1130,7 +1130,7 @@ export default function Home() {
               <a href="/prazos">🔥 FireHub Prazos (extensão)</a>
             </div>
             <div className="footer-col">
-              <h4>Contato</h4>
+              <h3>Contato</h3>
               <a href={WA} target="_blank" rel="noopener">📱 WhatsApp</a>
               <a href="mailto:contato@firehubfood.com.br">✉️ contato@firehubfood.com.br</a>
             </div>

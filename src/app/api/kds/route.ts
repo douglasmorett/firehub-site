@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import {
   chaveDaTela,
+  contaDasTelas,
   faltaFinalizacao,
   itemPronto,
   itensDaTela,
@@ -240,8 +241,10 @@ export async function GET(req: NextRequest) {
     const daTela = String(req.nextUrl.searchParams.get("tela") || "").trim();
     let minha: TelaDoKds | null = null;
     if (daTela) {
+      // As telas moram no DONO (onde o painel grava): `userStoreIds[0]` é a
+      // conta logada, e a TV logada como funcionário ficava sem tela nenhuma.
       const donoDasTelas = await prisma.user
-        .findUnique({ where: { id: userStoreIds[0] }, select: { kdsScreens: true } })
+        .findUnique({ where: { id: contaDasTelas(user, userStoreIds) }, select: { kdsScreens: true } })
         .catch(() => null);
       const telas = (Array.isArray(donoDasTelas?.kdsScreens) ? donoDasTelas!.kdsScreens : []) as any[];
       minha = telas.find((t) => chaveDaTela(t) === daTela) || null;
@@ -327,7 +330,7 @@ export async function GET(req: NextRequest) {
     // resto. A regra mora na conta do DONO, onde o painel grava — por isso o
     // `ownerId`. Falhou a leitura: fica a ordem de sempre, nunca a tela vazia.
     const regrasDaLoja = await prisma.user
-      .findUnique({ where: { id: user?.ownerId || user?.id || userStoreIds[0] }, select: { kdsConfig: true } })
+      .findUnique({ where: { id: contaDasTelas(user, userStoreIds) }, select: { kdsConfig: true } })
       .then((u) => lerKdsConfig(u?.kdsConfig))
       .catch(() => null);
     // Cada etapa com a sua lista: a finalização pode ter a dela (Pizzaria 17).

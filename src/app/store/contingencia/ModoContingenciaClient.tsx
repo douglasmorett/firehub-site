@@ -50,7 +50,14 @@ type EstadoDaNuvem = {
     ips?: string[];
     porta?: number;
     ultimoErro?: string | null;
+    /** IP público de onde o computador relata (api/contingencia/relato). */
+    ipPublico?: string | null;
   } | null;
+  /**
+   * Há tela do painel abrindo o FireHub por outra internet que não a do
+   * computador da contingência (lib/contingencia/rede-da-loja.ts). Só alerta.
+   */
+  redeDaLoja?: { ipDoComputador: string; outras: { ip: string; em: string; n: number; esteAparelho: boolean }[] } | null;
   episodios?: { id: string; inicio: string | null; fim: string | null; subiuEm: string; linhas: number; pedidos: number; conflitos: number }[];
   conflitos?: { tabela: string; coluna: string | null; decisao: string; em: string }[];
 };
@@ -196,7 +203,7 @@ function Requisito({ icone, titulo, texto }: { icone: React.ReactNode; titulo: s
 const DUVIDAS: { p: string; r: string }[] = [
   { p: "Como abro o FireHub sem internet?", r: "Pelo ícone FireHub que aparece sozinho na área de trabalho do computador do caixa, ou pelo endereço de sempre. Sem internet, o navegador leva ao computador da loja já com você dentro, sem pedir senha." },
   { p: "E se ficar dias sem internet?", r: "A loja continua funcionando: pedidos, balcão, mesas, cozinha, abrir e fechar o caixa e impressão. A entrada guardada vale por até um ano sem nenhuma conexão. Quando a internet voltar, tudo sobe sozinho." },
-  { p: "Preciso fazer alguma coisa quando a internet cair?", r: "Não. Em uns 15 segundos as telas passam sozinhas para o computador do caixa, e voltam sozinhas quando a internet volta." },
+  { p: "Preciso fazer alguma coisa quando a internet cair?", r: "Não. Em menos de 1 minuto as telas passam sozinhas para o computador do caixa, e voltam sozinhas quando a internet volta." },
   { p: "E se o computador do caixa estiver desligado?", r: "Aí não tem contingência. Com internet, a TV e o celular do garçom continuam funcionando normalmente pela nuvem." },
   { p: "Os pedidos feitos na queda duplicam?", r: "Não. Cada pedido sobe uma vez só. Se alguma coisa foi mudada nos dois lugares ao mesmo tempo, ela aparece em \"Últimas quedas\", nesta tela." },
   { p: "Posso mexer pelo celular no 4G durante a queda?", r: "O 4G não alcança o computador da loja. Durante a queda, use as telas que estão no Wi-Fi da loja." },
@@ -312,7 +319,7 @@ export default function ModoContingenciaClient() {
       if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error || "O teste não começou.");
       try { localStorage.setItem(CHAVE_TESTOU, "1"); } catch {}
       setTestou(true);
-      setMensagem("🧪 Teste começou: por 2 minutos este computador age como se a internet tivesse caído. Em uns 15 segundos as telas abertas NESTE computador vão para o computador da loja, com a faixa de aviso embaixo. Lance um pedido de teste no Balcão, se quiser — ele sobe sozinho no fim.");
+      setMensagem("🧪 Teste começou: por 2 minutos este computador age como se a internet tivesse caído. Em menos de 1 minuto as telas abertas NESTE computador vão para o computador da loja, com a faixa de aviso embaixo. Lance um pedido de teste no Balcão, se quiser — ele sobe sozinho no fim.");
     } catch (e: any) {
       setMensagem(`⚠️ ${e?.message}`);
     } finally {
@@ -470,7 +477,7 @@ export default function ModoContingenciaClient() {
 
           <Passo n={5} titulo="Faça o teste de 2 minutos" resumo="Simula a queda da internet, sem tirar nenhum cabo." situacao={situacao(5)}>
             <p style={{ margin: "0 0 10px" }}>
-              Por 2 minutos este computador age como se a internet tivesse caído. Em uns 15 segundos a tela troca sozinha para o computador
+              Por 2 minutos este computador age como se a internet tivesse caído. Em menos de 1 minuto a tela troca sozinha para o computador
               da loja, com a faixa de aviso embaixo. Aproveite para lançar um pedido de teste no Balcão: ele sobe sozinho no fim.
             </p>
             {contingenciaAqui?.ativa ? (
@@ -542,6 +549,32 @@ export default function ModoContingenciaClient() {
             </div>
           </div>
           {relato?.ultimoErro && <p style={{ margin: "10px 0 0", fontSize: 13, color: "#B91C1C" }}>Último problema: {relato.ultimoErro}</p>}
+          {nuvem?.redeDaLoja && (
+            // Só alerta, nunca trava (14/10/2026: a contingência da Hakim Centro
+            // estava no PC de casa do Douglas e as telas da loja pulavam para um
+            // endereço que lá não existe).
+            <div
+              role="alert"
+              data-alerta-rede
+              style={{ margin: "12px 0 0", background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: 12, padding: "10px 12px", fontSize: 13, lineHeight: 1.5, color: "#7F1D1D" }}
+            >
+              <strong>⚠️ O computador da contingência parece não estar na rede da loja.</strong>
+              <div>
+                Ele fala com o FireHub pela internet <code>{nuvem.redeDaLoja.ipDoComputador}</code>, mas há telas do painel abertas por outra internet:
+              </div>
+              <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
+                {nuvem.redeDaLoja.outras.map((o) => (
+                  <li key={o.ip}>
+                    <code>{o.ip}</code> — {haQuanto(o.em)}{o.esteAparelho ? " (este aparelho)" : ""}
+                  </li>
+                ))}
+              </ul>
+              <div>
+                Se essas telas estão na loja, numa queda elas vão procurar um computador que não está lá. Ative a contingência no computador do
+                caixa da loja. (Se é só você abrindo o painel de casa, pode ignorar.)
+              </div>
+            </div>
+          )}
           {podeMexer && (
             <div style={{ marginTop: 14 }}>
               <button

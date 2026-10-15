@@ -16,6 +16,7 @@ import {
   pedidoNaTela,
   type KdsConfig,
 } from "@/lib/kds-telas";
+import { CHAVE_DA_ULTIMA_TELA, destinoDaTelaSemEtapa, ultimaTelaParaGuardar } from "@/lib/kds-ultima-tela";
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -596,12 +597,25 @@ export default function KDSTelaPage() {
   }, [scrollDown, scrollUp]);
 
   // ─── Redirect if no stage ───────────────────────────────────────────────────
+  //
+  // Com etapa: esta é a última tela deste aparelho. Sem etapa (o /tv da loja,
+  // o endereço digitado na TV): reabre a última tela guardada, ou vai para a
+  // lista se não houver (lib/kds-ultima-tela.ts — lá está por que não há laço).
+  // Armazenamento bloqueado (TV, janela anônima) só faz cair na lista.
 
+  const queryDaTela = searchParams.toString();
   useEffect(() => {
-    if (!stage) {
-      router.replace("/store/kds");
+    if (stage) {
+      const guardar = ultimaTelaParaGuardar(queryDaTela);
+      if (guardar) {
+        try { localStorage.setItem(CHAVE_DA_ULTIMA_TELA, guardar); } catch {}
+      }
+      return;
     }
-  }, [stage, router]);
+    let guardada: string | null = null;
+    try { guardada = localStorage.getItem(CHAVE_DA_ULTIMA_TELA); } catch {}
+    router.replace(destinoDaTelaSemEtapa(queryDaTela, guardada));
+  }, [stage, queryDaTela, router]);
 
   // ─── Clock tick (every second) ──────────────────────────────────────────────
 
@@ -1349,6 +1363,32 @@ export default function KDSTelaPage() {
         >
           {/* ── Left group: Name + Badge + Undo + Filter Tabs ── */}
           <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", minWidth: 0, gap: 12, rowGap: 8 }}>
+            {/* ☰ Telas — a tela cobre o menu lateral, e trocar Produção ↔
+                Finalização exigia digitar o endereço (a TV não tem barra de
+                endereço). Link relativo e na mesma aba: vale na nuvem e no
+                computador da loja (http://<ip>:7890), sem abrir aba nova. */}
+            <a
+              href="/store/kds"
+              title="Voltar para a lista de telas do KDS (trocar de tela)"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "5px 10px",
+                borderRadius: 8,
+                border: "1px solid #292524",
+                background: "transparent",
+                color: "#94A3B8",
+                fontSize: 13,
+                fontWeight: 700,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+                fontFamily: FONT,
+                flexShrink: 0,
+              }}
+            >
+              ☰ Telas
+            </a>
             <span
               style={{ fontSize: 22, fontWeight: 800, letterSpacing: "-0.5px", whiteSpace: "nowrap" }}
             >
