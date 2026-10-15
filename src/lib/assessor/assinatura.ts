@@ -17,6 +17,11 @@
  *
  * Loja isenta (parceiro, conta da casa) não paga: a regra é a mesma da
  * mensalidade (lojaIsenta, em billing.ts).
+ *
+ * E a loja isenta tem o Bill SEMPRE LIGADO, sem ativar nem aceitar termo (não
+ * há o que contratar): "todos os embaixadores, vendedores e isentos de
+ * pagamento têm que ter o Bill liberado, para conseguirem mostrar e gravar
+ * vídeo" (Douglas, 15/10/2026). Para ela não existe "Desligar".
  */
 import { prisma } from "@/lib/prisma";
 import { garantirEstruturaDoAssessor } from "./estrutura-no-banco";
@@ -102,7 +107,7 @@ export async function assessorIsento(franchiseeId: string): Promise<boolean> {
 
 export async function estadoDoAssessor(franchiseeId: string, agora: Date = new Date()): Promise<EstadoDoAssessor> {
   const isento = await assessorIsento(franchiseeId);
-  const vazio: EstadoDoAssessor = { ativo: false, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, periodos: [] };
+  const vazio: EstadoDoAssessor = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, periodos: [] };
   if (!(await garantirEstruturaDoAssessor())) return vazio;
   const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId } });
   if (!a) return vazio;
@@ -113,22 +118,28 @@ export async function estadoDoAssessor(franchiseeId: string, agora: Date = new D
     cobradoEsteMes = !isento && valorDoAssessorNoMes(periodos, a.testeAte, monthStart, monthEnd, agora) > 0;
   } catch {}
   return {
-    ativo: a.ativo,
+    ativo: a.ativo || isento,
     cobradoEsteMes,
     testeAte: a.testeAte ? a.testeAte.toISOString() : null,
-    emTeste: Boolean(a.ativo && a.testeAte && a.testeAte.getTime() > agora.getTime()),
+    emTeste: Boolean(!isento && a.ativo && a.testeAte && a.testeAte.getTime() > agora.getTime()),
     jaTestou: Boolean(a.testeAte),
     isento,
     periodos,
   };
 }
 
-/** Só a coluna `ativo`: roda em toda mensagem do dono e em toda página do painel. */
+/**
+ * Roda em toda mensagem do dono e em toda página do painel: primeiro a coluna
+ * `ativo`; desligado, a loja isenta conta como ligada (embaixador, vendedor,
+ * conta da casa — ver o topo do arquivo).
+ */
 export async function assessorEstaLigado(franchiseeId: string): Promise<boolean> {
   try {
-    if (!(await garantirEstruturaDoAssessor())) return false;
-    const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId }, select: { ativo: true } });
-    return Boolean(a?.ativo);
+    if (await garantirEstruturaDoAssessor()) {
+      const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId }, select: { ativo: true } });
+      if (a?.ativo) return true;
+    }
+    return await assessorIsento(franchiseeId);
   } catch {
     return false;
   }
@@ -146,6 +157,8 @@ export async function ligarOuDesligarAssessor(
   aceite: Omit<AceiteDoTermo, "em"> | null,
   agora: Date = new Date(),
 ): Promise<EstadoDoAssessor> {
+  // Loja isenta: o Bill já está liberado e não desliga — nada a gravar.
+  if (await assessorIsento(franchiseeId)) return estadoDoAssessor(franchiseeId, agora);
   if (!(await garantirEstruturaDoAssessor())) throw new Error("O Bill ainda não está disponível. Tente de novo em alguns minutos.");
   const atual = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId } });
   const periodos = lerPeriodos(atual?.periodos);
@@ -176,6 +189,8 @@ export async function ligarOuDesligarAssessor(
 export async function cobrancaDoAssessorNoMes(franchiseeId: string, inicio: Date, fim: Date): Promise<number> {
   try {
     if (!(await garantirEstruturaDoAssessor())) return 0;
+    // Isenta não paga, nem na prévia do painel (o fechamento já pula a loja inteira).
+    if (await assessorIsento(franchiseeId)) return 0;
     const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId } });
     if (!a) return 0;
     return valorDoAssessorNoMes(lerPeriodos(a.periodos), a.testeAte, inicio, fim);

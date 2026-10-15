@@ -141,17 +141,17 @@ export default function BillClient() {
           <div style={{ marginTop: 28, padding: 16, border: "1px solid #E2E8F0", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 13, color: "#475569" }}>
               {estado.isento
-                ? <><b>Conta isenta:</b> o Bill não entra no boleto desta loja.</>
+                ? <><b>Conta isenta:</b> o Bill fica sempre ligado nesta loja e não entra no boleto.</>
                 : estado.emTeste && estado.testeAte
                 ? <>Grátis até <b>{new Date(estado.testeAte).toLocaleDateString("pt-BR")}</b>. Depois, <b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub (o mês em que fica ativo é cobrado inteiro).</>
                 : <><b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub — o mês em que o Bill fica ativo é cobrado inteiro.{estado.cobradoEsteMes && <> Este mês já está no boleto.</>}</>}
               {!estado.isento && <>{" "}Desligando, o mês seguinte não é cobrado.</>}
             </div>
-            <button disabled={salvando} onClick={() => { if (confirmarDesligar) ligar(false); else setConfirmarDesligar(true); }}
+            {!estado.isento && <button disabled={salvando} onClick={() => { if (confirmarDesligar) ligar(false); else setConfirmarDesligar(true); }}
               onBlur={() => setConfirmarDesligar(false)}
               style={{ background: confirmarDesligar ? "#DC2626" : "white", border: "1px solid", borderColor: confirmarDesligar ? "#DC2626" : "#CBD5E1", color: confirmarDesligar ? "white" : "#475569", borderRadius: 8, padding: "8px 14px", fontWeight: 700, cursor: "pointer" }}>
               {confirmarDesligar ? "Toque de novo para desligar" : "Desligar"}
-            </button>
+            </button>}
           </div>
         </>
       )}
