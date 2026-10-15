@@ -56,6 +56,9 @@ export async function PUT(req: NextRequest) {
   const config = {
     soNaFinalizacao: "soNaFinalizacao" in bruto ? enviado.soNaFinalizacao : gravado.soNaFinalizacao,
     prioridade: "prioridade" in bruto ? enviado.prioridade : gravado.prioridade,
+    // A da finalização, quando a tela de finalização separou (lib/kds-telas.ts,
+    // `prioridadeDaEtapa`). `null` = segue a da produção.
+    prioridadeNaFinalizacao: "prioridadeNaFinalizacao" in bruto ? enviado.prioridadeNaFinalizacao : gravado.prioridadeNaFinalizacao,
   };
 
   await prisma.user.update({

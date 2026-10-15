@@ -854,7 +854,7 @@ export default function Home() {
           { t: "💰 Economia de Taxas", d: "Aproveite melhor sua equipe e evite idas e vindas desnecessárias" },
         ]}
         acao={<a href={TRIAL} className="btn-primary" style={{ padding: "14px 28px", fontSize: "1rem", background: "linear-gradient(135deg,#3B82F6,#1D4ED8)", boxShadow: "0 6px 24px rgba(59,130,246,.3)" }}>🗺️ Organizar Minhas Entregas</a>}
-        visual={<Moldura src="/images/roteirizador_ui.webp" alt="FireHub Roteirizador" borda="1px solid rgba(255,255,255,0.15)" sombra="0 20px 40px rgba(0,0,0,0.8)" fundo="#000" />}
+        visual={<Moldura real src="/images/tela-roteirizacao.webp" alt="Tela do FireHub: roteirização com os pedidos no mapa" borda="1px solid rgba(255,255,255,0.15)" sombra="0 20px 40px rgba(0,0,0,0.8)" fundo="#FFF" />}
       />
 
       {/* SEÇÃO MÓDULO DE VALIDADE & ETIQUETAS — /store/etiquetas, do FireHub. */}
@@ -1116,7 +1116,7 @@ export default function Home() {
               <p>Simples, rápido e completo. Tudo que o seu restaurante precisa em um só lugar.</p>
             </div>
             <div className="footer-col">
-              <h4>Links</h4>
+              <h3>Links</h3>
               <a href="#funcionalidades">Funcionalidades</a>
               <a href="#trafego-pago">Tráfego Pago</a>
               <a href="#contingencia">Modo Contingência</a>
@@ -1130,7 +1130,7 @@ export default function Home() {
               <a href="/prazos">🔥 FireHub Prazos (extensão)</a>
             </div>
             <div className="footer-col">
-              <h4>Contato</h4>
+              <h3>Contato</h3>
               <a href={WA} target="_blank" rel="noopener">📱 WhatsApp</a>
               <a href="mailto:contato@firehubfood.com.br">✉️ contato@firehubfood.com.br</a>
             </div>

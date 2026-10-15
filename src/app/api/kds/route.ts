@@ -333,7 +333,8 @@ export async function GET(req: NextRequest) {
       .findUnique({ where: { id: contaDasTelas(user, userStoreIds) }, select: { kdsConfig: true } })
       .then((u) => lerKdsConfig(u?.kdsConfig))
       .catch(() => null);
-    visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja);
+    // Cada etapa com a sua lista: a finalização pode ter a dela (Pizzaria 17).
+    visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja, stage);
 
     return NextResponse.json(visiveis, {
       headers: {

@@ -26,6 +26,7 @@ import { chamarComContexto } from "@/lib/ifood-http";
 import { lerStatusDoMerchant } from "@/lib/ifood-disponibilidade";
 import { assistenteVistoEm, esquecerSinaisVelhos, painelVistoEm, servidorSubiuEm } from "@/lib/sinais-da-loja";
 import { gravarEstadoSemConexao, lerEstadosSemConexao } from "@/lib/loja-sem-conexao-no-banco";
+import { contingenciaAtivada, subidasDesde } from "@/lib/contingencia/aviso-ao-dono";
 import {
   ASSISTENTE_RECENTE_MS, DESCRICAO_DA_PAUSA, PAUSA_NO_IFOOD_MS,
   decidirSemConexao, horaLocalParaOIfood, idDaPausaCriada, idsDasNossasPausas, mesmoEstado,
@@ -228,9 +229,16 @@ export async function GET(req: NextRequest) {
         if (a.aviso) {
           let mensagem: string | null = null;
           if (a.aviso === "queda" && estado.episodio) {
-            mensagem = mensagemDeQueda({ loja: nome, episodio: estado.episodio, tz, semPausaAutomatica: await canaisSemPausa(loja) });
+            mensagem = mensagemDeQueda({
+              loja: nome, episodio: estado.episodio, tz, semPausaAutomatica: await canaisSemPausa(loja),
+              contingencia: await contingenciaAtivada(loja.id),
+            });
           } else if (a.aviso === "volta" && d.encerrado) {
-            mensagem = mensagemDeVolta({ loja: nome, episodio: d.encerrado, agora, tz, ifoodQueFicou: ficou });
+            // Modo Contingência: o que o computador do caixa subiu desde o começo da queda.
+            const contingencia = (await contingenciaAtivada(loja.id))
+              ? { subida: await subidasDesde(loja.id, new Date(d.encerrado.ultimoSinal - 60_000)) }
+              : undefined;
+            mensagem = mensagemDeVolta({ loja: nome, episodio: d.encerrado, agora, tz, ifoodQueFicou: ficou, contingencia });
           } else if (a.aviso === "fim_do_horario" && d.encerrado) {
             mensagem = mensagemDeFimDoHorario({ loja: nome, episodio: d.encerrado, agora, tz, ifoodQueFicou: ficou });
           }
