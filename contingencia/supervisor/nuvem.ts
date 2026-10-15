@@ -4,15 +4,34 @@
 export class Nuvem {
   constructor(public base: string, private chave: string) {}
 
+  /**
+   * Quantas respostas 401 (chave recusada) seguidas, e desde quando. Uma
+   * resposta boa de qualquer pedido com a chave zera. O sinal não conta: ele
+   * responde sem olhar a chave. Quem decide o que fazer é o supervisor
+   * (regras.ts → chaveRecusada).
+   */
+  recusasSeguidas = 0;
+  primeiraRecusaEm = 0;
+
   private async pedir(caminho: string, init: RequestInit & { prazoMs?: number } = {}): Promise<Response> {
     const c = new AbortController();
     const t = setTimeout(() => c.abort(), init.prazoMs ?? 30_000);
     try {
-      return await fetch(`${this.base}${caminho}`, {
+      const r = await fetch(`${this.base}${caminho}`, {
         ...init,
         signal: c.signal,
         headers: { authorization: `Bearer ${this.chave}`, ...(init.headers || {}) },
       });
+      if (!caminho.startsWith("/api/contingencia/sinal")) {
+        if (r.status === 401) {
+          if (this.recusasSeguidas === 0) this.primeiraRecusaEm = Date.now();
+          this.recusasSeguidas++;
+        } else if (r.ok) {
+          this.recusasSeguidas = 0;
+          this.primeiraRecusaEm = 0;
+        }
+      }
+      return r;
     } finally {
       clearTimeout(t);
     }
