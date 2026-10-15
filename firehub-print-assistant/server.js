@@ -356,13 +356,27 @@ function dedupePrinters(list) {
 const CHAVE_IMPRESSORAS_SISTEMA = "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers";
 const PREFIXO_IMPRESSORAS_SISTEMA = "HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\Print\\Printers\\";
 
-function valorPorImpressoraNoRegistro(valor) {
-  const cmd = `cmd /c "chcp 65001>nul & reg query "${CHAVE_IMPRESSORAS_SISTEMA}" /s /v "${valor}""`;
-  const raw = execSync(cmd, { encoding: "utf-8", timeout: 6000, windowsHide: true });
+/* ─── Lista de impressoras SEM travar o Assistente (14/10/2026) ──────────
+ *
+ * Cada etapa abaixo roda um programa do Windows (reg.exe, PowerShell). Era
+ * tudo execSync: enquanto o PowerShell pensava (até 8 s por etapa), o processo
+ * inteiro do Assistente parava — /status, fila, comandas. Agora as etapas são
+ * escritas UMA vez, como um gerador que pede "rode este comando" (`yield`) e
+ * recebe a saída; quem roda decide se espera parado (rodarSincrono, só na
+ * primeiríssima leitura de quem precisa da lista para imprimir) ou sem travar
+ * (rodarAssincrono, o resto). A ordem e os fallbacks continuam os mesmos.
+ */
+const CMD_REGISTRO_DO_USUARIO = 'reg query "HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\PrinterPorts"';
+
+function comandoDoRegistroDoSistema(valor) {
+  return `cmd /c "chcp 65001>nul & reg query "${CHAVE_IMPRESSORAS_SISTEMA}" /s /v "${valor}""`;
+}
+
+function valorPorImpressoraNaSaida(valor, raw) {
   const mapa = new Map();
   const re = new RegExp("^\\s+" + valor + "\\s+REG_\\w+\\s*(.*)$", "i");
   let atual = null;
-  for (const linha of raw.split(/\r?\n/)) {
+  for (const linha of String(raw).split(/\r?\n/)) {
     if (linha.startsWith(PREFIXO_IMPRESSORAS_SISTEMA)) {
       const nome = linha.slice(PREFIXO_IMPRESSORAS_SISTEMA.length).trim();
       // `reg query` sem /s lista só as filhas diretas; a barra que sobra seria
@@ -377,12 +391,14 @@ function valorPorImpressoraNoRegistro(valor) {
   return mapa;
 }
 
-function impressorasPeloRegistroDoSistema() {
-  const portas = valorPorImpressoraNoRegistro("Port");
+function* impressorasPeloRegistroDoSistema() {
+  const portas = valorPorImpressoraNaSaida("Port", yield { cmd: comandoDoRegistroDoSistema("Port"), opcoes: { encoding: "utf-8", timeout: 6000, windowsHide: true } });
   // O driver é um segundo `reg query` porque o reg.exe aceita um /v por vez.
   // Custa milissegundos, e sem ele a tela nao consegue distinguir a termica.
   let drivers = new Map();
-  try { drivers = valorPorImpressoraNoRegistro("Printer Driver"); } catch {}
+  try {
+    drivers = valorPorImpressoraNaSaida("Printer Driver", yield { cmd: comandoDoRegistroDoSistema("Printer Driver"), opcoes: { encoding: "utf-8", timeout: 6000, windowsHide: true } });
+  } catch {}
 
   const lista = [];
   for (const [name, port] of portas) {
@@ -402,7 +418,7 @@ function impressorasPeloRegistroDoSistema() {
  */
 let diagnosticoImpressoras = [];
 
-function listPrinters() {
+function* etapasDaListaDeImpressoras() {
   const list = [];
   const diag = [];
   const anota = (etapa, resultado) => diag.push(`${etapa}: ${resultado}`);
@@ -419,7 +435,7 @@ function listPrinters() {
   // driver. Sem eles a tela nao separa a termica do "Microsoft Print to PDF" e
   // o cadastro de impressora acaba chutando o primeiro nome da lista.
   try {
-    const doSistema = impressorasPeloRegistroDoSistema();
+    const doSistema = yield* impressorasPeloRegistroDoSistema();
     for (const p of doSistema) list.push(p);
     anota("registro do sistema (HKLM)", `${doSistema.length} impressora(s)`);
   } catch (e05) {
@@ -427,8 +443,8 @@ function listPrinters() {
   }
 
   try {
-    const raw = execSync('reg query "HKCU\\Software\\Microsoft\\Windows NT\\CurrentVersion\\PrinterPorts"', { encoding: "utf-8", timeout: 4000 });
-    const lines = raw.split(/\r?\n/);
+    const raw = yield { cmd: CMD_REGISTRO_DO_USUARIO, opcoes: { encoding: "utf-8", timeout: 4000 } };
+    const lines = String(raw).split(/\r?\n/);
     let achadas = 0;
     for (const line of lines) {
       const trimmed = line.trim();
@@ -452,7 +468,7 @@ function listPrinters() {
   // 1. Tenta Get-Printer com UTF-8 explícito
   try {
     const cmd = `powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-Printer | Select-Object Name, DriverName, PortName | ConvertTo-Json -Compress"`;
-    const raw = execSync(cmd, { encoding: "utf-8", timeout: 8000 });
+    const raw = yield { cmd, opcoes: { encoding: "utf-8", timeout: 8000 } };
     const parsed = safeJsonParse(raw);
     if (parsed) {
       const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -470,7 +486,7 @@ function listPrinters() {
   // 2. Fallback Get-WmiObject Win32_Printer
   try {
     const cmd = `powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; Get-WmiObject Win32_Printer | Select-Object Name, DriverName, PortName | ConvertTo-Json -Compress"`;
-    const raw = execSync(cmd, { encoding: "utf-8", timeout: 8000 });
+    const raw = yield { cmd, opcoes: { encoding: "utf-8", timeout: 8000 } };
     const parsed = safeJsonParse(raw);
     if (parsed) {
       const arr = Array.isArray(parsed) ? parsed : [parsed];
@@ -488,8 +504,8 @@ function listPrinters() {
   // 3. Fallback super simples em Texto Puro (uma linha por impressora)
   try {
     const cmd = `powershell -NoProfile -Command "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; (Get-Printer).Name"`;
-    const raw = execSync(cmd, { encoding: "utf-8", timeout: 6000 });
-    const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const raw = yield { cmd, opcoes: { encoding: "utf-8", timeout: 6000 } };
+    const lines = String(raw).split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     for (const name of lines) {
       list.push({ name, driver: "", port: "", status: "online" });
     }
@@ -500,6 +516,38 @@ function listPrinters() {
 
   encerra();
   return dedupePrinters(list);
+}
+
+/** Roda as etapas esperando cada comando parado (execSync). */
+function rodarSincrono(etapas, executar = execSync) {
+  let passo = etapas.next();
+  while (!passo.done) {
+    let saida;
+    let erro = null;
+    try { saida = executar(passo.value.cmd, passo.value.opcoes); } catch (e) { erro = e; }
+    passo = erro ? etapas.throw(erro) : etapas.next(saida);
+  }
+  return passo.value;
+}
+
+function execAssincrono(cmd, opcoes) {
+  return new Promise((ok, falha) => exec(cmd, opcoes, (err, stdout) => (err ? falha(err) : ok(stdout))));
+}
+
+/** Roda as etapas sem travar o processo (exec com callback). */
+async function rodarAssincrono(etapas, executar = execAssincrono) {
+  let passo = etapas.next();
+  while (!passo.done) {
+    let saida;
+    let erro = null;
+    try { saida = await executar(passo.value.cmd, passo.value.opcoes); } catch (e) { erro = e; }
+    passo = erro ? etapas.throw(erro) : etapas.next(saida);
+  }
+  return passo.value;
+}
+
+function listPrinters() {
+  return rodarSincrono(etapasDaListaDeImpressoras());
 }
 
 /* ─── Cache da lista de impressoras ──────────────────────────────────────
@@ -514,21 +562,52 @@ function listPrinters() {
  * Consulta vazia NAO apaga o cache: uma falha passageira (antivirus ocupado,
  * PowerShell frio) esvaziaria o dropdown de quem estava funcionando. Some so o
  * que nunca foi encontrado.
+ *
+ * Cache vencido (14/10/2026): devolve a lista que tem e renova EM SEGUNDO
+ * PLANO (atualizarImpressoras). Antes a renovação era execSync no meio do
+ * /status — o "Assistente surdo" que a vigia confundia com cópia presa.
  */
 const TTL_CACHE_IMPRESSORAS = 30_000;
 let cacheDeImpressoras = { lista: [], quando: 0 };
+let atualizandoImpressoras = null;
 
-function listPrintersCached(forcar = false) {
-  const agora = Date.now();
-  if (!forcar && cacheDeImpressoras.quando && agora - cacheDeImpressoras.quando < TTL_CACHE_IMPRESSORAS) {
-    return cacheDeImpressoras.lista;
-  }
-  let lista = [];
-  try { lista = listPrinters(); } catch (e) { lista = []; }
+function guardarImpressoras(lista) {
   if (lista.length > 0 || cacheDeImpressoras.lista.length === 0) {
-    cacheDeImpressoras = { lista, quando: agora };
+    cacheDeImpressoras = { lista, quando: Date.now() };
   }
   return cacheDeImpressoras.lista;
+}
+
+/** Lê a lista de novo sem travar; quem chama junto espera a mesma leitura. */
+function atualizarImpressoras() {
+  if (!atualizandoImpressoras) {
+    atualizandoImpressoras = rodarAssincrono(etapasDaListaDeImpressoras())
+      .catch(() => [])
+      .then((lista) => guardarImpressoras(lista))
+      .finally(() => { atualizandoImpressoras = null; });
+  }
+  return atualizandoImpressoras;
+}
+
+/**
+ * A lista na hora, do cache. Vencida, renova em segundo plano. Só a primeira
+ * leitura de todas (nada no cache ainda) espera parada — é o caminho da
+ * comanda sem impressora escolhida, que precisa de um nome para imprimir.
+ */
+function listPrintersCached() {
+  if (!cacheDeImpressoras.quando) {
+    let lista = [];
+    try { lista = listPrinters(); } catch (e) { lista = []; }
+    return guardarImpressoras(lista);
+  }
+  if (Date.now() - cacheDeImpressoras.quando >= TTL_CACHE_IMPRESSORAS) void atualizarImpressoras();
+  return cacheDeImpressoras.lista;
+}
+
+/** Para as rotas: `fresca` (botão "Atualizar" da tela) ou cache vazio esperam a leitura — sem travar ninguém. */
+async function impressorasParaRota(fresca) {
+  if (fresca || !cacheDeImpressoras.quando) return atualizarImpressoras();
+  return listPrintersCached();
 }
 
 
@@ -552,12 +631,12 @@ function impressoraPadraoFisica() {
 }
 
 // Aquece o cache logo depois de subir, para a primeira consulta da tela ja
-// encontrar a lista pronta em vez de pagar a deteccao inteira na hora.
+// encontrar a lista pronta em vez de pagar a deteccao inteira na hora — e sem
+// travar a subida.
 setTimeout(() => {
-  try {
-    const achadas = listPrintersCached(true);
-    console.log(`[Impressoras] ${achadas.length} encontrada(s) — ${diagnosticoImpressoras.join(" | ")}`);
-  } catch {}
+  atualizarImpressoras()
+    .then((achadas) => console.log(`[Impressoras] ${achadas.length} encontrada(s) — ${diagnosticoImpressoras.join(" | ")}`))
+    .catch(() => {});
 }, 1000);
 
 /**
@@ -3422,10 +3501,11 @@ const VERSAO_ASSISTENTE = (() => {
   try { return require("./package.json").version; } catch { return "desconhecida"; }
 })();
 
-app.get("/status", (req, res) => {
+app.get("/status", async (req, res) => {
   // ?fresh=1 ignora o cache — e o que o botao "Atualizar" da tela manda depois
-  // que a loja pluga uma impressora nova e quer ve-la aparecer agora.
-  const printers = listPrintersCached(req.query.fresh === "1");
+  // que a loja pluga uma impressora nova e quer ve-la aparecer agora. Sem
+  // travar o Assistente: o reg/PowerShell roda sem execSync (impressorasParaRota).
+  const printers = await impressorasParaRota(req.query.fresh === "1");
   res.json({
     ok: true,
     app: "FireHub-Thermal-Printer-v2",
@@ -3464,7 +3544,7 @@ app.post("/atualizar-agora", (req, res) => {
 
 // ?fresh=1 refaz a deteccao ignorando o cache — e o que o botao "Atualizar" da
 // tela de Impressoras precisa depois de plugar uma impressora nova.
-app.get("/printers", (req, res) => res.json(listPrintersCached(req.query.fresh === "1")));
+app.get("/printers", async (req, res) => res.json(await impressorasParaRota(req.query.fresh === "1")));
 
 /* ── TETO ZERO AO ABRIR, TAMBEM PELA PORTA DO NAVEGADOR ─────────────────────
  *

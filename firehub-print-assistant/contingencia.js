@@ -26,8 +26,20 @@
  *     rotas daqui que MUDAM algo só aceitam pedido feito NESTE computador
  *     (127.0.0.1) e vindo da página do FireHub (Origin https://firehubfood.com.br).
  *   - A "nuvem" do pareamento só pode ser o domínio oficial.
+ *
+ * ── Nada pesado no processo principal (14/10/2026) ──────────────────────────
+ * Este arquivo roda DENTRO do processo do Assistente — o mesmo que responde o
+ * /status e imprime as comandas (server.js). Cada versão do FireHub tem ~9.200
+ * arquivos: montar com mkdirSync/linkSync levava ~6 s e apagar com rmSync ~10 s,
+ * com o Assistente surdo esse tempo todo. Na noite de 14/10, ao desativar a
+ * contingência, o rmSync da cópia travou o Assistente, a vigia achou a "cópia
+ * presa", derrubou todas e a impressão ficou ~5 min fora. Por isso: montar,
+ * faxina e apagar só com fs.promises, poucos de cada vez (sem lotar o pool do
+ * libuv, que também resolve o DNS da fila), e pasta velha é RENOMEADA para
+ * "<nome>.apagar-<hora>" (instantâneo) e apagada em segundo plano.
  */
 const fs = require("fs");
+const fsp = fs.promises;
 const path = require("path");
 const os = require("os");
 const crypto = require("crypto");
@@ -92,6 +104,11 @@ let parando = false;
 let estadoDoSupervisor = null;
 let mantendo = false;
 let runtime = null;
+/** Última vez que a nuvem pareceu instável aos olhos do supervisor (ver anotarInstabilidade). Sem histórico = agora. */
+let nuvemInstavelEm = Date.now();
+/** Por que a troca de versão da cópia está esperando (null = não está). */
+let trocaAdiada = null;
+let manterAgendado = null;
 
 function registro(linha) {
   try {
@@ -100,6 +117,114 @@ function registro(linha) {
   } catch {
     /* sem disco: segue */
   }
+}
+
+// ── Disco sem travar o Assistente ───────────────────────────────────────────
+
+/** Marca do que foi posto de lado para apagar ("app.apagar-1760000000000"). */
+const SUFIXO_APAGAR = ".apagar-";
+/** Quantas operações de disco de uma vez: o pool do libuv tem 4 vagas e o DNS da fila de impressão usa a mesma. */
+const DE_CADA_VEZ = 2;
+
+/** Roda `fazer` em cada item, `quantos` por vez. */
+async function emFila(itens, quantos, fazer) {
+  let i = 0;
+  const trabalhador = async () => {
+    while (i < itens.length) {
+      const item = itens[i++];
+      await fazer(item);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(quantos, itens.length) }, trabalhador));
+}
+
+async function existe(caminho) {
+  try {
+    await fsp.lstat(caminho);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Apaga uma árvore inteira devagar: arquivo por arquivo, DE_CADA_VEZ por vez.
+ * O fs.promises.rm recursivo também não trava o processo, mas solta milhares de
+ * operações de uma vez no pool — e o DNS da fila de impressão espera atrás.
+ */
+async function apagarArvore(raiz) {
+  let st;
+  try {
+    st = await fsp.lstat(raiz);
+  } catch {
+    return;
+  }
+  const arquivos = [];
+  const pastas = [];
+  if (!st.isDirectory()) arquivos.push(raiz);
+  const aVisitar = st.isDirectory() ? [raiz] : [];
+  while (aVisitar.length) {
+    const atual = aVisitar.pop();
+    pastas.push(atual);
+    let itens = [];
+    try {
+      itens = await fsp.readdir(atual, { withFileTypes: true });
+    } catch {
+      /* some no meio: segue */
+    }
+    for (const d of itens) (d.isDirectory() ? aVisitar : arquivos).push(path.join(atual, d.name));
+  }
+  await emFila(arquivos, DE_CADA_VEZ, async (a) => {
+    try {
+      await fsp.unlink(a);
+    } catch (e) {
+      // Somente leitura no Windows: tira a marca e tenta de novo.
+      if (e && e.code === "EPERM") await fsp.chmod(a, 0o666).then(() => fsp.unlink(a)).catch(() => {});
+    }
+  });
+  // Da mais funda para a raiz.
+  for (const p of pastas.sort((a, b) => b.length - a.length)) await fsp.rmdir(p).catch(() => {});
+  // O que sobrar (arquivo preso), o rm do Node tenta uma última vez.
+  if (await existe(raiz)) await fsp.rm(raiz, { recursive: true, force: true, maxRetries: 2 });
+}
+
+const apagandoAgora = new Set();
+function apagarEmSegundoPlano(caminho) {
+  if (apagandoAgora.has(caminho)) return;
+  apagandoAgora.add(caminho);
+  apagarArvore(caminho)
+    .catch((e) => registro(`Sobrou ${path.basename(caminho)} para apagar depois: ${e && e.message}`))
+    .finally(() => apagandoAgora.delete(caminho));
+}
+
+/**
+ * Tira uma pasta (ou arquivo) do caminho na hora: renomeia para
+ * "<nome>.apagar-<hora>" e apaga em segundo plano. Se o Windows não deixar
+ * renomear (arquivo aberto), apaga no lugar — assíncrono do mesmo jeito, mas
+ * esperando, para quem chamou não escrever por cima do que ainda está saindo.
+ */
+async function tirarDoCaminho(caminho) {
+  if (!(await existe(caminho))) return;
+  const deLado = `${caminho}${SUFIXO_APAGAR}${Date.now()}`;
+  try {
+    await fsp.rename(caminho, deLado);
+  } catch (e) {
+    registro(`Não consegui pôr ${path.basename(caminho)} de lado (${(e && e.code) || e}); apagando no lugar.`);
+    await apagarArvore(caminho).catch((err) => registro(`Não consegui apagar ${path.basename(caminho)}: ${err && err.message}`));
+    return;
+  }
+  apagarEmSegundoPlano(deLado);
+}
+
+/** Restos ".apagar-" de uma faxina que o Assistente não terminou (fechou no meio). */
+async function apagarRestos(pasta) {
+  let nomes = [];
+  try {
+    nomes = await fsp.readdir(pasta);
+  } catch {
+    return;
+  }
+  for (const n of nomes) if (n.includes(SUFIXO_APAGAR)) apagarEmSegundoPlano(path.join(pasta, n));
 }
 
 // ── O pareamento, cifrado pelo cofre do Windows ─────────────────────────────
@@ -233,24 +358,98 @@ function caminhoSeguro(base, rel) {
   return destino;
 }
 
+/** O arquivo do esquema do Prisma dentro do pacote: é com ele que o FireHub local fala com o banco. */
+const ESQUEMA_DO_PRISMA = /(^|\/)node_modules\/\.prisma\/client\/schema\.prisma$/;
+
+/** O hash do schema.prisma do pacote (null se a lista não tiver). Duas versões com o mesmo hash usam o mesmo banco. */
+function hashDoEsquemaNaLista(arquivos) {
+  const candidatos = (arquivos || []).filter((a) => a && typeof a.caminho === "string" && ESQUEMA_DO_PRISMA.test(a.caminho));
+  candidatos.sort((a, b) => a.caminho.length - b.caminho.length);
+  return candidatos.length ? candidatos[0].hash : null;
+}
+
+/** O que a versão montada leva (gravado ao montar): os hashes dos arquivos e o do esquema. */
+function listaDaVersaoParaGravar(versao, arquivos) {
+  return { versao, hashes: [...new Set(arquivos.map((a) => a.hash))], esquema: hashDoEsquemaNaLista(arquivos) };
+}
+
+async function lerListaDaVersao(versao) {
+  if (!versao) return null;
+  try {
+    const l = JSON.parse(await fsp.readFile(path.join(PASTA, "app", versao, ".lista.json"), "utf8"));
+    return l && Array.isArray(l.hashes) ? l : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A contingência foi desativada no meio do trabalho: para de mexer no disco. */
+function seguirSoAtivada() {
+  if (!pareamento) throw new Error("A contingência foi desativada no meio da manutenção.");
+}
+
+/**
+ * Monta a versão em "<dir>.montando" com hardlink de cada objeto (ou cópia,
+ * se o disco não deixar) e só então troca o nome para <dir>: quem olha a pasta
+ * nunca vê versão pela metade. Tudo assíncrono e DE_CADA_VEZ por vez.
+ */
+async function montarVersao(versao, arquivos, dir, objetos, conferir = seguirSoAtivada) {
+  const tmp = `${dir}.montando`;
+  await tirarDoCaminho(tmp);
+  const destinos = arquivos.map((a) => ({ destino: caminhoSeguro(tmp, a.caminho), origem: path.join(objetos, a.hash) }));
+  // As pastas primeiro, uma vez cada (antes era um mkdirSync por arquivo).
+  const pastas = [...new Set(destinos.map((d) => path.dirname(d.destino)))].sort();
+  for (const p of pastas) {
+    conferir();
+    await fsp.mkdir(p, { recursive: true });
+  }
+  await emFila(destinos, DE_CADA_VEZ, async ({ destino, origem }) => {
+    conferir();
+    try {
+      await fsp.link(origem, destino);
+    } catch {
+      await fsp.copyFile(origem, destino);
+    }
+  });
+  await fsp.writeFile(path.join(tmp, ".lista.json"), JSON.stringify(listaDaVersaoParaGravar(versao, arquivos)));
+  await tirarDoCaminho(dir);
+  await fsp.rename(tmp, dir);
+  await fsp.writeFile(path.join(dir, ".completo"), new Date().toISOString());
+}
+
 async function sincronizarPacote() {
-  const lista = listaAssinada(await nuvemJson("/api/contingencia/pacote"));
+  const resposta = await nuvemJson("/api/contingencia/pacote");
+  const lista = listaAssinada(resposta);
+  // Fora da parte assinada, só um conselho: "a loja está no expediente" (a troca
+  // pode esperar se o esquema do banco não mudou). Nunca muda o que é instalado.
+  const adiar = resposta && typeof resposta.adiar === "string" && resposta.adiar ? resposta.adiar : null;
   const versao = String(lista.versao).replace(/[^A-Za-z0-9_.-]/g, "");
   const dir = path.join(PASTA, "app", versao);
-  if (fs.existsSync(path.join(dir, ".completo"))) return { versao, dir, nova: false };
+  const arquivos = lista.arquivos.filter((a) => a && /^[0-9a-f]{64}$/.test(a.hash) && typeof a.caminho === "string");
+  const esquema = hashDoEsquemaNaLista(arquivos);
+  if (await existe(path.join(dir, ".completo"))) {
+    // Montada por um Assistente de antes da lista: grava agora (a faxina dos objetos depende dela).
+    if (!(await existe(path.join(dir, ".lista.json")))) {
+      await fsp.writeFile(path.join(dir, ".lista.json"), JSON.stringify(listaDaVersaoParaGravar(versao, arquivos))).catch(() => {});
+    }
+    return { versao, dir, nova: false, esquema, adiar };
+  }
 
   etapa = `baixando o FireHub (versão ${versao})`;
   const objetos = path.join(PASTA, "objetos");
-  const arquivos = lista.arquivos.filter((a) => a && /^[0-9a-f]{64}$/.test(a.hash) && typeof a.caminho === "string");
+  await fsp.mkdir(objetos, { recursive: true });
+  // Um readdir em vez de um existsSync por arquivo (9.200 deles: ~0,5 s parado).
+  const jaTem = new Set(await fsp.readdir(objetos).catch(() => []));
   // Um download por hash: o mesmo conteúdo aparece em mais de um caminho.
   const porHash = new Map();
-  for (const a of arquivos) if (!porHash.has(a.hash) && !fs.existsSync(path.join(objetos, a.hash))) porHash.set(a.hash, a);
+  for (const a of arquivos) if (!porHash.has(a.hash) && !jaTem.has(a.hash)) porHash.set(a.hash, a);
   const faltam = [...porHash.values()];
   const totalBytes = faltam.reduce((s, a) => s + (Number(a.tamanho) || 0), 0) || 1;
   let feitos = 0;
   const fila = [...faltam];
   const trabalhador = async () => {
     for (let a = fila.shift(); a; a = fila.shift()) {
+      seguirSoAtivada();
       await baixar(`${pareamento.nuvem}/api/contingencia/pacote/arquivo?hash=${a.hash}`, path.join(objetos, a.hash), {
         headers: { authorization: `Bearer ${pareamento.chave}` },
         sha256: a.hash,
@@ -262,37 +461,57 @@ async function sincronizarPacote() {
   await Promise.all(Array.from({ length: 6 }, trabalhador));
 
   etapa = "montando o FireHub";
-  const tmp = `${dir}.montando`;
-  fs.rmSync(tmp, { recursive: true, force: true });
-  for (const a of arquivos) {
-    const destino = caminhoSeguro(tmp, a.caminho);
-    fs.mkdirSync(path.dirname(destino), { recursive: true });
-    const origem = path.join(objetos, a.hash);
-    try {
-      fs.linkSync(origem, destino);
-    } catch {
-      fs.copyFileSync(origem, destino);
-    }
-  }
-  fs.rmSync(dir, { recursive: true, force: true });
-  fs.renameSync(tmp, dir);
-  fs.writeFileSync(path.join(dir, ".completo"), new Date().toISOString());
+  const inicio = Date.now();
+  await montarVersao(versao, arquivos, dir, objetos);
+  registro(`Versão ${versao} montada (${arquivos.length} arquivos, ${faltam.length} baixados) em ${Math.round((Date.now() - inicio) / 1000)} s.`);
   progresso = null;
-  return { versao, dir, nova: true };
+  return { versao, dir, nova: true, esquema, adiar };
 }
 
-/** Versões velhas: ficam a em uso, a que o supervisor ainda roda e a anterior. */
-function faxina(...manter) {
+/** Os objetos (por hash) que nenhuma versão que fica usa — e restos de download. */
+function objetosQueSobram(nomes, hashesQueFicam) {
+  return nomes.filter((n) => (/^[0-9a-f]{64}$/.test(n) && !hashesQueFicam.has(n)) || n.endsWith(".baixando"));
+}
+
+/**
+ * objetos/ guarda cada arquivo por hash para a PRÓXIMA versão baixar só o que
+ * mudou. As versões montadas não dependem dele (hardlink mantém os dados).
+ * Sai o que nenhuma versão que fica usa. Só com a lista da versão em uso: sem
+ * ela (montada antes desta faxina existir) apagaria a base da próxima troca.
+ */
+async function faxinaDosObjetos(versoesQueFicam, emUso) {
+  const listaEmUso = await lerListaDaVersao(emUso);
+  if (!listaEmUso) return;
+  const ficam = new Set(listaEmUso.hashes);
+  for (const v of versoesQueFicam) {
+    if (v === emUso) continue;
+    const l = await lerListaDaVersao(v);
+    if (l) for (const h of l.hashes) ficam.add(h);
+  }
+  const objetos = path.join(PASTA, "objetos");
+  const sobram = objetosQueSobram(await fsp.readdir(objetos).catch(() => []), ficam);
+  if (!sobram.length) return;
+  await emFila(sobram, DE_CADA_VEZ, (n) => fsp.unlink(path.join(objetos, n)).catch(() => {}));
+  registro(`Faxina: ${sobram.length} arquivo(s) que nenhuma versão usa saíram de objetos/.`);
+}
+
+/** Versões velhas: ficam a em uso, a que o supervisor ainda roda, a recém-baixada e a anterior. */
+async function faxina(emUso, ...outrasQueFicam) {
   try {
     const apps = path.join(PASTA, "app");
-    const versoes = fs.readdirSync(apps).filter((v) => !v.endsWith(".montando"));
-    const fixas = manter.filter(Boolean);
-    const porData = versoes
-      .map((v) => ({ v, t: fs.statSync(path.join(apps, v)).mtimeMs }))
-      .sort((a, b) => b.t - a.t)
-      .map((x) => x.v);
+    await apagarRestos(PASTA);
+    await apagarRestos(apps);
+    const versoes = (await fsp.readdir(apps)).filter((v) => !v.endsWith(".montando") && !v.includes(SUFIXO_APAGAR));
+    const fixas = [emUso, ...outrasQueFicam].filter(Boolean);
+    const comData = [];
+    for (const v of versoes) {
+      const st = await fsp.stat(path.join(apps, v)).catch(() => null);
+      if (st) comData.push({ v, t: st.mtimeMs });
+    }
+    const porData = comData.sort((a, b) => b.t - a.t).map((x) => x.v);
     const ficam = new Set([...fixas, ...porData.filter((v) => !fixas.includes(v)).slice(0, 1)]);
-    for (const v of versoes) if (!ficam.has(v)) fs.rmSync(path.join(apps, v), { recursive: true, force: true });
+    for (const v of versoes) if (!ficam.has(v)) await tirarDoCaminho(path.join(apps, v));
+    await faxinaDosObjetos(versoes.filter((v) => ficam.has(v)), emUso);
   } catch {
     /* faxina é bônus */
   }
@@ -300,10 +519,14 @@ function faxina(...manter) {
 
 // ── O supervisor ────────────────────────────────────────────────────────────
 //
-// O supervisor NÃO morre junto com o Assistente (no Windows o processo filho
-// segue de pé): o Assistente que reinicia — atualização dele, queda do
-// programa — ADOTA o supervisor que achar na porta da loja, em vez de subir
-// outro. Assim a loja não cai nem no meio de uma queda.
+// O supervisor sobe DESLIGADO do Assistente (spawn com `detached`). Sem isso o
+// libuv põe o filho num job do Windows com KILL_ON_JOB_CLOSE e ele morre junto
+// com o Assistente — atualização, vigia, travamento: cada um derrubava a
+// contingência por ~1 min e matava o Postgres sem desligar (14/10/2026). Agora
+// o Assistente que reinicia ADOTA o supervisor que achar na porta da loja, em
+// vez de subir outro. Em troca, quem desativa ou desinstala tem de pedir para
+// ele parar (/contingencia/desparear e build/installer.nsh): sozinho, ele
+// ficaria de pé até o Windows reiniciar.
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -320,9 +543,96 @@ async function supervisorNaPorta() {
 /** Há supervisor desta loja de pé — filho deste processo ou adotado. */
 const supervisorVivo = () => !!filho || adotado;
 
+// O pid do supervisor fica anotado: é o único jeito de encerrar o ADOTADO (não
+// é filho deste processo) quando ele não atende o /parar, e de não subir um
+// segundo enquanto o primeiro ainda está ligando o banco (a porta só abre
+// depois). Vale só no mesmo boot do Windows: depois o número é de outro programa.
+const ARQUIVO_DO_PID = path.join(PASTA, "supervisor.pid");
+const inicioDoWindows = () => Date.now() - os.uptime() * 1000;
+
+function anotarPid(pid) {
+  try {
+    fs.writeFileSync(ARQUIVO_DO_PID, JSON.stringify({ pid, inicioDoWindows: inicioDoWindows(), em: Date.now() }));
+  } catch {
+    /* sem a anotação, só não dá para encerrar à força o adotado */
+  }
+}
+
+function pidAnotado() {
+  try {
+    const a = JSON.parse(fs.readFileSync(ARQUIVO_DO_PID, "utf8"));
+    if (!a || !Number.isInteger(a.pid) || Math.abs(Number(a.inicioDoWindows) - inicioDoWindows()) > 5 * 60_000) return null;
+    return a;
+  } catch {
+    return null;
+  }
+}
+
+function esquecerPid(pid) {
+  const a = pidAnotado();
+  if (!a || a.pid === pid) fs.rm(ARQUIVO_DO_PID, { force: true }, () => {});
+}
+
+/** A saída do `tasklist /FO CSV /NH` diz que esse pid é um node.exe? */
+function pidEhNode(saida, pid) {
+  return new RegExp(`^"node\\.exe","${Number(pid)}"`, "im").test(String(saida || ""));
+}
+
+function supervisorAnotadoDePe(pid) {
+  return new Promise((ok) =>
+    execFile("tasklist", ["/FI", `PID eq ${pid}`, "/FO", "CSV", "/NH"], { windowsHide: true, timeout: 10_000 }, (e, saida) =>
+      ok(!e && pidEhNode(saida, pid)),
+    ),
+  );
+}
+
+/** Encerra à força (com a árvore: FireHub local e Postgres) o supervisor do pid anotado. */
+async function encerrarPeloPidAnotado(motivo) {
+  const a = pidAnotado();
+  if (!a || !(await supervisorAnotadoDePe(a.pid))) return false;
+  registro(`${motivo}: encerrando o supervisor à força (pid ${a.pid}).`);
+  await new Promise((ok) => execFile("taskkill", ["/PID", String(a.pid), "/T", "/F"], { windowsHide: true, timeout: 15_000 }, () => ok()));
+  esquecerPid(a.pid);
+  return true;
+}
+
+function esperarSair(p, ms) {
+  if (!p || p.exitCode !== null || p.signalCode !== null) return Promise.resolve(true);
+  return new Promise((ok) => {
+    const fim = () => {
+      clearTimeout(prazo);
+      ok(true);
+    };
+    const prazo = setTimeout(() => {
+      p.off("exit", fim);
+      ok(false);
+    }, ms);
+    p.once("exit", fim);
+  });
+}
+
+/** Prazo para o supervisor que acabou de ser ligado abrir a porta (a 1ª subida de versão nova chega a ~50 s pelo antivírus). */
+const PRAZO_PARA_ABRIR_A_PORTA_MS = 90_000;
+
 async function ligarSupervisor(dir) {
   if (filho || adotado || !pareamento || !runtime) return;
-  const deFora = await supervisorNaPorta();
+  let deFora = await supervisorNaPorta();
+  if (!deFora) {
+    // Um supervisor de pé que ainda não abriu a porta (o Assistente reiniciou
+    // no meio da subida dele): espera em vez de subir um segundo, que brigaria
+    // pelo mesmo Postgres. Não abriu no prazo = travado: sai à força.
+    // Ligado há tempo e mudo: ainda ganha 30 s (pode ser só um soluço do /estado).
+    const anotado = pidAnotado();
+    if (anotado && (await supervisorAnotadoDePe(anotado.pid))) {
+      const limite = Math.max((Number(anotado.em) || 0) + PRAZO_PARA_ABRIR_A_PORTA_MS, Date.now() + 30_000);
+      while (!deFora && Date.now() < limite) {
+        await esperar(2000);
+        deFora = await supervisorNaPorta();
+      }
+      if (!deFora) await encerrarPeloPidAnotado("Supervisor de pé sem abrir a porta da loja");
+    }
+  }
+  if (filho || adotado || !pareamento) return; // outro chamado ligou (ou desativaram) enquanto este esperava
   if (deFora && deFora.loja === pareamento.lojaId) {
     adotado = true;
     estadoDoSupervisor = deFora;
@@ -333,11 +643,11 @@ async function ligarSupervisor(dir) {
   if (deFora) {
     // De outra ativação neste computador: para com cuidado antes do novo.
     registro("Supervisor de outra loja na porta: parando.");
-    await pedirParaParar();
+    await encerrarSupervisor(null);
   }
-  if (filho || adotado) return; // outro chamado ligou enquanto este esperava
+  if (filho || adotado || !pareamento) return; // outro chamado ligou enquanto este esperava
   const js = path.join(dir, "contingencia", "supervisor.js");
-  if (!fs.existsSync(js)) {
+  if (!(await existe(js))) {
     erro = "O pacote desta versão não tem o supervisor da contingência.";
     return;
   }
@@ -354,6 +664,9 @@ async function ligarSupervisor(dir) {
     filho = spawn(runtime.nodeExe, [js], {
       cwd: dir,
       stdio: ["ignore", log, log],
+      // Fora do job do Assistente (ver o topo desta seção). Sem `unref`: o
+      // "exit" abaixo continua valendo enquanto este Assistente estiver vivo.
+      detached: true,
       windowsHide: true,
       env: {
         ...process.env,
@@ -371,10 +684,12 @@ async function ligarSupervisor(dir) {
     fs.closeSync(log); // o filho já tem a cópia dele
   }
   etapa = "pronta";
-  registro(`Supervisor ligado (versão ${versaoEmUso}).`);
   const este = filho;
+  if (este.pid) anotarPid(este.pid);
+  registro(`Supervisor ligado (versão ${versaoEmUso}, pid ${este.pid}).`);
   este.on("exit", (codigo) => {
     if (filho === este) filho = null;
+    esquecerPid(este.pid);
     estadoDoSupervisor = null;
     if (parando || !pareamento) return;
     reinicios++;
@@ -384,34 +699,119 @@ async function ligarSupervisor(dir) {
   });
 }
 
-/** Pede ao supervisor da porta que pare (ele desliga o FireHub local e o banco) e espera a porta fechar. */
-async function pedirParaParar() {
+/**
+ * Pede ao supervisor da porta que pare (ele desliga o FireHub local e o banco
+ * direito) e espera a porta fechar. Devolve se fechou.
+ */
+async function pedirParaParar(prazoMs = 15_000) {
   try {
     await fetch(`http://127.0.0.1:${PORTA_DA_LOJA}/__contingencia/parar`, { method: "POST", signal: AbortSignal.timeout(3000) });
   } catch {
     /* já não responde */
   }
-  const limite = Date.now() + 15_000;
-  while (Date.now() < limite && (await supervisorNaPorta())) await esperar(500);
+  const limite = Date.now() + prazoMs;
+  while (Date.now() < limite) {
+    if (!(await supervisorNaPorta())) return true;
+    await esperar(500);
+  }
+  return !(await supervisorNaPorta());
+}
+
+/**
+ * Para o supervisor com cuidado: /parar, e de novo se não atender (em 14/10 o
+ * primeiro pedido se perdia e quase toda troca matava o Postgres à força — o
+ * banco subia depois em "recovery"). Só então à força: pelo processo, se é
+ * filho deste Assistente; pelo pid anotado, se é o adotado.
+ */
+async function encerrarSupervisor(p) {
+  let fechou = await pedirParaParar(15_000);
+  if (!fechou) {
+    registro("O supervisor não atendeu o /parar em 15 s: pedindo de novo.");
+    fechou = await pedirParaParar(10_000);
+  }
+  if (p) {
+    if (await esperarSair(p, fechou ? 5_000 : 1_000)) return;
+    registro(`O supervisor não atendeu o /parar: encerrando à força (pid ${p.pid}).`);
+    try {
+      p.kill();
+    } catch {
+      /* já saiu */
+    }
+    await esperarSair(p, 5_000);
+  } else if (!fechou) {
+    await encerrarPeloPidAnotado("O supervisor não atendeu o /parar");
+  }
 }
 
 async function pararSupervisor() {
   if (!supervisorVivo()) return;
   parando = true;
   try {
-    const p = filho;
-    await pedirParaParar();
-    if (p) {
-      const limite = Date.now() + 5_000;
-      while (filho === p && Date.now() < limite) await esperar(300);
-      if (filho === p) p.kill();
-    }
+    // Espera o "exit" do filho ainda com `parando` ligado: antes o finally
+    // limpava a marca primeiro e o "exit" atrasado registrava "religa em 5 s".
+    await encerrarSupervisor(filho);
   } finally {
     filho = null;
     adotado = false;
     estadoDoSupervisor = null;
     parando = false;
   }
+}
+
+// ── A troca de versão da cópia ──────────────────────────────────────────────
+//
+// Trocar a versão desliga a porta da loja por ~20-35 s (o supervisor novo
+// sobe o banco e o FireHub local de novo). Em 14/10 a cópia trocou duas vezes
+// no pico do jantar. Agora só troca:
+//   • com o supervisor em modo normal, sem nada esperando para subir;
+//   • com a nuvem ESTÁVEL há 5 min (nenhuma falha vista pelo supervisor);
+//   • fora do expediente (o servidor diz em `adiar`) — MAS só quando o esquema
+//     do banco é o mesmo: o supervisor velho aplica o esquema novo da nuvem na
+//     cópia, e o FireHub local velho (Prisma antigo) quebraria justo na queda.
+//     Esquema diferente: troca assim que a nuvem estiver estável.
+
+const NUVEM_ESTAVEL_MS = 5 * 60_000;
+/** Sem conferir a nuvem há mais que isto (`ultimoOkEm`), o supervisor não está vendo a nuvem de pé. */
+const SEM_OK_HA_MS = 60_000;
+
+/** Anota quando o supervisor viu a nuvem instável (falha, modo fora do normal, sem resposta boa há 1 min). */
+function anotarInstabilidade(e, agora = Date.now()) {
+  if (!e) return;
+  const ok = Date.parse(e.ultimoOkEm || "");
+  const instavel = e.modo !== "normal" || Number(e.falhas) > 0 || (Number.isFinite(ok) && agora - ok > SEM_OK_HA_MS);
+  if (instavel) nuvemInstavelEm = agora;
+}
+
+/**
+ * A regra da troca, sem efeito nenhum (scripts/teste-contingencia-assistente.js).
+ * `estado` é o /__contingencia/estado do supervisor; `adiar` é o motivo do
+ * servidor para segurar (loja no expediente) ou null; `mesmoEsquema` diz se o
+ * schema.prisma da versão nova é o da versão que roda.
+ */
+function decidirTroca({ vivo, estado, agora, nuvemInstavelEm: instavelEm, adiar, mesmoEsquema }) {
+  if (!vivo) return { trocar: true, motivo: "sem supervisor de pé" };
+  if (!estado) return { trocar: false, motivo: "o supervisor não respondeu agora", tentarDeNovoEmMs: 2 * 60_000 };
+  if (estado.modo !== "normal") return { trocar: false, motivo: `a loja está em modo ${estado.modo}`, tentarDeNovoEmMs: 2 * 60_000 };
+  if (estado.pendentes) return { trocar: false, motivo: `${estado.pendentes} mudança(s) esperando subir`, tentarDeNovoEmMs: 2 * 60_000 };
+  if (Number(estado.falhas) > 0) return { trocar: false, motivo: "o supervisor está vendo falhas da nuvem", tentarDeNovoEmMs: 2 * 60_000 };
+  const estavelHa = agora - (Number(instavelEm) || 0);
+  if (estavelHa < NUVEM_ESTAVEL_MS) {
+    return {
+      trocar: false,
+      motivo: `a nuvem está estável há só ${Math.max(0, Math.round(estavelHa / 1000))} s (precisa de ${NUVEM_ESTAVEL_MS / 60_000} min)`,
+      tentarDeNovoEmMs: NUVEM_ESTAVEL_MS - estavelHa + 5_000,
+    };
+  }
+  if (adiar && mesmoEsquema) return { trocar: false, motivo: `${adiar}; o esquema do banco é o mesmo, então a cópia troca fora do expediente` };
+  return { trocar: true, motivo: adiar ? `${adiar}, mas o esquema do banco mudou: troca já` : "loja em paz" };
+}
+
+function agendarManter(ms) {
+  if (manterAgendado) return;
+  manterAgendado = setTimeout(() => {
+    manterAgendado = null;
+    void manter();
+  }, Math.max(30_000, ms));
 }
 
 // ── O ciclo do Assistente ───────────────────────────────────────────────────
@@ -429,16 +829,30 @@ async function manter() {
     const vivo = supervisorVivo();
     // A versão que roda: a que o supervisor conta (o adotado pode ser de antes da última troca).
     const rodando = vivo ? (s && s.app) || versaoEmUso : null;
-    // Troca só com a loja em paz: nuvem de pé e nada esperando para subir.
-    const emPaz = !vivo || (s && s.modo === "normal" && !s.pendentes);
-    if (emPaz && (pacote.versao !== versaoEmUso || (vivo && rodando !== pacote.versao))) {
-      await pararSupervisor();
-      versaoEmUso = pacote.versao;
-      fs.writeFileSync(path.join(PASTA, "atual.txt"), versaoEmUso);
-      reinicios = 0;
+    if (pacote.versao !== versaoEmUso || (vivo && rodando !== pacote.versao)) {
+      const listaRodando = vivo ? await lerListaDaVersao(rodando) : null;
+      const mesmoEsquema = !!pacote.esquema && !!listaRodando && listaRodando.esquema === pacote.esquema;
+      const d = decidirTroca({ vivo, estado: s, agora: Date.now(), nuvemInstavelEm, adiar: pacote.adiar, mesmoEsquema });
+      if (d.trocar) {
+        registro(`Trocando a cópia ${rodando || versaoEmUso || "-"} → ${pacote.versao} (${d.motivo}).`);
+        trocaAdiada = null;
+        await pararSupervisor();
+        versaoEmUso = pacote.versao;
+        fs.writeFileSync(path.join(PASTA, "atual.txt"), versaoEmUso);
+        reinicios = 0;
+      } else {
+        if (trocaAdiada !== d.motivo) registro(`Troca da cópia para ${pacote.versao} adiada: ${d.motivo}.`);
+        trocaAdiada = d.motivo;
+        if (d.tentarDeNovoEmMs) agendarManter(d.tentarDeNovoEmMs);
+      }
+    } else {
+      trocaAdiada = null;
     }
-    faxina(versaoEmUso, supervisorVivo() ? rodando : null);
+    // Primeiro a loja volta a ter contingência; a faxina (que pode levar uns
+    // segundos de disco) vem depois.
+    const rodandoAgora = supervisorVivo() ? rodando : null;
     if (!supervisorVivo()) await ligarSupervisor(path.join(PASTA, "app", versaoEmUso));
+    await faxina(versaoEmUso, rodandoAgora, pacote.versao);
   } catch (e) {
     erro = String((e && e.message) || e);
     registro(`Manutenção da contingência: ${erro}`);
@@ -447,7 +861,7 @@ async function manter() {
     try {
       const atual = fs.readFileSync(path.join(PASTA, "atual.txt"), "utf8").trim();
       if (!versaoEmUso && atual && fs.existsSync(path.join(PASTA, "app", atual, ".completo"))) versaoEmUso = atual;
-      if (runtime && versaoEmUso && !supervisorVivo()) await ligarSupervisor(path.join(PASTA, "app", versaoEmUso));
+      if (pareamento && runtime && versaoEmUso && !supervisorVivo()) await ligarSupervisor(path.join(PASTA, "app", versaoEmUso));
     } catch {
       /* primeira vez sem internet: nada a fazer */
     }
@@ -461,6 +875,7 @@ async function lerEstadoDoSupervisor() {
   const e = await supervisorNaPorta();
   if (e && e.loja === pareamento.lojaId) {
     estadoDoSupervisor = e;
+    anotarInstabilidade(e);
     if (!filho && !adotado && !parando) {
       adotado = true;
       etapa = "pronta";
@@ -493,6 +908,7 @@ function estadoPublico() {
     porta: PORTA_DA_LOJA,
     pendentes: s.pendentes || 0,
     memoriaTotalMb: Math.round(os.totalmem() / 1024 / 1024),
+    trocaAdiada,
   };
 }
 
@@ -535,13 +951,20 @@ function registrar(app) {
   app.post("/contingencia/desparear", async (req, res) => {
     if (!daqui(req) || !doFireHub(req)) return res.status(403).json({ error: "Só pela página do FireHub, neste computador." });
     pareamento = null;
-    await pararSupervisor();
+    // O supervisor vive fora do Assistente: se não for parado aqui, fica de pé
+    // até o Windows reiniciar. O adotado também (encerrarSupervisor pelo pid).
+    if (supervisorVivo()) await pararSupervisor();
+    else if (await supervisorNaPorta()) await encerrarSupervisor(null);
     fs.rmSync(ARQUIVO_DO_PAREAMENTO, { force: true });
     // A cópia da loja sai do computador; o Node e o Postgres baixados ficam.
-    for (const pasta of ["banco", "app", "objetos"]) fs.rmSync(path.join(PASTA, pasta), { recursive: true, force: true });
-    fs.rmSync(path.join(PASTA, "estado.json"), { force: true });
+    // Antes era rmSync de ~9 mil arquivos POR versão: o Assistente ficava surdo,
+    // a vigia o derrubava e a impressão parava (14/10). Agora as pastas mudam
+    // de nome na hora e somem em segundo plano.
+    for (const pasta of ["banco", "app", "objetos"]) await tirarDoCaminho(path.join(PASTA, pasta));
+    await fsp.rm(path.join(PASTA, "estado.json"), { force: true }).catch(() => {});
     etapa = "desligada";
     versaoEmUso = null;
+    trocaAdiada = null;
     registro("Contingência desativada neste computador.");
     res.json({ ok: true });
   });
@@ -558,10 +981,12 @@ function registrar(app) {
   });
 }
 
-/** Sobe com o Assistente. Sem pareamento, não faz nada. */
+/** Sobe com o Assistente. Sem pareamento, não faz nada (além de terminar uma faxina interrompida). */
 function iniciar() {
   // O cofre do Windows só abre com o Electron pronto.
   const comecar = async () => {
+    // Pastas postas de lado por um Assistente que fechou antes de apagá-las.
+    void apagarRestos(PASTA).then(() => apagarRestos(path.join(PASTA, "app")));
     pareamento = lerPareamento();
     if (!pareamento) return;
     try {
@@ -589,4 +1014,19 @@ function iniciar() {
   }, 60_000);
 }
 
-module.exports = { registrar, iniciar, baseDaFilaNaContingencia, estadoPublico, listaAssinada };
+module.exports = {
+  registrar,
+  iniciar,
+  baseDaFilaNaContingencia,
+  estadoPublico,
+  listaAssinada,
+  // Para os testes (scripts/teste-contingencia-assistente.js):
+  decidirTroca,
+  hashDoEsquemaNaLista,
+  objetosQueSobram,
+  pidEhNode,
+  montarVersao,
+  tirarDoCaminho,
+  apagarArvore,
+  NUVEM_ESTAVEL_MS,
+};
