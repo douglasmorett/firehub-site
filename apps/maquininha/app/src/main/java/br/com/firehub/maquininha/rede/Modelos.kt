@@ -168,10 +168,26 @@ fun JSONObject.textoOuNulo(chave: String): String? {
     return valor.ifBlank { null }
 }
 
+/**
+ * Quem é esta maquininha no FireHub: o id dela (vai no POST da cobrança de mesa
+ * que o garçom manda daqui, para a cobrança cair NESTA máquina) e o slug da
+ * loja (o login do garçom pede). Vem em toda resposta 200 do polling; servidor
+ * antigo não manda e os dois ficam nulos.
+ */
+data class IdentidadeDoTerminal(val terminalId: String?, val lojaSlug: String?)
+
 /** Resposta de GET /api/pos/terminal/pendente. */
 sealed class RespostaDaFila {
-    data class SemCobranca(val terminal: String?) : RespostaDaFila()
-    data class ComCobranca(val cobranca: Cobranca, val terminal: String?) : RespostaDaFila()
+    data class SemCobranca(
+        val terminal: String?,
+        val identidade: IdentidadeDoTerminal? = null,
+    ) : RespostaDaFila()
+
+    data class ComCobranca(
+        val cobranca: Cobranca,
+        val terminal: String?,
+        val identidade: IdentidadeDoTerminal? = null,
+    ) : RespostaDaFila()
 
     /**
      * 401 TERMINAL_DESCONHECIDO ou 403 TERMINAL_DESATIVADO. Nos dois casos

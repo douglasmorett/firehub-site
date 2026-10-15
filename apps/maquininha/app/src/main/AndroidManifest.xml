@@ -129,6 +129,23 @@
 
         </activity>
 
+        <!--
+          Modo garçom. taskAffinity própria: quando chega cobrança, o serviço
+          traz a OperacaoActivity (singleTask) para a frente, e o singleTask
+          destruiria qualquer tela empilhada em cima dela NA MESMA task — o
+          pedido que o garçom estava montando sumiria. Numa task separada a
+          tela do garçom fica intacta atrás e volta no fim da cobrança.
+          adjustResize: o teclado não pode cobrir o botão do rodapé.
+        -->
+        <activity
+            android:name=".tela.GarcomActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="br.com.firehub.maquininha.garcom"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation" />
+
         <activity
             android:name=".tela.PareamentoActivity"
             android:exported="false"

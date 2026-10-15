@@ -19,6 +19,7 @@ import br.com.firehub.maquininha.R
 import br.com.firehub.maquininha.TrabalhoDeTela
 import br.com.firehub.maquininha.estado.EstadoDoTerminal
 import br.com.firehub.maquininha.fila.FilaDeResultados
+import br.com.firehub.maquininha.garcom.ModoGarcom
 import br.com.firehub.maquininha.pagamento.Adquirente
 import br.com.firehub.maquininha.rede.TipoDePagamento
 import br.com.firehub.maquininha.servico.ServicoDeCobranca
@@ -49,7 +50,17 @@ class OperacaoActivity : AppCompatActivity() {
     private lateinit var botoesDeForma: List<Button>
     private lateinit var botaoCancelar: Button
     private lateinit var botaoAcao: Button
+    private lateinit var botaoGarcom: Button
     private lateinit var txtAvisos: TextView
+
+    /**
+     * Esta instância mostrou uma cobrança (escolha, cartão, resultado). Junto com
+     * ModoGarcom.voltarAoGarcom, é o que diz "a cobrança acabou, devolva a frente
+     * para o garçom" — sem ele, a tela que acabou de abrir ainda mostrando o
+     * "aguardando" da volta anterior mandaria o garçom de volta antes de a
+     * cobrança dele aparecer.
+     */
+    private var mostrouCobranca = false
 
     /**
      * Abrir a tela de pareamento (ou a de ativação) só uma vez por instância.
@@ -82,7 +93,9 @@ class OperacaoActivity : AppCompatActivity() {
         painelEscolha = findViewById(R.id.painelEscolha)
         botaoCancelar = findViewById(R.id.botaoCancelar)
         botaoAcao = findViewById(R.id.botaoAcao)
+        botaoGarcom = findViewById(R.id.botaoGarcom)
         txtAvisos = findViewById(R.id.txtAvisos)
+        botaoGarcom.setOnClickListener { abrirModoGarcom() }
 
         // Cada adquirente aceita as suas formas (Pix só onde o app da
         // adquirente cobra Pix). Botão de forma que a adquirente não aceita
@@ -238,6 +251,15 @@ class OperacaoActivity : AppCompatActivity() {
         }
     }
 
+    private fun abrirModoGarcom() {
+        // Task própria (taskAffinity no manifesto): a tela de cobrança pode vir
+        // para a frente a qualquer momento sem destruir o pedido que o garçom
+        // está montando.
+        startActivity(
+            Intent(this, GarcomActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
+    }
+
     private fun mandarParear() {
         if (jaMandeiParear) return
         jaMandeiParear = true
@@ -257,6 +279,18 @@ class OperacaoActivity : AppCompatActivity() {
         // situação mostrou continuaria na tela na situação seguinte — e o campo
         // teimoso mais perigoso aqui é o valor da compra anterior.
         esconderTudo()
+
+        if (ModoGarcom.ehCobranca(situacao)) {
+            mostrouCobranca = true
+        } else if (situacao is EstadoDoTerminal.Situacao.Ocioso && mostrouCobranca) {
+            mostrouCobranca = false
+            // A cobrança acabou e o garçom estava no meio do trabalho dele:
+            // devolve a frente. Totem que chega sem garçom nenhum não entra aqui.
+            if (ModoGarcom.voltarAoGarcom) {
+                ModoGarcom.voltarAoGarcom = false
+                abrirModoGarcom()
+            }
+        }
 
         when (situacao) {
             is EstadoDoTerminal.Situacao.Ocioso -> desenharOcioso(situacao)
@@ -307,6 +341,7 @@ class OperacaoActivity : AppCompatActivity() {
         )
         txtRede.visibility = View.VISIBLE
         txtTitulo.text = getString(R.string.operacao_aguardando)
+        botaoGarcom.visibility = View.VISIBLE
 
         situacao.detalhe?.let { detalhe ->
             txtAndamento.text = detalhe
@@ -423,6 +458,7 @@ class OperacaoActivity : AppCompatActivity() {
         painelEscolha.visibility = View.GONE
         botaoCancelar.visibility = View.GONE
         botaoAcao.visibility = View.GONE
+        botaoGarcom.visibility = View.GONE
         txtAvisos.visibility = View.GONE
         txtTitulo.text = getString(R.string.operacao_verificando)
         txtTerminal.text = CofreDoToken.rotulo(this) ?: getString(R.string.operacao_sem_nome)

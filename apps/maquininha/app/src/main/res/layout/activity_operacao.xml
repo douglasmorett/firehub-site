@@ -170,6 +170,24 @@
             android:textStyle="bold"
             android:visibility="gone" />
 
+        <!--
+          Modo garçom: só aparece com a maquininha parada. O garçom tira o
+          pedido da mesa e cobra aqui mesmo (tela/GarcomActivity.kt).
+        -->
+        <Button
+            android:id="@+id/botaoGarcom"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/botao_secundario"
+            android:minHeight="64dp"
+            android:text="@string/operacao_modo_garcom"
+            android:textAllCaps="false"
+            android:textColor="@color/texto"
+            android:textSize="19sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
         <TextView
             android:id="@+id/txtAvisos"
             android:layout_width="match_parent"

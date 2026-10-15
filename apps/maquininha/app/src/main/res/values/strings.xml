@@ -77,4 +77,135 @@
     <string name="pareamento_desconhecido">O FireHub não reconheceu este código. Gere um novo no painel, em Maquininhas, e digite de novo.</string>
     <string name="pareamento_desativado">Esta maquininha está desativada no painel do FireHub. Ative em Maquininhas antes de continuar.</string>
     <string name="pareamento_sem_rede">Não foi possível falar com o FireHub: %1$s Confira a internet do terminal e tente de novo.</string>
+
+    <!-- Tela de operação: entrada do modo garçom -->
+    <string name="operacao_modo_garcom">Modo garçom</string>
+
+    <!--
+      Modo garçom (tela/GarcomActivity.kt). Mesmas rotas do garçom web; textos
+      no jeito de falar do salão.
+    -->
+    <string name="garcom_voltar">‹ Voltar</string>
+    <string name="garcom_sair_do_modo">‹ Maquininha</string>
+    <string name="garcom_logado_como">Garçom: %1$s</string>
+    <string name="garcom_nao">Não</string>
+    <string name="garcom_atualizar">Atualizar</string>
+    <string name="garcom_falha_inesperada">Algo deu errado: %1$s</string>
+    <string name="garcom_sem_rede">%1$s Confira a internet da maquininha e tente de novo.</string>
+    <string name="garcom_resposta_estranha">O FireHub respondeu algo que o app não entendeu. Tente de novo.</string>
+    <string name="garcom_sessao_expirou">Sua sessão expirou. Entre de novo.</string>
+    <string name="garcom_conferindo_sessao">Conferindo o acesso…</string>
+
+    <string name="garcom_login_titulo">Entrar como garçom</string>
+    <string name="garcom_login_explicacao">Use o usuário e a senha que o gerente cadastrou em Garçons, no painel do FireHub. São os mesmos do link do garçom no celular.</string>
+    <string name="garcom_login_loja">Loja: %1$s</string>
+    <string name="garcom_login_sem_loja">A maquininha ainda não recebeu a loja do FireHub. Aguarde alguns segundos com internet, ou digite o final do link do garçom (firehubfood.com.br/garcom/LOJA).</string>
+    <string name="garcom_login_campo_loja">Loja (final do link)</string>
+    <string name="garcom_login_campo_usuario">Usuário</string>
+    <string name="garcom_login_campo_senha">Senha</string>
+    <string name="garcom_login_entrar">Entrar</string>
+    <string name="garcom_login_entrando">Entrando…</string>
+    <string name="garcom_login_falta_loja">Informe a loja.</string>
+    <string name="garcom_login_falta_dados">Informe usuário e senha.</string>
+    <string name="garcom_trocar_garcom">Sair (trocar de garçom)</string>
+    <string name="garcom_sair_titulo">Sair do acesso de garçom?</string>
+    <string name="garcom_sair_texto">Para entrar de novo vai precisar do usuário e da senha. Itens no carrinho que não foram enviados se perdem.</string>
+    <string name="garcom_sair_sim">Sair</string>
+    <string name="garcom_saindo">Saindo…</string>
+
+    <string name="garcom_mesas_titulo">Mesas</string>
+    <string name="garcom_carregando_mesas">Carregando as mesas…</string>
+    <string name="garcom_sem_mesas">Nenhuma mesa cadastrada. O cadastro é no painel, em Mesas.</string>
+    <string name="garcom_mesas_resumo">%1$d de %2$d mesas ocupadas. Toque para abrir.</string>
+    <string name="garcom_mesa_livre">Livre</string>
+    <string name="garcom_mesa_numero">Mesa %1$d</string>
+    <string name="garcom_mesa_com_nome">Mesa %1$d · %2$s</string>
+    <string name="garcom_abrir_titulo">Abrir a mesa %1$d?</string>
+    <string name="garcom_abrir_texto">A mesa fica no seu nome e já dá para lançar os itens.</string>
+    <string name="garcom_abrir_sim">Abrir mesa</string>
+    <string name="garcom_abrindo_mesa">Abrindo a mesa…</string>
+    <string name="garcom_mesa_ja_aberta">Esta mesa acabou de ser aberta por outra pessoa.</string>
+    <string name="garcom_mesa_fechada">Esta mesa foi fechada no caixa.</string>
+
+    <string name="garcom_carregando_conta">Carregando a conta…</string>
+    <string name="garcom_itens_lancados">ITENS LANÇADOS</string>
+    <string name="garcom_sem_itens">Nenhum item lançado ainda.</string>
+    <string name="garcom_consumo">Consumo</string>
+    <string name="garcom_desconto">Desconto</string>
+    <string name="garcom_taxa">Taxa de serviço (%1$s%%)</string>
+    <string name="garcom_gorjeta">Gorjeta</string>
+    <string name="garcom_total">Total</string>
+    <string name="garcom_ja_pago">Já pago</string>
+    <string name="garcom_falta_pagar">Falta pagar</string>
+    <string name="garcom_carrinho_pendente">%1$d item(ns) separados e AINDA NÃO enviados para a cozinha.</string>
+    <string name="garcom_ver_carrinho">Ver itens não enviados</string>
+    <string name="garcom_lancar_itens">Lançar itens</string>
+    <string name="garcom_cobrar_valor">Cobrar %1$s</string>
+    <string name="garcom_nada_a_cobrar">Nada a cobrar</string>
+    <string name="garcom_sem_permissao_de_cobrar">Cobrança só pelo caixa</string>
+    <string name="garcom_cobranca_viva">%1$s esperando na maquininha.</string>
+    <string name="garcom_acompanhar">Acompanhar a cobrança</string>
+    <string name="garcom_ja_tem_cobranca">Já tem uma cobrança desta mesa na maquininha. Acompanhe ou cancele antes de mandar outra.</string>
+
+    <string name="garcom_carregando_cardapio">Carregando o cardápio…</string>
+    <string name="garcom_cardapio_vazio">Nenhum item liberado para o salão. Confira o cardápio no painel.</string>
+    <string name="garcom_lancar_em">Lançar · %1$s</string>
+    <string name="garcom_categoria">%1$s  (%2$d)</string>
+    <string name="garcom_atualizar_cardapio">Atualizar cardápio</string>
+    <string name="garcom_dica_produto">Toque para somar. Segure o dedo para escolher quantidade e observação.</string>
+    <string name="garcom_a_partir_de">a partir de %1$s</string>
+    <string name="garcom_somado">%1$s: %2$d× no pedido</string>
+    <string name="garcom_ver_pedido">Ver pedido · %1$d item(ns) · %2$s</string>
+
+    <string name="garcom_quantidade">QUANTIDADE</string>
+    <string name="garcom_observacao">Alguma observação? (ex.: sem cebola)</string>
+    <string name="garcom_vem_no_combo">VEM NO COMBO</string>
+    <string name="garcom_grupo_opcional">Opcional · até %1$d</string>
+    <string name="garcom_grupo_exato">Escolha %1$d</string>
+    <string name="garcom_grupo_faixa">Escolha de %1$d a %2$d</string>
+    <string name="garcom_maximo_da_opcao">máx. %1$d</string>
+    <string name="garcom_adicionar">Adicionar · %1$s</string>
+    <string name="garcom_falta_escolher">Falta escolher: %1$s</string>
+    <string name="garcom_adicionado">%1$d× %2$s adicionado ao pedido</string>
+
+    <string name="garcom_pedido_da">Pedido · %1$s</string>
+    <string name="garcom_carrinho_vazio">Nenhum item no pedido.</string>
+    <string name="garcom_obs">Obs.: %1$s</string>
+    <string name="garcom_remover">Remover</string>
+    <string name="garcom_total_estimado">Total estimado</string>
+    <string name="garcom_total_estimado_dica">O FireHub confere os preços ao receber; o valor que vale é o que ele devolver.</string>
+    <string name="garcom_enviar_pedido">Enviar para a cozinha</string>
+    <string name="garcom_mais_itens">Adicionar mais itens</string>
+    <string name="garcom_enviando_pedido">Enviando o pedido…</string>
+    <string name="garcom_pedido_enviado">Pedido enviado para a mesa.</string>
+    <string name="garcom_pedido_enviado_valor">Pedido enviado: %1$s (valor do FireHub).</string>
+
+    <string name="garcom_cobrar_titulo">Cobrar · %1$s</string>
+    <string name="garcom_valor_a_cobrar">VALOR A COBRAR</string>
+    <string name="garcom_atalho_tudo">Tudo</string>
+    <string name="garcom_cobra_nesta">A cobrança abre nesta maquininha (%1$s).</string>
+    <string name="garcom_cobrar_agora">Cobrar na maquininha</string>
+    <string name="garcom_valor_invalido">Valor inválido. Digite, por exemplo, 45,90.</string>
+    <string name="garcom_valor_minimo">O valor mínimo na maquininha é R$ 1,00.</string>
+    <string name="garcom_valor_maior_titulo">Valor maior que o que falta</string>
+    <string name="garcom_valor_maior_texto">Vai cobrar %1$s, mas faltam %2$s nesta mesa. Cobrar mesmo assim?</string>
+    <string name="garcom_cobrar_mesmo_assim">Cobrar mesmo assim</string>
+    <string name="garcom_sem_terminal_id">A maquininha ainda não recebeu a identificação do FireHub. Aguarde alguns segundos com internet e toque de novo.</string>
+    <string name="garcom_mandando_cobranca">Mandando para a maquininha…</string>
+    <string name="garcom_acordando_maquininha">Conectando a maquininha ao FireHub…</string>
+
+    <string name="garcom_cobrando_titulo">Cobrança · %1$s</string>
+    <string name="garcom_status_aguardando">Abrindo a tela de pagamento…</string>
+    <string name="garcom_status_dica">Em segundos a tela de pagamento abre nesta maquininha. Entregue para o cliente.</string>
+    <string name="garcom_status_no_terminal">Cliente pagando…</string>
+    <string name="garcom_status_no_terminal_dica">Aguarde o pagamento terminar na maquininha.</string>
+    <string name="garcom_status_pago">Pagamento aprovado</string>
+    <string name="garcom_status_recusado">Pagamento não aprovado</string>
+    <string name="garcom_status_cancelado">Cobrança cancelada</string>
+    <string name="garcom_status_sem_rede">Sem conexão para acompanhar. A cobrança continua na fila; tentando de novo…</string>
+    <string name="garcom_cancelar_cobranca">Cancelar cobrança</string>
+    <string name="garcom_cancelando">Cancelando…</string>
+    <string name="garcom_cobranca_cancelada">Cobrança cancelada.</string>
+    <string name="garcom_tentar_de_novo">Tentar de novo</string>
+    <string name="garcom_voltar_a_mesa">Voltar à mesa</string>
 </resources>

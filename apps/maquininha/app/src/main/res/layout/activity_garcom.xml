@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Modo garçom: uma moldura só, e as telas (login, mesas, mesa, cardápio,
+  opções, carrinho, cobrança) são desenhadas por código dentro de `conteudo`
+  e `rodape`. Nada de WebView: Cielo e PagBank reprovam app de maquininha que
+  abre página web.
+
+  O rodapé fica FORA da rolagem de propósito: o botão que conclui a tela
+  ("Enviar", "Cobrar", "Adicionar") tem que estar sempre à vista, numa tela de
+  5 polegadas em que a lista de opções de uma pizza passa de três telas.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/fundo">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical">
+
+        <!-- Barra de cima: voltar, título da tela e quem está logado. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/fundo_cartao"
+            android:gravity="center_vertical"
+            android:minHeight="60dp"
+            android:orientation="horizontal"
+            android:paddingStart="4dp"
+            android:paddingEnd="12dp">
+
+            <Button
+                android:id="@+id/botaoVoltar"
+                android:layout_width="wrap_content"
+                android:layout_height="56dp"
+                android:background="@android:color/transparent"
+                android:minWidth="64dp"
+                android:text="@string/garcom_voltar"
+                android:textAllCaps="false"
+                android:textColor="@color/destaque"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+
+                <TextView
+                    android:id="@+id/txtTituloDaTela"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/texto"
+                    android:textSize="19sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/txtQuemEsta"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:maxLines="1"
+                    android:textColor="@color/texto_fraco"
+                    android:textSize="13sp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Recado de erro ou sem rede, com o que fazer. Toque para fechar. -->
+        <TextView
+            android:id="@+id/txtRecado"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/fundo_recusado"
+            android:lineSpacingExtra="2dp"
+            android:padding="12dp"
+            android:textColor="@color/texto"
+            android:textSize="16sp"
+            android:visibility="gone" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <ScrollView
+                android:id="@+id/rolagem"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:fillViewport="true">
+
+                <LinearLayout
+                    android:id="@+id/conteudo"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="12dp" />
+            </ScrollView>
+
+            <!-- Carregando: cobre o conteúdo e segura toque duplo. -->
+            <LinearLayout
+                android:id="@+id/painelCarregando"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#CC0F1216"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <ProgressBar
+                    android:layout_width="56dp"
+                    android:layout_height="56dp"
+                    android:indeterminate="true" />
+
+                <TextView
+                    android:id="@+id/txtCarregando"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:textColor="@color/texto"
+                    android:textSize="17sp" />
+            </LinearLayout>
+        </FrameLayout>
+
+        <LinearLayout
+            android:id="@+id/rodape"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/fundo_cartao"
+            android:orientation="vertical"
+            android:paddingStart="12dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="10dp"
+            android:visibility="gone" />
+    </LinearLayout>
+</FrameLayout>

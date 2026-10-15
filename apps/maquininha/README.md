@@ -599,6 +599,148 @@ emulador** — nesta máquina não há emulador instalado (nem AVD).
 - `POST resultado` passa a trazer `adquirente` e, opcionalmente, `idsDaAdquirente` (objeto texto→texto). São campos a mais; o servidor pode ignorar.
 - `pedidoId` é texto opaco no app: `"mesa:<id>"` com `descricao` "Mesa 5" funciona sem mudança (conferido: nada no app assume formato de id; os códigos de referência só usam os alfanuméricos dele).
 
+## Modo garçom
+
+O garçom tira o pedido da mesa e cobra **na própria maquininha**, sem celular.
+Botão **Modo garçom** na tela de operação (só aparece com a maquininha parada).
+
+Telas **nativas** (Views montadas por código em `tela/GarcomActivity.kt` +
+`tela/Pecas.kt`). Nada de WebView: Cielo e PagBank reprovam app de maquininha
+que abre página web. Compose ficou de fora pelo mesmo motivo de sempre: mais
+dependência, APK maior e mais pergunta na homologação.
+
+### Nenhuma API nova
+
+São as mesmas rotas do garçom web (`/garcom/<slug>/mesas`), com a mesma
+credencial:
+
+| O quê | Rota |
+|---|---|
+| Entrar | `POST /api/garcom/login {slug, login, senha}` → cookie `__Secure-firehub_garcom` (Set-Cookie) |
+| Quem sou / motivo do 401 | `GET /api/garcom/me` |
+| Sair | `POST /api/garcom/logout` |
+| Mesas (livre/ocupada/total) e taxa da loja | `GET /api/store/tables` |
+| Abrir mesa livre | `POST /api/store/table-sessions {tableId}` |
+| Conta (itens, taxa, total) | `GET /api/store/table-sessions/<id>/conta?taxa=<taxaServicoPadrao>` |
+| Já pago | `GET /api/store/table-sessions/<id>/pagamentos` |
+| Cardápio do salão | `GET /api/garcom/cardapio` |
+| Lançar | `POST /api/store/table-sessions/<id>/add-order` |
+| Cobrar / acompanhar / cancelar | `POST`, `GET`, `DELETE /api/store/table-sessions/<id>/maquininha` |
+
+O cookie fica em `EncryptedSharedPreferences` (arquivo `cofre_do_garcom`,
+separado do crachá da maquininha) e vai em toda chamada junto com
+`x-operador: garcom` — o cabeçalho que obriga o servidor a usar SÓ o cookie do
+garçom (`lib/garcom-auth.ts`). Qualquer 401 volta ao login; antes, o app
+pergunta a `/api/garcom/me` o porquê (senha trocada, caixa fechado, acesso
+desativado) e mostra.
+
+O app descobre o próprio `terminalId` e o slug da loja pelo polling:
+`GET /api/pos/terminal/pendente` passou a devolver `terminalId` e `lojaSlug`
+em toda resposta 200 (com ou sem cobrança). Ficam no `CofreDoToken`. Sem o slug
+(servidor antigo, ou antes da primeira volta) o login pede o final do link.
+
+### O fluxo
+
+1. **Login** — loja (do polling), usuário e senha do cadastro Garçons.
+2. **Mesas** — grade de 3 por linha: número, livre ou total da conta. Mesa
+   livre pergunta e abre a conta (como o web).
+3. **Mesa** — itens lançados, consumo, taxa, total, já pago, **falta pagar**.
+   Botões *Lançar itens* e *Cobrar*. Cobrança viva aparece no topo
+   (acompanhar).
+4. **Lançar** — categorias (na ordem da loja, com a aba transversal "Combos")
+   → produtos → opções → carrinho → *Enviar para a cozinha*. Produto simples:
+   toque soma 1 (como o web); toque longo abre quantidade e observação.
+5. **Cobrar** — valor (padrão = falta pagar; atalhos Tudo, ÷2, ÷3), mínimo
+   R$ 1,00. Manda `POST maquininha {valor, terminalId: <esta maquininha>}`.
+
+### O cardápio e o corpo do add-order (o que foi portado)
+
+`/api/garcom/cardapio` devolve a lista de produtos do salão com o preço do
+canal já aplicado. O app filtra igual a `lib/cardapio-da-mesa.ts`: ativo,
+`activeGarcom`, sem `esgotado`, fora do dia/horário (`foraDoCardapioAgora`),
+espelho de integração, e complemento de combo (`apenasOpcaoDeCombo`, ou a
+regra de reserva de `idsSoDeOpcaoDeCombo`).
+
+Cada produto pode ter `comboGroups` (ou o `comboConfig` antigo):
+
+```
+{ id, title, maxQty, minQty (nulo = exige maxQty), priceRule (SOMA|MAIOR|MEDIA),
+  items: [{ additionalPrice, adicionalDe?, maxPerItem?, optionNote?,
+            precoPorEscolha? {"Grande": 15, "Pequena": null},
+            menuProduct: { id, name, active } }] }
+```
+
+A tela de opções segue o `ComboModal.tsx`: grupo sem escolha possível já vem
+marcado; item fixo do combo vai em "Vem no combo"; mínimo/máximo do grupo e
+"Máx N" da opção; escolha única (max 1) é toque que marca/desmarca; opção que
+outra escolha bloqueia (`precoPorEscolha: null`, a meia pizza na Pequena) some e
+é desmarcada; pergunta que depende de outra (a borda que espera o tamanho)
+fica escondida; "Meio a meio?" nunca espera. O preço é o de
+`lib/preco-combo.ts` (`precoDaOpcao` por escolha, SOMA / mais caro / média),
+portado em `garcom/Cardapio.kt`.
+
+O corpo é o MESMO do MesasApp:
+
+```json
+{ "items": [ { "menuProductId": "…", "quantity": 2, "price": 54.9,
+               "comboSelections": "[{\"name\":\"Calabresa\",\"quantity\":1}]",
+               "tableGuestId": null, "notes": "sem cebola" } ] }
+```
+
+`comboSelections` é a lista `[{name, quantity}]` **em texto** (o MesasApp
+achata o `{grupoId: {nome: qtd}}` do modal assim). O `price` vai por
+compatibilidade: `lib/lancar-na-mesa.ts` recalcula tudo pelo canal salão. A
+tela mostra um "total estimado" e, depois de enviar, o `order.totalAmount` que
+o servidor devolveu.
+
+### A cobrança: um caminho só
+
+O modo garçom **não cobra**. Ele põe a cobrança na fila do servidor endereçada
+a esta maquininha e acorda o serviço (`ServicoDeCobranca.acordar`, que também
+reinicia a escada do polling). O serviço pega na próxima volta e cobra pelo
+caminho de sempre — fila em disco, marcador, recuperação, tudo igual ao totem.
+A tela acompanha pelo `GET maquininha` de 2 em 2 s até `PAGO`, `RECUSADO`,
+`CANCELADO` ou `EXPIRADO`; aprovado volta sozinho para a mesa, recusado oferece
+*Tentar de novo* (recusa de mesa não volta para a fila sozinha). Enquanto a
+maquininha não pegou (`AGUARDANDO_TERMINAL`) dá para cancelar daqui.
+
+A rota recusa cobrança para maquininha calada há mais de 2 min
+(`TERMINAL_OFFLINE`) — no chip, com a loja parada, o polling chega a 3 min.
+Por isso a tela de cobrar acorda o serviço ao abrir, e se mesmo assim vier
+`TERMINAL_OFFLINE` ela acorda de novo, espera 4 s e tenta uma vez.
+
+### Totem tem prioridade, e a tela do garçom não se perde
+
+O servidor entrega o pedido do totem antes da cobrança de mesa. Quando
+qualquer cobrança chega, o serviço traz a `OperacaoActivity` para a frente como
+sempre. A `GarcomActivity` mora numa **task própria** (`taskAffinity` no
+manifesto): sem isso o `singleTask` da tela de operação destruiria o pedido que
+o garçom estava montando. `garcom/ModoGarcom.kt` guarda o recado
+"devolver ao garçom": quando a tela de operação volta a "aguardando" depois de
+mostrar uma cobrança, ela reabre o modo garçom, que recarrega a tela em que
+estava (o carrinho fica em memória).
+
+### O que ficou de fora
+
+- **Permissões do garçom**: `/api/garcom/me` hoje só devolve id, nome e
+  comissão. O app lê `podeFecharConta` se um dia vier (o botão Cobrar vira
+  "Cobrança só pelo caixa"); até lá quem barra é o servidor, com 403 e a
+  mensagem dele.
+- Divisão por pessoa (`tableGuestId`), desconto, taxa editável, gorjeta,
+  pagamento em dinheiro e fechar a mesa: continuam no garçom web e no caixa. O
+  "falta pagar" usa a taxa padrão da loja.
+- Busca por nome no cardápio e foto do produto.
+- Editar um item já no carrinho (dá para mudar a quantidade ou remover e
+  lançar de novo).
+
+### Não testado
+
+Compila nos quatro flavors, mas **não rodou em aparelho nem emulador**. Conferir
+na mão: login (cookie `__Secure-`), abrir mesa, combo com meio a meio e borda,
+pizza com tamanho que bloqueia meia, envio, cobrança na própria maquininha
+(Wi-Fi e chip), pedido do totem chegando com o garçom no meio do carrinho, e a
+volta para o garçom depois do aprovado/recusado.
+
 ## Mapa dos arquivos
 
 ```
@@ -620,9 +762,17 @@ app/src/main/java/br/com/firehub/maquininha/      comum às quatro adquirentes
 │   └── ReceptorDeBoot.kt         volta a funcionar depois de reiniciar
 ├── estado/
 │   └── EstadoDoTerminal.kt       ponte entre a thread do serviço e a tela
+├── garcom/                      modo garçom (ver "Modo garçom")
+│   ├── ApiDoGarcom.kt            rotas do garçom web, cookie + x-operador
+│   ├── CofreDoGarcom.kt          o cookie do garçom, no Keystore
+│   ├── Cardapio.kt               filtro do cardápio e preço das opções (porte do web)
+│   ├── Dinheiro.kt               reais <-> centavos, R$ formatado
+│   └── ModoGarcom.kt             recado "devolver ao garçom" depois da cobrança
 └── tela/
     ├── PareamentoActivity.kt
-    └── OperacaoActivity.kt
+    ├── OperacaoActivity.kt
+    ├── GarcomActivity.kt         as telas do modo garçom (task própria)
+    └── Pecas.kt                  botões, cartões e campos montados por código
 
 app/src/pagbank/      só no APK do PagBank (único com o SDK PlugPag)
 ├── AndroidManifest.xml           MANAGE_PAYMENTS, <queries>, ativação, filtro PAYMENT

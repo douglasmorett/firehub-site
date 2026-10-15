@@ -41,8 +41,11 @@ export async function GET(req: NextRequest) {
     // e continua PAGBANK_APP). Quem sabe em que máquina roda é o app.
     const provedorInformado = provedorDaAdquirente(req.nextUrl.searchParams.get("adquirente"));
     const provedor = provedorInformado ?? terminal.provider;
-    await prisma.posTerminal.update({
+    const atualizado = await prisma.posTerminal.update({
       where: { id: terminal.id },
+      // O slug da loja vem na mesma viagem do ping: o modo garçom do app
+      // precisa dele para o login (/api/garcom/login pede { slug, login, senha }).
+      select: { franchisee: { select: { slug: true } } },
       data: {
         lastSeenAt: agora,
         ...(req.nextUrl.searchParams.get("versao")
@@ -54,10 +57,17 @@ export async function GET(req: NextRequest) {
 
     // A Cielo exige no deeplink o Client-Id e o Access-Token do app do
     // desenvolvedor (FireHub), gerados no portal da Cielo — não são da loja.
+    // Quem é esta maquininha e de que loja. O app usa no modo garçom: o
+    // terminalId vai no POST da cobrança de mesa (para cair nesta máquina) e o
+    // slug no login do garçom. Vai em TODA resposta 200, com ou sem cobrança;
+    // a versão do app que não conhece os campos simplesmente os ignora.
+    const identidade = { terminalId: terminal.id, lojaSlug: atualizado.franchisee?.slug ?? null };
+
     const extras =
       provedor === "CIELO_APP" && process.env.CIELO_CLIENT_ID && process.env.CIELO_ACCESS_TOKEN
         ? { credenciaisCielo: { clientId: process.env.CIELO_CLIENT_ID, accessToken: process.env.CIELO_ACCESS_TOKEN } }
         : {};
+    const extrasComIdentidade: Record<string, unknown> = { ...identidade, ...extras };
 
     // Cobrança presa há tempo demais volta para a fila. O app pode ter travado,
     // o aparelho pode ter desligado no meio — o pedido não pode ficar marcado
@@ -95,7 +105,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!candidato) {
-      return responderComMesaOuNada(terminal, extras);
+      return responderComMesaOuNada(terminal, extrasComIdentidade);
     }
 
     // A reserva: só sai da fila se AINDA estiver aguardando. Se outro aparelho
@@ -114,7 +124,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (reservado.count === 0) {
-      return responderComMesaOuNada(terminal, extras);
+      return responderComMesaOuNada(terminal, extrasComIdentidade);
     }
 
     const identificacao = candidato.dailyOrderNumber
@@ -136,7 +146,7 @@ export async function GET(req: NextRequest) {
         tipo: "PEDIDO",
       },
       terminal: terminal.label,
-      ...extras,
+      ...extrasComIdentidade,
     });
   } catch (err) {
     console.error("[Terminal Pendente] Erro:", err);

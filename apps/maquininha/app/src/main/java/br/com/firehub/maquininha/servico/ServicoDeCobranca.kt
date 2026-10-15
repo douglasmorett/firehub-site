@@ -329,6 +329,7 @@ class ServicoDeCobranca : Service() {
         return when (val resposta = ApiDoFireHub.buscarCobranca(token)) {
             is RespostaDaFila.ComCobranca -> {
                 CofreDoToken.atualizarRotulo(this, resposta.terminal)
+                CofreDoToken.atualizarIdentidade(this, resposta.identidade)
                 processarCobranca(token, resposta.cobranca)
                 // Volta na hora, sem dormir: em restaurante pedido vem em
                 // rajada, e o cliente seguinte já está esperando na maquininha.
@@ -337,6 +338,7 @@ class ServicoDeCobranca : Service() {
 
             is RespostaDaFila.SemCobranca -> {
                 CofreDoToken.atualizarRotulo(this, resposta.terminal)
+                CofreDoToken.atualizarIdentidade(this, resposta.identidade)
                 mostrarOcioso(conectado = true, detalhe = null)
                 ritmo.intervaloMs()
             }

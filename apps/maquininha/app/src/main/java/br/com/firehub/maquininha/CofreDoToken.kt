@@ -5,6 +5,7 @@ import android.content.SharedPreferences
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
+import br.com.firehub.maquininha.rede.IdentidadeDoTerminal
 
 /**
  * Onde mora o crachá desta maquininha.
@@ -108,6 +109,56 @@ object CofreDoToken {
         if (rotulo.isNullOrBlank()) return
         if (rotulo == this.rotulo(context)) return
         abrir(context)?.edit()?.putString(CHAVE_ROTULO, rotulo)?.apply()
+    }
+
+    // ------------------------------------------------- identidade no FireHub
+
+    private const val CHAVE_TERMINAL_ID = "id_do_terminal"
+    private const val CHAVE_LOJA_SLUG = "slug_da_loja"
+
+    /**
+     * Cópia em memória do que está no disco. O polling chama atualizarIdentidade
+     * a cada volta (de 2 em 2 segundos no Wi-Fi), e decifrar o arquivo toda vez
+     * só para descobrir que nada mudou seria trabalho à toa.
+     */
+    @Volatile
+    private var identidadeEmMemoria: IdentidadeDoTerminal? = null
+
+    /** O id desta maquininha no FireHub, se o servidor já informou. */
+    fun terminalId(context: Context): String? = identidade(context).terminalId
+
+    /** O slug da loja a que esta maquininha pertence (usado no login do garçom). */
+    fun lojaSlug(context: Context): String? = identidade(context).lojaSlug
+
+    private fun identidade(context: Context): IdentidadeDoTerminal {
+        identidadeEmMemoria?.let { return it }
+        val cofre = abrir(context)
+        val lida = IdentidadeDoTerminal(
+            terminalId = cofre?.getString(CHAVE_TERMINAL_ID, null)?.ifBlank { null },
+            lojaSlug = cofre?.getString(CHAVE_LOJA_SLUG, null)?.ifBlank { null },
+        )
+        identidadeEmMemoria = lida
+        return lida
+    }
+
+    /**
+     * Grava o que o polling contou. Campo nulo (servidor antigo, sem o campo)
+     * NÃO apaga o que já estava gravado: sumir com o id por causa de uma
+     * resposta incompleta deixaria o garçom sem conseguir cobrar.
+     */
+    fun atualizarIdentidade(context: Context, nova: IdentidadeDoTerminal?) {
+        if (nova == null || (nova.terminalId == null && nova.lojaSlug == null)) return
+        val atual = identidade(context)
+        val mesclada = IdentidadeDoTerminal(
+            terminalId = nova.terminalId ?: atual.terminalId,
+            lojaSlug = nova.lojaSlug ?: atual.lojaSlug,
+        )
+        if (mesclada == atual) return
+        identidadeEmMemoria = mesclada
+        abrir(context)?.edit()
+            ?.putString(CHAVE_TERMINAL_ID, mesclada.terminalId)
+            ?.putString(CHAVE_LOJA_SLUG, mesclada.lojaSlug)
+            ?.apply()
     }
 
     // NÃO existe aqui um "esquecer o token", e a ausência é deliberada.

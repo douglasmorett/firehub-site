@@ -53,11 +53,15 @@ object ApiDoFireHub {
         return when {
             resposta.status == 200 && json != null -> {
                 val terminal = json.textoOuNulo("terminal")
+                val identidade = IdentidadeDoTerminal(
+                    terminalId = json.textoOuNulo("terminalId"),
+                    lojaSlug = json.textoOuNulo("lojaSlug"),
+                )
                 val cobranca = json.optJSONObject("cobranca")
                 if (cobranca == null) {
-                    RespostaDaFila.SemCobranca(terminal)
+                    RespostaDaFila.SemCobranca(terminal, identidade)
                 } else {
-                    RespostaDaFila.ComCobranca(lerCobranca(cobranca, json), terminal)
+                    RespostaDaFila.ComCobranca(lerCobranca(cobranca, json), terminal, identidade)
                 }
             }
 
