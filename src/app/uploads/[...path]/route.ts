@@ -82,7 +82,10 @@ function servirVideo(req: NextRequest, caminho: string, tamanho: number, tipo: s
     ...extras,
     "Content-Type": tipo,
     "Accept-Ranges": "bytes",
-    "Cache-Control": "public, max-age=31536000, immutable",
+    // no-transform: sem ele o Next comprime o vídeo em gzip quando o Cloudflare
+    // pede com Accept-Encoding — some o Content-Length, o Range vira 200 inteiro
+    // e o iPhone não toca (visto em produção, 14/10/2026).
+    "Cache-Control": "public, max-age=31536000, immutable, no-transform",
     "X-Content-Type-Options": "nosniff",
     // Aberto direto na barra, o vídeo nunca vira página com script.
     "Content-Security-Policy": "default-src 'none'; media-src 'self'; sandbox",
