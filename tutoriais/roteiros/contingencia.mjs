@@ -13,7 +13,7 @@
 // - "Procurar atualização agora" é o item do menu da bandeja do Assistente
 //   (firehub-print-assistant/main.js);
 // - o teste dura 2 minutos (POST /contingencia/testar no Assistente); a troca
-//   de tela acontece em uns 15 s (prova de 12/10, nota do vault);
+//   de tela acontece em menos de 1 minuto (45 s fora do caixa, decisão de 14/10);
 // - na queda: iFood pausado e reaberto sozinho (lib/loja-sem-conexao.ts); nota
 //   fiscal fica para a volta.
 //
@@ -171,7 +171,7 @@ export default {
       },
     },
     {
-      fala: "Se a internet cair, em uns 15 segundos as telas passam para esse computador. A TV da cozinha e o celular do garçom chegam nele pelo Wi-Fi da loja, e a impressão continua igual.",
+      fala: "Se a internet cair, em menos de 1 minuto as telas passam para esse computador. A TV da cozinha e o celular do garçom chegam nele pelo Wi-Fi da loja, e a impressão continua igual.",
       acao: async (palco, ctx) => {
         const p = palco.pagina;
         const desenho = p.locator("[data-ilustracao-contingencia]");

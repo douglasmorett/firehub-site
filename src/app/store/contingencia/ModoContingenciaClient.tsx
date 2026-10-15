@@ -319,7 +319,7 @@ export default function ModoContingenciaClient() {
       if (!r.ok) throw new Error((await r.json().catch(() => ({})))?.error || "O teste não começou.");
       try { localStorage.setItem(CHAVE_TESTOU, "1"); } catch {}
       setTestou(true);
-      setMensagem("🧪 Teste começou: por 2 minutos este computador age como se a internet tivesse caído. Em uns 15 segundos as telas abertas NESTE computador vão para o computador da loja, com a faixa de aviso embaixo. Lance um pedido de teste no Balcão, se quiser — ele sobe sozinho no fim.");
+      setMensagem("🧪 Teste começou: por 2 minutos este computador age como se a internet tivesse caído. Em menos de 1 minuto as telas abertas NESTE computador vão para o computador da loja, com a faixa de aviso embaixo. Lance um pedido de teste no Balcão, se quiser — ele sobe sozinho no fim.");
     } catch (e: any) {
       setMensagem(`⚠️ ${e?.message}`);
     } finally {
@@ -477,7 +477,7 @@ export default function ModoContingenciaClient() {
 
           <Passo n={5} titulo="Faça o teste de 2 minutos" resumo="Simula a queda da internet, sem tirar nenhum cabo." situacao={situacao(5)}>
             <p style={{ margin: "0 0 10px" }}>
-              Por 2 minutos este computador age como se a internet tivesse caído. Em uns 15 segundos a tela troca sozinha para o computador
+              Por 2 minutos este computador age como se a internet tivesse caído. Em menos de 1 minuto a tela troca sozinha para o computador
               da loja, com a faixa de aviso embaixo. Aproveite para lançar um pedido de teste no Balcão: ele sobe sozinho no fim.
             </p>
             {contingenciaAqui?.ativa ? (
