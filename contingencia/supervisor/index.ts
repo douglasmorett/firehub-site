@@ -13,6 +13,9 @@
  *                 faz vai para a saída.
  *   VOLTANDO      a nuvem respondeu 7 vezes seguidas (~20 s). A saída sobe
  *                 em lotes; vazia, a cópia se atualiza e volta o NORMAL.
+ *                 Se a subida falhar 5 vezes seguidas, volta o NORMAL assim
+ *                 mesmo (as telas não ficam presas na cópia): a saída fica
+ *                 guardada, sobe no normal e o erro aparece no módulo.
  *
  *   REVOGADA      a nuvem recusa a chave da loja há mais de 1 min (a
  *                 contingência foi ativada noutro computador ou desativada):
@@ -34,7 +37,7 @@ import { ErroDaNuvem, Nuvem } from "./nuvem";
 import { aplicarEsquema, hashDoEsquema, pendentesNaSaida, type EsquemaDoBanco } from "./esquema";
 import { esquecerColunas, fazerFoto, puxarEspelho } from "./copia";
 import { FireHubLocal } from "./firehub-local";
-import { subirSaida } from "./subida";
+import { FALHAS_DA_SUBIDA_ATE_DESISTIR, passoDaVolta, subirSaida } from "./subida";
 import { abrirPortaDaLoja, paginaDaEntrada, type DecisaoDaPorta } from "./porta-da-loja";
 import { garantirAtalho, origensDaNuvem } from "./atalho";
 import {
@@ -102,11 +105,21 @@ async function principal(): Promise<void> {
   let pendentes = 0;
   let normalDesde = Date.now();
   let ultimoRelato = 0;
-  let ultimaFotoDeClientes = 0;
+  // Da foto que já estava aqui: sem isto, cada religada do supervisor refazia a
+  // foto de clientes no primeiro ciclo (achado foto-1).
+  let ultimaFotoDeClientes = Date.parse(estado.fotoEm || "") || 0;
   let tique = 0;
   let ultimoErro = "";
   /** Falha ao ligar o FireHub local: fica até ele subir (o ciclo apaga o ultimoErro a cada volta). */
   let erroDoLocal = "";
+  /**
+   * A volta que não sobe: fica à vista (tela do módulo, relato) até a saída
+   * esvaziar. As falhas seguidas contam só no modo "voltando" (passoDaVolta).
+   */
+  let erroDaVolta = "";
+  let falhasDaSubida = 0;
+  /** No modo normal, a saída que falhou espera 1 minuto para tentar de novo (não martela a nuvem a cada 3 s). */
+  let proximaSubidaEm = 0;
   const ligarLocal = () => {
     local.ligar().then(
       () => { if (local.pronto()) erroDoLocal = ""; },
@@ -147,7 +160,7 @@ async function principal(): Promise<void> {
     pendentes,
     versao: VERSAO,
     app: versaoDoApp,
-    ultimoErro: erroDaRevogacao || ultimoErro || erroDoLocal || null,
+    ultimoErro: erroDaRevogacao || ultimoErro || erroDaVolta || erroDoLocal || null,
     // Para a página de entrada (porta-da-loja.ts) e as telas da nuvem:
     /** Falhas seguidas da nuvem vistas daqui (0 = em paz). */
     falhas,
@@ -382,7 +395,24 @@ async function principal(): Promise<void> {
               aquecido = true;
               ligarLocal();
             }
-            if (pendentes > 0) await subirSaida(pool, nuvem, null, registro);
+            // A subida no normal (o que sobrou de uma volta que desistiu de
+            // esperar) não pode impedir o espelho: cada uma no seu try.
+            if (pendentes > 0 && Date.now() >= proximaSubidaEm) {
+              try {
+                await subirSaida(pool, nuvem, estado.episodio, registro);
+                pendentes = await pendentesNaSaida(pool);
+                if (pendentes === 0 && (erroDaVolta || estado.episodio)) {
+                  erroDaVolta = "";
+                  estado.episodio = null;
+                  gravarEstado(cfg, estado);
+                  registro("O que tinha ficado da volta subiu. Saída vazia.");
+                }
+              } catch (e: any) {
+                proximaSubidaEm = Date.now() + 60_000;
+                erroDaVolta = `${pendentes} mudança(s) da loja ainda não subiram para a nuvem: ${String(e?.message || e)}`;
+                registro(erroDaVolta);
+              }
+            }
             if (tique % 2 === 0) await espelhar();
             if (Date.now() - ultimaFotoDeClientes > 60 * 60_000) {
               await fazerFoto(pool, nuvem, registro, (t) => t === "StoreCustomer");
@@ -420,23 +450,48 @@ async function principal(): Promise<void> {
           }
           break;
 
-        case "voltando":
+        case "voltando": {
           if (!ok) {
             modo = "contingencia";
+            falhasDaSubida = 0;
             registro("A nuvem caiu de novo durante a volta: CONTINGÊNCIA.");
             break;
           }
-          await subirSaida(pool, nuvem, estado.episodio, registro);
+          let subiu = true;
+          let falha = "";
+          try {
+            await subirSaida(pool, nuvem, estado.episodio, registro);
+            falhasDaSubida = 0;
+          } catch (e: any) {
+            subiu = false;
+            falhasDaSubida++;
+            falha = String(e?.message || e);
+            registro(`A volta não subiu (${falhasDaSubida}ª vez seguida): ${falha}`);
+          }
           pendentes = await pendentesNaSaida(pool);
-          if (pendentes === 0) {
+          const passo = passoDaVolta({ subiu, falhasSeguidas: falhasDaSubida, pendentes });
+          if (passo === "normal") {
             await espelhar();
             modo = "normal";
             normalDesde = Date.now();
             estado.episodio = null;
+            erroDaVolta = "";
             gravarEstado(cfg, estado);
             registro("Tudo subiu. Modo normal — as telas voltam para a nuvem.");
+          } else if (passo === "normal-com-pendentes") {
+            // A nuvem está de pé e a loja não pode ficar presa na cópia
+            // congelada esperando a subida. NADA é apagado: a saída fica aqui
+            // (com o episódio) e segue tentando no modo normal, com o erro à
+            // vista na tela do módulo.
+            modo = "normal";
+            normalDesde = Date.now();
+            falhasDaSubida = 0;
+            proximaSubidaEm = Date.now() + 60_000;
+            erroDaVolta = `${pendentes} mudança(s) da loja não subiram para a nuvem (${falha}). Seguem guardadas neste computador e sobem sozinhas quando der.`;
+            registro(`A volta falhou ${FALHAS_DA_SUBIDA_ATE_DESISTIR} vezes seguidas: modo normal, as telas voltam para a nuvem. ${erroDaVolta}`);
           }
           break;
+        }
 
         case "revogada":
           // A cada 5 min, confere se a chave voltou a valer (o relato é o

@@ -122,3 +122,97 @@ export function decidir(
   if (Object.keys(mudar).every((c) => ignorar.has(c))) return { tipo: "nada", motivo: "só o pulso do Assistente" };
   return { tipo: "atualizar", mudar, conflitos };
 }
+
+// ── A linha que o banco da nuvem não aceita ─────────────────────────────────
+//
+// A subida era tudo-ou-nada: uma linha com erro de SQL (o pedido apontando
+// para a rota que nunca subiu, um NOT NULL, um único) desfazia o lote inteiro,
+// a rota respondia 500 e o computador ficava em "voltando" para sempre — as
+// telas presas numa cópia congelada. Agora cada linha roda num SAVEPOINT
+// (subida-linha-a-linha.ts) e estas regras dizem o que fazer com a que falhou.
+
+/** O código do Postgres (SQLSTATE) e a mensagem, venha o erro do Prisma ($executeRawUnsafe → P2010) ou do pg. */
+export function erroDoBanco(e: unknown): { codigo: string | null; mensagem: string; texto: string } {
+  const x = (e || {}) as {
+    code?: unknown;
+    meta?: { code?: unknown; message?: unknown; field_name?: unknown };
+    message?: unknown;
+    detail?: unknown;
+    constraint?: unknown;
+  };
+  const textos = [x.meta?.message, x.message, x.detail, x.constraint, x.meta?.field_name].filter((t): t is string => typeof t === "string" && !!t);
+  const texto = textos.join(" | ") || String(e);
+  // "P2010"/"P2003" são códigos do Prisma, não do Postgres (que só usa P0001–P0004).
+  const sqlstate = (v: unknown) => (typeof v === "string" && /^[0-9A-Z]{5}$/.test(v) && !/^P[1-9]\d{3}$/.test(v) ? v : null);
+  // P2003 = o Prisma já traduziu a chave estrangeira (o nome da restrição vem em meta.field_name).
+  const codigo =
+    sqlstate(x.meta?.code) ?? sqlstate(x.code) ?? /Code: `([0-9A-Z]{5})`/.exec(texto)?.[1] ?? (x.code === "P2003" ? "23503" : null);
+  // A mensagem do Prisma começa com "Invalid `prisma.$executeRawUnsafe()` invocation": o que interessa é a do Postgres.
+  const doPostgres = /Message: `(?:ERROR: )?([^`]+)`/.exec(texto)?.[1];
+  const mensagem = semDadoDoCliente((doPostgres || textos[0] || texto).replace(/\s+/g, " ").trim()).slice(0, 300);
+  return { codigo, mensagem, texto };
+}
+
+/**
+ * A `mensagem` vai para o log da nuvem (Coolify), o log do computador e o
+ * painel. O Prisma junta o DETAIL do Postgres na mensagem, e o DETAIL traz os
+ * VALORES da linha: "Failing row contains (… nome, telefone, endereço …)" no
+ * NOT NULL, "Key (phone)=(119…)" no único. Fica só o que o banco disse, sem
+ * os valores. (O `texto` inteiro segue só para achar a coluna da chave
+ * estrangeira, e não é gravado em lugar nenhum.)
+ */
+function semDadoDoCliente(m: string): string {
+  return m
+    .replace(/\s*\b(DETAIL|HINT|Failing row contains)\b[\s\S]*$/, "")
+    .replace(/\)=\([^)]*\)/g, ")=(…)")
+    .trim();
+}
+
+/** 23503 = chave estrangeira violada (a linha-pai não existe na nuvem). */
+const CHAVE_ESTRANGEIRA = "23503";
+
+export type OQueFazerComOErro =
+  | { tipo: "anular"; coluna: string }
+  | { tipo: "recusar"; motivo: string };
+
+/**
+ * A linha falhou na nuvem. Se foi chave estrangeira numa coluna anulável que a
+ * tabela declara (`paiQuePodeFaltar`) e a linha tem valor nela, tenta de novo
+ * com a coluna vazia — o pedido sobe sem a rota, e não deixa de subir. Senão,
+ * a linha é recusada (vira conflito "recusada" no painel) e as outras seguem.
+ *
+ * @param jaAnuladas colunas que já foram esvaziadas nas tentativas anteriores desta linha.
+ */
+export function oQueFazerComOErro(
+  t: TabelaDaCopia | undefined,
+  s: LinhaDaSaida,
+  erro: unknown,
+  jaAnuladas: string[] = [],
+): OQueFazerComOErro {
+  const { codigo, mensagem, texto } = erroDoBanco(erro);
+  const motivo = codigo ? `erro ${codigo}: ${mensagem}` : mensagem;
+  if (!t || codigo !== CHAVE_ESTRANGEIRA || s.operacao === "DELETE" || !s.depois) return { tipo: "recusar", motivo };
+  for (const coluna of t.paiQuePodeFaltar || []) {
+    if (jaAnuladas.includes(coluna) || t.chave.includes(coluna)) continue;
+    const valor = s.depois[coluna];
+    if (valor === null || valor === undefined) continue;
+    // O Prisma nomeia a restrição "<Tabela>_<coluna>_fkey"; o Postgres conta a coluna em "Key (<coluna>)=(…)".
+    if (texto.includes(`${t.nome}_${coluna}_fkey`) || texto.includes(`(${coluna})=`)) return { tipo: "anular", coluna };
+  }
+  return { tipo: "recusar", motivo };
+}
+
+/**
+ * A mesma linha da saída SEM a coluna (a tentativa seguinte de
+ * `oQueFazerComOErro`). Tirar, e não pôr null: na linha nova a coluna fica
+ * vazia do mesmo jeito (o INSERT só grava as colunas que vieram); na linha que
+ * a nuvem já tem, `decidir` não mexe nela e o valor da nuvem fica — com null,
+ * o pedido que a loja trocou para a rota que não subiu perderia também a rota
+ * boa que tinha na nuvem.
+ */
+export function comColunaVazia(s: LinhaDaSaida, coluna: string): LinhaDaSaida {
+  if (!s.depois) return s;
+  const depois = { ...s.depois };
+  delete depois[coluna];
+  return { ...s, depois };
+}

@@ -57,6 +57,14 @@ export type TabelaDaCopia = {
   mescla?: Record<string, "soma" | "maior">;
   /** A loja não cria linha nova desta tabela pela contingência (só altera). */
   semLinhaNova?: boolean;
+  /**
+   * Na VOLTA, colunas de chave estrangeira ANULÁVEIS cuja linha-pai pode não
+   * estar na nuvem (o banco do computador não tem chave estrangeira: a rota
+   * que nunca subiu, o cliente cadastrado de novo com um telefone que a nuvem
+   * já tinha). Sem isto, a linha inteira seria recusada; com isto, ela sobe
+   * com a coluna vazia e o conflito fica anotado (subida-linha-a-linha.ts).
+   */
+  paiQuePodeFaltar?: string[];
 };
 
 /** Pedidos que entram na cópia: os dos últimos 3 dias e os de mesa ainda aberta. */
@@ -80,16 +88,27 @@ export const TABELAS_DA_COPIA: TabelaDaCopia[] = [
       "metaCapiToken", "gaApiSecret", "mpAccessToken", "mpRefreshToken", "ifoodAccessToken",
       "ifoodRefreshToken", "ifoodAuthVerifier", "jotajaClientSecret", "food99SecretKey",
     ],
+    // O Painel de senhas (configuração e código da TV que chama o pedido) cai
+    // na regra geral por ter "senha" no nome, mas não é segredo: sem ele, a
+    // TV do salão não acha a loja na cópia e o PC gera um código novo.
+    permitirColunas: ["painelDeSenhas"],
     ignorarMudancaDe: ["printQueuePolledAt", "printQueueEstado", "updatedAt"],
     semLinhaNova: true,
     mescla: { storeOrderCount: "soma" },
   },
-  { nome: "CustomerOrder", loja: { tipo: "coluna", coluna: "franchiseeId" }, chave: ["id"], foto: PEDIDOS_DA_FOTO },
+  {
+    nome: "CustomerOrder",
+    loja: { tipo: "coluna", coluna: "franchiseeId" },
+    chave: ["id"],
+    foto: PEDIDOS_DA_FOTO,
+    paiQuePodeFaltar: ["routeId", "motoboyId", "employeeId", "tableSessionId", "customerId", "parentOrderId"],
+  },
   {
     nome: "CustomerOrderItem",
     loja: { tipo: "pai", coluna: "orderId", tabela: "CustomerOrder", lojaDoPai: "franchiseeId" },
     chave: ["id"],
     foto: `t."orderId" IN (SELECT t.id FROM "CustomerOrder" t WHERE ${PEDIDOS_DA_FOTO})`,
+    paiQuePodeFaltar: ["menuProductId", "tableGuestId"],
   },
   {
     nome: "DailyOrderCounter",
@@ -103,6 +122,7 @@ export const TABELAS_DA_COPIA: TabelaDaCopia[] = [
     loja: { tipo: "coluna", coluna: "franchiseeId" },
     chave: ["id"],
     foto: `t."franchiseeId" = $1 AND (t.status <> 'CLOSED' OR t."openedAt" >= now() - interval '3 days')`,
+    paiQuePodeFaltar: ["waiterId"],
   },
   {
     nome: "TableGuest",
@@ -156,12 +176,35 @@ export const TABELAS_DA_COPIA: TabelaDaCopia[] = [
   },
   { nome: "StoreEmployee", loja: { tipo: "coluna", coluna: "franchiseeId" }, chave: ["id"] },
   { nome: "Motoboy", loja: { tipo: "coluna", coluna: "franchiseeId" }, chave: ["id"] },
+  // A rota do motoboy ("Despachar rota" no Pedidos): sem ela na cópia, a rota
+  // criada na queda nunca subia e o pedido que apontava para ela (routeId)
+  // travava a volta inteira na chave estrangeira da nuvem.
+  {
+    nome: "RouteSchedule",
+    loja: { tipo: "coluna", coluna: "franchiseeId" },
+    chave: ["id"],
+    foto: `t."franchiseeId" = $1 AND (t."createdAt" >= now() - interval '3 days' OR t.status = 'PENDING')`,
+    paiQuePodeFaltar: ["motoboyId"],
+  },
   { nome: "StockItem", loja: { tipo: "coluna", coluna: "franchiseeId" }, chave: ["id"], mescla: { quantity: "soma" } },
   {
     nome: "StockTransaction",
     loja: { tipo: "coluna", coluna: "franchiseeId" },
     chave: ["id"],
     foto: `t."franchiseeId" = $1 AND t."createdAt" >= now() - interval '1 day'`,
+    paiQuePodeFaltar: ["stockLotId"],
+  },
+  // A ficha técnica: sem ela, o pedido aceito no computador não baixava
+  // insumo nenhum (lib/stock.ts lê a receita do produto) e a volta não refaz
+  // a baixa. Com ela, a baixa acontece no PC e sobe como StockTransaction
+  // nova + StockItem.quantity pela regra "soma". A receita é cadastro da
+  // nuvem: a loja só altera na queda, não cria.
+  {
+    nome: "ProductRecipe",
+    loja: { tipo: "pai", coluna: "menuProductId", tabela: "MenuProduct", lojaDoPai: "franchiseeId" },
+    chave: ["id"],
+    foto: `t."menuProductId" IN (SELECT p.id FROM "MenuProduct" p WHERE p."franchiseeId" = $1)`,
+    semLinhaNova: true,
   },
   // Tabelas criadas por SQL (fora do schema.prisma).
   { nome: "ClienteDaLoja", loja: { tipo: "coluna", coluna: "lojaId" }, chave: ["id"] },
