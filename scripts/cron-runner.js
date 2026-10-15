@@ -77,6 +77,18 @@ const jobs = [
     intervalMs: 30_000, // 30 segundos
   },
   {
+    // Open Delivery de SAÍDA (logística Bem Dito): varre os pedidos de entrega
+    // das lojas ligadas, gera os eventos (CREATED, DISPATCHED, CANCELLED...) e
+    // manda o webhook com as retentativas. Sem loja ligada é uma leitura numa
+    // tabela vazia — custo zero.
+    name: 'open-delivery-saida',
+    path: '/api/cron/open-delivery-saida',
+    intervalMs: 20_000, // 20 segundos
+    // Volta que ainda está no ar (parceiro lento) não ganha outra por cima: o
+    // mesmo webhook não sai duas vezes.
+    exclusivo: true,
+  },
+  {
     // Mantem a loja ABERTA no 99Food sem ninguem abrir o gestor deles.
     //
     // O lojista fechava o app do 99Food e a loja ficava offline la. O swagger

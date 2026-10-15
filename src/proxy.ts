@@ -218,6 +218,15 @@ export async function proxy(request: NextRequest) {
     return NextResponse.rewrite(url);
   }
 
+  // ─── Open Delivery: o ":" do `events:polling` da spec ───
+  // Pasta com ":" não existe (no Windows nem dá para criar), então o caminho
+  // da spec vira /events/polling aqui. Cobre o ":" cru e o codificado (%3A).
+  if (/^\/api\/opendelivery\/v1\/events(?::|%3A)polling\/?$/i.test(pathname)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/api/opendelivery/v1/events/polling";
+    return NextResponse.rewrite(url);
+  }
+
   // ─── CORS preflight for API routes ───
   if (pathname.startsWith("/api") && !ROTAS_COM_CORS_PROPRIO.has(pathname)) {
     if (request.method === "OPTIONS") {

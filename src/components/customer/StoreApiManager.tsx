@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { Key, Webhook, Plus, Trash2, Copy, Check, ShieldCheck, ExternalLink, RefreshCw, Radio } from "lucide-react";
+import { OpenDeliveryLogistica } from "@/components/customer/OpenDeliveryLogistica";
 
 export function StoreApiManager() {
   const [apiKeys, setApiKeys] = useState<any[]>([]);
@@ -215,6 +216,9 @@ export function StoreApiManager() {
           )}
         </div>
       )}
+
+      {/* Open Delivery para a logística (Bem Dito) */}
+      <OpenDeliveryLogistica />
 
       {/* SEÇÃO 1: CHAVES DE API */}
       <div style={{ background: "#FFFFFF", borderRadius: 16, padding: "1.5rem", border: "1px solid #E2E8F0", marginBottom: "2rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)" }}>
