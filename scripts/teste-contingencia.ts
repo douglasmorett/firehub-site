@@ -11,7 +11,7 @@ import { existsSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { comColunaVazia, decidir, erroDoBanco, iguais, oQueFazerComOErro, type LinhaDaSaida } from "../src/lib/contingencia/mescla";
 import { aplicarLote, type BancoDaSubida } from "../src/lib/contingencia/subida-linha-a-linha";
-import { FALHAS_DA_SUBIDA_ATE_DESISTIR, passoDaVolta } from "../contingencia/supervisor/subida";
+import { FALHAS_DA_SUBIDA_ATE_DESISTIR, passoDaVolta } from "../contingencia/supervisor/regras";
 import { TABELAS_DA_COPIA, colunasQueNaoDescem, idDoRegistro, tabelaDaCopia } from "../src/lib/contingencia/catalogo";
 import { assinarBilhete, lerBilhete, VALIDADE_DO_BILHETE_MS } from "../src/lib/contingencia/chave";
 import { conteudoDoAtalho, origensDaNuvem } from "../contingencia/supervisor/atalho";

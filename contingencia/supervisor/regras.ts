@@ -175,3 +175,27 @@ export function proximaContagem(anterior: { n: number; em: number } | null, agor
   if (anterior && anterior.n > 0 && agora - anterior.em < 20 * 60000) return anterior.n + 1;
   return 1;
 }
+
+/**
+ * Quantas subidas seguidas podem falhar no modo "voltando" antes de o
+ * supervisor desistir de ESPERAR por elas. Sem isto, uma subida que nunca
+ * passa (achado volta-1) deixava a loja em "voltando" para sempre: as telas
+ * presas na cópia congelada, sem o pedido novo do iFood e do site. Desistir
+ * não apaga nada — a saída fica guardada e segue subindo no modo normal.
+ */
+export const FALHAS_DA_SUBIDA_ATE_DESISTIR = 5;
+
+export type PassoDaVolta =
+  /** Tudo subiu: modo normal. */
+  | "normal"
+  /** Falhou de novo, e já são FALHAS_DA_SUBIDA_ATE_DESISTIR: modo normal com a saída guardada e o erro à vista. */
+  | "normal-com-pendentes"
+  /** Ainda há o que subir: continua voltando. */
+  | "seguir-voltando";
+
+/** Depois de cada tentativa de subida no modo "voltando": o que o supervisor faz. */
+export function passoDaVolta(r: { subiu: boolean; falhasSeguidas: number; pendentes: number }): PassoDaVolta {
+  if (r.subiu && r.pendentes === 0) return "normal";
+  if (!r.subiu && r.falhasSeguidas >= FALHAS_DA_SUBIDA_ATE_DESISTIR) return "normal-com-pendentes";
+  return "seguir-voltando";
+}
