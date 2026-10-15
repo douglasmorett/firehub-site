@@ -312,6 +312,18 @@ console.log("\n— A linha que a nuvem não aceita (volta-1) —");
     e4.codigo === "23502" && e4.mensagem.includes("not-null") && !/Maria|11987654321|Flores|DETAIL/.test(e4.mensagem),
     e4.mensagem,
   );
+  // O Prisma de verdade (P2010) manda SÓ o DETAIL: em inglês no Neon, no idioma do Windows no Postgres local (visto em 15/10).
+  const soDetalhe = (msg: string) =>
+    Object.assign(new Error(`\nInvalid \`prisma.$executeRawUnsafe()\` invocation:\n\n\nRaw query failed. Code: \`23502\`. Message: \`${msg}\``), {
+      code: "P2010",
+      meta: { code: "23502", message: msg },
+    });
+  const e4en = erroDoBanco(soDetalhe("Failing row contains (p2, L, Maria da Silva, 11987654321)."));
+  confere("Prisma real, só o DETAIL em inglês: sem o dado e com o motivo pelo código", e4en.mensagem === "campo obrigatório vazio" && e4en.codigo === "23502", e4en.mensagem);
+  const e4pt = erroDoBanco(soDetalhe("Registro que falhou contém (p2, L, Maria da Silva, 11987654321)."));
+  confere("Prisma real, só o DETAIL em português: o dado do cliente não vaza", e4pt.mensagem === "campo obrigatório vazio", e4pt.mensagem);
+  const e4det = erroDoBanco(erroDoPrisma("23502", 'o valor nulo na coluna "status" viola a restrição de não-nulo\nDETALHE: Registro que falhou contém (p2, Maria).'));
+  confere("DETALHE em português também sai", !/Maria|DETALHE/.test(e4det.mensagem) && e4det.mensagem.includes("não-nulo"), e4det.mensagem);
   const e5 = erroDoBanco(erroDoPrisma("23505", 'duplicate key value violates unique constraint "X_phone_key" Key (phone)=(11987654321) already exists.'));
   confere("valor da chave no texto do erro sai como (…)", !e5.mensagem.includes("11987654321") && e5.mensagem.includes("(phone)=(…)"), e5.mensagem);
   const fkComDetalhe = erroDoPrisma(

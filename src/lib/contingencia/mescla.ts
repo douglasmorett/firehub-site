@@ -149,8 +149,24 @@ export function erroDoBanco(e: unknown): { codigo: string | null; mensagem: stri
     sqlstate(x.meta?.code) ?? sqlstate(x.code) ?? /Code: `([0-9A-Z]{5})`/.exec(texto)?.[1] ?? (x.code === "P2003" ? "23503" : null);
   // A mensagem do Prisma começa com "Invalid `prisma.$executeRawUnsafe()` invocation": o que interessa é a do Postgres.
   const doPostgres = /Message: `(?:ERROR: )?([^`]+)`/.exec(texto)?.[1];
-  const mensagem = semDadoDoCliente((doPostgres || textos[0] || texto).replace(/\s+/g, " ").trim()).slice(0, 300);
+  // No Prisma de verdade (P2010) a mensagem é SÓ o DETAIL ("Failing row
+  // contains (…)"), sem a frase do erro: tirado o dado do cliente, não sobra
+  // nada — aí o código diz o que houve (visto num Postgres 17 em 15/10).
+  const mensagem = (semDadoDoCliente((doPostgres || textos[0] || texto).replace(/\s+/g, " ").trim()) || oQueOCodigoDiz(codigo)).slice(0, 300);
   return { codigo, mensagem, texto };
+}
+
+/** O que o código do Postgres quer dizer, quando a mensagem não diz nada sem o dado do cliente. */
+function oQueOCodigoDiz(codigo: string | null): string {
+  const porCodigo: Record<string, string> = {
+    "23502": "campo obrigatório vazio",
+    "23503": "a linha-pai não está na nuvem",
+    "23505": "valor repetido onde não pode repetir",
+    "23514": "valor fora da regra do banco",
+  };
+  if (codigo && porCodigo[codigo]) return porCodigo[codigo];
+  if (codigo?.startsWith("22")) return "valor inválido para a coluna";
+  return "recusada pelo banco da nuvem";
 }
 
 /**
@@ -162,8 +178,10 @@ export function erroDoBanco(e: unknown): { codigo: string | null; mensagem: stri
  * estrangeira, e não é gravado em lugar nenhum.)
  */
 function semDadoDoCliente(m: string): string {
+  // Também em português: o Postgres local responde no idioma do Windows
+  // ("DETALHE: Registro que falhou contém (…)").
   return m
-    .replace(/\s*\b(DETAIL|HINT|Failing row contains)\b[\s\S]*$/, "")
+    .replace(/\s*(\bDETAIL\b|\bDETALHE\b|\bHINT\b|\bDICA\b|\bFailing row contains\b|\bRegistro que falhou cont[ée]m)[\s\S]*$/i, "")
     .replace(/\)=\([^)]*\)/g, ")=(…)")
     .trim();
 }
