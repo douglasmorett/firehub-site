@@ -151,7 +151,7 @@ async function main() {
     confere("tela viu a mensagem do pinpad", mensagens.has("INSIRA OU APROXIME O CARTAO") && mensagens.has("DIGITE A SENHA"), true);
     await ate(() => host().historico.length === 1);
     confere("aprovada: CNF na PayGo", host().historico.map((h) => h.acao), ["CONFIRMADA"]);
-    confere("aprovada: pendência apagada do disco", arquivoPendente(), []);
+    await ate(() => arquivoPendente().length === 0); confere("aprovada: pendência apagada do disco", arquivoPendente(), []);
     confere("aprovada: duas vias impressas", impressos.map((i) => i.via), ["cliente", "loja"]);
     confere("aprovada: FireHub recebeu NSU, autorização e comprovante", Boolean(nuvem.pedidos.p1.dados.nsu && nuvem.pedidos.p1.dados.autorizacao && nuvem.pedidos.p1.dados.comprovanteCliente), true);
   }
