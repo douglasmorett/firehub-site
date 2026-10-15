@@ -27,16 +27,23 @@
  * ── Entrega do app não é do motoboy da loja ─────────────────────────────────
  * O pedido que o entregador do iFood/99 levou (`ehEntregaDaLoja`, a mesma
  * régua do fechamento de caixa) sai do acerto, mesmo com o motoboy marcado.
+ *
+ * ── Os ajustes à mão ────────────────────────────────────────────────────────
+ * A diária de um dia mudada pela loja e as pendências ("faltou R$ 50,00")
+ * entram AQUI, para chegar iguais à tela Motoboys, ao app do entregador e ao
+ * relatório Acerto de entregadores (lib/ajustes-do-acerto-regras.ts).
  */
 import { canalDoPedido, chaveDoCanal } from "@/lib/canal-do-pedido";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { ganhoDoPedido as calcularGanho, lerAcerto, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
 import { prisma } from "@/lib/prisma";
 import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, getInstantUTC } from "@/lib/timezone";
-import { resumoDasEntregas, ehCancelado, partesDaEntrega, canceladoComCorrida, contaComoCorrida, ehEntregaDaLoja, composicaoDoGanho } from "@/lib/resumo-do-entregador";
+import { resumoDasEntregas, ehCancelado, partesDaEntrega, canceladoComCorrida, contaComoCorrida, ehEntregaDaLoja, composicaoDoGanho, diaDoExpediente } from "@/lib/resumo-do-entregador";
 import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 import { configDaLoja, descontoDoAcerto, lanchesDoPeriodo, type LancheDoHistorico } from "@/lib/lanche-da-equipe";
 import { fiadoDosMotoboys } from "@/lib/fiado-do-motoboy";
+import { ajustesDoPeriodo, type AjustesDoPeriodo } from "@/lib/ajustes-do-acerto";
+import { diariasDoPeriodo, somaDasDiarias, totalDasPendencias, totaisDoAcertoDoMotoboy } from "@/lib/ajustes-do-acerto-regras";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
 
@@ -152,6 +159,15 @@ export async function montarRelatorioDosEntregadores(opts: {
   // relatório, mas não sai do acerto: a baixa é na tela Fiado.
   const fiadoPorMotoboy = await fiadoDosMotoboys({ lojaId, motoboys, de: fromDate, ate: toDate });
 
+  // A diária mudada num dia e as pendências (lib/ajustes-do-acerto.ts). Os
+  // dois são por DIA do expediente: entram os dias que o período alcança — com
+  // hora (18h do dia 1 às 2h do dia 2), é o dia 1. Sem a tabela, o acerto sai
+  // sem ajustes, como era antes.
+  const diaDe = diaDoExpediente(fromDate, tz);
+  const diaAte = diaDoExpediente(toDate, tz);
+  const ajustes: AjustesDoPeriodo = await ajustesDoPeriodo({ lojaId, motoboyIds, de: diaDe, ate: diaAte })
+    .catch(() => ({ diarias: new Map(), pendencias: new Map() }));
+
   // Agrupar pedidos em memória por motoboyId
   const ordersByMotoboy: Record<string, typeof allOrders> = {};
   for (const o of allOrders) {
@@ -224,15 +240,21 @@ export async function montarRelatorioDosEntregadores(opts: {
     const resumo = resumoDasEntregas(ganhos.map((g) => ({ ...g.pedido, ganho: g.valor })), tz);
 
     // A diária só existe nos tipos que a oferecem — `dailyRate` já vem zerado
-    // nos outros, então não há mais o que descontar aqui.
-    const dailyTotal = resumo.uniqueDays * dailyRate;
+    // nos outros, então não há mais o que descontar aqui. Cada dia trabalhado
+    // vale a do cadastro, a não ser o dia que a loja ajustou.
+    const diarias = diariasDoPeriodo(resumo.diasTrabalhados, dailyRate, ajustes.diarias.get(mb.id));
+    const dailyTotal = somaDasDiarias(diarias);
     const feeTotal = resumo.feeTotal;
 
     // O lanche acima do combinado é descontado do que a loja paga.
     const lanches = lanchesPorMotoboy.get(mb.id) || [];
     const lancheDescontado = descontoDoAcerto(lanches);
-    const totalWithDaily = Math.round((dailyTotal + feeTotal - lancheDescontado) * 100) / 100;
-    const totalFeeOnly = Math.round((feeTotal - lancheDescontado) * 100) / 100;
+    // As pendências lançadas pela loja também — nos dois totais, como o lanche.
+    const pendencias = ajustes.pendencias.get(mb.id) || [];
+    const pendenciasDescontadas = totalDasPendencias(pendencias);
+    const { totalWithDaily, totalFeeOnly } = totaisDoAcertoDoMotoboy({
+      diarias: dailyTotal, entregas: feeTotal, lanche: lancheDescontado, pendencias: pendenciasDescontadas,
+    });
 
     return {
       motoboy: {
@@ -260,7 +282,15 @@ export async function montarRelatorioDosEntregadores(opts: {
         totalFeeOnly,
         /** Lanche acima do combinado do dia, já tirado dos dois totais acima. */
         lancheDescontado,
+        /** A diária de cada dia trabalhado (a do cadastro ou a ajustada pela loja). */
+        diarias,
+        /** Quantos dias tiveram a diária mudada pela loja. */
+        diariasAjustadas: diarias.filter((d) => d.ajustada).length,
+        /** Pendências lançadas pela loja no período, já tiradas dos dois totais. */
+        pendenciasDescontadas,
       },
+      /** As pendências do período: data, valor, motivo e quem lançou (o motoboy vê). */
+      pendencias,
       /** O fiado dele no período e o saldo em aberto (não descontado do acerto). */
       fiado: fiadoPorMotoboy.get(mb.id) || null,
       /** Os lanches do período (o motoboy confere dia, itens e o que foi descontado). */

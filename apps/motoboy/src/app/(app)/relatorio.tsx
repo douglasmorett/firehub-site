@@ -28,7 +28,12 @@ type Resposta = {
     cashCollectedSum: number;
     cashOrdersCount: number;
     changeGivenSum: number;
+    /** Pendências lançadas pela loja, já tiradas do A RECEBER. */
+    pendenciasDescontadas?: number;
+    diarias?: { dia: string; valor: number; padrao: number; ajustada: boolean }[];
   };
+  /** O que a loja descontou à mão (faltou dinheiro, avaria...) e por quê. */
+  pendencias?: { id: string; dia: string; valor: number; motivo: string }[];
   motoboy?: { dailyRate: number | null; entregasSemDistancia: number };
   cancelados: { qtd: number };
   orders: {
@@ -208,6 +213,27 @@ export default function Relatorio() {
                 </Text>
               </View>
             ) : null}
+            {(dados.pendencias || []).length > 0 ? (
+              <View style={s.pendencia}>
+                <Text style={s.pendenciaTitulo}>
+                  ⚠️ Pendências descontadas pela loja: − {reais(s_?.pendenciasDescontadas)} (já tirado do A RECEBER)
+                </Text>
+                {(dados.pendencias || []).map((p) => (
+                  <Text key={p.id} style={s.pendenciaLinha}>
+                    {p.dia.slice(8, 10)}/{p.dia.slice(5, 7)} · {p.motivo} · − {reais(p.valor)}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
+            {(s_?.diarias || []).some((d) => d.ajustada) ? (
+              <Text style={s.nota}>
+                Diária ajustada pela loja:{" "}
+                {(s_?.diarias || [])
+                  .filter((d) => d.ajustada)
+                  .map((d) => `${d.dia.slice(8, 10)}/${d.dia.slice(5, 7)} ${reais(d.valor)} (era ${reais(d.padrao)})`)
+                  .join(" · ")}
+              </Text>
+            ) : null}
             {dados.cancelados.qtd > 0 ? (
               <Text style={s.nota}>
                 {dados.cancelados.qtd} pedido{dados.cancelados.qtd > 1 ? "s" : ""} cancelado{dados.cancelados.qtd > 1 ? "s" : ""} com
@@ -271,6 +297,9 @@ const s = StyleSheet.create({
   numeroValor: { fontSize: 21, fontWeight: "900", marginTop: 2, fontVariant: ["tabular-nums"] },
   dinheiro: { backgroundColor: cor.ambarClaro, borderWidth: 1, borderColor: cor.ambarBorda, borderRadius: raio.pequeno, padding: 10 },
   dinheiroTexto: { color: cor.ambar, fontWeight: "700", fontSize: 14 },
+  pendencia: { backgroundColor: cor.vermelhoClaro, borderRadius: raio.pequeno, padding: 10, gap: 4 },
+  pendenciaTitulo: { color: cor.vermelho, fontWeight: "800", fontSize: 14 },
+  pendenciaLinha: { color: cor.vermelho, fontSize: 13 },
   nota: { fontSize: 13, color: cor.textoApagado, textAlign: "center" },
   pedido: { flexDirection: "row", gap: 8, backgroundColor: cor.cartao, borderRadius: raio.pequeno, borderWidth: 1, borderColor: cor.borda, padding: 11 },
   pedidoNumero: { fontWeight: "900", fontSize: 15, color: cor.texto },

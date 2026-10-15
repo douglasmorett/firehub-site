@@ -90,6 +90,11 @@ export async function register() {
   // faltar, o robô volta a chamar atendente para pedido já na cozinha.
   const { garantirTabelaDeAcrescimos } = await import("./lib/acrescimo-no-banco");
   await garantirTabelaDeAcrescimos();
+  // Diária mudada num dia e pendências do acerto do motoboy
+  // (lib/ajustes-do-acerto.ts). Tabelas próprias por SQL cru, fora do schema;
+  // se faltarem, o acerto sai sem os ajustes e só gravar um ajuste falha.
+  const { garantirTabelasDoAcerto } = await import("./lib/ajustes-do-acerto");
+  await garantirTabelasDoAcerto();
   // Memória da conversa do robô (ChatbotConversationState.history). O schema NÃO
   // conhece a coluna de propósito — o acesso é por SQL cru e falha em silêncio
   // (lib/memoria-da-conversa-no-banco.ts). Aqui é só para o ALTER acontecer no

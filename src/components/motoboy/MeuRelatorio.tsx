@@ -15,6 +15,8 @@ import { useState, type CSSProperties } from "react";
 import { Loader2, X } from "lucide-react";
 
 const reais = (v: number | null | undefined) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
+/** "2026-10-15" → "15/10" (o dia do expediente, que já vem pronto da loja). */
+const diaCurto = (dia: string) => `${dia.slice(8, 10)}/${dia.slice(5, 7)}`;
 
 /** O dia do EXPEDIENTE no relógio do celular: antes das 5h ainda é ontem. */
 function diaDoExpediente(deslocarDias = 0): string {
@@ -29,7 +31,10 @@ type Resposta = {
   stats: null | {
     totalDeliveries: number; uniqueDays: number; feeTotal: number; dailyTotal: number; totalWithDaily: number; lancheDescontado?: number;
     cashCollectedSum: number; cashOrdersCount: number; changeGivenSum: number;
+    pendenciasDescontadas?: number;
+    diarias?: { dia: string; valor: number; padrao: number; ajustada: boolean }[];
   };
+  pendencias?: { id: string; dia: string; valor: number; motivo: string }[];
   motoboy?: { dailyRate: number; entregasSemDistancia: number };
   fiado?: null | { totalNoPeriodo: number; saldoEmAberto: number; lancamentos: { id: string; em: string; valor: number; descricao: string }[] };
   cancelados: { qtd: number };
@@ -139,6 +144,34 @@ export default function MeuRelatorio({ motoboyId, storeId, aoFechar }: { motoboy
             {s && (s.lancheDescontado || 0) > 0.005 && (
               <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: 10, fontSize: "0.85rem", color: "#B91C1C", fontWeight: 700, marginBottom: 12 }}>
                 🍔 Lanche acima do combinado: − {reais(s.lancheDescontado)} (já tirado do A RECEBER). O detalhe de cada lanche está no QR do lanche, em "Meus lanches".
+              </div>
+            )}
+            {/* A pendência que a loja lançou (faltou dinheiro, avaria...):
+                o motoboy vê o valor, o dia e o motivo — já saiu do A RECEBER. */}
+            {(dados.pendencias || []).length > 0 && (
+              <div style={{ background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 12, padding: 10, fontSize: "0.85rem", color: "#B91C1C", fontWeight: 700, marginBottom: 12 }}>
+                ⚠️ Pendências descontadas pela loja: − {reais(s?.pendenciasDescontadas)} (já tirado do A RECEBER)
+                {(dados.pendencias || []).map((p) => (
+                  <div key={p.id} style={{ fontSize: "0.78rem", fontWeight: 500, color: "#7F1D1D", display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+                    <span>{diaCurto(p.dia)} · {p.motivo}</span>
+                    <span style={{ whiteSpace: "nowrap", fontWeight: 800 }}>− {reais(p.valor)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Dia com a diária mudada pela loja: o motoboy vê o valor e o que valeria. */}
+            {(s?.diarias || []).some((d) => d.ajustada) && (
+              <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 12, padding: 10, fontSize: "0.85rem", color: "#92400E", fontWeight: 700, marginBottom: 12 }}>
+                Diária ajustada pela loja:
+                {(s?.diarias || []).filter((d) => d.ajustada).map((d) => (
+                  <div key={d.dia} style={{ fontSize: "0.78rem", fontWeight: 500, display: "flex", justifyContent: "space-between", gap: 8, marginTop: 4 }}>
+                    <span>{diaCurto(d.dia)}</span>
+                    <span style={{ whiteSpace: "nowrap" }}>
+                      <span style={{ textDecoration: "line-through", opacity: 0.6, marginRight: 6 }}>{reais(d.padrao)}</span>
+                      <strong>{reais(d.valor)}</strong>
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
             {dados?.fiado && (

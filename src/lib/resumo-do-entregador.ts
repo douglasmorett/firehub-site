@@ -191,6 +191,14 @@ export type EntregaDoResumo = EntregaParaCaixa & {
   ganho: number;
 };
 
+/**
+ * O dia do EXPEDIENTE de um instante ("2026-10-15"), no fuso da loja: vira às
+ * 5h, então a entrega da 1h é do dia anterior. É o dia que paga a diária — e o
+ * dia em que a loja ajusta a diária (lib/ajustes-do-acerto-regras.ts).
+ */
+export const diaDoExpediente = (instante: Date | string, tz: string) =>
+  toLocalISODate(new Date(new Date(instante).getTime() - VIRADA_MS), tz);
+
 export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
   // ── AS CORRIDAS ───────────────────────────────────────────────────────────
   // Entrega não cancelada, ou cancelada DEPOIS de o motoboy sair com ela
@@ -202,9 +210,8 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
 
   // Dias trabalhados = EXPEDIENTES, no fuso da loja. É o que paga a diária:
   // pelo calendário, o turno das 18h às 2h contava dois dias.
-  const uniqueDays = corridas.length > 0
-    ? new Set(corridas.map((o) => toLocalISODate(new Date(new Date(o.createdAt).getTime() - VIRADA_MS), tz))).size
-    : 0;
+  const diasTrabalhados = [...new Set(corridas.map((o) => diaDoExpediente(o.createdAt, tz)))].sort();
+  const uniqueDays = diasTrabalhados.length;
 
   // Soma das taxas dos pedidos
   const deliveryFeeSum = corridas.reduce((s, o) => s + (o.deliveryFee || o.motoboyFee || 0), 0);
@@ -289,6 +296,8 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
     valorDosPedidos: centavos(valorDosPedidos),
     totalDistance,
     uniqueDays,
+    /** Os expedientes com corrida ("2026-10-15"), em ordem: um por diária. */
+    diasTrabalhados,
     deliveryFeeSum,
     motoboyFeeSum,
     /** O dinheiro a entregar: pedidos em dinheiro + o troco que ele levou da loja. */
