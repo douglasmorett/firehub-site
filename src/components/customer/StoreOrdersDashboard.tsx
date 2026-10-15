@@ -54,6 +54,7 @@ import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
 import ConfigDoAgendamento from "@/components/customer/ConfigDoAgendamento";
 import { lerConfigDeAgendamento, textoDoAgendamento, type ConfigDeAgendamento } from "@/lib/agendamento";
 import { motivoValido, MENSAGEM_SEM_MOTIVO, SUGESTOES_DE_MOTIVO } from "@/lib/motivo-do-cancelamento";
+import { copiarTexto, origemParaLinkDeFora } from "@/lib/copiar-texto";
 
 const BOTAO_ACAO: React.CSSProperties = {
   padding: "5px 14px", borderRadius: "8px", border: "none",
@@ -7659,9 +7660,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
             <div style={{ display: "flex" }}>
               <button
-                onClick={() => {
-                  const link = `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy`;
-                  navigator.clipboard.writeText(link);
+                onClick={async () => {
+                  // Na porta da loja (http://<ip>:7890) não há navigator.clipboard
+                  // e a origem é o computador do caixa: lib/copiar-texto.ts.
+                  const link = `${origemParaLinkDeFora(window.location.origin)}/loja/${user.slug || "sua-loja"}/motoboy`;
+                  if (!(await copiarTexto(link))) return;
                   setCopiedMotoboyLink(true);
                   setTimeout(() => setCopiedMotoboyLink(false), 3000);
                 }}

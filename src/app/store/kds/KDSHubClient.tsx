@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
+import { novoIdDaTela } from "@/lib/kds-telas";
+import { AvisoNoTopo, type Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
 
 interface KDSScreenConfig {
   id: string;
@@ -13,11 +15,24 @@ interface KDSScreenConfig {
 const STORAGE_KEY = "kds-screens";
 const FONT = `-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif`;
 
+// O localStorage aqui é só a cópia deste aparelho (as telas valem do servidor).
+// Navegador de TV e janela anônima podem bloquear o armazenamento: aí o
+// getItem/setItem LANÇA, e um erro dentro do efeito deixava a lista em branco
+// para sempre (o `loaded` nunca virava true). Sem armazenamento, segue sem a cópia.
+function lerDoAparelho(chave: string): string | null {
+  try { return localStorage.getItem(chave); } catch { return null; }
+}
+function gravarNoAparelho(chave: string, valor: string) {
+  try { localStorage.setItem(chave, valor); } catch {}
+}
+
 export default function KDSHubClient() {
   const [screens, setScreens] = useState<KDSScreenConfig[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
+  const [aviso, setAviso] = useState<Aviso | null>(null);
+  const fecharAviso = useCallback(() => setAviso(null), []);
 
   // Categorias disponíveis (carregadas da API)
   const [allCategories, setAllCategories] = useState<{ id: string; name: string; emoji: string; color: string }[]>([]);
@@ -64,7 +79,7 @@ export default function KDSHubClient() {
 
   useEffect(() => {
     let localScreens: KDSScreenConfig[] = [];
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = lerDoAparelho(STORAGE_KEY);
     if (saved) {
       try { localScreens = JSON.parse(saved); } catch {}
     }
@@ -75,7 +90,7 @@ export default function KDSHubClient() {
       .then((data: KDSScreenConfig[]) => {
         if (Array.isArray(data) && data.length > 0) {
           setScreens(data);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+          gravarNoAparelho(STORAGE_KEY, JSON.stringify(data));
         } else if (localScreens.length > 0) {
           // Se o banco estiver vazio mas houver telas salvas localmente neste PC, migra para o banco
           setScreens(localScreens);
@@ -106,11 +121,16 @@ export default function KDSHubClient() {
 
   const save = (s: KDSScreenConfig[]) => {
     setScreens(s);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
+    gravarNoAparelho(STORAGE_KEY, JSON.stringify(s));
     // Falha calada aqui era o pior dos mundos: o painel mostrava o filtro
     // salvo, e as telas da cozinha — que leem do servidor — seguiam sem ele.
+    // Aviso no topo, não alert() (regra da casa).
     const avisar = () =>
-      alert("Não consegui salvar as telas do KDS. As telas da cozinha continuam com a configuração anterior. Confira a internet e salve de novo.");
+      setAviso({
+        tipo: "erro",
+        titulo: "Não consegui salvar as telas do KDS",
+        detalhe: "As telas da cozinha continuam com a configuração anterior. Confira a internet e salve de novo.",
+      });
     fetch("/api/store/kds-screens", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -144,7 +164,7 @@ export default function KDSHubClient() {
     if (editId) {
       save(screens.map(s => s.id === editId ? { ...s, name: formName, stage: formStage, filter: formFilter, categoryFilter: formCategories } : s));
     } else {
-      save([...screens, { id: crypto.randomUUID(), name: formName, stage: formStage, filter: formFilter, categoryFilter: formCategories }]);
+      save([...screens, { id: novoIdDaTela(), name: formName, stage: formStage, filter: formFilter, categoryFilter: formCategories }]);
     }
     setShowForm(false);
     setEditId(null);
@@ -158,6 +178,7 @@ export default function KDSHubClient() {
 
   return (
     <div style={{ minHeight: "calc(100vh - 80px)", background: "#0f0f0f", padding: "2rem", color: "#e2e8f0", fontFamily: FONT }}>
+      <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.25rem", flexWrap: "wrap", gap: "1rem" }}>
         <div style={{ fontSize: "1.8rem", fontWeight: 800, color: "#fff", display: "flex", alignItems: "center", gap: "0.5rem" }}>
