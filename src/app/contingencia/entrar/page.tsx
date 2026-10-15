@@ -19,25 +19,45 @@
  * serviria): o botão "Entrar" abre o MESMO endereço na nuvem. Sem internet, a
  * rede de segurança do navegador (public/sw-contingencia.js) responde no lugar
  * da nuvem e traz de volta com o bilhete guardado. (14/10/2026)
+ *
+ * O fragmento traz também (lib/contingencia/troca.ts): de que endereço a tela
+ * saiu (`origem`, com ou sem www), quantos pulos seguidos já houve (`n`) e as
+ * preferências que só existem por origem (`p`: som e posição do KDS). Ficam
+ * guardados AQUI, na origem da loja: a volta usa a mesma origem (validada
+ * pela lista fixa) e leva a marca #fh-voltou=<ms>&n=<pulos> — com ela a nuvem
+ * não pula de novo logo em seguida (o vaivém de 14/10).
  */
 import { useEffect, useState } from "react";
+import {
+  CHAVE_DA_ORIGEM, CHAVE_DOS_PULOS, VOLTA_PADRAO, armazenamentoLocal, gravarPreferencias, lerPreferencias, origemValida,
+  preferenciasDoFragmento, urlDeVolta, voltaSegura,
+} from "@/lib/contingencia/troca";
 
 function destinoSeguro(volta: string | null): string {
-  const v = String(volta || "");
-  return v.startsWith("/") && !v.startsWith("//") ? v : "/store/pedidos-clientes";
+  return voltaSegura(volta) || VOLTA_PADRAO;
 }
 
 const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** O endereço da nuvem, pela porta da loja (o supervisor sabe); na falta, o de sempre. */
-async function enderecoDaNuvem(): Promise<string> {
+type EstadoDaPorta = { modo?: string; nuvem?: string; origensDaNuvem?: unknown; origemDoPainel?: string };
+
+/** O que a porta da loja diz (o supervisor sabe o endereço da nuvem); sem ela, null. */
+async function estadoDaPorta(): Promise<EstadoDaPorta | null> {
   try {
-    const e = await (await fetch("/__contingencia/estado", { cache: "no-store" })).json();
-    if (typeof e?.nuvem === "string" && /^https?:\/\//.test(e.nuvem)) return e.nuvem.replace(/\/+$/, "");
+    return await (await fetch("/__contingencia/estado", { cache: "no-store" })).json();
   } catch {
-    /* sem a porta da loja: o endereço de sempre */
+    return null;
   }
-  return "https://firehubfood.com.br";
+}
+
+/**
+ * Para onde voltar na nuvem: a origem de onde a tela saiu (se estiver na
+ * lista), senão a do painel no supervisor, senão a nuvem dele, senão a de sempre.
+ */
+function origemDaVolta(saiuDe: string | null, e: EstadoDaPorta | null): string {
+  const nuvem = typeof e?.nuvem === "string" && /^https?:\/\//.test(e.nuvem) ? e.nuvem.replace(/\/+$/, "") : null;
+  const extras = Array.isArray(e?.origensDaNuvem) ? e!.origensDaNuvem : nuvem ? [nuvem] : [];
+  return origemValida(saiuDe, extras) || origemValida(e?.origemDoPainel, extras) || nuvem || "https://firehubfood.com.br";
 }
 
 export default function EntrarNaContingencia() {
@@ -50,10 +70,25 @@ export default function EntrarNaContingencia() {
     const parametros = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const bilhete = parametros.get("bilhete") || "";
     const volta = destinoSeguro(parametros.get("volta") || new URLSearchParams(window.location.search).get("volta"));
+    // De onde a tela saiu e quantos pulos já houve: para a volta (TrocaDeContingencia).
+    // Só guarda origem que esteja na lista fixa — o resto do caminho valida de novo.
+    const saiuDe = origemValida(parametros.get("origem"));
+    const pulos = Math.max(1, Math.trunc(Number(parametros.get("n"))) || 1);
+    const guardar = (k: string, v: string | null) => {
+      for (const area of [() => sessionStorage, () => localStorage]) {
+        try { if (v === null) area().removeItem(k); else area().setItem(k, v); } catch { /* sem armazenamento */ }
+      }
+    };
+    if (parametros.has("bilhete")) {
+      guardar(CHAVE_DA_ORIGEM, saiuDe);
+      guardar(CHAVE_DOS_PULOS, String(pulos));
+    }
+    // O som e a posição do KDS desta TV (no endereço da loja o armazenamento é outro).
+    try { gravarPreferencias(armazenamentoLocal(), preferenciasDoFragmento(parametros)); } catch { /* sem armazenamento */ }
     history.replaceState(null, "", window.location.pathname);
     const semBilhete = (texto: string) => {
       setErro(texto);
-      enderecoDaNuvem().then((nuvem) => setEntrarPor(`${nuvem}${volta}`));
+      estadoDaPorta().then((e) => setEntrarPor(`${origemDaVolta(saiuDe, e)}${volta}`));
     };
     if (!bilhete) {
       semBilhete("");
@@ -67,7 +102,15 @@ export default function EntrarNaContingencia() {
           if (e?.modo === "contingencia" || e?.modo === "voltando") break;
           if (e?.modo === "normal" && e?.nuvem) {
             setAviso("A conexão voltou. Voltando ao FireHub…");
-            window.location.replace(`${e.nuvem}${volta}`);
+            // Com a marca de volta: a nuvem espera antes de pular de novo.
+            window.location.replace(urlDeVolta({
+              origem: origemDaVolta(saiuDe, e),
+              volta,
+              em: Date.now(),
+              n: pulos,
+              extras: Array.isArray(e?.origensDaNuvem) ? e.origensDaNuvem : [String(e.nuvem).replace(/\/+$/, "")],
+              preferencias: lerPreferencias(armazenamentoLocal()),
+            }));
             return;
           }
           setAviso("Conectando ao computador da loja…");

@@ -8,6 +8,12 @@
  *
  * A tela do garçom manda `x-operador: garcom` (lib/garcom-auth.ts): aí só o
  * cookie do garçom vale, mesmo com o painel aberto no mesmo navegador.
+ *
+ * Toda tela do PAINEL que pede o bilhete deixa anotado de que internet (IP
+ * público) pediu — no máximo uma gravação a cada 5 min por IP. A tela do
+ * módulo compara com o IP do computador da contingência e avisa quando ele não
+ * está na internet da loja (lib/contingencia/rede-da-loja.ts). O garçom fica
+ * de fora: o celular dele pode estar no 4G.
  */
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
@@ -15,6 +21,8 @@ import { prisma } from "@/lib/prisma";
 import { quemPede } from "@/lib/contingencia/sessao";
 import { assinarBilhete, VALIDADE_DO_BILHETE_MS, type Bilhete } from "@/lib/contingencia/chave";
 import { autenticarGarcom, CABECALHO_DO_OPERADOR } from "@/lib/garcom-auth";
+import { getClientIp } from "@/lib/rateLimit";
+import { anotarTela } from "@/lib/contingencia/rede-da-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +39,7 @@ async function quemEhEsta(): Promise<Quem | null> {
   return null;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const quem = await quemEhEsta();
   if (!quem) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   try {
@@ -45,6 +53,17 @@ export async function GET() {
     const exp = Date.now() + VALIDADE_DO_BILHETE_MS;
     const bilhete = assinarBilhete({ v: 1, loja: quem.lojaId, exp, ...quem.corpo }, r[0].segredoDoBilhete);
     const relato = r[0].relato || {};
+    if (quem.corpo.tipo === "painel") {
+      const telas = anotarTela(relato.abas, getClientIp(req));
+      if (telas) {
+        // Só um aviso para a tela do módulo: não segura o bilhete nem falha com ele.
+        prisma.$executeRawUnsafe(
+          `UPDATE "Contingencia" SET "relato" = jsonb_set(COALESCE("relato", '{}'::jsonb), '{abas}', $2::jsonb) WHERE "lojaId" = $1`,
+          quem.lojaId,
+          JSON.stringify(telas),
+        ).catch(() => {});
+      }
+    }
     const porta = Number(relato.porta) || 7890;
     const ips: string[] = Array.isArray(relato.ips) ? relato.ips.filter((ip: unknown) => typeof ip === "string") : [];
     return NextResponse.json({
