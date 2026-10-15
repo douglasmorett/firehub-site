@@ -242,6 +242,11 @@ const hashDaTv = `#bilhete=XYZ&volta=${encodeURIComponent("/store/kds/tela?stage
     confere("supervisor também vendo falhas: espera, sem voltar", !r.replace && !r.reload && !r.pedidos.some((u) => u.endsWith("/api/contingencia/sinal")), r);
   }
   {
+    // "Testar agora": o caixa chega antes do primeiro ciclo contar a falha de mentira.
+    const r = await simular({ hash: hashDaTv, estado: { ...estadoNormal, testando: true }, nuvemOk: true });
+    confere("\"Testar agora\" com falhas=0: espera a contingência, não volta para a nuvem", !r.replace && !r.pedidos.some((u) => u.endsWith("/api/contingencia/sinal")), r);
+  }
+  {
     const r = await simular({ hash: hashDaTv, estado: { ...estadoNormal, modo: "contingencia" }, nuvemOk: false, voltas: 1 });
     confere("supervisor em contingência: recarrega (o bilhete segue no fragmento)", r.reload === 1 && !r.replace, r);
   }

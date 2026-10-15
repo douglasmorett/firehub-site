@@ -144,7 +144,10 @@ export function paginaDaEntrada(): string {
           return;
         }
         if (e.modo === "iniciando") { okSeguidos = 0; texto("O computador da loja está ligando…"); return; }
-        if (e.modo === "normal" && e.falhas > 0) { okSeguidos = 0; texto("Conferindo a conexão com o FireHub…"); return; }
+        // "Testar agora": a nuvem está de pé de verdade, mas a loja está ensaiando a
+        // queda — o aparelho espera a contingência em vez de voltar (o caixa chega
+        // aqui antes do primeiro ciclo do supervisor contar a falha de mentira).
+        if (e.modo === "normal" && (e.falhas > 0 || e.testando)) { okSeguidos = 0; texto("Conferindo a conexão com o FireHub…"); return; }
         if (Date.now() < proximoTesteEm) return;
         var origem = origemDaVolta({ origemPedida: f.get("origem"), origens: e.origensDaNuvem || [], origemDoPainel: e.origemDoPainel || null, nuvem: e.nuvem });
         return comPrazo(origem + "/api/contingencia/sinal", 4000)

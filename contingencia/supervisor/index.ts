@@ -221,7 +221,9 @@ async function principal(): Promise<void> {
       html: String(req.headers.accept || "").includes("text/html"),
       modo,
       localPronto: local.pronto(),
-      falhas,
+      // No "Testar agora" a falha é de mentira, mas conta desde já: o aparelho
+      // que chega antes do ciclo acorda o FireHub local e espera.
+      falhas: Date.now() < simularQuedaAte ? Math.max(falhas, 1) : falhas,
       nuvem: cfg.nuvem,
     });
     switch (d.tipo) {
