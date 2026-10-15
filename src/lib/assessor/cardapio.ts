@@ -27,7 +27,7 @@ const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
 /** Produtos da própria loja (sem espelho de marketplace e sem a meia, que acompanha o sabor). */
 async function produtosDaLoja(franchiseeId: string) {
   return prisma.menuProduct.findMany({
-    where: { franchiseeId, ...SEM_PRODUTO_DE_INTEGRACAO, NOT: { name: { startsWith: PREFIXO_DA_MEIA } } },
+    where: { franchiseeId, AND: [SEM_PRODUTO_DE_INTEGRACAO, { NOT: { name: { startsWith: PREFIXO_DA_MEIA } } }] },
     select: { id: true, name: true, category: true, active: true, price: true, isCombo: true },
     orderBy: [{ category: "asc" }, { name: "asc" }],
   });

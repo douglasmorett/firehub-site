@@ -17,7 +17,7 @@
  *
  * Esta lib não importa nada do servidor: recebe o resultado já montado.
  */
-import { c2, naLoja } from "@/lib/relatorios/base";
+import { c2, fmtReais, naLoja } from "@/lib/relatorios/base";
 
 /** O que a conta lê de cada motoboy (o formato de `montarRelatorioDosEntregadores`). */
 export type MotoboyDoAcerto = {
@@ -51,7 +51,13 @@ export type MotoboyDoAcerto = {
     feeTotal: number;
     totalWithDaily: number;
     lancheDescontado: number;
+    /** Pendências lançadas pela loja, já tiradas de `totalWithDaily`. */
+    pendenciasDescontadas?: number;
+    /** A diária de cada dia trabalhado (a do cadastro ou a ajustada pela loja). */
+    diarias?: { dia: string; valor: number; padrao: number; ajustada: boolean }[];
   };
+  /** As pendências do período, com o motivo (lib/ajustes-do-acerto-regras.ts). */
+  pendencias?: { id: string; dia: string; valor: number; motivo: string; criadoPor?: string | null }[];
   fiado?: { saldoEmAberto?: number; [k: string]: unknown } | null;
   entregasDoApp?: { qtd: number };
   composicao?: { origem: string; rotulo: string; qtd: number; valor: number; [k: string]: unknown }[];
@@ -95,7 +101,12 @@ export type LinhaDoMotoboy = {
   diaria: number;
   porEntrega: number;
   lanche: number;
-  /** Diária + entregas − lanche acima do combinado: o "Total a pagar" da tela Motoboys. */
+  /** Pendências lançadas pela loja (faltou dinheiro, avaria...), descontadas. */
+  pendencias: number;
+  listaDePendencias: { dia: string; valor: number; motivo: string; criadoPor: string | null }[];
+  /** Dias com a diária mudada pela loja (o recibo diz quais). */
+  diariasAjustadas: { dia: string; valor: number; padrao: number }[];
+  /** Diária + entregas − lanche acima do combinado − pendências: o "Total a pagar" da tela Motoboys. */
   aPagar: number;
   /** O dinheiro que ele recebeu na porta e devolve à loja (pedidos + troco levado). */
   dinheiroComEle: number;
@@ -151,6 +162,7 @@ export type TotaisDoAcerto = {
   diaria: number;
   porEntrega: number;
   lanche: number;
+  pendencias: number;
   motoboysComEntrega: number;
   diasComEntrega: number;
 };
@@ -168,7 +180,7 @@ export type ResultadoDoAcerto = {
 
 const div = (a: number, b: number) => (b ? a / b : null);
 
-export function totaisDoAcerto(linhas: Pick<LinhaDoMotoboy, "entregas" | "aPagar" | "km" | "valorLevado" | "dinheiroComEle" | "saldo" | "diaria" | "porEntrega" | "lanche">[], diasComEntrega: number): TotaisDoAcerto {
+export function totaisDoAcerto(linhas: (Pick<LinhaDoMotoboy, "entregas" | "aPagar" | "km" | "valorLevado" | "dinheiroComEle" | "saldo" | "diaria" | "porEntrega" | "lanche"> & { pendencias?: number })[], diasComEntrega: number): TotaisDoAcerto {
   const s = (f: (l: (typeof linhas)[number]) => number) => c2(linhas.reduce((t, l) => t + f(l), 0));
   const entregas = linhas.reduce((t, l) => t + l.entregas, 0);
   const aPagar = s((l) => l.aPagar);
@@ -185,6 +197,7 @@ export function totaisDoAcerto(linhas: Pick<LinhaDoMotoboy, "entregas" | "aPagar
     diaria: s((l) => l.diaria),
     porEntrega: s((l) => l.porEntrega),
     lanche: s((l) => l.lanche),
+    pendencias: s((l) => l.pendencias || 0),
     motoboysComEntrega: linhas.filter((l) => l.entregas > 0).length,
     diasComEntrega,
   };
@@ -205,20 +218,23 @@ export function acertoDaEquipe(porLoja: { loja: string; report: MotoboyDoAcerto[
     for (const r of report) {
       const s = r.stats;
       const corridas = r.orders.filter((o) => o.corrida !== false);
-      const temAlgo = s.totalDeliveries > 0 || s.canceladasSemCorridaCount > 0 || (r.entregasDoApp?.qtd || 0) > 0;
+      // Pendência sem entrega no período também é acerto: ele deve à loja.
+      const temAlgo = s.totalDeliveries > 0 || s.canceladasSemCorridaCount > 0 || (r.entregasDoApp?.qtd || 0) > 0 || (r.pendencias?.length || 0) > 0;
       if (!temAlgo) {
         semEntrega.push({ nome: r.motoboy.name, loja, ativo: r.motoboy.active !== false });
         continue;
       }
 
-      // A diária de cada dia trabalhado, igual à do acerto: um valor por expediente.
-      const diariaDoDia = s.uniqueDays ? s.dailyTotal / s.uniqueDays : 0;
+      // A diária de cada dia trabalhado, igual à do acerto: um valor por
+      // expediente — o do dia, quando a loja mudou a diária daquele dia.
+      const diariaMedia = s.uniqueDays ? s.dailyTotal / s.uniqueDays : 0;
+      const diariaPorDia = new Map((s.diarias || []).map((d) => [d.dia, d.valor]));
       for (const o of corridas) {
         const { dia, hora } = naLoja(o.createdAt instanceof Date ? o.createdAt : new Date(o.createdAt), tz);
         const d = dias.get(dia) || { entregas: 0, ganho: 0, porMotoboy: new Map() };
         d.entregas++;
         d.ganho += Number(o.ganhoDoMotoboy) || 0;
-        const m = d.porMotoboy.get(r.motoboy.id) || { nome: r.motoboy.name, entregas: 0, diaria: diariaDoDia };
+        const m = d.porMotoboy.get(r.motoboy.id) || { nome: r.motoboy.name, entregas: 0, diaria: diariaPorDia.get(dia) ?? diariaMedia };
         m.entregas++;
         d.porMotoboy.set(r.motoboy.id, m);
         dias.set(dia, d);
@@ -250,6 +266,9 @@ export function acertoDaEquipe(porLoja: { loja: string; report: MotoboyDoAcerto[
         diaria: c2(s.dailyTotal),
         porEntrega: c2(s.feeTotal),
         lanche: c2(s.lancheDescontado || 0),
+        pendencias: c2(s.pendenciasDescontadas || 0),
+        listaDePendencias: (r.pendencias || []).map((p) => ({ dia: p.dia, valor: c2(p.valor), motivo: p.motivo, criadoPor: p.criadoPor ?? null })),
+        diariasAjustadas: (s.diarias || []).filter((d) => d.ajustada).map((d) => ({ dia: d.dia, valor: d.valor, padrao: d.padrao })),
         aPagar,
         dinheiroComEle,
         trocoLevado: c2(s.changeGivenSum),
@@ -313,6 +332,7 @@ export function acertoDaEquipe(porLoja: { loja: string; report: MotoboyDoAcerto[
     if (l.usandoTaxaDoCliente) avisos.push({ tom: "atencao", texto: `${l.nome}: sem valor por entrega cadastrado — o acerto usou a taxa que o cliente pagou.` });
     if (l.naRua) avisos.push({ tom: "atencao", texto: `${l.nome}: ${l.naRua} entrega${l.naRua === 1 ? " ainda está" : "s ainda estão"} na rua ou em preparo — o valor pode mudar até fechar.` });
     if (l.naoIdentificadoQtd) avisos.push({ tom: "atencao", texto: `${l.nome}: ${l.naoIdentificadoQtd} pagamento${l.naoIdentificadoQtd === 1 ? "" : "s"} sem forma identificada — confira antes de cobrar o dinheiro.` });
+    if (l.listaDePendencias.length) avisos.push({ tom: "atencao", texto: `${l.nome}: ${l.listaDePendencias.length} pendência${l.listaDePendencias.length === 1 ? "" : "s"} lançada${l.listaDePendencias.length === 1 ? "" : "s"} pela loja (− ${fmtReais(l.pendencias)}) — já descontada${l.listaDePendencias.length === 1 ? "" : "s"} do a pagar.` });
     if (l.entregasDoApp) avisos.push({ tom: "atencao", texto: `${l.nome}: ${l.entregasDoApp} pedido${l.entregasDoApp === 1 ? "" : "s"} marcado${l.entregasDoApp === 1 ? "" : "s"} com ele, mas levado${l.entregasDoApp === 1 ? "" : "s"} pelo entregador do app — fora do acerto.` });
   }
 

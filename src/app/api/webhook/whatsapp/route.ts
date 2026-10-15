@@ -957,7 +957,20 @@ async function handleIncomingMessage(body: any, instance: string) {
   }
 
   const chatbotConfig = (user.chatbotConfig as any) || {};
-  if (chatbotConfig.active === false) {
+
+  // O dono com o Bill ligado passa pelas duas travas abaixo: o Bill é serviço
+  // à parte (R$ 29,90), e muito dono põe o próprio número em "números que o
+  // robô não responde" para o robô de VENDAS não oferecer cardápio a ele —
+  // teste na Hakim, 15/10/2026: a mensagem chegava e morria em
+  // "numero-ignorado". O robô de vendas continua calado para ele: quem
+  // responde é o Bill, mais abaixo.
+  let donoComBill = false;
+  if (ehNumeroDoDono((user as any).notificationPhone, chatbotConfig, cleanPhone)) {
+    const { assessorEstaLigado } = await import("@/lib/assessor/assinatura");
+    donoComBill = await assessorEstaLigado((user as any).ownerId || user.id);
+  }
+
+  if (chatbotConfig.active === false && !donoComBill) {
     registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "robo-desativado" });
     return;
   }
@@ -967,7 +980,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   // inteiro e não quer cardápio nem "posso anotar seu pedido?". O robô
   // respondendo a esses números é ruído para os dois lados — e, no caso do
   // motoboy em rota, atrapalha no pior momento.
-  if (numeroEstaNaListaDeIgnorados(cleanPhone, chatbotConfig.numerosIgnorados)) {
+  if (!donoComBill && numeroEstaNaListaDeIgnorados(cleanPhone, chatbotConfig.numerosIgnorados)) {
     console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🔕 ${mascararTelefone(remoteJid)} está na lista de números que o robô não responde.`);
     registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "numero-ignorado" });
     return;

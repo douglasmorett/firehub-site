@@ -18,7 +18,7 @@ import { EVENTO_BILL_LIGADO } from "@/components/bill/BillFlutuante";
 import { VERSAO_DO_TERMO_DO_BILL, TITULO_DO_TERMO_DO_BILL, CLAUSULAS_DO_TERMO_DO_BILL } from "@/lib/assessor/termo";
 import { Mic, Camera, Package, Wallet, Receipt, Undo2, CheckCircle2, MessageCircle, PauseCircle, Store } from "lucide-react";
 
-type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean };
+type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento?: boolean };
 type Registro = { id: string; tipo: string; resumo: string; canal: string; desfeitoEm: string | null; criadoEm: string };
 type Dados = { estado: Estado; preco: number; diasDeTeste: number; numerosDoDono: string[]; numeroDoRobo: string | null; registros: Registro[] };
 type Aviso = { tipo: "ok" | "erro"; titulo: string; detalhe?: string };
@@ -117,7 +117,7 @@ export default function BillClient() {
         <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: 0 }}>Bill, seu assessor</h1>
         {estado.ativo && (
           <span style={{ fontSize: 12, fontWeight: 800, color: VERDE, background: "#ECFDF5", padding: "4px 10px", borderRadius: 999 }}>
-            {estado.emTeste && estado.testeAte ? `GRÁTIS até ${new Date(estado.testeAte).toLocaleDateString("pt-BR")}` : "LIGADO"}
+            {estado.isento ? "LIGADO · ISENTO" : estado.emTeste && estado.testeAte ? `GRÁTIS até ${new Date(estado.testeAte).toLocaleDateString("pt-BR")}` : "LIGADO"}
           </span>
         )}
       </div>
@@ -140,10 +140,12 @@ export default function BillClient() {
           <Historico registros={dados.registros} />
           <div style={{ marginTop: 28, padding: 16, border: "1px solid #E2E8F0", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <div style={{ fontSize: 13, color: "#475569" }}>
-              {estado.emTeste && estado.testeAte
+              {estado.isento
+                ? <><b>Conta isenta:</b> o Bill não entra no boleto desta loja.</>
+                : estado.emTeste && estado.testeAte
                 ? <>Grátis até <b>{new Date(estado.testeAte).toLocaleDateString("pt-BR")}</b>. Depois, <b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub (o mês em que fica ativo é cobrado inteiro).</>
                 : <><b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub — o mês em que o Bill fica ativo é cobrado inteiro.{estado.cobradoEsteMes && <> Este mês já está no boleto.</>}</>}
-              {" "}Desligando, o mês seguinte não é cobrado.
+              {!estado.isento && <>{" "}Desligando, o mês seguinte não é cobrado.</>}
             </div>
             <button disabled={salvando} onClick={() => { if (confirmarDesligar) ligar(false); else setConfirmarDesligar(true); }}
               onBlur={() => setConfirmarDesligar(false)}
@@ -177,7 +179,7 @@ function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean;
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" }}>
           <button onClick={onLigar} disabled={salvando} style={{ background: "#FACC15", color: "#0F172A", border: 0, borderRadius: 10, padding: "12px 20px", fontWeight: 900, fontSize: 15, cursor: "pointer" }}>
-            {salvando ? "Ligando…" : dados.estado.jaTestou ? `Ativar o Bill por ${fmtR(dados.preco)}/mês` : `Testar ${dados.diasDeTeste} dias grátis`}
+            {salvando ? "Ligando…" : dados.estado.isento ? "Ativar o Bill (conta isenta)" : dados.estado.jaTestou ? `Ativar o Bill por ${fmtR(dados.preco)}/mês` : `Testar ${dados.diasDeTeste} dias grátis`}
           </button>
           <div style={{ fontSize: 13, opacity: 0.9 }}>
             {dados.estado.jaTestou

@@ -47,7 +47,7 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
         </>
       )}
       {tab === "relatorio" && (
-        <MotoboyReport motoboys={motoboys} storeTimezone={storeTimezone} operador={operador} />
+        <MotoboyReport motoboys={motoboys} storeTimezone={storeTimezone} operador={operador} deliveryConfig={deliveryConfig} />
       )}
       {tab === "lanche" && lanche && <LancheDaEquipePainel slug={lanche.slug} loja={lanche.loja} />}
     </div>

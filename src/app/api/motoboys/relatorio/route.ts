@@ -80,6 +80,9 @@ export async function GET(req: NextRequest) {
       },
       stats: meu.stats,
       fiado: meu.fiado,
+      // O que a loja descontou à mão e por quê — já fora do A RECEBER. A
+      // diária de cada dia (com a ajustada) vai em `stats.diarias`.
+      pendencias: meu.pendencias.map((p) => ({ id: p.id, dia: p.dia, valor: p.valor, motivo: p.motivo })),
       cancelados: meu.cancelados,
       orders: meu.orders.map((o) => ({
         id: o.id,

@@ -78,6 +78,7 @@ function Fechamento({ total, anterior }: { total: TotaisDoAcerto; anterior: Tota
         {linha("Diárias", fmtReais(total.diaria))}
         {linha("Entregas", fmtReais(total.porEntrega), "+ ")}
         {total.lanche > 0.005 && linha("Lanche acima do combinado", fmtReais(total.lanche), "− ")}
+        {(total.pendencias || 0) > 0.005 && linha("Pendências lançadas", fmtReais(total.pendencias), "− ")}
         <div style={{ borderTop: `1px dashed ${PALETA.areiaBorda}`, marginTop: 4, paddingTop: 4 }}>{linha("A pagar", fmtReais(total.aPagar), "", true)}</div>
       </div>
       <div style={{ padding: "1rem 1.2rem" }}>
@@ -188,9 +189,24 @@ function Detalhe({ l, onRecibo }: { l: LinhaDoMotoboy; onRecibo: () => void }) {
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "1rem 1.6rem", padding: "0.9rem 1rem 1rem 2.6rem", background: PALETA.areia, textAlign: "left", whiteSpace: "normal" }}>
       <div>
         <div style={sub}>De onde vem o pagamento</div>
-        {l.diaria > 0.005 && linha(`Diária × ${plural(l.dias, "dia", "dias")}`, fmtReais(l.diaria))}
+        {(l.diaria > 0.005 || (l.diariasAjustadas || []).length > 0) && linha(
+          `Diária × ${plural(l.dias, "dia", "dias")}${(l.diariasAjustadas || []).length ? ` (${plural(l.diariasAjustadas.length, "dia ajustado", "dias ajustados")})` : ""}`,
+          fmtReais(l.diaria),
+        )}
+        {(l.diariasAjustadas || []).map((d) => (
+          <div key={d.dia} style={{ fontSize: "0.72rem", color: PALETA.areiaTinta, marginTop: -2 }}>
+            {fmtDia(d.dia)}: diária ajustada para {fmtReais(d.valor)} <span style={{ textDecoration: "line-through" }}>{fmtReais(d.padrao)}</span>
+          </div>
+        ))}
         {l.composicao.map((c) => linha(`${c.rotulo} (${c.qtd})`, fmtReais(c.valor), c.rotulo))}
         {l.lanche > 0.005 && linha("Lanche acima do combinado", `− ${fmtReais(l.lanche)}`)}
+        {/* A pendência que a loja lançou no relatório do motoboy, com o motivo. */}
+        {(l.listaDePendencias || []).map((p, i) => (
+          <div key={`p${i}`}>
+            {linha(`Pendência ${fmtDia(p.dia)}`, `− ${fmtReais(p.valor)}`)}
+            <div style={{ fontSize: "0.72rem", color: PALETA.areiaTinta, marginTop: -2 }}>{p.motivo}{p.criadoPor ? ` · lançada por ${p.criadoPor}` : ""}</div>
+          </div>
+        ))}
         <div style={{ borderTop: `1px dashed ${PALETA.areiaBorda}`, marginTop: 4, paddingTop: 4 }}>{linha(<strong>A pagar</strong>, <strong>{fmtReais(l.aPagar)}</strong>)}</div>
       </div>
       <div>
@@ -252,8 +268,19 @@ function Recibo({ l, periodo, nomeDaLoja, onFechar }: { l: LinhaDoMotoboy; perio
         {l.km > 0 && linha("Km rodados", `${fmtQtd(l.km)} km`)}
         <div style={{ borderTop: `1px solid ${PALETA.areiaBorda}`, margin: "8px 0" }} />
         {l.diaria > 0.005 && linha("Diárias", fmtReais(l.diaria))}
+        {(l.diariasAjustadas || []).map((d) => (
+          <div key={d.dia} style={{ fontSize: "0.78rem", color: PALETA.carvao2, marginTop: -2 }}>
+            {fmtDia(d.dia)}: diária de {fmtReais(d.valor)} (padrão {fmtReais(d.padrao)})
+          </div>
+        ))}
         {linha("Entregas", fmtReais(l.porEntrega))}
         {l.lanche > 0.005 && linha("Lanche acima do combinado", `− ${fmtReais(l.lanche)}`)}
+        {(l.listaDePendencias || []).map((p, i) => (
+          <div key={`p${i}`}>
+            {linha(`Pendência ${fmtDia(p.dia)}`, `− ${fmtReais(p.valor)}`)}
+            <div style={{ fontSize: "0.78rem", color: PALETA.carvao2, marginTop: -4, paddingBottom: 2 }}>Motivo: {p.motivo}</div>
+          </div>
+        ))}
         {linha("Total do acerto", fmtReais(l.aPagar), true)}
         {l.dinheiroComEle > 0.005 && linha(l.trocoLevado > 0.005 ? "Dinheiro com ele (pedidos + troco levado)" : "Dinheiro dos pedidos com ele", `− ${fmtReais(l.dinheiroComEle)}`)}
         <div style={{ background: PALETA.areia, borderRadius: 10, padding: "8px 12px", marginTop: 8 }}>
@@ -361,7 +388,7 @@ export default function AcertoDeEntregadoresClient({ inicio }: { inicio: InicioD
                     <th style={{ ...th, minWidth: 110 }} title="Participação nas entregas da equipe">% equipe</th>
                     <th style={th}>Km</th>
                     <th style={th} title="Tudo o que ele recebe ÷ entregas">Custo/entrega</th>
-                    <th style={th} title="Diária + entregas − lanche acima do combinado">A pagar</th>
+                    <th style={th} title="Diária + entregas − lanche acima do combinado − pendências">A pagar</th>
                     <th style={th} title="Pedidos em dinheiro + o troco que ele levou da loja">Dinheiro c/ ele</th>
                     <th style={th} title="A pagar − dinheiro com ele">Saldo</th>
                   </tr>
@@ -472,8 +499,8 @@ export default function AcertoDeEntregadoresClient({ inicio }: { inicio: InicioD
       )}
 
       <p style={{ fontSize: "0.78rem", color: PALETA.areiaTinta, marginTop: "1rem", lineHeight: 1.55 }}>
-        <strong>A pagar</strong> é a diária de cada dia trabalhado mais o valor de cada entrega (pela forma de pagamento do cadastro do motoboy),
-        menos o lanche acima do combinado — o mesmo total da tela <Link href="/store/motoboys" style={{ color: PALETA.marca, fontWeight: 800 }}>Motoboys</Link> e
+        <strong>A pagar</strong> é a diária de cada dia trabalhado (a do cadastro, ou a que a loja ajustou naquele dia) mais o valor de cada entrega
+        (pela forma de pagamento do cadastro do motoboy), menos o lanche acima do combinado e as pendências lançadas no relatório do motoboy — o mesmo total da tela <Link href="/store/motoboys" style={{ color: PALETA.marca, fontWeight: 800 }}>Motoboys</Link> e
         do app do entregador. <strong>Dinheiro com ele</strong> são os pedidos pagos em dinheiro mais o troco que ele levou da loja.{" "}
         <strong>Saldo</strong> é um menos o outro: positivo, a loja paga; negativo, ele devolve. Entrega cancelada depois que o motoboy saiu conta como
         corrida; antes de sair, não. Pedido levado pelo entregador do iFood ou da 99 fica fora. O dia vira às 5h.

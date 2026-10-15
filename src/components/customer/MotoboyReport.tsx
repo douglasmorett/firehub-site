@@ -10,6 +10,9 @@ import { toLocalISODate } from "@/lib/timezone";
 import TrocaDePagamentoPainel from "./TrocaDePagamentoPainel";
 import VerPedidoDoAcerto from "./VerPedidoDoAcerto";
 import { acharPedidoNoAcerto } from "@/lib/achar-pedido-no-acerto";
+import { lerOpcoesDoAcerto, quadradoDaCaixa, type QuadradoDoAcerto } from "@/lib/ajustes-do-acerto-regras";
+import { AvisoNoTopo, type Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
+import { DiariasPorDia, OpcaoCartaoEVale, PendenciasDoMotoboy } from "./AjustesDoAcerto";
 
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
@@ -20,8 +23,10 @@ const fmt = (v: number) => `R$ ${(v || 0).toLocaleString("pt-BR", { minimumFract
  * da entrega, para o olho ligar uma coisa à outra: as linhas com a etiqueta
  * verde "Pago Online" são as que somam o quadrado verde.
  */
-const COR_DA_CAIXA: Record<ChaveDaForma, { fundo: string; borda: string; texto: string }> = {
+const COR_DA_CAIXA: Record<QuadradoDoAcerto, { fundo: string; borda: string; texto: string }> = {
   DINHEIRO: { fundo: "#FFF7E6", borda: "#FCD9A8", texto: "#B45309" },
+  // Débito + crédito + voucher juntos (opção da loja): a mesma cor da maquininha.
+  CARTAO: { fundo: "#F1F5F9", borda: "#CBD5E1", texto: "#334155" },
   DEBITO: { fundo: "#F1F5F9", borda: "#CBD5E1", texto: "#334155" },
   CREDITO: { fundo: "#F1F5F9", borda: "#CBD5E1", texto: "#334155" },
   VALE: { fundo: "#F1F5F9", borda: "#CBD5E1", texto: "#334155" },
@@ -30,22 +35,35 @@ const COR_DA_CAIXA: Record<ChaveDaForma, { fundo: string; borda: string; texto: 
   FIADO: { fundo: "#FEF3C7", borda: "#FDE68A", texto: "#92400E" },
   OUTROS: { fundo: "#FEF2F2", borda: "#FECACA", texto: "#B91C1C" },
 };
-const ROTULO_DA_CAIXA = new Map(CAIXAS_DO_ACERTO.map((c) => [c.chave, c]));
+const ROTULO_DA_CAIXA = new Map<QuadradoDoAcerto, { rotulo: string; curto: string }>([
+  ...CAIXAS_DO_ACERTO.map((c) => [c.chave, c] as [QuadradoDoAcerto, { rotulo: string; curto: string }]),
+  ["CARTAO", { rotulo: "💳 Cartão / voucher (Máquina)", curto: "💳 Cartão / voucher" }],
+]);
 
 /**
  * Os quadrados da conferência de UM motoboy. Dinheiro e maquininha sempre
  * aparecem (é o que o motoboy traz na mão); Pix na entrega, Pago Online,
  * Fiado e Forma não identificada só com valor.
+ *
+ * Com a opção da loja "cartão e voucher num quadrado só" (Delícia de Casa,
+ * 15/10/2026), débito, crédito e voucher viram UM quadrado, com a soma e a
+ * contagem da maquininha (`cardPosTotal`/`cardPosCount`, a mesma do topo).
  */
-function quadradosDaConferencia(st: any): { chave: ChaveDaForma; valor: number; qtd: number; nota?: string }[] {
-  const todos: { chave: ChaveDaForma; valor: number; qtd: number; sempre?: boolean; nota?: string }[] = [
+function quadradosDaConferencia(st: any, juntarCartao: boolean): { chave: QuadradoDoAcerto; valor: number; qtd: number; nota?: string }[] {
+  const maquininha: { chave: QuadradoDoAcerto; valor: number; qtd: number; sempre?: boolean; nota?: string }[] = juntarCartao
+    ? [{ chave: "CARTAO", valor: st.cardPosTotal || 0, qtd: st.cardPosCount || 0, sempre: true,
+        nota: (st.cardPosCount || 0) > 0 ? `débito ${fmt(st.debitTotal || 0)} · crédito ${fmt(st.creditTotal || 0)} · voucher ${fmt(st.voucherTotal || 0)}` : undefined }]
+    : [
+        { chave: "DEBITO", valor: st.debitTotal || 0, qtd: st.debitCount || 0, sempre: true },
+        { chave: "CREDITO", valor: st.creditTotal || 0, qtd: st.creditCount || 0, sempre: true },
+        { chave: "VALE", valor: st.voucherTotal || 0, qtd: st.voucherCount || 0, sempre: true },
+      ];
+  const todos: { chave: QuadradoDoAcerto; valor: number; qtd: number; sempre?: boolean; nota?: string }[] = [
     // O dinheiro a entregar é a nota inteira: os pedidos MAIS o troco que ele
     // levou da loja para o cliente que pagou com nota grande (ele devolve).
     { chave: "DINHEIRO", valor: st.cashCollectedSum || 0, qtd: st.cashOrdersCount || 0, sempre: true,
       nota: (st.changeGivenSum || 0) > 0 ? `pedidos ${fmt(st.cashOrdersValueSum || 0)} + troco levado ${fmt(st.changeGivenSum || 0)}` : undefined },
-    { chave: "DEBITO", valor: st.debitTotal || 0, qtd: st.debitCount || 0, sempre: true },
-    { chave: "CREDITO", valor: st.creditTotal || 0, qtd: st.creditCount || 0, sempre: true },
-    { chave: "VALE", valor: st.voucherTotal || 0, qtd: st.voucherCount || 0, sempre: true },
+    ...maquininha,
     { chave: "PIX", valor: st.pixTotal || 0, qtd: st.pixCount || 0, nota: "caiu na conta da loja" },
     { chave: "ONLINE", valor: st.onlineTotal || 0, qtd: st.onlineCount || 0, nota: "site/app — não passa pelo motoboy" },
     { chave: "FIADO", valor: st.fiadoTotal || 0, qtd: st.fiadoCount || 0, nota: "acertado depois" },
@@ -130,8 +148,19 @@ function getRange(period: string, tz = "America/Sao_Paulo") {
   return null;
 }
 
-export default function MotoboyReport({ motoboys, storeTimezone, operador }: { motoboys: Motoboy[], storeTimezone?: string, operador: OperadorDaEdicao }) {
+export default function MotoboyReport({ motoboys, storeTimezone, operador, deliveryConfig }: {
+  motoboys: Motoboy[], storeTimezone?: string, operador: OperadorDaEdicao,
+  /** O deliveryConfig da LOJA: guarda as opções do acerto (lib/ajustes-do-acerto-regras.ts). */
+  deliveryConfig?: unknown,
+}) {
   const tzLoja = storeTimezone || "America/Sao_Paulo";
+  // Retorno das ações (diária, pendência, opção) no aviso do topo, nunca alert().
+  const [aviso, setAviso] = useState<Aviso | null>(null);
+  const fecharAviso = useCallback(() => setAviso(null), []);
+  // Débito, crédito e voucher num quadrado só — opção da loja, desligada por padrão.
+  const [juntarCartao, setJuntarCartao] = useState(() => lerOpcoesDoAcerto(deliveryConfig).juntarCartaoEVale);
+  // A lista de diárias por dia aberta no cartão de cada motoboy.
+  const [diariasAbertas, setDiariasAbertas] = useState<Record<string, boolean>>({});
   // As caixas de data nascem preenchidas com o período selecionado. O lojista
   // vê exatamente qual intervalo vai ser consultado antes de gerar — e pode
   // mexer direto na data sem procurar botão nenhum.
@@ -178,8 +207,8 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
   // formam aquele valor. Era o que faltava para achar a diferença no "Pago
   // Online": o lojista somava as notas e não tinha como saber quais o sistema
   // tinha posto ali (Fellipe, Delícia de Casa, 10/10/2026).
-  const [caixaFiltrada, setCaixaFiltrada] = useState<Record<string, ChaveDaForma | null>>({});
-  const filtrarPelaCaixa = (motoboyId: string, chave: ChaveDaForma) => {
+  const [caixaFiltrada, setCaixaFiltrada] = useState<Record<string, QuadradoDoAcerto | null>>({});
+  const filtrarPelaCaixa = (motoboyId: string, chave: QuadradoDoAcerto) => {
     const jaEstava = caixaFiltrada[motoboyId] === chave;
     setCaixaFiltrada((atual) => ({ ...atual, [motoboyId]: jaEstava ? null : chave }));
     if (jaEstava) return;
@@ -220,6 +249,11 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
    * desmontava, e quem acerta 15 entregas com o motoboy teria de reabri-la a
    * cada troca.
    */
+  /** Mudou uma diária ou uma pendência: relê em silêncio, sem fechar as listas abertas. */
+  const aposAjuste = async () => {
+    if (buscaNaTela.current) await buscar(buscaNaTela.current, true);
+  };
+
   const aposTrocarPagamento = async (pedidoId: string) => {
     setTrocandoPagamento(null);
     if (buscaNaTela.current) await buscar(buscaNaTela.current, true);
@@ -319,6 +353,11 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
     return { r, st, visiveis, filtrado, ocultos, semDistancia, cancelados, canceladosSemCorrida, composicao, porCanal, botoes };
   });
 
+  // A data que o "Lançar pendência" já traz: hoje (o expediente), se estiver
+  // no período da tela; senão o último dia do período.
+  const hojeDoExpediente = getRange("today", tzLoja)!.from;
+  const diaSugeridoDaPendencia = hojeDoExpediente >= customFrom && hojeDoExpediente <= customTo ? hojeDoExpediente : customTo;
+
   const getMotoboyPay = (st: any) => calcMode === "fee_only" ? st.totalFeeOnly : st.totalWithDaily;
   const totalPay = cards.reduce((s, c) => s + getMotoboyPay(c.st), 0);
   const totalDeliveries = cards.reduce((s, c) => s + c.st.totalDeliveries, 0);
@@ -417,6 +456,19 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
               🛵 Só Taxa
             </button>
           </div>
+        </div>
+
+        {/* Opção da LOJA (não do motoboy): débito, crédito e voucher num
+            quadrado só na conferência. Desligada por padrão — as lojas que
+            conferem cada forma separada continuam vendo como sempre. */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 6, textTransform: "uppercase" }}>Conferência</label>
+          <OpcaoCartaoEVale
+            ligada={juntarCartao}
+            podeMudar={String(operador?.role || "").toUpperCase() !== "STAFF"}
+            avisar={setAviso}
+            aoMudar={(ligada) => { setJuntarCartao(ligada); setCaixaFiltrada({}); }}
+          />
         </div>
 
         <button onClick={load} disabled={loading}
@@ -640,7 +692,7 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 10 }}>
-                    {quadradosDaConferencia(st).map((q) => {
+                    {quadradosDaConferencia(st, juntarCartao).map((q) => {
                       const cor = COR_DA_CAIXA[q.chave];
                       const comValor = q.qtd > 0;
                       const ativo = caixaFiltrada[r.motoboy.id] === q.chave;
@@ -680,17 +732,40 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                 <div style={{ borderTop: "1px solid #F1F5F9", paddingTop: 10 }}>
                   <p style={{ fontSize: "0.72rem", fontWeight: 700, color: "#94A3B8", textTransform: "uppercase", marginBottom: 6 }}>Composição do Pagamento</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    {r.stats.dailyTotal > 0 && (() => {
+                    {(() => {
+                      // ── A DIÁRIA, DIA A DIA ─────────────────────────────────
+                      // Cada dia trabalhado vale a diária do cadastro, a não ser
+                      // o dia que a loja mudou aqui (lib/ajustes-do-acerto-regras.ts).
+                      // A linha abre a lista dos dias para ajustar um por um.
+                      const diarias: any[] = r.stats.diarias || [];
+                      const ajustadas = diarias.filter((d) => d.ajustada).length;
+                      if (!diarias.length || ((r.motoboy.dailyRate || 0) <= 0 && ajustadas === 0)) return null;
                       // Com filtro de integração a diária sai da conta: ela é
                       // do dia trabalhado, não do iFood nem do 99. Fica
                       // riscada, com o valor cheio, para ninguém achar que sumiu.
                       const fora = calcMode === "fee_only" || filtrado;
+                      const aberta = !!diariasAbertas[r.motoboy.id];
                       return (
-                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.85rem", opacity: fora ? 0.45 : 1 }}>
-                          <span style={{ textDecoration: fora ? "line-through" : "none" }}>
-                            Diária: {fmt(r.motoboy.dailyRate || 0)} × {r.stats.uniqueDays} dias {filtrado ? "(não se divide por integração)" : calcMode === "fee_only" ? "(Desconsiderada)" : ""}
-                          </span>
-                          <span style={{ fontWeight: 700, textDecoration: fora ? "line-through" : "none" }}>{fmt(r.stats.dailyTotal)}</span>
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: "0.85rem" }}>
+                            <span style={{ opacity: fora ? 0.45 : 1, textDecoration: fora ? "line-through" : "none" }}>
+                              {ajustadas
+                                ? `Diária: ${r.stats.uniqueDays} dias (${ajustadas} ajustado${ajustadas > 1 ? "s" : ""}, padrão ${fmt(r.motoboy.dailyRate || 0)})`
+                                : `Diária: ${fmt(r.motoboy.dailyRate || 0)} × ${r.stats.uniqueDays} dias`}
+                              {" "}{filtrado ? "(não se divide por integração)" : calcMode === "fee_only" ? "(Desconsiderada)" : ""}
+                            </span>
+                            <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                              <button type="button" onClick={() => setDiariasAbertas((a) => ({ ...a, [r.motoboy.id]: !aberta }))}
+                                aria-expanded={aberta} title="Ver a diária de cada dia e mudar a de um dia"
+                                style={{ background: "none", border: "none", padding: 0, color: "#C92E09", fontWeight: 700, fontSize: "0.74rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                                {aberta ? "fechar ▲" : "ajustar por dia ›"}
+                              </button>
+                              <span style={{ fontWeight: 700, opacity: fora ? 0.45 : 1, textDecoration: fora ? "line-through" : "none" }}>{fmt(r.stats.dailyTotal)}</span>
+                            </span>
+                          </div>
+                          {aberta && (
+                            <DiariasPorDia motoboyId={r.motoboy.id} diarias={diarias} avisar={setAviso} aoMudar={aposAjuste} />
+                          )}
                         </div>
                       );
                     })()}
@@ -740,6 +815,23 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                           ))}
                         </div>
                       </details>
+                    )}
+
+                    {/* As pendências lançadas pela loja (faltou dinheiro, avaria...):
+                        saem do total a pagar, com o motivo. Fora do filtro de
+                        integração, como o lanche. */}
+                    {!filtrado && (
+                      <PendenciasDoMotoboy
+                        motoboyId={r.motoboy.id}
+                        nome={r.motoboy.name}
+                        pendencias={r.pendencias || []}
+                        total={r.stats.pendenciasDescontadas || 0}
+                        diaSugerido={diaSugeridoDaPendencia}
+                        de={customFrom}
+                        ate={customTo}
+                        avisar={setAviso}
+                        aoMudar={aposAjuste}
+                      />
                     )}
 
                     {/* O fiado do motoboy (lib/fiado-do-motoboy.ts): aparece
@@ -827,10 +919,10 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
                   // Com um quadrado escolhido, a lista é só o que soma nele.
                   const filtroDaCaixa = caixaFiltrada[r.motoboy.id] || null;
                   const naLista: any[] = filtroDaCaixa
-                    ? visiveis.filter((o: any) => !o.cancelado && partesDaEntrega(o).some((p) => p.caixa === filtroDaCaixa))
+                    ? visiveis.filter((o: any) => !o.cancelado && partesDaEntrega(o).some((p) => quadradoDaCaixa(p.caixa, juntarCartao) === filtroDaCaixa))
                     : visiveis;
                   const somaDaCaixa = filtroDaCaixa
-                    ? Math.round(naLista.reduce((s: number, o: any) => s + partesDaEntrega(o).filter((p) => p.caixa === filtroDaCaixa).reduce((t, p) => t + valorNoQuadrado(p), 0), 0) * 100) / 100
+                    ? Math.round(naLista.reduce((s: number, o: any) => s + partesDaEntrega(o).filter((p) => quadradoDaCaixa(p.caixa, juntarCartao) === filtroDaCaixa).reduce((t, p) => t + valorNoQuadrado(p), 0), 0) * 100) / 100
                     : 0;
                   return (
                   <div id={`entregas-${r.motoboy.id}`} style={{ marginTop: 14, scrollMarginTop: 12 }}>
@@ -993,6 +1085,8 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador }: { m
           })}
         </>
       )}
+
+      <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
 
       {pedidoAberto && (
         <VerPedidoDoAcerto

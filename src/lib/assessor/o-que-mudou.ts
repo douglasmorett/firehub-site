@@ -50,7 +50,7 @@ export async function oQueMudouNaLoja(franchiseeId: string, timezone?: string | 
         select: { supplierName: true, value: true, updatedAt: true },
       }),
       prisma.menuProduct.findMany({
-        where: { franchiseeId, updatedAt: { gte: desde }, ...SEM_PRODUTO_DE_INTEGRACAO, NOT: { name: { startsWith: PREFIXO_DA_MEIA } } },
+        where: { franchiseeId, updatedAt: { gte: desde }, AND: [SEM_PRODUTO_DE_INTEGRACAO, { NOT: { name: { startsWith: PREFIXO_DA_MEIA } } }] },
         orderBy: { updatedAt: "desc" },
         take: 12,
         select: { id: true, name: true, active: true, updatedAt: true },

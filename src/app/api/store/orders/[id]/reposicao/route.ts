@@ -33,6 +33,7 @@ import {
   type MotivoDaReposicao,
   type Reposicao,
 } from "@/lib/reposicao";
+import { taxaDaCorrida } from "@/lib/ganho-do-entregador";
 
 type ItemPedido = { itemId: string; quantity: number; opcao?: { nome: string } | null };
 
@@ -66,6 +67,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         id: true, status: true, dailyOrderNumber: true, ifoodReference: true, openDeliveryReference: true,
         customerId: true, customerName: true, customerPhone: true, customerAddress: true, customerLatLng: true,
         deliveryType: true, editHistory: true, totalAmount: true,
+        deliveryFee: true, entregaGratis: true, deliveryDistance: true,
         items: {
           select: { id: true, menuProductId: true, productName: true, quantity: true, notes: true, comboSelections: true },
         },
@@ -145,6 +147,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // Já pago no original: nem item, nem taxa. Faturamento e caixa ficam
         // como estavam.
         deliveryFee: 0,
+        // Mas o motoboy faz a corrida inteira de novo, até o mesmo endereço.
+        // Com taxa 0 ela rendia R$ 0,00 no acerto (maicon, Hakim Centro,
+        // 14/10/2026). A taxa do original vai como entrega grátis — o cliente
+        // não paga, e o acerto, o fechamento e o painel já pagam o valor
+        // cheio dela ao motoboy (taxaDaCorrida). A distância vai junto para
+        // quem recebe por faixa ou km.
+        ...(String(order.deliveryType || "DELIVERY").toUpperCase() === "DELIVERY" && taxaDaCorrida(order) > 0
+          ? { entregaGratis: { valor: taxaDaCorrida(order), motivo: `Reposição do #${numero}` } as any }
+          : {}),
+        ...(order.deliveryDistance != null ? { deliveryDistance: order.deliveryDistance } : {}),
         totalAmount: 0,
         status: "ACEITO",
         source: "PRESENCIAL",

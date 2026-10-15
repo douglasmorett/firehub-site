@@ -69,6 +69,10 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
   {
     titulo: "Gestão",
     itens: [
+      // Estoque, financeiro e cardápio pelo WhatsApp do dono (lib/assessor). O
+      // menu de cima (StoreTopNav) tinha o item; este, que é o que o painel
+      // mostra, não — achado no teste na Hakim, 15/10/2026.
+      { href: "/store/bill", label: "Bill, seu assessor", icone: "Mic", selo: "NOVO" },
       { href: "/store/financeiro", label: "Financeiro", icone: "BarChart2" },
       { href: "/store/antecipacao", label: "Antecipação", icone: "Zap", somenteCom: "antecipacao" },
       { href: "/store/relatorios", label: "Relatórios", icone: "LineChart" },
