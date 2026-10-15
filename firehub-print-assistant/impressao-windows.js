@@ -256,7 +256,7 @@ function htmlDaComanda(dados, { columns = 48, paperWidth = "80mm" } = {}) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>FireHub</title><style>
 @page { margin: 0; }
 html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-body { width: ${larguraMm}mm; margin: 0 auto; padding: 1mm 0 2mm;
+body { width: ${larguraMm}mm; margin: 0; padding: 1mm 0 2mm ${((paperWidth === "58mm" ? 58 : 80) - larguraMm) / 2}mm;
   font-family: "Courier New", Courier, Consolas, monospace; font-size: ${letraMm.toFixed(3)}mm; }
 pre { margin: 0; font: inherit; white-space: pre; line-height: 1.15; overflow: hidden; }
 .img { text-align: center; line-height: 0; }
@@ -271,14 +271,16 @@ pre { margin: 0; font: inherit; white-space: pre; line-height: 1.15; overflow: h
  * Windows aceitou o trabalho; rejeita com o motivo (impressora inexistente,
  * driver recusou, prazo) — o chamador trata como o rawPrint: vira pendente.
  */
-async function imprimirPeloDriver(printerName, html, { prazoMs = 30_000 } = {}) {
+async function imprimirPeloDriver(printerName, html, { prazoMs = 30_000, paperWidth = "80mm" } = {}) {
   const { app, BrowserWindow } = require("electron");
   await app.whenReady();
+  // JavaScript ligado só para MEDIR a altura da comanda: a pagina e nossa,
+  // montada aqui com todo texto escapado (escaparHtml), sem nada de fora.
   const win = new BrowserWindow({
     show: false,
     width: 420,
     height: 900,
-    webPreferences: { javascript: false, sandbox: true, contextIsolation: true },
+    webPreferences: { javascript: true, sandbox: true, contextIsolation: true },
   });
   try {
     try {
@@ -292,6 +294,20 @@ async function imprimirPeloDriver(printerName, html, { prazoMs = 30_000 } = {}) 
       // Lista indisponivel: segue e deixa o print() dizer.
     }
     await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
+
+    // ── O TAMANHO DA PAGINA E O DA BOBINA ─────────────────────────────────
+    //
+    // Sem `pageSize`, o Chromium imprime numa folha A4 (210 mm) e centraliza
+    // a comanda nela: numa bobina de 80 mm a comanda cai a ~69 mm da borda,
+    // fora do papel — a Diebold do Bistro Burguer (15/10/2026) soltou um papel
+    // em branco no 1o teste. A pagina tem a largura da bobina e a altura da
+    // propria comanda (medida no navegador), para o driver nao puxar folha A4
+    // inteira de papel em branco.
+    const larguraMm = paperWidth === "58mm" ? 58 : 80;
+    let alturaPx = 0;
+    try { alturaPx = Number(await win.webContents.executeJavaScript("document.documentElement.scrollHeight")) || 0; } catch (_) {}
+    const alturaMm = Math.max(40, Math.min(2000, Math.ceil(alturaPx * 25.4 / 96) + 6));
+
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`driver do Windows nao respondeu em ${Math.round(prazoMs / 1000)} s`)), prazoMs);
       win.webContents.print({
@@ -299,6 +315,7 @@ async function imprimirPeloDriver(printerName, html, { prazoMs = 30_000 } = {}) 
         deviceName: printerName,
         printBackground: false,
         margins: { marginType: "none" },
+        pageSize: { width: larguraMm * 1000, height: alturaMm * 1000 },
       }, (ok, motivo) => {
         clearTimeout(timer);
         if (ok) resolve(true);

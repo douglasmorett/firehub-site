@@ -751,7 +751,7 @@ function enviarParaImpressora(printerName, dataBuffer, perfil) {
   if (perfil && perfil.profile === "windows") {
     if (rodandoDentroDoElectron()) {
       const html = impressaoWindows.htmlDaComanda(dataBuffer, { columns: perfil.columns, paperWidth: perfil.paperWidth });
-      return impressaoWindows.imprimirPeloDriver(printerName, html, { prazoMs: Math.max(PRAZO_IMPRESSAO_MS, 30_000) });
+      return impressaoWindows.imprimirPeloDriver(printerName, html, { prazoMs: Math.max(PRAZO_IMPRESSAO_MS, 30_000), paperWidth: perfil.paperWidth });
     }
     if (!avisouSemElectron) {
       avisouSemElectron = true;
