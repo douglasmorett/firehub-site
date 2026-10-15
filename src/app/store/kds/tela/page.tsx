@@ -235,18 +235,31 @@ export default function KDSTelaPage() {
   // inteiro 90° para um lado ou para o outro — depende de como a TV foi
   // pendurada. É do APARELHO, não da loja: cada TV tem a sua posição, por isso
   // fica no localStorage (sem ele, a tela abre deitada como sempre abriu).
+  //
+  // A chave é de CADA TELA, não do aparelho inteiro. Com uma chave só, o
+  // computador que abre a Produção (TV de pé) e a Finalização (TV de 24"
+  // deitada) girava as duas: a Finalização virava de lado sozinha no F5
+  // seguinte (14/10/2026).
+  //
+  // E o ⟳ abre as três posições em vez de girar em ciclo: no ciclo
+  // 0 → 90 → 270 → 0, quem tocava para "desvirar" uma tela a 90° caía em 270°
+  // (de pé para o outro lado) e achava que o botão não funcionava; e o OK do
+  // controle remoto num ⟳ que ficou com o foco girava a tela de novo.
+  const chaveDaRotacao = `kds-rotacao:${chaveDaTela || `${stage}:${screenName}`}`;
   const [rotacao, setRotacao] = useState<0 | 90 | 270>(0);
+  const [showGirar, setShowGirar] = useState(false);
   useEffect(() => {
     try {
-      const salvo = Number(localStorage.getItem("kds-rotacao"));
-      if (salvo === 90 || salvo === 270) setRotacao(salvo);
+      const salvo = Number(localStorage.getItem(chaveDaRotacao));
+      setRotacao(salvo === 90 || salvo === 270 ? salvo : 0);
     } catch {}
-  }, []);
-  const girarTela = () => {
-    const proxima = rotacao === 0 ? 90 : rotacao === 90 ? 270 : 0;
-    setRotacao(proxima);
+  }, [chaveDaRotacao]);
+  const posicionarTela = (nova: 0 | 90 | 270) => {
+    setRotacao(nova);
+    setShowGirar(false);
     try {
-      localStorage.setItem("kds-rotacao", String(proxima));
+      if (nova === 0) localStorage.removeItem(chaveDaRotacao);
+      else localStorage.setItem(chaveDaRotacao, String(nova));
     } catch {}
   };
   // ── 🔔 AVISO SONORO DE PEDIDO NOVO ───────────────────────────────────────
@@ -1502,9 +1515,15 @@ export default function KDSTelaPage() {
               )}
 
               {/* ⟳ Girar a tela — discreto: só quem pendurou a TV de pé precisa. */}
+              <div style={{ position: "relative", flexShrink: 0 }}>
               <button
-                onClick={girarTela}
-                title={rotacao === 0 ? "Girar a tela (TV de pé)" : rotacao === 90 ? "Girar para o outro lado" : "Voltar a tela ao normal"}
+                type="button"
+                onClick={(e) => {
+                  // Sem o foco, o OK do controle / Enter do teclado não aciona o ⟳.
+                  e.currentTarget.blur();
+                  setShowGirar((v) => !v);
+                }}
+                title="Posição da tela (TV deitada ou de pé)"
                 aria-label="Girar a tela"
                 style={{
                   width: 32,
@@ -1524,6 +1543,56 @@ export default function KDSTelaPage() {
               >
                 ⟳
               </button>
+              {showGirar && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 8px)",
+                    right: 0,
+                    zIndex: 1000,
+                    background: "#111118",
+                    border: "1px solid #44403C",
+                    borderRadius: 12,
+                    padding: 12,
+                    width: 260,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 8,
+                    boxShadow: "0 10px 30px rgba(0,0,0,0.5)",
+                  }}
+                >
+                  <span style={{ fontWeight: 800, fontSize: 12, color: "#94A3B8", paddingBottom: 4 }}>POSIÇÃO DESTA TELA</span>
+                  {([
+                    { graus: 0, rotulo: "▭ Deitada (normal)" },
+                    { graus: 90, rotulo: "↻ De pé, girada para a direita" },
+                    { graus: 270, rotulo: "↺ De pé, girada para a esquerda" },
+                  ] as const).map((p) => (
+                    <button
+                      key={p.graus}
+                      type="button"
+                      onClick={(e) => {
+                        e.currentTarget.blur();
+                        posicionarTela(p.graus);
+                      }}
+                      style={{
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        border: rotacao === p.graus ? `2px solid ${accent}` : "1px solid #292524",
+                        background: rotacao === p.graus ? "#1C1917" : "transparent",
+                        color: "#F8FAFC",
+                        fontWeight: 700,
+                        fontSize: 14,
+                        textAlign: "left",
+                        cursor: "pointer",
+                        fontFamily: FONT,
+                      }}
+                    >
+                      {p.rotulo}
+                    </button>
+                  ))}
+                </div>
+              )}
+              </div>
 
               <button
                 onClick={alternarSom}
