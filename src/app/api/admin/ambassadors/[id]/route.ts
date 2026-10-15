@@ -27,9 +27,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (body.active !== undefined) data.active = !!body.active;
     if (body.code) data.code = String(body.code).toLowerCase().trim();
 
-    // Os dois percentuais somados saem da mensalidade da loja. O painel é o
-    // único lugar onde eles mudam, então a validação mora aqui.
-    for (const campo of ["commissionPercent", "level2Percent"] as const) {
+    // O percentual sai da mensalidade da loja. O painel é o único lugar onde
+    // ele muda, então a validação mora aqui. (O nível 2 — `level2Percent` e
+    // `parentAmbassadorId` — acabou em 15/10/2026 e não se edita mais.)
+    for (const campo of ["commissionPercent"] as const) {
       if (body[campo] === undefined || body[campo] === null || body[campo] === "") continue;
       const valor = parseFloat(String(body[campo]));
       if (!Number.isFinite(valor) || valor < 0 || valor > 40) {
@@ -39,35 +40,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         );
       }
       data[campo] = valor;
-    }
-
-    if (body.parentAmbassadorId !== undefined) {
-      const paiId = body.parentAmbassadorId || null;
-
-      // Sem laço. Um embaixador apontando para si mesmo (ou A→B→A) faria o
-      // billing pagar duas vezes para a mesma carteira no mesmo boleto.
-      if (paiId === id) {
-        return NextResponse.json(
-          { error: "Um embaixador não pode ser indicado por ele mesmo." },
-          { status: 400 }
-        );
-      }
-      if (paiId) {
-        const pai = await prisma.ambassador.findUnique({
-          where: { id: paiId },
-          select: { id: true, parentAmbassadorId: true },
-        });
-        if (!pai) {
-          return NextResponse.json({ error: "Embaixador indicador não encontrado." }, { status: 400 });
-        }
-        if (pai.parentAmbassadorId === id) {
-          return NextResponse.json(
-            { error: "Esses dois já estão ligados na outra direção — isso criaria um ciclo." },
-            { status: 400 }
-          );
-        }
-      }
-      data.parentAmbassadorId = paiId;
     }
 
     const ambassador = await prisma.ambassador.update({

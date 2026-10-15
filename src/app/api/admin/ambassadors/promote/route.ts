@@ -13,10 +13,9 @@ import bcrypt from "bcryptjs";
  *
  * O ponto delicado é o que este endpoint NÃO faz: ele não encosta em
  * `User.ambassadorId` da loja promovida. Esse campo continua apontando para
- * quem indicou a loja, que é o que preserva a comissão de nível 1 já
- * contratada — o embaixador antigo não perde a loja por ela virar embaixadora.
- * O mesmo embaixador vira o `parentAmbassador` da conta nova e passa a receber
- * o nível 2 (3%) das lojas que a promovida trouxer.
+ * quem indicou a loja, que é o que preserva a comissão já contratada — o
+ * embaixador antigo não perde a loja por ela virar embaixadora. Ele NÃO ganha
+ * nada das lojas que a promovida trouxer: o nível 2 acabou em 15/10/2026.
  */
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -89,10 +88,10 @@ export async function POST(req: NextRequest) {
         pixKey: pixKey || null,
         password: await bcrypt.hash(senhaTemporaria, 12),
         active: true,
-        parentAmbassadorId: loja.ambassadorId || null,
+        parentAmbassadorId: null,
+        level2Percent: 0,
         linkedUserId: loja.id,
       },
-      include: { parentAmbassador: { select: { id: true, name: true, level2Percent: true } } },
     });
 
     return NextResponse.json({

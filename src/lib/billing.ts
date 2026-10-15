@@ -636,7 +636,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         include: {
           // Dois niveis: quem indicou a loja e quem indicou esse embaixador.
           // Nao sobe mais que isso — o programa para no segundo nivel.
-          ambassador: { include: { parentAmbassador: true } },
+          ambassador: true,
           // O vendedor que o admin pôs para acompanhar a loja (lib/vendedores.ts).
           vendedor: true,
           // A loja é do próprio embaixador/vendedor? (lojaIsenta)
@@ -860,15 +860,12 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         fine: { value: MULTA_POR_ATRASO_PCT, type: "PERCENTAGE" },
       };
 
-      // ── Comissão de embaixador: dois níveis, nunca mais ──────────────────
+      // ── Comissão de embaixador: um nível só ──────────────────────────────
       //
-      // Nível 1 é quem indicou ESTA loja (`commissionPercent`, 20% de padrão e
-      // editável caso a caso no admin). Nível 2 é quem trouxe esse embaixador
-      // para o programa (`level2Percent`, 3%). O terceiro nível não existe: a
-      // corrente para no `parentAmbassador` de propósito, sem recursão.
-      //
-      // Os dois percentuais saem do bolo da FireHub, não um do outro: uma loja
-      // com rede completa devolve 23% da mensalidade.
+      // Quem indicou ESTA loja leva `commissionPercent` (20% de padrão e
+      // editável caso a caso no admin). O nível 2 (3% para quem trouxe o
+      // embaixador) foi encerrado em 15/10/2026: `parentAmbassadorId` e
+      // `level2Percent` ficam no banco, mas não pagam mais nada.
       //
       // O ramo antigo do "Indique e Ganhe" entre lojistas (User.referredById,
       // 20/3/1) saiu daqui. O programa foi encerrado para o cliente comum, mas
@@ -879,25 +876,16 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
 
       if (nivel1?.active && nivel1.asaasWalletId) {
         splits.push({ walletId: nivel1.asaasWalletId, percentualValue: nivel1.commissionPercent });
-
-        const nivel2 = nivel1.parentAmbassador;
-        if (nivel2?.active && nivel2.asaasWalletId && nivel2.id !== nivel1.id) {
-          splits.push({ walletId: nivel2.asaasWalletId, percentualValue: nivel2.level2Percent ?? 3 });
-        }
       }
 
       // Vendedor responsável: `sellerPercent` (3%) além do embaixador — só em
-      // loja que NÃO é indicação dele. Se ele indicou a loja (ou trouxe quem
-      // indicou), já ganha a comissão de embaixador e só acompanha
-      // (lib/vendedores.ts, ganhaComoVendedor). A soma na mesma linha fica
-      // como rede: o Asaas não aceita a mesma carteira duas vezes.
+      // loja que NÃO é indicação dele. Se ele indicou a loja, já ganha a
+      // comissão de embaixador e só acompanha (lib/vendedores.ts,
+      // ganhaComoVendedor).
       const vendedor = cycle.franchisee?.vendedor;
       if (
         vendedor?.active && vendedor.isVendedor && vendedor.asaasWalletId && vendedor.sellerPercent > 0 &&
-        ganhaComoVendedor(vendedor.id, {
-          ambassadorId: cycle.franchisee?.ambassadorId,
-          ambassador: cycle.franchisee?.ambassador ? { parentAmbassadorId: cycle.franchisee.ambassador.parentAmbassadorId } : null,
-        })
+        ganhaComoVendedor(vendedor.id, { ambassadorId: cycle.franchisee?.ambassadorId })
       ) {
         const mesma = splits.find((s) => s.walletId === vendedor.asaasWalletId);
         if (mesma) mesma.percentualValue += vendedor.sellerPercent;

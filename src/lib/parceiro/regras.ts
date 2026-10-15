@@ -36,14 +36,11 @@ export const TETO_DE_SPLIT = 40;
 
 /**
  * O vendedor leva `sellerPercent` desta loja? Não quando já ganha nela como
- * embaixador: indicou a loja (nível 1) ou trouxe quem indicou (nível 2).
+ * embaixador, por ter indicado a loja. (Até 15/10/2026 também não levava quando
+ * tinha trazido quem indicou — era o nível 2, que acabou.)
  */
-export function ganhaComoVendedor(
-  vendedorId: string,
-  loja: { ambassadorId?: string | null; ambassador?: { parentAmbassadorId?: string | null } | null }
-): boolean {
+export function ganhaComoVendedor(vendedorId: string, loja: { ambassadorId?: string | null }): boolean {
   if (loja.ambassadorId && loja.ambassadorId === vendedorId) return false;
-  if (loja.ambassador?.parentAmbassadorId && loja.ambassador.parentAmbassadorId === vendedorId) return false;
   return true;
 }
 
@@ -87,15 +84,13 @@ export type PapelNaLoja = {
 
 /**
  * O papel do parceiro nesta loja, ou null se ela não é dele. A indicação vence
- * a carteira: nível 1, depois nível 2, depois vendedor.
+ * a carteira: embaixador, depois vendedor. O papel REDE (nível 2) acabou em
+ * 15/10/2026 e não é mais atribuído.
  */
 export function papelNaLoja(p: ParceiroNasRegras, loja: LojaNasRegras): PapelNaLoja | null {
   const naCarteira = p.isVendedor && !!loja.vendedorId && loja.vendedorId === p.id;
   if (loja.ambassadorId && loja.ambassadorId === p.id) {
     return { papel: "EMBAIXADOR", percentual: p.commissionPercent, tambemNaCarteira: naCarteira };
-  }
-  if (loja.ambassador?.parentAmbassadorId && loja.ambassador.parentAmbassadorId === p.id) {
-    return { papel: "REDE", percentual: p.level2Percent, tambemNaCarteira: naCarteira };
   }
   if (naCarteira) return { papel: "VENDEDOR", percentual: p.sellerPercent, tambemNaCarteira: false };
   return null;
@@ -109,12 +104,6 @@ export function splitDaLoja(loja: LojaNasRegras): { linhas: { parceiroId: string
   const n1 = loja.ambassador;
   if (n1 && n1.active && n1.temCarteira) {
     linhas.push({ parceiroId: n1.id, papel: "EMBAIXADOR", percentual: n1.commissionPercent });
-    // O nível 2 só é olhado DENTRO do nível 1 — é assim no fechamento: se quem
-    // indicou está sem carteira ou inativo, o avô também fica de fora.
-    const n2 = n1.parentAmbassador;
-    if (n2 && n2.active && n2.temCarteira && n2.id !== n1.id) {
-      linhas.push({ parceiroId: n2.id, papel: "REDE", percentual: n2.level2Percent });
-    }
   }
   const v = loja.vendedor;
   if (v && v.active && v.isVendedor && v.temCarteira && v.sellerPercent > 0 && ganhaComoVendedor(v.id, loja)) {

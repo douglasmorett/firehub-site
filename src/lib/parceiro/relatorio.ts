@@ -37,7 +37,7 @@ export type RelatorioDoParceiro = {
     /** Os papéis que ele tem de fato (chips do topo e seções da estrutura). */
     papeis: Papel[];
   };
-  /** Os embaixadores que ele trouxe (nível 2). */
+  /** Os embaixadores que ele trouxe. Sempre vazio desde que o nível 2 acabou (15/10/2026). */
   rede: { id: string; nome: string; codigo: string; ativo: boolean; temCarteira: boolean; lojas: number }[];
   meses: { atual: string; anterior: string; historico: string[] };
   geradoEm: string;
@@ -81,7 +81,6 @@ export async function relatorioDoParceiro(parceiroId: string, agora = new Date()
     select: {
       id: true, name: true, email: true, phone: true, code: true, active: true, asaasWalletId: true,
       commissionPercent: true, level2Percent: true, isVendedor: true, sellerPercent: true,
-      subAmbassadors: { select: { id: true, name: true, code: true, active: true, asaasWalletId: true }, orderBy: { name: "asc" } },
     },
   });
   if (!p) return null;
@@ -100,7 +99,6 @@ export async function relatorioDoParceiro(parceiroId: string, agora = new Date()
     where: {
       OR: [
         { ambassadorId: p.id },
-        { ambassador: { parentAmbassadorId: p.id } },
         ...(p.isVendedor ? [{ vendedorId: p.id }] : []),
       ],
     },
@@ -239,18 +237,9 @@ export async function relatorioDoParceiro(parceiroId: string, agora = new Date()
     });
   }
 
-  const redeComLojas = p.subAmbassadors.map((s) => ({
-    id: s.id,
-    nome: s.name,
-    codigo: s.code,
-    ativo: s.active,
-    temCarteira: !!s.asaasWalletId,
-    lojas: saida.filter((l) => l.via?.id === s.id).length,
-  }));
 
   const papeis: Papel[] = [];
   if (p.commissionPercent > 0 || saida.some((l) => l.papel === "EMBAIXADOR")) papeis.push("EMBAIXADOR");
-  if (p.subAmbassadors.length > 0 || saida.some((l) => l.papel === "REDE")) papeis.push("REDE");
   if (p.isVendedor) papeis.push("VENDEDOR");
 
   return {
@@ -266,7 +255,7 @@ export async function relatorioDoParceiro(parceiroId: string, agora = new Date()
       percentuais: { EMBAIXADOR: p.commissionPercent, REDE: p.level2Percent ?? 3, VENDEDOR: p.sellerPercent },
       papeis,
     },
-    rede: redeComLojas,
+    rede: [],
     meses: { atual: mesAtual, anterior: mesAnterior, historico },
     geradoEm: agora.toISOString(),
     lojas: saida,
