@@ -207,6 +207,7 @@ export type PrinterEntry = {
   soPedidoDeMesa?: boolean;
   /** Só conta da mesa e o botão Imprimir: nenhuma comanda automática (impressorasPeloTipoDoPedido). */
   semComandaAutomatica?: boolean;
+  semPedidoSoDeBebida?: boolean;
   /** Pedido com item desta e de outra impressora: esta imprime o pedido inteiro (itensDaImpressora). */
   comandaInteiraNoMisto?: boolean;
   /** true = uma linha por unidade ("1x X-Bacon" cinco vezes). Ausente = agrupado. */

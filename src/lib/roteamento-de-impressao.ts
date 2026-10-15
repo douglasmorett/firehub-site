@@ -61,6 +61,11 @@ export type ImpressoraConfigurada = {
    * inteiro. Sem item dela, a regra de sempre. Ver `itensDaImpressora`.
    */
   comandaInteiraNoMisto?: boolean | null;
+  /**
+   * Pedido que é SÓ bebida não sai aqui (nem em outra, se só esta pede
+   * Bebidas): a NIK (14/10/2026) imprime o refrigerante avulso à mão no balcão.
+   */
+  semPedidoSoDeBebida?: boolean | null;
   /** true = uma linha por unidade no papel desta impressora. */
   separarItens?: boolean | null;
   /** QR do motoboy no rodapé. Ausente = ligado (ver lib/qr-puxar.ts). */
@@ -230,6 +235,7 @@ export function itensDaImpressora<T extends ItemDoPedido>(
   pedidas?: Set<string>
 ): T[] | null {
   const itens = pedido?.items || [];
+  if (impressora.semPedidoSoDeBebida === true && itens.length > 0 && itens.every((i) => itemEhBebida(i, pedido?.source))) return null;
 
   // A do pedido só de bebida recebe o pedido inteiro: quem decidiu que ele
   // vem para cá foi `impressorasPeloPedidoSoDeBebida` — ou tudo nele é

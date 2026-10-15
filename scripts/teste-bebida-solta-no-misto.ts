@@ -17,3 +17,13 @@ for (const [nome, items, esperado] of casos) {
   console.log(ok ? "✅" : "❌", nome, r.join(" "), ok ? "" : `(esperado ${esperado.join(" ")})`);
 }
 if (falhas) process.exit(1); else console.log("tudo certo");
+
+// NIK, 14/10/2026 (2): pedido só de bebida não imprime em nenhuma (vai à mão no balcão).
+{
+  const coz = { ...cozinha, semPedidoSoDeBebida: true };
+  const r1 = destinosDoPedido([coz, pizza] as any, { source: "SITE", items: [P("Bebidas", "Coca", true)] } as any).map((d) => d.impressora.name);
+  const r2 = destinosDoPedido([coz, pizza] as any, { source: "SITE", items: [P("Esfihas", "Carne"), P("Bebidas", "Coca", true)] } as any).map((d) => `${d.impressora.name}:${d.itens.length}`);
+  const ok = r1.length === 0 && JSON.stringify(r2) === JSON.stringify(["ELGIN:2"]);
+  console.log(ok ? "✅" : "❌", "só bebida não sai; esfiha + bebida segue na Cozinha", JSON.stringify(r1), JSON.stringify(r2));
+  if (!ok) process.exit(1);
+}
