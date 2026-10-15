@@ -1520,3 +1520,78 @@ export async function garantirEstruturaDeAcompanhamento(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * ── Open Delivery de SAÍDA: o FireHub entregando pedido à logística ─────────
+ *
+ * Duas tabelas NOVAS, sem coluna em tabela existente (lib/open-delivery-saida):
+ * a credencial por loja (client_id + client_secret cifrado pelo cofre, a URL
+ * de webhook do parceiro) e a fila de eventos que o parceiro lê pelo polling
+ * ou recebe pelo webhook. Se o CREATE falhar, só a integração de logística
+ * fica sem banco — nenhuma outra tela lê daqui.
+ *
+ * O acesso é por SQL (não pelo client do Prisma) de propósito: o modelo está
+ * no schema para documentar, mas a rota funciona mesmo num client gerado antes
+ * dele.
+ */
+const INSTRUCOES_OPEN_DELIVERY_SAIDA = [
+  `CREATE TABLE IF NOT EXISTS "OpenDeliverySaida" (
+     "id" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "parceiro" TEXT NOT NULL DEFAULT 'Bem Dito',
+     "merchantId" TEXT NOT NULL,
+     "clientId" TEXT NOT NULL,
+     "clientSecretCifrado" TEXT NOT NULL,
+     "webhookUrl" TEXT,
+     "ativo" BOOLEAN NOT NULL DEFAULT true,
+     "ligadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "ultimaVarredura" TIMESTAMP(3),
+     "ultimoUsoEm" TIMESTAMP(3),
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "OpenDeliverySaida_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "OpenDeliverySaida_franchiseeId_key" ON "OpenDeliverySaida"("franchiseeId")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "OpenDeliverySaida_merchantId_key" ON "OpenDeliverySaida"("merchantId")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "OpenDeliverySaida_clientId_key" ON "OpenDeliverySaida"("clientId")`,
+  `CREATE TABLE IF NOT EXISTS "OpenDeliverySaidaEvento" (
+     "id" TEXT NOT NULL,
+     "integracaoId" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "orderId" TEXT NOT NULL,
+     "eventType" TEXT NOT NULL,
+     "ocorridoEm" TIMESTAMP(3) NOT NULL,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "confirmadoEm" TIMESTAMP(3),
+     "webhookStatus" TEXT,
+     "webhookTentativas" INTEGER NOT NULL DEFAULT 0,
+     "webhookProximaEm" TIMESTAMP(3),
+     "webhookUltimoErro" TEXT,
+     CONSTRAINT "OpenDeliverySaidaEvento_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "OpenDeliverySaidaEvento_integracaoId_orderId_eventType_key" ON "OpenDeliverySaidaEvento"("integracaoId", "orderId", "eventType")`,
+  `CREATE INDEX IF NOT EXISTS "OpenDeliverySaidaEvento_integracaoId_confirmadoEm_idx" ON "OpenDeliverySaidaEvento"("integracaoId", "confirmadoEm")`,
+  `CREATE INDEX IF NOT EXISTS "OpenDeliverySaidaEvento_webhookStatus_webhookProximaEm_idx" ON "OpenDeliverySaidaEvento"("webhookStatus", "webhookProximaEm")`,
+];
+
+let openDeliverySaidaOk = false;
+
+/** As tabelas do Open Delivery de saída existem? Uma vez por processo — e só marca DEPOIS de conseguir. */
+export async function garantirEstruturaDaOpenDeliverySaida(): Promise<boolean> {
+  if (openDeliverySaidaOk) return true;
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) {
+    console.warn("[Boot] DATABASE_URL não é Postgres; pulando a garantia do Open Delivery de saída.");
+    return false;
+  }
+  try {
+    for (const sql of INSTRUCOES_OPEN_DELIVERY_SAIDA) {
+      await prisma.$executeRawUnsafe(sql);
+    }
+    openDeliverySaidaOk = true;
+    return true;
+  } catch (err: any) {
+    console.error(`[Boot] 🛑 Estrutura do Open Delivery de saída falhou: ${err?.message}`);
+    return false;
+  }
+}
