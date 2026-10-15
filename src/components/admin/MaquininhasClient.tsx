@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { CreditCard, Plus, Copy, RefreshCw, Wifi, WifiOff, CheckCircle2, AlertTriangle } from "lucide-react";
+import StoneConnectSecao from "./StoneConnectSecao";
 
 /**
  * Maquininhas com app próprio (PagBank, Stone, Cielo, Getnet).
@@ -268,6 +269,8 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
           </p>
         )}
       </div>
+
+      <StoneConnectSecao totens={totens} />
     </div>
   );
 }

@@ -222,6 +222,14 @@ const jobs = [
     intervalMs: 10 * 60_000, // 10 minutos
   },
   {
+    // Stone pela nuvem (Connect 2.0): pedido aberto não expira e a POS trava
+    // com 30 abertos. Confere as cobranças Stone vivas (baixa o que o webhook
+    // perdeu) e derruba as abandonadas. Sem cobrança viva, não chama a Stone.
+    name: 'stone-connect-faxina',
+    path: '/api/cron/stone-connect-faxina',
+    intervalMs: 5 * 60_000, // 5 minutos
+  },
+  {
     // Os caches do mapa (endereços e rotas) sem uso há 90 dias saem do banco:
     // eles ganham uma linha por endereço novo e cresceriam com o uso para
     // sempre (src/lib/faxina-dos-caches.ts).

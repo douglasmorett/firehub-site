@@ -16,6 +16,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { cancelarOrdem, consultarOrdem } from "@/lib/mp-point";
+import { ESTADOS_DA_COBRANCA } from "@/lib/terminal-app";
+import { credencialStone } from "@/lib/stone-connect-loja";
+import { aplicarPedidoStoneNoTotem, cancelarPedidoStone, cobrancaEhDaStone } from "@/lib/cobranca-stone-do-totem";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +42,7 @@ export async function POST(req: NextRequest) {
         franchiseeId: true,
         paymentPaidAt: true,
         posOrderId: true,
+        posTerminalId: true,
       },
     });
     if (!pedido) {
@@ -67,6 +71,57 @@ export async function POST(req: NextRequest) {
         },
         { status: 409 },
       );
+    }
+
+    // ── Stone pela nuvem ─────────────────────────────────────────────────
+    // Fecha o pedido na Stone como "canceled" e RECONSULTA: fechar não estorna
+    // cartão já aprovado, então o pagamento que entrou no meio vira JA_PAGO.
+    if (await cobrancaEhDaStone(pedido.franchiseeId, pedido.posTerminalId, pedido.posOrderId)) {
+      const cred = await credencialStone(pedido.franchiseeId);
+      if (!cred) {
+        return NextResponse.json(
+          {
+            error: "Esta loja está sem a chave da Stone. Cancele na tela da maquininha (X vermelho).",
+            code: "STONE_NAO_CONECTADO",
+          },
+          { status: 409 },
+        );
+      }
+      const c = await cancelarPedidoStone(cred.chave, pedido.posOrderId);
+      if (!c.ok) {
+        return NextResponse.json(
+          { error: `Não foi possível cancelar a cobrança na Stone: ${c.erro}`, code: "STONE_FALHOU" },
+          { status: 502 },
+        );
+      }
+      const efeito = await aplicarPedidoStoneNoTotem(pedido.id, cred.chave, c.ordem);
+      if (efeito.pago) {
+        return NextResponse.json(
+          {
+            error: "O pagamento foi aprovado na maquininha antes do cancelamento.",
+            code: "JA_PAGO",
+            pago: true,
+            status: ESTADOS_DA_COBRANCA.pago,
+          },
+          { status: 409 },
+        );
+      }
+      if (!c.ordem.fechado) {
+        return NextResponse.json(
+          {
+            error: "A Stone não confirmou o cancelamento. Cancele na tela da maquininha (X vermelho).",
+            code: "STONE_FALHOU",
+          },
+          { status: 502 },
+        );
+      }
+      return NextResponse.json({
+        ok: true,
+        status: ESTADOS_DA_COBRANCA.cancelado,
+        posOrderId: pedido.posOrderId,
+        // A POS tira o pedido da tela em até 1 minuto (ou no X vermelho).
+        mensagem: "Cobrança cancelada. Nada foi cobrado do seu cartão.",
+      });
     }
 
     const loja = await prisma.user.findUnique({

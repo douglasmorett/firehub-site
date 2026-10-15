@@ -73,7 +73,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     where: {
       franchiseeId: ctx.lojaId,
       active: true,
-      provider: { in: [...PROVEDORES_COM_APP, "MERCADOPAGO_POINT"] },
+      provider: { in: [...PROVEDORES_COM_APP, "MERCADOPAGO_POINT", "STONE_CONNECT"] },
     },
     select: { id: true, label: true, provider: true, lastSeenAt: true, operatingMode: true },
     orderBy: { label: "asc" },
@@ -81,7 +81,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const agora = Date.now();
 
   let cobrancas = await cobrancasDaMesa(id);
-  const pendenteNoPoint = cobrancas.find((c) => c.provedor === "MERCADOPAGO_POINT" && c.status === "NO_TERMINAL");
+  // Point e Stone pela nuvem: a tela que acompanha é a rede de segurança do
+  // webhook (na Stone a consulta é espaçada em 10s e derruba a abandonada).
+  const pendenteNoPoint = cobrancas.find(
+    (c) => (c.provedor === "MERCADOPAGO_POINT" || c.provedor === "STONE_CONNECT") && c.status === "NO_TERMINAL",
+  );
   if (pendenteNoPoint) {
     await conferirCobrancaNoPoint(pendenteNoPoint).catch((e) =>
       console.error("[Mesa maquininha] conferência no Point falhou:", e?.message),
@@ -96,8 +100,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       adquirente: NOME_DO_PROVEDOR[t.provider] ?? t.provider,
       // No Point quem acende o visor é a nuvem do MP: não há "sinal" do app para
       // medir, então ela conta como disponível se estiver em modo PDV.
+      // Stone pela nuvem também não manda sinal: o pedido vai pela Pagar.me.
       online:
-        t.provider === "MERCADOPAGO_POINT"
+        t.provider === "STONE_CONNECT"
+          ? true
+          : t.provider === "MERCADOPAGO_POINT"
           ? t.operatingMode !== "STANDALONE"
           : Boolean(t.lastSeenAt && agora - t.lastSeenAt.getTime() < MINUTOS_PARA_OFFLINE * 60_000),
     })),

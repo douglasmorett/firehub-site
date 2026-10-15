@@ -143,6 +143,9 @@ export const NOME_DO_PROVEDOR: Record<string, string> = {
   CIELO_APP: "Cielo",
   GETNET_APP: "Getnet",
   MERCADOPAGO_POINT: "Mercado Pago Point",
+  // Stone SEM o app do FireHub: a cobrança vai pela nuvem (Connect 2.0) para a
+  // POS pelo número de série (lib/stone-connect.ts).
+  STONE_CONNECT: "Stone (nuvem)",
 };
 
 export function ehProvedorComApp(provider: string | null | undefined): provider is ProvedorComApp {

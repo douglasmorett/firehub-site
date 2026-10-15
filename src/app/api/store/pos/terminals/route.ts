@@ -118,7 +118,9 @@ export async function GET(_req: NextRequest) {
       // com mensagem melhor do que um cadastro apagado por engano.
       if (vistos.length > 0 && remotos.dados.length < TETO_DA_LISTAGEM) {
         await prisma.posTerminal.updateMany({
-          where: { franchiseeId: lojaId, active: true, externalId: { notIn: vistos } },
+          // Só Point: a lista do MP não conhece a maquininha com app nem a
+          // Stone pela nuvem, e sem este filtro abrir esta tela desligava todas.
+          where: { franchiseeId: lojaId, active: true, provider: "MERCADOPAGO_POINT", externalId: { notIn: vistos } },
           data: { active: false },
         });
       }

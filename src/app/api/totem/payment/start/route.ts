@@ -7,13 +7,36 @@
  * Aqui só sobe o valor na Point; quem confirma o pagamento é o webhook
  * /api/webhooks/mercadopago-point, depois de reconsultar a ordem no MP.
  *
- * Corpo: { token, orderId, terminalId? }
+ * Corpo: { token, orderId, terminalId?, forma? }
+ *
+ * Três caminhos, conforme a maquininha:
+ *   - Stone pela nuvem (Connect 2.0, provider STONE_CONNECT): pedido na
+ *     Pagar.me endereçado ao número de série da POS; quem confirma é o webhook
+ *     /api/webhooks/stone-connect (ou a reconsulta do payment-status).
+ *   - App do FireHub na maquininha (PagBank/Stone/Cielo/Getnet): fila.
+ *   - Mercado Pago Point: ordem na nuvem do MP.
+ * `forma` (credit|debit|pix|voucher) só vale na Stone em fluxo DIRETO.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { consultarOrdem, criarOrdemPoint } from "@/lib/mp-point";
 import { ESTADOS_DA_COBRANCA, PROVEDORES_COM_APP } from "@/lib/terminal-app";
+import {
+  consultarPedidoStone,
+  criarPedidoStone,
+  ehIdDePedidoStone,
+  ehTipoDireto,
+  pedidoVivo,
+  serviceRefererName,
+} from "@/lib/stone-connect";
+import { credencialStone } from "@/lib/stone-connect-loja";
+import {
+  PROVEDOR_STONE,
+  aplicarPedidoStoneNoTotem,
+  cancelarPedidoStone,
+  cobrancaEhDaStone,
+} from "@/lib/cobranca-stone-do-totem";
 
 export const dynamic = "force-dynamic";
 
@@ -110,9 +133,238 @@ async function maquininhaDaCobranca(
   return null;
 }
 
+type TerminalStone = { id: string; externalId: string; label: string };
+
+/**
+ * A cobrança deste pedido vai pela nuvem da Stone? Sim quando: já existe
+ * cobrança Stone no pedido; ou a tela escolheu uma maquininha STONE_CONNECT;
+ * ou, sem escolha, a maquininha do totem é STONE_CONNECT; ou ela é a única
+ * maquininha ativa da loja. Cobrança anterior de OUTRA nuvem (Point) no pedido
+ * fica com o caminho antigo — trocar de nuvem no meio da cobrança acenderia
+ * duas telas de pagamento.
+ */
+async function caminhoDaStone(
+  pedido: { franchiseeId: string; posOrderId: string | null; posTerminalId: string | null },
+  licencaId: string,
+  terminalId: unknown,
+): Promise<{ existente: boolean; terminal: TerminalStone | null } | null> {
+  const selecao = { id: true, externalId: true, label: true, provider: true, active: true } as const;
+  const existente = await cobrancaEhDaStone(pedido.franchiseeId, pedido.posTerminalId, pedido.posOrderId);
+  if (pedido.posOrderId && !existente) return null;
+
+  let escolhido: { id: string; externalId: string; label: string; provider: string; active: boolean } | null = null;
+  if (terminalId && typeof terminalId === "string") {
+    escolhido = await prisma.posTerminal.findFirst({
+      where: { id: terminalId, franchiseeId: pedido.franchiseeId, active: true },
+      select: selecao,
+    });
+  } else {
+    const vinculo = await prisma.totemLicense.findUnique({
+      where: { id: licencaId },
+      select: { posTerminal: { select: selecao } },
+    });
+    if (vinculo?.posTerminal?.active) {
+      escolhido = vinculo.posTerminal;
+    } else {
+      const ativas = await prisma.posTerminal.findMany({
+        where: { franchiseeId: pedido.franchiseeId, active: true },
+        select: selecao,
+        take: 2,
+      });
+      if (ativas.length === 1) escolhido = ativas[0];
+    }
+  }
+
+  const terminal = escolhido?.provider === PROVEDOR_STONE ? escolhido : null;
+  if (!terminal && !existente) return null;
+  if (!terminal && existente && pedido.posTerminalId) {
+    // Reconhecer a cobrança que já existe não depende da maquininha continuar
+    // escolhida: vale a gravada quando a cobrança subiu.
+    const gravada = await prisma.posTerminal.findFirst({
+      where: { id: pedido.posTerminalId, franchiseeId: pedido.franchiseeId, provider: PROVEDOR_STONE },
+      select: selecao,
+    });
+    return { existente, terminal: gravada?.active ? gravada : null };
+  }
+  return { existente, terminal };
+}
+
+/**
+ * Cobrança pela nuvem da Stone. Mesmo contrato de resposta do Point — a tela
+ * do totem não precisa saber de que nuvem é. O `posStatus` usa o vocabulário
+ * do app (NO_TERMINAL, PAGO, RECUSADO...), que a tela já entende.
+ */
+async function cobrarNaStone(params: {
+  pedido: {
+    id: string;
+    franchiseeId: string;
+    totalAmount: number;
+    dailyOrderNumber: number | null;
+    posOrderId: string | null;
+  };
+  existente: boolean;
+  terminal: TerminalStone | null;
+  valorEmCentavos: number;
+  forma: unknown;
+}) {
+  const { pedido, existente, terminal, valorEmCentavos, forma } = params;
+
+  const cred = await credencialStone(pedido.franchiseeId);
+  if (!cred) {
+    return NextResponse.json(
+      {
+        error:
+          "Esta loja ainda não cadastrou a chave da Stone. O lojista cadastra em Totem > Maquininhas > Stone pela nuvem.",
+        code: "STONE_NAO_CONECTADO",
+      },
+      { status: 409 },
+    );
+  }
+  if (!serviceRefererName()) {
+    console.error("[Totem Stone Start] STONE_CONNECT_SERVICE_REFERER_NAME não configurada no servidor.");
+    return NextResponse.json(
+      { error: "Cobrança na Stone indisponível neste servidor. Chame um atendente.", code: "STONE_SEM_PARCEIRO" },
+      { status: 503 },
+    );
+  }
+
+  // ── Já existe cobrança Stone neste pedido? ─────────────────────────────
+  if (existente && pedido.posOrderId) {
+    const atual = await consultarPedidoStone(cred.chave, pedido.posOrderId);
+    if (!atual.ok) {
+      return NextResponse.json(
+        {
+          error: `Não deu para conferir a cobrança anterior na Stone (${atual.erro}). Tente de novo em alguns segundos.`,
+          code: "STONE_INDISPONIVEL",
+        },
+        { status: 502 },
+      );
+    }
+    let ordem = atual.dados;
+
+    if (pedidoVivo(ordem) && !ordem.recusado) {
+      await prisma.customerOrder.updateMany({
+        where: { id: pedido.id, posOrderId: ordem.id },
+        data: { posStatus: ESTADOS_DA_COBRANCA.noTerminal },
+      });
+      const visor = terminal ? { id: terminal.id, label: terminal.label } : null;
+      return NextResponse.json({
+        ok: true,
+        reaproveitada: true,
+        posOrderId: ordem.id,
+        status: ESTADOS_DA_COBRANCA.noTerminal,
+        terminal: visor,
+        valor: pedido.totalAmount,
+        modo: PROVEDOR_STONE,
+        mensagem: visor ? `A cobrança já está na maquininha "${visor.label}".` : "A cobrança já está na maquininha.",
+      });
+    }
+
+    // Recusada mas ainda aberta: derruba antes de mandar outra, senão a POS
+    // fica com duas cobranças do mesmo pedido.
+    if (pedidoVivo(ordem) && ordem.recusado) {
+      const c = await cancelarPedidoStone(cred.chave, ordem.id);
+      if (!c.ok) {
+        return NextResponse.json(
+          { error: `Não deu para tirar a cobrança recusada da maquininha (${c.erro}). Tente de novo.`, code: "STONE_INDISPONIVEL" },
+          { status: 502 },
+        );
+      }
+      ordem = c.ordem;
+    }
+
+    const efeito = await aplicarPedidoStoneNoTotem(pedido.id, cred.chave, ordem);
+    if (efeito.pago) {
+      return NextResponse.json({
+        ok: true,
+        pago: true,
+        posOrderId: ordem.id,
+        status: ESTADOS_DA_COBRANCA.pago,
+        mensagem: "Este pedido já foi pago na maquininha.",
+      });
+    }
+    // Morta (cancelada/fechada): segue e manda uma nova.
+  }
+
+  if (!terminal) {
+    return NextResponse.json(
+      {
+        error: "Nenhuma maquininha vinculada a este totem. Escolha a maquininha do totem no painel, em Totem.",
+        code: "TERMINAL_NAO_VINCULADO",
+      },
+      { status: 409 },
+    );
+  }
+
+  if (!(await caixaEstaAberto(pedido.franchiseeId))) {
+    return respostaDeCaixaFechado(pedido.dailyOrderNumber);
+  }
+
+  const { posTentativas: tentativa } = await prisma.customerOrder.update({
+    where: { id: pedido.id },
+    data: { posTentativas: { increment: 1 } },
+    select: { posTentativas: true },
+  });
+
+  const identificacao = pedido.dailyOrderNumber
+    ? `Pedido ${pedido.dailyOrderNumber}`
+    : `Pedido ${pedido.id.slice(-6).toUpperCase()}`;
+  const tipo = cred.fluxo === "DIRETO" ? (ehTipoDireto(forma) ? forma : cred.tipoDireto) : null;
+
+  const r = await criarPedidoStone({
+    chave: cred.chave,
+    serial: terminal.externalId,
+    referencia: pedido.id,
+    valorEmCentavos,
+    descricao: identificacao,
+    nomeNaTela: `Totem - ${identificacao}`,
+    tipo,
+  });
+
+  if (!r.ok) {
+    if (r.status === 401 || r.status === 403) {
+      return NextResponse.json(
+        {
+          error: "A Stone recusou a chave da loja. O lojista precisa colar a chave de novo em Totem > Maquininhas.",
+          code: "STONE_CHAVE_INVALIDA",
+          detalhe: r.erro,
+        },
+        { status: 409 },
+      );
+    }
+    // Sem resposta (timeout/5xx) o pedido pode ter nascido na Stone. Ele leva
+    // a nossa referência: o webhook ou a reconsulta adotam ele pelo `code`.
+    return NextResponse.json(
+      { error: `A maquininha não aceitou a cobrança: ${r.erro}`, code: "STONE_FALHOU" },
+      { status: 502 },
+    );
+  }
+
+  // gatewayProvider NÃO entra aqui: acender a POS não é pagamento.
+  await prisma.customerOrder.update({
+    where: { id: pedido.id },
+    data: {
+      posOrderId: r.dados.id,
+      posTerminalId: terminal.id,
+      posStatus: ESTADOS_DA_COBRANCA.noTerminal,
+      paymentMethod: FORMA_MAQUININHA,
+    },
+  });
+
+  return NextResponse.json({
+    ok: true,
+    modo: PROVEDOR_STONE,
+    posOrderId: r.dados.id,
+    status: ESTADOS_DA_COBRANCA.noTerminal,
+    tentativa,
+    terminal: { id: terminal.id, label: terminal.label },
+    valor: pedido.totalAmount,
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { token, orderId, terminalId } = await req.json().catch(() => ({}));
+    const { token, orderId, terminalId, forma } = await req.json().catch(() => ({}));
 
     const auth = await autenticarTotem(token);
     if (!auth.ok) {
@@ -164,6 +416,21 @@ export async function POST(req: NextRequest) {
         { error: "Pedido sem valor a cobrar.", code: "VALOR_INVALIDO" },
         { status: 409 },
       );
+    }
+
+    // ── STONE PELA NUVEM (Connect 2.0) ───────────────────────────────────────
+    // Antes da fila do app: a fila pega QUALQUER maquininha com app da loja, e
+    // um totem amarrado à Stone pela nuvem nunca chegaria aqui se a loja também
+    // tiver uma maquininha com app.
+    const stone = await caminhoDaStone(pedido, licenca.id, terminalId);
+    if (stone) {
+      return await cobrarNaStone({
+        pedido,
+        existente: stone.existente,
+        terminal: stone.terminal,
+        valorEmCentavos,
+        forma,
+      });
     }
 
     // ── MAQUININHA COM APP PRÓPRIO (PagBank) ─────────────────────────────────
@@ -255,7 +522,8 @@ export async function POST(req: NextRequest) {
     // pode depender de a maquininha continuar vinculada e em modo PDV: senão um
     // pedido JÁ PAGO responderia TERMINAL_NAO_VINCULADO e o cliente ficaria
     // parado na frente do totem com o valor debitado.
-    if (pedido.posOrderId) {
+    // Id da Stone ("or_...") nunca vai para o Mercado Pago.
+    if (pedido.posOrderId && !ehIdDePedidoStone(pedido.posOrderId)) {
       const atual = await consultarOrdem(accessToken, pedido.posOrderId);
 
       if (!atual.ok) {

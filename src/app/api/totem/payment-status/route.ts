@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
+import { ESTADOS_DA_COBRANCA } from "@/lib/terminal-app";
+import { cobrancaEhDaStone, conferirCobrancaStoneDoTotem } from "@/lib/cobranca-stone-do-totem";
 
 export const dynamic = "force-dynamic";
 
@@ -18,26 +20,44 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: auth.erro, code: auth.codigo }, { status: auth.status });
     }
 
-    const order = await prisma.customerOrder.findUnique({
-      where: { id: orderId },
-      select: {
-        id: true,
-        status: true,
-        totalAmount: true,
-        franchiseeId: true,
-        paymentPaidAt: true,
-        gatewayProvider: true,
-        gatewayPaymentId: true,
-        pagarmeStatus: true,
-        posStatus: true,
-      },
-    });
+    const selecao = {
+      id: true,
+      status: true,
+      totalAmount: true,
+      franchiseeId: true,
+      paymentPaidAt: true,
+      gatewayProvider: true,
+      gatewayPaymentId: true,
+      pagarmeStatus: true,
+      posStatus: true,
+      posOrderId: true,
+      posTerminalId: true,
+    } as const;
+    let order = await prisma.customerOrder.findUnique({ where: { id: orderId }, select: selecao });
 
     if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
 
     // Isolamento: o totem só enxerga pedido da própria loja.
     if (order.franchiseeId !== auth.licenca.franchiseeId) {
       return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
+    }
+
+    // ── STONE PELA NUVEM: rede de segurança do webhook ─────────────────────
+    // Reconsulta a Stone (no máximo a cada 10s — "obter pedido" tem limite) e
+    // derruba da POS a cobrança abandonada há mais de 15 min: pedido aberto na
+    // Stone não expira sozinho e a POS para com 30 abertos.
+    if (
+      !order.paymentPaidAt &&
+      order.posOrderId &&
+      order.posStatus === ESTADOS_DA_COBRANCA.noTerminal &&
+      (await cobrancaEhDaStone(order.franchiseeId, order.posTerminalId, order.posOrderId))
+    ) {
+      try {
+        await conferirCobrancaStoneDoTotem(order);
+        order = (await prisma.customerOrder.findUnique({ where: { id: orderId }, select: selecao })) ?? order;
+      } catch (e: any) {
+        console.error("[Totem PaymentStatus] conferência na Stone falhou:", e?.message);
+      }
     }
 
     // ── PAGO É PAGO, NÃO "NÃO-CANCELADO" ─────────────────────────────────────
