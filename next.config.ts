@@ -51,6 +51,14 @@ const nextConfig: NextConfig = {
           source: "/uploads/tutoriais/:path*",
           destination: "/arquivos-dos-tutoriais/:path*",
         },
+        // ─── Vídeo da capa do cardápio: pela rota também ───
+        // Mesmo defeito: como arquivo de public/ o vídeo saía sem Range, e o
+        // iPhone ficava na imagem parada da capa (src/app/videos-das-lojas).
+        // Só o vídeo; foto de loja e de produto seguem como arquivo estático.
+        {
+          source: "/uploads/lojas/:arquivo([^/]+\\.(?:mp4|webm))",
+          destination: "/videos-das-lojas/:arquivo",
+        },
         // ─── Icebox: raiz → catálogo Icebox independente ───
         {
           source: "/",
