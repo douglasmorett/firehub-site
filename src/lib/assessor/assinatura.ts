@@ -39,6 +39,12 @@ export type EstadoDoAssessor = {
   emTeste: boolean;
   /** Já usou o teste: religar não dá outro. */
   jaTestou: boolean;
+  /**
+   * Loja isenta (conta da casa, parceiro): a mesma `lojaIsenta` da
+   * mensalidade, que é quem tira o Bill do boleto em closeBillingCycle.
+   * Hakim Centro: "tem que ficar ativo e isento, já pra mim mesmo" (15/10/2026).
+   */
+  isento: boolean;
   periodos: Periodo[];
 };
 
@@ -80,8 +86,23 @@ async function mesCorrente(franchiseeId: string, agora: Date) {
   return intervaloDoMes(getCurrentYearMonth(0, tz), tz);
 }
 
+/** A loja não paga o Bill: mesma regra (e mesmos campos) da mensalidade. */
+export async function assessorIsento(franchiseeId: string): Promise<boolean> {
+  try {
+    const { lojaIsenta } = await import("@/lib/billing");
+    const loja = await prisma.user.findUnique({
+      where: { id: franchiseeId },
+      select: { email: true, planPercent: true, isFranqueadoHakim: true, ambassadorAccount: { select: { active: true } } },
+    });
+    return lojaIsenta(loja as any);
+  } catch {
+    return false;
+  }
+}
+
 export async function estadoDoAssessor(franchiseeId: string, agora: Date = new Date()): Promise<EstadoDoAssessor> {
-  const vazio: EstadoDoAssessor = { ativo: false, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, periodos: [] };
+  const isento = await assessorIsento(franchiseeId);
+  const vazio: EstadoDoAssessor = { ativo: false, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, periodos: [] };
   if (!(await garantirEstruturaDoAssessor())) return vazio;
   const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId } });
   if (!a) return vazio;
@@ -89,7 +110,7 @@ export async function estadoDoAssessor(franchiseeId: string, agora: Date = new D
   let cobradoEsteMes = false;
   try {
     const { monthStart, monthEnd } = await mesCorrente(franchiseeId, agora);
-    cobradoEsteMes = valorDoAssessorNoMes(periodos, a.testeAte, monthStart, monthEnd, agora) > 0;
+    cobradoEsteMes = !isento && valorDoAssessorNoMes(periodos, a.testeAte, monthStart, monthEnd, agora) > 0;
   } catch {}
   return {
     ativo: a.ativo,
@@ -97,6 +118,7 @@ export async function estadoDoAssessor(franchiseeId: string, agora: Date = new D
     testeAte: a.testeAte ? a.testeAte.toISOString() : null,
     emTeste: Boolean(a.ativo && a.testeAte && a.testeAte.getTime() > agora.getTime()),
     jaTestou: Boolean(a.testeAte),
+    isento,
     periodos,
   };
 }

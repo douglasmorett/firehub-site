@@ -27,7 +27,7 @@ export async function GET() {
     : [];
   const cfg = (s.loja.chatbotConfig || {}) as any;
   return NextResponse.json({
-    estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou },
+    estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou, isento: estado.isento },
     preco: PRECO_DO_ASSESSOR,
     diasDeTeste: DIAS_DE_TESTE_DO_ASSESSOR,
     numerosDoDono: numerosDoDono(s.loja.notificationPhone, cfg),
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
   }
   try {
     const estado = await ligarOuDesligarAssessor(s.franchiseeId, corpo.ligar, aceite);
-    return NextResponse.json({ ok: true, estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou } });
+    return NextResponse.json({ ok: true, estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou, isento: estado.isento } });
   } catch (err: any) {
     if (err instanceof TermoNaoAceitoError) return NextResponse.json({ error: err.message, precisaDoTermo: true }, { status: 400 });
     return NextResponse.json({ error: err?.message || "Erro ao salvar." }, { status: 503 });
