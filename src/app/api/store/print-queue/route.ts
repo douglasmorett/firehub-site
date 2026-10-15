@@ -1,7 +1,7 @@
 import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { destinosDoPedido, impressoraDaViaDoEntregador, itensQueContamParaAVia, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR } from "@/lib/roteamento-de-impressao";
+import { destinosDoPedido, impressoraDaViaDoEntregador, itensQueContamParaAVia, pedidoEhSoBebida, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR } from "@/lib/roteamento-de-impressao";
 import { impressorasDaContaDaMesa, impressoraDoCaixa, impressoraUnicaDoPc } from "@/lib/impressao-da-conta";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -582,6 +582,19 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         return null;
       }
       const destinos = destinosDoPedido(printers, order as any, { palavrasDeBebida: pc?.customBeverageKeywords });
+      // ── PEDIDO SÓ DE BEBIDA QUE A LOJA NÃO QUER NO PAPEL ──
+      // "Sem pedido só de bebida" tirou o pedido de todas as impressoras, e
+      // `destinos` vazio faz o Assistente cair na impressora padrão do PC — a
+      // Coca avulsa da NIK saía duas vezes, uma por computador (14/10/2026).
+      // Sem papel nenhum, carimbado como resolvido igual à bebida da mesa.
+      if (
+        destinos.length === 0 &&
+        printers.some((p: any) => p?.semPedidoSoDeBebida === true) &&
+        pedidoEhSoBebida(order as any, pc?.customBeverageKeywords)
+      ) {
+        semPapel.push(pedidoDoBanco.id);
+        return null;
+      }
       // ── QR "PUXAR PEDIDO" ──────────────────────────────────────────
       //
       // Esta fila imprime o delivery quando o painel não está aberto num
