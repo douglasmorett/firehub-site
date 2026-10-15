@@ -9,7 +9,7 @@
  * SALVOS, então as próprias esfirras ficavam "sem dono" — e pedido todo sem
  * dono aparece em toda tela.
  */
-import { categoriasComDono, pedidoNaTela, type TelaDoKds } from "../src/lib/kds-telas";
+import { categoriasComDono, contaDasTelas, novoIdDaTela, pedidoNaTela, type TelaDoKds } from "../src/lib/kds-telas";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -97,6 +97,30 @@ confere("só pizza: não aparece na Finalização Esfihas", naFinalizacao(nikFim
 confere("bebida fora do filtro da finalização não aparece (marque Bebidas na tela para ver)", naFinalizacao(nikFim[1], pedido(item("Calabresa", "Pizzas Tradicionais"), item("Guaraná", "Bebidas"))), ["Calabresa"]);
 confere("só bebida fora do filtro: não aparece", naFinalizacao(nikFim[0], pedido(item("Coca", "Bebidas"))), "—");
 confere("finalização SEM filtro continua vendo o pedido inteiro", naTela(pedidoNaTela(misto, { filtroDestaTela: [], donos: null, estagio: "finishing", config: configNik })), ["Carne", "Calabresa", "Coca"]);
+
+// ── De quem são as telas (api/kds lia da conta logada) ──
+console.log("\n— Funcionário logado vê as telas do dono —");
+const dono = { id: "dono-1", ownerId: null };
+const funcionario = { id: "func-7", ownerId: "dono-1" };
+confere("funcionário logado: telas do dono", contaDasTelas(funcionario, ["func-7", "dono-1"]), "dono-1");
+confere("dono logado: as dele", contaDasTelas(dono, ["dono-1"]), "dono-1");
+confere("sem usuário: a primeira loja da lista (como era)", contaDasTelas(null, ["loja-x"]), "loja-x");
+confere("sem usuário e sem loja: nada", contaDasTelas(undefined, []), undefined);
+// O que a TV do funcionário acha: a tela "p1" do dono, e não `null`.
+const telasPorConta: Record<string, TelaDoKds[]> = { "dono-1": hakim, "func-7": [] };
+const telaDaTv = (telasPorConta[contaDasTelas(funcionario, ["func-7", "dono-1"])!] || []).find((t) => t.id === "p1") || null;
+confere("TV do funcionário acha a tela p1 (o filtro volta a valer)", telaDaTv?.name ?? null, "Produção 1");
+
+// ── Id de tela nova: crypto.randomUUID só existe em endereço seguro ──
+console.log("\n— Id da tela nova no endereço da loja (http) —");
+confere("com randomUUID: usa ele", novoIdDaTela({ randomUUID: () => "uuid-fixo" }), "uuid-fixo");
+confere("sem crypto (http://<ip>): gera id mesmo assim", /^tela-[a-z0-9]+-[a-z0-9]+$/.test(novoIdDaTela(null)), true);
+// É o caso real do http://<ip>: `crypto` existe (getRandomValues), `randomUUID` não.
+confere("crypto sem randomUUID: gera id", novoIdDaTela({}).startsWith("tela-"), true);
+confere("randomUUID que lança: gera id", novoIdDaTela({ randomUUID: () => { throw new Error("inseguro"); } }).startsWith("tela-"), true);
+const ids = new Set(Array.from({ length: 500 }, () => novoIdDaTela(null)));
+confere("500 ids sem crypto, nenhum repetido", ids.size, 500);
+confere("no Node de hoje (crypto global): um UUID", /^[0-9a-f-]{36}$/.test(novoIdDaTela()), true);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);
