@@ -6,6 +6,7 @@ import {
   TENTATIVAS_ATE_SAIR_DA_FILA,
 } from "@/lib/terminal-app";
 import { confirmOrderPayment } from "@/lib/order-payment-confirm";
+import { idDaCobrancaDaMesa, registrarResultadoDaMesa } from "@/lib/cobranca-da-mesa-na-maquininha";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,23 @@ export async function POST(req: NextRequest) {
         { error: "Informe pedidoId e aprovado (true/false)." },
         { status: 400 },
       );
+    }
+
+    // Cobrança de mesa ("mesa:<id>") vira baixa na conta da mesa, não pedido pago.
+    const cobrancaDaMesa = idDaCobrancaDaMesa(pedidoId);
+    if (cobrancaDaMesa) {
+      const r = await registrarResultadoDaMesa({
+        terminal,
+        cobrancaId: cobrancaDaMesa,
+        aprovado,
+        dados: {
+          terminal: terminal.label, terminalId: terminal.id, provedor: terminal.provider,
+          bandeira: bandeira ?? null, nsu: nsu ?? null, autorizacao: autorizacao ?? null,
+          parcelas: parcelas ?? null, tipo: tipo ?? null, referencia: referencia ?? null,
+          motivo: motivoRecusa ?? null,
+        },
+      });
+      return NextResponse.json(r.corpo, { status: r.status });
     }
 
     const pedido = await prisma.customerOrder.findUnique({

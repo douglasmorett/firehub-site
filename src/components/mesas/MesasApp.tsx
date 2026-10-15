@@ -405,6 +405,13 @@ export default function MesasApp({
   const [formaPagamento, setFormaPagamento] = useState("Dinheiro");
   const [valorPagamento, setValorPagamento] = useState("");
   const [registrandoPagamento, setRegistrandoPagamento] = useState(false);
+  /** Maquininhas integradas da loja e as cobranças desta mesa nelas. */
+  const [maquininhas, setMaquininhas] = useState<{ id: string; label: string; adquirente: string; online: boolean }[]>([]);
+  const [cobrancasNaMaquininha, setCobrancasNaMaquininha] = useState<{
+    id: string; valor: number; status: string; provedor: string; pessoa: string | null; motivo: string | null;
+  }[]>([]);
+  const [maquininhaEscolhida, setMaquininhaEscolhida] = useState("");
+  const [enviandoParaMaquininha, setEnviandoParaMaquininha] = useState(false);
   /** Menu de ações da pessoa tocada no painel da mesa. */
   const [acaoPessoa, setAcaoPessoa] = useState<{ id: string; nome: string } | null>(null);
   const [novaPessoa, setNovaPessoa] = useState("");
@@ -1068,6 +1075,7 @@ export default function MesasApp({
     await Promise.all([
       carregarConta(sessionId, taxa, Number(waiterTip) || 0),
       carregarPagamentos(sessionId),
+      carregarMaquininha(sessionId),
     ]);
   };
 
@@ -1160,6 +1168,90 @@ export default function MesasApp({
       }
     } catch { /* silencioso: a tela continua com o que já tinha */ }
   }, []);
+
+  // ─── COBRAR NA MAQUININHA ─────────────────────────────────────────────────
+  // A cobrança vai para a maquininha integrada (app do FireHub na PagBank,
+  // Stone, Cielo ou Getnet; ou o Point pela nuvem do Mercado Pago). Quando o
+  // cartão aprova, o servidor grava a baixa sozinho — o garçom não digita nada.
+  const carregarMaquininha = useCallback(async (sessionId: string) => {
+    try {
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/maquininha`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const lista = Array.isArray(data.maquininhas) ? data.maquininhas : [];
+      setMaquininhas(lista);
+      setMaquininhaEscolhida(atual =>
+        atual && lista.some((m: any) => m.id === atual) ? atual : (lista.find((m: any) => m.online)?.id || lista[0]?.id || ""));
+      const novas = Array.isArray(data.cobrancas) ? data.cobrancas : [];
+      setCobrancasNaMaquininha(prev => {
+        // Avisa a virada de "na maquininha" para pago/recusado uma vez só.
+        for (const c of novas) {
+          const antes = prev.find(p => p.id === c.id);
+          if (antes && antes.status !== c.status) {
+            if (c.status === "PAGO") showToast(`✅ ${fmt(c.valor)} aprovado na maquininha`);
+            else if (c.status === "RECUSADO") showToast(`❌ Recusado na maquininha${c.motivo ? `: ${c.motivo}` : ""}`);
+          }
+        }
+        return novas;
+      });
+      // A baixa do cartão é gravada pelo servidor; recarregar a lista é o que
+      // faz o "falta pagar" descer na tela.
+      if (novas.some((c: any) => c.status === "PAGO")) carregarPagamentos(sessionId);
+    } catch { /* a tela continua com o que já tinha */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [carregarPagamentos]);
+
+  const cobrancaViva = cobrancasNaMaquininha.find(c => c.status === "AGUARDANDO_TERMINAL" || c.status === "NO_TERMINAL");
+
+  // Enquanto há cobrança na maquininha, a tela acompanha de 3 em 3 segundos.
+  useEffect(() => {
+    const sessionId = selectedTable?.openSession?.id;
+    if (!showCloseModal || !sessionId || !cobrancaViva) return;
+    const t = setInterval(() => carregarMaquininha(sessionId), 3000);
+    return () => clearInterval(t);
+  }, [showCloseModal, selectedTable?.openSession?.id, cobrancaViva?.id, carregarMaquininha]);
+
+  const cobrarNaMaquininha = async () => {
+    const sessionId = selectedTable?.openSession?.id;
+    if (!sessionId || !maquininhaEscolhida) return;
+    const valor = lerValorDigitado(valorPagamento);
+    if (valor <= 0) { showToast("⚠️ Informe quanto cobrar na maquininha"); return; }
+    setEnviandoParaMaquininha(true);
+    try {
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/maquininha`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ valor, terminalId: maquininhaEscolhida, guestId: donoPagamento }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setValorPagamento("");
+        showToast(`💳 ${fmt(valor)} enviado — passe o cartão na maquininha`);
+        await carregarMaquininha(sessionId);
+      } else {
+        showToast(`❌ ${data.mensagem || "Não consegui mandar para a maquininha"}`);
+      }
+    } catch {
+      showToast("❌ Erro de conexão");
+    } finally {
+      setEnviandoParaMaquininha(false);
+    }
+  };
+
+  const cancelarNaMaquininha = async (cobrancaId: string) => {
+    const sessionId = selectedTable?.openSession?.id;
+    if (!sessionId) return;
+    try {
+      const res = await chamar(`/api/store/table-sessions/${sessionId}/maquininha?cobranca=${encodeURIComponent(cobrancaId)}`, {
+        method: "DELETE",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) showToast(`⚠️ ${data.mensagem || "Não consegui cancelar"}`);
+      await carregarMaquininha(sessionId);
+    } catch {
+      showToast("❌ Erro de conexão");
+    }
+  };
 
   const registrarPagamento = async () => {
     const sessionId = selectedTable?.openSession?.id;
@@ -3383,6 +3475,51 @@ export default function MesasApp({
                       {registrandoPagamento ? "Registrando..." : "Registrar"}
                     </button>
                   </div>
+
+                  {maquininhas.length > 0 && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 8 }}>
+                      <select
+                        value={maquininhaEscolhida}
+                        onChange={e => setMaquininhaEscolhida(e.target.value)}
+                        style={{
+                          flex: "1 1 160px", padding: "11px 8px", borderRadius: 10, border: "1px solid #E2E8F0",
+                          fontSize: 13, fontFamily: "inherit", background: "#fff", cursor: "pointer",
+                        }}>
+                        {maquininhas.map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.label} · {m.adquirente}{m.online ? "" : " (sem sinal)"}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={cobrarNaMaquininha}
+                        disabled={enviandoParaMaquininha || Boolean(cobrancaViva)}
+                        style={{
+                          flex: "1 1 180px", padding: "12px 14px", borderRadius: 10, border: "none",
+                          background: "#1E3A8A", color: "#fff", fontSize: 13, fontWeight: 900, fontFamily: "inherit",
+                          cursor: enviandoParaMaquininha || cobrancaViva ? "default" : "pointer",
+                          opacity: enviandoParaMaquininha || cobrancaViva ? 0.6 : 1,
+                        }}>
+                        {enviandoParaMaquininha ? "Enviando..." : "💳 Cobrar na maquininha"}
+                      </button>
+                    </div>
+                  )}
+
+                  {cobrancaViva && (
+                    <div style={{
+                      marginTop: 8, padding: "10px 12px", borderRadius: 10, background: "#EFF6FF",
+                      border: "1px solid #BFDBFE", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
+                    }}>
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 800, color: "#1E3A8A" }}>
+                        ⏳ {fmt(cobrancaViva.valor)}{cobrancaViva.pessoa ? ` de ${cobrancaViva.pessoa}` : ""} — {
+                          cobrancaViva.status === "NO_TERMINAL" ? "passando o cartão" : "esperando a maquininha"}
+                      </span>
+                      <button onClick={() => cancelarNaMaquininha(cobrancaViva.id)} style={{
+                        border: "none", background: "#fff", color: "#C92E09", borderRadius: 8,
+                        padding: "6px 10px", fontSize: 12, fontWeight: 800, cursor: "pointer",
+                      }}>Cancelar</button>
+                    </div>
+                  )}
 
                   <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                     <span style={{ fontSize: 11, color: "#94A3B8", fontWeight: 700, alignSelf: "center" }}>Atalhos:</span>

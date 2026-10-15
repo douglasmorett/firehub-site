@@ -13,7 +13,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { consultarOrdem, criarOrdemPoint } from "@/lib/mp-point";
-import { ESTADOS_DA_COBRANCA } from "@/lib/terminal-app";
+import { ESTADOS_DA_COBRANCA, PROVEDORES_COM_APP } from "@/lib/terminal-app";
 
 export const dynamic = "force-dynamic";
 
@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
       where: {
         franchiseeId: pedido.franchiseeId,
         active: true,
-        provider: "PAGBANK_APP",
+        provider: { in: [...PROVEDORES_COM_APP] },
         ...(terminalId && typeof terminalId === "string" ? { id: terminalId } : {}),
       },
       select: { id: true, label: true, lastSeenAt: true },

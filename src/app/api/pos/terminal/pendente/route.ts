@@ -4,7 +4,9 @@ import {
   autenticarTerminal,
   ESTADOS_DA_COBRANCA,
   MINUTOS_ATE_DESTRAVAR,
+  provedorDaAdquirente,
 } from "@/lib/terminal-app";
+import { reservarCobrancaDaMesa, PREFIXO_DA_MESA } from "@/lib/cobranca-da-mesa-na-maquininha";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +37,10 @@ export async function GET(req: NextRequest) {
 
     // Ping e reserva na mesma viagem: o app pergunta a cada poucos segundos, e
     // uma escrita a mais por pergunta seria peso puro no banco.
+    // O app diz de qual adquirente é (a versão PagBank antiga não manda nada
+    // e continua PAGBANK_APP). Quem sabe em que máquina roda é o app.
+    const provedorInformado = provedorDaAdquirente(req.nextUrl.searchParams.get("adquirente"));
+    const provedor = provedorInformado ?? terminal.provider;
     await prisma.posTerminal.update({
       where: { id: terminal.id },
       data: {
@@ -42,8 +48,16 @@ export async function GET(req: NextRequest) {
         ...(req.nextUrl.searchParams.get("versao")
           ? { appVersion: req.nextUrl.searchParams.get("versao")! }
           : {}),
+        ...(provedorInformado && provedorInformado !== terminal.provider ? { provider: provedorInformado } : {}),
       },
     });
+
+    // A Cielo exige no deeplink o Client-Id e o Access-Token do app do
+    // desenvolvedor (FireHub), gerados no portal da Cielo — não são da loja.
+    const extras =
+      provedor === "CIELO_APP" && process.env.CIELO_CLIENT_ID && process.env.CIELO_ACCESS_TOKEN
+        ? { credenciaisCielo: { clientId: process.env.CIELO_CLIENT_ID, accessToken: process.env.CIELO_ACCESS_TOKEN } }
+        : {};
 
     // Cobrança presa há tempo demais volta para a fila. O app pode ter travado,
     // o aparelho pode ter desligado no meio — o pedido não pode ficar marcado
@@ -81,7 +95,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!candidato) {
-      return NextResponse.json({ cobranca: null, terminal: terminal.label });
+      return responderComMesaOuNada(terminal, extras);
     }
 
     // A reserva: só sai da fila se AINDA estiver aguardando. Se outro aparelho
@@ -100,7 +114,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (reservado.count === 0) {
-      return NextResponse.json({ cobranca: null, terminal: terminal.label });
+      return responderComMesaOuNada(terminal, extras);
     }
 
     const identificacao = candidato.dailyOrderNumber
@@ -119,11 +133,44 @@ export async function GET(req: NextRequest) {
         tentativa: candidato.posTentativas,
         // O app usa isto para não reenviar o mesmo resultado duas vezes.
         referencia: `${candidato.id}:${candidato.posTentativas}`,
+        tipo: "PEDIDO",
       },
       terminal: terminal.label,
+      ...extras,
     });
   } catch (err) {
     console.error("[Terminal Pendente] Erro:", err);
     return NextResponse.json({ error: "Erro interno" }, { status: 500 });
   }
+}
+
+/**
+ * Sem pedido do totem na fila, a vez é da cobrança de mesa. O totem vem antes
+ * porque ali o cliente está sozinho em pé na frente da máquina; na mesa o
+ * garçom está do lado e espera os poucos segundos.
+ *
+ * O `pedidoId` vai como "mesa:<id>": o app trata o id como texto opaco e o
+ * devolve igual no resultado, então a versão que já está nas maquininhas cobra
+ * mesa sem atualização.
+ */
+async function responderComMesaOuNada(
+  terminal: { id: string; franchiseeId: string; label: string },
+  extras: Record<string, unknown>,
+) {
+  const mesa = await reservarCobrancaDaMesa(terminal);
+  if (!mesa) return NextResponse.json({ cobranca: null, terminal: terminal.label, ...extras });
+  const numero = mesa.dados?.mesa;
+  return NextResponse.json({
+    cobranca: {
+      pedidoId: `${PREFIXO_DA_MESA}${mesa.id}`,
+      valorEmCentavos: mesa.valorCentavos,
+      descricao: numero != null ? `Mesa ${numero}` : "Mesa",
+      cliente: mesa.guestName || null,
+      tentativa: mesa.tentativas,
+      referencia: `${PREFIXO_DA_MESA}${mesa.id}:${mesa.tentativas}`,
+      tipo: "MESA",
+    },
+    terminal: terminal.label,
+    ...extras,
+  });
 }

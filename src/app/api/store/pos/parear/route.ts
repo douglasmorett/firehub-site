@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { gerarTokenDeTerminal } from "@/lib/terminal-app";
+import { gerarTokenDeTerminal, PROVEDORES_COM_APP, NOME_DO_PROVEDOR, ehProvedorComApp } from "@/lib/terminal-app";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Pareamento de maquininha com app próprio (PagBank).
+ * Pareamento de maquininha com app próprio (PagBank, Stone, Cielo, Getnet).
  *
  * POST — cria (ou regera) o código que o app instalado no terminal usa para se
  *        identificar. É o equivalente à licença do totem, para o aparelho.
@@ -40,11 +40,11 @@ export async function GET() {
     if (!ctx) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
     const terminais = await prisma.posTerminal.findMany({
-      where: { franchiseeId: ctx.lojaId, provider: "PAGBANK_APP" },
+      where: { franchiseeId: ctx.lojaId, provider: { in: [...PROVEDORES_COM_APP] } },
       orderBy: { createdAt: "asc" },
       select: {
         id: true, label: true, active: true, lastSeenAt: true, appVersion: true,
-        createdAt: true, deviceToken: true,
+        createdAt: true, deviceToken: true, provider: true,
         totemLicenses: { select: { id: true, label: true } },
       },
     });
@@ -56,6 +56,8 @@ export async function GET() {
       terminais: terminais.map((t) => ({
         id: t.id,
         label: t.label,
+        provedor: t.provider,
+        adquirente: NOME_DO_PROVEDOR[t.provider] ?? t.provider,
         active: t.active,
         appVersion: t.appVersion,
         lastSeenAt: t.lastSeenAt,
@@ -91,14 +93,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { label, terminalId, totemLicenseId } = await req.json().catch(() => ({}));
+    const { label, terminalId, totemLicenseId, provedor } = await req.json().catch(() => ({}));
+    // A escolha do painel é só o ponto de partida: quando o app se apresenta,
+    // ele diz de qual adquirente é e o cadastro se corrige sozinho.
+    const provider = ehProvedorComApp(provedor) ? provedor : "PAGBANK_APP";
 
     // Regerar o código de uma maquininha existente: usado quando o aparelho é
     // trocado ou o código vaza. O aparelho antigo para de funcionar na hora.
     if (terminalId) {
       const novo = gerarTokenDeTerminal();
       const alterados = await prisma.posTerminal.updateMany({
-        where: { id: terminalId, franchiseeId: ctx.lojaId, provider: "PAGBANK_APP" },
+        where: { id: terminalId, franchiseeId: ctx.lojaId, provider: { in: [...PROVEDORES_COM_APP] } },
         data: { deviceToken: novo, lastSeenAt: null, appVersion: null },
       });
       if (alterados.count === 0) {
@@ -111,17 +116,17 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    const nome = String(label || "").trim().slice(0, 60) || "Maquininha PagBank";
+    const nome = String(label || "").trim().slice(0, 60) || `Maquininha ${NOME_DO_PROVEDOR[provider]}`;
 
     // `externalId` é único por loja e no PagBank não existe id vindo da nuvem —
     // o número de série só se conhece quando o app se apresenta. Usamos um id
     // próprio para não colidir com outra maquininha da mesma loja.
-    const externalId = `pagbank-${gerarTokenDeTerminal().slice(0, 12)}`;
+    const externalId = `${provider.replace("_APP", "").toLowerCase()}-${gerarTokenDeTerminal().slice(0, 12)}`;
 
     const criado = await prisma.posTerminal.create({
       data: {
         franchiseeId: ctx.lojaId,
-        provider: "PAGBANK_APP",
+        provider,
         externalId,
         label: nome,
         deviceToken: gerarTokenDeTerminal(),

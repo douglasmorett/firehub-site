@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CreditCard, Plus, Copy, RefreshCw, Wifi, WifiOff, CheckCircle2, AlertTriangle } from "lucide-react";
 
 /**
- * Maquininhas com app próprio (PagBank).
+ * Maquininhas com app próprio (PagBank, Stone, Cielo, Getnet).
  *
  * O pareamento existia só como rota de API: para ligar uma maquininha o lojista
  * teria que chamar a API na mão. Esta tela é o que falta para o recurso existir
@@ -18,6 +18,7 @@ import { CreditCard, Plus, Copy, RefreshCw, Wifi, WifiOff, CheckCircle2, AlertTr
 type Maquininha = {
   id: string;
   label: string;
+  adquirente?: string;
   active: boolean;
   online: boolean;
   pareado: boolean;
@@ -33,6 +34,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
   const [salvando, setSalvando] = useState(false);
   const [nome, setNome] = useState("");
   const [totemEscolhido, setTotemEscolhido] = useState("");
+  const [provedor, setProvedor] = useState("PAGBANK_APP");
   const [codigoNovo, setCodigoNovo] = useState<{ codigo: string; label: string } | null>(null);
   const [aviso, setAviso] = useState<{ texto: string; erro?: boolean } | null>(null);
 
@@ -70,7 +72,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
       const res = await fetch("/api/store/pos/parear", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ label: nome.trim(), totemLicenseId: totemEscolhido || undefined }),
+        body: JSON.stringify({ label: nome.trim(), totemLicenseId: totemEscolhido || undefined, provedor }),
       });
       const dados = await res.json();
       if (!res.ok) { mostrar(dados.error || "Não consegui criar a maquininha.", true); return; }
@@ -122,8 +124,8 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
         <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Maquininhas</h2>
       </div>
       <p style={{ color: "#64748B", fontSize: 14, margin: "0 0 20px" }}>
-        Maquininha com o app do FireHub instalado. O cliente fecha o pedido no totem e paga aqui;
-        o pedido só vai para a cozinha depois que o cartão for aprovado.
+        Maquininha PagBank, Stone, Cielo ou Getnet com o app do FireHub instalado. Cobra o pedido
+        do totem (que só vai para a cozinha depois do cartão aprovado) e a conta das mesas.
       </p>
 
       {aviso && (
@@ -186,7 +188,10 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
                   ? <Wifi size={20} color="#0F766E" />
                   : <WifiOff size={20} color="#94A3B8" />}
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{m.label}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>
+                    {m.label}
+                    {m.adquirente && <span style={{ fontWeight: 600, fontSize: 12, color: "#64748B" }}> · {m.adquirente}</span>}
+                  </div>
                   <div style={{ fontSize: 12, color: "#64748B", marginTop: 2 }}>
                     {!m.pareado
                       ? "Ainda não pareada — digite o código no app"
@@ -225,6 +230,19 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
               border: "1px solid #CBD5E1", fontSize: 14, fontFamily: "inherit",
             }}
           />
+          <select
+            value={provedor}
+            onChange={(e) => setProvedor(e.target.value)}
+            style={{
+              flex: "0 1 160px", padding: "10px 12px", borderRadius: 8,
+              border: "1px solid #CBD5E1", fontSize: 14, background: "#fff", fontFamily: "inherit",
+            }}
+          >
+            <option value="PAGBANK_APP">PagBank</option>
+            <option value="STONE_APP">Stone</option>
+            <option value="CIELO_APP">Cielo</option>
+            <option value="GETNET_APP">Getnet</option>
+          </select>
           {totens.length > 0 && (
             <select
               value={totemEscolhido}

@@ -128,3 +128,34 @@ export function gerarTokenDeTerminal(): string {
   crypto.getRandomValues(bytes);
   return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
+
+/**
+ * Maquininhas em que quem cobra é o app do FireHub instalado no terminal.
+ * Cada adquirente tem a sua versão do app (product flavor em apps/maquininha),
+ * mas a fila e o contrato com o servidor são os mesmos para todas.
+ */
+export const PROVEDORES_COM_APP = ["PAGBANK_APP", "STONE_APP", "CIELO_APP", "GETNET_APP"] as const;
+export type ProvedorComApp = (typeof PROVEDORES_COM_APP)[number];
+
+export const NOME_DO_PROVEDOR: Record<string, string> = {
+  PAGBANK_APP: "PagBank",
+  STONE_APP: "Stone",
+  CIELO_APP: "Cielo",
+  GETNET_APP: "Getnet",
+  MERCADOPAGO_POINT: "Mercado Pago Point",
+};
+
+export function ehProvedorComApp(provider: string | null | undefined): provider is ProvedorComApp {
+  return (PROVEDORES_COM_APP as readonly string[]).includes(String(provider));
+}
+
+/**
+ * O app diz de qual adquirente ele é (`?adquirente=STONE`). Vale mais que o
+ * que o lojista escolheu no painel: quem sabe em que máquina está rodando é o
+ * app — e a escolha errada no painel só mudaria o nome na tela.
+ */
+export function provedorDaAdquirente(adquirente: string | null | undefined): ProvedorComApp | null {
+  const a = String(adquirente || "").trim().toUpperCase();
+  const p = `${a}_APP`;
+  return ehProvedorComApp(p) ? p : null;
+}

@@ -24,6 +24,7 @@ import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { centavosParaAmount, consultarOrdem } from "@/lib/mp-point";
+import { processarOrdemPointDaMesa } from "@/lib/cobranca-da-mesa-na-maquininha";
 
 export const dynamic = "force-dynamic";
 
@@ -125,6 +126,10 @@ export async function POST(req: NextRequest) {
     if (tipo && tipo !== "order") {
       return NextResponse.json({ received: true, ignorado: `tipo ${tipo}` });
     }
+
+    // Cobrança de mesa (external_reference "mesa:<id>") tem tabela própria.
+    const daMesa = await processarOrdemPointDaMesa(dataId);
+    if (daMesa) return NextResponse.json(daMesa.corpo, { status: daMesa.status });
 
     const pedido = await prisma.customerOrder.findFirst({
       where: { posOrderId: dataId },
