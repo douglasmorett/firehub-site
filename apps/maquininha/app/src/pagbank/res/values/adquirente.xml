@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Textos que citam a adquirente. Só o APK do PagBank leva este arquivo: a
+  homologação do PagBank reprova app que mencione outra adquirente, então os
+  textos das outras moram nos flavors delas e nunca entram neste APK.
+-->
+<resources>
+    <string name="nome_da_adquirente">PagBank</string>
+
+    <string name="erro_terminal_nao_ativado">Este terminal ainda não foi ativado no PagBank.</string>
+    <string name="erro_sem_servico_adquirente">O serviço de pagamento do PagBank não está neste aparelho. Este app só funciona num terminal PagBank.</string>
+    <string name="travado_sem_conferencia">A maquininha não confirmou o que houve com o cartão da venda %1$s (%2$s). Procure esse código no extrato do PagBank.</string>
+    <string name="recusa_sem_servico">O serviço de pagamento do PagBank não está instalado no aparelho.</string>
+    <string name="recusa_nao_ativado">Terminal não ativado no PagBank.</string>
+
+    <!-- Tela de ativação (só existe no PagBank) -->
+    <string name="ativacao_titulo">Ativar o terminal no PagBank</string>
+    <string name="ativacao_explicacao">Este terminal ainda não está ativado para receber pagamento. Digite o código de ativação que o PagBank enviou, ou abra o aplicativo de ativação do próprio PagBank.</string>
+    <string name="ativacao_campo">Código de ativação</string>
+    <string name="ativacao_botao">Ativar</string>
+    <string name="ativacao_botao_onboarding">Abrir a ativação do PagBank</string>
+    <string name="ativacao_trabalhando">Ativando o terminal…</string>
+    <string name="ativacao_vazia">Digite o código de ativação.</string>
+    <string name="ativacao_ok">Terminal ativado.</string>
+    <string name="ativacao_falhou">Não foi possível ativar: %1$s</string>
+    <string name="ativacao_ja_ativado">Este terminal já está ativado.</string>
+    <string name="ativacao_sem_servico">O serviço de pagamento do PagBank não está neste aparelho.</string>
+</resources>

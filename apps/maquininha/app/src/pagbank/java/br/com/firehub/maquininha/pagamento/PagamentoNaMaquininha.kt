@@ -1,11 +1,13 @@
 package br.com.firehub.maquininha.pagamento
 
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Looper
 import android.util.Log
 import br.com.firehub.maquininha.rede.Cobranca
 import br.com.firehub.maquininha.rede.TipoDePagamento
+import br.com.firehub.maquininha.tela.AtivacaoActivity
 import br.com.uol.pagseguro.plugpagservice.wrapper.IPlugPagWrapper
 import br.com.uol.pagseguro.plugpagservice.wrapper.PlugPag
 import br.com.uol.pagseguro.plugpagservice.wrapper.PlugPagActivationData
@@ -31,7 +33,43 @@ import br.com.uol.pagseguro.plugpagservice.wrapper.PlugPagTransactionResult
  * O laço do serviço de cobrança já é sequencial por construção; o cadeado é a
  * garantia de que uma tela nunca vai atropelar o laço.
  */
-object PagamentoNaMaquininha {
+object PagamentoNaMaquininha : CobradorDaAdquirente {
+
+    override val nome = "PagBank"
+
+    /**
+     * Exatamente três, e é regra de homologação: app embarcado em terminal
+     * PagBank não pode oferecer forma de pagamento que o terminal não processa
+     * por cartão. Pix existe no enum por causa das outras adquirentes, mas
+     * nunca vira botão neste APK.
+     */
+    override val formasAceitas = listOf(
+        TipoDePagamento.CREDITO,
+        TipoDePagamento.DEBITO,
+        TipoDePagamento.VOUCHER,
+    )
+
+    override val podeAbortar = true
+
+    /**
+     * Doze perguntas a cada cinco segundos dão um minuto: tempo de sobra para
+     * o serviço do PagBank terminar de subir depois de um boot, que é o motivo
+     * pelo qual a consulta da última aprovada falha na prática.
+     */
+    override val conferenciasAntesDeChamarGente = 12
+
+    override fun intentDeAtivacao(context: Context): Intent =
+        Intent(context, AtivacaoActivity::class.java)
+
+    override fun montarIdentificador(cobranca: Cobranca): String =
+        montarReferenciaCurta(cobranca.pedidoId, cobranca.tentativa)
+
+    override fun conferir(
+        identificador: String,
+        valorEmCentavos: Int,
+        tipo: TipoDePagamento?,
+    ): ConferenciaDaUltima = conferirUltimaAprovada(identificador, valorEmCentavos, tipo)
+
 
     private const val ETIQUETA = "PagamentoPagBank"
 
@@ -62,66 +100,8 @@ object PagamentoNaMaquininha {
     @Volatile
     private var wrapper: IPlugPagWrapper? = null
 
-    fun guardarContexto(context: Context) {
+    override fun guardarContexto(context: Context) {
         contexto = context.applicationContext
-    }
-
-    /**
-     * Resultado da transação já traduzido para o vocabulário do FireHub, sem
-     * nenhum tipo do SDK vazando para fora deste arquivo.
-     */
-    data class ResultadoDoSdk(
-        val aprovado: Boolean,
-        val bandeira: String?,
-        val nsu: String?,
-        val autorizacao: String?,
-        val parcelas: Int?,
-        val tipo: String?,
-        val motivo: String?,
-        val codigoDeErro: String?,
-        /**
-         * Verdadeiro quando NEM O TERMINAL sabe o que aconteceu com o cartão.
-         *
-         * É diferente de `aprovado = false`. Recusa é uma resposta: o cartão não
-         * passou, o pedido volta para a fila e o cliente tenta outro. Incerto é
-         * a ausência de resposta — a chamada estourou e o terminal também não
-         * soube dizer qual foi a última venda aprovada.
-         *
-         * Quem recebe isto NÃO pode mandar recusa para o servidor: se o cartão
-         * tiver sido debitado, o pedido voltaria para a fila e o cliente pagaria
-         * de novo. O caminho certo é segurar o marcador em disco e reconferir
-         * nas próximas voltas do laço, que é o que `ServicoDeCobranca` faz.
-         */
-        val incerto: Boolean = false,
-    )
-
-    /**
-     * O que o terminal respondeu quando lhe perguntamos se uma venda específica
-     * chegou a ser aprovada.
-     *
-     * As três respostas são diferentes e tratá-las como duas é como se perde
-     * dinheiro: "não foi esta" é informação (a venda não aconteceu), enquanto
-     * "não deu para conferir" é a falta dela (o cartão pode ter sido debitado e
-     * ninguém sabe). Quem trata as duas como "não" apaga a única pista que havia
-     * de uma cobrança já paga.
-     */
-    sealed class ConferenciaDaUltima {
-        /** A última venda aprovada do terminal É esta cobrança. */
-        data class FoiEsta(val resultado: ResultadoDoSdk) : ConferenciaDaUltima()
-
-        /** A última aprovada é de outra venda: esta não chegou a ser paga. */
-        object NaoFoiEsta : ConferenciaDaUltima()
-
-        /** O terminal não respondeu, ou respondeu algo que não dá para ler. */
-        data class NaoDeuParaConferir(val motivo: String) : ConferenciaDaUltima()
-    }
-
-    /** Por que a maquininha não pode cobrar agora. */
-    sealed class Impedimento {
-        object Nenhum : Impedimento()
-        object ServicoNaoInstalado : Impedimento()
-        object TerminalNaoAtivado : Impedimento()
-        data class FalhaAoConsultar(val mensagem: String) : Impedimento()
     }
 
     // ------------------------------------------------------------- prontidão
@@ -149,7 +129,7 @@ object PagamentoNaMaquininha {
      * cartão, a segunda diz a este app de qual loja ele é. Um terminal pode
      * estar ativado e não pareado, e vice-versa.
      */
-    fun impedimentoParaCobrar(): Impedimento {
+    override fun impedimentoParaCobrar(): Impedimento {
         exigirThreadDeTrabalho()
         val app = contexto ?: return Impedimento.FalhaAoConsultar("Aplicação não iniciada.")
         if (!servicoDoPagBankInstalado(app)) return Impedimento.ServicoNaoInstalado
@@ -254,13 +234,20 @@ object PagamentoNaMaquininha {
      * diz recusado com o motivo — exceto no caso em que a transação pode ter
      * passado sem o app saber, que é tratado consultando a última aprovada.
      */
-    fun cobrar(
+    override fun cobrar(
         cobranca: Cobranca,
         tipo: TipoDePagamento,
-        referenciaCurta: String,
+        identificador: String,
         aoProgredir: (String) -> Unit,
     ): ResultadoDoSdk {
         exigirThreadDeTrabalho()
+        val referenciaCurta = identificador
+
+        // Defesa: a tela só mostra os botões de `formasAceitas`, então isto não
+        // deveria acontecer. Se acontecer, nada foi mandado ao terminal e
+        // recusar é seguro.
+        val codigoDoTipo = codigoDoTipo(tipo)
+            ?: return recusa("Forma de pagamento não aceita nesta maquininha.", null, tipo)
 
         if (cobranca.valorEmCentavos < VALOR_MINIMO_EM_CENTAVOS) {
             // Melhor recusar aqui, com um motivo que o operador entende, do que
@@ -270,7 +257,7 @@ object PagamentoNaMaquininha {
         }
 
         val dados = PlugPagPaymentData(
-            type = codigoDoTipo(tipo),
+            type = codigoDoTipo,
             amount = cobranca.valorEmCentavos,
             installmentType = PlugPag.INSTALLMENT_TYPE_A_VISTA,
             installments = PlugPag.A_VISTA_INSTALLMENT_QUANTITY,
@@ -449,7 +436,7 @@ object PagamentoNaMaquininha {
      * Por isso este método é o único que NÃO pega o cadeado: ele precisa rodar
      * enquanto o cadeado está na mão do doPayment.
      */
-    fun abortar() {
+    override fun abortar() {
         exigirThreadDeTrabalho()
         try {
             wrapper?.abort()
@@ -518,10 +505,11 @@ object PagamentoNaMaquininha {
         codigoDeErro = codigo,
     )
 
-    private fun codigoDoTipo(tipo: TipoDePagamento): Int = when (tipo) {
+    private fun codigoDoTipo(tipo: TipoDePagamento): Int? = when (tipo) {
         TipoDePagamento.CREDITO -> PlugPag.TYPE_CREDITO
         TipoDePagamento.DEBITO -> PlugPag.TYPE_DEBITO
         TipoDePagamento.VOUCHER -> PlugPag.TYPE_VOUCHER
+        TipoDePagamento.PIX -> null
     }
 
     /**

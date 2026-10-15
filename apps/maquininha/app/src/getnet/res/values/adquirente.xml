@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Textos que citam a adquirente. Só o APK da Getnet leva este arquivo: cada
+  adquirente homologa o seu APK e reprova app que cite a concorrente.
+-->
+<resources>
+    <string name="nome_da_adquirente">Getnet</string>
+
+    <!-- Deeplink não tem "ativação" pelo nosso app: quem ativa é o app da própria adquirente. -->
+    <string name="erro_terminal_nao_ativado">Este terminal ainda não está pronto para cobrar na Getnet.</string>
+    <string name="erro_sem_servico_adquirente">O aplicativo de pagamento da Getnet não está neste aparelho. Este app só cobra numa maquininha Getnet.</string>
+    <string name="travado_sem_conferencia">Não deu para saber se o cartão da venda %1 passou (%2). Confira no aplicativo de pagamento da Getnet (últimas transações) antes de cobrar de novo.</string>
+    <string name="recusa_sem_servico">O aplicativo de pagamento da Getnet não está instalado no aparelho.</string>
+    <string name="recusa_nao_ativado">Maquininha Getnet não está pronta para cobrar.</string>
+
+    <string name="andamento_no_app_da_adquirente">Conclua o pagamento na tela da Getnet</string>
+    <string name="recusa_app_em_segundo_plano">A tela do FireHub não estava aberta na maquininha e o pagamento não chegou a ser aberto.</string>
+    <string name="recusa_app_da_adquirente_nao_abriu">Não foi possível abrir o aplicativo de pagamento da Getnet.</string>
+    <string name="incerto_sem_resposta">O aplicativo da Getnet não devolveu o resultado a tempo.</string>
+</resources>

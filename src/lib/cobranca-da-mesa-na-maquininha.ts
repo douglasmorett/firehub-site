@@ -396,6 +396,7 @@ export type DadosDaTransacao = {
   tipo?: unknown;
   referencia?: unknown;
   motivo?: unknown;
+  idsDaAdquirente?: unknown;
 };
 
 /**

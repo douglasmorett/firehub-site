@@ -2,8 +2,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
+      Manifesto COMUM às quatro adquirentes. O que é de uma adquirente só
+      (permissão do SDK, <queries> do app de pagamento, tela de ativação, ponte
+      de deeplink) mora em src/<flavor>/AndroidManifest.xml e entra pelo merge
+      só no APK dela.
+    -->
+
+    <!--
       Fala com https://firehubfood.com.br. Vale lembrar que a APN do chip do
-      PagBank é PRIVADA: este domínio precisa estar na lista de endpoints
+      PagBank é PRIVADA (e a de outras adquirentes pode ser também): este domínio precisa estar na lista de endpoints
       enviada na homologação, senão o app funciona no Wi-Fi da loja e fica mudo
       no 4G. Trocar de domínio ou de IP depois disso exige abrir chamado.
     -->
@@ -17,13 +24,6 @@
     -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!--
-      O AAR do WrapperPPS já declara esta permissão e ela entraria por merge,
-      mas fica repetida aqui de propósito: quem analisa a homologação lê este
-      arquivo, e uma permissão de pagamento que aparece "do nada" pelo merge
-      levanta pergunta que custa dias de SLA.
-    -->
-    <uses-permission android:name="br.com.uol.pagseguro.permission.MANAGE_PAYMENTS" />
 
     <!--
       O polling vive num serviço em primeiro plano. Se ele parasse quando o
@@ -86,16 +86,6 @@
     -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
 
-    <!--
-      O app precisa checar se o PlugPagService está instalado antes de tentar
-      cobrar. A forma direta seria QUERY_ALL_PACKAGES, que está na lista de
-      permissões PROIBIDAS do PagBank. Declarando o pacote aqui a consulta
-      funciona sem pedir visibilidade de nada mais.
-    -->
-    <queries>
-        <package android:name="br.com.uol.pagseguro.plugpagservice" />
-        <package android:name="br.com.uol.pagseguro.onboarding" />
-    </queries>
 
     <application
         android:name=".AplicacaoDaMaquininha"
@@ -137,15 +127,6 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!--
-              O launcher do PagBank dispara esta ação quando o cliente encosta o
-              cartão ou aperta uma tecla na tela inicial do terminal. Com o
-              filtro, o app abre sozinho no gesto que o operador ja conhece.
-            -->
-            <intent-filter>
-                <action android:name="br.com.uol.pagseguro.PAYMENT" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
         </activity>
 
         <activity
@@ -154,11 +135,6 @@
             android:screenOrientation="portrait"
             android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation" />
 
-        <activity
-            android:name=".tela.AtivacaoActivity"
-            android:exported="false"
-            android:screenOrientation="portrait"
-            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation" />
 
         <!--
           stopWithTask=false: fechar o app pela lista de recentes não pode

@@ -67,6 +67,20 @@ object Ajustes {
     const val ESPERA_APOS_ABANDONO_MS = 30_000L
 
     /**
+     * Quanto a cobrança espera o app de pagamento da adquirente (Stone, Cielo,
+     * Getnet) devolver o resultado.
+     *
+     * Passado o prazo a cobrança NÃO vira recusa: vira incerta, o marcador
+     * fica em disco e a recuperação decide. Três minutos cobrem o cliente
+     * procurando o cartão, errando a senha e tentando de novo, e ficam abaixo
+     * dos cinco minutos em que o servidor destrava o pedido sozinho.
+     */
+    const val PRAZO_NO_APP_DA_ADQUIRENTE_MS = 180_000L
+
+    /** A consulta de status (checkstatus da Getnet) não espera ninguém digitar nada. */
+    const val PRAZO_DA_CONSULTA_NA_ADQUIRENTE_MS = 30_000L
+
+    /**
      * Espera entre duas perguntas ao terminal sobre um cartão cujo resultado
      * ficou em aberto.
      *

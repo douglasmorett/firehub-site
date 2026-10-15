@@ -1,7 +1,14 @@
 # FireHub Maquininha
 
-App Android nativo que roda **dentro** de uma maquininha PagBank Smart POS e
-cobra os pedidos que o cliente fecha no totem de autoatendimento.
+App Android nativo que roda **dentro** de uma maquininha Smart POS e cobra os
+pedidos que o cliente fecha no totem de autoatendimento (e, do lado do servidor,
+também as contas de mesa).
+
+O mesmo código gera **um APK por adquirente**: PagBank (SDK PlugPag), Stone,
+Cielo e Getnet (deeplink para o app de pagamento de cada uma). Ver
+[Quatro adquirentes](#quatro-adquirentes). O resto deste arquivo foi escrito
+para o PagBank e continua valendo para ele; o que muda nas outras está naquela
+seção.
 
 O totem é uma página web num tablet; a maquininha fica ao lado. O cliente monta
 o pedido no totem e paga aqui. Quem cobra é este app, usando a
@@ -34,7 +41,7 @@ servidor para sempre.
 1. **Pareamento** — o lojista gera um código de 64 caracteres no painel do
    FireHub (Maquininhas) e digita aqui. O código **é** a credencial. Só é
    gravado depois que o servidor responde 200.
-2. **Ativação do terminal** — só aparece se o terminal ainda não estiver ativado
+2. **Ativação do terminal** (só no APK do PagBank) — só aparece se o terminal ainda não estiver ativado
    no PagBank. Aceita o código de ativação ou entrega a tarefa ao aplicativo de
    boas-vindas do próprio PagBank.
 3. **Operação** — o dia inteiro em "Aguardando pedido". Quando chega cobrança,
@@ -53,9 +60,14 @@ AGP 8.4.0 já vêm declarados no projeto.
 
 ```bash
 cd apps/maquininha
-./gradlew assembleDebug     # APK de teste
-./gradlew assembleRelease   # APK para homologação
+./gradlew assemblePagbankDebug assembleStoneDebug assembleCieloDebug assembleGetnetDebug
+./gradlew assemblePagbankRelease          # APK para homologação (um por adquirente)
+./gradlew :simulador:assembleDebug        # simulador das adquirentes de deeplink
 ```
+
+`local.properties` (fora do git) precisa de
+`sdk.dir=C:/Users/<você>/AppData/Local/Android/Sdk` — com barras normais: no
+formato `.properties` a barra invertida é escape e `C:\Users` vira `C:Users`.
 
 Se não houver `gradlew` na pasta (o `.jar` do wrapper não vai ao repositório),
 abra a pasta no Android Studio uma vez — ele o gera — ou rode `gradle wrapper`
@@ -88,7 +100,7 @@ padrão do Gradle moderno é só V2.
 ### Instalar no terminal de debug
 
 ```bash
-adb install -r app/build/outputs/apk/release/app-release.apk
+adb install -r app/build/outputs/apk/pagbank/release/app-pagbank-release.apk
 ```
 
 O terminal de debug já vem apontado para o ambiente de testes e identificado por
@@ -333,8 +345,12 @@ vale pedir um ao comercial explicitamente antes de prometer prazo.
 - **WebView é proibida.** `ACCESS_WEBVIEW` está na lista de permissões bloqueadas
   e o FAQ cita Ionic e Cordova pelo nome. Este app é Kotlin nativo, sem WebView.
 - **Não citar outra adquirente nem outra forma de pagamento** — nem em string,
-  nem em ícone, nem em comentário que apareça na tela. Por isso `TipoDePagamento`
-  tem exatamente três valores.
+  nem em ícone, nem em comentário que apareça na tela. Por isso o APK do
+  PagBank só mostra três botões (`PagamentoNaMaquininha.formasAceitas`), e todo
+  texto que cita adquirente mora em `src/<flavor>/res/values/adquirente.xml` —
+  o APK do PagBank não leva o nome de nenhuma outra (conferido no dex e nos
+  recursos). O enum `TipoDePagamento` tem `PIX` por causa das outras três; no
+  PagBank ele nunca vira botão nem texto de recurso.
 - **O app tem que chamar o SDK de verdade.** App que não cobra não passa.
 - **Não separar em dois apps** (um de pedidos, outro de pagamento).
 - APK ≤ 200 MB, assinatura **V1 e V2**, `versionCode` único e crescente, sem
@@ -429,12 +445,166 @@ Também não implementada: **impressão de comprovante**. Quem imprime o pedido 
 FireHub, na impressora da cozinha, e bobina de terminal é consumível que acaba no
 meio do movimento.
 
+## Quatro adquirentes
+
+O mesmo app roda nas Smart POS de **PagBank, Stone, Cielo e Getnet**. Cada
+adquirente homologa e assina o APK dela, e cada uma reprova app que cite a
+concorrente ou carregue SDK de terminal de terceiro. Por isso não existe "um APK
+com as quatro": existe um **product flavor** por adquirente (dimensão
+`adquirente`), e cada flavor só compila o código e os textos dela.
+
+| Flavor | applicationId | Como cobra | Recuperação depois de queda |
+|---|---|---|---|
+| `pagbank` | `br.com.firehub.maquininha` (o de sempre) | SDK PlugPag, `doPayment` bloqueante | `getLastApprovedTransaction()` |
+| `stone` | `br.com.firehub.maquininha.stone` | deeplink `payment-app://pay`, volta por deeplink | não existe consulta |
+| `cielo` | `br.com.firehub.maquininha.cielo` | deeplink `lio://payment`, volta por deeplink | não existe consulta |
+| `getnet` | `br.com.firehub.maquininha.getnet` | deeplink `getnet://pagamento/v3/payment`, volta por `onActivityResult` | `getnet://pagamento/v1/checkstatus` pelo `callerId` |
+
+O `pagbank` **não mudou de applicationId**: a homologação PagBank amarra ao
+packageName. Ele é o único com a dependência do SDK (`pagbankImplementation`), e
+`PagamentoNaMaquininha`/`AtivacaoActivity` moram em `src/pagbank` — os outros
+flavors nem compilam esses arquivos (conferido: zero classe `PlugPag` nos APKs
+de Stone, Cielo e Getnet).
+
+### O desenho
+
+Tudo que protege o dinheiro continua em `src/main` e vale para as quatro: fila
+em disco, marcador gravado **antes** de tocar o cartão, "antes de cobrar,
+pergunta se já cobrou", lista de atenção. O que muda por adquirente fica atrás
+de `CobradorDaAdquirente` (`src/main/.../pagamento/`):
+
+- `nome`, `formasAceitas` (os botões da tela), `podeAbortar`;
+- `cobrar(cobranca, tipo, identificador, aoProgredir) -> ResultadoDoSdk`,
+  bloqueante, chamado da thread do serviço como sempre foi;
+- `conferir(identificador, valor, tipo) -> ConferenciaDaUltima` (as mesmas três
+  respostas: foi esta / não foi / não deu para conferir);
+- `montarIdentificador(cobranca)`: o código desta tentativa, gravado no marcador.
+
+Cada flavor tem um `Adquirente.kt` (mesmo pacote, mesmo nome) que diz qual
+cobrador está no APK. O polling passa `&adquirente=PAGBANK|STONE|CIELO|GETNET` e
+o POST de resultado leva `adquirente` e, quando houver, `idsDaAdquirente`
+(ATK/ITK da Stone, `cvNumber` da Getnet, `cieloCode` da Cielo).
+
+**A ponte de deeplink** (`src/deeplink`, compartilhado só por Stone, Cielo e
+Getnet): o serviço chama `CanalDaPonte.executar`, que abre a
+`PonteDaAdquirenteActivity` (transparente, `singleTop`), que abre o app da
+adquirente e recebe a volta — por `onNewIntent`/`onCreate` com a URI (Stone,
+Cielo) ou por `onActivityResult` (Getnet). A thread do serviço espera num latch
+com prazo de **3 minutos** (`Ajustes.PRAZO_NO_APP_DA_ADQUIRENTE_MS`). Uma
+cobrança por vez, por cadeado. Três desfechos, e a diferença entre eles é
+dinheiro:
+
+| Desfecho | O que vira | Por quê |
+|---|---|---|
+| A ponte não abriu (tela do FireHub fora da frente, app da adquirente ausente) | **recusa** | nada chegou ao app da adquirente; o cartão não foi tocado |
+| O app da adquirente abriu e não voltou no prazo | **incerto** | o marcador fica; a recuperação decide |
+| Voltou | o cobrador lê | na dúvida (campo faltando, valor diferente, resposta de outra venda), **incerto** |
+
+O app fica o dia todo na tela Operação, então a ponte abre normalmente. Se não
+estiver em primeiro plano, o Android (API 29+) bloqueia a abertura **em
+silêncio**: a ponte não aparece em 10 s, a cobrança é recusada com "a tela do
+FireHub não estava aberta" e o pedido volta para a fila — seguro, porque nada
+foi aberto.
+
+Resposta que chega **depois** do prazo não se perde: fica guardada em memória e
+a recuperação (`conferir`) a usa. Resposta de outra venda é rejeitada onde dá
+para saber (a Cielo devolve a `reference`, a Getnet o `callerId`; ambos são o
+identificador desta tentativa).
+
+### Recuperação sem consulta (Stone e Cielo) — a decisão
+
+Nenhuma das duas oferece, no deeplink, um jeito de perguntar "a venda X
+passou?". Então, quando uma cobrança fica incerta, o app espera um pouco (3
+conferências de 5 s) por uma resposta atrasada e, sem ela, manda o registro
+para a **lista de atenção** com o recado "confira no aplicativo de pagamento da
+Stone/Cielo (últimas transações) antes de cobrar de novo". **Nunca vira
+recusa**: recusa devolveria o pedido para a fila e, se o cartão tiver passado,
+o cliente pagaria duas vezes. O custo da escolha é uma pessoa olhar o histórico
+da maquininha; o da outra seria cobrança dupla.
+
+Na Getnet, incerto (incluindo voltar sem dados, que as libs comunitárias tratam
+como "cancelado") vai para o `checkstatus` com o mesmo `callerId`. O `callerId`
+é **único por toque de cartão** (pedido + tentativa + relógio), porque o
+servidor repete a tentativa quando devolve um pedido recusado, e um `callerId`
+repetido faria a consulta devolver a tentativa anterior.
+
+### Formas de pagamento
+
+| | Crédito | Débito | Pix | Voucher |
+|---|---|---|---|---|
+| PagBank | sim | sim | **não** (regra de homologação) | sim |
+| Stone | `CREDIT` | `DEBIT` | `PIX` | `VOUCHER` |
+| Cielo | `CREDITO_AVISTA` | `DEBITO_AVISTA` | `PIX` | `VOUCHER_REFEICAO` |
+| Getnet | `credit` | `debit` | `pix` | `voucher` |
+
+Sempre à vista. A tela mostra "Conectado - <adquirente>" e só os botões que a
+adquirente aceita. Nos deeplinks o botão "Cancelar" some durante a transação:
+quem cancela é o cliente, na tela da adquirente.
+
+### O que cada uma pede, e o que falta
+
+**PagBank** — nada mudou; ver "O que depende do PagBank".
+
+**Stone** — fonte: <https://sdkandroid.stone.com.br/reference/pagamento-deeplink.md>.
+
+- Ida: `payment-app://pay?return_scheme=firehubmaquininha&amount=<centavos>&transaction_type=…&installment_type=NONE&editable_amount=0`, com `FLAG_ACTIVITY_NEW_TASK`.
+- Volta: `firehubmaquininha://pay-response?code=0&…` (code 0 = aprovado; senão `message`/`reason`/`response_code`). NSU = `atk`; ATK e ITK vão os dois em `idsDaAdquirente`.
+- Falta: credenciamento como parceiro Stone, homologação do APK e POS Stone para teste — **o deeplink só funciona em POS Stone**.
+- Conferir no terminal: (1) que `installment_type=NONE` sem `installment_count` não faz o app perguntar parcelas (a doc só aceita `installment_count` de 2 a 99, por isso ele não vai); (2) qual dos dois, ATK ou ITK, aparece no portal/extrato; (3) se o app da Stone devolve o deeplink para a ponte existente (`onNewIntent`) ou cria outra — o código aguenta os dois.
+- `order_id` **não vai**: a doc exige número (até `Long.MAX`) e a função ligada no app de Ajustes do POS; o `pedidoId` do FireHub é texto opaco.
+- Risco aceito: a volta da Stone não traz nenhum identificador nosso, então a única conferência de que a resposta é desta cobrança é o **valor**. Uma resposta atrasada de outra venda **com o mesmo valor** seria aceita. Só acontece se o app da Stone devolver uma venda depois de mais de 3 minutos *e* outra cobrança já estiver aberta.
+
+**Cielo (Cielo Smart / LIO)** — fonte: manual de integração por deep link da Cielo LIO.
+
+- Manifesto: `<meta-data android:name="cs_integration_type" android:value="uri"/>`; `minSdk 24` e `targetSdk 29` **só neste flavor**; WebView proibida (o app não tem).
+- Ida: JSON em Base64 (`NO_WRAP`, codificado na query) em `lio://payment?request=…&urlCallback=firehubcielo://response`. Volta: `response` em Base64 com o pedido; aprovado = `payments[0]` (bandeira, `authCode`, `nsu`/`cieloCode`).
+- **Credenciais por loja**: `clientId` e `accessToken` vêm do servidor no campo opcional `credenciaisCielo:{clientId, accessToken, email?}` da resposta do `pendente`. Sem eles a cobrança é **recusada antes de abrir qualquer tela**, com "A loja ainda não cadastrou as credenciais da Cielo". Nunca vão para log nem para disco. O nome do campo vem de `BuildConfig.CAMPO_DE_CREDENCIAIS`, preenchido só no flavor cielo — o APK do PagBank não leva a palavra "Cielo".
+- Falta: cadastro no portal de desenvolvedores da Cielo (gera clientId/accessToken por estabelecimento), homologação do APK, POS Cielo Smart para teste.
+- Conferir no terminal: (1) **unidade de `value`/`unitPrice`** — o app manda centavos; se a tela da Cielo mostrar o valor 100× maior, é em `CobradorCielo.montarSaida`; (2) o formato da resposta de cancelamento/erro (o app aceita `code`/`reason`/`message`/`status`; sem nada reconhecível é incerto); (3) se `email` vazio é aceito; (4) se voucher refeição recusa cartão alimentação.
+
+**Getnet (Get Smart, Santander)** — a especificação oficial é fechada; o formato segue as duas integrações comunitárias em produção:
+<https://github.com/CarvalhoWesley/getnet_payments> e
+<https://github.com/ControleOnline/react-native-getnet-payment>.
+
+- **As duas mandam os parâmetros como query string na URI**, não como extras do Bundle. O app segue as fontes (query) e repete os mesmos valores como extras, o que é inofensivo e cobre a variante antiga.
+- Ida (`startActivityForResult`): `getnet://pagamento/v3/payment?paymentType=credit|debit|voucher|pix&amount=<12 dígitos em centavos>&callerId=<único>&installments=1&allowPrintCurrentTransaction=false&orderId=<o mesmo>`. O valor é montado do inteiro em centavos, sem passar por double (as libs fazem `amount * 100` em double).
+- Volta (extras): `result` 0 aprovado / 1 negado / 2 cancelado / 3 falha / 4 desconhecido / 5 pendente; `nsu`, `cvNumber`, `authorizationCode`, `brand`, `cardLastDigits`, `installments`. 4, 5 e "voltou sem dados" são **incertos** e vão para o `checkstatus`.
+- Falta: parceria Getnet (acesso à doc oficial e ao ambiente de homologação), homologação do APK, POS Getnet para teste.
+- Conferir no terminal: (1) query vs. extras; (2) tamanho máximo do `callerId` (o app manda uns 20 alfanuméricos); (3) o que o `checkstatus` responde para um `callerId` que a Getnet não conhece (se for 2/3, o pedido volta para a fila; se for 4, vai para a lista de atenção depois de um minuto — o lado seguro); (4) se o `checkstatus` mostra tela.
+
+### Simulador (testar sem maquininha)
+
+`apps/maquininha/simulador` é um app separado
+(`br.com.firehub.simuladoradquirente`) que registra os mesmos deeplinks
+(`payment-app://pay`, `lio://payment`, `getnet://pagamento/v3/payment` e
+`/v1/checkstatus`) e mostra **Aprovar / Recusar / Cancelar / Fechar sem
+responder**, devolvendo exatamente o formato de cada adquirente. O "fechar sem
+responder" testa o caminho que importa: a cobrança tem que ficar **incerta**,
+nunca recusada. **Nunca instalar numa maquininha de verdade.**
+
+```bash
+./gradlew assembleStoneDebug :simulador:assembleDebug
+adb install -r app/build/outputs/apk/stone/debug/app-stone-debug.apk
+adb install -r simulador/build/outputs/apk/debug/simulador-debug.apk
+```
+
+Pareie o app com um código de teste, gere uma cobrança no painel e escolha a
+forma: o simulador abre no lugar do app da Stone. **Ainda não foi rodado em
+emulador** — nesta máquina não há emulador instalado (nem AVD).
+
+### Do lado do servidor
+
+- `GET pendente` recebe `&adquirente=PAGBANK|STONE|CIELO|GETNET`.
+- Para terminal Cielo, mandar `credenciaisCielo:{clientId, accessToken, email?}` dentro de `cobranca` (o app também aceita na raiz da resposta, ao lado dela).
+- `POST resultado` passa a trazer `adquirente` e, opcionalmente, `idsDaAdquirente` (objeto texto→texto). São campos a mais; o servidor pode ignorar.
+- `pedidoId` é texto opaco no app: `"mesa:<id>"` com `descricao` "Mesa 5" funciona sem mudança (conferido: nada no app assume formato de id; os códigos de referência só usam os alfanuméricos dele).
+
 ## Mapa dos arquivos
 
 ```
-app/src/main/java/br/com/firehub/maquininha/
+app/src/main/java/br/com/firehub/maquininha/      comum às quatro adquirentes
 ├── Ajustes.kt                    números e endereços num lugar só
-├── AplicacaoDaMaquininha.kt      guarda o Context do processo para o SDK
+├── AplicacaoDaMaquininha.kt      guarda o Context do processo para o cobrador
 ├── CofreDoToken.kt               o token de 64 caracteres, no Keystore
 ├── TrabalhoDeTela.kt             tira as telas da thread principal
 ├── rede/
@@ -443,7 +613,7 @@ app/src/main/java/br/com/firehub/maquininha/
 ├── fila/
 │   └── FilaDeResultados.kt       o caderninho: pendentes, travados, marcador
 ├── pagamento/
-│   └── PagamentoNaMaquininha.kt  o ÚNICO arquivo que toca o SDK do PagBank
+│   └── CobradorDaAdquirente.kt   o contrato: cobrar, conferir, impedimento
 ├── servico/
 │   ├── ServicoDeCobranca.kt      o laço, em primeiro plano
 │   ├── RitmoDoPolling.kt         a escada adaptativa
@@ -452,8 +622,27 @@ app/src/main/java/br/com/firehub/maquininha/
 │   └── EstadoDoTerminal.kt       ponte entre a thread do serviço e a tela
 └── tela/
     ├── PareamentoActivity.kt
-    ├── AtivacaoActivity.kt
     └── OperacaoActivity.kt
+
+app/src/pagbank/      só no APK do PagBank (único com o SDK PlugPag)
+├── AndroidManifest.xml           MANAGE_PAYMENTS, <queries>, ativação, filtro PAYMENT
+├── java/.../pagamento/Adquirente.kt
+├── java/.../pagamento/PagamentoNaMaquininha.kt  o ÚNICO arquivo que toca o SDK
+├── java/.../tela/AtivacaoActivity.kt
+└── res/                          tela de ativação e textos que citam o PagBank
+
+app/src/deeplink/java/.../pagamento/ponte/        Stone, Cielo e Getnet
+├── CanalDaPonte.kt               a espera bloqueante (latch) entre serviço e ponte
+├── PonteDaAdquirenteActivity.kt  Activity transparente que abre o app da adquirente
+└── CobradorPorDeeplink.kt        a regra de dinheiro comum aos três
+
+app/src/stone|cielo|getnet/
+├── AndroidManifest.xml           <queries> e o intent-filter da volta
+├── java/.../pagamento/Adquirente.kt
+├── java/.../pagamento/Cobrador<Adquirente>.kt   monta a ida, lê a volta
+└── res/values/adquirente.xml     textos que citam a adquirente
+
+simulador/                        app separado que finge ser Stone/Cielo/Getnet
 ```
 
 ### Por que tudo numa thread só
@@ -481,7 +670,9 @@ chamada anterior. O `doPayment` continua bloqueado e vai retornar do jeito dele
 Quatro, e é de propósito: cada SDK de terceiro a mais é uma pergunta a mais na
 análise de homologação.
 
-- `br.com.uol.pagseguro.plugpagservice.wrapper:wrapper:1.35.0` — o SDK
+- `br.com.uol.pagseguro.plugpagservice.wrapper:wrapper:1.35.0` — o SDK, **só
+  no flavor pagbank** (`pagbankImplementation`). Stone, Cielo e Getnet não
+  levam SDK nenhum: falam com o app da adquirente por Intent.
 - `androidx.appcompat:appcompat` — as Activities
 - `androidx.core:core-ktx` — notificação e serviço em primeiro plano
 - `androidx.security:security-crypto:1.0.0` — o cofre do token

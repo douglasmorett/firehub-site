@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Para devolver a resposta da Stone e da Cielo: os schemes de volta do FireHub. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="firehubmaquininha" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="firehubcielo" />
+        </intent>
+    </queries>
+
+    <application
+        android:label="Simulador de adquirente"
+        android:allowBackup="false"
+        android:theme="@android:style/Theme.Material.Light">
+
+        <activity
+            android:name=".SimuladorActivity"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Stone: payment-app://pay?... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="payment-app" android:host="pay" />
+            </intent-filter>
+
+            <!-- Cielo: lio://payment?request=...&urlCallback=... -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="lio" android:host="payment" />
+            </intent-filter>
+
+            <!-- Getnet: getnet://pagamento/v3/payment e getnet://pagamento/v1/checkstatus -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="getnet" android:host="pagamento" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

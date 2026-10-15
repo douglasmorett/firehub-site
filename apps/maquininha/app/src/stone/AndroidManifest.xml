@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Só no APK da Stone. Junta-se ao manifesto de src/main pelo merge. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      Android 11+: sem isto o app não "enxerga" o app de pagamento da Stone e
+      resolveActivity diz que ele não existe. QUERY_ALL_PACKAGES seria o atalho
+      e é exatamente o tipo de permissão que homologação reprova.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="payment-app" />
+        </intent>
+    </queries>
+
+    <application>
+        <!--
+          Ponte transparente para o app de pagamento da adquirente (ver
+          PonteDaAdquirenteActivity). singleTop: a volta por deeplink reaproveita
+          a ponte do topo. Sem orientação fixa: Activity translúcida com
+          orientação fixa estoura no Android 8.0.
+        -->
+        <activity
+            android:name=".pagamento.ponte.PonteDaAdquirenteActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation"
+            android:exported="true">
+            <!--
+              Volta do pagamento: firehubmaquininha://pay-response?code=...
+              O scheme tem que ser o mesmo do return_scheme mandado na ida
+              (CobradorStone.ESQUEMA_DE_VOLTA).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="firehubmaquininha" android:host="pay-response" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

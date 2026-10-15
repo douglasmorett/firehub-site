@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Só no APK da Cielo. Junta-se ao manifesto de src/main pelo merge. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Android 11+: visibilidade do app de pagamento da Cielo (scheme lio). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="lio" />
+        </intent>
+    </queries>
+
+    <application>
+        <!--
+          Exigido pelo manual da Cielo Smart para integração por deep link
+          (URI). Sem ele a Cielo trata o app como integração por SDK.
+        -->
+        <meta-data
+            android:name="cs_integration_type"
+            android:value="uri" />
+
+        <!--
+          Ponte transparente para o app de pagamento da adquirente (ver
+          PonteDaAdquirenteActivity). singleTop: a volta por deeplink reaproveita
+          a ponte do topo. Sem orientação fixa: Activity translúcida com
+          orientação fixa estoura no Android 8.0.
+        -->
+        <activity
+            android:name=".pagamento.ponte.PonteDaAdquirenteActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation"
+            android:exported="true">
+            <!-- Volta do pagamento: firehubcielo://response?response=<base64> -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="firehubcielo" android:host="response" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -118,6 +118,22 @@
                 android:textSize="22sp"
                 android:textStyle="bold" />
 
+            <!--
+              Pix: só aparece onde a adquirente cobra Pix no próprio app
+              (Stone, Cielo, Getnet). O texto vem do código, ver OperacaoActivity.
+            -->
+            <Button
+                android:id="@+id/botaoPix"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:background="@drawable/botao_principal"
+                android:minHeight="76dp"
+                android:textColor="@color/texto"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+
             <Button
                 android:id="@+id/botaoVoucher"
                 android:layout_width="match_parent"

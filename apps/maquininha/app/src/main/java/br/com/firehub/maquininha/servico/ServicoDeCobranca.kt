@@ -21,7 +21,9 @@ import br.com.firehub.maquininha.CofreDoToken
 import br.com.firehub.maquininha.R
 import br.com.firehub.maquininha.estado.EstadoDoTerminal
 import br.com.firehub.maquininha.fila.FilaDeResultados
-import br.com.firehub.maquininha.pagamento.PagamentoNaMaquininha
+import br.com.firehub.maquininha.pagamento.Adquirente
+import br.com.firehub.maquininha.pagamento.ConferenciaDaUltima
+import br.com.firehub.maquininha.pagamento.Impedimento
 import br.com.firehub.maquininha.rede.ApiDoFireHub
 import br.com.firehub.maquininha.rede.Cobranca
 import br.com.firehub.maquininha.rede.RespostaDaFila
@@ -77,7 +79,7 @@ class ServicoDeCobranca : Service() {
      * efeito prático, porque ativação de terminal não muda sozinha.
      */
     @Volatile
-    private var prontidao: PagamentoNaMaquininha.Impedimento = PagamentoNaMaquininha.Impedimento.Nenhum
+    private var prontidao: Impedimento = Impedimento.Nenhum
 
     @Volatile
     private var prontidaoConferidaEm = 0L
@@ -125,16 +127,13 @@ class ServicoDeCobranca : Service() {
         private const val TEMPO_MOSTRANDO_RESULTADO_MS = 6_000L
 
         /**
-         * Quantas vezes se pergunta ao terminal o que houve com um cartão antes
-         * de desistir e chamar gente.
-         *
-         * Doze tentativas a cada cinco segundos dão um minuto — tempo de sobra
-         * para o serviço do PagBank terminar de subir depois de um boot, que é o
-         * motivo pelo qual esta pergunta falha na prática. Passou disso, o
-         * problema não é tempo: é um cartão que pode ter sido debitado e ninguém
-         * do lado do software consegue descobrir.
+         * Quem cobra neste APK: PlugPag no PagBank, deeplink na Stone, Cielo e
+         * Getnet. Quantas vezes perguntar o que houve com um cartão antes de
+         * chamar gente também é dele (`conferenciasAntesDeChamarGente`): onde
+         * existe consulta vale insistir um minuto; onde não existe, insistir
+         * não muda a resposta.
          */
-        private const val CONFERENCIAS_ANTES_DE_CHAMAR_GENTE = 12
+        private val cobrador = Adquirente.cobrador
 
         fun ligar(context: Context) {
             ContextCompat.startForegroundService(
@@ -312,7 +311,7 @@ class ServicoDeCobranca : Service() {
         // outra maquininha da mesma loja, se houver, ainda pode dar conta dele,
         // e tirar da fila só para recusar em seguida apenas atrasaria isso.
         val impedimento = conferirProntidao(reconferirAgora = false)
-        if (impedimento !is PagamentoNaMaquininha.Impedimento.Nenhum) {
+        if (impedimento !is Impedimento.Nenhum) {
             publicarImpedimento(impedimento)
             return ritmo.intervaloMs()
         }
@@ -439,7 +438,7 @@ class ServicoDeCobranca : Service() {
         }
 
         val impedimento = conferirProntidao(reconferirAgora = true)
-        if (impedimento !is PagamentoNaMaquininha.Impedimento.Nenhum) {
+        if (impedimento !is Impedimento.Nenhum) {
             // A cobrança já está reservada no servidor. Se este app não pode
             // cobrar, o mínimo é dizer isso e devolver o pedido para a fila na
             // hora, para outra maquininha da loja poder pegar.
@@ -493,8 +492,10 @@ class ServicoDeCobranca : Service() {
             }
         }
 
-        val referenciaCurta =
-            PagamentoNaMaquininha.montarReferenciaCurta(cobranca.pedidoId, cobranca.tentativa)
+        // O código desta tentativa junto à adquirente. No PagBank é o
+        // userReference de 10 caracteres; na Getnet, o callerId da consulta;
+        // na Stone e na Cielo, o código que a lista de atenção manda procurar.
+        val referenciaCurta = cobrador.montarIdentificador(cobranca)
 
         // O marcador vai para o disco ANTES de o cartão ser tocado. Se faltar
         // energia no meio da transação, é por ele que o app descobre, na volta,
@@ -515,7 +516,7 @@ class ServicoDeCobranca : Service() {
             EstadoDoTerminal.Situacao.Cobrando(cobranca, getString(R.string.andamento_inicial)),
         )
 
-        val doSdk = PagamentoNaMaquininha.cobrar(cobranca, tipo, referenciaCurta) { andamento ->
+        val doSdk = cobrador.cobrar(cobranca, tipo, referenciaCurta) { andamento ->
             EstadoDoTerminal.publicar(EstadoDoTerminal.Situacao.Cobrando(cobranca, andamento))
         }
 
@@ -547,6 +548,7 @@ class ServicoDeCobranca : Service() {
             parcelas = doSdk.parcelas,
             tipo = doSdk.tipo,
             motivoRecusa = doSdk.motivo,
+            idsDaAdquirente = doSdk.idsDaAdquirente,
         )
 
         // Grava primeiro, apaga o marcador depois. Na ordem inversa, uma queda
@@ -682,20 +684,20 @@ class ServicoDeCobranca : Service() {
         Log.w(ETIQUETA, "Marcador em aberto do pedido " + marcador.pedidoId + "; conferindo.")
 
         val conferencia = try {
-            PagamentoNaMaquininha.conferirUltimaAprovada(
+            cobrador.conferir(
                 marcador.referenciaCurta,
                 marcador.valorEmCentavos,
                 null,
             )
         } catch (erro: Throwable) {
             Log.e(ETIQUETA, "Falha ao conferir a última transação aprovada.", erro)
-            PagamentoNaMaquininha.ConferenciaDaUltima.NaoDeuParaConferir(
-                erro.message ?: "O serviço do PagBank não respondeu.",
+            ConferenciaDaUltima.NaoDeuParaConferir(
+                erro.message ?: "A adquirente não respondeu.",
             )
         }
 
         when (conferencia) {
-            is PagamentoNaMaquininha.ConferenciaDaUltima.FoiEsta -> {
+            is ConferenciaDaUltima.FoiEsta -> {
                 Log.w(ETIQUETA, "Pagamento recuperado do pedido " + marcador.pedidoId + ".")
                 val recuperado = conferencia.resultado
                 // Grava primeiro, apaga o marcador depois. Na ordem inversa, uma
@@ -711,12 +713,13 @@ class ServicoDeCobranca : Service() {
                         parcelas = recuperado.parcelas,
                         tipo = recuperado.tipo ?: marcador.tipo,
                         motivoRecusa = null,
+                        idsDaAdquirente = recuperado.idsDaAdquirente,
                     ),
                 )
                 fila.limparMarcador()
             }
 
-            is PagamentoNaMaquininha.ConferenciaDaUltima.NaoFoiEsta -> {
+            is ConferenciaDaUltima.NaoFoiEsta -> {
                 // A última aprovada é de outra venda: esta não foi paga. A
                 // recusa devolve o pedido para a fila agora, em vez de deixar o
                 // cliente parado até o destravamento automático do servidor.
@@ -737,8 +740,8 @@ class ServicoDeCobranca : Service() {
                 fila.limparMarcador()
             }
 
-            is PagamentoNaMaquininha.ConferenciaDaUltima.NaoDeuParaConferir -> {
-                if (marcador.conferencias + 1 < CONFERENCIAS_ANTES_DE_CHAMAR_GENTE) {
+            is ConferenciaDaUltima.NaoDeuParaConferir -> {
+                if (marcador.conferencias + 1 < cobrador.conferenciasAntesDeChamarGente) {
                     fila.contarConferencia(marcador)
                     EstadoDoTerminal.publicar(
                         EstadoDoTerminal.Situacao.Ocioso(
@@ -873,42 +876,42 @@ class ServicoDeCobranca : Service() {
 
     // ------------------------------------------------------------- prontidão
 
-    private fun conferirProntidao(reconferirAgora: Boolean): PagamentoNaMaquininha.Impedimento {
+    private fun conferirProntidao(reconferirAgora: Boolean): Impedimento {
         val agora = SystemClock.elapsedRealtime()
         val vencida = agora - prontidaoConferidaEm >= VALIDADE_DA_PRONTIDAO_MS
         if (!reconferirAgora && prontidaoJaConferida && !vencida) return prontidao
 
-        prontidao = PagamentoNaMaquininha.impedimentoParaCobrar()
+        prontidao = cobrador.impedimentoParaCobrar()
         prontidaoJaConferida = true
         prontidaoConferidaEm = agora
         return prontidao
     }
 
-    private fun publicarImpedimento(impedimento: PagamentoNaMaquininha.Impedimento) {
+    private fun publicarImpedimento(impedimento: Impedimento) {
         val situacao = when (impedimento) {
-            is PagamentoNaMaquininha.Impedimento.ServicoNaoInstalado ->
-                EstadoDoTerminal.Situacao.SemServicoDoPagBank(getString(R.string.erro_sem_servico_pagbank))
+            is Impedimento.ServicoNaoInstalado ->
+                EstadoDoTerminal.Situacao.SemServicoDaAdquirente(getString(R.string.erro_sem_servico_adquirente))
 
-            is PagamentoNaMaquininha.Impedimento.TerminalNaoAtivado ->
+            is Impedimento.TerminalNaoAtivado ->
                 EstadoDoTerminal.Situacao.PrecisaAtivar(getString(R.string.erro_terminal_nao_ativado))
 
-            is PagamentoNaMaquininha.Impedimento.FalhaAoConsultar ->
-                EstadoDoTerminal.Situacao.SemServicoDoPagBank(impedimento.mensagem)
+            is Impedimento.FalhaAoConsultar ->
+                EstadoDoTerminal.Situacao.SemServicoDaAdquirente(impedimento.mensagem)
 
-            is PagamentoNaMaquininha.Impedimento.Nenhum -> return
+            is Impedimento.Nenhum -> return
         }
         EstadoDoTerminal.publicar(situacao)
     }
 
-    private fun textoDoImpedimento(impedimento: PagamentoNaMaquininha.Impedimento): String =
+    private fun textoDoImpedimento(impedimento: Impedimento): String =
         when (impedimento) {
-            is PagamentoNaMaquininha.Impedimento.ServicoNaoInstalado ->
+            is Impedimento.ServicoNaoInstalado ->
                 getString(R.string.recusa_sem_servico)
-            is PagamentoNaMaquininha.Impedimento.TerminalNaoAtivado ->
+            is Impedimento.TerminalNaoAtivado ->
                 getString(R.string.recusa_nao_ativado)
-            is PagamentoNaMaquininha.Impedimento.FalhaAoConsultar ->
+            is Impedimento.FalhaAoConsultar ->
                 getString(R.string.recusa_maquininha_muda)
-            is PagamentoNaMaquininha.Impedimento.Nenhum -> ""
+            is Impedimento.Nenhum -> ""
         }
 
     // ----------------------------------------------------------------- telas

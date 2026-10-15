@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Só no APK do PagBank. Junta-se ao manifesto de src/main pelo merge.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      O AAR do WrapperPPS já declara esta permissão e ela entraria por merge,
+      mas fica repetida aqui de propósito: quem analisa a homologação lê este
+      arquivo, e uma permissão de pagamento que aparece "do nada" pelo merge
+      levanta pergunta que custa dias de SLA.
+    -->
+    <uses-permission android:name="br.com.uol.pagseguro.permission.MANAGE_PAYMENTS" />
+
+    <!--
+      O app precisa checar se o PlugPagService está instalado antes de tentar
+      cobrar. A forma direta seria QUERY_ALL_PACKAGES, que está na lista de
+      permissões PROIBIDAS do PagBank. Declarando o pacote aqui a consulta
+      funciona sem pedir visibilidade de nada mais.
+    -->
+    <queries>
+        <package android:name="br.com.uol.pagseguro.plugpagservice" />
+        <package android:name="br.com.uol.pagseguro.onboarding" />
+    </queries>
+
+    <application>
+        <activity
+            android:name=".tela.AtivacaoActivity"
+            android:exported="false"
+            android:screenOrientation="portrait"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation" />
+
+        <!--
+          Acrescenta um filtro à tela de operação declarada em src/main. O merge
+          junta os dois elementos <activity> pelo nome.
+        -->
+        <activity android:name=".tela.OperacaoActivity">
+            <!--
+              O launcher do PagBank dispara esta ação quando o cliente encosta o
+              cartão ou aperta uma tecla na tela inicial do terminal. Com o
+              filtro, o app abre sozinho no gesto que o operador ja conhece.
+            -->
+            <intent-filter>
+                <action android:name="br.com.uol.pagseguro.PAYMENT" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

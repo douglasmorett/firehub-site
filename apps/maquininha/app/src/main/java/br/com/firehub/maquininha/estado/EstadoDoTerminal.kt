@@ -42,11 +42,11 @@ object EstadoDoTerminal {
         /** Token recusado pelo servidor: só o pareamento resolve. */
         data class PrecisaParear(val mensagem: String) : Situacao()
 
-        /** Terminal não ativado junto ao PagBank. */
+        /** Terminal não ativado junto à adquirente (hoje só acontece no PagBank). */
         data class PrecisaAtivar(val mensagem: String) : Situacao()
 
-        /** O serviço de pagamento do PagBank não está neste aparelho. */
-        data class SemServicoDoPagBank(val mensagem: String) : Situacao()
+        /** O serviço (PagBank) ou o app de pagamento da adquirente não está neste aparelho. */
+        data class SemServicoDaAdquirente(val mensagem: String) : Situacao()
     }
 
     /** O que o cliente respondeu na tela de escolha. */

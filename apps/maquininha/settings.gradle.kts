@@ -21,3 +21,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "FireHub Maquininha"
 include(":app")
+
+// Simulador dos apps de pagamento da Stone, Cielo e Getnet, para testar os
+// flavors de deeplink no emulador, sem maquininha. NÃO vai para loja nenhuma.
+include(":simulador")

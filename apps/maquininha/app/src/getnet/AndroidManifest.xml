@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Só no APK da Getnet. Junta-se ao manifesto de src/main pelo merge. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Android 11+: visibilidade do app de pagamento da Getnet (scheme getnet). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="getnet" />
+        </intent>
+    </queries>
+
+    <application>
+        <!--
+          A Getnet responde por onActivityResult, não por deeplink: a ponte não
+          precisa ficar visível para outros apps.
+        -->
+        <!--
+          Ponte transparente para o app de pagamento da adquirente (ver
+          PonteDaAdquirenteActivity). singleTop: a volta por deeplink reaproveita
+          a ponte do topo. Sem orientação fixa: Activity translúcida com
+          orientação fixa estoura no Android 8.0.
+        -->
+        <activity
+            android:name=".pagamento.ponte.PonteDaAdquirenteActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation"
+            android:exported="false" />
+    </application>
+</manifest>

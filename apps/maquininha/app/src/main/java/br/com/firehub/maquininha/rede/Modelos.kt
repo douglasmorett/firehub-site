@@ -1,19 +1,24 @@
 package br.com.firehub.maquininha.rede
 
+import br.com.firehub.maquininha.BuildConfig
 import org.json.JSONObject
 
 /**
- * As três formas de pagamento que este app oferece.
+ * As formas de pagamento que o app sabe pedir.
  *
- * A lista é curta de propósito e não vai crescer sem conversa: aplicação
- * embarcada em terminal PagBank não pode oferecer nem mencionar outras formas de
- * pagamento além das que o próprio terminal processa por cartão. Isso é regra de
- * homologação, não preferência de produto.
+ * Quem decide quais viram botão é a adquirente (`CobradorDaAdquirente.
+ * formasAceitas`), não este enum. No APK do PagBank são só as três de cartão:
+ * app embarcado em terminal PagBank não pode oferecer forma de pagamento que o
+ * terminal não processa por cartão, e isso é regra de homologação. Stone,
+ * Cielo e Getnet cobram Pix no próprio app de pagamento, e lá o botão aparece.
+ *
+ * `codigoNoContrato` é o texto que vai no campo `tipo` do POST de resultado.
  */
 enum class TipoDePagamento(val rotulo: String, val codigoNoContrato: String) {
     CREDITO("Crédito", "CREDITO"),
     DEBITO("Débito", "DEBITO"),
     VOUCHER("Voucher", "VOUCHER"),
+    PIX("Pix", "PIX"),
 }
 
 /**
@@ -32,6 +37,14 @@ data class Cobranca(
     val tentativa: Int,
     /** Formato "<pedidoId>:<tentativa>". Volta inteira no POST de resultado. */
     val referencia: String,
+    /**
+     * Credenciais da adquirente por loja, quando a adquirente exige em cada
+     * pagamento. Hoje só a Cielo (clientID + accessToken no deeplink): o
+     * servidor manda junto da cobrança no campo BuildConfig.CAMPO_DE_CREDENCIAIS
+     * e, sem elas, a cobrança é recusada com motivo claro antes de abrir
+     * qualquer tela. Nos outros APKs fica sempre nulo.
+     */
+    val credenciais: CredenciaisDaAdquirente? = null,
 ) {
     /**
      * "R$ 1.234,56" a partir de 123456.
@@ -58,6 +71,14 @@ data class Cobranca(
 }
 
 /**
+ * Credenciais da adquirente da loja. NUNCA vão para log nem para disco: o app
+ * as usa na hora da cobrança e as esquece junto com o objeto da cobrança.
+ */
+data class CredenciaisDaAdquirente(val clientId: String, val accessToken: String, val email: String?) {
+    override fun toString(): String = "CredenciaisDaAdquirente(clientId=***, accessToken=***)"
+}
+
+/**
  * O que aconteceu com o cartão, pronto para virar corpo do POST.
  *
  * Este objeto é gravado em disco ANTES de qualquer tentativa de envio. É a peça
@@ -75,6 +96,8 @@ data class ResultadoDeCobranca(
     val parcelas: Int?,
     val tipo: String?,
     val motivoRecusa: String?,
+    /** Identificadores extras da adquirente (ATK/ITK, cvNumber...). Pode vir vazio. */
+    val idsDaAdquirente: Map<String, String> = emptyMap(),
     /** Só para o operador saber há quanto tempo um resultado está preso. */
     val criadoEm: Long = System.currentTimeMillis(),
     val tentativasDeEnvio: Int = 0,
@@ -93,6 +116,11 @@ data class ResultadoDeCobranca(
         put("parcelas", parcelas)
         put("tipo", tipo)
         put("motivoRecusa", motivoRecusa)
+        // Qual adquirente cobrou. O servidor já sabe pelo ?adquirente= do
+        // polling, mas um resultado preso na fila pode ser reenviado depois de
+        // uma atualização do app; mandar junto não custa nada.
+        put("adquirente", BuildConfig.ADQUIRENTE)
+        if (idsDaAdquirente.isNotEmpty()) put("idsDaAdquirente", JSONObject(idsDaAdquirente as Map<*, *>))
     }
 
     fun paraJson(): JSONObject = JSONObject().apply {
@@ -105,6 +133,7 @@ data class ResultadoDeCobranca(
         put("parcelas", parcelas)
         put("tipo", tipo)
         put("motivoRecusa", motivoRecusa)
+        if (idsDaAdquirente.isNotEmpty()) put("idsDaAdquirente", JSONObject(idsDaAdquirente as Map<*, *>))
         put("criadoEm", criadoEm)
         put("tentativasDeEnvio", tentativasDeEnvio)
     }
@@ -120,6 +149,9 @@ data class ResultadoDeCobranca(
             parcelas = if (json.isNull("parcelas")) null else json.optInt("parcelas"),
             tipo = json.textoOuNulo("tipo"),
             motivoRecusa = json.textoOuNulo("motivoRecusa"),
+            idsDaAdquirente = json.optJSONObject("idsDaAdquirente")?.let { ids ->
+                ids.keys().asSequence().associateWith { chave -> ids.optString(chave, "") }
+            } ?: emptyMap(),
             criadoEm = json.optLong("criadoEm", System.currentTimeMillis()),
             tentativasDeEnvio = json.optInt("tentativasDeEnvio", 0),
         )

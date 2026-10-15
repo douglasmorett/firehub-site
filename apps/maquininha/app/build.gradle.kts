@@ -51,6 +51,66 @@ android {
         // daria a falsa impressao de que existe cobertura.
     }
 
+    // ------------------------------------------------------------ adquirentes
+    //
+    // Um APK por adquirente. Não é gosto: cada adquirente homologa e assina o
+    // APK dela, e a homologação de cada uma reprova app que cite a concorrente
+    // ou que carregue SDK de terminal de terceiros. Um APK único com as quatro
+    // dentro não passaria em nenhuma das quatro.
+    //
+    //  - pagbank: cobra pelo SDK PlugPag (ligação AIDL com o serviço do
+    //    PagBank). Único flavor com a dependência do SDK, e o único cujo
+    //    applicationId não muda: a homologação PagBank amarra ao packageName.
+    //  - stone, cielo, getnet: cobram por deeplink, abrindo o app de pagamento
+    //    da própria adquirente. Nosso app não lê cartão nesses três.
+    flavorDimensions += "adquirente"
+    productFlavors {
+        create("pagbank") {
+            dimension = "adquirente"
+            // SEM applicationIdSuffix, de propósito: o PagBank amarra a
+            // homologação a "br.com.firehub.maquininha" e um pacote diferente
+            // simplesmente não cobra.
+            buildConfigField("String", "ADQUIRENTE", "\"PAGBANK\"")
+            buildConfigField("String", "CAMPO_DE_CREDENCIAIS", "\"\"")
+        }
+        create("stone") {
+            dimension = "adquirente"
+            applicationIdSuffix = ".stone"
+            buildConfigField("String", "ADQUIRENTE", "\"STONE\"")
+            buildConfigField("String", "CAMPO_DE_CREDENCIAIS", "\"\"")
+        }
+        create("cielo") {
+            dimension = "adquirente"
+            applicationIdSuffix = ".cielo"
+            // Exigências do manual de integração da Cielo Smart: minSdk 24 e
+            // targetSdk 29. Vale SÓ para este APK — o PagBank precisa de 23 por
+            // causa do SK800 e o app-demo dele usa 34.
+            minSdk = 24
+            targetSdk = 29
+            buildConfigField("String", "ADQUIRENTE", "\"CIELO\"")
+            // Nome do campo, na resposta do polling, com clientId/accessToken
+            // da Cielo da loja. Só este flavor lê credencial; nos outros o
+            // campo é vazio e o nome da Cielo nem entra no APK.
+            buildConfigField("String", "CAMPO_DE_CREDENCIAIS", "\"credenciaisCielo\"")
+        }
+        create("getnet") {
+            dimension = "adquirente"
+            applicationIdSuffix = ".getnet"
+            buildConfigField("String", "ADQUIRENTE", "\"GETNET\"")
+            buildConfigField("String", "CAMPO_DE_CREDENCIAIS", "\"\"")
+        }
+    }
+
+    // A ponte de deeplink (Activity transparente + o canal que a liga ao
+    // serviço) é a mesma para Stone, Cielo e Getnet e não pode entrar no APK do
+    // PagBank, que não a usa. Um diretório compartilhado só pelos três resolve
+    // sem módulo extra.
+    sourceSets {
+        getByName("stone").java.srcDir("src/deeplink/java")
+        getByName("cielo").java.srcDir("src/deeplink/java")
+        getByName("getnet").java.srcDir("src/deeplink/java")
+    }
+
     signingConfigs {
         if (dadosDaAssinatura.isNotEmpty()) {
             create("release") {
@@ -130,7 +190,11 @@ dependencies {
     // dia alguem trocar doPayment por doAsyncPayment aqui, tem que adicionar
     // io.reactivex.rxjava2:rxjava e :rxandroid junto, senao o app compila e
     // estoura NoClassDefFoundError na hora de cobrar.
-    implementation("br.com.uol.pagseguro.plugpagservice.wrapper:wrapper:1.35.0")
+    //
+    // SÓ no flavor pagbank. Os APKs da Stone, Cielo e Getnet não podem levar
+    // classe do PlugPag: é SDK de terminal de terceiro para eles, e o código
+    // que o usa mora em src/pagbank, que os outros flavors nem compilam.
+    "pagbankImplementation"("br.com.uol.pagseguro.plugpagservice.wrapper:wrapper:1.35.0")
 
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.core:core-ktx:1.12.0")

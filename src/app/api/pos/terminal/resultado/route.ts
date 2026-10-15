@@ -30,6 +30,10 @@ export async function POST(req: NextRequest) {
       token, pedidoId, aprovado, referencia,
       bandeira, nsu, autorizacao, parcelas, tipo, motivoRecusa,
     } = corpo;
+    // ATK/ITK da Stone, cvNumber da Getnet, cieloCode da Cielo: o que cada
+    // adquirente usa para achar a venda no extrato dela.
+    const idsDaAdquirente =
+      corpo?.idsDaAdquirente && typeof corpo.idsDaAdquirente === "object" ? corpo.idsDaAdquirente : null;
 
     const auth = await autenticarTerminal(token);
     if (!auth.ok) {
@@ -55,7 +59,7 @@ export async function POST(req: NextRequest) {
           terminal: terminal.label, terminalId: terminal.id, provedor: terminal.provider,
           bandeira: bandeira ?? null, nsu: nsu ?? null, autorizacao: autorizacao ?? null,
           parcelas: parcelas ?? null, tipo: tipo ?? null, referencia: referencia ?? null,
-          motivo: motivoRecusa ?? null,
+          motivo: motivoRecusa ?? null, idsDaAdquirente,
         },
       });
       return NextResponse.json(r.corpo, { status: r.status });
@@ -107,6 +111,7 @@ export async function POST(req: NextRequest) {
       parcelas: parcelas ?? null,
       tipo: tipo ?? null,
       referencia: referencia ?? null,
+      idsDaAdquirente,
       em: new Date().toISOString(),
     };
 

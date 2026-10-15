@@ -36,7 +36,11 @@ object ApiDoFireHub {
     fun buscarCobranca(token: String): RespostaDaFila {
         val endereco = Ajustes.ENDERECO_DO_FIREHUB + Ajustes.CAMINHO_DA_FILA +
             "?token=" + URLEncoder.encode(token, "UTF-8") +
-            "&versao=" + URLEncoder.encode(BuildConfig.VERSAO_DO_APP, "UTF-8")
+            "&versao=" + URLEncoder.encode(BuildConfig.VERSAO_DO_APP, "UTF-8") +
+            // PAGBANK, STONE, CIELO ou GETNET. O servidor grava em qual
+            // adquirente este terminal cobra (e só manda credencial de
+            // adquirente para o APK que precisa dela).
+            "&adquirente=" + URLEncoder.encode(BuildConfig.ADQUIRENTE, "UTF-8")
 
         val resposta = try {
             chamar(endereco, "GET", null)
@@ -53,7 +57,7 @@ object ApiDoFireHub {
                 if (cobranca == null) {
                     RespostaDaFila.SemCobranca(terminal)
                 } else {
-                    RespostaDaFila.ComCobranca(lerCobranca(cobranca), terminal)
+                    RespostaDaFila.ComCobranca(lerCobranca(cobranca, json), terminal)
                 }
             }
 
@@ -84,7 +88,12 @@ object ApiDoFireHub {
         }
     }
 
-    private fun lerCobranca(json: JSONObject) = Cobranca(
+    /**
+     * O pedidoId é TEXTO OPACO. Pode ser o id de um pedido do totem ou
+     * "mesa:<id>" numa cobrança de mesa — nada no app pode assumir formato.
+     * getString também aceita número e o devolve como texto.
+     */
+    private fun lerCobranca(json: JSONObject, raiz: JSONObject) = Cobranca(
         pedidoId = json.getString("pedidoId"),
         valorEmCentavos = json.getInt("valorEmCentavos"),
         descricao = json.textoOuNulo("descricao") ?: "Pedido",
@@ -95,6 +104,18 @@ object ApiDoFireHub {
         // esta tentativa quando o app reenvia depois de uma queda de rede.
         referencia = json.textoOuNulo("referencia")
             ?: (json.getString("pedidoId") + ":" + json.optInt("tentativa", 1)),
+        credenciais = BuildConfig.CAMPO_DE_CREDENCIAIS.takeIf { it.isNotEmpty() }
+            // Aceita dentro de "cobranca" ou ao lado dela, na raiz da resposta.
+            ?.let { campo -> json.optJSONObject(campo) ?: raiz.optJSONObject(campo) }
+            ?.let { cred ->
+                val clientId = cred.textoOuNulo("clientId")
+                val accessToken = cred.textoOuNulo("accessToken")
+                if (clientId != null && accessToken != null) {
+                    CredenciaisDaAdquirente(clientId, accessToken, cred.textoOuNulo("email"))
+                } else {
+                    null
+                }
+            },
     )
 
     /**

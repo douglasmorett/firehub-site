@@ -8,6 +8,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import br.com.firehub.maquininha.R
 import br.com.firehub.maquininha.TrabalhoDeTela
+import br.com.firehub.maquininha.pagamento.Impedimento
 import br.com.firehub.maquininha.pagamento.PagamentoNaMaquininha
 import br.com.firehub.maquininha.servico.ServicoDeCobranca
 
@@ -58,11 +59,11 @@ class AtivacaoActivity : AppCompatActivity() {
             aoTerminar = { resultado ->
                 val impedimento = resultado.getOrNull() ?: return@fazer
                 when (impedimento) {
-                    is PagamentoNaMaquininha.Impedimento.Nenhum -> {
+                    is Impedimento.Nenhum -> {
                         avisar(getString(R.string.ativacao_ja_ativado))
                         finish()
                     }
-                    is PagamentoNaMaquininha.Impedimento.ServicoNaoInstalado -> {
+                    is Impedimento.ServicoNaoInstalado -> {
                         avisar(getString(R.string.ativacao_sem_servico))
                         trabalhando(true)
                     }

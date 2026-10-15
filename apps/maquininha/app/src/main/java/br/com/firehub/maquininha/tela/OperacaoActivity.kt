@@ -19,7 +19,7 @@ import br.com.firehub.maquininha.R
 import br.com.firehub.maquininha.TrabalhoDeTela
 import br.com.firehub.maquininha.estado.EstadoDoTerminal
 import br.com.firehub.maquininha.fila.FilaDeResultados
-import br.com.firehub.maquininha.pagamento.PagamentoNaMaquininha
+import br.com.firehub.maquininha.pagamento.Adquirente
 import br.com.firehub.maquininha.rede.TipoDePagamento
 import br.com.firehub.maquininha.servico.ServicoDeCobranca
 
@@ -64,6 +64,8 @@ class OperacaoActivity : AppCompatActivity() {
     /** Pedir a permissão de notificação uma vez por instância, não a cada volta. */
     private var jaPediNotificacao = false
 
+    private val cobrador = Adquirente.cobrador
+
     private val ouvinte = EstadoDoTerminal.Ouvinte { situacao -> desenhar(situacao) }
 
     override fun onCreate(estadoSalvo: Bundle?) {
@@ -82,14 +84,26 @@ class OperacaoActivity : AppCompatActivity() {
         botaoAcao = findViewById(R.id.botaoAcao)
         txtAvisos = findViewById(R.id.txtAvisos)
 
-        val credito = findViewById<Button>(R.id.botaoCredito)
-        val debito = findViewById<Button>(R.id.botaoDebito)
-        val voucher = findViewById<Button>(R.id.botaoVoucher)
-        botoesDeForma = listOf(credito, debito, voucher)
-
-        credito.setOnClickListener { escolher(TipoDePagamento.CREDITO) }
-        debito.setOnClickListener { escolher(TipoDePagamento.DEBITO) }
-        voucher.setOnClickListener { escolher(TipoDePagamento.VOUCHER) }
+        // Cada adquirente aceita as suas formas (Pix só onde o app da
+        // adquirente cobra Pix). Botão de forma que a adquirente não aceita
+        // nem aparece: no APK do PagBank, oferecer Pix reprovaria a
+        // homologação.
+        val botaoPix = findViewById<Button>(R.id.botaoPix)
+        // Texto vindo do enum, e não de string de recurso, para o APK do
+        // PagBank não carregar um texto de tela de forma que ele não aceita.
+        botaoPix.text = TipoDePagamento.PIX.rotulo.uppercase()
+        val porForma = linkedMapOf(
+            TipoDePagamento.CREDITO to findViewById<Button>(R.id.botaoCredito),
+            TipoDePagamento.DEBITO to findViewById<Button>(R.id.botaoDebito),
+            TipoDePagamento.PIX to botaoPix,
+            TipoDePagamento.VOUCHER to findViewById<Button>(R.id.botaoVoucher),
+        )
+        val aceitas = cobrador.formasAceitas
+        porForma.forEach { (forma, botao) ->
+            botao.visibility = if (forma in aceitas) View.VISIBLE else View.GONE
+            botao.setOnClickListener { escolher(forma) }
+        }
+        botoesDeForma = porForma.filterKeys { it in aceitas }.values.toList()
         botaoCancelar.setOnClickListener { cancelar() }
 
         // A lista de pagamentos que precisam de atenção não se limpa sozinha, e
@@ -215,7 +229,7 @@ class OperacaoActivity : AppCompatActivity() {
                 // registra o resultado continua sendo o serviço.
                 botaoCancelar.isEnabled = false
                 TrabalhoDeTela.fazer(
-                    tarefa = { PagamentoNaMaquininha.abortar() },
+                    tarefa = { cobrador.abortar() },
                     aoTerminar = { },
                 )
             }
@@ -233,7 +247,7 @@ class OperacaoActivity : AppCompatActivity() {
     private fun mandarAtivar() {
         if (jaMandeiAtivar) return
         jaMandeiAtivar = true
-        startActivity(Intent(this, AtivacaoActivity::class.java))
+        cobrador.intentDeAtivacao(this)?.let { startActivity(it) }
     }
 
     // --------------------------------------------------------------- desenho
@@ -264,12 +278,13 @@ class OperacaoActivity : AppCompatActivity() {
                 pintar(R.color.fundo, R.color.atencao)
                 txtTitulo.text = situacao.mensagem
                 botaoAcao.text = getString(R.string.operacao_ativar)
-                botaoAcao.visibility = View.VISIBLE
-                botaoAcao.setOnClickListener { startActivity(Intent(this, AtivacaoActivity::class.java)) }
+                botaoAcao.setOnClickListener { cobrador.intentDeAtivacao(this)?.let { startActivity(it) } }
+                botaoAcao.visibility =
+                    if (cobrador.intentDeAtivacao(this) != null) View.VISIBLE else View.GONE
                 mandarAtivar()
             }
 
-            is EstadoDoTerminal.Situacao.SemServicoDoPagBank -> {
+            is EstadoDoTerminal.Situacao.SemServicoDaAdquirente -> {
                 pintar(R.color.fundo, R.color.recusado)
                 txtTitulo.text = situacao.mensagem
             }
@@ -283,8 +298,12 @@ class OperacaoActivity : AppCompatActivity() {
         txtTerminal.text = situacao.terminal
             ?: CofreDoToken.rotulo(this)
             ?: getString(R.string.operacao_sem_nome)
+        // "Conectado - Stone": quem está no balcão sabe na hora em qual
+        // adquirente esta maquininha cobra, sem abrir configuração nenhuma.
         txtRede.text = getString(
-            if (situacao.conectado) R.string.operacao_conectado else R.string.operacao_desconectado,
+            R.string.operacao_rede_e_adquirente,
+            getString(if (situacao.conectado) R.string.operacao_conectado else R.string.operacao_desconectado),
+            getString(R.string.nome_da_adquirente),
         )
         txtRede.visibility = View.VISIBLE
         txtTitulo.text = getString(R.string.operacao_aguardando)
@@ -311,7 +330,9 @@ class OperacaoActivity : AppCompatActivity() {
         mostrarValor(situacao.cobranca.valorFormatado(), null)
         txtAndamento.text = situacao.andamento
         txtAndamento.visibility = View.VISIBLE
-        botaoCancelar.visibility = View.VISIBLE
+        // Nos deeplinks quem cancela é o cliente, na tela da adquirente; um
+        // botão aqui não teria o que interromper.
+        botaoCancelar.visibility = if (cobrador.podeAbortar) View.VISIBLE else View.GONE
         botaoCancelar.isEnabled = true
     }
 
