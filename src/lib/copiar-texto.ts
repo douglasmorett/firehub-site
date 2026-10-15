@@ -16,19 +16,22 @@ export async function copiarTexto(texto: string): Promise<boolean> {
   } catch {
     // Clipboard API bloqueada (aba sem foco, navegador antigo): cai no jeito velho.
   }
+  let campo: HTMLTextAreaElement | null = null;
   try {
-    const campo = document.createElement("textarea");
+    campo = document.createElement("textarea");
     campo.value = texto;
     campo.setAttribute("readonly", "");
     campo.style.position = "fixed";
     campo.style.opacity = "0";
     document.body.appendChild(campo);
     campo.select();
-    const ok = document.execCommand("copy");
-    campo.remove();
-    return ok;
+    return document.execCommand("copy");
   } catch {
     return false;
+  } finally {
+    // Sai sempre: se o execCommand lançar, o campo invisível ficava no body
+    // (um a cada clique), segurando o foco do painel.
+    campo?.remove();
   }
 }
 
