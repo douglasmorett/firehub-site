@@ -24,6 +24,7 @@ import {
 import { minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, precoDaOpcaoNaTela } from "@/lib/preco-combo";
 import { itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
 import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
+import { acharTef, chamarTef, type EstadoTef } from "@/lib/tef-no-assistente";
 
 /* ═══════════════════════════════════════════════════════════════════════════
  * TOTEM DE AUTOATENDIMENTO
@@ -456,6 +457,8 @@ const COBRANCA_ESPERANDO_CARTAO = new Set([
   "ACTION_REQUIRED",
   "AGUARDANDO_TERMINAL",
   "NO_TERMINAL",
+  // TEF no pinpad do totem (lib/tef-do-totem.ts): a tela lê o pinpad pelo Assistente.
+  "TEF_NO_PINPAD",
 ]);
 const COBRANCA_RECUSADA = new Set(["FAILED", "REJECTED", "RECUSADO"]);
 const COBRANCA_EXPIRADA = new Set(["EXPIRED", "EXPIRADO"]);
@@ -832,6 +835,18 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
   const [erro, setErro] = useState("");
   const [loja, setLoja] = useState<Loja | null>(null);
   const [maquininha, setMaquininha] = useState<Maquininha>({ estado: "DESCONHECIDA", rotulo: null });
+  /*
+   * TEF: pinpad PayGo ligado a ESTE computador, falado pelo Assistente
+   * (lib/tef-no-assistente.ts). O segredo local vem do /api/totem/auth e do
+   * start; a sessão é a porta do Assistente + o id da transação nele. A tela
+   * só MOSTRA o que o pinpad diz — pago é o que o servidor disser.
+   */
+  const segredoTefRef = useRef<string | null>(null);
+  const tefRef = useRef<{ porta: number; id: string } | null>(null);
+  const [tef, setTef] = useState<{ porta: number; id: string } | null>(null);
+  const [estadoTef, setEstadoTef] = useState<EstadoTef | null>(null);
+  const [tefSemResposta, setTefSemResposta] = useState(false);
+  const [respostaDigitada, setRespostaDigitada] = useState("");
   const [lojaAberta, setLojaAberta] = useState(true);
   /* Caixa aberto decide se dá para CONCLUIR o pedido — nunca se a tela abre. */
   const [caixaAberto, setCaixaAberto] = useState(true);
@@ -1067,6 +1082,10 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         mensagem: auth.dados?.store?.config?.welcomeMessage || null,
       });
       setMaquininha(extrairMaquininha(auth.dados));
+      const tefDaLicenca = auth.dados?.license?.tef;
+      segredoTefRef.current = tefDaLicenca?.ligado && tefDaLicenca?.segredoLocal ? String(tefDaLicenca.segredoLocal) : null;
+      // Licença com pinpad: o cartão existe mesmo sem maquininha vinculada.
+      if (segredoTefRef.current) setMaquininha({ estado: "SIM", rotulo: null });
       setPerguntarDocumento(auth.dados?.store?.notaFiscal?.perguntar === true);
 
       // O totem abre com a LICENÇA dele, não com o horário do delivery.
@@ -1679,8 +1698,58 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
   /* ─────────────────────── COBRANÇA NA MAQUININHA ────────────────────────── */
 
+  /**
+   * TEF: o start respondeu `modo: "TEF"`. Acha o Assistente deste computador,
+   * pede a venda ao pinpad e deixa a leitura do pinpad (efeito mais abaixo)
+   * mostrar as mensagens. Assistente fora → mensagem clara e "Pagar no caixa".
+   */
+  const iniciarNoPinpad = useCallback(async (dados: any) => {
+    const segredo = String(dados?.segredoLocal || segredoTefRef.current || "");
+    segredoTefRef.current = segredo || null;
+    const falhar = (mensagem: string) => {
+      setEstadoDoPagamento("FALHOU_INICIAR");
+      setDetalheDoPagamento(mensagem);
+    };
+    if (!segredo) return falhar("O pinpad deste totem não está configurado. Você pode pagar no caixa.");
+    const achado = await acharTef(segredo);
+    if (!achado) {
+      return falhar("O pinpad não está respondendo: o Assistente FireHub deste computador parece desligado. Você pode pagar no caixa.");
+    }
+    if (!achado.status?.pronto) {
+      return falhar(
+        achado.status?.erro
+          ? `O pinpad não está pronto (${achado.status.erro}). Você pode pagar no caixa.`
+          : "O pinpad ainda está iniciando. Tente de novo em alguns segundos ou pague no caixa."
+      );
+    }
+    const venda = await chamarTef(achado.porta, segredo, "/tef/venda", {
+      metodo: "POST",
+      corpo: { pedidoId: dados.pedidoId, valorCentavos: dados.valorCentavos },
+      prazoMs: 8000,
+    });
+    if (!venda.ok || !venda.dados?.id) {
+      return falhar(venda.foraDoAr ? "O pinpad parou de responder. Você pode pagar no caixa." : venda.dados?.error || "O pinpad não aceitou o pagamento.");
+    }
+    const sessao = { porta: achado.porta, id: String(venda.dados.id) };
+    tefRef.current = sessao;
+    setTef(sessao);
+    inicioDaCobrancaRef.current = Date.now();
+    setEstadoDoPagamento("AGUARDANDO_CARTAO");
+  }, []);
+
+  const responderTef = async (valor: string | null) => {
+    const sessao = tefRef.current;
+    if (!sessao) return;
+    setRespostaDigitada("");
+    await chamarTef(sessao.porta, segredoTefRef.current || "", "/tef/responder", { metodo: "POST", corpo: { id: sessao.id, valor } });
+  };
+
   const iniciarCobranca = useCallback(
     async (orderId: string) => {
+      tefRef.current = null;
+      setTef(null);
+      setEstadoTef(null);
+      setTefSemResposta(false);
       setEstadoDoPagamento("INICIANDO");
       setDetalheDoPagamento(null);
       setErroDoCancelamento(null);
@@ -1720,13 +1789,18 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         return;
       }
 
+      if (r.dados?.modo === "TEF") {
+        await iniciarNoPinpad(r.dados);
+        return;
+      }
+
       const rotulo = r.dados?.terminal?.label;
       if (rotulo) setMaquininha({ estado: "SIM", rotulo: String(rotulo) });
 
       inicioDaCobrancaRef.current = Date.now();
       setEstadoDoPagamento("AGUARDANDO_CARTAO");
     },
-    [bipar, token]
+    [bipar, token, iniciarNoPinpad]
   );
 
   const pagarNaMaquininha = async () => {
@@ -1773,6 +1847,9 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         setTela("CONFIRMADO");
         return;
       }
+      // No TEF, recusa/cancelamento chegam pela leitura do pinpad (abaixo);
+      // daqui vale só o "pago" do servidor.
+      if (tefRef.current) return;
 
       const dentroDaCarencia = Date.now() - inicioDaCobrancaRef.current < CARENCIA_APOS_INICIAR_MS;
 
@@ -1812,6 +1889,47 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     };
   }, [tela, pedido?.id, estadoDoPagamento, token, bipar]);
 
+  /** TEF: lê o pinpad pelo Assistente a cada 500 ms (mensagem, menu, fim). */
+  useEffect(() => {
+    if (tela !== "MAQUININHA" || !tef) return;
+    if (estadoDoPagamento !== "AGUARDANDO_CARTAO" && estadoDoPagamento !== "PROCESSANDO") return;
+    let vivo = true;
+    let falhasSeguidas = 0;
+    const segredo = segredoTefRef.current || "";
+    const ler = async () => {
+      const r = await chamarTef(tef.porta, segredo, `/tef/estado?id=${encodeURIComponent(tef.id)}`, { prazoMs: 2000 });
+      if (!vivo) return;
+      if (!r.ok) {
+        falhasSeguidas += 1;
+        setTefSemResposta(falhasSeguidas >= 4);
+        return;
+      }
+      falhasSeguidas = 0;
+      setTefSemResposta(false);
+      const e = r.dados as EstadoTef;
+      setEstadoTef(e);
+      if (e.fase === "registrando" || e.fase === "aprovado") {
+        // Aprovado no cartão; quem libera o cliente é o payment-status.
+        setEstadoDoPagamento("PROCESSANDO");
+      } else if (e.fase === "recusado") {
+        setEstadoDoPagamento("RECUSADO");
+        setDetalheDoPagamento(e.mensagem || null);
+      } else if (e.fase === "cancelado") {
+        setEstadoDoPagamento("CANCELADO");
+        setDetalheDoPagamento(e.mensagem || "Pagamento cancelado. Nada foi cobrado.");
+      } else if (e.fase === "desfeito" || e.fase === "erro") {
+        setEstadoDoPagamento("FALHOU_INICIAR");
+        setDetalheDoPagamento(e.mensagem || "O pagamento não foi concluído.");
+      }
+    };
+    void ler();
+    const id = setInterval(() => void ler(), 500);
+    return () => {
+      vivo = false;
+      clearInterval(id);
+    };
+  }, [tela, tef, estadoDoPagamento]);
+
   /** Contador da espera: 40s de maquininha sem nada se mexendo parece travado. */
   useEffect(() => {
     if (tela !== "MAQUININHA") return;
@@ -1825,6 +1943,21 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
     if (!pedido?.id || cancelandoCobranca) return;
     setCancelandoCobranca(true);
     setErroDoCancelamento(null);
+
+    // TEF: cancela no pinpad (PW_iPPAbort). O "cancelado" chega pela leitura
+    // do pinpad; se o cartão já tinha sido aprovado, o pedido segue pago.
+    if (tefRef.current) {
+      const r = await chamarTef(tefRef.current.porta, segredoTefRef.current || "", "/tef/cancelar", { metodo: "POST" });
+      setCancelandoCobranca(false);
+      if (!r.ok) {
+        setErroDoCancelamento(
+          r.foraDoAr
+            ? "O pinpad não respondeu ao cancelamento. Se ele mostrar APROVADO, seu pedido segue normalmente."
+            : r.dados?.error || "Não foi possível cancelar no pinpad."
+        );
+      }
+      return;
+    }
 
     const r = await chamar("/api/totem/payment/cancel", {
       metodo: "POST",
@@ -3272,9 +3405,15 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       estadoDoPagamento === "INICIANDO"
         ? "Preparando a maquininha..."
         : estadoDoPagamento === "AGUARDANDO_CARTAO"
-          ? "Aproxime, insira ou passe o cartão"
+          ? tef
+            ? estadoTef?.fase === "pergunta"
+              ? "Escolha no pinpad"
+              : "Siga as instruções do pinpad"
+            : "Aproxime, insira ou passe o cartão"
           : estadoDoPagamento === "PROCESSANDO"
-            ? "Processando o pagamento..."
+            ? tef
+              ? "Confirmando o pagamento..."
+              : "Processando o pagamento..."
             : estadoDoPagamento === "RECUSADO"
               ? "Pagamento recusado"
               : estadoDoPagamento === "EXPIRADO"
@@ -3287,11 +3426,15 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
       estadoDoPagamento === "INICIANDO"
         ? "Estamos subindo o valor no visor."
         : estadoDoPagamento === "AGUARDANDO_CARTAO"
-          ? `Use a maquininha ${maquininha.rotulo ? `"${maquininha.rotulo}"` : "ao lado do totem"}. Não saia desta tela.`
+          ? tef
+            ? "Use o pinpad ao lado da tela. Não saia desta tela."
+            : `Use a maquininha ${maquininha.rotulo ? `"${maquininha.rotulo}"` : "ao lado do totem"}. Não saia desta tela.`
           : estadoDoPagamento === "PROCESSANDO"
             ? "Aguarde a confirmação do banco. Isso pode levar alguns segundos."
             : estadoDoPagamento === "RECUSADO"
-              ? "O cartão não foi aceito. Tente outro cartão ou pague no caixa."
+              ? tef && detalheDoPagamento
+                ? `${detalheDoPagamento} — tente outro cartão ou pague no caixa.`
+                : "O cartão não foi aceito. Tente outro cartão ou pague no caixa."
               : estadoDoPagamento === "EXPIRADO"
                 ? "Ninguém pagou dentro do prazo da cobrança."
                 : estadoDoPagamento === "CANCELADO"
@@ -3326,6 +3469,61 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
         <h1 style={{ fontSize: 42, fontWeight: 900, margin: 0 }}>{titulo}</h1>
         <p style={{ fontSize: 22, color: "#94A3B8", margin: "14px 0 0", maxWidth: 820, lineHeight: 1.45 }}>{subtitulo}</p>
+
+        {/* TEF: o que o pinpad está dizendo, grande, e o menu dele quando pede escolha. */}
+        {tef && !acabou && estadoTef?.mensagem && estadoTef.fase !== "pergunta" && (
+          <div
+            style={{
+              marginTop: 22,
+              minWidth: 420,
+              maxWidth: 820,
+              background: "#0B1220",
+              border: "2px solid rgba(59,130,246,0.6)",
+              borderRadius: 18,
+              padding: "18px 28px",
+              fontFamily: "ui-monospace, Consolas, monospace",
+              fontSize: 26,
+              fontWeight: 800,
+              whiteSpace: "pre-line",
+              letterSpacing: 1,
+            }}
+          >
+            {estadoTef.mensagem}
+          </div>
+        )}
+        {tef && !acabou && estadoTef?.fase === "pergunta" && estadoTef.pergunta && (
+          <div style={{ marginTop: 22, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
+            <div style={{ fontSize: 24, fontWeight: 800 }}>{estadoTef.pergunta.prompt}</div>
+            {estadoTef.pergunta.tipo === "menu" ? (
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", justifyContent: "center" }}>
+                {estadoTef.pergunta.opcoes.map((o) => (
+                  <button key={o.valor} type="button" onClick={() => void responderTef(o.valor)} style={{ ...botaoPrimario, minWidth: 240 }}>
+                    {o.texto}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 12 }}>
+                <input
+                  value={respostaDigitada}
+                  onChange={(ev) => setRespostaDigitada(ev.target.value)}
+                  type={estadoTef.pergunta.ocultar ? "password" : "text"}
+                  inputMode="numeric"
+                  maxLength={estadoTef.pergunta.maximo || undefined}
+                  style={{ fontSize: 26, padding: "12px 18px", borderRadius: 14, border: "2px solid #334155", background: "#0B1220", color: "white", width: 280 }}
+                />
+                <button type="button" onClick={() => void responderTef(respostaDigitada)} style={{ ...botaoPrimario, minWidth: 180 }}>
+                  Confirmar
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {tef && tefSemResposta && !acabou && (
+          <p style={{ fontSize: 17, color: "#FBBF24", marginTop: 12 }}>
+            O pinpad parou de responder. Aguarde — se o pagamento foi aprovado, o pedido segue normalmente.
+          </p>
+        )}
 
         <div style={{ fontSize: 40, fontWeight: 900, margin: "24px 0 0" }}>{formatarPreco(pedido?.valor ?? total)}</div>
         {pedido?.numero && <div style={{ fontSize: 18, color: "#94A3B8" }}>Senha #{pedido.numero}</div>}

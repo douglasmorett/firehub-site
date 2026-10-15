@@ -12,6 +12,7 @@ import {
 } from "./actions";
 import TotemCategoriesClient from "@/components/admin/TotemCategoriesClient";
 import MaquininhasClient from "@/components/admin/MaquininhasClient";
+import TefDoTotemClient from "@/components/admin/TefDoTotemClient";
 
 export default function TotemModuleClient({ store, categories }: { store: any, categories?: any[] }) {
   const router = useRouter();
@@ -436,6 +437,11 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
         <MaquininhasClient
           totens={(store.totemLicenses || []).map((l: any) => ({ id: l.id, label: l.label }))}
         />
+      )}
+
+      {/* Pinpad PayGo no computador do totem, pelo Assistente (TEF). */}
+      {store.totemEnabled && (
+        <TefDoTotemClient totens={(store.totemLicenses || []).map((l: any) => ({ id: l.id, label: l.label }))} />
       )}
 
     </div>

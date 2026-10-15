@@ -141,6 +141,8 @@ async function executar(qCru: string, ...p: any[]): Promise<number> {
 }
 async function consultar(qCru: string, ...p: any[]): Promise<any[]> {
   const q = sql(qCru);
+  // TEF no totem (lib/tef-do-totem.ts): nenhuma licença deste teste tem TEF.
+  if (q.startsWith(`SELECT * FROM "TefDoTotem"`)) return [];
   if (q.startsWith(`SELECT * FROM "StoneConnectLoja" WHERE "franchiseeId" = $1`)) return lojasStone.filter((l) => l.franchiseeId === p[0]);
   if (q.startsWith(`SELECT * FROM "CobrancaDaMesaNaMaquininha" WHERE "mpOrderId" = $1 AND "provedor" = $2`))
     return cobrancasMesa.filter((c) => c.mpOrderId === p[0] && c.provedor === p[1]);

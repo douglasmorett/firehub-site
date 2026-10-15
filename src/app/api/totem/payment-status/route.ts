@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { ESTADOS_DA_COBRANCA } from "@/lib/terminal-app";
+import { ESTADO_TEF_NO_PINPAD, PROVEDOR_TEF } from "@/lib/tef-do-totem";
 import { cobrancaEhDaStone, conferirCobrancaStoneDoTotem } from "@/lib/cobranca-stone-do-totem";
 
 export const dynamic = "force-dynamic";
@@ -89,6 +90,10 @@ export async function GET(req: NextRequest) {
       // RECUSADO = tentar outro cartão sem refazer o pedido.
       cobranca: order.posStatus ?? null,
       podeTentarDeNovo: order.posStatus === "RECUSADO",
+      // Cobrança no pinpad do totem (TEF pelo Assistente). A tela mostra a
+      // mensagem do pinpad lendo o Assistente; daqui vem só a verdade sobre
+      // pago/recusado (lib/tef-do-totem.ts).
+      tef: order.posStatus === ESTADO_TEF_NO_PINPAD || order.gatewayProvider === PROVEDOR_TEF,
     });
   } catch (err) {
     console.error("[Totem PaymentStatus] Erro:", err);

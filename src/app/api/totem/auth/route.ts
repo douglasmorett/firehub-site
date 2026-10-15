@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { autenticarTotem, ipDaRequisicao } from "@/lib/totem-auth";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido } from "@/lib/fiscal-modo";
+import { tefDaLicenca } from "@/lib/tef-do-totem";
 
 export const dynamic = "force-dynamic";
 
@@ -67,9 +68,21 @@ export async function POST(req: NextRequest) {
       })
       .then((r) => r.franchisee);
 
+    // TEF (pinpad PayGo pelo Assistente deste computador): o totem precisa do
+    // segredo local para o Assistente aceitar o pedido de venda (header
+    // x-firehub-tef). Falha aqui não pode impedir o totem de abrir — sem TEF
+    // ele cobra pela maquininha como sempre.
+    let tef: { ligado: true; segredoLocal: string } | null = null;
+    try {
+      const t = await tefDaLicenca(licenca.id);
+      if (t) tef = { ligado: true, segredoLocal: t.segredoLocal };
+    } catch (e: any) {
+      console.error("[Totem Auth] TEF da licença não pôde ser lido:", e?.message);
+    }
+
     return NextResponse.json({
       success: true,
-      license: { id: licenca.id, label: licenca.label },
+      license: { id: licenca.id, label: licenca.label, ...(tef ? { tef } : {}) },
       store: {
         id: loja.id,
         name: loja.storeName || loja.name,

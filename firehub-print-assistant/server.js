@@ -18,6 +18,19 @@ const PORT = 7891;
 const app = express();
 
 app.use((req, res, next) => {
+  // As rotas do TEF (pinpad) não respondem a qualquer site: só a página do
+  // FireHub enxerga a resposta (tef/index.js confere origem e segredo também).
+  if (req.path.startsWith("/tef/")) {
+    if (tef && tef.origemDoTefAceita(req.headers.origin)) {
+      res.header("Access-Control-Allow-Origin", String(req.headers.origin));
+      res.header("Vary", "Origin");
+    }
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "content-type, x-firehub-tef");
+    res.header("Access-Control-Allow-Private-Network", "true");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    return next();
+  }
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.header("Access-Control-Allow-Headers", "*");
@@ -26,7 +39,8 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(cors({ origin: true, credentials: true }));
+const corsPadrao = cors({ origin: true, credentials: true });
+app.use((req, res, next) => (req.path.startsWith("/tef/") ? next() : corsPadrao(req, res, next)));
 app.use(express.json({ limit: "5mb" }));
 
 /* ─── Modo Contingência (contingencia.js) ─────────────────────────────────────
@@ -41,6 +55,33 @@ try {
 } catch (e) {
   contingencia = null;
   console.error("[Contingência] Módulo não carregou:", e && e.message);
+}
+
+/* ─── TEF no totem (tef/index.js) ─────────────────────────────────────────────
+ * Pinpad PayGo Web pela PGWebLib.dll, num processo filho de 32 bits. Dorme
+ * até a loja ligar o TEF numa licença do totem (painel › Totem › TEF no
+ * totem → POST /tef/parear). Se o módulo falhar ao carregar, a impressão
+ * segue como sempre. O comprovante do cartão sai na impressora do Assistente
+ * pelo mesmo rawPrint das comandas. */
+let tef = null;
+try {
+  tef = require("./tef");
+  tef.registrar(app, {
+    imprimir: async (texto, { impressora } = {}) => {
+      const alvo = impressora || currentConfig.printer || impressoraPadraoFisica();
+      if (!alvo) throw new Error("Nenhuma impressora para o comprovante do cartão.");
+      const corpo = Buffer.from(
+        String(texto).normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\n\x20-\x7E]/g, " ") + "\n\n\n\n",
+        "latin1",
+      );
+      // ESC @ (reinicia) + texto + avanço + GS V 66 0 (corte parcial).
+      await rawPrint(alvo, Buffer.concat([Buffer.from([0x1b, 0x40]), corpo, Buffer.from([0x1d, 0x56, 0x42, 0x00])]));
+    },
+  });
+  setImmediate(() => tef.iniciar());
+} catch (e) {
+  tef = null;
+  console.error("[TEF] Módulo não carregou:", e && e.message);
 }
 
 /* ─── Permissão de loopback no navegador (Chrome/Edge 142+) ──────────────────

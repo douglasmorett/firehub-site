@@ -16,6 +16,9 @@
  *   - App do FireHub na maquininha (PagBank/Stone/Cielo/Getnet): fila.
  *   - Mercado Pago Point: ordem na nuvem do MP.
  * `forma` (credit|debit|pix|voucher) só vale na Stone em fluxo DIRETO.
+ *
+ * Antes dos três: licença com TEF ligado (pinpad PayGo no computador do totem)
+ * responde `modo: "TEF"` e o totem pede a venda ao Assistente local.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -31,6 +34,7 @@ import {
   serviceRefererName,
 } from "@/lib/stone-connect";
 import { credencialStone } from "@/lib/stone-connect-loja";
+import { ESTADO_TEF_NO_PINPAD, formaDoPedidoTef, tefDaLicenca } from "@/lib/tef-do-totem";
 import {
   PROVEDOR_STONE,
   aplicarPedidoStoneNoTotem,
@@ -416,6 +420,46 @@ export async function POST(req: NextRequest) {
         { error: "Pedido sem valor a cobrar.", code: "VALOR_INVALIDO" },
         { status: 409 },
       );
+    }
+
+    // ── TEF NO PINPAD DO TOTEM (PayGo, pelo Assistente) ──────────────────────
+    // A licença com TEF ligado cobra no pinpad ligado ao computador do totem.
+    // Aqui NÃO se marca nada que conte como pago: o servidor só devolve ao
+    // totem o que ele precisa para pedir a venda ao Assistente local. Quem
+    // carimba o pagamento é /api/totem/tef/resultado, com o "aprovado" do
+    // pinpad em mãos (lib/tef-do-totem.ts). Pix fica com a maquininha.
+    let tef: { segredoLocal: string } | null = null;
+    try {
+      tef = await tefDaLicenca(licenca.id);
+    } catch (e: any) {
+      console.error("[Totem Start] Não consegui conferir o TEF da licença:", e?.message);
+      return NextResponse.json(
+        { error: "Não deu para preparar o pinpad agora. Tente de novo em alguns segundos.", code: "TEF_INDISPONIVEL" },
+        { status: 503 },
+      );
+    }
+    if (tef && forma !== "pix") {
+      if (!(await caixaEstaAberto(pedido.franchiseeId))) {
+        return respostaDeCaixaFechado(pedido.dailyOrderNumber);
+      }
+      const { posTentativas } = await prisma.customerOrder.update({
+        where: { id: pedido.id },
+        data: {
+          posStatus: ESTADO_TEF_NO_PINPAD,
+          posTentativas: { increment: 1 },
+          paymentMethod: formaDoPedidoTef(null),
+        },
+        select: { posTentativas: true },
+      });
+      return NextResponse.json({
+        success: true,
+        modo: "TEF",
+        pedidoId: pedido.id,
+        valorCentavos: valorEmCentavos,
+        segredoLocal: tef.segredoLocal,
+        tentativa: posTentativas,
+        instrucao: "Siga as instruções do pinpad",
+      });
     }
 
     // ── STONE PELA NUVEM (Connect 2.0) ───────────────────────────────────────
