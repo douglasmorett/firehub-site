@@ -136,7 +136,9 @@ export type MarcaDeVolta = { em: number; n: number };
 /** Preferências que só existem por origem (localStorage): som e posição do KDS (app/store/kds/tela). */
 export type PreferenciasDoAparelho = Record<string, string>;
 
-const CHAVE_DE_PREFERENCIA = /^kds-som$|^kds-rotacao:[^\s]{1,200}$/;
+// A tela sem id usa `kds-rotacao:<etapa>:<nome da tela>`, e o nome tem espaço
+// ("Cozinha Quente"): espaço vale, só caractere de controle fica de fora.
+const CHAVE_DE_PREFERENCIA = /^kds-som$|^kds-rotacao:[^\u0000-\u001f\u007f]{1,200}$/;
 const VALOR_DE_PREFERENCIA = /^(0|1|90|270)$/;
 
 /** O caminho de volta é deste site: começa com "/" e não com "//" (outro domínio). */

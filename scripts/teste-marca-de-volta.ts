@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ESPERAS_ENTRE_PULOS_MS, ORIGENS_DA_NUVEM, VOLTA_PADRAO, esperaDepoisDaVolta, gravarPreferencias, lerMarcaDeVolta,
-  lerPreferencias, lerVoltaGuardada, origemValida, preferenciasDoFragmento, urlDeVolta, voltaSegura,
+  lerPreferencias, lerVoltaGuardada, origemValida, preferenciasDoFragmento, preferenciasValidas, urlDeVolta, voltaSegura,
 } from "../src/lib/contingencia/troca";
 
 let falhas = 0;
@@ -109,6 +109,8 @@ console.log("\n— Som e posição do KDS vão junto —");
   confere("e são gravadas na origem de destino", destino.getItem("kds-som") === "1" && destino.getItem("kds-rotacao:tela-123") === "90");
   const malicioso = new URLSearchParams({ p: JSON.stringify({ firehub_contingencia: "{}", "kds-som": "<script>", "kds-rotacao:x": "45", "kds-rotacao:y": "270" }) });
   confere("do link só entra chave e valor conhecidos", JSON.stringify(preferenciasDoFragmento(malicioso)) === JSON.stringify({ "kds-rotacao:y": "270" }), preferenciasDoFragmento(malicioso));
+  const comEspaco = preferenciasValidas({ "kds-rotacao:production:Cozinha Quente": "90", "kds-rotacao:x\ny": "90" });
+  confere("tela sem id (nome com espaço) também leva a posição; quebra de linha não", JSON.stringify(comEspaco) === JSON.stringify({ "kds-rotacao:production:Cozinha Quente": "90" }), comEspaco);
   confere("p ilegível: nada", JSON.stringify(preferenciasDoFragmento(new URLSearchParams("p=%7B"))) === "{}");
   confere("sem preferências, o fragmento fica só com a marca", !urlDeVolta({ origem: ORIGENS_DA_NUVEM[0], volta: "/store", em: EM, n: 1 }).includes("&p="));
 }
