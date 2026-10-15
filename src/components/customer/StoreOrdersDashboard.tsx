@@ -19,6 +19,7 @@ import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
 import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 import { corrigirPeriodo } from "@/lib/periodo-do-quadro";
 import { tempoNaEtapa, textoDoTempo, mesmosCarimbos } from "@/lib/tempo-na-etapa";
+import { corDoAlerta, lerConfigDoAlerta, faixasDoModo, avisoDasFaixas, type ConfigDoAlerta, type FaixasDoAlerta } from "@/lib/alerta-de-producao";
 import { carimboDeStatus } from "@/lib/order-stages";
 import { avaliarEdicaoNoPainel, podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { edicoesDosItens, lerHistorico, quandoFoi, ROTULO_DA_EDICAO } from "@/lib/historico-do-pedido";
@@ -664,21 +665,28 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   const remainingMins = remainingMs !== null ? Math.floor(remainingMs / 60000) : null;
 
   const isInProduction = order.status === "ACEITO" || order.status === "PREPARANDO";
-  const redActive = timeAlertConfig?.redEnabled && Number(timeAlertConfig.redMinutes) > 0;
-  const yellowActive = timeAlertConfig?.yellowEnabled && Number(timeAlertConfig.yellowMinutes) > 0;
-  const redThreshold = redActive ? Number(timeAlertConfig.redMinutes) : null;
-  const yellowThreshold = yellowActive ? Number(timeAlertConfig.yellowMinutes) : null;
 
-  let isRedAlert = false;
-  let isYellowAlert = false;
+  // ── HÁ QUANTO TEMPO NESTA ETAPA ──────────────────────────────────────────
+  // O relógio do prazo conta desde a CHEGADA. Este zera a cada troca de etapa —
+  // "Em produção (5 min)", "Saiu para entrega (3 min)" —, como na Saipos:
+  // na correria a equipe perdia a noção de há quanto tempo o motoboy tinha
+  // saído (Lucas, Frangoso, 13/10/2026). Conta e regras em
+  // lib/tempo-na-etapa.ts; sem o carimbo da etapa, não aparece.
+  const naEtapa = tempoNaEtapa(order, now);
+  const tituloDaEtapa = naEtapa
+    ? `${naEtapa.rotulo} desde as ${naEtapa.desde.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} — há ${textoDoTempo(naEtapa.minutos)}`
+    : undefined;
 
-  if (isInProduction && remainingMins !== null) {
-    if (redThreshold !== null && remainingMins <= redThreshold) {
-      isRedAlert = true;
-    } else if (yellowThreshold !== null && remainingMins <= yellowThreshold) {
-      isYellowAlert = true;
-    }
-  }
+  // Alertas de Produção: pelo prazo do cliente ou pelo tempo em preparo, como
+  // o lojista escolheu (lib/alerta-de-producao.ts).
+  const corDoCartao = isInProduction
+    ? corDoAlerta(timeAlertConfig, {
+        minutosRestantes: remainingMins,
+        minutosEmPreparo: naEtapa?.etapa === "producao" ? naEtapa.minutos : null,
+      })
+    : null;
+  const isRedAlert = corDoCartao === "vermelho";
+  const isYellowAlert = corDoCartao === "amarelo";
 
   const isLate = !isFinished && remainingMins !== null && remainingMins < 0;
   const isUrgent = !isFinished && remainingMins !== null && remainingMins <= 5 && remainingMins >= 0;
@@ -692,17 +700,6 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
         ? `🍽️ ${decorrido} na mesa`
         : decorrido;
   const timerColor = isLate ? PALETA.grave : isUrgent ? PALETA.atencao : PALETA.areiaTinta;
-
-  // ── HÁ QUANTO TEMPO NESTA ETAPA ──────────────────────────────────────────
-  // O relógio acima conta desde a CHEGADA. Este zera a cada troca de etapa —
-  // "Em produção (5 min)", "Saiu para entrega (3 min)" —, como na Saipos:
-  // na correria a equipe perdia a noção de há quanto tempo o motoboy tinha
-  // saído (Lucas, Frangoso, 13/10/2026). Conta e regras em
-  // lib/tempo-na-etapa.ts; sem o carimbo da etapa, não aparece.
-  const naEtapa = tempoNaEtapa(order, now);
-  const tituloDaEtapa = naEtapa
-    ? `${naEtapa.rotulo} desde as ${naEtapa.desde.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} — há ${textoDoTempo(naEtapa.minutos)}`
-    : undefined;
 
   // O finalizado também arrasta, mas só para Cancelado, e com trava
   // (handleDrop → janela de cancelamento).
@@ -1842,17 +1839,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, []);
 
   // === CONFIGURAÇÕES DE ALERTAS VISUAIS DE TEMPO (Amarelo / Vermelho) ===
-  const [timeAlertConfig, setTimeAlertConfig] = useState<{
-    yellowEnabled: boolean;
-    yellowMinutes: number;
-    redEnabled: boolean;
-    redMinutes: number;
-  }>({
-    yellowEnabled: true,
-    yellowMinutes: 10,
-    redEnabled: true,
-    redMinutes: 5,
-  });
+  // Pelo prazo do cliente ou pelo tempo em preparo: lib/alerta-de-producao.ts.
+  const [timeAlertConfig, setTimeAlertConfig] = useState<ConfigDoAlerta>(() => lerConfigDoAlerta(null));
+  /** Muda só as faixas do modo escolhido (as do outro modo ficam guardadas como estão). */
+  const mudarFaixa = (campo: Partial<FaixasDoAlerta>) =>
+    setTimeAlertConfig(c => (c.modo === "preparo" ? { ...c, preparo: { ...c.preparo, ...campo } } : { ...c, ...campo }));
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [showRoteirizacaoModal, setShowRoteirizacaoModal] = useState(false);
   const [showMotoboyLinkModal, setShowMotoboyLinkModal] = useState(false);
@@ -1888,7 +1879,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   useEffect(() => {
     fetch("/api/store/time-alert-config")
       .then(r => r.json())
-      .then(d => { if (d && d.yellowMinutes !== undefined) setTimeAlertConfig(d); })
+      .then(d => { if (d && d.yellowMinutes !== undefined) setTimeAlertConfig(lerConfigDoAlerta(d)); })
       .catch(() => {});
   }, []);
 
@@ -7399,74 +7390,99 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <button onClick={() => setShowAlertModal(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.4rem", color: "#94A3B8" }}>×</button>
             </div>
 
-            {/* Explicação */}
-            <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "12px", padding: "12px 14px", marginBottom: "20px", fontSize: "0.8rem", color: "#475569", lineHeight: 1.4 }}>
-              💡 Configure com quantos minutos de antecedência a borda do pedido na aba <strong>Em Produção</strong> deve ficar amarela ou vermelha para alertar a equipe. Se desativado ou 0, o alerta não é exibido.
-            </div>
+            {(() => {
+              const preparo = timeAlertConfig.modo === "preparo";
+              const f = faixasDoModo(timeAlertConfig);
+              const aviso = avisoDasFaixas(timeAlertConfig);
+              // Exemplo com horário de verdade: "aceito às 20:00 → amarelo às 20:20".
+              const hora = (min: number) => `${String(20 + Math.floor(min / 60)).padStart(2, "0")}:${String(min % 60).padStart(2, "0")}`;
+              const exemplo = preparo
+                ? `Pedido que entrou em produção às 20:00${f.yellowEnabled && f.yellowMinutes > 0 ? ` fica amarelo às ${hora(f.yellowMinutes)}` : ""}${f.yellowEnabled && f.yellowMinutes > 0 && f.redEnabled && f.redMinutes > 0 ? " e" : ""}${f.redEnabled && f.redMinutes > 0 ? ` vermelho às ${hora(f.redMinutes)}` : ""}.`
+                : `Pedido prometido ao cliente para 21:00${f.yellowEnabled && f.yellowMinutes > 0 ? ` fica amarelo às ${hora(60 - Math.min(60, f.yellowMinutes))}` : ""}${f.yellowEnabled && f.yellowMinutes > 0 && f.redEnabled && f.redMinutes > 0 ? " e" : ""}${f.redEnabled && f.redMinutes > 0 ? ` vermelho às ${hora(60 - Math.min(60, f.redMinutes))}` : ""}.`;
+              const opcao = (modo: "preparo" | "entrega", icone: string, titulo: string, texto: string) => {
+                const ativo = timeAlertConfig.modo === modo;
+                return (
+                  <button
+                    type="button"
+                    onClick={() => setTimeAlertConfig(c => ({ ...c, modo }))}
+                    aria-pressed={ativo}
+                    style={{ flex: 1, textAlign: "left", padding: "12px", borderRadius: "12px", cursor: "pointer", border: ativo ? "2px solid #B45309" : "1.5px solid #E2E8F0", background: ativo ? "#FFF7E6" : "#FFF" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", fontWeight: 800, fontSize: "0.88rem", color: ativo ? "#92400E" : "#0F172A" }}>
+                      <span style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${ativo ? "#B45309" : "#CBD5E1"}`, display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {ativo && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#B45309" }} />}
+                      </span>
+                      {icone} {titulo}
+                    </div>
+                    <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: "4px", lineHeight: 1.35 }}>{texto}</div>
+                  </button>
+                );
+              };
+              const linha = (cor: "yellow" | "red") => {
+                const amarelo = cor === "yellow";
+                const ligado = amarelo ? f.yellowEnabled : f.redEnabled;
+                const minutos = amarelo ? f.yellowMinutes : f.redMinutes;
+                const tinta = amarelo ? "#78350F" : "#B71C1C";
+                const borda = amarelo ? "#B45309" : "#C92E09";
+                return (
+                  <div style={{ background: amarelo ? "#FFF7E6" : "#FEF2F2", border: `1.5px solid ${amarelo ? "#FDE68A" : "#FCA5A5"}`, borderRadius: "14px", padding: "16px", marginBottom: amarelo ? "16px" : "12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "1.2rem" }}>{amarelo ? "🟡" : "🔴"}</span>
+                        <span style={{ fontWeight: 800, fontSize: "0.95rem", color: amarelo ? "#92400E" : "#B71C1C" }}>{amarelo ? "Alerta Amarelo (Aviso)" : "Alerta Vermelho (Urgente)"}</span>
+                      </div>
+                      <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={ligado}
+                          onChange={e => mudarFaixa(amarelo ? { yellowEnabled: e.target.checked } : { redEnabled: e.target.checked })}
+                          style={{ width: 18, height: 18, cursor: "pointer", accentColor: borda }}
+                        />
+                      </label>
+                    </div>
+                    {ligado && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "10px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "0.82rem", color: tinta, fontWeight: 600 }}>{preparo ? "Quando o pedido estiver há" : "Quando faltarem"}</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={240}
+                          value={minutos}
+                          onChange={e => {
+                            const n = Math.max(0, Math.floor(Number(e.target.value) || 0));
+                            mudarFaixa(amarelo ? { yellowMinutes: n } : { redMinutes: n });
+                          }}
+                          style={{ width: 70, padding: "6px 10px", borderRadius: "8px", border: `1.5px solid ${borda}`, fontWeight: 800, fontSize: "0.95rem", textAlign: "center" }}
+                        />
+                        <span style={{ fontSize: "0.82rem", color: tinta, fontWeight: 600 }}>{preparo ? "minutos em preparo" : "minutos para chegar no cliente"}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              };
+              return (
+                <>
+                  <div style={{ fontSize: "0.8rem", fontWeight: 800, color: "#334155", marginBottom: "8px" }}>Contar o tempo por:</div>
+                  <div style={{ display: "flex", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
+                    {opcao("preparo", "⏳", "Tempo de preparo", "Quanto tempo o pedido já está em produção na cozinha.")}
+                    {opcao("entrega", "🛵", "Chegada no cliente", "Quanto tempo falta para o horário prometido ao cliente.")}
+                  </div>
 
-            {/* 🟡 Alerta Amarelo */}
-            <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", borderRadius: "14px", padding: "16px", marginBottom: "16px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "1.2rem" }}>🟡</span>
-                  <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#92400E" }}>Alerta Amarelo (Aviso)</span>
-                </div>
-                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={timeAlertConfig.yellowEnabled}
-                    onChange={e => setTimeAlertConfig(c => ({ ...c, yellowEnabled: e.target.checked }))}
-                    style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#B45309" }}
-                  />
-                </label>
-              </div>
-              {timeAlertConfig.yellowEnabled && (
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "10px" }}>
-                  <span style={{ fontSize: "0.82rem", color: "#78350F", fontWeight: 600 }}>Ativar quando faltarem</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={120}
-                    value={timeAlertConfig.yellowMinutes}
-                    onChange={e => setTimeAlertConfig(c => ({ ...c, yellowMinutes: Math.max(0, Number(e.target.value)) }))}
-                    style={{ width: 70, padding: "6px 10px", borderRadius: "8px", border: "1.5px solid #B45309", fontWeight: 800, fontSize: "0.95rem", textAlign: "center" }}
-                  />
-                  <span style={{ fontSize: "0.82rem", color: "#78350F", fontWeight: 600 }}>minutos para o cliente</span>
-                </div>
-              )}
-            </div>
+                  {linha("yellow")}
+                  {linha("red")}
 
-            {/* 🔴 Alerta Vermelho */}
-            <div style={{ background: "#FEF2F2", border: "1.5px solid #FCA5A5", borderRadius: "14px", padding: "16px", marginBottom: "20px" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "10px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "1.2rem" }}>🔴</span>
-                  <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#B71C1C" }}>Alerta Vermelho (Urgente)</span>
-                </div>
-                <label style={{ display: "flex", alignItems: "center", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={timeAlertConfig.redEnabled}
-                    onChange={e => setTimeAlertConfig(c => ({ ...c, redEnabled: e.target.checked }))}
-                    style={{ width: 18, height: 18, cursor: "pointer", accentColor: "#C92E09" }}
-                  />
-                </label>
-              </div>
-              {timeAlertConfig.redEnabled && (
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "10px" }}>
-                  <span style={{ fontSize: "0.82rem", color: "#B71C1C", fontWeight: 600 }}>Ativar quando faltarem</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={120}
-                    value={timeAlertConfig.redMinutes}
-                    onChange={e => setTimeAlertConfig(c => ({ ...c, redMinutes: Math.max(0, Number(e.target.value)) }))}
-                    style={{ width: 70, padding: "6px 10px", borderRadius: "8px", border: "1.5px solid #C92E09", fontWeight: 800, fontSize: "0.95rem", textAlign: "center" }}
-                  />
-                  <span style={{ fontSize: "0.82rem", color: "#B71C1C", fontWeight: 600 }}>minutos para o cliente</span>
-                </div>
-              )}
-            </div>
+                  {aviso ? (
+                    <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 12px", marginBottom: "16px", fontSize: "0.78rem", color: "#B71C1C", fontWeight: 600 }}>
+                      ⚠️ {aviso}
+                    </div>
+                  ) : (
+                    <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "10px 12px", marginBottom: "16px", fontSize: "0.78rem", color: "#475569", lineHeight: 1.4 }}>
+                      💡 {f.yellowEnabled || f.redEnabled ? exemplo : "Os dois alertas estão desligados: a borda do pedido não muda de cor."} A cor aparece na borda do pedido na aba <strong>Em Produção</strong>.
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
             {/* Botões de Ação */}
             <div style={{ display: "flex", gap: "10px" }}>
@@ -7477,6 +7493,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 Cancelar
               </button>
               <button
+                disabled={Boolean(avisoDasFaixas(timeAlertConfig))}
                 onClick={async () => {
                   try {
                     const res = await fetch("/api/store/time-alert-config", {
@@ -7492,7 +7509,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     showToast("Erro ao salvar alertas.", "#C92E09");
                   }
                 }}
-                style={{ flex: 2, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #B45309, #B45309)", color: "#FFF", fontWeight: 800, cursor: "pointer" }}
+                style={{ flex: 2, padding: "10px", borderRadius: "10px", border: "none", background: "linear-gradient(135deg, #B45309, #B45309)", color: "#FFF", fontWeight: 800, cursor: avisoDasFaixas(timeAlertConfig) ? "not-allowed" : "pointer", opacity: avisoDasFaixas(timeAlertConfig) ? 0.5 : 1 }}
               >
                 💾 Salvar Configurações
               </button>
