@@ -46,6 +46,10 @@ export async function GET() {
       storeLatLng: lerPontoDaLoja(user.storeLatLng),
       storeAddress: user.storeAddress ?? null,
       repasseDoEntregador: lerRegraDeRepasse(user.deliveryConfig),
+      // O pop-up "Mudar tempo de entrega" do painel abre o mapa com o que
+      // está gravado: sem estes dois, salvar de lá apagaria o desenho da loja.
+      areasDeRisco: Array.isArray((user.deliveryConfig as any)?.areasDeRisco) ? (user.deliveryConfig as any).areasDeRisco : [],
+      limiteDeAtendimento: Array.isArray((user.deliveryConfig as any)?.limiteDeAtendimento) ? (user.deliveryConfig as any).limiteDeAtendimento : [],
     },
   });
 }

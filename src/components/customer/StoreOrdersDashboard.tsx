@@ -19,6 +19,7 @@ import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
 import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
 import { corrigirPeriodo } from "@/lib/periodo-do-quadro";
 import { tempoNaEtapa, textoDoTempo, mesmosCarimbos } from "@/lib/tempo-na-etapa";
+import ModalTempoDeEntrega from "./ModalTempoDeEntrega";
 import { corDoAlerta, lerConfigDoAlerta, faixasDoModo, avisoDasFaixas, type ConfigDoAlerta, type FaixasDoAlerta } from "@/lib/alerta-de-producao";
 import { carimboDeStatus } from "@/lib/order-stages";
 import { avaliarEdicaoNoPainel, podeEditarPedidos } from "@/lib/edicao-de-pedido";
@@ -1847,6 +1848,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [showRoteirizacaoModal, setShowRoteirizacaoModal] = useState(false);
   const [showMotoboyLinkModal, setShowMotoboyLinkModal] = useState(false);
+  const [showTempoEntregaModal, setShowTempoEntregaModal] = useState(false);
   const [copiedMotoboyLink, setCopiedMotoboyLink] = useState(false);
   // O que o app dos entregadores faz na hora da entrega (User.appMotoboyConfig).
   const [appMotoboyCfg, setAppMotoboyCfg] = useState<AppMotoboyConfig>(() => lerAppMotoboyConfig(user?.appMotoboyConfig));
@@ -6645,6 +6647,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   { chave: "botaoAlertas", rotulo: "Alertas de Produção", ajuda: "Amarelo/vermelho por tempo" },
                   { chave: "botaoRoteirizacao", rotulo: "Roteirização", ajuda: "Mapa de entregas" },
                   { chave: "botaoMotoboys", rotulo: "App Motoboys", ajuda: "Link de acesso dos entregadores" },
+                  { chave: "botaoTempoEntrega", rotulo: "Mudar tempo de entrega", ajuda: "Abre o mapa da entrega" },
                 ].map((item) => (
                   <label
                     key={item.chave}
@@ -6892,6 +6895,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               title="App Motoboys - Copiar Link de Acesso para seus Entregadores"
             >
               <Bike size={14} /> App Motoboys
+            </button>
+            )}
+            {naBarra("botaoTempoEntrega") && (
+            <button
+              onClick={() => setShowTempoEntregaModal(true)}
+              style={BOTAO_BARRA}
+              title="Mudar o tempo de entrega das faixas, bairros e áreas, no mesmo mapa da tela Entrega"
+            >
+              <Clock size={14} /> Mudar tempo de entrega
             </button>
             )}
 
@@ -7533,6 +7545,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       />
 
       {/* Modal App Motoboys - Link de Acesso Exclusivo */}
+      {/* ===== MUDAR TEMPO DE ENTREGA: o mapa da tela Entrega num pop-up ===== */}
+      {showTempoEntregaModal && <ModalTempoDeEntrega nomeDaLoja={storeName} onClose={() => setShowTempoEntregaModal(false)} />}
+
       {showMotoboyLinkModal && (
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, bottom: 0,
