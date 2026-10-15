@@ -122,3 +122,72 @@ export function decidir(
   if (Object.keys(mudar).every((c) => ignorar.has(c))) return { tipo: "nada", motivo: "só o pulso do Assistente" };
   return { tipo: "atualizar", mudar, conflitos };
 }
+
+// ── A linha que o banco da nuvem não aceita ─────────────────────────────────
+//
+// A subida era tudo-ou-nada: uma linha com erro de SQL (o pedido apontando
+// para a rota que nunca subiu, um NOT NULL, um único) desfazia o lote inteiro,
+// a rota respondia 500 e o computador ficava em "voltando" para sempre — as
+// telas presas numa cópia congelada. Agora cada linha roda num SAVEPOINT
+// (subida-linha-a-linha.ts) e estas regras dizem o que fazer com a que falhou.
+
+/** O código do Postgres (SQLSTATE) e a mensagem, venha o erro do Prisma ($executeRawUnsafe → P2010) ou do pg. */
+export function erroDoBanco(e: unknown): { codigo: string | null; mensagem: string; texto: string } {
+  const x = (e || {}) as {
+    code?: unknown;
+    meta?: { code?: unknown; message?: unknown; field_name?: unknown };
+    message?: unknown;
+    detail?: unknown;
+    constraint?: unknown;
+  };
+  const textos = [x.meta?.message, x.message, x.detail, x.constraint, x.meta?.field_name].filter((t): t is string => typeof t === "string" && !!t);
+  const texto = textos.join(" | ") || String(e);
+  // "P2010"/"P2003" são códigos do Prisma, não do Postgres (que só usa P0001–P0004).
+  const sqlstate = (v: unknown) => (typeof v === "string" && /^[0-9A-Z]{5}$/.test(v) && !/^P[1-9]\d{3}$/.test(v) ? v : null);
+  // P2003 = o Prisma já traduziu a chave estrangeira (o nome da restrição vem em meta.field_name).
+  const codigo =
+    sqlstate(x.meta?.code) ?? sqlstate(x.code) ?? /Code: `([0-9A-Z]{5})`/.exec(texto)?.[1] ?? (x.code === "P2003" ? "23503" : null);
+  // A mensagem do Prisma começa com "Invalid `prisma.$executeRawUnsafe()` invocation": o que interessa é a do Postgres.
+  const doPostgres = /Message: `(?:ERROR: )?([^`]+)`/.exec(texto)?.[1];
+  const mensagem = (doPostgres || textos[0] || texto).replace(/\s+/g, " ").trim().slice(0, 300);
+  return { codigo, mensagem, texto };
+}
+
+/** 23503 = chave estrangeira violada (a linha-pai não existe na nuvem). */
+const CHAVE_ESTRANGEIRA = "23503";
+
+export type OQueFazerComOErro =
+  | { tipo: "anular"; coluna: string }
+  | { tipo: "recusar"; motivo: string };
+
+/**
+ * A linha falhou na nuvem. Se foi chave estrangeira numa coluna anulável que a
+ * tabela declara (`paiQuePodeFaltar`) e a linha tem valor nela, tenta de novo
+ * com a coluna vazia — o pedido sobe sem a rota, e não deixa de subir. Senão,
+ * a linha é recusada (vira conflito "recusada" no painel) e as outras seguem.
+ *
+ * @param jaAnuladas colunas que já foram esvaziadas nas tentativas anteriores desta linha.
+ */
+export function oQueFazerComOErro(
+  t: TabelaDaCopia | undefined,
+  s: LinhaDaSaida,
+  erro: unknown,
+  jaAnuladas: string[] = [],
+): OQueFazerComOErro {
+  const { codigo, mensagem, texto } = erroDoBanco(erro);
+  const motivo = codigo ? `erro ${codigo}: ${mensagem}` : mensagem;
+  if (!t || codigo !== CHAVE_ESTRANGEIRA || s.operacao === "DELETE" || !s.depois) return { tipo: "recusar", motivo };
+  for (const coluna of t.paiQuePodeFaltar || []) {
+    if (jaAnuladas.includes(coluna) || t.chave.includes(coluna)) continue;
+    const valor = s.depois[coluna];
+    if (valor === null || valor === undefined) continue;
+    // O Prisma nomeia a restrição "<Tabela>_<coluna>_fkey"; o Postgres conta a coluna em "Key (<coluna>)=(…)".
+    if (texto.includes(`${t.nome}_${coluna}_fkey`) || texto.includes(`(${coluna})=`)) return { tipo: "anular", coluna };
+  }
+  return { tipo: "recusar", motivo };
+}
+
+/** A mesma linha da saída com a coluna vazia (a tentativa seguinte de `oQueFazerComOErro`). */
+export function comColunaVazia(s: LinhaDaSaida, coluna: string): LinhaDaSaida {
+  return { ...s, depois: s.depois ? { ...s.depois, [coluna]: null } : s.depois };
+}

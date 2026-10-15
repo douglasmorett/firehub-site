@@ -109,8 +109,10 @@ export async function fazerFoto(
 ): Promise<string> {
   const inicio = await nuvem.json<{ cursor: string; tabelas: { nome: string; chave: string[] }[] }>("/api/contingencia/foto");
   let total = 0;
+  const feitas: string[] = [];
   for (const t of inicio.tabelas) {
     if (apenas && !apenas(t.nome)) continue;
+    feitas.push(t.nome);
     const linhas: Record<string, unknown>[] = [];
     let depoisDe: string | null = null;
     do {
@@ -126,7 +128,14 @@ export async function fazerFoto(
     });
     total += linhas.length;
   }
-  registro(`Foto da loja: ${total} linhas em ${inicio.tabelas.length} tabelas.`);
+  // Com `apenas` é a atualização de hora em hora (só os cadastros de clientes,
+  // sem apagar nada): dizer "Foto da loja" com o total de tabelas da cópia
+  // fazia parecer que a cópia inteira tinha só essas linhas (achado foto-1).
+  registro(
+    apenas
+      ? `Foto de hora em hora dos clientes (${feitas.join(", ") || "nenhuma tabela"}): ${total} cadastro(s) — não é a cópia inteira, que segue pelo espelho.`
+      : `Foto da loja: ${total} linhas em ${feitas.length} tabelas.`,
+  );
   return inicio.cursor;
 }
 
