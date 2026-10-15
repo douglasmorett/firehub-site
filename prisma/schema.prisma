@@ -2290,6 +2290,49 @@ model WebhookSubscription {
   @@index([franchiseeId])
 }
 
+/// Open Delivery de SAÍDA (lib/open-delivery-saida): o FireHub como "Ordering
+/// Application" para uma logística (Bem Dito). Uma credencial por loja; o
+/// client_secret fica cifrado pelo cofre (lib/cofre.ts) porque assina o
+/// webhook (HMAC) — hash não serviria. Criada por garantir-colunas
+/// (garantirEstruturaDaOpenDeliverySaida) e lida por SQL, sem depender do client.
+model OpenDeliverySaida {
+  id                  String    @id @default(cuid())
+  franchiseeId        String    @unique
+  parceiro            String    @default("Bem Dito")
+  merchantId          String    @unique
+  clientId            String    @unique
+  clientSecretCifrado String
+  webhookUrl          String?
+  ativo               Boolean   @default(true)
+  ligadoEm            DateTime  @default(now())
+  ultimaVarredura     DateTime?
+  ultimoUsoEm         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+}
+
+/// A fila de eventos Open Delivery que a logística lê (events:polling) e
+/// confirma (events/acknowledgment), ou recebe pelo webhook. Um evento por
+/// pedido e tipo — a varredura é idempotente pela chave única.
+model OpenDeliverySaidaEvento {
+  id                String    @id
+  integracaoId      String
+  franchiseeId      String
+  orderId           String
+  eventType         String
+  ocorridoEm        DateTime
+  createdAt         DateTime  @default(now())
+  confirmadoEm      DateTime?
+  webhookStatus     String?
+  webhookTentativas Int       @default(0)
+  webhookProximaEm  DateTime?
+  webhookUltimoErro String?
+
+  @@unique([integracaoId, orderId, eventType])
+  @@index([integracaoId, confirmadoEm])
+  @@index([webhookStatus, webhookProximaEm])
+}
+
 // ══════════════════════════════════════════════════════════
 // TRACKING DE CUSTOS POR LOJISTA
 // ══════════════════════════════════════════════════════════
