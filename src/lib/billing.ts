@@ -46,6 +46,8 @@ import { fimDoTeste } from "@/lib/fim-do-teste";
  * portal do parceiro avisa a loja que passaria do teto com a mesma conta.
  */
 import { TETO_DE_SPLIT } from "@/lib/parceiro/regras";
+import { aplicarCreditosNoCiclo, indiqueEGanheDaLoja, previsaoDoIndiqueEGanhe } from "@/lib/indique-e-ganhe-no-banco";
+import { INDICADOS_PARA_ISENCAO } from "@/lib/indique-e-ganhe";
 
 /**
  * ── O QUE CONTA COMO VENDA PARA A MENSALIDADE ───────────────────────────────
@@ -711,8 +713,31 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   // teste sem ter vendido. Isto era decidido lá embaixo, no bloco que zera o
   // ciclo inteiro — e era exatamente por isso que as taxas de serviço prestado
   // iam junto (ver o bloco de taxas extras abaixo).
-  const mensalidadePerdoada = isSpecialStore || isentoPorTeste || !hasUsage;
-  const mensalidadePendente = mensalidadePerdoada ? 0 : Math.max(0, amountDue - cycle.amountOffset);
+  //
+  // INDIQUE E GANHE (lib/indique-e-ganhe.ts): a loja principal de uma conta
+  // com mais de 10 indicados ativos e pagantes não paga a mensalidade dela
+  // enquanto a condição durar — conferida a cada fechamento, então cair para
+  // 10 volta a cobrar no mês seguinte. Só a MENSALIDADE: tráfego pago, totem,
+  // Bill e loja extra continuam no boleto, como no teste.
+  const indique = isSpecialStore || isentoPorTeste || !hasUsage
+    ? null
+    : await indiqueEGanheDaLoja(cycle.franchisee);
+  const isentaPorIndicacoes = !!indique?.isenta;
+  const mensalidadePerdoada = isSpecialStore || isentoPorTeste || !hasUsage || isentaPorIndicacoes;
+  const mensalidadeCheia = mensalidadePerdoada ? 0 : Math.max(0, amountDue - cycle.amountOffset);
+  // Os créditos de R$ 100 por indicação paga abatem a mensalidade (nunca as
+  // taxas). Mensalidade menor que o crédito: abate até zerar e o resto fica
+  // para o mês seguinte. Com a mensalidade isenta ou perdoada não se consome
+  // nada — o crédito espera o mês em que houver o que abater. Idempotente por
+  // ciclo: refazer este fechamento não usa o crédito de novo.
+  const creditoDeIndicacao = mensalidadeCheia > 0 && indique?.principal && indique.saldo > 0
+    ? await aplicarCreditosNoCiclo(franchiseeId, { id: cycle.id, yearMonth }, mensalidadeCheia)
+    : 0;
+  const mensalidadePendente = parseFloat(Math.max(0, mensalidadeCheia - creditoDeIndicacao).toFixed(2));
+  const notaDoIndique = [
+    isentaPorIndicacoes ? `Mensalidade isenta pelo Indique e Ganhe: ${indique!.ativosPagantes} lojas indicadas ativas e pagantes (a partir de ${INDICADOS_PARA_ISENCAO}).` : null,
+    creditoDeIndicacao > 0 ? `Indique e Ganhe: R$ ${creditoDeIndicacao.toFixed(2)} de crédito abatido da mensalidade de R$ ${mensalidadeCheia.toFixed(2)}.` : null,
+  ].filter(Boolean).join(" ");
 
   // Taxas fixas do mês, por fora do percentual sobre as vendas.
   //
@@ -782,7 +807,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         notes: isSpecialStore ? "Isento (loja oficial/própria)."
           : isentoPorTeste ? `Em período de teste até ${trialAte?.toLocaleDateString("pt-BR")} — cobriu o mês inteiro, mensalidade isenta. Vendas no mês: R$ ${totalSales.toFixed(2)}. Uso detectado: ${motivosUso.join(", ") || "nenhum"}.`
           : !hasUsage ? "Não usou nenhuma funcionalidade no mês."
-          : "Valor abaixo do mínimo de cobrança.",
+          : notaDoIndique || "Valor abaixo do mínimo de cobrança.",
       },
     });
     return {
@@ -790,6 +815,8 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       amountPending: 0,
       message: isSpecialStore ? "Isento (loja oficial / própria)."
         : isentoPorTeste ? "Em período de teste no mês inteiro — mensalidade isenta."
+        : isentaPorIndicacoes ? "Mensalidade isenta pelo Indique e Ganhe."
+        : creditoDeIndicacao > 0 ? "Mensalidade coberta pelo crédito do Indique e Ganhe."
         : "Nada a cobrar neste mês.",
     };
   }
@@ -840,8 +867,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       // A mensalidade só entra na descrição quando existe: com ela perdoada
       // (teste sem venda) e só a taxa de tráfego a cobrar, o boleto dizia
       // "Mensalidade R$0,00 + ...".
+      //
+      // Com crédito do Indique e Ganhe, o boleto mostra a mensalidade cheia e o
+      // desconto ao lado — o lojista vê que os R$ 100 entraram.
       const linhasDaFatura = [
-        ...(mensalidadePendente > 0 ? [`Mensalidade R$${mensalidadePendente.toFixed(2)}`] : []),
+        ...(creditoDeIndicacao > 0
+          ? [`Mensalidade R$${mensalidadeCheia.toFixed(2)} - desconto Indique e Ganhe R$${creditoDeIndicacao.toFixed(2)}`]
+          : mensalidadePendente > 0 ? [`Mensalidade R$${mensalidadePendente.toFixed(2)}`] : []),
+        ...(isentaPorIndicacoes ? ["Mensalidade isenta (Indique e Ganhe)"] : []),
         ...linhasExtras,
       ];
       const chargeDescription = linhasDaFatura.length > 0
@@ -942,8 +975,13 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       // Teste que acabou no meio do mês: fica escrito de onde a base começou,
       // senão "por que a mensalidade não bate com as vendas do mês?" vira
       // arqueologia toda vez.
-      ...(testeAcabouNoMes && inicio
-        ? { notes: `Período de teste até ${new Date(trialAte!).toLocaleDateString("pt-BR")}: só as vendas a partir daí entram na base (R$ ${totalSales.toFixed(2)}).` }
+      ...((testeAcabouNoMes && inicio) || notaDoIndique
+        ? {
+            notes: [
+              testeAcabouNoMes && inicio ? `Período de teste até ${new Date(trialAte!).toLocaleDateString("pt-BR")}: só as vendas a partir daí entram na base (R$ ${totalSales.toFixed(2)}).` : null,
+              notaDoIndique || null,
+            ].filter(Boolean).join(" "),
+          }
         : {}),
     },
   });
@@ -994,10 +1032,13 @@ export type FaturaEmAberto = Awaited<ReturnType<typeof faturasEmAbertoDaLoja>>[n
  * onde sai o total — "por que o boleto deu R$ 500 se a tela dizia R$ 400?"
  * tem que ter resposta antes do boleto.
  */
+/** O Indique e Ganhe na previsão do painel, quando não há nada (teste, isenta, sem indicação). */
+const SEM_INDIQUE = { isenta: false, ativosPagantes: 0, saldo: 0, abate: 0 };
+
 export async function getCurrentCycleView(franchiseeId: string) {
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true, ifoodConnected: true, food99Connected: true },
+    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true, trialEndsAt: true, ifoodConnected: true, food99Connected: true, accountGroupId: true },
   });
 
   const isExempt = lojaIsenta(user);
@@ -1036,8 +1077,23 @@ export async function getCurrentCycleView(franchiseeId: string) {
       asaasBoletoUrl: null as string | null,
       asaasBoletoCode: null as string | null,
       faturasEmAberto,
+      indiqueEGanhe: SEM_INDIQUE,
     };
   }
+
+  // Indique e Ganhe (lib/indique-e-ganhe.ts): a mesma conta do fechamento —
+  // isenta com mais de 10 indicados ativos e pagantes, e o saldo de créditos
+  // abatendo a mensalidade (nunca as taxas). Só prevê: quem grava o uso do
+  // crédito é o fechamento.
+  const loja = { id: franchiseeId, accountGroupId: user?.accountGroupId ?? null };
+  const indiqueDoMes = async (mensalidade: number) => {
+    try {
+      const r = await previsaoDoIndiqueEGanhe(loja, mensalidade);
+      return { isenta: r.isenta, ativosPagantes: r.ativosPagantes, saldo: r.saldo, abate: r.isenta ? 0 : r.abate };
+    } catch {
+      return SEM_INDIQUE;
+    }
+  };
 
   // Sem venda no mês, o valor devido só aparecia no fechamento — o lojista via
   // R$ 0,00 o mês inteiro e recebia um boleto do mínimo no fim. Aqui a previsão
@@ -1097,13 +1153,15 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // por isso pode não ter linha de ciclo no meio do mês. O valor previsto tem
   // que aparecer do mesmo jeito.
   if (!cycle) {
-    const total = parseFloat((devidoAgora + lojasExtras.valor).toFixed(2));
+    const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(devidoAgora);
+    const mensalidadeDoMes = indique.isenta ? 0 : devidoAgora;
+    const total = parseFloat((mensalidadeDoMes + lojasExtras.valor).toFixed(2));
     return {
       yearMonth, totalSales: vendasDoMes, vendasA1PorCento,
       amountDue: total,
       amountOffset: 0,
-      amountPending: total,
-      mensalidadePrevista: devidoAgora,
+      amountPending: parseFloat(Math.max(0, total - indique.abate).toFixed(2)),
+      mensalidadePrevista: mensalidadeDoMes,
       taxas: { trafegoPago: 0, totem: 0, lojasExtras: lojasExtras.valor },
       lojasExtras,
       status: "OPEN", isExempt: false, emTeste,
@@ -1113,6 +1171,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
       asaasBoletoUrl: null as string | null,
       asaasBoletoCode: null as string | null,
       faturasEmAberto,
+      indiqueEGanhe: indique,
     };
   }
 
@@ -1133,10 +1192,13 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const assessor = await cobrancaDoAssessorNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
   const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor;
 
-  const mensalidadePrevista = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
+  const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
+  const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
+  const mensalidadePrevista = indique.isenta ? 0 : calculada;
   // O abatimento de pagamentos online desconta a MENSALIDADE, não as taxas —
-  // mesma conta do fechamento, para o painel bater com o boleto.
-  const mensalidadePendente = Math.max(0, mensalidadePrevista - cycle.amountOffset);
+  // mesma conta do fechamento, para o painel bater com o boleto. O crédito do
+  // Indique e Ganhe também.
+  const mensalidadePendente = Math.max(0, mensalidadePrevista - cycle.amountOffset - indique.abate);
 
   return {
     yearMonth: cycle.yearMonth,
@@ -1162,6 +1224,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     cobrancaDesde,
     trialEndsAt,
     faturasEmAberto,
+    indiqueEGanhe: indique,
   };
 }
 

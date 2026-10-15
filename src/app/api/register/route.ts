@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { name, email, password, phone, storeName, cnpj, cpf, semCnpj, city, repasseConfig, refCode, comoConheceu, faturamento, aceitouTermos, versaoDosTermos } = await req.json();
+    const { name, email, password, phone, storeName, cnpj, cpf, semCnpj, city, repasseConfig, refCode, indicacao, comoConheceu, faturamento, aceitouTermos, versaoDosTermos } = await req.json();
 
     // Validações básicas
     if (!name || !email || !password) {
@@ -225,6 +225,16 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         console.error("[Register] Falha ao gravar o aceite dos Termos:", err);
       }
+    }
+
+    // Indique e Ganhe entre lojistas (`?indicacao=` no link, lib/indique-e-ganhe.ts):
+    // grava a loja que indicou numa tabela própria. Não é o `refCode` acima —
+    // não vira embaixador, não toca em `referredById` e nunca gera split; é só
+    // o desconto de R$ 100 na mensalidade de quem indicou quando esta loja
+    // pagar a primeira. Nunca lança.
+    if (indicacao) {
+      const { registrarIndicacaoNoCadastro } = await import("@/lib/indique-e-ganhe-no-banco");
+      await registrarIndicacaoNoCadastro(user.id, indicacao);
     }
 
     // O lead do CRM vira "em teste" e, se um vendedor cuidava dele, a loja já

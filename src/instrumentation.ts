@@ -88,6 +88,11 @@ export async function register() {
   await garantirTabelaDeAjustes();
   // Acréscimo que o cliente pede pelo robô e a loja aceita no pop-up. Se
   // faltar, o robô volta a chamar atendente para pedido já na cozinha.
+  // Indique e Ganhe entre lojistas: quem indicou cada loja e o crédito de
+  // R$ 100 (lib/indique-e-ganhe-no-banco.ts). Tabela própria por SQL cru; se
+  // faltar, a mensalidade sai sem o desconto, como antes do programa.
+  const { garantirTabelaDeIndicacoes } = await import("./lib/indique-e-ganhe-no-banco");
+  await garantirTabelaDeIndicacoes();
   const { garantirTabelaDeAcrescimos } = await import("./lib/acrescimo-no-banco");
   await garantirTabelaDeAcrescimos();
   // Diária mudada num dia e pendências do acerto do motoboy

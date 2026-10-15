@@ -45,6 +45,8 @@ type Lojista = {
   lojasExtras: number;
   /** Cliente pagante do Acompanhamento iFood (aba Acompanhamento iFood). */
   acompanhamentoIfood: boolean;
+  /** Indique e Ganhe entre lojistas: a loja (principal) cujo link trouxe esta. Não é embaixador. */
+  indicadaPor?: { id: string; nome: string } | null;
 };
 
 type Vendedor = { id: string; name: string; active: boolean };
@@ -490,6 +492,7 @@ export default function AdminDashboardClient({
             ["Último pedido", l.atividade?.ultimoPedidoEm ? new Date(l.atividade.ultimoPedidoEm).toLocaleString("pt-BR") : "Nunca"],
             ["Repasse Pix", l.repasseConfig ? (typeof l.repasseConfig === "object" ? `${(l.repasseConfig as any).tipoChave || "—"}: ${(l.repasseConfig as any).chavePix || "—"}` : "Configurado") : "Não configurado"],
             ["Pagamento online", `Mercado Pago ${l.temMP ? "✓" : "✗"} · Pix ${l.temCelcoin ? "✓" : "✗"}`],
+            ["Indicada por (Indique e Ganhe)", l.indicadaPor?.nome || "—"],
             ["Como conheceu", l.onboardingData?.comoConheceu || "—"],
             ["Faturamento declarado", l.onboardingData?.faturamento || "—"],
             ["Franqueado Hakim (isento)", <ToggleFranqueadoHakim key="hakim" userId={l.id} initialValue={l.isFranqueadoHakim} />],

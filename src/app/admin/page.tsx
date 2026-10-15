@@ -5,6 +5,7 @@ import AdminDashboardClient from "@/components/admin/AdminDashboardClient";
 import { getCurrentYearMonth, intervaloDoMes, lojaIsenta } from "@/lib/billing";
 import { inicioDoDiaDaLojaAtras } from "@/lib/fuso";
 import { atividadeDasLojas } from "@/lib/atividade-da-loja";
+import { indicadorasDasLojas } from "@/lib/indique-e-ganhe-no-banco";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "FireHub Admin — Visão Geral" };
@@ -62,6 +63,10 @@ export default async function AdminPage() {
     `;
     linhas.forEach(l => acompanhadas.add(l.lojaId));
   } catch {}
+
+  // Indique e Ganhe entre lojistas: qual loja indicou cada uma (tabela própria,
+  // lib/indique-e-ganhe-no-banco.ts). Sem a tabela, a linha só fica sem isso.
+  const indicadoras = await indicadorasDasLojas();
 
   // Está usando? O último pedido de cada loja, para achar quem parou.
   const atividade = await atividadeDasLojas(lojistas.map(l => l.id));
@@ -202,6 +207,11 @@ export default async function AdminPage() {
     ambassadorId: l.ambassadorId,
     atividade: atividade.get(l.id) || null,
     acompanhamentoIfood: acompanhadas.has(l.id),
+    indicadaPor: (id => {
+      if (!id) return null;
+      const p = porId.get(id);
+      return { id, nome: p ? p.storeName || p.name || p.email : "loja removida" };
+    })(indicadoras.get(l.id)),
   }));
 
   return (

@@ -17,6 +17,7 @@ import type { VisaoDoCiclo } from "@/lib/billing";
 import { diasAte } from "@/lib/prazo-da-mensalidade";
 import { nomeDoMes } from "@/lib/financeiro/dre";
 import { fmtNum, fmtR } from "./ui";
+import CartaoIndiqueEGanhe from "./CartaoIndiqueEGanhe";
 
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const mesPorExtenso = (ym: string) => {
@@ -73,6 +74,7 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
           <h2 style={{ fontSize: "1.5rem", fontWeight: 900, margin: "8px 0 2px", color: "#F8FAFC" }}>Mensalidade FireHub (isenta)</h2>
           <p style={{ margin: 0, fontSize: "0.85rem", color: "#94A3B8" }}>Esta loja não paga mensalidade nem comissão da plataforma.</p>
         </div>
+        <CartaoIndiqueEGanhe />
       </div>
     );
   }
@@ -177,6 +179,14 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
           {(ciclo.taxas?.totem || 0) > 0 && linha("Totem de autoatendimento", fmtR(ciclo.taxas.totem))}
           {(ciclo.taxas?.assessor || 0) > 0 && linha("Bill, seu assessor (estoque e financeiro pelo WhatsApp)", fmtR(ciclo.taxas.assessor || 0), "R$ 29,90 no mês em que ficou ativo depois dos 7 dias grátis (termo aceito ao ligar)")}
           {(ciclo.amountOffset || 0) > 0 && linha("Já abatido por pagamentos online", `- ${fmtR(Math.min(ciclo.amountOffset, mensalidade))}`)}
+          {ciclo.indiqueEGanhe?.isenta && linha("Mensalidade isenta (Indique e Ganhe)", fmtR(0), `${ciclo.indiqueEGanhe.ativosPagantes} restaurantes indicados ativos e pagantes — vale enquanto forem mais de 10`)}
+          {(ciclo.indiqueEGanhe?.abate || 0) > 0 && linha(
+            "Desconto Indique e Ganhe",
+            `- ${fmtR(ciclo.indiqueEGanhe.abate)}`,
+            ciclo.indiqueEGanhe.saldo > ciclo.indiqueEGanhe.abate
+              ? `crédito de indicação; sobram ${fmtR(ciclo.indiqueEGanhe.saldo - ciclo.indiqueEGanhe.abate)} para os próximos meses`
+              : "crédito de indicação, usado no fechamento",
+          )}
           {linha("Previsão do boleto até agora", fmtR(ciclo.amountPending), "muda até o fim do mês conforme as vendas; o valor final sai no fechamento", true)}
         </div>
 
@@ -198,6 +208,8 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
           </button>
         </div>
       </div>
+
+      <CartaoIndiqueEGanhe />
 
       {verDetalhes && <DetalhesDaCobranca ciclo={ciclo} tz={tz} onFechar={() => setVerDetalhes(false)} />}
     </div>

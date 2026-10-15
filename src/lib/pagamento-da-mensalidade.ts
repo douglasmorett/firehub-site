@@ -23,6 +23,7 @@
 import { prisma } from "@/lib/prisma";
 import { getAsaasKey } from "@/lib/asaas";
 import { cicloDaReferencia, statusDePago } from "@/lib/parceiro/regras";
+import { creditarIndicacaoPelaMensalidadePaga } from "@/lib/indique-e-ganhe-no-banco";
 
 export { cicloDaReferencia };
 
@@ -90,6 +91,10 @@ export async function registrarCobrancaDaMensalidade(c: CobrancaDoAsaas, evento?
 
   if (statusDePago(status)) {
     if (ciclo.status === "PAID" && ciclo.paidAt) {
+      // O webhook repetido também passa no crédito da indicação: se a primeira
+      // passada caiu (banco fora no meio), a repetição gera; se não caiu, não
+      // faz nada (lib/indique-e-ganhe-no-banco.ts).
+      await creditarIndicacaoPelaMensalidadePaga(ciclo.id);
       if (ciclo.asaasStatus === status) return "SEM_MUDANCA";
       await prisma.franchiseeBillingCycle.update({ where: { id: ciclo.id }, data: { asaasStatus: status } });
       return "ATUALIZADO";
@@ -111,6 +116,11 @@ export async function registrarCobrancaDaMensalidade(c: CobrancaDoAsaas, evento?
       },
     });
     console.log(`[Mensalidade] Ciclo ${ciclo.yearMonth} da loja ${ciclo.franchiseeId} PAGO no Asaas (${c.id}, R$ ${valor ?? "?"}).`);
+    // Indique e Ganhe entre lojistas (lib/indique-e-ganhe.ts): a primeira
+    // mensalidade paga de uma loja indicada gera R$ 100 de desconto para quem
+    // indicou. Um por loja indicada — o webhook repetido e a conferência que
+    // passa de novo por aqui não geram outro. Nunca lança.
+    await creditarIndicacaoPelaMensalidadePaga(ciclo.id);
     return "PAGO";
   }
 

@@ -172,15 +172,19 @@ export default function CadastroPage() {
       // dela numa caixa que pergunta exatamente isso.
       const storeName = nomeDaLojaPeloCnpj(cnpjData, empresa);
       let refCode = null;
+      // Indique e Ganhe entre lojistas: parâmetro próprio, separado do `ref`
+      // do embaixador (lib/indique-e-ganhe.ts).
+      let indicacao = null;
       if (typeof window !== "undefined") {
         const urlParams = new URLSearchParams(window.location.search);
         refCode = urlParams.get("ref") || urlParams.get("codigo") || null;
+        indicacao = urlParams.get("indicacao") || null;
       }
       
       const body: any = {
         name: nome, email, password: senha, phone: whatsapp.replace(/\D/g, ""),
         cnpj: semCnpj ? null : cnpjData?.cnpj, cpf: cpf.replace(/\D/g, ""), semCnpj,
-        storeName, city: semCnpj ? cidadeSemCnpj.trim() : cnpjData?.municipio, refCode,
+        storeName, city: semCnpj ? cidadeSemCnpj.trim() : cnpjData?.municipio, refCode, indicacao,
         comoConheceu, faturamento,
         // Vira prova em AceiteDosTermos (lib/termos-de-uso.ts). Sem isto a
         // conta nasce sem aceite e cai na tela de aceite do painel.
