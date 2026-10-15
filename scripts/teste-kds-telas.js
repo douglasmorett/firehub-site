@@ -88,11 +88,13 @@ conferir("e sabe que ainda falta chegar coisa", tudoPronto(esfirraFeita), false)
 conferir("com tudo carimbado, esta tudo la", tudoPronto([carimbado(umaEsfirra), carimbado(umaPizza)]), true);
 conferir("o visto por item e o proprio carimbo", [itemPronto(esfirraFeita[0]), itemPronto(esfirraFeita[1])], [true, false]);
 
-console.log("\nFINALIZACAO: uma tela NAO finaliza pela outra");
+console.log("\nFINALIZACAO: duas telas IGUAIS sao copias (a baixa de uma fecha)");
 const FIM1 = { id: "f1", name: "Expedicao 1", stage: "finishing", filter: "all", categoryFilter: [] };
 const FIM2 = { id: "f2", name: "Expedicao 2", stage: "finishing", filter: "all", categoryFilter: [] };
 const PEDIDO = { numero: "8825", deliveryType: "DELIVERY" };
-conferir("f1 deu baixa -> f2 ainda falta", faltaFinalizacao([FIM1, FIM2], ["f1"], PEDIDO), true);
+conferir("iguais: f1 deu baixa -> acabou (Hakim, 15/10)", faltaFinalizacao([FIM1, FIM2], ["f1"], PEDIDO), false);
+conferir("iguais: f2 deu baixa -> acabou", faltaFinalizacao([FIM1, FIM2], ["f2"], PEDIDO), false);
+conferir("iguais: ninguem deu -> falta", faltaFinalizacao([FIM1, FIM2], [], PEDIDO), true);
 conferir("as duas deram -> acabou", faltaFinalizacao([FIM1, FIM2], ["f1", "f2"], PEDIDO), false);
 conferir("uma tela so -> a primeira baixa fecha", faltaFinalizacao([FIM1], [], PEDIDO), false);
 conferir("producao nao conta na finalizacao", faltaFinalizacao([ESFIRRA, PIZZA, FIM1], ["f1"], PEDIDO), false);
@@ -115,8 +117,17 @@ const SO_ESFIRRA = [carimbado(umaEsfirra)];
 const OS_DOIS = [carimbado(umaEsfirra), carimbado(umaPizza)];
 conferir("so esfirra: a de esfirra fecha sozinha", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO, SO_ESFIRRA), false);
 conferir("esfirra + pizza: a de pizza ainda falta", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO, OS_DOIS), true);
+conferir("sem itens: categorias diferentes continuam estacoes", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO), true);
+
+// Ragnar: uma finalizacao so de bebida, outra com tudo.
+const FIM_BEB = { id: "fb", name: "Finalizacao Bebidas", stage: "finishing", filter: "all", categoryFilter: ["Bebidas"] };
+const FIM_TUDO = { id: "ft", name: "Finalizacao", stage: "finishing", filter: "all", categoryFilter: [] };
+const LANCHE_E_BEBIDA = [{ category: "Lanches" }, { category: "Bebidas" }];
+conferir("Ragnar: a de tudo deu baixa -> acabou", faltaFinalizacao([FIM_BEB, FIM_TUDO], ["ft"], PEDIDO, LANCHE_E_BEBIDA), false);
+conferir("Ragnar: so a de bebida deu -> o lanche ainda falta", faltaFinalizacao([FIM_BEB, FIM_TUDO], ["fb"], PEDIDO, LANCHE_E_BEBIDA), true);
 conferir("esfirra + pizza: as duas deram -> acabou", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe", "fp"], PEDIDO, OS_DOIS), false);
-conferir("item sem categoria aparece nas duas, entao prende as duas", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO, [carimbado(ORFAO)]), true);
+// Item sem categoria aparece nas duas: a que deu baixa ja fez o que a outra faria (15/10/2026).
+conferir("item sem categoria aparece nas duas: a baixa de uma basta", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO, [carimbado(ORFAO)]), false);
 conferir("sem itens a regra antiga vale", faltaFinalizacao([FIM_ESF, FIM_PIZ], ["fe"], PEDIDO, null), true);
 
 console.log("\nfiltro de entrega e retirada");

@@ -298,6 +298,19 @@ export function tudoPronto(itens: { prontoEm?: Date | string | null }[] | null |
  *
  * Sem `itens` a régua de categoria não roda — quem chama sem eles trata só do
  * filtro de número.
+ *
+ * ── Tela que mostra a mesma coisa é cópia, não estação ─────────────────────
+ *
+ * A tela que ainda não deu baixa só segura o pedido se tiver algum item que a
+ * tela que JÁ deu baixa não mostra — "se duas telas mostram a mesma coisa e
+ * alguém já fez, não é pra fazer de novo" (o dono, 22/09/2026). Exigir a baixa
+ * das duas travava a cozinha: a Hakim Centro (e Luxúria, Picanha na Pizza,
+ * Delícias de Casa, Pastel da Paulista) tem "Finalização 1" e "Finalização 2"
+ * com tudo, a cozinha dava pronto numa, o pedido saía dela e ficava esperando
+ * a outra — nunca virava Pronto no painel (Douglas, 15/10/2026: 11 pedidos da
+ * Hakim e 5 da Ragnar presos assim em 7 dias). Estações diferentes de verdade
+ * (NIK: Esfihas × Pizza, cada uma com as suas categorias) continuam esperando
+ * uma pela outra quando o pedido tem dos dois.
  */
 export function faltaFinalizacao(
   telas: TelaDoKds[] | null | undefined,
@@ -309,12 +322,25 @@ export function faltaFinalizacao(
     .filter((t) => texto(t?.stage) === "finishing")
     .filter((t) => !pedido || telaMostraPedido(t as any, pedido))
     .filter((t) => !itens || itens.length === 0 || itensDaTela(t, itens).length > 0)
-    .map(chaveDaTela)
-    .filter(Boolean);
-  const unicas = [...new Set(deFinalizacao)];
+    .filter((t) => Boolean(chaveDaTela(t)));
+  const unicas = [...new Set(deFinalizacao.map(chaveDaTela))];
   if (unicas.length <= 1) return false;
   const jaDeram = lerTelasProntas(prontas);
-  return unicas.some((c) => !jaDeram.includes(c));
+  const feitas = deFinalizacao.filter((t) => jaDeram.includes(chaveDaTela(t)));
+  return deFinalizacao.some((t) => !jaDeram.includes(chaveDaTela(t)) && !feitas.some((f) => cobre(f, t, itens)));
+}
+
+/**
+ * A tela `f` (que já deu baixa) mostra tudo o que `t` mostraria deste pedido?
+ * Com os itens, item por item; sem eles, pelas categorias da tela (sem filtro
+ * = mostra tudo).
+ */
+function cobre(f: TelaDoKds, t: TelaDoKds, itens?: ItemParaTela[] | null): boolean {
+  if (itens && itens.length > 0) return itensDaTela(t, itens).every((i) => telaMostraItem(f, i));
+  const deF = (f.categoryFilter || []).map(texto).filter(Boolean);
+  if (deF.length === 0) return true;
+  const deT = (t.categoryFilter || []).map(texto).filter(Boolean);
+  return deT.length > 0 && deT.every((c) => deF.includes(c));
 }
 
 /**
