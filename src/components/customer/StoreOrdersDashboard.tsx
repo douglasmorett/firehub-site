@@ -39,6 +39,8 @@ import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
 import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
 import AvisoPedidoEsperandoLoja from "@/components/customer/AvisoPedidoEsperandoLoja";
+import FoodyNoPedido from "@/components/customer/FoodyNoPedido";
+import AvisosDaFoody from "@/components/customer/AvisosDaFoody";
 import { esperandoConferencia, motivoDeAguardarLoja } from "@/lib/finalizar-rascunho";
 import AvisoPedidoDoRoboParaConferir from "@/components/customer/AvisoPedidoDoRoboParaConferir";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
@@ -4171,6 +4173,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           e é um elemento só, então o MutationObserver dela não fica preso a
           um badge que o React trocou. Vazio em "Todas as Lojas". */}
       <span id="firehub-em-producao-count-badge" hidden>{pedidosNaCozinha ?? ""}</span>
+      {/* A chamada ao motoboy da Foody/Voe que falhou (só aparece em loja com
+          a integração ligada e com falha recente). */}
+      <AvisosDaFoody />
       {/* MODAL CANCELAR PEDIDO */}
       {cancelConfirmId && (() => {
         const pedido = orders.find(o => o.id === cancelConfirmId);
@@ -4503,6 +4508,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   );
                 })()}
                 </div>
+
+                {/* Motoboy terceirizado da Foody/Voe: some sozinho na loja sem a
+                    integração e no pedido que não é entrega da loja. */}
+                {!getPartnerDeliveryInfo(order).isPartner && <FoodyNoPedido pedidoId={order.id} />}
 
                 {/* Rota de Entrega */}
                 <div style={{ marginBottom: "14px" }}>

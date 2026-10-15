@@ -62,18 +62,63 @@ function estoqueDoCancelamento(ids: string[], tentativa = 0) {
   }, espera)
 }
 
+// ── A FOODY / VOE DELIVERY, EM TODO CAMINHO ─────────────────────────────────
+//
+// O motoboy terceirizado da Foody é chamado quando o pedido é aceito ou fica
+// pronto (conforme a loja escolheu), e a entrega é cancelada lá quando o pedido
+// é cancelado aqui. Status muda em uma dúzia de lugares (painel, KDS, aceite
+// automático, robô, webhooks), então a decisão mora aqui, como a do estoque.
+//
+// Depois da gravação e fora dela: a chamada à Foody nunca segura nem desfaz a
+// mudança de status, e `foodyDepoisDoStatus` relê o pedido (transação
+// desfeita = status antigo = nada a fazer). Sem loja com a integração ligada,
+// não custa nem uma consulta (lib/foody-no-banco.ts).
+const STATUS_DA_FOODY = new Set([
+  'CONFIRMADO', 'ACEITO', 'PREPARANDO', 'EM_PREPARO', 'EM_ANDAMENTO',
+  'PRONTO', 'SAIU_ENTREGA', 'SAIU_PARA_ENTREGA',
+  ...STATUS_DE_CANCELAMENTO,
+])
+
+function interessaAFoody(data: unknown): boolean {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false
+  const status = (data as Record<string, unknown>).status
+  return typeof status === 'string' && STATUS_DA_FOODY.has(status.toUpperCase())
+}
+
+function foodyDoStatus(ids: string[]) {
+  if (typeof window !== 'undefined' || ids.length === 0) return
+  setTimeout(() => {
+    import('./foody-no-banco')
+      .then(({ foodyDepoisDoStatus }) => foodyDepoisDoStatus(ids))
+      .catch((e) => console.error('[Foody] Erro ao carregar o gatilho:', e?.message || e))
+  }, 1_500)
+}
+
 function criarClient() {
   const base = new PrismaClient()
   return base.$extends({
     query: {
       customerOrder: {
-        create({ args, query }) { args.data = comCarimbos(args.data); return query(args) },
+        async create({ args, query }) {
+          args.data = comCarimbos(args.data)
+          const resultado = await query(args)
+          // Pedido que já nasce aceito (aceite automático, balcão).
+          if (interessaAFoody(args.data)) {
+            const id = (resultado as { id?: unknown })?.id
+            if (typeof id === 'string') foodyDoStatus([id])
+          }
+          return resultado
+        },
         async update({ args, query }) {
           args.data = comCarimbos(args.data)
           const resultado = await query(args)
           if (cancela(args.data)) {
             const id = typeof args.where?.id === 'string' ? args.where.id : (resultado as { id?: unknown })?.id
             if (typeof id === 'string') estoqueDoCancelamento([id])
+          }
+          if (interessaAFoody(args.data)) {
+            const id = typeof args.where?.id === 'string' ? args.where.id : (resultado as { id?: unknown })?.id
+            if (typeof id === 'string') foodyDoStatus([id])
           }
           return resultado
         },
@@ -86,7 +131,22 @@ function criarClient() {
                 .then((l) => l.map((p) => p.id)).catch(() => [] as string[])
             : []
           const resultado = await query(args)
-          if (ids.length) estoqueDoCancelamento(ids)
+          if (ids.length) {
+            estoqueDoCancelamento(ids)
+            // Cancelou em qualquer quantidade: a entrega em curso na Foody cai junto.
+            foodyDoStatus(ids)
+          }
+          // A Foody ouve a gravação que aponta o pedido pelo id (a escrita
+          // condicional do painel e do app do motoboy) — sem consulta extra.
+          // Gravação em lote (fechamento do caixa) não chama motoboy.
+          if (interessaAFoody(args.data) && !ids.length) {
+            const alvo = (args.where as { id?: unknown } | undefined)?.id
+            const daFoody = typeof alvo === 'string' ? [alvo]
+              : alvo && typeof alvo === 'object' && Array.isArray((alvo as { in?: unknown }).in)
+                ? ((alvo as { in: unknown[] }).in.filter((x) => typeof x === 'string') as string[])
+                : []
+            if (daFoody.length && daFoody.length <= 20 && (resultado as { count?: number })?.count) foodyDoStatus(daFoody)
+          }
           return resultado
         },
         upsert({ args, query }) {

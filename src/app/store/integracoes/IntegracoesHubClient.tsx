@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import PagamentoOnlineAsaas from "@/components/customer/PagamentoOnlineAsaas";
+import FoodyDeliveryConfig from "@/components/customer/FoodyDeliveryConfig";
 import { CheckCircle2, ShieldCheck, Zap, Key, Store, Save, ExternalLink, RefreshCw, X, ArrowRight, Activity, CreditCard, Radio, Plus, Trash2, Loader2 } from "lucide-react";
 
 export default function IntegracoesHubClient({
@@ -41,7 +42,18 @@ export default function IntegracoesHubClient({
   initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
-  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | "keeta" | null>(null);
+  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | "keeta" | "foody" | null>(null);
+
+  // ── FOODY / VOE DELIVERY (motoboy terceirizado) ──
+  // O cartão da lista lê o estado de /api/store/integracoes/foody; o modal
+  // (FoodyDeliveryConfig) avisa quando conecta ou desconecta.
+  const [foodyConectada, setFoodyConectada] = useState(false);
+  useEffect(() => {
+    fetch("/api/store/integracoes/foody", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setFoodyConectada(Boolean(d.conectada)))
+      .catch(() => {});
+  }, []);
 
   // ── ASAAS (Pix e cartão pelo site na conta da loja) ──
   // O estado vem de /api/store/asaas; o cartão da lista mostra o que é
@@ -1312,6 +1324,16 @@ export default function IntegracoesHubClient({
       description: "Pedidos do cardápio e da IA da Brendi caem direto no FireHub via Open Delivery, com status sincronizado.",
     },
     {
+      id: "foody" as const,
+      category: "channels",
+      title: "Foody / Voe Delivery",
+      subtitle: "Motoboy terceirizado",
+      icon: "🛵",
+      gradient: "linear-gradient(135deg, #EA580C, #9A3412)",
+      badge: foodyConectada ? { text: "🟢 Conectado & Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Chame o motoboy da Foody Delivery ou da Voe Delivery direto do pedido de entrega, sem redigitar endereço nem valor — ou deixe o FireHub chamar sozinho.",
+    },
+    {
       id: "wabiz" as const,
       category: "channels",
       title: "Wabiz",
@@ -2387,6 +2409,8 @@ export default function IntegracoesHubClient({
             )}
 
             {/* 💳 MODAL: ASAAS — Pix e cartão pelo site (conta da loja) */}
+            {openModal === "foody" && <FoodyDeliveryConfig onMudou={setFoodyConectada} />}
+
             {openModal === "asaas" && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px", paddingRight: "40px" }}>

@@ -51,6 +51,15 @@ const jobs = [
     intervalMs: 60_000, // 1 minuto
   },
   {
+    // Foody Delivery / Voe Delivery (motoboy terceirizado): status, motoboy e
+    // link de rastreio das entregas em curso (POST /orders/checkupdates). A
+    // Foody pede no maximo a cada 30 s. Sem entrega em curso a rota responde
+    // vazio com uma consulta so (src/lib/foody-no-banco.ts).
+    name: 'foody-acompanhamento',
+    path: '/api/cron/foody-acompanhamento',
+    intervalMs: 60_000, // 1 minuto
+  },
+  {
     // Wabiz (app com a marca do restaurante) só tem polling: sem webhook, o
     // pedido espera em orders/pending. A doc deles pede consulta a cada 30s.
     // Sem loja com wabizConnected=true a rota responde vazio — custo zero.
