@@ -938,8 +938,10 @@ export function descontosDoPeriodo(pedidos: PedidoParaDescontos[], mesas: ContaD
     if (cbUsado > 0) { cashback.usado += cbUsado; cashback.pedidosQueUsaram++; }
 
     // Entrega grátis que NÃO passou pelo desconto (regra de valor mínimo, área).
+    // A reposição (lib/reposicao.ts) guarda ali a taxa do original só para o
+    // acerto do motoboy — não é taxa que a loja deixou de cobrar.
     const eg = lerEntregaGratis(p.entregaGratis);
-    if (eg && !d.fatias.some((f) => f.alvo === "ENTREGA")) { entregaGratis.valor += eg.valor; entregaGratis.pedidos++; }
+    if (eg && !eg.motivo.startsWith("Reposição") && !d.fatias.some((f) => f.alvo === "ENTREGA")) { entregaGratis.valor += eg.valor; entregaGratis.pedidos++; }
 
     if (d.total <= 0) continue;
     pedidosComDesconto++;
