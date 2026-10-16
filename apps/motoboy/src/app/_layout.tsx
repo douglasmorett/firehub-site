@@ -8,9 +8,11 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { AvisoProvider } from "@/components/Aviso";
+import { useAtualizacaoAutomatica } from "@/lib/atualizacao";
 import { SessaoProvider } from "@/lib/sessao";
 
 export default function Raiz() {
+  useAtualizacaoAutomatica();
   return (
     <SafeAreaProvider>
       <SessaoProvider>

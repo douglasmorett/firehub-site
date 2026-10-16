@@ -2,13 +2,18 @@
   "expo": {
     "name": "FireHub Entregador",
     "slug": "firehub-entregador",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "firehub-entregador",
     "userInterfaceStyle": "light",
     "runtimeVersion": {
       "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/50b8a86a-8f0a-47ad-a3ab-1abdd79cfb31",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     },
     "ios": {
       "bundleIdentifier": "br.com.firehub.entregador",
