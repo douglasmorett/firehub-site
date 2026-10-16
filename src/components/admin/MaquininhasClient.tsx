@@ -5,7 +5,7 @@ import { CreditCard, Plus, Copy, RefreshCw, Wifi, WifiOff, CheckCircle2, AlertTr
 import StoneConnectSecao from "./StoneConnectSecao";
 
 /**
- * Maquininhas com app próprio (PagBank, Stone, Cielo, Getnet).
+ * Maquininhas com app próprio (PagBank, Stone, Cielo, Getnet, Rede).
  *
  * O pareamento existia só como rota de API: para ligar uma maquininha o lojista
  * teria que chamar a API na mão. Esta tela é o que falta para o recurso existir
@@ -125,7 +125,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
         <h2 style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>Maquininhas</h2>
       </div>
       <p style={{ color: "#64748B", fontSize: 14, margin: "0 0 20px" }}>
-        Maquininha PagBank, Stone, Cielo ou Getnet com o app do FireHub instalado. Cobra o pedido
+        Maquininha PagBank, Stone, Cielo, Getnet ou Rede com o app do FireHub instalado. Cobra o pedido
         do totem (que só vai para a cozinha depois do cartão aprovado) e a conta das mesas.
       </p>
 
@@ -243,6 +243,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
             <option value="STONE_APP">Stone</option>
             <option value="CIELO_APP">Cielo</option>
             <option value="GETNET_APP">Getnet</option>
+            <option value="REDE_APP">Rede (Itaú)</option>
           </select>
           {totens.length > 0 && (
             <select

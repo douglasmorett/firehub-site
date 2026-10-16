@@ -134,7 +134,7 @@ export function gerarTokenDeTerminal(): string {
  * Cada adquirente tem a sua versão do app (product flavor em apps/maquininha),
  * mas a fila e o contrato com o servidor são os mesmos para todas.
  */
-export const PROVEDORES_COM_APP = ["PAGBANK_APP", "STONE_APP", "CIELO_APP", "GETNET_APP"] as const;
+export const PROVEDORES_COM_APP = ["PAGBANK_APP", "STONE_APP", "CIELO_APP", "GETNET_APP", "REDE_APP"] as const;
 export type ProvedorComApp = (typeof PROVEDORES_COM_APP)[number];
 
 export const NOME_DO_PROVEDOR: Record<string, string> = {
@@ -142,6 +142,7 @@ export const NOME_DO_PROVEDOR: Record<string, string> = {
   STONE_APP: "Stone",
   CIELO_APP: "Cielo",
   GETNET_APP: "Getnet",
+  REDE_APP: "Rede (Itaú)",
   MERCADOPAGO_POINT: "Mercado Pago Point",
   // Stone SEM o app do FireHub: a cobrança vai pela nuvem (Connect 2.0) para a
   // POS pelo número de série (lib/stone-connect.ts).
