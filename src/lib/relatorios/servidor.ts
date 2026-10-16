@@ -45,6 +45,7 @@ import { inicioDoDiaDaLoja } from "@/lib/fuso";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { funcionarioAbre } from "@/lib/permissao-da-tela";
 import { chaveDaLoja } from "@/lib/origem-do-relatorio";
+import { SEM_REPOSICAO } from "@/lib/relatorios/sem-reposicao";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import {
   STATUS_FORA_DA_VENDA, HORA_DA_VIRADA, canalDoRelatorio, dentroDaFaixa, hojeNaLoja, lerFiltros, naLoja, tipoDeVenda,
@@ -225,10 +226,14 @@ export type PedidoBase = {
  * venda, canal, marca e faixa de horário. `select` soma colunas às dos
  * filtros. `incluirForaDaVenda` traz também cancelados e intenções — para os
  * relatórios que CONTAM cancelamento; quem soma venda nunca liga isto.
+ *
+ * O pedido de REPOSIÇÃO (faltou item / troca) nunca vem: não é venda
+ * (lib/relatorios/sem-reposicao.ts). `comReposicoes` é só para quem mede
+ * INSUMO gasto (Itens consumidos) — a reposição gasta insumo.
  */
 export async function pedidosDoRelatorio<S extends Record<string, unknown>>(
   ctx: ContextoDoRelatorio,
-  opts: { select?: S; incluirForaDaVenda?: boolean; janela?: { inicio: Date; fim: Date } } = {},
+  opts: { select?: S; incluirForaDaVenda?: boolean; comReposicoes?: boolean; janela?: { inicio: Date; fim: Date } } = {},
 ): Promise<Array<PedidoBase & Record<string, any>>> {
   const janela = opts.janela ?? { inicio: ctx.inicio, fim: ctx.fim };
   const pedidos = await prisma.customerOrder.findMany({
@@ -236,6 +241,7 @@ export async function pedidosDoRelatorio<S extends Record<string, unknown>>(
       franchiseeId: { in: ctx.lojaIds },
       createdAt: { gte: janela.inicio, lt: janela.fim },
       ...(opts.incluirForaDaVenda ? {} : { status: { notIn: [...STATUS_FORA_DA_VENDA] } }),
+      ...(opts.comReposicoes ? {} : SEM_REPOSICAO),
     },
     select: { ...COLUNAS_DOS_FILTROS, ...(opts.select || {}) } as any,
     orderBy: { createdAt: "asc" },

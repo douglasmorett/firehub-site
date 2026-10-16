@@ -177,7 +177,7 @@ export async function GET(req: NextRequest) {
     { celulas: [{ v: `${titulo} — ${cabecalho.lojas.join(", ")}`, estilo: "titulo" }] },
     { celulas: [{ v: `Período: ${fmtDia(f.de)} a ${fmtDia(f.ate)} (o dia vira às 5h)`, estilo: "suave" }] },
     { celulas: [{ v: filtrosEmTexto ? `Filtros: ${filtrosEmTexto} (tipo, canal e marca do pedido original)` : "Filtros: nenhum", estilo: "suave" }] },
-    { celulas: [{ v: extra || "Reposição cancelada não entra. Custo de refazer pela ficha técnica (ou o custo do produto); item sem custo cadastrado fica fora da soma. Entrega: o que o acerto paga ao motoboy pela corrida.", estilo: "suave" }] },
+    { celulas: [{ v: extra || "Reposição cancelada não entra, e reposição não é venda. Faltou item: o item já estava na venda — o custo é só a nova entrega. Troca: custo de refazer do item refeito pela ficha técnica (ou o custo do produto); sem custo cadastrado fica fora da soma. Entrega: o que o acerto paga ao motoboy pela corrida.", estilo: "suave" }] },
     { celulas: [] },
   ];
   const cab = (...c: string[]): LinhaDaPlanilha => ({ celulas: c, estilo: "cabecalho" });
@@ -198,10 +198,10 @@ export async function GET(req: NextRequest) {
     { celulas: ["Vendas no período (sem as reposições)", Q(s.vendas)] },
     { celulas: ["% das vendas que precisaram de reposição", P(s.pctDasVendas)] },
     { celulas: [] },
-    { celulas: [N("Custo de refazer (insumo)"), R(s.custoRefazer, true)] },
-    { celulas: ["Unidades refeitas", Q(s.itens)] },
-    { celulas: ["Unidades sem custo cadastrado (fora da soma)", Q(s.itensSemCusto)] },
-    { celulas: ["Valor de venda do que foi dado de novo (preço do cardápio)", R(s.valorDeVenda)] },
+    { celulas: [N("Custo de refazer (só trocas — o item refeito)"), R(s.custoRefazer, true)] },
+    { celulas: ["Unidades repostas (faltou + troca)", Q(s.itens)] },
+    { celulas: ["Unidades refeitas em troca sem custo cadastrado (fora da soma)", Q(s.itensSemCusto)] },
+    { celulas: ["Valor do que foi reposto (preço do cardápio, referência)", R(s.valorDeVenda)] },
     { celulas: [N("Custo de entrega (motoboy)"), R(s.custoEntrega, true)] },
     { celulas: ["Corridas de reposição", Q(s.entregas)] },
     { celulas: [`Das corridas, estimadas pela taxa do pedido original (antes de 15/10/2026)`, Q(s.entregasEstimadas)] },
@@ -219,9 +219,9 @@ export async function GET(req: NextRequest) {
 
   const produtos: LinhaDaPlanilha[] = [
     ...topo("Itens que mais dão problema", "Cada produto refeito: em quantas reposições apareceu, quantas unidades (faltou × troca) e o custo das unidades com custo cadastrado."),
-    cab("Produto", "Reposições", "Unidades", "Faltou", "Troca", "Custo de refazer", "Sem custo (un.)", "Por que sem custo", "Valor de venda"),
+    cab("Produto", "Reposições", "Unidades", "Faltou", "Troca", "Custo de refazer (troca)", "Sem custo (un.)", "Por que sem custo", "Valor de venda"),
     ...resultado.porProduto.map((p) => ({
-      celulas: [p.nome, Q(p.vezes), Q(p.quantidade), Q(p.faltou), Q(p.troca), RouTraco(p.custo), Q(p.quantidadeSemCusto), p.semCustoPorque || "", R(p.valorDeVenda)],
+      celulas: [p.nome, Q(p.vezes), Q(p.quantidade), Q(p.faltou), Q(p.troca), p.troca === 0 ? "já estava na venda" : RouTraco(p.troca === p.quantidadeSemCusto ? null : p.custo), Q(p.quantidadeSemCusto), p.semCustoPorque || "", R(p.valorDeVenda)],
     })),
   ];
 
@@ -230,7 +230,7 @@ export async function GET(req: NextRequest) {
     cab("Data", "Hora", "Reposição", "Pedido original", "Cliente", "Motivo", "Tipo", "Itens", "Custo de refazer", "Sem custo (un.)", "Entrega", "Entrega estimada?", "De onde saiu a entrega", "Custo total", "Motoboy"),
     ...resultado.lista.map((l) => ({
       celulas: [fmtDia(l.dia), l.hora, `#${l.numero}`, `#${l.original}`, l.cliente, l.rotulo, tipoEmTexto(l.tipo), l.itens,
-        RouTraco(l.custoRefazer), Q(l.itensSemCusto), R(l.custoEntrega), l.entregaEstimada ? "sim" : "", l.entregaDetalhe, R(l.custoTotal), l.motoboy || ""],
+        l.motivo === "FALTOU" ? "já estava na venda" : RouTraco(l.custoRefazer), Q(l.itensSemCusto), R(l.custoEntrega), l.entregaEstimada ? "sim" : "", l.entregaDetalhe, R(l.custoTotal), l.motoboy || ""],
     })),
     { celulas: [N("TOTAL"), "", Q(resultado.lista.length, true), "", "", "", "", "", R(s.custoRefazer, true), Q(s.itensSemCusto, true), R(s.custoEntrega, true), "", "", R(s.custoTotal, true), ""] },
   ];

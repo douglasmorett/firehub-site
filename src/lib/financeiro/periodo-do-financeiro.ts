@@ -15,10 +15,11 @@
  * só as colunas que o DRE e o Extrato usam, e o período é o da loja.
  */
 import { prisma } from "@/lib/prisma";
+import { custoDasReposicoesPorDia } from "@/lib/relatorios/reposicoes";
 import { janelaDoPeriodo, type ContextoDoRelatorio } from "@/lib/relatorios/servidor";
 import { mesasFechadasDoPeriodo } from "@/lib/relatorios/mesas-do-periodo";
 import { canalDoRelatorio, naLoja, tipoDeVenda } from "@/lib/relatorios/base";
-import { servicoDasMesas, situacaoDoPedido, temValorImpossivel } from "@/lib/relatorios/regua-da-venda";
+import { ehReposicao, servicoDasMesas, situacaoDoPedido, temValorImpossivel } from "@/lib/relatorios/regua-da-venda";
 import { cupomDaPlataforma, formaDoTexto, precisaDoDetalheDoCupom, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import { outrasTaxasDoPedido, precisaDoDetalheDoDesconto } from "@/lib/relatorios/vendas";
 import { partesDaEntrega } from "@/lib/resumo-do-entregador";
@@ -68,6 +69,8 @@ const COLUNAS = {
   items: { select: { quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true, prontoEm: true } },
   // O cancelado só é desperdício se saiu da produção (lib/desperdicio-do-cancelado.ts).
   cancelledAt: true, dispatchedAt: true, deliveredAt: true, readyAt: true, kdsFinishedAt: true, kdsStage: true,
+  // Pedido de reposição (faltou item / troca): não é venda; a TROCA vai para o CMV.
+  reposicao: true,
 } as const;
 
 /** O número que o lojista vê no pedido — o do dia, o do iFood, o do parceiro. */
@@ -261,13 +264,19 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
     select: COLUNAS,
     orderBy: { createdAt: "asc" },
   });
+  // ── REPOSIÇÃO NÃO É VENDA (o dono, 16/10/2026) ──
+  // Fora da receita, das vendas, do ticket e do Extrato. O custo do refeito na
+  // TROCA entra no CMV (dre.ts, "Reposições (troca)"); o do FALTOU ITEM já
+  // estava na venda original. A corrida já está em "Entregadores" (o acerto).
+  const reposicoesBrutas = brutos.filter((o) => ehReposicao(o));
+  const vendidos = brutos.filter((o) => !ehReposicao(o));
 
   // O cupom que o app bancou às vezes só está na observação ou no detalhe do
   // desconto (99Food antigo). Só esses pedidos buscam os campos pesados — a
   // mesma economia do relatório Formas de pagamento.
   // O mesmo detalhe decide de quem é o desconto do pedido de app sem as
   // colunas (lib/relatorios/vendas.ts, descontoDoPedido) — e daí a taxa do app.
-  const precisam = brutos
+  const precisam = vendidos
     .filter((o) => precisaDoDetalheDoCupom(o as any) || (MARKETPLACES.has(canalDoRelatorio(o as any)) && precisaDoDetalheDoDesconto(o)))
     .map((o) => o.id);
   const detalhes = new Map<string, { notes: string | null; discountDetails: unknown }>();
@@ -312,7 +321,31 @@ export async function dadosDoPeriodoDoFinanceiro(opts: {
   };
   for (const [dia, valor] of lancadoPorDia) doDiaDoDesperdicio(dia).lancado = c2(valor);
 
-  const pedidos: PedidoDoFinanceiro[] = brutos.map((o) => {
+  // As trocas: o custo do refeito, por dia, junto do desperdício (mesmos dias da contagem).
+  if (custos && reposicoesBrutas.length) {
+    const itensDasReposicoes = await prisma.customerOrderItem.findMany({
+      where: { orderId: { in: reposicoesBrutas.map((o) => o.id) } },
+      select: { orderId: true, menuProductId: true, productName: true, quantity: true, notes: true, comboSelections: true, menuProduct: { select: { name: true, price: true } } },
+    });
+    const itensDe = new Map<string, typeof itensDasReposicoes>();
+    for (const i of itensDasReposicoes) itensDe.set(i.orderId, [...(itensDe.get(i.orderId) || []), i]);
+    const c = custos;
+    const porDia = custoDasReposicoesPorDia(
+      reposicoesBrutas.map((o) => ({ createdAt: o.createdAt, status: o.status, reposicao: o.reposicao, items: itensDe.get(o.id) || [] })),
+      (item, dia) => c.custoDoItem(item, dia),
+      tz,
+    );
+    for (const [dia, r] of porDia) {
+      const d = doDiaDoDesperdicio(dia);
+      d.reposicoes = r.custoDasTrocas;
+      d.trocas = r.trocas;
+      d.trocasSemCusto = r.trocasSemCusto;
+      d.trocasSemCustoNomes = r.trocasSemCustoNomes;
+      d.faltou = r.faltou;
+    }
+  }
+
+  const pedidos: PedidoDoFinanceiro[] = vendidos.map((o) => {
     let cItens = 0, cComCusto = 0, cCusto = 0, cItensFicha = 0, cCustoFicha = 0;
     const dia = naLoja(o.createdAt, tz).dia;
     const contaNaVenda = situacaoDoPedido(o.status) === "venda" && !temValorImpossivel(o);

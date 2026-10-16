@@ -100,7 +100,7 @@ import {
   type TipoDeVenda,
 } from "@/lib/relatorios/base";
 import {
-  atendimentosDaVenda, cent, quantidadeDeItens, reais, servicoDasMesas, situacaoDoPedido, temValorImpossivel, ticketMedio, totalDosItens,
+  atendimentosDaVenda, cent, ehReposicao, quantidadeDeItens, reais, servicoDasMesas, situacaoDoPedido, temValorImpossivel, ticketMedio, totalDosItens,
   type MesaFechada, type ServicoDasMesas, type Situacao,
 } from "@/lib/relatorios/regua-da-venda";
 
@@ -311,6 +311,8 @@ export function resumoDeVendas(pedidos: PedidoParaVendas[], mesas: MesaFechada[]
   const at = atendimentosDaVenda(pedidos);
 
   for (const p of pedidos) {
+    // Reposição (faltou item / troca) não é venda nem cancelamento (regua-da-venda.ts).
+    if (ehReposicao(p)) continue;
     // Antes de tudo: nem venda, nem cancelado — um número de 17 dígitos não
     // pode entrar em soma nenhuma (ver "Valor impossível" no topo).
     if (temValorImpossivel(p)) { nImpossiveis++; continue; }

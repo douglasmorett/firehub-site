@@ -14,7 +14,7 @@
  * lib/telefone.ts (`telefoneCanonico`, que tira o nono dígito); o saldo de
  * cashback já casava pelos 8 últimos dígitos (`chaveDoSaldo`).
  */
-import { situacaoDoPedido } from "@/lib/relatorios/regua-da-venda";
+import { ehReposicao, situacaoDoPedido } from "@/lib/relatorios/regua-da-venda";
 import { dataDaLoja, FUSO_PADRAO } from "@/lib/fuso";
 
 /**
@@ -59,7 +59,8 @@ export function contaComoPedido(status: string | null | undefined): boolean {
   return situacaoDoPedido(status) === "venda";
 }
 
-export type PedidoParaNumeros = { status?: string | null; totalAmount?: number | null; createdAt: Date | string };
+/** `reposicao`: o pedido de reposição (faltou item / troca, R$ 0,00) não é pedido nem gasto do cliente. */
+export type PedidoParaNumeros = { status?: string | null; totalAmount?: number | null; createdAt: Date | string; reposicao?: unknown };
 
 /**
  * Os números da ficha do cliente, pela régua: pedidos e gasto só do que conta;
@@ -71,7 +72,7 @@ export function numerosDoCliente(pedidos: PedidoParaNumeros[]): {
   pedidos: number; gasto: number; ticketMedio: number; primeiro: string | null; ultimo: string | null; cancelados: number; naoConcluidos: number;
 } {
   const quando = (p: PedidoParaNumeros) => new Date(p.createdAt).getTime();
-  const validos = pedidos.filter((p) => contaComoPedido(p.status)).sort((a, b) => quando(a) - quando(b));
+  const validos = pedidos.filter((p) => contaComoPedido(p.status) && !ehReposicao(p)).sort((a, b) => quando(a) - quando(b));
   const cancelados = pedidos.filter((p) => situacaoDoPedido(p.status) === "cancelado").length;
   const gasto = Math.round(validos.reduce((t, p) => t + (Number(p.totalAmount) || 0), 0) * 100) / 100;
   return {

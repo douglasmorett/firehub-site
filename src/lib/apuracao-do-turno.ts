@@ -32,7 +32,7 @@ import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { tipoDeVenda, type TipoDeVenda } from "@/lib/relatorios/base";
 import {
-  atendimentosDaVenda, descontoNoFechamento, entraNaVenda, situacaoDoPedido, temValorImpossivel, ticketMedio, totalDosItens,
+  atendimentosDaVenda, descontoNoFechamento, ehReposicao, entraNaVenda, situacaoDoPedido, temValorImpossivel, ticketMedio, totalDosItens,
 } from "@/lib/relatorios/regua-da-venda";
 import { cupomDaPlataforma as cupomPagoPelaPlataforma, formaDoPedido, formaDoTexto, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import type { BlocoDoTipo, DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do-caixa";
@@ -212,7 +212,14 @@ type Bloco = {
   ajustesDoApp: number;
 };
 
-export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]): ApuracaoDasVendas {
+export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]): ApuracaoDasVendas {
+  // ── REPOSIÇÃO NÃO É VENDA ───────────────────────────────────────────────
+  // O pedido de reposição (faltou item / troca, R$ 0,00, "Pago Online (reposição
+  // do #N)") não entra em venda, forma de pagamento nem tipo do papel (o dono,
+  // 16/10/2026). A corrida dele continua: o motoboy rodou e o acerto paga
+  // (lib/relatorios/sem-reposicao.ts).
+  const pedidos = todos.filter((o) => !ehReposicao(o));
+  const reposicoes = todos.filter((o) => ehReposicao(o));
   const expected: Esperado = { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, food99Online: 0, food99Coupons: 0, total: 0 };
   // -- VENDA QUE NUNCA VIRA CEDULA ---------------------------------------
   //
@@ -642,6 +649,18 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
     }
     const do99 = cupomBancadoPelo99(o);
     if (do99 > 0) expected.food99Coupons += do99;
+  }
+
+  // A corrida da reposição: só o motoboy (entrega, taxa a pagar), sem dinheiro.
+  for (const o of reposicoes) {
+    if (situacaoDoPedido(o.status) !== "venda" || tipoDeVenda(o) !== "DELIVERY" || !o.motoboyId || !ehEntregaDaLoja(o)) continue;
+    entregasProprias.push({
+      motoboyId: o.motoboyId,
+      formas: [],
+      pedido: { motoboyFee: o.motoboyFee ?? null, deliveryFee: o.deliveryFee ?? null, deliveryDistance: o.deliveryDistance ?? null, entregaGratis: o.entregaGratis, customerAddress: o.customerAddress ?? null },
+      ehMarketplace: false,
+      trocoLevado: 0,
+    });
   }
 
   // ── AS BAIXAS DAS MESAS FECHADAS NESTE TURNO ──────────────────────────
