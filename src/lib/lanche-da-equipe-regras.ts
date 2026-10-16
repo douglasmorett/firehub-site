@@ -12,11 +12,11 @@ export type ConfigDoLanche = {
   ativo: boolean;
   /** R$ por dia, por motoboy, a preço do site. */
   limite: number;
-  /** O crédito do dia cobre só 1 bebida; as outras o motoboy paga (Douglas, 16/10/2026). */
+  /** O crédito do dia cobre só 1 bebida; as outras o motoboy paga (Douglas, 16/10/2026: "deixa ligada no Hakim" — vem ligada). */
   umaBebidaPorDia: boolean;
 };
 
-export const LANCHE_PADRAO: ConfigDoLanche = { ativo: false, limite: 22.9, umaBebidaPorDia: false };
+export const LANCHE_PADRAO: ConfigDoLanche = { ativo: false, limite: 22.9, umaBebidaPorDia: true };
 
 const centavos = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 

@@ -83,7 +83,8 @@ export async function garantirTabelaDoLanche(): Promise<boolean> {
       CONSTRAINT "LancheDaEquipeConfig_pkey" PRIMARY KEY ("lojaId")
     )`);
     // A regra da bebida (16/10/2026): a opção e quantas bebidas cada pedido pôs no crédito.
-    await prisma.$executeRawUnsafe(`ALTER TABLE "LancheDaEquipeConfig" ADD COLUMN IF NOT EXISTS "umaBebidaPorDia" BOOLEAN NOT NULL DEFAULT false`);
+    // DEFAULT true: a configuração que já existe (a da Hakim Centro) vem ligada ("deixa ligada no Hakim").
+    await prisma.$executeRawUnsafe(`ALTER TABLE "LancheDaEquipeConfig" ADD COLUMN IF NOT EXISTS "umaBebidaPorDia" BOOLEAN NOT NULL DEFAULT true`);
     await prisma.$executeRawUnsafe(`ALTER TABLE "LancheDaEquipe" ADD COLUMN IF NOT EXISTS "bebidasNoCredito" INTEGER NOT NULL DEFAULT 0`);
     tabelaOk = true;
     return true;

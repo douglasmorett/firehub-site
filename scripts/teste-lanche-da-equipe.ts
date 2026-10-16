@@ -28,9 +28,10 @@ confere("'Promoção' sozinha não é a do dia", ehPromocaoDoDia({ category: "Co
 confere("esfiha normal", ehPromocaoDoDia({ category: "Esfihas Salgadas", tags: null }), false);
 
 console.log("\n— Configuração —");
-confere("padrão: desligado, R$ 22,90, bebida livre", lerConfigDoLanche(null), { ativo: false, limite: 22.9, umaBebidaPorDia: false });
+confere("padrão: desligado, R$ 22,90, 1 bebida por dia ligada", lerConfigDoLanche(null), { ativo: false, limite: 22.9, umaBebidaPorDia: true });
 confere("valores lidos e arredondados", lerConfigDoLanche({ ativo: true, limite: "25.555", umaBebidaPorDia: true }), { ativo: true, limite: 25.56, umaBebidaPorDia: true });
-confere("umaBebidaPorDia em texto não liga", lerConfigDoLanche({ umaBebidaPorDia: "sim" }).umaBebidaPorDia, false);
+confere("desligar pelo painel vale", lerConfigDoLanche({ umaBebidaPorDia: false }).umaBebidaPorDia, false);
+confere("umaBebidaPorDia em texto fica no padrão", lerConfigDoLanche({ umaBebidaPorDia: "nao" }).umaBebidaPorDia, true);
 confere("negativo é ignorado", lerConfigDoLanche({ limite: -5 }).limite, 22.9);
 
 console.log("\n— 1 bebida por dia no crédito —");
