@@ -55,6 +55,11 @@ export const RELATORIOS: RelatorioDoMenu[] = [
   { slug: "tempos", secao: "Operação", titulo: "Tempo por status e produção", href: "/store/relatorios/tempos",
     descricao: "Quanto o pedido fica em cada etapa, os atrasados e o tempo de preparo por produto.",
     busca: "tempo de produção cozinha kds atraso entrega preparo" },
+  // Pedido do Douglas (16/10/2026): as abas "Faltou item" e "Veio errado
+  // (troca)" do Ver pedido (lib/reposicao.ts) — quantas e quanto custaram.
+  { slug: "reposicoes", secao: "Operação", titulo: "Reposições (faltou item e troca)", href: "/store/relatorios/reposicoes",
+    descricao: "Quantas vezes faltou item ou veio errado, o % das vendas e o custo de refazer e da entrega a mais.",
+    busca: "reposição reposicao troca trocas veio errado faltou item faltante erro refazer refeito reclamação custo de erro motoboy corrida extra" },
   { slug: "atendentes", secao: "Operação", titulo: "Desempenho por atendente", href: "/store/relatorios/atendentes",
     descricao: "Quem lançou quantos pedidos e quanto vendeu, com as categorias.",
     busca: "atendente funcionário operador caixa ranking vendedor",
