@@ -13,11 +13,17 @@
  * api/store/orders/[id]/reposicao grava.
  */
 import {
-  custoDaEntrega, itemParaCusto, montarReposicoes, relatorioDeReposicoes, valorDeVendaDoItem, vendasSemReposicoes,
+  custoDaEntrega, custoDasReposicoesPorDia, itemParaCusto, montarReposicoes, relatorioDeReposicoes, valorDeVendaDoItem, vendasSemReposicoes,
   type ItemGravado, type PedidoDeReposicao, type PedidoOriginal,
 } from "../src/lib/relatorios/reposicoes";
 import { custoDoItem, montarCatalogo, type CustoDoInsumo, type ProdutoParaCusto } from "../src/lib/financeiro/custo-pela-ficha";
 import { lerAcerto } from "../src/lib/ganho-do-entregador";
+import { atendimentosDaVenda, ehReposicao, entraNaVenda } from "../src/lib/relatorios/regua-da-venda";
+import { resumoDeVendas } from "../src/lib/relatorios/vendas";
+import { formasDePagamento } from "../src/lib/relatorios/formas-de-pagamento";
+import { resumoDasVendas } from "../src/lib/resumo-das-vendas";
+import { numerosDoCliente } from "../src/lib/clientes-da-loja-regras";
+import { apurarVendasDoTurno } from "../src/lib/apuracao-do-turno";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -128,7 +134,7 @@ const REPOSICOES: PedidoDeReposicao[] = [
   rep({ motivo: "FALTOU", original: "o2", createdAt: "2026-10-15T04:30:00.000Z", items: [CALABRESA, item("refri", 1)], motoboyId: "lucas" }),
   rep({ motivo: "TROCA", original: "o3", createdAt: "2026-10-15T15:00:00.000Z", items: [COMBO_INTEIRO], deliveryType: "RETIRADA" }),
   rep({ motivo: "FALTOU", original: "o2", createdAt: "2026-10-15T16:00:00.000Z", items: [item("carne", 1)], motoboyId: "ze" }),
-  rep({ motivo: "TROCA", original: "o4", createdAt: "2026-10-15T17:00:00.000Z", items: [item("carne", 1), item("carne", 0)], entregaGratis: { valor: 8, motivo: "Reposição do #40" }, motoboyId: "diarista" }),
+  rep({ motivo: "TROCA", original: "o4", createdAt: "2026-10-15T17:00:00.000Z", items: [item("carne", 1), item("carne", 0), item("refri", 1)], entregaGratis: { valor: 8, motivo: "Reposição do #40" }, motoboyId: "diarista" }),
   // Sem `reposicao` válida: fica de fora.
   { ...rep({ motivo: "FALTOU", original: "o9", createdAt: "2026-10-15T18:00:00.000Z", items: [item("carne", 1)] }), reposicao: null },
 ];
@@ -146,10 +152,14 @@ const motoboys = new Map([
 const montadas = montarReposicoes(REPOSICOES, { tz: TZ, custoDoItem: custo, originais, motoboys });
 
 confere("6 reposições montadas (a sem `reposicao` fica de fora)", montadas.length, 6);
-confere("o item com quantidade 0 (tirado) não entra", montadas.find((m) => m.id === "r6")!.itens.length, 1);
+confere("o item com quantidade 0 (tirado) não entra", montadas.find((m) => m.id === "r6")!.itens.length, 2);
 confere("01h30 do dia 15 é do expediente do dia 14 (o dia vira às 5h), 01:30 na hora",
   [montadas[2].dia, montadas[2].hora], ["2026-10-14", "01:30"]);
-confere("o custo de cada item é pedido no DIA da reposição (o custo do insumo no dia)", diasPedidos.slice(0, 3), ["2026-10-14", "2026-10-14", "2026-10-14"]);
+confere("custo só é pedido para a TROCA, no DIA da reposição (o faltou item não tem custo de refazer)",
+  diasPedidos, ["2026-10-14", "2026-10-15", "2026-10-15", "2026-10-15"]);
+confere("faltou item: os itens aparecem com a quantidade, custo de refazer R$ 0,00 e 'já estava na venda'",
+  montadas[2].itens.map((i) => [i.nome, i.quantidade, i.custo, i.jaNaVenda, i.semCustoPorque]),
+  [["Esfiha de Calabresa Especial", 1, 0, true, null], ["Refrigerante", 1, 0, true, null]]);
 confere("número da reposição e do original", [montadas[0].numero, montadas[0].original.numero], ["101", "10"]);
 confere("motoboy pelo nome", montadas.map((m) => m.motoboy), [null, "Lucas", "Lucas", null, "Zé", "Marcos"]);
 confere("entrega de cada uma: 7 gravada, 7 pelo acerto, 6 estimada, retirada 0, fixo 5, diária 0",
@@ -157,40 +167,54 @@ confere("entrega de cada uma: 7 gravada, 7 pelo acerto, 6 estimada, retirada 0, 
 
 const res = relatorioDeReposicoes(montadas, { vendas: 200, valorVendido: 10000 });
 const s = res.resumo;
-confere("resumo: 6 reposições, 4 pedidos diferentes, 8 unidades", [s.reposicoes, s.pedidosAfetados, s.itens], [6, 4, 8]);
-confere("custo de refazer R$ 32,00 (2 + 4 + 22 + 2 + 2); 2 unidades sem custo, FORA da soma (nada inventado)",
-  [s.custoRefazer, s.itensSemCusto], [32, 2]);
-confere("valor de venda R$ 83,00; 1 unidade sem preço (a opção sem produto)", [s.valorDeVenda, s.itensSemPreco], [83, 1]);
+confere("resumo: 6 reposições, 4 pedidos diferentes, 9 unidades repostas", [s.reposicoes, s.pedidosAfetados, s.itens], [6, 4, 9]);
+confere("custo de refazer R$ 28,00 = só as trocas (4 + 22 + 2); 1 unidade de troca sem custo, FORA da soma (nada inventado)",
+  [s.custoRefazer, s.itensSemCusto], [28, 1]);
+confere("valor do que foi reposto R$ 89,00; 1 unidade sem preço (a opção sem produto)", [s.valorDeVenda, s.itensSemPreco], [89, 1]);
 confere("entrega: 5 corridas, R$ 25,00; 1 estimada de R$ 6,00", [s.entregas, s.custoEntrega, s.entregasEstimadas, s.valorEstimado], [5, 25, 1, 6]);
-confere("custo total R$ 57,00 = refazer + entrega; médio R$ 9,50", [s.custoTotal, s.custoMedio], [57, 9.5]);
-confere("% das vendas: 4 pedidos ÷ 200 vendas = 2%; % do faturamento: 57 ÷ 10.000 = 0,57%", [s.pctDasVendas, s.pctDoFaturamento], [2, 0.57]);
+confere("custo total R$ 53,00 = refazer (trocas) + entrega; médio R$ 8,83", [s.custoTotal, s.custoMedio], [53, 8.83]);
+confere("% das vendas: 4 pedidos ÷ 200 vendas = 2%; % do faturamento: 53 ÷ 10.000 = 0,53%", [s.pctDasVendas, s.pctDoFaturamento], [2, 0.53]);
 confere("sem venda no período: os percentuais são nulos (tela mostra —), não 0%",
   [relatorioDeReposicoes(montadas, { vendas: 0, valorVendido: 0 }).resumo.pctDasVendas, relatorioDeReposicoes(montadas, { vendas: 0, valorVendido: 0 }).resumo.pctDoFaturamento], [null, null]);
 
 const faltou = res.porMotivo.find((m) => m.motivo === "FALTOU")!, troca = res.porMotivo.find((m) => m.motivo === "TROCA")!;
-confere("Faltou item: 3 reposições, 4 un., refazer R$ 4,00 (+2 sem custo), entrega R$ 18,00, total R$ 22,00",
-  [faltou.rotulo, faltou.reposicoes, faltou.itens, faltou.custoRefazer, faltou.itensSemCusto, faltou.custoEntrega, faltou.custoTotal], ["Faltou item", 3, 4, 4, 2, 18, 22]);
-confere("Veio errado (troca): 3 reposições, 4 un., refazer R$ 28,00, entrega R$ 7,00, total R$ 35,00",
-  [troca.rotulo, troca.reposicoes, troca.itens, troca.custoRefazer, troca.custoEntrega, troca.custoTotal], ["Veio errado (troca)", 3, 4, 28, 7, 35]);
+confere("Faltou item: 3 reposições, 4 un., refazer R$ 0,00 (já estava na venda), só a entrega R$ 18,00 = total R$ 18,00",
+  [faltou.rotulo, faltou.reposicoes, faltou.itens, faltou.custoRefazer, faltou.itensSemCusto, faltou.custoEntrega, faltou.custoTotal], ["Faltou item", 3, 4, 0, 0, 18, 18]);
+confere("Veio errado (troca): 3 reposições, 5 un., refazer R$ 28,00 (+1 sem custo), entrega R$ 7,00, total R$ 35,00",
+  [troca.rotulo, troca.reposicoes, troca.itens, troca.custoRefazer, troca.itensSemCusto, troca.custoEntrega, troca.custoTotal], ["Veio errado (troca)", 3, 5, 28, 1, 7, 35]);
 confere("os dois motivos somam o total", [faltou.custoTotal + troca.custoTotal, faltou.reposicoes + troca.reposicoes], [s.custoTotal, s.reposicoes]);
 
-confere("ranking: Esfiha de Carne na frente (3 reposições), depois por custo, e os sem custo no fim",
+confere("ranking: Esfiha de Carne (3 reposições), Refrigerante (2), depois por custo",
   res.porProduto.map((p) => [p.nome, p.vezes, p.quantidade, p.custo]),
-  [["Esfiha de Carne", 3, 4, 8], ["Combo 11 Esfihas", 1, 1, 22], ["Esfiha de Nevada", 1, 1, 2], ["Esfiha de Calabresa Especial", 1, 1, null], ["Refrigerante", 1, 1, null]]);
-const carne = res.porProduto[0];
-confere("Esfiha de Carne: 1 un. faltou, 3 un. troca", [carne.faltou, carne.troca], [1, 3]);
-confere("sem custo: o que falta, em português de lojista",
-  res.semCusto.map((x) => [x.nome, x.porque]),
-  [["Esfiha de Calabresa Especial", "o nome não está no cardápio"], ["Refrigerante", "sem ficha técnica e sem custo no produto"]]);
+  [["Esfiha de Carne", 3, 4, 6], ["Refrigerante", 2, 2, 0], ["Combo 11 Esfihas", 1, 1, 22], ["Esfiha de Calabresa Especial", 1, 1, 0], ["Esfiha de Nevada", 1, 1, 0]]);
+const carne = res.porProduto[0], refri = res.porProduto[1];
+confere("Esfiha de Carne: 1 un. faltou (R$ 0), 3 un. troca (R$ 6,00)", [carne.faltou, carne.troca, carne.custo], [1, 3, 6]);
+confere("Refrigerante: 1 faltou, 1 troca sem custo cadastrado", [refri.faltou, refri.troca, refri.quantidadeSemCusto, refri.semCustoPorque], [1, 1, 1, "sem ficha técnica e sem custo no produto"]);
+confere("sem custo: só o item refeito em TROCA (o do faltou não precisa de custo)",
+  res.semCusto.map((x) => [x.nome, x.porque, x.quantidade]),
+  [["Refrigerante", "sem ficha técnica e sem custo no produto", 1]]);
 
-const l3 = res.lista.find((l) => l.id === "r3")!;
+const l3 = res.lista.find((l) => l.id === "r3")!, l6 = res.lista.find((l) => l.id === "r6")!;
 confere("lista: mais recentes primeiro", res.lista.map((l) => l.id), ["r6", "r5", "r4", "r3", "r2", "r1"]);
-confere("lista: a reposição só com itens sem custo mostra 'sem custo' (nulo), não R$ 0,00",
-  [l3.custoRefazer, l3.itensSemCusto, l3.custoEntrega, l3.entregaEstimada, l3.custoTotal], [null, 2, 6, true, 6]);
+confere("lista: faltou item com refazer R$ 0,00 e só a entrega (estimada) no total",
+  [l3.custoRefazer, l3.itensSemCusto, l3.custoEntrega, l3.entregaEstimada, l3.custoTotal], [0, 0, 6, true, 6]);
+confere("lista: troca com um item sem custo — soma o que tem custo e conta o que falta", [l6.custoRefazer, l6.itensSemCusto, l6.custoTotal], [2, 1, 2]);
 confere("lista: itens em texto e motivo", [l3.itens, l3.rotulo, l3.original], ["1x Esfiha de Calabresa Especial, 1x Refrigerante", "Faltou item", "20"]);
-confere("por dia: 14/10 (3, R$ 26,00 = 9 + 11 + 6) e 15/10 (3, R$ 31,00 = 22 + 7 + 2)", res.porDia, [{ dia: "2026-10-14", reposicoes: 3, custoTotal: 26 }, { dia: "2026-10-15", reposicoes: 3, custoTotal: 31 }]);
+confere("por dia: 14/10 (3, R$ 24,00 = 7 + 11 + 6) e 15/10 (3, R$ 29,00 = 22 + 5 + 2)", res.porDia, [{ dia: "2026-10-14", reposicoes: 3, custoTotal: 24 }, { dia: "2026-10-15", reposicoes: 3, custoTotal: 29 }]);
 const somaDaLista = Math.round(res.lista.reduce((t, l) => t + l.custoTotal, 0) * 100) / 100;
 confere("a lista soma o custo total do resumo", somaDaLista, s.custoTotal);
+
+// ── 3b. O custo no CMV do DRE ────────────────────────────────────────────────
+
+const noCmv = custoDasReposicoesPorDia([
+  ...REPOSICOES,
+  // Troca cancelada: não entra.
+  { ...rep({ motivo: "TROCA", original: "o5", createdAt: "2026-10-15T19:00:00.000Z", items: [item("carne", 5)] }), status: "CANCELADO" },
+], (it) => custoDoItem(it, catalogo, insumo), TZ);
+confere("CMV, dia 14: troca R$ 4,00 (o refeito); 2 faltou item que não somam nada",
+  noCmv.get("2026-10-14"), { custoDasTrocas: 4, trocas: 1, trocasSemCusto: 0, trocasSemCustoNomes: [], faltou: 2 });
+confere("CMV, dia 15: trocas R$ 24,00 (combo 22 + carne 2), refrigerante sem custo FORA da soma, 1 faltou, a cancelada não entra",
+  noCmv.get("2026-10-15"), { custoDasTrocas: 24, trocas: 2, trocasSemCusto: 1, trocasSemCustoNomes: ["Refrigerante"], faltou: 1 });
 
 // ── 4. A base das vendas ─────────────────────────────────────────────────────
 
@@ -208,6 +232,44 @@ const v = vendasSemReposicoes([
   { id: "r2", createdAt: "2026-10-14T23:40:00Z", status: "ACEITO", totalAmount: 0, reposicao: { pedidoId: "b", numero: "2", motivo: "TROCA" } },
 ]);
 confere("vendas pela régua única sem as reposições: 3 vendas (a, b, a mesa), R$ 141,00", [v.vendas, v.valorVendido], [3, 141]);
+
+// ── 5. Reposição NÃO é venda em lugar nenhum ─────────────────────────────────
+// O dono (16/10/2026): "reposição não é venda, o cliente não paga, é prejuízo".
+// As buscas a tiram no banco (lib/relatorios/sem-reposicao.ts); aqui, as contas
+// puras que a recebem por engano também a recusam.
+
+const base = {
+  franchiseeId: L, status: "ENTREGUE", deliveryType: "DELIVERY", source: "ONLINE", deliveryFee: 0,
+  discountIfood: 0, discountTotal: 0, discountMerchant: 0, notes: null, tableSessionId: null, parentOrderId: null,
+  paymentMethods: null, paymentPaidAt: null, gatewayProvider: null, openDeliveryChannel: null, ifoodOrderId: null,
+  deliveryBy: null, motoboyId: null, motoboyFee: null, deliveryDistance: null, entregaGratis: null, customerAddress: null, reposicao: null,
+};
+const V1 = { ...base, id: "v1", createdAt: "2026-10-14T22:00:00Z", paymentMethod: "Pix", totalAmount: 50, items: [{ price: 50, quantity: 1 }], motoboyId: "lucas", deliveryFee: 7 };
+const V2 = { ...base, id: "v2", createdAt: "2026-10-14T22:30:00Z", paymentMethod: "Dinheiro", totalAmount: 30, items: [{ price: 30, quantity: 1 }], deliveryType: "RETIRADA" };
+const REP = {
+  ...base, id: "rp", createdAt: "2026-10-14T23:00:00Z", status: "ACEITO", source: "PRESENCIAL", paymentMethod: "Pago Online (reposição do #1)",
+  totalAmount: 0, items: [{ price: 0, quantity: 1 }], motoboyId: "lucas", entregaGratis: { valor: 7, motivo: "Reposição do #1" },
+  reposicao: { pedidoId: "v1", numero: "1", motivo: "TROCA" },
+};
+const comRep = [V1, V2, REP] as any[];
+
+confere("régua única: a reposição não entra na venda (entraNaVenda / ehReposicao)", [entraNaVenda(REP), ehReposicao(REP), ehReposicao(V1)], [false, true, false]);
+confere("régua única: 2 vendas, não 3 (atendimentosDaVenda)", atendimentosDaVenda(comRep).vendas, 2);
+const rv = resumoDeVendas(comRep);
+confere("Vendas por período / Início / robô do dono (resumoDeVendas): 2 vendas, R$ 80,00, ticket R$ 40,00 — sem o pedido de R$ 0,00",
+  [rv.atendimentos, rv.pedidos, rv.totalPedidos, rv.ticketMedio, rv.cancelados.pedidos], [2, 2, 80, 40, 0]);
+const rf = formasDePagamento(comRep, [], { de: "2026-10-14", ate: "2026-10-14", tz: TZ });
+confere("Formas de pagamento: sem o 'Pago online (reposição do #1)' de R$ 0,00 — 2 pagamentos, 2 vendas, ticket R$ 40,00",
+  [rf.total.pagamentos, rf.total.contas, rf.vendas.atendimentos, rf.vendas.ticketMedio], [2, 2, 2, 40]);
+const ri = resumoDasVendas(comRep);
+confere("Início (resumo das vendas do quadro): 2 vendas, R$ 80,00", [ri.total.vendas, ri.total.lancamentos, ri.total.valor, ri.total.ticket], [2, 2, 80, 40]);
+const nc = numerosDoCliente([V1, REP]);
+confere("cliente: a reposição não é pedido nem gasto dele (1 pedido, R$ 50,00)", [nc.pedidos, nc.gasto, nc.ticketMedio], [1, 50, 50]);
+const caixaSem = apurarVendasDoTurno([V1, V2], []), caixaCom = apurarVendasDoTurno(comRep, []);
+confere("fechamento de caixa: a reposição não muda o esperado nem o retrato das vendas",
+  [JSON.stringify(caixaCom.expected) === JSON.stringify(caixaSem.expected), JSON.stringify(caixaCom.retrato) === JSON.stringify(caixaSem.retrato)], [true, true]);
+confere("fechamento de caixa: a corrida da reposição continua com o motoboy (o acerto paga), sem dinheiro",
+  [caixaSem.entregasProprias.length, caixaCom.entregasProprias.length, caixaCom.entregasProprias[1]?.formas.length], [1, 2, 0]);
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

@@ -79,7 +79,7 @@
  */
 import { c2, diasNoPeriodo, naLoja, somarDias } from "@/lib/relatorios/base";
 import {
-  atendimentosDaVenda, cent, descontoNoFechamento, entraNaVenda, reais, servicoDasMesas, situacaoDoPedido, temValorImpossivel, totalDosItens,
+  atendimentosDaVenda, cent, descontoNoFechamento, ehReposicao, entraNaVenda, reais, servicoDasMesas, situacaoDoPedido, temValorImpossivel, totalDosItens,
   type MesaFechada, type ServicoDasMesas,
 } from "@/lib/relatorios/regua-da-venda";
 
@@ -299,6 +299,8 @@ export function faturamentoPorDia(e: EntradaDoFaturamento): ResultadoDoFaturamen
   let valoresImpossiveis = 0;
   for (const p of noRecorte) {
     const d = mapa.get(diaDe.get(p.id) as string)!;
+    // Reposição (faltou item / troca) não é venda (regua-da-venda.ts).
+    if (ehReposicao(p)) continue;
     if (temValorImpossivel(p)) { valoresImpossiveis++; continue; }
     const situacao = situacaoDoPedido(p.status);
     if (situacao === "cancelado") { d.canceladosQtd++; d.canceladosValor += cent(p.totalAmount); continue; }

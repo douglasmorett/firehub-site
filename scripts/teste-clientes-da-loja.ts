@@ -99,7 +99,7 @@ if (!db) {
   console.log("\n4) A consulta da lista, num Postgres em memória (PGlite)");
   await db.exec(`
     CREATE TABLE "CustomerOrder" ("id" text, "franchiseeId" text, "customerPhone" text, "customerName" text, "status" text,
-      "totalAmount" double precision, "createdAt" timestamp(3), "tableSessionId" text, "ifoodOrderId" text);
+      "totalAmount" double precision, "createdAt" timestamp(3), "tableSessionId" text, "ifoodOrderId" text, "reposicao" jsonb);
     CREATE TABLE "StoreCustomer" ("phone" text, "name" text, "lojaDeOrigemId" text, "createdAt" timestamp(3));
     CREATE TABLE "CashbackAjuste" ("lojaId" text, "telefone" text, "nome" text, "createdAt" timestamp(3));
     CREATE TABLE "ClienteDaLoja" ("lojaId" text, "chave" text, "nome" text);
@@ -125,6 +125,8 @@ if (!db) {
     await db.query(`INSERT INTO "CustomerOrder" VALUES ($1, $2, $3, $4, $5, $6, $7::timestamp, $8, $9)`, [id, L, tel, nome, status, total, quando, mesa, ifood]);
   }
   await db.query(`INSERT INTO "CustomerOrder" VALUES ('o1', 'outra', '91981060960', 'Erik', 'ENTREGUE', 500, '2026-10-10 20:00:00', NULL, NULL)`);
+  // A troca do pedido e4 (lib/reposicao.ts): R$ 0,00, não é pedido nem gasto do Erik (o dono, 16/10/2026).
+  await db.query(`INSERT INTO "CustomerOrder" VALUES ('e5', $1, '91981060960', 'Erik Bastos', 'ACEITO', 0, '2026-10-11 00:30:00', NULL, NULL, '{"pedidoId":"e4","numero":"4","motivo":"TROCA"}')`, [L]);
   await db.query(`INSERT INTO "StoreCustomer" VALUES ('(91) 8106-0960', 'Erik (Gama)', $1, '2026-09-01 12:00:00')`, [L]);
   await db.query(`INSERT INTO "CashbackAjuste" VALUES ($1, '91981060960', 'Erik B.', '2026-10-03 12:00:00')`, [L]);
 
@@ -142,6 +144,8 @@ if (!db) {
     [erik?.tel, erik?.pedidos, Math.round(erik?.gasto * 100) / 100], ["91981060960", 3, 213.7]);
   confere("primeiro pedido do Erik = o primeiro que CONTA (26/09), não o cancelado de 25/09",
     String(erik?.primeiro).slice(0, 10), "2026-09-26");
+  confere("a reposição (troca de R$ 0,00 em 11/10) não é pedido do Erik: o último continua o de 10/10",
+    String(erik?.ultimo).slice(0, 10), "2026-10-10");
   confere("o cadastro importado (sem o 9) e o lançamento de saldo juntam na mesma linha", [erik?.importado, erik?.saldo], [true, 12.5]);
   confere("Ana (só rascunho do robô) e Dani (esperando pagamento): 0 pedido, R$ 0, sem primeiro pedido",
     [linha("2299990001")?.pedidos, linha("2299990001")?.gasto, linha("2299990001")?.primeiro, linha("2299990003")?.pedidos, linha("2299990003")?.primeiro],
@@ -149,8 +153,8 @@ if (!db) {
   confere("Bia: o 'CANCELLED' (em inglês) não conta — 1 pedido, R$ 30, último em 01/08",
     [linha("2299990002")?.pedidos, linha("2299990002")?.gasto, String(linha("2299990002")?.ultimo).slice(0, 10)], [1, 30, "2026-08-01"]);
   confere("Caio do 99Food entra pelo número sem o ramal", [linha("2191385491")?.tel, linha("2191385491")?.pedidos], ["21991385491", 1]);
-  confere("a ficha do Erik acha os 4 pedidos dele (com e sem o 9), não o do Erik de SP nem o da outra loja",
-    (await rodar(sqlDosPedidosDoCliente(L, chaveDoCliente("91981060960")!))).map((r) => r.id), ["e4", "e3", "e2", "e1"]);
+  confere("a ficha do Erik acha os pedidos dele (com e sem o 9) e a reposição no histórico, não o do Erik de SP nem o da outra loja",
+    (await rodar(sqlDosPedidosDoCliente(L, chaveDoCliente("91981060960")!))).map((r) => r.id), ["e5", "e4", "e3", "e2", "e1"]);
   confere("a ficha do Caio (99Food) acha o pedido pelo número sem o ramal",
     (await rodar(sqlDosPedidosDoCliente(L, chaveDoCliente("21991385491")!))).map((r) => r.id), ["c1"]);
   // O "Editar cadastro" (lib/cadastro-do-cliente.ts): o nome corrigido vence.

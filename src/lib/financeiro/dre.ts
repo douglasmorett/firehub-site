@@ -315,6 +315,17 @@ export type DesperdicioDoDia = {
   /** Valor (preço) dos itens dos cancelados já produzidos que ficaram sem custo. */
   canceladosSemCusto: number;
   lancado: number;
+  /**
+   * Reposições (lib/relatorios/reposicoes.ts, custoDasReposicoesPorDia): o
+   * custo do item REFEITO nas trocas (veio errado). O faltou item só conta —
+   * o custo dele já estava na venda original. Ausente = dado antigo.
+   */
+  reposicoes?: number;
+  trocas?: number;
+  /** Unidades refeitas em troca sem custo cadastrado (fora da soma). */
+  trocasSemCusto?: number;
+  trocasSemCustoNomes?: string[];
+  faltou?: number;
 };
 
 export type DadosDoPeriodo = {
@@ -545,6 +556,13 @@ export type CmvDoDRE = {
   desperdicio: {
     cancelados: { valor: number; pedidos: number; semCusto: number; noCmv: number };
     lancado: { valor: number; noCmv: number };
+    /**
+     * Reposições: o custo do refeito nas TROCAS (o errado já está na venda
+     * original; o refeito é o segundo custo do mesmo item). `faltou` só conta:
+     * o item do faltou é feito pela primeira vez, o custo já estava na venda. A
+     * corrida das duas já está em Entregadores (o acerto do motoboy).
+     */
+    reposicoes: { valor: number; trocas: number; faltou: number; semCusto: number; semCustoNomes: string[]; noCmv: number };
     naContagem: number;
   };
   faltas: FaltaDoCmv[];
@@ -586,6 +604,8 @@ function cmvDoPeriodo(validos: PedidoDoFinanceiro[], dados: DadosDoPeriodo): {
   // (ficha ou custo digitado) e o desperdício entra somado a ele.
   let cDespCancelados = 0, cDespSemCusto = 0, cDespLancado = 0, cDespNaContagem = 0, pedidosDesp = 0;
   let cCanceladosNoCmv = 0, cLancadoNoCmv = 0;
+  let cReposicoes = 0, cReposicoesNoCmv = 0, trocas = 0, faltou = 0, trocasSemCusto = 0;
+  const trocasSemCustoNomes = new Set<string>();
   for (const [dia, d] of Object.entries(info?.desperdicioPorDia || {})) {
     if (dia < dados.de || dia > dados.ate) continue;
     const c = cent(d.cancelados), l = cent(d.lancado);
@@ -595,6 +615,16 @@ function cmvDoPeriodo(validos: PedidoDoFinanceiro[], dados: DadosDoPeriodo): {
     pedidosDesp += d.pedidosCancelados || 0;
     if (dentro(dia)) cDespNaContagem += c + l;
     else { cCanceladosNoCmv += c; cLancadoNoCmv += l; }
+    // A troca baixou o insumo do refeito: nos dias da contagem ele já saiu do
+    // estoque contado (está no CMV real); nos outros, entra somado aqui.
+    const r = cent(d.reposicoes || 0);
+    cReposicoes += r;
+    trocas += d.trocas || 0;
+    faltou += d.faltou || 0;
+    trocasSemCusto += d.trocasSemCusto || 0;
+    for (const n of d.trocasSemCustoNomes || []) trocasSemCustoNomes.add(n);
+    if (dentro(dia)) cDespNaContagem += r;
+    else cReposicoesNoCmv += r;
   }
 
   // Os sem custo dos dias de fora, juntados pelo nome.
@@ -682,6 +712,9 @@ function cmvDoPeriodo(validos: PedidoDoFinanceiro[], dados: DadosDoPeriodo): {
     pendencias.push("o CMV pela contagem deu negativo (o estoque final vale mais que o inicial mais as compras): quase sempre é compra que entrou sem ser lançada, ou contagem com quantidade errada");
   }
   if (info?.erro) pendencias.push("o custo dos produtos (contagem do estoque, fichas técnicas e custo digitado) não pôde ser lido agora — recarregue a página");
+  if (trocasSemCusto > 0) {
+    avisos.push(`${trocasSemCusto} ${trocasSemCusto === 1 ? "unidade refeita" : "unidades refeitas"} em troca (veio errado) sem custo cadastrado ${trocasSemCusto === 1 ? "ficou" : "ficaram"} fora do CMV: ${listaCurta([...trocasSemCustoNomes].sort())}`);
+  }
 
   if (faltaCobertura) {
     const p = Math.round((1 - coberturaFora) * 100);
@@ -729,12 +762,13 @@ function cmvDoPeriodo(validos: PedidoDoFinanceiro[], dados: DadosDoPeriodo): {
     desperdicio: {
       cancelados: { valor: reais(cDespCancelados), pedidos: pedidosDesp, semCusto: reais(cDespSemCusto), noCmv: reais(cCanceladosNoCmv) },
       lancado: { valor: reais(cDespLancado), noCmv: reais(cLancadoNoCmv) },
+      reposicoes: { valor: reais(cReposicoes), trocas, faltou, semCusto: trocasSemCusto, semCustoNomes: [...trocasSemCustoNomes].sort(), noCmv: reais(cReposicoesNoCmv) },
       naContagem: reais(cDespNaContagem),
     },
     faltas,
     completo: !faltaCobertura && !(trecho && real && real.semCustoNaContagem.length) && !(trecho && trecho.cmv < 0) && !info?.erro,
   };
-  return { detalhe, cCmv: cReal + cCustoFora + cCanceladosNoCmv + cLancadoNoCmv, cComCusto: cItensReal + cComCustoFora, pendencias, avisos };
+  return { detalhe, cCmv: cReal + cCustoFora + cCanceladosNoCmv + cLancadoNoCmv + cReposicoesNoCmv, cComCusto: cItensReal + cComCustoFora, pendencias, avisos };
 }
 
 const pct = (parte: number, todo: number) => (todo > 0 ? Math.round((parte / todo) * 10000) / 100 : 0);

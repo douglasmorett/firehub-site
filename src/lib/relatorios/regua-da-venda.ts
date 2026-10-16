@@ -68,6 +68,15 @@
  * do pai: com a regra "acréscimo nunca é venda", aquele dia teria valor sem
  * venda nenhuma.
  *
+ * ── Reposição ───────────────────────────────────────────────────────────────
+ *
+ * O pedido de REPOSIÇÃO (faltou item / veio errado — lib/reposicao.ts) não é
+ * venda em lugar nenhum: R$ 0,00, o cliente não paga, é prejuízo (o dono,
+ * 16/10/2026). As buscas o tiram no banco (lib/relatorios/sem-reposicao.ts,
+ * inclusive pedidosDoRelatorio); aqui `entraNaVenda` o recusa quando o pedido
+ * traz a coluna `reposicao`, para nenhuma conta depender só da busca. O custo
+ * da TROCA vai para o CMV do DRE; o do faltou item já estava na venda.
+ *
  * Testado em scripts/teste-vendas.ts, teste-faturamento-por-dia.ts,
  * teste-data-hora.ts e teste-formas-de-pagamento.ts — cada um confere a sua
  * conta contra esta. scripts/conferir-relatorios-batem.mjs confere os
@@ -152,9 +161,19 @@ export function temValorImpossivel(p: { totalAmount?: number | null; items?: Ite
   return !(Math.abs(itens) < VALOR_IMPOSSIVEL);
 }
 
-/** O pedido entra no valor vendido? Venda (nem cancelado, nem intenção) e valor possível. */
-export function entraNaVenda(p: { status?: string | null; totalAmount?: number | null; items?: ItemDaRegua[] | null }): boolean {
-  return situacaoDoPedido(p.status) === "venda" && !temValorImpossivel(p);
+/**
+ * É pedido de reposição? `reposicao` preenchido (um objeto com o pedido
+ * original). Pedido que não trouxe a coluna (undefined) não é — a busca é que
+ * o tira (lib/relatorios/sem-reposicao.ts).
+ */
+export function ehReposicao(p: object): boolean {
+  const r = (p as { reposicao?: unknown }).reposicao;
+  return Boolean(r && typeof r === "object" && !Array.isArray(r));
+}
+
+/** O pedido entra no valor vendido? Venda (nem cancelado, nem intenção, nem reposição) e valor possível. */
+export function entraNaVenda(p: { status?: string | null; totalAmount?: number | null; items?: ItemDaRegua[] | null; reposicao?: unknown }): boolean {
+  return situacaoDoPedido(p.status) === "venda" && !ehReposicao(p) && !temValorImpossivel(p);
 }
 
 // ── VENDAS (ATENDIMENTOS) ───────────────────────────────────────────────────
@@ -167,6 +186,8 @@ export type PedidoDaRegua = {
   tableSessionId?: string | null;
   parentOrderId?: string | null;
   items?: ItemDaRegua[] | null;
+  /** Pedido de reposição (lib/reposicao.ts): nunca é venda. */
+  reposicao?: unknown;
 };
 
 export type AtendimentosDaVenda = {

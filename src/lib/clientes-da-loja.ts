@@ -133,8 +133,13 @@ export type ResumoDosClientes = {
   saldoTotal: number;
 };
 
-/** Fora da venda (lib/relatorios/base.ts): cancelado nas três grafias, rascunho do robô e pedido esperando pagamento. */
-const FORA_DA_VENDA = Prisma.sql`upper(COALESCE("status", '')) IN (${Prisma.join([...STATUS_FORA_DA_VENDA])})`;
+/**
+ * Fora da venda (lib/relatorios/base.ts): cancelado nas três grafias, rascunho
+ * do robô, pedido esperando pagamento — e o pedido de REPOSIÇÃO (faltou item /
+ * troca, R$ 0,00): não é pedido nem gasto do cliente (lib/relatorios/sem-reposicao.ts).
+ * O histórico do cliente continua mostrando a reposição.
+ */
+const FORA_DA_VENDA = Prisma.sql`(upper(COALESCE("status", '')) IN (${Prisma.join([...STATUS_FORA_DA_VENDA])}) OR "reposicao" IS NOT NULL)`;
 
 /**
  * O telefone da coluna como DDD+número: sem o ramal do 99Food, só dígitos, sem
@@ -452,7 +457,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
             id: true, dailyOrderNumber: true, createdAt: true, status: true, totalAmount: true, deliveryType: true,
             paymentMethod: true, customerName: true, customerAddress: true, customerId: true,
             source: true, ifoodOrderId: true, ifoodReference: true, openDeliveryChannel: true, openDeliveryOrderId: true,
-            cashbackEarned: true, cashbackUsed: true,
+            cashbackEarned: true, cashbackUsed: true, reposicao: true,
           },
         })
       : Promise.resolve([]),

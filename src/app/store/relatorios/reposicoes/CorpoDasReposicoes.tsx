@@ -44,6 +44,16 @@ function Etiqueta({ children, tom = "neutro" }: { children: React.ReactNode; tom
   );
 }
 
+/** Faltou item: não há custo de refazer — o item já estava na venda original. */
+function JaNaVenda() {
+  return (
+    <>
+      <span style={{ color: PALETA.areiaTinta }}>R$ 0,00</span>
+      <div style={suave}>já estava na venda</div>
+    </>
+  );
+}
+
 /** O custo que pode faltar: "sem custo cadastrado" no lugar de um R$ 0,00 que não é verdade. */
 function Custo({ valor, semCusto }: { valor: number | null; semCusto?: number }) {
   if (valor == null) return <span style={{ color: PALETA.atencao, fontWeight: 700, fontSize: "0.78rem" }}>sem custo cadastrado</span>;
@@ -73,24 +83,22 @@ export default function CorpoDasReposicoes({ dados }: { dados: RespostaDasReposi
           detalhe={r.vendas > 0
             ? `${vezes(r.pedidosAfetados, "pedido precisou", "pedidos precisaram")} de reposição, de ${r.vendas.toLocaleString("pt-BR")} vendas`
             : "sem vendas no período para comparar"} />
-        <Cartao rotulo="Custo de refazer" valor={fmtReais(r.custoRefazer)} tom={r.itensSemCusto > 0 ? "atencao" : "neutro"}
-          detalhe={r.itensSemCusto > 0
-            ? `${un(r.itens)} refeitas; ${un(r.itensSemCusto)} sem custo cadastrado (fora da soma)`
-            : `${un(r.itens)} refeitas, pelo custo dos insumos`} />
+        <Cartao rotulo="Custo de refazer (trocas)" valor={fmtReais(r.custoRefazer)} tom={r.itensSemCusto > 0 ? "atencao" : "neutro"}
+          detalhe={`${un(troca?.itens ?? 0)} ${(troca?.itens ?? 0) === 1 ? "refeita" : "refeitas"} em troca${r.itensSemCusto > 0 ? `; ${un(r.itensSemCusto)} sem custo cadastrado (fora da soma)` : ", pelo custo dos insumos"}${(faltou?.itens ?? 0) > 0 ? ` · faltou item não soma: já estava na venda` : ""}`} />
         <Cartao rotulo="Custo de entrega" valor={fmtReais(r.custoEntrega)}
           detalhe={r.entregas > 0
             ? `${vezes(r.entregas, "corrida", "corridas")} a mais do motoboy${r.entregasEstimadas ? ` · ${r.entregasEstimadas} estimada${r.entregasEstimadas === 1 ? "" : "s"}` : ""}`
             : "nenhuma reposição foi de entrega"} />
         <Cartao rotulo="Custo total" valor={fmtReais(r.custoTotal)} tom={r.custoTotal > 0 ? "grave" : "neutro"}
           detalhe={<>{r.pctDoFaturamento != null ? <>{fmtPct(r.pctDoFaturamento, 2)} do faturamento ({fmtReais(r.valorVendido)}) · </> : null}<Variacao atual={r.custoTotal} anterior={dados.anterior.custoTotal} menorEhMelhor /></>} />
-        <Cartao rotulo="Valor do que foi dado de novo" valor={fmtReais(r.valorDeVenda)}
+        <Cartao rotulo="Valor do que foi reposto" valor={fmtReais(r.valorDeVenda)}
           detalhe={`pelo preço do cardápio — referência, não é custo${r.itensSemPreco ? ` · ${un(r.itensSemPreco)} sem preço` : ""}`} />
       </GradeDeCartoes>
 
       {r.itensSemCusto > 0 && (
         <div role="note" style={{ background: PALETA.atencaoClaro, border: `1px solid ${PALETA.atencaoBorda}`, color: PALETA.carvao, borderRadius: 12, padding: "0.75rem 1rem", marginBottom: "1.25rem", fontSize: "0.84rem", lineHeight: 1.5 }}>
           <strong style={{ color: PALETA.atencao }}>{un(r.itensSemCusto)} sem custo cadastrado.</strong>{" "}
-          O custo de refazer mostra só o que tem custo — nada é inventado. Cadastre a ficha técnica (ou o custo no produto) dos itens da lista
+          Itens refeitos em troca: o custo de refazer mostra só o que tem custo — nada é inventado. Cadastre a ficha técnica (ou o custo no produto) dos itens da lista
           “Sem custo cadastrado”, no fim da página, para o número ficar completo.
         </div>
       )}
@@ -115,7 +123,7 @@ export default function CorpoDasReposicoes({ dados }: { dados: RespostaDasReposi
                       <td style={{ ...td, fontWeight: 800 }}>{m.motivo === "TROCA" ? "🔄" : "📦"} {m.rotulo}</td>
                       <td style={{ ...td, ...num, fontWeight: 800 }}>{m.reposicoes}</td>
                       <td style={{ ...td, ...num }}>{m.itens}</td>
-                      <td style={{ ...td, ...num }}><Custo valor={m.itens > 0 && m.itensSemCusto === m.itens ? null : m.custoRefazer} semCusto={m.itensSemCusto < m.itens ? m.itensSemCusto : 0} /></td>
+                      <td style={{ ...td, ...num }}>{m.motivo === "FALTOU" ? <JaNaVenda /> : <Custo valor={m.itens > 0 && m.itensSemCusto === m.itens ? null : m.custoRefazer} semCusto={m.itensSemCusto < m.itens ? m.itensSemCusto : 0} />}</td>
                       <td style={{ ...td, ...num }}>{fmtReais(m.custoEntrega)}</td>
                       <td style={{ ...td, ...num, fontWeight: 800 }}>{fmtReais(m.custoTotal)}</td>
                       <td style={{ ...td, ...num, color: PALETA.areiaTinta }}>{fmtReais(m.valorDeVenda)}</td>
@@ -154,7 +162,7 @@ export default function CorpoDasReposicoes({ dados }: { dados: RespostaDasReposi
                         {p.faltou > 0 && <Etiqueta>📦 faltou {p.faltou}</Etiqueta>}{p.faltou > 0 && p.troca > 0 ? " " : null}
                         {p.troca > 0 && <Etiqueta tom="troca">🔄 troca {p.troca}</Etiqueta>}
                       </td>
-                      <td style={{ ...td, ...num }}><Custo valor={p.custo} semCusto={p.custo != null ? p.quantidadeSemCusto : 0} /></td>
+                      <td style={{ ...td, ...num }}>{p.troca === 0 ? <JaNaVenda /> : <Custo valor={p.troca === p.quantidadeSemCusto ? null : p.custo} semCusto={p.troca > p.quantidadeSemCusto ? p.quantidadeSemCusto : 0} />}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -193,7 +201,7 @@ export default function CorpoDasReposicoes({ dados }: { dados: RespostaDasReposi
                       <td style={{ ...td, wordBreak: "break-word", maxWidth: 180 }}>{l.cliente}</td>
                       <td style={{ ...td, whiteSpace: "nowrap" }}>{l.motivo === "TROCA" ? <Etiqueta tom="troca">🔄 {l.rotulo}</Etiqueta> : <Etiqueta>📦 {l.rotulo}</Etiqueta>}</td>
                       <td style={{ ...td, wordBreak: "break-word", maxWidth: 300 }}>{l.itens}</td>
-                      <td style={{ ...td, ...num }}><Custo valor={l.custoRefazer} semCusto={l.custoRefazer != null ? l.itensSemCusto : 0} /></td>
+                      <td style={{ ...td, ...num }}>{l.motivo === "FALTOU" ? <JaNaVenda /> : <Custo valor={l.custoRefazer} semCusto={l.custoRefazer != null ? l.itensSemCusto : 0} />}</td>
                       <td style={{ ...td, ...num }} title={l.entregaDetalhe}>
                         {l.tipo === "DELIVERY" ? fmtReais(l.custoEntrega) : <span style={{ color: PALETA.areiaTinta }}>—</span>}
                         {l.entregaEstimada && <div style={{ ...suave, color: PALETA.atencao }}>estimada</div>}
@@ -233,10 +241,12 @@ export default function CorpoDasReposicoes({ dados }: { dados: RespostaDasReposi
       <p style={{ fontSize: "0.78rem", color: PALETA.areiaTinta, marginTop: "1rem", lineHeight: 1.55 }}>
         A reposição é o pedido de R$ 0,00 que nasce nas abas <strong>📦 Faltou item</strong> e <strong>🔄 Veio errado (troca)</strong> do Ver pedido. Reposição cancelada não entra.
         Ela conta no dia e na hora em que foi lançada; os filtros de tipo, canal e marca olham o pedido original.
-        O <strong>custo de refazer</strong> é o custo dos insumos pela ficha técnica, no dia da reposição (sem ficha, o custo cadastrado no produto) — a mesma conta do CMV do DRE. Item sem custo cadastrado fica fora da soma e é contado à parte.
+        No <strong>faltou item</strong>, o item não tinha sido feito: ele é feito agora pela primeira vez e o custo dele já estava na venda — o prejuízo é só a nova entrega.
+        Na <strong>troca</strong>, o errado já foi feito e o certo é feito de novo: o <strong>custo de refazer</strong> é o custo dos insumos do que foi refeito, pela ficha técnica no dia da reposição (sem ficha, o custo cadastrado no produto) — a mesma conta do CMV do DRE, onde ele entra na linha “Reposições (troca)”. Item sem custo cadastrado fica fora da soma e é contado à parte.
+        A reposição não conta como venda em nenhum relatório.
         O <strong>custo de entrega</strong> é o que o acerto paga ao motoboy pela corrida a mais (sem motoboy marcado, a taxa da entrega do pedido original). Nas reposições anteriores a 15/10/2026 essa taxa não ficava gravada e foi <strong>estimada</strong> pela do pedido original.
         O <strong>% das vendas</strong> é quantos pedidos precisaram de reposição sobre as vendas do período (as próprias reposições não contam como venda); o <strong>% do faturamento</strong> é o custo total sobre o valor vendido, o mesmo do Vendas por período.
-        O valor do que foi dado de novo é o preço de hoje no cardápio — serve de referência, não é custo.
+        O valor do que foi reposto é o preço de hoje no cardápio — serve de referência, não é custo.
       </p>
     </>
   );

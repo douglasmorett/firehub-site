@@ -19,9 +19,24 @@
  * e, quando o nome não existe no cardápio, a rota deixa o produto do COMBO
  * (é o que dá a categoria no KDS). Reposição cancelada não conta.
  *
+ * ── O que é prejuízo (o dono, 16/10/2026) ───────────────────────────────────
+ *
+ * "Se não foi feita, só o custo da entrega de novo; se refez, o custo é do
+ * primeiro e do segundo."
+ *
+ *  • FALTOU ITEM: o item não tinha sido feito. Ele é feito agora pela primeira
+ *    vez, e o custo dele JÁ está no CMV da venda do pedido original. Custo de
+ *    produto a mais = R$ 0,00; o prejuízo é só a corrida de novo.
+ *  • VEIO ERRADO (TROCA): o errado já entrou no CMV pela venda original; o
+ *    refeito é custo A MAIS — no relatório (custo de refazer) e no CMV do DRE
+ *    (`custoDasReposicoesPorDia`, linha "Reposições (troca)").
+ *  • A ENTREGA, nos dois: o acerto do motoboy já a paga (e o DRE já a lança
+ *    em "Entregadores"); o relatório só a mostra.
+ *  • Reposição não é venda em lugar nenhum (lib/relatorios/sem-reposicao.ts).
+ *
  * ── As réguas ───────────────────────────────────────────────────────────────
  *
- *  • CUSTO DE REFAZER: a mesma régua do CMV do DRE (lib/financeiro/custo-pela-ficha.ts):
+ *  • CUSTO DE REFAZER (só TROCA): a mesma régua do CMV do DRE (lib/financeiro/custo-pela-ficha.ts):
  *    ficha técnica × custo do insumo NO DIA da reposição; combo pela ficha
  *    das opções; sem ficha, o custo digitado no produto (`MenuProduct.cost`).
  *    Sem nada disso o item fica SEM CUSTO — não entra na soma e a tela conta
@@ -48,7 +63,7 @@ import { lerEscolhas, type CustoDoItem, type ItemParaCusto, type MotivoSemCusto 
 import type { RegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { lerReposicao, type MotivoDaReposicao } from "@/lib/reposicao";
 import { c2, naLoja } from "@/lib/relatorios/base";
-import { atendimentosDaVenda, entraNaVenda, type PedidoDaRegua } from "@/lib/relatorios/regua-da-venda";
+import { atendimentosDaVenda, entraNaVenda, situacaoDoPedido, type PedidoDaRegua } from "@/lib/relatorios/regua-da-venda";
 
 export const MOTIVOS: MotivoDaReposicao[] = ["FALTOU", "TROCA"];
 
@@ -232,9 +247,14 @@ export type PedidoOriginal = PedidoParaGanho & {
 export type ItemDaReposicaoMontado = {
   nome: string;
   quantidade: number;
-  /** Nulo = sem custo cadastrado (não entra na soma). */
+  /**
+   * O custo A MAIS de refazer. TROCA: o custo do refeito (nulo = sem custo
+   * cadastrado, fora da soma). FALTOU: 0 — o item já estava na venda original.
+   */
   custo: number | null;
   fonte: CustoDoItem["fonte"];
+  /** FALTOU: o item já estava na venda do pedido original; só a entrega é prejuízo. */
+  jaNaVenda: boolean;
   /** O que falta para ter custo ("sem ficha técnica…"). */
   semCustoPorque: string | null;
   valorDeVenda: number | null;
@@ -278,12 +298,18 @@ export function montarReposicoes(pedidos: PedidoDeReposicao[], ctx: ContextoDaMo
     for (const i of p.items || []) {
       if (!((Number(i.quantity) || 0) > 0)) continue;
       const { item } = itemParaCusto(i);
+      if (r.motivo === "FALTOU") {
+        // Feito agora pela primeira vez: o custo já está no CMV da venda original.
+        itens.push({ nome: item.nome || "Item", quantidade: item.quantidade, custo: 0, fonte: null, jaNaVenda: true, semCustoPorque: null, valorDeVenda: valorDeVendaDoItem(i) });
+        continue;
+      }
       const c = ctx.custoDoItem(p.franchiseeId, item, onde.dia);
       itens.push({
         nome: item.nome || "Item",
         quantidade: item.quantidade,
         custo: c.custo,
         fonte: c.fonte,
+        jaNaVenda: false,
         semCustoPorque: c.custo == null ? textoDasFaltas(c) : null,
         valorDeVenda: valorDeVendaDoItem(i),
       });
@@ -514,4 +540,59 @@ export function relatorioDeReposicoes(reps: ReposicaoMontada[], vendas: VendasDo
     semCusto,
     lista,
   };
+}
+
+// ── O CUSTO DAS REPOSIÇÕES NO CMV DO DRE ────────────────────────────────────
+
+/** O que as reposições de um dia operacional põem no CMV (lib/financeiro/dre.ts). */
+export type ReposicoesNoCmvDoDia = {
+  /** Custo dos itens refeitos nas TROCAS (com custo cadastrado). */
+  custoDasTrocas: number;
+  trocas: number;
+  /** Unidades refeitas em troca sem custo cadastrado — fora da soma. */
+  trocasSemCusto: number;
+  trocasSemCustoNomes: string[];
+  /** Reposições de FALTOU ITEM: só contadas (o custo já estava na venda). */
+  faltou: number;
+};
+
+export type PedidoDeReposicaoNoDre = {
+  createdAt: Date | string;
+  status?: string | null;
+  reposicao: unknown;
+  items: ItemGravado[];
+};
+
+/**
+ * O custo de PRODUTO das reposições, por dia operacional, para o CMV do DRE e
+ * do Financeiro. Só a TROCA soma (o refeito é o segundo custo do mesmo item);
+ * o FALTOU ITEM só conta (o item é feito pela primeira vez e o custo já está
+ * na venda do original). Reposição cancelada não entra. Item de troca sem
+ * custo cadastrado fica fora da soma, com o nome — nada é inventado.
+ */
+export function custoDasReposicoesPorDia(
+  pedidos: PedidoDeReposicaoNoDre[],
+  custoDoItem: (item: ItemParaCusto, dia: string) => CustoDoItem,
+  tz: string,
+): Map<string, ReposicoesNoCmvDoDia> {
+  const porDia = new Map<string, ReposicoesNoCmvDoDia & { c: number }>();
+  for (const p of pedidos) {
+    const r = lerReposicao(p.reposicao);
+    if (!r || situacaoDoPedido(p.status) !== "venda") continue;
+    const dia = naLoja(new Date(p.createdAt), tz).dia;
+    let d = porDia.get(dia);
+    if (!d) { d = { custoDasTrocas: 0, trocas: 0, trocasSemCusto: 0, trocasSemCustoNomes: [], faltou: 0, c: 0 }; porDia.set(dia, d); }
+    if (r.motivo === "FALTOU") { d.faltou++; continue; }
+    d.trocas++;
+    for (const i of p.items || []) {
+      if (!((Number(i.quantity) || 0) > 0)) continue;
+      const c = custoDoItem(itemParaCusto(i).item, dia);
+      if (c.custo != null) d.c += cent(c.custo);
+      else {
+        d.trocasSemCusto += Number(i.quantity) || 0;
+        if (!d.trocasSemCustoNomes.includes(c.nome)) d.trocasSemCustoNomes.push(c.nome);
+      }
+    }
+  }
+  return new Map([...porDia].map(([dia, { c, ...d }]) => [dia, { ...d, custoDasTrocas: reais(c) }]));
 }

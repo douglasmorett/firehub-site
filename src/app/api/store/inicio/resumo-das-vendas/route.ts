@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { SEM_REPOSICAO } from "@/lib/relatorios/sem-reposicao";
 import { funcionarioAbre } from "@/lib/permissao-da-tela";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import { FUSO_PADRAO } from "@/lib/fuso";
@@ -76,7 +77,8 @@ export async function GET(req: NextRequest) {
   const lojaIds = Array.from(new Set([lojaDona, usuario.id, usuario.ownerId, ...(visao.todas ? visao.lojaIds : [])].filter(Boolean))) as string[];
 
   const pedidos = await prisma.customerOrder.findMany({
-    where: { franchiseeId: { in: lojaIds }, createdAt: { gte: inicio, lt: fim } },
+    // Reposição (faltou item / troca) não é venda (lib/relatorios/sem-reposicao.ts).
+    where: { franchiseeId: { in: lojaIds }, createdAt: { gte: inicio, lt: fim }, ...SEM_REPOSICAO },
     select: {
       id: true, createdAt: true, status: true, totalAmount: true, deliveryType: true, source: true,
       tableSessionId: true, parentOrderId: true, paymentMethods: true,

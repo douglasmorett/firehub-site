@@ -231,6 +231,13 @@ export default function AbaDRE({
               detalhe={`${fmtR(desp.lancado.valor)} lançados em Estoque › Desperdício, Movimentar › Perda e no FireCheck${desp.naContagem > 0 ? " · nos dias da contagem do estoque já está dentro do CMV real" : ""}`} />
           </>
         )}
+        {/* Reposições (o dono, 16/10/2026): a TROCA é refeita — o custo do
+            refeito entra no CMV; o faltou item já estava na venda original. A
+            corrida das duas já está em Entregadores. Ausente em dado antigo. */}
+        {desp?.reposicoes && (desp.reposicoes.trocas > 0 || desp.reposicoes.faltou > 0) && (
+          <DRERow indent={1} label="Reposições (troca — item refeito)" value={-desp.reposicoes.noCmv} color={vermelho}
+            detalhe={`${fmtNum(desp.reposicoes.trocas)} ${desp.reposicoes.trocas === 1 ? "troca" : "trocas"} (veio errado): ${fmtR(desp.reposicoes.valor)} pelo custo do que foi refeito${desp.reposicoes.semCusto > 0 ? ` · ${fmtNum(desp.reposicoes.semCusto)} ${desp.reposicoes.semCusto === 1 ? "unidade" : "unidades"} sem custo cadastrado ficam de fora` : ""}${desp.reposicoes.faltou > 0 ? ` · ${fmtNum(desp.reposicoes.faltou)} de faltou item não somam: o item já estava na venda, o custo é só a nova entrega (em Entregadores)` : ""}${desp.naContagem > 0 ? " · nos dias da contagem do estoque já está dentro do CMV real" : ""}`} />
+        )}
         <DRERow label="(=) LUCRO BRUTO" value={dre.lucroBruto} bold border color={corDoValor(dre.lucroBruto)} />
 
         <TituloDaSecao cor="#E11D48" fundo="#FFF1F2">CUSTOS QUE ANDAM COM A VENDA</TituloDaSecao>

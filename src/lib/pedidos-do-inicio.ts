@@ -28,6 +28,7 @@
  */
 
 import { prisma } from "@/lib/prisma";
+import { SEM_REPOSICAO } from "@/lib/relatorios/sem-reposicao";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
 import { inicioDoDiaOperacional, MAIOR_PERIODO_EM_DIAS, type PedidoDaTelaInicio } from "@/lib/numeros-do-inicio";
@@ -72,6 +73,8 @@ export async function pedidosDoInicio({
         ? { franchiseeId: { in: franchiseeId } }
         : franchiseeId ? { franchiseeId } : {}),
       createdAt: ate ? { gte: desde, lte: ate } : { gte: desde },
+      // Reposição (faltou item / troca) não é venda: fora dos números da Início.
+      ...SEM_REPOSICAO,
     },
     orderBy: { createdAt: "desc" },
     select: {

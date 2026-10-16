@@ -72,7 +72,10 @@ export async function GET(req: NextRequest) {
   // período; e vai até a folga depois do fim, para a correção que chega depois.
   const fimDaLeitura = new Date(ctx.fim.getTime() + DIAS_DE_FOLGA * 86_400_000);
   const [vendas, insumos, lidos, fichas] = await Promise.all([
+    // Com as reposições: não são venda, mas a TROCA baixa insumo
+    // (api/store/orders/[id]/reposicao) e o consumo tem de aparecer.
     pedidosDoRelatorio(ctx, {
+      comReposicoes: true,
       select: {
         items: {
           select: {

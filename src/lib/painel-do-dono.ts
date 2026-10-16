@@ -24,6 +24,7 @@
  * período" (src/lib/resumo-do-dono.ts).
  */
 import { prisma } from "@/lib/prisma";
+import { SEM_REPOSICAO } from "@/lib/relatorios/sem-reposicao";
 import { inicioDoDiaDaLoja, inicioDoExpedienteDaLoja } from "@/lib/fuso";
 import { hojeNaLoja } from "@/lib/relatorios/base";
 import { inicioDoDiaOperacional } from "@/lib/numeros-do-inicio";
@@ -208,7 +209,8 @@ export async function montarResumoGerencial(
     await Promise.all([
       // Com cancelados e rascunhos: o resumoDeVendas põe cada um na sua situação.
       prisma.customerOrder.findMany({
-        where: { franchiseeId, createdAt: { gte: inicioDoTurno, lte: agora } },
+        // Reposição (faltou item / troca) não é venda (lib/relatorios/sem-reposicao.ts).
+        where: { franchiseeId, createdAt: { gte: inicioDoTurno, lte: agora }, ...SEM_REPOSICAO },
         select: {
           id: true, franchiseeId: true, createdAt: true, status: true, totalAmount: true,
           deliveryType: true, source: true, tableSessionId: true, parentOrderId: true, totemLicenseId: true,
