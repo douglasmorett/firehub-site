@@ -23,6 +23,8 @@
  * Teste: scripts/teste-cadastro-da-entrega.ts
  */
 
+import { lerApelidos } from "./bairro-pelo-endereco";
+
 /** Uma faixa de distância (modos KM e ROTA). `km` é o limite INCLUSIVO: "até X km". */
 export type FaixaDeKm = {
   km: number;
@@ -46,6 +48,8 @@ export type BairroDoCadastro = {
   minimo?: number;
   motoboyFee?: number;
   repasseAcimaDaTaxa?: true;
+  /** Outros jeitos de o endereço escrever este bairro ("AR 1 a AR 24", "Dnocs"): lib/bairro-pelo-endereco.ts. */
+  aliases?: string[];
 };
 
 /** Área desenhada: `repasse` é o nome que lib/area-de-entrega.ts lê. */
@@ -330,7 +334,7 @@ export function normalizarBairros(bruto: unknown): ResultadoDoCadastro<BairroDoC
   }
 
   const vistos = new Map<string, number>();
-  const lidos: { i: number; name: string; v: Valores; minimo: number | null; confirmado: boolean }[] = [];
+  const lidos: { i: number; name: string; v: Valores; minimo: number | null; confirmado: boolean; aliases: string[] }[] = [];
   bruto.forEach((z: any, i: number) => {
     const name = String(z?.name ?? z?.nome ?? "").replace(/\s+/g, " ").trim();
     if (!name) {
@@ -353,7 +357,7 @@ export function normalizarBairros(bruto: unknown): ResultadoDoCadastro<BairroDoC
       else if (minimo > L.minimoMax) { problemas.push({ indice: i, campo: "minimo", nivel: "erro", mensagem: `${rotulo}: pedido mínimo de ${formatarReais(minimo)} — confira a vírgula (máximo ${formatarReais(L.minimoMax)}).` }); minimo = null; }
       else minimo = centavos(minimo);
     }
-    lidos.push({ i, name, v, minimo, confirmado: z?.repasseAcimaDaTaxa === true });
+    lidos.push({ i, name, v, minimo, confirmado: z?.repasseAcimaDaTaxa === true, aliases: lerApelidos(z) });
   });
 
   if (lidos.length === 0) {
@@ -368,6 +372,7 @@ export function normalizarBairros(bruto: unknown): ResultadoDoCadastro<BairroDoC
       time: b.v.time as number,
       fee: b.v.fee as number,
       ...(b.minimo != null ? { minimo: b.minimo } : {}),
+      ...(b.aliases.length ? { aliases: b.aliases } : {}),
       ...(b.v.repasse != null ? { motoboyFee: b.v.repasse } : {}),
       ...(b.v.repasse != null && b.v.repasse > (b.v.fee as number) && b.confirmado ? { repasseAcimaDaTaxa: true as const } : {}),
     }));

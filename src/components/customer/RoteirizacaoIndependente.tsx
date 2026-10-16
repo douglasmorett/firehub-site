@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import { criarFeedDePedidos } from "@/lib/feed-de-pedidos";
+import type { ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
 
 /**
  * Casca da página /store/roteirizacao: mantém a lista de pedidos viva e
@@ -25,6 +26,8 @@ export default function RoteirizacaoIndependente({
     slug?: string | null;
     storeLatLng?: any;
     storeName?: string | null;
+    /** Os bairros da loja que cobra por bairro (lib/bairro-pelo-endereco.ts). */
+    bairrosDaLoja?: ZonaComApelidos[];
   };
   initialOrders: any[];
 }) {
@@ -89,6 +92,7 @@ export default function RoteirizacaoIndependente({
       storeSlug={user.slug || undefined}
       storeId={user.id}
       storeLatLng={user.storeLatLng}
+      bairrosDaLoja={user.bairrosDaLoja}
       onRefreshOrders={() => { ultimoCorpo.current = ""; void carregar(); }}
     />
   );

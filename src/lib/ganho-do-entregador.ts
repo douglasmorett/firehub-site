@@ -28,6 +28,7 @@
 import { lerFaixasDoMotoboy, valorDaFaixa, type FaixaDoMotoboy } from "./faixas-do-motoboy";
 import { repasseDoPedido, type RegraDeRepasse } from "./repasse-do-entregador";
 import { lerEntregaGratis } from "./entrega-gratis";
+import { bairroPeloEndereco } from "./bairro-pelo-endereco";
 
 /** De onde saiu o valor deste pedido — para a tela explicar em vez de o lojista adivinhar. */
 export type OrigemDoGanho =
@@ -110,6 +111,8 @@ export type PedidoParaGanho = {
   deliveryDistance?: number | null;
   /** {valor, motivo} da entrega que o cliente não pagou (lib/entrega-gratis.ts). */
   entregaGratis?: unknown;
+  /** O endereço em texto: no pedido de app, é dele que sai o bairro da tabela (bairroDoPedidoDeApp). */
+  customerAddress?: string | null;
   [k: string]: any;
 };
 
@@ -135,7 +138,8 @@ export function taxaDaCorrida(pedido: PedidoParaGanho): number {
  *   1. o que ficou gravado NO PEDIDO (`motoboyFee`) — é história, não regra
  *   2. o acerto individual deste entregador (faixa dele / km / por entrega)
  *   3. a REGRA da loja: faixa ou bairro cadastrado, ou — em pedido de app — o
- *      valor que veio do app, quando foi isso que a loja escolheu
+ *      valor que veio do app, quando foi isso que a loja escolheu. No app pela
+ *      tabela, o bairro sai do texto do endereço (bairroDoPedidoDeApp)
  *   4. a taxa que o cliente pagou — último recurso, com aviso na tela
  */
 export function ganhoDoPedido(args: {
@@ -178,6 +182,7 @@ export function ganhoDoPedido(args: {
       regra: regraDaLoja,
       zonas,
       km: pedido.deliveryDistance,
+      bairro: bairroDoPedidoDeApp(pedido, regraDaLoja, zonas, ehMarketplace),
       taxaDaEntrega: taxaDaCorrida(pedido),
       ehMarketplace,
     });
@@ -196,6 +201,33 @@ export function ganhoDoPedido(args: {
   }
 
   return { valor: centavos(taxaDaCorrida(pedido)), origem: "TAXA_DO_CLIENTE" };
+}
+
+/**
+ * O bairro cadastrado do pedido de APP, quando a loja cobra por bairro e paga
+ * o motoboy pela TABELA também no app.
+ *
+ * O pedido do site grava o repasse na venda (`motoboyFee`, passo 1). O de
+ * iFood/99Food/Wabiz chega com o endereço num texto livre e sem bairro da
+ * loja, e o repasse era procurado só pela distância — que loja por bairro não
+ * tem —, caindo na taxa que o app cobrou do cliente. Na NIK (15/10/2026) o
+ * acerto pagava R$ 6,99 do iFood numa entrega da Quadra 3 que a tabela paga
+ * R$ 5,00. Aqui o bairro sai do texto (lib/bairro-pelo-endereco.ts); não
+ * achou = null, e o acerto segue como antes.
+ *
+ * Só no app com "pagar pela tabela": no "valor do app" e no "valor fixo" a
+ * tabela não entra, e no pedido próprio o que vale é o gravado na venda.
+ */
+function bairroDoPedidoDeApp(
+  pedido: PedidoParaGanho,
+  regra: RegraDeRepasse,
+  zonas: unknown,
+  ehMarketplace: boolean | undefined,
+): string | null {
+  if (!ehMarketplace || !regra.separado || regra.marketplace !== "TABELA") return null;
+  const endereco = typeof pedido.customerAddress === "string" ? pedido.customerAddress : null;
+  if (!endereco) return null;
+  return bairroPeloEndereco(endereco, zonas)?.name ?? null;
 }
 
 /** Número >= 0 gravado no pedido, ou null. Vazio, texto e negativo são "não gravado". */

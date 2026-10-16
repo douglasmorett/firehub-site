@@ -22,6 +22,7 @@ import {
 import MandeSeusBairros from "@/components/customer/MandeSeusBairros";
 import { MapPin, Search, Plus, Trash2, Check, Loader2, Navigation, Pencil } from "lucide-react";
 import { bairroComNomeDosCorreios } from "@/lib/bairro-dos-correios";
+import { lerApelidos } from "@/lib/bairro-pelo-endereco";
 
 const ZONE_COLORS = ["#C92E09", "#FB8C00", "#43A047", "#1E88E5", "#8E24AA", "#00ACC1"];
 
@@ -82,7 +83,12 @@ const CORES_DA_AREA = ["#0F766E", "#1C1917", "#44403C", "#E8590C", "#0F766E", "#
 type FaixaNaTela = { id: string; km: number | null; time: number | null; fee: number | null; motoboyFee: number | null };
 /** Bairro atendido (modo NEIGHBORHOOD). */
 /** `minimo`: pedido mínimo só deste bairro; null = vale o geral da loja (lib/minimo-do-bairro.ts). */
-type BairroNaTela = { id: string; name: string; time: number | null; fee: number | null; motoboyFee: number | null; minimo: number | null };
+/**
+ * `aliases`: outros jeitos de o endereço escrever este bairro ("AR 1 a AR 24",
+ * "Dnocs") — lib/bairro-pelo-endereco.ts. Sem campo na tela por enquanto; a
+ * lista só atravessa o salvar, para a loja não perder o que foi gravado.
+ */
+type BairroNaTela = { id: string; name: string; time: number | null; fee: number | null; motoboyFee: number | null; minimo: number | null; aliases?: string[] };
 /** Área desenhada (modo POLIGONO; lib/area-de-entrega.ts lê `pontos`, `fee`, `time` e `repasse`). */
 type AreaNaTela = { id: string; nome: string; pontos: [number, number][]; fee: number | null; time: number | null; repasse: number | null };
 
@@ -460,6 +466,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
           fee: numeroOuNulo(z.fee),
           motoboyFee: numeroOuNulo(z.motoboyFee),
           minimo: numeroOuNulo(z.minimo),
+          ...(lerApelidos(z).length ? { aliases: lerApelidos(z) } : {}),
         }))
       : BAIRROS_DE_EXEMPLO.map((b) => ({ id: novoId("b"), ...b, motoboyFee: null, minimo: null }));
   });
@@ -1256,6 +1263,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
       return bairros.map((b) => ({
         name: b.name, time: b.time, fee: b.fee,
         ...(b.minimo != null ? { minimo: b.minimo } : {}),
+        ...(b.aliases?.length ? { aliases: b.aliases } : {}),
         ...(repassePorFaixa && b.motoboyFee != null ? { motoboyFee: b.motoboyFee } : {}),
         ...marcar(b.fee, b.motoboyFee),
       }));

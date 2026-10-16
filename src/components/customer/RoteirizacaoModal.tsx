@@ -27,6 +27,7 @@ import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { rotaJaDespachada, rotasComLinha, pontosDaLinha, podarCoordenadas } from "@/lib/rotas-no-mapa";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
+import { bairroPeloEndereco, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
 
 // ── Aviso que desce do topo (no lugar do alert()) ─────────────────────────
 // Mesma interface do components/AvisoNoTopo.tsx de outra frente, que ainda não
@@ -295,6 +296,14 @@ interface RoteirizacaoModalProps {
    * está nela) e "Fechar" fecha a própria aba.
    */
   modoIndependente?: boolean;
+  /**
+   * Os bairros cadastrados da loja que cobra por bairro (nome + apelidos;
+   * lib/bairro-pelo-endereco.ts, `zonasDeBairro`). Com eles, o "Bairro:" do
+   * cartão mostra o bairro DA LOJA que o endereço indica — o pedido de app
+   * chega com "... - Sobradinho - Brasília" ou "- QUADRA 12 - Brasília/DF", e
+   * o cartão mostrava "Bairro: Brasília/DF". Vazio = como sempre.
+   */
+  bairrosDaLoja?: ZonaComApelidos[];
 }
 
 /**
@@ -343,6 +352,7 @@ export default function RoteirizacaoModal({
   storeLatLng = null,
   onRefreshOrders,
   onUpdateOrderStatus,
+  bairrosDaLoja,
   modoIndependente = false
 }: RoteirizacaoModalProps) {
   const [activeTab, setActiveTab] = useState<"PENDING" | "ROTAS">("PENDING");
@@ -2382,7 +2392,12 @@ ${mapsUrl}`;
 
                               {/* Bairro em Destaque & Endereço Completo sem cortes */}
                               {(() => {
-                                const { neighborhood, fullAddress } = parseAddressDetails(addrText);
+                                const lido = parseAddressDetails(addrText);
+                                const { fullAddress } = lido;
+                                // Só o RÓTULO: a busca no mapa continua com o bairro lido do texto.
+                                const neighborhood = (bairrosDaLoja?.length
+                                  ? bairroPeloEndereco(addrText, bairrosDaLoja, { cidades: [storeCity] })?.name
+                                  : null) || lido.neighborhood;
                                 const isMapped = Boolean(geocodedMap[order.id]);
                                 return (
                                   <div style={{ margin: "3px 0 5px 0" }}>

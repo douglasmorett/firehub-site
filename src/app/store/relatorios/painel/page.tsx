@@ -103,6 +103,10 @@ export default async function StoreRelatoriosPage() {
         ifoodStoreMerchant: true, food99AppShopId: true, food99ShopId: true,
         ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryChannel: true, openDeliveryReference: true,
         motoboyId: true, motoboyFee: true, deliveryDistance: true, entregaGratis: true,
+        // O pedido de app pago pela tabela de BAIRRO acha o bairro no texto do
+        // endereço (lib/ganho-do-entregador.ts) — sem ele, o custo daqui diverge
+        // do acerto do motoboy.
+        customerAddress: true,
         acceptedAt: true, readyAt: true, dispatchedAt: true, deliveredAt: true,
         kdsProductionAt: true, kdsFinishingAt: true, scheduledDatetime: true,
         items: {

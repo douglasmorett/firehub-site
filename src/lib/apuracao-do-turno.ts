@@ -177,7 +177,8 @@ export type MesaDoTurno = {
 export type EntregaPropria = {
   motoboyId: string;
   formas: Forma[];
-  pedido: { motoboyFee: number | null; deliveryFee: number | null; deliveryDistance: number | null; entregaGratis?: unknown };
+  /** `customerAddress`: no pedido de app pago pela tabela, o bairro sai dele (lib/ganho-do-entregador.ts). */
+  pedido: { motoboyFee: number | null; deliveryFee: number | null; deliveryDistance: number | null; entregaGratis?: unknown; customerAddress?: string | null };
   ehMarketplace: boolean;
   /** O troco que o motoboy levou da loja para a nota do cliente ("troco para 100"): ele devolve junto. */
   trocoLevado: number;
@@ -402,7 +403,7 @@ export function apurarVendasDoTurno(pedidos: any[], mesasFechadas: MesaDoTurno[]
         entregasProprias.push({
           motoboyId: o.motoboyId,
           formas,
-          pedido: { motoboyFee: o.motoboyFee ?? null, deliveryFee: o.deliveryFee ?? null, deliveryDistance: o.deliveryDistance ?? null, entregaGratis: o.entregaGratis },
+          pedido: { motoboyFee: o.motoboyFee ?? null, deliveryFee: o.deliveryFee ?? null, deliveryDistance: o.deliveryDistance ?? null, entregaGratis: o.entregaGratis, customerAddress: o.customerAddress ?? null },
           ehMarketplace: canalDoPedido(o).ehMarketplace,
           trocoLevado: reais(trocoLevado),
         });

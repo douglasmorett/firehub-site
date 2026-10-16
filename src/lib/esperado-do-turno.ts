@@ -84,7 +84,7 @@ export async function calcularEsperadoDoTurno(
   let entregadores: DetalheDoTurno["entregadores"] = [];
   // As entregas canceladas DEPOIS de o motoboy sair: são corrida (a régua do
   // acerto, lib/resumo-do-entregador.ts) e vão para o "a pagar" do papel.
-  let corridasCanceladas: { motoboyId: string; pedido: { motoboyFee: number | null; deliveryFee: number | null; deliveryDistance: number | null; entregaGratis?: unknown }; ehMarketplace: boolean }[] = [];
+  let corridasCanceladas: { motoboyId: string; pedido: { motoboyFee: number | null; deliveryFee: number | null; deliveryDistance: number | null; entregaGratis?: unknown; customerAddress?: string | null }; ehMarketplace: boolean }[] = [];
   let maisVendidos: ParteDoRetrato[] = [];
 
   const orders = await prisma.customerOrder.findMany({
@@ -108,6 +108,8 @@ export async function calcularEsperadoDoTurno(
     select: { id: true, parentOrderId: true, status: true, paymentMethod: true, paymentMethods: true, totalAmount: true, source: true, paymentPaidAt: true, gatewayProvider: true, deliveryFee: true, discountIfood: true, discountTotal: true, discountMerchant: true, notes: true, tableSessionId: true, openDeliveryChannel: true, discountDetails: true,
       ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true,
       createdAt: true, dailyOrderNumber: true, customerName: true, employeeName: true, deliveryType: true, deliveryBy: true, motoboyId: true, motoboyFee: true, deliveryDistance: true, entregaGratis: true,
+      // O bairro do pedido de app pago pela tabela da loja sai do texto (lib/ganho-do-entregador.ts).
+      customerAddress: true,
       // Quem entregou (a régua `ehEntregaDaLoja`, a mesma do acerto do motoboy) e
       // a nota do cliente no dinheiro (o troco que o motoboy levou e devolve).
       ifoodDriverStatus: true, ifoodDriverName: true, changeAmount: true,
@@ -209,14 +211,14 @@ export async function calcularEsperadoDoTurno(
         source: true, openDeliveryChannel: true, ifoodOrderId: true, ifoodReference: true, openDeliveryOrderId: true, openDeliveryReference: true, tableSessionId: true,
         // A corrida do cancelado: com motoboy da loja e saído antes de cancelar.
         status: true, deliveryType: true, motoboyId: true, dispatchedAt: true, cancelledAt: true, deliveryBy: true, ifoodDriverStatus: true, ifoodDriverName: true,
-        motoboyFee: true, deliveryFee: true, deliveryDistance: true, entregaGratis: true },
+        motoboyFee: true, deliveryFee: true, deliveryDistance: true, entregaGratis: true, customerAddress: true },
       orderBy: { createdAt: "asc" },
     });
     corridasCanceladas = lista
       .filter((o) => o.motoboyId && o.deliveryType === "DELIVERY" && canceladoComCorrida(o) && ehEntregaDaLoja(o))
       .map((o) => ({
         motoboyId: o.motoboyId as string,
-        pedido: { motoboyFee: o.motoboyFee ?? null, deliveryFee: o.deliveryFee ?? null, deliveryDistance: o.deliveryDistance ?? null, entregaGratis: o.entregaGratis },
+        pedido: { motoboyFee: o.motoboyFee ?? null, deliveryFee: o.deliveryFee ?? null, deliveryDistance: o.deliveryDistance ?? null, entregaGratis: o.entregaGratis, customerAddress: o.customerAddress ?? null },
         ehMarketplace: canalDoPedido(o as any).ehMarketplace,
       }));
     cancelados = {

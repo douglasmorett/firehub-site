@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import RoteirizacaoIndependente from "@/components/customer/RoteirizacaoIndependente";
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import { lojasDaVisao } from "@/lib/loja-ativa";
+import { zonasDeBairro } from "@/lib/bairro-pelo-endereco";
 
 export const dynamic = "force-dynamic";
 
@@ -44,6 +45,8 @@ export default async function RoteirizacaoPage() {
       role: true,
       ownerId: true,
       storeLatLng: true,
+      deliveryZones: true,
+      deliveryZoneType: true,
     },
   }).catch((err) => {
     console.error("[Roteirizacao] Erro ao buscar usuário:", err);
@@ -77,7 +80,7 @@ export default async function RoteirizacaoPage() {
       : (await prisma.user
           .findUnique({
             where: { id: idDaLojaNoMapa },
-            select: { id: true, storeAddress: true, city: true, slug: true, storeLatLng: true, storeName: true, name: true },
+            select: { id: true, storeAddress: true, city: true, slug: true, storeLatLng: true, storeName: true, name: true, deliveryZones: true, deliveryZoneType: true },
           })
           .catch(() => null)) || user;
 
@@ -112,6 +115,8 @@ export default async function RoteirizacaoPage() {
         slug: user.slug,
         storeLatLng: noMapa.ponto,
         storeName: (lojaDoMapa as any).storeName || (lojaDoMapa as any).name || user.storeName || user.name,
+        // O "Bairro:" do cartão no vocabulário da loja que cobra por bairro.
+        bairrosDaLoja: zonasDeBairro(lojaDoMapa.deliveryZones, lojaDoMapa.deliveryZoneType),
       }}
       initialOrders={orders}
     />

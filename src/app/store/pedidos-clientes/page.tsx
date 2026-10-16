@@ -13,6 +13,7 @@ import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed } from "@/lib/filtro-do-feed";
 import { lojasDaVisao } from "@/lib/loja-ativa";
+import { zonasDeBairro, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,13 @@ export default async function FranchiseeCustomerOrdersPage() {
   // isto só impede o Node de tratá-la como "rejeição sem dono" enquanto os
   // pedidos ainda estão sendo lidos.
   noMapaP.catch(() => {});
+  // Os bairros da loja que cobra por bairro, para o "Bairro:" da roteirização
+  // (lib/bairro-pelo-endereco.ts). Só nome e apelidos vão para o navegador —
+  // nunca o `deliveryZones` inteiro, que pode ter contorno desenhado.
+  const bairrosDaLojaP: Promise<ZonaComApelidos[]> = prisma.user
+    .findUnique({ where: { id: idDaLojaNoMapa }, select: { deliveryZones: true, deliveryZoneType: true } })
+    .then((l) => zonasDeBairro(l?.deliveryZones, l?.deliveryZoneType))
+    .catch(() => []);
 
   // Busca do caixa aberto, motoboys e pedidos
   let orders: any[] = [];
@@ -216,7 +224,7 @@ export default async function FranchiseeCustomerOrdersPage() {
   // O modal de roteirização recebe daqui o ponto da loja. Ele vinha do usuário
   // logado e, sem `storeLatLng` salvo, virava Rio das Ostras — o padrão antigo
   // do código — mesmo com o endereço cadastrado. Ver lib/ponto-da-loja-servidor.
-  const [lojasDeOrigem, noMapa] = await Promise.all([lojasDeOrigemP, noMapaP]);
+  const [lojasDeOrigem, noMapa, bairrosDaLoja] = await Promise.all([lojasDeOrigemP, noMapaP, bairrosDaLojaP]);
 
   return (
     <>
@@ -235,6 +243,7 @@ export default async function FranchiseeCustomerOrdersPage() {
           storeAddress: noMapa.endereco || user.storeAddress,
           city: noMapa.cidade || user.city,
           storeLatLng: noMapa.ponto,
+          bairrosDaLoja,
         }}
         orders={orders}
         // De qual MARCA é cada pedido. Sem isto o selo da loja só saía para o
