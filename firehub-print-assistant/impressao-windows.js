@@ -216,6 +216,41 @@ function svgDoRaster(b) {
  * pagina (80 mm -> 72 mm, 58 mm -> 48 mm), e a letra no tamanho em que
  * `columns` caracteres da fonte monoespacada (0,6 em) ocupam essa largura.
  */
+/**
+ * Linha em letra ampliada que passa da largura da bobina: na impressora ESC/POS
+ * o proprio firmware quebra; aqui o <pre> cortava ("Longo Para Medir Largur",
+ * Diebold do Bistro Burguer, 15/10/2026). Quebra por palavra, contando cada
+ * caractere pela sua largura (larg), e repete o estilo do trecho na linha nova.
+ */
+function quebrarLinhasLargas(blocos, cols) {
+  const out = [];
+  for (const b of blocos) {
+    if (b.tipo !== "linha") { out.push(b); continue; }
+    const visivel = b.runs.reduce((s, r) => s + r.texto.length * r.larg, 0);
+    if (visivel <= cols) { out.push(b); continue; }
+    let atual = [], usado = 0;
+    const fechar = () => { if (atual.length) out.push({ ...b, runs: atual }); atual = []; usado = 0; };
+    for (const r of b.runs) {
+      for (const palavra of r.texto.split(/(?<= )/)) {
+        let p = palavra;
+        while (p.length) {
+          const cabe = Math.floor((cols - usado) / r.larg);
+          if (p.trimEnd().length <= cabe) {
+            atual.push({ ...r, texto: p }); usado += p.length * r.larg; p = "";
+          } else if (usado > 0) {
+            fechar(); p = p.replace(/^ +/, "");
+          } else {
+            const n = Math.max(1, Math.floor(cols / r.larg));
+            atual.push({ ...r, texto: p.slice(0, n) }); fechar(); p = p.slice(n);
+          }
+        }
+      }
+    }
+    fechar();
+  }
+  return out;
+}
+
 function htmlDaComanda(dados, { columns = 48, paperWidth = "80mm" } = {}) {
   const cols = Math.max(24, Math.min(64, Math.floor(Number(columns) || 48)));
   const larguraMm = paperWidth === "58mm" ? 48 : 72;
@@ -228,7 +263,7 @@ function htmlDaComanda(dados, { columns = 48, paperWidth = "80mm" } = {}) {
     pre = [];
   };
 
-  for (const b of lerEscPos(dados)) {
+  for (const b of quebrarLinhasLargas(lerEscPos(dados), cols)) {
     if (b.tipo === "linha") {
       // Recuo do alinhamento em colunas NORMAIS, contando a largura ampliada.
       const visivel = b.runs.reduce((s, r) => s + r.texto.length * r.larg, 0);
@@ -257,7 +292,10 @@ function htmlDaComanda(dados, { columns = 48, paperWidth = "80mm" } = {}) {
 @page { margin: 0; }
 html, body { margin: 0; padding: 0; background: #fff; color: #000; }
 body { width: ${larguraMm}mm; margin: 0; padding: 1mm 0 2mm ${((paperWidth === "58mm" ? 58 : 80) - larguraMm) / 2}mm;
-  font-family: "Courier New", Courier, Consolas, monospace; font-size: ${letraMm.toFixed(3)}mm; }
+  font-family: Consolas, "Lucida Console", "Courier New", monospace; font-size: ${letraMm.toFixed(3)}mm;
+  /* Tudo em negrito: pelo driver, a letra fina do Courier saia quase apagada
+     no papel termico (Diebold do Bistro Burguer, 15/10/2026). */
+  font-weight: bold; -webkit-font-smoothing: none; }
 pre { margin: 0; font: inherit; white-space: pre; line-height: 1.15; overflow: hidden; }
 .img { text-align: center; line-height: 0; }
 .img + pre { margin-top: 1mm; }
