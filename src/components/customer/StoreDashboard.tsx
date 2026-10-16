@@ -5,6 +5,7 @@ import Link from "next/link";
 import { TrendingUp, DollarSign, ShoppingCart, Users, CreditCard, Banknote, Smartphone, ArrowUpRight, ArrowDownRight, Filter, Calendar, Store as StoreIcon, UtensilsCrossed, RefreshCw } from "lucide-react";
 import OnboardingChecklist from "@/components/OnboardingChecklist";
 import StoreDashboardMap from "@/components/customer/StoreDashboardMap";
+import FunilDoSite from "@/components/customer/FunilDoSite";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { fmtDia, hojeNaLoja } from "@/lib/relatorios/base";
 import { entraNaVenda } from "@/lib/relatorios/regua-da-venda";
@@ -372,6 +373,14 @@ export default function StoreDashboard({ orders: ordersDaTela, carregadoDesde = 
         )}
         {erroDaAtualizacao && <span role="alert" style={{ marginLeft: 6, color: "#B45309", fontWeight: 600 }}>{erroDaAtualizacao}</span>}
       </p>
+
+      {/* O SITE AGORA E O FUNIL (components/customer/FunilDoSite.tsx) — no topo, a pedido do Douglas (16/10/2026). */}
+      <FunilDoSite
+        janela={periodo.janela}
+        anterior={periodo.anterior ? periodo.anterior.janela : null}
+        loja={isAdmin && selectedStoreId !== "todas" ? selectedStoreId : null}
+        rotulo={rotuloDoFiltro}
+      />
 
       {/* OS CARTÕES — pela régua: faturamento = valor vendido (a Receita Bruta do DRE e o "Valor vendido"
           dos Relatórios), vendas (a mesa conta uma vez), ticket = valor ÷ vendas. "PEDIDOS" virou "VENDAS"
