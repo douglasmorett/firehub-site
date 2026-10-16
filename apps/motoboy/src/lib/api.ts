@@ -88,6 +88,12 @@ export type Pedido = {
   customerPhone: string | null;
   endereco: string;
   destino: { texto: string; ponto: { lat: number; lng: number } | null } | null;
+  /** O ponto para ver no mapa (aproximado = centro do bairro). */
+  mapa: { lat: number; lng: number; aproximado: boolean } | null;
+  /** O telefone pronto: o que discar, o ID do iFood e o número do WhatsApp (só celular). */
+  telefone: { discar: string; id: string | null; whatsapp: string | null } | null;
+  /** Até quando o cliente espera (a previsão da comanda). */
+  previsaoEntrega: { em: string; tipo: string } | null;
   observacao: string;
   paymentMethod: string | null;
   totalAmount: number;
@@ -106,7 +112,17 @@ export type Pedido = {
 export type ListaDePedidos = {
   orders: Pedido[];
   formasDePagamento: string[];
-  appConfig: { lembrarBebidas: boolean; cobrarNaEntrega: boolean; pedirCodigoEntrega: boolean; pedirCodigo99Food: boolean };
+  appConfig: {
+    lembrarBebidas: boolean;
+    cobrarNaEntrega: boolean;
+    pedirCodigoEntrega: boolean;
+    pedirCodigo99Food: boolean;
+    relatorioLiberado?: boolean;
+    relatorioDias?: number;
+    permitirSemCodigo?: boolean;
+  };
+  /** Os minutos de amarelo/vermelho da loja (os do KDS). */
+  alertaDeTempo?: { amareloAtivo: boolean; amareloMin: number; vermelhoAtivo: boolean; vermelhoMin: number };
 };
 
 export type RespostaDaBaixa = {

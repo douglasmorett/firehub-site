@@ -5,11 +5,41 @@
  */
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
-import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActionSheetIOS, Linking, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { WebView } from "react-native-webview";
 
 import type { Pedido } from "@/lib/api";
+import { CORES_DA_URGENCIA, textoDaUrgencia, urgenciaDaEntrega, type LimitesDaUrgencia } from "@/lib/urgencia";
 import { Botao } from "./Botao";
 import { cor, raio, reais } from "./tema";
+
+/**
+ * "Abrir com…" (Lucas, Frangoso, 03/10/2026: "no outro você clica no
+ * endereço e ele pergunta qual navegador abrir"). No Android, o geo: chama a
+ * lista do próprio sistema com todo app de mapa instalado; no iPhone, a folha
+ * nativa com Apple Maps, Google Maps e Waze.
+ */
+function abrirCom(p: Pedido) {
+  if (!p.destino) return;
+  const exato = p.destino.ponto;
+  const alvo = exato ? `${exato.lat},${exato.lng}` : p.destino.texto;
+  if (Platform.OS === "android") {
+    const geo = exato ? `geo:${exato.lat},${exato.lng}?q=${exato.lat},${exato.lng}` : `geo:0,0?q=${encodeURIComponent(p.destino.texto)}`;
+    Linking.openURL(geo).catch(() => Linking.openURL(linkDoMapa(p, "google")!));
+    return;
+  }
+  const opcoes = [
+    { rotulo: "Apple Maps", url: `https://maps.apple.com/?daddr=${encodeURIComponent(alvo)}&dirflg=d` },
+    { rotulo: "Google Maps", url: linkDoMapa(p, "google")! },
+    { rotulo: "Waze", url: linkDoMapa(p, "waze")! },
+  ];
+  ActionSheetIOS.showActionSheetWithOptions(
+    { title: "Abrir com…", message: p.endereco, options: [...opcoes.map((o) => o.rotulo), "Cancelar"], cancelButtonIndex: opcoes.length },
+    (i) => {
+      if (i < opcoes.length) Linking.openURL(opcoes[i].url).catch(() => {});
+    },
+  );
+}
 
 function linkDoMapa(p: Pedido, app: "google" | "waze"): string | null {
   if (!p.destino) return null;
@@ -23,19 +53,11 @@ function linkDoMapa(p: Pedido, app: "google" | "waze"): string | null {
     : `https://waze.com/ul?q=${encodeURIComponent(texto)}&navigate=yes`;
 }
 
-/** Telefone que o WhatsApp entende. O iFood manda 0800 com localizador: esse só liga. */
-function whatsappDoCliente(telefone: string | null): string | null {
-  const d = String(telefone || "").replace(/\D/g, "");
-  if (d.length < 10 || d.startsWith("0800")) return null;
-  const comPais = d.length >= 12 && d.startsWith("55") ? d : `55${d}`;
-  const texto = encodeURIComponent("Olá! Sou o entregador da loja e estou a caminho do seu endereço!");
-  return `https://wa.me/${comPais}?text=${texto}`;
-}
-
 export function CartaoDoPedido({
   pedido,
   ordem,
   agora,
+  limites,
   aoEntregar,
   aoDevolver,
   ocupado,
@@ -44,21 +66,33 @@ export function CartaoDoPedido({
   ordem: number;
   /** O relógio da tela (o cartão não lê o relógio sozinho durante o desenho). */
   agora: number;
+  /** Os minutos de amarelo/vermelho da loja (os do KDS). */
+  limites: LimitesDaUrgencia | null;
   aoEntregar: () => void;
   aoDevolver: () => void;
   ocupado: boolean;
 }) {
   const [sacolaAberta, setSacolaAberta] = useState(false);
+  const [mapaAberto, setMapaAberto] = useState(false);
   const cobranca = pedido.cobrarNaEntrega;
   const google = linkDoMapa(pedido, "google");
   const waze = linkDoMapa(pedido, "waze");
-  const whatsapp = whatsappDoCliente(pedido.customerPhone);
-  const telefone = String(pedido.customerPhone || "").replace(/\D/g, "");
+  // O telefone já vem pronto do servidor: o 0800 do iFood sem o localizador,
+  // o ID à parte e o WhatsApp só para celular.
+  const tel = pedido.telefone;
+  const whatsapp = tel?.whatsapp
+    ? `https://wa.me/${tel.whatsapp}?text=${encodeURIComponent("Olá! Sou o entregador da loja e estou a caminho do seu endereço!")}`
+    : null;
+  // Liga para o 0800 e, depois de uma pausa, digita o ID do pedido (como o
+  // outro app que o Lucas usa).
+  const ligar = tel ? `tel:${tel.discar}${tel.id ? `,,${tel.id}` : ""}` : null;
+  const urgencia = urgenciaDaEntrega(pedido.previsaoEntrega?.em, agora, limites);
+  const corUrg = urgencia ? CORES_DA_URGENCIA[urgencia.faixa] : null;
   const podeDevolver = pedido.podeDevolverAte ? new Date(pedido.podeDevolverAte).getTime() > agora : false;
   const trocoSemCobranca = !cobranca && (pedido.changeAmount || /troco/i.test(pedido.observacao));
 
   return (
-    <View style={s.cartao}>
+    <View style={[s.cartao, corUrg ? { borderColor: corUrg.borda } : null]}>
       <View style={s.cabeca}>
         <View style={s.ordem}>
           <Text style={s.ordemTexto}>{ordem}º</Text>
@@ -80,13 +114,53 @@ export function CartaoDoPedido({
         </View>
       </View>
 
+      {urgencia && corUrg ? (
+        <View style={[s.urgencia, { backgroundColor: corUrg.fundo, borderColor: corUrg.borda }]}>
+          <Ionicons name="time" size={18} color={corUrg.texto} />
+          <Text style={[s.urgenciaTexto, { color: corUrg.texto }]}>{textoDaUrgencia(urgencia)}</Text>
+        </View>
+      ) : null}
+
       <Text style={s.cliente}>{pedido.customerName}</Text>
-      <View style={s.endereco}>
+      <Pressable
+        onPress={() => abrirCom(pedido)}
+        disabled={!pedido.destino}
+        accessibilityRole="button"
+        accessibilityHint="Abre o endereço no app de mapa"
+        style={({ pressed }) => [s.endereco, pressed && { opacity: 0.8 }]}
+      >
         <Ionicons name="location" size={18} color={cor.azulEscuro} />
-        <Text style={s.enderecoTexto} selectable>
-          {pedido.endereco}
-        </Text>
-      </View>
+        <View style={{ flex: 1 }}>
+          <Text style={s.enderecoTexto}>{pedido.endereco}</Text>
+          {pedido.destino ? <Text style={s.enderecoDica}>Toque para abrir no app de mapa</Text> : null}
+        </View>
+      </Pressable>
+
+      {pedido.mapa ? (
+        <View style={{ gap: 6 }}>
+          <Botao
+            titulo={mapaAberto ? "Fechar o mapa" : "Ver no mapa"}
+            variante={mapaAberto ? "escuro" : "contorno"}
+            pequeno
+            icone={<Ionicons name="map" size={17} color={mapaAberto ? "#FFFFFF" : cor.azulEscuro} />}
+            aoTocar={() => setMapaAberto((v) => !v)}
+          />
+          {mapaAberto ? (
+            <View style={s.mapa}>
+              <WebView
+                source={{ uri: `https://maps.google.com/maps?q=${pedido.mapa.lat},${pedido.mapa.lng}&z=16&output=embed` }}
+                style={{ flex: 1 }}
+                // O mapa fica no cartão; tocar num link dele não troca a tela do app.
+                onShouldStartLoadWithRequest={(r) => r.url.startsWith("https://maps.google.com") || r.url.startsWith("https://www.google.com/maps")}
+                nestedScrollEnabled
+              />
+              {pedido.mapa.aproximado ? (
+                <Text style={s.mapaAviso}>Ponto aproximado (pelo bairro). Confira o número na rua.</Text>
+              ) : null}
+            </View>
+          ) : null}
+        </View>
+      ) : null}
 
       <View style={[s.pagamento, cobranca ? s.pagamentoCobrar : null]}>
         {cobranca ? (
@@ -189,24 +263,31 @@ export function CartaoDoPedido({
         </View>
       ) : null}
 
-      {telefone ? (
-        <View style={s.linha}>
-          <Botao
-            titulo="Ligar"
-            pequeno
-            variante="contorno"
-            icone={<Ionicons name="call" size={18} color={cor.texto} />}
-            aoTocar={() => Linking.openURL(`tel:${telefone}`)}
-            estilo={s.metade}
-          />
-          {whatsapp ? (
+      {ligar ? (
+        <View style={{ gap: 4 }}>
+          <View style={s.linha}>
             <Botao
-              titulo="WhatsApp"
+              titulo="Ligar"
               pequeno
-              icone={<Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" />}
-              aoTocar={() => Linking.openURL(whatsapp)}
-              estilo={[s.metade, { backgroundColor: cor.whatsapp, borderColor: cor.whatsapp }]}
+              variante="contorno"
+              icone={<Ionicons name="call" size={18} color={cor.texto} />}
+              aoTocar={() => Linking.openURL(ligar)}
+              estilo={s.metade}
             />
+            {whatsapp ? (
+              <Botao
+                titulo="WhatsApp"
+                pequeno
+                icone={<Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" />}
+                aoTocar={() => Linking.openURL(whatsapp)}
+                estilo={[s.metade, { backgroundColor: cor.whatsapp, borderColor: cor.whatsapp }]}
+              />
+            ) : null}
+          </View>
+          {tel?.id ? (
+            <Text style={s.idDoPedido}>
+              📞 O Ligar já digita o ID depois do 0800. Se a central pedir de novo: <Text style={s.forte}>{tel.id}</Text>
+            </Text>
           ) : null}
         </View>
       ) : null}
@@ -255,7 +336,13 @@ const s = StyleSheet.create({
     borderRadius: raio.pequeno,
     padding: 10,
   },
-  enderecoTexto: { flex: 1, fontSize: 16, fontWeight: "800", color: cor.azulEscuro, lineHeight: 22 },
+  enderecoTexto: { fontSize: 16, fontWeight: "800", color: cor.azulEscuro, lineHeight: 22 },
+  enderecoDica: { fontSize: 12, fontWeight: "700", color: "#3B82F6", marginTop: 2 },
+  urgencia: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1.5, borderRadius: raio.pequeno, paddingHorizontal: 10, paddingVertical: 8 },
+  urgenciaTexto: { fontSize: 15, fontWeight: "900", flexShrink: 1 },
+  mapa: { height: 240, borderRadius: raio.medio, overflow: "hidden", borderWidth: 1, borderColor: cor.bordaForte },
+  mapaAviso: { position: "absolute", left: 0, right: 0, bottom: 0, backgroundColor: cor.ambarClaro, color: cor.ambar, fontSize: 12, fontWeight: "700", padding: 6 },
+  idDoPedido: { fontSize: 13, fontWeight: "700", color: cor.textoSuave, textAlign: "center" },
   pagamento: { backgroundColor: "#F8FAFC", borderWidth: 1, borderColor: cor.borda, borderRadius: raio.pequeno, padding: 10, gap: 6 },
   pagamentoCobrar: { backgroundColor: cor.verdeClaro, borderColor: cor.verdeBorda, borderWidth: 2 },
   pagamentoTexto: { fontSize: 15, fontWeight: "700", color: "#334155" },
