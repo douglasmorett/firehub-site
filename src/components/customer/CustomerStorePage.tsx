@@ -35,6 +35,7 @@ import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 import { precoMinimoDoProduto, precoVariaPorEscolha, precoMinimoAntesDaPromocao } from "@/lib/preco-combo";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
 import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./GoogleAnalytics";
+import { useVisitaDoCardapio } from "./useVisitaDoCardapio";
 import { isStoreOpen } from "@/lib/store-hours";
 import { TEXTO_DA_INSTABILIDADE } from "@/lib/loja-aberta";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
@@ -392,6 +393,9 @@ export default function CustomerStorePage({
   }, []);
   // Os avisos da página, em pop-up — era alert() do navegador.
   const { avisar, perguntar, avisoNaTela } = useAvisoDoCardapio();
+  // O funil do site da Início (lib/funil-do-site.ts): só o cardápio de pedido — mesa, garçom e o lanche da equipe ficam fora.
+  const marcarNoFunil = useVisitaDoCardapio(franchisee.slug, !mesa);
+  useEffect(() => { if (comboProduct) marcarNoFunil("produto"); }, [comboProduct, marcarNoFunil]);
   // Forma paga pelo site na conta Asaas: pede CPF (o Asaas exige).
   const pagaPeloAsaas =
     (paymentMethod === "PIX" && franchisee.pixOnlineAtivo === true) ||
@@ -1204,6 +1208,7 @@ export default function CustomerStorePage({
       return [...prev, { ...product, productId: product.id, price: finalPrice, quantity: qty || 1 }];
     });
     trackPixelEvent("AddToCart", { content_name: product.name, value: finalPrice * (qty || 1), currency: "BRL" });
+    marcarNoFunil("carrinho");
     // Mesmo momento, nomenclatura do GA4. Os nomes são os recomendados
     // (`add_to_cart`, `begin_checkout`, `purchase`): só eles alimentam os
     // relatórios de monetização e as conversões do Google Ads — nome inventado
@@ -1341,6 +1346,7 @@ export default function CustomerStorePage({
 
     const valorTotal = novos.reduce((s, n) => s + n.price * n.quantity, 0);
     trackPixelEvent("AddToCart", { content_name: "Repetir pedido", value: valorTotal, currency: "BRL" });
+    marcarNoFunil("carrinho");
     trackGaEvent("add_to_cart", {
       currency: "BRL",
       value: valorTotal,
@@ -2594,6 +2600,8 @@ export default function CustomerStorePage({
               : null,
           });
         }
+        // O funil conta o pedido feito (o Pix ainda pendente também: a pessoa chegou até o fim).
+        marcarNoFunil("pedido");
         // A venda para o Pixel e o GA4. Pedido pago na entrega registra agora;
         // pedido com Pix pelo site só quando o Pix cai (onPaid do modal) —
         // quem desiste na tela do QR não pode virar venda, a mesma regra do
@@ -4459,6 +4467,7 @@ export default function CustomerStorePage({
                 }
                 setIsCheckout(true);
                 trackPixelEvent("InitiateCheckout", { value: finalTotal, currency: "BRL" });
+                marcarNoFunil("checkout");
                 trackGaEvent("begin_checkout", {
                   currency: "BRL",
                   value: finalTotal,
