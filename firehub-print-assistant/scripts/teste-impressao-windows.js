@@ -75,5 +75,45 @@ conferir("negrito vira maiusculas e o corte some", tr === "TOTAL\nfim\n");
 conferir("raster vira bloco de imagem", lerEscPos(raster).some(b => b.tipo === "raster" && b.linhas === 2));
 conferir("HTML escapa < e &", htmlDaComanda(Buffer.from("a<b & c\n")).includes("a&lt;b &amp; c"));
 
+// ── PAPEL EM BRANCO ANTES DO TEXTO (16/10/2026) ──────────────────────────
+// A 2a via do fechamento saiu na Diebold do Bistro Burguer com ~5 cm em
+// branco antes do titulo. Pelo driver, cada linha vazia no comeco e papel:
+// a pagina tem que comecar no primeiro texto, e terminar no ultimo.
+console.log("\nSem linha vazia nas pontas da pagina");
+const primeiraLinhaDoHtml = (html) => {
+  const corpo = html.split("<body>")[1] || "";
+  const m = corpo.match(/^<pre>([^\n]*)/);
+  return m ? m[1].replace(/<[^>]+>/g, "") : null;
+};
+const comecoSujo = Buffer.from("\x1b@\x1bt\x03\n\n\x1bd\x05   \n\x1d!\x01\x1bE\x01TITULO\x1bE\x00\x1d!\x00\nmeio\n\n\ndepois\n\n\x1bd\x04\x1dV\x00", "latin1");
+const blSujo = lerEscPos(comecoSujo);
+conferir("LF, ESC d e linha so de espacos no comeco somem", blSujo[0].tipo === "linha" && blSujo[0].runs.map(r => r.texto).join("") === "TITULO");
+conferir("as linhas vazias do MEIO ficam", textoDaComanda(comecoSujo, 48) === "TITULO\nmeio\n\n\ndepois\n");
+conferir("HTML comeca no titulo", primeiraLinhaDoHtml(htmlDaComanda(comecoSujo)) === "TITULO");
+conferir("HTML termina no ultimo texto", /depois<\/pre><\/body>/.test(htmlDaComanda(comecoSujo)));
+conferir("so linhas vazias: pagina vazia, sem erro", lerEscPos(Buffer.from("\n\n\x1bd\x03\n", "latin1")).length === 0);
+
+const FECHAMENTO = {
+  id: "caixa_fechamento_1_reimpressao_1", kind: "CAIXA_FECHAMENTO",
+  dailyOrderNumber: "2a VIA - FECHAMENTO DE CAIXA", customerName: "16/10/2026 19:13 - Operador",
+  caixaQuando: "16/10/2026 19:13", caixaOperador: "Operador",
+  relatorio: [
+    { tipo: "titulo", texto: "Conferencia" },
+    { tipo: "linha", texto: "Dinheiro", valor: "R$ 120,00" },
+    { tipo: "separador" },
+    { tipo: "titulo", texto: "NAO E DOCUMENTO FISCAL" },
+  ],
+  customerPhone: "", customerAddress: "", deliveryType: "BALCAO", source: "CAIXA", paymentMethod: "-",
+  isPrepaid: true, items: [{ name: "Dinheiro", qty: 1, price: 120 }], totalAmount: 120, deliveryFee: 0, notes: "Guarde",
+};
+const htmlFech = htmlDaComanda(buildEscPos(FECHAMENTO, "Bistro Burguer", 48, perfilDosBytes("windows")), { columns: 48 });
+conferir("2a via do fechamento: a pagina comeca no titulo", /^\s*2a VIA - FECHAMENTO DE CAIXA$/.test(primeiraLinhaDoHtml(htmlFech) || ""));
+
+// Modelo de comanda que abre com "espaco" e com secao titulada (que comeca
+// com LF): o papel comeca no texto mesmo assim.
+const comModelo = buildEscPos({ ...PEDIDO, blocos: [{ tipo: "espaco" }, { tipo: "espaco" }, { tipo: "cliente", ligado: true }, { tipo: "itens", ligado: true }] }, "Bistro Burguer", 48, perfilDosBytes("windows"));
+const primeiraDoModelo = primeiraLinhaDoHtml(htmlDaComanda(comModelo, { columns: 48 })) || "";
+conferir("modelo que abre com espaco: a pagina comeca no texto", primeiraDoModelo.trim().length > 0);
+
 console.log(`\n${ok} ok, ${falhou} falhou`);
 process.exit(falhou ? 1 : 0);

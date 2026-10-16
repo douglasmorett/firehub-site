@@ -134,14 +134,23 @@ function lerEscPos(dados) {
   }
   fecharLinhaSeAberta();
 
-  // As linhas em branco do avanco final (ESC d 4 antes do corte) nao vao:
-  // quem avanca e corta e o driver.
-  while (blocos.length) {
-    const u = blocos[blocos.length - 1];
-    if (u.tipo === "linha" && !u.runs.some(r => r.texto.trim())) blocos.pop();
-    else break;
-  }
-  return blocos;
+  // As linhas em branco das PONTAS nao vao para a pagina.
+  //  - No fim: o avanco final (ESC d 4 antes do corte) — quem avanca e corta
+  //    e o driver, e o rodape da pagina ja deixa o respiro do corte.
+  //  - No comeco (16/10/2026, 2a via do fechamento na Diebold do Bistro
+  //    Burguer saiu com ~5 cm em branco antes do titulo): LF/ESC d no inicio
+  //    do trabalho viram linhas vazias de ~4 mm cada, empurrando o texto para
+  //    baixo. Na impressora ESC/POS isso e barato; pelo driver, cada linha
+  //    vazia e papel. Modelo de comanda que comeca com "espaco" ou com secao
+  //    titulada (que abre com LF) cai aqui.
+  while (blocos.length && ehLinhaVazia(blocos[blocos.length - 1])) blocos.pop();
+  let primeiro = 0;
+  while (primeiro < blocos.length && ehLinhaVazia(blocos[primeiro])) primeiro++;
+  return primeiro ? blocos.slice(primeiro) : blocos;
+}
+
+function ehLinhaVazia(b) {
+  return b.tipo === "linha" && !b.runs.some(r => r.texto.trim());
 }
 
 /* ─── Texto puro ─────────────────────────────────────────────────────── */
@@ -291,7 +300,10 @@ function htmlDaComanda(dados, { columns = 48, paperWidth = "80mm" } = {}) {
   return `<!doctype html><html><head><meta charset="utf-8"><title>FireHub</title><style>
 @page { margin: 0; }
 html, body { margin: 0; padding: 0; background: #fff; color: #000; }
-body { width: ${larguraMm}mm; margin: 0; padding: 1mm 0 2mm ${((paperWidth === "58mm" ? 58 : 80) - larguraMm) / 2}mm;
+/* Em cima, 1 mm: o texto comeca colado ao topo da pagina (as linhas vazias do
+   comeco ja sairam em lerEscPos). Embaixo, 3 mm de respiro para o corte do
+   driver nao pegar a ultima linha. */
+body { width: ${larguraMm}mm; margin: 0; padding: 1mm 0 3mm ${((paperWidth === "58mm" ? 58 : 80) - larguraMm) / 2}mm;
   font-family: Consolas, "Lucida Console", "Courier New", monospace; font-size: ${letraMm.toFixed(3)}mm;
   /* Tudo em negrito: pelo driver, a letra fina do Courier saia quase apagada
      no papel termico (Diebold do Bistro Burguer, 15/10/2026). */
