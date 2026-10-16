@@ -79,7 +79,8 @@ export function FunilDoSiteVisual({ dados, rotulo, inicioDoPeriodo }: { dados: D
   const perda = useMemo(() => maiorPerda(degraus), [degraus]);
   const taxa = funil ? conversao(funil) : 0;
   const antes = dados.anterior?.funil || null;
-  const taxaAntes = antes ? conversao(antes) : null;
+  // Sem visitas no período anterior (a contagem ainda não existia), não há o que comparar.
+  const taxaAntes = antes && antes.visita > 0 ? conversao(antes) : null;
   const abandonados = funil ? Math.max(0, funil.carrinho - funil.pedido) : 0;
   const desde = dados.desde ? new Date(dados.desde) : null;
   const contandoNoMeio = desde && inicioDoPeriodo && desde > inicioDoPeriodo;
@@ -136,7 +137,7 @@ export function FunilDoSiteVisual({ dados, rotulo, inicioDoPeriodo }: { dados: D
           {/* OS NÚMEROS QUE IMPORTAM */}
           <div style={{ display: "grid", gap: 10 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
-              <Numero titulo="Visitas" valor={fmt(funil.visita)} comparado={antes ? variacaoEmTexto(funil.visita, antes.visita) : null} />
+              <Numero titulo="Visitas" valor={fmt(funil.visita)} comparado={antes && antes.visita > 0 ? variacaoEmTexto(funil.visita, antes.visita) : null} />
               <Numero titulo="Conversão" valor={fmtPct(taxa)} dica="pedidos ÷ visitas" comparado={taxaAntes !== null ? pontosEmTexto(taxa, taxaAntes) : null} />
               <Numero titulo="Carrinhos largados" valor={fmt(abandonados)} dica="puseram e não pediram" cor={abandonados > 0 ? "#B45309" : "#0F172A"} />
             </div>
@@ -206,7 +207,7 @@ function DesenhoDoFunil({ degraus }: { degraus: ReturnType<typeof degrausDoFunil
             </text>
             {proximo && (
               <text x={W / 2} y={y + ALTURA + 17} textAnchor="middle" fill="#64748B" style={{ fontSize: 12, fontWeight: 700 }}>
-                ↓ {fmtPct(proximo.daAnterior)} seguiram{proximo.perdidos > 0 ? ` · ${fmt(proximo.perdidos)} pararam` : ""}
+                ↓ {fmtPct(proximo.daAnterior)} seguiram{proximo.perdidos > 0 ? ` · ${fmt(proximo.perdidos)} ${proximo.perdidos === 1 ? "parou" : "pararam"}` : ""}
               </text>
             )}
           </g>
