@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { MODO_LOCAL } from "@/lib/modo-local";
+import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 import { prisma } from "@/lib/prisma";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { getServerSession } from "next-auth/next";
@@ -879,7 +880,13 @@ export async function GET(req: NextRequest) {
     // No computador da loja (modo contingência) o poll NÃO consulta os
     // parceiros: com internet, ele consumiria e daria ack em eventos do iFood
     // que a nuvem nunca veria (lib/modo-local.ts).
-    if (!MODO_LOCAL) try {
+    //
+    // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts) também não: o
+    // painel continua aberto POR BAIXO da tela de bloqueio e puxava o iFood a
+    // cada 5 s — era por aqui que a NATAL LANCHES seguia importando pedido
+    // travada (16/10/2026). Sem import e sem ack: o pedido fica no portal do
+    // marketplace, onde o lojista continua atendendo.
+    if (!MODO_LOCAL && !(await lojaBloqueadaPorMensalidade(targetFranchiseeId))) try {
       await Promise.allSettled([
         pollIfoodEvents(targetFranchiseeId),
         pollJotajaEvents(targetFranchiseeId),

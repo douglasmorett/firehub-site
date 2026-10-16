@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { semLojasBloqueadas } from "@/lib/loja-bloqueada";
 import { garantirColunasBrendi } from "@/lib/garantir-colunas";
 import { processBrendiEvent } from "@/lib/processBrendiEvent";
 
@@ -83,6 +84,10 @@ export async function GET(req: NextRequest) {
       log.push("ℹ️ Colunas Brendi ainda não existem no banco — nada a fazer");
       return NextResponse.json({ ok: true, events: 0, log, durationMs: Date.now() - startTime });
     }
+
+    // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts) nem tem a fila
+    // puxada: sem import e sem ack — o pedido fica no portal da Brendi.
+    if (Array.isArray(stores)) stores = await semLojasBloqueadas(stores, log);
 
     if (!Array.isArray(stores) || stores.length === 0) {
       log.push("ℹ️ Nenhuma loja com Brendi ativo encontrada");

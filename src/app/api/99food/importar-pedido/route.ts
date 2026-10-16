@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_CONTA_BLOQUEADA } from "@/lib/loja-bloqueada";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { detalheDoPedido } from "@/lib/food99-api";
@@ -47,6 +48,11 @@ export async function POST(req: NextRequest) {
   // sua.
   const lojaEscolhida = user.role === "ADMIN" && typeof body?.storeId === "string" ? body.storeId.trim() : null;
   const lojaId = lojaEscolhida || user.ownerId || user.id;
+  // Conta bloqueada por mensalidade não importa pedido (lib/loja-bloqueada.ts);
+  // o ADMIN (suporte) continua podendo.
+  if (user.role !== "ADMIN" && (await lojaBloqueadaPorMensalidade(lojaId))) {
+    return NextResponse.json({ error: MENSAGEM_CONTA_BLOQUEADA }, { status: 403 });
+  }
   const orderId = String(body.orderId ?? "").trim();
   if (!orderId || !/^\d+$/.test(orderId)) {
     return NextResponse.json(

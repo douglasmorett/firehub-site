@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/loja-bloqueada";
 import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
@@ -100,6 +101,12 @@ export async function POST(req: Request) {
       }
     });
     if (!franchisee) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
+
+    // Loja bloqueada por mensalidade não recebe pedido (lib/loja-bloqueada.ts).
+    // Ao cliente, só "indisponível" — a dívida é assunto da loja com o FireHub.
+    if (await lojaBloqueadaPorMensalidade(franchisee.id)) {
+      return NextResponse.json({ error: MENSAGEM_LOJA_INDISPONIVEL, lojaIndisponivel: true }, { status: 400 });
+    }
 
     // ── PAGAMENTO PELO SITE (PIX E CARTÃO) ─────────────────────────────────
     // "PIX" (sem _ENTREGA) e "CREDITO_ONLINE" são pagos na hora, pelo site. Só

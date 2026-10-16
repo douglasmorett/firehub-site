@@ -5,6 +5,7 @@
  */
 import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "@/lib/prisma";
+import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { isBeverageName } from "@/lib/beverage";
@@ -185,6 +186,13 @@ export async function processJotajaEvent(
       }
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
+
+      // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): pedido NOVO não
+      // entra — nada gravado, impresso ou confirmado; fica no portal do parceiro.
+      // O cron nem puxa a fila dela; aqui chegam o webhook e a importação manual.
+      if (await lojaBloqueadaPorMensalidade(franchiseeIdToUse)) {
+        return { action: "skipped", orderId, message: "loja bloqueada por mensalidade — pedido não importado" };
+      }
 
       // ── 2ª barreira de idempotência: pelo NÚMERO do pedido no JotaJá ───────
       // O evento do feed traz só o UUID. O número que o lojista vê (displayId)

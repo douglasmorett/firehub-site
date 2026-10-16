@@ -13,6 +13,7 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/loja-bloqueada";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { SEM_PRODUTO_DE_INTEGRACAO, motivoForaDoCardapio, textoDoHorario, textoDosDias } from "@/lib/cardapio-interno";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
@@ -47,6 +48,12 @@ export async function lancarNaMesa(opcoes: {
 
   if (!Array.isArray(items) || items.length === 0) {
     return { ok: false, status: 400, error: "Items are required" };
+  }
+
+  // Loja bloqueada por mensalidade não lança pedido — nem pelo QR do cliente,
+  // nem pelo app do garçom (que não passa pela tela de bloqueio do painel).
+  if (await lojaBloqueadaPorMensalidade(targetFranchiseeId)) {
+    return { ok: false, status: 403, error: MENSAGEM_LOJA_INDISPONIVEL };
   }
 
   const fuso = await fusoDaLoja(targetFranchiseeId);

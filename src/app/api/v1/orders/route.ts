@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { authenticateApiKey } from "@/lib/api-key";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/loja-bloqueada";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { prisma } from "@/lib/prisma";
 import { dispatchOutboundWebhook } from "@/lib/webhook-dispatcher";
@@ -91,6 +92,10 @@ export async function POST(req: NextRequest) {
   const auth = await authenticateApiKey(req);
   if (!auth) {
     return NextResponse.json({ error: "Não autorizado.", code: "UNAUTHORIZED" }, { status: 401 });
+  }
+  // Loja bloqueada por mensalidade não recebe pedido (lib/loja-bloqueada.ts).
+  if (await lojaBloqueadaPorMensalidade(auth.franchiseeId)) {
+    return NextResponse.json({ error: MENSAGEM_LOJA_INDISPONIVEL, code: "STORE_UNAVAILABLE" }, { status: 403 });
   }
 
   try {

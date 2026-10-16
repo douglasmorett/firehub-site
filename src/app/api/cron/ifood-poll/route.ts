@@ -4,6 +4,7 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 import { processarEventosIfood, puxarEventosIfood } from "@/lib/ifood-eventos";
 import { merchantsDoToken } from "@/lib/ifood-api";
 import { gruposDePollingIfood } from "@/lib/ifood-token";
+import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 
 /**
  * GET /api/cron/ifood-poll
@@ -317,6 +318,15 @@ export async function GET(req: NextRequest) {
               log.push(`[distribuído] ${nome}: polling falhou ${erro}`);
             }
             if (eventos.length === 0) continue;
+
+            // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): o polling
+            // acima continua — é uma chamada por minuto e é ele que mantém a
+            // loja aberta no iFood, onde o lojista segue atendendo pelo portal —
+            // mas nada é adotado, importado nem reconhecido (sem ack).
+            if (await lojaBloqueadaPorMensalidade(loja.id)) {
+              log.push(`[distribuído] ${nome}: bloqueada por mensalidade — ${eventos.length} evento(s) ignorado(s), sem ack`);
+              continue;
+            }
 
             // ── ADOÇÃO DA LOJA QUE O LOJISTA AUTORIZOU E NINGUÉM CADASTROU ──
             const desconhecidos = [

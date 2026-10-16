@@ -9,6 +9,7 @@ import {
   verifyCloudApiWebhook 
 } from '@/lib/whatsapp-cloud';
 import { processChatbotAI } from '@/lib/chatbot-ai';
+import { lojaBloqueadaPorMensalidade } from '@/lib/loja-bloqueada';
 import { trackWhatsAppMessage } from '@/lib/usage-tracker';
 
 export const dynamic = 'force-dynamic';
@@ -118,6 +119,8 @@ async function processPayload(body: any) {
     });
 
     if (!user || !user.chatbotConfig) continue;
+    // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): sem IA, sem resposta.
+    if (await lojaBloqueadaPorMensalidade(user.id)) continue;
     
     const config = user.chatbotConfig as Record<string, any>;
     if (config.active !== true) continue;

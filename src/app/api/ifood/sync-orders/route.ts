@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { getServerSession } from "next-auth/next";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_CONTA_BLOQUEADA } from "@/lib/loja-bloqueada";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken } from "@/lib/ifood-api";
 import { parseIfoodPaymentInfo } from "@/app/api/ifood/webhook/route";
@@ -41,6 +42,11 @@ export async function POST(req: NextRequest) {
 
   if (!merchantId) {
     return NextResponse.json({ error: "Você não possui uma loja iFood integrada no seu perfil." }, { status: 400 });
+  }
+
+  // Conta bloqueada por mensalidade não importa pedido (lib/loja-bloqueada.ts).
+  if (await lojaBloqueadaPorMensalidade(franchisee.id)) {
+    return NextResponse.json({ error: MENSAGEM_CONTA_BLOQUEADA }, { status: 403 });
   }
 
   try {

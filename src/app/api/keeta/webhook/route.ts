@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { keetaConfigurada, type EventoKeeta } from "@/lib/keeta/api";
 import { webhookAssinadoPelaKeeta } from "@/lib/keeta/assinatura";
 import { processarEventoKeeta } from "@/lib/keeta/eventos";
+import { lojaDoMerchant } from "@/lib/keeta/lojas";
+import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 import { guardarPayloadCru } from "@/lib/open-delivery/payload-cru";
 
 /**
@@ -54,6 +56,14 @@ export async function POST(req: NextRequest) {
     if (process.env.KEETA_WEBHOOK_ASSINATURA === "obrigatoria") {
       return NextResponse.json({ title: "assinatura inválida", status: 401 }, { status: 401 });
     }
+  }
+
+  // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): não processa. 204
+  // para a Keeta não repetir o webhook; o pedido fica no Portal da Keeta.
+  const lojaDoCabecalho = merchant ? await lojaDoMerchant(merchant).catch(() => null) : null;
+  if (lojaDoCabecalho && (await lojaBloqueadaPorMensalidade(lojaDoCabecalho.franchiseeId))) {
+    console.log(`[Keeta] webhook ${evento?.eventType} ${evento?.orderId}: loja bloqueada por mensalidade — ignorado`);
+    return new NextResponse(null, { status: 204 });
   }
 
   try {

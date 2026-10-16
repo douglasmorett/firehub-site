@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { dataHoraDaLoja } from "@/lib/fuso";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { getServerSession } from "next-auth/next";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_CONTA_BLOQUEADA } from "@/lib/loja-bloqueada";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken } from "@/lib/ifood-api";
 import { generateDailyOrderNumber } from "@/lib/order-number";
@@ -33,6 +34,10 @@ export async function GET(req: NextRequest) {
 
   let merchantId = user.ifoodMerchantId;
   const targetFranchiseeId = user.ownerId || user.id;
+  // Conta bloqueada por mensalidade não importa pedido (lib/loja-bloqueada.ts).
+  if (await lojaBloqueadaPorMensalidade(targetFranchiseeId)) {
+    return NextResponse.json({ error: MENSAGEM_CONTA_BLOQUEADA }, { status: 403 });
+  }
   if (!merchantId && user.ownerId) {
     const owner = await prisma.user.findUnique({
       where: { id: user.ownerId },
@@ -180,6 +185,9 @@ export async function POST(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   const targetFranchiseeId = user.ownerId || user.id;
+  if (await lojaBloqueadaPorMensalidade(targetFranchiseeId)) {
+    return NextResponse.json({ error: MENSAGEM_CONTA_BLOQUEADA }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const orderId = body.orderId;

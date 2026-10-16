@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { processJotajaEvent } from "@/lib/processJotajaEvent";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { semLojasBloqueadas } from "@/lib/loja-bloqueada";
 
 /**
  * GET /api/cron/jotaja-poll
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   try {
     // ── MULTI-TENANT: Buscar todas as lojas ativas com Jotajá ──────────
-    const stores = await prisma.user.findMany({
+    const todasAsLojas = await prisma.user.findMany({
       where: {
         jotajaConnected: true,
         NOT: [
@@ -42,6 +43,10 @@ export async function GET(req: NextRequest) {
         jotajaMerchantId: true,
       },
     });
+
+    // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts) nem tem a fila
+    // puxada: sem import e sem ack — o pedido fica no portal do Jotajá.
+    const stores = await semLojasBloqueadas(todasAsLojas, log);
 
     // MULTI-TENANT: Cada loja DEVE ter suas próprias credenciais no banco.
     // SEM fallback ENV — impede que lojas novas herdem credenciais do Hakim.

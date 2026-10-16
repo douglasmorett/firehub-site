@@ -14,12 +14,46 @@
  * eventos daquela loja.
  */
 import { prisma } from "./prisma";
+import { lojaBloqueadaPorMensalidade } from "./loja-bloqueada";
 import { dataHoraDaLoja } from "./fuso";
 import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-number";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
 import { montarItensDoPedidoIfood } from "./ifood-itens";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
+
+/** merchantId do iFood → conta da loja no FireHub (5 min; o vínculo quase nunca muda). */
+const lojaDoMerchant = new Map<string, { lojaId: string | null; ate: number }>();
+
+async function lojaDoMerchantIfood(merchantId: string): Promise<string | null> {
+  const agora = Date.now();
+  const guardado = lojaDoMerchant.get(merchantId);
+  if (guardado && guardado.ate > agora) return guardado.lojaId;
+  let lojaId: string | null = null;
+  try {
+    const u = await prisma.user.findFirst({ where: { ifoodMerchantId: merchantId, role: "FRANCHISEE" } as any, select: { id: true } });
+    if (u) lojaId = u.id;
+    else {
+      const integ = await prisma.ifoodIntegration.findFirst({ where: { merchantId, active: true }, select: { userId: true } });
+      lojaId = integ?.userId || null;
+    }
+  } catch {
+    lojaId = null;
+  }
+  if (lojaDoMerchant.size > 5000) lojaDoMerchant.clear();
+  lojaDoMerchant.set(merchantId, { lojaId, ate: agora + 5 * 60_000 });
+  return lojaId;
+}
+
+/** Os merchants (dentre os informados) cuja loja está bloqueada por mensalidade agora. */
+export async function merchantsIfoodBloqueados(merchantIds: Array<string | null | undefined>): Promise<Set<string>> {
+  const bloqueados = new Set<string>();
+  for (const m of new Set(merchantIds.filter(Boolean) as string[])) {
+    const lojaId = await lojaDoMerchantIfood(m);
+    if (lojaId && (await lojaBloqueadaPorMensalidade(lojaId))) bloqueados.add(m);
+  }
+  return bloqueados;
+}
 
 export type ResultadoEventos = {
   created: number;
@@ -172,6 +206,20 @@ export async function processarEventosIfood(opts: {
     descartados = antes - events.length;
     if (descartados > 0) {
       log.push("  [x] " + descartados + " evento(s) de outro merchant descartado(s)");
+    }
+  }
+
+  // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): os eventos dela
+  // NÃO são processados nem reconhecidos (ack). Nada é importado, impresso ou
+  // confirmado — o pedido fica no portal do iFood, onde o lojista atende. Sem
+  // ack o iFood devolve o evento no próximo polling até ele expirar; aqui ele
+  // é só peneirado (consulta de dono em cache), sem detalhe nem banco.
+  const bloqueados = await merchantsIfoodBloqueados(events.map((e) => e?.merchantId));
+  if (bloqueados.size > 0) {
+    const antes = events.length;
+    events = events.filter((e) => !(e?.merchantId && bloqueados.has(e.merchantId)));
+    if (antes > events.length) {
+      log.push(`  [bloqueio] ${antes - events.length} evento(s) de loja bloqueada por mensalidade ignorado(s), sem ack`);
     }
   }
 

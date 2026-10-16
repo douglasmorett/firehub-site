@@ -137,7 +137,13 @@ export async function POST(req: NextRequest) {
 
   // Processa eventos assincronicamente no background para não estourar o Timeout da Vercel
   after(async () => {
+    // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): o evento dela não
+    // é processado — nada de buscar detalhe, gravar ou confirmar. O 200 sai do
+    // mesmo jeito (webhook com 200 não volta), e o pedido fica no portal do iFood.
+    const { merchantsIfoodBloqueados } = await import("@/lib/ifood-eventos");
+    const bloqueados = await merchantsIfoodBloqueados(events.map((e: any) => e?.merchantId));
     for (const event of events) {
+      if (event?.merchantId && bloqueados.has(event.merchantId)) continue;
       try {
         await processIfoodEvent(event);
       } catch (err) {
@@ -182,7 +188,13 @@ export async function GET(req: NextRequest) {
   const dataText = await res.text();
   const data = dataText ? JSON.parse(dataText) : [];
 
+  // Loja bloqueada por mensalidade: nem processa nem dá ack (ver o POST acima).
+  const { merchantsIfoodBloqueados } = await import("@/lib/ifood-eventos");
+  const bloqueados = await merchantsIfoodBloqueados((data ?? []).map((e: any) => e?.merchantId));
+  const daLojaBloqueada = (e: any) => !!e?.merchantId && bloqueados.has(e.merchantId);
+
   for (const event of data ?? []) {
+    if (daLojaBloqueada(event)) continue;
     try {
       // Confiável: estes eventos vieram do events:polling da API do iFood,
       // autenticado com o nosso token — não da internet aberta.
@@ -192,7 +204,7 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const eventsToAck = (data ?? []).filter((e: any) => e.id).map((e: any) => ({
+  const eventsToAck = (data ?? []).filter((e: any) => e.id && !daLojaBloqueada(e)).map((e: any) => ({
     id: e.id,
   }));
   if (eventsToAck.length > 0) {

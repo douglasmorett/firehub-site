@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { telefoneDeVerdade } from "@/lib/telefone";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_CONTA_BLOQUEADA } from "@/lib/loja-bloqueada";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { lerPager } from "@/lib/pager";
@@ -81,6 +82,13 @@ export async function POST(req: Request) {
   if (!dbUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const targetFranchiseeId = dbUser.ownerId || dbUser.id;
+
+  // Conta bloqueada por mensalidade: a tela já trava o PDV; esta é a trava do
+  // servidor, para aba antiga ou chamada direta (lib/loja-bloqueada.ts). O
+  // ADMIN dentro da loja passa, como no layout.
+  if ((session.user as any)?.role !== "ADMIN" && (await lojaBloqueadaPorMensalidade(targetFranchiseeId))) {
+    return NextResponse.json({ error: MENSAGEM_CONTA_BLOQUEADA }, { status: 403 });
+  }
 
   // ── SEM CAIXA ABERTO NÃO SE LANÇA VENDA PRESENCIAL ───────────────────────
   //

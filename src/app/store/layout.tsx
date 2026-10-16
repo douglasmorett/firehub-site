@@ -8,7 +8,8 @@ import StoreSidebar from "@/components/customer/StoreSidebar";
 import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { prisma } from "@/lib/prisma";
 import { diasDeTesteRestantes } from "@/lib/fim-do-teste";
-import { bloqueioDoCiclo, diaEMes, diasAte, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
+import { diaEMes, diasAte, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
+import { cicloBloqueia, ehLojaEspecial } from "@/lib/loja-bloqueada";
 import HideOnCompras from "@/components/HideOnCompras";
 import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
 import AvisoIaForaDoAr from "@/components/customer/AvisoIaForaDoAr";
@@ -106,8 +107,10 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   } | null = null;
   const targetFranchiseeId = storeOwner?.id || user?.id;
   const userEmailClean = (storeOwner?.email || user?.email)?.toLowerCase().replace(/\s+/g, "");
-  const isHakimStore = storeOwner?.isFranqueadoHakim === true || user?.isFranqueadoHakim === true || userEmailClean === "contatohakim@gmail.com";
-  const isSpecialStore = isHakimStore || userEmailClean === "viniciusmenezes.ofc@gmail.com";
+  // As exceções (Hakim, vinicius) e a regra do bloqueio moram em
+  // lib/loja-bloqueada.ts — a MESMA que barra pedido no iFood, no robô, no
+  // cardápio e no totem. Aqui sem cache: a tela lê a fatura fresca.
+  const isSpecialStore = ehLojaEspecial(storeOwner, user);
 
   // No computador da loja (modo contingência) a mensalidade nunca trava nem
   // aparece: a loja está sem internet, e travar o caixa no meio da queda é o
@@ -131,9 +134,8 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         // para a loja — o prazo é o dia 5, e depois dele o boleto já cobra
         // juros e multa (dono, 02/10/2026).
         const venc = vencimentoDoBoleto(closedCycle.yearMonth);
-        const bloqueio = bloqueioDoCiclo(closedCycle, userEmailClean);
         const now = new Date();
-        const isOverdue = now >= bloqueio;
+        const isOverdue = cicloBloqueia(closedCycle, userEmailClean, now);
         const diasParaVencer = diasAte(venc.dia, now);
 
         pendingPayment = {

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { keetaConfigurada, eventosDaKeeta, confirmarLeitura, acaoNoPedidoKeeta, type EventoKeeta } from "@/lib/keeta/api";
 import { processarEventoKeeta } from "@/lib/keeta/eventos";
-import { merchantsAtivos } from "@/lib/keeta/lojas";
+import { lojaDoMerchant, merchantsAtivos } from "@/lib/keeta/lojas";
+import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 import { acoesPendentes, marcarTentativa } from "@/lib/keeta/acoes-pendentes";
 import { idNaKeeta } from "@/lib/keeta/status";
 
@@ -31,7 +32,18 @@ export async function GET(req: NextRequest) {
   const temTempo = () => Date.now() - inicio < 45_000;
   const log: string[] = [];
 
-  const merchants = await merchantsAtivos();
+  // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts) sai da lista do
+  // polling: a Keeta não entrega os eventos dela, nada é importado nem
+  // confirmado, e o pedido fica no Portal da Keeta.
+  const merchants: string[] = [];
+  for (const m of await merchantsAtivos()) {
+    const loja = await lojaDoMerchant(m).catch(() => null);
+    if (loja && (await lojaBloqueadaPorMensalidade(loja.franchiseeId))) {
+      log.push(`[bloqueio] ${loja.nomeNaKeeta || m}: bloqueada por mensalidade — fora do polling`);
+      continue;
+    }
+    merchants.push(m);
+  }
   if (merchants.length > 100) log.push(`⚠️ ${merchants.length} lojas vinculadas — o polling cobre as 100 primeiras; o webhook cobre o resto`);
 
   if (merchants.length > 0) {

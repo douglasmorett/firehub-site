@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 import { registrar99Food } from "@/lib/webhook-99food-log";
+import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 import { parseJson99Food } from "@/lib/json-ids-longos";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
 import { aplicarPedidoAlterado99, sincronizar99Food } from "@/lib/food99-status";
@@ -438,6 +439,14 @@ export async function POST(req: NextRequest) {
             `O 99Food ENTREGOU o pedido — a amarração da loja é que falta.`,
           payload: event,
         });
+        continue;
+      }
+
+      // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): nada é buscado
+      // nem gravado. O evento sai com ACK (não entra em `paraReenviar`), então
+      // o 99Food não reenvia; o pedido fica no portal do 99, onde o lojista atende.
+      if (await lojaBloqueadaPorMensalidade(franchisee.id)) {
+        console.log(`[99Food Webhook] Loja ${franchisee.id} bloqueada por mensalidade — evento ${eventType || "?"} ${orderId} ignorado.`);
         continue;
       }
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { semLojasBloqueadas } from "@/lib/loja-bloqueada";
 import { garantirColunasWabiz } from "@/lib/garantir-colunas";
 
 /**
@@ -53,6 +54,10 @@ export async function GET(req: NextRequest) {
   } catch {
     return NextResponse.json({ ok: true, lojas: 0, log: ["ℹ️ Colunas Wabiz ainda não existem"] });
   }
+
+  // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): a fila nem é lida
+  // — sem import e sem confirmar na Wabiz; o pedido fica no portal de lá.
+  lojas = await semLojasBloqueadas(lojas, log);
 
   if (lojas.length === 0) {
     return NextResponse.json({ ok: true, lojas: 0 });

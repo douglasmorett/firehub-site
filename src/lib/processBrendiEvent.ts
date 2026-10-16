@@ -21,6 +21,7 @@
  */
 import { observacaoDoItem } from "@/lib/observacao-do-item";
 import { prisma } from "@/lib/prisma";
+import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 import { coordenadasDoParceiro } from "./coordenadas-do-parceiro";
 import { pontoEDistanciaDoParceiro } from "./distancia-da-entrega";
 import { dataHoraDaLoja } from "@/lib/fuso";
@@ -628,6 +629,13 @@ export async function processBrendiEvent(
       }
 
       const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
+
+      // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): pedido NOVO não
+      // entra — nada gravado, impresso ou confirmado; fica no portal do parceiro.
+      // O cron nem puxa a fila dela; aqui chegam o webhook e a importação manual.
+      if (await lojaBloqueadaPorMensalidade(franchiseeIdToUse)) {
+        return { action: "skipped", orderId, message: "loja bloqueada por mensalidade — pedido não importado" };
+      }
 
       // ── REPASSE DE IFOOD/99FOOD PELA BRENDI NÃO ENTRA ─────────────────────
       //

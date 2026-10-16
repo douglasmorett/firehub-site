@@ -18,6 +18,7 @@ import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido } from "@/lib/fiscal-modo";
 import { lerConfigDeAgendamento } from "@/lib/agendamento";
 import { lojaFechadaPelaQueda } from "@/lib/loja-sem-conexao-no-banco";
+import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 
 export const SELECT_DA_LOJA_NO_CARDAPIO = {
   id: true,
@@ -79,6 +80,13 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
   // (lib/loja-sem-conexao.ts): o cardápio diz "instabilidade, volte em alguns
   // minutos" em vez de "fechada". Só se pergunta com o interruptor desligado.
   const semConexao = franchisee.storeOpen === false ? await lojaFechadaPelaQueda(franchisee.id) : false;
+
+  // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): o cardápio do
+  // delivery aparece FECHADO — o cliente não monta um carrinho para tomar
+  // "indisponível" no fim. Não fala de dívida; o POST do pedido também barra.
+  if (canal === "delivery" && franchisee.storeOpen !== false && (await lojaBloqueadaPorMensalidade(franchisee.id))) {
+    franchisee = { ...franchisee, storeOpen: false };
+  }
 
   const showReviews = (franchisee as any).showReviewsOnMenu !== false;
   const avaliacoesQueEntram = filtroDoCardapio(minimoDeEstrelas((franchisee as any).reviewsMinStars));

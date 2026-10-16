@@ -4,6 +4,7 @@ import { registrarEstadoDoRobo } from '@/lib/whatsapp-estado';
 import { hospedadoVaiParaOGatewayNovo, levarHospedadoAoGatewayNovo } from '@/lib/gateway-da-loja';
 import { sendEvolutionMessage } from '@/lib/whatsapp-evolution';
 import { processChatbotAI } from '@/lib/chatbot-ai';
+import { lojaBloqueadaPorMensalidade } from '@/lib/loja-bloqueada';
 import { trackWhatsAppMessage } from '@/lib/usage-tracker';
 import { ehPararPromocoes, MENSAGEM_DE_DESCADASTRO } from '@/lib/disparo-oficial/regras';
 import { registrarTrace, mascararTelefone } from '@/lib/webhook-trace';
@@ -639,6 +640,13 @@ async function handleIncomingMessage(body: any, instance: string) {
   if (!user) {
     console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] Instância "${instance}" não pertence a nenhuma loja cadastrada.`);
     registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: "texto", estagio: "loja-nao-encontrada" });
+    return;
+  }
+
+  // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): o robô fica
+  // calado — sem baixar áudio, sem chamar a IA, sem responder. É o que mais
+  // gastava de uma loja travada. Pagou, volta sozinho em até 1 minuto.
+  if (await lojaBloqueadaPorMensalidade(user.id)) {
     return;
   }
 

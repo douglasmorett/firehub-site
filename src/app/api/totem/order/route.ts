@@ -5,6 +5,7 @@ import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { autenticarTotem } from "@/lib/totem-auth";
+import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/loja-bloqueada";
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelAgora } from "@/lib/cardapio-interno";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
@@ -111,6 +112,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: auth.erro, code: auth.codigo }, { status: auth.status });
     }
     const licenca = auth.licenca;
+    // Loja bloqueada por mensalidade não recebe pedido (lib/loja-bloqueada.ts).
+    if (await lojaBloqueadaPorMensalidade(licenca.franchiseeId)) {
+      return NextResponse.json({ error: MENSAGEM_LOJA_INDISPONIVEL, code: "LOJA_INDISPONIVEL" }, { status: 403 });
+    }
     const fuso = await fusoDaLoja(licenca.franchiseeId);
 
     if (!items || !Array.isArray(items) || items.length === 0) {
