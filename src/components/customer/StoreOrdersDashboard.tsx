@@ -5024,7 +5024,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <div style={{ marginBottom: "14px" }}>
                   <div>Nome: {order.customerName}</div>
                   <div>Telefone: {phone}</div>
-                  <div>Qtd Pedidos: 1</div>
+                  {/* Era "1" cravado (lib/qtd-pedidos-do-cliente.ts): sem número, sem linha. */}
+                  {typeof (order as any).qtdPedidosDoCliente === "number" && <div>Qtd Pedidos: {(order as any).qtdPedidosDoCliente}</div>}
                 </div>
 
                 {isDelivery && order.customerAddress && (

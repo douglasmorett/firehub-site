@@ -1847,8 +1847,14 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (order.customerPhone && !/^0+$/.test(String(order.customerPhone).trim())) {
     corpoDoCliente += comNegrito(wrapLines(R("cliente", "telefone", "Telefone:") + " " + cleanAscii(order.customerPhone), 2), "cliente", "telefone", false);
   }
-  // "Qtd Pedidos: 1" na rodada da mesa nao conta nada a ninguem.
-  if (!ehConta && !ehPedidoDeMesa) corpoDoCliente += comNegrito(R("cliente", "qtdPedidos", "Qtd Pedidos:") + " 1", "cliente", "qtdPedidos", false) + LF;
+  // "Qtd Pedidos" na rodada da mesa nao conta nada a ninguem.
+  // Ate a 1.2.43 o numero era um "1" cravado, e a Showrrascao dava a taxa
+  // gratis do primeiro pedido a quem ja tinha pedido 4 vezes (16/10/2026).
+  // Desde a 1.2.44 vem do servidor (lib/qtd-pedidos-do-cliente.ts, campo
+  // qtdPedidosDoCliente); sem numero (marketplace, telefone de zeros, servidor
+  // velho) a linha nao sai — melhor nada do que um "1" falso.
+  const qtdPedidosDoCliente = typeof order.qtdPedidosDoCliente === "number" && order.qtdPedidosDoCliente > 0 ? order.qtdPedidosDoCliente : null;
+  if (!ehConta && !ehPedidoDeMesa && qtdPedidosDoCliente !== null) corpoDoCliente += comNegrito(R("cliente", "qtdPedidos", "Qtd Pedidos:") + " " + qtdPedidosDoCliente, "cliente", "qtdPedidos", false) + LF;
   marcas.tituloCliente = res.length;
   if (corpoDoCliente) res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
   marcas.cliente = res.length;

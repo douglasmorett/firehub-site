@@ -39,6 +39,8 @@ type PrintOrder = {
   customerPhone?: string;
   /** "CPF na nota" (só os dígitos). Ver lib/documento-do-cliente.ts. */
   customerCpfCnpj?: string | null;
+  /** Pedidos do cliente na loja, contando este (lib/qtd-pedidos-do-cliente.ts). null = não se conta. */
+  qtdPedidosDoCliente?: number | null;
   customerAddress?: string;
   deliveryType: "DELIVERY" | "RETIRADA";
   paymentMethod: string;
@@ -63,7 +65,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.43";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.44";
 
 /** "1.2.10" é mais nova que "1.2.9": compara por número, não por texto. */
 export function versaoAssistenteAoMenos(versao: string | null | undefined, minima: string): boolean {
@@ -378,6 +380,8 @@ async function printToDevice(
           // campo é o aditivo: o Assistente de hoje ignora, o de amanhã imprime
           // em linha própria sem precisar de mudança aqui.
           customerCpfCnpj: (order as any).customerCpfCnpj,
+          // Assistente 1.2.44+: "Qtd Pedidos: N"; null = a linha não sai.
+          qtdPedidosDoCliente: (order as any).qtdPedidosDoCliente ?? null,
           customerAddress: order.customerAddress,
           deliveryType: order.deliveryType,
           paymentMethod: order.paymentMethod,
@@ -577,6 +581,20 @@ export async function printOrder(
   }
 
   if (!printersToUse.length) return { success: false, printed: 0, attempted: true, aguardando: false };
+
+  // ── "Qtd Pedidos" DE VERDADE (lib/qtd-pedidos-do-cliente.ts) ─────────────
+  // A fila da nuvem já manda o número; o pedido do painel não tem, e a comanda
+  // saía "1" para todo mundo — a Showrrascão dava a taxa grátis do primeiro
+  // pedido a quem já tinha pedido 4 vezes (16/10/2026). Uma pergunta curta por
+  // comanda; se não responder a tempo, a linha não sai (nunca um "1" inventado).
+  if ((order as any).id && (order as any).qtdPedidosDoCliente === undefined && typeof window !== "undefined") {
+    const qtd = await fetch(`/api/store/orders/${encodeURIComponent((order as any).id)}/qtd-pedidos`, { signal: AbortSignal.timeout(3_000) })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => (typeof d?.qtd === "number" ? d.qtd : null))
+      .catch(() => null);
+    order = { ...order, qtdPedidosDoCliente: qtd } as PrintOrder;
+  }
+
   /** Todas as cadastradas, antes dos filtros: a via do entregador escolhe entre elas. */
   const todasAsImpressoras = printersToUse;
 

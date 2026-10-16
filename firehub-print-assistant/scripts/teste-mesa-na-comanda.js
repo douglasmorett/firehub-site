@@ -175,13 +175,16 @@ console.log("\n8) Entrega dividida entre duas cozinhas, com cupom: a conta fecha
     items: [{ name: "Thor", qty: 1, price: 39.9 }, { name: "Batata Frita", qty: 1, price: 20.1 }],
     discountTotal: 10, discountMerchant: 10,
     totalAmount: 95, deliveryFee: 5, createdAt: "2026-09-24T22:10:00.000Z",
+    qtdPedidosDoCliente: 4,
   };
   const l = linhas(papel(entrega));
   conferir("\"Em outra impressora (1 item): R$ 40,00\"", l.some((x) => /^Em outra impressora \(1 item\):\s+R\$ 40,00$/.test(x)));
   conferir("o cupom da loja na linha dele", l.some((x) => /^Desconto \(Cupom - Loja\):\s+-R\$ 10,00$/.test(x)), l.filter((x) => /Desconto|Outros/.test(x)).join(" | "));
   conferir("sem \"Outros valores\"", !l.some((x) => /Outros valores/.test(x)));
   conferir("a taxa de entrega continua (nao e mesa)", l.some((x) => /^Taxa de Entrega:\s+R\$ 5,00$/.test(x)));
-  conferir("\"Qtd Pedidos\" continua fora da mesa", l.some((x) => /^Qtd Pedidos: 1$/.test(x)));
+  conferir("\"Qtd Pedidos\" continua fora da mesa, com o numero do servidor", l.some((x) => /^Qtd Pedidos: 4$/.test(x)));
+  // Sem o numero (marketplace, telefone de zeros, servidor velho): a linha nao sai.
+  conferir("sem numero, sem \"Qtd Pedidos\"", !linhas(papel({ ...entrega, qtdPedidosDoCliente: null })).some((x) => /Qtd Pedidos/.test(x)));
 }
 
 console.log("\n9) Em 58 mm");

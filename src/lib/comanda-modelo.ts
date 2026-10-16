@@ -1119,6 +1119,8 @@ export type PedidoParaComanda = {
   /** O "CPF na nota", já formatado (lib/documento-do-cliente.ts). */
   documento?: string | null;
   telefone?: string | null;
+  /** Pedidos do cliente na loja, contando este (lib/qtd-pedidos-do-cliente.ts). Sem número, sem linha. */
+  qtdPedidos?: number | null;
   endereco?: string | null;
   data?: string | null;
   hora?: string | null;
@@ -1338,7 +1340,8 @@ export function montarComanda(
         if (pedido.cliente) por(`${R("nome")} ${pedido.cliente}`.trim(), { negrito: N("nome"), rotulo: "nome" });
         if (pedido.documento) por(`${R("documento")} ${pedido.documento}`.trim(), { negrito: N("documento"), rotulo: "documento" });
         if (pedido.telefone) por(`${R("telefone")} ${pedido.telefone}`.trim(), { negrito: N("telefone"), rotulo: "telefone" });
-        por(`${R("qtdPedidos")} 1`.trim(), { negrito: N("qtdPedidos"), rotulo: "qtdPedidos" });
+        // Gêmeo do server.js (1.2.44): o número vem do servidor; sem número, sem linha.
+        if (typeof pedido.qtdPedidos === "number" && pedido.qtdPedidos > 0) por(`${R("qtdPedidos")} ${pedido.qtdPedidos}`.trim(), { negrito: N("qtdPedidos"), rotulo: "qtdPedidos" });
         break;
 
       case "entrega":
@@ -1598,6 +1601,7 @@ export function pedidoDeExemplo(nomeDaLoja = "Sua Loja"): PedidoParaComanda {
     // reescrever o rótulo dela, mesmo antes de o primeiro cliente pedir.
     documento: "529.982.247-25",
     telefone: "(22) 99999-1020",
+    qtdPedidos: 3,
     endereco: "Rua Dez, 59 - Costazul - Rio das Ostras",
     data: "12/09/2026",
     hora: "23:22",

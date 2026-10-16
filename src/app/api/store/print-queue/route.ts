@@ -28,6 +28,7 @@ import { juntarJobsDasLojas } from "@/lib/lojas-no-mesmo-pc";
 import { chaveDoAssistente, registrarAssistente, trabalhosDoAssistente } from "@/lib/dono-da-impressora";
 import { marcarAssistente } from "@/lib/sinais-da-loja";
 import { bebidaDecididaPeloServidor } from "@/lib/bebida-para-o-assistente";
+import { qtdPedidosDosClientes } from "@/lib/qtd-pedidos-do-cliente";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -522,6 +523,10 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     const andares = lerAndares(pc);
     const slugDaLoja = owner?.slug || "";
 
+    // "Qtd Pedidos" de verdade (lib/qtd-pedidos-do-cliente.ts). Só quando há
+    // pedido na fila — a maioria dos polls volta vazia e não consulta nada.
+    const qtdPedidos = recentOrders.length > 0 ? await qtdPedidosDosClientes(recentOrders as any) : new Map<string, number | null>();
+
     /** Pedidos de mesa só de bebida com a opção ligada: nada a imprimir. */
     const semPapel: string[] = [];
     const jobs = recentOrders.map(({ tableSession, ...pedidoDoBanco }) => {
@@ -548,6 +553,8 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         // sem o número dependendo de haver uma aba aberta — a classe de
         // divergência que o modelo da comanda já documenta neste arquivo.
         customerName: nomeDoClienteNaComanda(comMesa as any) || pedidoDoBanco.customerName,
+        // Assistente 1.2.44+: imprime o número; null = a linha não sai.
+        qtdPedidosDoCliente: qtdPedidos.get(pedidoDoBanco.id) ?? null,
         // Os mesmos dois em campo próprio: o Assistente 1.2.24 põe a mesa no
         // topo ("(3) MESA 4") e o garçom logo abaixo, e tira do nome o que foi
         // embutido acima. A conta (`tableSession`) não viaja inteira: só o que
@@ -846,8 +853,16 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     const reimpressoes = avulsas.filter((a) => a.kind === KIND_REIMPRESSAO);
     const danfes = avulsas.filter(ehDanfe);
 
+    // A reimpressão leva o mesmo "Qtd Pedidos" da original (contado até a hora do pedido).
+    const pedidosReimpressos = reimpressoes
+      .map((r) => (r.payload || {}) as any)
+      .filter((o) => o?.id && o?.createdAt)
+      .map((o) => ({ ...o, franchiseeId: String(o.franchiseeId || franchiseeId) }));
+    const qtdDasReimpressoes = pedidosReimpressos.length > 0 ? await qtdPedidosDosClientes(pedidosReimpressos) : new Map<string, number | null>();
+
     const jobsReimpressos = reimpressoes.map((pedida) => {
-      const order: any = pedida.payload || {};
+      const order: any = { ...(pedida.payload as any || {}) };
+      if (order.id && qtdDasReimpressoes.has(order.id)) order.qtdPedidosDoCliente = qtdDasReimpressoes.get(order.id);
       // "Imprimir teste" de UMA impressora (PrinterSetupClient): sai só nela.
       // Roteado como pedido, o item de teste — sem categoria — saía em todas.
       const alvo = typeof order.impressoraAlvo === "string" ? order.impressoraAlvo.trim() : "";

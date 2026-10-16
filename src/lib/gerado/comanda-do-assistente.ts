@@ -4,7 +4,7 @@
  * GERADO por scripts/gerar-comanda-do-assistente.mjs — NÃO EDITE AQUI.
  *
  * É o código que monta a comanda no Assistente de Impressão
- * (firehub-print-assistant/server.js, versão 1.2.39), copiado para a prévia
+ * (firehub-print-assistant/server.js, versão 1.2.44), copiado para a prévia
  * de "Personalizar impressão" desenhar o papel com o MESMO código que imprime.
  * Mudou o server.js? Rode o script de novo; `--conferir` falha enquanto esta
  * cópia estiver velha.
@@ -1051,8 +1051,14 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   if (order.customerPhone && !/^0+$/.test(String(order.customerPhone).trim())) {
     corpoDoCliente += comNegrito(wrapLines(R("cliente", "telefone", "Telefone:") + " " + cleanAscii(order.customerPhone), 2), "cliente", "telefone", false);
   }
-  // "Qtd Pedidos: 1" na rodada da mesa nao conta nada a ninguem.
-  if (!ehConta && !ehPedidoDeMesa) corpoDoCliente += comNegrito(R("cliente", "qtdPedidos", "Qtd Pedidos:") + " 1", "cliente", "qtdPedidos", false) + LF;
+  // "Qtd Pedidos" na rodada da mesa nao conta nada a ninguem.
+  // Ate a 1.2.43 o numero era um "1" cravado, e a Showrrascao dava a taxa
+  // gratis do primeiro pedido a quem ja tinha pedido 4 vezes (16/10/2026).
+  // Desde a 1.2.44 vem do servidor (lib/qtd-pedidos-do-cliente.ts, campo
+  // qtdPedidosDoCliente); sem numero (marketplace, telefone de zeros, servidor
+  // velho) a linha nao sai — melhor nada do que um "1" falso.
+  const qtdPedidosDoCliente = typeof order.qtdPedidosDoCliente === "number" && order.qtdPedidosDoCliente > 0 ? order.qtdPedidosDoCliente : null;
+  if (!ehConta && !ehPedidoDeMesa && qtdPedidosDoCliente !== null) corpoDoCliente += comNegrito(R("cliente", "qtdPedidos", "Qtd Pedidos:") + " " + qtdPedidosDoCliente, "cliente", "qtdPedidos", false) + LF;
   marcas.tituloCliente = res.length;
   if (corpoDoCliente) res += LF + DOUBLE_HEIGHT + makeHeaderTitle("CLIENTE") + DOUBLE_OFF + LF;
   marcas.cliente = res.length;
@@ -1832,10 +1838,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   return Buffer.from(res, "binary");
 }
 
-export const VERSAO_DO_ASSISTENTE = "1.2.39";
-export const ASSINATURA_DO_CODIGO = "860111c79dd4894c";
+export const VERSAO_DO_ASSISTENTE = "1.2.44";
+export const ASSINATURA_DO_CODIGO = "eed7172cd4c29171";
 
-/** Os bytes ESC/POS da comanda, como o Assistente 1.2.39 manda para a impressora. */
+/** Os bytes ESC/POS da comanda, como o Assistente 1.2.44 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
   return buildEscPos(order, storeName, columns, profile);
 }
