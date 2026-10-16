@@ -8,7 +8,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
 import { camposDoEnderecoParaImpressao } from "@/lib/endereco-impresso";
-import { comboParaImpressao, itensComEscolhasSeparadas } from "@/lib/parse-combo";
+import { comboParaImpressao, itensUmaLinhaPorUnidade } from "@/lib/parse-combo";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
@@ -692,11 +692,13 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         columns: d.impressora.columns ?? undefined,
         escposProfile: d.impressora.escposProfile ?? undefined,
         somenteBebidas: d.impressora.somenteBebidas === true,
-        // Campo ADITIVO: Assistente < 1.2.19 ignora e agrupa, como sempre.
+        // O Assistente (até a 1.2.43) NÃO lê esta marca no destino — só no
+        // pedido —, e a comanda pela fila saía agrupada. Fica por informação;
+        // quem separa é a linha de baixo.
         separarItens: d.impressora.separarItens === true,
-        // Com "Separados", a escolha do combo também sai uma por linha
-        // (lib/parse-combo.ts → escolhasUmaPorUnidade).
-        items: itensComEscolhasSeparadas(d.itens, d.impressora.separarItens === true),
+        // Com "Separados", os itens já vão uma linha por unidade, o combo e as
+        // escolhas de dentro (lib/parse-combo.ts → itensUmaLinhaPorUnidade).
+        items: itensUmaLinhaPorUnidade(d.itens, d.impressora.separarItens === true),
         // O que foi para as OUTRAS impressoras (lib/roteamento-de-impressao.ts):
         // o Assistente 1.2.24 imprime "Em outra impressora (2 itens)" no lugar
         // do "Outros valores do pedido" que ninguém entendia.
@@ -912,7 +914,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           // Reimpressão pelo modal sai inteira: o "só bebidas" não corta o papel.
           somenteBebidas: d.impressora.somenteBebidas === true && !alvo && order.reimprimirInteiro !== true,
           separarItens: d.impressora.separarItens === true,
-          items: itensComEscolhasSeparadas(d.itens, d.impressora.separarItens === true),
+          items: itensUmaLinhaPorUnidade(d.itens, d.impressora.separarItens === true),
           ...(d.impressora.somenteBebidas !== true && restoDoPedido(order.items, d.itens)
             ? { restoDoPedido: restoDoPedido(order.items, d.itens) }
             : {}),
@@ -958,7 +960,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           escposProfile: d.escposProfile ?? undefined,
           somenteBebidas: false,
           separarItens: (d as any).separarItens === true,
-          items: itensComEscolhasSeparadas(Array.isArray(order?.items) ? order.items : [], (d as any).separarItens === true),
+          items: itensUmaLinhaPorUnidade(Array.isArray(order?.items) ? order.items : [], (d as any).separarItens === true),
         })),
         createdAt: pedido.createdAt.toISOString(),
       };

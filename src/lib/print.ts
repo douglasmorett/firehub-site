@@ -1,7 +1,7 @@
 import { camposDeEntregaParaImpressao } from "./entrega-parceira";
 import { camposDoAcrescimoParaImpressao } from "./acrescimo-no-credito";
 import { camposDoEnderecoParaImpressao } from "./endereco-impresso";
-import { comboParaImpressao, escolhasUmaPorUnidade } from "./parse-combo";
+import { comboParaImpressao, itensUmaLinhaPorUnidade } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
 import { impressorasDaLoja } from "./loja-de-origem";
@@ -385,12 +385,13 @@ async function printToDevice(
           // online é gravado como `{ grupoId: { nome: qtd } }`, e o Assistente
           // só sabe ler array: descartava o objeto inteiro e a comanda saía com
           // o nome do combo e mais nada. Ver `comboParaImpressao`.
-          // Com "Separados", a escolha do combo também sai uma por linha
-          // ("2x BBQ Burguer" dentro do combo vira duas): `escolhasUmaPorUnidade`.
-          items: order.items.map(i => {
-            const escolhas = comboParaImpressao((i as any).comboSelections);
-            return { name: i.name, qty: i.qty, price: i.price, notes: i.notes, comboSelections: separarItens ? escolhasUmaPorUnidade(escolhas) : escolhas };
-          }),
+          // Com "Separados", sai daqui já uma linha por unidade — o item e as
+          // escolhas do combo —, a mesma lista que a fila da nuvem manda
+          // (`itensUmaLinhaPorUnidade`): os dois trilhos desenham o mesmo papel.
+          items: itensUmaLinhaPorUnidade(
+            order.items.map(i => ({ name: i.name, qty: i.qty, price: i.price, notes: i.notes, comboSelections: comboParaImpressao((i as any).comboSelections) })),
+            separarItens
+          ),
           totalAmount: order.totalAmount,
           deliveryFee: order.deliveryFee,
           discountTotal: (order as any).discountTotal,

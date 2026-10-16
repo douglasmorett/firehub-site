@@ -196,17 +196,40 @@ export function escolhasUmaPorUnidade<T extends { quantity?: number }>(lista: T[
 }
 
 /**
- * Os itens de uma impressora com "Separados": cada escolha de combo
- * desdobrada (ver `escolhasUmaPorUnidade`). Sem "Separados", a lista volta
- * como veio.
+ * Os itens de uma impressora com "Separados", JÁ uma linha por unidade:
+ * "2x Combo" vira duas linhas "1x Combo", e cada escolha de dentro também
+ * (ver `escolhasUmaPorUnidade`). Sem "Separados", a lista volta como veio.
+ *
+ * Por que o servidor separa, e não o Assistente: pela fila da nuvem o
+ * "Separados" nunca chegou ao papel. O servidor manda `separarItens` dentro de
+ * cada destino, e o Assistente (até a 1.2.43, server.js → o laço dos
+ * `destinos`) monta o pedido de cada impressora copiando itens, "só bebida",
+ * modelo e "sem valores" — mas não essa marca; e o desenho só lê
+ * `order.separarItens`. Toda comanda automática da Frangoso que saía pela
+ * fila vinha agrupada ("2x 2 Burguers / - 2x Onion Rings"), e só a
+ * reimpressão pelo painel, que põe a marca no pedido, saía separada — o "a
+ * primeira sai errada, a reimpressão sai certa" de 04/10 a 16/10/2026.
+ *
+ * Separando aqui, o papel sai certo em QUALQUER versão do Assistente, sem a
+ * loja instalar nada. É a mesma conta que o Assistente faz quando recebe a
+ * marca (`itensDesenhados`): unidade inteira vira linha, fração (0,5 pizza)
+ * fica como está, e o valor não muda — cada linha leva o preço unitário.
+ * Quem recebe a lista já separada e também a marca não separa de novo: tudo
+ * chega com quantidade 1.
  */
-export function itensComEscolhasSeparadas<T extends { comboSelections?: any }>(itens: T[], separar: boolean): T[] {
+export function itensUmaLinhaPorUnidade<T extends { comboSelections?: any; qty?: any; quantity?: any }>(itens: T[], separar: boolean): T[] {
   if (!separar || !Array.isArray(itens)) return itens;
-  return itens.map((i) =>
-    Array.isArray(i?.comboSelections) && i.comboSelections.length > 0
-      ? { ...i, comboSelections: escolhasUmaPorUnidade(i.comboSelections) }
-      : i
-  );
+  const saida: T[] = [];
+  for (const i of itens) {
+    const comEscolhas: T =
+      Array.isArray(i?.comboSelections) && i.comboSelections.length > 0
+        ? { ...i, comboSelections: escolhasUmaPorUnidade(i.comboSelections) }
+        : i;
+    const q = Number(i?.qty || i?.quantity || 1) || 1;
+    if (!Number.isInteger(q) || q < 2) { saida.push(comEscolhas); continue; }
+    for (let k = 0; k < q; k++) saida.push({ ...comEscolhas, qty: 1, quantity: 1 });
+  }
+  return saida;
 }
 
 /**
