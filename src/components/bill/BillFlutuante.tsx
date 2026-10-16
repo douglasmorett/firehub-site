@@ -11,12 +11,17 @@
  * Fica acima do balão do WhatsApp da loja (bottom 100) e do "Fale conosco"
  * (bottom 24), no mesmo canto. Na própria /store/bill some: a conversa já está
  * na página.
+ *
+ * Arrasta como as outras bolinhas (lib/useArrastavel.ts — Douglas, 16/10/2026:
+ * "o bill possa ser clicado e arrastado igual aos outros botões"); ao
+ * recarregar volta para o canto.
  */
 
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
 import ConversaComOBill, { AVATAR_DO_BILL } from "./ConversaComOBill";
+import { useArrastavel } from "@/lib/useArrastavel";
 
 export const EVENTO_BILL_LIGADO = "bill:ligado";
 
@@ -24,6 +29,8 @@ export default function BillFlutuante({ ligadoInicial }: { ligadoInicial: boolea
   const [ligado, setLigado] = useState(ligadoInicial);
   const [aberto, setAberto] = useState(false);
   const caminho = usePathname();
+  // Antes do `return null`: hook que não roda em toda renderização derruba a tela.
+  const arraste = useArrastavel();
 
   useEffect(() => {
     const ouvir = (e: Event) => setLigado(Boolean((e as CustomEvent).detail));
@@ -41,17 +48,19 @@ export default function BillFlutuante({ ligadoInicial }: { ligadoInicial: boolea
       `}</style>
 
       {!aberto && (
-        <div style={{ position: "fixed", bottom: 176, right: "clamp(8px, 4vw, 24px)", zIndex: 10001, display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ position: "fixed", bottom: 176, right: "clamp(8px, 4vw, 24px)", zIndex: 10001, display: "flex", alignItems: "center", gap: 8, ...arraste.estiloDoContainer }}>
           <span style={{ background: "#0B1220", color: "#67E8F9", fontWeight: 800, fontSize: 12, padding: "5px 10px", borderRadius: 999, boxShadow: "0 4px 12px rgba(2,6,23,.25)" }}>
             Fale com o Bill
           </span>
           <button
             className="bill-botao"
-            onClick={() => setAberto(true)}
+            {...arraste.alca}
+            // Quem acabou de largar o Bill em outro canto não quer a conversa aberta.
+            onClick={() => { if (!arraste.arrastou()) setAberto(true); }}
             aria-label="Abrir conversa com o Bill, seu assessor"
-            style={{ width: 60, height: 60, borderRadius: 999, border: "2px solid #22D3EE", padding: 0, overflow: "hidden", cursor: "pointer", background: "#020617", animation: "bill-brilho 2.6s ease-in-out infinite" }}
+            style={{ width: 60, height: 60, borderRadius: 999, border: "2px solid #22D3EE", padding: 0, overflow: "hidden", cursor: "grab", touchAction: "none", background: "#020617", animation: "bill-brilho 2.6s ease-in-out infinite" }}
           >
-            <img src={AVATAR_DO_BILL} alt="" width={60} height={60} style={{ display: "block", width: "100%", height: "100%", transform: "scale(1.25)" }} />
+            <img src={AVATAR_DO_BILL} alt="" width={60} height={60} draggable={false} style={{ display: "block", width: "100%", height: "100%", transform: "scale(1.25)", pointerEvents: "none" }} />
           </button>
         </div>
       )}
