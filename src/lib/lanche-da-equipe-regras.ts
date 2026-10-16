@@ -12,9 +12,11 @@ export type ConfigDoLanche = {
   ativo: boolean;
   /** R$ por dia, por motoboy, a preço do site. */
   limite: number;
+  /** O crédito do dia cobre só 1 bebida; as outras o motoboy paga (Douglas, 16/10/2026). */
+  umaBebidaPorDia: boolean;
 };
 
-export const LANCHE_PADRAO: ConfigDoLanche = { ativo: false, limite: 22.9 };
+export const LANCHE_PADRAO: ConfigDoLanche = { ativo: false, limite: 22.9, umaBebidaPorDia: false };
 
 const centavos = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 
@@ -23,6 +25,7 @@ export function lerConfigDoLanche(bruto: unknown): ConfigDoLanche {
   if (bruto && typeof bruto === "object" && !Array.isArray(bruto)) {
     const o = bruto as Record<string, unknown>;
     if (typeof o.ativo === "boolean") cfg.ativo = o.ativo;
+    if (typeof o.umaBebidaPorDia === "boolean") cfg.umaBebidaPorDia = o.umaBebidaPorDia;
     const limite = Number(o.limite);
     if (o.limite != null && Number.isFinite(limite) && limite >= 0) cfg.limite = Math.min(500, centavos(limite));
   }
@@ -52,3 +55,40 @@ export function dividirNoLimite(jaUsado: number, valor: number, limite: number):
   return { coberto, excedente, restanteDepois: centavos(livre - coberto) };
 }
 
+
+/** O aviso antes de enviar, com o texto que o Douglas pediu (16/10/2026). */
+export const CODIGO_BEBIDA_FORA = "BEBIDA_FORA_DO_CREDITO";
+export function avisoDaBebidaFora(valorFora: number): string {
+  const v = `R$ ${centavos(valorFora).toFixed(2).replace(".", ",")}`;
+  return `Você tem direito a 1 bebida por dia no seu crédito diário. Se passar de uma, vai ter que pagar por fora: ${v} descontados no seu acerto. Você aceita?`;
+}
+
+export type ItemNaConta = { preco: number; qtd: number; bebida: boolean };
+
+/**
+ * A conta do lanche com a regra da bebida: com `umaBebidaPorDia`, o crédito
+ * cobre 1 bebida no dia (`bebidasHoje` = as que já entraram no crédito em
+ * pedidos de hoje). Se o pedido tem mais de uma, fica no crédito a MAIS
+ * BARATA e as outras vão inteiras para o excedente, mesmo sobrando limite.
+ * Bebida dentro de combo não conta: só a bebida pedida solta.
+ */
+export function contaDoLanche(opts: { itens: ItemNaConta[]; jaUsado: number; limite: number; umaBebidaPorDia: boolean; bebidasHoje: number }) {
+  const valor = centavos(opts.itens.reduce((t, i) => t + i.preco * i.qtd, 0));
+  const unidades = opts.umaBebidaPorDia
+    ? opts.itens.flatMap((i) => (i.bebida ? Array.from({ length: Math.max(0, Math.floor(i.qtd)) }, () => centavos(i.preco)) : [])).sort((a, b) => a - b)
+    : [];
+  const livres = Math.max(0, 1 - Math.max(0, Math.floor(opts.bebidasHoje || 0)));
+  const bebidasNoCredito = Math.min(livres, unidades.length);
+  const fora = unidades.slice(bebidasNoCredito);
+  const valorDasBebidasFora = centavos(fora.reduce((t, v) => t + v, 0));
+  const divisao = dividirNoLimite(opts.jaUsado, valor - valorDasBebidasFora, opts.limite);
+  return {
+    valor,
+    coberto: divisao.coberto,
+    excedente: centavos(divisao.excedente + valorDasBebidasFora),
+    restanteDepois: divisao.restanteDepois,
+    bebidasNoCredito,
+    bebidasFora: fora.length,
+    valorDasBebidasFora,
+  };
+}

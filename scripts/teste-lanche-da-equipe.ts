@@ -1,10 +1,10 @@
 /**
  * O lanche dos motoboys (lib/lanche-da-equipe-regras.ts) — a conta do limite
- * do dia e a Promoção do Dia fora.
+ * do dia, a Promoção do Dia fora e "1 bebida por dia no crédito".
  *
  *   npx tsx scripts/teste-lanche-da-equipe.ts
  */
-import { dividirNoLimite, ehPromocaoDoDia, lerConfigDoLanche } from "../src/lib/lanche-da-equipe-regras";
+import { contaDoLanche, dividirNoLimite, ehPromocaoDoDia, lerConfigDoLanche } from "../src/lib/lanche-da-equipe-regras";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -28,9 +28,23 @@ confere("'Promoção' sozinha não é a do dia", ehPromocaoDoDia({ category: "Co
 confere("esfiha normal", ehPromocaoDoDia({ category: "Esfihas Salgadas", tags: null }), false);
 
 console.log("\n— Configuração —");
-confere("padrão: desligado, R$ 22,90", lerConfigDoLanche(null), { ativo: false, limite: 22.9 });
-confere("valores lidos e arredondados", lerConfigDoLanche({ ativo: true, limite: "25.555" }), { ativo: true, limite: 25.56 });
+confere("padrão: desligado, R$ 22,90, bebida livre", lerConfigDoLanche(null), { ativo: false, limite: 22.9, umaBebidaPorDia: false });
+confere("valores lidos e arredondados", lerConfigDoLanche({ ativo: true, limite: "25.555", umaBebidaPorDia: true }), { ativo: true, limite: 25.56, umaBebidaPorDia: true });
+confere("umaBebidaPorDia em texto não liga", lerConfigDoLanche({ umaBebidaPorDia: "sim" }).umaBebidaPorDia, false);
 confere("negativo é ignorado", lerConfigDoLanche({ limite: -5 }).limite, 22.9);
+
+console.log("\n— 1 bebida por dia no crédito —");
+const lanche = { preco: 15.9, qtd: 1, bebida: false };
+const lata = { preco: 6, qtd: 1, bebida: true };
+const base = { jaUsado: 0, limite: 22.9, umaBebidaPorDia: true, bebidasHoje: 0 };
+const resumo = (c: ReturnType<typeof contaDoLanche>) => ({ coberto: c.coberto, excedente: c.excedente, bebidasNoCredito: c.bebidasNoCredito, bebidasFora: c.bebidasFora, fora: c.valorDasBebidasFora });
+confere("lanche + 1 lata: tudo no crédito, a bebida do dia usada", resumo(contaDoLanche({ ...base, itens: [lanche, lata] })), { coberto: 21.9, excedente: 0, bebidasNoCredito: 1, bebidasFora: 0, fora: 0 });
+confere("lanche + 2 latas: a 2ª paga por fora mesmo cabendo R$ 1", resumo(contaDoLanche({ ...base, itens: [lanche, { ...lata, qtd: 2 }] })), { coberto: 21.9, excedente: 6, bebidasNoCredito: 1, bebidasFora: 1, fora: 6 });
+confere("2 bebidas diferentes: fica no crédito a mais barata", resumo(contaDoLanche({ ...base, itens: [{ preco: 12, qtd: 1, bebida: true }, lata] })), { coberto: 6, excedente: 12, bebidasNoCredito: 1, bebidasFora: 1, fora: 12 });
+confere("bebida do dia já usada: a lata vai toda por fora", resumo(contaDoLanche({ ...base, bebidasHoje: 1, jaUsado: 15.9, itens: [lata] })), { coberto: 0, excedente: 6, bebidasNoCredito: 0, bebidasFora: 1, fora: 6 });
+confere("bebida do dia usada, mas lanche ainda cabe no limite", resumo(contaDoLanche({ ...base, bebidasHoje: 1, jaUsado: 6, itens: [lanche] })), { coberto: 15.9, excedente: 0, bebidasNoCredito: 0, bebidasFora: 0, fora: 0 });
+confere("opção desligada: 2 latas no limite como antes", resumo(contaDoLanche({ ...base, umaBebidaPorDia: false, itens: [{ ...lata, qtd: 2 }] })), { coberto: 12, excedente: 0, bebidasNoCredito: 0, bebidasFora: 0, fora: 0 });
+confere("bebida fora + estouro do limite somam no excedente", resumo(contaDoLanche({ ...base, itens: [{ ...lanche, preco: 20 }, { ...lata, qtd: 2 }] })), { coberto: 22.9, excedente: 9.1, bebidasNoCredito: 1, bebidasFora: 1, fora: 6 });
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

@@ -12,7 +12,7 @@ type Lanche = {
   itens: { qtd: number; nome: string; opcoes: string[] }[];
   motoboyId: string; motoboyNome: string | null;
 };
-type Dados = { disponivel: boolean; ativo: boolean; limite: number; fuso: string; lanches: Lanche[] };
+type Dados = { disponivel: boolean; ativo: boolean; limite: number; umaBebidaPorDia?: boolean; fuso: string; lanches: Lanche[] };
 
 const reais = (v: number) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
 const lerReais = (t: string) => Number(String(t).replace(/[^\d,.-]/g, "").replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
@@ -21,6 +21,7 @@ export default function LancheDaEquipePainel({ slug, loja }: { slug: string; loj
   const [dados, setDados] = useState<Dados | null>(null);
   const [ativo, setAtivo] = useState(false);
   const [limite, setLimite] = useState("22,90");
+  const [umaBebida, setUmaBebida] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState("");
   const [qr, setQr] = useState("");
@@ -36,6 +37,7 @@ export default function LancheDaEquipePainel({ slug, loja }: { slug: string; loj
     setDados(d);
     setAtivo(Boolean(d.ativo));
     setLimite(Number(d.limite ?? 22.9).toFixed(2).replace(".", ","));
+    setUmaBebida(d.umaBebidaPorDia === true);
   }, []);
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -48,14 +50,14 @@ export default function LancheDaEquipePainel({ slug, loja }: { slug: string; loj
 
   if (!dados?.disponivel) return null;
 
-  const salvar = async (proximoAtivo = ativo) => {
+  const salvar = async (proximoAtivo = ativo, proximaUmaBebida = umaBebida) => {
     setSalvando(true);
     setAviso("");
     try {
       const r = await fetch("/api/store/lanche-da-equipe", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ativo: proximoAtivo, limite: lerReais(limite) }),
+        body: JSON.stringify({ ativo: proximoAtivo, limite: lerReais(limite), umaBebidaPorDia: proximaUmaBebida }),
       });
       const d = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(d.error || "Não deu para salvar.");
@@ -120,6 +122,21 @@ svg{width:120mm;height:120mm}.r{font-size:20px;line-height:1.5;margin-top:16px;t
             <input value={limite} onChange={(e) => setLimite(e.target.value)} inputMode="decimal" style={campo} />
           </label>
           <div style={{ fontSize: "0.78rem", color: "#64748B" }}>A "Promoção do Dia" não aparece para eles. O dia vira às 5h.</div>
+          <label style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: "0.85rem", color: "#0F172A", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={umaBebida}
+              disabled={salvando}
+              onChange={(e) => { setUmaBebida(e.target.checked); salvar(ativo, e.target.checked); }}
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              <strong>🥤 1 bebida por dia no crédito</strong>
+              <span style={{ display: "block", fontSize: "0.78rem", color: "#64748B" }}>
+                A partir da 2ª bebida do dia o motoboy paga por fora (descontado no acerto). Ele vê o aviso e precisa tocar em "Aceito". Bebida dentro de combo não conta.
+              </span>
+            </span>
+          </label>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <button onClick={() => salvar()} disabled={salvando} style={{ padding: "9px 14px", borderRadius: 10, border: "none", background: "#C2410C", color: "#fff", fontWeight: 800, cursor: "pointer" }}>
               {salvando ? "Salvando…" : "Salvar"}

@@ -10,6 +10,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { propsDoCardapio, SELECT_DA_LOJA_NO_CARDAPIO } from "@/lib/cardapio-publico";
 import { LOJAS_COM_LANCHE_DA_EQUIPE, ehPromocaoDoDia } from "@/lib/lanche-da-equipe-regras";
+import { palavrasDeBebidaDaLoja, produtoEhBebida } from "@/lib/lanche-da-equipe";
 import LancheDaEquipe from "@/components/lanche/LancheDaEquipe";
 
 export const dynamic = "force-dynamic";
@@ -26,5 +27,12 @@ export default async function LancheDaEquipePage({ params }: { params: Promise<{
   const menuProducts = (props.menuProducts as any[]).filter((p) => !ehPromocaoDoDia(p));
   const storeCategories = ((props.storeCategories || []) as any[]).filter((c) => !ehPromocaoDoDia({ category: c.name }));
 
-  return <LancheDaEquipe slug={slug} cardapio={{ ...props, menuProducts, storeCategories }} />;
+  // As bebidas pela régua do servidor, para a tela avisar antes da 2ª do dia.
+  // (o cardápio público não traz o isBeverage do cadastro: vem à parte).
+  const palavras = await palavrasDeBebidaDaLoja(loja.id);
+  const marcadas = new Set((await prisma.menuProduct.findMany({ where: { franchiseeId: loja.id, isBeverage: true }, select: { id: true } })).map((p) => p.id));
+  const idsDeBebida: string[] = [];
+  for (const p of menuProducts) if (await produtoEhBebida({ ...p, isBeverage: marcadas.has(p.id) }, palavras)) idsDeBebida.push(String(p.id));
+
+  return <LancheDaEquipe slug={slug} cardapio={{ ...props, menuProducts, storeCategories }} idsDeBebida={idsDeBebida} />;
 }

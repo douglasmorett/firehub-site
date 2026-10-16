@@ -2,8 +2,9 @@
  * POST /api/loja/equipe/pedido — o lanche do motoboy pela tela do QR da parede
  * (app/loja/[slug]/equipe). Sessão assinada do motoboy (lib/motoboy-sessao.ts).
  *
- * Corpo: { itens: [{ menuProductId, quantity, comboSelections, notes }], levar, observacao }
+ * Corpo: { itens: [{ menuProductId, quantity, comboSelections, notes }], levar, observacao, aceitouBebidaFora }
  * → { ok, numero, valor, coberto, excedente, restante }
+ * 409 { codigo: "BEBIDA_FORA_DO_CREDITO" } = passou de 1 bebida no dia sem o "Aceito".
  *
  * A conta (limite do dia, Promoção do Dia fora) é de
  * lib/lanche-da-equipe.ts; nada de preço vem do corpo.
@@ -25,8 +26,9 @@ export async function POST(req: NextRequest) {
       itens: Array.isArray(body?.itens) ? body.itens : [],
       levar: body?.levar === true,
       observacao: body?.observacao,
+      aceitouBebidaFora: body?.aceitouBebidaFora === true,
     });
-    if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
+    if (!r.ok) return NextResponse.json({ error: r.error, codigo: r.codigo, valorDasBebidasFora: r.valorDasBebidasFora }, { status: r.status });
     return NextResponse.json(r);
   } catch (err: any) {
     console.error("[Lanche] pedido falhou:", err?.message || err);

@@ -5,7 +5,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { exigirMotoboy } from "@/lib/motoboy-sessao";
-import { configDaLoja, descontoDoAcerto, diaDoExpediente, lanchesDoPeriodo, usadoNoDia, garantirTabelaDoLanche } from "@/lib/lanche-da-equipe";
+import { configDaLoja, descontoDoAcerto, diaDoExpediente, lanchesDoPeriodo, consumoDoDia, garantirTabelaDoLanche } from "@/lib/lanche-da-equipe";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     await garantirTabelaDoLanche();
     const fuso = await fusoDaLoja(motoboy.franchiseeId);
     const dia = diaDoExpediente(fuso);
-    const usado = await usadoNoDia(motoboy.franchiseeId, motoboy.id, dia);
+    const { usado, bebidas } = await consumoDoDia(motoboy.franchiseeId, motoboy.id, dia);
     const agora = new Date();
     const lanches = await lanchesDoPeriodo({
       lojaId: motoboy.franchiseeId, motoboyId: motoboy.id, de: new Date(agora.getTime() - 31 * 86_400_000), ate: agora,
@@ -29,8 +29,9 @@ export async function GET(req: NextRequest) {
       motoboy: { nome: motoboy.name },
       ativo: cfg.ativo,
       limite: cfg.limite,
+      umaBebidaPorDia: cfg.umaBebidaPorDia,
       fuso,
-      hoje: { dia, usado, restante: Math.max(0, Math.round((cfg.limite - usado) * 100) / 100) },
+      hoje: { dia, usado, bebidas, restante: Math.max(0, Math.round((cfg.limite - usado) * 100) / 100) },
       mes: { lanches: doMes.filter((l) => !l.cancelado).length, descontado: descontoDoAcerto(doMes) },
       lanches,
     }, { headers: { "Cache-Control": "no-store" } });

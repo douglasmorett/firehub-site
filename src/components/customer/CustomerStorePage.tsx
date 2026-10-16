@@ -38,6 +38,7 @@ import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./
 import { isStoreOpen } from "@/lib/store-hours";
 import { TEXTO_DA_INSTABILIDADE } from "@/lib/loja-aberta";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
+import { contaDoLanche, avisoDaBebidaFora, CODIGO_BEBIDA_FORA } from "@/lib/lanche-da-equipe-regras";
 import { menorMinimoDeEntrega, minimoDaEntregaNoBairro } from "@/lib/minimo-do-bairro";
 import { avisoDoCep, buscarCep, cepFormatado, digitosDoCep } from "@/lib/cep";
 import { bairroComNomeDosCorreios } from "@/lib/bairro-dos-correios";
@@ -274,11 +275,16 @@ export type EquipeNoCardapio = {
   nome: string;
   limite: number;
   usadoHoje: number;
+  /** "1 bebida por dia no crédito": as bebidas soltas (ids, régua do servidor) e quantas já entraram hoje. */
+  umaBebidaPorDia?: boolean;
+  bebidasHoje?: number;
+  idsDeBebida?: string[];
   enviar: (p: {
     itens: { menuProductId: string; quantity: number; comboSelections: unknown; notes: string }[];
     levar: boolean;
     observacao: string;
-  }) => Promise<{ ok: true; numero: number | null; excedente: number; restante: number } | { ok: false; erro: string }>;
+    aceitouBebidaFora?: boolean;
+  }) => Promise<{ ok: true; numero: number | null; excedente: number; restante: number } | { ok: false; erro: string; codigo?: string; valorDasBebidasFora?: number }>;
   /** A faixa do topo (quem é, quanto resta hoje, Meus lanches, Sair). */
   topo?: React.ReactNode;
 };
@@ -2928,20 +2934,40 @@ export default function CustomerStorePage({
   const equipe = mesa?.equipe || null;
   const totalDoLanche = equipe ? Math.round(cartTotal * 100) / 100 : 0;
   const livreNoLanche = equipe ? Math.max(0, Math.round((equipe.limite - equipe.usadoHoje) * 100) / 100) : 0;
-  const cobertoNoLanche = Math.min(livreNoLanche, totalDoLanche);
-  const excedenteDoLanche = Math.round((totalDoLanche - cobertoNoLanche) * 100) / 100;
+  const contaDaEquipe = equipe
+    ? contaDoLanche({
+        itens: cart.map(i => ({ preco: i.price, qtd: i.quantity, bebida: (equipe.idsDeBebida || []).includes(idDoProduto(i)) })),
+        jaUsado: equipe.usadoHoje,
+        limite: equipe.limite,
+        umaBebidaPorDia: equipe.umaBebidaPorDia === true,
+        bebidasHoje: equipe.bebidasHoje || 0,
+      })
+    : null;
+  const cobertoNoLanche = contaDaEquipe?.coberto ?? 0;
+  const excedenteDoLanche = contaDaEquipe?.excedente ?? 0;
   const reaisDoLanche = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
+  // O aviso da 2ª bebida do dia, com o texto do Douglas (lib/lanche-da-equipe-regras.ts).
+  const aceitaBebidaFora = (valor: number) =>
+    perguntar({ titulo: "⚠️ Atenção", texto: avisoDaBebidaFora(valor), confirmar: "Aceito", cancelar: "Voltar" });
 
-  const enviarLancheDaEquipe = async () => {
+  const enviarLancheDaEquipe = async (aceitou = false): Promise<void> => {
     if (!equipe || loading) return;
+    if (!aceitou && contaDaEquipe && contaDaEquipe.bebidasFora > 0) {
+      if (!(await aceitaBebidaFora(contaDaEquipe.valorDasBebidasFora))) return;
+      aceitou = true;
+    }
+    let perguntarDeNovo: number | null = null;
     setLoading(true);
     try {
       const r = await equipe.enviar({
         itens: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
         levar: levarLanche,
         observacao: obsDaMesa.trim(),
+        aceitouBebidaFora: aceitou,
       });
       if (!r.ok) {
+        // O servidor viu bebida a mais que a tela não viu (outro lanche hoje): pergunta e manda de novo.
+        if (r.codigo === CODIGO_BEBIDA_FORA && !aceitou) { perguntarDeNovo = r.valorDasBebidasFora || 0; return; }
         avisar({ tipo: "erro", titulo: "O lanche não foi enviado", texto: r.erro });
         return;
       }
@@ -2959,6 +2985,7 @@ export default function CustomerStorePage({
     } finally {
       setLoading(false);
     }
+    if (perguntarDeNovo !== null && (await aceitaBebidaFora(perguntarDeNovo))) await enviarLancheDaEquipe(true);
   };
 
   const enviarPedidoDaMesa = async () => {
@@ -3050,6 +3077,12 @@ export default function CustomerStorePage({
           <span>No combinado de hoje (restam {reaisDoLanche(livreNoLanche)})</span>
           <span>{reaisDoLanche(cobertoNoLanche)}</span>
         </div>
+        {contaDaEquipe && contaDaEquipe.bebidasFora > 0 && (
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#B91C1C", fontWeight: 700 }}>
+            <span>🥤 {contaDaEquipe.bebidasFora} bebida{contaDaEquipe.bebidasFora > 1 ? "s" : ""} fora do crédito (1 por dia)</span>
+            <span>{reaisDoLanche(contaDaEquipe.valorDasBebidasFora)}</span>
+          </div>
+        )}
       </div>
       {excedenteDoLanche > 0 ? (
         <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "0.75rem 0.9rem", fontSize: "0.88rem", color: "#991B1B", lineHeight: 1.45 }}>

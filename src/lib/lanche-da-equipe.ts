@@ -12,7 +12,10 @@
  *   - comer na loja ou levar (sem cobrar embalagem por enquanto — Douglas,
  *     12/10/2026);
  *   - o que passar do limite é descontado no acerto do motoboy
- *     (lib/relatorio-do-entregador.ts).
+ *     (lib/relatorio-do-entregador.ts);
+ *   - opção "1 bebida por dia no crédito" (Douglas, 16/10/2026): a segunda
+ *     bebida do dia vai inteira para o excedente, com aviso e aceite antes
+ *     (contaDoLanche, em lib/lanche-da-equipe-regras.ts).
  *
  * ── Como fica gravado ────────────────────────────────────────────────────────
  * Um CustomerOrder normal (cozinha, quadro e impressão pegam sozinhos), com
@@ -34,9 +37,9 @@ import { horaEmUtc } from "@/lib/cashback-no-banco";
 
 export {
   LOJAS_COM_LANCHE_DA_EQUIPE, SOURCE_DO_LANCHE, FORMA_DO_LANCHE, LANCHE_PADRAO, lerConfigDoLanche, ehPromocaoDoDia, dividirNoLimite,
-  type ConfigDoLanche,
+  contaDoLanche, avisoDaBebidaFora, CODIGO_BEBIDA_FORA, type ConfigDoLanche,
 } from "@/lib/lanche-da-equipe-regras";
-import { LOJAS_COM_LANCHE_DA_EQUIPE, LANCHE_PADRAO, lerConfigDoLanche, type ConfigDoLanche } from "@/lib/lanche-da-equipe-regras";
+import { LOJAS_COM_LANCHE_DA_EQUIPE, LANCHE_PADRAO, SOURCE_DO_LANCHE, lerConfigDoLanche, type ConfigDoLanche } from "@/lib/lanche-da-equipe-regras";
 
 const centavos = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 
@@ -79,6 +82,9 @@ export async function garantirTabelaDoLanche(): Promise<boolean> {
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "LancheDaEquipeConfig_pkey" PRIMARY KEY ("lojaId")
     )`);
+    // A regra da bebida (16/10/2026): a opção e quantas bebidas cada pedido pôs no crédito.
+    await prisma.$executeRawUnsafe(`ALTER TABLE "LancheDaEquipeConfig" ADD COLUMN IF NOT EXISTS "umaBebidaPorDia" BOOLEAN NOT NULL DEFAULT false`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "LancheDaEquipe" ADD COLUMN IF NOT EXISTS "bebidasNoCredito" INTEGER NOT NULL DEFAULT 0`);
     tabelaOk = true;
     return true;
   } catch (err: any) {
@@ -92,13 +98,31 @@ type Banco = Pick<typeof prisma, "$queryRaw">;
 /** Cancelado nas três grafias não conta (a mesma régua dos relatórios). */
 const NAO_CANCELADO = Prisma.sql`upper(COALESCE(o."status", '')) NOT IN ('CANCELADO', 'CANCELED', 'CANCELLED')`;
 
-/** O que o motoboy já pediu no dia (valor cheio), sem os cancelados. */
-export async function usadoNoDia(lojaId: string, motoboyId: string, dia: string, db: Banco = prisma): Promise<number> {
-  const [l] = await db.$queryRaw<{ total: number | null }[]>(Prisma.sql`
-    SELECT COALESCE(sum(l."valor"), 0)::float8 AS total
+/**
+ * O que o motoboy já usou do crédito no dia e quantas bebidas entraram nele,
+ * sem os cancelados. Soma o `coberto`, não o valor cheio: a bebida paga por
+ * fora não come o limite (antes da regra da bebida dava no mesmo — o que
+ * passava do limite já era todo excedente).
+ */
+export async function consumoDoDia(lojaId: string, motoboyId: string, dia: string, db: Banco = prisma): Promise<{ usado: number; bebidas: number }> {
+  const [l] = await db.$queryRaw<{ total: number | null; bebidas: number | null }[]>(Prisma.sql`
+    SELECT COALESCE(sum(l."coberto"), 0)::float8 AS total, COALESCE(sum(l."bebidasNoCredito"), 0)::int AS bebidas
     FROM "LancheDaEquipe" l JOIN "CustomerOrder" o ON o."id" = l."pedidoId"
     WHERE l."lojaId" = ${lojaId} AND l."motoboyId" = ${motoboyId} AND l."dia" = ${dia} AND ${NAO_CANCELADO}`);
-  return centavos(Number(l?.total) || 0);
+  return { usado: centavos(Number(l?.total) || 0), bebidas: Number(l?.bebidas) || 0 };
+}
+
+/** As palavras de bebida que a loja cadastrou na impressão (as mesmas da comanda). */
+export async function palavrasDeBebidaDaLoja(lojaId: string): Promise<string> {
+  const u = await prisma.user.findUnique({ where: { id: lojaId }, select: { printerConfig: true } }).catch(() => null);
+  const cfg = u?.printerConfig as { customBeverageKeywords?: unknown } | null;
+  return typeof cfg?.customBeverageKeywords === "string" ? cfg.customBeverageKeywords : "";
+}
+
+/** O produto é bebida pedida solta? A mesma régua da comanda (itemEhBebida); combo não é. */
+export async function produtoEhBebida(produto: { name?: string | null; category?: string | null; isBeverage?: boolean | null }, palavras: string): Promise<boolean> {
+  const { itemEhBebida } = await import("@/lib/roteamento-de-impressao");
+  return itemEhBebida({ name: produto.name ?? "", category: produto.category ?? "", isBeverage: produto.isBeverage === true }, SOURCE_DO_LANCHE, palavras);
 }
 
 export type LancheDoHistorico = {
@@ -178,7 +202,7 @@ export async function configDaLoja(lojaId: string): Promise<ConfigDoLanche & { d
   const disponivel = LOJAS_COM_LANCHE_DA_EQUIPE.has(lojaId);
   if (!disponivel || !(await garantirTabelaDoLanche())) return { ...LANCHE_PADRAO, disponivel };
   const [l] = await prisma.$queryRaw<ConfigDoLanche[]>`
-    SELECT "ativo", "limite" FROM "LancheDaEquipeConfig" WHERE "lojaId" = ${lojaId}`.catch(() => []);
+    SELECT "ativo", "limite", "umaBebidaPorDia" FROM "LancheDaEquipeConfig" WHERE "lojaId" = ${lojaId}`.catch(() => []);
   return { ...lerConfigDoLanche(l), disponivel };
 }
 
@@ -187,9 +211,9 @@ export async function salvarConfigDoLanche(lojaId: string, bruto: unknown, quem:
   if (!(await garantirTabelaDoLanche())) throw new Error("tabela LancheDaEquipeConfig indisponível");
   const cfg = lerConfigDoLanche(bruto);
   await prisma.$executeRaw`
-    INSERT INTO "LancheDaEquipeConfig" ("lojaId", "ativo", "limite", "atualizadoPor", "updatedAt")
-    VALUES (${lojaId}, ${cfg.ativo}, ${cfg.limite}, ${quem}, NOW())
-    ON CONFLICT ("lojaId") DO UPDATE SET "ativo" = EXCLUDED."ativo", "limite" = EXCLUDED."limite",
+    INSERT INTO "LancheDaEquipeConfig" ("lojaId", "ativo", "limite", "umaBebidaPorDia", "atualizadoPor", "updatedAt")
+    VALUES (${lojaId}, ${cfg.ativo}, ${cfg.limite}, ${cfg.umaBebidaPorDia}, ${quem}, NOW())
+    ON CONFLICT ("lojaId") DO UPDATE SET "ativo" = EXCLUDED."ativo", "limite" = EXCLUDED."limite", "umaBebidaPorDia" = EXCLUDED."umaBebidaPorDia",
       "atualizadoPor" = EXCLUDED."atualizadoPor", "updatedAt" = NOW()`;
   return cfg;
 }
@@ -200,7 +224,7 @@ export type ItemDoLanche = { menuProductId?: unknown; quantity?: unknown; comboS
 
 export type ResultadoDoLanche =
   | { ok: true; pedidoId: string; numero: number | null; valor: number; coberto: number; excedente: number; restante: number }
-  | { ok: false; status: number; error: string };
+  | { ok: false; status: number; error: string; codigo?: string; valorDasBebidasFora?: number };
 
 /**
  * Grava o lanche: confere a tela ligada, o caixa aberto e os itens (da loja,
@@ -214,6 +238,8 @@ export async function pedirLanche(opts: {
   itens: ItemDoLanche[];
   levar: boolean;
   observacao?: unknown;
+  /** O motoboy aceitou pagar por fora a bebida que passa de 1 no dia. */
+  aceitouBebidaFora?: boolean;
 }): Promise<ResultadoDoLanche> {
   const { lojaId, motoboy } = opts;
   const cfg = await configDaLoja(lojaId);
@@ -230,7 +256,7 @@ export async function pedirLanche(opts: {
   const { precoUnitarioDoItem, pisoDoPreco } = await import("@/lib/preco-combo");
   const { conferirEstoque } = await import("@/lib/estoque-restante");
   const { fusoDaLoja } = await import("@/lib/fuso-da-loja");
-  const { ehPromocaoDoDia, dividirNoLimite, SOURCE_DO_LANCHE, FORMA_DO_LANCHE } = await import("@/lib/lanche-da-equipe-regras");
+  const { ehPromocaoDoDia, contaDoLanche, avisoDaBebidaFora, CODIGO_BEBIDA_FORA, FORMA_DO_LANCHE } = await import("@/lib/lanche-da-equipe-regras");
 
   const fuso = await fusoDaLoja(lojaId);
   const ids = [...new Set(opts.itens.map((i) => String(i?.menuProductId ?? "")).filter(Boolean))];
@@ -240,7 +266,8 @@ export async function pedirLanche(opts: {
   });
   const porId = new Map(produtos.map((p) => [p.id, p]));
 
-  const itens: { menuProductId: string; quantity: number; price: number; comboSelections: unknown; notes: string | null }[] = [];
+  const palavras = cfg.umaBebidaPorDia ? await palavrasDeBebidaDaLoja(lojaId) : "";
+  const itens: { menuProductId: string; quantity: number; price: number; comboSelections: unknown; notes: string | null; bebida: boolean }[] = [];
   for (const item of opts.itens) {
     const produto = porId.get(String(item?.menuProductId ?? ""));
     if (!produto) return { ok: false, status: 400, error: "Um item do pedido saiu do cardápio. Atualize a página e escolha de novo." };
@@ -256,14 +283,15 @@ export async function pedirLanche(opts: {
       price: centavos(preco),
       comboSelections: item.comboSelections ?? null,
       notes: item.notes ? String(item.notes).trim().slice(0, 200) || null : null,
+      bebida: cfg.umaBebidaPorDia ? await produtoEhBebida(produto, palavras) : false,
     });
   }
 
   const estoque = await conferirEstoque(lojaId, itens);
   if (!estoque.ok) return { ok: false, status: 409, error: estoque.mensagem };
 
-  const produtosTotal = centavos(itens.reduce((t, i) => t + i.price * i.quantity, 0));
-  const valor = produtosTotal;
+  const naConta = itens.map((i) => ({ preco: i.price, qtd: i.quantity, bebida: i.bebida }));
+  const valor = centavos(itens.reduce((t, i) => t + i.price * i.quantity, 0));
   const dia = diaDoExpediente(fuso);
   const observacao = String(opts.observacao ?? "").trim().slice(0, 300);
   const { generateDailyOrderNumberTx } = await import("@/lib/order-number");
@@ -271,13 +299,18 @@ export async function pedirLanche(opts: {
   const r = await prisma.$transaction(async (tx) => {
     // A trava do motoboy: o segundo pedido espera o primeiro gravar.
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"lanche:" + motoboy.id}))`;
-    const usado = await usadoNoDia(lojaId, motoboy.id, dia, tx);
-    const divisao = dividirNoLimite(usado, valor, cfg.limite);
+    const hoje = await consumoDoDia(lojaId, motoboy.id, dia, tx);
+    const divisao = contaDoLanche({ itens: naConta, jaUsado: hoje.usado, limite: cfg.limite, umaBebidaPorDia: cfg.umaBebidaPorDia, bebidasHoje: hoje.bebidas });
+    // A bebida a mais só sai com o "Aceito" do motoboy (a tela pergunta antes).
+    if (divisao.bebidasFora > 0 && !opts.aceitouBebidaFora) return { recusa: divisao.valorDasBebidasFora };
     const numero = await generateDailyOrderNumberTx(tx as any, lojaId);
     const linhaDoTopo = opts.levar ? "🥡 PARA LEVAR" : "🍽️ COMER NA LOJA";
     const conta = divisao.excedente > 0
       ? `Lanche da equipe: R$ ${divisao.coberto.toFixed(2).replace(".", ",")} no combinado + R$ ${divisao.excedente.toFixed(2).replace(".", ",")} descontado no acerto`
       : "Lanche da equipe: dentro do combinado";
+    const daBebida = divisao.bebidasFora > 0
+      ? `🥤 ${divisao.bebidasFora} bebida${divisao.bebidasFora > 1 ? "s" : ""} fora do crédito (R$ ${divisao.valorDasBebidasFora.toFixed(2).replace(".", ",")}) — o motoboy aceitou pagar`
+      : "";
     const order = await tx.customerOrder.create({
       data: {
         franchiseeId: lojaId,
@@ -287,7 +320,7 @@ export async function pedirLanche(opts: {
         customerAddress: opts.levar ? "Para levar" : "Comer na loja",
         deliveryType: "RETIRADA",
         paymentMethod: FORMA_DO_LANCHE,
-        notes: [linhaDoTopo, conta, observacao].filter(Boolean).join("\n"),
+        notes: [linhaDoTopo, conta, daBebida, observacao].filter(Boolean).join("\n"),
         deliveryFee: 0,
         discountTotal: divisao.coberto,
         totalAmount: divisao.excedente,
@@ -307,10 +340,14 @@ export async function pedirLanche(opts: {
     });
     const id = `lde_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
     await tx.$executeRaw`
-      INSERT INTO "LancheDaEquipe" ("id", "lojaId", "motoboyId", "motoboyNome", "pedidoId", "dia", "valor", "coberto", "excedente", "levar", "createdAt")
-      VALUES (${id}, ${lojaId}, ${motoboy.id}, ${motoboy.name}, ${order.id}, ${dia}, ${valor}, ${divisao.coberto}, ${divisao.excedente}, ${opts.levar}, ${horaEmUtc(new Date())})`;
+      INSERT INTO "LancheDaEquipe" ("id", "lojaId", "motoboyId", "motoboyNome", "pedidoId", "dia", "valor", "coberto", "excedente", "levar", "bebidasNoCredito", "createdAt")
+      VALUES (${id}, ${lojaId}, ${motoboy.id}, ${motoboy.name}, ${order.id}, ${dia}, ${valor}, ${divisao.coberto}, ${divisao.excedente}, ${opts.levar}, ${divisao.bebidasNoCredito}, ${horaEmUtc(new Date())})`;
     return { order, divisao };
   });
+  if ("recusa" in r) {
+    const fora = r.recusa ?? 0;
+    return { ok: false, status: 409, error: avisoDaBebidaFora(fora), codigo: CODIGO_BEBIDA_FORA, valorDasBebidasFora: fora };
+  }
 
   const { deductStockForOrder } = await import("@/lib/stock");
   deductStockForOrder(r.order.id).catch((err) => console.error("[Lanche] baixa de estoque falhou:", err?.message || err));
