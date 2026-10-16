@@ -142,16 +142,20 @@ export async function bebidasDoCardapio(lojaId: string): Promise<BebidasDoCardap
   const palavras = await palavrasDeBebidaDaLoja(lojaId);
   const produtos = await prisma.menuProduct.findMany({
     where: { franchiseeId: lojaId },
-    select: { id: true, name: true, category: true, isBeverage: true, price: true, priceDelivery: true, active: true },
+    select: { id: true, name: true, category: true, isBeverage: true, isCombo: true, price: true, priceDelivery: true, active: true },
+    // Os ativos primeiro: mesmo nome em dois cadastros, vale o que está no ar.
+    orderBy: [{ active: "desc" }, { createdAt: "asc" }],
   });
   const mapa: BebidasDoCardapio = { porId: {}, porNome: {} };
   for (const p of produtos) {
+    // Combo nunca é a bebida (o "10 Esfirras + 2 bebidas" antigo, marcado como bebida no cadastro).
+    if (p.isCombo || /\bcombo\b|\+/i.test(p.name || "")) continue;
     if (!(await produtoEhBebida(p, palavras))) continue;
     const preco = centavos(Number(p.priceDelivery) > 0 ? Number(p.priceDelivery) : Number(p.price) || 0);
     mapa.porId[p.id] = preco;
     const chave = chaveDaBebida(p.name);
-    // Mesmo nome em dois cadastros: vale o ativo (e, entre eles, o mais barato).
-    if (chave && (mapa.porNome[chave] == null || (p.active && preco < mapa.porNome[chave]))) mapa.porNome[chave] = preco;
+    // Sem preço (a "Coca 2L" de R$ 0 desativada) não serve de preço da bebida do combo.
+    if (chave && preco > 0 && mapa.porNome[chave] == null) mapa.porNome[chave] = preco;
   }
   return mapa;
 }
