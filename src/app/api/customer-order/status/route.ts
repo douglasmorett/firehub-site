@@ -602,6 +602,12 @@ export async function PUT(req: Request) {
     });
   }
 
+  // Lanche da equipe cancelado: a bebida que foi para o fiado do motoboy cai junto.
+  if (status === "CANCELADO" && order.source === "EQUIPE") {
+    const { cancelarFiadoDoLanche } = await import("@/lib/lanche-da-equipe");
+    await cancelarFiadoDoLanche(orderId).catch((err) => console.error("[Lanche] fiado da bebida não cancelou:", err?.message || err));
+  }
+
   // ── Notificações via WhatsApp ──
   try {
     const { sendOrderNotification } = await import("@/lib/order-notifications");

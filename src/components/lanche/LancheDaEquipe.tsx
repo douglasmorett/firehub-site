@@ -14,12 +14,13 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import CustomerStorePage, { type EquipeNoCardapio } from "@/components/customer/CustomerStorePage";
+import type { BebidasDoCardapio } from "@/lib/lanche-da-equipe-regras";
 
 type Sessao = { motoboyId: string; motoboyName: string; storeId: string; storeName?: string; token?: string };
 
 type Lanche = {
   pedidoId: string; numero: number | null; dia: string; em: string; levar: boolean;
-  valor: number; coberto: number; excedente: number; cancelado: boolean;
+  valor: number; coberto: number; excedente: number; fiado?: number; cancelado: boolean;
   itens: { qtd: number; nome: string; opcoes: string[] }[];
 };
 
@@ -36,7 +37,7 @@ type Resumo = {
 
 const reais = (v: number) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
 
-export default function LancheDaEquipe({ slug, cardapio, idsDeBebida = [] }: { slug: string; cardapio: any; idsDeBebida?: string[] }) {
+export default function LancheDaEquipe({ slug, cardapio, bebidas = null }: { slug: string; cardapio: any; bebidas?: BebidasDoCardapio | null }) {
   const chave = `firehub_motoboy_session_${slug}`;
   const [sessao, setSessao] = useState<Sessao | null>(null);
   const [pronto, setPronto] = useState(false);
@@ -101,7 +102,7 @@ export default function LancheDaEquipe({ slug, cardapio, idsDeBebida = [] }: { s
     usadoHoje: resumo.hoje.usado,
     umaBebidaPorDia: resumo.umaBebidaPorDia === true,
     bebidasHoje: Number(resumo.hoje.bebidas) || 0,
-    idsDeBebida,
+    bebidas,
     enviar: async ({ itens, levar, observacao, aceitouBebidaFora }) => {
       try {
         const r = await fetch("/api/loja/equipe/pedido", {
@@ -117,7 +118,7 @@ export default function LancheDaEquipe({ slug, cardapio, idsDeBebida = [] }: { s
           return { ok: false, erro: j.error || "O lanche não foi enviado.", codigo: j.codigo, valorDasBebidasFora: Number(j.valorDasBebidasFora) || 0 };
         }
         carregar();
-        return { ok: true, numero: j.numero ?? null, excedente: Number(j.excedente) || 0, restante: Number(j.restante) || 0 };
+        return { ok: true, numero: j.numero ?? null, excedente: Number(j.excedente) || 0, fiado: Number(j.fiado) || 0, restante: Number(j.restante) || 0 };
       } catch {
         return { ok: false, erro: "Sem conexão. Confira a internet e tente de novo." };
       }
@@ -133,7 +134,7 @@ export default function LancheDaEquipe({ slug, cardapio, idsDeBebida = [] }: { s
             </div>
             {resumo.umaBebidaPorDia && (
               <div style={{ fontSize: "0.8rem", opacity: 0.95, marginTop: 2 }}>
-                🥤 1 bebida por dia no crédito · {(Number(resumo.hoje.bebidas) || 0) > 0 ? <strong>a de hoje já foi — outra é paga por fora</strong> : <strong>a de hoje ainda está livre</strong>}
+                🥤 1 bebida por dia no crédito · {(Number(resumo.hoje.bebidas) || 0) > 0 ? <strong>a de hoje já foi — outra vai para o seu fiado</strong> : <strong>a de hoje ainda está livre</strong>}
               </div>
             )}
           </div>
@@ -264,7 +265,7 @@ function MeusLanches({ resumo, onFechar }: { resumo: Resumo; onFechar: () => voi
                     ))}
                   </ul>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.85rem", borderTop: "1px dashed #E2E8F0", paddingTop: 6 }}>
-                    <span>Total {reais(l.valor)} · no combinado {reais(l.coberto)}</span>
+                    <span>Total {reais(l.valor)} · no combinado {reais(l.coberto)}{(l.fiado || 0) > 0 && !l.cancelado ? ` · 🥤 ${reais(l.fiado || 0)} no fiado` : ""}</span>
                     <strong style={{ color: l.excedente > 0 && !l.cancelado ? "#B91C1C" : "#047857" }}>
                       {l.cancelado ? "não conta" : l.excedente > 0 ? `descontado ${reais(l.excedente)}` : "sem desconto"}
                     </strong>

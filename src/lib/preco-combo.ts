@@ -269,7 +269,7 @@ export type EscolhasDoCombo =
  * "Esfirra de Carne" grátis no grupo do sabor incluso e a R$ 3,98 no grupo da
  * segunda esfirra, o modal cobra R$ 20,88 e o chute cobraria R$ 24,86.
  */
-function normalizarEscolhas(escolhas: EscolhasDoCombo): { grupoId?: string; nome: string; qtd: number }[] {
+export function normalizarEscolhas(escolhas: EscolhasDoCombo): { grupoId?: string; nome: string; qtd: number }[] {
   if (!escolhas) return [];
 
   let bruto: any = escolhas;

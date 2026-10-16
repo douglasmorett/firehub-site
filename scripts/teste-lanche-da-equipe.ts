@@ -4,7 +4,7 @@
  *
  *   npx tsx scripts/teste-lanche-da-equipe.ts
  */
-import { contaDoLanche, dividirNoLimite, ehPromocaoDoDia, lerConfigDoLanche } from "../src/lib/lanche-da-equipe-regras";
+import { bebidasDoItem, contaDoLanche, dividirNoLimite, ehPromocaoDoDia, lerConfigDoLanche } from "../src/lib/lanche-da-equipe-regras";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -35,17 +35,32 @@ confere("umaBebidaPorDia em texto fica no padrão", lerConfigDoLanche({ umaBebid
 confere("negativo é ignorado", lerConfigDoLanche({ limite: -5 }).limite, 22.9);
 
 console.log("\n— 1 bebida por dia no crédito —");
-const lanche = { preco: 15.9, qtd: 1, bebida: false };
-const lata = { preco: 6, qtd: 1, bebida: true };
+// `excedente` = o que passou do limite (acerto); `fora` = a bebida a mais (fiado).
+const lanche = { preco: 15.9, qtd: 1, bebidas: [] as number[] };
+const lata = { preco: 6, qtd: 1, bebidas: [6] };
 const base = { jaUsado: 0, limite: 22.9, umaBebidaPorDia: true, bebidasHoje: 0 };
 const resumo = (c: ReturnType<typeof contaDoLanche>) => ({ coberto: c.coberto, excedente: c.excedente, bebidasNoCredito: c.bebidasNoCredito, bebidasFora: c.bebidasFora, fora: c.valorDasBebidasFora });
 confere("lanche + 1 lata: tudo no crédito, a bebida do dia usada", resumo(contaDoLanche({ ...base, itens: [lanche, lata] })), { coberto: 21.9, excedente: 0, bebidasNoCredito: 1, bebidasFora: 0, fora: 0 });
-confere("lanche + 2 latas: a 2ª paga por fora mesmo cabendo R$ 1", resumo(contaDoLanche({ ...base, itens: [lanche, { ...lata, qtd: 2 }] })), { coberto: 21.9, excedente: 6, bebidasNoCredito: 1, bebidasFora: 1, fora: 6 });
-confere("2 bebidas diferentes: fica no crédito a mais barata", resumo(contaDoLanche({ ...base, itens: [{ preco: 12, qtd: 1, bebida: true }, lata] })), { coberto: 6, excedente: 12, bebidasNoCredito: 1, bebidasFora: 1, fora: 12 });
-confere("bebida do dia já usada: a lata vai toda por fora", resumo(contaDoLanche({ ...base, bebidasHoje: 1, jaUsado: 15.9, itens: [lata] })), { coberto: 0, excedente: 6, bebidasNoCredito: 0, bebidasFora: 1, fora: 6 });
+confere("lanche + 2 latas: a 2ª vai pro fiado mesmo cabendo R$ 1", resumo(contaDoLanche({ ...base, itens: [lanche, { ...lata, qtd: 2 }] })), { coberto: 21.9, excedente: 0, bebidasNoCredito: 1, bebidasFora: 1, fora: 6 });
+confere("2 bebidas diferentes: fica no crédito a mais barata", resumo(contaDoLanche({ ...base, itens: [{ preco: 12, qtd: 1, bebidas: [12] }, lata] })), { coberto: 6, excedente: 0, bebidasNoCredito: 1, bebidasFora: 1, fora: 12 });
+confere("bebida do dia já usada: a lata vai toda pro fiado", resumo(contaDoLanche({ ...base, bebidasHoje: 1, jaUsado: 15.9, itens: [lata] })), { coberto: 0, excedente: 0, bebidasNoCredito: 0, bebidasFora: 1, fora: 6 });
 confere("bebida do dia usada, mas lanche ainda cabe no limite", resumo(contaDoLanche({ ...base, bebidasHoje: 1, jaUsado: 6, itens: [lanche] })), { coberto: 15.9, excedente: 0, bebidasNoCredito: 0, bebidasFora: 0, fora: 0 });
 confere("opção desligada: 2 latas no limite como antes", resumo(contaDoLanche({ ...base, umaBebidaPorDia: false, itens: [{ ...lata, qtd: 2 }] })), { coberto: 12, excedente: 0, bebidasNoCredito: 0, bebidasFora: 0, fora: 0 });
-confere("bebida fora + estouro do limite somam no excedente", resumo(contaDoLanche({ ...base, itens: [{ ...lanche, preco: 20 }, { ...lata, qtd: 2 }] })), { coberto: 22.9, excedente: 9.1, bebidasNoCredito: 1, bebidasFora: 1, fora: 6 });
+confere("bebida pro fiado + estouro do limite pro acerto", resumo(contaDoLanche({ ...base, itens: [{ ...lanche, preco: 20 }, { ...lata, qtd: 2 }] })), { coberto: 22.9, excedente: 3.1, bebidasNoCredito: 1, bebidasFora: 1, fora: 6 });
+
+console.log("\n— Guaravita dentro do combo conta como a bebida —");
+const mapa = { porId: { guara: 4.9, coca: 9.9 }, porNome: { "guaravita 280ml": 4.9, "coca-cola lata": 9.9 } };
+const comboGuara = { menuProductId: "combo3", preco: 17.9, comboSelections: { g1: { "Esfirra de Carne": 3 }, g2: { "Guaravita 280ml": 1 } } };
+const bebidasDoCombo = bebidasDoItem(comboGuara, mapa);
+confere("combo '3 Clássicas + Guaravita' leva 1 bebida de R$ 4,90", bebidasDoCombo, [4.9]);
+confere("formato do PDV (lista sem grupo) também acha", bebidasDoItem({ ...comboGuara, comboSelections: [{ name: "Guaravita 280ml", quantity: 1 }, { name: "Esfirra de Carne", quantity: 3 }] }, mapa), [4.9]);
+confere("trocou por Coca no combo: conta a Coca (R$ 9,90)", bebidasDoItem({ ...comboGuara, comboSelections: { g2: { "Coca-Cola lata": 1 } } }, mapa), [9.9]);
+confere("combo sem bebida não leva nenhuma", bebidasDoItem({ ...comboGuara, comboSelections: { g1: { "Esfirra de Carne": 4 } } }, mapa), []);
+confere("bebida solta: o preço do item", bebidasDoItem({ menuProductId: "coca", preco: 9.9 }, mapa), [9.9]);
+confere("opção desligada (sem mapa): nenhuma", bebidasDoItem(comboGuara, null), []);
+const combo = { preco: 17.9, qtd: 1, bebidas: bebidasDoCombo };
+confere("combo com Guaravita + Coca lata: Guaravita no crédito, Coca pro fiado", resumo(contaDoLanche({ ...base, itens: [combo, { preco: 9.9, qtd: 1, bebidas: [9.9] }] })), { coberto: 17.9, excedente: 0, bebidasNoCredito: 1, bebidasFora: 1, fora: 9.9 });
+confere("2 combos com Guaravita: o 2º Guaravita pro fiado, o resto no limite", resumo(contaDoLanche({ ...base, itens: [{ ...combo, qtd: 2 }] })), { coberto: 22.9, excedente: 8, bebidasNoCredito: 1, bebidasFora: 1, fora: 4.9 });
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

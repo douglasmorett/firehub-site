@@ -38,7 +38,7 @@ import GoogleAnalytics, { trackGaEvent, lerGaClientId, lerGaSessionId } from "./
 import { isStoreOpen } from "@/lib/store-hours";
 import { TEXTO_DA_INSTABILIDADE } from "@/lib/loja-aberta";
 import { bairroCadastrado } from "@/lib/area-de-entrega";
-import { contaDoLanche, avisoDaBebidaFora, CODIGO_BEBIDA_FORA } from "@/lib/lanche-da-equipe-regras";
+import { contaDoLanche, avisoDaBebidaFora, bebidasDoItem, CODIGO_BEBIDA_FORA, type BebidasDoCardapio } from "@/lib/lanche-da-equipe-regras";
 import { menorMinimoDeEntrega, minimoDaEntregaNoBairro } from "@/lib/minimo-do-bairro";
 import { avisoDoCep, buscarCep, cepFormatado, digitosDoCep } from "@/lib/cep";
 import { bairroComNomeDosCorreios } from "@/lib/bairro-dos-correios";
@@ -275,16 +275,16 @@ export type EquipeNoCardapio = {
   nome: string;
   limite: number;
   usadoHoje: number;
-  /** "1 bebida por dia no crédito": as bebidas soltas (ids, régua do servidor) e quantas já entraram hoje. */
+  /** "1 bebida por dia no crédito": as bebidas da loja (mapa do servidor) e quantas já entraram hoje. */
   umaBebidaPorDia?: boolean;
   bebidasHoje?: number;
-  idsDeBebida?: string[];
+  bebidas?: BebidasDoCardapio | null;
   enviar: (p: {
     itens: { menuProductId: string; quantity: number; comboSelections: unknown; notes: string }[];
     levar: boolean;
     observacao: string;
     aceitouBebidaFora?: boolean;
-  }) => Promise<{ ok: true; numero: number | null; excedente: number; restante: number } | { ok: false; erro: string; codigo?: string; valorDasBebidasFora?: number }>;
+  }) => Promise<{ ok: true; numero: number | null; excedente: number; fiado?: number; restante: number } | { ok: false; erro: string; codigo?: string; valorDasBebidasFora?: number }>;
   /** A faixa do topo (quem é, quanto resta hoje, Meus lanches, Sair). */
   topo?: React.ReactNode;
 };
@@ -2936,7 +2936,7 @@ export default function CustomerStorePage({
   const livreNoLanche = equipe ? Math.max(0, Math.round((equipe.limite - equipe.usadoHoje) * 100) / 100) : 0;
   const contaDaEquipe = equipe
     ? contaDoLanche({
-        itens: cart.map(i => ({ preco: i.price, qtd: i.quantity, bebida: (equipe.idsDeBebida || []).includes(idDoProduto(i)) })),
+        itens: cart.map(i => ({ preco: i.price, qtd: i.quantity, bebidas: bebidasDoItem({ menuProductId: idDoProduto(i), preco: i.price, comboSelections: i.comboSelections }, equipe.bebidas) })),
         jaUsado: equipe.usadoHoje,
         limite: equipe.limite,
         umaBebidaPorDia: equipe.umaBebidaPorDia === true,
@@ -2944,7 +2944,9 @@ export default function CustomerStorePage({
       })
     : null;
   const cobertoNoLanche = contaDaEquipe?.coberto ?? 0;
+  // O que passou do limite (acerto) e a bebida a mais (fiado), separados.
   const excedenteDoLanche = contaDaEquipe?.excedente ?? 0;
+  const fiadoDoLanche = contaDaEquipe?.valorDasBebidasFora ?? 0;
   const reaisDoLanche = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
   // O aviso da 2ª bebida do dia, com o texto do Douglas (lib/lanche-da-equipe-regras.ts).
   const aceitaBebidaFora = (valor: number) =>
@@ -2979,7 +2981,7 @@ export default function CustomerStorePage({
       avisar({
         tipo: "sucesso",
         titulo: "Lanche enviado para a cozinha!",
-        texto: `Pedido #${r.numero ?? "—"}. ${r.excedente > 0 ? `${reaisDoLanche(r.excedente)} passaram do combinado e vão ser descontados no seu acerto.` : `Ficou no combinado. Ainda restam ${reaisDoLanche(r.restante)} hoje.`}`,
+        texto: `Pedido #${r.numero ?? "—"}. ${r.excedente > 0 ? `${reaisDoLanche(r.excedente)} passaram do combinado e vão ser descontados no seu acerto.` : `Ficou no combinado. Ainda restam ${reaisDoLanche(r.restante)} hoje.`}${(r.fiado || 0) > 0 ? ` A bebida a mais (${reaisDoLanche(r.fiado || 0)}) foi para o seu fiado.` : ""}`,
         botao: "OK",
       });
     } finally {
@@ -3079,16 +3081,21 @@ export default function CustomerStorePage({
         </div>
         {contaDaEquipe && contaDaEquipe.bebidasFora > 0 && (
           <div style={{ display: "flex", justifyContent: "space-between", color: "#B91C1C", fontWeight: 700 }}>
-            <span>🥤 {contaDaEquipe.bebidasFora} bebida{contaDaEquipe.bebidasFora > 1 ? "s" : ""} fora do crédito (1 por dia)</span>
+            <span>🥤 {contaDaEquipe.bebidasFora} bebida{contaDaEquipe.bebidasFora > 1 ? "s" : ""} fora do crédito → seu fiado</span>
             <span>{reaisDoLanche(contaDaEquipe.valorDasBebidasFora)}</span>
           </div>
         )}
       </div>
+      {fiadoDoLanche > 0 && (
+        <div style={{ background: "#FFF7ED", border: "1.5px solid #FDBA74", borderRadius: 12, padding: "0.75rem 0.9rem", fontSize: "0.88rem", color: "#9A3412", lineHeight: 1.45 }}>
+          🥤 Você tem direito a <strong>1 bebida por dia</strong> no crédito. A bebida a mais (<strong>{reaisDoLanche(fiadoDoLanche)}</strong>) vai para o <strong>seu fiado</strong>.
+        </div>
+      )}
       {excedenteDoLanche > 0 ? (
         <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 12, padding: "0.75rem 0.9rem", fontSize: "0.88rem", color: "#991B1B", lineHeight: 1.45 }}>
           <strong>{reaisDoLanche(excedenteDoLanche)} passam do combinado</strong> e vão ser <strong>descontados no seu acerto</strong>. Se enviar, você concorda com o desconto.
         </div>
-      ) : (
+      ) : fiadoDoLanche > 0 ? null : (
         <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 12, padding: "0.75rem 0.9rem", fontSize: "0.85rem", color: "#166534" }}>
           Tudo dentro do combinado — não é descontado nada.
         </div>
@@ -4475,7 +4482,7 @@ export default function CustomerStorePage({
                 }}
               >
                 {equipe
-                  ? (loading ? "Enviando para a cozinha..." : excedenteDoLanche > 0 ? `🍔 Pedir (descontar ${reaisDoLanche(excedenteDoLanche)})` : `🍔 Pedir meu lanche • ${reaisDoLanche(totalDoLanche)}`)
+                  ? (loading ? "Enviando para a cozinha..." : excedenteDoLanche + fiadoDoLanche > 0 ? `🍔 Pedir (você paga ${reaisDoLanche(excedenteDoLanche + fiadoDoLanche)})` : `🍔 Pedir meu lanche • ${reaisDoLanche(totalDoLanche)}`)
                   : mesa
                   ? (loading ? "Enviando para a cozinha..." : `🍽️ Enviar para a cozinha • R$ ${cartTotal.toFixed(2).replace(".", ",")}`)
                   : semComoPedir
