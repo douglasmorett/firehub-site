@@ -4,5 +4,7 @@
 // dificil de ler.
 plugins {
     id("com.android.application") version "8.4.0" apply false
+    // Só para o esqueleto do SDK da Rede (:rede-sdk-stub).
+    id("com.android.library") version "8.4.0" apply false
     id("org.jetbrains.kotlin.android") version "1.9.24" apply false
 }

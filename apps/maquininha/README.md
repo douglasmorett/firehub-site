@@ -60,7 +60,7 @@ AGP 8.4.0 já vêm declarados no projeto.
 
 ```bash
 cd apps/maquininha
-./gradlew assemblePagbankDebug assembleStoneDebug assembleCieloDebug assembleGetnetDebug
+./gradlew assemblePagbankDebug assembleStoneDebug assembleCieloDebug assembleGetnetDebug assembleRedeDebug
 ./gradlew assemblePagbankRelease          # APK para homologação (um por adquirente)
 ./gradlew :simulador:assembleDebug        # simulador das adquirentes de deeplink
 ```
@@ -447,7 +447,7 @@ meio do movimento.
 
 ## Quatro adquirentes
 
-O mesmo app roda nas Smart POS de **PagBank, Stone, Cielo e Getnet**. Cada
+O mesmo app roda nas Smart POS de **PagBank, Stone, Cielo, Getnet e Rede**. Cada
 adquirente homologa e assina o APK dela, e cada uma reprova app que cite a
 concorrente ou carregue SDK de terminal de terceiro. Por isso não existe "um APK
 com as quatro": existe um **product flavor** por adquirente (dimensão
@@ -459,6 +459,7 @@ com as quatro": existe um **product flavor** por adquirente (dimensão
 | `stone` | `br.com.firehub.maquininha.stone` | deeplink `payment-app://pay`, volta por deeplink | não existe consulta |
 | `cielo` | `br.com.firehub.maquininha.cielo` | deeplink `lio://payment`, volta por deeplink | não existe consulta |
 | `getnet` | `br.com.firehub.maquininha.getnet` | deeplink `getnet://pagamento/v3/payment`, volta por `onActivityResult` | `getnet://pagamento/v1/checkstatus` pelo `callerId` |
+| `rede` | `br.com.firehub.maquininha.rede` | Intent pronta do SDK da Rede (`.aar`), volta por `onActivityResult` | não existe consulta |
 
 O `pagbank` **não mudou de applicationId**: a homologação PagBank amarra ao
 packageName. Ele é o único com a dependência do SDK (`pagbankImplementation`), e
@@ -481,12 +482,12 @@ de `CobradorDaAdquirente` (`src/main/.../pagamento/`):
 - `montarIdentificador(cobranca)`: o código desta tentativa, gravado no marcador.
 
 Cada flavor tem um `Adquirente.kt` (mesmo pacote, mesmo nome) que diz qual
-cobrador está no APK. O polling passa `&adquirente=PAGBANK|STONE|CIELO|GETNET` e
+cobrador está no APK. O polling passa `&adquirente=PAGBANK|STONE|CIELO|GETNET|REDE` e
 o POST de resultado leva `adquirente` e, quando houver, `idsDaAdquirente`
 (ATK/ITK da Stone, `cvNumber` da Getnet, `cieloCode` da Cielo).
 
-**A ponte de deeplink** (`src/deeplink`, compartilhado só por Stone, Cielo e
-Getnet): o serviço chama `CanalDaPonte.executar`, que abre a
+**A ponte de deeplink** (`src/deeplink`, compartilhado só por Stone, Cielo,
+Getnet e Rede): o serviço chama `CanalDaPonte.executar`, que abre a
 `PonteDaAdquirenteActivity` (transparente, `singleTop`), que abre o app da
 adquirente e recebe a volta — por `onNewIntent`/`onCreate` com a URI (Stone,
 Cielo) ou por `onActivityResult` (Getnet). A thread do serviço espera num latch
@@ -536,6 +537,7 @@ repetido faria a consulta devolver a tentativa anterior.
 | Stone | `CREDIT` | `DEBIT` | `PIX` | `VOUCHER` |
 | Cielo | `CREDITO_AVISTA` | `DEBITO_AVISTA` | `PIX` | `VOUCHER_REFEICAO` |
 | Getnet | `credit` | `debit` | `pix` | `voucher` |
+| Rede | `CREDITO_A_VISTA` | `DEBITO` | `PIX` | `VOUCHER` |
 
 Sempre à vista. A tela mostra "Conectado - <adquirente>" e só os botões que a
 adquirente aceita. Nos deeplinks o botão "Cancelar" some durante a transação:
@@ -572,6 +574,18 @@ quem cancela é o cliente, na tela da adquirente.
 - Falta: parceria Getnet (acesso à doc oficial e ao ambiente de homologação), homologação do APK, POS Getnet para teste.
 - Conferir no terminal: (1) query vs. extras; (2) tamanho máximo do `callerId` (o app manda uns 20 alfanuméricos); (3) o que o `checkstatus` responde para um `callerId` que a Getnet não conhece (se for 2/3, o pedido volta para a fila; se for 4, vai para a lista de atenção depois de um minuto — o lado seguro); (4) se o `checkstatus` mostra tela.
 
+**Rede (Itaú) — "Laranjinha Smart"** (Gertec GPOS700; em campo também N960K) — fonte: "Manual de Integração App3" em <https://portaldodesenvolvedor.docs.apiary.io/>.
+
+- **Não é deeplink: é SDK.** O `sdk-3.0-release.aar` (pacote `rede.smartrede.sdk`) monta uma Intent explícita para o app "Pagamentos" da Rede: `RedePayments.getInstance(ctx).intentForPaymentBuilder(FlexTipoPagamento.X, centavos).build()`. A ponte (`src/deeplink`, agora também no flavor `rede`) abre com `startActivityForResult`, igual à Getnet: uma cobrança por vez, prazo de 3 minutos, mesmos três desfechos. Sempre à vista: `setInstallments` não é chamado.
+- Volta: `RESULT_CANCELED` sem pagamento = **cliente cancelou** (o manual diz isso; diferente da Getnet, aqui vira recusa — ver o comentário em `CobradorRede.interpretar`). Com pagamento, `RedePayments.getPaymentFromIntent(data)` → `getStatus()`: `AUTHORIZED` aprovado, `DECLINED`/`FAILED` recusa, qualquer outra coisa incerto. Do comprovante (`getReceipt()`): NSU = `getNSU()`, autorização = `getAUTO()`, bandeira = `getFlag()`/`getIssuerName()` (vazia no ambiente de desenvolvimento), `getCV()` vai em `idsDaAdquirente.cv`. Valor de volta diferente do cobrado = incerto.
+- O que o manual não diz (se `getPaymentFromIntent` é estático, o tipo de `getAmount` e dos getters do comprovante) é lido **por reflexão**, para um palpite errado do esqueleto não virar `NoSuchMethodError` com o cartão já passado.
+- **Não há consulta de transação** (o SDK só faz pagamento, estorno e reimpressão): recuperação igual à de Stone e Cielo — resposta atrasada ou lista de atenção com "confira no aplicativo Pagamentos da Rede". Nunca recusa silenciosa.
+- **Onde pôr o `.aar`:** `apps/maquininha/app/libs/rede/sdk-3.0-release.aar`. Ele vem por e-mail da Rede e **não vai ao git** (`.gitignore`). Com o arquivo lá, o Gradle embarca o SDK e o `com.google.code.gson:gson:2.8.5` que o manual manda declarar junto. Sem ele, o flavor compila contra o esqueleto `apps/maquininha/rede-sdk-stub` (mesmas classes e pacote, `compileOnly`, nada vai para o APK) e o app mostra e responde **"SDK da Rede não instalado neste app"** — sem crash. Ao receber o `.aar`, rodar `./gradlew assembleRedeDebug` de novo: agora ele compila contra o SDK de verdade, e qualquer assinatura que o esqueleto tenha errado aparece como erro de compilação.
+- `minSdk` 23 (o padrão do app): a GPOS700 roda Android 6 e o manual não pede outro. `<queries>`: a doc não publica o pacote do app Pagamentos, então o manifesto não declara nenhum; em Android 11+ o cobrador não bloqueia por "não achei" (pode ser só a filtragem de pacotes) e deixa a abertura decidir. **Conferir no terminal** o pacote (`adb shell pm list packages`) e, se houver terminal Rede com Android 11+, pôr `<package>` em `src/rede/AndroidManifest.xml`.
+- **Assinatura de desenvolvimento:** a maquininha DEV só instala APK assinado com a chave **"Development - Gertec - Customer APP"**, publicada no próprio portal, seção "Manual de Assinaturas" (`Development_GertecDeveloper_CustomerAPP_29-10.JKS`; alias `developmentgertecdeveloper_customerapp`; as senhas estão na mesma página do portal). Para isso, um `keystore.properties` apontando para esse `.jks` só na máquina que gera o APK de teste — nunca a chave de produção. A maquininha DEV tem que ter o app "Pagamentos" (baixar pela Smart Store dela); `ActivityNotFound` é a falta dele. Comprar com a Gertec pedindo o padrão de chaves "Desenvolvimento Redeflex".
+- **Contatos:** dúvida técnica, `.aar` e maquininha DEV: **DevSmartRede@userede.com.br** (formulário "Suporte App3" com o log). Certificação do APK (APK + manual de configuração + "Briefing_app3", hospedados em 4shared/Google Drive; prazo até 5 dias úteis): **CertificacaoSmart@userede.com.br**. Terminal: suporte.integracoes@gertec.com.br. A certificação exige informação de suporte na tela inicial e dentro do app.
+- Falta: o `.aar` oficial, maquininha DEV, certificação. Conferir no terminal: (1) `getAmount` em centavos (se vier em outra unidade, toda aprovação cai na lista de atenção — lado seguro); (2) se `RESULT_CANCELED` também aparece quando o app Pagamentos morre depois de autorizar; (3) se `getFlag` existe ou só `getIssuerName`; (4) o pacote do app Pagamentos.
+
 ### Simulador (testar sem maquininha)
 
 `apps/maquininha/simulador` é um app separado
@@ -580,7 +594,8 @@ quem cancela é o cliente, na tela da adquirente.
 `/v1/checkstatus`) e mostra **Aprovar / Recusar / Cancelar / Fechar sem
 responder**, devolvendo exatamente o formato de cada adquirente. O "fechar sem
 responder" testa o caminho que importa: a cobrança tem que ficar **incerta**,
-nunca recusada. **Nunca instalar numa maquininha de verdade.**
+nunca recusada. **Nunca instalar numa maquininha de verdade.** Não cobre a
+Rede: lá a Intent é explícita para o app Pagamentos, montada pelo SDK.
 
 ```bash
 ./gradlew assembleStoneDebug :simulador:assembleDebug
@@ -594,7 +609,7 @@ emulador** — nesta máquina não há emulador instalado (nem AVD).
 
 ### Do lado do servidor
 
-- `GET pendente` recebe `&adquirente=PAGBANK|STONE|CIELO|GETNET`.
+- `GET pendente` recebe `&adquirente=PAGBANK|STONE|CIELO|GETNET|REDE` (`REDE` vira o provedor `REDE_APP`, "Rede (Itaú)" no painel).
 - Para terminal Cielo, mandar `credenciaisCielo:{clientId, accessToken, email?}` dentro de `cobranca` (o app também aceita na raiz da resposta, ao lado dela).
 - `POST resultado` passa a trazer `adquirente` e, opcionalmente, `idsDaAdquirente` (objeto texto→texto). São campos a mais; o servidor pode ignorar.
 - `pedidoId` é texto opaco no app: `"mesa:<id>"` com `descricao` "Mesa 5" funciona sem mudança (conferido: nada no app assume formato de id; os códigos de referência só usam os alfanuméricos dele).
@@ -781,10 +796,14 @@ app/src/pagbank/      só no APK do PagBank (único com o SDK PlugPag)
 ├── java/.../tela/AtivacaoActivity.kt
 └── res/                          tela de ativação e textos que citam o PagBank
 
-app/src/deeplink/java/.../pagamento/ponte/        Stone, Cielo e Getnet
+app/src/deeplink/java/.../pagamento/ponte/        Stone, Cielo, Getnet e Rede
 ├── CanalDaPonte.kt               a espera bloqueante (latch) entre serviço e ponte
 ├── PonteDaAdquirenteActivity.kt  Activity transparente que abre o app da adquirente
 └── CobradorPorDeeplink.kt        a regra de dinheiro comum aos três
+
+app/src/rede/          só no APK da Rede: CobradorRede.kt (o único que toca o SDK
+                       rede.smartrede.sdk), manifesto e textos que citam a Rede
+rede-sdk-stub/         esqueleto do SDK da Rede, compileOnly enquanto o .aar não chega
 
 app/src/stone|cielo|getnet/
 ├── AndroidManifest.xml           <queries> e o intent-filter da volta

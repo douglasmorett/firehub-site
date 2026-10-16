@@ -14,6 +14,12 @@ val dadosDaAssinatura = Properties().apply {
     if (arquivoDeAssinatura.exists()) arquivoDeAssinatura.inputStream().use { load(it) }
 }
 
+// O SDK da Rede (sdk-3.0-release.aar) chega por e-mail da Rede e NÃO vai ao
+// repositório (ver .gitignore e README, "Rede (Itaú)"). Sem ele o flavor
+// `rede` compila contra o esqueleto :rede-sdk-stub e o app recusa toda
+// cobrança com "SDK da Rede não instalado neste app".
+val aarDaRede = file("libs/rede/sdk-3.0-release.aar")
+
 android {
     namespace = "br.com.firehub.maquininha"
     compileSdk = 34
@@ -63,6 +69,9 @@ android {
     //    applicationId não muda: a homologação PagBank amarra ao packageName.
     //  - stone, cielo, getnet: cobram por deeplink, abrindo o app de pagamento
     //    da própria adquirente. Nosso app não lê cartão nesses três.
+    //  - rede: Intent pronta do SDK da Rede (.aar) aberta com
+    //    startActivityForResult no app "Pagamentos" da Rede. Também não lê
+    //    cartão; usa a mesma ponte de Activity dos deeplinks.
     flavorDimensions += "adquirente"
     productFlavors {
         create("pagbank") {
@@ -99,6 +108,17 @@ android {
             buildConfigField("String", "ADQUIRENTE", "\"GETNET\"")
             buildConfigField("String", "CAMPO_DE_CREDENCIAIS", "\"\"")
         }
+        create("rede") {
+            dimension = "adquirente"
+            applicationIdSuffix = ".rede"
+            // minSdk 23 (o padrão acima) serve: a Laranjinha Smart (Gertec
+            // GPOS700) roda Android 6, e o manual da Rede não pede outro.
+            buildConfigField("String", "ADQUIRENTE", "\"REDE\"")
+            buildConfigField("String", "CAMPO_DE_CREDENCIAIS", "\"\"")
+            // Se o .aar estava na pasta quando este APK foi gerado. Falso =
+            // APK sem o SDK: cobra nada e diz por quê.
+            buildConfigField("boolean", "SDK_DA_REDE_NO_APK", aarDaRede.exists().toString())
+        }
     }
 
     // A ponte de deeplink (Activity transparente + o canal que a liga ao
@@ -109,6 +129,7 @@ android {
         getByName("stone").java.srcDir("src/deeplink/java")
         getByName("cielo").java.srcDir("src/deeplink/java")
         getByName("getnet").java.srcDir("src/deeplink/java")
+        getByName("rede").java.srcDir("src/deeplink/java")
     }
 
     signingConfigs {
@@ -195,6 +216,17 @@ dependencies {
     // classe do PlugPag: é SDK de terminal de terceiro para eles, e o código
     // que o usa mora em src/pagbank, que os outros flavors nem compilam.
     "pagbankImplementation"("br.com.uol.pagseguro.plugpagservice.wrapper:wrapper:1.35.0")
+
+    // SDK da Rede, SÓ no flavor rede. Com o .aar na pasta, compila e embarca
+    // o de verdade (e o Gson 2.8.5 que o manual da Rede manda declarar junto:
+    // o .aar local não traz POM, então ninguém puxa o Gson por ele). Sem o
+    // .aar, compila contra o esqueleto, que NÃO vai para o APK (compileOnly).
+    if (aarDaRede.exists()) {
+        "redeImplementation"(files(aarDaRede))
+        "redeImplementation"("com.google.code.gson:gson:2.8.5")
+    } else {
+        "redeCompileOnly"(project(":rede-sdk-stub"))
+    }
 
     implementation("androidx.appcompat:appcompat:1.6.1")
     implementation("androidx.core:core-ktx:1.12.0")

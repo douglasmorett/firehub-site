@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Só no APK da Rede. Junta-se ao manifesto de src/main pelo merge. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+      <queries>: o SDK monta uma Intent EXPLÍCITA para o app "Pagamentos" da
+      Rede, e a documentação não publica o pacote dele. Por isso não há
+      <package> aqui: inventar um nome não ajudaria. Na prática não faz falta —
+      a Laranjinha Smart (GPOS700) roda Android 6/7, e a filtragem de pacotes só
+      existe do Android 11 em diante. Num terminal Rede com Android 11+, o
+      CobradorRede não bloqueia por "não achei o app" (pode ser só a
+      filtragem): quem decide é a abertura, que recusa com segurança se o app
+      não estiver lá. CONFERIR NO TERMINAL: o pacote do app Pagamentos
+      (adb shell pm list packages) e, se o terminal for Android 11+, colocar
+      <package android:name="…"/> aqui.
+    -->
+
+    <application>
+        <!--
+          A Rede responde por onActivityResult, não por deeplink: a ponte não
+          precisa ficar visível para outros apps. Ponte transparente (ver
+          PonteDaAdquirenteActivity); sem orientação fixa: Activity translúcida
+          com orientação fixa estoura no Android 8.0.
+        -->
+        <activity
+            android:name=".pagamento.ponte.PonteDaAdquirenteActivity"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation"
+            android:exported="false" />
+    </application>
+</manifest>

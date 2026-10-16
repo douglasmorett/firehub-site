@@ -25,3 +25,7 @@ include(":app")
 // Simulador dos apps de pagamento da Stone, Cielo e Getnet, para testar os
 // flavors de deeplink no emulador, sem maquininha. NÃO vai para loja nenhuma.
 include(":simulador")
+
+// Esqueleto do SDK da Rede (pacote rede.smartrede.sdk), compileOnly no flavor
+// `rede` enquanto o .aar oficial não está em app/libs/rede/. Não vai para APK.
+include(":rede-sdk-stub")
