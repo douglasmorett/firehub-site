@@ -78,4 +78,4 @@ export const conferirAtualizacoes = (token: string, uids: string[]) => foody<any
 
 /** Lista os pedidos de um intervalo (datas no formato da Foody). Até 500 por chamada. */
 export const listarEntregas = (token: string, inicio: string, fim: string) =>
-  foody<any[]>(token, "GET", `/orders/?startDate=${encodeURIComponent(inicio)}&endDate=${encodeURIComponent(fim)}`);
+  foody<any[]>(token, "GET", `/orders?startDate=${encodeURIComponent(inicio)}&endDate=${encodeURIComponent(fim)}`);
