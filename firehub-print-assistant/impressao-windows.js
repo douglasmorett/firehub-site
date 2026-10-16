@@ -271,16 +271,14 @@ pre { margin: 0; font: inherit; white-space: pre; line-height: 1.15; overflow: h
  * Windows aceitou o trabalho; rejeita com o motivo (impressora inexistente,
  * driver recusou, prazo) — o chamador trata como o rawPrint: vira pendente.
  */
-async function imprimirPeloDriver(printerName, html, { prazoMs = 30_000, paperWidth = "80mm" } = {}) {
+async function imprimirPeloDriver(printerName, html, { prazoMs = 30_000 } = {}) {
   const { app, BrowserWindow } = require("electron");
   await app.whenReady();
-  // JavaScript ligado só para MEDIR a altura da comanda: a pagina e nossa,
-  // montada aqui com todo texto escapado (escaparHtml), sem nada de fora.
   const win = new BrowserWindow({
     show: false,
     width: 420,
     height: 900,
-    webPreferences: { javascript: true, sandbox: true, contextIsolation: true },
+    webPreferences: { javascript: false, sandbox: true, contextIsolation: true },
   });
   try {
     try {
@@ -295,19 +293,17 @@ async function imprimirPeloDriver(printerName, html, { prazoMs = 30_000, paperWi
     }
     await win.loadURL("data:text/html;charset=utf-8," + encodeURIComponent(html));
 
-    // ── O TAMANHO DA PAGINA E O DA BOBINA ─────────────────────────────────
+    // ── O PAPEL E O DO DRIVER ─────────────────────────────────────────────
     //
-    // Sem `pageSize`, o Chromium imprime numa folha A4 (210 mm) e centraliza
-    // a comanda nela: numa bobina de 80 mm a comanda cai a ~69 mm da borda,
-    // fora do papel — a Diebold do Bistro Burguer (15/10/2026) soltou um papel
-    // em branco no 1o teste. A pagina tem a largura da bobina e a altura da
-    // propria comanda (medida no navegador), para o driver nao puxar folha A4
-    // inteira de papel em branco.
-    const larguraMm = paperWidth === "58mm" ? 58 : 80;
-    let alturaPx = 0;
-    try { alturaPx = Number(await win.webContents.executeJavaScript("document.documentElement.scrollHeight")) || 0; } catch (_) {}
-    const alturaMm = Math.max(40, Math.min(2000, Math.ceil(alturaPx * 25.4 / 96) + 6));
-
+    // A pagina NAO forca tamanho. Na 1.2.40 mandavamos `pageSize` com a
+    // largura da bobina e a altura da comanda, e a Diebold IM453H do Bistro
+    // Burguer (15/10/2026) descartou o trabalho calada: nada na fila, nada no
+    // papel — enquanto o Bloco de Notas e o Ctrl+P do Chrome, que usam o papel
+    // do driver, imprimiam. Vale o papel configurado no driver (a loja escolhe
+    // a bobina de 80 mm nas Preferencias de impressao), e a comanda vai
+    // encostada na borda esquerda (htmlDaComanda): mesmo num driver em A4 ela
+    // cai dentro dos primeiros 80 mm, em vez de centralizada fora da bobina,
+    // que foi o papel em branco da 1.2.39.
     await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error(`driver do Windows nao respondeu em ${Math.round(prazoMs / 1000)} s`)), prazoMs);
       win.webContents.print({
@@ -315,7 +311,6 @@ async function imprimirPeloDriver(printerName, html, { prazoMs = 30_000, paperWi
         deviceName: printerName,
         printBackground: false,
         margins: { marginType: "none" },
-        pageSize: { width: larguraMm * 1000, height: alturaMm * 1000 },
       }, (ok, motivo) => {
         clearTimeout(timer);
         if (ok) resolve(true);
