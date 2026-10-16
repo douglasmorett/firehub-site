@@ -569,7 +569,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           name: i.comboSelections ? nomeDoItemParaComanda(i, "Combo") : nomeDoItem(i, "Item"),
           // O 2º argumento é o produto: é com os `comboGroups` dele que o preço
           // de cada adicional é resolvido, para sair "+R$ 3,00" na notinha.
-          comboSelections: comboParaImpressao(i.comboSelections, i.menuProduct),
+          comboSelections: comboParaImpressao(i.comboSelections, i.menuProduct, i.price),
         })),
       };
       // ── A BEBIDA LANÇADA NA MESA, QUANDO A LOJA DESLIGOU (lib/bebida-da-mesa.ts) ──

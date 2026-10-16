@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/loja-bloqueada";
-import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
+import { precoUnitarioDoItem, pisoDoPreco, escolhasNosGruposAtuais } from "@/lib/preco-combo";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
@@ -441,6 +441,14 @@ export async function POST(req: Request) {
           { statusCode: 400 }
         );
       }
+
+      // CARRINHO COM O ID DE GRUPO VELHO: salvar o produto recria as
+      // perguntas com id novo, e a página aberta antes manda os ids antigos.
+      // Sem trocar pelos atuais, a meia a meia caía na regra SOMA e era
+      // gravada pelo preço de duas pizzas (Deeds, 16/10/2026: 112,70 no lugar
+      // de 66,30). Trocado aqui, o preço, as conferências abaixo e o que fica
+      // gravado (comanda, KDS, edição) usam os grupos que existem.
+      item.comboSelections = escolhasNosGruposAtuais(product as any, item.comboSelections);
 
       // A OPÇÃO PAUSADA também não entra (o sabor que acabou). A vitrine já a
       // esconde, mas a aba aberta antes da pausa e o "Repetir pedido" ainda a

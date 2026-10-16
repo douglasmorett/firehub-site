@@ -162,10 +162,10 @@ export function safeParseCombo(raw: any): any[] {
  * A quantidade NÃO é multiplicada pela do item pai: é assim que o array do
  * iFood sempre chegou ao Assistente, e é ele quem imprime "2x" do lado.
  */
-export function comboParaImpressao(raw: any, produto?: unknown): ComboItem[] | null {
+export function comboParaImpressao(raw: any, produto?: unknown, precoGravadoDoItem?: number | null): ComboItem[] | null {
   const lista = parseComboSelections(raw, 1);
   if (lista.length === 0) return null;
-  return produto ? comPrecoDoAdicional(lista, raw, produto) : lista;
+  return produto ? comPrecoDoAdicional(lista, raw, produto, precoGravadoDoItem) : lista;
 }
 
 /**
@@ -225,7 +225,7 @@ export function itensComEscolhasSeparadas<T extends { comboSelections?: any }>(i
  * Adicional que veio do PDV ou do iFood já traz `price`: esse é respeitado, e
  * nada aqui o sobrescreve.
  */
-function comPrecoDoAdicional(lista: ComboItem[], raw: any, produto: any): ComboItem[] {
+function comPrecoDoAdicional(lista: ComboItem[], raw: any, produto: any, precoGravadoDoItem?: number | null): ComboItem[] {
   let detalhado: { nome: string; qtd: number; precoUnitario: number }[] = [];
   try {
     // Import estático causaria ciclo (preco-combo não conhece parse-combo, mas
@@ -236,6 +236,19 @@ function comPrecoDoAdicional(lista: ComboItem[], raw: any, produto: any): ComboI
     return lista;
   }
   if (!detalhado.length) return lista;
+
+  // O PREÇO GRAVADO MANDA. Os "+R$" saem do cardápio de AGORA, e o item foi
+  // cobrado pelo de quando o pedido entrou: se a pergunta mudou de regra
+  // (SOMA → MÉDIA) ou de preço depois, os adicionais podem somar mais que o
+  // próprio item — o papel diria "+R$ 46,90 +R$ 45,90" num item de R$ 66,30.
+  // Nesse caso as opções saem só com o nome; o valor do item e o total
+  // continuam os gravados (o Assistente imprime `price` × quantidade e o
+  // `totalAmount` do pedido).
+  const gravado = Number(precoGravadoDoItem);
+  if (precoGravadoDoItem != null && Number.isFinite(gravado)) {
+    const soma = detalhado.reduce((s, d) => s + d.precoUnitario * d.qtd, 0);
+    if (soma > gravado + 0.01) return lista;
+  }
 
   const chave = (s: string) => s.trim().toLowerCase();
   const preco = new Map<string, number>();

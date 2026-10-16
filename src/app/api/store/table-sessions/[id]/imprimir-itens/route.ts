@@ -132,7 +132,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     qty: i.quantity,
     price: i.price,
     notes: i.notes || "",
-    comboSelections: comboParaImpressao(i.comboSelections, i.menuProduct),
+    comboSelections: comboParaImpressao(i.comboSelections, i.menuProduct, i.price),
     category: i.menuProduct?.category || undefined,
     menuProduct: i.menuProduct
       ? { name: i.menuProduct.name, category: i.menuProduct.category, isBeverage: i.menuProduct.isBeverage === true }

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { generateDailyOrderNumberTx } from "@/lib/order-number";
-import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
+import { precoUnitarioDoItem, pisoDoPreco, escolhasNosGruposAtuais } from "@/lib/preco-combo";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { autenticarTotem } from "@/lib/totem-auth";
 import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/loja-bloqueada";
@@ -238,6 +238,11 @@ export async function POST(req: NextRequest) {
         recusados.push(product.name);
         continue;
       }
+
+      // A tela do totem fica horas aberta: salvar o produto no painel recria
+      // as perguntas com id novo e o carrinho chega com os velhos. Sem trocar
+      // pelos atuais, a meia a meia caía na regra SOMA (lib/preco-combo.ts).
+      item.comboSelections = escolhasNosGruposAtuais(product as any, item.comboSelections);
 
       // + a opção que outra escolha bloqueia (meia pizza com a Pequena).
       const pausadas = [...opcoesPausadasEscolhidas(product as any, item.comboSelections), ...opcoesBloqueadasEscolhidas(product as any, item.comboSelections)];

@@ -304,6 +304,82 @@ export function normalizarEscolhas(escolhas: EscolhasDoCombo): { grupoId?: strin
   return [];
 }
 
+/**
+ * ESCOLHA COM O ID DE UM GRUPO QUE NÃO EXISTE MAIS.
+ *
+ * Salvar o produto no cardápio apaga e recria as perguntas (ComboGroup), e
+ * cada uma nasce com id novo. Quem estava com o cardápio aberto antes — ou
+ * pegou a cópia de 60 s do cache — monta o carrinho com os ids VELHOS. O
+ * servidor não achava o grupo, caía no casamento por nome e, sem grupo, na
+ * regra SOMA: a meia a meia saía pelo preço de duas pizzas inteiras.
+ *
+ * Deeds Delivery, 16/10/2026 22:00: a dona salvou a "Pizza Grande 8 Pedaços -
+ * 2 Sabores" às 21:54, o cliente (com a página de antes) pediu Atum I Premium
+ * (46,90) + Portuguesa (45,90) + Broto Brigadeiro (19,90). Na tela, MÉDIA:
+ * 46,40 + 19,90 = 66,30. Gravado: 46,90 + 45,90 + 19,90 = 112,70, total
+ * 115,69 — a comanda e o "cobrar na entrega" saíram com isso, e a dona teve
+ * de refazer o item na mão.
+ *
+ * Aqui o id velho é trocado pelo grupo ATUAL que tem TODOS os nomes daquele
+ * grupo velho (as escolhas do mesmo grupo velho andam juntas, então "Atum" e
+ * "Portuguesa" só cabem no grupo de sabores). Nenhum candidato, ou mais de um,
+ * e a escolha fica sem grupo — o comportamento de antes.
+ */
+function reancorarNosGruposAtuais<T extends { grupoId?: string; nome: string; qtd: number }>(
+  grupos: GrupoDeCombo[],
+  escolhido: T[]
+): T[] {
+  const idsAtuais = new Set(grupos.map((g) => g.id).filter(Boolean) as string[]);
+  const orfaos = new Map<string, Set<string>>();
+  for (const e of escolhido) {
+    if (!e.grupoId || idsAtuais.has(e.grupoId)) continue;
+    if (!orfaos.has(e.grupoId)) orfaos.set(e.grupoId, new Set());
+    orfaos.get(e.grupoId)!.add(e.nome);
+  }
+  if (orfaos.size === 0) return escolhido;
+
+  const novoId = new Map<string, string | undefined>();
+  for (const [velho, nomes] of orfaos) {
+    const candidatos = grupos.filter((g) => {
+      if (!g.id) return false;
+      const doGrupo = new Set((g.items || []).map((i) => i?.menuProduct?.name).filter(Boolean) as string[]);
+      for (const n of nomes) if (!doGrupo.has(n)) return false;
+      return true;
+    });
+    novoId.set(velho, candidatos.length === 1 ? candidatos[0].id : undefined);
+  }
+  return escolhido.map((e) =>
+    e.grupoId && novoId.has(e.grupoId) ? { ...e, grupoId: novoId.get(e.grupoId) } : e
+  );
+}
+
+/**
+ * As escolhas no formato do cardápio (`{ grupoId: { nome: qtd } }`), com os
+ * ids de grupo velhos trocados pelos atuais (ver `reancorarNosGruposAtuais`).
+ * É o que o pedido grava: assim a comanda, o KDS e a edição do pedido leem as
+ * escolhas nos grupos que existem. Lista do PDV (sem grupo) e escolha que não
+ * dá para reancorar voltam como vieram.
+ */
+export function escolhasNosGruposAtuais(produto: ProdutoComCombo | null | undefined, escolhas: EscolhasDoCombo): EscolhasDoCombo {
+  const grupos = produto?.comboGroups || [];
+  if (!escolhas || grupos.length === 0) return escolhas;
+  let bruto: any = escolhas;
+  if (typeof bruto === "string") {
+    try { bruto = JSON.parse(bruto); } catch { return escolhas; }
+  }
+  if (Array.isArray(bruto) || typeof bruto !== "object") return escolhas;
+  const lista = normalizarEscolhas(bruto);
+  if (lista.some((e) => !e.grupoId)) return escolhas;
+  const reancorado = reancorarNosGruposAtuais(grupos, lista);
+  if (reancorado.some((e) => !e.grupoId)) return escolhas; // algum não casou: não mexe
+  const saida: Record<string, Record<string, number>> = {};
+  for (const e of reancorado) {
+    const g = (saida[e.grupoId!] ||= {});
+    g[e.nome] = (g[e.nome] || 0) + e.qtd;
+  }
+  return saida;
+}
+
 /** Soma dos adicionais efetivamente escolhidos pelo cliente. */
 export function somaDosAdicionais(
   produto: ProdutoComCombo,
@@ -342,7 +418,7 @@ export function adicionaisDetalhados(
   const grupos = produto?.comboGroups || [];
   if (grupos.length === 0) return [];
 
-  const escolhido = normalizarEscolhas(escolhas);
+  const escolhido = reancorarNosGruposAtuais(grupos, normalizarEscolhas(escolhas));
   if (escolhido.length === 0) return [];
 
   const escolhidas = nomesEscolhidos(escolhido);
