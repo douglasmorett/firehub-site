@@ -10,6 +10,7 @@ import { estadoDoRoteador, sondarRoteador } from "@/lib/distancia-por-rota";
 import { estadoDoNominatim } from "@/lib/geocoding";
 import { sondarNominatim, estadoDaFilaDoMapa, estadoDoGoogle } from "@/lib/geocodificacao-servidor";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { lerMemoria } from "@/lib/memoria-do-servidor";
 
 export const dynamic = "force-dynamic";
 
@@ -26,11 +27,16 @@ export async function GET(req: NextRequest) {
     checks.database = { ok: false, error: e.message?.substring(0, 100) };
   }
 
-  // 2. Memory check
+  // 2. Memória — pelo PISO contra o teto real do Node (lib/memoria-do-servidor.ts).
+  // Era o `heapUsed` do instante contra 512 MB: o topo do serrote da coleta de
+  // lixo dava 503 em um terço das leituras com o servidor folgado. Só o nível
+  // crítico derruba o semáforo; a atenção (piso ≥ 60%) é aviso cedo e vai no
+  // corpo, em `memoria`.
   const mem = process.memoryUsage();
   const heapUsedMB = Math.round(mem.heapUsed / 1024 / 1024);
   const heapTotalMB = Math.round(mem.heapTotal / 1024 / 1024);
-  checks.memory = { ok: heapUsedMB < 512, ms: heapUsedMB }; // ms field reused for MB
+  const memoria = lerMemoria();
+  checks.memory = { ok: memoria.nivel !== "critico", ms: heapUsedMB }; // ms field reused for MB
 
   // 3. Uptime
   const uptimeSeconds = Math.round(process.uptime());
@@ -195,6 +201,8 @@ export async function GET(req: NextRequest) {
       status: allOk ? "healthy" : "degraded",
       uptime: uptimeSeconds,
       memory: `${heapUsedMB}MB / ${heapTotalMB}MB`,
+      // Nível, piso e teto de verdade (lib/memoria-do-servidor.ts).
+      memoria,
       esquema,
       entrega,
       checks,

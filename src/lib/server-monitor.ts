@@ -1,5 +1,6 @@
 import { segredoObrigatorio } from "./segredos";
 import { paraEnvioWhatsApp } from "./telefone";
+import { lerMemoria, textoDoAvisoDeMemoria } from "./memoria-do-servidor";
 /**
  * src/lib/server-monitor.ts
  * Sistema de monitoramento interno com alertas via WhatsApp.
@@ -26,9 +27,9 @@ const ALERT_PHONES = [
 const alertCooldowns = new Map<string, number>();
 const COOLDOWN_MS = 5 * 60 * 1000; // 5 minutos
 
-function canAlert(alertType: string): boolean {
+function canAlert(alertType: string, cooldownMs = COOLDOWN_MS): boolean {
   const last = alertCooldowns.get(alertType) || 0;
-  if (Date.now() - last < COOLDOWN_MS) return false;
+  if (Date.now() - last < cooldownMs) return false;
   alertCooldowns.set(alertType, Date.now());
   return true;
 }
@@ -163,7 +164,7 @@ export async function runHealthCheck(): Promise<{
   status: "healthy" | "degraded" | "critical";
   issues: string[];
 }> {
-  const issues: string[] = [];
+  const doBanco: string[] = [];
 
   // 1. Verificar banco de dados
   try {
@@ -172,36 +173,46 @@ export async function runHealthCheck(): Promise<{
     await prisma.$queryRaw`SELECT 1`;
     const dbMs = Date.now() - start;
     if (dbMs > 5000) {
-      issues.push(`⚠️ Banco de dados lento: ${dbMs}ms`);
+      doBanco.push(`⚠️ Banco de dados lento: ${dbMs}ms`);
     }
   } catch (err: any) {
-    issues.push(`🔴 Banco de dados INACESSÍVEL: ${err.message?.substring(0, 80)}`);
+    doBanco.push(`🔴 Banco de dados INACESSÍVEL: ${err.message?.substring(0, 80)}`);
   }
 
-  // 2. Verificar memória
-  const mem = process.memoryUsage();
-  const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
-  if (heapMB > 450) {
-    issues.push(`⚠️ Memória alta: ${heapMB}MB`);
-  }
+  // 2. Memória: o PISO contra o teto real do Node (lib/memoria-do-servidor.ts).
+  // Era o `heapUsed` do instante contra 450 MB — o topo do serrote da coleta
+  // de lixo, que passa disso o tempo todo com o servidor folgado — e mandava
+  // "Memória alta" a cada 5 minutos para o Douglas e o Victor.
+  const memoria = lerMemoria();
+  const daMemoria = textoDoAvisoDeMemoria(memoria);
+  const issues = daMemoria ? [...doBanco, daMemoria] : doBanco;
 
   // 3. Determinar status e alertar se necessário
   const hasCritical = issues.some((i) => i.includes("🔴"));
   const status = hasCritical ? "critical" : issues.length > 0 ? "degraded" : "healthy";
 
-  if (issues.length > 0 && canAlert("health")) {
+  // Cada assunto com o seu intervalo entre avisos: o banco como sempre
+  // (5 min); a memória em atenção no máximo a cada 30 min — é aviso cedo,
+  // não pode virar enxurrada que ninguém mais lê —, e em crítico a cada 10.
+  const avisar: string[] = [];
+  if (doBanco.length > 0 && canAlert("health")) avisar.push(...doBanco);
+  if (daMemoria && canAlert(`memoria_${memoria.nivel}`, memoria.nivel === "critico" ? 10 * 60_000 : 30 * 60_000)) {
+    avisar.push(daMemoria);
+  }
+
+  if (avisar.length > 0) {
     const msg = [
       `🚨 *ALERTA FIREHUB*`,
       `Status: ${status.toUpperCase()}`,
       `Hora: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`,
       ``,
-      ...issues,
+      ...avisar,
       ``,
       `🔗 https://firehubfood.com.br`,
     ].join("\n");
 
     await sendWhatsAppAlert(msg);
-    console.log(`[Monitor] 🚨 Alerta enviado: ${issues.join("; ")}`);
+    console.log(`[Monitor] 🚨 Alerta enviado: ${avisar.join("; ")}`);
   }
 
   return { status, issues };
