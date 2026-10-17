@@ -188,7 +188,10 @@ export async function validarCodigoEntrega(
     body: JSON.stringify({ code }),
   });
 
-  return { ...r, conferido: r.ok && r.data?.success === true };
+  // Código certo volta 2xx com corpo VAZIO na prática (a doc promete
+  // {"success":true}) — mesma regra de src/lib/codigo-de-entrega.ts: 2xx sem
+  // `success:false` é conferido.
+  return { ...r, conferido: r.ok && r.data?.success !== false };
 }
 
 // ── o evento que autoriza pedir o código ────────────────────────────────────

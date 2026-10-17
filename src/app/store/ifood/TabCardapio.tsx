@@ -375,7 +375,9 @@ export default function TabCardapio() {
 
           <button onClick={salvarItemCompleto} disabled={salvando || !categoriaId} style={botao(VERDE, !salvando && !!categoriaId)}>
             {salvando ? <Loader size={14} className="spin" /> : <Plus size={14} />}
-            {criado ? "Regravar item com complementos" : "Criar item com complementos"}
+            {criado
+              ? nomeGrupo ? "Regravar item com complementos" : "Regravar item"
+              : nomeGrupo ? "Criar item com complementos" : "Criar item"}
           </button>
           <p style={{ margin: "0.6rem 0 0", fontSize: "0.74rem", color: CINZA }}>
             Item, produto, grupo e complementos vão numa única chamada <code>PUT /items</code>.

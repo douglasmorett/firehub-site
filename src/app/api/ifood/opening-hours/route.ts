@@ -9,13 +9,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { comContextoIfood } from "@/lib/ifood-rota";
 import { chamarComContexto, mensagemDeErro } from "@/lib/ifood-http";
+import { agruparPorDia, corpoDoPut } from "@/lib/ifood-horarios";
 
 export async function GET(req: NextRequest) {
   return comContextoIfood(req, async ({ ctx }) => {
     const r = await chamarComContexto(ctx, `/merchant/v1.0/merchants/${ctx.merchantId}/opening-hours`);
     return NextResponse.json({
       merchantId: ctx.merchantId,
-      openingHours: r.data ?? null,
+      openingHours: r.ok ? agruparPorDia(r.data) : null,
       ifood: { status: r.status, ok: r.ok, origem: r.origem },
       ...(r.ok ? {} : { error: mensagemDeErro(r) }),
     });
@@ -24,8 +25,13 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   return comContextoIfood(req, async ({ ctx, corpo }) => {
-    // A API aceita tanto o array de turnos quanto o objeto que os embrulha.
-    const payload = Array.isArray(corpo) ? corpo : (corpo?.shifts ?? corpo);
+    // A API só aceita { storeId, shifts: [{ dayOfWeek, start: "HH:MM:SS", duration }] }.
+    // A tela de homologação manda agrupado por dia e a de configurações manda
+    // a lista plana — os dois viram o formato da API aqui.
+    const payload = corpoDoPut(ctx.merchantId, corpo);
+    if (payload.shifts.length === 0) {
+      return NextResponse.json({ error: "Nenhum turno informado." }, { status: 400 });
+    }
 
     const r = await chamarComContexto(ctx, `/merchant/v1.0/merchants/${ctx.merchantId}/opening-hours`, {
       method: "PUT",

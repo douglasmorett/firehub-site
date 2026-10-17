@@ -79,14 +79,36 @@ export function listarCatalogos(ctx: CtxCatalogo) {
   return chamarComContexto(ctx, `${base(ctx.merchantId)}/catalogs`);
 }
 
-/** Categorias do cardápio. Com `comItens`, cada categoria vem com seus itens. */
-export function listarCategorias(ctx: CtxCatalogo, comItens = false) {
-  const q = comItens ? "?include_items=true" : "";
-  return chamarComContexto(ctx, `${base(ctx.merchantId)}/categories${q}`);
+/**
+ * O catálogo onde as categorias moram. Na v2 categoria não existe solta na
+ * loja: `/merchants/{id}/categories` responde 404 "no Route matched" — o
+ * caminho é `/merchants/{id}/catalogs/{catalogId}/categories`. Prefere o
+ * catálogo de contexto DEFAULT (delivery), que é o que o Portal mostra.
+ */
+async function catalogoPadrao(ctx: CtxCatalogo): Promise<
+  { ok: true; catalogId: string } | { ok: false; resposta: Awaited<ReturnType<typeof listarCatalogos>> }
+> {
+  const r = await listarCatalogos(ctx);
+  const lista: any[] = Array.isArray(r.data) ? r.data : [];
+  const escolhido = lista.find((c) => (c?.context ?? []).includes("DEFAULT")) ?? lista[0];
+  if (!r.ok || !escolhido?.catalogId) return { ok: false, resposta: r };
+  return { ok: true, catalogId: escolhido.catalogId };
 }
 
-export function itensDaCategoria(ctx: CtxCatalogo, categoryId: string) {
-  return chamarComContexto(ctx, `${base(ctx.merchantId)}/categories/${categoryId}/items`);
+/** Categorias do cardápio. Com `comItens`, cada categoria vem com seus itens. */
+export async function listarCategorias(ctx: CtxCatalogo, comItens = false) {
+  const cat = await catalogoPadrao(ctx);
+  if (!cat.ok) return cat.resposta;
+  return chamarComContexto(
+    ctx,
+    `${base(ctx.merchantId)}/catalogs/${cat.catalogId}/categories?includeItems=${comItens ? "true" : "false"}`,
+  );
+}
+
+export async function itensDaCategoria(ctx: CtxCatalogo, categoryId: string) {
+  const cat = await catalogoPadrao(ctx);
+  if (!cat.ok) return cat.resposta;
+  return chamarComContexto(ctx, `${base(ctx.merchantId)}/catalogs/${cat.catalogId}/categories/${categoryId}/items`);
 }
 
 /** O item com tudo junto: produto, grupos de complemento e opções. */
@@ -108,13 +130,15 @@ export function itensAVenda(ctx: CtxCatalogo, catalogId: string) {
 
 // ── escrita ─────────────────────────────────────────────────────────────────
 
-/** Cria uma categoria para agrupar itens. */
-export function criarCategoria(
+/** Cria uma categoria para agrupar itens (dentro do catálogo DEFAULT). */
+export async function criarCategoria(
   ctx: CtxCatalogo,
   dados: { nome: string; status?: StatusCatalogo; template?: string; index?: number },
 ) {
   const name = validarTitulo(dados.nome, "nome da categoria");
-  return chamarComContexto(ctx, `${base(ctx.merchantId)}/categories`, {
+  const cat = await catalogoPadrao(ctx);
+  if (!cat.ok) return cat.resposta;
+  return chamarComContexto(ctx, `${base(ctx.merchantId)}/catalogs/${cat.catalogId}/categories`, {
     method: "POST",
     body: JSON.stringify({
       name,

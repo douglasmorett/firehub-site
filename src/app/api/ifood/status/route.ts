@@ -10,6 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { comContextoIfood } from "@/lib/ifood-rota";
 import { chamarComContexto } from "@/lib/ifood-http";
+import { agruparPorDia } from "@/lib/ifood-horarios";
 
 export async function GET(req: NextRequest) {
   return comContextoIfood(req, async ({ ctx }) => {
@@ -26,7 +27,8 @@ export async function GET(req: NextRequest) {
       loja: ctx.label ?? null,
       fetchedAt: new Date().toISOString(),
       status: disponibilidade.ok ? disponibilidade.data : null,
-      openingHours: horarios.ok ? horarios.data : null,
+      // A API devolve { storeId, shifts } plano; as telas leem agrupado por dia.
+      openingHours: horarios.ok ? agruparPorDia(horarios.data) : null,
       interruptions: pausas.ok ? pausas.data : null,
       ifood: {
         origem: disponibilidade.origem,

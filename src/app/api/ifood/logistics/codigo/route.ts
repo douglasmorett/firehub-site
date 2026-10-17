@@ -43,7 +43,12 @@ export async function POST(req: NextRequest) {
 
     // 422 é o iFood dizendo "esse código não confere" — resposta legítima da
     // API, não erro nosso. Vira uma mensagem que convida a tentar de novo.
-    if (!r.ok && r.status !== 422) return responder(r);
+    // Na prática (17/10/2026, loja de teste) o código errado voltou como 400
+    // {"errorType":"NOT_FOUND","description":"Confirmation code is invalid"}.
+    const codigoInvalido =
+      r.status === 422 ||
+      (r.status === 400 && /confirmation code is invalid/i.test(JSON.stringify(r.data ?? r.texto ?? "")));
+    if (!r.ok && !codigoInvalido) return responder(r);
 
     if (r.conferido) {
       await prisma.customerOrder.updateMany({
