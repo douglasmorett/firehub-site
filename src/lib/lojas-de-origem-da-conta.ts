@@ -1,6 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { lojas99DaConta } from "@/lib/food99-lojas";
-import { chaveIfood, chave99Food, chaveLojaPropria, type LojaDeOrigem } from "@/lib/loja-de-origem";
+import { chaveIfood, chave99Food, chaveCardapioWeb, chaveLojaPropria, type LojaDeOrigem } from "@/lib/loja-de-origem";
+import { instalacoesDasLojas } from "@/lib/cardapioweb/instalacoes";
+import { chaveDaLojaCW } from "@/lib/cardapioweb/id-do-pedido";
 
 /**
  * As lojas de origem de uma conta, com NOME — para a tela dizer de qual marca
@@ -22,7 +24,8 @@ import { chaveIfood, chave99Food, chaveLojaPropria, type LojaDeOrigem } from "@/
  *
  * ── Só aparece quando há o que separar ──────────────────────────────────────
  *
- * Mais de uma loja no iFood, mais de uma no 99Food, ou um grupo de lojas. Com
+ * Mais de uma loja no iFood, mais de uma no 99Food, mais de uma no
+ * CardápioWeb (multimarca lá é uma loja por marca), ou um grupo de lojas. Com
  * uma loja só por integração o nome seria a mesma palavra repetida em todo
  * pedido da tela — ruído puro.
  */
@@ -81,7 +84,18 @@ export async function lojasDeOrigemDaConta(ownerId: string, accountGroupId: stri
     }
   }
 
-  const haOQueSeparar = ifood.length > 1 || food99.length > 1 || grupo.length > 1;
+  // CardápioWeb: uma loja de lá por marca, várias na mesma conta (tabela
+  // própria, lib/cardapioweb/instalacoes.ts). Falha ao ler não derruba a tela.
+  const cardapioweb: LojaDeOrigem[] = [];
+  const instalacoes = await instalacoesDasLojas(grupo.map((l) => l.id)).catch(() => []);
+  for (const l of grupo) {
+    for (const i of instalacoes.filter((x) => x.franchiseeId === l.id)) {
+      const nome = `${i.nome || `Loja ${i.companyId}`}${i.ambiente === "sandbox" ? " (sandbox)" : ""}`;
+      cardapioweb.push({ chave: chaveCardapioWeb(chaveDaLojaCW(i.ambiente, i.companyId)), nome: nome + sufixo(l), emoji: "🌐", origem: "CardápioWeb" });
+    }
+  }
+
+  const haOQueSeparar = ifood.length > 1 || food99.length > 1 || cardapioweb.length > 1 || grupo.length > 1;
   if (!haOQueSeparar) return [];
 
   // A própria loja: o que entra pelos canais dela (site, WhatsApp, mesa,
@@ -94,5 +108,5 @@ export async function lojasDeOrigemDaConta(ownerId: string, accountGroupId: stri
     origem: "Loja",
   }));
 
-  return [...ifood, ...food99, ...proprias];
+  return [...ifood, ...food99, ...cardapioweb, ...proprias];
 }

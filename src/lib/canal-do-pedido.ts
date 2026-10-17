@@ -27,6 +27,7 @@ export type ChaveDeCanal =
   | "WABIZ"
   | "JOTAJA"
   | "KEETA"
+  | "CARDAPIOWEB"
   | "WHATSAPP_IA"
   | "PDV"
   | "TOTEM"
@@ -62,6 +63,11 @@ const CORES: Record<ChaveDeCanal, { nome: string; emoji: string; fundo: string; 
   // Preto com amarelo, as cores da Keeta — e o que a separa do amarelo-claro
   // do 99 num relance.
   KEETA:       { nome: "Keeta",   emoji: "🟨", fundo: "#1F2937", texto: "#FACC15", marketplace: true },
+  // Venda própria da loja pelo cardápio digital do CardápioWeb — mas pedido
+  // que VEIO DE FORA, como Brendi e Wabiz: o pago online é repasse de
+  // plataforma no caixa, não dinheiro da gaveta. Rosa para não se confundir
+  // com nenhum outro selo; 🌐 de "web".
+  CARDAPIOWEB: { nome: "CardápioWeb", emoji: "🌐", fundo: "#FCE7F3", texto: "#BE185D", marketplace: true },
   WHATSAPP_IA: { nome: "IA Whats", emoji: "🤖", fundo: "#F3E8FF", texto: "#7C3AED", marketplace: false },
   PDV:         { nome: "PDV",     emoji: "🧾", fundo: "#E0E7FF", texto: "#4338CA", marketplace: false },
   TOTEM:       { nome: "Totem",   emoji: "🖥️", fundo: "#CFFAFE", texto: "#0E7490", marketplace: false },
@@ -96,6 +102,10 @@ export function chaveDoCanal(pedido: PedidoParaCanal | null | undefined): ChaveD
   // Antes do "todo openDeliveryOrderId é JotaJá" lá embaixo: a Keeta também
   // grava openDeliveryOrderId (lib/open-delivery/traducao.ts).
   if (src === "KEETA" || od === "KEETA") return "KEETA";
+  // O CardápioWeb também grava openDeliveryOrderId (cardapioweb_<loja>_<id>,
+  // lib/cardapioweb/id-do-pedido.ts) — o id entra na conta para que nem um
+  // pedido gravado sem o canal seja lido como JotaJá.
+  if (src === "CARDAPIOWEB" || od === "CARDAPIOWEB" || /^cardapioweb_/.test(String(pedido.openDeliveryOrderId || ""))) return "CARDAPIOWEB";
   // OPEN_DELIVERY é o rótulo genérico antigo: o canal fino vem no
   // openDeliveryChannel, e sem ele o resto do Open Delivery era o JotaJá.
   if (src === "OPEN_DELIVERY") return od.includes("99") ? "99FOOD" : od === "BRENDI" ? "BRENDI" : "JOTAJA";

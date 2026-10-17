@@ -28,7 +28,7 @@
  * Comparadas SEM diferenciar maiúscula de minúscula — foi exatamente essa
  * diferença que fez o filtro antigo não filtrar nada.
  */
-export const CATEGORIAS_DE_INTEGRACAO = ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "99FOOD", "KEETA"];
+export const CATEGORIAS_DE_INTEGRACAO = ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE", "99FOOD", "KEETA", "CARDÁPIOWEB", "CARDAPIOWEB"];
 
 /**
  * Prefixos de `id` que só o espelho tem. A categoria sozinha não basta:
@@ -44,7 +44,7 @@ export const CATEGORIAS_DE_INTEGRACAO = ["IFOOD", "JOTAJA", "JOTAJÁ", "ONLINE",
  * KDS e na impressão), mas também não são cardápio. O id é o que não mente:
  * quem cria espelho sempre carimba um prefixo próprio.
  */
-export const PREFIXOS_DE_ESPELHO = ["ifood-", "jotaja-", "brendi-", "wabiz-", "99food_", "keeta-", "restored-prod-"];
+export const PREFIXOS_DE_ESPELHO = ["ifood-", "jotaja-", "brendi-", "wabiz-", "99food_", "keeta-", "cardapioweb-", "restored-prod-"];
 
 /**
  * Trecho de `where` do Prisma que remove o espelho das integrações.

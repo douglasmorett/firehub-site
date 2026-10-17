@@ -3819,16 +3819,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const isBrendi = o.source === "BRENDI" || o.openDeliveryChannel === "BRENDI";
     const isWabiz = o.source === "WABIZ" || o.openDeliveryChannel === "WABIZ";
     const isKeeta = o.source === "KEETA" || o.openDeliveryChannel === "KEETA";
+    const isCardapioWeb = o.source === "CARDAPIOWEB" || o.openDeliveryChannel === "CARDAPIOWEB";
     // O JotaJá era o "resto" do Open Delivery (todo pedido com
     // openDeliveryOrderId que não fosse 99Food) — com a Brendi gravando o id
     // dela no MESMO campo, o pedido dela cairia aqui e o filtro Brendi do
     // usuário não teria efeito nenhum. Canal decide; presença de campo não.
-    const isJotaja = !isBrendi && !isWabiz && !isKeeta && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
+    const isJotaja = !isBrendi && !isWabiz && !isKeeta && !isCardapioWeb && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
     // "Loja" é tudo que não veio de marketplace: site, robô do WhatsApp,
     // balcão, mesa, totem. Retirada saiu daqui — ela é TIPO, não origem, e
     // mora no filtro ao lado.
-    const isSite = !isIfood && !is99Food && !isBrendi && !isWabiz && !isKeeta && !isJotaja;
+    const isSite = !isIfood && !is99Food && !isBrendi && !isWabiz && !isKeeta && !isCardapioWeb && !isJotaja;
 
+    // CardápioWeb ainda sem botão próprio na barra: aparece sempre. Esconder
+    // pedido atrás de um filtro que não existe é pior que mostrar a mais.
+    if (isCardapioWeb) return true;
     if (isIfood && selectedChannels.ifood) return true;
     if (is99Food && selectedChannels["99food"]) return true;
     if (isBrendi && selectedChannels.brendi) return true;

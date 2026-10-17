@@ -83,8 +83,13 @@ export type PedidoParaEndereco = {
   [k: string]: unknown;
 };
 
-/** Os canais em que o webhook põe a cidade do cliente SEMPRE por último. */
-const CANAIS_COM_CIDADE_NO_FIM = new Set(["IFOOD", "BRENDI", "JOTAJA"]);
+/**
+ * Os canais em que o webhook põe a cidade do cliente SEMPRE por último. O
+ * CardápioWeb passa pela base Open Delivery (lib/open-delivery/traducao.ts →
+ * enderecoDoPedido), que escreve a cidade no fim, e a cidade é obrigatória
+ * no endereço dele.
+ */
+const CANAIS_COM_CIDADE_NO_FIM = new Set(["IFOOD", "BRENDI", "JOTAJA", "CARDAPIOWEB"]);
 
 const UFS = new Set([
   "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA",

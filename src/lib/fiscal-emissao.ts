@@ -420,9 +420,10 @@ export function pendenciasDosItens(itens: ItemDaNota[], regime: number): Problem
  *    com a NFS-e de comissão que a 99Food emite para a loja: o CNPJ daquela
  *    nota é o do intermediador. Se for outro, `config.intermediadores["99FOOD"]`.
  *
- * Brendi, Wabiz e JotaJá ficam FORA de propósito: são sistemas de delivery
- * próprio (cardápio digital e app com a marca da loja, sem comissão por
- * pedido — brendi.com.br, wabiz.com.br, site.jotaja.com). A NT 2020.006
+ * Brendi, Wabiz, JotaJá e CardápioWeb ficam FORA de propósito: são sistemas
+ * de delivery próprio (cardápio digital e app com a marca da loja, sem
+ * comissão por pedido — brendi.com.br, wabiz.com.br, site.jotaja.com,
+ * cardapioweb.com, que cobra mensalidade). A NT 2020.006
  * define: "considera-se site/plataforma própria as vendas que não foram
  * intermediadas (por marketplace), como venda em site próprio" — é o mesmo
  * caso do site do FireHub. A loja que tiver contrato diferente liga em
@@ -440,6 +441,7 @@ const NOME_DO_CANAL: Partial<Record<ChaveDeCanal, string>> = {
   BRENDI: "Brendi",
   WABIZ: "Wabiz",
   JOTAJA: "JotaJá",
+  CARDAPIOWEB: "CardápioWeb",
 };
 
 export type IntermediadorDaNota = { nome: string; cnpj: string; id: string };

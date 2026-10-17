@@ -14,6 +14,8 @@
  *
  *   ifood:<merchantId>        a loja do iFood (CustomerOrder.ifoodStoreMerchant)
  *   99food:<app_shop_id>      a loja do 99Food (food99AppShopId / food99ShopId)
+ *   cardapioweb:<company>     a loja do CardápioWeb, lida do próprio
+ *                             `openDeliveryOrderId` (lib/cardapioweb/id-do-pedido.ts)
  *   loja:<franchiseeId>       a própria loja — site, WhatsApp, mesa, balcão,
  *                             totem e integrações que não identificam loja
  *
@@ -25,6 +27,7 @@
  * Browser-safe de propósito: o navegador (print.ts) e a fila da nuvem
  * (roteamento-de-impressao.ts) decidem com a MESMA função.
  */
+import { chaveDeOrigemCW, lerIdDoPedidoCW } from "./cardapioweb/id-do-pedido";
 
 /**
  * Uma loja de origem com NOME, para a tela mostrar e a impressora escolher.
@@ -69,6 +72,7 @@ const texto = (v: unknown) => String(v ?? "").trim().toLowerCase();
 export const chaveIfood = (merchantId: string) => `ifood:${texto(merchantId)}`;
 export const chave99Food = (id: string) => `99food:${texto(id)}`;
 export const chaveLojaPropria = (franchiseeId: string) => `loja:${texto(franchiseeId)}`;
+export const chaveCardapioWeb = (chaveDaLoja: string) => chaveDeOrigemCW(chaveDaLoja);
 
 export type PedidoComOrigem = {
   franchiseeId?: string | null;
@@ -91,7 +95,14 @@ export function chavesDeLojaDoPedido(pedido: PedidoComOrigem | null | undefined)
   if (app) chaves.push(`99food:${app}`);
   const shop = texto(pedido?.food99ShopId);
   if (shop && shop !== app) chaves.push(`99food:${shop}`);
-  if (chaves.length === 0) {
+  // CardápioWeb: a marca está no próprio id do pedido. Pedido do CardápioWeb
+  // que chega SEM o id (um objeto montado sem ele) não vira "a própria loja":
+  // sem chave nenhuma, toda impressora recebe — comanda a mais é papel, e a
+  // impressora "só site e balcão" não pode engolir o pedido de uma marca.
+  const doCardapioWeb = lerIdDoPedidoCW(String(pedido?.openDeliveryOrderId ?? ""));
+  if (doCardapioWeb) chaves.push(chaveDeOrigemCW(doCardapioWeb.chaveDaLoja));
+  const cardapioWebSemId = !doCardapioWeb && (texto(pedido?.source) === "cardapioweb" || texto(pedido?.openDeliveryChannel) === "cardapioweb");
+  if (chaves.length === 0 && !cardapioWebSemId) {
     const propria = texto(pedido?.franchiseeId);
     if (propria) chaves.push(`loja:${propria}`);
   }

@@ -237,9 +237,10 @@ export function cuponsComCampanha(storeCoupons: unknown, storeLoyalty: unknown):
 /**
  * Origens que NÃO contam como "pedido pelo site" para a regra do primeiro
  * pedido: marketplace (é justamente de onde o cliente está vindo) e salão
- * (quem comeu na mesa nunca pediu pelo site).
+ * (quem comeu na mesa nunca pediu pelo site). O cardápio do CardápioWeb é
+ * outro site: quem pediu lá ainda não pediu pelo site do FireHub.
  */
-export const FONTES_QUE_NAO_SAO_SITE = ["IFOOD", "99FOOD", "JOTAJA", "BRENDI", "WABIZ", "PRESENCIAL", "PDV", "BALCAO", "MESA", "TOTEM"];
+export const FONTES_QUE_NAO_SAO_SITE = ["IFOOD", "99FOOD", "JOTAJA", "BRENDI", "WABIZ", "CARDAPIOWEB", "PRESENCIAL", "PDV", "BALCAO", "MESA", "TOTEM"];
 
 /** Só os dígitos do telefone, sem o 55 do país — para comparar com o que está gravado. */
 export function digitosDoTelefone(telefone: unknown): string {

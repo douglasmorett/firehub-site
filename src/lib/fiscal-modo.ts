@@ -64,6 +64,7 @@ export const INTEGRACOES_DA_NOTA = [
   { canal: "BRENDI", nome: "Brendi" },
   { canal: "WABIZ", nome: "Wabiz" },
   { canal: "JOTAJA", nome: "JotaJá" },
+  { canal: "CARDAPIOWEB", nome: "CardápioWeb" },
 ] as const;
 
 export type IntegracaoDaNota = (typeof INTEGRACOES_DA_NOTA)[number]["canal"];

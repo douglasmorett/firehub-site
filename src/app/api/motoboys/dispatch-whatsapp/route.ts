@@ -120,13 +120,20 @@ export async function POST(req: NextRequest) {
           const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
           const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
           const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
+          const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
           for (const ord of orders) {
-            // Keeta antes de tudo: fora desta cadeia ela cairia no ramo do JotaJá.
+            // Keeta e CardápioWeb antes de tudo: fora desta cadeia cairiam no ramo do JotaJá.
             if (ehPedidoKeeta(ord)) {
               await sincronizarKeeta(
                 { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status, deliveryBy: ord.deliveryBy, deliveryType: (ord as any).deliveryType },
                 "SAIU_ENTREGA"
               ).catch((err: any) => console.warn(`[Motoboy Dispatch → Keeta] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
+            } else if (ehPedidoCardapioWeb(ord)) {
+              await sincronizarCardapioWeb(
+                { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status, deliveryBy: ord.deliveryBy, deliveryType: (ord as any).deliveryType },
+                "SAIU_ENTREGA",
+                { limiteMs: 30_000 }
+              ).catch((err: any) => console.warn(`[Motoboy Dispatch → CardápioWeb] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
             } else if (ehPedidoWabiz(ord)) {
               await sincronizarWabiz(
                 {

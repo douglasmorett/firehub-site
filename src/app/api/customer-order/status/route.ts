@@ -7,6 +7,7 @@ import { ehPedido99Food, sincronizar99Food } from "@/lib/food99-status";
 import { ehPedidoBrendi, sincronizarBrendi } from "@/lib/brendi-status";
 import { ehPedidoWabiz, sincronizarWabiz } from "@/lib/wabiz-status";
 import { ehPedidoKeeta, sincronizarKeeta } from "@/lib/keeta/status";
+import { ehPedidoCardapioWeb, sincronizarCardapioWeb } from "@/lib/cardapioweb/status";
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR } from "@/lib/motivo-do-cancelamento";
 import { empilharEdicao } from "@/lib/edicao-de-pedido";
 
@@ -307,6 +308,7 @@ export async function PUT(req: Request) {
   // E o mesmo para a Brendi: a falha ia só para o log, a tela dizia "pronto".
   let avisoBrendi: string | null = null;
   let avisoKeeta: string | null = null;
+  let avisoCardapioWeb: string | null = null;
   if (order.ifoodOrderId) {
     try {
       const { acaoNoPedidoIfood, despacharNoIfood } = await import("@/lib/ifood-pedido");
@@ -483,7 +485,34 @@ export async function PUT(req: Request) {
     }
   }
 
-  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order) && !ehPedidoWabiz(order) && !ehPedidoKeeta(order)) {
+  // ── Sync with CardápioWeb ───────────────────────────────────────────────
+  // Também usa `openDeliveryOrderId` (cardapioweb_<loja>_<id>): entra ANTES do
+  // ramo JotaJá e é excluído dele. A loja de lá (e o token) sai do próprio id —
+  // a conta pode ter uma loja do CardápioWeb por marca (lib/cardapioweb/status.ts).
+  if (ehPedidoCardapioWeb(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarCardapioWeb(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+        deliveryType: (order as any).deliveryType,
+        notes: order.notes,
+      },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[CardápioWeb Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      avisoCardapioWeb = r.erros[0].replace(/^[^:]+:\s*/, "");
+    }
+  }
+
+  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order) && !ehPedidoWabiz(order) && !ehPedidoKeeta(order) && !ehPedidoCardapioWeb(order)) {
     const syncErrors: string[] = [];
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");
@@ -753,7 +782,7 @@ export async function PUT(req: Request) {
   const pedido = saiDoRascunhoDoRobo
     ? { dailyOrderNumber: updateData.dailyOrderNumber, createdAt: updateData.createdAt, printedAt: null, notes: updateData.notes }
     : undefined;
-  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoKeeta, avisoEstorno, ...(pedido ? { pedido } : {}) });
+  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoKeeta, avisoCardapioWeb, avisoEstorno, ...(pedido ? { pedido } : {}) });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });

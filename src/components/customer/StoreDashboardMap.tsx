@@ -340,9 +340,11 @@ export default function StoreDashboardMap({
 
           // Determinar cor do pino baseado no canal
           const isIfood = (o.source || "").toUpperCase() === "IFOOD" || Boolean(o.ifoodReference);
-          const isJotaja = (o.source || "").toUpperCase() === "JOTAJA" || Boolean(o.openDeliveryReference);
+          // CardápioWeb antes do JotaJá: ele também grava openDeliveryReference.
+          const isCardapioWeb = !isIfood && (o.source || "").toUpperCase() === "CARDAPIOWEB";
+          const isJotaja = !isCardapioWeb && ((o.source || "").toUpperCase() === "JOTAJA" || Boolean(o.openDeliveryReference));
 
-          const pinBg = isIfood ? "#EA1D2C" : isJotaja ? "#FF6C00" : "#0F766E";
+          const pinBg = isIfood ? "#EA1D2C" : isCardapioWeb ? "#BE185D" : isJotaja ? "#FF6C00" : "#0F766E";
           const displayNum = o.ifoodReference ? `#${o.ifoodReference}` : o.openDeliveryReference ? `#${o.openDeliveryReference}` : `#${o.id.slice(-4).toUpperCase()}`;
 
           const popupContent = `
@@ -350,7 +352,7 @@ export default function StoreDashboardMap({
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                 <strong style="font-size: 14px; color: #0F172A;">${displayNum}</strong>
                 <span style="background: ${pinBg}; color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 12px;">
-                  ${isIfood ? "iFood" : isJotaja ? "Jotajá" : "Site"}
+                  ${isIfood ? "iFood" : isCardapioWeb ? "CardápioWeb" : isJotaja ? "Jotajá" : "Site"}
                 </span>
               </div>
               <div style="font-size: 13px; font-weight: 700; color: #1E293B; margin-bottom: 4px;">

@@ -42,7 +42,7 @@ export default function IntegracoesHubClient({
   initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
-  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | "keeta" | "foody" | null>(null);
+  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | "keeta" | "cardapioweb" | "foody" | null>(null);
 
   // ── FOODY / VOE DELIVERY (motoboy terceirizado) ──
   // O cartão da lista lê o estado de /api/store/integracoes/foody; o modal
@@ -159,6 +159,168 @@ export default function IntegracoesHubClient({
     await fetch("/api/store/integracoes/keeta", { method: "DELETE" }).catch(() => null);
     setKt((k) => ({ ...k, salvando: false, conectada: false, loja: null }));
     showToast("Keeta desconectada.", "#475569");
+  };
+
+  // ── CARDÁPIOWEB (cardápio digital; app privado do FireHub na CW App Store) ──
+  // O lojista conecta CADA loja/marca dele, uma vez por marca: o POST
+  // "conectar" devolve o link de autorização do CardápioWeb, que devolve para
+  // /api/store/integracoes/cardapioweb/retorno, e o retorno volta para cá com
+  // ?integracao=cardapioweb&cardapioweb=ok|erro(&motivo=...).
+  // Diferente da Keeta (uma loja por conta), aqui são N lojas na mesma conta:
+  // o modal lista cada uma com o estado, o último pedido e o desligar dela.
+  // Plano: Obsidian → Projetos/FireHub - Integração CardápioWeb.md.
+  type LojaCardapioWebTela = {
+    companyId: string | number;
+    nome: string | null;
+    ambiente: "producao" | "sandbox";
+    estado: "ok" | "reconectar";
+    conectadaEm: string;
+    ultimoPedidoEm: string | null;
+    webhookMudo: boolean;
+  };
+  const [cw, setCw] = useState<{
+    carregando: boolean;
+    /** A consulta respondeu pelo menos uma vez. Sem isso, "em homologação" seria chute. */
+    lido: boolean;
+    configurada: boolean;
+    ambiente: "producao" | "sandbox" | null;
+    lojas: LojaCardapioWebTela[];
+    receberMarketplaces: boolean;
+    /** O que a volta do CardápioWeb disse. Fica no alto do modal até fechar. */
+    retorno: { ok: boolean; msg: string } | null;
+    erro: string;
+    salvando: boolean;
+    salvandoMarketplaces: boolean;
+    /** companyId (em texto) da loja cujo Desconectar espera o "sim" no próprio modal. */
+    confirmarSaida: string | null;
+  }>({ carregando: true, lido: false, configurada: false, ambiente: null, lojas: [], receberMarketplaces: false, retorno: null, erro: "", salvando: false, salvandoMarketplaces: false, confirmarSaida: null });
+  const lerCardapioWeb = () =>
+    fetch("/api/store/integracoes/cardapioweb", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        // Falha numa releitura mantém o que já estava na tela; só a primeira
+        // leitura sem resposta vira o aviso de "não consegui consultar".
+        if (!d) return setCw((c) => ({ ...c, carregando: false }));
+        setCw((c) => ({
+          ...c,
+          carregando: false,
+          lido: true,
+          configurada: !!d.configurada,
+          ambiente: d.ambiente === "producao" || d.ambiente === "sandbox" ? d.ambiente : null,
+          lojas: Array.isArray(d.lojas) ? d.lojas : [],
+          receberMarketplaces: !!d.receberMarketplaces,
+        }));
+      })
+      .catch(() => setCw((c) => ({ ...c, carregando: false })));
+  useEffect(() => {
+    let abrir = false;
+    try {
+      const q = new URLSearchParams(window.location.search);
+      if (q.get("integracao") === "cardapioweb") {
+        abrir = true;
+        const r = q.get("cardapioweb");
+        if (r === "ok") {
+          setCw((c) => ({ ...c, retorno: { ok: true, msg: "Os pedidos novos dessa loja entram sozinhos no painel, na cozinha e na impressora. Confira o passo 3 abaixo para a comanda não sair duas vezes." } }));
+          showToast("✅ Loja do CardápioWeb conectada!", "#0F766E");
+        } else if (r === "erro") {
+          setCw((c) => ({ ...c, retorno: { ok: false, msg: q.get("motivo") || "O CardápioWeb não confirmou a autorização. Tente de novo." } }));
+          showToast("⚠️ Não deu para conectar a loja do CardápioWeb", "#C92E09");
+        }
+        // Tira os parâmetros da barra: um F5 não repete o aviso.
+        window.history.replaceState(null, "", window.location.pathname);
+      }
+    } catch { /* sem window */ }
+    // Abrindo o modal, a leitura sai pelo efeito de baixo — uma só, não duas.
+    if (abrir) setOpenModal("cardapioweb");
+    else lerCardapioWeb();
+  }, []);
+  // Relê ao abrir o modal: "último pedido" e "parou de avisar" mudam com a
+  // tela aberta, e é para conferir isso que o lojista abre. Ao fechar, o aviso
+  // da volta do CardápioWeb e um "Desconectar?" pendente não valem para a
+  // próxima abertura. O ref evita limpar o aviso na montagem, quando o modal
+  // ainda nem abriu.
+  const cwAberto = useRef(false);
+  useEffect(() => {
+    if (openModal === "cardapioweb") {
+      cwAberto.current = true;
+      lerCardapioWeb();
+    } else if (cwAberto.current) {
+      cwAberto.current = false;
+      setCw((c) => ({ ...c, retorno: null, erro: "", confirmarSaida: null }));
+    }
+  }, [openModal]);
+  useEffect(() => {
+    // Voltou do CardápioWeb pelo botão Voltar, sem autorizar: o navegador pode
+    // devolver a página congelada com o botão travado em "Abrindo…".
+    const aoVoltar = (e: PageTransitionEvent) => {
+      if (e.persisted) setCw((c) => ({ ...c, salvando: false }));
+    };
+    window.addEventListener("pageshow", aoVoltar);
+    return () => window.removeEventListener("pageshow", aoVoltar);
+  }, []);
+  const conectarCardapioWeb = async () => {
+    setCw((c) => ({ ...c, salvando: true, erro: "", retorno: null, confirmarSaida: null }));
+    try {
+      const r = await fetch("/api/store/integracoes/cardapioweb", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "conectar" }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.url) {
+        // Mesma aba: o CardápioWeb devolve para cá quando o lojista autorizar.
+        window.location.href = d.url;
+        return;
+      }
+      setCw((c) => ({ ...c, salvando: false, erro: d.error || d.erro || "O CardápioWeb não respondeu. Tente de novo." }));
+    } catch {
+      setCw((c) => ({ ...c, salvando: false, erro: "Sem conexão com o servidor. Tente de novo." }));
+    }
+  };
+  const desconectarCardapioWeb = async (loja: LojaCardapioWebTela) => {
+    const id = String(loja.companyId);
+    setCw((c) => ({ ...c, salvando: true, erro: "" }));
+    try {
+      // Com o ambiente: sem ele o servidor desliga a loja no teste E na
+      // produção, e quem só queria tirar a loja de teste perdia a de verdade.
+      const r = await fetch("/api/store/integracoes/cardapioweb", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "desconectar", companyId: loja.companyId, ambiente: loja.ambiente }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.ok) {
+        setCw((c) => ({ ...c, salvando: false, confirmarSaida: null, lojas: c.lojas.filter((l) => !(String(l.companyId) === id && l.ambiente === loja.ambiente)) }));
+        showToast(`${loja.nome || "Loja"} desconectada do CardápioWeb.`, "#475569");
+        lerCardapioWeb();
+        return;
+      }
+      setCw((c) => ({ ...c, salvando: false }));
+      showToast(`⚠️ ${d.error || d.erro || "Não consegui desconectar. Tente de novo."}`, "#C92E09");
+    } catch {
+      setCw((c) => ({ ...c, salvando: false }));
+      showToast("⚠️ Sem conexão com o servidor. Tente de novo.", "#C92E09");
+    }
+  };
+  const alternarMarketplacesCardapioWeb = async () => {
+    const ligado = !cw.receberMarketplaces;
+    setCw((c) => ({ ...c, salvandoMarketplaces: true }));
+    try {
+      const r = await fetch("/api/store/integracoes/cardapioweb", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "marketplaces", ligado }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.ok) {
+        setCw((c) => ({ ...c, salvandoMarketplaces: false, receberMarketplaces: ligado }));
+        showToast(ligado ? "✅ iFood/99 que passam pelo CardápioWeb vão entrar aqui." : "✅ Só os pedidos do seu cardápio CardápioWeb vão entrar aqui.", "#0F766E");
+        return;
+      }
+      setCw((c) => ({ ...c, salvandoMarketplaces: false }));
+      showToast(`⚠️ ${d.error || d.erro || "Não consegui salvar a opção. Tente de novo."}`, "#C92E09");
+    } catch {
+      setCw((c) => ({ ...c, salvandoMarketplaces: false }));
+      showToast("⚠️ Sem conexão com o servidor. Tente de novo.", "#C92E09");
+    }
+  };
+  // A tela não conhece o fuso da loja: data e hora saem no relógio do
+  // navegador, que é o do computador da própria loja.
+  const quandoCw = (iso: string | null | undefined, soData = false) => {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    return soData
+      ? d.toLocaleDateString("pt-BR")
+      : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   };
 
   // Meta Pixel state
@@ -1324,6 +1486,26 @@ export default function IntegracoesHubClient({
       description: "Pedidos do cardápio e da IA da Brendi caem direto no FireHub via Open Delivery, com status sincronizado.",
     },
     {
+      id: "cardapioweb" as const,
+      category: "channels",
+      title: "CardápioWeb",
+      subtitle: "Cardápio digital — integração oficial",
+      icon: "🍽️",
+      // Logo do cabeçalho do site oficial (cardapioweb.com), cortado e reduzido.
+      logo: "/images/logos/cardapioweb.png",
+      gradient: "linear-gradient(135deg, #A543FA, #59327A)",
+      // Loja pedindo reconexão vence o resto: com ela, os pedidos daquela
+      // marca pararam de entrar, e o cartão é o primeiro lugar que o lojista vê.
+      badge: cw.lojas.some((l) => l.estado === "reconectar")
+        ? { text: "🔴 Reconectar", bg: "#FEF2F2", color: "#B71C1C", border: "#FCA5A5" }
+        : cw.lojas.length > 0
+          ? { text: cw.lojas.length > 1 ? `🟢 ${cw.lojas.length} lojas conectadas` : "🟢 Conectado & Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" }
+          : cw.lido && !cw.configurada
+            ? { text: "⏳ Em homologação", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" }
+            : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Pedidos do seu cardápio CardápioWeb entram direto no FireHub (painel, cozinha e impressora) e o status volta sozinho. Conecte cada marca em um clique.",
+    },
+    {
       id: "foody" as const,
       category: "channels",
       title: "Foody / Voe Delivery",
@@ -1350,11 +1532,22 @@ export default function IntegracoesHubClient({
     return item.category === activeTab;
   });
 
+  // Canais que JÁ entram direto no FireHub. Com eles ligados, receber o mesmo
+  // canal repassado pelo CardápioWeb põe o pedido duas vezes na cozinha; o
+  // modal do CardápioWeb avisa isso só para quem tem o canal ligado aqui.
+  const canaisDiretos = [
+    (ifoodIntegrations.some((i) => i.active) || initialIfoodConnected) && "iFood",
+    food99Connected && "99Food",
+  ].filter((c): c is string => typeof c === "string");
+
   return (
     <div style={{ maxWidth: "1150px", margin: "0 auto", padding: "24px 16px", fontFamily: "inherit" }}>
-      {/* Toast alert */}
+      {/* Toast alert — um degrau acima do modal: os dois eram zIndex 9999 e o
+          modal vem depois no HTML, então no empate o fundo escuro cobria o
+          aviso dado com o modal aberto (ex.: a volta do CardápioWeb, que abre
+          o modal sozinha). */}
       {toast && (
-        <div style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 9999, background: toast.color, color: "#fff", padding: "12px 20px", borderRadius: "10px", fontWeight: 700, boxShadow: "0 10px 25px rgba(0,0,0,0.2)", fontSize: "0.88rem", display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ position: "fixed", bottom: "24px", right: "24px", zIndex: 10000, background: toast.color, color: "#fff", padding: "12px 20px", borderRadius: "10px", fontWeight: 700, boxShadow: "0 10px 25px rgba(0,0,0,0.2)", fontSize: "0.88rem", display: "flex", alignItems: "center", gap: "8px" }}>
           {toast.msg}
         </div>
       )}
@@ -2807,6 +3000,245 @@ export default function IntegracoesHubClient({
                       <ExternalLink size={16} /> {kt.salvando ? "Abrindo a Keeta…" : kt.autorizadas.length > 0 ? "Conectar de novo" : "Conectar com a Keeta"}
                     </button>
                   )}
+                </div>
+              </div>
+            )}
+
+            {/* 🍽️ MODAL: CARDÁPIOWEB */}
+            {openModal === "cardapioweb" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px", paddingRight: "40px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "#fff", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", padding: "6px", flexShrink: 0 }}>
+                    <img src="/images/logos/cardapioweb.png" alt="CardápioWeb" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>CardápioWeb</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração oficial do cardápio digital</span>
+                  </div>
+                </div>
+
+                {/* O que a volta do CardápioWeb disse. Fica aqui no alto até o
+                    lojista fechar: o motivo do erro é longo demais para o aviso
+                    de 4 segundos do canto. */}
+                {cw.retorno && (
+                  <div role={cw.retorno.ok ? "status" : "alert"} style={{ display: "flex", alignItems: "flex-start", gap: "10px", background: cw.retorno.ok ? "#F0FDFA" : "#FEF2F2", border: `1px solid ${cw.retorno.ok ? "#99F6E4" : "#FCA5A5"}`, padding: "12px 14px", borderRadius: "12px", marginBottom: "16px" }}>
+                    <div style={{ flex: 1, fontSize: "0.8rem", color: cw.retorno.ok ? "#0F766E" : "#B71C1C", lineHeight: 1.5 }}>
+                      <div style={{ fontSize: "0.88rem", fontWeight: 900, marginBottom: 2 }}>
+                        {cw.retorno.ok ? "✅ Loja do CardápioWeb conectada!" : "Não deu para conectar a loja do CardápioWeb"}
+                      </div>
+                      {cw.retorno.msg}
+                    </div>
+                    <button
+                      onClick={() => setCw((c) => ({ ...c, retorno: null }))}
+                      aria-label="Fechar aviso"
+                      style={{ background: "transparent", border: "none", padding: 2, cursor: "pointer", color: cw.retorno.ok ? "#0F766E" : "#B71C1C", display: "flex" }}
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                )}
+
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
+                  Os pedidos do seu cardápio CardápioWeb entram aqui no FireHub (painel, cozinha e impressora) e o status volta
+                  sozinho para o CardápioWeb. Tem mais de uma marca lá? Conecte cada uma: os pedidos de todas caem neste painel.
+                </p>
+
+                {/* Credenciais de teste: o botão leva ao portal de testes do
+                    CardápioWeb, onde a loja de verdade do lojista não existe.
+                    Melhor dizer antes do clique. */}
+                {cw.configurada && cw.ambiente === "sandbox" && (
+                  <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "10px 12px", borderRadius: "12px", marginBottom: "16px", fontSize: "0.78rem", color: "#92400E", lineHeight: 1.5 }}>
+                    🧪 <b>Ambiente de teste do CardápioWeb.</b> Por enquanto só conecta a loja de teste que o CardápioWeb criou para o FireHub.
+                  </div>
+                )}
+
+                {cw.carregando ? (
+                  <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#475569" }}>Consultando o CardápioWeb…</div>
+                  </div>
+                ) : !cw.lido ? (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "14px", borderRadius: "14px", marginBottom: "20px", fontSize: "0.8rem", color: "#B71C1C", lineHeight: 1.5 }}>
+                    Não consegui consultar a integração com o CardápioWeb agora.{" "}
+                    <button
+                      onClick={() => { setCw((c) => ({ ...c, carregando: true })); lerCardapioWeb(); }}
+                      style={{ background: "none", border: "none", padding: 0, color: "#B71C1C", fontWeight: 800, fontSize: "inherit", fontFamily: "inherit", textDecoration: "underline", cursor: "pointer" }}
+                    >
+                      Tentar de novo
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {!cw.configurada && (
+                      <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                        <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#B45309" }}>⏳ Integração em homologação com o CardápioWeb — em breve.</div>
+                        <div style={{ fontSize: "0.78rem", color: "#92400E", marginTop: 4, lineHeight: 1.5 }}>
+                          Assim que o CardápioWeb liberar o FireHub, o botão abaixo funciona. Não precisa fazer nada agora.
+                        </div>
+                      </div>
+                    )}
+
+                    {cw.lojas.length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+                        {cw.lojas.map((l) => {
+                          const id = String(l.companyId);
+                          const nome = l.nome || `Loja ${id}`;
+                          const reconectar = l.estado === "reconectar";
+                          const confirmando = cw.confirmarSaida === id;
+                          const conectadaEm = quandoCw(l.conectadaEm, true);
+                          return (
+                            <div key={id} style={{ background: reconectar ? "#FEF2F2" : "#F0FDFA", border: `1px solid ${reconectar ? "#FCA5A5" : "#99F6E4"}`, borderRadius: "14px", padding: "12px 14px" }}>
+                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                    <span style={{ fontSize: "0.92rem", fontWeight: 900, color: "#0F172A" }}>{nome}</span>
+                                    {l.ambiente === "sandbox" && (
+                                      <span style={{ fontSize: "0.66rem", fontWeight: 800, color: "#B45309", background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: "20px", padding: "1px 8px" }}>Teste</span>
+                                    )}
+                                  </div>
+                                  <div style={{ fontSize: "0.8rem", fontWeight: 800, color: reconectar ? "#B71C1C" : "#0F766E", marginTop: 2 }}>
+                                    {reconectar ? "🔴 Reconectar — os pedidos desta loja não estão entrando" : "🟢 Conectada — recebendo pedidos"}
+                                  </div>
+                                  <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 3, lineHeight: 1.5 }}>
+                                    {l.ultimoPedidoEm ? `Último pedido: ${quandoCw(l.ultimoPedidoEm)}` : "Nenhum pedido recebido ainda"}
+                                    {conectadaEm && ` · conectada em ${conectadaEm}`}
+                                    {" · "}<span style={{ fontFamily: "monospace" }}>ID {id}</span>
+                                  </div>
+                                </div>
+                                {!confirmando && (
+                                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                                    {reconectar && (
+                                      <button
+                                        onClick={conectarCardapioWeb}
+                                        disabled={cw.salvando || !cw.configurada}
+                                        style={{ padding: "6px 12px", borderRadius: "8px", border: "none", background: "#B71C1C", color: "#fff", fontWeight: 800, fontSize: "0.76rem", cursor: cw.configurada ? "pointer" : "not-allowed", fontFamily: "inherit", opacity: cw.salvando || !cw.configurada ? 0.6 : 1 }}
+                                      >
+                                        {cw.salvando ? "Abrindo…" : "Reconectar"}
+                                      </button>
+                                    )}
+                                    <button
+                                      onClick={() => setCw((c) => ({ ...c, confirmarSaida: id }))}
+                                      disabled={cw.salvando}
+                                      style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#fff", color: "#B71C1C", fontWeight: 700, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit" }}
+                                    >
+                                      Desconectar
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {reconectar && (
+                                <div style={{ fontSize: "0.76rem", color: "#B71C1C", marginTop: 8, lineHeight: 1.5 }}>
+                                  O CardápioWeb não aceita mais a autorização desta loja. Clique em <b>Reconectar</b>, entre como
+                                  Proprietário e autorize esta marca de novo.
+                                </div>
+                              )}
+
+                              {l.webhookMudo && (
+                                <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", borderRadius: "10px", padding: "8px 10px", marginTop: 8, fontSize: "0.76rem", color: "#92400E", lineHeight: 1.5 }}>
+                                  ⚠️ O CardápioWeb parou de avisar; os pedidos seguem entrando pela consulta a cada 30 s.
+                                </div>
+                              )}
+
+                              {/* O "sim" é pedido aqui mesmo, na linha da loja (nada de
+                                  confirm() do navegador): fica claro QUAL marca sai,
+                                  e as outras seguem ligadas. */}
+                              {confirmando && (
+                                <div style={{ background: "#fff", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 12px", marginTop: 10 }}>
+                                  <div style={{ fontSize: "0.8rem", color: "#7F1D1D", lineHeight: 1.5 }}>
+                                    Desconectar <b>{nome}</b>? Os pedidos dessa loja do CardápioWeb param de entrar no FireHub.
+                                  </div>
+                                  <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap", marginTop: 8 }}>
+                                    <button
+                                      onClick={() => setCw((c) => ({ ...c, confirmarSaida: null }))}
+                                      disabled={cw.salvando}
+                                      style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      onClick={() => desconectarCardapioWeb(l)}
+                                      disabled={cw.salvando}
+                                      style={{ padding: "6px 12px", borderRadius: "8px", border: "none", background: "#B71C1C", color: "#fff", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", opacity: cw.salvando ? 0.6 : 1 }}
+                                    >
+                                      {cw.salvando ? "Desconectando…" : "Sim, desconectar"}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : cw.configurada ? (
+                      <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                        <div style={{ fontSize: "0.75rem", color: "#B45309" }}>Status da Conexão:</div>
+                        <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#B45309" }}>⚪ Nenhuma loja do CardápioWeb conectada ainda</div>
+                      </div>
+                    ) : null}
+                  </>
+                )}
+
+                {cw.erro && (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "12px", borderRadius: "12px", marginBottom: "16px", fontSize: "0.8rem", color: "#B71C1C", lineHeight: 1.5 }}>
+                    {cw.erro}
+                  </div>
+                )}
+
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                  <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>O que fazer no CardápioWeb</div>
+                  <ol style={{ margin: 0, paddingLeft: 18, fontSize: "0.82rem", color: "#475569", lineHeight: 1.7 }}>
+                    <li>Na hora de autorizar, entre como <b>Proprietário</b> da loja no CardápioWeb.</li>
+                    <li>Autorize <b>uma vez por marca</b>: cada loja do CardápioWeb se conecta separada, pelo <b>Conectar outra loja</b>.</li>
+                    <li>Desligue <b>Imprimir e aceitar pedidos automaticamente</b> no CardápioWeb, para a comanda não sair duas vezes.</li>
+                    <li>Escolha <b>um só emissor de NFC-e</b>: o FireHub <b>ou</b> o CardápioWeb. Os dois emitindo dá nota em dobro.</li>
+                  </ol>
+                </div>
+
+                {/* O CardápioWeb repassa iFood/99 no mesmo canal dos pedidos dele.
+                    Desligado por padrão: quem já tem esses canais direto aqui
+                    receberia o pedido duas vezes. */}
+                {cw.configurada && (
+                  <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px", display: "flex", alignItems: "flex-start", gap: "12px" }}>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={cw.receberMarketplaces}
+                      aria-label="Receber também iFood/99 que passam pelo CardápioWeb"
+                      onClick={alternarMarketplacesCardapioWeb}
+                      disabled={cw.salvandoMarketplaces}
+                      style={{ position: "relative", width: 52, height: 28, borderRadius: 20, background: cw.receberMarketplaces ? "#0F766E" : "#CBD5E1", border: "none", cursor: cw.salvandoMarketplaces ? "wait" : "pointer", flexShrink: 0, boxShadow: "inset 0 2px 4px rgba(0,0,0,0.1)", opacity: cw.salvandoMarketplaces ? 0.6 : 1 }}
+                    >
+                      <span style={{ position: "absolute", top: 3, left: cw.receberMarketplaces ? 27 : 3, width: 22, height: 22, borderRadius: "50%", background: "#fff", boxShadow: "0 2px 4px rgba(0,0,0,0.2)", transition: "left .2s ease" }} />
+                    </button>
+                    <div>
+                      <div style={{ fontSize: "0.84rem", fontWeight: 800, color: "#0F172A" }}>Receber também iFood/99 que passam pelo CardápioWeb</div>
+                      <div style={{ fontSize: "0.76rem", color: "#64748B", marginTop: 3, lineHeight: 1.5 }}>
+                        Deixe desligado se o seu iFood/99 já está ligado direto no FireHub — senão o pedido entra duas vezes.
+                      </div>
+                      {cw.receberMarketplaces && canaisDiretos.length > 0 && (
+                        <div style={{ fontSize: "0.76rem", fontWeight: 700, color: "#B71C1C", marginTop: 6, lineHeight: 1.5 }}>
+                          ⚠️ O seu {canaisDiretos.join(" e ")} já {canaisDiretos.length > 1 ? "entram" : "entra"} direto aqui: com esta opção ligada, o mesmo pedido chega duas vezes na cozinha.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => setOpenModal(null)}
+                    style={{ padding: "10px 18px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}
+                  >
+                    Fechar
+                  </button>
+                  <button
+                    onClick={conectarCardapioWeb}
+                    disabled={cw.salvando || !cw.configurada}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "#59327A", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: cw.configurada && !cw.salvando ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", opacity: cw.salvando || !cw.configurada ? 0.6 : 1 }}
+                  >
+                    {cw.lojas.length > 0 ? <Plus size={16} /> : <ExternalLink size={16} />}{" "}
+                    {cw.salvando ? "Abrindo o CardápioWeb…" : cw.lojas.length > 0 ? "Conectar outra loja" : "Conectar loja do CardápioWeb"}
+                  </button>
                 </div>
               </div>
             )}

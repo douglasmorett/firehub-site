@@ -277,6 +277,13 @@ const NOME_DO_METODO: Record<string, string> = {
   REDEEM: "Resgate",
   PREPAID_REDEEM: "Resgate",
   OTHER: "Outro",
+  // Fora do Open Delivery, mas formas reais do CardápioWeb (lib/cardapioweb/
+  // traducao.ts). "Fiado" é a palavra que o caixa lê como fiado
+  // (lib/relatorios/formas-de-pagamento.ts, formaDoTexto).
+  BANK_TRANSFER: "Transferência",
+  BANK_SLIP: "Boleto",
+  PICPAY: "PicPay",
+  DEBT_BOOK: "Fiado",
 };
 
 export type PagamentoLido = {
@@ -574,6 +581,13 @@ export function traduzirPedidoOpenDelivery(pedido: PedidoOD, ctx: ContextoOD): T
   const complementoDoMinimo = reais(taxas.filter(ehMinimo).reduce((s, f) => s + valor(f.price), 0));
   const outrasTaxas = taxas.filter((f) => !ehEntrega(f) && !ehGorjeta(f) && !ehMinimo(f));
   const taxaDeServico = reais(outrasTaxas.reduce((s, f) => s + valor(f.price), 0));
+  // De quem é a taxa: `receivedBy: MERCHANT` é dinheiro da LOJA (a taxa
+  // adicional e a da forma de pagamento do CardápioWeb). Sem `receivedBy`, ou
+  // com outro dono (MARKETPLACE, LOGISTIC_SERVICES), continua sendo da
+  // plataforma — a leitura de sempre, e o que a Keeta manda hoje.
+  const ehDaLoja = (f: (typeof taxas)[number]) => texto(f.receivedBy).toUpperCase() === "MERCHANT";
+  const taxasDaLoja = outrasTaxas.filter(ehDaLoja).filter((f) => valor(f.price) > 0);
+  const taxaDaPlataforma = reais(taxaDeServico - taxasDaLoja.reduce((s, f) => s + valor(f.price), 0));
 
   const desconto = lerDescontos(pedido);
   const totalDeclarado = valor(pedido.total?.orderAmount);
@@ -618,7 +632,8 @@ export function traduzirPedidoOpenDelivery(pedido: PedidoOD, ctx: ContextoOD): T
       ? `🏷️ ${desconto.detalhes.find((d) => d.description)?.description || "Desconto"}: -R$${desconto.total.toFixed(2)}` +
         (desconto.plataforma > 0 ? ` (${canal.nome}: R$${desconto.plataforma.toFixed(2)} | Loja: R$${desconto.loja.toFixed(2)})` : "")
       : null,
-    taxaDeServico > 0 ? `💳 Taxa de serviço ${canal.nome}: R$${taxaDeServico.toFixed(2)} (fica com a plataforma)` : null,
+    taxaDaPlataforma > 0 ? `💳 Taxa de serviço ${canal.nome}: R$${taxaDaPlataforma.toFixed(2)} (fica com a plataforma)` : null,
+    ...taxasDaLoja.map((f) => `💳 ${texto(f.name) || "Taxa adicional"}: R$${valor(f.price).toFixed(2)} (fica com a loja)`),
     complementoDoMinimo > 0 ? `🧾 Complemento do pedido mínimo: R$${complementoDoMinimo.toFixed(2)}` : null,
     gorjeta > 0 ? `💝 Gorjeta: R$${gorjeta.toFixed(2)}` : null,
     pagamento.parteOnline > 0 ? `💳 Já pago no app: R$${pagamento.parteOnline.toFixed(2)}` : null,
