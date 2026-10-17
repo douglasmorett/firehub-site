@@ -37,6 +37,15 @@
  * ligar: apagar em 30 dias o que veio do Google, e não abrir o mapa do OSM no
  * ponto dele. Com a taxa pelo bairro, o GPS e o CEP, o Google deixou de ser
  * necessário.
+ *
+ * ── Na roteirização (16/10/2026) ───────────────────────────────────────────
+ *
+ * O pedido sem ponto plausível pode perguntar ao Google antes de virar "sem
+ * localização" (lib/geocodificacao-servidor.ts, `resolverPontosNoServidor`),
+ * com o mesmo cache e o mesmo teto do dia — só com a chave E
+ * `GOOGLE_NA_ROTEIRIZACAO=1`. Desligado de propósito: o mapa da roteirização
+ * é o do OpenStreetMap, e desenhar ali um ponto do Google é o "with or near a
+ * non-Google Map" que os termos vetam. Ligar só depois de decidir isso.
  */
 import type { RespostaDoMapa } from "./geocoding";
 

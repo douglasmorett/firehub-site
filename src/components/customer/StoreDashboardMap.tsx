@@ -22,8 +22,8 @@ import { lerPonto, type Ponto } from "@/lib/ponto-da-loja";
  * Agora o ponto de cada pedido vem, nesta ordem:
  *   1. a coordenada que o parceiro mandou junto com o pedido (o iFood manda em
  *      toda entrega — ver customerLatLng);
- *   2. o cache de endereços deste navegador, o MESMO que a roteirização
- *      preenche (firehub_geo_cache_v3): quem já roteirizou hoje não paga nada;
+ *   2. o cache de endereços deste navegador (firehub_geo_cache_v4, só deste
+ *      mapa desde 16/10/2026);
  *   3. /api/geocodificar — servidor, com fila e cache no banco, um endereço
  *      resolvido uma vez para todas as lojas.
  *
@@ -55,7 +55,11 @@ const chaveDoEndereco = (endereco: string, cidade: string) =>
     .toLowerCase()
     .trim();
 
-const CHAVE_DO_CACHE = "firehub_geo_cache_v3";
+// v4 (16/10/2026): a v3 guardava pontos achados sem a régua da área da loja
+// (a Asa Sul de pedidos de Sobradinho, na NIK) — e a roteirização, que a
+// preenchia, deixou de usar cópia no navegador (lib/ponto-do-pedido.ts). O
+// servidor agora só devolve ponto plausível; o incerto não vira pino.
+const CHAVE_DO_CACHE = "firehub_geo_cache_v4";
 /** O teto por chamada da rota é 15; 14 deixa folga. */
 const TAMANHO_DO_LOTE = 14;
 /**

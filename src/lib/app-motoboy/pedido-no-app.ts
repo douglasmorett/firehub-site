@@ -40,10 +40,12 @@ export function enderecoParaOMapa(endereco: string): string {
 
 /**
  * O ponto do cliente só guia a navegação quando é EXATO: o que o parceiro
- * mandou (iFood e 99 mandam o pino do cliente) ou o GPS/pino do próprio
- * cliente. O ponto que o servidor achou geocodificando o texto não ganha do
- * texto: o Google Maps geocodifica melhor, e o centro do bairro levaria o
- * entregador para a praça.
+ * mandou (iFood e 99 mandam o pino do cliente), o GPS/pino do próprio
+ * cliente, ou o ponto que a LOJA posicionou no mapa da roteirização
+ * ("manual") ou ensinou para o endereço ("aprendido") — lib/ponto-do-pedido.ts.
+ * O ponto que o servidor achou geocodificando o texto não ganha do texto: o
+ * Google Maps geocodifica melhor, e o centro do bairro levaria o entregador
+ * para a praça.
  */
 function pontoExato(latLng: unknown): { lat: number; lng: number } | null {
   if (!latLng || typeof latLng !== "object") return null;
@@ -52,7 +54,7 @@ function pontoExato(latLng: unknown): { lat: number; lng: number } | null {
   const lng = Number(p.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || (lat === 0 && lng === 0)) return null;
   const origem = String(p.origem ?? "").trim();
-  if (origem && !/gps|pino|parceiro|ifood|99|cliente/i.test(origem)) return null;
+  if (origem && !/gps|pino|parceiro|ifood|99|cliente|manual|aprendido/i.test(origem)) return null;
   return { lat, lng };
 }
 

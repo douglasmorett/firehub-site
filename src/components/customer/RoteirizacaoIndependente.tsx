@@ -28,6 +28,10 @@ export default function RoteirizacaoIndependente({
     storeName?: string | null;
     /** Os bairros da loja que cobra por bairro (lib/bairro-pelo-endereco.ts). */
     bairrosDaLoja?: ZonaComApelidos[];
+    /** Até onde um ponto achado pelo texto vale (lib/ponto-do-pedido.ts, `areaParaOMapa`). */
+    areaDoMapa?: { raioKm: number; raioDoParceiroKm: number } | null;
+    /** A loja dona do mapa (o funcionário logado não é ela). */
+    lojaDoMapaId?: string | null;
   };
   initialOrders: any[];
 }) {
@@ -93,6 +97,8 @@ export default function RoteirizacaoIndependente({
       storeId={user.id}
       storeLatLng={user.storeLatLng}
       bairrosDaLoja={user.bairrosDaLoja}
+      areaDoMapa={user.areaDoMapa}
+      lojaDoMapaId={user.lojaDoMapaId}
       onRefreshOrders={() => { ultimoCorpo.current = ""; void carregar(); }}
     />
   );

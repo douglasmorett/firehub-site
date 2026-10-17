@@ -130,6 +130,39 @@ function doObjeto(alvo: any): Ponto | null {
 }
 
 /**
+ * O par sem nome de campo: "lat,lng" em texto, [lat, lng] ou [lng, lat] numa
+ * lista, ou o GeoJSON { coordinates: [lng, lat] }. No Brasil a ordem se
+ * descobre sozinha — latitude vai de -34 a 6, longitude de -74 a -34.
+ *
+ * Wabiz (16/10/2026): o pedido traz `service.delivery.geo`, que a doc não
+ * descreve e que veio nulo nas 29 entregas guardadas da NIK. Quando vier, pode
+ * vir como texto ou lista; com isto ele entra sem esperar um pedido real.
+ */
+function doTextoOuLista(v: unknown): Ponto | null {
+  let a: number | null = null;
+  let b: number | null = null;
+  if (typeof v === "string") {
+    const m = v.trim().match(/^\(?\s*(-?\d{1,2}\.\d+)\s*[,; ]\s*(-?\d{1,3}\.\d+)\s*\)?$/);
+    if (!m) return null;
+    a = Number(m[1]);
+    b = Number(m[2]);
+  } else if (Array.isArray(v) && v.length === 2) {
+    a = numero(v[0]);
+    b = numero(v[1]);
+  } else if (v && typeof v === "object" && Array.isArray((v as any).coordinates)) {
+    return doTextoOuLista((v as any).coordinates);
+  } else {
+    return null;
+  }
+  if (a === null || b === null || !Number.isFinite(a) || !Number.isFinite(b)) return null;
+  const ehLat = (n: number) => n >= -34 && n <= 6;
+  const ehLng = (n: number) => n >= -74 && n <= -34;
+  const ponto = ehLat(a) && ehLng(b) ? { lat: a, lng: b } : ehLat(b) && ehLng(a) ? { lat: b, lng: a } : null;
+  if (!ponto || coordenadaGrosseira(ponto.lat, ponto.lng)) return null;
+  return ponto;
+}
+
+/**
  * O ponto que veio no pedido do parceiro, ou `undefined`.
  *
  * `undefined`, nunca `null`: para o Prisma, null num campo Json exige
@@ -144,9 +177,9 @@ export function coordenadasDoParceiro(...candidatos: unknown[]): Ponto | undefin
     const direto = doObjeto(obj);
     if (direto) return direto;
 
-    // 2. Num dos ninhos conhecidos.
+    // 2. Num dos ninhos conhecidos — com nome de campo ou só o par.
     for (const ninho of NINHOS) {
-      const dentro = doObjeto(obj[ninho]);
+      const dentro = doObjeto(obj[ninho]) || doTextoOuLista(obj[ninho]);
       if (dentro) return dentro;
     }
 
@@ -157,7 +190,7 @@ export function coordenadasDoParceiro(...candidatos: unknown[]): Ponto | undefin
       const nele = doObjeto(valor);
       if (nele) return nele;
       for (const ninho of NINHOS) {
-        const fundo = doObjeto((valor as any)[ninho]);
+        const fundo = doObjeto((valor as any)[ninho]) || doTextoOuLista((valor as any)[ninho]);
         if (fundo) return fundo;
       }
     }
