@@ -5,7 +5,7 @@ import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import TutorialDaTela from "@/components/TutorialDaTela";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode, Mic } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode, Mic, Smartphone } from "lucide-react";
 import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
 import SimularPedidos from "./SimularPedidos";
@@ -37,6 +37,9 @@ const NAV_ITEMS = [
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "IA" },
   // Bill, seu assessor: estoque e financeiro pelo WhatsApp do dono (R$ 49,90/mês — lib/assessor).
   { href: "/store/bill", label: "Bill, seu assessor", icon: Mic, badge: "NOVO" },
+  // Aplicativo próprio da loja na Play Store/App Store: a loja pede aqui e a
+  // FireHub desenvolve (lib/app-da-loja/solicitacao.ts — Douglas, 17/10/2026).
+  { href: "/store/aplicativo", label: "Aplicativo da loja", icon: Smartphone, badge: "NOVO" },
   // A pagina SEMPRE morou em /store/meta-ads — e o callback do OAuth do Meta
   // (api/meta-ads/callback) e o checklist de onboarding mandam para la. Este
   // link apontava para /store/trafego, endereco que nunca existiu: quem clicava
