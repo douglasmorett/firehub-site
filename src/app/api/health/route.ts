@@ -136,6 +136,9 @@ export async function GET(req: NextRequest) {
       ["TableSession", "waiterCommission"],
       ["PosTerminal", "deviceToken"], ["PosTerminal", "lastSeenAt"],
       ["PosTerminal", "appVersion"],
+      // Quem abriu o caixa. Está no schema: toda consulta de CashSession sem
+      // `select` (o caixa inteiro) lê a coluna.
+      ["CashSession", "abertoPor"],
     ];
     const cols = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
       SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns

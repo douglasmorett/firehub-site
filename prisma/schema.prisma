@@ -1615,6 +1615,11 @@ model CashSession {
   difference      Float?                         // Positivo = sobra, Negativo = falta
   justification   String?                        // Justificativa da diferença
   closedBy        String?
+  /// Quem abriu o caixa: { nome, email, papel: "DONO" | "FUNCIONARIO" | "SUPORTE" }
+  /// (lib/resumo-do-caixa-aberto.ts). Aparece no topo do "Movimentar caixa".
+  /// Nulo = caixa aberto antes de 17/10/2026 — a tela mostra "—".
+  /// A COLUNA nasce em garantir-colunas.ts (COLUNA_QUEM_ABRIU_O_CAIXA).
+  abertoPor       Json?
   notes           String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt

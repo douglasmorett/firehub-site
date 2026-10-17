@@ -12,6 +12,8 @@ import SimularPedidos from "./SimularPedidos";
 import VendasPorTipoDoCaixa, { type VendasPorTipo } from "./VendasPorTipoDoCaixa";
 import CancelamentosDoCaixa, { type CancelamentosDoTurno } from "./CancelamentosDoCaixa";
 import SecoesDoFechamentoNoPapel from "./SecoesDoFechamentoNoPapel";
+import ResumoDoCaixaAbertoNoMenu from "./ResumoDoCaixaAberto";
+import type { ResumoDoCaixaAberto } from "@/lib/resumo-do-caixa-aberto";
 import {
   avisarQueOCaixaMudou, EVENTO_ABRIR_MENU_DO_CAIXA, PARAMETRO_ABRIR_CAIXA, type PedidoDoCaixa,
 } from "@/lib/caixa-aberto";
@@ -397,6 +399,14 @@ export default function StoreTopNav({
   const [movErro, setMovErro] = useState("");
   const [movs, setMovs] = useState<any[]>([]);
   const [movTotais, setMovTotais] = useState({ entradas: 0, saidas: 0, saldo: 0 });
+  // ── O CAIXA ABERTO, EM RESUMO ───────────────────────────────────────
+  // Pedido do Allan (Delícia de Casa, 17/10/2026): no topo do menu, quem abriu
+  // e quando, o troco de abertura, o que entrou de venda (e quanto em
+  // dinheiro), as entradas e saídas e o dinheiro que deveria estar na gaveta.
+  // Vem pronto do GET /api/cash-session — a MESMA apuração do fechamento
+  // (lib/resumo-do-caixa-aberto.ts) —, então a tela não soma nada.
+  const [resumoDoCaixa, setResumoDoCaixa] = useState<(ResumoDoCaixaAberto & { fuso: string }) | null>(null);
+  const [resumoCarregando, setResumoCarregando] = useState(false);
   // ── O COMPROVANTE DA SANGRIA ────────────────────────────────────────
   // Pedido da Delícia de Casa (02/10/2026): imprimir a entrada ou a retirada
   // quando lança. Desligado até a loja marcar uma vez — depois o navegador
@@ -444,7 +454,22 @@ export default function StoreTopNav({
       })
       .catch(() => {});
 
-  useEffect(() => { if (showCaixaMenu) carregarMovs(); }, [showCaixaMenu]);
+  // Recarrega a cada abertura do menu e depois de cada lançamento: a sangria
+  // que acabou de entrar tem de mudar o "dinheiro na gaveta" na hora.
+  const carregarResumoDoCaixa = () => {
+    setResumoCarregando(true);
+    return fetch("/api/cash-session", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => setResumoDoCaixa(d?.resumoDoCaixa || null))
+      .catch(() => {})
+      .finally(() => setResumoCarregando(false));
+  };
+
+  useEffect(() => {
+    if (!showCaixaMenu) return;
+    carregarMovs();
+    carregarResumoDoCaixa();
+  }, [showCaixaMenu]);
 
   // A faixa de "caixa aberto ha mais de 24h" (AvisoCaixaAberto24h) vive fora
   // desta barra, entao ela pede o menu por evento em vez de duplicar a tela.
@@ -525,7 +550,7 @@ export default function StoreTopNav({
       if (!res.ok) { setMovErro(d.error || "Não consegui registrar. Tente de novo."); return; }
       if (movImprimir) avisarImpressaoDaMov(d.impressao);
       setMovTipo(null); setMovValor(""); setMovDescricao("");
-      await carregarMovs();
+      await Promise.all([carregarMovs(), carregarResumoDoCaixa()]);
     } catch {
       setMovErro("Sem conexão. O lançamento não foi registrado.");
     } finally {
@@ -535,7 +560,7 @@ export default function StoreTopNav({
 
   const apagarMov = async (id: string) => {
     await fetch(`/api/cash-session/movimentacao?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
-    await carregarMovs();
+    await Promise.all([carregarMovs(), carregarResumoDoCaixa()]);
   };
 
   // Fetch expected values and pending orders when opening close modal
@@ -1045,6 +1070,11 @@ export default function StoreTopNav({
               </p>
             </div>
 
+            {/* Quem abriu, o troco, as vendas e o dinheiro da gaveta — no lugar
+                dos dois números "Entrou/Saiu" que ficavam no rodapé (Allan,
+                Delícia de Casa, 17/10/2026). */}
+            <ResumoDoCaixaAbertoNoMenu resumo={resumoDoCaixa} carregando={resumoCarregando} />
+
             {/* Lançar */}
             {!movTipo ? (
               <div style={{ padding:"18px 24px", display:"flex", flexDirection:"column", gap:10 }}>
@@ -1140,15 +1170,10 @@ export default function StoreTopNav({
             {/* O que já foi lançado no turno */}
             <div style={{ padding:"0 24px 22px" }}>
               <div style={{ borderTop:"1px solid #F1F5F9", paddingTop:16 }}>
-                <div style={{ display:"flex", gap:10, marginBottom:12 }}>
-                  <div style={{ flex:1, background:"#F0FDFA", border:"1px solid #99F6E4", borderRadius:12, padding:"10px 12px" }}>
-                    <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.06em", color:"#0F766E", textTransform:"uppercase" }}>Entrou</div>
-                    <div style={{ fontSize:"1.05rem", fontWeight:900, color:"#0F766E", marginTop:2 }}>{fmt(movTotais.entradas)}</div>
-                  </div>
-                  <div style={{ flex:1, background:"#FFF1E8", border:"1px solid #FFD3C2", borderRadius:12, padding:"10px 12px" }}>
-                    <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.06em", color:"#D14300", textTransform:"uppercase" }}>Saiu</div>
-                    <div style={{ fontSize:"1.05rem", fontWeight:900, color:"#D14300", marginTop:2 }}>{fmt(movTotais.saidas)}</div>
-                  </div>
+                {/* Os totais de entrada e saída subiram para o resumo do topo;
+                    aqui fica a lista, lançamento por lançamento. */}
+                <div style={{ fontSize:"0.68rem", fontWeight:800, letterSpacing:"0.09em", color:"#94A3B8", textTransform:"uppercase", marginBottom:10 }}>
+                  Entradas e saídas deste turno
                 </div>
 
                 {movs.length === 0 ? (
