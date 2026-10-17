@@ -11,10 +11,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Mic, Square, Camera, Send, Loader2 } from "lucide-react";
+import RostoDoBill, { type EmocaoDoBill } from "./RostoDoBill";
 
 type Fala = { id: string; papel: "DONO" | "BILL"; texto: string; canal: "WHATSAPP" | "PAINEL"; autor: string | null; criadoEm: string; provisoria?: boolean };
-
-export const AVATAR_DO_BILL = "/bill/bill.png";
 
 function paraBase64(blob: Blob): Promise<string> {
   return new Promise((ok, erro) => {
@@ -58,13 +57,29 @@ function comNegrito(t: string) {
   return t.split(/(\*[^*\n]+\*)/g).map((p, j) => (p.length > 2 && p.startsWith("*") && p.endsWith("*") ? <b key={j}>{p.slice(1, -1)}</b> : p));
 }
 
-export default function ConversaComOBill({ altura = 380, aoGravar }: { altura?: number | string; aoGravar?: () => void }) {
+export default function ConversaComOBill({ altura = 380, aoGravar, aoMudarEstado }: {
+  altura?: number | string;
+  aoGravar?: () => void;
+  /** O humor do rosto que acompanha esta conversa: ouvindo (gravando), pensando (enviando), erro, feliz (respondeu). */
+  aoMudarEstado?: (e: EmocaoDoBill) => void;
+}) {
   const [falas, setFalas] = useState<Fala[]>([]);
   const [carregou, setCarregou] = useState(false);
   const [texto, setTexto] = useState("");
   const [enviando, setEnviando] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [comemorando, setComemorando] = useState(false);
+
+  useEffect(() => {
+    if (!aoMudarEstado) return;
+    aoMudarEstado(erro ? "erro" : gravando ? "ouvindo" : enviando ? "pensando" : comemorando ? "feliz" : "normal");
+  }, [erro, gravando, enviando, comemorando, aoMudarEstado]);
+  useEffect(() => {
+    if (!comemorando) return;
+    const t = setTimeout(() => setComemorando(false), 2500);
+    return () => clearTimeout(t);
+  }, [comemorando]);
   const gravador = useRef<MediaRecorder | null>(null);
   const pedacos = useRef<Blob[]>([]);
   const fim = useRef<HTMLDivElement | null>(null);
@@ -106,6 +121,7 @@ export default function ConversaComOBill({ altura = 380, aoGravar }: { altura?: 
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || "Não consegui falar com o Bill agora.");
       await buscarNovas();
+      setComemorando(true);
       if (j.gravou) aoGravar?.();
     } catch (e: any) {
       setFalas((f) => f.filter((x) => !x.provisoria));
@@ -203,7 +219,7 @@ function Balao({ de, rodape, children }: { de: "DONO" | "BILL"; rodape?: string;
   const dono = de === "DONO";
   return (
     <div style={{ alignSelf: dono ? "flex-end" : "flex-start", maxWidth: "85%", display: "flex", gap: 6, alignItems: "flex-end" }}>
-      {!dono && <img src={AVATAR_DO_BILL} alt="" width={24} height={24} style={{ borderRadius: 999, flexShrink: 0 }} />}
+      {!dono && <RostoDoBill tamanho={24} piscar={false} style={{ flexShrink: 0 }} />}
       <div style={{ background: dono ? "#DCF8C6" : "white", borderRadius: 10, padding: "8px 11px", fontSize: 14, color: "#0F172A", whiteSpace: "pre-wrap", boxShadow: "0 1px 1px rgba(0,0,0,.08)", wordBreak: "break-word" }}>
         {children}
         {rodape && <div style={{ fontSize: 10.5, color: "#64748B", marginTop: 3, textAlign: "right" }}>{rodape}</div>}
