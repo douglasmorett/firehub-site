@@ -50,13 +50,72 @@ async function resolveCredentials(storeUserId?: string): Promise<JotajaCredentia
  * A loja recebe pedido do JotaJá? Só com credencial E integração ligada.
  * Credencial gravada com a integração desligada não puxa nada — antes o poll do
  * painel rodava para toda loja que tivesse credencial, ligada ou não.
+ * E uma credencial, uma loja: se a mesma credencial está ligada numa loja mais
+ * antiga, só ela puxa (lib/jotaja-loja.ts › donasDasCredenciais, igual ao cron).
  */
 export async function lojaComJotajaLigado(lojaId: string): Promise<boolean> {
   const loja = await prisma.user.findUnique({
     where: { id: lojaId },
-    select: { jotajaConnected: true, jotajaClientId: true, jotajaClientSecret: true },
+    select: { jotajaConnected: true, jotajaClientId: true, jotajaClientSecret: true, createdAt: true },
   });
-  return !!(loja?.jotajaConnected && loja.jotajaClientId && loja.jotajaClientSecret);
+  if (!(loja?.jotajaConnected && loja.jotajaClientId && loja.jotajaClientSecret)) return false;
+  const maisAntigaComAMesma = await prisma.user.findFirst({
+    where: {
+      id: { not: lojaId },
+      jotajaConnected: true,
+      jotajaClientId: loja.jotajaClientId,
+      ownerId: null,
+      NOT: { email: { startsWith: "deleted_" } },
+      OR: [{ createdAt: { lt: loja.createdAt } }, { createdAt: loja.createdAt, id: { lt: lojaId } }],
+    },
+    select: { id: true },
+  });
+  return !maisAntigaComAMesma;
+}
+
+// ── A hora em que a loja ligou o JotaJá ────────────────────────────────────
+//
+// A partir dela os pedidos entram; o que foi pedido antes fica no portal do
+// JotaJá (lib/jotaja-loja.ts › pedidoDeAntesDaLigacao). Tabela própria, criada
+// no 1º uso por SQL cru (fora do schema.prisma, como AcrescimoDoPedido) — não
+// mexe na tabela User. Hora em milissegundos (BIGINT): sem fuso para deslocar.
+// Loja ligada antes desta regra não tem linha, e nada é barrado por aqui.
+
+let tabelaDaLigacaoOk = false;
+
+async function garantirTabelaDaLigacao(): Promise<void> {
+  if (tabelaDaLigacaoOk) return;
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "JotajaLigacao" (
+      "lojaId" TEXT PRIMARY KEY,
+      "ligadoEmMs" BIGINT NOT NULL,
+      "clientId" TEXT
+    )`);
+  tabelaDaLigacaoOk = true;
+}
+
+const _ligadoEmCache = new Map<string, { valor: number | null; exp: number }>();
+
+/** Quando a loja ligou o JotaJá no FireHub (ms), ou null se ligou antes desta regra. */
+export async function ligadoEmDaLoja(lojaId: string): Promise<number | null> {
+  const guardado = _ligadoEmCache.get(lojaId);
+  if (guardado && Date.now() < guardado.exp) return guardado.valor;
+  await garantirTabelaDaLigacao();
+  const linhas = await prisma.$queryRaw<{ ligadoEmMs: bigint | number }[]>`
+    SELECT "ligadoEmMs" FROM "JotajaLigacao" WHERE "lojaId" = ${lojaId}`;
+  const valor = linhas[0] ? Number(linhas[0].ligadoEmMs) : null;
+  _ligadoEmCache.set(lojaId, { valor, exp: Date.now() + 60_000 });
+  return valor;
+}
+
+/** Grava a hora em que a loja (re)ligou o JotaJá. */
+export async function marcarLigacao(lojaId: string, clientId: string, ligadoEmMs: number): Promise<void> {
+  await garantirTabelaDaLigacao();
+  await prisma.$executeRaw`
+    INSERT INTO "JotajaLigacao" ("lojaId", "ligadoEmMs", "clientId")
+    VALUES (${lojaId}, ${BigInt(ligadoEmMs)}, ${clientId})
+    ON CONFLICT ("lojaId") DO UPDATE SET "ligadoEmMs" = EXCLUDED."ligadoEmMs", "clientId" = EXCLUDED."clientId"`;
+  _ligadoEmCache.delete(lojaId);
 }
 
 /** Obtém (ou reutiliza) o Bearer token via client_credentials, com cache per-store */
@@ -177,15 +236,23 @@ export async function jotajaMutate(
 // Open Delivery de uma loja antes de o FireHub ligar, a fila enche (Duga Burguer,
 // 16/10/2026: 313 pedidos da semana). Ligar sem esvaziar jogava a semana inteira
 // no painel e na impressora da loja. Por isso a tela de Integrações lê a fila
-// com a credencial nova, confere de que loja ela é e dá baixa no que é de antes.
+// com a credencial nova, confere de que loja ela é e, ao ligar, dá baixa nos
+// pedidos de antes da ligação.
+
+/** O JotaJá disse NÃO à credencial (401/403/400) — diferente de estar fora do ar. */
+export class CredencialJotajaRecusada extends Error {}
 
 async function tokenDaCredencial(clientId: string, clientSecret: string): Promise<string> {
   const res = await fetch(`${JOTAJA_BASE}/oauth/token`, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ grant_type: "client_credentials", client_id: clientId, client_secret: clientSecret }),
+    signal: AbortSignal.timeout(15_000),
   });
-  if (!res.ok) throw new Error(`JotaJá recusou a credencial (HTTP ${res.status})`);
+  if (res.status === 400 || res.status === 401 || res.status === 403) {
+    throw new CredencialJotajaRecusada(`JotaJá recusou a credencial (HTTP ${res.status})`);
+  }
+  if (!res.ok) throw new Error(`JotaJá respondeu HTTP ${res.status} ao pedir o token`);
   const data = await res.json();
   return data.access_token ?? data.accessToken;
 }
@@ -195,6 +262,7 @@ export async function filaDaCredencial(clientId: string, clientSecret: string): 
   const token = await tokenDaCredencial(clientId, clientSecret);
   const res = await fetch(`${JOTAJA_BASE}/v1/events:polling`, {
     headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+    signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Fila do JotaJá respondeu HTTP ${res.status}`);
   const texto = await res.text();
@@ -216,6 +284,7 @@ export async function darBaixaNaFila(clientId: string, clientSecret: string, eve
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
       body: JSON.stringify(lote),
+      signal: AbortSignal.timeout(15_000),
     });
     if (!res.ok) throw new Error(`Baixa na fila do JotaJá respondeu HTTP ${res.status}`);
     baixados += lote.length;

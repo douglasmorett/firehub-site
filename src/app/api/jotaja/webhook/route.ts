@@ -123,14 +123,17 @@ export async function POST(req: NextRequest) {
 
           // Só ackar com o pedido confirmado no banco: o ACK apaga o evento do
           // feed em definitivo e o JotaJá não tem listagem para recuperá-lo.
-          // "ignorado" = pedido velho demais (lib/jotaja-loja.ts): sai sem entrar.
+          // "ignorado" = nunca entra nesta loja (lib/jotaja-loja.ts): sai sem entrar.
           let podeAckar = result.action !== "error";
           if (podeAckar && event.orderId && result.action !== "ignorado") {
+            // O pedido tem que estar NESTA loja (o import manual grava o UUID na referência).
             const gravado = await prisma.customerOrder.findFirst({
               where: {
+                franchiseeId: lojaId,
                 OR: [
                   { openDeliveryOrderId: event.orderId },
                   { openDeliveryOrderId: { startsWith: `${event.orderId}_` } },
+                  { openDeliveryReference: event.orderId },
                 ],
               } as any,
               select: { id: true },

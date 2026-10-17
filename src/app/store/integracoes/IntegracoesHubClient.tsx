@@ -623,16 +623,18 @@ export default function IntegracoesHubClient({
 
       const data = await res.json();
       if (res.ok && data.ok) {
-        // "Conectado" agora reflete o teste real da credencial no JotaJá,
-        // não o simples fato de o formulário ter sido salvo.
-        setJjConnected(!!data.autenticou);
+        // "Conectado" reflete o que a rota gravou: credencial aceita E desta
+        // loja (autenticar não basta — pode ser de outro restaurante).
+        const ligada = !!data.user?.jotajaConnected;
+        setJjConnected(ligada);
         setJjHasSecret(true);
         setJjClientSecret("");
+        if (data.user?.jotajaMerchantId) setJjMerchantId(data.user.jotajaMerchantId);
         showToast(
-          data.autenticou ? "✅ Integração JotaJá salva e ativada!" : `⚠️ ${data.message}`,
-          data.autenticou ? "#0F766E" : "#B45309"
+          ligada ? `✅ ${data.message}` : `⚠️ ${data.message}`,
+          ligada ? "#0F766E" : "#B45309"
         );
-        if (data.autenticou) setOpenModal(null);
+        if (ligada) setOpenModal(null);
       } else {
         showToast(`⚠️ ${data.error || "Erro ao salvar JotaJá"}`, "#C92E09");
       }

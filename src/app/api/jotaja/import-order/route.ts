@@ -90,6 +90,10 @@ export async function POST(req: NextRequest) {
             orderId: result.orderId
           });
         }
+        // Pedido de OUTRO restaurante/loja: não vira pedido manual aqui.
+        if (result.recusadoPorLoja) {
+          return NextResponse.json({ error: `Esse pedido não é desta loja no JotaJá: ${result.message}` }, { status: 400 });
+        }
       } catch (err: any) {
         console.warn("[Import JotaJá] Tentativa via API Open Delivery falhou:", err?.message);
       }
@@ -126,7 +130,11 @@ export async function POST(req: NextRequest) {
         dailyOrderNumber,
         source: "JOTAJA",
         openDeliveryChannel: "JOTAJA",
-        openDeliveryOrderId: cleanRef || `manual_${Date.now()}`,
+        // O id é único no banco inteiro, então o que foi digitado leva a loja
+        // junto: o mesmo número (#4498) existe em mais de um restaurante, e um
+        // UUID de outro restaurante digitado aqui travaria o pedido de verdade
+        // da outra loja. O cron acha este pedido pela referência.
+        openDeliveryOrderId: cleanRef ? `manual_jotaja_${cleanRef}_${targetFranchiseeId}` : `manual_${Date.now()}`,
         openDeliveryReference: refTag,
         customerName: customerName || `Cliente JotaJá #${refTag}`,
         customerPhone: customerPhone || "",

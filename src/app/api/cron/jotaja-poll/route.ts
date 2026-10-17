@@ -3,6 +3,7 @@ import { processJotajaEvent } from "@/lib/processJotajaEvent";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { semLojasBloqueadas } from "@/lib/loja-bloqueada";
+import { donasDasCredenciais } from "@/lib/jotaja-loja";
 
 /**
  * GET /api/cron/jotaja-poll
@@ -26,9 +27,10 @@ export async function GET(req: NextRequest) {
 
   try {
     // ── MULTI-TENANT: Buscar todas as lojas ativas com Jotajá ──────────
-    const todasAsLojas = await prisma.user.findMany({
+    const lojasLigadas = await prisma.user.findMany({
       where: {
         jotajaConnected: true,
+        ownerId: null, // loja, não funcionário
         NOT: [
           { jotajaClientId: null },
           { jotajaClientSecret: null },
@@ -41,8 +43,20 @@ export async function GET(req: NextRequest) {
         storeName: true,
         ownerId: true,
         jotajaMerchantId: true,
+        jotajaClientId: true,
+        createdAt: true,
       },
     });
+
+    // Uma credencial, uma loja (lib/jotaja-loja.ts › donasDasCredenciais): a
+    // mesma credencial ligada em duas lojas fazia o pedido cair ora numa, ora
+    // noutra. Só a mais antiga puxa; as outras aparecem no log.
+    const { donas: todasAsLojas, repetidas } = donasDasCredenciais(
+      lojasLigadas.map((l) => ({ ...l, clientId: l.jotajaClientId, criadaEm: l.createdAt })),
+    );
+    for (const r of repetidas) {
+      log.push(`⚠️ Credencial JotaJá repetida: só ${r.dona.storeName || r.dona.email} puxa; fora: ${r.foraDoPoll.map((l) => l.storeName || l.email).join(", ")}`);
+    }
 
     // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts) nem tem a fila
     // puxada: sem import e sem ack — o pedido fica no portal do Jotajá.
@@ -70,7 +84,7 @@ export async function GET(req: NextRequest) {
       }
       const chunk = stores.slice(i, i + CHUNK_SIZE);
       const results = await Promise.allSettled(chunk.map(async (store) => {
-        const storeId = store.ownerId || store.id;
+        const storeId = store.id;
         const storeName = store.storeName || store.email;
 
         try {
@@ -130,13 +144,16 @@ export async function GET(req: NextRequest) {
               const eid = event.eventId || event.id;
               const podeAckar = await (async () => {
                 if (result.action === "error") return false;
-                if (result.action === "ignorado") return true; // pedido velho demais (lib/jotaja-loja.ts) — sai da fila sem entrar
+                if (result.action === "ignorado") return true; // nunca entra nesta loja (de antes da ligação / velho demais) — sai da fila
                 if (!event.orderId) return true; // evento sem pedido (keepalive) — nada a conferir
+                // O pedido tem que estar NESTA loja (o import manual grava o UUID na referência).
                 const gravado = await prisma.customerOrder.findFirst({
                   where: {
+                    franchiseeId: storeId,
                     OR: [
                       { openDeliveryOrderId: event.orderId },
                       { openDeliveryOrderId: { startsWith: `${event.orderId}_` } },
+                      { openDeliveryReference: event.orderId },
                     ],
                   } as any,
                   select: { id: true },

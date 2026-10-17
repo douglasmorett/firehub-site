@@ -678,6 +678,12 @@ async function pollIfoodEvents(sessionUserId?: string) {
 
 // Throttle Jotajá polling PER-STORE — evita cruzamento entre lojas
 const lastJotajaPollMap = new Map<string, number>();
+// Uma rodada por loja de cada vez: com fila grande, a rodada passava dos 2 s
+// do throttle e as próximas abas abriam outra por cima.
+const jotajaPollRodando = new Set<string>();
+// O painel trata no máximo isto por rodada; o resto fica para a próxima (e
+// para o cron, que tem limite de tempo próprio).
+const MAX_EVENTOS_JOTAJA_POR_RODADA = 30;
 
 async function pollJotajaEvents(sessionUserId?: string) {
   // Sem loja não há credencial: o JotaJá é por loja, igual à Brendi.
@@ -686,8 +692,10 @@ async function pollJotajaEvents(sessionUserId?: string) {
   const now = Date.now();
   const lastPoll = lastJotajaPollMap.get(storeKey) || 0;
   if (now - lastPoll < 2_000) return;
+  if (jotajaPollRodando.has(storeKey)) return;
 
   lastJotajaPollMap.set(storeKey, now);
+  jotajaPollRodando.add(storeKey);
 
   try {
     const { jotajaFetch, jotajaMutate, lojaComJotajaLigado } = await import("@/lib/jotaja-api");
@@ -716,7 +724,7 @@ async function pollJotajaEvents(sessionUserId?: string) {
     if (!events || events.length === 0) return;
 
     const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
-    for (const event of events) {
+    for (const event of (Array.isArray(events) ? events : [events]).slice(0, MAX_EVENTOS_JOTAJA_POR_RODADA)) {
       const result = await processJotajaEvent(
         event,
         (path: string, opts?: RequestInit) => jotajaFetch(path, opts, sessionUserId),
@@ -729,14 +737,17 @@ async function pollJotajaEvents(sessionUserId?: string) {
       // listagem para recuperá-lo depois (GET /v1/orders responde 404). Só ackamos
       // se o pedido realmente existir no banco — antes, "skipped" também ackava.
       let podeAckar = result.action !== "error";
-      // "ignorado" = pedido velho demais (lib/jotaja-loja.ts): sai da fila sem entrar.
+      // "ignorado" = nunca entra nesta loja (lib/jotaja-loja.ts): sai da fila sem entrar.
       if (podeAckar && event.orderId && result.action !== "ignorado") {
         const { prisma } = await import("@/lib/prisma");
+        // O pedido tem que estar NESTA loja (o import manual grava o UUID na referência).
         const gravado = await prisma.customerOrder.findFirst({
           where: {
+            franchiseeId: sessionUserId,
             OR: [
               { openDeliveryOrderId: event.orderId },
               { openDeliveryOrderId: { startsWith: `${event.orderId}_` } },
+              { openDeliveryReference: event.orderId },
             ],
           } as any,
           select: { id: true },
@@ -772,6 +783,8 @@ async function pollJotajaEvents(sessionUserId?: string) {
     }
   } catch (err) {
     console.error("[Jotaja Poll] Erro geral:", err);
+  } finally {
+    jotajaPollRodando.delete(storeKey);
   }
 }
 

@@ -1017,42 +1017,14 @@ async function handleIncomingMessage(body: any, instance: string) {
     const cleanTarget = remoteJid.replace(/@.*$/, "");
     cooldownCache.set(remoteJid, Date.now());
 
-    // Extrair o número do pedido para a resposta carinhosa e auto-resgate
+    // Extrair o número do pedido para a resposta carinhosa
     const orderNumMatch = textMessage.match(/Pedido\s*n[ºo]?:\s*#?(\d+)/i);
     const orderNum = orderNumMatch ? orderNumMatch[1] : "";
 
-    // 🚀 AUTO-RESGATE EM TEMPO REAL: Garantir que se o evento do Jotajá não tiver sido polled, importa na hora!
-    if (orderNum) {
-      (async () => {
-        try {
-          const targetFranchiseeId = user.ownerId || user.id;
-          const existing = await prisma.customerOrder.findFirst({
-            where: {
-              OR: [
-                { openDeliveryOrderId: orderNum },
-                { openDeliveryOrderId: { startsWith: `${orderNum}_` } },
-                { openDeliveryReference: orderNum }
-              ]
-            }
-          });
-
-          if (!existing) {
-            console.log(`[WhatsApp Webhook] Auto-resgatando pedido JotaJá #${orderNum}...`);
-            const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
-            const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
-
-            await processJotajaEvent(
-              { orderId: orderNum, eventType: "CREATED", code: "PLC" },
-              jotajaFetch,
-              jotajaMutate,
-              targetFranchiseeId
-            );
-          }
-        } catch (rescueErr: any) {
-          console.warn("[WhatsApp Webhook] Erro ao auto-resgatar pedido JotaJá:", rescueErr?.message);
-        }
-      })();
-    }
+    // (Saiu daqui o "auto-resgate": mandava o NÚMERO do pedido ao JotaJá como se
+    // fosse o id — nunca importou nada —, chamava a API sem dizer a loja e
+    // procurava o pedido no banco inteiro. O pedido entra pela fila da loja;
+    // perdido, pelo "Importar pedido" do painel.)
 
     const thankMsg = orderNum
       ? `Recebemos a confirmação do seu pedido *#${orderNum}* pelo Jotajá! 📝\n\nMuito obrigado pela preferência! 🛵 Seu pedido já está em nosso sistema e está sendo preparado com todo carinho pela nossa equipe!\n\nSe precisar de qualquer dúvida ou alteração, pode falar por aqui! 😊`
