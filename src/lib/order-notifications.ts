@@ -73,7 +73,7 @@ export function comandaDoPedidoRecebido(order: any, numero: string | number | nu
 export async function sendOrderNotification(
   orderId: string,
   type: OrderNotificationType,
-  extra?: { cancelReason?: string }
+  extra?: { cancelReason?: string; minutos?: number }
 ) {
   try {
     const order = await prisma.customerOrder.findUnique({
@@ -147,7 +147,7 @@ export async function sendOrderNotification(
         entregador: order.motoboy?.name ?? null,
       },
       type,
-      extra?.cancelReason ?? null,
+      type === "CHEGANDO" && extra?.minutos ? String(extra.minutos) : extra?.cancelReason ?? null,
     ).catch(() => {});
 
     // Verificar se a loja desativou notificações automáticas de pedido nas configurações
@@ -193,6 +193,9 @@ export async function sendOrderNotification(
     const storeName = order.franchisee?.storeName || "Nossa Loja";
 
     let message = "";
+    // A página do pedido, onde o cliente vê o entregador no mapa (lib/entrega-ao-vivo.ts).
+    const slugDoLink = order.franchisee?.slug && order.franchisee.slug !== "minha-loja" ? order.franchisee.slug : "loja";
+    const linkDoPedido = `${(process.env.NEXTAUTH_URL || "https://firehubfood.com.br").replace(/\/$/, "")}/loja/${slugDoLink}/pedido/${order.id}`;
 
     switch (type) {
       case "CREATED": {
@@ -224,7 +227,11 @@ ${order.deliveryType === "DELIVERY" ? "Assim que sair para entrega, a gente te a
 Olá, *${order.customerName}*! O seu pedido *#${shortId}* de *${storeName}* acabou de sair com nosso entregador e está a caminho!
 
 📍 *Endereço:* ${order.customerAddress || "Endereço cadastrado"}${(order as any).motoboy?.name ? `
-🛵 *Entregador:* ${(order as any).motoboy.name}` : ""}
+🛵 *Entregador:* ${(order as any).motoboy.name}` : ""}${order.motoboyId ? `
+
+🗺️ *Veja o entregador no mapa, ao vivo:*
+${linkDoPedido}
+A gente te avisa aqui quando ele estiver a uns 5 minutos.` : ""}
 
 Muito obrigado pela preferência! Fique atento para receber o entregador. 
 
@@ -232,16 +239,14 @@ Bom apetite e uma ótima refeição! 😋✨`;
         break;
 
       case "CHEGANDO": {
-        const rawSlug = (order.franchisee as any)?.slug;
-        const storeSlug = rawSlug && rawSlug !== "minha-loja" ? rawSlug : "loja";
-        const baseUrl = (process.env.NEXTAUTH_URL || "https://firehubfood.com.br").replace(/\/$/, "");
+        const minutos = extra?.minutos && extra.minutos > 1 ? `uns ${extra.minutos} minutos` : "1 minuto";
         const entregador = (order as any).motoboy?.name ? String((order as any).motoboy.name).trim().split(/\s+/)[0] : "O entregador";
         message = `📍 *Seu pedido está chegando!*
 
-Olá, *${order.customerName}*! ${entregador} já está bem perto com o seu pedido *#${shortId}* de *${storeName}*.
+Olá, *${order.customerName}*! ${entregador} está a *${minutos}* do endereço de entrega com o seu pedido *#${shortId}* de *${storeName}*.
 
-Fique de olho na porta. 🛵
-Acompanhe no mapa: ${baseUrl}/loja/${storeSlug}/pedido/${order.id}`;
+Já pode se preparar para receber. 🛵
+Acompanhe no mapa: ${linkDoPedido}`;
         break;
       }
 

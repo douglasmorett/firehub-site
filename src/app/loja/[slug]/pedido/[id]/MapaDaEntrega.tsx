@@ -93,7 +93,7 @@ export default function MapaDaEntrega({ aoVivo }: { aoVivo: EntregaAoVivo }) {
       ? `${aoVivo.entregador.nome || "O entregador"} está a caminho`
       : km < 0.15
         ? `${aoVivo.entregador.nome || "O entregador"} chegou! 🎉`
-        : `${aoVivo.entregador.nome || "O entregador"} está a ${km < 1 ? `${Math.round(km * 1000 / 10) * 10} m` : `${km.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`} de você`;
+        : `${aoVivo.entregador.nome || "O entregador"} está a ${km < 1 ? `${Math.round(km * 1000 / 10) * 10} m` : `${km.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} km`} de você${aoVivo.minutos ? ` · chega em ~${aoVivo.minutos} min` : ""}`;
 
   return (
     <div style={{ background: "#fff", borderRadius: 16, overflow: "hidden", boxShadow: "0 1px 3px rgba(0,0,0,.08)", marginBottom: "1rem" }}>

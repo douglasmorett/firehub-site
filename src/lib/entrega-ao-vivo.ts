@@ -19,8 +19,9 @@
  * ── O aviso de chegando ────────────────────────────────────────────────────
  *
  * A cada posição recebida, os pedidos na rua com ESSE entregador são medidos
- * contra o ponto do cliente. A RAIO_DE_CHEGANDO_KM sai o aviso (push do app
- * da loja + WhatsApp da loja), uma vez por pedido: a tabela PedidoChegando
+ * contra o ponto do cliente. Quando faltam uns MINUTOS_DE_CHEGANDO (5) sai o
+ * aviso (push do app da loja + WhatsApp da loja) — o Douglas (16/10/2026): "o
+ * cliente já sai para fora para receber". Uma vez por pedido: a tabela PedidoChegando
  * (SQL cru, como PedidoAparelho) é a trava — o INSERT que entra é o que avisa,
  * então dois GPS seguidos ou dois servidores não mandam duas vezes. Ponto de
  * centro de bairro não conta: a 500 m da praça não é "chegando".
@@ -30,7 +31,19 @@ import { pontoNoMapa } from "@/lib/app-motoboy/pedido-no-app";
 
 /** GPS mais velho que isto não vai para o cliente (o app manda a cada ~12 s). */
 export const POSICAO_VALE_MS = 3 * 60 * 1000;
-export const RAIO_DE_CHEGANDO_KM = 0.5;
+/** "Seu pedido está chegando" sai quando a estimativa cai para isto. */
+export const MINUTOS_DE_CHEGANDO = 5;
+/** Recém-saído não ganha "chegando" no mesmo minuto do "saiu para entrega". */
+const SAIU_HA_POUCO_MS = 60 * 1000;
+
+/**
+ * Minutos de moto até o cliente, pela linha reta: rua não é reta (×1,4) e moto
+ * na cidade anda uns 22 km/h contando sinal e quebra-molas. É estimativa para
+ * o aviso e para o "chega em ~X min" do mapa, não promessa — nunca menos de 1.
+ */
+export function minutosAte(kmEmLinhaReta: number): number {
+  return Math.max(1, Math.round(((kmEmLinhaReta * 1.4) / 22) * 60));
+}
 
 const NA_RUA = ["SAIU_ENTREGA", "SAIU_PARA_ENTREGA", "EM_ROTA"];
 
@@ -46,6 +59,8 @@ export type EntregaAoVivo = {
   entregador: { nome: string | null; lat: number; lng: number; atualizadoEm: string } | null;
   destino: { lat: number; lng: number; aproximado: boolean } | null;
   distanciaKm: number | null;
+  /** Estimativa de minutos até o cliente (minutosAte). */
+  minutos: number | null;
 };
 
 /** O que a página do pedido mostra no mapa. Nulo = não há mapa a mostrar. */
@@ -73,7 +88,7 @@ export function entregaAoVivo(pedido: {
   const destino = pontoNoMapa(pedido.customerLatLng);
   if (!entregador && !destino) return null;
   const distanciaKm = entregador && destino && !destino.aproximado ? kmEntre(entregador, destino) : null;
-  return { entregador, destino, distanciaKm };
+  return { entregador, destino, distanciaKm, minutos: distanciaKm == null ? null : minutosAte(distanciaKm) };
 }
 
 let tabelaOk = false;
@@ -108,7 +123,7 @@ export async function avisarSeEstaChegando(motoboyId: string, lat: number, lng: 
         // Pedido esquecido "na rua" desde ontem não avisa ninguém.
         updatedAt: { gte: new Date(Date.now() - 4 * 60 * 60 * 1000) },
       },
-      select: { id: true, customerLatLng: true },
+      select: { id: true, customerLatLng: true, dispatchedAt: true, motoboyPuxadoEm: true },
       take: 10,
     });
     if (pedidos.length === 0) return;
@@ -116,8 +131,11 @@ export async function avisarSeEstaChegando(motoboyId: string, lat: number, lng: 
     for (const p of pedidos) {
       const destino = pontoNoMapa(p.customerLatLng);
       if (!destino || destino.aproximado) continue;
+      const saiuEm = p.dispatchedAt ?? p.motoboyPuxadoEm;
+      if (saiuEm && Date.now() - saiuEm.getTime() < SAIU_HA_POUCO_MS) continue;
       const km = kmEntre({ lat, lng }, destino);
-      if (km > RAIO_DE_CHEGANDO_KM) continue;
+      const minutos = minutosAte(km);
+      if (minutos > MINUTOS_DE_CHEGANDO) continue;
       if (!(await garantirTabela())) return;
       const entrou = await prisma.$executeRaw`
         INSERT INTO "PedidoChegando" ("pedidoId", "distanciaM", "createdAt")
@@ -126,7 +144,7 @@ export async function avisarSeEstaChegando(motoboyId: string, lat: number, lng: 
       `;
       if (entrou !== 1) continue;
       const { sendOrderNotification } = await import("@/lib/order-notifications");
-      await sendOrderNotification(p.id, "CHEGANDO");
+      await sendOrderNotification(p.id, "CHEGANDO", { minutos });
     }
   } catch (err: any) {
     console.warn(`[Entrega ao vivo] conferência de chegada do entregador ${motoboyId} falhou: ${err?.message}`);
