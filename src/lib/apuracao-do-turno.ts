@@ -291,7 +291,7 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
   let dinheiroCobradoPeloApp = 0;
   const taxaDeEntrega = { qtd: 0, c: 0 };
   // Troco feito pelo Pix (lib/troco-no-pix.ts), em centavos: o da loja mexe na
-  // conferência (nota inteira na gaveta, troco a menos no Pix); o do motoboy é
+  // conferência (nota inteira na gaveta; o Pix sai da conta, fora do caixa); o do motoboy é
   // só informação — a gaveta recebe o pedido, como sempre esperou.
   const trocoNoPix = { qtd: 0, c: 0, motoboyQtd: 0, motoboyC: 0 };
   const mesas = { servico: 0, servicoQtd: 0, gorjeta: 0, troco: 0, trocoQtd: 0 };
@@ -471,9 +471,11 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
   // Pedido de R$ 40 pago com nota de R$ 50, troco de R$ 10 devolvido por Pix
   // (lib/troco-no-pix.ts). Sem a marca, a conta é a de sempre: o troco saiu
   // em cédula da gaveta e a nota voltou, então a gaveta fica com os R$ 40.
-  //   • Pix DA LOJA: nenhuma cédula saiu, a nota inteira entrou. O dinheiro
-  //     espera R$ 50 e o Pix R$ 10 a MENOS (saiu da conta da loja) — os dois
-  //     somam os R$ 40 do pedido, e o total do caixa não muda.
+  //   • Pix DA LOJA: nenhuma cédula saiu, a nota inteira entrou: o dinheiro
+  //     espera R$ 50. O Pix do troco saiu da CONTA da loja, que não é o caixa
+  //     — decisão do Douglas (17/10/2026): "se for pelo Pix, não espera nada
+  //     no caixa". A linha do Pix não ganha −R$ 10; o faturamento continua
+  //     R$ 40 em dinheiro (retrato) e o caixa mostra a nota inteira.
   //   • Pix DO MOTOBOY: ele ficou com os R$ 10 da nota e entregou R$ 40 — o
   //     que a gaveta já esperava. Nada muda na conferência; fica a informação.
   // Só para a parte que passou pela gaveta da loja (`conferirParte`): o que o
@@ -484,7 +486,6 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
       if (t <= 0) continue;
       if (p.trocoNoPix === "LOJA") {
         esp.cash += t;
-        esp.pix -= t;
         trocoNoPix.qtd += 1;
         trocoNoPix.c += t;
       } else {
