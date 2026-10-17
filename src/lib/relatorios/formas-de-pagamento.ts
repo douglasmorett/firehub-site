@@ -231,6 +231,51 @@ export function foiPagoOnline(p: PedidoParaForma): boolean {
   return ehDo99Food(p) || src === "IFOOD" || !ehVendaDeSalao;
 }
 
+// ── AS BAIXAS DE UMA CONTA DE MESA, SEM O TROCO ──────────────────────────────
+
+export type BaixaDaConta = { forma: ChaveDaForma; centavos: number; texto: string };
+
+/**
+ * O que UMA conta de mesa fechada recebeu, forma a forma, já sem o troco (ver
+ * "O TROCO" no cabeçalho). Morava dentro de `formasDePagamento`; saiu para cá
+ * quando o Histórico de mesas (lib/relatorios/historico-de-mesas.ts) passou a
+ * mostrar a forma de cada mesa: se cada tela tirasse o troco do seu jeito, a
+ * soma do Dinheiro do histórico não bateria com a do Formas de pagamento.
+ *
+ * Tudo em CENTAVOS. `servico` e `gorjeta` como gravados na sessão (a taxa
+ * negativa de conta antiga entra crua, como sempre entrou aqui); `consumo` é
+ * a soma dos pedidos da conta que são venda.
+ *
+ * - Conta antiga com total pago e sem as baixas: o dinheiro entrou, só não se
+ *   sabe por onde — vira uma baixa "OUTROS" em vez de sumir.
+ * - O entregue além de consumo + serviço + gorjeta volta para o cliente, da
+ *   gaveta: sai do DINHEIRO desta conta, da maior nota para a menor; a nota
+ *   que vira troco inteira (R$ 5 numa conta já coberta pelo cartão) fica com
+ *   0 centavos e deixa de ser pagamento (quem lê filtra o zero).
+ */
+export function baixasDaConta(m: {
+  pagamentos: unknown;
+  totalPago: number | null | undefined;
+  servico: number;
+  gorjeta: number;
+  consumo: number;
+}): { baixas: BaixaDaConta[]; entregue: number; troco: number } {
+  const baixas: BaixaDaConta[] = lerPagamentos(m.pagamentos).map((b) => ({ forma: formaDoTexto(b.method), centavos: emCentavos(b.amount), texto: textoLimpo(b.method) }));
+  if (baixas.length === 0 && emCentavos(m.totalPago || 0) > 0) {
+    baixas.push({ forma: "OUTROS", centavos: emCentavos(m.totalPago || 0), texto: "Mesa sem a forma registrada" });
+  }
+  const entregue = baixas.reduce((s, b) => s + b.centavos, 0);
+  const aMais = Math.max(0, entregue - m.servico - m.gorjeta - m.consumo);
+  let troco = 0;
+  for (const b of baixas.filter((x) => x.forma === "DINHEIRO").sort((x, y) => y.centavos - x.centavos)) {
+    if (troco >= aMais) break;
+    const sai = Math.min(b.centavos, aMais - troco);
+    b.centavos -= sai;
+    troco += sai;
+  }
+  return { baixas, entregue, troco };
+}
+
 /** A forma do pedido de UMA forma só (sem divisão e sem mesa). */
 export function formaDoPedido(p: PedidoParaForma): ChaveDaForma {
   if (foiPagoOnline(p)) return "ONLINE";
@@ -564,26 +609,9 @@ export function formasDePagamento(
       if (!pedidosDeMesa.has(o.id)) { deOutroPeriodo += c; deOutroPeriodoQtd++; }
     }
 
-    const baixas = lerPagamentos(m.pagamentos).map((b) => ({ forma: formaDoTexto(b.method), centavos: emCentavos(b.amount), texto: textoLimpo(b.method) }));
-    // Conta antiga com total pago e sem as baixas: o dinheiro entrou, só não
-    // se sabe por onde. Aparece em "não identificado" em vez de sumir.
-    if (baixas.length === 0 && emCentavos(m.totalPago || 0) > 0) {
-      baixas.push({ forma: "OUTROS", centavos: emCentavos(m.totalPago || 0), texto: "Mesa sem a forma registrada" });
-    }
-    const entregue = baixas.reduce((s, b) => s + b.centavos, 0);
-
-    // O TROCO (ver o cabeçalho): o entregue além de consumo + serviço +
-    // gorjeta volta para o cliente, da gaveta. Sai do dinheiro desta conta,
-    // da maior nota para a menor; a nota que vira troco inteira (R$ 5 numa
-    // conta já coberta pelo cartão) deixa de ser pagamento.
-    const aMais = Math.max(0, entregue - servico - gorjeta - consumo);
-    let troco = 0;
-    for (const b of baixas.filter((x) => x.forma === "DINHEIRO").sort((x, y) => y.centavos - x.centavos)) {
-      if (troco >= aMais) break;
-      const sai = Math.min(b.centavos, aMais - troco);
-      b.centavos -= sai;
-      troco += sai;
-    }
+    // As baixas da conta já sem o troco (`baixasDaConta`, abaixo — a mesma
+    // conta que o Histórico de mesas mostra mesa a mesa).
+    const { baixas, entregue, troco } = baixasDaConta({ pagamentos: m.pagamentos, totalPago: m.totalPago, servico, gorjeta, consumo });
     for (const b of baixas) if (b.centavos > 0) registrar(b.forma, b.centavos, `m:${m.id}`, dia, "MESA", b.texto);
     if (troco > 0) { mesasResumo.troco += troco; mesasResumo.trocoContas++; }
     mesasResumo.centavos += entregue - troco;

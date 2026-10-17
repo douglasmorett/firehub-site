@@ -43,9 +43,10 @@ export type ItemDaMesaParaConta = {
  * tradicionais" é UM item de quantidade 1 com "Tradicional ×2" dentro. A
  * conta impressa mostrava só "1x Carne moida com Catupiry R$ 71,60", e o
  * cliente lia um pastel onde havia dois. A comanda da cozinha já imprime as
- * opções com "2x"; a conta precisa dizer a mesma coisa.
+ * opções com "2x"; a conta precisa dizer a mesma coisa. O detalhe do Histórico
+ * de mesas (lib/relatorios/historico-de-mesas.ts) usa o mesmo nome.
  */
-function nomeDaLinha(item: ItemDaMesaParaConta): string {
+export function nomeDaLinhaDaConta(item: ItemDaMesaParaConta): string {
   const base = item.productName || item.menuProduct?.name || "Item";
   const escolhas = parseComboSelections(item.comboSelections, 1);
   if (escolhas.length === 0) return base;
@@ -124,7 +125,7 @@ export function calcularContaDaMesa(
       somaDosItens += valor;
 
       const linha: LinhaDaConta = {
-        nome: nomeDaLinha(item),
+        nome: nomeDaLinhaDaConta(item),
         quantidade: item.quantity,
         valor: emReais(valor),
       };

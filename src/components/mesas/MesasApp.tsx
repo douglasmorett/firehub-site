@@ -20,6 +20,7 @@ import { numeroDaMesa } from "@/lib/mesa-na-comanda";
 import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
+import HistoricoDeMesas from "@/components/mesas/HistoricoDeMesas";
 import { motivoValido } from "@/lib/motivo-do-cancelamento";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
@@ -423,6 +424,8 @@ export default function MesasApp({
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showNewTableModal, setShowNewTableModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
+  /** Histórico de mesas (as contas fechadas no dia) — só no painel, não no link do garçom. */
+  const [verHistorico, setVerHistorico] = useState(false);
   /** Mesa de ORIGEM da transferência (nulo = modal fechado). */
   const [showTransferModal, setShowTransferModal] = useState<TableItem | null>(null);
   const [showEditModal, setShowEditModal] = useState<TableItem | null>(null);
@@ -2249,6 +2252,13 @@ export default function MesasApp({
               background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0", borderRadius: 10,
               padding: "8px 12px", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap",
             }}>📱 Celular</a>
+            {/* As mesas fechadas do dia, com a forma de pagamento de cada uma
+                (Allan, Delicias de Casa, 17/10/2026): fechada, a mesa sumia
+                daqui e virava rodadas "N/A" em Pedidos. */}
+            <button onClick={() => setVerHistorico(true)} title="Mesas fechadas no dia: abertura, fechamento, valor, forma de pagamento e itens" style={{
+              background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0", borderRadius: 10,
+              padding: "8px 12px", fontWeight: 700, fontSize: 13, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit",
+            }}>📋<span className="mesa-voltar-texto"> Histórico</span></button>
             <button onClick={() => setShowNewTableModal(true)} style={{
               background: "#475569", color: "#fff", border: "none", borderRadius: 10,
               padding: "8px 16px", fontWeight: 700, fontSize: 13, cursor: "pointer",
@@ -3711,6 +3721,9 @@ export default function MesasApp({
         />
       )}
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
+
+      {/* ─── HISTÓRICO DE MESAS ─── */}
+      {verHistorico && !ehGarcom && <HistoricoDeMesas onFechar={() => setVerHistorico(false)} />}
 
       {/* ─── CONFIG MODAL ─── */}
       {showConfigModal && (

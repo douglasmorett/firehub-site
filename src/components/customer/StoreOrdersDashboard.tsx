@@ -33,6 +33,7 @@ import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
+import { camposDoPagamentoDaMesaParaImpressao, pagamentoDaMesaNoPedido } from "@/lib/pagamento-da-mesa-no-pedido";
 import EditarPedidoPainel from "@/components/customer/EditarPedidoPainel";
 import EnviarParaOutraLojaPainel from "@/components/customer/EnviarParaOutraLojaPainel";
 import TrocarTipoDoPedidoPainel from "@/components/customer/TrocarTipoDoPedidoPainel";
@@ -153,6 +154,10 @@ const translatePayment = (method: string) => PAYMENT_LABELS[method] || PAYMENT_L
 /** A forma no card. Pix/cartão pago pelo site grava só "PIX": aqui vira
  *  "Pix (Pago Online)", como o "iFood App (Pago Online)" (pagoPeloSite). */
 const formaNoCard = (order: any): string => {
+  // Rodada de conta de mesa: a forma está na conta, não no pedido ("N/A" de
+  // nascença) — lib/pagamento-da-mesa-no-pedido.ts.
+  const daMesa = pagamentoDaMesaNoPedido(order);
+  if (daMesa) return daMesa.resumo;
   const peloSite = pagoPeloSite(order);
   if (peloSite) return `${peloSite} (Pago Online)`;
   return order.paymentMethod ? translatePayment(order.paymentMethod) : "—";
@@ -2590,6 +2595,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       // Calculada aqui, do pedido inteiro: este objeto não leva o prazo cru.
       ...camposDaPrevisaoParaImpressao(order),
       notes: order.notes,
+      // Rodada de mesa JÁ PAGA: a forma da conta na linha da forma e na
+      // observação, por cima dos dois campos acima — o papel saía "na conta
+      // da mesa" de uma mesa que já tinha pago (lib/pagamento-da-mesa-no-pedido.ts).
+      ...camposDoPagamentoDaMesaParaImpressao(order),
       createdAt: order.createdAt,
     };
 
@@ -5376,6 +5385,43 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </div>
 
                 {(() => {
+                  // ── RODADA DE CONTA DE MESA ──────────────────────────────
+                  // O pedido de mesa nasce "N/A" e a forma mora na conta
+                  // (lib/pagamento-da-mesa-no-pedido.ts). Sem este desvio, o
+                  // "N/A" caía no ramo de baixo: "N/A (Cobrar na Entrega)" e
+                  // "COBRAR DO CLIENTE NA ENTREGA" numa mesa já paga (Allan,
+                  // Delicias de Casa, 17/10/2026). Os valores são da CONTA
+                  // inteira, não desta rodada — e a tela diz isso.
+                  const daMesa = pagamentoDaMesaNoPedido(order as any);
+                  if (daMesa) {
+                    return (
+                      <div style={{ marginTop: "10px" }}>
+                        <div style={{ fontWeight: "bold", fontSize: "13px", color: "#000" }}>
+                          Forma de Pagamento: {daMesa.situacao === "naConta" ? "na conta da mesa" : daMesa.situacao === "paga" ? daMesa.formas.map((f) => f.forma).join(" + ") : daMesa.resumo}
+                        </div>
+                        {daMesa.situacao === "paga" && (
+                          <div style={{ marginTop: "6px", padding: "6px 8px", border: "1.5px solid #000", borderRadius: "4px", fontSize: "12px" }}>
+                            <div style={{ fontWeight: 900, marginBottom: "3px" }}>✅ Mesa paga no fechamento da conta</div>
+                            {daMesa.formas.map((f) => (
+                              <div key={f.forma} style={{ display: "flex", justifyContent: "space-between" }}>
+                                <span>{f.forma}</span>
+                                <span>R$ {f.valor.toFixed(2).replace('.', ',')}</span>
+                              </div>
+                            ))}
+                            <div style={{ fontSize: "11px", marginTop: "4px", color: "#334155" }}>
+                              Valores da conta inteira da mesa (todas as rodadas, taxa e gorjeta), como o caixa recebeu — em dinheiro, a nota entregue, antes do troco.
+                            </div>
+                          </div>
+                        )}
+                        {daMesa.situacao === "naConta" && (
+                          <div style={{ fontSize: "12px", marginTop: "4px", color: "#334155" }}>
+                            A rodada entra na conta da mesa e é paga no fechamento, em Mesas.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  }
+
                   const payMethodRaw = order.paymentMethod || "";
                   const payMethodClean = payMethodRaw.toLowerCase();
 
