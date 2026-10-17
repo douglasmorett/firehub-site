@@ -76,6 +76,9 @@ type PrinterEntry = {
   soPedidoDeMesa?: boolean;
   // Nenhuma comanda automatica: so a conta da mesa e o botao Imprimir.
   semComandaAutomatica?: boolean;
+  // Fora do KDS: com "imprimir so quando o KDS finalizar", esta imprime na
+  // chegada do pedido (o bar). lib/momento-da-impressao.ts.
+  foraDoKds?: boolean;
   // Pedido com item desta e de outra impressora: esta imprime o pedido inteiro.
   comandaInteiraNoMisto?: boolean;
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
@@ -804,6 +807,10 @@ export default function PrinterSetupClient({
                   “Finalizar” na tela do KDS. Se a cozinha não usa o KDS, nenhuma comanda será
                   impressa e vai parecer que a impressora quebrou.
                 </p>
+                <p style={{ margin: "6px 0 0", fontSize: "0.78rem", color: "#B71C1C", lineHeight: 1.5 }}>
+                  Tem impressora de quem <strong>não usa o KDS</strong> (o bar)? Marque nela
+                  “🍹 Fora do KDS: imprime na chegada”.
+                </p>
               </div>
             )}
           </div>
@@ -1214,6 +1221,32 @@ export default function PrinterSetupClient({
                   Imprimir, escolhendo esta impressora.
                 </div>
               </button>
+
+              {/* ── Fora do KDS ──
+                  Ragnar Burger (16/10/2026): a cozinha imprime só quando o KDS
+                  finaliza, mas o bar trabalha no papel — "a impressora do Bar,
+                  eu não quero que passe pelo KDS". Só aparece com a opção da
+                  loja ligada; sem ela, toda impressora já imprime na chegada. */}
+              {config.imprimirSoNoFimDoKds && (
+                <button
+                  onClick={() => updatePrinter(printer.id, { foraDoKds: !printer.foraDoKds })}
+                  style={{
+                    width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                    padding: "10px 12px", borderRadius: 12, marginTop: 8,
+                    border: printer.foraDoKds ? "2px solid #1C1917" : "1.5px solid #E2E8F0",
+                    background: printer.foraDoKds ? "#FAF6F2" : "#fff",
+                    color: printer.foraDoKds ? "#1C1917" : "#64748B",
+                  }}
+                >
+                  <div style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                    {printer.foraDoKds ? "✓" : "○"} 🍹 Fora do KDS: imprime na chegada
+                  </div>
+                  <div style={{ fontSize: "0.72rem", fontWeight: 500, marginTop: 2, lineHeight: 1.35, opacity: 0.9 }}>
+                    Para quem trabalha no papel, como o bar. Os itens desta impressora saem assim que o pedido
+                    entra, sem esperar a cozinha finalizar no KDS. As outras impressoras continuam saindo no fim do KDS.
+                  </div>
+                </button>
+              )}
             </div>
 
             {/* ── COMO OS ITENS SAEM NESTA IMPRESSORA ──

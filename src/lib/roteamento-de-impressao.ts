@@ -57,6 +57,12 @@ export type ImpressoraConfigurada = {
    */
   semComandaAutomatica?: boolean | null;
   /**
+   * Fora do KDS: com a loja imprimindo só quando o KDS finaliza, esta imprime
+   * a parte dela na CHEGADA do pedido (o bar que trabalha no papel). Não muda
+   * o roteamento — só o momento (lib/momento-da-impressao.ts → planoDoPapel).
+   */
+  foraDoKds?: boolean | null;
+  /**
    * Pedido com item desta impressora E de outra: esta imprime o pedido
    * inteiro. Sem item dela, a regra de sempre. Ver `itensDaImpressora`.
    */

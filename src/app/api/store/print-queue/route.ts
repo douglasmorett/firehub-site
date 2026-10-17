@@ -16,7 +16,7 @@ import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-con
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
 import { KIND_DANFE_NFCE, PARAMETRO_DO_DANFE, assistenteImprimeDanfe } from "@/lib/print";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
-import { esperaOFimDoKds } from "@/lib/momento-da-impressao";
+import { esperaOFimDoKds, impressoraForaDoKds, papelEmDoisMomentos, planoDoPapel, SUFIXO_DA_CHEGADA } from "@/lib/momento-da-impressao";
 import { MESA_DA_COMANDA, camposDaMesaParaImpressao, nomeDoClienteNaComanda, numeroDaMesa } from "@/lib/mesa-na-comanda";
 import { impressorasDaContaNoAndar, lerAndares } from "@/lib/andares-da-mesa";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
@@ -401,13 +401,29 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // — a comanda nunca sairia. Com a opção ligada, vale também a hora da
     // FINALIZAÇÃO. Sem isso, a loja de movimento lento (ou o pedido agendado)
     // perderia justamente as comandas que mais demoram.
+    //
+    // ── E A IMPRESSORA FORA DO KDS (o bar que trabalha no papel) ──────────
+    //
+    // Com impressora marcada "Fora do KDS", o pedido ainda na cozinha também
+    // entra — pela janela de sempre, até a parte do bar sair
+    // (`printedNaChegadaAt`). Pedido sem item do bar é carimbado como
+    // resolvido na primeira consulta, e não volta a ser lido a cada 3 s.
+    const doisMomentos = papelEmDoisMomentos(pc);
     if (esperaOFimDoKds(pc)) {
-      where.kdsStage = "FINISHED";
-      where.OR = [
+      const janelaDoFim = [
         ...where.OR,
         { kdsFinishedAt: { gt: sinceDate } },
         ...(inicioDoAtraso ? [{ kdsFinishedAt: { gt: inicioDoAtraso } }] : []),
       ];
+      if (doisMomentos) {
+        where.OR = [
+          { kdsStage: "FINISHED", OR: janelaDoFim },
+          { printedNaChegadaAt: null, OR: where.OR },
+        ];
+      } else {
+        where.kdsStage = "FINISHED";
+        where.OR = janelaDoFim;
+      }
     }
 
     // ── O que o Assistente já confirmou não volta ─────────────────────────
@@ -530,7 +546,11 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
 
     /** Pedidos de mesa só de bebida com a opção ligada: nada a imprimir. */
     const semPapel: string[] = [];
-    const jobs = recentOrders.map(({ tableSession, ...pedidoDoBanco }) => {
+    /** Pedidos sem item de impressora fora do KDS: a chegada está resolvida sem papel. */
+    const chegadaSemPapel: string[] = [];
+    /** O papel da chegada (só as impressoras fora do KDS), à parte do principal. */
+    const jobsDaChegada: any[] = [];
+    const jobs = recentOrders.flatMap(({ tableSession, ...pedidoDoBanco }) => {
       // O Assistente só sabe ler `comboSelections` em array, e o combo do
       // cardápio online é gravado como `{ grupoId: { nome: qtd } }`: o objeto
       // era descartado em silêncio e a comanda saía com o nome do combo e mais
@@ -590,14 +610,14 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         semPapel.push(pedidoDoBanco.id);
         return null;
       }
-      const destinos = destinosDoPedido(printers, order as any, { palavrasDeBebida: pc?.customBeverageKeywords });
+      const todosOsDestinos = destinosDoPedido(printers, order as any, { palavrasDeBebida: pc?.customBeverageKeywords });
       // ── PEDIDO SÓ DE BEBIDA QUE A LOJA NÃO QUER NO PAPEL ──
       // "Sem pedido só de bebida" tirou o pedido de todas as impressoras, e
       // `destinos` vazio faz o Assistente cair na impressora padrão do PC — a
       // Coca avulsa da NIK saía duas vezes, uma por computador (14/10/2026).
       // Sem papel nenhum, carimbado como resolvido igual à bebida da mesa.
       if (
-        destinos.length === 0 &&
+        todosOsDestinos.length === 0 &&
         printers.some((p: any) => p?.semPedidoSoDeBebida === true) &&
         pedidoEhSoBebida(order as any, pc?.customBeverageKeywords)
       ) {
@@ -618,6 +638,12 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       // vier no `order` em todas, e assim a loja que desligou o QR na cozinha
       // não o vê lá — fica sem QR até o auto-update, em vez de com QR onde não
       // pediu. Loja sem impressora cadastrada cai na impressora única: vai.
+      // ── QUANDO CADA PARTE SAI (lib/momento-da-impressao.ts → planoDoPapel) ──
+      // Sem impressora fora do KDS, é a regra de sempre: um papel, agora (ou
+      // nenhum, se a consulta só o trouxe por ele já ter sido finalizado).
+      const plano = planoDoPapel(pedidoDoBanco as any, pc, todosOsDestinos, (d) => impressoraForaDoKds(d.impressora as any));
+      if (doisMomentos && plano.chegadaSemPapel && !(pedidoDoBanco as any).printedNaChegadaAt) chegadaSemPapel.push(pedidoDoBanco.id);
+      const montarJob = (destinos: typeof todosOsDestinos, sufixo: string) => {
       const qr = camposDoQrPuxar(order as any, slugDaLoja);
       const qrEmTodas = destinos.length === 0 || destinos.every(d => qrLigadoNaImpressora(d.impressora, pc));
       // ── CAMPANHA "CONVERTER PARA SITE PRÓPRIO" ─────────────────────
@@ -632,7 +658,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         ? camposDaCampanhaSemDestino(order as any, owner?.storeLoyalty, slugDaLoja)
         : {};
       return {
-      id: "job_" + order.id,
+      id: "job_" + order.id + sufixo,
       // ── QUEM ENTREGA ESTE PEDIDO ────────────────────────────────────
       //
       // O pedido do banco ia inteiro para o Assistente, e ele decide sozinho
@@ -662,6 +688,9 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         ...campanhaSemDestino,
         ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
         ...(avisosDaComanda ? { avisos: avisosDaComanda } : {}),
+        // O papel da chegada tem id próprio também no pedido: o Assistente
+        // guarda "já impresso" por ele (como a via do entregador).
+        ...(sufixo ? { id: order.id + sufixo } : {}),
       },
       storeName: (order as any).franchisee?.storeName || (order as any).franchisee?.name || "FIREHUB",
       // Escalar compativel com o assistente ja instalado. Vale para instalacao
@@ -737,11 +766,19 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       })),
       createdAt: order.createdAt.toISOString(),
       };
+      };
+      if (plano.naChegada.length > 0) jobsDaChegada.push(montarJob(plano.naChegada, SUFIXO_DA_CHEGADA));
+      return plano.agora ? [montarJob(plano.agora, "")] : [];
     }).filter((job): job is NonNullable<typeof job> => job !== null);
 
     // O lançamento de mesa só de bebida (opção da loja) não tem comanda: o
     // carimbo diz "resolvido" — mesmo efeito do /ack, sem papel. O ouvinte do
     // navegador (GlobalPrintListener) faz o mesmo quando é ele quem decide.
+    if (chegadaSemPapel.length > 0) {
+      prisma.customerOrder
+        .updateMany({ where: { id: { in: chegadaSemPapel }, franchiseeId, printedNaChegadaAt: null } as any, data: { printedNaChegadaAt: new Date() } as any })
+        .catch(() => { /* coluna ausente: volta na próxima consulta */ });
+    }
     if (semPapel.length > 0) {
       prisma.customerOrder
         .updateMany({ where: { id: { in: semPapel }, franchiseeId, printedAt: null }, data: { printedAt: new Date() } })
@@ -1091,7 +1128,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // para o pedido, a via do entregador e a reimpressão; o que não é pedido
     // (conta, caixa, DANFE) passa intacto. Na dúvida, o job segue como veio.
     const comCamposDoSite = (job: any) => { try { return trabalhoParaOAssistente(job); } catch { return job; } };
-    return NextResponse.json({ jobs: [...jobs, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe].map(comCamposDoSite).map(comBebidaCerta) });
+    return NextResponse.json({ jobs: [...jobs, ...jobsDaChegada, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe].map(comCamposDoSite).map(comBebidaCerta) });
   } catch (err: any) {
     // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
     // arquivo do servidor e nome de coluna) não pode sair para quem chamar.

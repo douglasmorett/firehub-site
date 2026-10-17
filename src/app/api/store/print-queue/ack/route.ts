@@ -20,6 +20,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { lojasQueEstePcConfirma } from "@/lib/lojas-no-mesmo-pc-no-banco";
+import { SUFIXO_DA_CHEGADA } from "@/lib/momento-da-impressao";
 
 export const dynamic = "force-dynamic";
 
@@ -49,7 +50,13 @@ export async function POST(req: NextRequest) {
     // seria carimbada e sairia de novo a cada reinício (lib/lojas-no-mesmo-pc.ts).
     const lojas = await lojasQueEstePcConfirma(franchiseeId);
     const daLoja = lojas.length > 1 ? { in: lojas } : franchiseeId;
-    const [pedidos, avulsas] = await Promise.all([
+    // O papel da CHEGADA (impressora fora do KDS, lib/momento-da-impressao.ts):
+    // "<pedido>-na-chegada" carimba só a parte do bar; o principal continua
+    // esperando o KDS.
+    const daChegada = ids
+      .filter((id) => id.endsWith(SUFIXO_DA_CHEGADA))
+      .map((id) => id.slice(0, -SUFIXO_DA_CHEGADA.length));
+    const [pedidos, avulsas, chegadas] = await Promise.all([
       prisma.customerOrder.updateMany({
         where: { id: { in: ids }, franchiseeId: daLoja, printedAt: null },
         data: { printedAt: agora },
@@ -58,8 +65,14 @@ export async function POST(req: NextRequest) {
         where: { id: { in: ids }, franchiseeId: daLoja, printedAt: null },
         data: { printedAt: agora },
       }).catch(() => ({ count: 0 })),
+      daChegada.length === 0
+        ? { count: 0 }
+        : prisma.customerOrder.updateMany({
+            where: { id: { in: daChegada }, franchiseeId: daLoja, printedNaChegadaAt: null } as any,
+            data: { printedNaChegadaAt: agora } as any,
+          }).catch(() => ({ count: 0 })),
     ]);
-    return NextResponse.json({ ok: true, pedidos: pedidos.count, avulsas: avulsas.count });
+    return NextResponse.json({ ok: true, pedidos: pedidos.count, avulsas: avulsas.count, chegadas: chegadas.count });
   } catch (err: any) {
     // Coluna ainda ausente (falta db push): responde 200 com ok:false para o
     // Assistente não ficar reenviando o mesmo lote a cada 3 s. Sem o carimbo

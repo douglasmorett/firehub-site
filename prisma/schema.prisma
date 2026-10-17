@@ -1053,6 +1053,11 @@ model CustomerOrder {
   /// (POST /api/store/print-queue/ack). Depois disto a fila nunca mais devolve
   /// este pedido — nem para um Assistente reinstalado, nem para um PC novo.
   printedAt         DateTime?
+  /// A parte da comanda das impressoras "Fora do KDS" (o bar que trabalha no
+  /// papel) já saiu, na CHEGADA do pedido, enquanto a cozinha espera o KDS
+  /// (lib/momento-da-impressao.ts → planoDoPapel). Carimbo do /ack do job
+  /// "<pedido>-na-chegada", ou "resolvido sem papel" quando não há item dela.
+  printedNaChegadaAt DateTime?
   deliveredAt       DateTime?           // Chegou no cliente (-> ENTREGUE)
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt

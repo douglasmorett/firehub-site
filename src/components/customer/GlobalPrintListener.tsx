@@ -5,7 +5,7 @@ import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { nomeDoItemParaComanda } from "@/lib/nome-do-item";
-import { aguardandoFimDoKds, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
+import { navegadorSeguraAComanda, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
@@ -316,7 +316,10 @@ export default function GlobalPrintListener() {
                 // pedidos das irmãs, e cada uma tem as suas impressoras e o seu
                 // "itens separados" (ver configDaLojaDoPedido).
                 const configDoPedido = await configDaLojaDoPedido(order);
-                if (aguardandoFimDoKds(order, configDoPedido)) continue;
+                // Com impressora "Fora do KDS" (o bar), o papel tem dois
+                // momentos e quem os separa é a fila da nuvem — daqui o drink
+                // sairia de novo no bar quando a cozinha finalizasse.
+                if (navegadorSeguraAComanda(order, configDoPedido)) continue;
 
                 // Reivindica atomicamente ANTES de disparar a impressão
                 claimOrderPrint(order);

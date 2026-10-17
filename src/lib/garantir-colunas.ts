@@ -836,6 +836,10 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // demorou na cozinha já teria saído da janela da fila ao ser finalizado, e a
   // comanda nunca sairia — justamente nos pedidos que mais demoram.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "kdsFinishedAt" TIMESTAMP(3)`,
+  // A parte da comanda das impressoras "Fora do KDS" que já saiu na chegada do
+  // pedido (lib/momento-da-impressao.ts). Sem ela, a fila não saberia que o
+  // drink já foi para o bar e o mandaria de novo a cada consulta.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "printedNaChegadaAt" TIMESTAMP(3)`,
   // Quais TELAS do KDS já deram baixa (ver lib/kds-telas.ts). Sem ela, a baixa
   // da tela de esfirra finalizava o pedido inteiro e ele sumia da tela de
   // pizza, que nem tinha começado (NIK, 21/09/2026). Nulo = ninguém deu baixa,

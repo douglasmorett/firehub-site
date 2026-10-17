@@ -27,7 +27,7 @@ import { carimboDeStatus } from "@/lib/order-stages";
 import { avaliarEdicaoNoPainel, podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { edicoesDosItens, lerHistorico, quandoFoi, ROTULO_DA_EDICAO } from "@/lib/historico-do-pedido";
 import { podeTerReposicao } from "@/lib/reposicao";
-import { aguardandoFimDoKds, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
+import { navegadorSeguraAComanda, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
@@ -2476,8 +2476,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // pessoa pedindo o papel agora, e uma opção sobre QUANDO imprimir sozinho
     // não pode transformar o botão em botão que não funciona.
     const configDoPedido = await configDaLojaDoPedido(order);
-    if (!isManual && aguardandoFimDoKds(order, configDoPedido)) {
-      console.log(`[Print] ⏸️ ${orderKey}: a comanda sai quando a cozinha finalizar no KDS (opção ligada em Impressoras).`);
+    // Com impressora "Fora do KDS" (o bar), a fila da nuvem separa os dois
+    // papéis do pedido; daqui o drink sairia de novo no bar no fim do KDS.
+    if (!isManual && navegadorSeguraAComanda(order, configDoPedido)) {
+      console.log(`[Print] ⏸️ ${orderKey}: a comanda automática sai pela fila (espera do KDS / impressora fora do KDS, em Impressoras).`);
       if (orderKey) printingInProgressRef.current.delete(orderKey);
       return;
     }

@@ -176,6 +176,8 @@ export type PrinterEntry = {
   soPedidoDeMesa?: boolean;
   /** Só conta da mesa e o botão Imprimir: nenhuma comanda automática (impressorasPeloTipoDoPedido). */
   semComandaAutomatica?: boolean;
+  /** Fora do KDS: imprime na chegada mesmo com "imprimir só quando o KDS finalizar" (lib/momento-da-impressao.ts). */
+  foraDoKds?: boolean;
   semPedidoSoDeBebida?: boolean;
   /** Pedido com item desta e de outra impressora: esta imprime o pedido inteiro (itensDaImpressora). */
   comandaInteiraNoMisto?: boolean;
