@@ -2,7 +2,7 @@
 import { useState, useCallback, useRef } from "react";
 import { Calendar, Download, Filter, Bike, TrendingUp, DollarSign, MapPin, Loader2, X } from "lucide-react";
 import type { ChaveDeCanal } from "@/lib/canal-do-pedido";
-import { CAIXAS_DO_ACERTO, composicaoDoGanho, partesDaEntrega, resumoDasEntregas } from "@/lib/resumo-do-entregador";
+import { CAIXAS_DO_ACERTO, composicaoDoGanho, dinheiroDaParte, partesDaEntrega, resumoDasEntregas, trocoNoPixDaParte } from "@/lib/resumo-do-entregador";
 import type { ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import { podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
@@ -61,8 +61,7 @@ function quadradosDaConferencia(st: any, juntarCartao: boolean): { chave: Quadra
   const todos: { chave: QuadradoDoAcerto; valor: number; qtd: number; sempre?: boolean; nota?: string }[] = [
     // O dinheiro a entregar é a nota inteira: os pedidos MAIS o troco que ele
     // levou da loja para o cliente que pagou com nota grande (ele devolve).
-    { chave: "DINHEIRO", valor: st.cashCollectedSum || 0, qtd: st.cashOrdersCount || 0, sempre: true,
-      nota: (st.changeGivenSum || 0) > 0 ? `pedidos ${fmt(st.cashOrdersValueSum || 0)} + troco levado ${fmt(st.changeGivenSum || 0)}` : undefined },
+    { chave: "DINHEIRO", valor: st.cashCollectedSum || 0, qtd: st.cashOrdersCount || 0, sempre: true, nota: notaDoDinheiro(st) },
     ...maquininha,
     { chave: "PIX", valor: st.pixTotal || 0, qtd: st.pixCount || 0, nota: "caiu na conta da loja" },
     { chave: "ONLINE", valor: st.onlineTotal || 0, qtd: st.onlineCount || 0, nota: "site/app — não passa pelo motoboy" },
@@ -72,9 +71,28 @@ function quadradosDaConferencia(st: any, juntarCartao: boolean): { chave: Quadra
   return todos.filter((q) => q.sempre || q.qtd > 0);
 }
 
-/** Quanto do quadrado vem desta parte: no dinheiro, a nota que o motoboy trouxe. */
-const valorNoQuadrado = (p: { caixa: ChaveDaForma; valor: number; trocoPara: number | null }) =>
-  p.caixa === "DINHEIRO" ? (p.trocoPara ?? p.valor) : p.valor;
+/**
+ * O que compõe o dinheiro a entregar, quando não é só "os pedidos": o troco
+ * levado da loja e o troco feito pelo Pix (lib/troco-no-pix.ts). No Pix da
+ * loja ele traz a nota inteira — a parte além do pedido está no quadrado, sem
+ * ser troco levado. No Pix dele, ficou com essa parte da nota: fora do quadrado.
+ */
+function notaDoDinheiro(st: any): string | undefined {
+  const levado = st.changeGivenSum || 0;
+  const pixDaLoja = st.trocoNoPixDaLojaSum || 0;
+  const pixDele = st.trocoNoPixDoMotoboySum || 0;
+  const soma: string[] = [];
+  if (levado > 0.005) soma.push(`troco levado ${fmt(levado)}`);
+  if (pixDaLoja > 0.005) soma.push(`${fmt(pixDaLoja)} da nota (troco no Pix da loja)`);
+  const partes: string[] = [];
+  if (soma.length) partes.push(`pedidos ${fmt(st.cashOrdersValueSum || 0)} + ${soma.join(" + ")}`);
+  if (pixDele > 0.005) partes.push(`troco no Pix do motoboy ${fmt(pixDele)}: ficou com ele da nota`);
+  return partes.length ? partes.join(" · ") : undefined;
+}
+
+/** Quanto do quadrado vem desta parte: no dinheiro, o que o motoboy entrega (a nota, salvo troco no Pix dele). */
+const valorNoQuadrado = (p: { caixa: ChaveDaForma; valor: number; trocoPara: number | null; trocoNoPix?: "LOJA" | "MOTOBOY" | null }) =>
+  dinheiroDaParte(p);
 /**
  * Os botões do filtro de integrações no cartão de cada motoboy. Os quatro
  * primeiros aparecem sempre (é o que o lojista procura: iFood, 99, site,
@@ -681,8 +699,8 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
                           mesma conta no papel do fechamento de caixa. */}
                       <span style={{ fontSize: "0.78rem", fontWeight: 800, color: COR_DA_CAIXA.DINHEIRO.texto, background: COR_DA_CAIXA.DINHEIRO.fundo, padding: "4px 10px", borderRadius: 20 }}>
                         💵 Entregar Dinheiro: {fmt(st.cashCollectedSum || 0)}
-                        {(st.changeGivenSum || 0) > 0.005 && (
-                          <span style={{ fontWeight: 600 }}> (pedidos {fmt(st.cashOrdersValueSum || 0)} + troco levado {fmt(st.changeGivenSum || 0)})</span>
+                        {notaDoDinheiro(st) && (
+                          <span style={{ fontWeight: 600 }}> ({notaDoDinheiro(st)})</span>
                         )}
                       </span>
                       <span style={{ fontSize: "0.78rem", fontWeight: 800, color: "#334155", background: "#FAF6F2", padding: "4px 10px", borderRadius: 20 }}>
@@ -1016,7 +1034,12 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
                                       <span key={k} style={{ background: cor.fundo, color: cor.texto, border: `1px solid ${cor.borda}`, padding: "2px 7px", borderRadius: 6, fontWeight: 800, fontSize: "0.7rem", lineHeight: 1.35 }}>
                                         {ROTULO_DA_CAIXA.get(p.caixa)?.curto}
                                         {partes.length > 1 ? ` ${fmt(p.valor)}` : ""}
-                                        {p.caixa === "DINHEIRO" && p.trocoPara ? ` · entregar ${fmt(p.trocoPara)} (troco ${fmt(p.trocoPara - p.valor)})` : ""}
+                                        {p.caixa === "DINHEIRO" && p.trocoPara
+                                          ? p.trocoNoPix
+                                            // Troco feito pelo Pix (lib/troco-no-pix.ts): sem troco levado.
+                                            ? ` · entregar ${fmt(dinheiroDaParte(p))} (troco ${fmt(trocoNoPixDaParte(p))} no Pix ${p.trocoNoPix === "MOTOBOY" ? "do motoboy" : "da loja"})`
+                                            : ` · entregar ${fmt(p.trocoPara)} (troco ${fmt(p.trocoPara - p.valor)})`
+                                          : ""}
                                       </span>
                                     );
                                   })}

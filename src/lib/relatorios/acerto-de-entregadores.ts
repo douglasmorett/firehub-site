@@ -41,6 +41,9 @@ export type MotoboyDoAcerto = {
     uniqueDays: number;
     cashCollectedSum: number;
     changeGivenSum: number;
+    /** Troco feito pelo Pix (lib/troco-no-pix.ts). Ausente no relatório antigo. */
+    trocoNoPixDaLojaSum?: number;
+    trocoNoPixDoMotoboySum?: number;
     cardPosTotal: number;
     pixTotal: number;
     onlineTotal: number;
@@ -111,6 +114,13 @@ export type LinhaDoMotoboy = {
   /** O dinheiro que ele recebeu na porta e devolve à loja (pedidos + troco levado). */
   dinheiroComEle: number;
   trocoLevado: number;
+  /**
+   * Troco feito pelo Pix (lib/troco-no-pix.ts). Da loja: a parte da nota além
+   * do pedido, que ele traz junto (já dentro de `dinheiroComEle`, sem ser troco
+   * levado). Dele: a parte da nota com que ele ficou (fora de `dinheiroComEle`).
+   */
+  trocoNoPixDaLoja: number;
+  trocoNoPixDoMotoboy: number;
   /** aPagar − dinheiroComEle: positivo = a loja paga; negativo = ele devolve. */
   saldo: number;
   maquininha: number;
@@ -272,6 +282,8 @@ export function acertoDaEquipe(porLoja: { loja: string; report: MotoboyDoAcerto[
         aPagar,
         dinheiroComEle,
         trocoLevado: c2(s.changeGivenSum),
+        trocoNoPixDaLoja: c2(s.trocoNoPixDaLojaSum || 0),
+        trocoNoPixDoMotoboy: c2(s.trocoNoPixDoMotoboySum || 0),
         saldo: c2(aPagar - dinheiroComEle),
         maquininha: c2(s.cardPosTotal),
         pix: c2(s.pixTotal),

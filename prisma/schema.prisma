@@ -933,6 +933,12 @@ model CustomerOrder {
   /// O cliente AGENDOU no site próprio (lib/agendamento.ts). Os parceiros seguem a regra das 3 h.
   agendado            Boolean            @default(false)
   changeAmount        Float?             // Cen5: Valor do troco (pagamento em dinheiro)
+  /// TROCO FEITO PELO PIX: o cliente pagou em dinheiro com nota maior e o troco
+  /// voltou por Pix — { por: "LOJA" | "MOTOBOY", quando, quem }. O valor é a
+  /// nota (`changeAmount`) menos a parte em dinheiro. Muda o que o caixa espera
+  /// na gaveta e no Pix e o que o motoboy entrega no acerto (lib/troco-no-pix.ts).
+  /// Criada no boot por garantir-colunas.ts.
+  trocoNoPix          Json?
   customerCpfCnpj     String?            // Cen5: CPF/CNPJ do cliente para NF
   cancelledBy         String?            // Cen4: quem cancelou: RESTAURANT | IFOOD | CUSTOMER
   cancelReason        String?            // Motivo do cancelamento
