@@ -2,7 +2,7 @@
 
 /**
  * A CARINHA DO BILL no canto do painel — só para o dono, só com o serviço
- * ligado (R$ 29,90/mês, lib/assessor/assinatura.ts).
+ * ligado (R$ 49,90/mês, lib/assessor/assinatura.ts).
  *
  * Douglas, 14/10/2026: "ele ativou, atualizou a página, já aparece a carinha
  * do Bill lá embaixo… pra clicar, dar o comando pra ele". Nem precisa

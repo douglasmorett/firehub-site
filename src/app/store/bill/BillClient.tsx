@@ -5,7 +5,7 @@
  * é da Tittanium (Felipe Titto) no INPI, processos 939197650 (classe 9) e
  * 939133610 (classe 42). "Bill" é o mesmo assistente do FireCheck.
  *
- * Desligado: a oferta (o que faz, exemplos, R$ 29,90/mês) e, ao ligar, o
+ * Desligado: a oferta (o que faz, exemplos, R$ 49,90/mês) e, ao ligar, o
  * termo de contratação (lib/assessor/termo.ts) — só liga com o "concordo".
  * Ligado: de quais números falar, a conversa de teste (texto, áudio gravado
  * no navegador e foto — o mesmo assessor do WhatsApp, gravando de verdade) e

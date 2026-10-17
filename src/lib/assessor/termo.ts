@@ -9,16 +9,21 @@
  * E: "deixa 7 dias grátis, depois começa cobrar, mas só na primeira ativação"
  * (versão 2026-10-14b).
  *
+ * Douglas, 17/10/2026: "vamos trocar o bill de 29,90 para 49,90" (versão
+ * 2026-10-17). Quem aceitou a versão de 14/10 segue pagando R$ 29,90 enquanto
+ * o trecho que ligou com ela ficar ligado — é o que está no termo dele
+ * (precoDoTrecho, em assinatura.ts). Desligou e religou: aceita este, a 49,90.
+ *
  * Arquivo puro (sem banco): a tela importa.
  */
-export const VERSAO_DO_TERMO_DO_BILL = "2026-10-14b";
+export const VERSAO_DO_TERMO_DO_BILL = "2026-10-17";
 
 export const TITULO_DO_TERMO_DO_BILL = "Termo de contratação — Bill, seu assessor";
 
 export const CLAUSULAS_DO_TERMO_DO_BILL = [
-  "Ao ativar, eu contrato o Bill, seu assessor, por R$ 29,90 por mês e autorizo que esse valor seja cobrado no boleto da mensalidade do FireHub.",
+  "Ao ativar, eu contrato o Bill, seu assessor, por R$ 49,90 por mês e autorizo que esse valor seja cobrado no boleto da mensalidade do FireHub.",
   "A primeira ativação da loja tem 7 dias grátis. Depois deles a cobrança começa sozinha. Os 7 dias valem uma vez só: desativar e ativar de novo não dá outro período grátis.",
-  "Passados os 7 dias grátis, o mês em que o Bill ficar ativo, mesmo que por um único dia, é cobrado inteiro (R$ 29,90). Desativar e ativar de novo no mesmo mês — inclusive no mesmo dia — não diminui o valor desse mês, e ele é cobrado uma vez só.",
+  "Passados os 7 dias grátis, o mês em que o Bill ficar ativo, mesmo que por um único dia, é cobrado inteiro (R$ 49,90). Desativar e ativar de novo no mesmo mês — inclusive no mesmo dia — não diminui o valor desse mês, e ele é cobrado uma vez só.",
   "Se eu desativar, a cobrança para: no mês seguinte não é cobrado nada, a não ser que eu ative de novo.",
   "O que o Bill lança no estoque, no financeiro e no cardápio fica no sistema como se eu tivesse feito pelo painel. Posso desfazer pelo próprio Bill (\"desfaz\") ou pelo painel.",
   "O Bill atende os números de WhatsApp cadastrados como do dono (Minha Loja e Chatbot IA › Notificações). Sou responsável por quem tem acesso a esses números.",

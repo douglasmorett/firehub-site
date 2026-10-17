@@ -967,7 +967,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   const chatbotConfig = (user.chatbotConfig as any) || {};
 
   // O dono com o Bill ligado passa pelas duas travas abaixo: o Bill é serviço
-  // à parte (R$ 29,90), e muito dono põe o próprio número em "números que o
+  // à parte (R$ 49,90), e muito dono põe o próprio número em "números que o
   // robô não responde" para o robô de VENDAS não oferecer cardápio a ele —
   // teste na Hakim, 15/10/2026: a mensagem chegava e morria em
   // "numero-ignorado". O robô de vendas continua calado para ele: quem
@@ -1280,7 +1280,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   }
 
   // ── BILL, SEU ASSESSOR: O DONO LANÇA ESTOQUE E FINANCEIRO POR AQUI ──────────────
-  // Com o serviço ligado (R$ 29,90/mês, lib/assessor/assinatura.ts), a
+  // Com o serviço ligado (R$ 49,90/mês, lib/assessor/assinatura.ts), a
   // mensagem do dono — áudio, texto ou foto — não vai para o robô de vendas:
   // vai para o assessor, que grava ("comprei 10 Coca lata, paguei 45" →
   // estoque + financeiro) e responde relatório. Sem o serviço, segue o modo
