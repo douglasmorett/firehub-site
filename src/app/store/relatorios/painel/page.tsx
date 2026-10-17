@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { SEM_REPOSICAO } from "@/lib/relatorios/sem-reposicao";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -79,6 +80,8 @@ export default async function StoreRelatoriosPage() {
     franchiseeId: { in: lojaIds },
     createdAt: { gte: since },
     status: { notIn: ["AGUARDANDO_PAGAMENTO", "CRIANDO_IA"] },
+    // Reposição (faltou item / troca) não é venda nem cancelamento.
+    ...SEM_REPOSICAO,
   };
 
   let orders: any[] = [];

@@ -105,7 +105,7 @@ import { cupomBancadoPelo99, ehDo99Food } from "@/lib/cupom-do-parceiro";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
 import { STATUS_FORA_DA_VENDA, canalDoRelatorio, diasNoPeriodo, naLoja, somarDias } from "@/lib/relatorios/base";
 import {
-  atendimentosDaVenda, cent, descontoNoFechamento, servicoDasMesas, situacaoDoPedido, temValorImpossivel, ticketMedio,
+  atendimentosDaVenda, cent, descontoNoFechamento, ehReposicao, servicoDasMesas, situacaoDoPedido, temValorImpossivel, ticketMedio,
   type ItemDaRegua, type MesaFechada,
 } from "@/lib/relatorios/regua-da-venda";
 
@@ -495,6 +495,8 @@ export function formasDePagamento(
 
   for (const p of pedidos) {
     const status = String(p.status || "").toUpperCase();
+    // Reposição (faltou item / troca, "Pago Online (reposição do #N)") não é venda.
+    if (ehReposicao(p)) continue;
     // Valor impossível (≥ R$ 1 milhão) fica fora de toda soma, até da dos cancelados.
     if (temValorImpossivel(p)) { impossiveis++; continue; }
     const situacao = situacaoDoPedido(status);

@@ -13,6 +13,7 @@
  *     entrada sem compra, item contado sem custo).
  */
 import { prisma } from "@/lib/prisma";
+import { SEM_REPOSICAO } from "@/lib/relatorios/sem-reposicao";
 import { STATUS_FORA_DA_VENDA, naLoja, somarDias } from "@/lib/relatorios/base";
 import { entraNaVenda } from "@/lib/relatorios/regua-da-venda";
 import { janelaDoPeriodo as janelaDeDatas } from "@/lib/relatorios/servidor";
@@ -141,7 +142,8 @@ export async function montarPainel(e: { lojaId: string; nomeDaLoja: string; tz: 
   // ── Vendas (régua única, sem taxa de entrega) ──────────────────────────
   const { inicio: t0, fim: t1 } = janelaDeDatas(inicio, fim, tz);
   const pedidos = await prisma.customerOrder.findMany({
-    where: { franchiseeId: lojaId, createdAt: { gte: t0, lt: t1 }, status: { notIn: [...STATUS_FORA_DA_VENDA] } },
+    // Reposição (faltou item / troca) não é venda (lib/relatorios/sem-reposicao.ts).
+    where: { franchiseeId: lojaId, createdAt: { gte: t0, lt: t1 }, status: { notIn: [...STATUS_FORA_DA_VENDA] }, ...SEM_REPOSICAO },
     select: { createdAt: true, status: true, totalAmount: true, deliveryFee: true, items: { select: { quantity: true, price: true } } },
   });
   const vendasPorDia = new Map<string, number>();

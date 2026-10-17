@@ -29,7 +29,7 @@
  * relatório Formas de pagamento), e o número entre parênteses diz o que é:
  * lançamentos.
  */
-import { atendimentosDaVenda, cent, reais, situacaoDoPedido, temValorImpossivel, ticketMedio, type PedidoDaRegua } from "@/lib/relatorios/regua-da-venda";
+import { atendimentosDaVenda, cent, ehReposicao, reais, situacaoDoPedido, temValorImpossivel, ticketMedio, type PedidoDaRegua } from "@/lib/relatorios/regua-da-venda";
 import { cupomDaPlataforma, type PedidoComCupom } from "@/lib/relatorios/formas-de-pagamento";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 
@@ -108,6 +108,8 @@ export function resumoDasVendas(pedidos: PedidoDoResumo[]): ResumoDasVendas {
   let nCupom = 0, cCupom = 0;
 
   for (const p of pedidos) {
+    // Reposição (faltou item / troca) não é venda (regua-da-venda.ts).
+    if (ehReposicao(p)) continue;
     if (temValorImpossivel(p)) { impossiveis++; continue; }
     const situacao = situacaoDoPedido(p.status);
     const status = String(p.status || "").toUpperCase();

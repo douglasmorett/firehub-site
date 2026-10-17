@@ -438,12 +438,31 @@ async function main() {
     cmvDo({ desperdicioPorDia }), "2026-10-12", "2026-10-19");
   confere("desperdício fora da contagem soma no CMV; o dos dias da contagem já está nela", comDesperdicio.cmv, 3500 + 30 + 18 + 7);
   confere("desperdício: cancelados e lançado separados, com a parte do CMV e a da contagem", comDesperdicio.cmvDetalhe.desperdicio,
-    { cancelados: { valor: 48, pedidos: 3, semCusto: 5, noCmv: 18 }, lancado: { valor: 11, noCmv: 7 }, naContagem: 34 });
+    { cancelados: { valor: 48, pedidos: 3, semCusto: 5, noCmv: 18 }, lancado: { valor: 11, noCmv: 7 }, reposicoes: { valor: 0, trocas: 0, faltou: 0, semCusto: 0, semCustoNomes: [], noCmv: 0 }, naContagem: 34 });
   confere("desperdício entra no lucro bruto", comDesperdicio.lucroBruto, Math.round((comDesperdicio.receitaDaLoja - comDesperdicio.cmv) * 100) / 100);
   const soFichaComDesperdicio = semanaHakim([venda("2026-10-13", { itensComCusto: 100, custo: 32, itensPelaFicha: 100, custoPelaFicha: 32 })],
     cmvDo({ real: real({ trecho: null, falta: "NENHUMA_CONTAGEM", contagens: 0, abertura: null, ultimaCompleta: null }), desperdicioPorDia: { "2026-10-13": { cancelados: 12.5, pedidosCancelados: 1, canceladosSemCusto: 0, lancado: 0 } } }));
   confere("sem contagem: o cancelado já produzido soma inteiro no CMV", [soFichaComDesperdicio.cmv, soFichaComDesperdicio.cmvDetalhe.desperdicio.cancelados.noCmv], [44.5, 12.5]);
-  confere("sem desperdício: tudo zero", soContagem.cmvDetalhe.desperdicio, { cancelados: { valor: 0, pedidos: 0, semCusto: 0, noCmv: 0 }, lancado: { valor: 0, noCmv: 0 }, naContagem: 0 });
+  confere("sem desperdício: tudo zero", soContagem.cmvDetalhe.desperdicio, { cancelados: { valor: 0, pedidos: 0, semCusto: 0, noCmv: 0 }, lancado: { valor: 0, noCmv: 0 }, reposicoes: { valor: 0, trocas: 0, faltou: 0, semCusto: 0, semCustoNomes: [], noCmv: 0 }, naContagem: 0 });
+
+  console.log("\n— Reposições no CMV do DRE (troca refeita soma; faltou item não) —");
+  // O dono (16/10/2026): "se não foi feita, só o custo da entrega de novo; se
+  // refez, o custo é do primeiro e do segundo". 12/10 fora da contagem, 14/10 dentro.
+  const zeroDesp = { cancelados: 0, pedidosCancelados: 0, canceladosSemCusto: 0, lancado: 0 };
+  const comReposicoes = semanaHakim([venda("2026-10-12", { itensComCusto: 100, custo: 30, itensPelaFicha: 100, custoPelaFicha: 30 }), venda("2026-10-14")],
+    cmvDo({ desperdicioPorDia: {
+      "2026-10-12": { ...zeroDesp, reposicoes: 22, trocas: 2, trocasSemCusto: 1, trocasSemCustoNomes: ["Refrigerante"], faltou: 3 },
+      "2026-10-14": { ...zeroDesp, reposicoes: 9, trocas: 1, trocasSemCusto: 0, trocasSemCustoNomes: [], faltou: 0 },
+    } }), "2026-10-12", "2026-10-19");
+  confere("troca fora da contagem soma no CMV (R$ 22,00); a dos dias da contagem já saiu do estoque contado", comReposicoes.cmv, 3500 + 30 + 22);
+  confere("a linha própria 'Reposições (troca)': valor, trocas, faltou só contado, sem custo fora da soma", comReposicoes.cmvDetalhe.desperdicio.reposicoes,
+    { valor: 31, trocas: 3, faltou: 3, semCusto: 1, semCustoNomes: ["Refrigerante"], noCmv: 22 });
+  confere("a troca dos dias da contagem conta como 'já na contagem'", comReposicoes.cmvDetalhe.desperdicio.naContagem, 9);
+  confere("item refeito sem custo cadastrado: aviso, sem inventar custo", comReposicoes.avisos.some((a) => a.startsWith("1 unidade refeita em troca (veio errado) sem custo cadastrado ficou fora do CMV: Refrigerante")), true);
+  confere("a troca entra no lucro bruto", comReposicoes.lucroBruto, Math.round((comReposicoes.receitaDaLoja - comReposicoes.cmv) * 100) / 100);
+  const soFaltou = semanaHakim([venda("2026-10-13", { itensComCusto: 100, custo: 32, itensPelaFicha: 100, custoPelaFicha: 32 })],
+    cmvDo({ real: real({ trecho: null, falta: "NENHUMA_CONTAGEM", contagens: 0, abertura: null, ultimaCompleta: null }), desperdicioPorDia: { "2026-10-13": { ...zeroDesp, reposicoes: 0, trocas: 0, faltou: 4 } } }));
+  confere("só faltou item: o CMV não muda (o item já estava na venda; o prejuízo é a corrida, em Entregadores)", [soFaltou.cmv, soFaltou.cmvDetalhe.desperdicio.reposicoes.faltou, soFaltou.cmvDetalhe.desperdicio.reposicoes.noCmv], [32, 4, 0]);
 
   console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
   process.exit(falhas === 0 ? 0 : 1);

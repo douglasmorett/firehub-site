@@ -113,7 +113,9 @@ export async function calcularEsperadoDoTurno(
       // Quem entregou (a régua `ehEntregaDaLoja`, a mesma do acerto do motoboy) e
       // a nota do cliente no dinheiro (o troco que o motoboy levou e devolve).
       ifoodDriverStatus: true, ifoodDriverName: true, changeAmount: true,
-      totemLicenseId: true, items: { select: { price: true, quantity: true } } },
+      totemLicenseId: true, items: { select: { price: true, quantity: true } },
+      // Reposição (faltou item / troca): fora da venda, só a corrida do motoboy (apurarVendasDoTurno).
+      reposicao: true },
   });
 
   // ── AS CONTAS DE MESA FECHADAS NESTE TURNO ────────────────────────────
