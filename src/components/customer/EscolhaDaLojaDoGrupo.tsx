@@ -192,7 +192,7 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
   const estiloDaCor = (vitrine.cor ? { "--cor": vitrine.cor } : {}) as CSSProperties;
 
   return (
-    <div className={s.pagina} style={estiloDaCor}>
+    <div className={s.pagina} style={estiloDaCor} data-pagina-do-cliente>
       <header className={s.topo}>
         <Capa imagem={vitrine.capa} video={vitrine.capaVideo} className={s.capa} tocar />
         <div className={s.veu} />

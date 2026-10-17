@@ -10,9 +10,16 @@ const WA_URL = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20saber%20mai
 export default function FloatingContactWidget({
   ifoodWidgetId,
   ifoodMerchantId,
+  whatsappDaLoja,
 }: {
   ifoodWidgetId?: string;
   ifoodMerchantId?: string;
+  /**
+   * Só o cardápio da loja passa (mesmo null): o balão vira "fale com a loja".
+   * Sem isso, o WhatsApp é o de vendas do FireHub — que levava o cliente da
+   * loja para o FireHub ("Quero saber mais sobre o FireHub"), Douglas 17/10/2026.
+   */
+  whatsappDaLoja?: string | null;
 } = {}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -37,6 +44,14 @@ export default function FloatingContactWidget({
   // (aba "Suporte FireHub" do balão da loja), que não depende do WhatsApp do
   // FireHub — o número já caiu duas vezes (08/10/2026). O WhatsApp fica de 2ª opção.
   const noPainel = !!pathname?.startsWith("/store");
+  // O balão do layout (o do FireHub) leva a classe `fcw-do-firehub`, e o
+  // globals.css o esconde em página com `data-pagina-do-cliente` (cardápio e
+  // página do grupo). É por marcação e não por rota porque o domínio próprio da
+  // loja abre o cardápio na raiz "/" (rewrite do proxy.ts).
+  const daLoja = whatsappDaLoja !== undefined;
+  const zapDaLoja = (whatsappDaLoja || "").replace(/\D/g, "");
+  const linkDoWhatsapp = !daLoja ? WA_URL
+    : zapDaLoja ? `https://wa.me/${zapDaLoja.length <= 11 ? "55" + zapDaLoja : zapDaLoja}` : null;
 
   // Stop pulsing after first open
   useEffect(() => {
@@ -96,7 +111,7 @@ export default function FloatingContactWidget({
           globals.css ele NÃO recebe clique (pointer-events: none) — só a
           bolinha (onde mora o arraste) e o menu aberto. Antes a caixa
           invisível engolia o clique do que estivesse embaixo, no canto. */}
-      <div className="fcw-container" id="floating-contact-widget" style={arraste.estiloDoContainer}>
+      <div className={`fcw-container${daLoja ? "" : " fcw-do-firehub"}`} id="floating-contact-widget" style={arraste.estiloDoContainer}>
         {/* Channel options */}
         <div className={`fcw-menu ${open ? "fcw-menu-open" : ""}`}>
           <div className="fcw-menu-header">
@@ -124,8 +139,8 @@ export default function FloatingContactWidget({
           )}
 
           {/* WhatsApp */}
-          <a
-            href={WA_URL}
+          {linkDoWhatsapp && <a
+            href={linkDoWhatsapp}
             target="_blank"
             rel="noopener noreferrer"
             className="fcw-option"
@@ -139,10 +154,10 @@ export default function FloatingContactWidget({
             </span>
             <span className="fcw-option-text">
               <span className="fcw-option-label">WhatsApp</span>
-              <span className="fcw-option-sub">{noPainel ? "Se preferir" : "Resposta rápida"}</span>
+              <span className="fcw-option-sub">{daLoja ? "Fale com a loja" : noPainel ? "Se preferir" : "Resposta rápida"}</span>
             </span>
             <span className="fcw-option-arrow">→</span>
-          </a>
+          </a>}
 
           {/* iFood Chat — only show if widget is configured */}
           {ifoodWidgetId && (

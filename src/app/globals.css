@@ -553,6 +553,13 @@ nav [style*="scroll"] {
   }
 }
 
+/* O balão do FireHub (vendas do sistema) não aparece para o cliente da loja:
+   cardápio e página do grupo marcam a raiz com data-pagina-do-cliente. O balão
+   do cardápio (WhatsApp da loja) não tem a classe fcw-do-firehub e fica. */
+body:has([data-pagina-do-cliente]) .fcw-do-firehub {
+  display: none !important;
+}
+
 /* ── Responsive: hide widget on mobile ── */
 @media (max-width: 600px) {
   .fcw-container,
