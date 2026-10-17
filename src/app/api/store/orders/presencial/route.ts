@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { registrarVendaPresencial } from "@/lib/venda-presencial";
+import { CABECALHO_DA_SENHA } from "@/lib/senha-do-gerente-regras";
 
 /**
  * POST /api/store/orders/presencial — a venda do PDV do painel (balcão, mesa
@@ -27,6 +28,8 @@ export async function POST(req: Request) {
     origemDaImpressao: dbUser.ownerId ? "FIREHUB" : "HAKIM RIO DAS OSTRAS",
     passaPeloBloqueio: (session.user as any)?.role === "ADMIN",
     data,
+    // Venda no fiado com a senha do gerente ligada (lib/senha-do-gerente.ts).
+    senhaDoGerente: req.headers.get(CABECALHO_DA_SENHA),
   });
   return NextResponse.json(r.corpo, { status: r.status });
 }

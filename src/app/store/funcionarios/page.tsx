@@ -4,6 +4,14 @@ import {
   Users, UserPlus, DollarSign, Calendar, Filter, FileText, CheckCircle2,
   AlertTriangle, Search, Trash2, Edit, CreditCard, RefreshCw, X, ShieldAlert
 } from "lucide-react";
+import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
+
+/**
+ * Como o fiado foi pago na baixa. Fica escrito na observação da baixa (o
+ * extrato mostra) — a baixa do fiado continua fora da conferência do caixa,
+ * como sempre foi: quem recebe em dinheiro lança o reforço no caixa.
+ */
+const FORMAS_DA_BAIXA = ["Dinheiro", "Pix", "Cartão Débito", "Cartão Crédito", "Desconto no salário"];
 
 type Employee = {
   id: string;
@@ -53,11 +61,16 @@ export default function FuncionariosPage() {
   const [abateAmount, setAbateAmount] = useState("");
   const [abateNotes, setAbateNotes] = useState("");
   const [savingAbate, setSavingAbate] = useState(false);
+  const [abateForma, setAbateForma] = useState("");
 
   const [addDebtEmp, setAddDebtEmp] = useState<Employee | null>(null);
   const [addDebtAmount, setAddDebtAmount] = useState("");
   const [addDebtNotes, setAddDebtNotes] = useState("");
   const [savingAddDebt, setSavingAddDebt] = useState(false);
+  const [addDebtErro, setAddDebtErro] = useState("");
+  // Lançar dívida à mão pode pedir a senha do gerente (Minha Loja → Senha do
+  // gerente). Quem decide é a rota; a tela só pede e repete.
+  const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
 
   const [statementEmp, setStatementEmp] = useState<Employee | null>(null);
   const [statementData, setStatementData] = useState<StatementItem[]>([]);
@@ -187,12 +200,14 @@ export default function FuncionariosPage() {
       const res = await fetch(`/api/store/employees/${abateEmp.id}/payment`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount, notes: abateNotes }),
+        // A forma vai na frente da observação: "Pix — pagou a semana".
+        body: JSON.stringify({ amount, notes: [abateForma, abateNotes.trim()].filter(Boolean).join(" — ") }),
       });
       if (res.ok) {
         setAbateEmp(null);
         setAbateAmount("");
         setAbateNotes("");
+        setAbateForma("");
         fetchEmployees();
       } else {
         const err = await res.json();
@@ -229,21 +244,29 @@ export default function FuncionariosPage() {
     if (isNaN(amountNum) || amountNum <= 0) return alert("Digite um valor válido.");
 
     setSavingAddDebt(true);
+    setAddDebtErro("");
     try {
-      const res = await fetch(`/api/store/employees/${addDebtEmp.id}/debt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: amountNum, notes: addDebtNotes }),
-      });
-      if (res.ok) {
+      const res = await comSenhaDoGerente(
+        (cab) => fetch(`/api/store/employees/${addDebtEmp.id}/debt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...cab },
+          body: JSON.stringify({ amount: amountNum, notes: addDebtNotes }),
+        }),
+        pedirSenha,
+      );
+      if (!res) {
+        setAddDebtErro("Dívida não lançada: precisa da senha do gerente.");
+      } else if (res.ok) {
         setAddDebtEmp(null);
         fetchEmployees();
       } else {
-        alert("Erro ao adicionar dívida.");
+        // A mensagem do servidor (senha travada, cadastro de outra loja...).
+        const d = await res.json().catch(() => ({}));
+        setAddDebtErro(d?.error || "Erro ao adicionar dívida.");
       }
     } catch (e) {
       console.error(e);
-      alert("Erro ao adicionar dívida.");
+      setAddDebtErro("Sem conexão. Tente de novo.");
     }
     setSavingAddDebt(false);
   };
@@ -576,6 +599,7 @@ export default function FuncionariosPage() {
                       setAbateEmp(emp);
                       setAbateAmount(emp.currentDebt > 0 ? String(emp.currentDebt) : "");
                       setAbateNotes("");
+                      setAbateForma("");
                     }}
                     style={{
                       flex: 1,
@@ -601,6 +625,7 @@ export default function FuncionariosPage() {
                       setAddDebtEmp(emp);
                       setAddDebtAmount("");
                       setAddDebtNotes("");
+                      setAddDebtErro("");
                     }}
                     style={{
                       flex: 1,
@@ -797,7 +822,17 @@ export default function FuncionariosPage() {
               </div>
 
               <div>
-                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Observação / Forma de Pagamento</label>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Forma de pagamento</label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                  {FORMAS_DA_BAIXA.map((f) => (
+                    <button key={f} type="button" onClick={() => setAbateForma(abateForma === f ? "" : f)}
+                      style={{ padding: "6px 10px", borderRadius: 999, fontSize: "0.78rem", fontWeight: 700, cursor: "pointer",
+                        border: `1.5px solid ${abateForma === f ? "#0F766E" : "#E2E8F0"}`, background: abateForma === f ? "#F0FDFA" : "#fff", color: abateForma === f ? "#0F766E" : "#475569" }}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+                <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#475569", display: "block", marginBottom: 4 }}>Observação</label>
                 <input
                   value={abateNotes}
                   onChange={(e) => setAbateNotes(e.target.value)}
@@ -923,6 +958,11 @@ export default function FuncionariosPage() {
               />
             </div>
 
+            {addDebtErro && (
+              <div role="alert" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", padding: "8px 12px", borderRadius: 8, fontSize: "0.82rem", fontWeight: 700, marginBottom: 12 }}>
+                {addDebtErro}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 12 }}>
               <button
                 onClick={() => setAddDebtEmp(null)}
@@ -942,6 +982,7 @@ export default function FuncionariosPage() {
         </div>
       )}
 
+      {modalDaSenha}
     </div>
   );
 }

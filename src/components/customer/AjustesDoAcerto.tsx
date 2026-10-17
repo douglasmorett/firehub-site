@@ -19,6 +19,7 @@ import { useState, type CSSProperties } from "react";
 import type { Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
 import type { DiariaDoDia, PendenciaDoAcerto } from "@/lib/ajustes-do-acerto-regras";
 import { lerValorEmReais } from "@/lib/ajustes-do-acerto-regras";
+import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 
 const fmt = (v: number) => `R$ ${(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const DIAS = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
@@ -150,6 +151,9 @@ export function PendenciasDoMotoboy({ motoboyId, nome, pendencias, total, diaSug
   const [dia, setDia] = useState(diaSugerido);
   const [salvando, setSalvando] = useState(false);
   const [excluindo, setExcluindo] = useState<string | null>(null);
+  // Excluir pendência lançada pode pedir a senha do gerente (Minha Loja →
+  // Senha do gerente). Quem decide é a rota; aqui só se pede e repete.
+  const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
 
   const abrir = () => { setAberto(true); setValor(""); setMotivo(""); setDia(diaSugerido); };
 
@@ -173,9 +177,19 @@ export function PendenciasDoMotoboy({ motoboyId, nome, pendencias, total, diaSug
   const excluir = async (p: PendenciaDoAcerto) => {
     if (!window.confirm(`Excluir a pendência de ${fmt(p.valor)} (${p.motivo})? O valor volta para o total a pagar.`)) return;
     setExcluindo(p.id);
-    const r = await enviar(`/api/motoboy-report/pendencias?id=${encodeURIComponent(p.id)}`, { method: "DELETE" });
+    let erro: string | null = null;
+    try {
+      const res = await comSenhaDoGerente(
+        (cab) => fetch(`/api/motoboy-report/pendencias?id=${encodeURIComponent(p.id)}`, { method: "DELETE", headers: cab }),
+        pedirSenha,
+      );
+      if (!res) { setExcluindo(null); return; } // o gerente cancelou
+      if (!res.ok) erro = (await res.json().catch(() => ({})))?.error || "Não deu para excluir agora.";
+    } catch {
+      erro = "Sem conexão. Tente de novo.";
+    }
     setExcluindo(null);
-    if (!r.ok) return avisar({ tipo: "erro", titulo: "Pendência não foi excluída", detalhe: r.erro });
+    if (erro) return avisar({ tipo: "erro", titulo: "Pendência não foi excluída", detalhe: erro });
     await aoMudar();
     avisar({ tipo: "ok", titulo: `Pendência de ${fmt(p.valor)} excluída`, detalhe: "O valor voltou para o total a pagar." });
   };
@@ -184,6 +198,7 @@ export function PendenciasDoMotoboy({ motoboyId, nome, pendencias, total, diaSug
 
   return (
     <div style={{ fontSize: "0.85rem" }}>
+      {modalDaSenha}
       {pendencias.length > 0 && (
         <div style={{ marginBottom: 4 }}>
           <div style={{ display: "flex", justifyContent: "space-between", color: "#B91C1C" }}>

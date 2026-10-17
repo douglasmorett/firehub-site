@@ -32,6 +32,7 @@ import {
   emReais,
   type PagamentoDaMesa,
 } from "@/lib/pagamentos-da-mesa";
+import { formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +121,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   const metodo = String(corpo?.metodo ?? corpo?.method ?? "Dinheiro").trim() || "Dinheiro";
+  // Fiado não é baixa solta: precisa dizer QUEM fica devendo, e isso é o
+  // "Lançar no fiado" do fechamento (close + lib/fiado-da-mesa.ts), que ainda
+  // confere a senha do gerente. Por aqui ele fecharia a mesa sem dívida.
+  if (formaDoTexto(metodo) === "FIADO") {
+    return NextResponse.json(
+      { error: "forma_invalida", mensagem: "Para deixar no fiado, use \"Lançar no fiado\" no fechamento da conta." },
+      { status: 400 }
+    );
+  }
 
   // O dono do pagamento é conferido contra as pessoas DESTA mesa. Um guestId de
   // outra mesa gravaria um pagamento em nome de quem não está sentado aqui, e o

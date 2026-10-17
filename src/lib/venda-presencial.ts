@@ -18,6 +18,9 @@
  * responderem do jeito delas sem este arquivo depender de next/server.
  */
 import { prisma } from "@/lib/prisma";
+import { formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
+import { conferirSenhaDoGerente } from "@/lib/senha-do-gerente";
+import { senhaDoCabecalho } from "@/lib/senha-do-gerente-regras";
 import { telefoneDeVerdade } from "@/lib/telefone";
 import { lojaBloqueadaPorMensalidade, MENSAGEM_CONTA_BLOQUEADA } from "@/lib/loja-bloqueada";
 import { generateDailyOrderNumber } from "@/lib/order-number";
@@ -68,6 +71,8 @@ export async function registrarVendaPresencial(opcoes: {
   passaPeloBloqueio: boolean;
   /** O corpo do pedido, no formato do PDV (venda-presencial/page.tsx). */
   data: any;
+  /** O cabeçalho da senha do gerente (venda no fiado com a senha ligada). */
+  senhaDoGerente?: string | null;
 }): Promise<ResultadoDaVendaPresencial> {
   const data = opcoes.data || {};
   const { customerName, customerPhone, customerAddress, deliveryType, notes, totalAmount, deliveryFee, items, employeeId, employeeName, changeAmount, change, discountTotal, discountMerchant } = data;
@@ -132,6 +137,47 @@ export async function registrarVendaPresencial(opcoes: {
       { error: MENSAGEM_CAIXA_FECHADO, codigo: ERRO_CAIXA_FECHADO },
       { status: 409 },
     );
+  }
+
+  // ── VENDA NO FIADO ("CONTA FUNCIONÁRIO") ─────────────────────────────────
+  //
+  // É fiado quando a venda vem em nome de um cadastro do fiado (employeeId:
+  // é ele que vira dívida, api/store/employees) ou quando a forma — inteira ou
+  // uma parte do dividido — é fiado pela régua do caixa (formaDoTexto).
+  //
+  //   1. O cadastro tem de ser desta loja (ou do mesmo grupo de lojas, que é
+  //      o que a tela Fiado lista): antes nada conferia, e um id de outra loja
+  //      lançava a dívida no cliente alheio.
+  //   2. Com a senha do gerente ligada para o fiado (Minha Loja → Senha do
+  //      gerente), só passa com ela (lib/senha-do-gerente.ts). Vem ANTES de
+  //      gravar qualquer coisa: nada de número de pedido queimado.
+  const ehFiado = Boolean(employeeId)
+    || formaDoTexto(paymentMethod) === "FIADO"
+    || (paymentMethods || []).some((p) => formaDoTexto(p.method) === "FIADO");
+  if (employeeId) {
+    const cadastro = await prisma.storeEmployee.findUnique({ where: { id: String(employeeId) }, select: { franchiseeId: true } });
+    let daLoja = cadastro?.franchiseeId === targetFranchiseeId;
+    if (cadastro && !daLoja) {
+      const [loja, dona] = await Promise.all([
+        prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { id: true, accountGroupId: true } }),
+        prisma.user.findUnique({ where: { id: cadastro.franchiseeId }, select: { id: true, accountGroupId: true } }),
+      ]);
+      const grupo = loja?.accountGroupId || loja?.id;
+      daLoja = !!grupo && (dona?.id === grupo || dona?.accountGroupId === grupo);
+    }
+    if (!daLoja) return resposta({ error: "Este cliente do fiado não é desta loja. Escolha outro." }, { status: 400 });
+  }
+  if (ehFiado) {
+    let senha;
+    try {
+      senha = await conferirSenhaDoGerente(targetFranchiseeId, "fiado", senhaDoCabecalho(opcoes.senhaDoGerente));
+    } catch (err: any) {
+      console.error(`[Senha do gerente] não conferiu (fiado) na loja ${targetFranchiseeId}:`, err?.message || err);
+      return resposta({ error: "Não deu para conferir a senha do gerente agora. Tente de novo." }, { status: 503 });
+    }
+    if (!senha.ok) {
+      return resposta({ error: senha.error, mensagem: senha.error, codigo: senha.codigo, acao: senha.acao, restam: senha.restam }, { status: senha.status });
+    }
   }
 
   // ── PAGER OBRIGATÓRIO, SE A LOJA MARCOU ──────────────────────────────────

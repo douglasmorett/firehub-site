@@ -16,6 +16,8 @@
  * baixa continua na tela Fiado, senão a dívida seria cobrada duas vezes.
  */
 import { prisma } from "@/lib/prisma";
+import { mesasNoFiado, totalDasMesasNoFiado } from "@/lib/fiado-da-mesa";
+import { saldoDoFiado } from "@/lib/fiado-da-mesa-regras";
 
 const centavos = (v: number) => Math.round((Number(v) || 0) * 100) / 100;
 const soDigitos = (s: string | null | undefined) => (s || "").replace(/\D/g, "");
@@ -186,7 +188,7 @@ export async function fiadoDosMotoboys(opts: {
       const ids = cadastros.filter((c) => ehAMesmaPessoa(mb, c)).map((c) => c.id);
       if (ids.length === 0) continue;
 
-      const [pedidos, tudo, baixas] = await Promise.all([
+      const [pedidos, tudo, baixas, mesas, todasAsMesas] = await Promise.all([
         prisma.customerOrder.findMany({
           where: { employeeId: { in: ids }, status: { not: "CANCELADO" }, createdAt: { gte: opts.de, lte: opts.ate } },
           select: {
@@ -200,15 +202,25 @@ export async function fiadoDosMotoboys(opts: {
           _sum: { totalAmount: true },
         }),
         prisma.employeePayment.aggregate({ where: { employeeId: { in: ids } }, _sum: { amount: true } }),
+        // A conta de mesa jogada para o fiado também é dívida (lib/fiado-da-mesa.ts).
+        mesasNoFiado(ids, { gte: opts.de, lte: opts.ate }),
+        totalDasMesasNoFiado(ids),
       ]);
 
-      const saldoEmAberto = centavos(Math.max(0, (tudo._sum.totalAmount || 0) - (baixas._sum.amount || 0)));
-      if (pedidos.length === 0 && saldoEmAberto < 0.005) continue;
+      const saldoEmAberto = centavos(saldoDoFiado({ pedidos: tudo._sum.totalAmount || 0, mesas: todasAsMesas, baixas: baixas._sum.amount || 0 }));
+      if (pedidos.length === 0 && mesas.length === 0 && saldoEmAberto < 0.005) continue;
+      const daMesa = mesas.map((m) => ({
+        id: m.id,
+        em: m.createdAt.toISOString(),
+        numero: null,
+        valor: centavos(m.valor),
+        descricao: m.descricao || (m.mesaNumero != null ? `Conta da Mesa ${m.mesaNumero}` : "Conta de mesa"),
+      }));
 
       resultado.set(mb.id, {
-        totalNoPeriodo: centavos(pedidos.reduce((t, p) => t + (p.totalAmount || 0), 0)),
+        totalNoPeriodo: centavos(pedidos.reduce((t, p) => t + (p.totalAmount || 0), 0) + mesas.reduce((t, m) => t + m.valor, 0)),
         saldoEmAberto,
-        lancamentos: pedidos.map((p) => ({
+        lancamentos: [...pedidos.map((p) => ({
           id: p.id,
           em: p.createdAt.toISOString(),
           numero: p.dailyOrderNumber ?? null,
@@ -216,7 +228,7 @@ export async function fiadoDosMotoboys(opts: {
           descricao: p.items.length
             ? p.items.map((i) => `${Number(i.quantity) || 1}× ${i.productName || "Item"}`).join(", ")
             : p.notes || "Lançamento no fiado",
-        })),
+        })), ...daMesa].sort((a, b) => a.em.localeCompare(b.em)),
       });
     }
   } catch (err) {

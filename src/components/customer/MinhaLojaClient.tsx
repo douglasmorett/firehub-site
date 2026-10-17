@@ -12,9 +12,10 @@ import LoyaltyConfigForm from "@/components/LoyaltyConfigForm";
 import StoreTeamManager from "@/components/customer/StoreTeamManager";
 import StoreReviewsManager from "@/components/customer/StoreReviewsManager";
 import { StoreApiManager } from "@/components/customer/StoreApiManager";
+import SenhaDoGerenteConfig from "@/components/customer/SenhaDoGerenteConfig";
 import { updatePassword } from "@/app/actions/updatePassword";
 
-type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe" | "api" | "balcao" | "lojas";
+type Section = "menu" | "cardapio" | "info" | "hours" | "delivery" | "payment" | "coupons" | "loyalty" | "reviews" | "conta" | "equipe" | "api" | "balcao" | "lojas" | "senha";
 
 const SECTIONS = [
   {
@@ -116,6 +117,20 @@ const SECTIONS = [
   },
 ];
 
+/**
+ * Só entra no menu do DONO (MinhaLojaClient decide): a senha que autoriza
+ * fiado e exclusões é dele (lib/senha-do-gerente-regras.ts). A rota recusa
+ * funcionário de qualquer forma.
+ */
+const SECAO_DA_SENHA = {
+  id: "senha" as Section,
+  icon: <Lock size={28} />,
+  color: "#B91C1C",
+  bg: "#FEF2F2",
+  title: "Senha do gerente",
+  desc: "Senha que autoriza lançar no fiado e excluir lançamento no acerto do motoboy",
+};
+
 /** Só entra no menu de quem tem mais de uma loja (MinhaLojaClient decide). */
 const SECAO_DAS_LOJAS = {
   id: "lojas" as Section,
@@ -154,6 +169,8 @@ const HASH_TO_SECTION: Record<string, Section> = {
   conta: "conta",
   balcao: "balcao",
   pager: "balcao",
+  senha: "senha",
+  "senha-do-gerente": "senha",
   lojas: "lojas",
   "pagina-das-lojas": "lojas",
 };
@@ -188,7 +205,13 @@ export default function MinhaLojaClient({ user }: { user: any }) {
       .then((d) => { if (d?.multiloja && d.caminho) setLinkDoGrupo(`${window.location.origin}${d.caminho}`); })
       .catch(() => {});
   }, []);
-  const secoes = linkDoGrupo ? [SECAO_DAS_LOJAS, ...SECTIONS] : SECTIONS;
+  // A conta da loja (sem ownerId e não STAFF) é a do dono.
+  const ehDono = user.role !== "STAFF" && !user.ownerId;
+  const secoes = [
+    ...(linkDoGrupo ? [SECAO_DAS_LOJAS] : []),
+    ...SECTIONS,
+    ...(ehDono ? [SECAO_DA_SENHA] : []),
+  ];
 
   async function saveLoyalty(config: any) {
     await fetch("/api/store-settings", {
@@ -318,6 +341,16 @@ export default function MinhaLojaClient({ user }: { user: any }) {
       <div style={{ maxWidth: 850, margin: "0 auto", padding: "1.5rem 1rem" }}>
         <BackBtn onClick={() => setSection("menu")} title="🔔 Balcão & Pager" />
         <BalcaoConfigManager />
+      </div>
+    );
+  }
+
+  // ── Seção Senha do gerente (só o dono) ─────────────────────────────────────
+  if (section === "senha") {
+    return (
+      <div style={{ maxWidth: 700, margin: "0 auto", padding: "1.5rem 1rem" }}>
+        <BackBtn onClick={() => setSection("menu")} title="🔒 Senha do gerente" />
+        <SenhaDoGerenteConfig />
       </div>
     );
   }

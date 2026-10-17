@@ -19,6 +19,7 @@ import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
 import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
 import { lerConsulta, preencherBalcao, type ClienteSugerido } from "@/lib/busca-de-clientes";
 import { useSession } from "next-auth/react";
+import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 
 // A mesma lista do pedido de balcão do garçom (lib/balcao-config.ts).
 const PAYMENT_METHODS = FORMAS_DE_PAGAMENTO_DO_BALCAO;
@@ -57,6 +58,9 @@ export default function VendaPresencialPage() {
    */
   const { data: sessao } = useSession();
   const cidadeDaLoja: string = String((sessao?.user as any)?.city ?? "");
+  // Venda na "Conta Funcionário" pode pedir a senha do gerente (Minha Loja →
+  // Senha do gerente). Quem decide é a rota; a tela só pede e repete.
+  const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
   const [products, setProducts] = useState<any[]>([]);
   const [paymentConfig, setPaymentConfig] = useState<any>(null);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -690,10 +694,25 @@ export default function VendaPresencialPage() {
       })),
     };
 
-    const res = await fetch("/api/store/orders/presencial", {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
-    });
+    let res: Response | null;
+    try {
+      res = await comSenhaDoGerente(
+        (cab) => fetch("/api/store/orders/presencial", {
+          method: "POST", headers: { "Content-Type": "application/json", ...cab }, body: JSON.stringify(body),
+        }),
+        pedirSenha,
+      );
+    } catch {
+      setLoading(false);
+      setMsg("❌ Sem conexão. O pedido não foi registrado — tente de novo.");
+      return;
+    }
     setLoading(false);
+    if (!res) {
+      // Cancelou a senha do gerente: o carrinho fica como está.
+      setMsg("⚠️ Venda não lançada — sem a senha do gerente o fiado não passa.");
+      return;
+    }
     if (res.ok) {
       // O que o servidor anotou sobre a entrega (fora da área, não localizado,
       // ponto aproximado, distância estimada, taxa diferente da tabela) — as
@@ -817,6 +836,7 @@ export default function VendaPresencialPage() {
 
   return (
     <div className="pdv-layout" style={{ fontFamily: "'Inter', sans-serif", height: "calc(100vh - 145px)", maxHeight: "calc(100vh - 145px)", overflow: "hidden", position: "relative" }}>
+      {modalDaSenha}
       <style>{`
         /* ── LAYOUT ADAPTATIVO PARA TABLET ──────────────────────────────────
            O carrinho tinha 380px FIXOS. Num tablet em retrato (768px) sobravam

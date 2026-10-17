@@ -21,6 +21,7 @@ import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento }
 import { EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
 import HistoricoDeMesas from "@/components/mesas/HistoricoDeMesas";
+import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 import { motivoValido } from "@/lib/motivo-do-cancelamento";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
@@ -422,6 +423,21 @@ export default function MesasApp({
   // Modals
   const [confirmOpen, setConfirmOpen] = useState<TableItem | null>(null); // confirm open table
   const [showCloseModal, setShowCloseModal] = useState(false);
+
+  // ── "LANÇAR NO FIADO" NO FECHAMENTO (lib/fiado-da-mesa-regras.ts) ──────
+  // A mesa que pagou e ninguém deu baixa, ou o cliente que paga depois: o que
+  // falta da conta vira dívida de um cliente do Fiado e a mesa fica livre.
+  /** O Fiado da loja: ligado? e quem pode ficar com a conta. Nulo = ainda não perguntou. */
+  const [fiadoDaLoja, setFiadoDaLoja] = useState<{ ligado: boolean; clientes: { id: string; nome: string; cargo: string | null }[] } | null>(null);
+  const [showFiado, setShowFiado] = useState(false);
+  const [fiadoBusca, setFiadoBusca] = useState("");
+  const [fiadoClienteId, setFiadoClienteId] = useState<string | null>(null);
+  const [fiadoNovo, setFiadoNovo] = useState(false);
+  const [fiadoNovoNome, setFiadoNovoNome] = useState("");
+  const [fiadoNovoTel, setFiadoNovoTel] = useState("");
+  const [lancandoFiado, setLancandoFiado] = useState(false);
+  // Com a senha do gerente ligada para o fiado, a rota pede e este modal abre.
+  const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
   const [showNewTableModal, setShowNewTableModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   /** Histórico de mesas (as contas fechadas no dia) — só no painel, não no link do garçom. */
@@ -1140,6 +1156,70 @@ export default function MesasApp({
     }
   };
 
+  /** Abre a escolha do cliente do fiado, limpa. */
+  const abrirFiado = () => {
+    setFiadoBusca(""); setFiadoClienteId(null); setFiadoNovo(false); setFiadoNovoNome(""); setFiadoNovoTel("");
+    setShowFiado(true);
+  };
+
+  /**
+   * Joga o que falta da conta para o fiado do cliente escolhido e libera a
+   * mesa. É o mesmo fechamento (close), com `fiado`: taxa, desconto e baixas
+   * já gravadas valem igual, e a conta é feita lá.
+   */
+  const lancarNoFiado = async () => {
+    const sessionId = selectedTable?.openSession?.id;
+    if (!selectedTable || !sessionId) return;
+    const cliente = fiadoNovo
+      ? (fiadoNovoNome.trim().length >= 2 ? { novoCliente: { nome: fiadoNovoNome.trim(), telefone: fiadoNovoTel } } : null)
+      : (fiadoClienteId ? { clienteId: fiadoClienteId } : null);
+    if (!cliente) {
+      showToast(fiadoNovo ? "⚠️ Digite o nome do cliente" : "⚠️ Escolha o cliente do fiado");
+      return;
+    }
+    const problemaNoCpf = conta?.notaFiscal?.perguntar ? problemaDoDocumento(documentoDaConta) : null;
+    if (problemaNoCpf) { showToast(`❌ ${problemaNoCpf}`); return; }
+    const numero = selectedTable.number;
+    setLancandoFiado(true);
+    try {
+      const res = await comSenhaDoGerente(
+        (cab) => chamar(`/api/store/table-sessions/${sessionId}/close`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...cab },
+          body: JSON.stringify({
+            paymentMethods: pagamentosDaMesa,
+            serviceFeePercent: useServiceFee ? serviceFee : 0,
+            waiterTip,
+            desconto: descontoDaMesa > 0 ? desconto : null,
+            cpfCnpj: conta?.notaFiscal?.perguntar ? lerDocumentoDoCliente(documentoDaConta) : null,
+            fiado: cliente,
+          }),
+        }),
+        pedirSenha,
+      );
+      if (!res) return; // o gerente cancelou a senha: a mesa continua aberta
+      const d = await res.json().catch(() => ({}));
+      if (res.ok) {
+        showToast(`📒 Mesa ${numero} no fiado de ${d?.fiado?.cliente || "cliente"} (${fmt(Number(d?.fiado?.valor) || 0)}) — mesa liberada`);
+        setShowFiado(false);
+        setShowCloseModal(false);
+        setSelectedTable(null);
+        setSessionDetail(null);
+        setWaiterTip(0);
+        setPagamentosDaMesa([]);
+        setDonoPagamento(null);
+        setValorPagamento("");
+        setConta(null);
+        setView("grid");
+        await fetchTables();
+      } else {
+        showToast(`❌ ${d?.mensagem || d?.error || "Não deu para lançar no fiado"}`);
+      }
+    } catch { showToast("❌ Erro de conexão"); } finally {
+      setLancandoFiado(false);
+    }
+  };
+
   // ─── PAGAMENTOS DA MESA ───────────────────────────────────────────────────
   // Cada baixa é gravada no servidor no instante em que o garçom registra. As
   // linhas viviam só nesta tela e iam todas juntas no fechamento: fechar o
@@ -1639,6 +1719,19 @@ export default function MesasApp({
     }, 400);
     return () => clearTimeout(t);
   }, [showCloseModal, serviceFee, useServiceFee, waiterTip, selectedTable?.openSession?.id, desconto.tipo, desconto.valor, desconto.motivo]);
+
+  // O Fiado da loja, quando o fechamento abre. Desligado (ou garçom que não
+  // fecha conta), o botão "Lançar no fiado" nem aparece.
+  useEffect(() => {
+    const sessionId = selectedTable?.openSession?.id;
+    if (!showCloseModal || !sessionId) return;
+    let vivo = true;
+    chamar(`/api/store/table-sessions/${sessionId}/fiado`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (vivo) setFiadoDaLoja({ ligado: Boolean(d?.ligado), clientes: Array.isArray(d?.clientes) ? d.clientes : [] }); })
+      .catch(() => { if (vivo) setFiadoDaLoja({ ligado: false, clientes: [] }); });
+    return () => { vivo = false; };
+  }, [showCloseModal, selectedTable?.openSession?.id]);
 
   // ─── MODAL DE COMBO ───────────────────────────────────────────────────────
   // Esta página tem DOIS returns: o de lançar pedido e o da grade de mesas. O
@@ -3634,10 +3727,109 @@ export default function MesasApp({
                     ? "Fechar Conta e Liberar Mesa"
                     : `Faltam ${fmt(faltaPagar)} para fechar`}
               </button>
+              {/* O que falta vira dívida de um cliente do Fiado e a mesa fica
+                  livre (a mesa 9 que pagou e ninguém deu baixa). Só com o
+                  Fiado ligado na loja; a senha do gerente, se ligada, a rota pede. */}
+              {fiadoDaLoja?.ligado && faltaPagar > 0.01 && (
+                <button onClick={abrirFiado} disabled={actionLoading || lancandoFiado} style={{
+                  width: "100%", marginTop: 8, background: "#fff", color: "#7C2D12",
+                  border: "1.5px solid #FDBA74", borderRadius: 12, padding: "12px 0", fontWeight: 800, fontSize: 14,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>
+                  📒 Lançar {fmt(faltaPagar)} no fiado e liberar a mesa
+                </button>
+              )}
             </div>
           </div>
         </div>
       )}
+
+      {/* ─── LANÇAR NO FIADO: quem fica com a conta ─── */}
+      {showFiado && showCloseModal && selectedTable?.openSession && (() => {
+        const busca = fiadoBusca.trim().toLowerCase();
+        const lista = (fiadoDaLoja?.clientes || []).filter(c => !busca || c.nome.toLowerCase().includes(busca));
+        const escolhido = (fiadoDaLoja?.clientes || []).find(c => c.id === fiadoClienteId) || null;
+        const pronto = fiadoNovo ? fiadoNovoNome.trim().length >= 2 : !!escolhido;
+        return (
+          <div style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100,
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 12,
+          }} onClick={() => { if (!lancandoFiado) setShowFiado(false); }}>
+            <div onClick={e => e.stopPropagation()} className="mesa-modal-conta" style={{
+              background: "#fff", borderRadius: 20, width: "100%", maxWidth: 440, maxHeight: "88vh",
+              display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+            }}>
+              <div style={{ padding: "18px 20px 10px", borderBottom: "1px solid #F1F5F9" }}>
+                <h3 style={{ margin: "0 0 4px", fontWeight: 800, fontSize: 18, color: "#0F172A" }}>
+                  📒 Mesa {selectedTable.number} no fiado
+                </h3>
+                <p style={{ margin: 0, fontSize: 13, color: "#64748B", lineHeight: 1.45 }}>
+                  <b style={{ color: "#7C2D12" }}>{fmt(faltaPagar)}</b> vão para a conta do cliente no Fiado e a mesa fica livre agora.
+                  O acerto é depois, na tela <b>Fiado</b> (Dar baixa).
+                </p>
+              </div>
+
+              <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
+                <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+                  <button onClick={() => setFiadoNovo(false)} className="mesa-chip" style={{
+                    flex: 1, padding: "8px 0", borderRadius: 10, fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+                    border: `1.5px solid ${!fiadoNovo ? "#C2410C" : "#E2E8F0"}`, background: !fiadoNovo ? "#FFF7ED" : "#fff", color: !fiadoNovo ? "#9A3412" : "#475569",
+                  }}>Já está no fiado</button>
+                  <button onClick={() => setFiadoNovo(true)} className="mesa-chip" style={{
+                    flex: 1, padding: "8px 0", borderRadius: 10, fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit",
+                    border: `1.5px solid ${fiadoNovo ? "#C2410C" : "#E2E8F0"}`, background: fiadoNovo ? "#FFF7ED" : "#fff", color: fiadoNovo ? "#9A3412" : "#475569",
+                  }}>+ Cliente novo</button>
+                </div>
+
+                {fiadoNovo ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                    <input value={fiadoNovoNome} onChange={e => setFiadoNovoNome(e.target.value)} placeholder="Nome do cliente" autoFocus maxLength={80}
+                      style={{ padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontFamily: "inherit" }} />
+                    <input value={fiadoNovoTel} onChange={e => setFiadoNovoTel(e.target.value)} placeholder="Telefone (opcional)" inputMode="tel" maxLength={20}
+                      style={{ padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontFamily: "inherit" }} />
+                  </div>
+                ) : (
+                  <>
+                    <input value={fiadoBusca} onChange={e => setFiadoBusca(e.target.value)} placeholder="Buscar pelo nome" autoFocus
+                      style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", borderRadius: 10, border: "1.5px solid #CBD5E1", fontSize: 14, fontFamily: "inherit", marginBottom: 8 }} />
+                    {lista.length === 0 ? (
+                      <p style={{ fontSize: 13, color: "#94A3B8", margin: "8px 0" }}>
+                        {(fiadoDaLoja?.clientes || []).length === 0 ? "Ninguém no fiado ainda — cadastre em \"+ Cliente novo\"." : "Ninguém com esse nome."}
+                      </p>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {lista.slice(0, 60).map(c => (
+                          <button key={c.id} onClick={() => setFiadoClienteId(c.id)} style={{
+                            textAlign: "left", padding: "10px 12px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit", fontSize: 14,
+                            border: `1.5px solid ${fiadoClienteId === c.id ? "#C2410C" : "#E2E8F0"}`, background: fiadoClienteId === c.id ? "#FFF7ED" : "#fff",
+                            color: "#0F172A", fontWeight: fiadoClienteId === c.id ? 800 : 600,
+                          }}>
+                            {c.nome}{c.cargo ? <span style={{ color: "#94A3B8", fontWeight: 500 }}> · {c.cargo}</span> : null}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div style={{ padding: "12px 20px 18px", borderTop: "1px solid #F1F5F9", display: "flex", gap: 8 }}>
+                <button onClick={() => setShowFiado(false)} disabled={lancandoFiado} style={{
+                  flex: 1, padding: "12px 0", borderRadius: 12, border: "1.5px solid #CBD5E1", background: "#fff", color: "#334155",
+                  fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: "inherit",
+                }}>Voltar</button>
+                <button onClick={lancarNoFiado} disabled={!pronto || lancandoFiado} style={{
+                  flex: 2, padding: "12px 0", borderRadius: 12, border: "none", background: pronto ? "#C2410C" : "#CBD5E1", color: "#fff",
+                  fontWeight: 800, fontSize: 14, cursor: pronto ? "pointer" : "not-allowed", fontFamily: "inherit", opacity: lancandoFiado ? 0.6 : 1,
+                }}>
+                  {lancandoFiado ? "Lançando..." : `Lançar ${fmt(faltaPagar)} no fiado${fiadoNovo ? "" : escolhido ? ` de ${escolhido.nome.split(" ")[0]}` : ""}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      {modalDaSenha}
 
       {/* ─── TRANSFER MODAL ─── */}
       {showTransferModal?.openSession && (

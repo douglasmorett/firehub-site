@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { limiteDeDia } from "@/lib/timezone";
+import { mesasNoFiado, totalDasMesasNoFiado } from "@/lib/fiado-da-mesa";
+import { saldoDoFiado } from "@/lib/fiado-da-mesa-regras";
 
 export async function GET(
   req: NextRequest,
@@ -95,6 +97,9 @@ export async function GET(
     orderBy: { createdAt: "desc" },
   });
 
+  // Contas de mesa jogadas para o fiado no fechamento (lib/fiado-da-mesa.ts).
+  const mesas = await mesasNoFiado([employeeId], hasDateFilter ? dateFilter : undefined);
+
   // Unifica em um extrato cronológico único
   const statementItems = [
     ...orders.map((o) => ({
@@ -105,6 +110,15 @@ export async function GET(
       date: o.createdAt,
       notes: o.notes,
       itemsSummary: o.items.length === 0 ? o.notes : o.items.map((i) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", "),
+    })),
+    ...mesas.map((m) => ({
+      id: m.id,
+      type: "ORDER" as const,
+      title: `Conta da ${m.mesaNumero != null ? `Mesa ${m.mesaNumero}` : "mesa"} no fiado`,
+      amount: m.valor,
+      date: m.createdAt,
+      notes: m.criadoPor ? `Lançada por ${m.criadoPor}` : null,
+      itemsSummary: m.descricao,
     })),
     ...payments.map((p) => ({
       id: p.id,
@@ -128,9 +142,10 @@ export async function GET(
     _sum: { amount: true },
   });
 
-  const totalOrders = allOrdersAgg._sum.totalAmount || 0;
+  const totalDasMesas = await totalDasMesasNoFiado([employeeId]);
+  const totalOrders = (allOrdersAgg._sum.totalAmount || 0) + totalDasMesas;
   const totalPayments = allPaymentsAgg._sum.amount || 0;
-  const currentDebt = Math.max(0, totalOrders - totalPayments);
+  const currentDebt = saldoDoFiado({ pedidos: allOrdersAgg._sum.totalAmount || 0, mesas: totalDasMesas, baixas: totalPayments });
 
   return NextResponse.json({
     employee,
