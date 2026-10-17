@@ -251,6 +251,9 @@ export default async function StoreRelatoriosPage() {
     ifoodStoreMerchant: o.ifoodStoreMerchant || null,
     food99AppShopId: o.food99AppShopId || null,
     food99ShopId: o.food99ShopId || null,
+    // A marca do CardápioWeb mora no próprio id do pedido (cardapioweb_<loja>_<id>).
+    openDeliveryOrderId: o.openDeliveryOrderId || null,
+    openDeliveryChannel: o.openDeliveryChannel || null,
     // O que a LOJA paga ao entregador por este pedido. `null` = não dá para
     // saber (sem entregador atribuído) — e null não é zero.
     custoDaEntrega: custoPorPedido.has(o.id) ? custoPorPedido.get(o.id) : null,

@@ -89,6 +89,19 @@ const jobs = [
     exclusivo: true,
   },
   {
+    // CardápioWeb: a rede PRINCIPAL dos pedidos dele, não um enfeite — o
+    // webhook do CardápioWeb pausa depois de 15 falhas e só volta por e-mail.
+    // Lista o que mudou desde o último ciclo, reprocessa aviso parado e repete
+    // as ações pendentes. 30 s é o que a doc deles recomenda. Ciclo ainda no ar
+    // não ganha outro por cima (o mesmo pedido buscado duas vezes gasta o
+    // limite de 300 chamadas a cada 3 min da loja). Sem CARDAPIOWEB_* no
+    // servidor a rota responde na hora sem tocar no banco — custo zero.
+    name: 'cardapioweb-poll',
+    path: '/api/cron/cardapioweb-poll',
+    intervalMs: 30_000, // 30 segundos
+    exclusivo: true,
+  },
+  {
     // Mantem a loja ABERTA no 99Food sem ninguem abrir o gestor deles.
     //
     // O lojista fechava o app do 99Food e a loja ficava offline la. O swagger

@@ -4,7 +4,7 @@
  * Despachar é gravar: a rota vira DISPATCHED e os pedidos SAIU_ENTREGA com o
  * entregador (api/store/routes/dispatch). O resto é CONSEQUÊNCIA, e pode
  * falhar sem desfazer o despacho: o aviso ao cliente, a NFC-e, o aviso no app
- * do entregador, o "saiu" no iFood/99Food/Brendi/Wabiz/Keeta/JotaJá e o
+ * do entregador, o "saiu" no iFood/99Food/Brendi/Wabiz/Keeta/CardápioWeb/JotaJá e o
  * WhatsApp com as paradas para o motoboy.
  *
  * Esses efeitos já não eram aguardados pela rota, mas nasciam no meio dela,
@@ -134,6 +134,7 @@ export async function sincronizarPedidoNasPlataformas(
   const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
   const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
   const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
+  const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
 
   // ── Sync Brendi ──
   //
@@ -203,8 +204,18 @@ export async function sincronizarPedidoNasPlataformas(
       "SAIU_ENTREGA"
     ).catch((err: any) => console.warn(`[Route Dispatch → Keeta] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
   }
+  // ── Sync CardápioWeb ──
+  // A loja de lá (uma por marca) sai do próprio id do pedido; o que falhar
+  // vai para a fila de pendentes do polling (lib/cardapioweb/acoes-pendentes.ts).
+  if (ehPedidoCardapioWeb(ord)) {
+    await sincronizarCardapioWeb(
+      { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status, deliveryBy: ord.deliveryBy, deliveryType: ord.deliveryType },
+      "SAIU_ENTREGA",
+      { limiteMs: 30_000 }
+    ).catch((err: any) => console.warn(`[Route Dispatch → CardápioWeb] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
+  }
   // ── Sync Jotajá (Open Delivery) ──
-  if (ord.openDeliveryOrderId && !ehPedido99Food(ord) && !ehPedidoWabiz(ord) && !ehPedidoBrendi(ord) && !ehPedidoKeeta(ord)) {
+  if (ord.openDeliveryOrderId && !ehPedido99Food(ord) && !ehPedidoWabiz(ord) && !ehPedidoBrendi(ord) && !ehPedidoKeeta(ord) && !ehPedidoCardapioWeb(ord)) {
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");
       const odId = ord.openDeliveryOrderId;

@@ -644,14 +644,22 @@ export async function PUT(req: NextRequest) {
       const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
       const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
       const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
+      const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
 
-      // Keeta primeiro: ela também usa openDeliveryOrderId, e fora desta
-      // cadeia cairia no "senão é JotaJá" lá embaixo.
+      // Keeta e CardápioWeb primeiro: os dois também usam openDeliveryOrderId,
+      // e fora desta cadeia cairiam no "senão é JotaJá" lá embaixo.
       if (ehPedidoKeeta(order)) {
         await sincronizarKeeta(
           { openDeliveryOrderId: order.openDeliveryOrderId!, franchiseeId: order.franchiseeId, status: order.status, deliveryBy: order.deliveryBy, deliveryType: order.deliveryType },
           "PRONTO"
         ).catch((e) => console.warn("[KDS Keeta Sync Error]:", e?.message));
+      } else if (ehPedidoCardapioWeb(order)) {
+        // PRONTO de retirada sobe até "esperando retirada" lá (prepared + dispatch).
+        await sincronizarCardapioWeb(
+          { openDeliveryOrderId: order.openDeliveryOrderId!, franchiseeId: order.franchiseeId, status: order.status, deliveryBy: order.deliveryBy, deliveryType: order.deliveryType },
+          "PRONTO",
+          { limiteMs: 30_000 }
+        ).catch((e) => console.warn("[KDS CardápioWeb Sync Error]:", e?.message));
       } else if (ehPedidoWabiz(order)) {
         await sincronizarWabiz(
           {
