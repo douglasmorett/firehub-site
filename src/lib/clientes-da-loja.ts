@@ -37,7 +37,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { funcionarioAbre } from "@/lib/permissao-da-tela";
 import { extratoDoCliente, garantirTabelaDeAjustes, horaEmUtc, saldosDaLoja } from "@/lib/cashback-no-banco";
-import { lerCashback, type ExtratoDoCashback } from "@/lib/cashback";
+import { lerCashback, type CanaisDoCashback, type ExtratoDoCashback } from "@/lib/cashback";
 import { nomeDoCanal } from "@/lib/canal-do-pedido";
 import { telefoneNacional } from "@/lib/lote-de-saldo";
 import { nomeDoItem } from "@/lib/nome-do-item";
@@ -420,7 +420,7 @@ export type DetalheDoCliente = {
     /** Rascunho do robô e pedido esperando pagamento: aparecem na lista, não contam. */
     naoConcluidos: number;
   };
-  cashback: ExtratoDoCashback & { ativo: boolean; validadeDias: number; taxa: number; maxResgatePct: number };
+  cashback: ExtratoDoCashback & { ativo: boolean; validadeDias: number; taxa: number; maxResgatePct: number; canais: CanaisDoCashback };
   /** Trilha Premiada e cartão de carimbos — `null` no programa que a loja não ligou. */
   fidelidade: FidelidadeNaFicha;
 };
@@ -521,7 +521,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
     LIMIT 1`);
 
   const regra = lerCashback(sessao.storeLoyalty);
-  const cashback = { ...extrato, ativo: regra.ativo, validadeDias: regra.validadeDias, taxa: regra.taxa, maxResgatePct: regra.maxResgatePct };
+  const cashback = { ...extrato, ativo: regra.ativo, validadeDias: regra.validadeDias, taxa: regra.taxa, maxResgatePct: regra.maxResgatePct, canais: regra.canais };
 
   if (!pedidos.length && !cadastro && !extrato.movimentos.length && !editado) {
     return {

@@ -20,6 +20,13 @@ import {
   type TrilhaPremiada,
 } from "@/lib/trilha-premiada";
 import TrilhaPremiadaEditor from "@/components/trilha/TrilhaPremiadaEditor";
+import {
+  CANAIS_DO_CASHBACK,
+  CANAIS_DO_CASHBACK_PADRAO,
+  lerCanaisDoCashback,
+  ondeValeOCashback,
+  type CanaisDoCashback,
+} from "@/lib/cashback";
 
 export type LoyaltyConfig = {
   active: boolean;
@@ -34,6 +41,8 @@ export type LoyaltyConfig = {
   minOrderValue: number;
   maxRedeemPercent: number;
   expiresInDays: number;
+  // Onde o cashback vale — gera e pode ser usado (lib/cashback.ts). Nasce tudo marcado.
+  cashbackCanais: CanaisDoCashback;
   // Program 2: Carimbos (Cartão Fidelidade)
   stampsActive: boolean;
   stampGoal: number; // Ex: 10 carimbos
@@ -68,6 +77,7 @@ const DEFAULT_LOYALTY: LoyaltyConfig = {
   minOrderValue: 20,
   maxRedeemPercent: 50,
   expiresInDays: 30,
+  cashbackCanais: CANAIS_DO_CASHBACK_PADRAO,
 
   stampsActive: false,
   stampGoal: 10,
@@ -109,6 +119,8 @@ export default function LoyaltyConfigForm({
     // normaliza uma vez, na entrada.
     converter: lerCampanha(initialConfig),
     trilha: lerTrilha(initialConfig),
+    // Ausente (loja que nunca mexeu) = os dois marcados, como era antes.
+    cashbackCanais: lerCanaisDoCashback(initialConfig),
   });
   const [activeTab, setActiveTab] = useState<"trilha" | "converter" | "cashback" | "stamps" | "referral" | "birthday" | "vip">("trilha");
   const [saving, setSaving] = useState(false);
@@ -573,7 +585,7 @@ export default function LoyaltyConfigForm({
                   Devolva uma porcentagem das compras do cliente como crédito em saldo para os próximos pedidos.
                 </p>
                 <p style={{ margin: "4px 0 0", fontSize: "0.74rem", color: "#64748B", lineHeight: 1.5 }}>
-                  Vale nos pedidos feitos pelo site da loja. O crédito entra quando o pedido é entregue
+                  {ondeValeOCashback(config.cashbackCanais)} O crédito entra quando o pedido é entregue
                   e só pode ser usado nesta loja; pedido cancelado não gera, e o saldo que ele usou volta.
                 </p>
               </div>
@@ -688,6 +700,55 @@ export default function LoyaltyConfigForm({
                   onChange={e => update("expiresInDays", e.target.value === "" ? 0 : parseInt(e.target.value) || 0)}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
                 />
+              </div>
+            </div>
+
+            {/* Onde vale: os canais em que o pedido gera e usa cashback (lib/cashback.ts).
+                Só site e robô: são os que têm o telefone do cliente e onde ele vê e usa o saldo. */}
+            <div style={{ marginTop: 20, border: "1.5px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
+              <div style={{ padding: "10px 14px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
+                <b style={{ display: "block", fontSize: "0.86rem", fontWeight: 800, color: "#0F172A" }}>Onde o cashback vale</b>
+                <span style={{ fontSize: "0.74rem", color: "#64748B", lineHeight: 1.5 }}>
+                  Marque em quais pedidos o cliente ganha e usa o saldo. Desmarcou, aquele canal para de gerar e de
+                  oferecer o saldo — o que o cliente já ganhou continua valendo nos canais marcados.
+                </span>
+              </div>
+              <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
+                {CANAIS_DO_CASHBACK.map((c) => {
+                  const ligado = config.cashbackCanais[c.chave] === true;
+                  return (
+                    <button
+                      key={c.chave}
+                      type="button"
+                      aria-pressed={ligado}
+                      onClick={() => update("cashbackCanais", { ...config.cashbackCanais, [c.chave]: !ligado })}
+                      style={{
+                        display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 11px", width: "100%",
+                        border: `1.5px solid ${ligado ? "#99F6E4" : "#E2E8F0"}`, borderRadius: 12,
+                        background: ligado ? "#F0FDFA" : "#fff", cursor: "pointer", textAlign: "left", fontFamily: "inherit",
+                      }}
+                    >
+                      <span style={{
+                        width: 20, height: 20, borderRadius: 6, flexShrink: 0, marginTop: 1,
+                        border: `1.5px solid ${ligado ? "#0F766E" : "#CBD5E1"}`, background: ligado ? "#F0FDFA" : "#fff",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: "0.74rem", fontWeight: 900, color: "#0F766E",
+                      }}>{ligado ? "✓" : ""}</span>
+                      <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                        <b style={{ fontSize: "0.82rem", fontWeight: 800, color: "#0F172A" }}>{c.nome}</b>
+                        <span style={{ fontSize: "0.72rem", color: "#64748B", lineHeight: 1.4, marginTop: 1 }}>{c.ajuda}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+                <span style={{ fontSize: "0.72rem", color: "#64748B", lineHeight: 1.5 }}>
+                  Balcão, mesa, totem e iFood/99Food não entram: ali o cliente não vê nem consegue usar o saldo.
+                </span>
+                {config.cashbackActive && !config.cashbackCanais.site && !config.cashbackCanais.whatsapp && (
+                  <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", color: "#92400E", borderRadius: 10, padding: "8px 12px", fontSize: "0.76rem", lineHeight: 1.5 }}>
+                    Nenhum canal marcado: com o cashback habilitado, nenhum pedido gera nem usa saldo.
+                  </div>
+                )}
               </div>
             </div>
 

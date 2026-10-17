@@ -33,7 +33,7 @@ import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { premioDoCliente } from "@/lib/premio-no-pedido";
 import { efeitoDoPremio } from "@/lib/trilha-premiada";
-import { cashbackDoPedido, lerCashback, resgateMaximo } from "@/lib/cashback";
+import { cashbackDoPedido, lerCashback, regraNoCanal, resgateMaximo } from "@/lib/cashback";
 import { cashbackDoCliente } from "@/lib/cashback-no-banco";
 import { cpfValido, documentoValido } from "@/lib/fiscal-validacao";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
@@ -764,7 +764,8 @@ export async function POST(req: Request) {
     // (lib/cashback.ts). Como o prêmio, o cashback nunca impede o pedido.
     let cashbackUsado = 0;
     let cashbackGerado = 0;
-    const regraDoCashback = lerCashback(franchisee.storeLoyalty);
+    // Canal desmarcado na Fidelidade (cashbackCanais.site) = sem cashback aqui.
+    const regraDoCashback = regraNoCanal(lerCashback(franchisee.storeLoyalty), "site");
     if (regraDoCashback.ativo) {
       try {
         const doCliente = await cashbackDoCliente(franchisee.id, franchisee.storeLoyalty, customerPhone);

@@ -6,6 +6,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cupons";
 import { hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
 import { cashbackDoCliente } from "@/lib/cashback-no-banco";
+import { lerCashback, regraNoCanal } from "@/lib/cashback";
 import { ondeEstaoOsPedidosDoTelefone, PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
 import { trilhaDoTelefone } from "@/lib/premio-no-pedido";
 
@@ -234,10 +235,13 @@ export async function GET(req: Request) {
  * O saldo de cashback deste telefone NESTA loja (lib/cashback.ts), ou null
  * quando a loja não tem cashback. Sai só o valor e o próximo vencimento — o
  * mesmo nível de informação do progresso da trilha, que já sai daqui.
+ * Quem pergunta é o cardápio: com o site desmarcado nos canais do cashback,
+ * não há saldo a mostrar nem a usar aqui.
  */
 async function saldoDeCashbackDoCliente(franchiseeId: string, cleanPhone: string) {
   try {
     const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { storeLoyalty: true } });
+    if (!regraNoCanal(lerCashback(loja?.storeLoyalty), "site").ativo) return null;
     return await cashbackDoCliente(franchiseeId, loja?.storeLoyalty, cleanPhone);
   } catch {
     return null;

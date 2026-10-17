@@ -35,7 +35,18 @@ type ClienteDaLista = {
   saldo: number;
 };
 
-type RegraDoCashback = { ativo: boolean; taxa: number; validadeDias: number; maxResgatePct: number };
+/** `canais` = onde o pedido novo gera e usa (lib/cashback.ts); ausente = os dois. */
+type RegraDoCashback = { ativo: boolean; taxa: number; validadeDias: number; maxResgatePct: number; canais?: { site: boolean; whatsapp: boolean } };
+
+/** Onde o cliente consegue usar o saldo, do que a loja marcou em Fidelidade. */
+function ondeUsa(r: RegraDoCashback): string | null {
+  const site = r.canais?.site !== false;
+  const whats = r.canais?.whatsapp !== false;
+  if (site && whats) return "no pedido pelo site e pelo WhatsApp";
+  if (site) return "só no pedido pelo site";
+  if (whats) return "só no pedido pelo WhatsApp";
+  return null;
+}
 
 type Lista = {
   clientes: ClienteDaLista[];
@@ -284,6 +295,12 @@ export default function ClientesPage() {
         <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: "0.86rem", color: "#92400E" }}>
           <strong>O cashback está desligado na loja.</strong> O saldo lançado aqui fica guardado, mas o cliente só consegue usar no cardápio
           depois que você ligar em{" "}
+          <a href="/store/minha-loja#fidelidade" style={{ color: "#92400E", fontWeight: 800 }}>Minha loja → Fidelidade &amp; trilha</a>.
+        </div>
+      )}
+      {regra && regra.ativo && !ondeUsa(regra) && (
+        <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 12, padding: "12px 14px", marginBottom: 16, fontSize: "0.86rem", color: "#92400E" }}>
+          <strong>O cashback está ligado, mas sem nenhum canal marcado.</strong> Nenhum pedido gera nem usa saldo até você marcar o site ou o WhatsApp em{" "}
           <a href="/store/minha-loja#fidelidade" style={{ color: "#92400E", fontWeight: 800 }}>Minha loja → Fidelidade &amp; trilha</a>.
         </div>
       )}
@@ -749,8 +766,10 @@ function FichaDoCliente({ telefone, fuso, onFechar, onMudou, avisar }: { telefon
             <div style={{ fontSize: "0.78rem", color: "#065F46", display: "grid", gap: 2 }}>
               {cb.proximoVencimento && <span>{fmt(cb.proximoVencimento.valor)} vence em {data(cb.proximoVencimento.em, fuso)}</span>}
               {cb.aReceber > 0 && <span>+ {fmt(cb.aReceber)} a receber quando o pedido em andamento for entregue</span>}
-              {cb.ativo ? (
-                <span>Usa no pedido pelo site: até {cb.maxResgatePct}% dos produtos.</span>
+              {cb.ativo && ondeUsa(cb) ? (
+                <span>Usa {ondeUsa(cb)}: até {cb.maxResgatePct}% dos produtos.</span>
+              ) : cb.ativo ? (
+                <span style={{ color: "#92400E" }}>Nenhum canal marcado no cashback: o cliente não consegue usar este saldo.</span>
               ) : (
                 <span style={{ color: "#92400E" }}>O cashback está desligado: o cliente ainda não consegue usar este saldo.</span>
               )}

@@ -28,14 +28,53 @@
  * saldo, pergunta se o cliente quer usar e grava as mesmas duas colunas que o
  * checkout do site (lib/chatbot-ai.ts). O rascunho do robô (CRIANDO_IA) não
  * conta: ainda não é pedido. Balcão, mesa e aplicativos não geram nem consomem.
+ *
+ * ── A loja escolhe em quais desses canais vale (17/10/2026) ─────────────────
+ *
+ * `storeLoyalty.cashbackCanais` = { site, whatsapp }. O Bistrô Burguer quis o
+ * cashback só no site, como prêmio para quem pede por lá. Canal ausente vale
+ * marcado: a loja que nunca mexeu continua igual. Só existem os dois porque
+ * são os únicos em que o pedido chega com o telefone do cliente E um fluxo que
+ * mostra e usa o saldo (checkout do site, pergunta do robô). Balcão, mesa e
+ * totem não têm onde o cliente ver nem usar o saldo — oferecer a caixinha
+ * seria prometer o que o caixa não faz.
+ *
+ * O canal decide o pedido NOVO: se gera (`cashbackEarned`) e se pode usar o
+ * saldo (`cashbackUsed`). O saldo continua somando o que já foi gravado nos
+ * dois canais: desmarcar o WhatsApp não apaga o cashback que o cliente já
+ * ganhou por lá — ele passa a usar no canal que ficou marcado.
  */
 
 import { chaveDoCanal } from "./canal-do-pedido";
 
 type PedidoParaCanal = NonNullable<Parameters<typeof chaveDoCanal>[0]>;
 
+/** Onde o cashback vale: gera e pode ser usado. Ausente = marcado. */
+export type CanaisDoCashback = { site: boolean; whatsapp: boolean };
+
+export const CANAIS_DO_CASHBACK_PADRAO: CanaisDoCashback = { site: true, whatsapp: true };
+
+/** Os canais na ordem da tela, com o texto que o lojista lê. */
+export const CANAIS_DO_CASHBACK: { chave: keyof CanaisDoCashback; nome: string; ajuda: string }[] = [
+  { chave: "site", nome: "🌐 Site (cardápio digital)", ajuda: "O cliente vê o saldo e escolhe usar no checkout." },
+  { chave: "whatsapp", nome: "🤖 WhatsApp (robô)", ajuda: "O robô avisa o saldo e pergunta se o cliente quer usar." },
+];
+
+/** Lê `storeLoyalty.cashbackCanais`; o canal que não estiver lá vale marcado. */
+export function lerCanaisDoCashback(storeLoyalty: unknown): CanaisDoCashback {
+  const l = (storeLoyalty && typeof storeLoyalty === "object" ? storeLoyalty : {}) as Record<string, unknown>;
+  const bruto = (l.cashbackCanais && typeof l.cashbackCanais === "object" ? l.cashbackCanais : {}) as Record<string, unknown>;
+  const canais = { ...CANAIS_DO_CASHBACK_PADRAO };
+  for (const chave of Object.keys(CANAIS_DO_CASHBACK_PADRAO) as (keyof CanaisDoCashback)[]) {
+    if (typeof bruto[chave] === "boolean") canais[chave] = bruto[chave] as boolean;
+  }
+  return canais;
+}
+
 export type RegraDoCashback = {
   ativo: boolean;
+  /** Em quais canais o pedido novo gera e usa cashback (ver `regraNoCanal`). */
+  canais: CanaisDoCashback;
   /** % do valor dos produtos que volta como saldo. */
   taxa: number;
   /** Valor mínimo dos produtos para o pedido gerar cashback. */
@@ -60,6 +99,7 @@ export function lerCashback(storeLoyalty: unknown): RegraDoCashback {
   return {
     // Mesma leitura do cardápio (CustomerStorePage): só `true` liga.
     ativo: l.cashbackActive === true && taxa > 0,
+    canais: lerCanaisDoCashback(storeLoyalty),
     taxa,
     minimo: Math.max(0, num(l.minOrderValue, 0)),
     maxResgatePct: Math.min(100, Math.max(0, num(l.maxRedeemPercent, 50))),
@@ -74,6 +114,24 @@ export function lerCashback(storeLoyalty: unknown): RegraDoCashback {
         }
       : null,
   };
+}
+
+/**
+ * A regra para um pedido NOVO neste canal: canal desmarcado vira cashback
+ * desligado — o pedido não gera, o saldo não é oferecido nem abatido. É ela
+ * que o checkout do site, o cardápio e o robô usam; o saldo (`saldoDoCashback`)
+ * segue a regra inteira, porque o que já foi ganho continua do cliente.
+ */
+export function regraNoCanal(regra: RegraDoCashback, canal: keyof CanaisDoCashback): RegraDoCashback {
+  return { ...regra, ativo: regra.ativo && regra.canais[canal] === true };
+}
+
+/** A frase de onde o cashback vale, montada do que a loja marcou. */
+export function ondeValeOCashback(canais: CanaisDoCashback): string {
+  if (canais.site && canais.whatsapp) return "Vale nos pedidos pelo site e pelo WhatsApp.";
+  if (canais.site) return "Vale só nos pedidos pelo site.";
+  if (canais.whatsapp) return "Vale só nos pedidos pelo WhatsApp.";
+  return "Nenhum canal marcado: nenhum pedido gera nem usa cashback.";
 }
 
 const centavos = (n: number) => Math.round(n * 100) / 100;
@@ -128,7 +186,11 @@ export function pedidoDoSite(p: PedidoParaCanal): boolean {
   return chaveDoCanal(p) === "SITE";
 }
 
-/** O pedido gera e consome cashback: site, ou robô do WhatsApp já fechado (rascunho não). */
+/**
+ * O pedido entra na conta do saldo: site, ou robô do WhatsApp já fechado
+ * (rascunho não). Não olha os canais marcados: é o histórico do que foi
+ * gravado; se o pedido NOVO gera ou usa, quem diz é `regraNoCanal`.
+ */
 export function pedidoComCashback(p: PedidoParaCanal & { status?: string | null }): boolean {
   const canal = chaveDoCanal(p);
   if (canal === "SITE") return true;

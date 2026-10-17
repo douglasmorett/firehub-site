@@ -50,6 +50,7 @@ import {
   type CotacaoNaTela, type EnderecoDigitado, type Ponto, type PontoDoCliente,
 } from "@/lib/entrega-no-checkout";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
+import { lerCashback, regraNoCanal } from "@/lib/cashback";
 import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto, motivoForaDoCardapio } from "@/lib/cardapio-interno";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/TrilhaDoCliente";
@@ -930,7 +931,9 @@ export default function CustomerStorePage({
 
   // Fidelidade, Cashback, Carimbos, Indicação & Níveis VIP
   const loyalty = (franchisee.storeLoyalty as any) || {};
-  const isCashbackActive = Boolean(loyalty.cashbackActive === true && Number(loyalty.rate || 0) > 0);
+  // A mesma régua do servidor (lib/cashback.ts): com o site desmarcado nos
+  // canais do cashback, o cardápio não anuncia, não mostra saldo nem oferece usar.
+  const isCashbackActive = regraNoCanal(lerCashback(loyalty), "site").ativo;
   const baseCashbackRate = Number(loyalty.rate || 0);
   const cashbackMinOrder = Number(loyalty.minOrderValue || 0);
   const cashbackMaxRedeemPercent = Number(loyalty.maxRedeemPercent || 50);

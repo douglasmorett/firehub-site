@@ -58,7 +58,7 @@ import { servicosSemFonte, RESPOSTA_QUANDO_NAO_SABE } from "./afirmacao-sem-font
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
 import { previsaoDaEntrega, tempoDeEntregaParaGravar } from "./previsao-da-entrega";
-import { cashbackDoPedido, lerCashback, resgateMaximo } from "./cashback";
+import { cashbackDoPedido, lerCashback, regraNoCanal, resgateMaximo } from "./cashback";
 import { cashbackDoCliente } from "./cashback-no-banco";
 import { cashbackDoClienteParaOPrompt, comandaDoRobo } from "./comanda-do-robo";
 import { itensEmTexto, mensagemDoAcrescimoEnviado, pedidoAtivoParaOPrompt } from "./acrescimo-do-pedido";
@@ -963,7 +963,8 @@ export async function processChatbotAI(
   let cashbackDesteCliente = "";
   if (aiOrderingEnabled && clientPhoneDigits.length >= 10) {
     try {
-      const regraDoCashback = lerCashback((user as any).storeLoyalty);
+      // WhatsApp desmarcado na Fidelidade (cashbackCanais.whatsapp): o robô nem conta do saldo.
+      const regraDoCashback = regraNoCanal(lerCashback((user as any).storeLoyalty), "whatsapp");
       if (regraDoCashback.ativo) {
         const doCliente = await cashbackDoCliente(
           targetFranchiseeId,
@@ -3517,7 +3518,8 @@ async function syncAiOrderToDatabase({
   let cashbackUsado = 0;
   let cashbackGerado = 0;
   if (cashback) {
-    const regraDoCashback = lerCashback(cashback.storeLoyalty);
+    // WhatsApp desmarcado: o pedido do robô não gera nem abate cashback.
+    const regraDoCashback = regraNoCanal(lerCashback(cashback.storeLoyalty), "whatsapp");
     if (regraDoCashback.ativo) {
       try {
         const doCliente = await cashbackDoCliente(

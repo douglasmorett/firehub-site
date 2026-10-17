@@ -83,7 +83,7 @@ export async function GET(req: Request) {
         total,
         porPagina: 50,
         resumo,
-        cashback: { ativo: regra.ativo, taxa: regra.taxa, validadeDias: regra.validadeDias, maxResgatePct: regra.maxResgatePct },
+        cashback: { ativo: regra.ativo, taxa: regra.taxa, validadeDias: regra.validadeDias, maxResgatePct: regra.maxResgatePct, canais: regra.canais },
         fuso: sessao.fuso,
         visao,
       },
