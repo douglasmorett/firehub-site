@@ -40,6 +40,8 @@ import EnviarParaOutraLojaPainel from "@/components/customer/EnviarParaOutraLoja
 import TrocarTipoDoPedidoPainel from "@/components/customer/TrocarTipoDoPedidoPainel";
 import ReposicaoPainel from "@/components/customer/ReposicaoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
+import EntregueDepoisDeCancelado from "@/components/customer/EntregueDepoisDeCancelado";
+import { foiEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-cancelado";
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
 import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
 import AvisoPedidoEsperandoLoja from "@/components/customer/AvisoPedidoEsperandoLoja";
@@ -4806,6 +4808,26 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <div style={{ background: "#FEF2F2", border: "1.5px solid #FECACA", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: "0.82rem", color: "#7F1D1D", fontFamily: "system-ui, sans-serif" }}>
                   <b>❌ Cancelado</b>
                   {(order as any).cancelReason ? <>: {(order as any).cancelReason}</> : " — sem motivo registrado"}
+                  {/* O cliente cancelou, o motoboy entregou e recebeu (Allan,
+                      Delícias de Casa, 17/10/2026): volta a contar como
+                      venda. Só pedido da própria loja — a regra decide. */}
+                  <div style={{ marginTop: 6 }}>
+                    <EntregueDepoisDeCancelado
+                      pedido={order}
+                      operador={{ role: user?.role, permissions: user?.permissions }}
+                      aoSalvar={async (r) => {
+                        showToast(r.jaEstava ? "Este pedido já estava marcado como entregue." : `Pedido marcado como entregue — pago em ${r.forma}.`, "#0F766E");
+                        await recarregarPedidos();
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+              {/* Entregue depois de cancelado: o selo diz que ele foi cancelado antes. */}
+              {foiEntregueDepoisDeCancelado(order) && (
+                <div style={{ background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 10, padding: "8px 12px", marginBottom: 10, fontSize: "0.82rem", color: "#14532D", fontFamily: "system-ui, sans-serif" }}>
+                  <b>✅ Entregue depois de cancelado</b>
+                  {(order as any).cancelReason ? <> — tinha sido cancelado: {(order as any).cancelReason}</> : null}
                 </div>
               )}
 

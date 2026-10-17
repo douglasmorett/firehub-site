@@ -34,6 +34,7 @@
  * relatório Acerto de entregadores (lib/ajustes-do-acerto-regras.ts).
  */
 import { canalDoPedido, chaveDoCanal } from "@/lib/canal-do-pedido";
+import { foiEntregueDepoisDeCancelado, podeMarcarEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-cancelado";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { ganhoDoPedido as calcularGanho, lerAcerto, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
 import { prisma } from "@/lib/prisma";
@@ -146,6 +147,10 @@ export async function montarRelatorioDosEntregadores(opts: {
       ifoodDriverName: true,
       // Troco feito pelo Pix (lib/troco-no-pix.ts): muda o dinheiro a entregar.
       ...SELECT_TROCO_NO_PIX,
+      // A regra do "entregue mesmo depois de cancelado" (a reposição não é venda).
+      reposicao: true,
+      cancelReason: true,
+      cancelledBy: true,
     },
     orderBy: { createdAt: "asc" },
   });
@@ -395,6 +400,15 @@ export async function montarRelatorioDosEntregadores(opts: {
           status: o.status,
           /** Sai do dinheiro — as telas marcam "CANCELADO". */
           cancelado,
+          /**
+           * O cancelado que o cliente recebeu e pagou pode voltar a ser
+           * entregue pela Conferência (lib/entregue-depois-de-cancelado.ts):
+           * só pedido da própria loja. Decidido aqui, com os campos do canal
+           * que a linha não leva (ifoodOrderId, openDeliveryOrderId).
+           */
+          podeEntregueDepoisDeCancelado: cancelado && podeMarcarEntregueDepoisDeCancelado(o).pode,
+          /** Já voltou: a linha diz que foi cancelado antes. */
+          entregueDepoisDeCancelado: foiEntregueDepoisDeCancelado(o),
           /** É corrida (não cancelada, ou cancelada depois de sair): conta entrega, dia e ganho. */
           corrida: contaComoCorrida(o),
           dispatchedAt: o.dispatchedAt,

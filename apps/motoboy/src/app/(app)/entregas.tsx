@@ -48,6 +48,11 @@ import { registrarAvisos } from "@/lib/notificacoes";
 import { useSessao } from "@/lib/sessao";
 
 const FORMAS_PADRAO = ["Dinheiro", "Cartão Débito", "Cartão Crédito", "Pix", "Vale-refeição"];
+/**
+ * As formas do "entregue mesmo cancelado" — as quatro do servidor
+ * (lib/entregue-depois-de-cancelado.ts no site; o app não importa de lá).
+ */
+const FORMAS_DO_CANCELADO = ["Dinheiro", "Cartão Crédito", "Cartão Débito", "Pix"];
 const FINALIZADO = (s: string) => s === "ENTREGUE" || s === "ENCERRADO";
 const CANCELADO = (s: string) => s === "CANCELADO" || s === "CANCELED" || s === "CANCELLED";
 const SESSAO_CAIU = "Sua entrada terminou (senha trocada ou acesso encerrado pela loja). Entre de novo.";
@@ -98,6 +103,9 @@ export default function Entregas() {
 
   const [emEntrega, setEmEntrega] = useState<Pedido | null>(null);
   const [baixando, setBaixando] = useState<string | null>(null);
+  /** O cancelado que ele vai informar como entregue, e a forma escolhida. */
+  const [canceladoEntregue, setCanceladoEntregue] = useState<Pedido | null>(null);
+  const [formaDoCancelado, setFormaDoCancelado] = useState<string | null>(null);
 
   // QR de comanda escaneado na tela de entrar já nasce como a confirmação do puxar.
   const [codigoPuxar, setCodigoPuxar] = useState<string | null>(() => lerComanda(String(params.puxar || "")));
@@ -355,6 +363,43 @@ export default function Entregas() {
     }
   }
 
+  /**
+   * ENTREGUE MESMO CANCELADO. O cliente cancelou com ele já na rua, recebeu e
+   * pagou na porta (Allan, Delícias de Casa, 17/10/2026): o pedido volta a
+   * contar como entregue e o valor entra no acerto dele e no caixa. Quem
+   * decide se pode (só pedido da própria loja) é o servidor.
+   */
+  async function informarCanceladoEntregue(p: Pedido, forma: string) {
+    if (!sessao || baixandoAgora.current.has(p.id)) return;
+    baixandoAgora.current.add(p.id);
+    setBaixando(p.id);
+    try {
+      const r = await chamar<RespostaDaBaixa>("/api/motoboys/orders", {
+        metodo: "PATCH",
+        token: sessao.token,
+        corpo: { orderId: p.id, entregueMesmoCancelado: true, pagamento: forma },
+        limite: 30_000,
+      });
+      setCanceladoEntregue(null);
+      // A mesma trava da baixa normal: a lista velha não o devolve a cancelado.
+      baixasLocais.current.set(p.id, Date.now());
+      setPedidos((lista) => lista.map((o) => (o.id === p.id ? { ...o, status: "ENTREGUE", cancelado: false, podeInformarEntregue: false } : o)));
+      avisar(r.jaEntregue ? "✅ Este pedido já estava informado." : `✅ Pedido #${p.numero} informado como entregue (${forma}).`, "ok");
+    } catch (e) {
+      if (await quandoSessaoCai(e)) return;
+      avisar(
+        e instanceof ErroDaApi && e.tipo === "rede"
+          ? "⚠️ Sem conexão — a entrega NÃO foi informada. Tente de novo."
+          : `⚠️ ${(e as Error)?.message || "Não consegui informar. Fale com a loja."}`,
+        "erro",
+        5000,
+      );
+    } finally {
+      baixandoAgora.current.delete(p.id);
+      setBaixando(null);
+    }
+  }
+
   // ── O que mostrar ──────────────────────────────────────────────────────────
 
   const ativos = useMemo(
@@ -370,6 +415,8 @@ export default function Entregas() {
     [pedidos],
   );
   const concluidos = useMemo(() => pedidos.filter((o) => FINALIZADO(o.status)), [pedidos]);
+  // Cancelados neste expediente que estavam com ele: à parte, nunca como pendente.
+  const cancelados = useMemo(() => pedidos.filter((o) => CANCELADO(o.status)), [pedidos]);
 
   const gpsParado = gps === "ligado" && ultimoGps !== null && agora - ultimoGps > 120_000;
   const corDoGps = gps === "ligado" ? "#22C55E" : gps === "ligando" ? "#F59E0B" : gps === "pausado" ? "#94A3B8" : "#EF4444";
@@ -535,6 +582,42 @@ export default function Entregas() {
           ))
         )}
 
+        {/* Cancelados que estavam com ele: em vermelho, "não entregue" é a
+            regra. Se o cliente recebeu e pagou assim mesmo, ele informa. */}
+        {cancelados.length > 0 ? (
+          <View style={{ gap: 8 }}>
+            <Text style={[s.secao, { color: cor.vermelho }]}>❌ Cancelados ({cancelados.length})</Text>
+            {cancelados.map((p) => (
+              <View key={p.id} style={s.cancelado}>
+                <View style={s.canceladoTopo}>
+                  <Text style={s.canceladoNumero}>#{p.numero}</Text>
+                  <View style={s.canceladoSelo}>
+                    <Text style={s.canceladoSeloTexto}>CANCELADO</Text>
+                  </View>
+                </View>
+                <Text style={s.canceladoTexto} numberOfLines={1}>
+                  {p.customerName} · {reais(p.totalAmount)}
+                </Text>
+                {p.cancelReason ? <Text style={s.canceladoMotivo}>Motivo: {p.cancelReason}</Text> : null}
+                <Text style={s.canceladoAviso}>Não entregue. Se o cliente recebeu e pagou mesmo assim, informe abaixo.</Text>
+                {p.podeInformarEntregue ? (
+                  <Botao
+                    titulo="Informar entregue mesmo cancelado"
+                    variante="perigo"
+                    carregando={baixando === p.id}
+                    aoTocar={() => {
+                      setFormaDoCancelado(null);
+                      setCanceladoEntregue(p);
+                    }}
+                  />
+                ) : (
+                  <Text style={s.canceladoApp}>Pedido de aplicativo: o cancelamento vale. Fale com a loja.</Text>
+                )}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
         {concluidos.length > 0 ? (
           <View style={{ gap: 6 }}>
             <Pressable onPress={() => setVerConcluidas((v) => !v)} style={s.concluidasBotao}>
@@ -617,6 +700,46 @@ export default function Entregas() {
         />
       </Folha>
 
+      <Folha aberta={Boolean(canceladoEntregue)} aoFechar={() => baixando !== canceladoEntregue?.id && setCanceladoEntregue(null)}>
+        <Text style={s.folhaTitulo}>Entregou o #{canceladoEntregue?.numero} mesmo cancelado?</Text>
+        <Text style={s.folhaTexto}>
+          {canceladoEntregue?.customerName} · {reais(canceladoEntregue?.totalAmount)}
+        </Text>
+        <Text style={s.rotuloForma}>O CLIENTE PAGOU COM</Text>
+        <View style={s.formas}>
+          {FORMAS_DO_CANCELADO.map((forma) => {
+            const ativa = formaDoCancelado === forma;
+            return (
+              <Pressable
+                key={forma}
+                onPress={() => setFormaDoCancelado(forma)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: ativa }}
+                style={[s.forma, ativa && s.formaAtiva]}
+              >
+                <Text style={[s.formaTexto, ativa && { color: cor.verdeEscuro }]}>{forma}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
+        <Text style={[s.folhaTexto, { color: cor.ambar }]}>
+          O pedido volta a contar como entregue — o valor entra no seu acerto e no caixa da loja.
+        </Text>
+        <Botao
+          titulo="Confirmar"
+          variante="verde"
+          desabilitado={!formaDoCancelado}
+          carregando={Boolean(canceladoEntregue) && baixando === canceladoEntregue?.id}
+          aoTocar={() => canceladoEntregue && formaDoCancelado && informarCanceladoEntregue(canceladoEntregue, formaDoCancelado)}
+        />
+        <Botao
+          titulo="Voltar"
+          variante="claro"
+          desabilitado={Boolean(canceladoEntregue) && baixando === canceladoEntregue?.id}
+          aoTocar={() => setCanceladoEntregue(null)}
+        />
+      </Folha>
+
       <Folha aberta={Boolean(codigoPuxar)} aoFechar={() => !puxando && setCodigoPuxar(null)}>
         <Text style={{ fontSize: 44, textAlign: "center" }}>🛵</Text>
         <Text style={s.folhaTitulo}>
@@ -675,6 +798,20 @@ const s = StyleSheet.create({
   concluida: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: cor.cartao, borderRadius: raio.pequeno, borderWidth: 1, borderColor: cor.borda, padding: 12 },
   concluidaTexto: { flex: 1, fontSize: 15, fontWeight: "700", color: cor.texto },
   concluidaValor: { fontSize: 14, fontWeight: "800", color: cor.textoSuave },
+  cancelado: { backgroundColor: cor.vermelhoClaro, borderRadius: raio.medio, borderWidth: 2, borderColor: "#FCA5A5", padding: 14, gap: 6 },
+  canceladoTopo: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  canceladoNumero: { fontSize: 22, fontWeight: "900", color: "#7F1D1D" },
+  canceladoSelo: { backgroundColor: "#DC2626", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 4 },
+  canceladoSeloTexto: { color: "#FFFFFF", fontWeight: "900", fontSize: 13, letterSpacing: 0.6 },
+  canceladoTexto: { fontSize: 15, fontWeight: "700", color: cor.textoSuave },
+  canceladoMotivo: { fontSize: 13, color: "#991B1B" },
+  canceladoAviso: { fontSize: 13, fontWeight: "700", color: "#7F1D1D" },
+  canceladoApp: { fontSize: 13, fontWeight: "600", color: cor.textoApagado },
+  rotuloForma: { fontSize: 12, fontWeight: "800", color: cor.textoSuave, letterSpacing: 0.6 },
+  formas: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  forma: { minHeight: 48, justifyContent: "center", paddingHorizontal: 14, borderRadius: raio.pequeno, borderWidth: 2, borderColor: cor.borda, backgroundColor: "#FFFFFF" },
+  formaAtiva: { borderColor: cor.verde, backgroundColor: cor.verdeClaro },
+  formaTexto: { fontSize: 15, fontWeight: "800", color: "#334155" },
   folhaTitulo: { fontSize: 21, fontWeight: "900", color: cor.texto, textAlign: "center" },
   folhaTexto: { fontSize: 14, color: cor.textoApagado, textAlign: "center", fontWeight: "600" },
   campoNumero: {

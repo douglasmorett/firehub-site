@@ -10,6 +10,7 @@ import { previsaoDaEntrega } from "@/lib/previsao-da-entrega";
 import { limitesDoAlerta } from "@/lib/relatorios/tempos";
 import { ehPedido99Food } from "@/lib/food99-status";
 import { codigoJaConferido, jaSaiuNoParceiro } from "@/lib/codigo-de-entrega";
+import { podeMarcarEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-cancelado";
 
 export async function GET(req: NextRequest) {
   try {
@@ -73,16 +74,21 @@ export async function GET(req: NextRequest) {
       where: {
         franchiseeId: storeId,
         motoboyId: motoboyId,
-        // As TRÊS grafias de cancelado. Só as inglesas eram filtradas — e o
-        // sistema grava "CANCELADO": pedido cancelado com motoboy atribuído
-        // era reenviado ao celular a cada 10s, para sempre.
-        status: { notIn: [...STATUS_CANCELADOS] },
         OR: [
-          // 1. Pedidos ativos pendentes de entrega (até 7 dias)
-          { status: { notIn: [...STATUS_FINALIZADOS] }, createdAt: { gte: pisoPendentes } },
+          // 1. Pedidos ativos pendentes de entrega (até 7 dias). As TRÊS
+          // grafias de cancelado fora: só as inglesas eram filtradas — e o
+          // sistema grava "CANCELADO": pedido cancelado com motoboy atribuído
+          // era reenviado ao celular como pendente a cada 10s, para sempre.
+          { status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] }, createdAt: { gte: pisoPendentes } },
           // 2. Pedidos entregues NESTE EXPEDIENTE por este motoboy
           { status: { in: [...STATUS_FINALIZADOS] }, deliveredAt: { gte: todayStart } },
           { status: { in: [...STATUS_FINALIZADOS] }, deliveredAt: null, updatedAt: { gte: todayStart } },
+          // 3. Cancelados NESTE EXPEDIENTE que estavam com ele. Continuam na
+          // tela, à parte e marcados CANCELADO (nunca como pendente): o
+          // cliente cancela com o motoboy já na rua, recebe e paga — e é ele
+          // quem informa "entregue mesmo cancelado" (Allan, Delícias de Casa,
+          // 17/10/2026; lib/entregue-depois-de-cancelado.ts).
+          { status: { in: [...STATUS_CANCELADOS] }, cancelledAt: { gte: todayStart } },
         ]
       },
       // ⚠️ `select` explícito, não `include`. O include trazia TODAS as colunas
@@ -126,6 +132,15 @@ export async function GET(req: NextRequest) {
         deliveryBy: true,
         openDeliveryOrderId: true,
         openDeliveryChannel: true,
+        // O cancelado da lista (item 3 do OR): quando e por quê, e o que a
+        // regra do "entregue mesmo cancelado" lê para dizer se ele pode
+        // informar a entrega. Os de gateway, mesa e reposição saem da resposta.
+        cancelledAt: true,
+        cancelReason: true,
+        tableSessionId: true,
+        gatewayProvider: true,
+        gatewayPaymentId: true,
+        reposicao: true,
         items: {
           select: {
             quantity: true,
@@ -160,7 +175,14 @@ export async function GET(req: NextRequest) {
       }
     } catch {}
 
-    const ordersComSequencia = orders.map(({ ifoodOrderId, ifoodDropCodeRequired, ifoodDropCodeInfo, deliveryBy, openDeliveryOrderId, openDeliveryChannel, ...o }) => {
+    const ordersComSequencia = orders.map(({ ifoodOrderId, ifoodDropCodeRequired, ifoodDropCodeInfo, deliveryBy, openDeliveryOrderId, openDeliveryChannel, tableSessionId, gatewayProvider, gatewayPaymentId, reposicao, ...o }) => {
+      // Cancelado com ele neste expediente: a regra do "entregue mesmo
+      // cancelado" decide AQUI se ele pode informar (só pedido da própria
+      // loja) — o app e a página só olham o booleano.
+      const cancelado = (STATUS_CANCELADOS as readonly string[]).includes(String(o.status));
+      const podeInformarEntregue = cancelado && podeMarcarEntregueDepoisDeCancelado({
+        ...o, ifoodOrderId, openDeliveryOrderId, openDeliveryChannel, tableSessionId, gatewayProvider, gatewayPaymentId, reposicao,
+      }).pode;
       // O iFood marca "exige código" também em pedido que ELE entrega (195 no
       // banco em 11/09/2026, nenhum com motoboy da loja) — ali quem confere é o
       // entregador do iFood, não o nosso.
@@ -183,7 +205,8 @@ export async function GET(req: NextRequest) {
       //
       // Sai `null` quando a loja desligou o aviso ou o pedido já está pago —
       // assim o app não precisa saber a regra, só olhar se veio algo.
-      const cobranca = appConfig.cobrarNaEntrega ? cobrancaNaEntrega(o as any) : null;
+      // Cancelado não tem o que receber (até alguém informar que entregou).
+      const cobranca = appConfig.cobrarNaEntrega && !cancelado ? cobrancaNaEntrega(o as any) : null;
       const { customerLatLng, scheduledDatetime, tempoEntregaMin, ...semPonto } = o;
       const pedido = {
         ...semPonto,
@@ -198,6 +221,8 @@ export async function GET(req: NextRequest) {
         canalDoCodigo: pedeIfood ? "iFood" : pede99 ? "99Food" : null,
         codigoJaConferido: Boolean(jaConferido),
         cobrarNaEntrega: cobranca && cobranca.cobrar ? cobranca : null,
+        cancelado,
+        podeInformarEntregue,
       };
       if (!formatoDoApp) return pedido;
       return {
@@ -592,6 +617,31 @@ export async function PATCH(req: NextRequest) {
         { error: "Pedido não encontrado para este entregador nesta loja." },
         { status: 404 }
       );
+    }
+
+    // ── ENTREGUE MESMO DEPOIS DE CANCELADO ──────────────────────────────────
+    //
+    // O cliente cancelou com o motoboy já na rua, recebeu e pagou na porta
+    // (Allan, Delícias de Casa, 17/10/2026). O pedido cancelado continua na
+    // lista dele, marcado CANCELADO, e ele informa a entrega com a forma de
+    // pagamento — o dinheiro entra no acerto dele e no caixa. A regra (só
+    // pedido da própria loja, nunca de iFood/99/Keeta…) e a gravação são as
+    // mesmas do painel (lib/entregue-depois-de-cancelado*.ts). É um caminho à
+    // parte da baixa normal: sem código do parceiro, sem bebida, sem aviso ao
+    // cliente (que recebeu o "cancelado").
+    if (corpo?.entregueMesmoCancelado === true) {
+      const { marcarEntregueDepoisDeCancelado, efeitosDoEntregueDepoisDeCancelado } = await import("@/lib/entregue-depois-de-cancelado-no-banco");
+      const r = await marcarEntregueDepoisDeCancelado({
+        pedidoId: order.id,
+        lojaIds: [String(storeId)],
+        motoboyId: String(motoboyId),
+        forma: pagamento,
+        trocoPara: corpo?.trocoPara,
+        quem: `Motoboy ${motoboyAtivo.name}`,
+      });
+      if (!r.ok) return NextResponse.json({ error: r.erro }, { status: r.status });
+      if (!r.jaEstava) efeitosDoEntregueDepoisDeCancelado(r.pedido.id, r.pedido.franchiseeId);
+      return NextResponse.json({ success: true, jaEntregue: r.jaEstava, entregueMesmoCancelado: true });
     }
 
     if ((STATUS_FINALIZADOS as readonly string[]).includes(order.status)) {

@@ -107,6 +107,14 @@ export type Pedido = {
   podeDevolverAte: string | null;
   routeSequence: number | null;
   routeSchedule: { id: string; routeNumber: string | null; color: string | null } | null;
+  /**
+   * Cancelado neste expediente que estava com ele: aparece à parte, em
+   * vermelho. `podeInformarEntregue` é a regra do servidor (só pedido da
+   * própria loja) para o "entregue mesmo cancelado". Servidor antigo não manda.
+   */
+  cancelado?: boolean;
+  podeInformarEntregue?: boolean;
+  cancelReason?: string | null;
 };
 
 export type ListaDePedidos = {
@@ -129,4 +137,5 @@ export type RespostaDaBaixa = {
   success?: boolean;
   jaEntregue?: boolean;
   avisoCodigo?: string;
+  entregueMesmoCancelado?: boolean;
 };
