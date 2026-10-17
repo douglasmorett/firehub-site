@@ -29,6 +29,7 @@ export async function GET() {
       podeLiberarMesa: auth.garcom.podeLiberarMesa,
       podeTirarTaxa: auth.garcom.podeTirarTaxa,
       podeRemoverItem: auth.garcom.podeRemoverItem,
+      podeFazerBalcao: auth.garcom.podeFazerBalcao,
     },
   });
 }

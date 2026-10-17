@@ -64,6 +64,11 @@ export type GarcomAutenticado = {
   podeTirarTaxa: boolean;
   /** Pode remover item já lançado (ou diminuir a quantidade / cancelar o pedido) pelo link? */
   podeRemoverItem: boolean;
+  /**
+   * Pode lançar pedido de BALCÃO pelo link (api/garcom/balcao)? Ao contrário
+   * das outras, nasce DESLIGADA — o dono libera garçom por garçom.
+   */
+  podeFazerBalcao: boolean;
 };
 
 export type ResultadoDoGarcom =
@@ -127,7 +132,7 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
     select: {
       id: true, name: true, login: true, active: true, franchiseeId: true,
       credentialsUpdatedAt: true, commissionRate: true, podeFecharConta: true, podeDarDesconto: true,
-      podeLiberarMesa: true, podeTirarTaxa: true, podeRemoverItem: true,
+      podeLiberarMesa: true, podeTirarTaxa: true, podeRemoverItem: true, podeFazerBalcao: true,
       franchisee: { select: { cashClosedAt: true } },
     },
   });
@@ -176,6 +181,9 @@ export async function autenticarGarcom(): Promise<ResultadoDoGarcom> {
       podeLiberarMesa: w.podeLiberarMesa !== false,
       podeTirarTaxa: w.podeTirarTaxa !== false,
       podeRemoverItem: w.podeRemoverItem !== false,
+      // Esta é ao contrário: só pode com o "sim" gravado. Nulo (linha de
+      // antes da coluna) = não pode, que é o padrão desta.
+      podeFazerBalcao: w.podeFazerBalcao === true,
     },
   };
 }
@@ -251,6 +259,7 @@ export async function resolverOperadorDaMesa(): Promise<OperadorDaMesa | null> {
 export const CAMPOS_DO_GARCOM = {
   id: true, name: true, phone: true, active: true, commissionRate: true, notes: true,
   podeFecharConta: true, podeDarDesconto: true, podeLiberarMesa: true, podeTirarTaxa: true, podeRemoverItem: true,
+  podeFazerBalcao: true,
   login: true, lastLoginAt: true, createdAt: true, updatedAt: true,
 } as const;
 

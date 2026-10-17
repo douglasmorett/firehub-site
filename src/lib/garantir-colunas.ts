@@ -1029,6 +1029,8 @@ const INSTRUCOES_MESA = [
   `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "podeLiberarMesa" BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "podeTirarTaxa" BOOLEAN NOT NULL DEFAULT true`,
   `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "podeRemoverItem" BOOLEAN NOT NULL DEFAULT true`,
+  // Pedido de BALCÃO pelo link do garçom: nasce DESLIGADO, o dono libera (Delicias de Casa, 17/10/2026).
+  `ALTER TABLE "Waiter" ADD COLUMN IF NOT EXISTS "podeFazerBalcao" BOOLEAN NOT NULL DEFAULT false`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "Waiter_franchiseeId_login_key" ON "Waiter"("franchiseeId", "login")`,
 
   // Fechar o caixa encerra o turno do garçom; e o carimbo do poll da fila.

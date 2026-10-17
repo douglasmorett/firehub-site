@@ -44,6 +44,15 @@ export type BalcaoConfig = {
   pagerObrigatorioMesa: boolean;
 };
 
+/**
+ * As formas de pagamento da venda de balcão: os botões do PDV e os do pedido
+ * de balcão do garçom (components/mesas/MesasCelular.tsx), conferidos também
+ * pela rota do garçom (api/garcom/balcao). Uma lista só para as duas telas
+ * gravarem os mesmos textos — é por eles que o fechamento de caixa separa as
+ * linhas. "Conta Funcionário" fica de fora: é só do PDV, quando a loja liga.
+ */
+export const FORMAS_DE_PAGAMENTO_DO_BALCAO: readonly string[] = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
+
 /** O que vale para quem nunca abriu a tela: nada obrigatório. */
 export const BALCAO_CONFIG_PADRAO: BalcaoConfig = {
   pagerObrigatorioBalcao: false,

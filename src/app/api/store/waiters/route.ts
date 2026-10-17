@@ -120,6 +120,8 @@ export async function POST(req: Request) {
         podeLiberarMesa: data.podeLiberarMesa !== undefined ? data.podeLiberarMesa === true : true,
         podeTirarTaxa: data.podeTirarTaxa !== undefined ? data.podeTirarTaxa === true : true,
         podeRemoverItem: data.podeRemoverItem !== undefined ? data.podeRemoverItem === true : true,
+        // Balcão pelo link é ao contrário das outras: só com o "sim" explícito.
+        podeFazerBalcao: data.podeFazerBalcao === true,
         active: data.active !== undefined ? data.active : true,
         login: credenciais.login ?? null,
         passwordHash: credenciais.passwordHash ?? null,
@@ -179,6 +181,7 @@ export async function PUT(req: Request) {
         podeLiberarMesa: data.podeLiberarMesa !== undefined ? data.podeLiberarMesa === true : undefined,
         podeTirarTaxa: data.podeTirarTaxa !== undefined ? data.podeTirarTaxa === true : undefined,
         podeRemoverItem: data.podeRemoverItem !== undefined ? data.podeRemoverItem === true : undefined,
+        podeFazerBalcao: data.podeFazerBalcao !== undefined ? data.podeFazerBalcao === true : undefined,
         active: data.active,
         ...credenciais,
       },

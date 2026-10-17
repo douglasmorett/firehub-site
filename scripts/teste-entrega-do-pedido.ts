@@ -655,7 +655,9 @@ console.log("\n10b) R10 — o que fazer com a diferença de total, e o pagamento
 // ───────────────────────────────────────────────────────────────────────────
 console.log("\n10c) Ordem das rotas (sem banco: lê o código)");
 {
-  const balcao = readFileSync(join(__dirname, "../src/app/api/store/orders/presencial/route.ts"), "utf8");
+  // A regra do balcão saiu da rota para lib/venda-presencial.ts (17/10/2026),
+  // a mesma que o pedido de balcão do garçom usa.
+  const balcao = readFileSync(join(__dirname, "../src/lib/venda-presencial.ts"), "utf8");
   const iMapa = balcao.indexOf("avaliarEntrega(loja");
   const iEstoque = balcao.indexOf("await conferirEstoque(");
   const iCreate = balcao.indexOf("prisma.customerOrder.create(");

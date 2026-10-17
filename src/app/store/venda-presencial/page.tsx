@@ -12,7 +12,7 @@ import {
 } from "@/lib/documento-do-cliente";
 import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPedido } from "@/lib/fiscal-modo";
 import {
-  BALCAO_CONFIG_PADRAO, numeroDaMesaEhObrigatorio, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
+  BALCAO_CONFIG_PADRAO, FORMAS_DE_PAGAMENTO_DO_BALCAO, numeroDaMesaEhObrigatorio, pagerEhObrigatorio, problemaDoPagerObrigatorio, type BalcaoConfig,
 } from "@/lib/balcao-config";
 import { MENSAGEM_CAIXA_FECHADO, EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
@@ -20,7 +20,8 @@ import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@
 import { lerConsulta, preencherBalcao, type ClienteSugerido } from "@/lib/busca-de-clientes";
 import { useSession } from "next-auth/react";
 
-const PAYMENT_METHODS = ["Dinheiro", "PIX", "Cartão Débito", "Cartão Crédito", "Voucher/Vale"];
+// A mesma lista do pedido de balcão do garçom (lib/balcao-config.ts).
+const PAYMENT_METHODS = FORMAS_DE_PAGAMENTO_DO_BALCAO;
 const fmt = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
 
 type CartItem = { product: any; qty: number; unitPrice?: number; notes?: string; comboSelections?: { name: string; quantity: number }[] };
