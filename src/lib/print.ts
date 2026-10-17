@@ -1,6 +1,7 @@
 import { camposDeEntregaParaImpressao } from "./entrega-parceira";
 import { camposDoAcrescimoParaImpressao } from "./acrescimo-no-credito";
 import { camposDoEnderecoParaImpressao } from "./endereco-impresso";
+import { pedidoParaOAssistente } from "./bairro-na-comanda";
 import { comboParaImpressao, itensUmaLinhaPorUnidade } from "./parse-combo";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "./qr-puxar";
 import { camposDaCampanha, type BlocoDaCampanha, type CampanhaConverterConfig } from "./campanha-converter";
@@ -370,7 +371,12 @@ async function printToDevice(
           autoBeverageTag: (printerConfig as any)?.autoBeverageTag !== false,
           customBeverageKeywords: (printerConfig as any)?.customBeverageKeywords || "",
         },
-        order: {
+        // ── O {bairro} DO MODELO E A OBSERVAÇÃO SEM O AVISO DO SISTEMA ──────
+        // `pedidoParaOAssistente` (lib/bairro-na-comanda.ts) troca o campo
+        // do bairro pelo valor nos blocos — o Assistente instalado não o
+        // conhece — e tira da observação o aviso "Taxa pelo bairro", que no
+        // papel saía como recado do cliente. Mesma regra da fila da nuvem.
+        order: pedidoParaOAssistente({
           id: order.id,
           dailyOrderNumber: (order as any).dailyOrderNumber,
           customerName: order.customerName,
@@ -505,7 +511,7 @@ async function printToDevice(
             autoBeverageTag: (printerConfig as any)?.autoBeverageTag !== false,
             customBeverageKeywords: (printerConfig as any)?.customBeverageKeywords || "",
           },
-        },
+        }),
         storeName,
         copies,
       }),

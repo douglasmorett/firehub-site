@@ -40,6 +40,7 @@
  */
 import { bairroDoEndereco, PEDACO_DA_CASA_RE } from "@/lib/bairro-do-endereco";
 import { chaveDoCanal } from "@/lib/canal-do-pedido";
+import { CONFIRA_O_ENDERECO, temAvisoDaTaxaPeloBairro } from "@/lib/bairro-na-comanda";
 
 export type RotuloDoEndereco =
   | "Rua"
@@ -68,6 +69,14 @@ export type EnderecoImpresso = {
    */
   emUmaLinha: string;
   original: string;
+  /**
+   * O bairro lido no texto, pela mesma régua das linhas — também quando o
+   * endereço INTEIRO não passou na conferência palavra a palavra (o bairro é
+   * sempre um pedaço do próprio texto). null no caso ambíguo ("…, Operário,
+   * Rio das Ostras" sem a cidade da loja) e quando não há bairro escrito. É o
+   * da linha BAIRRO da comanda (lib/bairro-na-comanda.ts).
+   */
+  bairro: string | null;
 };
 
 export type PedidoParaEndereco = {
@@ -349,8 +358,8 @@ function separar(texto: string, opcoes: { cidadeNoFim: boolean; cidadeDaLoja: st
 const LOCALIZACAO_DO_WHATSAPP_RE =
   /^📍\s*Localiza[çc][ãa]o enviada pelo WhatsApp(?::\s*(.*?))?\s*\((-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)\)\s*$/u;
 
-function semSeparar(original: string): EnderecoImpresso {
-  return { separado: false, linhas: [], emUmaLinha: original, original };
+function semSeparar(original: string, bairro: string | null = null): EnderecoImpresso {
+  return { separado: false, linhas: [], emUmaLinha: original, original, bairro };
 }
 
 /**
@@ -380,6 +389,7 @@ export function enderecoImpresso(
   }
 
   const s = texto ? separar(texto, { cidadeNoFim: loc ? false : cidadeNoFim, cidadeDaLoja }) : null;
+  const bairro = s?.bairro || null;
   const linhas: LinhaDoEndereco[] = [];
   if (localizacao) linhas.push({ rotulo: "Localização", valor: localizacao });
   // Só a "rua" e mais nada: é um nome de lugar ("Suporte Técnico…"), não uma rua.
@@ -399,15 +409,17 @@ export function enderecoImpresso(
   }
 
   // Só a rua (texto solto do balcão, "quadra 05"): separar não ajuda ninguém.
-  if (linhas.length < 2) return semSeparar(original);
+  if (linhas.length < 2) return semSeparar(original, bairro);
 
   // ── A CONFERÊNCIA: nada sumiu, nada apareceu ──
+  // Ela protege o endereço inteiro; o bairro, que é um pedaço do próprio
+  // texto, segue valendo para a linha BAIRRO mesmo quando ela recusa.
   const antes = palavras(texto + (localizacao ? ` ${localizacao}` : ""));
   const depois = palavras(linhas.map((l) => l.valor).join(" "));
-  for (const p of antes) if (!depois.has(p)) return semSeparar(original);
-  for (const p of depois) if (!antes.has(p)) return semSeparar(original);
+  for (const p of antes) if (!depois.has(p)) return semSeparar(original, bairro);
+  for (const p of depois) if (!antes.has(p)) return semSeparar(original, bairro);
 
-  return { separado: true, linhas, emUmaLinha: emUmaLinha(linhas), original };
+  return { separado: true, linhas, emUmaLinha: emUmaLinha(linhas), original, bairro };
 }
 
 /** "Rua Dez, 59 | Comp: Apto 4 | Bairro: Costazul | Ref: ... | Cidade: Rio das Ostras". */
@@ -445,6 +457,14 @@ function emUmaLinha(linhas: LinhaDoEndereco[]): string {
  *    versão instalada imprime (o `wrap` do Assistente junta qualquer quebra de
  *    linha num parágrafo só, então não há como forçar linha nova pelo texto),
  *    e é o que melhora o papel hoje, sem esperar atualização.
+ *  - `bairroDoPedido`: o bairro sozinho, para a linha BAIRRO do modelo da
+ *    comanda (lib/bairro-na-comanda.ts). O Assistente não lê o campo — quem o
+ *    usa é o site, antes de mandar —, então ele não muda papel nenhum sozinho.
+ *
+ * Quando a taxa saiu pelo bairro (o mapa achou o bairro, não a rua), o aviso
+ * do sistema deixa de sair no papel como observação do cliente e vira
+ * "(confira o endereço)" aqui: na linha do bairro (sem bairro, na da rua);
+ * endereço que não se separa leva o aviso no fim do texto.
  *
  * Só para entrega: o `customerAddress` da mesa é "Mesa 4", e o Assistente lê
  * o número da mesa dele.
@@ -452,12 +472,34 @@ function emUmaLinha(linhas: LinhaDoEndereco[]): string {
 export function camposDoEnderecoParaImpressao(
   pedido: PedidoParaEndereco | null | undefined,
   cidadeDaLoja?: string | null,
-): { customerAddress?: string; enderecoImpresso?: LinhaDoEndereco[] } {
+): { customerAddress?: string; enderecoImpresso?: LinhaDoEndereco[]; bairroDoPedido?: string } {
   if (!pedido || String(pedido.deliveryType || "").toUpperCase() !== "DELIVERY") return {};
   // Já separado (a reimpressão guarda o pedido como saiu): ler de novo a
   // linha rotulada não acrescenta nada e poderia desfazer a separação.
-  if (Array.isArray(pedido.enderecoImpresso) && pedido.enderecoImpresso.length > 0) return {};
+  if (Array.isArray(pedido.enderecoImpresso) && pedido.enderecoImpresso.length > 0) {
+    if (typeof pedido.bairroDoPedido === "string" && pedido.bairroDoPedido.trim()) return {};
+    const daLinha = (pedido.enderecoImpresso as LinhaDoEndereco[]).find((l) => l?.rotulo === "Bairro")?.valor;
+    const bairro = aparar(espacos(String(daLinha ?? "")).replace(CONFIRA_O_ENDERECO, ""));
+    return bairro ? { bairroDoPedido: bairro } : {};
+  }
   const e = enderecoImpresso(pedido, { cidadeDaLoja });
-  if (!e.separado) return {};
-  return { customerAddress: e.emUmaLinha, enderecoImpresso: e.linhas };
+  const doBairro = e.bairro ? { bairroDoPedido: e.bairro } : {};
+  const avisar = temAvisoDaTaxaPeloBairro(pedido.notes);
+  if (!e.separado) {
+    if (avisar && e.original && !e.original.includes(CONFIRA_O_ENDERECO)) {
+      return { customerAddress: `${e.original} ${CONFIRA_O_ENDERECO}`, ...doBairro };
+    }
+    return doBairro;
+  }
+  const linhas = avisar ? comAvisoAoLadoDoBairro(e.linhas) : e.linhas;
+  return { customerAddress: avisar ? emUmaLinha(linhas) : e.emUmaLinha, enderecoImpresso: linhas, ...doBairro };
+}
+
+/** "(confira o endereço)" na linha do bairro; sem bairro, na da rua; sem as duas, na última. */
+function comAvisoAoLadoDoBairro(linhas: LinhaDoEndereco[]): LinhaDoEndereco[] {
+  if (linhas.some((l) => l.valor.includes(CONFIRA_O_ENDERECO))) return linhas;
+  const doBairro = linhas.findIndex((l) => l.rotulo === "Bairro");
+  const daRua = linhas.findIndex((l) => l.rotulo === "Rua");
+  const k = doBairro >= 0 ? doBairro : daRua >= 0 ? daRua : linhas.length - 1;
+  return linhas.map((l, i) => (i === k ? { ...l, valor: `${l.valor} ${CONFIRA_O_ENDERECO}` } : l));
 }

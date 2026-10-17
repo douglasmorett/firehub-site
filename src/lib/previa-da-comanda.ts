@@ -13,6 +13,7 @@ import { lerPapel, type LinhaDoPapel } from "@/lib/papel-da-impressora";
 import { blocosParaOAssistente, saneiaAvisos, type AvisosDesligados, type Bloco } from "@/lib/comanda-modelo";
 import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 import { camposDoEnderecoParaImpressao } from "@/lib/endereco-impresso";
+import { pedidoParaOAssistente } from "@/lib/bairro-na-comanda";
 
 /**
  * Três pedidos, porque um só não mostra todos os avisos: o pago na entrega
@@ -116,7 +117,10 @@ export type EntradaDaPrevia = {
 export function papelDaPrevia(e: EntradaDaPrevia): LinhaDoPapel[] {
   const avisos = saneiaAvisos(e.avisos);
   const pedido = pedidoDeExemplo(e.exemplo);
-  const order = {
+  // `pedidoParaOAssistente`: o {bairro} vira texto pronto antes do Assistente,
+  // como a fila e o navegador fazem (lib/bairro-na-comanda.ts) — sem isso a
+  // prévia escondia a linha que o papel imprime.
+  const order = pedidoParaOAssistente({
     ...pedido,
     // A previsão de entrega pela mesma regra do papel de verdade.
     ...camposDaPrevisaoParaImpressao(pedido),
@@ -130,6 +134,6 @@ export function papelDaPrevia(e: EntradaDaPrevia): LinhaDoPapel[] {
       autoBeverageTag: e.autoBeverageTag,
       customBeverageKeywords: e.customBeverageKeywords,
     },
-  };
+  });
   return lerPapel(comandaDoAssistente(order, e.nomeDaLoja || "Sua Loja", e.colunas, "safe"));
 }

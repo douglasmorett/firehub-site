@@ -34,6 +34,7 @@ import {
 } from "./cotacao-de-entrega";
 import type { ModoDaArea, VeredictoDeEntrega } from "./area-de-entrega";
 import { coordenadaGrosseira, limiteDoParceiroKm } from "./coordenadas-do-parceiro";
+import { ETIQUETA_DA_TAXA_PELO_BAIRRO } from "./bairro-na-comanda";
 import {
   faixaDaTaxa,
   kmDaZona,
@@ -541,7 +542,9 @@ export function notasDaEntrega(
   if (e.peloBairro && e.resultado === "ATENDE") {
     // O cliente não marcou a casa: a taxa é a do bairro que ele escreveu. A loja
     // confere o endereço antes de sair (e corrige a taxa se precisar, R10).
-    notas.push("[📍 Taxa pelo bairro: o mapa achou o bairro, não a rua do cliente — confira o endereço antes de sair]");
+    // No papel a etiqueta não sai como "observação do cliente": vira
+    // "(confira o endereço)" ao lado do bairro (lib/bairro-na-comanda.ts).
+    notas.push(ETIQUETA_DA_TAXA_PELO_BAIRRO);
   } else if (e.pedeConfirmacao && e.resultado !== "DESCONHECIDO") {
     const porque = e.motivosDaConfirmacao.length
       ? e.motivosDaConfirmacao.join("; ")

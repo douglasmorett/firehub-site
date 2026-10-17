@@ -8,6 +8,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { camposDeEntregaParaImpressao } from "@/lib/entrega-parceira";
 import { camposDoEnderecoParaImpressao } from "@/lib/endereco-impresso";
+import { trabalhoParaOAssistente } from "@/lib/bairro-na-comanda";
 import { comboParaImpressao, itensUmaLinhaPorUnidade } from "@/lib/parse-combo";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
@@ -1084,7 +1085,13 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // Assistente erraria ("carne de SOL <=== BEBIDA", lib/bebida-para-o-assistente.ts).
     // Na dúvida, o job segue como veio.
     const comBebidaCerta = (job: any) => { try { return bebidaDecididaPeloServidor(job); } catch { return job; } };
-    return NextResponse.json({ jobs: [...jobs, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe].map(comBebidaCerta) });
+    // O {bairro} do modelo da comanda resolvido aqui — o Assistente instalado
+    // não conhece o campo — e a observação sem o aviso "Taxa pelo bairro", que
+    // no papel saía como recado do cliente (lib/bairro-na-comanda.ts). Vale
+    // para o pedido, a via do entregador e a reimpressão; o que não é pedido
+    // (conta, caixa, DANFE) passa intacto. Na dúvida, o job segue como veio.
+    const comCamposDoSite = (job: any) => { try { return trabalhoParaOAssistente(job); } catch { return job; } };
+    return NextResponse.json({ jobs: [...jobs, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe].map(comCamposDoSite).map(comBebidaCerta) });
   } catch (err: any) {
     // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
     // arquivo do servidor e nome de coluna) não pode sair para quem chamar.

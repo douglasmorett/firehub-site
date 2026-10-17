@@ -569,7 +569,15 @@ export function temRotuloTrocado(modelo: ModeloDeComanda): boolean {
       String(valor ?? "").trim() !== "" && String(valor) !== rotuloPadrao(b.tipo, chave)));
 }
 
-/** Os campos que o lojista pode usar dentro de um bloco de texto livre. */
+/**
+ * Os campos que o lojista pode usar dentro de um bloco de texto livre.
+ *
+ * Quase todos têm o gêmeo no `campos` de `aplicarModelo` (server.js). A
+ * exceção são `bairro` e `avisoDoBairro`: o Assistente instalado não os
+ * conhece, e quem troca o campo pelo valor é o SITE, antes de mandar o pedido
+ * (lib/bairro-na-comanda.ts → CAMPOS_RESOLVIDOS_PELO_SITE). Por isso eles
+ * funcionam em todo Assistente com texto rico (1.2.18), sem versão nova.
+ */
 export const CAMPOS_DISPONIVEIS: { chave: string; rotulo: string }[] = [
   { chave: "numero", rotulo: "Número do pedido" },
   { chave: "canal", rotulo: "Canal (iFood, 99Food…)" },
@@ -579,6 +587,12 @@ export const CAMPOS_DISPONIVEIS: { chave: string; rotulo: string }[] = [
   { chave: "documento", rotulo: "CPF/CNPJ do cliente" },
   { chave: "telefone", rotulo: "Telefone" },
   { chave: "endereco", rotulo: "Endereço de entrega" },
+  // "BAIRRO: PORTO DO CARRO" na comanda da cozinha, para quem divide os
+  // pedidos entre os motoboys (Divinos, 16/10/2026). Só em entrega.
+  { chave: "bairro", rotulo: "Bairro do cliente (só entrega)" },
+  // "(confira o endereço)" quando a taxa saiu pelo bairro (o mapa achou o
+  // bairro, não a rua) — o aviso que antes saía como observação do cliente.
+  { chave: "avisoDoBairro", rotulo: "Aviso \"confira o endereço\" (taxa pelo bairro)" },
   { chave: "data", rotulo: "Data" },
   { chave: "hora", rotulo: "Hora" },
   { chave: "total", rotulo: "Total do pedido" },
@@ -1122,6 +1136,10 @@ export type PedidoParaComanda = {
   /** Pedidos do cliente na loja, contando este (lib/qtd-pedidos-do-cliente.ts). Sem número, sem linha. */
   qtdPedidos?: number | null;
   endereco?: string | null;
+  /** O bairro como o {bairro} imprime (lib/bairro-na-comanda.ts → textoDoBairroNaComanda). Vazio = a linha some. */
+  bairro?: string | null;
+  /** "(confira o endereço)" quando a taxa saiu pelo bairro (lib/bairro-na-comanda.ts → avisoDoBairroNaComanda). */
+  avisoDoBairro?: string | null;
   data?: string | null;
   hora?: string | null;
   total?: number | null;
@@ -1207,6 +1225,9 @@ function mapaDeCampos(p: PedidoParaComanda): Record<string, string> {
     documento: p.documento || "",
     telefone: p.telefone || "",
     endereco: p.endereco || "",
+    // Sem gêmeo no Assistente: no papel quem resolve é o site (lib/bairro-na-comanda.ts).
+    bairro: p.bairro || "",
+    avisoDoBairro: p.avisoDoBairro || "",
     data: p.data || "",
     hora: p.hora || "",
     total: dinheiro(p.total),
@@ -1603,6 +1624,7 @@ export function pedidoDeExemplo(nomeDaLoja = "Sua Loja"): PedidoParaComanda {
     telefone: "(22) 99999-1020",
     qtdPedidos: 3,
     endereco: "Rua Dez, 59 - Costazul - Rio das Ostras",
+    bairro: "COSTAZUL",
     data: "12/09/2026",
     hora: "23:22",
     subtotal: 34.88,
