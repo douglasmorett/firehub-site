@@ -12,8 +12,17 @@ import MesasCelular from "@/components/mesas/MesasCelular";
 
 export const dynamic = "force-dynamic";
 
-export default async function PaginaDeMesasDoGarcomNoCelular({ params }: { params: Promise<{ slug: string }> }) {
+export default async function PaginaDeMesasDoGarcomNoCelular({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ balcao?: string }>;
+}) {
   const { slug } = await params;
+  // ?balcao=1: o botão "Balcão" da tela completa abre direto no pedido de
+  // balcão. Só abre se o garçom pode — quem decide, de novo, é a rota.
+  const { balcao } = await searchParams;
   // O login lembra de qual tela o garçom veio, para devolvê-lo a ela.
   const destinoDoLogin = `/garcom/${encodeURIComponent(slug)}?tela=celular`;
 
@@ -29,8 +38,9 @@ export default async function PaginaDeMesasDoGarcomNoCelular({ params }: { param
   return (
     <MesasCelular
       modo="garcom"
-      garcom={{ id: auth.garcom.id, name: auth.garcom.name }}
+      garcom={{ id: auth.garcom.id, name: auth.garcom.name, podeFazerBalcao: auth.garcom.podeFazerBalcao }}
       slug={slug}
+      abrirNoBalcao={balcao === "1" && auth.garcom.podeFazerBalcao}
     />
   );
 }

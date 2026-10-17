@@ -12,21 +12,14 @@
  */
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/loja-bloqueada";
 import { generateDailyOrderNumber } from "@/lib/order-number";
-import { SEM_PRODUTO_DE_INTEGRACAO, motivoForaDoCardapio, textoDoHorario, textoDosDias } from "@/lib/cardapio-interno";
-import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
-import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
 import { conferirEstoque } from "@/lib/estoque-restante";
+import { validarItensDoSalao, type ItemParaLancar } from "@/lib/itens-do-salao";
 
-export type ItemParaLancar = {
-  menuProductId?: unknown;
-  quantity?: unknown;
-  comboSelections?: unknown;
-  tableGuestId?: unknown;
-  notes?: unknown;
-};
+// O formato do item que chega é o mesmo da conferência; re-exportado para
+// quem já importava daqui.
+export type { ItemParaLancar };
 
 export type ResultadoDoLancamento =
   | { ok: true; order: Awaited<ReturnType<typeof prisma.customerOrder.create>> }
@@ -56,8 +49,6 @@ export async function lancarNaMesa(opcoes: {
     return { ok: false, status: 403, error: MENSAGEM_LOJA_INDISPONIVEL };
   }
 
-  const fuso = await fusoDaLoja(targetFranchiseeId);
-
   const tableSession = await prisma.tableSession.findUnique({
     where: { id },
     include: { table: true },
@@ -71,90 +62,12 @@ export async function lancarNaMesa(opcoes: {
   }
 
   // ── PREÇO E PRODUTO SÃO DO SERVIDOR, NÃO DO CORPO ─────────────────────
-  // A rota gravava o `price` que a tela mandava e aceitava qualquer
-  // menuProductId. Com o módulo aberto ao garçom pelo link — e agora ao
-  // cliente pelo QR, o papel de menor confiança do sistema — bastaria uma
-  // requisição montada na mão para lançar o combo por R$ 0,01 ou um produto
-  // de outra loja. Mesma regra do totem (api/totem/order): produto da loja,
-  // ativo e liberado para o salão; preço recalculado pelo canal a partir das
-  // escolhas do combo, com o mínimo do produto como piso; quantidade inteira
-  // de 1 a 99.
-  const idsPedidos = [...new Set(items.map((i) => String(i?.menuProductId ?? "")).filter(Boolean))];
-  const produtosDaLoja = await prisma.menuProduct.findMany({
-    where: {
-      id: { in: idsPedidos },
-      franchiseeId: targetFranchiseeId,
-      active: true,
-      activeGarcom: true,
-      ...SEM_PRODUTO_DE_INTEGRACAO,
-    },
-    include: { comboGroups: { include: { items: { include: { menuProduct: true } } } } },
-  });
-  const porId = new Map(produtosDaLoja.map((p) => [p.id, p]));
-
-  const recusados: string[] = [];
-  // Fora do dia/horário é outra conversa: o item ESTÁ no cardápio, só não
-  // vende agora. Misturar os dois mandava o lojista cadastrar de novo um
-  // produto que já existe (Ragnar Burger, 06/10/2026).
-  const foraDaHora: string[] = [];
-  const itensValidados: {
-    menuProductId: string;
-    quantity: number;
-    price: number;
-    comboSelections: any;
-    tableGuestId: string | null;
-    notes: string | null;
-  }[] = [];
-
-  for (const item of items) {
-    const produto = porId.get(String(item?.menuProductId ?? ""));
-    if (!produto) {
-      recusados.push(String(item?.menuProductId ?? "?"));
-      continue;
-    }
-    // Produto de dia ou horário específico não sai fora dele; a tela pode
-    // estar aberta desde ontem.
-    const fora = motivoForaDoCardapio(produto, fuso);
-    if (fora) {
-      const quando = fora === "horario" ? textoDoHorario(produto.availableHours) : textoDosDias(produto.availableDays);
-      foraDaHora.push(quando ? `${produto.name} (só vende ${quando})` : produto.name);
-      continue;
-    }
-    // Mesma conta do cardápio, do modal e do totem (src/lib/preco-combo.ts).
-    const noCanal = aplicarPrecoDoCanalComCombo(produto as any, "salao");
-    let preco = precoUnitarioDoItem(noCanal as any, item.comboSelections as any);
-    // Piso que aceita o desconto da meia pizza mais barata (lib/preco-combo.ts).
-    const minimo = pisoDoPreco(noCanal as any);
-    if (preco < minimo) preco = minimo;
-    const quantity = Math.max(1, Math.min(99, Math.floor(Number(item.quantity) || 1)));
-    itensValidados.push({
-      menuProductId: produto.id,
-      quantity,
-      price: preco,
-      comboSelections: item.comboSelections ?? null,
-      tableGuestId: item.tableGuestId ? String(item.tableGuestId) : null,
-      notes: item.notes ? String(item.notes).trim().slice(0, 200) || null : null,
-    });
-  }
-
-  if (foraDaHora.length > 0) {
-    // Dizer o motivo CERTO: "não está no cardápio da mesa" manda o lojista
-    // procurar um item que está lá — e o caminho do conserto junto, porque
-    // quem marcou os dias foi ele, nesta tela.
-    return {
-      ok: false,
-      status: 400,
-      error:
-        `Fora do dia/horário de venda: ${foraDaHora.join(", ")}. ` +
-        "Para vender todo dia, abra Cardápio → o item → 📅 Dias de Disponibilidade → Sempre Ativo.",
-    };
-  }
-
-  if (recusados.length > 0) {
-    // Recusar o pedido inteiro, não o item: lançar MENOS do que o garçom
-    // conferiu com o cliente é pior do que pedir para lançar de novo.
-    return { ok: false, status: 400, error: `Estes itens não estão no cardápio da mesa: ${recusados.join(", ")}. ${tenteDeNovo}` };
-  }
+  // A conferência (produto da loja e do salão, dia e horário, preço do canal
+  // com o combo, quantidade de 1 a 99) mora em lib/itens-do-salao.ts — a
+  // mesma do pedido de balcão do garçom.
+  const conferidos = await validarItensDoSalao({ franchiseeId: targetFranchiseeId, items, comoTentarDeNovo: tenteDeNovo });
+  if (!conferidos.ok) return conferidos;
+  const itensValidados = conferidos.itens;
 
   // Estoque disponível: o garçom lança do celular com o cardápio que abriu
   // no começo do turno.

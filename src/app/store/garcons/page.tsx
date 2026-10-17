@@ -22,6 +22,8 @@ interface Waiter {
   podeLiberarMesa?: boolean;
   podeTirarTaxa?: boolean;
   podeRemoverItem?: boolean;
+  /** Pelo link, pode lançar pedido de BALCÃO? Ao contrário das outras: ausente = NÃO pode. */
+  podeFazerBalcao?: boolean;
   /** Login pelo link do garçom. Nulo = sem acesso próprio. */
   login: string | null;
   lastLoginAt: string | null;
@@ -33,15 +35,22 @@ interface AcessoDoGarcom {
   caminho: string | null;
 }
 
-const FORM_VAZIO = { name: "", phone: "", commissionRate: 10, active: true, podeFecharConta: true, podeDarDesconto: true, podeLiberarMesa: true, podeTirarTaxa: true, podeRemoverItem: true, login: "", password: "" };
+const FORM_VAZIO = { name: "", phone: "", commissionRate: 10, active: true, podeFecharConta: true, podeDarDesconto: true, podeLiberarMesa: true, podeTirarTaxa: true, podeRemoverItem: true, podeFazerBalcao: false, login: "", password: "" };
 
-/** As permissões do módulo de mesas pelo link — todas nascem ligadas; o dono desliga. */
-const PERMISSOES_DO_LINK: { campo: "podeFecharConta" | "podeDarDesconto" | "podeLiberarMesa" | "podeTirarTaxa" | "podeRemoverItem"; titulo: string; ajuda: string }[] = [
+/**
+ * As permissões do link do garçom. As cinco do módulo de mesas nascem
+ * ligadas (o dono desliga); a do balcão nasce DESLIGADA (o dono liga) —
+ * FORM_VAZIO e o "editar" abaixo carregam cada uma com o seu padrão.
+ */
+const PERMISSOES_DO_LINK: { campo: "podeFecharConta" | "podeDarDesconto" | "podeLiberarMesa" | "podeTirarTaxa" | "podeRemoverItem" | "podeFazerBalcao"; titulo: string; ajuda: string }[] = [
   { campo: "podeFecharConta", titulo: "Pode fechar a conta pelo link do garçom", ajuda: "Desmarcado, o garçom lança pedidos e imprime a conta, mas o botão \"Fechar Conta\" só aparece no painel da loja." },
   { campo: "podeDarDesconto", titulo: "Pode dar desconto pelo link do garçom", ajuda: "Desmarcado, o botão \"Dar desconto\" some para ele; o desconto na conta fica só com o painel da loja." },
   { campo: "podeLiberarMesa", titulo: "Pode liberar mesa pelo link do garçom", ajuda: "Desmarcado, o botão \"Liberar Mesa\" some para ele; quem libera a mesa é o painel da loja." },
   { campo: "podeTirarTaxa", titulo: "Pode tirar a taxa de serviço pelo link do garçom", ajuda: "Desmarcado, a taxa da loja fica travada para ele — não desmarca nem baixa o percentual; só o painel da loja mexe." },
   { campo: "podeRemoverItem", titulo: "Pode remover item já lançado pelo link do garçom", ajuda: "Desmarcado, ele só acrescenta: não remove item, não diminui quantidade nem cancela pedido da mesa. Ajuste é com o caixa." },
+  // Pedido do Allan (Delicias de Casa, 17/10/2026): o garçom tira o pedido
+  // de balcão no celular para adiantar a fila. Vem desligado para todo mundo.
+  { campo: "podeFazerBalcao", titulo: "Pode fazer pedido de balcão pelo link do garçom", ajuda: "Marcado, o celular do garçom mostra Mesas / Balcão: ele monta o pedido de balcão (nome do cliente opcional, forma de pagamento) e o pedido entra igual ao do balcão do PDV — mesma comanda, mesmo caixa. Desmarcado (o padrão), ele só lança em mesa." },
 ];
 
 /**
@@ -275,7 +284,7 @@ export default function GarconsPage() {
 
   const openEdit = (w: Waiter) => {
     setEditingId(w.id);
-    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate ?? taxaDaLoja ?? 10, active: w.active, podeFecharConta: w.podeFecharConta !== false, podeDarDesconto: w.podeDarDesconto !== false, podeLiberarMesa: w.podeLiberarMesa !== false, podeTirarTaxa: w.podeTirarTaxa !== false, podeRemoverItem: w.podeRemoverItem !== false, login: w.login || "", password: "" });
+    setFormData({ name: w.name, phone: w.phone || "", commissionRate: w.commissionRate ?? taxaDaLoja ?? 10, active: w.active, podeFecharConta: w.podeFecharConta !== false, podeDarDesconto: w.podeDarDesconto !== false, podeLiberarMesa: w.podeLiberarMesa !== false, podeTirarTaxa: w.podeTirarTaxa !== false, podeRemoverItem: w.podeRemoverItem !== false, podeFazerBalcao: w.podeFazerBalcao === true, login: w.login || "", password: "" });
     setErroDoForm("");
     setMostrarSenha(false);
     setShowModal(true);

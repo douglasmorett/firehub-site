@@ -1485,6 +1485,13 @@ model Waiter {
   podeLiberarMesa  Boolean         @default(true)
   podeTirarTaxa    Boolean         @default(true)
   podeRemoverItem  Boolean         @default(true)
+  /// Pelo link, pode lançar pedido de BALCÃO (não só de mesa)? Ao contrário
+  /// das outras, nasce DESLIGADA: é o dono quem libera, garçom por garçom.
+  /// Ligada, o celular do garçom mostra Mesas / Balcão e o pedido entra igual
+  /// ao balcão do PDV (api/garcom/balcao → lib/venda-presencial.ts). Pedido
+  /// do Allan (Delicias de Casa), decidido pelo Douglas em 17/10/2026. A
+  /// COLUNA nasce em garantir-colunas.ts (INSTRUCOES_MESA).
+  podeFazerBalcao  Boolean         @default(false)
 
   /// Acesso próprio do garçom pelo link /garcom/<slug-da-loja>.
   ///

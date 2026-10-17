@@ -313,7 +313,7 @@ export default function MesasApp({
 }: {
   modo?: ModoDaTela;
   /** Garçom logado pelo link. Só existe em modo "garcom". */
-  garcom?: { id: string; name: string; commissionRate?: number | null; podeFecharConta?: boolean; podeDarDesconto?: boolean; podeLiberarMesa?: boolean; podeTirarTaxa?: boolean; podeRemoverItem?: boolean } | null;
+  garcom?: { id: string; name: string; commissionRate?: number | null; podeFecharConta?: boolean; podeDarDesconto?: boolean; podeLiberarMesa?: boolean; podeTirarTaxa?: boolean; podeRemoverItem?: boolean; podeFazerBalcao?: boolean } | null;
   /** Slug da loja, para o "Sair" do garçom voltar ao login certo. */
   slug?: string;
 }) {
@@ -2232,6 +2232,16 @@ export default function MesasApp({
               padding: "6px 12px", fontWeight: 700, fontSize: 13,
               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
             }}>👤 {garcom?.name}</span>
+            {/* Pedido de balcão pelo link (Garçons › "Pode fazer pedido de
+                balcão"): o fluxo mora na tela de celular, que é por onde o
+                garçom tira o pedido na fila. A rota confere a permissão. */}
+            {garcom?.podeFazerBalcao === true && (
+              <a href={`/garcom/${encodeURIComponent(slug)}/celular?balcao=1`}
+                title="Pedido de balcão: monta o pedido e ele entra como o balcão do PDV" style={{
+                background: "#C92E09", color: "#fff", border: "1px solid #C92E09", borderRadius: 10,
+                padding: "8px 12px", fontWeight: 700, fontSize: 13, textDecoration: "none", whiteSpace: "nowrap",
+              }}>🛍️ Balcão</a>
+            )}
             <a href={ehGarcom ? `/garcom/${encodeURIComponent(slug)}/celular` : "/store/mesas/celular"}
               title="Versão para celular: uma coisa por tela, botões grandes" style={{
               background: "#F1F5F9", color: "#475569", border: "1px solid #E2E8F0", borderRadius: 10,

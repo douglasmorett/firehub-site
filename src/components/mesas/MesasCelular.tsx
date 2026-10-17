@@ -21,6 +21,13 @@
  * mexe no que o link dele permite). Fechar a conta com pagamento continua na
  * tela completa: ela tem divisão por pessoa, taxa, desconto e formas de
  * pagamento, que não cabem bem num celular.
+ *
+ * PEDIDO DE BALCÃO (17/10/2026, Delicias de Casa): o garçom que o dono
+ * liberou (Garçons › "Pode fazer pedido de balcão") vê Mesas / Balcão na
+ * grade. No Balcão o fluxo é o mesmo cardápio → revisar → enviar, sem mesa:
+ * nome do cliente opcional, forma de pagamento, e o pedido entra pela rota
+ * api/garcom/balcao como o balcão do PDV (mesma regra, lib/venda-presencial).
+ * O botão some para quem não pode, e a rota recusa do mesmo jeito.
  */
 
 import { quantidadeDigitada } from "@/lib/quantidade-de-pessoas";
@@ -37,6 +44,7 @@ import { montarCardapioDaMesa, gruposDoProduto, type ItemDaMesa } from "@/lib/ca
 import { numerosDaFaixa, type AndarDaMesa, lerAndares } from "@/lib/andares-da-mesa";
 import { caminhoParaAbrirOCaixa } from "@/lib/caixa-aberto";
 import { ROXO_DA_CONTA } from "@/lib/mesa-em-fechamento";
+import { FORMAS_DE_PAGAMENTO_DO_BALCAO } from "@/lib/balcao-config";
 
 // ─── Tipos (os mesmos que as rotas devolvem para a tela completa) ───────────
 interface Mesa {
@@ -122,6 +130,8 @@ function resumoDoCombo(sel: unknown): string {
 }
 
 const chaveDoCarrinho = (sessionId: string) => `mesa-celular-carrinho:${sessionId}`;
+/** O carrinho do balcão também fica no aparelho, um por garçom (não há mesa para ser a chave). */
+const chaveDoBalcao = (garcomId: string) => `balcao:${garcomId}`;
 
 function lerCarrinhoGuardado(sessionId: string): LinhaDoCarrinho[] {
   try {
@@ -262,6 +272,11 @@ const CSS = `
 .mc-campo:focus { border-color:#0F172A; }
 .mc-rotulo { display:block; font-size:13px; font-weight:700; color:var(--suave); margin:12px 0 6px; }
 .mc-vazio { text-align:center; color:var(--suave); padding:40px 16px; font-size:15px; }
+/* Mesas / Balcão (garçom liberado para o pedido de balcão). */
+.mc-modo { display:flex; gap:4px; margin-top:10px; background:rgba(255,255,255,.1); border-radius:12px; padding:4px; }
+.mc-modo button { flex:1; min-height:40px; border:none; border-radius:9px; background:transparent; color:#CBD5E1;
+                  font-weight:800; font-size:15px; cursor:pointer; }
+.mc-modo button[aria-selected="true"] { background:#fff; color:#0F172A; }
 @keyframes mc-sobe { from { transform:translateY(16px); opacity:0 } to { transform:none; opacity:1 } }
 @keyframes mc-aparece { from { opacity:0 } to { opacity:1 } }
 @media (prefers-reduced-motion: reduce) { .mc *, .mc-veu, .mc-folha, .mc-ultimo { animation:none !important; transition:none !important; } }
@@ -284,12 +299,18 @@ export default function MesasCelular({
   modo = "loja",
   garcom = null,
   slug = "",
+  abrirNoBalcao = false,
 }: {
   modo?: "loja" | "garcom";
-  garcom?: { id: string; name: string } | null;
+  /** `podeFazerBalcao`: o cadastro do garçom liberou o pedido de balcão pelo link. */
+  garcom?: { id: string; name: string; podeFazerBalcao?: boolean } | null;
   slug?: string;
+  /** Abre direto no pedido de balcão (o botão "Balcão" da tela completa). */
+  abrirNoBalcao?: boolean;
 }) {
   const ehGarcom = modo === "garcom" && !!garcom;
+  // Só o garçom pelo link: no painel o balcão é o PDV, que já existe.
+  const podeBalcao = ehGarcom && garcom?.podeFazerBalcao === true;
   const enderecoCompleto = ehGarcom ? `/garcom/${encodeURIComponent(slug)}/mesas` : "/store/mesas";
 
   const [aviso, setAviso] = useState<Aviso | null>(null);
@@ -332,6 +353,8 @@ export default function MesasCelular({
   // ── Navegação ────────────────────────────────────────────────────────────
   const [tela, setTela] = useState<Tela>("mesas");
   const [mesaId, setMesaId] = useState<string | null>(null);
+  /** Lançando no BALCÃO (sem mesa): as telas cardápio e revisar servem às duas coisas. */
+  const [balcao, setBalcao] = useState(false);
   const mesa = useMemo(() => mesas.find((m) => m.id === mesaId) || null, [mesas, mesaId]);
   const sessionId = mesa?.openSession?.id || null;
   const [detalhe, setDetalhe] = useState<DetalheDaMesa | null>(null);
@@ -361,6 +384,13 @@ export default function MesasCelular({
   const [obsDaLinha, setObsDaLinha] = useState<{ uid: string; texto: string } | null>(null);
   const [descartar, setDescartar] = useState(false);
   const relogioUltima = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // ── Pedido de balcão ─────────────────────────────────────────────────────
+  const [nomeNoBalcao, setNomeNoBalcao] = useState("");
+  const [pagerNoBalcao, setPagerNoBalcao] = useState("");
+  // Começa SEM forma escolhida, de propósito: "Dinheiro" já marcado faria o
+  // garçom com pressa mandar tudo como dinheiro, e o caixa não fecharia.
+  const [pagamentoNoBalcao, setPagamentoNoBalcao] = useState("");
 
   // ── Itens já lançados ────────────────────────────────────────────────────
   const [itemLancado, setItemLancado] = useState<{
@@ -461,10 +491,12 @@ export default function MesasCelular({
     }
   }, [mesa, mesaId, tela, carregando]);
 
-  // O carrinho mora no aparelho, por mesa: aba que recarrega não perde o pedido.
+  // O carrinho mora no aparelho, por mesa (o do balcão, por garçom): aba que
+  // recarrega não perde o pedido.
+  const chaveDoCarrinhoAtual = balcao && garcom ? chaveDoBalcao(garcom.id) : sessionId;
   useEffect(() => {
-    if (sessionId) guardarCarrinho(sessionId, carrinho);
-  }, [carrinho, sessionId]);
+    if (chaveDoCarrinhoAtual) guardarCarrinho(chaveDoCarrinhoAtual, carrinho);
+  }, [carrinho, chaveDoCarrinhoAtual]);
 
   // O botão "voltar" do Android volta UMA etapa, em vez de sair do módulo.
   // Fora da grade há sempre uma (e só uma) entrada de guarda no histórico: o
@@ -505,6 +537,36 @@ export default function MesasCelular({
   }, []);
 
   // ── Ações ────────────────────────────────────────────────────────────────
+  /** Mesas → Balcão: vai direto ao cardápio, com o carrinho do balcão que ficou guardado. */
+  const entrarNoBalcao = useCallback(() => {
+    if (!podeBalcao || !garcom) return;
+    setBalcao(true);
+    setMesaId(null);
+    setDetalhe(null);
+    setPessoas([]);
+    setPessoaAtiva(null);
+    setCarrinho(lerCarrinhoGuardado(chaveDoBalcao(garcom.id)));
+    setCategoria(null);
+    setBusca("");
+    setTela("cardapio");
+  }, [podeBalcao, garcom]);
+
+  // ?balcao=1 (o botão "Balcão" da tela completa): abre já no balcão, uma vez.
+  const abriuNoBalcao = useRef(false);
+  useEffect(() => {
+    if (abrirNoBalcao && podeBalcao && !abriuNoBalcao.current) {
+      abriuNoBalcao.current = true;
+      entrarNoBalcao();
+    }
+  }, [abrirNoBalcao, podeBalcao, entrarNoBalcao]);
+
+  /** Do balcão de volta à grade de mesas (o carrinho do balcão fica guardado no aparelho). */
+  const sairDoBalcao = () => {
+    setBalcao(false);
+    setCarrinho([]);
+    setTela("mesas");
+  };
+
   const entrarNaMesa = (m: Mesa) => {
     if (!m.openSession) {
       setAbrindo(m);
@@ -644,6 +706,65 @@ export default function MesasCelular({
     }
   };
 
+  /**
+   * O pedido de balcão: a mesma montagem de itens do envio da mesa, para a
+   * rota do garçom (api/garcom/balcao). O preço que vai é só referência — o
+   * servidor recalcula o do salão, como na mesa.
+   */
+  const enviarBalcao = async () => {
+    if (!balcao || !garcom || carrinho.length === 0 || ocupado) return;
+    if (!pagamentoNoBalcao) {
+      avisar("atencao", "Escolha a forma de pagamento", "O pedido de balcão entra no caixa com ela.");
+      return;
+    }
+    setOcupado(true);
+    try {
+      const res = await chamar("/api/garcom/balcao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customerName: nomeNoBalcao.trim(),
+          pagerNumber: pagerNoBalcao.trim() || null,
+          paymentMethod: pagamentoNoBalcao,
+          items: carrinho.map((c) => ({
+            menuProductId: c.item.id,
+            quantity: c.qty,
+            price: c.unitPrice ?? c.item.price,
+            comboSelections: c.comboSelections ? JSON.stringify(c.comboSelections) : null,
+            notes: (c.notes || "").trim() || null,
+          })),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        avisar("erro", "O pedido de balcão não foi enviado", data?.error);
+        return;
+      }
+      const qtd = carrinho.reduce((s, l) => s + l.qty, 0);
+      const nome = nomeNoBalcao.trim();
+      // Tudo do cliente sai daqui: nome, pager e pagamento iriam parar no
+      // pedido do PRÓXIMO da fila (a mesma lição do PDV).
+      setCarrinho([]);
+      guardarCarrinho(chaveDoBalcao(garcom.id), []);
+      setNomeNoBalcao("");
+      setPagerNoBalcao("");
+      setPagamentoNoBalcao("");
+      avisar(
+        "ok",
+        `Pedido de balcão${data?.dailyOrderNumber ? ` #${data.dailyOrderNumber}` : ""} enviado`,
+        `${nome ? `${nome} · ` : ""}${qtd} ${qtd === 1 ? "item foi" : "itens foram"} para a produção.`,
+      );
+      // Pronto para o próximo da fila.
+      setCategoria(null);
+      setBusca("");
+      setTela("cardapio");
+    } catch {
+      avisar("erro", "Sem conexão. O pedido continua aqui, tente enviar de novo.");
+    } finally {
+      setOcupado(false);
+    }
+  };
+
   const confirmarItemLancado = async (remover: boolean) => {
     if (!sessionId || !itemLancado || mexendo) return;
     setMexendo(true);
@@ -772,6 +893,11 @@ export default function MesasCelular({
     if (tela === "revisar") return setTela("cardapio");
     if (tela === "cardapio") {
       if (categoria || busca) { setCategoria(null); setBusca(""); return; }
+      // No balcão não há a tela da mesa: o cardápio volta direto à grade.
+      if (balcao) {
+        if (carrinho.length > 0) return setDescartar(true);
+        return sairDoBalcao();
+      }
       return setTela("mesa");
     }
     if (tela === "mesa") {
@@ -845,6 +971,9 @@ export default function MesasCelular({
   }, [cardapio]);
 
   const linhaUltima = carrinho.find((l) => l.uid === ultimaLinha) || null;
+  /** Onde o carrinho vai cair: "Balcão" ou "Mesa 12" — o título do cardápio e da revisão. */
+  const ondeLanca = balcao ? "Balcão" : mesa ? `Mesa ${mesa.number}` : "";
+  const lancando = balcao || !!mesa?.openSession;
   const nomeDaPessoa = (id: string | null) => (id ? pessoas.find((p) => p.id === id)?.name || "Pessoa" : "Mesa toda");
 
   const itensLancados = useMemo(
@@ -922,7 +1051,14 @@ export default function MesasCelular({
               <button className="mc-icone" onClick={() => { carregarMesas(); avisar("info", "Mesas atualizadas"); }} aria-label="Atualizar"><RefreshCw size={18} /></button>
               <a className="mc-icone" href={enderecoCompleto} aria-label="Versão completa" title="Versão completa (tablet e computador)"><Monitor size={18} /></a>
               {ehGarcom && <button className="mc-icone" onClick={sair} aria-label="Sair"><LogOut size={18} /></button>}
-            </>
+            </>,
+            // Mesas / Balcão: só para o garçom que o dono liberou.
+            podeBalcao ? (
+              <div className="mc-modo" role="tablist" aria-label="Onde lançar">
+                <button role="tab" aria-selected="true">Mesas</button>
+                <button role="tab" aria-selected="false" onClick={entrarNoBalcao}>Balcão</button>
+              </div>
+            ) : undefined
           )}
           <main className="mc-corpo">
             {caixaAberto === false && (
@@ -1103,13 +1239,14 @@ export default function MesasCelular({
       )}
 
       {/* ═══ CARDÁPIO ═══ */}
-      {tela === "cardapio" && mesa?.openSession && (
+      {tela === "cardapio" && lancando && (
         <>
           {topo(
-            `Mesa ${mesa.number} · ${busca.trim() ? "Busca" : categoria || "Cardápio"}`,
-            `Lançando para: ${nomeDaPessoa(pessoaAtiva)}`,
+            `${ondeLanca} · ${busca.trim() ? "Busca" : categoria || "Cardápio"}`,
+            balcao ? `Pedido de balcão${garcom ? ` · ${garcom.name}` : ""}` : `Lançando para: ${nomeDaPessoa(pessoaAtiva)}`,
             true,
-            <button className="mc-icone" onClick={() => setEscolhendoPessoa(true)} aria-label="Para quem é o item"><Users size={18} /></button>,
+            // "Para quem é" divide a conta da mesa; no balcão não há conta a dividir.
+            balcao ? undefined : <button className="mc-icone" onClick={() => setEscolhendoPessoa(true)} aria-label="Para quem é o item"><Users size={18} /></button>,
             <div className="mc-busca">
               <Search size={18} color="#64748B" />
               <input
@@ -1186,9 +1323,9 @@ export default function MesasCelular({
       )}
 
       {/* ═══ REVISAR ═══ */}
-      {tela === "revisar" && mesa?.openSession && (
+      {tela === "revisar" && lancando && (
         <>
-          {topo(`Revisar · Mesa ${mesa.number}`, "Confira antes de mandar para a produção")}
+          {topo(`Revisar · ${ondeLanca}`, "Confira antes de mandar para a produção")}
           <main className="mc-corpo">
             {carrinho.length === 0 ? (
               <p className="mc-vazio">Nenhum item para enviar.</p>
@@ -1229,11 +1366,40 @@ export default function MesasCelular({
             <button className="mc-btn secundario" style={{ width: "100%" }} onClick={() => setTela("cardapio")}>
               <Plus size={18} /> Adicionar mais itens
             </button>
+
+            {/* O que o balcão do PDV pergunta e cabe no celular: nome (opcional),
+                pager (a loja pode exigir — a rota confere) e a forma de
+                pagamento, que é a linha do caixa onde o pedido entra. */}
+            {balcao && (
+              <div className="mc-cartao" style={{ marginTop: 12 }}>
+                <label className="mc-rotulo" htmlFor="mc-balcao-nome" style={{ marginTop: 0 }}>Nome do cliente (opcional)</label>
+                <input id="mc-balcao-nome" className="mc-campo" value={nomeNoBalcao} onChange={(e) => setNomeNoBalcao(e.target.value)}
+                  placeholder="Ex.: Juliana" autoComplete="off" maxLength={80} />
+                <label className="mc-rotulo" htmlFor="mc-balcao-pager">Pager (se a loja usa)</label>
+                <input id="mc-balcao-pager" className="mc-campo" value={pagerNoBalcao} onChange={(e) => setPagerNoBalcao(e.target.value)}
+                  placeholder="Nº do aparelhinho" inputMode="numeric" autoComplete="off" maxLength={10} />
+                <span className="mc-rotulo">Pagamento</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }} role="radiogroup" aria-label="Forma de pagamento">
+                  {FORMAS_DE_PAGAMENTO_DO_BALCAO.map((f) => (
+                    <button key={f} className="mc-chip" role="radio" aria-checked={pagamentoNoBalcao === f} aria-pressed={pagamentoNoBalcao === f}
+                      onClick={() => setPagamentoNoBalcao(f)}>
+                      {f}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </main>
           <div className="mc-barra">
-            <button className="mc-btn primario" disabled={carrinho.length === 0 || ocupado} onClick={enviar}>
-              <Check size={20} /> {ocupado ? "Enviando..." : `Enviar · ${fmt(totalDoCarrinho)}`}
-            </button>
+            {balcao ? (
+              <button className="mc-btn primario" disabled={carrinho.length === 0 || ocupado} onClick={enviarBalcao}>
+                <Check size={20} /> {ocupado ? "Enviando..." : pagamentoNoBalcao ? `Enviar balcão · ${fmt(totalDoCarrinho)}` : "Escolha o pagamento"}
+              </button>
+            ) : (
+              <button className="mc-btn primario" disabled={carrinho.length === 0 || ocupado} onClick={enviar}>
+                <Check size={20} /> {ocupado ? "Enviando..." : `Enviar · ${fmt(totalDoCarrinho)}`}
+              </button>
+            )}
           </div>
         </>
       )}
@@ -1403,15 +1569,15 @@ export default function MesasCelular({
       <Folha aberta={descartar} onFechar={() => setDescartar(false)}>
         <h3>Itens ainda não enviados</h3>
         <p style={{ margin: "0 0 16px", color: "#64748B", fontSize: 14 }}>
-          {qtdNoCarrinho} {qtdNoCarrinho === 1 ? "item ficou" : "itens ficaram"} sem enviar. Eles continuam guardados neste aparelho para esta mesa.
+          {qtdNoCarrinho} {qtdNoCarrinho === 1 ? "item ficou" : "itens ficaram"} sem enviar. Eles continuam guardados neste aparelho {balcao ? "para o próximo pedido de balcão" : "para esta mesa"}.
         </p>
         <button className="mc-btn primario" style={{ width: "100%" }} onClick={() => { setDescartar(false); setTela("revisar"); }}>
           Revisar e enviar
         </button>
-        <button className="mc-btn secundario" style={{ width: "100%", marginTop: 10 }} onClick={() => { setDescartar(false); setTela("mesas"); setMesaId(null); }}>
+        <button className="mc-btn secundario" style={{ width: "100%", marginTop: 10 }} onClick={() => { setDescartar(false); if (balcao) sairDoBalcao(); else { setTela("mesas"); setMesaId(null); } }}>
           Guardar e voltar às mesas
         </button>
-        <button className="mc-btn perigo" style={{ width: "100%", marginTop: 10 }} onClick={() => { if (sessionId) guardarCarrinho(sessionId, []); setCarrinho([]); setDescartar(false); setTela("mesas"); setMesaId(null); }}>
+        <button className="mc-btn perigo" style={{ width: "100%", marginTop: 10 }} onClick={() => { if (chaveDoCarrinhoAtual) guardarCarrinho(chaveDoCarrinhoAtual, []); setCarrinho([]); setDescartar(false); if (balcao) sairDoBalcao(); else { setTela("mesas"); setMesaId(null); } }}>
           <Trash2 size={18} /> Descartar os itens
         </button>
       </Folha>
