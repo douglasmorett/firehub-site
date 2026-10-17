@@ -1,3 +1,7 @@
+// Módulo, não script global: sem isto `falhas`/`confere`/`main` brigam com os
+// outros scripts no tsc do projeto inteiro.
+export {};
+
 /**
  * PEDIDO DE BALCÃO PELO LINK DO GARÇOM (api/garcom/balcao).
  *
