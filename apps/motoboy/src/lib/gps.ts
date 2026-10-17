@@ -87,7 +87,12 @@ export async function ligarGps(): Promise<ResultadoDoGps> {
       await Location.startLocationUpdatesAsync(TAREFA_DO_GPS, {
         accuracy: Location.Accuracy.High,
         timeInterval: INTERVALO_DO_GPS_MS,
-        distanceInterval: 25,
+        // 0 e não 25 m: com distância mínima o iPhone não manda NADA enquanto o
+        // entregador está parado (esperando na loja, no sinal, na porta do
+        // cliente), a posição envelhece e some do mapa do cliente depois de
+        // 3 min (Lucas/Frangoso, 16/10/2026: celular no bolso, 30 min sem
+        // posição). Quem limita o envio é o INTERVALO_DO_GPS_MS em enviarPosicao.
+        distanceInterval: 0,
         activityType: Location.ActivityType.AutomotiveNavigation,
         pausesUpdatesAutomatically: false,
         showsBackgroundLocationIndicator: true,
