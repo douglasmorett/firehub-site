@@ -8,6 +8,7 @@ import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil, Volume2, UtensilsCrossed, Bike, Receipt } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import PessoasNoSiteAgora from "@/components/customer/PessoasNoSiteAgora";
+import { useLinhasEquilibradas } from "@/components/customer/useLinhasEquilibradas";
 import { DIAS_DO_RELATORIO, lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { ESTADOS_DE_ENTREGADOR_IFOOD } from "@/lib/entrega-parceira";
 import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido";
@@ -4169,6 +4170,12 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const fmtR = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const lancamentosEmTexto = (n: number) => `${n.toLocaleString("pt-BR")} ${n === 1 ? "lançamento" : "lançamentos"}`;
   const dataHoraDoResumo = (iso: string, tz: string) => new Date(iso).toLocaleString("pt-BR", { timeZone: tz, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  // Os atalhos da barra repartidos em linhas iguais (nada de um botão sozinho
+  // na última linha). A chave muda quando o texto/quantidade de botões muda.
+  const atalhosRef = useLinhasEquilibradas<HTMLDivElement>(6, `${altaDemanda.active ? 1 : 0}|${scheduledOrders.length}|${painelClean ? 1 : 0}|${JSON.stringify(barraConfig)}`);
+  // No celular os dois filtros também (Delivery/Retirada/Balcão/Mesa = 2 + 2, não 3 + 1).
+  const integracoesRef = useLinhasEquilibradas<HTMLDivElement>(4, "", "so-no-celular");
+  const tiposRef = useLinhasEquilibradas<HTMLDivElement>(4, "", "so-no-celular");
 
 
 
@@ -6304,7 +6311,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         <div style={{ maxWidth: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
 
           {/* Linha 1: no site agora + busca + período · filtros + som + engrenagem */}
-          <div className="bp-topo" style={{ display: "flex", alignItems: "flex-end", gap: "0.6rem 0.75rem", flexWrap: "wrap" }}>
+          <div className="bp-topo" style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: "0.6rem 0.75rem", flexWrap: "wrap" }}>
             {/* Quantos clientes estão no cardápio agora — o mesmo número da
                 Início, para o funcionário que só tem esta tela (Jerrajê). */}
             {naBarra("pessoasNoSite") && (
@@ -6315,7 +6322,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             )}
 
             {/* Search */}
-            <div className="bp-busca" style={{ position: "relative", flex: "1 1 220px", minWidth: "180px", maxWidth: "340px" }}>
+            <div className="bp-busca" style={{ position: "relative" }}>
               <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
               <input
                 type="text" placeholder="Nome, número, telefone, endereço..."
@@ -6340,10 +6347,6 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               )}
             </div>
 
-            {/* A mola: empurra filtros, som e engrenagem para a direita quando
-                tudo cabe numa linha (some no tablet e no celular). */}
-            <span className="bp-mola" aria-hidden style={{ flex: "1 1 0px", minWidth: 0 }} />
-
             {/* Filtro por integração (de onde o pedido veio) */}
             {naBarra("filtroCanais") && (
             <div className="bp-filtro" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
@@ -6360,7 +6363,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   em telas largas, porque o que decide é o espaço que sobra na
                   barra, não o tamanho do monitor. Cada botão recusa encolher
                   e a fila quebra linha quando não couber. */}
-              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", background: "#F8FAFC", padding: "2px 5px", borderRadius: "9px", border: "1px solid #E2E8F0" }}>
+              <div className="bp-equilibra" ref={integracoesRef} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", background: "#F8FAFC", padding: "2px 5px", borderRadius: "9px", border: "1px solid #E2E8F0" }}>
                 {/* iFood */}
                 <button
                   type="button"
@@ -6556,7 +6559,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <span style={{ fontSize: "0.60rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: "2px" }}>
                 Filtro de pedidos
               </span>
-              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", background: "#F8FAFC", padding: "2px 5px", borderRadius: "9px", border: "1px solid #E2E8F0" }}>
+              <div className="bp-equilibra" ref={tiposRef} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", background: "#F8FAFC", padding: "2px 5px", borderRadius: "9px", border: "1px solid #E2E8F0" }}>
                 {/* Paleta Brasa: os quatro com o mesmo tratamento dos filtros de
                     integração — selecionado com borda carvão, apagado em areia.
                     Uma cor por tipo era o "tudo colorido" que o dono recusou. */}
@@ -6822,7 +6825,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
           {/* Linha 2: os atalhos repartem a largura (bp-acoes no <style>);
               no celular viram uma faixa que corre para o lado. */}
-          <div className="bp-acoes" style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+          <div className="bp-acoes bp-equilibra" ref={atalhosRef} style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
             {/* ── PAINEL CLEAN À VISTA ───────────────────────────────────────
                 Era só uma opção na engrenagem; o dono gostou tanto que quis o
                 interruptor na barra, destacado, "o cara vê com facilidade"
@@ -7952,36 +7955,70 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         }
 
         /* ── A BARRA DO TOPO POR TAMANHO DE TELA (bp-*) ──
-           Monitor e notebook: linha 1 com "no site agora", busca e período à
-           esquerda e, empurrados pela mola, filtros, som e engrenagem à
-           direita; linha 2 com os atalhos crescendo até encher a largura —
-           sem buraco no canto e sem um botão sozinho numa 3ª linha curta.
-           Tablet: busca esticada ao lado da caixinha, som e engrenagem na
-           mesma linha; período e filtros embaixo. Celular: tudo em largura
-           cheia, e os atalhos viram uma faixa que corre para o lado. */
+           "No site agora", busca e período à esquerda; som e engrenagem
+           à direita; os filtros na mesma linha (monitor largo) ou meio a meio
+           na de baixo. Busca e filtros esticam até fechar cada linha, sem
+           buraco no canto. Embaixo, os atalhos em linhas iguais, sem um botão
+           sozinho numa linha curta. */
         .bp-acoes > * {
           flex: 1 1 auto;
           justify-content: center;
           white-space: nowrap;
           box-sizing: border-box;
         }
-        @media (max-width: 1023px) {
-          .bp-online { order: 1; }
-          .bp-busca { order: 2; max-width: none !important; }
+        /* A base comum vem do useLinhasEquilibradas (10 em 2 linhas = 5/5,
+           nunca 9/1); data-medindo é o instante em que ele mede. */
+        .bp-equilibra[data-por-linha] > * {
+          flex: 1 1 var(--bp-base, auto) !important;
+        }
+        /* Os filtros animam "all": o flex-grow ficava no valor antigo durante
+           a medida e cada arrumação piscava. Só a cor anima. */
+        .bp-equilibra > * { transition-property: background-color, border-color, color, filter, box-shadow !important; }
+        .bp-equilibra[data-medindo] > * { flex: 0 0 auto !important; transition: none !important; }
+        /* A linha de cima decide pela largura da BARRA (@container), não da
+           tela: o menu lateral aberto ou recolhido muda tudo.
+           Padrão (notebook e monitor comum): caixinha, busca (estica),
+           período, som e engrenagem; embaixo os dois filtros meio a meio. */
+        /* O container é SÓ a linha de cima: container-type prende position:
+           fixed, e o modal da engrenagem mora logo abaixo dela. */
+        .bp-topo { container: bp-barra / inline-size; }
+        .bp-online { order: 1; }
+        .bp-busca { order: 2; flex: 1 1 220px; min-width: 180px; }
+        .bp-periodo { order: 3; }
+        .bp-som { order: 4; }
+        .bp-engrenagem { order: 5; }
+        .bp-filtro { order: 6; flex: 1 1 48%; }
+        .bp-filtro > div:last-child { width: 100%; box-sizing: border-box; }
+        .bp-filtro > div:last-child > button { flex: 1 1 auto; justify-content: center; }
+        /* Monitor largo: tudo numa linha só — filtros, som e engrenagem à direita. */
+        @container bp-barra (min-width: 1620px) {
+          .bp-busca { max-width: 560px; }
+          .bp-filtro { order: 4; flex: 1 1 auto; }
+          .bp-som { order: 5; }
+          .bp-engrenagem { order: 6; }
+        }
+        /* Tablet: caixinha + período + som + engrenagem; a busca numa linha
+           inteira; os filtros lado a lado se couberem. */
+        @container bp-barra (max-width: 899px) {
+          .bp-periodo { order: 2; flex: 1 1 auto; }
+          .bp-periodo input { flex: 1 1 0; min-width: 132px; }
           .bp-som { order: 3; }
           .bp-engrenagem { order: 4; }
-          .bp-periodo { order: 5; }
-          .bp-mola { display: none; }
-          .bp-filtro { order: 6; }
+          .bp-busca { order: 5; flex: 1 1 100%; }
+          .bp-filtro { flex: 1 1 auto; }
         }
-        @media (max-width: 640px) {
+        /* Celular: caixinha com som e engrenagem; busca, período e cada filtro
+           em largura cheia. */
+        @container bp-barra (max-width: 679px) {
           .bp-online { margin-right: auto; }
-          .bp-busca { order: 5; flex: 1 1 100% !important; }
-          .bp-periodo { order: 6; flex: 1 1 100%; flex-wrap: wrap; box-sizing: border-box; }
-          .bp-periodo input { flex: 1 1 0; min-width: 0; }
+          /* De e Até um embaixo do outro: lado a lado a hora era cortada. */
+          .bp-periodo { order: 6; flex: 1 1 100%; box-sizing: border-box; display: grid !important; grid-template-columns: auto 1fr; }
+          .bp-periodo input { min-width: 0; width: 100%; box-sizing: border-box; }
+          .bp-periodo > button { grid-column: 1 / -1; }
           .bp-filtro { order: 7; flex: 1 1 100%; }
-          .bp-filtro > div:last-child { width: 100%; box-sizing: border-box; }
-          .bp-filtro > div:last-child > button { flex: 1 1 auto; justify-content: center; }
+        }
+        /* Celular: os atalhos numa faixa que corre para o lado. */
+        @media (max-width: 640px) {
           .bp-acoes {
             flex-wrap: nowrap !important;
             overflow-x: auto;
@@ -7989,7 +8026,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             scrollbar-width: thin;
             -webkit-overflow-scrolling: touch;
           }
-          .bp-acoes > * { flex: 0 0 auto; }
+          .bp-acoes > * { flex: 0 0 auto !important; }
         }
 
         @keyframes pulse {
