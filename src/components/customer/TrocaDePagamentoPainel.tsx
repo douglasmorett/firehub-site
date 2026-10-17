@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import { podeEditarPedidos, type OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica, podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
 import { lerPartes, quantoFalta, somarPartes, type ParteDoPagamento } from "@/lib/pagamento-dividido";
+import { lerTrocoNoPix, textoDoTrocoNoPix, trocoNoPixDoPedido, type QuemFezOPix, type TrocoNoPix } from "@/lib/troco-no-pix";
 
 /**
  * Trocar a forma de pagamento de um pedido, pelo painel — inteira ou DIVIDIDA.
@@ -26,6 +27,13 @@ import { lerPartes, quantoFalta, somarPartes, type ParteDoPagamento } from "@/li
  * A pessoa nunca faz conta de cabeça: ao abrir a divisão, a primeira forma já
  * vem com o total inteiro; ao escolher a segunda, o que sobra cai nela sozinho;
  * e enquanto não fechar, a barra mostra "faltam R$ X" e o botão não salva.
+ *
+ * ── Troco feito pelo Pix ───────────────────────────────────────────────────
+ *
+ * Com dinheiro e "troco para" acima do valor, aparece "Troco feito pelo Pix":
+ * o troco voltou ao cliente por Pix, da conta da loja ou do celular do
+ * motoboy. Muda o que o caixa espera na gaveta e no Pix e o que o motoboy
+ * entrega no acerto (lib/troco-no-pix.ts) — pedido do Allan, Delícia de Casa.
  */
 export default function TrocaDePagamentoPainel({
   pedido,
@@ -36,7 +44,7 @@ export default function TrocaDePagamentoPainel({
 }: {
   pedido: any;
   operador: OperadorDaEdicao;
-  aoSalvar: (resultado: { paymentMethod: string; changeAmount: number | null; paymentMethods?: ParteDoPagamento[] | null }) => void | Promise<void>;
+  aoSalvar: (resultado: { paymentMethod: string; changeAmount: number | null; paymentMethods?: ParteDoPagamento[] | null; trocoNoPix?: TrocoNoPix | null }) => void | Promise<void>;
   /**
    * Quem abre a troca por um clique na própria forma de pagamento (relatório
    * de motoboys) já pediu para trocar: o painel nasce aberto, e "Cancelar"
@@ -57,11 +65,15 @@ export default function TrocaDePagamentoPainel({
       : [{ method: formaCanonica(pedido?.paymentMethod) || "Dinheiro", valor: total.toFixed(2) }, { method: "", valor: "" }]
   );
   const [trocoPara, setTrocoPara] = useState<string>(pedido?.changeAmount ? String(pedido.changeAmount) : "");
+  // De quem foi o Pix do troco ("" = o troco saiu em dinheiro, como sempre).
+  const [pixDoTroco, setPixDoTroco] = useState<"" | QuemFezOPix>(lerTrocoNoPix(pedido?.trocoNoPix)?.por ?? "");
+  const ehEntrega = String(pedido?.deliveryType || "").toUpperCase() === "DELIVERY";
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   const atual = pedido?.paymentMethod || "não informado";
   const trocoAtual = Number(pedido?.changeAmount || 0);
+  const trocoNoPixAtual = trocoNoPixDoPedido(pedido || {});
   const caixa: React.CSSProperties = {
     marginBottom: 12, background: "#F8FAFC", padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0",
   };
@@ -103,6 +115,11 @@ export default function TrocaDePagamentoPainel({
         <span style={{ fontSize: "0.8rem", color: "#334155" }}>
           💳 <b>Pagamento:</b> {atual}
           {trocoAtual > 0 ? ` · troco para ${dinheiro(trocoAtual)}` : ""}
+          {trocoNoPixAtual && (
+            <span style={{ display: "block", fontSize: "0.74rem", color: "#0F766E", fontWeight: 700, marginTop: 2 }}>
+              {textoDoTrocoNoPix(trocoNoPixAtual.valor, trocoNoPixAtual.por)}
+            </span>
+          )}
         </span>
         {avaliacao.pode ? (
           <button
@@ -149,12 +166,21 @@ export default function TrocaDePagamentoPainel({
     ? partesValidas.some((p) => p.method === "Dinheiro")
     : forma === "Dinheiro";
 
+  // O troco desta nota: o "troco para" menos o que o cliente pagou em
+  // dinheiro (no dividido, só a parte em dinheiro) — a mesma conta do servidor.
+  const notaDigitada = temDinheiro && trocoPara.trim() ? Number(trocoPara.replace(",", ".")) || 0 : 0;
+  const baseEmDinheiro = dividido ? partesValidas.find((p) => p.method === "Dinheiro")?.amount ?? 0 : total;
+  const trocoDaNota = Math.round((notaDigitada - baseEmDinheiro) * 100) / 100;
+  const temTroco = notaDigitada > 0 && trocoDaNota > 0.005;
+  // Sem troco, a marca não vale — e no balcão não há motoboy para fazer o Pix.
+  const pixEscolhido: "" | QuemFezOPix = !temTroco ? "" : pixDoTroco === "MOTOBOY" && !ehEntrega ? "LOJA" : pixDoTroco;
+
   const salvar = async () => {
     setSalvando(true);
     setErro(null);
     try {
       const troco = temDinheiro && trocoPara.trim() ? Number(trocoPara.replace(",", ".")) : null;
-      const corpo: any = { changeAmount: troco };
+      const corpo: any = { changeAmount: troco, trocoNoPix: pixEscolhido || null };
       if (dividido) corpo.paymentMethods = partesValidas;
       else corpo.paymentMethod = forma;
 
@@ -173,6 +199,7 @@ export default function TrocaDePagamentoPainel({
         paymentMethod: data.paymentMethod ?? forma,
         changeAmount: data.changeAmount ?? null,
         paymentMethods: data.paymentMethods ?? null,
+        trocoNoPix: data.trocoNoPix ?? null,
       });
     } catch {
       setErro("Sem conexão. Tente de novo.");
@@ -288,7 +315,44 @@ export default function TrocaDePagamentoPainel({
             placeholder="opcional"
             style={{ width: 90, padding: "4px 8px", borderRadius: 6, border: "1px solid #FDE68A", fontFamily: "inherit", fontSize: "0.78rem" }}
           />
+          {temTroco && <span style={{ color: "#B45309" }}>troco de {dinheiro(trocoDaNota)}</span>}
         </label>
+      )}
+
+      {/* ── TROCO FEITO PELO PIX ─────────────────────────────────────────
+          Só com troco de verdade (nota acima do dinheiro do pedido). A frase
+          de baixo diz o que muda no caixa e no acerto — quem marca precisa
+          saber o que vai ver no fechamento. */}
+      {temDinheiro && temTroco && (
+        <div style={{ marginBottom: 8, padding: "6px 8px", borderRadius: 8, background: "#FFF", border: "1px solid #FDE68A" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.78rem", fontWeight: 800, color: "#78350F", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={pixEscolhido !== ""}
+              onChange={(e) => setPixDoTroco(e.target.checked ? "LOJA" : "")}
+            />
+            Troco feito pelo Pix ({dinheiro(trocoDaNota)})
+          </label>
+          {pixEscolhido !== "" && (
+            <>
+              {ehEntrega && (
+                <div style={{ display: "flex", gap: 6, margin: "6px 0 4px" }}>
+                  <button type="button" onClick={() => setPixDoTroco("LOJA")} style={{ ...chip(pixEscolhido === "LOJA"), flex: 1 }}>
+                    Pix da loja
+                  </button>
+                  <button type="button" onClick={() => setPixDoTroco("MOTOBOY")} style={{ ...chip(pixEscolhido === "MOTOBOY"), flex: 1 }}>
+                    Pix do motoboy
+                  </button>
+                </div>
+              )}
+              <div style={{ fontSize: "0.72rem", color: "#92400E", lineHeight: 1.35, marginTop: 4 }}>
+                {pixEscolhido === "MOTOBOY"
+                  ? `O motoboy fica com ${dinheiro(trocoDaNota)} da nota (paga o Pix que ele fez) e entrega ${dinheiro(baseEmDinheiro)} à loja. A gaveta conta só o valor do pedido.`
+                  : `Nenhum troco sai da gaveta: a nota de ${dinheiro(notaDigitada)} fica no caixa e o Pix esperado cai ${dinheiro(trocoDaNota)} (saiu da conta da loja). O pedido continua valendo ${dinheiro(baseEmDinheiro)} no caixa.`}
+              </div>
+            </>
+          )}
+        </div>
       )}
 
       {erro && <div style={{ fontSize: "0.76rem", color: "#B71C1C", fontWeight: 700, marginBottom: 8 }}>{erro}</div>}

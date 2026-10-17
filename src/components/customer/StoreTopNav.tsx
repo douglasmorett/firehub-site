@@ -373,6 +373,8 @@ export default function StoreTopNav({
   const [trocoInicial, setTrocoInicial] = useState(0);
   const [onlinePorCanal, setOnlinePorCanal] = useState<{ nome: string; qtd: number; valor: number }[]>([]);
   const [cobradoPeloApp, setCobradoPeloApp] = useState<{ nome: string; qtd: number; valor: number }[]>([]);
+  // Troco feito pelo Pix da loja: a nota inteira na gaveta, o troco a menos no Pix.
+  const [trocoNoPix, setTrocoNoPix] = useState<{ qtd: number; valor: number } | null>(null);
   const [cuponsDoApp, setCuponsDoApp] = useState<{ nome: string; qtd: number; valor: number; noOnline?: number; qtdNoOnline?: number }[]>([]);
   // Nenhuma forma contada: a pergunta "fechar sem conferir?", e a resposta.
   const [showSemConferenciaWarn, setShowSemConferenciaWarn] = useState(false);
@@ -581,6 +583,7 @@ export default function StoreTopNav({
       setTrocoInicial(Number(d.trocoInicial) || 0);
       setOnlinePorCanal(Array.isArray(d.onlinePorCanal) ? d.onlinePorCanal : []);
       setCobradoPeloApp(Array.isArray(d.cobradoPeloApp) ? d.cobradoPeloApp : []);
+      setTrocoNoPix(d.trocoNoPix && Number(d.trocoNoPix.qtd) > 0 ? { qtd: Number(d.trocoNoPix.qtd), valor: Number(d.trocoNoPix.valor) || 0 } : null);
       setCuponsDoApp(Array.isArray(d.cupomDaPlataforma) ? d.cupomDaPlataforma : []);
     });
     // Buscar pedidos pendentes em SAIU_ENTREGA
@@ -1457,6 +1460,16 @@ export default function StoreTopNav({
                               {trocoInicial > 0.005 ? `inclui ${fmt(trocoInicial)} de troco inicial` : "inclui"}
                               {movTotais.entradas > 0 ? ` + ${fmt(movTotais.entradas)} de reforço` : ""}
                               {movTotais.saidas > 0 ? ` − ${fmt(movTotais.saidas)} de sangria` : ""}
+                            </span>
+                          )}
+                          {/* Troco feito pelo Pix da loja (lib/troco-no-pix.ts):
+                              a nota inteira ficou na gaveta e o troco saiu da
+                              conta. As duas linhas mudam juntas — dizer nas duas. */}
+                          {trocoNoPix && trocoNoPix.qtd > 0 && (m.key === "cash" || m.key === "pix") && (
+                            <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#64748B" }}>
+                              {m.key === "cash"
+                                ? `inclui ${fmt(trocoNoPix.valor)} de nota inteira (troco feito pelo Pix da loja, ${trocoNoPix.qtd} ${trocoNoPix.qtd === 1 ? "pedido" : "pedidos"})`
+                                : `− ${fmt(trocoNoPix.valor)} de troco devolvido pelo Pix da loja`}
                             </span>
                           )}
                         </td>

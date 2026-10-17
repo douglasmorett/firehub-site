@@ -852,6 +852,10 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // pedido (lib/momento-da-impressao.ts). Sem ela, a fila não saberia que o
   // drink já foi para o bar e o mandaria de novo a cada consulta.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "printedNaChegadaAt" TIMESTAMP(3)`,
+  // TROCO FEITO PELO PIX (lib/troco-no-pix.ts): { por: "LOJA" | "MOTOBOY",
+  // quando, quem }. Nulo = o troco saiu em dinheiro, como em todo pedido até
+  // aqui — o caixa e o acerto do motoboy seguem a conta de sempre.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "trocoNoPix" JSONB`,
   // Quais TELAS do KDS já deram baixa (ver lib/kds-telas.ts). Sem ela, a baixa
   // da tela de esfirra finalizava o pedido inteiro e ele sumia da tela de
   // pizza, que nem tinha começado (NIK, 21/09/2026). Nulo = ninguém deu baixa,

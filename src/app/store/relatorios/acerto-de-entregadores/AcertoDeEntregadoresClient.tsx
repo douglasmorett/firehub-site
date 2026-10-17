@@ -171,10 +171,23 @@ function Barras<T>({ itens, valor, rotulo, subRotulo, dica, destaque, altura = 1
   );
 }
 
+/**
+ * O que, além dos pedidos, está no dinheiro com ele: o troco levado e a parte
+ * da nota do troco feito pelo Pix da loja; e o troco que ele mesmo fez no Pix,
+ * com que ficou da nota (fora do dinheiro). Ver lib/troco-no-pix.ts.
+ */
+function composicaoDoDinheiro(l: LinhaDoMotoboy): string {
+  const partes: string[] = [];
+  if (l.trocoLevado > 0.005) partes.push(`inclui ${fmtReais(l.trocoLevado)} de troco levado`);
+  if ((l.trocoNoPixDaLoja || 0) > 0.005) partes.push(`inclui ${fmtReais(l.trocoNoPixDaLoja)} da nota (troco no Pix da loja)`);
+  if ((l.trocoNoPixDoMotoboy || 0) > 0.005) partes.push(`sem ${fmtReais(l.trocoNoPixDoMotoboy)} do troco que ele fez no Pix`);
+  return partes.join(" · ");
+}
+
 /** O detalhe de um motoboy, aberto na linha da tabela. */
 function Detalhe({ l, onRecibo }: { l: LinhaDoMotoboy; onRecibo: () => void }) {
   const formas = [
-    { rotulo: "💵 Dinheiro (com ele)", valor: l.dinheiroComEle, extra: l.trocoLevado > 0.005 ? `inclui ${fmtReais(l.trocoLevado)} de troco levado` : "" },
+    { rotulo: "💵 Dinheiro (com ele)", valor: l.dinheiroComEle, extra: composicaoDoDinheiro(l) },
     { rotulo: "💳 Maquininha", valor: l.maquininha },
     { rotulo: "📲 Pix na entrega", valor: l.pix },
     { rotulo: "⚡ Pago online", valor: l.online },
@@ -282,7 +295,7 @@ function Recibo({ l, periodo, nomeDaLoja, onFechar }: { l: LinhaDoMotoboy; perio
           </div>
         ))}
         {linha("Total do acerto", fmtReais(l.aPagar), true)}
-        {l.dinheiroComEle > 0.005 && linha(l.trocoLevado > 0.005 ? "Dinheiro com ele (pedidos + troco levado)" : "Dinheiro dos pedidos com ele", `− ${fmtReais(l.dinheiroComEle)}`)}
+        {l.dinheiroComEle > 0.005 && linha(composicaoDoDinheiro(l) ? `Dinheiro com ele (${composicaoDoDinheiro(l)})` : "Dinheiro dos pedidos com ele", `− ${fmtReais(l.dinheiroComEle)}`)}
         <div style={{ background: PALETA.areia, borderRadius: 10, padding: "8px 12px", marginTop: 8 }}>
           {linha(l.saldo >= 0 ? "A loja paga ao entregador" : "O entregador devolve à loja", fmtReais(Math.abs(l.saldo)), true)}
         </div>

@@ -96,6 +96,8 @@ export async function GET(req: NextRequest) {
         totalAmount: o.totalAmount,
         cashToDeliver: o.cashToDeliver,
         changeGiven: o.changeGiven,
+        // "Troco feito pelo Pix: R$ X" na linha da entrega (lib/troco-no-pix.ts).
+        trocoNoPix: o.trocoNoPixInfo,
         ganhoDoMotoboy: o.ganhoDoMotoboy,
         origemDoGanho: o.origemDoGanho,
         status: o.status,

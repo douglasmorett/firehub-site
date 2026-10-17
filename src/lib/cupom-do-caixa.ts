@@ -165,6 +165,14 @@ export type DetalheDoTurno = {
    */
   mesas: { servico: number; servicoQtd: number; gorjeta: number; troco?: number; trocoQtd?: number };
   gaveta: { vendasEmDinheiro: number; reforcosQtd: number; sangriasQtd: number };
+  /**
+   * Troco feito pelo Pix (lib/troco-no-pix.ts). `qtd`/`valor`: o Pix DA LOJA —
+   * a nota inteira ficou na gaveta (já dentro das vendas em dinheiro) e o
+   * troco saiu da conta (já fora do Pix esperado). `motoboyQtd`/`motoboyValor`:
+   * o Pix DO MOTOBOY, que ficou com a diferença da nota — não muda a gaveta.
+   * Ausente quando não houve, e no papel antigo.
+   */
+  trocoNoPix?: { qtd: number; valor: number; motoboyQtd: number; motoboyValor: number };
   /** `quem`: quem lançou (o e-mail gravado). Ausente no papel montado à mão (testes antigos). */
   /** `depoisDoFechamento`: a esquecida, lançada no Histórico com o caixa já fechado (a hora é a do lançamento). */
   movimentacoes: { tipo: string; valor: number; descricao: string | null; hora: Date | string; quem?: string | null; depoisDoFechamento?: boolean }[];
@@ -198,6 +206,10 @@ export type DetalheDoTurno = {
     pelaTaxaDoCliente: number;
     /** O troco que ele levou da loja para a nota do cliente — volta junto com o dinheiro. Ausente no papel antigo. */
     trocoLevado?: number;
+    /** Troco feito pelo Pix da loja: a parte da nota além do pedido, que ele entrega junto (lib/troco-no-pix.ts). */
+    trocoNoPixDaLoja?: number;
+    /** Troco feito pelo Pix dele: a parte da nota com que ficou, fora do dinheiro a entregar. */
+    trocoNoPixDoMotoboy?: number;
     /** Das entregas, as canceladas depois de ele sair (a corrida conta, o dinheiro não). */
     canceladasComCorrida?: number;
   }[];
@@ -759,10 +771,18 @@ function relatorioDoFechamento(
     // "vendas em dinheiro" é o que ficou. Antes ela cobrava a nota inteira e o
     // papel mostrava "+ Troco das mesas … vira falta".
     const trocoDasMesas = d.mesas.troco || 0;
+    // Troco feito pelo Pix da loja (lib/troco-no-pix.ts): a nota inteira
+    // ficou aqui, e a parte dela que passa do pedido já está nas vendas em
+    // dinheiro — sem dizer, o operador procuraria uma venda desse tamanho.
+    const pixDoTroco = d.trocoNoPix?.valor || 0;
+    const notasDaVenda = [
+      trocoDasMesas > 0.01 ? `sem os ${reais(trocoDasMesas)} de troco das mesas (${d.mesas.trocoQtd || 0})` : "",
+      pixDoTroco > 0.01 ? `com ${reais(pixDoTroco)} de nota inteira: troco feito pelo Pix da loja (${d.trocoNoPix?.qtd || 0}), a menos no Pix` : "",
+    ].filter(Boolean);
     linha(
       "+ Vendas em dinheiro",
       reais(d.gaveta.vendasEmDinheiro),
-      trocoDasMesas > 0.01 ? `sem os ${reais(trocoDasMesas)} de troco das mesas (${d.mesas.trocoQtd || 0})` : undefined
+      notasDaVenda.length ? notasDaVenda.join(" | ") : undefined
     );
     if (entradas > 0.01) linha(`+ Reforcos (${d.gaveta.reforcosQtd})`, reais(entradas));
     if (saidas > 0.01) linha(`- Sangrias (${d.gaveta.sangriasQtd})`, reais(saidas));
@@ -955,12 +975,21 @@ function relatorioDoFechamento(
       // acerto do motoboy. O papel dizia só o valor dos pedidos ("Dinheiro
       // recebido R$ 84,95") e o acerto, a nota com o troco (R$ 170,00): o
       // mesmo Marlon com dois números.
+      // Troco feito pelo Pix (lib/troco-no-pix.ts): no da loja ele traz a
+      // nota inteira (a parte além do pedido entra no a entregar, sem ser
+      // troco levado); no dele, fica com essa parte e entrega só o pedido.
       const troco = m.trocoLevado || 0;
-      if (m.dinheiro > 0.01 && troco > 0.005) {
-        linha("- Dinheiro a entregar", reais(m.dinheiro + troco), `pedidos ${reais(m.dinheiro)} + troco levado ${reais(troco)}`);
+      const notaDoPixDaLoja = m.trocoNoPixDaLoja || 0;
+      const pixDele = m.trocoNoPixDoMotoboy || 0;
+      if (m.dinheiro > 0.01 && (troco > 0.005 || notaDoPixDaLoja > 0.005)) {
+        const partes = [`pedidos ${reais(m.dinheiro)}`];
+        if (troco > 0.005) partes.push(`troco levado ${reais(troco)}`);
+        if (notaDoPixDaLoja > 0.005) partes.push(`${reais(notaDoPixDaLoja)} da nota (troco no Pix da loja)`);
+        linha("- Dinheiro a entregar", reais(m.dinheiro + troco + notaDoPixDaLoja), partes.join(" + "));
       } else if (m.dinheiro > 0.01) {
         linha("- Dinheiro a entregar", reais(m.dinheiro), "pedidos em dinheiro; prestar contas no caixa");
       }
+      if (pixDele > 0.005) texto(`Troco no Pix dele: ${reais(pixDele)} - ficou com essa parte da nota (fora do a entregar e do a pagar).`);
       if (m.cartao > 0.01) linha("- Cartao na maquininha", reais(m.cartao));
       if (m.pix > 0.01) linha("- Pix", reais(m.pix));
       if (m.online > 0.01) linha("- Ja pago online", reais(m.online));

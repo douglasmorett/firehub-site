@@ -31,6 +31,7 @@ import { navegadorSeguraAComanda, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS 
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
+import { textoDoTrocoNoPix, trocoNoPixDoPedido } from "@/lib/troco-no-pix";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
 import { camposDoPagamentoDaMesaParaImpressao, pagamentoDaMesaNoPedido } from "@/lib/pagamento-da-mesa-no-pedido";
@@ -1352,6 +1353,18 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 Troco p/ R$ {Number(order.changeAmount).toFixed(2).replace('.', ',')}
               </span>
             )}
+            {/* Troco feito pelo Pix (lib/troco-no-pix.ts): sem isto o card
+                diria só "troco p/ R$ 50", e quem despacha separaria o troco
+                em dinheiro que já foi devolvido por Pix. */}
+            {(() => {
+              const pix = trocoNoPixDoPedido(order);
+              if (!pix) return null;
+              return (
+                <span style={{ ...ETIQUETA_NEUTRA, fontSize: "0.72rem", color: "#0F766E", padding: "2px 8px", whiteSpace: "nowrap" }}>
+                  {textoDoTrocoNoPix(pix.valor, pix.por)}
+                </span>
+              );
+            })()}
           </div>
           {/* Pix/cartão pelo site já pago: o card dizia só "Pix", igual ao Pix
               do PDV, e o balcão podia cobrar de novo (lib/pagamento-na-entrega). */}
@@ -5461,12 +5474,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         {order.changeAmount != null && Number(order.changeAmount) > 0 && (() => {
                           const changeVal = Number(order.changeAmount);
                           const changeToGive = changeVal > order.totalAmount ? (changeVal - order.totalAmount) : 0;
+                          // Troco já devolvido por Pix: o papel não manda
+                          // separar cédula, diz o que foi feito.
+                          const pixDoTroco = trocoNoPixDoPedido(order);
                           return (
                             <div style={{ marginTop: "6px", padding: "6px 8px", background: "#FFF3E0", border: "1.5px solid #000", borderRadius: "4px" }}>
                               <div style={{ fontSize: "13px", fontWeight: 900, color: "#000" }}>
                                 💵 Troco para: R$ {changeVal.toFixed(2).replace('.', ',')}
                               </div>
-                              {changeToGive > 0 && (
+                              {pixDoTroco ? (
+                                <div style={{ color: "#000", fontSize: "13px", fontWeight: 900, marginTop: "3px" }}>
+                                  {textoDoTrocoNoPix(pixDoTroco.valor, pixDoTroco.por)}
+                                </div>
+                              ) : changeToGive > 0 && (
                                 <div style={{ color: "#C92E09", fontSize: "13px", fontWeight: 900, marginTop: "3px" }}>
                                   👉 SEPARAR R$ {changeToGive.toFixed(2).replace('.', ',')} DE TROCO
                                 </div>

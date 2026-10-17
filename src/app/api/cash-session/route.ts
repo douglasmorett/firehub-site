@@ -184,6 +184,10 @@ export async function GET() {
     cobradoPeloApp: detalhe ? detalhe.cobradoPeloApp || [] : [],
     // Os cupons pagos pelas plataformas, com quanto já está dentro do online.
     cupomDaPlataforma: detalhe ? detalhe.cupomDaPlataforma : [],
+    // Troco feito pelo Pix (lib/troco-no-pix.ts): a tela diz quanto do dinheiro
+    // esperado é nota inteira e quanto saiu do Pix — senão o operador procura
+    // uma venda desse tamanho.
+    trocoNoPix: detalhe?.trocoNoPix || null,
     // Só informação, como no papel: a soma dos tipos é o total faturado
     // (vendas.valor), não o esperado da conferência — o esperado tem o troco
     // de abertura e as movimentações, e não tem o fiado.

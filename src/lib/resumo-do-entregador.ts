@@ -35,6 +35,7 @@ import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 import { formaDoPedido, formaDoTexto, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 import { infoDaEntrega } from "@/lib/entrega-parceira";
+import { lerTrocoNoPix, type QuemFezOPix } from "@/lib/troco-no-pix";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
 
@@ -136,6 +137,8 @@ export type EntregaParaCaixa = PedidoDoDinheiro & {
   openDeliveryChannel?: string | null;
   /** Pagamento dividido (troca de pagamento na loja ou no app): manda no texto. */
   paymentMethods?: unknown;
+  /** Troco feito pelo Pix (lib/troco-no-pix.ts): o troco da nota não saiu em cédula. */
+  trocoNoPix?: unknown;
 };
 
 /** As caixas do acerto, na ordem da tela. As três últimas só aparecem com valor. */
@@ -156,6 +159,12 @@ export type ParteDaEntrega = {
   valor: number;
   /** Só no dinheiro: a nota com que o cliente pagou ("troco para 100"). */
   trocoPara: number | null;
+  /**
+   * Só no dinheiro com nota: o troco voltou ao cliente por Pix, e de quem
+   * (lib/troco-no-pix.ts). null = o troco saiu em cédula, levado da loja.
+   * Opcional para quem monta a parte à mão (testes, telas antigas).
+   */
+  trocoNoPix?: QuemFezOPix | null;
 };
 
 /**
@@ -166,16 +175,53 @@ export type ParteDaEntrega = {
  * da parte.
  */
 export function partesDaEntrega(o: EntregaParaCaixa): ParteDaEntrega[] {
+  const pixDoTroco = lerTrocoNoPix(o.trocoNoPix)?.por ?? null;
   const divisao = lerPagamentos(o.paymentMethods);
   if (divisao.length > 0) {
     return divisao.map((p) => {
       const caixa = formaDoTexto(p.method);
       const nota = Number(o.changeAmount || 0);
-      return { caixa, valor: p.amount, trocoPara: caixa === "DINHEIRO" && nota > p.amount ? nota : null };
+      const trocoPara = caixa === "DINHEIRO" && nota > p.amount ? nota : null;
+      return { caixa, valor: p.amount, trocoPara, trocoNoPix: trocoPara ? pixDoTroco : null };
     });
   }
   const caixa = formaDoPedido(o);
-  return [{ caixa, valor: Number(o.totalAmount || 0), trocoPara: caixa === "DINHEIRO" ? trocoParaDoPedido(o) : null }];
+  const trocoPara = caixa === "DINHEIRO" ? trocoParaDoPedido(o) : null;
+  return [{ caixa, valor: Number(o.totalAmount || 0), trocoPara, trocoNoPix: trocoPara ? pixDoTroco : null }];
+}
+
+// ── O DINHEIRO DE UMA PARTE, COM E SEM TROCO NO PIX ─────────────────────────
+//
+// Três leituras da mesma parte em dinheiro, e as três moram aqui para o acerto
+// (resumo, linha de cada entrega, tela), o papel do caixa e o app do motoboy
+// fazerem a MESMA conta. Pedido de R$ 40 pago com nota de R$ 50:
+//
+//                        entrega à loja   troco levado   troco no Pix
+//   troco em cédula           R$ 50           R$ 10            —
+//   Pix da loja               R$ 50             —            R$ 10
+//   Pix do motoboy            R$ 40             —            R$ 10
+//
+// No Pix do motoboy ele fica com os R$ 10 da nota: é o reembolso do Pix que ele
+// fez do bolso dele. Ver lib/troco-no-pix.ts.
+
+const c2 = (v: number) => Math.round(v * 100) / 100;
+
+/** O dinheiro que o motoboy entrega à loja por esta parte (fora do dinheiro, o valor dela). */
+export function dinheiroDaParte(p: ParteDaEntrega): number {
+  if (p.caixa !== "DINHEIRO" || !p.trocoPara) return p.valor;
+  return p.trocoNoPix === "MOTOBOY" ? p.valor : p.trocoPara;
+}
+
+/** O troco que saiu em cédula da gaveta com o motoboy (e volta junto com a nota). */
+export function trocoLevadoDaParte(p: ParteDaEntrega): number {
+  if (p.caixa !== "DINHEIRO" || !p.trocoPara || p.trocoNoPix) return 0;
+  return c2(p.trocoPara - p.valor);
+}
+
+/** O troco que voltou ao cliente por Pix nesta parte (0 sem a marca). */
+export function trocoNoPixDaParte(p: ParteDaEntrega): number {
+  if (p.caixa !== "DINHEIRO" || !p.trocoPara || !p.trocoNoPix) return 0;
+  return c2(p.trocoPara - p.valor);
 }
 
 export type EntregaDoResumo = EntregaParaCaixa & {
@@ -219,6 +265,8 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
 
   // Classificação de pagamentos recebidos pelo motoboy na entrega vs online
   let cashCollectedSum = 0, cashOrdersCount = 0, changeGivenSum = 0, cashOrdersValueSum = 0;
+  // Troco feito pelo Pix (lib/troco-no-pix.ts), separado por quem fez o Pix.
+  let trocoNoPixDaLojaSum = 0, trocoNoPixDoMotoboySum = 0, trocoNoPixCount = 0;
   let debitTotal = 0, debitCount = 0;
   let creditTotal = 0, creditCount = 0;
   let voucherTotal = 0, voucherCount = 0;
@@ -261,10 +309,21 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
           // para a loja: a nota inteira. Ele saiu com o troco DA LOJA (a nota
           // menos o pedido) e o devolve junto — por isso o "entregar" é
           // pedidos + troco levado, e os dois aparecem separados na tela.
-          cashCollectedSum += parte.trocoPara ?? v;
+          // Com o troco feito pelo Pix não houve troco levado: no Pix da loja
+          // ele entrega a nota inteira; no Pix dele, só o pedido (fica com a
+          // diferença da nota, que reembolsa o Pix que ele fez).
+          cashCollectedSum += dinheiroDaParte(parte);
           cashOrdersCount++;
-          changeGivenSum += parte.trocoPara ? parte.trocoPara - v : 0;
+          changeGivenSum += trocoLevadoDaParte(parte);
           cashOrdersValueSum += v;
+          {
+            const pix = trocoNoPixDaParte(parte);
+            if (pix > 0) {
+              trocoNoPixCount++;
+              if (parte.trocoNoPix === "MOTOBOY") trocoNoPixDoMotoboySum += pix;
+              else trocoNoPixDaLojaSum += pix;
+            }
+          }
           break;
         case "DEBITO": debitTotal += v; debitCount++; break;
         case "CREDITO": creditTotal += v; creditCount++; break;
@@ -307,6 +366,18 @@ export function resumoDasEntregas(orders: EntregaDoResumo[], tz: string) {
     cashOrdersValueSum: centavos(cashOrdersValueSum),
     /** O troco levado da loja (a nota do cliente menos o pedido), que volta junto. */
     changeGivenSum: centavos(changeGivenSum),
+    /**
+     * Troco feito pelo Pix da LOJA: a parte da nota que passa do pedido. Já
+     * está dentro de `cashCollectedSum` (ele entrega a nota inteira), mas não é
+     * troco levado — nenhuma cédula saiu da gaveta.
+     */
+    trocoNoPixDaLojaSum: centavos(trocoNoPixDaLojaSum),
+    /**
+     * Troco feito pelo Pix do MOTOBOY: ele ficou com essa diferença da nota (o
+     * reembolso do Pix dele). FORA de `cashCollectedSum` e fora do a pagar.
+     */
+    trocoNoPixDoMotoboySum: centavos(trocoNoPixDoMotoboySum),
+    trocoNoPixCount,
     cardPosTotal: centavos(debitTotal + creditTotal + voucherTotal),
     cardPosCount: debitCount + creditCount + voucherCount,
     debitTotal: centavos(debitTotal),

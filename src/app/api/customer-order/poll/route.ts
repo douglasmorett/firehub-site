@@ -13,6 +13,7 @@ import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from "@/lib/filtro-do-feed";
 import { marcarPainelAberto } from "@/lib/sinais-da-loja";
 import { LIMITE as LIMITE_DO_FEED } from "@/lib/feed-de-pedidos";
+import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
 
 /** Teto de pedidos por rodada do feed (ver o findMany abaixo); o navegador corta no MESMO número (lib/feed-de-pedidos.ts). */
 const TETO_DO_FEED = LIMITE_DO_FEED;
@@ -1015,6 +1016,9 @@ export async function GET(req: NextRequest) {
         // num pedido de gateway e o servidor recusaria.
         paymentMethod: true, paymentPaidAt: true, gatewayProvider: true, gatewayPaymentId: true,
         totalAmount: true, changeAmount: true,
+        // "Troco feito pelo Pix: R$ X" no card e na comanda, e a troca de
+        // pagamento já aberta com a marca (lib/troco-no-pix.ts).
+        ...SELECT_TROCO_NO_PIX,
         discountTotal: true, discountIfood: true, discountMerchant: true, discountDetails: true,
         status: true, source: true, notes: true, kdsStage: true,
         // A janela de cancelar pedido finalizado avisa quando já há nota emitida.

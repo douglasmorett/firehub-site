@@ -38,7 +38,8 @@ import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { ganhoDoPedido as calcularGanho, lerAcerto, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
 import { prisma } from "@/lib/prisma";
 import { getStartOfDayUTC, getEndOfDayUTC, getStartOfMonthUTC, getInstantUTC } from "@/lib/timezone";
-import { resumoDasEntregas, ehCancelado, partesDaEntrega, canceladoComCorrida, contaComoCorrida, ehEntregaDaLoja, composicaoDoGanho, diaDoExpediente } from "@/lib/resumo-do-entregador";
+import { resumoDasEntregas, ehCancelado, partesDaEntrega, canceladoComCorrida, contaComoCorrida, ehEntregaDaLoja, composicaoDoGanho, diaDoExpediente, dinheiroDaParte, trocoLevadoDaParte } from "@/lib/resumo-do-entregador";
+import { SELECT_TROCO_NO_PIX, trocoNoPixDoPedido } from "@/lib/troco-no-pix";
 import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 import { configDaLoja, descontoDoAcerto, lanchesDoPeriodo, type LancheDoHistorico } from "@/lib/lanche-da-equipe";
 import { fiadoDosMotoboys } from "@/lib/fiado-do-motoboy";
@@ -143,6 +144,8 @@ export async function montarRelatorioDosEntregadores(opts: {
       deliveryBy: true,
       ifoodDriverStatus: true,
       ifoodDriverName: true,
+      // Troco feito pelo Pix (lib/troco-no-pix.ts): muda o dinheiro a entregar.
+      ...SELECT_TROCO_NO_PIX,
     },
     orderBy: { createdAt: "asc" },
   });
@@ -334,8 +337,10 @@ export async function montarRelatorioDosEntregadores(opts: {
         const changeFor = emDinheiro.find((p) => p.trocoPara)?.trocoPara ?? null;
         // Cancelado: a corrida conta, o dinheiro não — ninguém pagou o pedido.
         const cancelado = ehCancelado(o.status);
-        const cashToDeliver = cancelado ? 0 : Math.round(emDinheiro.reduce((s, p) => s + (p.trocoPara ?? p.valor), 0) * 100) / 100;
-        const changeGiven = cancelado ? 0 : Math.round(emDinheiro.reduce((s, p) => s + (p.trocoPara ? p.trocoPara - p.valor : 0), 0) * 100) / 100;
+        // Com o troco feito pelo Pix: no Pix da loja ele entrega a nota inteira,
+        // no dele só o pedido; troco levado, nenhum (`dinheiroDaParte`).
+        const cashToDeliver = cancelado ? 0 : Math.round(emDinheiro.reduce((s, p) => s + dinheiroDaParte(p), 0) * 100) / 100;
+        const changeGiven = cancelado ? 0 : Math.round(emDinheiro.reduce((s, p) => s + trocoLevadoDaParte(p), 0) * 100) / 100;
 
         return {
           id: o.id,
@@ -354,6 +359,10 @@ export async function montarRelatorioDosEntregadores(opts: {
           changeFor,
           changeGiven,
           cashToDeliver,
+          // A marca crua (a tela refaz `partesDaEntrega` com ela) e a linha
+          // pronta "Troco feito pelo Pix: R$ X" (valor e quem fez o Pix).
+          trocoNoPix: (o as any).trocoNoPix ?? null,
+          trocoNoPixInfo: cancelado ? null : trocoNoPixDoPedido(o as any),
           deliveryFee: o.deliveryFee,
           motoboyFee: o.motoboyFee,
           // Para o "Ver Pedido" mostrar a conta fechando, com o desconto e a

@@ -31,6 +31,8 @@ type Resposta = {
   stats: null | {
     totalDeliveries: number; uniqueDays: number; feeTotal: number; dailyTotal: number; totalWithDaily: number; lancheDescontado?: number;
     cashCollectedSum: number; cashOrdersCount: number; changeGivenSum: number;
+    /** Troco feito pelo Pix (lib/troco-no-pix.ts): o da loja vem dentro do dinheiro; o dele, não. */
+    trocoNoPixDaLojaSum?: number; trocoNoPixDoMotoboySum?: number;
     pendenciasDescontadas?: number;
     diarias?: { dia: string; valor: number; padrao: number; ajustada: boolean }[];
   };
@@ -42,6 +44,7 @@ type Resposta = {
     id: string; createdAt: string; dailyOrderNumber: number | null; ifoodReference: string | null;
     openDeliveryReference: string | null; customerName: string | null; paymentMethod: string | null;
     totalAmount: number; cashToDeliver: number; ganhoDoMotoboy: number; status: string; cancelado?: boolean;
+    trocoNoPix?: { valor: number; por: "LOJA" | "MOTOBOY" } | null;
   }[];
   error?: string;
 };
@@ -189,6 +192,13 @@ export default function MeuRelatorio({ motoboyId, storeId, aoFechar }: { motoboy
               <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 12, padding: 10, fontSize: "0.85rem", color: "#92400E", fontWeight: 700, marginBottom: 12 }}>
                 Dinheiro para entregar na loja: {reais(s.cashCollectedSum)} ({s.cashOrdersCount} pedido{s.cashOrdersCount > 1 ? "s" : ""}
                 {s.changeGivenSum > 0 ? `, ${reais(s.changeGivenSum)} saíram de troco` : ""})
+                {/* O troco que ELE fez no Pix: ficou com essa parte da nota, e
+                    por isso ela não está no dinheiro a entregar. */}
+                {(s.trocoNoPixDoMotoboySum || 0) > 0.005 && (
+                  <div style={{ fontSize: "0.76rem", fontWeight: 600, marginTop: 4 }}>
+                    Troco que você fez no Pix: {reais(s.trocoNoPixDoMotoboySum || 0)} — já ficou com você da nota do cliente.
+                  </div>
+                )}
               </div>
             )}
             {dados.cancelados.qtd > 0 && (
@@ -221,6 +231,11 @@ export default function MeuRelatorio({ motoboyId, storeId, aoFechar }: { motoboy
                   <div style={{ textAlign: "right", flexShrink: 0 }}>
                     <div style={{ fontWeight: 900, fontSize: "0.9rem", color: "#16A34A" }}>{reais(o.ganhoDoMotoboy)}</div>
                     {o.cashToDeliver > 0 && <div style={{ fontSize: "0.72rem", color: "#92400E", fontWeight: 700 }}>💵 {reais(o.cashToDeliver)}</div>}
+                    {o.trocoNoPix && (
+                      <div style={{ fontSize: "0.68rem", color: "#0F766E", fontWeight: 700 }}>
+                        Troco no Pix {o.trocoNoPix.por === "MOTOBOY" ? "seu" : "da loja"}: {reais(o.trocoNoPix.valor)}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

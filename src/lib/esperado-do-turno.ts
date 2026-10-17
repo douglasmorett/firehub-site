@@ -34,6 +34,7 @@ import { canceladoComCorrida, ehEntregaDaLoja } from "@/lib/resumo-do-entregador
 import { apurarVendasDoTurno, PAGO_ONLINE, type MesaDoTurno } from "@/lib/apuracao-do-turno";
 import type { DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do-caixa";
 import { itensCanceladosNoTurno, quemCancelouPeloRastro } from "@/lib/cancelamentos-do-turno";
+import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
 
 export { PAGO_ONLINE };
 
@@ -115,7 +116,10 @@ export async function calcularEsperadoDoTurno(
       ifoodDriverStatus: true, ifoodDriverName: true, changeAmount: true,
       totemLicenseId: true, items: { select: { price: true, quantity: true } },
       // Reposição (faltou item / troca): fora da venda, só a corrida do motoboy (apurarVendasDoTurno).
-      reposicao: true },
+      reposicao: true,
+      // Troco feito pelo Pix (lib/troco-no-pix.ts): muda a gaveta e o Pix
+      // esperados e o dinheiro a entregar do motoboy.
+      ...SELECT_TROCO_NO_PIX },
   });
 
   // ── AS CONTAS DE MESA FECHADAS NESTE TURNO ────────────────────────────
@@ -314,6 +318,10 @@ export async function calcularEsperadoDoTurno(
         // O troco que ele levou da loja para a nota do cliente: volta junto
         // com o dinheiro (o acerto mostra o mesmo, pedido a pedido).
         atual.trocoLevado = (atual.trocoLevado || 0) + (e.trocoLevado || 0);
+        // Troco feito pelo Pix (lib/troco-no-pix.ts): o da loja ele entrega
+        // junto com a nota; o dele fica com ele. Só aparece quando houve.
+        if (e.trocoNoPixDaLoja) atual.trocoNoPixDaLoja = (atual.trocoNoPixDaLoja || 0) + e.trocoNoPixDaLoja;
+        if (e.trocoNoPixDoMotoboy) atual.trocoNoPixDoMotoboy = (atual.trocoNoPixDoMotoboy || 0) + e.trocoNoPixDoMotoboy;
         for (const f of e.formas) {
           if (f.forma === "Dinheiro") atual.dinheiro += f.valor;
           else if (f.forma === "Debito" || f.forma === "Credito" || f.forma === "Vale-refeicao") atual.cartao += f.valor;
@@ -361,6 +369,8 @@ export async function calcularEsperadoDoTurno(
           ...m,
           dinheiro: centavos(m.dinheiro), cartao: centavos(m.cartao), pix: centavos(m.pix),
           online: centavos(m.online), outros: centavos(m.outros), taxas: centavos(m.taxas), trocoLevado: centavos(m.trocoLevado || 0),
+          ...(m.trocoNoPixDaLoja ? { trocoNoPixDaLoja: centavos(m.trocoNoPixDaLoja) } : {}),
+          ...(m.trocoNoPixDoMotoboy ? { trocoNoPixDoMotoboy: centavos(m.trocoNoPixDoMotoboy) } : {}),
         }))
         .sort((a, b) => b.entregas - a.entregas);
     } catch (e: any) {

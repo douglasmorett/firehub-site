@@ -27,7 +27,7 @@
  * (lib/resumo-do-entregador.ts): mudou a régua, muda nos três.
  */
 import { cupomBancadoPelo99, ehDo99Food } from "@/lib/cupom-do-parceiro";
-import { ehEntregaDaLoja, partesDaEntrega } from "@/lib/resumo-do-entregador";
+import { ehEntregaDaLoja, partesDaEntrega, trocoLevadoDaParte, trocoNoPixDaParte } from "@/lib/resumo-do-entregador";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { tipoDeVenda, type TipoDeVenda } from "@/lib/relatorios/base";
@@ -182,6 +182,14 @@ export type EntregaPropria = {
   ehMarketplace: boolean;
   /** O troco que o motoboy levou da loja para a nota do cliente ("troco para 100"): ele devolve junto. */
   trocoLevado: number;
+  /**
+   * Troco feito pelo Pix DA LOJA: a parte da nota que passa do pedido. Ele a
+   * entrega junto com o dinheiro dos pedidos, mas não é troco levado
+   * (lib/troco-no-pix.ts). Opcional para o papel montado à mão.
+   */
+  trocoNoPixDaLoja?: number;
+  /** Troco feito pelo Pix DO MOTOBOY: ele ficou com essa parte da nota. */
+  trocoNoPixDoMotoboy?: number;
 };
 
 export type Esperado = { cash: number; debit: number; credit: number; pix: number; voucher: number; ifoodOnline: number; ifoodCoupons: number; food99Online: number; food99Coupons: number; total: number };
@@ -197,7 +205,7 @@ export type ApuracaoDasVendas = {
   entregasProprias: EntregaPropria[];
   retrato: Pick<DetalheDoTurno,
     "vendas" | "porForma" | "porCanal" | "porTipo" | "cupomDaLoja" | "cupomDaPlataforma" | "onlinePorCanal" |
-    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador" | "cobradoPeloApp" | "dinheiroCobradoPeloApp"> &
+    "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador" | "cobradoPeloApp" | "dinheiroCobradoPeloApp" | "trocoNoPix"> &
     Required<Pick<DetalheDoTurno, "recebido" | "ponte" | "descontoNasMesas">>;
 };
 
@@ -282,6 +290,10 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
   const cobradoPeloApp = new Map<string, Soma>();
   let dinheiroCobradoPeloApp = 0;
   const taxaDeEntrega = { qtd: 0, c: 0 };
+  // Troco feito pelo Pix (lib/troco-no-pix.ts), em centavos: o da loja mexe na
+  // conferência (nota inteira na gaveta, troco a menos no Pix); o do motoboy é
+  // só informação — a gaveta recebe o pedido, como sempre esperou.
+  const trocoNoPix = { qtd: 0, c: 0, motoboyQtd: 0, motoboyC: 0 };
   const mesas = { servico: 0, servicoQtd: 0, gorjeta: 0, troco: 0, trocoQtd: 0 };
   const recebido = { qtd: 0, c: 0 };
   // A régua única: o valor vendido do turno e o lançado em cada conta de mesa.
@@ -404,15 +416,20 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
       } else if (o.motoboyId) {
         // O troco levado: a nota do cliente menos o pedido, nas partes em
         // dinheiro (a mesma conta do acerto do motoboy, `partesDaEntrega`).
-        const trocoLevado = partesDaEntrega(o)
-          .filter((p) => p.caixa === "DINHEIRO" && p.trocoPara)
-          .reduce((s, p) => s + cent((p.trocoPara as number) - p.valor), 0);
+        // Com o troco feito pelo Pix não houve troco levado: ver
+        // `trocoLevadoDaParte` e lib/troco-no-pix.ts.
+        const partes = partesDaEntrega(o);
+        const trocoLevado = partes.reduce((s, p) => s + cent(trocoLevadoDaParte(p)), 0);
+        const pixDaLoja = partes.filter((p) => p.trocoNoPix === "LOJA").reduce((s, p) => s + cent(trocoNoPixDaParte(p)), 0);
+        const pixDoMotoboy = partes.filter((p) => p.trocoNoPix === "MOTOBOY").reduce((s, p) => s + cent(trocoNoPixDaParte(p)), 0);
         entregasProprias.push({
           motoboyId: o.motoboyId,
           formas,
           pedido: { motoboyFee: o.motoboyFee ?? null, deliveryFee: o.deliveryFee ?? null, deliveryDistance: o.deliveryDistance ?? null, entregaGratis: o.entregaGratis, customerAddress: o.customerAddress ?? null },
           ehMarketplace: canalDoPedido(o).ehMarketplace,
           trocoLevado: reais(trocoLevado),
+          ...(pixDaLoja > 0 ? { trocoNoPixDaLoja: reais(pixDaLoja) } : {}),
+          ...(pixDoMotoboy > 0 ? { trocoNoPixDoMotoboy: reais(pixDoMotoboy) } : {}),
         });
       } else {
         semEntregador.qtd += 1;
@@ -449,6 +466,34 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
   // Uma parte de pagamento feita na loja (do balcão dividido, da baixa da mesa
   // ou o pedido inteiro) na linha da conferência da forma dela. Devolve o nome
   // da forma para o retrato contar a parte onde a conferência contou.
+  // ── O TROCO FEITO PELO PIX NA CONFERÊNCIA ───────────────────────────────
+  //
+  // Pedido de R$ 40 pago com nota de R$ 50, troco de R$ 10 devolvido por Pix
+  // (lib/troco-no-pix.ts). Sem a marca, a conta é a de sempre: o troco saiu
+  // em cédula da gaveta e a nota voltou, então a gaveta fica com os R$ 40.
+  //   • Pix DA LOJA: nenhuma cédula saiu, a nota inteira entrou. O dinheiro
+  //     espera R$ 50 e o Pix R$ 10 a MENOS (saiu da conta da loja) — os dois
+  //     somam os R$ 40 do pedido, e o total do caixa não muda.
+  //   • Pix DO MOTOBOY: ele ficou com os R$ 10 da nota e entregou R$ 40 — o
+  //     que a gaveta já esperava. Nada muda na conferência; fica a informação.
+  // Só para a parte que passou pela gaveta da loja (`conferirParte`): o que o
+  // entregador do app cobrou na porta nem entra aqui.
+  const conferirTrocoNoPix = (o: any) => {
+    for (const p of partesDaEntrega(o)) {
+      const t = cent(trocoNoPixDaParte(p));
+      if (t <= 0) continue;
+      if (p.trocoNoPix === "LOJA") {
+        esp.cash += t;
+        esp.pix -= t;
+        trocoNoPix.qtd += 1;
+        trocoNoPix.c += t;
+      } else {
+        trocoNoPix.motoboyQtd += 1;
+        trocoNoPix.motoboyC += t;
+      }
+    }
+  };
+
   const conferirParte = (chave: ChaveDaForma, v: number): string => {
     const linha = LINHA_DA_CONFERENCIA[chave];
     if (linha) {
@@ -565,6 +610,7 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
     const divisao = lerPagamentos(o.paymentMethods);
     if (divisao.length > 0) {
       const formas = divisao.map((p) => ({ forma: conferirParte(formaDoTexto(p.method), p.amount), valor: p.amount }));
+      conferirTrocoNoPix(o);
       // As partes fecham com o total com 2 centavos de tolerância
       // (lib/pagamento-dividido.ts): a diferença vai para a ponte.
       centavosDoDividido += formas.reduce((s, f) => s + cent(f.valor), 0) - cent(o.totalAmount);
@@ -620,6 +666,7 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
       }
     } else {
       forma = conferirParte(chave, valReal);
+      conferirTrocoNoPix(o);
     }
 
     // O cupom que a plataforma pagou NESTE pedido, no retrato. É o mesmo
@@ -850,6 +897,9 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
       fiado,
       entregaParceira: { qtd: entregaParceira.qtd, valor: reais(entregaParceira.c) },
       semEntregador: { qtd: semEntregador.qtd, valor: reais(semEntregador.c) },
+      ...(trocoNoPix.qtd > 0 || trocoNoPix.motoboyQtd > 0
+        ? { trocoNoPix: { qtd: trocoNoPix.qtd, valor: reais(trocoNoPix.c), motoboyQtd: trocoNoPix.motoboyQtd, motoboyValor: reais(trocoNoPix.motoboyC) } }
+        : {}),
     },
   };
 }

@@ -23,7 +23,8 @@ import { contaDoPedido, emReais } from "@/lib/conta-do-pedido";
 import { safeParseCombo } from "@/lib/parse-combo";
 import { nomeDoItem } from "@/lib/nome-do-item";
 import { lerHistorico, quandoFoi, ROTULO_DA_EDICAO } from "@/lib/historico-do-pedido";
-import { CAIXAS_DO_ACERTO, partesDaEntrega } from "@/lib/resumo-do-entregador";
+import { CAIXAS_DO_ACERTO, dinheiroDaParte, partesDaEntrega, trocoNoPixDaParte } from "@/lib/resumo-do-entregador";
+import { textoDoTrocoNoPix } from "@/lib/troco-no-pix";
 
 type Props = {
   pedido: any;
@@ -114,6 +115,7 @@ ${linha("TOTAL", emReais(conta.total), true)}
 <div class="m"><b>Pagamento:</b> ${escapar(o.paymentMethod || "—")}</div>
 <div class="m"><b>No acerto:</b> ${escapar(partes.map((p) => `${(rotuloDaCaixa.get(p.caixa) || p.caixa).replace(/^\S+\s/, "")}${partes.length > 1 ? ` ${emReais(p.valor)}` : ""}`).join(" + "))}</div>
 ${dinheiro ? `<div class="m"><b>Troco para:</b> ${escapar(emReais(dinheiro.trocoPara))} (troco ${escapar(emReais((dinheiro.trocoPara || 0) - dinheiro.valor))})</div>` : ""}
+${dinheiro?.trocoNoPix ? `<div class="m"><b>${escapar(textoDoTrocoNoPix(trocoNoPixDaParte(dinheiro), dinheiro.trocoNoPix))}</b></div>` : ""}
 <div class="m"><b>Entregador:</b> ${escapar(entregador)}${o.ganhoDoMotoboy != null ? ` — recebe ${escapar(emReais(o.ganhoDoMotoboy))}` : ""}</div>
 ${o.cancelado ? `<div class="m"><b>PEDIDO CANCELADO</b></div>` : ""}
 ${o.notes ? `<hr><div class="m"><b>Obs.:</b> ${escapar(o.notes)}</div>` : ""}
@@ -226,7 +228,10 @@ export default function VerPedidoDoAcerto({ pedido: o, entregador, tz, linkDeEdi
           </div>
           {dinheiro && (
             <div style={{ marginTop: 3, color: "#0F766E", fontWeight: 700 }}>
-              💵 Troco para {emReais(dinheiro.trocoPara)} — o motoboy levou {emReais((dinheiro.trocoPara || 0) - dinheiro.valor)} de troco
+              {/* Troco feito pelo Pix (lib/troco-no-pix.ts): ninguém levou troco em cédula. */}
+              {dinheiro.trocoNoPix
+                ? <>💵 Troco para {emReais(dinheiro.trocoPara)} — {textoDoTrocoNoPix(trocoNoPixDaParte(dinheiro), dinheiro.trocoNoPix)}; o motoboy entrega {emReais(dinheiroDaParte(dinheiro))}</>
+                : <>💵 Troco para {emReais(dinheiro.trocoPara)} — o motoboy levou {emReais((dinheiro.trocoPara || 0) - dinheiro.valor)} de troco</>}
             </div>
           )}
           {o.ganhoDoMotoboy != null && (
