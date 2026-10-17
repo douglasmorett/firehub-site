@@ -164,6 +164,84 @@ export function quemEntrega99(deliveryType: unknown): "99FOOD" | "MERCHANT" {
   return Number(deliveryType) === 2 ? "MERCHANT" : "99FOOD";
 }
 
+// ─── O "TROCO PARA" DO DINHEIRO ─────────────────────────────────────────────
+//
+// Showrrascão, 17/10/2026 ~20h: pedido do 99Food em dinheiro, total R$ 72,23,
+// o cliente pediu troco para R$ 100. A comanda saiu com "COBRAR DO CLIENTE NA
+// ENTREGA: R$ 72,23" e nenhuma linha de troco; o motoboy chegou sem os
+// R$ 27,77 e o cliente cobrou na porta.
+//
+// A comanda, o painel e o WhatsApp do motoboy JÁ sabem mostrar o troco: leem
+// `changeAmount` (a NOTA que o cliente entrega — lib/pagamento-na-entrega.ts),
+// igual para iFood, site e robô. O que faltava era o 99: este tradutor não
+// tinha campo de troco e o webhook/importação nunca gravavam `changeAmount`.
+// Um leitor assim foi escrito em 30/09 (06385e95, branch auditoria-xml) e não
+// chegou ao master.
+//
+// O `OrderModel` do swagger que este tradutor segue NÃO documenta o troco, e
+// o FireHub não guarda o `order/detail` cru (só o `price`). Então o nome do
+// campo é desconhecido: o leitor procura os nomes prováveis e, sem achar,
+// varre as chaves com "change"/"troco" no nome. Só aceita o que se prova —
+// pedido em dinheiro e valor ACIMA do total (a nota que o cliente entrega).
+// Quando é dinheiro e nada aparece, o tradutor loga as chaves que o pedido
+// REALMENTE tem: o próximo pedido em dinheiro fecha o assunto, como fechou o
+// código de coleta e as coordenadas.
+
+/** Nomes prováveis do "troco para", em ordem — o objeto de cima e o `price`/`pay_info`. */
+const TROCO_CANDIDATOS: ((o: any) => unknown)[] = [
+  (o) => o?.change_for, (o) => o?.cash_change_for, (o) => o?.change_for_amount, (o) => o?.pay_with,
+  (o) => o?.cash_amount, (o) => o?.cash_paid, (o) => o?.customer_cash,
+  (o) => o?.price?.change_for, (o) => o?.price?.cash_amount, (o) => o?.price?.cash_change_for,
+  (o) => o?.pay_info?.change_for, (o) => o?.pay_info?.cash_amount, (o) => o?.pay_info?.pay_with,
+  (o) => o?.payment?.change_for, (o) => o?.payment?.cash_amount,
+];
+/** Chave que fala de troco pelo nome — e não é hora, status nem id (`last_change_time` não é dinheiro). */
+const CHAVE_DE_TROCO = /change|troco/i;
+const CHAVE_QUE_NAO_E_DINHEIRO = /time|date|_at$|status|state|type|_id$|^id$|reason|count|num/i;
+
+/** Valor em centavos (como todo dinheiro do 99) → reais, se for número de verdade. */
+function centavosOuNada(v: unknown): number | null {
+  if (v == null || v === "" || typeof v === "boolean" || typeof v === "object") return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n / 100 : null;
+}
+
+/**
+ * "Troco para" (a nota que o cliente vai entregar) do pedido em dinheiro, em
+ * reais — ou null quando não é dinheiro, o cliente não pediu troco, ou o 99
+ * não mandou nada que se prove.
+ *
+ * Aceita só valor acima do total e até R$ 500 acima dele: ninguém pede troco
+ * para mais de R$ 500 de diferença, e é essa trava que impede um timestamp ou
+ * um id numérico de virar troco na comanda.
+ */
+export function trocoPara99(o: any, total: number): number | null {
+  if (Number(o?.pay_type) !== 2) return null;
+  const aceita = (reais: number | null) =>
+    reais != null && reais > total + 0.009 && reais - total <= 500 ? Math.round(reais * 100) / 100 : null;
+
+  for (const ler of TROCO_CANDIDATOS) {
+    const v = aceita(centavosOuNada(ler(o)));
+    if (v != null) return v;
+  }
+
+  // Varredura: qualquer chave com "change"/"troco" no nome, até 3 níveis.
+  const varrer = (obj: unknown, nivel: number): number | null => {
+    if (!obj || typeof obj !== "object" || Array.isArray(obj) || nivel > 3) return null;
+    for (const [chave, valor] of Object.entries(obj as Record<string, unknown>)) {
+      if (valor && typeof valor === "object") {
+        const dentro = varrer(valor, nivel + 1);
+        if (dentro != null) return dentro;
+      } else if (CHAVE_DE_TROCO.test(chave) && !CHAVE_QUE_NAO_E_DINHEIRO.test(chave)) {
+        const v = aceita(centavosOuNada(valor));
+        if (v != null) return v;
+      }
+    }
+    return null;
+  };
+  return varrer(o, 0);
+}
+
 /**
  * Campos que o 99Food MASCARA em vez de deixar em branco.
  *
@@ -367,6 +445,11 @@ export interface PedidoTraduzido {
   precoCru: Record<string, unknown> | null;
   observacoes: string;
   itens: ItemTraduzido[];
+  /**
+   * "Troco para" do pagamento em dinheiro, em reais (vira `changeAmount`).
+   * Null quando não é dinheiro ou o 99 não mandou — ver `trocoPara99`.
+   */
+  trocoPara: number | null;
 }
 
 /**
@@ -462,6 +545,17 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     recebeLoja: reparticao.recebeLoja,
   };
 
+  // O "troco para" do dinheiro (Showrrascão, 17/10/2026: saiu sem troco e o
+  // motoboy não levou os R$ 27,77). Sem achar em pedido em dinheiro, o log
+  // lista as chaves do pedido — é o que revela o nome do campo no próximo.
+  const trocoPara = trocoPara99(o, totalPago);
+  if (trocoPara == null && Number(o.pay_type) === 2) {
+    console.warn(
+      `[99Food] pedido ${o.order_id ?? "?"} em DINHEIRO sem "troco para" reconhecido ` +
+      `(ou o cliente não pediu troco); chaves do pedido: ${chavesParaLog(o)}`,
+    );
+  }
+
   // order_index é o número sequencial do dia na loja, que é o que o lojista vê
   // no app do 99Food e o que ele vai procurar quando ligar reclamando.
   const numeroNoParceiro = String(o.order_index ?? o.order_id ?? "");
@@ -498,6 +592,7 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
     precoCru: preco && typeof preco === "object" ? (preco as Record<string, unknown>) : null,
     observacoes: String(o.remark ?? "").trim(),
     itens: Array.isArray(o.order_items) ? o.order_items.map(traduzirItem) : [],
+    trocoPara,
   };
 }
 
