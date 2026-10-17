@@ -83,7 +83,10 @@ export async function ligarGps(): Promise<ResultadoDoGps> {
       return { ok: false, motivo: "negado", mensagem: "Sem a localização, a loja não te vê no mapa. Libere nas configurações do app." };
     }
 
-    if (!(await Location.hasStartedLocationUpdatesAsync(TAREFA_DO_GPS).catch(() => false))) {
+    // Sempre (re)inicia, mesmo já rodando: o expo-location só troca as opções
+    // da tarefa, sem parar o rastreio. Sem isto, quem atualizou o app ficava
+    // com as opções da versão anterior gravadas na tarefa.
+    {
       await Location.startLocationUpdatesAsync(TAREFA_DO_GPS, {
         accuracy: Location.Accuracy.High,
         timeInterval: INTERVALO_DO_GPS_MS,

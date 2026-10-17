@@ -42,7 +42,7 @@ import { cor, raio, reais } from "@/components/tema";
 import { chamar, ErroDaApi, type ListaDePedidos, type Pedido, type RespostaDaBaixa } from "@/lib/api";
 import { ATUALIZAR_LISTA_MS } from "@/lib/config";
 import { gravarGpsPausado, lerGpsPausado } from "@/lib/guardado";
-import { desligarGps, gpsLigado, ligarGps, ouvirEnvios, registrarPosicaoAgora, ultimaPosicaoAceita } from "@/lib/gps";
+import { desligarGps, ligarGps, ouvirEnvios, registrarPosicaoAgora, ultimaPosicaoAceita } from "@/lib/gps";
 import { lerComanda } from "@/lib/loja";
 import { registrarAvisos } from "@/lib/notificacoes";
 import { useSessao } from "@/lib/sessao";
@@ -60,7 +60,8 @@ type EstadoDoGps = "ligando" | "ligado" | "pausado" | "negado" | "desligado-no-c
  */
 async function resolverGps(peloEntregador: boolean): Promise<{ estado: EstadoDoGps; erro?: string }> {
   if (!peloEntregador && (await lerGpsPausado())) return { estado: "pausado" };
-  if (!peloEntregador && (await gpsLigado())) return { estado: "ligado" };
+  // Ligado ou não, passa pelo ligarGps: ele reaplica as opções da tarefa
+  // (quem atualizou o app ficava com as da versão anterior).
   const r = await ligarGps();
   if (r.ok) {
     await gravarGpsPausado(false);
