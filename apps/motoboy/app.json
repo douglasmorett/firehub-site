@@ -29,7 +29,7 @@
     "android": {
       "package": "br.com.firehub.entregador",
       "adaptiveIcon": {
-        "backgroundColor": "#FF4D00",
+        "backgroundColor": "#0B1220",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -71,7 +71,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#FF4D00",
+          "backgroundColor": "#0B1220",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 120
         }
