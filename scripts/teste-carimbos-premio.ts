@@ -10,6 +10,8 @@
  * 3) desconto limitado ao valor dos produtos (não vira troco);
  * 4) prêmio produto (item grátis; produto fora do cardápio guarda o prêmio);
  * 5) não aplica em canal fora do site e do robô; marketplace não ganha carimbo;
+ * 5b) a loja escolhe onde o cliente ganha carimbo (stampCanais; site desmarcado
+ *    = prêmio não entra no site); 5c) o cliente do robô guarda o prêmio;
  * 6) pedido com prêmio cancelado devolve o prêmio;
  * 7) a etiqueta do pedido, a comanda do robô e o brinde fora da comparação da tag.
  */
@@ -20,13 +22,17 @@ import {
   ehItemDoPremioDosCarimbos,
   etiquetaDoPremioDosCarimbos,
   ganhaCarimbo,
+  guardarNoRobo,
   lerCarimbos,
   lerResgateDosCarimbos,
+  marcaDePremioGuardado,
   NOTA_DO_ITEM_DO_PREMIO,
+  ondeEntraOPremio,
+  premioFoiGuardado,
   type PedidoDoCarimbo,
 } from "../src/lib/carimbos";
 import { finalDoTelefone, mesmoTelefoneDoCardapio } from "../src/lib/pedidos-do-telefone";
-import { comandaDoRobo } from "../src/lib/comanda-do-robo";
+import { carimbosDoClienteParaOPrompt, comandaDoRobo } from "../src/lib/comanda-do-robo";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -141,6 +147,54 @@ confere("prêmio R$ 0 (Point da Pizza): cartão fora do ar, nada aplica",
   [false, null]);
 confere("mínimo 0 na configuração = qualquer pedido ganha (antes virava R$ 30)",
   ganhaCarimbo(ped(12), lerCarimbos({ ...LAPASTINE, stampMinOrder: 0 })), true);
+
+// ── 5b) A loja escolhe os canais ─────────────────────────────────────────────
+console.log("\n5b) Onde o cliente ganha carimbo: a loja decide (stampCanais)");
+confere("loja sem o campo salvo: todos os canais marcados (nada muda nas lojas de hoje)",
+  lerCarimbos(LAPASTINE).canais, { site: true, whatsapp: true, balcao: true, mesa: true, totem: true });
+const SEM_BALCAO = { ...LAPASTINE, stampCanais: { balcao: false, mesa: false } };
+const regraSemBalcao = lerCarimbos(SEM_BALCAO);
+confere("canal ausente no campo herda marcado; o desmarcado vale",
+  regraSemBalcao.canais, { site: true, whatsapp: true, balcao: false, mesa: false, totem: true });
+confere("balcão e mesa desmarcados: não ganham carimbo; site, robô e totem ganham",
+  [ped(80, { source: "PRESENCIAL" }), ped(80, { source: "PRESENCIAL", tableSessionId: "m1" }), ped(80), ped(80, { source: "WHATSAPP_IA" }), ped(80, { source: "TOTEM" })]
+    .map((p) => ganhaCarimbo(p, regraSemBalcao)),
+  [false, false, true, true, true]);
+confere("os pedidos de balcão saem da conta do cartão",
+  contarCarimbos(regraSemBalcao, [...Array.from({ length: 9 }, () => ped(60)), ped(60, { source: "PRESENCIAL" })]).aReceber, 0);
+const SEM_SITE = { ...LAPASTINE, stampCanais: { site: false } };
+const regraSemSite = lerCarimbos(SEM_SITE);
+const cartaoSemSite = contarCarimbos(regraSemSite, Array.from({ length: 10 }, () => ped(60, { source: "WHATSAPP_IA" })));
+confere("site desmarcado: o pedido do site não ganha carimbo", ganhaCarimbo(ped(80), regraSemSite), false);
+confere("site desmarcado: o prêmio NÃO entra no site, mas entra no robô",
+  [efeitoDosCarimbos(regraSemSite, cartaoSemSite, { canal: "site", produtosAPagar: 80 }), efeitoDosCarimbos(regraSemSite, cartaoSemSite, { canal: "whatsapp", produtosAPagar: 80 })?.descontoExtra],
+  [null, 50]);
+confere("onde o prêmio entra, do que a loja marcou",
+  [ondeEntraOPremio(regra), ondeEntraOPremio(regraSemSite), ondeEntraOPremio(lerCarimbos({ ...LAPASTINE, stampCanais: { site: false, whatsapp: false } }))],
+  ["pelo site ou pelo WhatsApp", "pelo WhatsApp", ""]);
+
+// ── 5c) Guardar no robô ──────────────────────────────────────────────────────
+console.log("\n5c) O cliente do robô guarda o prêmio para a próxima");
+confere("a tag decide; sem o campo, vale o que o rascunho já tinha; sem nada, usa (como o site)",
+  [guardarNoRobo(true, null), guardarNoRobo(false, marcaDePremioGuardado()), guardarNoRobo(undefined, marcaDePremioGuardado()), guardarNoRobo(undefined, null), guardarNoRobo(undefined, efeito.resgate), guardarNoRobo("true", null)],
+  [true, false, true, false, false, true]);
+const comGuardado = [ped(80, { source: "WHATSAPP_IA", status: "NOVO", carimboPremio: marcaDePremioGuardado() }), ...dez];
+const cartaoGuardado = contarCarimbos(regra, comGuardado);
+confere("o pedido que guardou NÃO conta como prêmio usado: o prêmio continua a receber",
+  [lerResgateDosCarimbos(marcaDePremioGuardado()), premioFoiGuardado(comGuardado[0].carimboPremio), cartaoGuardado.usados, cartaoGuardado.aReceber],
+  [null, true, 0, 1]);
+confere("e entra no pedido seguinte", efeitoDosCarimbos(regra, cartaoGuardado, { canal: "site", produtosAPagar: 70 })?.descontoExtra, 50);
+const promptDoRobo = carimbosDoClienteParaOPrompt({ premio: "R$ 50,00 de desconto", aReceber: 1 });
+confere("o robô só fala do prêmio que o servidor contou: sem prêmio a receber, nada no prompt",
+  [carimbosDoClienteParaOPrompt({ premio: "R$ 50,00 de desconto", aReceber: 0 }), promptDoRobo.includes("Quer usar neste pedido ou guardar para a próxima?"), promptDoRobo.includes("\"guardarPremioDosCarimbos\": true")],
+  ["", true, true]);
+const comandaGuardada = comandaDoRobo({
+  numero: 14, status: "NOVO", itens: [{ quantity: 1, productName: "Pizza G", price: 80 }],
+  formaDePagamento: "Pix", entrega: false, taxaDeEntrega: 0, total: 80, premioDosCarimbosGuardado: true,
+});
+confere("comanda de quem guardou: total cheio e o aviso de guardado",
+  [comandaGuardada.includes("*Total: R$ 80,00*"), comandaGuardada.includes("ficou guardado para o próximo pedido"), comandaGuardada.includes("-R$ 50,00")],
+  [true, true, false]);
 
 // ── 6) Cancelado devolve ─────────────────────────────────────────────────────
 console.log("\n6) Pedido com prêmio cancelado devolve o prêmio");

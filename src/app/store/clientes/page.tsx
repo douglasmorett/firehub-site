@@ -1095,7 +1095,8 @@ function CarimbosDaFicha({ c }: { c: CarimbosNaFicha }) {
       </div>
       {c.aReceber > 0 && (
         <div style={{ marginTop: 8, background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "6px 9px", fontSize: "0.76rem", color: "#14532D" }}>
-          🎁 A receber: <strong>{c.premio}</strong> — entra sozinho no próximo pedido pelo site ou pelo WhatsApp
+          🎁 A receber: <strong>{c.premio}</strong> —{" "}
+          {c.ondeEntra ? `entra sozinho no próximo pedido ${c.ondeEntra}` : "site e WhatsApp desmarcados na Fidelidade: a loja dá o prêmio à mão"}
           {c.aReceber > 1 ? ` (${c.aReceber} cartelas completas, um prêmio por pedido)` : ""}.
         </div>
       )}

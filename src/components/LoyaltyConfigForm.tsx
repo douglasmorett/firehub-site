@@ -27,6 +27,12 @@ import {
   ondeValeOCashback,
   type CanaisDoCashback,
 } from "@/lib/cashback";
+import {
+  CANAIS_DOS_CARIMBOS,
+  CANAIS_DOS_CARIMBOS_PADRAO,
+  lerCanaisDosCarimbos,
+  type CanaisDosCarimbos,
+} from "@/lib/carimbos";
 
 export type LoyaltyConfig = {
   active: boolean;
@@ -52,6 +58,8 @@ export type LoyaltyConfig = {
   // Prêmio "produto": qual item do cardápio entra grátis (lib/carimbos.ts).
   stampRewardProductId?: string;
   stampRewardProductName?: string;
+  // Onde o cliente ganha carimbo (lib/carimbos.ts). Ausente = todos marcados.
+  stampCanais: CanaisDosCarimbos;
   // Program 3: Indique e Ganhe
   referralActive: boolean;
   friendDiscount: number; // Ex: R$ 10 off para o amigo
@@ -81,6 +89,7 @@ const DEFAULT_LOYALTY: LoyaltyConfig = {
   maxRedeemPercent: 50,
   expiresInDays: 30,
   cashbackCanais: CANAIS_DO_CASHBACK_PADRAO,
+  stampCanais: CANAIS_DOS_CARIMBOS_PADRAO,
 
   stampsActive: false,
   stampGoal: 10,
@@ -124,6 +133,7 @@ export default function LoyaltyConfigForm({
     trilha: lerTrilha(initialConfig),
     // Ausente (loja que nunca mexeu) = os dois marcados, como era antes.
     cashbackCanais: lerCanaisDoCashback(initialConfig),
+    stampCanais: lerCanaisDosCarimbos(initialConfig),
   });
   const [activeTab, setActiveTab] = useState<"trilha" | "converter" | "cashback" | "stamps" | "referral" | "birthday" | "vip">("trilha");
   const [saving, setSaving] = useState(false);
@@ -1048,11 +1058,59 @@ export default function LoyaltyConfigForm({
               )}
             </div>
 
+            {/* Onde o cliente ganha carimbo (lib/carimbos.ts, stampCanais) — o padrão do "Onde o cashback vale". */}
+            <div style={{ marginTop: 20, border: "1.5px solid #E2E8F0", borderRadius: 14, overflow: "hidden" }}>
+              <div style={{ padding: "10px 14px", background: "#F8FAFC", borderBottom: "1px solid #E2E8F0" }}>
+                <b style={{ display: "block", fontSize: "0.86rem", fontWeight: 800, color: "#0F172A" }}>Onde o cliente ganha carimbo</b>
+                <span style={{ fontSize: "0.74rem", color: "#64748B", lineHeight: 1.5 }}>
+                  Marque em quais pedidos o cliente ganha carimbo. O prêmio entra sozinho só no site e no WhatsApp, e só se
+                  o canal estiver marcado. Desmarcar não apaga os carimbos já ganhos nos outros canais.
+                </span>
+              </div>
+              <div style={{ padding: "10px 14px", display: "flex", flexDirection: "column", gap: 7 }}>
+                {CANAIS_DOS_CARIMBOS.map((c) => {
+                  const ligado = config.stampCanais[c.chave] === true;
+                  return (
+                    <button
+                      key={c.chave}
+                      type="button"
+                      aria-pressed={ligado}
+                      onClick={() => update("stampCanais", { ...config.stampCanais, [c.chave]: !ligado })}
+                      style={{
+                        display: "flex", alignItems: "flex-start", gap: 10, padding: "9px 11px", width: "100%",
+                        border: `1.5px solid ${ligado ? "#99F6E4" : "#E2E8F0"}`, borderRadius: 12,
+                        background: ligado ? "#F0FDFA" : "#fff", cursor: "pointer", textAlign: "left", fontFamily: "inherit",
+                      }}
+                    >
+                      <span style={{
+                        width: 20, height: 20, borderRadius: 6, flexShrink: 0, marginTop: 1,
+                        border: `1.5px solid ${ligado ? "#0F766E" : "#CBD5E1"}`, background: ligado ? "#F0FDFA" : "#fff",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        fontSize: "0.74rem", fontWeight: 900, color: "#0F766E",
+                      }}>{ligado ? "✓" : ""}</span>
+                      <span style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                        <b style={{ fontSize: "0.82rem", fontWeight: 800, color: "#0F172A" }}>{c.nome}</b>
+                        <span style={{ fontSize: "0.72rem", color: "#64748B", lineHeight: 1.4, marginTop: 1 }}>{c.ajuda}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+                <span style={{ fontSize: "0.72rem", color: "#64748B", lineHeight: 1.5 }}>
+                  iFood, 99Food e outros apps nunca contam: a loja já paga comissão ali e o prêmio não pode ser usado naquela tela.
+                </span>
+                {config.stampsActive && !config.stampCanais.site && !config.stampCanais.whatsapp && (
+                  <div style={{ background: "#FFF7E6", border: "1.5px solid #FDE68A", color: "#92400E", borderRadius: 10, padding: "8px 12px", fontSize: "0.76rem", lineHeight: 1.5 }}>
+                    Site e WhatsApp desmarcados: o prêmio não entra sozinho em pedido nenhum — a loja dá à mão.
+                  </div>
+                )}
+              </div>
+            </div>
+
             <p style={{ margin: "12px 0 0", fontSize: "0.76rem", color: "#475569", lineHeight: 1.45 }}>
-              Ganha carimbo o pedido do site, do WhatsApp, do balcão, da mesa ou do totem que alcançar o pedido mínimo
-              (iFood e outros apps não contam; pedido cancelado não conta). Ao completar a cartela, o prêmio entra
-              sozinho no próximo pedido do cliente pelo site ou pelo WhatsApp — um prêmio por cartela — e a cartela recomeça.
-              O desconto vale só sobre os produtos: não abate a entrega e não vira troco.
+              Ganha carimbo o pedido de canal marcado que alcançar o pedido mínimo (pedido cancelado não conta). Ao completar
+              a cartela, o prêmio entra sozinho no próximo pedido do cliente pelo site ou pelo WhatsApp (o que estiver marcado) —
+              um prêmio por cartela — e a cartela recomeça. O cliente pode guardar o prêmio para a próxima. O desconto vale só
+              sobre os produtos: não abate a entrega e não vira troco.
             </p>
             {problemaDosCarimbos && (
               <p style={{ margin: "8px 0 0", fontSize: "0.78rem", fontWeight: 700, color: "#B91C1C" }}>⚠️ {problemaDosCarimbos}</p>

@@ -19,15 +19,22 @@
  *   por cartela completa. Pedido com prêmio que é CANCELADO devolve o prêmio:
  *   o cliente não recebeu a comida.
  * - Entra no pedido pelo SITE e pelo ROBÔ DO WHATSAPP — os dois canais em que o
- *   sistema monta a conta. Balcão, mesa e marketplace não aplicam.
+ *   sistema monta a conta —, e só se a loja deixou o canal marcado. Balcão,
+ *   mesa e marketplace não aplicam.
+ * - O cliente pode GUARDAR o prêmio para a próxima: no site pela caixinha do
+ *   checkout (`dispensarPremioDosCarimbos`), no robô pelo campo
+ *   `guardarPremioDosCarimbos` da tag — e o rascunho do robô guarda a escolha
+ *   em `carimboPremio` como `{ programa: "carimbos", guardado: true }`, que
+ *   NÃO conta como prêmio usado.
  *
  * ── Quem ganha carimbo ───────────────────────────────────────────────────────
  *
  * O pedido que não foi cancelado/recusado, não é rascunho do robô nem Pix
  * esperando pagamento (o prêmio agora vale dinheiro: Pix não pago completando
- * cartela seria desconto de graça), veio de canal da própria loja (site,
- * WhatsApp, balcão, mesa, totem — marketplace e canal desconhecido não) e
- * alcança o pedido mínimo.
+ * cartela seria desconto de graça), veio de um canal que a LOJA marcou em
+ * "Onde o cliente ganha carimbo" (`storeLoyalty.stampCanais`: site, WhatsApp,
+ * balcão, mesa, totem — ausente = marcado, como o cashback; marketplace e canal
+ * desconhecido nunca) e alcança o pedido mínimo.
  *
  * ── A configuração é a que a loja salvou ─────────────────────────────────────
  *
@@ -41,6 +48,31 @@
 
 import { canalDaTrilha } from "./trilha-premiada";
 
+/** Onde o cliente ganha carimbo (e, no site e no robô, onde o prêmio entra). Ausente = marcado. */
+export type CanaisDosCarimbos = { site: boolean; whatsapp: boolean; balcao: boolean; mesa: boolean; totem: boolean };
+
+export const CANAIS_DOS_CARIMBOS_PADRAO: CanaisDosCarimbos = { site: true, whatsapp: true, balcao: true, mesa: true, totem: true };
+
+/** Os canais na ordem da tela, com o texto que o lojista lê. */
+export const CANAIS_DOS_CARIMBOS: { chave: keyof CanaisDosCarimbos; nome: string; ajuda: string }[] = [
+  { chave: "site", nome: "🌐 Site (cardápio digital)", ajuda: "Ganha carimbo, e o prêmio entra sozinho no checkout." },
+  { chave: "whatsapp", nome: "🤖 WhatsApp (robô)", ajuda: "Ganha carimbo, e o robô aplica o prêmio (ou guarda, se o cliente pedir)." },
+  { chave: "balcao", nome: "🧾 Balcão / PDV", ajuda: "Ganha carimbo quando o telefone do cliente vai no pedido. O prêmio não entra aqui." },
+  { chave: "mesa", nome: "🍽️ Mesa", ajuda: "Ganha carimbo pela comanda da mesa com telefone. O prêmio não entra aqui." },
+  { chave: "totem", nome: "🖥️ Totem", ajuda: "Ganha carimbo no autoatendimento com telefone. O prêmio não entra aqui." },
+];
+
+/** Lê `storeLoyalty.stampCanais`; o canal que não estiver lá vale marcado. */
+export function lerCanaisDosCarimbos(storeLoyalty: unknown): CanaisDosCarimbos {
+  const l = (storeLoyalty && typeof storeLoyalty === "object" ? storeLoyalty : {}) as Record<string, unknown>;
+  const bruto = (l.stampCanais && typeof l.stampCanais === "object" ? l.stampCanais : {}) as Record<string, unknown>;
+  const canais = { ...CANAIS_DOS_CARIMBOS_PADRAO };
+  for (const chave of Object.keys(CANAIS_DOS_CARIMBOS_PADRAO) as (keyof CanaisDosCarimbos)[]) {
+    if (typeof bruto[chave] === "boolean") canais[chave] = bruto[chave] as boolean;
+  }
+  return canais;
+}
+
 export type RegraDosCarimbos = {
   ativo: boolean;
   /** Carimbos para completar a cartela. */
@@ -53,6 +85,8 @@ export type RegraDosCarimbos = {
   /** O produto do prêmio, quando o prêmio é produto (`stampRewardProductId`). */
   premioProdutoId?: string;
   premioProdutoNome?: string;
+  /** Onde o cliente ganha carimbo (`stampCanais`). */
+  canais: CanaisDosCarimbos;
 };
 
 /** O padrão do formulário — só para o campo que a loja nunca salvou. */
@@ -79,6 +113,7 @@ export function lerCarimbos(storeLoyalty: unknown): RegraDosCarimbos {
     premioValor: numeroSalvo(l.stampRewardValue, PREMIO_PADRAO),
     premioProdutoId: premioTipo === "product" ? String(l.stampRewardProductId || "").trim() || undefined : undefined,
     premioProdutoNome: premioTipo === "product" ? String(l.stampRewardProductName || "").trim() || undefined : undefined,
+    canais: lerCanaisDosCarimbos(storeLoyalty),
   };
 }
 
@@ -123,6 +158,8 @@ export function ganhaCarimbo(p: PedidoDoCarimbo, regra: RegraDosCarimbos): boole
   if (String(p.source || "").toUpperCase().trim() === "EQUIPE") return false;
   const canal = canalDaTrilha(p as any);
   if (canal === null || canal === "marketplace") return false;
+  // Canal que a loja desmarcou em "Onde o cliente ganha carimbo".
+  if (regra.canais[canal] !== true) return false;
   return !(regra.pedidoMinimo > 0) || Number(p.totalAmount) >= regra.pedidoMinimo;
 }
 
@@ -148,7 +185,8 @@ export type ResgateDosCarimbos = {
 
 export function lerResgateDosCarimbos(bruto: unknown): ResgateDosCarimbos | null {
   const r = bruto as any;
-  if (!r || typeof r !== "object" || r.programa !== "carimbos") return null;
+  // "Guardado para a próxima" (rascunho do robô) não é prêmio usado.
+  if (!r || typeof r !== "object" || r.programa !== "carimbos" || r.guardado === true) return null;
   const cartela = Math.floor(Number(r.cartela));
   return {
     programa: "carimbos",
@@ -219,6 +257,42 @@ export function ehItemDoPremioDosCarimbos(item: { notes?: string | null; price?:
 /** Os canais em que o prêmio entra sozinho. */
 export type CanalDoPremio = "site" | "whatsapp";
 
+/** O prêmio entra sozinho neste canal? Só site e robô, e só se a loja deixou marcado. */
+export function premioEntraNoCanal(regra: RegraDosCarimbos, canal: string): boolean {
+  return (canal === "site" || canal === "whatsapp") && regra.canais[canal] === true;
+}
+
+/** A marca que o rascunho do robô grava quando o cliente pede para guardar o prêmio. */
+export function marcaDePremioGuardado(agora: Date = new Date()) {
+  return { programa: "carimbos" as const, guardado: true as const, em: agora.toISOString() };
+}
+
+/** O pedido traz a marca de "guardar o prêmio para a próxima"? */
+export function premioFoiGuardado(bruto: unknown): boolean {
+  const r = bruto as any;
+  return !!r && typeof r === "object" && r.programa === "carimbos" && r.guardado === true;
+}
+
+/**
+ * O cliente do robô quer guardar o prêmio? O campo da tag decide; sem ele, vale
+ * o que o rascunho já tinha (o modelo nem sempre repete o campo na finalização,
+ * como no cashback). Sem nada: usa — o mesmo padrão do site.
+ */
+export function guardarNoRobo(daTag: unknown, carimboDoRascunho: unknown): boolean {
+  if (daTag === true || daTag === "true") return true;
+  if (daTag === false || daTag === "false") return false;
+  return premioFoiGuardado(carimboDoRascunho);
+}
+
+/** "pelo site ou pelo WhatsApp" — onde o prêmio entra, do que a loja marcou. */
+export function ondeEntraOPremio(regra: RegraDosCarimbos): string {
+  const site = regra.canais.site, zap = regra.canais.whatsapp;
+  if (site && zap) return "pelo site ou pelo WhatsApp";
+  if (site) return "pelo site";
+  if (zap) return "pelo WhatsApp";
+  return "";
+}
+
 export type EfeitoDosCarimbos = {
   /** Quanto abater dos produtos, em reais. */
   descontoExtra: number;
@@ -253,7 +327,7 @@ export function efeitoDosCarimbos(
   agora: Date = new Date(),
 ): EfeitoDosCarimbos | null {
   if (!carimbosNoAr(regra) || !(cartao.aReceber > 0)) return null;
-  if (conta.canal !== "site" && conta.canal !== "whatsapp") return null;
+  if (!premioEntraNoCanal(regra, conta.canal)) return null;
   const base = {
     programa: "carimbos" as const,
     cartela: cartao.usados + 1,
@@ -313,6 +387,8 @@ export type CarimbosDoCliente = {
   completas: number;
   aReceber: number;
   premio: string;
+  /** "pelo site ou pelo WhatsApp"; vazio = nenhum canal com prêmio automático marcado. */
+  ondeEntra: string;
 };
 
 export function carimbosDoCliente(regra: RegraDosCarimbos, cartao: CartaoDeCarimbos): CarimbosDoCliente {
@@ -323,5 +399,6 @@ export function carimbosDoCliente(regra: RegraDosCarimbos, cartao: CartaoDeCarim
     completas: cartao.completas,
     aReceber: cartao.aReceber,
     premio: premioDosCarimbos(regra),
+    ondeEntra: ondeEntraOPremio(regra),
   };
 }

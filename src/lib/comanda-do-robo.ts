@@ -72,6 +72,8 @@ export type DadosDaComanda = {
    * de abatimento; desconto 0 é o brinde, que já está nos itens a R$ 0.
    */
   premioDosCarimbos?: { descricao: string; desconto: number } | null;
+  /** O cliente guardou o prêmio do cartão para a próxima. */
+  premioDosCarimbosGuardado?: boolean;
   total: number;
 };
 
@@ -199,6 +201,9 @@ export function comandaDoRobo(d: DadosDaComanda): string {
   if (d.premioDosCarimbos && doCartao <= 0) {
     linhas.push("", `🎫 Você completou o Cartão de Carimbos: ${d.premioDosCarimbos.descricao} vai de presente neste pedido!`);
   }
+  if (!d.premioDosCarimbos && d.premioDosCarimbosGuardado) {
+    linhas.push("", "🎫 O prêmio do seu Cartão de Carimbos ficou guardado para o próximo pedido.");
+  }
   if (d.cupomRecusado) linhas.push("", `ℹ️ ${d.cupomRecusado}`);
 
   linhas.push("", "Obrigado pela preferência! Se precisar de algo, é só chamar 😉");
@@ -210,6 +215,24 @@ export function comandaDoRobo(d: DadosDaComanda): string {
  * calcula o desconto — só pergunta e marca `usarCashback` na tag; quem decide
  * quanto abate é o servidor (lib/cashback.ts, resgateMaximo).
  */
+/**
+ * O prêmio do Cartão de Carimbos deste cliente, para o prompt do robô — só
+ * quando o SERVIDOR contou que há prêmio a receber (lib/premio-no-pedido.ts,
+ * `carimbosDoTelefone`). Sem este bloco o robô não fala de prêmio nenhum: o
+ * modelo não inventa prêmio. Ele só pergunta "usar ou guardar?" e marca a
+ * resposta na tag; quem aplica e calcula é o sistema (syncAiOrderToDatabase).
+ */
+export function carimbosDoClienteParaOPrompt(opcoes: { premio: string; aReceber: number }): string {
+  if (!(opcoes.aReceber > 0) || !String(opcoes.premio || "").trim()) return "";
+  return [
+    `🎫 CARTÃO DE CARIMBOS DESTE CLIENTE: ele completou a cartela e tem o prêmio "${opcoes.premio}" a receber nesta loja. O sistema já aplica o prêmio no pedido sozinho.`,
+    `    - Quando for mandar o resumo para ele confirmar, PERGUNTE junto, uma vez só: "Você tem o prêmio do Cartão de Carimbos (${opcoes.premio}). Quer usar neste pedido ou guardar para a próxima?"`,
+    `    - Se ele quiser GUARDAR, coloque "guardarPremioDosCarimbos": true na tag [[PEDIDO_IA]] (no rascunho E na finalização). Se quiser usar, "guardarPremioDosCarimbos": false. Sem resposta, o prêmio entra neste pedido.`,
+    `    - Você NÃO calcula o prêmio e não tira nada do total que você escreve: o sistema aplica e acrescenta, logo abaixo da sua mensagem, a linha do prêmio e o total exato. Prêmio em produto o sistema põe nos itens: não coloque na tag.`,
+    `    - Não fale de prêmio de cartão de carimbos fora deste bloco, e nunca prometa prêmio a outro cliente.`,
+  ].join("\n");
+}
+
 export function cashbackDoClienteParaOPrompt(opcoes: {
   saldo: number;
   maxResgatePct: number;

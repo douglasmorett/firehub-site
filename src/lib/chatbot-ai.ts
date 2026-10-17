@@ -60,9 +60,18 @@ import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedid
 import { previsaoDaEntrega, tempoDeEntregaParaGravar } from "./previsao-da-entrega";
 import { cashbackDoPedido, lerCashback, regraNoCanal, resgateMaximo } from "./cashback";
 import { cashbackDoCliente } from "./cashback-no-banco";
-import { premioDosCarimbosNoPedido } from "./premio-no-pedido";
-import { ehItemDoPremioDosCarimbos, etiquetaDoPremioDosCarimbos, NOTA_DO_ITEM_DO_PREMIO, type ResgateDosCarimbos } from "./carimbos";
-import { cashbackDoClienteParaOPrompt, comandaDoRobo } from "./comanda-do-robo";
+import { carimbosDoTelefone, premioDosCarimbosNoPedido } from "./premio-no-pedido";
+import {
+  ehItemDoPremioDosCarimbos,
+  etiquetaDoPremioDosCarimbos,
+  guardarNoRobo,
+  marcaDePremioGuardado,
+  NOTA_DO_ITEM_DO_PREMIO,
+  premioDosCarimbos,
+  premioEntraNoCanal,
+  type ResgateDosCarimbos,
+} from "./carimbos";
+import { carimbosDoClienteParaOPrompt, cashbackDoClienteParaOPrompt, comandaDoRobo } from "./comanda-do-robo";
 import { itensEmTexto, mensagemDoAcrescimoEnviado, pedidoAtivoParaOPrompt } from "./acrescimo-do-pedido";
 import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco";
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
@@ -989,6 +998,25 @@ export async function processChatbotAI(
     }
   }
 
+  // O prêmio do Cartão de Carimbos deste telefone (lib/premio-no-pedido.ts),
+  // sem os pedidos desta conversa — o rascunho que já leva (ou guardou) o
+  // prêmio não pode escondê-lo. Só com o WhatsApp marcado na Fidelidade: é o
+  // que deixa o robô perguntar "usar ou guardar?" sem inventar prêmio.
+  let carimbosDesteCliente = "";
+  if (aiOrderingEnabled && clientPhoneDigits.length >= 10) {
+    try {
+      const doCartao = await carimbosDoTelefone(targetFranchiseeId, (user as any).storeLoyalty, clientPhoneDigits, idsDaConversa);
+      if (doCartao && premioEntraNoCanal(doCartao.regra, "whatsapp") && doCartao.cartao.aReceber > 0) {
+        carimbosDesteCliente = carimbosDoClienteParaOPrompt({
+          premio: premioDosCarimbos(doCartao.regra),
+          aReceber: doCartao.cartao.aReceber,
+        });
+      }
+    } catch (e: any) {
+      console.error("[Chatbot AI] Não consegui conferir o cartão de carimbos do cliente:", e?.message || e);
+    }
+  }
+
   // ── IA FORA DO AR É INCIDENTE, NÃO MODO DE OPERAÇÃO ──────────────────────
   //
   // Quando os modelos falhavam, o robô caía numa frase fixa com o nome do
@@ -1438,7 +1466,7 @@ RETORNO APÓS INATIVIDADE DE 20 MINUTOS (MUITO IMPORTANTE!):
 ` : ""}
 PEDIDOS RECENTES DESTE CLIENTE NO SEU NÚMERO:
 ${recentOrdersSummary}
-${cupomDesteCliente ? `\n${cupomDesteCliente}\n` : ""}${cashbackDesteCliente ? `\n${cashbackDesteCliente}\n` : ""}${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}${addressValidationText}
+${cupomDesteCliente ? `\n${cupomDesteCliente}\n` : ""}${cashbackDesteCliente ? `\n${cashbackDesteCliente}\n` : ""}${carimbosDesteCliente ? `\n${carimbosDesteCliente}\n` : ""}${memoriaDoPedido ? `\n${memoriaDoPedido}\n` : ""}${addressValidationText}
 
 Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma ideia só, até uns 150 caracteres, sem repetir o que já foi dito e sem oferta de ajuda no final. Só o resumo do pedido e a lista de preços que o cliente pediu podem ser maiores.`;
 
@@ -2066,6 +2094,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                 cashbackUsado: Number(gravado.cashbackUsed) || 0,
                 cashbackGerado: Number(gravado.cashbackEarned) || 0,
                 premioDosCarimbos: resultadoDoSync.premioDosCarimbos ?? null,
+                premioDosCarimbosGuardado: resultadoDoSync.premioDosCarimbosGuardado === true,
                 total: Number(gravado.totalAmount) || 0,
               });
             }
@@ -2140,8 +2169,10 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           const doCartao = resultadoDoSync.premioDosCarimbos;
           if (doCartao && /total/i.test(cleanText)) {
             cleanText += doCartao.desconto > 0
-              ? `\n\n🎫 Você completou o Cartão de Carimbos! O prêmio de ${reaisDe(doCartao.desconto)} entra como desconto${usado > 0 ? "" : `: o total fica ${reaisDe(resultadoDoSync.total)}`}.`
-              : `\n\n🎫 Você completou o Cartão de Carimbos! Seu prêmio, ${doCartao.descricao}, vai grátis neste pedido.`;
+              ? `\n\n🎫 Você completou o Cartão de Carimbos! O prêmio de ${reaisDe(doCartao.desconto)} entra como desconto${usado > 0 ? "" : `: o total fica ${reaisDe(resultadoDoSync.total)}`}. Se preferir guardar para a próxima, é só me dizer.`
+              : `\n\n🎫 Você completou o Cartão de Carimbos! Seu prêmio, ${doCartao.descricao}, vai grátis neste pedido. Se preferir guardar para a próxima, é só me dizer.`;
+          } else if (resultadoDoSync.premioDosCarimbosGuardado && /total/i.test(cleanText)) {
+            cleanText += `\n\n🎫 Combinado: o prêmio do seu Cartão de Carimbos fica guardado para o próximo pedido.`;
           }
           if (usado > 0 && /total/i.test(cleanText)) {
             cleanText += `\n\n💰 Seu cashback de ${reaisDe(usado)} entra como desconto: o total fica ${reaisDe(resultadoDoSync.total)}.`;
@@ -2348,6 +2379,8 @@ type SyncResultado =
       cashbackGerado?: number;
       /** O prêmio do Cartão de Carimbos que entrou (desconto 0 = brinde, que vai nos itens). */
       premioDosCarimbos?: { descricao: string; desconto: number };
+      /** O cliente guardou o prêmio do cartão para a próxima: o pedido saiu sem ele. */
+      premioDosCarimbosGuardado?: boolean;
       /** O pedido já tinha sido enviado e a tag o alterou. */
       alterado?: boolean;
       /** A tag final veio repetida e nada mudou: o cliente já recebeu a confirmação. */
@@ -3537,10 +3570,30 @@ async function syncAiOrderToDatabase({
   // o rascunho já leva contaria como usado e sumiria dele). Recalculado a cada
   // gravação, como o cupom e o cashback. O desconto só abate os produtos (não a
   // entrega, não vira troco); o produto entra como item de preço zero.
+  //
+  // GUARDAR PARA A PRÓXIMA (como a caixinha do site): o cliente responde à
+  // pergunta do resumo e a tag traz `guardarPremioDosCarimbos`. Sem o campo,
+  // vale o que o rascunho já tinha — a escolha fica gravada nele como
+  // `{ programa: "carimbos", guardado: true }`, que não conta como prêmio usado.
   let resgateDosCarimbos: ResgateDosCarimbos | null = null;
   let descontoDosCarimbos = 0;
   let itemDoPremioDosCarimbos: any = null;
-  if (carimbos) {
+  const guardarPremioDosCarimbos = guardarNoRobo(payload?.guardarPremioDosCarimbos, (existingDraft as any)?.carimboPremio);
+  // Há mesmo prêmio guardado? Só então a marca vai ao rascunho e o cliente lê
+  // "ficou guardado" — sem prêmio a receber não há o que guardar.
+  let premioGuardadoDosCarimbos = false;
+  if (carimbos && guardarPremioDosCarimbos) {
+    try {
+      const doCartao = await carimbosDoTelefone(franchiseeId, carimbos.storeLoyalty, phoneClean, existingDraft?.id ? [existingDraft.id] : []);
+      premioGuardadoDosCarimbos = !!doCartao && premioEntraNoCanal(doCartao.regra, "whatsapp") && doCartao.cartao.aReceber > 0;
+    } catch (e: any) {
+      console.error("[Chatbot AI Order Sync] Não consegui conferir o cartão de carimbos:", e?.message || e);
+    }
+    if (premioGuardadoDosCarimbos) {
+      console.log(`[Chatbot AI Order Sync] 🎫 Cliente guardou o prêmio do cartão de carimbos para a próxima · loja ${franchiseeId} · tel ${phoneClean.slice(-4)}`);
+    }
+  }
+  if (carimbos && !guardarPremioDosCarimbos) {
     try {
       const efeito = await premioDosCarimbosNoPedido({
         franchiseeId,
@@ -3884,7 +3937,9 @@ async function syncAiOrderToDatabase({
         ...descontoParaGravar,
         ...cashbackParaGravar,
         // O prêmio do cartão é recalculado a cada gravação: some se deixou de valer.
-        carimboPremio: resgateDosCarimbos ? (resgateDosCarimbos as any) : Prisma.DbNull,
+        carimboPremio: resgateDosCarimbos
+          ? (resgateDosCarimbos as any)
+          : premioGuardadoDosCarimbos ? (marcaDePremioGuardado() as any) : Prisma.DbNull,
         notes: notasParaGravar,
         ...(fechaDeVerdade && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         // O pedido nasce AGORA, quando o cliente confirma — não quando o robô
@@ -3946,7 +4001,9 @@ async function syncAiOrderToDatabase({
         ...(descontoNoPedido > 0 ? descontoParaGravar : {}),
         ...(cashbackUsado > 0 ? { cashbackUsed: cashbackParaGravar.cashbackUsed } : {}),
         ...(cashbackGerado > 0 ? { cashbackEarned: cashbackParaGravar.cashbackEarned } : {}),
-        ...(resgateDosCarimbos ? { carimboPremio: resgateDosCarimbos as any } : {}),
+        ...(resgateDosCarimbos
+          ? { carimboPremio: resgateDosCarimbos as any }
+          : premioGuardadoDosCarimbos ? { carimboPremio: marcaDePremioGuardado() as any } : {}),
         source: "WHATSAPP_IA",
         status: statusParaGravar,
         notes: notasParaGravar,
@@ -4013,6 +4070,7 @@ async function syncAiOrderToDatabase({
     cashbackUsado,
     cashbackGerado,
     ...(resgateDosCarimbos ? { premioDosCarimbos: { descricao: resgateDosCarimbos.descricao, desconto: descontoDosCarimbos } } : {}),
+    ...(premioGuardadoDosCarimbos ? { premioDosCarimbosGuardado: true } : {}),
     alterado: Boolean(existingDraft && existingDraft.status !== "CRIANDO_IA"),
     agendadoPara: instanteAgendado ? textoDoAgendamento(instanteAgendado, agendamento?.timezone) : null,
     ...(avisoDoAgendamento ? { avisoDoAgendamento } : {}),

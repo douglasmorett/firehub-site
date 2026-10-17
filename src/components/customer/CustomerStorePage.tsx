@@ -57,7 +57,7 @@ import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/Tr
 import FileiraDeDestaques from "./FileiraDeDestaques";
 import CapaDaLoja from "./CapaDaLoja";
 import { lerTrilha, nomeDoPremio } from "@/lib/trilha-premiada";
-import { carimbosNoAr, lerCarimbos, minimoDosCarimbos, premioDosCarimbos, type CarimbosDoCliente } from "@/lib/carimbos";
+import { carimbosNoAr, lerCarimbos, minimoDosCarimbos, ondeEntraOPremio, premioDosCarimbos, type CarimbosDoCliente } from "@/lib/carimbos";
 import { cpfValido } from "@/lib/fiscal-validacao";
 import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPedido } from "@/lib/fiscal-modo";
 import { mascararDocumentoDigitado, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
@@ -965,6 +965,7 @@ export default function CustomerStorePage({
   const stampGoal = regraDosCarimbos.meta;
   const textoDoPremioDosCarimbos = premioDosCarimbos(regraDosCarimbos);
   const textoDoMinimoDosCarimbos = minimoDosCarimbos(regraDosCarimbos);
+  const ondeEntraOPremioDosCarimbos = ondeEntraOPremio(regraDosCarimbos);
 
   const isReferralActive = Boolean(loyalty.referralActive);
   const friendDiscount = Number(loyalty.friendDiscount || 10);
@@ -1088,7 +1089,8 @@ export default function CustomerStorePage({
   // (api/customer-order, lib/carimbos.ts `efeitoDosCarimbos`). Desconto em R$
   // até o que os produtos ainda custam depois do cupom e da trilha — não vira
   // troco; o produto entra grátis na comanda. Na mesa não há prêmio.
-  const premioDosCarimbosPendente = !mesa && isStampsActive && (carimbosDoServidor?.aReceber ?? 0) > 0;
+  // Site desmarcado em "Onde o cliente ganha carimbo": o prêmio não entra aqui.
+  const premioDosCarimbosPendente = !mesa && isStampsActive && regraDosCarimbos.canais.site && (carimbosDoServidor?.aReceber ?? 0) > 0;
   const premioDosCarimbosNestePedido = premioDosCarimbosPendente && !guardarPremioDosCarimbos && cartTotal > 0;
   const descontoDosCarimbos = premioDosCarimbosNestePedido && regraDosCarimbos.premioTipo === "discount"
     ? Math.round(Math.min(regraDosCarimbos.premioValor, Math.max(0, cartTotal - discount - descontoDaTrilha)) * 100) / 100
@@ -5258,7 +5260,7 @@ export default function CustomerStorePage({
                 <div style={{ fontSize: "0.74rem", color: "#475569", lineHeight: 1.35 }}>
                   {customer ? (
                     cartelaCompleta ? (
-                      <span style={{ color: "#16A34A", fontWeight: 800 }}>🎉 Você completou a cartela! Ganhou {textoDoPremioDosCarimbos} — entra sozinho no seu próximo pedido pelo site ou WhatsApp.</span>
+                      <span style={{ color: "#16A34A", fontWeight: 800 }}>🎉 Você completou a cartela! Ganhou {textoDoPremioDosCarimbos}{ondeEntraOPremioDosCarimbos ? ` — entra sozinho no seu próximo pedido ${ondeEntraOPremioDosCarimbos}` : ""}.</span>
                     ) : (
                       <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{textoDoPremioDosCarimbos}</strong>!</span>
                     )
@@ -5530,7 +5532,7 @@ export default function CustomerStorePage({
                 <div style={{ fontSize: "0.78rem", color: "#7E22CE", lineHeight: 1.35 }}>
                   {customer ? (
                     cartelaCompleta ? (
-                      <strong style={{ color: "#15803D" }}>🎉 Parabéns! Cartela completa! Ganhou {textoDoPremioDosCarimbos} — entra sozinho no seu próximo pedido pelo site ou WhatsApp.</strong>
+                      <strong style={{ color: "#15803D" }}>🎉 Parabéns! Cartela completa! Ganhou {textoDoPremioDosCarimbos}{ondeEntraOPremioDosCarimbos ? ` — entra sozinho no seu próximo pedido ${ondeEntraOPremioDosCarimbos}` : ""}.</strong>
                     ) : (
                       <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{textoDoPremioDosCarimbos}</strong>!</span>
                     )

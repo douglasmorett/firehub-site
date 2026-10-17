@@ -27,7 +27,7 @@
  * - os dois acham o pedido pelos 8 últimos dígitos, sem olhar o DDD
  *   (lib/pedidos-do-telefone.ts); a ficha junta por DDD + 8.
  */
-import { carimbosNoAr, contarCarimbos, lerCarimbos, minimoDosCarimbos, premioDosCarimbos, type PedidoDoCarimbo } from "./carimbos";
+import { carimbosNoAr, contarCarimbos, lerCarimbos, minimoDosCarimbos, ondeEntraOPremio, premioDosCarimbos, type PedidoDoCarimbo } from "./carimbos";
 import {
   lerTrilha,
   nomeDoPremio,
@@ -121,6 +121,8 @@ export type CarimbosNaFicha = {
   minimo: string;
   /** "R$ 50,00 de desconto" */
   premio: string;
+  /** "pelo site ou pelo WhatsApp" — onde o prêmio entra sozinho; vazio = a loja não marcou nenhum dos dois. */
+  ondeEntra: string;
 };
 
 /**
@@ -143,6 +145,7 @@ export function carimbosNaFicha(storeLoyalty: unknown, pedidos: PedidoDoCarimbo[
     validos: c.validos,
     minimo: minimoDosCarimbos(regra),
     premio: premioDosCarimbos(regra),
+    ondeEntra: ondeEntraOPremio(regra),
   };
 }
 
