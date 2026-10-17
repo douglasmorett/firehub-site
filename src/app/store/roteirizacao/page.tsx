@@ -7,6 +7,7 @@ import RoteirizacaoIndependente from "@/components/customer/RoteirizacaoIndepend
 import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import { lojasDaVisao } from "@/lib/loja-ativa";
 import { zonasDeBairro } from "@/lib/bairro-pelo-endereco";
+import { areaParaOMapa } from "@/lib/ponto-do-pedido";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,7 @@ export default async function RoteirizacaoPage() {
       storeLatLng: true,
       deliveryZones: true,
       deliveryZoneType: true,
+      deliveryConfig: true,
     },
   }).catch((err) => {
     console.error("[Roteirizacao] Erro ao buscar usuário:", err);
@@ -80,7 +82,7 @@ export default async function RoteirizacaoPage() {
       : (await prisma.user
           .findUnique({
             where: { id: idDaLojaNoMapa },
-            select: { id: true, storeAddress: true, city: true, slug: true, storeLatLng: true, storeName: true, name: true, deliveryZones: true, deliveryZoneType: true },
+            select: { id: true, storeAddress: true, city: true, slug: true, storeLatLng: true, storeName: true, name: true, deliveryZones: true, deliveryZoneType: true, deliveryConfig: true },
           })
           .catch(() => null)) || user;
 
@@ -117,6 +119,10 @@ export default async function RoteirizacaoPage() {
         storeName: (lojaDoMapa as any).storeName || (lojaDoMapa as any).name || user.storeName || user.name,
         // O "Bairro:" do cartão no vocabulário da loja que cobra por bairro.
         bairrosDaLoja: zonasDeBairro(lojaDoMapa.deliveryZones, lojaDoMapa.deliveryZoneType),
+        // Até onde um ponto achado pelo texto vale (lib/ponto-do-pedido.ts):
+        // só os dois raios vão para o navegador, nunca as zonas.
+        areaDoMapa: areaParaOMapa(lojaDoMapa, noMapa),
+        lojaDoMapaId: lojaDoMapa.id,
       }}
       initialOrders={orders}
     />

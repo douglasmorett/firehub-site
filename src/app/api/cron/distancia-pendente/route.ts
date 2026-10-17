@@ -56,6 +56,7 @@ import {
   origemDaGeocodificacao,
   repasseQueOCronCompleta,
 } from "@/lib/entrega-do-pedido";
+import { areaDaLoja, type AreaDaLoja } from "@/lib/ponto-do-pedido";
 
 export const dynamic = "force-dynamic";
 
@@ -126,13 +127,16 @@ export async function GET(req: NextRequest) {
   // do ciclo — e travariam os 565 que dava para medir.
   const lojas = await prisma.user.findMany({
     where: { storeLatLng: { not: Prisma.DbNull } },
-    select: { id: true, deliveryConfig: true, deliveryZones: true, storeLatLng: true },
+    select: { id: true, deliveryConfig: true, deliveryZones: true, deliveryZoneType: true, storeLatLng: true },
   });
   const lojasComPino = lojas.map((l) => l.id);
   if (lojasComPino.length === 0) {
     return NextResponse.json({ ok: true, medidos: 0, motivo: "nenhuma loja com ponto no mapa" });
   }
-  const tabelaDaLoja = new Map<string, { regra: RegraDeRepasse; zonas: unknown; porFaixa: boolean; ponto: { lat: number; lng: number } | null }>(
+  const tabelaDaLoja = new Map<
+    string,
+    { regra: RegraDeRepasse; zonas: unknown; porFaixa: boolean; ponto: { lat: number; lng: number } | null; area: AreaDaLoja }
+  >(
     lojas.map((l) => [
       l.id,
       {
@@ -140,6 +144,9 @@ export async function GET(req: NextRequest) {
         zonas: l.deliveryZones,
         porFaixa: temRepassePorFaixa(l.deliveryConfig, l.deliveryZones),
         ponto: lerPonto(l.storeLatLng),
+        // Até onde um ponto ACHADO PELO TEXTO vale para esta loja
+        // (lib/ponto-do-pedido.ts): fora dela, nem ponto nem distância.
+        area: areaDaLoja(l, lerPonto(l.storeLatLng)),
       },
     ]),
   );
@@ -287,9 +294,14 @@ export async function GET(req: NextRequest) {
     const centro = lerPonto(loja?.storeLatLng);
     if (!centro) { semResposta += pedidos.length; continue; }
 
+    // A mesma resolução da roteirização: a posição que a loja ensinou para o
+    // endereço vem primeiro, e o que o mapa achar FORA da área da loja não
+    // volta (fica incerto). Antes, o centro de outro bairro a 22 km virava
+    // ponto E distância do pedido — e o motoboy pago por faixa recebia pela
+    // faixa mais cara uma entrega de 3 km.
     const achados = await geocodificarNoServidor(
-      pedidos.map((p) => ({ id: p.id, endereco: p.customerAddress || "" })),
-      { cidade: loja?.city || "", endereco: loja?.storeAddress, centro },
+      pedidos.map((p) => ({ id: p.id, endereco: p.customerAddress || "", ehMarketplace: canalDoPedido(p).ehMarketplace })),
+      { cidade: loja?.city || "", endereco: loja?.storeAddress, centro, area: tabelaDaLoja.get(lojaId)?.area, franchiseeId: lojaId },
     ).catch(() => []);
 
     for (const a of achados) {
@@ -303,10 +315,14 @@ export async function GET(req: NextRequest) {
       if (km == null || !pedido) { semResposta++; continue; }
       // As coordenadas vão junto: a roteirização e o "motoboy mais perto"
       // passam a aproveitar o mesmo trabalho. Com a origem, para quem lê
-      // saber que foi o mapa (ou o centro do bairro), e não o cliente.
+      // saber que foi o mapa (ou o centro do bairro), e não o cliente — e
+      // "aprendido" quando é a posição que a própria loja ensinou.
       await prisma.customerOrder.update({
         where: { id: a.id },
-        data: { ...gravacao(pedido, km), customerLatLng: { ...coords, origem: origemDaGeocodificacao(a.origem) } },
+        data: {
+          ...gravacao(pedido, km),
+          customerLatLng: { ...coords, origem: a.fonte === "aprendido" ? "aprendido" : origemDaGeocodificacao(a.origem) },
+        },
       });
       medidos++;
       geocodificados++;

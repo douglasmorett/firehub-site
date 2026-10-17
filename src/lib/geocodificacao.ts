@@ -162,6 +162,83 @@ export const estadoPeloEndereco = (storeAddress?: string | null): string | null 
   return null;
 };
 
+const semAcento = (t: string) => (t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+/** As 27 siglas. "es", "pa", "se"… sozinhas num pedaço do endereço são o estado, nunca o bairro. */
+const UFS = "ac|al|ap|am|ba|ce|df|es|go|ma|mt|ms|mg|pa|pb|pr|pe|pi|rj|rn|rs|ro|rr|sc|sp|se|to";
+const ESTADOS =
+  "acre|alagoas|amapa|amazonas|bahia|ceara|distrito federal|espirito santo|goias|maranhao|mato grosso do sul|mato grosso|" +
+  "minas gerais|para|paraiba|parana|pernambuco|piaui|rio de janeiro|rio grande do norte|rio grande do sul|rondonia|roraima|" +
+  "santa catarina|sao paulo|sergipe|tocantins";
+const RE_ESTADO = new RegExp(`^(?:${UFS}|${ESTADOS}|br|brasil)$`);
+/** "Brasília/DF", "Cabo Frio / RJ": o jeito da Wabiz escrever a cidade. */
+const RE_CIDADE_BARRA_UF = new RegExp(`^[a-z0-9 .'-]+\\s*/\\s*(?:${UFS})$`);
+const RE_UF_NO_FIM = new RegExp(`\\s(?:${UFS})$`);
+
+/**
+ * A cidade sem a UF colada: o cadastro da NIK diz "BRASILIA DF", outros dizem
+ * "Cabo Frio - RJ" ou "Cabo Frio/RJ". Comparada assim, "Brasília" e
+ * "Brasília/DF" do endereço são a cidade, não o bairro.
+ */
+export const nucleoDaCidade = (cidade: string): string =>
+  semAcento(cidade).replace(/[\/,]/g, " ").replace(/\s+-\s+/g, " ").replace(/\s+/g, " ").trim().replace(RE_UF_NO_FIM, "").trim();
+
+/**
+ * O pedaço do endereço é a cidade, o estado, o CEP ou um número — nunca o bairro.
+ *
+ * NIK Esfihas (16/10/2026): a Wabiz escreve "… - SOBRADINHO 2 - Brasília/DF -
+ * CEP 73062892". O filtro conhecia só "Brasília" igual à cidade da loja (que
+ * no cadastro é "BRASILIA DF") e só cinco estados do Sudeste: "Brasília/DF"
+ * virou o BAIRRO, e o mapa achou o "Instituto de Arquitetos de Brasília", na
+ * Asa Sul, a 20 km. No 99Food ("… - Sobradinho, Brasília - DF") o bairro
+ * virava "DF".
+ */
+export const ehCidadeOuEstado = (parte: string, storeCity: string): boolean => {
+  const n = semAcento(parte);
+  if (!n) return true;
+  // "01310-100" vira "01310" e "100" na quebra por hífen; número não é bairro.
+  if (/^[0-9 ]+$/.test(n)) return true;
+  if (RE_ESTADO.test(n)) return true;
+  if (RE_CIDADE_BARRA_UF.test(n)) return true;
+  if (/\bcep\b/.test(n) || /^\d{5}-?\d{3}$/.test(n)) return true;
+  const cidade = nucleoDaCidade(storeCity || "");
+  if (!cidade) return false;
+  const semUf = n.replace(RE_UF_NO_FIM, "").trim();
+  return semUf === cidade || n.startsWith(cidade + " ") || n.endsWith(" " + cidade);
+};
+
+/**
+ * O nome do bairro comparável: sem acento, sem o prefixo ("Jardim", "Vila",
+ * "Setor"…), com o número romano em algarismo e sem zero à esquerda. O OSM
+ * escreve "Sobradinho II"; a Wabiz, "SOBRADINHO 2"; o cliente, "Quadra 02".
+ * O que vem entre parênteses sai: os Correios escrevem "Serra Azul
+ * (Sobradinho)", e o OSM, "Condomínio Serra Azul".
+ */
+export const nomeDeBairroComparavel = (t: string): string => {
+  const romanos: Record<string, string> = { i: "1", ii: "2", iii: "3", iv: "4", v: "5", vi: "6", vii: "7", viii: "8", ix: "9", x: "10" };
+  return semAcento(t)
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^(bairro|jardim|jd|residencial|res|parque|pq|vila|vl|setor|st)\s+/, "")
+    .split(" ")
+    .map((p) => romanos[p] ?? (/^\d+$/.test(p) ? String(Number(p)) : p))
+    .join(" ");
+};
+
+/**
+ * Os nomes com que um bairro escrito pode aparecer no mapa: o nome sem os
+ * parênteses e o que está dentro deles. "Setor Oeste (Sobradinho II)" (Correios)
+ * vale como "Setor Oeste" OU como a região "Sobradinho II" — o OSM do DF nem
+ * sempre tem o setor, mas tem a região. "Serra Azul (Sobradinho)" vale como o
+ * "Condomínio Serra Azul".
+ */
+export const variantesDoBairro = (t: string): string[] => {
+  const dentro = [...String(t || "").matchAll(/\(([^)]*)\)/g)].map((m) => m[1]);
+  return [...new Set([nomeDeBairroComparavel(t), ...dentro.map(nomeDeBairroComparavel)].filter(Boolean))];
+};
+
 // Helper para extrair e destacar o Bairro e formatar endereço completo
 export const parseAddressDetails = (rawAddr: string, storeCity: string) => {
   if (!rawAddr || typeof rawAddr !== "string") {
@@ -177,17 +254,8 @@ export const parseAddressDetails = (rawAddr: string, storeCity: string) => {
   // "São Gonçalo", e a rua era validada contra o centro da CIDADE — a
   // quilômetros da casa. Era o pedido 17 da Lucas Pimenta (10/09/2026),
   // com o pino "num endereço nada a ver".
-  const semAcento = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
-  const cidadeDaLoja = semAcento(storeCity || "");
-  const ehCidadeOuEstado = (p: string) => {
-    const n = semAcento(p);
-    if (!n) return true;
-    if (cidadeDaLoja && (n === cidadeDaLoja || n.startsWith(cidadeDaLoja + " ") || n.endsWith(" " + cidadeDaLoja))) return true;
-    // "01310-100" vira "01310" e "100" na quebra por hífen; número não é bairro.
-    if (/^[0-9 ]+$/.test(n)) return true;
-    if (/^(rj|sp|mg|es|br|brasil|rio de janeiro|sao paulo|minas gerais|espirito santo)$/.test(n)) return true;
-    return /\bcep\b/.test(n) || /^\d{5}-?\d{3}$/.test(n);
-  };
+  // Ver `ehCidadeOuEstado` (acima): "Brasília/DF", "DF" e a cidade com a UF colada.
+  const ehCidadeOuEstadoDaLoja = (p: string) => ehCidadeOuEstado(p, storeCity);
 
   // Lista Completa de Bairros Conhecidos da Região (Prioridade MÁXIMA de identificação)
   const knownNeighborhoods = [
@@ -237,7 +305,7 @@ export const parseAddressDetails = (rawAddr: string, storeCity: string) => {
     const bairroMatch = fullAddress.match(/(?:bairro|b\.:?)\s*([^-,]+)/i);
     if (bairroMatch && bairroMatch[1]) {
       const candidate = bairroMatch[1].trim();
-      if (candidate.length > 2 && candidate.toLowerCase() !== "asil" && !/brasil|rio das ostras|cabo frio|macae|macaé|rj/i.test(candidate) && !ehCidadeOuEstado(candidate)) {
+      if (candidate.length > 2 && candidate.toLowerCase() !== "asil" && !/brasil|rio das ostras|cabo frio|macae|macaé|rj/i.test(candidate) && !ehCidadeOuEstadoDaLoja(candidate)) {
         neighborhood = candidate;
       }
     }
@@ -247,7 +315,7 @@ export const parseAddressDetails = (rawAddr: string, storeCity: string) => {
   if (!neighborhood) {
     const parts = fullAddress.split(/\s*-\s*|\s*,\s*/);
     if (parts.length >= 2) {
-      const filteredParts = parts.filter(p => !/rio das ostras|cabo frio|unamar|macaé|macae|rj|brasil|asil/i.test(p.trim()) && !ehCidadeOuEstado(p.trim()));
+      const filteredParts = parts.filter(p => !/rio das ostras|cabo frio|unamar|macaé|macae|rj|brasil|asil/i.test(p.trim()) && !ehCidadeOuEstadoDaLoja(p.trim()));
       if (filteredParts.length >= 2) {
         const lastPart = filteredParts[filteredParts.length - 1].trim();
         if (!/comp|complemento|casa|apto|bloco|sobrado|ponto|muro|portão|ref/i.test(lastPart) && lastPart.length < 35 && lastPart.toLowerCase() !== "asil") {
@@ -526,7 +594,18 @@ export type OpcoesGeocodificador = {
    * relógio local de 1,1 s.
    */
   vez?: <T>(chamada: () => Promise<T>) => Promise<T>;
+  /**
+   * Até onde um resultado vale (km da loja). Sem isto, 30 km — a régua antiga,
+   * que deixou passar a Asa Sul (20 km) num pedido da NIK, que entrega a 7.
+   * Quem conhece a área da loja passa o raio dela (lib/ponto-do-pedido.ts,
+   * `areaDaLoja`): resultado além dele é descartado e a cascata segue para o
+   * degrau seguinte — o bairro e, sem bairro, "não localizado".
+   */
+  raioMaxKm?: number;
 };
+
+/** O que a cascata conseguiu: a casa/rua, só o bairro, ou nada (o ponto é a loja). */
+export type NivelDoPonto = "rua" | "bairro" | "nenhum";
 
 /**
  * Um geocodificador por abertura do mapa: carrega o limitador de 1 chamada por
@@ -538,8 +617,9 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
   const { storeCity, estado } = opts;
   const defaultCenter = opts.centroDaLoja;
   const sufixoDaCidade = estado ? `${storeCity}, ${estado}, Brasil` : `${storeCity}, Brasil`;
+  const raioMaxKm = Number.isFinite(opts.raioMaxKm) && (opts.raioMaxKm as number) > 0 ? (opts.raioMaxKm as number) : RAIO_MAX_DA_LOJA_KM;
   const pertoDaLoja = (lat: number, lng: number) =>
-    calculateHaversineKm(lat, lng, defaultCenter.lat, defaultCenter.lng) <= RAIO_MAX_DA_LOJA_KM;
+    calculateHaversineKm(lat, lng, defaultCenter.lat, defaultCenter.lng) <= raioMaxKm;
 
   // O ritmo vale para TODA chamada, não só entre endereços: um endereço
   // difícil dispara até 5 tentativas em sequência, e eram elas que
@@ -549,6 +629,10 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
   // vão falhar igual (até 5 por endereço). Trégua de 60 s: nesse tempo o
   // Photon responde pela rua E pelo bairro.
   let nominatimEmTreguaAte = 0;
+  // Quantas buscas NÃO aconteceram (429, 5xx, tempo, fila recusou, trégua).
+  // "Não achei" com o mapa falhando no meio não é "não existe": quem chama não
+  // guarda esse resultado nem marca o pedido como incerto — pergunta de novo.
+  let falhasDoMapa = 0;
 
   /** A chamada na vez dela: pela fila do servidor, quando há uma, ou pelo relógio local. */
   const naVez = async <T,>(chamada: () => Promise<T>): Promise<T> => {
@@ -560,16 +644,23 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
   };
 
   const fetchNominatim = async (query: string) => {
-    if (Date.now() < nominatimEmTreguaAte) return null;
+    if (Date.now() < nominatimEmTreguaAte) {
+      falhasDoMapa++;
+      return null;
+    }
     try {
       // Duas formas de perguntar: texto solto (q=) ou campos estruturados
       // (street=/city=/…, marcados com __params=1). A estruturada acerta
       // rua onde o texto solto falha, porque o Nominatim não precisa
       // adivinhar o que é rua, o que é bairro e o que é cidade.
       const ehEstruturada = query.includes("__params=1");
+      // `namedetails`: os OUTROS nomes da rua (alt_name, old_name…). A "Rua
+      // Adonias Lucas Martins" de Macaé é a "Rua Cinco" do cliente (alt_name);
+      // a Travessa Liberdade da Divinos é a Rua Beira Alta. Sem eles, a regra
+      // "a rua achada tem de ser a escrita" recusaria a rua certa.
       const url = ehEstruturada
-        ? `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&${query.replace("&__params=1", "")}`
-        : `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1`;
+        ? `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&namedetails=1&${query.replace("&__params=1", "")}`
+        : `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1&addressdetails=1&namedetails=1`;
       const res = await naVez(() => fetch(
         url,
         { headers: { "User-Agent": "FireHub-Roteirizacao/2.0" }, signal: AbortSignal.timeout(5000) }
@@ -581,6 +672,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
         // centróide do bairro (ver obterCentroide).
         console.warn(`[Geocodificação] Nominatim respondeu ${res.status} para "${query.slice(0, 80)}"`);
         if (res.status === 429 || res.status >= 500) nominatimEmTreguaAte = Date.now() + 60_000;
+        falhasDoMapa++;
         return null;
       }
       const data = await res.json();
@@ -600,10 +692,30 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
           // `city` fica de fora: é o município, não bairro.
           const bairros = [a.neighbourhood, a.residential, a.quarter, a.suburb, a.city_district, a.borough, a.village, a.town]
             .filter((v: unknown) => typeof v === "string" && v.trim()) as string[];
-          return { lat, lng, bairro: String(bairro), bairros };
+          // O que o ponto É (rua, área, comércio…) e o nome dele: é o que
+          // separa o BAIRRO de uma rua ou de um prédio que só tem o nome
+          // parecido (ver `ehOBairro`).
+          const d = data[0];
+          const classe = String(d.class ?? d.category ?? "");
+          const nome = String(d.name ?? "");
+          const rua = String(a.road || a.pedestrian || a.footway || (classe === "highway" ? nome : "") || "");
+          // Todos os nomes da RUA achada: o do endereço e, quando o próprio
+          // resultado é a rua, os apelidos dela no OSM ("A;B" vira dois).
+          const outrosNomes =
+            classe === "highway" && d.namedetails && typeof d.namedetails === "object"
+              ? Object.entries(d.namedetails as Record<string, unknown>)
+                  .filter(([k]) => /^(name|alt_name|old_name|official_name|short_name|loc_name|reg_name|nat_name)(:pt)?$/.test(k))
+                  .flatMap(([, v]) => String(v || "").split(";"))
+              : [];
+          const ruas = [...new Set([rua, ...outrosNomes].map((n) => n.trim()).filter(Boolean))];
+          return {
+            lat, lng, bairro: String(bairro), bairros,
+            classe, tipo: String(d.type ?? ""), tipoDeEndereco: String(d.addresstype ?? ""), nome, rua, ruas,
+          };
         }
       }
     } catch (e: any) {
+      falhasDoMapa++;
       console.warn(`[Geocodificação] Nominatim falhou para "${query.slice(0, 80)}": ${e?.name === "TimeoutError" ? "tempo esgotado" : e?.message}`);
     }
     return null;
@@ -632,8 +744,12 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
           const lng = f.geometry.coordinates[0];
           if (!isPointInSea(lat, lng) && pertoDaLoja(lat, lng)) return { lat, lng, bairro: String(f.properties?.district || f.properties?.locality || ""), nome: String(f.properties?.name || f.properties?.street || "") };
         }
+      } else {
+        falhasDoMapa++;
       }
-    } catch {}
+    } catch {
+      falhasDoMapa++;
+    }
     return null;
   };
 
@@ -660,18 +776,49 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
   // lugar e não serve — mesmo que passe na régua de distância, que num
   // município grande (São Gonçalo tem 250 km²) é folgada demais. Sem
   // bairro no resultado, a distância ao centróide continua decidindo.
-  const normalizaBairro = (t: string) =>
-    (t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
-      .replace(/^(bairro|jardim|jd|residencial|res|parque|pq|vila|vl)\s+/, "").trim();
+  const normalizaBairro = nomeDeBairroComparavel;
   const bairroConfere = (res: { bairro?: string; bairros?: string[] } | null, esperado: string) => {
     if (!res || !esperado || !res.bairro) return true;
-    const b = normalizaBairro(esperado);
-    if (!b) return true;
+    const bs = variantesDoBairro(esperado);
+    if (bs.length === 0) return true;
     const confere = (nome: string) => {
       const a = normalizaBairro(nome);
-      return !a || a === b || a.includes(b) || b.includes(a);
+      return !a || bs.some((b) => a === b || a.includes(b) || b.includes(a));
     };
     return confere(res.bairro) || (res.bairros || []).some(confere);
+  };
+
+  // ── O CENTRO DO BAIRRO TEM DE SER O BAIRRO ─────────────────────────────
+  //
+  // A busca "<bairro>, <cidade>" devolve o que o mapa acha com aquele nome —
+  // e nem sempre é o bairro. Com o bairro lido errado ("Brasília/DF", NIK,
+  // 16/10/2026) voltou o "Instituto de Arquitetos de Brasília", um terreno
+  // comercial na Asa Sul; com bairro que o OSM não conhece volta a RUA de
+  // mesmo nome em outro bairro (Deeds, "Milton Gavetti"). Esse ponto virava o
+  // centro do bairro, o validador das ruas (2,8 km) e, por fim, o pino.
+  // Agora só vale um LUGAR (bairro, conjunto, região, loteamento) com o NOME
+  // escrito — o mesmo cuidado que `buscarBairro` (lib/geocoding.ts) já tinha.
+  const nomeBate = (nome: string, esperado: string) => {
+    const a = normalizaBairro(nome);
+    if (!a) return false;
+    return variantesDoBairro(esperado).some((b) => a === b || ` ${a} `.includes(` ${b} `) || ` ${b} `.includes(` ${a} `));
+  };
+  const TIPOS_DE_BAIRRO = new Set([
+    "suburb", "neighbourhood", "quarter", "city_district", "borough", "residential", "town", "village",
+    "hamlet", "isolated_dwelling", "locality", "district", "city_block", "allotments",
+  ]);
+  const ehOBairro = (
+    res: { classe?: string; tipo?: string; tipoDeEndereco?: string; nome?: string; bairro?: string; bairros?: string[] } | null,
+    esperado: string,
+  ) => {
+    if (!res) return false;
+    const ehArea =
+      res.classe === "place" ||
+      res.classe === "boundary" ||
+      (res.classe === "landuse" && res.tipo === "residential") ||
+      TIPOS_DE_BAIRRO.has(String(res.tipoDeEndereco || ""));
+    if (!ehArea) return false;
+    return nomeBate(res.nome || "", esperado) || [res.bairro || "", ...(res.bairros || [])].some((n) => nomeBate(n, esperado));
   };
 
   /**
@@ -687,50 +834,88 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
         `&lat=${defaultCenter.lat}&lon=${defaultCenter.lng}` +
         `&osm_tag=place:suburb&osm_tag=place:neighbourhood&osm_tag=place:quarter&osm_tag=place:city_district&osm_tag=place:village&osm_tag=boundary:administrative`;
       const res = await naVez(() => fetch(url, { signal: AbortSignal.timeout(5000) }));
-      if (!res.ok) return null;
+      if (!res.ok) {
+        falhasDoMapa++;
+        return null;
+      }
       const data = await res.json();
-      const alvo = normalizaBairro(bairro);
       for (const f of data?.features || []) {
-        const nome = normalizaBairro(String(f?.properties?.name || ""));
+        const nome = String(f?.properties?.name || "");
         const par = f?.geometry?.coordinates || [];
         const lng = Number(par[0]);
         const lat = Number(par[1]);
-        if (!nome || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+        if (!normalizaBairro(nome) || !Number.isFinite(lat) || !Number.isFinite(lng)) continue;
         // Tem que ser o bairro pedido (ou conter o nome), em terra e perto da loja.
-        if (!(nome === alvo || nome.includes(alvo) || alvo.includes(nome))) continue;
+        if (!nomeBate(nome, bairro)) continue;
         if (isPointInSea(lat, lng) || !pertoDaLoja(lat, lng)) continue;
-        return { lat, lng, bairro: String(f.properties.name) };
+        return { lat, lng, bairro: nome };
       }
-    } catch {}
+    } catch {
+      falhasDoMapa++;
+    }
     return null;
   };
 
-  const centroidesDoBairro: Record<string, Promise<{ lat: number; lng: number } | null>> = {};
+  type Centroide = { lat: number; lng: number; de: "osm" | "photon" | "dicionario" };
+  const centroidesDoBairro: Record<string, Promise<Centroide | null>> = {};
 
   const obterCentroide = async (
     bairro: string,
     doDicionario?: { lat: number; lng: number }
-  ): Promise<{ lat: number; lng: number } | undefined> => {
+  ): Promise<Centroide | undefined> => {
+    // O dicionário de Rio das Ostras também passa pela régua da loja.
+    const dicionario: Centroide | undefined =
+      doDicionario && pertoDaLoja(doDicionario.lat, doDicionario.lng) ? { ...doDicionario, de: "dicionario" } : undefined;
     const chave = bairro.toLowerCase().trim();
-    if (!chave) return doDicionario;
+    if (!chave) return dicionario;
     if (!(chave in centroidesDoBairro)) {
-      // Nominatim primeiro; falhou (429, fora do ar, bairro ausente), o Photon
-      // procura o MESMO bairro como lugar.
-      centroidesDoBairro[chave] = (async () => {
+      // Nominatim primeiro; falhou (429, fora do ar, bairro ausente, ou o que
+      // voltou não é o bairro), o Photon procura o MESMO bairro como lugar.
+      const falhasAntes = falhasDoMapa;
+      const promessa = (async (): Promise<Centroide | null> => {
         const n = await fetchNominatim(`${bairro}, ${sufixoDaCidade}`);
-        if (n) return n;
-        return fetchPhotonBairro(bairro);
+        if (n && ehOBairro(n, bairro)) return { lat: n.lat, lng: n.lng, de: "osm" };
+        const p = await fetchPhotonBairro(bairro);
+        return p ? { lat: p.lat, lng: p.lng, de: "photon" } : null;
       })();
+      centroidesDoBairro[chave] = promessa;
+      // "Não achei" com o mapa falhando não fica guardado: o próximo endereço
+      // do mesmo bairro pergunta de novo.
+      promessa.then((c) => {
+        if (!c && falhasDoMapa > falhasAntes && centroidesDoBairro[chave] === promessa) delete centroidesDoBairro[chave];
+      }).catch(() => undefined);
     }
     const achado = await centroidesDoBairro[chave];
-    return achado || doDicionario;
+    return achado || dicionario;
   };
 
 
-  const geocodificarItem = async (item: ItemGeocodificavel): Promise<{ coords: Ponto; origem: string }> => {
+  const geocodificarItem = async (
+    item: ItemGeocodificavel,
+  ): Promise<{ coords: Ponto; origem: string; nivel: NivelDoPonto; mapaFalhou: boolean }> => {
     let coords: { lat: number; lng: number } | null = null;
     let origem = "";
+    let nivel: NivelDoPonto = "rua";
+    const falhasAntes = falhasDoMapa;
     const bCentroid = await obterCentroide(item.neighborhood, item.dictFallback);
+
+    // ── A RUA ACHADA TEM DE SER A RUA ESCRITA ─────────────────────────────
+    // A distância ao centro do bairro (2,8 km) não basta: a NIK pediu
+    // "Avenida central conjunto 02" e a busca solta devolveu a Avenida
+    // Paranoá, a 14 km (sem centro de bairro para conferir); "QMS 16" voltou
+    // "QMS 39A", outra quadra do mesmo setor. Rua de nome diferente do escrito
+    // não é a rua — o pedido desce para o centro do bairro, marcado como
+    // aproximado, em vez de fingir que achou a porta. Vale qualquer nome da
+    // rua no OSM (alt_name/old_name: "Rua Cinco" = Rua Adonias Lucas Martins,
+    // Macaé). Resultado sem nome de rua (um prédio, um lugar) só vale com o
+    // bairro para garantir.
+    const ruaConfere = (res: { rua?: string; ruas?: string[] } | null) => {
+      if (!res) return false;
+      if (!item.streetName) return true;
+      const nomes = res.ruas && res.ruas.length > 0 ? res.ruas : res.rua ? [res.rua] : [];
+      if (nomes.length > 0) return nomes.some((n) => nomeDeRuaParecido(n, item.streetName));
+      return !!bCentroid;
+    };
 
     // ── REGRA DE OURO: PRIMEIRO O BAIRRO, DEPOIS A RUA NO BAIRRO (Anti-Homônimos) ──
     // Em cidades como Rio das Ostras, existem várias "Rua Três", "Rua A", etc. em bairros distintos.
@@ -747,7 +932,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
       const res0 = await fetchNominatim(
         `street=${encodeURIComponent(ruaComNumero)}&city=${encodeURIComponent(storeCity)}${estado ? `&state=${estado}` : ""}&country=Brasil&countrycodes=br&__params=1`
       );
-      if (res0 && bairroConfere(res0, item.neighborhood) && (!bCentroid || calculateHaversineKm(res0.lat, res0.lng, bCentroid.lat, bCentroid.lng) <= 2.8)) {
+      if (res0 && bairroConfere(res0, item.neighborhood) && ruaConfere(res0) && (!bCentroid || calculateHaversineKm(res0.lat, res0.lng, bCentroid.lat, bCentroid.lng) <= 2.8)) {
         coords = res0; origem = "rua (busca estruturada)";
       }
     }
@@ -756,7 +941,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
     if (!coords && item.streetName && item.houseNumber && item.neighborhood) {
       const query1 = `${item.streetName}, ${item.houseNumber}, ${item.neighborhood}, ${sufixoDaCidade}`;
       const res1 = await fetchNominatim(query1);
-      if (res1 && bairroConfere(res1, item.neighborhood)) {
+      if (res1 && bairroConfere(res1, item.neighborhood) && ruaConfere(res1)) {
         // Se temos o centróide do bairro de referência, valida se a rua retornada não é em outro bairro homônimo
         if (!bCentroid || calculateHaversineKm(res1.lat, res1.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
           coords = res1; origem = "rua + número + bairro";
@@ -768,7 +953,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
     if (!coords && item.streetName && item.neighborhood) {
       const query2 = `${item.streetName}, ${item.neighborhood}, ${sufixoDaCidade}`;
       const res2 = await fetchNominatim(query2);
-      if (res2 && bairroConfere(res2, item.neighborhood)) {
+      if (res2 && bairroConfere(res2, item.neighborhood) && ruaConfere(res2)) {
         if (!bCentroid || calculateHaversineKm(res2.lat, res2.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
           coords = res2; origem = "rua + bairro";
         }
@@ -781,7 +966,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
         ? `${item.cleanedStreet}, ${sufixoDaCidade}`
         : `${item.cleanedStreet}, ${item.neighborhood}, ${sufixoDaCidade}`;
       const res3 = await fetchNominatim(query3);
-      if (res3 && bairroConfere(res3, item.neighborhood)) {
+      if (res3 && bairroConfere(res3, item.neighborhood) && ruaConfere(res3)) {
         if (!bCentroid || calculateHaversineKm(res3.lat, res3.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
           coords = res3; origem = "endereço limpo";
         }
@@ -806,35 +991,37 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
       }
     }
 
-    // 4. Tentativa 4: Bairro isolado no Nominatim (se a rua não existir na base cartográfica)
-    if (!coords && item.neighborhood) {
-      const query4 = `${item.neighborhood}, ${sufixoDaCidade}`;
-      coords = await fetchNominatim(query4);
-      if (coords) origem = "bairro (OSM)";
+    // 4 e 5. A rua não está no mapa: o CENTRO DO BAIRRO — o que
+    // `obterCentroide` confirmou ser o bairro escrito (OSM na frente, Photon e
+    // o dicionário de Rio das Ostras atrás). Era aqui que a busca do bairro
+    // sozinho aceitava qualquer coisa: "Brasília/DF" → Asa Sul (NIK, 16/10).
+    if (!coords && bCentroid) {
+      coords = { lat: bCentroid.lat, lng: bCentroid.lng };
+      origem = bCentroid.de === "osm" ? "bairro (OSM)" : bCentroid.de === "photon" ? "centróide do bairro" : "dicionário de bairros";
+      nivel = "bairro";
     }
 
-    // 5. Fallback: centróide do bairro (OSM na frente, dicionário atrás).
-    if (!coords && (bCentroid || item.dictFallback)) {
-      coords = bCentroid || item.dictFallback!;
-      origem = bCentroid ? "centróide do bairro" : "dicionário de bairros";
-    }
-
-    // 6. Fallback 6: Centro da Cidade com Jitter
+    // 6. Nada: o ponto da loja, marcado. Quem desenha ou mede NÃO usa este
+    // ponto — a roteirização lista o pedido como "localização incerta" e o
+    // cron deixa a distância em branco (`nivel` "nenhum").
     if (!coords) {
       coords = {
         lat: defaultCenter.lat + ((item.idx % 5) - 2) * 0.002,
         lng: defaultCenter.lng + (Math.floor(item.idx / 5) - 2) * 0.002,
       };
       origem = "loja (endereço não localizado)";
+      nivel = "nenhum";
     }
 
     // Garante 100% que o ponto final não cai no oceano!
     if (isPointInSea(coords.lat, coords.lng)) {
-      coords = item.dictFallback || defaultCenter;
-      origem += " → caiu no mar → " + (item.dictFallback ? "dicionário" : "loja");
+      const dicionario = item.dictFallback && pertoDaLoja(item.dictFallback.lat, item.dictFallback.lng) ? item.dictFallback : null;
+      coords = dicionario || defaultCenter;
+      origem += " → caiu no mar → " + (dicionario ? "dicionário" : "loja");
+      nivel = dicionario ? "bairro" : "nenhum";
     }
 
-    return { coords, origem };
+    return { coords, origem, nivel, mapaFalhou: falhasDoMapa > falhasAntes };
   };
 
   return { geocodificarItem, fetchNominatim, fetchPhoton, obterCentroide, bairroConfere };

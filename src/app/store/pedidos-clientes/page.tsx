@@ -14,6 +14,7 @@ import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed } from "@/lib/filtro-do-feed";
 import { lojasDaVisao } from "@/lib/loja-ativa";
 import { zonasDeBairro, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
+import { areaParaOMapa } from "@/lib/ponto-do-pedido";
 
 export const dynamic = "force-dynamic";
 
@@ -128,8 +129,12 @@ export default async function FranchiseeCustomerOrdersPage() {
   // Os bairros da loja que cobra por bairro, para o "Bairro:" da roteirização
   // (lib/bairro-pelo-endereco.ts). Só nome e apelidos vão para o navegador —
   // nunca o `deliveryZones` inteiro, que pode ter contorno desenhado.
-  const bairrosDaLojaP: Promise<ZonaComApelidos[]> = prisma.user
-    .findUnique({ where: { id: idDaLojaNoMapa }, select: { deliveryZones: true, deliveryZoneType: true } })
+  // A mesma leitura dá a ÁREA da loja para o mapa conferir ponto achado pelo
+  // texto (lib/ponto-do-pedido.ts) — só os dois raios vão para o navegador.
+  const zonasDaLojaP = prisma.user
+    .findUnique({ where: { id: idDaLojaNoMapa }, select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true } })
+    .catch(() => null);
+  const bairrosDaLojaP: Promise<ZonaComApelidos[]> = zonasDaLojaP
     .then((l) => zonasDeBairro(l?.deliveryZones, l?.deliveryZoneType))
     .catch(() => []);
 
@@ -224,7 +229,8 @@ export default async function FranchiseeCustomerOrdersPage() {
   // O modal de roteirização recebe daqui o ponto da loja. Ele vinha do usuário
   // logado e, sem `storeLatLng` salvo, virava Rio das Ostras — o padrão antigo
   // do código — mesmo com o endereço cadastrado. Ver lib/ponto-da-loja-servidor.
-  const [lojasDeOrigem, noMapa, bairrosDaLoja] = await Promise.all([lojasDeOrigemP, noMapaP, bairrosDaLojaP]);
+  const [lojasDeOrigem, noMapa, bairrosDaLoja, zonasDaLoja] = await Promise.all([lojasDeOrigemP, noMapaP, bairrosDaLojaP, zonasDaLojaP]);
+  const areaDoMapa = areaParaOMapa(zonasDaLoja, noMapa);
 
   return (
     <>
@@ -244,6 +250,8 @@ export default async function FranchiseeCustomerOrdersPage() {
           city: noMapa.cidade || user.city,
           storeLatLng: noMapa.ponto,
           bairrosDaLoja,
+          areaDoMapa,
+          lojaDoMapaId: idDaLojaNoMapa,
         }}
         orders={orders}
         // De qual MARCA é cada pedido. Sem isto o selo da loja só saía para o

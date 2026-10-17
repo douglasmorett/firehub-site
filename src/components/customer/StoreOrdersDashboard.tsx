@@ -7575,6 +7575,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         storeId={user.id}
         storeLatLng={user.storeLatLng}
         bairrosDaLoja={user.bairrosDaLoja}
+        areaDoMapa={user.areaDoMapa}
+        lojaDoMapaId={user.lojaDoMapaId}
         onRefreshOrders={() => router.refresh()}
         onUpdateOrderStatus={updateStatus}
       />

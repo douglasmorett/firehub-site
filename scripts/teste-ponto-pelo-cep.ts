@@ -56,8 +56,10 @@ async function main() {
 
   // ── O caso da NIK ──────────────────────────────────────────────────────
   const antes = await prepararBusca(NIK, lojaNik, viaCepFora);
-  confere("sem o CEP (ViaCEP fora), o texto vira bairro 'Brasília/DF' — o erro de 14/10",
-    antes.item.neighborhood === "Brasília/DF" && !antes.peloCep && antes.cepFalhou, antes);
+  // Em 14/10 o texto virava bairro "Brasília/DF" (o erro); desde 16/10 o
+  // "Cidade/UF" da Wabiz é a cidade (lib/geocodificacao.ts, ehCidadeOuEstado).
+  confere("sem o CEP (ViaCEP fora), o texto dá o bairro 'QUADRA 2' — não mais 'Brasília/DF'",
+    antes.item.neighborhood === "QUADRA 2" && !antes.peloCep && antes.cepFalhou, antes);
 
   const nik = await prepararBusca(NIK, lojaNik, viaCepFalso);
   confere("pelo CEP: bairro Sobradinho", nik.item.neighborhood === "Sobradinho", nik.item);

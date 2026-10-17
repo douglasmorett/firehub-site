@@ -27,6 +27,22 @@ export function digitosDoCep(v: unknown): string {
   return String(v ?? "").replace(/\D/g, "").slice(0, 8);
 }
 
+/**
+ * O CEP escrito no endereço: "CEP 73015217", "CEP: 73.015-217", "73015-217" ou
+ * o CEP sozinho. Nasceu em lib/geocodificacao-servidor.ts (NIK, 14/10/2026) e
+ * mora aqui para o navegador e as regras puras usarem sem puxar o banco.
+ */
+export function cepDoEndereco(endereco: unknown): string | null {
+  const t = String(endereco ?? "");
+  const m =
+    t.match(/\bcep[:\s.]*(\d{2}\.?\d{3}-?\d{3})(?!\d)/i) ||
+    t.match(/(?<!\d)(\d{5}-\d{3})(?!\d)/) ||
+    t.match(/^\s*(\d{8})\s*$/);
+  if (!m) return null;
+  const d = digitosDoCep(m[1]);
+  return d.length === 8 ? d : null;
+}
+
 /** "28900000" → "28900-000", à medida que o cliente digita. */
 export function cepFormatado(v: unknown): string {
   const d = digitosDoCep(v);

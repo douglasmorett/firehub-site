@@ -24,6 +24,20 @@ import {
   parseAddressDetails as parseEnderecoDaEntrega,
 } from "@/lib/geocodificacao";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
+import { canalDoPedido } from "@/lib/canal-do-pedido";
+import {
+  ESPERA_SEM_RESPOSTA_MS,
+  NOME_DA_FONTE,
+  fonteDaGeocodificacao,
+  motivoForaDaArea,
+  planoDosPontos,
+  pontoPlausivel,
+  raioDoPedido,
+  type AreaDaLoja,
+  type FonteDoPonto,
+  type PedidoNoMapa,
+  type Resolucao,
+} from "@/lib/ponto-do-pedido";
 import { rotaJaDespachada, rotasComLinha, pontosDaLinha, podarCoordenadas } from "@/lib/rotas-no-mapa";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
@@ -156,7 +170,12 @@ const ESPERA_DA_CAIXA_DO_PINO_MS = 1000;
  * 22h decide por estes dados; abrir o pedido no painel para ver o prazo é o
  * que fazia a rota sair errada.
  */
-export const popupDoPedido = (order: any, jaDespachado: boolean, pronto: boolean): string => {
+export const popupDoPedido = (
+  order: any,
+  jaDespachado: boolean,
+  pronto: boolean,
+  local?: { fonte: FonteDoPonto; aproximado: boolean },
+): string => {
   const esc = (t: unknown) =>
     String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
   const num = getOrderDisplayNumber(order);
@@ -184,6 +203,10 @@ export const popupDoPedido = (order: any, jaDespachado: boolean, pronto: boolean
     `👤 ${esc(order.customerName || "Cliente")}`,
     order.customerPhone ? `📞 ${esc(order.customerPhone)}` : "",
     endereco ? `<span style="color:#334155;">📍 ${esc(endereco)}</span>` : "",
+    // De onde saiu o ponto: quem monta a rota sabe quando desconfiar dele.
+    local
+      ? `<span style="color:${local.aproximado ? "#B45309" : "#64748B"};">🧭 Local: ${esc(NOME_DA_FONTE[local.fonte] || local.fonte)}${local.aproximado ? " — confira (botão direito no pino corrige)" : ""}</span>`
+      : "",
     entregarAte
       ? `<b style="color:#B45309;">⏰ Entregar até ${entregarAte.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</b>${prazoEstimado ? ` <span style="color:#94A3B8;font-weight:400;">(estimado)</span>` : ""}`
       : "",
@@ -304,6 +327,18 @@ interface RoteirizacaoModalProps {
    * o cartão mostrava "Bairro: Brasília/DF". Vazio = como sempre.
    */
   bairrosDaLoja?: ZonaComApelidos[];
+  /**
+   * Até onde um ponto ACHADO PELO TEXTO vale (km do pino da loja), para os
+   * canais da loja e para marketplace — lib/ponto-do-pedido.ts, `areaDaLoja`.
+   * Só vem quando a loja tem o pino salvo; sem ele, quem confere é o servidor.
+   */
+  areaDoMapa?: { raioKm: number; raioDoParceiroKm: number } | null;
+  /**
+   * A loja dona do mapa (o pino e a área acima). Em "Todas as lojas", pedido
+   * de outra loja não é medido pela área desta — o servidor mede com a dele.
+   * `storeId` não serve: é o usuário da sessão (o funcionário, quando é ele).
+   */
+  lojaDoMapaId?: string | null;
 }
 
 /**
@@ -353,9 +388,20 @@ export default function RoteirizacaoModal({
   onRefreshOrders,
   onUpdateOrderStatus,
   bairrosDaLoja,
+  areaDoMapa = null,
+  lojaDoMapaId = null,
   modoIndependente = false
 }: RoteirizacaoModalProps) {
   const [activeTab, setActiveTab] = useState<"PENDING" | "ROTAS">("PENDING");
+  // A tela ainda está aberta? A busca dos endereços termina depois de quem a
+  // começou ter saído, e não pode mexer em estado de quem já foi embora.
+  const montadoRef = useRef(true);
+  useEffect(() => {
+    montadoRef.current = true;
+    return () => {
+      montadoRef.current = false;
+    };
+  }, []);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
 
@@ -927,198 +973,311 @@ export default function RoteirizacaoModal({
   // fora do navegador). Aqui só a amarração com a cidade da loja.
   const parseAddressDetails = (rawAddr: string) => parseEnderecoDaEntrega(rawAddr, storeCity);
 
-  // Motor Inteligente de Geocodificação Automática: PRIORIDADE BAIRRO -> RUA DENTRO DO BAIRRO (Anti-Homônimos)
+  // ── O PONTO DE CADA PEDIDO ─────────────────────────────────────────────
+  //
+  // A regra mora em lib/ponto-do-pedido.ts — a mesma do servidor e do cron:
+  // o ponto que o pedido traz (loja, parceiro, cliente) vale; o que alguém
+  // achou pelo texto só vale dentro da área da loja; o resto o SERVIDOR
+  // resolve (/api/geocodificar: posição que a loja ensinou → CEP → texto →
+  // centro do bairro, sempre dentro da área). Sem nada plausível o pedido fica
+  // INCERTO: não vai para o mapa no lugar errado — vai para a lista "sem
+  // localização", e o operador posiciona com um clique.
+  //
+  // O que saiu (NIK, 16/10/2026): a cópia deste navegador (localStorage
+  // "firehub_geo_cache_v3") passava NA FRENTE do servidor e guardava para
+  // sempre o ponto que o navegador achava sozinho, sem o CEP — foi assim que
+  // dois pedidos de Sobradinho ficaram na Asa Sul, os pinos "2" e "3". O
+  // servidor tem o cache do banco, para todas as lojas, e aprende com a loja.
+  const resolucoesRef = useRef<Map<string, Resolucao>>(new Map());
+  const emVooRef = useRef<Set<string>>(new Set());
+  /** O que o operador posicionou nesta tela, antes de a lista de pedidos voltar do servidor. */
+  const manuaisRef = useRef<Map<string, { lat: number; lng: number }>>(new Map());
+  const [tiqueDosPontos, setTiqueDosPontos] = useState(0);
+  const [infoDoPino, setInfoDoPino] = useState<Record<string, { fonte: FonteDoPonto; aproximado: boolean }>>({});
+  const [incertos, setIncertos] = useState<Record<string, string>>({});
+  /** A lista "sem localização" no canto do mapa pode ser recolhida (noite cheia). */
+  const [incertosRecolhidos, setIncertosRecolhidos] = useState(false);
+
+  const textoDoEndereco = (order: any): string =>
+    String(order?.customerAddress || order?.address || `${order?.street || ""} ${order?.number || ""} ${order?.neighborhood || ""}`).trim();
+
+  /** A área da loja para conferir ponto achado pelo texto (só com o pino da loja). */
+  const areaDaTela = useMemo<AreaDaLoja | null>(
+    () =>
+      pontoDaLoja && areaDoMapa
+        ? { centro: pontoDaLoja, raioKm: areaDoMapa.raioKm, raioDoParceiroKm: areaDoMapa.raioDoParceiroKm, base: "faixas" }
+        : null,
+    [pontoDaLoja, areaDoMapa?.raioKm, areaDoMapa?.raioDoParceiroKm],
+  );
+
+  // A cópia velha dos pontos neste navegador não volta mais (ver acima).
+  useEffect(() => {
+    try { localStorage.removeItem("firehub_geo_cache_v3"); } catch {}
+  }, []);
+
+  // Roda também com a janela fechada: no painel de pedidos o mapa fica montado
+  // por trás e abre já com os pinos (como sempre foi).
   useEffect(() => {
     if (deliveryOrders.length === 0) return;
 
-    // Carregar cache local de geocodificação
-    let localCache: Record<string, { lat: number; lng: number }> = {};
-    try {
-      const stored = localStorage.getItem("firehub_geo_cache_v3");
-      if (stored) localCache = JSON.parse(stored);
-    } catch {}
-
-    const initialMap = { ...geocodedMap };
-    let initialUpdated = false;
-    const toGeocode: {
-      jaDespachado?: boolean;
-      id: string;
-      idx: number;
-      rawAddr: string;
-      neighborhood: string;
-      streetName: string;
-      houseNumber: string;
-      cleanedStreet: string;
-      cacheKey: string;
-      dictFallback?: { lat: number; lng: number };
-    }[] = [];
-
-    deliveryOrders.forEach((order, idx) => {
-      const rawAddr = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}`;
-      const { neighborhood, streetName, houseNumber } = parseAddressDetails(rawAddr);
-      const cleanedStreet = cleanAddressForGeocoding(rawAddr);
-      const cacheKey = `${cleanedStreet}_${neighborhood}_${storeCity}`.toLowerCase().trim();
-
-      const orderLat = (order as any).customerLatLng?.lat || (order as any).latitude || (order as any).lat;
-      const orderLng = (order as any).customerLatLng?.lng || (order as any).longitude || (order as any).lng;
-
-      const dictFallback = dicionarioDeBairro(neighborhood, defaultCenter);
-
-      // Se o pedido já possui lat/lng válidas e NÃO estão no mar, usa direto
-      if (orderLat && orderLng && !isNaN(Number(orderLat)) && !isNaN(Number(orderLng)) && !isPointInSea(Number(orderLat), Number(orderLng))) {
-        if (!initialMap[order.id] || initialMap[order.id].lat !== Number(orderLat)) {
-          initialMap[order.id] = { lat: Number(orderLat), lng: Number(orderLng) };
-          initialUpdated = true;
-        }
-      } else if (localCache[cacheKey] && !isPointInSea(localCache[cacheKey].lat, localCache[cacheKey].lng)) {
-        if (!initialMap[order.id] || initialMap[order.id].lat !== localCache[cacheKey].lat) {
-          initialMap[order.id] = localCache[cacheKey];
-          initialUpdated = true;
-        }
-      } else {
-        // Atribui o dictFallback provisório para a tela não abrir em branco
-        if (dictFallback && !initialMap[order.id]) {
-          initialMap[order.id] = dictFallback;
-          initialUpdated = true;
-        }
-        // SEMPRE coloca no toGeocode para buscar a rua exata no Nominatim
-        toGeocode.push({
-          jaDespachado: Boolean((order as any).__jaDespachado || (order as any).__recemEntregue),
-          id: order.id,
-          idx,
-          rawAddr,
-          neighborhood,
-          streetName,
-          houseNumber,
-          cleanedStreet,
-          cacheKey,
-          dictFallback,
-        });
-      }
+    const pedidos: (PedidoNoMapa & { jaDespachado: boolean })[] = deliveryOrders.map((o: any) => ({
+      id: o.id,
+      customerLatLng: manuaisRef.current.has(o.id) ? { ...manuaisRef.current.get(o.id), origem: "manual" } : o.customerLatLng,
+      latitude: o.latitude ?? o.lat,
+      longitude: o.longitude ?? o.lng,
+      franchiseeId: o.franchiseeId,
+      ehMarketplace: canalDoPedido(o).ehMarketplace,
+      endereco: textoDoEndereco(o),
+      jaDespachado: Boolean(o.__jaDespachado || o.__recemEntregue),
+    }));
+    const plano = planoDosPontos(pedidos, {
+      area: areaDaTela,
+      lojaDoMapa: lojaDoMapaId || null,
+      resolucoes: resolucoesRef.current,
+      agora: Date.now(),
+      emVoo: emVooRef.current,
     });
+    setGeocodedMap((atual) => (JSON.stringify(atual) === JSON.stringify(plano.pontos) ? atual : plano.pontos));
+    setInfoDoPino((atual) => (JSON.stringify(atual) === JSON.stringify(plano.info) ? atual : plano.info));
+    setIncertos((atual) => (JSON.stringify(atual) === JSON.stringify(plano.incertos) ? atual : plano.incertos));
 
-    if (initialUpdated) {
-      setGeocodedMap(initialMap);
-    }
-
-    if (toGeocode.length === 0) {
-      setGeocodingLoading(false);
+    // Sem o ponto da loja não existe âncora: o servidor recusa (o raio e o
+    // viés da busca saem dela). Pino nenhum é melhor que pino no meio do Brasil.
+    if (!temPontoDaLoja || plano.perguntar.length === 0) {
+      if (emVooRef.current.size === 0) setGeocodingLoading(false);
       return;
     }
 
-    let isMounted = true;
-    const geocodeAddresses = async () => {
-      setGeocodingLoading(true);
-      const updatedMap = { ...initialMap };
-      const updatedCache = { ...localCache };
-      let hasNewCache = false;
+    // Quem já está na rua vai para o fim da fila: as vagas do lote são dos
+    // pedidos que a loja precisa roteirizar AGORA. 14 por vez (o teto da rota
+    // é 15); o resto vai na volta seguinte.
+    const porId = new Map(pedidos.map((p) => [p.id, p]));
+    const lote = plano.perguntar
+      .map((id) => porId.get(id)!)
+      .sort((a, b) => Number(a.jaDespachado) - Number(b.jaDespachado))
+      .slice(0, 14);
+    lote.forEach((p) => emVooRef.current.add(p.id));
+    setGeocodingLoading(true);
 
-      // ── PRIMEIRO O SERVIDOR ─────────────────────────────────────────────
-      //
-      // O geocodificador limita por IP, e o IP daqui é o do Wi-Fi da loja —
-      // compartilhado com todo mundo em volta. Foi isso que deixou a
-      // roteirização do Lucas Pimenta sem carregar a noite de 11/09/2026,
-      // voltando na hora quando ele trocou para os dados móveis: outro IP.
-      //
-      // No servidor o IP é um só, o limite é respeitado por uma fila, e o
-      // endereço resolvido fica no banco para TODAS as lojas. O navegador só
-      // volta a falar com o geocodificador se o servidor não responder.
-      let faltam = toGeocode;
-      const ordenados = [...toGeocode].sort((a, b) => {
-        const da = (a as any).jaDespachado ? 1 : 0;
-        const db = (b as any).jaDespachado ? 1 : 0;
-        return da - db;
-      });
-      const paraOServidor = ordenados.slice(0, 14);
+    void (async () => {
+      let servidorFora = false;
       try {
         const r = await fetch("/api/geocodificar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          // Quem já está na rua vai para o fim da fila: as vagas do lote são
-          // dos pedidos que a loja precisa roteirizar AGORA.
-          body: JSON.stringify({ enderecos: paraOServidor.map((t) => ({ id: t.id, endereco: t.rawAddr })) }),
+          body: JSON.stringify({ enderecos: lote.map((p) => ({ id: p.id, endereco: p.endereco })) }),
         });
+        const agora = Date.now();
         if (r.ok) {
-          const { resultados } = await r.json();
-          const porId = new Map<string, { lat: number; lng: number; origem: string }>(
-            (resultados || []).map((x: any) => [x.id, x]),
-          );
-          const resolvidos = new Set<string>();
-          for (const item of toGeocode) {
-            const achado = porId.get(item.id);
-            if (!achado) continue;
-            updatedMap[item.id] = { lat: achado.lat, lng: achado.lng };
-            updatedCache[item.cacheKey] = { lat: achado.lat, lng: achado.lng };
-            hasNewCache = true;
-            resolvidos.add(item.id);
-            console.log(`[Roteirização] ${item.neighborhood || "(sem bairro)"} · ${item.streetName || "(sem rua)"} → ${achado.origem} (servidor)`);
+          const { resultados, incertos: semPonto } = await r.json();
+          const respondidos = new Set<string>();
+          for (const x of resultados || []) {
+            const fonte = (x.fonte as FonteDoPonto) || fonteDaGeocodificacao(x.origem);
+            resolucoesRef.current.set(x.id, {
+              ponto: { lat: x.lat, lng: x.lng },
+              fonte,
+              aproximado: typeof x.aproximado === "boolean" ? x.aproximado : fonte === "bairro",
+              em: agora,
+            });
+            respondidos.add(x.id);
+            console.log(`[Roteirização] pedido ${String(x.id).slice(-4)} → ${x.origem} (${NOME_DA_FONTE[fonte] || fonte})`);
           }
-          if (resolvidos.size > 0 && isMounted) setGeocodedMap({ ...updatedMap });
-          faltam = toGeocode.filter((t) => !resolvidos.has(t.id));
+          for (const x of semPonto || []) {
+            resolucoesRef.current.set(x.id, { ponto: null, motivo: String(x.motivo || "sem localização confiável"), em: agora });
+            respondidos.add(x.id);
+            console.warn(`[Roteirização] pedido ${String(x.id).slice(-4)} sem localização confiável: ${x.motivo}`);
+          }
+          // Sem resposta (prazo do lote, fila do mapa cheia): pergunta de novo em instantes.
+          for (const p of lote) if (!respondidos.has(p.id)) resolucoesRef.current.set(p.id, { ponto: null, em: agora });
+        } else if (r.status >= 500) {
+          servidorFora = true;
         } else {
-          console.warn("[Roteirização] servidor não geocodificou:", r.status, "— seguindo pelo navegador");
+          console.warn("[Roteirização] servidor não localizou os endereços:", r.status);
+          for (const p of lote) resolucoesRef.current.set(p.id, { ponto: null, em: agora });
         }
       } catch (e: any) {
-        console.warn("[Roteirização] servidor indisponível:", e?.message, "— seguindo pelo navegador");
-      }
-      if (faltam.length === 0) {
-        if (hasNewCache) { try { localStorage.setItem("firehub_geo_cache_v3", JSON.stringify(updatedCache)); } catch {} }
-        if (isMounted) setGeocodingLoading(false);
-        return;
+        console.warn("[Roteirização] servidor indisponível:", e?.message);
+        servidorFora = true;
       }
 
-      // Sem o ponto da loja não existe âncora para a busca do navegador: o raio
-      // de 30 km e o último recurso ("não achei, fica na loja") saem dela. Pino
-      // nenhum é melhor que pino no meio do Brasil.
-      if (!temPontoDaLoja) {
-        if (hasNewCache) { try { localStorage.setItem("firehub_geo_cache_v3", JSON.stringify(updatedCache)); } catch {} }
-        if (isMounted) setGeocodingLoading(false);
-        return;
-      }
-
-      const geo = criarGeocodificador({ storeCity, estado: estadoDaLoja, centroDaLoja: defaultCenter });
-
-      // A política de uso do Nominatim é 1 requisição por segundo — e não é
-      // aviso vazio: em 26/08 o IP da loja estava tomando 429 em TODA busca.
-      // O limitador mora dentro de criarGeocodificador; de 1 em 1 endereço o
-      // bloqueio não acontece, e o cache garante que cada um só paga uma vez.
-      const BATCH_SIZE = 1;
-      for (let i = 0; i < faltam.length; i += BATCH_SIZE) {
-        if (!isMounted) break;
-        const batch = faltam.slice(i, i + BATCH_SIZE);
-
-        await Promise.all(
-          batch.map(async (item) => {
-            const { coords, origem } = await geo.geocodificarItem(item);
-            console.log(`[Roteirização] ${item.neighborhood || "(sem bairro)"} · ${item.streetName || "(sem rua)"} → ${origem}`);
-
-            updatedMap[item.id] = coords;
-            updatedCache[item.cacheKey] = coords;
-            hasNewCache = true;
-          })
-        );
-
-        if (isMounted) {
-          setGeocodedMap({ ...updatedMap });
+      // ── SERVIDOR FORA: O NAVEGADOR PROCURA, COM A MESMA RÉGUA ───────────
+      // Só o mapa aberto e o texto (sem o CEP e sem a posição aprendida); o
+      // que ficar fora da área da loja, ou sem achar nada, é incerto — nunca
+      // o centro de outro lugar e nunca a porta da loja.
+      if (servidorFora) {
+        for (const p of lote) {
+          if (!montadoRef.current) break;
+          const lido = parseAddressDetails(p.endereco);
+          const raioMaxKm = areaDaTela ? raioDoPedido(areaDaTela, p.ehMarketplace) : undefined;
+          const geo = criarGeocodificador({ storeCity, estado: estadoDaLoja, centroDaLoja: defaultCenter, raioMaxKm });
+          const { coords, origem, nivel, mapaFalhou } = await geo
+            .geocodificarItem({
+              idx: 0,
+              neighborhood: lido.neighborhood,
+              streetName: lido.streetName,
+              houseNumber: lido.houseNumber,
+              cleanedStreet: cleanAddressForGeocoding(p.endereco),
+              dictFallback: dicionarioDeBairro(lido.neighborhood, defaultCenter),
+            })
+            .catch(() => ({ coords: defaultCenter, origem: "falhou", nivel: "nenhum" as const, mapaFalhou: true }));
+          const agora = Date.now();
+          if (nivel !== "nenhum" && pontoPlausivel(coords, areaDaTela, p.ehMarketplace)) {
+            const fonte = fonteDaGeocodificacao(origem);
+            resolucoesRef.current.set(p.id, { ponto: coords, fonte, aproximado: nivel === "bairro", em: agora });
+          } else if (mapaFalhou) {
+            // O mapa não respondeu: não é "incerto", é "ainda não sei".
+            resolucoesRef.current.set(p.id, { ponto: null, em: agora });
+          } else {
+            resolucoesRef.current.set(p.id, {
+              ponto: null,
+              motivo: nivel === "nenhum" || !areaDaTela ? "o mapa não achou este endereço" : motivoForaDaArea(coords, areaDaTela, p.ehMarketplace),
+              em: agora,
+            });
+          }
+          console.log(`[Roteirização] (navegador) pedido ${p.id.slice(-4)} → ${origem}`);
         }
-        await new Promise((r) => setTimeout(r, 120)); // o limitador de 1,1s por chamada é quem dita o ritmo
       }
 
-      if (hasNewCache) {
-        try {
-          localStorage.setItem("firehub_geo_cache_v3", JSON.stringify(updatedCache));
-        } catch {}
-      }
+      lote.forEach((p) => emVooRef.current.delete(p.id));
+      if (!montadoRef.current) return;
+      if (emVooRef.current.size === 0) setGeocodingLoading(false);
+      setTiqueDosPontos((n) => n + 1);
+    })();
+  }, [isOpen, deliveryOrders, areaDaTela, lojaDoMapaId, temPontoDaLoja, tiqueDosPontos]);
 
-      if (isMounted) setGeocodingLoading(false);
+  // Quem ficou sem resposta é perguntado de novo em 15 s, e o incerto de 5 em
+  // 5 min (lib/ponto-do-pedido.ts) — mesmo numa noite parada, sem pedido novo
+  // para mexer na lista.
+  useEffect(() => {
+    if (!isOpen) return;
+    const t = setInterval(() => setTiqueDosPontos((n) => n + 1), ESPERA_SEM_RESPOSTA_MS + 1000);
+    return () => clearInterval(t);
+  }, [isOpen]);
+
+  // ── O OPERADOR POSICIONA O PEDIDO ───────────────────────────────────────
+  //
+  // "📍 Posicionar" (lista de incertos e cartão do pedido) ou o botão direito
+  // no pino: o mapa entra no modo de posicionar — clique onde fica a casa,
+  // arraste o pino se precisar e salve. O ponto vai para o pedido (origem
+  // "manual": o app do motoboy navega até ali e o cron mede dali) e para o
+  // ENDEREÇO na loja (lib/ponto-aprendido.ts): o próximo pedido dele já nasce
+  // no lugar certo. Clique solto em pino nunca move nada — só com o modo ligado.
+  const [posicionando, setPosicionando] = useState<string | null>(null);
+  const [pontoProvisorio, setPontoProvisorio] = useState<{ lat: number; lng: number } | null>(null);
+  const [salvandoPonto, setSalvandoPonto] = useState(false);
+  const posicionandoRef = useRef<string | null>(null);
+  useEffect(() => {
+    posicionandoRef.current = posicionando;
+  }, [posicionando]);
+
+  const iniciarPosicionamento = (id: string) => {
+    setPosicionando(id);
+    const atual = geocodedMap[id] || null;
+    setPontoProvisorio(atual);
+    if (atual && leafletMapRef.current) {
+      try { leafletMapRef.current.panTo([atual.lat, atual.lng]); } catch {}
+    }
+  };
+  const cancelarPosicionamento = () => {
+    setPosicionando(null);
+    setPontoProvisorio(null);
+  };
+  // Esc desiste de posicionar, como em qualquer mapa.
+  useEffect(() => {
+    if (!posicionando) return;
+    const aoTeclar = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setPosicionando(null);
+        setPontoProvisorio(null);
+      }
     };
+    window.addEventListener("keydown", aoTeclar);
+    return () => window.removeEventListener("keydown", aoTeclar);
+  }, [posicionando]);
+  const salvarPosicao = async () => {
+    const id = posicionando;
+    if (!id || !pontoProvisorio || salvandoPonto) return;
+    setSalvandoPonto(true);
+    try {
+      const res = await fetch(`/api/store/orders/${encodeURIComponent(id)}/ponto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pontoProvisorio),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.ponto) {
+        setAviso({ tipo: "erro", titulo: "O ponto não foi salvo", detalhe: data?.error || "Tente de novo." });
+        return;
+      }
+      manuaisRef.current.set(id, data.ponto);
+      resolucoesRef.current.set(id, { ponto: data.ponto, fonte: "manual", aproximado: false, em: Date.now() });
+      const pedido = orders.find((o) => o.id === id);
+      const numero = pedido ? getOrderDisplayNumber(pedido) : "";
+      setAviso({
+        tipo: data.foraDaArea ? "atencao" : "ok",
+        titulo: `📍 Pedido #${numero} posicionado`,
+        detalhe: [
+          data.aprendido ? "Os próximos pedidos deste endereço já vêm neste ponto." : null,
+          data.foraDaArea ? "Atenção: o ponto fica fora da área de entrega cadastrada." : null,
+          typeof data.distanciaKm === "number" ? `Distância da loja: ${String(data.distanciaKm).replace(".", ",")} km.` : null,
+        ].filter(Boolean).join(" ") || undefined,
+      });
+      cancelarPosicionamento();
+      setTiqueDosPontos((n) => n + 1);
+      if (onRefreshOrders) onRefreshOrders();
+    } catch (err: any) {
+      setAviso({ tipo: "erro", titulo: "O ponto não foi salvo", detalhe: err?.message || String(err) });
+    } finally {
+      setSalvandoPonto(false);
+    }
+  };
 
-    geocodeAddresses();
-
+  // Modo de posicionar: o clique no mapa marca o ponto provisório.
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    if (!leafletLoaded || !map) return;
+    const container = map.getContainer?.();
+    if (!posicionando) return;
+    if (container) container.style.cursor = "crosshair";
+    const aoClicar = (e: any) => setPontoProvisorio({ lat: e.latlng.lat, lng: e.latlng.lng });
+    map.on("click", aoClicar);
     return () => {
-      isMounted = false;
+      map.off("click", aoClicar);
+      if (container) container.style.cursor = "";
     };
-  }, [isOpen, deliveryOrders, storeCity, defaultCenter, temPontoDaLoja]);
+  }, [leafletLoaded, posicionando]);
+
+  // O pino provisório (📍, arrastável). Fora dos marcadores do redesenho:
+  // a lista que volta a cada 8 s não o apaga no meio do arraste.
+  const marcadorProvisorioRef = useRef<any>(null);
+  useEffect(() => {
+    const map = leafletMapRef.current;
+    const L = (window as any).L;
+    if (!leafletLoaded || !map || !L) return;
+    if (!posicionando || !pontoProvisorio) {
+      if (marcadorProvisorioRef.current) {
+        try { marcadorProvisorioRef.current.remove(); } catch {}
+        marcadorProvisorioRef.current = null;
+      }
+      return;
+    }
+    if (!marcadorProvisorioRef.current) {
+      const icone = L.divIcon({
+        html: `<div style="font-size:34px;line-height:34px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.45));cursor:grab;">📍</div>`,
+        className: "pino-provisorio-do-pedido",
+        iconSize: [34, 34],
+        iconAnchor: [17, 32],
+      });
+      const m = L.marker([pontoProvisorio.lat, pontoProvisorio.lng], { icon: icone, draggable: true, zIndexOffset: 3000 }).addTo(map);
+      m.on("dragend", () => {
+        const p = m.getLatLng();
+        setPontoProvisorio({ lat: p.lat, lng: p.lng });
+      });
+      marcadorProvisorioRef.current = m;
+    } else {
+      marcadorProvisorioRef.current.setLatLng([pontoProvisorio.lat, pontoProvisorio.lng]);
+    }
+  }, [leafletLoaded, posicionando, pontoProvisorio]);
 
   // ── COORDENADA SÓ PARA QUEM TEM PINO ─────────────────────────────────────
   //
@@ -1244,6 +1403,17 @@ export default function RoteirizacaoModal({
     // 3. Otimiza a sequência do trajeto a partir da Loja (Loja -> Parada 1 -> Parada 2 -> Destino) no sentido mais eficiente
     const optimizedCluster = optimizeRouteSequence(clusterIds, defaultCenter);
     setSelectedOrderIds(optimizedCluster);
+
+    // O pedido sem localização confiável não entra no agrupamento (agrupar
+    // pelo ponto errado é a rota errada): fica dito, para ninguém esquecê-lo.
+    const semLocal = filteredPendingOrders.filter((o) => incertos[o.id] && !geocodedMap[o.id]);
+    if (semLocal.length > 0) {
+      setAviso({
+        tipo: "atencao",
+        titulo: `${semLocal.length} pedido(s) sem localização ficaram fora do agrupamento`,
+        detalhe: `${semLocal.map((o) => `#${getOrderDisplayNumber(o)}`).join(", ")} — use "📍 Posicionar" no mapa para incluir.`,
+      });
+    }
   };
 
   // Dispersor Anti-Sobreposição (Anti-Overlap Spider / Offset Lateral)
@@ -1485,9 +1655,13 @@ export default function RoteirizacaoModal({
       const isSelected = selectedOrderIds.includes(order.id);
       const selectedIndex = selectedOrderIds.indexOf(order.id);
       const isHovered = hoveredOrderId === order.id;
+      // De onde veio o ponto (lib/ponto-do-pedido.ts). Centro do bairro é
+      // aproximado: a gota ganha a borda tracejada e a caixa diz para conferir.
+      const local = infoDoPino[order.id];
+      const aproximado = Boolean(local?.aproximado);
 
       const assignedRoute = createdRoutes.find(r => r.orders.some(ro => ro.id === order.id));
-      
+
       // ── A COR DIZ EM QUE PÉ ESTÁ O PEDIDO ───────────────────────────
       //
       // Vermelho está na cozinha, roxo já ficou pronto, azul saiu com o
@@ -1563,7 +1737,7 @@ export default function RoteirizacaoModal({
               position: absolute; left: -17px; top: ${-alturaCentro - 17}px;
               width: 34px; height: 34px; border-radius: 50% 50% 50% 0;
               transform: rotate(-45deg); background: ${bgColor};
-              border: 2.5px solid ${borderColor}; box-shadow: ${shadowCss};
+              border: 2.5px ${aproximado ? "dashed" : "solid"} ${borderColor}; box-shadow: ${shadowCss};
               display: flex; align-items: center; justify-content: center;
               cursor: pointer; box-sizing: border-box;
             ">
@@ -1612,7 +1786,7 @@ export default function RoteirizacaoModal({
       ];
       const caixaDoPedido = L.popup({ autoPan: false, closeButton: false, offset: topoDoPino })
         .setLatLng([coords.lat, coords.lng])
-        .setContent(popupDoPedido(order, jaDespachado, prontoNaCozinha));
+        .setContent(popupDoPedido(order, jaDespachado, prontoNaCozinha, local));
 
       // ── O PEDIDO INTEIRO SÓ DE PASSAR O MOUSE ────────────────────────
       //
@@ -1638,14 +1812,30 @@ export default function RoteirizacaoModal({
       };
       orderMarker.on("mouseover", () => {
         cancelarEspera();
+        // Posicionando outro pedido: a caixa taparia o lugar do clique.
+        if (posicionandoRef.current) return;
         esperaDaCaixa = setTimeout(() => caixaDoPedido.openOn(map), ESPERA_DA_CAIXA_DO_PINO_MS);
       });
       orderMarker.on("mouseout", fecharCaixa);
       // O mapa redesenha os pinos a cada seleção: pino que sai leva a caixa.
       orderMarker.on("remove", fecharCaixa);
 
-      orderMarker.on("click", () => {
+      // Botão direito no pino: corrigir o lugar dele (o mesmo "📍 Corrigir
+      // local" do cartão do pedido).
+      orderMarker.on("contextmenu", (e: any) => {
+        try { e?.originalEvent?.preventDefault?.(); } catch {}
         fecharCaixa();
+        iniciarPosicionamento(order.id);
+      });
+
+      orderMarker.on("click", (e: any) => {
+        fecharCaixa();
+        // Modo de posicionar ligado: o clique no pino vizinho marca o ponto ali
+        // (dois pedidos do mesmo prédio) e não mexe na rota.
+        if (posicionandoRef.current) {
+          if (e?.latlng) setPontoProvisorio({ lat: e.latlng.lat, lng: e.latlng.lng });
+          return;
+        }
         // ── PINO AZUL E VERDE SÃO INFORMATIVOS, NÃO SELECIONÁVEIS ────────
         //
         // Desde que o pedido despachado passou a ficar no mapa, o pino dele
@@ -1796,7 +1986,7 @@ export default function RoteirizacaoModal({
       }).addTo(map);
       polylinesRef.current.push(routePoly);
     });
-  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, rotaEmFoco, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa, estaPronto]);
+  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, rotaEmFoco, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa, estaPronto, infoDoPino]);
 
   // O pino verde do recém-entregue precisa SUMIR sozinho ao completar os 10 s.
   // Sem um tique, ele só sairia no próximo evento que redesenhasse o mapa — e
@@ -2399,6 +2589,8 @@ ${mapsUrl}`;
                                   ? bairroPeloEndereco(addrText, bairrosDaLoja, { cidades: [storeCity] })?.name
                                   : null) || lido.neighborhood;
                                 const isMapped = Boolean(geocodedMap[order.id]);
+                                const motivoIncerto = !isMapped ? incertos[order.id] : undefined;
+                                const local = infoDoPino[order.id];
                                 return (
                                   <div style={{ margin: "3px 0 5px 0" }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
@@ -2411,13 +2603,43 @@ ${mapsUrl}`;
                                         </span>
                                       ) : null}
 
-                                      {!isMapped && (
+                                      {/* Sem localização confiável: o pedido NÃO está no
+                                          mapa (nem no agrupamento). O botão posiciona. */}
+                                      {motivoIncerto ? (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); iniciarPosicionamento(order.id); }}
+                                          title={`Sem localização confiável: ${motivoIncerto}. Clique e marque no mapa onde fica.`}
+                                          style={{
+                                            background: "#FFF7ED", color: "#9A3412", border: "1px solid #FDBA74",
+                                            padding: "2px 7px", borderRadius: "5px", fontWeight: 800, fontSize: "0.72rem",
+                                            cursor: "pointer", fontFamily: "inherit",
+                                          }}
+                                        >
+                                          ⚠️ Sem localização · 📍 Posicionar
+                                        </button>
+                                      ) : !isMapped ? (
                                         <span style={{
                                           background: "#FAF6F2", color: "#1C1917", border: "1px solid #E7DDD3",
                                           padding: "2px 7px", borderRadius: "5px", fontWeight: 700, fontSize: "0.72rem"
                                         }}>
                                           📍 Localizando GPS...
                                         </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); iniciarPosicionamento(order.id); }}
+                                          title={`Local: ${local ? NOME_DA_FONTE[local.fonte] : "mapa"}. Clique para corrigir no mapa.`}
+                                          style={{
+                                            background: local?.aproximado ? "#FFFBEB" : "#F8FAFC",
+                                            color: local?.aproximado ? "#B45309" : "#64748B",
+                                            border: `1px solid ${local?.aproximado ? "#FDE68A" : "#E2E8F0"}`,
+                                            padding: "2px 7px", borderRadius: "5px", fontWeight: 700, fontSize: "0.7rem",
+                                            cursor: "pointer", fontFamily: "inherit",
+                                          }}
+                                        >
+                                          {local?.aproximado ? "≈ centro do bairro · corrigir" : "📍 Corrigir local"}
+                                        </button>
                                       )}
                                     </div>
 
@@ -2795,6 +3017,124 @@ ${mapsUrl}`;
                 , arraste o pino até a sua porta e salve.
               </div>
             )}
+
+            {/* ── PEDIDOS SEM LOCALIZAÇÃO CONFIÁVEL ─────────────────────────
+                O mapa não achou um ponto DENTRO da área da loja (CEP que os
+                Correios não conhecem, endereço de quadra e conjunto, bairro de
+                outro lugar). Antes o pino ia assim mesmo para onde o mapa
+                achava — o #30 da NIK, de Sobradinho, na Asa Sul. Agora ele fica
+                fora do mapa e do agrupamento, aqui, até alguém posicionar. */}
+            {(() => {
+              const semLocal = deliveryOrders.filter((o) => incertos[o.id] && !geocodedMap[o.id]);
+              if (semLocal.length === 0 || posicionando) return null;
+              return (
+                <div style={{
+                  // Abaixo da linha de botões do canto direito ("Centralizar
+                  // Visão", "Motoboys"), que em tela estreita encostaria nela.
+                  position: "absolute", top: temPontoDaLoja ? "64px" : "150px", left: "16px", zIndex: 999,
+                  width: "min(320px, calc(100% - 90px))", maxHeight: "45%", overflowY: "auto",
+                  background: "#FFF7ED", border: "1.5px solid #F59E0B", borderRadius: "10px",
+                  padding: "10px 12px", boxShadow: "0 4px 14px rgba(0,0,0,0.18)",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <strong style={{ fontSize: "0.84rem", fontWeight: 800, color: "#9A3412" }}>
+                      ⚠️ {semLocal.length} {semLocal.length > 1 ? "pedidos" : "pedido"} sem localização
+                    </strong>
+                    <button
+                      type="button"
+                      onClick={() => setIncertosRecolhidos((v) => !v)}
+                      style={{ background: "transparent", border: "none", color: "#9A3412", fontWeight: 800, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      {incertosRecolhidos ? "mostrar" : "recolher"}
+                    </button>
+                  </div>
+                  {!incertosRecolhidos && (
+                    <>
+                      <p style={{ margin: "3px 0 6px 0", fontSize: "0.74rem", color: "#9A3412", lineHeight: 1.4 }}>
+                        O mapa não achou o endereço dentro da sua área, então o pedido não aparece no mapa nem no agrupamento.
+                        Posicione uma vez: o próximo pedido do mesmo endereço já vem no lugar certo.
+                      </p>
+                      {semLocal.map((o) => (
+                        <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderTop: "1px solid #FED7AA" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 800, fontSize: "0.8rem", color: "#0F172A" }}>
+                              #{getOrderDisplayNumber(o)} · {o.customerName || "Cliente"}
+                            </div>
+                            <div
+                              title={textoDoEndereco(o)}
+                              style={{ fontSize: "0.74rem", color: "#7C2D12", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                            >
+                              {textoDoEndereco(o) || "sem endereço"}
+                            </div>
+                            <div style={{ fontSize: "0.7rem", color: "#A16207" }}>{incertos[o.id]}</div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => iniciarPosicionamento(o.id)}
+                            style={{
+                              flexShrink: 0, background: "#EA580C", color: "#FFFFFF", border: "none", borderRadius: "7px",
+                              padding: "6px 10px", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit",
+                            }}
+                          >
+                            📍 Posicionar
+                          </button>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+
+            {/* ── POSICIONANDO UM PEDIDO ───────────────────────────────────── */}
+            {posicionando && (() => {
+              const pedido: any = deliveryOrders.find((o) => o.id === posicionando) || orders.find((o) => o.id === posicionando);
+              return (
+                <div style={{
+                  // No canto esquerdo (a lista de incertos some neste modo): o
+                  // + e − e "Centralizar Visão" ficam livres para achar a casa.
+                  position: "absolute", top: "16px", left: "16px", zIndex: 1000,
+                  width: "min(380px, calc(100% - 340px))", minWidth: "240px", background: "#1E293B", color: "#FFFFFF",
+                  borderRadius: "12px", padding: "10px 14px", boxShadow: "0 10px 25px rgba(0,0,0,0.35)",
+                }}>
+                  <div style={{ fontWeight: 900, fontSize: "0.9rem" }}>
+                    📍 Posicionando o pedido #{pedido ? getOrderDisplayNumber(pedido) : "?"}
+                  </div>
+                  {pedido && (
+                    <div style={{ fontSize: "0.78rem", color: "#CBD5E1", marginTop: 2, wordBreak: "break-word" }}>{textoDoEndereco(pedido)}</div>
+                  )}
+                  <div style={{ fontSize: "0.78rem", marginTop: 6, color: "#E2E8F0" }}>
+                    {pontoProvisorio
+                      ? "Arraste o 📍 até a porta do cliente, se precisar, e salve. Esc cancela."
+                      : "Clique no mapa onde fica a casa do cliente. Esc cancela."}
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                    <button
+                      type="button"
+                      disabled={!pontoProvisorio || salvandoPonto}
+                      onClick={salvarPosicao}
+                      style={{
+                        background: !pontoProvisorio || salvandoPonto ? "#475569" : "#EA580C", color: "#FFFFFF", border: "none",
+                        borderRadius: "8px", padding: "7px 14px", fontWeight: 800, fontSize: "0.82rem", fontFamily: "inherit",
+                        cursor: !pontoProvisorio || salvandoPonto ? "default" : "pointer",
+                      }}
+                    >
+                      {salvandoPonto ? "Salvando..." : "Salvar este ponto"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={cancelarPosicionamento}
+                      style={{
+                        background: "transparent", color: "#CBD5E1", border: "1px solid #475569", borderRadius: "8px",
+                        padding: "7px 12px", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit",
+                      }}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ─── LEGENDA DAS CORES, QUE TAMBÉM FILTRA ────────────────────
                 O significado das cores foi ditado pelo lojista e até agora só

@@ -27,10 +27,11 @@ import {
   estadoPeloEndereco,
   dicionarioDeBairro,
   isPointInSea,
+  RAIO_MAX_DA_LOJA_KM,
   type ItemGeocodificavel,
   type Ponto,
 } from "@/lib/geocodificacao";
-import { buscarCep, cidadeComparavel, digitosDoCep, type ConsultaDoCep } from "@/lib/cep";
+import { buscarCep, cepDoEndereco, cidadeComparavel, type ConsultaDoCep } from "@/lib/cep";
 import {
   geocodeAddress,
   geocodeStreetStructured,
@@ -43,12 +44,27 @@ import {
   type ResultadoDoMapa,
   type TrechoDeRua,
 } from "@/lib/geocoding";
+import {
+  fonteDaGeocodificacao,
+  motivoForaDaArea,
+  pontoPlausivel,
+  raioDoPedido,
+  RAIO_MAXIMO_KM,
+  type AreaDaLoja,
+  type FonteDoPonto,
+} from "@/lib/ponto-do-pedido";
+import { pontosAprendidos } from "@/lib/ponto-aprendido";
 
 export type PedidoDeGeocodificacao = {
   /** Id do pedido, só para devolver o resultado casado. */
   id: string;
   /** Endereço como o cliente escreveu. */
   endereco: string;
+  /**
+   * Pedido de marketplace (iFood, 99, Wabiz…): vale o raio do parceiro, maior
+   * que o da área cadastrada (lib/ponto-do-pedido.ts, `raioDoPedido`).
+   */
+  ehMarketplace?: boolean;
 };
 
 export type ResultadoGeocodificacao = {
@@ -57,6 +73,26 @@ export type ResultadoGeocodificacao = {
   lng: number;
   origem: string;
   doCache: boolean;
+  /** De onde veio o ponto (lib/ponto-do-pedido.ts). */
+  fonte: FonteDoPonto;
+  /** Centro do bairro: serve para a direção, não para a porta. */
+  aproximado: boolean;
+};
+
+/** Pedido sem ponto que sirva: não vai para o mapa, vai para a lista do operador. */
+export type PontoIncerto = { id: string; motivo: string };
+
+export type LojaDaGeocodificacao = {
+  cidade: string;
+  endereco?: string | null;
+  centro: Ponto;
+  /**
+   * A área da loja (lib/ponto-do-pedido.ts, `areaDaLoja`). Sem ela vale a
+   * régua antiga de 30 km — que deixou a Asa Sul passar na NIK.
+   */
+  area?: AreaDaLoja | null;
+  /** Com o id da loja, a posição que ela já ensinou vem antes do mapa (lib/ponto-aprendido.ts). */
+  franchiseeId?: string | null;
 };
 
 /**
@@ -105,17 +141,8 @@ export function chaveDeCache(endereco: string, cidade: string): string {
 // conhecem. Com CEP válido no texto, rua, bairro, cidade e UF saem do ViaCEP;
 // o texto cru só entra quando o CEP não resolve.
 
-/** O CEP escrito no endereço: "CEP 73015217", "CEP: 73.015-217", "73015-217" ou o CEP sozinho. */
-export function cepDoEndereco(endereco: unknown): string | null {
-  const t = String(endereco ?? "");
-  const m =
-    t.match(/\bcep[:\s.]*(\d{2}\.?\d{3}-?\d{3})(?!\d)/i) ||
-    t.match(/(?<!\d)(\d{5}-\d{3})(?!\d)/) ||
-    t.match(/^\s*(\d{8})\s*$/);
-  if (!m) return null;
-  const d = digitosDoCep(m[1]);
-  return d.length === 8 ? d : null;
-}
+/** O CEP escrito no endereço (mora em lib/cep.ts; reexportado para quem já importava daqui). */
+export { cepDoEndereco };
 
 /**
  * A chave do cache. Endereço com CEP ganha chave própria: o ponto que o texto
@@ -409,17 +436,71 @@ export function estadoDaFilaDoMapa() {
   };
 }
 
-export async function geocodificarNoServidor(
+// ── O PONTO DE CADA PEDIDO SEM COORDENADA ────────────────────────────────────
+//
+// Ordem (lib/ponto-do-pedido.ts): a posição que a loja já ensinou para o
+// endereço → o cache → o CEP → o texto → o centro do bairro → o Google (só se
+// ligado) → nada. Tudo que é NOSSA leitura do texto passa pela área da loja:
+// fora dela não é o cliente, é homônimo ou o centro de outra coisa — a Asa Sul
+// para um pedido de Sobradinho (NIK, 16/10/2026). Sem nada plausível, o pedido
+// volta em `incertos` e NÃO é desenhado: vai para a lista do operador.
+
+/** Endereço que acabou incerto não volta ao mapa por 30 min: o mapa não mudou, e a fila é de todos. */
+const VALIDADE_DO_INCERTO_MS = 30 * 60_000;
+const incertosRecentes = new Map<string, { ate: number; motivo: string }>();
+const TETO_DOS_INCERTOS = 3000;
+
+function lembrarIncerto(chave: string, motivo: string) {
+  incertosRecentes.delete(chave);
+  incertosRecentes.set(chave, { ate: Date.now() + VALIDADE_DO_INCERTO_MS, motivo });
+  if (incertosRecentes.size > TETO_DOS_INCERTOS) {
+    const maisVelho = incertosRecentes.keys().next().value;
+    if (maisVelho !== undefined) incertosRecentes.delete(maisVelho);
+  }
+}
+
+/** O Google na roteirização: com a chave E a escolha explícita (termos do Google: ver lib/geocodificacao-google.ts). */
+export function googleNaRoteirizacao(): boolean {
+  return !!chaveDoGoogle() && String(process.env.GOOGLE_NA_ROTEIRIZACAO || "").trim() === "1";
+}
+
+export async function resolverPontosNoServidor(
   pedidos: PedidoDeGeocodificacao[],
-  loja: { cidade: string; endereco?: string | null; centro: Ponto },
-): Promise<ResultadoGeocodificacao[]> {
-  if (pedidos.length === 0) return [];
+  loja: LojaDaGeocodificacao,
+): Promise<{ achados: ResultadoGeocodificacao[]; incertos: PontoIncerto[] }> {
+  const achados: ResultadoGeocodificacao[] = [];
+  const incertos: PontoIncerto[] = [];
+  if (pedidos.length === 0) return { achados, incertos };
   await garantirTabela().catch((e) => {
     console.warn("[Geocodificação] tabela de cache indisponível:", e?.message);
   });
 
   const cidade = loja.cidade || "";
-  const chaves = pedidos.map((p) => chaveDaBusca(p.endereco, cidade));
+  const area: AreaDaLoja = loja.area ?? { centro: loja.centro, raioKm: RAIO_MAX_DA_LOJA_KM, raioDoParceiroKm: RAIO_MAX_DA_LOJA_KM, base: "sem-raio" };
+  const raioDe = (p: PedidoDeGeocodificacao) => Math.min(RAIO_MAXIMO_KM, raioDoPedido(area, !!p.ehMarketplace));
+  const plausivel = (p: PedidoDeGeocodificacao, ponto: Ponto) => pontoPlausivel(ponto, area, !!p.ehMarketplace);
+
+  // 0. A posição que a loja já ensinou para o endereço (o operador arrastou o
+  //    pino de um pedido anterior). É a palavra de quem conhece a rua.
+  let aprendidos = new Map<string, { lat: number; lng: number }>();
+  if (loja.franchiseeId) {
+    aprendidos = await pontosAprendidos(loja.franchiseeId, pedidos.map((p) => p.endereco)).catch((e) => {
+      console.warn("[Geocodificação] posições aprendidas indisponíveis:", e?.message);
+      return new Map<string, { lat: number; lng: number }>();
+    });
+  }
+  const restantes: PedidoDeGeocodificacao[] = [];
+  for (const p of pedidos) {
+    const a = aprendidos.get(p.endereco);
+    if (a) {
+      achados.push({ id: p.id, lat: a.lat, lng: a.lng, origem: "posição salva pela loja", doCache: true, fonte: "aprendido", aproximado: false });
+    } else {
+      restantes.push(p);
+    }
+  }
+  if (restantes.length === 0) return { achados, incertos };
+
+  const chaves = restantes.map((p) => chaveDaBusca(p.endereco, cidade));
 
   // 1. o que já está no banco
   const noCache = new Map<string, { lat: number; lng: number; origem: string | null }>();
@@ -442,7 +523,6 @@ export async function geocodificarNoServidor(
   }
 
   const estado = estadoPeloEndereco(loja.endereco);
-  const saida: ResultadoGeocodificacao[] = [];
 
   // ── ORÇAMENTO DE TEMPO ────────────────────────────────────────────────
   //
@@ -452,27 +532,29 @@ export async function geocodificarNoServidor(
   // — e morrer no limite não devolvia nada e não gravava nada, então a próxima
   // tentativa recomeçava do zero e estourava de novo, para sempre.
   //
-  // Com prazo, a rota devolve o que conseguiu e o navegador resolve o resto
-  // pelo caminho antigo. Quem ficou de fora entra no cache na próxima abertura.
+  // Com prazo, a rota devolve o que conseguiu; quem ficou de fora não volta nem
+  // em `achados` nem em `incertos`, e a tela pergunta de novo (o que já custou
+  // uma ida à rede ficou no cache).
   const prazo = Date.now() + 25_000;
 
   // Cada CHAMADA da cascata entra na fila única, com prioridade de lote: a
   // cotação de frete de qualquer loja passa na frente entre uma chamada e a
   // outra deste endereço. Se a fila recusar alguma (cheia, prazo), o endereço
-  // sai do lote — o ponto dele seria de um degrau pior da cascata, e o
-  // navegador resolve sozinho, como fazia quando a fila recusava o item todo.
+  // sai do lote — o ponto dele seria de um degrau pior da cascata.
   let recusadaNesteItem = false;
-  // Um geocodificador por cidade/UF da busca: o CEP pode ser da cidade
-  // vizinha, ou trazer a UF que o endereço da loja não tem.
+  // Um geocodificador por cidade/UF da busca e raio: o CEP pode ser da cidade
+  // vizinha, ou trazer a UF que o endereço da loja não tem; o pedido de
+  // marketplace tem raio maior que o do site.
   const geocodificadores = new Map<string, ReturnType<typeof criarGeocodificador>>();
-  const geocodificadorDe = (cidadeDaBusca: string, estadoDaBusca: string | null) => {
-    const k = `${cidadeDaBusca}|${estadoDaBusca || ""}`;
+  const geocodificadorDe = (cidadeDaBusca: string, estadoDaBusca: string | null, raioMaxKm: number) => {
+    const k = `${cidadeDaBusca}|${estadoDaBusca || ""}|${raioMaxKm}`;
     let g = geocodificadores.get(k);
     if (!g) {
       g = criarGeocodificador({
         storeCity: cidadeDaBusca,
         estado: estadoDaBusca,
         centroDaLoja: loja.centro,
+        raioMaxKm,
         vez: (chamada) =>
           naFila(chamada, prazo, { prioridade: "lote" }).catch((e) => {
             if (e instanceof RecusaDaFila) recusadaNesteItem = true;
@@ -484,50 +566,111 @@ export async function geocodificarNoServidor(
     return g;
   };
 
-  for (let i = 0; i < pedidos.length; i++) {
-    if (Date.now() > prazo && !noCache.has(chaves[i])) {
-      console.warn(`[Geocodificação] prazo estourado: ${pedidos.length - i} endereço(s) ficaram para a próxima`);
-      break;
-    }
-    const p = pedidos[i];
+  for (let i = 0; i < restantes.length; i++) {
+    const p = restantes[i];
     const chave = chaves[i];
-    const achado = noCache.get(chave);
-    if (achado) {
-      saida.push({ id: p.id, lat: achado.lat, lng: achado.lng, origem: achado.origem || "cache", doCache: true });
+    // A linha "loja: …" é o ENDEREÇO DA LOJA (pontoDeEndereco), às vezes só o
+    // centro da cidade: endereço de cliente igual ao da loja não herda isso.
+    const doCache = noCache.get(chave);
+    const achado = doCache && !/^loja/i.test(String(doCache.origem || "")) ? doCache : undefined;
+    // O que o cache tem só vale DENTRO da área: o ponto antigo da Asa Sul de
+    // um pedido de Sobradinho é refeito com as regras de agora.
+    if (achado && plausivel(p, achado)) {
+      achados.push({
+        id: p.id, lat: achado.lat, lng: achado.lng, origem: achado.origem || "cache", doCache: true,
+        fonte: fonteDaGeocodificacao(achado.origem), aproximado: fonteDaGeocodificacao(achado.origem) === "bairro",
+      });
       continue;
     }
+    const chaveDoIncerto = `${chave}|${raioDe(p)}`;
+    const jaIncerto = incertosRecentes.get(chaveDoIncerto);
+    if (jaIncerto && jaIncerto.ate > Date.now()) {
+      incertos.push({ id: p.id, motivo: jaIncerto.motivo });
+      continue;
+    }
+    if (Date.now() > prazo) {
+      console.warn(`[Geocodificação] prazo estourado: ${restantes.length - i} endereço(s) ficaram para a próxima`);
+      break;
+    }
+    if (achado) console.warn(`[Geocodificação] endereço ${resumoDaConsulta(p.endereco)}: o ponto do cache está fora da área da loja — refazendo`);
     try {
       const busca = await prepararBusca(p.endereco, { cidade, estado, centro: loja.centro }, (cep) =>
         buscarCep(cep, { prazoMs: Math.max(1000, Math.min(4000, prazo - Date.now() - 1000)) }),
       );
       const { neighborhood } = busca.item;
       recusadaNesteItem = false;
-      const achou = await geocodificadorDe(busca.cidade, busca.estado).geocodificarItem({ idx: i, ...busca.item });
+      const achou = await geocodificadorDe(busca.cidade, busca.estado, raioDe(p)).geocodificarItem({ idx: i, ...busca.item });
       const coords = achou.coords;
       // O sufixo, e não prefixo: origemDaGeocodificacao (lib/entrega-do-pedido)
       // lê o COMEÇO para saber se foi o bairro.
       const origem = busca.peloCep ? `${achou.origem} (pelo CEP)` : achou.origem;
       if (recusadaNesteItem) {
-        console.warn(`[Geocodificação] endereço ${resumoDaConsulta(p.endereco)} ficou para o navegador: a fila recusou uma das buscas`);
+        console.warn(`[Geocodificação] endereço ${resumoDaConsulta(p.endereco)} ficou para a próxima: a fila recusou uma das buscas`);
         continue;
       }
-      saida.push({ id: p.id, lat: coords.lat, lng: coords.lng, origem, doCache: false });
-      // Grava NA HORA, não no fim: o lote pode ser interrompido pelo prazo ou
-      // pela plataforma, e o endereço que já custou uma ida à rede não pode se
-      // perder — ele vale para todas as lojas, não só para esta.
-      //
-      // Só entra o que veio de fonte de verdade. "Caiu na loja" é ausência de
-      // resposta; guardar isso congelaria o erro para sempre.
-      if (!/loja \(endereço não localizado\)/.test(origem) && !busca.cepFalhou) {
-        await gravarNoCache({ chave, lat: coords.lat, lng: coords.lng, origem, bairro: neighborhood, cidade });
+      if (achou.nivel !== "nenhum" && plausivel(p, coords)) {
+        const fonte = fonteDaGeocodificacao(origem);
+        achados.push({ id: p.id, lat: coords.lat, lng: coords.lng, origem, doCache: false, fonte, aproximado: achou.nivel === "bairro" });
+        // Grava NA HORA, não no fim: o lote pode ser interrompido pelo prazo
+        // ou pela plataforma, e o endereço que já custou uma ida à rede não
+        // pode se perder — ele vale para todas as lojas, não só para esta.
+        // Só entra o que veio de fonte de verdade: "caiu na loja" é ausência
+        // de resposta, e guardar isso congelaria o erro para sempre. Achado
+        // com o mapa falhando no meio (429, tempo) pode ser um degrau pior do
+        // que o endereço merece: vale agora, mas não fica guardado.
+        if (!busca.cepFalhou && !achou.mapaFalhou) {
+          await gravarNoCache({ chave, lat: coords.lat, lng: coords.lng, origem, bairro: neighborhood, cidade });
+        }
+        continue;
       }
+      // Nada plausível porque o mapa NÃO RESPONDEU (429, 5xx, tempo): não é
+      // "incerto" — fica sem resposta, e a tela pergunta de novo em instantes.
+      if (achou.mapaFalhou) {
+        console.warn(`[Geocodificação] endereço ${resumoDaConsulta(p.endereco)} ficou para a próxima: o mapa não respondeu`);
+        continue;
+      }
+
+      // ── NADA PLAUSÍVEL PELO MAPA ABERTO: O GOOGLE, SE LIGADO ─────────────
+      if (googleNaRoteirizacao() && prazo - Date.now() > 1500) {
+        const g = await googleNaTaxa(semRabichoDepoisDaUF(p.endereco), busca.cidade || cidade, loja.centro, prazo).catch(
+          () => ({ ok: false, motivo: "google" }) as RespostaDoMapa<ResultadoDoGoogle | null>,
+        );
+        const v = g.ok ? g.valor : null;
+        if (v && plausivel(p, v)) {
+          achados.push({ id: p.id, lat: v.lat, lng: v.lng, origem: `google (${v.precisao})`, doCache: false, fonte: "google", aproximado: v.precisao === "bairro" });
+          continue;
+        }
+      }
+
+      const motivo =
+        achou.nivel === "nenhum"
+          ? "o mapa não achou a rua nem o bairro deste endereço"
+          : motivoForaDaArea(coords, area, !!p.ehMarketplace);
+      if (!busca.cepFalhou) lembrarIncerto(chaveDoIncerto, motivo);
+      incertos.push({ id: p.id, motivo });
     } catch (e: any) {
       // O endereço do cliente não vai para o log (LGPD): o resumo correlaciona.
       console.warn(`[Geocodificação] endereço ${resumoDaConsulta(p.endereco)}: ${e?.message}`);
     }
   }
 
-  return saida;
+  return { achados, incertos };
+}
+
+/**
+ * Só os pontos achados (o formato de antes): quem não sabe o que fazer com o
+ * pedido incerto simplesmente não recebe ponto para ele.
+ */
+export async function geocodificarNoServidor(
+  pedidos: PedidoDeGeocodificacao[],
+  loja: LojaDaGeocodificacao,
+): Promise<ResultadoGeocodificacao[]> {
+  return (await resolverPontosNoServidor(pedidos, loja)).achados;
+}
+
+/** Zera a memória dos endereços incertos. SÓ PARA TESTE. */
+export function esquecerIncertosParaTeste() {
+  incertosRecentes.clear();
 }
 
 /**
