@@ -898,6 +898,9 @@ model CustomerOrder {
   /// resposta no dia seguinte.
   editHistory      Json?
   trilhaPremio     Json?
+  /// O prêmio do Cartão de Carimbos que este pedido usou (lib/carimbos.ts,
+  /// ResgateDosCarimbos). É a marca que impede o mesmo prêmio de sair duas vezes.
+  carimboPremio    Json?
   cashbackEarned   Float?              // Cashback gerado neste pedido (R$)
   cashbackUsed     Float?              // Cashback resgatado neste pedido (R$)
   // === GATEWAY UNIFICADO (Mercado Pago / Celcoin) ===

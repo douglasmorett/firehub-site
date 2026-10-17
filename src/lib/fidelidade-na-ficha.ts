@@ -12,10 +12,10 @@
  * - trilha: `resumoDaTrilha` (lib/trilha-premiada.ts) sobre os pedidos de
  *   `pedidosDaTrilhaDoTelefone` (lib/premio-no-pedido.ts) — a conta e a lista
  *   que respondem ao cardápio e que decidem o prêmio do pedido;
- * - carimbos: `contarCarimbos` (lib/carimbos.ts) sobre a lista de "Meus
- *   pedidos" do cardápio (lib/pedidos-do-telefone.ts, os 10 mais recentes).
- * Cada bloco só existe com o programa ligado: trilha no ar (`trilhaValida`) e
- * carimbos ativos.
+ * - carimbos: `contarCarimbos` (lib/carimbos.ts) sobre o histórico do telefone
+ *   (`pedidosDosCarimbosDoTelefone`) — a conta que o cardápio recebe pronta e
+ *   que decide o prêmio no checkout e no robô.
+ * Cada bloco só existe com o programa no ar: `trilhaValida` e `carimbosNoAr`.
  *
  * ── Por que pode não bater com o "Pedidos" da ficha ───────────────────────────
  *
@@ -23,11 +23,11 @@
  * cancelado, rascunho do robô e esperando pagamento). Cada programa tem a regra
  * dele, e a ficha segue a do programa:
  * - a trilha só conta os canais que a loja ligou, e só no ciclo (prazo) atual;
- * - o carimbo exige o pedido mínimo e só tira o "CANCELADO";
- * - os dois acham o pedido pela busca do cardápio, que não acha telefone
- *   gravado com máscara (o pedido do robô, "+55 (91) 8011-9516").
+ * - o carimbo exige o pedido mínimo e não conta marketplace;
+ * - os dois acham o pedido pelos 8 últimos dígitos, sem olhar o DDD
+ *   (lib/pedidos-do-telefone.ts); a ficha junta por DDD + 8.
  */
-import { contarCarimbos, lerCarimbos, minimoDosCarimbos, premioDosCarimbos, type PedidoDoCarimbo } from "./carimbos";
+import { carimbosNoAr, contarCarimbos, lerCarimbos, minimoDosCarimbos, premioDosCarimbos, type PedidoDoCarimbo } from "./carimbos";
 import {
   lerTrilha,
   nomeDoPremio,
@@ -107,8 +107,12 @@ export type CarimbosNaFicha = {
   noCartao: number;
   meta: number;
   faltam: number;
-  /** Cartelas completas (pedidos que ganharam ÷ meta): o prêmio a loja dá à mão. */
+  /** Cartelas completas (pedidos que ganharam ÷ meta). */
   completas: number;
+  /** Prêmios já usados em pedidos (cancelado devolve). */
+  usados: number;
+  /** Prêmios ganhos e não usados: entram sozinhos no próximo pedido pelo site ou WhatsApp. */
+  aReceber: number;
   /** O cliente vê "Você completou a cartela!" no cardápio. */
   acabouDeCompletar: boolean;
   /** Pedidos que ganharam carimbo. */
@@ -117,33 +121,28 @@ export type CarimbosNaFicha = {
   minimo: string;
   /** "R$ 50,00 de desconto" */
   premio: string;
-  /** O cliente tem mais pedidos do que os que o cardápio olha (os 10 mais recentes). */
-  alemDaLista: boolean;
 };
 
 /**
- * `pedidos` é a lista de "Meus pedidos" do cardápio (os `limite` mais recentes);
- * `alemDaLista` diz que o cliente tem mais que isso — e aí o cartão do cardápio
- * (e o desta ficha, que é o mesmo) não vê os mais antigos.
+ * `pedidos` é o histórico do telefone (`pedidosDosCarimbosDoTelefone`,
+ * lib/premio-no-pedido.ts) — o mesmo que o cardápio recebe contado e que decide
+ * o prêmio no checkout e no robô.
  */
-export function carimbosNaFicha(
-  storeLoyalty: unknown,
-  pedidos: PedidoDoCarimbo[],
-  alemDaLista = false,
-): CarimbosNaFicha | null {
+export function carimbosNaFicha(storeLoyalty: unknown, pedidos: PedidoDoCarimbo[]): CarimbosNaFicha | null {
   const regra = lerCarimbos(storeLoyalty);
-  if (!regra.ativo) return null;
-  const c = contarCarimbos(regra, pedidos, alemDaLista);
+  if (!carimbosNoAr(regra)) return null;
+  const c = contarCarimbos(regra, pedidos);
   return {
     noCartao: c.noCartao,
     meta: regra.meta,
     faltam: c.faltam,
     completas: c.completas,
+    usados: c.usados,
+    aReceber: c.aReceber,
     acabouDeCompletar: c.acabouDeCompletar,
     validos: c.validos,
     minimo: minimoDosCarimbos(regra),
     premio: premioDosCarimbos(regra),
-    alemDaLista,
   };
 }
 

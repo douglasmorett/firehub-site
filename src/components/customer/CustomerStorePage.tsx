@@ -57,7 +57,7 @@ import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/Tr
 import FileiraDeDestaques from "./FileiraDeDestaques";
 import CapaDaLoja from "./CapaDaLoja";
 import { lerTrilha, nomeDoPremio } from "@/lib/trilha-premiada";
-import { contarCarimbos, lerCarimbos } from "@/lib/carimbos";
+import { carimbosNoAr, lerCarimbos, minimoDosCarimbos, premioDosCarimbos, type CarimbosDoCliente } from "@/lib/carimbos";
 import { cpfValido } from "@/lib/fiscal-validacao";
 import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPedido } from "@/lib/fiscal-modo";
 import { mascararDocumentoDigitado, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
@@ -468,9 +468,6 @@ export default function CustomerStorePage({
   const [myOrdersPhone, setMyOrdersPhone] = useState("");
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [myOrdersList, setMyOrdersList] = useState<any[]>([]);
-  // A lista acima vem cortada nos 10 mais recentes; isto diz se o telefone tem
-  // mais pedidos que ela (o cartão de carimbos precisa saber, lib/carimbos.ts).
-  const [myOrdersAlemDaLista, setMyOrdersAlemDaLista] = useState(false);
   const [myOrdersSearched, setMyOrdersSearched] = useState(false);
 
   // Customer login
@@ -489,6 +486,15 @@ export default function CustomerStorePage({
   // fora um prêmio que valeria bem mais num pedido maior. Quem decide é o
   // cliente, e o servidor respeita (dispensarPremioDaTrilha no pedido).
   const [guardarPremioDaTrilha, setGuardarPremioDaTrilha] = useState(false);
+  /**
+   * O Cartão de Carimbos deste telefone, contado no servidor sobre o histórico
+   * (/api/store-customer, lib/carimbos.ts) — é a mesma conta que aplica o
+   * prêmio no pedido. `aReceber` > 0: o prêmio entra sozinho neste pedido.
+   */
+  const [carimbosDoServidor, setCarimbosDoServidor] = useState<CarimbosDoCliente | null>(null);
+  // Como na trilha: o cliente pode guardar o prêmio da cartela para a próxima
+  // (o servidor respeita `dispensarPremioDosCarimbos`).
+  const [guardarPremioDosCarimbos, setGuardarPremioDosCarimbos] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<"login" | "register">("login");
   const [authPhone, setAuthPhone] = useState("");
@@ -950,13 +956,15 @@ export default function CustomerStorePage({
   const premioDaTrilha = guardarPremioDaTrilha ? null : premioPendente;
 
   // Módulos adicionais
-  // Carimbos: a regra mora em lib/carimbos.ts — a ficha do cliente no painel
-  // conta o MESMO cartão sobre a MESMA lista (lib/pedidos-do-telefone.ts).
+  // Carimbos: a regra mora em lib/carimbos.ts e a conta vem pronta do servidor
+  // (carimbosDoServidor) — a mesma que a ficha do cliente no painel mostra e
+  // que aplica o prêmio no pedido. Prêmio R$ 0 ou produto não escolhido: o
+  // cartão não vai ao ar (antes o cardápio prometia R$ 25 que ninguém dava).
   const regraDosCarimbos = useMemo(() => lerCarimbos(loyalty), [loyalty]);
-  const isStampsActive = regraDosCarimbos.ativo;
+  const isStampsActive = carimbosNoAr(regraDosCarimbos);
   const stampGoal = regraDosCarimbos.meta;
-  const stampMinOrder = regraDosCarimbos.pedidoMinimo;
-  const stampRewardValue = regraDosCarimbos.premioValor;
+  const textoDoPremioDosCarimbos = premioDosCarimbos(regraDosCarimbos);
+  const textoDoMinimoDosCarimbos = minimoDosCarimbos(regraDosCarimbos);
 
   const isReferralActive = Boolean(loyalty.referralActive);
   const friendDiscount = Number(loyalty.friendDiscount || 10);
@@ -978,18 +986,12 @@ export default function CustomerStorePage({
       .reduce((acc, o) => acc + (Number(o.totalAmount) || 0), 0);
   }, [customerOrdersList, thirtyDaysAgo]);
 
-  // Carimbos acumulados (os "Meus pedidos" que vieram de /api/store-customer)
-  const cartaoDeCarimbos = useMemo(
-    () => contarCarimbos(regraDosCarimbos, customerOrdersList, myOrdersAlemDaLista),
-    [regraDosCarimbos, customerOrdersList, myOrdersAlemDaLista],
-  );
-  const currentStamps = cartaoDeCarimbos.noCartao;
-  const remainingStamps = cartaoDeCarimbos.faltam;
-  // O cartão cheio volta a zero na mesma hora (carimbos % meta), então
-  // "faltam 0" nunca acontecia e a mensagem de cartela completa nunca aparecia:
-  // o cliente via "faltam 10" logo depois de completar. A contagem não muda; a
-  // mensagem só sai quando a lista tem todos os pedidos dele (ver lib/carimbos.ts).
-  const cartelaCompleta = cartaoDeCarimbos.acabouDeCompletar;
+  // O cartão do cliente, como o servidor contou. Sem telefone reconhecido, o
+  // cartão vazio.
+  const currentStamps = carimbosDoServidor?.noCartao ?? 0;
+  const remainingStamps = carimbosDoServidor?.faltam ?? stampGoal;
+  // Cartela completa e prêmio ainda não usado: entra sozinho no próximo pedido.
+  const cartelaCompleta = (carimbosDoServidor?.aReceber ?? 0) > 0;
 
   // Nível VIP do Cliente
   const vipTier = useMemo(() => {
@@ -1080,6 +1082,18 @@ export default function CustomerStorePage({
           ? cartTotal * (Number((couponApplied as any).pct) / 100)
           : couponApplied.discount)
     : 0;
+  // ── PRÊMIO DO CARTÃO DE CARIMBOS NA CONTA ──────────────────────────────
+  //
+  // Espelho de exibição, como o da trilha: quem aplica é o servidor
+  // (api/customer-order, lib/carimbos.ts `efeitoDosCarimbos`). Desconto em R$
+  // até o que os produtos ainda custam depois do cupom e da trilha — não vira
+  // troco; o produto entra grátis na comanda. Na mesa não há prêmio.
+  const premioDosCarimbosPendente = !mesa && isStampsActive && (carimbosDoServidor?.aReceber ?? 0) > 0;
+  const premioDosCarimbosNestePedido = premioDosCarimbosPendente && !guardarPremioDosCarimbos && cartTotal > 0;
+  const descontoDosCarimbos = premioDosCarimbosNestePedido && regraDosCarimbos.premioTipo === "discount"
+    ? Math.round(Math.min(regraDosCarimbos.premioValor, Math.max(0, cartTotal - discount - descontoDaTrilha)) * 100) / 100
+    : 0;
+
   // O % que a loja dá a quem paga pelo site. A conta é a mesma do servidor
   // (lib/desconto-pagamento-online.ts): o Asaas cobra o total que ele grava.
   const descontoOnline = mesa
@@ -1088,7 +1102,7 @@ export default function CustomerStorePage({
         paymentFees: franchisee.paymentFees,
         paymentMethod,
         ligada: { pix: franchisee.pixOnlineAtivo === true, cartao: cartaoPeloAsaas },
-        base: cartTotal - discount - descontoDaTrilha,
+        base: cartTotal - discount - descontoDaTrilha - descontoDosCarimbos,
       });
   const descontoDoPagamento = descontoOnline?.valor || 0;
 
@@ -1098,7 +1112,7 @@ export default function CustomerStorePage({
   // (lib/cashback.ts): o saldo paga até X% dos produtos já com cupom e prêmio, e
   // o cashback que o pedido gera incide sobre o que foi pago pelos produtos.
   // Vem DEPOIS do desconto do pagamento online, como no servidor.
-  const produtosAPagar = Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDoPagamento);
+  const produtosAPagar = Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDoPagamento);
   const maxCashbackDiscount = mesa ? 0 : Math.round(Math.min(
     customerCashbackBalance,
     (produtosAPagar * cashbackMaxRedeemPercent) / 100
@@ -1144,7 +1158,7 @@ export default function CustomerStorePage({
 
   // Na mesa o total é o dos itens a preço do salão: cupom, cashback, prêmio
   // e taxa de entrega não existem na conta da mesa (lib/lancar-na-mesa.ts).
-  const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha - descontoDoPagamento);
+  const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha - descontoDosCarimbos - descontoDoPagamento);
   const totalAntesDoAcrescimo = mesa ? cartTotal : itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
   // ── ACRÉSCIMO NO CRÉDITO ───────────────────────────────────────────────
   //
@@ -1468,9 +1482,9 @@ export default function CustomerStorePage({
       if (res.ok) {
         const d = await res.json();
         setMyOrdersList(d.orders || []);
-        setMyOrdersAlemDaLista(d.maisPedidos === true);
         setTrilhaProgresso(d.trilha || null);
         setCashbackDoServidor(d.cashback || null);
+        setCarimbosDoServidor(d.carimbos || null);
         // O direito ao cupom de primeiro pedido vem na mesma resposta: quem
         // decide se este telefone "nunca pediu" é o servidor.
         setCupomPrimeiroPedido(d.cupomPrimeiroPedido || null);
@@ -2579,6 +2593,7 @@ export default function CustomerStorePage({
           cashbackUsed: cashbackDiscountApplied > 0 ? cashbackDiscountApplied : 0,
           usarCashback: cashbackDiscountApplied > 0,
           dispensarPremioDaTrilha: guardarPremioDaTrilha,
+          dispensarPremioDosCarimbos: guardarPremioDosCarimbos,
           items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
           // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
           // (src/lib/ga-purchase.ts) precisa deles para cair no mesmo visitante
@@ -3657,6 +3672,27 @@ export default function CustomerStorePage({
                     </span>
                   </div>
                 )}
+                {premioDosCarimbosPendente && cartTotal > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, color: guardarPremioDosCarimbos ? "#94A3B8" : "#15803D", fontWeight: 700 }}>
+                    <span>
+                      🎫 Prêmio do cartão de carimbos
+                      <button
+                        type="button"
+                        onClick={() => setGuardarPremioDosCarimbos(v => !v)}
+                        style={{ display: "block", marginTop: 2, background: "none", border: "none", padding: 0, fontSize: "0.7rem", fontWeight: 700, color: "#7C3AED", cursor: "pointer", fontFamily: "inherit", textDecoration: "underline" }}
+                      >
+                        {guardarPremioDosCarimbos ? "usar neste pedido" : "guardar para a próxima"}
+                      </button>
+                    </span>
+                    <span>
+                      {guardarPremioDosCarimbos
+                        ? "guardado"
+                        : descontoDosCarimbos > 0
+                          ? `- R$ ${descontoDosCarimbos.toFixed(2).replace(".", ",")}`
+                          : `${textoDoPremioDosCarimbos} grátis`}
+                    </span>
+                  </div>
+                )}
                 {cashbackDiscountApplied > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED" }}>
                     <span>Desconto Cashback</span>
@@ -4439,6 +4475,16 @@ export default function CustomerStorePage({
                   </span>
                 </div>
               )}
+              {premioDosCarimbosNestePedido && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#15803D", fontWeight: 700 }}>
+                  <span>🎫 Cartão de carimbos:</span>
+                  <span>
+                    {descontoDosCarimbos > 0
+                      ? `- R$ ${descontoDosCarimbos.toFixed(2).replace(".", ",")}`
+                      : `${textoDoPremioDosCarimbos} grátis`}
+                  </span>
+                </div>
+              )}
               {/* Por último, logo acima do total: é sobre tudo o que vem antes. */}
               {acrescimoCredito && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#B45309", fontWeight: 700 }}>
@@ -5212,12 +5258,12 @@ export default function CustomerStorePage({
                 <div style={{ fontSize: "0.74rem", color: "#475569", lineHeight: 1.35 }}>
                   {customer ? (
                     cartelaCompleta ? (
-                      <span style={{ color: "#16A34A", fontWeight: 800 }}>🎉 Você completou a cartela! Ganhou {loyalty.stampRewardType === "product" ? "1 Prêmio Especial" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}!</span>
+                      <span style={{ color: "#16A34A", fontWeight: 800 }}>🎉 Você completou a cartela! Ganhou {textoDoPremioDosCarimbos} — entra sozinho no seu próximo pedido pelo site ou WhatsApp.</span>
                     ) : (
-                      <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{loyalty.stampRewardType === "product" ? "1 Prêmio Especial" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} OFF`}</strong>!</span>
+                      <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{textoDoPremioDosCarimbos}</strong>!</span>
                     )
                   ) : (
-                    <span>Ganhe 1 carimbo a cada pedido acima de R$ {stampMinOrder.toFixed(2).replace(".", ",")}. Complete {stampGoal} e ganhe seu prêmio!</span>
+                    <span>Ganhe 1 carimbo a cada {textoDoMinimoDosCarimbos}. Complete {stampGoal} e ganhe {textoDoPremioDosCarimbos}!</span>
                   )}
                 </div>
               </div>
@@ -5484,12 +5530,12 @@ export default function CustomerStorePage({
                 <div style={{ fontSize: "0.78rem", color: "#7E22CE", lineHeight: 1.35 }}>
                   {customer ? (
                     cartelaCompleta ? (
-                      <strong style={{ color: "#15803D" }}>🎉 Parabéns! Cartela completa! Ganhou {loyalty.stampRewardType === "product" ? "1 Prêmio Grátis" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}!</strong>
+                      <strong style={{ color: "#15803D" }}>🎉 Parabéns! Cartela completa! Ganhou {textoDoPremioDosCarimbos} — entra sozinho no seu próximo pedido pelo site ou WhatsApp.</strong>
                     ) : (
-                      <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{loyalty.stampRewardType === "product" ? "1 Prêmio Grátis" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}</strong>!</span>
+                      <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{textoDoPremioDosCarimbos}</strong>!</span>
                     )
                   ) : (
-                    <span>Ganhe 1 carimbo a cada pedido acima de R$ {stampMinOrder.toFixed(2).replace(".", ",")}. Complete {stampGoal} e ganhe seu prêmio!</span>
+                    <span>Ganhe 1 carimbo a cada {textoDoMinimoDosCarimbos}. Complete {stampGoal} e ganhe {textoDoPremioDosCarimbos}!</span>
                   )}
                 </div>
               </div>

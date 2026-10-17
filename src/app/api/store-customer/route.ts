@@ -7,8 +7,10 @@ import { cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cu
 import { hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
 import { cashbackDoCliente } from "@/lib/cashback-no-banco";
 import { lerCashback, regraNoCanal } from "@/lib/cashback";
-import { ondeEstaoOsPedidosDoTelefone, PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
-import { trilhaDoTelefone } from "@/lib/premio-no-pedido";
+import { PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
+import { ondeEstaoOsPedidosDoTelefone } from "@/lib/pedidos-do-telefone-no-banco";
+import { carimbosDoTelefone, trilhaDoTelefone } from "@/lib/premio-no-pedido";
+import { carimbosDoCliente } from "@/lib/carimbos";
 
 // POST: Login or Register
 export async function POST(req: Request) {
@@ -187,13 +189,12 @@ export async function GET(req: Request) {
     return NextResponse.json({ orders: [], customer: null });
   }
 
-  // A busca e o tamanho da lista moram em lib/pedidos-do-telefone.ts: o cartão
-  // de carimbos do cardápio é contado sobre esta lista, e a ficha do cliente no
-  // painel conta o mesmo cartão sobre a mesma busca. Vem UM a mais só para
-  // dizer se a lista cortou pedidos (`maisPedidos`): sem isso o cardápio não
-  // sabe se o cartão vazio é "acabou de completar" ou "tem mais de 10 pedidos".
+  // A busca e o tamanho da lista moram em lib/pedidos-do-telefone.ts. Vem UM a
+  // mais só para dizer se a lista cortou pedidos (`maisPedidos`). O cartão de
+  // carimbos NÃO é mais contado sobre esta lista: vai pronto em `carimbos`,
+  // contado no servidor sobre o histórico (é dele que sai o prêmio).
   const encontrados = await prisma.customerOrder.findMany({
-    where: ondeEstaoOsPedidosDoTelefone(franchiseeId, cleanPhone),
+    where: await ondeEstaoOsPedidosDoTelefone(franchiseeId, cleanPhone, PEDIDOS_DO_CARDAPIO + 1),
     orderBy: { createdAt: "desc" },
     take: PEDIDOS_DO_CARDAPIO + 1,
     select: {
@@ -223,12 +224,30 @@ export async function GET(req: Request) {
   const maisPedidos = encontrados.length > PEDIDOS_DO_CARDAPIO;
 
   // `customer: null` de propósito: os dados pessoais só saem pelo login.
-  const [trilha, cupomPrimeiroPedido, cashback] = await Promise.all([
+  const [trilha, cupomPrimeiroPedido, cashback, carimbos] = await Promise.all([
     trilhaDoCliente(franchiseeId, cleanPhone),
     cupomDePrimeiroPedidoDoCliente(franchiseeId, cleanPhone),
     saldoDeCashbackDoCliente(franchiseeId, cleanPhone),
+    carimbosDoCardapio(franchiseeId, cleanPhone),
   ]);
-  return NextResponse.json({ orders, maisPedidos, customer: null, trilha, cupomPrimeiroPedido, cashback });
+  return NextResponse.json({ orders, maisPedidos, customer: null, trilha, cupomPrimeiroPedido, cashback, carimbos });
+}
+
+/**
+ * O Cartão de Carimbos deste telefone (lib/carimbos.ts), contado aqui sobre o
+ * histórico — a mesma conta que decide o prêmio no checkout e no robô, e que a
+ * ficha do cliente mostra à loja. Sai só contagem e prêmio (a rota é pública).
+ * `null` = cartão fora do ar nesta loja.
+ */
+async function carimbosDoCardapio(franchiseeId: string, cleanPhone: string) {
+  try {
+    const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { storeLoyalty: true } });
+    const r = await carimbosDoTelefone(franchiseeId, loja?.storeLoyalty, cleanPhone);
+    return r ? carimbosDoCliente(r.regra, r.cartao) : null;
+  } catch {
+    // O cartão nunca pode derrubar a consulta de pedidos do cliente.
+    return null;
+  }
 }
 
 /**

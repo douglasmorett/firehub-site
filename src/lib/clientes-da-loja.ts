@@ -48,10 +48,9 @@ import { FUSO_PADRAO } from "@/lib/fuso";
 import { chaveDoCliente, numerosDoCliente } from "@/lib/clientes-da-loja-regras";
 import { aniversarioBonito, cadastroEditado, garantirTabelaDoCadastro, type CadastroEditado } from "@/lib/cadastro-do-cliente";
 import { carimbosNaFicha, trilhaNaFicha, type FidelidadeNaFicha } from "@/lib/fidelidade-na-ficha";
-import { lerCarimbos } from "@/lib/carimbos";
+import { carimbosNoAr, lerCarimbos } from "@/lib/carimbos";
 import { lerTrilha, trilhaValida } from "@/lib/trilha-premiada";
-import { pedidosDaTrilhaDoTelefone } from "@/lib/premio-no-pedido";
-import { ondeEstaoOsPedidosDoTelefone, PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
+import { pedidosDaTrilhaDoTelefone, pedidosDosCarimbosDoTelefone } from "@/lib/premio-no-pedido";
 
 export type SessaoDosClientes = {
   lojaId: string;
@@ -435,26 +434,17 @@ const SEM_FIDELIDADE: FidelidadeNaFicha = { trilha: null, carimbos: null };
  */
 export async function fidelidadeDoTelefone(sessao: SessaoDosClientes, tel: string, agora: Date): Promise<FidelidadeNaFicha> {
   const comTrilha = trilhaValida(lerTrilha(sessao.storeLoyalty));
-  const comCarimbos = lerCarimbos(sessao.storeLoyalty).ativo;
+  const comCarimbos = carimbosNoAr(lerCarimbos(sessao.storeLoyalty));
   if (!comTrilha && !comCarimbos) return SEM_FIDELIDADE;
   try {
-    const [daTrilha, doCardapio] = await Promise.all([
+    const [daTrilha, dosCarimbos] = await Promise.all([
       comTrilha ? pedidosDaTrilhaDoTelefone(sessao.lojaId, tel) : Promise.resolve([]),
-      comCarimbos
-        ? prisma.customerOrder.findMany({
-            where: ondeEstaoOsPedidosDoTelefone(sessao.lojaId, tel),
-            orderBy: { createdAt: "desc" },
-            // Um a mais só para saber se o cliente passa do que o cardápio olha.
-            take: PEDIDOS_DO_CARDAPIO + 1,
-            select: { status: true, totalAmount: true },
-          })
-        : Promise.resolve([]),
+      // O histórico que decide o prêmio no checkout e no robô (lib/premio-no-pedido.ts).
+      comCarimbos ? pedidosDosCarimbosDoTelefone(sessao.lojaId, tel) : Promise.resolve([]),
     ]);
     return {
       trilha: comTrilha ? trilhaNaFicha(sessao.storeLoyalty, daTrilha, agora) : null,
-      carimbos: comCarimbos
-        ? carimbosNaFicha(sessao.storeLoyalty, doCardapio.slice(0, PEDIDOS_DO_CARDAPIO), doCardapio.length > PEDIDOS_DO_CARDAPIO)
-        : null,
+      carimbos: comCarimbos ? carimbosNaFicha(sessao.storeLoyalty, dosCarimbos) : null,
     };
   } catch (err: any) {
     console.error("[clientes] trilha/carimbos da ficha falhou:", err?.message);

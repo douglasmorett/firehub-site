@@ -67,6 +67,11 @@ export type DadosDaComanda = {
   cashbackUsado?: number;
   /** O que este pedido gera, liberado quando for entregue. */
   cashbackGerado?: number;
+  /**
+   * O prêmio do Cartão de Carimbos (lib/carimbos.ts). Desconto > 0 vira linha
+   * de abatimento; desconto 0 é o brinde, que já está nos itens a R$ 0.
+   */
+  premioDosCarimbos?: { descricao: string; desconto: number } | null;
   total: number;
 };
 
@@ -177,10 +182,12 @@ export function comandaDoRobo(d: DadosDaComanda): string {
   const descontoDoCupom = d.cupom && !d.cupom.freteGratis ? d.cupom.desconto : 0;
   const usado = Number(d.cashbackUsado) || 0;
   const outroDesconto = Math.max(0, Number(d.desconto) || 0);
-  const temAbatimento = descontoDoCupom > 0 || usado > 0 || outroDesconto > 0 || (d.entrega && d.taxaDeEntrega > 0);
+  const doCartao = Math.max(0, Number(d.premioDosCarimbos?.desconto) || 0);
+  const temAbatimento = descontoDoCupom > 0 || usado > 0 || outroDesconto > 0 || doCartao > 0 || (d.entrega && d.taxaDeEntrega > 0);
   if (temAbatimento) linhas.push(`Subtotal: ${reais(subtotal)}`);
   if (d.entrega && d.taxaDeEntrega > 0) linhas.push(`Taxa de entrega: ${reais(d.taxaDeEntrega)}`);
   if (descontoDoCupom > 0) linhas.push(`🎟️ Cupom ${d.cupom!.code}: -${reais(descontoDoCupom)}`);
+  if (doCartao > 0) linhas.push(`🎫 Cartão de Carimbos completo: -${reais(doCartao)}`);
   if (outroDesconto > 0) linhas.push(`🎟️ Desconto: -${reais(outroDesconto)}`);
   if (usado > 0) linhas.push(`💰 Cashback (desconto): -${reais(usado)}`);
   linhas.push(`*Total: ${reais(d.total)}*`);
@@ -188,6 +195,9 @@ export function comandaDoRobo(d: DadosDaComanda): string {
   const gerado = Number(d.cashbackGerado) || 0;
   if (gerado > 0) {
     linhas.push("", `🎁 Este pedido vai te dar ${reais(gerado)} de cashback, liberado quando ele for entregue.`);
+  }
+  if (d.premioDosCarimbos && doCartao <= 0) {
+    linhas.push("", `🎫 Você completou o Cartão de Carimbos: ${d.premioDosCarimbos.descricao} vai de presente neste pedido!`);
   }
   if (d.cupomRecusado) linhas.push("", `ℹ️ ${d.cupomRecusado}`);
 

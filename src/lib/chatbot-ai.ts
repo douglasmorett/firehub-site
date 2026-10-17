@@ -60,6 +60,8 @@ import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedid
 import { previsaoDaEntrega, tempoDeEntregaParaGravar } from "./previsao-da-entrega";
 import { cashbackDoPedido, lerCashback, regraNoCanal, resgateMaximo } from "./cashback";
 import { cashbackDoCliente } from "./cashback-no-banco";
+import { premioDosCarimbosNoPedido } from "./premio-no-pedido";
+import { ehItemDoPremioDosCarimbos, etiquetaDoPremioDosCarimbos, NOTA_DO_ITEM_DO_PREMIO, type ResgateDosCarimbos } from "./carimbos";
 import { cashbackDoClienteParaOPrompt, comandaDoRobo } from "./comanda-do-robo";
 import { itensEmTexto, mensagemDoAcrescimoEnviado, pedidoAtivoParaOPrompt } from "./acrescimo-do-pedido";
 import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco";
@@ -1989,6 +1991,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                     timeZone: (user as any).storeTimezone,
                   },
                   cashback: { storeLoyalty: (user as any).storeLoyalty },
+                  carimbos: { storeLoyalty: (user as any).storeLoyalty },
                   remoteJid: remoteJid ?? null,
                   textosDoCliente: [
                     ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").slice(-12).map((h: any) => String(h.text || "")),
@@ -2062,6 +2065,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                 cupomRecusado: resultadoDoSync.cupomRecusado ?? null,
                 cashbackUsado: Number(gravado.cashbackUsed) || 0,
                 cashbackGerado: Number(gravado.cashbackEarned) || 0,
+                premioDosCarimbos: resultadoDoSync.premioDosCarimbos ?? null,
                 total: Number(gravado.totalAmount) || 0,
               });
             }
@@ -2131,8 +2135,15 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           // O modelo não calcula o cashback (o prompt proíbe): quando o resumo
           // fala de total, o valor exato vem daqui, do que foi gravado.
           const usado = resultadoDoSync.cashbackUsado || 0;
+          const reaisDe = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+          // O prêmio do cartão de carimbos o modelo não conhece: a linha é do sistema.
+          const doCartao = resultadoDoSync.premioDosCarimbos;
+          if (doCartao && /total/i.test(cleanText)) {
+            cleanText += doCartao.desconto > 0
+              ? `\n\n🎫 Você completou o Cartão de Carimbos! O prêmio de ${reaisDe(doCartao.desconto)} entra como desconto${usado > 0 ? "" : `: o total fica ${reaisDe(resultadoDoSync.total)}`}.`
+              : `\n\n🎫 Você completou o Cartão de Carimbos! Seu prêmio, ${doCartao.descricao}, vai grátis neste pedido.`;
+          }
           if (usado > 0 && /total/i.test(cleanText)) {
-            const reaisDe = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
             cleanText += `\n\n💰 Seu cashback de ${reaisDe(usado)} entra como desconto: o total fica ${reaisDe(resultadoDoSync.total)}.`;
           }
         } else if ((payloadQueriaFinalizar || prometeuCozinha) && !gravouFinalizado) {
@@ -2283,7 +2294,13 @@ async function pedidosQueATagPodeTocar(franchiseeId: string, telefone: string, a
     orderBy: { createdAt: "desc" },
     take: 50,
   });
-  const doCliente = lista.filter((o) => mesmoTelefone(o.customerPhone, telefone));
+  // O brinde do Cartão de Carimbos (lib/carimbos.ts) é item que o SISTEMA põe
+  // no pedido, não o cliente: a tag nunca o traz. Fora da comparação, senão a
+  // tag repetida deixaria de ser "idêntica" e o pedido seria regravado (e
+  // reimpresso). Na regravação ele volta, se o prêmio ainda valer.
+  const doCliente = lista
+    .filter((o) => mesmoTelefone(o.customerPhone, telefone))
+    .map((o) => ({ ...o, items: o.items.filter((i) => !ehItemDoPremioDosCarimbos(i)) }));
   const aproveitaveis = new Set([
     ...candidatosValidos(doCliente as any, agora).map((p) => p.id),
     ...candidatosSoDeComparacao(doCliente as any, agora).map((p) => p.id),
@@ -2329,6 +2346,8 @@ type SyncResultado =
       cashbackUsado?: number;
       /** Cashback que este pedido gera quando for entregue. */
       cashbackGerado?: number;
+      /** O prêmio do Cartão de Carimbos que entrou (desconto 0 = brinde, que vai nos itens). */
+      premioDosCarimbos?: { descricao: string; desconto: number };
       /** O pedido já tinha sido enviado e a tag o alterou. */
       alterado?: boolean;
       /** A tag final veio repetida e nada mudou: o cliente já recebeu a confirmação. */
@@ -2433,6 +2452,7 @@ async function syncAiOrderToDatabase({
   jaPediuLocalizacao,
   cupons,
   cashback,
+  carimbos,
   remoteJid,
   textosDoCliente,
   conferirAntes,
@@ -2472,6 +2492,8 @@ async function syncAiOrderToDatabase({
   cupons?: { lista: unknown; campanha: unknown; chatbotConfig: unknown; timeZone: string | null | undefined };
   /** A regra de cashback da loja (`User.storeLoyalty`). Ausente = pedido sem cashback. */
   cashback?: { storeLoyalty: unknown };
+  /** O Cartão de Carimbos da loja (`User.storeLoyalty`). Ausente = pedido sem prêmio do cartão. */
+  carimbos?: { storeLoyalty: unknown };
   /** A conversa do WhatsApp: é por ela que a resposta da loja a um acréscimo volta ao cliente. */
   remoteJid?: string | null;
   /** O que o cliente escreveu nesta conversa: prova de que o cupom estratégico veio dele. */
@@ -3502,10 +3524,55 @@ async function syncAiOrderToDatabase({
       console.error("[Chatbot AI Order Sync] Não consegui aplicar o cupom:", e?.message || e);
     }
   }
-  const descontoDosItens = cupomAplicado && !cupomAplicado.freteGratis ? cupomAplicado.desconto : 0;
+  const descontoDoCupomNosItens = cupomAplicado && !cupomAplicado.freteGratis ? cupomAplicado.desconto : 0;
   if (cupomAplicado) {
     console.log(`[Chatbot AI Order Sync] 🎟️ Cupom ${cupomAplicado.code} no pedido: -R$ ${cupomAplicado.desconto.toFixed(2)} · loja ${franchiseeId} · tel ${phoneClean.slice(-4)}`);
   }
+
+  // ── PRÊMIO DO CARTÃO DE CARIMBOS (lib/carimbos.ts) ────────────────────────
+  //
+  // A régua do checkout do site: o servidor reconta o cartão deste telefone e,
+  // com cartela completa e prêmio não usado, o prêmio entra sozinho — o modelo
+  // não decide nem calcula. Este pedido fica fora da conta (senão o prêmio que
+  // o rascunho já leva contaria como usado e sumiria dele). Recalculado a cada
+  // gravação, como o cupom e o cashback. O desconto só abate os produtos (não a
+  // entrega, não vira troco); o produto entra como item de preço zero.
+  let resgateDosCarimbos: ResgateDosCarimbos | null = null;
+  let descontoDosCarimbos = 0;
+  let itemDoPremioDosCarimbos: any = null;
+  if (carimbos) {
+    try {
+      const efeito = await premioDosCarimbosNoPedido({
+        franchiseeId,
+        storeLoyalty: carimbos.storeLoyalty,
+        telefone: phoneClean,
+        canal: "whatsapp",
+        produtosAPagar: Math.max(0, totalItemsSum - descontoDoCupomNosItens),
+        excetoIds: existingDraft?.id ? [existingDraft.id] : [],
+      });
+      if (efeito) {
+        descontoDosCarimbos = centavos(efeito.descontoExtra);
+        if (efeito.produtoGratis) {
+          itemDoPremioDosCarimbos = {
+            menuProductId: efeito.produtoGratis.id,
+            quantity: 1,
+            productName: efeito.produtoGratis.nome,
+            price: 0,
+            notes: NOTA_DO_ITEM_DO_PREMIO,
+          };
+        }
+        resgateDosCarimbos = efeito.resgate;
+        console.log(`[Chatbot AI Order Sync] 🎫 Prêmio do cartão de carimbos no pedido: ${efeito.resgate.descricao} (R$ ${efeito.resgate.valorAplicado.toFixed(2)}) · loja ${franchiseeId} · tel ${phoneClean.slice(-4)}`);
+      }
+    } catch (e: any) {
+      // Prêmio é bônus: nunca impede o pedido.
+      console.error("[Chatbot AI Order Sync] Não consegui aplicar o prêmio do cartão de carimbos:", e?.message || e);
+      resgateDosCarimbos = null;
+      descontoDosCarimbos = 0;
+      itemDoPremioDosCarimbos = null;
+    }
+  }
+  const descontoDosItens = centavos(descontoDoCupomNosItens + descontoDosCarimbos);
 
   // ── CASHBACK (lib/cashback.ts) ────────────────────────────────────────────
   //
@@ -3557,7 +3624,7 @@ async function syncAiOrderToDatabase({
    * Cupom e cashback ficam REGISTRADOS como no checkout do site: o desconto da
    * loja soma os dois, e as colunas do cashback são o que o saldo lê depois.
    */
-  const descontoNoPedido = centavos((cupomAplicado?.desconto || 0) + cashbackUsado);
+  const descontoNoPedido = centavos((cupomAplicado?.desconto || 0) + descontoDosCarimbos + cashbackUsado);
   const descontoParaGravar = descontoNoPedido > 0
     ? { discountTotal: descontoNoPedido, discountMerchant: descontoNoPedido }
     : { discountTotal: null, discountMerchant: null };
@@ -3676,7 +3743,9 @@ async function syncAiOrderToDatabase({
   try {
     const divergencia = compararTotalDitoComGravado({
       ditoPelaIa: payload.totalAmount,
-      gravadoPeloSistema: totalOrderAmount,
+      // O prêmio do cartão o modelo não conhece (o sistema aplica e escreve a
+      // linha para o cliente): não é divergência de preço.
+      gravadoPeloSistema: centavos(totalOrderAmount + descontoDosCarimbos),
     });
     if (divergencia.houve) {
       const linha = `[Chatbot AI Order Sync] 💸 ${divergencia.resumo} · loja ${franchiseeId} · cliente ${customerPhone}`;
@@ -3720,6 +3789,7 @@ async function syncAiOrderToDatabase({
     (entregaGratis ? ` · Frete grátis (${entregaGratis.motivo}) — taxa ref: ${reais(entregaGratis.valor)}` : "") +
     (doPedido.observacao ? ` · Obs: ${doPedido.observacao}` : "") +
     (cupomAplicado ? ` · [Cupom: ${cupomAplicado.code}]` : "") +
+    (resgateDosCarimbos ? ` · ${etiquetaDoPremioDosCarimbos(resgateDosCarimbos)}` : "") +
     (cashbackUsado > 0 ? ` · [Cashback usado: ${reais(cashbackUsado)}]` : "");
 
   // Troco só existe em dinheiro. Se esta tag não trouxe o valor mas o rascunho
@@ -3733,6 +3803,8 @@ async function syncAiOrderToDatabase({
     : null;
 
   /** O item do jeito que a cozinha lê: nome do dia, escolhas e observação. */
+  /** Os itens que vão ao banco: os da tag e, se o prêmio do cartão é produto, o brinde. */
+  const itensParaGravar: any[] = itemDoPremioDosCarimbos ? [...orderItemsData, itemDoPremioDosCarimbos] : orderItemsData;
   const itemParaOBanco = (i: any) => ({
     quantity: i.quantity,
     price: i.price,
@@ -3811,6 +3883,8 @@ async function syncAiOrderToDatabase({
         status: !isFinal && existingDraft.status !== "CRIANDO_IA" ? existingDraft.status : statusParaGravar,
         ...descontoParaGravar,
         ...cashbackParaGravar,
+        // O prêmio do cartão é recalculado a cada gravação: some se deixou de valer.
+        carimboPremio: resgateDosCarimbos ? (resgateDosCarimbos as any) : Prisma.DbNull,
         notes: notasParaGravar,
         ...(fechaDeVerdade && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         // O pedido nasce AGORA, quando o cliente confirma — não quando o robô
@@ -3834,7 +3908,7 @@ async function syncAiOrderToDatabase({
             ? { agendado: false, scheduledDatetime: null }
             : {}),
         items: {
-          create: orderItemsData.map(itemParaOBanco),
+          create: itensParaGravar.map(itemParaOBanco),
         },
       },
     });
@@ -3872,6 +3946,7 @@ async function syncAiOrderToDatabase({
         ...(descontoNoPedido > 0 ? descontoParaGravar : {}),
         ...(cashbackUsado > 0 ? { cashbackUsed: cashbackParaGravar.cashbackUsed } : {}),
         ...(cashbackGerado > 0 ? { cashbackEarned: cashbackParaGravar.cashbackEarned } : {}),
+        ...(resgateDosCarimbos ? { carimboPremio: resgateDosCarimbos as any } : {}),
         source: "WHATSAPP_IA",
         status: statusParaGravar,
         notes: notasParaGravar,
@@ -3881,7 +3956,7 @@ async function syncAiOrderToDatabase({
         ...doAgendamento.campos,
         ...(fechaDeVerdade && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         items: {
-          create: orderItemsData.map(itemParaOBanco),
+          create: itensParaGravar.map(itemParaOBanco),
         },
       },
     });
@@ -3937,6 +4012,7 @@ async function syncAiOrderToDatabase({
     formaDePagamento: payload.paymentMethod || (existingDraft as any)?.paymentMethod || null,
     cashbackUsado,
     cashbackGerado,
+    ...(resgateDosCarimbos ? { premioDosCarimbos: { descricao: resgateDosCarimbos.descricao, desconto: descontoDosCarimbos } } : {}),
     alterado: Boolean(existingDraft && existingDraft.status !== "CRIANDO_IA"),
     agendadoPara: instanteAgendado ? textoDoAgendamento(instanteAgendado, agendamento?.timezone) : null,
     ...(avisoDoAgendamento ? { avisoDoAgendamento } : {}),

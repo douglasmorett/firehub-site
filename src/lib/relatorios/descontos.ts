@@ -67,7 +67,8 @@
  *   "[Desconto Pix pelo site (5%): -R$ 1,69]".
  * - MESA: ver abaixo.
  * - FIDELIDADE: a Trilha Premiada do site (`trilhaPremio.valorAplicado`, quando
- *   o prêmio é desconto ou frete), o CASHBACK usado (`cashbackUsed`) e a
+ *   o prêmio é desconto ou frete), o Cartão de Carimbos (`carimboPremio.
+ *   valorAplicado`, quando é desconto), o CASHBACK usado (`cashbackUsed`) e a
  *   "Troca de fidelidade" da Wabiz.
  * - O que o pedido não explica vira "Sem detalhe" — a diferença aparece.
  *
@@ -196,6 +197,7 @@
 import { lerCupons, descreverBeneficio, cupomVenceu, type Cupom } from "@/lib/cupons";
 import { repartirDesconto99 } from "@/lib/desconto-99food";
 import { lerEntregaGratis } from "@/lib/entrega-gratis";
+import { lerResgateDosCarimbos } from "@/lib/carimbos";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
 import {
   ROTULO_DO_TIPO, c2, canalDoRelatorio, diasNoPeriodo, fmtDia, fmtPct, naLoja, somarDias, tipoDeVenda,
@@ -229,6 +231,7 @@ export type PedidoParaDescontos = {
   discountDetails?: unknown;
   notes?: string | null;
   trilhaPremio?: unknown;
+  carimboPremio?: unknown;
   entregaGratis?: unknown;
   cashbackEarned?: number | null;
   cashbackUsed?: number | null;
@@ -654,6 +657,16 @@ export function descontoDoPedido(p: PedidoParaDescontos, canal: string = canalDo
       const valor = Math.min(restante, positivo(premio.valorAplicado));
       if (valor > 0) {
         fatias.push(fatia("fidelidade", canal, `Trilha Premiada${premio.descricao ? `: ${premio.descricao}` : ""}`, premio.tipo === "frete" ? "ENTREGA" : "PEDIDO", valor, { chave: `fidelidade:${canal}:trilha` }));
+        restante -= valor;
+      }
+    }
+    // O prêmio do Cartão de Carimbos (lib/carimbos.ts): desconto em R$ sobre
+    // os produtos, com o valor próprio gravado em `carimboPremio`.
+    const carimbo = lerResgateDosCarimbos(p.carimboPremio);
+    if (carimbo && carimbo.tipo === "discount" && restante > 0.004) {
+      const valor = Math.min(restante, positivo(carimbo.valorAplicado));
+      if (valor > 0) {
+        fatias.push(fatia("fidelidade", canal, "Cartão de Carimbos", "PEDIDO", valor, { chave: `fidelidade:${canal}:carimbos` }));
         restante -= valor;
       }
     }

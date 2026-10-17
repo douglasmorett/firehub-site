@@ -55,6 +55,9 @@ const INSTRUCOES = [
   `ALTER TABLE "ComboGroupItem" ADD COLUMN IF NOT EXISTS "additionalPriceTotem" DOUBLE PRECISION`,
   // Trilha Premiada: o prêmio que o pedido resgatou (lib/trilha-premiada.ts).
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "trilhaPremio" JSONB`,
+  // Cartão de Carimbos: o prêmio que o pedido usou (lib/carimbos.ts). Nulo =
+  // pedido sem prêmio, que é como todo pedido já gravado continua.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "carimboPremio" JSONB`,
   // Quanto a entrega custaria e por que não foi cobrada (lib/entrega-gratis.ts).
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "entregaGratis" JSONB`,
   // Faixas de km por entregador (lib/faixas-do-motoboy.ts).
@@ -110,6 +113,7 @@ const ESPERADAS = [
   "ComboGroupItem.additionalPriceDelivery",
   "ComboGroupItem.additionalPriceTotem",
   "CustomerOrder.trilhaPremio",
+  "CustomerOrder.carimboPremio",
   "CustomerOrder.entregaGratis",
   "Motoboy.faixasDeKm",
   "Motoboy.modeloDePagamento",
@@ -205,7 +209,7 @@ export async function garantirColunasDePreco(): Promise<void> {
             'priceSalao', 'priceDelivery', 'priceTotem', 'promoPrice', 'apenasEmCombo',
             'priceRule',
             'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem',
-            'trilhaPremio', 'entregaGratis', 'faixasDeKm',
+            'trilhaPremio', 'carimboPremio', 'entregaGratis', 'faixasDeKm',
             'modeloDePagamento', 'modelosDePagamento', 'kdsConfig',
             'estoqueQtd', 'estoqueDesde', 'estoquePausar',
             'storeBannerVideo', 'reviewsMinStars', 'availableHours',

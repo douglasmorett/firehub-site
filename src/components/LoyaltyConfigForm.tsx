@@ -49,6 +49,9 @@ export type LoyaltyConfig = {
   stampMinOrder: number; // Ex: R$ 30
   stampRewardType: "discount" | "product"; // "discount" | "product"
   stampRewardValue: number; // Ex: R$ 25 off
+  // Prêmio "produto": qual item do cardápio entra grátis (lib/carimbos.ts).
+  stampRewardProductId?: string;
+  stampRewardProductName?: string;
   // Program 3: Indique e Ganhe
   referralActive: boolean;
   friendDiscount: number; // Ex: R$ 10 off para o amigo
@@ -199,6 +202,26 @@ export default function LoyaltyConfigForm({
     setConv({ active: true });
   };
 
+  // ── PRÊMIO DO CARTÃO DE CARIMBOS ────────────────────────────────────────
+  //
+  // Desde 17/10/2026 o prêmio entra sozinho no pedido (site e WhatsApp). O
+  // prêmio "produto" precisa do item escolhido no cardápio — a mesma lista do
+  // prêmio da Trilha Premiada (/api/store/trilha-produtos), carregada só
+  // quando a loja escolhe "produto".
+  const [produtosDoPremio, setProdutosDoPremio] = useState<{ id: string; name: string; price: number; category: string | null }[] | null>(null);
+  useEffect(() => {
+    if (config.stampRewardType !== "product" || produtosDoPremio) return;
+    fetch("/api/store/trilha-produtos")
+      .then((r) => (r.ok ? r.json() : { produtos: [] }))
+      .then((d) => setProdutosDoPremio(Array.isArray(d?.produtos) ? d.produtos : []))
+      .catch(() => setProdutosDoPremio([]));
+  }, [config.stampRewardType, produtosDoPremio]);
+  const problemaDosCarimbos = !config.stampsActive
+    ? ""
+    : config.stampRewardType === "product"
+      ? (config.stampRewardProductId ? "" : "Escolha qual produto o cliente ganha ao completar a cartela.")
+      : (Number(config.stampRewardValue) > 0 ? "" : "Informe o valor do desconto do prêmio: com R$ 0 o cartão não aparece no cardápio.");
+
   const handleSave = async () => {
     // Campanha ligada sem impressora não sai em lugar nenhum: não deixa salvar
     // assim, e leva a pessoa para a aba certa com o motivo na tela.
@@ -210,6 +233,12 @@ export default function LoyaltyConfigForm({
     const faltaNaTrilha = config.trilha.ativa ? problemasDaTrilha(config.trilha) : [];
     if (faltaNaTrilha.length) {
       setActiveTab("trilha");
+      return;
+    }
+    // Cartão de carimbos ligado sem prêmio não vai ao ar no cardápio (lib/carimbos.ts,
+    // carimbosNoAr): a loja precisa saber disso ANTES de salvar.
+    if (problemaDosCarimbos) {
+      setActiveTab("stamps");
       return;
     }
     setSaving(true);
@@ -926,7 +955,9 @@ export default function LoyaltyConfigForm({
                   </div>
                 ))}
                 <div style={{ marginLeft: "auto", background: "#FFF7E6", border: "1.5px solid #FDE68A", padding: "8px 14px", borderRadius: 10, fontSize: "0.82rem", fontWeight: 800, color: "#92400E" }}>
-                  🎁 Prêmio Final: {fmt(config.stampRewardValue)} OFF
+                  🎁 Prêmio Final: {config.stampRewardType === "product"
+                    ? (config.stampRewardProductName || "escolha o produto")
+                    : `${fmt(config.stampRewardValue)} OFF`}
                 </div>
               </div>
             </div>
@@ -965,18 +996,67 @@ export default function LoyaltyConfigForm({
 
               <div>
                 <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
-                  Valor do Prêmio ao Completar (R$)
+                  Prêmio ao Completar
                 </label>
-                <input
-                  type="number"
-                  step="5"
-                  placeholder="0"
-                  value={config.stampRewardValue === 0 ? "" : config.stampRewardValue}
-                  onChange={e => update("stampRewardValue", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
+                <select
+                  value={config.stampRewardType}
+                  onChange={e => update("stampRewardType", e.target.value === "product" ? "product" : "discount")}
                   style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
-                />
+                >
+                  <option value="discount">Desconto em R$</option>
+                  <option value="product">Produto do cardápio grátis</option>
+                </select>
               </div>
+
+              {config.stampRewardType === "product" ? (
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
+                    Produto do Prêmio
+                  </label>
+                  <select
+                    value={config.stampRewardProductId || ""}
+                    onChange={e => {
+                      const p = (produtosDoPremio || []).find(x => x.id === e.target.value);
+                      setConfig(prev => ({ ...prev, stampRewardProductId: p?.id || "", stampRewardProductName: p?.name || "" }));
+                    }}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
+                  >
+                    <option value="">{produtosDoPremio === null ? "Carregando o cardápio..." : "Escolha o produto"}</option>
+                    {/* O escolhido continua na lista mesmo que tenha saído do cardápio: a tela não troca o prêmio calada. */}
+                    {config.stampRewardProductId && !(produtosDoPremio || []).some(x => x.id === config.stampRewardProductId) && (
+                      <option value={config.stampRewardProductId}>{config.stampRewardProductName || "Produto escolhido"} (fora do cardápio)</option>
+                    )}
+                    {(produtosDoPremio || []).map(p => (
+                      <option key={p.id} value={p.id}>{p.name} — {fmt(p.price)}</option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div>
+                  <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#334155", display: "block", marginBottom: 4 }}>
+                    Valor do Desconto ao Completar (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="5"
+                    placeholder="0"
+                    value={config.stampRewardValue === 0 ? "" : config.stampRewardValue}
+                    onChange={e => update("stampRewardValue", e.target.value === "" ? 0 : parseFloat(e.target.value) || 0)}
+                    style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1.5px solid #CBD5E1", fontSize: "0.9rem", fontWeight: 800, outline: "none" }}
+                  />
+                </div>
+              )}
             </div>
+
+            <p style={{ margin: "12px 0 0", fontSize: "0.76rem", color: "#475569", lineHeight: 1.45 }}>
+              Ganha carimbo o pedido do site, do WhatsApp, do balcão, da mesa ou do totem que alcançar o pedido mínimo
+              (iFood e outros apps não contam; pedido cancelado não conta). Ao completar a cartela, o prêmio entra
+              sozinho no próximo pedido do cliente pelo site ou pelo WhatsApp — um prêmio por cartela — e a cartela recomeça.
+              O desconto vale só sobre os produtos: não abate a entrega e não vira troco.
+            </p>
+            {problemaDosCarimbos && (
+              <p style={{ margin: "8px 0 0", fontSize: "0.78rem", fontWeight: 700, color: "#B91C1C" }}>⚠️ {problemaDosCarimbos}</p>
+            )}
           </div>
         )}
 

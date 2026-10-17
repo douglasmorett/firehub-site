@@ -31,7 +31,8 @@ import {
 import { tempoDeEntregaParaGravar } from "@/lib/previsao-da-entrega";
 import { porValorMinimo, type EntregaGratis } from "@/lib/entrega-gratis";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
-import { premioDoCliente } from "@/lib/premio-no-pedido";
+import { premioDoCliente, premioDosCarimbosNoPedido } from "@/lib/premio-no-pedido";
+import { etiquetaDoPremioDosCarimbos, NOTA_DO_ITEM_DO_PREMIO } from "@/lib/carimbos";
 import { efeitoDoPremio } from "@/lib/trilha-premiada";
 import { cashbackDoPedido, lerCashback, regraNoCanal, resgateMaximo } from "@/lib/cashback";
 import { cashbackDoCliente } from "@/lib/cashback-no-banco";
@@ -737,6 +738,43 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── PRÊMIO DO CARTÃO DE CARIMBOS ─────────────────────────────────────
+    //
+    // Mesmo princípio da trilha: o servidor reconta o cartão deste telefone
+    // (lib/premio-no-pedido.ts) e, com cartela completa e prêmio ainda não
+    // usado, o prêmio entra sozinho. O corpo só consegue DISPENSAR. Desconto
+    // só sobre os produtos que ainda faltam pagar (depois de cupom e trilha):
+    // não abate entrega e não vira troco. A marca vai em `carimboPremio` — é
+    // ela que impede o segundo uso.
+    let resgateDosCarimbos: any = null;
+    if (body.dispensarPremioDosCarimbos !== true) {
+      try {
+        const efeito = await premioDosCarimbosNoPedido({
+          franchiseeId: franchisee.id,
+          storeLoyalty: franchisee.storeLoyalty,
+          telefone: customerPhone,
+          canal: "site",
+          produtosAPagar: Math.max(0, totalAmount - (discount - descontoNaTaxa)),
+        });
+        if (efeito) {
+          discount += efeito.descontoExtra;
+          if (efeito.produtoGratis) {
+            orderItems.push({
+              menuProductId: efeito.produtoGratis.id,
+              quantity: 1,
+              productName: efeito.produtoGratis.nome,
+              price: 0,
+              notes: NOTA_DO_ITEM_DO_PREMIO,
+              comboSelections: null,
+            });
+          }
+          resgateDosCarimbos = efeito.resgate;
+        }
+      } catch (e) {
+        console.error("[customer-order] cartão de carimbos:", e);
+      }
+    }
+
     // ── DESCONTO DE QUEM PAGA PELO SITE ──────────────────────────────────
     //
     // O % que a loja deu ao Pix ou ao cartão pelo site, sobre os itens já com
@@ -834,6 +872,10 @@ export async function POST(req: Request) {
       // precisa saber por que a entrega está zerada.
       orderNotes = `[Trilha Premiada: ${resgateDaTrilha.descricao}] ${orderNotes}`.trim();
     }
+    if (resgateDosCarimbos) {
+      // Na comanda: a loja vê por que o total está menor (ou o brinde a montar).
+      orderNotes = `${etiquetaDoPremioDosCarimbos(resgateDosCarimbos)} ${orderNotes}`.trim();
+    }
     if (notaDaArea) {
       orderNotes = `${orderNotes}${notaDaArea}`.trim();
     }
@@ -895,6 +937,7 @@ export async function POST(req: Request) {
         // isto o desconto sumia do total e a base de cobrança encolhia junto.
         ...(discount > 0 ? { discountTotal: centavos(discount), discountMerchant: centavos(discount) } : {}),
         ...(resgateDaTrilha ? { trilhaPremio: resgateDaTrilha } : {}),
+        ...(resgateDosCarimbos ? { carimboPremio: resgateDosCarimbos } : {}),
         ...(entregaGratis ? { entregaGratis } : {}),
         // O que este pedido usou e o que ele gera. O saldo do cliente sai da
         // soma destas duas colunas (lib/cashback.ts) — não há contador.

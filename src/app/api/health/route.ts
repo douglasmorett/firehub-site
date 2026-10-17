@@ -102,6 +102,8 @@ export async function GET(req: NextRequest) {
       // O prêmio da Trilha Premiada que o pedido resgatou. Sem a coluna, o
       // checkout que aplica o prêmio quebra na gravação — e o pedido some.
       ["CustomerOrder", "trilhaPremio"],
+      // O prêmio do Cartão de Carimbos (lib/carimbos.ts): o checkout e o robô gravam.
+      ["CustomerOrder", "carimboPremio"],
       ["CustomerOrder", "entregaGratis"],
       // A previsão de entrega da comanda (lib/previsao-da-entrega.ts). A fila
       // da impressão lê o pedido SEM select: coluna ausente para a impressão.

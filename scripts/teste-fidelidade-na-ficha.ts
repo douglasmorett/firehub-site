@@ -5,17 +5,17 @@
  *   npx tsx scripts/teste-fidelidade-na-ficha.ts
  *
  * Prova, sem banco:
- * 1) carimbos — a conta saiu do navegador (CustomerStorePage) para lib/carimbos.ts
- *    sem mudar o resultado: compara com a fórmula antiga em milhares de listas;
- *    mínimo, cancelado, cartela completa (0 de 10 + 1 completa);
+ * 1) carimbos — a regra de lib/carimbos.ts (desde 17/10/2026 o prêmio entra no
+ *    pedido; a prova do prêmio é scripts/teste-carimbos-premio.ts): mínimo,
+ *    status, cartela completa, prêmio a receber e usado, configuração com zero;
  * 2) trilha — janela, canais, próxima parada, depois da última parada, prêmio a
  *    receber, e a ficha igual ao que o cardápio recebe (resumoDaTrilha);
- * 3) a busca por telefone é a mesma de antes (lib/pedidos-do-telefone.ts);
+ * 3) a busca por telefone pelos 8 últimos dígitos (lib/pedidos-do-telefone.ts);
  * 4) o exemplo real: Karin, Pizzaria Lapastine (16/10/2026).
  */
-import { contarCarimbos, ganhaCarimbo, lerCarimbos, minimoDosCarimbos, premioDosCarimbos } from "../src/lib/carimbos";
+import { carimbosDoCliente, contarCarimbos, ganhaCarimbo, lerCarimbos, minimoDosCarimbos, premioDosCarimbos } from "../src/lib/carimbos";
 import { carimbosNaFicha, trilhaNaFicha } from "../src/lib/fidelidade-na-ficha";
-import { ondeEstaoOsPedidosDoTelefone, PEDIDOS_DO_CARDAPIO } from "../src/lib/pedidos-do-telefone";
+import { finalDoTelefone, mesmoTelefoneDoCardapio } from "../src/lib/pedidos-do-telefone";
 import { lerTrilha, resumoDaTrilha } from "../src/lib/trilha-premiada";
 
 let falhas = 0;
@@ -42,75 +42,44 @@ const LAPASTINE = {
 };
 
 // ── 1) Carimbos ──────────────────────────────────────────────────────────────
-console.log("\n1) Carimbos: a conta do cardápio, igual");
-
-/** A fórmula que morava em CustomerStorePage.tsx até 16/10/2026, copiada sem mexer. */
-function cardapioAntigo(loyalty: any, lista: any[]) {
-  const stampGoal = Number(loyalty.stampGoal || 10);
-  const stampMinOrder = Number(loyalty.stampMinOrder || 30);
-  const validStampOrders = lista.filter((o) => o.status !== "CANCELADO" && (Number(o.totalAmount) >= stampMinOrder || !stampMinOrder)).length;
-  const currentStamps = validStampOrders % stampGoal;
-  return { isStampsActive: Boolean(loyalty.stampsActive), stampGoal, stampMinOrder, stampRewardValue: Number(loyalty.stampRewardValue || 25), currentStamps, remainingStamps: Math.max(0, stampGoal - currentStamps) };
-}
-
-let sorteio = 20261016;
-const aleatorio = () => ((sorteio = (sorteio * 1103515245 + 12345) % 2147483648) / 2147483648);
-const um = <T,>(xs: T[]) => xs[Math.floor(aleatorio() * xs.length)];
-const STATUS = ["ENTREGUE", "CANCELADO", "CANCELLED", "CANCELED", "PRONTO", "ACEITO", "SAIU_ENTREGA", "AGUARDANDO_PAGAMENTO", "CRIANDO_IA", "RECUSADO", "cancelado", null];
-let iguais = 0;
-let diferentes = "";
-for (let i = 0; i < 5000; i++) {
-  const loyalty = {
-    stampsActive: um([true, false, undefined, 1]),
-    stampGoal: um([5, 8, 10, 12, undefined, 0, "10"]),
-    stampMinOrder: um([0, 30, 43, 49.9, undefined, "45", 35]),
-    stampRewardValue: um([0, 25, 50, undefined, 5]),
-  };
-  const lista = Array.from({ length: Math.floor(aleatorio() * 12) }, () => ({
-    status: um(STATUS),
-    totalAmount: um([0, 10, 29.99, 30, 42.99, 43, 45, 49.9, 57.5, 134, 81, null]),
-  }));
-  const antigo = cardapioAntigo(loyalty, lista);
-  const regra = lerCarimbos(loyalty);
-  const novo = contarCarimbos(regra, lista);
-  const igual = antigo.isStampsActive === regra.ativo && antigo.stampGoal === regra.meta && antigo.stampMinOrder === regra.pedidoMinimo
-    && antigo.stampRewardValue === regra.premioValor && antigo.currentStamps === novo.noCartao && antigo.remainingStamps === novo.faltam;
-  if (igual) iguais++;
-  else if (!diferentes) diferentes = JSON.stringify({ loyalty, lista, antigo, regra, novo });
-}
-confere(`5000 listas sorteadas: a lib dá o mesmo cartão que a fórmula antiga do cardápio${diferentes ? " — " + diferentes : ""}`, iguais, 5000);
+// Desde 17/10/2026 a conta mudou de propósito (o prêmio entra sozinho no pedido,
+// lib/carimbos.ts): histórico em vez dos 10 de "Meus pedidos", status e canal
+// como a trilha, e o zero da configuração vale. O prêmio no pedido tem a prova
+// própria em scripts/teste-carimbos-premio.ts; aqui, o que a ficha mostra.
+console.log("\n1) Carimbos: a ficha mostra o cartão que o cardápio recebe");
 
 const regra = lerCarimbos(LAPASTINE);
-const pedido = (totalAmount: number, status = "ENTREGUE") => ({ status, totalAmount });
+const pedido = (totalAmount: number, status = "ENTREGUE", extra: Record<string, unknown> = {}) => ({ status, totalAmount, source: "ONLINE", ...extra });
 confere("abaixo do mínimo (R$ 42,99 com mínimo R$ 43) não ganha carimbo", ganhaCarimbo(pedido(42.99), regra), false);
 confere("no mínimo exato (R$ 43,00) ganha", ganhaCarimbo(pedido(43), regra), true);
-confere("cancelado não ganha, mesmo acima do mínimo", ganhaCarimbo(pedido(134, "CANCELADO"), regra), false);
+confere("cancelado (qualquer grafia), recusado, rascunho e Pix esperando pagamento não ganham",
+  ["CANCELADO", "CANCELLED", "CANCELED", "RECUSADO", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"].map((st) => ganhaCarimbo(pedido(134, st), regra)),
+  [false, false, false, false, false, false]);
 confere("3 que contam + 1 abaixo + 1 cancelado = 3 de 10, faltam 7",
   contarCarimbos(regra, [pedido(57.5), pedido(134), pedido(81), pedido(20), pedido(90, "CANCELADO")]),
-  { validos: 3, noCartao: 3, faltam: 7, completas: 0, acabouDeCompletar: false });
+  { validos: 3, noCartao: 3, faltam: 7, completas: 0, usados: 0, aReceber: 0, acabouDeCompletar: false });
 const dez = Array.from({ length: 10 }, () => pedido(50));
-confere("10 que contam: o cartão volta a 0 de 10 e vira 1 cartela completa",
-  contarCarimbos(regra, dez), { validos: 10, noCartao: 0, faltam: 10, completas: 1, acabouDeCompletar: true });
-confere("o 11º que conta abre o cartão novo: 1 de 10, ainda 1 completa",
-  contarCarimbos(regra, [...dez, pedido(50)]), { validos: 11, noCartao: 1, faltam: 9, completas: 1, acabouDeCompletar: false });
-confere("depois de completar, pedido abaixo do mínimo não abre o cartão novo",
-  contarCarimbos(regra, [...dez, pedido(10)]).acabouDeCompletar, true);
-confere("lista cortada (o cliente tem mais que os 10 da lista): a mesma contagem, mas não diz 'acabou de completar'",
-  contarCarimbos(regra, dez, true), { validos: 10, noCartao: 0, faltam: 10, completas: 1, acabouDeCompletar: false });
-confere("sem pedido nenhum: 0 de 10, nada completo", contarCarimbos(regra, []), { validos: 0, noCartao: 0, faltam: 10, completas: 0, acabouDeCompletar: false });
-confere("a regra do cardápio só tira 'CANCELADO': CANCELLED e esperando pagamento ganham carimbo (como sempre ganharam)",
-  [ganhaCarimbo(pedido(50, "CANCELLED"), regra), ganhaCarimbo(pedido(50, "AGUARDANDO_PAGAMENTO"), regra)], [true, true]);
-confere("os padrões do cardápio: mínimo 0 vira R$ 30, prêmio 0 vira R$ 25, meta vazia vira 10",
+confere("10 que contam: o cartão volta a 0 de 10, 1 cartela completa e 1 prêmio a receber",
+  contarCarimbos(regra, dez), { validos: 10, noCartao: 0, faltam: 10, completas: 1, usados: 0, aReceber: 1, acabouDeCompletar: true });
+confere("sem pedido nenhum: 0 de 10, nada completo", contarCarimbos(regra, []),
+  { validos: 0, noCartao: 0, faltam: 10, completas: 0, usados: 0, aReceber: 0, acabouDeCompletar: false });
+confere("a configuração salva vale: mínimo 0 = qualquer pedido, prêmio 0 = R$ 0 (e o cartão sai do ar)",
   (({ meta, pedidoMinimo, premioValor }) => ({ meta, pedidoMinimo, premioValor }))(lerCarimbos({ stampsActive: true, stampMinOrder: 0, stampRewardValue: 0 })),
-  { meta: 10, pedidoMinimo: 30, premioValor: 25 });
+  { meta: 10, pedidoMinimo: 0, premioValor: 0 });
+confere("campo nunca salvo herda o padrão do formulário (R$ 30 / R$ 25)",
+  (({ pedidoMinimo, premioValor }) => ({ pedidoMinimo, premioValor }))(lerCarimbos({ stampsActive: true })), { pedidoMinimo: 30, premioValor: 25 });
 confere("meta quebrada no banco não divide por zero", lerCarimbos({ stampGoal: -3 }).meta, 10);
 confere("textos da ficha: prêmio e mínimo", [premioDosCarimbos(regra), minimoDosCarimbos(regra)], ["R$ 50,00 de desconto", "pedido a partir de R$ 43,00"]);
 confere("carimbos desligados: a ficha não mostra o bloco", carimbosNaFicha({ ...LAPASTINE, stampsActive: false }, [pedido(50)]), null);
-const cortada = carimbosNaFicha(LAPASTINE, Array.from({ length: PEDIDOS_DO_CARDAPIO }, () => pedido(50)), true);
-confere("a ficha avisa quando o cliente passa da lista do cardápio, e não mostra 'completou' (o cardápio também não)",
-  [cortada?.alemDaLista, cortada?.acabouDeCompletar, cortada?.completas], [true, false, 1]);
-confere("lista inteira com 10 que contam: a ficha mostra a cartela completa, como o cardápio",
-  carimbosNaFicha(LAPASTINE, dez)?.acabouDeCompletar, true);
+confere("prêmio R$ 0 (Point da Pizza): o cartão não está no ar, a ficha não mostra o bloco",
+  carimbosNaFicha({ ...LAPASTINE, stampRewardValue: 0 }, [pedido(50)]), null);
+const fichaDez = carimbosNaFicha(LAPASTINE, dez)!;
+confere("10 que contam: a ficha mostra 1 prêmio a receber, nenhum usado",
+  [fichaDez.completas, fichaDez.aReceber, fichaDez.usados, fichaDez.acabouDeCompletar], [1, 1, 0, true]);
+const usado = { programa: "carimbos", cartela: 1, tipo: "discount", valor: 50, valorAplicado: 50, descricao: "R$ 50,00 de desconto", em: "" };
+const fichaUsou = carimbosNaFicha(LAPASTINE, [pedido(80, "ENTREGUE", { carimboPremio: usado }), ...dez])!;
+confere("o 11º pedido usou o prêmio: 1 de 10, nada a receber, 1 usado",
+  [fichaUsou.noCartao, fichaUsou.aReceber, fichaUsou.usados], [1, 0, 1]);
 
 // ── 2) Trilha ────────────────────────────────────────────────────────────────
 console.log("\n2) Trilha: a mesma conta do cardápio e do prêmio do pedido");
@@ -188,13 +157,11 @@ confere("parada de produto sem produto escolhido: a trilha não está no ar (nem
   trilhaNaFicha({ trilha: { ativa: true, paradas: [{ pedidos: 3, tipo: "produto" }] } }, lista), null);
 
 // ── 3) A busca por telefone ──────────────────────────────────────────────────
-console.log("\n3) A busca por telefone é a de antes");
-confere("contém os 8 últimos dígitos OU é o número inteiro (o que api/store-customer e a trilha faziam)",
-  ondeEstaoOsPedidosDoTelefone("loja1", "(91) 99107-7190"),
-  { franchiseeId: "loja1", OR: [{ customerPhone: { contains: "91077190" } }, { customerPhone: "91991077190" }] });
+console.log("\n3) A busca por telefone: os 8 últimos dígitos (as máscaras estão em teste-carimbos-premio.ts)");
 confere("com e sem o 9, com e sem o 55: os mesmos 8 dígitos",
-  ["91991077190", "9191077190", "5591991077190"].map((n) => (ondeEstaoOsPedidosDoTelefone("l", n).OR as any)[0].customerPhone.contains),
-  ["91077190", "91077190", "91077190"]);
+  ["91991077190", "9191077190", "5591991077190", "(91) 99107-7190"].map((n) => finalDoTelefone(n)),
+  ["91077190", "91077190", "91077190", "91077190"]);
+confere("o pedido gravado com máscara é achado", mesmoTelefoneDoCardapio("+55 (91) 99107-7190", "91991077190"), true);
 
 // ── 4) O exemplo real ────────────────────────────────────────────────────────
 console.log("\n4) Karin (Pizzaria Lapastine): 3 pedidos pelo site");
@@ -215,7 +182,8 @@ const ck = carimbosNaFicha(LAPASTINE, karin)!;
 confere("carimbos: 3 de 10, faltam 7, nenhuma cartela completa, prêmio R$ 50 de desconto, mínimo R$ 43",
   [ck.noCartao, ck.meta, ck.faltam, ck.completas, ck.premio, ck.minimo],
   [3, 10, 7, 0, "R$ 50,00 de desconto", "pedido a partir de R$ 43,00"]);
-confere("no cardápio ela vê o mesmo cartão (fórmula antiga)", cardapioAntigo(LAPASTINE, karin).currentStamps, ck.noCartao);
+confere("o cardápio recebe o mesmo cartão (carimbosDoCliente)",
+  carimbosDoCliente(lerCarimbos(LAPASTINE), contarCarimbos(lerCarimbos(LAPASTINE), karin)).noCartao, ck.noCartao);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

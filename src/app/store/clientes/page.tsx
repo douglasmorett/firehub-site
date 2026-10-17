@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { haQuanto as haQuantoNaLoja } from "@/lib/clientes-da-loja-regras";
 import { FUSO_PADRAO } from "@/lib/fuso";
-import { PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
 import type { CarimbosNaFicha, FidelidadeNaFicha, ParadaNaFicha, TrilhaNaFicha } from "@/lib/fidelidade-na-ficha";
 
 type Filtro = "todos" | "com_saldo" | "pediram" | "nunca" | "sumidos";
@@ -1092,21 +1091,18 @@ function CarimbosDaFicha({ c }: { c: CarimbosNaFicha }) {
         ))}
       </div>
       <div style={{ fontSize: "0.8rem" }}>
-        {c.acabouDeCompletar ? (
-          <span style={{ color: "#15803D", fontWeight: 700 }}>🎉 Completou a cartela: ganhou {c.premio}.</span>
-        ) : (
-          <>Falta{c.faltam === 1 ? "" : "m"} <strong>{c.faltam}</strong> para <strong>{c.premio}</strong></>
-        )}
+        Falta{c.faltam === 1 ? "" : "m"} <strong>{c.faltam}</strong> para <strong>{c.premio}</strong>
       </div>
-      <div style={notaDoCartao}>
-        Cartelas completas: <strong style={{ color: corDoTexto }}>{c.completas}</strong> — o prêmio a loja dá à mão. Conta {c.minimo}.
-      </div>
-      {c.alemDaLista && (
-        <div style={{ ...notaDoCartao, color: "#92400E" }}>
-          Este cliente tem mais de {PEDIDOS_DO_CARDAPIO} pedidos e o cardápio conta só os {PEDIDOS_DO_CARDAPIO} mais recentes: o cartão e as
-          cartelas completas podem estar abaixo do real.
+      {c.aReceber > 0 && (
+        <div style={{ marginTop: 8, background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "6px 9px", fontSize: "0.76rem", color: "#14532D" }}>
+          🎁 A receber: <strong>{c.premio}</strong> — entra sozinho no próximo pedido pelo site ou pelo WhatsApp
+          {c.aReceber > 1 ? ` (${c.aReceber} cartelas completas, um prêmio por pedido)` : ""}.
         </div>
       )}
+      <div style={notaDoCartao}>
+        Cartelas completas: <strong style={{ color: corDoTexto }}>{c.completas}</strong> · prêmios usados:{" "}
+        <strong style={{ color: corDoTexto }}>{c.usados}</strong>. Conta {c.minimo}.
+      </div>
     </div>
   );
 }
