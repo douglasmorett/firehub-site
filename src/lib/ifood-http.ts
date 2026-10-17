@@ -171,6 +171,8 @@ export function mensagemDeErro(r: RespostaIfood): string {
   const detalhe =
     (r.data as any)?.error?.message ||
     (r.data as any)?.message ||
+    // Review v2 responde {status, errorType, errorMessage, path}.
+    (r.data as any)?.errorMessage ||
     (Array.isArray((r.data as any)?.details) ? (r.data as any).details[0]?.message : null) ||
     "";
 

@@ -18,6 +18,7 @@ import { lojaBloqueadaPorMensalidade } from "./loja-bloqueada";
 import { dataHoraDaLoja } from "./fuso";
 import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-number";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
+import { registrarEventoDeShipping } from "./ifood-shipping";
 import { montarItensDoPedidoIfood } from "./ifood-itens";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
@@ -231,6 +232,12 @@ export async function processarEventosIfood(opts: {
       try {
         const { code, orderId, merchantId } = event;
         if (!orderId) continue;
+
+        // Pedido do canal próprio com entregador do iFood (aba Shipping da
+        // homologação): guarda o evento na linha dele para a tela mostrar a
+        // troca de endereço e o cancelamento chegando. UPDATE pela chave —
+        // para os outros pedidos não acha linha. Nunca lança.
+        await registrarEventoDeShipping(prisma, event);
 
         const isPlaced = code === "PLC" || event.fullCode === "PLACED";
         const isConfirmed = code === "CFM" || event.fullCode === "CONFIRMED";
