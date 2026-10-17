@@ -680,7 +680,9 @@ async function pollIfoodEvents(sessionUserId?: string) {
 const lastJotajaPollMap = new Map<string, number>();
 
 async function pollJotajaEvents(sessionUserId?: string) {
-  const storeKey = sessionUserId || "global";
+  // Sem loja não há credencial: o JotaJá é por loja, igual à Brendi.
+  if (!sessionUserId) return;
+  const storeKey = sessionUserId;
   const now = Date.now();
   const lastPoll = lastJotajaPollMap.get(storeKey) || 0;
   if (now - lastPoll < 2_000) return;
@@ -688,8 +690,13 @@ async function pollJotajaEvents(sessionUserId?: string) {
   lastJotajaPollMap.set(storeKey, now);
 
   try {
-    const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
+    const { jotajaFetch, jotajaMutate, lojaComJotajaLigado } = await import("@/lib/jotaja-api");
     const { processJotajaEvent } = await import("@/lib/processJotajaEvent");
+
+    // Só loja com a integração LIGADA. Antes rodava para toda loja: com a
+    // credencial gravada e a integração desligada, o painel aberto já puxava a
+    // fila inteira do JotaJá.
+    if (!(await lojaComJotajaLigado(sessionUserId))) return;
 
     // Usar credenciais da loja do usuário logado
     const res = await jotajaFetch("/v1/events:polling", { method: "GET" }, sessionUserId).catch(err => {
@@ -722,7 +729,8 @@ async function pollJotajaEvents(sessionUserId?: string) {
       // listagem para recuperá-lo depois (GET /v1/orders responde 404). Só ackamos
       // se o pedido realmente existir no banco — antes, "skipped" também ackava.
       let podeAckar = result.action !== "error";
-      if (podeAckar && event.orderId) {
+      // "ignorado" = pedido velho demais (lib/jotaja-loja.ts): sai da fila sem entrar.
+      if (podeAckar && event.orderId && result.action !== "ignorado") {
         const { prisma } = await import("@/lib/prisma");
         const gravado = await prisma.customerOrder.findFirst({
           where: {

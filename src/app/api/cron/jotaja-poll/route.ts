@@ -130,6 +130,7 @@ export async function GET(req: NextRequest) {
               const eid = event.eventId || event.id;
               const podeAckar = await (async () => {
                 if (result.action === "error") return false;
+                if (result.action === "ignorado") return true; // pedido velho demais (lib/jotaja-loja.ts) — sai da fila sem entrar
                 if (!event.orderId) return true; // evento sem pedido (keepalive) — nada a conferir
                 const gravado = await prisma.customerOrder.findFirst({
                   where: {

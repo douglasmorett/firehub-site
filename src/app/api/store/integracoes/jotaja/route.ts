@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { darBaixaNaFila, filaDaCredencial } from "@/lib/jotaja-api";
+import { conferirFilaNaLigacao } from "@/lib/jotaja-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -80,7 +82,7 @@ export async function POST(req: NextRequest) {
     // sempre — com o painel continuando verde. Vazio agora significa "mantém".
     const atual = await prisma.user.findUnique({
       where: { id: targetUserId },
-      select: { jotajaClientId: true, jotajaClientSecret: true, jotajaMerchantId: true },
+      select: { jotajaClientId: true, jotajaClientSecret: true, jotajaMerchantId: true, jotajaConnected: true },
     });
 
     const novoClientId = clientId?.trim() || atual?.jotajaClientId || null;
@@ -94,33 +96,55 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Só marca como conectada se a credencial realmente autenticar. "Conectado"
-    // no painel passa a significar "o JotaJá aceitou esta credencial agora".
+    // Só liga se a credencial autenticar E for desta loja. A fila do JotaJá
+    // (que a leitura já autentica) diz de que restaurante ela é: credencial de
+    // outro restaurante, de vários, ou de restaurante que já está em outra loja
+    // do FireHub não liga. Integração é POR LOJA (lib/jotaja-loja.ts).
+    const vaiLigar = connected !== false;
     let autenticou = false;
-    let erroAuth = "";
+    let erro = "";
+    let merchant = novoMerchant;
+    let foraDaLargada = 0;
     try {
-      const res = await fetch(`${process.env.JOTAJA_BASE_URL || "https://api.jotaja.com/openDelivery"}/oauth/token`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          grant_type: "client_credentials",
-          client_id: novoClientId,
-          client_secret: novoSecret,
-        }),
-      });
-      autenticou = res.ok;
-      if (!res.ok) erroAuth = `JotaJá recusou a credencial (HTTP ${res.status})`;
+      const fila = await filaDaCredencial(novoClientId, novoSecret);
+      autenticou = true;
+      const conferida = conferirFilaNaLigacao(fila, novoMerchant);
+      if (conferida.erro) {
+        erro = conferida.erro;
+      } else {
+        merchant = conferida.merchant;
+        const outra = merchant
+          ? await prisma.user.findFirst({
+              where: {
+                jotajaMerchantId: merchant,
+                id: { not: targetUserId },
+                ownerId: null,
+                NOT: { email: { startsWith: "deleted_" } },
+              },
+              select: { storeName: true, email: true },
+            })
+          : null;
+        if (outra) {
+          erro = `o restaurante ${merchant} do JotaJá já está ligado em outra loja do FireHub (${outra.storeName || outra.email})`;
+        } else if (vaiLigar && (!atual?.jotajaConnected || novoClientId !== atual?.jotajaClientId) && fila.length > 0) {
+          // Largada limpa: ligando agora (ou trocando de credencial), o que
+          // está na fila é de ANTES — pedido que a loja já atendeu por outro
+          // caminho. Sem a baixa, a semana inteira caía no painel e na impressora.
+          foraDaLargada = await darBaixaNaFila(novoClientId, novoSecret, fila);
+        }
+      }
     } catch (e: any) {
-      erroAuth = `Não foi possível falar com o JotaJá: ${e?.message}`;
+      erro = e?.message || "não foi possível falar com o JotaJá";
     }
 
+    const ligada = vaiLigar && autenticou && !erro;
     const updatedUser = await prisma.user.update({
       where: { id: targetUserId },
       data: {
         jotajaClientId: novoClientId,
         jotajaClientSecret: novoSecret,
-        jotajaMerchantId: novoMerchant,
-        jotajaConnected: connected === false ? false : autenticou,
+        jotajaMerchantId: merchant,
+        jotajaConnected: ligada,
       },
       select: {
         id: true,
@@ -133,10 +157,14 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       ok: true,
-      message: autenticou
-        ? "Integração JotaJá salva e ativada — credencial testada e aceita pelo JotaJá."
-        : `Credenciais salvas, mas a integração ficou DESLIGADA: ${erroAuth}. Confira Client ID e Secret no painel do JotaJá.`,
+      message: !vaiLigar
+        ? "Integração JotaJá desligada — nenhum pedido do JotaJá entra até ligar de novo."
+        : ligada
+          ? `Integração JotaJá ligada — credencial aceita${merchant ? ` (restaurante ${merchant} no JotaJá)` : ""}.` +
+            (foraDaLargada > 0 ? ` ${foraDaLargada} pedido(s) que estavam parados na fila do JotaJá, de antes de ligar, ficaram de fora; os novos entram a partir de agora.` : "")
+          : `Credenciais salvas, mas a integração ficou DESLIGADA: ${erro}. Confira Client ID e Secret no painel do JotaJá.`,
       autenticou,
+      foraDaLargada,
       user: updatedUser
     });
   } catch (err: any) {

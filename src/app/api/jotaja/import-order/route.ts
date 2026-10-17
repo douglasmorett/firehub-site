@@ -79,7 +79,8 @@ export async function POST(req: NextRequest) {
         }
 
         const eventFake = { orderId: targetId, eventType: "CREATED", code: "PLC", displayId: cleanRef };
-        const result = await processJotajaEvent(eventFake, storeFetch, storeMutate, targetFranchiseeId);
+        // Import manual é pedido explícito do lojista: pedido antigo também entra.
+        const result = await processJotajaEvent(eventFake, storeFetch, storeMutate, targetFranchiseeId, { pedidoAntigoEntra: true });
 
 
         if (result.action === "created" || result.action === "updated") {
@@ -98,15 +99,18 @@ export async function POST(req: NextRequest) {
     const refTag = cleanRef || "MANUAL";
 
     // ANTI-DUPLICATA: Verifica se o pedido já existe antes de criar (evita duplicação quando cron/webhook importa depois)
-    const alreadyExists = await prisma.customerOrder.findFirst({
+    // Só nesta loja: antes procurava no banco inteiro e devolvia na resposta o
+    // pedido de OUTRA loja que tivesse o mesmo número.
+    const alreadyExists = cleanRef ? await prisma.customerOrder.findFirst({
       where: {
+        franchiseeId: targetFranchiseeId,
         OR: [
-          cleanRef ? { openDeliveryOrderId: cleanRef } : undefined,
-          cleanRef ? { openDeliveryReference: cleanRef } : undefined,
-          cleanRef ? { openDeliveryOrderId: { startsWith: `manual_jotaja_${cleanRef}` } } : undefined,
-        ].filter(Boolean) as any[],
+          { openDeliveryOrderId: cleanRef },
+          { openDeliveryReference: cleanRef },
+          { openDeliveryOrderId: { startsWith: `manual_jotaja_${cleanRef}` } },
+        ],
       },
-    });
+    }) : null;
     if (alreadyExists) {
       return NextResponse.json({
         ok: true,

@@ -67,12 +67,13 @@ export async function POST(req: NextRequest) {
       body = { reason: reason || "Cancelamento aceito pelo restaurante." };
     }
 
-    // Chama API Open Delivery
+    // Chama API Open Delivery — com a credencial DESTA loja (antes ia sem loja
+    // e caía na credencial de reserva do servidor)
     const apiEndpoint = ACTION_ENDPOINT[action];
     const res = await jotajaMutate(`/v1/orders/${orderId}/${apiEndpoint}`, {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
-    });
+    }, targetFranchiseeId);
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");

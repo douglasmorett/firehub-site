@@ -14,6 +14,14 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 // cópias idênticas, com o mesmo defeito nas duas — ver o arquivo.
 import { extrairOpcoesDoItem, valorOpenDelivery } from "@/lib/opcoes-open-delivery";
 import { corrigirNomeDoEspelho } from "@/lib/espelho-do-parceiro";
+import {
+  decidirLojaDoPedido,
+  HORAS_DO_PEDIDO_ANTIGO,
+  idDoEspelhoJotaja,
+  idDoItemJotaja,
+  merchantDoEvento,
+  pedidoAntigoDemais,
+} from "@/lib/jotaja-loja";
 
 export interface JotajaEvent {
   id?: string;
@@ -26,7 +34,9 @@ export interface JotajaEvent {
 }
 
 export interface ProcessResult {
-  action: "created" | "updated" | "cancelled" | "dispute" | "skipped" | "error";
+  // "ignorado": pedido velho demais (lib/jotaja-loja.ts › pedidoAntigoDemais) —
+  // não entra e o evento pode sair da fila, mesmo sem pedido no banco.
+  action: "created" | "updated" | "cancelled" | "dispute" | "skipped" | "ignorado" | "error";
   orderId: string;
   message?: string;
 }
@@ -35,15 +45,22 @@ export interface ProcessResult {
  * Processa um único evento Open Delivery do JotaJá.
  * Retorna o resultado do processamento.
  * Auto-confirma pedidos PLACED via API.
+ *
+ * `targetFranchiseeId` é a loja cuja credencial buscou o evento — e a ÚNICA
+ * loja em que o pedido pode entrar (lib/jotaja-loja.ts).
  */
 export async function processJotajaEvent(
   event: JotajaEvent,
   jotajaFetch: (path: string, options?: RequestInit) => Promise<Response>,
   jotajaMutate: (path: string, options?: RequestInit) => Promise<Response>,
   targetFranchiseeId?: string,
+  opcoes: { pedidoAntigoEntra?: boolean } = {},
 ): Promise<ProcessResult> {
   const { code, orderId } = event || {} as JotajaEvent;
   if (!orderId) return { action: "skipped", orderId: "", message: "sem orderId" };
+  if (!targetFranchiseeId) {
+    return { action: "error", orderId, message: "evento sem loja — pedido do JotaJá só entra na loja dona da credencial" };
+  }
 
   // Jotajá uses eventType (CREATED, CONFIRMED, etc.) in addition to code/fullCode
   const et = event.eventType?.toUpperCase() ?? "";
@@ -74,7 +91,7 @@ export async function processJotajaEvent(
           requestedAt: meta.createdAt || new Date().toISOString(),
         };
         await (prisma.customerOrder as any).updateMany({
-          where: { openDeliveryOrderId: orderId } as any,
+          where: { openDeliveryOrderId: orderId, franchiseeId: targetFranchiseeId } as any,
           data: { cancelDispute: disputeData },
         });
         return { action: "dispute", orderId, message: `disputeId=${meta.disputeId}` };
@@ -85,7 +102,7 @@ export async function processJotajaEvent(
     // ── Cancelamento definitivo ────────────────────────────────────────────
     if (isCancelled) {
       const existing: any = await prisma.customerOrder.findFirst({
-        where: { openDeliveryOrderId: orderId } as any,
+        where: { openDeliveryOrderId: orderId, franchiseeId: targetFranchiseeId } as any,
         select: { cancelledBy: true } as any,
       });
       const cancelData: any = { status: "CANCELADO", cancelDispute: { pending: false } };
@@ -93,11 +110,11 @@ export async function processJotajaEvent(
         cancelData.cancelledBy = "JOTAJA";
       }
       await (prisma.customerOrder as any).updateMany({
-        where: { openDeliveryOrderId: orderId } as any,
+        where: { openDeliveryOrderId: orderId, franchiseeId: targetFranchiseeId } as any,
         data: cancelData,
       });
       // Cancelado pelo JotaJá com NFC-e de pé: não trava (o cliente já foi estornado lá), avisa na tela fiscal.
-      import("./fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ openDeliveryOrderId: orderId }, "JotaJá")).catch(() => {});
+      import("./fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ openDeliveryOrderId: orderId, franchiseeId: targetFranchiseeId }, "JotaJá")).catch(() => {});
       return { action: "cancelled", orderId };
     }
 
@@ -110,25 +127,27 @@ export async function processJotajaEvent(
     const idempotencyConditions: any[] = [
       { openDeliveryOrderId: orderId },
       { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+      { openDeliveryReference: orderId, franchiseeId: targetFranchiseeId, openDeliveryChannel: "JOTAJA" },
     ];
-    if (targetFranchiseeId) {
+    const displayRef = (event as any).displayId || (event as any).orderSeqNumber;
+    if (displayRef) {
       idempotencyConditions.push({
-        openDeliveryReference: orderId,
+        openDeliveryReference: String(displayRef),
         franchiseeId: targetFranchiseeId,
         openDeliveryChannel: "JOTAJA",
       });
-      const displayRef = (event as any).displayId || (event as any).orderSeqNumber;
-      if (displayRef) {
-        idempotencyConditions.push({
-          openDeliveryReference: String(displayRef),
-          franchiseeId: targetFranchiseeId,
-          openDeliveryChannel: "JOTAJA",
-        });
-      }
     }
     const existing = await prisma.customerOrder.findFirst({
       where: { OR: idempotencyConditions } as any,
     });
+
+    // O UUID do pedido é único no banco inteiro; se ele já está em OUTRA loja,
+    // nada aqui mexe nele — nem status, nem cópia nesta loja.
+    if (existing && existing.franchiseeId !== targetFranchiseeId) {
+      const msg = `pedido já está em outra loja do FireHub (${existing.franchiseeId}) — não mexo`;
+      console.error(`[Jotaja] ⛔ ${orderId}: ${msg}`);
+      return { action: "error", orderId, message: msg };
+    }
 
     if (!existing) {
       // ── CRIAR pedido novo (com até 3 tentativas resilientes) ──────────────
@@ -153,39 +172,50 @@ export async function processJotajaEvent(
       }
       const orderData = await orderRes.json();
 
-      // Resolve franqueado — MULTI-TENANT: resolução estrita por merchantId
-      const eventMerchantId = orderData.merchant?.id;
-      let franchisee: any = null;
-
-      // 1. Prioridade absoluta: buscar loja que possui exatamente o jotajaMerchantId do evento
-      if (eventMerchantId) {
-        franchisee = await prisma.user.findFirst({
-          where: {
-            jotajaMerchantId: eventMerchantId,
-            NOT: { email: { startsWith: "deleted_" } },
-          } as any,
-        });
-      }
-
-      // 2. Se não encontrou por merchantId e temos targetFranchiseeId, verificar se o target é compatível
-      if (!franchisee && targetFranchiseeId) {
-        const candidate = await prisma.user.findUnique({ where: { id: targetFranchiseeId } });
-        if (candidate) {
-          // MULTI-TENANT: aceitar APENAS se o merchantId bate OU se não veio merchantId no evento
-          if (!eventMerchantId || candidate.jotajaMerchantId === eventMerchantId) {
-            franchisee = candidate;
-          }
-        }
-      }
-
-      // 3. SEM FALLBACK — se não encontrou loja, é erro (nunca atribuir a outra loja)
+      // ── A loja do pedido: SÓ a dona da credencial (lib/jotaja-loja.ts) ─────
+      // Antes procurava "a loja que tem este merchantId" no banco inteiro e
+      // usava a primeira — podia ser outra conta, ou um funcionário (a tela de
+      // Equipe copia o jotajaMerchantId do dono), e aí o espelho e a impressão
+      // iam para o id do funcionário.
+      const franchisee: any = await prisma.user.findUnique({ where: { id: targetFranchiseeId } });
       if (!franchisee) {
-        const msg = `Nenhuma loja com merchantId correspondente (merchant: ${eventMerchantId || "N/A"})`;
-        console.error(`[Jotaja] ❌ ${orderId}: ${msg}`);
-        return { action: "error", orderId, message: msg };
+        return { action: "error", orderId, message: `loja ${targetFranchiseeId} não encontrada` };
+      }
+      const franchiseeIdToUse = franchisee.id;
+      const merchantDoPedido = merchantDoEvento(orderData);
+      const outraLoja = merchantDoPedido && !franchisee.jotajaMerchantId
+        ? await prisma.user.findFirst({
+            where: {
+              jotajaMerchantId: merchantDoPedido,
+              id: { not: franchiseeIdToUse },
+              ownerId: null,
+              NOT: { email: { startsWith: "deleted_" } },
+            } as any,
+            select: { id: true, storeName: true, email: true },
+          })
+        : null;
+      const decisao = decidirLojaDoPedido({
+        merchantDaLoja: franchisee.jotajaMerchantId,
+        merchantDoPedido,
+        outraLojaComEsseMerchant: outraLoja ? (outraLoja.storeName || outraLoja.email || outraLoja.id) : null,
+      });
+      if (!decisao.entra) {
+        console.error(`[Jotaja] ⛔ ${orderId} NÃO entra em ${franchisee.storeName || franchiseeIdToUse}: ${decisao.motivo}`);
+        return { action: "error", orderId, message: decisao.motivo };
+      }
+      if (decisao.adotarMerchant) {
+        await prisma.user
+          .update({ where: { id: franchiseeIdToUse }, data: { jotajaMerchantId: decisao.adotarMerchant } })
+          .catch(() => {});
+        console.log(`[Jotaja] ${franchisee.storeName || franchiseeIdToUse} é o restaurante ${decisao.adotarMerchant} do JotaJá (gravado no 1º pedido)`);
       }
 
-      const franchiseeIdToUse = franchisee.ownerId || franchisee.id;
+      // Fila parada (integração ligada tarde, credencial que caiu e voltou): o
+      // pedido de ontem não vai para a cozinha de hoje. O import manual entra.
+      if (!opcoes.pedidoAntigoEntra && pedidoAntigoDemais(orderData)) {
+        console.warn(`[Jotaja] ${orderId} (#${orderData.displayId ?? "?"}) de ${orderData.createdAt} — mais de ${HORAS_DO_PEDIDO_ANTIGO} h, não entra`);
+        return { action: "ignorado", orderId, message: `pedido de ${orderData.createdAt}, mais de ${HORAS_DO_PEDIDO_ANTIGO} h — não entra` };
+      }
 
       // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): pedido NOVO não
       // entra — nada gravado, impresso ou confirmado; fica no portal do parceiro.
@@ -242,6 +272,16 @@ export async function processJotajaEvent(
         []
       );
 
+      // Espelho com id de OUTRA loja não é usado: o item desta loja ganha o seu
+      // (lib/jotaja-loja.ts › idDoEspelhoJotaja).
+      const idsGlobais = Array.from(new Set(rawItemsList.map((i: any) => `jotaja-${idDoItemJotaja(i)}`))) as string[];
+      const donosDosIds = new Map<string, string>(
+        (await prisma.menuProduct.findMany({
+          where: { id: { in: idsGlobais } },
+          select: { id: true, franchiseeId: true },
+        })).map((p) => [p.id, p.franchiseeId] as [string, string]),
+      );
+
       // Espelhos que já existem e cujo nome precisa acompanhar o catálogo do
       // JotaJá (lib/espelho-do-parceiro.ts) — corrigidos antes de gravar.
       const espelhos: { id: string; nome: string }[] = [];
@@ -289,9 +329,9 @@ export async function processJotajaEvent(
         const comboSelectionsJson = comboSelsList ? JSON.stringify(comboSelsList) : null;
         // Sem id no catálogo, o espelho é pelo código externo ou pelo NOME —
         // nunca aleatório, senão cada pedido cria um espelho novo do mesmo item.
-        const itemId = i.id || i.externalId || i.externalCode ||
-          `nome-${String(itemName).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").slice(0, 60)}`;
-        espelhos.push({ id: `jotaja-${itemId}`, nome: itemName });
+        const itemId = idDoItemJotaja(i);
+        const espelhoId = idDoEspelhoJotaja(itemId, franchiseeIdToUse, donosDosIds.get(`jotaja-${itemId}`));
+        espelhos.push({ id: espelhoId, nome: itemName });
 
         return {
           price: Math.round(itemPrice * 100) / 100,
@@ -308,10 +348,10 @@ export async function processJotajaEvent(
             // o nome completo do dia em `productName`). Era o mesmo defeito
             // da Brendi — ver lib/espelho-do-parceiro.ts.
             connectOrCreate: {
-              where: { id: `jotaja-${itemId}` } as any,
+              where: { id: espelhoId } as any,
               create: {
-                id: `jotaja-${itemId}`,
-                franchiseeId: franchisee.id,
+                id: espelhoId,
+                franchiseeId: franchiseeIdToUse,
                 name: itemName,
                 description: "",
                 price: rawUnit || itemPrice,
@@ -326,7 +366,7 @@ export async function processJotajaEvent(
       });
       // Espelho que já existe com outro nome (renomeado no JotaJá, ou nascido
       // com as opções no nome): corrige antes de gravar o pedido.
-      await Promise.all(espelhos.map((e) => corrigirNomeDoEspelho(e.id, e.nome, franchisee.id, "JotaJá")));
+      await Promise.all(espelhos.map((e) => corrigirNomeDoEspelho(e.id, e.nome, franchiseeIdToUse, "JotaJá")));
 
       // Totais — handles {value, currency} objects
       const rawTotal = orderData.total?.orderAmount ?? orderData.total?.subTotal ?? orderData.totalPrice ?? orderData.total;
@@ -728,7 +768,7 @@ export async function processJotajaEvent(
       // Auto-enfileira impressão térmica para novos pedidos do JotaJá
       try {
         const fullOrder = await prisma.customerOrder.findFirst({
-          where: { openDeliveryOrderId: orderId },
+          where: { openDeliveryOrderId: orderId, franchiseeId: franchiseeIdToUse },
           include: {
             items: {
               include: { menuProduct: { select: { id: true, name: true, isBeverage: true } } }
@@ -737,7 +777,7 @@ export async function processJotajaEvent(
         });
         if (fullOrder) {
           const { pushJobToPrintQueue } = await import("@/app/api/store/print-queue/route");
-          pushJobToPrintQueue(franchisee.id, fullOrder, (franchisee as any).storeName || "HAKIM RIO DAS OSTRAS");
+          pushJobToPrintQueue(franchiseeIdToUse, fullOrder, (franchisee as any).storeName || undefined);
         }
       } catch (printErr) {
         console.error("[Jotaja] Erro ao enfileirar auto-impressão:", printErr);
@@ -767,19 +807,21 @@ export async function processJotajaEvent(
         const newRank = STATUS_RANK[newStatus] || 0;
 
         if (newRank >= currentRank) {
-          const updateConditions: any[] = [
-            { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: { startsWith: `${orderId}_` } },
-          ];
-          if (targetFranchiseeId) {
-            updateConditions.push({ openDeliveryReference: orderId, franchiseeId: targetFranchiseeId });
-          }
+          // Só nesta loja (a da credencial).
+          const naLoja = {
+            franchiseeId: targetFranchiseeId,
+            OR: [
+              { openDeliveryOrderId: orderId },
+              { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+              { openDeliveryReference: orderId },
+            ],
+          };
           await (prisma.customerOrder as any).updateMany({
-            where: { OR: updateConditions } as any,
+            where: naLoja as any,
             data: { status: newStatus },
           });
           // NFC-e: lib/fiscal-momento decide se este status é a hora; sem esta linha a nota só saía pela varredura do cron.
-          import("./fiscal-automatico").then((m) => m.emitirNfceDosPedidos({ OR: updateConditions })).catch(() => {});
+          import("./fiscal-automatico").then((m) => m.emitirNfceDosPedidos(naLoja as any)).catch(() => {});
           return { action: "updated", orderId, message: `→ ${newStatus}` };
         } else {
           return { action: "skipped", orderId, message: `ignorado regresso de status ${existing?.status} → ${newStatus}` };

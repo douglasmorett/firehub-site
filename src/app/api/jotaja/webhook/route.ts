@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { processJotajaEvent } from "@/lib/processJotajaEvent";
 import { avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
+import { merchantDoEvento } from "@/lib/jotaja-loja";
 
 /**
  * POST /api/jotaja/webhook
@@ -70,84 +71,101 @@ export async function POST(req: NextRequest) {
     const events = Array.isArray(rawEvents) ? rawEvents : [rawEvents];
 
     after(async () => {
-      // Resolver storeId a partir do payload — tenta encontrar a loja dona dos pedidos
-      let resolvedStoreId: string | undefined;
-      try {
-        const firstEvent = events[0];
-        const merchantId = firstEvent?.merchant?.id || firstEvent?.metadata?.merchantId;
-        if (merchantId) {
-          const store = await prisma.user.findFirst({
+      // Cada evento vai para a loja que É o restaurante dele no JotaJá
+      // (`storeId` do evento) e é processado com a credencial DESSA loja. Antes
+      // a loja saía do 1º evento do lote, por um campo que a fila do JotaJá nem
+      // manda (merchant.id), e sem loja a chamada caía na credencial de
+      // reserva do servidor. Sem exatamente uma loja ligada com esse
+      // restaurante, o evento não é processado (fica na fila do JotaJá).
+      const lojaDoMerchant = new Map<string, string | null>();
+      const porLoja = new Map<string, any[]>();
+      for (const event of events) {
+        const merchantId = merchantDoEvento(event);
+        if (!merchantId) {
+          console.warn(`[Jotajá Webhook] ⚠️ evento ${event?.eventId || event?.id || "?"} sem o restaurante (storeId) — não processado`);
+          continue;
+        }
+        if (!lojaDoMerchant.has(merchantId)) {
+          const lojas = await prisma.user.findMany({
             where: {
               jotajaMerchantId: merchantId,
               jotajaConnected: true,
+              ownerId: null,
               NOT: { email: { startsWith: "deleted_" } },
             },
-            select: { id: true, ownerId: true },
-          });
-          if (store) resolvedStoreId = store.ownerId || store.id;
-        }
-        if (!resolvedStoreId) {
-          console.warn("[Jotajá Webhook] ⚠️ merchantId não encontrado no payload — processJotajaEvent resolverá via orderData.merchant.id");
-        }
-      } catch {}
-
-      const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
-      let created = 0, updated = 0, disputes = 0, cancelled = 0;
-
-      for (const event of events) {
-        const result = await processJotajaEvent(
-          event,
-          (path: string, opts?: RequestInit) => jotajaFetch(path, opts, resolvedStoreId),
-          (path: string, opts?: RequestInit) => jotajaMutate(path, opts, resolvedStoreId),
-          resolvedStoreId
-        );
-        console.log(`[Jotajá Webhook] ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
-
-        const eid = event.eventId || event.id;
-
-        // Só ackar com o pedido confirmado no banco: o ACK apaga o evento do
-        // feed em definitivo e o JotaJá não tem listagem para recuperá-lo.
-        let podeAckar = result.action !== "error";
-        if (podeAckar && event.orderId) {
-          const gravado = await prisma.customerOrder.findFirst({
-            where: {
-              OR: [
-                { openDeliveryOrderId: event.orderId },
-                { openDeliveryOrderId: { startsWith: `${event.orderId}_` } },
-              ],
-            } as any,
             select: { id: true },
+            take: 2,
           });
-          if (!gravado) {
-            podeAckar = false;
-            console.error(`[Jotajá Webhook] ⛔ SEM ACK ${event.orderId}: ${result.action} não gravou pedido (${result.message || "-"})`);
+          if (lojas.length !== 1) {
+            console.warn(`[Jotajá Webhook] ⚠️ restaurante ${merchantId}: ${lojas.length === 0 ? "nenhuma loja com o JotaJá ligado" : "mais de uma loja com esse restaurante"} — não processado`);
           }
+          lojaDoMerchant.set(merchantId, lojas.length === 1 ? lojas[0].id : null);
         }
-
-        if (podeAckar && eid) {
-          processedEvents.push({
-            id: eid,
-            orderId: event.orderId || "",
-            eventType: event.eventType || event.fullCode || event.code || "",
-          });
-        }
-        if (result.action === "created")  created++;
-        if (result.action === "updated")  updated++;
-        if (result.action === "dispute")  disputes++;
-        if (result.action === "cancelled") cancelled++;
+        const lojaId = lojaDoMerchant.get(merchantId);
+        if (!lojaId) continue;
+        porLoja.set(lojaId, [...(porLoja.get(lojaId) ?? []), event]);
       }
 
-      // Acknowledge
-      if (processedEvents.length > 0) {
-        try {
-          await jotajaMutate("/v1/events/acknowledgment", {
-            method: "POST",
-            body: JSON.stringify(processedEvents),
-          }, resolvedStoreId);
-        } catch { /* não crítico */ }
-      }
+      for (const [lojaId, eventosDaLoja] of porLoja) {
+        const processedEvents: { id: string; orderId: string; eventType: string }[] = [];
+        let created = 0, updated = 0, disputes = 0, cancelled = 0;
 
-      console.log(`[Jotajá Webhook] ${created} criados, ${updated} atualizados, ${disputes} disputas, ${cancelled} cancelados`);
+        for (const event of eventosDaLoja) {
+          const result = await processJotajaEvent(
+            event,
+            (path: string, opts?: RequestInit) => jotajaFetch(path, opts, lojaId),
+            (path: string, opts?: RequestInit) => jotajaMutate(path, opts, lojaId),
+            lojaId
+          );
+          console.log(`[Jotajá Webhook] ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
+
+          const eid = event.eventId || event.id;
+
+          // Só ackar com o pedido confirmado no banco: o ACK apaga o evento do
+          // feed em definitivo e o JotaJá não tem listagem para recuperá-lo.
+          // "ignorado" = pedido velho demais (lib/jotaja-loja.ts): sai sem entrar.
+          let podeAckar = result.action !== "error";
+          if (podeAckar && event.orderId && result.action !== "ignorado") {
+            const gravado = await prisma.customerOrder.findFirst({
+              where: {
+                OR: [
+                  { openDeliveryOrderId: event.orderId },
+                  { openDeliveryOrderId: { startsWith: `${event.orderId}_` } },
+                ],
+              } as any,
+              select: { id: true },
+            });
+            if (!gravado) {
+              podeAckar = false;
+              console.error(`[Jotajá Webhook] ⛔ SEM ACK ${event.orderId}: ${result.action} não gravou pedido (${result.message || "-"})`);
+            }
+          }
+
+          if (podeAckar && eid) {
+            processedEvents.push({
+              id: eid,
+              orderId: event.orderId || "",
+              eventType: event.eventType || event.fullCode || event.code || "",
+            });
+          }
+          if (result.action === "created")  created++;
+          if (result.action === "updated")  updated++;
+          if (result.action === "dispute")  disputes++;
+          if (result.action === "cancelled") cancelled++;
+        }
+
+        // Acknowledge — com a credencial da mesma loja
+        if (processedEvents.length > 0) {
+          try {
+            await jotajaMutate("/v1/events/acknowledgment", {
+              method: "POST",
+              body: JSON.stringify(processedEvents),
+            }, lojaId);
+          } catch { /* não crítico */ }
+        }
+
+        console.log(`[Jotajá Webhook] loja ${lojaId}: ${created} criados, ${updated} atualizados, ${disputes} disputas, ${cancelled} cancelados`);
+      }
     });
 
     return NextResponse.json({ ok: true, message: "Accepted for processing", events: events.length });
