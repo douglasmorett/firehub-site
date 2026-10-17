@@ -135,6 +135,8 @@ export async function POST(req: NextRequest) {
       customerAddress: p.cliente.endereco,
       status: "NOVO",
       paymentMethod: p.pagamento.texto,
+      // Mesmo "troco para" do webhook (lib/food99-pedido, trocoPara99).
+      ...(p.trocoPara ? { changeAmount: p.trocoPara } : {}),
       totalAmount: p.total,
       deliveryFee: p.taxaEntrega,
       // O import manual gravava só o total: o desconto do 99Food sumia do

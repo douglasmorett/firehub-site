@@ -578,6 +578,12 @@ export async function POST(req: NextRequest) {
                 // lojista aceitar, exatamente como sempre foi.
                 status: aceitaSozinho ? "ACEITO" : "NOVO",
                 paymentMethod: p.pagamento.texto,
+                // O "troco para" do dinheiro. A comanda, o painel e o WhatsApp
+                // do motoboy já imprimem "Troco para R$ X (levar R$ Y)" a
+                // partir de `changeAmount` — o 99 é que nunca gravava. Na
+                // Showrrascão (17/10/2026) o motoboy saiu sem os R$ 27,77 do
+                // troco para R$ 100 e o cliente cobrou na porta.
+                ...(p.trocoPara ? { changeAmount: p.trocoPara } : {}),
                 totalAmount: p.total,
                 deliveryFee: p.taxaEntrega,
                 // Desconto do 99Food (cupom, promoção, entrega) registrado ao
