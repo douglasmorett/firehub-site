@@ -67,6 +67,8 @@ interface MenuProduct {
   name: string;
   category: string;
   price: number;
+  /** false = pausado pelo estoque (os pausados na mão nem vêm na lista). */
+  active?: boolean;
   recipeItems: Array<{
     id: string;
     stockItemId: string;
@@ -1331,6 +1333,11 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                         <div>
                           <span className="prod-category">{prod.category}</span>
                           <h3>{prod.name}</h3>
+                          {prod.active === false && (
+                            <span style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 800, color: "#B45309", background: "#FEF3C7", padding: "2px 8px", borderRadius: 999 }}>
+                              Pausado pelo estoque
+                            </span>
+                          )}
                         </div>
                         <button 
                           className="btn-configure"

@@ -75,6 +75,20 @@ async function marcasDaLoja(franchiseeId: string): Promise<Map<string, string[]>
   return new Map(r.map((m) => [m.menuProductId, Array.isArray(m.insumos) ? (m.insumos as unknown[]).map(String) : []]));
 }
 
+/**
+ * Os produtos que o estoque pausou agora (marca gravada). A aba Fichas técnicas
+ * lista só os ativos e os mostra com etiqueta, senão o produto pausado sumia de
+ * lá (Douglas, 17/10/2026). Nunca lança: sem tabela, lista vazia.
+ */
+export async function produtosPausadosPeloEstoque(franchiseeId: string): Promise<string[]> {
+  try {
+    if (!franchiseeId || !(await garantirEstruturaDaPausaPeloEstoque())) return [];
+    return [...(await marcasDaLoja(franchiseeId)).keys()];
+  } catch {
+    return [];
+  }
+}
+
 /** O lojista decidiu na mão (painel ou Bill): o produto deixa de ser "pausado pelo estoque". */
 export async function esquecerPausaPeloEstoque(franchiseeId: string, produtoIds: string[]): Promise<void> {
   if (!franchiseeId || !produtoIds.length) return;

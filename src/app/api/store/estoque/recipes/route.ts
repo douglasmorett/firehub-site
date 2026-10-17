@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizarUnidade, converter } from "@/lib/unidades";
-import { conferirPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
+import { conferirPausaPeloEstoque, produtosPausadosPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 
 // GET: Fetch the recipe for a product and the available stock items
 export async function GET(req: Request) {
@@ -52,10 +52,13 @@ export async function GET(req: Request) {
     // Se não informou ID de produto, retorna todos os produtos ativos reais do cardápio com suas receitas
     const junkCategories = ["IFOOD", "iFood", "Jotajá", "JOTAJA", "Jotaja", "ONLINE", "COMPLEMENTO", "COMPLEMENTOS", "OPCIONAL", "OPCIONAIS", "ADICIONAL", "ADICIONAIS", "INSUMO", "INSUMOS", "OCULTO"];
     
+    // Ativos + os que o estoque pausou: esses aparecem com a etiqueta "Pausado
+    // pelo estoque". Os pausados na mão continuam fora, como sempre.
+    const pausadosPeloEstoque = await produtosPausadosPeloEstoque(franchiseeId);
     const menuProducts = await prisma.menuProduct.findMany({
       where: {
         franchiseeId,
-        active: true,
+        OR: [{ active: true }, { id: { in: pausadosPeloEstoque } }],
         category: {
           notIn: junkCategories
         },
