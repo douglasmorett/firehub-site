@@ -1,6 +1,14 @@
 import { prisma } from "@/lib/prisma";
 
 /**
+ * A coluna de quem abriu o caixa (a lista INSTRUCOES_COLUNAS_DO_SCHEMA a
+ * aplica no boot). Exportada e no topo porque a abertura do caixa a repete na
+ * hora quando a gravação falha por falta dela (lib/quem-abriu-o-caixa.ts) — o
+ * mesmo "tenta criar na hora" da sangria (api/cash-session/movimentacao).
+ */
+export const COLUNA_QUEM_ABRIU_O_CAIXA = `ALTER TABLE "CashSession" ADD COLUMN IF NOT EXISTS "abertoPor" JSONB`;
+
+/**
  * Garante as colunas de PREÇO POR CANAL antes de o servidor aceitar tráfego.
  *
  * ── POR QUE ISTO EXISTE, SE JÁ HÁ /api/admin/colunas-preco ──────────────────
@@ -959,6 +967,13 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "FranchiseeBillingCycle" ADD COLUMN IF NOT EXISTS "paidAt" TIMESTAMP(3)`,
   `ALTER TABLE "FranchiseeBillingCycle" ADD COLUMN IF NOT EXISTS "paidValue" DOUBLE PRECISION`,
   `ALTER TABLE "FranchiseeBillingCycle" ADD COLUMN IF NOT EXISTS "paidNetValue" DOUBLE PRECISION`,
+
+  // ── Caixa ──
+  // Quem abriu o caixa (lib/quem-abriu-o-caixa.ts): o topo do "Movimentar
+  // caixa" mostra o nome e se é dono, equipe ou suporte (Allan, Delícia de
+  // Casa, 17/10/2026). Nulável: caixa aberto antes disso fica sem — a tela diz
+  // "—" — e a abertura nunca depende dela (a gravação é à parte, em try/catch).
+  COLUNA_QUEM_ABRIU_O_CAIXA,
 
   // ── Tabelas que também nasceram nesta janela ──
   // Se a tabela não existir no banco desta loja, estas seis falham sozinhas e

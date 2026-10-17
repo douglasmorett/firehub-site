@@ -16,6 +16,9 @@ import { secoesDoFechamento } from "@/lib/secoes-do-fechamento";
 import { conferirFechamento, lerContado, mensagemDoCaixaFechado } from "@/lib/conferencia-do-caixa";
 import { formaDoPedido, formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
 import { lerPagamentos } from "@/lib/pagamentos-da-mesa";
+// O resumo do caixa aberto (topo do "Movimentar caixa") e quem abriu.
+import { quemEstaAbrindo, resumoDoCaixaAberto } from "@/lib/resumo-do-caixa-aberto";
+import { gravarQuemAbriu, lerQuemAbriuDoBanco } from "@/lib/quem-abriu-o-caixa";
 
 async function getUser(session: any) {
   const u = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
@@ -112,7 +115,25 @@ export async function GET() {
   });
   const ultimoFechamento = ultimoCaixa?.closingCash != null ? ultimoCaixa : null;
 
+  // ── O RESUMO DO CAIXA ABERTO (topo do "Movimentar caixa") ─────────────
+  // Rearranjo do MESMO `dados` que a conferência acima usa — nenhuma soma
+  // nova (lib/resumo-do-caixa-aberto.ts): o que o menu diz no meio do turno é
+  // o que o fechamento vai cobrar. O fuso é o da LOJA (o funcionário logado
+  // não tem fuso próprio), para a hora da abertura sair como na parede.
+  let resumoDoCaixa: (ReturnType<typeof resumoDoCaixaAberto> & { fuso: string }) | null = null;
+  if (openSession && detalhe) {
+    const [abertoPor, loja] = await Promise.all([
+      lerQuemAbriuDoBanco(openSession.id, user.targetId),
+      prisma.user.findUnique({ where: { id: user.targetId }, select: { storeTimezone: true } }).catch(() => null),
+    ]);
+    resumoDoCaixa = {
+      ...resumoDoCaixaAberto({ openedAt: openSession.openedAt, openingAmount: openSession.openingAmount, abertoPor }, { ...dados, detalhe }),
+      fuso: loja?.storeTimezone || FUSO_PADRAO,
+    };
+  }
+
   return NextResponse.json({
+    resumoDoCaixa,
     session: openSession,
     expected,
     // Quanto do pago online (já dentro de `expected.ifoodOnline`) veio do site
@@ -266,6 +287,24 @@ export async function POST(req: Request) {
   const cashSession = await prisma.cashSession.create({
     data: { franchiseeId: user.targetId, openingAmount: Number(openingAmount), status: "OPEN" },
   });
+
+  // ── QUEM ABRIU ─────────────────────────────────────────────────────────
+  // O topo do "Movimentar caixa" mostra quem abriu e quando (Allan, Delícia
+  // de Casa, 17/10/2026). À parte e sem lançar (lib/quem-abriu-o-caixa.ts): o
+  // caixa já está aberto aqui, e falhar a gravação só deixa o "quem" em "—".
+  // O suporte do FireHub entrando como a loja grava "Suporte FireHub", não o
+  // nome da loja — mesma regra da correção do caixa fechado.
+  {
+    const impersonatedBy = (session.user as any)?.impersonatedBy as string | null | undefined;
+    const suporte = impersonatedBy
+      ? await prisma.user.findUnique({ where: { id: impersonatedBy }, select: { name: true } }).catch(() => null)
+      : null;
+    await gravarQuemAbriu(
+      cashSession.id,
+      user.targetId,
+      quemEstaAbrindo(user, impersonatedBy ? suporte || { name: null } : null),
+    );
+  }
 
   // Marcar caixa como aberto no user e no owner
   await prisma.user.updateMany({
