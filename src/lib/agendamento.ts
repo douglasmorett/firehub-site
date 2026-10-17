@@ -299,6 +299,26 @@ export function textoDoAgendamento(instante: Date | string, timezone?: string | 
 }
 
 /**
+ * A marca que abre as observações do pedido agendado: "[📅 AGENDADO para sáb
+ * 17/10 às 19:30]". Sai na comanda, no painel e na memória do robô. O site
+ * (api/customer-order) e o robô do WhatsApp (lib/agendamento-do-robo.ts) gravam
+ * a MESMA marca — por isso ela mora aqui.
+ */
+export function marcaDoAgendamento(instante: Date | string, timezone?: string | null): string {
+  return `[📅 AGENDADO para ${textoDoAgendamento(instante, timezone)}]`;
+}
+
+/**
+ * Os campos do pedido agendado, do jeito que a rota do site grava: o horário
+ * escolhido e a marca de que foi o CLIENTE que agendou. É `agendado` que põe o
+ * pedido em Pedidos › Agendamentos até `liberarAntesMin` antes do horário
+ * (`aindaGuardado`), na cozinha pela hora marcada e na previsão como AGENDADO.
+ */
+export function camposDoPedidoAgendado(instante: Date): { scheduledDatetime: Date; agendado: true } {
+  return { scheduledDatetime: instante, agendado: true };
+}
+
+/**
  * O pedido agendado ainda está "guardado" (em Agendamentos, fora da cozinha)?
  * Sai quando falta `liberarAntesMin` para o horário.
  */

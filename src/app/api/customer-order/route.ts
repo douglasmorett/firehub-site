@@ -7,7 +7,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { motivoForaDoCardapio, textoDoHorario } from "@/lib/cardapio-interno";
-import { conferirAgendamento, lerConfigDeAgendamento, textoDoAgendamento } from "@/lib/agendamento";
+import { camposDoPedidoAgendado, conferirAgendamento, lerConfigDeAgendamento, marcaDoAgendamento } from "@/lib/agendamento";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
 import { opcoesBloqueadasEscolhidas } from "@/lib/preco-combo";
@@ -838,7 +838,7 @@ export async function POST(req: Request) {
     }
     if (instanteAgendado) {
       // Na comanda, no painel e para o robô: o pedido é para DEPOIS.
-      orderNotes = `[📅 AGENDADO para ${textoDoAgendamento(instanteAgendado, franchisee.storeTimezone)}] ${orderNotes}`.trim();
+      orderNotes = `${marcaDoAgendamento(instanteAgendado, franchisee.storeTimezone)} ${orderNotes}`.trim();
     }
     const finalNotes = orderNotes || null;
 
@@ -918,7 +918,7 @@ export async function POST(req: Request) {
         kdsProductionAt: initialKdsProductionAt,
         // O horário que o cliente escolheu e a marca de que foi ele que agendou
         // (lib/agendamento.ts). Fica em Agendamentos até a hora de liberar.
-        ...(instanteAgendado ? { scheduledDatetime: instanteAgendado, agendado: true } : {}),
+        ...(instanteAgendado ? camposDoPedidoAgendado(instanteAgendado) : {}),
         // O PONTO QUE DECIDIU A TAXA FICA NO PEDIDO — o pino/GPS do cliente,
         // ou o ponto que o mapa achou para o endereço digitado.
         //

@@ -67,6 +67,11 @@ import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
 import { lerRespostasProntas, blocoDasRespostasProntas, textoDasRespostasProntas, extrairMarcasDeRespostaPronta, envioDasRespostasProntas, extrairFichaPreenchida, regraDaReservaPelaFicha } from "./respostas-prontas";
 import { feriadoLocal, linhaDoFeriadoParaORobo } from "./holidays";
+import { lerConfigDeAgendamento, textoDoAgendamento } from "./agendamento";
+import {
+  agendamentoParaGravar, blocoDoAgendamentoParaORobo, decidirAgendamento, instrucaoDaLojaComAgendamento, lerAgendadoDaTag,
+  fraseDoSoAgendado, opcoesEmTexto, type AgendadoNaTag, type LojaQueAgenda,
+} from "./agendamento-do-robo";
 
 /**
  * Chave do Gemini que o robô vai usar, na ordem: loja → ambiente → conta matriz.
@@ -185,6 +190,8 @@ export async function processChatbotAI(
       storeLoyalty: true,
       notificationPhone: true,
       cashOpen: true,
+      // Pedido agendado (lib/agendamento.ts): mora na linha do DONO, como o resto.
+      agendamentoConfig: true,
     },
   });
 
@@ -213,7 +220,7 @@ export async function processChatbotAI(
         storeName: true, storePhone: true, storeAddress: true, storeLatLng: true, storeTimezone: true, city: true, slug: true,
         storeHours: true, storePause: true, storeOpen: true, storeDeliveryOnly: true,
         deliveryConfig: true, deliveryZones: true, deliveryZoneType: true, storeCoupons: true, storeLoyalty: true,
-        chatbotConfig: true, notificationPhone: true,
+        chatbotConfig: true, notificationPhone: true, agendamentoConfig: true,
       },
     });
     if (dono) Object.assign(user, dono);
@@ -729,6 +736,22 @@ export async function processChatbotAI(
           : "A loja está fechada neste momento (o horário de funcionamento não está cadastrado no sistema).",
       }
     : estadoBrutoDaLoja;
+
+  // ── PEDIDO AGENDADO (lib/agendamento-do-robo.ts) ──────────────────────────
+  //
+  // A mesma configuração, os mesmos horários e a mesma conferência do site
+  // (lib/agendamento.ts). Só com o módulo de pedidos ligado: sem ele o robô
+  // não anota pedido nenhum e quem agenda é o checkout do site.
+  const lojaQueAgenda: LojaQueAgenda = {
+    config: lerConfigDeAgendamento((user as any).agendamentoConfig),
+    storeHours: user.storeHours,
+    storePause: (user as any).storePause,
+    timezone: user.storeTimezone,
+  };
+  const roboAgenda = aiOrderingEnabled && lojaQueAgenda.config.ativo;
+  const instrucaoDaSituacao = (roboAgenda ? instrucaoDaLojaComAgendamento(estadoAtualDaLoja, lojaQueAgenda) : null)
+    ?? instrucaoDeHorario(estadoAtualDaLoja);
+  const blocoDoAgendamento = roboAgenda ? blocoDoAgendamentoParaORobo(lojaQueAgenda) : "";
 
   // Separa o catálogo em: promoções de hoje, de amanhã, cronograma semanal,
   // combos e itens avulsos.
@@ -1251,7 +1274,7 @@ ${resumoEmTexto(resumo, user.storeTimezone)}
     // entra antes da linha "DAQUI PARA BAIXO: ESTA CONVERSA". Nem um número.
     // (O topo pode mudar com o estado da loja — aberta, fechada, modo dono —,
     // que dura horas.)
-    const systemPrompt = `${ownerContext}\n${blockFinancialsContext}\n${ownerContext ? "" : instrucaoDeHorario(estadoAtualDaLoja)}\n\n${identidade}
+    const systemPrompt = `${ownerContext}\n${blockFinancialsContext}\n${ownerContext ? "" : instrucaoDaSituacao}\n\n${identidade}
 
 ${regrasDoRobo({
   // As regras de conduta, uma vez só e sem gritaria (lib/regras-do-robo.ts):
@@ -1372,7 +1395,7 @@ ${availableCouponsText || "NENHUM CUPOM DISPONÍVEL NO MOMENTO."}
 
 NOSSO CARDÁPIO COMPLETO DA LOJA:
 ${catalogSummary}
-${customPrompt ? `\nINSTRUÇÕES EXTRAS E PROMOÇÕES DA LOJA: ${customPrompt}\n` : ""}${blocoDasRespostasProntas(respostasProntas)}
+${customPrompt ? `\nINSTRUÇÕES EXTRAS E PROMOÇÕES DA LOJA: ${customPrompt}\n` : ""}${blocoDasRespostasProntas(respostasProntas)}${blocoDoAgendamento ? `\n${blocoDoAgendamento}\n` : ""}
 COMO LER A CONVERSA: a primeira mensagem do usuário é um bloco "════ CONTEXTO DESTA CONVERSA ════" montado pelo sistema (situação da loja agora, dados do cliente, pedidos dele, memória do pedido em andamento, validação do endereço no mapa) — não é fala do cliente. É a fonte da verdade sobre ele: use-o, mas NUNCA o repita, cite ou mencione, e não o trate como novidade: o que o histórico mostra que você já disse (nome, cupom, link, horário) não se diz de novo. Depois vem a conversa de verdade, e a última mensagem é o que o cliente acabou de dizer.`;
 
       // ── O QUE É DA LOJA FICA NO SISTEMA; O QUE É DESTA CONVERSA VAI NA MENSAGEM ──
@@ -1948,6 +1971,8 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                   lojaAberta: estadoAtualDaLoja.aberta,
                   textoDoHorario: estadoAtualDaLoja.texto,
                   lojaSemConexao: estadoAtualDaLoja.instabilidade === true,
+                  // Pedido agendado: a mesma regra do site (lib/agendamento-do-robo.ts).
+                  agendamento: roboAgenda ? lojaQueAgenda : undefined,
                   loja: user,
                   aceitaRetirada,
                   // O ponto do aparelho do cliente e se o robô já pediu por ele:
@@ -2031,6 +2056,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                 endereco: gravado.customerAddress,
                 previsao: previsao ? new Date(previsao.em) : null,
                 fuso: (user as any).storeTimezone,
+                agendadoPara: resultadoDoSync.agendadoPara ?? null,
                 cupom: resultadoDoSync.cupom ?? null,
                 cupomRecusado: resultadoDoSync.cupomRecusado ?? null,
                 cashbackUsado: Number(gravado.cashbackUsed) || 0,
@@ -2098,6 +2124,9 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           // cupom. Só quando a mensagem fala de total — "anotado, mais algo?"
           // não ganha linha de cupom a cada item.
           cleanText += mensagemDoCupom(resultadoDoSync, cleanText, false);
+          // Horário que não vale (lib/agendamento-do-robo.ts): o rascunho foi
+          // gravado sem ele, e o cliente lê as opções antes de confirmar.
+          if (resultadoDoSync.avisoDoAgendamento) cleanText += `\n\n📅 ${resultadoDoSync.avisoDoAgendamento}`;
           // O modelo não calcula o cashback (o prompt proíbe): quando o resumo
           // fala de total, o valor exato vem daqui, do que foi gravado.
           const usado = resultadoDoSync.cashbackUsado || 0;
@@ -2306,6 +2335,10 @@ type SyncResultado =
       /** O cliente fechou, mas a loja confere cada pedido do robô: ficou como
        *  rascunho esperando o aceite (lib/finalizar-rascunho.ts). */
       aguardandoConferencia?: boolean;
+      /** Pedido AGENDADO: "sáb 17/10 às 19:30" no relógio da loja (lib/agendamento.ts). */
+      agendadoPara?: string | null;
+      /** Rascunho com horário que não vale: gravado sem ele, e isto vai para o cliente. */
+      avisoDoAgendamento?: string;
     }
   | {
       gravado: false;
@@ -2403,6 +2436,7 @@ async function syncAiOrderToDatabase({
   textosDoCliente,
   conferirAntes,
   retiradaPedidaPeloCliente,
+  agendamento,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -2445,56 +2479,14 @@ async function syncAiOrderToDatabase({
   conferirAntes?: boolean;
   /** O cliente falou em retirar/buscar? null = não dá para saber (áudio) e não trava. */
   retiradaPedidaPeloCliente?: boolean | null;
+  /**
+   * A loja aceita pedido agendado e o robô anota pedido (lib/agendamento-do-robo.ts).
+   * Ausente = a loja não agenda: o campo "agendadoPara" da tag é ignorado.
+   */
+  agendamento?: LojaQueAgenda;
 }): Promise<SyncResultado> {
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
-
-  // ── LOJA FECHADA NÃO RECEBE PEDIDO ────────────────────────────────────────
-  //
-  // A regra está no prompt, mas prompt não é garantia — mesma lição do pedido
-  // mínimo e do "pedido confirmado" que nunca foi gravado. Com a loja fechada,
-  // o que entrava era um pedido que ninguém ia preparar: some no meio da noite
-  // e o cliente só descobre no dia seguinte.
-  //
-  // Rascunho passa: o cliente pode ir montando enquanto conversa. O que não
-  // passa é FINALIZAR — e é o `isFinal` que decide, mais abaixo, então aqui a
-  // checagem olha o mesmo sinal do payload.
-  const statusDoPayload = String(payload?.status || "").toUpperCase().replace(/_/g, "");
-  const querFinalizar = payload?.finalized === true || statusDoPayload === "NOVO" || statusDoPayload === "ACEITO" || statusDoPayload === "FINALIZADO";
-  if (lojaAberta === false && querFinalizar) {
-    console.warn(
-      `[Chatbot AI Order Sync] 🕐 Pedido recusado: loja ${lojaSemConexao ? "SEM CONEXÃO" : "FECHADA"}. ` +
-      `Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
-    );
-    // Sem conexão a loja está no horário: "estamos fechados, volte no
-    // horário" mandaria embora quem pode pedir daqui a cinco minutos.
-    if (lojaSemConexao) {
-      return {
-        gravado: false,
-        motivo: "a loja está sem conexão agora (instabilidade no sistema)",
-        regraDeNegocio: true,
-        mensagemParaOCliente:
-          `Estamos com uma instabilidade no sistema agora e não consigo registrar o pedido. 🙏\n\n` +
-          `Volte em alguns minutos, por favor, que eu anoto certinho! 😊`,
-      };
-    }
-    return {
-      gravado: false,
-      motivo: textoDoHorario
-        ? `a loja está fechada agora (${textoDoHorario})`
-        : "a loja está fechada agora",
-      // Não é falha técnica: dizer "tive um probleminha no sistema" seria
-      // mentir de novo, e chamar um atendente às 3h da manhã para avisar que a
-      // loja está fechada é o oposto de ajudar.
-      regraDeNegocio: true,
-      mensagemParaOCliente:
-        `Ihhh, no momento a gente está fechado! 😴 ${textoDoHorario || ""}
-
-` +
-        `Não consigo registrar o pedido agora, mas posso te adiantar tudo sobre o cardápio ` +
-        `por aqui — aí é só voltar no horário que eu anoto certinho! 😊`.trim(),
-    };
-  }
 
   // Formatar número de telefone de forma numérico limpa (ex: +55 (22) 99823-2027 ou (22) 99823-2027)
   let formattedCustomerPhone = "";
@@ -2546,6 +2538,87 @@ async function syncAiOrderToDatabase({
   const candidatosDoCliente = await pedidosQueATagPodeTocar(franchiseeId, phoneClean, agoraDoSync);
   /** O mais recente deles: serve ao nome e ao cancelamento, antes de existirem itens. */
   const alvoProvavel = candidatosDoCliente[0] || null;
+
+  // ── O HORÁRIO QUE ESTE PEDIDO JÁ TEM (pedido agendado) ────────────────────
+  //
+  // A tag que não repete "agendadoPara" herda o horário do pedido que ela
+  // toca: o rascunho desta conversa ou o pedido enviado que ela altera.
+  const agendadoDaTag: AgendadoNaTag = agendamento ? lerAgendadoDaTag(payload, agendamento.timezone) : { tipo: "ausente" };
+  const alvoDoAgendamento: any = !agendamento
+    ? null
+    : alteraPedidoDaTag != null && String(alteraPedidoDaTag).trim() !== ""
+      ? candidatosDoCliente.find((p) => String(p.dailyOrderNumber ?? "") === String(alteraPedidoDaTag).replace(/\D/g, "")) || null
+      : candidatosDoCliente.find((p) => String(p.status).toUpperCase() === "CRIANDO_IA") || null;
+  const agendamentoHerdado = alvoDoAgendamento?.agendado === true && alvoDoAgendamento.scheduledDatetime
+    ? { instante: new Date(alvoDoAgendamento.scheduledDatetime), jaEnviado: String(alvoDoAgendamento.status).toUpperCase() !== "CRIANDO_IA" }
+    : null;
+  const opcoesDoAgendamento = agendamento ? opcoesEmTexto(agendamento) : "";
+
+  // ── LOJA FECHADA NÃO RECEBE PEDIDO ────────────────────────────────────────
+  //
+  // A regra está no prompt, mas prompt não é garantia — mesma lição do pedido
+  // mínimo e do "pedido confirmado" que nunca foi gravado. Com a loja fechada,
+  // o que entrava era um pedido que ninguém ia preparar: some no meio da noite
+  // e o cliente só descobre no dia seguinte.
+  //
+  // Rascunho passa: o cliente pode ir montando enquanto conversa. O que não
+  // passa é FINALIZAR — e é o `isFinal` que decide, mais abaixo, então aqui a
+  // checagem olha o mesmo sinal do payload.
+  const statusDoPayload = String(payload?.status || "").toUpperCase().replace(/_/g, "");
+  const querFinalizar = payload?.finalized === true || statusDoPayload === "NOVO" || statusDoPayload === "ACEITO" || statusDoPayload === "FINALIZADO";
+  //
+  // PEDIDO AGENDADO PASSA (lib/agendamento-do-robo.ts): é para quando a loja
+  // estiver aberta, como na rota do site. O horário é conferido mais abaixo,
+  // com o tipo do pedido já decidido; se ele não valer, nada fecha.
+  const recusaDaLojaFechada = (): SyncResultado => {
+    console.warn(
+      `[Chatbot AI Order Sync] 🕐 Pedido recusado: loja ${lojaSemConexao ? "SEM CONEXÃO" : "FECHADA"}. ` +
+      `Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
+    );
+    // Sem conexão a loja está no horário: "estamos fechados, volte no
+    // horário" mandaria embora quem pode pedir daqui a cinco minutos.
+    if (lojaSemConexao) {
+      return {
+        gravado: false,
+        motivo: "a loja está sem conexão agora (instabilidade no sistema)",
+        regraDeNegocio: true,
+        mensagemParaOCliente:
+          `Estamos com uma instabilidade no sistema agora e não consigo registrar o pedido. 🙏\n\n` +
+          `Volte em alguns minutos, por favor, que eu anoto certinho! 😊`,
+      };
+    }
+    // Loja "só agendado" (encomenda): fechada ou aberta, para agora não existe —
+    // a frase é a mesma da loja aberta, com as opções.
+    if (agendamento?.config.soAgendado) {
+      return {
+        gravado: false,
+        motivo: "a loja só aceita pedido agendado e está fechada agora",
+        regraDeNegocio: true,
+        mensagemParaOCliente: fraseDoSoAgendado(agendamento),
+      };
+    }
+    return {
+      gravado: false,
+      motivo: textoDoHorario
+        ? `a loja está fechada agora (${textoDoHorario})`
+        : "a loja está fechada agora",
+      // Não é falha técnica: dizer "tive um probleminha no sistema" seria
+      // mentir de novo, e chamar um atendente às 3h da manhã para avisar que a
+      // loja está fechada é o oposto de ajudar.
+      regraDeNegocio: true,
+      mensagemParaOCliente:
+        `Ihhh, no momento a gente está fechado! 😴 ${textoDoHorario || ""}
+
+` +
+        (opcoesDoAgendamento
+          ? `Pra agora não consigo registrar, mas dá pra deixar AGENDADO! 📅 Os horários livres são: ${opcoesDoAgendamento}. Qual fica melhor pra você?`
+          : `Não consigo registrar o pedido agora, mas posso te adiantar tudo sobre o cardápio ` +
+            `por aqui — aí é só voltar no horário que eu anoto certinho! 😊`).trim(),
+    };
+  };
+  const pedeAgendado = !!agendamento &&
+    (agendadoDaTag.tipo === "horario" || agendadoDaTag.tipo === "invalido" || (agendadoDaTag.tipo === "ausente" && !!agendamentoHerdado));
+  if (lojaAberta === false && querFinalizar && !pedeAgendado) return recusaDaLojaFechada();
 
   // Extrai nome real do cliente se o robô capturou no payload da IA
   const payloadName = (payload.customerName || payload.name || "").trim();
@@ -3093,7 +3166,10 @@ async function syncAiOrderToDatabase({
   // fechou um balcão para quem esperava entrega. Pedido já enviado sendo
   // alterado não passa por aqui: o tipo dele a loja já recebeu.
   const ehPedidoNovo = !existingDraft || String(existingDraft.status).toUpperCase() === "CRIANDO_IA";
-  if (isFinal && ehPedidoNovo && deliveryType === "RETIRADA" && retiradaPedidaPeloCliente === false) {
+  // Loja "só agendado" que só agenda RETIRADA: não existe entrega, então não há
+  // o que perguntar (Pizza Vedana) — a pergunta só atrasaria o fechamento.
+  const soExisteRetirada = !!agendamento && agendamento.config.soAgendado && !agendamento.config.entrega;
+  if (isFinal && ehPedidoNovo && deliveryType === "RETIRADA" && retiradaPedidaPeloCliente === false && !soExisteRetirada) {
     console.warn(
       `[Chatbot AI Order Sync] 🛑 Fechamento como RETIRADA sem o cliente ter pedido retirada. Loja=${franchiseeId} tel=${phoneClean.slice(-4)} endereço="${String(payload.address || "")}"`
     );
@@ -3106,6 +3182,31 @@ async function syncAiOrderToDatabase({
         : "Pra fechar, me passa o endereço de entrega com rua, número e bairro? 😊",
     };
   }
+
+  // ── PEDIDO AGENDADO: A MESMA CONFERÊNCIA DO SITE ─────────────────────────
+  //
+  // O horário da tag (ou o herdado do rascunho) passa por `conferirAgendamento`
+  // com o tipo do pedido já decidido — dia aceito, horário da lista,
+  // antecedência, dias à frente, férias, entrega/retirada. Loja "só agendado"
+  // não fecha pedido para agora. Fora da regra, nada fecha e o cliente recebe
+  // as opções livres.
+  const decisaoDoAgendamento = agendamento
+    ? decidirAgendamento({ loja: agendamento, deliveryType, daTag: agendadoDaTag, querFinalizar: isFinal, herdado: agendamentoHerdado })
+    : ({ ok: true, instante: null } as const);
+  if (!decisaoDoAgendamento.ok) {
+    console.warn(`[Chatbot AI Order Sync] 📅 Agendamento recusado: ${decisaoDoAgendamento.motivo}. Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`);
+    return {
+      gravado: false,
+      motivo: decisaoDoAgendamento.motivo,
+      regraDeNegocio: true,
+      mensagemParaOCliente: decisaoDoAgendamento.mensagemParaOCliente,
+    };
+  }
+  const instanteAgendado = decisaoDoAgendamento.instante;
+  const avisoDoAgendamento = "aviso" in decisaoDoAgendamento ? decisaoDoAgendamento.aviso : undefined;
+  // Para agora com a loja fechada continua sem fechar (a trava lá de cima
+  // deixou passar porque a tag falava em agendamento).
+  if (lojaAberta === false && isFinal && !instanteAgendado) return recusaDaLojaFechada();
 
   // ── ONDE ESTÁ O CLIENTE ─────────────────────────────────────────────────
   // A localização que ele mandou nesta conversa (📎 → Localização); senão a
@@ -3650,7 +3751,9 @@ async function syncAiOrderToDatabase({
     isFinal && conferirAntes === true && (!existingDraft || String(existingDraft.status).toUpperCase() === "CRIANDO_IA");
   const fechaDeVerdade = isFinal && !segurarParaConferir;
   const statusParaGravar = segurarParaConferir ? "CRIANDO_IA" : finalStatus;
-  const notasParaGravar = segurarParaConferir ? marcarAguardandoLoja(notesText, MOTIVO_CONFERIR_PEDIDO) : notesText;
+  // Pedido agendado: os campos e a marca "[📅 AGENDADO para …]" iguais aos do site.
+  const doAgendamento = agendamentoParaGravar(instanteAgendado, agendamento?.timezone, notesText);
+  const notasParaGravar = segurarParaConferir ? marcarAguardandoLoja(doAgendamento.notas, MOTIVO_CONFERIR_PEDIDO) : doAgendamento.notas;
   // Já estava esperando a conferência e a tag veio igual (o "obrigado"): o
   // cliente já recebeu o resumo, não manda de novo.
   const assinaturaDosItens = (itens: any[]) =>
@@ -3721,6 +3824,13 @@ async function syncAiOrderToDatabase({
         // o item a mais ficavam só no painel, e a cozinha seguia com a comanda
         // velha. Zerar faz a comanda inteira sair de novo, corrigida.
         ...(existingDraft.status !== "CRIANDO_IA" ? { printedAt: null } : {}),
+        // Agendado: o horário que vale agora. O cliente trocou para "agora" (ou
+        // o horário do rascunho venceu): sai de Agendamentos.
+        ...(instanteAgendado
+          ? doAgendamento.campos
+          : agendamento && (existingDraft as any).agendado === true
+            ? { agendado: false, scheduledDatetime: null }
+            : {}),
         items: {
           create: orderItemsData.map(itemParaOBanco),
         },
@@ -3763,6 +3873,10 @@ async function syncAiOrderToDatabase({
         source: "WHATSAPP_IA",
         status: statusParaGravar,
         notes: notasParaGravar,
+        // O horário que o cliente escolheu e a marca de que foi ele que agendou —
+        // os mesmos campos do site (lib/agendamento.ts). Fica em Agendamentos
+        // até `liberarAntesMin` antes da hora.
+        ...doAgendamento.campos,
         ...(fechaDeVerdade && finalDailyNumber ? { dailyOrderNumber: finalDailyNumber } : {}),
         items: {
           create: orderItemsData.map(itemParaOBanco),
@@ -3822,6 +3936,8 @@ async function syncAiOrderToDatabase({
     cashbackUsado,
     cashbackGerado,
     alterado: Boolean(existingDraft && existingDraft.status !== "CRIANDO_IA"),
+    agendadoPara: instanteAgendado ? textoDoAgendamento(instanteAgendado, agendamento?.timezone) : null,
+    ...(avisoDoAgendamento ? { avisoDoAgendamento } : {}),
   };
 }
 

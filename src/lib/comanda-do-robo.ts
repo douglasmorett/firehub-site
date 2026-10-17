@@ -47,6 +47,12 @@ export type DadosDaComanda = {
   endereco?: string | null;
   /** Hora em que o pedido deve chegar (criação + tempo da área). */
   previsao?: Date | null;
+  /**
+   * Pedido AGENDADO (lib/agendamento.ts): "sáb 17/10 às 19:30", no relógio da
+   * loja. Muda o título (não está "em produção" — espera em Agendamentos) e
+   * toma o lugar da previsão.
+   */
+  agendadoPara?: string | null;
   fuso?: string | null;
   cupom?: { code: string; desconto: number; freteGratis: boolean } | null;
   /** Motivo de um cupom que o cliente pediu e o sistema recusou. */
@@ -98,6 +104,12 @@ function horaNoFuso(d: Date, fuso: string | null | undefined): string {
 function titulo(d: DadosDaComanda): string {
   const status = String(d.status || "").toUpperCase();
   if (d.alterado) return "✏️ Pronto! Seu pedido foi *ATUALIZADO*.";
+  const agendado = String(d.agendadoPara || "").trim();
+  if (agendado) {
+    return status === "NOVO"
+      ? `📅 Recebemos seu pedido *AGENDADO* para ${agendado}! Assim que a loja aceitar, ele fica reservado pra esse horário.`
+      : `📅 Seu pedido está *AGENDADO* para ${agendado}! ✅`;
+  }
   if (status === "ACEITO" || status === "PREPARANDO" || status === "EM_PREPARO") {
     return "Oba! Seu pedido está *EM PRODUÇÃO*! 🥳";
   }
@@ -150,11 +162,14 @@ export function comandaDoRobo(d: DadosDaComanda): string {
     linhas.push(`🛵 *Delivery* (${taxa})`);
     const endereco = String(d.endereco || "").trim();
     if (endereco) linhas.push(`🏠 ${endereco}`);
-    if (d.previsao && Number.isFinite(d.previsao.getTime())) {
+    if (String(d.agendadoPara || "").trim()) {
+      linhas.push(`📅 Entrega agendada para ${String(d.agendadoPara).trim()}`);
+    } else if (d.previsao && Number.isFinite(d.previsao.getTime())) {
       linhas.push(`⏰ Previsão de entrega: até ${horaNoFuso(d.previsao, d.fuso)}`);
     }
   } else {
     linhas.push("🏪 *Retirada na loja*");
+    if (String(d.agendadoPara || "").trim()) linhas.push(`📅 Retirada agendada para ${String(d.agendadoPara).trim()}`);
   }
   linhas.push("");
 

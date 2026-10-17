@@ -363,6 +363,9 @@ const dadosDoPedido = (p: PedidoCandidato): string => {
   if (p.deliveryType) partes.push(`Tipo: ${p.deliveryType}`);
   if (p.customerAddress) partes.push(`Endereço: ${p.customerAddress}`);
   if (p.paymentMethod) partes.push(`Pagamento: ${p.paymentMethod}`);
+  // Pedido agendado: a marca que o sync grava nas observações (lib/agendamento.ts).
+  const agendado = /\[📅 AGENDADO para ([^\]]+)\]/.exec(String(p.notes || ""));
+  if (agendado) partes.push(`Agendado para: ${agendado[1]}`);
   if (Number(p.changeAmount) > 0) partes.push(`Troco para: R$ ${brl(p.changeAmount)}`);
   if (Number(p.deliveryFee) > 0) partes.push(`Taxa de entrega: R$ ${brl(p.deliveryFee)}`);
   if (Number(p.totalAmount) > 0) partes.push(`Total: R$ ${brl(p.totalAmount)}`);
