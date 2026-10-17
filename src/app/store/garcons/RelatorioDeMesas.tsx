@@ -326,7 +326,8 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
       <p style={{ margin: "12px 4px 0", fontSize: 12, color: "#94A3B8", lineHeight: 1.5 }}>
         Mesas fechadas, consumo, taxa de serviço e gorjeta: as contas fechadas no período (a mesa liberada sem consumo também conta como
         fechada). O consumo é o que foi lançado na conta, sem taxa de serviço, gorjeta e troco; o desconto dado ao fechar a conta aparece à
-        parte e não sai do consumo.
+        parte e não sai do consumo. Mesa a mesa, com abertura, fechamento, forma de pagamento e itens: Mesas › 📋 Histórico (os mesmos
+        números, dia a dia).
       </p>
       <p style={{ margin: "6px 4px 0", fontSize: 12, color: "#94A3B8", lineHeight: 1.5 }}>
         Vendas por origem: pela hora do pedido, os mesmos números do relatório Vendas por período — por isso a linha Mesa inclui mesa

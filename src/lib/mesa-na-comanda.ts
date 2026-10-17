@@ -54,7 +54,11 @@ export const MESA_DA_COMANDA = {
  * que não precisa disso.
  */
 export const MESA_DO_QUADRO = {
-  select: { ...MESA_DA_COMANDA.select, status: true },
+  // As baixas e o pago da conta: a rodada de mesa já paga mostra no card, no
+  // "Ver pedido" e no papel COMO a mesa pagou, em vez do "N/A" que o pedido de
+  // mesa carrega de nascença (lib/pagamento-da-mesa-no-pedido.ts). É um JSON
+  // curto por conta — duas, três baixas.
+  select: { ...MESA_DA_COMANDA.select, status: true, paymentMethods: true, totalPaid: true, closedAt: true },
 } as const;
 
 export type PedidoComMesa = {
