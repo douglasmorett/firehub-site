@@ -2,7 +2,8 @@
 
 /**
  * O ROSTO DO BILL — o personagem do FireHub, em vetor, com olhos de LED que
- * expressam emoção e acompanham o mouse.
+ * expressam emoção e acompanham o mouse. Sem bochechas: Douglas tirou as rosas
+ * em 17/10/2026 ("tira essas bochechas rosas").
  *
  * Douglas, 17/10/2026: "quero que a gente construa um personagem para ser o
  * Bill, não algo genérico: olhos de LED onde ele expressa emoções; na caixinha
@@ -46,19 +47,19 @@ const BOCA = {
 };
 
 type Def = {
-  w: number; h: number; cor: string; cima: number; baixo: number; boca: string; bocaX?: number; bochecha: number;
+  w: number; h: number; cor: string; cima: number; baixo: number; boca: string; bocaX?: number;
   sobrancelha?: { esq: number; dir: number }; piscaDir?: boolean; inclinar?: boolean;
 };
 const EMOCOES: Record<EmocaoDoBill, Def> = {
-  normal: { w: 1, h: 1, cor: COR.ciano, cima: -74, baixo: 48, boca: BOCA.barra, bochecha: 0 },
-  feliz: { w: 1, h: 1.3, cor: COR.ciano, cima: -74, baixo: 14, boca: BOCA.sorriso, bochecha: 0.9 },
-  ouvindo: { w: 1.15, h: 1.15, cor: COR.verde, cima: -74, baixo: 48, boca: BOCA.sorrisinho, bochecha: 0 },
-  pensando: { w: 1, h: 0.55, cor: COR.amarelo, cima: -74, baixo: 48, boca: BOCA.hmm, bocaX: 5, bochecha: 0, sobrancelha: { esq: -8, dir: 0 } },
-  falando: { w: 1, h: 1, cor: COR.ciano, cima: -74, baixo: 48, boca: BOCA.barra, bochecha: 0 },
-  surpreso: { w: 1.25, h: 1.35, cor: COR.ciano, cima: -74, baixo: 48, boca: BOCA.o, bochecha: 0, sobrancelha: { esq: -10, dir: -10 } },
-  piscada: { w: 1.05, h: 1.05, cor: COR.ciano, cima: -74, baixo: 48, boca: BOCA.sorrisinho, bocaX: 3, bochecha: 0.5, piscaDir: true },
-  erro: { w: 1, h: 0.8, cor: COR.vermelho, cima: -74, baixo: 48, boca: BOCA.triste, bochecha: 0, sobrancelha: { esq: 0, dir: 0 }, inclinar: true },
-  dormindo: { w: 1, h: 1, cor: COR.ciano, cima: -30, baixo: 48, boca: BOCA.mini, bochecha: 0 },
+  normal: { w: 1, h: 1, cor: COR.ciano, cima: -74, baixo: 48, boca: BOCA.barra },
+  feliz: { w: 1, h: 1.3, cor: COR.ciano, cima: -74, baixo: 14, boca: BOCA.sorriso },
+  ouvindo: { w: 1.15, h: 1.15, cor: COR.verde, cima: -74, baixo: 48, boca: BOCA.sorrisinho },
+  pensando: { w: 1, h: 0.55, cor: COR.amarelo, cima: -74, baixo: 48, boca: BOCA.hmm, bocaX: 5, sobrancelha: { esq: -8, dir: 0 } },
+  falando: { w: 1, h: 1, cor: COR.ciano, cima: -74, baixo: 48, boca: BOCA.barra },
+  surpreso: { w: 1.25, h: 1.35, cor: COR.ciano, cima: -74, baixo: 48, boca: BOCA.o, sobrancelha: { esq: -10, dir: -10 } },
+  piscada: { w: 1.05, h: 1.05, cor: COR.ciano, cima: -74, baixo: 48, boca: BOCA.sorrisinho, bocaX: 3, piscaDir: true },
+  erro: { w: 1, h: 0.8, cor: COR.vermelho, cima: -74, baixo: 48, boca: BOCA.triste, sobrancelha: { esq: 0, dir: 0 }, inclinar: true },
+  dormindo: { w: 1, h: 1, cor: COR.ciano, cima: -30, baixo: 48, boca: BOCA.mini },
 };
 
 const CSS_ID = "rosto-do-bill-css";
@@ -69,7 +70,6 @@ const CSS = `
 .rdb .palpebra-cima { transition: y .14s ease-in; }
 .rdb .palpebra-baixo { transition: cy .25s cubic-bezier(.2,.8,.2,1); }
 .rdb .boca { transition: d .28s cubic-bezier(.2,.8,.2,1), fill .3s, stroke .3s, opacity .25s, transform .25s; }
-.rdb .bochecha { transition: opacity .3s; }
 .rdb .sobrancelha { transition: transform .25s, opacity .25s; transform-box: fill-box; transform-origin: center; }
 .rdb.falando .boca { animation: rdb-boca .34s ease-in-out infinite alternate; }
 @keyframes rdb-boca { from { d: path("M -8 0 Q 0 -1 8 0 Q 0 2 -8 0 Z"); } to { d: path("M -9 0 Q 0 -7 9 0 Q 0 8 -9 0 Z"); } }
@@ -125,7 +125,6 @@ function aplicarEmocao(svg: SVGSVGElement, nome: EmocaoDoBill) {
   boca.style.stroke = e.cor;
   boca.style.transform = e.bocaX ? `translateX(${e.bocaX}px)` : "";
   boca.style.opacity = nome === "dormindo" ? "0.5" : "1";
-  svg.querySelectorAll<SVGCircleElement>(".bochecha").forEach((b) => { b.style.opacity = String(e.bochecha); });
 }
 
 type Props = {
@@ -262,8 +261,6 @@ export default function RostoDoBill({ emocao = "normal", tamanho = 60, seguirMou
         <rect x="58" y="70" width="84" height="22" rx="11" fill="white" opacity="0.06" />
         {olho(ex1, ey1, "esq")}
         {olho(ex2, ey2, "dir")}
-        <circle className="bochecha" cx={ex1 - 4} cy={ey1 + 20} r="5" fill="#F472B6" opacity="0" filter={`url(#rdb-glow-${id})`} />
-        <circle className="bochecha" cx={ex2 + 4} cy={ey2 + 20} r="5" fill="#F472B6" opacity="0" filter={`url(#rdb-glow-${id})`} />
         {/* O <g> posiciona; o transform CSS da boca (bocaX) fica relativo a ele. */}
         <g transform={`translate(${BOCA_EM[0]} ${BOCA_EM[1]})`}>
           <path className="boca" d={BOCA.barra} fill={COR.ciano} stroke={COR.ciano} strokeWidth="2.5" strokeLinejoin="round" filter={`url(#rdb-glow-${id})`} />

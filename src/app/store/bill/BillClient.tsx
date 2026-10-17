@@ -84,7 +84,9 @@ export default function BillClient() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Erro");
       setAviso(ligar
-        ? { tipo: "ok", titulo: "Bill ligado!", detalhe: "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica." }
+        ? { tipo: "ok", titulo: "Bill ligado!", detalhe: dados?.estado.isento
+            ? "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica."
+            : `Mande um áudio do seu WhatsApp para o número da loja e veja a mágica. Depois dos ${dados?.diasDeTeste ?? 7} dias grátis, se você não desligar, ${fmtR(dados?.preco ?? 0)} por mês vem no boleto da mensalidade do FireHub.` }
         : { tipo: "ok", titulo: "Bill desligado.", detalhe: "O mês que vem não é cobrado. Se este mês já passou dos dias grátis, ele continua no boleto." });
       setTermoAberto(false);
       // A carinha do Bill no canto aparece (ou some) sem atualizar a página.
@@ -148,7 +150,7 @@ export default function BillClient() {
               {estado.isento
                 ? <><b>Conta isenta:</b> o Bill fica sempre ligado nesta loja e não entra no boleto.</>
                 : estado.emTeste && estado.testeAte
-                ? <>Grátis até <b>{new Date(estado.testeAte).toLocaleDateString("pt-BR")}</b>. Depois, <b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub (o mês em que fica ativo é cobrado inteiro).</>
+                ? <>Grátis até <b>{new Date(estado.testeAte).toLocaleDateString("pt-BR")}</b>. Depois disso, <b>se você não desligar, {fmtR(dados.preco)} por mês vem cobrado junto com a mensalidade do FireHub</b>, no mesmo boleto (o mês em que fica ativo é cobrado inteiro).</>
                 : <><b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub — o mês em que o Bill fica ativo é cobrado inteiro.{estado.cobradoEsteMes && <> Este mês já está no boleto.</>}</>}
               {!estado.isento && <>{" "}Desligando, o mês seguinte não é cobrado.</>}
             </div>
@@ -286,7 +288,7 @@ function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean;
             <div className="bo-preco-curto">
               {dados.estado.isento ? <>Conta isenta: sem cobrança.</>
                 : dados.estado.jaTestou ? <><b>{fmtR(dados.preco)}/mês</b> no boleto do FireHub · desliga quando quiser</>
-                : <>Depois, <b>{fmtR(dados.preco)}/mês</b> no boleto · sem fidelidade</>}
+                : <>Depois dos {dados.diasDeTeste} dias, <b>se você não desligar, {fmtR(dados.preco)}/mês</b> vem junto com a mensalidade do FireHub, no mesmo boleto. Sem fidelidade.</>}
             </div>
           </div>
           <ul className="bo-garantias">
@@ -362,7 +364,7 @@ function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean;
       <section>
         <h3 className="bo-titulo">Começa em 1 minuto</h3>
         <ol className="bo-passos">
-          <li><span>1</span><div><b>Ative aqui</b>Aceite o termo e pronto{!dados.estado.jaTestou && !dados.estado.isento ? ` — ${dados.diasDeTeste} dias grátis` : ""}.</div></li>
+          <li><span>1</span><div><b>Ative aqui</b>Aceite o termo e pronto{!dados.estado.jaTestou && !dados.estado.isento ? ` — ${dados.diasDeTeste} dias grátis. Depois, se não desligar, entra no boleto da mensalidade` : ""}.</div></li>
           <li><span>2</span><div><b>Mande do seu WhatsApp</b>Para o número da loja{dados.numeroDoRobo ? `, ${fone(dados.numeroDoRobo)}` : ""}.</div></li>
           <li><span>3</span><div><b>Confira no painel</b>Tudo aparece em Estoque e Financeiro.</div></li>
         </ol>
@@ -381,7 +383,7 @@ function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean;
             <div className="bo-preco-dia">menos de {porDia} por dia · no boleto que você já paga</div>
           </div>
           <ul>
-            {!dados.estado.jaTestou && <li><CheckCircle2 size={15} /> {dados.diasDeTeste} dias grátis na primeira ativação</li>}
+            {!dados.estado.jaTestou && <li><CheckCircle2 size={15} /> {dados.diasDeTeste} dias grátis na primeira ativação — depois, se você não desligar, vem cobrado junto com a mensalidade do FireHub</li>}
             <li><CheckCircle2 size={15} /> Sem fidelidade: desligou, o mês seguinte não é cobrado</li>
             <li><CheckCircle2 size={15} /> Sem cartão e sem cadastro novo</li>
           </ul>
