@@ -4,6 +4,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { limiteDeDia } from "@/lib/timezone";
 import { sincronizarEquipeNoFiado } from "@/lib/fiado-do-motoboy";
+import { mesasNoFiadoPorCliente } from "@/lib/fiado-da-mesa";
+import { saldoDoFiado } from "@/lib/fiado-da-mesa-regras";
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -55,6 +57,13 @@ export async function GET(req: NextRequest) {
     orderBy: { name: "asc" },
   });
 
+  // As contas de mesa jogadas para o fiado (lib/fiado-da-mesa.ts) também são
+  // dívida: entram no total e no saldo ao lado dos pedidos fiados. Uma busca
+  // só para a lista inteira (e outra para o período, se houver filtro).
+  const idsDosCadastros = employees.map((e) => e.id);
+  const mesasDeTodos = await mesasNoFiadoPorCliente(idsDosCadastros);
+  const mesasDoPeriodo = hasDateFilter ? await mesasNoFiadoPorCliente(idsDosCadastros, dateFilter) : mesasDeTodos;
+
   // Para cada funcionário, calcular os saldos acumulados e do período
   const result = await Promise.all(
     employees.map(async (emp) => {
@@ -74,14 +83,15 @@ export async function GET(req: NextRequest) {
         _sum: { amount: true },
       });
 
-      const totalOrdersAmount = allOrdersAgg._sum.totalAmount || 0;
+      const mesas = mesasDeTodos.get(emp.id) || { valor: 0, qtd: 0 };
+      const totalOrdersAmount = (allOrdersAgg._sum.totalAmount || 0) + mesas.valor;
       const totalPaymentsAmount = allPaymentsAgg._sum.amount || 0;
-      const currentDebt = Math.max(0, totalOrdersAmount - totalPaymentsAmount);
+      const currentDebt = saldoDoFiado({ pedidos: allOrdersAgg._sum.totalAmount || 0, mesas: mesas.valor, baixas: totalPaymentsAmount });
 
       // 3. Se houver filtro por data, calcular métricas do período selecionado
       let periodOrdersAmount = totalOrdersAmount;
       let periodPaymentsAmount = totalPaymentsAmount;
-      let periodOrdersCount = allOrdersAgg._count.id || 0;
+      let periodOrdersCount = (allOrdersAgg._count.id || 0) + mesas.qtd;
 
       if (hasDateFilter) {
         const periodOrdersAgg = await prisma.customerOrder.aggregate({
@@ -102,9 +112,10 @@ export async function GET(req: NextRequest) {
           _sum: { amount: true },
         });
 
-        periodOrdersAmount = periodOrdersAgg._sum.totalAmount || 0;
+        const mesasNoPeriodo = mesasDoPeriodo.get(emp.id) || { valor: 0, qtd: 0 };
+        periodOrdersAmount = (periodOrdersAgg._sum.totalAmount || 0) + mesasNoPeriodo.valor;
         periodPaymentsAmount = periodPaymentsAgg._sum.amount || 0;
-        periodOrdersCount = periodOrdersAgg._count.id || 0;
+        periodOrdersCount = (periodOrdersAgg._count.id || 0) + mesasNoPeriodo.qtd;
       }
 
       return {
@@ -114,7 +125,7 @@ export async function GET(req: NextRequest) {
         currentDebt,
         totalOrdersAmount,
         totalPaymentsAmount,
-        totalOrdersCount: allOrdersAgg._count.id || 0,
+        totalOrdersCount: (allOrdersAgg._count.id || 0) + mesas.qtd,
         periodOrdersAmount,
         periodPaymentsAmount,
         periodOrdersCount,

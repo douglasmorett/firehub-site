@@ -6,6 +6,13 @@ import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
 import { comissaoDoGarcom, sanearTaxa } from "@/lib/conta-da-mesa";
 import { lerDocumentoDoCliente, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
+import { formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
+import { garantirTabelaDoFiadoDaMesa, lancarMesaNoFiado, lojasDoMesmoFiado } from "@/lib/fiado-da-mesa";
+import { MODO_LOCAL } from "@/lib/modo-local";
+import {
+  FORMA_DO_FIADO_NA_MESA, descricaoDaMesaNoFiado, lerClienteDoFiado, valorParaOFiado, type ClienteDoFiado,
+} from "@/lib/fiado-da-mesa-regras";
 
 /** Último degrau da taxa sugerida — o mesmo da conta impressa (imprimir-conta). */
 const TAXA_PADRAO = 10;
@@ -42,6 +49,19 @@ export async function POST(
 
     const data = await req.json();
     const { paymentMethods, serviceFeePercent, waiterTip, desconto } = data;
+
+    // ── "LANÇAR NO FIADO" (lib/fiado-da-mesa-regras.ts) ──────────────────
+    // Com `fiado` no corpo, o que falta pagar da conta vira dívida de um
+    // cliente do Fiado e a mesa fecha na hora — a mesa 9 que pagou e ninguém
+    // deu baixa (Allan, Delícia de Casa). Mesmas travas do fechamento normal
+    // (garçom que fecha conta, desconto, taxa, caixa aberto), mais o Fiado
+    // ligado na loja e a senha do gerente, se o dono ligou para o fiado.
+    let clienteDoFiado: ClienteDoFiado | null = null;
+    if (data?.fiado != null) {
+      const lido = lerClienteDoFiado(data.fiado);
+      if (!lido.ok) return NextResponse.json({ error: lido.erro, mensagem: lido.erro }, { status: 400 });
+      clienteDoFiado = lido.cliente;
+    }
     // "CPF na nota" do fechamento (opcional). O que vier tem de ser documento
     // de verdade: é o destinatário da nota da conta (lib/fiscal-momento →
     // montarNotaDaMesa, que lê o primeiro documento entre os pedidos).
@@ -149,12 +169,92 @@ export async function POST(
     // O corpo continua valendo quando não há nada gravado — é o caminho de
     // quem ainda está na tela antiga e o de liberar mesa sem consumo.
     const jaGravados = lerPagamentos(tableSession.paymentMethods);
-    const pagamentosEfetivos =
+    let pagamentosEfetivos =
       jaGravados.length > 0
         ? jaGravados
         : lerPagamentos(Array.isArray(paymentMethods) ? paymentMethods : []);
 
-    const totalPaid = somarPagamentos(pagamentosEfetivos);
+    // Fiado só entra pelo "Lançar no fiado": é ele que diz QUEM deve. Uma
+    // baixa "Fiado" solta fecharia a mesa sem dívida de ninguém — o caixa
+    // tiraria o valor da conferência e ninguém cobraria.
+    if (pagamentosEfetivos.some((p) => formaDoTexto(p.method) === "FIADO")) {
+      const m = "Para deixar a conta no fiado, use \"Lançar no fiado\" no fechamento (escolhendo o cliente).";
+      return NextResponse.json({ error: m, mensagem: m }, { status: 400 });
+    }
+
+    let totalPaid = somarPagamentos(pagamentosEfetivos);
+
+    /** O que vai para o fiado, já conferido (null = fechamento normal). */
+    let fiado: { valor: number; employeeId: string | null; novo: { nome: string; telefone: string | null } | null; nome: string; descricao: string } | null = null;
+    if (clienteDoFiado) {
+      // No Modo Contingência (FireHub no computador da loja) a tabela da
+      // dívida não está na cópia que volta para a nuvem (lib/contingencia/
+      // catalogo.ts): a mesa fecharia com "Fiado" e a dívida ficaria só no
+      // computador. Melhor recusar do que perder quem deve.
+      if (MODO_LOCAL) {
+        const m = "Sem internet (modo contingência) a mesa não vai para o fiado. Feche a conta normalmente ou espere a conexão voltar.";
+        return NextResponse.json({ error: m, mensagem: m }, { status: 503 });
+      }
+      const loja = await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { employeeAccountEnabled: true } });
+      if (!loja?.employeeAccountEnabled) {
+        const m = "O Fiado está desligado nesta loja. O dono liga em Financeiro → Fiado.";
+        return NextResponse.json({ error: m, mensagem: m }, { status: 400 });
+      }
+      const v = valorParaOFiado({ totalDaConta: totalAmount, jaPago: totalPaid });
+      if (!v.ok) return NextResponse.json({ error: v.erro, mensagem: v.erro }, { status: 400 });
+
+      let nome: string;
+      let employeeId: string | null = null;
+      if (clienteDoFiado.tipo === "existente") {
+        const c = await prisma.storeEmployee.findUnique({ where: { id: clienteDoFiado.id }, select: { id: true, name: true, franchiseeId: true, active: true } });
+        if (!c || !c.active || !(await lojasDoMesmoFiado(targetFranchiseeId)).includes(c.franchiseeId)) {
+          const m = "Este cliente não está no fiado desta loja. Escolha outro ou cadastre um novo.";
+          return NextResponse.json({ error: m, mensagem: m }, { status: 400 });
+        }
+        nome = c.name;
+        employeeId = c.id;
+      } else {
+        nome = clienteDoFiado.nome;
+      }
+
+      // A senha vem DEPOIS das conferências da conta: ninguém digita senha
+      // para ouvir em seguida que a mesa já estava paga.
+      const semSenha = await exigirSenhaDoGerente(req, targetFranchiseeId, "fiado");
+      if (semSenha) return semSenha;
+
+      if (!(await garantirTabelaDoFiadoDaMesa())) {
+        const m = "Não deu para lançar no fiado agora. Feche a conta normalmente ou tente de novo.";
+        return NextResponse.json({ error: m, mensagem: m }, { status: 503 });
+      }
+
+      // O que a mesa consumiu, para o extrato do fiado dizer o que é a dívida.
+      const itens = await prisma.customerOrderItem.findMany({
+        where: { order: { tableSessionId: id, status: { not: "CANCELADO" } } },
+        select: { quantity: true, productName: true, menuProduct: { select: { name: true } } },
+      });
+      const descricao = descricaoDaMesaNoFiado({
+        numero: tableSession.table.number ?? null,
+        itens: itens.map((i) => ({ nome: i.productName || i.menuProduct?.name || "Item", quantidade: Number(i.quantity) || 1 })),
+      });
+
+      fiado = {
+        valor: v.valor, employeeId, nome, descricao,
+        novo: clienteDoFiado.tipo === "novo" ? { nome: clienteDoFiado.nome, telefone: clienteDoFiado.telefone } : null,
+      };
+      // A conta fecha com uma baixa "Fiado" do que faltava: é por ela que o
+      // caixa a tira da gaveta (lib/apuracao-do-turno.ts) e que o relatório
+      // Formas de pagamento a mostra em "Fiado / Conta funcionário".
+      pagamentosEfetivos = [...pagamentosEfetivos, {
+        uid: crypto.randomUUID(),
+        method: FORMA_DO_FIADO_NA_MESA,
+        amount: v.valor,
+        guestId: null,
+        guestName: nome.slice(0, 80),
+        at: new Date().toISOString(),
+        por: rotuloDoOperador(operador),
+      }];
+      totalPaid = somarPagamentos(pagamentosEfetivos);
+    }
 
     const faltando = centavos(totalAmount) - centavos(totalPaid);
 
@@ -178,6 +278,27 @@ export async function POST(
 
     // Wrap in transaction
     await prisma.$transaction(async (tx) => {
+      // 0. A dívida do fiado, junto com o fechamento: ou os dois, ou nenhum.
+      if (fiado) {
+        let employeeId = fiado.employeeId;
+        if (!employeeId && fiado.novo) {
+          const novo = await tx.storeEmployee.create({
+            data: { franchiseeId: targetFranchiseeId, name: fiado.novo.nome, phone: fiado.novo.telefone, role: "Cliente", active: true },
+            select: { id: true },
+          });
+          employeeId = novo.id;
+        }
+        await lancarMesaNoFiado(tx, {
+          lojaId: targetFranchiseeId,
+          employeeId: employeeId!,
+          tableSessionId: id,
+          mesaNumero: tableSession.table.number ?? null,
+          valor: fiado.valor,
+          descricao: fiado.descricao,
+          quem: rotuloDoOperador(operador),
+        });
+      }
+
       // 1. Update orders status to ENTREGUE
       if (pedidosValidos.length > 0) {
         // NOT: cancelado continua cancelado. Sem o filtro, fechar a mesa
@@ -235,7 +356,12 @@ export async function POST(
       .then(({ emitirNfceDaMesa }) => emitirNfceDaMesa(id, { desconto: descontoEmReais }))
       .catch((err) => console.error("[Table Sessions Close] Erro ao disparar NFC-e da conta:", err?.message));
 
-    return NextResponse.json({ success: true, message: "Session closed successfully" });
+    if (fiado) console.log(`[Mesa ${id}] conta no fiado: R$ ${fiado.valor.toFixed(2)} para ${fiado.nome} — por ${rotuloDoOperador(operador)}`);
+    return NextResponse.json({
+      success: true,
+      message: "Session closed successfully",
+      ...(fiado ? { fiado: { cliente: fiado.nome, valor: fiado.valor } } : {}),
+    });
   } catch (error: any) {
     console.error("[Table Sessions Close POST]", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

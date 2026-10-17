@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { totalDasMesasNoFiado } from "@/lib/fiado-da-mesa";
+import { saldoDoFiado } from "@/lib/fiado-da-mesa-regras";
 
 export async function POST(
   req: NextRequest,
@@ -66,9 +68,12 @@ export async function POST(
     _sum: { amount: true },
   });
 
-  const totalOrdersAmount = allOrdersAgg._sum.totalAmount || 0;
-  const totalPaymentsAmount = allPaymentsAgg._sum.amount || 0;
-  const remainingDebt = Math.max(0, totalOrdersAmount - totalPaymentsAmount);
+  // As contas de mesa no fiado também são dívida (lib/fiado-da-mesa.ts).
+  const remainingDebt = saldoDoFiado({
+    pedidos: allOrdersAgg._sum.totalAmount || 0,
+    mesas: await totalDasMesasNoFiado([employeeId]),
+    baixas: allPaymentsAgg._sum.amount || 0,
+  });
 
   return NextResponse.json({
     success: true,

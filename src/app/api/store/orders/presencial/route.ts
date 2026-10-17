@@ -14,6 +14,8 @@ import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido, documentoObrigatorioNoPedido } from "@/lib/fiscal-modo";
 import { MENSAGEM_CAIXA_FECHADO, ERRO_CAIXA_FECHADO } from "@/lib/caixa-aberto";
 import { caixaEstaAberto } from "@/lib/caixa-aberto-servidor";
+import { formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 import { avaliarEntrega, modoDaArea, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { comPrazo } from "@/lib/com-prazo";
@@ -105,6 +107,39 @@ export async function POST(req: Request) {
       { error: MENSAGEM_CAIXA_FECHADO, codigo: ERRO_CAIXA_FECHADO },
       { status: 409 },
     );
+  }
+
+  // ── VENDA NO FIADO ("CONTA FUNCIONÁRIO") ─────────────────────────────────
+  //
+  // É fiado quando a venda vem em nome de um cadastro do fiado (employeeId:
+  // é ele que vira dívida, api/store/employees) ou quando a forma — inteira ou
+  // uma parte do dividido — é fiado pela régua do caixa (formaDoTexto).
+  //
+  //   1. O cadastro tem de ser desta loja (ou do mesmo grupo de lojas, que é
+  //      o que a tela Fiado lista): antes nada conferia, e um id de outra loja
+  //      lançava a dívida no cliente alheio.
+  //   2. Com a senha do gerente ligada para o fiado (Minha Loja → Senha do
+  //      gerente), só passa com ela (lib/senha-do-gerente.ts). Vem ANTES de
+  //      gravar qualquer coisa: nada de número de pedido queimado.
+  const ehFiado = Boolean(employeeId)
+    || formaDoTexto(paymentMethod) === "FIADO"
+    || (paymentMethods || []).some((p) => formaDoTexto(p.method) === "FIADO");
+  if (employeeId) {
+    const cadastro = await prisma.storeEmployee.findUnique({ where: { id: String(employeeId) }, select: { franchiseeId: true } });
+    let daLoja = cadastro?.franchiseeId === targetFranchiseeId;
+    if (cadastro && !daLoja) {
+      const [loja, dona] = await Promise.all([
+        prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { id: true, accountGroupId: true } }),
+        prisma.user.findUnique({ where: { id: cadastro.franchiseeId }, select: { id: true, accountGroupId: true } }),
+      ]);
+      const grupo = loja?.accountGroupId || loja?.id;
+      daLoja = !!grupo && (dona?.id === grupo || dona?.accountGroupId === grupo);
+    }
+    if (!daLoja) return NextResponse.json({ error: "Este cliente do fiado não é desta loja. Escolha outro." }, { status: 400 });
+  }
+  if (ehFiado) {
+    const semSenha = await exigirSenhaDoGerente(req, targetFranchiseeId, "fiado");
+    if (semSenha) return semSenha;
   }
 
   // ── PAGER OBRIGATÓRIO, SE A LOJA MARCOU ──────────────────────────────────

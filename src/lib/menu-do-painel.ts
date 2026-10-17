@@ -112,6 +112,8 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
           { href: "/store/minha-loja#fidelidade", label: "Fidelidade & trilha" },
           { href: "/store/minha-loja#avaliacoes", label: "Avaliações" },
           { href: "/store/minha-loja#equipe", label: "Equipe & permissões" },
+          // Só o dono grava (api/store-settings/senha-do-gerente); funcionário vê o aviso.
+          { href: "/store/minha-loja#senha-do-gerente", label: "Senha do gerente" },
           { href: "/store/minha-loja#conta", label: "Minha conta" },
         ],
       },

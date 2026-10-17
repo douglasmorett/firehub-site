@@ -100,6 +100,14 @@ export async function register() {
   // se faltarem, o acerto sai sem os ajustes e só gravar um ajuste falha.
   const { garantirTabelasDoAcerto } = await import("./lib/ajustes-do-acerto");
   await garantirTabelasDoAcerto();
+  // Senha do gerente (lib/senha-do-gerente.ts) e a conta de mesa lançada no
+  // fiado (lib/fiado-da-mesa.ts). Tabelas próprias por SQL cru, fora do
+  // schema; se faltarem, nenhuma ação pede senha e a mesa não vai para o
+  // fiado — o resto segue como antes.
+  const { garantirTabelaDaSenhaDoGerente } = await import("./lib/senha-do-gerente");
+  await garantirTabelaDaSenhaDoGerente();
+  const { garantirTabelaDoFiadoDaMesa } = await import("./lib/fiado-da-mesa");
+  await garantirTabelaDoFiadoDaMesa();
   // Posição que a loja ensinou para um endereço na roteirização (o operador
   // arrastou o pino; lib/ponto-aprendido.ts). Tabela própria por SQL cru; se
   // faltar, a roteirização segue como antes e só deixa de aprender.
