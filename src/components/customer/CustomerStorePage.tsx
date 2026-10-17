@@ -56,6 +56,7 @@ import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/Tr
 import FileiraDeDestaques from "./FileiraDeDestaques";
 import CapaDaLoja from "./CapaDaLoja";
 import { lerTrilha, nomeDoPremio } from "@/lib/trilha-premiada";
+import { contarCarimbos, lerCarimbos } from "@/lib/carimbos";
 import { cpfValido } from "@/lib/fiscal-validacao";
 import { DOCUMENTO_NAO_PEDIDO, documentoObrigatorioNoPedido, type DocumentoNoPedido } from "@/lib/fiscal-modo";
 import { mascararDocumentoDigitado, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
@@ -466,6 +467,9 @@ export default function CustomerStorePage({
   const [myOrdersPhone, setMyOrdersPhone] = useState("");
   const [myOrdersLoading, setMyOrdersLoading] = useState(false);
   const [myOrdersList, setMyOrdersList] = useState<any[]>([]);
+  // A lista acima vem cortada nos 10 mais recentes; isto diz se o telefone tem
+  // mais pedidos que ela (o cartão de carimbos precisa saber, lib/carimbos.ts).
+  const [myOrdersAlemDaLista, setMyOrdersAlemDaLista] = useState(false);
   const [myOrdersSearched, setMyOrdersSearched] = useState(false);
 
   // Customer login
@@ -943,10 +947,13 @@ export default function CustomerStorePage({
   const premioDaTrilha = guardarPremioDaTrilha ? null : premioPendente;
 
   // Módulos adicionais
-  const isStampsActive = Boolean(loyalty.stampsActive);
-  const stampGoal = Number(loyalty.stampGoal || 10);
-  const stampMinOrder = Number(loyalty.stampMinOrder || 30);
-  const stampRewardValue = Number(loyalty.stampRewardValue || 25);
+  // Carimbos: a regra mora em lib/carimbos.ts — a ficha do cliente no painel
+  // conta o MESMO cartão sobre a MESMA lista (lib/pedidos-do-telefone.ts).
+  const regraDosCarimbos = useMemo(() => lerCarimbos(loyalty), [loyalty]);
+  const isStampsActive = regraDosCarimbos.ativo;
+  const stampGoal = regraDosCarimbos.meta;
+  const stampMinOrder = regraDosCarimbos.pedidoMinimo;
+  const stampRewardValue = regraDosCarimbos.premioValor;
 
   const isReferralActive = Boolean(loyalty.referralActive);
   const friendDiscount = Number(loyalty.friendDiscount || 10);
@@ -968,12 +975,18 @@ export default function CustomerStorePage({
       .reduce((acc, o) => acc + (Number(o.totalAmount) || 0), 0);
   }, [customerOrdersList, thirtyDaysAgo]);
 
-  // Carimbos acumulados
-  const validStampOrders = useMemo(() => {
-    return customerOrdersList.filter(o => o.status !== "CANCELADO" && (Number(o.totalAmount) >= stampMinOrder || !stampMinOrder)).length;
-  }, [customerOrdersList, stampMinOrder]);
-  const currentStamps = validStampOrders % stampGoal;
-  const remainingStamps = Math.max(0, stampGoal - currentStamps);
+  // Carimbos acumulados (os "Meus pedidos" que vieram de /api/store-customer)
+  const cartaoDeCarimbos = useMemo(
+    () => contarCarimbos(regraDosCarimbos, customerOrdersList, myOrdersAlemDaLista),
+    [regraDosCarimbos, customerOrdersList, myOrdersAlemDaLista],
+  );
+  const currentStamps = cartaoDeCarimbos.noCartao;
+  const remainingStamps = cartaoDeCarimbos.faltam;
+  // O cartão cheio volta a zero na mesma hora (carimbos % meta), então
+  // "faltam 0" nunca acontecia e a mensagem de cartela completa nunca aparecia:
+  // o cliente via "faltam 10" logo depois de completar. A contagem não muda; a
+  // mensagem só sai quando a lista tem todos os pedidos dele (ver lib/carimbos.ts).
+  const cartelaCompleta = cartaoDeCarimbos.acabouDeCompletar;
 
   // Nível VIP do Cliente
   const vipTier = useMemo(() => {
@@ -1452,6 +1465,7 @@ export default function CustomerStorePage({
       if (res.ok) {
         const d = await res.json();
         setMyOrdersList(d.orders || []);
+        setMyOrdersAlemDaLista(d.maisPedidos === true);
         setTrilhaProgresso(d.trilha || null);
         setCashbackDoServidor(d.cashback || null);
         // O direito ao cupom de primeiro pedido vem na mesma resposta: quem
@@ -5194,7 +5208,7 @@ export default function CustomerStorePage({
 
                 <div style={{ fontSize: "0.74rem", color: "#475569", lineHeight: 1.35 }}>
                   {customer ? (
-                    remainingStamps === 0 ? (
+                    cartelaCompleta ? (
                       <span style={{ color: "#16A34A", fontWeight: 800 }}>🎉 Você completou a cartela! Ganhou {loyalty.stampRewardType === "product" ? "1 Prêmio Especial" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}!</span>
                     ) : (
                       <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{loyalty.stampRewardType === "product" ? "1 Prêmio Especial" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} OFF`}</strong>!</span>
@@ -5466,7 +5480,7 @@ export default function CustomerStorePage({
 
                 <div style={{ fontSize: "0.78rem", color: "#7E22CE", lineHeight: 1.35 }}>
                   {customer ? (
-                    remainingStamps === 0 ? (
+                    cartelaCompleta ? (
                       <strong style={{ color: "#15803D" }}>🎉 Parabéns! Cartela completa! Ganhou {loyalty.stampRewardType === "product" ? "1 Prêmio Grátis" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}!</strong>
                     ) : (
                       <span>Faltam <strong>{remainingStamps} carimbos</strong> para você ganhar <strong>{loyalty.stampRewardType === "product" ? "1 Prêmio Grátis" : `R$ ${stampRewardValue.toFixed(2).replace(".", ",")} de desconto`}</strong>!</span>

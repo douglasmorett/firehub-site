@@ -47,6 +47,11 @@ import { lojasDoGrupo } from "@/lib/loja-ativa";
 import { FUSO_PADRAO } from "@/lib/fuso";
 import { chaveDoCliente, numerosDoCliente } from "@/lib/clientes-da-loja-regras";
 import { aniversarioBonito, cadastroEditado, garantirTabelaDoCadastro, type CadastroEditado } from "@/lib/cadastro-do-cliente";
+import { carimbosNaFicha, trilhaNaFicha, type FidelidadeNaFicha } from "@/lib/fidelidade-na-ficha";
+import { lerCarimbos } from "@/lib/carimbos";
+import { lerTrilha, trilhaValida } from "@/lib/trilha-premiada";
+import { pedidosDaTrilhaDoTelefone } from "@/lib/premio-no-pedido";
+import { ondeEstaoOsPedidosDoTelefone, PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
 
 export type SessaoDosClientes = {
   lojaId: string;
@@ -416,7 +421,46 @@ export type DetalheDoCliente = {
     naoConcluidos: number;
   };
   cashback: ExtratoDoCashback & { ativo: boolean; validadeDias: number; taxa: number; maxResgatePct: number };
+  /** Trilha Premiada e cartão de carimbos — `null` no programa que a loja não ligou. */
+  fidelidade: FidelidadeNaFicha;
 };
+
+const SEM_FIDELIDADE: FidelidadeNaFicha = { trilha: null, carimbos: null };
+
+/**
+ * A trilha e os carimbos deste telefone pela busca e pela conta do CARDÁPIO
+ * (lib/fidelidade-na-ficha.ts), não pela chave da ficha: o número que a loja lê
+ * tem de ser o que o cliente vê. Falhar aqui não derruba a ficha. Exportada
+ * para a prova rodar a MESMA busca no banco (só lê).
+ */
+export async function fidelidadeDoTelefone(sessao: SessaoDosClientes, tel: string, agora: Date): Promise<FidelidadeNaFicha> {
+  const comTrilha = trilhaValida(lerTrilha(sessao.storeLoyalty));
+  const comCarimbos = lerCarimbos(sessao.storeLoyalty).ativo;
+  if (!comTrilha && !comCarimbos) return SEM_FIDELIDADE;
+  try {
+    const [daTrilha, doCardapio] = await Promise.all([
+      comTrilha ? pedidosDaTrilhaDoTelefone(sessao.lojaId, tel) : Promise.resolve([]),
+      comCarimbos
+        ? prisma.customerOrder.findMany({
+            where: ondeEstaoOsPedidosDoTelefone(sessao.lojaId, tel),
+            orderBy: { createdAt: "desc" },
+            // Um a mais só para saber se o cliente passa do que o cardápio olha.
+            take: PEDIDOS_DO_CARDAPIO + 1,
+            select: { status: true, totalAmount: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    return {
+      trilha: comTrilha ? trilhaNaFicha(sessao.storeLoyalty, daTrilha, agora) : null,
+      carimbos: comCarimbos
+        ? carimbosNaFicha(sessao.storeLoyalty, doCardapio.slice(0, PEDIDOS_DO_CARDAPIO), doCardapio.length > PEDIDOS_DO_CARDAPIO)
+        : null,
+    };
+  } catch (err: any) {
+    console.error("[clientes] trilha/carimbos da ficha falhou:", err?.message);
+    return SEM_FIDELIDADE;
+  }
+}
 
 /** O nome dado no lançamento — o do cliente que só tem o saldo trazido de outro sistema. */
 async function nomeDoLancamento(lojaId: string, chaveDoTelefone: string): Promise<string | null> {
@@ -448,7 +492,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
   const chaveDoTel = chaveDoCliente(tel)!;
 
   const ids = await prisma.$queryRaw<{ id: string }[]>(sqlDosPedidosDoCliente(sessao.lojaId, chaveDoTel));
-  const [pedidos, extrato] = await Promise.all([
+  const [pedidos, extrato, fidelidade] = await Promise.all([
     ids.length
       ? prisma.customerOrder.findMany({
           where: { id: { in: ids.map((r) => r.id) } },
@@ -462,6 +506,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
         })
       : Promise.resolve([]),
     extratoDoCliente(sessao.lojaId, sessao.storeLoyalty, tel, agora),
+    fidelidadeDoTelefone(sessao, tel, agora),
   ]);
   const editado = await cadastroEditado(sessao.lojaId, tel);
 
@@ -484,6 +529,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
       importado: false, clienteDesde: null,
       pedidos: [], enderecos: [], numeros: { pedidos: 0, gasto: 0, ticketMedio: 0, primeiro: null, ultimo: null, cancelados: 0, naoConcluidos: 0 },
       cashback,
+      fidelidade: SEM_FIDELIDADE,
     };
   }
 
@@ -531,6 +577,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
     enderecos,
     numeros,
     cashback,
+    fidelidade,
   };
 }
 

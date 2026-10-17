@@ -561,6 +561,50 @@ export function chamadaDaTrilha(p: ProgressoNaTrilha): string {
     : `Faltam ${p.faltam} pedidos para você ganhar ${premio}.`;
 }
 
+// ── O que o cardápio recebe ─────────────────────────────────────────────────
+
+/**
+ * Onde o cliente está na trilha, do jeito que o cardápio recebe do servidor
+ * (api/store-customer GET) — e que a ficha do cliente no painel mostra à loja.
+ *
+ * Uma função para os dois lados: se a ficha montasse o próprio resumo, um dia
+ * o lojista diria "faltam 2" e o cliente leria "faltam 3". Aqui não há regra
+ * nova, só `calcularProgresso` e `premiosPendentes` juntos.
+ */
+export type ResumoDaTrilha = {
+  passos: number;
+  faltam: number;
+  proxima: ParadaDaTrilha | null;
+  conquistadas: ParadaDaTrilha[];
+  completou: boolean;
+  cicloExpiraEm: Date | null;
+  chamada: string;
+  /** O prêmio que entra no próximo pedido pelo site, ou null. */
+  premio: ParadaDaTrilha | null;
+  /** Quantos prêmios ganhos e ainda não usados. */
+  premiosNaFila: number;
+};
+
+export function resumoDaTrilha(
+  trilha: TrilhaPremiada,
+  pedidos: PedidoDaTrilha[],
+  agora: Date = new Date(),
+): ResumoDaTrilha {
+  const progresso = calcularProgresso(trilha, pedidos, agora);
+  const pendentes = premiosPendentes(trilha, pedidos);
+  return {
+    passos: progresso.passos,
+    faltam: progresso.faltam,
+    proxima: progresso.proxima,
+    conquistadas: progresso.conquistadas,
+    completou: progresso.completou,
+    cicloExpiraEm: progresso.cicloExpiraEm,
+    chamada: chamadaDaTrilha(progresso),
+    premio: pendentes[0] || null,
+    premiosNaFila: pendentes.length,
+  };
+}
+
 /**
  * A frase de "onde o pedido conta", montada do que a loja marcou.
  *
