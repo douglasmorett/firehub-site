@@ -6,13 +6,8 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cupons";
 import { hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
 import { cashbackDoCliente } from "@/lib/cashback-no-banco";
-import {
-  calcularProgresso,
-  chamadaDaTrilha,
-  lerTrilha,
-  premiosPendentes,
-  trilhaValida,
-} from "@/lib/trilha-premiada";
+import { ondeEstaoOsPedidosDoTelefone, PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
+import { trilhaDoTelefone } from "@/lib/premio-no-pedido";
 
 // POST: Login or Register
 export async function POST(req: Request) {
@@ -191,16 +186,15 @@ export async function GET(req: Request) {
     return NextResponse.json({ orders: [], customer: null });
   }
 
-  const orders = await prisma.customerOrder.findMany({
-    where: {
-      franchiseeId,
-      OR: [
-        { customerPhone: { contains: cleanPhone.slice(-8) } },
-        { customerPhone: cleanPhone }
-      ]
-    },
+  // A busca e o tamanho da lista moram em lib/pedidos-do-telefone.ts: o cartão
+  // de carimbos do cardápio é contado sobre esta lista, e a ficha do cliente no
+  // painel conta o mesmo cartão sobre a mesma busca. Vem UM a mais só para
+  // dizer se a lista cortou pedidos (`maisPedidos`): sem isso o cardápio não
+  // sabe se o cartão vazio é "acabou de completar" ou "tem mais de 10 pedidos".
+  const encontrados = await prisma.customerOrder.findMany({
+    where: ondeEstaoOsPedidosDoTelefone(franchiseeId, cleanPhone),
     orderBy: { createdAt: "desc" },
-    take: 10,
+    take: PEDIDOS_DO_CARDAPIO + 1,
     select: {
       id: true,
       status: true,
@@ -224,6 +218,8 @@ export async function GET(req: Request) {
       },
     },
   });
+  const orders = encontrados.slice(0, PEDIDOS_DO_CARDAPIO);
+  const maisPedidos = encontrados.length > PEDIDOS_DO_CARDAPIO;
 
   // `customer: null` de propósito: os dados pessoais só saem pelo login.
   const [trilha, cupomPrimeiroPedido, cashback] = await Promise.all([
@@ -231,7 +227,7 @@ export async function GET(req: Request) {
     cupomDePrimeiroPedidoDoCliente(franchiseeId, cleanPhone),
     saldoDeCashbackDoCliente(franchiseeId, cleanPhone),
   ]);
-  return NextResponse.json({ orders, customer: null, trilha, cupomPrimeiroPedido, cashback });
+  return NextResponse.json({ orders, maisPedidos, customer: null, trilha, cupomPrimeiroPedido, cashback });
 }
 
 /**
@@ -293,6 +289,10 @@ async function cupomDePrimeiroPedidoDoCliente(franchiseeId: string, cleanPhone: 
  * Devolve só contagem e prêmio: nada de nome, endereço ou histórico. A rota é
  * pública por telefone (como a consulta de pedidos), e o que sai daqui não
  * identifica ninguém.
+ *
+ * A conta e a busca moram em lib/premio-no-pedido.ts (`trilhaDoTelefone`), a
+ * mesma que a ficha do cliente no painel usa — o lojista lê o número que o
+ * cliente vê.
  */
 async function trilhaDoCliente(franchiseeId: string, cleanPhone: string) {
   try {
@@ -300,41 +300,7 @@ async function trilhaDoCliente(franchiseeId: string, cleanPhone: string) {
       where: { id: franchiseeId },
       select: { storeLoyalty: true },
     });
-    const trilha = lerTrilha(loja?.storeLoyalty);
-    if (!trilhaValida(trilha)) return null;
-
-    // Fundo suficiente para reconstruir os ciclos sem varrer a vida inteira do
-    // cliente: 120 pedidos cobrem anos de qualquer trilha configurável.
-    const pedidos = await prisma.customerOrder.findMany({
-      where: {
-        franchiseeId,
-        OR: [{ customerPhone: { contains: cleanPhone.slice(-8) } }, { customerPhone: cleanPhone }],
-      },
-      orderBy: { createdAt: "desc" },
-      take: 120,
-      // O canal sai de lib/canal-do-pedido.ts, que precisa destes campos: sem
-      // eles todo pedido viraria SITE e o filtro de canais da trilha não teria
-      // o que filtrar.
-      select: {
-        id: true, createdAt: true, status: true, source: true, trilhaPremio: true,
-        ifoodOrderId: true, openDeliveryChannel: true, openDeliveryOrderId: true,
-        tableSessionId: true,
-      },
-    });
-
-    const progresso = calcularProgresso(trilha, pedidos);
-    const pendentes = premiosPendentes(trilha, pedidos);
-    return {
-      passos: progresso.passos,
-      faltam: progresso.faltam,
-      proxima: progresso.proxima,
-      conquistadas: progresso.conquistadas,
-      completou: progresso.completou,
-      cicloExpiraEm: progresso.cicloExpiraEm,
-      chamada: chamadaDaTrilha(progresso),
-      premio: pendentes[0] || null,
-      premiosNaFila: pendentes.length,
-    };
+    return await trilhaDoTelefone(franchiseeId, loja?.storeLoyalty, cleanPhone);
   } catch {
     // A trilha nunca pode derrubar a consulta de pedidos do cliente.
     return null;

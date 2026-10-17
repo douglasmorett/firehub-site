@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { haQuanto as haQuantoNaLoja } from "@/lib/clientes-da-loja-regras";
 import { FUSO_PADRAO } from "@/lib/fuso";
+import { PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
+import type { CarimbosNaFicha, FidelidadeNaFicha, ParadaNaFicha, TrilhaNaFicha } from "@/lib/fidelidade-na-ficha";
 
 type Filtro = "todos" | "com_saldo" | "pediram" | "nunca" | "sumidos";
 type Ordem = "recentes" | "pedidos" | "gasto" | "saldo" | "nome";
@@ -71,6 +73,8 @@ type Detalhe = {
   enderecos: string[];
   numeros: { pedidos: number; gasto: number; ticketMedio: number; primeiro: string | null; ultimo: string | null; cancelados: number; naoConcluidos?: number };
   cashback: RegraDoCashback & { saldo: number; proximoVencimento: { valor: number; em: string } | null; movimentos: Movimento[]; aReceber: number };
+  /** Trilha Premiada e carimbos, pela conta do cardápio (lib/fidelidade-na-ficha.ts); null no programa desligado. */
+  fidelidade?: FidelidadeNaFicha;
 };
 
 type CadastroEditado = {
@@ -783,6 +787,20 @@ function FichaDoCliente({ telefone, fuso, onFechar, onMudou, avisar }: { telefon
             <Numero titulo="Cliente desde" valor={d.clienteDesde ? data(d.clienteDesde, fuso) : "—"} />
           </div>
 
+          {/* Fidelidade: só o programa que a loja ligou. O número é o do cardápio
+              (lib/fidelidade-na-ficha.ts) — pedido do Phabio, Pizzaria Lapastine. */}
+          {(d.fidelidade?.trilha || d.fidelidade?.carimbos) && (
+            <>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 8, marginTop: 8 }}>
+                {d.fidelidade.trilha && <TrilhaDaFicha t={d.fidelidade.trilha} fuso={fuso} />}
+                {d.fidelidade.carimbos && <CarimbosDaFicha c={d.fidelidade.carimbos} />}
+              </div>
+              <div style={{ fontSize: "0.7rem", color: corSuave, marginTop: 4 }}>
+                Cada programa segue a regra dele — é o mesmo número que o cliente vê no cardápio.
+              </div>
+            </>
+          )}
+
           {/* Abas */}
           <div style={{ display: "flex", gap: 6, marginTop: 16, borderBottom: borda }}>
             {([["extrato", `Extrato (${cb.movimentos.length})`], ["pedidos", `Pedidos (${d.pedidos.length})`], ["enderecos", `Endereços (${d.enderecos.length})`]] as const).map(([k, rot]) => (
@@ -943,6 +961,133 @@ function Numero({ titulo, valor, detalhe }: { titulo: string; valor: string; det
       <div style={{ fontSize: "0.68rem", fontWeight: 700, color: corSuave, textTransform: "uppercase" }}>{titulo}</div>
       <div style={{ fontWeight: 800, fontSize: "0.98rem", marginTop: 2 }}>{valor}</div>
       {detalhe && <div style={{ fontSize: "0.7rem", color: corSuave }}>{detalhe}</div>}
+    </div>
+  );
+}
+
+// ── Trilha e carimbos na ficha ───────────────────────────────────────────────
+// Os números chegam prontos do servidor, pela conta do cardápio: aqui é só desenho.
+
+const cartaoDaFicha: React.CSSProperties = { background: "#fff", border: borda, borderRadius: 10, padding: "10px 12px", minWidth: 0 };
+const tituloDoCartao: React.CSSProperties = { fontSize: "0.68rem", fontWeight: 700, color: corSuave, textTransform: "uppercase" };
+const notaDoCartao: React.CSSProperties = { fontSize: "0.72rem", color: corSuave, marginTop: 6, lineHeight: 1.45 };
+
+const COR_DA_PARADA: Record<ParadaNaFicha["situacao"], { fundo: string; cor: string; borda: string }> = {
+  conquistada: { fundo: "#F0FDF4", cor: "#15803D", borda: "#BBF7D0" },
+  proxima: { fundo: "#FFFBEB", cor: "#92400E", borda: "#FDE68A" },
+  adiante: { fundo: "#F8FAFC", cor: corSuave, borda: "#E2E8F0" },
+};
+
+function TrilhaDaFicha({ t, fuso }: { t: TrilhaNaFicha; fuso: string }) {
+  const fracao = t.tamanho ? Math.min(100, Math.round((t.passos / t.tamanho) * 100)) : 0;
+  const prazo = t.prazoVenceu
+    ? `O prazo de ${t.janelaDias} dias venceu: a contagem recomeça no próximo pedido, e o prêmio já ganho continua valendo.`
+    : t.janelaDias > 0
+      ? t.cicloExpiraEm
+        ? `Prazo de ${t.janelaDias} dias: este ciclo vence em ${data(t.cicloExpiraEm, fuso)}.`
+        : `Prazo de ${t.janelaDias} dias, contados do primeiro pedido.`
+      : "Sem prazo.";
+  return (
+    <div style={cartaoDaFicha}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+        <div style={tituloDoCartao}>🥾 Trilha Premiada</div>
+        <div style={{ fontWeight: 800, fontSize: "0.98rem", whiteSpace: "nowrap" }}>
+          {t.passos} {t.passos === 1 ? "pedido" : "pedidos"}
+        </div>
+      </div>
+      <div style={{ fontSize: "0.8rem", marginTop: 3 }}>
+        {t.completou ? (
+          <>Percorreu a trilha inteira — ela recomeça no próximo pedido.</>
+        ) : t.proxima ? (
+          <>Falta{t.faltam === 1 ? "" : "m"} <strong>{t.faltam}</strong> para <strong>{t.proxima.premio}</strong> ({t.proxima.pedidos}º pedido)</>
+        ) : null}
+        {t.alcancada && !t.completou && (
+          <div style={{ fontSize: "0.72rem", color: corSuave }}>Passou da parada do {t.alcancada.pedidos}º pedido ({t.alcancada.premio}).</div>
+        )}
+      </div>
+
+      {/* A barra vai até a bandeira (o pedido da última parada); cada bolinha é uma parada. */}
+      <div
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={t.tamanho}
+        aria-valuenow={Math.min(t.passos, t.tamanho)}
+        aria-label={`${t.passos} de ${t.tamanho} pedidos da trilha`}
+        style={{ position: "relative", height: 6, borderRadius: 999, background: "#E2E8F0", margin: "10px 5px 6px" }}
+      >
+        <div style={{ width: `${fracao}%`, height: "100%", borderRadius: 999, background: "#16A34A" }} />
+        {t.paradas.map((p) => (
+          <span
+            key={p.pedidos}
+            title={`${p.pedidos}º pedido: ${p.premio}`}
+            style={{
+              position: "absolute", top: -3, left: `${(p.pedidos / (t.tamanho || 1)) * 100}%`, width: 12, height: 12, marginLeft: -6,
+              borderRadius: "50%", boxSizing: "border-box",
+              background: p.situacao === "conquistada" ? "#16A34A" : "#fff",
+              border: `2px solid ${p.situacao === "adiante" ? "#CBD5E1" : COR_DA_PARADA[p.situacao].cor}`,
+            }}
+          />
+        ))}
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+        {t.paradas.map((p) => {
+          const c = COR_DA_PARADA[p.situacao];
+          return (
+            <span key={p.pedidos} style={{ fontSize: "0.7rem", fontWeight: 700, padding: "2px 7px", borderRadius: 6, background: c.fundo, color: c.cor, border: `1px solid ${c.borda}`, overflowWrap: "anywhere" }}>
+              {p.situacao === "conquistada" ? "✓ " : ""}{p.pedidos}º · {p.premio}
+            </span>
+          );
+        })}
+      </div>
+
+      {t.premioAReceber && (
+        <div style={{ marginTop: 8, background: "#F0FDF4", border: "1px solid #BBF7D0", borderRadius: 8, padding: "6px 9px", fontSize: "0.76rem", color: "#14532D" }}>
+          🎁 A receber: <strong>{t.premioAReceber}</strong> — entra sozinho no próximo pedido pelo site
+          {t.premiosNaFila > 1 ? ` (${t.premiosNaFila} prêmios guardados, um por pedido)` : ""}.
+        </div>
+      )}
+
+      <div style={notaDoCartao}>{prazo} {t.ondeConta}</div>
+    </div>
+  );
+}
+
+function CarimbosDaFicha({ c }: { c: CarimbosNaFicha }) {
+  return (
+    <div style={cartaoDaFicha}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+        <div style={tituloDoCartao}>🎫 Cartão de carimbos</div>
+        <div style={{ fontWeight: 800, fontSize: "0.98rem", whiteSpace: "nowrap" }}>{c.noCartao} de {c.meta}</div>
+      </div>
+      <div aria-hidden="true" style={{ display: "flex", flexWrap: "wrap", gap: 4, margin: "8px 0 6px" }}>
+        {Array.from({ length: c.meta }).map((_, i) => (
+          <span
+            key={i}
+            style={{
+              width: 14, height: 14, borderRadius: "50%", boxSizing: "border-box",
+              background: i < c.noCartao ? "#7C3AED" : "#fff",
+              border: i < c.noCartao ? "2px solid #6D28D9" : "1.5px dashed #CBD5E1",
+            }}
+          />
+        ))}
+      </div>
+      <div style={{ fontSize: "0.8rem" }}>
+        {c.acabouDeCompletar ? (
+          <span style={{ color: "#15803D", fontWeight: 700 }}>🎉 Completou a cartela: ganhou {c.premio}.</span>
+        ) : (
+          <>Falta{c.faltam === 1 ? "" : "m"} <strong>{c.faltam}</strong> para <strong>{c.premio}</strong></>
+        )}
+      </div>
+      <div style={notaDoCartao}>
+        Cartelas completas: <strong style={{ color: corDoTexto }}>{c.completas}</strong> — o prêmio a loja dá à mão. Conta {c.minimo}.
+      </div>
+      {c.alemDaLista && (
+        <div style={{ ...notaDoCartao, color: "#92400E" }}>
+          Este cliente tem mais de {PEDIDOS_DO_CARDAPIO} pedidos e o cardápio conta só os {PEDIDOS_DO_CARDAPIO} mais recentes: o cartão e as
+          cartelas completas podem estar abaixo do real.
+        </div>
+      )}
     </div>
   );
 }
