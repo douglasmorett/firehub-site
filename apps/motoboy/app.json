@@ -2,7 +2,7 @@
   "expo": {
     "name": "FireHub Entregador",
     "slug": "firehub-entregador",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "firehub-entregador",
@@ -21,7 +21,10 @@
       "icon": "./assets/images/icon.png",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
-      }
+      },
+      "associatedDomains": [
+        "applinks:firehubfood.com.br"
+      ]
     },
     "android": {
       "package": "br.com.firehub.entregador",
@@ -40,7 +43,24 @@
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
       ],
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "firehubfood.com.br",
+              "pathPattern": "/loja/.*/motoboy"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "output": "static",
