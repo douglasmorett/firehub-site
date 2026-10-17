@@ -83,6 +83,58 @@ function resumoDasEscolhas(sel?: Record<string, Record<string, number>>): string
 /** Categorias de espelho de integração: não se vende pelo balcão (mesma lista da mesa). */
 const CATEGORIAS_ESCONDIDAS = new Set(["IFOOD", "JOTAJA", "JOTAJÁ", "99FOOD", "ONLINE", "OCULTO"]);
 
+/**
+ * O cardápio da edição, guardado por loja e canal enquanto o painel está
+ * aberto no navegador.
+ *
+ * Hakim Centro, 17/10/2026, sábado à noite: "Carregando cardápio..." por
+ * vários segundos a cada edição — 448 KB com os combos, 1,5 a 3 s no pico.
+ * A busca só começava quando o atendente abria a caixa e já digitava. Agora
+ * começa ao abrir a aba, e a segunda edição em seguida usa a mesma lista.
+ * Item que esgotou nesse meio-tempo o servidor recusa ao gravar, como já
+ * fazia.
+ */
+const CARDAPIO_VALE_MS = 3 * 60_000;
+const cardapioGuardado = new Map<string, { em: number; lista: Promise<ProdutoDoCardapio[]> }>();
+
+function buscarCardapio(loja: string, canal: string): Promise<ProdutoDoCardapio[]> {
+  const chave = `${loja}|${canal}`;
+  const guardado = cardapioGuardado.get(chave);
+  if (guardado && Date.now() - guardado.em < CARDAPIO_VALE_MS) return guardado.lista;
+  const lista = (async () => {
+    // `storeId`: a loja DO PEDIDO. O suporte (ADMIN) com "Todas as lojas"
+    // recebia sem ele o cardápio da rede inteira. Para a loja, o servidor
+    // ignora o parâmetro e usa a sessão.
+    const res = await fetch(`/api/admin/menu-products?canal=${canal}${loja ? `&storeId=${encodeURIComponent(loja)}` : ""}`);
+    // Resposta de erro ({ error }) virava lista vazia, e a tela ficava em
+    // "Carregando cardápio..." para sempre.
+    if (!res.ok) throw new Error(`cardápio respondeu ${res.status}`);
+    const data = await res.json();
+    // O mesmo recorte da mesa: sem sabor/adicional solto (o servidor marca
+    // `apenasOpcaoDeCombo`), sem inativo e sem espelho de integração. Os
+    // sabores apareciam como item de R$ 0,00 no meio da busca.
+    return (Array.isArray(data) ? data : data?.products || [])
+      .filter((p: any) => p?.id && p?.name)
+      .filter((p: any) => p.active !== false && p.apenasOpcaoDeCombo !== true)
+      .filter((p: any) => !CATEGORIAS_ESCONDIDAS.has(String(p.category || "").toUpperCase().trim()))
+      .map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        price: Number(p.price) || 0,
+        category: p.category,
+        description: p.description ?? null,
+        imageUrl: p.imageUrl ?? null,
+        comboGroups: Array.isArray(p.comboGroups) ? p.comboGroups : [],
+      }));
+  })();
+  cardapioGuardado.set(chave, { em: Date.now(), lista });
+  // Falha não fica guardada: o "Tentar de novo" pergunta outra vez.
+  lista.catch(() => {
+    if (cardapioGuardado.get(chave)?.lista === lista) cardapioGuardado.delete(chave);
+  });
+  return lista;
+}
+
 const FORMAS_DE_PAGAMENTO = ["Dinheiro", "Pix", "Débito", "Crédito"];
 
 const fmt = (v: number) => `R$ ${(Number(v) || 0).toFixed(2).replace(".", ",")}`;
@@ -176,41 +228,27 @@ export default function EditarPedidoPainel({
   // lado. O atendente leria um total na tela e o pedido fecharia noutro.
   const canalDePreco = String(pedido?.deliveryType || "").toUpperCase() === "DELIVERY" ? "delivery" : "salao";
 
-  // O cardápio só é buscado quando o atendente abre a caixa de acrescentar:
-  // é uma lista grande e a maioria das edições é só tirar item.
+  // O cardápio é buscado ao abrir a aba (buscarCardapio), não ao abrir a
+  // caixa de acrescentar: quando o atendente termina de digitar, a lista já
+  // chegou. Rodada de mesa não acrescenta, então não busca.
+  const lojaDoPedido = String(pedido?.franchiseeId || "");
+  const [cardapioFalhou, setCardapioFalhou] = useState(false);
+  const [tentativaDoCardapio, setTentativaDoCardapio] = useState(0);
   useEffect(() => {
-    if (!abrindoBusca || cardapio.length > 0) return;
+    if (ehMesa) return;
     let vivo = true;
-    (async () => {
-      try {
-        const res = await fetch(`/api/admin/menu-products?canal=${canalDePreco}`);
-        const data = await res.json().catch(() => []);
-        if (!vivo) return;
-        // O mesmo recorte da mesa: sem sabor/adicional solto (o servidor marca
-        // `apenasOpcaoDeCombo`), sem inativo e sem espelho de integração. Os
-        // sabores apareciam como item de R$ 0,00 no meio da busca.
-        const lista = (Array.isArray(data) ? data : data?.products || [])
-          .filter((p: any) => p?.id && p?.name)
-          .filter((p: any) => p.active !== false && p.apenasOpcaoDeCombo !== true)
-          .filter((p: any) => !CATEGORIAS_ESCONDIDAS.has(String(p.category || "").toUpperCase().trim()))
-          .map((p: any) => ({
-            id: p.id,
-            name: p.name,
-            price: Number(p.price) || 0,
-            category: p.category,
-            description: p.description ?? null,
-            imageUrl: p.imageUrl ?? null,
-            comboGroups: Array.isArray(p.comboGroups) ? p.comboGroups : [],
-          }));
-        setCardapio(lista);
-      } catch {
-        if (vivo) setErro("Não consegui carregar o cardápio. Tente de novo.");
-      }
-    })();
+    setCardapioFalhou(false);
+    buscarCardapio(lojaDoPedido, canalDePreco)
+      .then((lista) => {
+        if (vivo) setCardapio(lista);
+      })
+      .catch(() => {
+        if (vivo) setCardapioFalhou(true);
+      });
     return () => {
       vivo = false;
     };
-  }, [abrindoBusca, cardapio.length, canalDePreco]);
+  }, [ehMesa, lojaDoPedido, canalDePreco, tentativaDoCardapio]);
 
   const itensOriginais: ItemDoPedido[] = pedido.items || [];
   const taxa = Number(pedido.deliveryFee) || 0;
@@ -621,7 +659,15 @@ export default function EditarPedidoPainel({
             }}
           />
           <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
-            {cardapio.length === 0 && <div style={{ padding: "10px", color: "#64748B", fontSize: "0.82rem" }}>Carregando cardápio...</div>}
+            {cardapio.length === 0 && !cardapioFalhou && <div style={{ padding: "10px", color: "#64748B", fontSize: "0.82rem" }}>Carregando cardápio...</div>}
+            {cardapio.length === 0 && cardapioFalhou && (
+              <div style={{ padding: "10px", color: "#B91C1C", fontSize: "0.82rem", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+                Não consegui carregar o cardápio.
+                <button type="button" onClick={() => setTentativaDoCardapio((n) => n + 1)} style={{ ...botaoSecundario, width: "auto", margin: 0, padding: "4px 10px" }}>
+                  Tentar de novo
+                </button>
+              </div>
+            )}
             {produtosFiltrados.map((p) => (
               <button
                 key={p.id}

@@ -232,6 +232,21 @@ export async function GET(req: NextRequest) {
         ...excludeIntegrationCategories
       };
 
+  const canal = req.nextUrl.searchParams.get("canal");
+  const ehTelaDeVenda =
+    (canal === "salao" || canal === "delivery" || canal === "totem") &&
+    req.nextUrl.searchParams.get("diagnostico") !== "1";
+  // Admin sem loja escolhida vê a rede inteira: aí não há um estoque só.
+  const lojaDoCardapio = scope.isAdmin ? scope.adminStoreId : scope.storeId;
+  // Estoque, fuso e ordem das categorias não dependem dos produtos: vão ao
+  // banco JUNTO com eles, não um depois do outro. Em fila eram quatro idas a
+  // mais — 1,5 a 3 s no "Carregando cardápio..." da edição de pedido no pico
+  // de sábado (Hakim Centro, 17/10/2026). Nenhuma das três lança erro (cada
+  // uma devolve o vazio), então nada fica pendurado se o findMany falhar.
+  const extrasDaVenda = ehTelaDeVenda
+    ? Promise.all([estoqueDaLojaOuVazio(lojaDoCardapio), fusoDaLoja(lojaDoCardapio), ordemDasCategorias(lojaDoCardapio)])
+    : null;
+
   const products = await prisma.menuProduct.findMany({
     where,
     orderBy: await orderByCardapio(),
@@ -299,8 +314,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const canal = req.nextUrl.searchParams.get("canal");
-  if (canal === "salao" || canal === "delivery" || canal === "totem") {
+  if (extrasDaVenda && (canal === "salao" || canal === "delivery" || canal === "totem")) {
     // ── Quem é só opção de combo se decide AQUI, com os preços crus ──────────
     //
     // A tela de venda não tem como calcular isso sozinha: o payload que ela
@@ -316,19 +330,16 @@ export async function GET(req: NextRequest) {
     const comPreco = aplicarPrecoNoCardapio(products as any[], canal);
     // Estoque disponível: a tela de venda esconde o `esgotado` e usa o
     // restante para não deixar lançar mais do que há.
-    // Admin sem loja escolhida vê a rede inteira: aí não há um estoque só.
-    const lojaDoCardapio = scope.isAdmin ? scope.adminStoreId : scope.storeId;
-    const estoque = await estoqueDaLojaOuVazio(lojaDoCardapio);
     // Dia e horário: o item de dia específico fora do dia dele. Decidido no
     // SERVIDOR porque quem manda é o fuso da LOJA — o mesmo relógio que recusa
     // o lançamento na mesa (lib/lancar-na-mesa.ts). Sem esta bandeira a mesa
     // era a ÚNICA tela de venda que ignorava o campo.
-    const fuso = await fusoDaLoja(lojaDoCardapio);
     // Na ordem que a loja escolheu em "Reordenar Cardápio", não na alfabética.
+    const [estoque, fuso, ordem] = await extrasDaVenda;
     return NextResponse.json(
       ordenarComoALoja(
         comDisponibilidadeAnotada(comPreco as any[], fuso).map((p: any) => comEstoqueAnotado({ ...p, apenasOpcaoDeCombo: soOpcao.has(String(p.id)) }, estoque)),
-        await ordemDasCategorias(lojaDoCardapio)
+        ordem
       )
     );
   }
