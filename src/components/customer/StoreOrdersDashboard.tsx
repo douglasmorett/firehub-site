@@ -7,6 +7,7 @@ import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
 import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil, Volume2, UtensilsCrossed, Bike, Receipt } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
+import PessoasNoSiteAgora from "@/components/customer/PessoasNoSiteAgora";
 import { DIAS_DO_RELATORIO, lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { ESTADOS_DE_ENTREGADOR_IFOOD } from "@/lib/entrega-parceira";
 import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido";
@@ -6291,13 +6292,30 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
       {/* FILTER BAR */}
 
-      <div style={{ background: "#fff", borderBottom: "1px solid #E2E8F0", padding: "0.6rem 1.5rem" }}>
-        <div style={{ maxWidth: "1400px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+      {/* ── A BARRA OCUPA A LARGURA TODA ─────────────────────────────────────
+          Era uma coluna de 1400px centrada: no monitor largo sobrava o canto
+          esquerdo vazio e, no notebook, "Mudar tempo de entrega" descia
+          sozinho para uma 3ª linha (Douglas, 16/10/2026: "podia estar melhor
+          distribuído"). Agora: à esquerda quem está no site, a busca e o
+          período; à direita os filtros, o som e a engrenagem; embaixo os
+          atalhos repartindo a largura. Tablet e celular empilham pelas
+          classes bp-* do <style> do fim do arquivo. */}
+      <div style={{ background: "#fff", borderBottom: "1px solid #E2E8F0", padding: "0.6rem 1.25rem" }}>
+        <div style={{ maxWidth: "100%", margin: "0 auto", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
 
-          {/* Row 1: Search + Date range + Weather/Clock */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+          {/* Linha 1: no site agora + busca + período · filtros + som + engrenagem */}
+          <div className="bp-topo" style={{ display: "flex", alignItems: "flex-end", gap: "0.6rem 0.75rem", flexWrap: "wrap" }}>
+            {/* Quantos clientes estão no cardápio agora — o mesmo número da
+                Início, para o funcionário que só tem esta tela (Jerrajê). */}
+            {naBarra("pessoasNoSite") && (
+              <PessoasNoSiteAgora
+                className="bp-online"
+                loja={String(user?.role || "").toUpperCase() === "ADMIN" && activeStoreId !== "all" ? String(user?.ownerId || user?.id || "") || null : null}
+              />
+            )}
+
             {/* Search */}
-            <div style={{ position: "relative", flex: 1, minWidth: "180px", maxWidth: "320px" }}>
+            <div className="bp-busca" style={{ position: "relative", flex: "1 1 220px", minWidth: "180px", maxWidth: "340px" }}>
               <Search size={16} style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
               <input
                 type="text" placeholder="Nome, número, telefone, endereço..."
@@ -6307,7 +6325,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
 
             {/* Date range */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", background: "#F8FAFC", padding: "4px 10px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
+            <div className="bp-periodo" style={{ display: "flex", alignItems: "center", gap: "6px", background: "#F8FAFC", padding: "4px 10px", borderRadius: "10px", border: "1px solid #E2E8F0" }}>
               <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>De</span>
               <input type="datetime-local" value={dateFrom} onChange={e => setDateFrom(e.target.value)} onBlur={e => { const p = corrigirPeriodo(e.target.value, dateTo, "de"); if (p.ate !== dateTo) setDateTo(p.ate); }} style={{ padding: "3px 6px", borderRadius: "6px", border: "1px solid #E2E8F0", fontSize: "0.75rem", outline: "none", background: "#fff" }} />
               <span style={{ fontSize: "0.75rem", color: "#64748B", fontWeight: 600 }}>Até</span>
@@ -6322,9 +6340,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               )}
             </div>
 
+            {/* A mola: empurra filtros, som e engrenagem para a direita quando
+                tudo cabe numa linha (some no tablet e no celular). */}
+            <span className="bp-mola" aria-hidden style={{ flex: "1 1 0px", minWidth: 0 }} />
+
             {/* Filtro por integração (de onde o pedido veio) */}
             {naBarra("filtroCanais") && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
+            <div className="bp-filtro" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
               <span style={{ fontSize: "0.60rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: "2px" }}>
                 Filtro de integrações
               </span>
@@ -6530,7 +6552,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
             {/* Filtro por tipo de pedido (o que ele é) — mesmo jeito do de integrações */}
             {naBarra("filtroCanais") && (
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
+            <div className="bp-filtro" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
               <span style={{ fontSize: "0.60rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: "2px" }}>
                 Filtro de pedidos
               </span>
@@ -6591,6 +6613,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 Um clique responde na hora de que lado está o problema. */}
             <button
               type="button"
+              className="bp-som"
               onClick={testarSom}
               style={{
                 alignSelf: "flex-end", height: "30px", padding: "0 9px", borderRadius: "8px",
@@ -6606,6 +6629,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
             <button
               type="button"
+              className="bp-engrenagem"
               onClick={() => setShowBarraConfig(true)}
               style={{
                 alignSelf: "flex-end", height: "30px", padding: "0 9px", borderRadius: "8px",
@@ -6671,6 +6695,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 </p>
 
                 {[
+                  { chave: "pessoasNoSite", rotulo: "Pessoas no site agora", ajuda: "Quantos clientes estão no cardápio neste momento" },
                   { chave: "filtroCanais", rotulo: "Filtros de integrações e de pedidos", ajuda: "iFood, 99Food, Brendi, Wabiz, Loja · Delivery, Retirada, Balcão, Mesa" },
                   { chave: "botaoPainelClean", rotulo: "Interruptor do Painel clean", ajuda: "Cards pequenos, mais pedidos na tela" },
                   { chave: "botaoResumo", rotulo: "Resumo das vendas", ajuda: "" },
@@ -6795,8 +6820,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
           )}
 
-          {/* Row 2: Action buttons */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", flexWrap: "wrap" }}>
+          {/* Linha 2: os atalhos repartem a largura (bp-acoes no <style>);
+              no celular viram uma faixa que corre para o lado. */}
+          <div className="bp-acoes" style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
             {/* ── PAINEL CLEAN À VISTA ───────────────────────────────────────
                 Era só uma opção na engrenagem; o dono gostou tanto que quis o
                 interruptor na barra, destacado, "o cara vê com facilidade"
@@ -7923,6 +7949,47 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             justify-content: space-between;
             margin-left: 0 !important;
           }
+        }
+
+        /* ── A BARRA DO TOPO POR TAMANHO DE TELA (bp-*) ──
+           Monitor e notebook: linha 1 com "no site agora", busca e período à
+           esquerda e, empurrados pela mola, filtros, som e engrenagem à
+           direita; linha 2 com os atalhos crescendo até encher a largura —
+           sem buraco no canto e sem um botão sozinho numa 3ª linha curta.
+           Tablet: busca esticada ao lado da caixinha, som e engrenagem na
+           mesma linha; período e filtros embaixo. Celular: tudo em largura
+           cheia, e os atalhos viram uma faixa que corre para o lado. */
+        .bp-acoes > * {
+          flex: 1 1 auto;
+          justify-content: center;
+          white-space: nowrap;
+          box-sizing: border-box;
+        }
+        @media (max-width: 1023px) {
+          .bp-online { order: 1; }
+          .bp-busca { order: 2; max-width: none !important; }
+          .bp-som { order: 3; }
+          .bp-engrenagem { order: 4; }
+          .bp-periodo { order: 5; }
+          .bp-mola { display: none; }
+          .bp-filtro { order: 6; }
+        }
+        @media (max-width: 640px) {
+          .bp-online { margin-right: auto; }
+          .bp-busca { order: 5; flex: 1 1 100% !important; }
+          .bp-periodo { order: 6; flex: 1 1 100%; flex-wrap: wrap; box-sizing: border-box; }
+          .bp-periodo input { flex: 1 1 0; min-width: 0; }
+          .bp-filtro { order: 7; flex: 1 1 100%; }
+          .bp-filtro > div:last-child { width: 100%; box-sizing: border-box; }
+          .bp-filtro > div:last-child > button { flex: 1 1 auto; justify-content: center; }
+          .bp-acoes {
+            flex-wrap: nowrap !important;
+            overflow-x: auto;
+            padding-bottom: 4px;
+            scrollbar-width: thin;
+            -webkit-overflow-scrolling: touch;
+          }
+          .bp-acoes > * { flex: 0 0 auto; }
         }
 
         @keyframes pulse {

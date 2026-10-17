@@ -5,7 +5,7 @@
  *   npx tsx scripts/teste-funil-do-site.ts
  */
 import {
-  conversao, degrausDoFunil, dispositivoDaVisita, ehRobo, etapasAte, maiorPerda, origemDaVisita,
+  conversao, degrausDoFunil, dicaDoOnline, dispositivoDaVisita, ehRobo, etapasAte, maiorPerda, origemDaVisita, textoDoOnline,
 } from "../src/lib/funil-do-site-regras";
 
 let falhas = 0;
@@ -46,6 +46,16 @@ confere("maior perda: produto → carrinho e checkout empatam em 50%: fica a pri
 confere("degrau nunca passa do anterior (dado torto)", degrausDoFunil({ visita: 10, produto: 12, carrinho: 3, checkout: 3, pedido: 1 }).map((x) => x.pessoas), [10, 10, 3, 3, 1]);
 confere("sem visitas: tudo zero, sem dividir por zero", degrausDoFunil({ visita: 0, produto: 0, carrinho: 0, checkout: 0, pedido: 0 }).map((x) => x.doTotal), [0, 0, 0, 0, 0]);
 confere("pouca gente não vira diagnóstico", maiorPerda(degrausDoFunil({ visita: 2, produto: 1, carrinho: 0, checkout: 0, pedido: 0 })), null);
+
+console.log("\n— A caixinha da tela de Pedidos —");
+confere("zero = ninguém", textoDoOnline(0), "ninguém no site agora");
+confere("um", textoDoOnline(1), "1 no site agora");
+confere("vários", textoDoOnline(3), "3 no site agora");
+confere("milhar com ponto", textoDoOnline(1200), "1.200 no site agora");
+confere("lixo vira zero", textoDoOnline(NaN), "ninguém no site agora");
+confere("negativo vira zero", textoDoOnline(-2), "ninguém no site agora");
+confere("dica sem carrinho não fala de carrinho", dicaDoOnline({ agora: 2, comCarrinho: 0, finalizando: 0 }).includes("🛒"), false);
+confere("dica com carrinho e finalizando", dicaDoOnline({ agora: 4, comCarrinho: 2, finalizando: 1 }).endsWith("🛒 2 com carrinho · 1 finalizando."), true);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

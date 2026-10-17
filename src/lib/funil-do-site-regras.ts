@@ -150,3 +150,24 @@ export function conversao(c: ContagemDoFunil): number {
 export const ONLINE_POR_MS = 2 * 60 * 1000;
 /** De quanto em quanto a página aberta avisa que a pessoa continua lá. */
 export const BATIDA_DO_ONLINE_MS = 45 * 1000;
+/** De quanto em quanto o painel pergunta quem está no site agora — a mesma
+ *  pergunta leve (só o "online") na Início e na tela de Pedidos. */
+export const PERGUNTA_DO_ONLINE_MS = 20 * 1000;
+
+/**
+ * A caixinha da tela de Pedidos (components/customer/PessoasNoSiteAgora.tsx):
+ * o funcionário da loja só tem a tela de Pedidos (Jerrajê, 16/10/2026) e vê
+ * ali o mesmo "agora" da Início, em poucas palavras.
+ */
+export function textoDoOnline(agora: number): string {
+  const n = Math.max(0, Math.round(Number(agora) || 0));
+  if (n === 0) return "ninguém no site agora";
+  return `${n.toLocaleString("pt-BR")} no site agora`;
+}
+
+/** A dica ao passar o mouse: de onde vem o número e quem está comprando. */
+export function dicaDoOnline(o: { agora: number; comCarrinho: number; finalizando: number }): string {
+  const partes = ["Clientes com o cardápio da loja aberto (sinal nos últimos 2 minutos). Atualiza sozinho a cada 20 s."];
+  if (o.comCarrinho > 0) partes.push(`🛒 ${o.comCarrinho} com carrinho${o.finalizando > 0 ? ` · ${o.finalizando} finalizando` : ""}.`);
+  return partes.join(" ");
+}

@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import {
-  conversao, degrausDoFunil, maiorPerda, NOME_DA_ETAPA, NOME_DA_ORIGEM,
+  conversao, degrausDoFunil, maiorPerda, NOME_DA_ETAPA, NOME_DA_ORIGEM, PERGUNTA_DO_ONLINE_MS,
   type ContagemDoFunil, type OrigemDaVisita,
 } from "@/lib/funil-do-site-regras";
 
@@ -59,7 +59,7 @@ export default function FunilDoSite({ janela, anterior, loja, rotulo }: { janela
         .then((r) => (r.ok ? r.json() : null))
         .then((j) => { if (vivo && j?.online) setDados((d) => (d ? { ...d, online: j.online } : d)); })
         .catch(() => {});
-    }, 20_000);
+    }, PERGUNTA_DO_ONLINE_MS);
     return () => { vivo = false; window.clearInterval(t); };
   }, [loja]);
 

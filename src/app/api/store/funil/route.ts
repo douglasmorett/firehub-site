@@ -6,6 +6,7 @@
  *
  * A mesma porta e a mesma visão de loja da /api/store/inicio: `loja` só vale
  * para o ADMIN; o lojista vê a loja ativa ou o grupo em "Todas as Lojas".
+ * A tela de Pedidos usa o mesmo "online agora" (PessoasNoSiteAgora).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
@@ -33,7 +34,12 @@ export async function GET(req: NextRequest) {
   if (usuario.role !== "FRANCHISEE" && usuario.role !== "ADMIN" && usuario.role !== "STAFF") {
     return NextResponse.json({ error: "Sem acesso" }, { status: 403 });
   }
-  if (usuario.role === "STAFF" && !funcionarioAbre("/store", String(usuario.permissions ?? ""))) {
+  // Funcionário: quem abre a Início vê tudo; quem só tem a tela de Pedidos
+  // (Jerrajê, 16/10/2026 — a caixinha "no site agora" da barra) vê SÓ o
+  // número de agora — o funil do período continua com a Início.
+  const permissoes = String(usuario.permissions ?? "");
+  const veOFunil = usuario.role !== "STAFF" || funcionarioAbre("/store", permissoes);
+  if (!veOFunil && !funcionarioAbre("/store/pedidos-clientes", permissoes)) {
     return NextResponse.json({ error: "Sem acesso" }, { status: 403 });
   }
 
@@ -50,7 +56,7 @@ export async function GET(req: NextRequest) {
     const online = await onlineAgora(lojas);
     const de = data(p.get("de"));
     const ate = data(p.get("ate"));
-    if (!de || !ate || de > ate) return NextResponse.json({ online }, { headers: { "Cache-Control": "no-store" } });
+    if (!veOFunil || !de || !ate || de > ate) return NextResponse.json({ online }, { headers: { "Cache-Control": "no-store" } });
 
     const antesDe = data(p.get("antesDe"));
     const antesAte = data(p.get("antesAte"));
