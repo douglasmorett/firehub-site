@@ -73,6 +73,11 @@ const INSTRUCOES = [
   // De qual modelo de pagamento o acerto deste entregador foi copiado, e a
   // lista de modelos da loja (lib/modelos-de-pagamento.ts).
   `ALTER TABLE "Motoboy" ADD COLUMN IF NOT EXISTS "modeloDePagamento" TEXT`,
+  // Como o entregador recebe nos pedidos de app — escolha do cadastro dele
+  // (lib/repasse-do-entregador.ts, PedidoDeAppDoEntregador). Nulo = nunca
+  // escolheu e segue a regra antiga da loja, que é como todo entregador já
+  // cadastrado continua.
+  `ALTER TABLE "Motoboy" ADD COLUMN IF NOT EXISTS "pedidoDeApp" JSONB`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "modelosDePagamento" JSONB`,
   // Regras do KDS fora das telas: categoria que só aparece na finalização
   // (lib/kds-telas.ts, `lerKdsConfig`).
@@ -125,6 +130,7 @@ const ESPERADAS = [
   "CustomerOrder.entregaGratis",
   "Motoboy.faixasDeKm",
   "Motoboy.modeloDePagamento",
+  "Motoboy.pedidoDeApp",
   "User.modelosDePagamento",
   "User.kdsConfig",
   "MenuProduct.estoqueQtd",
@@ -218,7 +224,7 @@ export async function garantirColunasDePreco(): Promise<void> {
             'priceRule',
             'additionalPriceSalao', 'additionalPriceDelivery', 'additionalPriceTotem',
             'trilhaPremio', 'carimboPremio', 'entregaGratis', 'faixasDeKm',
-            'modeloDePagamento', 'modelosDePagamento', 'kdsConfig',
+            'modeloDePagamento', 'modelosDePagamento', 'kdsConfig', 'pedidoDeApp',
             'estoqueQtd', 'estoqueDesde', 'estoquePausar',
             'storeBannerVideo', 'reviewsMinStars', 'availableHours',
             'agendamentoConfig', 'agendado',

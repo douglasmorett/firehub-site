@@ -109,6 +109,9 @@ export async function GET(req: NextRequest) {
       // da impressão lê o pedido SEM select: coluna ausente para a impressão.
       ["CustomerOrder", "tempoEntregaMin"],
       ["Motoboy", "faixasDeKm"],
+      // "Pagar diferente nos pedidos de app" do cadastro do entregador: a
+      // lista de motoboys e o relatório leem o Motoboy SEM select.
+      ["Motoboy", "pedidoDeApp"],
       ["CustomerOrder", "posOrderId"], ["CustomerOrder", "posTerminalId"],
       ["CustomerOrder", "posStatus"], ["CustomerOrder", "posDadosTransacao"],
       ["CustomerOrder", "posTentativas"], ["CustomerOrder", "tableSessionId"],

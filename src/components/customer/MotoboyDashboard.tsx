@@ -1,10 +1,10 @@
 "use client";
 import { useState } from "react";
 import MotoboyManager from "./MotoboyManager";
-import RegraDoPagamentoDoApp from "./RegraDoPagamentoDoApp";
 import MotoboyReport from "./MotoboyReport";
 import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import LancheDaEquipePainel from "@/components/lanche/LancheDaEquipePainel";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 
 export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliveryConfig, operador, lanche = null }: {
   initialMotoboys: any[], storeTimezone?: string, deliveryConfig?: unknown, operador: OperadorDaEdicao,
@@ -39,12 +39,12 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
       </div>
 
       {tab === "cadastro" && (
-        <>
-          {/* Decisão da LOJA, não de um entregador: o mesmo pedido de app não
-              pode valer um número para um e outro para outro. */}
-          <RegraDoPagamentoDoApp deliveryConfig={deliveryConfig} />
-          <MotoboyManager initialMotoboys={motoboys} />
-        </>
+        // O quadro "Pedido de iFood, 99Food e outros apps" que ficava aqui
+        // em cima saiu em 17/10/2026 ("está confuso, ninguém usa nem
+        // entende" — o dono): a escolha agora é no cadastro de cada
+        // entregador. A regra antiga da loja vai junto só para a tela mostrar
+        // o que vale para quem nunca escolheu.
+        <MotoboyManager initialMotoboys={motoboys} regraDaLoja={lerRegraDeRepasse(deliveryConfig)} />
       )}
       {tab === "relatorio" && (
         <MotoboyReport motoboys={motoboys} storeTimezone={storeTimezone} operador={operador} deliveryConfig={deliveryConfig} />

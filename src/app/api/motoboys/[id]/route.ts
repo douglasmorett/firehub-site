@@ -5,6 +5,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { hashDeSenha } from "@/lib/motoboy-senha";
 import { renomearNoFiado, tirarDoFiado } from "@/lib/fiado-do-motoboy";
+import { pedidoDeAppDoCorpo } from "@/lib/repasse-do-entregador";
+import { gravarPedidoDeApp } from "@/lib/pedido-de-app-no-banco";
 
 // PUT - atualizar motoboy
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -24,6 +26,13 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const body = await req.json();
   const { name, phone, password, paymentType, dailyRate, perDeliveryRate, perKmRate, faixasDeKm, notes, active, modeloDePagamento } = body;
+
+  // "Pagar diferente nos pedidos de app" (lib/repasse-do-entregador.ts). Por
+  // presença, como o resto: a tela só manda quando a pessoa mexeu na seção —
+  // salvar o nome não transforma a regra antiga da loja em escolha dele.
+  const app = pedidoDeAppDoCorpo(body.pedidoDeApp);
+  if (app.acao === "recusar") return NextResponse.json({ error: app.erro }, { status: 400 });
+  if (app.acao === "gravar") await gravarPedidoDeApp(id, app.escolha);
 
   const motoboy = await prisma.motoboy.update({
     where: { id },
@@ -52,7 +61,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   // fiado — só excluir.
   await renomearNoFiado(existing, motoboy);
 
-  return NextResponse.json({ ...motoboy, password: undefined });
+  // A escolha gravada volta na resposta mesmo com um cliente do Prisma de
+  // antes da coluna (lib/pedido-de-app-no-banco.ts).
+  const pedidoDeApp = app.acao === "gravar" ? app.escolha : ((motoboy as any).pedidoDeApp ?? null);
+  return NextResponse.json({ ...motoboy, pedidoDeApp, password: undefined });
 }
 
 // DELETE - remover motoboy

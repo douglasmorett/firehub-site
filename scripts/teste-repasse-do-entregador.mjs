@@ -15,7 +15,7 @@ const js = ts.transpileModule(readFileSync("src/lib/repasse-do-entregador.ts", "
 const M = await import("data:text/javascript," + encodeURIComponent(js));
 const {
   lerRegraDeRepasse, repasseDaFaixaKm, repasseDoBairro, repasseDoPedido,
-  repasseDaZona, explicarRegraDoApp, REPASSE_PADRAO,
+  repasseDaZona, REPASSE_PADRAO,
 } = M;
 
 let falhas = 0;
@@ -98,10 +98,10 @@ conferir("bairro vence a faixa quando os dois existem",
 conferir("bairro sem repasse cai na faixa, não na taxa do cliente",
   repasseDoPedido({ regra: SEPARADO, zonas: BAIRROS, bairro: "Vila Nova" }) === null);
 
-console.log("\n6) O texto explica a escolha");
-conferir("APP fala do valor do app", /veio do app/.test(explicarRegraDoApp({ separado: true, marketplace: "APP" })));
-conferir("TABELA avisa que a taxa do app é do marketplace",
-  /dinheiro do marketplace/.test(explicarRegraDoApp({ separado: true, marketplace: "TABELA" })));
+// O item 6 conferia o texto do quadro "Pedido de iFood, 99Food e outros apps"
+// da aba Motoboys (explicarRegraDoApp). O quadro saiu em 17/10/2026 — a
+// escolha passou para o cadastro de cada entregador
+// (scripts/teste-pedido-de-app-do-entregador.ts).
 
 console.log(falhas === 0 ? "\nTUDO OK\n" : `\n${falhas} FALHA(S)\n`);
 process.exit(falhas === 0 ? 0 : 1);

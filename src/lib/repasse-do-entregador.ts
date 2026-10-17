@@ -18,6 +18,11 @@
  *    a entrega do iFood inteira ao motoboy, e quem paga sempre o mesmo,
  *    independente do que o app pagou.
  *
+ *    Desde 17/10/2026 essa escolha é de CADA ENTREGADOR (`PedidoDeAppDoEntregador`,
+ *    no cadastro dele). A da loja ficou só como o padrão de quem nunca
+ *    escolheu, para as lojas que já usavam "valor do app" ou "valor fixo" não
+ *    mudarem de conta sem ninguém mexer — e não tem mais tela.
+ *
  * ── Onde cada número nasce ──────────────────────────────────────────────────
  *
  * Pedido do site/balcão/robô: o repasse é gravado NO PEDIDO na hora da venda
@@ -33,7 +38,11 @@ export type OrigemDoRepasseNoApp = "APP" | "TABELA" | "FIXO";
 export type RegraDeRepasse = {
   /** A loja informa separadamente o que paga ao entregador. */
   separado: boolean;
-  /** Em pedido de iFood/99Food: paga o que veio do app, o da sua tabela, ou um valor fixo. */
+  /**
+   * Em pedido de iFood/99Food: paga o que veio do app, o da sua tabela, ou um
+   * valor fixo. Regra ANTIGA da loja: vale só para o entregador sem escolha
+   * própria (lib/ganho-do-entregador.ts).
+   */
   marketplace: OrigemDoRepasseNoApp;
   /**
    * O valor fixo por entrega de app, quando `marketplace === "FIXO"`.
@@ -238,19 +247,66 @@ export function repasseDoPedido(args: {
 }
 
 /**
- * A frase que a tela mostra para a loja conferir a escolha do app.
+ * Como ESTE entregador recebe nos pedidos de app — a escolha do cadastro dele.
  *
- * Texto gerado da configuração, não escrito à mão: a loja troca a opção e a
- * explicação troca junto.
+ * ── Por que saiu da loja e foi para o entregador ───────────────────────────
+ *
+ * Até 17/10/2026 a escolha era uma só para a loja inteira, num quadro no topo
+ * da aba Motoboys ("o que o entregador recebe é: o valor que eu combinei / o
+ * que veio do app / um valor fixo"). O dono: "está confuso, ninguém usa nem
+ * entende". E a vida real é por pessoa: o motoboy da casa leva R$ 4,00 fixo
+ * no iFood, o freelancer do fim de semana leva a taxa que o app pagou.
+ *
+ * `IGUAL` = o mesmo pagamento dos pedidos do site (o acerto dele e a tabela da
+ * loja), ignorando a regra antiga da loja para app. `APP` = a taxa de entrega
+ * que veio do app. `FIXO` = sempre `valor` por entrega de app (zero vale).
+ *
+ * Nulo = ele nunca escolheu, e continua valendo a regra antiga da loja
+ * (`RegraDeRepasse.marketplace`) — é o que mantém igual, sem ninguém mexer,
+ * quem já tinha "valor do app" ou "valor fixo" na loja.
+ *
+ * Mora em `Motoboy.pedidoDeApp` (JSONB, lib/garantir-colunas.ts).
  */
-export function explicarRegraDoApp(regra: RegraDeRepasse): string {
-  if (regra.marketplace === "APP") {
-    return "Nos pedidos de iFood, 99Food e outros apps, o entregador recebe a taxa de entrega que veio do app.";
+export type PedidoDeAppDoEntregador =
+  | { modo: "IGUAL" }
+  | { modo: "APP" }
+  | { modo: "FIXO"; valor: number };
+
+/**
+ * A escolha gravada, validada. Qualquer coisa fora do formato é nulo ("não
+ * escolheu") — e FIXO sem valor também: a tela não deixa salvar assim, e
+ * pagar R$ 0,00 por engano é pior que seguir a regra de antes.
+ */
+export function lerPedidoDeAppDoEntregador(v: unknown): PedidoDeAppDoEntregador | null {
+  let bruto: any = v;
+  if (typeof bruto === "string") {
+    try { bruto = JSON.parse(bruto); } catch { return null; }
   }
-  if (regra.marketplace === "FIXO") {
-    return regra.valorFixoApp == null
-      ? "Falta preencher quanto você paga por entrega de app. Enquanto estiver vazio, vale o acerto individual de cada entregador."
-      : `Nos pedidos de iFood, 99Food e outros apps, o entregador recebe sempre ${regra.valorFixoApp.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} por entrega — não importa a taxa que o app cobrou do cliente nem a distância. Nos pedidos do seu site continua valendo a taxa do próprio pedido.`;
+  if (!bruto || typeof bruto !== "object" || Array.isArray(bruto)) return null;
+  if (bruto.modo === "IGUAL") return { modo: "IGUAL" };
+  if (bruto.modo === "APP") return { modo: "APP" };
+  if (bruto.modo === "FIXO") {
+    const valor = valorOuNulo(bruto.valor);
+    return valor == null ? null : { modo: "FIXO", valor };
   }
-  return "Nos pedidos de iFood, 99Food e outros apps, o entregador recebe o valor da sua tabela — a taxa que o app mostra é dinheiro do marketplace, não o que você paga.";
+  return null;
+}
+
+/**
+ * O que veio no corpo da tela: `undefined` = não mexer; `null` = apagar;
+ * objeto válido = gravar; objeto inválido (FIXO sem valor) = recusar.
+ */
+export function pedidoDeAppDoCorpo(v: unknown):
+  | { acao: "manter" }
+  | { acao: "gravar"; escolha: PedidoDeAppDoEntregador | null }
+  | { acao: "recusar"; erro: string } {
+  if (v === undefined) return { acao: "manter" };
+  if (v === null) return { acao: "gravar", escolha: null };
+  const escolha = lerPedidoDeAppDoEntregador(v);
+  if (!escolha) {
+    return (v as any)?.modo === "FIXO"
+      ? { acao: "recusar", erro: "Preencha quanto ele recebe por entrega de app." }
+      : { acao: "recusar", erro: "Escolha inválida para os pedidos de app." };
+  }
+  return { acao: "gravar", escolha };
 }

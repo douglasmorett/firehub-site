@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { estaNaSenhaPadrao, hashDeSenha } from "@/lib/motoboy-senha";
+import { pedidoDeAppDoCorpo } from "@/lib/repasse-do-entregador";
+import { gravarPedidoDeApp } from "@/lib/pedido-de-app-no-banco";
 
 // GET - listar motoboys do franqueado
 export async function GET() {
@@ -61,6 +63,9 @@ export async function POST(req: Request) {
   if (!name?.trim()) {
     return NextResponse.json({ error: "Nome é obrigatório" }, { status: 400 });
   }
+  // "Pagar diferente nos pedidos de app" (lib/repasse-do-entregador.ts).
+  const app = pedidoDeAppDoCorpo(body.pedidoDeApp);
+  if (app.acao === "recusar") return NextResponse.json({ error: app.erro }, { status: 400 });
 
   const motoboy = await prisma.motoboy.create({
     data: {
@@ -81,9 +86,11 @@ export async function POST(req: Request) {
     },
   });
 
+  if (app.acao === "gravar") await gravarPedidoDeApp(motoboy.id, app.escolha);
+
   // A resposta devolvia o registro inteiro, com o campo password dentro.
   return NextResponse.json(
-    { ...motoboy, password: undefined, senhaPadrao: !password?.trim() },
+    { ...motoboy, pedidoDeApp: app.acao === "gravar" ? app.escolha : null, password: undefined, senhaPadrao: !password?.trim() },
     { status: 201 }
   );
 }

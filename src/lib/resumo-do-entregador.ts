@@ -417,8 +417,11 @@ export function composicaoDoGanho(entregas: { origemDoGanho?: string | null; gan
     TAXA_DO_CLIENTE: "Taxa de entrega do pedido",
     SO_DIARIA: "Só diária (sem valor por entrega)",
     SEM_DISTANCIA: "Sem distância medida (R$ 0,00)",
+    // A escolha "pagar diferente nos pedidos de app" do cadastro do entregador.
+    VALOR_DO_APP: "Pedido de app: taxa que veio do app",
+    FIXO_NO_APP: "Pedido de app: valor fixo",
   };
-  const ORDEM = ["POR_ENTREGA", "FAIXA_DELE", "POR_KM", "REGRA_DA_LOJA", "TAXA_DO_CLIENTE", "GRAVADO", "SEM_DISTANCIA", "SO_DIARIA"];
+  const ORDEM = ["POR_ENTREGA", "FAIXA_DELE", "POR_KM", "REGRA_DA_LOJA", "FIXO_NO_APP", "VALOR_DO_APP", "TAXA_DO_CLIENTE", "GRAVADO", "SEM_DISTANCIA", "SO_DIARIA"];
   const grupos = new Map<string, { qtd: number; c: number; km: number; valores: Set<number> }>();
   for (const e of entregas) {
     if (e.corrida === false) continue;

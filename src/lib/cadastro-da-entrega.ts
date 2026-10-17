@@ -777,7 +777,9 @@ export function cadastroParaGravar(
  * A regra de repasse depois do salvar de UMA tela.
  *
  * `separado` ("o motoboy recebe um valor por faixa") é decidido na tela de
- * Entrega; `marketplace` e `valorFixoApp`, na aba Motoboys. A aba Motoboys
+ * Entrega; `marketplace` e `valorFixoApp`, na aba Motoboys (até 17/10/2026 —
+ * hoje a escolha do app é no cadastro de cada entregador, e estes dois ficam
+ * só como o padrão de quem não escolheu). A aba Motoboys
  * mandava `separado: true` em todo clique e ligava o repasse por faixa de lojas
  * que nunca preencheram "Motoboy recebe". Agora campo AUSENTE no corpo mantém
  * o que está gravado, e campos que outra versão da regra tenha guardado
