@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exigirEstoque } from "@/lib/cmv/acesso";
 import { CompraRecusadaError, desfazerCompra, lancarCompra, type PagamentoDaCompra } from "@/lib/cmv/lancar-compra";
+import { conferirPausaDaCompra } from "@/lib/pausa-pelo-estoque-no-banco";
 import { hojeNaLoja, naLoja, somarDias } from "@/lib/relatorios/base";
 
 export const dynamic = "force-dynamic";
@@ -111,6 +112,8 @@ export async function POST(req: NextRequest) {
         pagamento: (body?.pagamento as PagamentoDaCompra | null) ?? null,
       }),
     );
+    // Chegou o insumo: o que a pausa pelo estoque tirou do ar pode voltar.
+    await conferirPausaDaCompra(lojaId, result.invoiceId);
     return NextResponse.json({ success: true, ...result });
   } catch (error: any) {
     if (error instanceof CompraRecusadaError || error?.name === "CompraRecusadaError") {
@@ -129,6 +132,7 @@ export async function DELETE(req: NextRequest) {
     if (!id) return NextResponse.json({ error: "Informe a compra." }, { status: 400 });
 
     const result = await prisma.$transaction((tx) => desfazerCompra(tx, { franchiseeId: r.acesso.lojaId, usuarioId: r.acesso.usuarioId, invoiceId: id }));
+    await conferirPausaDaCompra(r.acesso.lojaId, id);
     return NextResponse.json({ success: true, ...result });
   } catch (error: any) {
     if (error instanceof CompraRecusadaError || error?.name === "CompraRecusadaError") {

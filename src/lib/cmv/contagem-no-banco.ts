@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { custosNoDia, type EntradaComCusto, type InsumoParaCusto } from "@/lib/cmv/custo-do-insumo";
 import { entraNoCarregado, fecharContagem, type Fechamento } from "@/lib/cmv/contagem";
 import { naLoja } from "@/lib/relatorios/base";
+import { conferirPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 
 export class ContagemRecusadaError extends Error {
   constructor(m: string) { super(m); this.name = "ContagemRecusadaError"; }
@@ -181,6 +182,10 @@ export async function fecharContagemNoBanco(e: { lojaId: string; usuarioId: stri
     });
   }, { timeout: 60000, maxWait: 15000 });
 
+  // A contagem acertou saldos: zerou ou voltou, a pausa pelo estoque confere.
+  const ajustados = fechamento.linhas.filter((l) => l.origem === "CONTADO" && Math.abs(l.ajuste) > 1e-9).map((l) => l.stockItemId);
+  if (ajustados.length) await conferirPausaPeloEstoque(e.lojaId, ajustados);
+
   return { fechamento, dia: contagem.dia };
 }
 
@@ -192,8 +197,10 @@ export async function reabrirContagem(e: { lojaId: string; contagemId: string })
   const depois = await prisma.contagemDeEstoque.findFirst({ where: { franchiseeId: e.lojaId, dia: { gt: contagem.dia } }, select: { dia: true } });
   if (depois) throw new ContagemRecusadaError(`Só dá para reabrir a última contagem. Existe outra depois (${depois.dia}).`);
 
+  const desfeitos: string[] = [];
   await prisma.$transaction(async (tx) => {
     const ajustes = await tx.stockTransaction.findMany({ where: { franchiseeId: e.lojaId, type: "AJUSTE", sourceRef: { startsWith: `contagem:${contagem.id}:` } } });
+    for (const a of ajustes) desfeitos.push(a.stockItemId);
     for (const a of ajustes) {
       await tx.stockItem.updateMany({ where: { id: a.stockItemId, franchiseeId: e.lojaId }, data: { quantity: { decrement: a.quantity } } });
       await tx.stockTransaction.delete({ where: { id: a.id } });
@@ -206,4 +213,5 @@ export async function reabrirContagem(e: { lojaId: string; contagemId: string })
     await tx.contagemItem.updateMany({ where: { contagemId: contagem.id }, data: { quantidade: null, origem: null, custoUnitario: null, valor: null, saldoSistema: null } });
     await tx.contagemDeEstoque.update({ where: { id: contagem.id }, data: { status: "ABERTA", valorTotal: null, fechadaEm: null, fechadaPor: null } });
   }, { timeout: 60000, maxWait: 15000 });
+  if (desfeitos.length) await conferirPausaPeloEstoque(e.lojaId, desfeitos);
 }

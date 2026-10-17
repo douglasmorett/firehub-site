@@ -12,6 +12,7 @@ import { SELECT_DO_CARDAPIO, ordemDasCategorias, ordenarComoALoja } from "@/lib/
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 import { refazerMeiasDaLoja } from "@/lib/meio-a-meio-no-banco";
 import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
+import { esquecerPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -608,6 +609,12 @@ export async function PUT(req: NextRequest) {
     });
     meiasJuntas = r.count;
   }
+  // Pausou ou reativou na mão: o produto deixa de ser "pausado pelo estoque"
+  // (lib/pausa-pelo-estoque.ts) e a regra nunca reativa sozinha o que o
+  // lojista decidiu.
+  if (typeof updateData.active === "boolean" && existing.franchiseeId) {
+    await esquecerPausaPeloEstoque(existing.franchiseeId, [id]);
+  }
 
   // Estoque reposto (ou "pausar" trocado): a vitrine é cacheada por 60 s e o
   // item pausado ficaria fora do ar esse tempo depois da reposição.
@@ -684,6 +691,8 @@ export async function DELETE(req: NextRequest) {
   } catch (err) {
     // Soft delete se falhar por restrição em histórico de pedidos anteriores
     await prisma.menuProduct.update({ where: { id: productId }, data: { active: false } });
+    // Excluído não volta sozinho quando o insumo for reposto.
+    if (existing.franchiseeId) await esquecerPausaPeloEstoque(existing.franchiseeId, [productId]);
     return NextResponse.json({ success: true, softDeleted: true });
   }
 }

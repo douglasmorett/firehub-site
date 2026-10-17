@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { normalizarUnidade, converter } from "@/lib/unidades";
+import { conferirPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 
 // GET: Fetch the recipe for a product and the available stock items
 export async function GET(req: Request) {
@@ -266,6 +267,11 @@ export async function POST(req: Request) {
     // `convertidas` e `recusadas` viajam para a tela: salvar em silêncio uma
     // ficha pela metade, com "✅ Ficha técnica salva!", é como o lojista
     // acreditava estar com o estoque configurado sem estar.
+    // Ficha mudou: se o produto estava pausado pelo estoque esperando um item
+    // que saiu da ficha, ele volta. Lista vazia = não pausa nada por isso,
+    // só confere quem está esperando (lib/pausa-pelo-estoque.ts).
+    await conferirPausaPeloEstoque(franchiseeId, []);
+
     return NextResponse.json({ success: true, recipe: savedRecipe, convertidas, recusadas });
   } catch (error: any) {
     console.error("[Recipes POST] Erro:", error);

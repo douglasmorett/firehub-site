@@ -78,6 +78,11 @@ export async function register() {
   // StockTransaction, StockInvoice e Payable: faltando, o estoque serve 500.
   const { garantirEstruturaDoCmv } = await import("./lib/cmv/estrutura-no-banco");
   await garantirEstruturaDoCmv();
+  // Pausa pelo estoque (lib/pausa-pelo-estoque.ts): o interruptor da loja e
+  // a marca do produto pausado pelo estoque. Tabelas próprias; se faltarem, só
+  // a pausa automática para.
+  const { garantirEstruturaDaPausaPeloEstoque } = await import("./lib/pausa-pelo-estoque-no-banco");
+  await garantirEstruturaDaPausaPeloEstoque();
   // Disparo oficial (API da Meta, lib/disparo-oficial). Tabelas próprias; se
   // faltarem, só essa tela para.
   const { garantirEstruturaDoDisparoOficial } = await import("./lib/disparo-oficial/estrutura-no-banco");

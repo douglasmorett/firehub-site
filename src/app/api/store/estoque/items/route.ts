@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { lerNumeroBr } from "@/lib/cmv/numero";
+import { conferirPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 
 // O STAFF é um User com ownerId apontando para o dono da loja. Usando só o user.id,
 // o funcionário caía num estoque paralelo vazio em vez do estoque da loja onde trabalha.
@@ -234,6 +235,10 @@ export async function DELETE(req: Request) {
       where: { id, franchiseeId },
       data: { active: false },
     });
+
+    // Insumo arquivado não conta mais como "acabou": o que ele segurava
+    // pausado pelo estoque pode voltar.
+    await conferirPausaPeloEstoque(franchiseeId, [id]);
 
     return NextResponse.json({ success: true, message: "Insumo arquivado." });
   } catch (error: any) {

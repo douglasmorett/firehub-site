@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exigirEstoque } from "@/lib/cmv/acesso";
 import { CompraRecusadaError, lancarCompra, type PagamentoDaCompra } from "@/lib/cmv/lancar-compra";
+import { conferirPausaDaCompra } from "@/lib/pausa-pelo-estoque-no-banco";
 import { hojeNaLoja } from "@/lib/relatorios/base";
 
 /**
@@ -56,6 +57,8 @@ export async function POST(req: Request) {
         pagamento: (pagamento as PagamentoDaCompra | null) ?? null,
       }),
     );
+    // Chegou o insumo: o que a pausa pelo estoque tirou do ar pode voltar.
+    await conferirPausaDaCompra(franchiseeId, result.invoiceId);
 
     return NextResponse.json({
       success: true,

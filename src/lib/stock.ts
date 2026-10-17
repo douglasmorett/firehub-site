@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { avisarMovimentoDeEstoque } from "./pausa-pelo-estoque-no-banco";
 import {
   ROTULO_DA_ETAPA, ehPedidoCancelado, etapaAntesDoCancelamento, marcaDoDesperdicio, type EtapaDoDesperdicio,
 } from "./desperdicio-do-cancelado";
@@ -227,6 +228,9 @@ export async function deductStockForOrder(orderId: string) {
       saldo: number;
       unidade: string;
     }[] = [];
+    // Insumos baixados e a loja, para a pausa pelo estoque depois do commit.
+    const insumosBaixados = new Set<string>();
+    let lojaDaBaixa: string | null = null;
 
     // Verificar idempotência com transação atômica
     const result = await prisma.$transaction(async (tx) => {
@@ -586,6 +590,9 @@ export async function deductStockForOrder(orderId: string) {
           // técnica consumiu insumo que o sistema não tinha (quase sempre nota de
           // entrada esquecida), e até agora isso passava mudo até o inventário.
           // Fica uma linha por insumo, com o pedido e o saldo que sobrou.
+          insumosBaixados.add(stockItemId);
+          lojaDaBaixa = order.franchiseeId;
+
           if (saldoDepois.quantity < 0) {
             saldosNegativos.push({
               insumoId: saldoDepois.id,
@@ -607,6 +614,10 @@ export async function deductStockForOrder(orderId: string) {
     } else {
       console.log(`[Stock] Baixa concluída para pedido #${orderId.slice(-6)}`);
     }
+
+    // Acabou o insumo? Pausa o que usa ele (se a loja ligou a opção). Não
+    // espera e não lança: o pedido fecha igual (lib/pausa-pelo-estoque-no-banco.ts).
+    if (insumosBaixados.size) avisarMovimentoDeEstoque(lojaDaBaixa, [...insumosBaixados]);
 
     for (const negativo of saldosNegativos) {
       console.warn(
@@ -661,6 +672,8 @@ export async function deductStockForOrder(orderId: string) {
  * @param orderId ID do pedido cancelado
  */
 export async function restoreStockForOrder(orderId: string) {
+  const insumosDevolvidos = new Set<string>();
+  let lojaDaDevolucao: string | null = null;
   try {
     const result = await prisma.$transaction(async (tx) => {
       // Quando foi a última devolução deste pedido, se é que houve alguma.
@@ -697,6 +710,7 @@ export async function restoreStockForOrder(orderId: string) {
       }
 
       let restored = 0;
+      for (const sale of sales) if (sale.franchiseeId) { lojaDaDevolucao = sale.franchiseeId; insumosDevolvidos.add(sale.stockItemId); }
 
       for (const sale of sales) {
         // A baixa grava quantidade negativa; o módulo protege contra registro
@@ -748,6 +762,8 @@ export async function restoreStockForOrder(orderId: string) {
       console.log(`[Stock] Nada a devolver no pedido #${orderId.slice(-6)} (sem baixa registrada)`);
     } else {
       console.log(`[Stock] Devolução concluída para pedido #${orderId.slice(-6)} (${result.restored} insumo(s))`);
+      // O insumo voltou: o que a pausa pelo estoque tirou do ar pode voltar.
+      avisarMovimentoDeEstoque(lojaDaDevolucao, [...insumosDevolvidos]);
     }
   } catch (error: any) {
     // A outra chamada do mesmo cancelamento já devolveu (sourceRef único).
