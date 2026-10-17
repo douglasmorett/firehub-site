@@ -99,7 +99,8 @@ export function textoDoAviso(
     case "CHEGANDO":
       return {
         titulo: `📍 Seu pedido${n} está chegando`,
-        corpo: `${p.entregador ? p.entregador.split(/\s+/)[0] : "O entregador"} está bem perto. Toque para ver no mapa.`,
+        // Em CHEGANDO o `motivo` carrega os minutos estimados (lib/entrega-ao-vivo.ts).
+        corpo: `${p.entregador ? p.entregador.split(/\s+/)[0] : "O entregador"} está a ${Number(p.motivo) > 1 ? `uns ${Number(p.motivo)} minutos` : "1 minuto"}. Toque para ver no mapa.`,
       };
     case "PRONTO_RETIRADA":
       return { titulo: `🛍️ Pedido${n} pronto`, corpo: `Pode vir buscar na ${loja}.` };
