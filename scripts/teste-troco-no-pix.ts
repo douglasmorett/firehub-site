@@ -91,10 +91,12 @@ console.log("\n== 3. Troco feito pelo Pix da LOJA (marcado) ==");
   const gaveta = 100 + 50;
   const contaPix = -10;
   exigir("caixa: dinheiro esperado = a nota inteira (50)", igual(a.expected.cash, 50), a.expected);
-  exigir("caixa: Pix esperado = −10 (o troco saiu da conta)", igual(a.expected.pix, -10), a.expected);
-  exigir("caixa: o pedido continua valendo 40 no total", igual(a.expected.total, 40), a.expected);
+  // Regra do Douglas (17/10/2026): o Pix do troco sai da CONTA da loja, fora
+  // do caixa — a linha do Pix não muda; o caixa mostra a nota inteira.
+  exigir("caixa: Pix esperado = 0 (o Pix do troco é da conta, fora do caixa)", igual(a.expected.pix, 0), a.expected);
+  exigir("caixa: total = a nota inteira na gaveta (50)", igual(a.expected.total, 50), a.expected);
   exigir("caixa FECHA na gaveta: 100 + 50 = 150", igual(100 + a.expected.cash, gaveta));
-  exigir("caixa FECHA no Pix: −10 = −10", igual(a.expected.pix, contaPix));
+  exigir("caixa: o Pix do caixa não espera o troco (conta da loja à parte: " + contaPix + ")", igual(a.expected.pix, 0));
   exigir("faturamento não muda: Dinheiro 40 no retrato", igual(a.retrato.porForma.find((f) => f.nome === "Dinheiro")?.valor ?? 0, 40), a.retrato.porForma);
   exigir("recebido = 40 (a venda, sem a nota)", igual(a.retrato.recebido.valor, 40));
   exigir("retrato: 1 troco no Pix da loja de R$ 10", a.retrato.trocoNoPix?.qtd === 1 && igual(a.retrato.trocoNoPix?.valor ?? 0, 10), a.retrato.trocoNoPix);
@@ -135,8 +137,8 @@ console.log("\n== 5. Dividido: Dinheiro 30 (nota de 50) + Pix 10 ==");
   const o = pedido({ ...dividido, trocoNoPix: { por: "LOJA" } });
   const a = conferencia(o);
   // Gaveta: +50 (a nota). Conta Pix: +10 do cliente −20 de troco = −10.
-  exigir("Pix da loja: dinheiro 50 e Pix 10 − 20 = −10", igual(a.expected.cash, 50) && igual(a.expected.pix, -10), a.expected);
-  exigir("total continua 40", igual(a.expected.total, 40), a.expected);
+  exigir("Pix da loja: dinheiro 50 e Pix 10 (só o que o cliente pagou no Pix)", igual(a.expected.cash, 50) && igual(a.expected.pix, 10), a.expected);
+  exigir("total = 60 (nota inteira + Pix do cliente)", igual(a.expected.total, 60), a.expected);
   const partes = partesDaEntrega(o);
   const din = partes.find((p) => p.caixa === "DINHEIRO")!;
   exigir("a parte em dinheiro: troco 20 no Pix, entregar 50, troco levado 0",
@@ -213,10 +215,11 @@ exports.prisma = {
   //   gaveta: 100 − 10 (troco do pedido 1) + 50 + 50 (nota inteira, Pix da loja) + 40 (motoboy ficou com 10) − 20 (sangria) = 210
   //   conta Pix: +40 (pedido 4) − 10 (troco do pedido 2) = 30
   const gaveta = 100 - 10 + 50 + 50 + 40 - 20;
-  const contaPix = 40 - 10;
+  // O Pix do troco (10) saiu da conta da loja, fora do caixa: o Pix do caixa é só o do pedido 4.
+  const contaPix = 40;
   exigir(`gaveta: esperado ${n.expected.cash} = contado ${gaveta}`, igual(n.expected.cash, gaveta), n.expected);
   exigir(`Pix: esperado ${n.expected.pix} = contado ${contaPix}`, igual(n.expected.pix, contaPix), n.expected);
-  exigir("total do turno = abertura + vendas (160) − sangria", igual(n.expected.total, 100 + 160 - 20), n.expected);
+  exigir("total do turno = abertura + vendas (160) + nota inteira do Pix da loja (10) − sangria", igual(n.expected.total, 100 + 160 + 10 - 20), n.expected);
   exigir("vendas em dinheiro da gaveta = 40 + 50 + 40 = 130", igual(n.detalhe.gaveta.vendasEmDinheiro, 130), n.detalhe.gaveta);
   exigir("detalhe.trocoNoPix: 1 da loja (10) e 1 do motoboy (10)", n.detalhe.trocoNoPix?.qtd === 1 && igual(n.detalhe.trocoNoPix?.valor, 10) && n.detalhe.trocoNoPix?.motoboyQtd === 1, n.detalhe.trocoNoPix);
   const jobson = n.detalhe.entregadores[0];

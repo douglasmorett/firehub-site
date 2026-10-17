@@ -371,7 +371,7 @@ export default function StoreTopNav({
   const [trocoInicial, setTrocoInicial] = useState(0);
   const [onlinePorCanal, setOnlinePorCanal] = useState<{ nome: string; qtd: number; valor: number }[]>([]);
   const [cobradoPeloApp, setCobradoPeloApp] = useState<{ nome: string; qtd: number; valor: number }[]>([]);
-  // Troco feito pelo Pix da loja: a nota inteira na gaveta, o troco a menos no Pix.
+  // Troco feito pelo Pix da loja: a nota inteira na gaveta; o Pix sai da conta, fora do caixa.
   const [trocoNoPix, setTrocoNoPix] = useState<{ qtd: number; valor: number } | null>(null);
   const [cuponsDoApp, setCuponsDoApp] = useState<{ nome: string; qtd: number; valor: number; noOnline?: number; qtdNoOnline?: number }[]>([]);
   // Nenhuma forma contada: a pergunta "fechar sem conferir?", e a resposta.
@@ -1438,13 +1438,11 @@ export default function StoreTopNav({
                             </span>
                           )}
                           {/* Troco feito pelo Pix da loja (lib/troco-no-pix.ts):
-                              a nota inteira ficou na gaveta e o troco saiu da
-                              conta. As duas linhas mudam juntas — dizer nas duas. */}
-                          {trocoNoPix && trocoNoPix.qtd > 0 && (m.key === "cash" || m.key === "pix") && (
+                              a nota inteira ficou na gaveta; o Pix do troco
+                              saiu da conta da loja, fora do caixa. */}
+                          {trocoNoPix && trocoNoPix.qtd > 0 && m.key === "cash" && (
                             <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#64748B" }}>
-                              {m.key === "cash"
-                                ? `inclui ${fmt(trocoNoPix.valor)} de nota inteira (troco feito pelo Pix da loja, ${trocoNoPix.qtd} ${trocoNoPix.qtd === 1 ? "pedido" : "pedidos"})`
-                                : `− ${fmt(trocoNoPix.valor)} de troco devolvido pelo Pix da loja`}
+                              {`inclui ${fmt(trocoNoPix.valor)} de nota inteira (troco feito pelo Pix da loja, ${trocoNoPix.qtd} ${trocoNoPix.qtd === 1 ? "pedido" : "pedidos"}; o Pix saiu da conta, fora do caixa)`}
                             </span>
                           )}
                         </td>

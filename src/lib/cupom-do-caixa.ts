@@ -777,7 +777,7 @@ function relatorioDoFechamento(
     const pixDoTroco = d.trocoNoPix?.valor || 0;
     const notasDaVenda = [
       trocoDasMesas > 0.01 ? `sem os ${reais(trocoDasMesas)} de troco das mesas (${d.mesas.trocoQtd || 0})` : "",
-      pixDoTroco > 0.01 ? `com ${reais(pixDoTroco)} de nota inteira: troco feito pelo Pix da loja (${d.trocoNoPix?.qtd || 0}), a menos no Pix` : "",
+      pixDoTroco > 0.01 ? `com ${reais(pixDoTroco)} de nota inteira: troco feito pelo Pix da loja (${d.trocoNoPix?.qtd || 0}), Pix fora do caixa` : "",
     ].filter(Boolean);
     linha(
       "+ Vendas em dinheiro",
