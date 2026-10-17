@@ -39,6 +39,7 @@ import TrocarTipoDoPedidoPainel from "@/components/customer/TrocarTipoDoPedidoPa
 import ReposicaoPainel from "@/components/customer/ReposicaoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
+import CorrigirEnderecoPainel from "@/components/customer/CorrigirEnderecoPainel";
 import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
 import AvisoPedidoEsperandoLoja from "@/components/customer/AvisoPedidoEsperandoLoja";
 import FoodyNoPedido from "@/components/customer/FoodyNoPedido";
@@ -4875,6 +4876,23 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     `Taxa de entrega corrigida: R$ ${r.taxaAntes.toFixed(2).replace(".", ",")} → R$ ${r.deliveryFee.toFixed(2).replace(".", ",")}.`,
                     "#0F766E"
                   );
+                  await recarregarPedidos();
+                }}
+              />
+
+              {/* Corrigir o endereço — junto da taxa: o cliente errou o
+                  endereço e a loja não tinha onde acertar no pedido (Flavio,
+                  Showrrascão, 17/10/2026). Vale também em pedido de app; a
+                  regra é lib/correcao-de-endereco.ts. */}
+              <CorrigirEnderecoPainel
+                key={`endereco-${order.id}`}
+                pedido={order}
+                operador={operadorDaEdicao}
+                aoSalvar={async (r) => {
+                  setOrders(prev => prev.map(o => o.id === order.id
+                    ? { ...o, customerAddress: r.customerAddress, ...(r.distanciaRefeita ? { deliveryDistance: r.distanciaKm } : {}) }
+                    : o));
+                  showToast("Endereço do pedido corrigido.", "#0F766E");
                   await recarregarPedidos();
                 }}
               />

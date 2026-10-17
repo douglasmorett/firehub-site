@@ -775,8 +775,10 @@ export type RegistroDeEdicao = {
    * não muda e o total cai (lib/cancelamento-parcial.ts).
    * TRANSFERIU: o pedido foi para outra loja do mesmo acesso, que aceitou
    * (lib/transferencia-do-pedido.ts); o total não muda, o número muda.
+   * ENDERECO: a loja corrigiu o endereço de entrega (api/store/orders/[id]/endereco,
+   * lib/correcao-de-endereco.ts); o total não muda.
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU" | "ENDERECO";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;
