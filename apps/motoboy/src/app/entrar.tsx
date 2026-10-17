@@ -3,10 +3,16 @@
  * (api/motoboys/login). A loja vem do link que ela mandou, do QR do painel ou
  * do QR de qualquer comanda; quem escaneia a comanda já cai com o pedido
  * pronto para puxar depois de entrar.
+ *
+ * O jeito principal é o QR (botão grande): digitar "o nome da loja" gerava
+ * dúvida (Douglas, 16/10/2026). O campo de texto fica escondido atrás de
+ * "Digitar o link da loja". Lida a loja, a tela mostra o nome e pede só o
+ * telefone e a senha. O link do QR aberto pela câmera do celular chega aqui
+ * com ?loja=&puxar= (src/app/loja/[slug]/motoboy.tsx).
  */
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useRef, useState } from "react";
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,19 +22,21 @@ import { LeitorDeQr } from "@/components/LeitorDeQr";
 import { cor, raio } from "@/components/tema";
 import { ErroDaApi } from "@/lib/api";
 import { lerUltimaLoja } from "@/lib/guardado";
-import { lerLinkDaLoja } from "@/lib/loja";
+import { lerLinkDaLoja, lojaParaOLogin } from "@/lib/loja";
 import { useSessao } from "@/lib/sessao";
 
 export default function Entrar() {
   const { entrar, avisoDeSaida } = useSessao();
-  const [loja, setLoja] = useState("");
+  const params = useLocalSearchParams<{ loja?: string; puxar?: string }>();
+  const [loja, setLoja] = useState(String(params.loja || ""));
+  const [digitarLoja, setDigitarLoja] = useState(false);
   const [acesso, setAcesso] = useState("");
   const [senha, setSenha] = useState("");
   const [verSenha, setVerSenha] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [entrando, setEntrando] = useState(false);
   const [lendoQr, setLendoQr] = useState(false);
-  const comandaDoQr = useRef<string | null>(null);
+  const comandaDoQr = useRef<string | null>(params.puxar ? String(params.puxar) : null);
   const campoAcesso = useRef<TextInput>(null);
   const campoSenha = useRef<TextInput>(null);
 
@@ -38,7 +46,7 @@ export default function Entrar() {
 
   async function aoEntrar() {
     setErro(null);
-    if (!loja.trim()) return setErro("Informe a loja (o link que ela mandou ou o nome).");
+    if (!loja.trim()) return setErro("Escaneie o QR de uma comanda da loja (ou digite o link da loja).");
     if (!acesso.trim() || !senha) return setErro("Informe o telefone e a senha.");
     setEntrando(true);
     try {
@@ -74,29 +82,45 @@ export default function Entrar() {
               </View>
             ) : null}
 
-            <Text style={s.rotulo}>LOJA</Text>
-            <View style={s.linhaLoja}>
-              <TextInput
-                value={loja}
-                onChangeText={setLoja}
-                placeholder="Link ou nome da loja"
-                placeholderTextColor="#94A3B8"
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="next"
-                onSubmitEditing={() => campoAcesso.current?.focus()}
-                style={[s.campo, { flex: 1 }]}
-                accessibilityLabel="Loja"
-              />
-              <Botao
-                titulo="QR"
-                variante="roxo"
-                icone={<Ionicons name="qr-code" size={20} color="#FFFFFF" />}
-                aoTocar={() => setLendoQr(true)}
-                estilo={{ paddingHorizontal: 16 }}
-              />
-            </View>
-            <Text style={s.dica}>Escaneie o QR do painel da loja ou de qualquer comanda.</Text>
+            {loja.trim() && !digitarLoja ? (
+              <View style={s.lojaLida}>
+                <Ionicons name="storefront" size={20} color={cor.texto} />
+                <Text style={s.lojaLidaNome} numberOfLines={1}>{lojaParaOLogin(loja)}</Text>
+                <Botao titulo="Trocar" variante="contorno" aoTocar={() => setLendoQr(true)} estilo={{ minHeight: 40, paddingHorizontal: 12 }} />
+              </View>
+            ) : (
+              <>
+                <Botao
+                  titulo="Escanear a comanda ou o QR da loja"
+                  variante="roxo"
+                  icone={<Ionicons name="qr-code" size={22} color="#FFFFFF" />}
+                  aoTocar={() => setLendoQr(true)}
+                  estilo={{ minHeight: 60 }}
+                />
+                <Text style={s.dica}>Aponte para o QR impresso em qualquer comanda da loja, ou o QR do painel.</Text>
+                {digitarLoja ? (
+                  <>
+                    <Text style={s.rotulo}>LINK DA LOJA</Text>
+                    <TextInput
+                      value={loja}
+                      onChangeText={setLoja}
+                      placeholder="Ex.: firehubfood.com.br/loja/minha-loja"
+                      placeholderTextColor="#94A3B8"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      returnKeyType="next"
+                      onSubmitEditing={() => campoAcesso.current?.focus()}
+                      style={s.campo}
+                      accessibilityLabel="Link da loja"
+                    />
+                  </>
+                ) : (
+                  <Text style={s.linkTexto} onPress={() => setDigitarLoja(true)} accessibilityRole="button">
+                    Sem comanda? Digitar o link da loja
+                  </Text>
+                )}
+              </>
+            )}
 
             <Text style={s.rotulo}>TELEFONE OU NOME CADASTRADO</Text>
             <TextInput
@@ -164,6 +188,7 @@ export default function Entrar() {
           const lido = lerLinkDaLoja(texto);
           if (!lido) return false;
           setLoja(lido.loja);
+          setDigitarLoja(false);
           comandaDoQr.current = lido.comanda;
           setLendoQr(false);
           setTimeout(() => campoAcesso.current?.focus(), 400);
@@ -194,7 +219,10 @@ const s = StyleSheet.create({
     color: cor.texto,
   },
   linhaLoja: { flexDirection: "row", gap: 8, alignItems: "center" },
-  dica: { fontSize: 12, color: cor.textoApagado },
+  dica: { fontSize: 12, color: cor.textoApagado, textAlign: "center" },
+  lojaLida: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#F1F5F9", borderRadius: raio.pequeno, paddingVertical: 8, paddingHorizontal: 12 },
+  lojaLidaNome: { flex: 1, fontSize: 17, fontWeight: "800", color: cor.texto },
+  linkTexto: { fontSize: 14, fontWeight: "700", color: "#7C3AED", textAlign: "center", paddingVertical: 8, textDecorationLine: "underline" },
   erro: { backgroundColor: cor.vermelhoClaro, borderWidth: 1, borderColor: "#FCA5A5", borderRadius: raio.pequeno, padding: 10 },
   erroTexto: { color: "#DC2626", fontWeight: "800", fontSize: 14, textAlign: "center" },
   avisoSaida: { backgroundColor: cor.ambarClaro, color: cor.ambar, borderRadius: raio.pequeno, padding: 10, fontWeight: "800", textAlign: "center", overflow: "hidden" },
