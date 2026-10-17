@@ -26,6 +26,7 @@ import { temEstruturaDeCaixa } from "@/lib/garantir-colunas";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { ganhoDoPedido, lerAcerto } from "@/lib/ganho-do-entregador";
+import { pedidoDeAppDosEntregadores } from "@/lib/pedido-de-app-no-banco";
 import { canceladoComCorrida, ehEntregaDaLoja } from "@/lib/resumo-do-entregador";
 // A apuração das vendas (forma de cada venda, conferência e retrato por forma,
 // canal e TIPO) é pura e mora em lib/apuracao-do-turno.ts, para o teste
@@ -301,7 +302,10 @@ export async function calcularEsperadoDoTurno(
         prisma.user.findUnique({ where: { id: targetId }, select: { deliveryZones: true, deliveryConfig: true } }),
       ]);
       const regraDaLoja = lerRegraDeRepasse(loja?.deliveryConfig);
-      const porId = new Map(motoboys.map((m) => [m.id, m]));
+      // "Pagar diferente nos pedidos de app", do cadastro de cada um — por SQL
+      // (lib/pedido-de-app-no-banco.ts); sem a coluna, segue a regra da loja.
+      const escolhaNoApp = await pedidoDeAppDosEntregadores(ids);
+      const porId = new Map(motoboys.map((m) => [m.id, { ...m, pedidoDeApp: escolhaNoApp.get(m.id) ?? null }]));
       const acumulado = new Map<string, DetalheDoTurno["entregadores"][number]>();
       for (const e of entregasProprias) {
         const mb = porId.get(e.motoboyId);

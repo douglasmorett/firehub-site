@@ -26,7 +26,9 @@
  */
 
 import { lerFaixasDoMotoboy, valorDaFaixa, type FaixaDoMotoboy } from "./faixas-do-motoboy";
-import { repasseDoPedido, type RegraDeRepasse } from "./repasse-do-entregador";
+import {
+  lerPedidoDeAppDoEntregador, repasseDoPedido, type PedidoDeAppDoEntregador, type RegraDeRepasse,
+} from "./repasse-do-entregador";
 import { lerEntregaGratis } from "./entrega-gratis";
 import { bairroPeloEndereco } from "./bairro-pelo-endereco";
 
@@ -39,7 +41,9 @@ export type OrigemDoGanho =
   | "REGRA_DA_LOJA"
   | "TAXA_DO_CLIENTE"
   | "SO_DIARIA"
-  | "SEM_DISTANCIA";
+  | "SEM_DISTANCIA"
+  | "VALOR_DO_APP"
+  | "FIXO_NO_APP";
 
 export const ROTULO_DA_ORIGEM: Record<OrigemDoGanho, string> = {
   GRAVADO: "valor gravado na venda",
@@ -50,6 +54,8 @@ export const ROTULO_DA_ORIGEM: Record<OrigemDoGanho, string> = {
   TAXA_DO_CLIENTE: "taxa que o cliente pagou",
   SO_DIARIA: "só diária",
   SEM_DISTANCIA: "sem distância medida",
+  VALOR_DO_APP: "taxa que veio do app",
+  FIXO_NO_APP: "valor fixo por entrega de app",
 };
 
 /**
@@ -79,6 +85,8 @@ export type AcertoDoEntregador = {
   perDeliveryRate?: number | null;
   perKmRate?: number | null;
   faixasDeKm?: unknown;
+  /** Como ele recebe nos pedidos de app (Motoboy.pedidoDeApp). */
+  pedidoDeApp?: unknown;
 };
 
 export type AcertoLimpo = {
@@ -89,6 +97,8 @@ export type AcertoLimpo = {
   faixas: FaixaDoMotoboy[];
   /** Pago por distância: escada dele ou R$/km. */
   pagoPorDistancia: boolean;
+  /** A escolha dele para pedido de app; nulo = nunca escolheu (vale a regra antiga da loja). */
+  pedidoDeApp: PedidoDeAppDoEntregador | null;
 };
 
 /** O acerto do entregador com os campos que o tipo dele NÃO usa já zerados. */
@@ -102,6 +112,7 @@ export function lerAcerto(mb: AcertoDoEntregador): AcertoLimpo {
     perKmRate: usaPorKm(tipo) ? Number(mb.perKmRate) || 0 : 0,
     faixas,
     pagoPorDistancia: faixas.length > 0 || usaPorKm(tipo),
+    pedidoDeApp: lerPedidoDeAppDoEntregador(mb.pedidoDeApp),
   };
 }
 
@@ -135,6 +146,8 @@ export function taxaDaCorrida(pedido: PedidoParaGanho): number {
  * Quanto ESTE pedido rende, e por quê.
  *
  * A ordem vai da mais específica para a mais genérica:
+ *   0. pedido de app com "pagar diferente nos pedidos de app" no cadastro
+ *      DELE: o valor do app ou o valor fixo dele (depois só do gravado)
  *   1. o que ficou gravado NO PEDIDO (`motoboyFee`) — é história, não regra
  *   2. o acerto individual deste entregador (faixa dele / km / por entrega)
  *   3. a REGRA da loja: faixa ou bairro cadastrado, ou — em pedido de app — o
@@ -150,8 +163,34 @@ export function ganhoDoPedido(args: {
   zonas?: unknown;
   ehMarketplace?: boolean;
 }): { valor: number; origem: OrigemDoGanho } {
-  const { acerto, pedido, regraDaLoja, zonas, ehMarketplace } = args;
+  const { acerto, pedido, zonas, ehMarketplace } = args;
   const centavos = (n: number) => Math.round(n * 100) / 100;
+
+  // ── A ESCOLHA DO ENTREGADOR VENCE A DA LOJA ──────────────────────────
+  //
+  // Em pedido de app, quem escolheu no cadastro dele "pagar diferente nos
+  // pedidos de app" recebe por ESSA escolha — antes da faixa, do km, do valor
+  // por entrega e da diária: é justamente o "diferente" do site. Vem antes do
+  // `DAILY_RATE` de propósito: "só diária no site e R$ 3,00 por entrega de
+  // app" é um acerto que existe. O gravado no pedido continua vencendo (é
+  // história: a correção de taxa feita à mão).
+  //
+  // Tendo escolha própria — qualquer uma, inclusive "igual aos pedidos do
+  // site" —, a regra antiga da loja para app sai da conta dele: no passo 3 a
+  // tabela da loja vale como vale no pedido do site.
+  const escolha = ehMarketplace ? acerto.pedidoDeApp : null;
+  const regraDaLoja: RegraDeRepasse | null | undefined =
+    escolha && args.regraDaLoja ? { ...args.regraDaLoja, marketplace: "TABELA" } : args.regraDaLoja;
+  if (escolha && escolha.modo !== "IGUAL") {
+    const gravadoNoApp = numeroGravado(pedido.motoboyFee);
+    if (gravadoNoApp != null) return { valor: centavos(gravadoNoApp), origem: "GRAVADO" };
+    if (escolha.modo === "FIXO") return { valor: centavos(escolha.valor), origem: "FIXO_NO_APP" };
+    // "O valor que veio do app" num pedido em que o app não pagou entrega
+    // nenhuma: segue o acerto normal dele, como a regra antiga da loja fazia
+    // (repasseDoPedido devolve nulo e a conta continua).
+    const doApp = taxaDaCorrida(pedido);
+    if (doApp > 0) return { valor: centavos(doApp), origem: "VALOR_DO_APP" };
+  }
 
   if (acerto.tipo === "DAILY_RATE") return { valor: 0, origem: "SO_DIARIA" };
 
@@ -235,4 +274,36 @@ function numeroGravado(v: unknown): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : null;
+}
+
+/**
+ * O que vale para ESTE entregador nos pedidos de app — para a tela dele dizer
+ * a verdade, e não só o que está gravado.
+ *
+ * Com escolha própria, é ela. Sem escolha, é a regra antiga da loja — mas só
+ * quando ela chega a ser usada: a regra da loja vem DEPOIS do acerto dele
+ * (`ganhoDoPedido`, passo 3), então quem tem valor por entrega, faixa ou R$/km
+ * não recebia o "fixo da loja" no app mesmo com ele ligado, e mostrar "R$ 4,00
+ * fixo" ali seria mentir. (Entregador pago por distância só cai na regra da
+ * loja no pedido de app sem distância medida — o caso raro fica de fora da
+ * frase.)
+ *
+ * `daLoja` = a resposta veio da regra antiga da loja, não do cadastro dele.
+ */
+export function oQueValeNoApp(args: {
+  acerto: AcertoLimpo;
+  regraDaLoja?: RegraDeRepasse | null;
+}): { modo: "IGUAL" | "APP" | "FIXO"; valor: number | null; daLoja: boolean } {
+  const { acerto, regraDaLoja } = args;
+  const dele = acerto.pedidoDeApp;
+  if (dele) return { modo: dele.modo, valor: dele.modo === "FIXO" ? dele.valor : null, daLoja: false };
+  const igual = { modo: "IGUAL" as const, valor: null, daLoja: false };
+  if (!regraDaLoja || regraDaLoja.marketplace === "TABELA") return igual;
+  // A regra da loja só é lida quando o acerto dele não respondeu antes: nem
+  // "só diária" (devolve zero antes), nem valor por entrega, nem distância.
+  const chega = acerto.tipo !== "DAILY_RATE" && acerto.perDeliveryRate <= 0 && !acerto.pagoPorDistancia;
+  if (!chega) return igual;
+  if (regraDaLoja.marketplace === "APP") return { modo: "APP", valor: null, daLoja: true };
+  // FIXO sem valor preenchido nunca respondeu (repasseDoPedido → nulo).
+  return regraDaLoja.valorFixoApp != null ? { modo: "FIXO", valor: regraDaLoja.valorFixoApp, daLoja: true } : igual;
 }

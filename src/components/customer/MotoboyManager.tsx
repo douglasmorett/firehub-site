@@ -10,8 +10,10 @@ import {
 } from "@/lib/modelos-de-pagamento";
 // Que campos cada tipo de pagamento usa — a MESMA regra do fechamento, para a
 // tela nunca mostrar (nem salvar) um campo que a conta ignora, e vice-versa.
-import { usaDiaria, usaPorEntrega, usaPorKm } from "@/lib/ganho-do-entregador";
+import { lerAcerto, oQueValeNoApp, usaDiaria, usaPorEntrega, usaPorKm } from "@/lib/ganho-do-entregador";
 import { avisoDoFiadoAoExcluir } from "@/lib/aviso-do-fiado";
+import type { RegraDeRepasse } from "@/lib/repasse-do-entregador";
+import PedidosDeAppDoEntregador, { valorDoCampo, type ModoNoApp } from "./PedidosDeAppDoEntregador";
 
 type Motoboy = {
   // password só existe na ida (definir/redefinir). A API não devolve mais o
@@ -21,7 +23,11 @@ type Motoboy = {
   faixasDeKm?: FaixaDoMotoboy[];
   /** Id do modelo de onde este acerto foi copiado (lib/modelos-de-pagamento.ts). */
   modeloDePagamento?: string | null;
+  /** "Pagar diferente nos pedidos de app" (lib/repasse-do-entregador.ts, PedidoDeAppDoEntregador). */
+  pedidoDeApp?: unknown;
 };
+
+const reais = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const PAYMENT_TYPES = [
   { value: "PER_DELIVERY", label: "Por Entrega (fixo por corrida)" },
@@ -48,8 +54,19 @@ const PAYMENT_TYPES = [
 
 const empty = (): Partial<Motoboy> => ({ name: "", phone: "", password: "", paymentType: "PER_DELIVERY", active: true, dailyRate: undefined, perDeliveryRate: undefined, perKmRate: undefined, faixasDeKm: [], modeloDePagamento: null, notes: "" });
 
-export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: Motoboy[] }) {
+export default function MotoboyManager({ initialMotoboys, regraDaLoja = null }: {
+  initialMotoboys: Motoboy[];
+  /** A regra antiga da loja para app: vale para quem nunca escolheu no próprio cadastro. */
+  regraDaLoja?: RegraDeRepasse | null;
+}) {
   const [motoboys, setMotoboys] = useState<Motoboy[]>(initialMotoboys);
+  // ── PEDIDOS DE APP ─────────────────────────────────────────────────────
+  //
+  // Nulo = a pessoa não mexeu na seção: a tela mostra o que vale hoje
+  // (oQueValeNoApp, ao vivo com o tipo de pagamento escolhido) e o salvar NÃO
+  // manda o campo. Senão abrir um entregador de loja com a regra antiga e só
+  // corrigir o telefone gravaria a regra da loja como escolha dele.
+  const [app, setApp] = useState<{ modo: ModoNoApp; fixo: string } | null>(null);
   const [editing, setEditing] = useState<Partial<Motoboy> | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -151,15 +168,29 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
     (mb.phone && mb.phone.includes(searchTerm))
   );
 
-  const openNew = () => { setEditing(empty()); setEditingId(null); };
+  const openNew = () => { setEditing(empty()); setEditingId(null); setApp(null); };
   // A senha não vem mais do servidor, e o campo do formulário fica vazio: em
   // branco quer dizer "não mexer na senha". Antes o input era preenchido com a
   // senha em texto puro do entregador, à vista de quem estivesse perto da tela.
-  const openEdit = (mb: Motoboy) => { setEditing({ ...mb, password: "" }); setEditingId(mb.id); };
-  const cancel = () => { setEditing(null); setEditingId(null); };
+  const openEdit = (mb: Motoboy) => { setEditing({ ...mb, password: "" }); setEditingId(mb.id); setApp(null); };
+  const cancel = () => { setEditing(null); setEditingId(null); setApp(null); };
+
+  /** O que vale nos pedidos de app para este cadastro, como está agora. */
+  const valeNoApp = (mb: Partial<Motoboy>) => oQueValeNoApp({ acerto: lerAcerto(mb as any), regraDaLoja });
 
   const save = async () => {
     if (!editing?.name?.trim()) { setMsg("❌ Nome obrigatório"); return; }
+    // Só vai quando a pessoa mexeu na seção (ver o estado `app`).
+    let pedidoDeApp: { modo: ModoNoApp; valor?: number } | undefined;
+    if (app) {
+      if (app.modo === "FIXO") {
+        const valor = valorDoCampo(app.fixo);
+        if (valor == null) { setMsg("❌ Preencha quanto ele recebe por entrega de app."); return; }
+        pedidoDeApp = { modo: "FIXO", valor };
+      } else {
+        pedidoDeApp = { modo: app.modo };
+      }
+    }
     setSaving(true); setMsg("");
     try {
       const method = editingId ? "PUT" : "POST";
@@ -173,9 +204,15 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
         dailyRate: usaDiaria(editing.paymentType) ? editing.dailyRate : null,
         perDeliveryRate: usaPorEntrega(editing.paymentType) ? editing.perDeliveryRate : null,
         perKmRate: usaPorKm(editing.paymentType) ? editing.perKmRate : null,
+        // `undefined` some do JSON: a rota não mexe no que está gravado.
+        pedidoDeApp,
       };
       const res = await fetch(url, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(corpo) });
-      if (!res.ok) throw new Error();
+      if (!res.ok) {
+        const d = await res.json().catch(() => null);
+        setMsg(`❌ ${d?.error || "Erro ao salvar."}`);
+        return;
+      }
       const saved: Motoboy = await res.json();
       if (editingId) setMotoboys(prev => prev.map(m => m.id === editingId ? saved : m));
       else setMotoboys(prev => [...prev, saved]);
@@ -507,6 +544,19 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
             </div>
           );
         })()}
+        {(() => {
+          const vale = valeNoApp(editing);
+          const mostrar = app ?? { modo: vale.modo, fixo: vale.valor == null ? "" : vale.valor.toFixed(2).replace(".", ",") };
+          return (
+            <PedidosDeAppDoEntregador
+              modo={mostrar.modo}
+              fixo={mostrar.fixo}
+              daLoja={!app && vale.daLoja}
+              onEscolher={(modo) => setApp({ modo, fixo: mostrar.fixo })}
+              onFixo={(fixo) => setApp({ modo: "FIXO", fixo })}
+            />
+          );
+        })()}
         <div style={{ marginBottom: 12 }}>
           <label style={{ fontSize: "0.8rem", fontWeight: 600, display: "block", marginBottom: 4 }}>
             🔑 {editingId ? "Redefinir senha do App Entregador" : "Senha de Acesso ao App Entregador"}
@@ -546,22 +596,22 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
   };
 
   return (
-    <div style={{ maxWidth: 700 }}>
+    <div>
       {msg && <div style={{ padding: "10px 14px", borderRadius: 8, marginBottom: 12, background: msg.startsWith("✅") ? "#F0FDFA" : "#fef2f2", color: msg.startsWith("✅") ? "#0F766E" : "#C92E09", border: `1px solid ${msg.startsWith("✅") ? "#99F6E4" : "#fecaca"}`, fontSize: "0.85rem" }}>{msg}</div>}
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         <h3 style={{ fontWeight: 800, fontSize: "1.1rem" }}>🏍️ Motoboys Cadastrados ({motoboys.length})</h3>
         {!editing && <button onClick={openNew} className="btn btn-primary" style={{ fontSize: "0.85rem", padding: "0.5rem 1rem" }}><Plus size={15} style={{ marginRight: 6 }} />Novo Motoboy</button>}
       </div>
 
       {/* Busca */}
       {motoboys.length > 0 && !editing && (
-        <div style={{ position: "relative", marginBottom: 16 }}>
+        <div style={{ position: "relative", marginBottom: 16, maxWidth: 520 }}>
           <Search size={18} color="#94A3B8" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)" }} />
-          <input 
-            type="text" 
-            placeholder="Buscar por nome ou telefone..." 
+          <input
+            type="text"
+            placeholder="Buscar por nome ou telefone..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             style={{ width: "100%", padding: "12px 14px 12px 40px", borderRadius: 12, border: "1px solid #E2E8F0", background: "#F8FAFC", fontSize: "0.95rem", outline: "none", transition: "border 0.2s" }}
@@ -572,7 +622,7 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
       )}
 
       {/* New Motoboy Form at top if editingId is null */}
-      {editing && editingId === null && renderForm()}
+      {editing && editingId === null && <div style={{ maxWidth: 760 }}>{renderForm()}</div>}
 
       {motoboys.length === 0 && !editing && (
         <div style={{ textAlign: "center", padding: "2.5rem 1rem", background: "#F8FAFC", borderRadius: 16, border: "1.5px dashed #E2E8F0" }}>
@@ -582,49 +632,63 @@ export default function MotoboyManager({ initialMotoboys }: { initialMotoboys: M
         </div>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        {filteredMotoboys.length === 0 && motoboys.length > 0 && (
-          <div style={{ textAlign: "center", padding: "2rem", color: "#64748B", fontSize: "0.9rem" }}>
-            Nenhum motoboy encontrado para "{searchTerm}".
-          </div>
-        )}
+      {filteredMotoboys.length === 0 && motoboys.length > 0 && (
+        <div style={{ textAlign: "center", padding: "2rem", color: "#64748B", fontSize: "0.9rem" }}>
+          Nenhum motoboy encontrado para "{searchTerm}".
+        </div>
+      )}
+
+      {/* ── A GRADE DE CARTÕES ───────────────────────────────────────────
+          O padrão da tela Fiado: na tela larga os cartões ficam lado a lado
+          (cada um com pelo menos 300 px), no celular um embaixo do outro. Era
+          uma coluna de 700 px colada à esquerda, com a tela vazia do lado. O
+          `min(…, 100%)` impede o cartão de vazar no celular estreito. O
+          formulário de editar ocupa a linha inteira da grade. */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(300px, 100%), 1fr))", gap: 12, alignItems: "stretch" }}>
         {filteredMotoboys.map(mb => {
           if (editingId === mb.id) {
-            return <div key={mb.id}>{renderForm()}</div>;
+            return <div key={mb.id} style={{ gridColumn: "1 / -1", maxWidth: 760, width: "100%" }}>{renderForm()}</div>;
           }
+          const noApp = valeNoApp(mb);
 
           return (
-            <div key={mb.id} style={{ background: "#fff", border: `1.5px solid ${mb.active ? "#E2E8F0" : "#FEE2E2"}`, borderRadius: 14, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12, opacity: mb.active ? 1 : 0.7 }}>
-              <div style={{ width: 42, height: 42, borderRadius: 12, background: mb.active ? "#FEF3E2" : "#FEE2E2", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <Bike size={20} color={mb.active ? "#C92E09" : "#C92E09"} />
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B" }}>{mb.name}
-                  {!mb.active && <span style={{ marginLeft: 8, fontSize: "0.7rem", background: "#FEE2E2", color: "#C92E09", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>Inativo</span>}
+            <div key={mb.id} style={{ background: "#fff", border: `1.5px solid ${mb.active ? "#E2E8F0" : "#FEE2E2"}`, borderRadius: 14, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10, opacity: mb.active ? 1 : 0.7 }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+                <div style={{ width: 42, height: 42, flexShrink: 0, borderRadius: 12, background: mb.active ? "#FEF3E2" : "#FEE2E2", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Bike size={20} color="#C92E09" />
                 </div>
-                <div style={{ fontSize: "0.78rem", color: "#64748B", display: "flex", gap: 12, marginTop: 2, flexWrap: "wrap" }}>
-                  {mb.phone && <span><Phone size={11} style={{ marginRight: 3 }} />{mb.phone}</span>}
-                  <span><DollarSign size={11} style={{ marginRight: 3 }} />{payLabel(mb.paymentType)}</span>
-                  {/* Só o que o tipo escolhido usa. O valor digitado num tipo
-                      anterior continua gravado, e o cartão mostrava tudo junto:
-                      o Lucas lia "Diária R$60 · R$2,00/entrega · R$1,00/km" num
-                      entregador pago por faixa, sem ter onde apagar — os campos
-                      nem aparecem no formulário nesse tipo. */}
-                  {usaDiaria(mb.paymentType) && mb.dailyRate ? <span>Diária: R${mb.dailyRate.toFixed(2)}</span> : null}
-                  {usaPorEntrega(mb.paymentType) && mb.perDeliveryRate ? <span>R${mb.perDeliveryRate.toFixed(2)}/entrega</span> : null}
-                  {usaPorKm(mb.paymentType) && mb.perKmRate ? <span>R${mb.perKmRate.toFixed(2)}/km</span> : null}
-                  {mb.paymentType === "FAIXA_KM" && (mb.faixasDeKm?.length || 0) > 0 ? <span>{mb.faixasDeKm!.length} faixas de km</span> : null}
-                  {mb.paymentType === "DAILY_PLUS_FEE" && <span style={{ color: "#1C1917" }}>💰 Recebe taxa do pedido</span>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B", overflowWrap: "anywhere" }}>{mb.name}
+                    {!mb.active && <span style={{ marginLeft: 8, fontSize: "0.7rem", background: "#FEE2E2", color: "#C92E09", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>Inativo</span>}
+                  </div>
+                  {mb.phone && <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 2 }}><Phone size={11} style={{ marginRight: 3 }} />{mb.phone}</div>}
                 </div>
-                {/* Aqui era o "Hoje: N entregas / Total: R$ X". Tela de CADASTRO
-                    mostra o cadastro: o dono via "Hoje: 0" o dia inteiro e não
-                    sabia se era defeito (23/09/2026). Quanto cada um fez fica no
-                    Relatório de Pagamentos, a aba ao lado. */}
               </div>
-              <div style={{ display: "flex", gap: 6 }}>
+              <div style={{ fontSize: "0.78rem", color: "#64748B", display: "flex", gap: "4px 12px", flexWrap: "wrap", background: "#F8FAFC", padding: "8px 10px", borderRadius: 8 }}>
+                <span><DollarSign size={11} style={{ marginRight: 3 }} />{payLabel(mb.paymentType)}</span>
+                {/* Só o que o tipo escolhido usa. O valor digitado num tipo
+                    anterior continua gravado, e o cartão mostrava tudo junto:
+                    o Lucas lia "Diária R$60 · R$2,00/entrega · R$1,00/km" num
+                    entregador pago por faixa, sem ter onde apagar — os campos
+                    nem aparecem no formulário nesse tipo. */}
+                {usaDiaria(mb.paymentType) && mb.dailyRate ? <span>Diária: R${mb.dailyRate.toFixed(2)}</span> : null}
+                {usaPorEntrega(mb.paymentType) && mb.perDeliveryRate ? <span>R${mb.perDeliveryRate.toFixed(2)}/entrega</span> : null}
+                {usaPorKm(mb.paymentType) && mb.perKmRate ? <span>R${mb.perKmRate.toFixed(2)}/km</span> : null}
+                {mb.paymentType === "FAIXA_KM" && (mb.faixasDeKm?.length || 0) > 0 ? <span>{mb.faixasDeKm!.length} faixas de km</span> : null}
+                {mb.paymentType === "DAILY_PLUS_FEE" && <span style={{ color: "#1C1917" }}>💰 Recebe taxa do pedido</span>}
+                {/* O que vale nos pedidos de app quando é diferente do site
+                    (a escolha dele ou a regra antiga da loja). */}
+                {noApp.modo === "APP" && <span style={{ color: "#9A3412", fontWeight: 700 }}>📱 App: valor do app</span>}
+                {noApp.modo === "FIXO" && noApp.valor != null && <span style={{ color: "#9A3412", fontWeight: 700 }}>📱 App: {reais(noApp.valor)} fixo</span>}
+              </div>
+              {/* Aqui era o "Hoje: N entregas / Total: R$ X". Tela de CADASTRO
+                  mostra o cadastro: o dono via "Hoje: 0" o dia inteiro e não
+                  sabia se era defeito (23/09/2026). Quanto cada um fez fica no
+                  Relatório de Pagamentos, a aba ao lado. */}
+              <div style={{ display: "flex", gap: 6, marginTop: "auto", justifyContent: "flex-end" }}>
                 <button onClick={() => toggle(mb)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", fontSize: "0.75rem", fontWeight: 600, color: mb.active ? "#C92E09" : "#0F766E" }}>{mb.active ? "Pausar" : "Ativar"}</button>
-                <button onClick={() => openEdit(mb)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Edit2 size={14} color="#1C1917" /></button>
-                <button onClick={() => remove(mb.id)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} color="#C92E09" /></button>
+                <button onClick={() => openEdit(mb)} title="Editar" style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #E2E8F0", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, fontSize: "0.75rem", fontWeight: 600, color: "#1C1917" }}><Edit2 size={13} color="#1C1917" />Editar</button>
+                <button onClick={() => remove(mb.id)} title="Remover" style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #FCA5A5", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}><Trash2 size={14} color="#C92E09" /></button>
               </div>
             </div>
           );

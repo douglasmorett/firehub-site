@@ -16,8 +16,9 @@ export default async function MotoboysPage() {
 
   const targetFranchiseeId = (user as any).ownerId || user.id;
 
-  // A regra do pagamento em pedido de app é da LOJA — em conta de funcionário,
-  // vem do dono, não de quem está logado.
+  // O deliveryConfig é da LOJA (opções do acerto e a regra antiga de pedido de
+  // app, que vale para o entregador sem escolha própria) — em conta de
+  // funcionário, vem do dono, não de quem está logado.
   const dono = (user as any).ownerId
     ? await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { deliveryConfig: true, slug: true, storeName: true } }).catch(() => null)
     : null;

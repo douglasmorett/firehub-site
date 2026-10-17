@@ -1454,6 +1454,12 @@ model Motoboy {
   /// recebem. Isto aqui so serve para a tela dizer de onde veio e oferecer
   /// reaplicar quando a loja mandar.
   modeloDePagamento String?
+  /// Como ele recebe nos pedidos de app (iFood, 99Food, Keeta...):
+  /// {"modo":"IGUAL"} | {"modo":"APP"} | {"modo":"FIXO","valor":4}. Nulo =
+  /// nunca escolheu, vale a regra antiga da loja
+  /// (lib/repasse-do-entregador.ts, PedidoDeAppDoEntregador). Lido e gravado
+  /// por SQL em lib/pedido-de-app-no-banco.ts; o boot cria a coluna.
+  pedidoDeApp      Json?
   notes            String?
   franchisee       User            @relation(fields: [franchiseeId], references: [id])
   orders           CustomerOrder[]
