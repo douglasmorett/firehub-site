@@ -871,10 +871,19 @@ function ehACidade(segmento: string, cidade: string | null | undefined): boolean
  * Frio) é o centro do BAIRRO — e ele só roda com o bairro em separado. Sem
  * as partes, o balcão caía em "não localizado" onde o site achava o bairro.
  *
- * Conservador de propósito: sem vírgula depois da rua, sem número, ou sem um
- * pedaço que pareça bairro (e não "apto 201"), devolve null e vale o texto
- * livre, como antes. A mesma separação vai na cotação e no POST — é o que faz
- * a chave da cotação assinada casar dos dois lados.
+ * Conservador de propósito: sem número, ou sem um pedaço que pareça bairro (e
+ * não "apto 201"), devolve null e vale o texto livre, como antes. A mesma
+ * separação vai na cotação e no POST — é o que faz a chave da cotação
+ * assinada casar dos dois lados.
+ *
+ * SEM VÍRGULA ("Rua Tal 45 Centro") também separa, quando começa pelo tipo de
+ * rua (ruaENumeroSemVirgula). Até 17/10/2026 só valia "Rua Tal, 45, Centro":
+ * no "Finalizar pedido manualmente" da Hakim Centro, "rua doutor ricardo
+ * bartelega 371 atlantica parque bali" ia sem bairro e só achou com as
+ * vírgulas — e nem todo atendente usa vírgula. Sem o separador, o pedaço
+ * depois do número vem grudado ("casa 2 Centro Rio das Ostras"): o
+ * complemento do começo e a cidade do fim saem dele (semComplementoNoComeco,
+ * semACidadeNoFim).
  *
  * Bairro errado é pior que bairro nenhum: o mapa filtra a rua por ele e, sem
  * a rua, geocodifica o "bairro" como último recurso. Por isso a busca PARA
@@ -890,22 +899,84 @@ function ehACidade(segmento: string, cidade: string | null | undefined): boolean
 export function partesDoEnderecoDigitado(texto: unknown, cidade?: string | null): { street: string; number: string; neighborhood: string } | null {
   const t = String(texto ?? "").replace(/\s+/g, " ").trim();
   const m = t.match(/^([^,]*[^\d\s,][^,]*?)\s*,\s*(?:n[º°o.]?\s*)?(\d{1,6}[a-z]?|s\/?n)(?![\w/])\s*(.*)$/i);
-  if (!m) return null;
-  const street = m[1].trim();
-  const number = m[2].trim();
+  const achado = m ? { street: m[1].trim(), number: m[2].trim(), resto: m[3] } : ruaENumeroSemVirgula(t);
+  if (!achado) return null;
+  const { street, number } = achado;
   if (street.length < 3 || PARECE_REFERENCIA.test(textoLimpo(street))) return null;
-  const segmentos = m[3]
+  const segmentos = achado.resto
     .replace(/^[\s,–-]+/, "")
     .split(/\s*,\s*|\s+[-–]\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
-  for (const s of segmentos) {
+  for (const bruto of segmentos) {
+    const semComplemento = semComplementoNoComeco(bruto);
+    if (!semComplemento) continue;
+    const s = semACidadeNoFim(semComplemento, cidade);
     const limpo = textoLimpo(s);
-    if (PARECE_REFERENCIA.test(limpo) || ehACidade(s, cidade)) return null;
+    if (!s || PARECE_REFERENCIA.test(limpo) || ehACidade(s, cidade)) return null;
     if (PARECE_COMPLEMENTO.test(s) || DESCRICAO_DA_CASA.test(limpo) || /^\d/.test(s) || s.length < 3) continue;
     return { street, number, neighborhood: s };
   }
   return null;
+}
+
+/**
+ * "Rua Tal 45 Centro": rua e número sem a vírgula entre eles. Só quando o
+ * texto começa pelo tipo de rua — é ele que diz onde a rua começa; sem ele
+ * ("Jardim Esperança 45") não há como saber o que é rua e o que é bairro.
+ *
+ * O número é o primeiro que tem NOME de rua antes: em "Rua 7 de Setembro 100
+ * Centro" o 7 é o nome e o número é o 100. Número logo depois de "casa",
+ * "lote", "km"… é o da casa ou o quilômetro, não o da rua: aí não há número
+ * da rua, e vale o texto livre.
+ */
+function ruaENumeroSemVirgula(t: string): { street: string; number: string; resto: string } | null {
+  if (!TIPO_DE_RUA.test(textoLimpo(t))) return null;
+  const numero = /(^|\s)(?:n[º°o.]?\s*)?(\d{1,6}[a-z]?|s\/?n)(?![\w/ºª°])/gi;
+  for (let m = numero.exec(t); m; m = numero.exec(t)) {
+    const street = t.slice(0, m.index).trim();
+    if (street.includes(",")) return null;
+    const nome = `${textoLimpo(street)} `.replace(TIPO_DE_RUA, "");
+    if (!/[a-z]/.test(nome)) continue;
+    const ultima = textoLimpo(street).split(" ").pop() || "";
+    if (PARECE_COMPLEMENTO.test(ultima)) return null;
+    return { street, number: m[2], resto: t.slice(m.index + m[0].length) };
+  }
+  return null;
+}
+
+/**
+ * Complemento com o código ("casa 2", "apto 302", "bloco B", "lote 5 quadra
+ * 3") e "fundos" no começo do pedaço, tirados para o bairro que vem grudado
+ * depois: "casa 2 Centro" → "Centro". Sem código ("casa amarela") não sai:
+ * aí o pedaço inteiro é do motoboy e é pulado, como sempre foi.
+ */
+function semComplementoNoComeco(s: string): string {
+  const COMPLEMENTO_COM_CODIGO =
+    /^(?:(?:ap|apt|apto|apartamento|bl|bloco|casa|cs|lote|lt|quadra|qd|sala|sl|loja|lj|torre|andar)(?![a-zà-ú])\.?\s*(?:n[º°o.]?\s*)?(?:\d{1,5}[a-z]?|[a-z])(?![\wÀ-ú])|fundos(?![\wÀ-ú]))\s*[-–,]?\s*/i;
+  let resto = s;
+  for (let m = resto.match(COMPLEMENTO_COM_CODIGO); m && m[0]; m = resto.match(COMPLEMENTO_COM_CODIGO)) {
+    resto = resto.slice(m[0].length);
+  }
+  return resto.trim();
+}
+
+/**
+ * A cidade da loja no FIM do pedaço ("Centro Rio das Ostras", "Atlântica Rio
+ * das Ostras RJ") sai; o pedaço que É a cidade vira "" (quem chama para, como
+ * sempre). Não corta quando sobraria só o prefixo ("Jardim Cabo Frio" fica
+ * inteiro): aí a cidade é parte do nome do bairro.
+ */
+function semACidadeNoFim(s: string, cidade: string | null | undefined): string {
+  if (ehACidade(s, cidade)) return "";
+  const palavras = s.split(" ");
+  for (let i = 1; i < palavras.length; i++) {
+    if (!ehACidade(palavras.slice(i).join(" "), cidade)) continue;
+    const antes = palavras.slice(0, i).join(" ").replace(/[\s,/–-]+$/, "");
+    const soPrefixo = antes.split(" ").length === 1 && PREFIXO_DE_BAIRRO.test(`${textoLimpo(antes)} `);
+    return antes && !soPrefixo ? antes : s;
+  }
+  return s;
 }
 
 /**

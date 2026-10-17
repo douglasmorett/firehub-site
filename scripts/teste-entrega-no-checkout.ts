@@ -477,7 +477,37 @@ async function corrida() {
   confere("balcão: bairro com hífen no nome não é cortado",
     p("Rua X, 10 - Jardim Bela-Vista") === JSON.stringify({ street: "Rua X", number: "10", neighborhood: "Jardim Bela-Vista" }), p("Rua X, 10 - Jardim Bela-Vista"));
   confere("balcão: sem bairro, vale o texto livre", partesDoEnderecoDigitado("Av. Brasil, 500") === null);
-  confere("balcão: sem vírgula, vale o texto livre", partesDoEnderecoDigitado("Rua Diamante 19 Monte Alegre") === null);
+  // SEM VÍRGULA (Hakim Centro, 17/10/2026): o atendente digita tudo junto.
+  const ps = (t: string, c?: string) => JSON.stringify(partesDoEnderecoDigitado(t, c));
+  const partes = (street: string, number: string, neighborhood: string) => JSON.stringify({ street, number, neighborhood });
+  const semVirgula: [string, string | undefined, string][] = [
+    ["Rua Diamante 19 Monte Alegre", undefined, partes("Rua Diamante", "19", "Monte Alegre")],
+    ["rua doutor ricardo bartelega 371 atlantica  parque bali", "Rio das Ostras", partes("rua doutor ricardo bartelega", "371", "atlantica parque bali")],
+    ["rua doutor ricardo bartelega 371, atlantica parque bali", "Rio das Ostras", partes("rua doutor ricardo bartelega", "371", "atlantica parque bali")],
+    ["Rua 7 de Setembro 100 Centro", undefined, partes("Rua 7 de Setembro", "100", "Centro")],
+    ["Av Brasil nº 1500 apto 302 bloco B Centro", undefined, partes("Av Brasil", "1500", "Centro")],
+    ["R. das Flores 45 casa 2 Jardim Esperança", undefined, partes("R. das Flores", "45", "Jardim Esperança")],
+    ["Rua X 10 Centro Rio das Ostras RJ", "Rio das Ostras", partes("Rua X", "10", "Centro")],
+    ["Travessa Canaã 6 - Boca do Mato", undefined, partes("Travessa Canaã", "6", "Boca do Mato")],
+    ["Estrada do Guriri S/N Peró", undefined, partes("Estrada do Guriri", "S/N", "Peró")],
+  ];
+  for (const [t, c, esperado] of semVirgula) confere(`balcão sem vírgula: '${t}'`, ps(t, c) === esperado, ps(t, c));
+  const semVirgulaNulo: [string, string | undefined][] = [
+    ["Rua 2 casa 5 Centro", undefined], // o 5 é da casa: não há número da rua
+    ["Estrada do Guriri km 5 Tamoios", undefined],
+    ["Rua X 10 Cabo Frio", "Cabo Frio - RJ"], // depois do número, só a cidade
+    ["Rua X 10 perto do mercado", undefined],
+    ["Rua X 10 casa amarela", undefined],
+    ["Rua X 10", undefined],
+    ["Rua 7 de Setembro Centro", undefined],
+    ["Jardim Esperança 45", undefined], // sem tipo de rua não dá para saber o que é rua
+    ["casa 2 rua x 10 centro", undefined],
+  ];
+  for (const [t, c] of semVirgulaNulo) confere(`balcão sem vírgula, texto livre: '${t}'`, partesDoEnderecoDigitado(t, c) === null, ps(t, c));
+  confere("balcão: 'Jardim' + cidade fica inteiro (a cidade é parte do nome do bairro)",
+    ps("Rua X, 10 - Jardim Cabo Frio", "Cabo Frio - RJ") === partes("Rua X", "10", "Jardim Cabo Frio"), ps("Rua X, 10 - Jardim Cabo Frio", "Cabo Frio - RJ"));
+  const qsv = new URLSearchParams(consultaDoBalcao("rua doutor ricardo bartelega 371 atlantica parque bali", "Rio das Ostras"));
+  confere("balcão: a consulta sem vírgula leva o bairro", qsv.get("neighborhood") === "atlantica parque bali" && qsv.get("number") === "371", Object.fromEntries(qsv));
   confere("balcão: vazio", partesDoEnderecoDigitado("") === null && partesDoEnderecoDigitado(undefined) === null);
 
   // REFERÊNCIA não é bairro: com ela no lugar do bairro, o mapa filtrava a
