@@ -8,6 +8,7 @@ import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import { podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
 import { toLocalISODate } from "@/lib/timezone";
 import TrocaDePagamentoPainel from "./TrocaDePagamentoPainel";
+import EntregueDepoisDeCancelado from "./EntregueDepoisDeCancelado";
 import VerPedidoDoAcerto from "./VerPedidoDoAcerto";
 import { acharPedidoNoAcerto } from "@/lib/achar-pedido-no-acerto";
 import { lerOpcoesDoAcerto, quadradoDaCaixa, type QuadradoDoAcerto } from "@/lib/ajustes-do-acerto-regras";
@@ -1000,6 +1001,13 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
                                   {o.corrida === false ? "✕ CANCELADO antes de sair — sem corrida" : "✕ CANCELADO depois de sair — sem dinheiro"}
                                 </span>
                               ) : (
+                                <>
+                                {o.entregueDepoisDeCancelado && (
+                                  <span title="O cliente cancelou e recebeu assim mesmo: a loja (ou o motoboy) informou a entrega — está no histórico do pedido"
+                                    style={{ display: "inline-block", marginBottom: 3, background: "#DCFCE7", color: "#14532D", border: "1px solid #86EFAC", padding: "1px 6px", borderRadius: 4, fontWeight: 800, fontSize: "0.64rem", whiteSpace: "nowrap" }}>
+                                    ✅ ENTREGUE DEPOIS DE CANCELADO
+                                  </span>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => setTrocandoPagamento(trocando ? null : o.id)}
@@ -1023,6 +1031,7 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
                                   <span style={{ fontSize: "0.72rem", opacity: trocando ? 1 : 0.6 }} aria-hidden>{trocavel.pode ? "✏️" : "🔒"}</span>
                                   <span style={{ flexBasis: "100%", fontSize: "0.66rem", color: "#94A3B8", fontWeight: 600, lineHeight: 1.2 }}>{o.paymentMethod || "sem forma gravada"}</span>
                                 </button>
+                                </>
                               )}
                             </span>
                             {o.deliveryDistance ? <span style={{ color: "#1C1917", fontWeight: 600 }}>{o.deliveryDistance} km</span> : <span />}
@@ -1068,6 +1077,22 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
                                 operador={operador}
                                 abrirDireto
                                 aoFechar={() => setTrocandoPagamento(null)}
+                                aoSalvar={() => aposTrocarPagamento(o.id)}
+                              />
+                            </div>
+                          )}
+                          {/* O cancelado que o cliente recebeu e pagou (Allan,
+                              Delícias de Casa, 17/10/2026, mostrou um aqui):
+                              volta como entregue e entra no dinheiro deste
+                              motoboy. Só pedido da própria loja — o servidor
+                              decide (`podeEntregueDepoisDeCancelado`). */}
+                          {o.cancelado && o.podeEntregueDepoisDeCancelado && (
+                            <div style={{ margin: "2px 0 6px 0" }}>
+                              <EntregueDepoisDeCancelado
+                                pedido={o}
+                                operador={operador}
+                                pode
+                                compacto
                                 aoSalvar={() => aposTrocarPagamento(o.id)}
                               />
                             </div>

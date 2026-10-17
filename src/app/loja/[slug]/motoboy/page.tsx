@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { getBeveragesFromOrder } from "@/lib/beverage";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica } from "@/lib/pagamento-na-entrega";
+import { FORMAS_DO_ENTREGUE_DEPOIS_DE_CANCELADO } from "@/lib/entregue-depois-de-cancelado";
 import VerPedido from "@/components/motoboy/VerPedido";
 import MeuRelatorio from "@/components/motoboy/MeuRelatorio";
 import TutorialDaTela from "@/components/TutorialDaTela";
@@ -628,6 +629,51 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     handleMarkDelivered(order.id, extra);
   };
 
+  // ── ENTREGUE MESMO CANCELADO ──────────────────────────────────────────────
+  //
+  // O cliente cancela com o motoboy já na rua, recebe e paga na porta (Allan,
+  // Delícias de Casa, 17/10/2026). O cancelado continua na tela, à parte e em
+  // vermelho, e o entregador informa a entrega com a forma de pagamento — o
+  // dinheiro entra no acerto dele e no caixa. Quem decide se o pedido aceita
+  // (só pedido da própria loja) é o servidor: `podeInformarEntregue` vem pronto.
+  const [canceladoParaInformar, setCanceladoParaInformar] = useState<any | null>(null);
+  const [formaDoCancelado, setFormaDoCancelado] = useState<string | null>(null);
+  const [informandoCancelado, setInformandoCancelado] = useState(false);
+
+  const informarEntregueCancelado = async () => {
+    const alvo = canceladoParaInformar;
+    if (!session || !alvo || !formaDoCancelado || informandoCancelado) return;
+    setInformandoCancelado(true);
+    try {
+      const res = await fetch("/api/motoboys/orders", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId: alvo.id, motoboyId: session.motoboyId, storeId: session.storeId,
+          entregueMesmoCancelado: true, pagamento: formaDoCancelado,
+        }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (res.ok && data.success) {
+        setCanceladoParaInformar(null);
+        // A mesma trava da baixa normal: a lista velha não "descancela" e
+        // recancela o pedido na tela nos próximos segundos.
+        baixasLocaisRef.current.set(alvo.id, Date.now());
+        setOrders((prev) => prev.map((o) => (o.id === alvo.id ? { ...o, status: "ENTREGUE", cancelado: false, podeInformarEntregue: false } : o)));
+        setToastMsg(data.jaEntregue ? "✅ Este pedido já estava informado." : `✅ Entrega informada — pago em ${formaDoCancelado}. A loja vai ver.`);
+        setTimeout(() => setToastMsg(null), 4000);
+      } else {
+        setToastMsg(`⚠️ ${data.error || "Não consegui informar. Fale com a loja."}`);
+        setTimeout(() => setToastMsg(null), 5000);
+      }
+    } catch {
+      setToastMsg("⚠️ Sem conexão — a entrega NÃO foi informada. Tente de novo.");
+      setTimeout(() => setToastMsg(null), 4500);
+    } finally {
+      setInformandoCancelado(false);
+    }
+  };
+
   /**
    * O passo do código: confere com a plataforma e NÃO dá baixa. Aprovado, o
    * pedido deixa de pedir código (o app pode fechar aqui e voltar depois) e a
@@ -790,6 +836,8 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
       return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
     });
   const completedOrders = orders.filter(o => FINALIZADO(o.status));
+  // Cancelados neste expediente que estavam com ele: à parte, nunca como pendente.
+  const cancelledOrders = orders.filter(o => CANCELADO(o.status));
 
   // Change Password State
   const [showPassModal, setShowPassModal] = useState(false);
@@ -1536,7 +1584,130 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
           })
         )}
 
+        {/* ── CANCELADOS QUE ESTAVAM COM ELE ────────────────────────────────
+            Em vermelho e fora dos pendentes: "não entregue" é a regra. Se o
+            cliente recebeu e pagou assim mesmo, ele informa por aqui (só
+            pedido da própria loja — o servidor manda `podeInformarEntregue`). */}
+        {jaSincronizou && cancelledOrders.length > 0 && (
+          <div style={{ marginTop: "1.25rem" }}>
+            <h2 style={{ fontSize: "1.05rem", fontWeight: 900, color: "#B91C1C", marginBottom: "0.75rem", display: "flex", alignItems: "center", gap: 6 }}>
+              ❌ Cancelados ({cancelledOrders.length})
+            </h2>
+            {cancelledOrders.map((order) => {
+              const numero = order.dailyOrderNumber || order.ifoodReference || order.openDeliveryReference || "";
+              return (
+                <div key={order.id} style={{ background: "#FEF2F2", border: "2px solid #FCA5A5", borderRadius: 14, padding: "12px 14px", marginBottom: 10 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: "1.3rem", fontWeight: 900, color: "#7F1D1D" }}>#{numero}</span>
+                    <span style={{ background: "#DC2626", color: "#FFFFFF", padding: "3px 10px", borderRadius: 8, fontWeight: 900, fontSize: "0.8rem", letterSpacing: "0.05em" }}>
+                      CANCELADO
+                    </span>
+                  </div>
+                  <div style={{ marginTop: 4, fontSize: "0.88rem", fontWeight: 700, color: "#334155" }}>
+                    {order.customerName} · R$ {Number(order.totalAmount || 0).toFixed(2).replace(".", ",")}
+                  </div>
+                  {order.cancelReason && (
+                    <div style={{ marginTop: 2, fontSize: "0.8rem", color: "#991B1B" }}>Motivo: {order.cancelReason}</div>
+                  )}
+                  <div style={{ marginTop: 6, fontSize: "0.78rem", color: "#7F1D1D", fontWeight: 700 }}>
+                    Não entregue. Se o cliente recebeu e pagou mesmo assim, informe abaixo.
+                  </div>
+                  {order.podeInformarEntregue ? (
+                    <button
+                      type="button"
+                      onClick={() => { setFormaDoCancelado(null); setCanceladoParaInformar(order); }}
+                      style={{
+                        width: "100%", marginTop: 10, padding: "11px", background: "#FFFFFF", color: "#B91C1C",
+                        border: "2px solid #DC2626", borderRadius: 12, fontSize: "0.9rem", fontWeight: 900, cursor: "pointer", fontFamily: "inherit",
+                      }}
+                    >
+                      Informar entregue mesmo cancelado
+                    </button>
+                  ) : (
+                    <div style={{ marginTop: 6, fontSize: "0.74rem", color: "#94A3B8", fontWeight: 600 }}>
+                      Pedido de aplicativo: o cancelamento vale. Fale com a loja.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
       </div>
+
+      {/* ── INFORMAR ENTREGUE MESMO CANCELADO: a forma de pagamento ─────── */}
+      {canceladoParaInformar && (
+        <div
+          onClick={() => { if (!informandoCancelado) setCanceladoParaInformar(null); }}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.8)", backdropFilter: "blur(4px)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem", zIndex: 10000,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: "#FFFFFF", borderRadius: 18, padding: "1.5rem 1.25rem", width: "100%", maxWidth: 400, textAlign: "center", boxShadow: "0 24px 60px rgba(0,0,0,0.35)" }}
+          >
+            <h3 style={{ margin: "0 0 4px", fontSize: "1.05rem", fontWeight: 900, color: "#0F172A" }}>
+              Entregou o pedido #{canceladoParaInformar.dailyOrderNumber || ""} mesmo cancelado?
+            </h3>
+            <p style={{ margin: 0, fontSize: "0.82rem", color: "#64748B" }}>
+              {canceladoParaInformar.customerName} · R$ {Number(canceladoParaInformar.totalAmount || 0).toFixed(2).replace(".", ",")}
+            </p>
+            <div style={{ textAlign: "left", margin: "14px 0" }}>
+              <div style={{ fontSize: "0.72rem", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                O cliente pagou com
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {FORMAS_DO_ENTREGUE_DEPOIS_DE_CANCELADO.map((forma) => {
+                  const ativa = formaDoCancelado === forma;
+                  return (
+                    <button
+                      key={forma}
+                      type="button"
+                      onClick={() => setFormaDoCancelado(forma)}
+                      style={{
+                        padding: "8px 12px", borderRadius: 10, fontWeight: 800, fontSize: "0.85rem", cursor: "pointer",
+                        border: `2px solid ${ativa ? "#16A34A" : "#E2E8F0"}`,
+                        background: ativa ? "#F0FDF4" : "#FFFFFF", color: ativa ? "#14532D" : "#334155",
+                      }}
+                    >
+                      {forma}
+                    </button>
+                  );
+                })}
+              </div>
+              <p style={{ margin: "8px 0 0", fontSize: "0.76rem", color: "#B45309", fontWeight: 700 }}>
+                O pedido volta a contar como entregue — o valor entra no seu acerto e no caixa da loja.
+              </p>
+            </div>
+            <div style={{ display: "flex", gap: "0.75rem" }}>
+              <button
+                type="button"
+                disabled={informandoCancelado}
+                onClick={() => setCanceladoParaInformar(null)}
+                style={{ flex: 1, padding: "12px", background: "#F8FAFC", color: "#334155", border: "1.5px solid #E2E8F0", borderRadius: 12, fontWeight: 800, cursor: "pointer", fontSize: "0.9rem" }}
+              >
+                Voltar
+              </button>
+              <button
+                type="button"
+                disabled={!formaDoCancelado || informandoCancelado}
+                onClick={informarEntregueCancelado}
+                style={{
+                  flex: 1.5, padding: "12px", background: formaDoCancelado ? "#16A34A" : "#CBD5E1", color: "#FFFFFF",
+                  border: "none", borderRadius: 12, fontWeight: 900, cursor: formaDoCancelado ? "pointer" : "default",
+                  fontSize: "1rem", display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                }}
+              >
+                {informandoCancelado ? <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /> : <CheckCircle2 size={18} />}
+                Confirmar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── ABRIR COM… ─────────────────────────────────────────────────────
           O entregador escolhe o app de mapa que tem. No Android, "Outro app"

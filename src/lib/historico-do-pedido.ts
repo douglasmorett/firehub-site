@@ -105,4 +105,5 @@ export const ROTULO_DA_EDICAO: Record<string, string> = {
   REPOSICAO: "Reposição",
   CANCELAMENTO_PARCIAL: "Cancelamento parcial",
   MOTOBOY: "Entregador",
+  ENTREGUE_DEPOIS_DE_CANCELADO: "Entregue depois de cancelado",
 };
