@@ -35,6 +35,8 @@ import FaixaDoVinculo from "./FaixaDoVinculo";
 import ApresentacaoDisparoOficial, { ChamadaDaRecuperacaoOficial } from "@/components/ApresentacaoDisparoOficial";
 import PixDaLojaNoRobo from "./PixDaLojaNoRobo";
 import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
+import { lerCupom } from "@/lib/cupons";
+import { textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
 import {
   MAX_OUTROS_NUMEROS_DO_DONO,
   digitosDoTelefoneDoDono,
@@ -1403,6 +1405,19 @@ export default function ChatbotHubClient() {
                           </button>
                         )}
                       </div>
+                      {/* Em quais formas de pagamento o cupom vale: o MESMO campo do cupom
+                          (Minha Loja → Cupons), que o robô e o cardápio obedecem. */}
+                      {config.instantCouponCode && (() => {
+                        const cadastrado = lerCupom(storeCoupons.find((c: any) => String(c?.code || "").toUpperCase() === String(config.instantCouponCode).toUpperCase()));
+                        if (!cadastrado) return null;
+                        const formas = textoDasFormasDoCupom(cadastrado);
+                        return (
+                          <div style={{ marginTop: "6px", fontSize: "0.74rem", color: "#475569", lineHeight: 1.4 }}>
+                            💳 {formas ? <>Vale só para <strong>{formas}</strong>.</> : "Vale em todas as formas de pagamento."}{" "}
+                            <a href="/store/minha-loja#cupons" style={{ color: "#2563EB", fontWeight: 700 }}>Mudar em Minha Loja → Cupons</a>
+                          </div>
+                        );
+                      })()}
                       <button
                         type="button"
                         onClick={() => {

@@ -70,6 +70,8 @@ import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/clien
 import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReconhecido } from "@/lib/cliente-reconhecido";
 import { bandeirasDeValeLigadas, ehFormaPeloSite, entregaSoOnlineMarcada, formaLigada, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
 import { rotuloDaForma, textosNoCanal } from "@/lib/formas-proprias";
+import { acharCupom } from "@/lib/cupons";
+import { formaRecusadaPeloCupom, textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import QuandoReceber, { type Quando } from "./QuandoReceber";
 import AgendarNoCardapio from "./AgendarNoCardapio";
@@ -1159,18 +1161,33 @@ export default function CustomerStorePage({
     ? cartTotal * ((premioDaTrilha.valor || 10) / 100)
     : 0;
 
-  const isFreeShippingEffective = Boolean(isFreeShippingByMin || couponApplied?.isFreeShipping || premioZeraFrete);
+  // ── EM QUAIS FORMAS DE PAGAMENTO O CUPOM VALE (lib/cupom-por-forma.ts) ──
+  // A restrição mora no cupom cadastrado (a página traz a lista). Na sacola a
+  // forma ainda não foi escolhida: só se mostra "válido para…". No fechamento,
+  // forma que o cupom não aceita tira o desconto da conta (com o aviso) e o
+  // cupom não vai ao servidor — que recusaria pela mesma regra. Voltando para
+  // uma forma aceita, o desconto volta.
+  const cupomCadastrado = couponApplied ? acharCupom((franchisee as any).storeCoupons, couponApplied.code) : null;
+  const formasDoCupomAplicado = cupomCadastrado ? textoDasFormasDoCupom(cupomCadastrado) : null;
+  const cupomForaDaForma = cupomCadastrado && isCheckout && !mesa
+    ? formaRecusadaPeloCupom(cupomCadastrado, paymentMethod, franchisee.paymentFees)
+    : null;
+  const cupomNaConta = cupomForaDaForma ? null : couponApplied;
+  const cupomPrimeiroPedidoCadastrado = cupomPrimeiroPedido ? acharCupom((franchisee as any).storeCoupons, cupomPrimeiroPedido.code) : null;
+  const formasDoCupomPrimeiroPedido = cupomPrimeiroPedidoCadastrado ? textoDasFormasDoCupom(cupomPrimeiroPedidoCadastrado) : null;
+
+  const isFreeShippingEffective = Boolean(isFreeShippingByMin || cupomNaConta?.isFreeShipping || premioZeraFrete);
   const effectiveDeliveryFee = (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null)
     ? deliveryFee
     : 0;
   // Cupom percentual recalcula sobre o carrinho ATUAL — o valor gravado no
   // "Aplicar" congelava e divergia do total quando o cliente mexia na sacola.
-  const discount = couponApplied
-    ? (couponApplied.isFreeShipping
+  const discount = cupomNaConta
+    ? (cupomNaConta.isFreeShipping
         ? 0
-        : (couponApplied as any).pct != null
-          ? cartTotal * (Number((couponApplied as any).pct) / 100)
-          : couponApplied.discount)
+        : (cupomNaConta as any).pct != null
+          ? cartTotal * (Number((cupomNaConta as any).pct) / 100)
+          : cupomNaConta.discount)
     : 0;
   // ── PRÊMIO DO CARTÃO DE CARIMBOS NA CONTA ──────────────────────────────
   //
@@ -1193,7 +1210,7 @@ export default function CustomerStorePage({
   // de primeiro pedido — os dois não somam. Só sobre os produtos a pagar.
   const indicadoPor = codigoDeIndicacao && isReferralActive && !mesa ? indicacaoDoServidor?.indicadoPor ?? null : null;
   const cupomDePrimeiroPedidoNaSacola = Boolean(
-    couponApplied && (couponApplied.primeiroPedido || couponApplied.code === cupomPrimeiroPedido?.code || (cupomDaUrl?.somentePrimeiroPedido && couponApplied.code === cupomDaUrl.code)),
+    cupomNaConta && (cupomNaConta.primeiroPedido || cupomNaConta.code === cupomPrimeiroPedido?.code || (cupomDaUrl?.somentePrimeiroPedido && cupomNaConta.code === cupomDaUrl.code)),
   );
   const indicacaoNaSacola = Boolean(indicadoPor?.valido && cartTotal > 0 && cartTotal >= (indicadoPor?.minimo || 0));
   const descontoDaIndicacao = indicacaoNaSacola && !cupomDePrimeiroPedidoNaSacola
@@ -2751,7 +2768,7 @@ export default function CustomerStorePage({
             return Number.isFinite(v) && v >= finalTotal ? v : null;
           })(),
           deliveryFee: effectiveDeliveryFee,
-          couponCode: couponApplied?.code || null,
+          couponCode: cupomNaConta?.code || null,
           cashbackUsed: cashbackDiscountApplied > 0 ? cashbackDiscountApplied : 0,
           usarCashback: cashbackDiscountApplied > 0,
           dispensarPremioDaTrilha: guardarPremioDaTrilha,
@@ -3692,6 +3709,7 @@ export default function CustomerStorePage({
                           ? `Vale em pedidos a partir de R$ ${cupomPrimeiroPedido.minOrderValue.toFixed(2).replace(".", ",")}. Entra sozinho, sem código.`
                           : "Entra sozinho na sacola, sem código."}
                       {cupomPrimeiroPedido.validade && ` Válido até ${cupomPrimeiroPedido.validade.split("-").reverse().slice(0, 2).join("/")}.`}
+                      {formasDoCupomPrimeiroPedido && ` Válido para ${formasDoCupomPrimeiroPedido}.`}
                     </div>
                   </div>
                 )}
@@ -3719,6 +3737,9 @@ export default function CustomerStorePage({
                               ? "Frete Grátis Aplicado!"
                               : `Desconto de R$ ${discount.toFixed(2).replace(".", ",")}`}
                           </div>
+                          {formasDoCupomAplicado && (
+                            <div style={{ fontSize: "0.7rem", color: "#166534", marginTop: 1 }}>💳 Válido para {formasDoCupomAplicado}</div>
+                          )}
                         </div>
                         <button onClick={() => setCouponApplied(null)} style={{ background: "none", border: "none", color: "#DC2626", fontWeight: 700, fontSize: "0.75rem", cursor: "pointer" }}>Remover</button>
                       </div>
@@ -3820,12 +3841,12 @@ export default function CustomerStorePage({
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span>Taxa de entrega</span>
-                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
+                  <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || cupomNaConta?.isFreeShipping) ? "#16A34A" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
                     {deliveryType === "PICKUP" ? (
                       "Retirada no local (Grátis)"
                     ) : isFreeShippingByMin ? (
                       "Grátis 🎉"
-                    ) : couponApplied?.isFreeShipping ? (
+                    ) : cupomNaConta?.isFreeShipping ? (
                       "Grátis (Cupom) 🎉"
                     ) : premioZeraFrete ? (
                       "Grátis (Prêmio da trilha) 🎉"
@@ -3842,7 +3863,7 @@ export default function CustomerStorePage({
                     )}
                   </span>
                 </div>
-                {discount > 0 && !couponApplied?.isFreeShipping && (
+                {discount > 0 && !cupomNaConta?.isFreeShipping && (
                   <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A" }}>
                     <span>Desconto</span>
                     <span style={{ fontWeight: 700 }}>- R$ {discount.toFixed(2).replace(".", ",")}</span>
@@ -4506,6 +4527,12 @@ export default function CustomerStorePage({
                   <button key={pm.k} type="button" onClick={() => setPaymentMethod(pm.k)} className={`checkout-type-btn ${paymentMethod === pm.k ? "active" : ""}`} style={{ flex: "1 1 30%", fontSize: "0.78rem", minHeight: "44px" }}>{pm.l}</button>
                 ))}
               </div>
+              {/* Cupom que não vale nesta forma: o desconto saiu da conta (lib/cupom-por-forma.ts). */}
+              {cupomForaDaForma && (
+                <p style={{ margin: "8px 0 0", padding: "8px 10px", background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: "10px", fontSize: "0.78rem", color: "#92400E", fontWeight: 600, lineHeight: 1.4 }}>
+                  ⚠️ {cupomForaDaForma} O desconto saiu da conta — escolha uma dessas formas para usar o cupom.
+                </p>
+              )}
               {/* Pix/cartão pelo site: o Asaas só gera a cobrança com o CPF de quem paga. */}
               {pagaPeloAsaas && (
                 <div style={{ marginTop: "8px", background: "#ECFDF5", border: "1px solid #A7F3D0", borderRadius: "10px", padding: "10px 12px" }}>
@@ -4631,12 +4658,12 @@ export default function CustomerStorePage({
               </div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span>Entrega:</span>
-                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || couponApplied?.isFreeShipping) ? "#16A34A" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
+                <span style={{ fontWeight: 700, color: (deliveryType === "PICKUP" || isFreeShippingByMin || cupomNaConta?.isFreeShipping) ? "#16A34A" : (deliveryFeeCalculated && effectiveDeliveryFee > 0) ? "#0F172A" : "#64748B" }}>
                   {deliveryType === "PICKUP" ? (
                     "Retirada (Grátis)"
                   ) : isFreeShippingByMin ? (
                     "Grátis 🎉"
-                  ) : couponApplied?.isFreeShipping ? (
+                  ) : cupomNaConta?.isFreeShipping ? (
                     "Grátis (Cupom) 🎉"
                   ) : premioZeraFrete ? (
                     "Grátis (Prêmio da trilha) 🎉"
@@ -4670,7 +4697,7 @@ export default function CustomerStorePage({
                   <span>- R$ {cashbackDiscountApplied.toFixed(2).replace(".", ",")}</span>
                 </div>
               )}
-              {discount > 0 && !couponApplied?.isFreeShipping && (
+              {discount > 0 && !cupomNaConta?.isFreeShipping && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#16A34A", fontWeight: 700 }}>
                   <span>Desconto (Cupom):</span>
                   <span>- R$ {discount.toFixed(2).replace(".", ",")}</span>

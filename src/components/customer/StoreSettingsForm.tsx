@@ -11,6 +11,7 @@ import { DICA_DO_VIDEO, MAX_VIDEO_BYTES } from "@/lib/video-enviado";
 import { DESCONTO_ONLINE_MAXIMO, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
 import { ACRESCIMO_NO_CREDITO_MAXIMO, percentualDoAcrescimoNoCredito } from "@/lib/acrescimo-no-credito";
 import { CANAIS_AO_CRIAR, CANAIS_DA_FORMA, LIMITE_DE_FORMAS, LIMITE_DO_NOME, type FormaPropria } from "@/lib/formas-proprias";
+import { FORMAS_DO_CUPOM, chaveDaPropria, lerFormasDoCupom, lerValesFora } from "@/lib/cupom-por-forma";
 
 /**
  * O cupom como fica gravado em `storeCoupons`. A régua que lê isto é
@@ -33,7 +34,69 @@ type Coupon = {
   usosPorCliente?: number | null;
   /** Só para quem nunca pediu pelo site; o site aplica sozinho e avisa. */
   primeiroPedido?: boolean;
+  /** Em quais formas de pagamento vale (lib/cupom-por-forma.ts). Ausente = todas. */
+  formasDePagamento?: string[];
+  /** Bandeiras de Vale em que não vale. */
+  valesFora?: string[];
 };
+
+/**
+ * "Vale nas formas de pagamento" do cupom (Ligeiro Lanches, 18/10/2026). Tudo
+ * marcado grava o campo AUSENTE — o cupom antigo e o novo sem mexer valem em
+ * todas. Desmarcar a última não deixa: cupom que não vale em nada é cupom
+ * desligado, e para isso existe o "Ativo".
+ */
+function FormasDoCupom({ cupom, paymentConfig, onMudar }: {
+  cupom: Coupon;
+  paymentConfig: any;
+  onMudar: (campo: "formasDePagamento" | "valesFora", valor: string[] | undefined) => void;
+}) {
+  const proprias: string[] = (Array.isArray(paymentConfig?.formasProprias) ? paymentConfig.formasProprias : [])
+    .filter((f: any) => f && f.ativo !== false && String(f.nome || "").trim())
+    .map((f: any) => String(f.nome).trim());
+  const opcoes = [
+    ...FORMAS_DO_CUPOM.map((f) => ({ chave: f.chave as string, rotulo: f.rotulo })),
+    ...proprias.map((nome) => ({ chave: chaveDaPropria(nome), rotulo: nome })),
+  ];
+  const todas = opcoes.map((o) => o.chave);
+  const marcadas = lerFormasDoCupom(cupom.formasDePagamento) ?? todas;
+  const bandeiras: string[] = (Array.isArray(paymentConfig?.VOUCHER?.brands) ? paymentConfig.VOUCHER.brands : [])
+    .filter((b: any) => b && b.active !== false && String(b.name || "").trim())
+    .map((b: any) => String(b.name).trim());
+  const fora = lerValesFora(cupom.valesFora);
+  const valeMarcado = marcadas.includes("VALE");
+
+  const alternar = (chave: string) => {
+    const proxima = marcadas.includes(chave) ? marcadas.filter((m) => m !== chave) : [...marcadas, chave];
+    if (proxima.length === 0) return;
+    onMudar("formasDePagamento", todas.every((t) => proxima.includes(t)) ? undefined : proxima);
+  };
+  const alternarBandeira = (nome: string) => {
+    const proxima = fora.includes(nome) ? fora.filter((f) => f !== nome) : [...fora, nome];
+    onMudar("valesFora", proxima.length > 0 ? proxima : undefined);
+  };
+  const caixa = (marcada: boolean, rotulo: string, onClick: () => void, chave: string) => (
+    <label key={chave} style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: "0.75rem", color: "#1E293B", cursor: "pointer" }}>
+      <input type="checkbox" checked={marcada} onChange={onClick} />
+      {rotulo}
+    </label>
+  );
+
+  return (
+    <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+        <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Vale nas formas de pagamento:</span>
+        {opcoes.map((o) => caixa(marcadas.includes(o.chave), o.rotulo, () => alternar(o.chave), o.chave))}
+      </div>
+      {valeMarcado && bandeiras.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap", paddingLeft: 12 }}>
+          <span style={{ fontSize: "0.72rem", color: "#64748B" }}>Bandeiras de vale:</span>
+          {bandeiras.map((b) => caixa(!fora.includes(b), b, () => alternarBandeira(b), `vale-${b}`))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * O % de desconto do pagamento pelo site. Texto próprio enquanto digita:
@@ -954,6 +1017,8 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
         <p style={{ margin: "0 0 1rem", fontSize: "0.78rem", color: "#64748B", lineHeight: 1.5 }}>
           Validade e limite por cliente são conferidos pelo telefone, na hora de fechar o pedido. O cupom de 1º pedido
           é aplicado sozinho para quem nunca pediu pelo seu site — o cliente vê o desconto sem digitar código.
+          Em <strong>Vale nas formas de pagamento</strong>, desmarque onde o cupom não vale (no cardápio e no robô do WhatsApp):
+          Pix pelo site conta como Pix, cartão pelo site como Crédito, e no pagamento dividido o cupom só entra se todas as formas estiverem marcadas.
         </p>
         {coupons.length === 0 ? (
           <p style={{ color: "#94A3B8", fontSize: "0.85rem", textAlign: "center", padding: "1rem" }}>Nenhum cupom cadastrado.</p>
@@ -1023,6 +1088,10 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
                         Vale só para quem nunca pediu pelo seu site · aplicado automaticamente
                       </span>
                     )}
+                  </div>
+                  {/* Linha 3: em quais formas de pagamento vale (lib/cupom-por-forma.ts). */}
+                  <div style={{ paddingLeft: ehPrimeiro ? 0 : 24 }}>
+                    <FormasDoCupom cupom={c} paymentConfig={paymentConfig} onMudar={(campo, valor) => updateCoupon(idx, campo, valor)} />
                   </div>
                 </div>
               );

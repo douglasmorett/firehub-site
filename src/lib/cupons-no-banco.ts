@@ -91,6 +91,9 @@ export async function fatosDoCupom(
     franchiseeId: string; telefone: unknown; timeZone: string | null | undefined; subtotal: number; taxa: number;
     /** O pedido que está sendo gravado: não conta como "já pediu" nem "já usou" dele mesmo. */
     excetoPedidoId?: PedidosDeFora;
+    /** A forma de pagamento do pedido e o `paymentFees` da loja (lib/cupom-por-forma.ts). Ausente = não confere. */
+    formaDePagamento?: unknown;
+    paymentFees?: unknown;
   }
 ): Promise<FatosDoCupom> {
   const temTelefone = digitosDoTelefone(ctx.telefone).length >= 8;
@@ -104,5 +107,6 @@ export async function fatosDoCupom(
     hojeDaLoja: hojeDaLoja(ctx.timeZone),
     usosDoCliente: usos,
     jaPediuPeloSite: jaPediu,
+    ...(ctx.formaDePagamento !== undefined ? { formaDePagamento: ctx.formaDePagamento, paymentFees: ctx.paymentFees } : {}),
   };
 }

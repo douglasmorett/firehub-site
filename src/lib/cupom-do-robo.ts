@@ -21,6 +21,7 @@
  * Funções puras. Teste: scripts/teste-cupom-do-robo.ts.
  */
 import { cupomDePrimeiroPedido, cupomVenceu, cuponsAnunciaveis, descreverBeneficio, lerCupons, type Cupom } from "./cupons";
+import { textoDasFormasDoCupom } from "./cupom-por-forma";
 
 /** Maiúsculas, sem acento, só letras e números separados por um espaço. */
 function palavras(texto: unknown): string[] {
@@ -116,9 +117,10 @@ export function cuponsDoRobo(storeCoupons: unknown, chatbotConfig: unknown, hoje
   return { publicos, primeiroPedido };
 }
 
-/** "PRIMEIROPEDIDO (40% de desconto)". */
+/** "PRIMEIROPEDIDO (40% de desconto)" — e, com restrição, "…, só pagando com Pix, Débito e Crédito)". */
 export function nomeDoCupom(c: Cupom): string {
-  return `${c.code} (${descreverBeneficio(c)})`;
+  const formas = textoDasFormasDoCupom(c, "ou");
+  return `${c.code} (${descreverBeneficio(c)}${formas ? `, só pagando com ${formas}` : ""})`;
 }
 
 /**

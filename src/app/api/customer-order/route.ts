@@ -686,6 +686,9 @@ export async function POST(req: Request) {
           timeZone: (franchisee as any).storeTimezone,
           subtotal: totalAmount,
           taxa: fee,
+          // Em quais formas o cupom vale (lib/cupom-por-forma.ts): Pix pelo site conta como Pix.
+          formaDePagamento: paymentMethod ?? null,
+          paymentFees: franchisee.paymentFees,
         });
         const veredito = avaliarCupom(coupon, fatos);
         if (!veredito.ok) {

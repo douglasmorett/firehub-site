@@ -20,6 +20,7 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { acharCupom, avaliarCupom, descreverBeneficio } from "@/lib/cupons";
 import { fatosDoCupom } from "@/lib/cupons-no-banco";
+import { textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
 
 export async function GET(req: NextRequest) {
   const ip = getClientIp(req);
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
 
   const loja = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { storeCoupons: true, storeLoyalty: true, storeTimezone: true },
+    select: { storeCoupons: true, storeLoyalty: true, storeTimezone: true, paymentFees: true },
   });
   if (!loja) return NextResponse.json({ ok: false, motivo: "Cupom inválido ou expirado." }, { status: 404 });
 
@@ -44,7 +45,11 @@ export async function GET(req: NextRequest) {
 
   const subtotal = Math.max(0, Number(p.get("subtotal")) || 0);
   const taxa = Math.max(0, Number(p.get("fee")) || 0);
-  const fatos = await fatosDoCupom(cupom, { franchiseeId, telefone: p.get("phone"), timeZone: loja.storeTimezone, subtotal, taxa });
+  // `payment` (opcional): a forma já escolhida — sem ela a regra da forma fica para o checkout.
+  const fatos = await fatosDoCupom(cupom, {
+    franchiseeId, telefone: p.get("phone"), timeZone: loja.storeTimezone, subtotal, taxa,
+    ...(p.get("payment") ? { formaDePagamento: p.get("payment"), paymentFees: loja.paymentFees } : {}),
+  });
   const veredito = avaliarCupom(cupom, fatos);
 
   return NextResponse.json({
@@ -57,5 +62,7 @@ export async function GET(req: NextRequest) {
     usosPorCliente: cupom.usosPorCliente,
     primeiroPedido: cupom.primeiroPedido,
     beneficio: descreverBeneficio(cupom),
+    // "Pix, Débito e Crédito" — em quais formas vale (null = todas).
+    formasDoCupom: textoDasFormasDoCupom(cupom),
   }, { status: veredito.ok ? 200 : 400 });
 }

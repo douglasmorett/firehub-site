@@ -13,6 +13,10 @@
  *   primeiroPedido  vale só para quem nunca pediu pelo site desta loja — e o
  *                   site aplica sozinho e avisa, sem o cliente digitar código.
  *
+ * Em 18/10/2026 (Ligeiro Lanches) entraram `formasDePagamento` e `valesFora`:
+ * em quais formas de pagamento o cupom vale (lib/cupom-por-forma.ts). Ausente
+ * = vale em todas.
+ *
  * `somentePrimeiroPedido` é o mesmo conceito vindo do cupom da campanha
  * "converter" (lib/campanha-converter.ts); aqui os dois são lidos como um só.
  *
@@ -25,6 +29,8 @@
  * aqui são puras — recebem os fatos e devolvem o veredito — para que os dois
  * lugares apliquem exatamente a mesma régua. Teste: scripts/teste-cupons.js.
  */
+
+import { formaRecusadaPeloCupom, lerFormasDoCupom, lerValesFora } from "./cupom-por-forma";
 
 export type TipoDeCupom = "percent" | "fixed" | "free_shipping";
 
@@ -46,6 +52,10 @@ export type Cupom = {
   origem: string | null;
   /** Texto pronto para o cliente, quando a origem dá um. */
   descricao: string | null;
+  /** As formas de pagamento em que vale (lib/cupom-por-forma.ts). null = todas. */
+  formasDePagamento: string[] | null;
+  /** Bandeiras de Vale em que não vale, mesmo com o Vale marcado. */
+  valesFora: string[];
 };
 
 /** Lê o que está gravado em `storeCoupons`, tolerando o formato antigo. */
@@ -76,6 +86,8 @@ export function lerCupom(bruto: unknown): Cupom | null {
     isPublic: b.isPublic === true,
     origem: typeof b.origem === "string" ? b.origem : null,
     descricao: typeof b.descricao === "string" ? b.descricao : null,
+    formasDePagamento: lerFormasDoCupom(b.formasDePagamento),
+    valesFora: lerValesFora(b.valesFora),
   };
 }
 
@@ -132,6 +144,14 @@ export type FatosDoCupom = {
   usosDoCliente: number | null;
   /** Este telefone já fez pedido pelo site desta loja? `null` = não sabemos ainda. */
   jaPediuPeloSite: boolean | null;
+  /**
+   * A forma de pagamento do pedido (código do cardápio, texto, resumo do
+   * dividido ou lista de partes). Ausente = ainda não se sabe (o cliente
+   * aplicando o cupom na sacola): a regra da forma não é conferida.
+   */
+  formaDePagamento?: unknown;
+  /** `User.paymentFees`: bandeiras de Vale e formas próprias, para ler a forma. */
+  paymentFees?: unknown;
 };
 
 export type VereditoDoCupom = {
@@ -147,6 +167,8 @@ export type VereditoDoCupom = {
    * mas avisa que a confirmação vem no checkout.
    */
   dependeDoTelefone: boolean;
+  /** A recusa é pela forma de pagamento (o cupom não vale nela). */
+  recusaPelaForma?: boolean;
 };
 
 /**
@@ -193,6 +215,11 @@ export function avaliarCupom(cupom: Cupom | null, fatos: FatosDoCupom): Veredito
       };
     }
     if (fatos.usosDoCliente === null) dependeDoTelefone = true;
+  }
+
+  if (fatos.formaDePagamento !== undefined) {
+    const recusa = formaRecusadaPeloCupom(cupom, fatos.formaDePagamento, fatos.paymentFees);
+    if (recusa) return { ok: false, motivo: recusa, ...nada, recusaPelaForma: true };
   }
 
   if (cupom.type === "free_shipping") {

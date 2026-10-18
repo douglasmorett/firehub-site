@@ -19,7 +19,8 @@ import {
 } from "@/lib/entrega-do-robo";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { avaliarCupom, cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cupons";
+import { avaliarCupom, cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio, type Cupom } from "@/lib/cupons";
+import { textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
 import { fatosDoCupom, hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
 import { cuponsComCampanha } from "@/lib/campanha-converter";
 import { codigoCompacto, cupomCitadoPeloCliente, cupomDesteClienteParaOPrompt, cuponsDoRobo, cuponsParaTentar, mensagemDoCupom } from "@/lib/cupom-do-robo";
@@ -299,7 +300,9 @@ export async function processChatbotAI(
         clientPhoneDigits.length >= 10 &&
         !(await jaPediuPeloSite(targetFranchiseeId, clientPhoneDigits))
       ) {
-        cupomDoPrimeiroPedido = { code: primeiro.code, beneficio: descreverBeneficio(primeiro) };
+        // "10% de desconto (pagando com Pix, Débito ou Crédito)" — lib/cupom-por-forma.ts.
+        const formas = textoDasFormasDoCupom(primeiro, "ou");
+        cupomDoPrimeiroPedido = { code: primeiro.code, beneficio: descreverBeneficio(primeiro) + (formas ? ` (pagando com ${formas})` : "") };
       }
     } catch (e: any) {
       console.error("[Chatbot AI] Saudação: não consegui conferir o cupom de primeiro pedido:", e?.message || e);
@@ -936,8 +939,10 @@ export async function processChatbotAI(
   const cuponsDaLoja = cuponsComCampanha(user.storeCoupons, (user as any).storeLoyalty);
   const doRobo = cuponsDoRobo(user.storeCoupons, chatbotConfig, hojeDoCupom);
   const temCupomParaCitar = doRobo.publicos.length > 0 || doRobo.primeiroPedido !== null;
-  const minimoDoCupom = (c: { minOrderValue: number }) =>
-    c.minOrderValue > 0 ? ` — Válido apenas para pedidos a partir de R$ ${c.minOrderValue}` : "";
+  const minimoDoCupom = (c: Cupom) =>
+    (c.minOrderValue > 0 ? ` — Válido apenas para pedidos a partir de R$ ${c.minOrderValue}` : "") +
+    // Em quais formas de pagamento vale (lib/cupom-por-forma.ts).
+    (textoDasFormasDoCupom(c) ? ` — Vale SÓ pagando com ${textoDasFormasDoCupom(c, "ou")}; em outra forma o desconto não entra` : "");
 
   let availableCouponsText = doRobo.publicos
     .map((c) => `- Cupom Público Permitido: Código "${c.code}" (${descreverBeneficio(c)}${minimoDoCupom(c)})`)
@@ -3595,10 +3600,21 @@ async function syncAiOrderToDatabase({
             subtotal: totalItemsSum,
             taxa: deliveryFee,
             excetoPedidoId: existingDraft?.id,
+            // Em quais formas o cupom vale (lib/cupom-por-forma.ts). Sem forma
+            // ainda (rascunho no começo) não recusa; quando o cliente escolhe
+            // uma que o cupom não aceita, o desconto sai.
+            formaDePagamento: payload?.paymentMethod || (existingDraft as any)?.paymentMethod || null,
+            paymentFees: formasProprias,
           })
         );
         if (!veredito.ok || veredito.dependeDoTelefone) {
-          if (pedidoPeloCliente.has(codigoCompacto(cupom.code)) && !cupomRecusado) cupomRecusado = veredito.motivo || null;
+          // Pela forma, avisa mesmo no de primeiro pedido que entrou sozinho:
+          // o robô já tinha contado do desconto ao cliente.
+          if ((pedidoPeloCliente.has(codigoCompacto(cupom.code)) || veredito.recusaPelaForma) && !cupomRecusado) {
+            cupomRecusado = veredito.recusaPelaForma
+              ? `${veredito.motivo} Com a forma de pagamento escolhida, o desconto não entrou no pedido.`
+              : veredito.motivo || null;
+          }
           continue;
         }
         const desconto = veredito.zeraTaxa ? deliveryFee : veredito.desconto;
