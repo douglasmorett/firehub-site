@@ -16,6 +16,7 @@ import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
 import RelatorioDaCarteira from "@/components/perfil-da-loja/RelatorioDaCarteira";
 import PerformanceDasCarteiras from "@/components/perfil-da-loja/PerformanceDasCarteiras";
+import MapaDeProspeccao from "@/components/prospeccao/MapaDeProspeccao";
 import { GavetaDoPerfil } from "@/components/perfil-da-loja/PerfilDaLoja";
 import type { ResumoDoPerfil, StatusDaAtividade } from "@/lib/perfil-da-loja/regras";
 
@@ -57,8 +58,8 @@ type Vendedor = { id: string; name: string; active: boolean };
 type Embaixador = { id: string; name: string; code: string; active: boolean };
 
 type StatusFilter = "todos" | "trial" | "assinantes" | "pendencia" | "mes" | "usando" | "inativos" | "nunca";
-type Tab = "overview" | "projecao" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda" | "acompanhamento" | "perfil";
-const ABAS: Tab[] = ["overview", "projecao", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda", "acompanhamento", "perfil"];
+type Tab = "overview" | "projecao" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda" | "acompanhamento" | "perfil" | "mapa";
+const ABAS: Tab[] = ["overview", "projecao", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda", "acompanhamento", "perfil", "mapa"];
 
 type KPIs = {
   totalLojistas: number; emTrial: number; assinantes: number;
@@ -82,6 +83,8 @@ const TITULOS: Record<Tab, string> = {
   agenda: "Agenda da equipe",
   acompanhamento: "Acompanhamento iFood",
   perfil: "Perfil dos clientes",
+  // O mesmo mapa da aba do vendedor (src/components/prospeccao); a API aceita ADMIN.
+  mapa: "Mapa de prospecção",
 };
 
 // ── Perfil da loja (lib/perfil-da-loja): status da atividade e oportunidades na lista ──
@@ -914,6 +917,7 @@ export default function AdminDashboardClient({
             { key: "agenda", icone: "📅", rotulo: "Agenda" },
             { key: "vendedores", icone: "💼", rotulo: "Vendedores" },
             { key: "perfil", icone: "🧭", rotulo: "Perfil dos clientes" },
+            { key: "mapa", icone: "🗺️", rotulo: "Mapa de prospecção" },
             { key: "acompanhamento", icone: "🛵", rotulo: "Acompanhamento iFood" },
           ] as { key: Tab; icone: string; rotulo: string; selo?: number }[]).map(n => (
             <button key={n.key} onClick={() => setTab(n.key)} className={`fha-nav-item${tab === n.key ? " active" : ""}`}>
@@ -1099,6 +1103,7 @@ export default function AdminDashboardClient({
           {tab === "projecao" && <ProjecaoTab />}
           {tab === "custos" && <AdminCostsTab />}
           {tab === "acompanhamento" && <AcompanhamentoIfoodTab />}
+          {tab === "mapa" && <MapaDeProspeccao />}
           {tab === "perfil" && (
             <RelatorioDaCarteira fonte="/api/admin/perfil-das-lojas" tema="admin" titulo="Perfil dos clientes" vendedores={vendedores} />
           )}
