@@ -9,9 +9,10 @@ export default function Page() {
   return (
     <div style={{ background: "#faf8f6", minHeight: "100vh" }}>
       <MultimarcasClient previa={{
-        estado: { ativo: false, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento: false },
+        estado: { ativo: false, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento: false, cortesia: false },
         preco: 97,
         diasDeTeste: 7,
+        precoDoAppCompleto: 197,
         mensalidade: { percentual: FIREHUB_PLAN.PERCENT_RATE, minimo: FIREHUB_PLAN.MIN_MONTHLY, teto: FIREHUB_PLAN.MAX_MONTHLY, lojaExtraMarketplace: FIREHUB_PLAN.EXTRA_STORE_FEE },
       }} />
     </div>

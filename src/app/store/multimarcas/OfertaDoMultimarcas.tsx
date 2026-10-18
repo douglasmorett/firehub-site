@@ -15,7 +15,7 @@
 
 import { useEffect, useState } from "react";
 import {
-  ArrowRight, Bike, Check, ChevronRight, Clock, LayoutGrid, Megaphone, Plus, Rocket, Search, ShoppingBag,
+  ArrowRight, Bike, Check, ChevronRight, Clock, Gift, LayoutGrid, Megaphone, Plus, Rocket, Search, ShoppingBag,
   Smartphone, Sparkles, Star, Store, TrendingUp, X,
 } from "lucide-react";
 import VitrineDaRede from "@/components/rede/VitrineDaRede";
@@ -38,9 +38,10 @@ const FRANGO = { marca: marca("frango"), produto: produto("f1") };
 export default function OfertaDoMultimarcas({ dados, salvando, onAtivar }: { dados: DadosDoMultimarcas; salvando: boolean; onAtivar: () => void }) {
   const m = dados.mensalidade;
   const isento = dados.estado.isento;
-  const comTeste = !isento && !dados.estado.jaTestou;
-  const botao = salvando ? "Ativando…" : comTeste ? `Ativar com ${dados.diasDeTeste} dias grátis` : "Ativar o Multimarcas";
-  const precoCurto = isento ? "Liberado para a sua conta" : <><strong>{reais(dados.preco)}/mês</strong> · à parte da mensalidade</>;
+  const cortesia = !isento && dados.estado.cortesia;
+  const comTeste = !isento && !cortesia && !dados.estado.jaTestou;
+  const botao = salvando ? "Ativando…" : cortesia ? "Ativar de cortesia" : comTeste ? `Ativar com ${dados.diasDeTeste} dias grátis` : "Ativar o Multimarcas";
+  const precoCurto = isento ? "Liberado para a sua conta" : cortesia ? <><strong>Cortesia</strong> · você tem o Aplicativo da loja completo</> : <><strong>{reais(dados.preco)}/mês</strong> · à parte da mensalidade</>;
 
   return (
     <div className={s.oferta}>
@@ -340,6 +341,13 @@ function Preco({ dados, comTeste, botao, salvando, onAtivar }: { dados: DadosDoM
           {comTeste && <p className={s.teste}>{dados.diasDeTeste} primeiros dias grátis na primeira ativação.</p>}
         </div>
       </div>
+      <div className={s.cortesia}>
+        <span className={s.cortesiaIcone}><Gift size={22} /></span>
+        <div>
+          <strong>{dados.estado.cortesia ? "Para você é cortesia." : "Cortesia para quem tem o aplicativo completo."}</strong>
+          <p>Com o <b>Aplicativo da loja no Android e no iPhone</b> ({reais(dados.precoDoAppCompleto)}/mês), o Multimarcas sai de graça — e o seu aplicativo já vem com todas as marcas e a sacola única. Com só uma plataforma, vale o preço normal.</p>
+        </div>
+      </div>
       <div className={s.exemplo}>
         <strong>Exemplo:</strong> sua loja paga {reais(m.teto)} de mensalidade. Com o Multimarcas, o boleto vem com {reais(m.teto)} (mensalidade) + {reais(dados.preco)} (Multimarcas) = <strong>{reais(m.teto + dados.preco)}</strong>.
       </div>
@@ -358,6 +366,7 @@ function Duvidas({ dados }: { dados: DadosDoMultimarcas }) {
     ["O cliente consegue pedir de mais de uma marca no mesmo pedido?", "Sim, esse é o centro do Multimarcas. Ele entra numa marca, põe no carrinho, entra em outra, põe mais, e fecha tudo num pedido só, com uma taxa de entrega."],
     [`Os ${reais(dados.preco)} substituem a minha mensalidade?`,
       `Não. A mensalidade de cada loja continua igual: ${m.percentual}% do faturamento, com mínimo de ${reais(m.minimo)} e teto de ${reais(m.teto)}. As lojas extras de iFood e 99Food continuam ${reais(m.lojaExtraMarketplace)} cada. O Multimarcas é um valor fixo, à parte, numa linha própria do mesmo boleto.`],
+    ["Tenho o Aplicativo da loja. Pago o Multimarcas?", `Se o seu aplicativo estiver ativo nas duas plataformas (Android e iPhone, ${reais(dados.precoDoAppCompleto)}/mês), não: o Multimarcas sai de cortesia. Com só uma plataforma, ou sem aplicativo, são ${reais(dados.preco)} por mês.`],
     ["Pago mais se tiver mais marcas?", `Não. São ${reais(dados.preco)} por mês para a página, com quantas marcas você quiser colocar nela.`],
     ["Preciso criar uma loja nova para cada marca?", "Não. Você diz quais categorias do seu cardápio são de cada marca. O pedido continua caindo no seu painel, na sua impressora e no seu caixa."],
     ["E o iFood e os outros apps?", "Não muda nada. O Multimarcas é a sua página própria, sem comissão por pedido."],

@@ -277,3 +277,12 @@
   .etiqueta, .pulso, .contadorPulando, .miniProdutoAtivo .miniMais, .miniSacolaAtiva .miniGrupo, .miniSacolaAtiva .miniConta em { animation: none; }
   .cena, .miniToast, .recurso { transition: none; }
 }
+
+/* ─── Cortesia do aplicativo completo ─── */
+.cortesia {
+  margin-top: 14px; display: flex; gap: 14px; align-items: flex-start; padding: 18px; border-radius: 18px;
+  background: linear-gradient(135deg, #f3f0ff, #fff); border: 1px solid #d0bfff;
+}
+.cortesia strong { font-size: 16px; color: #5f3dc4; }
+.cortesia p { margin: 4px 0 0; color: var(--tinta-2); font-size: 14px; line-height: 1.55; }
+.cortesiaIcone { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: #7048e8; color: #fff; flex-shrink: 0; }

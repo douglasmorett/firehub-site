@@ -7,6 +7,7 @@
 import assert from "node:assert/strict";
 import { valorDoMultimarcasNoMes as valor, PRECO_DO_MULTIMARCAS, DIAS_DE_TESTE_DO_MULTIMARCAS, type TrechoDoMultimarcas } from "../src/lib/multimarcas/assinatura";
 import { CLAUSULAS_DO_TERMO_DO_MULTIMARCAS } from "../src/lib/multimarcas/termo";
+import { teveAppCompletoNoMes, type TrechoDoApp } from "../src/lib/app-da-loja/plano";
 
 const ini = new Date("2026-11-01T03:00:00Z"); // 1º/11 00h em Brasília
 const fim = new Date("2026-12-01T03:00:00Z");
@@ -43,5 +44,17 @@ assert.equal(valor([t("2026-11-02T12:00:00Z", "2026-11-03T12:00:00Z", 97), t("20
 
 // O termo diz com todas as letras que é à parte da mensalidade.
 assert.ok(CLAUSULAS_DO_TERMO_DO_MULTIMARCAS.some((c) => /À PARTE/.test(c) && /mensalidade/.test(c)));
+
+// Cortesia: o mês com o Aplicativo da loja completo (Android + Apple) não cobra o Multimarcas.
+const app = (plataformas: TrechoDoApp["plataformas"], de: string, ate: string | null): TrechoDoApp => ({ de: d(de), ate: ate ? d(ate) : null, plataformas, valor: 0 });
+assert.equal(teveAppCompletoNoMes([app("ambos", "2026-10-01T12:00:00Z", null)], ini, fim, agora), true);
+// Só Android ou só Apple: sem cortesia.
+assert.equal(teveAppCompletoNoMes([app("android", "2026-10-01T12:00:00Z", null)], ini, fim, agora), false);
+assert.equal(teveAppCompletoNoMes([app("apple", "2026-10-01T12:00:00Z", null)], ini, fim, agora), false);
+// Desligou o completo em outubro: novembro sem cortesia.
+assert.equal(teveAppCompletoNoMes([app("ambos", "2026-09-01T12:00:00Z", "2026-10-20T12:00:00Z")], ini, fim, agora), false);
+// Trocou de Android para completo no meio de novembro: novembro com cortesia.
+assert.equal(teveAppCompletoNoMes([app("android", "2026-10-01T12:00:00Z", "2026-11-15T12:00:00Z"), app("ambos", "2026-11-15T12:00:00Z", null)], ini, fim, agora), true);
+assert.ok(CLAUSULAS_DO_TERMO_DO_MULTIMARCAS.some((c) => /Cortesia/.test(c) && /Android e Apple/.test(c)));
 
 console.log("✅ teste-multimarcas-cobranca: tudo certo");

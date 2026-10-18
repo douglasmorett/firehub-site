@@ -19,6 +19,12 @@
  * Loja isenta (parceiro, conta da casa) tem o Multimarcas liberado sem pagar —
  * igual ao Bill, para embaixador e vendedor conseguirem mostrar.
  *
+ * CORTESIA (Douglas, 17/10/2026): "se ele estiver pagando os dois aplicativos,
+ * R$ 197 o pacote, ele não paga essa estrutura. Só se tiver os dois, Apple e
+ * Android." O mês em que o Aplicativo da loja completo esteve ligado não cobra
+ * o Multimarcas (lib/app-da-loja/plano.ts → appCompletoNoMes). Ele continua
+ * tendo que ativar: a cortesia é do valor, não liga sozinha.
+ *
  * Tabela própria criada no primeiro uso (como lib/app-da-loja/plano.ts): se
  * faltar, só o Multimarcas para de cobrar.
  */
@@ -41,6 +47,8 @@ export type EstadoDoMultimarcas = {
   emTeste: boolean;
   jaTestou: boolean;
   isento: boolean;
+  /** Tem o Aplicativo da loja Android + Apple ligado agora: o Multimarcas não é cobrado. */
+  cortesia: boolean;
   /** Quanto esta loja paga por mês: o do trecho ligado; desligada, o de quem ativar hoje. */
   preco: number;
   trechos: TrechoDoMultimarcas[];
@@ -134,9 +142,20 @@ async function mesCorrente(franchiseeId: string) {
   return intervaloDoMes(getCurrentYearMonth(0, tz), tz);
 }
 
+/** O Aplicativo da loja completo (Android + Apple) está ligado agora. */
+async function temAppCompleto(franchiseeId: string): Promise<boolean> {
+  try {
+    const { estadoDoApp } = await import("@/lib/app-da-loja/plano");
+    return (await estadoDoApp(franchiseeId)).plataformas === "ambos";
+  } catch {
+    return false;
+  }
+}
+
 export async function estadoDoMultimarcas(franchiseeId: string, agora: Date = new Date()): Promise<EstadoDoMultimarcas> {
   const isento = await multimarcasIsento(franchiseeId);
-  const vazio: EstadoDoMultimarcas = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, preco: PRECO_DO_MULTIMARCAS, trechos: [] };
+  const cortesia = !isento && (await temAppCompleto(franchiseeId));
+  const vazio: EstadoDoMultimarcas = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, cortesia, preco: PRECO_DO_MULTIMARCAS, trechos: [] };
   if (!(await garantirEstruturaDoMultimarcas())) return vazio;
   const a = await lerLinha(franchiseeId);
   if (!a) return vazio;
@@ -145,6 +164,10 @@ export async function estadoDoMultimarcas(franchiseeId: string, agora: Date = ne
   try {
     const { monthStart, monthEnd } = await mesCorrente(franchiseeId);
     cobradoEsteMes = !isento && valorDoMultimarcasNoMes(trechos, a.testeAte, monthStart, monthEnd, agora) > 0;
+    if (cobradoEsteMes) {
+      const { appCompletoNoMes } = await import("@/lib/app-da-loja/plano");
+      if (await appCompletoNoMes(franchiseeId, monthStart, monthEnd)) cobradoEsteMes = false;
+    }
   } catch {}
   const aberto = trechos.find((t) => !t.ate);
   return {
@@ -154,6 +177,7 @@ export async function estadoDoMultimarcas(franchiseeId: string, agora: Date = ne
     emTeste: Boolean(!isento && a.ativo && a.testeAte && new Date(a.testeAte).getTime() > agora.getTime()),
     jaTestou: Boolean(a.testeAte),
     isento,
+    cortesia,
     preco: a.ativo && aberto ? aberto.valor : PRECO_DO_MULTIMARCAS,
     trechos,
   };
@@ -220,7 +244,11 @@ export async function cobrancaDoMultimarcasNoMes(franchiseeId: string, inicio: D
     if (await multimarcasIsento(franchiseeId)) return 0;
     const a = await lerLinha(franchiseeId);
     if (!a) return 0;
-    return valorDoMultimarcasNoMes(lerTrechos(a.trechos), a.testeAte, inicio, fim);
+    const valor = valorDoMultimarcasNoMes(lerTrechos(a.trechos), a.testeAte, inicio, fim);
+    if (valor <= 0) return 0;
+    // Cortesia: o mês em que pagou o Aplicativo da loja completo (Android + Apple).
+    const { appCompletoNoMes } = await import("@/lib/app-da-loja/plano");
+    return (await appCompletoNoMes(franchiseeId, inicio, fim)) ? 0 : valor;
   } catch (err: any) {
     console.error("[Multimarcas] Erro ao calcular a cobrança do mês:", err?.message);
     return 0;

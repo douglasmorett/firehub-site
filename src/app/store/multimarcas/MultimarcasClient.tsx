@@ -23,11 +23,13 @@ import OfertaDoMultimarcas from "./OfertaDoMultimarcas";
 import { CLAUSULAS_DO_TERMO_DO_MULTIMARCAS, TITULO_DO_TERMO_DO_MULTIMARCAS, VERSAO_DO_TERMO_DO_MULTIMARCAS } from "@/lib/multimarcas/termo";
 import s from "./Multimarcas.module.css";
 
-type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento: boolean };
+type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento: boolean; cortesia: boolean };
 export type DadosDoMultimarcas = {
   estado: Estado;
   preco: number;
   diasDeTeste: number;
+  /** O Aplicativo da loja completo (Android + Apple): quem paga, ganha o Multimarcas de cortesia. */
+  precoDoAppCompleto: number;
   mensalidade: { percentual: number; minimo: number; teto: number; lojaExtraMarketplace: number };
 };
 type Aviso = { tipo: "ok" | "erro"; titulo: string; detalhe?: string };
@@ -130,7 +132,7 @@ function Ativo({ dados, salvando, confirmarDesligar, onPedirDesligar, onCancelar
     <>
       <div className={s.cabecalhoAtivo}>
         <h1>Multimarcas</h1>
-        <span className={s.seloAtivo}>{e.isento ? "LIBERADO" : e.emTeste && e.testeAte ? `ATIVO · grátis até ${data(e.testeAte)}` : "ATIVO"}</span>
+        <span className={s.seloAtivo}>{e.isento ? "LIBERADO" : e.cortesia ? "ATIVO · CORTESIA DO APLICATIVO" : e.emTeste && e.testeAte ? `ATIVO · grátis até ${data(e.testeAte)}` : "ATIVO"}</span>
       </div>
       <p className={s.sub}>A página com todas as suas marcas, banners e a sacola única.</p>
 
@@ -145,8 +147,8 @@ function Ativo({ dados, salvando, confirmarDesligar, onPedirDesligar, onCancelar
       {!e.isento && (
         <div className={s.desligar}>
           <span>
-            {reais(dados.preco)} por mês, numa linha própria do boleto, à parte da mensalidade.
-            {e.emTeste && e.testeAte ? ` Grátis até ${data(e.testeAte)}.` : e.cobradoEsteMes ? " Este mês já entra no boleto." : ""}
+            {e.cortesia ? "Cortesia: enquanto o Aplicativo da loja estiver ativo no Android e no iPhone, o Multimarcas não é cobrado." : `${reais(dados.preco)} por mês, numa linha própria do boleto, à parte da mensalidade.`}
+            {e.cortesia ? "" : e.emTeste && e.testeAte ? ` Grátis até ${data(e.testeAte)}.` : e.cobradoEsteMes ? " Este mês já entra no boleto." : ""}
           </span>
           {confirmarDesligar ? (
             <span className={s.desligarBotoes}>

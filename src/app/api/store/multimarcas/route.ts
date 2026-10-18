@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { lojaDoAssessorDaSessao } from "@/lib/assessor/loja-da-sessao";
 import { DIAS_DE_TESTE_DO_MULTIMARCAS, TermoNaoAceitoError, estadoDoMultimarcas, ligarOuDesligarMultimarcas } from "@/lib/multimarcas/assinatura";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
+import { PRECOS_DO_APP } from "@/lib/app-da-loja/plano";
 
 /**
  * GET  — o estado do Multimarcas e os números da mensalidade (para a tela
@@ -13,7 +14,7 @@ import { FIREHUB_PLAN } from "@/lib/firehub-billing";
  * Só o dono (ou o ADMIN dentro da loja): a mesma porta do Bill.
  */
 const publico = (e: Awaited<ReturnType<typeof estadoDoMultimarcas>>) => ({
-  ativo: e.ativo, cobradoEsteMes: e.cobradoEsteMes, testeAte: e.testeAte, emTeste: e.emTeste, jaTestou: e.jaTestou, isento: e.isento,
+  ativo: e.ativo, cobradoEsteMes: e.cobradoEsteMes, testeAte: e.testeAte, emTeste: e.emTeste, jaTestou: e.jaTestou, isento: e.isento, cortesia: e.cortesia,
 });
 
 export async function GET() {
@@ -24,6 +25,7 @@ export async function GET() {
     estado: publico(estado),
     preco: estado.preco,
     diasDeTeste: DIAS_DE_TESTE_DO_MULTIMARCAS,
+    precoDoAppCompleto: PRECOS_DO_APP.ambos,
     mensalidade: {
       percentual: FIREHUB_PLAN.PERCENT_RATE,
       minimo: FIREHUB_PLAN.MIN_MONTHLY,
