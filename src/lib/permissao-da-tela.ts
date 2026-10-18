@@ -98,6 +98,8 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/garcons", abre: ["minha_loja"] },
   { prefixo: "/store/firecheck", abre: ["minha_loja"] },
   { prefixo: "/store/contingencia", abre: ["minha_loja"] },
+  // Aplicativo próprio da loja: contratar é do dono (a API também só atende o dono).
+  { prefixo: "/store/aplicativo", abre: ["minha_loja"] },
 
   { prefixo: "/store/perfil", abre: LIVRE },
   { prefixo: "/store/profile", abre: LIVRE },

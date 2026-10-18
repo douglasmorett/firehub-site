@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   BarChart2, Bike, PlayCircle, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
   Contact, Gauge, Home, LifeBuoy, LineChart, LogOut, MapPin, Menu, Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
-  Send, ShoppingBag, Store, TabletSmartphone, Tag, Truck, Tv, UtensilsCrossed, Users, Wallet,
+  Send, ShoppingBag, Smartphone, Store, TabletSmartphone, Tag, Truck, Tv, UtensilsCrossed, Users, Wallet,
   X, Zap, type LucideIcon,
 } from "lucide-react";
 import { menuDaLoja, type ItemDoMenu } from "@/lib/menu-do-painel";
@@ -315,6 +315,25 @@ export default function StoreSidebar({
           </Link>
         )}
 
+        {/* Aplicativo próprio da loja (Play Store/App Store): em amarelo-ouro,
+            abaixo da contingência, para a loja achar e pedir (Douglas,
+            17/10/2026: "um botão destacado igual ao tutorial e ao modo
+            contingência, só que amarelo: tenha o app próprio da sua loja").
+            Só o dono: contratar é decisão dele (app/store/aplicativo). */}
+        {permissoesDoFuncionario == null && (
+          <Link
+            href="/store/aplicativo"
+            {...navegarNoAperto("/store/aplicativo")}
+            className={`fh-menu-app${enxuta ? " enxuta" : ""}${pathname?.startsWith("/store/aplicativo") ? " ativo" : ""}`}
+            title="Tenha o app da sua loja"
+          >
+            <Smartphone size={16} />
+            {!enxuta && <span>Tenha o app da sua loja</span>}
+            {!enxuta && <span className="fh-menu-app-selo">NOVO</span>}
+            <SinalDoClique />
+          </Link>
+        )}
+
         <nav className="fh-menu-lista">
           {grupos.map((grupo) => (
             <div key={grupo.titulo} className="fh-menu-grupo">
@@ -547,6 +566,29 @@ const ESTILO = `
   font-size:.58rem; font-weight:800; letter-spacing:.04em; padding:1px 5px; border-radius:5px;
   background:#fff; color:#6D28D9;
 }
+
+/* Aplicativo da loja: amarelo-ouro (não o laranja dos tutoriais), letra escura
+   e um brilho que passa a cada poucos segundos para chamar o olho. */
+.fh-menu-app{
+  position:relative; overflow:hidden; margin:0 12px 10px; display:flex; align-items:center; justify-content:center; gap:7px;
+  padding:8px 10px; border-radius:9px; text-decoration:none;
+  font-size:.78rem; font-weight:900; color:#1C1917; white-space:nowrap;
+  background:linear-gradient(135deg,#FDE047,#F59E0B); box-shadow:0 4px 14px rgba(245,158,11,.45);
+}
+.fh-menu-app::after{
+  content:""; position:absolute; top:0; bottom:0; left:-60%; width:40%; pointer-events:none;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.65),transparent);
+  transform:skewX(-20deg); animation:fh-menu-app-brilho 4.5s ease-in-out infinite;
+}
+@keyframes fh-menu-app-brilho{ 0%,70%{ left:-60%; } 100%{ left:130%; } }
+.fh-menu-app:hover{ filter:brightness(1.06); }
+.fh-menu-app.ativo{ outline:2px solid #FEF08A; outline-offset:1px; }
+.fh-menu-app.enxuta{ margin:0 10px 10px; padding:9px 0; }
+.fh-menu-app-selo{
+  font-size:.58rem; font-weight:800; letter-spacing:.04em; padding:1px 5px; border-radius:5px;
+  background:#1C1917; color:#FDE047;
+}
+@media (prefers-reduced-motion: reduce){ .fh-menu-app::after{ animation:none; display:none; } }
 
 /* O rodapé não rola com a lista: quem tem flex:1 é a lista, então o que vem
    depois dela encosta no fim da barra e fica sempre visível. */
