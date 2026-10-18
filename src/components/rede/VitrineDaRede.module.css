@@ -292,3 +292,6 @@
 .embutida .trilho { grid-auto-columns: 100%; }
 .embutida .bannerTexto strong { font-size: 22px; }
 .embutida .capa { height: 170px; border-radius: 0; }
+.embutida .banner { aspect-ratio: 16 / 10; }
+.embutida .bannerTexto strong { font-size: 20px; }
+.embutida .cartaoLinha { font-size: 12px; }

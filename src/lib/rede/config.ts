@@ -42,6 +42,8 @@ export type BannerDaRede = {
 export type ConfigDaRede = {
   nome: string;
   frase: string;
+  /** Onde entrega, na barra do topo ("Entrega em …"). */
+  local: string;
   cor: string;
   entrega: { taxa: number; min: number; max: number; minimo: number };
   marcas: MarcaDaRede[];
@@ -56,6 +58,7 @@ const foto = (nome: string) => PRODUTOS_DA_REDE.find((p) => p.nome === nome)?.fo
 export const CONFIG_PADRAO: ConfigDaRede = {
   nome: "Rede Trindade",
   frase: "Várias lojas, uma cozinha. Peça de todas e pague uma entrega só.",
+  local: "Trindade, São Gonçalo",
   cor: "#E8590C",
   entrega: { taxa: 5.99, min: 35, max: 50, minimo: 25 },
   marcas: [

@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { ArrowLeft, Bike, Check, ChevronRight, Clock, Minus, Plus, Search, ShoppingBag, Star, X } from "lucide-react";
 import { PRODUTOS_DA_REDE, type ProdutoDaRede } from "@/lib/rede/previa-dados";
 import {
-  CHAVE_DA_CONFIG, CHAVE_DA_SACOLA, CONFIG_PADRAO, MARCA_DOS_EXTRAS, lerConfig, produtosDaMarca, produtosExtras, reais,
+  CHAVE_DA_CONFIG, CHAVE_DA_SACOLA, CONFIG_PADRAO, MARCA_DOS_EXTRAS, lerConfig, reais,
   type ConfigDaRede, type MarcaDaRede,
 } from "@/lib/rede/config";
 import s from "./VitrineDaRede.module.css";
@@ -20,7 +20,11 @@ import s from "./VitrineDaRede.module.css";
 type ItemDaSacola = { produtoId: string; qtd: number; obs: string };
 type Tela = { tipo: "inicio" } | { tipo: "marca"; id: string } | { tipo: "pronto"; numero: number; itens: ItemDaSacola[]; total: number };
 
-const PRODUTO = new Map(PRODUTOS_DA_REDE.map((p) => [p.id, p]));
+/** O cardápio que a vitrine mostra: o da prévia do Lucas ou o exemplo da página de venda. */
+type Catalogo = { produtos: ProdutoDaRede[]; porId: Map<string, ProdutoDaRede> };
+const catalogoDe = (produtos: ProdutoDaRede[]): Catalogo => ({ produtos, porId: new Map(produtos.map((p) => [p.id, p])) });
+const CatalogoCtx = createContext<Catalogo>(catalogoDe(PRODUTOS_DA_REDE));
+const useCatalogo = () => useContext(CatalogoCtx);
 
 function iniciais(nome: string) {
   const palavras = nome.replace(/[^\p{L}\p{N} ]/gu, "").split(/\s+/).filter((p) => p.length > 1 || /\d/.test(p));
@@ -45,7 +49,11 @@ function Nota({ marca }: { marca: MarcaDaRede }) {
   );
 }
 
-export default function VitrineDaRede({ config: configDaProp, embutida = false }: { config?: ConfigDaRede; embutida?: boolean }) {
+export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTOS_DA_REDE, embutida = false, chaveDaSacola = CHAVE_DA_SACOLA }: {
+  config?: ConfigDaRede; produtos?: ProdutoDaRede[]; embutida?: boolean; chaveDaSacola?: string;
+}) {
+  const catalogo = useMemo(() => catalogoDe(produtos), [produtos]);
+  const PRODUTO = catalogo.porId;
   const [configSalva, setConfigSalva] = useState<ConfigDaRede>(CONFIG_PADRAO);
   const config = configDaProp ?? configSalva;
   const [tela, setTela] = useState<Tela>({ tipo: "inicio" });
@@ -67,14 +75,14 @@ export default function VitrineDaRede({ config: configDaProp, embutida = false }
   useEffect(() => {
     if (embutida) return;
     try {
-      const s = JSON.parse(localStorage.getItem(CHAVE_DA_SACOLA) || "[]");
+      const s = JSON.parse(localStorage.getItem(chaveDaSacola) || "[]");
       if (Array.isArray(s)) setSacola(s.filter((i) => PRODUTO.has(i.produtoId)));
     } catch {}
   }, [embutida]);
   useEffect(() => {
     if (embutida) return;
-    try { localStorage.setItem(CHAVE_DA_SACOLA, JSON.stringify(sacola)); } catch {}
-  }, [sacola, embutida]);
+    try { localStorage.setItem(chaveDaSacola, JSON.stringify(sacola)); } catch {}
+  }, [sacola, embutida, chaveDaSacola]);
 
   const marcas = config.marcas.filter((m) => !m.oculta);
   const marcaPorId = useMemo(() => new Map(config.marcas.map((m) => [m.id, m])), [config.marcas]);
@@ -109,13 +117,14 @@ export default function VitrineDaRede({ config: configDaProp, embutida = false }
   // ─── Busca em todas as lojas ───
   const termo = busca.trim().toLowerCase();
   const achados = termo.length >= 2
-    ? PRODUTOS_DA_REDE.filter((p) => (p.marca === MARCA_DOS_EXTRAS || marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta)
+    ? produtos.filter((p) => (p.marca === MARCA_DOS_EXTRAS || marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta)
         && (p.nome.toLowerCase().includes(termo) || p.descricao.toLowerCase().includes(termo) || p.categoria.toLowerCase().includes(termo)))
     : [];
 
   const marcaAtual = tela.tipo === "marca" ? marcaPorId.get(tela.id) ?? null : null;
 
   return (
+    <CatalogoCtx.Provider value={catalogo}>
     <div ref={raiz} className={`${s.pagina} ${embutida ? s.embutida : ""}`} style={estiloDaCor}>
       <header className={s.barra}>
         <div className={s.barraDentro}>
@@ -124,7 +133,7 @@ export default function VitrineDaRede({ config: configDaProp, embutida = false }
               <span className={s.selo}>{iniciais(config.nome)}</span>
               <span>
                 <strong>{config.nome}</strong>
-                <small><Bike size={12} /> Entrega em Trindade, São Gonçalo</small>
+                <small><Bike size={12} /> Entrega em {config.local || CONFIG_PADRAO.local}</small>
               </span>
             </button>
           ) : (
@@ -227,6 +236,7 @@ export default function VitrineDaRede({ config: configDaProp, embutida = false }
           }} />
       )}
     </div>
+    </CatalogoCtx.Provider>
   );
 }
 
@@ -291,7 +301,8 @@ function CartaoDaMarca({ marca, config, onAbrir }: { marca: MarcaDaRede; config:
 
 function MaisPedidos({ marcaPorId, onAbrir }: { marcaPorId: Map<string, MarcaDaRede>; onAbrir: (p: ProdutoDaRede) => void }) {
   // Os "Destaques" de cada loja visível — na versão real, os mais vendidos da semana.
-  const lista = PRODUTOS_DA_REDE.filter((p) => p.foto && p.categoria === "Destaques" && marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta);
+  const { produtos } = useCatalogo();
+  const lista = produtos.filter((p) => p.foto && p.categoria === "Destaques" && marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta);
   if (!lista.length) return null;
   return (
     <section className={s.secao}>
@@ -315,8 +326,9 @@ function MaisPedidos({ marcaPorId, onAbrir }: { marcaPorId: Map<string, MarcaDaR
 function PaginaDaMarca({ marca, config, onAbrir, onAdicionar }: {
   marca: MarcaDaRede; config: ConfigDaRede; onAbrir: (p: ProdutoDaRede) => void; onAdicionar: (p: ProdutoDaRede) => void;
 }) {
-  const produtos = produtosDaMarca(marca.id);
-  const extras = produtosExtras();
+  const { produtos: todos } = useCatalogo();
+  const produtos = todos.filter((p) => p.marca === marca.id);
+  const extras = todos.filter((p) => p.marca === MARCA_DOS_EXTRAS);
   const categorias = [...new Set(produtos.map((p) => p.categoria))].sort((a, b) => Number(b === "Destaques") - Number(a === "Destaques"));
   const categoriasExtras = [...new Set(extras.map((p) => p.categoria))];
   const [catAtiva, setCatAtiva] = useState(categorias[0]);
@@ -440,7 +452,7 @@ function FolhaDoProduto({ p, marca, fechada, onFechar, onAdicionar }: {
 
 // ─── Sacola única ────────────────────────────────────────────────────────
 
-function agruparPorMarca(itens: ItemDaSacola[]) {
+function agruparPorMarca(itens: ItemDaSacola[], PRODUTO: Map<string, ProdutoDaRede>) {
   const grupos = new Map<string, { item: ItemDaSacola; idx: number }[]>();
   itens.forEach((item, idx) => {
     const m = PRODUTO.get(item.produtoId)!.marca;
@@ -455,6 +467,7 @@ function Sacola({ config, sacola, marcaPorId, subtotal, onFechar, onQtd, onFinal
   config: ConfigDaRede; sacola: ItemDaSacola[]; marcaPorId: Map<string, MarcaDaRede>; subtotal: number;
   onFechar: () => void; onQtd: (idx: number, delta: number) => void; onFinalizar: () => void;
 }) {
+  const PRODUTO = useCatalogo().porId;
   const falta = config.entrega.minimo - subtotal;
   return (
     <div className={s.fundo} onClick={onFechar}>
@@ -467,7 +480,7 @@ function Sacola({ config, sacola, marcaPorId, subtotal, onFechar, onQtd, onFinal
           <p className={s.vazio}>Sacola vazia. Entre numa loja e escolha à vontade — pode misturar lojas.</p>
         ) : (
           <div className={s.folhaCorpo}>
-            {agruparPorMarca(sacola).map(([mId, itens]) => {
+            {agruparPorMarca(sacola, PRODUTO).map(([mId, itens]) => {
               const marca = marcaPorId.get(mId);
               return (
                 <div key={mId} className={s.grupo}>
@@ -519,6 +532,7 @@ function Sacola({ config, sacola, marcaPorId, subtotal, onFechar, onQtd, onFinal
 function PedidoEnviado({ tela, config, marcaPorId, onVoltar }: {
   tela: Extract<Tela, { tipo: "pronto" }>; config: ConfigDaRede; marcaPorId: Map<string, MarcaDaRede>; onVoltar: () => void;
 }) {
+  const PRODUTO = useCatalogo().porId;
   return (
     <main className={s.conteudo}>
       <div className={s.pronto}>
@@ -533,7 +547,7 @@ function PedidoEnviado({ tela, config, marcaPorId, onVoltar }: {
           <strong>{config.nome.toUpperCase()}</strong>
           <span>PEDIDO #{tela.numero} · ENTREGA</span>
         </div>
-        {agruparPorMarca(tela.itens).map(([mId, itens]) => (
+        {agruparPorMarca(tela.itens, PRODUTO).map(([mId, itens]) => (
           <div key={mId} className={s.comandaGrupo}>
             <div className={s.comandaMarca}>== {(marcaPorId.get(mId)?.nome ?? "Acompanhamentos").toUpperCase()} ==</div>
             {itens.map(({ item, idx }) => (

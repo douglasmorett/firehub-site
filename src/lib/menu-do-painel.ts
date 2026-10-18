@@ -60,6 +60,8 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
     titulo: "Cardápio & vendas",
     itens: [
       { href: "/store/cardapio", label: "Cardápio", icone: "BookOpen" },
+      // Página das várias marcas da mesma cozinha (R$ 97/mês, lib/multimarcas — Douglas, 17/10/2026).
+      { href: "/store/multimarcas", label: "Multimarcas", icone: "LayoutGrid", selo: "NOVO" },
       { href: "/store/clientes", label: "Clientes", icone: "Contact" },
       { href: "/store/marketing", label: "Marketing & cupons", icone: "Send" },
       { href: "/store/chatbot", label: "Chatbot IA", icone: "Bot", selo: "IA" },
