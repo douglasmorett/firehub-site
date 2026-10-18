@@ -136,9 +136,12 @@ export default function ProjecaoTab() {
           { label: "Se todas pagarem", val: fmt0(totais.seTodas), sub: `${linhas.length} boletos previstos`, color: "#0F172A" },
           // O mesmo quadrado mostra valor e transações (pedidos não cancelados) — a meta de transações do Pix.
           { label: "Vendas pelo sistema", val: fmt0(vendasDoMes.ateAgora), sub: `deve fechar em ${fmt0(vendasDoMes.projetado)}`, color: "#0F172A",
-            transacoes: { ateAgora: vendasDoMes.pedidosAteAgora, projetado: vendasDoMes.pedidosProjetados } },
+            transacoes: {
+              ateAgora: vendasDoMes.pedidosAteAgora, projetado: vendasDoMes.pedidosProjetados,
+              proprios: vendasDoMes.propriosAteAgora, propriosProjetados: vendasDoMes.propriosProjetados,
+            } },
           { label: `${nomeDoMes(dados.mesSeguinte)} no ritmo de hoje`, val: fmt0(dados.mesSeguinteNoRitmo), sub: "mês cheio, todas fora do teste", color: "#0F172A" },
-        ].map((k: { label: string; val: string; sub: string; color: string; transacoes?: { ateAgora: number; projetado: number } }) => (
+        ].map((k: { label: string; val: string; sub: string; color: string; transacoes?: { ateAgora: number; projetado: number; proprios: number; propriosProjetados: number } }) => (
           <div key={k.label} className="fha-kpi">
             <div className="fha-kpi-lbl">{k.label}</div>
             {k.transacoes ? (
@@ -152,6 +155,9 @@ export default function ProjecaoTab() {
                   <div className="pj-meia-lbl">Transações</div>
                   <div className="pj-meia-val" style={{ color: k.color }}>{qtd(k.transacoes.ateAgora)}</div>
                   <div className="fha-kpi-sub">deve fechar em {qtd(k.transacoes.projetado)}</div>
+                  <div className="fha-kpi-sub" title="Site, robô do WhatsApp e totem: o que passaria pela Tuna. iFood, 99, Brendi e balcão ficam de fora.">
+                    canal próprio: <b>{qtd(k.transacoes.proprios)}</b> → {qtd(k.transacoes.propriosProjetados)}
+                  </div>
                 </div>
               </div>
             ) : (

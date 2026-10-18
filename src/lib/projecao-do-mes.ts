@@ -86,14 +86,18 @@ export async function montarProjecao(agora = new Date()) {
       FROM "User" u WHERE u.role = 'FRANCHISEE' AND u."ownerId" IS NULL`,
     // Venda de cada loja por dia (no fuso dela), na régua do boleto. `cobravel`
     // é a parte de depois do teste. `pedidos` são as transações (sem os
-    // cancelados, que a régua do boleto conta no valor desde a virada).
-    prisma.$queryRaw<{ id: string; dia: string; bruto: number; cobravel: number; pedidos: number }[]>`
+    // cancelados, que a régua do boleto conta no valor desde a virada);
+    // `proprios`, as do canal próprio — as que um meio de pagamento nosso (a
+    // Tuna) pode receber: iFood/99/Brendi/Wabiz recebem pelo app deles e o
+    // balcão (PRESENCIAL) na maquininha.
+    prisma.$queryRaw<{ id: string; dia: string; bruto: number; cobravel: number; pedidos: number; proprios: number }[]>`
       SELECT o."franchiseeId" AS id,
         to_char((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE COALESCE(u."storeTimezone", ${FUSO}), 'YYYY-MM-DD') AS dia,
         SUM(o."totalAmount" + COALESCE(o."discountTotal", 0))::float AS bruto,
         SUM(CASE WHEN u."trialEndsAt" IS NULL OR o."createdAt" >= u."trialEndsAt"
           THEN o."totalAmount" + COALESCE(o."discountTotal", 0) ELSE 0 END)::float AS cobravel,
-        (COUNT(*) FILTER (WHERE o.status <> 'CANCELADO'))::int AS pedidos
+        (COUNT(*) FILTER (WHERE o.status <> 'CANCELADO'))::int AS pedidos,
+        (COUNT(*) FILTER (WHERE o.status <> 'CANCELADO' AND o.source IN ('ONLINE', 'WHATSAPP_IA', 'SITE', 'TOTEM')))::int AS proprios
       FROM "CustomerOrder" o JOIN "User" u ON u.id = o."franchiseeId"
       WHERE o."createdAt" >= ${desde}
         AND o.status <> 'CRIANDO_IA'
@@ -116,19 +120,25 @@ export async function montarProjecao(agora = new Date()) {
   const cicloDa = new Map(ciclos.map((c) => [c.franchiseeId, c]));
 
   const diaDaVirada = diaNoFuso(VIRADA_DOS_2_POR_CENTO, FUSO);
-  type Soma = { mes: number; antes: number; depois: number; janela: number; pedidosNaJanela: number };
+  type Soma = { mes: number; antes: number; depois: number; janela: number; pedidosNaJanela: number; propriosNaJanela: number };
   const somas = new Map<string, Soma>();
   const vendaDoDia = new Map<string, number>();
   const pedidosDoDia = new Map<string, number>();
+  const propriosDoDia = new Map<string, number>();
   for (const r of porDiaDaLoja) {
-    const s = somas.get(r.id) || { mes: 0, antes: 0, depois: 0, janela: 0, pedidosNaJanela: 0 };
+    const s = somas.get(r.id) || { mes: 0, antes: 0, depois: 0, janela: 0, pedidosNaJanela: 0, propriosNaJanela: 0 };
     if (r.dia.startsWith(mes)) {
       s.mes += r.bruto;
       if (r.dia < diaDaVirada) s.antes += r.cobravel; else s.depois += r.cobravel;
       vendaDoDia.set(r.dia, (vendaDoDia.get(r.dia) || 0) + r.bruto);
       pedidosDoDia.set(r.dia, (pedidosDoDia.get(r.dia) || 0) + Number(r.pedidos || 0));
+      propriosDoDia.set(r.dia, (propriosDoDia.get(r.dia) || 0) + Number(r.proprios || 0));
     }
-    if (r.dia >= inicioDaJanelaDia && r.dia < hoje) { s.janela += r.bruto; s.pedidosNaJanela += Number(r.pedidos || 0); }
+    if (r.dia >= inicioDaJanelaDia && r.dia < hoje) {
+      s.janela += r.bruto;
+      s.pedidosNaJanela += Number(r.pedidos || 0);
+      s.propriosNaJanela += Number(r.proprios || 0);
+    }
     somas.set(r.id, s);
   }
 
@@ -136,6 +146,7 @@ export async function montarProjecao(agora = new Date()) {
   const linhas: LinhaDaProjecao[] = [];
   let ritmoDaPlataforma = 0;
   let pedidosPorDiaDaPlataforma = 0;
+  let propriosPorDiaDaPlataforma = 0;
   let mesSeguinteNoRitmo = 0;
   const porDiaDa = new Map<string, number>();
   for (const [id, s] of somas) {
@@ -146,6 +157,7 @@ export async function montarProjecao(agora = new Date()) {
     porDiaDa.set(id, porDia);
     ritmoDaPlataforma += porDia;
     pedidosPorDiaDaPlataforma += ritmoPorDia(s.pedidosNaJanela, primeiro, inicioDaJanela, fimDaJanela);
+    propriosPorDiaDaPlataforma += ritmoPorDia(s.propriosNaJanela, primeiro, inicioDaJanela, fimDaJanela);
     if (lojaIsenta(l)) continue;
     mesSeguinteNoRitmo += mesCheioNoRitmo(porDia, mesSeguinte);
 
@@ -245,18 +257,24 @@ export async function montarProjecao(agora = new Date()) {
     else if (d === hoje) dias.push({ dia: d, valor: vendaDoDia.get(d) || 0, tipo: "hoje" });
     else dias.push({ dia: d, valor: ritmoDaPlataforma, tipo: "projetado" });
   }
-  const restoDeHoje = ritmoDaPlataforma * Math.max(0, (intervaloDoDia(somarDias(hoje, 1)).getTime() - agora.getTime()) / DIA);
+  const fracaoQueFaltaDeHoje = Math.max(0, (intervaloDoDia(somarDias(hoje, 1)).getTime() - agora.getTime()) / DIA);
+  const restoDeHoje = ritmoDaPlataforma * fracaoQueFaltaDeHoje;
+  const ateHoje = (porDia: Map<string, number>) =>
+    dias.filter((d) => d.tipo !== "projetado").reduce((s, d) => s + (porDia.get(d.dia) || 0), 0);
+  const projetarContagem = (porDia: Map<string, number>, ritmo: number) => Math.round(
+    dias.reduce((s, d) => s + (d.tipo === "projetado" ? ritmo : porDia.get(d.dia) || 0), 0) + ritmo * fracaoQueFaltaDeHoje,
+  );
   const vendasDoMes = {
     ateAgora: dias.filter((d) => d.tipo !== "projetado").reduce((s, d) => s + d.valor, 0),
     projetado: dias.reduce((s, d) => s + d.valor, 0) + restoDeHoje,
     porDia: ritmoDaPlataforma,
     // Transações (pedidos não cancelados) no mesmo ritmo: os dias que faltam + o resto de hoje.
-    pedidosAteAgora: dias.filter((d) => d.tipo !== "projetado").reduce((s, d) => s + (pedidosDoDia.get(d.dia) || 0), 0),
-    pedidosProjetados: Math.round(
-      dias.reduce((s, d) => s + (d.tipo === "projetado" ? pedidosPorDiaDaPlataforma : pedidosDoDia.get(d.dia) || 0), 0)
-      + pedidosPorDiaDaPlataforma * Math.max(0, (intervaloDoDia(somarDias(hoje, 1)).getTime() - agora.getTime()) / DIA),
-    ),
+    pedidosAteAgora: ateHoje(pedidosDoDia),
+    pedidosProjetados: projetarContagem(pedidosDoDia, pedidosPorDiaDaPlataforma),
     pedidosPorDia: pedidosPorDiaDaPlataforma,
+    // Só o canal próprio (site, robô do WhatsApp, totem): o que conta para a meta da Tuna.
+    propriosAteAgora: ateHoje(propriosDoDia),
+    propriosProjetados: projetarContagem(propriosDoDia, propriosPorDiaDaPlataforma),
   };
 
   // ── Mês passado: o que foi cobrado e o que entrou ─────────────
