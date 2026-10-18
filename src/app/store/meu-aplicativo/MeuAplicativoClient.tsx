@@ -143,11 +143,11 @@ export default function MeuAplicativoClient() {
       <style>{CSS}</style>
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <span style={{ width: 44, height: 44, borderRadius: 12, background: "#0F172A", display: "grid", placeItems: "center", flexShrink: 0 }}>
           <Smartphone size={24} color="#FACC15" />
         </span>
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
           <h1 style={{ fontSize: 24, fontWeight: 900, color: "#0F172A", margin: 0 }}>Meu aplicativo</h1>
           <div style={{ fontSize: 13, color: "#64748B" }}>
             {dados.plano.rotulo ? `${dados.plano.rotulo} · ` : ""}ativo desde {data(dados.plano.ativoDesde)}
@@ -167,7 +167,16 @@ export default function MeuAplicativoClient() {
         })}
       </div>
 
-      {aba === "visao" && <VisaoGeral dados={dados} irParaNotificacoes={() => setAba("notificacoes")} />}
+      {aba === "visao" && (
+        <VisaoGeral
+          dados={dados}
+          irParaNotificacoes={() => {
+            setAba("notificacoes");
+            // O botão fica no fim da Visão geral: no celular, a aba nova abriria rolada lá embaixo.
+            requestAnimationFrame(() => document.querySelector(".ma-abas")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+          }}
+        />
+      )}
       {aba === "notificacoes" && <Notificacoes dados={dados} avisar={setAviso} recarregar={carregar} />}
     </div>
   );
@@ -208,7 +217,7 @@ function VisaoGeral({ dados, irParaNotificacoes }: { dados: Dados; irParaNotific
         <Numero icone={<Users size={14} />} rotulo="Ativos em 7 dias" valor={inteiro(base.ativos7)} detalhe="abriram ou pediram" />
         <Numero icone={<Users size={14} />} rotulo="Ativos em 30 dias" valor={inteiro(base.ativos30)} detalhe="abriram ou pediram" />
         <Numero icone={<TrendingUp size={14} />} rotulo="Novos no mês" valor={inteiro(base.novosNoMes)} detalhe={`desde ${diaCurto(mes.de)}`} />
-        <Numero icone={<Bell size={14} />} rotulo="Recebem promoções" valor={inteiro(alcance.todos)} detalhe="aceitaram no app" />
+        <Numero icone={<Bell size={14} />} rotulo="Aceitam promoção" valor={inteiro(alcance.todos)} detalhe="recebem a notificação" />
       </div>
 
       <div style={cartao}>
@@ -228,7 +237,7 @@ function VisaoGeral({ dados, irParaNotificacoes }: { dados: Dados; irParaNotific
         <div style={cartao}>
           <h2 style={tituloDoCartao}>Aparelhos que abriram o app</h2>
           <p style={sub}>Por dia, últimos 30 dias. Cada celular conta uma vez por dia.</p>
-          <Barras dados={porDia.map((d) => ({ dia: d.dia, valor: d.aberturas }))} cor="#2563EB" unidade={(n) => `${n} ${n === 1 ? "aparelho" : "aparelhos"}`} />
+          <Barras dados={porDia.map((d) => ({ dia: d.dia, valor: d.aberturas }))} cor="#2563EB" media unidade={(n) => `${n} ${n === 1 ? "aparelho" : "aparelhos"}`} />
         </div>
         <div style={cartao}>
           <h2 style={tituloDoCartao}>Pedidos pelo app</h2>
@@ -262,7 +271,7 @@ function VisaoGeral({ dados, irParaNotificacoes }: { dados: Dados; irParaNotific
 }
 
 /** Barras de um valor por dia. Uma série, um eixo; o valor de cada dia no toque/hover. */
-function Barras({ dados, cor, unidade }: { dados: { dia: string; valor: number }[]; cor: string; unidade: (n: number) => string }) {
+function Barras({ dados, cor, unidade, media }: { dados: { dia: string; valor: number }[]; cor: string; unidade: (n: number) => string; media?: boolean }) {
   const max = Math.max(1, ...dados.map((d) => d.valor));
   const total = dados.reduce((s, d) => s + d.valor, 0);
   const [foco, setFoco] = useState<number | null>(null);
@@ -271,7 +280,8 @@ function Barras({ dados, cor, unidade }: { dados: { dia: string; valor: number }
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#64748B", marginBottom: 6, minHeight: 18 }}>
-        <span>{atual ? `${diaCurto(atual.dia)}: ${unidade(atual.valor)}` : `Total: ${unidade(total)}`}</span>
+        {/* Aparelhos por dia não somam: o mesmo celular abre em vários dias. Ali vale a média. */}
+        <span>{atual ? `${diaCurto(atual.dia)}: ${unidade(atual.valor)}` : media ? `Média: ${unidade(Math.round(total / Math.max(1, dados.filter((d) => d.valor > 0).length)))} por dia` : `Total: ${unidade(total)}`}</span>
         <span>máx. {inteiro(max)}</span>
       </div>
       <svg viewBox={`0 0 ${L} ${A}`} width="100%" height={120} preserveAspectRatio="none" role="img" aria-label={`Total ${unidade(total)} em 30 dias`} onMouseLeave={() => setFoco(null)}>
@@ -399,9 +409,19 @@ function Notificacoes({ dados, avisar, recarregar }: { dados: Dados; avisar: (a:
           {link === "produto" && (
             <div style={{ marginTop: 8 }}>
               <input style={campo} value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar produto…" aria-label="Buscar produto" />
-              <select style={{ ...campo, marginTop: 6 }} size={5} value={produtoId} onChange={(e) => setProdutoId(e.target.value)} aria-label="Produto">
-                {filtrados.map((p) => <option key={p.id} value={p.id}>{p.nome} — {reais(p.preco)}</option>)}
-              </select>
+              <div className="ma-produtos" role="radiogroup" aria-label="Produto">
+                {filtrados.length === 0 && <div style={{ padding: 10, fontSize: 13, color: "#94A3B8" }}>Nenhum produto com esse nome.</div>}
+                {filtrados.map((p) => (
+                  <button key={p.id} type="button" role="radio" aria-checked={produtoId === p.id} className={`ma-produto${produtoId === p.id ? " marcado" : ""}`} onClick={() => setProdutoId(p.id)}>
+                    {p.foto
+                      // eslint-disable-next-line @next/next/no-img-element
+                      ? <img src={p.foto} alt="" className="ma-produto-foto" />
+                      : <span className="ma-produto-foto ma-produto-sem-foto"><ShoppingBag size={16} /></span>}
+                    <span className="ma-produto-nome">{p.nome}</span>
+                    <span className="ma-produto-preco">{reais(p.preco)}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -432,10 +452,10 @@ function Notificacoes({ dados, avisar, recarregar }: { dados: Dados; avisar: (a:
           </div>
         </div>
 
-        <div style={{ ...cartao, display: "grid", justifyItems: "center", alignContent: "start", gap: 10 }}>
+        <div className="ma-previa" style={{ ...cartao, display: "grid", justifyItems: "center", alignContent: "start", gap: 10 }}>
           <div style={{ fontSize: 12, fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: ".04em" }}>Como o cliente vê</div>
           <Celular nomeDoApp={dados.loja.nome} logo={dados.loja.logo} titulo={titulo} mensagem={mensagem} />
-          <div style={{ fontSize: 12, color: "#94A3B8", textAlign: "center", maxWidth: 260 }}>
+          <div className="ma-previa-nota" style={{ fontSize: 12, color: "#94A3B8", textAlign: "center", maxWidth: 260 }}>
             O celular mostra até umas duas linhas da mensagem fechada; o resto aparece quando o cliente puxa a notificação.
           </div>
         </div>
@@ -470,9 +490,11 @@ function Notificacoes({ dados, avisar, recarregar }: { dados: Dados; avisar: (a:
                     <div className="ma-contas">
                       <span><b>{inteiro(e.alvo)}</b> no público</span>
                       <span><b>{inteiro(e.aceitos)}</b> receberam</span>
-                      <span><b>{inteiro(e.entregues)}</b> entregues</span>
+                      {e.entregues === 0 && e.errosNaEntrega === 0 && e.aceitos > 0 && e.enviadoEm && Date.now() - new Date(e.enviadoEm).getTime() < 30 * 60 * 1000
+                        ? <span style={{ color: "#94A3B8" }}>confirmando a entrega…</span>
+                        : <span><b>{inteiro(e.entregues)}</b> entregues</span>}
                       {e.errosNoEnvio + e.errosNaEntrega > 0 && <span><b>{inteiro(e.errosNoEnvio + e.errosNaEntrega)}</b> com erro</span>}
-                      {e.removidos > 0 && <span><b>{inteiro(e.removidos)}</b> desinstalaram</span>}
+                      {e.removidos > 0 && <span><b>{inteiro(e.removidos)}</b> {e.removidos === 1 ? "desinstalou o app" : "desinstalaram o app"}</span>}
                     </div>
                   )}
                   {e.motivo && e.status !== "ENVIADO" && <div style={{ fontSize: 12.5, color: "#B45309", marginTop: 4 }}>{e.motivo}</div>}
@@ -527,7 +549,7 @@ function Celular({ nomeDoApp, logo, titulo, mensagem }: { nomeDoApp: string; log
     <div className="ma-celular" aria-label="Prévia da notificação no celular">
       <div className="ma-tela">
         <div className="ma-hora">{agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</div>
-        <div className="ma-data">{agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" })}</div>
+        <div className="ma-data">{(() => { const t = agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }); return t.charAt(0).toUpperCase() + t.slice(1); })()}</div>
         <div className="ma-notif">
           <div className="ma-notif-topo">
             {logo && !semLogo
@@ -546,7 +568,7 @@ function Celular({ nomeDoApp, logo, titulo, mensagem }: { nomeDoApp: string; log
 }
 
 const CSS = `
-.ma-abas { display: flex; gap: 6px; margin: 18px 0 16px; border-bottom: 1px solid #E2E8F0; overflow-x: auto; }
+.ma-abas { display: flex; gap: 6px; margin: 18px 0 16px; border-bottom: 1px solid #E2E8F0; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .ma-aba { display: inline-flex; align-items: center; gap: 6px; padding: 10px 14px; border: none; background: none; font-weight: 800; font-size: .9rem; color: #64748B; cursor: pointer; border-bottom: 3px solid transparent; margin-bottom: -1px; white-space: nowrap; }
 .ma-aba.ativa { color: #0F172A; border-bottom-color: #FACC15; }
 .ma-grade { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
@@ -555,6 +577,15 @@ const CSS = `
 .ma-compor { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 16px; }
 @media (max-width: 820px) { .ma-compor { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 380px) { .ma-grade-2 { grid-template-columns: minmax(0, 1fr); } }
+.ma-previa { align-self: start; position: sticky; top: 16px; }
+.ma-produtos { margin-top: 6px; max-height: 232px; overflow-y: auto; border: 1.5px solid #CBD5E1; border-radius: 10px; padding: 4px; display: grid; gap: 2px; }
+.ma-produto { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border: 1.5px solid transparent; border-radius: 8px; background: #fff; cursor: pointer; text-align: left; font-family: inherit; }
+.ma-produto:hover { background: #F8FAFC; }
+.ma-produto.marcado { border-color: #0F172A; background: #F8FAFC; }
+.ma-produto-foto { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+.ma-produto-sem-foto { display: grid; place-items: center; background: #F1F5F9; color: #94A3B8; }
+.ma-produto-nome { flex: 1; min-width: 0; font-size: .88rem; font-weight: 700; color: #0F172A; overflow-wrap: anywhere; }
+.ma-produto-preco { font-size: .82rem; color: #475569; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ma-num { background: #fff; border: 1px solid #E2E8F0; border-radius: 14px; padding: 12px 14px; min-width: 0; }
 .ma-num.destaque { background: #0F172A; border-color: #0F172A; }
 .ma-num.destaque .ma-num-rotulo, .ma-num.destaque .ma-num-detalhe { color: #CBD5E1; }
@@ -584,7 +615,7 @@ const CSS = `
 .ma-celular { width: 250px; max-width: 100%; aspect-ratio: 9 / 18; border-radius: 34px; background: #0F172A; padding: 10px; box-sizing: border-box; box-shadow: 0 12px 30px rgba(15,23,42,.25); }
 .ma-tela { height: 100%; border-radius: 26px; background: linear-gradient(160deg, #334155, #1E293B 55%, #0F172A); padding: 28px 10px 10px; box-sizing: border-box; overflow: hidden; }
 .ma-hora { text-align: center; color: #fff; font-size: 44px; font-weight: 300; line-height: 1; }
-.ma-data { text-align: center; color: #CBD5E1; font-size: 12px; margin: 6px 0 18px; text-transform: capitalize; }
+.ma-data { text-align: center; color: #CBD5E1; font-size: 12px; margin: 6px 0 18px; }
 .ma-notif { background: rgba(255,255,255,.92); border-radius: 16px; padding: 10px 11px; }
 .ma-notif-topo { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
 .ma-notif-icone { width: 18px; height: 18px; border-radius: 5px; object-fit: cover; }
@@ -593,4 +624,12 @@ const CSS = `
 .ma-notif-agora { font-size: 11px; color: #64748B; }
 .ma-notif-titulo { font-size: 13px; font-weight: 800; color: #0F172A; overflow-wrap: anywhere; }
 .ma-notif-texto { font-size: 12.5px; color: #334155; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+/* No fim de propósito: vence as regras de cima. No celular a prévia vem antes do formulário e encolhe: a loja vê o aviso enquanto escreve. */
+@media (max-width: 820px) {
+  .ma-previa { position: static; order: -1; }
+  .ma-celular { aspect-ratio: auto; height: 290px; width: 240px; border-radius: 30px 30px 0 0; padding-bottom: 0; }
+  .ma-tela { border-radius: 22px 22px 0 0; padding-top: 20px; }
+  .ma-hora { font-size: 36px; }
+  .ma-previa-nota { display: none; }
+}
 `;
