@@ -15,6 +15,9 @@ import ConexaoDoAtendimento from "@/components/crm/ConexaoDoAtendimento";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
 import DesempenhoDaEquipe from "@/components/crm/DesempenhoDaEquipe";
+import RelatorioDaCarteira from "@/components/perfil-da-loja/RelatorioDaCarteira";
+import { GavetaDoPerfil } from "@/components/perfil-da-loja/PerfilDaLoja";
+import type { ResumoDoPerfil, StatusDaAtividade } from "@/lib/perfil-da-loja/regras";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmtDate = (d: string) => new Date(d).toLocaleDateString("pt-BR");
@@ -54,8 +57,8 @@ type Vendedor = { id: string; name: string; active: boolean };
 type Embaixador = { id: string; name: string; code: string; active: boolean };
 
 type StatusFilter = "todos" | "trial" | "assinantes" | "pendencia" | "mes" | "usando" | "inativos" | "nunca";
-type Tab = "overview" | "projecao" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda" | "acompanhamento";
-const ABAS: Tab[] = ["overview", "projecao", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda", "acompanhamento"];
+type Tab = "overview" | "projecao" | "lojistas" | "financeiro" | "vendedores" | "ambassadors" | "inscricoes" | "custos" | "atendimento" | "crm" | "agenda" | "acompanhamento" | "perfil";
+const ABAS: Tab[] = ["overview", "projecao", "lojistas", "financeiro", "vendedores", "ambassadors", "inscricoes", "custos", "atendimento", "crm", "agenda", "acompanhamento", "perfil"];
 
 type KPIs = {
   totalLojistas: number; emTrial: number; assinantes: number;
@@ -78,7 +81,18 @@ const TITULOS: Record<Tab, string> = {
   crm: "CRM — contatos e funil",
   agenda: "Agenda da equipe",
   acompanhamento: "Acompanhamento iFood",
+  perfil: "Perfil dos clientes",
 };
+
+// ── Perfil da loja (lib/perfil-da-loja): status da atividade e oportunidades na lista ──
+const COR_DA_ATIVIDADE: Record<StatusDaAtividade, { cor: string; fundo: string; rotulo: string }> = {
+  ATIVA: { cor: "#15803D", fundo: "#DCFCE7", rotulo: "Ativa" },
+  ESFRIANDO: { cor: "#9A5B06", fundo: "#FEF3C7", rotulo: "Esfriando" },
+  PARADA: { cor: "#B91C1C", fundo: "#FEE2E2", rotulo: "Parada" },
+  NOVA: { cor: "#1D4ED8", fundo: "#DBEAFE", rotulo: "Nova (teste)" },
+};
+type FiltroDeAtividade = "todas" | StatusDaAtividade;
+const diasEmTexto = (d: number | null) => (d === null ? "nunca vendeu" : d === 0 ? "última hoje" : d === 1 ? "última ontem" : `última há ${d} dias`);
 
 /** "hoje", "ontem", "há 12 dias", "nunca vendeu". */
 function textoDoUltimoPedido(a: Atividade | null): string {
@@ -135,6 +149,25 @@ export default function AdminDashboardClient({
     return () => { vivo = false; clearInterval(i); };
   }, []);
   const [atribuindo, setAtribuindo] = useState<string | null>(null);
+
+  // Perfil das lojas: status da atividade e oportunidades para a lista
+  // (GET /api/admin/perfil-das-lojas, 5 min de cache no servidor). Carrega uma
+  // vez, quando a lista aparece; a gaveta abre o perfil completo de uma loja.
+  const [perfis, setPerfis] = useState<Map<string, ResumoDoPerfil> | null>(null);
+  const [perfisErro, setPerfisErro] = useState(false);
+  const [atividadeFilter, setAtividadeFilter] = useState<FiltroDeAtividade>("todas");
+  const [oportunidadeFilter, setOportunidadeFilter] = useState<string>("todas");
+  const [perfilAberto, setPerfilAberto] = useState<string | null>(null);
+  const fecharPerfil = React.useCallback(() => setPerfilAberto(null), []);
+  useEffect(() => {
+    if (perfis || perfisErro || (tab !== "overview" && tab !== "lojistas")) return;
+    let vivo = true;
+    fetch("/api/admin/perfil-das-lojas", { cache: "no-store" })
+      .then(r => (r.ok ? r.json() : Promise.reject()))
+      .then((d: { lojas: ResumoDoPerfil[] }) => { if (vivo) setPerfis(new Map(d.lojas.map(l => [l.id, l]))); })
+      .catch(() => { if (vivo) setPerfisErro(true); });
+    return () => { vivo = false; };
+  }, [tab, perfis, perfisErro]);
 
   // Modal de concessão de dias
   const [grantModalUser, setGrantModalUser] = useState<Lojista | null>(null);
@@ -246,7 +279,22 @@ export default function AdminDashboardClient({
   const matchesVendedor = (l: Lojista) =>
     vendedorFilter === "todos" ? true : vendedorFilter === "sem" ? !l.vendedorId : l.vendedorId === vendedorFilter;
 
-  const filtered = lojistas.filter(l => matchesSearch(l) && matchesStatus(l) && matchesVendedor(l));
+  const matchesAtividade = (l: Lojista) => atividadeFilter === "todas" || perfis?.get(l.id)?.status === atividadeFilter;
+  const matchesOportunidade = (l: Lojista) => oportunidadeFilter === "todas" || !!perfis?.get(l.id)?.oportunidades.some(o => o.chave === oportunidadeFilter);
+
+  const filtered = lojistas.filter(l => matchesSearch(l) && matchesStatus(l) && matchesVendedor(l) && matchesAtividade(l) && matchesOportunidade(l));
+
+  // Contagens dos filtros do perfil, sobre a lista inteira.
+  const contaAtividade = (s: StatusDaAtividade) => (perfis ? lojistas.filter(l => perfis.get(l.id)?.status === s).length : 0);
+  const produtosDeOportunidade = (() => {
+    const m = new Map<string, { produto: string; tipo: string; n: number }>();
+    if (perfis) for (const l of lojistas) for (const o of perfis.get(l.id)?.oportunidades || []) {
+      const atual = m.get(o.chave) || { produto: o.produto, tipo: o.tipo, n: 0 };
+      atual.n++;
+      m.set(o.chave, atual);
+    }
+    return [...m.entries()].sort((a, b) => (a[1].tipo === b[1].tipo ? b[1].n - a[1].n : a[1].tipo === "VENDA" ? -1 : 1));
+  })();
 
   const usando = lojistas.filter(l => l.atividade?.situacao === "ATIVA").length;
   const inativas = lojistas.filter(l => l.atividade?.situacao === "INATIVA").length;
@@ -263,7 +311,7 @@ export default function AdminDashboardClient({
    * qualquer outra aba, vai para Lojistas.
    */
   const irParaLojistas = (filtro: StatusFilter = "todos", vendedor = "todos") => {
-    setSearch(""); setStatusFilter(filtro); setVendedorFilter(vendedor);
+    setSearch(""); setStatusFilter(filtro); setVendedorFilter(vendedor); setAtividadeFilter("todas"); setOportunidadeFilter("todas");
     if (tab === "overview") {
       setTimeout(() => tabelaRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
     } else {
@@ -446,6 +494,20 @@ export default function AdminDashboardClient({
           : <span className="fha-badge fha-badge-active">Assinante</span>;
 
   const Uso = ({ l }: { l: Lojista }) => {
+    const p = perfis?.get(l.id);
+    if (p) {
+      const c = COR_DA_ATIVIDADE[p.status];
+      return (
+        <div title={p.motivo} style={{ maxWidth: 220 }}>
+          <span className="fha-badge" style={{ background: c.fundo, color: c.cor }}>{c.rotulo}</span>
+          <div className="fha-sub" style={{ color: "#475569", whiteSpace: "nowrap" }}>{p.vendas30} vendas · {fmt(p.valor30)}</div>
+          <div className="fha-sub" style={{ whiteSpace: "nowrap" }}>
+            {diasEmTexto(p.diasSemVenda)}
+            {p.tendenciaPct !== null && <span style={{ color: p.tendenciaPct < -2 ? "#B91C1C" : p.tendenciaPct > 2 ? "#15803D" : undefined, fontWeight: 700 }}> · {p.tendenciaPct > 0 ? "+" : ""}{p.tendenciaPct}%</span>}
+          </div>
+        </div>
+      );
+    }
     const a = l.atividade;
     const cls = !a || a.situacao === "NUNCA_VENDEU" ? "fha-uso-nunca" : a.situacao === "INATIVA" ? "fha-uso-parada" : "fha-uso-ativa";
     return (
@@ -501,6 +563,28 @@ export default function AdminDashboardClient({
           ))}
         </select>
         {atual && <div className="fha-sub" style={{ color: "#64748B" }}>indicou · {atual.code}</div>}
+      </div>
+    );
+  };
+
+  /** As duas oportunidades mais fortes da loja e o botão do perfil completo. */
+  const Oportunidades = ({ l }: { l: Lojista }) => {
+    const p = perfis?.get(l.id);
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 5, alignItems: "flex-start", maxWidth: 230 }}>
+        {p ? (
+          p.oportunidades.length ? (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+              {p.oportunidades.slice(0, 2).map(o => (
+                <span key={o.chave} title={o.motivo} className="fha-badge" style={o.tipo === "VENDA" ? { background: "#EDE9FE", color: "#6D28D9" } : { background: "#E0F2FE", color: "#0369A1" }}>
+                  {o.tipo === "VENDA" ? "💰 " : ""}{o.produto}
+                </span>
+              ))}
+              {p.oportunidades.length > 2 && <span className="fha-badge fha-badge-exempt">+{p.oportunidades.length - 2}</span>}
+            </div>
+          ) : <span className="fha-muted" style={{ fontSize: "0.74rem" }}>{p.status === "PARADA" ? "reativar primeiro" : "nada agora"}</span>
+        ) : <span className="fha-muted" style={{ fontSize: "0.74rem" }}>{perfisErro ? "—" : "carregando…"}</span>}
+        <button className="fha-btn" onClick={() => setPerfilAberto(l.id)} title="Perfil completo: funcionalidades, canais, oportunidades e mensalidade">🧭 Perfil</button>
       </div>
     );
   };
@@ -645,6 +729,28 @@ export default function AdminDashboardClient({
           ))}
         </select>
       </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+        <span style={{ fontSize: "0.68rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase", letterSpacing: 0.4, marginRight: 2 }}>Atividade</span>
+        {perfis ? (
+          <>
+            <button onClick={() => setAtividadeFilter("todas")} className={`fha-chip${atividadeFilter === "todas" ? " on" : ""}`}>Todas</button>
+            {(["ATIVA", "ESFRIANDO", "PARADA", "NOVA"] as StatusDaAtividade[]).map(s => (
+              <button
+                key={s}
+                onClick={() => setAtividadeFilter(atividadeFilter === s ? "todas" : s)}
+                className={`fha-chip${atividadeFilter === s ? " on" : ""}`}
+                style={atividadeFilter === s ? { background: COR_DA_ATIVIDADE[s].cor, borderColor: COR_DA_ATIVIDADE[s].cor } : { color: COR_DA_ATIVIDADE[s].cor }}
+              >
+                {COR_DA_ATIVIDADE[s].rotulo} ({contaAtividade(s)})
+              </button>
+            ))}
+            <select className="fha-input" style={{ padding: "6px 10px", fontSize: "0.78rem", marginLeft: 4 }} value={oportunidadeFilter} onChange={e => setOportunidadeFilter(e.target.value)} aria-label="Tem oportunidade de">
+              <option value="todas">Tem oportunidade de…</option>
+              {produtosDeOportunidade.map(([chave, g]) => <option key={chave} value={chave}>{g.tipo === "VENDA" ? "💰 " : ""}{g.produto} ({g.n})</option>)}
+            </select>
+          </>
+        ) : <span className="fha-muted" style={{ fontSize: "0.76rem" }}>{perfisErro ? "Não deu para carregar o perfil das lojas." : "Carregando o perfil das lojas…"}</span>}
+      </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
         {([
           { key: "todos", label: `Todos (${lojistas.length})` },
@@ -655,7 +761,11 @@ export default function AdminDashboardClient({
           { key: "usando", label: `Usando · pedido nos últimos 7 dias (${usando})` },
           { key: "inativos", label: `Paradas · 7+ dias sem pedido (${inativas})`, alerta: true },
           { key: "nunca", label: `Nunca venderam (${nuncaVenderam})`, alerta: true },
-        ] as { key: StatusFilter; label: string; alerta?: boolean }[]).map(opt => (
+        ] as { key: StatusFilter; label: string; alerta?: boolean }[])
+          // Com o perfil carregado, a linha "Atividade" acima responde o mesmo (com a
+          // régua nova): os três chips antigos de uso saem para não haver duas "Paradas".
+          .filter(opt => !perfis || !["usando", "inativos", "nunca"].includes(opt.key) || statusFilter === opt.key)
+          .map(opt => (
           <button
             key={opt.key}
             onClick={() => setStatusFilter(opt.key)}
@@ -672,7 +782,7 @@ export default function AdminDashboardClient({
       <table className="fha-table">
         <thead>
           <tr>
-            <th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Uso</th><th>Vendedor / Embaixador</th><th>Ações</th>
+            <th>Lojista</th><th>Cidade</th><th>Telefone</th><th>Cadastro</th><th>Status</th><th>Uso (30 dias)</th><th>Oferecer</th><th>Vendedor / Embaixador</th><th>Ações</th>
           </tr>
         </thead>
         <tbody>
@@ -685,14 +795,15 @@ export default function AdminDashboardClient({
                 <td style={{ whiteSpace: "nowrap" }}>{fmtDate(l.createdAt)}</td>
                 <td>{Situacao({ l })}</td>
                 <td>{Uso({ l })}</td>
+                <td>{Oportunidades({ l })}</td>
                 <td>{SeletorDeVendedor({ l })}{SeletorDeEmbaixador({ l })}</td>
                 <td>{Acoes({ l })}</td>
               </tr>
-              {expandedId === l.id && Dados({ l, colSpan: 8 })}
+              {expandedId === l.id && Dados({ l, colSpan: 9 })}
             </React.Fragment>
           ))}
           {filtered.length === 0 && (
-            <tr><td colSpan={8} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>
+            <tr><td colSpan={9} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>
               Nenhum lojista encontrado{search ? ` para "${search}"` : ""}.
             </td></tr>
           )}
@@ -802,6 +913,7 @@ export default function AdminDashboardClient({
             { key: "crm", icone: "🎯", rotulo: "CRM" },
             { key: "agenda", icone: "📅", rotulo: "Agenda" },
             { key: "vendedores", icone: "💼", rotulo: "Vendedores" },
+            { key: "perfil", icone: "🧭", rotulo: "Perfil dos clientes" },
             { key: "acompanhamento", icone: "🛵", rotulo: "Acompanhamento iFood" },
           ] as { key: Tab; icone: string; rotulo: string; selo?: number }[]).map(n => (
             <button key={n.key} onClick={() => setTab(n.key)} className={`fha-nav-item${tab === n.key ? " active" : ""}`}>
@@ -986,9 +1098,14 @@ export default function AdminDashboardClient({
           {tab === "projecao" && <ProjecaoTab />}
           {tab === "custos" && <AdminCostsTab />}
           {tab === "acompanhamento" && <AcompanhamentoIfoodTab />}
+          {tab === "perfil" && (
+            <RelatorioDaCarteira fonte="/api/admin/perfil-das-lojas" tema="admin" titulo="Perfil dos clientes" vendedores={vendedores} />
+          )}
 
         </div>
       </main>
+
+      <GavetaDoPerfil url={perfilAberto ? `/api/admin/perfil-das-lojas/${perfilAberto}` : null} aoFechar={fecharPerfil} tema="admin" />
 
       {/* ── MODAL LIBERAR DIAS DE BENEFÍCIO ── */}
       {appDaLoja && <PlanoDoAppDaLoja userId={appDaLoja.id} storeName={appDaLoja.storeName || appDaLoja.name || "Loja"} aoFechar={() => setAppDaLoja(null)} />}

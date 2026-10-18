@@ -6,25 +6,29 @@
  * o admin abre o relatório de qualquer parceiro em /admin/parceiros/[id].
  *
  *   Meus números  o relatório (RelatorioDoParceiro)
+ *   Carteira      perfil de cada loja e o que oferecer (RelatorioDaCarteira) — vendedor
  *   Conversas     a caixa de atendimento do número do FireHub  ┐
  *   Contatos      o funil do CRM                               ├ só vendedor
  *   Agenda        a agenda compartilhada da equipe            ┘
  */
 import { useEffect, useState } from "react";
-import { ArrowLeft, Briefcase, CalendarClock, ChartNoAxesColumn, Handshake, LogOut, MessageCircle, Network, Target } from "lucide-react";
+import { ArrowLeft, Briefcase, CalendarClock, ChartNoAxesColumn, Handshake, LogOut, MessageCircle, Network, Sparkles, Target } from "lucide-react";
 import SairDaConta from "@/components/SairDaConta";
 import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
 import RelatorioDoParceiro from "@/components/parceiro/RelatorioDoParceiro";
+import RelatorioDaCarteira from "@/components/perfil-da-loja/RelatorioDaCarteira";
 import { OcultarValoresProvider, OlhoDosValores } from "@/components/parceiro/ValoresOcultos";
 import type { Papel } from "@/lib/parceiro/regras";
 import type { RelatorioDoParceiro as Relatorio } from "@/lib/parceiro/relatorio";
 
-type Aba = "numeros" | "conversas" | "contatos" | "agenda";
+type Aba = "numeros" | "carteira" | "conversas" | "contatos" | "agenda";
 const ABAS: { chave: Aba; rotulo: string; Icone: typeof Handshake; soVendedor: boolean }[] = [
   { chave: "numeros", rotulo: "Meus números", Icone: ChartNoAxesColumn, soVendedor: false },
+  // O perfil das lojas e o que oferecer (lib/perfil-da-loja) — o admin também abre, pela carteira deste vendedor.
+  { chave: "carteira", rotulo: "Carteira e oportunidades", Icone: Sparkles, soVendedor: true },
   { chave: "conversas", rotulo: "Conversas", Icone: MessageCircle, soVendedor: true },
   { chave: "contatos", rotulo: "Contatos", Icone: Target, soVendedor: true },
   { chave: "agenda", rotulo: "Agenda", Icone: CalendarClock, soVendedor: true },
@@ -51,7 +55,7 @@ export default function PortalDoParceiro({
 }) {
   const p = relatorio.parceiro;
   const temCrm = modo === "PARCEIRO" && p.isVendedor;
-  const abas = ABAS.filter((a) => !a.soVendedor || temCrm);
+  const abas = ABAS.filter((a) => !a.soVendedor || temCrm || (a.chave === "carteira" && p.isVendedor));
   const [aba, setAba] = useState<Aba>("numeros");
   const [contatoParaAbrir, setContatoParaAbrir] = useState<string | null>(null);
   const abrirConversa = (id: string) => {
@@ -130,6 +134,13 @@ export default function PortalDoParceiro({
       {aba === "numeros" && (
         <main className="pp-wrap">
           <RelatorioDoParceiro relatorio={relatorio} modo={modo} podeMarcarAtendimento={modo === "PARCEIRO" && p.isVendedor && p.ativo} />
+        </main>
+      )}
+      {aba === "carteira" && (
+        <main className="pp-largo">
+          {modo === "ADMIN"
+            ? <RelatorioDaCarteira fonte="/api/admin/perfil-das-lojas" vendedorFixo={p.id} titulo={`Carteira de ${p.nome}`} />
+            : p.ativo ? <RelatorioDaCarteira fonte="/api/vendedor/carteira" titulo="Minha carteira" /> : pausado}
         </main>
       )}
       {aba === "conversas" && (

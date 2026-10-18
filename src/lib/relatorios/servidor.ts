@@ -41,14 +41,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { inicioDoDiaDaLoja } from "@/lib/fuso";
+import { inicioOperacional, janelaDoPeriodo } from "@/lib/relatorios/janela";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
 import { funcionarioAbre } from "@/lib/permissao-da-tela";
 import { chaveDaLoja } from "@/lib/origem-do-relatorio";
 import { SEM_REPOSICAO } from "@/lib/relatorios/sem-reposicao";
 import type { LojaDeOrigem } from "@/lib/loja-de-origem";
 import {
-  STATUS_FORA_DA_VENDA, HORA_DA_VIRADA, canalDoRelatorio, dentroDaFaixa, hojeNaLoja, lerFiltros, naLoja, tipoDeVenda,
+  STATUS_FORA_DA_VENDA, canalDoRelatorio, dentroDaFaixa, hojeNaLoja, lerFiltros, naLoja, tipoDeVenda,
   type FiltrosDoRelatorio,
 } from "@/lib/relatorios/base";
 
@@ -86,20 +86,10 @@ type Resultado<T> = { ok: true; valor: T } | { ok: false; resposta: NextResponse
 const erro = (status: number, mensagem: string): { ok: false; resposta: NextResponse } =>
   ({ ok: false, resposta: NextResponse.json({ error: mensagem }, { status }) });
 
-/**
- * O início do DIA OPERACIONAL de uma data do calendário, no fuso da loja.
- * Meio-dia local está dentro daquele dia em qualquer offset (−02/−03), então
- * serve de âncora para `inicioDoDiaDaLoja` achar a meia-noite certa.
- */
-export function inicioOperacional(dia: string, tz: string | null | undefined): Date {
-  const meioDia = new Date(`${dia}T12:00:00-03:00`);
-  return new Date(inicioDoDiaDaLoja(tz, meioDia).getTime() + HORA_DA_VIRADA * 60 * 60 * 1000);
-}
-
-/** A janela [inicio, fim) de "de" a "ate", inclusive, no dia operacional. */
-export function janelaDoPeriodo(de: string, ate: string, tz: string | null | undefined): { inicio: Date; fim: Date } {
-  return { inicio: inicioOperacional(de, tz), fim: new Date(inicioOperacional(ate, tz).getTime() + DIA_MS) };
-}
+// O dia operacional em instantes (inicioOperacional, janelaDoPeriodo) mora em
+// lib/relatorios/janela.ts, sem sessão nem Next, para lib pura e teste usarem.
+// Continua exportado daqui, como sempre foi.
+export { inicioOperacional, janelaDoPeriodo };
 
 /**
  * Quem está pedindo, de quais lojas, com quais filtros. Devolve a resposta de
