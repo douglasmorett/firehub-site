@@ -1,29 +1,22 @@
 /**
  * PRAZO AUTOMÁTICO iFOOD E 99 — a extensão do FireHub que ajusta o prazo pela
  * fila da cozinha. Aqui mora o que o servidor faz com ela: o prazo que vale no
- * site da loja e a cobrança do mês.
+ * site da loja e o registro de quem usa.
  *
  * Douglas, 18/10/2026:
  * - "não faz sentido mudar do iFood e 99 e não mudar do nosso site": o prazo que
  *   a extensão aplicou também vale no site/robô da loja. Todas as áreas de
  *   entrega sobem a mesma diferença (a escada por distância continua) e nunca
  *   ficam abaixo do tempo que a loja cadastrou na área.
- * - "vai custar R$ 29,90. Ativou, tá usando, usou uma vez no mês, vem R$ 29,90 a
- *   mais na mensalidade": o mês em que o robô da extensão mandou algum prazo
- *   entra inteiro; mês sem uso não paga.
+ * - "deixa a extensão de prazos de cortesia para quem usa FireHub; a gente vende
+ *   para quem é de fora na Cakto": sem cobrança na mensalidade. Quem não é
+ *   FireHub compra a FireHub Prazos (firehub-prazos-extension, /prazos).
  *
  * Tudo em `User.etaConfig` (o mesmo JSON dos motoboys), sem tabela nova:
  *   prazoNoSite: { minutos, em }        — último prazo que a extensão mandou;
- *   usoPorMes:   { "2026-11": "<iso>" } — primeiro uso de cada mês.
+ *   usoPorMes:   { "2026-11": "<iso>" } — primeiro uso de cada mês (só para
+ *   saber quem usa; não cobra nada).
  */
-
-export const PRECO_DO_PRAZO_AUTOMATICO = 29.9;
-
-/**
- * Primeiro mês cobrado. As lojas que já usavam a extensão de graça ficam sem
- * cobrança no mês em que o preço foi anunciado.
- */
-export const COBRA_A_PARTIR_DE = "2026-11";
 
 /** Sem sinal da extensão por mais que isto, o site volta ao tempo das áreas (PC desligado, robô parado). */
 export const VALIDADE_DO_PRAZO_NO_SITE_MS = 15 * 60 * 1000;
@@ -98,17 +91,6 @@ export function comPrazoAplicado(etaConfig: unknown, minutos: number, yearMonth:
   return { ...cfg, prazoNoSite: { minutos, em: agora.toISOString() }, usoPorMes };
 }
 
-/** O valor do mês [inicio, fim) no boleto: usou em algum momento = o mês inteiro. */
-export function valorDoPrazoNoMes(etaConfig: unknown, yearMonth: string, inicio: Date, fim: Date): number {
-  if (yearMonth < COBRA_A_PARTIR_DE) return 0;
-  const usos = Object.values(comoConfig(etaConfig).usoPorMes || {});
-  const usou = usos.some((iso) => {
-    const t = new Date(iso).getTime();
-    return t >= inicio.getTime() && t < fim.getTime();
-  });
-  return usou ? PRECO_DO_PRAZO_AUTOMATICO : 0;
-}
-
 // ── No banco ─────────────────────────────────────────────────────────────
 
 /** A extensão aplicou `minutos`: vale no site e marca o uso do mês. */
@@ -119,20 +101,4 @@ export async function registrarPrazoAplicado(lojaId: string, minutos: number): P
   if (!loja) return;
   const novo = comPrazoAplicado(loja.etaConfig, minutos, getCurrentYearMonth(0, loja.storeTimezone || "America/Sao_Paulo"));
   if (novo) await prisma.user.update({ where: { id: lojaId }, data: { etaConfig: novo as any } });
-}
-
-/** A linha do boleto do mês (0 = nada a cobrar). Nunca lança. */
-export async function cobrancaDoPrazoAutomaticoNoMes(franchiseeId: string, inicio: Date, fim: Date): Promise<number> {
-  try {
-    const { prisma } = await import("@/lib/prisma");
-    const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { etaConfig: true, storeTimezone: true } });
-    if (!loja) return 0;
-    // O mês do intervalo: o instante do meio dele, no fuso da loja.
-    const meio = new Date((inicio.getTime() + fim.getTime()) / 2);
-    const yearMonth = new Intl.DateTimeFormat("en-CA", { timeZone: loja.storeTimezone || "America/Sao_Paulo", year: "numeric", month: "2-digit" }).format(meio);
-    return valorDoPrazoNoMes(loja.etaConfig, yearMonth, inicio, fim);
-  } catch (err: any) {
-    console.error("[Prazo automático] Erro ao calcular a cobrança do mês:", err?.message);
-    return 0;
-  }
 }

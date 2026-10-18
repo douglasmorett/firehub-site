@@ -173,8 +173,8 @@ export async function PUT(req: NextRequest) {
 
 /**
  * POST — o robô da extensão manda o prazo que calculou (a cada minuto, ligado).
- * Vale no site e no robô da loja e marca o uso do mês: R$ 29,90 na mensalidade
- * (lib/prazo-automatico.ts).
+ * Vale no site e no robô da loja e marca o uso do mês (só registro: é cortesia
+ * para quem usa FireHub — lib/prazo-automatico.ts).
  */
 export async function POST(req: NextRequest) {
   try {

@@ -636,7 +636,7 @@ async function aplicarNasPlataformas(minutos) {
 /**
  * Avisa o servidor do prazo calculado: e com ele que o site e o robo do FireHub
  * sobem o tempo das areas de entrega (vale 15 min la). Uma vez por minuto, ou
- * na hora quando o prazo muda. Tambem e o que marca o uso do mes (R$ 29,90).
+ * na hora quando o prazo muda. Tambem marca o uso do mes (so registro: e cortesia).
  */
 async function reportarAoServidor(minutos) {
   const s = await chrome.storage.local.get(["authToken", "serverUrl", "ultimoReporte"]);

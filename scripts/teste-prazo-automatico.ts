@@ -1,12 +1,10 @@
-// Prazo automático iFood e 99 (lib/prazo-automatico.ts): o prazo no site e a cobrança do mês.
+// Prazo automático iFood e 99 (lib/prazo-automatico.ts): o prazo no site e o registro de uso.
 //   npx tsx scripts/teste-prazo-automatico.ts
 import {
   acrescimoNoSite,
   comPrazoAplicado,
   comPrazoDaExtensao,
   prazoDaExtensaoAgora,
-  valorDoPrazoNoMes,
-  PRECO_DO_PRAZO_AUTOMATICO,
 } from "../src/lib/prazo-automatico";
 
 let falhas = 0;
@@ -54,15 +52,6 @@ const mudou = comPrazoAplicado(primeiro, 78, "2026-11", umMinDepois);
 ok(mudou?.prazoNoSite?.minutos === 78 && mudou?.usoPorMes?.["2026-11"] === agora.toISOString(), "prazo mudou: regrava, uso do mês fica o primeiro", mudou);
 const seisMin = new Date(agora.getTime() + 6 * 60000);
 ok(comPrazoAplicado(primeiro, 58, "2026-11", seisMin)?.prazoNoSite?.em === seisMin.toISOString(), "mesmo prazo depois de 5 min: renova o sinal");
-
-// ── cobrança ──
-const nov = { inicio: new Date("2026-11-01T03:00:00Z"), fim: new Date("2026-12-01T03:00:00Z") };
-const usou = { usoPorMes: { "2026-11": "2026-11-10T23:00:00.000Z" } };
-ok(valorDoPrazoNoMes(usou, "2026-11", nov.inicio, nov.fim) === PRECO_DO_PRAZO_AUTOMATICO, "usou em novembro: R$ 29,90");
-ok(valorDoPrazoNoMes({}, "2026-11", nov.inicio, nov.fim) === 0, "não usou: nada");
-ok(valorDoPrazoNoMes({ usoPorMes: { "2026-10": "2026-10-20T23:00:00.000Z" } }, "2026-11", nov.inicio, nov.fim) === 0, "uso de outubro não cobra novembro");
-const out = { inicio: new Date("2026-10-01T03:00:00Z"), fim: new Date("2026-11-01T03:00:00Z") };
-ok(valorDoPrazoNoMes({ usoPorMes: { "2026-10": "2026-10-20T23:00:00.000Z" } }, "2026-10", out.inicio, out.fim) === 0, "outubro (mês do anúncio): grátis");
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

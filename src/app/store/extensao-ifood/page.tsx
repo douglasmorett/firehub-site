@@ -25,9 +25,8 @@ import { AbasDoChrome, BarraDoChrome, FichaDaLoja, Fluxo, Pilula, PopupLogin, Po
  * tempo das áreas de entrega do site/robô (lib/prazo-automatico.ts). NÃO pausa a
  * loja sozinha e NUNCA abre aba sozinha (decisão de 04/09/2026).
  *
- * Preço (Douglas, 18/10/2026): R$ 29,90 na mensalidade do mês em que o robô
- * ajustou o prazo pelo menos uma vez; mês sem uso não paga. A regra fica escrita
- * aqui com todas as letras, para ninguém se surpreender com o boleto.
+ * Preço (Douglas, 18/10/2026): cortesia para quem usa o FireHub. Quem é de fora
+ * compra a FireHub Prazos pela Cakto (/prazos, firehub-prazos-extension).
  */
 
 // O ID do item na Chrome Web Store. Aprovado e no ar (não listado) — conferido
@@ -292,21 +291,18 @@ export default function ExtensaoIfoodPage() {
           </div>
         </div>
 
-        {/* QUANTO CUSTA */}
-        <div id="preco" style={{ ...cartao, scrollMarginTop: 16, border: "1.5px solid #FFD3C2", background: "#FFFBF8" }}>
-          <span style={selo}>QUANTO CUSTA</span>
+        {/* CORTESIA */}
+        <div id="preco" style={{ ...cartao, scrollMarginTop: 16, border: "1.5px solid #99F6E4", background: "#F0FDFA" }}>
+          <span style={selo}>CORTESIA FIREHUB</span>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", margin: "10px 0 6px" }}>
-            <span style={{ fontSize: "2.2rem", fontWeight: 900, color: "#0F172A", letterSpacing: "-0.6px" }}>R$ 29,90</span>
-            <span style={{ fontSize: "1rem", fontWeight: 800, color: "#475569" }}>por mês, na mensalidade do FireHub</span>
+            <span style={{ fontSize: "2.2rem", fontWeight: 900, color: "#0F766E", letterSpacing: "-0.6px" }}>Grátis</span>
+            <span style={{ fontSize: "1rem", fontWeight: 800, color: "#475569" }}>para quem usa o FireHub</span>
           </div>
           <div style={{ display: "grid", gap: 8, marginTop: "0.75rem" }}>
             {[
-              <>Você paga <b>só no mês em que usar</b>: bastou o robô ajustar o prazo <b>uma vez</b> no mês, entram os R$ 29,90 inteiros. Não existe valor proporcional.</>,
-              <><b>Mês com o robô desligado não paga nada.</b> Instalar, entrar e olhar o popup não conta como uso. O que conta é a chave do robô ligada.</>,
-              <>Vale para todas as lojas que você marcar e para o seu site: é <b>um valor por conta FireHub</b>, não por loja do iFood ou do 99.</>,
-              <>Vem no mesmo boleto da mensalidade, na linha <b>&quot;Prazo automático iFood e 99&quot;</b>. Dá para conferir antes em <b>Financeiro › Mensalidade</b>.</>,
-              <>Sem fidelidade e sem taxa de instalação. Não quer mais? Desligue a chave do robô: o mês seguinte já não vem.</>,
-              <>Começa a contar em <b>novembro de 2026</b>. O uso em outubro de 2026 é grátis.</>,
+              <>Não entra nada a mais na mensalidade: a extensão faz parte do FireHub.</>,
+              <>Vale para <b>todas as lojas que você marcar</b> no iFood e no 99, e para o seu site.</>,
+              <>Sem taxa de instalação. Não quer usar? É só desligar a chave do robô.</>,
             ].map((linha, i) => (
               <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: "0.92rem", color: "#334155", lineHeight: 1.5 }}>
                 <CheckCircle2 size={18} color="#0F766E" style={{ flexShrink: 0, marginTop: 2 }} />
@@ -448,9 +444,6 @@ export default function ExtensaoIfoodPage() {
             <p style={{ margin: 0 }}>
               Depois ligue a chave <b>Robô Automático</b>: ela fica <b style={{ color: "#0F766E" }}>verde</b>. Pronto, a partir daqui o prazo do iFood, do 99 e
               do seu site acompanha a sua cozinha.
-            </p>
-            <p style={{ margin: 0, fontSize: "0.85rem" }}>
-              Com a chave ligada, o mês entra na mensalidade (R$ 29,90, <a href="#preco" style={{ color: "#E8360C", fontWeight: 800 }}>veja a regra</a>).
             </p>
           </Passo>
 
@@ -681,10 +674,9 @@ export default function ExtensaoIfoodPage() {
                 O 99 limita o tempo de preparo de cada loja (em algumas, 30 min no máximo). A extensão coloca o máximo que o 99 aceita e avisa no 🔥.
               </p>
             </Pergunta>
-            <Pergunta titulo="Quanto custa e quando é cobrado?">
+            <Pergunta titulo="Paga alguma coisa a mais?">
               <p style={{ margin: 0 }}>
-                R$ 29,90 na mensalidade do mês em que o robô ajustou o prazo pelo menos uma vez. Mês com o robô desligado não paga.
-                Os detalhes estão em <a href="#preco" style={{ color: "#E8360C", fontWeight: 800 }}>Quanto custa</a>.
+                Não. Para quem usa o FireHub a extensão é cortesia: nada entra a mais na mensalidade.
               </p>
             </Pergunta>
           </div>
