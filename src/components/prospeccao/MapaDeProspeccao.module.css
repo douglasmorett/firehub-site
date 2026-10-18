@@ -35,8 +35,9 @@
 
 .filtro { display: flex; gap: 8px; align-items: center; grid-column: 1 / 2; flex-wrap: wrap; }
 .filtro label { font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #94A3B8; }
+.campoCidade { position: relative; flex: 1 1 220px; min-width: 0; max-width: 360px; }
 .filtro input {
-  flex: 1 1 220px; min-width: 0; max-width: 360px;
+  width: 100%; padding-right: 36px;
   background: #1E293B; color: #F8FAFC; border: 1px solid #334155; border-radius: 8px;
   padding: 10px 12px; font-size: 0.95rem;
 }
@@ -47,6 +48,20 @@
   font-weight: 800; font-size: 0.9rem; cursor: pointer;
 }
 .filtro button:disabled, .acoesDoMapa button:disabled { opacity: 0.55; cursor: default; }
+.filtro .limparCidade {
+  position: absolute; right: 4px; top: 50%; transform: translateY(-50%);
+  background: none; color: #94A3B8; padding: 4px 10px; font-size: 1.3rem; line-height: 1; font-weight: 400;
+}
+.sugestoes {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 20; margin: 0; padding: 4px; list-style: none;
+  background: #1E293B; border: 1px solid #334155; border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+.filtro .sugestoes button {
+  display: block; width: 100%; text-align: left; background: none; color: #F8FAFC;
+  padding: 10px 12px; border-radius: 6px; font-weight: 700;
+}
+.filtro .sugestoes button:hover { background: #334155; }
+.sugestoes small { display: block; color: #94A3B8; font-weight: 500; font-size: 0.75rem; }
 
 .medidor { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 0.78rem; color: var(--mp-suave); }
 .medidor b { color: var(--mp-texto); }

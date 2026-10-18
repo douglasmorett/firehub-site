@@ -206,6 +206,8 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
   const [carga, setCarga] = useState<CargaDoMapa | null>(null);
   const [uso, setUso] = useState<UsoDoGoogle | null>(null);
   const [cidadeDigitada, setCidadeDigitada] = useState(cidadeInicial);
+  const [sugerindo, setSugerindo] = useState(false);
+  const campoCidade = useRef<HTMLInputElement>(null);
   const [cidade, setCidade] = useState<string>("");
   const [resumo, setResumo] = useState<ResumoDaVarredura | null>(null);
   const [lugares, setLugares] = useState<Map<string, LugarDoMapa>>(new Map());
@@ -679,6 +681,10 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
   const semChave = carga && !carga.chave;
   const contatosRestantes = uso ? vagas(uso, "contato").qtd : null;
   const nomesHoje = uso ? vagas(uso, "nearby").qtd : null;
+  const digitada = nomeDaCidade(cidadeDigitada);
+  const sugestoes = digitada
+    ? (carga?.cidades || []).filter((c) => { const n = nomeDaCidade(c.nome); return n.includes(digitada) && n !== digitada; }).slice(0, 5)
+    : [];
 
   return (
     <section className={s.mapa}>
@@ -689,11 +695,27 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
         </div>
         <form className={s.filtro} onSubmit={(e) => { e.preventDefault(); abrirCidade(cidadeDigitada); }}>
           <label htmlFor="mp-cidade">Cidade</label>
-          <input id="mp-cidade" list="mp-cidades" value={cidadeDigitada} onChange={(e) => setCidadeDigitada(e.target.value)}
-            placeholder="Ex.: Rio das Ostras - RJ" autoComplete="off" />
-          <datalist id="mp-cidades">
-            {(carga?.cidades || []).map((c) => <option key={c.nome} value={c.nome}>{c.lojas} {c.lojas === 1 ? "loja" : "lojas"} do FireHub</option>)}
-          </datalist>
+          {/* Lista própria em vez de <datalist>: no iPad a sugestão do Safari travava o apagar (Victor, 18/10). */}
+          <div className={s.campoCidade}>
+            <input id="mp-cidade" ref={campoCidade} value={cidadeDigitada} onChange={(e) => { setCidadeDigitada(e.target.value); setSugerindo(true); }}
+              onFocus={() => setSugerindo(true)} onBlur={() => setTimeout(() => setSugerindo(false), 150)}
+              placeholder="Ex.: Rio das Ostras - RJ" autoComplete="off" />
+            {cidadeDigitada && (
+              <button type="button" className={s.limparCidade} aria-label="Apagar a cidade"
+                onClick={() => { setCidadeDigitada(""); campoCidade.current?.focus(); }}>×</button>
+            )}
+            {sugerindo && sugestoes.length > 0 && (
+              <ul className={s.sugestoes}>
+                {sugestoes.map((c) => (
+                  <li key={c.nome}>
+                    <button type="button" onClick={() => { setCidadeDigitada(c.nome); setSugerindo(false); abrirCidade(c.nome); }}>
+                      {c.nome} <small>{c.lojas} {c.lojas === 1 ? "loja" : "lojas"} do FireHub</small>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
           <button type="submit" disabled={!!buscando || varrendo || !cidadeDigitada.trim() || !!semChave}>
             {buscando === "cidade" ? "Abrindo…" : "Abrir cidade"}
           </button>
@@ -879,6 +901,11 @@ function PainelDaCobertura({ resumo, totalNaTela, souAdmin, varrendo, celulasFei
     botoes.push(<button key="v" type="button" className={s.botaoVarrer} onClick={() => onVarrer({ continuar: true })}>
       {resumo.estado === "nova" ? "Varrer a cidade inteira" : "Continuar a varredura"}
     </button>);
+  } else if (resumo.estado === "nova" && resumo.continuaEm) {
+    // A busca grátis de hoje acabou: entra na fila e começa sozinha no dia que volta.
+    botoes.push(<button key="f" type="button" className={s.botaoVarrer} onClick={() => onVarrer({ continuar: true })}>
+      Varrer a partir de {diaDoGoogle(resumo.continuaEm)}
+    </button>);
   } else if (resumo.estado === "completa" && souAdmin) {
     botoes.push(<button key="u" type="button" className={s.botaoClaro} onClick={() => {
       const previsto = resumo.estimativa ?? 0;
@@ -898,6 +925,9 @@ function PainelDaCobertura({ resumo, totalNaTela, souAdmin, varrendo, celulasFei
               ? <>Estimativa: ~{numero(resumo.estimativa)} buscas no Google — cerca de {diasDaVarredura(resumo.estimativa)} {diasDaVarredura(resumo.estimativa) === 1 ? "dia" : "dias"} (até {VARREDURA_POR_DIA} por dia){resumo.populacao ? `; ${numero(resumo.populacao)} habitantes` : ""}. Sempre dentro do grátis: sem custo. Feita uma vez, vale 30 dias para a equipe toda.</>
               : <>Sem base para estimar (o mapa não trouxe a população). Vai até {VARREDURA_POR_DIA} buscas por dia, sempre dentro do grátis.</>}
           </small>
+        )}
+        {resumo.estado === "nova" && resumo.continuaEm && (
+          <small>A busca grátis do Google já foi usada por agora (em outras cidades). Toque em <b>Varrer a partir de {diaDoGoogle(resumo.continuaEm)}</b>: a cidade entra na fila e a varredura começa sozinha nesse dia, quando alguém da equipe abrir a cidade.</small>
         )}
         {resumo.estado !== "completa" && resumo.estado !== "nova" && !varrendo && resumo.continuaEm && (
           <small>Volta sozinha a partir de {diaDoGoogle(resumo.continuaEm)}, quando alguém da equipe abrir esta cidade. Os lugares já achados estão no mapa.</small>
