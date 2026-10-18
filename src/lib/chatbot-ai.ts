@@ -27,7 +27,8 @@ import fs from "fs";
 
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
-import { trackGeminiUsage, trackDivergenciaDePreco } from "@/lib/usage-tracker";
+import { trackGeminiUsage, trackDivergenciaDePreco, trackGeminiCacheStorage } from "@/lib/usage-tracker";
+import { cacheDoPromptDaLoja, ehErroDeCacheSumido, esquecerCacheDaLoja } from "@/lib/cache-do-prompt";
 import { conferirPrecosDitos, extrairPrecosDoTexto, compararTotalDitoComGravado } from "@/lib/precos-ditos";
 import { normalizeStoreHours } from "@/lib/store-hours";
 import { precoMinimoDoProduto, pisoDoPreco, completarEscolhasExigidas, precoVariaPorEscolha, minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, tabelaDaOpcao } from "./preco-combo";
@@ -1552,10 +1553,22 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         : [MODELO_DE_PEDIDO, "gemini-2.5-flash"];
 
       let generatedText = "";
+      /** O Google não achou o prompt guardado nesta mensagem: o resto dela vai sem o cache. */
+      let semCacheNestaMensagem = false;
 
       for (let idx = 0; idx < modelNames.length; idx++) {
         const mName = modelNames[idx];
         const ehOBarato = mName === MODELO_BARATO;
+        // O prompt da loja GUARDADO no Google (lib/cache-do-prompt.ts): o mesmo
+        // texto do `systemInstruction`, lido com 90% de desconto. Só no modelo de
+        // pedido e fora do modo dono (o prompt do dono é outro, e raro). Sem
+        // cache pronto, esta chamada vai como sempre e ele é criado para as próximas.
+        const cacheDoPrompt = !ehOBarato && mName === MODELO_DE_PEDIDO && !ownerContext && !semCacheNestaMensagem && apiKey
+          ? cacheDoPromptDaLoja(ai, {
+              loja: userId, modelo: mName, apiKey, prompt: systemPrompt,
+              custo: (c) => trackGeminiCacheStorage(c.loja, c.modelo, c.tokens, c.segundos, { motivo: c.motivo }),
+            })
+          : null;
         const baseTimeout = audioData?.base64 ? 35000 : imagem ? 20000 : 12000;
         // O Lite responde em ~1,2 s (A/B de 03/10/2026): 8 s parado é falha, e
         // o 3.6 que vem depois dele precisa do prazo cheio (~4,5 s pensando).
@@ -1572,7 +1585,8 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
             config: {
               // Só o que é da loja: o contexto desta conversa (e o lembrete do
               // barato) vai na última mensagem — ver `contextoDaConversa`.
-              systemInstruction: systemPrompt,
+              // Com o prompt guardado, ele vem do cache: a API recusa os dois juntos.
+              ...(cacheDoPrompt ? { cachedContent: cacheDoPrompt } : { systemInstruction: systemPrompt }),
               // ── TEMPERATURA: 0.9 era de escrever texto, não de copiar preço ──
               //
               // A REGRA DE FERRO manda copiar o número que está escrito no
@@ -1635,6 +1649,8 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                   // Qual montagem de prompt respondeu: é por aqui que o custo e o
                   // cache de antes e de depois se comparam no painel de uso.
                   prompt: "enxuto-2026-10-09",
+                  // O prompt da loja veio do cache explícito (lib/cache-do-prompt.ts)?
+                  ...(cacheDoPrompt ? { cacheExplicito: true } : {}),
                   ...(response?.text ? {} : { respostaVazia: true }),
                 },
                 { thoughtsTokens: usage.thoughtsTokenCount, cachedTokens: usage.cachedContentTokenCount }
@@ -1649,6 +1665,17 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           // Respondeu sem texto (bloqueio de segurança, resposta vazia): também é falha.
           falhasDosModelos.push(classificarFalhaDaIa("resposta vazia"));
         } catch (mErr: any) {
+          // O prompt guardado sumiu no Google (venceu antes da hora, foi apagado):
+          // 403 "CachedContent not found". Repete o MESMO modelo sem o cache —
+          // e antes de `classificarFalhaDaIa`, que leria o 403 como chave
+          // recusada e abriria incidente com a IA de pé.
+          if (cacheDoPrompt && ehErroDeCacheSumido(mErr)) {
+            esquecerCacheDaLoja({ loja: userId, modelo: mName, apiKey: apiKey || "", nome: cacheDoPrompt });
+            semCacheNestaMensagem = true;
+            console.warn(`[Chatbot AI] Prompt guardado da loja sumiu no Google; repetindo ${mName} sem o cache.`);
+            idx--;
+            continue;
+          }
           const isTimeout = mErr?.name === "AbortError" || mErr?.message?.includes("abort");
           const errDetail = mErr?.message || mErr?.status || JSON.stringify(mErr).slice(0, 200);
           console.warn(`[Chatbot AI] Modelo ${mName} ${isTimeout ? "⏳ timeout" : "❌ falhou"} (${modelTimeout}ms): ${errDetail}`);

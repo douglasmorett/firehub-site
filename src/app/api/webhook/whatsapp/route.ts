@@ -20,7 +20,8 @@ import { detectarProblemaNoPedido, FRASE_DE_TRANSFERENCIA } from '@/lib/problema
 import { numeroEstaNaListaDeIgnorados, numeroDaEquipeDoFireHub } from '@/lib/numeros-ignorados';
 import { ehConversaDeCliente, conversaOriginalEhDeCliente, tipoDoJid } from '@/lib/jid-de-cliente';
 import { contaOficialDoWhatsApp } from '@/lib/contas-oficiais-whatsapp';
-import { descartavelNoCooldown, desembrulharMensagem, localizacaoDoPayload, semLinhaDaLocalizacao, textoDaLocalizacao } from '@/lib/localizacao-do-whatsapp';
+import { desembrulharMensagem, localizacaoDoPayload, semLinhaDaLocalizacao, textoDaLocalizacao } from '@/lib/localizacao-do-whatsapp';
+import { esperarAVezDaRajada, rajadasDoRobo } from '@/lib/rajada-do-webhook';
 import { avisarDono, avisarAdminDoSistema, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
 import { textoDoAvisoDaFicha, type FichaPreenchida } from '@/lib/respostas-prontas';
 import { mesmoTelefone } from '@/lib/telefone';
@@ -55,6 +56,12 @@ const FRASE_DE_SO_UM_INSTANTE = "Só um instantinho que já te respondo 😊";
  * mapa e gravação do pedido. Um minuto além do prazo já é patológico.
  */
 const TETO_DA_RESPOSTA_TARDIA_MS = 60_000;
+/**
+ * Quanto a mensagem seguinte da MESMA conversa espera a resposta da anterior
+ * (lib/rajada-do-webhook.ts). Passou disso, segue em paralelo, como antes da
+ * rajada: conversa muda é pior que duas respostas.
+ */
+const TETO_DA_VEZ_DA_CONVERSA_MS = 35_000;
 
 // Estado dos alertas de "IA fora do ar". Memória do processo de propósito: depois
 // de um deploy o alerta pode repetir UMA vez, e no meio de um incidente isso é
@@ -935,34 +942,11 @@ async function handleIncomingMessage(body: any, instance: string) {
    */
   const textoDigitado = semLinhaDaLocalizacao(textMessage);
 
-  // Cooldown check (não responder se a última resposta foi há menos de 3 segundos)
+  // O cooldown de 3 s que DESCARTAVA a mensagem chegada logo depois de uma
+  // resposta saiu em 17/10/2026: quem escrevia picado ("oi" / "quero 2 x-tudo"
+  // / "e uma coca") perdia o pedaço sem rastro. A rajada (mais abaixo, antes
+  // da IA) junta os pedaços numa resposta só (lib/rajada-do-webhook.ts).
   const now = Date.now();
-  const lastResponse = cooldownCache.get(remoteJid) || 0;
-  // Pedido de atendente NÃO passa pelo cooldown. Quem escreve "quero falar com
-  // alguém" logo depois de uma resposta do robô está reagindo a ela — e era
-  // descartado aqui em silêncio, sem fila e sem alerta, antes de qualquer
-  // checagem (medido em 18/09/2026).
-  //
-  // A LOCALIZAÇÃO também não (lib/localizacao-do-whatsapp.ts,
-  // `descartavelNoCooldown`): é o ponto que decide a taxa de quem cobra por km,
-  // e chega justamente logo depois da resposta. Descartada aqui, ia só para o
-  // painel e não entrava no histórico em memória, de onde o robô a lê.
-  if (descartavelNoCooldown({
-    msDesdeAUltimaResposta: now - lastResponse,
-    temLocalizacao: Boolean(localizacao),
-    pediuAtendente: detectarPedidoDeAtendente(textoDigitado).pediu,
-  })) {
-    // ⚠️ ESTE DESCARTE AINDA EXISTE, e é o próximo a sair: a mensagem some sem
-    // fila, sem histórico e sem rastro. Quem escreve picado ("oi" / "quero 2
-    // x-tudo" / "e uma coca") perde parte do que disse. O substituto já está
-    // escrito e testado em lib/fila-da-conversa.ts: agrupa a rajada numa
-    // mensagem só e atende uma conversa de cada vez, em vez de descartar.
-    // Enquanto isso, pelo menos ela APARECE: a loja vê no painel o que o
-    // cliente escreveu e o robô não respondeu.
-    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
-    console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Cooldown ativo para ${remoteJid}`);
-    return;
-  }
 
   // Registrar / atualizar o contato do cliente automaticamente na base de dados
   const cleanPhone = (remoteJid || data.from || "").split("@")[0].replace(/\D/g, "");
@@ -1345,6 +1329,40 @@ async function handleIncomingMessage(body: any, instance: string) {
       estagio: "guard-degradou", detalhe: guard.reason,
     });
     return;
+  }
+
+  // ── RAJADA: UMA RESPOSTA PARA O QUE O CLIENTE MANDOU PICADO ──────────────
+  //
+  // Cada mensagem já passou sozinha por todas as porteiras acima. Daqui para a
+  // frente, os pedaços que chegam juntos viram UMA chamada de IA, e a conversa
+  // é atendida uma de cada vez (lib/rajada-do-webhook.ts). A janela é o mesmo
+  // "tempo de leitura" que existia antes de chamar a IA.
+  const vezDaRajada = await esperarAVezDaRajada({
+    rajadas: rajadasDoRobo(),
+    chave: `${user.id}_${remoteJid}`,
+    item: {
+      texto: textMessage,
+      barreira: Boolean(audioData?.base64 || imagemData?.base64 || localizacao),
+      mensagemAnteriorEm: guard.action === "allow" ? guard.mensagemAnteriorEm ?? null : null,
+    },
+    janelaMs: audioData ? 1500 : 3000 + Math.floor(Math.random() * 2001),
+    tetoDaVezMs: TETO_DA_VEZ_DA_CONVERSA_MS,
+  });
+  if (vezDaRajada.papel !== "carrega") {
+    // O texto desta mensagem é (ou já foi) respondido junto com outra. Ela
+    // aparece no painel como chegou; quem carrega grava a própria.
+    void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
+    registrarTrace({
+      instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "juntada",
+      detalhe: vezDaRajada.papel === "juntada" ? "respondida junto com a mensagem seguinte" : "já levada por outra mensagem da conversa",
+    });
+    return;
+  }
+  /** Solta a conversa para a próxima mensagem: só depois que a resposta foi ENTREGUE (ou o vigia desistiu). */
+  const liberarAVez = vezDaRajada.liberar;
+  if (vezDaRajada.quantas > 1) {
+    textMessage = vezDaRajada.texto;
+    console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] 🧩 ${vezDaRajada.quantas} mensagens de ${remoteJid} numa resposta só`);
   }
 
   // Prepare and format history to pass to AI
@@ -1786,11 +1804,8 @@ async function handleIncomingMessage(body: any, instance: string) {
   let aiResponse: any = null;
   let estourouOPrazo = false;
   try {
-    // Se for mensagem de usuário, aplicamos um delay de leitura para imitar humano
-    if (remoteJid?.includes("@s.whatsapp.net")) {
-      const readingDelay = audioData ? 1500 : Math.floor(Math.random() * (5000 - 3000 + 1)) + 3000;
-      await new Promise(r => setTimeout(r, readingDelay));
-    }
+    // O "tempo de leitura" (3–5 s, áudio 1,5 s) que ficava aqui virou a janela
+    // da rajada, lá em cima: é nele que os pedaços seguintes chegam.
 
     const aiTimeout = audioData ? 45000 : imagemData ? 35000 : 25000;
     const iaInicio = Date.now();
@@ -1825,7 +1840,9 @@ async function handleIncomingMessage(body: any, instance: string) {
       processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName, {
         localizacao,
         imagem: imagemData,
-        ultimaMensagemDoClienteEm: guard.action === "allow" ? guard.mensagemAnteriorEm ?? null : undefined,
+        // Na rajada, vale o "antes" da PRIMEIRA mensagem: "oi" + "quero pizza"
+        // juntos continuam sendo o primeiro oi do dia.
+        ultimaMensagemDoClienteEm: vezDaRajada.mensagemAnteriorEm ?? null,
       }),
       aiTimeout,
       async (respostaTardia, atrasoMs) => {
@@ -1838,13 +1855,15 @@ async function handleIncomingMessage(body: any, instance: string) {
           estagio: "ia-tardia", ms: aiTimeout + atrasoMs,
           detalhe: `chegou ${Math.round(atrasoMs / 1000)}s depois do prazo${pedidoTardio?.ok ? " · COM PEDIDO GRAVADO" : ""}${vigiaJaFalou ? " · o vigia já tinha respondido" : ""}`,
         });
-        // Depois que o vigia falou ("não consegui, manda de novo"), a resposta
-        // tardia só interessa se MEXEU no pedido: aí o cliente precisa saber.
-        if (vigiaJaFalou && !pedidoTardio?.ok) return;
         try {
+          // Depois que o vigia falou ("não consegui, manda de novo"), a resposta
+          // tardia só interessa se MEXEU no pedido: aí o cliente precisa saber.
+          if (vigiaJaFalou && !pedidoTardio?.ok) return;
           await entregarRespostaDaIa(respostaTardia?.reply ? respostaTardia : falhaComoResposta("resposta vazia"), true);
         } catch (e: any) {
           console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ Erro ao entregar a resposta tardia para ${remoteJid}:`, e?.message || e);
+        } finally {
+          liberarAVez();
         }
       },
       (erroTardio) => {
@@ -1852,8 +1871,12 @@ async function handleIncomingMessage(body: any, instance: string) {
         if (desfecho !== "aberto") return;
         desfecho = "respondida";
         console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ A IA falhou depois do prazo para ${remoteJid}:`, (erroTardio as any)?.message || erroTardio);
-        if (conversaJaAndou()) return pedirOQueFicouParaTras("erro depois do prazo");
-        entregarRespostaDaIa(falhaComoResposta(erroTardio), true).catch(() => {});
+        if (conversaJaAndou()) {
+          pedirOQueFicouParaTras("erro depois do prazo");
+          liberarAVez();
+          return;
+        }
+        entregarRespostaDaIa(falhaComoResposta(erroTardio), true).catch(() => {}).finally(liberarAVez);
       },
     );
 
@@ -1868,9 +1891,13 @@ async function handleIncomingMessage(body: any, instance: string) {
       vigia = setTimeout(() => {
         if (desfecho !== "aberto") return;
         desfecho = "desistiu";
-        if (conversaJaAndou()) return pedirOQueFicouParaTras("passou do teto");
+        if (conversaJaAndou()) {
+          pedirOQueFicouParaTras("passou do teto");
+          liberarAVez();
+          return;
+        }
         console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ A IA não respondeu nem depois do prazo para ${remoteJid}. Enviando fallback.`);
-        entregarRespostaDaIa(falhaComoResposta("timeout"), true).catch(() => {});
+        entregarRespostaDaIa(falhaComoResposta("timeout"), true).catch(() => {}).finally(liberarAVez);
       }, TETO_DA_RESPOSTA_TARDIA_MS);
     }
     registrarTrace({
@@ -1891,7 +1918,8 @@ async function handleIncomingMessage(body: any, instance: string) {
   if (estourouOPrazo) {
     // "Só um instante" NÃO entra no histórico nem na conta de falhas: ainda não
     // se sabe se a IA falhou. Conversa que passou para a equipe nesse meio-tempo
-    // não recebe nada do robô.
+    // não recebe nada do robô. A vez da conversa segue presa até a resposta
+    // tardia ou o vigia (acima) — ou o teto da vez.
     if (!roboEstaPausado(user.id, remoteJid)) {
       await replyToCustomer(user.id, remoteJid, FRASE_DE_SO_UM_INSTANTE, remoteJid || data.from || "");
       trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: remoteJid || data.from || "" });
@@ -1899,7 +1927,11 @@ async function handleIncomingMessage(body: any, instance: string) {
     return;
   }
 
-  await entregarRespostaDaIa(aiResponse, false);
+  try {
+    await entregarRespostaDaIa(aiResponse, false);
+  } finally {
+    liberarAVez();
+  }
 }
 
 export async function GET() {

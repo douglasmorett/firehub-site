@@ -32,6 +32,8 @@ export type TraceStage =
   | "ia-falhou"
   /** A IA está fora do ar: crédito, chave, ou falhas repetidas (lib/falha-da-ia.ts). */
   | "ia-fora-do-ar"
+  /** Mensagem respondida junto com outra da mesma rajada (lib/rajada-do-webhook.ts). */
+  | "juntada"
   | "guard-ignorou"
   | "guard-degradou"
   | "ia-chamada"

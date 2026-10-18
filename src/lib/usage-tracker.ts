@@ -117,6 +117,33 @@ export function trackGeminiUsage(
   }).catch((err) => console.error("[UsageTracker] Gemini log error:", err));
 }
 
+// A "diária" do prompt guardado no Google (lib/cache-do-prompt.ts): US$ por
+// milhão de tokens POR HORA. ⚠️ Também dobra em 01/01/2027 (1,00 no 3.6 Flash).
+const DIARIA_DO_CACHE_USD_POR_MILHAO_HORA: Record<string, number> = {
+  "gemini-3.6-flash": 0.5,
+};
+
+/**
+ * O que custou manter o prompt da loja guardado (criação ou renovação do cache
+ * explícito). Sem isto o painel de custos mostraria só a leitura barata e
+ * esconderia a diária que o Google cobra à parte.
+ */
+export function trackGeminiCacheStorage(franchiseeId: string, model: string, tokens: number, segundos: number, metadata?: Record<string, any>) {
+  const precoHora = DIARIA_DO_CACHE_USD_POR_MILHAO_HORA[model] ?? DIARIA_DO_CACHE_USD_POR_MILHAO_HORA["gemini-3.6-flash"];
+  const custo = (tokens / 1_000_000) * precoHora * (Math.max(0, segundos) / 3600) * COTACAO_DOLAR;
+  prisma.usageLog.create({
+    data: {
+      franchiseeId,
+      category: "GEMINI_CACHE",
+      subCategory: model,
+      quantity: tokens,
+      estimatedCost: Math.round(custo * 10000) / 10000,
+      metadata: { model, tokens, segundos: Math.round(segundos), ...(metadata || {}) },
+      yearMonth: getYearMonth(),
+    },
+  }).catch((err) => console.error("[UsageTracker] Gemini cache log error:", err));
+}
+
 // ── Preço que o robô DISSE x preço que existe ──────────────────────
 //
 // Não custa dinheiro: entra aqui porque `UsageLog` já é a tabela por lojista,
