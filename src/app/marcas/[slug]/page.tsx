@@ -16,6 +16,15 @@ import Vitrine from "@/components/multimarcas/Vitrine";
  * para link divulgado nunca dar em página vazia.
  */
 export const revalidate = 60;
+/**
+ * Sem generateStaticParams a rota [slug] é dinâmica e o revalidate acima não
+ * vale nada: cada visita refazia o cardápio e as avaliações no banco
+ * (Cache-Control: no-store, 2–37 s medidos em 18/10). Lista vazia = cada loja
+ * vira página em cache na primeira visita e se renova a cada 60 s (ISR).
+ */
+export async function generateStaticParams() {
+  return [];
+}
 
 async function carregar(slug: string) {
   const franchisee = await prisma.user.findUnique({ where: { slug }, select: SELECT_DA_LOJA_NO_CARDAPIO });

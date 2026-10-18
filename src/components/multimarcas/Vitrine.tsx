@@ -29,6 +29,9 @@ const useCatalogo = () => useContext(CatalogoCtx);
 /** Página pública: para onde cada toque leva. */
 type Publica = { slug: string };
 const linkDaMarca = (pub: Publica, marca: string) => `/loja/${pub.slug}?marca=${encodeURIComponent(marca)}`;
+/** O produto abre já na folha dele: o cardápio lê ?produto= (CustomerStorePage) e abre o mesmo modal do toque no card. */
+const linkDoProduto = (pub: Publica, marca: string | null, produto: string) =>
+  `/loja/${pub.slug}?${marca ? `marca=${encodeURIComponent(marca)}&` : ""}produto=${encodeURIComponent(produto)}`;
 const linkDaSacola = (pub: Publica) => `/loja/${pub.slug}?sacola=1`;
 type Acao = { href?: string; onClick?: () => void };
 
@@ -150,7 +153,7 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
 
   const marcaAtual = tela.tipo === "marca" ? marcaPorId.get(tela.id) ?? null : null;
   const abrirMarca = (id: string | null): Acao => (publica ? (id ? { href: linkDaMarca(publica, id) } : {}) : { onClick: () => { if (id) irPara({ tipo: "marca", id }); } });
-  const abrirProduto = (p: ProdutoDaVitrine): Acao => (publica ? abrirMarca(marcaDoProduto(p)) : { onClick: () => setAberto(p) });
+  const abrirProduto = (p: ProdutoDaVitrine): Acao => (publica ? { href: linkDoProduto(publica, marcaDoProduto(p), p.id) } : { onClick: () => setAberto(p) });
   const abrirSacola: Acao = publica ? { href: linkDaSacola(publica) } : { onClick: () => setSacolaAberta(true) };
 
   return (
@@ -443,12 +446,19 @@ function LinhaDoProduto({ p, marca, mostrarMarca, fechada, toque, onAdicionar }:
         {p.descricao && <span className={s.descricao}>{p.descricao}</span>}
         <span className={s.preco}>{reais(p.preco)}</span>
       </Toque>
-      <div className={s.produtoFoto}>
-        {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.semFoto} style={{ background: marca?.cor ?? "#868E96" }}>{iniciais(p.nome)}</span>}
-        {!fechada && onAdicionar && (
-          <button className={s.mais} onClick={onAdicionar} aria-label={`Adicionar ${p.nome}`}><Plus size={18} /></button>
-        )}
-      </div>
+      {/* Na página pública não há o "+": a foto também é o link do produto. */}
+      {!onAdicionar && toque.href ? (
+        <a href={toque.href} className={s.produtoFoto} aria-hidden tabIndex={-1}>
+          {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.semFoto} style={{ background: marca?.cor ?? "#868E96" }}>{iniciais(p.nome)}</span>}
+        </a>
+      ) : (
+        <div className={s.produtoFoto}>
+          {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.semFoto} style={{ background: marca?.cor ?? "#868E96" }}>{iniciais(p.nome)}</span>}
+          {!fechada && onAdicionar && (
+            <button className={s.mais} onClick={onAdicionar} aria-label={`Adicionar ${p.nome}`}><Plus size={18} /></button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
