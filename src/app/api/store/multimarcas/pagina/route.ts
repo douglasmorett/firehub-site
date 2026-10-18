@@ -22,8 +22,12 @@ async function sugestoesDeMarcas(franchiseeId: string): Promise<string[]> {
     for (const i of ifood) if (i.label?.trim()) nomes.add(i.label.trim());
   } catch {}
   try {
-    const r = await prisma.$queryRawUnsafe<{ label: string | null }[]>(`SELECT "label" FROM "Food99Store" WHERE "userId" = $1 AND "active" = true`, franchiseeId);
-    for (const x of r) if (x.label?.trim()) nomes.add(x.label.trim());
+    // A tabela das lojas da 99 nasce no primeiro uso (api/admin/tabela-lojas-99food): pode não existir.
+    const existe = await prisma.$queryRawUnsafe<{ ok: boolean }[]>(`SELECT to_regclass('"Food99Store"') IS NOT NULL AS ok`);
+    if (existe[0]?.ok) {
+      const r = await prisma.$queryRawUnsafe<{ label: string | null }[]>(`SELECT "label" FROM "Food99Store" WHERE "userId" = $1 AND "active" = true`, franchiseeId);
+      for (const x of r) if (x.label?.trim()) nomes.add(x.label.trim());
+    }
   } catch {}
   // "Frangoso iFood" → "Frangoso": o nome da conta costuma vir com o app junto.
   return [...nomes].map((n) => n.replace(/\s*[-–·|]?\s*(ifood|99\s?food|99)\s*$/i, "").trim()).filter(Boolean).slice(0, 12);
