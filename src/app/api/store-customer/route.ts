@@ -12,6 +12,7 @@ import { PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
 import { ondeEstaoOsPedidosDoTelefone } from "@/lib/pedidos-do-telefone-no-banco";
 import { carimbosDoTelefone, trilhaDoTelefone } from "@/lib/premio-no-pedido";
 import { carimbosDoCliente } from "@/lib/carimbos";
+import { criarSessaoDoCliente } from "@/lib/sessao-do-cliente";
 
 // POST: Login or Register
 export async function POST(req: Request) {
@@ -111,6 +112,8 @@ export async function POST(req: Request) {
       address: customer.address,
       birthDate: customer.birthDate,
       cashbackBalance: customer.cashbackBalance || 0,
+      // A prova do login para o Clube e para o app lembrar a conta (lib/sessao-do-cliente.ts).
+      sessao: criarSessaoDoCliente(customer.id, customer.phone),
     });
   }
 
@@ -145,6 +148,7 @@ export async function POST(req: Request) {
     address: customer.address,
     birthDate: customer.birthDate,
     cashbackBalance: customer.cashbackBalance || 0,
+    sessao: criarSessaoDoCliente(customer.id, customer.phone),
     orders
   });
 }

@@ -23,11 +23,20 @@ export default function PlanoDoAppDaLoja({ userId, storeName, aoFechar }: { user
   const [interesses, setInteresses] = useState<Interesse[]>([]);
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; texto: string } | null>(null);
+  // Os links do app nas lojas: com o plano ligado, o site da loja convida para baixar.
+  const [linkAndroid, setLinkAndroid] = useState("");
+  const [linkIos, setLinkIos] = useState("");
 
   useEffect(() => {
     fetch(`/api/admin/app-da-loja?userId=${encodeURIComponent(userId)}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((j) => { if (j.error) throw new Error(j.error); setPlano(j.plano); setInteresses(j.interesses || []); })
+      .then((j) => {
+        if (j.error) throw new Error(j.error);
+        setPlano(j.plano);
+        setInteresses(j.interesses || []);
+        setLinkAndroid(j.links?.android || "");
+        setLinkIos(j.links?.ios || "");
+      })
       .catch((e) => setMsg({ ok: false, texto: e.message }));
   }, [userId]);
 
@@ -47,11 +56,30 @@ export default function PlanoDoAppDaLoja({ userId, storeName, aoFechar }: { user
     }
   }
 
+  async function salvarLinks() {
+    setSalvando(true);
+    setMsg(null);
+    try {
+      const r = await fetch("/api/admin/app-da-loja", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, links: { android: linkAndroid, ios: linkIos } }) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || "Não deu certo.");
+      setLinkAndroid(j.links?.android || "");
+      setLinkIos(j.links?.ios || "");
+      setMsg({ ok: true, texto: j.links?.android || j.links?.ios ? "Links salvos. Com o plano ativo, o site da loja já convida para baixar o app." : "Links apagados: o convite do site some." });
+    } catch (e: any) {
+      setMsg({ ok: false, texto: e.message });
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  const campo = { width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: 13, boxSizing: "border-box" as const };
+
   return (
     <div role="dialog" aria-modal="true" aria-label={`Aplicativo da loja — ${storeName}`}
       onClick={(e) => { if (e.target === e.currentTarget && !salvando) aoFechar(); }}
       style={{ position: "fixed", inset: 0, zIndex: 2000, background: "rgba(15,23,42,.5)", display: "grid", placeItems: "center", padding: 16 }}>
-      <div style={{ background: "white", borderRadius: 14, width: "min(440px, 100%)", padding: 20, boxShadow: "0 24px 60px rgba(2,6,23,.35)" }}>
+      <div style={{ background: "white", borderRadius: 14, width: "min(440px, 100%)", maxHeight: "calc(100vh - 32px)", overflowY: "auto", padding: 20, boxShadow: "0 24px 60px rgba(2,6,23,.35)" }}>
         <div style={{ fontWeight: 900, fontSize: 17, color: "#0F172A" }}>📱 Aplicativo da loja</div>
         <div style={{ fontSize: 13, color: "#64748B", marginBottom: 14 }}>{storeName}</div>
 
@@ -80,6 +108,16 @@ export default function PlanoDoAppDaLoja({ userId, storeName, aoFechar }: { user
             <p style={{ fontSize: 12, color: "#64748B", margin: "12px 0 0" }}>
               Ativo em qualquer dia do mês = o mês inteiro no boleto. Trocou de plano no mês: vale o maior.
             </p>
+            <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid #E2E8F0", display: "grid", gap: 6 }}>
+              <div style={{ fontWeight: 800, fontSize: 13, color: "#0F172A" }}>Links do app nas lojas</div>
+              <div style={{ fontSize: 12, color: "#64748B" }}>Com o plano ativo e um link aqui, o site da loja mostra “Baixe o app e ganhe descontos exclusivos”.</div>
+              <input aria-label="Link do Google Play" placeholder="https://play.google.com/store/apps/details?id=…" value={linkAndroid} onChange={(e) => setLinkAndroid(e.target.value)} style={campo} />
+              <input aria-label="Link da App Store" placeholder="https://apps.apple.com/br/app/…/id…" value={linkIos} onChange={(e) => setLinkIos(e.target.value)} style={campo} />
+              <button disabled={salvando} onClick={salvarLinks}
+                style={{ justifySelf: "start", padding: "8px 12px", borderRadius: 10, border: "1px solid #CBD5E1", background: "white", color: "#0F172A", fontWeight: 700, fontSize: 13, cursor: "pointer" }}>
+                Salvar links
+              </button>
+            </div>
             {interesses.length > 0 && (
               <p style={{ fontSize: 12, color: "#475569", margin: "8px 0 0" }}>
                 Clicou em “quero o meu aplicativo”: {interesses.slice(0, 3).map((i) => `${OPCOES.find((o) => o.p === i.plataformas)?.rotulo.split(" · ")[0]} (${new Date(i.criadoEm).toLocaleDateString("pt-BR")})`).join(", ")}

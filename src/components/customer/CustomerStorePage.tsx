@@ -75,6 +75,10 @@ import QuandoReceber, { type Quando } from "./QuandoReceber";
 import AgendarNoCardapio from "./AgendarNoCardapio";
 import { aceitaAgendamentoPara, horariosParaAgendar, lerConfigDeAgendamento, textoDoAgendamento } from "@/lib/agendamento";
 import { avisarOApp } from "@/lib/app-da-loja/ponte";
+import { useClubeDoApp } from "./clube/useClubeDoApp";
+import { FaixaDoClube, ModalDoClube, ClubeNaSacola } from "./clube/ClubeNoCardapio";
+import ConviteDoApp from "./clube/ConviteDoApp";
+import { descontoDoClube as calcularDescontoDoClube } from "@/lib/clube/regras";
 import { categoriaEntraNaMarca, siglaDaMarca, type MarcasNoCardapio } from "@/lib/multimarcas/no-cardapio";
 import { ehRetirada, etapaDoAcompanhamento } from "@/lib/status-para-o-cliente";
 
@@ -310,6 +314,7 @@ export default function CustomerStorePage({
   storeRating,
   mesa = null,
   multimarcas = null,
+  appDaLoja = null,
 }: {
   franchisee: Franchisee;
   menuProducts: MenuProduct[];
@@ -318,6 +323,8 @@ export default function CustomerStorePage({
   mesa?: MesaDoQr | null;
   /** Multimarcas ligado: as marcas da loja. Com ?marca=<id> o cardápio mostra só a marca (lib/multimarcas/no-cardapio.ts). */
   multimarcas?: MarcasNoCardapio | null;
+  /** Plano do app ligado e com link nas lojas: o convite "Baixe o app" (lib/app-da-loja/links.ts). */
+  appDaLoja?: { android: string | null; ios: string | null } | null;
 }) {
   // Configuração de medição do Google DESTA loja. Só o que ela preencheu na
   // tela de Integrações — nunca uma medição do FireHub.
@@ -540,6 +547,11 @@ export default function CustomerStorePage({
 
   // Customer login
   const [customer, setCustomer] = useState<any>(null);
+  // Clube do aplicativo (lib/clube): situação de quem está logado, só dentro do app.
+  const clubeApp = useClubeDoApp(franchisee.id, !mesa);
+  const [modalDoClube, setModalDoClube] = useState(false);
+  // Apertou "Assinar" sem estar logado: depois do login, segue para o pagamento.
+  const querAssinarDepoisDoLogin = useRef(false);
   // Onde este cliente está na Trilha Premiada. Vem calculado do servidor
   // junto da consulta de pedidos (lib/trilha-premiada.ts decide prêmio: no
   // navegador a regra seria editável com o inspetor aberto).
@@ -1188,6 +1200,18 @@ export default function CustomerStorePage({
     ? Math.round(Math.min(indicadoPor!.desconto, Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDosCarimbos)) * 100) / 100
     : 0;
 
+  // Clube do aplicativo: o % do assinante sobre os produtos a pagar, depois da
+  // indicação e antes do desconto do pagamento — a mesma ordem do servidor
+  // (/api/customer-order, lib/clube/regras.ts).
+  const baseDoClube = Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao);
+  const descontoDoClube = !mesa && clubeApp.descontoValendo && clubeApp.clube
+    ? calcularDescontoDoClube(clubeApp.clube, baseDoClube)
+    : 0;
+  // O que o pedido economizaria no clube (convite na sacola de quem não assina).
+  const economiaNoClube = !mesa && clubeApp.noApp && clubeApp.clube && clubeApp.situacao !== "ativo"
+    ? calcularDescontoDoClube(clubeApp.clube, baseDoClube)
+    : 0;
+
   // O % que a loja dá a quem paga pelo site. A conta é a mesma do servidor
   // (lib/desconto-pagamento-online.ts): o Asaas cobra o total que ele grava.
   const descontoOnline = mesa
@@ -1196,7 +1220,7 @@ export default function CustomerStorePage({
         paymentFees: franchisee.paymentFees,
         paymentMethod,
         ligada: { pix: franchisee.pixOnlineAtivo === true, cartao: cartaoPeloAsaas },
-        base: cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao,
+        base: cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoClube,
       });
   const descontoDoPagamento = descontoOnline?.valor || 0;
 
@@ -1206,7 +1230,7 @@ export default function CustomerStorePage({
   // (lib/cashback.ts): o saldo paga até X% dos produtos já com cupom e prêmio, e
   // o cashback que o pedido gera incide sobre o que foi pago pelos produtos.
   // Vem DEPOIS do desconto do pagamento online, como no servidor.
-  const produtosAPagar = Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoPagamento);
+  const produtosAPagar = Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoClube - descontoDoPagamento);
   const maxCashbackDiscount = mesa ? 0 : Math.round(Math.min(
     customerCashbackBalance,
     (produtosAPagar * cashbackMaxRedeemPercent) / 100
@@ -1252,7 +1276,7 @@ export default function CustomerStorePage({
 
   // Na mesa o total é o dos itens a preço do salão: cupom, cashback, prêmio
   // e taxa de entrega não existem na conta da mesa (lib/lancar-na-mesa.ts).
-  const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoPagamento);
+  const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoClube - descontoDoPagamento);
   const totalAntesDoAcrescimo = mesa ? cartTotal : itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
   // ── ACRÉSCIMO NO CRÉDITO ───────────────────────────────────────────────
   //
@@ -1743,6 +1767,12 @@ export default function CustomerStorePage({
         if (data.address) setCustomerAddress(data.address);
         setShowAuth(false);
         localStorage.setItem("storeCustomer", JSON.stringify({ id: data.id, phone: data.phone }));
+        // A sessão assinada: prova do login para o Clube e faz o app lembrar a conta.
+        clubeApp.setSessao(data.sessao || null);
+        if (querAssinarDepoisDoLogin.current) {
+          querAssinarDepoisDoLogin.current = false;
+          if (data.sessao) setModalDoClube(true);
+        }
       } else { setAuthError(data.error || "Erro"); }
     } catch { setAuthError("Erro de conexão."); }
     finally { setAuthLoading(false); }
@@ -1751,6 +1781,31 @@ export default function CustomerStorePage({
   const handleLogout = () => {
     setCustomer(null);
     localStorage.removeItem("storeCustomer");
+    clubeApp.setSessao(null);
+  };
+
+  // A sessão guardada traz o login de volta (fechou e abriu o app, recarregou a página).
+  useEffect(() => {
+    const c = clubeApp.cliente;
+    if (!c || customer) return;
+    setCustomer({ id: c.id, name: c.name, phone: c.phone, address: c.address, birthDate: c.birthDate });
+    setCustomerName((atual: string) => atual || c.name);
+    setCustomerPhone((atual: string) => atual || c.phone);
+    if (c.address) setCustomerAddress((atual: string) => atual || c.address!);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clubeApp.cliente]);
+
+  // "Assinar" do Clube: sem login, abre o login e volta para o pagamento depois.
+  const assinarOClube = async () => {
+    const r = await clubeApp.assinar();
+    if (r === "entrar") {
+      querAssinarDepoisDoLogin.current = true;
+      setModalDoClube(false);
+      setAuthMode("register");
+      setShowAuth(true);
+    } else if (r === "ok") {
+      setModalDoClube(false);
+    }
   };
 
   // Excluir a conta pede a senha de novo: é irreversível, e a App Store e o
@@ -1773,6 +1828,7 @@ export default function CustomerStorePage({
       setExcluirConta("excluida");
       setCustomer(null);
       localStorage.removeItem("storeCustomer");
+      clubeApp.setSessao(null);
     } catch { setErroAoExcluir("Erro de conexão."); }
     finally { setExcluindo(false); }
   };
@@ -2702,6 +2758,8 @@ export default function CustomerStorePage({
           dispensarPremioDosCarimbos: guardarPremioDosCarimbos,
           // O link de indicação guardado: o servidor confere tudo (lib/indicacao.ts).
           ...(codigoDeIndicacao && isReferralActive && !mesa ? { codigoDeIndicacao } : {}),
+          // A prova do login: o servidor só dá o desconto do Clube com ela (lib/sessao-do-cliente.ts).
+          ...(clubeApp.sessao && !mesa ? { sessaoDoCliente: clubeApp.sessao } : {}),
           items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
           // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
           // (src/lib/ga-purchase.ts) precisa deles para cair no mesmo visitante
@@ -3838,6 +3896,10 @@ export default function CustomerStorePage({
                     <span style={{ fontWeight: 700 }}>- R$ {descontoDaIndicacao.toFixed(2).replace(".", ",")}</span>
                   </div>
                 )}
+                {!mesa && clubeApp.noApp && clubeApp.clube && (
+                  <ClubeNaSacola clube={clubeApp.clube} situacao={clubeApp.situacao} desconto={descontoDoClube}
+                    economiaPossivel={economiaNoClube} onAbrir={() => setModalDoClube(true)} />
+                )}
                 {cashbackDiscountApplied > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED" }}>
                     <span>Desconto Cashback</span>
@@ -4598,6 +4660,10 @@ export default function CustomerStorePage({
                   <span>- R$ {descontoDaIndicacao.toFixed(2).replace(".", ",")}</span>
                 </div>
               )}
+              {!mesa && clubeApp.noApp && clubeApp.clube && (
+                <ClubeNaSacola clube={clubeApp.clube} situacao={clubeApp.situacao} desconto={descontoDoClube}
+                  economiaPossivel={economiaNoClube} onAbrir={() => setModalDoClube(true)} compacto />
+              )}
               {cashbackDiscountApplied > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED", fontWeight: 700 }}>
                   <span>Desconto Cashback:</span>
@@ -5091,6 +5157,21 @@ export default function CustomerStorePage({
           </div>
         </div>
       </div>
+
+      {/* CLUBE DO APLICATIVO (só dentro do app) e CONVITE "BAIXE O APP" (só no site) —
+          no fluxo da página, logo abaixo do topo: não cobrem o cardápio nem a sacola. */}
+      {!mesa && clubeApp.noApp && clubeApp.clube && (
+        <FaixaDoClube clube={clubeApp.clube} situacao={clubeApp.situacao} pagoAte={clubeApp.pagoAte}
+          onAbrir={() => setModalDoClube(true)} onPagar={assinarOClube} />
+      )}
+      {!mesa && appDaLoja && !marcaAtiva && franchisee.slug && (
+        <ConviteDoApp lojaId={franchisee.id} slug={franchisee.slug} nomeDaLoja={storeName}
+          logo={franchisee.storeLogo} android={appDaLoja.android} ios={appDaLoja.ios} />
+      )}
+      {modalDoClube && clubeApp.clube && clubeApp.situacao !== "ativo" && (
+        <ModalDoClube clube={clubeApp.clube} situacao={clubeApp.situacao} logado={!!clubeApp.sessao}
+          abrindo={clubeApp.abrindo} erro={clubeApp.erro} onFechar={() => setModalDoClube(false)} onAssinar={assinarOClube} />
+      )}
 
       {/* AGENDAR PEDIDO: dia e hora primeiro, depois o cardápio daquele horário */}
       {!mesa && configDoAgendamento.ativo && (

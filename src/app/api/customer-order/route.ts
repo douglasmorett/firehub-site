@@ -67,6 +67,10 @@ import { acrescimoNoCredito, etiquetaDoAcrescimo } from "@/lib/acrescimo-no-cred
 import { aplicarMarcasNosItens } from "@/lib/multimarcas/itens";
 import { ehPedidoDeEntrega, formaDesligada, formaRecusadaNaEntrega, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
 import { problemaDaFormaPropria } from "@/lib/formas-proprias";
+import { lerSessaoDoCliente } from "@/lib/sessao-do-cliente";
+import { finalDoTelefone } from "@/lib/pedidos-do-telefone";
+import { descontoDoClube, ehDoAplicativo, etiquetaDoClube } from "@/lib/clube/regras";
+import { clubeValendoNaLoja, registrarDescontoDoClube, situacaoDoTelefone } from "@/lib/clube/no-banco";
 
 export async function POST(req: Request) {
   try {
@@ -822,6 +826,36 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── CLUBE DO APLICATIVO (lib/clube) ─────────────────────────────────
+    //
+    // O % do clube da marca, sobre os produtos que ainda faltam pagar, para
+    // quem: (1) pede pelo APLICATIVO da loja (user agent do apps/loja), (2)
+    // mandou a sessão do login (lib/sessao-do-cliente.ts) do MESMO telefone do
+    // pedido e (3) está com a assinatura paga. Faltou qualquer um: o pedido
+    // sai normal, sem o desconto — o cardápio já mostrou o aviso para pagar.
+    let descontoClube: { valor: number; percentual: number; chave: string; assinaturaId: string } | null = null;
+    if (body.sessaoDoCliente && ehDoAplicativo(req.headers.get("user-agent"))) {
+      try {
+        const sessao = lerSessaoDoCliente(body.sessaoDoCliente);
+        if (sessao && finalDoTelefone(sessao.telefone) === finalDoTelefone(customerPhone)) {
+          const clube = await clubeValendoNaLoja(franchisee.id);
+          if (clube) {
+            const { situacao, assinante } = await situacaoDoTelefone(clube.chave, customerPhone);
+            if (situacao === "ativo" && assinante) {
+              const valor = descontoDoClube(clube.config, Math.max(0, totalAmount - (discount - descontoNaTaxa)));
+              if (valor > 0) {
+                discount += valor;
+                descontoClube = { valor, percentual: clube.config.percentual, chave: clube.chave, assinaturaId: assinante.id };
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // O clube nunca impede o pedido.
+        console.error("[customer-order] clube:", e);
+      }
+    }
+
     // ── DESCONTO DE QUEM PAGA PELO SITE ──────────────────────────────────
     //
     // O % que a loja deu ao Pix ou ao cartão pelo site, sobre os itens já com
@@ -899,7 +933,7 @@ export async function POST(req: Request) {
     // total deixaria os dois divergindo em frações de centavo.
     fee = centavos(fee);
     let orderNotes = notes || "";
-    if (couponCode && discount - (descontoOnline?.valor || 0) - cashbackUsado > 0) {
+    if (couponCode && discount - (descontoOnline?.valor || 0) - cashbackUsado - (descontoClube?.valor || 0) > 0) {
       orderNotes = `[Cupom: ${couponCode.trim().toUpperCase()}] ${orderNotes}`.trim();
     }
     if (descontoOnline) {
@@ -931,6 +965,10 @@ export async function POST(req: Request) {
     if (resgateDaIndicacao) {
       // Linha própria na comanda e no painel: "[Indicação de Maria: -R$ 10,00]".
       orderNotes = `${etiquetaDaIndicacao(resgateDaIndicacao)} ${orderNotes}`.trim();
+    }
+    if (descontoClube) {
+      // Na comanda e no painel: "[Clube 15%: -R$ 7,20]" (lib/clube/regras.ts).
+      orderNotes = `${etiquetaDoClube(descontoClube.percentual, descontoClube.valor)} ${orderNotes}`.trim();
     }
     if (notaDaArea) {
       orderNotes = `${orderNotes}${notaDaArea}`.trim();
@@ -1051,6 +1089,16 @@ export async function POST(req: Request) {
       }
     });
 
+    if (descontoClube) {
+      await registrarDescontoDoClube({
+        pedidoId: order.id,
+        chave: descontoClube.chave,
+        lojaId: franchisee.id,
+        assinaturaId: descontoClube.assinaturaId,
+        desconto: descontoClube.valor,
+      });
+    }
+
     // O bairro pelo GPS/pino do cliente quando o endereço ficou sem bairro: é
     // dele que sai a linha BAIRRO da comanda (lib/bairro-pela-coordenada.ts).
     // Só vai à rede quando falta; até 1,5 s aqui, o resto em segundo plano.
@@ -1148,6 +1196,7 @@ export async function POST(req: Request) {
       discount,
       // A indicação que entrou (o cardápio tira o código guardado).
       indicacao: resgateDaIndicacao ? { desconto: resgateDaIndicacao.desconto } : null,
+      clube: descontoClube ? { desconto: descontoClube.valor, percentual: descontoClube.percentual } : null,
       status: initialStatus,
       autoAccepted: franchisee.autoAcceptOrders,
     });

@@ -1,5 +1,6 @@
 "use client";
 
+import ConviteDoApp from "./clube/ConviteDoApp";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Bike, Clock, Loader2, MapPin, Navigation, Phone, Search, Store, ChevronRight } from "lucide-react";
 import type { LojaNaVitrine, VitrineDoGrupo } from "@/lib/vitrine-do-grupo";
@@ -71,7 +72,16 @@ const kmBr = (n: number) => `${String(n).replace(".", ",")} km`;
 const sem = (t: string) => t.toLocaleLowerCase("pt-BR").normalize("NFD").replace(/[̀-ͯ]/g, "");
 const CHAVE_ULTIMA = (slug: string) => `firehub-grupo-${slug}`;
 
-export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; vitrine: VitrineDoGrupo }) {
+export default function EscolhaDaLojaDoGrupo({
+  slug,
+  vitrine,
+  appDaLoja = null,
+}: {
+  slug: string;
+  vitrine: VitrineDoGrupo;
+  /** Plano do app ligado e com link nas lojas: o convite "Baixe o app". */
+  appDaLoja?: { android: string | null; ios: string | null } | null;
+}) {
   const fazRetirada = vitrine.lojas.some((l) => !l.soDelivery);
   const [modo, setModo] = useState<"entrega" | "retirada">("entrega");
   const [busca, setBusca] = useState("");
@@ -210,6 +220,12 @@ export default function EscolhaDaLojaDoGrupo({ slug, vitrine }: { slug: string; 
       </header>
 
       <main className={s.conteudo}>
+        {appDaLoja && vitrine.lojas[0] && (
+          <div style={{ margin: "0 -12px 12px" }}>
+            <ConviteDoApp lojaId={vitrine.lojas[0].id} slug={vitrine.lojas[0].slug} nomeDaLoja={vitrine.nomeDoGrupo}
+              logo={vitrine.logo} android={appDaLoja.android} ios={appDaLoja.ios} />
+          </div>
+        )}
         {ultima && !resposta && (
           <a className={s.atalho} href={`/loja/${ultima.slug}`}>
             <span>

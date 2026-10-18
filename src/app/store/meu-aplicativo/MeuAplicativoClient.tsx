@@ -11,19 +11,22 @@
  *   horários;
  * - Notificações: mandar direcionado (segmento + assistente + IA) e o
  *   resultado de cada envio.
- * Promoções exclusivas do app e Clube de assinatura entram em ABAS quando
- * existirem — aba que não funciona não aparece.
+ * - Clube: o clube de assinatura do app (lib/clube, Douglas 18/10/2026) —
+ *   preço, %, Cakto, assinantes e se as mensalidades cobrem o desconto.
+ * Promoções exclusivas do app entram em ABAS quando existirem — aba que não
+ * funciona não aparece.
  *
  * Os números vêm prontos de GET /api/store/meu-aplicativo
  * (lib/app-da-loja/painel.ts): régua dos Relatórios, dia que vira às 5h.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bell, LineChart, Smartphone, TrendingUp } from "lucide-react";
+import { Bell, Crown, LineChart, Smartphone, TrendingUp } from "lucide-react";
 import { CSS } from "./estilo";
 import { ROTULO_DO_PERIODO, data, reais, type Dados, type Periodo } from "./tipos";
 import AbaVisaoGeral from "./AbaVisaoGeral";
 import AbaResultados from "./AbaResultados";
 import AbaNotificacoes from "./AbaNotificacoes";
+import AbaClube from "./AbaClube";
 
 export type Aviso = { tipo: "ok" | "erro" | "atencao" | "info"; titulo: string; detalhe?: string };
 const COR_DO_AVISO: Record<Aviso["tipo"], { cor: string; fundo: string }> = {
@@ -60,6 +63,7 @@ const ABAS = [
   { id: "visao", rotulo: "Visão geral", icone: TrendingUp, periodo: true },
   { id: "resultados", rotulo: "Resultados", icone: LineChart, periodo: true },
   { id: "notificacoes", rotulo: "Notificações", icone: Bell, periodo: false },
+  { id: "clube", rotulo: "Clube", icone: Crown, periodo: false },
 ] as const;
 type IdDaAba = (typeof ABAS)[number]["id"];
 const PERIODOS: Periodo[] = ["7d", "30d", "90d", "mes", "mesAnterior"];
@@ -100,7 +104,7 @@ export default function MeuAplicativoClient() {
   useEffect(() => {
     try {
       const h = window.location.hash.replace("#", "");
-      if (h === "notificacoes" || h === "resultados") setAba(h);
+      if (h === "notificacoes" || h === "resultados" || h === "clube") setAba(h);
     } catch {}
   }, []);
 
@@ -159,6 +163,7 @@ export default function MeuAplicativoClient() {
           {aba === "visao" && <AbaVisaoGeral dados={dados} irPara={irPara} />}
           {aba === "resultados" && <AbaResultados dados={dados} />}
           {aba === "notificacoes" && <AbaNotificacoes dados={dados} avisar={setAviso} recarregar={() => carregar(periodo, true)} />}
+          {aba === "clube" && <AbaClube nomeDaLoja={dados.loja.nome} avisar={setAviso} />}
         </div>
       )}
     </div>

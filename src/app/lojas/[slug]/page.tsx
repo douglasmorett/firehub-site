@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { carregarVitrineDoGrupo, slugValido } from "@/lib/vitrine-do-grupo";
 import EscolhaDaLojaDoGrupo from "@/components/customer/EscolhaDaLojaDoGrupo";
+import { conviteDoApp } from "@/lib/app-da-loja/links";
 
 /**
  * /lojas/[slug]: o link único de quem tem mais de uma loja. O cliente diz
@@ -33,5 +34,7 @@ export default async function PaginaDoGrupo({ params }: { params: Promise<{ slug
   }
   // Loja sem filial: não há o que escolher.
   if (vitrine.lojas.length === 1) redirect(`/loja/${vitrine.lojas[0].slug}`);
-  return <EscolhaDaLojaDoGrupo slug={slug} vitrine={vitrine} />;
+  // O app é da marca: qualquer unidade responde pelo plano e pelos links (lib/app-da-loja/links.ts).
+  const appDaLoja = await conviteDoApp(vitrine.lojas[0].id);
+  return <EscolhaDaLojaDoGrupo slug={slug} vitrine={vitrine} appDaLoja={appDaLoja} />;
 }

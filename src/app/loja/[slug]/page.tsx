@@ -6,6 +6,7 @@ import { propsDoCardapio, SELECT_DA_LOJA_NO_CARDAPIO } from "@/lib/cardapio-publ
 import { multimarcasEstaLigado } from "@/lib/multimarcas/assinatura";
 import { lerConfigDaPagina } from "@/lib/multimarcas/pagina";
 import { marcasNoCardapio } from "@/lib/multimarcas/no-cardapio";
+import { conviteDoApp } from "@/lib/app-da-loja/links";
 
 export const revalidate = 60; // ⚡ Cache de Borda (Edge) de 60 segundos
 
@@ -76,5 +77,7 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
   const multimarcas = (await multimarcasEstaLigado(franchisee.id))
     ? await lerConfigDaPagina(franchisee.id).then((c) => (c ? marcasNoCardapio(c) : null)).catch(() => null)
     : null;
-  return <CustomerStorePage {...props} multimarcas={multimarcas} />;
+  // Plano do app ligado e com link nas lojas: o site convida a baixar (lib/app-da-loja/links.ts).
+  const appDaLoja = await conviteDoApp(franchisee.id);
+  return <CustomerStorePage {...props} multimarcas={multimarcas} appDaLoja={appDaLoja} />;
 }

@@ -194,6 +194,7 @@
  * Puro: sem banco. Recebe os pedidos já filtrados por lib/relatorios/servidor.ts.
  * Testado em scripts/teste-descontos.ts.
  */
+import { valorDaEtiquetaDoClube } from "@/lib/clube/regras";
 import { lerCupons, descreverBeneficio, cupomVenceu, type Cupom } from "@/lib/cupons";
 import { repartirDesconto99 } from "@/lib/desconto-99food";
 import { lerEntregaGratis } from "@/lib/entrega-gratis";
@@ -680,6 +681,14 @@ export function descontoDoPedido(p: PedidoParaDescontos, canal: string = canalDo
     if (indicacao && indicacao.desconto > 0 && restante > 0.004) {
       const valor = Math.min(restante, indicacao.desconto);
       fatias.push(fatia("fidelidade", canal, "Indicação", "PEDIDO", valor, { chave: `fidelidade:${canal}:indicacao` }));
+      restante -= valor;
+    }
+    // Clube do aplicativo (lib/clube): o % do assinante, lido da etiqueta
+    // "[Clube 15%: -R$ 7,20]" que o pedido grava nas notas.
+    const doClube = valorDaEtiquetaDoClube(p.notes);
+    if (doClube > 0 && restante > 0.004) {
+      const valor = Math.min(restante, doClube);
+      fatias.push(fatia("fidelidade", canal, "Clube do aplicativo", "ITENS", valor, { chave: `fidelidade:${canal}:clube` }));
       restante -= valor;
     }
     // O % de quem paga Pix/cartão pelo site e o cashback usado têm valor
