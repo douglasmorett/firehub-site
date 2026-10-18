@@ -34,13 +34,13 @@ const soCarteira: LojaNasRegras = { ambassadorId: null, ambassador: null, vended
 const deOutro: LojaNasRegras = { ambassadorId: "ana", ambassador: { ...ana, parentAmbassadorId: null, parentAmbassador: null }, vendedorId: "bia", vendedor: outroVendedor };
 
 console.log("\n— Papel: indicação vence carteira —");
-confere("indicou e acompanha = EMBAIXADOR 30%, também na carteira", papelNaLoja(victor, indicouEAcompanha), { papel: "EMBAIXADOR", percentual: 30, tambemNaCarteira: true });
-// Regra de 18/10/2026: quem convidou e NÃO atende não leva nada.
-confere("convidou e a Bia atende = null (perdeu os 30%)", papelNaLoja(victor, soIndicou), null);
+confere("indicou e acompanha = EMBAIXADOR 30%, também na carteira", papelNaLoja(victor, indicouEAcompanha), { papel: "EMBAIXADOR", percentual: 30, tambemNaCarteira: true, origem: "INDICACAO" });
+// Regra de 18/10/2026: indicação de EMBAIXADOR (Victor, 30%) é recorrente, atenda quem atender.
+confere("indicou como embaixador e a Bia atende = EMBAIXADOR 30%", papelNaLoja(victor, soIndicou), { papel: "EMBAIXADOR", percentual: 30, tambemNaCarteira: false, origem: "INDICACAO" });
 // Nível 2 acabou em 15/10/2026: a loja da Ana que o Victor acompanha é só carteira dele.
-confere("loja da Ana (trazida por ele) e acompanha = VENDEDOR 3%", papelNaLoja(victor, daRedeEAcompanha), { papel: "VENDEDOR", percentual: 3, tambemNaCarteira: false });
+confere("loja da Ana (trazida por ele) e acompanha = VENDEDOR 3%", papelNaLoja(victor, daRedeEAcompanha), { papel: "VENDEDOR", percentual: 3, tambemNaCarteira: false, origem: "ATRIBUIDA" });
 confere("loja da Ana sem carteira dele = null (sem nível 2)", papelNaLoja(victor, { ...daRedeEAcompanha, vendedorId: "bia", vendedor: outroVendedor }), null);
-confere("só carteira = VENDEDOR 3%", papelNaLoja(victor, soCarteira), { papel: "VENDEDOR", percentual: 3, tambemNaCarteira: false });
+confere("só carteira = VENDEDOR 3%", papelNaLoja(victor, soCarteira), { papel: "VENDEDOR", percentual: 3, tambemNaCarteira: false, origem: "ATRIBUIDA" });
 confere("loja de outro = null", papelNaLoja(victor, deOutro), null);
 confere("fora da equipe não tem carteira", papelNaLoja({ ...victor, isVendedor: false }, soCarteira), null);
 
@@ -55,7 +55,10 @@ confere("split: loja da Ana que o Victor acompanha = Ana 20% + Victor 3% de vend
 confere("split: sem vendedor, a loja da Ana não paga nível 2", splitDaLoja({ ...daRedeEAcompanha, vendedorId: null, vendedor: null }).linhas, [
   { parceiroId: "ana", papel: "EMBAIXADOR", percentual: 20 },
 ]);
-confere("split: convidou e a Bia atende = só os 3% da Bia", splitDaLoja(soIndicou).linhas, [{ parceiroId: "bia", papel: "VENDEDOR", percentual: 3 }]);
+confere("split: Victor indicou e a Bia atende = Victor 30% + Bia 3%", splitDaLoja(soIndicou).linhas, [
+  { parceiroId: "victor", papel: "EMBAIXADOR", percentual: 30 },
+  { parceiroId: "bia", papel: "VENDEDOR", percentual: 3 },
+]);
 confere("split: mesmo parceiro como indicador SEM isVendedor e como vendedor atribuído = paga uma vez só", splitDaLoja({ ...indicouEAcompanha, ambassador: { ...vicComoN1, isVendedor: undefined } }).total, 30);
 
 console.log("\n— Repasse —");

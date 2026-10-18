@@ -26,7 +26,7 @@ import { janelaDoPeriodo } from "@/lib/relatorios/janela";
 import { VALOR_IMPOSSIVEL } from "@/lib/relatorios/regua-da-venda";
 import { getCurrentYearMonth, intervaloDoMes, lojaIsenta } from "@/lib/billing";
 import {
-  COMISSAO_DO_DISPARO_PCT, comissaoSobre, mensalidadeDoCiclo, mesesAntes, papelNaLoja, vendedorQueAtende,
+  COMISSAO_DO_DISPARO_PCT, comissaoSobre, indicacaoDeEmbaixador, mensalidadeDoCiclo, mesesAntes, papelNaLoja, vendedorQueAtende,
   type CicloNasRegras, type LojaNasRegras, type ParceiroNasRegras,
 } from "@/lib/parceiro/regras";
 import { valorDoAssessorNoMes, PRECO_DO_ASSESSOR, type Periodo } from "@/lib/assessor/assinatura";
@@ -363,9 +363,10 @@ function lojaDaAnalise(base: Base, faixas: Map<string, LojaDaAnalise["faixa"]>, 
 function carteirasDaBase(base: Base, faixas: Map<string, LojaDaAnalise["faixa"]>): CarteiraDaAnalise[] {
   const parceiro = new Map(base.parceiros.map((p) => [p.id, p]));
   const ehVendedor = (id: string) => !!parceiro.get(id)?.isVendedor;
+  const ehEmbaixador = (id: string) => { const p = parceiro.get(id); return !!p && indicacaoDeEmbaixador(p); };
   const lojasDe = new Map<string, LojaDaAnalise[]>();
   for (const l of base.lojas) {
-    for (const d of donosDaLoja(l, ehVendedor)) {
+    for (const d of donosDaLoja(l, ehVendedor, ehEmbaixador)) {
       const desde = d.origem === "ATRIBUIDA" && l.vendedorAtribuidoEm && l.vendedorAtribuidoEm > l.createdAt ? l.vendedorAtribuidoEm : l.createdAt;
       const dono = d.carteira === "sem" ? "__sem_vendedor__" : d.carteira;
       lojasDe.set(d.carteira, [...(lojasDe.get(d.carteira) || []), lojaDaAnalise(base, faixas, l, dono, d.origem, desde)]);

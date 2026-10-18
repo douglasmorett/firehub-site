@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { indicacaoDeEmbaixador } from "@/lib/parceiro/regras";
 import { getServerSession } from "next-auth/next";
 import bcrypt from "bcryptjs";
 import { authOptions } from "@/lib/auth";
@@ -11,9 +12,10 @@ import { soltarContatosDoVendedor } from "@/lib/crm/contatos";
  * `novaSenha: true`, que gera uma temporária e a devolve UMA vez.
  *
  * `sairDaEquipe: true` tira o vendedor da equipe e devolve as lojas dele para
- * "sem vendedor" (senão elas seguiriam pagando 3% a quem não acompanha mais) e
- * PAUSA a conta: quem sai da FireHub não recebe mais comissão nenhuma, nem das
- * lojas que convidou (18/10/2026). Reativar como embaixador é decisão à mão.
+ * "sem vendedor" (senão elas seguiriam pagando 3% a quem não acompanha mais).
+ * Vendedor puro (link de 10%) tem a conta PAUSADA: sem comissão futura, nem das
+ * lojas que convidou. Quem tem % de embaixador próprio continua embaixador
+ * (as indicações seguem pagando) — 18/10/2026.
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -23,16 +25,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params;
   const body = await req.json().catch(() => ({}));
 
-  const atual = await prisma.ambassador.findUnique({ where: { id }, select: { id: true, isVendedor: true } });
+  const atual = await prisma.ambassador.findUnique({ where: { id }, select: { id: true, isVendedor: true, commissionPercent: true } });
   if (!atual?.isVendedor) return NextResponse.json({ error: "Vendedor não encontrado." }, { status: 404 });
 
   if (body.sairDaEquipe) {
     const [, soltas] = await prisma.$transaction([
-      // Saiu da FireHub = sem comissão futura, nem das lojas que convidou
-      // (Douglas, 18/10/2026; termo de comissionamento). Sem `active: false`,
-      // com `isVendedor` falso ele viraria "embaixador" e o split seguiria
-      // pagando o % de link nas lojas do convite dele.
-      prisma.ambassador.update({ where: { id }, data: { isVendedor: false, active: false } }),
+      // Douglas, 18/10/2026: o VENDEDOR (contratado) que sai perde as comissões
+      // de vendedor, inclusive os 10% do link — a conta é pausada (sem isso,
+      // com `isVendedor` falso ele viraria "embaixador" e seguiria recebendo).
+      // Quem tem % de EMBAIXADOR próprio (acima dos 10% de link, ex.: Victor
+      // 30%) é autônomo: perde só o papel de vendedor; as indicações dele
+      // continuam pagando, enquanto as lojas pagarem (lib/parceiro/regras.ts).
+      prisma.ambassador.update({
+        where: { id },
+        data: { isVendedor: false, ...(atual && indicacaoDeEmbaixador({ isVendedor: true, commissionPercent: atual.commissionPercent }) ? {} : { active: false }) },
+      }),
       prisma.user.updateMany({
         where: { vendedorId: id },
         data: { vendedorId: null, vendedorStatus: null, vendedorAtribuidoEm: null, vendedorAtendidoEm: null },

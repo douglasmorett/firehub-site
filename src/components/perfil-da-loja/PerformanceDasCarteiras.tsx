@@ -34,7 +34,7 @@ const consultaDo = (f: Filtro) => {
   if (f.chave === "intervalo") { if (f.de) q.set("de", f.de); if (f.ate) q.set("ate", f.ate); }
   return q.toString();
 };
-const ROTULO_DA_ORIGEM = { LINK: "Pelo link", ATRIBUIDA: "Atribuída", INDICACAO: "Indicação", SEM: "—" } as const;
+const ROTULO_DA_ORIGEM = { LINK: "Link de vendedor", ATRIBUIDA: "Atribuída", INDICACAO: "Indicação (embaixador)", SEM: "—" } as const;
 
 /** Período escolhido × anterior (validado: scripts/validate_palette.js, CVD ΔE 22,8). */
 const COR_DO_PERIODO = "#E8360C";
@@ -249,8 +249,9 @@ function DetalheDaCarteiraTela({ id, consulta, aoFechar }: { id: string; consult
                   </div>
                 </section>
 
-                {r.regra && r.papel === "VENDEDOR" && (
+                {r.regra && (r.papel === "VENDEDOR" || r.regra.embaixador !== null) && (
                   <ComoVoceGanha embutido modo="ADMIN" d={{
+                    embaixador: r.regra.embaixador, lojasIndicadas: d.lojas.filter((l) => l.origem === "INDICACAO").length,
                     link: r.regra.link, atribuida: r.regra.atribuida, lojasDoLink, lojasAtribuidas,
                     previstoNoMes: r.atual.comissaoPrevista, recebidoNoMes: r.atual.comissaoRecebida, recebidoNoMesAnterior: null,
                     ganhoComDisparo: r.atual.comissaoDoDisparo, divergencias: r.regra.divergencias, custoMeta: d.custoMetaAtual,

@@ -22,7 +22,7 @@ import RelatorioDoParceiro from "@/components/parceiro/RelatorioDoParceiro";
 import RelatorioDaCarteira from "@/components/perfil-da-loja/RelatorioDaCarteira";
 import ComoVoceGanha from "@/components/perfil-da-loja/ComoVoceGanha";
 import { OcultarValoresProvider, OlhoDosValores } from "@/components/parceiro/ValoresOcultos";
-import type { Papel } from "@/lib/parceiro/regras";
+import { indicacaoDeEmbaixador, type Papel } from "@/lib/parceiro/regras";
 import type { RelatorioDoParceiro as Relatorio } from "@/lib/parceiro/relatorio";
 
 type Aba = "numeros" | "carteira" | "conversas" | "contatos" | "agenda";
@@ -138,15 +138,18 @@ export default function PortalDoParceiro({
       {aba === "numeros" && (
         <main className="pp-wrap">
           {/* O comissionamento explicado (Douglas, 18/10/2026): link 10% × atribuída 3%, com os % do cadastro. */}
-          {p.isVendedor && (
+          {(p.isVendedor || p.percentuais.EMBAIXADOR > 0) && (
             <div style={{ marginBottom: 16 }}>
               <ComoVoceGanha
                 modo={modo === "ADMIN" ? "ADMIN" : "VENDEDOR"}
                 d={{
-                  link: p.percentuais.EMBAIXADOR,
-                  atribuida: p.percentuais.VENDEDOR,
-                  lojasDoLink: relatorio.lojas.filter((l) => l.papel === "EMBAIXADOR").length,
-                  lojasAtribuidas: relatorio.lojas.filter((l) => l.papel === "VENDEDOR").length,
+                  // Embaixador (recorrente) × vendedor (enquanto atende): lib/parceiro/regras.ts, indicacaoDeEmbaixador.
+                  embaixador: indicacaoDeEmbaixador({ isVendedor: p.isVendedor, commissionPercent: p.percentuais.EMBAIXADOR }) && p.percentuais.EMBAIXADOR > 0 ? p.percentuais.EMBAIXADOR : null,
+                  lojasIndicadas: relatorio.lojas.filter((l) => l.origem === "INDICACAO" || (!l.origem && l.papel === "EMBAIXADOR")).length,
+                  link: p.isVendedor && !indicacaoDeEmbaixador({ isVendedor: true, commissionPercent: p.percentuais.EMBAIXADOR }) ? p.percentuais.EMBAIXADOR : null,
+                  atribuida: p.isVendedor ? p.percentuais.VENDEDOR : null,
+                  lojasDoLink: relatorio.lojas.filter((l) => l.origem === "LINK").length,
+                  lojasAtribuidas: relatorio.lojas.filter((l) => l.origem === "ATRIBUIDA").length,
                   previstoNoMes: relatorio.resumo.mesAtual.comissao,
                   recebidoNoMes: relatorio.resumo.recebidoEsteMes,
                   recebidoNoMesAnterior: relatorio.resumo.mesAnterior.recebido,

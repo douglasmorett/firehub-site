@@ -114,7 +114,7 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
 
   const tirarDaEquipe = async (m: Membro) => {
     const aviso = m.clientes > 0 ? ` As ${m.clientes} lojas da carteira dele ficam sem vendedor.` : "";
-    if (!confirm(`Tirar ${m.name} da equipe de vendas?${aviso} A conta dele fica PAUSADA: ele deixa de receber todas as comissões futuras, inclusive das lojas que convidou pelo link.`)) return;
+    if (!confirm(`Tirar ${m.name} da equipe de vendas?${aviso} ${(m.linkPercent ?? 0) > 10 ? " Ele continua EMBAIXADOR: as lojas que indicou seguem pagando o % de embaixador dele." : " A conta dele fica PAUSADA: ele deixa de receber as comissões futuras, inclusive dos 10% das lojas que convidou pelo link."}`)) return;
     if (await enviar(`/api/admin/vendedores/${m.id}`, "PATCH", { sairDaEquipe: true })) carregar();
   };
 

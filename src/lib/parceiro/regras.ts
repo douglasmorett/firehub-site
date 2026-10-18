@@ -11,11 +11,11 @@
  *   3. Em que pé está a mensalidade que paga a comissão: em andamento, paga,
  *      a vencer, vencida, sem boleto ou sem cobrança.
  *
- * Regra do Douglas de 18/10/2026 (substitui a de 27/09): entre os vendedores,
- * quem ATENDE é quem ganha — 10% (o % de link do cadastro) na loja que ele
- * trouxe pelo link, 3% na que foi atribuída a ele; quem convidou e não atende
- * não leva nada. Embaixador que não vende segue a regra do programa de
- * indicação. Ver `vendedorQueAtende`.
+ * Regra do Douglas de 18/10/2026 (substitui a de 27/09): a indicação de
+ * EMBAIXADOR é recorrente (o % dele enquanto a loja paga, atenda quem
+ * atender); entre os VENDEDORES ganha quem atende — 10% na loja do link de
+ * vendedor dele, 3% na atribuída; quem convidou como vendedor e não atende não
+ * leva nada. Ver `indicacaoDeEmbaixador` e `vendedorQueAtende`.
  *
  * Sem Prisma nem "@/…": roda puro no teste.
  */
@@ -36,26 +36,39 @@ export const TETO_DE_SPLIT = 40;
 // ─── 1. O PAPEL ─────────────────────────────────────────────────────────────
 
 /**
- * REGRA DE 18/10/2026 (Douglas): "quem atende tem que ser comissionado… se
- * amanhã ele parar de atender quem ele convidou, ele perde os 10%".
+ * REGRA DE 18/10/2026 (Douglas) — EMBAIXADOR é diferente de VENDEDOR:
  *
- *   • O DONO da loja, entre os vendedores, é quem ATENDE: o vendedor atribuído
- *     (User.vendedorId). Sem atribuído, e se a loja veio pelo link de convite
- *     de um vendedor (User.ambassadorId = vendedor), o dono é quem convidou.
- *   • O dono leva o % de LINK (`commissionPercent` do cadastro — padrão 10%)
- *     se foi ele quem convidou; o % de ATRIBUÍDA (`sellerPercent`, 3%) se a
- *     loja foi posta na carteira dele.
- *   • Vendedor que convidou mas NÃO atende mais: nada. Vendedor inativo ou fora
- *     da equipe: nada (nem pelo link) — o split exige conta ativa.
- *   • Embaixador que NÃO é vendedor (programa de indicação): a regra de antes,
- *     intocada — leva o `commissionPercent` dele, e o vendedor que atende leva
- *     os 3% à parte.
- *   • Nunca dois vendedores na mesma loja.
+ *   "Embaixador vai ganhar recorrente de quem ele botou para dentro. O Victor,
+ *    por exemplo, ganha 30%. Se ele parar de trabalhar com a gente, a comissão
+ *    é dele, enquanto o cliente dele estiver ativo. Mas o vendedor que ganha
+ *    10% perde se sair. Porque o embaixador é um cara autônomo; o vendedor é
+ *    contratado nosso." E: "quem atende tem que ser comissionado".
  *
- * Antes desta data: quem indicou levava o commissionPercent mesmo sem atender
- * (e o vendedor atribuído levava +3% em cima), e o vendedor que indicava a
- * loja e atendia levava só o commissionPercent (0% no cadastro de vendedor).
+ *   • INDICAÇÃO DE EMBAIXADOR (programa de indicação, autônomo): o % de
+ *     embaixador do cadastro (`commissionPercent`, ex.: 20%/30%) de cada boleto
+ *     pago da loja que ele indicou — recorrente, NÃO depende de ele atender,
+ *     nem de estar na equipe de vendas, nem some se outro vendedor atender.
+ *   • LINK DE VENDEDOR (contratado): 10% do boleto da loja que veio pelo link
+ *     dele, só enquanto ele está na equipe, ativo, e ATENDE a loja.
+ *   • ATRIBUÍDA: o vendedor que atende leva `sellerPercent` (3%).
+ *   • Quem é as duas coisas (Victor): as lojas que ele trouxe pagam o % de
+ *     embaixador dele (recorrente), nunca os 10% junto.
+ *   • Quem atende, entre os vendedores: o atribuído (User.vendedorId); sem
+ *     atribuído, o vendedor que convidou pelo link de vendedor.
+ *
+ * COMO O SISTEMA DISTINGUE os dois (não existe campo próprio; os dois usam o
+ * mesmo link de convite e o mesmo `commissionPercent`): é INDICAÇÃO DE
+ * EMBAIXADOR quando quem indicou não é vendedor, ou quando é vendedor com % de
+ * embaixador próprio — `commissionPercent` acima do % de link de vendedor
+ * (`PCT_DO_LINK_DE_VENDEDOR`, 10). Vendedor com 10% (ou menos) no cadastro é
+ * LINK DE VENDEDOR. Ver `indicacaoDeEmbaixador`.
  */
+export const PCT_DO_LINK_DE_VENDEDOR = 10;
+
+/** A loja que este parceiro indicou paga como indicação de EMBAIXADOR (recorrente)? */
+export function indicacaoDeEmbaixador(p: { isVendedor?: boolean | null; commissionPercent: number }): boolean {
+  return !p.isVendedor || p.commissionPercent > PCT_DO_LINK_DE_VENDEDOR;
+}
 
 /** O vendedor ganha os 3% de atribuída nesta loja? Só se a loja não veio pelo link DELE. */
 export function ganhaComoVendedor(vendedorId: string, loja: { ambassadorId?: string | null }): boolean {
@@ -83,7 +96,7 @@ export type LojaNasRegras = {
     active: boolean;
     temCarteira: boolean;
     commissionPercent: number;
-    /** É vendedor da equipe? (vendedor que convida pelo link segue a regra de quem atende) */
+    /** É vendedor da equipe? Com % de link (até 10), a indicação é LINK DE VENDEDOR. */
     isVendedor?: boolean;
     parentAmbassadorId: string | null;
     parentAmbassador: { id: string; active: boolean; temCarteira: boolean; level2Percent: number } | null;
@@ -91,30 +104,40 @@ export type LojaNasRegras = {
   vendedorId: string | null;
   vendedor: {
     id: string; active: boolean; isVendedor: boolean; temCarteira: boolean; sellerPercent: number;
-    /** % de link do cadastro dele — vale quando a loja veio pelo link dele E ele atende. */
+    /** % do cadastro dele (link de vendedor ou de embaixador). */
     commissionPercent?: number;
   } | null;
 };
 
+/** De onde vem a comissão do parceiro na loja. */
+export type OrigemDaComissao = "INDICACAO" | "LINK" | "ATRIBUIDA";
+
 export type DonoDaLoja = {
   parceiroId: string;
-  /** LINK = ele convidou e atende; ATRIBUIDA = posta na carteira dele. */
-  origem: "LINK" | "ATRIBUIDA";
+  /**
+   * LINK = veio pelo link de vendedor dele e ele atende (10%);
+   * ATRIBUIDA = posta na carteira dele (3%);
+   * INDICACAO = ele atende uma loja que indicou como embaixador — o boleto já
+   * paga o % de embaixador dele, o papel de vendedor não soma (0%).
+   */
+  origem: OrigemDaComissao;
+  /** % do boleto pelo papel de VENDEDOR. */
   percentual: number;
   ativo: boolean;
   temCarteira: boolean;
 };
 
-/** O vendedor que ATENDE a loja (o dono dela entre os vendedores), ou null. */
+/** O vendedor que ATENDE a loja, ou null. */
 export function vendedorQueAtende(loja: LojaNasRegras): DonoDaLoja | null {
   const v = loja.vendedor;
   if (v && v.isVendedor && loja.vendedorId === v.id) {
-    const convidou = loja.ambassadorId === v.id;
-    const pctLink = v.commissionPercent ?? (loja.ambassador?.id === v.id ? loja.ambassador.commissionPercent : 0);
-    return { parceiroId: v.id, origem: convidou ? "LINK" : "ATRIBUIDA", percentual: convidou ? pctLink : v.sellerPercent, ativo: v.active, temCarteira: v.temCarteira };
+    if (loja.ambassadorId !== v.id) return { parceiroId: v.id, origem: "ATRIBUIDA", percentual: v.sellerPercent, ativo: v.active, temCarteira: v.temCarteira };
+    const pct = v.commissionPercent ?? (loja.ambassador?.id === v.id ? loja.ambassador.commissionPercent : 0);
+    if (indicacaoDeEmbaixador({ isVendedor: true, commissionPercent: pct })) return { parceiroId: v.id, origem: "INDICACAO", percentual: 0, ativo: v.active, temCarteira: v.temCarteira };
+    return { parceiroId: v.id, origem: "LINK", percentual: pct, ativo: v.active, temCarteira: v.temCarteira };
   }
   const a = loja.ambassador;
-  if (a && a.isVendedor && loja.ambassadorId === a.id) {
+  if (a && a.isVendedor && loja.ambassadorId === a.id && !indicacaoDeEmbaixador(a)) {
     return { parceiroId: a.id, origem: "LINK", percentual: a.commissionPercent, ativo: a.active, temCarteira: a.temCarteira };
   }
   return null;
@@ -122,51 +145,50 @@ export function vendedorQueAtende(loja: LojaNasRegras): DonoDaLoja | null {
 
 export type PapelNaLoja = {
   papel: Papel;
-  /** O que ELE ganha da mensalidade desta loja, em %. */
+  /** O que ELE ganha do boleto desta loja, em %. */
   percentual: number;
-  /** Convidou pelo link E está atribuída a ele (o portal diz "veio pelo seu link"). */
+  /** Indicou como embaixador E também atende como vendedor. */
   tambemNaCarteira: boolean;
+  origem: OrigemDaComissao;
 };
 
 /**
  * O papel do parceiro nesta loja, ou null se ele não ganha nada nela.
- *   embaixador (não vendedor) que indicou → EMBAIXADOR, commissionPercent (regra de sempre);
- *   vendedor que atende e convidou      → EMBAIXADOR (link), commissionPercent;
- *   vendedor que atende, atribuída       → VENDEDOR, sellerPercent;
- *   vendedor que convidou e não atende   → null.
+ *   indicou como EMBAIXADOR                 → EMBAIXADOR, commissionPercent (recorrente);
+ *   vendedor, veio pelo link dele e atende  → VENDEDOR (LINK), commissionPercent (10%);
+ *   vendedor, atribuída a ele               → VENDEDOR (ATRIBUIDA), sellerPercent;
+ *   vendedor que convidou e não atende      → null.
  * O papel REDE (nível 2) acabou em 15/10/2026 e não é mais atribuído.
  */
 export function papelNaLoja(p: ParceiroNasRegras, loja: LojaNasRegras): PapelNaLoja | null {
-  if (!p.isVendedor) {
-    if (loja.ambassadorId && loja.ambassadorId === p.id) return { papel: "EMBAIXADOR", percentual: p.commissionPercent, tambemNaCarteira: false };
-    return null;
+  if (loja.ambassadorId && loja.ambassadorId === p.id && indicacaoDeEmbaixador(p)) {
+    return { papel: "EMBAIXADOR", percentual: p.commissionPercent, tambemNaCarteira: p.isVendedor && loja.vendedorId === p.id, origem: "INDICACAO" };
   }
+  if (!p.isVendedor) return null;
   const dono = vendedorQueAtende(loja);
-  if (!dono || dono.parceiroId !== p.id) return null;
-  if (dono.origem === "LINK") return { papel: "EMBAIXADOR", percentual: p.commissionPercent, tambemNaCarteira: loja.vendedorId === p.id };
-  return { papel: "VENDEDOR", percentual: p.sellerPercent, tambemNaCarteira: false };
+  if (!dono || dono.parceiroId !== p.id || dono.origem === "INDICACAO") return null;
+  if (dono.origem === "LINK") return { papel: "VENDEDOR", percentual: p.commissionPercent, tambemNaCarteira: false, origem: "LINK" };
+  return { papel: "VENDEDOR", percentual: p.sellerPercent, tambemNaCarteira: false, origem: "ATRIBUIDA" };
 }
 
 // ─── 2. O REPASSE ───────────────────────────────────────────────────────────
 
 /**
  * As linhas do split que o fechamento monta para esta loja (lib/billing.ts lê
- * daqui): o embaixador que não vende (se indicou) + o vendedor que atende.
+ * daqui): a indicação de embaixador (recorrente) + o vendedor que atende.
  * Conta ativa e carteira no Asaas são exigidas; % zero não entra.
  */
 export function splitDaLoja(loja: LojaNasRegras): { linhas: { parceiroId: string; papel: Papel; percentual: number }[]; total: number; acimaDoTeto: boolean } {
   const linhas: { parceiroId: string; papel: Papel; percentual: number }[] = [];
-  const dono = vendedorQueAtende(loja);
   const n1 = loja.ambassador;
-  // Embaixador do programa de indicação (não vende). Se for o MESMO parceiro que
-  // atende (a loja veio pelo link dele e ele está atribuído), ele é vendedor
-  // aqui: leva só o % de quem atende, nunca os dois.
-  if (n1 && !n1.isVendedor && n1.id !== dono?.parceiroId && n1.active && n1.temCarteira && n1.commissionPercent > 0) {
+  if (n1 && loja.ambassadorId === n1.id && indicacaoDeEmbaixador(n1) && n1.active && n1.temCarteira && n1.commissionPercent > 0) {
     linhas.push({ parceiroId: n1.id, papel: "EMBAIXADOR", percentual: n1.commissionPercent });
   }
+  const dono = vendedorQueAtende(loja);
   if (dono && dono.ativo && dono.temCarteira && dono.percentual > 0) {
-    const papel: Papel = dono.origem === "LINK" ? "EMBAIXADOR" : "VENDEDOR";
-    linhas.push({ parceiroId: dono.parceiroId, papel, percentual: dono.percentual });
+    const mesma = linhas.find((l) => l.parceiroId === dono.parceiroId);
+    // O mesmo parceiro nos dois papéis só acontece com dado torto: vale o de embaixador, nunca os dois.
+    if (!mesma) linhas.push({ parceiroId: dono.parceiroId, papel: "VENDEDOR", percentual: dono.percentual });
   }
   const total = linhas.reduce((s, l) => s + l.percentual, 0);
   return { linhas, total, acimaDoTeto: total > TETO_DE_SPLIT };
@@ -400,6 +422,8 @@ export function mensalidadeDoCiclo(ciclo: CicloNasRegras | null, yearMonth: stri
 export type UsoDaLoja = "ATIVA" | "PARADA" | "NUNCA_VENDEU";
 
 export type LojaDoRelatorio = {
+  /** De onde vem a comissão dele nesta loja (indicação de embaixador, link de vendedor, atribuída). */
+  origem?: OrigemDaComissao;
   id: string;
   nome: string;
   dono: string;

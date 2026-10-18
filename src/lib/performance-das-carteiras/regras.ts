@@ -34,7 +34,7 @@
  *
  * Testado em scripts/teste-performance-das-carteiras.ts.
  */
-import { mesesAntes } from "@/lib/parceiro/regras";
+import { indicacaoDeEmbaixador, mesesAntes } from "@/lib/parceiro/regras";
 import { diasNoPeriodo, somarDias } from "@/lib/relatorios/base";
 import { tendencia, type StatusDaAtividade } from "@/lib/perfil-da-loja/regras";
 
@@ -400,7 +400,9 @@ export type LojaDaAnalise = {
 };
 
 export type RegraDeComissao = {
-  /** % do cadastro (o que o split paga) para loja do link / atribuída. null = não se aplica. */
+  /** % de EMBAIXADOR (recorrente) das lojas que ele indicou; null = não é embaixador. */
+  embaixador: number | null;
+  /** % do cadastro (o que o split paga) para loja do link de vendedor / atribuída. null = não se aplica. */
   link: number | null;
   atribuida: number | null;
   combinado: typeof COMISSAO_COMBINADA;
@@ -420,15 +422,17 @@ export type CarteiraDaAnalise = {
 
 /** O que o cadastro paga × o combinado (as divergências só valem para quem vende). */
 export function regraDeComissao(p: { isVendedor: boolean; commissionPercent: number; sellerPercent: number }): RegraDeComissao {
-  if (!p.isVendedor) return { link: p.commissionPercent, atribuida: null, combinado: COMISSAO_COMBINADA, divergencias: [] };
+  const embaixador = indicacaoDeEmbaixador(p) && p.commissionPercent > 0 ? p.commissionPercent : null;
+  if (!p.isVendedor) return { embaixador, link: null, atribuida: null, combinado: COMISSAO_COMBINADA, divergencias: [] };
   const divergencias: string[] = [];
-  if (p.commissionPercent !== COMISSAO_COMBINADA.LINK) {
-    divergencias.push(`Lojas do link de convite: o cadastro paga ${p.commissionPercent}% (combinado ${COMISSAO_COMBINADA.LINK}%). Ajuste o % de comissão dele em Embaixadores.`);
+  const link = embaixador === null ? p.commissionPercent : null;
+  if (link !== null && link !== COMISSAO_COMBINADA.LINK) {
+    divergencias.push(`Lojas do link de vendedor: o cadastro paga ${link}% (combinado ${COMISSAO_COMBINADA.LINK}%). Ajuste o % de comissão dele em Embaixadores (até 10% conta como link de vendedor; acima, como embaixador).`);
   }
   if (p.sellerPercent !== COMISSAO_COMBINADA.ATRIBUIDA) {
     divergencias.push(`Lojas atribuídas: o cadastro paga ${p.sellerPercent}% (combinado ${COMISSAO_COMBINADA.ATRIBUIDA}%).`);
   }
-  return { link: p.commissionPercent, atribuida: p.sellerPercent, combinado: COMISSAO_COMBINADA, divergencias };
+  return { embaixador, link, atribuida: p.sellerPercent, combinado: COMISSAO_COMBINADA, divergencias };
 }
 
 /**
@@ -441,12 +445,14 @@ export function regraDeComissao(p: { isVendedor: boolean; commissionPercent: num
 export function donosDaLoja(
   loja: { vendedorId: string | null; ambassadorId: string | null },
   ehVendedor: (id: string) => boolean,
+  /** Indicação de EMBAIXADOR (recorrente)? Ver lib/parceiro/regras.ts, indicacaoDeEmbaixador. */
+  ehEmbaixador: (id: string) => boolean = (id) => !ehVendedor(id),
 ): { carteira: string; origem: OrigemNaCarteira }[] {
   const a = loja.ambassadorId, v = loja.vendedorId;
   const saida: { carteira: string; origem: OrigemNaCarteira }[] = [];
-  if (v && ehVendedor(v)) saida.push({ carteira: v, origem: a === v ? "LINK" : "ATRIBUIDA" });
-  else if (a && ehVendedor(a)) saida.push({ carteira: a, origem: "LINK" });
-  if (a && !ehVendedor(a)) saida.push({ carteira: a, origem: "INDICACAO" });
+  if (v && ehVendedor(v)) saida.push({ carteira: v, origem: a === v ? (ehEmbaixador(a) ? "INDICACAO" : "LINK") : "ATRIBUIDA" });
+  else if (a && ehVendedor(a) && !ehEmbaixador(a)) saida.push({ carteira: a, origem: "LINK" });
+  if (a && a !== v && ehEmbaixador(a)) saida.push({ carteira: a, origem: "INDICACAO" });
   if (!saida.length) saida.push({ carteira: "sem", origem: "SEM" });
   return saida;
 }

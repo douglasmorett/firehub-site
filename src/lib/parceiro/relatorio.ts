@@ -196,6 +196,7 @@ export async function relatorioDoParceiro(parceiroId: string, agora = new Date()
       slug: l.slug,
       cadastradaEm: l.createdAt.toISOString(),
       papel: papel.papel,
+      origem: papel.origem,
       percentual: pct,
       tambemNaCarteira: papel.tambemNaCarteira,
       via: papel.papel === "REDE" && l.ambassador ? { id: l.ambassador.id, nome: l.ambassador.name } : null,
