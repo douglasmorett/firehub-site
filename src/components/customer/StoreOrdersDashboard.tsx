@@ -59,6 +59,7 @@ import NotaFiscalDoPedido, { NotaFiscalDaLojaProvider, useNotaFiscalDaLoja } fro
 // Paleta Brasa: cada cor com um papel (ver o cabeçalho de lib/paleta-brasa.ts).
 import { PALETA } from "@/lib/paleta-brasa";
 import TutorialDaTela from "@/components/TutorialDaTela";
+import LinksDoAppDoEntregador from "@/components/customer/LinksDoAppDoEntregador";
 import { criarFeedDePedidos } from "@/lib/feed-de-pedidos";
 import { pedidoComAcrescimos } from "@/lib/acrescimo-na-comanda";
 import { ehDisputaParcial, lerCancelamentosParciais } from "@/lib/cancelamento-parcial";
@@ -7771,7 +7772,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         }}>
           <div style={{
             background: "#FFFFFF", width: "100%", maxWidth: "520px", borderRadius: "16px",
-            padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.4)", border: "1px solid #E2E8F0"
+            padding: "1.75rem", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.4)", border: "1px solid #E2E8F0",
+            maxHeight: "calc(100vh - 2rem)", overflowY: "auto"
           }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
@@ -7817,6 +7819,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 {typeof window !== "undefined" ? `${window.location.origin}/loja/${user.slug || "sua-loja"}/motoboy` : `https://firehubfood.com.br/loja/${user.slug || "sua-loja"}/motoboy`}
               </div>
             </div>
+
+            {/* Os links das lojas de aplicativo (App Store e Google Play). */}
+            <LinksDoAppDoEntregador linkDaLoja={() => `${origemParaLinkDeFora(window.location.origin)}/loja/${user.slug || "sua-loja"}/motoboy`} />
 
             {/* ── O que o app faz na hora de confirmar a entrega ── */}
             <div style={{
