@@ -429,7 +429,7 @@ function MesQueVemComCrescimento({ c, mes, mesSeguinte, noRitmo }: { c: Crescime
   // Gráfico: boletos por mês (real), o previsto deste mês e o projetado do próximo.
   const barras = [
     ...c.serie.map((s) => ({ mes: s.mes, valor: s.tipo === "previsto" ? s.seTodas : s.cobrado, aposta: s.cobrado, pagantes: s.boletos, tipo: s.tipo as "real" | "previsto" | "projetado", faixa: null as null | [number, number] })),
-    { mes: mesSeguinte, valor: mp.doMes.total, aposta: mp.doMes.totalAposta, pagantes: mp.mesAtual.boletos - mp.doMes.lojasPerdidas + mp.doMes.lojasNovas, tipo: "projetado" as const, faixa: [mp.faixa.min, mp.faixa.max] as [number, number] },
+    { mes: mesSeguinte, valor: mp.doMes.total, aposta: mp.doMes.totalAposta, pagantes: mp.mesAtual.boletos - mp.doMes.lojasPerdidas + mp.doMes.lojasNovas + mp.doMes.lojasFicam, tipo: "projetado" as const, faixa: [mp.faixa.min, mp.faixa.max] as [number, number] },
   ];
   const maior = Math.max(1, ...barras.map((b) => Math.max(b.valor, b.faixa?.[1] ?? 0)));
   const foco = mesEmFoco !== null ? barras[mesEmFoco] : null;
@@ -488,22 +488,27 @@ function MesQueVemComCrescimento({ c, mes, mesSeguinte, noRitmo }: { c: Crescime
           {[
             { rotulo: "Mesmo padrão do último mês", l: mp.doMes, de: `o mesmo que entrou em ${atual}`,
               perdaDe: `das ${mp.doMes.lojasAnteriores} lojas com boleto em ${anterior}, ${mp.doMes.lojasPerdidas} não têm boleto em ${atual}`,
-              novaDe: `${mp.doMes.lojasNovas} lojas com o 1º boleto em ${atual} (inclui quem sai do teste até o fim do mês)` },
+              novaDe: `${mp.doMes.lojasNovas} lojas com o 1º boleto em ${atual} (inclui quem sai do teste até o fim do mês)`,
+              ficamDe: `lojas em teste vendendo constante cujo teste só acaba em ${seguinte} — sem boleto em ${atual}, ficariam de fora` },
             { rotulo: "Ritmo dos últimos 30 dias", l: mp.de30dias, de: "o que entrou nos últimos 30 dias",
               perdaDe: `das ${mp.de30dias.lojasAnteriores} lojas com boleto em ${anterior}, ${mp.de30dias.lojasPerdidas} sem boleto em ${atual} ou paradas há 7+ dias agora`,
-              novaDe: `${mp.de30dias.lojasNovas} lojas que começaram a pagar (saíram do teste) nos últimos 30 dias` },
+              novaDe: `${mp.de30dias.lojasNovas} lojas que começaram a pagar (saíram do teste) nos últimos 30 dias`,
+              ficamDe: `todas as lojas em teste vendendo constante, pela mensalidade de ${seguinte} no ritmo` },
           ].map((k) => (
             <details key={k.rotulo} className="pj-conta">
               <summary>
                 <span style={{ fontWeight: 700, color: "#0F172A", fontSize: "0.84rem" }}>{k.rotulo} <span className="pj-seta">▾</span></span>
                 <span className="pj-num" style={{ fontWeight: 800, color: "#0F172A" }}>{fmt0(k.l.total)}</span>
                 <span className="pj-nota" style={{ gridColumn: "1 / -1" }}>
-                  {maiuscula(atual)} {fmt0(mp.mesAtual.seTodas)} − perda {pct(k.l.perda)} + {fmt0(k.l.nova)} de lojas novas ({k.de}) = <b>{fmt0(k.l.total)}</b>
+                  {maiuscula(atual)} {fmt0(mp.mesAtual.seTodas)} − perda {pct(k.l.perda)} + {fmt0(k.l.nova)} de lojas novas ({k.de})
+                  {k.l.lojasFicam > 0 && <> + {fmt0(k.l.ficam)} de {k.l.lojasFicam} {k.l.lojasFicam === 1 ? "loja" : "lojas"} em teste vendendo constante</>} = <b>{fmt0(k.l.total)}</b>
                 </span>
               </summary>
               <div className="pj-nota" style={{ marginTop: 6, background: "#F8FAFC", borderRadius: 8, padding: "8px 10px", color: "#334155" }}>
-                {maiuscula(seguinte)} = {atual} × (1 − perda) + receita nova. Perda: {k.perdaDe} — {fmt0(k.l.perdido)} de {fmt0(k.l.anterior)}.
-                {" "}Receita nova: {k.novaDe}. Na aposta (chance de cada boleto): {fmt0(mp.mesAtual.aposta)} − {pct(k.l.perda)} + {fmt0(k.l.novaAposta)} = {fmt0(k.l.totalAposta)}.
+                {maiuscula(seguinte)} = {atual} × (1 − perda) + receita nova + lojas em teste que ficam. Perda: {k.perdaDe} — {fmt0(k.l.perdido)} de {fmt0(k.l.anterior)}.
+                {" "}Receita nova: {k.novaDe}.
+                {" "}Ficam ({fmt0(k.l.ficam)}): {k.ficamDe}. Vendendo constante = em teste, pedido nos últimos 7 dias e 10+ pedidos em 30 dias (o &quot;teste ativado&quot; do perfil da loja); em teste sem venda, parada ou com poucas vendas fica fora — só o conservador conta com elas.
+                {" "}Na aposta (chance de cada boleto; as em teste vendendo constante a 100%): {fmt0(mp.mesAtual.aposta)} − {pct(k.l.perda)} + {fmt0(k.l.novaAposta)}{k.l.ficam > 0 && <> + {fmt0(k.l.ficam)}</>} = {fmt0(k.l.totalAposta)}.
                 {" "}A conta supõe que {seguinte} traz de novo a mesma receita nova — não multiplica o crescimento.
               </div>
             </details>

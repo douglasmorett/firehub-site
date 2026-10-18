@@ -229,6 +229,7 @@ export async function montarProjecao(agora = new Date()) {
       previstoNoMes: pagandoNoMes.get(l.id) ?? null,
       noMes: linhaDa.get(l.id) ?? null,
       porDia: porDiaDa.get(l.id) || 0,
+      pedidos30d: 0, // preenchido com a leitura dos 30 dias, mais abaixo
     }));
 
   // Vendas por dia do mês: o realizado até hoje e o ritmo daqui para frente.
@@ -277,6 +278,8 @@ export async function montarProjecao(agora = new Date()) {
     perdoadas: anteriores.filter((c) => c.status === "FORGIVEN").length,
   };
 
+  const pedidos30d = new Map(ultimos30.map((u) => [u.id, Number(u.pedidos)]));
+  for (const l of lojasNoCrescimento) l.pedidos30d = pedidos30d.get(l.id) || 0;
   const seguinte = intervaloDoMes(mesSeguinte, FUSO);
   const crescimento = montarCrescimento({
     lojas: lojasNoCrescimento, agora, mes, mesSeguinte, meses,

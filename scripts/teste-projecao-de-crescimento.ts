@@ -8,7 +8,7 @@
  */
 import {
   entraNoFunil, etapasDaLoja, fracaoQueSaiDoTesteNoMes, funilPorMes, mensalidadeDaNova, montarCrescimento,
-  partesDoMesSeguinte, perdaMensal, projetarComCrescimento, somarMeses, taxa, diasDeTesteTipico, mesmoPadrao, crescimentoDoMes,
+  partesDoMesSeguinte, perdaMensal, projetarComCrescimento, somarMeses, taxa, diasDeTesteTipico, mesmoPadrao, crescimentoDoMes, vendeConstanteNoTeste, mensalidadeNoMesSeguinte,
   type LojaNoCrescimento,
 } from "../src/lib/projecao-de-crescimento-regras";
 
@@ -26,7 +26,7 @@ const loja = (o: Partial<Omit<LojaNoCrescimento, "cadastro">> & { cadastro: stri
   id: o.id || Math.random().toString(36).slice(2), doFunil: o.doFunil ?? true,
   cadastro: brt(o.cadastro), fimDoTeste: o.fimDoTeste === undefined ? new Date(brt(o.cadastro).getTime() + 15 * 86_400_000) : o.fimDoTeste,
   primeiroPedido: o.primeiroPedido ?? null, ultimoPedido: o.ultimoPedido ?? null,
-  boletos: o.boletos || [], previstoNoMes: o.previstoNoMes ?? null, noMes: o.noMes ?? null, porDia: o.porDia || 0,
+  boletos: o.boletos || [], previstoNoMes: o.previstoNoMes ?? null, noMes: o.noMes ?? null, porDia: o.porDia || 0, pedidos30d: o.pedidos30d || 0,
 });
 
 // Quem entra no funil.
@@ -147,20 +147,50 @@ confere("série começa no 1º mês com boleto e termina no previsto", m.serie.m
     boletos: [{ mes: "2026-09", pago: false, base: 2000, valor: 100 }], noMes: { total: 250, chance: 1 } });
   const ls = [ficou, saiu, paradoAgora, novaQueSaiuEmSetembro, novaDeOutubro, testeAcabaDia25, antigaDeSetembro, setembroTardia];
   const mesAtual = { seTodas: 1600, aposta: 1350 };
-  const m1 = mesmoPadrao(ls, "2026-09", agora, mesAtual, "mes");
+  const ctx = { mesAnterior: "2026-09", mesSeguinte: "2026-11", agora, fimDoMes: iniNov, inicioDoSeguinte: iniNov, fimDoSeguinte: fimNov };
+  const m1 = mesmoPadrao(ls, ctx, mesAtual, "mes");
   // Setembro: 400 + 100 + 100 + 100 + 100 = 800; perdeu 100 (sem boleto em outubro) = 12,5%.
   confere("último mês: perda em R$ = 100 de 800", [m1.anterior, m1.perdido, m1.lojasPerdidas, m1.perda], [800, 100, 1, 0.125]);
   // Novas (1º boleto em outubro): 300 + 200 + 100 = 600; na aposta 300 + 200 + 25 = 525.
   confere("último mês: receita nova inclui quem sai do teste até o fim do mês", [m1.nova, m1.novaAposta, m1.lojasNovas], [600, 525, 3]);
   // 1.600 × 0,875 + 600 = 2.000; aposta 1.350 × 0,875 + 525 = 1.706,25.
   confere("último mês: próximo = atual × (1 − perda) + nova", [m1.total, m1.totalAposta], [2000, 1706.25]);
-  const m30 = mesmoPadrao(ls, "2026-09", agora, mesAtual, "30dias");
+  const m30 = mesmoPadrao(ls, ctx, mesAtual, "30dias");
   // Perda de 30 dias conta também o parado agora: 200 de 800.
   confere("30 dias: perda conta quem está parado agora", [m30.perdido, m30.lojasPerdidas, m30.perda], [200, 2, 0.25]);
   // Novas nos 30 dias (cobrança começou de 18/09 a hoje): 300 (25/09) + 200 (16/10) + 250 (22/09) = 750; teste que acaba dia 25 ainda não.
   confere("30 dias: receita nova = quem começou a pagar nos últimos 30 dias", [m30.nova, m30.lojasNovas], [750, 3]);
   confere("30 dias: próximo", m30.total, r2(1600 * 0.75 + 750));
-  confere("sem boleto no mês anterior: perda zero", mesmoPadrao([novaDeOutubro], "2026-09", agora, mesAtual, "mes").perda, 0);
+  confere("sem boleto no mês anterior: perda zero", mesmoPadrao([novaDeOutubro], ctx, mesAtual, "mes").perda, 0);
+}
+
+// Loja em teste vendendo constante: fica (dono, 18/10/2026).
+{
+  const ctx = { mesAnterior: "2026-09", mesSeguinte: "2026-11", agora, fimDoMes: iniNov, inicioDoSeguinte: iniNov, fimDoSeguinte: fimNov };
+  const ontem = brt("2026-10-17T20:00:00");
+  // Teste acaba 25/10, 500/dia, 20 pedidos em 30 dias: já tem boleto (pedaço) de outubro com chance de teste 25%.
+  const constanteOut = loja({ cadastro: "2026-10-10T10:00:00", fimDoTeste: brt("2026-10-25T10:00:00"), ultimoPedido: ontem, porDia: 500, pedidos30d: 20, noMes: { total: 100, chance: 0.25 } });
+  // Teste acaba 11/11, 500/dia: sem boleto em outubro — ficava de fora dos dois lados.
+  const constanteNov = loja({ cadastro: "2026-10-12T10:00:00", fimDoTeste: brt("2026-11-11T00:00:00"), ultimoPedido: ontem, porDia: 500, pedidos30d: 15 });
+  const fraca = loja({ cadastro: "2026-10-12T10:00:00", fimDoTeste: brt("2026-10-27T10:00:00"), ultimoPedido: ontem, porDia: 100, pedidos30d: 4, noMes: { total: 100, chance: 0.25 } });
+  const parada = loja({ cadastro: "2026-10-01T10:00:00", fimDoTeste: brt("2026-10-30T10:00:00"), ultimoPedido: brt("2026-10-09T20:00:00"), porDia: 0, pedidos30d: 12 });
+  const pagava = loja({ cadastro: "2026-06-01T10:00:00", ultimoPedido: ontem, boletos: [{ mes: "2026-09", pago: true, base: 10000, valor: 200 }], noMes: { total: 200, chance: 1 }, porDia: 300, pedidos30d: 40 });
+  confere("constante: em teste, pedido < 7 dias, ritmo e 10+ pedidos em 30 dias",
+    [constanteOut, constanteNov, fraca, parada, pagava].map((l) => vendeConstanteNoTeste(l, agora)), [true, true, false, false, false]);
+  confere("mensalidade do mês que vem: 20 dias depois do teste × 500 = 10 mil → 200", mensalidadeNoMesSeguinte(constanteNov, "2026-11", iniNov, fimNov), 200);
+  confere("mensalidade do mês que vem: teste acaba em outubro = mês cheio (15 mil → 300)", mensalidadeNoMesSeguinte(constanteOut, "2026-11", iniNov, fimNov), 300);
+  const ls = [constanteOut, constanteNov, fraca, parada, pagava];
+  const atual = { seTodas: 400, aposta: 250 };
+  const m = mesmoPadrao(ls, ctx, atual, "mes");
+  // Último mês: novas = constanteOut (100, na aposta 100%) + fraca (100, aposta 25%); ficam = constanteNov 200.
+  confere("último mês: a do teste em novembro entra como 'fica'; a constante de outubro vai a 100% na aposta",
+    [m.nova, m.novaAposta, m.lojasNovas, m.ficam, m.lojasFicam], [200, 125, 2, 200, 1]);
+  confere("último mês: total = 400 + 200 + 200; aposta = 250 + 125 + 200", [m.total, m.totalAposta], [800, 575]);
+  const m30 = mesmoPadrao(ls, ctx, atual, "30dias");
+  // 30 dias: ficam as duas constantes pela mensalidade do mês que vem (300 + 200); a fraca e a parada ficam fora; ninguém começou a pagar.
+  confere("30 dias: as em teste constantes ficam pelo ritmo; fraca e parada fora", [m30.ficam, m30.lojasFicam, m30.nova, m30.lojasNovas], [500, 2, 0, 0]);
+  confere("30 dias: loja em teste nunca entra na perda (só quem já pagava)", [m30.lojasAnteriores, m30.lojasPerdidas, m30.perda], [1, 0, 0]);
+  confere("30 dias: total = 400 + 500", [m30.total, m30.totalAposta], [900, 750]);
 }
 
 // Crescimento do mês sobre o recebido (os em aberto à parte).

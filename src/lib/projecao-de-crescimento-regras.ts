@@ -33,6 +33,7 @@
  */
 import { calcMensalidade, FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { DIA, DIAS_PARA_PARADA, diaNoFuso, mesCheioNoRitmo, projetarMes } from "@/lib/projecao-do-mes-regras";
+import { VENDAS_PARA_ATIVAR } from "@/lib/perfil-da-loja/regras";
 
 /** Abaixo disto de lojas que já saíram do teste, a taxa é chute: a tela avisa. */
 export const LOJAS_PARA_TAXA_FIRME = 30;
@@ -57,6 +58,8 @@ export type LojaNoCrescimento = {
   previstoNoMes: number | null;
   /** Boleto previsto do mês atual em QUALQUER situação (a linha da projeção): total e chance. null = nenhum. */
   noMes: { total: number; chance: number } | null;
+  /** Pedidos não cancelados nos últimos 30 dias (para "vendendo constante"). */
+  pedidos30d: number;
   /** Venda por dia nos últimos 7 dias (ritmoPorDia). */
   porDia: number;
 };
@@ -361,8 +364,9 @@ export function montarCrescimento(e: {
   const primeiroComBoleto = serie.findIndex((s) => s.boletos > 0);
 
   // O número principal: o mesmo padrão do último mês (e dos últimos 30 dias).
-  const doMes = mesmoPadrao(lojas, e.mesAnterior, agora, e.previstoDoMes, "mes");
-  const de30dias = mesmoPadrao(lojas, e.mesAnterior, agora, e.previstoDoMes, "30dias");
+  const ctx = { mesAnterior: e.mesAnterior, mesSeguinte, agora, fimDoMes: e.fimDoMes, inicioDoSeguinte: e.inicioDoSeguinte, fimDoSeguinte: e.fimDoSeguinte };
+  const doMes = mesmoPadrao(lojas, ctx, e.previstoDoMes, "mes");
+  const de30dias = mesmoPadrao(lojas, ctx, e.previstoDoMes, "30dias");
   const crescimentoDoMesAtual = crescimentoDoMes({ ...e.mesPassado, seTodas: e.previstoDoMes.seTodas, aposta: e.previstoDoMes.aposta });
   const pontas = [doMes.total, doMes.totalAposta, de30dias.total, de30dias.totalAposta, igual.total];
   const faixaPrincipal = { min: Math.min(...pontas), max: Math.max(...pontas) };
@@ -393,52 +397,91 @@ export type LeituraAditiva = {
   perda: number;
   /** Receita nova (se todas pagarem e na aposta) e quantas lojas. */
   nova: number; novaAposta: number; lojasNovas: number;
-  /** Mês atual × (1 − perda) + receita nova. */
+  /** Lojas em teste vendendo constante que ficam (mensalidade do mês que vem no ritmo, chance 100%). */
+  ficam: number; lojasFicam: number;
+  /** Mês atual × (1 − perda) + receita nova + as que ficam. */
   total: number; totalAposta: number;
 };
 
 /**
+ * Loja em teste "vendendo constante" — a que vai ficar (dono, 18/10/2026: "elas
+ * estão ativas, vendendo constante, você vai entender que elas vão ficar"):
+ * ainda em teste, com pedido há menos de DIAS_PARA_PARADA dias, ritmo dos
+ * últimos 7 dias acima de zero e pelo menos VENDAS_PARA_ATIVAR pedidos nos
+ * últimos 30 dias — o "teste ativado" do perfil da loja
+ * (lib/perfil-da-loja/regras.ts). Em teste sem venda, parada ou com poucas
+ * vendas fica fora (entra só no conservador).
+ */
+export function vendeConstanteNoTeste(l: LojaNoCrescimento, agora: Date): boolean {
+  const e = etapasDaLoja(l, agora);
+  return e.emTeste && e.vendendo && l.porDia > 0 && l.pedidos30d >= VENDAS_PARA_ATIVAR;
+}
+
+/** Mensalidade do mês que vem no ritmo de hoje, só com os dias depois do teste (calcMensalidade). */
+export function mensalidadeNoMesSeguinte(l: LojaNoCrescimento, mesSeguinte: string, inicioDoSeguinte: Date, fimDoSeguinte: Date): number {
+  if (l.porDia <= 0 || (l.fimDoTeste && l.fimDoTeste >= fimDoSeguinte)) return 0;
+  const inicio = l.fimDoTeste && l.fimDoTeste > inicioDoSeguinte ? l.fimDoTeste : inicioDoSeguinte;
+  return projetarMes({ mes: mesSeguinte, contaAntesDaVirada: 0, contaDepois: 0, porDia: l.porDia, inicioDaCobranca: inicio, agora: inicioDoSeguinte, fimDoMes: fimDoSeguinte }).mensalidade;
+}
+
+/**
  * Mês que vem "no mesmo padrão" — a leitura aditiva do dono:
- *   próximo = mês atual × (1 − perda) + receita nova
+ *   próximo = mês atual × (1 − perda) + receita nova + lojas em teste que ficam
  *
  * Último mês (calendário):
  *   receita nova = boleto previsto deste mês das lojas cujo PRIMEIRO boleto é
  *     este mês (inclui quem sai do teste até o fim do mês);
+ *   ficam = loja em teste vendendo constante cujo teste só acaba no mês que
+ *     vem (não tem boleto neste mês, ficaria de fora dos dois lados): a
+ *     mensalidade dela no mês que vem;
  *   perda = R$ do boleto do mês anterior das lojas que não têm boleto previsto
  *     neste mês ÷ R$ de todos os boletos do mês anterior.
  * Últimos 30 dias:
  *   receita nova = boleto previsto deste mês das lojas cuja cobrança COMEÇOU
- *     nos últimos 30 dias (quem saiu do teste no fim do mês passado entra; quem
- *     ainda vai sair, não);
- *   perda = como a do último mês, contando também quem está parado agora (7+
- *     dias sem pedido) — o retrato de hoje, não o boleto do mês.
+ *     nos últimos 30 dias;
+ *   ficam = TODAS as lojas em teste vendendo constante, pela mensalidade do mês
+ *     que vem no ritmo (não pelo pedaço deste mês);
+ *   perda = como a do último mês, contando também quem já pagava e está parado
+ *     agora (7+ dias sem pedido). Loja em teste nunca entra na perda: ela não
+ *     teve boleto no mês anterior.
+ * As que ficam e as novas em teste vendendo constante entram com 100% na
+ * aposta, não com os 25–50% do teste.
  */
 export function mesmoPadrao(
-  lojas: LojaNoCrescimento[], mesAnterior: string, agora: Date,
+  lojas: LojaNoCrescimento[],
+  c: { mesAnterior: string; mesSeguinte: string; agora: Date; fimDoMes: Date; inicioDoSeguinte: Date; fimDoSeguinte: Date },
   mesAtual: { seTodas: number; aposta: number }, janela: "mes" | "30dias",
 ): LeituraAditiva {
+  const { agora } = c;
   const desde = agora.getTime() - 30 * DIA;
-  let anterior = 0, perdido = 0, lojasPerdidas = 0, lojasAnteriores = 0, nova = 0, novaAposta = 0, lojasNovas = 0;
+  let anterior = 0, perdido = 0, lojasPerdidas = 0, lojasAnteriores = 0, nova = 0, novaAposta = 0, lojasNovas = 0, ficam = 0, lojasFicam = 0;
   for (const l of lojas) {
-    const doAnterior = l.boletos.filter((b) => b.mes === mesAnterior).reduce((s, b) => s + b.valor, 0);
-    if (l.boletos.some((b) => b.mes === mesAnterior)) {
+    if (l.boletos.some((b) => b.mes === c.mesAnterior)) {
+      const doAnterior = l.boletos.filter((b) => b.mes === c.mesAnterior).reduce((s, b) => s + b.valor, 0);
       lojasAnteriores++;
       anterior += doAnterior;
       const saiu = !l.noMes || (janela === "30dias" && !etapasDaLoja(l, agora).vendendo);
       if (saiu) { perdido += doAnterior; lojasPerdidas++; }
     }
+    const constante = vendeConstanteNoTeste(l, agora);
+    // As que ficam: no último mês, só a que não tem boleto agora (o teste acaba no mês que vem); nos 30 dias, todas.
+    if (constante && (janela === "30dias" || !l.noMes)) {
+      const v = mensalidadeNoMesSeguinte(l, c.mesSeguinte, c.inicioDoSeguinte, c.fimDoSeguinte);
+      if (v > 0) { ficam += v; lojasFicam++; }
+      continue;
+    }
     if (!l.noMes) continue;
     const ehNova = janela === "mes"
       ? l.boletos.length === 0
       : inicioDaCobrancaDaLoja(l).getTime() >= desde && inicioDaCobrancaDaLoja(l) <= agora;
-    if (ehNova) { nova += l.noMes.total; novaAposta += l.noMes.total * l.noMes.chance; lojasNovas++; }
+    if (ehNova) { nova += l.noMes.total; novaAposta += l.noMes.total * (constante ? 1 : l.noMes.chance); lojasNovas++; }
   }
   const perda = anterior > 0 ? perdido / anterior : 0;
   const r = (v: number) => Math.round(v * 100) / 100;
   return {
     anterior: r(anterior), perdido: r(perdido), lojasPerdidas, lojasAnteriores, perda,
-    nova: r(nova), novaAposta: r(novaAposta), lojasNovas,
-    total: r(mesAtual.seTodas * (1 - perda) + nova), totalAposta: r(mesAtual.aposta * (1 - perda) + novaAposta),
+    nova: r(nova), novaAposta: r(novaAposta), lojasNovas, ficam: r(ficam), lojasFicam,
+    total: r(mesAtual.seTodas * (1 - perda) + nova + ficam), totalAposta: r(mesAtual.aposta * (1 - perda) + novaAposta + ficam),
   };
 }
 
