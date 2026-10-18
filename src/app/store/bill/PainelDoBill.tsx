@@ -457,7 +457,8 @@ function StatusDaAssinatura({ dados }: { dados: DadosDoBill }) {
     linhas.push(["Preço desta loja", `${fmtR(dados.preco)} por mês`]);
     if (estado.emTeste && estado.testeAte) linhas.push(["Grátis até", dataBr(estado.testeAte)]);
     else if (estado.testeAte) linhas.push(["Teste grátis", `usado (terminou ${dataBr(estado.testeAte)})`]);
-    linhas.push(["Este mês", estado.cobradoEsteMes ? "já entra no boleto" : estado.emTeste ? "dentro do teste grátis" : "ainda não cobrado"]);
+    // No teste grátis o "cobradoEsteMes" é previsão (o teste acaba dentro do mês): dá para desligar antes e não pagar.
+    linhas.push(["Este mês", estado.emTeste ? (estado.cobradoEsteMes ? "grátis por enquanto — se continuar ligado depois do teste, entra no boleto" : "dentro do teste grátis") : estado.cobradoEsteMes ? "já entra no boleto" : "ainda não cobrado"]);
   }
   return (
     <dl className="pb-dl">
@@ -719,7 +720,7 @@ function Configuracao({ dados, salvando, onDesligar }: { dados: DadosDoBill; sal
         {!estado.isento && (
           <div className="pb-desligar">
             <p>
-              O mês em que o Bill fica ativo é cobrado inteiro.{estado.cobradoEsteMes && <> Este mês já está no boleto.</>} Desligando, o mês seguinte não é cobrado.
+              O mês em que o Bill fica ativo é cobrado inteiro.{estado.cobradoEsteMes && !estado.emTeste && <> Este mês já está no boleto.</>} Desligando, o mês seguinte não é cobrado.
               {estado.jaTestou && <> Os {dados.diasDeTeste} dias grátis valem uma vez só.</>}
             </p>
             <button disabled={salvando} className={`pb-botao${confirmar ? " pb-perigo" : " pb-botao-claro"}`}

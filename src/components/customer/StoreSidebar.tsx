@@ -595,6 +595,8 @@ const ESTILO = `
 }
 @keyframes fh-menu-app-brilho{ 0%,70%{ left:-60%; } 100%{ left:130%; } }
 .fh-menu-app:hover{ filter:brightness(1.06); }
+/* O texto + selo NOVO não cabem: sem isto o ícone encolhia até virar um risco. */
+.fh-menu-app svg{ flex:none; }
 .fh-menu-app.ativo{ outline:2px solid #FEF08A; outline-offset:1px; }
 .fh-menu-app.enxuta{ margin:0 10px 10px; padding:9px 0; }
 .fh-menu-app-selo{

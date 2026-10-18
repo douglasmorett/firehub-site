@@ -129,8 +129,16 @@ export default function EditorDoMultimarcas({ onAviso }: { onAviso: (tipo: "ok" 
   if (!dados || !config || !previa) return <div className={s.carregando}><Loader2 size={18} className={s.girando} /> Carregando a página das suas marcas…</div>;
 
   const mudar = (c: ConfigDaPagina) => { setConfig(c); setMudou(true); };
-  const mudarMarca = (i: number, campo: Partial<MarcaDaPagina>) => mudar({ ...config, marcas: config.marcas.map((m, k) => (k === i ? { ...m, ...campo } : m)) });
-  const mudarBanner = (i: number, campo: Partial<BannerDaPagina>) => mudar({ ...config, banners: config.banners.map((b, k) => (k === i ? { ...b, ...campo } : b)) });
+  // Pela marca/banner que existe NA HORA (função): o envio de imagem termina depois, e com o
+  // `config` de quando a tela foi desenhada duas imagens subindo juntas apagavam uma à outra.
+  const mudarMarca = (i: number, campo: Partial<MarcaDaPagina>) => {
+    setConfig((c) => (c ? { ...c, marcas: c.marcas.map((m, k) => (k === i ? { ...m, ...campo } : m)) } : c));
+    setMudou(true);
+  };
+  const mudarBanner = (i: number, campo: Partial<BannerDaPagina>) => {
+    setConfig((c) => (c ? { ...c, banners: c.banners.map((b, k) => (k === i ? { ...b, ...campo } : b)) } : c));
+    setMudou(true);
+  };
   const erroDeImagem = (m: string) => onAviso("erro", "Imagem não enviada", m);
 
   function novaMarca(nome = "") {

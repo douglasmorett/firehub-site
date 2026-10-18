@@ -224,11 +224,15 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   const recarregarSaldos = async () => {
     setVersaoDosSaldos((v) => v + 1);
     try {
-      const [itemsRes, transRes] = await Promise.all([fetch("/api/store/estoque/items"), fetch("/api/store/estoque/transactions")]);
+      // As fichas também: o desperdício pode zerar um insumo e a pausa pelo estoque tirar
+      // produtos do cardápio — a etiqueta "Pausado pelo estoque" tem de aparecer sem F5.
+      const [itemsRes, transRes, recipesRes] = await Promise.all([fetch("/api/store/estoque/items"), fetch("/api/store/estoque/transactions"), fetch("/api/store/estoque/recipes")]);
       const itemsData = await itemsRes.json();
       const transData = await transRes.json();
+      const recipesData = await recipesRes.json();
       if (itemsData.success) setItems(itemsData.items);
       if (transData.success) setTransactions(transData.transactions);
+      if (recipesData.success) setProducts(recipesData.menuProducts);
     } catch {}
   };
 

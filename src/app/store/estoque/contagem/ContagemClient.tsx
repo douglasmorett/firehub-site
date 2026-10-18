@@ -124,7 +124,7 @@ export default function ContagemClient() {
             <div style={{ fontSize: "0.75rem", fontWeight: 500, opacity: 0.9 }}>{lista ? `${lista.marcadosNoDia} itens marcados "contar todo dia"` : "…"}</div>
           </button>
           <button type="button" disabled={abrindo || !dia} onClick={() => comecar("COMPLETA")} className={lista?.hojeEDiaDaCompleta ? "btn btn-primary" : "btn btn-outline"} style={{ padding: "0.8rem", fontSize: "0.95rem", order: lista?.hojeEDiaDaCompleta ? 1 : 2 }}>
-            Contagem completa (toda {lista?.diaDaCompleta || "semana"})
+            Contagem completa ({lista?.diaDaCompleta ? `${/^(domingo|s[áa]bado)/i.test(lista.diaDaCompleta) ? "todo" : "toda"} ${lista.diaDaCompleta}` : "toda semana"})
             <div style={{ fontSize: "0.75rem", fontWeight: 500 }}>{lista ? `todos os ${lista.totalDeInsumos} insumos` : "…"}</div>
           </button>
         </div>

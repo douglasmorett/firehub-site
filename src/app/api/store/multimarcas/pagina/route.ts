@@ -15,6 +15,18 @@ import { vitrineDaLoja } from "@/lib/multimarcas/carga";
  */
 export const dynamic = "force-dynamic";
 
+/** A página das marcas e o cardápio têm cache de 60 s: o que o dono salvou vale na hora. */
+async function atualizarPaginasDaLoja(franchiseeId: string) {
+  try {
+    const { prisma } = await import("@/lib/prisma");
+    const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { slug: true } });
+    if (!loja?.slug) return;
+    const { revalidatePath } = await import("next/cache");
+    revalidatePath(`/marcas/${loja.slug}`);
+    revalidatePath(`/loja/${loja.slug}`);
+  } catch {}
+}
+
 async function sugestoesDeMarcas(franchiseeId: string): Promise<string[]> {
   const nomes = new Set<string>();
   try {
@@ -78,6 +90,7 @@ export async function PUT(req: Request) {
   try { corpo = await req.json(); } catch {}
   try {
     const config = await gravarConfigDaPagina(s.franchiseeId, corpo?.config, s.loja.storeName || s.loja.name || undefined);
+    await atualizarPaginasDaLoja(s.franchiseeId);
     return NextResponse.json({ ok: true, config });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message || "Erro ao salvar." }, { status: 503 });

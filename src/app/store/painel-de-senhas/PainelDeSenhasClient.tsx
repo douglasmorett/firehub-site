@@ -196,7 +196,7 @@ export default function PainelDeSenhasClient() {
             <PainelDeSenhasTV key={`${config.codigo}:${versaoDaPrevia}`} lojaId={dados.lojaId} codigo={config.codigo} previa />
           </div>
           <p style={{ fontSize: 12, color: "#94A3B8", margin: "8px 0 0" }}>
-            Sem pedido agora, a prévia mostra números de exemplo.
+            Quando a loja está sem pedido, a prévia mostra números de exemplo.
           </p>
         </section>
       </div>

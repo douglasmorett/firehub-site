@@ -52,9 +52,13 @@ const hora = (iso: string) => {
   return d.toLocaleString("pt-BR", hoje ? { hour: "2-digit", minute: "2-digit" } : { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 };
 
-/** *negrito* do WhatsApp vira negrito aqui também. */
+/** *negrito* e _itálico_ do WhatsApp viram negrito e itálico aqui também. */
 function comNegrito(t: string) {
-  return t.split(/(\*[^*\n]+\*)/g).map((p, j) => (p.length > 2 && p.startsWith("*") && p.endsWith("*") ? <b key={j}>{p.slice(1, -1)}</b> : p));
+  return t.split(/(\*[^*\n]+\*|\b_[^_\n]+_\b)/g).map((p, j) => {
+    if (p.length > 2 && p.startsWith("*") && p.endsWith("*")) return <b key={j}>{p.slice(1, -1)}</b>;
+    if (p.length > 2 && p.startsWith("_") && p.endsWith("_")) return <i key={j}>{p.slice(1, -1)}</i>;
+    return p;
+  });
 }
 
 export default function ConversaComOBill({ altura = 380, aoGravar, aoMudarEstado, sugestao }: {
@@ -130,7 +134,8 @@ export default function ConversaComOBill({ altura = 380, aoGravar, aoMudarEstado
     return () => clearInterval(t);
   }, [buscarNovas]);
 
-  useEffect(() => { fim.current?.scrollIntoView({ block: "end" }); }, [falas, enviando]);
+  // Rola só a lista da conversa: o scrollIntoView rolava a PÁGINA e escondia a caixa de digitar.
+  useEffect(() => { const lista = fim.current?.parentElement; if (lista) lista.scrollTop = lista.scrollHeight; }, [falas, enviando]);
 
   async function mandar(corpo: { texto?: string; audio?: any; imagem?: any }, rotulo: string) {
     setErro(null);

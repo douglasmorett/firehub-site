@@ -430,6 +430,8 @@ const CSS = `
 .al-cta:active { transform: translateY(0) scale(.98); }
 .al-btn-claro { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,.1); color: white; border: 1px solid rgba(255,255,255,.25); border-radius: 12px; padding: 14px 20px; font-weight: 800; font-size: 15px; cursor: pointer; text-decoration: none; }
 .al-ativo .al-btn-claro { background: #059669; border-color: #059669; padding: 10px 14px; font-size: 14px; }
+/* Na faixa lilás do bônus o botão claro (feito para fundo escuro) sumia: letra roxa sobre branco. */
+.al-bonus .al-btn-claro { background: #fff; color: #5F3DC4; border-color: #B197FC; padding: 10px 14px; font-size: 14px; }
 .al-numeros { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 28px; max-width: 560px; }
 .al-numeros div { background: rgba(255,255,255,.07); border: 1px solid rgba(255,255,255,.12); border-radius: 14px; padding: 12px; display: grid; gap: 2px; }
 .al-numeros b { font-size: 26px; font-weight: 900; color: #FACC15; letter-spacing: -.02em; }

@@ -17,6 +17,18 @@ const publico = (e: Awaited<ReturnType<typeof estadoDoMultimarcas>>) => ({
   ativo: e.ativo, cobradoEsteMes: e.cobradoEsteMes, testeAte: e.testeAte, emTeste: e.emTeste, jaTestou: e.jaTestou, isento: e.isento, cortesia: e.cortesia,
 });
 
+/** A página das marcas e o cardápio têm cache de 60 s: o que o dono salvou vale na hora. */
+async function atualizarPaginasDaLoja(franchiseeId: string) {
+  try {
+    const { prisma } = await import("@/lib/prisma");
+    const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { slug: true } });
+    if (!loja?.slug) return;
+    const { revalidatePath } = await import("next/cache");
+    revalidatePath(`/marcas/${loja.slug}`);
+    revalidatePath(`/loja/${loja.slug}`);
+  } catch {}
+}
+
 export async function GET() {
   const s = await lojaDoAssessorDaSessao();
   if (!s) return NextResponse.json({ error: "Só o dono da loja contrata o Multimarcas." }, { status: 403 });
@@ -53,6 +65,8 @@ export async function POST(req: Request) {
   }
   try {
     const estado = await ligarOuDesligarMultimarcas(s.franchiseeId, corpo.ligar, aceite);
+    // Ligou ou desligou: a página das marcas abre ou volta a levar ao cardápio, já.
+    await atualizarPaginasDaLoja(s.franchiseeId);
     return NextResponse.json({ ok: true, estado: publico(estado) });
   } catch (err: any) {
     if (err instanceof TermoNaoAceitoError) return NextResponse.json({ error: err.message, precisaDoTermo: true }, { status: 400 });
