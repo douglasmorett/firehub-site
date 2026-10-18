@@ -102,6 +102,10 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/aplicativo", abre: ["minha_loja"] },
   // Multimarcas: contratar é do dono (a API também só atende o dono).
   { prefixo: "/store/multimarcas", abre: ["minha_loja"] },
+  // Meu aplicativo (base de clientes do app e notificação push): a tela e a
+  // API só atendem o dono; a caixinha aqui só evita o proxy mandar o
+  // funcionário para outra tela antes de a página explicar.
+  { prefixo: "/store/meu-aplicativo", abre: ["minha_loja"] },
 
   { prefixo: "/store/perfil", abre: LIVRE },
   { prefixo: "/store/profile", abre: LIVRE },

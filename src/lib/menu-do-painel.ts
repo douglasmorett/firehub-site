@@ -25,7 +25,7 @@ export type ItemDoMenu = {
   /** Bolinha de destaque (é por onde o pedido entra). */
   destaque?: boolean;
   /** Só aparece quando a loja tem o benefício ligado. */
-  somenteCom?: "antecipacao" | "compras";
+  somenteCom?: "antecipacao" | "compras" | "app";
   /**
    * Abre em outra guia. Vale para a tela que a loja usa AO LADO do painel,
    * não no lugar dele: a roteirização fica aberta no mapa enquanto o
@@ -64,6 +64,9 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       { href: "/store/multimarcas", label: "Multimarcas", icone: "LayoutGrid", selo: "NOVO" },
       { href: "/store/clientes", label: "Clientes", icone: "Contact" },
       { href: "/store/marketing", label: "Marketing & cupons", icone: "Send" },
+      // O app próprio da loja, depois que o admin ativa o plano
+      // (lib/app-da-loja/plano.ts): base, ativos agora, notificação push.
+      { href: "/store/meu-aplicativo", label: "Meu aplicativo", icone: "Smartphone", selo: "NOVO", somenteCom: "app" },
       { href: "/store/chatbot", label: "Chatbot IA", icone: "Bot", selo: "IA" },
       { href: "/store/meta-ads", label: "Tráfego pago", icone: "PieChart", selo: "EM TESTES" },
     ],
@@ -154,6 +157,8 @@ export function itemAtivo(pathname: string | null | undefined): ItemDoMenu | nul
 export function menuDaLoja(opcoes: {
   antecipacao?: boolean;
   compras?: boolean;
+  /** Plano do aplicativo próprio ligado (lib/app-da-loja/instalacoes.ts `appLigadoNaConta`). */
+  app?: boolean;
   permissoesDoFuncionario?: string | null;
 }): GrupoDoMenu[] {
   const funcionario = opcoes.permissoesDoFuncionario;

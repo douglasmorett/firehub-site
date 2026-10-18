@@ -22,6 +22,7 @@ import HumanSupportFloatingWidget from "@/components/HumanSupportFloatingWidget"
 import BillFlutuante from "@/components/bill/BillFlutuante";
 import { assessorEstaLigado } from "@/lib/assessor/assinatura";
 import { lojaAtivaDoAdmin } from "@/lib/assessor/loja-da-sessao";
+import { appLigadoNaConta } from "@/lib/app-da-loja/instalacoes";
 import CentralDeTutoriais from "@/components/CentralDeTutoriais";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { TutoriaisEnviados } from "@/components/TutoriaisEnviados";
@@ -170,6 +171,11 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   const billLigado = role !== "STAFF" && lojaDoBill && process.env.FIREHUB_LOCAL !== "1"
     ? await assessorEstaLigado(lojaDoBill)
     : false;
+  // Meu aplicativo: o mesmo "quem manda na loja" do Bill, e só com o plano do
+  // app próprio ligado pelo admin (na loja ou na principal do grupo).
+  const meuAplicativo = role !== "STAFF" && process.env.FIREHUB_LOCAL !== "1"
+    ? await appLigadoNaConta(lojaDoBill)
+    : false;
 
   // === TERMOS DE USO: o dono aceita a versão em vigor antes de usar o painel ===
   // Só o dono (sem ownerId): funcionário não assina pela empresa, e o suporte
@@ -210,6 +216,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           slug={storeOwner?.slug || user?.slug}
           mostrarAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || storeOwner?.email?.toLowerCase() === "contatohakim@gmail.com"}
           mostrarCompras={storeOwner?.isFranqueadoHakim === true}
+          mostrarMeuAplicativo={meuAplicativo}
           isAdmin={isAdmin}
           caixaAberto={storeOwner?.cashOpen ?? false}
           permissoesDoFuncionario={user?.role === "STAFF" ? String(user?.permissions ?? "") : null}

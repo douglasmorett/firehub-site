@@ -512,6 +512,19 @@ export default function CustomerStorePage({
     setCodigoDeIndicacao(null);
     try { localStorage.removeItem(chaveDaIndicacao); } catch { /* ignore */ }
   };
+  // ── PRODUTO QUE CHEGOU PELA URL (?produto=) ──────────────────────────────
+  // A notificação do app próprio da loja (Meu aplicativo, lib/app-da-loja/
+  // notificacoes.ts) pode levar direto a um produto: abre o mesmo modal do
+  // toque no card. Produto que saiu do cardápio: só abre o cardápio.
+  useEffect(() => {
+    try {
+      const id = (new URLSearchParams(window.location.search).get("produto") || "").trim();
+      if (!id) return;
+      const achado = menuProducts.find((p) => p.id === id);
+      if (achado) setComboProduct(achado);
+    } catch { /* sem URL legível: segue no cardápio */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Modais especiais de alto engajamento

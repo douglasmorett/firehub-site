@@ -11,9 +11,12 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { Platform } from "react-native";
 
+import { idDaInstalacao } from "./instalacao";
 import { marca, urlDoSite } from "./marca";
 
 export const CANAL_DE_PEDIDOS = "pedidos";
+/** As promoções que a loja manda pelo painel (Meu aplicativo). Canal à parte: o cliente pode calar só este no Android. */
+export const CANAL_DE_PROMOCOES = "promocoes";
 
 // Com o app aberto o aviso também aparece: o cliente pode estar no cardápio.
 Notifications.setNotificationHandler({
@@ -36,6 +39,23 @@ async function criarCanal(): Promise<void> {
     sound: "default",
     lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
   });
+  await Notifications.setNotificationChannelAsync(CANAL_DE_PROMOCOES, {
+    name: "Promoções e novidades",
+    description: `Ofertas e novidades da ${marca.nome}. Só chegam se você aceitou no app.`,
+    importance: Notifications.AndroidImportance.DEFAULT,
+    lightColor: marca.cor,
+    sound: "default",
+    lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+  });
+}
+
+/** Cria os canais do Android logo na abertura: a promoção pode chegar antes do primeiro pedido. */
+export async function prepararCanais(): Promise<void> {
+  try {
+    await criarCanal();
+  } catch {
+    /* sem canal, o Android usa o padrão */
+  }
 }
 
 function projetoDoExpo(): string | null {
@@ -61,23 +81,27 @@ export async function tokenDoAparelho(pedirPermissao: boolean): Promise<string |
   }
 }
 
-/** Liga este celular ao pedido: o servidor passa a avisar o andamento dele aqui. */
+/**
+ * Liga este celular ao pedido: o servidor passa a avisar o andamento dele
+ * aqui. Sem permissão de aviso o pedido ainda é contado como "pedido do app"
+ * no painel da loja (vai só o id da instalação).
+ */
 export async function registrarNoPedido(pedidoId: string): Promise<boolean> {
-  const pushToken = await tokenDoAparelho(true);
-  if (!pushToken) return false;
+  const [pushToken, instalacaoId] = await Promise.all([tokenDoAparelho(true), idDaInstalacao()]);
   try {
     const res = await fetch(urlDoSite("/api/app-da-loja/aparelho"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         pushToken,
+        instalacaoId,
         pedidoId,
         plataforma: Platform.OS,
         versaoDoApp: Constants.expoConfig?.version ?? null,
         app: marca.bundleId,
       }),
     });
-    return res.ok;
+    return res.ok && Boolean(pushToken);
   } catch {
     return false;
   }

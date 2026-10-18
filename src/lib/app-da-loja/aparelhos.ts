@@ -172,8 +172,10 @@ export async function avisarAparelhosDoPedido(
     const mortos = tickets
       .map((t, i) => (t?.status === "error" && t?.details?.error === "DeviceNotRegistered" ? mensagens[i]?.to : null))
       .filter((t): t is string => Boolean(t));
-    for (const token of mortos) {
-      await prisma.$executeRaw`DELETE FROM "PedidoAparelho" WHERE "pushToken" = ${token}`.catch(() => {});
+    // O app saiu do celular: sai do pedido E da base da tela Meu aplicativo.
+    if (mortos.length) {
+      const { removerTokensMortos } = await import("@/lib/app-da-loja/instalacoes");
+      await removerTokensMortos(mortos);
     }
   } catch (err: any) {
     console.warn(`[App da Loja] aviso do pedido ${pedido.id} falhou: ${err?.message}`);

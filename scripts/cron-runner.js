@@ -223,6 +223,14 @@ const jobs = [
     intervalMs: 60_000, // 1 minuto
   },
   {
+    // Meu aplicativo (app proprio da loja): solta as notificacoes agendadas,
+    // confere no Expo se o Google/Apple entregou as de 15 min atras e tira da
+    // base o aparelho de onde o app saiu (src/lib/app-da-loja/notificacoes.ts).
+    name: 'app-da-loja-notificacoes',
+    path: '/api/cron/app-da-loja-notificacoes',
+    intervalMs: 60_000, // 1 minuto
+  },
+  {
     // A cada 5 minutos porque atraso pede reacao rapida — e quem segura a
     // repeticao e a propria rota: um aviso por PEDIDO a cada hora.
     name: 'pedidos-atrasados',

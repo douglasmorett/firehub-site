@@ -1,15 +1,21 @@
 /**
- * POST   /api/app-da-loja/aparelho  { pushToken, pedidoId, plataforma, versaoDoApp, app }
+ * POST   /api/app-da-loja/aparelho  { pushToken?, instalacaoId?, pedidoId, plataforma, versaoDoApp, app }
  * DELETE /api/app-da-loja/aparelho  { pushToken }
  *
  * O app próprio da loja (apps/loja) liga o celular do cliente a cada pedido
  * feito por ele, para avisar "aceito", "saiu para entrega", "entregue"
  * (lib/app-da-loja/aparelhos.ts). Não há sessão de cliente: quem conhece o id
  * do pedido é quem o fez — o mesmo segredo que abre /loja/<slug>/pedido/<id>.
+ *
+ * Desde a tela Meu aplicativo (17/10/2026) o app manda também o id da
+ * instalação, e o token passou a ser opcional: o pedido feito no app conta
+ * como "pedido do app" (AppDaLojaPedido) mesmo quando o cliente não deixou
+ * avisar. Pelo menos um dos dois tem de vir.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { instalacaoValida, registrarPedidoDoApp } from "@/lib/app-da-loja/instalacoes";
 import {
   esquecerAparelhoDoCliente,
   registrarAparelhoNoPedido,
@@ -25,8 +31,10 @@ export async function POST(req: NextRequest) {
     const rl = checkRateLimit(`app-loja-aparelho:${ip}`, { windowMs: 60_000, maxRequests: 20 });
     if (!rl.allowed) return NextResponse.json({ error: "Aguarde um instante." }, { status: 429 });
 
-    const { pushToken, pedidoId, plataforma, versaoDoApp, app } = await req.json().catch(() => ({} as any));
-    if (!tokenDeNotificacaoValido(pushToken)) {
+    const { pushToken, instalacaoId, pedidoId, plataforma, versaoDoApp, app } = await req.json().catch(() => ({} as any));
+    const comToken = tokenDeNotificacaoValido(pushToken);
+    const comInstalacao = instalacaoValida(instalacaoId);
+    if (!comToken && (!comInstalacao || (pushToken != null && pushToken !== ""))) {
       return NextResponse.json({ error: "Token de notificação inválido." }, { status: 400 });
     }
     if (typeof pedidoId !== "string" || !/^[A-Za-z0-9_-]{8,40}$/.test(pedidoId)) {
@@ -40,6 +48,13 @@ export async function POST(req: NextRequest) {
     if (!pedido || Date.now() - new Date(pedido.createdAt).getTime() > IDADE_MAXIMA_MS) {
       return NextResponse.json({ error: "Pedido não encontrado." }, { status: 404 });
     }
+
+    if (comInstalacao) {
+      await registrarPedidoDoApp({ pedidoId: pedido.id, lojaId: pedido.franchiseeId, instalacaoId }).catch((e) =>
+        console.warn(`[App da Loja Aparelho] pedido do app ${pedido.id}: ${e?.message}`),
+      );
+    }
+    if (!comToken) return NextResponse.json({ success: true });
 
     const gravou = await registrarAparelhoNoPedido({
       pedidoId: pedido.id,

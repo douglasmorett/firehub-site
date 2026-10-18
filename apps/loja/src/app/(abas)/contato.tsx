@@ -1,5 +1,6 @@
 /**
- * A loja: como falar com ela, onde fica, e os avisos do pedido neste celular.
+ * A loja: como falar com ela, onde fica, os avisos do pedido e a chave das
+ * promoções neste celular (Apple 4.5.4: quem aceitou promoção tem de poder sair).
  */
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
@@ -8,12 +9,13 @@ import * as Linking from "expo-linking";
 import { useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { estadoDosAvisos, tokenDoAparelho, type EstadoDosAvisos } from "@/lib/avisos";
 import { logoDaMarca } from "@/lib/logo-da-marca";
 import { marca } from "@/lib/marca";
+import { avisarAbertura, guardarRespostaDasPromocoes, respostaDasPromocoes } from "@/lib/presenca";
 
 function Linha({ icone, titulo, detalhe, aoTocar }: { icone: keyof typeof Ionicons.glyphMap; titulo: string; detalhe?: string; aoTocar: () => void }) {
   return (
@@ -40,11 +42,13 @@ const TEXTO_DOS_AVISOS: Record<EstadoDosAvisos, string> = {
 export default function Contato() {
   const topo = useSafeAreaInsets().top;
   const [avisos, setAvisos] = useState<EstadoDosAvisos>("indisponivel");
+  const [promocoes, setPromocoes] = useState(false);
   const { whatsapp, telefone, instagram, endereco } = marca.contato || {};
 
   useFocusEffect(
     useCallback(() => {
       estadoDosAvisos().then(setAvisos);
+      respostaDasPromocoes().then((r) => setPromocoes(r === "sim"));
     }, []),
   );
 
@@ -55,6 +59,16 @@ export default function Contato() {
     } else if (avisos === "desligados") {
       Linking.openSettings();
     }
+  };
+
+  const trocarPromocoes = async (quer: boolean) => {
+    setPromocoes(quer);
+    await guardarRespostaDasPromocoes(quer ? "sim" : "nao");
+    if (quer) {
+      await tokenDoAparelho(true);
+      setAvisos(await estadoDosAvisos());
+    }
+    avisarAbertura(true);
   };
 
   return (
@@ -87,6 +101,27 @@ export default function Contato() {
       <Text style={estilos.secao}>Este celular</Text>
       <View style={estilos.grupo}>
         <Linha icone="notifications" titulo="Avisos do pedido" detalhe={TEXTO_DOS_AVISOS[avisos]} aoTocar={ligarAvisos} />
+        <View style={estilos.linha}>
+          <View style={[estilos.icone, { backgroundColor: `${marca.cor}14` }]}>
+            <Ionicons name="pricetags" size={20} color={marca.cor} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={estilos.titulo}>Promoções e novidades</Text>
+            <Text style={estilos.detalhe}>
+              {promocoes
+                ? avisos === "desligados"
+                  ? "Aceitas, mas as notificações estão desligadas nos ajustes do celular."
+                  : "Você recebe as ofertas da loja por notificação."
+                : "Desligadas — você não recebe ofertas por notificação."}
+            </Text>
+          </View>
+          <Switch
+            value={promocoes}
+            onValueChange={trocarPromocoes}
+            trackColor={{ true: marca.cor, false: "#D4D4D4" }}
+            accessibilityLabel="Receber promoções e novidades"
+          />
+        </View>
         <Linha icone="shield-checkmark" titulo="Privacidade" detalhe="Como seus dados são usados" aoTocar={() => WebBrowser.openBrowserAsync(marca.privacidade)} />
       </View>
 

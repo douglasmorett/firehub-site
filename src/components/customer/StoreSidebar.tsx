@@ -35,7 +35,7 @@ import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 const ICONES: Record<string, LucideIcon> = {
   BarChart2, Bike, BookOpen, Bot, CheckCircle2, ClipboardList, Contact, Gauge, Home, LayoutGrid, LifeBuoy, LineChart, MapPin,
   Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt, Send, ShoppingBag, Store,
-  TabletSmartphone, Tag, Truck, Tv, UtensilsCrossed, Users, Wallet, Zap,
+  Smartphone, TabletSmartphone, Tag, Truck, Tv, UtensilsCrossed, Users, Wallet, Zap,
 };
 
 const CHAVE_RECOLHIDA = "firehub_menu_recolhido";
@@ -47,6 +47,7 @@ export default function StoreSidebar({
   slug,
   mostrarAntecipacao = false,
   mostrarCompras = false,
+  mostrarMeuAplicativo = false,
   isAdmin = false,
   caixaAberto = false,
   permissoesDoFuncionario = null,
@@ -58,6 +59,11 @@ export default function StoreSidebar({
   slug?: string | null;
   mostrarAntecipacao?: boolean;
   mostrarCompras?: boolean;
+  /**
+   * Plano do aplicativo próprio ligado e quem entrou é o dono (ou o admin):
+   * aparece "Meu aplicativo" no menu e o botão amarelo de venda sai.
+   */
+  mostrarMeuAplicativo?: boolean;
   isAdmin?: boolean;
   /**
    * Só para o aviso do modal de saída ("o caixa continua aberto"). É o retrato
@@ -168,7 +174,7 @@ export default function StoreSidebar({
     });
   };
 
-  const grupos = menuDaLoja({ antecipacao: mostrarAntecipacao, compras: mostrarCompras, permissoesDoFuncionario });
+  const grupos = menuDaLoja({ antecipacao: mostrarAntecipacao, compras: mostrarCompras, app: mostrarMeuAplicativo, permissoesDoFuncionario });
 
   // O caminho COM o # — é o que distingue "Entrega" de "Pagamento", que são
   // a mesma rota. `usePathname` não enxerga hash, então vem do próprio
@@ -319,8 +325,12 @@ export default function StoreSidebar({
             abaixo da contingência, para a loja achar e pedir (Douglas,
             17/10/2026: "um botão destacado igual ao tutorial e ao modo
             contingência, só que amarelo: tenha o app próprio da sua loja").
-            Só o dono: contratar é decisão dele (app/store/aplicativo). */}
-        {permissoesDoFuncionario == null && (
+            Só o dono: contratar é decisão dele (app/store/aplicativo).
+            Com o plano ligado ele some: a loja já tem o app, e o lugar dele
+            passa a ser "Meu aplicativo" na lista (Cardápio & vendas) — botão
+            de venda para quem já comprou é ruído, e dois atalhos para a mesma
+            tela confundem. */}
+        {permissoesDoFuncionario == null && !mostrarMeuAplicativo && (
           <Link
             href="/store/aplicativo"
             {...navegarNoAperto("/store/aplicativo")}
