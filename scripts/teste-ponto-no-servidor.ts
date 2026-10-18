@@ -26,7 +26,17 @@ function confere(nome: string, cond: boolean, detalhe?: unknown) {
 // ── O banco falso: só o SQL cru que estas duas libs usam ────────────────────
 type LinhaDoCache = { chave: string; lat: number; lng: number; origem: string | null };
 const geocodeCache = new Map<string, LinhaDoCache>();
-const aprendidos = new Map<string, { franchiseeId: string; chave: string; lat: number; lng: number; endereco: string | null }>();
+const aprendidos = new Map<string, { franchiseeId: string; chave: string; lat: number; lng: number; endereco: string | null; vizinhanca: string | null }>();
+const mediana = (xs: number[]) => {
+  const o = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(o.length / 2);
+  return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+};
+// Uma correção de ANTES da coluna "vizinhanca" (as ~8 da NIK em 17/10): a subida preenche.
+const Q12_ANTIGA = "Q 12 Conjunto B, 47 - Sobradinho - Brasília";
+aprendidos.set("nik|t:q 12 conjunto b 47 sobradinho brasilia", {
+  franchiseeId: "nik", chave: "t:q 12 conjunto b 47 sobradinho brasilia", lat: -15.648812, lng: -47.795512, endereco: Q12_ANTIGA, vizinhanca: null,
+});
 const sqlFeito: string[] = [];
 (globalThis as any).prisma = new Proxy(
   {
@@ -38,9 +48,15 @@ const sqlFeito: string[] = [];
         return 1;
       }
       if (/INSERT INTO "PontoAprendido"/.test(sql)) {
-        const [franchiseeId, chave, lat, lng, endereco] = args;
-        aprendidos.set(`${franchiseeId}|${chave}`, { franchiseeId, chave, lat, lng, endereco });
+        const [franchiseeId, chave, lat, lng, endereco, , , vizinhanca] = args;
+        aprendidos.set(`${franchiseeId}|${chave}`, { franchiseeId, chave, lat, lng, endereco, vizinhanca: vizinhanca ?? null });
         return 1;
+      }
+      if (/SET "vizinhanca" = \$3/.test(sql)) {
+        const [franchiseeId, chave, vizinhanca] = args;
+        const l = aprendidos.get(`${franchiseeId}|${chave}`);
+        if (l) l.vizinhanca = vizinhanca;
+        return l ? 1 : 0;
       }
       return 0; // CREATE/ALTER/UPDATE de uso
     },
@@ -48,6 +64,21 @@ const sqlFeito: string[] = [];
       if (/FROM "GeocodeCache"/.test(sql)) {
         const chaves: string[] = args[0];
         return chaves.map((c) => geocodeCache.get(c)).filter(Boolean);
+      }
+      if (/"vizinhanca" IS NULL/.test(sql)) {
+        return [...aprendidos.values()].filter((l) => l.vizinhanca === null && l.chave.startsWith("t:"));
+      }
+      if (/FROM "PontoAprendido"/.test(sql) && /"vizinhanca" = ANY/.test(sql)) {
+        // A mediana por vizinhança (percentile_cont), só das linhas do texto.
+        const [franchiseeId, vizinhancas] = args as [string, string[]];
+        return vizinhancas.flatMap((v) => {
+          const ls = [...aprendidos.values()].filter((l) => l.franchiseeId === franchiseeId && l.vizinhanca === v && l.chave.startsWith("t:"));
+          if (!ls.length) return [];
+          const lat = ls.map((l) => l.lat);
+          const lng = ls.map((l) => l.lng);
+          return [{ vizinhanca: v, lat: mediana(lat), lng: mediana(lng), n: ls.length,
+            minLat: Math.min(...lat), maxLat: Math.max(...lat), minLng: Math.min(...lng), maxLng: Math.max(...lng) }];
+        });
       }
       if (/FROM "PontoAprendido"/.test(sql)) {
         const [franchiseeId, chaves] = args as [string, string[]];
@@ -148,6 +179,48 @@ async function main() {
   const deOutraLoja = await resolverPontosNoServidor([{ id: "q1", endereco: W30, ehMarketplace: true }], { ...loja, franchiseeId: "outra" });
   confere("outra loja não herda a posição desta", deOutraLoja.achados[0]?.fonte !== "aprendido");
   confere("faxina: um ano sem uso", /INTERVAL '365 days'/.test(sqlDaFaxinaDosPontosAprendidos()));
+
+  console.log("\n6) A vizinhança: o lote vizinho do mesmo conjunto nasce perto (NIK, 17/10/2026)");
+  esquecerIncertosParaTeste();
+  const LOTE07 = "Qd 03 Cj G lote 07, 07 - Casa - QUADRA 3 - Brasília/DF - CEP 73030037";
+  const LOTE11 = "Qd 03 Cj G lote 11, 11 - QUADRA 3 - Brasília/DF - CEP 73030041";
+  const LOTE15 = "Quadra 3 Conjunto G casa 15, 15 - Sobradinho - Brasília/DF - CEP 73030045";
+  const p07 = { lat: -15.652101, lng: -47.790412 };
+  const p11 = { lat: -15.652301, lng: -47.790812 };
+  const vazia = await resolverPontosNoServidor([{ id: "v0", endereco: LOTE11, ehMarketplace: true }], { ...loja, franchiseeId: "loja-sem-correcao" });
+  confere("loja sem nenhuma correção: igual a hoje (nada de vizinhança)", !vazia.achados.some((a) => a.fonte === "vizinhanca" || a.fonte === "aprendido"), vazia);
+  await aprenderPonto({ franchiseeId: "nik", endereco: LOTE07, ponto: p07, pedidoId: "n07", autor: "operador@nik" });
+  confere("a linha do texto guarda a vizinhança; a do CEP não (é o mesmo endereço)",
+    [...aprendidos.values()].some((l) => l.chave.startsWith("t:qd 03 cj g") && l.vizinhanca === "v:73030|q3|cjg") &&
+      [...aprendidos.values()].filter((l) => l.chave.startsWith("c:7303")).every((l) => l.vizinhanca === null));
+  const antesDaVizinhanca = buscasNoMapa;
+  const r6 = await resolverPontosNoServidor([{ id: "n11", endereco: LOTE11, ehMarketplace: true }], loja);
+  const a6 = r6.achados[0];
+  confere("lote 11 sem posição própria: a do lote 07, APROXIMADA pela vizinhança, sem ir ao mapa",
+    a6?.fonte === "vizinhanca" && a6.aproximado === true && a6.lat === p07.lat && /vizinhan/.test(a6.origem) && buscasNoMapa === antesDaVizinhanca, r6);
+  await aprenderPonto({ franchiseeId: "nik", endereco: LOTE11, ponto: p11, pedidoId: "n11", autor: "operador@nik" });
+  const r6b = await resolverPontosNoServidor([{ id: "n11b", endereco: LOTE11, ehMarketplace: true }, { id: "n15", endereco: LOTE15, ehMarketplace: true }], loja);
+  const exata = r6b.achados.find((a) => a.id === "n11b");
+  const media = r6b.achados.find((a) => a.id === "n15");
+  confere("a chave exata vence a vizinhança (lote 11 já corrigido: o ponto dele)", exata?.fonte === "aprendido" && exata.lat === p11.lat && !exata.aproximado, exata);
+  confere("lote 15 (escrito de outro jeito): meio das duas correções",
+    media?.fonte === "vizinhanca" && Math.abs(media.lat - (p07.lat + p11.lat) / 2) < 1e-9 && /2 correções/.test(media.origem), media);
+  const outraCidade = "Quadra 3 Conjunto G, 7 - Gama - Brasília/DF - CEP 72405030";
+  const r6c = await resolverPontosNoServidor([{ id: "g7", endereco: outraCidade, ehMarketplace: true }], loja);
+  confere("a mesma quadra e conjunto de OUTRA cidade (CEP do Gama) não herda a vizinhança", !r6c.achados.some((a) => a.fonte === "vizinhanca"), r6c);
+  const deOutra = await pontosAprendidos("outra", [LOTE15]);
+  confere("outra loja não herda a vizinhança desta", !deOutra.has(LOTE15));
+  // Correções espalhadas (mesma quadra/conjunto a 2 km): não é um quarteirão.
+  await aprenderPonto({ franchiseeId: "nik", endereco: "Qd 03 Cj G lote 30, 30 - CEP 73030050", ponto: { lat: -15.670101, lng: -47.790412 } });
+  const espalhada = await pontosAprendidos("nik", [LOTE15]);
+  confere("correções espalhadas por mais de 800 m: a vizinhança não vale", !espalhada.has(LOTE15), espalhada.get(LOTE15));
+  const vizinhoDaAntiga = "Quadra 12 conjunto B casa 9 - Sobradinho - Brasília";
+  const daAntiga = await pontosAprendidos("nik", [vizinhoDaAntiga]);
+  confere("a correção de antes da coluna ganhou a vizinhança na subida e já serve ao vizinho",
+    aprendidos.get("nik|t:q 12 conjunto b 47 sobradinho brasilia")?.vizinhanca === "v:sobradinho|q12|cjb" &&
+      daAntiga.get(vizinhoDaAntiga)?.pela === "vizinhanca" && daAntiga.get(vizinhoDaAntiga)?.lat === -15.648812, daAntiga.get(vizinhoDaAntiga));
+  const ambigua = "Q 5 Q 3 Conjunto G, 9 - Sobradinho - Brasília/DF - CEP 73030099";
+  confere("duas quadras no texto: sem vizinhança (não piora)", !(await pontosAprendidos("nik", [ambigua])).has(ambigua));
 
   console.log(`\n${ok} ok, ${falhas} falharam`);
   if (falhas > 0) process.exit(1);

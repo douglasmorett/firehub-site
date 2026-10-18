@@ -148,7 +148,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
             // O endereço ainda é o que esta busca procurou.
             where: { id: pedido.id, customerAddress: endereco },
             data: {
-              customerLatLng: { ...ponto, origem: a.fonte === "aprendido" ? "aprendido" : origemDaGeocodificacao(a.origem) },
+              customerLatLng: { ...ponto, origem: a.fonte === "aprendido" || a.fonte === "vizinhanca" ? a.fonte : origemDaGeocodificacao(a.origem) },
               ...(refaz && km != null ? { deliveryDistance: km } : {}),
             },
           });

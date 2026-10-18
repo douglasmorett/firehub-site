@@ -14,6 +14,7 @@ import {
   areaDaLoja,
   areaParaOMapa,
   chavesDoAprendizado,
+  chaveDaVizinhanca,
   cepServeDeChave,
   distanciaKm,
   fonteConfiavel,
@@ -296,6 +297,42 @@ async function main() {
   confere("#30: CEP desconhecido dos Correios ainda serve (é a mesma porta)", chavesDoAprendizado(W30).includes("c:73062892|17"));
   confere("o mesmo endereço com outra caixa e acento dá a mesma chave", chavesDoAprendizado(W30.toUpperCase())[0] === chavesDoAprendizado(W30)[0]);
   confere("endereço vazio não ensina nada", chavesDoAprendizado("").length === 0 && chavesDoAprendizado(null).length === 0);
+
+  console.log("\n6b) A vizinhança: quadra + conjunto (NIK, 17/10/2026)");
+  const viz: [string, string | null][] = [
+    ["Qd 03 Cj G lote 07, 07 - Casa - QUADRA 3 - Brasília/DF - CEP 73030037", "v:73030|q3|cjg"],
+    ["Qd03 Cj.G Lt 11 - Brasília/DF - CEP 73030-041", "v:73030|q3|cjg"],
+    ["Q 12 Conjunto B, 47 - Sobradinho - Brasília", "v:sobradinho|q12|cjb"],
+    ["AR 14 conjunto 04, 03 - Sobradinho II - Brasília/DF", "v:sobradinho 2|ar14|cj4"],
+    ["ar 7, cj 5 LT 18 - Sobradinho II, Sobradinho - DF, Casa cinza na esquina", "v:sobradinho 2|ar7|cj5"],
+    ["Quadra 12, conjunto B, casa 06 - Sobradinho 1 - QUADRA 12 - Brasília/DF - CEP 73010122", "v:73010|q12|cjb"],
+    ["Quadra 2 conjunto B2 bloco B, 601 - Edifício Kona ap 601 - QUADRA 2 - Brasília/DF - CEP 73015217", "v:73015|q2|cjb2"],
+    ["Quadra 2 Conjunto B-2 Bloco B, 601 - QUADRA 2 - Brasília/DF - CEP 73015217", "v:73015|q2|cjb2"],
+    [W13, "v:73045|q17|cja"],
+    ["Quadra 106 conjunto 1 casa 37, 37 - ALTO BOA VISTA - Brasília/DF - CEP 73130900", "v:73130|q106|cj1"],
+    // Duas quadras no texto: não dá para saber qual — sem vizinhança (não piora).
+    ["Q 5 Q 12 Conjunto B, 3 - Sobradinho - Brasília", null],
+    ["Q. 9 Conjunto E, AR 17 - Sobradinho", null],
+    // Sem conjunto, sem quadra, ou sem o lugar (CEP ou bairro): sem vizinhança.
+    ["Q 3, 0 - Ref: Na Loja Dog Do Bartô - Sobradinho - Brasília", null],
+    [W30, null],
+    ["QD 3 CONJ G, 11 - Brasília - DF", null],
+    ["Rua das Flores, 10 - Centro", null],
+    ["", null],
+  ];
+  for (const [e, esperada] of viz) confere(`vizinhança de "${e.slice(0, 48)}" = ${esperada}`, chaveDaVizinhanca(e) === esperada, chaveDaVizinhanca(e));
+  confere("lote 07 e lote 11 do mesmo conjunto: a mesma vizinhança, chaves exatas diferentes",
+    chaveDaVizinhanca(viz[0][0]) === chaveDaVizinhanca(viz[1][0]) && chavesDoAprendizado(viz[0][0])[0] !== chavesDoAprendizado(viz[1][0])[0]);
+  confere("a mesma Quadra 3 Conjunto G com CEP de outra cidade (Gama, 724xx) não é a mesma vizinhança",
+    chaveDaVizinhanca("Quadra 3 Conjunto G, 7 - Gama - Brasília/DF - CEP 72405030") !== chaveDaVizinhanca(viz[0][0]));
+  confere("sem CEP: Sobradinho e Planaltina não se misturam",
+    chaveDaVizinhanca("Q 12 Conjunto B, 9 - Planaltina - DF") !== chaveDaVizinhanca(viz[2][0]));
+  const gravadoViz = lerPontoGravado({ lat: -15.651234, lng: -47.791234, origem: "vizinhanca" }, true);
+  confere("ponto gravado pela vizinhança: fonte própria, aproximado e de quem sabe (não cai pela área)",
+    gravadoViz?.fonte === "vizinhanca" && gravadoViz.aproximado === true && fonteConfiavel("vizinhanca"), gravadoViz);
+  confere("a origem do servidor vira a fonte vizinhança",
+    fonteDaGeocodificacao("posição aproximada pela vizinhança (2 correções da mesma quadra e conjunto)") === "vizinhanca" &&
+      fonteDaGeocodificacao("posição salva pela loja") === "aprendido");
 
   console.log("\n7) O que a roteirização desenha (planoDosPontos)");
   const agora = Date.parse("2026-10-16T22:30:00Z");
