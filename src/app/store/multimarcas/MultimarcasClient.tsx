@@ -21,10 +21,14 @@ import { useCallback, useEffect, useState } from "react";
 import { LayoutGrid, Link2 } from "lucide-react";
 import OfertaDoMultimarcas from "./OfertaDoMultimarcas";
 import EditorDoMultimarcas from "./EditorDoMultimarcas";
+import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
+import ResumoDaCobranca from "@/components/modulos/ResumoDaCobranca";
 import { CLAUSULAS_DO_TERMO_DO_MULTIMARCAS, TITULO_DO_TERMO_DO_MULTIMARCAS, VERSAO_DO_TERMO_DO_MULTIMARCAS } from "@/lib/multimarcas/termo";
 import s from "./Multimarcas.module.css";
 
-type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento: boolean; cortesia: boolean };
+type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento: boolean; cortesia: boolean;
+  /** Desligamento marcado para a virada do mês (lib/modulo-pago.ts). */
+  desligaEm: string | null; fimDoMes: string | null };
 export type DadosDoMultimarcas = {
   estado: Estado;
   preco: number;
@@ -43,7 +47,6 @@ export default function MultimarcasClient({ previa }: { previa?: DadosDoMultimar
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [termoAberto, setTermoAberto] = useState(false);
-  const [confirmarDesligar, setConfirmarDesligar] = useState(false);
   const [aviso, setAviso] = useState<Aviso | null>(null);
 
   const carregar = useCallback(async () => {
@@ -67,13 +70,13 @@ export default function MultimarcasClient({ previa }: { previa?: DadosDoMultimar
   async function ligar(ligar: boolean) {
     if (!dados) return;
     setSalvando(true);
-    setConfirmarDesligar(false);
+    const antes = dados.estado;
     try {
       let estado: Estado;
       if (previa) {
         estado = ligar
           ? { ...dados.estado, ativo: true, emTeste: true, jaTestou: true, testeAte: dados.estado.testeAte ?? new Date(Date.now() + dados.diasDeTeste * 864e5).toISOString() }
-          : { ...dados.estado, ativo: false, emTeste: false };
+          : { ...dados.estado, ativo: false, emTeste: false, desligaEm: null };
       } else {
         const r = await fetch("/api/store/multimarcas", {
           method: "POST",
@@ -86,9 +89,17 @@ export default function MultimarcasClient({ previa }: { previa?: DadosDoMultimar
       }
       setDados({ ...dados, estado });
       setTermoAberto(false);
+      // O aviso diz o que acontece com a cobrança, do jeito da regra (lib/modulo-pago.ts).
       setAviso(ligar
-        ? { tipo: "ok", titulo: "Multimarcas ativado!", detalhe: estado.isento ? undefined : `Os ${dados.diasDeTeste} primeiros dias são grátis. Depois, ${reais(dados.preco)} por mês numa linha própria do boleto, à parte da mensalidade.` }
-        : { tipo: "ok", titulo: "Multimarcas desativado.", detalhe: "A página das marcas saiu do ar e o mês que vem não é cobrado." });
+        ? antes.ativo && antes.desligaEm
+          ? { tipo: "ok", titulo: "O Multimarcas continua ligado.", detalhe: "O desligamento da virada do mês foi cancelado; a cobrança segue normal." }
+          : { tipo: "ok", titulo: "Multimarcas ligado!", detalhe: estado.isento ? undefined
+              : estado.cortesia ? "Cortesia: com o Aplicativo da loja completo, não é cobrado."
+              : estado.emTeste && estado.testeAte ? `Grátis até ${data(estado.testeAte)}. Depois disso, se continuar ligado, o mês entra inteiro no boleto (${reais(dados.preco)}), à parte da mensalidade.`
+              : `Este mês já entra inteiro no boleto (${reais(dados.preco)}), numa linha própria, à parte da mensalidade.` }
+        : estado.ativo && estado.desligaEm
+          ? { tipo: "ok", titulo: `O Multimarcas desliga em ${data(estado.desligaEm)}.`, detalhe: "Este mês já está pago: até lá ele continua liberado para você, e o mês que vem não é cobrado." }
+          : { tipo: "ok", titulo: "Multimarcas desligado.", detalhe: "Você estava no teste grátis: nada foi cobrado. A página das marcas saiu do ar." });
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e: any) {
       setAviso({ tipo: "erro", titulo: "Não deu certo", detalhe: e.message });
@@ -111,22 +122,23 @@ export default function MultimarcasClient({ previa }: { previa?: DadosDoMultimar
       )}
 
       {estado.ativo ? (
-        <Ativo dados={dados} previa={!!previa} onAviso={(tipo, titulo, detalhe) => setAviso({ tipo, titulo, detalhe })} salvando={salvando} confirmarDesligar={confirmarDesligar}
-          onPedirDesligar={() => setConfirmarDesligar(true)} onCancelarDesligar={() => setConfirmarDesligar(false)} onDesligar={() => ligar(false)} />
+        <Ativo dados={dados} previa={!!previa} onAviso={(tipo, titulo, detalhe) => setAviso({ tipo, titulo, detalhe })} salvando={salvando}
+          onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} />
       ) : (
         <OfertaDoMultimarcas dados={dados} salvando={salvando} onAtivar={() => setTermoAberto(true)} />
       )}
 
-      {termoAberto && <Termo preco={dados.preco} salvando={salvando} onCancelar={() => setTermoAberto(false)} onAceitar={() => ligar(true)} />}
+      {termoAberto && <Termo preco={dados.preco} diasDeTeste={dados.diasDeTeste} comTeste={!estado.jaTestou && !estado.isento} cortesia={estado.cortesia}
+        salvando={salvando} onCancelar={() => setTermoAberto(false)} onAceitar={() => ligar(true)} />}
     </div>
   );
 }
 
 // ─── Ativado ─────────────────────────────────────────────────────────────
 
-function Ativo({ dados, previa, onAviso, salvando, confirmarDesligar, onPedirDesligar, onCancelarDesligar, onDesligar }: {
-  dados: DadosDoMultimarcas; previa: boolean; onAviso: (tipo: "ok" | "erro", titulo: string, detalhe?: string) => void; salvando: boolean; confirmarDesligar: boolean;
-  onPedirDesligar: () => void; onCancelarDesligar: () => void; onDesligar: () => void;
+function Ativo({ dados, previa, onAviso, salvando, onDesligar, onContinuar }: {
+  dados: DadosDoMultimarcas; previa: boolean; onAviso: (tipo: "ok" | "erro", titulo: string, detalhe?: string) => void; salvando: boolean;
+  onDesligar: () => void; onContinuar: () => void;
 }) {
   const e = dados.estado;
   return (
@@ -136,6 +148,10 @@ function Ativo({ dados, previa, onAviso, salvando, confirmarDesligar, onPedirDes
         <span className={s.seloAtivo}>{e.isento ? "LIBERADO" : e.cortesia ? "ATIVO · CORTESIA DO APLICATIVO" : e.emTeste && e.testeAte ? `ATIVO · grátis até ${data(e.testeAte)}` : "ATIVO"}</span>
       </div>
       <p className={s.sub}>A página com todas as suas marcas, banners e a sacola única.</p>
+
+      {/* O liga/desliga com a regra da cobrança escrita (components/modulos/InterruptorDoModulo). */}
+      <InterruptorDoModulo nome="o Multimarcas" preco={dados.preco} estado={e} salvando={salvando}
+        onLigar={() => {}} onDesligar={onDesligar} onContinuar={onContinuar} />
 
       {previa ? (
       <section className={s.montagem}>
@@ -149,29 +165,15 @@ function Ativo({ dados, previa, onAviso, salvando, confirmarDesligar, onPedirDes
         <EditorDoMultimarcas onAviso={onAviso} />
       )}
 
-      {!e.isento && (
-        <div className={s.desligar}>
-          <span>
-            {e.cortesia ? "Cortesia: enquanto o Aplicativo da loja estiver ativo no Android e no iPhone, o Multimarcas não é cobrado." : `${reais(dados.preco)} por mês, numa linha própria do boleto, à parte da mensalidade.`}
-            {e.cortesia ? "" : e.emTeste && e.testeAte ? ` Grátis até ${data(e.testeAte)}.` : e.cobradoEsteMes ? " Este mês já entra no boleto." : ""}
-          </span>
-          {confirmarDesligar ? (
-            <span className={s.desligarBotoes}>
-              <button className={s.botaoPerigo} onClick={onDesligar} disabled={salvando}>{salvando ? "Desativando…" : "Sim, desativar"}</button>
-              <button className={s.botaoLeve} onClick={onCancelarDesligar} disabled={salvando}>Cancelar</button>
-            </span>
-          ) : (
-            <button className={s.botaoLeve} onClick={onPedirDesligar}>Desativar</button>
-          )}
-        </div>
-      )}
     </>
   );
 }
 
 // ─── Termo ───────────────────────────────────────────────────────────────
 
-function Termo({ preco, salvando, onCancelar, onAceitar }: { preco: number; salvando: boolean; onCancelar: () => void; onAceitar: () => void }) {
+function Termo({ preco, diasDeTeste, comTeste, cortesia, salvando, onCancelar, onAceitar }: {
+  preco: number; diasDeTeste: number; comTeste: boolean; cortesia: boolean; salvando: boolean; onCancelar: () => void; onAceitar: () => void;
+}) {
   const [concordo, setConcordo] = useState(false);
   return (
     <div role="dialog" aria-modal="true" aria-label={TITULO_DO_TERMO_DO_MULTIMARCAS} className={s.termoFundo}
@@ -184,6 +186,7 @@ function Termo({ preco, salvando, onCancelar, onAceitar }: { preco: number; salv
             <span>{reais(preco)} por mês · versão de {VERSAO_DO_TERMO_DO_MULTIMARCAS.split("-").reverse().join("/")}</span>
           </div>
         </div>
+        <ResumoDaCobranca preco={preco} diasDeTeste={diasDeTeste} comTeste={comTeste} cortesia={cortesia} />
         <ol className={s.clausulas}>
           {CLAUSULAS_DO_TERMO_DO_MULTIMARCAS.map((c, i) => <li key={i}>{c}</li>)}
         </ol>

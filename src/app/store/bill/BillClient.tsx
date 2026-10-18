@@ -20,6 +20,7 @@ import { EVENTO_BILL_LIGADO } from "@/components/bill/BillFlutuante";
 import { VERSAO_DO_TERMO_DO_BILL, TITULO_DO_TERMO_DO_BILL, CLAUSULAS_DO_TERMO_DO_BILL } from "@/lib/assessor/termo";
 import { Mic, Camera, Package, Wallet, Receipt, CheckCircle2, PauseCircle, Store } from "lucide-react";
 import PainelDoBill, { type DadosDoBill, type AvisoDoBill } from "./PainelDoBill";
+import ResumoDaCobranca from "@/components/modulos/ResumoDaCobranca";
 
 type Dados = DadosDoBill;
 type Aviso = AvisoDoBill;
@@ -57,6 +58,7 @@ export default function BillClient() {
 
   async function ligar(ligar: boolean) {
     setSalvando(true);
+    const antes = dados?.estado;
     try {
       const r = await fetch("/api/store/assessor", {
         method: "POST",
@@ -65,14 +67,23 @@ export default function BillClient() {
       });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Erro");
+      // O aviso diz o que acontece com a cobrança, do jeito da regra (lib/modulo-pago.ts).
+      const novo = j.estado as DadosDoBill["estado"];
+      const dia = (iso: string) => new Date(iso).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
       setAviso(ligar
-        ? { tipo: "ok", titulo: "Bill ligado!", detalhe: dados?.estado.isento
-            ? "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica."
-            : `Mande um áudio do seu WhatsApp para o número da loja e veja a mágica. Depois dos ${dados?.diasDeTeste ?? 7} dias grátis, se você não desligar, ${fmtR(dados?.preco ?? 0)} por mês vem no boleto da mensalidade do FireHub.` }
-        : { tipo: "ok", titulo: "Bill desligado.", detalhe: "O mês que vem não é cobrado. Se este mês já passou dos dias grátis, ele continua no boleto." });
+        ? antes?.ativo && antes?.desligaEm
+          ? { tipo: "ok", titulo: "O Bill continua ligado.", detalhe: "O desligamento da virada do mês foi cancelado; a cobrança segue normal." }
+          : { tipo: "ok", titulo: "Bill ligado!", detalhe: novo?.isento
+              ? "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica."
+              : novo?.emTeste && novo.testeAte
+                ? `Mande um áudio do seu WhatsApp para o número da loja. Grátis até ${dia(novo.testeAte)}; depois disso, se continuar ligado, o mês entra inteiro no boleto (${fmtR(dados?.preco ?? 0)}).`
+                : `Mande um áudio do seu WhatsApp para o número da loja. Este mês já entra inteiro no boleto (${fmtR(dados?.preco ?? 0)}).` }
+        : novo?.ativo && novo.desligaEm
+          ? { tipo: "ok", titulo: `O Bill desliga em ${dia(novo.desligaEm)}.`, detalhe: "Este mês já está pago: até lá ele continua liberado para você, e o mês que vem não é cobrado." }
+          : { tipo: "ok", titulo: "Bill desligado.", detalhe: "Você estava no teste grátis: nada foi cobrado." });
       setTermoAberto(false);
       // A carinha do Bill no canto aparece (ou some) sem atualizar a página.
-      window.dispatchEvent(new CustomEvent(EVENTO_BILL_LIGADO, { detail: ligar }));
+      window.dispatchEvent(new CustomEvent(EVENTO_BILL_LIGADO, { detail: Boolean(j.estado?.ativo) }));
       await carregar();
     } catch (e: any) {
       setAviso({ tipo: "erro", titulo: "Não deu certo", detalhe: e.message });
@@ -100,10 +111,10 @@ export default function BillClient() {
         </div>
       )}
 
-      {termoAberto && <Termo preco={dados.preco} salvando={salvando} onCancelar={() => setTermoAberto(false)} onAceitar={() => ligar(true)} />}
+      {termoAberto && <Termo preco={dados.preco} diasDeTeste={dados.diasDeTeste} comTeste={!estado.jaTestou && !estado.isento} salvando={salvando} onCancelar={() => setTermoAberto(false)} onAceitar={() => ligar(true)} />}
 
       {estado.ativo ? (
-        <PainelDoBill dados={dados} setAviso={setAviso} salvando={salvando} onDesligar={() => ligar(false)} />
+        <PainelDoBill dados={dados} setAviso={setAviso} salvando={salvando} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} />
       ) : (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
@@ -185,7 +196,7 @@ const PERGUNTAS: [string, string][] = [
   ["Preciso instalar alguma coisa?", "Não. Você manda mensagem do seu WhatsApp para o WhatsApp da loja que já está conectado no FireHub. O Bill reconhece o seu número e atende só você (e quem você cadastrar)."],
   ["E se ele lançar errado?", "Manda “desfaz” e ele desfaz o último lançamento. Tudo o que ele lança aparece no Estoque e no Financeiro como se você tivesse digitado, e dá para corrigir pelo painel."],
   ["Meus clientes vão falar com o Bill?", "Não. Cliente continua falando com o robô de atendimento da loja. O Bill só responde os números do dono."],
-  ["Como cancelo?", "Aqui nesta tela, em “Desligar”. No mês seguinte não é cobrado nada."],
+  ["Como cancelo?", "Pelo botão de liga/desliga, na aba Configuração. No teste grátis, ele para na hora e nada é cobrado. Depois do teste, o mês já está pago (inteiro, sem valor proporcional): ele fica liberado até o fim do mês e desliga sozinho na virada; o mês seguinte não é cobrado."],
 ];
 
 function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean; onLigar: () => void }) {
@@ -498,7 +509,7 @@ const CSS_DA_OFERTA = `
 `;
 
 /** O termo de contratação: só liga marcando o "concordo" (texto em lib/assessor/termo.ts). */
-function Termo({ preco, salvando, onCancelar, onAceitar }: { preco: number; salvando: boolean; onCancelar: () => void; onAceitar: () => void }) {
+function Termo({ preco, diasDeTeste, comTeste, salvando, onCancelar, onAceitar }: { preco: number; diasDeTeste: number; comTeste: boolean; salvando: boolean; onCancelar: () => void; onAceitar: () => void }) {
   const [concordo, setConcordo] = useState(false);
   return (
     <div role="dialog" aria-modal="true" aria-label={TITULO_DO_TERMO_DO_BILL}
@@ -512,6 +523,7 @@ function Termo({ preco, salvando, onCancelar, onAceitar }: { preco: number; salv
             <div style={{ fontSize: 13, color: "#475569" }}>{fmtR(preco)} por mês · versão de {VERSAO_DO_TERMO_DO_BILL.slice(0, 10).split("-").reverse().join("/")}</div>
           </div>
         </div>
+        <ResumoDaCobranca preco={preco} diasDeTeste={diasDeTeste} comTeste={comTeste} />
         <ol style={{ margin: 0, padding: "16px 20px 4px 40px", display: "grid", gap: 10, fontSize: 14, color: "#1E293B", lineHeight: 1.5 }}>
           {CLAUSULAS_DO_TERMO_DO_BILL.map((c, i) => <li key={i}>{c}</li>)}
         </ol>

@@ -28,7 +28,7 @@ export async function GET() {
   const cfg = (s.loja.chatbotConfig || {}) as any;
   const trechoLigado = estado.periodos.find((p) => !p.ate);
   return NextResponse.json({
-    estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou, isento: estado.isento },
+    estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou, isento: estado.isento, desligaEm: estado.desligaEm, fimDoMes: estado.fimDoMes },
     preco: estado.preco,
     // Desde quando o trecho ligado agora está ligado (a aba Configuração da tela).
     ligadoDesde: trechoLigado?.de ?? null,
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
   }
   try {
     const estado = await ligarOuDesligarAssessor(s.franchiseeId, corpo.ligar, aceite);
-    return NextResponse.json({ ok: true, estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou, isento: estado.isento } });
+    return NextResponse.json({ ok: true, estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou, isento: estado.isento, desligaEm: estado.desligaEm, fimDoMes: estado.fimDoMes } });
   } catch (err: any) {
     if (err instanceof TermoNaoAceitoError) return NextResponse.json({ error: err.message, precisaDoTermo: true }, { status: 400 });
     return NextResponse.json({ error: err?.message || "Erro ao salvar." }, { status: 503 });

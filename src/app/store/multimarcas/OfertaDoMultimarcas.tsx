@@ -367,7 +367,7 @@ function Duvidas({ dados }: { dados: DadosDoMultimarcas }) {
     ["Pago mais se tiver mais marcas?", `Não. São ${reais(dados.preco)} por mês para a página, com quantas marcas você quiser colocar nela.`],
     ["Preciso criar uma loja nova para cada marca?", "Não. Você diz quais categorias do seu cardápio são de cada marca. O pedido continua caindo no seu painel, na sua impressora e no seu caixa."],
     ["E o iFood e os outros apps?", "Não muda nada. O Multimarcas é a sua página própria, sem comissão por pedido."],
-    ["Como cancelo?", "Aqui nesta tela, em \"Desativar\". A página sai do ar e o mês seguinte não é cobrado."],
+    ["Como cancelo?", "Pelo botão de liga/desliga desta tela. No teste grátis, ele para na hora e nada é cobrado. Depois do teste, o mês já está pago (inteiro, sem valor proporcional): o Multimarcas fica liberado até o fim do mês e desliga sozinho na virada; o mês seguinte não é cobrado."],
   ];
   return (
     <section className={s.secao}>
