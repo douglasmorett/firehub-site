@@ -45,6 +45,40 @@ export async function guardarRespostaDasPromocoes(r: "sim" | "nao"): Promise<voi
   }
 }
 
+const CHAVE_DO_REPERGUNTA = "loja.promocoes.reperguntado";
+
+/** Quem disse "agora não" é perguntado de novo UMA vez, depois do primeiro pedido pelo app. */
+export async function podeReperguntar(): Promise<boolean> {
+  try {
+    if ((await respostaDasPromocoes()) !== "nao") return false;
+    return (await SecureStore.getItemAsync(CHAVE_DO_REPERGUNTA)) !== "sim";
+  } catch {
+    return false;
+  }
+}
+
+export async function marcarReperguntado(): Promise<void> {
+  try {
+    await SecureStore.setItemAsync(CHAVE_DO_REPERGUNTA, "sim");
+  } catch {
+    /* sem onde guardar: no pior caso pergunta mais uma vez */
+  }
+}
+
+/** O cliente tocou numa notificação de promoção: conta como "aberta" no painel da loja. */
+export async function avisarToque(envioId: unknown): Promise<void> {
+  if (typeof envioId !== "string" || !envioId) return;
+  try {
+    await fetch(urlDoSite("/api/app-da-loja/notificacao-aberta"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ envioId, instalacaoId: await idDaInstalacao() }),
+    });
+  } catch {
+    /* sem internet: o toque só não é contado */
+  }
+}
+
 /** Avisa o servidor. `batida` = segue aberto (não conta como abertura nova). */
 export async function avisarAbertura(batida = false): Promise<void> {
   try {

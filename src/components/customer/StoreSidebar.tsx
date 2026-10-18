@@ -61,7 +61,7 @@ export default function StoreSidebar({
   mostrarCompras?: boolean;
   /**
    * Plano do aplicativo próprio ligado e quem entrou é o dono (ou o admin):
-   * aparece "Meu aplicativo" no menu e o botão amarelo de venda sai.
+   * o botão amarelo deixa de vender e vira a porta do "Meu aplicativo".
    */
   mostrarMeuAplicativo?: boolean;
   isAdmin?: boolean;
@@ -174,7 +174,7 @@ export default function StoreSidebar({
     });
   };
 
-  const grupos = menuDaLoja({ antecipacao: mostrarAntecipacao, compras: mostrarCompras, app: mostrarMeuAplicativo, permissoesDoFuncionario });
+  const grupos = menuDaLoja({ antecipacao: mostrarAntecipacao, compras: mostrarCompras, permissoesDoFuncionario });
 
   // O caminho COM o # — é o que distingue "Entrega" de "Pagamento", que são
   // a mesma rota. `usePathname` não enxerga hash, então vem do próprio
@@ -325,24 +325,27 @@ export default function StoreSidebar({
             abaixo da contingência, para a loja achar e pedir (Douglas,
             17/10/2026: "um botão destacado igual ao tutorial e ao modo
             contingência, só que amarelo: tenha o app próprio da sua loja").
-            Só o dono: contratar é decisão dele (app/store/aplicativo).
-            Com o plano ligado ele some: a loja já tem o app, e o lugar dele
-            passa a ser "Meu aplicativo" na lista (Cardápio & vendas) — botão
-            de venda para quem já comprou é ruído, e dois atalhos para a mesma
-            tela confundem. */}
-        {permissoesDoFuncionario == null && !mostrarMeuAplicativo && (
-          <Link
-            href="/store/aplicativo"
-            {...navegarNoAperto("/store/aplicativo")}
-            className={`fh-menu-app${enxuta ? " enxuta" : ""}${pathname?.startsWith("/store/aplicativo") ? " ativo" : ""}`}
-            title="Tenha o app da sua loja"
-          >
-            <Smartphone size={16} />
-            {!enxuta && <span>Tenha o app da sua loja</span>}
-            {!enxuta && <span className="fh-menu-app-selo">NOVO</span>}
-            <SinalDoClique />
-          </Link>
-        )}
+            Com o plano ligado ele NÃO some: vira "Meu aplicativo" (selo
+            ATIVO) e leva ao painel do app — é a porta da tela, que por isso
+            não tem item repetido na lista (Douglas, 17/10/2026).
+            Só o dono: contratar é decisão dele (app/store/aplicativo). */}
+        {permissoesDoFuncionario == null && (() => {
+          const destino = mostrarMeuAplicativo ? "/store/meu-aplicativo" : "/store/aplicativo";
+          const texto = mostrarMeuAplicativo ? "Meu aplicativo" : "Tenha o app da sua loja";
+          return (
+            <Link
+              href={destino}
+              {...navegarNoAperto(destino)}
+              className={`fh-menu-app${enxuta ? " enxuta" : ""}${pathname?.startsWith(destino) ? " ativo" : ""}`}
+              title={texto}
+            >
+              <Smartphone size={16} />
+              {!enxuta && <span>{texto}</span>}
+              {!enxuta && <span className="fh-menu-app-selo">{mostrarMeuAplicativo ? "ATIVO" : "NOVO"}</span>}
+              <SinalDoClique />
+            </Link>
+          );
+        })()}
 
         <nav className="fh-menu-lista">
           {grupos.map((grupo) => (

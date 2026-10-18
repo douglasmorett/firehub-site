@@ -72,16 +72,18 @@ export default function PrivacidadeDoApp() {
           <b>Para quê:</b> a loja pode mandar ofertas e novidades dela por notificação — por exemplo, uma
           promoção do dia que abre o cardápio ou um produto dentro do app.
           <br /><br />
-          <b>Quando:</b> só se você tocar em <b>“Quero receber”</b> na pergunta que o app faz uma vez, ou ligar a
-          chave <b>Promoções e novidades</b> na aba Loja. Sem isso, o app nunca manda promoção — só os avisos
-          do seu pedido.
+          <b>Quando:</b> só se você tocar em <b>“Ativar notificações”</b> na tela de boas-vindas do app, ou ligar a
+          chave <b>Promoções e novidades</b> na aba Loja. Se você tocar em “Agora não”, o app funciona normal e
+          pergunta de novo uma única vez, depois do seu primeiro pedido pelo app. Sem o seu sim, o app nunca
+          manda promoção — só os avisos do seu pedido.
           <br /><br />
           <b>Sair:</b> desligue a chave <b>Promoções e novidades</b> na aba Loja (vale na hora) ou as
           notificações do app nos ajustes do celular. Os avisos do pedido continuam funcionando se você
           deixar as notificações ligadas.
           <br /><br />
-          Promoção vem só da loja dona do app, nunca de outras empresas, e não é feita com base no que você
-          pediu.
+          Promoção vem só da loja dona do app, nunca de outras empresas. A loja pode escolher para quem manda
+          com base nos pedidos feitos nela (por exemplo, quem não pede há um mês ou quem já pediu pizza) — sem
+          ver quem é cada pessoa: ela vê só quantos aparelhos o grupo tem.
         </div>
 
         <h2 style={h2}>Uso do app pela loja</h2>
@@ -90,7 +92,7 @@ export default function PrivacidadeDoApp() {
           <b> número sorteado na instalação</b>, a versão do app, se é Android ou iPhone, o identificador de
           notificação (se você deixou) e a sua resposta sobre as promoções. Com isso a loja vê, no painel dela,
           números somados — quantos celulares têm o app, quantos estão com ele aberto agora, quantos pedidos
-          vieram pelo app. Esse número sorteado não é o seu telefone nem o número de série do aparelho, não diz
+          vieram pelo app, quantas pessoas tocaram em cada notificação e quantos pedidos vieram depois dela. Esse número sorteado não é o seu telefone nem o número de série do aparelho, não diz
           quem você é e some quando você desinstala o app. Quando o app é desinstalado, o identificador de
           notificação dele é apagado da lista da loja.
         </p>

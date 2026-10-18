@@ -1,51 +1,57 @@
 /**
  * A NOTIFICAÇÃO DE PROMOÇÃO que a loja manda para quem tem o app dela
- * (tela "Meu aplicativo" › Notificações). Regras puras em regras-do-push.ts.
+ * (tela "Meu aplicativo" › Notificações). Regras puras em regras-do-push.ts,
+ * segmentos.ts, mensagem.ts e resultado-dos-envios.ts.
  *
  * - Só pela API do Expo, em lotes de 100 (como lib/app-da-loja/aparelhos.ts).
  *   NUNCA pelo WhatsApp (memória numero-do-firehub-so-responde).
- * - Só para os aparelhos que ACEITARAM promoção no app (Apple 4.5.4).
- * - Até 3 envios por dia operacional (vira às 5h, fuso da loja), por conta
- *   (o app é da marca: as unidades do grupo dividem o limite). Agendado conta
- *   no dia em que vai sair; cancelado devolve a vaga.
+ * - Só para os aparelhos que ACEITARAM promoção no app (Apple 4.5.4), e
+ *   dentro deles o SEGMENTO escolhido (sumidos, fiéis, quem pediu X…).
+ * - Sem limite por dia (Douglas, 17/10/2026): a tela avisa a partir do 3º e
+ *   o histórico mostra quantos desligaram as promoções depois de cada envio.
+ *   Proteções técnicas: confirmação na tela, o mesmo texto duas vezes em
+ *   menos de 2 min é barrado (clique duplo), lotes de 100.
  * - Agendado sai pelo cron /api/cron/app-da-loja-notificacoes (a cada
- *   minuto, scripts/cron-runner.js), que também pergunta ao Expo, 15 min
- *   depois, se o Google/Apple entregou (os "recibos") e tira da base o
- *   aparelho de onde o app saiu (DeviceNotRegistered).
+ *   minuto), que também: pergunta ao Expo os recibos (entregue/erro, 15 min
+ *   depois), tira da base o aparelho de onde o app saiu (DeviceNotRegistered)
+ *   e APURA cada envio das últimas 72 h — abertos (toques), pedidos e
+ *   faturamento atribuídos (24 h) e quantos desligaram (48 h).
  *
  * Tabelas em SQL cru, criadas no primeiro uso:
- *   AppDaLojaNotificacao        um envio (texto, público, contas)
- *   AppDaLojaNotificacaoTicket  os tickets do Expo à espera do recibo
+ *   AppDaLojaNotificacao         um envio (texto, segmento, contas, resultado)
+ *   AppDaLojaNotificacaoTicket   os tickets do Expo à espera do recibo
+ *   AppDaLojaNotificacaoDestino  quem recebeu (token e "i:<instalação>"), 7 dias
+ *   AppDaLojaNotificacaoToque    quem tocou (o app avisa)
  */
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { naLoja, somarDias } from "@/lib/relatorios/base";
 import { inicioOperacional } from "@/lib/relatorios/servidor";
+import { entraNaVenda } from "@/lib/relatorios/regua-da-venda";
 import {
   anotarErroDeEntrega,
   apagarAberturasVelhas,
   appDaConta,
-  lerBase,
+  garantirEstruturaDasInstalacoes,
   removerTokensMortos,
   type AppDaConta,
 } from "@/lib/app-da-loja/instalacoes";
+import { carregarPerfis, pedidosDoAppComChaves } from "@/lib/app-da-loja/perfis";
+import { SEGMENTOS, segmentoValido, tokensDoSegmento, type Segmento } from "@/lib/app-da-loja/segmentos";
+import { envioDuplicado } from "@/lib/app-da-loja/mensagem";
+import { atribuirPedidos, desligaramDepois, JANELA_DE_ATRIBUICAO_MS } from "@/lib/app-da-loja/resultado-dos-envios";
 import {
   ESPERA_DO_RECIBO_MS,
-  LIMITE_DE_ENVIOS_POR_DIA,
   LOTE_DE_RECIBOS,
-  PUBLICOS,
   VALIDADE_DO_AVISO_S,
   caminhoDoAviso,
   conferirAgendamento,
   conferirComposicao,
   emLotesDe,
-  enviosRestantesNoDia,
-  juntarBase,
+  enviosNoDia,
   lerRecibos,
   lerTickets,
-  tokensDoPublico,
-  type Publico,
 } from "@/lib/app-da-loja/regras-do-push";
 
 const URL_DO_ENVIO = "https://exp.host/--/api/v2/push/send";
@@ -62,7 +68,9 @@ const INSTRUCOES = [
      "mensagem" TEXT NOT NULL,
      "caminho" TEXT,
      "produtoNome" TEXT,
-     "publico" TEXT NOT NULL,
+     "segmento" TEXT NOT NULL,
+     "segmentoValor" TEXT,
+     "segmentoRotulo" TEXT,
      "status" TEXT NOT NULL,
      "dia" TEXT NOT NULL,
      "agendadoPara" TIMESTAMP(3),
@@ -75,6 +83,11 @@ const INSTRUCOES = [
      "entregues" INTEGER NOT NULL DEFAULT 0,
      "errosNaEntrega" INTEGER NOT NULL DEFAULT 0,
      "removidos" INTEGER NOT NULL DEFAULT 0,
+     "abertos" INTEGER NOT NULL DEFAULT 0,
+     "pedidos" INTEGER NOT NULL DEFAULT 0,
+     "faturamento" DOUBLE PRECISION NOT NULL DEFAULT 0,
+     "desligaram" INTEGER NOT NULL DEFAULT 0,
+     "apuradoEm" TIMESTAMP(3),
      "motivo" TEXT,
      CONSTRAINT "AppDaLojaNotificacao_pkey" PRIMARY KEY ("id")
    )`,
@@ -89,6 +102,18 @@ const INSTRUCOES = [
      CONSTRAINT "AppDaLojaNotificacaoTicket_pkey" PRIMARY KEY ("ticketId")
    )`,
   `CREATE INDEX IF NOT EXISTS "AppDaLojaNotificacaoTicket_criadoEm_idx" ON "AppDaLojaNotificacaoTicket"("criadoEm")`,
+  `CREATE TABLE IF NOT EXISTS "AppDaLojaNotificacaoDestino" (
+     "envioId" TEXT NOT NULL,
+     "chave" TEXT NOT NULL,
+     "criadoEm" TIMESTAMP(3) NOT NULL,
+     CONSTRAINT "AppDaLojaNotificacaoDestino_pkey" PRIMARY KEY ("envioId", "chave")
+   )`,
+  `CREATE TABLE IF NOT EXISTS "AppDaLojaNotificacaoToque" (
+     "envioId" TEXT NOT NULL,
+     "instalacaoId" TEXT NOT NULL,
+     "em" TIMESTAMP(3) NOT NULL,
+     CONSTRAINT "AppDaLojaNotificacaoToque_pkey" PRIMARY KEY ("envioId", "instalacaoId")
+   )`,
 ];
 
 let pronto = false;
@@ -110,7 +135,9 @@ export type Envio = {
   mensagem: string;
   caminho: string | null;
   produtoNome: string | null;
-  publico: Publico;
+  segmento: string;
+  segmentoValor: string | null;
+  segmentoRotulo: string | null;
   status: "AGENDADO" | "ENVIANDO" | "ENVIADO" | "CANCELADO" | "FALHOU";
   dia: string;
   agendadoPara: Date | null;
@@ -122,28 +149,33 @@ export type Envio = {
   entregues: number;
   errosNaEntrega: number;
   removidos: number;
+  abertos: number;
+  pedidos: number;
+  faturamento: number;
+  desligaram: number;
+  apuradoEm: Date | null;
   motivo: string | null;
   quem: string | null;
 };
 
-const COLUNAS = `"id","titulo","mensagem","caminho","produtoNome","publico","status","dia","agendadoPara","criadoEm","enviadoEm",
-  "alvo","aceitos","errosNoEnvio","entregues","errosNaEntrega","removidos","motivo","quem"`;
+const COLUNAS = `"id","titulo","mensagem","caminho","produtoNome","segmento","segmentoValor","segmentoRotulo","status","dia","agendadoPara","criadoEm","enviadoEm",
+  "alvo","aceitos","errosNoEnvio","entregues","errosNaEntrega","removidos","abertos","pedidos","faturamento","desligaram","apuradoEm","motivo","quem"`;
 
-export async function historicoDeEnvios(chave: string, quantos = 30): Promise<Envio[]> {
+export async function historicoDeEnvios(chave: string, quantos = 40): Promise<Envio[]> {
   if (!(await garantirEstruturaDasNotificacoes())) return [];
   return prisma.$queryRawUnsafe<Envio[]>(
-    `SELECT ${COLUNAS} FROM "AppDaLojaNotificacao" WHERE "lojaId" = $1 ORDER BY COALESCE("agendadoPara","criadoEm") DESC LIMIT $2`,
+    `SELECT ${COLUNAS} FROM "AppDaLojaNotificacao" WHERE "lojaId" = $1 ORDER BY COALESCE("enviadoEm","agendadoPara","criadoEm") DESC LIMIT $2`,
     chave,
     quantos,
   );
 }
 
-/** Quantos envios ainda cabem no dia operacional `dia` desta conta. */
-export async function restantesNoDia(chave: string, dia: string): Promise<number> {
+/** Quantos envios saem (ou saíram) no dia operacional `dia` desta conta. */
+export async function quantosNoDia(chave: string, dia: string): Promise<number> {
   if (!(await garantirEstruturaDasNotificacoes())) return 0;
   const envios = await prisma.$queryRaw<{ dia: string; status: string }[]>`
     SELECT "dia", "status" FROM "AppDaLojaNotificacao" WHERE "lojaId" = ${chave} AND "dia" = ${dia}`;
-  return enviosRestantesNoDia(envios, dia);
+  return enviosNoDia(envios, dia);
 }
 
 /** Os marcos de tempo da conta: começo de hoje, 7 e 30 dias, e do mês (dia operacional). */
@@ -158,10 +190,12 @@ export function marcosDaConta(tz: string | null, agora: Date = new Date()) {
   };
 }
 
-/** Os tokens que o público escolhido alcança agora. */
-export async function tokensParaEnviar(app: Pick<AppDaConta, "chave" | "lojaIds" | "tz">, publico: Publico, agora = new Date()): Promise<string[]> {
-  const { aberturas, pedidos } = await lerBase(app);
-  return tokensDoPublico(juntarBase(aberturas, pedidos), publico, marcosDaConta(app.tz, agora).inicio30);
+/** Os tokens (e o mapa token → instalação) que o segmento alcança agora. */
+export async function destinosDoSegmento(app: Pick<AppDaConta, "chave" | "lojaIds" | "tz">, seg: Segmento, agora = new Date()) {
+  const perfis = await carregarPerfis(app, agora);
+  const mes = naLoja(agora, app.tz).dia.slice(5, 7);
+  const tokens = tokensDoSegmento(perfis.aparelhos, seg, perfis.clientes, { agora, mesDaLoja: mes });
+  return { tokens, instalacaoDoToken: perfis.instalacaoDoToken };
 }
 
 export type PedidoDeEnvio = {
@@ -173,15 +207,22 @@ export type PedidoDeEnvio = {
   produtoId?: unknown;
   /** false = sem link: o toque só abre o app. */
   comLink?: unknown;
-  publico: unknown;
+  segmento: unknown;
   /** ISO; ausente = agora. */
   agendarPara?: unknown;
 };
 
+function rotuloDoSegmento(seg: Segmento, nomeDoValor: string | null): string {
+  const def = SEGMENTOS.find((s) => s.tipo === seg.tipo)!;
+  if (seg.tipo === "produto") return `Pediram ${nomeDoValor || "o produto"}`;
+  if (seg.tipo === "categoria") return `Pediram de ${seg.valor}`;
+  return def.rotulo;
+}
+
 /**
  * Cria o envio (agora ou agendado). Agora: manda na hora e devolve as contas.
- * A vaga do dia é reservada dentro de uma trava por conta — dois cliques
- * rápidos não passam do limite.
+ * Dentro de uma trava por conta: dois cliques no mesmo texto em menos de
+ * 2 min viram um envio só.
  */
 export async function criarEnvio(p: PedidoDeEnvio, agora: Date = new Date()): Promise<{ ok: true; envio: Envio } | { ok: false; erro: string; status?: number }> {
   if (!(await garantirEstruturaDasNotificacoes())) return { ok: false, erro: "As notificações não estão disponíveis agora.", status: 503 };
@@ -190,8 +231,15 @@ export async function criarEnvio(p: PedidoDeEnvio, agora: Date = new Date()): Pr
 
   const texto = conferirComposicao({ titulo: p.titulo, mensagem: p.mensagem });
   if (!texto.ok) return { ok: false, erro: texto.erro };
-  const publico = PUBLICOS.includes(p.publico as Publico) ? (p.publico as Publico) : null;
-  if (!publico) return { ok: false, erro: "Escolha para quem vai a notificação." };
+  const seg = segmentoValido(p.segmento);
+  if (!seg) return { ok: false, erro: "Escolha para quem vai a notificação." };
+
+  let nomeDoValor: string | null = null;
+  if (seg.tipo === "produto") {
+    const prod = await prisma.menuProduct.findFirst({ where: { id: String(seg.valor), franchiseeId: { in: app.lojaIds } }, select: { name: true } });
+    if (!prod) return { ok: false, erro: "Esse produto não foi achado no cardápio." };
+    nomeDoValor = prod.name;
+  }
 
   // O link: cardápio da loja que está enviando, ou um produto dela (ativo).
   let caminho: string | null = null;
@@ -220,37 +268,37 @@ export async function criarEnvio(p: PedidoDeEnvio, agora: Date = new Date()): Pr
   const dia = naLoja(agendadoPara ?? agora, app.tz).dia;
 
   if (!agendadoPara) {
-    const alcance = await tokensParaEnviar(app, publico, agora);
-    if (alcance.length === 0) {
-      return { ok: false, erro: "Ninguém desse público aceitou receber promoções ainda. Divulgue o app e peça para os clientes tocarem em “Quero receber”." };
+    const { tokens } = await destinosDoSegmento(app, seg, agora);
+    if (tokens.length === 0) {
+      return { ok: false, erro: "Ninguém desse grupo pode receber agora (é preciso ter aceitado as promoções no app). Escolha outro grupo." };
     }
   }
 
   const id = randomUUID();
-  const reservou = await prisma.$transaction(async (tx) => {
+  const criou = await prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`app-da-loja-push:${app.chave}`}))`;
-    const doDia = await tx.$queryRaw<{ dia: string; status: string }[]>`
-      SELECT "dia", "status" FROM "AppDaLojaNotificacao" WHERE "lojaId" = ${app.chave} AND "dia" = ${dia}`;
-    if (enviosRestantesNoDia(doDia, dia) <= 0) return false;
+    const recentes = await tx.$queryRaw<{ titulo: string; mensagem: string; criadoEm: Date }[]>`
+      SELECT "titulo", "mensagem", "criadoEm" FROM "AppDaLojaNotificacao"
+      WHERE "lojaId" = ${app.chave} AND "status" <> 'CANCELADO' AND "criadoEm" > (now() AT TIME ZONE 'UTC') - interval '5 minutes'`;
+    if (envioDuplicado(texto.texto, recentes.map((r) => ({ ...r, criadoEm: new Date(r.criadoEm) })), agora)) return false;
     await tx.$executeRaw`
       INSERT INTO "AppDaLojaNotificacao" ("id","lojaId","enviadoPelaLojaId","quem","titulo","mensagem","caminho","produtoNome",
-        "publico","status","dia","agendadoPara","criadoEm","iniciadoEm")
+        "segmento","segmentoValor","segmentoRotulo","status","dia","agendadoPara","criadoEm","iniciadoEm")
       VALUES (${id}, ${app.chave}, ${p.franchiseeId}, ${p.quem?.slice(0, 80) ?? null}, ${texto.texto.titulo}, ${texto.texto.mensagem},
-        ${caminho}, ${produtoNome}, ${publico}, ${agendadoPara ? "AGENDADO" : "ENVIANDO"}, ${dia},
+        ${caminho}, ${produtoNome}, ${seg.tipo}, ${seg.valor ?? null}, ${rotuloDoSegmento(seg, nomeDoValor)},
+        ${agendadoPara ? "AGENDADO" : "ENVIANDO"}, ${dia},
         (${agendadoPara ? agendadoPara.toISOString() : null}::timestamptz AT TIME ZONE 'UTC'),
-        (now() AT TIME ZONE 'UTC'), (${agendadoPara ? null : agora.toISOString()}::timestamptz AT TIME ZONE 'UTC'))`;
+        (${agora.toISOString()}::timestamptz AT TIME ZONE 'UTC'), (${agendadoPara ? null : agora.toISOString()}::timestamptz AT TIME ZONE 'UTC'))`;
     return true;
   });
-  if (!reservou) {
-    return { ok: false, erro: `Limite de ${LIMITE_DE_ENVIOS_POR_DIA} notificações por dia atingido${agendadoPara ? " nesse dia" : " hoje"}. Muita notificação faz o cliente desinstalar o app.` };
-  }
+  if (!criou) return { ok: false, erro: "Essa mesma notificação acabou de ser enviada. Se quer mandar de novo, espere 2 minutos.", status: 409 };
 
   if (!agendadoPara) await executarEnvio(id);
   const [envio] = await prisma.$queryRawUnsafe<Envio[]>(`SELECT ${COLUNAS} FROM "AppDaLojaNotificacao" WHERE "id" = $1`, id);
   return { ok: true, envio };
 }
 
-/** Cancela um agendado que ainda não saiu (a vaga do dia volta). */
+/** Cancela um agendado que ainda não saiu. */
 export async function cancelarAgendado(chave: string, id: string): Promise<boolean> {
   if (!(await garantirEstruturaDasNotificacoes())) return false;
   const n = await prisma.$executeRaw`
@@ -270,8 +318,8 @@ function cabecalhosDoExpo(): Record<string, string> {
  * erro e o envio segue com os outros. Nunca lança — o status final diz o que houve.
  */
 export async function executarEnvio(id: string): Promise<void> {
-  const [linha] = await prisma.$queryRaw<{ lojaId: string; enviadoPelaLojaId: string; titulo: string; mensagem: string; caminho: string | null; publico: Publico }[]>`
-    SELECT "lojaId","enviadoPelaLojaId","titulo","mensagem","caminho","publico" FROM "AppDaLojaNotificacao" WHERE "id" = ${id} AND "status" = 'ENVIANDO'`;
+  const [linha] = await prisma.$queryRaw<{ lojaId: string; enviadoPelaLojaId: string; titulo: string; mensagem: string; caminho: string | null; segmento: string; segmentoValor: string | null }[]>`
+    SELECT "lojaId","enviadoPelaLojaId","titulo","mensagem","caminho","segmento","segmentoValor" FROM "AppDaLojaNotificacao" WHERE "id" = ${id} AND "status" = 'ENVIANDO'`;
   if (!linha) return;
   try {
     const app = await appDaConta(linha.enviadoPelaLojaId);
@@ -279,7 +327,8 @@ export async function executarEnvio(id: string): Promise<void> {
       await prisma.$executeRaw`UPDATE "AppDaLojaNotificacao" SET "status" = 'CANCELADO', "motivo" = 'O plano do aplicativo foi desligado antes do envio' WHERE "id" = ${id}`;
       return;
     }
-    const tokens = await tokensParaEnviar(app, linha.publico);
+    const seg = segmentoValido({ tipo: linha.segmento, valor: linha.segmentoValor }) || { tipo: "todos" as const };
+    const { tokens, instalacaoDoToken } = await destinosDoSegmento(app, seg);
     let aceitos = 0, erros = 0;
     const mortos: string[] = [];
     const comErro: string[] = [];
@@ -319,6 +368,14 @@ export async function executarEnvio(id: string): Promise<void> {
         await prisma.$executeRaw`
           INSERT INTO "AppDaLojaNotificacaoTicket" ("ticketId","envioId","lojaId","pushToken","criadoEm")
           VALUES ${Prisma.join(valores)} ON CONFLICT DO NOTHING`;
+        // Quem recebeu, pelas duas chaves do aparelho — para atribuir pedidos e desligamentos.
+        const chaves = r.aceitos.flatMap((a) => {
+          const inst = instalacaoDoToken.get(a.token);
+          return inst ? [a.token, `i:${inst}`] : [a.token];
+        });
+        const destinos = chaves.map((c) => Prisma.sql`(${id}, ${c}, (now() AT TIME ZONE 'UTC'))`);
+        await prisma.$executeRaw`
+          INSERT INTO "AppDaLojaNotificacaoDestino" ("envioId","chave","criadoEm") VALUES ${Prisma.join(destinos)} ON CONFLICT DO NOTHING`;
       }
     }
     await removerTokensMortos(mortos);
@@ -327,7 +384,7 @@ export async function executarEnvio(id: string): Promise<void> {
       UPDATE "AppDaLojaNotificacao" SET "status" = ${tokens.length > 0 && aceitos === 0 ? "FALHOU" : "ENVIADO"},
         "enviadoEm" = (now() AT TIME ZONE 'UTC'), "alvo" = ${tokens.length}, "aceitos" = ${aceitos},
         "errosNoEnvio" = ${erros}, "removidos" = "removidos" + ${mortos.length},
-        "motivo" = ${tokens.length === 0 ? "Ninguém desse público aceitou promoções" : aceitos === 0 ? "O serviço de notificações recusou o envio" : null}
+        "motivo" = ${tokens.length === 0 ? "Ninguém desse grupo podia receber na hora do envio" : aceitos === 0 ? "O serviço de notificações recusou o envio" : null}
       WHERE "id" = ${id}`;
   } catch (err: any) {
     console.error(`[App da loja] Envio ${id} falhou: ${err?.message}`);
@@ -403,10 +460,84 @@ export async function conferirRecibos(): Promise<{ conferidos: number; removidos
   return { conferidos: respondidos.length, removidos };
 }
 
-/** Cron, uma vez por hora basta: o carimbo diário de abertura só serve ao gráfico de 30 dias. */
+/** O app avisa que o cliente tocou na notificação. Uma vez por instalação e envio. */
+export async function registrarToque(envioId: string, instalacaoId: string): Promise<boolean> {
+  if (!(await garantirEstruturaDasNotificacoes())) return false;
+  const existe = await prisma.$queryRaw<{ id: string }[]>`
+    SELECT "id" FROM "AppDaLojaNotificacao" WHERE "id" = ${envioId} AND "enviadoEm" > (now() AT TIME ZONE 'UTC') - interval '7 days'`;
+  if (!existe.length) return false;
+  await prisma.$executeRaw`
+    INSERT INTO "AppDaLojaNotificacaoToque" ("envioId","instalacaoId","em") VALUES (${envioId}, ${instalacaoId}, (now() AT TIME ZONE 'UTC'))
+    ON CONFLICT DO NOTHING`;
+  return true;
+}
+
+/**
+ * Cron: apura os envios das últimas 72 h de cada conta — toques, pedidos e
+ * faturamento atribuídos (24 h, regra em resultado-dos-envios.ts) e quantos
+ * desligaram as promoções ou desinstalaram (48 h). Grava no envio; a tela só
+ * lê. Depois de 72 h o envio fica com o último resultado e os destinos saem.
+ */
+export async function apurarEnvios(): Promise<number> {
+  if (!(await garantirEstruturaDasNotificacoes()) || !(await garantirEstruturaDasInstalacoes())) return 0;
+  const recentes = await prisma.$queryRaw<{ id: string; lojaId: string; enviadoPelaLojaId: string; enviadoEm: Date }[]>`
+    SELECT "id","lojaId","enviadoPelaLojaId","enviadoEm" FROM "AppDaLojaNotificacao"
+    WHERE "status" = 'ENVIADO' AND "enviadoEm" > (now() AT TIME ZONE 'UTC') - interval '72 hours'
+      AND ("apuradoEm" IS NULL OR "apuradoEm" < (now() AT TIME ZONE 'UTC') - interval '5 minutes')
+    ORDER BY "enviadoEm"`;
+  const porConta = new Map<string, typeof recentes>();
+  for (const e of recentes) porConta.set(e.lojaId, [...(porConta.get(e.lojaId) || []), e]);
+  let apurados = 0;
+  for (const [chave, envios] of porConta) {
+    try {
+      const app = await appDaConta(envios[0].enviadoPelaLojaId);
+      if (!app) continue;
+      const ids = envios.map((e) => e.id);
+      const destinosLinhas = await prisma.$queryRaw<{ envioId: string; chave: string }[]>`
+        SELECT "envioId","chave" FROM "AppDaLojaNotificacaoDestino" WHERE "envioId" = ANY(${ids}::text[])`;
+      const destinos = new Map<string, Set<string>>(ids.map((i) => [i, new Set<string>()]));
+      for (const d of destinosLinhas) destinos.get(d.envioId)!.add(d.chave);
+      const maisAntigo = new Date(Math.min(...envios.map((e) => new Date(e.enviadoEm).getTime())));
+      const pedidosApp = await pedidosDoAppComChaves(app, maisAntigo);
+      const vendas = new Map(
+        (pedidosApp.length
+          ? await prisma.customerOrder.findMany({ where: { id: { in: pedidosApp.map((p) => p.id) } }, select: { id: true, status: true, totalAmount: true, reposicao: true } })
+          : []
+        ).map((o) => [o.id, o]),
+      );
+      const paraAtribuir = pedidosApp
+        .filter((p) => vendas.has(p.id) && entraNaVenda(vendas.get(p.id) as any))
+        .map((p) => ({ id: p.id, em: p.em, valor: Number(vendas.get(p.id)!.totalAmount) || 0, chaves: p.chaves }));
+      const atribuidos = atribuirPedidos(envios.map((e) => ({ id: e.id, enviadoEm: new Date(e.enviadoEm), destinos: destinos.get(e.id)! })), paraAtribuir, JANELA_DE_ATRIBUICAO_MS);
+      const eventos = await prisma.$queryRaw<{ instalacaoId: string; em: Date }[]>`
+        SELECT "instalacaoId", GREATEST("promocoesDesligadasEm", "removidoEm") AS em FROM "AppDaLojaAparelho"
+        WHERE "lojaId" = ${chave} AND GREATEST("promocoesDesligadasEm", "removidoEm") >= (${maisAntigo.toISOString()}::timestamptz AT TIME ZONE 'UTC')`;
+      const evs = eventos.map((e) => ({ chave: `i:${e.instalacaoId}`, em: new Date(e.em) }));
+      const toques = await prisma.$queryRaw<{ envioId: string; n: number }[]>`
+        SELECT "envioId", COUNT(*)::int AS n FROM "AppDaLojaNotificacaoToque" WHERE "envioId" = ANY(${ids}::text[]) GROUP BY "envioId"`;
+      const nToques = new Map(toques.map((t) => [t.envioId, Number(t.n)]));
+      for (const e of envios) {
+        const a = atribuidos.get(e.id)!;
+        const desligaram = desligaramDepois(new Date(e.enviadoEm), destinos.get(e.id)!, evs);
+        await prisma.$executeRaw`
+          UPDATE "AppDaLojaNotificacao" SET "abertos" = ${nToques.get(e.id) || 0}, "pedidos" = ${a.pedidos},
+            "faturamento" = ${a.faturamento}, "desligaram" = ${desligaram}, "apuradoEm" = (now() AT TIME ZONE 'UTC')
+          WHERE "id" = ${e.id}`;
+        apurados++;
+      }
+    } catch (err: any) {
+      console.warn(`[App da loja] Apuração dos envios de ${chave} falhou: ${err?.message}`);
+    }
+  }
+  // Destino só serve à apuração (72 h) — sai depois de 7 dias.
+  await prisma.$executeRaw`DELETE FROM "AppDaLojaNotificacaoDestino" WHERE "criadoEm" < (now() AT TIME ZONE 'UTC') - interval '7 days'`;
+  return apurados;
+}
+
+/** Cron, uma vez por hora basta: o carimbo diário de abertura só serve ao gráfico. */
 let ultimaFaxina = 0;
 export async function faxinaDasAberturas(agora = new Date()): Promise<void> {
   if (agora.getTime() - ultimaFaxina < 60 * 60 * 1000) return;
   ultimaFaxina = agora.getTime();
-  await apagarAberturasVelhas(somarDias(naLoja(agora, null).dia, -60));
+  await apagarAberturasVelhas(somarDias(naLoja(agora, null).dia, -100));
 }

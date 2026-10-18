@@ -6,13 +6,13 @@
  */
 import {
   ATIVO_AGORA_MS,
-  LIMITE_DE_ENVIOS_POR_DIA,
+  AVISAR_A_PARTIR_DE,
   caminhoDoAviso,
   conferirAgendamento,
   conferirComposicao,
   contarBase,
   emLotesDe,
-  enviosRestantesNoDia,
+  enviosNoDia,
   juntarBase,
   lerRecibos,
   lerTickets,
@@ -82,16 +82,12 @@ confere("público ativos 30 dias tira quem não abre há 45 dias", tokensDoPubli
 const repetido = juntarBase([...aberturas, { ...aberturas[0], instalacaoId: "inst-1b" }], []);
 confere("o mesmo token duas vezes sai uma vez só no envio", tokensDoPublico(repetido, "todos", marcos.inicio30).filter((t) => t === T(1)).length, 1);
 
-// ── Limite do dia ───────────────────────────────────────────────────────────
-confere("limite é 3 por dia", LIMITE_DE_ENVIOS_POR_DIA, 3);
-confere("nenhum envio: cabem 3", enviosRestantesNoDia([], "2026-10-17"), 3);
-confere("2 enviados + 1 cancelado: cabe 1", enviosRestantesNoDia([
-  { dia: "2026-10-17", status: "ENVIADO" }, { dia: "2026-10-17", status: "FALHOU" }, { dia: "2026-10-17", status: "CANCELADO" },
-], "2026-10-17"), 1);
-confere("agendado conta no dia dele, não no de hoje", enviosRestantesNoDia([
-  { dia: "2026-10-18", status: "AGENDADO" }, { dia: "2026-10-17", status: "ENVIADO" },
+// ── Envios no dia (sem limite; aviso a partir do 3º) ─────────────────────────
+confere("aviso a partir do 3º envio do dia", AVISAR_A_PARTIR_DE, 3);
+confere("conta os do dia, sem cancelado nem falho", enviosNoDia([
+  { dia: "2026-10-17", status: "ENVIADO" }, { dia: "2026-10-17", status: "AGENDADO" },
+  { dia: "2026-10-17", status: "CANCELADO" }, { dia: "2026-10-17", status: "FALHOU" }, { dia: "2026-10-18", status: "ENVIADO" },
 ], "2026-10-17"), 2);
-confere("3 no dia: nenhum a mais (nunca negativo)", enviosRestantesNoDia(Array(4).fill({ dia: "2026-10-17", status: "ENVIADO" }), "2026-10-17"), 0);
 
 // ── Lotes de 100 ────────────────────────────────────────────────────────────
 confere("250 tokens = lotes de 100, 100 e 50", emLotesDe(Array.from({ length: 250 }, (_, i) => i)).map((l) => l.length), [100, 100, 50]);

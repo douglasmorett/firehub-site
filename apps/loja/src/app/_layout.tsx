@@ -12,7 +12,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { PerguntaDasPromocoes } from "@/components/PerguntaDasPromocoes";
 import { abrirNoCardapio } from "@/lib/abrir-no-cardapio";
 import { prepararCanais } from "@/lib/avisos";
-import { BATIDA_MS, avisarAbertura } from "@/lib/presenca";
+import { BATIDA_MS, avisarAbertura, avisarToque } from "@/lib/presenca";
 
 function abrirPeloAviso(resposta: Notifications.NotificationResponse | null) {
   const dados: any = resposta?.notification.request.content.data;
@@ -21,6 +21,8 @@ function abrirPeloAviso(resposta: Notifications.NotificationResponse | null) {
   }
   // Promoção da loja (painel › Meu aplicativo): abre o cardápio ou o produto, dentro do app.
   if (dados?.tipo === "PROMOCAO") {
+    // Conta como "aberta" no painel da loja (resultado de cada envio).
+    avisarToque(dados.envioId);
     abrirNoCardapio(dados.caminho);
     router.navigate("/");
   }

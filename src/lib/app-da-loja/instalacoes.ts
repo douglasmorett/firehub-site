@@ -44,6 +44,7 @@ const INSTRUCOES = [
      "app" TEXT,
      "promocoes" BOOLEAN NOT NULL DEFAULT false,
      "promocoesRespondidoEm" TIMESTAMP(3),
+     "promocoesDesligadasEm" TIMESTAMP(3),
      "primeiroAcesso" TIMESTAMP(3) NOT NULL,
      "ultimoAcesso" TIMESTAMP(3) NOT NULL,
      "aberturas" INTEGER NOT NULL DEFAULT 0,
@@ -233,6 +234,9 @@ export async function registrarAbertura(a: Abertura, agora: Date = new Date()): 
         "promocoes" = CASE WHEN ${respondeu}::boolean THEN EXCLUDED."promocoes" ELSE "AppDaLojaAparelho"."promocoes" END,
         "promocoesRespondidoEm" = CASE WHEN ${respondeu}::boolean AND EXCLUDED."promocoes" <> "AppDaLojaAparelho"."promocoes"
           THEN EXCLUDED."promocoesRespondidoEm" ELSE COALESCE("AppDaLojaAparelho"."promocoesRespondidoEm", EXCLUDED."promocoesRespondidoEm") END,
+        -- Desligou as promoções agora (estava ligado): o histórico mostra o efeito de cada envio.
+        "promocoesDesligadasEm" = CASE WHEN ${respondeu}::boolean AND EXCLUDED."promocoes" = false AND "AppDaLojaAparelho"."promocoes" = true
+          THEN EXCLUDED."ultimoAcesso" ELSE "AppDaLojaAparelho"."promocoesDesligadasEm" END,
         "primeiroAcesso" = LEAST("AppDaLojaAparelho"."primeiroAcesso", EXCLUDED."primeiroAcesso"),
         "ultimoAcesso" = EXCLUDED."ultimoAcesso",
         "aberturas" = "AppDaLojaAparelho"."aberturas" + ${mais},
@@ -293,6 +297,7 @@ export async function anotarErroDeEntrega(chave: string, tokens: string[], ok: s
 
 /** As duas fontes da base, cruas — quem junta é `juntarBase` (regras puras). */
 export async function lerBase(app: Pick<AppDaConta, "chave" | "lojaIds">): Promise<{ aberturas: AparelhoDaAbertura[]; pedidos: AparelhoDePedido[] }> {
+  // (Os perfis para segmentar e atribuir pedidos moram em lib/app-da-loja/perfis.ts.)
   const [okA, okP] = await Promise.all([garantirEstruturaDasInstalacoes(), garantirTabelaDoAppDaLoja()]);
   const aberturas = okA
     ? await prisma.$queryRaw<AparelhoDaAbertura[]>`

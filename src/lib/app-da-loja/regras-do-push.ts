@@ -31,8 +31,13 @@ export const ATIVO_AGORA_MS = 5 * 60 * 1000;
 /** De quanto em quanto tempo o app avisa que segue aberto (apps/loja/src/lib/presenca.ts). */
 export const BATIDA_DO_APP_MS = 4 * 60 * 1000;
 
-/** Proteção contra abuso: envios por dia (dia operacional da loja, vira às 5h). */
-export const LIMITE_DE_ENVIOS_POR_DIA = 3;
+/**
+ * Envios no mesmo dia: SEM limite (Douglas, 17/10/2026 — nenhuma regra da
+ * Apple, do Google ou do Expo obriga, e o app é da loja). A partir do 3º no
+ * dia da loja, a tela avisa (não bloqueia) e o histórico mostra quantos
+ * desligaram as promoções depois de cada envio.
+ */
+export const AVISAR_A_PARTIR_DE = 3;
 /** A API do Expo aceita até 100 mensagens por chamada. */
 export const LOTE_DO_EXPO = 100;
 /** A consulta de recibos aceita até 1000 ids por chamada. */
@@ -179,17 +184,14 @@ export function tokensDoPublico(base: AparelhoDaBase[], publico: Publico, inicio
   return [...vistos];
 }
 
-// ── LIMITE DO DIA ───────────────────────────────────────────────────────────
+// ── ENVIOS NO DIA ───────────────────────────────────────────────────────────
 
-/** Um envio que conta no limite: o dia operacional em que sai e se ainda vale. */
+/** Um envio no dia operacional em que sai. */
 export type EnvioNoDia = { dia: string; status: string };
 
-const NAO_CONTA = new Set(["CANCELADO"]);
-
-/** Quantos envios ainda cabem no dia. Cancelado não conta; agendado conta no dia em que vai sair. */
-export function enviosRestantesNoDia(envios: EnvioNoDia[], dia: string, limite = LIMITE_DE_ENVIOS_POR_DIA): number {
-  const usados = envios.filter((e) => e.dia === dia && !NAO_CONTA.has(e.status)).length;
-  return Math.max(0, limite - usados);
+/** Quantos envios saem (ou já saíram) no dia. Cancelado e falho não contam. */
+export function enviosNoDia(envios: EnvioNoDia[], dia: string): number {
+  return envios.filter((e) => e.dia === dia && e.status !== "CANCELADO" && e.status !== "FALHOU").length;
 }
 
 // ── O TEXTO ─────────────────────────────────────────────────────────────────
