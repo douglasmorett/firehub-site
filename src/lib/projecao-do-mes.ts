@@ -216,6 +216,7 @@ export async function montarProjecao(agora = new Date()) {
     boletosDa.set(c.franchiseeId, [...(boletosDa.get(c.franchiseeId) || []), b]);
   }
   const pagandoNoMes = new Map(linhas.filter((x) => x.situacao === "PAGANDO").map((x) => [x.id, x.baseProjetada]));
+  const linhaDa = new Map(linhas.map((x) => [x.id, { total: x.total, chance: x.chance }]));
   const lojasNoCrescimento: LojaNoCrescimento[] = lojas
     .filter((l) => !lojaIsenta(l))
     .map((l) => ({
@@ -226,15 +227,9 @@ export async function montarProjecao(agora = new Date()) {
       ultimoPedido: atv.get(l.id)?.ultimo ? new Date(atv.get(l.id)!.ultimo!) : null,
       boletos: boletosDa.get(l.id) || [],
       previstoNoMes: pagandoNoMes.get(l.id) ?? null,
+      noMes: linhaDa.get(l.id) ?? null,
       porDia: porDiaDa.get(l.id) || 0,
     }));
-  const seguinte = intervaloDoMes(mesSeguinte, FUSO);
-  const crescimento = montarCrescimento({
-    lojas: lojasNoCrescimento, agora, mes, mesSeguinte, meses,
-    inicioDoMes: monthStart, fimDoMes: monthEnd, inicioDoSeguinte: seguinte.monthStart, fimDoSeguinte: seguinte.monthEnd,
-    previstoDoMes: { boletos: linhas.length, aposta: totais.aposta, seTodas: totais.seTodas },
-    fuso: FUSO,
-  });
 
   // Vendas por dia do mês: o realizado até hoje e o ritmo daqui para frente.
   const dias: { dia: string; valor: number; tipo: "real" | "hoje" | "projetado" }[] = [];
@@ -281,6 +276,16 @@ export async function montarProjecao(agora = new Date()) {
     lojasEmAberto: emAberto,
     perdoadas: anteriores.filter((c) => c.status === "FORGIVEN").length,
   };
+
+  const seguinte = intervaloDoMes(mesSeguinte, FUSO);
+  const crescimento = montarCrescimento({
+    lojas: lojasNoCrescimento, agora, mes, mesSeguinte, meses,
+    inicioDoMes: monthStart, fimDoMes: monthEnd, inicioDoSeguinte: seguinte.monthStart, fimDoSeguinte: seguinte.monthEnd,
+    previstoDoMes: { boletos: linhas.length, aposta: totais.aposta, seTodas: totais.seTodas },
+    mesAnterior,
+    mesPassado: { recebido: mesPassado.recebido, emAberto: mesPassado.emAberto, boletosEmAberto: emAberto.length, lojasPagas: mesPassado.lojasPagas },
+    fuso: FUSO,
+  });
 
   // ── Para ligar ────────────────────────────────────────────────
   const qtdProdutos = new Map(produtos.map((p) => [p.franchiseeId, p._count._all]));

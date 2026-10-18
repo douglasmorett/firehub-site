@@ -7,10 +7,15 @@
  * contabilizar a projeção de crescimento — quantos entraram esse mês, quantos
  * ativaram e ficaram; se continuar crescendo igual, mês que vem bate quanto?".
  *
- * O "no ritmo de hoje" (mesSeguinteNoRitmo) só projeta as lojas que já vendem.
- * Aqui entram também a perda (quem para), as lojas em teste que vão virar
- * pagantes e as contas novas que o mês que vem deve trazer, cada parte com a
- * taxa medida no histórico e a faixa dela (poucas lojas = faixa larga).
+ * O número principal (`mesmoPadrao`, pedido do dono no mesmo dia: "se eu
+ * cresci 10 mil com a galera que entrou, a projeção do mês que vem deveria
+ * bater uns 20 — algo coerente") é aditivo, em R$: o mês atual menos a perda
+ * do último mês, mais a receita nova que entrou no mês atual de novo. A
+ * segunda leitura faz a mesma conta com os últimos 30 dias.
+ *
+ * A conta por coorte (`projetarComCrescimento`) virou o cenário CONSERVADOR:
+ * usa a conversão medida de quem já saiu do teste, que sai baixa enquanto as
+ * contas do mês acabaram de sair dele (não tiveram tempo de virar pagantes).
  *
  * ── AS ETAPAS DO FUNIL (por mês de cadastro, em Brasília) ──────────────────
  *   Cadastro       conta nova: não isenta (Hakim, casa, isentada pelo dono) e
@@ -50,6 +55,8 @@ export type LojaNoCrescimento = {
   boletos: Boleto[];
   /** Base projetada do boleto do mês atual quando a loja já paga e vende (PAGANDO); null = não tem. */
   previstoNoMes: number | null;
+  /** Boleto previsto do mês atual em QUALQUER situação (a linha da projeção): total e chance. null = nenhum. */
+  noMes: { total: number; chance: number } | null;
   /** Venda por dia nos últimos 7 dias (ritmoPorDia). */
   porDia: number;
 };
@@ -267,6 +274,9 @@ export function montarCrescimento(e: {
   inicioDoSeguinte: Date; fimDoSeguinte: Date;
   /** Boletos previstos do mês atual (a projeção de cima): quantos e a aposta. */
   previstoDoMes: { boletos: number; aposta: number; seTodas: number };
+  mesAnterior: string;
+  /** Boletos do mês anterior: recebido e em aberto (a inadimplência esperada). */
+  mesPassado: { recebido: number; emAberto: number; boletosEmAberto: number; lojasPagas: number };
   fuso?: string;
 }) {
   const { lojas, agora, mes, mesSeguinte, meses } = e;
@@ -350,12 +360,20 @@ export function montarCrescimento(e: {
   });
   const primeiroComBoleto = serie.findIndex((s) => s.boletos > 0);
 
+  // O número principal: o mesmo padrão do último mês (e dos últimos 30 dias).
+  const doMes = mesmoPadrao(lojas, e.mesAnterior, agora, e.previstoDoMes, "mes");
+  const de30dias = mesmoPadrao(lojas, e.mesAnterior, agora, e.previstoDoMes, "30dias");
+  const crescimentoDoMesAtual = crescimentoDoMes({ ...e.mesPassado, seTodas: e.previstoDoMes.seTodas, aposta: e.previstoDoMes.aposta });
+  const pontas = [doMes.total, doMes.totalAposta, de30dias.total, de30dias.totalAposta, igual.total];
+  const faixaPrincipal = { min: Math.min(...pontas), max: Math.max(...pontas) };
+
   const avisos: string[] = [];
   if (saiu < LOJAS_PARA_TAXA_FIRME) avisos.push(`a conversão sai de só ${saiu} ${saiu === 1 ? "conta" : "contas"} que já saíram do teste`);
   if (taxas.perda.meses < MESES_PARA_PERDA_FIRME) avisos.push(`a perda sai de ${taxas.perda.meses} ${taxas.perda.meses === 1 ? "mês" : "meses"} com boleto (${taxas.perda.n} boletos)`);
   if (taxas.mensalidadeNova.reserva) avisos.push("nenhuma conta nova pagou ainda: a mensalidade da nova é o mínimo");
 
   return {
+    mesmoPadrao: { doMes, de30dias, faixa: faixaPrincipal, crescimento: crescimentoDoMesAtual, mesAtual: e.previstoDoMes },
     funil, taxas, ritmoDeCadastro, diasDeTeste, fracaoNoMes, partes, cenarios,
     serie: primeiroComBoleto < 0 ? serie.slice(-1) : serie.slice(primeiroComBoleto),
     historicoCurto: avisos.length ? avisos : null,
@@ -363,3 +381,73 @@ export function montarCrescimento(e: {
 }
 
 export type Crescimento = ReturnType<typeof montarCrescimento>;
+
+/** Quando a cobrança da loja começa: o fim do teste, ou o cadastro sem teste. */
+export const inicioDaCobrancaDaLoja = (l: LojaNoCrescimento) => l.fimDoTeste ?? l.cadastro;
+
+export type LeituraAditiva = {
+  /** R$ dos boletos do mês anterior que entram na conta da perda. */
+  anterior: number;
+  perdido: number; lojasPerdidas: number; lojasAnteriores: number;
+  /** perdido ÷ anterior. */
+  perda: number;
+  /** Receita nova (se todas pagarem e na aposta) e quantas lojas. */
+  nova: number; novaAposta: number; lojasNovas: number;
+  /** Mês atual × (1 − perda) + receita nova. */
+  total: number; totalAposta: number;
+};
+
+/**
+ * Mês que vem "no mesmo padrão" — a leitura aditiva do dono:
+ *   próximo = mês atual × (1 − perda) + receita nova
+ *
+ * Último mês (calendário):
+ *   receita nova = boleto previsto deste mês das lojas cujo PRIMEIRO boleto é
+ *     este mês (inclui quem sai do teste até o fim do mês);
+ *   perda = R$ do boleto do mês anterior das lojas que não têm boleto previsto
+ *     neste mês ÷ R$ de todos os boletos do mês anterior.
+ * Últimos 30 dias:
+ *   receita nova = boleto previsto deste mês das lojas cuja cobrança COMEÇOU
+ *     nos últimos 30 dias (quem saiu do teste no fim do mês passado entra; quem
+ *     ainda vai sair, não);
+ *   perda = como a do último mês, contando também quem está parado agora (7+
+ *     dias sem pedido) — o retrato de hoje, não o boleto do mês.
+ */
+export function mesmoPadrao(
+  lojas: LojaNoCrescimento[], mesAnterior: string, agora: Date,
+  mesAtual: { seTodas: number; aposta: number }, janela: "mes" | "30dias",
+): LeituraAditiva {
+  const desde = agora.getTime() - 30 * DIA;
+  let anterior = 0, perdido = 0, lojasPerdidas = 0, lojasAnteriores = 0, nova = 0, novaAposta = 0, lojasNovas = 0;
+  for (const l of lojas) {
+    const doAnterior = l.boletos.filter((b) => b.mes === mesAnterior).reduce((s, b) => s + b.valor, 0);
+    if (l.boletos.some((b) => b.mes === mesAnterior)) {
+      lojasAnteriores++;
+      anterior += doAnterior;
+      const saiu = !l.noMes || (janela === "30dias" && !etapasDaLoja(l, agora).vendendo);
+      if (saiu) { perdido += doAnterior; lojasPerdidas++; }
+    }
+    if (!l.noMes) continue;
+    const ehNova = janela === "mes"
+      ? l.boletos.length === 0
+      : inicioDaCobrancaDaLoja(l).getTime() >= desde && inicioDaCobrancaDaLoja(l) <= agora;
+    if (ehNova) { nova += l.noMes.total; novaAposta += l.noMes.total * l.noMes.chance; lojasNovas++; }
+  }
+  const perda = anterior > 0 ? perdido / anterior : 0;
+  const r = (v: number) => Math.round(v * 100) / 100;
+  return {
+    anterior: r(anterior), perdido: r(perdido), lojasPerdidas, lojasAnteriores, perda,
+    nova: r(nova), novaAposta: r(novaAposta), lojasNovas,
+    total: r(mesAtual.seTodas * (1 - perda) + nova), totalAposta: r(mesAtual.aposta * (1 - perda) + novaAposta),
+  };
+}
+
+/**
+ * Quanto o mês atual cresceu sobre o que entrou de verdade no mês anterior:
+ * recebido (boleto pago) × previsto agora. Os boletos do mês anterior em
+ * aberto ficam à parte — são a inadimplência esperada, não receita.
+ */
+export function crescimentoDoMes(p: { recebido: number; emAberto: number; boletosEmAberto: number; lojasPagas: number; seTodas: number; aposta: number }) {
+  const vezes = (v: number) => (p.recebido > 0 ? Math.round((v / p.recebido) * 10) / 10 : null);
+  return { ...p, cobrado: Math.round((p.recebido + p.emAberto) * 100) / 100, vezesSeTodas: vezes(p.seTodas), vezesAposta: vezes(p.aposta) };
+}

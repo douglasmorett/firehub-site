@@ -8,7 +8,7 @@
  */
 import {
   entraNoFunil, etapasDaLoja, fracaoQueSaiDoTesteNoMes, funilPorMes, mensalidadeDaNova, montarCrescimento,
-  partesDoMesSeguinte, perdaMensal, projetarComCrescimento, somarMeses, taxa, diasDeTesteTipico,
+  partesDoMesSeguinte, perdaMensal, projetarComCrescimento, somarMeses, taxa, diasDeTesteTipico, mesmoPadrao, crescimentoDoMes,
   type LojaNoCrescimento,
 } from "../src/lib/projecao-de-crescimento-regras";
 
@@ -26,7 +26,7 @@ const loja = (o: Partial<Omit<LojaNoCrescimento, "cadastro">> & { cadastro: stri
   id: o.id || Math.random().toString(36).slice(2), doFunil: o.doFunil ?? true,
   cadastro: brt(o.cadastro), fimDoTeste: o.fimDoTeste === undefined ? new Date(brt(o.cadastro).getTime() + 15 * 86_400_000) : o.fimDoTeste,
   primeiroPedido: o.primeiroPedido ?? null, ultimoPedido: o.ultimoPedido ?? null,
-  boletos: o.boletos || [], previstoNoMes: o.previstoNoMes ?? null, porDia: o.porDia || 0,
+  boletos: o.boletos || [], previstoNoMes: o.previstoNoMes ?? null, noMes: o.noMes ?? null, porDia: o.porDia || 0,
 });
 
 // Quem entra no funil.
@@ -118,6 +118,7 @@ const m = montarCrescimento({
   agora, mes: "2026-10", mesSeguinte: "2026-11", meses: ["2026-07", "2026-08", "2026-09", "2026-10"],
   inicioDoMes: brt("2026-10-01T00:00:00"), fimDoMes: iniNov, inicioDoSeguinte: iniNov, fimDoSeguinte: fimNov,
   previstoDoMes: { boletos: 3, aposta: 400, seTodas: 500 },
+  mesAnterior: "2026-09", mesPassado: { recebido: 1600, emAberto: 640, boletosEmAberto: 3, lojasPagas: 8 },
 });
 confere("ritmo de cadastro: 2 em 17,5 dias → 30 dias de novembro", r2(m.ritmoDeCadastro.igual), r2((2 / 17.5) * 30));
 confere("média: julho vazio fica fora (agosto e setembro)", [m.ritmoDeCadastro.mesesDaMedia, m.ritmoDeCadastro.media], [["2026-08", "2026-09"], 2]);
@@ -125,6 +126,50 @@ confere("pessimista ≤ cenários ≤ otimista", m.cenarios.pessimista.total <= 
   && m.cenarios.otimista.total >= Math.max(m.cenarios.igual.total, m.cenarios.media!.total), true);
 confere("histórico curto avisa", !!m.historicoCurto && m.historicoCurto.length >= 2, true);
 confere("série começa no 1º mês com boleto e termina no previsto", m.serie.map((s) => [s.mes, s.tipo, s.boletos]), [["2026-09", "real", 3], ["2026-10", "previsto", 3]]);
+
+// O número principal: o mesmo padrão do último mês, aditivo em R$.
+{
+  const ficou = loja({ cadastro: "2026-06-01T10:00:00", ultimoPedido: brt("2026-10-18T09:00:00"),
+    boletos: [{ mes: "2026-09", pago: true, base: 20000, valor: 400 }], noMes: { total: 400, chance: 1 } });
+  const saiu = loja({ cadastro: "2026-06-01T10:00:00", ultimoPedido: brt("2026-09-28T20:00:00"),
+    boletos: [{ mes: "2026-09", pago: false, base: 5000, valor: 100 }] });
+  const paradoAgora = loja({ cadastro: "2026-06-01T10:00:00", ultimoPedido: brt("2026-10-05T20:00:00"),
+    boletos: [{ mes: "2026-09", pago: true, base: 5000, valor: 100 }], noMes: { total: 100, chance: 0.5 } });
+  // Nova do mês: 1º boleto é outubro. Uma saiu do teste em 25/09 (já teve boleto de setembro? não: entrou no fim do mês, boleto só agora).
+  const novaQueSaiuEmSetembro = loja({ cadastro: "2026-09-10T10:00:00", fimDoTeste: brt("2026-09-25T10:00:00"), ultimoPedido: brt("2026-10-18T09:00:00"), noMes: { total: 300, chance: 1 } });
+  const novaDeOutubro = loja({ cadastro: "2026-10-01T10:00:00", fimDoTeste: brt("2026-10-16T10:00:00"), ultimoPedido: brt("2026-10-18T09:00:00"), noMes: { total: 200, chance: 1 } });
+  const testeAcabaDia25 = loja({ cadastro: "2026-10-10T10:00:00", fimDoTeste: brt("2026-10-25T10:00:00"), ultimoPedido: brt("2026-10-18T09:00:00"), noMes: { total: 100, chance: 0.25 } });
+  // Saiu do teste em 10/09 e teve boleto de setembro: não é nova no mês, mas é nova nos 30 dias? Não — começou há mais de 30 dias.
+  const antigaDeSetembro = loja({ cadastro: "2026-08-26T10:00:00", fimDoTeste: brt("2026-09-10T10:00:00"), ultimoPedido: brt("2026-10-18T09:00:00"),
+    boletos: [{ mes: "2026-09", pago: true, base: 4000, valor: 100 }], noMes: { total: 150, chance: 1 } });
+  // Saiu do teste em 22/09 com boleto de setembro: nos 30 dias ela é nova.
+  const setembroTardia = loja({ cadastro: "2026-09-07T10:00:00", fimDoTeste: brt("2026-09-22T10:00:00"), ultimoPedido: brt("2026-10-18T09:00:00"),
+    boletos: [{ mes: "2026-09", pago: false, base: 2000, valor: 100 }], noMes: { total: 250, chance: 1 } });
+  const ls = [ficou, saiu, paradoAgora, novaQueSaiuEmSetembro, novaDeOutubro, testeAcabaDia25, antigaDeSetembro, setembroTardia];
+  const mesAtual = { seTodas: 1600, aposta: 1350 };
+  const m1 = mesmoPadrao(ls, "2026-09", agora, mesAtual, "mes");
+  // Setembro: 400 + 100 + 100 + 100 + 100 = 800; perdeu 100 (sem boleto em outubro) = 12,5%.
+  confere("último mês: perda em R$ = 100 de 800", [m1.anterior, m1.perdido, m1.lojasPerdidas, m1.perda], [800, 100, 1, 0.125]);
+  // Novas (1º boleto em outubro): 300 + 200 + 100 = 600; na aposta 300 + 200 + 25 = 525.
+  confere("último mês: receita nova inclui quem sai do teste até o fim do mês", [m1.nova, m1.novaAposta, m1.lojasNovas], [600, 525, 3]);
+  // 1.600 × 0,875 + 600 = 2.000; aposta 1.350 × 0,875 + 525 = 1.706,25.
+  confere("último mês: próximo = atual × (1 − perda) + nova", [m1.total, m1.totalAposta], [2000, 1706.25]);
+  const m30 = mesmoPadrao(ls, "2026-09", agora, mesAtual, "30dias");
+  // Perda de 30 dias conta também o parado agora: 200 de 800.
+  confere("30 dias: perda conta quem está parado agora", [m30.perdido, m30.lojasPerdidas, m30.perda], [200, 2, 0.25]);
+  // Novas nos 30 dias (cobrança começou de 18/09 a hoje): 300 (25/09) + 200 (16/10) + 250 (22/09) = 750; teste que acaba dia 25 ainda não.
+  confere("30 dias: receita nova = quem começou a pagar nos últimos 30 dias", [m30.nova, m30.lojasNovas], [750, 3]);
+  confere("30 dias: próximo", m30.total, r2(1600 * 0.75 + 750));
+  confere("sem boleto no mês anterior: perda zero", mesmoPadrao([novaDeOutubro], "2026-09", agora, mesAtual, "mes").perda, 0);
+}
+
+// Crescimento do mês sobre o recebido (os em aberto à parte).
+const cr = crescimentoDoMes({ recebido: 1600, emAberto: 640, boletosEmAberto: 3, lojasPagas: 8, seTodas: 10088, aposta: 7900 });
+confere("1.600 recebidos → 10.088 = 6,3x; aposta 4,9x; cobrado 2.240", [cr.vezesSeTodas, cr.vezesAposta, cr.cobrado], [6.3, 4.9, 2240]);
+confere("sem recebido: sem 'x'", crescimentoDoMes({ recebido: 0, emAberto: 0, boletosEmAberto: 0, lojasPagas: 0, seTodas: 500, aposta: 400 }).vezesSeTodas, null);
+// Na montagem acima nenhuma loja tem boleto previsto em outubro: as 3 de setembro somem (perda 100%).
+confere("montagem: perda 100% quando nenhuma de setembro tem boleto agora", [m.mesmoPadrao.doMes.perda, m.mesmoPadrao.doMes.total], [1, 0]);
+confere("montagem: crescimento sobre o recebido", m.mesmoPadrao.crescimento.vezesSeTodas, 0.3);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);
