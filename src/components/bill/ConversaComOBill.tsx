@@ -57,11 +57,17 @@ function comNegrito(t: string) {
   return t.split(/(\*[^*\n]+\*)/g).map((p, j) => (p.length > 2 && p.startsWith("*") && p.endsWith("*") ? <b key={j}>{p.slice(1, -1)}</b> : p));
 }
 
-export default function ConversaComOBill({ altura = 380, aoGravar, aoMudarEstado }: {
+export default function ConversaComOBill({ altura = 380, aoGravar, aoMudarEstado, sugestao }: {
   altura?: number | string;
   aoGravar?: () => void;
   /** O humor do rosto que acompanha esta conversa: ouvindo (gravando), pensando (enviando), erro, feliz (respondeu). */
   aoMudarEstado?: (e: EmocaoDoBill) => void;
+  /**
+   * Um exemplo do "O que posso pedir" (/store/bill): vai para a caixa de texto,
+   * sem enviar — o Bill grava de verdade, o dono confere e ajusta antes.
+   * `vez` muda a cada clique, para o mesmo exemplo poder voltar.
+   */
+  sugestao?: { texto: string; vez: number } | null;
 }) {
   const [falas, setFalas] = useState<Fala[]>([]);
   const [carregou, setCarregou] = useState(false);
@@ -85,6 +91,20 @@ export default function ConversaComOBill({ altura = 380, aoGravar, aoMudarEstado
   const fim = useRef<HTMLDivElement | null>(null);
   const arquivo = useRef<HTMLInputElement | null>(null);
   const ultima = useRef<string | null>(null);
+  const caixa = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!sugestao?.texto) return;
+    setTexto(sugestao.texto);
+    // Depois de a aba aparecer: o foco põe o cursor no fim para o dono completar.
+    const t = setTimeout(() => {
+      const el = caixa.current;
+      if (!el) return;
+      el.focus();
+      try { el.setSelectionRange(el.value.length, el.value.length); } catch {}
+    }, 30);
+    return () => clearTimeout(t);
+  }, [sugestao]);
 
   const buscarNovas = useCallback(async () => {
     try {
@@ -196,7 +216,7 @@ export default function ConversaComOBill({ altura = 380, aoGravar, aoMudarEstado
           style={{ background: "white", border: 0, borderRadius: 999, width: 40, height: 40, display: "grid", placeItems: "center", cursor: "pointer", flexShrink: 0 }}>
           <Camera size={18} color="#475569" />
         </button>
-        <input value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") enviarTexto(); }}
+        <input ref={caixa} value={texto} onChange={(e) => setTexto(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") enviarTexto(); }}
           placeholder={gravando ? "Gravando… toque no quadrado para enviar" : "Ex.: acabou a esfirra de frango, pausa"}
           disabled={enviando || gravando}
           style={{ flex: 1, minWidth: 0, border: 0, borderRadius: 999, padding: "10px 14px", fontSize: 14, outline: "none" }} />

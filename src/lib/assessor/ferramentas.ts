@@ -26,6 +26,7 @@ import { converter, normalizarUnidade } from "@/lib/unidades";
 import { lerNumeroBr } from "@/lib/cmv/numero";
 import { hojeNaLoja } from "@/lib/relatorios/base";
 import { garantirEstruturaDeDespesas } from "@/lib/garantir-colunas";
+import { comAutor } from "./painel";
 import { buscarNoCardapio, pausarOuReativar, listarPausados, abrirOuFecharSite, desfazerNoCardapio } from "./cardapio";
 
 export type ContextoDoAssessor = {
@@ -57,7 +58,7 @@ function diaValido(dia: unknown, ctx: ContextoDoAssessor): string {
 async function registrar(ctx: ContextoDoAssessor, tipo: string, resumo: string, refs: Record<string, unknown>) {
   try {
     await prisma.assessorRegistro.create({
-      data: { franchiseeId: ctx.franchiseeId, tipo, resumo: resumo.slice(0, 500), refs: refs as any, canal: ctx.canal, telefone: ctx.telefone || null },
+      data: { franchiseeId: ctx.franchiseeId, tipo, resumo: resumo.slice(0, 500), refs: comAutor(refs, ctx) as any, canal: ctx.canal, telefone: ctx.telefone || null },
     });
   } catch (err: any) {
     // O lançamento já está gravado; perder a linha do histórico não pode
@@ -469,11 +470,44 @@ async function consultarEstoque(args: any, ctx: ContextoDoAssessor) {
 }
 
 async function desfazerUltimo(ctx: ContextoDoAssessor) {
+  return desfazerRegistroDoBill(ctx, null);
+}
+
+/**
+ * O "desfaz" — do WhatsApp (o último, sem id) e do botão Desfazer do histórico
+ * em /store/bill (com o id da linha). A regra é uma só: desfaz-se o lançamento
+ * MAIS NOVO da loja que ainda não foi desfeito. Com `idEsperado`, se ele não for
+ * mais o último (chegou outro lançamento pelo WhatsApp com a tela aberta), nada
+ * é mexido e a resposta diz por quê.
+ *
+ * O registro é marcado como desfeito ANTES de mexer no estoque/financeiro: dois
+ * "desfaz" ao mesmo tempo (WhatsApp e painel) não estornam duas vezes. Se o
+ * desfazer não acontece, a marca sai.
+ */
+export async function desfazerRegistroDoBill(ctx: ContextoDoAssessor, idEsperado: string | null): Promise<Record<string, unknown>> {
   const ultimo = await prisma.assessorRegistro.findFirst({
     where: { franchiseeId: ctx.franchiseeId, desfeitoEm: null },
-    orderBy: { criadoEm: "desc" },
+    orderBy: [{ criadoEm: "desc" }, { id: "desc" }],
   });
   if (!ultimo) return { ok: false, erro: "Não há lançamento do assessor para desfazer." };
+  if (idEsperado && ultimo.id !== idEsperado) {
+    return { ok: false, erro: "Só o último lançamento do Bill se desfaz por aqui, e chegou outro depois deste. Atualize a lista." };
+  }
+  const marcado = await prisma.assessorRegistro.updateMany({ where: { id: ultimo.id, franchiseeId: ctx.franchiseeId, desfeitoEm: null }, data: { desfeitoEm: new Date() } });
+  if (marcado.count === 0) return { ok: false, erro: "Esse lançamento acabou de ser desfeito." };
+  const soltar = () => prisma.assessorRegistro.updateMany({ where: { id: ultimo.id }, data: { desfeitoEm: null } }).catch(() => null);
+
+  try {
+    const r = await desfazerOLancamento(ultimo, ctx);
+    if (!r.ok) await soltar();
+    return r;
+  } catch (err) {
+    await soltar();
+    throw err;
+  }
+}
+
+async function desfazerOLancamento(ultimo: { tipo: string; resumo: string; refs: unknown }, ctx: ContextoDoAssessor): Promise<Record<string, unknown>> {
   const refs = (ultimo.refs || {}) as any;
 
   if (ultimo.tipo === "COMPRA") {
@@ -504,6 +538,5 @@ async function desfazerUltimo(ctx: ContextoDoAssessor) {
   } else {
     return { ok: false, erro: "Esse lançamento não se desfaz por aqui." };
   }
-  await prisma.assessorRegistro.update({ where: { id: ultimo.id }, data: { desfeitoEm: new Date() } });
   return { ok: true, desfeito: ultimo.resumo };
 }

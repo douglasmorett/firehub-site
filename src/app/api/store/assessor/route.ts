@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { lojaDoAssessorDaSessao } from "@/lib/assessor/loja-da-sessao";
 import { estadoDoAssessor, ligarOuDesligarAssessor, DIAS_DE_TESTE_DO_ASSESSOR, TermoNaoAceitoError } from "@/lib/assessor/assinatura";
 import { garantirEstruturaDoAssessor } from "@/lib/assessor/estrutura-no-banco";
-import { numerosDoDono } from "@/lib/numeros-do-dono";
+import { numerosDoDono, digitosDoTelefoneDoDono } from "@/lib/numeros-do-dono";
 
 /**
  * GET  — o estado do Bill, os números que falam com ele e os últimos lançamentos.
@@ -26,9 +26,15 @@ export async function GET() {
       })
     : [];
   const cfg = (s.loja.chatbotConfig || {}) as any;
+  const trechoLigado = estado.periodos.find((p) => !p.ate);
   return NextResponse.json({
     estado: { ativo: estado.ativo, cobradoEsteMes: estado.cobradoEsteMes, testeAte: estado.testeAte, emTeste: estado.emTeste, jaTestou: estado.jaTestou, isento: estado.isento },
     preco: estado.preco,
+    // Desde quando o trecho ligado agora está ligado (a aba Configuração da tela).
+    ligadoDesde: trechoLigado?.de ?? null,
+    // O termo aceito ao ligar este trecho (versão e quando).
+    aceiteAtual: trechoLigado?.aceite ? { versao: trechoLigado.aceite.versao, em: trechoLigado.aceite.em } : null,
+    numeroPrincipal: digitosDoTelefoneDoDono(s.loja.notificationPhone) || null,
     diasDeTeste: DIAS_DE_TESTE_DO_ASSESSOR,
     numerosDoDono: numerosDoDono(s.loja.notificationPhone, cfg),
     numeroDoRobo: String(cfg?.phone || "").replace(/\D/g, "") || null,

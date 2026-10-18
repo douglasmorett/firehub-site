@@ -21,6 +21,7 @@ import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
 import { atualizarVitrineDaLoja, mudarPausaDosProdutos } from "@/lib/pausar-produtos";
 import { esquecerPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 import type { ContextoDoAssessor } from "./ferramentas";
+import { comAutor } from "./painel";
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
@@ -76,7 +77,7 @@ export async function pausarOuReativar(args: any, ctx: ContextoDoAssessor) {
     const resumo = `${ativo ? "Reativado" : "Pausado"} no cardápio: ${nomes.join(", ")}`;
     try {
       await prisma.assessorRegistro.create({
-        data: { franchiseeId: ctx.franchiseeId, tipo: ativo ? "REATIVADO" : "PAUSADO", resumo: resumo.slice(0, 500), refs: { ids: mudar.map((p) => p.id), ativo } as any, canal: ctx.canal, telefone: ctx.telefone || null },
+        data: { franchiseeId: ctx.franchiseeId, tipo: ativo ? "REATIVADO" : "PAUSADO", resumo: resumo.slice(0, 500), refs: comAutor({ ids: mudar.map((p) => p.id), ativo }, ctx) as any, canal: ctx.canal, telefone: ctx.telefone || null },
       });
     } catch {}
   }
@@ -105,7 +106,7 @@ export async function abrirOuFecharSite(args: any, ctx: ContextoDoAssessor) {
   const resumo = aberto ? "Site aberto" : "Site fechado";
   try {
     await prisma.assessorRegistro.create({
-      data: { franchiseeId: ctx.franchiseeId, tipo: "SITE", resumo, refs: { anterior: loja.storeOpen } as any, canal: ctx.canal, telefone: ctx.telefone || null },
+      data: { franchiseeId: ctx.franchiseeId, tipo: "SITE", resumo, refs: comAutor({ anterior: loja.storeOpen }, ctx) as any, canal: ctx.canal, telefone: ctx.telefone || null },
     });
   } catch {}
   return {
