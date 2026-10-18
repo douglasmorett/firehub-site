@@ -73,8 +73,9 @@ export async function POST(req: NextRequest) {
   if (corpo?.acao === "varrer") {
     const cidade = typeof corpo.cidade === "string" ? corpo.cidade.trim().slice(0, 80) : "";
     if (!cidade) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
-    if (corpo.refazer && quem.tipo !== "ADMIN") {
-      return NextResponse.json({ error: "Só o administrador atualiza uma cidade já varrida." }, { status: 403 });
+    // Douglas, 18/10/2026: só ele varre (começar, continuar e atualizar); vendedor vê o que já foi varrido.
+    if (quem.tipo !== "ADMIN") {
+      return NextResponse.json({ error: "Só o administrador varre a cidade." }, { status: 403 });
     }
     const resultados = Array.isArray(corpo.resultados) ? corpo.resultados.slice(0, 50) : undefined;
     try {

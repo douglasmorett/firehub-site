@@ -178,7 +178,7 @@ ok(() => assert.equal(VARREDURA_POR_DIA, 115));
 for (const sku of Object.keys(SKUS) as Sku[]) ok(() => assert.ok(limiteDoDia(SKUS[sku].cota as CotaDoCloud) < TRAVAS_DO_CLOUD[SKUS[sku].cota as CotaDoCloud].porDia));
 const zero = () => ({ nearby: 0, texto: 0, detalhes: 0, contato: 0, mapa: 0 });
 const uso = (hoje: Partial<Record<Sku, number>>, noMes: Partial<Record<Sku, number>> = {}): UsoDoGoogle =>
-  ({ dia: "2026-10-18", mes: "2026-10", hoje: { ...zero(), ...hoje }, noMes: { ...zero(), ...hoje, ...noMes } });
+  ({ dia: "2026-10-17", mes: "2026-10", hoje: { ...zero(), ...hoje }, noMes: { ...zero(), ...hoje, ...noMes } });
 ok(() => assert.deepEqual(vagas(uso({}), "nearby"), { qtd: 155, trava: "dia" }));
 // O nome (Pro) e o telefone (Enterprise) dividem o GetPlaceRequest do dia.
 ok(() => assert.deepEqual(vagas(uso({ contato: 20, detalhes: 11 }), "contato"), { qtd: 0, trava: "dia" }));
@@ -187,6 +187,11 @@ ok(() => assert.deepEqual(vagas(uso({ contato: 20 }), "detalhes"), { qtd: 11, tr
 ok(() => assert.deepEqual(vagas(uso({ contato: 2 }, { contato: 975 }), "contato"), { qtd: 5, trava: "mes" }));
 ok(() => assert.deepEqual(vagasDaVarredura(uso({ nearby: 100 })), { qtd: 15, trava: "dia" }));
 ok(() => assert.deepEqual(vagasDaVarredura(uso({ nearby: 0 }, { nearby: 4890 })), { qtd: 10, trava: "mes" }));
+// O dia da trava maior (18/10/2026) só vale nele e só para o Nearby; o mês continua mandando.
+const noDiaMaior = (hoje: Partial<Record<Sku, number>>, noMes: Partial<Record<Sku, number>> = {}) => ({ ...uso(hoje, noMes), dia: "2026-10-18" });
+ok(() => assert.deepEqual(vagasDaVarredura(noDiaMaior({ nearby: 115 })), { qtd: 1358 - 40 - 115, trava: "dia" }));
+ok(() => assert.deepEqual(vagas(noDiaMaior({}), "texto"), { qtd: 155, trava: "dia" }));
+ok(() => assert.deepEqual(vagasDaVarredura(noDiaMaior({ nearby: 115 }, { nearby: 4800 })), { qtd: 100, trava: "mes" }));
 ok(() => assert.deepEqual(vagasDaVarredura(uso({ nearby: 140 })), { qtd: 0, trava: "dia" }));
 // A varredura deixa os últimos 40 do dia para os nomes; os nomes alcançam até 155.
 ok(() => assert.equal(vagas(uso({ nearby: 115 }), "nearby").qtd, 40));

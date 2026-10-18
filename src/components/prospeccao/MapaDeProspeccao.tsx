@@ -580,7 +580,7 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
       limparGrade();
       // Pausada pela trava (ou pela tela fechada) e com vaga de novo: continua sozinha.
       const v = c.cidade?.varredura;
-      if (v && v.estado === "pausada" && v.vagasAgora > 0 && !v.ocupadaPorOutro && v.motivo !== "teto_da_cidade") {
+      if (c.souAdmin && v && v.estado === "pausada" && v.vagasAgora > 0 && !v.ocupadaPorOutro && v.motivo !== "teto_da_cidade") {
         for (let i = 0; i < 50 && !google.current; i++) await new Promise((r) => setTimeout(r, 200));
         setBuscando(null);
         varrer({ continuar: true }, alvo);
@@ -817,7 +817,7 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
               <ul className={s.lista}>
                 {!cidade && <li className={s.dica}>Digite a cidade e toque em <b>Abrir cidade</b>.</li>}
                 {cidade && !visiveis.length && !buscando && !varrendo && (
-                  <li className={s.dica}>{resumo?.estado === "nova" ? "A cidade ainda não foi varrida: toque em Varrer a cidade inteira, lá em cima." : "Nada aqui com esse filtro."}</li>
+                  <li className={s.dica}>{resumo?.estado === "nova" ? (souAdmin ? "A cidade ainda não foi varrida: toque em Varrer a cidade inteira, lá em cima." : "A cidade ainda não foi varrida. Só o administrador varre.") : "Nada aqui com esse filtro."}</li>
                 )}
                 {daPagina.map((p) => {
                   const m = p.placeId ? marcacoes.get(p.placeId) : null;
@@ -897,6 +897,8 @@ function PainelDaCobertura({ resumo, totalNaTela, souAdmin, varrendo, celulasFei
     botoes.push(<button key="p" type="button" className={s.botaoClaro} onClick={onPausar}>Pausar</button>);
   } else if (resumo.ocupadaPorOutro) {
     botoes.push(<button key="r" type="button" className={s.botaoClaro} onClick={onRecarregar}>Ver o que já veio</button>);
+  } else if (!souAdmin) {
+    // Douglas, 18/10/2026: só ele varre; o vendedor vê o que já foi varrido.
   } else if ((resumo.estado === "nova" || resumo.estado === "pausada") && resumo.vagasAgora > 0 && resumo.motivo !== "teto_da_cidade") {
     botoes.push(<button key="v" type="button" className={s.botaoVarrer} onClick={() => onVarrer({ continuar: true })}>
       {resumo.estado === "nova" ? "Varrer a cidade inteira" : "Continuar a varredura"}
@@ -919,18 +921,21 @@ function PainelDaCobertura({ resumo, totalNaTela, souAdmin, varrendo, celulasFei
       <div className={s.coberturaTexto}>
         <strong>{principal}</strong>
         <span className={`${s.selo} ${s[`selo_${selo.tipo}`]}`}>{selo.texto}</span>
-        {resumo.estado === "nova" && (
+        {!souAdmin && resumo.estado !== "completa" && (
+          <small>Só o administrador varre a cidade. {resumo.estado === "nova" ? "Peça a ele para varrer esta." : "Os lugares já achados estão no mapa; o resto vem quando ele continuar."}</small>
+        )}
+        {souAdmin && resumo.estado === "nova" && (
           <small>
             {resumo.estimativa != null
               ? <>Estimativa: ~{numero(resumo.estimativa)} buscas no Google — cerca de {diasDaVarredura(resumo.estimativa)} {diasDaVarredura(resumo.estimativa) === 1 ? "dia" : "dias"} (até {VARREDURA_POR_DIA} por dia){resumo.populacao ? `; ${numero(resumo.populacao)} habitantes` : ""}. Sempre dentro do grátis: sem custo. Feita uma vez, vale 30 dias para a equipe toda.</>
               : <>Sem base para estimar (o mapa não trouxe a população). Vai até {VARREDURA_POR_DIA} buscas por dia, sempre dentro do grátis.</>}
           </small>
         )}
-        {resumo.estado === "nova" && resumo.continuaEm && (
-          <small>A busca grátis do Google já foi usada por agora (em outras cidades). Toque em <b>Varrer a partir de {diaDoGoogle(resumo.continuaEm)}</b>: a cidade entra na fila e a varredura começa sozinha nesse dia, quando alguém da equipe abrir a cidade.</small>
+        {souAdmin && resumo.estado === "nova" && resumo.continuaEm && (
+          <small>A busca grátis do Google já foi usada por agora (em outras cidades). Toque em <b>Varrer a partir de {diaDoGoogle(resumo.continuaEm)}</b>: a cidade entra na fila e a varredura começa sozinha nesse dia, quando você abrir a cidade.</small>
         )}
-        {resumo.estado !== "completa" && resumo.estado !== "nova" && !varrendo && resumo.continuaEm && (
-          <small>Volta sozinha a partir de {diaDoGoogle(resumo.continuaEm)}, quando alguém da equipe abrir esta cidade. Os lugares já achados estão no mapa.</small>
+        {souAdmin && resumo.estado !== "completa" && resumo.estado !== "nova" && !varrendo && resumo.continuaEm && (
+          <small>Volta sozinha a partir de {diaDoGoogle(resumo.continuaEm)}, quando você abrir esta cidade. Os lugares já achados estão no mapa.</small>
         )}
         {varrendo && <small>{numero(celulasFeitas)} pedaços da cidade buscados nesta tela. A grade azul é o que já foi visto; vermelha, onde tinha mais de 20 e foi dividida.</small>}
         {resumo.estado === "completa" && souAdmin && resumo.populacao && resumo.lugares > 0 && (

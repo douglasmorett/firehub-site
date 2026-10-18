@@ -383,18 +383,29 @@ export const VARREDURA_POR_DIA = limiteDoDia("SearchNearbyRequest") - RESERVA_DE
 
 export type UsoDoGoogle = { dia: string; mes: string; hoje: Record<Sku, number>; noMes: Record<Sku, number> };
 
+/**
+ * Douglas, 18/10/2026: fechar Macaé e Rio das Ostras no mesmo dia. A trava do
+ * Nearby no Cloud subiu SÓ nesse dia (dia do Pacífico); o mês continua no teto
+ * do grátis. No dia seguinte vale de novo a trava de cima, sem deploy.
+ */
+export const DIA_COM_TRAVA_MAIOR = { dia: "2026-10-18", cota: "SearchNearbyRequest", porDia: 1400 } as const;
+const limiteDoDiaDoUso = (cota: CotaDoCloud, uso: UsoDoGoogle) =>
+  uso.dia === DIA_COM_TRAVA_MAIOR.dia && cota === DIA_COM_TRAVA_MAIOR.cota
+    ? Math.floor(DIA_COM_TRAVA_MAIOR.porDia * MARGEM_DO_DIA)
+    : limiteDoDia(cota);
+
 /** Quanto ainda dá para usar do SKU agora: o menor entre o que sobra no dia (da quota do Cloud) e no mês. */
 export function vagas(uso: UsoDoGoogle, sku: Sku): { qtd: number; trava: "dia" | "mes" } {
   const cota = SKUS[sku].cota as CotaDoCloud;
   const hojeNaCota = (TRAVAS_DO_CLOUD[cota].skus as readonly Sku[]).reduce((t, k) => t + (uso.hoje[k] || 0), 0);
-  const dia = Math.max(0, limiteDoDia(cota) - hojeNaCota);
+  const dia = Math.max(0, limiteDoDiaDoUso(cota, uso) - hojeNaCota);
   const mes = Math.max(0, tetoDoMes(sku) - (uso.noMes[sku] || 0));
   return dia <= mes ? { qtd: dia, trava: "dia" } : { qtd: mes, trava: "mes" };
 }
 
 /** Quantas buscas a varredura ainda pode fazer agora (fora a reserva dos nomes). */
 export function vagasDaVarredura(uso: UsoDoGoogle): { qtd: number; trava: "dia" | "mes" } {
-  const dia = Math.max(0, VARREDURA_POR_DIA - (uso.hoje.nearby || 0));
+  const dia = Math.max(0, limiteDoDiaDoUso("SearchNearbyRequest", uso) - RESERVA_DE_NOMES_POR_DIA - (uso.hoje.nearby || 0));
   const mes = Math.max(0, tetoDoMes("nearby") - (uso.noMes.nearby || 0));
   return dia <= mes ? { qtd: dia, trava: "dia" } : { qtd: mes, trava: "mes" };
 }
