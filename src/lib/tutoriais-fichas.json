@@ -450,50 +450,42 @@
   "estoque": {
     "id": "estoque",
     "titulo": "Estoque: controlar o que tem e repor",
-    "duracao": 158,
+    "duracao": 172,
     "capitulos": [
       {
         "em": 0,
         "titulo": "O que é esta tela"
       },
       {
-        "em": 21.5,
-        "titulo": "Os números do alto"
+        "em": 7.9,
+        "titulo": "Os números e a lista"
       },
       {
-        "em": 39.7,
-        "titulo": "A lista de insumos"
+        "em": 24.2,
+        "titulo": "Editar o insumo"
       },
       {
-        "em": 52.3,
-        "titulo": "Cadastrar um insumo"
+        "em": 43,
+        "titulo": "Pausa pelo estoque"
       },
       {
-        "em": 72.6,
-        "titulo": "Repor o estoque"
+        "em": 60.1,
+        "titulo": "Desperdício"
       },
       {
-        "em": 97,
-        "titulo": "Saída e perda"
+        "em": 85.3,
+        "titulo": "O produto pausado sozinho"
       },
       {
-        "em": 105.3,
-        "titulo": "Ficha técnica"
+        "em": 101.6,
+        "titulo": "Compras"
       },
       {
-        "em": 126.2,
-        "titulo": "Baixa automática na venda"
-      },
-      {
-        "em": 139,
-        "titulo": "Histórico"
-      },
-      {
-        "em": 148.6,
-        "titulo": "Para rever este vídeo"
+        "em": 141.9,
+        "titulo": "Contagem"
       }
     ],
-    "versao": "6e917e1e"
+    "versao": "49e66214"
   },
   "etiquetas": {
     "id": "etiquetas",
@@ -1595,5 +1587,181 @@
       }
     ],
     "versao": "c114042d"
+  },
+  "aplicativo": {
+    "id": "aplicativo",
+    "titulo": "Aplicativo da loja: o seu app na Play Store e na App Store",
+    "duracao": 143,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "Onde fica"
+      },
+      {
+        "em": 7.5,
+        "titulo": "O que é"
+      },
+      {
+        "em": 27.4,
+        "titulo": "O celular de exemplo"
+      },
+      {
+        "em": 45.9,
+        "titulo": "Os planos"
+      },
+      {
+        "em": 71.2,
+        "titulo": "Bônus: Multimarcas de cortesia"
+      },
+      {
+        "em": 90.1,
+        "titulo": "Faça a conta"
+      },
+      {
+        "em": 106.9,
+        "titulo": "Como contratar"
+      },
+      {
+        "em": 128.2,
+        "titulo": "Dúvidas"
+      }
+    ],
+    "versao": "8d5a4fe9"
+  },
+  "painel-de-senhas": {
+    "id": "painel-de-senhas",
+    "titulo": "Painel de senhas: a TV que chama o pedido pronto",
+    "duracao": 159,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "O que é o Painel de senhas"
+      },
+      {
+        "em": 13.7,
+        "titulo": "Ligar na TV"
+      },
+      {
+        "em": 23.7,
+        "titulo": "Na TV"
+      },
+      {
+        "em": 41.1,
+        "titulo": "As duas colunas"
+      },
+      {
+        "em": 48.7,
+        "titulo": "A senha chamada na TV"
+      },
+      {
+        "em": 73.6,
+        "titulo": "O que aparece na TV"
+      },
+      {
+        "em": 94,
+        "titulo": "Sua marca"
+      },
+      {
+        "em": 115.5,
+        "titulo": "Numeração dos pedidos"
+      },
+      {
+        "em": 150,
+        "titulo": "Para terminar"
+      }
+    ],
+    "versao": "73c418d5"
+  },
+  "multimarcas": {
+    "id": "multimarcas",
+    "titulo": "Multimarcas: todas as suas marcas numa sacola só",
+    "duracao": 163,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "Onde fica o Multimarcas"
+      },
+      {
+        "em": 16.4,
+        "titulo": "O que é"
+      },
+      {
+        "em": 33.8,
+        "titulo": "Quanto custa"
+      },
+      {
+        "em": 51.6,
+        "titulo": "Ativar"
+      },
+      {
+        "em": 61.4,
+        "titulo": "Criar as marcas"
+      },
+      {
+        "em": 93.1,
+        "titulo": "Logo, capa e salvar"
+      },
+      {
+        "em": 108.5,
+        "titulo": "O link da página"
+      },
+      {
+        "em": 115.4,
+        "titulo": "Como o cliente pede"
+      },
+      {
+        "em": 143.7,
+        "titulo": "Na cozinha"
+      },
+      {
+        "em": 155.6,
+        "titulo": "Resumo"
+      }
+    ],
+    "versao": "67f5e25d"
+  },
+  "bill": {
+    "id": "bill",
+    "titulo": "Bill, seu assessor: estoque e financeiro pelo WhatsApp",
+    "duracao": 183,
+    "capitulos": [
+      {
+        "em": 0,
+        "titulo": "Onde fica o Bill"
+      },
+      {
+        "em": 8.3,
+        "titulo": "O que ele faz"
+      },
+      {
+        "em": 32.2,
+        "titulo": "Preço e teste grátis"
+      },
+      {
+        "em": 67.2,
+        "titulo": "Quem fala com o Bill"
+      },
+      {
+        "em": 82.5,
+        "titulo": "Lançar uma compra"
+      },
+      {
+        "em": 112.9,
+        "titulo": "Pausar o que acabou"
+      },
+      {
+        "em": 137.1,
+        "titulo": "Visão geral"
+      },
+      {
+        "em": 150.4,
+        "titulo": "Histórico e desfazer"
+      },
+      {
+        "em": 166.8,
+        "titulo": "Desligar o Bill"
+      }
+    ],
+    "versao": "087f25a9"
   }
 }
