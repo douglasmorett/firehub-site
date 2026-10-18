@@ -170,7 +170,7 @@ export function resumoDaConsulta(texto: string): string {
 
 async function consultarNominatim(
   parametros: string,
-  tipo: "livre" | "estruturada",
+  tipo: "livre" | "estruturada" | "reversa",
   consulta: string,
   timeoutMs: number,
 ): Promise<RespostaDoMapa<any[]>> {
@@ -180,7 +180,10 @@ async function consultarNominatim(
   // O log diz o tipo, o status e quanto demorou; o endereço, só pelo resumo.
   const qual = () => `busca ${tipo} #${resumoDaConsulta(consulta)}, ${Date.now() - inicio} ms`;
   try {
-    const res = await fetch(`${URL_DO_NOMINATIM}?${parametros}`, {
+    // A reversa (ponto → endereço) é outro caminho do mesmo servidor: mesma
+    // trégua, mesmo cabeçalho, mesmo log.
+    const url = tipo === "reversa" ? URL_DO_NOMINATIM.replace(/\/search$/, "/reverse") : URL_DO_NOMINATIM;
+    const res = await fetch(`${url}?${parametros}`, {
       headers: CABECALHOS,
       signal: AbortSignal.timeout(Math.max(1, Math.round(timeoutMs))),
     });
@@ -198,6 +201,8 @@ async function consultarNominatim(
     }
     const data = await res.json();
     estadoNominatim.ultimoSucessoEm = Date.now();
+    // A reversa devolve UM objeto (ou {error: "Unable to geocode"} no mar).
+    if (tipo === "reversa") return { ok: true, valor: data && typeof data === "object" && !Array.isArray(data) && !data.error ? [data] : [] };
     return { ok: true, valor: Array.isArray(data) ? data : [] };
   } catch (err: any) {
     const motivo = err?.name === "TimeoutError" || err?.name === "AbortError" ? `sem resposta em ${Math.round(timeoutMs)} ms` : String(err?.message || err);
@@ -337,6 +342,25 @@ export async function buscaDeRuaNoMapa(
       }))
       .filter((d: TrechoDeRua) => Number.isFinite(d.lat) && Number.isFinite(d.lng)),
   };
+}
+
+/**
+ * O endereço de um PONTO (reverse geocode, /reverse?addressdetails=1): o
+ * `address` cru do OSM. `ok` com `null` = o mapa não tem nada ali (mar).
+ * Quem chama lê rua e bairro (lib/bairro-pela-coordenada.ts).
+ */
+export async function enderecoDoPontoNoMapa(
+  ponto: Ponto,
+  opcoes?: { timeoutMs?: number },
+): Promise<RespostaDoMapa<Record<string, unknown> | null>> {
+  if (!ponto || !Number.isFinite(ponto.lat) || !Number.isFinite(ponto.lng)) return { ok: true, valor: null };
+  // zoom 18 = o nível do prédio: a rua mais perto do ponto, com o bairro dela.
+  const parametros = `format=json&lat=${ponto.lat.toFixed(6)}&lon=${ponto.lng.toFixed(6)}&zoom=18&addressdetails=1`;
+  const r = await consultarNominatim(parametros, "reversa", `${ponto.lat.toFixed(4)},${ponto.lng.toFixed(4)}`, opcoes?.timeoutMs ?? PRAZO_DA_BUSCA_MS);
+  if (!r.ok) return r;
+  const d = r.valor[0];
+  const a = d && typeof d.address === "object" && d.address ? (d.address as Record<string, unknown>) : null;
+  return { ok: true, valor: a };
 }
 
 // Geocodifica um endereço via OpenStreetMap Nominatim API com priorização geográfica (viewbox)

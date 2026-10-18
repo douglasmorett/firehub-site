@@ -393,6 +393,20 @@ export function enderecoImpresso(
     texto = espacos(loc[1] || "");
   }
 
+  // Só a localização, com o bairro que o sistema achou pelo ponto
+  // (lib/bairro-pela-coordenada.ts): "📍 …WhatsApp: Bairro: Porto do Carro (lat, lng)".
+  const soOBairro = localizacao ? texto.match(/^bairro\s*:\s*(.+)$/i) : null;
+  if (localizacao && soOBairro) {
+    const b = aparar(soOBairro[1]);
+    if (b) {
+      const linhasDoBairro: LinhaDoEndereco[] = [
+        { rotulo: "Localização", valor: localizacao },
+        { rotulo: "Bairro", valor: b },
+      ];
+      return { separado: true, linhas: linhasDoBairro, emUmaLinha: emUmaLinha(linhasDoBairro), original, bairro: b };
+    }
+  }
+
   const s = texto ? separar(texto, { cidadeNoFim: loc ? false : cidadeNoFim, cidadeDaLoja }) : null;
   const bairro = s?.bairro || null;
   const linhas: LinhaDoEndereco[] = [];

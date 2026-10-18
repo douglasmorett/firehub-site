@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { pontoQuePedeBairro } from "@/lib/bairro-pela-coordenada";
+import { completarBairroPelaCoordenada } from "@/lib/bairro-pela-coordenada-servidor";
 import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/loja-bloqueada";
 import { precoUnitarioDoItem, pisoDoPreco, escolhasNosGruposAtuais } from "@/lib/preco-combo";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
@@ -1048,6 +1050,13 @@ export async function POST(req: Request) {
         items: { create: itensParaGravar }
       }
     });
+
+    // O bairro pelo GPS/pino do cliente quando o endereço ficou sem bairro: é
+    // dele que sai a linha BAIRRO da comanda (lib/bairro-pela-coordenada.ts).
+    // Só vai à rede quando falta; até 1,5 s aqui, o resto em segundo plano.
+    if ("ponto" in pontoQuePedeBairro(order, franchisee.city)) {
+      await completarBairroPelaCoordenada(order.id);
+    }
 
     // Se NÃO for pagamento online (ex: dinheiro/maquininha na entrega), envia direto para a fila de impressão da loja!
     if (!isOnlinePayment) {

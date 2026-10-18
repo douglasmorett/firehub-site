@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { completarBairroPelaCoordenada } from "@/lib/bairro-pela-coordenada-servidor";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { avaliarEntrega, modoDaArea, type VeredictoDeEntrega } from "@/lib/area-de-entrega";
@@ -300,6 +301,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     }
 
     console.log(`[Finalizar rascunho] pedido ${order.id} (#${dailyOrderNumber}) finalizado por ${quem}: ${status}, total R$ ${totalAmount}, entrega R$ ${f.taxa}${mudaDeLoja ? ` — vai para a loja ${destino.nome} (${destinoId})` : ""}`);
+
+    // O bairro pelo ponto do cliente, quando o endereço não tem (Divinos #25,
+    // 18/10/2026: "Em frente à Dolcice" com a localização do WhatsApp). Até
+    // 1,5 s aqui; o resto em segundo plano, antes da fila da impressão ler.
+    if (f.tipo === "DELIVERY") await completarBairroPelaCoordenada(order.id);
 
     const completo = await prisma.customerOrder.findUnique({
       where: { id: order.id },

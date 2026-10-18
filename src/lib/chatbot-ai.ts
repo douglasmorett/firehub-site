@@ -4081,6 +4081,15 @@ async function syncAiOrderToDatabase({
     console.log(`[Chatbot AI Order Sync] ✅ Novo pedido IA criado (${newOrder.id}): status=${statusParaGravar}${segurarParaConferir ? " (esperando a loja conferir)" : ""}, total=R$${totalOrderAmount} (entrega=R$${deliveryFee}, ${deliveryType})`);
   }
 
+  // O BAIRRO PELO PONTO: o cliente mandou a localização e escreveu só "Em
+  // frente à Dolcice" — sem bairro no texto, a linha BAIRRO da comanda não
+  // sai (Divinos #25, 18/10/2026). Antes da comanda; o que passar de 1,5 s
+  // segue em segundo plano (lib/bairro-pela-coordenada-servidor.ts).
+  if (isFinal && deliveryType === "DELIVERY" && pontoDoPedido) {
+    const { completarBairroPelaCoordenada } = await import("@/lib/bairro-pela-coordenada-servidor");
+    await completarBairroPelaCoordenada(pedidoGravadoId);
+  }
+
   // 🖨️ APENAS SE O PEDIDO FOI TOTALMENTE FINALIZADO E CONFIRMADO PELO CLIENTE
   // (e a loja não pediu para conferir antes — aí a comanda sai no aceite):
   if (fechaDeVerdade) {
