@@ -206,3 +206,14 @@
   .areaDoMapa { min-height: 60vh; }
   .lado { border-left: 0; border-top: 1px solid var(--mp-borda); max-height: 70vh; }
 }
+
+/* A caixa "Achar todos os restaurantes" (varredura por áreas). */
+.cobertura {
+  margin: 12px 14px 0; padding: 12px; border-radius: 10px; border: 1px solid #FED7AA; background: #FFF7ED;
+  display: flex; flex-direction: column; gap: 8px; font-size: 0.84rem;
+}
+.cobertura strong { font-size: 0.88rem; }
+.cobertura p { margin: 0; color: #431407; line-height: 1.4; }
+.cobertura small { color: #9A3412; }
+.coberturaOk { font-weight: 700; color: #166534 !important; }
+.mostrarAreas { display: flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--mp-suave); cursor: pointer; }

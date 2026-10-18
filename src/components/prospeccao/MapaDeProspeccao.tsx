@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import s from "./MapaDeProspeccao.module.css";
 import {
   CAMPOS_DA_BUSCA, CAMPOS_DO_CONTATO, LIMITES_DO_DIA, TERMOS_DA_CIDADE, TERMOS_EXTRAS, TIPOS_DA_AREA,
-  linkComoChegar, linkDoWhatsapp, lojaDoLugar, metrosEntre, nomeDaCidade,
-  type CaixaDaCidade, type LojaDoMapa, type StatusDaMarcacao, type StatusDoPino, type TipoDeUso,
+  areaParaVarrer, celulaDaCaixa, dentroDaCaixa, dividirCelula, gradeDaArea,
+  linkComoChegar, linkDoWhatsapp, lojaDoLugar, nomeDaCidade,
+  type CaixaDaCidade, type Celula, type LojaDoMapa, type StatusDaMarcacao, type StatusDoPino, type TipoDeUso,
 } from "@/lib/prospeccao/regras";
 import type { Marcacao, UsoDoDia } from "@/lib/prospeccao/dados";
 
@@ -79,6 +80,20 @@ const ESTILO_SEM_COMERCIOS = [
   { featureType: "poi", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
   { featureType: "transit", stylers: [{ visibility: "off" }] },
 ];
+
+/** Área buscada: "cheia" voltou com 20 (pode ter mais); "aprofundada" já virou 4. */
+type CelulaBuscada = { celula: Celula; estado: "feita" | "cheia" | "aprofundada"; qtd: number };
+
+/** Os retângulos da varredura: cinza = falta buscar, verde = buscada, laranja = cheia. */
+const ESTILO_DA_AREA = {
+  pendente: { strokeColor: "#64748B", strokeOpacity: 0.5, strokeWeight: 1, fillColor: "#64748B", fillOpacity: 0.06 },
+  feita: { strokeColor: "#16A34A", strokeOpacity: 0.45, strokeWeight: 1, fillColor: "#16A34A", fillOpacity: 0.03 },
+  cheia: { strokeColor: "#F97316", strokeOpacity: 0.8, strokeWeight: 2, fillColor: "#F97316", fillOpacity: 0.07 },
+  aprofundada: { strokeOpacity: 0, fillOpacity: 0 },
+};
+
+/** O Google traz até 20 lugares por busca. */
+const MAXIMO_DA_BUSCA = 20;
 
 /**
  * O pino é uma camada nossa (OverlayView) com HTML, não o marcador do Google:
@@ -186,11 +201,18 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
   const [erroDoMapa, setErroDoMapa] = useState<string | null>(null);
   /** Sobe quando o mapa do Google fica pronto, para os efeitos dos pinos rodarem. */
   const [pronto, setPronto] = useState(0);
+  /** A varredura por áreas: onde a cidade tem restaurante e as células já buscadas. */
+  const [areaDaCidade, setAreaDaCidade] = useState<CaixaDaCidade | null>(null);
+  const [celulas, setCelulas] = useState<Map<string, CelulaBuscada>>(new Map());
+  const [varrendo, setVarrendo] = useState<{ feitas: number; total: number } | null>(null);
+  const [mostrarAreas, setMostrarAreas] = useState(true);
+  const pararVarredura = useRef(false);
 
   const caixaDoMapa = useRef<HTMLDivElement>(null);
   const mapa = useRef<any>(null);
   const google = useRef<any>(null);
   const marcadores = useRef<Map<string, any>>(new Map());
+  const retangulos = useRef<Map<string, any>>(new Map());
 
   // ── Primeira carga: a chave, as cidades e o uso do dia ──
   useEffect(() => {
@@ -276,6 +298,46 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
     }
   }, [visiveis, selecionado, pronto]);
 
+  // ── A varredura: o que falta, o que encheu e os retângulos no mapa ──
+  const celulasPendentes = useMemo(() => {
+    if (!areaDaCidade) return [];
+    const todos = [...lugares.values()];
+    // Primeiro onde não tem pino nenhum: é ali que faltam lugares.
+    // A grade da cidade + os pedaços das áreas aprofundadas que ainda não foram buscados
+    // (a varredura parada no meio não perde nada).
+    const filhas = [...celulas.values()].filter((x) => x.estado === "aprofundada").flatMap((x) => dividirCelula(x.celula));
+    return [...gradeDaArea(areaDaCidade), ...filhas]
+      .filter((c) => !celulas.has(c.id))
+      .map((c) => ({ c, n: todos.filter((l) => dentroDaCaixa(l, c)).length }))
+      .sort((a, b) => a.n - b.n)
+      .map((x) => x.c);
+  }, [areaDaCidade, celulas, lugares]);
+
+  const celulasCheias = useMemo(
+    () => [...celulas.values()].filter((x) => x.estado === "cheia" && x.celula.nivel < 3).map((x) => x.celula),
+    [celulas],
+  );
+
+  useEffect(() => {
+    const g = google.current;
+    if (!g || !mapa.current) return;
+    const atuais = retangulos.current;
+    const queremos = new Map<string, { celula: Celula; estilo: any }>();
+    if (mostrarAreas) {
+      for (const c of celulasPendentes) queremos.set(c.id, { celula: c, estilo: ESTILO_DA_AREA.pendente });
+      for (const x of celulas.values()) if (x.estado !== "aprofundada") queremos.set(x.celula.id, { celula: x.celula, estilo: ESTILO_DA_AREA[x.estado] });
+    }
+    for (const [k, r] of atuais) if (!queremos.has(k)) { r.setMap(null); atuais.delete(k); }
+    for (const [k, { celula: c, estilo }] of queremos) {
+      const r = atuais.get(k);
+      if (r) { r.setOptions(estilo); continue; }
+      atuais.set(k, new g.maps.Rectangle({
+        map: mapa.current, clickable: false, zIndex: 1,
+        bounds: { south: c.sul, west: c.oeste, north: c.norte, east: c.leste }, ...estilo,
+      }));
+    }
+  }, [celulasPendentes, celulas, mostrarAreas, pronto]);
+
   // Leva o mapa até a cidade.
   useEffect(() => {
     const g = google.current;
@@ -291,9 +353,7 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
     if (!r.ok) {
       setAviso({
         tipo: "erro",
-        texto: tipo === "busca"
-          ? "As buscas grátis de hoje acabaram para a equipe. Amanhã liberam de novo (vira às 4h/5h da manhã)."
-          : "Os contatos grátis de hoje acabaram para a equipe. Amanhã liberam de novo (vira às 4h/5h da manhã).",
+        texto: `${tipo === "texto" ? "As buscas por nome" : tipo === "area" ? "As buscas por área" : "Os contatos"} grátis de hoje acabaram para a equipe. Amanhã liberam de novo (vira às 4h/5h da manhã).`,
       });
     }
     return r.ok;
@@ -321,7 +381,7 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
   async function buscarTermo(termo: string, nomeDaCidadeAtual: string, caixa: CaixaDaCidade | null) {
     const g = google.current;
     if (!g) return null;
-    if (!(await reservar("busca", 1))) return null;
+    if (!(await reservar("texto", 1))) return null;
     const { Place } = await g.maps.importLibrary("places");
     const pedido: any = {
       textQuery: `${termo} em ${nomeDaCidadeAtual}`,
@@ -349,6 +409,8 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
       setUso(c.uso);
       setCidade(alvo);
       setLugares(new Map());
+      setCelulas(new Map());
+      setAreaDaCidade(null);
       setTermosFeitos(new Set());
       setContatos(new Map());
       setMarcacoes(new Map(c.marcacoes.map((m) => [m.placeId, m])));
@@ -368,6 +430,11 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
         for (const p of achados) if (p?.location) limites.extend(p.location);
         mapa.current.fitBounds(limites, 40);
       }
+      // Onde a cidade tem restaurante: é essa área que a varredura corta em células.
+      setAreaDaCidade(areaParaVarrer(
+        achados.filter((p) => p?.location).map((p) => ({ lat: p.location.lat(), lng: p.location.lng() })),
+        c.cidade?.caixa || null,
+      ));
     } catch (e: any) {
       setAviso({ tipo: "erro", texto: e?.message || "Não deu para buscar agora." });
     } finally {
@@ -383,29 +450,89 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
     finally { setBuscando(null); }
   }
 
-  async function buscarNaArea() {
+  /**
+   * Uma célula = uma busca por perto, do mais próximo do centro para fora
+   * (rankPreference DISTANCE): cobre a célula inteira, não só os famosos.
+   * Devolve null quando a cota do dia acabou.
+   */
+  async function buscarCelula(c: Celula): Promise<any[] | null> {
     const g = google.current;
+    if (!g) return null;
+    if (!(await reservar("area", 1))) return null;
+    const { Place, SearchNearbyRankPreference } = await g.maps.importLibrary("places");
+    const { places } = await Place.searchNearby({
+      fields: [...CAMPOS_DA_BUSCA],
+      locationRestriction: { center: c.centro, radius: c.raio },
+      includedTypes: [...TIPOS_DA_AREA],
+      rankPreference: SearchNearbyRankPreference?.DISTANCE ?? "DISTANCE",
+      maxResultCount: MAXIMO_DA_BUSCA,
+      language: "pt-BR",
+      region: "br",
+    });
+    const lista = (places || []) as any[];
+    juntarLugares(lista);
+    setCelulas((antes) => new Map(antes).set(c.id, {
+      celula: c, estado: lista.length >= MAXIMO_DA_BUSCA ? "cheia" : "feita", qtd: lista.length,
+    }));
+    return lista;
+  }
+
+  /** Busca as células uma a uma; para quando a cota acaba ou o vendedor toca em "Parar". */
+  async function varrer(lista: Celula[], aprofundando: Celula[] = []) {
+    if (!lista.length) return;
+    pararVarredura.current = false;
+    setBuscando("varredura");
+    setAviso(null);
+    if (aprofundando.length) {
+      setCelulas((antes) => {
+        const novo = new Map(antes);
+        for (const c of aprofundando) {
+          const x = novo.get(c.id);
+          if (x) novo.set(c.id, { ...x, estado: "aprofundada" });
+        }
+        return novo;
+      });
+    }
+    const vistos = new Set(lugares.keys());
+    let feitas = 0;
+    let novos = 0;
+    try {
+      for (const c of lista) {
+        if (pararVarredura.current) break;
+        setVarrendo({ feitas, total: lista.length });
+        const achados = await buscarCelula(c);
+        if (!achados) return;
+        feitas++;
+        for (const p of achados) if (p?.id && !vistos.has(p.id)) { vistos.add(p.id); novos++; }
+      }
+      setAviso({ tipo: "info", texto: `${feitas} áreas buscadas: ${novos} lugares novos no mapa.` });
+    } catch (e: any) {
+      setAviso({ tipo: "erro", texto: e?.message || "Não deu para buscar agora." });
+    } finally {
+      setVarrendo(null);
+      setBuscando(null);
+    }
+  }
+
+  /** "Buscar nesta área": o que está na tela vira uma célula (e entra na cobertura). */
+  async function buscarNaArea() {
     const m = mapa.current;
-    if (!g || !m) return;
-    const centro = m.getCenter();
-    const limites = m.getBounds();
-    if (!centro || !limites) return;
-    const canto = limites.getNorthEast();
-    const raio = Math.min(Math.max(metrosEntre({ lat: centro.lat(), lng: centro.lng() }, { lat: canto.lat(), lng: canto.lng() }), 300), 50000);
+    const limites = m?.getBounds();
+    if (!limites) return;
+    const ne = limites.getNorthEast();
+    const so = limites.getSouthWest();
+    const c = celulaDaCaixa({ sul: so.lat(), oeste: so.lng(), norte: ne.lat(), leste: ne.lng() }, 0);
     setBuscando("area");
     try {
-      if (!(await reservar("busca", 1))) return;
-      const { Place } = await g.maps.importLibrary("places");
-      const { places } = await Place.searchNearby({
-        fields: [...CAMPOS_DA_BUSCA],
-        locationRestriction: { center: { lat: centro.lat(), lng: centro.lng() }, radius: raio },
-        includedTypes: [...TIPOS_DA_AREA],
-        maxResultCount: 20,
-        language: "pt-BR",
-        region: "br",
+      const achados = await buscarCelula(c);
+      if (!achados) return;
+      const n = achados.length;
+      setAviso({
+        tipo: "info",
+        texto: n >= MAXIMO_DA_BUSCA && c.raio > 3000
+          ? `${n} lugares (o máximo de uma busca). Aproxime o mapa e busque de novo para ver os que faltam aqui.`
+          : `${n} lugares nesta área.`,
       });
-      juntarLugares(places || []);
-      setAviso({ tipo: "info", texto: `${(places || []).length} lugares nesta área.` });
     } catch (e: any) {
       setAviso({ tipo: "erro", texto: e?.message || "Não deu para buscar agora." });
     } finally {
@@ -479,7 +606,8 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
         </form>
         {uso && (
           <div className={s.cota} title="A cota é da equipe toda e é grátis. Vira de madrugada.">
-            <Medidor rotulo="Buscas hoje" usado={uso.busca} limite={LIMITES_DO_DIA.busca} />
+            <Medidor rotulo="Buscas por nome hoje" usado={uso.texto} limite={LIMITES_DO_DIA.texto} />
+            <Medidor rotulo="Buscas por área hoje" usado={uso.area} limite={LIMITES_DO_DIA.area} />
             <Medidor rotulo="Contatos hoje" usado={uso.contato} limite={LIMITES_DO_DIA.contato} />
           </div>
         )}
@@ -537,6 +665,24 @@ export default function MapaDeProspeccao({ api = apiDoServidor, cidadeInicial = 
             />
           ) : (
             <>
+              {cidade && areaDaCidade && (
+                <Cobertura
+                  pendentes={celulasPendentes}
+                  cheias={celulasCheias}
+                  buscadas={[...celulas.values()].filter((x) => x.estado !== "aprofundada").length}
+                  restantes={uso ? LIMITES_DO_DIA.area - uso.area : 0}
+                  varrendo={varrendo}
+                  ocupado={!!buscando}
+                  mostrarAreas={mostrarAreas}
+                  onMostrarAreas={setMostrarAreas}
+                  onVarrer={(n) => varrer(celulasPendentes.slice(0, n))}
+                  onAprofundar={(n) => {
+                    const cheias = celulasCheias.slice(0, n / 4);
+                    varrer(cheias.flatMap(dividirCelula), cheias);
+                  }}
+                  onParar={() => { pararVarredura.current = true; }}
+                />
+              )}
               {cidade && (
                 <div className={s.extras}>
                   <span>Buscar também:</span>
@@ -596,6 +742,62 @@ function elementoDoPino(p: Pino, aberto: boolean, onClicar: () => void): HTMLEle
   balao.append(nome, end, st);
   el.appendChild(balao);
   return el;
+}
+
+/**
+ * A caixa da varredura: o Google traz no máximo 20 por busca, então a cidade é
+ * buscada por áreas. Cinza no mapa = falta buscar; laranja = área cheia, que
+ * pode ser aprofundada (vira 4 menores).
+ */
+function Cobertura({ pendentes, cheias, buscadas, restantes, varrendo, ocupado, mostrarAreas, onMostrarAreas, onVarrer, onAprofundar, onParar }: {
+  pendentes: Celula[];
+  cheias: Celula[];
+  buscadas: number;
+  restantes: number;
+  varrendo: { feitas: number; total: number } | null;
+  ocupado: boolean;
+  mostrarAreas: boolean;
+  onMostrarAreas: (v: boolean) => void;
+  onVarrer: (n: number) => void;
+  onAprofundar: (n: number) => void;
+  onParar: () => void;
+}) {
+  const varrer = Math.min(pendentes.length, restantes);
+  // Aprofunda só área inteira: cada uma vira 4 buscas.
+  const aprofundar = Math.min(cheias.length, Math.floor(restantes / 4)) * 4;
+  return (
+    <div className={s.cobertura}>
+      <strong>Achar todos os restaurantes</strong>
+      {varrendo ? (
+        <>
+          <p>Buscando área {varrendo.feitas + 1} de {varrendo.total}…</p>
+          <button type="button" className={s.botaoClaro} onClick={onParar}>Parar</button>
+        </>
+      ) : (
+        <>
+          <p>
+            O Google traz no máximo 20 lugares por busca, os do centro primeiro. Para os bairros de fora aparecerem,
+            busque a cidade por áreas{buscadas > 0 && <> — {buscadas} já buscadas</>}.
+          </p>
+          {pendentes.length > 0 && (
+            <button type="button" className={s.botaoPrincipal} disabled={ocupado || varrer === 0} onClick={() => onVarrer(varrer)}>
+              Buscar {varrer === pendentes.length ? "as" : `${varrer} das`} {pendentes.length} áreas cinzas · usa {varrer} {varrer === 1 ? "busca" : "buscas"}
+            </button>
+          )}
+          {cheias.length > 0 && (
+            <button type="button" className={s.botaoClaro} disabled={ocupado || aprofundar === 0} onClick={() => onAprofundar(aprofundar)}>
+              Aprofundar {cheias.length} {cheias.length === 1 ? "área laranja" : "áreas laranjas"} (podem ter mais) · usa {aprofundar} {aprofundar === 1 ? "busca" : "buscas"}
+            </button>
+          )}
+          {!pendentes.length && !cheias.length && <p className={s.coberturaOk}>Cidade toda buscada.</p>}
+          {restantes === 0 && <small>As buscas por área de hoje acabaram. Amanhã liberam de novo.</small>}
+          <label className={s.mostrarAreas}>
+            <input type="checkbox" checked={mostrarAreas} onChange={(e) => onMostrarAreas(e.target.checked)} /> Mostrar as áreas no mapa
+          </label>
+        </>
+      )}
+    </div>
+  );
 }
 
 function Medidor({ rotulo, usado, limite }: { rotulo: string; usado: number; limite: number }) {

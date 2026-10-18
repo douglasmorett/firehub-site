@@ -33,7 +33,7 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST { acao: "marcar", placeId, cidade, status, nota } — o vendedor anota o lugar.
- * POST { acao: "reservar", tipo: "busca" | "contato", qtd } — antes de chamar o Google.
+ * POST { acao: "reservar", tipo: "texto" | "area" | "contato", qtd } — antes de chamar o Google.
  */
 export async function POST(req: NextRequest) {
   const quem = await quemEsta();
@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
   if (corpo?.acao === "reservar") {
     const tipo = corpo.tipo as TipoDeUso;
     const qtd = Math.floor(Number(corpo.qtd));
-    if (!(tipo in LIMITES_DO_DIA) || !(qtd >= 1 && qtd <= 20)) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+    if (!Object.prototype.hasOwnProperty.call(LIMITES_DO_DIA, tipo) || !(qtd >= 1 && qtd <= 20)) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
     return NextResponse.json(await reservarUso(quem, tipo, qtd));
   }
 

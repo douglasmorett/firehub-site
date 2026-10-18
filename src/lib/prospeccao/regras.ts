@@ -13,7 +13,11 @@
  * Os limites daqui ficam um pouco abaixo da trava, para a tela avisar antes do erro.
  */
 
-export const LIMITES_DO_DIA = { busca: 150, contato: 30 } as const;
+/**
+ * `texto` (Text Search) e `area` (Nearby Search) são SKUs diferentes no Google,
+ * cada um com os seus 5.000 grátis por mês e a sua trava de 160 por dia.
+ */
+export const LIMITES_DO_DIA = { texto: 150, area: 150, contato: 30 } as const;
 export type TipoDeUso = keyof typeof LIMITES_DO_DIA;
 
 export const STATUS_DA_MARCACAO = ["negociacao", "sem_interesse", "oportunidade"] as const;
@@ -129,6 +133,96 @@ export type CaixaDaCidade = { sul: number; oeste: number; norte: number; leste: 
 
 export function dentroDaCaixa(p: { lat: number; lng: number }, c: CaixaDaCidade): boolean {
   return p.lat >= c.sul && p.lat <= c.norte && p.lng >= c.oeste && p.lng <= c.leste;
+}
+
+// ── A varredura por áreas ───────────────────────────────────────────────────
+//
+// O Google devolve no máximo 20 lugares por busca, os mais relevantes — numa
+// cidade inteira, os do centro. Para os bairros de fora aparecerem, a cidade é
+// cortada em células e cada célula é uma busca por perto, do mais próximo para
+// o mais longe. Célula que volta com 20 está "cheia" (pode ter mais) e pode ser
+// cortada em 4.
+
+export type Celula = CaixaDaCidade & { id: string; nivel: number; centro: { lat: number; lng: number }; raio: number };
+
+const METROS_POR_GRAU = 111320;
+
+export function celulaDaCaixa(c: CaixaDaCidade, nivel: number): Celula {
+  const centro = { lat: (c.sul + c.norte) / 2, lng: (c.oeste + c.leste) / 2 };
+  return {
+    ...c, nivel, centro,
+    id: `${nivel}:${c.sul.toFixed(5)},${c.oeste.toFixed(5)}`,
+    // O círculo que cobre a célula inteira (meia diagonal), com o teto de 50 km do Google.
+    raio: Math.min(50000, Math.ceil(metrosEntre(centro, { lat: c.norte, lng: c.leste }))),
+  };
+}
+
+/** Lado e tamanho da caixa em metros. */
+function medidas(c: CaixaDaCidade) {
+  const alto = (c.norte - c.sul) * METROS_POR_GRAU;
+  const largo = (c.leste - c.oeste) * METROS_POR_GRAU * Math.cos((((c.sul + c.norte) / 2) * Math.PI) / 180);
+  return { alto, largo };
+}
+
+/**
+ * Corta a área em células quadradas de pelo menos `ladoMinimo` metros, com no
+ * máximo `maximo` células (o lado cresce até caber).
+ */
+export function gradeDaArea(c: CaixaDaCidade, maximo = 30, ladoMinimo = 1200): Celula[] {
+  const { alto, largo } = medidas(c);
+  if (!(alto > 0 && largo > 0)) return [];
+  let lado = Math.max(ladoMinimo, Math.sqrt((alto * largo) / maximo));
+  let linhas = Math.max(1, Math.ceil(alto / lado));
+  let colunas = Math.max(1, Math.ceil(largo / lado));
+  while (linhas * colunas > maximo) {
+    lado *= 1.1;
+    linhas = Math.max(1, Math.ceil(alto / lado));
+    colunas = Math.max(1, Math.ceil(largo / lado));
+  }
+  const dLat = (c.norte - c.sul) / linhas;
+  const dLng = (c.leste - c.oeste) / colunas;
+  const saida: Celula[] = [];
+  for (let i = 0; i < linhas; i++) {
+    for (let j = 0; j < colunas; j++) {
+      saida.push(celulaDaCaixa({ sul: c.sul + i * dLat, norte: c.sul + (i + 1) * dLat, oeste: c.oeste + j * dLng, leste: c.oeste + (j + 1) * dLng }, 0));
+    }
+  }
+  return saida;
+}
+
+/** A célula cheia vira 4. */
+export function dividirCelula(c: Celula): Celula[] {
+  const lat = (c.sul + c.norte) / 2;
+  const lng = (c.oeste + c.leste) / 2;
+  return [
+    { sul: c.sul, norte: lat, oeste: c.oeste, leste: lng },
+    { sul: c.sul, norte: lat, oeste: lng, leste: c.leste },
+    { sul: lat, norte: c.norte, oeste: c.oeste, leste: lng },
+    { sul: lat, norte: c.norte, oeste: lng, leste: c.leste },
+  ].map((x) => celulaDaCaixa(x, c.nivel + 1));
+}
+
+/**
+ * A área a varrer: onde as buscas da cidade acharam restaurantes, com uma
+ * folga larga (metade do tamanho de cada lado, pelo menos ~2 km): a busca por nome
+ * acha o centro e os bairros de fora ficavam fora da grade (Rio das Ostras,
+ * 18/10). Sem passar da caixa do município — a caixa
+ * inteira pega a zona rural e gastaria busca à toa.
+ */
+export function areaParaVarrer(pontos: { lat: number; lng: number }[], cidade: CaixaDaCidade | null): CaixaDaCidade | null {
+  if (pontos.length < 2) return cidade;
+  let c: CaixaDaCidade = { sul: Infinity, norte: -Infinity, oeste: Infinity, leste: -Infinity };
+  for (const p of pontos) {
+    c = { sul: Math.min(c.sul, p.lat), norte: Math.max(c.norte, p.lat), oeste: Math.min(c.oeste, p.lng), leste: Math.max(c.leste, p.lng) };
+  }
+  const fLat = Math.max((c.norte - c.sul) * 0.5, 0.018);
+  const fLng = Math.max((c.leste - c.oeste) * 0.5, 0.018);
+  c = { sul: c.sul - fLat, norte: c.norte + fLat, oeste: c.oeste - fLng, leste: c.leste + fLng };
+  if (cidade) {
+    const corte = { sul: Math.max(c.sul, cidade.sul), norte: Math.min(c.norte, cidade.norte), oeste: Math.max(c.oeste, cidade.oeste), leste: Math.min(c.leste, cidade.leste) };
+    if (corte.sul < corte.norte && corte.oeste < corte.leste) c = corte;
+  }
+  return c;
 }
 
 /** Link "Como chegar" do Google Maps — abre o app, não gasta cota. */

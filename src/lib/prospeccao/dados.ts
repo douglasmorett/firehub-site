@@ -185,14 +185,14 @@ export async function marcarLugar(quem: QuemEsta, dados: { placeId: string; cida
 
 // ── O contador do dia (a cota do Google é da equipe toda) ──────────────────
 
-export type UsoDoDia = { busca: number; contato: number; limites: typeof LIMITES_DO_DIA };
+export type UsoDoDia = { texto: number; area: number; contato: number; limites: typeof LIMITES_DO_DIA };
 
 export async function usoDoDia(): Promise<UsoDoDia> {
   await garantirEstrutura();
   const linhas = await prisma.$queryRaw<{ tipo: string; qtd: bigint }[]>`
     SELECT tipo, SUM(qtd)::bigint AS qtd FROM "ProspeccaoUso" WHERE dia = ${diaDaCotaDoGoogle()} GROUP BY tipo`;
   const de = (t: TipoDeUso) => Number(linhas.find((l) => l.tipo === t)?.qtd || 0);
-  return { busca: de("busca"), contato: de("contato"), limites: LIMITES_DO_DIA };
+  return { texto: de("texto"), area: de("area"), contato: de("contato"), limites: LIMITES_DO_DIA };
 }
 
 /**
