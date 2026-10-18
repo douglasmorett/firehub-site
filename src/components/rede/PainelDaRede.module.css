@@ -1,0 +1,59 @@
+.painel {
+  --tinta: #1d1b19; --tinta-2: #5c5752; --linha: #e7e2dc; --fundo: #f4f2ef; --cor: #e8590c;
+  min-height: 100vh; background: var(--fundo); color: var(--tinta); font-family: Inter, system-ui, sans-serif;
+  padding: 24px 16px 60px;
+}
+.painel button { font: inherit; cursor: pointer; }
+.topo { max-width: 1240px; margin: 0 auto; display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.topo h1 { margin: 6px 0 4px; font-size: 26px; letter-spacing: -0.02em; }
+.topo p { margin: 0; color: var(--tinta-2); font-size: 14px; }
+.etiqueta { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; background: #fff3bf; color: #8a6d00; padding: 3px 8px; border-radius: 6px; }
+.acoesTopo { display: flex; gap: 8px; }
+.botaoPrincipal, .botaoSecundario {
+  height: 40px; padding: 0 16px; border-radius: 10px; font-weight: 600; font-size: 14px;
+  display: inline-flex; align-items: center; gap: 6px; text-decoration: none;
+}
+.botaoPrincipal { background: var(--tinta); color: #fff; border: 0; }
+.botaoPrincipal:disabled { background: #cfc9c1; cursor: default; }
+.botaoSecundario { background: #fff; color: var(--tinta); border: 1px solid var(--linha); }
+.aviso { max-width: 1240px; margin: 12px auto 0; background: #ebfbee; color: #2b8a3e; border: 1px solid #b2f2bb; border-radius: 10px; padding: 10px 14px; font-size: 14px; font-weight: 500; }
+
+.colunas { max-width: 1240px; margin: 20px auto 0; display: grid; gap: 24px; }
+@media (min-width: 1000px) { .colunas { grid-template-columns: minmax(0, 1fr) 400px; align-items: start; } }
+.formulario { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.bloco { background: #fff; border: 1px solid var(--linha); border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.bloco h2 { margin: 0; font-size: 16px; }
+.blocoTopo { display: flex; justify-content: space-between; align-items: center; }
+.campo { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 600; color: var(--tinta-2); flex: 1; min-width: 0; }
+.campo input, .campo select, .inputTitulo {
+  font: inherit; font-size: 14px; font-weight: 400; color: var(--tinta); height: 38px; border: 1px solid var(--linha);
+  border-radius: 9px; padding: 0 10px; background: #fff; min-width: 0;
+}
+.campo input[type="color"] { padding: 3px; width: 64px; }
+.campo input:focus, .campo select:focus, .inputTitulo:focus { outline: 0; border-color: var(--tinta); }
+.campoCheck { display: flex; align-items: center; gap: 6px; font-size: 14px; align-self: flex-end; height: 38px; }
+.linhaDeCampos { display: flex; gap: 10px; flex-wrap: wrap; }
+.dica { margin: 0; font-size: 12px; color: var(--tinta-2); line-height: 1.45; }
+.cores { display: flex; gap: 8px; }
+.cor, .corAtiva { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--linha); }
+.corAtiva { box-shadow: 0 0 0 2px var(--tinta); }
+
+.item { border: 1px solid var(--linha); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.itemApagado { opacity: .55; }
+.itemTopo { display: flex; align-items: center; gap: 10px; }
+.inputTitulo { flex: 1; font-weight: 600; }
+.miniatura { width: 56px; height: 38px; border-radius: 8px; object-fit: cover; background: #eee; flex-shrink: 0; }
+.letra { width: 38px; height: 38px; border-radius: 10px; color: #fff; display: grid; place-items: center; font-weight: 800; flex-shrink: 0; }
+.botoesDoItem { display: flex; gap: 2px; }
+.botoesDoItem button { width: 32px; height: 32px; border: 0; background: none; border-radius: 8px; display: grid; place-items: center; color: var(--tinta-2); }
+.botoesDoItem button:hover { background: var(--fundo); color: var(--tinta); }
+.restaurar { align-self: flex-start; border: 0; background: none; color: var(--tinta-2); font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+
+.previa { position: sticky; top: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.previaRotulo { font-size: 12px; font-weight: 600; color: var(--tinta-2); }
+/* transform: os position:fixed da vitrine (barra da sacola, folhas) ficam presos na moldura. */
+.telefone {
+  width: 380px; max-width: 100%; height: 760px; border-radius: 36px; overflow: hidden; background: #fff;
+  border: 10px solid #1d1b19; box-shadow: 0 20px 50px rgba(0,0,0,.18); transform: translateZ(0);
+}
+@media (max-width: 999px) { .telefone { height: 680px; } }
