@@ -2,7 +2,7 @@
 
 /**
  * A CARINHA DO BILL no canto do painel — só para o dono, só com o serviço
- * ligado (R$ 29,90/mês, lib/assessor/assinatura.ts).
+ * ligado (R$ 49,90/mês, lib/assessor/assinatura.ts).
  *
  * Douglas, 14/10/2026: "ele ativou, atualizou a página, já aparece a carinha
  * do Bill lá embaixo… pra clicar, dar o comando pra ele". Nem precisa
@@ -20,7 +20,8 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
-import ConversaComOBill, { AVATAR_DO_BILL } from "./ConversaComOBill";
+import ConversaComOBill from "./ConversaComOBill";
+import RostoDoBill, { type EmocaoDoBill } from "./RostoDoBill";
 import { useArrastavel } from "@/lib/useArrastavel";
 
 export const EVENTO_BILL_LIGADO = "bill:ligado";
@@ -28,6 +29,10 @@ export const EVENTO_BILL_LIGADO = "bill:ligado";
 export default function BillFlutuante({ ligadoInicial }: { ligadoInicial: boolean }) {
   const [ligado, setLigado] = useState(ligadoInicial);
   const [aberto, setAberto] = useState(false);
+  // A carinha olha para o mouse; sorri quando o ponteiro chega nela e, com a
+  // conversa aberta, mostra o que o Bill está fazendo (ouvindo, pensando...).
+  const [sobre, setSobre] = useState(false);
+  const [humor, setHumor] = useState<EmocaoDoBill>("normal");
   const caminho = usePathname();
   // Antes do `return null`: hook que não roda em toda renderização derruba a tela.
   const arraste = useArrastavel();
@@ -57,10 +62,12 @@ export default function BillFlutuante({ ligadoInicial }: { ligadoInicial: boolea
             {...arraste.alca}
             // Quem acabou de largar o Bill em outro canto não quer a conversa aberta.
             onClick={() => { if (!arraste.arrastou()) setAberto(true); }}
+            onPointerEnter={() => setSobre(true)}
+            onPointerLeave={() => setSobre(false)}
             aria-label="Abrir conversa com o Bill, seu assessor"
-            style={{ width: 60, height: 60, borderRadius: 999, border: "2px solid #22D3EE", padding: 0, overflow: "hidden", cursor: "grab", touchAction: "none", background: "#020617", animation: "bill-brilho 2.6s ease-in-out infinite" }}
+            style={{ width: 60, height: 60, borderRadius: 999, border: "2px solid #22D3EE", padding: 0, overflow: "hidden", cursor: "grab", touchAction: "none", background: "#020617", animation: "bill-brilho 2.6s ease-in-out infinite", display: "grid", placeItems: "center" }}
           >
-            <img src={AVATAR_DO_BILL} alt="" width={60} height={60} draggable={false} style={{ display: "block", width: "100%", height: "100%", transform: "scale(1.25)", pointerEvents: "none" }} />
+            <RostoDoBill tamanho={60} seguirMouse emocao={sobre ? "feliz" : "normal"} style={{ transform: "scale(1.3)", pointerEvents: "none" }} />
           </button>
         </div>
       )}
@@ -77,7 +84,9 @@ export default function BillFlutuante({ ligadoInicial }: { ligadoInicial: boolea
           }}
         >
           <div style={{ background: "#0B1220", color: "white", padding: "10px 12px", display: "flex", alignItems: "center", gap: 10 }}>
-            <img src={AVATAR_DO_BILL} alt="" width={38} height={38} style={{ borderRadius: 999, border: "1.5px solid #22D3EE" }} />
+            <div style={{ width: 38, height: 38, borderRadius: 999, border: "1.5px solid #22D3EE", display: "grid", placeItems: "center", overflow: "hidden", flexShrink: 0 }}>
+              <RostoDoBill tamanho={36} emocao={humor} style={{ transform: "scale(1.3)" }} />
+            </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 900, fontSize: 15 }}>Bill, seu assessor</div>
               <div style={{ fontSize: 11.5, color: "#94A3B8" }}>Estoque, financeiro e cardápio · a mesma conversa do WhatsApp</div>
@@ -88,7 +97,7 @@ export default function BillFlutuante({ ligadoInicial }: { ligadoInicial: boolea
             </button>
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <ConversaComOBill altura="100%" />
+            <ConversaComOBill altura="100%" aoMudarEstado={setHumor} />
           </div>
         </div>
       )}

@@ -81,6 +81,9 @@ type PrinterEntry = {
   foraDoKds?: boolean;
   // Pedido com item desta e de outra impressora: esta imprime o pedido inteiro.
   comandaInteiraNoMisto?: boolean;
+  // A comanda desta termina com o que saiu nas outras impressoras
+  // ("TAMBEM NESTE PEDIDO"). lib/outros-setores-na-comanda.ts.
+  avisarOutrosSetores?: boolean;
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
@@ -1660,6 +1663,33 @@ export default function PrinterSetupClient({
                     </div>
                     <div style={{ fontSize: "0.72rem", fontWeight: 500, marginTop: 2, lineHeight: 1.35, opacity: 0.9 }}>
                       Quando o pedido tem item desta impressora e de outra, esta imprime o pedido completo.
+                    </div>
+                  </button>
+                )}
+
+                {/* ── Avisar os outros itens do pedido ──
+                    Jerrajê (Gil, 17/10/2026): a comanda de cada setor termina
+                    com "** TAMBEM NESTE PEDIDO **  BURGER: 1 item", para não
+                    liberar um e esquecer o outro. Desligado por padrão — a
+                    impressora que solta só bebida não quer isso
+                    (lib/outros-setores-na-comanda.ts). */}
+                {printer.categories.length > 0 && !printer.somenteBebidas && (
+                  <button
+                    onClick={() => updatePrinter(printer.id, { avisarOutrosSetores: !printer.avisarOutrosSetores })}
+                    style={{
+                      width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                      padding: "10px 12px", borderRadius: 12, marginTop: 8,
+                      border: printer.avisarOutrosSetores ? "2px solid #1C1917" : "1.5px solid #E2E8F0",
+                      background: printer.avisarOutrosSetores ? "#FAF6F2" : "#fff",
+                      color: printer.avisarOutrosSetores ? "#1C1917" : "#64748B",
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                      {printer.avisarOutrosSetores ? "✓" : "○"} 📋 Avisar os outros itens do pedido (de outras impressoras)
+                    </div>
+                    <div style={{ fontSize: "0.72rem", fontWeight: 500, marginTop: 2, lineHeight: 1.35, opacity: 0.9 }}>
+                      No fim desta comanda sai, bem separado, &quot;TAMBÉM NESTE PEDIDO&quot; com quantos itens foram para
+                      cada outra impressora (ex.: BURGER: 1 item). Só para a equipe saber que o pedido não está completo.
                     </div>
                   </button>
                 )}

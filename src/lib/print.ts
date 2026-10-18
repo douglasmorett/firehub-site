@@ -9,6 +9,7 @@ import { impressorasDaLoja } from "./loja-de-origem";
 import { bebidaQueOutraJaLeva, categoriasPedidas, impressoraDaViaDoEntregador, impressorasPeloPedidoSoDeBebida, impressorasPeloTipoDoPedido, itensQueContamParaAVia, itensDaImpressora, restoDoPedido, SUFIXO_DA_VIA_DO_ENTREGADOR, umaPorImpressora } from "./roteamento-de-impressao";
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
+import { blocosComOutrosSetores, outrosSetoresDoPedido, papelSemAvisoDeSetores } from "./outros-setores-na-comanda";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -181,6 +182,8 @@ export type PrinterEntry = {
   semPedidoSoDeBebida?: boolean;
   /** Pedido com item desta e de outra impressora: esta imprime o pedido inteiro (itensDaImpressora). */
   comandaInteiraNoMisto?: boolean;
+  /** A comanda desta avisa o que saiu nas outras impressoras (lib/outros-setores-na-comanda.ts). */
+  avisarOutrosSetores?: boolean;
   /** true = uma linha por unidade ("1x X-Bacon" cinco vezes). Ausente = agrupado. */
   separarItens?: boolean;
   /* Quais mundos esta impressora atende: salao, delivery, ou os dois.
@@ -699,6 +702,20 @@ export async function printOrder(
   // Quem ficou com itens do pedido: é onde a via do entregador sai (abaixo).
   const receberam: { nome: string; itens: number }[] = [];
 
+  // ── "TAMBEM NESTE PEDIDO" (lib/outros-setores-na-comanda.ts) ────────────
+  // A impressora com o aviso ligado precisa saber o que foi para as OUTRAS,
+  // então a divisão do pedido é feita inteira antes do laço — a mesma regra
+  // de dentro dele. Reimpressão sai o pedido inteiro: não há outro setor.
+  const destinosDoPedidoAqui = reimpressao
+    ? []
+    : uniquePrinters.flatMap((p) => {
+        if (!p.name) return [];
+        const itens = itensDaImpressora(p, pedidoParaRotear, pedidas);
+        if (itens === null || bebidaQueOutraJaLeva(p, itens, uniquePrinters, pedidoParaRotear, pedidas)) return [];
+        return [{ impressora: p, itens }];
+      });
+  const semAvisoDeSetores = reimpressao || papelSemAvisoDeSetores(order as any);
+
   for (const printer of destinosDaReimpressao || uniquePrinters) {
     if (!printer.name) continue;
 
@@ -762,10 +779,17 @@ export async function printOrder(
       // o mesmo modelo para todas as impressoras, e o defeito só aparecia em
       // loja com mais de uma. Impressora sem `modeloId` (inclusive a sintética
       // de resgate, que não tem cadastro) cai no modelo padrão da loja.
-      blocosDoPedido(printerConfig, {
-        semValores: semValoresAqui,
-        modeloId,
-      }),
+      // Com "Avisar os outros itens do pedido" ligado nesta impressora, o
+      // modelo dela ganha o aviso logo depois dos itens.
+      (() => {
+        const base = blocosDoPedido(printerConfig, { semValores: semValoresAqui, modeloId });
+        if (semAvisoDeSetores) return base;
+        const setores = outrosSetoresDoPedido(destinosDoPedidoAqui, printer, pedidoParaRotear.items, {
+          source: (order as any).source,
+          palavrasDeBebida: printerConfig?.customBeverageKeywords,
+        });
+        return blocosComOutrosSetores(base, setores, { semValores: semValoresAqui }) ?? base;
+      })(),
       avisosDoPedido(printerConfig, { modeloId })
     );
     if (result.ok) printed++;

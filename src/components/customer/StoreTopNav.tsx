@@ -35,7 +35,7 @@ const NAV_ITEMS = [
   { href: "/store/fiscal", label: "Fiscal", icon: Receipt },
   { href: "/store/firecheck", label: "Checklist e Ponto", icon: CheckCircle2, badge: "FIRECHECK" },
   { href: "/store/chatbot", label: "Chatbot IA", icon: Bot, badge: "IA" },
-  // Bill, seu assessor: estoque e financeiro pelo WhatsApp do dono (R$ 29,90/mês — lib/assessor).
+  // Bill, seu assessor: estoque e financeiro pelo WhatsApp do dono (R$ 49,90/mês — lib/assessor).
   { href: "/store/bill", label: "Bill, seu assessor", icon: Mic, badge: "NOVO" },
   // A pagina SEMPRE morou em /store/meta-ads — e o callback do OAuth do Meta
   // (api/meta-ads/callback) e o checklist de onboarding mandam para la. Este

@@ -778,7 +778,7 @@ export type RegistroDeEdicao = {
    * ENTREGUE_DEPOIS_DE_CANCELADO: o pedido cancelado foi entregue e pago assim
    * mesmo (lib/entregue-depois-de-cancelado.ts); volta a contar como venda.
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU" | "ENTREGUE_DEPOIS_DE_CANCELADO";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "ESCOLHAS" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU" | "ENTREGUE_DEPOIS_DE_CANCELADO";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;

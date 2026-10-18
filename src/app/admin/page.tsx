@@ -33,12 +33,13 @@ export default async function AdminPage() {
   });
 
   // Por que a loja não paga mensalidade (lojaIsenta, em lib/billing.ts), para
-  // o selo da linha não dizer "Teste" de quem nunca vai ser cobrado.
+  // o selo da linha não dizer "Teste" de quem nunca vai ser cobrado. Ser
+  // embaixador não isenta (17/10/2026): o nome só aparece em quem o dono isentou.
   const motivoDaIsencao = (l: typeof lojistas[0]): string | null => {
+    if (!lojaIsenta(l)) return null;
     if (l.isFranqueadoHakim) return "Hakim";
     if (l.ambassadorAccount?.active) return l.ambassadorAccount.isVendedor ? "vendedor" : "embaixador";
-    if (lojaIsenta(l)) return "";
-    return null;
+    return "";
   };
 
   // Loja aberta pelo "Nova loja" do painel nasce com e-mail virtual

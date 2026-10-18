@@ -177,7 +177,7 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
           )}
           {(ciclo.taxas?.trafegoPago || 0) > 0 && linha("Gestão de tráfego pago (FireHub)", fmtR(ciclo.taxas.trafegoPago), "R$ 50 por semana de campanha ativa")}
           {(ciclo.taxas?.totem || 0) > 0 && linha("Totem de autoatendimento", fmtR(ciclo.taxas.totem))}
-          {(ciclo.taxas?.assessor || 0) > 0 && linha("Bill, seu assessor (estoque e financeiro pelo WhatsApp)", fmtR(ciclo.taxas.assessor || 0), "R$ 29,90 no mês em que ficou ativo depois dos 7 dias grátis (termo aceito ao ligar)")}
+          {(ciclo.taxas?.assessor || 0) > 0 && linha("Bill, seu assessor (estoque e financeiro pelo WhatsApp)", fmtR(ciclo.taxas.assessor || 0), "Cobrado inteiro no mês em que ficou ativo depois dos 7 dias grátis (termo aceito ao ligar)")}
           {(ciclo.amountOffset || 0) > 0 && linha("Já abatido por pagamentos online", `- ${fmtR(Math.min(ciclo.amountOffset, mensalidade))}`)}
           {ciclo.indiqueEGanhe?.isenta && linha("Mensalidade isenta (Indique e Ganhe)", fmtR(0), `${ciclo.indiqueEGanhe.ativosPagantes} restaurantes indicados ativos e pagantes — vale enquanto forem mais de 10`)}
           {(ciclo.indiqueEGanhe?.abate || 0) > 0 && linha(

@@ -1,5 +1,8 @@
 /**
- * A ASSINATURA DO BILL, SEU ASSESSOR — R$ 29,90 por mês, no boleto da mensalidade.
+ * A ASSINATURA DO BILL, SEU ASSESSOR — R$ 49,90 por mês, no boleto da mensalidade.
+ *
+ * Até 17/10/2026 era R$ 29,90. Quem ligou aceitando o termo daquela época
+ * segue com 29,90 enquanto aquele trecho ficar ligado (precoDoTrecho).
  *
  * Douglas, 14/10/2026: "esse modo aí do meu assessor pode ser cobrado. A gente
  * já entrega muita funcionalidade sem cobrar". Cobrar no Asaas pelo boleto que
@@ -11,7 +14,7 @@
  * - a PRIMEIRA ativação da loja ganha 7 dias grátis (`testeAte`). Desligar e
  *   religar não dá outro período: "senão a pessoa fica saindo e entrando e
  *   pegando 7 dias" (Douglas, 14/10/2026);
- * - depois do teste, ficou ativo em algum momento do mês = R$ 29,90 do mês
+ * - depois do teste, ficou ativo em algum momento do mês = o preço do mês
  *   inteiro, uma vez só, mesmo desligando e religando no mesmo dia;
  * - desligou: o mês seguinte não é cobrado (a não ser que ligue de novo).
  *
@@ -27,7 +30,10 @@ import { prisma } from "@/lib/prisma";
 import { garantirEstruturaDoAssessor } from "./estrutura-no-banco";
 import { VERSAO_DO_TERMO_DO_BILL } from "./termo";
 
-export const PRECO_DO_ASSESSOR = 29.9;
+export const PRECO_DO_ASSESSOR = 49.9;
+/** O preço do termo até 16/10/2026 (versões anteriores a 2026-10-17). */
+export const PRECO_ANTIGO_DO_ASSESSOR = 29.9;
+const PRIMEIRA_VERSAO_A_49_90 = "2026-10-17";
 export const DIAS_DE_TESTE_DO_ASSESSOR = 7;
 const DIA_MS = 24 * 60 * 60 * 1000;
 
@@ -50,8 +56,21 @@ export type EstadoDoAssessor = {
    * Hakim Centro: "tem que ficar ativo e isento, já pra mim mesmo" (15/10/2026).
    */
   isento: boolean;
+  /** Quanto esta loja paga por mês: o do trecho ligado agora; desligada, o de quem ligar hoje. */
+  preco: number;
   periodos: Periodo[];
 };
+
+/**
+ * O preço que vale para um trecho ligado: o do termo aceito ao ligá-lo. Trecho
+ * sem aceite gravado é anterior ao termo (só pode ser da época dos 29,90).
+ * As versões são datas ISO ("2026-10-17", "2026-10-14b"): a ordem do texto é a
+ * ordem do tempo.
+ */
+export function precoDoTrecho(p: Periodo): number {
+  const v = p.aceite?.versao;
+  return v && v >= PRIMEIRA_VERSAO_A_49_90 ? PRECO_DO_ASSESSOR : PRECO_ANTIGO_DO_ASSESSOR;
+}
 
 function lerPeriodos(bruto: unknown): Periodo[] {
   if (!Array.isArray(bruto)) return [];
@@ -63,6 +82,8 @@ function lerPeriodos(bruto: unknown): Periodo[] {
 /**
  * Quanto o Bill custa no mês [inicio, fim). Puro, para o teste.
  * Ativo em qualquer instante do mês depois dos 7 dias grátis = o mês inteiro.
+ * Dois trechos no mesmo mês com preços diferentes (ligou a 29,90, desligou e
+ * religou a 49,90): vale o maior, uma vez só.
  */
 export function valorDoAssessorNoMes(
   periodos: Periodo[],
@@ -75,12 +96,13 @@ export function valorDoAssessorNoMes(
   const ini = Math.max(inicio.getTime(), fimDoTeste);
   const fimMs = fim.getTime();
   if (ini >= fimMs) return 0;
-  const ativoNoMes = periodos.some((p) => {
+  let valor = 0;
+  for (const p of periodos) {
     const de = Math.max(new Date(p.de).getTime(), ini);
     const ate = Math.min(p.ate ? new Date(p.ate).getTime() : Math.max(agora.getTime(), de + 1), fimMs);
-    return ate > de;
-  });
-  return ativoNoMes ? PRECO_DO_ASSESSOR : 0;
+    if (ate > de) valor = Math.max(valor, precoDoTrecho(p));
+  }
+  return valor;
 }
 
 async function mesCorrente(franchiseeId: string, agora: Date) {
@@ -97,7 +119,7 @@ export async function assessorIsento(franchiseeId: string): Promise<boolean> {
     const { lojaIsenta } = await import("@/lib/billing");
     const loja = await prisma.user.findUnique({
       where: { id: franchiseeId },
-      select: { email: true, planPercent: true, isFranqueadoHakim: true, ambassadorAccount: { select: { active: true } } },
+      select: { email: true, planPercent: true, isFranqueadoHakim: true },
     });
     return lojaIsenta(loja as any);
   } catch {
@@ -107,7 +129,7 @@ export async function assessorIsento(franchiseeId: string): Promise<boolean> {
 
 export async function estadoDoAssessor(franchiseeId: string, agora: Date = new Date()): Promise<EstadoDoAssessor> {
   const isento = await assessorIsento(franchiseeId);
-  const vazio: EstadoDoAssessor = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, periodos: [] };
+  const vazio: EstadoDoAssessor = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, preco: PRECO_DO_ASSESSOR, periodos: [] };
   if (!(await garantirEstruturaDoAssessor())) return vazio;
   const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId } });
   if (!a) return vazio;
@@ -124,6 +146,7 @@ export async function estadoDoAssessor(franchiseeId: string, agora: Date = new D
     emTeste: Boolean(!isento && a.ativo && a.testeAte && a.testeAte.getTime() > agora.getTime()),
     jaTestou: Boolean(a.testeAte),
     isento,
+    preco: (a.ativo && periodos.find((p) => !p.ate)) ? precoDoTrecho(periodos.find((p) => !p.ate)!) : PRECO_DO_ASSESSOR,
     periodos,
   };
 }

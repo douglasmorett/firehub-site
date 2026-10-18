@@ -9,6 +9,19 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   if (process.env.NEXT_PHASE === "phase-production-build") return;
 
+  // ── CONEXÃO PARA FORA NÃO DESISTE EM 250 ms ────────────────────────────────
+  //
+  // O Node 20 tenta cada endereço do destino (IPv4/IPv6) por no máximo 250 ms.
+  // Esse relógio corre no mesmo laço que atende os painéis: no pico de sábado
+  // 17/10/2026 o laço andou 100–450 ms atrasado (68 requisições/s), cada
+  // tentativa "venceu" antes de o Node ver a resposta e TODA chamada para fora
+  // virou `fetch failed` / `connect ETIMEDOUT` — Gemini, iFood, Brendi,
+  // Nominatim. O robô passou a dizer "instabilidade" em 14 lojas. Com 3 s por
+  // endereço, o atraso do laço não derruba mais a conexão; a que funcionava
+  // continua igual. Aplicado ao vivo naquela noite (setDefault… pelo inspector).
+  const net = await import("node:net");
+  net.setDefaultAutoSelectFamilyAttemptTimeout(3000);
+
   // Computador da loja (modo contingência): nada sai para fora — antes do DDL
   // e do primeiro request (lib/modo-local.ts).
   if (process.env.FIREHUB_LOCAL === "1") {

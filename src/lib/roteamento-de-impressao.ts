@@ -68,6 +68,12 @@ export type ImpressoraConfigurada = {
    */
   comandaInteiraNoMisto?: boolean | null;
   /**
+   * A comanda desta termina com "** TAMBEM NESTE PEDIDO **" e o que saiu nas
+   * outras impressoras (BURGER: 1 item). Ausente = desligado. Ver
+   * lib/outros-setores-na-comanda.ts (Jerrajê, 17/10/2026).
+   */
+  avisarOutrosSetores?: boolean | null;
+  /**
    * Pedido que é SÓ bebida não sai aqui (nem em outra, se só esta pede
    * Bebidas): a NIK (14/10/2026) imprime o refrigerante avulso à mão no balcão.
    */

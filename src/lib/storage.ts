@@ -93,14 +93,20 @@ function safeBaseName(name: string, ext: string): string {
  * Sai em WebP: comprime melhor que JPEG e, ao contrario dele, preserva
  * transparencia — logo de loja costuma ter fundo transparente.
  */
-async function otimizarImagem(buffer: Buffer, mime: string): Promise<{ buffer: Buffer; ext: string }> {
+async function otimizarImagem(buffer: Buffer, mime: string, folder?: string | null): Promise<{ buffer: Buffer; ext: string }> {
   if (mime === "application/pdf") return { buffer, ext: "pdf" };
+
+  // A capa da loja (pasta "lojas", junto com a logo) ocupa a largura da tela no
+  // cardápio e na página do grupo: cortada em 900 px, a capa larga do Jerrajê
+  // saía 900x238 esticada para ~1900 px (17/10/2026). Ela pode ir a 2400 de
+  // largura; a altura continua limitada em 900, então logo quadrada fica igual.
+  const larguraMaxima = folder === "lojas" ? 2400 : 900;
 
   try {
     const sharp = (await import("sharp")).default;
     const otimizada = await sharp(buffer)
       .rotate() // respeita EXIF, senao foto de celular sai deitada
-      .resize(900, 900, { fit: "inside", withoutEnlargement: true })
+      .resize(larguraMaxima, 900, { fit: "inside", withoutEnlargement: true })
       .webp({ quality: 82 })
       .toBuffer();
 
@@ -147,7 +153,7 @@ export async function saveUploadedFile(file: File, folder?: string | null): Prom
   if (!real || !ALLOWED[real]) {
     throw new Error("O conteúdo do arquivo não corresponde a uma imagem ou PDF válido.");
   }
-  const { buffer, ext } = await otimizarImagem(original, mime);
+  const { buffer, ext } = await otimizarImagem(original, mime, folder);
 
   const dir = sanitizeFolder(folder);
   const fileName = safeBaseName(file.name, ext);
@@ -209,7 +215,7 @@ export async function saveDataUrl(dataUrl: string, folder?: string | null): Prom
 
   // Mesma otimizacao do upload normal: a migracao das imagens que hoje estao no
   // banco tem que sair pequena, senao troca base64 gigante por arquivo gigante.
-  const { buffer, ext: finalExt } = await otimizarImagem(original, mime);
+  const { buffer, ext: finalExt } = await otimizarImagem(original, mime, folder);
 
   const dir = sanitizeFolder(folder);
   const fileName = safeBaseName("imagem", finalExt);

@@ -20,6 +20,13 @@
  *            desconto que o pedido tinha, vale sobre os itens (sem a taxa) e
  *            só quando o cliente ainda vai pagar (`descontoNaEdicao`).
  *
+ *        { trocar: [{ itemId, quantity, comboSelections, notes }] }
+ *          → REMONTA um item que já está no pedido (sabor, borda, adicional),
+ *            pela mesma janela do cardápio. Não é cancelamento: não pede
+ *            motivo. `quantity` menor que a do item separa — "uma das duas
+ *            pizzas com bacon" —, igual ou maior troca o item inteiro. Só em
+ *            pedido próprio (lib/escolhas-na-edicao.ts).
+ *
  *        { acrescentar: [{ menuProductId, quantity, notes, comboSelections }], pagamento }
  *          → acrescenta item. Em pedido próprio o item entra no MESMO pedido e
  *            o total sobe. Em pedido de marketplace nasce um pedido COLADO
@@ -54,6 +61,7 @@
  * funciona, ou escrita que a tela não deixaria passar.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -75,6 +83,7 @@ import { valorDoAcrescimoGravado } from "@/lib/acrescimo-no-credito";
 import { descontoDoCorpo, descreverDesconto, notaDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR, type ItemRetirado } from "@/lib/motivo-do-cancelamento";
 import { carregarRodadaDaMesa, editarRodadaDaMesa, cancelarRodadaDaMesa } from "@/lib/edicao-na-mesa";
+import { planoDaTroca, descricaoDaTroca, type PlanoDaTroca } from "@/lib/escolhas-na-edicao";
 
 /** Os campos do pedido que a decisão e o recálculo precisam. */
 const CAMPOS_DO_PEDIDO = {
@@ -111,7 +120,9 @@ const CAMPOS_DO_PEDIDO = {
   // Nota autorizada trava a edição (travaDaNotaFiscal, em avaliarEdicao).
   fiscalStatus: true,
   fiscalInfo: true,
-  items: { select: { id: true, quantity: true, price: true, productName: true, menuProductId: true } },
+  // `comboSelections`: a troca de escolhas escreve no histórico como estava
+  // antes ("antes: Grande; agora: Grande / Bacon extra").
+  items: { select: { id: true, quantity: true, price: true, productName: true, menuProductId: true, comboSelections: true } },
 } as const;
 
 async function contexto(params: Promise<{ id: string }>) {
@@ -195,14 +206,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const removerItemIds: string[] = Array.isArray(body?.removerItemIds)
       ? body.removerItemIds.map(String)
       : [];
+    const trocar: Troca[] = Array.isArray(body?.trocar) ? body.trocar : [];
 
     const querMexerNosOriginais = itens.length > 0 || removerItemIds.length > 0;
     const desconto = descontoDoCorpo(body?.desconto);
     // Tirar item ou diminuir quantidade pede o motivo (lib/motivo-do-cancelamento.ts).
     const motivo = motivoDoCorpo(body);
 
-    if (!querMexerNosOriginais && acrescentar.length === 0 && !desconto) {
+    if (!querMexerNosOriginais && acrescentar.length === 0 && trocar.length === 0 && !desconto) {
       return NextResponse.json({ error: "Nada para alterar" }, { status: 400 });
+    }
+    // Remontar o item muda o preço dele. Na mesa a conta é da tela de Mesas, e
+    // no parceiro o que sobe vira pedido colado com pagamento próprio — nos
+    // dois o caminho é acrescentar (rodada nova / colado), não trocar.
+    if (trocar.length > 0 && avaliacao.modo !== "COMPLETO") {
+      return NextResponse.json(
+        {
+          error:
+            avaliacao.modo === "MESA"
+              ? "Para mudar as escolhas de um item da mesa, tire o item e lance uma rodada nova pela tela de Mesas."
+              : "Neste pedido não dá para mudar as escolhas do item: acrescente o item com as escolhas novas (vira um pedido colado, com pagamento próprio).",
+        },
+        { status: 400 }
+      );
     }
     if (desconto) {
       const pode = descontoNaEdicao(order as any, avaliacao);
@@ -281,7 +307,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // acrescentasse um pastel na mesma edição via a tela prever um total e o
     // pedido fechar noutro, com a Coca ainda lá. Uma transação só também deixa o
     // total ser recalculado uma vez, do estado final.
-    return await editarPedidoProprio({ order, lojaId, operador, itens, removerItemIds, acrescentar, desconto, motivo });
+    return await editarPedidoProprio({ order, lojaId, operador, itens, removerItemIds, acrescentar, trocar, desconto, motivo });
   } catch (error: any) {
     console.error("[Editar Pedido PATCH]", error);
     return NextResponse.json({ error: "Erro ao editar o pedido" }, { status: 500 });
@@ -328,6 +354,7 @@ async function editarPedidoProprio(entrada: {
   itens: { itemId: string; quantity: number }[];
   removerItemIds: string[];
   acrescentar: Acrescimo[];
+  trocar?: Troca[];
   desconto: DescontoManual | null;
   motivo: string;
 }) {
@@ -348,7 +375,45 @@ async function editarPedidoProprio(entrada: {
     novosItens = montados.itens;
   }
 
-  const mexeuNosItens = remover.length > 0 || mudar.length > 0 || novosItens.length > 0;
+  // ── Trocar as escolhas de um item que já está no pedido ───────────────
+  // O item remontado sai pela MESMA conta do acréscimo (montarItensNovos:
+  // preço do banco, precoUnitarioDoItem + piso, escolhas só do que existe), e
+  // grava o mesmo formato de item do cardápio — a comanda, o KDS e o caixa
+  // leem igual a um item feito no site.
+  const trocas: { plano: PlanoDaTroca; original: any; montado: ItemNovo }[] = [];
+  for (const t of entrada.trocar || []) {
+    const id = String(t?.itemId || "");
+    const original = order.items.find((i: any) => i.id === id);
+    if (!original) continue;
+    if (remover.includes(id) || mudar.some((m) => m.itemId === id) || trocas.some((x) => x.original.id === id)) {
+      return NextResponse.json(
+        { error: `"${original.productName || "Item"}": mude a quantidade OU as escolhas numa edição; salve uma e depois faça a outra.` },
+        { status: 400 }
+      );
+    }
+    if (!original.menuProductId) {
+      return NextResponse.json(
+        { error: `"${original.productName || "Item"}" não está mais no cardápio: tire o item e acrescente de novo com as escolhas.` },
+        { status: 400 }
+      );
+    }
+    const plano = planoDaTroca(original, t?.quantity);
+    if (!plano) return NextResponse.json({ error: "Quantidade inválida no item remontado." }, { status: 400 });
+    const montados = await montarItensNovos(
+      [{
+        menuProductId: original.menuProductId,
+        quantity: plano.tipo === "NO_LUGAR" ? plano.quantidade : plano.remontadas,
+        notes: t?.notes,
+        comboSelections: t?.comboSelections,
+      }],
+      lojaId,
+      order.deliveryType
+    );
+    if ("erro" in montados) return montados.erro;
+    trocas.push({ plano, original, montado: montados.itens[0] });
+  }
+
+  const mexeuNosItens = remover.length > 0 || mudar.length > 0 || novosItens.length > 0 || trocas.length > 0;
   if (!mexeuNosItens && !desconto) {
     return NextResponse.json({ error: "Nenhum item válido para alterar" }, { status: 400 });
   }
@@ -368,6 +433,12 @@ async function editarPedidoProprio(entrada: {
     if (m) diferenca.push({ menuProductId: i.menuProductId, quantity: m.quantity - i.quantity });
   }
   for (const n of novosItens) diferenca.push({ menuProductId: n.menuProductId, quantity: n.quantity });
+  // Trocar as escolhas não muda o produto; só a quantidade que subir conta.
+  for (const t of trocas) {
+    if (t.plano.tipo === "NO_LUGAR" && t.plano.quantidade > t.original.quantity) {
+      diferenca.push({ menuProductId: t.original.menuProductId, quantity: t.plano.quantidade - t.original.quantity });
+    }
+  }
   const liquido = new Map<string, number>();
   for (const d of diferenca) liquido.set(d.menuProductId, (liquido.get(d.menuProductId) || 0) + d.quantity);
   const aumentos = [...liquido].filter(([, q]) => q > 0).map(([menuProductId, quantity]) => ({ menuProductId, quantity }));
@@ -380,10 +451,18 @@ async function editarPedidoProprio(entrada: {
   // muda a operação inteira: vira cancelamento.
   const sobraram = order.items
     .filter((i: any) => !remover.includes(i.id))
-    .map((i: any) => ({ ...i, quantity: mudar.find((m) => m.itemId === i.id)?.quantity ?? i.quantity }));
+    .map((i: any) => {
+      const troca = trocas.find((t) => t.original.id === i.id);
+      if (troca?.plano.tipo === "NO_LUGAR") return { ...i, price: troca.montado.price, quantity: troca.plano.quantidade };
+      if (troca?.plano.tipo === "SEPARA") return { ...i, quantity: troca.plano.ficam };
+      return { ...i, quantity: mudar.find((m) => m.itemId === i.id)?.quantity ?? i.quantity };
+    });
+  // A parte remontada que vira linha nova ("uma das duas pizzas com bacon").
+  const separados = trocas.filter((t) => t.plano.tipo === "SEPARA").map((t) => t.montado);
 
   const finais = [
     ...sobraram.map((i: any) => ({ price: i.price, quantity: i.quantity })),
+    ...separados.map((i) => ({ price: i.price, quantity: i.quantity })),
     ...novosItens.map((i) => ({ price: i.price, quantity: i.quantity })),
   ];
 
@@ -416,6 +495,14 @@ async function editarPedidoProprio(entrada: {
       const antes = order.items.find((i: any) => i.id === m.itemId)?.quantity;
       return `${nomeDoItem(m.itemId)} ${antes}x → ${m.quantity}x`;
     }),
+    ...trocas.map((t) => {
+      const q = t.plano.tipo === "NO_LUGAR" ? t.plano.quantidade : t.plano.remontadas;
+      const troca = descricaoDaTroca(q, t.montado.productName, t.original.comboSelections as any, (t.montado.comboSelections || null) as any);
+      // Trocado inteiro e com mais unidades: a quantidade também fica no rastro.
+      return t.plano.tipo === "NO_LUGAR" && t.plano.quantidade !== t.original.quantity
+        ? `${troca}, ${t.montado.productName} ${t.original.quantity}x → ${t.plano.quantidade}x`
+        : troca;
+    }),
     ...novosItens.map((i) => `+${i.quantity}x ${comEscolhas(i)}`),
     ...(comDesconto ? [comDesconto.descricao] : []),
   ].join(", ");
@@ -430,7 +517,9 @@ async function editarPedidoProprio(entrada: {
           ? "MUDOU_QTD"
           : novosItens.length > 0
             ? "ACRESCENTOU"
-            : "DESCONTO",
+            : trocas.length > 0
+              ? "ESCOLHAS"
+              : "DESCONTO",
     descricao,
     totalAntes: order.totalAmount || 0,
     totalDepois: novoTotal,
@@ -443,6 +532,25 @@ async function editarPedidoProprio(entrada: {
     }
     for (const m of mudar) {
       await tx.customerOrderItem.update({ where: { id: m.itemId }, data: { quantity: m.quantity } });
+    }
+    for (const t of trocas) {
+      if (t.plano.tipo === "NO_LUGAR") {
+        await tx.customerOrderItem.update({
+          where: { id: t.original.id },
+          data: {
+            productName: t.montado.productName,
+            quantity: t.plano.quantidade,
+            price: t.montado.price,
+            notes: t.montado.notes,
+            comboSelections: t.montado.comboSelections ?? Prisma.DbNull,
+            // Remontado = a cozinha faz de novo; o "pronto" do KDS era do item antigo.
+            prontoEm: null,
+          },
+        });
+      } else {
+        await tx.customerOrderItem.update({ where: { id: t.original.id }, data: { quantity: t.plano.ficam } });
+        await tx.customerOrderItem.create({ data: { ...t.montado, orderId: order.id } });
+      }
     }
     for (const i of novosItens) {
       await tx.customerOrderItem.create({ data: { ...i, orderId: order.id } });
@@ -494,7 +602,7 @@ async function editarPedidoProprio(entrada: {
     );
 
   console.log(
-    `[Editar Pedido] ${order.id}: ${remover.length} removido(s), ${mudar.length} qtd alterada(s), ` +
+    `[Editar Pedido] ${order.id}: ${remover.length} removido(s), ${mudar.length} qtd alterada(s), ${trocas.length} remontado(s), ` +
     `total ${order.totalAmount} → ${novoTotal}, por ${registro.quem}`
   );
   return NextResponse.json({ success: true, totalAmount: novoTotal, registro, ...(comDesconto ? { desconto: comDesconto.valor } : {}) });
@@ -710,6 +818,8 @@ async function editarItensDoMarketplace(entrada: {
 
 /** O que a tela manda para acrescentar. `comboSelections`: { grupoId: { opção: qtd } }, como o cardápio. */
 type Acrescimo = { menuProductId: string; quantity: number; notes?: string; comboSelections?: unknown };
+/** Remontar um item do pedido: as escolhas novas e quantas unidades ganham. */
+type Troca = { itemId: string; quantity: number; notes?: string; comboSelections?: unknown };
 
 type ItemNovo = {
   menuProductId: string;

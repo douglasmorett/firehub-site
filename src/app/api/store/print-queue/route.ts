@@ -14,6 +14,7 @@ import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
+import { blocosComOutrosSetores, outrosSetoresDoPedido, papelSemAvisoDeSetores } from "@/lib/outros-setores-na-comanda";
 import { KIND_DANFE_NFCE, PARAMETRO_DO_DANFE, assistenteImprimeDanfe } from "@/lib/print";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds, impressoraForaDoKds, papelEmDoisMomentos, planoDoPapel, SUFIXO_DA_CHEGADA } from "@/lib/momento-da-impressao";
@@ -643,6 +644,15 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       // nenhum, se a consulta só o trouxe por ele já ter sido finalizado).
       const plano = planoDoPapel(pedidoDoBanco as any, pc, todosOsDestinos, (d) => impressoraForaDoKds(d.impressora as any));
       if (doisMomentos && plano.chegadaSemPapel && !(pedidoDoBanco as any).printedNaChegadaAt) chegadaSemPapel.push(pedidoDoBanco.id);
+      const blocosDoDestinoDoPedido = (impressora: any) => {
+        const proprio = blocosDaImpressora(impressora);
+        if (papelSemAvisoDeSetores(order as any)) return proprio;
+        const setores = outrosSetoresDoPedido(todosOsDestinos, impressora, order.items, {
+          source: (order as any).source,
+          palavrasDeBebida: pc?.customBeverageKeywords,
+        });
+        return blocosComOutrosSetores(proprio || blocosDaComanda, setores, { semValores: semValoresDaImpressora(pc, impressora?.modeloId) }) || proprio;
+      };
       const montarJob = (destinos: typeof todosOsDestinos, sufixo: string) => {
       const qr = camposDoQrPuxar(order as any, slugDaLoja);
       const qrEmTodas = destinos.length === 0 || destinos.every(d => qrLigadoNaImpressora(d.impressora, pc));
@@ -752,7 +762,12 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         // lê `order.blocos` e imprime o modelo padrão da loja, exatamente como
         // fazia antes. Só vai quando a impressora escolheu um modelo próprio —
         // mandar o padrão de novo aqui seria peso de rede sem efeito.
-        ...(blocosDaImpressora(d.impressora as any) ? { blocos: blocosDaImpressora(d.impressora as any) } : {}),
+        //
+        // Com "Avisar os outros itens do pedido" ligado nela, o modelo (o dela,
+        // o padrão da loja ou o de fábrica) ganha o "TAMBEM NESTE PEDIDO" logo
+        // depois dos itens, contado sobre TODOS os destinos do pedido — não só
+        // os que saem agora (lib/outros-setores-na-comanda.ts).
+        ...(blocosDoDestinoDoPedido(d.impressora as any) ? { blocos: blocosDoDestinoDoPedido(d.impressora as any) } : {}),
         // Impressora com modelo próprio leva os avisos DELE — inclusive "nenhum
         // desligado" ({}), senão herdaria os do modelo padrão da loja.
         ...(avisosDaImpressora(d.impressora as any) ? { avisos: avisosDaImpressora(d.impressora as any) } : {}),
@@ -922,8 +937,17 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           ? [{ impressora: daVia, itens: order.items || [] }]
           : destinosDoPedido(printers, order, { palavrasDeBebida: pc?.customBeverageKeywords });
       const modeloSemValores = (imp: any) => !completo && semValoresDaImpressora(pc, imp?.modeloId);
-      const blocosDoDestino = (imp: any) =>
+      const blocosSemAviso = (imp: any) =>
         daVia ? blocosDaViaDoEntregador(pc) : completo && semValoresDaImpressora(pc, imp?.modeloId) ? blocosDaComanda : blocosDaImpressora(imp);
+      // A reimpressão roteada (não a de uma impressora só, nem a inteira) leva
+      // o "TAMBEM NESTE PEDIDO" como a original (lib/outros-setores-na-comanda.ts).
+      const roteada = !alvo && order.reimprimirInteiro !== true && !daVia && !papelSemAvisoDeSetores(order);
+      const blocosDoDestino = (imp: any) => {
+        const base = blocosSemAviso(imp);
+        if (!roteada) return base;
+        const setores = outrosSetoresDoPedido(destinos as any, imp, order.items, { source: order.source, palavrasDeBebida: pc?.customBeverageKeywords });
+        return blocosComOutrosSetores(base || blocosDaComanda, setores, { semValores: modeloSemValores(imp) }) || base;
+      };
       // ── A REIMPRESSÃO SAI IGUAL À ORIGINAL ──────────────────────────────
       // Os destinos daqui não levavam o QR do motoboy, o modelo de cada
       // impressora nem o "sem valores" dela: o botão Imprimir usado fora do PC

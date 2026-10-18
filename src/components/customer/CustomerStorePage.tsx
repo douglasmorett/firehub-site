@@ -4618,7 +4618,7 @@ export default function CustomerStorePage({
 
   // ===== MAIN RENDER =====
   return (
-    <div className="saipos-store">
+    <div className="saipos-store" data-pagina-do-cliente>
       {avisoNaTela}
       {/* Dois campos no schema guardam a mesma coisa: `facebookPixelId` (preenchido
           na tela de Integrações) e `metaPixelId` (preenchido pelo módulo de tráfego
@@ -5896,11 +5896,14 @@ export default function CustomerStorePage({
         </div>
       )}
 
-      {/* CONTACT WIDGET */}
-      {!mesa?.equipe && franchisee.ifoodWidgetId && franchisee.ifoodMerchantId && (
+      {/* CONTACT WIDGET — o balão do cliente fala com a LOJA (WhatsApp dela e, se
+          houver, o chat do iFood). O do FireHub, que vem do layout, some aqui
+          pelo data-pagina-do-cliente da raiz. */}
+      {!mesa?.equipe && (franchisee.storePhone || (franchisee.ifoodWidgetId && franchisee.ifoodMerchantId)) && (
         <FloatingContactWidget
-          ifoodWidgetId={franchisee.ifoodWidgetId}
-          ifoodMerchantId={franchisee.ifoodMerchantId}
+          whatsappDaLoja={franchisee.storePhone || null}
+          ifoodWidgetId={franchisee.ifoodWidgetId && franchisee.ifoodMerchantId ? franchisee.ifoodWidgetId : undefined}
+          ifoodMerchantId={franchisee.ifoodWidgetId && franchisee.ifoodMerchantId ? franchisee.ifoodMerchantId : undefined}
         />
       )}
     </div>

@@ -65,6 +65,22 @@ const alertasDeIaEnviados = new Map<string, number>();
 const clientesAvisadosDaFalha = new Map<string, number>();
 const DUAS_HORAS_MS = 2 * 60 * 60 * 1000;
 
+/**
+ * Conversa → quando a IA respondeu DE VERDADE pela última vez (não a frase de
+ * falha). O vigia de uma mensagem que ficou para trás olha aqui.
+ *
+ * Sábado 17/10/2026, servidor saturado: o cliente mandava duas ou três
+ * mensagens seguidas, elas rodavam em paralelo, a mais nova era respondida e a
+ * mais velha estourava o teto. O vigia dela mandava "Tive uma instabilidade"
+ * para quem acabara de receber resposta — e contava como falha da IA: 21 das
+ * 34 desistências da noite foram assim, e três delas em dez minutos punham a
+ * loja em "incidente" (frase forte, conversa para a equipe, alerta ao dono)
+ * com o Gemini respondendo normalmente.
+ */
+const ultimaRespostaDaIa = new Map<string, number>();
+/** A mensagem que ficou para trás numa conversa que andou: pede o que faltou, sem "instabilidade". */
+const FRASE_DA_MENSAGEM_QUE_FICOU_PARA_TRAS = "Opa, uma das suas mensagens ficou sem resposta aqui 😅 Pode me mandar de novo o que faltou?";
+
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Evita timeout silencioso do Vercel (504) se a IA ou download demorar
 
@@ -100,6 +116,10 @@ function cleanCache() {
       // Limpa pausas com mais de 24h (safety net)
       cooldownCache.delete(key);
     }
+  }
+  // Só interessa enquanto um vigia pode estar de pé (prazo + teto, ~2 min).
+  for (const [chave, em] of ultimaRespostaDaIa.entries()) {
+    if (now - em > 10 * 60 * 1000) ultimaRespostaDaIa.delete(chave);
   }
 }
 
@@ -967,7 +987,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   const chatbotConfig = (user.chatbotConfig as any) || {};
 
   // O dono com o Bill ligado passa pelas duas travas abaixo: o Bill é serviço
-  // à parte (R$ 29,90), e muito dono põe o próprio número em "números que o
+  // à parte (R$ 49,90), e muito dono põe o próprio número em "números que o
   // robô não responde" para o robô de VENDAS não oferecer cardápio a ele —
   // teste na Hakim, 15/10/2026: a mensagem chegava e morria em
   // "numero-ignorado". O robô de vendas continua calado para ele: quem
@@ -1280,7 +1300,7 @@ async function handleIncomingMessage(body: any, instance: string) {
   }
 
   // ── BILL, SEU ASSESSOR: O DONO LANÇA ESTOQUE E FINANCEIRO POR AQUI ──────────────
-  // Com o serviço ligado (R$ 29,90/mês, lib/assessor/assinatura.ts), a
+  // Com o serviço ligado (R$ 49,90/mês, lib/assessor/assinatura.ts), a
   // mensagem do dono — áudio, texto ou foto — não vai para o robô de vendas:
   // vai para o assessor, que grava ("comprei 10 Coca lata, paguei 45" →
   // estoque + financeiro) e responde relatório. Sem o serviço, segue o modo
@@ -1411,6 +1431,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       // cliente que o robô já voltou a atender.
       if (!falhaDaIa) {
         registrarSucessoDaIa(user.id);
+        ultimaRespostaDaIa.set(chaveDaConversa, Date.now());
         const naFila = global.__humanSupportChats?.get(chaveDaConversa);
         if (naFila && (naFila as any).soPorIaForaDoAr === true && naFila.status === "PENDING") {
           global.__humanSupportChats!.delete(chaveDaConversa);
@@ -1779,6 +1800,23 @@ async function handleIncomingMessage(body: any, instance: string) {
     const falhaComoResposta = (motivo: unknown) => ({
       reply: fallbackReply, falhaDaIa: classificarFalhaDaIa(motivo), respostaDeFalha: "soluco" as const,
     });
+    /**
+     * A conversa já andou: depois que esta mensagem começou, a IA respondeu
+     * outra do mesmo cliente (`ultimaRespostaDaIa`). Esta ficou para trás, mas a
+     * IA está de pé — não é falha, não entra na conta de incidente.
+     */
+    const conversaJaAndou = () => (ultimaRespostaDaIa.get(`${user.id}_${remoteJid}`) ?? 0) > iaInicio;
+    const pedirOQueFicouParaTras = (motivo: string) => {
+      console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ Mensagem de ${remoteJid} ficou para trás (${motivo}); a conversa já tinha sido respondida — não conta como falha da IA.`);
+      registrarTrace({
+        instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
+        estagio: "ia-timeout", detalhe: `ficou para trás (${motivo}): a conversa já tinha sido respondida`,
+      });
+      if (roboEstaPausado(user.id, remoteJid)) return;
+      replyToCustomer(user.id, remoteJid, FRASE_DA_MENSAGEM_QUE_FICOU_PARA_TRAS, remoteJid || data.from || "")
+        .then(() => trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: remoteJid || data.from || "" }))
+        .catch(() => {});
+    };
 
     const espera = await comPrazo(
       // `mensagemAnteriorEm` é o que diz se este "oi" é o primeiro do dia
@@ -1814,6 +1852,7 @@ async function handleIncomingMessage(body: any, instance: string) {
         if (desfecho !== "aberto") return;
         desfecho = "respondida";
         console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ A IA falhou depois do prazo para ${remoteJid}:`, (erroTardio as any)?.message || erroTardio);
+        if (conversaJaAndou()) return pedirOQueFicouParaTras("erro depois do prazo");
         entregarRespostaDaIa(falhaComoResposta(erroTardio), true).catch(() => {});
       },
     );
@@ -1829,6 +1868,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       vigia = setTimeout(() => {
         if (desfecho !== "aberto") return;
         desfecho = "desistiu";
+        if (conversaJaAndou()) return pedirOQueFicouParaTras("passou do teto");
         console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ A IA não respondeu nem depois do prazo para ${remoteJid}. Enviando fallback.`);
         entregarRespostaDaIa(falhaComoResposta("timeout"), true).catch(() => {});
       }, TETO_DA_RESPOSTA_TARDIA_MS);

@@ -5,7 +5,8 @@
  * é da Tittanium (Felipe Titto) no INPI, processos 939197650 (classe 9) e
  * 939133610 (classe 42). "Bill" é o mesmo assistente do FireCheck.
  *
- * Desligado: a oferta (o que faz, exemplos, R$ 29,90/mês) e, ao ligar, o
+ * Desligado: a apresentação (celular com a conversa tocando, o que faz,
+ * preço, dúvidas) e, ao ligar, o
  * termo de contratação (lib/assessor/termo.ts) — só liga com o "concordo".
  * Ligado: de quais números falar, a conversa de teste (texto, áudio gravado
  * no navegador e foto — o mesmo assessor do WhatsApp, gravando de verdade) e
@@ -13,7 +14,8 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import ConversaComOBill, { AVATAR_DO_BILL } from "@/components/bill/ConversaComOBill";
+import ConversaComOBill from "@/components/bill/ConversaComOBill";
+import RostoDoBill, { type EmocaoDoBill } from "@/components/bill/RostoDoBill";
 import { EVENTO_BILL_LIGADO } from "@/components/bill/BillFlutuante";
 import { VERSAO_DO_TERMO_DO_BILL, TITULO_DO_TERMO_DO_BILL, CLAUSULAS_DO_TERMO_DO_BILL } from "@/lib/assessor/termo";
 import { Mic, Camera, Package, Wallet, Receipt, Undo2, CheckCircle2, MessageCircle, PauseCircle, Store } from "lucide-react";
@@ -50,6 +52,8 @@ export default function BillClient() {
   const [aviso, setAviso] = useState<Aviso | null>(null);
   const [confirmarDesligar, setConfirmarDesligar] = useState(false);
   const [termoAberto, setTermoAberto] = useState(false);
+  // O rosto no cabeçalho da conversa mostra o que o Bill está fazendo.
+  const [humorDaConversa, setHumorDaConversa] = useState<EmocaoDoBill>("normal");
 
   const carregar = useCallback(async () => {
     try {
@@ -80,7 +84,9 @@ export default function BillClient() {
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Erro");
       setAviso(ligar
-        ? { tipo: "ok", titulo: "Bill ligado!", detalhe: "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica." }
+        ? { tipo: "ok", titulo: "Bill ligado!", detalhe: dados?.estado.isento
+            ? "Mande um áudio do seu WhatsApp para o número da loja e veja a mágica."
+            : `Mande um áudio do seu WhatsApp para o número da loja e veja a mágica. Depois dos ${dados?.diasDeTeste ?? 7} dias grátis, se você não desligar, ${fmtR(dados?.preco ?? 0)} por mês vem no boleto da mensalidade do FireHub.` }
         : { tipo: "ok", titulo: "Bill desligado.", detalhe: "O mês que vem não é cobrado. Se este mês já passou dos dias grátis, ele continua no boleto." });
       setTermoAberto(false);
       // A carinha do Bill no canto aparece (ou some) sem atualizar a página.
@@ -113,7 +119,7 @@ export default function BillClient() {
       )}
 
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
-        <img src={AVATAR_DO_BILL} alt="" width={44} height={44} style={{ borderRadius: 999, border: "2px solid #22D3EE" }} />
+        <RostoDoBill tamanho={52} seguirMouse emocao={estado.ativo ? "feliz" : "normal"} />
         <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: 0 }}>Bill, seu assessor</h1>
         {estado.ativo && (
           <span style={{ fontSize: 12, fontWeight: 800, color: VERDE, background: "#ECFDF5", padding: "4px 10px", borderRadius: 999 }}>
@@ -121,9 +127,10 @@ export default function BillClient() {
           </span>
         )}
       </div>
-      <p style={{ color: "#475569", margin: "0 0 20px", fontSize: 15 }}>
+      {estado.ativo && <p style={{ color: "#475569", margin: "0 0 20px", fontSize: 15 }}>
         Eu sou o Bill: cuido do seu estoque, do seu financeiro e do seu cardápio pelo WhatsApp. Mande um áudio, um texto ou a foto da nota — eu lanço no sistema na hora.
-      </p>
+      </p>}
+      {!estado.ativo && <div style={{ height: 14 }} />}
 
       {termoAberto && <Termo preco={dados.preco} salvando={salvando} onCancelar={() => setTermoAberto(false)} onAceitar={() => ligar(true)} />}
 
@@ -132,10 +139,10 @@ export default function BillClient() {
           <ComoUsar dados={dados} />
           <div style={{ border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 22 }}>
             <div style={{ background: "#0B1220", color: "white", padding: "10px 14px", fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", gap: 10 }}>
-              <img src={AVATAR_DO_BILL} alt="" width={30} height={30} style={{ borderRadius: 999, border: "1.5px solid #22D3EE" }} />
+              <RostoDoBill tamanho={34} emocao={humorDaConversa} />
               Converse com o Bill — a mesma conversa do WhatsApp (lança de verdade)
             </div>
-            <ConversaComOBill altura={420} aoGravar={carregar} />
+            <ConversaComOBill altura={420} aoGravar={carregar} aoMudarEstado={setHumorDaConversa} />
           </div>
           <Historico registros={dados.registros} />
           <div style={{ marginTop: 28, padding: 16, border: "1px solid #E2E8F0", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -143,7 +150,7 @@ export default function BillClient() {
               {estado.isento
                 ? <><b>Conta isenta:</b> o Bill fica sempre ligado nesta loja e não entra no boleto.</>
                 : estado.emTeste && estado.testeAte
-                ? <>Grátis até <b>{new Date(estado.testeAte).toLocaleDateString("pt-BR")}</b>. Depois, <b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub (o mês em que fica ativo é cobrado inteiro).</>
+                ? <>Grátis até <b>{new Date(estado.testeAte).toLocaleDateString("pt-BR")}</b>. Depois disso, <b>se você não desligar, {fmtR(dados.preco)} por mês vem cobrado junto com a mensalidade do FireHub</b>, no mesmo boleto (o mês em que fica ativo é cobrado inteiro).</>
                 : <><b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub — o mês em que o Bill fica ativo é cobrado inteiro.{estado.cobradoEsteMes && <> Este mês já está no boleto.</>}</>}
               {!estado.isento && <>{" "}Desligando, o mês seguinte não é cobrado.</>}
             </div>
@@ -159,55 +166,384 @@ export default function BillClient() {
   );
 }
 
-function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean; onLigar: () => void }) {
-  const exemplos = [
-    { icone: Mic, titulo: "Manda um áudio", fala: "“Comprei 10 Coca lata no Atacadão, paguei 45 no Pix.”", resultado: "📦 +10 Coca-Cola Lata no estoque\n💰 R$ 45,00 no financeiro" },
-    { icone: PauseCircle, titulo: "Controla o cardápio", fala: "“Acabou a esfirra de frango, pausa. E me diz o que está pausado.”", resultado: "⏸️ Pausada no site, robô, balcão, totem e combos\n📋 Lista dos itens pausados" },
-    { icone: Camera, titulo: "Tira foto da nota", fala: "Foto da nota do fornecedor", resultado: "📦 Todos os itens no estoque, com custo\n💰 Conta paga ou a prazo" },
-    { icone: Wallet, titulo: "Fala do gasto", fala: "“Paguei o gás, 130 reais.”", resultado: "💰 Despesa Gás R$ 130,00 no DRE" },
-    { icone: Receipt, titulo: "Boleto e conta", fala: "“Paguei o boleto da Enel.”", resultado: "✅ Conta marcada como paga" },
-    { icone: Package, titulo: "Perda e consumo", fala: "“Joguei fora 2 kg de queijo, estragou.”", resultado: "📦 Saída de 2 kg (perda) com o valor perdido" },
-    { icone: Store, titulo: "Abre e fecha a loja", fala: "“Tô sem motoboy, fecha o site.”", resultado: "🏪 Site e robô param de aceitar pedido" },
-    { icone: MessageCircle, titulo: "Pergunta o que quiser", fala: "“Quanto tem de Coca? Quanto vendi hoje?”", resultado: "Resposta com o número do sistema" },
-  ];
-  return (
-    <div>
-      <div style={{ background: "linear-gradient(135deg,#064E3B,#065F46)", color: "white", borderRadius: 16, padding: "24px 22px", marginBottom: 20 }}>
-        <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 6 }}>Você cuida da loja. Eu cuido da papelada.</div>
-        <div style={{ fontSize: 14, opacity: 0.9, maxWidth: 620 }}>
-          Chegou mercadoria? Pagou uma conta? Acabou um sabor? Fala com o WhatsApp da sua loja, do seu número, como falaria com um gerente. A quantidade vai para o estoque, o valor vai para o financeiro e o que acabou sai do cardápio — numa mensagem só.
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" }}>
-          <button onClick={onLigar} disabled={salvando} style={{ background: "#FACC15", color: "#0F172A", border: 0, borderRadius: 10, padding: "12px 20px", fontWeight: 900, fontSize: 15, cursor: "pointer" }}>
-            {salvando ? "Ligando…" : dados.estado.isento ? "Ativar o Bill (conta isenta)" : dados.estado.jaTestou ? `Ativar o Bill por ${fmtR(dados.preco)}/mês` : `Testar ${dados.diasDeTeste} dias grátis`}
-          </button>
-          <div style={{ fontSize: 13, opacity: 0.9 }}>
-            {dados.estado.jaTestou
-              ? <><b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub (os 7 dias grátis já foram usados). Desligou, o mês seguinte não é cobrado.</>
-              : <>Depois, <b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub. Os 7 dias grátis valem só na primeira ativação.</>}
-          </div>
-        </div>
-      </div>
+/**
+ * A apresentação do Bill para quem ainda não ligou (Douglas, 17/10/2026: "a
+ * tela para quem não testou linda, interativa, apresentando o Bill e o que ele
+ * faz"). Um celular com a conversa do WhatsApp tocando sozinha, cena por cena;
+ * tocar num exemplo põe aquela cena no celular. Só mostra o que as ferramentas
+ * do Bill fazem de verdade (lib/assessor/ferramentas.ts) — o card antigo
+ * "Quanto vendi hoje?" prometia uma consulta que o Bill não tem.
+ */
+type Fala = { de: "dono" | "bill"; texto: string; tipo?: "audio" | "foto" };
+type Cena = { icone: typeof Mic; titulo: string; resumo: string; falas: Fala[] };
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
-        {exemplos.map((e) => (
-          <div key={e.titulo} style={{ border: "1px solid #E2E8F0", borderRadius: 12, padding: 14, background: "white" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>
-              <e.icone size={18} color={VERDE} /> {e.titulo}
+const CENAS: Cena[] = [
+  {
+    icone: Mic, titulo: "Manda um áudio", resumo: "Compra vai para o estoque e o valor para o financeiro.",
+    falas: [
+      { de: "dono", tipo: "audio", texto: "Comprei 10 Coca lata no Atacadão, paguei 45 no Pix." },
+      { de: "bill", texto: "Lancei ✅\n📦 +10 Coca-Cola Lata no estoque\n💰 R$ 45,00 · Atacadão · Pix\nErrou? Manda *desfaz*." },
+    ],
+  },
+  {
+    icone: Camera, titulo: "Foto da nota", resumo: "Todos os itens da nota de uma vez, com o custo.",
+    falas: [
+      { de: "dono", tipo: "foto", texto: "Nota da distribuidora" },
+      { de: "bill", texto: "Li a nota: 6 itens, R$ 387,40.\n📦 Estoque atualizado com o custo de cada item\n💰 Conta a pagar lançada no financeiro" },
+    ],
+  },
+  {
+    icone: PauseCircle, titulo: "Pausa o que acabou", resumo: "Sai do site, do robô, do balcão e dos combos.",
+    falas: [
+      { de: "dono", texto: "Acabou a esfirra de frango, pausa" },
+      { de: "bill", texto: "⏸️ Esfirra de Frango pausada no site, no robô, no balcão e dentro dos combos.\nQuando voltar, é só falar *volta a esfirra*." },
+    ],
+  },
+  {
+    icone: Wallet, titulo: "Fala do gasto", resumo: "Despesa no financeiro, na categoria certa.",
+    falas: [
+      { de: "dono", texto: "Paguei o gás, 130 reais" },
+      { de: "bill", texto: "💰 Despesa Gás · R$ 130,00 lançada no financeiro." },
+    ],
+  },
+  {
+    icone: Receipt, titulo: "Contas e boletos", resumo: "Anota o boleto, avisa o que vence, dá baixa.",
+    falas: [
+      { de: "dono", texto: "O que vence essa semana?" },
+      { de: "bill", texto: "📅 Esta semana:\n• Enel · R$ 412,30 · sexta\n• Aluguel · R$ 2.500,00 · sábado\nPagou? Me fala que eu dou baixa." },
+    ],
+  },
+  {
+    icone: Store, titulo: "Abre e fecha a loja", resumo: "Sem motoboy? Fecha o site e o robô na hora.",
+    falas: [
+      { de: "dono", texto: "Tô sem motoboy, fecha o site" },
+      { de: "bill", texto: "🏪 Loja fechada no site e no robô.\nPara abrir de novo: *abre a loja*." },
+    ],
+  },
+  {
+    icone: Package, titulo: "Pergunta do estoque", resumo: "Quanto tem, o que acabou, o que perdeu.",
+    falas: [
+      { de: "dono", texto: "Quanto tem de Coca lata?" },
+      { de: "bill", texto: "📦 Coca-Cola Lata: 34 unidades no estoque." },
+    ],
+  },
+];
+
+const PERGUNTAS: [string, string][] = [
+  ["Preciso instalar alguma coisa?", "Não. Você manda mensagem do seu WhatsApp para o WhatsApp da loja que já está conectado no FireHub. O Bill reconhece o seu número e atende só você (e quem você cadastrar)."],
+  ["E se ele lançar errado?", "Manda “desfaz” e ele desfaz o último lançamento. Tudo o que ele lança aparece no Estoque e no Financeiro como se você tivesse digitado, e dá para corrigir pelo painel."],
+  ["Meus clientes vão falar com o Bill?", "Não. Cliente continua falando com o robô de atendimento da loja. O Bill só responde os números do dono."],
+  ["Como cancelo?", "Aqui nesta tela, em “Desligar”. No mês seguinte não é cobrado nada."],
+];
+
+function Oferta({ dados, salvando, onLigar }: { dados: Dados; salvando: boolean; onLigar: () => void }) {
+  const [cena, setCena] = useState(0);
+  const [passo, setPasso] = useState(0); // 0 nada · 1 fala do dono · 2 digitando · 3 resposta do Bill
+  const [pergunta, setPergunta] = useState<number | null>(0);
+  const [semMovimento, setSemMovimento] = useState(false);
+  // O Bill grande reage à cena do celular (ouve, pensa, comemora) e sorri
+  // quando o ponteiro chega no botão de ativar.
+  const [ctaSobre, setCtaSobre] = useState(false);
+  const humor: EmocaoDoBill = ctaSobre ? "feliz" : passo === 1 ? "ouvindo" : passo === 2 ? "pensando" : passo === 3 ? "feliz" : "normal";
+
+  useEffect(() => {
+    try { setSemMovimento(window.matchMedia("(prefers-reduced-motion: reduce)").matches); } catch {}
+  }, []);
+
+  // A cena toca sozinha: fala do dono, "digitando…", resposta do Bill, pausa e a próxima.
+  useEffect(() => {
+    if (semMovimento) { setPasso(3); return; }
+    setPasso(0);
+    const ts = [
+      setTimeout(() => setPasso(1), 350),
+      setTimeout(() => setPasso(2), 1300),
+      setTimeout(() => setPasso(3), 2600),
+      setTimeout(() => setCena((c) => (c + 1) % CENAS.length), 7600),
+    ];
+    return () => ts.forEach(clearTimeout);
+  }, [cena, semMovimento]);
+
+  const botao = salvando ? "Ligando…"
+    : dados.estado.isento ? "Ativar o Bill (conta isenta)"
+    : dados.estado.jaTestou ? `Ativar o Bill por ${fmtR(dados.preco)}/mês`
+    : `Testar ${dados.diasDeTeste} dias grátis`;
+  const porDia = fmtR(Math.floor((dados.preco / 30) * 100) / 100);
+  const atual = CENAS[cena];
+
+  return (
+    <div className="bill-oferta">
+      <style>{CSS_DA_OFERTA}</style>
+
+      {/* ── Topo: a promessa + o celular tocando ── */}
+      <section className="bo-hero">
+        <div className="bo-hero-texto">
+          <span className="bo-selo">Novo · funciona pelo WhatsApp</span>
+          <h2>Você cuida da loja.<br /><span>Eu cuido da papelada.</span></h2>
+          <p>
+            Chegou mercadoria, pagou uma conta, acabou um sabor? Fale com o WhatsApp da sua loja como falaria com um gerente.
+            Eu lanço no estoque, no financeiro e no cardápio — na hora, numa mensagem só.
+          </p>
+          <div className="bo-acoes">
+            <button className="bo-cta" onClick={onLigar} disabled={salvando} onPointerEnter={() => setCtaSobre(true)} onPointerLeave={() => setCtaSobre(false)}>{botao}</button>
+            <div className="bo-preco-curto">
+              {dados.estado.isento ? <>Conta isenta: sem cobrança.</>
+                : dados.estado.jaTestou ? <><b>{fmtR(dados.preco)}/mês</b> no boleto do FireHub · desliga quando quiser</>
+                : <>Depois dos {dados.diasDeTeste} dias, <b>se você não desligar, {fmtR(dados.preco)}/mês</b> vem junto com a mensalidade do FireHub, no mesmo boleto. Sem fidelidade.</>}
             </div>
-            <div style={{ background: "#DCF8C6", borderRadius: 10, padding: "8px 10px", fontSize: 13, color: "#0F172A", marginBottom: 6 }}>{e.fala}</div>
-            <div style={{ background: "#F1F5F9", borderRadius: 10, padding: "8px 10px", fontSize: 13, color: "#334155", whiteSpace: "pre-line" }}>{e.resultado}</div>
           </div>
-        ))}
-      </div>
-      {dados.numerosDoDono.length === 0 && (
-        <p style={{ marginTop: 16, fontSize: 13, color: "#B45309" }}>
-          ⚠️ Cadastre o seu WhatsApp em <b>Minha Loja</b> (WhatsApp do proprietário): é por ele que o Bill sabe que é você.
-        </p>
+          <ul className="bo-garantias">
+            <li><CheckCircle2 size={15} /> Áudio, texto ou foto</li>
+            <li><CheckCircle2 size={15} /> Errou? “desfaz”</li>
+            <li><CheckCircle2 size={15} /> Só o seu número fala com ele</li>
+          </ul>
+        </div>
+
+        <div className="bo-palco">
+          <div className="bo-bill-grande"><RostoDoBill tamanho={190} seguirMouse emocao={humor} /></div>
+        <div className="bo-celular" aria-label={`Exemplo de conversa: ${atual.titulo}`}>
+          <div className="bo-cel-topo">
+            <RostoDoBill tamanho={34} emocao={humor} piscar={false} />
+            <div>
+              <b>Bill · sua loja</b>
+              <small>{passo === 2 ? "digitando…" : "online"}</small>
+            </div>
+          </div>
+          <div className="bo-cel-conversa" key={cena}>
+            {passo >= 1 && <Balao fala={atual.falas[0]} />}
+            {passo === 2 && <div className="bo-balao bo-bill bo-digitando"><i /><i /><i /></div>}
+            {passo >= 3 && <Balao fala={atual.falas[1]} />}
+          </div>
+          <div className="bo-cel-pontos">
+            {CENAS.map((c, i) => (
+              <button key={c.titulo} aria-label={c.titulo} className={i === cena ? "on" : ""} onClick={() => setCena(i)} />
+            ))}
+          </div>
+        </div>
+        </div>
+      </section>
+
+      {/* ── O que ele faz: tocar num card põe a cena no celular ── */}
+      <section>
+        <h3 className="bo-titulo">O que o Bill faz por você</h3>
+        <p className="bo-sub">Toque num exemplo para ver a conversa no celular.</p>
+        <div className="bo-cards">
+          {CENAS.map((c, i) => (
+            <button key={c.titulo} className={`bo-card${i === cena ? " on" : ""}`}
+              onClick={() => { setCena(i); document.querySelector(".bo-celular")?.scrollIntoView({ behavior: "smooth", block: "center" }); }}>
+              <span className="bo-card-icone"><c.icone size={20} /></span>
+              <b>{c.titulo}</b>
+              <span>{c.resumo}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Antes e depois ── */}
+      <section className="bo-antes-depois">
+        <div className="bo-antes">
+          <b>Sem o Bill</b>
+          <ul>
+            <li>Nota amassada no balcão esperando alguém lançar</li>
+            <li>Estoque que nunca bate</li>
+            <li>Conta que vence e ninguém lembra</li>
+            <li>Cliente pedindo sabor que acabou</li>
+          </ul>
+        </div>
+        <div className="bo-depois">
+          <b>Com o Bill</b>
+          <ul>
+            <li>Um áudio no caminho do mercado e está lançado</li>
+            <li>Estoque e custo atualizados a cada compra</li>
+            <li>Contas a pagar na ponta da língua</li>
+            <li>O que acabou sai do cardápio na hora</li>
+          </ul>
+        </div>
+      </section>
+
+      {/* ── Como começar ── */}
+      <section>
+        <h3 className="bo-titulo">Começa em 1 minuto</h3>
+        <ol className="bo-passos">
+          <li><span>1</span><div><b>Ative aqui</b>Aceite o termo e pronto{!dados.estado.jaTestou && !dados.estado.isento ? ` — ${dados.diasDeTeste} dias grátis. Depois, se não desligar, entra no boleto da mensalidade` : ""}.</div></li>
+          <li><span>2</span><div><b>Mande do seu WhatsApp</b>Para o número da loja{dados.numeroDoRobo ? `, ${fone(dados.numeroDoRobo)}` : ""}.</div></li>
+          <li><span>3</span><div><b>Confira no painel</b>Tudo aparece em Estoque e Financeiro.</div></li>
+        </ol>
+        {dados.numerosDoDono.length === 0 && (
+          <p className="bo-alerta">
+            ⚠️ Cadastre o seu WhatsApp em <b>Minha Loja</b> (WhatsApp do proprietário): é por ele que o Bill sabe que é você.
+          </p>
+        )}
+      </section>
+
+      {/* ── Preço ── */}
+      {!dados.estado.isento && (
+        <section className="bo-preco">
+          <div>
+            <div className="bo-preco-valor">{fmtR(dados.preco)}<small>/mês</small></div>
+            <div className="bo-preco-dia">menos de {porDia} por dia · no boleto que você já paga</div>
+          </div>
+          <ul>
+            {!dados.estado.jaTestou && <li><CheckCircle2 size={15} /> {dados.diasDeTeste} dias grátis na primeira ativação — depois, se você não desligar, vem cobrado junto com a mensalidade do FireHub</li>}
+            <li><CheckCircle2 size={15} /> Sem fidelidade: desligou, o mês seguinte não é cobrado</li>
+            <li><CheckCircle2 size={15} /> Sem cartão e sem cadastro novo</li>
+          </ul>
+          <button className="bo-cta" onClick={onLigar} disabled={salvando}>{botao}</button>
+        </section>
       )}
+
+      {/* ── Dúvidas ── */}
+      <section>
+        <h3 className="bo-titulo">Dúvidas</h3>
+        <div className="bo-faq">
+          {PERGUNTAS.map(([p, r], i) => (
+            <div key={p} className={`bo-faq-item${pergunta === i ? " on" : ""}`}>
+              <button aria-expanded={pergunta === i} onClick={() => setPergunta(pergunta === i ? null : i)}>
+                {p}<span>{pergunta === i ? "−" : "+"}</span>
+              </button>
+              {pergunta === i && <p>{r}</p>}
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
+
+function Balao({ fala }: { fala: Fala }) {
+  const lado = fala.de === "dono" ? "bo-dono" : "bo-bill";
+  if (fala.tipo === "audio") {
+    return (
+      <div className={`bo-balao ${lado}`}>
+        <div className="bo-audio"><Mic size={16} /><span className="bo-onda">{Array.from({ length: 22 }, (_, i) => <i key={i} style={{ height: 4 + ((i * 7) % 13) }} />)}</span><small>0:07</small></div>
+        <em>“{fala.texto}”</em>
+      </div>
+    );
+  }
+  if (fala.tipo === "foto") {
+    return (
+      <div className={`bo-balao ${lado} bo-foto`}>
+        <div className="bo-nota"><Receipt size={26} /><span /><span /><span /><span /></div>
+        <small>📷 {fala.texto}</small>
+      </div>
+    );
+  }
+  // *negrito* do WhatsApp
+  const partes = fala.texto.split(/(\*[^*]+\*)/g);
+  return (
+    <div className={`bo-balao ${lado}`}>
+      {partes.map((p, i) => (p.startsWith("*") && p.endsWith("*") ? <b key={i}>{p.slice(1, -1)}</b> : <span key={i}>{p}</span>))}
+    </div>
+  );
+}
+
+const CSS_DA_OFERTA = `
+.bill-oferta { display: grid; gap: 36px; color: #0F172A; }
+.bill-oferta section { min-width: 0; }
+.bo-hero { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(0,.85fr); gap: 28px; align-items: center;
+  background: radial-gradient(120% 140% at 0% 0%, #0E7490 0%, #0B1220 55%); color: white; border-radius: 22px; padding: 32px; overflow: hidden; }
+.bo-selo { display: inline-block; font-size: 12px; font-weight: 800; letter-spacing: .02em; color: #A5F3FC; background: rgba(34,211,238,.14);
+  border: 1px solid rgba(34,211,238,.35); padding: 5px 11px; border-radius: 999px; }
+.bo-hero h2 { font-size: clamp(26px, 4vw, 38px); line-height: 1.08; font-weight: 900; margin: 14px 0 12px; letter-spacing: -.02em; }
+.bo-hero h2 span { color: #FACC15; }
+.bo-hero p { font-size: 15.5px; line-height: 1.55; opacity: .9; margin: 0; max-width: 520px; }
+.bo-acoes { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 22px; }
+.bo-cta { background: #FACC15; color: #0F172A; border: 0; border-radius: 12px; padding: 14px 22px; font-weight: 900; font-size: 15.5px; cursor: pointer;
+  box-shadow: 0 8px 24px rgba(250,204,21,.35); transition: transform .15s ease, box-shadow .15s ease; }
+.bo-cta:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 12px 28px rgba(250,204,21,.45); }
+.bo-cta:active:not(:disabled) { transform: translateY(0) scale(.98); }
+.bo-cta:disabled { opacity: .7; cursor: wait; }
+.bo-preco-curto { font-size: 13px; opacity: .9; }
+.bo-garantias { list-style: none; padding: 0; margin: 18px 0 0; display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; opacity: .92; }
+.bo-garantias li { display: inline-flex; align-items: center; gap: 6px; }
+.bo-garantias svg { color: #34D399; }
+
+.bo-palco { display: grid; justify-items: center; width: 100%; }
+.bo-bill-grande { margin-bottom: -30px; position: relative; z-index: 2; filter: drop-shadow(0 18px 28px rgba(34,211,238,.28)); animation: bo-flutua 4s ease-in-out infinite; }
+@keyframes bo-flutua { 50% { transform: translateY(-6px); } }
+.bo-celular { background: #0B141A; border-radius: 28px; border: 6px solid #1F2C34; box-shadow: 0 30px 60px rgba(0,0,0,.45); overflow: hidden;
+  width: 100%; max-width: 330px; justify-self: center; }
+.bo-cel-topo { display: flex; align-items: center; gap: 10px; padding: 12px 14px; background: #1F2C34; }
+.bo-cel-topo b { display: block; font-size: 14px; }
+.bo-cel-topo small { font-size: 11.5px; color: #8696A0; }
+.bo-cel-conversa { display: flex; flex-direction: column; gap: 8px; padding: 16px 12px; min-height: 270px;
+  background: #0B141A url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Ccircle cx='2' cy='2' r='1' fill='%23ffffff10'/%3E%3C/svg%3E"); }
+.bo-balao { max-width: 86%; padding: 8px 10px; border-radius: 10px; font-size: 13.5px; line-height: 1.45; white-space: pre-line;
+  animation: bo-entra .32s cubic-bezier(.2,.8,.2,1) both; }
+.bo-dono { align-self: flex-end; background: #005C4B; border-top-right-radius: 3px; }
+.bo-bill { align-self: flex-start; background: #202C33; border-top-left-radius: 3px; }
+.bo-balao em { display: block; font-size: 12px; opacity: .75; margin-top: 4px; }
+.bo-audio { display: flex; align-items: center; gap: 8px; min-width: 190px; }
+.bo-onda { display: flex; align-items: center; gap: 2px; flex: 1; }
+.bo-onda i { display: block; width: 3px; border-radius: 2px; background: #9FE5D3; }
+.bo-audio small { font-size: 11px; opacity: .8; }
+.bo-foto { padding: 5px; }
+.bo-nota { width: 170px; height: 110px; border-radius: 7px; background: #F8FAFC; color: #64748B; display: grid; place-items: center; align-content: center; gap: 5px; }
+.bo-nota span { display: block; width: 110px; height: 4px; border-radius: 2px; background: #CBD5E1; }
+.bo-nota span:nth-child(odd) { width: 80px; }
+.bo-foto small { display: block; font-size: 11.5px; padding: 4px 4px 1px; opacity: .85; }
+.bo-digitando { display: flex; gap: 4px; padding: 12px 14px; }
+.bo-digitando i { width: 7px; height: 7px; border-radius: 999px; background: #8696A0; animation: bo-pula 1s infinite ease-in-out; }
+.bo-digitando i:nth-child(2) { animation-delay: .15s; }
+.bo-digitando i:nth-child(3) { animation-delay: .3s; }
+.bo-cel-pontos { display: flex; justify-content: center; gap: 6px; padding: 10px 0 14px; background: #0B141A; }
+.bo-cel-pontos button { width: 7px; height: 7px; border-radius: 999px; border: 0; padding: 0; background: #2A3942; cursor: pointer; transition: width .2s ease, background .2s ease; }
+.bo-cel-pontos button.on { width: 20px; background: #22D3EE; }
+
+.bo-titulo { font-size: 22px; font-weight: 900; margin: 0 0 4px; letter-spacing: -.01em; }
+.bo-sub { margin: 0 0 14px; color: #64748B; font-size: 14px; }
+.bo-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.bo-card { text-align: left; display: grid; gap: 6px; background: white; border: 1px solid #E2E8F0; border-radius: 14px; padding: 16px; cursor: pointer;
+  font: inherit; color: inherit; transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+.bo-card:hover { border-color: #67E8F9; box-shadow: 0 8px 22px rgba(14,116,144,.10); transform: translateY(-2px); }
+.bo-card.on { border-color: #0E7490; box-shadow: 0 0 0 3px rgba(34,211,238,.25); }
+.bo-card b { font-size: 15px; }
+.bo-card > span:last-child { font-size: 13px; color: #64748B; line-height: 1.4; }
+.bo-card-icone { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: #ECFEFF; color: #0E7490; }
+
+.bo-antes-depois { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.bo-antes, .bo-depois { border-radius: 16px; padding: 20px; }
+.bo-antes { background: #F8FAFC; border: 1px solid #E2E8F0; color: #475569; }
+.bo-depois { background: #ECFDF5; border: 1px solid #A7F3D0; color: #065F46; }
+.bo-antes b, .bo-depois b { font-size: 16px; }
+.bo-antes ul, .bo-depois ul { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 7px; font-size: 14px; }
+.bo-antes li::marker { content: "✕  "; color: #94A3B8; }
+.bo-depois li::marker { content: "✓  "; color: #059669; font-weight: 900; }
+
+.bo-passos { list-style: none; padding: 0; margin: 12px 0 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.bo-passos li { display: flex; gap: 12px; align-items: flex-start; background: white; border: 1px solid #E2E8F0; border-radius: 14px; padding: 16px; font-size: 13.5px; color: #475569; }
+.bo-passos li b { display: block; color: #0F172A; font-size: 15px; margin-bottom: 2px; }
+.bo-passos li > span { flex: none; width: 30px; height: 30px; border-radius: 999px; background: #0B1220; color: #FACC15; font-weight: 900; display: grid; place-items: center; }
+.bo-alerta { margin: 14px 0 0; font-size: 13px; color: #B45309; }
+
+.bo-preco { display: grid; grid-template-columns: auto 1fr auto; gap: 24px; align-items: center; background: #0B1220; color: white; border-radius: 20px; padding: 24px 28px; }
+.bo-preco-valor { font-size: 36px; font-weight: 900; letter-spacing: -.02em; }
+.bo-preco-valor small { font-size: 15px; font-weight: 700; opacity: .7; margin-left: 2px; }
+.bo-preco-dia { font-size: 13px; color: #A5F3FC; }
+.bo-preco ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13.5px; opacity: .92; }
+.bo-preco li { display: flex; align-items: center; gap: 7px; }
+.bo-preco svg { color: #34D399; flex: none; }
+
+.bo-faq { display: grid; gap: 8px; margin-top: 10px; }
+.bo-faq-item { border: 1px solid #E2E8F0; border-radius: 12px; background: white; overflow: hidden; }
+.bo-faq-item button { width: 100%; display: flex; justify-content: space-between; gap: 12px; background: none; border: 0; padding: 14px 16px; font: inherit;
+  font-weight: 800; font-size: 14.5px; color: #0F172A; text-align: left; cursor: pointer; }
+.bo-faq-item button span { color: #0E7490; font-size: 18px; line-height: 1; }
+.bo-faq-item p { margin: 0; padding: 0 16px 14px; font-size: 14px; color: #475569; line-height: 1.5; }
+.bo-faq-item.on { border-color: #A5F3FC; }
+
+@keyframes bo-entra { from { opacity: 0; transform: translateY(8px) scale(.97); } to { opacity: 1; transform: none; } }
+@keyframes bo-pula { 0%, 60%, 100% { transform: translateY(0); opacity: .5; } 30% { transform: translateY(-4px); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  .bo-balao, .bo-digitando i, .bo-bill-grande { animation: none; }
+  .bo-card, .bo-cta { transition: none; }
+}
+@media (max-width: 760px) {
+  .bo-hero { grid-template-columns: 1fr; padding: 22px 18px; }
+  .bo-antes-depois, .bo-passos { grid-template-columns: 1fr; }
+  .bo-preco { grid-template-columns: 1fr; gap: 16px; padding: 22px 18px; }
+  .bo-cta { width: 100%; }
+}
+`;
 
 function ComoUsar({ dados }: { dados: Dados }) {
   return (
@@ -267,7 +603,7 @@ function Termo({ preco, salvando, onCancelar, onAceitar }: { preco: number; salv
       onClick={(e) => { if (e.target === e.currentTarget && !salvando) onCancelar(); }}>
       <div style={{ background: "white", borderRadius: 16, width: "min(560px, 100%)", maxHeight: "calc(100vh - 32px)", overflowY: "auto", boxShadow: "0 24px 60px rgba(2,6,23,.35)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "18px 20px", borderBottom: "1px solid #E2E8F0" }}>
-          <img src={AVATAR_DO_BILL} alt="" width={40} height={40} style={{ borderRadius: 999, border: "2px solid #22D3EE" }} />
+          <RostoDoBill tamanho={44} emocao="feliz" />
           <div>
             <div style={{ fontWeight: 900, fontSize: 17, color: "#0F172A" }}>{TITULO_DO_TERMO_DO_BILL}</div>
             <div style={{ fontSize: 13, color: "#475569" }}>{fmtR(preco)} por mês · versão de {VERSAO_DO_TERMO_DO_BILL.slice(0, 10).split("-").reverse().join("/")}</div>
