@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "FireHub — Prazo Automático de Entrega",
-  "version": "1.0.1",
-  "description": "Ajusta sozinho o tempo de entrega da sua loja no Portal do Parceiro iFood pela fila de pedidos do painel FireHub.",
+  "name": "FireHub — Prazo automático iFood e 99",
+  "version": "1.1.0",
+  "description": "Ajusta sozinho o prazo no iFood, o preparo no 99Food e o tempo do seu site FireHub pela fila de pedidos do painel.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -31,6 +31,9 @@
     "http://localhost:3000/*",
     "http://localhost:3001/*",
     "http://localhost/*"
+  ],
+  "optional_host_permissions": [
+    "https://merchant.99app.com/*"
   ],
   "background": {
     "service_worker": "scripts/background.js"

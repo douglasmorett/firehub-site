@@ -28,7 +28,7 @@ function CabecalhoDoPopup({ sub, status, statusCor }: { sub: string; status: str
       <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
         <div style={{ width: 22, height: 22, borderRadius: 6, background: "linear-gradient(135deg, #FF5722, #F44336)", display: "grid", placeItems: "center", fontSize: 12 }}>🔥</div>
         <div>
-          <div style={{ fontWeight: 900, fontSize: 11.5 }}>FireHub iFood</div>
+          <div style={{ fontWeight: 900, fontSize: 11.5 }}>Prazo automático</div>
           <div style={{ fontSize: 8.5, color: "#FF7A59", fontWeight: 700 }}>{sub}</div>
         </div>
       </div>
@@ -55,7 +55,7 @@ export function FichaDaLoja() {
       <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#FFF", border: "1px solid #CBD5E1", borderRadius: 12, padding: 12, boxShadow: "0 10px 26px rgba(15,23,42,0.10)" }}>
         <div style={{ width: 36, height: 36, borderRadius: 9, background: "linear-gradient(135deg, #FF5722, #F44336)", display: "grid", placeItems: "center", fontSize: 18, flexShrink: 0 }}>🔥</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 800, fontSize: 11.5, color: "#0F172A", lineHeight: 1.25 }}>FireHub — Prazo Automático</div>
+          <div style={{ fontWeight: 800, fontSize: 11.5, color: "#0F172A", lineHeight: 1.25 }}>FireHub — Prazo automático iFood e 99</div>
           <div style={{ fontSize: 9.5, color: "#64748B" }}>Chrome Web Store</div>
         </div>
         <span style={{ background: "#1A73E8", color: "#FFF", borderRadius: 999, padding: "6px 11px", fontWeight: 800, fontSize: 10.5, whiteSpace: "nowrap", outline: "2px solid #E8360C", outlineOffset: 2 }}>
@@ -63,7 +63,7 @@ export function FichaDaLoja() {
         </span>
       </div>
       <div style={{ background: "#FFF", border: "1px solid #CBD5E1", borderRadius: 12, padding: 12, boxShadow: "0 10px 26px rgba(15,23,42,0.10)", fontSize: 11 }}>
-        <div style={{ fontWeight: 800, color: "#0F172A" }}>Adicionar &quot;FireHub — Prazo Automático&quot;?</div>
+        <div style={{ fontWeight: 800, color: "#0F172A" }}>Adicionar &quot;FireHub — Prazo automático iFood e 99&quot;?</div>
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 10 }}>
           <span style={{ border: "1px solid #CBD5E1", borderRadius: 999, padding: "5px 11px", color: "#1A73E8", fontWeight: 700 }}>Cancelar</span>
           <span style={{ background: "#1A73E8", color: "#FFF", borderRadius: 999, padding: "5px 11px", fontWeight: 800, outline: "2px solid #E8360C", outlineOffset: 2 }}>Adicionar extensão</span>
@@ -91,7 +91,7 @@ export function BarraDoChrome() {
           <div style={{ fontSize: 10, color: "#64748B", fontWeight: 700, marginBottom: 6 }}>Extensões</div>
           <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 6px", borderRadius: 8, background: "#FFF7ED" }}>
             <span style={{ fontSize: 13 }}>🔥</span>
-            <span style={{ flex: 1, fontWeight: 700, color: "#0F172A", fontSize: 10.5, lineHeight: 1.25 }}>FireHub — Prazo Automático</span>
+            <span style={{ flex: 1, fontWeight: 700, color: "#0F172A", fontSize: 10.5, lineHeight: 1.25 }}>FireHub — Prazo automático iFood e 99</span>
             <span style={{ width: 22, height: 22, borderRadius: 999, display: "grid", placeItems: "center", background: "#1A73E8", color: "#FFF" }}>
               <Pin size={12} />
             </span>
@@ -156,7 +156,7 @@ export function AbasDoChrome() {
 export function PopupRobo({ motoboys = 3, pedidos = 7, prazo = "58 min" }: { motoboys?: number; pedidos?: number; prazo?: string }) {
   return (
     <div style={popupFundo}>
-      <CabecalhoDoPopup sub="AUTOMATION & ETA" status="ONLINE" statusCor="verde" />
+      <CabecalhoDoPopup sub="IFOOD · 99 · SITE" status="ONLINE" statusCor="verde" />
       <div style={{ display: "flex", background: "#0F172A", border: "1px solid #334155", borderRadius: 8, padding: 2, marginBottom: 8 }}>
         <div style={{ flex: 1, textAlign: "center", padding: "4px 0", borderRadius: 6, background: "#334155", fontWeight: 800 }}>🤖 Automático</div>
         <div style={{ flex: 1, textAlign: "center", padding: "4px 0", color: "#94A3B8", fontWeight: 800 }}>✍️ Manual</div>
@@ -182,7 +182,7 @@ export function PopupRobo({ motoboys = 3, pedidos = 7, prazo = "58 min" }: { mot
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "#0F172A", border: "1px solid #334155", borderRadius: 9, padding: "7px 9px", outline: "2px solid #22C55E", outlineOffset: 2 }}>
         <div>
           <div style={{ fontWeight: 800 }}>🤖 Robô Automático</div>
-          <div style={{ fontSize: 8, color: "#94A3B8" }}>Ajusta o prazo no iFood sozinho</div>
+          <div style={{ fontSize: 8, color: "#94A3B8" }}>Ajusta iFood, 99 e o site sozinho</div>
         </div>
         <span style={{ position: "relative", width: 34, height: 19, borderRadius: 999, background: "#22C55E", flexShrink: 0 }}>
           <span style={{ position: "absolute", top: 2, left: 17, width: 15, height: 15, borderRadius: 999, background: "#FFF" }} />

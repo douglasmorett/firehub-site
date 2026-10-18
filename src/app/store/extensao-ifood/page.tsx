@@ -18,12 +18,16 @@ import {
 import { AbasDoChrome, BarraDoChrome, FichaDaLoja, Fluxo, Pilula, PopupLogin, PopupRobo } from "./ilustracoes";
 
 /**
- * /store/extensao-ifood — como o lojista instala e usa a extensão de prazo
- * (firehub-ifood-extension/). Tudo o que esta página promete tem de existir na
- * extensão: ela escreve SÓ no iFood, pelo portal (não há API de prazo), NÃO
- * pausa a loja sozinha e NUNCA abre aba sozinha (decisão de 04/09/2026). Até
- * 25/09/2026 a página dizia o contrário nos três pontos e tinha um botão
- * "Conectar iFood via API Oficial" que não levava a lugar nenhum.
+ * /store/extensao-ifood — como o lojista instala e usa a extensão "Prazo
+ * automático iFood e 99" (firehub-ifood-extension/). Tudo o que esta página
+ * promete tem de existir na extensão: desde a 1.1.0 ela escreve no iFood (várias
+ * lojas do mesmo login), no tempo de preparo do 99Food e, pelo servidor, no
+ * tempo das áreas de entrega do site/robô (lib/prazo-automatico.ts). NÃO pausa a
+ * loja sozinha e NUNCA abre aba sozinha (decisão de 04/09/2026).
+ *
+ * Preço (Douglas, 18/10/2026): R$ 29,90 na mensalidade do mês em que o robô
+ * ajustou o prazo pelo menos uma vez; mês sem uso não paga. A regra fica escrita
+ * aqui com todas as letras, para ninguém se surpreender com o boleto.
  */
 
 // O ID do item na Chrome Web Store. Aprovado e no ar (não listado) — conferido
@@ -34,12 +38,14 @@ const STORE_URL = EXTENSION_ID
   ? `https://chromewebstore.google.com/detail/${EXTENSION_ID}`
   : "";
 
-// A mesma tela que o background.js procura (SETTINGS_URL). Outra página do
-// portal não serve: a extensão só trabalha na aba que estiver neste endereço.
+// Desde a 1.1.0 qualquer tela do portal logada serve (a extensão usa a API do
+// portal); a de Entrega continua sendo a melhor para o lojista conferir o prazo.
 const TELA_DE_ENTREGA_IFOOD = "https://portal.ifood.com.br/merchant-delivery-core-portal-experience";
 
+const ADMIN_DO_99 = "https://merchant.99app.com/pt-BR/manager";
+
 const SUPORTE = `https://wa.me/5522981118514?text=${encodeURIComponent(
-  "Oi! Preciso de ajuda com a extensão de prazo automático do iFood no FireHub."
+  "Oi! Preciso de ajuda com a extensão de prazo automático do iFood e 99 no FireHub."
 )}`;
 
 /** Mesma tabela do background.js (calculateAndApply) e de /api/store/dynamic-eta. */
@@ -196,6 +202,7 @@ export default function ExtensaoIfoodPage() {
         .eta-hero { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 2rem; align-items: center; }
         .eta-passo { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 1.75rem; align-items: center; }
         .eta-grade-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; }
+        .eta-grade-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.9rem; }
         .eta-grade-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.9rem; }
         .eta-faixas { display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.6rem; }
         .eta-seta-baixo { display: none; }
@@ -204,7 +211,7 @@ export default function ExtensaoIfoodPage() {
         .eta-pergunta-seta { transition: transform 0.2s; }
         .eta-alcance { width: 100%; accent-color: #E8360C; }
         @media (max-width: 860px) {
-          .eta-hero, .eta-passo, .eta-grade-2 { grid-template-columns: 1fr; }
+          .eta-hero, .eta-passo, .eta-grade-2, .eta-grade-3 { grid-template-columns: 1fr; }
           .eta-grade-4 { grid-template-columns: 1fr 1fr; }
           .eta-faixas { grid-template-columns: 1fr; }
           .eta-fluxo { flex-direction: column; }
@@ -223,7 +230,7 @@ export default function ExtensaoIfoodPage() {
             <ArrowLeft size={16} /> Voltar ao Painel
           </Link>
           <div style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 900, fontSize: "0.95rem" }}>
-            <Flame size={20} /> PRAZO AUTOMÁTICO NO IFOOD
+            <Flame size={20} /> PRAZO AUTOMÁTICO IFOOD E 99
           </div>
         </div>
       </div>
@@ -235,11 +242,11 @@ export default function ExtensaoIfoodPage() {
           <div>
             <span style={selo}>EXTENSÃO PARA O GOOGLE CHROME</span>
             <h1 style={{ fontSize: "2.1rem", fontWeight: 900, lineHeight: 1.15, color: "#0F172A", margin: "12px 0 12px", letterSpacing: "-0.6px" }}>
-              O tempo de entrega do iFood muda sozinho, conforme a fila da sua cozinha
+              O prazo do iFood, do 99 e do seu site muda sozinho, conforme a fila da sua cozinha
             </h1>
             <p style={{ ...texto, fontSize: "1.02rem" }}>
-              Encheu de pedido, o prazo no iFood sobe. A cozinha esvaziou, ele desce. Você não precisa largar o atendimento para
-              mexer no Portal do Parceiro. Quem mexe é a extensão, no computador do caixa.
+              Encheu de pedido, o prazo sobe nos três lugares ao mesmo tempo. A cozinha esvaziou, ele desce. Tem mais de uma loja no
+              mesmo login do iFood ou do 99? Marque quais e ela ajusta todas. Quem mexe é a extensão, no computador do caixa.
             </p>
 
             <div style={{ marginTop: "1.25rem", display: "grid", gap: 10 }}>
@@ -267,6 +274,48 @@ export default function ExtensaoIfoodPage() {
           </div>
         </div>
 
+        {/* ONDE MUDA */}
+        <div style={cartao}>
+          <span style={selo}>ONDE O PRAZO MUDA</span>
+          <h2 style={titulo2}>Um prazo só, nos três lugares onde o cliente pede</h2>
+          <div className="eta-grade-3" style={{ marginTop: "1rem" }}>
+            {[
+              { t: "iFood", cor: "#EA1D2C", d: "O prazo de entrega de cada loja que você marcar. Se você usa prazos diferentes por distância (ex.: 30, 40, 50 min), todos sobem a mesma diferença." },
+              { t: "99Food", cor: "#F59E0B", d: "O tempo de preparo de cada loja marcada. O 99 soma por cima a entrega da área, por isso o preparo fica no prazo do iFood menos os minutos de entrega (15, se você não mudar)." },
+              { t: "Seu site e robô FireHub", cor: "#0F766E", d: "Mudam sozinhos, sem marcar nada. Todas as áreas de entrega sobem a mesma diferença, e nunca ficam abaixo do tempo que você cadastrou. Com o robô desligado (ou o computador desligado), em até 15 min volta ao tempo cadastrado." },
+            ].map((item) => (
+              <div key={item.t} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderTop: `4px solid ${item.cor}`, borderRadius: 16, padding: "1rem" }}>
+                <div style={{ fontWeight: 900, fontSize: "1rem", marginBottom: 6, color: item.cor }}>{item.t}</div>
+                <div style={{ fontSize: "0.86rem", color: "#475569", lineHeight: 1.5 }}>{item.d}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* QUANTO CUSTA */}
+        <div id="preco" style={{ ...cartao, scrollMarginTop: 16, border: "1.5px solid #FFD3C2", background: "#FFFBF8" }}>
+          <span style={selo}>QUANTO CUSTA</span>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap", margin: "10px 0 6px" }}>
+            <span style={{ fontSize: "2.2rem", fontWeight: 900, color: "#0F172A", letterSpacing: "-0.6px" }}>R$ 29,90</span>
+            <span style={{ fontSize: "1rem", fontWeight: 800, color: "#475569" }}>por mês, na mensalidade do FireHub</span>
+          </div>
+          <div style={{ display: "grid", gap: 8, marginTop: "0.75rem" }}>
+            {[
+              <>Você paga <b>só no mês em que usar</b>: bastou o robô ajustar o prazo <b>uma vez</b> no mês, entram os R$ 29,90 inteiros. Não existe valor proporcional.</>,
+              <><b>Mês com o robô desligado não paga nada.</b> Instalar, entrar e olhar o popup não conta como uso. O que conta é a chave do robô ligada.</>,
+              <>Vale para todas as lojas que você marcar e para o seu site: é <b>um valor por conta FireHub</b>, não por loja do iFood ou do 99.</>,
+              <>Vem no mesmo boleto da mensalidade, na linha <b>&quot;Prazo automático iFood e 99&quot;</b>. Dá para conferir antes em <b>Financeiro › Mensalidade</b>.</>,
+              <>Sem fidelidade e sem taxa de instalação. Não quer mais? Desligue a chave do robô: o mês seguinte já não vem.</>,
+              <>Começa a contar em <b>novembro de 2026</b>. O uso em outubro de 2026 é grátis.</>,
+            ].map((linha, i) => (
+              <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: "0.92rem", color: "#334155", lineHeight: 1.5 }}>
+                <CheckCircle2 size={18} color="#0F766E" style={{ flexShrink: 0, marginTop: 2 }} />
+                <span>{linha}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
         {/* COMO FUNCIONA */}
         <div style={{ marginBottom: "2rem" }}>
           <div style={{ textAlign: "center", marginBottom: "1.25rem" }}>
@@ -275,7 +324,7 @@ export default function ExtensaoIfoodPage() {
           </div>
           <Fluxo />
           <p style={{ ...texto, textAlign: "center", marginTop: "1rem", fontSize: "0.88rem" }}>
-            A extensão confere a fila a cada minuto e só mexe no iFood quando o prazo precisa mudar de faixa.
+            A extensão confere a fila a cada minuto e só mexe no iFood e no 99 quando o prazo precisa mudar de faixa.
           </p>
         </div>
 
@@ -287,7 +336,7 @@ export default function ExtensaoIfoodPage() {
             {[
               { icone: <Monitor size={20} />, t: "O computador do caixa", d: "Com Google Chrome. É nele que a extensão trabalha, não no celular." },
               { icone: <KeyRound size={20} />, t: "Seu login do FireHub", d: "O mesmo e-mail e senha que você usa para entrar neste painel." },
-              { icone: <span style={{ fontWeight: 900, fontSize: 15 }}>iF</span>, t: "O login do iFood", d: "Do Portal do Parceiro da loja: portal.ifood.com.br." },
+              { icone: <span style={{ fontWeight: 900, fontSize: 15 }}>iF</span>, t: "O login do iFood e do 99", d: "Do Portal do Parceiro (portal.ifood.com.br) e, se você vende no 99, do 99Food Admin." },
               { icone: <Bike size={20} />, t: "Quantos motoboys tem hoje", d: "O prazo é calculado com esse número. Dá para mudar a qualquer hora." },
             ].map((item) => (
               <div key={item.t} style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 16, padding: "1rem" }}>
@@ -303,7 +352,7 @@ export default function ExtensaoIfoodPage() {
         <div id="passo-a-passo" style={{ ...cartao, scrollMarginTop: 16 }}>
           <div style={{ textAlign: "center", marginBottom: "0.5rem" }}>
             <span style={selo}>PASSO A PASSO</span>
-            <h2 style={titulo2}>Configure uma vez, em 5 passos</h2>
+            <h2 style={titulo2}>Configure uma vez, em 6 passos</h2>
             <p style={{ ...texto, fontSize: "0.9rem" }}>Faça tudo no computador do caixa. Depois, no dia a dia, você só ajusta os motoboys.</p>
           </div>
 
@@ -345,7 +394,7 @@ export default function ExtensaoIfoodPage() {
           <Passo numero={2} titulo="Deixe o ícone 🔥 sempre à vista" desenho={<BarraDoChrome />}>
             <p style={{ margin: 0 }}>
               No canto de cima, à direita do Chrome, clique na <b>peça de quebra-cabeça</b> (Extensões). Na lista, clique no <b>alfinete</b> ao lado de
-              <b> FireHub — Prazo Automático de Entrega</b>.
+              <b> FireHub — Prazo automático iFood e 99</b>.
             </p>
             <p style={{ margin: 0 }}>O ícone 🔥 passa a ficar fixo ao lado da barra de endereço. É por ele que você abre a extensão.</p>
           </Passo>
@@ -359,28 +408,49 @@ export default function ExtensaoIfoodPage() {
             </p>
           </Passo>
 
-          <Passo numero={4} titulo="Abra a tela de entrega do iFood e deixe a aba aberta" desenho={<AbasDoChrome />}>
+          <Passo numero={4} titulo="Abra o iFood (e o 99, se usar) e deixe as abas abertas" desenho={<AbasDoChrome />}>
             <p style={{ margin: 0 }}>
-              Clique no botão abaixo. Ele abre o Portal do Parceiro <b>direto na tela de Entrega</b>, que é onde a extensão muda o prazo.
-              Se o iFood pedir, entre com o login da loja.
+              Clique nos botões abaixo e entre com o login da loja, se pedir. Qualquer tela do portal serve: a extensão só precisa da aba
+              <b> aberta e logada</b>.
             </p>
             <p style={{ margin: 0 }}>
-              <b>Não feche essa aba.</b> Ela pode ficar atrás das outras, não precisa estar na tela. Deixe também esta aba de pedidos do FireHub aberta:
+              <b>Não feche essas abas.</b> Elas podem ficar atrás das outras, não precisam estar na tela. Deixe também esta aba de pedidos do FireHub aberta:
               com ela aberta, a extensão vê cada pedido novo na hora.
             </p>
-            <div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
               <a href={TELA_DE_ENTREGA_IFOOD} target="_blank" rel="noopener noreferrer" style={{ ...botaoLaranja, background: "linear-gradient(135deg, #EA1D2C 0%, #B71C1C 100%)", boxShadow: "0 6px 18px rgba(234,29,44,0.3)" }}>
-                <ExternalLink size={16} /> Abrir a tela de Entrega do iFood
+                <ExternalLink size={16} /> Abrir o Portal do iFood
+              </a>
+              <a href={ADMIN_DO_99} target="_blank" rel="noopener noreferrer" style={{ ...botaoLaranja, background: "linear-gradient(135deg, #F59E0B 0%, #D97706 100%)", boxShadow: "0 6px 18px rgba(217,119,6,0.3)" }}>
+                <ExternalLink size={16} /> Abrir o 99Food Admin
               </a>
             </div>
           </Passo>
 
-          <Passo numero={5} titulo="Diga quantos motoboys tem e ligue o robô" desenho={<PopupRobo />}>
+          <Passo numero={5} titulo="Marque as lojas que devem ter o prazo ajustado" desenho={<PopupRobo />}>
+            <p style={{ margin: 0 }}>
+              Clique no 🔥 e desça até <b>Onde o prazo muda</b>. Clique em <b>Atualizar lista de lojas</b>: aparecem as lojas do seu login no iFood
+              e no 99. Se o Chrome perguntar se a extensão pode acessar o 99Food, clique em <b>Permitir</b>.
+            </p>
+            <p style={{ margin: 0 }}>
+              <b>Marque a caixinha</b> de cada loja que deve acompanhar a sua cozinha. Loja desmarcada fica como está. Se o login do iFood tem uma loja
+              só, ela já vem marcada.
+            </p>
+            <p style={{ margin: 0 }}>
+              No 99, confira os <b>minutos de entrega</b> (vêm 15): o preparo no 99 fica no prazo do iFood menos esse número.
+            </p>
+          </Passo>
+
+          <Passo numero={6} titulo="Diga quantos motoboys tem e ligue o robô" desenho={<PopupRobo />}>
             <p style={{ margin: 0 }}>
               Clique no 🔥 de novo. Na aba <b>🤖 Automático</b>, use o <b>−</b> e o <b>+</b> para deixar o número de <b>motoboys na casa</b> agora.
             </p>
             <p style={{ margin: 0 }}>
-              Depois ligue a chave <b>Robô Automático</b>: ela fica <b style={{ color: "#0F766E" }}>verde</b>. Pronto, a partir daqui o prazo do iFood acompanha a sua cozinha.
+              Depois ligue a chave <b>Robô Automático</b>: ela fica <b style={{ color: "#0F766E" }}>verde</b>. Pronto, a partir daqui o prazo do iFood, do 99 e
+              do seu site acompanha a sua cozinha.
+            </p>
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              Com a chave ligada, o mês entra na mensalidade (R$ 29,90, <a href="#preco" style={{ color: "#E8360C", fontWeight: 800 }}>veja a regra</a>).
             </p>
           </Passo>
 
@@ -398,13 +468,16 @@ export default function ExtensaoIfoodPage() {
               </div>
               <div style={{ display: "grid", gap: 8 }}>
                 <div style={{ fontSize: "0.9rem", color: "#134E4A", lineHeight: 1.5 }}>
-                  No ícone 🔥, o quadro <b>PORTAL IFOOD</b> mostra a bolinha verde e o horário da última vez que ela conferiu o prazo no iFood:
+                  No ícone 🔥, os quadros <b>SITE</b>, <b>IFOOD</b> e <b>99FOOD</b> mostram a bolinha verde e o horário da última vez que o prazo foi
+                  conferido em cada um. Bolinha vermelha: o motivo aparece embaixo da lista de lojas.
                 </div>
-                <div>
-                  <span style={{ display: "inline-block", background: "#0F172A", border: "1px solid #334155", borderRadius: 8, padding: "6px 14px", textAlign: "center" }}>
-                    <span style={{ display: "block", fontSize: 10, color: "#94A3B8", fontWeight: 700 }}>PORTAL IFOOD</span>
-                    <span style={{ display: "block", fontSize: 12, color: "#5EEAD4", fontWeight: 800 }}>🟢 19:42</span>
-                  </span>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {[["SITE", "🟢 19:42"], ["IFOOD", "🟢 19:42"], ["99FOOD", "🟢 19:42 · 43m"]].map(([nome, valor]) => (
+                    <span key={nome} style={{ display: "inline-block", background: "#0F172A", border: "1px solid #334155", borderRadius: 8, padding: "6px 14px", textAlign: "center" }}>
+                      <span style={{ display: "block", fontSize: 10, color: "#94A3B8", fontWeight: 700 }}>{nome}</span>
+                      <span style={{ display: "block", fontSize: 12, color: "#5EEAD4", fontWeight: 800 }}>{valor}</span>
+                    </span>
+                  ))}
                 </div>
               </div>
             </div>
@@ -469,6 +542,9 @@ export default function ExtensaoIfoodPage() {
               {pedidosNaTela} {pedidosNaTela === 1 ? "pedido" : "pedidos"} e {motoboys} {motoboys === 1 ? "motoboy" : "motoboys"}: o iFood fica em
             </div>
             <div style={{ fontSize: "2.2rem", fontWeight: 900, color: FAIXAS[resultado.faixa].cor, lineHeight: 1.2 }}>{resultado.minutos} min</div>
+            <div style={{ fontSize: "0.85rem", color: "#475569", fontWeight: 700, marginTop: 4 }}>
+              no 99, {resultado.minutos - 15} min de preparo (com 15 min de entrega) · no seu site, as áreas sobem junto
+            </div>
             {estourou && (
               <div style={{ fontSize: "0.88rem", color: "#B71C1C", fontWeight: 800, marginTop: 4 }}>
                 e a pílula fica vermelha avisando para você pausar a loja no iFood
@@ -533,10 +609,10 @@ export default function ExtensaoIfoodPage() {
           <h2 style={titulo2}>O que fazer em cada turno</h2>
           <div className="eta-grade-2" style={{ marginTop: "1rem" }}>
             {[
-              { t: "Ao abrir a loja", d: "Ligue o computador do caixa, abra o Chrome com a aba de pedidos do FireHub e a tela de Entrega do iFood. Confira no 🔥 se o número de motoboys está certo." },
+              { t: "Ao abrir a loja", d: "Ligue o computador do caixa, abra o Chrome com a aba de pedidos do FireHub, o Portal do iFood e o 99Food Admin. Confira no 🔥 se o número de motoboys está certo." },
               { t: "Quando um motoboy sai ou chega", d: "Abra o 🔥 e ajuste o − / +. O número fica salvo até alguém mudar de novo, mesmo se desligar o computador." },
               { t: "Quando a pílula ficar vermelha", d: "A cozinha passou do limite. O prazo já está em 78 min. Se precisar, pause a loja no iFood até a fila baixar." },
-              { t: "Se desligar o computador", d: "O prazo do iFood fica parado no último valor. Ao ligar de novo, abra as duas abas que a extensão volta a trabalhar." },
+              { t: "Se desligar o computador", d: "O prazo do iFood e do 99 fica parado no último valor; o do site volta sozinho ao tempo cadastrado em até 15 min. Ao ligar de novo, abra as abas que a extensão volta a trabalhar." },
             ].map((item) => (
               <div key={item.t} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1rem" }}>
                 <Clock size={18} color="#E8360C" style={{ flexShrink: 0, marginTop: 2 }} />
@@ -557,12 +633,12 @@ export default function ExtensaoIfoodPage() {
             <Pergunta titulo="“O Portal iFood foi desconectado!”">
               <p style={{ margin: 0 }}>
                 O iFood deslogou a aba (acontece de tempos em tempos). Clique no botão <b>Reconectar no iFood</b> do próprio aviso, entre com o login
-                da loja e deixe a aba na tela de Entrega. Enquanto estiver deslogado, o prazo não muda.
+                da loja e deixe a aba aberta. Enquanto estiver deslogado, o prazo do iFood não muda (o do 99 e o do site continuam).
               </p>
             </Pergunta>
             <Pergunta titulo="“Abra o portal iFood para o prazo mudar”">
               <p style={{ margin: 0 }}>
-                A aba do iFood foi fechada ou saiu da tela de Entrega. Clique em <b>Abrir a tela de entrega</b>, no próprio aviso, ou no botão do passo 4 desta página. A extensão
+                A aba do iFood foi fechada. Clique em <b>Abrir a tela de entrega</b>, no próprio aviso, ou no botão do passo 4 desta página. A extensão
                 nunca abre aba sozinha, de propósito: assim ela não enche o Chrome de abas repetidas.
               </p>
             </Pergunta>
@@ -577,13 +653,38 @@ export default function ExtensaoIfoodPage() {
               <ol style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: 4 }}>
                 <li>O Chrome está aberto no computador do caixa.</li>
                 <li>A chave do robô está <b>verde</b> no ícone 🔥.</li>
-                <li>A aba do iFood está aberta, logada e na tela de Entrega (passo 4).</li>
+                <li>A aba do iFood está aberta e logada (passo 4).</li>
+                <li>A loja está <b>marcada</b> em Onde o prazo muda (passo 5).</li>
                 <li>O número de motoboys está certo. Com poucos pedidos, o prazo pode continuar na mesma faixa, e aí não há nada para mudar.</li>
               </ol>
             </Pergunta>
             <Pergunta titulo="A extensão muda o prazo do meu site próprio também?">
               <p style={{ margin: 0 }}>
-                Não. Ela muda só o tempo de entrega do iFood. O tempo do seu cardápio próprio continua o que você configurou no painel.
+                Sim, sozinha. Quando o iFood vai para 58 min, a sua área de entrega mais rápida no site também vai para 58 e as outras sobem a mesma
+                diferença (ex.: 30, 40, 50 viram 58, 68, 78). O robô do WhatsApp fala o mesmo tempo. Ela nunca deixa o site abaixo do tempo que você
+                cadastrou, e o pedido já feito guarda o tempo que o cliente viu.
+              </p>
+            </Pergunta>
+            <Pergunta titulo="Tenho mais de uma loja no iFood ou no 99. Ela ajusta todas?">
+              <p style={{ margin: 0 }}>
+                Ajusta as que você marcar no 🔥, desde que estejam no <b>mesmo login</b> do portal aberto no Chrome. Todas recebem o prazo calculado
+                pela fila desta conta FireHub.
+              </p>
+            </Pergunta>
+            <Pergunta titulo="A loja aparece com “entrega do iFood: sem prazo para mudar”">
+              <p style={{ margin: 0 }}>
+                Nessa loja quem entrega é o iFood, e o prazo é dele: não há o que a extensão mudar. Ela só mexe no prazo da entrega própria.
+              </p>
+            </Pergunta>
+            <Pergunta titulo="No 99 o preparo ficou menor do que a conta">
+              <p style={{ margin: 0 }}>
+                O 99 limita o tempo de preparo de cada loja (em algumas, 30 min no máximo). A extensão coloca o máximo que o 99 aceita e avisa no 🔥.
+              </p>
+            </Pergunta>
+            <Pergunta titulo="Quanto custa e quando é cobrado?">
+              <p style={{ margin: 0 }}>
+                R$ 29,90 na mensalidade do mês em que o robô ajustou o prazo pelo menos uma vez. Mês com o robô desligado não paga.
+                Os detalhes estão em <a href="#preco" style={{ color: "#E8360C", fontWeight: 800 }}>Quanto custa</a>.
               </p>
             </Pergunta>
           </div>

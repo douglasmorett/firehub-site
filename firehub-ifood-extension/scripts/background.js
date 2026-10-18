@@ -5,17 +5,29 @@
  * 1. PRIMARIO: Bridge (le o DOM do FireHub em tempo real)
  * 2. FALLBACK: API do servidor (so quando o bridge nao esta ativo)
  *
- * ARQUITETURA DO AJUSTE DE PRAZO (headless):
- * O laco de espera vive AQUI, no service worker, que nao e um documento e por
- * isso nao sofre o throttling de aba oculta do Chrome. O content script virou
- * um efetor burro: o SW injeta funcoes pontuais via chrome.scripting.executeScript
- * e controla o ritmo. Resultado: o prazo muda com a aba apenas ABERTA, sem
- * precisar estar visivel nem focada.
+ * ONDE O PRAZO E ESCRITO (1.1.0, motor trazido da FireHub Prazos):
+ * - iFood: o prazo de entrega de CADA loja marcada no popup, pela API do proprio
+ *   Portal do Parceiro (o que o botao Salvar manda), de dentro de qualquer aba
+ *   logada do portal. Desloca todas as faixas de raio pela mesma diferenca.
+ * - 99Food: o tempo de preparo de cada loja marcada (prazo do iFood menos os
+ *   minutos de entrega que o lojista informa), pela API do 99Food Admin.
+ * - Site e robo do FireHub: o servidor recebe o prazo (POST /api/store/eta-config)
+ *   e soma a diferenca em todas as areas de entrega (lib/prazo-automatico.ts).
+ * As chamadas rodam no mundo da pagina (world: MAIN), com o login dela, e o
+ * laco vive aqui no service worker: funciona com a aba so ABERTA, sem foco.
+ * Ate a 1.0.1 era uma loja so, clicando +5/-5 na tela de Entrega.
  */
 
 const ALARM_NAME = "FIREHUB_DYNAMIC_ETA_SYNC";
 const SETTINGS_URL = "https://portal.ifood.com.br/merchant-delivery-core-portal-experience";
-const SETTINGS_URL_MATCH = SETTINGS_URL + "*";
+const IFOOD_URL_MATCH = "https://portal.ifood.com.br/*";
+const N99_URL = "https://merchant.99app.com/pt-BR/manager";
+const N99_URL_MATCH = "https://merchant.99app.com/*";
+// 99Food: o cliente ve preparo + a entrega da area (tabela fixa por raio do 99).
+// Preparo = prazo do iFood menos estes minutos (o lojista muda no popup).
+const DESCONTO_PADRAO_99 = 15;
+// O site do FireHub segue o prazo enquanto o robo avisa o servidor (validade de 15 min la).
+const REPORTE_AO_SERVIDOR_MS = 60 * 1000;
 
 // Histerese: o alarme AVALIA a cada minuto, mas so ESCREVE no iFood quando a
 // faixa muda de verdade ou quando passou o intervalo minimo. Evita um save por
@@ -73,7 +85,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
 
-  const triggerKeys = ["motoboysCount", "activeMode", "manualRules", "autoSyncEnabled", "manualSyncEnabled"];
+  const triggerKeys = ["motoboysCount", "activeMode", "manualRules", "autoSyncEnabled", "manualSyncEnabled", "lojasIfood", "lojas99", "desconto99"];
   const changed = triggerKeys.some(key => key in changes);
 
   if (changed) {
@@ -131,13 +143,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  if (msg && msg.action === "OPEN_DELIVERY_SETTINGS") {
-    handleFocusOrOpenIfood(sendResponse, false); // false = nao rouba foco (background sync)
+  if (msg && msg.action === "FOCUS_OR_OPEN_IFOOD") {
+    handleFocusOrOpenIfood(sendResponse, true); // true = rouba foco (clique manual do lojista)
     return true;
   }
 
-  if (msg && msg.action === "FOCUS_OR_OPEN_IFOOD") {
-    handleFocusOrOpenIfood(sendResponse, true); // true = rouba foco (clique manual do lojista)
+  if (msg && msg.action === "FOCUS_OR_OPEN_99") {
+    focarOuAbrir(N99_URL_MATCH, N99_URL).then(() => sendResponse({ success: true })).catch(() => sendResponse({ success: false }));
+    return true;
+  }
+
+  // Popup: le as lojas dos logins abertos para o lojista marcar.
+  if (msg && msg.action === "LISTAR_LOJAS") {
+    listarLojas().then((r) => sendResponse({ success: true, ...r })).catch((e) => sendResponse({ success: false, error: String(e) }));
     return true;
   }
 });
@@ -165,7 +183,7 @@ async function notifyBridgeTabs(payload) {
 
 // ── REAPROVEITAMENTO E FOCO DE ABA DO IFOOD (Evita abas duplicadas) ──
 async function handleFocusOrOpenIfood(sendResponse, forceFocus) {
-  const settingsTabs = await chrome.tabs.query({ url: SETTINGS_URL_MATCH });
+  const settingsTabs = await chrome.tabs.query({ url: SETTINGS_URL + "*" });
 
   if (settingsTabs.length > 0 && settingsTabs[0].id) {
     if (forceFocus) {
@@ -173,15 +191,6 @@ async function handleFocusOrOpenIfood(sendResponse, forceFocus) {
       await chrome.tabs.update(settingsTabs[0].id, { active: true });
       if (settingsTabs[0].windowId) {
         await chrome.windows.update(settingsTabs[0].windowId, { focused: true });
-      }
-    } else {
-      // Antes esse ramo so imprimia "despachando" e nao despachava nada:
-      // o pendingETA ficava orfao ate a aba ser recarregada. Agora aplica.
-      const pending = await chrome.storage.local.get("pendingETA");
-      if (typeof pending.pendingETA === "number") {
-        console.log("[FireHub] Aba de config ja existe. Aplicando pendingETA=" + pending.pendingETA);
-        await chrome.storage.local.remove("pendingETA");
-        applyEtaHeadless(settingsTabs[0].id, pending.pendingETA).catch(() => {});
       }
     }
     if (sendResponse) sendResponse({ success: true, tabId: settingsTabs[0].id });
@@ -220,131 +229,249 @@ async function handleFocusOrOpenIfood(sendResponse, forceFocus) {
  */
 function avisarAbaFaltando() {
   chrome.storage.local.set({
-    ifoodApplyError: "Abra a tela Configuracoes > Entrega do portal iFood e deixe a aba aberta"
+    ifoodApplyError: "Abra o Portal do Parceiro iFood (logado) e deixe a aba aberta"
   });
   notifyBridgeTabs({
     action: "IFOOD_TAB_MISSING_ALERT",
-    reason: "A aba de Configurações de entrega do portal iFood não está aberta. O prazo não muda até você abrir e deixar aberta."
+    reason: "O Portal do Parceiro iFood não está aberto. O prazo do iFood não muda até você abrir e deixar a aba aberta (qualquer tela do portal serve)."
   });
 }
 
-// ── FUNCOES INJETADAS NA PAGINA DO IFOOD ──
-// Precisam ser autocontidas: rodam no contexto da aba, sem acesso a este escopo.
-
-function fnReadBaseTime() {
-  const allInputs = Array.from(document.querySelectorAll("input"));
-  const matches = allInputs.filter(function (input) {
-    const rawVal = (input.value || "").trim();
-    if (rawVal.indexOf(",") !== -1 || rawVal.indexOf(".") !== -1) return false;
-    const numVal = parseInt(rawVal, 10);
-    if (isNaN(numVal) || numVal < 5 || numVal > 500) return false;
-
-    let next = input.nextElementSibling;
-    while (next) {
-      const txt = (next.textContent || "").trim().toLowerCase();
-      if (txt.indexOf("min") !== -1) return true;
-      if (txt.indexOf("r$") !== -1 || txt.indexOf("taxa") !== -1) return false;
-      next = next.nextElementSibling;
-    }
-    const parent = input.parentElement;
-    if (parent) {
-      const parentText = parent.textContent || "";
-      if (parentText.indexOf("min") !== -1 && parentText.indexOf("R$") === -1) return true;
-      const parentNext = parent.nextElementSibling;
-      if (parentNext && (parentNext.textContent || "").trim().toLowerCase().indexOf("min") !== -1) return true;
-    }
-    return false;
-  });
-  const values = matches.map(function (i) { return parseInt(i.value, 10) || 0; }).filter(function (v) { return v > 0; });
-  return values.length > 0 ? values[0] : null;
+async function focarOuAbrir(padrao, url) {
+  const abas = await chrome.tabs.query({ url: padrao });
+  if (abas.length && abas[0].id) {
+    await chrome.tabs.update(abas[0].id, { active: true });
+    if (abas[0].windowId) await chrome.windows.update(abas[0].windowId, { focused: true });
+    return;
+  }
+  await chrome.tabs.create({ url, active: true });
 }
 
-function fnClickOperacaoAtual() {
-  const els = Array.from(document.querySelectorAll("button, a, [role='tab'], span"));
-  const tab = els.find(function (el) {
-    const txt = (el.textContent || "").trim().toLowerCase();
-    return txt.indexOf("operacao atual") !== -1 || txt.indexOf("operação atual") !== -1;
-  });
-  if (!tab) return false;
-  const isActive = tab.classList.contains("active") || tab.getAttribute("aria-selected") === "true";
-  if (isActive) return true;
-  try { tab.focus(); } catch (e) {}
-  tab.click();
-  return true;
+// ── FUNCOES INJETADAS NOS PORTAIS (autocontidas: rodam na pagina, nao aqui) ──
+// Copiadas da FireHub Prazos (firehub-prazos-extension/scripts/background.js),
+// que as testou na escrita real: iFood em 3 lojas e 99Food na Brasa e na Chapa
+// Quente (07/09/2026). Mudou la, muda aqui.
+
+/** iFood — lista as lojas do login (GET user/restaurants, com o token da página). */
+function fnIfoodListarLojas() {
+  var tok = (document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/) || [])[1];
+  if (!tok) return { ok: false, deslogado: true, erro: "Portal do Parceiro deslogado" };
+  return fetch("https://portal-api.ifood.com.br/next-web-bff/user/restaurants?offset=0&size=100", {
+    headers: { Authorization: "Bearer " + tok, Accept: "application/json" },
+  }).then(function (r) {
+    if (r.status === 401 || r.status === 403) return { ok: false, deslogado: true, erro: "sessão do portal expirou" };
+    if (!r.ok) return { ok: false, erro: "portal respondeu " + r.status };
+    return r.json().then(function (j) {
+      var lista = Array.isArray(j) ? j : (j && (j.items || j.content || j.restaurants)) || [];
+      var lojas = lista.filter(function (x) { return x && x.uuid; }).map(function (x) {
+        var ops = (x.business && x.business.operations) || [];
+        return { uuid: String(x.uuid).toLowerCase(), nome: x.simpleName || x.name || "Loja", id: x.id || null, entrega: ops.indexOf("DELIVERY") !== -1, entregaPropria: null };
+      });
+      // Entrega pelo iFood (DELIVERY_FULL_SERVICE) não tem prazo para mexer: marca para o popup avisar.
+      return Promise.all(lojas.map(function (l) {
+        return fetch("https://portal-api.ifood.com.br/next-web-bff/delivery/merchants/" + l.uuid + "/all-delivery-flow-routes", { headers: { Authorization: "Bearer " + tok, Accept: "application/json" } })
+          .then(function (rr) { return rr.ok ? rr.json() : null; })
+          .then(function (rotas) {
+            if (Array.isArray(rotas) && rotas.length) l.entregaPropria = rotas.some(function (x) { return x && x.deliveryFlow && x.deliveryFlow !== "DELIVERY_FULL_SERVICE"; });
+          })
+          .catch(function () {});
+      })).then(function () { return { ok: true, lojas: lojas }; });
+    });
+  }).catch(function (e) { return { ok: false, erro: String(e && e.message ? e.message : e) }; });
 }
 
-function fnClickAdjust(isIncrease) {
-  let btn = document.querySelector(isIncrease ? 'button[aria-label="add 5 min"]' : 'button[aria-label="subtract 5 min"]');
-  if (!btn) {
-    const buttons = Array.from(document.querySelectorAll("button"));
-    btn = buttons.find(function (b) {
-      const text = (b.textContent || "").trim();
-      if (text.indexOf("5") === -1 || text.toLowerCase().indexOf("min") === -1) return false;
-      if (isIncrease) return text.indexOf("+") !== -1;
-      return text.indexOf("-") !== -1 || text.indexOf("–") !== -1 || text.indexOf("—") !== -1;
+/**
+ * iFood — escreve o prazo `alvo` nas lojas dadas, pela API do portal:
+ * GET all-delivery-flow-routes (setups) → GET faixas de entrega própria →
+ * PATCH com o mesmo corpo que o botão Salvar manda → GET para conferir.
+ *
+ * O prazo da loja é o da faixa mais perto (500 m). Muita loja escalona as
+ * faixas seguintes (34, 44, 53… até 110 min no raio maior): a extensão
+ * DESLOCA todas pela mesma diferença, preservando a escada que o lojista
+ * montou — nunca achata tudo num valor só.
+ */
+function fnIfoodAplicarLojas(lojas, alvo) {
+  var tok = (document.cookie.match(/(?:^|;\s*)access_token=([^;]+)/) || [])[1];
+  if (!tok) return Promise.resolve({ deslogado: true, resultados: [] });
+  var H = { Authorization: "Bearer " + tok, Accept: "application/json", "Content-Type": "application/json" };
+  var base = "https://portal-api.ifood.com.br/next-web-bff/delivery/merchants/";
+  function json(url, init) {
+    return fetch(url, Object.assign({ headers: H }, init || {})).then(function (r) {
+      if (r.status === 401 || r.status === 403) throw new Error("DESLOGADO");
+      if (!r.ok) throw new Error("portal respondeu " + r.status);
+      return r.status === 204 ? null : r.json().catch(function () { return null; });
     });
   }
-  if (!btn) return false;
-  try { btn.focus(); } catch (e) {}
-  // Sequencia completa de ponteiro: alguns componentes React ignoram click puro.
-  try {
-    btn.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, cancelable: true }));
-    btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
-    btn.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true }));
-    btn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, cancelable: true }));
-  } catch (e) {}
-  btn.click();
-  return true;
-}
-
-function fnClickSalvar() {
-  const buttons = Array.from(document.querySelectorAll("button"));
-  const candidates = buttons.filter(function (b) {
-    return (b.textContent || "").trim().toLowerCase() === "salvar";
-  });
-  if (candidates.length === 0) return { clicked: false, reason: "nao-encontrado" };
-  const enabled = candidates.find(function (b) { return !b.disabled; });
-  if (!enabled) {
-    // Botao desabilitado significa que nao ha alteracao pendente.
-    // Forcar o clique aqui so produzia falso "SALVO!".
-    return { clicked: false, reason: "desabilitado" };
+  function faixasProprias(cfg) {
+    var dm = (cfg && cfg.deliveryMethods) || [];
+    return dm.filter(function (m) { return m && m.id && typeof m.time === "number" && (!m.geometry || !m.geometry.deliveredBy || m.geometry.deliveredBy === "MERCHANT"); });
   }
-  try { enabled.focus(); } catch (e) {}
-  enabled.click();
-  return { clicked: true };
-}
-
-function fnIsLoggedOut() {
-  const href = window.location.href.toLowerCase();
-  if (href.indexOf("openid-connect") !== -1 || href.indexOf("callback") !== -1 || href.indexOf("response_type=") !== -1) {
-    return false;
+  function umaLoja(l) {
+    var saida = { uuid: l.uuid, nome: l.nome, ok: false, minutos: alvo, antes: null, depois: null, erro: null };
+    return json(base + l.uuid + "/all-delivery-flow-routes").then(function (rotas) {
+      var setups = [];
+      (Array.isArray(rotas) ? rotas : []).forEach(function (r) { var id = r && r.setup && r.setup.setupId; if (id && setups.indexOf(id) === -1) setups.push(id); });
+      if (!setups.length) { saida.erro = "sem configuração de entrega própria"; return saida; }
+      var mexeu = 0;
+      var cadeia = Promise.resolve();
+      setups.forEach(function (setupId) {
+        cadeia = cadeia.then(function () {
+          if (saida.erro) return;
+          var url = base + l.uuid + "?setupV2=" + encodeURIComponent(setupId) + "&deliveredBy=MERCHANT";
+          return json(url).then(function (cfg) {
+            var faixas = faixasProprias(cfg);
+            if (!faixas.length) return;
+            faixas.sort(function (a, b) { return Number(a.label) - Number(b.label); });
+            var base0 = faixas[0].time;
+            if (saida.antes === null) saida.antes = base0;
+            var delta = alvo - base0;
+            if (delta === 0) { saida.depois = alvo; mexeu++; return; }
+            var limitar = function (t) { return Math.max(5, Math.min(180, t)); };
+            var esperado = faixas.map(function (m) { return limitar(m.time + delta); });
+            var corpo = faixas.map(function (m, i) { return { deliveryMethodId: m.id, newFee: m.fee, newTime: esperado[i], label: m.label, newOffset: 10 }; });
+            return json(url, { method: "PATCH", body: JSON.stringify(corpo) }).then(function () { return json(url); }).then(function (conf) {
+              var depois = faixasProprias(conf);
+              depois.sort(function (a, b) { return Number(a.label) - Number(b.label); });
+              var confere = depois.length === esperado.length && depois.every(function (m, i) { return m.time === esperado[i]; });
+              if (!confere) {
+                saida.depois = depois.length ? depois[0].time : null;
+                saida.erro = "portal não confirmou o novo prazo";
+                return;
+              }
+              saida.depois = alvo; mexeu++;
+            });
+          });
+        });
+      });
+      return cadeia.then(function () {
+        if (saida.erro) return saida;
+        if (!mexeu) { saida.erro = "sem faixas de entrega própria (entrega pelo iFood?)"; return saida; }
+        saida.ok = true; return saida;
+      });
+    }).catch(function (e) {
+      var msg = String(e && e.message ? e.message : e);
+      if (msg === "DESLOGADO") { saida.erro = "portal deslogado"; saida.deslogado = true; } else saida.erro = msg;
+      return saida;
+    });
   }
-  const passwordInput = document.querySelector('input[type="password"]');
-  const bodyText = (document.body ? document.body.innerText : "").toLowerCase();
-  const hasDisconnectText = bodyText.indexOf("fazer login") !== -1 ||
-    bodyText.indexOf("sessão expirou") !== -1 ||
-    bodyText.indexOf("entre com sua conta") !== -1;
-  return !!(passwordInput && (hasDisconnectText || href.indexOf("login.ifood.com.br") !== -1));
+  return Promise.all(lojas.map(umaLoja)).then(function (res) { return { resultados: res, deslogado: res.some(function (r) { return r.deslogado; }) }; });
 }
 
-// ── ORQUESTRADOR HEADLESS ──
+/** 99Food — parâmetros que a API interna exige em toda chamada (cookie faz o login). */
+function fn99ListarLojas() {
+  var app = { appCode: "1.0.0", versionCode: "rc.2508241000", originType: "6", osType: "12", passportAppId: "200108", lang: "pt-BR", locale: "pt-BR", country: "BR", location_country: "BR", countryCode: "BR" };
+  function post(caminho, params) {
+    return fetch("https://b.99app.com" + caminho, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", tripcountry: "BR" },
+      body: new URLSearchParams(Object.assign({}, app, params)).toString(),
+    }).then(function (r) { return r.json(); });
+  }
+  return post("/auth/contractor/getAuthContractorList", {}).then(function (c) {
+    if (!c || c.errno !== 0) return { ok: false, deslogado: !!c && c.errno === 990003, erro: (c && c.errmsg) || "99Food não respondeu" };
+    var signatarios = (c.data && c.data.list) || [];
+    var lojas = [];
+    var cadeia = Promise.resolve();
+    signatarios.forEach(function (sg) {
+      cadeia = cadeia.then(function () {
+        var params = { contractorId: sg.contractorId, roleType: "1", brandId: "0", businessType: "1", menuKey: "serviceManagement", shopId: "" };
+        return post("/merchant/storefront/getShopList", params).then(function (r) {
+          if (!r || r.errno !== 0) { delete params.businessType; return post("/merchant/storefront/getShopList", params); }
+          return r;
+        }).then(function (r) {
+          if (!r || r.errno !== 0) return;
+          ((r.data && r.data.list) || []).forEach(function (l) {
+            lojas.push({ shopId: String(l.shopId), cityId: String(l.cityId), contractorId: String(l.contractorId || sg.contractorId), nome: l.shopName || "Loja", signatario: sg.contractorName || "" });
+          });
+        }).catch(function () {});
+      });
+    });
+    return cadeia.then(function () { return { ok: true, lojas: lojas }; });
+  }).catch(function (e) { return { ok: false, erro: String(e && e.message ? e.message : e) }; });
+}
+
+/**
+ * 99Food — escreve `minutos` de preparo nas lojas dadas: lê settingInfo,
+ * manda avgProduceTime (o que o botão Salvar da aba Configurações de
+ * operações manda) e relê para conferir.
+ *
+ * Duas coisas que o 99 cobra, medidas na Brasa e na Chapa Quente em
+ * 07/09/2026:
+ *   - cada loja tem seu limite (`produceTimeConf`: min 3, max 30 min lá).
+ *     Pedir 43 volta "O tempo de preparo excede o tempo máximo" — então a
+ *     extensão GRAMPEIA no limite da loja e avisa, em vez de falhar;
+ *   - `multiPeriodsProduceTime: "[]"` volta "Erro no tipo do parâmetro".
+ *     Loja sem tempo especial simplesmente não manda o campo.
+ */
+function fn99AplicarLojas(lojas, minutos) {
+  var app = { appCode: "1.0.0", versionCode: "rc.2508241000", originType: "6", osType: "12", passportAppId: "200108", lang: "pt-BR", locale: "pt-BR", country: "BR", location_country: "BR", countryCode: "BR" };
+  function post(caminho, params) {
+    return fetch("https://b.99app.com" + caminho, {
+      method: "POST", credentials: "include",
+      headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8", tripcountry: "BR" },
+      body: new URLSearchParams(Object.assign({}, app, params)).toString(),
+    }).then(function (r) { return r.json(); });
+  }
+  function uma(l) {
+    var saida = { shopId: l.shopId, nome: l.nome, ok: false, minutos: minutos, antes: null, depois: null, erro: null, aviso: null, entregaPropria: null };
+    var base = { shopId: l.shopId, cityId: l.cityId, contractorId: l.contractorId, roleType: "1" };
+    return post("/shop/query/settingInfo", base).then(function (a) {
+      if (!a || a.errno !== 0) {
+        if (a && a.errno === 990003) { saida.deslogado = true; saida.erro = "99Food deslogado"; }
+        else saida.erro = (a && a.errmsg) || "99Food não respondeu";
+        return saida;
+      }
+      var d = a.data || {};
+      saida.antes = Math.round((d.avgProduceTime || 0) / 60);
+      saida.entregaPropria = d.deliverType === 2;
+
+      var conf = d.produceTimeConf || {};
+      var minLoja = typeof conf.min === "number" && conf.min > 0 ? conf.min : 1;
+      var maxLoja = typeof conf.max === "number" && conf.max > 0 ? conf.max : 240;
+      var alvo = Math.max(minLoja, Math.min(maxLoja, minutos));
+      if (alvo !== minutos) saida.aviso = "o 99 limita esta loja a " + maxLoja + " min de preparo";
+      saida.minutos = alvo;
+      var seg = Math.round(alvo * 60);
+
+      var periodos = Array.isArray(d.multiPeriodsProduceTime) ? d.multiPeriodsProduceTime : [];
+      var jaEsta = d.avgProduceTime === seg && periodos.every(function (p) { return (p.periods || []).every(function (q) { return q.preparationTime === seg; }); });
+      var corpo = Object.assign({}, base, { appVersion: "1.3.58", avgProduceTime: String(seg), source: "0" });
+      // Lista vazia quebra o 99: só manda o campo quando há tempo especial.
+      if (periodos.length) {
+        corpo.multiPeriodsProduceTime = JSON.stringify(periodos.map(function (p) {
+          return { days: p.days, periods: (p.periods || []).map(function (q) { return { begin: q.begin, end: q.end, preparationTime: seg }; }) };
+        }));
+      }
+      var escrever = jaEsta ? Promise.resolve({ errno: 0 }) : post("/shop/setting/avgProduceTime", corpo);
+      return escrever.then(function (w) {
+        if (!w || w.errno !== 0) { saida.erro = (w && w.errmsg) || "99Food recusou"; return saida; }
+        return post("/shop/query/settingInfo", base).then(function (b) {
+          saida.depois = b && b.data ? Math.round((b.data.avgProduceTime || 0) / 60) : null;
+          saida.ok = saida.depois === alvo;
+          if (!saida.ok) saida.erro = "99Food não confirmou (" + saida.depois + " min)";
+          return saida;
+        });
+      });
+    }).catch(function (e) { saida.erro = String(e && e.message ? e.message : e); return saida; });
+  }
+  return Promise.all(lojas.map(uma)).then(function (res) { return { resultados: res, deslogado: res.some(function (r) { return r.deslogado; }) }; });
+}
+
+// ── ORQUESTRADOR ──
 
 function hhmm() {
   return new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
 }
 
-// No service worker isto NAO sofre throttling de aba oculta.
-function wait(ms) {
-  return new Promise(function (r) { setTimeout(r, ms); });
+async function passo(tabId, func, args, mundo) {
+  const r = await chrome.scripting.executeScript({ target: { tabId: tabId }, func: func, args: args || [], world: mundo || "ISOLATED" });
+  return r && r[0] ? r[0].result : undefined;
 }
 
-async function step(tabId, func, args) {
-  const results = await chrome.scripting.executeScript({
-    target: { tabId: tabId },
-    func: func,
-    args: args || []
-  });
-  return results && results[0] ? results[0].result : undefined;
+async function abaDe(padrao) {
+  const abas = await chrome.tabs.query({ url: padrao }).catch(() => []);
+  // Prefere aba que nao esta descartada; qualquer uma serve para a API.
+  return abas.find((a) => a.id && !a.discarded) || abas.find((a) => a.id) || null;
 }
 
 async function ensureTabReady(tabId) {
@@ -378,131 +505,161 @@ async function ensureTabReady(tabId) {
   }
 }
 
-// Recarrega a aba do iFood e espera terminar de carregar.
-async function recarregarAba(tabId) {
-  await chrome.tabs.reload(tabId);
-  await new Promise(function (resolve) {
-    const listener = function (id, info) {
-      if (id === tabId && info.status === "complete") {
-        chrome.tabs.onUpdated.removeListener(listener);
-        resolve();
-      }
-    };
-    chrome.tabs.onUpdated.addListener(listener);
-    setTimeout(function () {
-      chrome.tabs.onUpdated.removeListener(listener);
-      resolve();
-    }, 20000);
-  });
-}
-
-// Abre "Operacao atual" e le o prazo, esperando a tela montar (depois de
-// recarregar, os campos levam alguns segundos para aparecer).
-async function lerPrazoDaTela(tabId) {
-  for (let i = 0; i < 15; i++) {
-    await step(tabId, fnClickOperacaoAtual);
-    await wait(1000);
-    const v = await step(tabId, fnReadBaseTime);
-    if (v !== null && v !== undefined) return v;
+/** Lista as lojas de cada plataforma pelas abas abertas (para o popup marcar). */
+async function listarLojas() {
+  const saida = { ifood: { ok: false, lojas: [], erro: null }, n99: { ok: false, lojas: [], erro: null } };
+  const abaIfood = await abaDe(IFOOD_URL_MATCH);
+  if (!abaIfood) saida.ifood.erro = "Abra o Portal do Parceiro iFood (logado) e clique em Atualizar.";
+  else {
+    try {
+      await ensureTabReady(abaIfood.id);
+      const r = await passo(abaIfood.id, fnIfoodListarLojas, [], "MAIN");
+      if (r && r.ok) saida.ifood = { ok: true, lojas: r.lojas, erro: null };
+      else saida.ifood.erro = (r && r.erro) || "nao consegui ler as lojas";
+    } catch (e) { saida.ifood.erro = String(e && e.message ? e.message : e); }
   }
-  return null;
+  const aba99 = await abaDe(N99_URL_MATCH);
+  if (!aba99) saida.n99.erro = "Abra o 99Food Admin (logado) e clique em Atualizar.";
+  else {
+    try {
+      await ensureTabReady(aba99.id);
+      const r = await passo(aba99.id, fn99ListarLojas, [], "MAIN");
+      if (r && r.ok) saida.n99 = { ok: true, lojas: r.lojas, erro: null };
+      else saida.n99.erro = (r && r.erro) || "nao consegui ler as lojas";
+    } catch (e) { saida.n99.erro = String(e && e.message ? e.message : e); }
+  }
+  return saida;
 }
 
 /**
- * Aplica o prazo dirigindo a pagina de fora. O laco vive aqui no SW,
- * entao funciona com a aba apenas aberta (oculta, minimizada ou coberta).
- * Termina SEMPRE com verificacao real: le o valor de volta da tela.
+ * Lojas do iFood marcadas. Quem atualizou da 1.0.1 nunca marcou nada: se o
+ * login tem UMA loja so, ela e marcada sozinha (era essa loja que a extensao ja
+ * ajustava); com mais de uma, o lojista escolhe no popup.
  */
-async function applyEtaHeadless(tabId, target) {
+async function lojasIfoodMarcadas(tabId) {
+  const s = await chrome.storage.local.get(["lojasIfood"]);
+  if (Array.isArray(s.lojasIfood)) return s.lojasIfood.filter((l) => l.ativa);
+  const r = await passo(tabId, fnIfoodListarLojas, [], "MAIN");
+  if (!r || !r.ok) return [];
+  const lojas = r.lojas.map((l) => ({ uuid: l.uuid, nome: l.nome, ativa: r.lojas.length === 1 }));
+  await chrome.storage.local.set({ lojasIfood: lojas });
+  return lojas.filter((l) => l.ativa);
+}
+
+/** Escreve `minutos` no iFood e o preparo no 99 das lojas marcadas. */
+async function aplicarNasPlataformas(minutos) {
   if (applyInFlight) return { ok: false, reason: "ja-aplicando" };
   applyInFlight = true;
-
   try {
-    const ready = await ensureTabReady(tabId);
-    if (!ready) return { ok: false, reason: "aba-indisponivel" };
+    const s = await chrome.storage.local.get(["lojasIfood", "lojas99", "desconto99"]);
+    const relato = { ifood: null, n99: null };
 
-    // A tela de Entrega do iFood so habilita o Salvar quando o valor difere do
-    // que estava gravado QUANDO A PAGINA ABRIU, nao do ultimo salvo. Sem
-    // recarregar, voltar ao valor da abertura deixava o Salvar cinza e o iFood
-    // preso no prazo anterior (visto ao vivo em 03/10/2026: aba aberta em 38,
-    // a extensao subiu para 58 e o "volta para 38" nunca gravou). Recarregando
-    // antes, a tela parte do que o iFood tem gravado agora.
-    await recarregarAba(tabId);
-
-    const loggedOut = await step(tabId, fnIsLoggedOut);
-    if (loggedOut) {
-      await chrome.storage.local.set({ ifoodDisconnected: true });
-      notifyBridgeTabs({ action: "IFOOD_DISCONNECTED_ALERT", reason: "Sessao do portal iFood encerrada" });
-      return { ok: false, reason: "deslogado" };
-    }
-
-    const current = await lerPrazoDaTela(tabId);
-    if (current === null || current === undefined) {
-      await chrome.storage.local.set({ ifoodApplyError: "Campos de tempo nao encontrados na tela" });
-      return { ok: false, reason: "input" };
-    }
-
-    if (Math.abs(target - current) <= 2) {
-      await chrome.storage.local.set({ lastAppliedETA: target, ifoodLastApply: hhmm(), ifoodApplyError: null });
-      return { ok: true, after: current, unchanged: true };
-    }
-
-    let last = null;
-    for (let i = 0; i < 25; i++) {
-      const v = await step(tabId, fnReadBaseTime);
-      if (v === null || v === undefined || v === 0) {
-        await chrome.storage.local.set({ ifoodApplyError: "Valor do prazo ilegivel durante o ajuste" });
-        return { ok: false, reason: "input" };
+    // ── iFood: prazo de entrega ──
+    // Lista salva e nenhuma marcada = o lojista tirou o iFood (loja so de 99):
+    // nada de cobrar a aba do portal dele.
+    const semIfood = Array.isArray(s.lojasIfood) && !s.lojasIfood.some((l) => l.ativa);
+    const abaIfood = semIfood ? null : await abaDe(IFOOD_URL_MATCH);
+    if (semIfood) {
+      await chrome.storage.local.set({ ifoodApplyError: null });
+    } else if (!abaIfood) {
+      avisarAbaFaltando();
+      relato.ifood = { ok: false, reason: "sem-aba" };
+    } else if (!(await ensureTabReady(abaIfood.id))) {
+      relato.ifood = { ok: false, reason: "aba-indisponivel" };
+    } else {
+      notifyBridgeTabs({ action: "IFOOD_TAB_PRESENT" });
+      const lojas = await lojasIfoodMarcadas(abaIfood.id);
+      if (lojas.length === 0) {
+        await chrome.storage.local.set({ ifoodApplyError: "Marque no popup da extensao as lojas do iFood que devem ter o prazo ajustado" });
+        relato.ifood = { ok: false, reason: "sem-lojas" };
+      } else {
+        const r = await passo(abaIfood.id, fnIfoodAplicarLojas, [lojas, minutos], "MAIN");
+        const resultados = (r && r.resultados) || [];
+        if (!r || r.deslogado) {
+          await chrome.storage.local.set({ ifoodDisconnected: true });
+          notifyBridgeTabs({ action: "IFOOD_DISCONNECTED_ALERT", reason: "Sessao do portal iFood encerrada" });
+          relato.ifood = { ok: false, reason: "deslogado" };
+        } else {
+          const falhas = resultados.filter((x) => !x.ok);
+          await chrome.storage.local.set({
+            ifoodDisconnected: false,
+            ifoodRelato: resultados,
+            ifoodApplyError: falhas.length ? falhas.map((f) => f.nome + ": " + (f.erro || "falhou")).join(" · ") : null,
+            ...(resultados.some((x) => x.ok) ? { lastAppliedETA: minutos, ifoodLastApply: hhmm() } : {}),
+          });
+          relato.ifood = { ok: falhas.length === 0, resultados };
+        }
       }
-      if (Math.abs(target - v) <= 2) break;
-
-      // Clique morto: o valor nao mexeu desde a iteracao anterior.
-      if (v === last) {
-        await chrome.storage.local.set({ ifoodApplyError: "Portal ignorou o clique de +/- 5 min" });
-        return { ok: false, reason: "clique-ignorado", after: v };
-      }
-      last = v;
-
-      const clicked = await step(tabId, fnClickAdjust, [target > v]);
-      if (!clicked) {
-        await chrome.storage.local.set({ ifoodApplyError: "Botao +/- 5 min nao encontrado" });
-        return { ok: false, reason: "botao-ajuste" };
-      }
-      await wait(450);
     }
 
-    const salvar = await step(tabId, fnClickSalvar);
-    if (!salvar || !salvar.clicked) {
-      const reason = salvar ? salvar.reason : "falhou";
-      await chrome.storage.local.set({ ifoodApplyError: "Salvar: " + reason });
-      return { ok: false, reason: reason };
+    // ── 99Food: tempo de preparo ──
+    const lojas99 = Array.isArray(s.lojas99) ? s.lojas99.filter((l) => l.ativa) : [];
+    if (lojas99.length > 0) {
+      const desconto = typeof s.desconto99 === "number" ? s.desconto99 : DESCONTO_PADRAO_99;
+      const preparo = Math.max(5, Math.min(240, minutos - desconto));
+      const aba99 = await abaDe(N99_URL_MATCH);
+      if (!aba99) {
+        await chrome.storage.local.set({ n99ApplyError: "Abra o 99Food Admin (logado) e deixe a aba aberta" });
+        relato.n99 = { ok: false, reason: "sem-aba" };
+      } else if (!(await ensureTabReady(aba99.id))) {
+        relato.n99 = { ok: false, reason: "aba-indisponivel" };
+      } else {
+        const r = await passo(aba99.id, fn99AplicarLojas, [lojas99, preparo], "MAIN");
+        const resultados = (r && r.resultados) || [];
+        const falhas = resultados.filter((x) => !x.ok);
+        // Grampeado no limite da loja nao e falha: aplicou o que dava, e o
+        // lojista precisa saber por que ficou menor do que a conta.
+        const avisos = resultados.filter((x) => x.ok && x.aviso);
+        await chrome.storage.local.set({
+          n99Relato: resultados,
+          n99ApplyError: !r ? "a pagina do 99Food nao respondeu"
+            : r.deslogado ? "99Food Admin deslogado: entre de novo"
+            : [...falhas.map((f) => f.nome + ": " + (f.erro || "falhou")), ...avisos.map((f) => f.nome + " ficou em " + f.minutos + " min (" + f.aviso + ")")].join(" · ") || null,
+          ...(resultados.some((x) => x.ok) ? { n99LastApply: hhmm(), n99Preparo: preparo } : {}),
+        });
+        relato.n99 = { ok: !!r && !r.deslogado && falhas.length === 0, resultados };
+      }
     }
 
-    await wait(2500);
-
-    // VERIFICACAO REAL: le de novo DEPOIS de recarregar. O numero na tela antes
-    // de recarregar e so o formulario — foi ele que fez a extensao dar como
-    // aplicado um prazo que o iFood nunca gravou.
-    await recarregarAba(tabId);
-    const after = await lerPrazoDaTela(tabId);
-    const ok = after !== null && after !== undefined && Math.abs(after - target) <= 2;
-
-    await chrome.storage.local.set(ok
-      ? { lastAppliedETA: target, ifoodLastApply: hhmm(), ifoodApplyError: null }
-      : { ifoodApplyError: "Nao confirmou: alvo " + target + " min, tela " + after + " min" });
-
-    console.log(ok
-      ? "[FireHub] CONFIRMADO " + target + " min no iFood (tela: " + after + ")"
-      : "[FireHub] Falha ao aplicar: alvo " + target + ", tela " + after);
-
-    return { ok: ok, after: after };
+    const ok = (!relato.ifood || relato.ifood.ok) && (!relato.n99 || relato.n99.ok);
+    return { ok, relato, reason: ok ? null : ((relato.ifood && relato.ifood.reason) || (relato.n99 && relato.n99.reason) || "falhou") };
   } catch (err) {
     const message = String(err && err.message ? err.message : err);
     await chrome.storage.local.set({ ifoodApplyError: message });
-    console.warn("[FireHub applyEtaHeadless]", err);
+    console.warn("[FireHub aplicarNasPlataformas]", err);
     return { ok: false, reason: "excecao", error: message };
   } finally {
     applyInFlight = false;
+  }
+}
+
+/**
+ * Avisa o servidor do prazo calculado: e com ele que o site e o robo do FireHub
+ * sobem o tempo das areas de entrega (vale 15 min la). Uma vez por minuto, ou
+ * na hora quando o prazo muda. Tambem e o que marca o uso do mes (R$ 29,90).
+ */
+async function reportarAoServidor(minutos) {
+  const s = await chrome.storage.local.get(["authToken", "serverUrl", "ultimoReporte"]);
+  if (!s.authToken) return;
+  const u = s.ultimoReporte || {};
+  if (u.minutos === minutos && Date.now() - (u.em || 0) < REPORTE_AO_SERVIDOR_MS) return;
+  const base = (s.serverUrl || "https://firehubfood.com.br").replace(/\/$/, "");
+  try {
+    const res = await fetch(base + "/api/store/eta-config?token=" + encodeURIComponent(s.authToken), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ minutos: minutos }),
+      signal: AbortSignal.timeout(8000),
+    });
+    if (res.ok) {
+      await chrome.storage.local.set({ ultimoReporte: { minutos: minutos, em: Date.now() }, firehubSiteError: null, firehubSiteLastApply: hhmm() });
+    } else {
+      await chrome.storage.local.set({
+        firehubSiteError: res.status === 401 ? "Sessao antiga: saia e entre de novo na extensao" : "Servidor respondeu " + res.status,
+      });
+    }
+  } catch (e) {
+    await chrome.storage.local.set({ firehubSiteError: "Servidor do FireHub nao respondeu" });
   }
 }
 
@@ -594,38 +751,39 @@ async function calculateAndApply(count, opts) {
     });
 
     if (!syncEnabled) return { dispatched: false, reason: "sync-desligado", recommendedMinutes: recommendedMinutes };
-    if (store.ifoodDisconnected) return { dispatched: false, reason: "ifood-desconectado", recommendedMinutes: recommendedMinutes };
+    // iFood deslogado nao segura mais o resto: o 99 e o site seguem, e a
+    // tentativa no iFood devolve "deslogado" sozinha (aplicarNasPlataformas).
 
-    // ── HISTERESE: so escreve no iFood quando a faixa muda de fato ──
+    // Site e robo do FireHub: o servidor sobe as areas de entrega junto.
+    await reportarAoServidor(recommendedMinutes);
+
+    // ── HISTERESE: so escreve nos portais quando a faixa muda de fato ──
     const sameTier = store.lastDispatchedMinutes === recommendedMinutes;
     const sinceLast = Date.now() - (store.lastDispatchTime || 0);
     if (!options.force && sameTier && sinceLast < MIN_APPLY_INTERVAL_MS) {
       return { dispatched: false, reason: "histerese", recommendedMinutes: recommendedMinutes };
     }
 
-    const settingsTabs = await chrome.tabs.query({ url: SETTINGS_URL_MATCH });
-    console.log("[FireHub] Despachando " + recommendedMinutes + " min | Abas de Config: " + settingsTabs.length);
+    console.log("[FireHub] Despachando " + recommendedMinutes + " min");
 
-    if (settingsTabs.length === 0 || !settingsTabs[0].id) {
-      avisarAbaFaltando();
-      return { dispatched: false, reason: "sem-aba", recommendedMinutes: recommendedMinutes };
+    // Avisa a pilula das abas do iFood (so display, nao automacao).
+    const abasIfood = await chrome.tabs.query({ url: IFOOD_URL_MATCH }).catch(() => []);
+    for (const aba of abasIfood) {
+      if (aba.id) chrome.tabs.sendMessage(aba.id, {
+        action: "ETA_STATUS",
+        formatted: etaRangeFormatted,
+        ordersInProduction: count,
+        mode: mode,
+        shouldPause: shouldPauseStore
+      }).catch(function () {});
     }
 
-    const tabId = settingsTabs[0].id;
-    notifyBridgeTabs({ action: "IFOOD_TAB_PRESENT" });
+    const result = await aplicarNasPlataformas(recommendedMinutes);
 
-    // Avisa a pilula da aba do iFood (so display, nao automacao).
-    chrome.tabs.sendMessage(tabId, {
-      action: "ETA_STATUS",
-      formatted: etaRangeFormatted,
-      ordersInProduction: count,
-      mode: mode,
-      shouldPause: shouldPauseStore
-    }).catch(function () {});
-
-    const result = await applyEtaHeadless(tabId, recommendedMinutes);
-
-    if (result.ok) {
+    // Marca a tentativa mesmo com falha: o painel manda a contagem a cada
+    // poucos segundos, e um portal fora do ar viraria uma chamada por leitura.
+    // Com a mesma faixa, tenta de novo depois de MIN_APPLY_INTERVAL_MS.
+    if (result.reason !== "ja-aplicando") {
       await chrome.storage.local.set({
         lastDispatchedMinutes: recommendedMinutes,
         lastDispatchTime: Date.now()
@@ -636,7 +794,7 @@ async function calculateAndApply(count, opts) {
       dispatched: true,
       ok: result.ok,
       reason: result.reason,
-      after: result.after,
+      relato: result.relato,
       recommendedMinutes: recommendedMinutes
     };
 

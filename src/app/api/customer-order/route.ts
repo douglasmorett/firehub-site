@@ -102,7 +102,7 @@ export async function POST(req: Request) {
         // A área de entrega, para o SERVIDOR conferir — antes só o navegador
         // conferia, e um POST direto (ou aba antiga) entrava com qualquer
         // endereço e qualquer taxa.
-        deliveryZones: true, deliveryZoneType: true, storeLatLng: true, storeAddress: true, city: true,
+        deliveryZones: true, deliveryZoneType: true, storeLatLng: true, storeAddress: true, city: true, etaConfig: true,
         // Pix e cartão pelo site na conta Asaas da loja (lib/pix-online.ts).
         pixOnlineAtivo: true, cartaoOnlineAtivo: true, asaasChaveCifrada: true,
         // O % de desconto de quem paga pelo site (lib/desconto-pagamento-online.ts).

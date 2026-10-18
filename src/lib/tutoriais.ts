@@ -92,7 +92,7 @@ const NOMES: Record<string, string> = {
   "/store/impressoras": "Impressoras",
   "/store/minha-loja": "Minha loja",
   "/store/integracoes": "Integrações",
-  "/store/extensao-ifood": "Extensão iFood",
+  "/store/extensao-ifood": "Prazo automático iFood e 99",
   "/store/chatbot": "Chatbot",
   "/store/roteirizacao": "Roteirização",
   "/store/motoboys": "Motoboys",

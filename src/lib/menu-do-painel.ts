@@ -53,6 +53,10 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       { href: "/store/mesas", label: "Mesas", icone: "UtensilsCrossed" },
       { href: "/store/venda-presencial", label: "Balcão", icone: "ShoppingBag" },
       { href: "/store/roteirizacao", label: "Roteirização", icone: "MapPin", novaAba: true },
+      // A extensão que muda o prazo do iFood, do 99 e do site pela fila (R$ 29,90 no mês
+      // em que é usada — lib/prazo-automatico.ts). Douglas, 18/10/2026: "às vezes o cara
+      // não clica no ícone do quebra-cabeça" — a porta fica no menu, não só no ícone do topo.
+      { href: "/store/extensao-ifood", label: "Prazo automático iFood e 99", icone: "Timer", selo: "NOVO" },
       { href: "/store/totem", label: "Totem", icone: "TabletSmartphone", selo: "EM TESTES" },
     ],
   },

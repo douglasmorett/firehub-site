@@ -151,7 +151,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       where: { id: lojaId },
       select: {
         city: true, chatbotConfig: true, storeName: true,
-        deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, storeAddress: true,
+        deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, storeAddress: true, etaConfig: true,
       },
     });
 

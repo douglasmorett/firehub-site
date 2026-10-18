@@ -143,7 +143,7 @@ export async function GET(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { id: franchiseeId },
-    select: { deliveryZoneType: true, deliveryZones: true, deliveryConfig: true, storeLatLng: true, storeAddress: true, city: true },
+    select: { deliveryZoneType: true, deliveryZones: true, deliveryConfig: true, storeLatLng: true, storeAddress: true, city: true, etaConfig: true },
   });
   if (!user) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
 

@@ -60,6 +60,7 @@ import { conferePedidoDoRobo, esperandoConferencia, MARCA_AGUARDANDO_LOJA, marca
 import { servicosSemFonte, RESPOSTA_QUANDO_NAO_SABE } from "./afirmacao-sem-fonte";
 import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
+import { comPrazoDaExtensao } from "./prazo-automatico";
 import { previsaoDaEntrega, tempoDeEntregaParaGravar } from "./previsao-da-entrega";
 import { cashbackDoPedido, lerCashback, regraNoCanal, resgateMaximo } from "./cashback";
 import { cashbackDoCliente } from "./cashback-no-banco";
@@ -211,6 +212,8 @@ export async function processChatbotAI(
       deliveryConfig: true,
       deliveryZones: true,
       deliveryZoneType: true,
+      // O prazo da extensão soma no tempo das áreas (lib/prazo-automatico.ts).
+      etaConfig: true,
       // As formas de pagamento PRÓPRIAS liberadas para o robô (lib/formas-proprias.ts).
       paymentFees: true,
       chatbotConfig: true,
@@ -249,12 +252,15 @@ export async function processChatbotAI(
       select: {
         storeName: true, storePhone: true, storeAddress: true, storeLatLng: true, storeTimezone: true, city: true, slug: true,
         storeHours: true, storePause: true, storeOpen: true, storeDeliveryOnly: true,
-        deliveryConfig: true, deliveryZones: true, deliveryZoneType: true, storeCoupons: true, storeLoyalty: true,
+        deliveryConfig: true, deliveryZones: true, deliveryZoneType: true, etaConfig: true, storeCoupons: true, storeLoyalty: true,
         chatbotConfig: true, notificationPhone: true, agendamentoConfig: true,
       },
     });
     if (dono) Object.assign(user, dono);
   }
+  // Prazo automático iFood e 99 ligado: o robô diz o tempo das áreas já somado
+  // ao do iFood, como o site (lib/prazo-automatico.ts).
+  Object.assign(user, comPrazoDaExtensao(user as any));
 
   // Extrai telefone limpo se fornecido remoteJid
   let clientPhoneDigits = "";

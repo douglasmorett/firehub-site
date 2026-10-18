@@ -271,7 +271,7 @@ export async function registrarVendaPresencial(opcoes: {
     try {
       const loja = await prisma.user.findUnique({
         where: { id: targetFranchiseeId },
-        select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, storeAddress: true, city: true },
+        select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, storeAddress: true, city: true, etaConfig: true },
       });
       const endereco = String(customerAddress || "").trim();
       const coords = coordenadaDoCorpo(data.customerCoords, data.customerCoordsOrigem);

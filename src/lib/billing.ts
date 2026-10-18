@@ -837,6 +837,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += multimarcas;
       linhasExtras.push(`Multimarcas R${multimarcas.toFixed(2)}`);
     }
+    // Prazo automático iFood e 99 (lib/prazo-automatico.ts): a extensão mandou
+    // algum prazo no mês = R$ 29,90 inteiros; mês sem uso não paga.
+    const { cobrancaDoPrazoAutomaticoNoMes } = await import("@/lib/prazo-automatico");
+    const prazoAutomatico = await cobrancaDoPrazoAutomaticoNoMes(franchiseeId, monthStart, monthEnd);
+    if (prazoAutomatico > 0) {
+      taxasExtras += prazoAutomatico;
+      linhasExtras.push(`Prazo automatico iFood e 99 R$${prazoAutomatico.toFixed(2)}`);
+    }
   }
 
   const ifoodExtraCharge = taxasExtras;
@@ -1231,7 +1239,10 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // Multimarcas — a mesma conta do fechamento.
   const { cobrancaDoMultimarcasNoMes } = await import("@/lib/multimarcas/assinatura");
   const multimarcas = await cobrancaDoMultimarcasNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
-  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas;
+  // Prazo automático iFood e 99 — a mesma conta do fechamento.
+  const { cobrancaDoPrazoAutomaticoNoMes } = await import("@/lib/prazo-automatico");
+  const prazoAutomatico = await cobrancaDoPrazoAutomaticoNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
+  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + prazoAutomatico;
 
   const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
@@ -1251,7 +1262,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     // Discriminado para o painel poder mostrar a linha em vez de só inflar o
     // total — "por que subiu R$ 200?" tem que ter resposta na tela.
     mensalidadePrevista,
-    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas },
+    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, prazoAutomatico },
     lojasExtras,
     status: cycle.status,
     isExempt: false,
@@ -1297,9 +1308,11 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
   const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
   const { cobrancaDoAppNoMes } = await import("@/lib/app-da-loja/plano");
   const { cobrancaDoMultimarcasNoMes } = await import("@/lib/multimarcas/assinatura");
+  const { cobrancaDoPrazoAutomaticoNoMes } = await import("@/lib/prazo-automatico");
   const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0) + (await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd))
     + (await cobrancaDoAppNoMes(franchiseeId, monthStart, monthEnd))
-    + (await cobrancaDoMultimarcasNoMes(franchiseeId, monthStart, monthEnd));
+    + (await cobrancaDoMultimarcasNoMes(franchiseeId, monthStart, monthEnd))
+    + (await cobrancaDoPrazoAutomaticoNoMes(franchiseeId, monthStart, monthEnd));
   if (inicio === null) {
     // Teste no mês inteiro: mensalidade e lojas extras perdoadas; tráfego e
     // totem são serviço prestado e o fechamento cobra.

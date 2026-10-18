@@ -43,6 +43,7 @@ import { areaDeRiscoDoPonto, dentroDoPoligono } from "@/lib/area-de-risco";
 import { foraDoLimiteDeAtendimento } from "@/lib/limite-de-atendimento";
 import { repasseDaFaixaKm, repasseDoBairro } from "@/lib/repasse-do-entregador";
 import { buscarCep, digitosDoCep } from "@/lib/cep";
+import { comPrazoDaExtensao } from "@/lib/prazo-automatico";
 
 export type LojaParaEntrega = {
   storeAddress?: string | null;
@@ -51,6 +52,8 @@ export type LojaParaEntrega = {
   deliveryZones?: unknown;
   deliveryZoneType?: string | null;
   deliveryConfig?: unknown;
+  /** Para o prazo da extensão (lib/prazo-automatico.ts). Sem ele, vale o tempo cadastrado. */
+  etaConfig?: unknown;
 };
 
 export type ModoDaArea = "BAIRRO" | "KM" | "POLIGONO" | "SEM_AREA";
@@ -395,6 +398,9 @@ export async function avaliarEntrega(
   },
   opcoes?: { prazoMs?: number; donos?: string[] },
 ): Promise<VeredictoDeEntrega> {
+  // Prazo automático iFood e 99 ligado: o tempo das áreas sobe junto com o do
+  // iFood (lib/prazo-automatico.ts). Só soma quando a loja veio com etaConfig.
+  loja = comPrazoDaExtensao(loja);
   const modo = modoDaArea(loja);
   let endereco = String(pedido.endereco || "").trim();
   const prazo = Date.now() + (opcoes?.prazoMs ?? PRAZO_DA_VERIFICACAO_MS);

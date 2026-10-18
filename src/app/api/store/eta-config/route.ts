@@ -19,7 +19,7 @@ import { authOptions } from "@/lib/auth";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, PUT, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, x-store-token",
 };
 
@@ -166,6 +166,33 @@ export async function PUT(req: NextRequest) {
   } catch (err: any) {
     return NextResponse.json(
       { error: err?.message || "Erro ao salvar configuracao de ETA" },
+      { status: 500, headers: corsHeaders }
+    );
+  }
+}
+
+/**
+ * POST — o robô da extensão manda o prazo que calculou (a cada minuto, ligado).
+ * Vale no site e no robô da loja e marca o uso do mês: R$ 29,90 na mensalidade
+ * (lib/prazo-automatico.ts).
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const ctx = await resolveStore(req, true);
+    if (!ctx) {
+      return NextResponse.json({ error: "Loja nao identificada" }, { status: 401, headers: corsHeaders });
+    }
+    const body = await req.json().catch(() => ({}));
+    const minutos = Number(body?.minutos);
+    if (!Number.isInteger(minutos) || minutos < 5 || minutos > 240) {
+      return NextResponse.json({ error: "minutos deve ser um inteiro entre 5 e 240" }, { status: 400, headers: corsHeaders });
+    }
+    const { registrarPrazoAplicado } = await import("@/lib/prazo-automatico");
+    await registrarPrazoAplicado(ctx.storeId, minutos);
+    return NextResponse.json({ success: true, minutos }, { headers: corsHeaders });
+  } catch (err: any) {
+    return NextResponse.json(
+      { error: err?.message || "Erro ao registrar o prazo" },
       { status: 500, headers: corsHeaders }
     );
   }

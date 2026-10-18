@@ -221,7 +221,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function showLoginScreen() {
     loginScreen.style.display = "block";
     mainScreen.style.display = "none";
-    headerTitle.textContent = "FireHub iFood";
+    headerTitle.textContent = "Prazo automático";
     headerSub.textContent = "AUTENTICAÇÃO";
     statusBadgeEl.textContent = "DESCONECTADO";
     statusBadgeEl.style.background = "#7F1D1D";
@@ -635,4 +635,137 @@ document.addEventListener("DOMContentLoaded", () => {
       }
     });
   }
+
+  // ── ONDE O PRAZO MUDA: lojas do iFood e do 99Food (1.1.0) ──
+  // As lojas vêm dos logins abertos (o service worker lê pela API de cada
+  // portal). Só as marcadas têm o prazo mexido; trocar uma caixinha recalcula
+  // na hora (o background escuta lojasIfood / lojas99 / desconto99).
+  const listaIfoodEl = document.getElementById("listaIfood");
+  const lista99El = document.getElementById("lista99");
+  const desconto99El = document.getElementById("desconto99");
+  const erroLojasEl = document.getElementById("erroLojas");
+  const btnListarLojas = document.getElementById("btnListarLojas");
+  const n99SyncStatus = document.getElementById("n99SyncStatus");
+
+  function renderLista(el, chave, lojas, idDe, vazio) {
+    el.innerHTML = "";
+    if (!Array.isArray(lojas) || lojas.length === 0) {
+      el.innerHTML = `<div class="lista-vazia">${vazio}</div>`;
+      return;
+    }
+    lojas.forEach((l, i) => {
+      const label = document.createElement("label");
+      const caixa = document.createElement("input");
+      caixa.type = "checkbox";
+      caixa.checked = !!l.ativa;
+      caixa.addEventListener("change", () => {
+        lojas[i].ativa = caixa.checked;
+        chrome.storage.local.set({ [chave]: lojas });
+      });
+      const nome = document.createElement("span");
+      nome.textContent = l.nome || idDe(l);
+      label.appendChild(caixa);
+      label.appendChild(nome);
+      if (l.entregaPropria === false) {
+        const obs = document.createElement("span");
+        obs.className = "obs";
+        obs.textContent = "entrega do iFood: sem prazo para mudar";
+        label.appendChild(obs);
+      }
+      el.appendChild(label);
+    });
+  }
+
+  function renderLojas() {
+    chrome.storage.local.get(["lojasIfood", "lojas99", "desconto99"], (s) => {
+      renderLista(listaIfoodEl, "lojasIfood", s.lojasIfood, (l) => l.uuid, "Clique em Atualizar lista com o portal aberto.");
+      renderLista(lista99El, "lojas99", s.lojas99, (l) => l.shopId, "Clique em Atualizar lista com o 99Food Admin aberto.");
+      if (typeof s.desconto99 === "number") desconto99El.value = s.desconto99;
+    });
+  }
+
+  /** Junta a lista nova com as marcações salvas. Loja nova entra marcada só se for a única. */
+  function juntar(novas, salvas, id) {
+    const antes = new Map((salvas || []).map((l) => [id(l), l.ativa]));
+    return novas.map((l) => ({
+      ...l,
+      ativa: antes.has(id(l)) ? antes.get(id(l)) : (!salvas && novas.length === 1),
+    }));
+  }
+
+  btnListarLojas.addEventListener("click", () => {
+    erroLojasEl.style.display = "none";
+    btnListarLojas.textContent = "⏳ Lendo as lojas...";
+    // A permissão do 99Food é opcional (não desliga a extensão de quem só usa
+    // iFood na atualização): o Chrome só pergunta dentro do clique.
+    chrome.permissions.request({ origins: ["https://merchant.99app.com/*"] }, () => {
+      chrome.runtime.sendMessage({ action: "LISTAR_LOJAS" }, (r) => {
+        btnListarLojas.textContent = "🔄 Atualizar lista de lojas";
+        if (chrome.runtime.lastError || !r || !r.success) {
+          erroLojasEl.textContent = "Não consegui ler as lojas. Tente de novo.";
+          erroLojasEl.style.display = "block";
+          return;
+        }
+        chrome.storage.local.get(["lojasIfood", "lojas99"], (s) => {
+          const novo = {};
+          if (r.ifood.ok) novo.lojasIfood = juntar(r.ifood.lojas, s.lojasIfood, (l) => l.uuid);
+          if (r.n99.ok) novo.lojas99 = juntar(r.n99.lojas, s.lojas99, (l) => l.shopId);
+          chrome.storage.local.set(novo, renderLojas);
+        });
+        const erros = [r.ifood.ok ? null : "iFood: " + r.ifood.erro, r.n99.ok ? null : "99Food: " + r.n99.erro].filter(Boolean);
+        if (erros.length) {
+          erroLojasEl.textContent = erros.join(" · ");
+          erroLojasEl.style.display = "block";
+        }
+      });
+    });
+  });
+
+  desconto99El.addEventListener("change", () => {
+    const v = Math.max(0, Math.min(120, parseInt(desconto99El.value, 10) || 0));
+    desconto99El.value = v;
+    chrome.storage.local.set({ desconto99: v });
+  });
+
+  document.getElementById("btnAbrirIfood").addEventListener("click", () => chrome.runtime.sendMessage({ action: "FOCUS_OR_OPEN_IFOOD" }));
+  document.getElementById("btnAbrir99").addEventListener("click", () => {
+    chrome.permissions.request({ origins: ["https://merchant.99app.com/*"] }, () => chrome.runtime.sendMessage({ action: "FOCUS_OR_OPEN_99" }));
+  });
+
+  function mostrarStatus(el, hora, erro) {
+    if (erro) {
+      el.textContent = "🔴 erro";
+      el.title = erro;
+      el.style.color = "#FCA5A5";
+    } else if (hora) {
+      el.textContent = `🟢 ${hora}`;
+      el.title = "";
+      el.style.color = "#34D399";
+    }
+  }
+
+  function renderStatusDasPlataformas() {
+    chrome.storage.local.get(["firehubSiteLastApply", "firehubSiteError", "ifoodLastApply", "ifoodApplyError", "n99LastApply", "n99ApplyError", "n99Preparo"], (s) => {
+      mostrarStatus(firehubSyncStatus, s.firehubSiteLastApply, s.firehubSiteError);
+      mostrarStatus(ifoodSyncStatus, s.ifoodLastApply, s.ifoodApplyError);
+      mostrarStatus(n99SyncStatus, s.n99LastApply, s.n99ApplyError);
+      if (!s.n99ApplyError && s.n99Preparo) n99SyncStatus.title = `${s.n99Preparo} min de preparo no 99`;
+      const erros = [s.firehubSiteError && "Site: " + s.firehubSiteError, s.ifoodApplyError && "iFood: " + s.ifoodApplyError, s.n99ApplyError && "99Food: " + s.n99ApplyError].filter(Boolean);
+      if (erros.length) {
+        erroLojasEl.textContent = erros.join(" · ");
+        erroLojasEl.style.display = "block";
+      }
+    });
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes.lojasIfood || changes.lojas99) renderLojas();
+    if (["firehubSiteLastApply", "firehubSiteError", "ifoodLastApply", "ifoodApplyError", "n99LastApply", "n99ApplyError"].some((k) => k in changes)) {
+      renderStatusDasPlataformas();
+    }
+  });
+
+  renderLojas();
+  renderStatusDasPlataformas();
 });

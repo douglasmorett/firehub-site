@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>FireHub Dynamic ETA</title>
+  <title>FireHub — Prazo automático iFood e 99</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     body {
@@ -174,6 +174,18 @@
     }
     .btn-sync:hover { filter: brightness(1.1); }
 
+    .btn-mini {
+      background: #334155; border: 1px solid #475569; color: #E2E8F0;
+      font-size: 0.62rem; font-weight: 700; border-radius: 6px; padding: 2px 7px; cursor: pointer;
+    }
+    .lista-lojas { display: flex; flex-direction: column; gap: 4px; }
+    .lista-lojas label {
+      display: flex; align-items: center; gap: 6px; background: #0F172A; border: 1px solid #334155;
+      border-radius: 8px; padding: 5px 8px; font-size: 0.7rem; color: #E2E8F0; cursor: pointer;
+    }
+    .lista-lojas .obs { margin-left: auto; font-size: 0.6rem; color: #FBBF24; }
+    .lista-vazia { font-size: 0.65rem; color: #64748B; }
+
     .last-sync {
       font-size: 0.65rem; color: #64748B; text-align: center; margin-top: 8px;
     }
@@ -184,8 +196,8 @@
     <div class="logo">
       <div class="logo-badge">🔥</div>
       <div>
-        <div class="title" id="headerTitle">FireHub iFood</div>
-        <div class="subtitle" id="headerSub">AUTOMATION & ETA</div>
+        <div class="title" id="headerTitle">Prazo automático</div>
+        <div class="subtitle" id="headerSub">IFOOD · 99 · SITE</div>
       </div>
     </div>
     <div class="status-pill" id="statusBadge">CONECTANDO</div>
@@ -197,7 +209,7 @@
       🔐 Faça Login na sua Conta FireHub
     </div>
     <p style="font-size: 0.7rem; color: #94A3B8; margin-bottom: 12px; text-align: center;">
-      Para usar a automação dual do FireHub + iFood, informe suas credenciais do painel.
+      Entre com o mesmo e-mail e senha do painel FireHub.
     </p>
 
     <label style="font-size: 0.68rem; color: #94A3B8; display: block; margin-bottom: 4px;">E-mail do FireHub:</label>
@@ -217,18 +229,22 @@
   <div id="mainScreen" style="display: none;">
     <!-- Orientação ao Lojista -->
     <div class="notice-box">
-      💡 <b>Orientação:</b> Mantenha a aba do <b>Portal do iFood</b> aberta e logada na área de entregas.
+      💡 Deixe abertos e logados o <b>painel FireHub</b>, o <b>Portal do Parceiro iFood</b> e, se usar, o <b>99Food Admin</b> (qualquer tela).
     </div>
 
     <!-- Status Duplo (FireHub + iFood) -->
-    <div class="sync-status-grid">
+    <div class="sync-status-grid" style="grid-template-columns: 1fr 1fr 1fr;">
       <div class="sync-badge-box">
-        <div class="sync-badge-title">FIREHUB SITE</div>
+        <div class="sync-badge-title">SITE</div>
         <div class="sync-badge-status" id="firehubSyncStatus" style="color: #34D399;">🟢 --:--</div>
       </div>
       <div class="sync-badge-box">
-        <div class="sync-badge-title">PORTAL IFOOD</div>
+        <div class="sync-badge-title">IFOOD</div>
         <div class="sync-badge-status" id="ifoodSyncStatus" style="color: #34D399;">🟢 --:--</div>
+      </div>
+      <div class="sync-badge-box">
+        <div class="sync-badge-title">99FOOD</div>
+        <div class="sync-badge-status" id="n99SyncStatus" style="color: #94A3B8;">—</div>
       </div>
     </div>
 
@@ -276,7 +292,7 @@
       <div style="display: flex; align-items: center; justify-content: space-between; background: #0F172A; border: 1px solid #334155; border-radius: 12px; padding: 10px 14px;">
         <div>
           <div style="font-size: 0.78rem; font-weight: 800; color: #FFF;">🤖 Robô Automático</div>
-          <div style="font-size: 0.62rem; color: #94A3B8;">Ajusta o prazo no iFood sozinho</div>
+          <div style="font-size: 0.62rem; color: #94A3B8;">Ajusta iFood, 99 e o site sozinho</div>
         </div>
         <label style="position: relative; display: inline-block; width: 44px; height: 24px; cursor: pointer;">
           <input type="checkbox" id="toggleAutoSync" style="opacity: 0; width: 0; height: 0;">
@@ -322,6 +338,38 @@
           <span id="toggleManualDot" style="position: absolute; top: 2px; left: 2px; width: 20px; height: 20px; background: #FFF; border-radius: 50%; transition: all 0.3s;"></span>
         </label>
       </div>
+    </div>
+
+    <!-- ONDE O PRAZO MUDA: lojas marcadas de cada plataforma (vale nos dois modos) -->
+    <div class="card" style="margin-top: 0.75rem;">
+      <div class="card-title">📍 Onde o prazo muda</div>
+      <div style="font-size: 0.66rem; color: #A7F3D0; margin-bottom: 8px; line-height: 1.35;">
+        ✅ <b>Seu site e robô FireHub</b>: mudam juntos. Todas as áreas de entrega sobem a mesma diferença, nunca abaixo do tempo que você cadastrou.
+      </div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+        <span style="font-size: 0.72rem; font-weight: 800; color: #FFF;">iFood — prazo de entrega</span>
+        <button class="btn-mini" id="btnAbrirIfood">Abrir portal</button>
+      </div>
+      <div id="listaIfood" class="lista-lojas"><div class="lista-vazia">Clique em Atualizar lista com o portal aberto.</div></div>
+
+      <div style="display:flex; justify-content:space-between; align-items:center; margin: 10px 0 4px;">
+        <span style="font-size: 0.72rem; font-weight: 800; color: #FFF;">99Food — tempo de preparo</span>
+        <button class="btn-mini" id="btnAbrir99">Abrir 99</button>
+      </div>
+      <div id="lista99" class="lista-lojas"><div class="lista-vazia">Clique em Atualizar lista com o 99Food Admin aberto.</div></div>
+      <div style="display:flex; align-items:center; gap:6px; margin-top:6px; font-size:0.65rem; color:#94A3B8;">
+        Preparo no 99 = prazo do iFood menos
+        <input type="number" id="desconto99" min="0" max="120" value="15" style="width: 44px; background: #0F172A; border: 1px solid #475569; color: #FFF; border-radius: 6px; font-size: 0.72rem; text-align: center; padding: 2px;">
+        min de entrega
+      </div>
+
+      <button class="btn-sync" id="btnListarLojas" style="margin-top: 10px; padding: 7px; font-size: 0.75rem;">🔄 Atualizar lista de lojas</button>
+      <div id="erroLojas" style="display:none; margin-top:6px; font-size:0.65rem; color:#FCA5A5; line-height:1.35;"></div>
+    </div>
+
+    <div class="notice-box" style="margin-bottom: 0;">
+      💳 <b>R$ 29,90 por mês</b>, na mensalidade do FireHub, só no mês em que o robô ajustar o prazo pelo menos uma vez. Mês com o robô desligado não paga.
     </div>
 
     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 8px;">
