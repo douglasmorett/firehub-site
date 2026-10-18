@@ -72,12 +72,16 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
   // Este É o delivery: o que está liberado para delivery, com o preço dele.
   // A carga inteira (produtos, avaliações, estoque, nota fiscal) mora em
   // lib/cardapio-publico.ts, a mesma do cardápio da mesa pelo QR.
-  const props = await propsDoCardapio(franchisee, "delivery");
-  // Multimarcas ligado: as marcas vão junto, e o ?marca= (lido no navegador) filtra o cardápio.
-  const multimarcas = (await multimarcasEstaLigado(franchisee.id))
-    ? await lerConfigDaPagina(franchisee.id).then((c) => (c ? marcasNoCardapio(c) : null)).catch(() => null)
-    : null;
-  // Plano do app ligado e com link nas lojas: o site convida a baixar (lib/app-da-loja/links.ts).
-  const appDaLoja = await conviteDoApp(franchisee.id);
+  // As três cargas são independentes e saem juntas (18/10/2026): em fila, a
+  // página esperava umas 18 idas ao banco, uma depois da outra.
+  const [props, multimarcas, appDaLoja] = await Promise.all([
+    propsDoCardapio(franchisee, "delivery"),
+    // Multimarcas ligado: as marcas vão junto, e o ?marca= (lido no navegador) filtra o cardápio.
+    multimarcasEstaLigado(franchisee.id).then((ligado) =>
+      ligado ? lerConfigDaPagina(franchisee.id).then((c) => (c ? marcasNoCardapio(c) : null)).catch(() => null) : null,
+    ),
+    // Plano do app ligado e com link nas lojas: o site convida a baixar (lib/app-da-loja/links.ts).
+    conviteDoApp(franchisee.id),
+  ]);
   return <CustomerStorePage {...props} multimarcas={multimarcas} appDaLoja={appDaLoja} />;
 }

@@ -73,18 +73,29 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
   // regra pública vai para o cardápio. Lido À PARTE de propósito — o
   // fiscalConfig tem tokens cifrados e o caminho do certificado, e o
   // `franchisee` do select de cima vai inteiro para o HTML.
-  const fiscal = await prisma.user.findUnique({ where: { id: franchisee.id }, select: { fiscalConfig: true } }).catch(() => null);
+  //
+  // As consultas que só dependem do id da loja saem JUNTAS (18/10/2026): em
+  // fila, eram ~10 idas ao banco antes de a página começar a responder, e no
+  // pico cada ida custa 100–300 ms no servidor. O resultado é o mesmo.
+  const lojaId = franchisee.id;
+  const [fiscal, semConexaoBruto, bloqueada, estoqueDaLoja, ordem] = await Promise.all([
+    prisma.user.findUnique({ where: { id: lojaId }, select: { fiscalConfig: true } }).catch(() => null),
+    franchisee.storeOpen === false ? lojaFechadaPelaQueda(lojaId) : Promise.resolve(false),
+    canal === "delivery" && franchisee.storeOpen !== false ? lojaBloqueadaPorMensalidade(lojaId) : Promise.resolve(false),
+    estoqueDaLojaOuVazio(lojaId),
+    orderByCardapio(),
+  ]);
   const notaFiscal = documentoNoPedido(normalizarConfigFiscal(fiscal?.fiscalConfig));
 
   // "Site aberto" desligado pela proteção de LOJA SEM CONEXÃO
   // (lib/loja-sem-conexao.ts): o cardápio diz "instabilidade, volte em alguns
   // minutos" em vez de "fechada". Só se pergunta com o interruptor desligado.
-  const semConexao = franchisee.storeOpen === false ? await lojaFechadaPelaQueda(franchisee.id) : false;
+  const semConexao = semConexaoBruto;
 
   // Loja bloqueada por mensalidade (lib/loja-bloqueada.ts): o cardápio do
   // delivery aparece FECHADO — o cliente não monta um carrinho para tomar
   // "indisponível" no fim. Não fala de dívida; o POST do pedido também barra.
-  if (canal === "delivery" && franchisee.storeOpen !== false && (await lojaBloqueadaPorMensalidade(franchisee.id))) {
+  if (bloqueada) {
     franchisee = { ...franchisee, storeOpen: false };
   }
 
@@ -113,7 +124,7 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
       where: canal === "salao"
         ? { active: true, activeGarcom: true, franchiseeId: franchisee.id, AND: [{ NOT: { apenasEmCombo: true } }, SEM_PRODUTO_DE_INTEGRACAO] }
         : { active: true, activeDelivery: true, franchiseeId: franchisee.id, NOT: { apenasEmCombo: true } },
-      orderBy: await orderByCardapio(),
+      orderBy: ordem,
       // SELECT explícito: com include, TODAS as colunas do produto iam
       // serializadas para o HTML público — inclusive `cost` (o CUSTO de
       // insumo do lojista, visível para qualquer concorrente com F12) e os
@@ -271,7 +282,7 @@ export async function propsDoCardapio(franchisee: any, canal: CanalDoCardapio) {
   // Estoque disponível: o que esgotou fecha, igual ao iFood. O que ainda tem
   // leva o restante junto, para o carrinho não deixar pedir mais do que há —
   // o servidor confere de novo na hora de gravar (esta página é cacheada).
-  const menuComEstoque = aplicarEstoqueNaVitrine(menuDoDia, await estoqueDaLojaOuVazio(franchisee.id));
+  const menuComEstoque = aplicarEstoqueNaVitrine(menuDoDia, estoqueDaLoja);
 
   const menuComPrecoDoCanal = aplicarPrecoNoCardapio(menuComEstoque as any[], canal);
 
