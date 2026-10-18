@@ -20,6 +20,7 @@ import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
 import RelatorioDoParceiro from "@/components/parceiro/RelatorioDoParceiro";
 import RelatorioDaCarteira from "@/components/perfil-da-loja/RelatorioDaCarteira";
+import ComoVoceGanha from "@/components/perfil-da-loja/ComoVoceGanha";
 import { OcultarValoresProvider, OlhoDosValores } from "@/components/parceiro/ValoresOcultos";
 import type { Papel } from "@/lib/parceiro/regras";
 import type { RelatorioDoParceiro as Relatorio } from "@/lib/parceiro/relatorio";
@@ -133,6 +134,23 @@ export default function PortalDoParceiro({
 
       {aba === "numeros" && (
         <main className="pp-wrap">
+          {/* O comissionamento explicado (Douglas, 18/10/2026): link 10% × atribuída 3%, com os % do cadastro. */}
+          {p.isVendedor && (
+            <div style={{ marginBottom: 16 }}>
+              <ComoVoceGanha
+                modo={modo === "ADMIN" ? "ADMIN" : "VENDEDOR"}
+                d={{
+                  link: p.percentuais.EMBAIXADOR,
+                  atribuida: p.percentuais.VENDEDOR,
+                  lojasDoLink: relatorio.lojas.filter((l) => l.papel === "EMBAIXADOR").length,
+                  lojasAtribuidas: relatorio.lojas.filter((l) => l.papel === "VENDEDOR").length,
+                  previstoNoMes: relatorio.resumo.mesAtual.comissao,
+                  recebidoNoMes: relatorio.resumo.recebidoEsteMes,
+                  recebidoNoMesAnterior: relatorio.resumo.mesAnterior.recebido,
+                }}
+              />
+            </div>
+          )}
           <RelatorioDoParceiro relatorio={relatorio} modo={modo} podeMarcarAtendimento={modo === "PARCEIRO" && p.isVendedor && p.ativo} />
         </main>
       )}

@@ -455,15 +455,21 @@ export async function idsDeTodasAsLojas(): Promise<string[]> {
 }
 
 /**
- * As lojas que o vendedor vê no portal dele: as da CARTEIRA (User.vendedorId)
- * e as que ele INDICOU (User.ambassadorId) — as mesmas que o relatório do
- * parceiro já mostra (lib/parceiro/relatorio.ts). Nada além disso.
+ * As lojas da CARTEIRA do vendedor (regra do Douglas, 18/10/2026: "se a pessoa
+ * for vendedora, ela indicou, ela atende"): as que vieram pelo link de convite
+ * dele (User.ambassadorId) e as que o admin pôs na carteira dele
+ * (User.vendedorId) — menos a que veio pelo link de OUTRO vendedor: essa é do
+ * outro. Uma loja, um dono (lib/performance-das-carteiras/regras.ts, donosDaLoja).
  */
+const DA_CARTEIRA = (parceiroId: string) => ({
+  OR: [
+    { ambassadorId: parceiroId },
+    { vendedorId: parceiroId, OR: [{ ambassadorId: null }, { ambassador: { isVendedor: false } }] },
+  ],
+});
+
 export async function idsDaCarteira(parceiroId: string): Promise<string[]> {
-  const lojas = await prisma.user.findMany({
-    where: { OR: [{ vendedorId: parceiroId }, { ambassadorId: parceiroId }] },
-    select: { id: true },
-  });
+  const lojas = await prisma.user.findMany({ where: DA_CARTEIRA(parceiroId), select: { id: true } });
   return lojas.map((l) => l.id);
 }
 
@@ -475,7 +481,7 @@ export async function idsSemDono(): Promise<string[]> {
 
 /** A loja está entre as que este parceiro pode ver? */
 export async function lojaEstaNaCarteira(parceiroId: string, lojaId: string): Promise<boolean> {
-  const n = await prisma.user.count({ where: { id: lojaId, OR: [{ vendedorId: parceiroId }, { ambassadorId: parceiroId }] } });
+  const n = await prisma.user.count({ where: { id: lojaId, ...DA_CARTEIRA(parceiroId) } });
   return n > 0;
 }
 

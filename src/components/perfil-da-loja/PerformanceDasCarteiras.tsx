@@ -16,15 +16,25 @@ import {
 } from "lucide-react";
 import { useDinheiro } from "@/components/parceiro/ValoresOcultos";
 import {
-  NOME_DO_SERVICO, PERIODOS, csvDoComparativo, mesCurto, ordenarCarteiras,
+  ATALHOS_DO_PERIODO, NOME_DO_SERVICO, csvDoComparativo, mesCurto, ordenarCarteiras,
   type ChaveDoPeriodo, type OrdemDoComparativo, type PeriodoDaAnalise, type ResumoDaCarteira, type MesDaEvolucao,
 } from "@/lib/performance-das-carteiras/regras";
 import type { DetalheDaCarteira, LinhaDaLojaNaCarteira } from "@/lib/performance-das-carteiras/no-banco";
 import { ESTILO_DO_PERFIL } from "./estilo";
 import { AvisoNoTopo, PilulaDoStatus, type Aviso } from "./PerfilDaLoja";
 import RelatorioDaCarteira from "./RelatorioDaCarteira";
+import ComoVoceGanha, { ESTILO_DO_COMISSIONAMENTO } from "./ComoVoceGanha";
 
-type Analise = { periodo: PeriodoDaAnalise; carteiras: ResumoDaCarteira[]; total: ResumoDaCarteira; geradoEm: string };
+type Analise = { periodo: PeriodoDaAnalise; carteiras: ResumoDaCarteira[]; total: ResumoDaCarteira; disparoEstimado: boolean; custoMetaAtual: number; geradoEm: string };
+/** O período pedido: atalho, mês escolhido ou intervalo livre. */
+type Filtro = { chave: ChaveDoPeriodo; mes?: string; de?: string; ate?: string };
+const consultaDo = (f: Filtro) => {
+  const q = new URLSearchParams({ periodo: f.chave });
+  if (f.chave === "mesEspecifico" && f.mes) q.set("mes", f.mes);
+  if (f.chave === "intervalo") { if (f.de) q.set("de", f.de); if (f.ate) q.set("ate", f.ate); }
+  return q.toString();
+};
+const ROTULO_DA_ORIGEM = { LINK: "Pelo link", ATRIBUIDA: "Atribuída", INDICACAO: "Indicação", SEM: "—" } as const;
 
 /** Período escolhido × anterior (validado: scripts/validate_palette.js, CVD ΔE 22,8). */
 const COR_DO_PERIODO = "#E8360C";
@@ -32,7 +42,7 @@ const COR_DO_ANTERIOR = "#4F6FB8";
 const COR_DO_HISTORICO = "#D6D3D1";
 const COR_DA_SITUACAO = { ATIVA: "#22A55A", ESFRIANDO: "#E8A317", PARADA: "#E5484D", NOVA: "#3B82F6" } as const;
 const PAPEL: Record<ResumoDaCarteira["papel"], string> = {
-  VENDEDOR: "Vendedor", EMBAIXADOR: "Embaixador", VENDEDOR_E_EMBAIXADOR: "Vendedor e embaixador", SEM_VENDEDOR: "Do Douglas",
+  VENDEDOR: "Vendedor", EMBAIXADOR: "Embaixador (indicações)", SEM_VENDEDOR: "Do Douglas",
 };
 const ORDENS: { chave: OrdemDoComparativo; rotulo: string }[] = [
   { chave: "receita", rotulo: "Receita FireHub" }, { chave: "gmv", rotulo: "Faturamento (GMV)" }, { chave: "crescimento", rotulo: "Crescimento" },
@@ -155,7 +165,7 @@ function GraficoMensal({ dados, medida, doPeriodo, doAnterior, formato, moeda }:
 
 // ── O detalhe de uma carteira ────────────────────────────────────────────────
 
-function DetalheDaCarteiraTela({ id, periodo, aoFechar }: { id: string; periodo: ChaveDoPeriodo; aoFechar: () => void }) {
+function DetalheDaCarteiraTela({ id, consulta, aoFechar }: { id: string; consulta: string; aoFechar: () => void }) {
   const dinheiro = useDinheiro();
   const [d, setD] = useState<DetalheDaCarteira | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -165,11 +175,11 @@ function DetalheDaCarteiraTela({ id, periodo, aoFechar }: { id: string; periodo:
   useEffect(() => {
     let vivo = true;
     setD(null); setErro(null);
-    fetch(`/api/admin/performance-das-carteiras/${encodeURIComponent(id)}?periodo=${periodo}`, { cache: "no-store" })
+    fetch(`/api/admin/performance-das-carteiras/${encodeURIComponent(id)}?${consulta}`, { cache: "no-store" })
       .then(async (r) => { const j = await r.json().catch(() => ({})); if (!vivo) return; if (!r.ok) setErro(j.error || "Não deu para abrir a carteira."); else setD(j); })
       .catch(() => vivo && setErro("Sem conexão."));
     return () => { vivo = false; };
-  }, [id, periodo]);
+  }, [id, consulta]);
 
   useEffect(() => {
     const tecla = (e: KeyboardEvent) => { if (e.key === "Escape") aoFechar(); };
@@ -187,6 +197,8 @@ function DetalheDaCarteiraTela({ id, periodo, aoFechar }: { id: string; periodo:
     { nome: "Mensalidades", atual: receita.mensalidade, anterior: r!.anterior.receita.mensalidade },
     ...(Object.keys(receita.servicos) as (keyof typeof receita.servicos)[]).map((k) => ({ nome: NOME_DO_SERVICO[k], atual: receita.servicos[k], anterior: r!.anterior.receita.servicos[k] })),
   ].filter((x) => x.atual > 0 || x.anterior > 0) : [];
+  const lojasDoLink = d ? d.lojas.filter((l) => l.origem === "LINK").length : 0;
+  const lojasAtribuidas = d ? d.lojas.filter((l) => l.origem === "ATRIBUIDA").length : 0;
   const maxReceita = Math.max(1, ...linhasDaReceita.flatMap((x) => [x.atual, x.anterior]));
 
   return (
@@ -237,9 +249,18 @@ function DetalheDaCarteiraTela({ id, periodo, aoFechar }: { id: string; periodo:
                   </div>
                 </section>
 
+                {r.regra && r.papel === "VENDEDOR" && (
+                  <ComoVoceGanha embutido modo="ADMIN" d={{
+                    link: r.regra.link, atribuida: r.regra.atribuida, lojasDoLink, lojasAtribuidas,
+                    previstoNoMes: r.atual.comissaoPrevista, recebidoNoMes: r.atual.comissaoRecebida, recebidoNoMesAnterior: null,
+                    comissaoDoDisparo: r.atual.comissaoDoDisparo, divergencias: r.regra.divergencias, custoMeta: d.custoMetaAtual,
+                    rotulos: { previsto: "Comissão prevista no período", previstoSub: d.periodo.rotulo, recebido: "Já recebida no período" },
+                  }} />
+                )}
+
                 <div className="pf-duas">
                   <section className="pf-painel">
-                    <div className="pf-painel-cab"><div><h3 className="pf-h">De onde vem a receita</h3><p className="pf-sub">Barra = período; traço azul = anterior.</p></div></div>
+                    <div className="pf-painel-cab"><div><h3 className="pf-h">De onde vem a receita</h3><p className="pf-sub">Barra = período; traço azul = anterior. Disparo entra pelo lucro do FireHub (recarga − custo da Meta).</p></div></div>
                     {linhasDaReceita.length === 0 ? <div className="pf-vazio">Nenhuma receita no período (lojas em teste, isentas ou sem cobrança).</div> : (
                       <ul className="pc-receita">
                         {linhasDaReceita.map((x) => (
@@ -253,6 +274,13 @@ function DetalheDaCarteiraTela({ id, periodo, aoFechar }: { id: string; periodo:
                           </li>
                         ))}
                       </ul>
+                    )}
+                    {receita && receita.disparoBruto > 0 && (
+                      <p className="pc-disparo">
+                        Disparo: <b>{dinheiro(receita.disparoBruto)}</b> cobrado das lojas → <b>{dinheiro(receita.servicos.disparo)}</b> de lucro do FireHub
+                        {d.disparoEstimado ? ` (custo da Meta estimado em ${dinheiro(d.custoMetaAtual)} por mensagem onde a recarga não gravou o custo)` : " (custo da Meta gravado em cada recarga)"}.
+                        {" "}Comissão sobre o lucro: <b>{dinheiro(r.atual.comissaoDoDisparo)}</b> — calculada, ainda não sai no split.
+                      </p>
                     )}
                   </section>
                   <section className="pf-painel">
@@ -324,7 +352,7 @@ function TabelaDeLojas({ lojas }: { lojas: LinhaDaLojaNaCarteira[] }) {
     <div className="pf-tabela-rolagem">
       <table className="pf-tabela pc-tabela-lojas">
         <thead>
-          <tr><th>Loja</th><th className="dir">Faturamento</th><th className="dir so-largo">Receita FireHub</th><th className="dir so-largo">Comissão</th><th className="so-largo">Upsell no período</th><th className="so-largo">Oferecer</th></tr>
+          <tr><th>Loja</th><th className="dir">Faturamento</th><th className="so-largo">Origem</th><th className="dir so-largo">Receita FireHub</th><th className="dir so-largo">Comissão</th><th className="so-largo">Upsell no período</th><th className="so-largo">Oferecer</th></tr>
         </thead>
         <tbody>
           {lojas.map((l) => (
@@ -341,8 +369,11 @@ function TabelaDeLojas({ lojas }: { lojas: LinhaDaLojaNaCarteira[] }) {
                 </div>
               </td>
               <td className="dir"><b>{dinheiro(l.gmv)}</b><div><Delta pct={l.variacaoGmv} /></div></td>
+              <td className="so-largo">
+                <span className={`pf-tag ${l.origem === "LINK" ? "venda" : "adocao"}`}>{ROTULO_DA_ORIGEM[l.origem]}{l.percentual !== null ? ` · ${l.percentual}%` : ""}</span>
+              </td>
               <td className="dir so-largo"><b>{dinheiro(l.previsto)}</b><div className="pc-fraco">receb. {dinheiro(l.recebido)}{l.emAberto > 0 ? ` · aberto ${dinheiro(l.emAberto)}` : ""}</div></td>
-              <td className="dir so-largo">{dinheiro(l.comissao)}</td>
+              <td className="dir so-largo"><b>{dinheiro(l.comissao)}</b><div className="pc-fraco">receb. {dinheiro(l.comissaoRecebida)}{l.comissaoDoDisparo > 0 ? ` · disparo ${dinheiro(l.comissaoDoDisparo)}` : ""}</div></td>
               <td className="so-largo">{l.upsell.length ? <div className="pf-ops-mini">{l.upsell.map((u) => <span key={u} className="pf-tag venda">{NOME_DO_SERVICO[u as keyof typeof NOME_DO_SERVICO] || u}</span>)}</div> : <span className="pc-fraco">—</span>}</td>
               <td className="so-largo">{l.produtos.length ? <div className="pf-ops-mini">{l.produtos.slice(0, 2).map((p) => <span key={p} className="pf-tag adocao">{p}</span>)}{l.produtos.length > 2 && <span className="pc-fraco">+{l.produtos.length - 2}</span>}</div> : <span className="pc-fraco">—</span>}</td>
             </tr>
@@ -357,7 +388,9 @@ function TabelaDeLojas({ lojas }: { lojas: LinhaDaLojaNaCarteira[] }) {
 
 export default function PerformanceDasCarteiras() {
   const dinheiro = useDinheiro();
-  const [periodo, setPeriodo] = useState<ChaveDoPeriodo>("mes");
+  const [filtro, setFiltro] = useState<Filtro>({ chave: "mes" });
+  const [rascunho, setRascunho] = useState<{ mes: string; de: string; ate: string }>({ mes: "", de: "", ate: "" });
+  const consulta = consultaDo(filtro);
   const [ordem, setOrdem] = useState<OrdemDoComparativo>("receita");
   const [dados, setDados] = useState<Analise | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -370,7 +403,7 @@ export default function PerformanceDasCarteiras() {
   const carregar = useCallback(async () => {
     setCarregando(true); setErro(null);
     try {
-      const r = await fetch(`/api/admin/performance-das-carteiras?periodo=${periodo}`, { cache: "no-store" });
+      const r = await fetch(`/api/admin/performance-das-carteiras?${consulta}`, { cache: "no-store" });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) setErro(j.error || "Não deu para carregar a análise.");
       else setDados(j);
@@ -379,7 +412,7 @@ export default function PerformanceDasCarteiras() {
     } finally {
       setCarregando(false);
     }
-  }, [periodo]);
+  }, [consulta]);
   useEffect(() => { void carregar(); }, [carregar]);
 
   const carteiras = useMemo(() => (dados ? ordenarCarteiras(dados.carteiras, ordem) : []), [dados, ordem]);
@@ -400,9 +433,9 @@ export default function PerformanceDasCarteiras() {
 
   return (
     <div className="pf pf-admin pc">
-      <style>{ESTILO_DO_PERFIL + ESTILO_DA_PERFORMANCE}</style>
+      <style>{ESTILO_DO_PERFIL + ESTILO_DA_PERFORMANCE + ESTILO_DO_COMISSIONAMENTO}</style>
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
-      {aberta && <DetalheDaCarteiraTela id={aberta} periodo={periodo} aoFechar={fechar} />}
+      {aberta && <DetalheDaCarteiraTela id={aberta} consulta={consulta} aoFechar={fechar} />}
 
       <div className="pf-relatorio">
         <div className="pf-rel-cab">
@@ -414,7 +447,7 @@ export default function PerformanceDasCarteiras() {
           </div>
           <div className="pf-rel-acoes">
             <div className="pc-segmento" role="group" aria-label="Período">
-              {PERIODOS.map((p) => <button key={p.chave} type="button" className={periodo === p.chave ? "on" : ""} onClick={() => setPeriodo(p.chave)} aria-pressed={periodo === p.chave}>{p.rotulo}</button>)}
+              {ATALHOS_DO_PERIODO.map((p) => <button key={p.chave} type="button" className={filtro.chave === p.chave ? "on" : ""} onClick={() => setFiltro({ chave: p.chave })} aria-pressed={filtro.chave === p.chave}>{p.rotulo}</button>)}
             </div>
             <select value={ordem} onChange={(e) => setOrdem(e.target.value as OrdemDoComparativo)} aria-label="Ordenar por">
               {ORDENS.map((o) => <option key={o.chave} value={o.chave}>Ordenar: {o.rotulo}</option>)}
@@ -422,6 +455,27 @@ export default function PerformanceDasCarteiras() {
             <button type="button" className="pf-botao" onClick={carregar} disabled={carregando}><RefreshCw size={14} className={carregando ? "pf-gira" : ""} aria-hidden /> Atualizar</button>
             <button type="button" className="pf-botao escuro" onClick={exportar} disabled={!dados}><Download size={14} aria-hidden /> CSV</button>
           </div>
+        </div>
+
+        <div className="pc-filtros" role="group" aria-label="Período livre">
+          <label className={filtro.chave === "mesEspecifico" ? "on" : ""}>
+            <span>Mês</span>
+            <input type="month" value={rascunho.mes} max={new Date().toISOString().slice(0, 7)} onChange={(e) => {
+              const v = e.target.value;
+              setRascunho((x) => ({ ...x, mes: v }));
+              if (v) setFiltro({ chave: "mesEspecifico", mes: v });
+            }} />
+          </label>
+          <label className={filtro.chave === "intervalo" ? "on" : ""}>
+            <span>De</span>
+            <input type="date" value={rascunho.de} max={rascunho.ate || undefined} onChange={(e) => { const v = e.target.value; setRascunho((x) => ({ ...x, de: v })); }} />
+          </label>
+          <label className={filtro.chave === "intervalo" ? "on" : ""}>
+            <span>Até</span>
+            <input type="date" value={rascunho.ate} min={rascunho.de || undefined} onChange={(e) => { const v = e.target.value; setRascunho((x) => ({ ...x, ate: v })); }} />
+          </label>
+          <button type="button" className="pf-botao pequeno" disabled={!rascunho.de || !rascunho.ate} onClick={() => setFiltro({ chave: "intervalo", de: rascunho.de, ate: rascunho.ate })}>Aplicar intervalo</button>
+          <span className="pc-fraco">Comparado com o mesmo trecho logo antes. Mensalidade e serviços são rateados pelos dias do mês dentro do período.</span>
         </div>
 
         {erro && <div className="pf-erro-caixa">{erro}<button type="button" className="pf-botao pequeno" onClick={carregar}>Tentar de novo</button></div>}
@@ -432,9 +486,10 @@ export default function PerformanceDasCarteiras() {
             <div className="pc-kpis">
               <Kpi rotulo="Lojas" valor={String(t.atual.lojas)} extra={<DeltaAbs atual={t.atual.lojas} anterior={t.anterior.lojas} />} sub={`${t.atual.novas} novas · ${t.atual.perdidas} perdidas no período`} />
               <Kpi rotulo="Faturamento das lojas (GMV)" valor={dinheiro(t.atual.gmv)} extra={<Delta pct={t.variacao.gmv} />} sub={`${n0(t.atual.vendas)} vendas · antes ${dinheiro(t.anterior.gmv)}`} />
-              <Kpi rotulo="Receita FireHub prevista" valor={dinheiro(t.atual.receita.previsto)} extra={<Delta pct={t.variacao.receita} />} sub={`faturado ${dinheiro(t.atual.receita.faturado)} · recebido ${dinheiro(t.atual.receita.recebido)} · antes ${dinheiro(t.anterior.receita.previsto)}${dados.periodo.chave === "mes" ? " (mês inteiro; a variação é proporcional)" : ""}`} />
+              <Kpi rotulo="Receita FireHub prevista" valor={dinheiro(t.atual.receita.previsto)} extra={<Delta pct={t.variacao.receita} />} sub={`faturado ${dinheiro(t.atual.receita.faturado)} · recebido ${dinheiro(t.atual.receita.recebido)} · antes ${dinheiro(t.anterior.receita.previsto)}`} />
               <Kpi rotulo="Em aberto" valor={dinheiro(t.atual.receita.emAberto)} sub={`${t.agora.bloqueadas} lojas bloqueadas por boleto agora`} alerta={t.atual.receita.emAberto > 0} />
-              <Kpi rotulo="Comissões" valor={dinheiro(t.atual.comissaoPrevista)} extra={<Delta pct={t.variacao.comissao} />} sub={`recebidas ${dinheiro(t.atual.comissaoRecebida)}`} />
+              <Kpi rotulo="Comissões" valor={dinheiro(t.atual.comissaoPrevista)} extra={<Delta pct={t.variacao.comissao} />} sub={`recebidas ${dinheiro(t.atual.comissaoRecebida)}${t.atual.comissaoDoDisparo > 0 ? ` · + ${dinheiro(t.atual.comissaoDoDisparo)} do disparo (sem split)` : ""}`} />
+              <Kpi rotulo="Disparo oficial (lucro)" valor={dinheiro(t.atual.receita.servicos.disparo)} sub={`de ${dinheiro(t.atual.receita.disparoBruto)} em recargas pagas${dados.disparoEstimado ? " · custo Meta estimado" : ""}`} />
               <Kpi rotulo="Conversão do teste" valor={t.atual.conversaoPct === null ? "—" : `${t.atual.conversaoPct}%`} sub={`${t.atual.novasPagantes} de ${t.atual.novasForaDoTeste} pagaram · antes ${t.anterior.conversaoPct === null ? "—" : `${t.anterior.conversaoPct}%`}`} />
               <Kpi rotulo="Upsell no período" valor={String(t.atual.upsell)} extra={<DeltaAbs atual={t.atual.upsell} anterior={t.anterior.upsell} />} sub={`+${dinheiro(t.atual.upsellMensal)}/mês em serviços`} />
               <Kpi rotulo="Em risco agora" valor={dinheiro(t.agora.gmvEmRisco)} sub={`${t.agora.emRisco} lojas · ${t.agora.oportunidades} oportunidades (${dinheiro(t.agora.potencial)}/mês)`} alerta={t.agora.emRisco > 0} />
@@ -488,11 +543,11 @@ export default function PerformanceDasCarteiras() {
                       <tr key={c.id} onClick={() => setAberta(c.id)} tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") setAberta(c.id); }}>
                         <td><span className={`pf-pos${i < 3 && c.id !== "sem" ? " ouro" : ""}`}>{i < 3 && c.id !== "sem" ? <Medal size={13} aria-label={`${i + 1}º`} /> : i + 1}</span></td>
                         <td><div className="pf-loja-cel"><strong>{c.nome}</strong><small>{PAPEL[c.papel]}{!c.ativo ? " · pausado" : ""}</small></div></td>
-                        <td className="dir"><b>{c.atual.lojas}</b><div><DeltaAbs atual={c.atual.lojas} anterior={c.anterior.lojas} /></div><div className="pc-fraco" title="Perdidas no período (pararam de vender)" style={{ color: c.atual.perdidas > c.anterior.perdidas ? "#B91C1C" : undefined }}>{c.atual.perdidas ? `${c.atual.perdidas} perdida${c.atual.perdidas === 1 ? "" : "s"}` : "sem perdas"}</div></td>
+                        <td className="dir"><b>{c.atual.lojas}</b><div><DeltaAbs atual={c.atual.lojas} anterior={c.anterior.lojas} /></div>{c.atual.perdidas > 0 && <div className="pc-fraco" title="Perdidas no período (pararam de vender)" style={{ color: "#B91C1C" }}>{c.atual.perdidas} perdida{c.atual.perdidas === 1 ? "" : "s"}</div>}{c.papel === "VENDEDOR" && <div className="pc-fraco" title="Pelo link de convite / atribuídas" style={{ whiteSpace: "nowrap" }}>{c.atual.porOrigem.LINK} link · {c.atual.porOrigem.ATRIBUIDA} atr.</div>}</td>
                         <td><BarraDaSituacao s={c.atual.porSituacao} /></td>
                         <td className="dir"><b>{dinheiro(c.atual.gmv)}</b><div><Delta pct={c.variacao.gmv} /></div></td>
                         <td className="dir pc-receita-cel"><b>{dinheiro(c.atual.receita.previsto)}</b><div className="pc-fraco">receb. {dinheiro(c.atual.receita.recebido)}{c.atual.receita.emAberto > 0 ? ` · aberto ${dinheiro(c.atual.receita.emAberto)}` : ""}</div></td>
-                        <td className="dir">{c.papel === "SEM_VENDEDOR" ? <span className="pc-fraco">—</span> : <><b>{dinheiro(c.atual.comissaoPrevista)}</b><div className="pc-fraco">receb. {dinheiro(c.atual.comissaoRecebida)}</div></>}</td>
+                        <td className="dir">{c.papel === "SEM_VENDEDOR" ? <span className="pc-fraco">—</span> : <><b>{dinheiro(c.atual.comissaoPrevista)}</b><div className="pc-fraco">receb. {dinheiro(c.atual.comissaoRecebida)}</div>{c.regra && c.regra.divergencias.length > 0 && <div className="pc-fraco" style={{ color: "#B45309" }} title={c.regra.divergencias.join(" ")}>⚠ cadastro {c.regra.link}% / {c.regra.atribuida}%</div>}</>}</td>
                         <td className="dir"><b>{c.atual.novasPagantes}/{c.atual.novasForaDoTeste}</b><div className="pc-fraco">{c.atual.conversaoPct === null ? `${c.atual.novas} novas` : `${c.atual.conversaoPct}% · ${c.atual.novas} novas`}</div></td>
                         <td className="dir"><b title="Serviços pagos que começaram no período">{c.atual.upsell}</b> <span className="pc-fraco">/</span> <b title="Oportunidades de venda abertas agora">{c.agora.oportunidades}</b><div className="pc-fraco">{c.atual.upsellMensal > 0 ? `+${dinheiro(c.atual.upsellMensal)}` : "—"} / {dinheiro(c.agora.potencial)}</div></td>
                         <td className="dir">{c.agora.emRisco > 0 ? <><b style={{ color: "#B91C1C" }}>{c.agora.emRisco}</b><div className="pc-fraco">{dinheiro(c.agora.gmvEmRisco)}</div></> : <span className="pc-fraco">0</span>}</td>
@@ -569,11 +624,12 @@ export default function PerformanceDasCarteiras() {
             <details className="pf-painel pc-como">
               <summary><Info size={15} aria-hidden /> Como cada número é calculado</summary>
               <ul>
-                <li><b>Carteira</b> = lojas com o vendedor (desde a atribuição) + lojas que ele indicou (desde o cadastro). “Sem vendedor” = sem vendedor e sem embaixador. A troca de vendedor não tem histórico: vale a carteira de hoje.</li>
+                <li><b>Carteira</b> = uma loja, um dono: a que veio pelo link de convite de um vendedor é dele (desde o cadastro), mesmo que o admin tenha posto outro vendedor; a atribuída é do vendedor atribuído (desde a atribuição). Loja indicada por embaixador que não vende aparece nas indicações dele e na carteira do vendedor que atende. “Sem vendedor” = sem vendedor e sem embaixador. A troca de vendedor não tem histórico: vale a carteira de hoje.</li>
                 <li><b>Situação</b> no fim do período, régua mensal: nova (cadastrada no mês ou em teste), parada (0 vendas no mês), esfriando (≤ 70% das vendas do mês anterior, com base ≥ 20; o mês corrente é projetado), ativa.</li>
                 <li><b>GMV</b> = soma do valor dos pedidos na régua dos relatórios (sem cancelado, reposição e não concluídos; mesa uma vez). No “Mês atual” o mês anterior é cortado no mesmo ponto.</li>
                 <li><b>Receita FireHub</b>: mês fechado = boleto emitido (pago: valor pago; aberto: pendente) + recargas de disparo pagas. Mês aberto = previsto (mensalidade que o ciclo já soma + tráfego + totem + Bill/App/Multimarcas ativos). Recebido = boleto pago + recargas. Em aberto = boleto emitido e não pago. Isenta não gera receita.</li>
-                <li><b>Comissão</b> = a mesma conta do portal do parceiro: % do papel (indicação ou carteira) sobre a mensalidade do ciclo; recebida = sobre o boleto pago.</li>
+                <li><b>Comissão</b> = a que o split do boleto paga hoje: loja que veio pelo link de convite do vendedor → o % de comissão do cadastro dele (combinado 10%); loja atribuída pelo admin → o % de vendedor (combinado 3%); embaixador que não vende → o % dele. Incide sobre o boleto do mês (mensalidade + serviços cobrados nele); recebida = boleto pago. Período que pega parte do mês leva a parte proporcional.</li>
+                <li><b>Disparo oficial</b> = lucro do FireHub na recarga paga (valor − mensagens × custo da Meta gravado na recarga; sem o custo gravado, o custo atual, marcado como estimado). A comissão sobre esse lucro usa o mesmo %, mas a recarga não tem split: ainda não cai sozinha.</li>
                 <li><b>Teste → pagante</b> = lojas novas do período que já saíram do teste e pagaram pelo menos um boleto ÷ as que já saíram do teste.</li>
                 <li><b>Perdidas</b> = venderam num mês e ficaram o mês seguinte inteiro sem vender, sem voltar até o fim do período (no mês corrente: 30+ dias sem venda). Loja excluída do sistema não aparece — não há registro de cancelamento.</li>
                 <li><b>Upsell</b> = serviço pago que começou no período (App, Bill, Multimarcas, totem, primeira recarga de disparo, primeiro mês de tráfego).</li>
@@ -654,6 +710,12 @@ const ESTILO_DA_PERFORMANCE = `
 .pc-funil-barra { height: 12px; background: var(--pf-neutro-bg); border-radius: 999px; overflow: hidden; }
 .pc-funil-barra span { display: block; height: 100%; background: #6D28D9; border-radius: 999px; }
 .pc-funil-nota { margin: 4px 0 0; color: var(--pf-cinza); font-size: 0.78rem; }
+.pc-filtros { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: flex-end; }
+.pc-filtros label { display: flex; flex-direction: column; gap: 3px; font-size: 0.72rem; font-weight: 700; color: var(--pf-cinza); text-transform: uppercase; letter-spacing: .03em; }
+.pc-filtros label.on input { border-color: var(--pf-tinta); box-shadow: inset 0 0 0 1px var(--pf-tinta); }
+.pc-filtros input { font: inherit; font-size: 0.84rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--pf-tinta); background: var(--pf-papel); border: 1px solid var(--pf-linha-forte); border-radius: 9px; padding: 6px 9px; }
+.pc-filtros .pc-fraco { flex: 1 1 260px; }
+.pc-disparo { margin: 0 18px 16px; padding: 10px 12px; border-radius: 10px; background: var(--pf-papel-2); border: 1px dashed var(--pf-linha-forte); font-size: 0.8rem; color: var(--pf-tinta-2); }
 .pc-como { padding: 0; }
 .pc-como summary { cursor: pointer; padding: 14px 18px; font-weight: 800; display: flex; gap: 8px; align-items: center; list-style: none; }
 .pc-como summary::-webkit-details-marker { display: none; }
