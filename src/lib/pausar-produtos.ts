@@ -13,7 +13,6 @@
  * (lib/pausa-pelo-estoque-no-banco.ts). O PUT do painel grava junto com os
  * outros campos do produto e por isso segue com a cópia dele, que faz o mesmo.
  */
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
 
@@ -22,7 +21,13 @@ export type ProdutoMudado = { id: string; name: string };
 export async function atualizarVitrineDaLoja(franchiseeId: string) {
   const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { slug: true } }).catch(() => null);
   if (loja?.slug) {
-    try { revalidatePath(`/loja/${loja.slug}`); } catch {}
+    // Import dinâmico: este arquivo chega ao boot (instrumentation.ts) e ao
+    // SSR de componente cliente pelo lib/stock.ts, onde o import estático de
+    // "next/cache" derruba o `next build` ("only available in Server Components").
+    try {
+      const { revalidatePath } = await import("next/cache");
+      revalidatePath(`/loja/${loja.slug}`);
+    } catch {}
   }
 }
 
