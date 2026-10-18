@@ -14,8 +14,8 @@ import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
 import ConexaoDoAtendimento from "@/components/crm/ConexaoDoAtendimento";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
-import DesempenhoDaEquipe from "@/components/crm/DesempenhoDaEquipe";
 import RelatorioDaCarteira from "@/components/perfil-da-loja/RelatorioDaCarteira";
+import PerformanceDasCarteiras from "@/components/perfil-da-loja/PerformanceDasCarteiras";
 import { GavetaDoPerfil } from "@/components/perfil-da-loja/PerfilDaLoja";
 import type { ResumoDoPerfil, StatusDaAtividade } from "@/lib/perfil-da-loja/regras";
 
@@ -1085,7 +1085,8 @@ export default function AdminDashboardClient({
           {tab === "vendedores" && (
             <>
               <VendedoresTab onVerCarteira={(id) => irParaLojistas("todos", id)} />
-              <DesempenhoDaEquipe />
+              {/* Performance por carteira + a atividade do CRM (o antigo "Desempenho da equipe", agora junto). */}
+              <div style={{ marginTop: 20 }}><PerformanceDasCarteiras /></div>
             </>
           )}
           {tab === "atendimento" && (

@@ -467,6 +467,12 @@ export async function idsDaCarteira(parceiroId: string): Promise<string[]> {
   return lojas.map((l) => l.id);
 }
 
+/** "Sem vendedor": lojas sem vendedor e sem embaixador — a carteira do Douglas (a mesma da performance das carteiras). */
+export async function idsSemDono(): Promise<string[]> {
+  const lojas = await prisma.user.findMany({ where: { role: "FRANCHISEE", vendedorId: null, ambassadorId: null }, select: { id: true } });
+  return lojas.map((l) => l.id);
+}
+
 /** A loja está entre as que este parceiro pode ver? */
 export async function lojaEstaNaCarteira(parceiroId: string, lojaId: string): Promise<boolean> {
   const n = await prisma.user.count({ where: { id: lojaId, OR: [{ vendedorId: parceiroId }, { ambassadorId: parceiroId }] } });
