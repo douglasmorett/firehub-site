@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { conferirPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 
 // GET: Fetch transaction history
 export async function GET(req: Request) {
@@ -138,7 +139,11 @@ export async function POST(req: Request) {
       return { transaction, updatedItem };
     });
 
-    return NextResponse.json({ success: true, transaction, currentQuantity: updatedItem.quantity });
+    // Zerou ou voltou a ter saldo: pausa/reativa o que usa o item, se a loja
+    // ligou a opção. Nunca lança (lib/pausa-pelo-estoque-no-banco.ts).
+    const pausaPeloEstoque = await conferirPausaPeloEstoque(franchiseeId, [stockItemId]);
+
+    return NextResponse.json({ success: true, transaction, currentQuantity: updatedItem.quantity, pausaPeloEstoque });
   } catch (error: any) {
     console.error("[Stock Transactions POST] Erro:", error);
     return NextResponse.json({ error: error.message || "Erro interno" }, { status: 500 });

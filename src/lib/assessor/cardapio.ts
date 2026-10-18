@@ -6,19 +6,20 @@
  * WhatsApp — isso faz valer os 29,90".
  *
  * Pausar é o mesmo `MenuProduct.active` do ⏸ do painel (PUT
- * api/admin/menu-products): vale para o item avulso e para a opção dentro de
- * todo combo, em todos os canais (lib/opcao-pausada.ts). E faz o que aquela
- * rota faz junto: pausa a meia pizza do mesmo sabor e atualiza a vitrine na
- * hora (o cache é de 60 s). Espelho de marketplace fica de fora: o iFood tem o
+ * api/admin/menu-products), pela função de lib/pausar-produtos.ts: vale para o
+ * item avulso e para a opção dentro de todo combo, em todos os canais
+ * (lib/opcao-pausada.ts), pausa a meia pizza do mesmo sabor e atualiza a
+ * vitrine na hora (o cache é de 60 s). Espelho de marketplace fica de fora: o iFood tem o
  * cardápio dele.
  *
  * Fechar o site é o `storeOpen` do botão "Site" do topo. O iFood NÃO fecha por
  * aqui (a interrupção é pela tela) — a resposta avisa.
  */
-import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { SEM_PRODUTO_DE_INTEGRACAO } from "@/lib/cardapio-interno";
 import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
+import { atualizarVitrineDaLoja, mudarPausaDosProdutos } from "@/lib/pausar-produtos";
+import { esquecerPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 import type { ContextoDoAssessor } from "./ferramentas";
 
 const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -33,12 +34,7 @@ async function produtosDaLoja(franchiseeId: string) {
   });
 }
 
-async function atualizarVitrine(franchiseeId: string) {
-  const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { slug: true } }).catch(() => null);
-  if (loja?.slug) {
-    try { revalidatePath(`/loja/${loja.slug}`); } catch {}
-  }
-}
+const atualizarVitrine = atualizarVitrineDaLoja;
 
 export async function buscarNoCardapio(args: any, ctx: ContextoDoAssessor) {
   const palavras = semAcento(String(args?.busca || "")).split(/\s+/).filter((p) => p.length > 1);
@@ -70,13 +66,12 @@ export async function pausarOuReativar(args: any, ctx: ContextoDoAssessor) {
   const jaEstavam = daLoja.filter((p) => p.active === ativo).map((p) => p.name);
 
   if (mudar.length) {
-    await prisma.menuProduct.updateMany({ where: { id: { in: mudar.map((p) => p.id) }, franchiseeId: ctx.franchiseeId }, data: { active: ativo } });
-    // A meia pizza do mesmo sabor vai junto (mesma regra do PUT do painel).
-    await prisma.menuProduct.updateMany({
-      where: { franchiseeId: ctx.franchiseeId, active: !ativo, OR: mudar.map((p) => ({ name: { equals: PREFIXO_DA_MEIA + p.name, mode: "insensitive" as const } })) },
-      data: { active: ativo },
-    });
-    await atualizarVitrine(ctx.franchiseeId);
+    // Mesma função do painel e da pausa pelo estoque (lib/pausar-produtos.ts):
+    // leva a meia pizza do mesmo sabor e atualiza a vitrine na hora.
+    await mudarPausaDosProdutos(ctx.franchiseeId, mudar.map((p) => p.id), ativo);
+    // O dono decidiu na mão: a pausa deixa de ser "do estoque" e o estoque não
+    // reativa sozinho o que ele pausou.
+    await esquecerPausaPeloEstoque(ctx.franchiseeId, mudar.map((p) => p.id));
     const nomes = mudar.map((p) => p.name);
     const resumo = `${ativo ? "Reativado" : "Pausado"} no cardápio: ${nomes.join(", ")}`;
     try {
@@ -125,12 +120,8 @@ export async function desfazerNoCardapio(tipo: string, refs: any, ctx: ContextoD
   if (tipo === "PAUSADO" || tipo === "REATIVADO") {
     const voltaPara = !refs.ativo;
     const ids: string[] = refs.ids || [];
-    const nomes = await prisma.menuProduct.findMany({ where: { id: { in: ids }, franchiseeId: ctx.franchiseeId }, select: { name: true } });
-    await prisma.menuProduct.updateMany({ where: { id: { in: ids }, franchiseeId: ctx.franchiseeId }, data: { active: voltaPara } });
-    await prisma.menuProduct.updateMany({
-      where: { franchiseeId: ctx.franchiseeId, OR: nomes.map((p) => ({ name: { equals: PREFIXO_DA_MEIA + p.name, mode: "insensitive" as const } })) },
-      data: { active: voltaPara },
-    });
+    await mudarPausaDosProdutos(ctx.franchiseeId, ids, voltaPara);
+    await esquecerPausaPeloEstoque(ctx.franchiseeId, ids);
   } else if (tipo === "SITE") {
     await prisma.user.update({ where: { id: ctx.franchiseeId }, data: { storeOpen: Boolean(refs.anterior) } });
   }

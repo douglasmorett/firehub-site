@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { temEstruturaDeLotes } from "@/lib/garantir-colunas";
 import { normalizarCodigo, codigoPlausivel, estadoDePrazo, textoDePrazo } from "@/lib/lote";
+import { avisarMovimentoDeEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 
 /**
  * O que o QR da etiqueta resolve, e por onde o insumo entra e sai do estoque.
@@ -254,6 +255,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
 
         return { lote: atualizado, insumo: saldo };
       });
+      // Chegou o insumo: o que a pausa pelo estoque tirou do ar pode voltar.
+      if (resultado.insumo?.id) avisarMovimentoDeEstoque(loja.franchiseeId, [resultado.insumo.id]);
 
       return NextResponse.json({
         ok: true,
@@ -325,6 +328,8 @@ export async function POST(req: Request, ctx: { params: Promise<{ code: string }
 
       return { mov, item, lote: loteAtualizado };
     });
+    // Baixa/descarte/ajuste pela etiqueta: zerou ou voltou, a pausa confere.
+    avisarMovimentoDeEstoque(loja.franchiseeId, [lote.stockItemId!]);
 
     return NextResponse.json({
       ok: true,

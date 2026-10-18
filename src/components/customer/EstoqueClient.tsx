@@ -14,6 +14,7 @@ import Link from "next/link";
 import EditarInsumo, { type InsumoEditavel } from "@/components/cmv/EditarInsumo";
 import PagamentoDaCompra, { pagamentoInicial, pagamentoParaApi, type EstadoDoPagamento } from "@/components/cmv/PagamentoDaCompra";
 import DesperdicioDoEstoque from "@/components/estoque/DesperdicioDoEstoque";
+import PausaPeloEstoque from "@/components/estoque/PausaPeloEstoque";
 
 /** Hoje no dia operacional (vira às 5h), no relógio de quem está lançando. */
 function hojeOperacional(): string {
@@ -66,6 +67,8 @@ interface MenuProduct {
   name: string;
   category: string;
   price: number;
+  /** false = pausado pelo estoque (os pausados na mão nem vêm na lista). */
+  active?: boolean;
   recipeItems: Array<{
     id: string;
     stockItemId: string;
@@ -96,6 +99,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   const [filtroDeLote, setFiltroDeLote] = useState<"todos" | "aguardando" | "geladeira" | "vencendo" | "vencidos">("todos");
   const [carregandoLotes, setCarregandoLotes] = useState(false);
   const [loading, setLoading] = useState<boolean>(true);
+  // Sobe a cada recarga dos saldos: a pausa pelo estoque (topo) relê junto.
+  const [versaoDosSaldos, setVersaoDosSaldos] = useState(0);
   
   // Onboarding
   const [showOnboarding, setShowOnboarding] = useState<boolean>(true);
@@ -217,6 +222,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   // Depois de um desperdício: o saldo e o histórico mudaram. Sem o spinner da
   // tela inteira, que desmontaria a aba aberta.
   const recarregarSaldos = async () => {
+    setVersaoDosSaldos((v) => v + 1);
     try {
       const [itemsRes, transRes] = await Promise.all([fetch("/api/store/estoque/items"), fetch("/api/store/estoque/transactions")]);
       const itemsData = await itemsRes.json();
@@ -228,6 +234,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
 
   const loadData = async () => {
     setLoading(true);
+    setVersaoDosSaldos((v) => v + 1);
     try {
       // Load all data on mount
       const [itemsRes, transRes, recipesRes] = await Promise.all([
@@ -652,6 +659,11 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           </button>
         </div>
       </header>
+
+      {/* ── PAUSA PELO ESTOQUE ───────────────────────────────────────────
+          Douglas, 17/10/2026: "em um lugar fácil e intuitivo". Fica no topo,
+          não em Configurações: é aqui que o lojista vê o item zerar. */}
+      <PausaPeloEstoque versao={versaoDosSaldos} />
 
       {/* ── A TRILHA DO QR ───────────────────────────────────────────────── */}
       <TrilhaDoQr fluxo={fluxo} aoEscanear={() => setMostrarScanner(true)} />
@@ -1321,6 +1333,11 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                         <div>
                           <span className="prod-category">{prod.category}</span>
                           <h3>{prod.name}</h3>
+                          {prod.active === false && (
+                            <span style={{ display: "inline-block", marginTop: 4, fontSize: 11, fontWeight: 800, color: "#B45309", background: "#FEF3C7", padding: "2px 8px", borderRadius: 999 }}>
+                              Pausado pelo estoque
+                            </span>
+                          )}
                         </div>
                         <button 
                           className="btn-configure"

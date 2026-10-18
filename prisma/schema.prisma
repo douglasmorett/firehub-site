@@ -653,6 +653,7 @@ model MenuProduct {
   comboGroups     ComboGroup[]
   comboGroupItems ComboGroupItem[]
   recipeItems     ProductRecipe[]
+  pausaPeloEstoque ProdutoPausadoPeloEstoque?
 
   @@index([franchiseeId])
   @@index([franchiseeId, active])
@@ -2196,6 +2197,30 @@ model StockLot {
   @@index([recebidoPorId])
 }
 
+
+/// PAUSA PELO ESTOQUE (src/lib/pausa-pelo-estoque.ts): o interruptor da loja,
+/// "Pausar sozinho o que usa um item quando ele acabar". Sem linha = desligado.
+/// Criada no boot por src/lib/pausa-pelo-estoque-no-banco.ts, que lê e grava
+/// por SQL cru.
+model PausaPeloEstoqueLoja {
+  franchiseeId  String   @id
+  ligado        Boolean  @default(false)
+  atualizadoPor String?
+  atualizadoEm  DateTime @default(now())
+}
+
+/// A marca "quem pausou este produto foi o estoque": só o que tem marca volta
+/// sozinho quando o insumo é reposto. Pausar/reativar na mão apaga a marca.
+/// `insumos` = ids dos insumos zerados na hora da pausa.
+model ProdutoPausadoPeloEstoque {
+  menuProductId String      @id
+  franchiseeId  String
+  insumos       Json        @default("[]")
+  criadoEm      DateTime    @default(now())
+  menuProduct   MenuProduct @relation(fields: [menuProductId], references: [id], onDelete: Cascade)
+
+  @@index([franchiseeId])
+}
 
 model ProductRecipe {
   id               String       @id @default(cuid())

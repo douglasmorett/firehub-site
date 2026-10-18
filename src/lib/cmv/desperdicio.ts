@@ -23,6 +23,7 @@ import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { janelaDoPeriodo } from "@/lib/relatorios/servidor";
 import { custosDoDiaNaLoja } from "@/lib/cmv/contagem-no-banco";
+import { conferirPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 import {
   ROTULO_DA_ETAPA, etapaAntesDoCancelamento, pedidoDaMarca, type EtapaDoDesperdicio,
 } from "@/lib/desperdicio-do-cancelado";
@@ -69,7 +70,7 @@ export async function gravarPerda(e: {
   lojaId: string; linha: LinhaDaPerda; baixas: BaixaDaPerda[]; custos: Custos; nota: string;
   prefixo: "firecheck" | "descarte"; userId?: string | null;
 }): Promise<{ id: string }> {
-  return prisma.$transaction(async (tx) => {
+  const r = await prisma.$transaction(async (tx) => {
     const linha = await tx.descarteDoFirecheck.create({ data: { franchiseeId: e.lojaId, ...e.linha }, select: { id: true } });
     for (const b of e.baixas) {
       await tx.stockTransaction.create({
@@ -89,6 +90,9 @@ export async function gravarPerda(e: {
     }
     return linha;
   });
+  // Zerou o insumo jogado fora? Pausa o que usa ele, se a loja ligou a opção.
+  if (e.baixas.length) await conferirPausaPeloEstoque(e.lojaId, e.baixas.map((b) => b.stockItemId));
+  return r;
 }
 
 // ── Lançar no Estoque ─────────────────────────────────────────────────────

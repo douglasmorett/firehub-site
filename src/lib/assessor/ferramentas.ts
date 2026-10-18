@@ -20,6 +20,7 @@
  */
 import { Type } from "@google/genai";
 import { prisma } from "@/lib/prisma";
+import { conferirPausaDaCompra, conferirPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 import { lancarCompra, desfazerCompra, CompraRecusadaError, type ItemDaCompra, type PagamentoDaCompra } from "@/lib/cmv/lancar-compra";
 import { converter, normalizarUnidade } from "@/lib/unidades";
 import { lerNumeroBr } from "@/lib/cmv/numero";
@@ -323,6 +324,9 @@ async function registrarCompra(args: any, ctx: ContextoDoAssessor) {
     }),
   );
 
+  // Chegou o insumo: o que a pausa pelo estoque tirou do ar pode voltar.
+  await conferirPausaDaCompra(ctx.franchiseeId, r.invoiceId);
+
   // O saldo de cada item depois da entrada, para a resposta ao dono.
   const movs = await prisma.stockTransaction.findMany({
     where: { stockInvoiceId: r.invoiceId, type: "INPUT" },
@@ -367,6 +371,8 @@ async function registrarSaida(args: any, ctx: ContextoDoAssessor) {
     const item = await tx.stockItem.update({ where: { id: insumo.id, franchiseeId: ctx.franchiseeId }, data: { quantity: { decrement: convertida } } });
     return { mov, item };
   });
+  // Zerou o item? Pausa o que usa ele, se a loja ligou a opção.
+  await conferirPausaPeloEstoque(ctx.franchiseeId, [insumo.id]);
   const resumo = `${rotulo}: ${qtd(convertida)} ${unidadeDoInsumo} de ${insumo.name}`;
   await registrar(ctx, "SAIDA", resumo, { transacaoId: mov.id, stockItemId: insumo.id, quantidade: convertida, type });
   return { ok: true, item: insumo.name, saiu: `${qtd(convertida)} ${unidadeDoInsumo}`, agora: `${qtd(item.quantity)} ${unidadeDoInsumo}`, valorPerdido: insumo.unitCost ? reais(insumo.unitCost * convertida) : null };
@@ -472,6 +478,7 @@ async function desfazerUltimo(ctx: ContextoDoAssessor) {
 
   if (ultimo.tipo === "COMPRA") {
     await prisma.$transaction((tx) => desfazerCompra(tx, { franchiseeId: ctx.franchiseeId, usuarioId: ctx.usuarioId, invoiceId: refs.invoiceId }));
+    await conferirPausaDaCompra(ctx.franchiseeId, refs.invoiceId);
   } else if (ultimo.tipo === "DESPESA") {
     await prisma.despesaLancada.deleteMany({ where: { id: refs.despesaId, franchiseeId: ctx.franchiseeId } });
   } else if (ultimo.tipo === "CONTA") {
@@ -491,6 +498,7 @@ async function desfazerUltimo(ctx: ContextoDoAssessor) {
       });
       await tx.stockItem.updateMany({ where: { id: refs.stockItemId, franchiseeId: ctx.franchiseeId }, data: { quantity: { increment: refs.quantidade } } });
     });
+    await conferirPausaPeloEstoque(ctx.franchiseeId, [String(refs.stockItemId)]);
   } else if (ultimo.tipo === "PAUSADO" || ultimo.tipo === "REATIVADO" || ultimo.tipo === "SITE") {
     await desfazerNoCardapio(ultimo.tipo, refs, ctx);
   } else {
