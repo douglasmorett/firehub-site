@@ -57,7 +57,6 @@ async function main() {
       select: {
         storeTimezone: true, paymentFees: true, fixedCosts: true, financialGoals: true, trialEndsAt: true,
         ifoodConnected: true, food99Connected: true, email: true, planPercent: true, isFranqueadoHakim: true,
-        ambassadorAccount: { select: { active: true } },
       },
     });
     if (!dono) { console.log(`\n${nome}: não achada`); continue; }

@@ -160,6 +160,36 @@ export default function AdminDashboardClient({
   // Expandir detalhes do lojista
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
+  // Isenção de mensalidade é escolha do dono (17/10/2026): ser embaixador ou
+  // vendedor não isenta mais sozinho (lojaIsenta / definirIsencao, lib/billing.ts).
+  const [isentandoId, setIsentandoId] = useState<string | null>(null);
+  const alternarIsencao = async (l: Lojista) => {
+    const isentar = l.isencao === null;
+    const nome = l.storeName || l.name || l.email;
+    const pergunta = isentar
+      ? `Isentar ${nome} da mensalidade? A loja deixa de pagar a partir deste mês.`
+      : `Voltar a cobrar a mensalidade de ${nome}? O mês atual passa a ser cobrado no fechamento.`;
+    if (!confirm(pergunta)) return;
+    setIsentandoId(l.id);
+    try {
+      const res = await fetch("/api/admin/isencao", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: l.id, isenta: isentar }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        alert(data.error || "Não deu para mudar a isenção.");
+        return;
+      }
+      setLojistas(prev => prev.map(item => item.id === l.id ? { ...item, isencao: isentar ? "" : null } : item));
+    } catch {
+      alert("Erro de conexão ao mudar a isenção.");
+    } finally {
+      setIsentandoId(null);
+    }
+  };
+
   // Copiar o link do cardápio sem entrar na loja: o Douglas manda loja de
   // demonstração pelo WhatsApp, e abrir a conta só para copiar da barra do
   // navegador era o caminho (02/10/2026).
@@ -526,6 +556,17 @@ export default function AdminDashboardClient({
       >
         {linkCopiadoId === l.id ? "✓ Link copiado" : "🔗 Copiar link"}
       </button>
+      {!l.isFranqueadoHakim && (
+        <button
+          onClick={() => alternarIsencao(l)}
+          disabled={isentandoId === l.id}
+          className="fha-btn"
+          style={{ gridColumn: "1 / -1" }}
+          title={l.isencao === null ? "Esta loja não paga mensalidade (escolha sua; embaixador não é isento sozinho)" : "Voltar a cobrar a mensalidade desta loja"}
+        >
+          {isentandoId === l.id ? "Salvando..." : l.isencao === null ? "Isentar mensalidade" : "Cobrar mensalidade"}
+        </button>
+      )}
       <button onClick={() => abrirExcluir(l)} className="fha-btn" style={{ color: "#B91C1C", gridColumn: "1 / -1" }} title="Excluir a loja inteira (pede EXCLUIR duas vezes)">
         🗑️ Excluir
       </button>

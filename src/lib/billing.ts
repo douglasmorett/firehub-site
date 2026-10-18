@@ -203,23 +203,25 @@ export function isExemptAccount(email?: string | null): boolean {
 }
 
 /**
- * Loja que não paga mensalidade. Além da lista acima, do percentual zerado e
- * das lojas Hakim: a loja do próprio embaixador ou vendedor (conta de parceiro
- * ativa ligada a ela por `Ambassador.linkedUserId`). Dono, 01/10/2026:
- * "vendedor e embaixador não paga mensalidade em suas lojas" — antes isso
- * dependia de alguém zerar o `planPercent` à mão.
+ * Loja que não paga mensalidade: a lista acima, as lojas Hakim e quem o dono
+ * ISENTOU (`planPercent` 0, pelo botão "Isentar" da lista de lojistas no admin
+ * — `definirIsencao`).
+ *
+ * Ser embaixador ou vendedor NÃO isenta mais sozinho. De 01/10 a 17/10/2026 a
+ * conta de parceiro ativa ligada à loja (`Ambassador.linkedUserId`) isentava
+ * automaticamente; o dono, em 17/10: "às vezes eu quero que o cara revenda, eu
+ * faço o link dele de embaixador. Eu que escolho se é isento". As lojas que
+ * eram isentas só por isso ficaram com `planPercent` 0 na virada.
  */
 export function lojaIsenta(loja?: {
   email?: string | null;
   planPercent?: number | null;
   isFranqueadoHakim?: boolean | null;
-  ambassadorAccount?: { active: boolean } | null;
 } | null): boolean {
   if (!loja) return false;
   return isExemptAccount(loja.email)
     || loja.planPercent === 0
-    || loja.isFranqueadoHakim === true
-    || loja.ambassadorAccount?.active === true;
+    || loja.isFranqueadoHakim === true;
 }
 
 /** O pedaço do `select` do User que `lojaIsenta` precisa. */
@@ -227,8 +229,44 @@ const CAMPOS_DA_ISENCAO = {
   email: true,
   planPercent: true,
   isFranqueadoHakim: true,
-  ambassadorAccount: { select: { active: true } },
 } as const;
+
+/**
+ * O dono isenta (ou volta a cobrar) uma loja — o botão da lista de lojistas.
+ *
+ * Além do `planPercent`, acerta o ciclo do mês: o ciclo de loja isenta NASCE
+ * "PAID" com R$ 0 (`ensureCycle`), e a varredura de hora em hora não mexe em
+ * ciclo que não esteja "OPEN". Sem reabrir, quem deixa de ser isento passaria
+ * o resto do mês mostrando R$ 0 no admin. Ciclo pago de verdade (com boleto
+ * no Asaas) não se reabre.
+ *
+ * Isenção da casa (lista de e-mails, Hakim) não muda por aqui: volta
+ * `{ ok: false }` com o motivo.
+ */
+export async function definirIsencao(franchiseeId: string, isenta: boolean) {
+  const loja = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: { ...CAMPOS_DA_ISENCAO, storeTimezone: true },
+  });
+  if (!loja) return { ok: false as const, motivo: "Loja não encontrada." };
+  if (!isenta && (isExemptAccount(loja.email) || loja.isFranqueadoHakim === true)) {
+    return { ok: false as const, motivo: "Esta loja é da casa (Hakim ou conta interna): a isenção não muda por aqui." };
+  }
+
+  const mes = getCurrentYearMonth(0, loja.storeTimezone || "America/Sao_Paulo");
+  await prisma.user.update({
+    where: { id: franchiseeId },
+    data: { planPercent: isenta ? 0 : percentualDoMes(mes) },
+  });
+  if (!isenta) {
+    await prisma.franchiseeBillingCycle.updateMany({
+      where: { franchiseeId, yearMonth: mes, status: "PAID", asaasPaymentId: null },
+      data: { status: "OPEN" },
+    });
+  }
+  const ciclo = await recalcularCiclo(franchiseeId, mes);
+  return { ok: true as const, isenta, ciclo };
+}
 
 export function getCurrentYearMonth(offset = 0, timezone = "America/Sao_Paulo"): string {
   // Usa o fuso horário da loja (ou Brasília) para garantir que
@@ -641,8 +679,6 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
           ambassador: true,
           // O vendedor que o admin pôs para acompanhar a loja (lib/vendedores.ts).
           vendedor: true,
-          // A loja é do próprio embaixador/vendedor? (lojaIsenta)
-          ambassadorAccount: { select: { active: true } },
         },
       },
     },

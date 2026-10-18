@@ -119,7 +119,7 @@ export async function assessorIsento(franchiseeId: string): Promise<boolean> {
     const { lojaIsenta } = await import("@/lib/billing");
     const loja = await prisma.user.findUnique({
       where: { id: franchiseeId },
-      select: { email: true, planPercent: true, isFranqueadoHakim: true, ambassadorAccount: { select: { active: true } } },
+      select: { email: true, planPercent: true, isFranqueadoHakim: true },
     });
     return lojaIsenta(loja as any);
   } catch {
