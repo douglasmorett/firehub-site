@@ -62,6 +62,7 @@ import { acharCupom, avaliarCupom } from "@/lib/cupons";
 import { fatosDoCupom } from "@/lib/cupons-no-banco";
 import { descontoDoPagamentoOnline } from "@/lib/desconto-pagamento-online";
 import { acrescimoNoCredito, etiquetaDoAcrescimo } from "@/lib/acrescimo-no-credito";
+import { aplicarMarcasNosItens } from "@/lib/multimarcas/itens";
 import { ehPedidoDeEntrega, formaDesligada, formaRecusadaNaEntrega, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
 import { problemaDaFormaPropria } from "@/lib/formas-proprias";
 
@@ -973,6 +974,10 @@ export async function POST(req: Request) {
       : await generateDailyOrderNumber(franchisee.id);
 
     // Criar pedido
+    // Multimarcas: cada item com o nome da marca na frente, agrupado por marca —
+    // é o que a comanda, o KDS e o painel mostram (lib/multimarcas/itens.ts).
+    const itensParaGravar = (await aplicarMarcasNosItens(franchisee.id, orderItems as any[], menuProducts as any)) as typeof orderItems;
+
     const order = await prisma.customerOrder.create({
       data: {
         franchiseeId: franchisee.id,
@@ -1040,7 +1045,7 @@ export async function POST(req: Request) {
         customerCpfCnpj: documentoDoCliente,
         gaClientId: typeof body.gaClientId === "string" ? body.gaClientId.slice(0, 64) : null,
         gaSessionId: typeof body.gaSessionId === "string" ? body.gaSessionId.slice(0, 32) : null,
-        items: { create: orderItems }
+        items: { create: itensParaGravar }
       }
     });
 
@@ -1057,8 +1062,8 @@ export async function POST(req: Request) {
           deliveryType: order.deliveryType || "DELIVERY",
           paymentMethod: order.paymentMethod || "Não informado",
           isPrepaid: false,
-          items: orderItems.map((i: any) => ({
-            name: menuProducts.find(p => p.id === i.menuProductId)?.name || "Item",
+          items: itensParaGravar.map((i: any) => ({
+            name: i.productName || menuProducts.find(p => p.id === i.menuProductId)?.name || "Item",
             qty: i.quantity,
             price: i.price,
             comboSelections: i.comboSelections,

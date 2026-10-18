@@ -152,3 +152,29 @@ export async function cobrancaDoAppNoMes(franchiseeId: string, inicio: Date, fim
     return 0;
   }
 }
+
+/**
+ * Teve o plano COMPLETO (Android + Apple) ligado em algum momento do mês
+ * [inicio, fim)? Puro, para o teste. É a cortesia do Multimarcas: quem paga os
+ * dois aplicativos não paga a página das marcas (Douglas, 17/10/2026 —
+ * lib/multimarcas/assinatura.ts).
+ */
+export function teveAppCompletoNoMes(trechos: TrechoDoApp[], inicio: Date, fim: Date, agora: Date = new Date()): boolean {
+  const ini = inicio.getTime(), fimMs = fim.getTime();
+  return trechos.some((t) => {
+    if (t.plataformas !== "ambos") return false;
+    const de = Math.max(new Date(t.de).getTime(), ini);
+    const ate = Math.min(t.ate ? new Date(t.ate).getTime() : Math.max(agora.getTime(), de + 1), fimMs);
+    return ate > de;
+  });
+}
+
+/** O mesmo, lendo do banco. Nunca lança: na dúvida, sem cortesia. */
+export async function appCompletoNoMes(franchiseeId: string, inicio: Date, fim: Date): Promise<boolean> {
+  try {
+    if (!(await garantirEstruturaDoPlano())) return false;
+    return teveAppCompletoNoMes(await lerDoBanco(franchiseeId), inicio, fim);
+  } catch {
+    return false;
+  }
+}

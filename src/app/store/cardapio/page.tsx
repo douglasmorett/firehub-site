@@ -5,6 +5,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import MenuProductManager from "@/components/admin/MenuProductManager";
 import CopiamosSeuCardapio from "@/components/customer/CopiamosSeuCardapio";
+import ConviteDoMultimarcas from "@/components/customer/ConviteDoMultimarcas";
+import { multimarcasEstaLigado } from "@/lib/multimarcas/assinatura";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
 
 export const dynamic = "force-dynamic";
@@ -95,6 +97,13 @@ export default async function StoreCardapioPage() {
   }
 
 
+  // Multimarcas: só o dono contrata (funcionário não abre a tela; admin vê todas as lojas).
+  const mostrarMultimarcas = user.role === "FRANCHISEE";
+  const multimarcasAtivo = mostrarMultimarcas ? await multimarcasEstaLigado(targetFranchiseeId) : false;
+  const slugDaLoja = mostrarMultimarcas && multimarcasAtivo
+    ? (await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { slug: true } }).catch(() => null))?.slug ?? null
+    : null;
+
   return (
     <div className="container" style={{ marginTop: "1.5rem" }}>
       <div
@@ -135,6 +144,8 @@ export default async function StoreCardapioPage() {
           📊 Cadastrar CMV em Massa
         </a>
       </div>
+
+      {mostrarMultimarcas && <ConviteDoMultimarcas ativo={multimarcasAtivo} slug={slugDaLoja} />}
 
       {/* Cardápio vazio: janela oferecendo a cópia pela equipe; sempre, um
           cartão no topo. O administrador vê todas as lojas — não é para ele. */}

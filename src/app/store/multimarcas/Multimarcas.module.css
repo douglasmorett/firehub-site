@@ -1,0 +1,56 @@
+/* Multimarcas — página de venda e tela do dono. */
+
+.pagina {
+  --tinta: #15120f; --tinta-2: #57524c; --tinta-3: #8c857d; --linha: #e9e3dc;
+  --laranja: #e8590c; --laranja-claro: #fff4ec; --verde: #2b8a3e;
+  max-width: 1100px; margin: 0 auto; padding: 20px 16px 72px; color: var(--tinta);
+  font-family: Inter, system-ui, sans-serif;
+}
+.pagina :where(button) { font: inherit; cursor: pointer; }
+.erro { padding: 24px; color: #b91c1c; font-weight: 600; }
+.carregando { padding: 24px; color: #64748b; }
+
+.avisoOk, .avisoErro {
+  position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 10060; width: min(520px, calc(100% - 32px));
+  display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-radius: 14px; font-size: 14px;
+  box-shadow: 0 12px 30px rgba(0,0,0,.15); cursor: pointer; animation: descer .25s ease;
+}
+.avisoOk { background: #ecfdf3; border: 1px solid #a6e9bd; color: #14532d; }
+.avisoErro { background: #fef2f2; border: 1px solid #fecaca; color: #7f1d1d; }
+@keyframes descer { from { transform: translate(-50%, -12px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+.cta {
+  height: 48px; padding: 0 22px; border: 0; border-radius: 14px; background: var(--laranja); color: #fff; font-weight: 800; font-size: 15px;
+}
+.cta:disabled { background: #a8a29e; cursor: not-allowed; }
+.sub { color: var(--tinta-2); margin: 6px 0 0; font-size: 15px; }
+.recursoIcone { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--laranja-claro); color: var(--laranja); flex-shrink: 0; }
+
+/* ─── Ativado ─── */
+.cabecalhoAtivo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.cabecalhoAtivo h1 { font-size: 28px; margin: 0; letter-spacing: -0.02em; }
+.seloAtivo { font-size: 12px; font-weight: 800; color: var(--verde); background: #ebfbee; padding: 5px 12px; border-radius: 999px; }
+.montagem { display: flex; gap: 14px; margin-top: 22px; padding: 20px; border-radius: 18px; background: #fff; border: 1px solid var(--linha); }
+.montagem p { margin: 4px 0 0; color: var(--tinta-2); font-size: 14px; line-height: 1.5; }
+.desligar {
+  margin-top: 28px; padding: 16px; border: 1px solid var(--linha); border-radius: 14px;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; font-size: 14px; color: var(--tinta-2);
+}
+.desligarBotoes { display: flex; gap: 8px; }
+.botaoLeve { height: 40px; padding: 0 16px; border-radius: 10px; border: 1px solid #d6d3d1; background: #fff; color: var(--tinta-2); font-weight: 700; }
+.botaoPerigo { height: 40px; padding: 0 16px; border-radius: 10px; border: 0; background: #dc2626; color: #fff; font-weight: 700; }
+
+/* ─── Termo ─── */
+.termoFundo { position: fixed; inset: 0; z-index: 10050; background: rgba(15, 12, 9, .55); display: grid; place-items: center; padding: 16px; }
+.termo { background: #fff; border-radius: 20px; width: min(580px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; box-shadow: 0 24px 60px rgba(0,0,0,.35); }
+.termoTopo { display: flex; gap: 12px; align-items: center; padding: 18px 20px; border-bottom: 1px solid var(--linha); }
+.termoTopo div { display: flex; flex-direction: column; }
+.termoTopo strong { font-size: 17px; }
+.termoTopo span { font-size: 13px; color: var(--tinta-2); }
+.clausulas { margin: 0; padding: 16px 20px 4px 40px; display: grid; gap: 10px; font-size: 14px; line-height: 1.5; color: #292524; }
+.concordo { display: flex; gap: 10px; align-items: flex-start; margin: 12px 20px 0; padding: 12px; background: #faf8f6; border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.concordo input { width: 18px; height: 18px; margin-top: 1px; flex-shrink: 0; }
+.termoBotoes { display: flex; gap: 10px; justify-content: flex-end; padding: 16px 20px 20px; flex-wrap: wrap; }
+.termoBotoes .cta { height: 44px; font-size: 15px; box-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) { .avisoOk, .avisoErro { animation: none; } }
