@@ -9,6 +9,7 @@ import AdminCostsTab from "./AdminCostsTab";
 import ProjecaoTab from "./ProjecaoTab";
 import VendedoresTab from "./VendedoresTab";
 import AcompanhamentoIfoodTab from "./AcompanhamentoIfoodTab";
+import PlanoDoAppDaLoja from "./PlanoDoAppDaLoja";
 import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
 import ConexaoDoAtendimento from "@/components/crm/ConexaoDoAtendimento";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
@@ -137,6 +138,8 @@ export default function AdminDashboardClient({
 
   // Modal de concessão de dias
   const [grantModalUser, setGrantModalUser] = useState<Lojista | null>(null);
+  // Admin › 📱 App: ativação manual do aplicativo próprio da loja (lib/app-da-loja/plano.ts).
+  const [appDaLoja, setAppDaLoja] = useState<Lojista | null>(null);
   const [customDays, setCustomDays] = useState<string>("15");
   const [granting, setGranting] = useState(false);
 
@@ -567,6 +570,9 @@ export default function AdminDashboardClient({
           {isentandoId === l.id ? "Salvando..." : l.isencao === null ? "Isentar mensalidade" : "Cobrar mensalidade"}
         </button>
       )}
+      <button onClick={() => setAppDaLoja(l)} className="fha-btn" style={{ gridColumn: "1 / -1", fontWeight: 700 }} title="Ativar, trocar ou desligar o aplicativo próprio da loja (entra no boleto)">
+        📱 App
+      </button>
       <button onClick={() => abrirExcluir(l)} className="fha-btn" style={{ color: "#B91C1C", gridColumn: "1 / -1" }} title="Excluir a loja inteira (pede EXCLUIR duas vezes)">
         🗑️ Excluir
       </button>
@@ -985,6 +991,7 @@ export default function AdminDashboardClient({
       </main>
 
       {/* ── MODAL LIBERAR DIAS DE BENEFÍCIO ── */}
+      {appDaLoja && <PlanoDoAppDaLoja userId={appDaLoja.id} storeName={appDaLoja.storeName || appDaLoja.name || "Loja"} aoFechar={() => setAppDaLoja(null)} />}
       {grantModalUser && (
         <div className="fha-modal-fundo">
           <div className="fha-modal">

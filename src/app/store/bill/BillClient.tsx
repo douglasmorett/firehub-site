@@ -552,7 +552,7 @@ function ComoUsar({ dados }: { dados: Dados }) {
       {dados.numerosDoDono.length > 0 ? (
         <div style={{ fontSize: 14, color: "#065F46" }}>
           Do {dados.numerosDoDono.length > 1 ? "seus números" : "seu número"} <b>{dados.numerosDoDono.map(fone).join(", ")}</b>, mande mensagem para o WhatsApp da loja
-          {dados.numeroDoRobo ? <> (<b>{fone(dados.numeroDoRobo)}</b>)</> : " conectado no Chatbot IA"}. Áudio, texto ou foto. Errou? Manda <b>desfaz</b>.
+          {dados.numeroDoRobo ? <>, <b>{fone(dados.numeroDoRobo)}</b></> : " conectado no Chatbot IA"}. Áudio, texto ou foto. Errou? Manda <b>desfaz</b>.
           <div style={{ fontSize: 12, marginTop: 4, color: "#047857" }}>Outros números (sócio, gerente) entram em Chatbot IA › Notificações.</div>
         </div>
       ) : (

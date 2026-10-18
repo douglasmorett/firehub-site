@@ -822,6 +822,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += assessor;
       linhasExtras.push(`Bill Assessor R$${assessor.toFixed(2)}`);
     }
+    // Aplicativo próprio da loja: ativado à mão pelo admin (lib/app-da-loja/plano.ts);
+    // ligado em algum dia do mês = o mês inteiro (R$ 149 um sistema, R$ 197 os dois).
+    const { cobrancaDoAppNoMes } = await import("@/lib/app-da-loja/plano");
+    const aplicativo = await cobrancaDoAppNoMes(franchiseeId, monthStart, monthEnd);
+    if (aplicativo > 0) {
+      taxasExtras += aplicativo;
+      linhasExtras.push(`Aplicativo da loja R$${aplicativo.toFixed(2)}`);
+    }
   }
 
   const ifoodExtraCharge = taxasExtras;
@@ -1226,7 +1234,10 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
   const intervaloDoCiclo = intervaloDoMes(cycle.yearMonth, tz);
   const assessor = await cobrancaDoAssessorNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
-  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor;
+  // Aplicativo próprio da loja — a mesma conta do fechamento.
+  const { cobrancaDoAppNoMes } = await import("@/lib/app-da-loja/plano");
+  const aplicativo = await cobrancaDoAppNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
+  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo;
 
   const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
@@ -1246,7 +1257,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     // Discriminado para o painel poder mostrar a linha em vez de só inflar o
     // total — "por que subiu R$ 200?" tem que ter resposta na tela.
     mensalidadePrevista,
-    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor },
+    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo },
     lojasExtras,
     status: cycle.status,
     isExempt: false,
@@ -1290,7 +1301,9 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
   const { monthStart, monthEnd } = intervaloDoMes(yearMonth, tz);
   const inicio = inicioDaCobranca(monthStart, monthEnd, user?.trialEndsAt);
   const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
-  const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0) + (await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd));
+  const { cobrancaDoAppNoMes } = await import("@/lib/app-da-loja/plano");
+  const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0) + (await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd))
+    + (await cobrancaDoAppNoMes(franchiseeId, monthStart, monthEnd));
   if (inicio === null) {
     // Teste no mês inteiro: mensalidade e lojas extras perdoadas; tráfego e
     // totem são serviço prestado e o fechamento cobra.
