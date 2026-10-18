@@ -13,10 +13,19 @@ import path from "node:path";
 
 export function indexar(saida = path.join(process.cwd(), "tutoriais", "saida")) {
   const fichas = JSON.parse(fs.readFileSync(path.join("src", "lib", "tutoriais-fichas.json"), "utf8"));
+  // O índice que já está publicado: vídeo sem a gravação nesta máquina mantém o texto de lá.
+  // (18/10/2026: a pasta com as gravações dos 34 primeiros vídeos foi apagada; os vídeos e o
+  // índice continuam no ar, só a fonte das falas sumiu.)
+  const arquivoDoIndice = path.join("src", "lib", "tutoriais-busca.json");
+  const publicado = fs.existsSync(arquivoDoIndice) ? JSON.parse(fs.readFileSync(arquivoDoIndice, "utf8")) : {};
   const indice = {};
   for (const ficha of Object.values(fichas)) {
     const arquivo = path.join(saida, ficha.id, "gravacao.json");
-    if (!fs.existsSync(arquivo)) throw new Error(`Falta ${arquivo}: sem as falas, ${ficha.id} não entra na busca.`);
+    if (!fs.existsSync(arquivo)) {
+      const anterior = publicado[ficha.id];
+      if (anterior && anterior.length === ficha.capitulos.length) { indice[ficha.id] = anterior; continue; }
+      throw new Error(`Falta ${arquivo}: sem as falas, ${ficha.id} não entra na busca.`);
+    }
     const { cenas } = JSON.parse(fs.readFileSync(arquivo, "utf8"));
     // A cena que abre capítulo traz `capitulo`; as seguintes, até o próximo, são dele.
     const falas = [];

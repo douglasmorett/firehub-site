@@ -61,6 +61,11 @@ const TELAS: Record<string, string[]> = {
   // Pedido do Douglas (13/10/2026): o dono ativa sozinho, sem chamar o suporte.
   "/store/contingencia": ["contingencia"],
   "/store/estoque": ["estoque"],
+  // Telas novas de 13–18/10/2026 (módulos e o painel de senhas). Sem ficha publicada, nada aparece.
+  "/store/painel-de-senhas": ["painel-de-senhas"],
+  "/store/bill": ["bill"],
+  "/store/aplicativo": ["aplicativo"],
+  "/store/multimarcas": ["multimarcas"],
   "/store/financeiro": ["financeiro"],
   "/store/relatorios": ["relatorios"],
   "/store/etiquetas": ["etiquetas"],
@@ -96,6 +101,10 @@ const NOMES: Record<string, string> = {
   "/store/meta-ads": "Tráfego Pago",
   "/store/contingencia": "Modo Contingência",
   "/store/estoque": "Estoque",
+  "/store/painel-de-senhas": "Painel de senhas",
+  "/store/bill": "Bill",
+  "/store/aplicativo": "Aplicativo",
+  "/store/multimarcas": "Multimarcas",
   "/store/financeiro": "Financeiro",
   "/store/relatorios": "Relatórios",
   "/store/etiquetas": "Etiquetas",
