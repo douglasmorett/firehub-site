@@ -455,16 +455,15 @@ export async function idsDeTodasAsLojas(): Promise<string[]> {
 }
 
 /**
- * As lojas da CARTEIRA do vendedor (regra do Douglas, 18/10/2026: "se a pessoa
- * for vendedora, ela indicou, ela atende"): as que vieram pelo link de convite
- * dele (User.ambassadorId) e as que o admin pôs na carteira dele
- * (User.vendedorId) — menos a que veio pelo link de OUTRO vendedor: essa é do
- * outro. Uma loja, um dono (lib/performance-das-carteiras/regras.ts, donosDaLoja).
+ * As lojas da CARTEIRA do vendedor — quem ATENDE é o dono (Douglas,
+ * 18/10/2026; lib/parceiro/regras.ts, vendedorQueAtende): as que o admin pôs
+ * na carteira dele (User.vendedorId) e as que vieram pelo link de convite dele
+ * e não têm outro vendedor atendendo. Uma loja, um dono.
  */
 const DA_CARTEIRA = (parceiroId: string) => ({
   OR: [
-    { ambassadorId: parceiroId },
-    { vendedorId: parceiroId, OR: [{ ambassadorId: null }, { ambassador: { isVendedor: false } }] },
+    { vendedorId: parceiroId },
+    { ambassadorId: parceiroId, OR: [{ vendedorId: null }, { vendedor: { isVendedor: false } }] },
   ],
 });
 

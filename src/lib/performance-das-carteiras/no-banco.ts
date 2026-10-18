@@ -26,7 +26,7 @@ import { janelaDoPeriodo } from "@/lib/relatorios/janela";
 import { VALOR_IMPOSSIVEL } from "@/lib/relatorios/regua-da-venda";
 import { getCurrentYearMonth, intervaloDoMes, lojaIsenta } from "@/lib/billing";
 import {
-  comissaoSobre, mensalidadeDoCiclo, mesesAntes, papelNaLoja,
+  COMISSAO_DO_DISPARO_PCT, comissaoSobre, mensalidadeDoCiclo, mesesAntes, papelNaLoja, vendedorQueAtende,
   type CicloNasRegras, type LojaNasRegras, type ParceiroNasRegras,
 } from "@/lib/parceiro/regras";
 import { valorDoAssessorNoMes, PRECO_DO_ASSESSOR, type Periodo } from "@/lib/assessor/assinatura";
@@ -172,11 +172,11 @@ async function montarBase(nMeses: number, agora: Date): Promise<Base> {
     return {
       ambassadorId: l.ambassadorId,
       ambassador: a ? {
-        id: a.id, active: a.active, temCarteira: !!a.asaasWalletId, commissionPercent: a.commissionPercent, parentAmbassadorId: a.parentAmbassadorId,
+        id: a.id, active: a.active, temCarteira: !!a.asaasWalletId, commissionPercent: a.commissionPercent, isVendedor: a.isVendedor, parentAmbassadorId: a.parentAmbassadorId,
         parentAmbassador: pai ? { id: pai.id, active: pai.active, temCarteira: !!pai.asaasWalletId, level2Percent: pai.level2Percent ?? 3 } : null,
       } : null,
       vendedorId: l.vendedorId,
-      vendedor: v ? { id: v.id, active: v.active, isVendedor: v.isVendedor, temCarteira: !!v.asaasWalletId, sellerPercent: v.sellerPercent } : null,
+      vendedor: v ? { id: v.id, active: v.active, isVendedor: v.isVendedor, temCarteira: !!v.asaasWalletId, sellerPercent: v.sellerPercent, commissionPercent: v.commissionPercent } : null,
     };
   };
 
@@ -223,13 +223,17 @@ async function montarBase(nMeses: number, agora: Date): Promise<Base> {
     const ciclosDaLoja = new Map((ciclosDe.get(l.id) || []).map((c) => [c.yearMonth, c]));
     const vendasDaLoja = new Map((vendasDe.get(l.id) || []).map((v) => [v.mes, v]));
     const regrasDaLoja = lojaNasRegras(l);
-    // O % que o split paga a cada parceiro desta loja — a regra de verdade (papelNaLoja).
+    // O % que o split paga a cada parceiro desta loja — a regra de verdade (papelNaLoja:
+    // embaixador que indicou + vendedor que ATENDE). Conta pausada não recebe nada.
     const percentuais = new Map<string, number>();
     for (const pid of new Set([l.vendedorId, l.ambassadorId].filter(Boolean) as string[])) {
       const p = parceiroPorId.get(pid);
       const papel = p ? papelNaLoja(doBancoParaRegras(p), regrasDaLoja) : null;
-      if (p && papel) percentuais.set(p.id, papel.percentual);
+      if (p && papel && p.active) percentuais.set(p.id, papel.percentual);
     }
+    // Disparo: 3% da margem para o vendedor que atende, ativo (splitDaRecarga).
+    const dono = vendedorQueAtende(regrasDaLoja);
+    const donoDoDisparo = dono && dono.ativo ? dono.parceiroId : null;
 
     const mesesDaLoja: Record<string, MesDaBase> = {};
     for (const ym of meses) {
@@ -256,7 +260,7 @@ async function montarBase(nMeses: number, agora: Date): Promise<Base> {
         comissao.set(pid, {
           prevista: comissaoSobre(m.situacao === "PAGA" ? m.pago : m.valor, pct),
           recebida: m.situacao === "PAGA" ? comissaoSobre(m.pago, pct) : 0,
-          disparo: comissaoSobre(servicos.disparo, pct),
+          disparo: pid === donoDoDisparo ? Math.floor(servicos.disparo * COMISSAO_DO_DISPARO_PCT) / 100 : 0,
         });
       }
       mesesDaLoja[ym] = { vendas: v ? Number(v.vendas) : 0, gmv: v ? c2(Number(v.gmv)) : 0, receita, comissao };

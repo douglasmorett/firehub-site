@@ -59,12 +59,12 @@ const SELECT_DA_LOJA = {
   ambassadorId: true,
   ambassador: {
     select: {
-      id: true, name: true, active: true, asaasWalletId: true, commissionPercent: true, parentAmbassadorId: true,
+      id: true, name: true, active: true, asaasWalletId: true, commissionPercent: true, isVendedor: true, parentAmbassadorId: true,
       parentAmbassador: { select: { id: true, active: true, asaasWalletId: true, level2Percent: true } },
     },
   },
   vendedorId: true,
-  vendedor: { select: { id: true, name: true, active: true, isVendedor: true, asaasWalletId: true, sellerPercent: true } },
+  vendedor: { select: { id: true, name: true, active: true, isVendedor: true, asaasWalletId: true, sellerPercent: true, commissionPercent: true } },
   vendedorStatus: true, vendedorAtribuidoEm: true, vendedorAtendidoEm: true,
 } as const;
 
@@ -141,6 +141,7 @@ export async function relatorioDoParceiro(parceiroId: string, agora = new Date()
             active: l.ambassador.active,
             temCarteira: !!l.ambassador.asaasWalletId,
             commissionPercent: l.ambassador.commissionPercent,
+            isVendedor: l.ambassador.isVendedor,
             parentAmbassadorId: l.ambassador.parentAmbassadorId,
             parentAmbassador: l.ambassador.parentAmbassador
               ? {
@@ -154,7 +155,7 @@ export async function relatorioDoParceiro(parceiroId: string, agora = new Date()
         : null,
       vendedorId: l.vendedorId,
       vendedor: l.vendedor
-        ? { id: l.vendedor.id, active: l.vendedor.active, isVendedor: l.vendedor.isVendedor, temCarteira: !!l.vendedor.asaasWalletId, sellerPercent: l.vendedor.sellerPercent }
+        ? { id: l.vendedor.id, active: l.vendedor.active, isVendedor: l.vendedor.isVendedor, temCarteira: !!l.vendedor.asaasWalletId, sellerPercent: l.vendedor.sellerPercent, commissionPercent: l.vendedor.commissionPercent }
         : null,
     };
     const papel = papelNaLoja(regrasDoParceiro, regrasDaLoja);

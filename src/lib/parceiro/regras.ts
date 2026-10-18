@@ -2,7 +2,7 @@
  * AS REGRAS DO PARCEIRO DA FIREHUB — embaixador, rede e vendedor.
  *
  * Três perguntas, uma resposta cada, para o portal (lib/parceiro/relatorio.ts),
- * para o split do Asaas (lib/billing.ts, pelo `ganhaComoVendedor`) e para o
+ * para o split do Asaas (lib/billing.ts, pelo `splitDaLoja`) e para o
  * teste (scripts/teste-relatorio-do-parceiro.ts) lerem a MESMA conta:
  *
  *   1. Em que papel o parceiro está nesta loja — e quanto ganha nela.
@@ -11,10 +11,11 @@
  *   3. Em que pé está a mensalidade que paga a comissão: em andamento, paga,
  *      a vencer, vencida, sem boleto ou sem cobrança.
  *
- * Regra do Douglas (27/09, reafirmada em 30/09/2026 no caso do Victor): quem
- * indicou a loja — ou trouxe o embaixador que indicou — e também a acompanha
- * como vendedor recebe SÓ a comissão de embaixador. Os % de vendedor pagam
- * cuidar de cliente que a FireHub conseguiu; não somam em cima da indicação.
+ * Regra do Douglas de 18/10/2026 (substitui a de 27/09): entre os vendedores,
+ * quem ATENDE é quem ganha — 10% (o % de link do cadastro) na loja que ele
+ * trouxe pelo link, 3% na que foi atribuída a ele; quem convidou e não atende
+ * não leva nada. Embaixador que não vende segue a regra do programa de
+ * indicação. Ver `vendedorQueAtende`.
  *
  * Sem Prisma nem "@/…": roda puro no teste.
  */
@@ -35,10 +36,28 @@ export const TETO_DE_SPLIT = 40;
 // ─── 1. O PAPEL ─────────────────────────────────────────────────────────────
 
 /**
- * O vendedor leva `sellerPercent` desta loja? Não quando já ganha nela como
- * embaixador, por ter indicado a loja. (Até 15/10/2026 também não levava quando
- * tinha trazido quem indicou — era o nível 2, que acabou.)
+ * REGRA DE 18/10/2026 (Douglas): "quem atende tem que ser comissionado… se
+ * amanhã ele parar de atender quem ele convidou, ele perde os 10%".
+ *
+ *   • O DONO da loja, entre os vendedores, é quem ATENDE: o vendedor atribuído
+ *     (User.vendedorId). Sem atribuído, e se a loja veio pelo link de convite
+ *     de um vendedor (User.ambassadorId = vendedor), o dono é quem convidou.
+ *   • O dono leva o % de LINK (`commissionPercent` do cadastro — padrão 10%)
+ *     se foi ele quem convidou; o % de ATRIBUÍDA (`sellerPercent`, 3%) se a
+ *     loja foi posta na carteira dele.
+ *   • Vendedor que convidou mas NÃO atende mais: nada. Vendedor inativo ou fora
+ *     da equipe: nada (nem pelo link) — o split exige conta ativa.
+ *   • Embaixador que NÃO é vendedor (programa de indicação): a regra de antes,
+ *     intocada — leva o `commissionPercent` dele, e o vendedor que atende leva
+ *     os 3% à parte.
+ *   • Nunca dois vendedores na mesma loja.
+ *
+ * Antes desta data: quem indicou levava o commissionPercent mesmo sem atender
+ * (e o vendedor atribuído levava +3% em cima), e o vendedor que indicava a
+ * loja e atendia levava só o commissionPercent (0% no cadastro de vendedor).
  */
+
+/** O vendedor ganha os 3% de atribuída nesta loja? Só se a loja não veio pelo link DELE. */
 export function ganhaComoVendedor(vendedorId: string, loja: { ambassadorId?: string | null }): boolean {
   if (loja.ambassadorId && loja.ambassadorId === vendedorId) return false;
   return true;
@@ -56,7 +75,7 @@ export type ParceiroNasRegras = {
   sellerPercent: number;
 };
 
-/** A loja, com quem a indicou, quem trouxe esse embaixador e quem a acompanha. */
+/** A loja, com quem a indicou (pelo link) e quem a atende. */
 export type LojaNasRegras = {
   ambassadorId: string | null;
   ambassador: {
@@ -64,55 +83,161 @@ export type LojaNasRegras = {
     active: boolean;
     temCarteira: boolean;
     commissionPercent: number;
+    /** É vendedor da equipe? (vendedor que convida pelo link segue a regra de quem atende) */
+    isVendedor?: boolean;
     parentAmbassadorId: string | null;
     parentAmbassador: { id: string; active: boolean; temCarteira: boolean; level2Percent: number } | null;
   } | null;
   vendedorId: string | null;
-  vendedor: { id: string; active: boolean; isVendedor: boolean; temCarteira: boolean; sellerPercent: number } | null;
+  vendedor: {
+    id: string; active: boolean; isVendedor: boolean; temCarteira: boolean; sellerPercent: number;
+    /** % de link do cadastro dele — vale quando a loja veio pelo link dele E ele atende. */
+    commissionPercent?: number;
+  } | null;
 };
+
+export type DonoDaLoja = {
+  parceiroId: string;
+  /** LINK = ele convidou e atende; ATRIBUIDA = posta na carteira dele. */
+  origem: "LINK" | "ATRIBUIDA";
+  percentual: number;
+  ativo: boolean;
+  temCarteira: boolean;
+};
+
+/** O vendedor que ATENDE a loja (o dono dela entre os vendedores), ou null. */
+export function vendedorQueAtende(loja: LojaNasRegras): DonoDaLoja | null {
+  const v = loja.vendedor;
+  if (v && v.isVendedor && loja.vendedorId === v.id) {
+    const convidou = loja.ambassadorId === v.id;
+    const pctLink = v.commissionPercent ?? (loja.ambassador?.id === v.id ? loja.ambassador.commissionPercent : 0);
+    return { parceiroId: v.id, origem: convidou ? "LINK" : "ATRIBUIDA", percentual: convidou ? pctLink : v.sellerPercent, ativo: v.active, temCarteira: v.temCarteira };
+  }
+  const a = loja.ambassador;
+  if (a && a.isVendedor && loja.ambassadorId === a.id) {
+    return { parceiroId: a.id, origem: "LINK", percentual: a.commissionPercent, ativo: a.active, temCarteira: a.temCarteira };
+  }
+  return null;
+}
 
 export type PapelNaLoja = {
   papel: Papel;
   /** O que ELE ganha da mensalidade desta loja, em %. */
   percentual: number;
-  /**
-   * Indicou (ou é da rede dele) E está na carteira de vendas dele: conta só
-   * como embaixador — o portal diz isso na linha da loja.
-   */
+  /** Convidou pelo link E está atribuída a ele (o portal diz "veio pelo seu link"). */
   tambemNaCarteira: boolean;
 };
 
 /**
- * O papel do parceiro nesta loja, ou null se ela não é dele. A indicação vence
- * a carteira: embaixador, depois vendedor. O papel REDE (nível 2) acabou em
- * 15/10/2026 e não é mais atribuído.
+ * O papel do parceiro nesta loja, ou null se ele não ganha nada nela.
+ *   embaixador (não vendedor) que indicou → EMBAIXADOR, commissionPercent (regra de sempre);
+ *   vendedor que atende e convidou      → EMBAIXADOR (link), commissionPercent;
+ *   vendedor que atende, atribuída       → VENDEDOR, sellerPercent;
+ *   vendedor que convidou e não atende   → null.
+ * O papel REDE (nível 2) acabou em 15/10/2026 e não é mais atribuído.
  */
 export function papelNaLoja(p: ParceiroNasRegras, loja: LojaNasRegras): PapelNaLoja | null {
-  const naCarteira = p.isVendedor && !!loja.vendedorId && loja.vendedorId === p.id;
-  if (loja.ambassadorId && loja.ambassadorId === p.id) {
-    return { papel: "EMBAIXADOR", percentual: p.commissionPercent, tambemNaCarteira: naCarteira };
+  if (!p.isVendedor) {
+    if (loja.ambassadorId && loja.ambassadorId === p.id) return { papel: "EMBAIXADOR", percentual: p.commissionPercent, tambemNaCarteira: false };
+    return null;
   }
-  if (naCarteira) return { papel: "VENDEDOR", percentual: p.sellerPercent, tambemNaCarteira: false };
-  return null;
+  const dono = vendedorQueAtende(loja);
+  if (!dono || dono.parceiroId !== p.id) return null;
+  if (dono.origem === "LINK") return { papel: "EMBAIXADOR", percentual: p.commissionPercent, tambemNaCarteira: loja.vendedorId === p.id };
+  return { papel: "VENDEDOR", percentual: p.sellerPercent, tambemNaCarteira: false };
 }
 
 // ─── 2. O REPASSE ───────────────────────────────────────────────────────────
 
-/** As linhas do split que o fechamento montaria para esta loja HOJE. */
+/**
+ * As linhas do split que o fechamento monta para esta loja (lib/billing.ts lê
+ * daqui): o embaixador que não vende (se indicou) + o vendedor que atende.
+ * Conta ativa e carteira no Asaas são exigidas; % zero não entra.
+ */
 export function splitDaLoja(loja: LojaNasRegras): { linhas: { parceiroId: string; papel: Papel; percentual: number }[]; total: number; acimaDoTeto: boolean } {
   const linhas: { parceiroId: string; papel: Papel; percentual: number }[] = [];
+  const dono = vendedorQueAtende(loja);
   const n1 = loja.ambassador;
-  if (n1 && n1.active && n1.temCarteira) {
+  // Embaixador do programa de indicação (não vende). Se for o MESMO parceiro que
+  // atende (a loja veio pelo link dele e ele está atribuído), ele é vendedor
+  // aqui: leva só o % de quem atende, nunca os dois.
+  if (n1 && !n1.isVendedor && n1.id !== dono?.parceiroId && n1.active && n1.temCarteira && n1.commissionPercent > 0) {
     linhas.push({ parceiroId: n1.id, papel: "EMBAIXADOR", percentual: n1.commissionPercent });
   }
-  const v = loja.vendedor;
-  if (v && v.active && v.isVendedor && v.temCarteira && v.sellerPercent > 0 && ganhaComoVendedor(v.id, loja)) {
-    const mesma = linhas.find((l) => l.parceiroId === v.id);
-    if (mesma) mesma.percentual += v.sellerPercent;
-    else linhas.push({ parceiroId: v.id, papel: "VENDEDOR", percentual: v.sellerPercent });
+  if (dono && dono.ativo && dono.temCarteira && dono.percentual > 0) {
+    const papel: Papel = dono.origem === "LINK" ? "EMBAIXADOR" : "VENDEDOR";
+    linhas.push({ parceiroId: dono.parceiroId, papel, percentual: dono.percentual });
   }
   const total = linhas.reduce((s, l) => s + l.percentual, 0);
   return { linhas, total, acimaDoTeto: total > TETO_DE_SPLIT };
+}
+
+/** O parceiro como vem do banco (Ambassador), só com o que o split precisa. */
+export type ParceiroDoCadastro = {
+  id: string; active: boolean; isVendedor: boolean; asaasWalletId: string | null;
+  commissionPercent: number; sellerPercent: number; parentAmbassadorId?: string | null;
+};
+
+/** A loja do banco (User com `ambassador` e `vendedor` incluídos) nas regras. */
+export function lojaNasRegrasDoCadastro(l: {
+  ambassadorId: string | null; vendedorId: string | null;
+  ambassador: ParceiroDoCadastro | null | undefined; vendedor: ParceiroDoCadastro | null | undefined;
+}): LojaNasRegras {
+  const a = l.ambassador, v = l.vendedor;
+  return {
+    ambassadorId: l.ambassadorId,
+    ambassador: a ? {
+      id: a.id, active: a.active, temCarteira: !!a.asaasWalletId, commissionPercent: a.commissionPercent, isVendedor: a.isVendedor,
+      parentAmbassadorId: a.parentAmbassadorId ?? null, parentAmbassador: null,
+    } : null,
+    vendedorId: l.vendedorId,
+    vendedor: v ? { id: v.id, active: v.active, isVendedor: v.isVendedor, temCarteira: !!v.asaasWalletId, sellerPercent: v.sellerPercent, commissionPercent: v.commissionPercent } : null,
+  };
+}
+
+/**
+ * O split do boleto no formato do Asaas (`percentualValue` por carteira), com
+ * o freio de mão: acima do teto, nenhum split (`acimaDoTeto`).
+ */
+export function splitDoBoletoNoAsaas(l: Parameters<typeof lojaNasRegrasDoCadastro>[0]): { split: { walletId: string; percentualValue: number }[]; total: number; acimaDoTeto: boolean } {
+  const regras = lojaNasRegrasDoCadastro(l);
+  const s = splitDaLoja(regras);
+  const carteira = new Map<string, string | null>();
+  if (l.ambassador) carteira.set(l.ambassador.id, l.ambassador.asaasWalletId);
+  if (l.vendedor) carteira.set(l.vendedor.id, l.vendedor.asaasWalletId);
+  const split: { walletId: string; percentualValue: number }[] = [];
+  for (const linha of s.linhas) {
+    const w = carteira.get(linha.parceiroId);
+    if (!w) continue;
+    const mesma = split.find((x) => x.walletId === w);
+    if (mesma) mesma.percentualValue += linha.percentual;
+    else split.push({ walletId: w, percentualValue: linha.percentual });
+  }
+  return { split: s.acimaDoTeto ? [] : split, total: s.total, acimaDoTeto: s.acimaDoTeto };
+}
+
+/** Na recarga do disparo oficial o vendedor que atende leva SEMPRE 3% da margem do FireHub (Douglas, 18/10/2026). */
+export const COMISSAO_DO_DISPARO_PCT = 3;
+
+/**
+ * O split da recarga do disparo: valor FIXO = 3% da margem (valor − mensagens ×
+ * custo da Meta) para o vendedor que atende a loja, com conta ativa e carteira.
+ * Embaixador que não vende não entra (o combinado do disparo é com quem atende).
+ */
+export function splitDaRecarga(r: { valor: number; disparos: number; custoPorDisparo: number }, loja: LojaNasRegras): { parceiroId: string; fixedValue: number; margem: number } | null {
+  const margem = Math.max(0, Math.round((r.valor - r.disparos * r.custoPorDisparo) * 100) / 100);
+  const dono = vendedorQueAtende(loja);
+  if (!dono || !dono.ativo || !dono.temCarteira) return null;
+  const fixedValue = Math.floor(margem * COMISSAO_DO_DISPARO_PCT) / 100;
+  if (fixedValue < 0.01) return null;
+  return { parceiroId: dono.parceiroId, fixedValue, margem };
+}
+
+/** O que o vendedor ganha numa recarga de N mensagens (a tabelinha do portal — sem mostrar margem nem custo). */
+export function ganhoPorPacote(disparos: number, precoPorDisparo: number, custoPorDisparo: number): number {
+  const valor = Math.round(disparos * precoPorDisparo * 100) / 100;
+  const margem = Math.max(0, valor - disparos * custoPorDisparo);
+  return Math.floor(margem * COMISSAO_DO_DISPARO_PCT) / 100;
 }
 
 /**

@@ -4,6 +4,8 @@ import { prisma } from "@/lib/prisma";
 import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
 import PortalDoParceiro from "@/components/parceiro/PortalDoParceiro";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
+import TermoDeComissionamento from "@/components/parceiro/TermoDeComissionamento";
+import { aceitouAVersaoVigente } from "@/lib/parceiro/aceite-do-termo";
 import { lojaQueAbreOPortal } from "@/lib/paineis-do-dono";
 
 export const dynamic = "force-dynamic";
@@ -29,9 +31,14 @@ export default async function EmbaixadorPage() {
         { email: { equals: sessionUser.email, mode: "insensitive" as const } },
       ],
     },
-    select: { id: true },
+    select: { id: true, isVendedor: true, active: true, name: true },
   });
   if (!ambassador) return <AmbassadorLoginForm />;
+
+  // Vendedor que entra por esta porta também aceita o termo de comissionamento antes (o mesmo de /vendedor).
+  if (ambassador.isVendedor && ambassador.active && !(await aceitouAVersaoVigente(ambassador.id))) {
+    return <TermoDeComissionamento nome={ambassador.name} saida="/embaixador" />;
+  }
 
   const relatorio = await relatorioDoParceiro(ambassador.id);
   if (!relatorio) return <AmbassadorLoginForm />;

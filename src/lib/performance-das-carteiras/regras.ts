@@ -12,28 +12,25 @@
  *
  * ── Comissão (Douglas, 18/10/2026) ──────────────────────────────────────────
  *
- * "Se a pessoa for vendedora, ela indicou, ela atende. Todo vendedor tem seu
- * link de convite; quem veio pelo link dele garante 10% de comissão; quem veio
- * jogado na carteira dele mantém os 3%." Uma loja tem UM dono de carteira:
- *   • veio pelo link de um VENDEDOR (User.ambassadorId = vendedor) → carteira
- *     dele, papel EMBAIXADOR, % = commissionPercent do cadastro dele (o
- *     combinado é 10% — `COMISSAO_COMBINADA.LINK`);
- *   • atribuída pelo admin (User.vendedorId) → carteira do vendedor, papel
- *     VENDEDOR, % = sellerPercent (combinado 3%);
- *   • indicada por um embaixador que NÃO é vendedor: a regra de sempre — o
- *     embaixador leva o commissionPercent dele e a loja aparece nas indicações
- *     dele; quem atende é o vendedor atribuído (3%).
- * O % que vale aqui é o que o split do boleto paga HOJE (papelNaLoja +
- * comissaoSobre, lib/parceiro/regras.ts). Quando o cadastro diverge do
- * combinado, a tela avisa — não inventa um número que o boleto não paga.
+ * "Quem atende tem que ser comissionado… se amanhã ele parar de atender quem
+ * ele convidou, ele perde os 10%." Entre os vendedores, a loja tem UM dono, o
+ * que ATENDE (lib/parceiro/regras.ts, vendedorQueAtende — a mesma regra do
+ * split do boleto):
+ *   • o vendedor atribuído (User.vendedorId); sem atribuído, quem convidou
+ *     pelo link (User.ambassadorId = vendedor);
+ *   • ele leva o % de link do cadastro (combinado 10%) se foi ele quem
+ *     convidou, e o % de atribuída (3%) se a loja foi posta na carteira dele;
+ *   • quem convidou e não atende não leva nada; conta pausada não leva nada;
+ *   • embaixador que NÃO é vendedor (programa de indicação): a regra de
+ *     sempre — leva o commissionPercent dele e aparece nas indicações dele.
  *
  * ── Disparo oficial ─────────────────────────────────────────────────────────
  *
- * "Eles têm que ser comissionados em cima do nosso lucro e não do valor total
- * do disparo." A receita do disparo para a carteira é a MARGEM da recarga
- * (valor − disparos × custo da Meta gravado na recarga). A recarga é um Pix à
- * parte, SEM split: a comissão sobre a margem é calculada e mostrada, mas hoje
- * não cai sozinha na conta de ninguém.
+ * A receita do disparo para a carteira é a MARGEM da recarga (valor −
+ * mensagens × custo da Meta gravado na recarga). O vendedor que atende leva
+ * SEMPRE 3% dessa margem, venha a loja do link ou não, num split de valor
+ * fixo no Pix da recarga (lib/disparo-oficial/servidor.ts). O portal do
+ * vendedor não mostra margem nem custo — só quanto ele ganha.
  *
  * Testado em scripts/teste-performance-das-carteiras.ts.
  */
@@ -42,7 +39,7 @@ import { diasNoPeriodo, somarDias } from "@/lib/relatorios/base";
 import { tendencia, type StatusDaAtividade } from "@/lib/perfil-da-loja/regras";
 
 /** O combinado com o Douglas (18/10/2026). O split paga o que está no cadastro de cada parceiro. */
-export const COMISSAO_COMBINADA = { LINK: 10, ATRIBUIDA: 3 } as const;
+export const COMISSAO_COMBINADA = { LINK: 10, ATRIBUIDA: 3, DISPARO: 3 } as const;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // PERÍODOS
@@ -356,7 +353,7 @@ export type MesDaLoja = {
   /** Comissão do DONO DA CARTEIRA (a que o split paga: sobre o boleto). */
   comissaoPrevista: number;
   comissaoRecebida: number;
-  /** Comissão sobre a margem do disparo, mesmo % — calculada, ainda sem split. */
+  /** 3% da margem do disparo para o vendedor que atende (split de valor fixo na recarga). */
   comissaoDoDisparo: number;
 };
 
@@ -435,20 +432,21 @@ export function regraDeComissao(p: { isVendedor: boolean; commissionPercent: num
 }
 
 /**
- * Em que carteira(s) a loja aparece, com a origem. Uma loja, um dono: veio pelo
- * link de um VENDEDOR → só a carteira dele (mesmo que o admin tenha posto
- * outro vendedor). Duas carteiras só quando quem indicou é um embaixador que
- * NÃO vende: ele vê nas indicações, o vendedor atribuído atende.
+ * Em que carteira(s) a loja aparece, com a origem — a regra do split (quem
+ * ATENDE é o dono): o vendedor atribuído (LINK se foi ele quem convidou,
+ * ATRIBUIDA se não); sem atribuído, o vendedor que convidou (LINK). Vendedor
+ * que convidou e não atende não vê a loja. O embaixador que NÃO vende também
+ * a vê, nas indicações dele.
  */
 export function donosDaLoja(
   loja: { vendedorId: string | null; ambassadorId: string | null },
   ehVendedor: (id: string) => boolean,
 ): { carteira: string; origem: OrigemNaCarteira }[] {
   const a = loja.ambassadorId, v = loja.vendedorId;
-  if (a && ehVendedor(a)) return [{ carteira: a, origem: "LINK" }];
   const saida: { carteira: string; origem: OrigemNaCarteira }[] = [];
-  if (v) saida.push({ carteira: v, origem: "ATRIBUIDA" });
-  if (a) saida.push({ carteira: a, origem: "INDICACAO" });
+  if (v && ehVendedor(v)) saida.push({ carteira: v, origem: a === v ? "LINK" : "ATRIBUIDA" });
+  else if (a && ehVendedor(a)) saida.push({ carteira: a, origem: "LINK" });
+  if (a && !ehVendedor(a)) saida.push({ carteira: a, origem: "INDICACAO" });
   if (!saida.length) saida.push({ carteira: "sem", origem: "SEM" });
   return saida;
 }
@@ -735,7 +733,7 @@ export function exemploDeComissao(regra: { link: number | null; atribuida: numbe
     faturamento, mensalidade, app, boleto, recarga, margem,
     link: regra.link === null ? null : c2((boleto * regra.link) / 100),
     atribuida: regra.atribuida === null ? null : c2((boleto * regra.atribuida) / 100),
-    linkDisparo: regra.link === null ? null : c2((margem * regra.link) / 100),
-    atribuidaDisparo: regra.atribuida === null ? null : c2((margem * regra.atribuida) / 100),
+    /** Disparo: sempre 3% da margem, venha a loja do link ou não. */
+    disparo: Math.floor(margem * COMISSAO_COMBINADA.DISPARO) / 100,
   };
 }

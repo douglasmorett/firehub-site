@@ -7,6 +7,7 @@ import { createHmac } from "crypto";
 import { prisma } from "@/lib/prisma";
 import { cifrar, decifrar } from "@/lib/cofre";
 import { getAsaasKey } from "@/lib/asaas";
+import { lojaNasRegrasDoCadastro, splitDaRecarga } from "@/lib/parceiro/regras";
 import { levarHospedadoAoGatewayNovo } from "@/lib/gateway-da-loja";
 import { FUSO_PADRAO, dataDaLoja, horaDaLoja } from "@/lib/fuso";
 import { garantirEstruturaDoDisparoOficial } from "./estrutura-no-banco";
@@ -226,7 +227,14 @@ export async function criarRecarga(franchiseeId: string, disparosPedidos: number
   const chave = getAsaasKey();
   if (!chave) throw new Error("O Pix do FireHub não está configurado no servidor. Fale com o suporte.");
 
-  const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { name: true, email: true, cpfCnpj: true, storeName: true } });
+  const SELECT_DO_PARCEIRO = { id: true, active: true, isVendedor: true, asaasWalletId: true, commissionPercent: true, sellerPercent: true } as const;
+  const loja = await prisma.user.findUnique({
+    where: { id: franchiseeId },
+    select: {
+      name: true, email: true, cpfCnpj: true, storeName: true, ambassadorId: true, vendedorId: true,
+      ambassador: { select: SELECT_DO_PARCEIRO }, vendedor: { select: SELECT_DO_PARCEIRO },
+    },
+  });
   const doc = String(loja?.cpfCnpj || "").replace(/\D/g, "");
   if (!loja || (doc.length !== 11 && doc.length !== 14)) {
     throw new Error("Para gerar o Pix, cadastre o CPF ou CNPJ da loja em Minha conta.");
@@ -242,22 +250,41 @@ export async function criarRecarga(franchiseeId: string, disparosPedidos: number
     clienteId = novo.dados.id;
   }
 
+  // Comissão do disparo (Douglas, 18/10/2026): 3% da MARGEM do FireHub (valor −
+  // mensagens × custo da Meta de agora, o mesmo gravado na recarga) para o
+  // vendedor que atende a loja — valor fixo no split do Pix. Sem vendedor ativo
+  // com carteira, sai sem split. lib/parceiro/regras.ts, splitDaRecarga.
+  const comissao = splitDaRecarga({ valor, disparos, custoPorDisparo: custoMeta() }, lojaNasRegrasDoCadastro({
+    ambassadorId: loja.ambassadorId, vendedorId: loja.vendedorId, ambassador: loja.ambassador, vendedor: loja.vendedor,
+  }));
+  const carteiraDoVendedor = comissao
+    ? [loja.vendedor, loja.ambassador].find((p) => p?.id === comissao.parceiroId)?.asaasWalletId ?? null
+    : null;
+  const split = comissao && carteiraDoVendedor ? [{ walletId: carteiraDoVendedor, fixedValue: comissao.fixedValue }] : undefined;
+
   const recarga = await db.disparoRecarga.create({
-    data: { franchiseeId, disparos, valor, precoPorDisparo: preco, tipo: "PIX", status: "PENDENTE", criadoPor: criadoPor || null, descricao: `Custo Meta na hora: R$ ${custoMeta().toFixed(4)}` },
+    data: { franchiseeId, disparos, valor, precoPorDisparo: preco, tipo: "PIX", status: "PENDENTE", criadoPor: criadoPor || null, descricao: `Custo Meta na hora: R$ ${custoMeta().toFixed(4)}${comissao ? ` · comissão do vendedor R$ ${comissao.fixedValue.toFixed(2)}` : ""}` },
   });
 
   const vencimento = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const cobranca = await asaas(chave, "/payments", {
-    metodo: "POST",
-    corpo: {
-      customer: clienteId,
-      billingType: "PIX",
-      value: valor,
-      dueDate: vencimento,
-      description: `FireHub — ${disparos.toLocaleString("pt-BR")} disparos de WhatsApp (API oficial)`,
-      externalReference: `disparo:${recarga.id}`,
-    },
-  });
+  const corpoDaCobranca = {
+    customer: clienteId,
+    billingType: "PIX",
+    value: valor,
+    dueDate: vencimento,
+    description: `FireHub — ${disparos.toLocaleString("pt-BR")} disparos de WhatsApp (API oficial)`,
+    externalReference: `disparo:${recarga.id}`,
+  };
+  let cobranca = await asaas(chave, "/payments", { metodo: "POST", corpo: split ? { ...corpoDaCobranca, split } : corpoDaCobranca });
+  // O split não pode impedir a loja de comprar: recusado (carteira do vendedor
+  // inválida, por exemplo), a recarga sai sem split e o erro fica no log.
+  if (split && (!cobranca.ok || !cobranca.dados?.id)) {
+    console.error(`[Disparo] Asaas recusou o split da recarga ${recarga.id} (vendedor ${comissao?.parceiroId}): ${JSON.stringify(cobranca.dados?.errors || cobranca.dados).slice(0, 300)} — gerando sem split.`);
+    cobranca = await asaas(chave, "/payments", { metodo: "POST", corpo: corpoDaCobranca });
+    if (cobranca.ok && cobranca.dados?.id) {
+      await db.disparoRecarga.update({ where: { id: recarga.id }, data: { descricao: `Custo Meta na hora: R$ ${custoMeta().toFixed(4)} · split recusado pelo Asaas` } });
+    }
+  }
   if (!cobranca.ok || !cobranca.dados?.id) {
     await db.disparoRecarga.update({ where: { id: recarga.id }, data: { status: "CANCELADA" } });
     throw new Error(cobranca.dados?.errors?.[0]?.description || "O Asaas não gerou a cobrança.");

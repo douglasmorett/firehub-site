@@ -11,8 +11,9 @@ import { soltarContatosDoVendedor } from "@/lib/crm/contatos";
  * `novaSenha: true`, que gera uma temporária e a devolve UMA vez.
  *
  * `sairDaEquipe: true` tira o vendedor da equipe e devolve as lojas dele para
- * "sem vendedor" (senão elas seguiriam pagando 3% a quem não acompanha mais).
- * A conta de embaixador, se houver, continua.
+ * "sem vendedor" (senão elas seguiriam pagando 3% a quem não acompanha mais) e
+ * PAUSA a conta: quem sai da FireHub não recebe mais comissão nenhuma, nem das
+ * lojas que convidou (18/10/2026). Reativar como embaixador é decisão à mão.
  */
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await getServerSession(authOptions);
@@ -27,7 +28,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (body.sairDaEquipe) {
     const [, soltas] = await prisma.$transaction([
-      prisma.ambassador.update({ where: { id }, data: { isVendedor: false } }),
+      // Saiu da FireHub = sem comissão futura, nem das lojas que convidou
+      // (Douglas, 18/10/2026; termo de comissionamento). Sem `active: false`,
+      // com `isVendedor` falso ele viraria "embaixador" e o split seguiria
+      // pagando o % de link nas lojas do convite dele.
+      prisma.ambassador.update({ where: { id }, data: { isVendedor: false, active: false } }),
       prisma.user.updateMany({
         where: { vendedorId: id },
         data: { vendedorId: null, vendedorStatus: null, vendedorAtribuidoEm: null, vendedorAtendidoEm: null },

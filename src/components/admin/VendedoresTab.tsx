@@ -18,6 +18,12 @@ type Membro = {
   comissaoMes: number;
   /** Tudo que ele recebe no mês: indicação + rede + carteira. */
   comissaoTotal: number;
+  /** % de link do cadastro (loja que ele convidou e atende). */
+  linkPercent?: number;
+  /** Termo de comissionamento: último aceite (lib/parceiro/aceite-do-termo.ts). */
+  termoAceitoEm?: string | null;
+  termoVersao?: string | null;
+  termoVigente?: boolean;
 };
 type Embaixador = { id: string; name: string; email: string; asaasWalletId: string | null };
 
@@ -108,7 +114,7 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
 
   const tirarDaEquipe = async (m: Membro) => {
     const aviso = m.clientes > 0 ? ` As ${m.clientes} lojas da carteira dele ficam sem vendedor.` : "";
-    if (!confirm(`Tirar ${m.name} da equipe de vendas?${aviso}`)) return;
+    if (!confirm(`Tirar ${m.name} da equipe de vendas?${aviso} A conta dele fica PAUSADA: ele deixa de receber todas as comissões futuras, inclusive das lojas que convidou pelo link.`)) return;
     if (await enviar(`/api/admin/vendedores/${m.id}`, "PATCH", { sairDaEquipe: true })) carregar();
   };
 
@@ -178,18 +184,18 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
           <table className="fha-table">
             <thead>
               <tr>
-                <th>Vendedor</th><th>Clientes</th><th>Atendidos</th><th>Sem atendimento</th><th>Parados</th><th>Comissão do mês</th><th>Asaas</th><th>Situação</th><th>Ações</th>
+                <th>Vendedor</th><th>Clientes</th><th>Atendidos</th><th>Sem atendimento</th><th>Parados</th><th>Comissão do mês</th><th>Asaas</th><th>Termo aceito em</th><th>Situação</th><th>Ações</th>
               </tr>
             </thead>
             <tbody>
               {carregando && (
-                <tr><td colSpan={9} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>Carregando a equipe...</td></tr>
+                <tr><td colSpan={10} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>Carregando a equipe...</td></tr>
               )}
               {!carregando && erro && (
-                <tr><td colSpan={9} style={{ textAlign: "center", padding: 28, color: "#B91C1C" }}>{erro}</td></tr>
+                <tr><td colSpan={10} style={{ textAlign: "center", padding: 28, color: "#B91C1C" }}>{erro}</td></tr>
               )}
               {!carregando && !erro && equipe.length === 0 && (
-                <tr><td colSpan={9} style={{ textAlign: "center", padding: 32, color: "#64748B" }}>
+                <tr><td colSpan={10} style={{ textAlign: "center", padding: 32, color: "#64748B" }}>
                   Nenhum vendedor ainda. Cadastre o primeiro em <strong>+ Cadastrar vendedor</strong>.
                 </td></tr>
               )}
@@ -222,7 +228,7 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
                     <td style={{ fontWeight: 700, color: m.inativos ? "#B91C1C" : "#94A3B8" }}>{m.inativos}</td>
                     <td>
                       <div style={{ fontWeight: 800, color: "#0F172A" }}>{brl(m.comissaoMes)}</div>
-                      <div className="fha-sub">{m.sellerPercent}% da carteira</div>
+                      <div className="fha-sub">{m.linkPercent ?? "—"}% link · {m.sellerPercent}% atribuídas</div>
                       {m.comissaoTotal > m.comissaoMes && (
                         <div className="fha-sub" title="Somando a indicação e a rede dele">{brl(m.comissaoTotal)} no total</div>
                       )}
@@ -231,6 +237,12 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
                       {m.asaasWalletId
                         ? <span className="fha-badge fha-badge-active">Carteira ok</span>
                         : <span className="fha-badge fha-badge-pending" title="Sem carteira o split não sai para ele">Sem carteira</span>}
+                    </td>
+                    <td>
+                      {m.termoAceitoEm
+                        ? <><div style={{ fontWeight: 700, color: m.termoVigente ? "#15803D" : "#B45309" }}>{new Date(m.termoAceitoEm).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" })}</div>
+                            <div className="fha-sub">{m.termoVigente ? "versão vigente" : `versão antiga (${m.termoVersao})`}</div></>
+                        : <span className="fha-badge fha-badge-pending" title="O portal pede o aceite no próximo acesso">Ainda não aceitou</span>}
                     </td>
                     <td>{m.active ? <span className="fha-badge fha-badge-active">Ativo</span> : <span className="fha-badge fha-badge-exempt">Pausado</span>}</td>
                     <td>

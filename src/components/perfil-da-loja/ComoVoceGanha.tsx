@@ -2,19 +2,24 @@
 
 /**
  * COMO VOCÊ GANHA — o comissionamento do vendedor explicado (Douglas,
- * 18/10/2026): "quem veio pelo link dele garante 10% de comissão; quem veio
- * jogado na carteira dele mantém os 3%. Tudo isso tem que ficar bem explicado
- * no comissionamento dele."
+ * 18/10/2026): "quem atende tem que ser comissionado… se amanhã ele parar de
+ * atender quem ele convidou, ele perde os 10%".
  *
- * Os percentuais mostrados são os do CADASTRO (o que o split do boleto paga de
- * verdade — lib/billing.ts e lib/parceiro/regras.ts). O admin vê também o
- * combinado e o aviso quando o cadastro diverge; o vendedor vê só o que recebe.
- * Aparece no portal do vendedor (Meus números) e no detalhe da carteira no admin.
+ *   • loja que veio pelo link dele, enquanto ELE atende → % de link do cadastro (10%);
+ *   • loja atribuída à carteira dele → % de atribuída (3%);
+ *   • recarga de disparo das lojas que ele atende → 3% (o vendedor NÃO vê a
+ *     margem nem o custo da Meta: só quanto ganha por pacote — pedido do Douglas).
+ *
+ * Os percentuais são os do CADASTRO (o que o split paga). O admin vê também o
+ * combinado, o aviso de divergência e a margem do disparo. Aparece no portal
+ * (Meus números) e no detalhe da carteira no admin.
  */
-import { Link2, UserPlus, Wallet, Info, TriangleAlert, MessageSquare } from "lucide-react";
+import { Link2, UserPlus, Wallet, Info, TriangleAlert, MessageSquare, DoorOpen } from "lucide-react";
 import { useDinheiro } from "@/components/parceiro/ValoresOcultos";
 import { COMISSAO_COMBINADA, exemploDeComissao } from "@/lib/performance-das-carteiras/regras";
 import { ESTILO_DO_PERFIL } from "./estilo";
+
+export type PacoteDoDisparo = { mensagens: number; ganho: number };
 
 export type DadosDoComissionamento = {
   /** % do cadastro: lojas do link de convite (commissionPercent) e atribuídas (sellerPercent). */
@@ -22,35 +27,39 @@ export type DadosDoComissionamento = {
   atribuida: number | null;
   lojasDoLink: number;
   lojasAtribuidas: number;
-  /** Comissão prevista do mês corrente (ciclo aberto) e o que já caiu. */
   previstoNoMes: number;
   recebidoNoMes: number;
   recebidoNoMesAnterior?: number | null;
-  /** Comissão sobre a margem do disparo no período (calculada; ainda não sai no split). */
-  comissaoDoDisparo?: number | null;
+  /** O que ele ganhou com disparo no período (3% da margem das recargas). */
+  ganhoComDisparo?: number | null;
+  /** Vendedor: "pacote de N mensagens → você ganha R$ X". */
+  pacotes?: PacoteDoDisparo[];
+  /** Só o admin: bruto e margem do disparo no período. */
+  disparoDoAdmin?: { bruto: number; margem: number; estimado: boolean } | null;
   /** Só o admin: cadastro diferente do combinado. */
   divergencias?: string[];
   custoMeta?: number;
-  /** Os rótulos dos números (o admin mostra o período escolhido, não o mês). */
   rotulos?: { previsto: string; previstoSub: string; recebido: string };
 };
 
 export default function ComoVoceGanha({ d, modo, tema = "areia", embutido = false }: { d: DadosDoComissionamento; modo: "VENDEDOR" | "ADMIN"; tema?: "areia" | "admin"; embutido?: boolean }) {
   const dinheiro = useDinheiro();
   const ex = exemploDeComissao({ link: d.link, atribuida: d.atribuida }, d.custoMeta);
-  const naCarteira = modo === "VENDEDOR" ? "na sua carteira" : "na carteira dele";
-  const noAsaas = modo === "VENDEDOR" ? "na sua carteira do Asaas" : "na carteira do Asaas dele";
+  const vend = modo === "VENDEDOR";
+  const naCarteira = vend ? "na sua carteira" : "na carteira dele";
+  const noAsaas = vend ? "na sua carteira do Asaas" : "na carteira do Asaas dele";
   const rotulos = d.rotulos ?? { previsto: "Previsto neste mês", previstoSub: "o ciclo de agora, se as lojas pagarem", recebido: "Já caiu neste mês" };
+
   const corpo = (
     <section className="pf-painel cg">
       <div className="pf-painel-cab">
         <div>
-          <h3 className="pf-h"><Wallet size={17} aria-hidden /> Como {modo === "VENDEDOR" ? "você ganha" : "ele ganha"}</h3>
-          <p className="pf-sub">Comissão é uma parte da conta que a loja paga ao FireHub todo mês — não das vendas da loja.</p>
+          <h3 className="pf-h"><Wallet size={17} aria-hidden /> Como {vend ? "você ganha" : "ele ganha"}</h3>
+          <p className="pf-sub">Comissão é uma parte da conta que a loja paga ao FireHub todo mês — não das vendas da loja. Quem ganha é quem atende a loja.</p>
         </div>
       </div>
 
-      {modo === "ADMIN" && d.divergencias && d.divergencias.length > 0 && (
+      {!vend && d.divergencias && d.divergencias.length > 0 && (
         <div className="cg-aviso" role="note">
           <TriangleAlert size={16} aria-hidden />
           <div>
@@ -66,15 +75,15 @@ export default function ComoVoceGanha({ d, modo, tema = "areia", embutido = fals
           <span className="cg-icone link"><Link2 size={18} aria-hidden /></span>
           <div>
             <div className="cg-pct">{d.link === null ? "—" : `${d.link}%`}</div>
-            <strong>{modo === "VENDEDOR" ? "Loja que veio pelo seu link" : "Loja que veio pelo link dele"}</strong>
-            <p>A loja se cadastra pelo link de convite e fica {naCarteira}. {d.lojasDoLink} {d.lojasDoLink === 1 ? "loja" : "lojas"} hoje.</p>
+            <strong>{vend ? "Loja que veio pelo seu link" : "Loja que veio pelo link dele"}</strong>
+            <p>Enquanto {vend ? "você atende" : "ele atende"} a loja. Se outro vendedor passar a atender, a comissão passa para quem atende. {d.lojasDoLink} {d.lojasDoLink === 1 ? "loja" : "lojas"} hoje.</p>
           </div>
         </div>
         <div className="cg-regra">
           <span className="cg-icone atrib"><UserPlus size={18} aria-hidden /></span>
           <div>
             <div className="cg-pct">{d.atribuida === null ? "—" : `${d.atribuida}%`}</div>
-            <strong>{modo === "VENDEDOR" ? "Loja atribuída à sua carteira" : "Loja atribuída à carteira dele"}</strong>
+            <strong>{vend ? "Loja atribuída à sua carteira" : "Loja atribuída à carteira dele"}</strong>
             <p>A loja chegou pelo FireHub (anúncio, site) e foi posta {naCarteira} para atender. {d.lojasAtribuidas} {d.lojasAtribuidas === 1 ? "loja" : "lojas"} hoje.</p>
           </div>
         </div>
@@ -83,8 +92,25 @@ export default function ComoVoceGanha({ d, modo, tema = "areia", embutido = fals
       <ul className="cg-como">
         <li><Info size={14} aria-hidden /><span><b>Sobre o quê:</b> o boleto do mês da loja — mensalidade (2% das vendas, mínimo R$ 100, máximo R$ 400) + os serviços cobrados nele (App, Bill, Multimarcas, totem, tráfego, lojas extras). O Asaas calcula sobre o valor líquido do boleto (depois da tarifa dele).</span></li>
         <li><Info size={14} aria-hidden /><span><b>Quando cai:</b> no dia em que a loja paga o boleto, direto {noAsaas} (split). Loja que não pagou não gera comissão; loja isenta ou em teste não tem boleto.</span></li>
-        <li><MessageSquare size={14} aria-hidden /><span><b>Disparo oficial:</b> conta sobre o LUCRO do FireHub na recarga (valor − custo da Meta), não sobre o valor cheio. A recarga é um Pix à parte: essa parte ainda não cai sozinha no split{d.comissaoDoDisparo ? ` (${dinheiro(d.comissaoDoDisparo)} no período, calculado)` : ""}.</span></li>
+        <li><MessageSquare size={14} aria-hidden /><span><b>Disparo oficial:</b> {vend
+          ? <>{COMISSAO_COMBINADA.DISPARO}% em cada recarga de disparo das suas lojas, no Pix da recarga.{d.ganhoComDisparo ? <> Neste mês: <b>{dinheiro(d.ganhoComDisparo)}</b>.</> : null}</>
+          : <>{COMISSAO_COMBINADA.DISPARO}% do LUCRO do FireHub em cada recarga das lojas que ele atende (valor − custo da Meta), em split de valor fixo no Pix.
+            {d.disparoDoAdmin && d.disparoDoAdmin.bruto > 0 ? <> No período: {dinheiro(d.disparoDoAdmin.bruto)} em recargas, {dinheiro(d.disparoDoAdmin.margem)} de lucro{d.disparoDoAdmin.estimado ? " (custo estimado)" : ""}, {dinheiro(d.ganhoComDisparo || 0)} para ele.</> : null}</>}
+        </span></li>
+        <li><DoorOpen size={14} aria-hidden /><span><b>Enquanto trabalha com a FireHub:</b> quem para de atender uma loja deixa de receber dela; quem sai da FireHub deixa de receber as comissões futuras, inclusive das lojas que convidou.</span></li>
       </ul>
+
+      {vend && d.pacotes && d.pacotes.length > 0 && (
+        <div className="cg-pacotes">
+          <strong>Disparo: quanto você ganha por recarga</strong>
+          <table>
+            <thead><tr><th>Pacote</th><th>Você ganha</th></tr></thead>
+            <tbody>
+              {d.pacotes.map((p) => <tr key={p.mensagens}><td>{p.mensagens.toLocaleString("pt-BR")} mensagens</td><td><b>{dinheiro(p.ganho)}</b></td></tr>)}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="cg-numeros">
         <div><span className="pf-rotulo">{rotulos.previsto}</span><b>{dinheiro(d.previstoNoMes)}</b><small>{rotulos.previstoSub}</small></div>
@@ -101,10 +127,11 @@ export default function ComoVoceGanha({ d, modo, tema = "areia", embutido = fals
           {ex.link !== null && <> Pelo link: <b>{dinheiro(ex.link)}</b> ({d.link}%).</>}
           {ex.atribuida !== null && <> Atribuída: <b>{dinheiro(ex.atribuida)}</b> ({d.atribuida}%).</>}
         </p>
-        <p>
-          Recarga de disparo de {dinheiro(ex.recarga.valor)} ({ex.recarga.disparos} mensagens): a Meta cobra {dinheiro(ex.recarga.disparos * ex.recarga.custo)}, o lucro do FireHub é {dinheiro(ex.margem)}
-          {ex.linkDisparo !== null && <> — pelo link, {dinheiro(ex.linkDisparo)}</>}{ex.atribuidaDisparo !== null && <>; atribuída, {dinheiro(ex.atribuidaDisparo)}</>}.
-        </p>
+        {!vend && (
+          <p>
+            Recarga de {dinheiro(ex.recarga.valor)} ({ex.recarga.disparos} mensagens): a Meta cobra {dinheiro(ex.recarga.disparos * ex.recarga.custo)}, o lucro do FireHub é {dinheiro(ex.margem)} e o vendedor que atende leva {dinheiro(ex.disparo)} ({COMISSAO_COMBINADA.DISPARO}%).
+          </p>
+        )}
       </div>
     </section>
   );
@@ -130,6 +157,11 @@ export const ESTILO_DO_COMISSIONAMENTO = `
 .cg-como { list-style: none; margin: 0; padding: 0 18px 12px; display: flex; flex-direction: column; gap: 6px; }
 .cg-como li { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 8px; font-size: 0.82rem; color: var(--pf-tinta-2); align-items: start; }
 .cg-como li svg { margin-top: 3px; color: var(--pf-cinza); }
+.cg-pacotes { margin: 0 18px 12px; border: 1px solid var(--pf-linha); border-radius: 12px; padding: 10px 12px; background: var(--pf-papel); font-size: 0.82rem; }
+.cg-pacotes table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+.cg-pacotes th { text-align: left; font-size: 0.7rem; color: var(--pf-cinza); text-transform: uppercase; letter-spacing: .04em; padding: 4px 0; }
+.cg-pacotes td { padding: 5px 0; border-top: 1px dashed var(--pf-linha); font-variant-numeric: tabular-nums; }
+.cg-pacotes th:last-child, .cg-pacotes td:last-child { text-align: right; }
 .cg-numeros { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; padding: 0 18px 12px; }
 .cg-numeros div { border: 1px solid var(--pf-linha); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; background: var(--pf-papel); }
 .cg-numeros b { font-size: 1.2rem; font-variant-numeric: tabular-nums; }
@@ -139,6 +171,6 @@ export const ESTILO_DO_COMISSIONAMENTO = `
 @media (max-width: 640px) {
   .cg-regras { grid-template-columns: 1fr; padding: 0 14px 12px; }
   .cg-como, .cg-numeros { padding-left: 14px; padding-right: 14px; }
-  .cg-exemplo, .cg-aviso { margin-left: 14px; margin-right: 14px; }
+  .cg-exemplo, .cg-aviso, .cg-pacotes { margin-left: 14px; margin-right: 14px; }
 }
 `;

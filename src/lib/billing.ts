@@ -32,7 +32,6 @@ import { calcMensalidade, FIREHUB_PLAN, percentualDoMes, percentualDaVenda, MES_
 import { getAsaasKey } from "@/lib/asaas";
 import { prepararAvisoDoBoleto } from "@/lib/aviso-do-boleto";
 import { bloqueioDaMensalidade, bloqueioDoCiclo, JUROS_AO_MES_PCT, MULTA_POR_ATRASO_PCT, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade";
-import { ganhaComoVendedor } from "@/lib/vendedores";
 import { fimDoTeste } from "@/lib/fim-do-teste";
 
 /**
@@ -45,7 +44,7 @@ import { fimDoTeste } from "@/lib/fim-do-teste";
  * alguém errou o número no admin. O número mora em lib/parceiro/regras.ts: o
  * portal do parceiro avisa a loja que passaria do teto com a mesma conta.
  */
-import { TETO_DE_SPLIT } from "@/lib/parceiro/regras";
+import { TETO_DE_SPLIT, splitDoBoletoNoAsaas } from "@/lib/parceiro/regras";
 import { aplicarCreditosNoCiclo, indiqueEGanheDaLoja, previsaoDoIndiqueEGanhe } from "@/lib/indique-e-ganhe-no-banco";
 import { INDICADOS_PARA_ISENCAO } from "@/lib/indique-e-ganhe";
 
@@ -945,49 +944,33 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
         fine: { value: MULTA_POR_ATRASO_PCT, type: "PERCENTAGE" },
       };
 
-      // ── Comissão de embaixador: um nível só ──────────────────────────────
+      // ── Comissão: embaixador que indicou + vendedor que ATENDE ───────────
       //
-      // Quem indicou ESTA loja leva `commissionPercent` (20% de padrão e
-      // editável caso a caso no admin). O nível 2 (3% para quem trouxe o
-      // embaixador) foi encerrado em 15/10/2026: `parentAmbassadorId` e
-      // `level2Percent` ficam no banco, mas não pagam mais nada.
+      // A regra mora em lib/parceiro/regras.ts (`splitDaLoja`), a mesma que o
+      // portal do parceiro e a análise das carteiras leem. Desde 18/10/2026
+      // (Douglas): entre os vendedores, quem atende é quem ganha — % de link do
+      // cadastro (10%) se ele trouxe a loja pelo link de convite, 3% se a loja
+      // foi atribuída a ele; quem convidou e não atende mais não leva nada;
+      // vendedor inativo não leva nada. Embaixador que não vende (programa de
+      // indicação) segue como antes: `commissionPercent` dele. O nível 2 acabou
+      // em 15/10/2026 e o "Indique e Ganhe" entre lojistas não paga por aqui.
       //
-      // O ramo antigo do "Indique e Ganhe" entre lojistas (User.referredById,
-      // 20/3/1) saiu daqui. O programa foi encerrado para o cliente comum, mas
-      // o código continuava pagando: bastava um lojista gravar o próprio
-      // asaasWalletId para começar a receber 20% de quem tivesse o ref dele.
-      const splits: { walletId: string; percentualValue: number }[] = [];
-      const nivel1 = cycle.franchisee?.ambassador;
-
-      if (nivel1?.active && nivel1.asaasWalletId) {
-        splits.push({ walletId: nivel1.asaasWalletId, percentualValue: nivel1.commissionPercent });
-      }
-
-      // Vendedor responsável: `sellerPercent` (3%) além do embaixador — só em
-      // loja que NÃO é indicação dele. Se ele indicou a loja, já ganha a
-      // comissão de embaixador e só acompanha (lib/vendedores.ts,
-      // ganhaComoVendedor).
-      const vendedor = cycle.franchisee?.vendedor;
-      if (
-        vendedor?.active && vendedor.isVendedor && vendedor.asaasWalletId && vendedor.sellerPercent > 0 &&
-        ganhaComoVendedor(vendedor.id, { ambassadorId: cycle.franchisee?.ambassadorId })
-      ) {
-        const mesma = splits.find((s) => s.walletId === vendedor.asaasWalletId);
-        if (mesma) mesma.percentualValue += vendedor.sellerPercent;
-        else splits.push({ walletId: vendedor.asaasWalletId, percentualValue: vendedor.sellerPercent });
-      }
-
-      // Freio de mão. `commissionPercent` entra por um input livre no admin —
-      // um 300 digitado no lugar de 30 viraria um boleto com split de 300%, que
-      // o Asaas recusa e deixa a loja sem cobrança nenhuma no mês. Melhor
-      // cobrar sem split e gritar no log do que não cobrar.
-      const totalSplit = splits.reduce((acc, s) => acc + s.percentualValue, 0);
-      if (totalSplit > TETO_DE_SPLIT) {
+      // Freio de mão (mantido): `commissionPercent` entra por um input livre no
+      // admin — um 300 digitado no lugar de 30 viraria um boleto com split de
+      // 300%, que o Asaas recusa e deixa a loja sem cobrança. Acima do teto,
+      // cobra sem split e grita no log.
+      const comissao = splitDoBoletoNoAsaas({
+        ambassadorId: cycle.franchisee?.ambassadorId ?? null,
+        vendedorId: cycle.franchisee?.vendedorId ?? null,
+        ambassador: cycle.franchisee?.ambassador ?? null,
+        vendedor: cycle.franchisee?.vendedor ?? null,
+      });
+      if (comissao.acimaDoTeto) {
         console.error(
-          `[Billing] Split de ${totalSplit}% no ciclo ${cycle.id} (loja ${franchiseeId}) acima do teto de ${TETO_DE_SPLIT}% — cobrança emitida SEM split. Revisar comissão do embaixador.`
+          `[Billing] Split de ${comissao.total}% no ciclo ${cycle.id} (loja ${franchiseeId}) acima do teto de ${TETO_DE_SPLIT}% — cobrança emitida SEM split. Revisar comissão do embaixador.`
         );
-      } else if (splits.length > 0) {
-        payload.split = splits;
+      } else if (comissao.split.length > 0) {
+        payload.split = comissao.split;
       }
 
       const pr = await fetch(`${BASE}/payments`, {

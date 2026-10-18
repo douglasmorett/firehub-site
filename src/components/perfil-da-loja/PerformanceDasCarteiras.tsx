@@ -253,7 +253,8 @@ function DetalheDaCarteiraTela({ id, consulta, aoFechar }: { id: string; consult
                   <ComoVoceGanha embutido modo="ADMIN" d={{
                     link: r.regra.link, atribuida: r.regra.atribuida, lojasDoLink, lojasAtribuidas,
                     previstoNoMes: r.atual.comissaoPrevista, recebidoNoMes: r.atual.comissaoRecebida, recebidoNoMesAnterior: null,
-                    comissaoDoDisparo: r.atual.comissaoDoDisparo, divergencias: r.regra.divergencias, custoMeta: d.custoMetaAtual,
+                    ganhoComDisparo: r.atual.comissaoDoDisparo, divergencias: r.regra.divergencias, custoMeta: d.custoMetaAtual,
+                    disparoDoAdmin: { bruto: r.atual.receita.disparoBruto, margem: r.atual.receita.servicos.disparo, estimado: d.disparoEstimado },
                     rotulos: { previsto: "Comissão prevista no período", previstoSub: d.periodo.rotulo, recebido: "Já recebida no período" },
                   }} />
                 )}
@@ -279,7 +280,7 @@ function DetalheDaCarteiraTela({ id, consulta, aoFechar }: { id: string; consult
                       <p className="pc-disparo">
                         Disparo: <b>{dinheiro(receita.disparoBruto)}</b> cobrado das lojas → <b>{dinheiro(receita.servicos.disparo)}</b> de lucro do FireHub
                         {d.disparoEstimado ? ` (custo da Meta estimado em ${dinheiro(d.custoMetaAtual)} por mensagem onde a recarga não gravou o custo)` : " (custo da Meta gravado em cada recarga)"}.
-                        {" "}Comissão sobre o lucro: <b>{dinheiro(r.atual.comissaoDoDisparo)}</b> — calculada, ainda não sai no split.
+                        {" "}Comissão do vendedor que atende (3% do lucro): <b>{dinheiro(r.atual.comissaoDoDisparo)}</b> — no split do Pix das recargas geradas a partir desta versão.
                       </p>
                     )}
                   </section>
@@ -488,7 +489,7 @@ export default function PerformanceDasCarteiras() {
               <Kpi rotulo="Faturamento das lojas (GMV)" valor={dinheiro(t.atual.gmv)} extra={<Delta pct={t.variacao.gmv} />} sub={`${n0(t.atual.vendas)} vendas · antes ${dinheiro(t.anterior.gmv)}`} />
               <Kpi rotulo="Receita FireHub prevista" valor={dinheiro(t.atual.receita.previsto)} extra={<Delta pct={t.variacao.receita} />} sub={`faturado ${dinheiro(t.atual.receita.faturado)} · recebido ${dinheiro(t.atual.receita.recebido)} · antes ${dinheiro(t.anterior.receita.previsto)}`} />
               <Kpi rotulo="Em aberto" valor={dinheiro(t.atual.receita.emAberto)} sub={`${t.agora.bloqueadas} lojas bloqueadas por boleto agora`} alerta={t.atual.receita.emAberto > 0} />
-              <Kpi rotulo="Comissões" valor={dinheiro(t.atual.comissaoPrevista)} extra={<Delta pct={t.variacao.comissao} />} sub={`recebidas ${dinheiro(t.atual.comissaoRecebida)}${t.atual.comissaoDoDisparo > 0 ? ` · + ${dinheiro(t.atual.comissaoDoDisparo)} do disparo (sem split)` : ""}`} />
+              <Kpi rotulo="Comissões" valor={dinheiro(t.atual.comissaoPrevista)} extra={<Delta pct={t.variacao.comissao} />} sub={`recebidas ${dinheiro(t.atual.comissaoRecebida)}${t.atual.comissaoDoDisparo > 0 ? ` · + ${dinheiro(t.atual.comissaoDoDisparo)} do disparo` : ""}`} />
               <Kpi rotulo="Disparo oficial (lucro)" valor={dinheiro(t.atual.receita.servicos.disparo)} sub={`de ${dinheiro(t.atual.receita.disparoBruto)} em recargas pagas${dados.disparoEstimado ? " · custo Meta estimado" : ""}`} />
               <Kpi rotulo="Conversão do teste" valor={t.atual.conversaoPct === null ? "—" : `${t.atual.conversaoPct}%`} sub={`${t.atual.novasPagantes} de ${t.atual.novasForaDoTeste} pagaram · antes ${t.anterior.conversaoPct === null ? "—" : `${t.anterior.conversaoPct}%`}`} />
               <Kpi rotulo="Upsell no período" valor={String(t.atual.upsell)} extra={<DeltaAbs atual={t.atual.upsell} anterior={t.anterior.upsell} />} sub={`+${dinheiro(t.atual.upsellMensal)}/mês em serviços`} />
@@ -624,12 +625,12 @@ export default function PerformanceDasCarteiras() {
             <details className="pf-painel pc-como">
               <summary><Info size={15} aria-hidden /> Como cada número é calculado</summary>
               <ul>
-                <li><b>Carteira</b> = uma loja, um dono: a que veio pelo link de convite de um vendedor é dele (desde o cadastro), mesmo que o admin tenha posto outro vendedor; a atribuída é do vendedor atribuído (desde a atribuição). Loja indicada por embaixador que não vende aparece nas indicações dele e na carteira do vendedor que atende. “Sem vendedor” = sem vendedor e sem embaixador. A troca de vendedor não tem histórico: vale a carteira de hoje.</li>
+                <li><b>Carteira</b> = uma loja, um dono: o vendedor que ATENDE — o atribuído (desde a atribuição); sem atribuído, quem convidou pelo link (desde o cadastro). Quem convidou e não atende não vê a loja. Loja indicada por embaixador que não vende aparece nas indicações dele e na carteira do vendedor que atende. “Sem vendedor” = sem vendedor e sem embaixador. A troca de vendedor não tem histórico: vale a carteira de hoje.</li>
                 <li><b>Situação</b> no fim do período, régua mensal: nova (cadastrada no mês ou em teste), parada (0 vendas no mês), esfriando (≤ 70% das vendas do mês anterior, com base ≥ 20; o mês corrente é projetado), ativa.</li>
                 <li><b>GMV</b> = soma do valor dos pedidos na régua dos relatórios (sem cancelado, reposição e não concluídos; mesa uma vez). No “Mês atual” o mês anterior é cortado no mesmo ponto.</li>
                 <li><b>Receita FireHub</b>: mês fechado = boleto emitido (pago: valor pago; aberto: pendente) + recargas de disparo pagas. Mês aberto = previsto (mensalidade que o ciclo já soma + tráfego + totem + Bill/App/Multimarcas ativos). Recebido = boleto pago + recargas. Em aberto = boleto emitido e não pago. Isenta não gera receita.</li>
-                <li><b>Comissão</b> = a que o split do boleto paga hoje: loja que veio pelo link de convite do vendedor → o % de comissão do cadastro dele (combinado 10%); loja atribuída pelo admin → o % de vendedor (combinado 3%); embaixador que não vende → o % dele. Incide sobre o boleto do mês (mensalidade + serviços cobrados nele); recebida = boleto pago. Período que pega parte do mês leva a parte proporcional.</li>
-                <li><b>Disparo oficial</b> = lucro do FireHub na recarga paga (valor − mensagens × custo da Meta gravado na recarga; sem o custo gravado, o custo atual, marcado como estimado). A comissão sobre esse lucro usa o mesmo %, mas a recarga não tem split: ainda não cai sozinha.</li>
+                <li><b>Comissão</b> = a do split do boleto: entre os vendedores ganha quem ATENDE — o atribuído; sem atribuído, quem convidou pelo link. Ele leva o % de link do cadastro (10%) se foi ele quem convidou, o de atribuída (3%) se não; quem convidou e não atende, ou está com a conta pausada, não leva nada. Embaixador que não vende → o % dele (programa de indicação). Incide sobre o boleto do mês (mensalidade + serviços cobrados nele); recebida = boleto pago. Período que pega parte do mês leva a parte proporcional.</li>
+                <li><b>Disparo oficial</b> = lucro do FireHub na recarga paga (valor − mensagens × custo da Meta gravado na recarga; sem o custo gravado, o custo atual, marcado como estimado). O vendedor que atende leva sempre 3% desse lucro, em split de valor fixo no Pix da recarga (recargas geradas a partir desta versão).</li>
                 <li><b>Teste → pagante</b> = lojas novas do período que já saíram do teste e pagaram pelo menos um boleto ÷ as que já saíram do teste.</li>
                 <li><b>Perdidas</b> = venderam num mês e ficaram o mês seguinte inteiro sem vender, sem voltar até o fim do período (no mês corrente: 30+ dias sem venda). Loja excluída do sistema não aparece — não há registro de cancelamento.</li>
                 <li><b>Upsell</b> = serviço pago que começou no período (App, Bill, Multimarcas, totem, primeira recarga de disparo, primeiro mês de tráfego).</li>

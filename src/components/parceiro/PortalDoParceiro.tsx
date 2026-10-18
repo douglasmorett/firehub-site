@@ -46,6 +46,7 @@ export default function PortalDoParceiro({
   modo = "PARCEIRO",
   saida = "/embaixador",
   voltarPara = "/admin?aba=vendedores",
+  disparo,
 }: {
   relatorio: Relatorio;
   modo?: "PARCEIRO" | "ADMIN";
@@ -53,6 +54,8 @@ export default function PortalDoParceiro({
   saida?: string;
   /** ADMIN: a aba de onde o relatório foi aberto. */
   voltarPara?: string;
+  /** Vendedor: quanto ganha por pacote de disparo e o que já ganhou no mês (sem margem nem custo). */
+  disparo?: { pacotes: { mensagens: number; ganho: number }[]; ganhoNoMes: number } | null;
 }) {
   const p = relatorio.parceiro;
   const temCrm = modo === "PARCEIRO" && p.isVendedor;
@@ -147,6 +150,8 @@ export default function PortalDoParceiro({
                   previstoNoMes: relatorio.resumo.mesAtual.comissao,
                   recebidoNoMes: relatorio.resumo.recebidoEsteMes,
                   recebidoNoMesAnterior: relatorio.resumo.mesAnterior.recebido,
+                  pacotes: disparo?.pacotes,
+                  ganhoComDisparo: disparo?.ganhoNoMes ?? null,
                 }}
               />
             </div>

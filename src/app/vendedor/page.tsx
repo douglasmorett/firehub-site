@@ -5,6 +5,10 @@ import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
 import PortalDoParceiro from "@/components/parceiro/PortalDoParceiro";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
 import { lojaQueAbreOPortal } from "@/lib/paineis-do-dono";
+import TermoDeComissionamento from "@/components/parceiro/TermoDeComissionamento";
+import { aceitouAVersaoVigente } from "@/lib/parceiro/aceite-do-termo";
+import { ganhoComDisparoNoMes, pacotesDoVendedor } from "@/lib/parceiro/disparo-do-vendedor";
+import { idsDaCarteira } from "@/lib/perfil-da-loja/no-banco";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Portal do parceiro - FireHub" };
@@ -28,7 +32,7 @@ export default async function VendedorPage() {
         { email: { equals: sessionUser.email, mode: "insensitive" as const } },
       ],
     },
-    select: { id: true, isVendedor: true },
+    select: { id: true, isVendedor: true, name: true },
   });
 
   if (!vendedor) return <AmbassadorLoginForm modo="vendedor" />;
@@ -47,8 +51,17 @@ export default async function VendedorPage() {
     );
   }
 
-  const relatorio = await relatorioDoParceiro(vendedor.id);
+  // O termo de comissionamento vem antes das abas (lib/parceiro/termo-de-comissionamento.ts).
+  // Bloqueia o portal, não o pagamento: o split segue a regra de quem atende.
+  if (!(await aceitouAVersaoVigente(vendedor.id))) {
+    return <TermoDeComissionamento nome={vendedor.name} saida="/vendedor" />;
+  }
+
+  const [relatorio, ganhoNoMes] = await Promise.all([
+    relatorioDoParceiro(vendedor.id),
+    idsDaCarteira(vendedor.id).then(ganhoComDisparoNoMes).catch(() => 0),
+  ]);
   if (!relatorio) return <AmbassadorLoginForm modo="vendedor" />;
 
-  return <PortalDoParceiro relatorio={relatorio} saida="/vendedor" />;
+  return <PortalDoParceiro relatorio={relatorio} saida="/vendedor" disparo={{ pacotes: pacotesDoVendedor(), ganhoNoMes }} />;
 }

@@ -64,11 +64,12 @@ const corrente = receitaDoMes(ciclo({ yearMonth: "2026-10", status: "OPEN", amou
 confere("mês aberto: boleto 220 + App 149 + Bill 49,90 + totem 100; receita leva a MARGEM do disparo, não o bruto", [corrente.previsto, corrente.boleto, corrente.servicos.disparo, corrente.disparoBruto, corrente.recebido], [532.73, 518.9, 13.83, 46, 13.83]);
 confere("isenta: só a margem do disparo", receitaDoMes(ciclo({}), { ...sv, disparo: 13.83, disparoBruto: 46 }, true).previsto, 13.83);
 
-console.log("\n— Dono da carteira (uma loja, um dono) —");
+console.log("\n— Dono da carteira (quem atende) —");
 const vendedores = new Set(["vic", "bia"]);
 const eh = (id: string) => vendedores.has(id);
 confere("veio pelo link do vendedor → só dele (LINK)", donosDaLoja({ ambassadorId: "vic", vendedorId: null }, eh), [{ carteira: "vic", origem: "LINK" }]);
-confere("link do Victor e o admin pôs a Bia → continua só do Victor", donosDaLoja({ ambassadorId: "vic", vendedorId: "bia" }, eh), [{ carteira: "vic", origem: "LINK" }]);
+confere("link do Victor e a Bia atende → é da Bia (quem atende), como atribuída", donosDaLoja({ ambassadorId: "vic", vendedorId: "bia" }, eh), [{ carteira: "bia", origem: "ATRIBUIDA" }]);
+confere("link do Victor e ele mesmo atribuído → LINK", donosDaLoja({ ambassadorId: "vic", vendedorId: "vic" }, eh), [{ carteira: "vic", origem: "LINK" }]);
 confere("atribuída pelo admin → do vendedor (ATRIBUIDA)", donosDaLoja({ ambassadorId: null, vendedorId: "bia" }, eh), [{ carteira: "bia", origem: "ATRIBUIDA" }]);
 confere("embaixador que não vende + vendedor atribuído → as duas (regra antiga)", donosDaLoja({ ambassadorId: "ana", vendedorId: "bia" }, eh), [{ carteira: "bia", origem: "ATRIBUIDA" }, { carteira: "ana", origem: "INDICACAO" }]);
 confere("ninguém → Sem vendedor", donosDaLoja({ ambassadorId: null, vendedorId: null }, eh), [{ carteira: "sem", origem: "SEM" }]);
@@ -79,7 +80,7 @@ confere("vendedor criado no admin (0% no link) = aviso", regraDeComissao({ isVen
 confere("embaixador que não vende: sem aviso, vale o % dele", [regraDeComissao({ isVendedor: false, commissionPercent: 20, sellerPercent: 3 }).link, regraDeComissao({ isVendedor: false, commissionPercent: 20, sellerPercent: 3 }).divergencias], [20, []]);
 const ex = exemploDeComissao({ link: 10, atribuida: 3 });
 confere("exemplo: loja de R$ 10 mil → boleto R$ 349 (200 + App 149); 10% = 34,90; 3% = 10,47", [ex.boleto, ex.link, ex.atribuida], [349, 34.9, 10.47]);
-confere("exemplo do disparo: margem 13,83; 10% = 1,38", [ex.margem, ex.linkDisparo], [13.83, 1.38]);
+confere("exemplo do disparo: margem 13,83; sempre 3% = 0,41", [ex.margem, ex.disparo], [13.83, 0.41]);
 
 console.log("\n— Situação no mês —");
 const sit = (x: Partial<Parameters<typeof situacaoNoMes>[0]>) => situacaoNoMes({

@@ -22,9 +22,9 @@ const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
 };
 
 const victor: ParceiroNasRegras = { id: "victor", active: true, temCarteira: true, isVendedor: true, commissionPercent: 30, level2Percent: 3, sellerPercent: 3 };
-const ana = { id: "ana", active: true, temCarteira: true, commissionPercent: 20, parentAmbassadorId: "victor", parentAmbassador: { id: "victor", active: true, temCarteira: true, level2Percent: 3 } };
-const vicComoN1 = { id: "victor", active: true, temCarteira: true, commissionPercent: 30, parentAmbassadorId: null, parentAmbassador: null };
-const vicVendedor = { id: "victor", active: true, isVendedor: true, temCarteira: true, sellerPercent: 3 };
+const ana = { id: "ana", active: true, temCarteira: true, commissionPercent: 20, isVendedor: false, parentAmbassadorId: "victor", parentAmbassador: { id: "victor", active: true, temCarteira: true, level2Percent: 3 } };
+const vicComoN1 = { id: "victor", active: true, temCarteira: true, commissionPercent: 30, isVendedor: true, parentAmbassadorId: null, parentAmbassador: null };
+const vicVendedor = { id: "victor", active: true, isVendedor: true, temCarteira: true, sellerPercent: 3, commissionPercent: 30 };
 const outroVendedor = { id: "bia", active: true, isVendedor: true, temCarteira: true, sellerPercent: 3 };
 
 const indicouEAcompanha: LojaNasRegras = { ambassadorId: "victor", ambassador: vicComoN1, vendedorId: "victor", vendedor: vicVendedor };
@@ -35,7 +35,8 @@ const deOutro: LojaNasRegras = { ambassadorId: "ana", ambassador: { ...ana, pare
 
 console.log("\n— Papel: indicação vence carteira —");
 confere("indicou e acompanha = EMBAIXADOR 30%, também na carteira", papelNaLoja(victor, indicouEAcompanha), { papel: "EMBAIXADOR", percentual: 30, tambemNaCarteira: true });
-confere("só indicou = EMBAIXADOR 30%", papelNaLoja(victor, soIndicou), { papel: "EMBAIXADOR", percentual: 30, tambemNaCarteira: false });
+// Regra de 18/10/2026: quem convidou e NÃO atende não leva nada.
+confere("convidou e a Bia atende = null (perdeu os 30%)", papelNaLoja(victor, soIndicou), null);
 // Nível 2 acabou em 15/10/2026: a loja da Ana que o Victor acompanha é só carteira dele.
 confere("loja da Ana (trazida por ele) e acompanha = VENDEDOR 3%", papelNaLoja(victor, daRedeEAcompanha), { papel: "VENDEDOR", percentual: 3, tambemNaCarteira: false });
 confere("loja da Ana sem carteira dele = null (sem nível 2)", papelNaLoja(victor, { ...daRedeEAcompanha, vendedorId: "bia", vendedor: outroVendedor }), null);
@@ -43,7 +44,7 @@ confere("só carteira = VENDEDOR 3%", papelNaLoja(victor, soCarteira), { papel: 
 confere("loja de outro = null", papelNaLoja(victor, deOutro), null);
 confere("fora da equipe não tem carteira", papelNaLoja({ ...victor, isVendedor: false }, soCarteira), null);
 
-console.log("\n— O split do fechamento: os 3% não somam em cima da indicação —");
+console.log("\n— O split do fechamento: quem atende é quem ganha (18/10/2026) —");
 confere("ganhaComoVendedor na própria indicação", ganhaComoVendedor("victor", indicouEAcompanha), false);
 confere("ganhaComoVendedor na loja da Ana (nível 2 acabou)", ganhaComoVendedor("victor", daRedeEAcompanha), true);
 confere("split: indicou e acompanha = só 30%", splitDaLoja(indicouEAcompanha).linhas, [{ parceiroId: "victor", papel: "EMBAIXADOR", percentual: 30 }]);
@@ -54,14 +55,15 @@ confere("split: loja da Ana que o Victor acompanha = Ana 20% + Victor 3% de vend
 confere("split: sem vendedor, a loja da Ana não paga nível 2", splitDaLoja({ ...daRedeEAcompanha, vendedorId: null, vendedor: null }).linhas, [
   { parceiroId: "ana", papel: "EMBAIXADOR", percentual: 20 },
 ]);
-confere("split: indicou, outra vendedora = 30% + 3% da Bia", splitDaLoja(soIndicou).total, 33);
+confere("split: convidou e a Bia atende = só os 3% da Bia", splitDaLoja(soIndicou).linhas, [{ parceiroId: "bia", papel: "VENDEDOR", percentual: 3 }]);
+confere("split: mesmo parceiro como indicador SEM isVendedor e como vendedor atribuído = paga uma vez só", splitDaLoja({ ...indicouEAcompanha, ambassador: { ...vicComoN1, isVendedor: undefined } }).total, 30);
 
 console.log("\n— Repasse —");
 confere("tudo certo = CAI", repasseNaLoja(victor, indicouEAcompanha, "EMBAIXADOR"), "CAI");
 confere("sem carteira", repasseNaLoja({ ...victor, temCarteira: false }, soCarteira, "VENDEDOR"), "SEM_CARTEIRA");
 confere("pausado", repasseNaLoja({ ...victor, active: false }, soCarteira, "VENDEDOR"), "PARCEIRO_INATIVO");
 confere("rede com a Ana sem carteira", repasseNaLoja(victor, { ...daRedeEAcompanha, ambassador: { ...ana, temCarteira: false } }, "REDE"), "INDICADOR_FORA");
-confere("acima do teto", repasseNaLoja(victor, { ...soIndicou, ambassador: { ...vicComoN1, commissionPercent: 38 } }, "EMBAIXADOR"), "ACIMA_DO_TETO");
+confere("acima do teto (embaixadora 38% + vendedor 3%)", repasseNaLoja(victor, { ...daRedeEAcompanha, ambassador: { ...ana, commissionPercent: 38 } }, "VENDEDOR"), "ACIMA_DO_TETO");
 
 console.log("\n— Meses e vencimento do boleto —");
 confere("mês seguinte vira o ano", mesSeguinte("2026-12"), "2027-01");

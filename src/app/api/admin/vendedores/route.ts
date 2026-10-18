@@ -4,6 +4,8 @@ import bcrypt from "bcryptjs";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { atividadeDasLojas } from "@/lib/atividade-da-loja";
+import { ultimosAceites } from "@/lib/parceiro/aceite-do-termo";
+import { VERSAO_DO_TERMO_DE_COMISSIONAMENTO } from "@/lib/parceiro/termo-de-comissionamento";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
 import { gerarCodigoUnico, gerarSenhaTemporaria, percentualDoVendedor } from "@/lib/vendedores";
 
@@ -34,6 +36,9 @@ export async function GET() {
 
   const atividade = await atividadeDasLojas(vendedores.flatMap((v) => v.carteira.map((l) => l.id)));
 
+  // O termo de comissionamento que cada um aceitou (lib/parceiro/aceite-do-termo.ts).
+  const aceites = await ultimosAceites(vendedores.map((v) => v.id)).catch(() => new Map());
+
   const equipe = await Promise.all(
     vendedores.map(async (v) => {
       // A MESMA conta do portal dele (lib/parceiro/relatorio.ts): loja que ele
@@ -48,6 +53,10 @@ export async function GET() {
         active: v.active,
         asaasWalletId: v.asaasWalletId,
         sellerPercent: v.sellerPercent,
+        linkPercent: v.commissionPercent,
+        termoAceitoEm: aceites.get(v.id)?.aceitoEm ?? null,
+        termoVersao: aceites.get(v.id)?.versao ?? null,
+        termoVigente: aceites.get(v.id)?.versao === VERSAO_DO_TERMO_DE_COMISSIONAMENTO,
         // Também é embaixador quando indicou loja ou tem comissão de indicação própria.
         tambemEmbaixador: v.commissionPercent > 0 || v._count.referredStores > 0,
         clientes: v.carteira.length,
@@ -134,8 +143,9 @@ export async function POST(req: NextRequest) {
       asaasWalletId: String(body.asaasWalletId || "").trim() || null,
       isVendedor: true,
       sellerPercent: percentual,
-      // Só vendedor: não ganha comissão de indicação até o admin decidir.
-      commissionPercent: 0,
+      // % de LINK (Douglas, 18/10/2026): a loja que ele trouxe pelo link de
+      // convite e atende rende 10% (lib/parceiro/regras.ts, vendedorQueAtende).
+      commissionPercent: 10,
       level2Percent: 0,
       password: await bcrypt.hash(senhaTemporaria, 12),
       active: true,
