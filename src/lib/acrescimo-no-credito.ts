@@ -67,6 +67,8 @@ export function ehCreditoNaMaquininha(paymentMethod: unknown): boolean {
   const m = semAcento(String(paymentMethod || "")).trim();
   if (!m) return false;
   if (!/credit/.test(m)) return false;
+  // Forma própria da loja ("Crédito social (forma própria)") não é maquininha.
+  if (/\(forma pr[oó]pria\)/i.test(m)) return false;
   if (/online|pelo site|site|asaas|mercadopago|gateway|link/.test(m)) return false;
   if (/debit|dinheiro|cash|pix|voucher|vale|meal|fiado|funcion/.test(m)) return false;
   return true;

@@ -53,6 +53,7 @@ const VISUAL_DA_FORMA: Record<ChaveDaFormaDoInicio, { icon: any; color: string }
   ONLINE: { icon: Smartphone, color: "#EA1D2C" },
   MESA: { icon: UtensilsCrossed, color: "#B45309" },
   FIADO: { icon: DollarSign, color: "#7C3AED" },
+  PROPRIA: { icon: DollarSign, color: "#5B21B6" },
   OUTROS: { icon: DollarSign, color: "#64748B" },
 };
 

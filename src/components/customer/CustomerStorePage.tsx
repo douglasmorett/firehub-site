@@ -67,6 +67,7 @@ import { acrescimoNoCredito, percentualDoAcrescimoNoCredito } from "@/lib/acresc
 import { esquecerCliente, lembrarCliente, lerClienteLembrado } from "@/lib/cliente-lembrado";
 import { mesmoEndereco, primeiroNome, type ClienteReconhecido, type EnderecoReconhecido } from "@/lib/cliente-reconhecido";
 import { bandeirasDeValeLigadas, ehFormaPeloSite, entregaSoOnlineMarcada, formaLigada, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
+import { rotuloDaForma, textosNoCanal } from "@/lib/formas-proprias";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import QuandoReceber, { type Quando } from "./QuandoReceber";
 import AgendarNoCardapio from "./AgendarNoCardapio";
@@ -1780,6 +1781,11 @@ export default function CustomerStorePage({
       if (bandeiras.length > 0) bandeiras.forEach((nome) => base.push({ k: `VOUCHER_${nome}`, l: `🎟️ ${nome}` }));
       else base.push({ k: "VOUCHER", l: "🎟️ Voucher" });
     }
+    // Formas PRÓPRIAS da loja marcadas para o cardápio (a Macaíba, moeda
+    // social): pagas na entrega/retirada, nunca online. A chave é o texto
+    // gravado ("Macaíba (forma própria)") — o caixa a lê pela marca, e o
+    // servidor confere o canal (lib/formas-proprias.ts).
+    for (const texto of textosNoCanal(fees, "site")) base.push({ k: texto, l: `🪙 ${rotuloDaForma(texto)}` });
     // "Na entrega, só pagamento online": na ENTREGA ficam só as formas pagas
     // pelo site; o servidor recusa as outras pela mesma regra.
     if (soOnlineNaEntrega) return base.filter((p) => ehFormaPeloSite(p.k));

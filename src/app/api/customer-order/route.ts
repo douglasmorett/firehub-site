@@ -61,6 +61,7 @@ import { fatosDoCupom } from "@/lib/cupons-no-banco";
 import { descontoDoPagamentoOnline } from "@/lib/desconto-pagamento-online";
 import { acrescimoNoCredito, etiquetaDoAcrescimo } from "@/lib/acrescimo-no-credito";
 import { ehPedidoDeEntrega, formaDesligada, formaRecusadaNaEntrega, TEXTO_ENTREGA_SO_ONLINE } from "@/lib/formas-do-cardapio";
+import { problemaDaFormaPropria } from "@/lib/formas-proprias";
 
 export async function POST(req: Request) {
   try {
@@ -124,6 +125,12 @@ export async function POST(req: Request) {
         { error: `Esta loja não está aceitando ${formaFora} agora. Escolha outra forma de pagamento.` },
         { status: 400 },
       );
+    }
+    // Forma PRÓPRIA da loja (a Macaíba): só se liberada para o cardápio do
+    // site, ligada e ainda cadastrada (lib/formas-proprias.ts).
+    const formaPropriaFora = problemaDaFormaPropria(franchisee.paymentFees, [paymentMethod], "site");
+    if (formaPropriaFora) {
+      return NextResponse.json({ error: formaPropriaFora }, { status: 400 });
     }
     // "Na entrega, só pagamento online" (Minha Loja → Formas de Pagamento): o
     // pedido de ENTREGA pago na porta não entra. A retirada segue com tudo.

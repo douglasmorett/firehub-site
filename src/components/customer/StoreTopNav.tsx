@@ -346,7 +346,7 @@ export default function StoreTopNav({
   const [pendentes, setPendentes] = useState<{ valor: number; quantidade: number }>({ valor: 0, quantidade: 0 });
   // Fiado da equipe e forma que o sistema nao soube ler: existem como venda,
   // nao como cedula. Ficam fora da conferencia e visiveis na tela.
-  const [foraConf, setForaConf] = useState<{ fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas?: number; mesasAbertasQtd?: number }>({ fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 });
+  const [foraConf, setForaConf] = useState<{ fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas?: number; mesasAbertasQtd?: number; proprias?: { nome: string; valor: number; qtd: number }[] }>({ fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 });
   const [actual, setActual]     = useState<Record<string,string>>({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
   /* Vendas de antes deste caixa abrir: o dinheiro delas está na gaveta e não
      entra no esperado. É a explicação da sobra que ninguém entendia. */
@@ -1638,6 +1638,22 @@ export default function StoreTopNav({
                         <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#9A3412" }}>—</td>
                       </tr>
                     )}
+                    {/* Formas PRÓPRIAS da loja (a Macaíba): recebidas, mas
+                        não estão na gaveta nem na maquininha. Uma linha com
+                        o nome de cada uma, fora da conferência — nunca
+                        somadas ao Dinheiro (lib/formas-proprias.ts). */}
+                    {(foraConf.proprias || []).filter((p) => p.qtd > 0).map((p) => (
+                      <tr key={`propria-${p.nome}`} style={{ borderBottom:"1px solid #F1F5F9", background:"#F5F3FF" }}>
+                        <td style={{ padding:"8px 10px", fontWeight:600, color:"#5B21B6" }}>
+                          🪙 {p.nome}
+                          <div style={{ fontSize:"0.7rem", fontWeight:500, color:"#5B21B6", opacity:0.85 }}>
+                            {p.qtd} pagamento{p.qtd > 1 ? "s" : ""} — forma própria, fora da gaveta (confira à parte)
+                          </div>
+                        </td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", color:"#5B21B6", fontWeight:700 }}>{fmt(p.valor)}</td>
+                        <td style={{ padding:"8px 10px", textAlign:"right", fontSize:"0.75rem", color:"#5B21B6" }}>—</td>
+                      </tr>
+                    ))}
                     {(foraConf.naoIdentificadoQtd || 0) > 0 && (
                       <tr style={{ borderBottom:"1px solid #F1F5F9", background:"#F8FAFC" }}>
                         <td style={{ padding:"8px 10px", fontWeight:600, color:"#475569" }}>

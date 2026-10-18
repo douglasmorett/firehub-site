@@ -1,8 +1,9 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { podeEditarPedidos, type OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, formaCanonica, podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
 import { lerPartes, quantoFalta, somarPartes, type ParteDoPagamento } from "@/lib/pagamento-dividido";
+import { ehFormaPropria, rotuloDaForma, textosNoCanal } from "@/lib/formas-proprias";
 import { lerTrocoNoPix, textoDoTrocoNoPix, trocoNoPixDoPedido, type QuemFezOPix, type TrocoNoPix } from "@/lib/troco-no-pix";
 
 /**
@@ -58,11 +59,24 @@ export default function TrocaDePagamentoPainel({
 
   const [aberto, setAberto] = useState(abrirDireto);
   const [dividido, setDividido] = useState(partesAtuais.length >= 2);
-  const [forma, setForma] = useState<string>(formaCanonica(pedido?.paymentMethod) || "Dinheiro");
+  const formaAtual = ehFormaPropria(pedido?.paymentMethod) ? String(pedido.paymentMethod) : formaCanonica(pedido?.paymentMethod);
+  const [forma, setForma] = useState<string>(formaAtual || "Dinheiro");
+  // As formas PRÓPRIAS da loja liberadas no Caixa/PDV (lib/formas-proprias.ts):
+  // buscadas ao abrir, porque o modal não recebe o cadastro da loja.
+  const [proprias, setProprias] = useState<string[]>([]);
+  useEffect(() => {
+    if (!aberto) return;
+    let vivo = true;
+    fetch("/api/store-settings/payment").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (vivo && d) setProprias(textosNoCanal(d.paymentFees, "pdv"));
+    }).catch(() => {});
+    return () => { vivo = false; };
+  }, [aberto]);
+  const formasDaTela: string[] = [...FORMAS_DE_PAGAMENTO_NA_ENTREGA, ...proprias];
   const [partes, setPartes] = useState<{ method: string; valor: string }[]>(
     partesAtuais.length >= 2
       ? partesAtuais.map((p) => ({ method: p.method, valor: p.amount.toFixed(2) }))
-      : [{ method: formaCanonica(pedido?.paymentMethod) || "Dinheiro", valor: total.toFixed(2) }, { method: "", valor: "" }]
+      : [{ method: formaAtual || "Dinheiro", valor: total.toFixed(2) }, { method: "", valor: "" }]
   );
   const [trocoPara, setTrocoPara] = useState<string>(pedido?.changeAmount ? String(pedido.changeAmount) : "");
   // De quem foi o Pix do troco ("" = o troco saiu em dinheiro, como sempre).
@@ -231,9 +245,9 @@ export default function TrocaDePagamentoPainel({
 
       {!dividido ? (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
-          {FORMAS_DE_PAGAMENTO_NA_ENTREGA.map((f) => (
+          {formasDaTela.map((f) => (
             <button key={f} type="button" onClick={() => setForma(f)} style={chip(forma === f)}>
-              {f}
+              {ehFormaPropria(f) ? `🪙 ${rotuloDaForma(f)}` : f}
             </button>
           ))}
         </div>
@@ -251,8 +265,8 @@ export default function TrocaDePagamentoPainel({
                 style={{ flex: 1, padding: "6px 8px", borderRadius: 8, border: "1.5px solid #FDE68A", fontFamily: "inherit", fontSize: "0.78rem", background: "#FFF", color: "#334155" }}
               >
                 <option value="">Escolha a forma…</option>
-                {FORMAS_DE_PAGAMENTO_NA_ENTREGA.map((f) => (
-                  <option key={f} value={f}>{f}</option>
+                {formasDaTela.map((f) => (
+                  <option key={f} value={f}>{rotuloDaForma(f)}</option>
                 ))}
               </select>
               <span style={{ fontSize: "0.76rem", color: "#78350F" }}>R$</span>

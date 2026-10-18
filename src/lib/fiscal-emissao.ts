@@ -646,6 +646,13 @@ export function formaDaNota(
   if (/a combinar/.test(t)) return null;
 
   const limpo = bruto.replace(/\s*\([^)]*\)/g, "").replace(/_/g, " ").trim();
+  // Forma PRÓPRIA da loja ("Macaíba (forma própria)", lib/formas-proprias.ts):
+  // moeda social, vale da casa — nenhum dos meios da tabela. Vai como "99
+  // Outros" com o nome dela, antes de qualquer leitura do texto ("Vale
+  // Macaíba" não é vale-refeição). Nunca trava a nota.
+  if (/\(forma propria\)/.test(t) && !/^\s*dividido\s*:/.test(t)) {
+    return { codigo: "99", descricao: descricaoDoPagamento(limpo.length >= 2 ? limpo : "Forma propria da loja") };
+  }
   const canal = contexto.canal ?? null;
   const nomeDoCanal = canal ? NOME_DO_CANAL[canal] : undefined;
 

@@ -34,6 +34,7 @@ import { tipoDeVenda, type TipoDeVenda } from "@/lib/relatorios/base";
 import {
   atendimentosDaVenda, descontoNoFechamento, ehReposicao, entraNaVenda, situacaoDoPedido, temValorImpossivel, ticketMedio, totalDosItens,
 } from "@/lib/relatorios/regua-da-venda";
+import { nomeDaFormaPropria, textoDaFormaPropria } from "@/lib/formas-proprias";
 import { cupomDaPlataforma as cupomPagoPelaPlataforma, formaDoPedido, formaDoTexto, type ChaveDaForma } from "@/lib/relatorios/formas-de-pagamento";
 import type { BlocoDoTipo, DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do-caixa";
 
@@ -154,6 +155,8 @@ const NOME_DA_FORMA: Record<ChaveDaForma, string> = {
   VALE: "Vale-refeicao",
   ONLINE: PAGO_ONLINE,
   FIADO: "Fiado",
+  // A forma própria sai com o NOME dela (conferirParte); este é só o reserva.
+  PROPRIA: "Forma propria",
   OUTROS: NAO_IDENTIFICADA,
 };
 const LINHA_DA_CONFERENCIA: Partial<Record<ChaveDaForma, ChaveDoEsperado>> = {
@@ -198,7 +201,7 @@ export type Esperado = { cash: number; debit: number; credit: number; pix: numbe
 export type ApuracaoDasVendas = {
   /** Só as vendas: sem troco de abertura e sem sangria/reforço (quem soma é esperado-do-turno). */
   expected: Esperado;
-  foraDaConferencia: { fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas: number; mesasAbertasQtd: number };
+  foraDaConferencia: { fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas: number; mesasAbertasQtd: number; proprias: FormaPropriaDoTurno[] };
   pendentesValor: number;
   pendentesQuantidade: number;
   onlineProprio: number;
@@ -208,6 +211,14 @@ export type ApuracaoDasVendas = {
     "taxaDeEntrega" | "mesas" | "fiado" | "entregaParceira" | "semEntregador" | "cobradoPeloApp" | "dinheiroCobradoPeloApp" | "trocoNoPix"> &
     Required<Pick<DetalheDoTurno, "recebido" | "ponte" | "descontoNasMesas">>;
 };
+
+/**
+ * Uma forma PRÓPRIA da loja no turno ("Macaíba", lib/formas-proprias.ts): o
+ * valor e quantas partes. Não é dinheiro da gaveta nem maquininha — fica fora
+ * da conferência, numa linha com o nome dela (como o fiado), e entra no
+ * recebido por forma do papel.
+ */
+export type FormaPropriaDoTurno = { nome: string; valor: number; qtd: number };
 
 /** O acumulador de um bloco de tipo, em centavos. */
 type Bloco = {
@@ -246,7 +257,9 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
   // dado a `pendentesDePagamento`. Some da conta, nao da tela.
   // `mesasAbertas`: pedidos de mesa cuja mesa AINDA não fechou. Não há dinheiro
   // deles em lugar nenhum ainda — entram como informação, nunca conferência.
-  const foraDaConferencia = { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 };
+  const foraDaConferencia = { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0, proprias: [] as FormaPropriaDoTurno[] };
+  // As formas próprias, em centavos, pelo nome (a ordem é a de aparição).
+  const proprias = new Map<string, { c: number; qtd: number }>();
   // Pedidos do turno que ainda não têm pagamento nenhum. Ficam FORA do
   // esperado (ver o porquê no laço abaixo) e voltam aqui só para o lojista
   // saber que existem — informação, nunca conferência.
@@ -495,10 +508,20 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
     }
   };
 
-  const conferirParte = (chave: ChaveDaForma, v: number): string => {
+  const conferirParte = (chave: ChaveDaForma, v: number, texto?: string | null): string => {
     const linha = LINHA_DA_CONFERENCIA[chave];
     if (linha) {
       esp[linha] += cent(v);
+    } else if (chave === "PROPRIA") {
+      // Forma própria da loja (a Macaíba da Pizzaria 17): ninguém a conta na
+      // gaveta nem na maquininha. Linha própria, com o nome, fora da
+      // conferência — nunca somada ao Dinheiro, nunca sumida.
+      const nome = nomeDaFormaPropria(texto) ?? NOME_DA_FORMA.PROPRIA;
+      const atual = proprias.get(nome) || { c: 0, qtd: 0 };
+      atual.c += cent(v);
+      atual.qtd += 1;
+      proprias.set(nome, atual);
+      return nome;
     } else if (chave === "FIADO") {
       // Fiado: consumo da equipe e venda anotada. Tem ficha própria e é
       // acertado depois — nunca passa pela gaveta no fechamento do dia. Na
@@ -610,7 +633,7 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
     // casasse. A parte "Fiado" vai para o fiado (era "não identificada").
     const divisao = lerPagamentos(o.paymentMethods);
     if (divisao.length > 0) {
-      const formas = divisao.map((p) => ({ forma: conferirParte(formaDoTexto(p.method), p.amount), valor: p.amount }));
+      const formas = divisao.map((p) => ({ forma: conferirParte(formaDoTexto(p.method), p.amount, p.method), valor: p.amount }));
       conferirTrocoNoPix(o);
       // As partes fecham com o total com 2 centavos de tolerância
       // (lib/pagamento-dividido.ts): a diferença vai para a ponte.
@@ -646,7 +669,7 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
     // gaveta cobrava esse dinheiro da loja: em 60 dias, 42 pedidos do 99
     // (R$ 2.796,31) e 43 do iFood (24 no débito, 14 no crédito, 5 em
     // dinheiro). Vai para a linha travada do app, com o seu nome.
-    const peloEntregadorDoApp = chave !== "ONLINE" && chave !== "FIADO" && chave !== "OUTROS" && !ehEntregaDaLoja(o);
+    const peloEntregadorDoApp = chave !== "ONLINE" && chave !== "FIADO" && chave !== "OUTROS" && chave !== "PROPRIA" && !ehEntregaDaLoja(o);
     let forma: string;
     if (chave === "ONLINE" || peloEntregadorDoApp) {
       // Pago no app ou no site: não passa pela gaveta nem pela maquininha. O
@@ -666,7 +689,7 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
         if (!canalDoPedido(o).ehMarketplace) onlineProprio += reais(repasse);
       }
     } else {
-      forma = conferirParte(chave, valReal);
+      forma = conferirParte(chave, valReal, o.paymentMethod);
       conferirTrocoNoPix(o);
     }
 
@@ -722,7 +745,7 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
   const ponteDaMesa = { servico: 0, servicoQtd: 0, gorjeta: 0, gorjetaQtd: 0, desconto: 0, descontoQtd: 0, aMais: 0, aMaisQtd: 0, aMenos: 0, aMenosQtd: 0, deAntes: 0, deAntesQtd: 0 };
   for (const mesa of mesasFechadas) {
     const baixas: { chave: ChaveDaForma; forma: string; valor: number }[] = lerPagamentos(mesa.paymentMethods)
-      .map((p) => { const chave = formaDoTexto(p.method); return { chave, forma: NOME_DA_FORMA[chave], valor: p.amount }; });
+      .map((p) => { const chave = formaDoTexto(p.method); return { chave, forma: chave === "PROPRIA" ? (nomeDaFormaPropria(p.method) ?? NOME_DA_FORMA.PROPRIA) : NOME_DA_FORMA[chave], valor: p.amount }; });
     const servico = Number(mesa.serviceFee || 0);
     const gorjeta = Number(mesa.waiterTip || 0);
     if (servico > 0) { mesas.servico += cent(servico); mesas.servicoQtd += 1; }
@@ -752,7 +775,10 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
     // Forma que a mesa gravou e o caixa não soube ler: continua visível, fora
     // da conferência, em vez de sumir na gaveta (conferirParte).
     const chaveDoNome = new Map(baixas.map((b) => [b.forma, b.chave]));
-    const formas: Forma[] = semTroco.map((f) => ({ forma: conferirParte(chaveDoNome.get(f.forma) ?? "OUTROS", f.valor), valor: f.valor }));
+    const formas: Forma[] = semTroco.map((f) => {
+      const chave = chaveDoNome.get(f.forma) ?? "OUTROS";
+      return { forma: conferirParte(chave, f.valor, chave === "PROPRIA" ? textoDaFormaPropria(f.forma) : null), valor: f.valor };
+    });
     // Uma conta de mesa é UMA venda no recebido, com as baixas nas formas.
     const bloco = registrarVenda("Mesa", "MESA", formas, 0);
     const servicoCobrado = Math.max(0, cent(servico));
@@ -811,6 +837,7 @@ export function apurarVendasDoTurno(todos: any[], mesasFechadas: MesaDoTurno[]):
   expected.food99Coupons = reais(cent(expected.food99Coupons));
   foraDaConferencia.fiado = reais(fiadoC);
   foraDaConferencia.naoIdentificado = reais(naoIdentificadoC);
+  foraDaConferencia.proprias = [...proprias.entries()].map(([nome, p]) => ({ nome, valor: reais(p.c), qtd: p.qtd }));
   foraDaConferencia.mesasAbertas = reais(cent(foraDaConferencia.mesasAbertas));
 
   const blocos: BlocoDoTipo[] = ORDEM_DOS_TIPOS.filter((t) => porTipo.has(t)).map((t) => {

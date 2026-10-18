@@ -1104,7 +1104,7 @@ export function projetarMensalidadeDoMes(e: {
 
 export const ROTULO_DO_RECEBIMENTO: Partial<Record<ChaveDaForma, string>> = {
   DINHEIRO: "Dinheiro", PIX: "Pix (na loja / na entrega)", CREDITO: "Crédito (maquininha)", DEBITO: "Débito (maquininha)",
-  VALE: "Vale-refeição / voucher", FIADO: "Fiado / conta funcionário", OUTROS: "Forma não identificada",
+  VALE: "Vale-refeição / voucher", FIADO: "Fiado / conta funcionário", PROPRIA: "Formas próprias da loja (fora da gaveta)", OUTROS: "Forma não identificada",
 };
 
 /**
@@ -1147,7 +1147,7 @@ export function recebimentosDoPeriodo(dados: Pick<DadosDoPeriodo, "pedidos" | "m
     naLoja.set(parte.forma, (naLoja.get(parte.forma) || 0) + cent(parte.valor));
   }
 
-  const ordem: ChaveDaForma[] = ["DINHEIRO", "PIX", "CREDITO", "DEBITO", "VALE", "FIADO", "OUTROS"];
+  const ordem: ChaveDaForma[] = ["DINHEIRO", "PIX", "CREDITO", "DEBITO", "VALE", "FIADO", "PROPRIA", "OUTROS"];
   const linhasDaLoja = ordem.filter((f) => (naLoja.get(f) || 0) > 0).map((f) => ({ forma: f, rotulo: ROTULO_DO_RECEBIMENTO[f] || f, valor: reais(naLoja.get(f)!) }));
   const linhasDoApp = [...noApp.entries()].sort((a, b) => b[1] - a[1]).map(([canal, c]) => ({ canal, nome: nomeDoCanalNoDRE(canal), valor: reais(c) }));
   const site = cSitePix + cSiteCartao;

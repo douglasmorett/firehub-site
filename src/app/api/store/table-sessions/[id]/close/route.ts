@@ -7,6 +7,7 @@ import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
 import { comissaoDoGarcom, sanearTaxa } from "@/lib/conta-da-mesa";
 import { lerDocumentoDoCliente, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 import { formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
+import { ehFormaPropria, problemaDaFormaPropria } from "@/lib/formas-proprias";
 import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 import { garantirTabelaDoFiadoDaMesa, lancarMesaNoFiado, lojasDoMesmoFiado } from "@/lib/fiado-da-mesa";
 import { MODO_LOCAL } from "@/lib/modo-local";
@@ -180,6 +181,15 @@ export async function POST(
     if (pagamentosEfetivos.some((p) => formaDoTexto(p.method) === "FIADO")) {
       const m = "Para deixar a conta no fiado, use \"Lançar no fiado\" no fechamento (escolhendo o cliente).";
       return NextResponse.json({ error: m, mensagem: m }, { status: 400 });
+    }
+
+    // Forma própria da loja que veio no CORPO (tela antiga, sem baixa gravada):
+    // só se liberada para a mesa. A baixa já gravada passou por essa trava na
+    // rota `pagamentos` e não se recusa aqui — prenderia a mesa.
+    if (jaGravados.length === 0 && pagamentosEfetivos.some((p) => ehFormaPropria(p.method))) {
+      const loja = await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { paymentFees: true } });
+      const problema = problemaDaFormaPropria(loja?.paymentFees, pagamentosEfetivos.map((p) => p.method), "mesa");
+      if (problema) return NextResponse.json({ error: problema, mensagem: problema }, { status: 400 });
     }
 
     let totalPaid = somarPagamentos(pagamentosEfetivos);

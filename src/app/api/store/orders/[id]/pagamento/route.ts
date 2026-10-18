@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { avisoDaNotaNaTrocaDePagamento, empilharEdicao, podeEditarPedidos, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
 import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido";
+import { ehFormaPropria, problemaDaFormaPropria } from "@/lib/formas-proprias";
 import { lerTrocoNoPix, SELECT_TROCO_NO_PIX, type TrocoNoPix } from "@/lib/troco-no-pix";
 
 /**
@@ -90,11 +91,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!r.ok) return NextResponse.json({ error: r.erro }, { status: 400 });
     divisao = r.partes;
     forma = r.resumo;
+  } else if (ehFormaPropria(forma)) {
+    // Forma própria da loja ("Macaíba (forma própria)"): conferida abaixo,
+    // contra o cadastro, como a do balcão.
   } else if (!(FORMAS_DE_PAGAMENTO_NA_ENTREGA as readonly string[]).includes(forma)) {
     return NextResponse.json(
       { error: "Forma de pagamento inválida.", formas: FORMAS_DE_PAGAMENTO_NA_ENTREGA },
       { status: 400 },
     );
+  }
+
+  // A troca é da LOJA, no painel: vale a forma própria liberada no Caixa/PDV
+  // (lib/formas-proprias.ts). Apagada, desligada ou só de outro canal: recusa.
+  const textosDaTroca = [forma, ...(divisao || []).map((p) => p.method)];
+  if (textosDaTroca.some((t) => ehFormaPropria(t))) {
+    const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { paymentFees: true } });
+    const problema = problemaDaFormaPropria(loja?.paymentFees, textosDaTroca, "pdv");
+    if (problema) return NextResponse.json({ error: problema }, { status: 400 });
   }
 
   const avaliacao = podeTrocarPagamento(order, { pelaLoja: true });

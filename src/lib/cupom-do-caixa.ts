@@ -250,7 +250,7 @@ export type ValoresDoFechamento = {
   motivoSemConferencia?: "ABRIU_OUTRO" | "SEM_CONTAGEM" | "TUDO_ZERO" | null;
   movimentacoes?: { entradas: number; saidas: number };
   /** Venda do turno que sai da conferência de propósito (fiado, mesa aberta…). */
-  foraDaConferencia?: { fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas?: number; mesasAbertasQtd?: number };
+  foraDaConferencia?: { fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas?: number; mesasAbertasQtd?: number; proprias?: { nome: string; valor: number; qtd: number }[] };
   pendentes?: { valor: number; quantidade: number };
   /** Pedidos que estavam na rua e foram dados como entregues no fechamento. */
   finalizadosNoFechamento?: number;
@@ -441,6 +441,10 @@ export function cupomDeFechamentoDeCaixa(entrada: {
       price: online,
       notes: "Nao passa pela gaveta — entra no total, nao na conferencia",
     });
+  }
+  for (const p of v.foraDaConferencia?.proprias || []) {
+    if (Math.abs(p.valor) < 0.01) continue;
+    items.push({ name: `${p.nome} (${p.qtd})`, qty: 1, price: p.valor, notes: "Forma propria: fora da gaveta e da conferencia" });
   }
   if (v.movimentacoes && (v.movimentacoes.entradas > 0 || v.movimentacoes.saidas > 0)) {
     if (v.movimentacoes.entradas > 0) items.push({ name: "Reforcos de caixa", qty: 1, price: v.movimentacoes.entradas });
@@ -695,6 +699,15 @@ function relatorioDoFechamento(
       texto("O que o app repassa: com o cupom que ele pagou, sem a taxa de servico dele.");
     }
   };
+  // As formas PRÓPRIAS da loja (a Macaíba): recebidas, mas não estão na gaveta
+  // nem na maquininha — uma linha com o nome, fora da diferença, para conferir
+  // à parte (lib/formas-proprias.ts).
+  const linhasDasProprias = () => {
+    for (const p of v.foraDaConferencia?.proprias || []) {
+      if (Math.abs(p.valor) < 0.01) continue;
+      linha(`${p.nome} (${p.qtd})`, reais(p.valor), "forma propria: fora da gaveta, confira a parte");
+    }
+  };
   if (v.semConferencia) {
     // Não houve contagem: só o que o sistema esperava. Sem "confere", sem
     // diferença — zero ali seria dizer que alguém conferiu e bateu.
@@ -703,6 +716,7 @@ function relatorioDoFechamento(
       if (Math.abs(f.esperado) >= 0.01) linha(f.nome, reais(f.esperado), "esperado");
     }
     linhasDoOnline();
+    linhasDasProprias();
     L.push({ tipo: "separador" });
     L.push({ tipo: "destaque", texto: "ESPERADO", valor: reais(v.esperado.total), nota: "sem contagem, sem diferenca" });
   } else {
@@ -721,6 +735,7 @@ function relatorioDoFechamento(
       );
     }
     linhasDoOnline();
+    linhasDasProprias();
     // Sem o retrato, o troco não aparece na gaveta lá embaixo: fica aqui,
     // como sempre ficou. O operador conta a gaveta inteira e precisa saber
     // que aquela parte não é venda.
@@ -863,7 +878,8 @@ function relatorioDoFechamento(
       }
       L.push({ tipo: "titulo", texto: "Recebido por forma" });
       for (const f of naOrdemDasFormas(d.porForma)) {
-        const nota = f.nome === "Fiado" ? "acertado fora do caixa" : f.nome === "Forma nao identificada" ? "vale conferir o que e" : undefined;
+        const ehPropria = (v.foraDaConferencia?.proprias || []).some((p) => p.nome === f.nome);
+        const nota = f.nome === "Fiado" ? "acertado fora do caixa" : f.nome === "Forma nao identificada" ? "vale conferir o que e" : ehPropria ? "forma propria, fora da gaveta" : undefined;
         linha(`${f.nome} (${f.qtd})`, reais(f.valor), nota);
       }
       L.push({ tipo: "separador" });

@@ -29,6 +29,7 @@
  */
 
 import { formaCanonica } from "@/lib/pagamento-na-entrega";
+import { ehFormaPropria, nomeDaFormaPropria, textoDaFormaPropria } from "@/lib/formas-proprias";
 
 export type ParteDoPagamento = { method: string; amount: number };
 
@@ -82,11 +83,15 @@ export function validarDivisao(bruto: unknown, total: number): ResultadoDaDivisa
   // "Voucher/Vale", o painel manda "Pix" e "Vale-refeição". Comparar o texto
   // exato recusava o Pix do balcão (NIK, 01/10/2026). Grava-se a forma
   // canônica, a mesma que o fechamento de caixa entende.
-  const desconhecida = lidas.find((p) => !formaCanonica(p.method));
+  // A forma PRÓPRIA da loja ("Macaíba (forma própria)") entra como veio: o
+  // caixa a lê pela marca. Se ela vale NESTE canal, quem confere é a rota, com
+  // o cadastro da loja (problemaDaFormaPropria, lib/formas-proprias.ts).
+  const canonicaDa = (m: string): string | null => (ehFormaPropria(m) ? textoDaFormaPropria(nomeDaFormaPropria(m)!) : formaCanonica(m));
+  const desconhecida = lidas.find((p) => !canonicaDa(p.method));
   if (desconhecida) {
     return { ok: false, erro: `Forma de pagamento inválida: "${desconhecida.method}".` };
   }
-  const partes = lidas.map((p) => ({ ...p, method: formaCanonica(p.method)! }));
+  const partes = lidas.map((p) => ({ ...p, method: canonicaDa(p.method)! }));
   const soma = somarPartes(partes);
   if (Math.abs(emCentavos(soma) - emCentavos(total)) > TOLERANCIA_CENTAVOS) {
     return {
