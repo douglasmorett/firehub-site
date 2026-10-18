@@ -433,5 +433,20 @@ const ESTILO_DO_PORTAL = `
   .pp-topo-dir .pp-olho ~ .pp-sair { margin-left: 0; }
 }
 
+/* ── Contraste (Douglas, 18/10/2026: "fica tudo muito branquinho, muito liso,
+   a pessoa fica perdida") — sem ficar colorido: fundo mais fundo, abas presas
+   no topo com a aba atual marcada em tinta, blocos com borda e cabeçalho em
+   faixa, títulos fortes. ── */
+.pp { --pp-fundo: #E9E2D5; --pp-papel-2: #F4EEE4; --pp-linha: #DCCFBB; --pp-linha-forte: #C2B196; --pp-cinza: #5F574D; --pp-neutro-bg: #E8DFD1; }
+.pp-abas { position: sticky; top: 0; z-index: 50; background: #FFFDF9; border-bottom: 1px solid var(--pp-linha-forte); box-shadow: 0 3px 10px -6px rgba(28,25,23,.35); }
+.pp-aba { color: var(--pp-tinta-2); padding: 13px 16px 11px; }
+.pp-aba.on { border-bottom-color: var(--pp-tinta); background: var(--pp-papel-2); }
+.pp-painel, .pp-extrato { border-color: var(--pp-linha-forte); box-shadow: 0 1px 0 rgba(28,25,23,.05), 0 6px 16px -10px rgba(28,25,23,.24); }
+.pp-painel-cabeca { background: #F1EADE; border-bottom: 1px solid var(--pp-linha-forte); border-radius: 15px 15px 0 0; padding: 13px 18px 12px; margin-bottom: 12px; }
+.pp-painel-cabeca + .pp-lista, .pp-painel-cabeca + .pp-vazio { margin-top: -12px; border-top: none; }
+.pp-h2 { font-size: 1.08rem; font-weight: 900; }
+.pp-linha-cabeca { background: #EDE5D7; color: var(--pp-tinta-2); }
+.pp-razao-linha, .pp-rede li { border-color: var(--pp-linha-forte); }
+@media (max-width: 640px) { .pp-painel-cabeca { padding: 12px 14px 10px; } .pp-aba { padding: 12px 12px 10px; } }
 @media (prefers-reduced-motion: reduce) { .pp * { transition: none !important; scroll-behavior: auto !important; } }
 `;

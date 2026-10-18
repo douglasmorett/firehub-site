@@ -218,6 +218,46 @@ export const ESTILO_DO_PERFIL = `
 
 .pf-erro-caixa { padding: 16px 18px; border-radius: 14px; background: var(--pf-erro-bg); color: #7F1D1D; border: 1px solid #F3C4BF; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
 
+/* ── Selo do cardápio (bem evidente: verde × vermelho cheio) ── */
+.pf-selo-cardapio { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px 2px 7px; border-radius: 6px; font-size: 0.7rem; font-weight: 900; letter-spacing: .02em; white-space: nowrap; border: 1.5px solid; line-height: 1.35; }
+.pf-selo-cardapio em { font-style: normal; font-weight: 700; opacity: .9; padding-left: 6px; border-left: 1px solid currentColor; text-transform: none; letter-spacing: 0; }
+.pf-selo-cardapio.sim { background: #E3F4E7; color: #14532D; border-color: #22A55A; }
+.pf-selo-cardapio.nao { background: #B91C1C; color: #fff; border-color: #7F1D1D; text-transform: uppercase; }
+.pf-selo-cardapio.grande { font-size: 0.8rem; padding: 4px 10px; border-radius: 8px; }
+.pf-selo-cardapio.mini { font-size: 0.64rem; padding: 0 6px; }
+.pf-cab-selos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.pf-alerta-cardapio { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 14px; background: #FDECEA; border: 1.5px solid #B91C1C; color: #7F1D1D; }
+.pf-alerta-cardapio svg { flex-shrink: 0; margin-top: 1px; }
+.pf-alerta-cardapio strong { display: block; font-size: 0.92rem; }
+.pf-alerta-cardapio p { margin: 2px 0 0; font-size: 0.82rem; }
+.pf-criterio { margin: 0; font-size: 0.78rem; color: var(--pf-tinta-2); display: flex; flex-wrap: wrap; gap: 4px; align-items: center; padding: 8px 12px; border-radius: 10px; background: var(--pf-papel); border: 1px solid var(--pf-linha); }
+.pf-kpi.kpi-cardapio.tem { border-color: #E7A39C; }
+.pf-kpi.kpi-cardapio.tem .pf-kpi-val { color: #B91C1C; }
+.pf-chip.chip-sem-cardapio.on { background: #B91C1C; border-color: #B91C1C; }
+.pf-produto-loja { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* ── Abas da gaveta (Perfil × Linha do tempo), presas no topo ── */
+.pf-gaveta-cabeca { position: sticky; top: 0; z-index: 3; }
+.pf-gaveta-abas { display: flex; gap: 2px; background: var(--pf-papel); border-bottom: 1px solid var(--pf-linha-forte); padding: 0 10px; overflow-x: auto; box-shadow: 0 2px 8px -5px rgba(28,25,23,.3); }
+.pf-gaveta-abas button { background: none; border: none; border-bottom: 3px solid transparent; padding: 10px 12px 9px; font: inherit; font-size: 0.84rem; font-weight: 800; color: var(--pf-cinza); cursor: pointer; display: inline-flex; gap: 7px; align-items: center; white-space: nowrap; }
+.pf-gaveta-abas button:hover { color: var(--pf-tinta); }
+.pf-gaveta-abas button.on { color: var(--pf-tinta); border-bottom-color: var(--pf-tinta); }
+.pf-gaveta-abas button span { font-size: 0.7rem; background: var(--pf-neutro-bg); color: var(--pf-tinta-2); border-radius: 999px; padding: 1px 7px; }
+.pf-ponto-alerta { width: 8px; height: 8px; border-radius: 50%; background: #B91C1C; display: inline-block; }
+
+/* ── Contraste no tema areia (Douglas, 18/10/2026: "fica tudo muito branquinho,
+   muito liso, a pessoa fica perdida") — fundo mais fundo, blocos com borda e
+   cabeçalho em faixa, título forte. O tema admin não muda. ── */
+.pf:not(.pf-admin) { --pf-fundo: #E9E2D5; --pf-papel-2: #F4EEE4; --pf-linha: #DCCFBB; --pf-linha-forte: #C2B196; --pf-cinza: #5F574D; --pf-neutro-bg: #E8DFD1; }
+.pf:not(.pf-admin) .pf-painel { border-color: var(--pf-linha-forte); box-shadow: 0 1px 0 rgba(28,25,23,.05), 0 6px 16px -10px rgba(28,25,23,.24); }
+.pf:not(.pf-admin) .pf-painel-cab { background: #F1EADE; border-bottom: 1px solid var(--pf-linha-forte); border-radius: 15px 15px 0 0; padding: 13px 18px 12px; margin-bottom: 12px; }
+.pf:not(.pf-admin) .pf-h { font-size: 1.04rem; font-weight: 900; }
+.pf:not(.pf-admin) .pf-kpi { border-color: var(--pf-linha-forte); border-top: 3px solid var(--pf-tinta); }
+.pf:not(.pf-admin) .pf-kpi.kpi-cardapio.tem { border-top-color: #B91C1C; }
+.pf:not(.pf-admin) .pf-tabela th { background: #EDE5D7; color: var(--pf-tinta-2); border-color: var(--pf-linha-forte); }
+.pf:not(.pf-admin) .pf-rel-cab h2 { font-size: 1.4rem; }
+.pf:not(.pf-admin) .pf-op, .pf:not(.pf-admin) .pf-produto, .pf:not(.pf-admin) .pf-grupo ul { border-color: var(--pf-linha-forte); }
+
 @media (max-width: 860px) {
   .pf-duas { grid-template-columns: 1fr; }
   .pf-kpis { grid-template-columns: repeat(2, minmax(0,1fr)); }
@@ -233,6 +273,9 @@ export const ESTILO_DO_PERFIL = `
   .pf-rec { grid-template-columns: minmax(0,1fr) auto; }
   .pf-rec-ev { grid-column: 1 / -1; }
   .pf-painel-cab { padding: 14px 14px 8px; }
+  .pf:not(.pf-admin) .pf-painel-cab { padding: 12px 14px 10px; margin-bottom: 10px; }
+  .pf-loja-cel .pf-selo-cardapio em { display: none; }
+  .pf-tabela th { white-space: normal; }
   .pf-canais, .pf-ativacao, .pf-lista-simples { padding-left: 14px; padding-right: 14px; }
   .pf-ferramentas { padding: 0 14px 12px; }
   .pf-busca { width: 100%; }

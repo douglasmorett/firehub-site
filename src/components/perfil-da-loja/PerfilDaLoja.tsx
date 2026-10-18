@@ -8,15 +8,17 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import {
-  Activity, Check, CircleCheck, CircleDashed, CirclePause, Copy, ExternalLink, Flame, LoaderCircle, MessageCircle, Rocket, Snowflake,
-  Sparkles, Store, TrendingDown, TrendingUp, Minus, Wallet, X,
+  Activity, BookOpenCheck, Check, CircleCheck, CircleDashed, CirclePause, Copy, ExternalLink, Flame, History, LayoutDashboard, LoaderCircle, MessageCircle, Rocket, Snowflake,
+  Sparkles, Store, TrendingDown, TrendingUp, Minus, Wallet, X, BookX,
 } from "lucide-react";
 import { useDinheiro } from "@/components/parceiro/ValoresOcultos";
+import type { LinhaDoTempo as Linha } from "@/lib/perfil-da-loja/linha-do-tempo";
 import {
-  ROTULO_DO_ESTADO, ROTULO_DO_STATUS,
+  CRITERIO_DO_CARDAPIO, ROTULO_DO_ESTADO, ROTULO_DO_STATUS,
   type EstadoDoRecurso, type GrupoDoRecurso, type PerfilDaLoja, type StatusDaAtividade,
 } from "@/lib/perfil-da-loja/regras";
 import { COR_DO_CANAL, ESTILO_DO_PERFIL } from "./estilo";
+import LinhaDoTempo, { ESTILO_DA_LINHA_DO_TEMPO, ResumoDoRelacionamento } from "./LinhaDoTempo";
 
 // ── Aviso no topo (cópia local, ver memória aviso-e-no-topo-nao-alert) ──────
 
@@ -53,6 +55,20 @@ const ICONE_DO_STATUS: Record<StatusDaAtividade, typeof Flame> = { ATIVA: Flame,
 
 export function PilulaDoStatus({ status, curta }: { status: StatusDaAtividade; curta?: boolean }) {
   return <span className={`pf-pilula pf-st-${status}`}><i aria-hidden />{curta && status === "NOVA" ? "Nova" : ROTULO_DO_STATUS[status]}</span>;
+}
+
+/**
+ * O selo do cardápio (Douglas, 18/10/2026: "bem evidente"): verde "Cardápio
+ * puxado" ou vermelho cheio "SEM cardápio". O critério em CRITERIO_DO_CARDAPIO.
+ */
+export function SeloDoCardapio({ puxado, produtos, grande }: { puxado: boolean; produtos: number; grande?: boolean }) {
+  const Icone = puxado ? BookOpenCheck : BookX;
+  const itens = `${produtos.toLocaleString("pt-BR")} ${produtos === 1 ? "item" : "itens"}`;
+  return (
+    <span className={`pf-selo-cardapio ${puxado ? "sim" : "nao"}${grande ? " grande" : ""}`} title={`${itens} no cardápio. ${CRITERIO_DO_CARDAPIO}`}>
+      <Icone size={grande ? 15 : 12} aria-hidden /> {puxado ? "Cardápio puxado" : "SEM cardápio"}<em>{itens}</em>
+    </span>
+  );
 }
 
 export function Tendencia({ pct, sufixo = "" }: { pct: number | null; sufixo?: string }) {
@@ -99,7 +115,7 @@ const ICONE_DO_ESTADO: Record<EstadoDoRecurso, typeof Check> = { USANDO: CircleC
 
 // ── O perfil ────────────────────────────────────────────────────────────────
 
-export function VisaoDoPerfil({ perfil, avisar }: { perfil: PerfilDaLoja; avisar: (a: Aviso) => void }) {
+export function VisaoDoPerfil({ perfil, avisar, linha, aoVerLinha }: { perfil: PerfilDaLoja; avisar: (a: Aviso) => void; linha?: Linha | null; aoVerLinha?: () => void }) {
   const dinheiro = useDinheiro();
   const [filtro, setFiltro] = useState<EstadoDoRecurso | "TODOS">("TODOS");
   const { loja, atividade: a, financeiro: f } = perfil;
@@ -119,6 +135,10 @@ export function VisaoDoPerfil({ perfil, avisar }: { perfil: PerfilDaLoja; avisar
         {loja.logo ? <img className="pf-logo" src={loja.logo} alt="" /> : <div className="pf-logo" aria-hidden>{(loja.nome || "?").trim().charAt(0).toUpperCase()}</div>}
         <div style={{ minWidth: 0 }}>
           <div className="pf-nome">{loja.nome}</div>
+          <div className="pf-cab-selos">
+            <PilulaDoStatus status={a.status} />
+            <SeloDoCardapio puxado={perfil.cardapio.puxado} produtos={perfil.cardapio.produtos} grande />
+          </div>
           <div className="pf-cab-info">
             {loja.cidade && <span>{loja.cidade}</span>}
             <span>cliente desde {dataBR(loja.criadaEm)}</span>
@@ -145,6 +165,18 @@ export function VisaoDoPerfil({ perfil, avisar }: { perfil: PerfilDaLoja; avisar
           </div>
         </div>
       </section>
+
+      {!perfil.cardapio.puxado && (
+        <div className="pf-alerta-cardapio" role="note">
+          <BookX size={18} aria-hidden />
+          <div>
+            <strong>Esta loja está SEM cardápio ({perfil.cardapio.produtos.toLocaleString("pt-BR")} {perfil.cardapio.produtos === 1 ? "item" : "itens"}).</strong>
+            <p>{CRITERIO_DO_CARDAPIO} Sem cardápio a loja não vende pelo site, pelo robô nem pela mesa — oferecer puxar o cardápio é o primeiro passo.</p>
+          </div>
+        </div>
+      )}
+
+      {linha && <ResumoDoRelacionamento l={linha} aoVerTudo={aoVerLinha} />}
 
       <div className="pf-kpis">
         <div className="pf-kpi">
@@ -333,7 +365,28 @@ export function GavetaDoPerfil({ url, aoFechar, tema = "areia" }: { url: string 
   const [perfil, setPerfil] = useState<PerfilDaLoja | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<Aviso | null>(null);
+  const [aba, setAba] = useState<"perfil" | "linha">("perfil");
+  const [linha, setLinha] = useState<Linha | null>(null);
+  const [erroDaLinha, setErroDaLinha] = useState<string | null>(null);
   const fecharAviso = useCallback(() => setAviso(null), []);
+
+  // A linha do tempo (CRM do FireHub) vem por outra rota, em paralelo: `${url}/linha-do-tempo`.
+  useEffect(() => {
+    if (!url) return;
+    let vivo = true;
+    setLinha(null);
+    setErroDaLinha(null);
+    setAba("perfil");
+    fetch(`${url}/linha-do-tempo`, { cache: "no-store" })
+      .then(async (r) => {
+        const d = await r.json().catch(() => ({}));
+        if (!vivo) return;
+        if (!r.ok) setErroDaLinha(d.error || "Não deu para abrir a linha do tempo.");
+        else setLinha(d);
+      })
+      .catch(() => vivo && setErroDaLinha("Sem conexão. Tente de novo."));
+    return () => { vivo = false; };
+  }, [url]);
 
   useEffect(() => {
     if (!url) return;
@@ -363,15 +416,29 @@ export function GavetaDoPerfil({ url, aoFechar, tema = "areia" }: { url: string 
   if (!url) return null;
   return (
     <div className={`pf${tema === "admin" ? " pf-admin" : ""}`}>
-      <style>{ESTILO_DO_PERFIL}</style>
+      <style>{ESTILO_DO_PERFIL + ESTILO_DA_LINHA_DO_TEMPO}</style>
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
       <div className="pf-gaveta-fundo" onClick={aoFechar}>
         <aside className="pf-gaveta" role="dialog" aria-modal="true" aria-label="Perfil da loja" onClick={(e) => e.stopPropagation()}>
-          <div className="pf-gaveta-topo">
-            <strong>{perfil ? `Perfil · ${perfil.loja.nome}` : "Perfil da loja"}</strong>
-            <button type="button" className="pf-fechar" onClick={aoFechar} aria-label="Fechar o perfil"><X size={17} aria-hidden /></button>
+          <div className="pf-gaveta-cabeca">
+            <div className="pf-gaveta-topo">
+              <strong>{perfil ? `Perfil · ${perfil.loja.nome}` : "Perfil da loja"}</strong>
+              <button type="button" className="pf-fechar" onClick={aoFechar} aria-label="Fechar o perfil"><X size={17} aria-hidden /></button>
+            </div>
+            <div className="pf-gaveta-abas" role="tablist" aria-label="Seções do perfil">
+              <button type="button" role="tab" aria-selected={aba === "perfil"} className={aba === "perfil" ? "on" : ""} onClick={() => setAba("perfil")}><LayoutDashboard size={15} aria-hidden /> Perfil e números</button>
+              <button type="button" role="tab" aria-selected={aba === "linha"} className={aba === "linha" ? "on" : ""} onClick={() => setAba("linha")}>
+                <History size={15} aria-hidden /> Linha do tempo{linha ? <span>{linha.itens.length}</span> : null}{linha?.ajudaAberta ? <i className="pf-ponto-alerta" aria-label="pedido de ajuda aberto" /> : null}
+              </button>
+            </div>
           </div>
-          {erro ? (
+          {aba === "linha" ? (
+            <div className="pf-perfil">
+              {erroDaLinha ? <div className="pf-erro-caixa">{erroDaLinha}</div>
+                : !linha ? <div className="pf-esqueleto" aria-busy="true" style={{ padding: 0 }}><div style={{ height: 110 }} /><div style={{ height: 320 }} /></div>
+                : <LinhaDoTempo l={linha} />}
+            </div>
+          ) : erro ? (
             <div className="pf-perfil"><div className="pf-erro-caixa">{erro}<button type="button" className="pf-botao pequeno" onClick={aoFechar}>Fechar</button></div></div>
           ) : !perfil ? (
             <div className="pf-esqueleto" aria-busy="true" aria-label="Carregando o perfil">
@@ -380,7 +447,7 @@ export function GavetaDoPerfil({ url, aoFechar, tema = "areia" }: { url: string 
               <span style={{ display: "flex", gap: 8, alignItems: "center", color: "var(--pf-cinza)", fontSize: "0.82rem" }}><LoaderCircle size={15} className="pf-gira" aria-hidden /> Juntando os números da loja…</span>
             </div>
           ) : (
-            <VisaoDoPerfil perfil={perfil} avisar={setAviso} />
+            <VisaoDoPerfil perfil={perfil} avisar={setAviso} linha={linha} aoVerLinha={() => setAba("linha")} />
           )}
         </aside>
       </div>

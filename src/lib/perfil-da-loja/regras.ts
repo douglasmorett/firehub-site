@@ -213,6 +213,8 @@ export type AtividadeDoPerfil = {
 };
 
 export type PerfilDaLoja = {
+  /** Produtos ativos de cardápio (sem o espelho das integrações) e se o cardápio está puxado. */
+  cardapio: { produtos: number; puxado: boolean };
   loja: Pick<SinaisDaLoja, "id" | "nome" | "dono" | "cidade" | "telefone" | "email" | "slug" | "logo" | "criadaEm" | "vendedor" | "embaixador" | "lojasNaConta">;
   atividade: AtividadeDoPerfil;
   recursos: RecursoDoPerfil[];
@@ -237,6 +239,9 @@ export type PerfilDaLoja = {
 /** O que a lista (admin › Lojistas, carteira do vendedor) precisa de cada loja — sem o detalhe dos recursos. */
 export type ResumoDoPerfil = {
   id: string;
+  /** Produtos ativos de cardápio e o selo "Cardápio puxado" × "SEM cardápio". */
+  produtos: number;
+  cardapioPuxado: boolean;
   nome: string;
   cidade: string | null;
   telefone: string | null;
@@ -278,6 +283,19 @@ export const SEMANA_FRACA = 0.5;
 /** ESFRIANDO por sumiço: loja de ≥ 2 vendas/dia (60 em 30 dias) há 3+ dias sem vender. */
 export const VENDAS_DE_LOJA_DIARIA = 60;
 export const DIAS_DE_SUMICO = 3;
+/**
+ * CARDÁPIO PUXADO: a loja tem pelo menos 5 produtos ATIVOS de cardápio de
+ * verdade — fora das categorias de integração (o espelho que o iFood/99/Keeta
+ * criam a partir dos pedidos, `CATEGORIAS_DE_INTEGRACAO` em
+ * lib/cardapio-interno.ts). Não importa se foi montado à mão, importado ou
+ * copiado de marketplace: o que conta é o cardápio estar lá. Menos que isso =
+ * "SEM cardápio" (a loja não tem o que vender pelo site, robô e mesa).
+ */
+export const PRODUTOS_PARA_CARDAPIO = 5;
+export const cardapioPuxado = (produtos: number) => produtos >= PRODUTOS_PARA_CARDAPIO;
+/** O critério em uma frase, para a tela e a planilha. */
+export const CRITERIO_DO_CARDAPIO = `Cardápio puxado = pelo menos ${PRODUTOS_PARA_CARDAPIO} produtos ativos no cardápio da loja, sem contar o espelho que iFood, 99 e Keeta criam a partir dos pedidos.`;
+
 /** Teste ativado: pelo menos este tanto de vendas. */
 export const VENDAS_PARA_ATIVAR = 10;
 /** Comissão de marketplace usada só na ESTIMATIVA do argumento do App (dito como estimativa). */
@@ -839,7 +857,7 @@ export function passosDaAtivacao(s: SinaisDaLoja, agora: Date): PassoDaAtivacao[
   const assistente = diasDesde(s.assistenteVistoEm, agora);
   const temIntegracao = Object.values(s.integracoes).some(Boolean);
   return [
-    { chave: "cardapio", texto: "Cardápio montado", feito: s.produtos >= 5, detalhe: s.produtos >= 5 ? plural(s.produtos, "produto", "produtos") : s.produtos === 0 ? "nenhum produto" : `só ${plural(s.produtos, "produto", "produtos")}` },
+    { chave: "cardapio", texto: "Cardápio montado", feito: cardapioPuxado(s.produtos), detalhe: cardapioPuxado(s.produtos) ? plural(s.produtos, "produto", "produtos") : s.produtos === 0 ? "nenhum produto" : `só ${plural(s.produtos, "produto", "produtos")}` },
     { chave: "canal", texto: "Canal de pedido ligado (robô ou iFood/99)", feito: s.roboConfigurado || temIntegracao, detalhe: [s.roboConfigurado && "robô", s.integracoes.ifood && "iFood", s.integracoes.food99 && "99Food"].filter(Boolean).join(", ") || "nenhum" },
     { chave: "impressao", texto: "Assistente de impressão instalado", feito: assistente !== null, detalhe: assistente === null ? "não instalou" : assistente <= 2 ? "ligado" : `visto há ${assistente} dias` },
     { chave: "primeira", texto: "Primeira venda", feito: vendas > 0, detalhe: vendas > 0 ? plural(vendas, "venda", "vendas") : "ainda não" },
@@ -869,6 +887,7 @@ export function montarPerfil(s: SinaisDaLoja, precos: PrecosDeTabela, agora: Dat
   const contratados = servicosPagos.filter((p) => p.contratado);
 
   return {
+    cardapio: { produtos: s.produtos, puxado: cardapioPuxado(s.produtos) },
     loja: {
       id: s.id, nome: s.nome, dono: s.dono, cidade: s.cidade, telefone: s.telefone, email: s.email, slug: s.slug, logo: s.logo,
       criadaEm: s.criadaEm, vendedor: s.vendedor, embaixador: s.embaixador, lojasNaConta: s.lojasNaConta,
@@ -907,6 +926,8 @@ export function montarPerfil(s: SinaisDaLoja, precos: PrecosDeTabela, agora: Dat
 export function resumirPerfil(p: PerfilDaLoja): ResumoDoPerfil {
   return {
     id: p.loja.id,
+    produtos: p.cardapio.produtos,
+    cardapioPuxado: p.cardapio.puxado,
     nome: p.loja.nome,
     cidade: p.loja.cidade,
     telefone: p.loja.telefone,
@@ -950,6 +971,8 @@ export type RelatorioDaCarteira = {
   }[];
   ranking: ResumoDoPerfil[];
   novas: ResumoDoPerfil[];
+  /** Lojas abaixo do critério do cardápio (CRITERIO_DO_CARDAPIO). */
+  semCardapio: number;
 };
 
 export function relatorioDaCarteira(lojas: ResumoDoPerfil[]): RelatorioDaCarteira {
@@ -986,6 +1009,7 @@ export function relatorioDaCarteira(lojas: ResumoDoPerfil[]): RelatorioDaCarteir
     faturamento30Anterior: Math.round(fAnt * 100) / 100,
     tendenciaPct: tendencia(f30, fAnt),
     emRisco, oportunidadesPorProduto, ranking, novas,
+    semCardapio: lojas.filter((l) => !l.cardapioPuxado).length,
   };
 }
 
@@ -996,10 +1020,11 @@ export function csvDaCarteira(lojas: ResumoDoPerfil[]): string {
     return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
   const num = (v: number) => (Math.round(v * 100) / 100).toFixed(2).replace(".", ",");
-  const cab = ["Loja", "Cidade", "Telefone", "Vendedor", "Status", "Motivo", "Dias sem venda", "Vendas 30d", "Faturamento 30d", "Faturamento 30d anteriores", "Tendência %", "Canal principal", "Recursos em uso", "Oportunidades", "Em teste (dias)", "Falta para ativar", "Mensalidade em aberto"];
+  const cab = ["Loja", "Cidade", "Telefone", "Vendedor", "Status", "Motivo", "Dias sem venda", "Vendas 30d", "Faturamento 30d", "Faturamento 30d anteriores", "Tendência %", "Canal principal", "Recursos em uso", "Cardápio", "Oportunidades", "Em teste (dias)", "Falta para ativar", "Mensalidade em aberto"];
   const linhas = lojas.map((l) => [
     l.nome, l.cidade, l.telefone, l.vendedor?.nome, ROTULO_DO_STATUS[l.status], l.motivo, l.diasSemVenda ?? "nunca vendeu",
     l.vendas30, num(l.valor30), num(l.valor30Anterior), l.tendenciaPct ?? "", l.canalPrincipal, `${l.usando} de ${l.totalDeRecursos}`,
+    l.cardapioPuxado ? `puxado (${l.produtos} itens)` : `SEM cardápio (${l.produtos} itens)`,
     l.oportunidades.map((o) => o.produto).join(" | "), l.emTeste ? l.diasDeTeste : "", l.ativacaoFalta.join(" | "), num(l.emAberto),
   ].map(esc).join(";"));
   return "﻿" + [cab.join(";"), ...linhas].join("\r\n");

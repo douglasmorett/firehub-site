@@ -6,7 +6,7 @@
  *   DATABASE_URL=postgresql://x@localhost:1/x npx tsx scripts/teste-perfil-da-loja.ts
  */
 import {
-  csvDaCarteira, montarPerfil, oportunidadesDaLoja, passosDaAtivacao, recursosDaLoja, relatorioDaCarteira, resumirPerfil, statusDaAtividade,
+  CRITERIO_DO_CARDAPIO, PRODUTOS_PARA_CARDAPIO, cardapioPuxado, csvDaCarteira, montarPerfil, oportunidadesDaLoja, passosDaAtivacao, recursosDaLoja, relatorioDaCarteira, resumirPerfil, statusDaAtividade,
   type PrecosDeTabela, type SinaisDaLoja, type VendasDoCanal,
 } from "../src/lib/perfil-da-loja/regras";
 import { canalDaLinha, janelasDaLoja } from "../src/lib/perfil-da-loja/janelas";
@@ -162,6 +162,10 @@ confere("ranking por faturamento", rel.ranking.map((l) => l.id), ["a", "e", "l1"
 const app = rel.oportunidadesPorProduto.find((g) => g.chave === "APP_DA_LOJA");
 confere("oportunidade agrupada por produto, com potencial", app && [app.lojas, app.potencialMensal], [1, 149]);
 confere("serviços de venda antes dos de adoção", rel.oportunidadesPorProduto[0].tipo, "VENDA");
+confere("selo do cardápio: 5 itens é puxado, 4 não", [cardapioPuxado(5), cardapioPuxado(4), cardapioPuxado(0)], [true, false, false]);
+confere("o perfil e o resumo levam o selo", [pNova.cardapio, resumirPerfil(pNova).cardapioPuxado, resumirPerfil(ativa).cardapioPuxado], [{ produtos: 3, puxado: false }, false, true]);
+confere("a carteira conta as lojas sem cardápio", rel.semCardapio, 1);
+confere("o critério cita o mínimo", CRITERIO_DO_CARDAPIO.includes(`${PRODUTOS_PARA_CARDAPIO} produtos`), true);
 const csv = csvDaCarteira([ativa, nunca].map(resumirPerfil));
 confere("CSV com BOM, ; e vírgula decimal", [csv.charCodeAt(0) === 0xfeff, csv.split("\r\n").length, csv.split("\r\n")[1].includes(";17000,00;")], [true, 3, true]);
 

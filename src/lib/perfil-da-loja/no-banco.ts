@@ -29,6 +29,7 @@ import { STATUS_FORA_DA_VENDA } from "@/lib/relatorios/base";
 import { canalDaLinha, janelasDaLoja, type Janelas } from "@/lib/perfil-da-loja/janelas";
 import { VALOR_IMPOSSIVEL } from "@/lib/relatorios/regua-da-venda";
 import { getCurrentYearMonth, isExemptAccount, lojaIsenta } from "@/lib/billing";
+import { CATEGORIAS_DE_INTEGRACAO } from "@/lib/cardapio-interno";
 import { mensalidadeDoCiclo, type CicloNasRegras } from "@/lib/parceiro/regras";
 import { PRECO_DO_ASSESSOR } from "@/lib/assessor/assinatura";
 import { PRECOS_DO_APP } from "@/lib/app-da-loja/plano";
@@ -169,7 +170,9 @@ async function contagensDasLojas(ids: string[], desde: Date, agora: Date) {
     billAss, billUso, appPlano, appPedidos, appAparelhos, totens, campanhasMeta, multimarcas, whatsOficial, campanhasDisparo,
     acompanhamento, lojasNaConta, garcomLogin, termos,
   ] = await Promise.all([
-    c<Contagem>("produtos", () => prisma.$queryRaw`SELECT "franchiseeId" AS id, count(*)::int AS n FROM "MenuProduct" WHERE "franchiseeId" = ANY(${ids}) AND active = true GROUP BY 1`),
+    // Cardápio de verdade: ativo e fora das categorias de integração (o espelho do iFood/99/Keeta — lib/cardapio-interno.ts).
+    c<Contagem>("produtos", () => prisma.$queryRaw`SELECT "franchiseeId" AS id, count(*)::int AS n FROM "MenuProduct"
+      WHERE "franchiseeId" = ANY(${ids}) AND active = true AND upper(coalesce(category, '')) <> ALL(${CATEGORIAS_DE_INTEGRACAO}) GROUP BY 1`),
     c<Contagem>("categorias", () => prisma.$queryRaw`SELECT "franchiseeId" AS id, count(*)::int AS n FROM "MenuCategory" WHERE "franchiseeId" = ANY(${ids}) GROUP BY 1`),
     // UsageLog só tem índice por (franchiseeId, yearMonth): o mês entra no filtro para usá-lo.
     c<Contagem>("respostas do robô", () => prisma.$queryRaw`SELECT "franchiseeId" AS id, count(*)::int AS n FROM "UsageLog"

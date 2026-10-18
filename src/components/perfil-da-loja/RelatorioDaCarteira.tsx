@@ -11,14 +11,14 @@
  * vendedor, /api/admin/perfil-das-lojas). `fonte/<id>` abre o perfil.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Download, MessageCircle, RefreshCw, Rocket, Search, Sparkles, TriangleAlert, Trophy, X } from "lucide-react";
+import { BookX, ChevronDown, ChevronRight, Download, MessageCircle, RefreshCw, Rocket, Search, Sparkles, TriangleAlert, Trophy, X } from "lucide-react";
 import { useDinheiro } from "@/components/parceiro/ValoresOcultos";
 import {
-  ROTULO_DO_STATUS, csvDaCarteira,
+  CRITERIO_DO_CARDAPIO, ROTULO_DO_STATUS, csvDaCarteira,
   type RelatorioDaCarteira as Relatorio, type ResumoDoPerfil, type StatusDaAtividade,
 } from "@/lib/perfil-da-loja/regras";
 import { ESTILO_DO_PERFIL } from "./estilo";
-import { AvisoNoTopo, GavetaDoPerfil, PilulaDoStatus, Tendencia, linkDoWhatsApp, type Aviso } from "./PerfilDaLoja";
+import { AvisoNoTopo, GavetaDoPerfil, PilulaDoStatus, SeloDoCardapio, Tendencia, linkDoWhatsApp, type Aviso } from "./PerfilDaLoja";
 
 type Dados = { lojas: ResumoDoPerfil[]; relatorio: Relatorio; geradoEm: string };
 
@@ -46,6 +46,7 @@ export default function RelatorioDaCarteira({
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
   const [status, setStatus] = useState<StatusDaAtividade | null>(null);
+  const [soSemCardapio, setSoSemCardapio] = useState(false);
   const [busca, setBusca] = useState("");
   const [produtoAberto, setProdutoAberto] = useState<string | null>(null);
   const [perfilId, setPerfilId] = useState<string | null>(null);
@@ -78,9 +79,14 @@ export default function RelatorioDaCarteira({
   const lista = useMemo(() => {
     const todas = dados?.lojas || [];
     return todas
-      .filter((l) => (!status || l.status === status) && (!termo || [l.nome, l.cidade, l.vendedor?.nome].some((v) => v?.toLowerCase().includes(termo))))
+      .filter((l) => (!status || l.status === status) && (!soSemCardapio || !l.cardapioPuxado) && (!termo || [l.nome, l.cidade, l.vendedor?.nome].some((v) => v?.toLowerCase().includes(termo))))
       .sort((a, b) => b.valor30 - a.valor30 || a.nome.localeCompare(b.nome));
-  }, [dados, status, termo]);
+  }, [dados, status, termo, soSemCardapio]);
+  const porId = useMemo(() => new Map((dados?.lojas || []).map((l) => [l.id, l])), [dados]);
+  const selo = (id: string) => {
+    const l = porId.get(id);
+    return l ? <SeloDoCardapio puxado={l.cardapioPuxado} produtos={l.produtos} /> : null;
+  };
   const maiorFaturamento = Math.max(1, ...lista.map((l) => l.valor30));
   const potencial = rel ? rel.oportunidadesPorProduto.filter((g) => g.tipo === "VENDA").reduce((t, g) => t + g.potencialMensal, 0) : 0;
   const lojasComVenda = rel ? new Set(rel.oportunidadesPorProduto.filter((g) => g.tipo === "VENDA").flatMap((g) => g.itens.map((i) => i.id))).size : 0;
@@ -151,6 +157,11 @@ export default function RelatorioDaCarteira({
                   <div className="pf-kpi-sub">{rel.total ? Math.round((rel.porStatus[s] / rel.total) * 100) : 0}% da carteira</div>
                 </button>
               ))}
+              <button type="button" className={`pf-kpi clicavel kpi-cardapio${soSemCardapio ? " on" : ""}${rel.semCardapio ? " tem" : ""}`} onClick={() => setSoSemCardapio((v) => !v)} aria-pressed={soSemCardapio} title={CRITERIO_DO_CARDAPIO}>
+                <span className="pf-rotulo" style={{ display: "flex", gap: 6, alignItems: "center" }}><BookX size={13} aria-hidden /> Sem cardápio</span>
+                <div className="pf-kpi-val">{rel.semCardapio}</div>
+                <div className="pf-kpi-sub">{rel.semCardapio ? "toque para ver quais" : "todas com cardápio"}</div>
+              </button>
               <div className="pf-kpi">
                 <span className="pf-rotulo">Faturamento · 30d</span>
                 <div className="pf-kpi-val dinheiro">{dinheiro(rel.faturamento30)}</div>
@@ -162,6 +173,8 @@ export default function RelatorioDaCarteira({
                 <div className="pf-kpi-sub">por mês, em {lojasComVenda} {lojasComVenda === 1 ? "loja" : "lojas"}</div>
               </div>
             </div>
+
+            <p className="pf-criterio"><b>Selo do cardápio:</b> {CRITERIO_DO_CARDAPIO} Abaixo disso a loja aparece como <span className="pf-selo-cardapio nao mini">SEM cardápio</span>.</p>
 
             <div className="pf-barra" role="img" aria-label={STATUS.map((s) => `${ROTULO_DO_STATUS[s]}: ${rel.porStatus[s]}`).join(", ")} style={{ height: 10 }}>
               {STATUS.filter((s) => rel.porStatus[s] > 0).map((s) => <span key={s} style={{ width: `${(rel.porStatus[s] / Math.max(rel.total, 1)) * 100}%`, background: COR_DO_STATUS[s] }} />)}
@@ -183,7 +196,7 @@ export default function RelatorioDaCarteira({
                       return (
                         <li key={l.id}>
                           <div style={{ minWidth: 0 }}>
-                            <button type="button" className="pf-risco-nome" onClick={() => abrir(l.id)}>{l.nome} <PilulaDoStatus status={l.status} /></button>
+                            <button type="button" className="pf-risco-nome" onClick={() => abrir(l.id)}>{l.nome} <PilulaDoStatus status={l.status} /> <SeloDoCardapio puxado={l.cardapioPuxado} produtos={l.produtos} /></button>
                             <p>{l.motivo}</p>
                           </div>
                           <div className="pf-risco-perda">{perda > 0 ? <><b>−{dinheiro(perda)}</b>em 30 dias</> : l.diasSemVenda === null ? "nunca vendeu" : "—"}</div>
@@ -213,7 +226,7 @@ export default function RelatorioDaCarteira({
                     {rel.novas.slice(0, 12).map((l) => (
                       <li key={l.id}>
                         <div className="pf-novas-topo">
-                          <button type="button" className="pf-risco-nome" onClick={() => abrir(l.id)}>{l.nome}</button>
+                          <button type="button" className="pf-risco-nome" onClick={() => abrir(l.id)}>{l.nome} <SeloDoCardapio puxado={l.cardapioPuxado} produtos={l.produtos} /></button>
                           <span className="pf-pilula pf-st-NOVA">{l.diasDeTeste} {l.diasDeTeste === 1 ? "dia" : "dias"} de teste</span>
                         </div>
                         <div className="pf-falta">
@@ -255,7 +268,7 @@ export default function RelatorioDaCarteira({
                           <ul>
                             {g.itens.map((i) => (
                               <li key={i.id}>
-                                <button type="button" onClick={() => abrir(i.id)}>{i.nome}</button>
+                                <div className="pf-produto-loja"><button type="button" onClick={() => abrir(i.id)}>{i.nome}</button> {selo(i.id)}</div>
                                 <p>{i.motivo}</p>
                               </li>
                             ))}
@@ -271,7 +284,7 @@ export default function RelatorioDaCarteira({
             <section className="pf-painel">
               <div className="pf-painel-cab">
                 <div>
-                  <h3 className="pf-h"><Trophy size={17} color="#8A5A00" aria-hidden /> Ranking por faturamento <small>{lista.length} {lista.length === 1 ? "loja" : "lojas"}{status ? ` · ${ROTULO_DO_STATUS[status].toLowerCase()}` : ""}</small></h3>
+                  <h3 className="pf-h"><Trophy size={17} color="#8A5A00" aria-hidden /> Ranking por faturamento <small>{lista.length} {lista.length === 1 ? "loja" : "lojas"}{status ? ` · ${ROTULO_DO_STATUS[status].toLowerCase()}` : ""}{soSemCardapio ? " · sem cardápio" : ""}</small></h3>
                   <p className="pf-sub">Faturamento de 30 dias na régua dos relatórios. Toque na linha para abrir o perfil.</p>
                 </div>
               </div>
@@ -288,6 +301,9 @@ export default function RelatorioDaCarteira({
                       <i className="pf-ponto" style={{ background: COR_DO_STATUS[s] }} /> {ROTULO_DO_STATUS[s]} <span>{rel.porStatus[s]}</span>
                     </button>
                   ))}
+                  <button type="button" className={`pf-chip chip-sem-cardapio${soSemCardapio ? " on" : ""}`} onClick={() => setSoSemCardapio((v) => !v)} aria-pressed={soSemCardapio}>
+                    <BookX size={13} aria-hidden /> Sem cardápio <span>{rel.semCardapio}</span>
+                  </button>
                 </div>
               </div>
               <div className="pf-tabela-rolagem">
@@ -313,6 +329,7 @@ export default function RelatorioDaCarteira({
                             <strong>{l.nome}</strong>
                             <small style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                               <PilulaDoStatus status={l.status} curta />
+                              <SeloDoCardapio puxado={l.cardapioPuxado} produtos={l.produtos} />
                               {[l.cidade, vendedores ? l.vendedor?.nome : null].filter(Boolean).join(" · ")}
                             </small>
                           </div>
@@ -334,7 +351,7 @@ export default function RelatorioDaCarteira({
                       </tr>
                     ))}
                     {lista.length === 0 && (
-                      <tr><td colSpan={8} className="pf-vazio">Nenhuma loja{busca ? ` para "${busca}"` : ""}{status ? ` com status ${ROTULO_DO_STATUS[status].toLowerCase()}` : ""}.</td></tr>
+                      <tr><td colSpan={8} className="pf-vazio">Nenhuma loja{busca ? ` para "${busca}"` : ""}{status ? ` com status ${ROTULO_DO_STATUS[status].toLowerCase()}` : ""}{soSemCardapio ? " sem cardápio" : ""}.</td></tr>
                     )}
                   </tbody>
                 </table>
