@@ -244,8 +244,12 @@ async function main() {
   // O caminho inteiro de agora: CEP (não existe) → texto com o bairro certo.
   const b30 = await prepararBusca(W30, lojaDaBusca, viaCep);
   const r30 = await geoNik(areaNik.raioKm, b30.cidade, b30.estado).geocodificarItem({ idx: 0, ...b30.item });
-  confere("#30: CEP desconhecido → texto → 'Avenida Central Conjunto 3' em Sobradinho II, 1,9 km",
-    !b30.peloCep && r30.nivel === "rua" && Math.abs(distanciaKm(NIK, r30.coords) - 1.9) < 0.2 && pontoPlausivel(r30.coords, areaNik, true), { b30: b30.item, r30 });
+  // Até 18/10/2026 o mapa aceitava a "Avenida Central Conjunto 3" para o
+  // "conjunto 02" (Dice alto). Número diferente é outro conjunto — o mesmo
+  // erro que mandou a Quadra 3 Conjunto G para a Quadra 15 Conjunto C (#60).
+  // Agora fica no centro de Sobradinho II, aproximado (o pino sai com "confira").
+  confere("#30: CEP desconhecido → texto → o conjunto 3 não é o 02: centro de Sobradinho II, aproximado",
+    !b30.peloCep && r30.nivel === "bairro" && distanciaKm(NIK, r30.coords) < 3 && pontoPlausivel(r30.coords, areaNik, true), { b30: b30.item, r30 });
 
   const b13 = await prepararBusca(W13, lojaDaBusca, viaCep);
   const r13 = await geoNik(areaNik.raioKm, b13.cidade, b13.estado).geocodificarItem({ idx: 0, ...b13.item });

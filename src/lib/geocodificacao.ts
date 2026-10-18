@@ -28,6 +28,12 @@ export type ItemGeocodificavel = {
   houseNumber: string;
   cleanedStreet: string;
   dictFallback?: Ponto;
+  /**
+   * O CEP do endereço (8 dígitos), quando há. Resultado do mapa com o CEP do
+   * MESMO setor (os 5 primeiros dígitos) dispensa a régua dos 2,8 km do centro
+   * do bairro — ver `cepConfere` em criarGeocodificador.
+   */
+  cep?: string | null;
 };
 
 /**
@@ -548,6 +554,19 @@ export const nomeDeRuaParecido = (a: string, b: string): boolean => {
   const y = limpa(b);
   if (!x || !y) return true;
   if (x === y) return true;
+  // ── O NÚMERO E A LETRA DO CONJUNTO SÃO O NOME ──────────────────────────
+  // "Quadra 15 Conjunto C" e "Quadra 3 Conjunto G" dividem quase todos os
+  // pares de letras — e são quarteirões a 3 km um do outro. O Photon devolveu
+  // exatamente isso para o #60 da NIK (Sobradinho, 17/10/2026), e "Rua 5" ×
+  // "Rua 15" é a mesma armadilha. Com número dos DOIS lados, os números têm de
+  // ser os mesmos; com conjunto dos dois lados, o mesmo conjunto. ("Rua
+  // Cinco" × "Rua 5" segue a regra de sempre: só um lado tem número.)
+  const numeros = (t: string) => (t.match(/\d+/g) || []).map((n) => n.replace(/^0+(?=\d)/, "")).sort().join(",");
+  if (/\d/.test(x) && /\d/.test(y) && numeros(x) !== numeros(y)) return false;
+  const conjunto = (t: string) => t.replace(/\b([a-z]) (\d)/g, "$1$2").match(/\b(?:conjunto|conj|cj) ([a-z]{1,2}\d{0,2}|\d{1,3})\b/)?.[1] ?? null;
+  const cx = conjunto(x);
+  const cy = conjunto(y);
+  if (cx && cy && cx !== cy) return false;
   // ── UM NOME DENTRO DO OUTRO ────────────────────────────────────────────
   // "getulio" × "getulio vargas" é a mesma rua escrita pela metade. Mas
   // "marina" × "marina do canal palmer" não: era a "Rua Marina" do cliente do
@@ -711,6 +730,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
           return {
             lat, lng, bairro: String(bairro), bairros,
             classe, tipo: String(d.type ?? ""), tipoDeEndereco: String(d.addresstype ?? ""), nome, rua, ruas,
+            cep: String(a.postcode ?? "").replace(/\D/g, ""),
           };
         }
       }
@@ -917,6 +937,21 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
       return !!bCentroid;
     };
 
+    // ── O CEP DO MESMO SETOR VALE MAIS QUE A RÉGUA DO CENTRO DO BAIRRO ─────
+    // O "bairro" dos Correios em Brasília é a região inteira: "Sobradinho" tem
+    // 5 km de ponta a ponta e o centro dele, no OSM, fica do lado leste. A
+    // Quadra 3 Conjunto G, achada certinha pelo mapa (OSM: CEP 73030-035), está
+    // a 2,95 km desse centro — a régua dos 2,8 km a recusava, e o pino ia para
+    // a Quadra 15 pelo Photon (#60 da NIK, 17/10/2026). Quando o ponto achado
+    // tem no OSM o CEP do mesmo setor do endereço (os 5 primeiros dígitos), a
+    // rua homônima de outro lugar está descartada: a régua dos 2,8 km não vale.
+    // Só soma: CEP diferente ou ausente no OSM segue a régua de sempre.
+    const cepDoItem = String(item.cep ?? "").replace(/\D/g, "");
+    const cepConfere = (res: { cep?: string } | null) =>
+      !!res && cepDoItem.length === 8 && String(res.cep || "").length === 8 && res.cep!.slice(0, 5) === cepDoItem.slice(0, 5);
+    const pertoDoCentro = (res: { lat: number; lng: number; cep?: string }) =>
+      !bCentroid || calculateHaversineKm(res.lat, res.lng, bCentroid.lat, bCentroid.lng) <= 2.8 || cepConfere(res);
+
     // ── REGRA DE OURO: PRIMEIRO O BAIRRO, DEPOIS A RUA NO BAIRRO (Anti-Homônimos) ──
     // Em cidades como Rio das Ostras, existem várias "Rua Três", "Rua A", etc. em bairros distintos.
     // Por isso, a busca OBRIGATORIAMENTE ancora no BAIRRO e valida proximidade (< 2.5km do centróide do bairro).
@@ -932,7 +967,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
       const res0 = await fetchNominatim(
         `street=${encodeURIComponent(ruaComNumero)}&city=${encodeURIComponent(storeCity)}${estado ? `&state=${estado}` : ""}&country=Brasil&countrycodes=br&__params=1`
       );
-      if (res0 && bairroConfere(res0, item.neighborhood) && ruaConfere(res0) && (!bCentroid || calculateHaversineKm(res0.lat, res0.lng, bCentroid.lat, bCentroid.lng) <= 2.8)) {
+      if (res0 && bairroConfere(res0, item.neighborhood) && ruaConfere(res0) && pertoDoCentro(res0)) {
         coords = res0; origem = "rua (busca estruturada)";
       }
     }
@@ -943,7 +978,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
       const res1 = await fetchNominatim(query1);
       if (res1 && bairroConfere(res1, item.neighborhood) && ruaConfere(res1)) {
         // Se temos o centróide do bairro de referência, valida se a rua retornada não é em outro bairro homônimo
-        if (!bCentroid || calculateHaversineKm(res1.lat, res1.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
+        if (pertoDoCentro(res1)) {
           coords = res1; origem = "rua + número + bairro";
         }
       }
@@ -954,7 +989,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
       const query2 = `${item.streetName}, ${item.neighborhood}, ${sufixoDaCidade}`;
       const res2 = await fetchNominatim(query2);
       if (res2 && bairroConfere(res2, item.neighborhood) && ruaConfere(res2)) {
-        if (!bCentroid || calculateHaversineKm(res2.lat, res2.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
+        if (pertoDoCentro(res2)) {
           coords = res2; origem = "rua + bairro";
         }
       }
@@ -967,7 +1002,7 @@ export function criarGeocodificador(opts: OpcoesGeocodificador) {
         : `${item.cleanedStreet}, ${item.neighborhood}, ${sufixoDaCidade}`;
       const res3 = await fetchNominatim(query3);
       if (res3 && bairroConfere(res3, item.neighborhood) && ruaConfere(res3)) {
-        if (!bCentroid || calculateHaversineKm(res3.lat, res3.lng, bCentroid.lat, bCentroid.lng) <= 2.8) {
+        if (pertoDoCentro(res3)) {
           coords = res3; origem = "endereço limpo";
         }
       }

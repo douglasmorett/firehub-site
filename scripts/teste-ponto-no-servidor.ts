@@ -80,6 +80,10 @@ const sqlFeito: string[] = [];
             minLat: Math.min(...lat), maxLat: Math.max(...lat), minLng: Math.min(...lng), maxLng: Math.max(...lng) }];
         });
       }
+      if (/FROM "PontoAprendido"/.test(sql) && /"endereco" ~/.test(sql)) {
+        // As correções com CEP no texto (a posição pelo mesmo CEP).
+        return [...aprendidos.values()].filter((l) => l.franchiseeId === args[0] && l.chave.startsWith("t:") && /\d{5}-?\d{3}/.test(l.endereco || ""));
+      }
       if (/FROM "PontoAprendido"/.test(sql)) {
         const [franchiseeId, chaves] = args as [string, string[]];
         return chaves.map((c) => aprendidos.get(`${franchiseeId}|${c}`)).filter(Boolean);
@@ -134,7 +138,8 @@ async function main() {
   geocodeCache.set(chave30, { chave: chave30, ...ASA_SUL, origem: "bairro (OSM)" });
   const r1 = await resolverPontosNoServidor([{ id: "p30", endereco: W30, ehMarketplace: true }], loja);
   const a1 = r1.achados[0];
-  confere("achado em Sobradinho II, pelo texto com o bairro certo", !!a1 && a1.fonte === "texto" && distanciaKm(NIK, a1) < 3 && !a1.doCache, r1);
+  // O "Avenida Central Conjunto 3" do mapa não é o "conjunto 02" (18/10/2026): fica o centro de Sobradinho II.
+  confere("achado em Sobradinho II, pelo bairro certo (aproximado)", !!a1 && a1.fonte === "bairro" && a1.aproximado === true && distanciaKm(NIK, a1) < 3 && !a1.doCache, r1);
   confere("o cache foi corrigido (a Asa Sul saiu)", distanciaKm(NIK, geocodeCache.get(chave30)!) < 3);
   const r1b = await resolverPontosNoServidor([{ id: "p30", endereco: W30, ehMarketplace: true }], loja);
   confere("na segunda vez sai do cache, sem ir ao mapa", r1b.achados[0]?.doCache === true);

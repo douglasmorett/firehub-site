@@ -351,6 +351,15 @@ const SIGLAS_DE_CONJUNTO = new Set(["conjunto", "conj", "cj", "cjt", "cnj"]);
 const PALAVRA_DE_NUMERO = new Set(["n", "no", "nr", "num", "numero"]);
 /** Depois de "conjunto", não é o conjunto. */
 const NAO_E_CONJUNTO = new Set(["de", "da", "do", "das", "dos", "e", "o", "n", "no", "nr", "lt", "lote", "cs", "casa", "sn"]);
+/**
+ * "Conjunto E" existe (é dos mais comuns em Sobradinho) — o "e" só não é o
+ * conjunto quando liga duas palavras ("conjunto e da praça"). É o conjunto quando
+ * o pedaço acaba nele ou segue com vírgula, número, casa, lote ou bloco.
+ * Sem isto, 51 entregas do iFood da NIK e todo "Quadra N Conjunto E" ficavam
+ * sem vizinhança (18/10/2026).
+ */
+const DEPOIS_DO_CONJUNTO_E = new Set([",", "casa", "cs", "lote", "lt", "bloco", "bl", "ap", "apt", "apto"]);
+const conjuntoE = (depois: string | undefined) => !depois || DEPOIS_DO_CONJUNTO_E.has(depois) || /^\d/.test(depois);
 
 const siglaDeQuadra = (s: string): string | null =>
   SIGLAS_DE_QUADRA_DA_VIZINHANCA.has(s) ? "q" : SIGLA_DE_SETOR.test(s) ? s : null;
@@ -398,7 +407,7 @@ function vizinhancaNoPedaco(pedaco: string): LeituraDaVizinhanca {
     if (
       !conjunto &&
       SIGLAS_DE_CONJUNTO.has(lista[i]) &&
-      !NAO_E_CONJUNTO.has(valor) &&
+      (!NAO_E_CONJUNTO.has(valor) || (valor === "e" && conjuntoE(lista[j + 1]))) &&
       /^(\d{1,3}|[a-z]{1,2}|[a-z]\d{1,2}|\d{1,2}[a-z])$/.test(valor)
     ) {
       conjunto = semZeroAEsquerda(valor);
@@ -408,6 +417,15 @@ function vizinhancaNoPedaco(pedaco: string): LeituraDaVizinhanca {
   // "Q 5 Q 12 Conjunto B", "Q. 9 Conjunto E, AR 17": não dá para saber qual.
   if (quadras.size > 1) return "ambigua";
   return { quadra: [...quadras][0], conjunto };
+}
+
+/**
+ * Quadra + conjunto de um trecho só ("Quadra 3 Conjunto G" → "q3|cjg"), sem
+ * o lugar. É como a rua do CEP vem dos Correios (lib/ancora-do-cep.ts).
+ */
+export function quadraEConjunto(trecho: unknown): string | null {
+  const l = vizinhancaNoPedaco(String(trecho ?? ""));
+  return l && l !== "ambigua" ? `${l.quadra}|cj${l.conjunto}` : null;
 }
 
 const PALAVRAS_QUE_NAO_SAO_BAIRRO = new Set(["brasil", "brazil", "brasilia", "casa", "cep"]);

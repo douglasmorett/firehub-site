@@ -47,7 +47,10 @@
  * correção não tem linha: nada muda para ela.
  */
 import { prisma } from "@/lib/prisma";
-import { chavesDoAprendizado, chaveDaVizinhanca, distanciaKm, type Ponto } from "@/lib/ponto-do-pedido";
+import { chavesDoAprendizado, chaveDaVizinhanca, distanciaKm, lerPontoGravado, type Ponto } from "@/lib/ponto-do-pedido";
+import { ancorasDasEntregas, type Ancora } from "@/lib/ancora-do-cep";
+import { cepDoEndereco } from "@/lib/cep";
+import { canalDoPedido } from "@/lib/canal-do-pedido";
 
 let tabelaOk = false;
 
@@ -106,8 +109,9 @@ export async function garantirTabelaDePontosAprendidos(): Promise<boolean> {
 
 /** A posição achada para o endereço: a dele ("endereco") ou a dos vizinhos ("vizinhanca", aproximada). */
 export type PontoAprendidoAchado = Ponto & {
-  pela: "endereco" | "vizinhanca";
-  /** Na vizinhança: quantas correções da mesma quadra/conjunto entraram. */
+  /** O endereço; os vizinhos da mesma quadra e conjunto; ou o mesmo CEP (os dois últimos, aproximados). */
+  pela: "endereco" | "vizinhanca" | "cep";
+  /** Na vizinhança e no CEP: quantas correções entraram. */
   correcoes?: number;
 };
 
@@ -120,6 +124,12 @@ type LinhaDaVizinhanca = {
   maxLat: number;
   minLng: number;
   maxLng: number;
+};
+
+const medianaDe = (xs: number[]) => {
+  const o = [...xs].sort((a, b) => a - b);
+  const k = o.length >> 1;
+  return o.length % 2 ? o[k] : (o[k - 1] + o[k]) / 2;
 };
 
 /** A vizinhança serve? Precisa de correção e de as correções caberem num quarteirão. */
@@ -183,41 +193,81 @@ export async function pontosAprendidos(franchiseeId: string, enderecos: string[]
     const v = chaveDaVizinhanca(e);
     if (v) vizinhancaPorEndereco.set(e, v);
   }
-  if (vizinhancaPorEndereco.size === 0) return saida;
-  try {
-    const linhas = await prisma.$queryRawUnsafe<LinhaDaVizinhanca[]>(
-      `SELECT "vizinhanca",
-              percentile_cont(0.5) WITHIN GROUP (ORDER BY "lat") AS "lat",
-              percentile_cont(0.5) WITHIN GROUP (ORDER BY "lng") AS "lng",
-              COUNT(*)::int AS "n",
-              MIN("lat") AS "minLat", MAX("lat") AS "maxLat", MIN("lng") AS "minLng", MAX("lng") AS "maxLng"
-         FROM "PontoAprendido"
-        WHERE "franchiseeId" = $1 AND "vizinhanca" = ANY($2) AND "chave" LIKE 't:%'
-        GROUP BY "vizinhanca"`,
-      franchiseeId,
-      [...new Set(vizinhancaPorEndereco.values())],
-    );
-    const porVizinhanca = new Map(linhas.filter(vizinhancaServe).map((l) => [l.vizinhanca, l]));
-    const usadas = new Set<string>();
-    for (const [endereco, v] of vizinhancaPorEndereco) {
-      const l = porVizinhanca.get(v);
-      if (!l) continue;
-      saida.set(endereco, { lat: Number(l.lat), lng: Number(l.lng), pela: "vizinhanca", correcoes: Number(l.n) });
-      usadas.add(v);
+  if (vizinhancaPorEndereco.size > 0) {
+    try {
+      const linhas = await prisma.$queryRawUnsafe<LinhaDaVizinhanca[]>(
+        `SELECT "vizinhanca",
+                percentile_cont(0.5) WITHIN GROUP (ORDER BY "lat") AS "lat",
+                percentile_cont(0.5) WITHIN GROUP (ORDER BY "lng") AS "lng",
+                COUNT(*)::int AS "n",
+                MIN("lat") AS "minLat", MAX("lat") AS "maxLat", MIN("lng") AS "minLng", MAX("lng") AS "maxLng"
+           FROM "PontoAprendido"
+          WHERE "franchiseeId" = $1 AND "vizinhanca" = ANY($2) AND "chave" LIKE 't:%'
+          GROUP BY "vizinhanca"`,
+        franchiseeId,
+        [...new Set(vizinhancaPorEndereco.values())],
+      );
+      const porVizinhanca = new Map(linhas.filter(vizinhancaServe).map((l) => [l.vizinhanca, l]));
+      const usadas = new Set<string>();
+      for (const [endereco, v] of vizinhancaPorEndereco) {
+        const l = porVizinhanca.get(v);
+        if (!l) continue;
+        saida.set(endereco, { lat: Number(l.lat), lng: Number(l.lng), pela: "vizinhanca", correcoes: Number(l.n) });
+        usadas.add(v);
+      }
+      if (usadas.size > 0) {
+        // A correção que ainda serve aos vizinhos não sai na faxina.
+        prisma
+          .$executeRawUnsafe(
+            `UPDATE "PontoAprendido" SET "ultimoUso" = (NOW() AT TIME ZONE 'UTC')
+              WHERE "franchiseeId" = $1 AND "vizinhanca" = ANY($2)`,
+            franchiseeId,
+            [...usadas],
+          )
+          .catch(() => undefined);
+      }
+    } catch (e: any) {
+      console.warn(`[Ponto aprendido] leitura da vizinhança falhou: ${e?.message}`);
     }
-    if (usadas.size > 0) {
-      // A correção que ainda serve aos vizinhos não sai na faxina.
-      prisma
-        .$executeRawUnsafe(
-          `UPDATE "PontoAprendido" SET "ultimoUso" = (NOW() AT TIME ZONE 'UTC')
-            WHERE "franchiseeId" = $1 AND "vizinhanca" = ANY($2)`,
-          franchiseeId,
-          [...usadas],
-        )
-        .catch(() => undefined);
+  }
+
+  // Sem posição nem vizinhança: as correções da loja no MESMO CEP (NIK,
+  // 18/10/2026: "se puxar pelo CEP dá certo, os endereços aqui são muito
+  // parecidos"). Em 14 dias, 91 dos pedidos da Wabiz sem âncora repetiam o CEP
+  // de um pedido anterior — condomínio (73092-900), quadra comercial
+  // (73005-080), "SES quadra 13"… Uma correção serve ao CEP inteiro, aproximada;
+  // correções do mesmo CEP espalhadas por mais de 800 m não valem. CEP de
+  // cidade inteira (final 000) não é lugar.
+  const cepPorEndereco = new Map<string, string>();
+  for (const e of chavesPorEndereco.keys()) {
+    if (saida.has(e)) continue;
+    const cep = cepDoEndereco(e);
+    if (cep && !cep.endsWith("000")) cepPorEndereco.set(e, cep);
+  }
+  if (cepPorEndereco.size > 0) {
+    try {
+      const linhas = await prisma.$queryRawUnsafe<{ lat: number; lng: number; endereco: string | null }[]>(
+        `SELECT "lat", "lng", "endereco" FROM "PontoAprendido"
+          WHERE "franchiseeId" = $1 AND "chave" LIKE 't:%' AND "endereco" ~ '[0-9]{5}-?[0-9]{3}' LIMIT 5000`,
+        franchiseeId,
+      );
+      const porCep = new Map<string, Ponto[]>();
+      for (const l of linhas || []) {
+        const cep = cepDoEndereco(l.endereco);
+        if (cep) porCep.set(cep, [...(porCep.get(cep) || []), { lat: Number(l.lat), lng: Number(l.lng) }]);
+      }
+      for (const [endereco, cep] of cepPorEndereco) {
+        const pontos = porCep.get(cep);
+        if (!pontos?.length) continue;
+        const lats = pontos.map((p) => p.lat);
+        const lngs = pontos.map((p) => p.lng);
+        const faixa = { n: pontos.length, minLat: Math.min(...lats), maxLat: Math.max(...lats), minLng: Math.min(...lngs), maxLng: Math.max(...lngs) };
+        if (!vizinhancaServe(faixa)) continue;
+        saida.set(endereco, { lat: medianaDe(lats), lng: medianaDe(lngs), pela: "cep", correcoes: pontos.length });
+      }
+    } catch (e: any) {
+      console.warn(`[Ponto aprendido] leitura pelo CEP falhou: ${e?.message}`);
     }
-  } catch (e: any) {
-    console.warn(`[Ponto aprendido] leitura da vizinhança falhou: ${e?.message}`);
   }
   return saida;
 }
@@ -271,4 +321,59 @@ export async function aprenderPonto(a: {
 export function sqlDaFaxinaDosPontosAprendidos(dias: number = DIAS_SEM_USO_DO_APRENDIDO): string {
   const d = Number.isInteger(dias) && dias > 0 ? dias : DIAS_SEM_USO_DO_APRENDIDO;
   return `DELETE FROM "PontoAprendido" WHERE "ultimoUso" < (NOW() AT TIME ZONE 'UTC') - INTERVAL '${d} days'`;
+}
+
+// ── A ÂNCORA DO CEP: AS ENTREGAS COM PONTO DA PRÓPRIA LOJA ────────────────────
+//
+// Ver lib/ancora-do-cep.ts. Aqui só a leitura: as entregas dos últimos 120
+// dias que têm ponto de quem SABE onde é a casa — o parceiro (iFood, 99…), o
+// pino/GPS do cliente e a posição dada pela loja. Ponto achado pelo texto
+// (nosso, "mapa"/"bairro") e os aproximados (aprendido, vizinhança) não entram:
+// seria o mapa ensinando o mapa. Nada é gravado — a âncora é lida de novo a
+// cada 30 min, e cresce sozinha com cada pedido do iFood.
+
+export const DIAS_DA_ANCORA = 120;
+const VALIDADE_DA_ANCORA_MS = 30 * 60_000;
+const TETO_DE_ENTREGAS_DA_ANCORA = 4000;
+const ancorasNaMemoria = new Map<string, { ate: number; ancoras: Promise<Map<string, Ancora>> }>();
+
+/** As âncoras de quadra + conjunto desta loja. Nunca lança: banco fora = vazio. */
+export function ancorasDaLoja(franchiseeId: string): Promise<Map<string, Ancora>> {
+  if (!franchiseeId) return Promise.resolve(new Map());
+  const guardada = ancorasNaMemoria.get(franchiseeId);
+  if (guardada && guardada.ate > Date.now()) return guardada.ancoras;
+  const ancoras = (async () => {
+    try {
+      const linhas = await prisma.$queryRawUnsafe<
+        { customerAddress: string | null; customerLatLng: unknown; source: string | null; openDeliveryChannel: string | null; ifoodOrderId: string | null }[]
+      >(
+        `SELECT "customerAddress", "customerLatLng", "source", "openDeliveryChannel", "ifoodOrderId"
+           FROM "CustomerOrder"
+          WHERE "franchiseeId" = $1 AND "deliveryType" = 'DELIVERY' AND "customerLatLng" IS NOT NULL
+            AND "customerAddress" IS NOT NULL AND "createdAt" > NOW() - INTERVAL '${DIAS_DA_ANCORA} days'
+          ORDER BY "createdAt" DESC LIMIT ${TETO_DE_ENTREGAS_DA_ANCORA}`,
+        franchiseeId,
+      );
+      const entregas: { endereco: string; ponto: Ponto }[] = [];
+      for (const l of linhas || []) {
+        const g = lerPontoGravado(l.customerLatLng, canalDoPedido(l).ehMarketplace);
+        if (g && (g.fonte === "parceiro" || g.fonte === "cliente" || g.fonte === "manual")) {
+          entregas.push({ endereco: String(l.customerAddress), ponto: g.ponto });
+        }
+      }
+      return ancorasDasEntregas(entregas);
+    } catch (e: any) {
+      console.warn(`[Âncora do CEP] leitura das entregas falhou: ${e?.message}`);
+      ancorasNaMemoria.delete(franchiseeId);
+      return new Map<string, Ancora>();
+    }
+  })();
+  ancorasNaMemoria.set(franchiseeId, { ate: Date.now() + VALIDADE_DA_ANCORA_MS, ancoras });
+  if (ancorasNaMemoria.size > 500) ancorasNaMemoria.delete(ancorasNaMemoria.keys().next().value as string);
+  return ancoras;
+}
+
+/** Zera a memória das âncoras. SÓ PARA TESTE. */
+export function esquecerAncorasParaTeste() {
+  ancorasNaMemoria.clear();
 }

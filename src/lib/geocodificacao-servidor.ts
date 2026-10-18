@@ -53,7 +53,8 @@ import {
   type AreaDaLoja,
   type FonteDoPonto,
 } from "@/lib/ponto-do-pedido";
-import { pontosAprendidos, type PontoAprendidoAchado } from "@/lib/ponto-aprendido";
+import { ancorasDaLoja, pontosAprendidos, type PontoAprendidoAchado } from "@/lib/ponto-aprendido";
+import { ancoraDoPedido, chavesDaAncoraPeloCep } from "@/lib/ancora-do-cep";
 
 export type PedidoDeGeocodificacao = {
   /** Id do pedido, só para devolver o resultado casado. */
@@ -186,6 +187,7 @@ export async function prepararBusca(
       houseNumber: doTexto.houseNumber,
       cleanedStreet: cleanAddressForGeocoding(paraBuscar),
       dictFallback: dicionarioDeBairro(doTexto.neighborhood, loja.centro),
+      cep: cepDoEndereco(endereco),
     },
     peloCep: false,
     cepFalhou,
@@ -215,6 +217,7 @@ export async function prepararBusca(
       houseNumber: doTexto.houseNumber,
       cleanedStreet: [streetName, doTexto.houseNumber].filter(Boolean).join(", "),
       dictFallback: mesmaCidade ? dicionarioDeBairro(neighborhood, loja.centro) : undefined,
+      cep,
     },
     peloCep: true,
     cepFalhou: false,
@@ -459,6 +462,14 @@ function lembrarIncerto(chave: string, motivo: string) {
   }
 }
 
+/** O que o ViaCEP respondeu (a roteirização pergunta os mesmos CEPs a cada abertura): 24 h; "não sei" não fica. */
+const cepsLembrados = new Map<string, { ate: number; consulta: ConsultaDoCep }>();
+function lembrarCep(cep: string, consulta: ConsultaDoCep) {
+  if (!consulta.ok && consulta.motivo === "falhou") return;
+  if (cepsLembrados.size >= 3000) cepsLembrados.delete(cepsLembrados.keys().next().value as string);
+  cepsLembrados.set(cep, { ate: Date.now() + 24 * 60 * 60_000, consulta });
+}
+
 /** O Google na roteirização: com a chave E a escolha explícita (termos do Google: ver lib/geocodificacao-google.ts). */
 export function googleNaRoteirizacao(): boolean {
   return !!chaveDoGoogle() && String(process.env.GOOGLE_NA_ROTEIRIZACAO || "").trim() === "1";
@@ -491,7 +502,7 @@ export async function resolverPontosNoServidor(
       return new Map<string, PontoAprendidoAchado>();
     });
   }
-  const restantes: PedidoDeGeocodificacao[] = [];
+  const semPosicao: PedidoDeGeocodificacao[] = [];
   for (const p of pedidos) {
     const a = aprendidos.get(p.endereco);
     if (a?.pela === "vizinhanca") {
@@ -505,11 +516,72 @@ export async function resolverPontosNoServidor(
         fonte: "vizinhanca",
         aproximado: true,
       });
+    } else if (a?.pela === "cep") {
+      const n = a.correcoes || 1;
+      achados.push({
+        id: p.id,
+        lat: a.lat,
+        lng: a.lng,
+        origem: `posição aproximada pela vizinhança do CEP (${n} ${n === 1 ? "correção" : "correções"} da loja no mesmo CEP)`,
+        doCache: true,
+        fonte: "vizinhanca",
+        aproximado: true,
+      });
     } else if (a) {
       achados.push({ id: p.id, lat: a.lat, lng: a.lng, origem: "posição salva pela loja", doCache: true, fonte: "aprendido", aproximado: false });
     } else {
-      restantes.push(p);
+      semPosicao.push(p);
     }
+  }
+  if (semPosicao.length === 0) return { achados, incertos };
+
+  // O ViaCEP uma vez por CEP nesta chamada (a âncora e a busca usam o mesmo).
+  const consultasDoCep = new Map<string, Promise<ConsultaDoCep>>();
+  const prazoDoCep = Date.now() + 25_000;
+  const consultarCep = (cep: string): Promise<ConsultaDoCep> => {
+    let c = consultasDoCep.get(cep);
+    if (!c) {
+      const lembrado = cepsLembrados.get(cep);
+      c =
+        lembrado && lembrado.ate > Date.now()
+          ? Promise.resolve(lembrado.consulta)
+          : buscarCep(cep, { prazoMs: Math.max(1000, Math.min(4000, prazoDoCep - Date.now() - 1000)) }).then((r) => {
+              lembrarCep(cep, r);
+              return r;
+            });
+      consultasDoCep.set(cep, c);
+    }
+    return c;
+  };
+
+  // 0b. A ÂNCORA DO CEP (lib/ancora-do-cep.ts): o CEP diz a quadra e o
+  //     conjunto ("Quadra 3 Conjunto G", Sobradinho), e as entregas COM ponto
+  //     da loja (iFood, 99, pino do cliente) dizem onde eles ficam. Vem antes
+  //     do cache e do mapa: o OSM tem a mesma "Quadra 3 Conjunto G" em cinco
+  //     lugares do DF, e o ponto errado que ficou no cache não volta.
+  //     Aproximado (o quarteirão, não a casa): o pino sai com "confira".
+  const restantes: PedidoDeGeocodificacao[] = [];
+  const comCep = semPosicao.filter((p) => cepDoEndereco(p.endereco));
+  const ancoras = loja.franchiseeId && comCep.length > 0 ? await ancorasDaLoja(loja.franchiseeId) : new Map();
+  for (const p of semPosicao) {
+    const cep = ancoras.size > 0 ? cepDoEndereco(p.endereco) : null;
+    if (cep) {
+      const consulta = await consultarCep(cep).catch((): ConsultaDoCep => ({ ok: false, motivo: "falhou" }));
+      const a = consulta.ok ? ancoraDoPedido(chavesDaAncoraPeloCep(consulta.endereco), ancoras) : null;
+      if (a && pontoPlausivel(a, area, !!p.ehMarketplace)) {
+        achados.push({
+          id: p.id,
+          lat: a.lat,
+          lng: a.lng,
+          origem: `posição aproximada pela vizinhança do CEP (${a.entregas} ${a.entregas === 1 ? "entrega" : "entregas"} com ponto na mesma quadra e conjunto)`,
+          doCache: true,
+          fonte: "vizinhanca",
+          aproximado: true,
+        });
+        continue;
+      }
+    }
+    restantes.push(p);
   }
   if (restantes.length === 0) return { achados, incertos };
 
@@ -607,9 +679,7 @@ export async function resolverPontosNoServidor(
     }
     if (achado) console.warn(`[Geocodificação] endereço ${resumoDaConsulta(p.endereco)}: o ponto do cache está fora da área da loja — refazendo`);
     try {
-      const busca = await prepararBusca(p.endereco, { cidade, estado, centro: loja.centro }, (cep) =>
-        buscarCep(cep, { prazoMs: Math.max(1000, Math.min(4000, prazo - Date.now() - 1000)) }),
-      );
+      const busca = await prepararBusca(p.endereco, { cidade, estado, centro: loja.centro }, consultarCep);
       const { neighborhood } = busca.item;
       recusadaNesteItem = false;
       const achou = await geocodificadorDe(busca.cidade, busca.estado, raioDe(p)).geocodificarItem({ idx: i, ...busca.item });
