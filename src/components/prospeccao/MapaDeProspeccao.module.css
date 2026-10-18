@@ -77,12 +77,10 @@
 .selo_parcial { background: #FFF7ED; color: #9A3412; border-color: #FDBA74; }
 .selo_andamento { background: #EFF6FF; color: #1E3A8A; border-color: #93C5FD; }
 .selo_nenhuma { background: #F1F5F9; color: #334155; border-color: var(--mp-borda); }
-.alertaCusto { color: #9A3412 !important; font-weight: 600; }
-.botaoVarrer, .botaoPagar {
+.botaoVarrer {
   padding: 10px 16px; border-radius: 8px; font-weight: 800; font-size: 0.9rem; cursor: pointer; border: 1px solid;
 }
 .botaoVarrer { background: #16A34A; border-color: #15803D; color: #fff; }
-.botaoPagar { background: #FFF7ED; border-color: #EA580C; color: #9A3412; }
 
 /* Só o admin: o consumo do mês por SKU. */
 .consumo { background: #F8FAFC; border-bottom: 1px solid var(--mp-borda); padding: 8px 16px; font-size: 0.84rem; }
@@ -98,6 +96,15 @@
 }
 .creditoOsm { position: absolute; left: 8px; bottom: 26px; background: rgba(255, 255, 255, 0.85); font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; }
 .origem { margin: -4px 0 0; color: var(--mp-suave); font-size: 0.76rem; }
+/* Os nomes do Google sob demanda (não ficam no banco). */
+.semNome { color: var(--mp-suave); font-weight: 600 !important; font-style: italic; }
+.dicaDosNomes { margin: 0 14px 6px; color: var(--mp-suave); font-size: 0.76rem; line-height: 1.35; }
+.botaoNomes {
+  margin: 2px 14px 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid #1D4ED8; background: #EFF6FF;
+  color: #1E3A8A; font-weight: 700; font-size: 0.82rem; cursor: pointer;
+}
+.botaoNomes:disabled { opacity: 0.55; cursor: default; }
+.paginacao { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 14px 14px; font-size: 0.82rem; color: var(--mp-suave); }
 
 .legenda {
   display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 16px;

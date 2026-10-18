@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
 import {
   cidadesComLojas, guardarLugaresAvulsos, lojasDoMapa, lugaresDaCidade, marcacoesDaCidade, marcarLugar,
-  passoDaVarredura, prepararCidade, reservarNoMes, resumoDaCidade, usoDoMes,
+  passoDaVarredura, prepararCidade, reservar, resumoDaCidade, usoDoGoogle,
 } from "@/lib/prospeccao/dados";
 import { STATUS_DA_MARCACAO, type StatusDaMarcacao } from "@/lib/prospeccao/regras";
 import { SKUS, type Sku } from "@/lib/prospeccao/varredura";
@@ -13,8 +13,9 @@ export const dynamic = "force-dynamic";
  * Mapa de prospecção do vendedor (components/prospeccao/MapaDeProspeccao).
  *
  * GET ?cidade=X — a chave do mapa (de navegador, presa aos domínios do FireHub),
- * as cidades com loja, o uso do mês por SKU, a cidade (caixa + resumo da
- * varredura), os lugares do cache, as lojas do FireHub nela e as marcações.
+ * as cidades com loja, o uso do Google (hoje e no mês, por SKU), a cidade
+ * (caixa + resumo da varredura), os lugares do cache (do Google, só id e
+ * ponto: o nome a tela busca na hora), as lojas do FireHub nela e as marcações.
  * Sem cidade, só a chave, as cidades e o uso. A 1ª abertura de uma cidade busca
  * a caixa, a população e o OpenStreetMap (grátis) para estimar a varredura.
  *
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
   const chave = process.env.GOOGLE_MAPS_NAVEGADOR_KEY || null;
   const souAdmin = quem.tipo === "ADMIN";
 
-  const [cidades, uso] = await Promise.all([cidadesComLojas(), usoDoMes()]);
+  const [cidades, uso] = await Promise.all([cidadesComLojas(), usoDoGoogle()]);
   const base = { chave, cidades, uso, souAdmin };
   if (!cidade) return NextResponse.json({ ...base, cidade: null, lugares: [], lojas: [], marcacoes: [] });
 
@@ -47,10 +48,11 @@ export async function GET(req: NextRequest) {
 
 /**
  * POST { acao: "marcar", placeId, cidade, status, nota } — o vendedor anota o lugar.
- * POST { acao: "varrer", cidade, continuar?, autorizar?, refazer?, resultados?, erro? } — um passo da varredura
- *   (lib/prospeccao/dados.ts, passoDaVarredura). autorizar e refazer: só o admin.
- * POST { acao: "reservar", sku: "contato" | "texto" | "mapa", qtd } — antes de chamar o Google.
- * POST { acao: "lugares", cidade, lugares } — o que o "buscar também" trouxe entra no cache da cidade.
+ * POST { acao: "varrer", cidade, continuar?, refazer?, resultados?, erro?, pausar? } — um passo da varredura
+ *   (lib/prospeccao/dados.ts, passoDaVarredura). refazer: só o admin. Ninguém passa do grátis.
+ * POST { acao: "reservar", sku, qtd } — antes de chamar o Google; sem vaga no dia ou no mês, não reserva.
+ * POST { acao: "lugares", cidade, lugares } — o que o "buscar também" e os nomes por perto trouxeram
+ *   entra no cache da cidade (só id + ponto).
  */
 export async function POST(req: NextRequest) {
   const quem = await quemEsta();
@@ -71,14 +73,14 @@ export async function POST(req: NextRequest) {
   if (corpo?.acao === "varrer") {
     const cidade = typeof corpo.cidade === "string" ? corpo.cidade.trim().slice(0, 80) : "";
     if (!cidade) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
-    if ((corpo.autorizar || corpo.refazer) && quem.tipo !== "ADMIN") {
-      return NextResponse.json({ error: "Só o administrador autoriza passar do grátis ou atualiza a cidade." }, { status: 403 });
+    if (corpo.refazer && quem.tipo !== "ADMIN") {
+      return NextResponse.json({ error: "Só o administrador atualiza uma cidade já varrida." }, { status: 403 });
     }
     const resultados = Array.isArray(corpo.resultados) ? corpo.resultados.slice(0, 50) : undefined;
     try {
       return NextResponse.json(await passoDaVarredura(quem, {
         cidade, resultados,
-        continuar: !!corpo.continuar, autorizar: !!corpo.autorizar, refazer: !!corpo.refazer, pausar: !!corpo.pausar,
+        continuar: !!corpo.continuar, refazer: !!corpo.refazer, pausar: !!corpo.pausar,
         erro: typeof corpo.erro === "string" ? corpo.erro : undefined,
       }));
     } catch (e: any) {
@@ -89,8 +91,8 @@ export async function POST(req: NextRequest) {
   if (corpo?.acao === "reservar") {
     const sku = corpo.sku as Sku;
     const qtd = Math.floor(Number(corpo.qtd));
-    if (!(sku in SKUS) || sku === "nearby" || !(qtd >= 1 && qtd <= 20)) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
-    return NextResponse.json(await reservarNoMes(sku as Exclude<Sku, "nearby">, qtd));
+    if (!(sku in SKUS) || !(qtd >= 1 && qtd <= 20)) return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+    return NextResponse.json(await reservar(sku, qtd));
   }
 
   if (corpo?.acao === "lugares") {

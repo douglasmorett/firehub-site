@@ -28,12 +28,16 @@ export const MAXIMO_POR_CHAMADA = 20;
 export const LADO_DA_RAIZ_M = 6000;
 export const LADO_MINIMO_M = 150;
 export const PROFUNDIDADE_MAXIMA = 7;
-/** Freio de mão: nenhuma cidade passa disto, nem com o admin autorizando. */
-export const TETO_DE_CHAMADAS_POR_CIDADE = 8000;
+/** Só contra laço infinito (o custo é travado pelo teto do dia e do mês, abaixo): nenhuma cidade passa disto. */
+export const TETO_DE_CHAMADAS_POR_CIDADE = 20000;
 export const MAXIMO_DE_RAIZES = 600;
 /** Quantas células o navegador busca por vez antes de voltar ao servidor. */
 export const TAMANHO_DO_LOTE = 8;
-/** O cache da cidade vale 30 dias (os termos do Google deixam guardar o ponto por 30 dias). */
+/**
+ * O cache da cidade vale 30 dias. Termos do Google (Places API, "Caching"):
+ * o place_id pode ficar sem prazo; lat/lng, até 30 dias seguidos; nome,
+ * endereço, tipo e o resto NÃO ficam no banco (ver paraGuardar).
+ */
 export const DIAS_DO_CACHE = 30;
 
 /**
@@ -191,7 +195,21 @@ export type LugarDoMapa = {
   telefone?: string | null;
   /** Google que o OpenStreetMap também tem. */
   tambemNoOsm?: boolean;
+  /** Google: o nome do OpenStreetMap do mesmo lugar (licença ODbL; pode ficar no banco). */
+  nomeOsm?: string | null;
+  /** Google: a loja do FireHub que é este lugar (casada na hora da varredura; é dado nosso). */
+  lojaId?: string | null;
 };
+
+/**
+ * O que do lugar pode ir para o banco. Do Google, só o place_id e o ponto
+ * (30 dias): nome, endereço, tipo e link ficam só na memória do navegador.
+ * Do OpenStreetMap, tudo (ODbL, com a atribuição na tela).
+ */
+export function paraGuardar(l: LugarDoMapa): LugarDoMapa {
+  if (l.origem === "osm") return l;
+  return { id: l.id, nome: "", endereco: "", lat: l.lat, lng: l.lng, tipo: null, mapsUrl: null, origem: "google", lojaId: l.lojaId ?? null };
+}
 
 /** Junta sem repetir: o mesmo id fica uma vez só (o último dado vence). */
 export function juntarLugares<T extends { id: string }>(antes: Iterable<T>, novos: Iterable<T>): Map<string, T> {
@@ -315,22 +333,70 @@ export function estimarChamadas(caixa: CaixaDaCidade, populacao: number | null, 
   return Math.min(TETO_DE_CHAMADAS_POR_CIDADE, celulasRaiz(caixa).length + Math.ceil(esperados * CHAMADAS_POR_LUGAR));
 }
 
-/** O SKU de cada chamada e o grátis do mês. Fonte: developers.google.com/maps/billing-and-pricing/pricing (18/10/2026). */
+/** Quantos dias a varredura leva na velocidade do teto do dia. */
+export function diasDaVarredura(chamadas: number): number {
+  return Math.max(1, Math.ceil(chamadas / VARREDURA_POR_DIA));
+}
+
+// ── Custo zero: o teto do dia e do mês por SKU ─────────────────────────────
+
+/**
+ * O SKU de cada chamada e o grátis do mês.
+ * Fonte: developers.google.com/maps/billing-and-pricing/pricing (18/10/2026).
+ * Douglas, 18/10/2026: "não quero pagar nada" — ninguém passa do grátis, nem o admin.
+ */
 export const SKUS = {
-  nearby: { nome: "Nearby Search Pro", uso: "varredura da cidade", gratis: 5000, dolarPorMil: 32 },
-  texto: { nome: "Text Search Pro", uso: "\"buscar também\" por termo", gratis: 5000, dolarPorMil: 32 },
-  contato: { nome: "Place Details Enterprise", uso: "telefone e site do cartão", gratis: 1000, dolarPorMil: 20 },
-  mapa: { nome: "Dynamic Maps", uso: "cada vez que o mapa abre", gratis: 10000, dolarPorMil: 7 },
+  nearby: { nome: "Nearby Search Pro", uso: "varredura da cidade e nomes dos pinos", gratis: 5000, cota: "SearchNearbyRequest" },
+  texto: { nome: "Text Search Pro", uso: "\"buscar também\" por termo", gratis: 5000, cota: "SearchTextRequest" },
+  detalhes: { nome: "Place Details Pro", uso: "nome do pino que a busca por perto não trouxe", gratis: 5000, cota: "GetPlaceRequest" },
+  contato: { nome: "Place Details Enterprise", uso: "telefone e site do cartão", gratis: 1000, cota: "GetPlaceRequest" },
+  mapa: { nome: "Dynamic Maps", uso: "cada vez que o mapa abre", gratis: 10000, cota: "Map loads" },
 } as const;
 export type Sku = keyof typeof SKUS;
-/** Paramos um pouco antes do grátis: a conta do Google pode diferir da nossa em poucas chamadas. */
+
+/**
+ * As travas por DIA no Google Cloud (projeto gen-lang-client-0505076953). A
+ * quota do Cloud é por MÉTODO, não por SKU (developers.google.com/maps/documentation/
+ * places/web-service/usage-and-billing: "per API method per project"): o
+ * GetPlaceRequest é um só para o nome (Pro) e o telefone (Enterprise), então
+ * tem de caber no grátis do mais caro — 32 × 31 = 992 < 1.000.
+ * Regra: trava do dia × 31 < grátis do mês do SKU mais caro que o método alcança.
+ */
+export const TRAVAS_DO_CLOUD = {
+  SearchNearbyRequest: { porDia: 160, skus: ["nearby"] },
+  SearchTextRequest: { porDia: 160, skus: ["texto"] },
+  GetPlaceRequest: { porDia: 32, skus: ["detalhes", "contato"] },
+  "Map loads": { porDia: 300, skus: ["mapa"] },
+} as const satisfies Record<string, { porDia: number; skus: readonly Sku[] }>;
+export type CotaDoCloud = keyof typeof TRAVAS_DO_CLOUD;
+
+/** O app para um pouco antes da trava do Cloud (a tela avisa em vez do erro do Google). */
+export const MARGEM_DO_DIA = 0.97;
+export const limiteDoDia = (cota: CotaDoCloud) => Math.floor(TRAVAS_DO_CLOUD[cota].porDia * MARGEM_DO_DIA);
+/** Paramos 2% antes do grátis do mês. */
 export const MARGEM_DO_GRATIS = 0.02;
 export const tetoDoMes = (sku: Sku) => Math.floor(SKUS[sku].gratis * (1 - MARGEM_DO_GRATIS));
+/** Do Nearby do dia, isto fica para os nomes dos pinos (a varredura não usa). */
+export const RESERVA_DE_NOMES_POR_DIA = 40;
+/** A velocidade da varredura: o que o dia deixa, fora a reserva dos nomes. */
+export const VARREDURA_POR_DIA = limiteDoDia("SearchNearbyRequest") - RESERVA_DE_NOMES_POR_DIA;
 
-/** Quanto custa (US$) passar `chamadas` do que ainda resta grátis. */
-export function custoAlemDoGratis(sku: Sku, chamadas: number, restanteGratis: number): number {
-  const pagas = Math.max(0, chamadas - Math.max(0, restanteGratis));
-  return Math.round(pagas * SKUS[sku].dolarPorMil / 10) / 100;
+export type UsoDoGoogle = { dia: string; mes: string; hoje: Record<Sku, number>; noMes: Record<Sku, number> };
+
+/** Quanto ainda dá para usar do SKU agora: o menor entre o que sobra no dia (da quota do Cloud) e no mês. */
+export function vagas(uso: UsoDoGoogle, sku: Sku): { qtd: number; trava: "dia" | "mes" } {
+  const cota = SKUS[sku].cota as CotaDoCloud;
+  const hojeNaCota = (TRAVAS_DO_CLOUD[cota].skus as readonly Sku[]).reduce((t, k) => t + (uso.hoje[k] || 0), 0);
+  const dia = Math.max(0, limiteDoDia(cota) - hojeNaCota);
+  const mes = Math.max(0, tetoDoMes(sku) - (uso.noMes[sku] || 0));
+  return dia <= mes ? { qtd: dia, trava: "dia" } : { qtd: mes, trava: "mes" };
+}
+
+/** Quantas buscas a varredura ainda pode fazer agora (fora a reserva dos nomes). */
+export function vagasDaVarredura(uso: UsoDoGoogle): { qtd: number; trava: "dia" | "mes" } {
+  const dia = Math.max(0, VARREDURA_POR_DIA - (uso.hoje.nearby || 0));
+  const mes = Math.max(0, tetoDoMes("nearby") - (uso.noMes.nearby || 0));
+  return dia <= mes ? { qtd: dia, trava: "dia" } : { qtd: mes, trava: "mes" };
 }
 
 /** O mês da conta do Google (o faturamento é na hora do Pacífico), "AAAA-MM". */
@@ -338,10 +404,50 @@ export function mesDaCotaDoGoogle(agora = new Date()): string {
   return diaDaCotaDoGoogle(agora).slice(0, 7);
 }
 
+/** Quando a varredura pausada volta: amanhã (trava do dia) ou no dia 1º do mês seguinte (grátis do mês), "AAAA-MM-DD" do Pacífico. */
+export function quandoContinua(trava: "dia" | "mes", agora = new Date()): string {
+  const [a, m, d] = diaDaCotaDoGoogle(agora).split("-").map(Number);
+  const dt = trava === "dia" ? new Date(Date.UTC(a, m - 1, d + 1)) : new Date(Date.UTC(a, m, 1));
+  return dt.toISOString().slice(0, 10);
+}
+
+// ── Os nomes sob demanda ────────────────────────────────────────────────────
+
+/**
+ * O nome do lugar do Google não fica no banco: é buscado na hora, para o que o
+ * vendedor está vendo, e fica só na memória do navegador. O jeito barato é o
+ * Nearby por DISTÂNCIA em volta de um pino: 1 busca traz os 20 lugares mais
+ * perto, com nome — muito menos que um Place Details por pino, e fora do
+ * GetPlaceRequest, que é do telefone.
+ *
+ * Como temos o ponto de TODOS os lugares (`todos`), dá para prever quem cada
+ * busca traz: os 20 mais perto do centro. O plano escolhe, entre os alvos sem
+ * nome, o centro que cobre mais alvos, fecha o raio no 20º mais perto, e repete.
+ */
+export function planoDeNomes(alvos: (Ponto & { id: string })[], todos: (Ponto & { id: string })[], maximo: number): { centro: Ponto; raio: number; cobre: string[] }[] {
+  let falta = [...alvos];
+  const plano: { centro: Ponto; raio: number; cobre: string[] }[] = [];
+  const universo = todos.length ? todos : alvos;
+  while (falta.length && plano.length < maximo) {
+    let melhor: { centro: Ponto; raio: number; cobre: string[] } | null = null;
+    for (const t of falta.slice(0, 30)) {
+      const perto = universo.map((p) => ({ id: p.id, m: metrosEntre(t, p) })).sort((a, b) => a.m - b.m).slice(0, MAXIMO_POR_CHAMADA);
+      const ids = new Set(perto.map((x) => x.id));
+      const cobre = falta.filter((p) => ids.has(p.id) || p.id === t.id).map((p) => p.id);
+      const raio = Math.min(2000, Math.max(30, Math.ceil((perto[perto.length - 1]?.m ?? 0) + 5)));
+      if (!melhor || cobre.length > melhor.cobre.length) melhor = { centro: { lat: t.lat, lng: t.lng }, raio, cobre };
+    }
+    plano.push(melhor!);
+    const cobertos = new Set(melhor!.cobre);
+    falta = falta.filter((p) => !cobertos.has(p.id));
+  }
+  return plano;
+}
+
 // ── O selo da cobertura ─────────────────────────────────────────────────────
 
 export type EstadoDaVarredura = "nova" | "varrendo" | "pausada" | "completa";
-export type MotivoDaPausa = "gratis_do_mes" | "google" | "interrompida" | "teto_da_cidade" | null;
+export type MotivoDaPausa = "trava_do_dia" | "gratis_do_mes" | "google" | "interrompida" | "teto_da_cidade" | null;
 
 export type ResumoDaVarredura = {
   estado: EstadoDaVarredura;
@@ -351,7 +457,6 @@ export type ResumoDaVarredura = {
   estimativa: number | null;
   pendentes: number;
   saturadas: Ponto[];
-  liberadoPago: boolean;
   iniciadaEm: string | null;
   varridaEm: string | null;
   lugares: number;
@@ -359,10 +464,13 @@ export type ResumoDaVarredura = {
   populacao: number | null;
   /** Outra pessoa está varrendo agora (a tela dela segura o lote). */
   ocupadaPorOutro: boolean;
-  /** O que ainda resta grátis no mês (Nearby) e quanto custaria o que falta. */
-  restanteGratis: number;
   faltamEstimadas: number;
-  custoDoQueFalta: number;
+  /** De 0 a 100: buscas feitas ÷ (feitas + as que faltam). */
+  percentual: number;
+  /** Quantas buscas a varredura ainda pode fazer agora (dia e mês). */
+  vagasAgora: number;
+  /** Pausada pela trava: o dia em que volta, "AAAA-MM-DD". */
+  continuaEm: string | null;
 };
 
 /** Quanto ainda falta gastar: pelo menos o que está na fila; a estimativa, se for maior. */
@@ -371,10 +479,19 @@ export function faltamEstimadas(r: { estado: EstadoDaVarredura; chamadas: number
   return Math.max(r.pendentes, (r.estimativa ?? 0) - r.chamadas, r.estado === "nova" ? 1 : 0);
 }
 
-export function seloDaCobertura(r: Pick<ResumoDaVarredura, "estado" | "motivo" | "detalhe" | "saturadas" | "pendentes" | "chamadas" | "faltamEstimadas" | "custoDoQueFalta">): { tipo: "completa" | "parcial" | "andamento" | "nenhuma"; texto: string } {
-  const dinheiro = (v: number) => `US$ ${v.toFixed(2).replace(".", ",")}`;
+export function percentualDaVarredura(chamadas: number, faltam: number, completa: boolean): number {
+  if (completa) return 100;
+  return Math.min(99, Math.floor((chamadas / Math.max(1, chamadas + faltam)) * 100));
+}
+
+const diaMes = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+export function seloDaCobertura(
+  r: Pick<ResumoDaVarredura, "estado" | "motivo" | "detalhe" | "saturadas" | "pendentes" | "chamadas" | "faltamEstimadas" | "percentual" | "continuaEm">,
+  agora = new Date(),
+): { tipo: "completa" | "parcial" | "andamento" | "nenhuma"; texto: string } {
   if (r.estado === "nova") return { tipo: "nenhuma", texto: "Cidade ainda não varrida" };
-  if (r.estado === "varrendo") return { tipo: "andamento", texto: `Varrendo: ${r.chamadas} buscas feitas, ${r.pendentes} na fila` };
+  if (r.estado === "varrendo") return { tipo: "andamento", texto: `Varrendo: ${r.percentual}% · ${r.chamadas} buscas feitas, ${r.pendentes} na fila` };
   if (r.estado === "completa") {
     if (!r.saturadas.length) return { tipo: "completa", texto: "Cobertura completa" };
     return {
@@ -382,15 +499,20 @@ export function seloDaCobertura(r: Pick<ResumoDaVarredura, "estado" | "motivo" |
       texto: `Quase completa: ${r.saturadas.length} ${r.saturadas.length === 1 ? "ponto tem" : "pontos têm"} mais de 20 lugares do mesmo tipo no mesmo quarteirão (praça de alimentação, rua de bares) — ali pode faltar algum`,
     };
   }
-  const falta = `faltam ~${r.faltamEstimadas} buscas`;
+  const feita = `Varrida ${r.percentual}%`;
+  const amanha = quandoContinua("dia", agora);
   switch (r.motivo) {
-    case "gratis_do_mes":
-      return { tipo: "parcial", texto: `Parcial: o grátis do mês do Google acabou — ${falta} (~${dinheiro(r.custoDoQueFalta)}). Só o administrador pode autorizar continuar pagando` };
+    case "trava_do_dia":
+    case "gratis_do_mes": {
+      const quando = r.continuaEm && r.continuaEm !== amanha ? `em ${diaMes(r.continuaEm)}` : "amanhã";
+      const porque = r.motivo === "gratis_do_mes" ? "o grátis do mês do Google acabou" : "a busca grátis de hoje acabou";
+      return { tipo: "parcial", texto: `${feita} · continua ${quando} (${porque}; sem custo). O que já veio está no mapa` };
+    }
     case "google":
-      return { tipo: "parcial", texto: `Parcial: o Google parou a varredura${r.detalhe ? ` (${r.detalhe})` : ""} — ${falta}. Se for a trava do dia, continua amanhã` };
+      return { tipo: "parcial", texto: `${feita} · o Google parou a varredura${r.detalhe ? ` (${r.detalhe})` : ""}. Continua amanhã` };
     case "teto_da_cidade":
-      return { tipo: "parcial", texto: `Parcial: a cidade bateu o teto de ${TETO_DE_CHAMADAS_POR_CIDADE} buscas — ${falta}` };
+      return { tipo: "parcial", texto: `${feita} · a cidade bateu o limite de ${TETO_DE_CHAMADAS_POR_CIDADE} buscas (proteção contra laço)` };
     default:
-      return { tipo: "parcial", texto: `Parcial: a varredura parou no meio (a tela foi fechada) — ${falta}. Toque em Continuar` };
+      return { tipo: "parcial", texto: `${feita} · parou no meio (a tela foi fechada). Continua quando alguém abrir a cidade` };
   }
 }

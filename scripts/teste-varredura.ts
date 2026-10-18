@@ -1,18 +1,22 @@
 /**
  * A varredura completa da cidade (lib/prospeccao/varredura.ts): a grade que se
  * divide, a parada, a divisão por tipo, o dedupe, o OpenStreetMap, a
- * estimativa e o custo — e a varredura inteira contra uma cidade falsa
- * densa (scripts/cidade-falsa.ts), sem gastar o Google.
+ * estimativa, o CUSTO ZERO (teto do dia e do mês, retomada amanhã / no dia 1º),
+ * o que pode ir para o banco (termos do Google) e os nomes sob demanda — e a
+ * varredura inteira contra uma cidade falsa densa (scripts/cidade-falsa.ts),
+ * sem gastar o Google.
  * Roda sem banco e sem rede: npx tsx scripts/teste-varredura.ts
  */
 import assert from "node:assert/strict";
 import { metrosEntre } from "../src/lib/prospeccao/regras";
 import {
   GRUPOS_DE_TIPOS, LADO_DA_RAIZ_M, LADO_MINIMO_M, MAXIMO_POR_CHAMADA, SKUS, TETO_DE_CHAMADAS_POR_CIDADE, TIPOS_DE_COMIDA,
-  aplicarRespostas, celulasRaiz, circuloDaCelula, consultaDoOverpass, cruzarComOsm, custoAlemDoGratis, escolherLote,
-  estimarChamadas, faltamEstimadas, filhasDaCelula, juntarLugares, ladoDaCelula, lerRespostaDoOverpass, lugarDoGoogle,
-  lugaresEsperados, mesDaCotaDoGoogle, seloDaCobertura, tetoDoMes,
-  type Celula, type LugarDoMapa, type ResumoDaVarredura,
+  TRAVAS_DO_CLOUD, VARREDURA_POR_DIA,
+  aplicarRespostas, celulasRaiz, circuloDaCelula, consultaDoOverpass, cruzarComOsm, diasDaVarredura, escolherLote,
+  estimarChamadas, faltamEstimadas, filhasDaCelula, juntarLugares, ladoDaCelula, lerRespostaDoOverpass, limiteDoDia, lugarDoGoogle,
+  lugaresEsperados, mesDaCotaDoGoogle, paraGuardar, percentualDaVarredura, planoDeNomes, quandoContinua, seloDaCobertura,
+  tetoDoMes, vagas, vagasDaVarredura,
+  type Celula, type CotaDoCloud, type LugarDoMapa, type Sku, type UsoDoGoogle,
 } from "../src/lib/prospeccao/varredura";
 import { cidadeFalsa, nearbyFalso, type LugarFalso } from "./cidade-falsa";
 
@@ -158,41 +162,109 @@ ok(() => assert.equal(estGoiania, 49 + Math.ceil(9582 * 0.35)));
 ok(() => assert.equal(estimarChamadas(RIO, null, 0), null));
 ok(() => assert.ok(estimarChamadas(GOIANIA, 50_000_000, 0)! <= TETO_DE_CHAMADAS_POR_CIDADE));
 
-// ─── custo e cota (pricing do Google, 18/10/2026) ───
-ok(() => assert.deepEqual([SKUS.nearby.gratis, SKUS.nearby.dolarPorMil], [5000, 32]));
-ok(() => assert.deepEqual([SKUS.contato.gratis, SKUS.contato.dolarPorMil], [1000, 20]));
-ok(() => assert.equal(tetoDoMes("nearby"), 4900));
-ok(() => assert.equal(tetoDoMes("contato"), 980));
-ok(() => assert.equal(custoAlemDoGratis("nearby", 1000, 1000), 0));
-ok(() => assert.equal(custoAlemDoGratis("nearby", 3403, 0), 108.9));
-ok(() => assert.equal(custoAlemDoGratis("nearby", 500, 200), 9.6));
+// ─── custo zero: grátis do mês, trava do dia (pricing do Google, 18/10/2026) ───
+ok(() => assert.deepEqual([SKUS.nearby.gratis, SKUS.texto.gratis, SKUS.detalhes.gratis, SKUS.contato.gratis, SKUS.mapa.gratis], [5000, 5000, 5000, 1000, 10000]));
+ok(() => assert.deepEqual([tetoDoMes("nearby"), tetoDoMes("texto"), tetoDoMes("detalhes"), tetoDoMes("contato"), tetoDoMes("mapa")], [4900, 4900, 4900, 980, 9800]));
+// A trava do Cloud × 31 fica abaixo do grátis do SKU MAIS CARO que o método alcança (o GetPlace é do nome e do telefone).
+for (const [cota, t] of Object.entries(TRAVAS_DO_CLOUD)) {
+  const menorGratis = Math.min(...(t.skus as readonly Sku[]).map((k) => SKUS[k].gratis));
+  ok(() => assert.ok(t.porDia * 31 < menorGratis, `${cota}: ${t.porDia} × 31 >= ${menorGratis}`));
+}
+ok(() => assert.equal(TRAVAS_DO_CLOUD.SearchNearbyRequest.porDia, 160));
+ok(() => assert.equal(TRAVAS_DO_CLOUD.GetPlaceRequest.porDia, 32));
+ok(() => assert.deepEqual([limiteDoDia("SearchNearbyRequest"), limiteDoDia("SearchTextRequest"), limiteDoDia("GetPlaceRequest"), limiteDoDia("Map loads")], [155, 155, 31, 291]));
+ok(() => assert.equal(VARREDURA_POR_DIA, 115));
+// O app para antes da trava do Cloud em todo SKU (a tela avisa em vez do erro do Google).
+for (const sku of Object.keys(SKUS) as Sku[]) ok(() => assert.ok(limiteDoDia(SKUS[sku].cota as CotaDoCloud) < TRAVAS_DO_CLOUD[SKUS[sku].cota as CotaDoCloud].porDia));
+const zero = () => ({ nearby: 0, texto: 0, detalhes: 0, contato: 0, mapa: 0 });
+const uso = (hoje: Partial<Record<Sku, number>>, noMes: Partial<Record<Sku, number>> = {}): UsoDoGoogle =>
+  ({ dia: "2026-10-18", mes: "2026-10", hoje: { ...zero(), ...hoje }, noMes: { ...zero(), ...hoje, ...noMes } });
+ok(() => assert.deepEqual(vagas(uso({}), "nearby"), { qtd: 155, trava: "dia" }));
+// O nome (Pro) e o telefone (Enterprise) dividem o GetPlaceRequest do dia.
+ok(() => assert.deepEqual(vagas(uso({ contato: 20, detalhes: 11 }), "contato"), { qtd: 0, trava: "dia" }));
+ok(() => assert.deepEqual(vagas(uso({ contato: 20 }), "detalhes"), { qtd: 11, trava: "dia" }));
+// Fim do mês: o teto do mês manda.
+ok(() => assert.deepEqual(vagas(uso({ contato: 2 }, { contato: 975 }), "contato"), { qtd: 5, trava: "mes" }));
+ok(() => assert.deepEqual(vagasDaVarredura(uso({ nearby: 100 })), { qtd: 15, trava: "dia" }));
+ok(() => assert.deepEqual(vagasDaVarredura(uso({ nearby: 0 }, { nearby: 4890 })), { qtd: 10, trava: "mes" }));
+ok(() => assert.deepEqual(vagasDaVarredura(uso({ nearby: 140 })), { qtd: 0, trava: "dia" }));
+// A varredura deixa os últimos 40 do dia para os nomes; os nomes alcançam até 155.
+ok(() => assert.equal(vagas(uso({ nearby: 115 }), "nearby").qtd, 40));
 ok(() => assert.equal(mesDaCotaDoGoogle(new Date("2026-11-01T06:59:00Z")), "2026-10")); // ainda 31/10 no Pacífico
 ok(() => assert.equal(mesDaCotaDoGoogle(new Date("2026-11-01T07:00:00Z")), "2026-11"));
+// Retomada: amanhã (trava do dia) ou dia 1º do mês seguinte (grátis do mês), no dia do Pacífico.
+ok(() => assert.equal(quandoContinua("dia", new Date("2026-10-18T15:00:00Z")), "2026-10-19"));
+ok(() => assert.equal(quandoContinua("mes", new Date("2026-10-18T15:00:00Z")), "2026-11-01"));
+ok(() => assert.equal(quandoContinua("dia", new Date("2026-10-31T20:00:00Z")), "2026-11-01"));
+ok(() => assert.equal(quandoContinua("mes", new Date("2026-12-20T15:00:00Z")), "2027-01-01"));
+ok(() => assert.equal(diasDaVarredura(386), 4));
+ok(() => assert.equal(diasDaVarredura(3403), 30));
 ok(() => assert.equal(faltamEstimadas({ estado: "pausada", chamadas: 100, estimativa: 386, pendentes: 30 }), 286));
 ok(() => assert.equal(faltamEstimadas({ estado: "pausada", chamadas: 500, estimativa: 386, pendentes: 30 }), 30));
 ok(() => assert.equal(faltamEstimadas({ estado: "completa", chamadas: 500, estimativa: 386, pendentes: 0 }), 0));
+ok(() => assert.equal(percentualDaVarredura(115, 271, false), 29));
+ok(() => assert.equal(percentualDaVarredura(386, 0, false), 99));
+ok(() => assert.equal(percentualDaVarredura(386, 0, true), 100));
+
+// ─── termos do Google: o que vai para o banco ───
+ok(() => {
+  const g = paraGuardar({ id: "ChIJxyz12345", nome: "Pizzaria Bella", endereco: "Rua 1", lat: -22.5, lng: -41.9, tipo: "pizza_restaurant", mapsUrl: "https://maps.google.com/?cid=1", origem: "google", lojaId: "loja1" });
+  assert.deepEqual(g, { id: "ChIJxyz12345", nome: "", endereco: "", lat: -22.5, lng: -41.9, tipo: null, mapsUrl: null, origem: "google", lojaId: "loja1" });
+});
+ok(() => assert.equal(paraGuardar(osm[0]).nome, "Pizzaria Bella Napoli")); // OSM (ODbL) pode
+
+// ─── os nomes sob demanda: Nearby por distância em volta dos pinos ───
+ok(() => assert.deepEqual(planoDeNomes([{ id: "a", lat: -22.5, lng: -41.9 }], [], 1), [{ centro: { lat: -22.5, lng: -41.9 }, raio: 30, cobre: ["a"] }]));
+ok(() => assert.equal(planoDeNomes([], [], 3).length, 0));
+ok(() => {
+  // 45 pinos em 3 grupos: 3 buscas; e o máximo é respeitado.
+  const grupo = (lat: number, n: number, p: string) => Array.from({ length: n }, (_, i) => ({ id: `${p}${i}`, lat: lat + i * 0.0001, lng: -41.9 }));
+  const alvos = [...grupo(-22.50, 15, "a"), ...grupo(-22.52, 15, "b"), ...grupo(-22.54, 15, "c")];
+  assert.ok(planoDeNomes(alvos, alvos, 10).length <= 3);
+  assert.equal(planoDeNomes(alvos, alvos, 1).length, 1);
+  assert.ok(planoDeNomes(alvos, alvos, 10).every((x) => x.raio >= 30 && x.raio <= 2000));
+});
 
 // ─── o selo ───
-const base = { estado: "completa", motivo: null, detalhe: null, saturadas: [], pendentes: 0, chamadas: 300, faltamEstimadas: 0, custoDoQueFalta: 0 } as Pick<ResumoDaVarredura, "estado" | "motivo" | "detalhe" | "saturadas" | "pendentes" | "chamadas" | "faltamEstimadas" | "custoDoQueFalta">;
-ok(() => assert.deepEqual(seloDaCobertura(base), { tipo: "completa", texto: "Cobertura completa" }));
-ok(() => assert.match(seloDaCobertura({ ...base, saturadas: [{ lat: 1, lng: 1 }] }).texto, /^Quase completa: 1 ponto tem mais de 20/));
-ok(() => assert.equal(seloDaCobertura({ ...base, saturadas: [{ lat: 1, lng: 1 }] }).tipo, "parcial"));
-ok(() => assert.match(seloDaCobertura({ ...base, estado: "pausada", motivo: "gratis_do_mes", faltamEstimadas: 120, custoDoQueFalta: 3.84 }).texto, /grátis do mês.*~120 buscas.*US\$ 3,84.*administrador/));
-ok(() => assert.match(seloDaCobertura({ ...base, estado: "pausada", motivo: "google", detalhe: "RESOURCE_EXHAUSTED", faltamEstimadas: 40 }).texto, /Google parou.*RESOURCE_EXHAUSTED.*amanhã/));
-ok(() => assert.match(seloDaCobertura({ ...base, estado: "pausada", motivo: "interrompida", faltamEstimadas: 40 }).texto, /parou no meio/));
-ok(() => assert.equal(seloDaCobertura({ ...base, estado: "nova" }).tipo, "nenhuma"));
+type Selo = Parameters<typeof seloDaCobertura>[0];
+const base: Selo = { estado: "completa", motivo: null, detalhe: null, saturadas: [], pendentes: 0, chamadas: 300, faltamEstimadas: 0, percentual: 100, continuaEm: null };
+const hoje = new Date("2026-10-18T15:00:00Z");
+ok(() => assert.deepEqual(seloDaCobertura(base, hoje), { tipo: "completa", texto: "Cobertura completa" }));
+ok(() => assert.match(seloDaCobertura({ ...base, saturadas: [{ lat: 1, lng: 1 }] }, hoje).texto, /^Quase completa: 1 ponto tem mais de 20/));
+ok(() => assert.equal(seloDaCobertura({ ...base, saturadas: [{ lat: 1, lng: 1 }] }, hoje).tipo, "parcial"));
+ok(() => assert.equal(seloDaCobertura({ ...base, estado: "pausada", motivo: "gratis_do_mes", percentual: 62, continuaEm: "2026-11-01" }, hoje).texto,
+  "Varrida 62% · continua em 01/11 (o grátis do mês do Google acabou; sem custo). O que já veio está no mapa"));
+ok(() => assert.match(seloDaCobertura({ ...base, estado: "pausada", motivo: "trava_do_dia", percentual: 29, continuaEm: "2026-10-19" }, hoje).texto, /^Varrida 29% · continua amanhã \(a busca grátis de hoje acabou; sem custo\)/));
+ok(() => assert.match(seloDaCobertura({ ...base, estado: "pausada", motivo: "google", detalhe: "RESOURCE_EXHAUSTED", percentual: 10 }, hoje).texto, /Google parou.*RESOURCE_EXHAUSTED.*amanhã/));
+ok(() => assert.match(seloDaCobertura({ ...base, estado: "pausada", motivo: "interrompida", percentual: 40 }, hoje).texto, /parou no meio/));
+ok(() => assert.equal(seloDaCobertura({ ...base, estado: "nova" }, hoje).tipo, "nenhuma"));
+// Nenhum texto fala em pagar: custo zero, sem exceção.
+for (const m of ["gratis_do_mes", "trava_do_dia", "google", "interrompida", "teto_da_cidade"] as const) {
+  ok(() => assert.doesNotMatch(seloDaCobertura({ ...base, estado: "pausada", motivo: m, percentual: 50, continuaEm: "2026-11-01" }, hoje).texto, /US\$|pag|autoriz/i));
+}
 
 // ─── A VARREDURA INTEIRA contra a cidade falsa (o mesmo laço do servidor + navegador) ───
-function varrerCidade(cidade: LugarFalso[], caixa: typeof RIO, limiteDoMes = Infinity) {
+/** Roda a varredura dia a dia, com o limite do dia e o teto do mês, como o servidor. */
+function varrerCidade(cidade: LugarFalso[], caixa: typeof RIO, o: { porDia?: number; noMes?: number } = {}) {
+  const porDia = o.porDia ?? Infinity;
+  const noMes = o.noMes ?? Infinity;
   let pendentes = celulasRaiz(caixa);
   const achados = new Map<string, LugarFalso>();
   let chamadas = 0;
+  let dias = 1;
+  let hojeFeitas = 0;
   const saturadas: Celula[] = [];
   let cheias = 0;
-  for (;;) {
-    const { lote, pendentes: resto } = escolherLote(pendentes, limiteDoMes - chamadas);
+  for (let voltas = 0; voltas < 100_000; voltas++) {
+    const vaga = Math.min(porDia - hojeFeitas, noMes - chamadas);
+    if (pendentes.length && vaga <= 0) {
+      if (noMes - chamadas <= 0) break; // grátis do mês acabou: pausa (no dia 1º continua)
+      dias++; hojeFeitas = 0; continue; // trava do dia: continua amanhã
+    }
+    const { lote, pendentes: resto } = escolherLote(pendentes, vaga);
     if (!lote.length) { pendentes = resto; break; }
     chamadas += lote.length;
+    hojeFeitas += lote.length;
     const respostas = lote.map((c) => {
       const { centro, raio } = circuloDaCelula(c);
       const veio = nearbyFalso(cidade, { centro, raio, tipos: c.tipos || [...TIPOS_DE_COMIDA], maximo: MAXIMO_POR_CHAMADA });
@@ -204,7 +276,7 @@ function varrerCidade(cidade: LugarFalso[], caixa: typeof RIO, limiteDoMes = Inf
     pendentes = r.pendentes;
     saturadas.push(...r.saturadas);
   }
-  return { achados, chamadas, saturadas, cheias, pendentes };
+  return { achados, chamadas, saturadas, cheias, pendentes, dias };
 }
 
 // A cidade falsa: 600 lugares no centro de Rio das Ostras, 30 deles na mesma praça de alimentação.
@@ -220,6 +292,36 @@ ok(() => assert.ok(v.achados.size > 80 * 6));
 // Chamadas por lugar ficam na faixa que a estimativa usa (0,25 a 0,45).
 ok(() => assert.ok(v.chamadas / abertos.length > 0.15 && v.chamadas / abertos.length < 0.6, `${v.chamadas} chamadas`));
 
+// Na velocidade do dia (115): a mesma cidade, inteira, em 2 dias — nunca passa de 115 num dia.
+const devagar = varrerCidade(falsa, RIO, { porDia: VARREDURA_POR_DIA, noMes: tetoDoMes("nearby") });
+ok(() => assert.equal(devagar.achados.size, abertos.length));
+ok(() => assert.equal(devagar.dias, Math.ceil(v.chamadas / VARREDURA_POR_DIA)));
+ok(() => assert.equal(devagar.chamadas, v.chamadas));
+
+// Grátis do mês no fim: para no teto, a fila fica guardada e o resto do mês seguinte termina a cidade.
+const mes1 = varrerCidade(falsa, RIO, { porDia: VARREDURA_POR_DIA, noMes: 50 });
+ok(() => assert.equal(mes1.chamadas, 50));
+ok(() => assert.ok(mes1.pendentes.length > 0));
+ok(() => {
+  // Mês seguinte: continua da fila guardada (aplicarRespostas/escolherLote só olham a fila).
+  let pendentes = mes1.pendentes;
+  const achados = new Map(mes1.achados);
+  let chamadas = 0;
+  while (pendentes.length) {
+    const { lote, pendentes: resto } = escolherLote(pendentes, Infinity);
+    chamadas += lote.length;
+    const resp = lote.map((c) => {
+      const { centro, raio } = circuloDaCelula(c);
+      const veio = nearbyFalso(falsa, { centro, raio, tipos: c.tipos || [...TIPOS_DE_COMIDA], maximo: MAXIMO_POR_CHAMADA });
+      for (const l of veio) if (!l.fechado) achados.set(l.id, l);
+      return { celulaId: c.id, bruto: veio.length };
+    });
+    pendentes = aplicarRespostas(resto, lote, resp).pendentes;
+  }
+  assert.equal(achados.size, abertos.length);
+  assert.equal(50 + chamadas, v.chamadas);
+});
+
 // Praça com 25 do MESMO tipo no mesmo ponto: não dá para separar → saturada, e o selo explica.
 const lotada = [
   ...cidadeFalsa({ centro: centroDoRio, total: 100, semente: 7, pracaDeAlimentacao: 0 }),
@@ -229,9 +331,27 @@ const vl = varrerCidade(lotada, RIO);
 ok(() => assert.ok(vl.saturadas.length >= 1));
 ok(() => assert.ok(vl.achados.size >= lotada.length - 5 - 2, "fora os 5 que não cabem, acha o resto"));
 
-// Grátis do mês curto: para no limite, sobra fila (a tela mostra "parcial", o admin decide).
-const curta = varrerCidade(falsa, RIO, 50);
-ok(() => assert.equal(curta.chamadas, 50));
-ok(() => assert.ok(curta.pendentes.length > 0));
+// ─── os nomes de uma página da lista (20 mais perto do centro): poucas buscas, dentro do teto ───
+ok(() => {
+  const pagina = abertos.map((l) => ({ l, m: metrosEntre(centroDoRio, l) })).sort((a, b) => a.m - b.m).slice(20, 40).map((x) => x.l);
+  const nomes = new Set<string>();
+  let buscas = 0;
+  for (const passo of planoDeNomes(pagina, abertos, 4)) {
+    buscas++;
+    for (const l of nearbyFalso(falsa, { centro: passo.centro, raio: passo.raio, tipos: [...TIPOS_DE_COMIDA], maximo: 20, porDistancia: true })) nomes.add(l.id);
+  }
+  assert.ok(buscas <= 4);
+  const comNome = pagina.filter((l) => nomes.has(l.id)).length;
+  assert.ok(comNome >= 15, `só ${comNome} de 20 com nome em ${buscas} buscas`);
+  // A 1ª página (os 20 mais perto do centro) sai numa busca só.
+  const primeira = abertos.map((l) => ({ l, m: metrosEntre(centroDoRio, l) })).sort((a, b) => a.m - b.m).slice(0, 20).map((x) => x.l);
+  assert.ok(planoDeNomes(primeira, abertos, 4).length <= 2);
+});
+// O pino tocado sai na 1ª busca por distância (raio 30 m), fora da praça lotada.
+ok(() => {
+  const alvo = abertos[200];
+  const veio = nearbyFalso(falsa, { centro: alvo, raio: planoDeNomes([alvo], abertos, 1)[0].raio, tipos: [...TIPOS_DE_COMIDA], maximo: 20, porDistancia: true });
+  assert.ok(veio.some((l) => l.id === alvo.id));
+});
 
-console.log(`✅ teste-varredura: ${casos} casos ok (cidade falsa: ${abertos.length} lugares, ${v.chamadas} buscas, ${v.cheias} células cheias)`);
+console.log(`✅ teste-varredura: ${casos} casos ok (cidade falsa: ${abertos.length} lugares, ${v.chamadas} buscas, ${v.cheias} células cheias, ${devagar.dias} dias a ${VARREDURA_POR_DIA}/dia)`);

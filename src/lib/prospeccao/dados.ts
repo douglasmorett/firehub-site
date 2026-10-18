@@ -2,31 +2,36 @@ import { prisma } from "@/lib/prisma";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import type { QuemEsta } from "@/lib/crm/acesso";
 import {
-  STATUS_DA_MARCACAO, consultaDaCidade, dentroDaCaixa, nomeDaCidade,
+  STATUS_DA_MARCACAO, consultaDaCidade, dentroDaCaixa, diaDaCotaDoGoogle, lojaDoLugar, nomeDaCidade,
   type CaixaDaCidade, type LojaDoMapa, type StatusDaMarcacao,
 } from "./regras";
 import {
   DIAS_DO_CACHE, MAXIMO_POR_CHAMADA, SKUS, TETO_DE_CHAMADAS_POR_CIDADE, TIPOS_DE_COMIDA,
-  aplicarRespostas, celulasRaiz, circuloDaCelula, consultaDoOverpass, cruzarComOsm, custoAlemDoGratis,
-  escolherLote, estimarChamadas, faltamEstimadas, juntarLugares, lerRespostaDoOverpass, mesDaCotaDoGoogle, tetoDoMes,
+  aplicarRespostas, celulasRaiz, circuloDaCelula, consultaDoOverpass, cruzarComOsm, escolherLote, estimarChamadas,
+  faltamEstimadas, juntarLugares, lerRespostaDoOverpass, mesDaCotaDoGoogle, paraGuardar, percentualDaVarredura,
+  quandoContinua, vagas, vagasDaVarredura,
   type Celula, type EstadoDaVarredura, type LugarDoMapa, type MotivoDaPausa, type Ponto,
-  type RespostaDaCelula, type ResumoDaVarredura, type Sku,
+  type RespostaDaCelula, type ResumoDaVarredura, type Sku, type UsoDoGoogle,
 } from "./varredura";
 
 /**
  * Mapa de prospecção — o lado do servidor: as lojas do FireHub na cidade, as
  * marcações dos vendedores, a VARREDURA da cidade com o cache de 30 dias e o
- * consumo do mês por SKU do Google (ver lib/prospeccao/regras.ts e varredura.ts).
+ * uso do Google por dia e por SKU (ver lib/prospeccao/regras.ts e varredura.ts).
  *
  * A varredura roda UMA vez por cidade e a equipe toda usa: o navegador de quem
  * varre chama o Google (a chave é de navegador, presa aos domínios do FireHub)
- * e devolve cada lote aqui; a fila de células, o lote em andamento e o grátis
- * do mês ficam no banco (ProspeccaoCidade, ProspeccaoUsoMes).
+ * e devolve cada lote aqui; a fila de células, o lote em andamento e o uso
+ * do dia ficam no banco (ProspeccaoCidade, ProspeccaoUsoDia).
  *
- * ⚠ Termos do Google: o place_id pode ficar sem prazo e o ponto (lat/lng) por
- * até 30 dias. Nome, endereço e tipo do lugar ficam no cache junto e saem nos
- * mesmos 30 dias — decisão pendente do Douglas (relatório de 18/10/2026; a
- * alternativa estrita é guardar só id + ponto e buscar o nome ao abrir o pino).
+ * CUSTO ZERO (Douglas, 18/10/2026: "não quero pagar nada"): nenhum caminho
+ * passa do grátis do mês nem da trava do dia — sem vaga, pausa e continua.
+ *
+ * TERMOS DO GOOGLE, À RISCA: do Google o banco guarda só o place_id e o ponto
+ * (lat/lng, até 30 dias). Nome, endereço, tipo e link NÃO entram no banco: o
+ * nome chega na hora (na varredura e nos nomes por perto), serve para casar com
+ * as lojas e o OpenStreetMap e é descartado; a tela busca e guarda em memória.
+ * Do OpenStreetMap guardamos tudo (ODbL, atribuição na tela).
  */
 
 const INSTRUCOES = [
@@ -42,12 +47,12 @@ const INSTRUCOES = [
      CONSTRAINT "ProspeccaoMarcacao_pkey" PRIMARY KEY ("placeId")
    )`,
   `CREATE INDEX IF NOT EXISTS "ProspeccaoMarcacao_cidade_idx" ON "ProspeccaoMarcacao" ("cidade")`,
-  // O consumo do mês por SKU (a cota grátis do Google é por SKU e por mês).
-  `CREATE TABLE IF NOT EXISTS "ProspeccaoUsoMes" (
-     "mes" TEXT NOT NULL,
+  // O uso do Google por dia e por SKU (o mês é a soma dos dias; dia e mês do Pacífico).
+  `CREATE TABLE IF NOT EXISTS "ProspeccaoUsoDia" (
+     "dia" TEXT NOT NULL,
      "sku" TEXT NOT NULL,
      "qtd" INTEGER NOT NULL DEFAULT 0,
-     CONSTRAINT "ProspeccaoUsoMes_pkey" PRIMARY KEY ("mes", "sku")
+     CONSTRAINT "ProspeccaoUsoDia_pkey" PRIMARY KEY ("dia", "sku")
    )`,
   // A varredura da cidade: a fila de células, o lote que alguém está buscando e o resultado.
   `CREATE TABLE IF NOT EXISTS "ProspeccaoCidade" (
@@ -66,24 +71,25 @@ const INSTRUCOES = [
      "chamadas" INTEGER NOT NULL DEFAULT 0,
      "estimativa" INTEGER,
      "saturadas" JSONB NOT NULL DEFAULT '[]',
-     "liberadoPago" BOOLEAN NOT NULL DEFAULT false,
      "iniciadaEm" TIMESTAMP(3),
      "varridaEm" TIMESTAMP(3),
      "criadaEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
      CONSTRAINT "ProspeccaoCidade_pkey" PRIMARY KEY ("cidade")
    )`,
-  // Os lugares da cidade (Google e OpenStreetMap). Os do Google saem em 30 dias.
+  // Os lugares da cidade. Google: SÓ id + ponto (+ a loja nossa que casou), e saem em 30 dias.
+  // OpenStreetMap: nome, endereço, tipo e telefone (ODbL) e o lugar do Google que é o mesmo (googleId).
   `CREATE TABLE IF NOT EXISTS "ProspeccaoLugar" (
      "cidade" TEXT NOT NULL,
      "id" TEXT NOT NULL,
-     "nome" TEXT NOT NULL,
-     "endereco" TEXT NOT NULL DEFAULT '',
+     "origem" TEXT NOT NULL,
      "lat" DOUBLE PRECISION NOT NULL,
      "lng" DOUBLE PRECISION NOT NULL,
+     "lojaId" TEXT,
+     "nome" TEXT,
+     "endereco" TEXT,
      "tipo" TEXT,
-     "mapsUrl" TEXT,
-     "origem" TEXT NOT NULL,
      "telefone" TEXT,
+     "googleId" TEXT,
      "vistoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
      CONSTRAINT "ProspeccaoLugar_pkey" PRIMARY KEY ("cidade", "id")
    )`,
@@ -256,40 +262,47 @@ export async function marcarLugar(quem: QuemEsta, dados: { placeId: string; cida
   return { placeId: dados.placeId, status: dados.status, nota, vendedor: quem.nome, atualizadoEm: agora.toISOString(), historico };
 }
 
-// ── O consumo do mês (por SKU do Google; a cota grátis é da equipe toda) ──
-
-export type UsoDoMes = { mes: string } & Record<Sku, number>;
+// ── O uso do Google por dia e por SKU (a cota grátis é da equipe toda) ────
 
 type Executor = Pick<typeof prisma, "$queryRaw" | "$executeRaw">;
 
-export async function usoDoMes(db: Executor = prisma): Promise<UsoDoMes> {
+/** O que se usou hoje e no mês (dia e mês do Google: hora do Pacífico). */
+export async function usoDoGoogle(db: Executor = prisma): Promise<UsoDoGoogle> {
   await garantirEstrutura();
+  const dia = diaDaCotaDoGoogle();
   const mes = mesDaCotaDoGoogle();
-  const linhas = await db.$queryRaw<{ sku: string; qtd: number }[]>`
-    SELECT sku, qtd FROM "ProspeccaoUsoMes" WHERE mes = ${mes}`;
-  const uso = { mes } as UsoDoMes;
-  for (const sku of Object.keys(SKUS) as Sku[]) uso[sku] = Number(linhas.find((l) => l.sku === sku)?.qtd || 0);
+  const linhas = await db.$queryRaw<{ dia: string; sku: string; qtd: number }[]>`
+    SELECT dia, sku, qtd FROM "ProspeccaoUsoDia" WHERE dia LIKE ${`${mes}-%`}`;
+  const vazio = () => Object.fromEntries((Object.keys(SKUS) as Sku[]).map((k) => [k, 0])) as Record<Sku, number>;
+  const uso: UsoDoGoogle = { dia, mes, hoje: vazio(), noMes: vazio() };
+  for (const l of linhas) {
+    if (!(l.sku in SKUS)) continue;
+    uso.noMes[l.sku as Sku] += Number(l.qtd);
+    if (l.dia === dia) uso.hoje[l.sku as Sku] += Number(l.qtd);
+  }
   return uso;
 }
 
-/** Soma (ou devolve, com qtd negativa) consultas no mês do SKU. */
-async function somarNoMes(db: Executor, sku: Sku, qtd: number): Promise<void> {
+/** Soma (ou devolve, com qtd negativa) consultas de hoje no SKU. */
+async function somarHoje(db: Executor, sku: Sku, qtd: number): Promise<void> {
   if (!qtd) return;
   await db.$executeRaw`
-    INSERT INTO "ProspeccaoUsoMes" (mes, sku, qtd) VALUES (${mesDaCotaDoGoogle()}, ${sku}, ${Math.max(0, qtd)})
-    ON CONFLICT (mes, sku) DO UPDATE SET qtd = GREATEST(0, "ProspeccaoUsoMes".qtd + ${qtd})`;
+    INSERT INTO "ProspeccaoUsoDia" (dia, sku, qtd) VALUES (${diaDaCotaDoGoogle()}, ${sku}, ${Math.max(0, qtd)})
+    ON CONFLICT (dia, sku) DO UPDATE SET qtd = GREATEST(0, "ProspeccaoUsoDia".qtd + ${qtd})`;
 }
 
 /**
- * Reserva consultas antes de a tela chamar o Google (contato, "buscar também",
- * abrir o mapa). Passou do grátis do mês, não reserva — a tela avisa em vez de
- * gerar conta. O mapa só conta (10 mil grátis por mês sobram).
+ * Reserva consultas antes de a tela chamar o Google (nomes, contato, "buscar
+ * também", abrir o mapa). Sem vaga no dia (a trava do Cloud) ou no mês (o
+ * grátis − 2%), não reserva — CUSTO ZERO, sem exceção, nem para o admin.
  */
-export async function reservarNoMes(sku: Exclude<Sku, "nearby">, qtd: number): Promise<{ ok: boolean; uso: UsoDoMes }> {
-  const antes = await usoDoMes();
-  if (sku !== "mapa" && antes[sku] + qtd > tetoDoMes(sku)) return { ok: false, uso: antes };
-  await somarNoMes(prisma, sku, qtd);
-  return { ok: true, uso: { ...antes, [sku]: antes[sku] + qtd } };
+export async function reservar(sku: Sku, qtd: number): Promise<{ ok: boolean; trava?: "dia" | "mes"; uso: UsoDoGoogle }> {
+  const antes = await usoDoGoogle();
+  const v = vagas(antes, sku);
+  if (qtd > v.qtd) return { ok: false, trava: v.trava, uso: antes };
+  await somarHoje(prisma, sku, qtd);
+  const uso = await usoDoGoogle();
+  return { ok: true, uso };
 }
 
 // ── A varredura da cidade ──────────────────────────────────────────────────
@@ -301,7 +314,7 @@ export type LinhaDaCidade = {
   cidade: string; nome: string; caixa: CaixaDaCidade; populacao: number | null; osm: number;
   estado: EstadoDaVarredura; motivo: MotivoDaPausa; detalhe: string | null;
   pendentes: Celula[]; lote: Celula[]; loteDe: string | null; loteAte: Date | null;
-  chamadas: number; estimativa: number | null; saturadas: Ponto[]; liberadoPago: boolean;
+  chamadas: number; estimativa: number | null; saturadas: Ponto[];
   iniciadaEm: Date | null; varridaEm: Date | null;
 };
 
@@ -317,14 +330,14 @@ const venceu = (d: Date | null) => !!d && Date.now() - new Date(d).getTime() > D
 /**
  * Deixa a cidade pronta para o mapa: a caixa, a população, o OpenStreetMap e a
  * estimativa (1ª vez: alguns segundos). Varredura começada há mais de 30 dias
- * volta a "nova" — os lugares do Google dela já foram apagados. `null` = a
+ * volta a "nova" — os pontos do Google dela já foram apagados. `null` = a
  * cidade não foi achada no mapa (sem caixa, não dá para varrer).
  */
 export async function prepararCidade(nome: string): Promise<LinhaDaCidade | null> {
   await garantirEstrutura();
   const chave = nomeDaCidade(nome);
   if (!chave) return null;
-  // Os termos do Google: o ponto do lugar só pode ficar 30 dias.
+  // Os termos do Google: o ponto do lugar só pode ficar 30 dias (o place_id fica, nas marcações).
   await prisma.$executeRaw`
     DELETE FROM "ProspeccaoLugar" WHERE origem = 'google' AND "vistoEm" < ${new Date(Date.now() - DIAS_DO_CACHE * 86400_000)}`;
   const linha = await lerCidade(prisma, chave);
@@ -332,8 +345,7 @@ export async function prepararCidade(nome: string): Promise<LinhaDaCidade | null
   if (linha) {
     await prisma.$executeRaw`
       UPDATE "ProspeccaoCidade" SET estado = 'nova', motivo = NULL, detalhe = NULL, pendentes = '[]', lote = '[]',
-        "loteDe" = NULL, "loteAte" = NULL, chamadas = 0, saturadas = '[]', "liberadoPago" = false,
-        "iniciadaEm" = NULL, "varridaEm" = NULL
+        "loteDe" = NULL, "loteAte" = NULL, chamadas = 0, saturadas = '[]', "iniciadaEm" = NULL, "varridaEm" = NULL
       WHERE cidade = ${chave}`;
     return lerCidade(prisma, chave);
   }
@@ -349,63 +361,117 @@ export async function prepararCidade(nome: string): Promise<LinhaDaCidade | null
   return lerCidade(prisma, chave);
 }
 
+/** Grava os lugares. Do Google, SÓ o place_id, o ponto e a loja nossa que casou (paraGuardar). */
 async function salvarLugares(db: Executor, chave: string, todos: LugarDoMapa[]): Promise<void> {
   // Os círculos do lote se sobrepõem: o mesmo lugar vem em mais de uma célula (e o ON CONFLICT não aceita repetido).
-  const lugares = [...juntarLugares([], todos).values()];
+  const lugares = [...juntarLugares([], todos.map(paraGuardar)).values()];
   if (!lugares.length) return;
   const agora = new Date();
+  const ou = (s: string | null | undefined) => (s ? s : null);
   await db.$executeRaw`
-    INSERT INTO "ProspeccaoLugar" (cidade, id, nome, endereco, lat, lng, tipo, "mapsUrl", origem, telefone, "vistoEm")
-    SELECT ${chave}, x.id, x.nome, x.endereco, x.lat, x.lng, x.tipo, x.maps, x.origem, x.telefone, ${agora}
+    INSERT INTO "ProspeccaoLugar" (cidade, id, nome, endereco, lat, lng, tipo, origem, telefone, "lojaId", "vistoEm")
+    SELECT ${chave}, x.id, x.nome, x.endereco, x.lat, x.lng, x.tipo, x.origem, x.telefone, x.loja, ${agora}
     FROM unnest(
-      ${lugares.map((l) => l.id)}::text[], ${lugares.map((l) => l.nome)}::text[], ${lugares.map((l) => l.endereco)}::text[],
-      ${lugares.map((l) => l.lat)}::float8[], ${lugares.map((l) => l.lng)}::float8[], ${lugares.map((l) => l.tipo)}::text[],
-      ${lugares.map((l) => l.mapsUrl)}::text[], ${lugares.map((l) => l.origem)}::text[], ${lugares.map((l) => l.telefone ?? null)}::text[]
-    ) AS x(id, nome, endereco, lat, lng, tipo, maps, origem, telefone)
+      ${lugares.map((l) => l.id)}::text[], ${lugares.map((l) => ou(l.nome))}::text[], ${lugares.map((l) => ou(l.endereco))}::text[],
+      ${lugares.map((l) => l.lat)}::float8[], ${lugares.map((l) => l.lng)}::float8[], ${lugares.map((l) => ou(l.tipo))}::text[],
+      ${lugares.map((l) => l.origem)}::text[], ${lugares.map((l) => ou(l.telefone))}::text[], ${lugares.map((l) => ou(l.lojaId))}::text[]
+    ) AS x(id, nome, endereco, lat, lng, tipo, origem, telefone, loja)
     ON CONFLICT (cidade, id) DO UPDATE SET
       nome = EXCLUDED.nome, endereco = EXCLUDED.endereco, lat = EXCLUDED.lat, lng = EXCLUDED.lng, tipo = EXCLUDED.tipo,
-      "mapsUrl" = EXCLUDED."mapsUrl", telefone = EXCLUDED.telefone, "vistoEm" = EXCLUDED."vistoEm"`;
+      telefone = EXCLUDED.telefone, "lojaId" = COALESCE(EXCLUDED."lojaId", "ProspeccaoLugar"."lojaId"), "vistoEm" = EXCLUDED."vistoEm"`;
 }
 
-/** Os lugares da cidade para o mapa: os do Google e, do OpenStreetMap, só o que o Google não trouxe. */
+/**
+ * O que os nomes do Google (que chegam na hora e NÃO são guardados) ensinam:
+ * qual loja do FireHub é cada lugar e qual lugar do OpenStreetMap é o mesmo
+ * do Google. Grava só os ids (dados nossos), nunca o nome.
+ */
+async function casarComNomes(db: Executor, chave: string, achados: LugarDoMapa[], lojas: LojaDoMapa[]): Promise<LugarDoMapa[]> {
+  const comLoja = achados.map((l) => ({ ...l, lojaId: lojaDoLugar(l, lojas)?.id ?? null }));
+  const osm = await db.$queryRaw<LugarDoMapa[]>`
+    SELECT id, nome, endereco, lat, lng, origem FROM "ProspeccaoLugar"
+    WHERE cidade = ${chave} AND origem = 'osm' AND "googleId" IS NULL`;
+  if (osm.length) {
+    const pares = parDoOsm(comLoja, osm);
+    for (const [osmId, googleId] of pares) {
+      await db.$executeRaw`UPDATE "ProspeccaoLugar" SET "googleId" = ${googleId} WHERE cidade = ${chave} AND id = ${osmId}`;
+    }
+  }
+  return comLoja;
+}
+
+/** O par OSM → Google (pelo cruzarComOsm, um a um). */
+function parDoOsm(google: LugarDoMapa[], osm: LugarDoMapa[]): Map<string, string> {
+  const pares = new Map<string, string>();
+  for (const o of osm) {
+    const { tambemNoOsm } = cruzarComOsm(google, [o]);
+    const g = [...tambemNoOsm][0];
+    if (g) pares.set(o.id, g);
+  }
+  return pares;
+}
+
+/**
+ * Os lugares da cidade para o mapa. Do Google: id, ponto, a loja nossa e o
+ * nome do OpenStreetMap do mesmo lugar (se houver) — o nome do Google a tela
+ * busca na hora. Do OpenStreetMap: só o que o Google não trouxe.
+ */
 export async function lugaresDaCidade(nome: string): Promise<LugarDoMapa[]> {
   await garantirEstrutura();
-  const linhas = await prisma.$queryRaw<LugarDoMapa[]>`
-    SELECT id, nome, endereco, lat, lng, tipo, "mapsUrl", origem, telefone FROM "ProspeccaoLugar" WHERE cidade = ${nomeDaCidade(nome)}`;
-  const google = linhas.filter((l) => l.origem === "google").map(({ telefone: _sem, ...l }) => l);
-  const osm = linhas.filter((l) => l.origem === "osm");
-  const { soNoOsm, tambemNoOsm } = cruzarComOsm(google, osm);
-  return [...google.map((l) => (tambemNoOsm.has(l.id) ? { ...l, tambemNoOsm: true } : l)), ...soNoOsm];
+  const chave = nomeDaCidade(nome);
+  const linhas = await prisma.$queryRaw<(LugarDoMapa & { googleId: string | null })[]>`
+    SELECT id, nome, endereco, lat, lng, tipo, origem, telefone, "lojaId", "googleId" FROM "ProspeccaoLugar" WHERE cidade = ${chave}`;
+  const nomeOsm = new Map<string, string>();
+  const noOsm = new Set<string>();
+  for (const l of linhas) {
+    if (l.origem !== "osm" || !l.googleId) continue;
+    noOsm.add(l.googleId);
+    if (l.nome && l.nome !== "Sem nome") nomeOsm.set(l.googleId, l.nome);
+  }
+  const saida: LugarDoMapa[] = [];
+  for (const l of linhas) {
+    if (l.origem === "google") {
+      saida.push({
+        id: l.id, nome: "", endereco: "", lat: l.lat, lng: l.lng, tipo: null, mapsUrl: null, origem: "google",
+        lojaId: l.lojaId, nomeOsm: nomeOsm.get(l.id) ?? null, tambemNoOsm: noOsm.has(l.id),
+      });
+    } else if (!l.googleId) {
+      saida.push({ id: l.id, nome: l.nome || "Sem nome", endereco: l.endereco || "", lat: l.lat, lng: l.lng, tipo: l.tipo, mapsUrl: null, origem: "osm", telefone: l.telefone });
+    }
+  }
+  return saida;
 }
 
 const quemSegura = (quem: QuemEsta) => quem.id || quem.tipo;
 
-/** O que a tela mostra da varredura (o selo, a estimativa, o grátis que resta). */
-export function resumoDaVarredura(l: LinhaDaCidade, uso: UsoDoMes, quem: QuemEsta | null, lugares: number): ResumoDaVarredura {
+/** O que a tela mostra da varredura (o selo, a estimativa, quanto já foi, quando continua). */
+export function resumoDaVarredura(l: LinhaDaCidade, uso: UsoDoGoogle, quem: QuemEsta | null, lugares: number): ResumoDaVarredura {
   const loteVivo = l.lote.length > 0 && !!l.loteAte && new Date(l.loteAte).getTime() > Date.now();
   // Varrendo sem ninguém segurando o lote = a tela de quem varria fechou.
   const parada = l.estado === "varrendo" && !loteVivo;
   const estado: EstadoDaVarredura = parada ? "pausada" : l.estado;
   const motivo: MotivoDaPausa = parada ? "interrompida" : l.motivo;
-  const restanteGratis = Math.max(0, tetoDoMes("nearby") - uso.nearby);
   const pendentes = l.pendentes.length + (parada ? l.lote.length : 0);
   const faltam = faltamEstimadas({ estado, chamadas: l.chamadas, estimativa: l.estimativa, pendentes });
+  const v = vagasDaVarredura(uso);
   return {
     estado, motivo, detalhe: l.detalhe, chamadas: l.chamadas, estimativa: l.estimativa, pendentes,
-    saturadas: l.saturadas, liberadoPago: l.liberadoPago,
+    saturadas: l.saturadas,
     iniciadaEm: l.iniciadaEm ? new Date(l.iniciadaEm).toISOString() : null,
     varridaEm: l.varridaEm ? new Date(l.varridaEm).toISOString() : null,
     lugares, osm: l.osm, populacao: l.populacao,
     ocupadaPorOutro: loteVivo && (!quem || l.loteDe !== quemSegura(quem)),
-    restanteGratis,
     faltamEstimadas: faltam,
-    custoDoQueFalta: custoAlemDoGratis("nearby", faltam, restanteGratis),
+    percentual: percentualDaVarredura(l.chamadas, faltam, estado === "completa"),
+    vagasAgora: v.qtd,
+    // Sem vaga agora: volta amanhã (trava do dia) ou no dia 1º (grátis do mês).
+    continuaEm: estado !== "completa" && v.qtd <= 0 ? quandoContinua(v.trava) : null,
   };
 }
 
 export async function resumoDaCidade(linha: LinhaDaCidade, quem: QuemEsta | null): Promise<ResumoDaVarredura> {
   const [uso, total] = await Promise.all([
-    usoDoMes(),
+    usoDoGoogle(),
     prisma.$queryRaw<{ n: number }[]>`SELECT COUNT(*)::int AS n FROM "ProspeccaoLugar" WHERE cidade = ${linha.cidade} AND origem = 'google'`,
   ]);
   return resumoDaVarredura(linha, uso, quem, Number(total[0]?.n || 0));
@@ -417,11 +483,13 @@ export type PedidoDaVarredura = {
   cidade: string;
   /** Começar (cidade nova) ou continuar (pausada). Qualquer um da equipe. */
   continuar?: boolean;
-  /** Só o admin: pode passar do grátis do mês nesta varredura (o Douglas paga). */
-  autorizar?: boolean;
-  /** Só o admin: varrer de novo uma cidade já varrida. */
+  /** Só o admin: varrer de novo uma cidade já varrida (dentro do grátis, como sempre). */
   refazer?: boolean;
-  /** As células do lote que voltaram: quantos lugares vieram (bruto, com os fechados) e os lugares. */
+  /**
+   * As células do lote que voltaram: quantos lugares vieram (bruto, com os
+   * fechados) e os lugares. O nome que vem junto serve SÓ para casar com as
+   * lojas e o OpenStreetMap na hora; não é guardado.
+   */
   resultados?: { celulaId: string; bruto: number; lugares: unknown[] }[];
   /** O Google recusou (trava do dia, chave): as células que faltaram voltam para a fila. */
   erro?: string;
@@ -432,45 +500,50 @@ export type PedidoDaVarredura = {
 export type RespostaDaVarredura = {
   resumo: ResumoDaVarredura;
   lote: CelulaParaBuscar[];
-  uso: UsoDoMes;
-  /** A cidade vai passar do grátis do mês: só o admin pode autorizar. */
-  precisaAutorizar?: boolean;
+  uso: UsoDoGoogle;
   aviso?: string;
 };
 
 const ID_DO_LUGAR = /^[A-Za-z0-9_-]{10,300}$/;
 
-/** O lugar que a tela mandou, conferido (só Google: o OSM é o servidor que busca). */
+/** O lugar que a tela mandou, conferido (só Google: o OSM é o servidor que busca). O nome vem só para casar. */
 function lugarValido(l: any): LugarDoMapa | null {
   if (!l || typeof l.id !== "string" || !ID_DO_LUGAR.test(l.id) || l.id.startsWith("osm-")) return null;
   const lat = Number(l.lat), lng = Number(l.lng);
   if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
-  return {
-    id: l.id, nome: String(l.nome || "Sem nome").slice(0, 200), endereco: String(l.endereco || "").slice(0, 300), lat, lng,
-    tipo: typeof l.tipo === "string" ? l.tipo.slice(0, 60) : null,
-    mapsUrl: typeof l.mapsUrl === "string" && /^https:\/\//.test(l.mapsUrl) ? l.mapsUrl.slice(0, 500) : null,
-    origem: "google",
-  };
+  return { id: l.id, nome: String(l.nome || "").slice(0, 200), endereco: "", lat, lng, tipo: null, mapsUrl: null, origem: "google" };
 }
 
-type Saida = { linha: LinhaDaCidade; lote: Celula[]; aviso?: string; precisaAutorizar?: boolean };
+/** As lojas do FireHub da cidade, guardadas 10 min em memória (o passo da varredura roda a cada poucos segundos). */
+const lojasEmMemoria = new Map<string, { lojas: LojaDoMapa[]; em: number }>();
+async function lojasDaCidade(chave: string, caixa: CaixaDaCidade): Promise<LojaDoMapa[]> {
+  const g = lojasEmMemoria.get(chave);
+  if (g && Date.now() - g.em < 600_000) return g.lojas;
+  const lojas = await lojasDoMapa(chave, caixa);
+  lojasEmMemoria.set(chave, { lojas, em: Date.now() });
+  return lojas;
+}
+
+type Saida = { linha: LinhaDaCidade; lote: Celula[]; aviso?: string };
 
 /**
  * Um passo da varredura: guarda o que o lote trouxe, divide as células cheias
- * e entrega o próximo lote — dentro do grátis do mês, a não ser que o admin
- * tenha autorizado. Uma pessoa por vez segura o lote da cidade.
+ * e entrega o próximo lote — dentro do que o dia e o mês deixam (CUSTO ZERO).
+ * Sem vaga, pausa com a fila guardada e volta amanhã ou no dia 1º. Uma
+ * pessoa por vez segura o lote da cidade. `lojas` só nos testes e na prévia.
  */
-export async function passoDaVarredura(quem: QuemEsta, pedido: PedidoDaVarredura): Promise<RespostaDaVarredura> {
+export async function passoDaVarredura(quem: QuemEsta, pedido: PedidoDaVarredura, lojasDadas?: LojaDoMapa[]): Promise<RespostaDaVarredura> {
   const preparada = await prepararCidade(pedido.cidade);
   if (!preparada) throw new Error("Não achei essa cidade no mapa. Escreva como \"Cidade - UF\".");
   const chave = preparada.cidade;
   const eu = quemSegura(quem);
   const admin = quem.tipo === "ADMIN";
+  const lojas = lojasDadas ?? (pedido.resultados?.length ? await lojasDaCidade(chave, preparada.caixa) : []);
 
   const saida = await prisma.$transaction(async (tx): Promise<Saida> => {
     const l = (await lerCidade(tx, chave, true))!;
     const agora = new Date();
-    let { pendentes, lote, saturadas, chamadas, estado, motivo, detalhe, liberadoPago, iniciadaEm, varridaEm, estimativa } = l;
+    let { pendentes, lote, saturadas, chamadas, estado, motivo, detalhe, iniciadaEm, varridaEm, estimativa } = l;
     const loteVivo = lote.length > 0 && !!l.loteAte && new Date(l.loteAte).getTime() > agora.getTime();
 
     // 1. O que o lote trouxe (só de quem segura o lote).
@@ -486,11 +559,11 @@ export async function passoDaVarredura(quem: QuemEsta, pedido: PedidoDaVarredura
           if (v) achados.push(v);
         }
       }
-      await salvarLugares(tx, chave, achados);
+      await salvarLugares(tx, chave, await casarComNomes(tx, chave, achados, lojas));
       const r = aplicarRespostas(pendentes, lote, respostas);
-      // A célula que não voltou (o Google recusou) não foi cobrada: devolve ao mês.
+      // A célula que não voltou (o Google recusou) não foi cobrada: devolve ao dia.
       const naoVoltaram = lote.length - r.respondidas;
-      if (naoVoltaram) { await somarNoMes(tx, "nearby", -naoVoltaram); chamadas -= naoVoltaram; }
+      if (naoVoltaram) { await somarHoje(tx, "nearby", -naoVoltaram); chamadas -= naoVoltaram; }
       pendentes = r.pendentes;
       saturadas = [...saturadas, ...r.saturadas.map((c) => circuloDaCelula(c).centro)];
       lote = [];
@@ -504,20 +577,16 @@ export async function passoDaVarredura(quem: QuemEsta, pedido: PedidoDaVarredura
     }
 
     // 2. Começar, continuar, refazer. `parar` = não entrega lote agora (mas grava o que mudou acima).
-    const uso = await usoDoMes(tx);
-    const restante = Math.max(0, tetoDoMes("nearby") - uso.nearby);
-    let parar: { aviso?: string; precisaAutorizar?: boolean } | null = null;
-    if (pedido.autorizar && admin) liberadoPago = true;
+    const uso = await usoDoGoogle(tx);
+    const vaga = vagasDaVarredura(uso);
+    let parar: { aviso?: string } | null = null;
     const refazer = !!pedido.refazer && admin && estado !== "varrendo";
     if (pedido.refazer && !admin) parar = { aviso: "Só o administrador atualiza uma cidade já varrida." };
     else if (pedido.pausar) parar = {};
     if (parar || (estado === "completa" && !refazer)) {
       parar = parar || {};
     } else if (estado === "nova" || refazer) {
-      // Refazer: a varredura anterior é a melhor estimativa.
-      const previsto = refazer && l.chamadas > 0 ? l.chamadas : (estimativa ?? 0);
       if (!pedido.continuar && !refazer) parar = {};
-      else if (previsto > restante && !liberadoPago) parar = { precisaAutorizar: true };
       else {
         pendentes = celulasRaiz(l.caixa);
         saturadas = [];
@@ -529,30 +598,28 @@ export async function passoDaVarredura(quem: QuemEsta, pedido: PedidoDaVarredura
       }
     } else if (estado === "pausada" || (estado === "varrendo" && !pedido.resultados)) {
       if (!pedido.continuar) parar = {};
-      else if (motivo === "gratis_do_mes" && !liberadoPago && restante <= 0) parar = { precisaAutorizar: true };
       else { estado = "varrendo"; motivo = null; detalhe = null; }
     }
 
-    // 3. O próximo lote, dentro do grátis do mês (ou do que o admin liberou) e do teto da cidade.
+    // 3. O próximo lote, dentro do que sobra hoje e no mês (e do limite contra laço).
     let novo: Celula[] = [];
     if (!parar && estado === "varrendo") {
-      const limite = Math.min(liberadoPago ? Infinity : restante, TETO_DE_CHAMADAS_POR_CIDADE - chamadas);
-      const escolha = escolherLote(pendentes, limite);
+      const escolha = escolherLote(pendentes, Math.min(vaga.qtd, TETO_DE_CHAMADAS_POR_CIDADE - chamadas));
       novo = escolha.lote;
       pendentes = escolha.pendentes;
       if (!novo.length && pendentes.length) {
+        // Sem vaga: pausa com a fila guardada; volta amanhã (dia) ou no dia 1º (mês).
         estado = "pausada";
-        motivo = TETO_DE_CHAMADAS_POR_CIDADE - chamadas <= 0 ? "teto_da_cidade" : "gratis_do_mes";
+        motivo = TETO_DE_CHAMADAS_POR_CIDADE - chamadas <= 0 ? "teto_da_cidade" : vaga.trava === "mes" ? "gratis_do_mes" : "trava_do_dia";
       } else if (!novo.length) {
         estado = "completa";
         varridaEm = agora;
-        liberadoPago = false;
         // A próxima estimativa (atualizar a cidade) é o que esta gastou de verdade.
         estimativa = chamadas;
         // O que o Google não trouxe nesta varredura fechou ou mudou: sai do cache.
         if (iniciadaEm) await tx.$executeRaw`DELETE FROM "ProspeccaoLugar" WHERE cidade = ${chave} AND origem = 'google' AND "vistoEm" < ${iniciadaEm}`;
       }
-      if (novo.length) { await somarNoMes(tx, "nearby", novo.length); chamadas += novo.length; }
+      if (novo.length) { await somarHoje(tx, "nearby", novo.length); chamadas += novo.length; }
     } else if (estado === "varrendo") {
       // Parou sem lote na mão: fica "pausada" para quem abrir depois ver o porquê.
       estado = "pausada";
@@ -564,7 +631,7 @@ export async function passoDaVarredura(quem: QuemEsta, pedido: PedidoDaVarredura
         estado = ${estado}, motivo = ${motivo}, detalhe = ${detalhe},
         pendentes = ${JSON.stringify(pendentes)}::jsonb, lote = ${JSON.stringify(novo)}::jsonb,
         "loteDe" = ${novo.length ? eu : null}, "loteAte" = ${novo.length ? new Date(agora.getTime() + SEGUNDOS_DO_LOTE * 1000) : null},
-        chamadas = ${chamadas}, saturadas = ${JSON.stringify(saturadas)}::jsonb, "liberadoPago" = ${liberadoPago},
+        chamadas = ${chamadas}, saturadas = ${JSON.stringify(saturadas)}::jsonb,
         "iniciadaEm" = ${iniciadaEm}, "varridaEm" = ${varridaEm}, estimativa = ${estimativa}
       WHERE cidade = ${chave}`;
     return { linha: (await lerCidade(tx, chave))!, lote: novo, ...(parar || {}) };
@@ -573,8 +640,7 @@ export async function passoDaVarredura(quem: QuemEsta, pedido: PedidoDaVarredura
   return {
     resumo: await resumoDaCidade(saida.linha, quem),
     lote: saida.lote.map(paraBuscar),
-    uso: await usoDoMes(),
-    precisaAutorizar: saida.precisaAutorizar,
+    uso: await usoDoGoogle(),
     aviso: saida.aviso,
   };
 }
@@ -584,12 +650,17 @@ function paraBuscar(c: Celula): CelulaParaBuscar {
   return { ...c, centro, raio, tiposDaBusca: c.tipos || [...TIPOS_DE_COMIDA], maximo: MAXIMO_POR_CHAMADA };
 }
 
-/** "Buscar também" (Text Search): o que veio entra no cache da cidade, para a equipe toda. */
-export async function guardarLugaresAvulsos(cidade: string, lugares: unknown[]): Promise<number> {
+/**
+ * "Buscar também" e os nomes por perto: os lugares novos entram no cache da
+ * cidade (só id + ponto), para a equipe toda. O nome serve só para casar.
+ */
+export async function guardarLugaresAvulsos(cidade: string, lugares: unknown[], lojasDadas?: LojaDoMapa[]): Promise<number> {
   await garantirEstrutura();
   const chave = nomeDaCidade(cidade);
-  if (!chave || !(await lerCidade(prisma, chave))) return 0;
+  const linha = chave ? await lerCidade(prisma, chave) : null;
+  if (!linha) return 0;
   const validos = lugares.slice(0, 60).map(lugarValido).filter((l): l is LugarDoMapa => !!l);
-  await salvarLugares(prisma, chave, validos);
+  const lojas = lojasDadas ?? (await lojasDaCidade(chave, linha.caixa));
+  await salvarLugares(prisma, chave, await casarComNomes(prisma, chave, validos, lojas));
   return validos.length;
 }

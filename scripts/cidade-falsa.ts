@@ -60,11 +60,14 @@ export function cidadeFalsa(o: { centro: { lat: number; lng: number }; total?: n
   return saida;
 }
 
-/** O Nearby Search (New) falso: dentro do círculo, de um dos tipos, os 20 mais populares. */
-export function nearbyFalso(cidade: LugarFalso[], pedido: { centro: { lat: number; lng: number }; raio: number; tipos: string[]; maximo: number }): LugarFalso[] {
+/** O Nearby Search (New) falso: dentro do círculo, de um dos tipos, os 20 mais populares (ou os mais perto, com DISTANCE). */
+export function nearbyFalso(
+  cidade: LugarFalso[],
+  pedido: { centro: { lat: number; lng: number }; raio: number; tipos: string[]; maximo: number; porDistancia?: boolean },
+): LugarFalso[] {
   const tipos = new Set(pedido.tipos);
   return cidade
     .filter((l) => l.tipos.some((t) => tipos.has(t)) && metrosEntre(pedido.centro, l) <= pedido.raio)
-    .sort((a, b) => b.popularidade - a.popularidade)
+    .sort((a, b) => (pedido.porDistancia ? metrosEntre(pedido.centro, a) - metrosEntre(pedido.centro, b) : b.popularidade - a.popularidade))
     .slice(0, pedido.maximo);
 }
