@@ -5,7 +5,7 @@
  */
 import assert from "node:assert/strict";
 import {
-  CAMPOS_DA_BUSCA, LIMITES_DO_DIA, diaDaCotaDoGoogle, dentroDaCaixa, linkComoChegar, linkDoWhatsapp,
+  CAMPOS_DA_BUSCA, consultaDaCidade, diaDaCotaDoGoogle, dentroDaCaixa, linkComoChegar, linkDoWhatsapp,
   lojaDoLugar, nomeDaCidade, parecencaDosNomes, type LojaDoMapa,
 } from "../src/lib/prospeccao/regras";
 
@@ -19,6 +19,11 @@ ok(() => assert.equal(nomeDaCidade("  Rio das Ostras  "), "rio das ostras"));
 ok(() => assert.equal(nomeDaCidade("Goiânia, GO"), "goiania"));
 ok(() => assert.equal(nomeDaCidade("Goiânia (GO)"), "goiania"));
 ok(() => assert.equal(nomeDaCidade(null), ""));
+// O Nominatim com "Trindade - GO" devolve ruas; com vírgula, a cidade.
+ok(() => assert.equal(consultaDaCidade("Trindade - GO"), "Trindade, GO, Brasil"));
+ok(() => assert.equal(consultaDaCidade("Goiânia (GO)"), "Goiânia, GO, Brasil"));
+ok(() => assert.equal(consultaDaCidade("rio das ostras/rj"), "rio das ostras, rj, Brasil"));
+ok(() => assert.equal(consultaDaCidade("Rio das Ostras"), "Rio das Ostras, Brasil"));
 
 // ─── nomes ───
 ok(() => assert.equal(parecencaDosNomes("Pizzaria Bella Napoli", "Bella Napoli Delivery"), 1));
@@ -66,7 +71,7 @@ ok(() => assert.match(linkComoChegar({ nome: "X", lat: -16.65, lng: -49.49, plac
 for (const caro of ["nationalPhoneNumber", "internationalPhoneNumber", "websiteURI", "rating", "userRatingCount", "regularOpeningHours", "photos", "reviews"]) {
   ok(() => assert.ok(!(CAMPOS_DA_BUSCA as readonly string[]).includes(caro), caro));
 }
-// Os limites ficam abaixo da trava do Google (160 buscas e 32 contatos por dia).
-ok(() => assert.ok(LIMITES_DO_DIA.busca < 160 && LIMITES_DO_DIA.contato < 32));
+// A busca não pede campo Enterprise nem os de nível Pro mais raros: id, nome, ponto, endereço, tipo, status, link.
+ok(() => assert.deepEqual([...CAMPOS_DA_BUSCA], ["id", "displayName", "formattedAddress", "location", "primaryType", "businessStatus", "googleMapsURI"]));
 
 console.log(`✅ teste-prospeccao: ${casos} casos ok`);

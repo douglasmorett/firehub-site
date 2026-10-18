@@ -1,38 +1,36 @@
 /**
  * Mapa de prospecção do vendedor — as regras puras (sem banco e sem rede), que o
- * navegador também usa.
+ * navegador também usa. A varredura da cidade (a grade) mora em ./varredura.ts.
  *
- * O mapa mostra os restaurantes de uma cidade pela Places API (New) do Google e
- * pinta cada um: cliente do FireHub, em negociação, não quis ou oportunidade.
- * As cotas do Google estão TRAVADAS na faixa grátis (Douglas, 18/10/2026: "sem
- * custo nesse momento") no projeto gen-lang-client-0505076953:
- *   - SearchTextRequest e SearchNearbyRequest: 160 por dia cada (5.000 grátis/mês);
- *   - GetPlaceRequest: 32 por dia (o cartão com telefone e site é Enterprise: 1.000 grátis/mês);
- *   - Map loads: 300 por dia (10.000 grátis/mês); fotos, avaliações e autocomplete: 0.
- * O dia da cota do Google vira à meia-noite do Pacífico — o nosso contador também.
- * Os limites daqui ficam um pouco abaixo da trava, para a tela avisar antes do erro.
+ * O mapa mostra TODOS os lugares de comida de uma cidade pela Places API (New)
+ * do Google e pinta cada um: cliente do FireHub, em negociação, não quis ou
+ * oportunidade. O que se gasta do Google é contado por MÊS e por SKU
+ * (varredura.ts, SKUS), contra o grátis de cada SKU. As travas por dia do
+ * Google Cloud (projeto gen-lang-client-0505076953: SearchNearby 160/dia,
+ * GetPlace 32/dia, Map loads 300/dia) continuam lá: quando o Google para por
+ * elas, a varredura pausa e continua depois. O dia/mês do Google vira à
+ * meia-noite do Pacífico.
  */
-
-export const LIMITES_DO_DIA = { busca: 150, contato: 30 } as const;
-export type TipoDeUso = keyof typeof LIMITES_DO_DIA;
 
 export const STATUS_DA_MARCACAO = ["negociacao", "sem_interesse", "oportunidade"] as const;
 export type StatusDaMarcacao = (typeof STATUS_DA_MARCACAO)[number];
 /** O status do pino: cliente vem do nosso banco; os outros, do que o vendedor marcou. */
 export type StatusDoPino = "cliente" | StatusDaMarcacao;
 
-/** Cada busca da cidade é "<termo> em <cidade>": 1 consulta do Google, até 20 lugares. */
-export const TERMOS_DA_CIDADE = ["restaurante", "lanchonete", "pizzaria", "hamburgueria"] as const;
+/** "Buscar também": termos que pegam o que tem tipo fora da comida no Google (marmitaria cadastrada como "loja"). Text Search Pro. */
 export const TERMOS_EXTRAS = [
   "açaí", "marmitaria", "japonês sushi", "espetinho", "pastelaria", "churrascaria",
   "esfiha comida árabe", "padaria", "sorveteria", "doceria", "pastel e caldo de cana", "comida mineira",
 ] as const;
 
-/** Os campos da busca: só os de nível Pro (5.000 grátis). Telefone e site são Enterprise e ficam no cartão. */
+/**
+ * Os campos das buscas (varredura e "buscar também"): todos do SKU Pro — o
+ * mais barato do Nearby Search (ele não tem Essentials). Telefone, site,
+ * horário e nota são Enterprise e ficam no cartão (Place Details Enterprise).
+ * Fonte: developers.google.com/maps/documentation/places/web-service/nearby-search (seção SKUs).
+ */
 export const CAMPOS_DA_BUSCA = ["id", "displayName", "formattedAddress", "location", "primaryType", "businessStatus", "googleMapsURI"] as const;
 export const CAMPOS_DO_CONTATO = ["nationalPhoneNumber", "internationalPhoneNumber", "websiteURI", "rating", "userRatingCount", "regularOpeningHours"] as const;
-/** "Buscar nesta área": tipos da Tabela A do Places (New). */
-export const TIPOS_DA_AREA = ["restaurant", "meal_takeaway", "meal_delivery", "fast_food_restaurant", "sandwich_shop", "bakery"] as const;
 
 /** Dia da cota do Google (meia-noite do Pacífico), como "AAAA-MM-DD". */
 export function diaDaCotaDoGoogle(agora = new Date()): string {
@@ -41,6 +39,14 @@ export function diaDaCotaDoGoogle(agora = new Date()): string {
 
 export function semAcento(s: string): string {
   return s.normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/**
+ * O texto que vai ao Nominatim: "Trindade - GO" → "Trindade, GO, Brasil". Com
+ * o hífen o Nominatim devolve RUAS (a "Avenida Brasil" de Trindade), não a cidade.
+ */
+export function consultaDaCidade(s: string): string {
+  return `${s.trim().replace(/\s*[-/(]\s*([A-Za-z]{2})\)?\s*$/, ", $1")}, Brasil`;
 }
 
 /** "Trindade - GO", "trindade/go", " Trindade " → "trindade". */

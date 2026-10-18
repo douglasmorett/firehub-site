@@ -48,9 +48,9 @@
 }
 .filtro button:disabled, .acoesDoMapa button:disabled { opacity: 0.55; cursor: default; }
 
-.cota { grid-column: 2 / 3; grid-row: 1 / 3; display: grid; gap: 8px; min-width: 200px; }
-.medidor { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 0.78rem; color: #CBD5E1; }
-.medidor b { color: #F8FAFC; }
+.medidor { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; font-size: 0.78rem; color: var(--mp-suave); }
+.medidor b { color: var(--mp-texto); }
+.medidor small { grid-column: 1 / 3; color: var(--mp-suave); font-size: 0.72rem; }
 .medidor i { grid-column: 1 / 3; height: 6px; background: #334155; border-radius: 99px; overflow: hidden; display: block; }
 .medidor u { display: block; height: 100%; text-decoration: none; }
 
@@ -62,6 +62,42 @@
 .aviso_erro { background: #FEF2F2; color: #991B1B; }
 .aviso_ok { background: #F0FDF4; color: #166534; }
 .aviso_info { background: #EFF6FF; color: #1E3A8A; }
+
+/* A cobertura da cidade: quantos lugares, quando foi varrida, o selo e os botões da varredura. */
+.cobertura {
+  display: flex; gap: 12px 20px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+  padding: 12px 16px; background: var(--mp-painel); border-bottom: 1px solid var(--mp-borda);
+}
+.coberturaTexto { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1 1 380px; }
+.coberturaTexto strong { font-size: 1rem; }
+.coberturaTexto small { color: var(--mp-suave); font-size: 0.8rem; }
+.coberturaBotoes { display: flex; gap: 8px; flex-wrap: wrap; }
+.selo { display: inline-block; width: fit-content; font-size: 0.78rem; font-weight: 700; padding: 3px 9px; border-radius: 6px; border: 1px solid; }
+.selo_completa { background: #F0FDF4; color: #166534; border-color: #86EFAC; }
+.selo_parcial { background: #FFF7ED; color: #9A3412; border-color: #FDBA74; }
+.selo_andamento { background: #EFF6FF; color: #1E3A8A; border-color: #93C5FD; }
+.selo_nenhuma { background: #F1F5F9; color: #334155; border-color: var(--mp-borda); }
+.alertaCusto { color: #9A3412 !important; font-weight: 600; }
+.botaoVarrer, .botaoPagar {
+  padding: 10px 16px; border-radius: 8px; font-weight: 800; font-size: 0.9rem; cursor: pointer; border: 1px solid;
+}
+.botaoVarrer { background: #16A34A; border-color: #15803D; color: #fff; }
+.botaoPagar { background: #FFF7ED; border-color: #EA580C; color: #9A3412; }
+
+/* Só o admin: o consumo do mês por SKU. */
+.consumo { background: #F8FAFC; border-bottom: 1px solid var(--mp-borda); padding: 8px 16px; font-size: 0.84rem; }
+.consumo summary { cursor: pointer; font-weight: 700; color: var(--mp-texto); }
+.consumoGrade { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px 20px; margin: 10px 0 8px; }
+.consumo > small { color: var(--mp-suave); font-size: 0.76rem; }
+
+.legendaOsm { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 0.82rem; font-weight: 600; color: var(--mp-suave); }
+.bolinhaOsm { background: #fff !important; border: 2px dashed #475569 !important; }
+.dicaDoMapa {
+  display: inline-block; background: rgba(15, 23, 42, 0.85); color: #F8FAFC; font-size: 0.8rem; font-weight: 600;
+  padding: 6px 10px; border-radius: 8px;
+}
+.creditoOsm { position: absolute; left: 8px; bottom: 26px; background: rgba(255, 255, 255, 0.85); font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; }
+.origem { margin: -4px 0 0; color: var(--mp-suave); font-size: 0.76rem; }
 
 .legenda {
   display: flex; gap: 8px; flex-wrap: wrap; padding: 10px 16px;
@@ -145,6 +181,7 @@
 }
 .pino:hover { z-index: 1001; }
 .pinoAberto { width: 34px; height: 34px; z-index: 1000; box-shadow: 0 0 0 3px #0F172A, 0 2px 8px rgba(15, 23, 42, 0.6); }
+.pinoOsm { border-style: dashed; border-color: #0F172A; }
 .pinoLetra { color: #fff; font: 800 12px/1 Inter, system-ui, sans-serif; }
 .balao {
   display: none; position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%);
@@ -201,7 +238,8 @@
 
 @media (max-width: 900px) {
   .topo { grid-template-columns: 1fr; }
-  .cota { grid-column: auto; grid-row: auto; grid-template-columns: 1fr 1fr; }
+  .cobertura { flex-direction: column; align-items: stretch; }
+  .coberturaTexto { flex: none; }
   .corpo { grid-template-columns: 1fr; height: auto; }
   .areaDoMapa { min-height: 60vh; }
   .lado { border-left: 0; border-top: 1px solid var(--mp-borda); max-height: 70vh; }
