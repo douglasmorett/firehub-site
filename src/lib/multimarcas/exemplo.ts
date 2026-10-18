@@ -1,5 +1,4 @@
-import type { ConfigDaRede } from "@/lib/rede/config";
-import type { ProdutoDaRede } from "@/lib/rede/previa-dados";
+import type { ConfigDaVitrine, ProdutoDaVitrine } from "./vitrine";
 
 /**
  * A rede FICTÍCIA da demonstração na página de venda do Multimarcas: marcas,
@@ -9,18 +8,18 @@ import type { ProdutoDaRede } from "@/lib/rede/previa-dados";
  */
 const f = (nome: string) => `/multimarcas/${nome}.webp`;
 
-export const CONFIG_DO_EXEMPLO: ConfigDaRede = {
+export const CONFIG_DO_EXEMPLO: ConfigDaVitrine = {
   nome: "Cozinha Central",
   frase: "Cinco marcas, uma cozinha. Peça de todas e pague uma entrega só.",
   local: "toda a região",
   cor: "#E8590C",
   entrega: { taxa: 5.99, min: 30, max: 45, minimo: 20 },
   marcas: [
-    { id: "smash", nome: "Smash da Vila", tipo: "Hambúrguer", frase: "Smash burguer na chapa", cor: "#1F1F23", logo: null, capa: f("smash"), nota: 4.8, avaliacoes: 326, aberta: true, oculta: false },
-    { id: "frango", nome: "Box do Frango", tipo: "Frango", frase: "Frango frito crocante", cor: "#F08C00", logo: null, capa: f("frango-box"), nota: 4.7, avaliacoes: 418, aberta: true, oculta: false },
-    { id: "pizza", nome: "Forno da Praça", tipo: "Pizza", frase: "Pizza no forno a lenha", cor: "#C92A2A", logo: null, capa: f("pizza"), nota: 4.9, avaliacoes: 207, aberta: true, oculta: false },
-    { id: "marmita", nome: "Marmita da Casa", tipo: "Marmita", frase: "Prato feito todo dia", cor: "#2B8A3E", logo: null, capa: f("marmita"), nota: 4.6, avaliacoes: 154, aberta: true, oculta: false },
-    { id: "acai", nome: "Açaí Tropical", tipo: "Açaí", frase: "Açaí montado do seu jeito", cor: "#7048E8", logo: null, capa: f("acai"), nota: 4.8, avaliacoes: 98, aberta: false, oculta: false },
+    { id: "smash", nome: "Smash da Vila", tipo: "Hambúrguer", cor: "#1F1F23", logo: null, capa: f("smash"), nota: 4.8, avaliacoes: 326, aberta: true, oculta: false },
+    { id: "frango", nome: "Box do Frango", tipo: "Frango", cor: "#F08C00", logo: null, capa: f("frango-box"), nota: 4.7, avaliacoes: 418, aberta: true, oculta: false },
+    { id: "pizza", nome: "Forno da Praça", tipo: "Pizza", cor: "#C92A2A", logo: null, capa: f("pizza"), nota: 4.9, avaliacoes: 207, aberta: true, oculta: false },
+    { id: "marmita", nome: "Marmita da Casa", tipo: "Marmita", cor: "#2B8A3E", logo: null, capa: f("marmita"), nota: 4.6, avaliacoes: 154, aberta: true, oculta: false },
+    { id: "acai", nome: "Açaí Tropical", tipo: "Açaí", cor: "#7048E8", logo: null, capa: f("acai"), nota: 4.8, avaliacoes: 98, aberta: false, oculta: false },
   ],
   banners: [
     { id: "b1", titulo: "Smash em dobro por R$ 29,90", texto: "Só hoje no Smash da Vila", imagem: f("smash-bacon"), marca: "smash", ativo: true },
@@ -29,10 +28,10 @@ export const CONFIG_DO_EXEMPLO: ConfigDaRede = {
   ],
 };
 
-const p = (id: string, marca: string, categoria: string, nome: string, descricao: string, preco: number, foto: string | null = null): ProdutoDaRede =>
+const p = (id: string, marca: string, categoria: string, nome: string, descricao: string, preco: number, foto: string | null = null): ProdutoDaVitrine =>
   ({ id, marca, categoria, nome, descricao, preco, foto: foto ? f(foto) : null });
 
-export const PRODUTOS_DO_EXEMPLO: ProdutoDaRede[] = [
+export const PRODUTOS_DO_EXEMPLO: ProdutoDaVitrine[] = [
   p("s1", "smash", "Destaques", "Smash em dobro", "Dois smash de 90 g, cheddar e molho da casa", 29.9, "smash"),
   p("s2", "smash", "Burguers", "Smash bacon", "Smash de 90 g, bacon, cebola caramelizada e cheddar", 27.9, "smash-bacon"),
   p("s3", "smash", "Burguers", "Smash clássico", "Smash de 90 g, queijo prato, alface e tomate", 22.9),

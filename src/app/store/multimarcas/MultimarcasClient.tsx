@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { LayoutGrid, Link2 } from "lucide-react";
 import OfertaDoMultimarcas from "./OfertaDoMultimarcas";
+import EditorDoMultimarcas from "./EditorDoMultimarcas";
 import { CLAUSULAS_DO_TERMO_DO_MULTIMARCAS, TITULO_DO_TERMO_DO_MULTIMARCAS, VERSAO_DO_TERMO_DO_MULTIMARCAS } from "@/lib/multimarcas/termo";
 import s from "./Multimarcas.module.css";
 
@@ -110,7 +111,7 @@ export default function MultimarcasClient({ previa }: { previa?: DadosDoMultimar
       )}
 
       {estado.ativo ? (
-        <Ativo dados={dados} salvando={salvando} confirmarDesligar={confirmarDesligar}
+        <Ativo dados={dados} previa={!!previa} onAviso={(tipo, titulo, detalhe) => setAviso({ tipo, titulo, detalhe })} salvando={salvando} confirmarDesligar={confirmarDesligar}
           onPedirDesligar={() => setConfirmarDesligar(true)} onCancelarDesligar={() => setConfirmarDesligar(false)} onDesligar={() => ligar(false)} />
       ) : (
         <OfertaDoMultimarcas dados={dados} salvando={salvando} onAtivar={() => setTermoAberto(true)} />
@@ -123,8 +124,8 @@ export default function MultimarcasClient({ previa }: { previa?: DadosDoMultimar
 
 // ─── Ativado ─────────────────────────────────────────────────────────────
 
-function Ativo({ dados, salvando, confirmarDesligar, onPedirDesligar, onCancelarDesligar, onDesligar }: {
-  dados: DadosDoMultimarcas; salvando: boolean; confirmarDesligar: boolean;
+function Ativo({ dados, previa, onAviso, salvando, confirmarDesligar, onPedirDesligar, onCancelarDesligar, onDesligar }: {
+  dados: DadosDoMultimarcas; previa: boolean; onAviso: (tipo: "ok" | "erro", titulo: string, detalhe?: string) => void; salvando: boolean; confirmarDesligar: boolean;
   onPedirDesligar: () => void; onCancelarDesligar: () => void; onDesligar: () => void;
 }) {
   const e = dados.estado;
@@ -136,13 +137,17 @@ function Ativo({ dados, salvando, confirmarDesligar, onPedirDesligar, onCancelar
       </div>
       <p className={s.sub}>A página com todas as suas marcas, banners e a sacola única.</p>
 
+      {previa ? (
       <section className={s.montagem}>
-        <span className={s.recursoIcone}><Link2 size={20} /></span>
-        <div>
-          <strong>Próximo passo: montar as suas marcas</strong>
-          <p>Aqui você vai separar as categorias do cardápio por marca, subir logo, capa e banners, e pegar o link da página.</p>
-        </div>
-      </section>
+          <span className={s.recursoIcone}><Link2 size={20} /></span>
+          <div>
+            <strong>Próximo passo: montar as suas marcas</strong>
+            <p>Aqui você vai separar as categorias do cardápio por marca, subir logo, capa e banners, e pegar o link da página.</p>
+          </div>
+        </section>
+      ) : (
+        <EditorDoMultimarcas onAviso={onAviso} />
+      )}
 
       {!e.isento && (
         <div className={s.desligar}>

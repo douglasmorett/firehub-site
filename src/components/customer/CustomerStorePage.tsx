@@ -23,6 +23,7 @@ import {
   ArrowRight,
   Check,
   ChevronRight,
+  ChevronLeft,
   Trash2,
   Edit3
 } from "lucide-react";
@@ -74,6 +75,7 @@ import QuandoReceber, { type Quando } from "./QuandoReceber";
 import AgendarNoCardapio from "./AgendarNoCardapio";
 import { aceitaAgendamentoPara, horariosParaAgendar, lerConfigDeAgendamento, textoDoAgendamento } from "@/lib/agendamento";
 import { avisarOApp } from "@/lib/app-da-loja/ponte";
+import { categoriaEntraNaMarca, siglaDaMarca, type MarcasNoCardapio } from "@/lib/multimarcas/no-cardapio";
 import { ehRetirada, etapaDoAcompanhamento } from "@/lib/status-para-o-cliente";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
@@ -307,12 +309,15 @@ export default function CustomerStorePage({
   storeCategories,
   storeRating,
   mesa = null,
+  multimarcas = null,
 }: {
   franchisee: Franchisee;
   menuProducts: MenuProduct[];
   storeCategories?: { id: string; name: string; sortOrder: number }[];
   storeRating?: StoreRating;
   mesa?: MesaDoQr | null;
+  /** Multimarcas ligado: as marcas da loja. Com ?marca=<id> o cardápio mostra só a marca (lib/multimarcas/no-cardapio.ts). */
+  multimarcas?: MarcasNoCardapio | null;
 }) {
   // Configuração de medição do Google DESTA loja. Só o que ela preencheu na
   // tela de Integrações — nunca uma medição do FireHub.
@@ -362,6 +367,23 @@ export default function CustomerStorePage({
   const [selectedCategory, setSelectedCategory] = useState("Todos");
   const [searchTerm, setSearchTerm] = useState("");
   const [mobileCartOpen, setMobileCartOpen] = useState(false);
+
+  // ── MULTIMARCAS: ?marca=<id> e ?sacola=1 ──────────────────────────────────
+  // A página /marcas/<slug> abre este cardápio filtrado por marca. A sacola é
+  // a mesma da loja (cartStorageKey), então o cliente põe de uma marca, volta,
+  // põe de outra e fecha UM pedido. Lido no navegador, como o ?cupom=, para a
+  // página continuar no cache (ISR) — o filtro não muda o que o servidor manda.
+  const [marcaId, setMarcaId] = useState<string | null>(null);
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const m = q.get("marca");
+      if (m && !mesa && multimarcas?.marcas.some((x) => x.id === m)) setMarcaId(m);
+      if (q.get("sacola") === "1") setMobileCartOpen(true);
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const marcaAtiva = marcaId ? multimarcas?.marcas.find((x) => x.id === marcaId) ?? null : null;
   const [comboProduct, setComboProduct] = useState<MenuProduct | null>(null);
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -717,6 +739,8 @@ export default function CustomerStorePage({
   }, []);
 
   const storeName = franchisee.storeName || franchisee.name;
+  /** O nome no topo: o da marca, quando o cardápio abriu por uma (Multimarcas). */
+  const nomeNoTopo = marcaAtiva?.nome || storeName;
   const storeStatus = isStoreOpen(franchisee.storeHours as any, undefined, franchisee.storeTimezone);
   // Fechada AGORA por qualquer motivo: horário, chave manual ou pausa. É o
   // que desarma o botão de finalizar antes de o cliente preencher tudo.
@@ -824,9 +848,11 @@ export default function CustomerStorePage({
       (instanteDoCardapio
         ? motivoForaDoCardapio(p as any, franchisee.storeTimezone, new Date(instanteDoCardapio)) === null
         : isAvailableToday(p, currentDayCode))
-      && !isIntegrationCategory(p.category));
+      && !isIntegrationCategory(p.category)
+      // Multimarcas: só a marca escolhida e o que acompanha qualquer marca.
+      && (!marcaAtiva || categoriaEntraNaMarca(multimarcas!, marcaAtiva.id, p.category)));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [menuProducts, currentDayCode, minutoDoRelogio, instanteDoCardapio]);
+  }, [menuProducts, currentDayCode, minutoDoRelogio, instanteDoCardapio, marcaAtiva]);
 
   const categories = useMemo(() => {
     const activeCats = Array.from(new Set(activeTodayProducts.map(p => (p.category || "").trim()).filter(c => c.length > 0 && !isIntegrationCategory(c))));
@@ -4807,22 +4833,39 @@ export default function CustomerStorePage({
         </div>
       )}
 
-      {/* CAPA: a imagem e, quando a loja tem, o vídeo por cima (CapaDaLoja) */}
-      {(franchisee.storeBanner || franchisee.storeBannerVideo) && (
+      {/* Multimarcas: aberto por uma marca, volta para a página de todas. A sacola vale para todas. */}
+      {marcaAtiva && multimarcas && (
+        <a href={`/marcas/${franchisee.slug}`} style={{
+          position: "sticky", top: 0, zIndex: 40, display: "flex", alignItems: "center", gap: 8, padding: "10px 16px",
+          background: "#15120F", color: "#fff", fontWeight: 700, fontSize: 14, textDecoration: "none",
+        }}>
+          <ChevronLeft size={18} /> Todas as marcas
+          <span style={{ marginLeft: "auto", fontWeight: 500, fontSize: 12, opacity: 0.75 }}>a sacola vale para todas</span>
+        </a>
+      )}
+
+      {/* CAPA: a imagem e, quando a loja tem, o vídeo por cima (CapaDaLoja). Aberto por uma marca, a capa dela. */}
+      {marcaAtiva ? (
+        marcaAtiva.capa ? <CapaDaLoja imagem={marcaAtiva.capa} video={null} nome={nomeNoTopo} /> : null
+      ) : (franchisee.storeBanner || franchisee.storeBannerVideo) && (
         <CapaDaLoja imagem={franchisee.storeBanner} video={franchisee.storeBannerVideo ?? null} nome={storeName} />
       )}
 
       {/* STORE HEADER */}
       <div className="store-header">
         <div className="store-header-inner">
-          {franchisee.storeLogo ? (
+          {marcaAtiva ? (
+            marcaAtiva.logo ? <img src={marcaAtiva.logo} alt="Logo" className="store-logo" /> : (
+              <div className="store-logo-placeholder" style={{ background: marcaAtiva.cor, color: "#fff", fontWeight: 800, fontSize: 22 }}>{siglaDaMarca(marcaAtiva.nome)}</div>
+            )
+          ) : franchisee.storeLogo ? (
             <img src={franchisee.storeLogo} alt="Logo" className="store-logo" />
           ) : (
             <div className="store-logo-placeholder"><Store size={28} color="white" /></div>
           )}
 
           <div className="store-info">
-            <h1 className="store-name">{storeName}</h1>
+            <h1 className="store-name">{nomeNoTopo}</h1>
             {franchisee.showAddressOnMenu !== false && franchisee.storeAddress && (
               <div className="store-address"><MapPin size={13} /><span>{franchisee.storeAddress}</span></div>
             )}

@@ -31,7 +31,9 @@
 import { prisma } from "@/lib/prisma";
 import { VERSAO_DO_TERMO_DO_MULTIMARCAS } from "./termo";
 
-export const PRECO_DO_MULTIMARCAS = 97;
+import { PRECO_DO_MULTIMARCAS } from "./preco";
+
+export { PRECO_DO_MULTIMARCAS };
 export const DIAS_DE_TESTE_DO_MULTIMARCAS = 7;
 const DIA_MS = 24 * 60 * 60 * 1000;
 

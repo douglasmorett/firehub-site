@@ -18,7 +18,7 @@ import {
   ArrowRight, Bike, Check, ChevronRight, Clock, Gift, LayoutGrid, Megaphone, Plus, Rocket, Search, ShoppingBag,
   Smartphone, Sparkles, Star, Store, TrendingUp, X,
 } from "lucide-react";
-import VitrineDaRede from "@/components/rede/VitrineDaRede";
+import Vitrine from "@/components/multimarcas/Vitrine";
 import { CONFIG_DO_EXEMPLO, PRODUTOS_DO_EXEMPLO } from "@/lib/multimarcas/exemplo";
 import type { DadosDoMultimarcas } from "./MultimarcasClient";
 import s from "./Oferta.module.css";
@@ -27,7 +27,7 @@ const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", curr
 
 const marca = (id: string) => CONFIG_DO_EXEMPLO.marcas.find((m) => m.id === id)!;
 const produto = (id: string) => PRODUTOS_DO_EXEMPLO.find((p) => p.id === id)!;
-const TAXA = CONFIG_DO_EXEMPLO.entrega.taxa;
+const TAXA = CONFIG_DO_EXEMPLO.entrega.taxa ?? 0;
 /** "Smash da Vila" → "SV": as palavras curtas (da, do) não entram. */
 const iniciais = (nome: string) => nome.split(/\s+/).filter((p) => p.length > 2).slice(0, 2).map((p) => p[0].toUpperCase()).join("");
 
@@ -86,7 +86,7 @@ function Topo({ botao, precoCurto, salvando, onAtivar }: { botao: string; precoC
         <span className={`${s.etiqueta} ${s.etiqueta2}`}><Megaphone size={15} /> Banners de oferta</span>
         <span className={`${s.etiqueta} ${s.etiqueta3}`}><Star size={15} /> Nota de cada marca</span>
         <div className={s.telefone}>
-          <VitrineDaRede config={CONFIG_DO_EXEMPLO} produtos={PRODUTOS_DO_EXEMPLO} embutida />
+          <Vitrine config={CONFIG_DO_EXEMPLO} produtos={PRODUTOS_DO_EXEMPLO} embutida />
         </div>
         <span className={s.dicaDoTelefone}><span className={s.pulso} /> Exemplo funcionando: toque, entre nas marcas e monte a sacola</span>
       </div>
@@ -151,7 +151,7 @@ function MiniLoja({ item, sacola, animar }: { item: typeof BURGUER; sacola: numb
       </div>
       <div className={s.miniNome}>
         <span className={s.miniLogo} style={{ background: item.marca.cor }}>{iniciais(item.marca.nome)}</span>
-        <div><strong>{item.marca.nome}</strong><small><Star size={10} fill="currentColor" strokeWidth={0} /> {item.marca.nota.toFixed(1).replace(".", ",")} · {item.marca.tipo}</small></div>
+        <div><strong>{item.marca.nome}</strong><small><Star size={10} fill="currentColor" strokeWidth={0} /> {(item.marca.nota ?? 0).toFixed(1).replace(".", ",")} · {item.marca.tipo}</small></div>
       </div>
       <div className={`${s.miniProduto} ${animar ? s.miniProdutoAtivo : ""}`}>
         <div><strong>{item.produto.nome}</strong><small>{reais(item.produto.preco)}</small></div>
@@ -249,7 +249,7 @@ function NaSuaCozinha() {
       <div className={s.cozinhaTexto}>
         <span className={s.sobretitulo}>Na sua cozinha</span>
         <h2>Um pedido no painel.<br />Separado por marca.</h2>
-        <p className={s.sub}>O pedido de várias marcas cai no seu painel como qualquer outro: uma comanda, um motoboy, um acerto. A comanda vem com um bloco para cada marca, e a equipe já sabe qual embalagem usar.</p>
+        <p className={s.sub}>O pedido de várias marcas cai no seu painel como qualquer outro: uma comanda, um motoboy, um acerto. Cada item sai com o nome da marca, agrupado, e a equipe já sabe qual embalagem usar.</p>
         <ul className={s.listaCozinha}>
           <li><Clock size={16} /> Tudo sai junto, no mesmo prazo</li>
           <li><Bike size={16} /> Um motoboy, uma corrida</li>
@@ -258,12 +258,9 @@ function NaSuaCozinha() {
       </div>
       <div className={s.comanda} aria-label="Exemplo de comanda">
         <div className={s.comandaTopo}><strong>COZINHA CENTRAL</strong><span>PEDIDO #128 · ENTREGA</span></div>
-        <div className={s.comandaMarca}>== SMASH DA VILA ==</div>
-        <div>1x Smash em dobro</div>
+        <div><b>1x [SMASH DA VILA]</b> Smash em dobro</div>
         <div className={s.comandaObs}>   obs: sem cebola</div>
-        <div className={s.comandaMarca}>== BOX DO FRANGO ==</div>
-        <div>1x Box de frango M</div>
-        <div className={s.comandaMarca}>== ACOMPANHAMENTOS ==</div>
+        <div><b>1x [BOX DO FRANGO]</b> Box de frango M</div>
         <div>2x Refrigerante lata</div>
         <div className={s.comandaTotal}>TOTAL {reais(BURGUER.produto.preco + FRANGO.produto.preco + 2 * 6.5 + TAXA)}</div>
       </div>

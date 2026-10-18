@@ -3,6 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { slugAtualDeUmAntigo } from "@/lib/slug-da-loja";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
 import { propsDoCardapio, SELECT_DA_LOJA_NO_CARDAPIO } from "@/lib/cardapio-publico";
+import { multimarcasEstaLigado } from "@/lib/multimarcas/assinatura";
+import { lerConfigDaPagina } from "@/lib/multimarcas/pagina";
+import { marcasNoCardapio } from "@/lib/multimarcas/no-cardapio";
 
 export const revalidate = 60; // ⚡ Cache de Borda (Edge) de 60 segundos
 
@@ -69,5 +72,9 @@ export default async function PublicStorePage({ params }: { params: Promise<{ sl
   // A carga inteira (produtos, avaliações, estoque, nota fiscal) mora em
   // lib/cardapio-publico.ts, a mesma do cardápio da mesa pelo QR.
   const props = await propsDoCardapio(franchisee, "delivery");
-  return <CustomerStorePage {...props} />;
+  // Multimarcas ligado: as marcas vão junto, e o ?marca= (lido no navegador) filtra o cardápio.
+  const multimarcas = (await multimarcasEstaLigado(franchisee.id))
+    ? await lerConfigDaPagina(franchisee.id).then((c) => (c ? marcasNoCardapio(c) : null)).catch(() => null)
+    : null;
+  return <CustomerStorePage {...props} multimarcas={multimarcas} />;
 }

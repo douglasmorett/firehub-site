@@ -1,0 +1,101 @@
+/* Editor do Multimarcas (ativado). */
+
+.editor { --tinta: #15120f; --tinta-2: #57524c; --tinta-3: #8c857d; --linha: #e9e3dc; --laranja: #e8590c; margin-top: 18px; padding-bottom: 90px; }
+.editor :where(button) { font: inherit; cursor: pointer; }
+.erro { padding: 20px; color: #b91c1c; font-weight: 600; }
+.carregando { padding: 28px 4px; color: var(--tinta-2); display: flex; align-items: center; gap: 8px; }
+.girando { animation: girar 1s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+.rotulo { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: .07em; color: var(--tinta-3); }
+
+.barraDoLink {
+  display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 16px 18px; border-radius: 16px;
+  background: #17120e; color: #fff;
+}
+.barraDoLink > div:first-child { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.barraDoLink b { font-size: 16px; word-break: break-all; }
+.barraDoLink small { color: rgba(255,255,255,.65); font-size: 13px; }
+.barraDoLink .rotulo { color: #ffa94d; }
+.acoesDoLink { display: flex; gap: 8px; }
+.acoesDoLink .botaoLeve { background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); color: #fff; }
+
+.colunas { display: grid; gap: 22px; margin-top: 18px; }
+@media (min-width: 1100px) { .colunas { grid-template-columns: minmax(0, 1fr) 380px; align-items: start; } }
+.formulario { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.bloco { background: #fff; border: 1px solid var(--linha); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+.bloco h2 { margin: 0; font-size: 17px; }
+.blocoTopo { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.dica { margin: 4px 0 0; font-size: 13px; color: var(--tinta-2); line-height: 1.45; }
+.vazio { padding: 16px; border: 1px dashed #d6cec4; border-radius: 12px; color: var(--tinta-2); font-size: 14px; text-align: center; }
+.campo { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--tinta-2); flex: 1; min-width: 0; }
+.editor input:not([type="color"]):not([type="file"]), .editor select {
+  font: inherit; font-size: 14px; font-weight: 400; color: var(--tinta); height: 40px; border: 1px solid var(--linha);
+  border-radius: 10px; padding: 0 11px; background: #fff; min-width: 0; width: 100%; box-sizing: border-box;
+}
+.editor input:focus, .editor select:focus { outline: 0; border-color: var(--tinta); }
+.editor input[type="color"] { width: 46px; height: 40px; padding: 3px; border: 1px solid var(--linha); border-radius: 10px; background: #fff; flex-shrink: 0; }
+.cores { display: flex; gap: 8px; flex-wrap: wrap; }
+.cor, .corAtiva { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 0 0 1px var(--linha); }
+.corAtiva { box-shadow: 0 0 0 2px var(--tinta); }
+.linha { display: flex; gap: 8px; flex-wrap: wrap; }
+.linha > * { flex: 1 1 160px; }
+.linha > input[type="color"] { flex: 0 0 46px; }
+
+.botaoEscuro { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; border-radius: 10px; border: 0; background: var(--tinta); color: #fff; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.botaoEscuro:disabled { background: #cfc9c1; cursor: not-allowed; }
+.botaoLeve { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 14px; border-radius: 10px; border: 1px solid #d6d3d1; background: #fff; color: var(--tinta); font-weight: 700; font-size: 14px; text-decoration: none; }
+
+.sugestoes { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: #5f3dc4; background: #f3f0ff; border: 1px solid #d0bfff; padding: 10px 12px; border-radius: 12px; }
+.sugestoes button { border: 1px solid #b197fc; background: #fff; color: #5f3dc4; font-weight: 700; font-size: 13px; padding: 5px 10px; border-radius: 999px; }
+
+.marca { border: 1px solid var(--linha); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.apagado { opacity: .55; }
+.marcaTopo { display: flex; gap: 10px; align-items: flex-start; }
+.marcaCampos { flex: 1; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.inputNome { font-weight: 700 !important; }
+.botoesDoItem { display: flex; gap: 2px; flex-shrink: 0; align-items: center; }
+.botoesDoItem button { width: 32px; height: 32px; border: 0; background: none; border-radius: 8px; display: grid; place-items: center; color: var(--tinta-2); }
+.botoesDoItem button:hover { background: #f4f2ef; color: var(--tinta); }
+.botoesDoItem .apagarMesmo { width: auto; padding: 0 10px; background: #dc2626; color: #fff; font-weight: 800; font-size: 12px; }
+@media (max-width: 560px) { .marcaTopo { flex-wrap: wrap; } .botoesDoItem { width: 100%; justify-content: flex-end; } }
+
+.imagem { position: relative; flex-shrink: 0; }
+.imagemBotao {
+  width: 100%; height: 86px; border-radius: 12px; border: 1px dashed #cfc6bb; background: #faf8f6; color: var(--tinta-2);
+  display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; font-weight: 600; overflow: hidden; padding: 0;
+}
+.imagemBotao img { width: 100%; height: 100%; object-fit: cover; }
+.imagemQuadrada { width: 86px; }
+.imagemQuadrada .imagemBotao { flex-direction: column; font-size: 11px; }
+.marcaTopo > .imagem:not(.imagemQuadrada) { width: 150px; }
+.imagemTirar { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; border: 0; background: rgba(0,0,0,.6); color: #fff; display: grid; place-items: center; }
+
+.categorias { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip, .chipMarcado {
+  display: inline-flex; align-items: center; gap: 5px; border-radius: 999px; padding: 6px 11px; font-size: 13px; font-weight: 600;
+  border: 1px solid var(--linha); background: #fff; color: var(--tinta-2);
+}
+.chip small, .chipMarcado small { font-size: 11px; color: var(--tinta-3); font-weight: 600; }
+.chip em { font-style: normal; font-size: 10px; font-weight: 800; text-transform: uppercase; color: var(--tinta-3); background: #f4f2ef; padding: 1px 6px; border-radius: 6px; }
+.chipMarcado { background: var(--tinta); border-color: var(--tinta); color: #fff; }
+.chipMarcado small { color: rgba(255,255,255,.65); }
+.alerta { margin: 0; font-size: 13px; color: #b45309; font-weight: 600; }
+.acompanhar { font-size: 13px; color: var(--tinta-2); line-height: 1.5; padding: 10px 12px; background: #faf8f6; border-radius: 12px; }
+
+.previa { position: sticky; top: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
+/* transform: os position:fixed da vitrine (barra da sacola, folhas) ficam presos na moldura. */
+.telefone {
+  width: 360px; max-width: 100%; height: 720px; border-radius: 38px; overflow: hidden; background: #fff;
+  border: 10px solid #15120f; box-shadow: 0 22px 50px rgba(0,0,0,.18); transform: translateZ(0);
+}
+@media (max-width: 1099px) { .telefone { height: 640px; } }
+
+.salvar {
+  position: fixed; left: 50%; bottom: 16px; z-index: 50; transform: translate(-50%, 140%); width: min(560px, calc(100% - 32px));
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 12px 12px 18px; border-radius: 16px;
+  background: #15120f; color: #fff; box-shadow: 0 16px 40px rgba(0,0,0,.3); transition: transform .25s cubic-bezier(.2,.8,.2,1); font-size: 14px;
+}
+.salvarVisivel { transform: translate(-50%, 0); }
+.botaoSalvar { height: 42px; padding: 0 18px; border: 0; border-radius: 12px; background: var(--laranja); color: #fff; font-weight: 800; }
+.botaoSalvar:disabled { background: #57524c; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .salvar { transition: none; } .girando { animation: none; } }

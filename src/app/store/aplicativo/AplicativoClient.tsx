@@ -19,7 +19,8 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Smartphone, Bell, MapPin, UtensilsCrossed, ClipboardList, Store, CheckCircle2, Users, TrendingUp, ShieldCheck, Send, Apple, Play, MessageCircle, Crown, Calculator, Repeat } from "lucide-react";
+import { Smartphone, Bell, MapPin, UtensilsCrossed, ClipboardList, Store, CheckCircle2, Users, TrendingUp, ShieldCheck, Send, Apple, Play, MessageCircle, Crown, Calculator, Repeat, Gift } from "lucide-react";
+import { PRECO_DO_MULTIMARCAS } from "@/lib/multimarcas/preco";
 
 type Plataformas = "android" | "apple" | "ambos";
 type Foto = { nome: string; preco: number; foto: string; categoria: string };
@@ -129,6 +130,15 @@ export default function AplicativoClient() {
           <Plano p="apple" preco={precos.apple} titulo="Só Apple" sub="App Store (iPhone)" icones={<Apple size={20} />}
             itens={["App na App Store com a sua marca", "Notificação push ilimitada", "Pedidos, rastreio e motoboy ao vivo"]} quero={quero} ativo={plano.plataformas === "apple"} />
         </div>
+        {/* Douglas, 17/10/2026: quem assina os dois (Android + Apple) não paga o Multimarcas — dito aqui e na página do Multimarcas. */}
+        <div className="al-bonus">
+          <span className="al-bonus-icone"><Gift size={22} /></span>
+          <div>
+            <b>Bônus do Premium: o Multimarcas sai de cortesia.</b>
+            <span>Assinando o aplicativo no Android <b>e</b> no iPhone ({fmtR(precos.ambos)}/mês), você não paga o Multimarcas ({fmtR(PRECO_DO_MULTIMARCAS)}/mês): todas as suas marcas numa página e no aplicativo, com uma sacola só. Com uma plataforma só, o Multimarcas é cobrado normalmente.</span>
+          </div>
+          <a className="al-btn-claro" href="/store/multimarcas">Conhecer o Multimarcas</a>
+        </div>
       </section>
 
       {/* ── Benefícios ── */}
@@ -194,7 +204,7 @@ export default function AplicativoClient() {
       <section className="al-final">
         <Crown size={30} color="#FACC15" />
         <h3>Seus clientes já têm o celular na mão. Coloque a sua loja nele.</h3>
-        <p>Android + Apple por {fmtR(precos.ambos)}/mês — {fmtR(precos.android + precos.apple - precos.ambos)} a menos que os dois separados.</p>
+        <p>Android + Apple por {fmtR(precos.ambos)}/mês — {fmtR(precos.android + precos.apple - precos.ambos)} a menos que os dois separados, e com o Multimarcas de cortesia.</p>
         <button className="al-cta" onClick={() => quero("ambos")}><MessageCircle size={18} /> Quero o meu aplicativo</button>
       </section>
 
@@ -243,6 +253,7 @@ function PlanoPremium({ precos, quero, ativo }: { precos: Record<Plataformas, nu
         <li><CheckCircle2 size={15} /> Notificação push ilimitada nos dois</li>
         <li><CheckCircle2 size={15} /> Pedidos, rastreio e motoboy ao vivo</li>
         <li><CheckCircle2 size={15} /> Ninguém fica de fora: Android e iPhone</li>
+        <li className="al-bonus-item"><Gift size={15} /> <span><b>Multimarcas de cortesia</b> (economia de {fmtR(PRECO_DO_MULTIMARCAS)}/mês)</span></li>
       </ul>
       <button className="al-cta al-cta-cheio" onClick={() => quero("ambos")}>{ativo ? "Seu plano atual" : <><MessageCircle size={18} /> Quero o Premium</>}</button>
     </div>
@@ -383,6 +394,7 @@ function Duvidas() {
     ["Preciso de CNPJ?", "Para publicar na Play Store e na App Store, sim: o aplicativo sai no nome da sua loja, e as lojas de aplicativos pedem a conta da empresa. A gente te guia no cadastro e entra como administradora."],
     ["Tem custo nas lojas de aplicativos?", "O Google cobra uma taxa única e a Apple uma taxa anual, pagas direto a eles. A gente te passa os valores atuais no WhatsApp."],
     ["O cardápio do aplicativo é separado?", "Não. É o mesmo do painel: preço, foto, pausa e promoção mudam no aplicativo na hora."],
+    ["Tenho várias marcas na mesma cozinha. O Multimarcas vem junto?", `Vem de cortesia no plano Android + Apple: quem assina os dois não paga o Multimarcas (${fmtR(PRECO_DO_MULTIMARCAS)}/mês). O aplicativo já mostra todas as suas marcas, com uma sacola só. Com um plano de uma plataforma só, o Multimarcas é cobrado à parte.`],
     ["Os pedidos caem onde?", "No mesmo painel de pedidos, com o mesmo robô, impressão e caixa."],
   ];
   return (
@@ -480,6 +492,13 @@ const CSS = `
 .al-sub { margin: 0; color: #64748B; font-size: 15px; }
 
 .al-planos { display: grid; grid-template-columns: 1fr 1.18fr 1fr; gap: 16px; align-items: center; }
+.al-bonus { margin-top: 18px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; padding: 16px 18px; border-radius: 16px; background: linear-gradient(135deg, #F3F0FF, #fff); border: 1px solid #D0BFFF; }
+.al-bonus > div { flex: 1 1 320px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.al-bonus > div > b { color: #5F3DC4; font-size: 16px; }
+.al-bonus > div > span { color: #475569; font-size: 14px; line-height: 1.5; }
+.al-bonus-icone { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; background: #7048E8; color: #fff; flex-shrink: 0; }
+.al-bonus-item { color: #5F3DC4; }
+.al-bonus-item svg { color: #7048E8; }
 .al-plano { position: relative; display: grid; gap: 6px; background: white; border: 2px solid #E2E8F0; border-radius: 20px; padding: 24px 20px 20px; transition: transform .2s ease, box-shadow .2s ease; }
 .al-plano:hover { transform: translateY(-3px); box-shadow: 0 16px 36px rgba(15,23,42,.1); }
 .al-plano.seu { border-color: #059669; }

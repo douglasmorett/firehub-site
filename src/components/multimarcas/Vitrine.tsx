@@ -1,37 +1,45 @@
 "use client";
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ArrowLeft, Bike, Check, ChevronRight, Clock, Minus, Plus, Search, ShoppingBag, Star, X } from "lucide-react";
-import { PRODUTOS_DA_REDE, type ProdutoDaRede } from "@/lib/rede/previa-dados";
-import {
-  CHAVE_DA_CONFIG, CHAVE_DA_SACOLA, CONFIG_PADRAO, MARCA_DOS_EXTRAS, lerConfig, reais,
-  type ConfigDaRede, type MarcaDaRede,
-} from "@/lib/rede/config";
-import s from "./VitrineDaRede.module.css";
+import { MARCA_DOS_EXTRAS, reais, type ConfigDaVitrine, type MarcaDaVitrine, type ProdutoDaVitrine } from "@/lib/multimarcas/vitrine";
+import s from "./Vitrine.module.css";
 
 /**
- * PRÉVIA — a página da rede de marcas (Lucas / Frangoso, 17/10/2026).
- * Início com banners e as lojas da rede uma embaixo da outra; dentro da loja,
- * o cardápio dela; a sacola é UMA para todas as lojas e o pedido sai com UMA
- * entrega. Sem banco: cardápio de previa-dados.ts, config do painel no
- * localStorage. `embutida` = dentro do painel, com a config vinda por prop.
+ * A VITRINE DO MULTIMARCAS — banners, as marcas uma embaixo da outra (nota,
+ * tipo, prazo), busca em todas e uma fileira de destaques. Dois usos:
+ *
+ * - `publica` (página /marcas/<slug>): tocar numa marca abre o cardápio de
+ *   sempre da loja só com as categorias dela (/loja/<slug>?marca=<id>). A
+ *   sacola é a da LOJA (localStorage `fh_cart_<slug>`, a mesma do cardápio):
+ *   o cliente põe de uma marca, volta, põe de outra e fecha UM pedido com UMA
+ *   entrega, pelo checkout de sempre.
+ * - demonstração (página de venda e prévia do editor, `embutida`): tudo aqui
+ *   dentro, com uma sacola de mentira e a tela "assim chega na cozinha".
  */
 
 type ItemDaSacola = { produtoId: string; qtd: number; obs: string };
 type Tela = { tipo: "inicio" } | { tipo: "marca"; id: string } | { tipo: "pronto"; numero: number; itens: ItemDaSacola[]; total: number };
 
-/** O cardápio que a vitrine mostra: o da prévia do Lucas ou o exemplo da página de venda. */
-type Catalogo = { produtos: ProdutoDaRede[]; porId: Map<string, ProdutoDaRede> };
-const catalogoDe = (produtos: ProdutoDaRede[]): Catalogo => ({ produtos, porId: new Map(produtos.map((p) => [p.id, p])) });
-const CatalogoCtx = createContext<Catalogo>(catalogoDe(PRODUTOS_DA_REDE));
+type Catalogo = { produtos: ProdutoDaVitrine[]; porId: Map<string, ProdutoDaVitrine> };
+const catalogoDe = (produtos: ProdutoDaVitrine[]): Catalogo => ({ produtos, porId: new Map(produtos.map((p) => [p.id, p])) });
+const CatalogoCtx = createContext<Catalogo>(catalogoDe([]));
 const useCatalogo = () => useContext(CatalogoCtx);
 
-function iniciais(nome: string) {
-  const palavras = nome.replace(/[^\p{L}\p{N} ]/gu, "").split(/\s+/).filter((p) => p.length > 1 || /\d/.test(p));
-  return (palavras[0]?.[0] ?? "?").toUpperCase() + (palavras[1]?.[0] ?? "").toUpperCase();
+/** Página pública: para onde cada toque leva. */
+type Publica = { slug: string };
+const linkDaMarca = (pub: Publica, marca: string) => `/loja/${pub.slug}?marca=${encodeURIComponent(marca)}`;
+const linkDaSacola = (pub: Publica) => `/loja/${pub.slug}?sacola=1`;
+type Acao = { href?: string; onClick?: () => void };
+
+/** "Smash da Vila" → "SV": palavras curtas (da, do) e símbolos não entram. */
+export function iniciais(nome: string) {
+  const palavras = nome.replace(/[^\p{L}\p{N} ]/gu, "").split(/\s+/).filter((p) => p.length > 2 || /\d/.test(p));
+  const usadas = palavras.length ? palavras : nome.split(/\s+/);
+  return ((usadas[0]?.[0] ?? "?") + (usadas[1]?.[0] ?? "")).toUpperCase();
 }
 
-function LogoDaMarca({ marca, tamanho = 56 }: { marca: MarcaDaRede; tamanho?: number }) {
+function LogoDaMarca({ marca, tamanho = 56 }: { marca: Pick<MarcaDaVitrine, "logo" | "cor" | "nome">; tamanho?: number }) {
   if (marca.logo) return <img className={s.logo} src={marca.logo} alt="" style={{ width: tamanho, height: tamanho }} />;
   return (
     <div className={s.logoLetra} style={{ width: tamanho, height: tamanho, background: marca.cor, fontSize: tamanho * 0.36 }} aria-hidden>
@@ -40,7 +48,8 @@ function LogoDaMarca({ marca, tamanho = 56 }: { marca: MarcaDaRede; tamanho?: nu
   );
 }
 
-function Nota({ marca }: { marca: MarcaDaRede }) {
+function Nota({ marca }: { marca: MarcaDaVitrine }) {
+  if (marca.nota === null || marca.avaliacoes === 0) return <span className={s.nova}>Nova</span>;
   return (
     <span className={s.nota}>
       <Star size={13} fill="currentColor" strokeWidth={0} /> {marca.nota.toFixed(1).replace(".", ",")}
@@ -49,45 +58,64 @@ function Nota({ marca }: { marca: MarcaDaRede }) {
   );
 }
 
-export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTOS_DA_REDE, embutida = false, chaveDaSacola = CHAVE_DA_SACOLA }: {
-  config?: ConfigDaRede; produtos?: ProdutoDaRede[]; embutida?: boolean; chaveDaSacola?: string;
+function Prazo({ config }: { config: ConfigDaVitrine }) {
+  const { min, max, taxa } = config.entrega;
+  const partes: ReactNode[] = [];
+  if (min && max) partes.push(<><Clock size={13} /> {min}–{max} min</>);
+  if (taxa !== null) partes.push(taxa > 0 ? reais(taxa) : "Entrega grátis");
+  if (!partes.length) return <span className={s.prazo}>Aberta agora</span>;
+  return <>{partes.map((p, i) => <span key={i} className={s.prazo}>{i > 0 && <span className={s.ponto2}>•</span>}{p}</span>)}</>;
+}
+
+/** Botão ou link: na página pública cada toque é um link de verdade. */
+function Toque({ href, onClick, className, children, style, disabled }: Acao & {
+  className?: string; children: ReactNode; style?: CSSProperties; disabled?: boolean;
+}) {
+  if (href) return <a href={href} className={className} style={style}>{children}</a>;
+  return <button className={className} onClick={onClick} style={style} disabled={disabled}>{children}</button>;
+}
+
+/** A sacola da LOJA, lida do mesmo lugar que o cardápio grava (CustomerStorePage, `fh_cart_<slug>`, 6 h). */
+function useSacolaDaLoja(pub: Publica | undefined) {
+  const [qtd, setQtd] = useState(0);
+  useEffect(() => {
+    if (!pub) return;
+    const ler = () => {
+      try {
+        const bruto = JSON.parse(localStorage.getItem(`fh_cart_${pub.slug}`) || "null");
+        const itens = Array.isArray(bruto?.items) ? bruto.items : [];
+        const velho = bruto?.at && Date.now() - Number(bruto.at) > 6 * 60 * 60 * 1000;
+        setQtd(velho ? 0 : itens.reduce((t: number, i: any) => t + (Number(i?.quantity) || 1), 0));
+      } catch { setQtd(0); }
+    };
+    ler();
+    window.addEventListener("storage", ler);
+    window.addEventListener("pageshow", ler);
+    return () => { window.removeEventListener("storage", ler); window.removeEventListener("pageshow", ler); };
+  }, [pub]);
+  return qtd;
+}
+
+export default function Vitrine({ config, produtos, embutida = false, publica }: {
+  config: ConfigDaVitrine; produtos: ProdutoDaVitrine[]; embutida?: boolean; publica?: Publica;
 }) {
   const catalogo = useMemo(() => catalogoDe(produtos), [produtos]);
   const PRODUTO = catalogo.porId;
-  const [configSalva, setConfigSalva] = useState<ConfigDaRede>(CONFIG_PADRAO);
-  const config = configDaProp ?? configSalva;
   const [tela, setTela] = useState<Tela>({ tipo: "inicio" });
   const [tipo, setTipo] = useState<string | null>(null);
   const [busca, setBusca] = useState("");
   const [sacola, setSacola] = useState<ItemDaSacola[]>([]);
   const [sacolaAberta, setSacolaAberta] = useState(false);
-  const [aberto, setAberto] = useState<ProdutoDaRede | null>(null);
+  const [aberto, setAberto] = useState<ProdutoDaVitrine | null>(null);
   const raiz = useRef<HTMLDivElement>(null);
-
-  // Config do painel (outra aba grava → esta atualiza) e sacola guardada.
-  useEffect(() => {
-    if (configDaProp) return;
-    setConfigSalva(lerConfig());
-    const aoMudar = (e: StorageEvent) => { if (e.key === CHAVE_DA_CONFIG) setConfigSalva(lerConfig()); };
-    window.addEventListener("storage", aoMudar);
-    return () => window.removeEventListener("storage", aoMudar);
-  }, [configDaProp]);
-  useEffect(() => {
-    if (embutida) return;
-    try {
-      const s = JSON.parse(localStorage.getItem(chaveDaSacola) || "[]");
-      if (Array.isArray(s)) setSacola(s.filter((i) => PRODUTO.has(i.produtoId)));
-    } catch {}
-  }, [embutida]);
-  useEffect(() => {
-    if (embutida) return;
-    try { localStorage.setItem(chaveDaSacola, JSON.stringify(sacola)); } catch {}
-  }, [sacola, embutida, chaveDaSacola]);
+  const qtdDaLoja = useSacolaDaLoja(publica);
 
   const marcas = config.marcas.filter((m) => !m.oculta);
   const marcaPorId = useMemo(() => new Map(config.marcas.map((m) => [m.id, m])), [config.marcas]);
-  const tipos = useMemo(() => [...new Set(marcas.map((m) => m.tipo))], [marcas]);
+  const tipos = useMemo(() => [...new Set(marcas.map((m) => m.tipo).filter(Boolean))], [marcas]);
   const estiloDaCor = { "--cor": config.cor } as CSSProperties;
+  // Na página pública, o que é "para acompanhar" abre na primeira marca (aparece em todas).
+  const marcaDoProduto = (p: ProdutoDaVitrine) => (p.marca === MARCA_DOS_EXTRAS ? marcas[0]?.id ?? null : p.marca);
 
   function irPara(t: Tela) {
     setTela(t);
@@ -96,7 +124,7 @@ export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTO
     else window.scrollTo({ top: 0 });
   }
 
-  function adicionar(p: ProdutoDaRede, qtd = 1, obs = "") {
+  function adicionar(p: ProdutoDaVitrine, qtd = 1, obs = "") {
     setSacola((atual) => {
       const i = atual.findIndex((x) => x.produtoId === p.id && x.obs === obs);
       if (i < 0) return [...atual, { produtoId: p.id, qtd, obs }];
@@ -110,18 +138,20 @@ export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTO
   }
 
   const subtotal = sacola.reduce((t, i) => t + (PRODUTO.get(i.produtoId)?.preco ?? 0) * i.qtd, 0);
-  const qtdItens = sacola.reduce((t, i) => t + i.qtd, 0);
-  const marcasNaSacola = [...new Set(sacola.map((i) => PRODUTO.get(i.produtoId)!.marca))];
-  const lojasNaSacola = marcasNaSacola.filter((m) => m !== MARCA_DOS_EXTRAS).length;
+  const qtdItens = publica ? qtdDaLoja : sacola.reduce((t, i) => t + i.qtd, 0);
+  const lojasNaSacola = [...new Set(sacola.map((i) => PRODUTO.get(i.produtoId)?.marca))].filter((m) => m && m !== MARCA_DOS_EXTRAS).length;
+  const taxa = config.entrega.taxa ?? 0;
 
-  // ─── Busca em todas as lojas ───
   const termo = busca.trim().toLowerCase();
   const achados = termo.length >= 2
-    ? produtos.filter((p) => (p.marca === MARCA_DOS_EXTRAS || marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta)
+    ? produtos.filter((p) => (p.marca === MARCA_DOS_EXTRAS || (marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta))
         && (p.nome.toLowerCase().includes(termo) || p.descricao.toLowerCase().includes(termo) || p.categoria.toLowerCase().includes(termo)))
     : [];
 
   const marcaAtual = tela.tipo === "marca" ? marcaPorId.get(tela.id) ?? null : null;
+  const abrirMarca = (id: string | null): Acao => (publica ? (id ? { href: linkDaMarca(publica, id) } : {}) : { onClick: () => { if (id) irPara({ tipo: "marca", id }); } });
+  const abrirProduto = (p: ProdutoDaVitrine): Acao => (publica ? abrirMarca(marcaDoProduto(p)) : { onClick: () => setAberto(p) });
+  const abrirSacola: Acao = publica ? { href: linkDaSacola(publica) } : { onClick: () => setSacolaAberta(true) };
 
   return (
     <CatalogoCtx.Provider value={catalogo}>
@@ -129,22 +159,22 @@ export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTO
       <header className={s.barra}>
         <div className={s.barraDentro}>
           {tela.tipo === "inicio" ? (
-            <button className={s.marcaDaRede} onClick={() => irPara({ tipo: "inicio" })}>
-              <span className={s.selo}>{iniciais(config.nome)}</span>
+            <div className={s.marcaDaRede}>
+              {config.logo ? <img className={s.seloImg} src={config.logo} alt="" /> : <span className={s.selo}>{iniciais(config.nome)}</span>}
               <span>
                 <strong>{config.nome}</strong>
-                <small><Bike size={12} /> Entrega em {config.local || CONFIG_PADRAO.local}</small>
+                {config.local ? <small><Bike size={12} /> Entrega em {config.local}</small> : config.frase ? <small>{config.frase}</small> : null}
               </span>
-            </button>
+            </div>
           ) : (
             <button className={s.voltar} onClick={() => irPara({ tipo: "inicio" })}>
-              <ArrowLeft size={18} /> Todas as lojas
+              <ArrowLeft size={18} /> Todas as marcas
             </button>
           )}
-          <button className={s.botaoSacola} onClick={() => setSacolaAberta(true)} aria-label="Abrir sacola">
+          <Toque className={s.botaoSacola} {...abrirSacola}>
             <ShoppingBag size={20} />
             {qtdItens > 0 && <span className={s.contador}>{qtdItens}</span>}
-          </button>
+          </Toque>
         </div>
       </header>
 
@@ -152,7 +182,7 @@ export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTO
         <main className={s.conteudo}>
           <label className={s.busca}>
             <Search size={18} />
-            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar em todas as lojas: burguer, frango, açaí…" />
+            <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar em todas as marcas" />
             {busca && <button onClick={() => setBusca("")} aria-label="Limpar"><X size={16} /></button>}
           </label>
 
@@ -163,36 +193,41 @@ export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTO
                 {achados.map((p) => (
                   <LinhaDoProduto key={p.id} p={p} marca={marcaPorId.get(p.marca) ?? null} mostrarMarca
                     fechada={!!marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.aberta}
-                    onAbrir={() => setAberto(p)} onAdicionar={() => adicionar(p)} />
+                    toque={abrirProduto(p)} onAdicionar={publica ? undefined : () => adicionar(p)} />
                 ))}
               </div>
             </section>
           ) : (
             <>
-              <Banners config={config} marcaPorId={marcaPorId} onIr={(id) => irPara({ tipo: "marca", id })} />
+              <Banners config={config} marcaPorId={marcaPorId} abrir={abrirMarca} />
 
-              <div className={s.faixaUmaEntrega}>
-                <Bike size={20} />
-                <span><strong>Peça de várias lojas, pague uma entrega só.</strong> Tudo sai da mesma cozinha, junto.</span>
-              </div>
+              {marcas.length > 1 && (
+                <div className={s.faixaUmaEntrega}>
+                  <ShoppingBag size={20} />
+                  <span><strong>Monte uma sacola só com várias marcas.</strong> Põe de uma, entra em outra, põe mais — e recebe tudo numa entrega.</span>
+                </div>
+              )}
 
-              <nav className={s.filtros} aria-label="Tipo de comida">
-                <button className={tipo === null ? s.filtroAtivo : s.filtro} onClick={() => setTipo(null)}>Todas</button>
-                {tipos.map((t) => (
-                  <button key={t} className={tipo === t ? s.filtroAtivo : s.filtro} onClick={() => setTipo(tipo === t ? null : t)}>{t}</button>
-                ))}
-              </nav>
+              {tipos.length > 1 && (
+                <nav className={s.filtros} aria-label="Tipo de comida">
+                  <button className={tipo === null ? s.filtroAtivo : s.filtro} onClick={() => setTipo(null)}>Todas</button>
+                  {tipos.map((t) => (
+                    <button key={t} className={tipo === t ? s.filtroAtivo : s.filtro} onClick={() => setTipo(tipo === t ? null : t)}>{t}</button>
+                  ))}
+                </nav>
+              )}
 
               <section className={s.secao}>
-                <h2 className={s.tituloSecao}>Lojas da rede</h2>
+                <h2 className={s.tituloSecao}>Nossas marcas</h2>
+                {marcas.length === 0 && <p className={s.vazio}>As marcas aparecem aqui assim que forem cadastradas.</p>}
                 <div className={s.gradeDeLojas}>
                   {marcas.filter((m) => !tipo || m.tipo === tipo).map((m) => (
-                    <CartaoDaMarca key={m.id} marca={m} config={config} onAbrir={() => irPara({ tipo: "marca", id: m.id })} />
+                    <CartaoDaMarca key={m.id} marca={m} config={config} toque={abrirMarca(m.id)} />
                   ))}
                 </div>
               </section>
 
-              <MaisPedidos marcaPorId={marcaPorId} onAbrir={setAberto} />
+              <Destaques marcaPorId={marcaPorId} toque={abrirProduto} />
             </>
           )}
         </main>
@@ -207,14 +242,14 @@ export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTO
       )}
 
       {qtdItens > 0 && !sacolaAberta && tela.tipo !== "pronto" && (
-        <button className={s.barraDaSacola} onClick={() => setSacolaAberta(true)}>
+        <Toque className={s.barraDaSacola} {...abrirSacola}>
           <span className={s.barraQtd}>{qtdItens}</span>
           <span className={s.barraTexto}>
             Ver sacola
-            <small>{lojasNaSacola > 1 ? `${lojasNaSacola} lojas · uma entrega só` : "uma entrega só"}</small>
+            <small>{publica ? "uma entrega para tudo" : lojasNaSacola > 1 ? `${lojasNaSacola} marcas · uma entrega só` : "uma entrega só"}</small>
           </span>
-          <strong>{reais(subtotal)}</strong>
-        </button>
+          {publica ? <ChevronRight size={20} /> : <strong>{reais(subtotal)}</strong>}
+        </Toque>
       )}
 
       {aberto && (
@@ -228,11 +263,10 @@ export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTO
         <Sacola config={config} sacola={sacola} marcaPorId={marcaPorId} subtotal={subtotal}
           onFechar={() => setSacolaAberta(false)} onQtd={mudarQtd}
           onFinalizar={() => {
-            const total = subtotal + config.entrega.taxa;
             const itens = sacola;
             setSacola([]);
             setSacolaAberta(false);
-            irPara({ tipo: "pronto", numero: 100 + Math.floor(Math.random() * 900), itens, total });
+            irPara({ tipo: "pronto", numero: 100 + Math.floor(Math.random() * 900), itens, total: subtotal + taxa });
           }} />
       )}
     </div>
@@ -242,29 +276,29 @@ export default function VitrineDaRede({ config: configDaProp, produtos = PRODUTO
 
 // ─── Início ──────────────────────────────────────────────────────────────
 
-function Banners({ config, marcaPorId, onIr }: { config: ConfigDaRede; marcaPorId: Map<string, MarcaDaRede>; onIr: (id: string) => void }) {
-  const ativos = config.banners.filter((b) => b.ativo);
-  const trilho = useRef<HTMLDivElement>(null);
+function Banners({ config, marcaPorId, abrir }: { config: ConfigDaVitrine; marcaPorId: Map<string, MarcaDaVitrine>; abrir: (id: string | null) => Acao }) {
+  const ativos = config.banners.filter((b) => b.ativo && (b.titulo || b.imagem));
   const [atual, setAtual] = useState(0);
   if (!ativos.length) return null;
   return (
     <section className={s.banners} aria-label="Ofertas">
-      <div ref={trilho} className={s.trilho}
+      <div className={s.trilho}
         onScroll={(e) => { const el = e.currentTarget; setAtual(Math.round(el.scrollLeft / (el.firstElementChild as HTMLElement).offsetWidth)); }}>
         {ativos.map((b) => {
           const marca = b.marca ? marcaPorId.get(b.marca) : null;
+          const toque = marca && !marca.oculta ? abrir(marca.id) : {};
           return (
-            <button key={b.id} className={s.banner} onClick={() => marca && onIr(marca.id)} disabled={!marca}
+            <Toque key={b.id} className={s.banner} {...toque} disabled={!toque.href && !toque.onClick}
               style={{ background: marca?.cor ?? config.cor }}>
               {b.imagem && <img src={b.imagem} alt="" className={s.bannerFoto} />}
-              <span className={s.bannerVeu} />
+              {(b.titulo || b.texto) && <span className={s.bannerVeu} />}
               <span className={s.bannerTexto}>
-                {marca && <span className={s.bannerMarca}>{marca.nome}</span>}
-                <strong>{b.titulo}</strong>
+                {marca && b.titulo && <span className={s.bannerMarca}>{marca.nome}</span>}
+                {b.titulo && <strong>{b.titulo}</strong>}
                 {b.texto && <span>{b.texto}</span>}
-                {marca && <span className={s.bannerAcao}>Pedir agora <ChevronRight size={14} /></span>}
+                {marca && b.titulo && <span className={s.bannerAcao}>Pedir agora <ChevronRight size={14} /></span>}
               </span>
-            </button>
+            </Toque>
           );
         })}
       </div>
@@ -277,54 +311,56 @@ function Banners({ config, marcaPorId, onIr }: { config: ConfigDaRede; marcaPorI
   );
 }
 
-function CartaoDaMarca({ marca, config, onAbrir }: { marca: MarcaDaRede; config: ConfigDaRede; onAbrir: () => void }) {
+function CartaoDaMarca({ marca, config, toque }: { marca: MarcaDaVitrine; config: ConfigDaVitrine; toque: Acao }) {
   return (
-    <button className={`${s.cartao} ${marca.aberta ? "" : s.cartaoFechado}`} onClick={onAbrir}>
+    <Toque className={`${s.cartao} ${marca.aberta ? "" : s.cartaoFechado}`} {...toque}>
       <LogoDaMarca marca={marca} />
       <span className={s.cartaoInfo}>
         <strong className={s.cartaoNome}>{marca.nome}</strong>
         <span className={s.cartaoLinha}>
-          <Nota marca={marca} /> <span className={s.ponto2}>•</span> {marca.tipo}
+          <Nota marca={marca} />{marca.tipo && <><span className={s.ponto2}>•</span> {marca.tipo}</>}
         </span>
         <span className={s.cartaoLinha}>
-          {marca.aberta ? (
-            <><Clock size={13} /> {config.entrega.min}–{config.entrega.max} min <span className={s.ponto2}>•</span> {reais(config.entrega.taxa)}</>
-          ) : (
-            <span className={s.fechada}>Fechada agora · abre às 18h30</span>
-          )}
+          {marca.aberta ? <Prazo config={config} /> : <span className={s.fechada}>{config.avisoFechada || "Fechada agora"}</span>}
         </span>
       </span>
       <ChevronRight size={18} className={s.cartaoSeta} />
-    </button>
+    </Toque>
   );
 }
 
-function MaisPedidos({ marcaPorId, onAbrir }: { marcaPorId: Map<string, MarcaDaRede>; onAbrir: (p: ProdutoDaRede) => void }) {
-  // Os "Destaques" de cada loja visível — na versão real, os mais vendidos da semana.
+function Destaques({ marcaPorId, toque }: { marcaPorId: Map<string, MarcaDaVitrine>; toque: (p: ProdutoDaVitrine) => Acao }) {
   const { produtos } = useCatalogo();
-  const lista = produtos.filter((p) => p.foto && p.categoria === "Destaques" && marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta);
-  if (!lista.length) return null;
+  // Um produto com foto por marca visível: a fileira mostra a variedade da rede.
+  const vistas = new Set<string>();
+  const lista = produtos.filter((p) => {
+    const m = marcaPorId.get(p.marca);
+    if (!p.foto || !m || m.oculta || vistas.has(p.marca)) return false;
+    vistas.add(p.marca);
+    return true;
+  });
+  if (lista.length < 2) return null;
   return (
     <section className={s.secao}>
-      <h2 className={s.tituloSecao}>Mais pedidos da rede</h2>
+      <h2 className={s.tituloSecao}>Para abrir o apetite</h2>
       <div className={s.carrossel}>
         {lista.map((p) => (
-          <button key={p.id} className={s.miniProduto} onClick={() => onAbrir(p)}>
-            <img src={p.foto!} alt="" />
+          <Toque key={p.id} className={s.miniProduto} {...toque(p)}>
+            <img src={p.foto!} alt="" loading="lazy" />
             <span className={s.miniMarca}>{marcaPorId.get(p.marca)?.nome}</span>
             <strong>{p.nome}</strong>
             <span className={s.miniPreco}>{reais(p.preco)}</span>
-          </button>
+          </Toque>
         ))}
       </div>
     </section>
   );
 }
 
-// ─── Dentro da loja ──────────────────────────────────────────────────────
+// ─── Dentro da marca (só na demonstração; na página pública é o cardápio da loja) ──
 
 function PaginaDaMarca({ marca, config, onAbrir, onAdicionar }: {
-  marca: MarcaDaRede; config: ConfigDaRede; onAbrir: (p: ProdutoDaRede) => void; onAdicionar: (p: ProdutoDaRede) => void;
+  marca: MarcaDaVitrine; config: ConfigDaVitrine; onAbrir: (p: ProdutoDaVitrine) => void; onAdicionar: (p: ProdutoDaVitrine) => void;
 }) {
   const { produtos: todos } = useCatalogo();
   const produtos = todos.filter((p) => p.marca === marca.id);
@@ -349,43 +385,45 @@ function PaginaDaMarca({ marca, config, onAbrir, onAdicionar }: {
         <div>
           <h1>{marca.nome}</h1>
           <p className={s.cartaoLinha}>
-            <Nota marca={marca} /> <span className={s.ponto2}>•</span> {marca.tipo}
-            <span className={s.ponto2}>•</span> Pedido mínimo {reais(config.entrega.minimo)}
+            <Nota marca={marca} />{marca.tipo && <><span className={s.ponto2}>•</span> {marca.tipo}</>}
+            {config.entrega.minimo > 0 && <><span className={s.ponto2}>•</span> Pedido mínimo {reais(config.entrega.minimo)}</>}
           </p>
           <p className={s.cartaoLinha}>
-            {marca.aberta ? (
-              <><Clock size={13} /> {config.entrega.min}–{config.entrega.max} min <span className={s.ponto2}>•</span> Entrega {reais(config.entrega.taxa)}</>
-            ) : <span className={s.fechada}>Fechada agora · abre às 18h30. Dá para olhar o cardápio.</span>}
+            {marca.aberta ? <Prazo config={config} /> : <span className={s.fechada}>Fechada agora. Dá para olhar o cardápio.</span>}
           </p>
         </div>
       </div>
 
-      <nav className={s.abasDoCardapio}>
-        {[...categorias, ...categoriasExtras].map((c) => (
-          <button key={c} className={c === catAtiva ? s.abaAtiva : s.aba} onClick={() => rolarPara(c)}>{c}</button>
-        ))}
-      </nav>
+      {categorias.length + categoriasExtras.length > 0 && (
+        <nav className={s.abasDoCardapio}>
+          {[...categorias, ...categoriasExtras].map((c) => (
+            <button key={c} className={c === catAtiva ? s.abaAtiva : s.aba} onClick={() => rolarPara(c)}>{c}</button>
+          ))}
+        </nav>
+      )}
 
       {categorias.map((c) => (
         <section key={c} id={`cat-${marca.id}-${c}`} className={s.secaoCardapio}>
           <h2 className={s.tituloSecao}>{c}</h2>
           <div className={s.listaProdutos}>
             {produtos.filter((p) => p.categoria === c).map((p) => (
-              <LinhaDoProduto key={p.id} p={p} marca={marca} fechada={!marca.aberta} onAbrir={() => onAbrir(p)} onAdicionar={() => onAdicionar(p)} />
+              <LinhaDoProduto key={p.id} p={p} marca={marca} fechada={!marca.aberta} toque={{ onClick: () => onAbrir(p) }} onAdicionar={() => onAdicionar(p)} />
             ))}
           </div>
         </section>
       ))}
 
-      <div className={s.avisoExtras}>
-        <strong>Para acompanhar</strong> — bebidas, porções e sobremesas da rede. Vão na mesma entrega, de qualquer loja.
-      </div>
+      {extras.length > 0 && (
+        <div className={s.avisoExtras}>
+          <strong>Para acompanhar</strong> — vai na mesma entrega, de qualquer marca.
+        </div>
+      )}
       {categoriasExtras.map((c) => (
         <section key={c} id={`cat-${marca.id}-${c}`} className={s.secaoCardapio}>
           <h2 className={s.tituloSecao}>{c}</h2>
           <div className={s.listaProdutos}>
             {extras.filter((p) => p.categoria === c).map((p) => (
-              <LinhaDoProduto key={p.id} p={p} marca={null} fechada={false} onAbrir={() => onAbrir(p)} onAdicionar={() => onAdicionar(p)} />
+              <LinhaDoProduto key={p.id} p={p} marca={null} fechada={false} toque={{ onClick: () => onAbrir(p) }} onAdicionar={() => onAdicionar(p)} />
             ))}
           </div>
         </section>
@@ -394,20 +432,20 @@ function PaginaDaMarca({ marca, config, onAbrir, onAdicionar }: {
   );
 }
 
-function LinhaDoProduto({ p, marca, mostrarMarca, fechada, onAbrir, onAdicionar }: {
-  p: ProdutoDaRede; marca: MarcaDaRede | null; mostrarMarca?: boolean; fechada: boolean; onAbrir: () => void; onAdicionar: () => void;
+function LinhaDoProduto({ p, marca, mostrarMarca, fechada, toque, onAdicionar }: {
+  p: ProdutoDaVitrine; marca: MarcaDaVitrine | null; mostrarMarca?: boolean; fechada: boolean; toque: Acao; onAdicionar?: () => void;
 }) {
   return (
     <div className={s.produto}>
-      <button className={s.produtoTexto} onClick={onAbrir}>
+      <Toque className={s.produtoTexto} {...toque}>
         {mostrarMarca && <span className={s.miniMarca}>{marca?.nome ?? "Para acompanhar"}</span>}
         <strong>{p.nome}</strong>
         {p.descricao && <span className={s.descricao}>{p.descricao}</span>}
         <span className={s.preco}>{reais(p.preco)}</span>
-      </button>
+      </Toque>
       <div className={s.produtoFoto}>
         {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.semFoto} style={{ background: marca?.cor ?? "#868E96" }}>{iniciais(p.nome)}</span>}
-        {!fechada && (
+        {!fechada && onAdicionar && (
           <button className={s.mais} onClick={onAdicionar} aria-label={`Adicionar ${p.nome}`}><Plus size={18} /></button>
         )}
       </div>
@@ -416,7 +454,7 @@ function LinhaDoProduto({ p, marca, mostrarMarca, fechada, onAbrir, onAdicionar 
 }
 
 function FolhaDoProduto({ p, marca, fechada, onFechar, onAdicionar }: {
-  p: ProdutoDaRede; marca: MarcaDaRede | null; fechada: boolean; onFechar: () => void; onAdicionar: (qtd: number, obs: string) => void;
+  p: ProdutoDaVitrine; marca: MarcaDaVitrine | null; fechada: boolean; onFechar: () => void; onAdicionar: (qtd: number, obs: string) => void;
 }) {
   const [qtd, setQtd] = useState(1);
   const [obs, setObs] = useState("");
@@ -442,7 +480,7 @@ function FolhaDoProduto({ p, marca, fechada, onFechar, onAdicionar }: {
             <button onClick={() => setQtd(qtd + 1)} aria-label="Mais"><Plus size={16} /></button>
           </div>
           <button className={s.botaoPrincipal} disabled={fechada} onClick={() => onAdicionar(qtd, obs.trim())}>
-            {fechada ? "Loja fechada agora" : <>Adicionar <span>{reais(p.preco * qtd)}</span></>}
+            {fechada ? "Fechada agora" : <>Adicionar <span>{reais(p.preco * qtd)}</span></>}
           </button>
         </div>
       </div>
@@ -450,24 +488,24 @@ function FolhaDoProduto({ p, marca, fechada, onFechar, onAdicionar }: {
   );
 }
 
-// ─── Sacola única ────────────────────────────────────────────────────────
+// ─── Sacola da demonstração ──────────────────────────────────────────────
 
-function agruparPorMarca(itens: ItemDaSacola[], PRODUTO: Map<string, ProdutoDaRede>) {
+function agruparPorMarca(itens: ItemDaSacola[], PRODUTO: Map<string, ProdutoDaVitrine>) {
   const grupos = new Map<string, { item: ItemDaSacola; idx: number }[]>();
   itens.forEach((item, idx) => {
-    const m = PRODUTO.get(item.produtoId)!.marca;
+    const m = PRODUTO.get(item.produtoId)?.marca ?? MARCA_DOS_EXTRAS;
     if (!grupos.has(m)) grupos.set(m, []);
     grupos.get(m)!.push({ item, idx });
   });
-  // Extras por último.
   return [...grupos.entries()].sort(([a], [b]) => Number(a === MARCA_DOS_EXTRAS) - Number(b === MARCA_DOS_EXTRAS));
 }
 
 function Sacola({ config, sacola, marcaPorId, subtotal, onFechar, onQtd, onFinalizar }: {
-  config: ConfigDaRede; sacola: ItemDaSacola[]; marcaPorId: Map<string, MarcaDaRede>; subtotal: number;
+  config: ConfigDaVitrine; sacola: ItemDaSacola[]; marcaPorId: Map<string, MarcaDaVitrine>; subtotal: number;
   onFechar: () => void; onQtd: (idx: number, delta: number) => void; onFinalizar: () => void;
 }) {
   const PRODUTO = useCatalogo().porId;
+  const taxa = config.entrega.taxa ?? 0;
   const falta = config.entrega.minimo - subtotal;
   return (
     <div className={s.fundo} onClick={onFechar}>
@@ -477,7 +515,7 @@ function Sacola({ config, sacola, marcaPorId, subtotal, onFechar, onQtd, onFinal
           <button onClick={onFechar} aria-label="Fechar"><X size={20} /></button>
         </div>
         {sacola.length === 0 ? (
-          <p className={s.vazio}>Sacola vazia. Entre numa loja e escolha à vontade — pode misturar lojas.</p>
+          <p className={s.vazio}>Sacola vazia. Entre numa marca e escolha à vontade — pode misturar marcas.</p>
         ) : (
           <div className={s.folhaCorpo}>
             {agruparPorMarca(sacola, PRODUTO).map(([mId, itens]) => {
@@ -489,7 +527,8 @@ function Sacola({ config, sacola, marcaPorId, subtotal, onFechar, onQtd, onFinal
                     <strong>{marca?.nome ?? "Para acompanhar"}</strong>
                   </div>
                   {itens.map(({ item, idx }) => {
-                    const p = PRODUTO.get(item.produtoId)!;
+                    const p = PRODUTO.get(item.produtoId);
+                    if (!p) return null;
                     return (
                       <div key={idx} className={s.itemDaSacola}>
                         <div>
@@ -510,15 +549,15 @@ function Sacola({ config, sacola, marcaPorId, subtotal, onFechar, onQtd, onFinal
             })}
             <div className={s.contas}>
               <div><span>Subtotal</span><span>{reais(subtotal)}</span></div>
-              <div><span>Entrega <em>(uma só, todas as lojas juntas)</em></span><span>{reais(config.entrega.taxa)}</span></div>
-              <div className={s.total}><span>Total</span><span>{reais(subtotal + config.entrega.taxa)}</span></div>
+              <div><span>Entrega <em>(uma só, todas as marcas juntas)</em></span><span>{reais(taxa)}</span></div>
+              <div className={s.total}><span>Total</span><span>{reais(subtotal + taxa)}</span></div>
             </div>
           </div>
         )}
         {sacola.length > 0 && (
           <div className={s.folhaRodape}>
             <button className={s.botaoPrincipal} disabled={falta > 0} onClick={onFinalizar}>
-              {falta > 0 ? `Faltam ${reais(falta)} para o pedido mínimo` : <>Fazer pedido <span>{reais(subtotal + config.entrega.taxa)}</span></>}
+              {falta > 0 ? `Faltam ${reais(falta)} para o pedido mínimo` : <>Fazer pedido <span>{reais(subtotal + taxa)}</span></>}
             </button>
           </div>
         )}
@@ -527,10 +566,8 @@ function Sacola({ config, sacola, marcaPorId, subtotal, onFechar, onQtd, onFinal
   );
 }
 
-// ─── Pedido enviado: como chega na cozinha ───────────────────────────────
-
 function PedidoEnviado({ tela, config, marcaPorId, onVoltar }: {
-  tela: Extract<Tela, { tipo: "pronto" }>; config: ConfigDaRede; marcaPorId: Map<string, MarcaDaRede>; onVoltar: () => void;
+  tela: Extract<Tela, { tipo: "pronto" }>; config: ConfigDaVitrine; marcaPorId: Map<string, MarcaDaVitrine>; onVoltar: () => void;
 }) {
   const PRODUTO = useCatalogo().porId;
   return (
@@ -538,10 +575,10 @@ function PedidoEnviado({ tela, config, marcaPorId, onVoltar }: {
       <div className={s.pronto}>
         <span className={s.prontoIcone}><Check size={28} /></span>
         <h1>Pedido #{tela.numero} enviado</h1>
-        <p>Chega tudo junto, numa entrega só, em {config.entrega.min}–{config.entrega.max} min.</p>
+        <p>Chega tudo junto, numa entrega só{config.entrega.min && config.entrega.max ? `, em ${config.entrega.min}–${config.entrega.max} min` : ""}.</p>
       </div>
       <h2 className={s.tituloSecao}>Assim ele chega na cozinha</h2>
-      <p className={s.explica}>Um pedido só no painel, um motoboy, uma comanda separada por loja — a equipe sabe de qual marca é cada item e qual embalagem usar.</p>
+      <p className={s.explica}>Um pedido só no painel, um motoboy, e cada item com o nome da marca na comanda — a equipe sabe qual embalagem usar.</p>
       <div className={s.comanda}>
         <div className={s.comandaTopo}>
           <strong>{config.nome.toUpperCase()}</strong>
@@ -549,10 +586,9 @@ function PedidoEnviado({ tela, config, marcaPorId, onVoltar }: {
         </div>
         {agruparPorMarca(tela.itens, PRODUTO).map(([mId, itens]) => (
           <div key={mId} className={s.comandaGrupo}>
-            <div className={s.comandaMarca}>== {(marcaPorId.get(mId)?.nome ?? "Acompanhamentos").toUpperCase()} ==</div>
             {itens.map(({ item, idx }) => (
               <div key={idx}>
-                {item.qtd}x {PRODUTO.get(item.produtoId)!.nome}
+                {item.qtd}x {marcaPorId.get(mId) ? `[${marcaPorId.get(mId)!.nome.toUpperCase()}] ` : ""}{PRODUTO.get(item.produtoId)?.nome}
                 {item.obs && <div className={s.comandaObs}>  obs: {item.obs}</div>}
               </div>
             ))}
@@ -560,7 +596,7 @@ function PedidoEnviado({ tela, config, marcaPorId, onVoltar }: {
         ))}
         <div className={s.comandaTotal}>TOTAL {reais(tela.total)}</div>
       </div>
-      <button className={s.botaoPrincipal} onClick={onVoltar}>Voltar para as lojas</button>
+      <button className={s.botaoPrincipal} onClick={onVoltar}>Voltar para as marcas</button>
     </main>
   );
 }
