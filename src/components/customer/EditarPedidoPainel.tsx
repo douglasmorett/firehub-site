@@ -24,6 +24,13 @@
  *   • Dá para dar DESCONTO na mesma edição (% ou R$, com motivo — o mesmo do
  *     balcão), desde que o cliente ainda vá pagar: pago online ou no parceiro,
  *     o botão diz por que não (`descontoNaEdicao`).
+ *   • Item com pergunta (sabor, borda, adicional, refri do combo) ganha
+ *     "Editar escolhas": a MESMA janela do cardápio (ComboModal), aberta com o
+ *     que estava marcado, e o item é trocado pelo remontado — sem motivo,
+ *     porque não é tirar item (lib/escolhas-na-edicao.ts). A busca também
+ *     acha pelo nome do adicional. Lapastine, 17/10/2026: o adicional não
+ *     aparecia na busca, e o desvio (pizza nova + baixar a antiga) travava
+ *     no motivo com o botão cinza; o lojista refez o pedido e duplicou.
  *   • Rodada de MESA aberta (lápis do card de mesa, 09/10/2026): tira item e
  *     muda quantidade, pela regra da tela de Mesas (lib/edicao-na-mesa.ts) —
  *     a conta da mesa soma as rodadas e acompanha. Sem "Acrescentar" (item
@@ -35,11 +42,12 @@
  * decidisse sozinha, existiria botão que o servidor recusa.
  */
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { avaliarEdicaoNoPainel, contaDoDescontoDaEdicao, descontoNaEdicao, type ModoDeEdicao } from "@/lib/edicao-de-pedido";
 import { valorDoAcrescimoGravado } from "@/lib/acrescimo-no-credito";
 import { MOTIVOS_COMUNS, type DescontoManual, type TipoDeDesconto } from "@/lib/desconto-manual";
-import { precoMinimoDoProduto, precoVariaPorEscolha } from "@/lib/preco-combo";
+import { precoMinimoDoProduto, precoVariaPorEscolha, precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
+import { escolhasParaReabrir, escolhasEmTexto, opcaoQueCasa, normalizarBusca } from "@/lib/escolhas-na-edicao";
 import ComboModal from "@/components/customer/ComboModal";
 import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
 import { motivoValido } from "@/lib/motivo-do-cancelamento";
@@ -50,7 +58,41 @@ type ItemDoPedido = {
   quantity: number;
   price: number;
   notes?: string | null;
+  menuProductId?: string | null;
+  menuProduct?: { id?: string | null } | null;
+  comboSelections?: unknown;
 };
+
+/**
+ * Item do pedido REMONTADO no rascunho ("Editar escolhas"): as escolhas novas
+ * e quantas unidades as ganham. Menos que a quantidade do item = as outras
+ * ficam como estavam (o servidor separa em duas linhas).
+ */
+type TrocaDoRascunho = {
+  quantity: number;
+  precoUnitario: number;
+  comboSelections?: Record<string, Record<string, number>>;
+  notes?: string;
+};
+
+const idDoProduto = (i: ItemDoPedido) => i.menuProductId || i.menuProduct?.id || null;
+
+/** O preço do item com as escolhas — a mesma conta do servidor (precoUnitarioDoItem + piso). */
+function precoComEscolhas(p: { price: number; comboGroups?: any[] }, escolhas: Record<string, Record<string, number>> | undefined): number {
+  const produto = { price: Number(p.price) || 0, comboGroups: (p.comboGroups || []) as any };
+  return Math.round(Math.max(precoUnitarioDoItem(produto, escolhas || null), pisoDoPreco(produto)) * 100) / 100;
+}
+
+/** O que o ComboModal devolve, sem as opções zeradas. */
+function limparEscolhas(selections: unknown): Record<string, Record<string, number>> | undefined {
+  const escolhas: Record<string, Record<string, number>> = {};
+  for (const [grupo, itens] of Object.entries((selections || {}) as Record<string, Record<string, number>>)) {
+    for (const [nome, q] of Object.entries(itens || {})) {
+      if (Number(q) > 0) (escolhas[grupo] ||= {})[nome] = Number(q);
+    }
+  }
+  return Object.keys(escolhas).length > 0 ? escolhas : undefined;
+}
 
 type ProdutoDoCardapio = {
   id: string;
@@ -61,6 +103,9 @@ type ProdutoDoCardapio = {
   imageUrl?: string | null;
   /** As perguntas (sabor, tamanho, borda). Produto com elas abre a mesma janela do cardápio. */
   comboGroups?: any[];
+  isCombo?: boolean | null;
+  _ativo?: boolean;
+  _soOpcao?: boolean;
 };
 
 /** Um acréscimo do rascunho. `precoUnitario` já tem as escolhas; o servidor recalcula do zero. */
@@ -126,9 +171,16 @@ export default function EditarPedidoPainel({
   const [acrescimos, setAcrescimos] = useState<AcrescimoDoRascunho[]>([]);
   // Produto com perguntas esperando a escolha dos sabores/opções.
   const [produtoComOpcoes, setProdutoComOpcoes] = useState<ProdutoDoCardapio | null>(null);
+  // Item do pedido sendo remontado ("Editar escolhas") e as trocas do rascunho.
+  const [itemRemontando, setItemRemontando] = useState<ItemDoPedido | null>(null);
+  const [trocas, setTrocas] = useState<Record<string, TrocaDoRascunho>>({});
   const [pagamento, setPagamento] = useState("Dinheiro");
+  const caixaDoMotivo = useRef<HTMLDivElement | null>(null);
 
   const [cardapio, setCardapio] = useState<ProdutoDoCardapio[]>([]);
+  // O cardápio inteiro por id (inclusive categoria escondida): é dele que sai
+  // a pergunta do item que JÁ está no pedido, para o "Editar escolhas".
+  const [produtoPorId, setProdutoPorId] = useState<Map<string, ProdutoDoCardapio>>(new Map());
   const [buscaProduto, setBuscaProduto] = useState("");
   const [abrindoBusca, setAbrindoBusca] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -176,23 +228,21 @@ export default function EditarPedidoPainel({
   // lado. O atendente leria um total na tela e o pedido fecharia noutro.
   const canalDePreco = String(pedido?.deliveryType || "").toUpperCase() === "DELIVERY" ? "delivery" : "salao";
 
-  // O cardápio só é buscado quando o atendente abre a caixa de acrescentar:
-  // é uma lista grande e a maioria das edições é só tirar item.
+  // O cardápio é buscado quando o atendente abre a caixa de acrescentar — e,
+  // no pedido próprio, já ao abrir a aba: é dele que sai o "Editar escolhas"
+  // dos itens que têm pergunta (sabor, borda, adicional).
+  const precisaDoCardapio =
+    abrindoBusca || (modo === "COMPLETO" && (pedido.items || []).some((i: ItemDoPedido) => !!idDoProduto(i)));
   useEffect(() => {
-    if (!abrindoBusca || cardapio.length > 0) return;
+    if (!precisaDoCardapio || cardapio.length > 0) return;
     let vivo = true;
     (async () => {
       try {
         const res = await fetch(`/api/admin/menu-products?canal=${canalDePreco}`);
         const data = await res.json().catch(() => []);
         if (!vivo) return;
-        // O mesmo recorte da mesa: sem sabor/adicional solto (o servidor marca
-        // `apenasOpcaoDeCombo`), sem inativo e sem espelho de integração. Os
-        // sabores apareciam como item de R$ 0,00 no meio da busca.
-        const lista = (Array.isArray(data) ? data : data?.products || [])
+        const todos: ProdutoDoCardapio[] = (Array.isArray(data) ? data : data?.products || [])
           .filter((p: any) => p?.id && p?.name)
-          .filter((p: any) => p.active !== false && p.apenasOpcaoDeCombo !== true)
-          .filter((p: any) => !CATEGORIAS_ESCONDIDAS.has(String(p.category || "").toUpperCase().trim()))
           .map((p: any) => ({
             id: p.id,
             name: p.name,
@@ -201,7 +251,18 @@ export default function EditarPedidoPainel({
             description: p.description ?? null,
             imageUrl: p.imageUrl ?? null,
             comboGroups: Array.isArray(p.comboGroups) ? p.comboGroups : [],
+            isCombo: p.isCombo,
+            _ativo: p.active !== false,
+            _soOpcao: p.apenasOpcaoDeCombo === true,
           }));
+        setProdutoPorId(new Map(todos.map((p) => [p.id, p])));
+        // O mesmo recorte da mesa: sem sabor/adicional solto (o servidor marca
+        // `apenasOpcaoDeCombo`), sem inativo e sem espelho de integração. Os
+        // sabores apareciam como item de R$ 0,00 no meio da busca. O adicional
+        // continua achável: pela busca, no produto que o tem como escolha.
+        const lista = todos
+          .filter((p: any) => p._ativo && !p._soOpcao)
+          .filter((p) => !CATEGORIAS_ESCONDIDAS.has(String(p.category || "").toUpperCase().trim()));
         setCardapio(lista);
       } catch {
         if (vivo) setErro("Não consegui carregar o cardápio. Tente de novo.");
@@ -210,7 +271,14 @@ export default function EditarPedidoPainel({
     return () => {
       vivo = false;
     };
-  }, [abrindoBusca, cardapio.length, canalDePreco]);
+  }, [precisaDoCardapio, cardapio.length, canalDePreco]);
+
+  /** O produto do cardápio de um item do pedido, quando ele tem pergunta para reabrir. */
+  const produtoComPerguntas = (i: ItemDoPedido): ProdutoDoCardapio | null => {
+    const id = idDoProduto(i);
+    const p = id ? produtoPorId.get(id) : undefined;
+    return p && (p.comboGroups || []).length > 0 ? p : null;
+  };
 
   const itensOriginais: ItemDoPedido[] = pedido.items || [];
   const taxa = Number(pedido.deliveryFee) || 0;
@@ -218,6 +286,21 @@ export default function EditarPedidoPainel({
   // O acréscimo no crédito do cardápio fica de pé em reais, como no servidor
   // (recalcularTotal com `acrescimo`).
   const acrescimoNoCredito = valorDoAcrescimoGravado(pedido as any);
+
+  // As linhas que FICAM no pedido, com as trocas de escolha aplicadas: o item
+  // remontado inteiro vai pelo preço novo; remontado em parte, o resto fica
+  // pelo preço antigo e a parte remontada pelo novo (o servidor separa igual).
+  const linhasQueFicam = useMemo(() => {
+    const linhas: { price: number; quantity: number }[] = [];
+    for (const i of itensOriginais) {
+      if (removidos.has(i.id)) continue;
+      const t = trocas[i.id];
+      if (!t) { linhas.push({ price: i.price, quantity: quantidades[i.id] ?? i.quantity }); continue; }
+      if (t.quantity >= i.quantity) { linhas.push({ price: t.precoUnitario, quantity: t.quantity }); continue; }
+      linhas.push({ price: i.price, quantity: i.quantity - t.quantity }, { price: t.precoUnitario, quantity: t.quantity });
+    }
+    return linhas;
+  }, [itensOriginais, removidos, quantidades, trocas]);
 
   // A conta do desconto novo é a do servidor (contaDoDescontoDaEdicao), sobre
   // os itens que FICAM no pedido. No marketplace o acréscimo vira pedido
@@ -229,21 +312,16 @@ export default function EditarPedidoPainel({
       : null;
   const contaDoDesconto = useMemo(() => {
     if (!descontoNovo) return null;
-    const ficam = itensOriginais
-      .filter((i) => !removidos.has(i.id))
-      .map((i) => ({ price: i.price, quantity: quantidades[i.id] ?? i.quantity }));
     const novos = modo === "MARKETPLACE" ? [] : acrescimos.map((a) => ({ price: a.precoUnitario, quantity: a.quantity }));
-    return contaDoDescontoDaEdicao({ itens: [...ficam, ...novos], discountTotal: desconto, deliveryFee: taxa, acrescimo: acrescimoNoCredito, desconto: descontoNovo });
+    return contaDoDescontoDaEdicao({ itens: [...linhasQueFicam, ...novos], discountTotal: desconto, deliveryFee: taxa, acrescimo: acrescimoNoCredito, desconto: descontoNovo });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [descontoNovo?.tipo, descontoNovo?.valor, descontoNovo?.motivo, itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo, acrescimoNoCredito]);
+  }, [descontoNovo?.tipo, descontoNovo?.valor, descontoNovo?.motivo, linhasQueFicam, acrescimos, desconto, taxa, modo, acrescimoNoCredito]);
   const descontoValido = !!contaDoDesconto && !contaDoDesconto.problema && contaDoDesconto.valor > 0;
 
   // O mesmo `itens - desconto + taxa` do servidor. Repetido aqui de propósito e
   // só para PREVER o número na tela; quem grava é a API, que recalcula do zero.
   const totalPrevisto = useMemo(() => {
-    const somaOriginais = itensOriginais
-      .filter((i) => !removidos.has(i.id))
-      .reduce((s, i) => s + i.price * (quantidades[i.id] ?? i.quantity), 0);
+    const somaOriginais = linhasQueFicam.reduce((s, i) => s + i.price * i.quantity, 0);
     const somaNovos = acrescimos.reduce((s, a) => s + a.precoUnitario * a.quantity, 0);
     if (modo === "MARKETPLACE") {
       // O acréscimo do marketplace nunca entra no pedido do parceiro: ele vira
@@ -252,16 +330,14 @@ export default function EditarPedidoPainel({
     }
     if (descontoValido) return contaDoDesconto!.total;
     return Math.round((Math.max(0, somaOriginais + somaNovos - desconto + taxa) + acrescimoNoCredito) * 100) / 100;
-  }, [itensOriginais, removidos, quantidades, acrescimos, desconto, taxa, modo, descontoValido, contaDoDesconto, acrescimoNoCredito]);
+  }, [linhasQueFicam, acrescimos, desconto, taxa, modo, descontoValido, contaDoDesconto, acrescimoNoCredito]);
 
   /** O total do PEDIDO depois de tirar item — só existe quando ele acompanha. */
   const totalDoPedidoPrevisto = useMemo(() => {
-    const soma = itensOriginais
-      .filter((i) => !removidos.has(i.id))
-      .reduce((s, i) => s + i.price * (quantidades[i.id] ?? i.quantity), 0);
+    const soma = linhasQueFicam.reduce((s, i) => s + i.price * i.quantity, 0);
     if (descontoValido) return contaDoDesconto!.total;
     return Math.round((Math.max(0, soma - desconto + taxa) + acrescimoNoCredito) * 100) / 100;
-  }, [itensOriginais, removidos, quantidades, desconto, taxa, descontoValido, contaDoDesconto, acrescimoNoCredito]);
+  }, [linhasQueFicam, desconto, taxa, descontoValido, contaDoDesconto, acrescimoNoCredito]);
 
   const totalAtual = Number(pedido.totalAmount) || 0;
   const sobrouAlgum = itensOriginais.some((i) => !removidos.has(i.id));
@@ -273,7 +349,8 @@ export default function EditarPedidoPainel({
     removidos.size > 0 ||
     itensOriginais.some((i) => !removidos.has(i.id) && (quantidades[i.id] ?? i.quantity) < i.quantity);
   const faltaMotivo = tiraAlgo && !motivoValido(motivo);
-  const mudouOsItens = acrescimos.length > 0 || mexeuNosOriginais;
+  const temTroca = Object.keys(trocas).length > 0;
+  const mudouOsItens = acrescimos.length > 0 || mexeuNosOriginais || temTroca;
   const mudouAlgo = mudouOsItens || descontoValido;
   /** Só o desconto: a cozinha não tem o que refazer, a comanda não sai de novo. */
   const soDesconto = descontoValido && !mudouOsItens;
@@ -301,7 +378,15 @@ export default function EditarPedidoPainel({
     }
     if (!mudouAlgo) return;
     if (faltaMotivo) {
-      setErro("Escreva o motivo de tirar o item (pelo menos 3 letras). Ele aparece no fechamento do caixa.");
+      // O botão ficava cinza e mudo aqui: o lojista da Lapastine (17/10/2026)
+      // baixou a quantidade da pizza antiga, não viu o campo e refez o pedido
+      // do zero. Agora o clique diz o motivo e leva até o campo.
+      setErro(
+        "Falta o motivo de tirar o item (pelo menos 3 letras) — ele aparece no fechamento do caixa. " +
+          "Se era só para pôr um adicional ou trocar o sabor, use “Editar escolhas” no item: aí não precisa de motivo."
+      );
+      caixaDoMotivo.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      (caixaDoMotivo.current?.querySelector("textarea, input") as HTMLElement | null)?.focus();
       return;
     }
 
@@ -357,8 +442,17 @@ export default function EditarPedidoPainel({
       // Tirar item e mudar quantidade valem nos dois modos. No marketplace o
       // servidor grava os itens e decide sozinho se o total acompanha.
       corpo.removerItemIds = Array.from(removidos);
+      // Itens remontados ("Editar escolhas"): o servidor recalcula o preço.
+      if (temTroca) {
+        corpo.trocar = Object.entries(trocas).map(([itemId, t]) => ({
+          itemId,
+          quantity: t.quantity,
+          ...(t.comboSelections ? { comboSelections: t.comboSelections } : {}),
+          notes: t.notes || "",
+        }));
+      }
       corpo.itens = itensOriginais
-        .filter((i) => !removidos.has(i.id) && (quantidades[i.id] ?? i.quantity) !== i.quantity)
+        .filter((i) => !removidos.has(i.id) && !trocas[i.id] && (quantidades[i.id] ?? i.quantity) !== i.quantity)
         .map((i) => ({ itemId: i.id, quantity: quantidades[i.id] }));
       // O servidor recalcula o desconto do zero: vai o pedido (tipo, valor,
       // motivo), nunca os reais prontos.
@@ -383,11 +477,25 @@ export default function EditarPedidoPainel({
     }
   }
 
-  const produtosFiltrados = buscaProduto.trim()
-    ? cardapio
-        .filter((p) => p.name.toLowerCase().includes(buscaProduto.trim().toLowerCase()))
-        .slice(0, 25)
-    : cardapio.slice(0, 25);
+  // A busca acha pelo nome do produto E pelas escolhas dele: "bacon", "borda",
+  // "coca" trazem a pizza/o lanche que tem aquilo como adicional. O adicional
+  // não se vende sozinho (apenasOpcaoDeCombo) e a busca respondia "Nenhum item
+  // com esse nome" — Lapastine, 17/10/2026.
+  const termoDaBusca = normalizarBusca(buscaProduto);
+  const produtosFiltrados: { p: ProdutoDoCardapio; opcao: string | null }[] = termoDaBusca
+    ? [
+        ...cardapio.filter((p) => normalizarBusca(p.name).includes(termoDaBusca)).map((p) => ({ p, opcao: null as string | null })),
+        ...cardapio
+          .filter((p) => !normalizarBusca(p.name).includes(termoDaBusca))
+          .map((p) => ({ p, opcao: opcaoQueCasa(p, buscaProduto) }))
+          .filter((x) => !!x.opcao),
+      ].slice(0, 25)
+    : cardapio.slice(0, 25).map((p) => ({ p, opcao: null }));
+  // O adicional procurado está num produto que JÁ está no pedido? Então o
+  // caminho é o "Editar escolhas" daquele item, não uma pizza nova.
+  const itensQueTemAOpcao = termoDaBusca
+    ? itensOriginais.filter((i) => !removidos.has(i.id) && !trocas[i.id] && (quantidades[i.id] ?? i.quantity) === i.quantity && modo === "COMPLETO" && !!opcaoQueCasa(produtoComPerguntas(i), buscaProduto))
+    : [];
 
   return (
     <div style={{ padding: "4px 2px" }}>
@@ -445,6 +553,11 @@ export default function EditarPedidoPainel({
         {itensOriginais.map((item) => {
           const fora = removidos.has(item.id);
           const qtd = quantidades[item.id] ?? item.quantity;
+          const troca = trocas[item.id];
+          const escolhasDeHoje = escolhasEmTexto(item.comboSelections as any);
+          // "Editar escolhas": só no pedido próprio, com o produto ainda no
+          // cardápio e com pergunta, e sem quantidade mexida no rascunho.
+          const podeRemontar = modo === "COMPLETO" && !fora && !troca && qtd === item.quantity && !!produtoComPerguntas(item);
           return (
             <div
               key={item.id}
@@ -473,10 +586,53 @@ export default function EditarPedidoPainel({
                 >
                   {item.productName || "Item"}
                 </div>
+                {escolhasDeHoje && (
+                  <div
+                    style={{
+                      fontSize: "0.75rem",
+                      color: troca ? "#94A3B8" : "#475569",
+                      textDecoration: troca && troca.quantity >= item.quantity ? "line-through" : "none",
+                      lineHeight: 1.35,
+                    }}
+                  >
+                    ↳ {escolhasDeHoje}
+                  </div>
+                )}
+                {item.notes && !troca && <div style={{ fontSize: "0.74rem", color: "#B45309", fontWeight: 600 }}>📝 {item.notes}</div>}
                 <div style={{ fontSize: "0.75rem", color: "#64748B" }}>{fmt(item.price)} cada</div>
+                {troca && (
+                  <div style={{ marginTop: "4px", padding: "6px 8px", borderRadius: "6px", background: "#F0FDFA", border: "1px solid #99F6E4", color: "#134E4A", fontSize: "0.76rem", lineHeight: 1.4 }}>
+                    <div style={{ fontWeight: 800 }}>
+                      ✏️ {troca.quantity >= item.quantity ? `Remontado (${troca.quantity}x)` : `${troca.quantity} de ${item.quantity} remontado${troca.quantity > 1 ? "s" : ""}`}
+                    </div>
+                    <div style={{ fontWeight: 600 }}>↳ {resumoDasEscolhas(troca.comboSelections) || "sem escolhas"}</div>
+                    {troca.notes && <div style={{ color: "#B45309", fontWeight: 600 }}>📝 {troca.notes}</div>}
+                    <div>
+                      {fmt(troca.precoUnitario)} cada
+                      {troca.quantity < item.quantity && ` · ${item.quantity - troca.quantity}x fica${item.quantity - troca.quantity > 1 ? "m" : ""} como estava`}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTrocas((t) => { const { [item.id]: _fora, ...resto } = t; return resto; })}
+                      style={{ marginTop: "2px", border: "none", background: "none", padding: 0, color: "#0F766E", fontWeight: 700, fontSize: "0.74rem", cursor: "pointer", textDecoration: "underline", fontFamily: "inherit" }}
+                    >
+                      Desfazer
+                    </button>
+                  </div>
+                )}
+                {podeRemontar && (
+                  <button
+                    type="button"
+                    onClick={() => setItemRemontando(item)}
+                    title="Abrir as escolhas do item (sabor, borda, adicional) e trocar"
+                    style={{ marginTop: "4px", padding: "4px 10px", borderRadius: "6px", border: "1px solid #99F6E4", background: "#F0FDFA", color: "#0F766E", fontWeight: 700, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    ✏️ Editar escolhas / adicionais
+                  </button>
+                )}
               </div>
 
-              {!fora && (
+              {!fora && !troca && (
                 <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                   <button
                     type="button"
@@ -499,7 +655,7 @@ export default function EditarPedidoPainel({
                 </div>
               )}
 
-              <button
+              {!troca && <button
                   type="button"
                   onClick={() =>
                     setRemovidos((s) => {
@@ -522,7 +678,7 @@ export default function EditarPedidoPainel({
                   }}
                 >
                   {fora ? "↩" : "🗑️"}
-              </button>
+              </button>}
             </div>
           );
         })}
@@ -622,7 +778,25 @@ export default function EditarPedidoPainel({
           />
           <div style={{ maxHeight: 180, overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px" }}>
             {cardapio.length === 0 && <div style={{ padding: "10px", color: "#64748B", fontSize: "0.82rem" }}>Carregando cardápio...</div>}
-            {produtosFiltrados.map((p) => (
+            {itensQueTemAOpcao.length > 0 && (
+              <div style={{ padding: "8px 9px", borderRadius: "6px", background: "#F0FDFA", border: "1px solid #99F6E4", color: "#134E4A", fontSize: "0.78rem", lineHeight: 1.4 }}>
+                <strong>“{opcaoQueCasa(produtoComPerguntas(itensQueTemAOpcao[0]), buscaProduto)}”</strong> é escolha de um item que já está no pedido.
+                Para pôr nele, use “Editar escolhas”:
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "4px" }}>
+                  {itensQueTemAOpcao.map((i) => (
+                    <button
+                      key={i.id}
+                      type="button"
+                      onClick={() => { setItemRemontando(i); setBuscaProduto(""); setAbrindoBusca(false); }}
+                      style={{ padding: "4px 9px", borderRadius: "6px", border: "1px solid #0F766E", background: "#FFF", color: "#0F766E", fontWeight: 700, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      ✏️ {i.productName || "Item"} ({i.quantity}x)
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            {produtosFiltrados.map(({ p, opcao }) => (
               <button
                 key={p.id}
                 type="button"
@@ -656,14 +830,17 @@ export default function EditarPedidoPainel({
                   fontSize: "0.84rem",
                 }}
               >
-                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#1E293B" }}>{p.name}</span>
+                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "#1E293B" }}>
+                  {p.name}
+                  {opcao && <span style={{ display: "block", fontSize: "0.72rem", color: "#0F766E", fontWeight: 600 }}>tem “{opcao}” nas escolhas</span>}
+                </span>
                 {/* O preço do cardápio: "a partir de" quando depende da escolha. */}
                 <span style={{ fontWeight: 700, color: "#0F766E", whiteSpace: "nowrap" }}>
                   {precoVariaPorEscolha(p as any) ? `a partir de ${fmt(precoMinimoDoProduto(p as any))}` : fmt(precoMinimoDoProduto(p as any))}
                 </span>
               </button>
             ))}
-            {cardapio.length > 0 && produtosFiltrados.length === 0 && (
+            {cardapio.length > 0 && produtosFiltrados.length === 0 && itensQueTemAOpcao.length === 0 && (
               <div style={{ padding: "10px", color: "#64748B", fontSize: "0.82rem" }}>Nenhum item com esse nome.</div>
             )}
           </div>
@@ -905,12 +1082,19 @@ export default function EditarPedidoPainel({
       </div>
 
       {tiraAlgo && (
-        <div style={{ marginTop: "12px" }}>
+        <div ref={caixaDoMotivo} style={{ marginTop: "12px" }}>
           <MotivoDoCancelamento
             valor={motivo}
             aoMudar={setMotivo}
             rotulo={!sobrouAlgum && acrescimos.length === 0 ? "Motivo do cancelamento do pedido" : "Motivo de tirar o item"}
           />
+        </div>
+      )}
+
+      {faltaMotivo && !erro && (
+        <div style={{ marginTop: "10px", background: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E", borderRadius: "8px", padding: "8px 10px", fontSize: "0.8rem", lineHeight: 1.4 }}>
+          Para salvar, escreva acima o <strong>motivo de tirar o item</strong>. Só queria pôr um adicional ou trocar o
+          sabor? Desfaça a quantidade e use <strong>“Editar escolhas”</strong> no item — aí não pede motivo.
         </div>
       )}
 
@@ -927,17 +1111,20 @@ export default function EditarPedidoPainel({
         <button
           type="button"
           onClick={salvar}
-          disabled={salvando || !mudouAlgo || faltaMotivo}
+          // Falta de motivo NÃO desabilita: o clique diz o que falta e leva
+          // até o campo. Botão cinza sem explicação foi o "não consigo
+          // finalizar" da Lapastine (17/10/2026).
+          disabled={salvando || !mudouAlgo}
           style={{
             flex: 2,
             padding: "10px",
             borderRadius: "10px",
             border: "none",
-            background: !mudouAlgo || faltaMotivo ? "#CBD5E1" : "#C92E09",
+            background: !mudouAlgo ? "#CBD5E1" : faltaMotivo ? "#E07A5F" : "#C92E09",
             color: "#FFF",
             fontWeight: 800,
             fontSize: "0.88rem",
-            cursor: !mudouAlgo || faltaMotivo || salvando ? "default" : "pointer",
+            cursor: !mudouAlgo || salvando ? "default" : "pointer",
             fontFamily: "inherit",
           }}
         >
@@ -967,21 +1154,17 @@ export default function EditarPedidoPainel({
             isCombo: (produtoComOpcoes as any).isCombo,
           }}
           onClose={() => setProdutoComOpcoes(null)}
-          onConfirm={(selections, extraSum, qty, notes) => {
+          onConfirm={(selections, _extraSum, qty, notes) => {
             const p = produtoComOpcoes;
-            const escolhas: Record<string, Record<string, number>> = {};
-            for (const [grupo, itens] of Object.entries((selections || {}) as Record<string, Record<string, number>>)) {
-              for (const [nome, q] of Object.entries(itens || {})) {
-                if (Number(q) > 0) (escolhas[grupo] ||= {})[nome] = Number(q);
-              }
-            }
+            const escolhas = limparEscolhas(selections);
             setAcrescimos((lista) => [
               ...lista,
               {
                 produto: p,
                 quantity: Math.max(1, Math.min(99, Number(qty) || 1)),
-                precoUnitario: Math.round(((Number(p.price) || 0) + (Number(extraSum) || 0)) * 100) / 100,
-                comboSelections: Object.keys(escolhas).length > 0 ? escolhas : undefined,
+                // A conta do servidor (precoUnitarioDoItem + piso), não a soma do modal.
+                precoUnitario: precoComEscolhas(p, escolhas),
+                comboSelections: escolhas,
                 notes: notes && notes.trim() ? notes.trim() : undefined,
               },
             ]);
@@ -991,6 +1174,49 @@ export default function EditarPedidoPainel({
           }}
         />
       )}
+
+      {/* "Editar escolhas" de um item que JÁ está no pedido: a mesma janela,
+          aberta com o que estava marcado. Confirmar troca o item pelo
+          remontado — não é tirar item, então não pede motivo. Quantidade
+          menor que a do item remonta só essa parte (a outra fica como estava). */}
+      {itemRemontando && (() => {
+        const p = produtoComPerguntas(itemRemontando);
+        if (!p) return null;
+        const item = itemRemontando;
+        return (
+          <ComboModal
+            product={{
+              id: p.id,
+              name: p.name,
+              description: p.description ?? null,
+              price: p.price,
+              imageUrl: p.imageUrl ?? null,
+              comboGroups: (p.comboGroups || []) as any,
+              isCombo: p.isCombo,
+            }}
+            inicial={{
+              selections: escolhasParaReabrir(p as any, item.comboSelections as any),
+              qty: item.quantity,
+              notes: item.notes || "",
+            }}
+            rotuloDoBotao={item.quantity > 1 ? "Trocar estas unidades" : "Trocar o item"}
+            onClose={() => setItemRemontando(null)}
+            onConfirm={(selections, _extraSum, qty, notes) => {
+              const escolhas = limparEscolhas(selections);
+              setTrocas((t) => ({
+                ...t,
+                [item.id]: {
+                  quantity: Math.max(1, Math.min(99, Number(qty) || 1)),
+                  precoUnitario: precoComEscolhas(p, escolhas),
+                  comboSelections: escolhas,
+                  notes: notes && notes.trim() ? notes.trim() : undefined,
+                },
+              }));
+              setItemRemontando(null);
+            }}
+          />
+        );
+      })()}
     </div>
   );
 }

@@ -5093,7 +5093,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                                 ✏️ EDITADO —{" "}
                                 {m.tipo === "QUANTIDADE"
                                   ? <>antes: <span style={{ textDecoration: "line-through" }}>{m.antes}x</span> → agora {m.depois}x</>
-                                  : <>acrescentado depois ({m.quantidade}x)</>}
+                                  : m.tipo === "ESCOLHAS"
+                                    ? <>escolhas trocadas ({m.quantidade}x) — antes: <span style={{ textDecoration: "line-through" }}>{m.antes}</span></>
+                                    : <>acrescentado depois ({m.quantidade}x)</>}
                                 {" "}· {m.quem}, {quandoFoi(m.quando, user?.storeTimezone || undefined)}
                               </span>
                             ))}

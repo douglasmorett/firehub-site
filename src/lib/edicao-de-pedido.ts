@@ -776,7 +776,7 @@ export type RegistroDeEdicao = {
    * TRANSFERIU: o pedido foi para outra loja do mesmo acesso, que aceitou
    * (lib/transferencia-do-pedido.ts); o total não muda, o número muda.
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "ESCOLHAS" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;

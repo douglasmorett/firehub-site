@@ -138,6 +138,14 @@ interface ComboModalProps {
   };
   onClose: () => void;
   onConfirm: (selections: Selections, extraSum: number, qty: number, notes?: string) => void;
+  /**
+   * Reabrir um item JÁ escolhido (o "Editar escolhas" da edição do pedido):
+   * as escolhas, a quantidade e a observação com que a janela abre. As
+   * escolhas valem por cima do que o grupo marca sozinho.
+   */
+  inicial?: { selections?: Selections; qty?: number; notes?: string };
+  /** Texto do botão de confirmar, quando não é a sacola ("Trocar o item"). */
+  rotuloDoBotao?: string;
 }
 
 /**
@@ -158,16 +166,19 @@ interface ComboModalProps {
  *   history). Agora fecha o modal, como em app.
  * - Toque no fundo escuro descartava tudo sem perguntar.
  */
-export default function ComboModal({ product, onClose, onConfirm }: ComboModalProps) {
+export default function ComboModal({ product, onClose, onConfirm, inicial, rotuloDoBotao }: ComboModalProps) {
   const groups = product.comboGroups || [];
-  const [comboQty, setComboQty] = useState(1);
-  const [notes, setNotes] = useState("");
+  const [comboQty, setComboQty] = useState(() => Math.max(1, Math.min(99, Math.floor(Number(inicial?.qty) || 1))));
+  const [notes, setNotes] = useState(inicial?.notes || "");
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const { perguntar, avisoNaTela } = useAvisoDoCardapio();
 
   const [selections, setSelections] = useState<Selections>(() => {
     const init: Selections = {};
-    groups.forEach(g => { init[g.id] = preenchimentoForcado(g); });
+    groups.forEach(g => {
+      const ja = inicial?.selections?.[g.id];
+      init[g.id] = ja && Object.keys(ja).length > 0 ? { ...ja } : preenchimentoForcado(g);
+    });
     return init;
   });
 
@@ -175,7 +186,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
   // vai perder" na confirmação do backdrop.
   const estadoInicial = useRef<string>("");
   useEffect(() => {
-    estadoInicial.current = JSON.stringify({ s: selections, n: "" });
+    estadoInicial.current = JSON.stringify({ s: selections, n: (inicial?.notes || "").trim() && "x" || "" });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -399,7 +410,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
   };
 
   const tentarFechar = async () => {
-    const mexeu = JSON.stringify({ s: selections, n: notes.trim() && "x" || "" }) !== estadoInicial.current || notes.trim().length > 0;
+    const mexeu = JSON.stringify({ s: selections, n: notes.trim() && "x" || "" }) !== estadoInicial.current || notes.trim() !== (inicial?.notes || "").trim();
     if (mexeu && !(await perguntar({ titulo: "Descartar as escolhas deste item?", confirmar: "Descartar", cancelar: "Continuar escolhendo", perigo: true }))) return;
     onClose();
   };
@@ -974,7 +985,7 @@ export default function ComboModal({ product, onClose, onConfirm }: ComboModalPr
           >
             <span>
               {allComplete
-                ? (ehProdutoSimples ? "Adicionar à sacola" : "Confirmar item")
+                ? (rotuloDoBotao || (ehProdutoSimples ? "Adicionar à sacola" : "Confirmar item"))
                 : "Selecione as opções obrigatórias"}
             </span>
             <span style={{ fontSize: "1.05rem", whiteSpace: "nowrap" }}>R$ {grandTotal.toFixed(2).replace(".", ",")}</span>

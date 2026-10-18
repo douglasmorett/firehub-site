@@ -14,16 +14,19 @@
  *   −Batata frita                 → saiu
  *   Coca 2L 2x → 1x               → mudou a quantidade
  *   +1x Pastel de carne (...)     → entrou depois
+ *   ✎1x Pizza (antes: …; agora: …) → escolhas trocadas (lib/escolhas-na-edicao.ts)
  *
  * várias partes na mesma linha, separadas por ", ". Este arquivo desfaz esse
  * texto. Se a rota mudar o formato, o teste
  * (scripts/teste-historico-do-pedido.ts) é o que avisa.
  */
 import type { RegistroDeEdicao } from "@/lib/edicao-de-pedido";
+import { REGEX_DA_TROCA } from "@/lib/escolhas-na-edicao";
 
 export type MarcaDoItem =
   | { tipo: "QUANTIDADE"; antes: number; depois: number; quando: string; quem: string }
-  | { tipo: "ACRESCENTADO"; quantidade: number; quando: string; quem: string };
+  | { tipo: "ACRESCENTADO"; quantidade: number; quando: string; quem: string }
+  | { tipo: "ESCOLHAS"; quantidade: number; antes: string; depois: string; quando: string; quem: string };
 
 export type ItemRemovido = { nome: string; quando: string; quem: string };
 
@@ -47,9 +50,15 @@ export function edicoesDosItens(editHistory: unknown) {
   const removidos: ItemRemovido[] = [];
 
   for (const r of lerHistorico(editHistory)) {
-    if (r.acao !== "REMOVEU" && r.acao !== "MUDOU_QTD" && r.acao !== "ACRESCENTOU") continue;
+    if (r.acao !== "REMOVEU" && r.acao !== "MUDOU_QTD" && r.acao !== "ACRESCENTOU" && r.acao !== "ESCOLHAS") continue;
     const texto = r.descricao.replace(SUFIXO_DO_MARKETPLACE, "");
     for (const parte of texto.split(", ")) {
+      const trocou = parte.match(REGEX_DA_TROCA);
+      if (trocou) {
+        const chave = normalizar(trocou[2]);
+        porNome.set(chave, [...(porNome.get(chave) || []), { tipo: "ESCOLHAS", quantidade: Number(trocou[1]), antes: trocou[3], depois: trocou[4], quando: r.quando, quem: r.quem }]);
+        continue;
+      }
       const removeu = parte.match(/^[−-](.+)$/);
       if (removeu) {
         removidos.push({ nome: removeu[1].trim(), quando: r.quando, quem: r.quem });
@@ -96,6 +105,7 @@ export const ROTULO_DA_EDICAO: Record<string, string> = {
   REMOVEU: "Itens",
   MUDOU_QTD: "Itens",
   ACRESCENTOU: "Acréscimo",
+  ESCOLHAS: "Escolhas do item",
   CANCELOU: "Cancelamento",
   PAGAMENTO: "Pagamento",
   TAXA_DE_ENTREGA: "Taxa de entrega",
