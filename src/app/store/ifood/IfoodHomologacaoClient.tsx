@@ -4,8 +4,10 @@ import { Store, Clock, RefreshCw, Trash2, Plus, CheckCircle, ExternalLink, Loade
 import TabCardapio from "./TabCardapio";
 import TabEntrega from "./TabEntrega";
 import TabEventos from "./TabEventos";
+import TabShipping from "./TabShipping";
+import TabAvaliacoes from "./TabAvaliacoes";
 
-type Tab = "loja" | "pausas" | "horarios" | "cardapio" | "entrega" | "eventos" | "widget";
+type Tab = "loja" | "pausas" | "horarios" | "cardapio" | "entrega" | "shipping" | "avaliacoes" | "eventos" | "widget";
 
 // ── Status da conexão ──────────────────────────────────────
 type ConnStatus = "idle" | "loading" | "ok" | "error";
@@ -424,6 +426,8 @@ export default function IfoodHomologacaoClient({
           {tabBtn("horarios", "Horários", "🕐")}
           {tabBtn("cardapio", "Cardápio", "📖")}
           {tabBtn("entrega", "Entrega", "🛵")}
+          {tabBtn("shipping", "Entregador iFood", "🚚")}
+          {tabBtn("avaliacoes", "Avaliações", "⭐")}
           {tabBtn("eventos", "Eventos", "📡")}
           {tabBtn("widget", "Widget Chat", "💬")}
         </div>
@@ -435,6 +439,8 @@ export default function IfoodHomologacaoClient({
       {connStatus === "ok" && tab === "horarios" && <TabHorarios />}
       {connStatus === "ok" && tab === "cardapio" && <TabCardapio />}
       {connStatus === "ok" && tab === "entrega" && <TabEntrega />}
+      {connStatus === "ok" && tab === "shipping" && <TabShipping />}
+      {connStatus === "ok" && tab === "avaliacoes" && <TabAvaliacoes />}
       {connStatus === "ok" && tab === "eventos" && <TabEventos />}
       {connStatus === "ok" && tab === "widget" && <TabWidget currentWidgetId={ifoodWidgetId} />}
     </div>
