@@ -8,22 +8,21 @@
  * Desligado: a apresentação (celular com a conversa tocando, o que faz,
  * preço, dúvidas) e, ao ligar, o
  * termo de contratação (lib/assessor/termo.ts) — só liga com o "concordo".
- * Ligado: de quais números falar, a conversa de teste (texto, áudio gravado
- * no navegador e foto — o mesmo assessor do WhatsApp, gravando de verdade) e
- * o histórico do que ele lançou.
+ * Ligado: o painel do Bill (PainelDoBill.tsx) — visão geral do que ele fez,
+ * a conversa (a mesma do WhatsApp, gravando de verdade) com exemplos, o
+ * histórico com filtros e desfazer, e a configuração (números, assinatura,
+ * desligar).
  */
 
 import { useCallback, useEffect, useState } from "react";
-import ConversaComOBill from "@/components/bill/ConversaComOBill";
 import RostoDoBill, { type EmocaoDoBill } from "@/components/bill/RostoDoBill";
 import { EVENTO_BILL_LIGADO } from "@/components/bill/BillFlutuante";
 import { VERSAO_DO_TERMO_DO_BILL, TITULO_DO_TERMO_DO_BILL, CLAUSULAS_DO_TERMO_DO_BILL } from "@/lib/assessor/termo";
-import { Mic, Camera, Package, Wallet, Receipt, Undo2, CheckCircle2, MessageCircle, PauseCircle, Store } from "lucide-react";
+import { Mic, Camera, Package, Wallet, Receipt, CheckCircle2, PauseCircle, Store } from "lucide-react";
+import PainelDoBill, { type DadosDoBill, type AvisoDoBill } from "./PainelDoBill";
 
-type Estado = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento?: boolean };
-type Registro = { id: string; tipo: string; resumo: string; canal: string; desfeitoEm: string | null; criadoEm: string };
-type Dados = { estado: Estado; preco: number; diasDeTeste: number; numerosDoDono: string[]; numeroDoRobo: string | null; registros: Registro[] };
-type Aviso = { tipo: "ok" | "erro"; titulo: string; detalhe?: string };
+type Dados = DadosDoBill;
+type Aviso = AvisoDoBill;
 
 const VERDE = "#059669";
 const fmtR = (v: number) => `R$ ${v.toFixed(2).replace(".", ",")}`;
@@ -31,29 +30,13 @@ const fone = (d: string) => {
   const n = d.replace(/^55/, "");
   return n.length >= 10 ? `(${n.slice(0, 2)}) ${n.slice(2, n.length - 4)}-${n.slice(-4)}` : d;
 };
-const dataHora = (iso: string) =>
-  new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-
-const ROTULO: Record<string, { texto: string; cor: string }> = {
-  COMPRA: { texto: "Compra", cor: "#2563EB" },
-  SAIDA: { texto: "Saída", cor: "#D97706" },
-  DESPESA: { texto: "Despesa", cor: "#DC2626" },
-  CONTA: { texto: "Conta a pagar", cor: "#7C3AED" },
-  CONTA_PAGA: { texto: "Conta paga", cor: VERDE },
-  PAUSADO: { texto: "Pausado", cor: "#B45309" },
-  REATIVADO: { texto: "Reativado", cor: "#0891B2" },
-  SITE: { texto: "Site", cor: "#475569" },
-};
 
 export default function BillClient() {
   const [dados, setDados] = useState<Dados | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [aviso, setAviso] = useState<Aviso | null>(null);
-  const [confirmarDesligar, setConfirmarDesligar] = useState(false);
   const [termoAberto, setTermoAberto] = useState(false);
-  // O rosto no cabeçalho da conversa mostra o que o Bill está fazendo.
-  const [humorDaConversa, setHumorDaConversa] = useState<EmocaoDoBill>("normal");
 
   const carregar = useCallback(async () => {
     try {
@@ -74,7 +57,6 @@ export default function BillClient() {
 
   async function ligar(ligar: boolean) {
     setSalvando(true);
-    setConfirmarDesligar(false);
     try {
       const r = await fetch("/api/store/assessor", {
         method: "POST",
@@ -118,48 +100,18 @@ export default function BillClient() {
         </div>
       )}
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
-        <RostoDoBill tamanho={52} seguirMouse emocao={estado.ativo ? "feliz" : "normal"} />
-        <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: 0 }}>Bill, seu assessor</h1>
-        {estado.ativo && (
-          <span style={{ fontSize: 12, fontWeight: 800, color: VERDE, background: "#ECFDF5", padding: "4px 10px", borderRadius: 999 }}>
-            {estado.isento ? "LIGADO · ISENTO" : estado.emTeste && estado.testeAte ? `GRÁTIS até ${new Date(estado.testeAte).toLocaleDateString("pt-BR")}` : "LIGADO"}
-          </span>
-        )}
-      </div>
-      {estado.ativo && <p style={{ color: "#475569", margin: "0 0 20px", fontSize: 15 }}>
-        Eu sou o Bill: cuido do seu estoque, do seu financeiro e do seu cardápio pelo WhatsApp. Mande um áudio, um texto ou a foto da nota — eu lanço no sistema na hora.
-      </p>}
-      {!estado.ativo && <div style={{ height: 14 }} />}
-
       {termoAberto && <Termo preco={dados.preco} salvando={salvando} onCancelar={() => setTermoAberto(false)} onAceitar={() => ligar(true)} />}
 
-      {!estado.ativo ? <Oferta dados={dados} salvando={salvando} onLigar={() => setTermoAberto(true)} /> : (
+      {estado.ativo ? (
+        <PainelDoBill dados={dados} setAviso={setAviso} salvando={salvando} onDesligar={() => ligar(false)} />
+      ) : (
         <>
-          <ComoUsar dados={dados} />
-          <div style={{ border: "1px solid #E2E8F0", borderRadius: 14, overflow: "hidden", marginBottom: 22 }}>
-            <div style={{ background: "#0B1220", color: "white", padding: "10px 14px", fontWeight: 800, fontSize: 14, display: "flex", alignItems: "center", gap: 10 }}>
-              <RostoDoBill tamanho={34} emocao={humorDaConversa} />
-              Converse com o Bill — a mesma conversa do WhatsApp (lança de verdade)
-            </div>
-            <ConversaComOBill altura={420} aoGravar={carregar} aoMudarEstado={setHumorDaConversa} />
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+            <RostoDoBill tamanho={52} seguirMouse emocao="normal" />
+            <h1 style={{ fontSize: 26, fontWeight: 900, color: "#0F172A", margin: 0 }}>Bill, seu assessor</h1>
           </div>
-          <Historico registros={dados.registros} />
-          <div style={{ marginTop: 28, padding: 16, border: "1px solid #E2E8F0", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <div style={{ fontSize: 13, color: "#475569" }}>
-              {estado.isento
-                ? <><b>Conta isenta:</b> o Bill fica sempre ligado nesta loja e não entra no boleto.</>
-                : estado.emTeste && estado.testeAte
-                ? <>Grátis até <b>{new Date(estado.testeAte).toLocaleDateString("pt-BR")}</b>. Depois disso, <b>se você não desligar, {fmtR(dados.preco)} por mês vem cobrado junto com a mensalidade do FireHub</b>, no mesmo boleto (o mês em que fica ativo é cobrado inteiro).</>
-                : <><b>{fmtR(dados.preco)} por mês</b> no boleto do FireHub — o mês em que o Bill fica ativo é cobrado inteiro.{estado.cobradoEsteMes && <> Este mês já está no boleto.</>}</>}
-              {!estado.isento && <>{" "}Desligando, o mês seguinte não é cobrado.</>}
-            </div>
-            {!estado.isento && <button disabled={salvando} onClick={() => { if (confirmarDesligar) ligar(false); else setConfirmarDesligar(true); }}
-              onBlur={() => setConfirmarDesligar(false)}
-              style={{ background: confirmarDesligar ? "#DC2626" : "white", border: "1px solid", borderColor: confirmarDesligar ? "#DC2626" : "#CBD5E1", color: confirmarDesligar ? "white" : "#475569", borderRadius: 8, padding: "8px 14px", fontWeight: 700, cursor: "pointer" }}>
-              {confirmarDesligar ? "Toque de novo para desligar" : "Desligar"}
-            </button>}
-          </div>
+          <div style={{ height: 14 }} />
+          <Oferta dados={dados} salvando={salvando} onLigar={() => setTermoAberto(true)} />
         </>
       )}
     </div>
@@ -544,55 +496,6 @@ const CSS_DA_OFERTA = `
   .bo-cta { width: 100%; }
 }
 `;
-
-function ComoUsar({ dados }: { dados: Dados }) {
-  return (
-    <div style={{ border: "1px solid #BBF7D0", background: "#F0FDF4", borderRadius: 12, padding: 16, marginBottom: 18 }}>
-      <div style={{ fontWeight: 800, color: "#065F46", marginBottom: 6 }}>Como usar pelo WhatsApp</div>
-      {dados.numerosDoDono.length > 0 ? (
-        <div style={{ fontSize: 14, color: "#065F46" }}>
-          Do {dados.numerosDoDono.length > 1 ? "seus números" : "seu número"} <b>{dados.numerosDoDono.map(fone).join(", ")}</b>, mande mensagem para o WhatsApp da loja
-          {dados.numeroDoRobo ? <>, <b>{fone(dados.numeroDoRobo)}</b></> : " conectado no Chatbot IA"}. Áudio, texto ou foto. Errou? Manda <b>desfaz</b>.
-          <div style={{ fontSize: 12, marginTop: 4, color: "#047857" }}>Outros números (sócio, gerente) entram em Chatbot IA › Notificações.</div>
-        </div>
-      ) : (
-        <div style={{ fontSize: 14, color: "#B45309" }}>
-          Falta o seu número: cadastre o WhatsApp do proprietário em <b>Minha Loja</b>. Enquanto isso, use a conversa aqui embaixo.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Historico({ registros }: { registros: Registro[] }) {
-  return (
-    <div>
-      <div style={{ fontWeight: 800, color: "#0F172A", marginBottom: 8, fontSize: 16 }}>O que o Bill lançou</div>
-      {registros.length === 0 ? (
-        <div style={{ color: "#64748B", fontSize: 14, padding: 14, border: "1px dashed #CBD5E1", borderRadius: 12 }}>
-          Nada ainda. Os lançamentos aparecem aqui e também em Estoque e Financeiro, como se você tivesse digitado.
-        </div>
-      ) : (
-        <div style={{ border: "1px solid #E2E8F0", borderRadius: 12, overflow: "hidden" }}>
-          {registros.map((r) => {
-            const rot = ROTULO[r.tipo] || { texto: r.tipo, cor: "#475569" };
-            return (
-              <div key={r.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderBottom: "1px solid #F1F5F9", background: "white", opacity: r.desfeitoEm ? 0.55 : 1 }}>
-                <span style={{ fontSize: 11, fontWeight: 800, color: rot.cor, background: `${rot.cor}14`, padding: "3px 8px", borderRadius: 999, whiteSpace: "nowrap" }}>{rot.texto}</span>
-                <div style={{ flex: 1, fontSize: 14, color: "#0F172A", textDecoration: r.desfeitoEm ? "line-through" : "none" }}>{r.resumo}</div>
-                <div style={{ fontSize: 12, color: "#64748B", whiteSpace: "nowrap", textAlign: "right" }}>
-                  {dataHora(r.criadoEm)}
-                  <div>{r.desfeitoEm ? <span style={{ display: "inline-flex", gap: 3, alignItems: "center" }}><Undo2 size={11} /> desfeito</span>
-                    : <span style={{ display: "inline-flex", gap: 3, alignItems: "center" }}><CheckCircle2 size={11} color={VERDE} /> {r.canal === "PAINEL" ? "painel" : "WhatsApp"}</span>}</div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 /** O termo de contratação: só liga marcando o "concordo" (texto em lib/assessor/termo.ts). */
 function Termo({ preco, salvando, onCancelar, onAceitar }: { preco: number; salvando: boolean; onCancelar: () => void; onAceitar: () => void }) {
