@@ -10,6 +10,7 @@ import type { Crescimento, Taxa } from "@/lib/projecao-de-crescimento-regras";
 
 const fmt = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const fmt0 = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
+const qtd = (n: number) => Math.round(n).toLocaleString("pt-BR");
 const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 const nomeDoMes = (ym: string) => MESES[Number(ym.slice(5, 7)) - 1] || ym;
 const diaMes = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
@@ -113,6 +114,11 @@ export default function ProjecaoTab() {
         .pj-tabela { overflow-x: auto; }
         .pj-dia { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; cursor: default; padding: 0 1px; }
         .pj-dia > div { border-radius: 4px 4px 0 0; min-height: 2px; }
+        .pj-dividido { display: flex; flex-wrap: wrap; gap: 8px 0; margin-top: 4px; }
+        .pj-dividido > div { flex: 1 1 110px; min-width: 0; }
+        .pj-dividido > div + div { border-left: 1px solid #E5E7EB; padding-left: 12px; margin-left: 12px; }
+        .pj-meia-lbl { font-size: 0.66rem; color: #94A3B8; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; }
+        .pj-meia-val { font-size: 1.3rem; font-weight: 900; letter-spacing: -0.4px; font-variant-numeric: tabular-nums; }
       `}</style>
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
@@ -128,13 +134,32 @@ export default function ProjecaoTab() {
           { label: `Aposta para ${mes}`, val: fmt0(totais.aposta), sub: `entre ${fmt0(totais.garantido)} e ${fmt0(totais.seTodas)}`, color: COR },
           { label: "Já garantido", val: fmt0(totais.garantido), sub: `${vendendo.length} lojas pagando e vendendo`, color: "#15803D" },
           { label: "Se todas pagarem", val: fmt0(totais.seTodas), sub: `${linhas.length} boletos previstos`, color: "#0F172A" },
-          { label: "Vendas pelo sistema", val: fmt0(vendasDoMes.ateAgora), sub: `deve fechar em ${fmt0(vendasDoMes.projetado)}`, color: "#0F172A" },
+          // O mesmo quadrado mostra valor e transações (pedidos não cancelados) — a meta de transações do Pix.
+          { label: "Vendas pelo sistema", val: fmt0(vendasDoMes.ateAgora), sub: `deve fechar em ${fmt0(vendasDoMes.projetado)}`, color: "#0F172A",
+            transacoes: { ateAgora: vendasDoMes.pedidosAteAgora, projetado: vendasDoMes.pedidosProjetados } },
           { label: `${nomeDoMes(dados.mesSeguinte)} no ritmo de hoje`, val: fmt0(dados.mesSeguinteNoRitmo), sub: "mês cheio, todas fora do teste", color: "#0F172A" },
-        ].map((k) => (
+        ].map((k: { label: string; val: string; sub: string; color: string; transacoes?: { ateAgora: number; projetado: number } }) => (
           <div key={k.label} className="fha-kpi">
             <div className="fha-kpi-lbl">{k.label}</div>
-            <div className="fha-kpi-val" style={{ color: k.color }}>{k.val}</div>
-            <div className="fha-kpi-sub">{k.sub}</div>
+            {k.transacoes ? (
+              <div className="pj-dividido">
+                <div>
+                  <div className="pj-meia-lbl">Valor</div>
+                  <div className="pj-meia-val" style={{ color: k.color }}>{k.val}</div>
+                  <div className="fha-kpi-sub">{k.sub}</div>
+                </div>
+                <div>
+                  <div className="pj-meia-lbl">Transações</div>
+                  <div className="pj-meia-val" style={{ color: k.color }}>{qtd(k.transacoes.ateAgora)}</div>
+                  <div className="fha-kpi-sub">deve fechar em {qtd(k.transacoes.projetado)}</div>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="fha-kpi-val" style={{ color: k.color }}>{k.val}</div>
+                <div className="fha-kpi-sub">{k.sub}</div>
+              </>
+            )}
           </div>
         ))}
       </div>

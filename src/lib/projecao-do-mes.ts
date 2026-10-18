@@ -85,13 +85,15 @@ export async function montarProjecao(agora = new Date()) {
           ORDER BY o."createdAt" DESC LIMIT 1) AS ultimo
       FROM "User" u WHERE u.role = 'FRANCHISEE' AND u."ownerId" IS NULL`,
     // Venda de cada loja por dia (no fuso dela), na régua do boleto. `cobravel`
-    // é a parte de depois do teste.
-    prisma.$queryRaw<{ id: string; dia: string; bruto: number; cobravel: number }[]>`
+    // é a parte de depois do teste. `pedidos` são as transações (sem os
+    // cancelados, que a régua do boleto conta no valor desde a virada).
+    prisma.$queryRaw<{ id: string; dia: string; bruto: number; cobravel: number; pedidos: number }[]>`
       SELECT o."franchiseeId" AS id,
         to_char((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE COALESCE(u."storeTimezone", ${FUSO}), 'YYYY-MM-DD') AS dia,
         SUM(o."totalAmount" + COALESCE(o."discountTotal", 0))::float AS bruto,
         SUM(CASE WHEN u."trialEndsAt" IS NULL OR o."createdAt" >= u."trialEndsAt"
-          THEN o."totalAmount" + COALESCE(o."discountTotal", 0) ELSE 0 END)::float AS cobravel
+          THEN o."totalAmount" + COALESCE(o."discountTotal", 0) ELSE 0 END)::float AS cobravel,
+        (COUNT(*) FILTER (WHERE o.status <> 'CANCELADO'))::int AS pedidos
       FROM "CustomerOrder" o JOIN "User" u ON u.id = o."franchiseeId"
       WHERE o."createdAt" >= ${desde}
         AND o.status <> 'CRIANDO_IA'
@@ -114,23 +116,26 @@ export async function montarProjecao(agora = new Date()) {
   const cicloDa = new Map(ciclos.map((c) => [c.franchiseeId, c]));
 
   const diaDaVirada = diaNoFuso(VIRADA_DOS_2_POR_CENTO, FUSO);
-  type Soma = { mes: number; antes: number; depois: number; janela: number };
+  type Soma = { mes: number; antes: number; depois: number; janela: number; pedidosNaJanela: number };
   const somas = new Map<string, Soma>();
   const vendaDoDia = new Map<string, number>();
+  const pedidosDoDia = new Map<string, number>();
   for (const r of porDiaDaLoja) {
-    const s = somas.get(r.id) || { mes: 0, antes: 0, depois: 0, janela: 0 };
+    const s = somas.get(r.id) || { mes: 0, antes: 0, depois: 0, janela: 0, pedidosNaJanela: 0 };
     if (r.dia.startsWith(mes)) {
       s.mes += r.bruto;
       if (r.dia < diaDaVirada) s.antes += r.cobravel; else s.depois += r.cobravel;
       vendaDoDia.set(r.dia, (vendaDoDia.get(r.dia) || 0) + r.bruto);
+      pedidosDoDia.set(r.dia, (pedidosDoDia.get(r.dia) || 0) + Number(r.pedidos || 0));
     }
-    if (r.dia >= inicioDaJanelaDia && r.dia < hoje) s.janela += r.bruto;
+    if (r.dia >= inicioDaJanelaDia && r.dia < hoje) { s.janela += r.bruto; s.pedidosNaJanela += Number(r.pedidos || 0); }
     somas.set(r.id, s);
   }
 
   // ── Projeção, loja a loja ─────────────────────────────────────
   const linhas: LinhaDaProjecao[] = [];
   let ritmoDaPlataforma = 0;
+  let pedidosPorDiaDaPlataforma = 0;
   let mesSeguinteNoRitmo = 0;
   const porDiaDa = new Map<string, number>();
   for (const [id, s] of somas) {
@@ -140,6 +145,7 @@ export async function montarProjecao(agora = new Date()) {
     const porDia = ritmoPorDia(s.janela, primeiro, inicioDaJanela, fimDaJanela);
     porDiaDa.set(id, porDia);
     ritmoDaPlataforma += porDia;
+    pedidosPorDiaDaPlataforma += ritmoPorDia(s.pedidosNaJanela, primeiro, inicioDaJanela, fimDaJanela);
     if (lojaIsenta(l)) continue;
     mesSeguinteNoRitmo += mesCheioNoRitmo(porDia, mesSeguinte);
 
@@ -244,6 +250,13 @@ export async function montarProjecao(agora = new Date()) {
     ateAgora: dias.filter((d) => d.tipo !== "projetado").reduce((s, d) => s + d.valor, 0),
     projetado: dias.reduce((s, d) => s + d.valor, 0) + restoDeHoje,
     porDia: ritmoDaPlataforma,
+    // Transações (pedidos não cancelados) no mesmo ritmo: os dias que faltam + o resto de hoje.
+    pedidosAteAgora: dias.filter((d) => d.tipo !== "projetado").reduce((s, d) => s + (pedidosDoDia.get(d.dia) || 0), 0),
+    pedidosProjetados: Math.round(
+      dias.reduce((s, d) => s + (d.tipo === "projetado" ? pedidosPorDiaDaPlataforma : pedidosDoDia.get(d.dia) || 0), 0)
+      + pedidosPorDiaDaPlataforma * Math.max(0, (intervaloDoDia(somarDias(hoje, 1)).getTime() - agora.getTime()) / DIA),
+    ),
+    pedidosPorDia: pedidosPorDiaDaPlataforma,
   };
 
   // ── Mês passado: o que foi cobrado e o que entrou ─────────────
