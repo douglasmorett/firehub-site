@@ -38,6 +38,7 @@ const {
   temAlgoPronto,
   tudoPronto,
   faltaFinalizacao,
+  faltaNaProducao,
   telaMostraPedido,
   juntarPedidosDaProducao,
   lerBaixas,
@@ -187,6 +188,36 @@ conferir("lixo no campo nao derruba a leitura",
   lerBaixas([null, 1, { estagio: "x", em: "2026-10-09T20:00:00.000Z" }, { estagio: "finishing", em: "nada" }, { estagio: "finishing", em: "2026-10-09T20:00:00.000Z", itens: [1, null] }]),
   [{ tela: "", nome: "", estagio: "finishing", em: "2026-10-09T20:00:00.000Z", itens: ["1"] }]);
 conferir("campo nulo = sem baixas", lerBaixas(null), []);
+
+// Ragnar Burger, 18/10/2026 (#148): a Pizza deu baixa no shake, o pedido foi
+// para a finalizacao e a Finalizacao 2 o encerrou com os burgers por fazer —
+// ele sumiu da tela Burger. A finalizacao agora pergunta o que ainda falta.
+console.log("\nFINALIZACAO: o que ainda falta na producao");
+const R_PIZZA  = { id: "r-pizza",  name: "Pizza",  stage: "production", filter: "all", categoryFilter: ["Sobremesas", "Pizzas", "Sucos"] };
+const R_BURGER = { id: "r-burger", name: "Burger", stage: "production", filter: "all", categoryFilter: ["Entradas", "Burgers", "Combos", "Refrigerantes", "Adicionais Burger"] };
+const R_FIN1   = { id: "r-fin1",   name: "Finalização 1", stage: "finishing", filter: "all", categoryFilter: ["Drinks"] };
+const R_FIN2   = { id: "r-fin2",   name: "Finalização 2", stage: "finishing", filter: "all", categoryFilter: [] };
+const RAGNAR = [R_PIZZA, R_BURGER, R_FIN1, R_FIN2];
+const ragnar = { id: "b1", productName: "Ragnar", quantity: 1, menuProduct: { category: "Burgers" }, prontoEm: null };
+const thor   = { id: "b2", productName: "Thor",   quantity: 2, menuProduct: { category: "Burgers" }, prontoEm: null };
+const shake  = { id: "s1", productName: "MilkShake", quantity: 1, menuProduct: { category: "Sobremesas" }, prontoEm: null };
+const p148 = { numero: 148, deliveryType: "DELIVERY" };
+conferir("so o shake pronto: faltam os burgers, na tela Burger",
+  faltaNaProducao(RAGNAR, [ragnar, thor, carimbado(shake)], p148),
+  [{ item: "1× Ragnar", tela: "Burger" }, { item: "2× Thor", tela: "Burger" }]);
+conferir("tudo pronto: nada falta", faltaNaProducao(RAGNAR, [carimbado(ragnar), carimbado(thor), carimbado(shake)], p148), []);
+const chopp = { id: "c1", productName: "Chopp", quantity: 1, menuProduct: { category: "Cerveja" }, prontoEm: null };
+conferir("bebida que nenhuma tela de producao mostra nao conta",
+  faltaNaProducao(RAGNAR, [carimbado(ragnar), chopp], p148), []);
+const semCategoria = { id: "o1", productName: "Item iFood", quantity: 1, menuProduct: { category: null }, prontoEm: null };
+conferir("item sem categoria nao prende tela filtrada", faltaNaProducao(RAGNAR, [carimbado(shake), semCategoria], p148), []);
+conferir("loja sem telas: nada falta", faltaNaProducao([], [ragnar, thor], p148), []);
+conferir("o mesmo produto em duas linhas soma", faltaNaProducao(RAGNAR, [thor, { ...thor, id: "b3", quantity: 1 }], p148), [{ item: "3× Thor", tela: "Burger" }]);
+const COZINHA = { id: "r-coz", name: "Cozinha", stage: "production", filter: "all", categoryFilter: [] };
+conferir("tela de producao sem filtro responde por tudo", faltaNaProducao([COZINHA, R_FIN2], [chopp], p148), [{ item: "1× Chopp", tela: "Cozinha" }]);
+conferir("...menos o que a loja tirou da producao", faltaNaProducao([COZINHA, R_FIN2], [chopp], p148, { soNaFinalizacao: ["Cerveja"], prioridade: [] }), []);
+const BURGER_IMPAR = { ...R_BURGER, filter: "odd" };
+conferir("tela de producao que nao mostra o numero nao conta", faltaNaProducao([BURGER_IMPAR], [ragnar], p148), []);
 
 console.log("\n" + ok + " ok, " + falhou + " falharam\n");
 process.exit(falhou ? 1 : 0);

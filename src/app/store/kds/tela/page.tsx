@@ -135,6 +135,14 @@ const INTERVALO_ENTRE_BAIXAS_POR_TECLA_MS = 250;
  */
 const TOQUE_PROTEGIDO_MS = 350;
 
+/**
+ * Finalização com item ainda na produção (api/kds, `precisaConfirmar`): por
+ * quanto tempo o cartão fica com "Finalizar mesmo assim" e quanto o segundo
+ * toque espera — o resto de um toque duplo não pode encerrar o pedido.
+ */
+const AVISO_DA_PRODUCAO_MS = 10_000;
+const CONFIRMACAO_PROTEGIDA_MS = 1_000;
+
 function getElapsedSeconds(order: Order, stage: string): number {
   let ref: string | null = null;
   if (stage === "production") {
@@ -904,6 +912,33 @@ export default function KDSTelaPage() {
   /** Baixas ainda a caminho do servidor, por pedido (true = chegou). */
   const baixasEmAndamentoRef = useRef<Map<string, Promise<boolean>>>(new Map());
 
+  // ── "AINDA FALTA NA PRODUÇÃO" ───────────────────────────────────────────
+  //
+  // Ragnar Burger, 18/10/2026: a Finalização 2 deu pronto num pedido com os
+  // burgers ainda por fazer e ele sumiu da tela Burger. Agora o servidor
+  // devolve `precisaConfirmar` com o que falta; o cartão volta com o aviso e
+  // o próximo toque (ou a tecla) nele é o "Finalizar mesmo assim". Some
+  // sozinho ou com toque em outro lugar, e o cartão volta ao normal.
+  const [confirmarFim, setConfirmarFim] = useState<{ orderId: string; faltam: string } | null>(null);
+  const confirmarFimRef = useRef<{ orderId: string; desde: number } | null>(null);
+  const esquecerConfirmacao = useCallback(() => {
+    confirmarFimRef.current = null;
+    setConfirmarFim(null);
+  }, []);
+  useEffect(() => {
+    if (!confirmarFim) return;
+    const timer = setTimeout(esquecerConfirmacao, AVISO_DA_PRODUCAO_MS);
+    const foraDoCartao = (e: Event) => {
+      const cartao = (e.target as Element | null)?.closest?.("[data-kds-pedido]");
+      if (cartao?.getAttribute("data-kds-pedido") !== confirmarFim.orderId) esquecerConfirmacao();
+    };
+    document.addEventListener("pointerdown", foraDoCartao);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("pointerdown", foraDoCartao);
+    };
+  }, [confirmarFim, esquecerConfirmacao]);
+
   // ─── Mark as pronto ─────────────────────────────────────────────────────────
 
   const markAsPronto = useCallback(
@@ -915,11 +950,23 @@ export default function KDSTelaPage() {
       )
         return; // prevent double-action
 
+      // O toque no cartão avisado é o "Finalizar mesmo assim"; em outro
+      // pedido, o aviso some e a baixa segue normal.
+      const avisado = confirmarFimRef.current;
+      const forcar = avisado?.orderId === order.id;
+      if (forcar && Date.now() - avisado!.desde < CONFIRMACAO_PROTEGIDA_MS) return;
+      if (avisado) esquecerConfirmacao();
+
       // 1. Marca imediatamente como removido nas refs e no estado (0ms UI Latency)
       completedOrderIdsRef.current.add(order.id);
       exitingOrderIdsRef.current.add(order.id);
       setExitingOrderIds(new Set(exitingOrderIdsRef.current));
-      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+      // A posição, para o cartão voltar no mesmo lugar se faltar produção.
+      let posicaoAntes = -1;
+      setOrders((prev) => {
+        posicaoAntes = prev.findIndex((o) => o.id === order.id);
+        return prev.filter((o) => o.id !== order.id);
+      });
       lastJsonRef.current = "";
       geracaoRef.current++;
 
@@ -938,6 +985,9 @@ export default function KDSTelaPage() {
       if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
       toastTimerRef.current = setTimeout(() => setToast(null), 2000);
 
+      // O que o servidor disse que ainda falta na produção (`precisaConfirmar`).
+      let faltamNaProducao: { item: string; tela: string }[] | null = null;
+
       // 2. Chamada de API resiliente com AbortController (timeout de 4s para conexões mortas de Smart TV)
       const sendBaixaWithRetry = async (retries = 3): Promise<boolean> => {
         for (let attempt = 1; attempt <= retries; attempt++) {
@@ -953,7 +1003,7 @@ export default function KDSTelaPage() {
               },
               credentials: "include",
               signal: controller.signal,
-              body: JSON.stringify({ orderId: order.id, action, tela: chaveDaTela }),
+              body: JSON.stringify({ orderId: order.id, action, tela: chaveDaTela, ...(forcar ? { forcar: true } : {}) }),
             });
             clearTimeout(timeoutId);
             if (res.ok) {
@@ -964,6 +1014,10 @@ export default function KDSTelaPage() {
               // vista e a cozinha para de procurar — que é o jeito de comida
               // pronta ficar esquecida no balcão.
               const corpo = await res.json().catch(() => null);
+              if (corpo?.precisaConfirmar) {
+                faltamNaProducao = Array.isArray(corpo.faltam) ? corpo.faltam : [];
+                return true;
+              }
               // O desfazer apaga só o que ESTA baixa carimbou.
               if (Array.isArray(corpo?.carimbados)) {
                 const carimbados = corpo.carimbados.map((v: unknown) => String(v));
@@ -1017,6 +1071,28 @@ export default function KDSTelaPage() {
       setExitingOrderIds(new Set(exitingOrderIdsRef.current));
       geracaoRef.current++;
 
+      if (faltamNaProducao) {
+        // Nada foi gravado: o pedido volta para esta tela, no lugar dele, com
+        // o aviso no cartão — e sem o "PRONTO!" nem o desfazer de uma baixa
+        // que não houve.
+        completedOrderIdsRef.current.delete(order.id);
+        setLastCompletedOrder((atual) => (atual?.order.id === order.id ? null : atual));
+        try { localStorage.removeItem(chaveDaBaixa); } catch {}
+        lastJsonRef.current = "";
+        setOrders((prev) => {
+          if (prev.some((o) => o.id === order.id)) return prev;
+          const lista = [...prev];
+          lista.splice(posicaoAntes >= 0 ? Math.min(posicaoAntes, lista.length) : lista.length, 0, order);
+          return lista;
+        });
+        setToast(null);
+        const faltam = (faltamNaProducao as { item: string; tela: string }[])
+          .map((f) => `${f.item} (${f.tela})`)
+          .join(", ");
+        confirmarFimRef.current = { orderId: order.id, desde: Date.now() };
+        setConfirmarFim({ orderId: order.id, faltam: faltam || "item de outra tela" });
+      }
+
       if (!success) {
         // ── A BAIXA QUE NÃO CHEGOU VOLTA PARA A TELA ─────────────────────
         //
@@ -1044,7 +1120,7 @@ export default function KDSTelaPage() {
       // Confirma busca atualizada
       fetchOrders();
     },
-    [stage, fetchOrders],
+    [stage, fetchOrders, esquecerConfirmacao],
   );
 
   // ─── Desfazer ÚLTIMA baixa ──────────────────────────────────────────────────
@@ -2095,6 +2171,7 @@ export default function KDSTelaPage() {
                   isExiting={exitingOrderIds.has(order.id)}
                   tick={tick}
                   prioridadeDaLoja={furaAFila(order, kdsConfig, stage)}
+                  faltaNaProducao={confirmarFim?.orderId === order.id ? confirmarFim.faltam : undefined}
                   onMarkPronto={() => markAsPronto(order)}
                 />
               ))}
@@ -2254,6 +2331,7 @@ function OrderCard({
   isExiting,
   tick,
   prioridadeDaLoja,
+  faltaNaProducao,
   onMarkPronto,
 }: {
   order: Order;
@@ -2265,6 +2343,8 @@ function OrderCard({
   tick: number;
   /** O tipo deste pedido está na prioridade da loja (kdsConfig.prioridade). */
   prioridadeDaLoja?: boolean;
+  /** O servidor recusou a finalização: o que ainda falta na produção (o próximo toque força). */
+  faltaNaProducao?: string;
   onMarkPronto?: () => void;
 }) {
   // ── O TOQUE QUE ERA DO CARTÃO DE ANTES ─────────────────────────────────
@@ -2327,7 +2407,44 @@ function OrderCard({
         gap: isHugeOrder ? 6 : isVeryLargeOrder ? 8 : 12,
       }}
       onClick={aoTocar}
+      data-kds-pedido={order.id}
     >
+      {/* ⚠️ AINDA FALTA NA PRODUÇÃO (api/kds, `precisaConfirmar`): o cartão
+          inteiro vira o "Finalizar mesmo assim" até o aviso sumir. */}
+      {faltaNaProducao && (
+        <div
+          style={{
+            width: "100%",
+            background: "#B45309",
+            color: "#fff",
+            padding: "10px 14px",
+            borderRadius: 10,
+            border: "2px solid #F59E0B",
+            display: "flex",
+            flexDirection: "column",
+            gap: 10,
+            boxSizing: "border-box",
+          }}
+        >
+          <span style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.25 }}>
+            ⚠️ Ainda falta na produção: {faltaNaProducao}
+          </span>
+          <span
+            style={{
+              background: "#fff",
+              color: "#B45309",
+              borderRadius: 10,
+              padding: "12px 16px",
+              textAlign: "center",
+              fontSize: 24,
+              fontWeight: 900,
+            }}
+          >
+            Finalizar mesmo assim
+          </span>
+        </div>
+      )}
+
       {/* Green flash overlay for exiting cards */}
       {isExiting && (
         <div

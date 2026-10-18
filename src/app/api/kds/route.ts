@@ -6,6 +6,7 @@ import {
   chaveDaTela,
   contaDasTelas,
   faltaFinalizacao,
+  faltaNaProducao,
   itemPronto,
   itensDaTela,
   juntarPedidosDaProducao,
@@ -365,7 +366,9 @@ export async function PUT(req: NextRequest) {
   // continua valendo para o pedido inteiro, como sempre valeu.
   // `itens`: no desfazer da produção, os itens que aquela baixa carimbou
   // (devolvidos por `finish_production` em `carimbados`).
-  const { orderId, action, stationId, tela, itens: itensDaBaixa } = body;
+  // `forcar`: no `finish_order`, o "Finalizar mesmo assim" depois do aviso de
+  // item ainda na produção (ver abaixo, `precisaConfirmar`).
+  const { orderId, action, stationId, tela, itens: itensDaBaixa, forcar } = body;
   const chaveDaTelaQueDeuBaixa = String(tela ?? "").trim();
 
   if (!orderId || !action) {
@@ -404,7 +407,7 @@ export async function PUT(req: NextRequest) {
       // `productName` entra porque o item de plataforma aponta para o espelho
       // (categoria literal "iFood") e a categoria real é resolvida pelo nome —
       // a mesma regra do GET, em lib/categoria-do-item.ts.
-      items: { select: { id: true, prontoEm: true, productName: true, menuProduct: { select: { id: true, name: true, category: true } } } },
+      items: { select: { id: true, prontoEm: true, productName: true, quantity: true, menuProduct: { select: { id: true, name: true, category: true } } } },
       // De qual loja do 99Food é o pedido: o "pronto" sai com o token DELA
       // primeiro (lib/food99-status.ts), em vez de tentar o da conta e só
       // depois os das outras — que numa conta com três lojas estourava o
@@ -586,6 +589,31 @@ export async function PUT(req: NextRequest) {
         data: { kdsTelasProntas: prontas as any, kdsBaixas: baixas as any },
       });
       return NextResponse.json({ success: true, stage: order.kdsStage, aguardandoOutraTela: true });
+    }
+
+    // ── AINDA TEM ITEM NA PRODUÇÃO? PERGUNTA ANTES DE ENCERRAR ────────────
+    //
+    // Ragnar Burger, 18/10/2026 (#148 e #142): a tela Pizza deu baixa no shake,
+    // o pedido foi para a finalização (regra de 22/09) e a "Finalização 2" o
+    // encerrou com os burgers sem carimbo — ele sumiu da tela Burger, que só
+    // acha o adiantado enquanto ele está em FINISHING. Esta baixa encerraria o
+    // pedido: se alguma tela de PRODUÇÃO ainda tem item dele por carimbar, não
+    // grava nada e devolve a lista; a tela avisa e o segundo toque vem com
+    // `forcar: true`. A bebida que nenhuma tela de produção mostra não conta
+    // (lib/kds-telas.ts, `faltaNaProducao`), senão travaria para sempre. Sem
+    // identidade de tela (link antigo), fica como sempre foi.
+    //
+    // 200 e não 409: a tela trata qualquer não-ok como baixa que não chegou e
+    // repete — e aqui ela chegou, só precisa de confirmação.
+    if (chaveDaTelaQueDeuBaixa && forcar !== true) {
+      const regras = await prisma.user
+        .findUnique({ where: { id: order.franchiseeId! }, select: { kdsConfig: true } })
+        .then((u) => lerKdsConfig(u?.kdsConfig))
+        .catch(() => null);
+      const faltam = faltaNaProducao(telasFim, itensParaFiltro, pedidoParaFiltro, regras);
+      if (faltam.length > 0) {
+        return NextResponse.json({ success: false, precisaConfirmar: true, faltam });
+      }
     }
     const isPickup = order.deliveryType !== "DELIVERY";
     const updateData: any = {

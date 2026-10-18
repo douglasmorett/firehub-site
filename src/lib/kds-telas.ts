@@ -370,6 +370,63 @@ export function telaMostraPedido(
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   A FINALIZAÇÃO NÃO ENCERRA O QUE A PRODUÇÃO AINDA ESTÁ FAZENDO
+
+   Ragnar Burger, 18/10/2026, pedido #148 (Ragnar + Thor + MilkShake): a tela
+   Pizza deu baixa no shake e, pela regra de 22/09, o pedido foi para a
+   finalização com sinal nos burgers. 28 s depois a "Finalização 2" deu pronto
+   e o pedido virou FINISHED com os dois burgers sem carimbo — sumiu da tela
+   Burger, que só busca adiantados ainda em FINISHING. O dono: "quando a menina
+   dá ok no shake some tudo, some da tela do burger também".
+
+   Então a última baixa da finalização pergunta antes: ainda há item que uma
+   tela de PRODUÇÃO mostra e precisa carimbar? Só conta o que alguma tela de
+   produção é dona de verdade (`telaPrecisaDarBaixa`, mais o filtro de número
+   e a bebida que a loja tirou da produção): o item que nenhuma tela de
+   produção mostra — a bebida que ninguém carimba — nunca ganha `prontoEm`, e
+   contá-lo travaria o pedido para sempre. Loja sem tela de produção = lista
+   vazia = finaliza como sempre.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Um item ainda por fazer na produção, já no texto da tela: "2× Thor" na tela "Burger". */
+export type FaltaNaProducao = { item: string; tela: string };
+
+export function faltaNaProducao(
+  telas: TelaDoKds[] | null | undefined,
+  itens:
+    | (ItemParaTela & {
+        prontoEm?: Date | string | null;
+        productName?: string | null;
+        quantity?: number | null;
+        menuProduct?: { name?: string | null; category?: string | null } | null;
+      })[]
+    | null
+    | undefined,
+  pedido?: { numero?: unknown; deliveryType?: string | null } | null,
+  config?: KdsConfig | null
+): FaltaNaProducao[] {
+  const producao = (telas || [])
+    .filter((t) => texto(t?.stage) === "production")
+    .filter((t) => !pedido || telaMostraPedido(t, pedido));
+  const porChave = new Map<string, { qtd: number; nome: string; tela: string }>();
+  for (const i of itens || []) {
+    if (itemPronto(i)) continue;
+    const cat = i?.menuProduct?.category ?? i?.category;
+    const donas = producao.filter((t) => telaPrecisaDarBaixa(t, i) && !categoriaSoNaFinalizacao(config, cat, t.categoryFilter));
+    if (donas.length === 0) continue;
+    // A tela que lista a categoria diz mais do que a que mostra tudo.
+    const dona = donas.find((t) => (t.categoryFilter || []).some((c) => texto(c))) || donas[0];
+    const tela = String(dona?.name ?? "").trim() || "produção";
+    const nome = String(i?.productName ?? i?.menuProduct?.name ?? "").trim() || "item";
+    const chave = `${texto(nome)}|${tela}`;
+    const atual = porChave.get(chave) || { qtd: 0, nome, tela };
+    atual.qtd += Number(i?.quantity) > 0 ? Number(i?.quantity) : 1;
+    porChave.set(chave, atual);
+  }
+  return [...porChave.values()].map((f) => ({ item: `${f.qtd}× ${f.nome}`, tela: f.tela }));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    QUEM É DONO DE CADA CATEGORIA, VISTO DE UMA TELA
 
    "Categoria sem dono acompanha o pedido em toda tela" — e o dono era a união
