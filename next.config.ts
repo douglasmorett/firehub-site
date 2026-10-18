@@ -132,7 +132,11 @@ const nextConfig: NextConfig = {
     const portaDaLoja = "http://localhost:7890 http://127.0.0.1:7890";
     const csp = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com https://*.mercadopago.com https://connect.facebook.net https://*.googletagmanager.com",
+      // O mapa de prospecção do vendedor (components/prospeccao) carrega a
+      // Maps JavaScript API: o script vem de maps.googleapis.com e puxa
+      // pedaços de maps.gstatic.com; o mapa vetorial roda em worker de blob:.
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://sdk.mercadopago.com https://*.mercadopago.com https://connect.facebook.net https://*.googletagmanager.com https://maps.googleapis.com https://maps.gstatic.com",
+      "worker-src 'self' blob:",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "img-src 'self' data: blob: https:",
       "font-src 'self' data: https://fonts.gstatic.com",
