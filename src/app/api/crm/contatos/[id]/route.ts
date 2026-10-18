@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { garantirEstruturaDoCrm } from "@/lib/garantir-colunas";
-import { nomesDaEquipe, podeVerContato, quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
+import { nomesDaEquipe, podeVerContato, podeVerConversas, quemEsta, semConversa, NAO_AUTORIZADO, SO_O_ADMIN_NO_ATENDIMENTO } from "@/lib/crm/acesso";
 import { atribuirVendedor, mudarEtapa, registrarEvento, vincularLoja } from "@/lib/crm/contatos";
 import { etapaValida, origemValida } from "@/lib/crm/etapas";
 import { mensagensDoContato } from "@/lib/crm/mensagens";
@@ -29,6 +29,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const nomes = await nomesDaEquipe();
   const desde = req.nextUrl.searchParams.get("desde");
+  // O vendedor vê a ficha, as notas e as reuniões — não as conversas (só o admin atende).
+  const veConversas = podeVerConversas(quem);
+  if (desde && !veConversas) return NextResponse.json(SO_O_ADMIN_NO_ATENDIMENTO, { status: 403 });
   if (desde) {
     // Só o que é novo — a pergunta de poucos em poucos segundos da tela aberta.
     const novas = await prisma.crmMensagem.findMany({
@@ -41,15 +44,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   }
 
   const [mensagens, eventos, reunioes, loja] = await Promise.all([
-    mensagensDoContato(id, 300),
+    veConversas ? mensagensDoContato(id, 300) : Promise.resolve([] as Awaited<ReturnType<typeof mensagensDoContato>>),
     prisma.crmEvento.findMany({ where: { contatoId: id }, orderBy: { criadoEm: "desc" }, take: 60 }),
     prisma.agendaReuniao.findMany({ where: { contatoId: id }, orderBy: { inicio: "desc" }, take: 20, include: { contato: true } }),
     contato.userId ? estadoDaLojaParaSuporte(contato.userId, { aoVivo: req.nextUrl.searchParams.get("aoVivo") === "1" }).catch(() => null) : Promise.resolve(null),
   ]);
-  if (contato.naoLidas > 0) await prisma.crmContato.update({ where: { id }, data: { naoLidas: 0 } });
+  if (veConversas && contato.naoLidas > 0) await prisma.crmContato.update({ where: { id }, data: { naoLidas: 0 } });
 
   return NextResponse.json({
-    contato: contatoCompleto({ ...contato, naoLidas: 0 }, nomes),
+    contato: semConversa(contatoCompleto({ ...contato, naoLidas: veConversas ? 0 : contato.naoLidas }, nomes), quem),
     mensagens: mensagens.map(mensagemParaTela),
     eventos: eventos.map((e) => ({ id: e.id, tipo: e.tipo, texto: e.texto, autorNome: e.autorNome, autorTipo: e.autorTipo, criadoEm: e.criadoEm.toISOString() })),
     reunioes: reunioes.map((r) => reuniaoParaTela(r, nomes)),
@@ -110,5 +113,5 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const atualizado = await prisma.crmContato.findUnique({ where: { id } });
-  return NextResponse.json({ contato: contatoCompleto(atualizado, await nomesDaEquipe()) });
+  return NextResponse.json({ contato: semConversa(contatoCompleto(atualizado, await nomesDaEquipe()), quem) });
 }

@@ -43,6 +43,26 @@ export function filtroDeContatos(quem: QuemEsta): { vendedorId?: string } {
 
 export const NAO_AUTORIZADO = { error: "Não autorizado" } as const;
 
+/**
+ * O ATENDIMENTO (as conversas do WhatsApp do FireHub e o chat do painel) é só
+ * do admin — Douglas, 18/10/2026: "o meu vendedor não precisa ter esse painel
+ * de atendimento. Pode tirar dele. Só eu." O vendedor segue com os Contatos e
+ * a Agenda, sem o texto das conversas. Toda rota que lê ou manda mensagem, ou
+ * mexe no robô de uma conversa, chama isto (scripts/teste-atendimento-so-do-admin.ts
+ * confere).
+ */
+export function podeVerConversas(quem: QuemEsta | null): boolean {
+  return !!quem && quem.tipo === "ADMIN";
+}
+
+export const SO_O_ADMIN_NO_ATENDIMENTO = { error: "O atendimento (conversas) é só do administrador." } as const;
+
+/** O contato sem o conteúdo das conversas (última mensagem, resumo do robô) — para o vendedor. */
+export function semConversa<T extends Record<string, unknown>>(contato: T, quem: QuemEsta): T {
+  if (podeVerConversas(quem)) return contato;
+  return { ...contato, ultimaMensagemTexto: null, resumo: null };
+}
+
 /** id → nome de toda a equipe (inclusive quem saiu), para rotular contato e reunião. */
 export async function nomesDaEquipe(): Promise<Map<string, string>> {
   const vendedores = await prisma.ambassador.findMany({ where: { isVendedor: true }, select: { id: true, name: true } });

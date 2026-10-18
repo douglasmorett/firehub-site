@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { garantirEstruturaDoCrm } from "@/lib/garantir-colunas";
-import { filtroDeContatos, nomesDaEquipe, quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
+import { filtroDeContatos, nomesDaEquipe, podeVerConversas, quemEsta, semConversa, NAO_AUTORIZADO } from "@/lib/crm/acesso";
 import { etapaValida } from "@/lib/crm/etapas";
 import { contatoParaLista } from "@/lib/crm/serializar";
 import { configDoAtendimento } from "@/lib/atendimento/config";
@@ -21,6 +21,9 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   const quem = await quemEsta();
   if (!quem) return NextResponse.json(NAO_AUTORIZADO, { status: 401 });
+  // O vendedor usa esta lista só como a lista de CONTATOS (aba Contatos): sem o
+  // texto da última mensagem nem o resumo do robô. As conversas são do admin.
+  const soContatos = !podeVerConversas(quem);
   if (!(await garantirEstruturaDoCrm())) return NextResponse.json({ error: "O banco do CRM ainda não está pronto." }, { status: 503 });
 
   const p = req.nextUrl.searchParams;
@@ -71,7 +74,7 @@ export async function GET(req: NextRequest) {
   ]);
 
   return NextResponse.json({
-    contatos: contatos.map((c) => contatoParaLista(c, nomes)),
+    contatos: contatos.map((c) => (soContatos ? semConversa(contatoParaLista(c, nomes), quem) : contatoParaLista(c, nomes))),
     totais: {
       porEtapa: Object.fromEntries(contagem.map((g) => [g.etapa, g._count._all])),
       aguardando,

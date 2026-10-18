@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { nomesDaEquipe, podeVerContato, quemEsta, NAO_AUTORIZADO } from "@/lib/crm/acesso";
+import { nomesDaEquipe, podeVerContato, quemEsta, NAO_AUTORIZADO, podeVerConversas, SO_O_ADMIN_NO_ATENDIMENTO } from "@/lib/crm/acesso";
 import { registrarEvento } from "@/lib/crm/contatos";
 import { contatoCompleto } from "@/lib/crm/serializar";
 import { agendarRespostaDoRobo } from "@/lib/atendimento/robo";
@@ -20,6 +20,7 @@ const PAUSA_DA_TELA_MS = 7 * 24 * 60 * 60_000;
  */
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const quem = await quemEsta();
+  if (quem && !podeVerConversas(quem)) return NextResponse.json(SO_O_ADMIN_NO_ATENDIMENTO, { status: 403 });
   if (!quem) return NextResponse.json(NAO_AUTORIZADO, { status: 401 });
   const { id } = await params;
   const contato = await prisma.crmContato.findUnique({ where: { id } });

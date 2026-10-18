@@ -7,15 +7,20 @@
  *
  *   Meus números  o relatório (RelatorioDoParceiro)
  *   Carteira      perfil de cada loja e o que oferecer (RelatorioDaCarteira) — vendedor
- *   Conversas     a caixa de atendimento do número do FireHub  ┐
- *   Contatos      o funil do CRM                               ├ só vendedor
+ *   Mapa          mapa de prospecção — LUGAR PREVISTO: aparece quando a página passar `mapaDeProspeccao`
+ *   Contatos      o funil do CRM, sem o texto das conversas    ┐ só vendedor
  *   Agenda        a agenda compartilhada da equipe            ┘
+ *
+ * As CONVERSAS (caixa de atendimento do número do FireHub) saíram do portal em
+ * 18/10/2026 — Douglas: "o meu vendedor não precisa ter esse painel de
+ * atendimento… Só eu." As rotas negam no servidor (lib/crm/acesso.ts,
+ * podeVerConversas).
  */
 import { useEffect, useState } from "react";
-import { ArrowLeft, Briefcase, CalendarClock, ChartNoAxesColumn, Handshake, LogOut, MessageCircle, Network, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, Briefcase, CalendarClock, ChartNoAxesColumn, Handshake, LogOut, Map as IconeDoMapa, Network, Sparkles, Target } from "lucide-react";
+import type { ReactNode } from "react";
 import SairDaConta from "@/components/SairDaConta";
 import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
-import CaixaDeAtendimento from "@/components/crm/CaixaDeAtendimento";
 import FunilDoCrm from "@/components/crm/FunilDoCrm";
 import AgendaDaEquipe from "@/components/crm/AgendaDaEquipe";
 import RelatorioDoParceiro from "@/components/parceiro/RelatorioDoParceiro";
@@ -25,12 +30,13 @@ import { OcultarValoresProvider, OlhoDosValores } from "@/components/parceiro/Va
 import { indicacaoDeEmbaixador, type Papel } from "@/lib/parceiro/regras";
 import type { RelatorioDoParceiro as Relatorio } from "@/lib/parceiro/relatorio";
 
-type Aba = "numeros" | "carteira" | "conversas" | "contatos" | "agenda";
+type Aba = "numeros" | "carteira" | "mapa" | "contatos" | "agenda";
 const ABAS: { chave: Aba; rotulo: string; Icone: typeof Handshake; soVendedor: boolean }[] = [
   { chave: "numeros", rotulo: "Meus números", Icone: ChartNoAxesColumn, soVendedor: false },
   // O perfil das lojas e o que oferecer (lib/perfil-da-loja) — o admin também abre, pela carteira deste vendedor.
   { chave: "carteira", rotulo: "Carteira e oportunidades", Icone: Sparkles, soVendedor: true },
-  { chave: "conversas", rotulo: "Conversas", Icone: MessageCircle, soVendedor: true },
+  // Mapa de prospecção (outra sessão faz src/components/prospeccao/*): só aparece com a prop `mapaDeProspeccao`.
+  { chave: "mapa", rotulo: "Mapa de prospecção", Icone: IconeDoMapa, soVendedor: true },
   { chave: "contatos", rotulo: "Contatos", Icone: Target, soVendedor: true },
   { chave: "agenda", rotulo: "Agenda", Icone: CalendarClock, soVendedor: true },
 ];
@@ -47,6 +53,7 @@ export default function PortalDoParceiro({
   saida = "/embaixador",
   voltarPara = "/admin?aba=vendedores",
   disparo,
+  mapaDeProspeccao,
 }: {
   relatorio: Relatorio;
   modo?: "PARCEIRO" | "ADMIN";
@@ -56,24 +63,21 @@ export default function PortalDoParceiro({
   voltarPara?: string;
   /** Vendedor: quanto ganha por pacote de disparo e o que já ganhou no mês (sem margem nem custo). */
   disparo?: { pacotes: { mensagens: number; ganho: number }[]; ganhoNoMes: number } | null;
+  /** LUGAR PREVISTO: o mapa de prospecção (src/components/prospeccao). Sem ele, a aba não aparece. */
+  mapaDeProspeccao?: ReactNode;
 }) {
   const p = relatorio.parceiro;
   const temCrm = modo === "PARCEIRO" && p.isVendedor;
-  const abas = ABAS.filter((a) => !a.soVendedor || temCrm || (a.chave === "carteira" && p.isVendedor));
+  const abas = ABAS
+    .filter((a) => a.chave !== "mapa" || !!mapaDeProspeccao)
+    .filter((a) => !a.soVendedor || temCrm || (a.chave === "carteira" && p.isVendedor));
   const [aba, setAba] = useState<Aba>("numeros");
-  const [contatoParaAbrir, setContatoParaAbrir] = useState<string | null>(null);
-  const abrirConversa = (id: string) => {
-    setContatoParaAbrir(id);
-    setAba("conversas");
-  };
 
-  // /vendedor?aba=conversas&contato=… — o link que vai no aviso do vendedor.
+  // /vendedor?aba=… abre direto na aba (o antigo ?aba=conversas cai em Meus números).
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
     const pedida = q.get("aba") as Aba | null;
     if (pedida && abas.some((a) => a.chave === pedida)) setAba(pedida);
-    const contato = q.get("contato");
-    if (contato && temCrm) abrirConversa(contato);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -169,14 +173,12 @@ export default function PortalDoParceiro({
             : p.ativo ? <RelatorioDaCarteira fonte="/api/vendedor/carteira" titulo="Minha carteira" /> : pausado}
         </main>
       )}
-      {aba === "conversas" && (
-        <main className="pp-largo">{p.ativo ? <CaixaDeAtendimento modo="VENDEDOR" abrirContatoId={contatoParaAbrir} /> : pausado}</main>
-      )}
+      {aba === "mapa" && mapaDeProspeccao && <main className="pp-largo">{mapaDeProspeccao}</main>}
       {aba === "contatos" && (
-        <main className="pp-largo">{p.ativo ? <FunilDoCrm modo="VENDEDOR" aoAbrirConversa={abrirConversa} /> : pausado}</main>
+        <main className="pp-largo">{p.ativo ? <FunilDoCrm modo="VENDEDOR" /> : pausado}</main>
       )}
       {aba === "agenda" && (
-        <main className="pp-largo">{p.ativo ? <AgendaDaEquipe modo="VENDEDOR" aoAbrirConversa={abrirConversa} /> : pausado}</main>
+        <main className="pp-largo">{p.ativo ? <AgendaDaEquipe modo="VENDEDOR" /> : pausado}</main>
       )}
     </div>
     </OcultarValoresProvider>
@@ -430,5 +432,6 @@ const ESTILO_DO_PORTAL = `
   .pp-topo-dir .pp-olho { margin-left: auto; }
   .pp-topo-dir .pp-olho ~ .pp-sair { margin-left: 0; }
 }
+
 @media (prefers-reduced-motion: reduce) { .pp * { transition: none !important; scroll-behavior: auto !important; } }
 `;
