@@ -1127,7 +1127,7 @@ export default function LoyaltyConfigForm({
                   🎁 Indique e Ganhe (Recompensa por Indicação)
                 </h3>
                 <p style={{ margin: "2px 0 0", fontSize: "0.78rem", color: "#64748B" }}>
-                  Transforme seus clientes em divulgadores ativando cupons para quem indica e quem é indicado.
+                  Transforme seus clientes em divulgadores: desconto para o amigo e saldo para quem indicou.
                 </p>
               </div>
 
@@ -1153,10 +1153,15 @@ export default function LoyaltyConfigForm({
             <div style={{ background: "#FAF6F2", border: "1.5px solid #E7DDD3", borderRadius: 14, padding: "14px 16px", marginBottom: 20, fontSize: "0.82rem", color: "#1C1917" }}>
               <strong>Como Funciona o Fluxo de Indicação:</strong>
               <ol style={{ margin: "6px 0 0", paddingLeft: 18, lineHeight: 1.5 }}>
-                <li>O cliente copia o link único no cardápio digital (ex: <code>loja.com.br?ref=CARLOS10</code>).</li>
-                <li>O amigo indicado ganha <strong>{fmt(config.friendDiscount)} de desconto</strong> no 1º pedido.</li>
-                <li>Assim que o amigo compra, o indicador recebe <strong>{fmt(config.referrerReward)} de recompensa</strong>!</li>
+                <li>O cliente identificado (pelo telefone) copia o link dele no cardápio digital (ex: <code>?ref=K7M2QX</code>).</li>
+                <li>O amigo que abre o link ganha <strong>{fmt(config.friendDiscount)} de desconto</strong> no 1º pedido na loja pelo site, com produtos a partir de <strong>{fmt(config.referralMinOrder)}</strong>. O desconto sai na comanda como "Indicação de (nome)".</li>
+                <li>Quando o pedido do amigo é <strong>entregue</strong>, quem indicou recebe <strong>{fmt(config.referrerReward)} de saldo de cashback</strong> — uma vez por amigo. Pedido cancelado não credita.</li>
               </ol>
+              <div style={{ marginTop: 8, fontSize: "0.76rem", color: "#57534E", lineHeight: 1.45 }}>
+                Não vale indicar o próprio telefone, e não soma com o cupom de primeiro pedido (fica o cupom; quem indicou ganha igual).
+                O saldo se usa no site, até o limite de resgate da aba Cashback — mesmo com o cashback desligado.
+                Cada indicação aparece na ficha do cliente (Clientes) e o desconto no relatório Cupons e descontos.
+              </div>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>

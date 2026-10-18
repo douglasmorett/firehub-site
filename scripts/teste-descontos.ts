@@ -551,5 +551,22 @@ confere("no relatório: R$ 10,00 pagos pela Brendi, R$ 0 sem dono, e a linha diz
 confere("iFood com só a coluna da loja e o detalhe sem parte do iFood: continua 'não identificado' (nada inventado)",
   [d3.loja, d3.plataforma, d3.naoIdentificado], [7, 0, 3]);
 
+// ── Indique e Ganhe (17/10/2026): fatia própria "Indicação" ──────────────────
+// R$ 10 da indicação + 5% do Pix (R$ 2,00) no total de R$ 12,00: cada um no seu lugar.
+const INDICADO = siteShow({
+  totalAmount: 38, discountTotal: 12, discountMerchant: 12,
+  notes: "[Indicação de Maria: -R$ 10,00] [Desconto Pix pelo site (5%): -R$ 2,00]",
+  indicacao: { programa: "indicacao", codigo: "K7M2QX", indicador: "99991234", amigo: "88887777", desconto: 10, recompensa: 15 },
+});
+confere("indicação vira a fatia 'Indicação' e o Pix fica com o dele",
+  descontoDoPedido(INDICADO, "SITE").fatias.map((f) => [f.tipo, f.nome, f.valor]),
+  [["fidelidade", "Indicação", 10], ["pagamento", "Desconto Pix pelo site (5%)", 2]]);
+const INDICADO_COM_CUPOM = siteShow({
+  totalAmount: 45, discountTotal: 5, discountMerchant: 5, notes: "[Indicação de Maria — não soma com o cupom de primeiro pedido] [Cupom: PRIMEIRO]",
+  indicacao: { programa: "indicacao", codigo: "K7M2QX", indicador: "99991234", amigo: "88887777", desconto: 0, recompensa: 15, semDesconto: "cupom_de_primeiro_pedido" },
+});
+confere("indicação com o cupom de 1º pedido: o desconto é todo do cupom",
+  descontoDoPedido(INDICADO_COM_CUPOM, "SITE").fatias.map((f) => [f.tipo, f.nome, f.valor]), [["cupom", "PRIMEIRO", 5]]);
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

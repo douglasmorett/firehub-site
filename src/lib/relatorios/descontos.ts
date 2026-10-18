@@ -198,6 +198,7 @@ import { lerCupons, descreverBeneficio, cupomVenceu, type Cupom } from "@/lib/cu
 import { repartirDesconto99 } from "@/lib/desconto-99food";
 import { lerEntregaGratis } from "@/lib/entrega-gratis";
 import { lerResgateDosCarimbos } from "@/lib/carimbos";
+import { lerResgateDaIndicacao } from "@/lib/indicacao";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
 import {
   ROTULO_DO_TIPO, c2, canalDoRelatorio, diasNoPeriodo, fmtDia, fmtPct, naLoja, somarDias, tipoDeVenda,
@@ -232,6 +233,8 @@ export type PedidoParaDescontos = {
   notes?: string | null;
   trilhaPremio?: unknown;
   carimboPremio?: unknown;
+  /** Indique e Ganhe: o desconto do 1º pedido do amigo (lib/indicacao.ts). */
+  indicacao?: unknown;
   entregaGratis?: unknown;
   cashbackEarned?: number | null;
   cashbackUsed?: number | null;
@@ -669,6 +672,15 @@ export function descontoDoPedido(p: PedidoParaDescontos, canal: string = canalDo
         fatias.push(fatia("fidelidade", canal, "Cartão de Carimbos", "PEDIDO", valor, { chave: `fidelidade:${canal}:carimbos` }));
         restante -= valor;
       }
+    }
+    // Indique e Ganhe (lib/indicacao.ts): o desconto do primeiro pedido do
+    // amigo indicado, com o valor próprio gravado em `indicacao`. A recompensa
+    // de quem indicou é saldo de cashback: quando usada, sai em "Cashback usado".
+    const indicacao = lerResgateDaIndicacao(p.indicacao);
+    if (indicacao && indicacao.desconto > 0 && restante > 0.004) {
+      const valor = Math.min(restante, indicacao.desconto);
+      fatias.push(fatia("fidelidade", canal, "Indicação", "PEDIDO", valor, { chave: `fidelidade:${canal}:indicacao` }));
+      restante -= valor;
     }
     // O % de quem paga Pix/cartão pelo site e o cashback usado têm valor
     // próprio e estão DENTRO do `discountTotal`: saem antes do cupom, que fica

@@ -51,6 +51,7 @@ import {
 } from "@/lib/entrega-no-checkout";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { lerCashback, regraNoCanal } from "@/lib/cashback";
+import { FRASE_SEM_INDICACAO, lerIndicacao, lerReferencia, type MotivoSemIndicacao } from "@/lib/indicacao";
 import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto, motivoForaDoCardapio } from "@/lib/cardapio-interno";
 import FloatingContactWidget from "@/components/FloatingContactWidget";
 import TrilhaDoCliente, { type ProgressoDoCliente } from "@/components/trilha/TrilhaDoCliente";
@@ -416,7 +417,7 @@ export default function CustomerStorePage({
 
   const [notes, setNotes] = useState("");
   const [couponCode, setCouponCode] = useState("");
-  const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; pct?: number; isFreeShipping?: boolean } | null>(null);
+  const [couponApplied, setCouponApplied] = useState<{ code: string; discount: number; pct?: number; isFreeShipping?: boolean; primeiroPedido?: boolean } | null>(null);
   const [showCouponInput, setShowCouponInput] = useState(false);
   const [couponLoading, setCouponLoading] = useState(false);
   const [couponError, setCouponError] = useState("");
@@ -458,6 +459,37 @@ export default function CustomerStorePage({
     } catch { /* sem URL legível: segue sem cupom */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // ── INDIQUE E GANHE: o link "?ref=" do amigo (lib/indicacao.ts) ──────────
+  //
+  // O código fica guardado NESTA loja até o servidor dizer que não vale mais
+  // (o telefone já pediu aqui, o link é do próprio cliente ou não existe):
+  // quem abre pelo link hoje e pede amanhã ainda leva o desconto. Quem decide
+  // se vale é o servidor — aqui só se guarda e se manda o código.
+  const chaveDaIndicacao = `firehub:indicacao:${franchisee.id}`;
+  const [codigoDeIndicacao, setCodigoDeIndicacao] = useState<string | null>(null);
+  const [indicacaoDoServidor, setIndicacaoDoServidor] = useState<{
+    codigo: string | null;
+    indicadoPor: { valido: boolean; motivo: MotivoSemIndicacao | null; nome: string | null; desconto: number; minimo: number } | null;
+  } | null>(null);
+  useEffect(() => {
+    try {
+      const daUrl = new URLSearchParams(window.location.search).get("ref");
+      if (daUrl && lerReferencia(daUrl)) {
+        setCodigoDeIndicacao(daUrl.trim());
+        localStorage.setItem(chaveDaIndicacao, JSON.stringify({ codigo: daUrl.trim(), em: Date.now() }));
+        return;
+      }
+      const guardado = JSON.parse(localStorage.getItem(chaveDaIndicacao) || "null");
+      // 60 dias: link velho esquecido no navegador não vira desconto surpresa.
+      if (guardado?.codigo && Date.now() - Number(guardado.em || 0) < 60 * 86_400_000) setCodigoDeIndicacao(String(guardado.codigo));
+      else if (guardado) localStorage.removeItem(chaveDaIndicacao);
+    } catch { /* sem armazenamento: segue sem indicação guardada */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const esquecerIndicacao = () => {
+    setCodigoDeIndicacao(null);
+    try { localStorage.removeItem(chaveDaIndicacao); } catch { /* ignore */ }
+  };
   const sectionRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Modais especiais de alto engajamento
@@ -968,9 +1000,11 @@ export default function CustomerStorePage({
   const textoDoMinimoDosCarimbos = minimoDosCarimbos(regraDosCarimbos);
   const ondeEntraOPremioDosCarimbos = ondeEntraOPremio(regraDosCarimbos);
 
-  const isReferralActive = Boolean(loyalty.referralActive);
-  const friendDiscount = Number(loyalty.friendDiscount || 10);
-  const referrerReward = Number(loyalty.referrerReward || 10);
+  // A mesma leitura do servidor (lib/indicacao.ts): zero vale zero.
+  const regraDaIndicacao = lerIndicacao(loyalty);
+  const isReferralActive = regraDaIndicacao.ativo;
+  const friendDiscount = regraDaIndicacao.descontoDoAmigo;
+  const referrerReward = regraDaIndicacao.recompensa;
 
   const isVipActive = Boolean(loyalty.vipActive);
   const bronzeCashback = Number(loyalty.bronzeCashback || 0);
@@ -1052,7 +1086,10 @@ export default function CustomerStorePage({
   const cashbackRate = cashbackDoServidor?.taxa ?? (baseCashbackRate + (customer && isVipActive ? vipTier.bonus : 0));
 
   const [useCashback, setUseCashback] = useState(false);
-  const customerCashbackBalance = isCashbackActive ? Number(cashbackDoServidor?.saldo || 0) : 0;
+  // O saldo se usa no site com o cashback ligado — ou, na loja que só ligou o
+  // Indique e Ganhe, para gastar a recompensa (lib/indicacao.ts, regraParaUsarOSaldo).
+  const saldoUsavelNoSite = isCashbackActive || (isReferralActive && referrerReward > 0);
+  const customerCashbackBalance = saldoUsavelNoSite ? Number(cashbackDoServidor?.saldo || 0) : 0;
 
   const isFreeShippingConfigActive = Boolean(delivConfig.freeShippingActive === true || delivConfig.freeShippingActive === "true");
   const freeShippingThreshold = isFreeShippingConfigActive && Number(delivConfig.freeShippingMinValue) > 0 ? Number(delivConfig.freeShippingMinValue) : null;
@@ -1097,6 +1134,21 @@ export default function CustomerStorePage({
     ? Math.round(Math.min(regraDosCarimbos.premioValor, Math.max(0, cartTotal - discount - descontoDaTrilha)) * 100) / 100
     : 0;
 
+  // ── INDICAÇÃO NA CONTA ─────────────────────────────────────────────────
+  //
+  // Espelho de exibição: quem aplica é o servidor (api/customer-order,
+  // lib/indicacao.ts). Vale com o servidor dizendo que este telefone pode
+  // (primeiro pedido, não é o dono do link), produtos ≥ mínimo, e sem o cupom
+  // de primeiro pedido — os dois não somam. Só sobre os produtos a pagar.
+  const indicadoPor = codigoDeIndicacao && isReferralActive && !mesa ? indicacaoDoServidor?.indicadoPor ?? null : null;
+  const cupomDePrimeiroPedidoNaSacola = Boolean(
+    couponApplied && (couponApplied.primeiroPedido || couponApplied.code === cupomPrimeiroPedido?.code || (cupomDaUrl?.somentePrimeiroPedido && couponApplied.code === cupomDaUrl.code)),
+  );
+  const indicacaoNaSacola = Boolean(indicadoPor?.valido && cartTotal > 0 && cartTotal >= (indicadoPor?.minimo || 0));
+  const descontoDaIndicacao = indicacaoNaSacola && !cupomDePrimeiroPedidoNaSacola
+    ? Math.round(Math.min(indicadoPor!.desconto, Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDosCarimbos)) * 100) / 100
+    : 0;
+
   // O % que a loja dá a quem paga pelo site. A conta é a mesma do servidor
   // (lib/desconto-pagamento-online.ts): o Asaas cobra o total que ele grava.
   const descontoOnline = mesa
@@ -1105,7 +1157,7 @@ export default function CustomerStorePage({
         paymentFees: franchisee.paymentFees,
         paymentMethod,
         ligada: { pix: franchisee.pixOnlineAtivo === true, cartao: cartaoPeloAsaas },
-        base: cartTotal - discount - descontoDaTrilha - descontoDosCarimbos,
+        base: cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao,
       });
   const descontoDoPagamento = descontoOnline?.valor || 0;
 
@@ -1115,7 +1167,7 @@ export default function CustomerStorePage({
   // (lib/cashback.ts): o saldo paga até X% dos produtos já com cupom e prêmio, e
   // o cashback que o pedido gera incide sobre o que foi pago pelos produtos.
   // Vem DEPOIS do desconto do pagamento online, como no servidor.
-  const produtosAPagar = Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDoPagamento);
+  const produtosAPagar = Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoPagamento);
   const maxCashbackDiscount = mesa ? 0 : Math.round(Math.min(
     customerCashbackBalance,
     (produtosAPagar * cashbackMaxRedeemPercent) / 100
@@ -1130,7 +1182,7 @@ export default function CustomerStorePage({
    * existia na conta (`useCashback`), mas nada na tela o ligava.
    */
   const usarSaldoJSX = () => {
-    if (mesa || !isCashbackActive || customerCashbackBalance <= 0 || cartTotal <= 0) return null;
+    if (mesa || !saldoUsavelNoSite || customerCashbackBalance <= 0 || cartTotal <= 0) return null;
     const vence = cashbackDoServidor?.proximoVencimento;
     return (
       <label style={{
@@ -1161,7 +1213,7 @@ export default function CustomerStorePage({
 
   // Na mesa o total é o dos itens a preço do salão: cupom, cashback, prêmio
   // e taxa de entrega não existem na conta da mesa (lib/lancar-na-mesa.ts).
-  const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha - descontoDosCarimbos - descontoDoPagamento);
+  const itemsTotal = mesa ? cartTotal : Math.max(0, cartTotal - discount - cashbackDiscountApplied - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao - descontoDoPagamento);
   const totalAntesDoAcrescimo = mesa ? cartTotal : itemsTotal + (deliveryType === "DELIVERY" && !isFreeShippingEffective && deliveryFeeCalculated && deliveryFee !== null ? deliveryFee : 0);
   // ── ACRÉSCIMO NO CRÉDITO ───────────────────────────────────────────────
   //
@@ -1480,7 +1532,8 @@ export default function CustomerStorePage({
       // A loja vai junto: a rota passou a escopar a busca por ela (sem isso,
       // o telefone puxava pedidos de TODAS as lojas — dado de cliente alheio).
       const res = await fetch(
-        `/api/store-customer?phone=${encodeURIComponent(clean)}&franchiseeId=${encodeURIComponent(franchisee.id)}`
+        `/api/store-customer?phone=${encodeURIComponent(clean)}&franchiseeId=${encodeURIComponent(franchisee.id)}` +
+          (codigoDeIndicacao ? `&ref=${encodeURIComponent(codigoDeIndicacao)}` : "")
       );
       if (res.ok) {
         const d = await res.json();
@@ -1488,6 +1541,12 @@ export default function CustomerStorePage({
         setTrilhaProgresso(d.trilha || null);
         setCashbackDoServidor(d.cashback || null);
         setCarimbosDoServidor(d.carimbos || null);
+        setIndicacaoDoServidor(d.indicacao || null);
+        // Link que não vale mais para este telefone (já pediu aqui, é o dono
+        // do link, código inexistente): sai do navegador. Abaixo do mínimo não —
+        // é só a sacola que ainda não chegou lá.
+        const motivoDaIndicacao = d.indicacao?.indicadoPor?.motivo;
+        if (motivoDaIndicacao && motivoDaIndicacao !== "abaixo_do_minimo" && motivoDaIndicacao !== "desligada") esquecerIndicacao();
         // O direito ao cupom de primeiro pedido vem na mesma resposta: quem
         // decide se este telefone "nunca pediu" é o servidor.
         setCupomPrimeiroPedido(d.cupomPrimeiroPedido || null);
@@ -1533,9 +1592,9 @@ export default function CustomerStorePage({
       }
       setCouponCode(cleanCode);
       if (d.zeraTaxa) {
-        setCouponApplied({ code: d.code, discount: deliveryFee || 0, isFreeShipping: true });
+        setCouponApplied({ code: d.code, discount: deliveryFee || 0, isFreeShipping: true, primeiroPedido: d.primeiroPedido === true });
       } else {
-        setCouponApplied({ code: d.code, discount: Number(d.desconto) || 0, pct: d.type === "percent" ? d.discount : undefined, isFreeShipping: false });
+        setCouponApplied({ code: d.code, discount: Number(d.desconto) || 0, pct: d.type === "percent" ? d.discount : undefined, isFreeShipping: false, primeiroPedido: d.primeiroPedido === true });
       }
       // Regra por telefone (limite de usos / primeiro pedido) e o telefone
       // ainda não foi digitado: o desconto aparece, e o aviso diz que a
@@ -2602,6 +2661,8 @@ export default function CustomerStorePage({
           usarCashback: cashbackDiscountApplied > 0,
           dispensarPremioDaTrilha: guardarPremioDaTrilha,
           dispensarPremioDosCarimbos: guardarPremioDosCarimbos,
+          // O link de indicação guardado: o servidor confere tudo (lib/indicacao.ts).
+          ...(codigoDeIndicacao && isReferralActive && !mesa ? { codigoDeIndicacao } : {}),
           items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
           // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
           // (src/lib/ga-purchase.ts) precisa deles para cair no mesmo visitante
@@ -2640,6 +2701,10 @@ export default function CustomerStorePage({
               : null,
           });
         }
+        // A indicação entrou neste pedido: o link guardado já cumpriu o papel.
+        // Pix pelo site fica guardado até pagar: se a pessoa desistir do QR, o
+        // próximo pedido ainda é o primeiro (a consulta do telefone diz).
+        if (d.indicacao && !pagaPeloAsaas) esquecerIndicacao();
         // O funil conta o pedido feito (o Pix ainda pendente também: a pessoa chegou até o fim).
         marcarNoFunil("pedido");
         // A venda para o Pixel e o GA4. Pedido pago na entrega registra agora;
@@ -3491,6 +3556,33 @@ export default function CustomerStorePage({
                     aqui e a loja tem o cupom ligado. Não pede código: diz o
                     que a pessoa ganhou e o desconto já entra sozinho quando a
                     sacola atinge o mínimo (efeito acima). */}
+                {/* ── VOCÊ CHEGOU POR INDICAÇÃO ─────────────────────────────
+                    O servidor já conferiu este telefone (indicadoPor). Sem
+                    telefone ainda, só o convite; a conta entra quando ele é
+                    digitado. */}
+                {codigoDeIndicacao && isReferralActive && !mesa && friendDiscount > 0 && indicadoPor?.valido !== false && (
+                  <div style={{ background: "#FAF5FF", border: "1.5px solid #C4B5FD", borderRadius: "12px", padding: "10px 12px", marginBottom: "8px" }}>
+                    <div style={{ fontWeight: 900, fontSize: "0.88rem", color: "#5B21B6" }}>
+                      🎁 {indicadoPor?.nome ? `${indicadoPor.nome} te indicou` : "Você chegou por indicação"}: R$ {friendDiscount.toFixed(2).replace(".", ",")} OFF no 1º pedido
+                    </div>
+                    <div style={{ fontSize: "0.74rem", color: "#6D28D9", marginTop: 2, lineHeight: 1.4 }}>
+                      {!indicadoPor
+                        ? "Informe seu WhatsApp no pedido para confirmar o desconto."
+                        : descontoDaIndicacao > 0
+                          ? "Já aplicamos na sua sacola — é só fechar o pedido."
+                          : indicacaoNaSacola && cupomDePrimeiroPedidoNaSacola
+                            ? "Não soma com o cupom de primeiro pedido: fica o cupom. Remova o cupom para usar a indicação."
+                            : (indicadoPor.minimo || 0) > 0
+                              ? `Vale em pedidos a partir de R$ ${indicadoPor.minimo.toFixed(2).replace(".", ",")} em produtos.`
+                              : "Entra sozinho na sacola."}
+                    </div>
+                  </div>
+                )}
+                {codigoDeIndicacao && isReferralActive && !mesa && indicadoPor && !indicadoPor.valido && indicadoPor.motivo && indicadoPor.motivo !== "abaixo_do_minimo" && (
+                  <div style={{ fontSize: "0.72rem", color: "#64748B", marginBottom: "8px" }}>
+                    ℹ️ {FRASE_SEM_INDICACAO[indicadoPor.motivo]}
+                  </div>
+                )}
                 {cupomPrimeiroPedido && (
                   <div style={{ background: "linear-gradient(135deg, #FFFBEB, #FEF3C7)", border: "1.5px solid #F59E0B", borderRadius: "12px", padding: "10px 12px", marginBottom: "8px" }}>
                     <div style={{ fontWeight: 900, fontSize: "0.88rem", color: "#92400E" }}>
@@ -3699,6 +3791,12 @@ export default function CustomerStorePage({
                           ? `- R$ ${descontoDosCarimbos.toFixed(2).replace(".", ",")}`
                           : `${textoDoPremioDosCarimbos} grátis`}
                     </span>
+                  </div>
+                )}
+                {descontoDaIndicacao > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED" }}>
+                    <span>Indicação{indicadoPor?.nome ? ` de ${indicadoPor.nome}` : ""}</span>
+                    <span style={{ fontWeight: 700 }}>- R$ {descontoDaIndicacao.toFixed(2).replace(".", ",")}</span>
                   </div>
                 )}
                 {cashbackDiscountApplied > 0 && (
@@ -4455,6 +4553,12 @@ export default function CustomerStorePage({
                 </span>
               </div>
               {usarSaldoJSX()}
+              {descontoDaIndicacao > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED", fontWeight: 700 }}>
+                  <span>Indicação{indicadoPor?.nome ? ` de ${indicadoPor.nome}` : ""}:</span>
+                  <span>- R$ {descontoDaIndicacao.toFixed(2).replace(".", ",")}</span>
+                </div>
+              )}
               {cashbackDiscountApplied > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED", fontWeight: 700 }}>
                   <span>Desconto Cashback:</span>
@@ -5287,10 +5391,22 @@ export default function CustomerStorePage({
                 <p style={{ fontSize: "0.74rem", color: "#7E22CE", margin: "0 0 6px 0", lineHeight: 1.35 }}>
                   Seus amigos ganham <strong>R$ {friendDiscount.toFixed(2).replace(".", ",")} OFF</strong> no 1º pedido e você ganha <strong>R$ {referrerReward.toFixed(2).replace(".", ",")}</strong> de volta em saldo!
                 </p>
+                {regraDaIndicacao.minimo > 0 && (
+                  <p style={{ fontSize: "0.7rem", color: "#7E22CE", margin: "0 0 6px 0" }}>
+                    Vale no 1º pedido do amigo na loja, a partir de R$ {regraDaIndicacao.minimo.toFixed(2).replace(".", ",")} em produtos. O saldo entra quando o pedido dele é entregue.
+                  </p>
+                )}
                 <button
                   type="button"
                   onClick={() => {
-                    const link = typeof window !== 'undefined' ? `${window.location.origin}/loja/${franchisee.slug}?ref=${customer?.phone || 'amigo'}` : '';
+                    // O link leva o CÓDIGO deste telefone (o servidor gera e guarda):
+                    // sem telefone identificado não há de quem é a indicação.
+                    const codigo = indicacaoDoServidor?.codigo;
+                    if (!codigo) {
+                      setShowAuth(true);
+                      return;
+                    }
+                    const link = typeof window !== 'undefined' ? `${window.location.origin}/loja/${franchisee.slug}?ref=${codigo}` : '';
                     navigator.clipboard?.writeText(link);
                     setCopiedReferral(true);
                     setTimeout(() => setCopiedReferral(false), 2500);
@@ -5312,7 +5428,11 @@ export default function CustomerStorePage({
                     transition: "all 0.2s"
                   }}
                 >
-                  {copiedReferral ? "✅ Link de Indicação Copiado!" : "📋 Copiar Link de Indicação"}
+                  {copiedReferral
+                    ? "✅ Link de Indicação Copiado!"
+                    : indicacaoDoServidor?.codigo
+                      ? "📋 Copiar Link de Indicação"
+                      : "Entre com seu telefone para pegar seu link"}
                 </button>
               </div>
             )}

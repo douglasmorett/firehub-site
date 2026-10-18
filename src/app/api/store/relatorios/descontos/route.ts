@@ -72,7 +72,7 @@ async function buscar(ctx: ContextoDoRelatorio, janela: { inicio: Date; fim: Dat
     .map((p) => p.id);
   const detalhes = await emLotes(comDesconto, 500, (lote) => prisma.customerOrder.findMany({
     where: { id: { in: lote } },
-    select: { id: true, notes: true, discountDetails: true, trilhaPremio: true, carimboPremio: true },
+    select: { id: true, notes: true, discountDetails: true, trilhaPremio: true, carimboPremio: true, indicacao: true },
   }));
   const porId = new Map(detalhes.map((d) => [d.id, d]));
   const completos = pedidos.map((p) => ({ ...p, ...(porId.get(p.id) || {}) })) as PedidoParaDescontos[];

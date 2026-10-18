@@ -237,7 +237,7 @@ export type AjusteDoCashback = {
 
 export type MovimentoDoCashback = {
   em: string;
-  tipo: "ganho" | "uso" | "credito_manual" | "debito_manual" | "vencido";
+  tipo: "ganho" | "uso" | "credito_manual" | "debito_manual" | "vencido" | "indicacao";
   /** Positivo entrou, negativo saiu. */
   valor: number;
   saldoDepois: number;
@@ -257,11 +257,31 @@ export type ExtratoDoCashback = SaldoDoCashback & {
 type PedidoComNumero = PedidoDoCashback & { dailyOrderNumber?: number | null };
 
 /**
+ * Crédito que nasce FORA dos pedidos do próprio cliente: a recompensa do
+ * Indique e Ganhe (lib/indicacao.ts), que sai do pedido concluído do AMIGO.
+ * Já chega decidido (quando entrou, quanto) e vira um lote como o do pedido
+ * entregue — vence pela validade da loja. O que ainda espera o pedido do
+ * amigo ser concluído vai em `aReceber`.
+ */
+export type CreditosExtras = {
+  creditos: { em: Date | string; valor: number; pedidoId?: string; pedidoNumero?: number | null; motivo?: string | null }[];
+  aReceber: number;
+};
+
+const SEM_EXTRAS: CreditosExtras = { creditos: [], aReceber: 0 };
+
+/**
  * O caminho único do saldo: créditos viram lotes (valor, entrou em, vence em)
  * e cada uso consome os mais antigos primeiro — é o que faz o vencimento
  * justo: o que vence é o que sobrou de um lote velho, não o saldo inteiro.
  */
-function simular(regra: RegraDoCashback, pedidos: PedidoComNumero[], ajustes: AjusteDoCashback[], agora: Date): ExtratoDoCashback {
+function simular(
+  regra: RegraDoCashback,
+  pedidos: PedidoComNumero[],
+  ajustes: AjusteDoCashback[],
+  agora: Date,
+  extras: CreditosExtras = SEM_EXTRAS,
+): ExtratoDoCashback {
   const diaMs = 86_400_000;
   type Origem = Omit<MovimentoDoCashback, "em" | "valor" | "saldoDepois">;
   type Evento = { t: number; tipo: "credito" | "uso"; valor: number; semVencimento?: boolean; origem: Origem };
@@ -292,6 +312,16 @@ function simular(regra: RegraDoCashback, pedidos: PedidoComNumero[], ajustes: Aj
         : { t, tipo: "uso", valor: -valor, origem: { tipo: "debito_manual", ...quem } },
     );
   }
+  for (const c of extras.creditos) {
+    const valor = Number(c.valor) || 0;
+    const t = quando(c.em);
+    if (valor <= 0 || !Number.isFinite(t)) continue;
+    eventos.push({
+      t, tipo: "credito", valor,
+      origem: { tipo: "indicacao", pedidoId: c.pedidoId, pedidoNumero: c.pedidoNumero ?? null, motivo: c.motivo ?? null },
+    });
+  }
+  aReceber += Math.max(0, Number(extras.aReceber) || 0);
   // Na mesma hora, o crédito vem antes do uso.
   eventos.sort((a, b) => a.t - b.t || (a.tipo === b.tipo ? 0 : a.tipo === "credito" ? -1 : 1));
 
@@ -352,8 +382,9 @@ export function saldoDoCashback(
   pedidos: PedidoDoCashback[],
   agora = new Date(),
   ajustes: AjusteDoCashback[] = [],
+  extras: CreditosExtras = SEM_EXTRAS,
 ): SaldoDoCashback {
-  const { saldo, proximoVencimento } = simular(regra, pedidos, ajustes, agora);
+  const { saldo, proximoVencimento } = simular(regra, pedidos, ajustes, agora, extras);
   return { saldo, proximoVencimento };
 }
 
@@ -363,8 +394,9 @@ export function extratoDoCashback(
   pedidos: PedidoComNumero[],
   ajustes: AjusteDoCashback[],
   agora = new Date(),
+  extras: CreditosExtras = SEM_EXTRAS,
 ): ExtratoDoCashback {
-  return simular(regra, pedidos, ajustes, agora);
+  return simular(regra, pedidos, ajustes, agora, extras);
 }
 
 /** O que o cliente gastou na loja nos últimos 30 dias (para o nível VIP), sem os cancelados. */

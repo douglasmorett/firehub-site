@@ -36,6 +36,8 @@ import { etiquetaDoPremioDosCarimbos, NOTA_DO_ITEM_DO_PREMIO } from "@/lib/carim
 import { efeitoDoPremio } from "@/lib/trilha-premiada";
 import { cashbackDoPedido, lerCashback, regraNoCanal, resgateMaximo } from "@/lib/cashback";
 import { cashbackDoCliente } from "@/lib/cashback-no-banco";
+import { etiquetaDaIndicacao, regraParaUsarOSaldo, type ResgateDaIndicacao } from "@/lib/indicacao";
+import { indicacaoNoPedido } from "@/lib/indicacao-no-banco";
 import { cpfValido, documentoValido } from "@/lib/fiscal-validacao";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
 import { documentoNoPedido, documentoObrigatorioNoPedido } from "@/lib/fiscal-modo";
@@ -666,6 +668,8 @@ export async function POST(req: Request) {
     // A parte de `discount` que é a taxa de entrega zerada pelo cupom de frete
     // grátis — fica fora da base do desconto do pagamento pelo site.
     let descontoNaTaxa = 0;
+    // O cupom de PRIMEIRO PEDIDO entrou? A indicação não soma com ele (lib/indicacao.ts).
+    let comCupomDePrimeiroPedido = false;
     if (couponCode) {
       const coupon = acharCupom(cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty), couponCode);
       if (coupon) {
@@ -680,6 +684,7 @@ export async function POST(req: Request) {
         if (!veredito.ok) {
           return NextResponse.json({ error: veredito.motivo }, { status: 400 });
         }
+        comCupomDePrimeiroPedido = coupon.primeiroPedido === true;
         if (veredito.zeraTaxa) {
           discount = fee;
           descontoNaTaxa = fee;
@@ -782,6 +787,38 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── INDIQUE E GANHE (lib/indicacao.ts) ───────────────────────────────
+    //
+    // O corpo só traz o código do link (`codigoDeIndicacao`, o `?ref=` que o
+    // cardápio guardou). Quem decide é o servidor: loja com o programa ligado,
+    // código desta loja, telefone sem pedido anterior que conte, produtos ≥
+    // mínimo e quem indicou ≠ quem pede. Desconto em R$ só sobre os produtos
+    // que ainda faltam pagar. A marca `indicacao` no pedido é o que credita
+    // quem indicou, quando este pedido for concluído.
+    let resgateDaIndicacao: ResgateDaIndicacao | null = null;
+    if (body.codigoDeIndicacao) {
+      try {
+        const veredicto = await indicacaoNoPedido({
+          lojaId: franchisee.id,
+          storeLoyalty: franchisee.storeLoyalty,
+          telefone: customerPhone,
+          referencia: body.codigoDeIndicacao,
+          produtos: totalAmount,
+          produtosAPagar: Math.max(0, totalAmount - (discount - descontoNaTaxa)),
+          comCupomDePrimeiroPedido,
+        });
+        if (veredicto?.ok) {
+          discount += veredicto.desconto;
+          resgateDaIndicacao = veredicto.resgate;
+        } else if (veredicto) {
+          console.log(`[customer-order] indicação não aplicada (${veredicto.motivo}) na loja ${franchisee.id}`);
+        }
+      } catch (e) {
+        // Bônus nunca impede o pedido.
+        console.error("[customer-order] indicação:", e);
+      }
+    }
+
     // ── DESCONTO DE QUEM PAGA PELO SITE ──────────────────────────────────
     //
     // O % que a loja deu ao Pix ou ao cartão pelo site, sobre os itens já com
@@ -811,19 +848,24 @@ export async function POST(req: Request) {
     let cashbackGerado = 0;
     // Canal desmarcado na Fidelidade (cashbackCanais.site) = sem cashback aqui.
     const regraDoCashback = regraNoCanal(lerCashback(franchisee.storeLoyalty), "site");
-    if (regraDoCashback.ativo) {
+    // Usar o saldo: a regra do cashback ou, na loja que só ligou o Indique e
+    // Ganhe, a do saldo da recompensa (lib/indicacao.ts). Gerar, só o cashback.
+    const regraDoSaldo = regraParaUsarOSaldo(franchisee.storeLoyalty, "site");
+    if (regraDoSaldo.ativo) {
       try {
         const doCliente = await cashbackDoCliente(franchisee.id, franchisee.storeLoyalty, customerPhone);
         if (body.usarCashback === true && doCliente && doCliente.saldo > 0) {
-          cashbackUsado = resgateMaximo(regraDoCashback, doCliente.saldo, Math.max(0, totalAmount - discount));
+          cashbackUsado = resgateMaximo(regraDoSaldo, doCliente.saldo, Math.max(0, totalAmount - discount));
           discount += cashbackUsado;
         }
-        cashbackGerado = cashbackDoPedido(
-          regraDoCashback,
-          totalAmount,
-          Math.max(0, totalAmount - discount),
-          doCliente?.taxa ?? regraDoCashback.taxa,
-        );
+        cashbackGerado = regraDoCashback.ativo
+          ? cashbackDoPedido(
+              regraDoCashback,
+              totalAmount,
+              Math.max(0, totalAmount - discount),
+              doCliente?.taxa ?? regraDoCashback.taxa,
+            )
+          : 0;
       } catch (e) {
         console.error("[customer-order] cashback:", e);
         cashbackUsado = 0;
@@ -882,6 +924,10 @@ export async function POST(req: Request) {
     if (resgateDosCarimbos) {
       // Na comanda: a loja vê por que o total está menor (ou o brinde a montar).
       orderNotes = `${etiquetaDoPremioDosCarimbos(resgateDosCarimbos)} ${orderNotes}`.trim();
+    }
+    if (resgateDaIndicacao) {
+      // Linha própria na comanda e no painel: "[Indicação de Maria: -R$ 10,00]".
+      orderNotes = `${etiquetaDaIndicacao(resgateDaIndicacao)} ${orderNotes}`.trim();
     }
     if (notaDaArea) {
       orderNotes = `${orderNotes}${notaDaArea}`.trim();
@@ -945,6 +991,9 @@ export async function POST(req: Request) {
         ...(discount > 0 ? { discountTotal: centavos(discount), discountMerchant: centavos(discount) } : {}),
         ...(resgateDaTrilha ? { trilhaPremio: resgateDaTrilha } : {}),
         ...(resgateDosCarimbos ? { carimboPremio: resgateDosCarimbos } : {}),
+        // O primeiro pedido do amigo indicado (lib/indicacao.ts): é desta
+        // marca que sai o saldo de quem indicou, quando o pedido for concluído.
+        ...(resgateDaIndicacao ? { indicacao: resgateDaIndicacao as any } : {}),
         ...(entregaGratis ? { entregaGratis } : {}),
         // O que este pedido usou e o que ele gera. O saldo do cliente sai da
         // soma destas duas colunas (lib/cashback.ts) — não há contador.
@@ -1083,6 +1132,8 @@ export async function POST(req: Request) {
       // de abrir o Pix (a cotação e o pedido não podem divergir calados).
       deliveryFee: fee,
       discount,
+      // A indicação que entrou (o cardápio tira o código guardado).
+      indicacao: resgateDaIndicacao ? { desconto: resgateDaIndicacao.desconto } : null,
       status: initialStatus,
       autoAccepted: franchisee.autoAcceptOrders,
     });
