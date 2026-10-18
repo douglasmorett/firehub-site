@@ -204,7 +204,7 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
               {marcas.length > 1 && (
                 <div className={s.faixaUmaEntrega}>
                   <ShoppingBag size={20} />
-                  <span><strong>Monte uma sacola só com várias marcas.</strong> Põe de uma, entra em outra, põe mais — e recebe tudo numa entrega.</span>
+                  <span><strong>Monte uma sacola só com várias marcas.</strong> Tudo será entregue junto.</span>
                 </div>
               )}
 
