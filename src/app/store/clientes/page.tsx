@@ -19,6 +19,7 @@ import {
 import { haQuanto as haQuantoNaLoja } from "@/lib/clientes-da-loja-regras";
 import { FUSO_PADRAO } from "@/lib/fuso";
 import type { CarimbosNaFicha, FidelidadeNaFicha, ParadaNaFicha, TrilhaNaFicha } from "@/lib/fidelidade-na-ficha";
+import type { IndicacaoNaFicha } from "@/lib/clientes-da-loja";
 
 type Filtro = "todos" | "com_saldo" | "pediram" | "nunca" | "sumidos";
 type Ordem = "recentes" | "pedidos" | "gasto" | "saldo" | "nome";
@@ -61,7 +62,7 @@ type Lista = {
 
 type Movimento = {
   em: string;
-  tipo: "ganho" | "uso" | "credito_manual" | "debito_manual" | "vencido";
+  tipo: "ganho" | "uso" | "credito_manual" | "debito_manual" | "vencido" | "indicacao";
   valor: number;
   saldoDepois: number;
   pedidoNumero?: number | null;
@@ -82,9 +83,11 @@ type Detalhe = {
   pedidos: { id: string; numero: number | null; em: string; status: string; total: number; tipo: string; canal: string; pagamento: string | null; cashbackGerado: number; cashbackUsado: number }[];
   enderecos: string[];
   numeros: { pedidos: number; gasto: number; ticketMedio: number; primeiro: string | null; ultimo: string | null; cancelados: number; naoConcluidos?: number };
-  cashback: RegraDoCashback & { saldo: number; proximoVencimento: { valor: number; em: string } | null; movimentos: Movimento[]; aReceber: number };
+  cashback: RegraDoCashback & { saldo: number; proximoVencimento: { valor: number; em: string } | null; movimentos: Movimento[]; aReceber: number; saldoPelaIndicacao?: boolean };
   /** Trilha Premiada e carimbos, pela conta do cardápio (lib/fidelidade-na-ficha.ts); null no programa desligado. */
   fidelidade?: FidelidadeNaFicha;
+  /** Indique e Ganhe: quem ele indicou e quem o indicou (lib/indicacao.ts). */
+  indicacao?: IndicacaoNaFicha;
 };
 
 type CadastroEditado = {
@@ -169,6 +172,7 @@ const ROTULO_DO_MOVIMENTO: Record<Movimento["tipo"], string> = {
   credito_manual: "Saldo lançado pela loja",
   debito_manual: "Saldo tirado pela loja",
   vencido: "Venceu",
+  indicacao: "Indicação — pedido do amigo",
 };
 const STATUS: Record<string, string> = {
   NOVO: "Novo", PENDENTE: "Pendente", ACEITO: "Aceito", PREPARANDO: "Preparando", EM_PREPARO: "Em preparo",
@@ -769,6 +773,8 @@ function FichaDoCliente({ telefone, fuso, onFechar, onMudou, avisar }: { telefon
                 <span>Usa {ondeUsa(cb)}: até {cb.maxResgatePct}% dos produtos.</span>
               ) : cb.ativo ? (
                 <span style={{ color: "#92400E" }}>Nenhum canal marcado no cashback: o cliente não consegue usar este saldo.</span>
+              ) : cb.saldoPelaIndicacao ? (
+                <span>Usa no pedido pelo site (recompensa do Indique e Ganhe): até {cb.maxResgatePct}% dos produtos.</span>
               ) : (
                 <span style={{ color: "#92400E" }}>O cashback está desligado: o cliente ainda não consegue usar este saldo.</span>
               )}
@@ -818,6 +824,8 @@ function FichaDoCliente({ telefone, fuso, onFechar, onMudou, avisar }: { telefon
               </div>
             </>
           )}
+
+          {d.indicacao && (d.indicacao.feitas.length > 0 || d.indicacao.recebida) && <IndicacaoDaFicha i={d.indicacao} fuso={fuso} />}
 
           {/* Abas */}
           <div style={{ display: "flex", gap: 6, marginTop: 16, borderBottom: borda }}>
@@ -1067,6 +1075,59 @@ function TrilhaDaFicha({ t, fuso }: { t: TrilhaNaFicha; fuso: string }) {
       )}
 
       <div style={notaDoCartao}>{prazo} {t.ondeConta}</div>
+    </div>
+  );
+}
+
+// ── Indique e Ganhe na ficha ─────────────────────────────────────────────────
+// Quem este cliente indicou (o saldo que cada amigo rendeu) e quem o indicou.
+// A conta é a do saldo (lib/indicacao.ts): só o pedido CONCLUÍDO do amigo credita.
+
+const SITUACAO_DA_INDICACAO: Record<IndicacaoNaFicha["feitas"][number]["situacao"], { texto: string; cor: string }> = {
+  creditado: { texto: "creditado", cor: "#15803D" },
+  a_receber: { texto: "a receber (pedido em andamento)", cor: "#92400E" },
+  cancelado: { texto: "pedido cancelado — não creditou", cor: "#B91C1C" },
+};
+
+function IndicacaoDaFicha({ i, fuso }: { i: IndicacaoNaFicha; fuso: string }) {
+  const creditado = i.feitas.filter((f) => f.situacao === "creditado").reduce((t, f) => t + f.recompensa, 0);
+  return (
+    <div style={{ ...cartaoDaFicha, marginTop: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+        <div style={tituloDoCartao}>🎁 Indique e Ganhe</div>
+        {i.feitas.length > 0 && (
+          <div style={{ fontWeight: 800, fontSize: "0.9rem", whiteSpace: "nowrap" }}>
+            {i.feitas.length} indicad{i.feitas.length === 1 ? "o" : "os"} · {fmt(creditado)} creditado
+          </div>
+        )}
+      </div>
+      {i.recebida && (
+        <div style={{ fontSize: "0.8rem", marginTop: 6 }}>
+          Chegou indicado por <strong>{i.recebida.deQuem}</strong>
+          {i.recebida.pedidoNumero ? ` no pedido #${i.recebida.pedidoNumero}` : ""} ({data(i.recebida.em, fuso)})
+          {i.recebida.desconto > 0 ? ` · ganhou ${fmt(i.recebida.desconto)} de desconto` : " · sem desconto (ficou o cupom de primeiro pedido)"}.
+        </div>
+      )}
+      {i.feitas.length > 0 && (
+        <div style={{ display: "grid", gap: 4, marginTop: 8 }}>
+          {i.feitas.map((f) => (
+            <div key={f.pedidoId} style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: "0.78rem", borderTop: borda, paddingTop: 4 }}>
+              <span style={{ minWidth: 0 }}>
+                {f.amigoNome || "Amigo"} (final {f.amigoFinal}){f.pedidoNumero ? ` · pedido #${f.pedidoNumero}` : ""} · {data(f.em, fuso)}
+                {f.desconto > 0 ? ` · ganhou ${fmt(f.desconto)}` : ""}
+              </span>
+              <span style={{ whiteSpace: "nowrap", fontWeight: 700, color: SITUACAO_DA_INDICACAO[f.situacao].cor }}>
+                {f.situacao === "cancelado" ? "" : `+ ${fmt(f.recompensa)} `}{SITUACAO_DA_INDICACAO[f.situacao].texto}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      <div style={notaDoCartao}>
+        {i.ativa
+          ? `Amigo ganha ${fmt(i.descontoDoAmigo)} no 1º pedido; quem indicou ganha ${fmt(i.recompensa)} de saldo quando o pedido do amigo é concluído.`
+          : "O Indique e Ganhe está desligado: o que já foi creditado continua no saldo."}
+      </div>
     </div>
   );
 }

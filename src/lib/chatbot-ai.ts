@@ -77,6 +77,20 @@ import { itensEmTexto, mensagemDoAcrescimoEnviado, pedidoAtivoParaOPrompt } from
 import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco";
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
 import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
+import { formaPropriaPeloNome, nomeDaFormaPropria, problemaDaFormaPropria, rotuloDaForma, textosNoCanal } from "./formas-proprias";
+
+/**
+ * A linha dos DADOS DA LOJA com as formas de pagamento próprias liberadas para
+ * o robô (a Macaíba da Pizzaria 17). Sem nenhuma, nada: a loja comum não ganha
+ * linha nova no prompt. É dado da loja, fixo por horas — fica no começo do
+ * prompt sem quebrar o cache.
+ */
+function linhaDasFormasProprias(textos: string[]): string {
+  if (textos.length === 0) return "";
+  const nomes = textos.map(rotuloDaForma).join(", ");
+  return `
+- Outras formas de pagamento aceitas NA ENTREGA/RETIRADA (próprias da loja, além de Pix, cartão e dinheiro): ${nomes}. Se o cliente escolher uma delas, grave o pagamento com o nome exato (${nomes}); não tem troco nem pagamento pelo site.`;
+}
 import { lerRespostasProntas, blocoDasRespostasProntas, textoDasRespostasProntas, extrairMarcasDeRespostaPronta, envioDasRespostasProntas, extrairFichaPreenchida, regraDaReservaPelaFicha } from "./respostas-prontas";
 import { feriadoLocal, linhaDoFeriadoParaORobo } from "./holidays";
 import { lerConfigDeAgendamento, textoDoAgendamento } from "./agendamento";
@@ -195,6 +209,8 @@ export async function processChatbotAI(
       deliveryConfig: true,
       deliveryZones: true,
       deliveryZoneType: true,
+      // As formas de pagamento PRÓPRIAS liberadas para o robô (lib/formas-proprias.ts).
+      paymentFees: true,
       chatbotConfig: true,
       storeCoupons: true,
       // O cupom da campanha "converter" (lib/campanha-converter.ts) mora aqui:
@@ -1342,7 +1358,7 @@ DADOS DA LOJA:
 - Telefone: ${user.storePhone || "Não informado"}
 - Link do Cardápio: ${storeLink}
 - Tempo Médio de Entrega da Loja: ${prazoDaLoja.linhaDosDados}
-- Aceita Retirada no Balcão: ${aceitaRetirada ? "SIM" : "NÃO"}
+- Aceita Retirada no Balcão: ${aceitaRetirada ? "SIM" : "NÃO"}${linhaDasFormasProprias(textosNoCanal((user as any).paymentFees, "robo"))}
 ${linhasDoMinimoNosDados(fatosDoMinimo)}
 - Horário de Funcionamento Cadastrado: ${linhaDoHorarioDeHoje({ fraseDeHoje: nowStatusText, temQuadro: hoursText !== HORARIO_NAO_CADASTRADO })}
 ${linhaDoFeriado}- Quadro Geral de Horários:
@@ -2047,6 +2063,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                   },
                   cashback: { storeLoyalty: (user as any).storeLoyalty },
                   carimbos: { storeLoyalty: (user as any).storeLoyalty },
+                  formasProprias: (user as any).paymentFees,
                   remoteJid: remoteJid ?? null,
                   textosDoCliente: [
                     ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").slice(-12).map((h: any) => String(h.text || "")),
@@ -2518,6 +2535,7 @@ async function syncAiOrderToDatabase({
   conferirAntes,
   retiradaPedidaPeloCliente,
   agendamento,
+  formasProprias,
 }: {
   franchiseeId: string;
   customerPhone: string;
@@ -2567,7 +2585,21 @@ async function syncAiOrderToDatabase({
    * Ausente = a loja não agenda: o campo "agendadoPara" da tag é ignorado.
    */
   agendamento?: LojaQueAgenda;
+  /** `User.paymentFees`: as formas próprias liberadas para o robô (lib/formas-proprias.ts). */
+  formasProprias?: unknown;
 }): Promise<SyncResultado> {
+  // ── FORMA DE PAGAMENTO PRÓPRIA (a Macaíba) ─────────────────────────────
+  // O robô escreve o nome ("Macaíba", "macaiba"); o pedido grava o texto com a
+  // marca, que é o que o caixa e a nota leem. Só a forma LIBERADA para o robô:
+  // a marca de uma forma que não vale aqui sai, e o texto fica como o cliente
+  // disse (cai em "não identificada" no caixa, nunca no Dinheiro).
+  if (payload && payload.paymentMethod) {
+    const daLoja = formaPropriaPeloNome(formasProprias, payload.paymentMethod, "robo");
+    if (daLoja) payload.paymentMethod = daLoja;
+    else if (problemaDaFormaPropria(formasProprias, [payload.paymentMethod], "robo")) {
+      payload.paymentMethod = nomeDaFormaPropria(payload.paymentMethod) || payload.paymentMethod;
+    }
+  }
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };
 

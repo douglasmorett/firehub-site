@@ -27,6 +27,7 @@ import { generateDailyOrderNumber } from "@/lib/order-number";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { lerPager } from "@/lib/pager";
 import { validarDivisao, type ParteDoPagamento } from "@/lib/pagamento-dividido";
+import { ehFormaPropria, problemaDaFormaPropria } from "@/lib/formas-proprias";
 import { normalizarDocumento, problemaDoDocumento, lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { problemaDoPagerObrigatorio } from "@/lib/balcao-config";
 import { normalizarConfigFiscal } from "@/lib/fiscal-config";
@@ -114,6 +115,17 @@ export async function registrarVendaPresencial(opcoes: {
   if (!items || items.length === 0) return resposta({ error: "Nenhum item informado" }, { status: 400 });
 
   const targetFranchiseeId = opcoes.franchiseeId;
+
+  // ── FORMA DE PAGAMENTO PRÓPRIA DA LOJA (lib/formas-proprias.ts) ─────────
+  // A Macaíba da Pizzaria 17 só entra pelo balcão se a loja marcou o Caixa/PDV
+  // nela — e se ela ainda existe e está ligada. A tela só mostra as marcadas;
+  // aqui é a trava para aba antiga e chamada direta.
+  const textosDoPagamento = [paymentMethod, ...(paymentMethods || []).map((p) => p.method)];
+  if (textosDoPagamento.some((t) => ehFormaPropria(t))) {
+    const loja = await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { paymentFees: true } });
+    const problema = problemaDaFormaPropria(loja?.paymentFees, textosDoPagamento, "pdv");
+    if (problema) return resposta({ error: problema }, { status: 400 });
+  }
 
   // Conta bloqueada por mensalidade: a tela já trava o PDV; esta é a trava do
   // servidor, para aba antiga ou chamada direta (lib/loja-bloqueada.ts). O

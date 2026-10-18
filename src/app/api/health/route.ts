@@ -104,6 +104,8 @@ export async function GET(req: NextRequest) {
       ["CustomerOrder", "trilhaPremio"],
       // O prêmio do Cartão de Carimbos (lib/carimbos.ts): o checkout e o robô gravam.
       ["CustomerOrder", "carimboPremio"],
+      // Indique e Ganhe (lib/indicacao.ts): o checkout grava no 1º pedido do amigo.
+      ["CustomerOrder", "indicacao"],
       ["CustomerOrder", "entregaGratis"],
       // A previsão de entrega da comanda (lib/previsao-da-entrega.ts). A fila
       // da impressão lê o pedido SEM select: coluna ausente para a impressão.

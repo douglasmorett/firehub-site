@@ -51,6 +51,8 @@ import { carimbosNaFicha, trilhaNaFicha, type FidelidadeNaFicha } from "@/lib/fi
 import { carimbosNoAr, lerCarimbos } from "@/lib/carimbos";
 import { lerTrilha, trilhaValida } from "@/lib/trilha-premiada";
 import { pedidosDaTrilhaDoTelefone, pedidosDosCarimbosDoTelefone } from "@/lib/premio-no-pedido";
+import { lerIndicacao, lerResgateDaIndicacao, nomeDeQuemIndicou, type IndicacaoFeita } from "@/lib/indicacao";
+import { indicacoesDoTelefone } from "@/lib/indicacao-no-banco";
 
 export type SessaoDosClientes = {
   lojaId: string;
@@ -419,9 +421,24 @@ export type DetalheDoCliente = {
     /** Rascunho do robô e pedido esperando pagamento: aparecem na lista, não contam. */
     naoConcluidos: number;
   };
-  cashback: ExtratoDoCashback & { ativo: boolean; validadeDias: number; taxa: number; maxResgatePct: number; canais: CanaisDoCashback };
+  cashback: ExtratoDoCashback & { ativo: boolean; validadeDias: number; taxa: number; maxResgatePct: number; canais: CanaisDoCashback; saldoPelaIndicacao: boolean };
   /** Trilha Premiada e cartão de carimbos — `null` no programa que a loja não ligou. */
   fidelidade: FidelidadeNaFicha;
+  /**
+   * Indique e Ganhe (lib/indicacao.ts): quem este cliente indicou (e o saldo
+   * que cada um rendeu) e quem o indicou. Aparece com o programa desligado
+   * também, se já houve indicação — é histórico do cliente.
+   */
+  indicacao: IndicacaoNaFicha;
+};
+
+export type IndicacaoNaFicha = {
+  ativa: boolean;
+  descontoDoAmigo: number;
+  recompensa: number;
+  feitas: IndicacaoFeita[];
+  /** O primeiro pedido dele veio de um link de indicação. */
+  recebida: { pedidoNumero: number | null; em: string; deQuem: string; desconto: number; recompensa: number; status: string } | null;
 };
 
 const SEM_FIDELIDADE: FidelidadeNaFicha = { trilha: null, carimbos: null };
@@ -482,7 +499,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
   const chaveDoTel = chaveDoCliente(tel)!;
 
   const ids = await prisma.$queryRaw<{ id: string }[]>(sqlDosPedidosDoCliente(sessao.lojaId, chaveDoTel));
-  const [pedidos, extrato, fidelidade] = await Promise.all([
+  const [pedidos, extrato, fidelidade, indicacoes] = await Promise.all([
     ids.length
       ? prisma.customerOrder.findMany({
           where: { id: { in: ids.map((r) => r.id) } },
@@ -491,12 +508,13 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
             id: true, dailyOrderNumber: true, createdAt: true, status: true, totalAmount: true, deliveryType: true,
             paymentMethod: true, customerName: true, customerAddress: true, customerId: true,
             source: true, ifoodOrderId: true, ifoodReference: true, openDeliveryChannel: true, openDeliveryOrderId: true,
-            cashbackEarned: true, cashbackUsed: true, reposicao: true,
+            cashbackEarned: true, cashbackUsed: true, reposicao: true, indicacao: true,
           },
         })
       : Promise.resolve([]),
     extratoDoCliente(sessao.lojaId, sessao.storeLoyalty, tel, agora),
     fidelidadeDoTelefone(sessao, tel, agora),
+    indicacoesDoTelefone(sessao.lojaId, tel).catch(() => ({ feitas: [] as IndicacaoFeita[] })),
   ]);
   const editado = await cadastroEditado(sessao.lojaId, tel);
 
@@ -511,7 +529,30 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
     LIMIT 1`);
 
   const regra = lerCashback(sessao.storeLoyalty);
-  const cashback = { ...extrato, ativo: regra.ativo, validadeDias: regra.validadeDias, taxa: regra.taxa, maxResgatePct: regra.maxResgatePct, canais: regra.canais };
+  const regraDaIndicacao = lerIndicacao(sessao.storeLoyalty);
+  const cashback = {
+    ...extrato, ativo: regra.ativo, validadeDias: regra.validadeDias, taxa: regra.taxa, maxResgatePct: regra.maxResgatePct, canais: regra.canais,
+    // Loja só com o Indique e Ganhe: o saldo (a recompensa) se usa no site.
+    saldoPelaIndicacao: !regra.ativo && regraDaIndicacao.ativo && regraDaIndicacao.recompensa > 0,
+  };
+  const comIndicacao = [...pedidos].reverse().find((p) => lerResgateDaIndicacao(p.indicacao));
+  const resgateRecebido = comIndicacao ? lerResgateDaIndicacao(comIndicacao.indicacao) : null;
+  const indicacao: IndicacaoNaFicha = {
+    ativa: regraDaIndicacao.ativo,
+    descontoDoAmigo: regraDaIndicacao.descontoDoAmigo,
+    recompensa: regraDaIndicacao.recompensa,
+    feitas: indicacoes.feitas,
+    recebida: comIndicacao && resgateRecebido
+      ? {
+          pedidoNumero: comIndicacao.dailyOrderNumber ?? null,
+          em: new Date(comIndicacao.createdAt).toISOString(),
+          deQuem: `${nomeDeQuemIndicou(resgateRecebido)} (final ${resgateRecebido.indicador.slice(-4)})`,
+          desconto: resgateRecebido.desconto,
+          recompensa: resgateRecebido.recompensa,
+          status: String(comIndicacao.status || ""),
+        }
+      : null,
+  };
 
   if (!pedidos.length && !cadastro && !extrato.movimentos.length && !editado) {
     return {
@@ -520,6 +561,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
       pedidos: [], enderecos: [], numeros: { pedidos: 0, gasto: 0, ticketMedio: 0, primeiro: null, ultimo: null, cancelados: 0, naoConcluidos: 0 },
       cashback,
       fidelidade: SEM_FIDELIDADE,
+      indicacao,
     };
   }
 
@@ -568,6 +610,7 @@ export async function detalheDoCliente(sessao: SessaoDosClientes, telefoneBruto:
     numeros,
     cashback,
     fidelidade,
+    indicacao,
   };
 }
 

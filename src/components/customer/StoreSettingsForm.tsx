@@ -10,6 +10,7 @@ import { FUSOS_DO_BRASIL, fusoPorEndereco, rotuloDoFuso } from "@/lib/fuso-por-e
 import { DICA_DO_VIDEO, MAX_VIDEO_BYTES } from "@/lib/video-enviado";
 import { DESCONTO_ONLINE_MAXIMO, descontoOnlineDaLoja } from "@/lib/desconto-pagamento-online";
 import { ACRESCIMO_NO_CREDITO_MAXIMO, percentualDoAcrescimoNoCredito } from "@/lib/acrescimo-no-credito";
+import { CANAIS_AO_CRIAR, CANAIS_DA_FORMA, LIMITE_DE_FORMAS, LIMITE_DO_NOME, type FormaPropria } from "@/lib/formas-proprias";
 
 /**
  * O cupom como fica gravado em `storeCoupons`. A régua que lê isto é
@@ -343,7 +344,25 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
   };
 
   const saveCoupons = async () => { setSavingCoupons(true); try { await saveFields({ storeCoupons: coupons }); setDirtyCoupons(false); } finally { setSavingCoupons(false); } };
-  const savePayment = async () => { setSavingPayment(true); try { await saveFields({ paymentFees: paymentConfig }); setDirtyPayment(false); } finally { setSavingPayment(false); } };
+  // A recusa do servidor (nome repetido na forma própria, por exemplo) aparece
+  // na tela, ao lado do botão: o saveFields só lança "Erro ao salvar".
+  const [erroPagamento, setErroPagamento] = useState<string | null>(null);
+  const savePayment = async () => {
+    setSavingPayment(true);
+    setErroPagamento(null);
+    try {
+      const res = await fetch("/api/store-settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ paymentFees: paymentConfig }) });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setErroPagamento(d?.error || "Não consegui salvar. Tente de novo.");
+        return;
+      }
+      setDirtyPayment(false);
+      router.refresh();
+    } catch {
+      setErroPagamento("Não consegui salvar. Confira a internet e tente de novo.");
+    } finally { setSavingPayment(false); }
+  };
 
   const savePause = async () => {
     setSavingPause(true);
@@ -1313,6 +1332,74 @@ export default function StoreSettingsForm({ user, initialTab }: { user: any; ini
               <span style={{ fontWeight: 700, color: "#9A3412" }}>% de acréscimo</span>
             </div>
           </div>
+        )}
+        {/* ── FORMAS DE PAGAMENTO PRÓPRIAS (lib/formas-proprias.ts) ─────────
+            Pedido da Pizzaria 17 (17/10/2026): a "Macaíba", moeda social de
+            Macaé. A loja cria a forma e marca ONDE ela aparece. No fechamento
+            do caixa ela tem linha própria, com o nome, fora da gaveta. */}
+        {(() => {
+          // Cru, e não lerFormasProprias: a forma recém-criada ainda está sem
+          // nome e sumiria da tela. O servidor confere tudo ao salvar.
+          const formas: FormaPropria[] = (Array.isArray(paymentConfig.formasProprias) ? paymentConfig.formasProprias : []).map((f: any, i: number) => ({
+            id: String(f?.id || `fp-${i}`), nome: String(f?.nome ?? ""), ativo: f?.ativo !== false,
+            canais: { pdv: f?.canais?.pdv === true, mesa: f?.canais?.mesa === true, site: f?.canais?.site === true, robo: f?.canais?.robo === true },
+          }));
+          const mudar = (lista: FormaPropria[]) => { setPaymentConfig((p: any) => ({ ...p, formasProprias: lista })); setDirtyPayment(true); };
+          const mudarUma = (i: number, parte: Partial<FormaPropria>) => mudar(formas.map((f, j) => (j === i ? { ...f, ...parte } : f)));
+          return (
+            <div style={{ marginTop: 16, padding: "12px 14px", background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 12 }}>
+              <p style={{ fontSize: "0.88rem", fontWeight: 800, color: "#5B21B6", margin: 0 }}>🪙 Formas de pagamento próprias</p>
+              <p style={{ fontSize: "0.75rem", color: "#6D28D9", margin: "4px 0 10px" }}>
+                Moeda social, vale da casa, permuta… Crie a forma e marque onde ela aparece. No fechamento do caixa ela sai numa linha com o nome dela, fora da gaveta (não soma no Dinheiro).
+              </p>
+              {formas.length === 0 && (
+                <p style={{ fontSize: "0.78rem", color: "#7C3AED", margin: "0 0 8px" }}>Nenhuma forma própria cadastrada.</p>
+              )}
+              {formas.map((f, i) => (
+                <div key={f.id || i} style={{ background: "#fff", border: "1px solid #DDD6FE", borderRadius: 10, padding: "10px 12px", marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    <input
+                      value={f.nome}
+                      maxLength={LIMITE_DO_NOME}
+                      placeholder="Ex.: Macaíba"
+                      aria-label="Nome da forma de pagamento"
+                      onChange={(e) => mudarUma(i, { nome: e.target.value.replace(/[()]/g, "") })}
+                      style={{ flex: "1 1 160px", minWidth: 0, padding: "7px 10px", borderRadius: 8, border: "1.5px solid #DDD6FE", fontSize: "0.9rem", fontWeight: 700 }}
+                    />
+                    <button type="button" onClick={() => mudarUma(i, { ativo: !f.ativo })} title={f.ativo ? "Desligar esta forma" : "Ligar esta forma"} style={{ background: "none", border: "none", cursor: "pointer" }}>
+                      {f.ativo ? <ToggleRight size={30} color="#7C3AED" /> : <ToggleLeft size={30} color="#CBD5E1" />}
+                    </button>
+                    <button type="button" onClick={() => { if (confirm(`Remover a forma "${f.nome || "sem nome"}"? Os pedidos já feitos com ela continuam no caixa e nos relatórios.`)) mudar(formas.filter((_, j) => j !== i)); }}
+                      title="Remover" style={{ background: "none", border: "none", cursor: "pointer", color: "#B91C1C" }}>
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 8 }}>
+                    {CANAIS_DA_FORMA.map((c) => (
+                      <label key={c.chave} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "0.8rem", color: "#334155", cursor: "pointer" }}>
+                        <input type="checkbox" checked={f.canais[c.chave] === true}
+                          onChange={(e) => mudarUma(i, { canais: { ...f.canais, [c.chave]: e.target.checked } })} />
+                        {c.rotulo}
+                      </label>
+                    ))}
+                  </div>
+                  {!Object.values(f.canais).some(Boolean) && (
+                    <p style={{ fontSize: "0.72rem", color: "#B45309", margin: "6px 0 0" }}>Nenhum lugar marcado: a forma não aparece em tela nenhuma.</p>
+                  )}
+                </div>
+              ))}
+              {formas.length < LIMITE_DE_FORMAS && (
+                <button type="button"
+                  onClick={() => mudar([...formas, { id: `fp${Date.now().toString(36)}`, nome: "", ativo: true, canais: { ...CANAIS_AO_CRIAR } }])}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 8, border: "1.5px dashed #A78BFA", background: "#fff", color: "#5B21B6", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
+                  <Plus size={15} /> Adicionar forma de pagamento
+                </button>
+              )}
+            </div>
+          );
+        })()}
+        {erroPagamento && (
+          <p role="alert" style={{ marginTop: 10, padding: "8px 12px", borderRadius: 8, background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", fontSize: "0.8rem", fontWeight: 700 }}>{erroPagamento}</p>
         )}
         <SectionSaveBtn dirty={dirtyPayment} saving={savingPayment} onSave={savePayment} label="Salvar Formas de Pagamento" />
       </div>}

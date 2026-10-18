@@ -147,7 +147,7 @@ const forma = (k: string) => r.formas.find((f) => f.chave === k)!;
 const resumo = (k: string) => { const f = forma(k); return { pagamentos: f.pagamentos, contas: f.contas, valor: f.valor }; };
 
 confere("dias do período", r.dias, ["2026-09-17", "2026-09-18"]);
-confere("as 8 formas, na ordem do caixa", r.formas.map((f) => f.chave), ["DINHEIRO", "PIX", "CREDITO", "DEBITO", "VALE", "ONLINE", "FIADO", "OUTROS"]);
+confere("as 9 formas, na ordem do caixa (PROPRIA = formas próprias da loja, lib/formas-proprias.ts)", r.formas.map((f) => f.chave), ["DINHEIRO", "PIX", "CREDITO", "DEBITO", "VALE", "ONLINE", "FIADO", "PROPRIA", "OUTROS"]);
 confere("Dinheiro: balcão + baixa da mesa SEM o troco (50 − 13)", resumo("DINHEIRO"), { pagamentos: 2, contas: 2, valor: 87 });
 confere("Pix: madrugada + baixa da mesa", resumo("PIX"), { pagamentos: 2, contas: 2, valor: 130 });
 confere("Crédito: 2 partes do dividido (1 venda) + a mesa com desconto", resumo("CREDITO"), { pagamentos: 3, contas: 2, valor: 195.8 });

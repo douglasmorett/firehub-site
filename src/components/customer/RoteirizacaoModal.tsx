@@ -1217,7 +1217,11 @@ export default function RoteirizacaoModal({
         tipo: data.foraDaArea ? "atencao" : "ok",
         titulo: `📍 Pedido #${numero} posicionado`,
         detalhe: [
-          data.aprendido ? "Os próximos pedidos deste endereço já vêm neste ponto." : null,
+          data.aprendido
+            ? data.vizinhanca
+              ? "Os próximos pedidos deste endereço já vêm neste ponto, e os da mesma quadra e conjunto vêm perto (aproximado)."
+              : "Os próximos pedidos deste endereço já vêm neste ponto."
+            : null,
           data.foraDaArea ? "Atenção: o ponto fica fora da área de entrega cadastrada." : null,
           typeof data.distanciaKm === "number" ? `Distância da loja: ${String(data.distanciaKm).replace(".", ",")} km.` : null,
         ].filter(Boolean).join(" ") || undefined,

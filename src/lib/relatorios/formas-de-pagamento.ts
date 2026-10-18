@@ -101,6 +101,7 @@
  */
 import { lerPagamentos, emCentavos } from "@/lib/pagamentos-da-mesa";
 import { formaCanonica, ehFormaInformadaPelaLoja } from "@/lib/pagamento-na-entrega";
+import { ehFormaPropria, nomeDaFormaPropria } from "@/lib/formas-proprias";
 import { cupomBancadoPelo99, ehDo99Food } from "@/lib/cupom-do-parceiro";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
 import { STATUS_FORA_DA_VENDA, canalDoRelatorio, diasNoPeriodo, naLoja, somarDias } from "@/lib/relatorios/base";
@@ -111,7 +112,11 @@ import {
 
 // ── AS FORMAS ───────────────────────────────────────────────────────────────
 
-export type ChaveDaForma = "DINHEIRO" | "PIX" | "CREDITO" | "DEBITO" | "VALE" | "ONLINE" | "FIADO" | "OUTROS";
+/**
+ * PROPRIA: forma de pagamento criada pela loja ("Macaíba", lib/formas-proprias.ts).
+ * Não é dinheiro da gaveta nem maquininha: linha própria, com o nome dela.
+ */
+export type ChaveDaForma = "DINHEIRO" | "PIX" | "CREDITO" | "DEBITO" | "VALE" | "ONLINE" | "FIADO" | "PROPRIA" | "OUTROS";
 
 /**
  * Onde o dinheiro está: na loja (o caixa confere), no repasse da plataforma, ou
@@ -132,13 +137,14 @@ export const FORMAS: { chave: ChaveDaForma; rotulo: string; grupo: GrupoDaForma 
   { chave: "VALE", rotulo: "Vale-refeição / Voucher", grupo: "LOJA" },
   { chave: "ONLINE", rotulo: "Pago online (app / site)", grupo: "ONLINE" },
   { chave: "FIADO", rotulo: "Fiado / Conta funcionário", grupo: "SEM_DINHEIRO" },
+  { chave: "PROPRIA", rotulo: "Formas próprias da loja", grupo: "SEM_DINHEIRO" },
   { chave: "OUTROS", rotulo: "Outros / Não identificado", grupo: "SEM_DINHEIRO" },
 ];
 
 export const GRUPOS: { chave: GrupoDaForma; rotulo: string; explicacao: string }[] = [
   { chave: "LOJA", rotulo: "Recebido na loja", explicacao: "Gaveta, maquininha e Pix da loja — o que o fechamento de caixa confere." },
   { chave: "ONLINE", rotulo: "Pago online", explicacao: "Pago no app do marketplace ou no site: chega pelo repasse da plataforma ou do gateway, não passa pelo caixa." },
-  { chave: "SEM_DINHEIRO", rotulo: "Sem dinheiro no dia", explicacao: "Fiado (acertado depois) e forma que o sistema não reconheceu — ninguém recebeu na hora." },
+  { chave: "SEM_DINHEIRO", rotulo: "Sem dinheiro no dia", explicacao: "Fiado (acertado depois), formas próprias da loja (moeda social, vale da casa — fora da gaveta) e forma que o sistema não reconheceu." },
 ];
 
 const ROTULO_DA_FORMA = new Map(FORMAS.map((f) => [f.chave, f.rotulo]));
@@ -170,6 +176,9 @@ const DA_FORMA_CANONICA: Record<string, ChaveDaForma> = {
 export function formaDoTexto(texto: string | null | undefined): ChaveDaForma {
   const m = String(texto || "").toLowerCase();
   if (!m.trim()) return "OUTROS";
+  // A forma PRÓPRIA da loja vem antes de tudo: "Vale Macaíba (forma própria)"
+  // não é vale-refeição, e nenhuma delas é cédula da gaveta.
+  if (ehFormaPropria(texto)) return "PROPRIA";
   if (m.includes("funcion") || m.includes("fiado")) return "FIADO";
   if (m.includes("dinheiro") || m.includes("cash")) return "DINHEIRO";
   if (m.includes("débito") || m.includes("debito") || m.includes("debit")) return "DEBITO";
@@ -471,7 +480,7 @@ export type ResultadoDasFormas = {
 const reais = (c: number) => Math.round(c) / 100;
 const pctDe = (parte: number, todo: number) => (todo > 0 ? Math.round((parte / todo) * 10000) / 100 : 0);
 /** "Cartão  Crédito (Cobrar na Entrega) " → "Cartão Crédito (Cobrar na Entrega)" — só para agrupar. */
-const textoLimpo = (t: string | null | undefined) => String(t || "").replace(/\s+/g, " ").trim() || "(sem forma gravada)";
+const textoLimpo = (t: string | null | undefined) => nomeDaFormaPropria(t) ?? (String(t || "").replace(/\s+/g, " ").trim() || "(sem forma gravada)");
 
 type Acumulado = { pagamentos: number; centavos: number };
 const somar = (mapa: Map<string, Acumulado>, chave: string, centavos: number) => {
@@ -671,8 +680,10 @@ export function formasDePagamento(
 
   const formas: LinhaDaForma[] = FORMAS.map((f) => {
     const s = soma.get(f.chave)!;
+    // A linha das formas próprias leva o NOME delas ("Macaíba"), não o genérico.
+    const rotulo = f.chave === "PROPRIA" && s.textos.size > 0 ? [...s.textos.keys()].join(" / ") : f.rotulo;
     return {
-      chave: f.chave, rotulo: f.rotulo, grupo: f.grupo,
+      chave: f.chave, rotulo, grupo: f.grupo,
       pagamentos: s.pagamentos, contas: s.contas.size, valor: reais(s.centavos), pct: pctDe(s.centavos, totalCentavos),
       mediaPorConta: mediaPorConta(s.centavos, s.contas.size),
       porDia: s.porDia.map(reais),

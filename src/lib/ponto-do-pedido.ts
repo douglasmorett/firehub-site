@@ -23,6 +23,8 @@
  *   2. parceiro   iFood, 99, Keeta, Brendi… (conferido na entrada, R8);
  *   3. cliente    pino arrastado pelo cliente, GPS do site, localização do robô;
  *   4. aprendido  o operador já posicionou um pedido deste endereço nesta loja;
+ *      vizinhança  ...ou de um VIZINHO (mesma quadra e conjunto, outro lote):
+ *                 aproximado — o pino aparece com "confira";
  *   5. cep        rua e bairro dos Correios (ViaCEP) e a busca estruturada;
  *   6. texto      o endereço como foi escrito;
  *   7. bairro     o centro do bairro escrito — só se o mapa confirmar que é ele;
@@ -47,6 +49,7 @@ export type FonteDoPonto =
   | "parceiro"
   | "cliente"
   | "aprendido"
+  | "vizinhanca"
   | "cep"
   | "texto"
   | "bairro"
@@ -54,7 +57,7 @@ export type FonteDoPonto =
 
 /** A ordem de confiança, da mais forte para a mais fraca (ver o topo do arquivo). */
 export const ORDEM_DAS_FONTES: readonly FonteDoPonto[] = [
-  "manual", "parceiro", "cliente", "aprendido", "cep", "texto", "bairro", "google",
+  "manual", "parceiro", "cliente", "aprendido", "vizinhanca", "cep", "texto", "bairro", "google",
 ];
 
 /** Como o painel escreve cada fonte (selo do pino, lista de incertos, log). */
@@ -63,6 +66,7 @@ export const NOME_DA_FONTE: Record<FonteDoPonto, string> = {
   parceiro: "ponto do app (parceiro)",
   cliente: "localização do cliente",
   aprendido: "posição salva deste endereço",
+  vizinhanca: "aproximado pela vizinhança (mesma quadra e conjunto)",
   cep: "pelo CEP",
   texto: "pelo endereço escrito",
   bairro: "centro do bairro (aproximado)",
@@ -71,7 +75,7 @@ export const NOME_DA_FONTE: Record<FonteDoPonto, string> = {
 
 /** Quem SABE onde é a casa: nunca é descartado pela área, só pelo absurdo. */
 export function fonteConfiavel(f: FonteDoPonto): boolean {
-  return f === "manual" || f === "parceiro" || f === "cliente" || f === "aprendido";
+  return f === "manual" || f === "parceiro" || f === "cliente" || f === "aprendido" || f === "vizinhanca";
 }
 
 /** Acima disto não é entrega, é engano — o mesmo corte de lib/area-de-entrega.ts. */
@@ -234,7 +238,8 @@ export type PontoGravado = {
 /**
  * O `customerLatLng` gravado, com a fonte. A origem é escrita por quem grava:
  * "manual" (a loja, na roteirização), "aprendido" (o cron, pela posição salva
- * do endereço), "pino"/"gps" (o cliente), "mapa"/"bairro" (o checkout ou o
+ * do endereço), "vizinhanca" (o cron, pela posição salva da mesma quadra e
+ * conjunto), "pino"/"gps" (o cliente), "mapa"/"bairro" (o checkout ou o
  * cron achando o texto). Sem origem: o ponto do parceiro — e, nos canais da
  * loja, o GPS do site de antes de 25/09/2026, quando a origem não existia.
  * Ponto de enchimento (o (-23,-43) do 99Food) não é ponto.
@@ -249,6 +254,7 @@ export function lerPontoGravado(bruto: unknown, ehMarketplace: boolean): PontoGr
   const origem = String(o.origem ?? "").trim().toLowerCase();
   if (origem === "manual") return { ponto, fonte: "manual", aproximado: false };
   if (origem === "aprendido") return { ponto, fonte: "aprendido", aproximado: false };
+  if (origem === "vizinhanca") return { ponto, fonte: "vizinhanca", aproximado: true };
   if (origem === "pino" || origem === "gps") return { ponto, fonte: "cliente", aproximado: false };
   if (origem === "bairro") return { ponto, fonte: "bairro", aproximado: true };
   if (origem === "mapa") return { ponto, fonte: "texto", aproximado: false };
@@ -274,6 +280,7 @@ export function pontoGravadoVale(g: PontoGravado | null, area: AreaDaLoja | null
  */
 export function fonteDaGeocodificacao(origem: string | null | undefined): FonteDoPonto {
   const o = String(origem || "").trim().toLowerCase();
+  if (/vizinhan/.test(o)) return "vizinhanca";
   if (/aprendid|manual|salva pela loja/.test(o)) return "aprendido";
   if (/google/.test(o)) return "google";
   if (/^bairro|centr[oó]ide|dicion/.test(o)) return "bairro";
@@ -323,6 +330,155 @@ export function chavesDoAprendizado(endereco: unknown): string[] {
     if (/^\d{1,6}$/.test(numero)) chaves.push(`c:${cep}|${numero}`);
   }
   return chaves;
+}
+
+// ── A VIZINHANÇA: QUADRA + CONJUNTO (lib/ponto-aprendido.ts) ──────────────────
+//
+// NIK Esfihas (Sobradinho/DF, 17/10/2026): o operador corrigiu ~8 pinos e
+// "já teve outros pedidos para aqui depois e não bateu" — eram VIZINHOS
+// ("Qd 03 Cj G lote 07" corrigido, "Qd 03 Cj G lote 11" chegando). Em
+// Brasília a quadra + o conjunto já dizem o quarteirão (~100-200 m); o lote é
+// só a casa. A chave de vizinhança junta os pedidos do mesmo conjunto, sempre
+// com o lugar junto (o começo do CEP ou o bairro escrito) para a "Quadra 3
+// Conjunto G" de Sobradinho não valer pela de outra cidade.
+
+/** Os jeitos de escrever "quadra" — os mesmos de lib/bairro-pelo-endereco.ts. */
+const SIGLAS_DE_QUADRA_DA_VIZINHANCA = new Set(["quadra", "quadras", "qd", "qda", "qdr", "q"]);
+/** As quadras com sigla de setor de Brasília: AR (Sobradinho II), QR, QN, QNM, QS, SQS… */
+const SIGLA_DE_SETOR = /^(ar|q[delnrs]|qn[a-z]|qs[a-z]|qr[a-z]|qms|sq[ns]w?)$/;
+const SIGLAS_DE_CONJUNTO = new Set(["conjunto", "conj", "cj", "cjt", "cnj"]);
+/** "Quadra nº 5", "Conjunto n 4": a palavra do número entre a sigla e o valor. */
+const PALAVRA_DE_NUMERO = new Set(["n", "no", "nr", "num", "numero"]);
+/** Depois de "conjunto", não é o conjunto. */
+const NAO_E_CONJUNTO = new Set(["de", "da", "do", "das", "dos", "e", "o", "n", "no", "nr", "lt", "lote", "cs", "casa", "sn"]);
+
+const siglaDeQuadra = (s: string): string | null =>
+  SIGLAS_DE_QUADRA_DA_VIZINHANCA.has(s) ? "q" : SIGLA_DE_SETOR.test(s) ? s : null;
+
+/** "04" → "4", "b02" → "b2", "51a" fica. */
+const semZeroAEsquerda = (v: string) => v.replace(/^([a-z]?)0+(\d)/, "$1$2");
+
+/** Sem acento e caixa; a vírgula vira palavra (o conjunto não atravessa vírgula); "qd03" → "qd 03". */
+function palavrasDaVizinhanca(trecho: string): string[] {
+  const t = String(trecho || "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[ºª°]/g, " ")
+    .replace(/([a-z])[-/](\d)/g, "$1$2") // "Conjunto B-2" → "b2"
+    .replace(/,/g, " , ")
+    .replace(/[^a-z0-9,]+/g, " ")
+    .trim();
+  const saida: string[] = [];
+  for (const p of t.split(/\s+/)) {
+    const m = p.match(/^([a-z]+)(\d+[a-z]?)$/);
+    if (m && (siglaDeQuadra(m[1]) || SIGLAS_DE_CONJUNTO.has(m[1]))) saida.push(m[1], m[2]);
+    else if (p) saida.push(p);
+  }
+  return saida;
+}
+
+type LeituraDaVizinhanca = { quadra: string; conjunto: string } | "ambigua" | null;
+
+/** Quadra + conjunto de UM pedaço do endereço. Duas quadras diferentes no pedaço = ambígua. */
+function vizinhancaNoPedaco(pedaco: string): LeituraDaVizinhanca {
+  const lista = palavrasDaVizinhanca(pedaco);
+  const quadras = new Set<string>();
+  let conjunto: string | null = null;
+  for (let i = 0; i < lista.length; i++) {
+    let j = i + 1;
+    while (j < lista.length && PALAVRA_DE_NUMERO.has(lista[j])) j++;
+    const valor = lista[j];
+    if (!valor) continue;
+    const sigla = siglaDeQuadra(lista[i]);
+    if (sigla && /^\d{1,3}[a-z]?$/.test(valor)) {
+      quadras.add(`${sigla}${semZeroAEsquerda(valor)}`);
+      continue;
+    }
+    if (
+      !conjunto &&
+      SIGLAS_DE_CONJUNTO.has(lista[i]) &&
+      !NAO_E_CONJUNTO.has(valor) &&
+      /^(\d{1,3}|[a-z]{1,2}|[a-z]\d{1,2}|\d{1,2}[a-z])$/.test(valor)
+    ) {
+      conjunto = semZeroAEsquerda(valor);
+    }
+  }
+  if (!conjunto || quadras.size === 0) return null;
+  // "Q 5 Q 12 Conjunto B", "Q. 9 Conjunto E, AR 17": não dá para saber qual.
+  if (quadras.size > 1) return "ambigua";
+  return { quadra: [...quadras][0], conjunto };
+}
+
+const PALAVRAS_QUE_NAO_SAO_BAIRRO = new Set(["brasil", "brazil", "brasilia", "casa", "cep"]);
+const UFS_DA_VIZINHANCA = new Set([
+  "ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms", "mg", "pa", "pb", "pr",
+  "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to",
+]);
+
+/** O bairro escrito depois da rua ("- Sobradinho II -"), sem cidade, UF, CEP nem "QUADRA 3". */
+function bairroDaVizinhanca(pedacos: string[]): string | null {
+  for (const p of pedacos) {
+    const lista = String(p.split(",")[0])
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim()
+      .split(" ")
+      .filter(Boolean)
+      .map((x) => (x === "ii" ? "2" : x === "iii" ? "3" : x === "i" ? "1" : x));
+    if (lista.length === 0) continue;
+    if (lista.every((x) => PALAVRAS_QUE_NAO_SAO_BAIRRO.has(x) || UFS_DA_VIZINHANCA.has(x))) continue;
+    if (lista[0] === "cep" || /^\d+$/.test(lista[0])) continue;
+    if (siglaDeQuadra(lista[0]) || SIGLAS_DE_CONJUNTO.has(lista[0])) continue; // "QUADRA 3" repetido pela Wabiz
+    const nome = lista.join(" ");
+    if (nome.length < 4) continue;
+    return nome.slice(0, 40);
+  }
+  return null;
+}
+
+/**
+ * A chave de VIZINHANÇA do endereço: "v:<lugar>|<quadra>|cj<conjunto>", ou
+ * null quando o endereço não tem quadra E conjunto (ou tem duas quadras).
+ *
+ *   "Qd 03 Cj G lote 07, 07 - ... - CEP 73030037"      → "v:73030|q3|cjg"
+ *   "Q 12 Conjunto B, 47 - Sobradinho - Brasília"      → "v:sobradinho|q12|cjb"
+ *   "AR 14 conjunto 04, 03 - Sobradinho II - Brasília" → "v:sobradinho 2|ar14|cj4"
+ *
+ * O lugar é o começo do CEP (5 dígitos: o setor nos Correios) quando há CEP;
+ * sem CEP, o bairro escrito depois da rua. Sem nenhum dos dois, sem chave —
+ * a quadra sozinha não diz a cidade.
+ */
+export function chaveDaVizinhanca(endereco: unknown): string | null {
+  const texto = String(endereco ?? "")
+    .replace(/\([^()]*\)/g, " ")
+    .replace(/[()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (texto.length < 4) return null;
+  const pedacos = texto
+    .split(/\s+[-–—]\s+/)
+    .map((p) => p.trim())
+    .filter((p) => p && !/^\s*(ref(er[eê]ncia)?|ponto de refer[eê]ncia|obs(erva[cç][aã]o)?)\b/i.test(p));
+  if (pedacos.length === 0) return null;
+  const COMP = /^\s*comp(lemento)?\b\s*[:.]?/i;
+  let achada: { quadra: string; conjunto: string } | null = null;
+  // A rua primeiro, depois os outros pedaços ("sobradinho, 16 - (Qd 5 cj C cs 16 - ...").
+  for (const p of pedacos) {
+    const l = vizinhancaNoPedaco(p.replace(COMP, ""));
+    if (l === "ambigua") return null;
+    if (l) {
+      achada = l;
+      break;
+    }
+  }
+  if (!achada) return null;
+  const cep = digitosDoCep(cepDoEndereco(texto));
+  const lugar = cep.length === 8 ? cep.slice(0, 5) : bairroDaVizinhanca(pedacos.slice(1).filter((p) => !COMP.test(p)));
+  if (!lugar) return null;
+  return `v:${lugar}|${achada.quadra}|cj${achada.conjunto}`;
 }
 
 // ── O QUE A ROTEIRIZAÇÃO DESENHA (components/customer/RoteirizacaoModal.tsx) ──

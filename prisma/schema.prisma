@@ -902,6 +902,9 @@ model CustomerOrder {
   /// O prêmio do Cartão de Carimbos que este pedido usou (lib/carimbos.ts,
   /// ResgateDosCarimbos). É a marca que impede o mesmo prêmio de sair duas vezes.
   carimboPremio    Json?
+  /// Indique e Ganhe (lib/indicacao.ts, ResgateDaIndicacao): o primeiro pedido
+  /// do amigo indicado. É desta marca que sai o saldo de quem indicou.
+  indicacao        Json?
   cashbackEarned   Float?              // Cashback gerado neste pedido (R$)
   cashbackUsed     Float?              // Cashback resgatado neste pedido (R$)
   // === GATEWAY UNIFICADO (Mercado Pago / Celcoin) ===

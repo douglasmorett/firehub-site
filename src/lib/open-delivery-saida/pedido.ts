@@ -102,6 +102,7 @@ const METODO_NA_PORTA: Record<ChaveDaForma, string> = {
   VALE: "MEAL_VOUCHER",
   ONLINE: "OTHER",
   FIADO: "OTHER",
+  PROPRIA: "OTHER",
   OUTROS: "OTHER",
 };
 

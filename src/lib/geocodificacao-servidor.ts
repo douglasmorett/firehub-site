@@ -53,7 +53,7 @@ import {
   type AreaDaLoja,
   type FonteDoPonto,
 } from "@/lib/ponto-do-pedido";
-import { pontosAprendidos } from "@/lib/ponto-aprendido";
+import { pontosAprendidos, type PontoAprendidoAchado } from "@/lib/ponto-aprendido";
 
 export type PedidoDeGeocodificacao = {
   /** Id do pedido, só para devolver o resultado casado. */
@@ -481,18 +481,31 @@ export async function resolverPontosNoServidor(
   const plausivel = (p: PedidoDeGeocodificacao, ponto: Ponto) => pontoPlausivel(ponto, area, !!p.ehMarketplace);
 
   // 0. A posição que a loja já ensinou para o endereço (o operador arrastou o
-  //    pino de um pedido anterior). É a palavra de quem conhece a rua.
-  let aprendidos = new Map<string, { lat: number; lng: number }>();
+  //    pino de um pedido anterior). É a palavra de quem conhece a rua. Sem a
+  //    do endereço, a dos VIZINHOS (mesma quadra e conjunto): aproximada, e o
+  //    pino sai com "confira".
+  let aprendidos = new Map<string, PontoAprendidoAchado>();
   if (loja.franchiseeId) {
     aprendidos = await pontosAprendidos(loja.franchiseeId, pedidos.map((p) => p.endereco)).catch((e) => {
       console.warn("[Geocodificação] posições aprendidas indisponíveis:", e?.message);
-      return new Map<string, { lat: number; lng: number }>();
+      return new Map<string, PontoAprendidoAchado>();
     });
   }
   const restantes: PedidoDeGeocodificacao[] = [];
   for (const p of pedidos) {
     const a = aprendidos.get(p.endereco);
-    if (a) {
+    if (a?.pela === "vizinhanca") {
+      const n = a.correcoes || 1;
+      achados.push({
+        id: p.id,
+        lat: a.lat,
+        lng: a.lng,
+        origem: `posição aproximada pela vizinhança (${n} ${n === 1 ? "correção" : "correções"} da mesma quadra e conjunto)`,
+        doCache: true,
+        fonte: "vizinhanca",
+        aproximado: true,
+      });
+    } else if (a) {
       achados.push({ id: p.id, lat: a.lat, lng: a.lng, origem: "posição salva pela loja", doCache: true, fonte: "aprendido", aproximado: false });
     } else {
       restantes.push(p);

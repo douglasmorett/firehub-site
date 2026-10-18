@@ -44,7 +44,7 @@ export async function GET() {
     ? await calcularEsperadoDoTurno(user.targetId, openSession)
     : {
         expected: { cash: 0, debit: 0, credit: 0, pix: 0, voucher: 0, ifoodOnline: 0, ifoodCoupons: 0, food99Online: 0, food99Coupons: 0, total: 0 },
-        foraDaConferencia: { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 },
+        foraDaConferencia: { fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0, proprias: [] as { nome: string; valor: number; qtd: number }[] },
         pendentesValor: 0, pendentesQuantidade: 0, movimentacaoEntradas: 0, movimentacaoSaidas: 0, onlineProprio: 0,
       };
   const { expected, foraDaConferencia, pendentesValor, pendentesQuantidade, movimentacaoEntradas, movimentacaoSaidas, onlineProprio } = dados;
@@ -164,6 +164,8 @@ export async function GET() {
       // Mesas ainda abertas: conta em andamento, sem dinheiro recebido.
       mesasAbertas: Number(foraDaConferencia.mesasAbertas.toFixed(2)),
       mesasAbertasQtd: foraDaConferencia.mesasAbertasQtd,
+      // Formas próprias da loja (a Macaíba): linha com o nome, fora da gaveta.
+      proprias: foraDaConferencia.proprias || [],
     },
     // Vendas de antes deste caixa abrir, cujo dinheiro pode estar na gaveta.
     foraDoTurno: {

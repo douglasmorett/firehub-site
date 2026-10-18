@@ -316,12 +316,13 @@ export async function GET(req: NextRequest) {
       // As coordenadas vão junto: a roteirização e o "motoboy mais perto"
       // passam a aproveitar o mesmo trabalho. Com a origem, para quem lê
       // saber que foi o mapa (ou o centro do bairro), e não o cliente — e
-      // "aprendido" quando é a posição que a própria loja ensinou.
+      // "aprendido" quando é a posição que a própria loja ensinou ("vizinhanca"
+      // quando foi a de um vizinho da mesma quadra e conjunto).
       await prisma.customerOrder.update({
         where: { id: a.id },
         data: {
           ...gravacao(pedido, km),
-          customerLatLng: { ...coords, origem: a.fonte === "aprendido" ? "aprendido" : origemDaGeocodificacao(a.origem) },
+          customerLatLng: { ...coords, origem: a.fonte === "aprendido" || a.fonte === "vizinhanca" ? a.fonte : origemDaGeocodificacao(a.origem) },
         },
       });
       medidos++;

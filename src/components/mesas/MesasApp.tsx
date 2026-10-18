@@ -23,6 +23,7 @@ import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
 import HistoricoDeMesas from "@/components/mesas/HistoricoDeMesas";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 import { motivoValido } from "@/lib/motivo-do-cancelamento";
+import { rotuloDaForma } from "@/lib/formas-proprias";
 import {
   MOTIVOS_COMUNS, SEM_DESCONTO, problemaDoDesconto, valorDoDesconto,
   type DescontoManual,
@@ -402,6 +403,9 @@ export default function MesasApp({
   const [carregandoConta, setCarregandoConta] = useState(false);
   /** Baixas já gravadas no servidor para esta mesa. */
   const [pagamentosDaMesa, setPagamentosDaMesa] = useState<PagamentoDaMesa[]>([]);
+  // As formas PRÓPRIAS da loja liberadas para a mesa (a Macaíba): vêm junto
+  // com as baixas da conta (GET .../pagamentos), no painel e no garçom.
+  const [formasPropriasDaMesa, setFormasPropriasDaMesa] = useState<string[]>([]);
   /** De quem é o pagamento que está sendo digitado. Nulo = da mesa toda. */
   const [donoPagamento, setDonoPagamento] = useState<string | null>(null);
   const [formaPagamento, setFormaPagamento] = useState("Dinheiro");
@@ -1248,6 +1252,7 @@ export default function MesasApp({
       if (res.ok) {
         const data = await res.json();
         setPagamentosDaMesa(Array.isArray(data.pagamentos) ? data.pagamentos : []);
+        if (Array.isArray(data.formasProprias)) setFormasPropriasDaMesa(data.formasProprias.filter((f: unknown) => typeof f === "string"));
       }
     } catch { /* silencioso: a tela continua com o que já tinha */ }
   }, []);
@@ -3497,7 +3502,7 @@ export default function MesasApp({
                           </span>
                         )}
                       </span>
-                      <span style={{ fontSize: 12, color: "#0F766E", fontWeight: 600 }}>{p.method}</span>
+                      <span style={{ fontSize: 12, color: "#0F766E", fontWeight: 600 }}>{rotuloDaForma(p.method)}</span>
                       <span style={{ fontSize: 14, fontWeight: 900, color: "#0F766E" }}>{fmt(p.amount)}</span>
                       <button
                         onClick={() => apagarPagamento(p.uid)}
@@ -3559,8 +3564,8 @@ export default function MesasApp({
                         flex: "1 1 110px", padding: "11px 8px", borderRadius: 10, border: "1px solid #E2E8F0",
                         fontSize: 13, fontFamily: "inherit", background: "#fff", cursor: "pointer",
                       }}>
-                      {["Dinheiro", "Pix", "Débito", "Crédito", "Voucher"].map(m => (
-                        <option key={m} value={m}>{m}</option>
+                      {["Dinheiro", "Pix", "Débito", "Crédito", "Voucher", ...formasPropriasDaMesa].map(m => (
+                        <option key={m} value={m}>{rotuloDaForma(m)}</option>
                       ))}
                     </select>
                     <input

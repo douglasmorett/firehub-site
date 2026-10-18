@@ -162,6 +162,11 @@ export function ehFormaInformadaPelaLoja(texto: string | null | undefined): bool
 export function formaCanonica(texto: string | null | undefined): FormaNaEntrega | null {
   const t = String(texto || "").toLowerCase();
   if (!t) return null;
+  // Forma PRÓPRIA da loja ("Macaíba (forma própria)", lib/formas-proprias.ts):
+  // não é nenhuma das cinco, mesmo que o nome diga "vale" ou "dinheiro". A
+  // marca é lida aqui sem import de propósito (o gêmeo e o teste deste arquivo
+  // o carregam sozinho). O resumo do dividido segue a leitura de sempre.
+  if (/\(forma pr[oó]pria\)/.test(t) && !/^\s*dividido\s*:/.test(t)) return null;
   if (/dinheiro|cash|money|esp[eé]cie/.test(t)) return "Dinheiro";
   if (/d[eé]b/.test(t)) return "Cartão Débito";
   if (/pix/.test(t)) return "Pix";

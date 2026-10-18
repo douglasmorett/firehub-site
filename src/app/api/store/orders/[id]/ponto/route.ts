@@ -2,13 +2,15 @@
  * POST /api/store/orders/[id]/ponto — a loja POSICIONA o pedido no mapa.
  *
  *   corpo:    { lat, lng }
- *   resposta: { ok, ponto, aprendido, distanciaKm, foraDaArea }
+ *   resposta: { ok, ponto, aprendido, vizinhanca, distanciaKm, foraDaArea }
  *
  * Grava `customerLatLng = { lat, lng, origem: "manual" }` — a fonte mais forte
  * (lib/ponto-do-pedido.ts): a roteirização desenha ali, o app do motoboy navega
  * até ali (lib/app-motoboy/pedido-no-app.ts, `pontoExato`) e o cron mede dali.
  * E ensina o endereço (lib/ponto-aprendido.ts): o próximo pedido com o mesmo
- * endereço nesta loja já nasce no lugar certo, sem ninguém arrastar de novo.
+ * endereço nesta loja já nasce no lugar certo, sem ninguém arrastar de novo —
+ * e o do vizinho (mesma quadra e conjunto, outro lote) nasce perto, marcado
+ * como aproximado (`vizinhanca`: o endereço tem quadra e conjunto).
  *
  * ── Por que existe (NIK Esfihas, 16/10/2026) ───────────────────────────────
  *
@@ -35,7 +37,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { lojasDaVisao, COOKIE_DA_LOJA_ATIVA } from "@/lib/loja-ativa";
 import { aprenderPonto } from "@/lib/ponto-aprendido";
-import { areaDaLoja, distanciaKm, pontoPlausivel, RAIO_MAXIMO_KM } from "@/lib/ponto-do-pedido";
+import { areaDaLoja, chaveDaVizinhanca, distanciaKm, pontoPlausivel, RAIO_MAXIMO_KM } from "@/lib/ponto-do-pedido";
 import { distanciaDaEntregaKm, lerPonto } from "@/lib/distancia-da-entrega";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 
@@ -138,6 +140,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     ok: true,
     ponto,
     aprendido: aprendidas > 0,
+    vizinhanca: aprendidas > 0 && !!chaveDaVizinhanca(pedido.customerAddress),
     distanciaKm: distancia ?? null,
     // Ponto do operador fora da área cadastrada: vale (ele conhece a rua), só avisa.
     foraDaArea: area ? !pontoPlausivel(ponto, area, ehMarketplace) : false,

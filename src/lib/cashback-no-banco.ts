@@ -34,6 +34,8 @@ import {
   type SaldoDoCashback,
 } from "./cashback";
 import { telefoneNacional } from "./lote-de-saldo";
+import { lerIndicacao } from "./indicacao";
+import { indicacoesDaLoja, indicacoesDoTelefone } from "./indicacao-no-banco";
 
 export type CashbackDoCliente = SaldoDoCashback & {
   /** % que o próximo pedido gera (com o bônus VIP, se houver). */
@@ -157,18 +159,27 @@ export async function cashbackDoCliente(
   excetoPedidoIds: string[] = [],
 ): Promise<CashbackDoCliente | null> {
   const regra = lerCashback(storeLoyalty);
-  if (!regra.ativo) return null;
+  // A loja que só ligou o Indique e Ganhe também tem saldo: a recompensa de
+  // quem indicou (lib/indicacao.ts). Quem chama decide se o canal usa.
+  if (!regra.ativo && !lerIndicacao(storeLoyalty).ativo) return null;
   const final = chaveDoSaldo(telefone);
   if (!final) return null;
 
   // O cliente que só tem o saldo trazido de outro sistema ainda não tem
-  // pedido aqui — por isso os lançamentos contam mesmo sem pedido nenhum.
-  const [todos, ajustes] = await Promise.all([pedidosDoTelefone(franchiseeId, final), ajustesDaLoja(franchiseeId, final)]);
+  // pedido aqui — por isso os lançamentos contam mesmo sem pedido nenhum. A
+  // recompensa da indicação sai dos pedidos dos AMIGOS, não dos dele.
+  const [todos, ajustes, indicacoes] = await Promise.all([
+    pedidosDoTelefone(franchiseeId, final),
+    ajustesDaLoja(franchiseeId, final),
+    indicacoesDoTelefone(franchiseeId, telefone),
+  ]);
   const fora = new Set(excetoPedidoIds);
   const pedidos = fora.size ? todos.filter((p) => !fora.has(p.id)) : todos;
-  if (!pedidos.length && !ajustes.length) return { saldo: 0, proximoVencimento: null, taxa: taxaDoCliente(regra, 0) };
+  if (!pedidos.length && !ajustes.length && !indicacoes.extras.creditos.length) {
+    return { saldo: 0, proximoVencimento: null, taxa: taxaDoCliente(regra, 0) };
+  }
 
-  const saldo = saldoDoCashback(regra, pedidos, agora, ajustes);
+  const saldo = saldoDoCashback(regra, pedidos, agora, ajustes, indicacoes.extras);
   return { ...saldo, taxa: taxaDoCliente(regra, gastoEm30Dias(pedidos, agora)) };
 }
 
@@ -191,7 +202,8 @@ export async function extratoDoCliente(
   // Em sequência, não em paralelo: na transação as duas leituras dividem uma conexão.
   const pedidos = await pedidosDoTelefone(lojaId, final, db);
   const ajustes = await ajustesDaLoja(lojaId, final, db);
-  return extratoDoCashback(lerCashback(storeLoyalty), pedidos, ajustes, agora);
+  const { extras } = await indicacoesDoTelefone(lojaId, telefone);
+  return extratoDoCashback(lerCashback(storeLoyalty), pedidos, ajustes, agora, extras);
 }
 
 /**
@@ -206,7 +218,7 @@ export async function saldosDaLoja(
   agora = new Date(),
 ): Promise<Map<string, SaldoDoCashback & { nome: string | null; telefone: string }>> {
   const regra = lerCashback(storeLoyalty);
-  const [pedidos, ajustes] = await Promise.all([
+  const [pedidos, ajustes, indicacoes] = await Promise.all([
     prisma.customerOrder.findMany({
       where: { franchiseeId: lojaId, OR: [{ cashbackEarned: { gt: 0 } }, { cashbackUsed: { gt: 0 } }] },
       select: { ...CAMPOS_DO_PEDIDO, customerPhone: true, customerName: true },
@@ -214,6 +226,7 @@ export async function saldosDaLoja(
       take: 20_000,
     }),
     ajustesDaLoja(lojaId),
+    indicacoesDaLoja(lojaId),
   ]);
   type Grupo = { pedidos: typeof pedidos; ajustes: LinhaDeAjuste[]; nome: string | null; telefone: string };
   const grupos = new Map<string, Grupo>();
@@ -236,9 +249,13 @@ export async function saldosDaLoja(
     g.ajustes.push(a);
     if (!g.nome && a.nome) g.nome = a.nome;
   }
+  // Quem só tem a recompensa de indicação (nunca usou cashback) também entra na lista.
+  for (const final of indicacoes.keys()) {
+    if (!grupos.has(final)) grupo(final, final);
+  }
   const saldos = new Map<string, SaldoDoCashback & { nome: string | null; telefone: string }>();
   for (const [final, g] of grupos) {
-    saldos.set(final, { ...saldoDoCashback(regra, g.pedidos, agora, g.ajustes), nome: g.nome, telefone: g.telefone });
+    saldos.set(final, { ...saldoDoCashback(regra, g.pedidos, agora, g.ajustes, indicacoes.get(final)), nome: g.nome, telefone: g.telefone });
   }
   return saldos;
 }

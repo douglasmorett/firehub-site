@@ -20,6 +20,7 @@ import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@
 import { lerConsulta, preencherBalcao, type ClienteSugerido } from "@/lib/busca-de-clientes";
 import { useSession } from "next-auth/react";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
+import { ehFormaPropria, rotuloDaForma, textosNoCanal } from "@/lib/formas-proprias";
 
 // A mesma lista do pedido de balcão do garçom (lib/balcao-config.ts).
 const PAYMENT_METHODS = FORMAS_DE_PAGAMENTO_DO_BALCAO;
@@ -63,6 +64,9 @@ export default function VendaPresencialPage() {
   const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
   const [products, setProducts] = useState<any[]>([]);
   const [paymentConfig, setPaymentConfig] = useState<any>(null);
+  // As formas PRÓPRIAS da loja marcadas para o Caixa/PDV (lib/formas-proprias.ts):
+  // o texto gravado ("Macaíba (forma própria)"), o botão mostra só o nome.
+  const formasProprias = useMemo(() => textosNoCanal(paymentConfig, "pdv"), [paymentConfig]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("BALCAO");
   // O CPF/CNPJ na nota fiscal da loja que emite sozinha (lib/fiscal-modo).
@@ -1271,13 +1275,13 @@ export default function VendaPresencialPage() {
           <div style={{ marginBottom: 6 }}>
             <label style={{ fontSize: "0.72rem", fontWeight: 700, color: "#64748B", textTransform: "uppercase", letterSpacing: "0.4px", display: "block", marginBottom: 3 }}>Pagamento</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-              {[...PAYMENT_METHODS, ...(employeeAccountEnabled ? ["Conta Funcionário"] : [])].map(m => (
+              {[...PAYMENT_METHODS, ...formasProprias, ...(employeeAccountEnabled ? ["Conta Funcionário"] : [])].map(m => (
                 <button key={m} type="button" onClick={() => { setPaymentMethod(m); if (m !== "Voucher/Vale") setVoucherBrand(""); else if (bandeirasDoVale.length === 1) setVoucherBrand(bandeirasDoVale[0].name); }}
                   style={{ padding: "4px 9px", borderRadius: 8, border: `1.5px solid ${paymentMethod === m ? "#C92E09" : "#CBD5E1"}`,
                     background: paymentMethod === m ? "#C92E09" : "#fff",
                     color: paymentMethod === m ? "#fff" : "#334155",
                     fontWeight: 700, fontSize: "0.75rem", cursor: "pointer", fontFamily: "inherit" }}>
-                  {m === "Conta Funcionário" ? "👤 Conta Funcionário" : m}
+                  {m === "Conta Funcionário" ? "👤 Conta Funcionário" : ehFormaPropria(m) ? `🪙 ${rotuloDaForma(m)}` : m}
                 </button>
               ))}
               {/* Dividir entre formas, igual à mesa: metade no Pix, metade em dinheiro. */}
@@ -1317,7 +1321,7 @@ export default function VendaPresencialPage() {
                 <div key={idx} style={{ display: "flex", gap: 4, alignItems: "center", marginBottom: 4 }}>
                   <select value={p.metodo} onChange={e => setParte(idx, { metodo: e.target.value })}
                     style={{ flex: "1 1 90px", padding: "5px 6px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.78rem", fontFamily: "inherit", background: "#fff" }}>
-                    {PAYMENT_METHODS.map(m => <option key={m} value={m}>{m}</option>)}
+                    {[...PAYMENT_METHODS, ...formasProprias].map(m => <option key={m} value={m}>{rotuloDaForma(m)}</option>)}
                   </select>
                   <input type="number" inputMode="decimal" step="0.01" min="0" placeholder="0,00" value={p.valor}
                     onChange={e => setParte(idx, { valor: e.target.value })}

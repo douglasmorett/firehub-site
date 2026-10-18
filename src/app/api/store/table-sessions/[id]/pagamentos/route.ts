@@ -33,6 +33,7 @@ import {
   type PagamentoDaMesa,
 } from "@/lib/pagamentos-da-mesa";
 import { formaDoTexto } from "@/lib/relatorios/formas-de-pagamento";
+import { ehFormaPropria, problemaDaFormaPropria, textosNoCanal } from "@/lib/formas-proprias";
 
 export const dynamic = "force-dynamic";
 
@@ -89,7 +90,15 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (ctx.erro) return ctx.erro;
 
   const lista = lerPagamentos(ctx.mesa!.paymentMethods);
-  return NextResponse.json({ pagamentos: lista, totalPago: somarPagamentos(lista) });
+  // As formas PRÓPRIAS da loja liberadas para a mesa (lib/formas-proprias.ts):
+  // a tela de mesas (painel e garçom) as põe na lista de formas. Falha aqui
+  // não tira a conta da tela.
+  let formasProprias: string[] = [];
+  try {
+    const loja = await prisma.user.findUnique({ where: { id: ctx.lojaId! }, select: { paymentFees: true } });
+    formasProprias = textosNoCanal(loja?.paymentFees, "mesa");
+  } catch { /* segue sem as formas próprias */ }
+  return NextResponse.json({ pagamentos: lista, totalPago: somarPagamentos(lista), formasProprias });
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -129,6 +138,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       { error: "forma_invalida", mensagem: "Para deixar no fiado, use \"Lançar no fiado\" no fechamento da conta." },
       { status: 400 }
     );
+  }
+
+  // Forma própria da loja (a Macaíba) só se a loja a liberou para a mesa.
+  if (ehFormaPropria(metodo)) {
+    const loja = await prisma.user.findUnique({ where: { id: ctx.lojaId! }, select: { paymentFees: true } });
+    const problema = problemaDaFormaPropria(loja?.paymentFees, [metodo], "mesa");
+    if (problema) return NextResponse.json({ error: "forma_invalida", mensagem: problema }, { status: 400 });
   }
 
   // O dono do pagamento é conferido contra as pessoas DESTA mesa. Um guestId de

@@ -8,6 +8,7 @@ import { linkDeAvaliacaoNoGoogle } from "./avaliacao-no-google";
 import { comandaDoRobo } from "./comanda-do-robo";
 import { previsaoDaEntrega } from "./previsao-da-entrega";
 import { formaCanonica } from "./pagamento-na-entrega";
+import { nomeDaFormaPropria } from "./formas-proprias";
 import { lojaQueEnviaOAviso } from "./remetente-do-aviso";
 import { avisarAparelhosDoPedido } from "./app-da-loja/aparelhos";
 
@@ -18,6 +19,9 @@ import { avisarAparelhosDoPedido } from "./app-da-loja/aparelhos";
 export function formaDePagamentoParaOCliente(pedido: { paymentMethod?: string | null; gatewayProvider?: string | null; gatewayPaymentId?: string | null }): string {
   const cru = String(pedido.paymentMethod || "").trim();
   if (!cru) return "";
+  // Forma própria da loja ("Macaíba (forma própria)"): o cliente lê só o nome.
+  const propria = nomeDaFormaPropria(cru);
+  if (propria) return propria;
   const forma = formaCanonica(cru.replace(/_/g, " ")) || cru;
   if (pedido.gatewayProvider || pedido.gatewayPaymentId) return `${forma} (pago online)`;
   // "PIX_ENTREGA": o Pix é na porta — só "Pix" pareceria já pago.

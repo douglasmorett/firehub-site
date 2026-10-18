@@ -9,6 +9,7 @@ import { cadastroParaGravar, mesclarRegraDeRepasse } from "@/lib/cadastro-da-ent
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { enderecoDoMapaComBairroDosCorreios } from "@/lib/bairro-dos-correios";
+import { validarFormasProprias } from "@/lib/formas-proprias";
 
 /**
  * GET: o cadastro de entrega GRAVADO da loja da sessão.
@@ -121,6 +122,15 @@ export async function PUT(req: Request) {
     "repasseConfig",     // Configurações de Repasse Automático (Brendi Flow)
   ]) {
     if (body[key] !== undefined) data[key] = body[key];
+  }
+
+  // Formas de pagamento PRÓPRIAS (lib/formas-proprias.ts) moram dentro de
+  // paymentFees: conferidas aqui, para o PDV, a mesa, o cardápio e o robô
+  // lerem sempre a lista limpa (nome único, sem parêntese, canais em booleano).
+  if (data.paymentFees && typeof data.paymentFees === "object" && "formasProprias" in data.paymentFees) {
+    const r = validarFormasProprias((data.paymentFees as any).formasProprias);
+    if (!r.ok) return NextResponse.json({ error: r.erro }, { status: 400 });
+    data.paymentFees = { ...(data.paymentFees as any), formasProprias: r.formas };
   }
 
   // O VÍDEO DA CAPA vai para a linha da LOJA, que é a que o cardápio lê. Só

@@ -34,6 +34,7 @@ const COR_DA_CAIXA: Record<QuadradoDoAcerto, { fundo: string; borda: string; tex
   PIX: { fundo: "#EEF2FF", borda: "#C7D2FE", texto: "#4338CA" },
   ONLINE: { fundo: "#F0FDFA", borda: "#99F6E4", texto: "#0F766E" },
   FIADO: { fundo: "#FEF3C7", borda: "#FDE68A", texto: "#92400E" },
+  PROPRIA: { fundo: "#F5F3FF", borda: "#DDD6FE", texto: "#5B21B6" },
   OUTROS: { fundo: "#FEF2F2", borda: "#FECACA", texto: "#B91C1C" },
 };
 const ROTULO_DA_CAIXA = new Map<QuadradoDoAcerto, { rotulo: string; curto: string }>([

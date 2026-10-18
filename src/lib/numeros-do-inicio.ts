@@ -254,7 +254,7 @@ export type LinhaDaFormaDoInicio = {
 };
 
 /** A ordem do fechamento de caixa e do relatório: a linha não muda de lugar de um dia para o outro. */
-const ORDEM_DAS_FORMAS: ChaveDaFormaDoInicio[] = ["DINHEIRO", "PIX", "CREDITO", "DEBITO", "VALE", "ONLINE", "MESA", "FIADO", "OUTROS"];
+const ORDEM_DAS_FORMAS: ChaveDaFormaDoInicio[] = ["DINHEIRO", "PIX", "CREDITO", "DEBITO", "VALE", "ONLINE", "MESA", "FIADO", "PROPRIA", "OUTROS"];
 
 const ROTULO_DA_FORMA: Record<ChaveDaFormaDoInicio, string> = {
   ...(Object.fromEntries(FORMAS.map((f) => [f.chave, f.rotulo])) as Record<ChaveDaForma, string>),

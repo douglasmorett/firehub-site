@@ -146,6 +146,9 @@ export type ChaveDePagamento = "MONEY" | "PIX" | "CREDIT_CARD" | "DEBIT_CARD" | 
 export function chaveDaFormaDePagamento(forma: string | null | undefined): Exclude<ChaveDePagamento, "ONLINE"> | null {
   const f = String(forma || "").toLowerCase();
   if (!f) return null;
+  // Forma própria da loja (lib/formas-proprias.ts) não é nenhuma das cinco da
+  // tela — nem pelo nome ("Vale Macaíba"). A nota dela sai como "99 Outros".
+  if (/\(forma pr[oó]pria\)/.test(f) && !/^\s*dividido\s*:/.test(f)) return null;
   if (f.includes("pix")) return "PIX";
   if (f.includes("dinheiro") || f.includes("money") || f.includes("cash") || f.includes("espécie") || f.includes("especie")) return "MONEY";
   if (f.includes("créd") || f.includes("cred")) return "CREDIT_CARD";

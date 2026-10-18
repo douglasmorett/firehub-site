@@ -6,7 +6,8 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { cupomDePrimeiroPedido, cupomVenceu, descreverBeneficio } from "@/lib/cupons";
 import { hojeDaLoja, jaPediuPeloSite } from "@/lib/cupons-no-banco";
 import { cashbackDoCliente } from "@/lib/cashback-no-banco";
-import { lerCashback, regraNoCanal } from "@/lib/cashback";
+import { lerIndicacao, regraParaUsarOSaldo } from "@/lib/indicacao";
+import { codigoDoTelefone, indicacaoParaOCardapio } from "@/lib/indicacao-no-banco";
 import { PEDIDOS_DO_CARDAPIO } from "@/lib/pedidos-do-telefone";
 import { ondeEstaoOsPedidosDoTelefone } from "@/lib/pedidos-do-telefone-no-banco";
 import { carimbosDoTelefone, trilhaDoTelefone } from "@/lib/premio-no-pedido";
@@ -224,13 +225,35 @@ export async function GET(req: Request) {
   const maisPedidos = encontrados.length > PEDIDOS_DO_CARDAPIO;
 
   // `customer: null` de propósito: os dados pessoais só saem pelo login.
-  const [trilha, cupomPrimeiroPedido, cashback, carimbos] = await Promise.all([
+  const [trilha, cupomPrimeiroPedido, cashback, carimbos, indicacao] = await Promise.all([
     trilhaDoCliente(franchiseeId, cleanPhone),
     cupomDePrimeiroPedidoDoCliente(franchiseeId, cleanPhone),
     saldoDeCashbackDoCliente(franchiseeId, cleanPhone),
     carimbosDoCardapio(franchiseeId, cleanPhone),
+    indicacaoDoCardapio(franchiseeId, cleanPhone, searchParams.get("ref")),
   ]);
-  return NextResponse.json({ orders, maisPedidos, customer: null, trilha, cupomPrimeiroPedido, cashback, carimbos });
+  return NextResponse.json({ orders, maisPedidos, customer: null, trilha, cupomPrimeiroPedido, cashback, carimbos, indicacao });
+}
+
+/**
+ * Indique e Ganhe (lib/indicacao.ts): o código DESTE telefone para o link
+ * "?ref=" e, quando o cardápio chegou por um link (`ref`), se este telefone
+ * leva o desconto de amigo. Sai só o código, o primeiro nome de quem indicou
+ * e o valor — a rota é pública. `null` com o programa desligado.
+ */
+async function indicacaoDoCardapio(franchiseeId: string, cleanPhone: string, ref: string | null) {
+  try {
+    const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { storeLoyalty: true } });
+    if (!lerIndicacao(loja?.storeLoyalty).ativo) return null;
+    const [codigo, indicadoPor] = await Promise.all([
+      codigoDoTelefone(franchiseeId, cleanPhone),
+      ref ? indicacaoParaOCardapio(franchiseeId, loja?.storeLoyalty, cleanPhone, ref) : Promise.resolve(null),
+    ]);
+    return { codigo, indicadoPor };
+  } catch {
+    // A indicação nunca pode derrubar a consulta de pedidos do cliente.
+    return null;
+  }
 }
 
 /**
@@ -260,7 +283,8 @@ async function carimbosDoCardapio(franchiseeId: string, cleanPhone: string) {
 async function saldoDeCashbackDoCliente(franchiseeId: string, cleanPhone: string) {
   try {
     const loja = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { storeLoyalty: true } });
-    if (!regraNoCanal(lerCashback(loja?.storeLoyalty), "site").ativo) return null;
+    // Com a indicação ligada, o saldo da recompensa se usa no site mesmo sem cashback.
+    if (!regraParaUsarOSaldo(loja?.storeLoyalty, "site").ativo) return null;
     return await cashbackDoCliente(franchiseeId, loja?.storeLoyalty, cleanPhone);
   } catch {
     return null;
