@@ -40,6 +40,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ loj
   const evento = String(corpo?.event || "");
 
   try {
+    // Clube do aplicativo no cartão (lib/clube/assinatura-asaas.ts): assinatura,
+    // checkout e cobrança que nasceu de uma assinatura. O aviso só diz quem
+    // mexeu; o status sai da leitura da assinatura no Asaas, com a chave da loja.
+    const doClube = await (await import("@/lib/clube/assinatura-asaas")).aoAvisoDoAsaas(lojaId, corpo);
+    if (doClube) return NextResponse.json(doClube);
+
     if (evento.startsWith("PAYMENT_")) {
       const { pedidoDaReferencia, conferirPagamentoDoPedido } = await import("@/lib/pix-online-pedido");
       const orderId = pedidoDaReferencia(corpo?.payment?.externalReference);

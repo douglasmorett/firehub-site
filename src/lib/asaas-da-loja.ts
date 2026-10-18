@@ -212,6 +212,18 @@ export const EVENTOS_DO_WEBHOOK = [
   "ACCESS_TOKEN_DISABLED",
   "ACCESS_TOKEN_DELETED",
   "ACCESS_TOKEN_EXPIRED",
+  // Clube do aplicativo no cartão (lib/clube/asaas.ts): a mensalidade recusada
+  // ou vencida, o estorno, a assinatura criada pelo checkout e a removida.
+  // Nomes conferidos em docs.asaas.com/docs/webhook-para-cobrancas,
+  // /eventos-para-assinaturas e /eventos-para-checkout (18/10/2026).
+  "PAYMENT_OVERDUE",
+  "PAYMENT_CREDIT_CARD_CAPTURE_REFUSED",
+  "PAYMENT_CHARGEBACK_REQUESTED",
+  "SUBSCRIPTION_CREATED",
+  "SUBSCRIPTION_UPDATED",
+  "SUBSCRIPTION_INACTIVATED",
+  "SUBSCRIPTION_DELETED",
+  "CHECKOUT_PAID",
 ] as const;
 
 type OpcoesDoWebhook = { url: string; email: string; authToken: string };
@@ -277,6 +289,22 @@ export async function conferirWebhookDaLoja(chave: string, webhookId: string): P
   if (!r.dados.interrupted && r.dados.enabled !== false) return "ok";
   const p = await asaasDaLoja(chave, caminho, { method: "PUT", body: { enabled: true, interrupted: false } });
   return p.ok ? "reativado" : "falha";
+}
+
+/**
+ * O webhook de uma conexão antiga tem só os eventos do pagamento dos pedidos.
+ * Ao ligar o Clube no cartão, os eventos que faltam entram (PUT só com
+ * `events`, como a reativação acima faz só com `enabled`/`interrupted`).
+ */
+export async function garantirEventosNoWebhook(chave: string, webhookId: string): Promise<"ok" | "atualizado" | "sumiu" | "falha"> {
+  const caminho = `/webhooks/${encodeURIComponent(webhookId)}`;
+  const r = await asaasDaLoja<{ events?: string[] }>(chave, caminho);
+  if (r.status === 404) return "sumiu";
+  if (!r.ok || !r.dados) return "falha";
+  const tem = new Set((r.dados.events || []).map(String));
+  if (EVENTOS_DO_WEBHOOK.every((e) => tem.has(e))) return "ok";
+  const p = await asaasDaLoja(chave, caminho, { method: "PUT", body: { events: [...new Set([...tem, ...EVENTOS_DO_WEBHOOK])] } });
+  return p.ok ? "atualizado" : "falha";
 }
 
 export async function removerWebhookDaLoja(chave: string, webhookId: string) {

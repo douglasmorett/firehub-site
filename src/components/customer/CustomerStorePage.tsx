@@ -77,7 +77,7 @@ import QuandoReceber, { type Quando } from "./QuandoReceber";
 import AgendarNoCardapio from "./AgendarNoCardapio";
 import { aceitaAgendamentoPara, horariosParaAgendar, lerConfigDeAgendamento, textoDoAgendamento } from "@/lib/agendamento";
 import { avisarOApp } from "@/lib/app-da-loja/ponte";
-import { useClubeDoApp } from "./clube/useClubeDoApp";
+import { instalacaoDoApp, useClubeDoApp } from "./clube/useClubeDoApp";
 import { FaixaDoClube, ModalDoClube, ClubeNaSacola } from "./clube/ClubeNoCardapio";
 import ConviteDoApp from "./clube/ConviteDoApp";
 import { descontoDoClube as calcularDescontoDoClube } from "@/lib/clube/regras";
@@ -552,6 +552,8 @@ export default function CustomerStorePage({
   // Clube do aplicativo (lib/clube): situação de quem está logado, só dentro do app.
   const clubeApp = useClubeDoApp(franchisee.id, !mesa);
   const [modalDoClube, setModalDoClube] = useState(false);
+  // Clube no cartão (Asaas) sem cadastro ainda: o modal pede o CPF antes do checkout.
+  const [clubePedeCpf, setClubePedeCpf] = useState(false);
   // Apertou "Assinar" sem estar logado: depois do login, segue para o pagamento.
   const querAssinarDepoisDoLogin = useRef(false);
   // Onde este cliente está na Trilha Premiada. Vem calculado do servidor
@@ -1221,7 +1223,9 @@ export default function CustomerStorePage({
   // indicação e antes do desconto do pagamento — a mesma ordem do servidor
   // (/api/customer-order, lib/clube/regras.ts).
   const baseDoClube = Math.max(0, cartTotal - discount - descontoDaTrilha - descontoDosCarimbos - descontoDaIndicacao);
-  const descontoDoClube = !mesa && clubeApp.descontoValendo && clubeApp.clube
+  // Clube que não soma com cupom: com cupom na sacola, vale o cupom (o servidor faz igual).
+  const clubeForaPorCupom = Boolean(clubeApp.clube && clubeApp.clube.acumulaComCupom === false && cupomNaConta);
+  const descontoDoClube = !mesa && clubeApp.descontoValendo && clubeApp.clube && !clubeForaPorCupom
     ? calcularDescontoDoClube(clubeApp.clube, baseDoClube)
     : 0;
   // O que o pedido economizaria no clube (convite na sacola de quem não assina).
@@ -1813,9 +1817,13 @@ export default function CustomerStorePage({
   }, [clubeApp.cliente]);
 
   // "Assinar" do Clube: sem login, abre o login e volta para o pagamento depois.
-  const assinarOClube = async () => {
-    const r = await clubeApp.assinar();
-    if (r === "entrar") {
+  const assinarOClube = async (cpf?: string) => {
+    const r = await clubeApp.assinar(cpf);
+    if (r === "cpf") {
+      // Clube no cartão, primeira vez: o modal pede o CPF e chama de novo.
+      setClubePedeCpf(true);
+      setModalDoClube(true);
+    } else if (r === "entrar") {
       querAssinarDepoisDoLogin.current = true;
       setModalDoClube(false);
       setAuthMode("register");
@@ -2777,6 +2785,8 @@ export default function CustomerStorePage({
           ...(codigoDeIndicacao && isReferralActive && !mesa ? { codigoDeIndicacao } : {}),
           // A prova do login: o servidor só dá o desconto do Clube com ela (lib/sessao-do-cliente.ts).
           ...(clubeApp.sessao && !mesa ? { sessaoDoCliente: clubeApp.sessao } : {}),
+          // A instalação do app (apps/loja): prova de que o pedido é de dentro do aplicativo.
+          ...(clubeApp.noApp && instalacaoDoApp() ? { instalacaoDoApp: instalacaoDoApp() } : {}),
           items: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
           // Cookies do GA4 desta pessoa. O `purchase` que o SERVIDOR manda
           // (src/lib/ga-purchase.ts) precisa deles para cair no mesmo visitante
@@ -3919,7 +3929,7 @@ export default function CustomerStorePage({
                 )}
                 {!mesa && clubeApp.noApp && clubeApp.clube && (
                   <ClubeNaSacola clube={clubeApp.clube} situacao={clubeApp.situacao} desconto={descontoDoClube}
-                    economiaPossivel={economiaNoClube} onAbrir={() => setModalDoClube(true)} />
+                    economiaPossivel={economiaNoClube} onAbrir={() => setModalDoClube(true)} foraPorCupom={clubeForaPorCupom} />
                 )}
                 {cashbackDiscountApplied > 0 && (
                   <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED" }}>
@@ -4689,7 +4699,7 @@ export default function CustomerStorePage({
               )}
               {!mesa && clubeApp.noApp && clubeApp.clube && (
                 <ClubeNaSacola clube={clubeApp.clube} situacao={clubeApp.situacao} desconto={descontoDoClube}
-                  economiaPossivel={economiaNoClube} onAbrir={() => setModalDoClube(true)} compacto />
+                  economiaPossivel={economiaNoClube} onAbrir={() => setModalDoClube(true)} compacto foraPorCupom={clubeForaPorCupom} />
               )}
               {cashbackDiscountApplied > 0 && (
                 <div style={{ display: "flex", justifyContent: "space-between", color: "#7C3AED", fontWeight: 700 }}>
@@ -5189,15 +5199,19 @@ export default function CustomerStorePage({
           no fluxo da página, logo abaixo do topo: não cobrem o cardápio nem a sacola. */}
       {!mesa && clubeApp.noApp && clubeApp.clube && (
         <FaixaDoClube clube={clubeApp.clube} situacao={clubeApp.situacao} pagoAte={clubeApp.pagoAte}
-          onAbrir={() => setModalDoClube(true)} onPagar={assinarOClube} />
+          onAbrir={() => setModalDoClube(true)} onPagar={() => assinarOClube()}
+          cancelado={clubeApp.cancelado} confirmando={clubeApp.confirmando} />
       )}
       {!mesa && appDaLoja && !marcaAtiva && franchisee.slug && (
         <ConviteDoApp lojaId={franchisee.id} slug={franchisee.slug} nomeDaLoja={storeName}
           logo={franchisee.storeLogo} android={appDaLoja.android} ios={appDaLoja.ios} clube={appDaLoja.clube} />
       )}
-      {modalDoClube && clubeApp.clube && clubeApp.situacao !== "ativo" && (
+      {modalDoClube && clubeApp.clube && (clubeApp.situacao !== "ativo" || clubeApp.clube.cobranca === "asaas") && (
         <ModalDoClube clube={clubeApp.clube} situacao={clubeApp.situacao} logado={!!clubeApp.sessao}
-          abrindo={clubeApp.abrindo} erro={clubeApp.erro} onFechar={() => setModalDoClube(false)} onAssinar={assinarOClube} />
+          abrindo={clubeApp.abrindo} erro={clubeApp.erro} onFechar={() => setModalDoClube(false)} onAssinar={assinarOClube}
+          pedeCpf={clubePedeCpf || (clubeApp.clube.cobranca === "asaas" && !clubeApp.temCadastroNoAsaas)}
+          pagoAte={clubeApp.pagoAte} cancelado={clubeApp.cancelado}
+          onCancelar={clubeApp.clube.cobranca === "asaas" ? () => { clubeApp.cancelar(); } : undefined} />
       )}
 
       {/* AGENDAR PEDIDO: dia e hora primeiro, depois o cardápio daquele horário */}

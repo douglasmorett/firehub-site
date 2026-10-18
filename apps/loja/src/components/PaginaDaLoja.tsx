@@ -8,7 +8,9 @@
  *   não dentro do cardápio;
  * - "pedido feito" (src/lib/app-da-loja/ponte.ts no site) guarda o pedido na
  *   aba Pedidos e liga o aviso de andamento neste celular;
- * - o botão Voltar do Android volta a página, não fecha o app.
+ * - o botão Voltar do Android volta a página, não fecha o app;
+ * - a página recebe o id desta instalação, a prova de que o pedido é do app
+ *   (o desconto do Clube no cartão depende dela).
  */
 import * as Linking from "expo-linking";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,6 +20,8 @@ import type { ShouldStartLoadRequest } from "react-native-webview/lib/WebViewTyp
 
 import { perguntarDepoisDoPedido } from "@/components/PerguntaDasPromocoes";
 import { registrarNoPedido } from "@/lib/avisos";
+import { idDaInstalacao } from "@/lib/instalacao";
+import { scriptDaInstalacao } from "@/lib/instalacao-na-pagina";
 import { marca } from "@/lib/marca";
 import { guardarPedido } from "@/lib/pedidos-guardados";
 
@@ -42,6 +46,13 @@ export function PaginaDaLoja({ url, aoFazerPedido }: { url: string; aoFazerPedid
   const [podeVoltar, setPodeVoltar] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [semInternet, setSemInternet] = useState(false);
+  // A página só abre com o id da instalação na mão (lido do SecureStore, instantâneo).
+  const [instalacao, setInstalacao] = useState<string | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    idDaInstalacao().then((id) => { if (vivo) setInstalacao(id); });
+    return () => { vivo = false; };
+  }, []);
 
   // Android: Voltar volta a página enquanto houver para onde voltar.
   useEffect(() => {
@@ -104,12 +115,22 @@ export function PaginaDaLoja({ url, aoFazerPedido }: { url: string; aoFazerPedid
     );
   }
 
+  if (!instalacao) {
+    return (
+      <View style={estilos.carregando} pointerEvents="none">
+        <ActivityIndicator size="large" color={marca.cor} />
+      </View>
+    );
+  }
+
   return (
     <View style={{ flex: 1 }}>
       <WebView
         ref={web}
         source={{ uri: url }}
         applicationNameForUserAgent={`FireHubApp/1 (${marca.id})`}
+        // O id da instalação para a página (prova de que o pedido é do app — src/lib/instalacao-na-pagina.ts).
+        injectedJavaScriptBeforeContentLoaded={scriptDaInstalacao(instalacao, marca.id, [hostDe(marca.site), ...marca.dominiosDaLoja])}
         onNavigationStateChange={aoNavegar}
         onShouldStartLoadWithRequest={antesDeAbrir}
         onMessage={aoReceber}

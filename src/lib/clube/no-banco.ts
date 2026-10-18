@@ -10,14 +10,21 @@
  *   `callback` = o que vai no link do checkout e volta da Cakto.
  * - "ClubeEventoVisto": trava para o mesmo pagamento não somar dois meses.
  * - "ClubePedido": o desconto que cada pedido levou (números do painel).
+ * - "ClubeMensalidade": cada mensalidade do Asaas da loja (lib/clube/asaas.ts),
+ *   regravada a cada leitura da assinatura — a receita do clube no painel.
+ *
+ * Colunas do Asaas em "ClubeAssinatura" (18/10/2026, à tarde): `cobranca`
+ * (cakto|asaas; nula = cakto, as linhas antigas), `asaasClienteId`,
+ * `checkoutId`, `sincronizadoEm`. O CPF não é guardado: vai direto ao Asaas.
  */
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
 import { cifrar, decifrar, mesmoSegredo } from "@/lib/cofre";
 import { finalDoTelefone } from "@/lib/pedidos-do-telefone";
 import { principalDoGrupo } from "@/lib/vitrine-do-grupo";
-import { appLigadoNaConta } from "@/lib/app-da-loja/instalacoes";
+import { appLigadoNaConta, garantirEstruturaDasInstalacoes } from "@/lib/app-da-loja/instalacoes";
 import {
+  clubeProntoParaAssinar,
   lerConfigDoClube,
   novoPagoAte,
   situacaoDaAssinatura,
@@ -27,6 +34,7 @@ import {
   type StatusGravado,
 } from "@/lib/clube/regras";
 import { chaveDoPagamento, type EventoDaCakto } from "@/lib/clube/cakto";
+import type { Reconciliado } from "@/lib/clube/asaas";
 import { STATUS_FORA_DA_VENDA } from "@/lib/relatorios/base";
 
 const INSTRUCOES = [
@@ -75,6 +83,24 @@ const INSTRUCOES = [
      CONSTRAINT "ClubePedido_pkey" PRIMARY KEY ("pedidoId")
    )`,
   `CREATE INDEX IF NOT EXISTS "ClubePedido_chave_criado" ON "ClubePedido" ("chave", "criadoEm")`,
+  `ALTER TABLE "ClubeAssinatura" ADD COLUMN IF NOT EXISTS "cobranca" TEXT`,
+  `ALTER TABLE "ClubeAssinatura" ADD COLUMN IF NOT EXISTS "asaasClienteId" TEXT`,
+  `ALTER TABLE "ClubeAssinatura" ADD COLUMN IF NOT EXISTS "checkoutId" TEXT`,
+  `ALTER TABLE "ClubeAssinatura" ADD COLUMN IF NOT EXISTS "sincronizadoEm" TIMESTAMP(3)`,
+  `CREATE INDEX IF NOT EXISTS "ClubeAssinatura_asaasCliente" ON "ClubeAssinatura" ("chave", "asaasClienteId")`,
+  `CREATE TABLE IF NOT EXISTS "ClubeMensalidade" (
+     "id" TEXT NOT NULL,
+     "chave" TEXT NOT NULL,
+     "assinanteId" TEXT NOT NULL,
+     "status" TEXT NOT NULL,
+     "valor" DOUBLE PRECISION NOT NULL,
+     "valorLiquido" DOUBLE PRECISION,
+     "vencimento" TEXT,
+     "pagoEm" TEXT,
+     "atualizadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "ClubeMensalidade_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE INDEX IF NOT EXISTS "ClubeMensalidade_chave_pago" ON "ClubeMensalidade" ("chave", "pagoEm")`,
 ];
 
 let pronto = false;
@@ -125,18 +151,46 @@ export async function lerClube(chave: string): Promise<ClubeDaConta> {
 }
 
 /**
+ * O Asaas da marca está pronto para cobrar o clube? A conta é a da loja
+ * principal do grupo (`chave`, a mesma do app): chave conectada e não
+ * desligada por recusa (lib/pix-online-pedido.ts → desligarPixOnline).
+ */
+export async function asaasProntoNaMarca(chave: string): Promise<boolean> {
+  const loja = await prisma.user.findUnique({ where: { id: chave }, select: { asaasChaveCifrada: true, asaasConexao: true } });
+  const conexao = (loja?.asaasConexao as any) || {};
+  return Boolean(loja?.asaasChaveCifrada) && !conexao.desligadoEm;
+}
+
+/**
  * O clube que vale para o cardápio desta loja: só com o plano do app ligado
- * (o clube é benefício do aplicativo) e o clube ligado com o link do checkout.
+ * (o clube é benefício do aplicativo) e o clube ligado com quem cobra pronto
+ * (o link da Cakto, ou o Asaas da marca conectado).
  */
 export async function clubeValendoNaLoja(lojaId: string): Promise<ClubeDaConta | null> {
   try {
     const chave = await chaveDoClubeDaLoja(lojaId);
     if (!chave) return null;
     const [clube, app] = await Promise.all([lerClube(chave), appLigadoNaConta(lojaId)]);
-    if (!app || !clube.config.ativo || !clube.config.linkDoCheckout) return null;
-    return clube;
+    if (!app || !clube.config.ativo) return null;
+    const asaas = clube.config.cobranca === "asaas" ? await asaasProntoNaMarca(chave) : false;
+    return clubeProntoParaAssinar(clube.config, asaas) ? clube : null;
   } catch {
     return null;
+  }
+}
+
+/** A instalação do app existe na base desta marca (o app registrou ao abrir)? */
+export async function instalacaoDaMarca(chave: string, instalacaoId: string | null): Promise<boolean> {
+  if (!instalacaoId || !(await garantirEstruturaDasInstalacoes())) return false;
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT 1 FROM "AppDaLojaAparelho" WHERE "lojaId" = $1 AND "instalacaoId" = $2 LIMIT 1`,
+      chave,
+      instalacaoId,
+    );
+    return rows.length > 0;
+  } catch {
+    return false;
   }
 }
 
@@ -200,6 +254,12 @@ export type LinhaDoAssinante = {
   ultimoEvento: string | null;
   pagamentos: number;
   atualizadoEm: string | null;
+  /** Quem cobra este sócio (linha antiga, sem a coluna = Cakto). */
+  cobranca: "cakto" | "asaas";
+  assinaturaExterna: string | null;
+  asaasClienteId: string | null;
+  checkoutId: string | null;
+  sincronizadoEm: string | null;
 };
 
 function linha(r: any): LinhaDoAssinante {
@@ -218,6 +278,11 @@ function linha(r: any): LinhaDoAssinante {
     ultimoEvento: r.ultimoEvento ?? null,
     pagamentos: Number(r.pagamentos) || 0,
     atualizadoEm: iso(r.atualizadoEm),
+    cobranca: r.cobranca === "asaas" ? "asaas" : "cakto",
+    assinaturaExterna: r.assinaturaExterna ?? null,
+    asaasClienteId: r.asaasClienteId ?? null,
+    checkoutId: r.checkoutId ?? null,
+    sincronizadoEm: iso(r.sincronizadoEm),
   };
 }
 
@@ -275,6 +340,96 @@ export async function prepararAssinatura(
   const l = await assinanteDoTelefone(chave, c.telefone);
   if (!l) throw new Error("Não foi possível preparar a assinatura.");
   return l;
+}
+
+// ── O SÓCIO NO ASAAS DA LOJA (lib/clube/asaas.ts) ──────────────────────────
+
+export async function assinantePorId(chave: string, id: string): Promise<LinhaDoAssinante | null> {
+  if (!id || !(await garantirEstruturaDoClube())) return null;
+  const rows = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "ClubeAssinatura" WHERE "chave" = $1 AND "id" = $2`, chave, id);
+  return rows[0] ? linha(rows[0]) : null;
+}
+
+/** Guarda o cliente e o checkout do Asaas no sócio (e marca que é do Asaas). */
+export async function ligarSocioAoAsaas(id: string, d: { asaasClienteId: string; checkoutId: string | null }): Promise<void> {
+  await prisma.$executeRawUnsafe(
+    `UPDATE "ClubeAssinatura" SET "cobranca" = 'asaas', "asaasClienteId" = $2, "checkoutId" = COALESCE($3, "checkoutId"), "atualizadoEm" = CURRENT_TIMESTAMP WHERE "id" = $1`,
+    id,
+    d.asaasClienteId,
+    d.checkoutId,
+  );
+}
+
+/** De quem é o aviso: pela referência, pela assinatura, pelo cliente ou pelo checkout. */
+export async function socioDoAviso(
+  chave: string,
+  a: { assinanteId: string | null; assinaturaId: string | null; clienteId: string | null; checkoutId: string | null },
+): Promise<LinhaDoAssinante | null> {
+  if (!(await garantirEstruturaDoClube())) return null;
+  const tentativas: [string, string | null][] = [
+    [`"id"`, a.assinanteId],
+    [`"assinaturaExterna"`, a.assinaturaId],
+    [`"asaasClienteId"`, a.clienteId],
+    [`"checkoutId"`, a.checkoutId],
+  ];
+  for (const [coluna, valor] of tentativas) {
+    if (!valor) continue;
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT * FROM "ClubeAssinatura" WHERE "chave" = $1 AND ${coluna} = $2 AND "cobranca" = 'asaas' LIMIT 1`,
+      chave,
+      valor,
+    );
+    if (rows[0]) return linha(rows[0]);
+  }
+  return null;
+}
+
+/** Grava o que a leitura do Asaas disse (status, até quando está pago, as mensalidades). */
+export async function gravarLeituraDoAsaas(
+  atual: LinhaDoAssinante,
+  r: Reconciliado,
+  o: { evento: string; agora?: Date } = { evento: "leitura" },
+): Promise<LinhaDoAssinante> {
+  const agora = o.agora || new Date();
+  const canceladoEm = r.status === "CANCELADO" ? atual.canceladoEm || agora.toISOString() : null;
+  await prisma.$executeRawUnsafe(
+    `UPDATE "ClubeAssinatura" SET
+       "status" = $2, "pagoAte" = $3::timestamp, "desde" = COALESCE("desde", $4::timestamp), "canceladoEm" = $5::timestamp,
+       "pagamentos" = $6, "assinaturaExterna" = COALESCE($7, "assinaturaExterna"), "ultimoEvento" = $8,
+       "sincronizadoEm" = $9::timestamp, "atualizadoEm" = CURRENT_TIMESTAMP
+     WHERE "id" = $1`,
+    atual.id,
+    r.status,
+    r.pagoAte,
+    r.desde,
+    canceladoEm,
+    r.pagamentos,
+    r.assinaturaId,
+    `${o.evento} ${agora.toISOString()}`.slice(0, 120),
+    agora.toISOString(),
+  );
+  for (const m of r.mensalidades) {
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "ClubeMensalidade" ("id","chave","assinanteId","status","valor","valorLiquido","vencimento","pagoEm","atualizadoEm")
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP)
+       ON CONFLICT ("id") DO UPDATE SET "status" = EXCLUDED."status", "valor" = EXCLUDED."valor", "valorLiquido" = EXCLUDED."valorLiquido",
+         "vencimento" = EXCLUDED."vencimento", "pagoEm" = EXCLUDED."pagoEm", "atualizadoEm" = CURRENT_TIMESTAMP`,
+      m.id,
+      atual.chave,
+      atual.id,
+      m.status,
+      m.valor,
+      m.valorLiquido,
+      m.vencimento,
+      m.pagoEm,
+    );
+  }
+  return (await assinantePorId(atual.chave, atual.id)) || atual;
+}
+
+/** Só marca a hora da leitura (Asaas fora do ar): a próxima tentativa espera o intervalo. */
+export async function marcarLeitura(id: string): Promise<void> {
+  await prisma.$executeRawUnsafe(`UPDATE "ClubeAssinatura" SET "sincronizadoEm" = CURRENT_TIMESTAMP WHERE "id" = $1`, id).catch(() => 0);
 }
 
 // ── O WEBHOOK ───────────────────────────────────────────────────────────────
@@ -419,4 +574,49 @@ export async function pedidosDoClube(chave: string, desde: Date): Promise<{ pedi
     console.error("[Clube] pedidosDoClube:", e?.message);
     return { pedidos: 0, desconto: 0, faturamento: 0 };
   }
+}
+
+/** As mensalidades pagas no Asaas da loja desde o dia `desdeDia` (YYYY-MM-DD, dia de Brasília). */
+export async function mensalidadesPagasDesde(chave: string, desdeDia: string): Promise<{ quantas: number; bruto: number; liquido: number }> {
+  if (!(await garantirEstruturaDoClube())) return { quantas: 0, bruto: 0, liquido: 0 };
+  try {
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT COUNT(*)::int AS "quantas", COALESCE(SUM("valor"),0)::float AS "bruto", COALESCE(SUM(COALESCE("valorLiquido","valor")),0)::float AS "liquido"
+         FROM "ClubeMensalidade" WHERE "chave" = $1 AND "pagoEm" IS NOT NULL AND "pagoEm" >= $2
+          AND "status" IN ('RECEIVED','CONFIRMED','RECEIVED_IN_CASH')`,
+      chave,
+      desdeDia,
+    );
+    const r = rows[0] || {};
+    return { quantas: Number(r.quantas) || 0, bruto: Number(r.bruto) || 0, liquido: Number(r.liquido) || 0 };
+  } catch (e: any) {
+    console.error("[Clube] mensalidadesPagasDesde:", e?.message);
+    return { quantas: 0, bruto: 0, liquido: 0 };
+  }
+}
+
+/**
+ * Os pedidos com telefone das lojas da marca desde `desde`, pela régua da
+ * venda (lib/relatorios/regua-da-venda.ts): valor de todo pedido que entra na
+ * venda; `abre` = conta como uma venda (o acréscimo não abre outra). Mesa
+ * fica fora: a conta da mesa não tem o cliente.
+ */
+export async function pedidosComTelefone(lojaIds: string[], desde: Date): Promise<{ telefone: string; valor: number; abre: boolean }[]> {
+  const { atendimentosDaVenda, entraNaVenda } = await import("@/lib/relatorios/regua-da-venda");
+  const { SEM_REPOSICAO } = await import("@/lib/relatorios/sem-reposicao");
+  const brutos = await prisma.customerOrder.findMany({
+    where: {
+      franchiseeId: { in: lojaIds },
+      createdAt: { gte: desde },
+      status: { notIn: [...STATUS_FORA_DA_VENDA] },
+      tableSessionId: null,
+      ...SEM_REPOSICAO,
+    },
+    select: { id: true, createdAt: true, parentOrderId: true, status: true, totalAmount: true, customerPhone: true, reposicao: true },
+  });
+  const validos = brutos.filter((p: any) => entraNaVenda(p));
+  const { abre } = atendimentosDaVenda(validos as any);
+  return validos
+    .map((p: any) => ({ telefone: finalDoTelefone(p.customerPhone) || "", valor: Number(p.totalAmount) || 0, abre: abre.has(p.id) }))
+    .filter((p) => p.telefone);
 }

@@ -69,8 +69,8 @@ import { ehPedidoDeEntrega, formaDesligada, formaRecusadaNaEntrega, TEXTO_ENTREG
 import { problemaDaFormaPropria } from "@/lib/formas-proprias";
 import { lerSessaoDoCliente } from "@/lib/sessao-do-cliente";
 import { finalDoTelefone } from "@/lib/pedidos-do-telefone";
-import { descontoDoClube, ehDoAplicativo, etiquetaDoClube } from "@/lib/clube/regras";
-import { clubeValendoNaLoja, registrarDescontoDoClube, situacaoDoTelefone } from "@/lib/clube/no-banco";
+import { descontoDoClube, ehDoAplicativo, etiquetaDoClube, instalacaoDoCorpo, veredictoDoClube } from "@/lib/clube/regras";
+import { clubeValendoNaLoja, instalacaoDaMarca, registrarDescontoDoClube, situacaoDoTelefone } from "@/lib/clube/no-banco";
 
 export async function POST(req: Request) {
   try {
@@ -677,6 +677,8 @@ export async function POST(req: Request) {
     let descontoNaTaxa = 0;
     // O cupom de PRIMEIRO PEDIDO entrou? A indicação não soma com ele (lib/indicacao.ts).
     let comCupomDePrimeiroPedido = false;
+    // Entrou um cupom? O clube que não soma com cupom fica de fora (lib/clube/regras.ts).
+    let cupomNoPedido = false;
     if (couponCode) {
       const coupon = acharCupom(cuponsComCampanha(franchisee.storeCoupons, franchisee.storeLoyalty), couponCode);
       if (coupon) {
@@ -695,6 +697,7 @@ export async function POST(req: Request) {
           return NextResponse.json({ error: veredito.motivo }, { status: 400 });
         }
         comCupomDePrimeiroPedido = coupon.primeiroPedido === true;
+        cupomNoPedido = true;
         if (veredito.zeraTaxa) {
           discount = fee;
           descontoNaTaxa = fee;
@@ -832,25 +835,36 @@ export async function POST(req: Request) {
     // ── CLUBE DO APLICATIVO (lib/clube) ─────────────────────────────────
     //
     // O % do clube da marca, sobre os produtos que ainda faltam pagar, para
-    // quem: (1) pede pelo APLICATIVO da loja (user agent do apps/loja), (2)
-    // mandou a sessão do login (lib/sessao-do-cliente.ts) do MESMO telefone do
-    // pedido e (3) está com a assinatura paga. Faltou qualquer um: o pedido
-    // sai normal, sem o desconto — o cardápio já mostrou o aviso para pagar.
+    // quem: (1) pede pelo APLICATIVO da loja — user agent do apps/loja e, no
+    // clube do Asaas, a instalação do app registrada nesta marca; (2) mandou a
+    // sessão do login (lib/sessao-do-cliente.ts) do MESMO telefone do pedido;
+    // (3) está com a assinatura paga; (4) sem cupom, se o clube não soma com
+    // cupom. A regra inteira é `veredictoDoClube`. Faltou qualquer um: o pedido
+    // sai normal, sem o desconto — o cardápio já mostrou o aviso.
     let descontoClube: { valor: number; percentual: number; chave: string; assinaturaId: string } | null = null;
     if (body.sessaoDoCliente && ehDoAplicativo(req.headers.get("user-agent"))) {
       try {
         const sessao = lerSessaoDoCliente(body.sessaoDoCliente);
-        if (sessao && finalDoTelefone(sessao.telefone) === finalDoTelefone(customerPhone)) {
-          const clube = await clubeValendoNaLoja(franchisee.id);
-          if (clube) {
-            const { situacao, assinante } = await situacaoDoTelefone(clube.chave, customerPhone);
-            if (situacao === "ativo" && assinante) {
-              const valor = descontoDoClube(clube.config, Math.max(0, totalAmount - (discount - descontoNaTaxa)));
-              if (valor > 0) {
-                discount += valor;
-                descontoClube = { valor, percentual: clube.config.percentual, chave: clube.chave, assinaturaId: assinante.id };
-              }
+        const clube = sessao ? await clubeValendoNaLoja(franchisee.id) : null;
+        if (sessao && clube) {
+          const { situacao, assinante } = await situacaoDoTelefone(clube.chave, customerPhone);
+          const veredicto = veredictoDoClube({
+            userAgent: req.headers.get("user-agent"),
+            cobranca: clube.config.cobranca,
+            instalacaoConhecida: clube.config.cobranca === "asaas" ? await instalacaoDaMarca(clube.chave, instalacaoDoCorpo(body.instalacaoDoApp)) : false,
+            sessaoDoMesmoTelefone: finalDoTelefone(sessao.telefone) === finalDoTelefone(customerPhone),
+            situacao,
+            cupomNoPedido,
+            acumulaComCupom: clube.config.acumulaComCupom,
+          });
+          if (veredicto.ok && assinante) {
+            const valor = descontoDoClube(clube.config, Math.max(0, totalAmount - (discount - descontoNaTaxa)));
+            if (valor > 0) {
+              discount += valor;
+              descontoClube = { valor, percentual: clube.config.percentual, chave: clube.chave, assinaturaId: assinante.id };
             }
+          } else if (!veredicto.ok && veredicto.motivo !== "nao_ativo") {
+            console.log(`[customer-order] clube não aplicado (${veredicto.motivo}) na loja ${franchisee.id}`);
           }
         }
       } catch (e) {

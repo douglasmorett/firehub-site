@@ -12,7 +12,8 @@
  * - Notificações: mandar direcionado (segmento + assistente + IA) e o
  *   resultado de cada envio.
  * - Clube: o clube de assinatura do app (lib/clube, Douglas 18/10/2026) —
- *   preço, %, Cakto, assinantes e se as mensalidades cobrem o desconto.
+ *   preço, %, quem cobra (cartão pelo Asaas da loja ou Cakto), sócios,
+ *   sócio × não sócio e se as mensalidades cobrem o desconto.
  * Promoções exclusivas do app entram em ABAS quando existirem — aba que não
  * funciona não aparece.
  *
