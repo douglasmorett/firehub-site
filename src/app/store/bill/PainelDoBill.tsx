@@ -22,6 +22,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import ConversaComOBill from "@/components/bill/ConversaComOBill";
+import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
 import RostoDoBill, { type EmocaoDoBill } from "@/components/bill/RostoDoBill";
 import {
   ondeVer, rotuloDoRegistro, PERIODOS_DO_RESUMO, PERIODOS_DO_HISTORICO, TIPOS_DO_REGISTRO, ROTULO_DO_REGISTRO,
@@ -34,7 +35,9 @@ import {
 
 // ── Tipos que vêm das rotas ─────────────────────────────────────────────────
 
-export type EstadoDoBill = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento?: boolean };
+export type EstadoDoBill = { ativo: boolean; cobradoEsteMes: boolean; testeAte: string | null; emTeste: boolean; jaTestou: boolean; isento?: boolean;
+  /** Desligamento marcado para a virada do mês (lib/modulo-pago.ts). */
+  desligaEm?: string | null; fimDoMes?: string | null };
 export type DadosDoBill = {
   estado: EstadoDoBill;
   preco: number;
@@ -147,11 +150,13 @@ const FRASE_DO_HUMOR: Partial<Record<EmocaoDoBill, string>> = {
 
 // ── A tela ──────────────────────────────────────────────────────────────────
 
-export default function PainelDoBill({ dados, setAviso, salvando, onDesligar }: {
+export default function PainelDoBill({ dados, setAviso, salvando, onDesligar, onContinuar }: {
   dados: DadosDoBill;
   setAviso: (a: AvisoDoBill) => void;
   salvando: boolean;
   onDesligar: () => void;
+  /** Desmarca o desligamento da virada do mês. */
+  onContinuar: () => void;
 }) {
   const [aba, setAba] = useState<Aba>("geral");
   // Cada lançamento (conversa, desfazer, reativar) recarrega o resumo e o histórico.
@@ -283,7 +288,7 @@ export default function PainelDoBill({ dados, setAviso, salvando, onDesligar }: 
 
       {aba === "historico" && <Historico versao={versao} filtroPedido={filtroPedido} onDesfazer={desfazer} />}
 
-      {aba === "config" && <Configuracao dados={dados} salvando={salvando} onDesligar={onDesligar} />}
+      {aba === "config" && <Configuracao dados={dados} salvando={salvando} onDesligar={onDesligar} onContinuar={onContinuar} />}
     </div>
   );
 }
@@ -675,8 +680,7 @@ function Historico({ versao, filtroPedido, onDesfazer }: { versao: number; filtr
 
 // ── Configuração ────────────────────────────────────────────────────────────
 
-function Configuracao({ dados, salvando, onDesligar }: { dados: DadosDoBill; salvando: boolean; onDesligar: () => void }) {
-  const [confirmar, setConfirmar] = useState(false);
+function Configuracao({ dados, salvando, onDesligar, onContinuar }: { dados: DadosDoBill; salvando: boolean; onDesligar: () => void; onContinuar: () => void }) {
   const { estado } = dados;
   const extras = dados.numerosDoDono.filter((n) => !dados.numeroPrincipal || n.slice(-10) !== dados.numeroPrincipal.slice(-10));
   return (
@@ -717,19 +721,10 @@ function Configuracao({ dados, salvando, onDesligar }: { dados: DadosDoBill; sal
         {dados.aceiteAtual && (
           <p className="pb-nota">Termo aceito em {dataBr(dados.aceiteAtual.em)} (versão de {dados.aceiteAtual.versao.slice(0, 10).split("-").reverse().join("/")}).</p>
         )}
-        {!estado.isento && (
-          <div className="pb-desligar">
-            <p>
-              O mês em que o Bill fica ativo é cobrado inteiro.{estado.cobradoEsteMes && !estado.emTeste && <> Este mês já está no boleto.</>} Desligando, o mês seguinte não é cobrado.
-              {estado.jaTestou && <> Os {dados.diasDeTeste} dias grátis valem uma vez só.</>}
-            </p>
-            <button disabled={salvando} className={`pb-botao${confirmar ? " pb-perigo" : " pb-botao-claro"}`}
-              onClick={() => { if (confirmar) onDesligar(); else setConfirmar(true); }}
-              onBlur={() => setConfirmar(false)}>
-              {salvando ? "Desligando…" : confirmar ? "Toque de novo para desligar" : "Desligar o Bill"}
-            </button>
-          </div>
-        )}
+        {/* O liga/desliga com a regra da cobrança escrita (components/modulos/InterruptorDoModulo). */}
+        <InterruptorDoModulo nome="o Bill" preco={dados.preco} salvando={salvando}
+          estado={{ ativo: estado.ativo, emTeste: estado.emTeste, testeAte: estado.testeAte, isento: Boolean(estado.isento), jaTestou: estado.jaTestou, desligaEm: estado.desligaEm ?? null, fimDoMes: estado.fimDoMes ?? null }}
+          onLigar={() => {}} onDesligar={onDesligar} onContinuar={onContinuar} />
       </section>
     </div>
   );

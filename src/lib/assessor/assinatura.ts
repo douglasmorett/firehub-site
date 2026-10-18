@@ -29,6 +29,7 @@
 import { prisma } from "@/lib/prisma";
 import { garantirEstruturaDoAssessor } from "./estrutura-no-banco";
 import { VERSAO_DO_TERMO_DO_BILL } from "./termo";
+import { desligamentoMarcado, ligadoAgora, quandoDesliga } from "@/lib/modulo-pago";
 
 export const PRECO_DO_ASSESSOR = 49.9;
 /** O preço do termo até 16/10/2026 (versões anteriores a 2026-10-17). */
@@ -58,8 +59,20 @@ export type EstadoDoAssessor = {
   isento: boolean;
   /** Quanto esta loja paga por mês: o do trecho ligado agora; desligada, o de quem ligar hoje. */
   preco: number;
+  /** Desligamento marcado para a virada do mês (o mês já está pago): quando desliga sozinho. */
+  desligaEm: string | null;
+  /** O início do mês seguinte (fuso da loja): quando desligaria se desligar agora, fora do teste. */
+  fimDoMes: string | null;
   periodos: Periodo[];
 };
+
+/**
+ * Ligado agora, pelos trechos (lib/modulo-pago.ts): o desligamento marcado para a
+ * virada do mês vale sozinho. Linha antiga ligada sem trecho gravado continua ligada.
+ */
+function ligadoPelosTrechos(ativo: boolean, periodos: Periodo[], agora: Date = new Date()): boolean {
+  return periodos.length ? ligadoAgora(periodos, agora) : ativo;
+}
 
 /**
  * O preço que vale para um trecho ligado: o do termo aceito ao ligá-lo. Trecho
@@ -129,24 +142,30 @@ export async function assessorIsento(franchiseeId: string): Promise<boolean> {
 
 export async function estadoDoAssessor(franchiseeId: string, agora: Date = new Date()): Promise<EstadoDoAssessor> {
   const isento = await assessorIsento(franchiseeId);
-  const vazio: EstadoDoAssessor = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, preco: PRECO_DO_ASSESSOR, periodos: [] };
+  let fimDoMes: string | null = null;
+  try { fimDoMes = (await mesCorrente(franchiseeId, agora)).monthEnd.toISOString(); } catch {}
+  const vazio: EstadoDoAssessor = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, preco: PRECO_DO_ASSESSOR, desligaEm: null, fimDoMes, periodos: [] };
   if (!(await garantirEstruturaDoAssessor())) return vazio;
   const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId } });
   if (!a) return vazio;
   const periodos = lerPeriodos(a.periodos);
+  const ligado = ligadoPelosTrechos(a.ativo, periodos, agora);
   let cobradoEsteMes = false;
   try {
     const { monthStart, monthEnd } = await mesCorrente(franchiseeId, agora);
     cobradoEsteMes = !isento && valorDoAssessorNoMes(periodos, a.testeAte, monthStart, monthEnd, agora) > 0;
   } catch {}
+  const aberto = periodos.find((p) => !p.ate || new Date(p.ate).getTime() > agora.getTime());
   return {
-    ativo: a.ativo || isento,
+    ativo: ligado || isento,
     cobradoEsteMes,
     testeAte: a.testeAte ? a.testeAte.toISOString() : null,
-    emTeste: Boolean(!isento && a.ativo && a.testeAte && a.testeAte.getTime() > agora.getTime()),
+    emTeste: Boolean(!isento && ligado && a.testeAte && a.testeAte.getTime() > agora.getTime()),
     jaTestou: Boolean(a.testeAte),
     isento,
-    preco: (a.ativo && periodos.find((p) => !p.ate)) ? precoDoTrecho(periodos.find((p) => !p.ate)!) : PRECO_DO_ASSESSOR,
+    preco: ligado && aberto ? precoDoTrecho(aberto) : PRECO_DO_ASSESSOR,
+    desligaEm: isento ? null : desligamentoMarcado(periodos, agora),
+    fimDoMes,
     periodos,
   };
 }
@@ -159,8 +178,8 @@ export async function estadoDoAssessor(franchiseeId: string, agora: Date = new D
 export async function assessorEstaLigado(franchiseeId: string): Promise<boolean> {
   try {
     if (await garantirEstruturaDoAssessor()) {
-      const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId }, select: { ativo: true } });
-      if (a?.ativo) return true;
+      const a = await prisma.assessorAssinatura.findUnique({ where: { franchiseeId }, select: { ativo: true, periodos: true } });
+      if (a && ligadoPelosTrechos(a.ativo, lerPeriodos(a.periodos))) return true;
     }
     return await assessorIsento(franchiseeId);
   } catch {
@@ -171,7 +190,10 @@ export async function assessorEstaLigado(franchiseeId: string): Promise<boolean>
 export class TermoNaoAceitoError extends Error {}
 
 /**
- * Liga (abre um trecho, com o aceite do termo) ou desliga (fecha o trecho aberto).
+ * Liga (abre um trecho, com o aceite do termo) ou desliga.
+ * Desligar: no teste grátis, na hora; depois dele, marca o fim do trecho para a
+ * virada do mês — o mês já está no boleto, então fica liberado até lá
+ * (lib/modulo-pago.ts). Ligar com o desligamento marcado só desmarca.
  * Ligar sem o aceite da versão em vigor é recusado.
  */
 export async function ligarOuDesligarAssessor(
@@ -187,8 +209,18 @@ export async function ligarOuDesligarAssessor(
   const periodos = lerPeriodos(atual?.periodos);
   const iso = agora.toISOString();
 
+  const ligado = ligadoPelosTrechos(Boolean(atual?.ativo), periodos, agora);
+
   if (ligar) {
-    if (atual?.ativo) return estadoDoAssessor(franchiseeId, agora);
+    if (ligado) {
+      // Desligamento marcado para a virada do mês: "continuar ligado" desmarca.
+      const marcado = periodos.find((p) => p.ate && new Date(p.ate).getTime() > agora.getTime() && new Date(p.de).getTime() <= agora.getTime());
+      if (marcado) {
+        marcado.ate = null;
+        await prisma.assessorAssinatura.update({ where: { franchiseeId }, data: { ativo: true, periodos: periodos as any } });
+      }
+      return estadoDoAssessor(franchiseeId, agora);
+    }
     if (!aceite || aceite.versao !== VERSAO_DO_TERMO_DO_BILL) {
       throw new TermoNaoAceitoError("Para ativar o Bill é preciso aceitar o termo de contratação.");
     }
@@ -201,9 +233,13 @@ export async function ligarOuDesligarAssessor(
       update: { ativo: true, testeAte, periodos: periodos as any },
     });
   } else {
-    if (!atual?.ativo) return estadoDoAssessor(franchiseeId, agora);
-    for (const p of periodos) if (!p.ate) p.ate = iso;
-    await prisma.assessorAssinatura.update({ where: { franchiseeId }, data: { ativo: false, periodos: periodos as any } });
+    if (!ligado) return estadoDoAssessor(franchiseeId, agora);
+    const { monthEnd } = await mesCorrente(franchiseeId, agora);
+    const { naHora, ate } = quandoDesliga(atual?.testeAte, monthEnd, agora);
+    // Linha antiga sem trecho: cria o trecho que faltava, para a data de desligar valer.
+    if (!periodos.length) periodos.push({ de: iso, ate: null });
+    for (const p of periodos) if (!p.ate || new Date(p.ate).getTime() > agora.getTime()) p.ate = ate.toISOString();
+    await prisma.assessorAssinatura.update({ where: { franchiseeId }, data: { ativo: !naHora, periodos: periodos as any } });
   }
   return estadoDoAssessor(franchiseeId, agora);
 }

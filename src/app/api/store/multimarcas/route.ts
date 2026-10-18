@@ -14,7 +14,7 @@ import { PRECOS_DO_APP } from "@/lib/app-da-loja/plano";
  * Só o dono (ou o ADMIN dentro da loja): a mesma porta do Bill.
  */
 const publico = (e: Awaited<ReturnType<typeof estadoDoMultimarcas>>) => ({
-  ativo: e.ativo, cobradoEsteMes: e.cobradoEsteMes, testeAte: e.testeAte, emTeste: e.emTeste, jaTestou: e.jaTestou, isento: e.isento, cortesia: e.cortesia,
+  ativo: e.ativo, cobradoEsteMes: e.cobradoEsteMes, testeAte: e.testeAte, emTeste: e.emTeste, jaTestou: e.jaTestou, isento: e.isento, cortesia: e.cortesia, desligaEm: e.desligaEm, fimDoMes: e.fimDoMes,
 });
 
 /** A página das marcas e o cardápio têm cache de 60 s: o que o dono salvou vale na hora. */

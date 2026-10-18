@@ -14,17 +14,21 @@
  * o trecho que ligou com ela ficar ligado — é o que está no termo dele
  * (precoDoTrecho, em assinatura.ts). Desligou e religou: aceita este, a 49,90.
  *
+ * Douglas, 18/10/2026 (versão 2026-10-18): desligar depois do teste não corta na hora —
+ * o mês já está pago, fica liberado até o fim do mês e desliga sozinho na virada;
+ * sem valor proporcional (lib/modulo-pago.ts).
+ *
  * Arquivo puro (sem banco): a tela importa.
  */
-export const VERSAO_DO_TERMO_DO_BILL = "2026-10-17";
+export const VERSAO_DO_TERMO_DO_BILL = "2026-10-18";
 
 export const TITULO_DO_TERMO_DO_BILL = "Termo de contratação — Bill, seu assessor";
 
 export const CLAUSULAS_DO_TERMO_DO_BILL = [
   "Ao ativar, eu contrato o Bill, seu assessor, por R$ 49,90 por mês e autorizo que esse valor seja cobrado no boleto da mensalidade do FireHub.",
-  "A primeira ativação da loja tem 7 dias grátis. Depois deles a cobrança começa sozinha. Os 7 dias valem uma vez só: desativar e ativar de novo não dá outro período grátis.",
+  "A primeira ativação da loja tem 7 dias grátis. Depois deles a cobrança começa sozinha. Os 7 dias valem uma vez só: desativar e ativar de novo não dá outro período grátis, e quem já usou o teste, ao ativar, já tem o mês em curso cobrado inteiro.",
   "Passados os 7 dias grátis, o mês em que o Bill ficar ativo, mesmo que por um único dia, é cobrado inteiro (R$ 49,90). Desativar e ativar de novo no mesmo mês — inclusive no mesmo dia — não diminui o valor desse mês, e ele é cobrado uma vez só.",
-  "Se eu desativar, a cobrança para: no mês seguinte não é cobrado nada, a não ser que eu ative de novo.",
+  "Se eu desativar durante os 7 dias grátis, o Bill desliga na hora e nada é cobrado. Se eu desativar depois do teste, o mês em curso já está no boleto (inteiro, sem valor proporcional nem devolução): o Bill continua liberado até o último dia do mês, desliga sozinho na virada e, a partir do mês seguinte, não é cobrado nada, a não ser que eu ative de novo.",
   "O que o Bill lança no estoque, no financeiro e no cardápio fica no sistema como se eu tivesse feito pelo painel. Posso desfazer pelo próprio Bill (\"desfaz\") ou pelo painel.",
   "O Bill atende os números de WhatsApp cadastrados como do dono (Minha Loja e Chatbot IA › Notificações). Sou responsável por quem tem acesso a esses números.",
 ];

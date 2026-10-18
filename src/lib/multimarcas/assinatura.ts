@@ -30,6 +30,7 @@
  */
 import { prisma } from "@/lib/prisma";
 import { VERSAO_DO_TERMO_DO_MULTIMARCAS } from "./termo";
+import { desligamentoMarcado, ligadoAgora, quandoDesliga } from "@/lib/modulo-pago";
 
 import { PRECO_DO_MULTIMARCAS } from "./preco";
 
@@ -53,6 +54,10 @@ export type EstadoDoMultimarcas = {
   cortesia: boolean;
   /** Quanto esta loja paga por mês: o do trecho ligado; desligada, o de quem ativar hoje. */
   preco: number;
+  /** Desligamento marcado para a virada do mês (o mês já está pago): quando desliga sozinho. */
+  desligaEm: string | null;
+  /** O início do mês seguinte (fuso da loja): quando desligaria se desligar agora, fora do teste. */
+  fimDoMes: string | null;
   trechos: TrechoDoMultimarcas[];
 };
 
@@ -157,11 +162,15 @@ async function temAppCompleto(franchiseeId: string): Promise<boolean> {
 export async function estadoDoMultimarcas(franchiseeId: string, agora: Date = new Date()): Promise<EstadoDoMultimarcas> {
   const isento = await multimarcasIsento(franchiseeId);
   const cortesia = !isento && (await temAppCompleto(franchiseeId));
-  const vazio: EstadoDoMultimarcas = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, cortesia, preco: PRECO_DO_MULTIMARCAS, trechos: [] };
+  let fimDoMes: string | null = null;
+  try { fimDoMes = (await mesCorrente(franchiseeId)).monthEnd.toISOString(); } catch {}
+  const vazio: EstadoDoMultimarcas = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, cortesia, preco: PRECO_DO_MULTIMARCAS, desligaEm: null, fimDoMes, trechos: [] };
   if (!(await garantirEstruturaDoMultimarcas())) return vazio;
   const a = await lerLinha(franchiseeId);
   if (!a) return vazio;
   const trechos = lerTrechos(a.trechos);
+  // Ligado pelos trechos: o desligamento marcado para a virada do mês vale sozinho (lib/modulo-pago.ts).
+  const ligado = ligadoAgora(trechos, agora);
   let cobradoEsteMes = false;
   try {
     const { monthStart, monthEnd } = await mesCorrente(franchiseeId);
@@ -171,16 +180,18 @@ export async function estadoDoMultimarcas(franchiseeId: string, agora: Date = ne
       if (await appCompletoNoMes(franchiseeId, monthStart, monthEnd)) cobradoEsteMes = false;
     }
   } catch {}
-  const aberto = trechos.find((t) => !t.ate);
+  const aberto = trechos.find((t) => !t.ate || new Date(t.ate).getTime() > agora.getTime());
   return {
-    ativo: a.ativo || isento,
+    ativo: ligado || isento,
     cobradoEsteMes,
     testeAte: a.testeAte ? new Date(a.testeAte).toISOString() : null,
-    emTeste: Boolean(!isento && a.ativo && a.testeAte && new Date(a.testeAte).getTime() > agora.getTime()),
+    emTeste: Boolean(!isento && ligado && a.testeAte && new Date(a.testeAte).getTime() > agora.getTime()),
     jaTestou: Boolean(a.testeAte),
     isento,
     cortesia,
-    preco: a.ativo && aberto ? aberto.valor : PRECO_DO_MULTIMARCAS,
+    preco: ligado && aberto ? aberto.valor : PRECO_DO_MULTIMARCAS,
+    desligaEm: isento ? null : desligamentoMarcado(trechos, agora),
+    fimDoMes,
     trechos,
   };
 }
@@ -190,7 +201,7 @@ export async function multimarcasEstaLigado(franchiseeId: string): Promise<boole
   try {
     if (await garantirEstruturaDoMultimarcas()) {
       const a = await lerLinha(franchiseeId);
-      if (a?.ativo) return true;
+      if (a && ligadoAgora(lerTrechos(a.trechos))) return true;
     }
     return await multimarcasIsento(franchiseeId);
   } catch {
@@ -200,7 +211,13 @@ export async function multimarcasEstaLigado(franchiseeId: string): Promise<boole
 
 export class TermoNaoAceitoError extends Error {}
 
-/** Liga (abre um trecho, com o aceite do termo) ou desliga (fecha o trecho aberto). */
+/**
+ * Liga (abre um trecho, com o aceite do termo) ou desliga.
+ * Desligar: no teste grátis, na hora; depois dele, marca o fim do trecho para a
+ * virada do mês — o mês já está no boleto, então fica liberado até lá
+ * (lib/modulo-pago.ts). Ligar com o desligamento marcado só desmarca (continua
+ * o mesmo trecho, sem novo termo).
+ */
 export async function ligarOuDesligarMultimarcas(
   franchiseeId: string,
   ligar: boolean,
@@ -214,8 +231,19 @@ export async function ligarOuDesligarMultimarcas(
   const trechos = lerTrechos(atual?.trechos);
   const iso = agora.toISOString();
 
+  const ligado = ligadoAgora(trechos, agora);
+  const salvar = (ativo: boolean) => prisma.$executeRawUnsafe(
+    `UPDATE "MultimarcasAssinatura" SET "ativo" = $2, "trechos" = $3::jsonb, "atualizadoEm" = NOW() WHERE "franchiseeId" = $1`,
+    franchiseeId, ativo, JSON.stringify(trechos),
+  );
+
   if (ligar) {
-    if (atual?.ativo) return estadoDoMultimarcas(franchiseeId, agora);
+    if (ligado) {
+      // Desligamento marcado para a virada do mês: "continuar ligado" desmarca.
+      const marcado = trechos.find((t) => t.ate && new Date(t.ate).getTime() > agora.getTime() && new Date(t.de).getTime() <= agora.getTime());
+      if (marcado) { marcado.ate = null; await salvar(true); }
+      return estadoDoMultimarcas(franchiseeId, agora);
+    }
     if (!aceite || aceite.versao !== VERSAO_DO_TERMO_DO_MULTIMARCAS) {
       throw new TermoNaoAceitoError("Para ativar o Multimarcas é preciso aceitar o termo de contratação.");
     }
@@ -229,12 +257,11 @@ export async function ligarOuDesligarMultimarcas(
       franchiseeId, testeAte, JSON.stringify(trechos),
     );
   } else {
-    if (!atual?.ativo) return estadoDoMultimarcas(franchiseeId, agora);
-    for (const t of trechos) if (!t.ate) t.ate = iso;
-    await prisma.$executeRawUnsafe(
-      `UPDATE "MultimarcasAssinatura" SET "ativo" = false, "trechos" = $2::jsonb, "atualizadoEm" = NOW() WHERE "franchiseeId" = $1`,
-      franchiseeId, JSON.stringify(trechos),
-    );
+    if (!ligado) return estadoDoMultimarcas(franchiseeId, agora);
+    const { monthEnd } = await mesCorrente(franchiseeId);
+    const { naHora, ate } = quandoDesliga(atual?.testeAte, monthEnd, agora);
+    for (const t of trechos) if (!t.ate || new Date(t.ate).getTime() > agora.getTime()) t.ate = ate.toISOString();
+    await salvar(!naHora);
   }
   return estadoDoMultimarcas(franchiseeId, agora);
 }
