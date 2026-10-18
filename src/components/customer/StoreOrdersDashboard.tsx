@@ -39,7 +39,8 @@ import TrocarTipoDoPedidoPainel from "@/components/customer/TrocarTipoDoPedidoPa
 import ReposicaoPainel from "@/components/customer/ReposicaoPainel";
 import TrocaDePagamentoPainel from "@/components/customer/TrocaDePagamentoPainel";
 import EntregueDepoisDeCancelado from "@/components/customer/EntregueDepoisDeCancelado";
-import { foiEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-cancelado";
+import { foiEntregueDepoisDeCancelado, podeMarcarEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-cancelado";
+import { ehPedidoCancelado } from "@/lib/desperdicio-do-cancelado";
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
 import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
 import AvisoPedidoEsperandoLoja from "@/components/customer/AvisoPedidoEsperandoLoja";
@@ -1781,6 +1782,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [motoboys, setMotoboys] = useState<any[]>(initialMotoboys || []);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
+  /** Pedido cancelado arrastado para Entregue: a pergunta antes de trocar. */
+  const [entregueDoArrasto, setEntregueDoArrasto] = useState<any | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   // Trava do cancelamento de pedido FINALIZADO: só sai escrevendo "cancelar".
   const [travaDoCancelamento, setTravaDoCancelamento] = useState("");
@@ -3700,6 +3703,21 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
     if (order.status === newStatus) return;
 
+    // Cancelado arrastado para Entregue (Douglas, 17/10/2026): a loja tem
+    // autonomia para trocar, mas antes a pergunta — "tinha sido cancelado,
+    // conseguiu entregar?". O "sim" passa pela MESMA ação do botão
+    // "Entregue mesmo depois de cancelado" (forma de pagamento, estoque uma
+    // vez só, caixa e acerto do motoboy). Trocar só o status pulava tudo isso.
+    if (newStatus === "ENTREGUE" && ehPedidoCancelado(order.status)) {
+      const regra = podeMarcarEntregueDepoisDeCancelado(order as any);
+      if (!regra.pode) {
+        showToast(regra.motivo || "Este pedido cancelado não pode voltar como entregue.", "#B45309");
+        return;
+      }
+      setEntregueDoArrasto(order);
+      return;
+    }
+
     // Cancelar pede o motivo: abre a mesma janela do botão Cancelar.
     if (newStatus === "CANCELADO") {
       setCancelConfirmId(order.id);
@@ -4197,6 +4215,27 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           a integração ligada e com falha recente). */}
       <AvisosDaFoody />
       {/* MODAL CANCELAR PEDIDO */}
+      {entregueDoArrasto && (
+        <div role="dialog" aria-modal="true" onClick={() => setEntregueDoArrasto(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFF", borderRadius: 14, padding: 14, width: "min(440px, 100%)", boxShadow: "0 20px 50px rgba(0,0,0,0.25)" }}>
+            <div style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: 4, fontFamily: "system-ui, sans-serif" }}>
+              Pedido #{(entregueDoArrasto as any).dailyOrderNumber ?? ""} — {(entregueDoArrasto as any).customerName || ""}
+            </div>
+            <EntregueDepoisDeCancelado
+              pedido={entregueDoArrasto}
+              operador={{ role: user?.role, permissions: user?.permissions }}
+              pergunta="Esse pedido tinha sido cancelado. Tem certeza que quer colocar como entregue? Você conseguiu entregar?"
+              aoFechar={() => setEntregueDoArrasto(null)}
+              aoSalvar={async (r) => {
+                showToast(r.jaEstava ? "Este pedido já estava marcado como entregue." : `Pedido marcado como entregue — pago em ${r.forma}.`, "#0F766E");
+                await recarregarPedidos();
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {cancelConfirmId && (() => {
         const pedido = orders.find(o => o.id === cancelConfirmId);
         const finalizado = finalizadoPedeTrava(pedido);

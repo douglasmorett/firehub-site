@@ -7,6 +7,17 @@ import {
   type FormaDoEntregueDepoisDeCancelado,
 } from "@/lib/entregue-depois-de-cancelado";
 
+/** A forma gravada no pedido, quando é uma das quatro — para o "sim" ser um clique. */
+function formaDoPedido(pedido: any): FormaDoEntregueDepoisDeCancelado | null {
+  const t = String(pedido?.paymentMethod || "").toLowerCase();
+  if (!t || t.includes("divid")) return null;
+  if (t.includes("pix")) return "Pix";
+  if (t.includes("dinheiro") || t === "cash") return "Dinheiro";
+  if (t.includes("débito") || t.includes("debito") || t.includes("debit")) return "Cartão Débito";
+  if (t.includes("crédito") || t.includes("credito") || t.includes("credit")) return "Cartão Crédito";
+  return null;
+}
+
 /**
  * "Entregue mesmo depois de cancelado", no painel — o detalhe do pedido
  * cancelado e a linha do cancelado na Conferência do motoboy, onde o Allan
@@ -21,6 +32,8 @@ export default function EntregueDepoisDeCancelado({
   aoSalvar,
   compacto = false,
   pode,
+  pergunta,
+  aoFechar,
 }: {
   pedido: any;
   operador: OperadorDaEdicao;
@@ -32,9 +45,17 @@ export default function EntregueDepoisDeCancelado({
    * Conferência não leva os ids de parceiro). Sem ela, a regra roda aqui.
    */
   pode?: boolean;
+  /**
+   * Aberto de saída, com a pergunta no topo e a forma do pedido já marcada:
+   * é o arrastar de Cancelado para Entregue no quadro (Douglas, 17/10/2026:
+   * "pergunta se conseguiu entregar; colocou sim, ele troca").
+   */
+  pergunta?: string;
+  /** Quem abriu de saída fecha pelo "Voltar". */
+  aoFechar?: () => void;
 }) {
-  const [aberto, setAberto] = useState(false);
-  const [forma, setForma] = useState<FormaDoEntregueDepoisDeCancelado | null>(null);
+  const [aberto, setAberto] = useState(Boolean(pergunta));
+  const [forma, setForma] = useState<FormaDoEntregueDepoisDeCancelado | null>(() => (pergunta ? formaDoPedido(pedido) : null));
   const [trocoPara, setTrocoPara] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
@@ -73,6 +94,7 @@ export default function EntregueDepoisDeCancelado({
         return;
       }
       setAberto(false);
+      aoFechar?.();
       await aoSalvar({ forma: data.forma ?? forma, jaEstava: Boolean(data.jaEstava) });
     } catch {
       setErro("Sem conexão — nada foi gravado. Tente de novo.");
@@ -83,6 +105,9 @@ export default function EntregueDepoisDeCancelado({
 
   return (
     <div style={{ marginTop: 8, background: "#F0FDF4", border: "1.5px solid #86EFAC", borderRadius: 10, padding: "10px 12px", fontFamily: "system-ui, sans-serif", textAlign: "left" }}>
+      {pergunta && (
+        <div style={{ fontWeight: 900, fontSize: "0.92rem", color: "#7F1D1D", marginBottom: 6 }}>{pergunta}</div>
+      )}
       <div style={{ fontWeight: 800, fontSize: "0.82rem", color: "#14532D" }}>
         Entregue mesmo depois de cancelado — {dinheiro(total)}
       </div>
@@ -120,7 +145,7 @@ export default function EntregueDepoisDeCancelado({
       )}
       {erro && <div style={{ marginTop: 8, fontSize: "0.76rem", fontWeight: 700, color: "#B91C1C" }}>{erro}</div>}
       <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
-        <button type="button" disabled={salvando} onClick={() => setAberto(false)}
+        <button type="button" disabled={salvando} onClick={() => { setAberto(false); aoFechar?.(); }}
           style={{ padding: "6px 12px", borderRadius: 8, fontSize: "0.78rem", fontWeight: 700, border: "1.5px solid #E2E8F0", background: "#FFF", color: "#64748B", cursor: "pointer", fontFamily: "inherit" }}>
           Voltar
         </button>
@@ -129,7 +154,7 @@ export default function EntregueDepoisDeCancelado({
             padding: "6px 14px", borderRadius: 8, fontSize: "0.8rem", fontWeight: 900, border: "none", fontFamily: "inherit",
             background: forma ? "#16A34A" : "#CBD5E1", color: "#FFF", cursor: forma && !salvando ? "pointer" : "default",
           }}>
-          {salvando ? "Gravando…" : "Confirmar entregue"}
+          {salvando ? "Gravando…" : pergunta ? "Sim, foi entregue" : "Confirmar entregue"}
         </button>
       </div>
     </div>
