@@ -14,8 +14,11 @@
 import { prisma } from "@/lib/prisma";
 import { appLigadoNaConta } from "@/lib/app-da-loja/instalacoes";
 import { linkDaLojaDeApps } from "@/lib/app-da-loja/link-da-loja-de-apps";
+import { clubeValendoNaLoja } from "@/lib/clube/no-banco";
 
 export type LinksDoApp = { android: string | null; ios: string | null };
+/** O convite do site: os links e, com o Clube ligado, o que ele dá (vira uma das chamadas). */
+export type ConviteDoApp = LinksDoApp & { clube: { nome: string; percentual: number } | null };
 
 const INSTRUCOES = [
   `CREATE TABLE IF NOT EXISTS "AppDaLojaLinks" (
@@ -71,19 +74,29 @@ export async function gravarLinksDoApp(franchiseeId: string, links: { android?: 
 /**
  * O convite "Baixe o app" do cardápio desta loja: null quando o plano não está
  * ligado ou não há link. Vale o link da loja; faltando, o da principal do
- * grupo (o app é da marca). Nunca lança.
+ * grupo (o app é da marca). Com o Clube ligado, vai junto o nome e o % — o
+ * site troca a chamada a cada visita (components/customer/clube/ConviteDoApp.tsx).
+ * Nunca lança.
  */
-export async function conviteDoApp(lojaId: string): Promise<LinksDoApp | null> {
+export async function conviteDoApp(lojaId: string): Promise<ConviteDoApp | null> {
   try {
     if (!(await appLigadoNaConta(lojaId))) return null;
     if (!(await garantir())) return null;
-    const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { id: true, accountGroupId: true } });
+    const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { id: true, accountGroupId: true, storeName: true, name: true } });
     if (!loja) return null;
     const daLoja = await lerLinha(loja.id);
     const doGrupo = loja.accountGroupId && loja.accountGroupId !== loja.id ? await lerLinha(loja.accountGroupId) : null;
     const android = daLoja?.android || doGrupo?.android || null;
     const ios = daLoja?.ios || doGrupo?.ios || null;
-    return android || ios ? { android, ios } : null;
+    if (!android && !ios) return null;
+    const clube = await clubeValendoNaLoja(loja.id);
+    return {
+      android,
+      ios,
+      clube: clube
+        ? { nome: clube.config.nome || `Clube ${(loja.storeName || loja.name || "").trim()}`.trim(), percentual: clube.config.percentual }
+        : null,
+    };
   } catch {
     return null;
   }

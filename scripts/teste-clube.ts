@@ -29,6 +29,7 @@ import {
 import { acaoDoEvento, callbackValido, chaveDoPagamento, lerEventoDaCakto, linkDoCheckoutDoCliente } from "../src/lib/clube/cakto";
 import { criarSessaoDoCliente, lerSessaoDoCliente } from "../src/lib/sessao-do-cliente";
 import { linkDaLojaDeApps } from "../src/lib/app-da-loja/link-da-loja-de-apps";
+import { chamadaDaVez, chamadasDoConvite } from "../src/lib/app-da-loja/chamadas-do-convite";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -137,6 +138,14 @@ confere("links das lojas de app", [
   "https://apps.apple.com/br/app/hakim-delivery/id6822140388",
   null, null, null,
 ]);
+
+// ── 9) Chamadas do convite do site ──────────────────────────────────────────
+const comClube = chamadasDoConvite("Hakim Centro", { nome: "Clube Hakim", percentual: 15 });
+confere("com clube: 3 chamadas, a do clube primeiro", comClube.map((c) => c.id), ["clube", "promocoes", "descontos"]);
+confere("chamada do clube", [comClube[0].titulo, comClube[0].curto], ["Garanta o Clube Hakim: 15% OFF em todas as compras", "Garanta 15% OFF em todas as compras"]);
+confere("sem clube: sem a chamada do clube", chamadasDoConvite("Hakim Centro", null).map((c) => c.id), ["promocoes", "descontos"]);
+confere("roda a cada visita", [0, 1, 2, 3, 4].map((v) => chamadaDaVez(comClube, v).id), ["clube", "promocoes", "descontos", "clube", "promocoes"]);
+confere("texto do celular cabe no cartão baixo (≤ 40 letras)", comClube.every((c) => c.curto.length <= 40), true);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

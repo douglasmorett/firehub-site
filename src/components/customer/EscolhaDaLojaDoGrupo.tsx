@@ -80,7 +80,7 @@ export default function EscolhaDaLojaDoGrupo({
   slug: string;
   vitrine: VitrineDoGrupo;
   /** Plano do app ligado e com link nas lojas: o convite "Baixe o app". */
-  appDaLoja?: { android: string | null; ios: string | null } | null;
+  appDaLoja?: { android: string | null; ios: string | null; clube?: { nome: string; percentual: number } | null } | null;
 }) {
   const fazRetirada = vitrine.lojas.some((l) => !l.soDelivery);
   const [modo, setModo] = useState<"entrega" | "retirada">("entrega");
@@ -223,7 +223,7 @@ export default function EscolhaDaLojaDoGrupo({
         {appDaLoja && vitrine.lojas[0] && (
           <div style={{ margin: "0 -12px 12px" }}>
             <ConviteDoApp lojaId={vitrine.lojas[0].id} slug={vitrine.lojas[0].slug} nomeDaLoja={vitrine.nomeDoGrupo}
-              logo={vitrine.logo} android={appDaLoja.android} ios={appDaLoja.ios} />
+              logo={vitrine.logo} android={appDaLoja.android} ios={appDaLoja.ios} clube={appDaLoja.clube} />
           </div>
         )}
         {ultima && !resposta && (

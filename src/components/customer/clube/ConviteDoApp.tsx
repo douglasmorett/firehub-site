@@ -10,9 +10,13 @@
  * por cima do cardápio ou da sacola), escuro para destacar no fundo claro, e
  * fecha no X por 7 dias. Celular vê só o botão da loja dele; o computador vê
  * os dois e um QR para apontar a câmera.
+ *
+ * A chamada troca a cada visita (lib/app-da-loja/chamadas-do-convite.ts): o
+ * Clube com o % quando ligado, promoções imperdíveis, descontos exclusivos.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { X, Smartphone } from "lucide-react";
+import { chamadaDaVez, chamadasDoConvite } from "@/lib/app-da-loja/chamadas-do-convite";
 
 type Sistema = "android" | "ios" | "computador";
 const DIAS_FECHADO = 7;
@@ -76,6 +80,7 @@ export default function ConviteDoApp({
   logo,
   android,
   ios,
+  clube = null,
 }: {
   lojaId: string;
   slug: string;
@@ -83,11 +88,15 @@ export default function ConviteDoApp({
   logo?: string | null;
   android: string | null;
   ios: string | null;
+  /** Clube ligado: vira uma das chamadas ("Garanta o Clube: 15% OFF em todas as compras"). */
+  clube?: { nome: string; percentual: number } | null;
 }) {
   const [sistema, setSistema] = useState<Sistema | null>(null);
   const [fechado, setFechado] = useState(true);
   const [qr, setQr] = useState<string | null>(null);
+  const [vez, setVez] = useState(0);
   const chave = `fh_convite_app_fechado:${lojaId}`;
+  const chamadas = useMemo(() => chamadasDoConvite(nomeDaLoja, clube), [nomeDaLoja, clube]);
 
   useEffect(() => {
     // Dentro do próprio app não faz sentido convidar a baixar.
@@ -96,10 +105,15 @@ export default function ConviteDoApp({
     try {
       const quando = Number(localStorage.getItem(chave) || 0);
       setFechado(quando > 0 && Date.now() - quando < DIAS_FECHADO * 86_400_000);
+      // Cada visita mostra a próxima chamada da fila.
+      const chaveDaVez = `fh_convite_app_vez:${lojaId}`;
+      const n = Number(localStorage.getItem(chaveDaVez) || 0) || 0;
+      setVez(n);
+      localStorage.setItem(chaveDaVez, String(n + 1));
     } catch {
       setFechado(false);
     }
-  }, [chave]);
+  }, [chave, lojaId]);
 
   useEffect(() => {
     if (sistema !== "computador" || fechado) return;
@@ -124,6 +138,7 @@ export default function ConviteDoApp({
   // No celular há um botão só (o da loja do aparelho): o cartão inteiro vira o
   // link e fica baixo (~70 px). No computador, os dois botões e o QR.
   const linkDoCelular = sistema === "android" ? android : sistema === "ios" ? ios : null;
+  const chamada = chamadaDaVez(chamadas, vez);
 
   return (
     <div style={{ maxWidth: 1200, margin: "12px auto 0", padding: "0 12px", boxSizing: "border-box" }}>
@@ -137,15 +152,15 @@ export default function ConviteDoApp({
         </span>
         {linkDoCelular ? (
           <a href={linkDoCelular} target="_blank" rel="noopener noreferrer" className="fh-convite-texto fh-convite-link">
-            <span className="fh-convite-titulo">Baixe o app e ganhe descontos exclusivos</span>
+            <span className="fh-convite-titulo">{chamada.curto}</span>
             <span className="fh-convite-acao">{sistema === "android" ? <IconeDaPlay /> : <IconeDaApple />} Baixar</span>
           </a>
         ) : (
           <>
             <span className="fh-convite-texto">
-              <span className="fh-convite-selo">Novo · app {nomeDaLoja}</span>
-              <span className="fh-convite-titulo">Baixe o app e ganhe descontos exclusivos</span>
-              <span className="fh-convite-sub">Peça mais rápido e acompanhe a entrega no celular.</span>
+              <span className="fh-convite-selo">{chamada.selo}</span>
+              <span className="fh-convite-titulo">{chamada.titulo}</span>
+              <span className="fh-convite-sub">{chamada.sub}</span>
             </span>
             <span style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
               {mostrarAndroid && (

@@ -326,7 +326,7 @@ export default function CustomerStorePage({
   /** Multimarcas ligado: as marcas da loja. Com ?marca=<id> o cardápio mostra só a marca (lib/multimarcas/no-cardapio.ts). */
   multimarcas?: MarcasNoCardapio | null;
   /** Plano do app ligado e com link nas lojas: o convite "Baixe o app" (lib/app-da-loja/links.ts). */
-  appDaLoja?: { android: string | null; ios: string | null } | null;
+  appDaLoja?: { android: string | null; ios: string | null; clube?: { nome: string; percentual: number } | null } | null;
 }) {
   // Configuração de medição do Google DESTA loja. Só o que ela preencheu na
   // tela de Integrações — nunca uma medição do FireHub.
@@ -5193,7 +5193,7 @@ export default function CustomerStorePage({
       )}
       {!mesa && appDaLoja && !marcaAtiva && franchisee.slug && (
         <ConviteDoApp lojaId={franchisee.id} slug={franchisee.slug} nomeDaLoja={storeName}
-          logo={franchisee.storeLogo} android={appDaLoja.android} ios={appDaLoja.ios} />
+          logo={franchisee.storeLogo} android={appDaLoja.android} ios={appDaLoja.ios} clube={appDaLoja.clube} />
       )}
       {modalDoClube && clubeApp.clube && clubeApp.situacao !== "ativo" && (
         <ModalDoClube clube={clubeApp.clube} situacao={clubeApp.situacao} logado={!!clubeApp.sessao}
