@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
 import PortalDoParceiro from "@/components/parceiro/PortalDoParceiro";
+import MapaDeProspeccao from "@/components/prospeccao/MapaDeProspeccao";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
 import { lojaQueAbreOPortal } from "@/lib/paineis-do-dono";
 import TermoDeComissionamento from "@/components/parceiro/TermoDeComissionamento";
@@ -63,5 +64,14 @@ export default async function VendedorPage() {
   ]);
   if (!relatorio) return <AmbassadorLoginForm modo="vendedor" />;
 
-  return <PortalDoParceiro relatorio={relatorio} saida="/vendedor" disparo={{ pacotes: pacotesDoVendedor(), ganhoNoMes }} />;
+  // Mapa de prospecção por cidade (src/components/prospeccao): só vendedor ativo;
+  // a API dele (/api/vendedor/prospeccao) também barra quem não é.
+  return (
+    <PortalDoParceiro
+      relatorio={relatorio}
+      saida="/vendedor"
+      disparo={{ pacotes: pacotesDoVendedor(), ganhoNoMes }}
+      mapaDeProspeccao={<MapaDeProspeccao />}
+    />
+  );
 }

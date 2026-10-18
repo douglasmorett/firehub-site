@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import AmbassadorLoginForm from "@/components/ambassador/AmbassadorLoginForm";
 import PortalDoParceiro from "@/components/parceiro/PortalDoParceiro";
+import MapaDeProspeccao from "@/components/prospeccao/MapaDeProspeccao";
 import { relatorioDoParceiro } from "@/lib/parceiro/relatorio";
 import TermoDeComissionamento from "@/components/parceiro/TermoDeComissionamento";
 import { aceitouAVersaoVigente } from "@/lib/parceiro/aceite-do-termo";
@@ -43,5 +44,14 @@ export default async function EmbaixadorPage() {
   const relatorio = await relatorioDoParceiro(ambassador.id);
   if (!relatorio) return <AmbassadorLoginForm />;
 
-  return <PortalDoParceiro relatorio={relatorio} saida="/embaixador" />;
+  // O mapa de prospecção é do VENDEDOR: embaixador puro não vê a aba (a API
+  // /api/vendedor/prospeccao devolve 401 para ele).
+  const vendeAtivo = ambassador.isVendedor && ambassador.active;
+  return (
+    <PortalDoParceiro
+      relatorio={relatorio}
+      saida="/embaixador"
+      mapaDeProspeccao={vendeAtivo ? <MapaDeProspeccao /> : undefined}
+    />
+  );
 }
