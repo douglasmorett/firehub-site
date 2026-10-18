@@ -10,6 +10,7 @@ import { bebidaQueOutraJaLeva, categoriasPedidas, impressoraDaViaDoEntregador, i
 import { contaSaiNestaImpressora } from "./impressao-da-conta";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora, type AvisosDesligados, type Bloco } from "./comanda-modelo";
 import { blocosComOutrosSetores, outrosSetoresDoPedido, papelSemAvisoDeSetores } from "./outros-setores-na-comanda";
+import { blocosComAvisoDoTroco } from "./troco-nao-informado";
 import {
   moduloDoPedido,
   impressoraAtendeModulo,
@@ -353,6 +354,11 @@ async function printToDevice(
     }
     if (!targetPrinter) return nao;
 
+    // Entrega em dinheiro sem a nota do cliente ganha o "TROCO NAO INFORMADO"
+    // em todo papel — comanda e via do entregador —, pela mesma regra da fila
+    // da nuvem (lib/troco-nao-informado.ts).
+    const blocosDoPapel = blocosComAvisoDoTroco(blocos, order as any, { semValores }) ?? blocos;
+
     const res = await fetchAssistente(`${baseUrl}/print`, {
       method: "POST",
       // O Assistente imprime numa fila serial e responde quando ESTE job sai
@@ -452,7 +458,7 @@ async function printToDevice(
           // texto solto. Loja que nunca abriu a tela não manda nada e o
           // Assistente imprime o layout embutido; Assistente antigo ignora o
           // campo e faz a mesma coisa.
-          ...(blocos && blocos.length ? { blocos } : {}),
+          ...(blocosDoPapel && blocosDoPapel.length ? { blocos: blocosDoPapel } : {}),
           // Os avisos desligados na aba Avisos (Assistente 1.2.23+). Só vai o
           // que a loja desligou; Assistente antigo ignora e imprime todos.
           ...(avisos ? { avisos } : {}),

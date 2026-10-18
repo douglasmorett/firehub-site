@@ -15,6 +15,7 @@ import { camposDoQrPuxar, qrLigadoNaImpressora } from "@/lib/qr-puxar";
 import { camposDaCampanha, camposDaCampanhaSemDestino } from "@/lib/campanha-converter";
 import { avisosDoPedido, blocosDaViaDoEntregador, blocosDoPedido, semValoresDaImpressora } from "@/lib/comanda-modelo";
 import { blocosComOutrosSetores, outrosSetoresDoPedido, papelSemAvisoDeSetores } from "@/lib/outros-setores-na-comanda";
+import { blocosComAvisoDoTroco } from "@/lib/troco-nao-informado";
 import { KIND_DANFE_NFCE, PARAMETRO_DO_DANFE, assistenteImprimeDanfe } from "@/lib/print";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { esperaOFimDoKds, impressoraForaDoKds, papelEmDoisMomentos, planoDoPapel, SUFIXO_DA_CHEGADA } from "@/lib/momento-da-impressao";
@@ -653,6 +654,15 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         });
         return blocosComOutrosSetores(proprio || blocosDaComanda, setores, { semValores: semValoresDaImpressora(pc, impressora?.modeloId) }) || proprio;
       };
+      // ── TROCO NÃO INFORMADO (lib/troco-nao-informado.ts) ──────────────
+      // Entrega em dinheiro sem a nota do cliente: o aviso vai no pedido
+      // inteiro e em cada destino (cozinha, expedição); a via do entregador
+      // ganha o dela lá embaixo.
+      const blocosDoPedidoInteiro = blocosComAvisoDoTroco(blocosDaComanda, order as any) ?? blocosDaComanda;
+      const blocosDoDestinoComTroco = (impressora: any) => {
+        const b = blocosDoDestinoDoPedido(impressora);
+        return blocosComAvisoDoTroco(b || blocosDaComanda, order as any, { semValores: semValoresDaImpressora(pc, impressora?.modeloId) }) || b;
+      };
       const montarJob = (destinos: typeof todosOsDestinos, sufixo: string) => {
       const qr = camposDoQrPuxar(order as any, slugDaLoja);
       const qrEmTodas = destinos.length === 0 || destinos.every(d => qrLigadoNaImpressora(d.impressora, pc));
@@ -696,7 +706,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         ...camposDoAcrescimoParaImpressao(order as any),
         ...(qrEmTodas ? qr : {}),
         ...campanhaSemDestino,
-        ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
+        ...(blocosDoPedidoInteiro ? { blocos: blocosDoPedidoInteiro } : {}),
         ...(avisosDaComanda ? { avisos: avisosDaComanda } : {}),
         // O papel da chegada tem id próprio também no pedido: o Assistente
         // guarda "já impresso" por ele (como a via do entregador).
@@ -767,7 +777,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         // o padrão da loja ou o de fábrica) ganha o "TAMBEM NESTE PEDIDO" logo
         // depois dos itens, contado sobre TODOS os destinos do pedido — não só
         // os que saem agora (lib/outros-setores-na-comanda.ts).
-        ...(blocosDoDestinoDoPedido(d.impressora as any) ? { blocos: blocosDoDestinoDoPedido(d.impressora as any) } : {}),
+        ...(blocosDoDestinoComTroco(d.impressora as any) ? { blocos: blocosDoDestinoComTroco(d.impressora as any) } : {}),
         // Impressora com modelo próprio leva os avisos DELE — inclusive "nenhum
         // desligado" ({}), senão herdaria os do modelo padrão da loja.
         ...(avisosDaImpressora(d.impressora as any) ? { avisos: avisosDaImpressora(d.impressora as any) } : {}),
@@ -817,6 +827,8 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       const imp = impressoraDaViaDoEntregador(printers, job.order, (job.destinos || []).map((d: any) => ({ nome: d.printer, itens: itensQueContamParaAVia(d.items) })));
       if (!imp) return [];
       const idDaVia = String(job.order.id) + SUFIXO_DA_VIA_DO_ENTREGADOR;
+      // O motoboy sai com esta via: o aviso do troco não informado vai nela também.
+      const blocosDestaVia = blocosComAvisoDoTroco(blocosDaVia, job.order) ?? blocosDaVia;
       return [{
         ...job,
         id: "job_" + idDaVia,
@@ -826,7 +838,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           ...camposDoQrPuxar(job.order, slugDaLoja),
           campanha: undefined,
           semValores: undefined,
-          blocos: blocosDaVia,
+          blocos: blocosDestaVia,
           avisos: avisosDaVia,
         },
         destinos: [{
@@ -839,7 +851,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           separarItens: false,
           items: job.order.items,
           ...camposDoQrPuxar(job.order, slugDaLoja),
-          ...(blocosDaVia ? { blocos: blocosDaVia } : {}),
+          ...(blocosDestaVia ? { blocos: blocosDestaVia } : {}),
           ...(avisosDaVia ? { avisos: avisosDaVia } : {}),
         }],
       }];
@@ -942,12 +954,19 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       // A reimpressão roteada (não a de uma impressora só, nem a inteira) leva
       // o "TAMBEM NESTE PEDIDO" como a original (lib/outros-setores-na-comanda.ts).
       const roteada = !alvo && order.reimprimirInteiro !== true && !daVia && !papelSemAvisoDeSetores(order);
-      const blocosDoDestino = (imp: any) => {
+      const blocosComSetores = (imp: any) => {
         const base = blocosSemAviso(imp);
         if (!roteada) return base;
         const setores = outrosSetoresDoPedido(destinos as any, imp, order.items, { source: order.source, palavrasDeBebida: pc?.customBeverageKeywords });
         return blocosComOutrosSetores(base || blocosDaComanda, setores, { semValores: modeloSemValores(imp) }) || base;
       };
+      // O troco não informado sai na reimpressão como na original (lib/troco-nao-informado.ts).
+      const semValoresDoPedido = order.semValores === true;
+      const blocosDoDestino = (imp: any) => {
+        const b = blocosComSetores(imp);
+        return blocosComAvisoDoTroco(b || blocosDaComanda, order, { semValores: semValoresDoPedido || modeloSemValores(imp) }) || b;
+      };
+      const blocosDoPedidoReimpresso = blocosComAvisoDoTroco(blocosDaComanda, order, { semValores: semValoresDoPedido }) ?? blocosDaComanda;
       // ── A REIMPRESSÃO SAI IGUAL À ORIGINAL ──────────────────────────────
       // Os destinos daqui não levavam o QR do motoboy, o modelo de cada
       // impressora nem o "sem valores" dela: o botão Imprimir usado fora do PC
@@ -968,7 +987,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           // Acréscimo no crédito do cardápio (lib/acrescimo-no-credito.ts).
           ...camposDoAcrescimoParaImpressao(order as any),
           ...(qrEmTodas ? qr : {}),
-          ...(blocosDaComanda ? { blocos: blocosDaComanda } : {}),
+          ...(blocosDoPedidoReimpresso ? { blocos: blocosDoPedidoReimpresso } : {}),
           ...(avisosDaComanda ? { avisos: avisosDaComanda } : {}),
         },
         storeName: order.storeName || owner?.storeName || owner?.name || "FIREHUB",
