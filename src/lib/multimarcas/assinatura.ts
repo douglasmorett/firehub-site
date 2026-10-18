@@ -127,14 +127,22 @@ export function valorDoMultimarcasNoMes(
   return valor;
 }
 
-/** A loja não paga: mesma regra (e mesmos campos) da mensalidade. */
+/**
+ * Lojas com o Multimarcas liberado sem os R$ 97 por combinado particular do
+ * Douglas com o dono (18/10/2026: Lucas, Frangoso - Trindade — a mensalidade
+ * dela segue à parte, combinada fora do sistema). Pelo slug do cardápio.
+ */
+const LOJAS_COM_MULTIMARCAS_LIBERADO = new Set(["frangoso-trindade"]);
+
+/** A loja não paga: mesma regra (e mesmos campos) da mensalidade, ou combinado particular. */
 export async function multimarcasIsento(franchiseeId: string): Promise<boolean> {
   try {
     const { lojaIsenta } = await import("@/lib/billing");
     const loja = await prisma.user.findUnique({
       where: { id: franchiseeId },
-      select: { email: true, planPercent: true, isFranqueadoHakim: true },
+      select: { email: true, planPercent: true, isFranqueadoHakim: true, slug: true },
     });
+    if (loja?.slug && LOJAS_COM_MULTIMARCAS_LIBERADO.has(loja.slug)) return true;
     return lojaIsenta(loja as any);
   } catch {
     return false;
