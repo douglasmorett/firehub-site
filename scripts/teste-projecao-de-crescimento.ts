@@ -1,0 +1,130 @@
+/**
+ * scripts/teste-projecao-de-crescimento.ts — o bloco "Mês que vem com
+ * crescimento" da aba Projeção (lib/projecao-de-crescimento-regras.ts), sem banco.
+ *
+ * Pedido do dono (18/10/2026): "se continuar crescendo igual, mês que vem bate quanto?".
+ *
+ *   npx tsx scripts/teste-projecao-de-crescimento.ts
+ */
+import {
+  entraNoFunil, etapasDaLoja, fracaoQueSaiDoTesteNoMes, funilPorMes, mensalidadeDaNova, montarCrescimento,
+  partesDoMesSeguinte, perdaMensal, projetarComCrescimento, somarMeses, taxa, diasDeTesteTipico,
+  type LojaNoCrescimento,
+} from "../src/lib/projecao-de-crescimento-regras";
+
+let falhas = 0;
+const confere = (nome: string, obtido: unknown, esperado: unknown) => {
+  const ok = JSON.stringify(obtido) === JSON.stringify(esperado);
+  if (!ok) falhas++;
+  console.log(`${ok ? "✓" : "✗"} ${nome}${ok ? "" : ` — esperado ${JSON.stringify(esperado)}, veio ${JSON.stringify(obtido)}`}`);
+};
+const r2 = (v: number) => Math.round(v * 100) / 100;
+const brt = (s: string) => new Date(`${s}-03:00`);
+const agora = brt("2026-10-18T12:00:00");
+
+const loja = (o: Partial<Omit<LojaNoCrescimento, "cadastro">> & { cadastro: string }): LojaNoCrescimento => ({
+  id: o.id || Math.random().toString(36).slice(2), doFunil: o.doFunil ?? true,
+  cadastro: brt(o.cadastro), fimDoTeste: o.fimDoTeste === undefined ? new Date(brt(o.cadastro).getTime() + 15 * 86_400_000) : o.fimDoTeste,
+  primeiroPedido: o.primeiroPedido ?? null, ultimoPedido: o.ultimoPedido ?? null,
+  boletos: o.boletos || [], previstoNoMes: o.previstoNoMes ?? null, porDia: o.porDia || 0,
+});
+
+// Quem entra no funil.
+confere("conta nova entra", entraNoFunil({ id: "a", isenta: false, accountGroupId: null }), true);
+confere("loja principal do grupo entra", entraNoFunil({ id: "a", isenta: false, accountGroupId: "a" }), true);
+confere("loja extra de outra conta fica fora", entraNoFunil({ id: "b", isenta: false, accountGroupId: "a" }), false);
+confere("isenta (Hakim, casa) fica fora", entraNoFunil({ id: "a", isenta: true, accountGroupId: null }), false);
+
+// Etapas.
+const emTeste = loja({ cadastro: "2026-10-10T10:00:00", primeiroPedido: brt("2026-10-12T20:00:00"), ultimoPedido: brt("2026-10-17T20:00:00"), porDia: 300 });
+const e1 = etapasDaLoja(emTeste, agora);
+confere("em teste: ativou, ainda em teste, vendeu no teste, não é pagante", [e1.ativou, e1.emTeste, e1.vendeuNoTeste, e1.pagante], [true, true, true, false]);
+const pagaVende = loja({ cadastro: "2026-08-20T10:00:00", primeiroPedido: brt("2026-08-22T20:00:00"), ultimoPedido: brt("2026-10-17T20:00:00"),
+  boletos: [{ mes: "2026-09", pago: true, base: 12000, valor: 120 }], previstoNoMes: 15000, porDia: 500 });
+const e2 = etapasDaLoja(pagaVende, agora);
+confere("pagou setembro e vende: pagante que continua", [e2.pagante, e2.pagou, e2.continua, e2.parou], [true, true, true, false]);
+const parou = loja({ cadastro: "2026-08-05T10:00:00", primeiroPedido: brt("2026-08-06T20:00:00"), ultimoPedido: brt("2026-10-09T20:00:00"),
+  boletos: [{ mes: "2026-09", pago: true, base: 8000, valor: 100 }], previstoNoMes: 3000 });
+confere("pagante sem pedido há 8 dias: parou", etapasDaLoja(parou, agora).parou, true);
+const soPrevisto = loja({ cadastro: "2026-09-25T10:00:00", primeiroPedido: brt("2026-10-12T20:00:00"), ultimoPedido: brt("2026-10-18T10:00:00"), previstoNoMes: 4000, porDia: 200 });
+const e3 = etapasDaLoja(soPrevisto, agora);
+confere("saiu do teste, boleto previsto, vendeu só depois do teste", [e3.pagante, e3.pagou, e3.vendeuNoTeste], [true, false, false]);
+const boletoEmAberto = loja({ cadastro: "2026-08-01T10:00:00", primeiroPedido: brt("2026-08-02T20:00:00"), ultimoPedido: brt("2026-09-20T20:00:00"),
+  boletos: [{ mes: "2026-09", pago: false, base: 2000, valor: 100 }] });
+confere("boleto de setembro em aberto e nada em outubro: não é pagante", etapasDaLoja(boletoEmAberto, agora).pagante, false);
+confere("sem data de teste: saiu do teste", etapasDaLoja(loja({ cadastro: "2026-10-01T10:00:00", fimDoTeste: null }), agora).saiuDoTeste, true);
+
+// Funil por mês: só contas do funil, no mês de cadastro em Brasília.
+const extra = loja({ cadastro: "2026-10-02T10:00:00", doFunil: false, primeiroPedido: brt("2026-10-03T10:00:00") });
+const virada = loja({ cadastro: "2026-09-30T23:30:00" }); // 23h30 de Brasília = 02h30 UTC de 01/10
+const funil = funilPorMes([emTeste, pagaVende, parou, soPrevisto, boletoEmAberto, extra, virada], ["2026-08", "2026-09", "2026-10"], agora);
+confere("agosto: 3 cadastros, 2 pagantes (1 parou), conversão 2/3", [funil[0].cadastros, funil[0].pagantes, funil[0].pararam, r2(funil[0].conversao!)], [3, 2, 1, 0.67]);
+confere("setembro: o das 23h30 do dia 30 é de setembro", funil[1].cadastros, 2);
+confere("outubro: a loja extra não entra; a em teste fica 'ainda em teste'", [funil[2].cadastros, funil[2].emTeste, funil[2].conversao], [1, 1, null]);
+
+// Taxa com faixa.
+const t = taxa(1, 8);
+confere("taxa 1 de 8 = 12,5%", t.taxa, 0.125);
+confere("faixa de 1 de 8 é larga (≈3% a 41%)", [r2(t.min), r2(t.max)], [0.03, 0.41]);
+const t2 = taxa(100, 800);
+confere("com 800 a faixa aperta (±2 pontos)", [r2(t2.min), r2(t2.max)], [0.11, 0.15]);
+confere("sem ninguém: taxa nula", taxa(0, 0).taxa, null);
+confere("somar meses vira o ano", [somarMeses("2026-12", 1), somarMeses("2026-01", -1)], ["2027-01", "2025-12"]);
+
+// Perda: de setembro para outubro, ficou quem tem boleto previsto vendendo.
+const perda = perdaMensal([pagaVende, parou, boletoEmAberto], "2026-10", agora);
+confere("perda set→out: 2 de 3 (parou há 8 dias; boleto em aberto sem venda)", [perda.s, perda.n, perda.meses], [2, 3, 1]);
+const agoSet = loja({ cadastro: "2026-07-01T10:00:00", boletos: [{ mes: "2026-08", pago: true, base: 0, valor: 100 }, { mes: "2026-09", pago: true, base: 0, valor: 100 }], previstoNoMes: 5000, ultimoPedido: brt("2026-10-18T09:00:00") });
+const soAgo = loja({ cadastro: "2026-07-01T10:00:00", boletos: [{ mes: "2026-08", pago: true, base: 0, valor: 100 }] });
+const p2 = perdaMensal([agoSet, soAgo], "2026-10", agora);
+confere("perda ago→set pelos boletos + set→out pelo previsto: 1 de 3", [p2.s, p2.n, p2.meses], [1, 3, 2]);
+
+// Mensalidade da conta nova no 1º mês pago, a 2% de novembro.
+const nova = mensalidadeDaNova([pagaVende, soPrevisto, parou, emTeste], "2026-11", agora);
+// pagaVende: 1º boleto base 12.000 → 240; soPrevisto: base prevista 4.000 → 100 (mínimo); parou: base 8.000 → 160.
+confere("média do 1º mês: (240 + 100 + 160) / 3", [r2(nova.valor), nova.n, nova.reserva], [166.67, 3, false]);
+confere("sem pagante novo: mínimo, marcado como reserva", mensalidadeDaNova([emTeste], "2026-11", agora), { valor: 100, n: 0, reserva: true });
+
+// Teste típico e defasagem.
+confere("teste típico = mediana (15)", diasDeTesteTipico([emTeste, soPrevisto, loja({ cadastro: "2026-10-01T10:00:00", fimDoTeste: brt("2026-10-31T10:00:00") })]), 15);
+confere("novembro (30 dias) com teste de 15: metade sai no mês", fracaoQueSaiDoTesteNoMes(30, 15), 0.5);
+confere("teste de 30 num mês de 30: ninguém", fracaoQueSaiDoTesteNoMes(30, 30), 0);
+
+// Partes do mês que vem.
+const iniNov = brt("2026-11-01T00:00:00"), fimNov = brt("2026-12-01T00:00:00");
+const testeAteDia10 = loja({ cadastro: "2026-10-11T00:00:00", fimDoTeste: brt("2026-11-11T00:00:00"), porDia: 500 }); // 20 dias × 500 = 10 mil → 200
+const testeSemVenda = loja({ cadastro: "2026-10-15T00:00:00" });
+const testeLongo = loja({ cadastro: "2026-10-15T00:00:00", fimDoTeste: brt("2026-12-15T00:00:00"), porDia: 900 });
+const partes = partesDoMesSeguinte([pagaVende, emTeste, testeAteDia10, testeSemVenda, testeLongo, extra], agora, "2026-11", iniNov, fimNov);
+// pagaVende 500/dia × 30 = 15 mil → 300. emTeste (acaba 25/10) 300/dia: mês cheio 9 mil → 180.
+confere("fora do teste vendendo: mês cheio", partes.pagantesNoRitmo, { valor: 300, lojas: 1 });
+confere("em teste vendendo: dias depois do teste (180 + 200), teste até dezembro fica fora",
+  [r2(partes.emTesteVendendo.valor), partes.emTesteVendendo.lojas, r2(partes.emTesteVendendo.valorMesCheio)], [380, 2, 480]);
+confere("em teste sem venda que sai do teste em novembro", partes.emTesteSemVenda, 1);
+
+// A fórmula, com números redondos.
+const c = projetarComCrescimento(
+  { pagantesNoRitmo: { valor: 10000, lojas: 40 }, emTesteVendendo: { valor: 2000, valorMesCheio: 3000, lojas: 10 }, emTesteSemVenda: 50 },
+  180, 0.5, { perda: 0.1, convVendeu: 0.6, convNaoVendeu: 0.1, convCadastro: 0.2, mensalidadeNova: 120 },
+);
+// base 10.000 × 0,9 = 9.000; teste vendendo 2.000 × 0,6 = 1.200; sem venda 50 × 0,1 × 120 = 600;
+// novas 180 × 0,5 × 0,2 = 18 lojas × 120 = 2.160 → total 12.960; pagantes 36 + 6 + 5 + 18 = 65.
+confere("fórmula: total", c.total, 12960);
+confere("fórmula: partes", [c.base, c.perdido, c.testeVendendo, c.testeSemVenda, c.novasLojas, c.novas, c.pagantes], [9000, 1000, 1200, 600, 18, 2160, 65]);
+
+// Montagem inteira: cenários e aviso de histórico curto.
+const m = montarCrescimento({
+  lojas: [emTeste, pagaVende, parou, soPrevisto, boletoEmAberto, extra, testeSemVenda],
+  agora, mes: "2026-10", mesSeguinte: "2026-11", meses: ["2026-07", "2026-08", "2026-09", "2026-10"],
+  inicioDoMes: brt("2026-10-01T00:00:00"), fimDoMes: iniNov, inicioDoSeguinte: iniNov, fimDoSeguinte: fimNov,
+  previstoDoMes: { boletos: 3, aposta: 400, seTodas: 500 },
+});
+confere("ritmo de cadastro: 2 em 17,5 dias → 30 dias de novembro", r2(m.ritmoDeCadastro.igual), r2((2 / 17.5) * 30));
+confere("média: julho vazio fica fora (agosto e setembro)", [m.ritmoDeCadastro.mesesDaMedia, m.ritmoDeCadastro.media], [["2026-08", "2026-09"], 2]);
+confere("pessimista ≤ cenários ≤ otimista", m.cenarios.pessimista.total <= Math.min(m.cenarios.igual.total, m.cenarios.media!.total)
+  && m.cenarios.otimista.total >= Math.max(m.cenarios.igual.total, m.cenarios.media!.total), true);
+confere("histórico curto avisa", !!m.historicoCurto && m.historicoCurto.length >= 2, true);
+confere("série começa no 1º mês com boleto e termina no previsto", m.serie.map((s) => [s.mes, s.tipo, s.boletos]), [["2026-09", "real", 3], ["2026-10", "previsto", 3]]);
+
+console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
+process.exit(falhas ? 1 : 0);

@@ -19,6 +19,7 @@ import {
   projetarMes, ritmoPorDia, somarDias, telefoneDoWhatsapp, totaisDaProjecao,
   type Faixa, type Situacao,
 } from "@/lib/projecao-do-mes-regras";
+import { entraNoFunil, montarCrescimento, type Boleto, type LojaNoCrescimento } from "@/lib/projecao-de-crescimento-regras";
 
 const FUSO = "America/Sao_Paulo";
 /** Sem pedido há este tanto de dias, a loja que vendia entra na lista de contato. */
@@ -27,6 +28,8 @@ export const DIAS_PARA_LIGAR = 3;
 const DIAS_MAX_PARADA = 45;
 /** O teste acaba em até este tanto de dias: lista de contato. */
 const DIAS_DO_FIM_DO_TESTE = 5;
+/** Meses antes do atual que o bloco "Mês que vem com crescimento" olha. */
+const MESES_DE_HISTORICO = 6;
 
 export type LinhaDaProjecao = {
   id: string; loja: string; whatsapp: string | null; vendedor: string | null;
@@ -129,11 +132,13 @@ export async function montarProjecao(agora = new Date()) {
   const linhas: LinhaDaProjecao[] = [];
   let ritmoDaPlataforma = 0;
   let mesSeguinteNoRitmo = 0;
+  const porDiaDa = new Map<string, number>();
   for (const [id, s] of somas) {
     const l = porId.get(id);
     if (!l) continue;
     const primeiro = atv.get(id)?.primeiro ? new Date(atv.get(id)!.primeiro!) : null;
     const porDia = ritmoPorDia(s.janela, primeiro, inicioDaJanela, fimDaJanela);
+    porDiaDa.set(id, porDia);
     ritmoDaPlataforma += porDia;
     if (lojaIsenta(l)) continue;
     mesSeguinteNoRitmo += mesCheioNoRitmo(porDia, mesSeguinte);
@@ -194,6 +199,42 @@ export async function montarProjecao(agora = new Date()) {
 
   linhas.sort((a, b) => b.total - a.total || b.baseProjetada - a.baseProjetada);
   const totais = totaisDaProjecao(linhas);
+
+  // ── Mês que vem com crescimento (lib/projecao-de-crescimento-regras.ts) ──
+  // Uma leitura a mais: os boletos dos meses de histórico. O resto já está aqui.
+  const meses = Array.from({ length: MESES_DE_HISTORICO + 1 }, (_, i) => getCurrentYearMonth(i - MESES_DE_HISTORICO, FUSO));
+  const ciclosAntigos = await prisma.franchiseeBillingCycle.findMany({
+    where: { yearMonth: { gte: meses[0], lt: mes }, status: { in: ["CLOSED", "PAID", "FORGIVEN"] } },
+    select: { franchiseeId: true, yearMonth: true, status: true, amountDue: true, totalSales: true, asaasPaymentId: true },
+  });
+  const boletosDa = new Map<string, Boleto[]>();
+  for (const c of ciclosAntigos) {
+    // Boleto = mês fechado com mensalidade, ou perdoado pelo admin. PAID sem
+    // boleto no Asaas é o "nada a cobrar" (teste, isenta).
+    if (c.status !== "FORGIVEN" && c.amountDue <= 0) continue;
+    const b = { mes: c.yearMonth, pago: c.status === "PAID" && !!c.asaasPaymentId, base: c.totalSales, valor: c.amountDue };
+    boletosDa.set(c.franchiseeId, [...(boletosDa.get(c.franchiseeId) || []), b]);
+  }
+  const pagandoNoMes = new Map(linhas.filter((x) => x.situacao === "PAGANDO").map((x) => [x.id, x.baseProjetada]));
+  const lojasNoCrescimento: LojaNoCrescimento[] = lojas
+    .filter((l) => !lojaIsenta(l))
+    .map((l) => ({
+      id: l.id,
+      doFunil: entraNoFunil({ id: l.id, isenta: false, accountGroupId: l.accountGroupId }),
+      cadastro: l.createdAt, fimDoTeste: l.trialEndsAt,
+      primeiroPedido: atv.get(l.id)?.primeiro ? new Date(atv.get(l.id)!.primeiro!) : null,
+      ultimoPedido: atv.get(l.id)?.ultimo ? new Date(atv.get(l.id)!.ultimo!) : null,
+      boletos: boletosDa.get(l.id) || [],
+      previstoNoMes: pagandoNoMes.get(l.id) ?? null,
+      porDia: porDiaDa.get(l.id) || 0,
+    }));
+  const seguinte = intervaloDoMes(mesSeguinte, FUSO);
+  const crescimento = montarCrescimento({
+    lojas: lojasNoCrescimento, agora, mes, mesSeguinte, meses,
+    inicioDoMes: monthStart, fimDoMes: monthEnd, inicioDoSeguinte: seguinte.monthStart, fimDoSeguinte: seguinte.monthEnd,
+    previstoDoMes: { boletos: linhas.length, aposta: totais.aposta, seTodas: totais.seTodas },
+    fuso: FUSO,
+  });
 
   // Vendas por dia do mês: o realizado até hoje e o ritmo daqui para frente.
   const dias: { dia: string; valor: number; tipo: "real" | "hoje" | "projetado" }[] = [];
@@ -304,7 +345,7 @@ export async function montarProjecao(agora = new Date()) {
 
   return {
     mes, mesAnterior, mesSeguinte, geradoEm: agora.toISOString(),
-    totais, linhas, mesSeguinteNoRitmo, vendasDoMes, dias, mesPassado,
+    totais, linhas, mesSeguinteNoRitmo, crescimento, vendasDoMes, dias, mesPassado,
     contatos: { pararam, testeAcabando, semCardapio, cardapioSemVenda },
     regras: { diasParaLigar: DIAS_PARA_LIGAR, diasParaParada: DIAS_PARA_PARADA, diasDoFimDoTeste: DIAS_DO_FIM_DO_TESTE },
   };

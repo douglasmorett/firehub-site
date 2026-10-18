@@ -1,6 +1,7 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import type { ProjecaoDoMes, LinhaDaProjecao } from "@/lib/projecao-do-mes";
+import type { Crescimento, Taxa } from "@/lib/projecao-de-crescimento-regras";
 
 /**
  * Aba Projeção do admin: quanto o mês deve fechar de mensalidade e quem
@@ -192,6 +193,8 @@ export default function ProjecaoTab() {
         </div>
       </div>
 
+      <MesQueVemComCrescimento c={dados.crescimento} mes={dados.mes} mesSeguinte={dados.mesSeguinte} noRitmo={dados.mesSeguinteNoRitmo} />
+
       {/* Mês passado */}
       <div className="fha-section" style={{ marginBottom: 24 }}>
         <div className="fha-section-head">
@@ -359,5 +362,233 @@ export default function ProjecaoTab() {
         teste acabando 80% (vende mais de R$ 10 mil/mês), 50% (R$ 2–10 mil), 25% (menos); mínimo sem venda 25%.
       </div>
     </>
+  );
+}
+
+const pct = (v: number) => `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: v < 0.1 ? 1 : 0 })}%`;
+const num = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: v < 10 ? 1 : 0 });
+const deTaxa = (t: Taxa) => (t.n ? `${t.s} de ${t.n} · faixa de ${pct(t.min)} a ${pct(t.max)}` : "sem loja para medir");
+const maiuscula = (s: string) => s[0].toUpperCase() + s.slice(1);
+
+/**
+ * "Mês que vem com crescimento" (lib/projecao-de-crescimento-regras.ts): o
+ * ritmo de hoje menos a perda, mais as lojas em teste e as contas novas que o
+ * mês que vem deve trazer, com a conta escrita na tela.
+ */
+function MesQueVemComCrescimento({ c, mes, mesSeguinte, noRitmo }: { c: Crescimento; mes: string; mesSeguinte: string; noRitmo: number }) {
+  const [cenario, setCenario] = useState<"igual" | "media">("igual");
+  const [mesEmFoco, setMesEmFoco] = useState<number | null>(null);
+  const atual = nomeDoMes(mes), seguinte = nomeDoMes(mesSeguinte);
+  const { taxas, ritmoDeCadastro: rc, partes, cenarios } = c;
+  const naMedia = cenario === "media" && !!cenarios.media;
+  const usado = naMedia ? cenarios.media! : cenarios.igual;
+  const t = cenarios.taxasUsadas;
+  const mesesDaMedia = rc.mesesDaMedia.length === 0 ? ""
+    : rc.mesesDaMedia.length === 1 ? nomeDoMes(rc.mesesDaMedia[0])
+      : `${nomeDoMes(rc.mesesDaMedia[0]).slice(0, 3)}–${nomeDoMes(rc.mesesDaMedia[rc.mesesDaMedia.length - 1]).slice(0, 3)}`;
+
+  const contas = [
+    {
+      rotulo: "Lojas pagando e vendendo hoje",
+      linha: `${fmt0(partes.pagantesNoRitmo.valor)} (${partes.pagantesNoRitmo.lojas} lojas, mês cheio no ritmo dos últimos 7 dias) − ${pct(t.perda)} de perda`,
+      valor: usado.base,
+      detalhe: <>Perda mensal: das lojas com boleto num mês, as que não tiveram boleto no mês seguinte (para {atual}: sem boleto previsto vendendo, ou paradas há 7+ dias) — {deTaxa(taxas.perda)}, em {taxas.perda.meses} {taxas.perda.meses === 1 ? "mês medido" : "meses medidos"}. Saem {fmt0(usado.perdido)}.</>,
+    },
+    {
+      rotulo: "Em teste e já vendendo",
+      linha: `${fmt0(partes.emTesteVendendo.valor)} (${partes.emTesteVendendo.lojas} lojas, só os dias de ${seguinte} depois do teste) × ${pct(t.convVendeu)} que viram pagantes`,
+      valor: usado.testeVendendo,
+      detalhe: <>Das contas que venderam durante o teste e já saíram dele, as que viraram pagantes: {deTaxa(taxas.convVendeu)}. No mês cheio essas lojas fariam {fmt0(partes.emTesteVendendo.valorMesCheio)}; o teste come o começo de {seguinte}.</>,
+    },
+    {
+      rotulo: "Em teste sem venda",
+      linha: `${partes.emTesteSemVenda} lojas × ${pct(t.convNaoVendeu)} viram pagantes × ${fmt0(t.mensalidadeNova)} de mensalidade da nova`,
+      valor: usado.testeSemVenda,
+      detalhe: <>Contas em teste, sem pedido nos últimos 7 dias, cujo teste acaba antes do fim de {seguinte}. Das que saíram do teste sem ter vendido nele, viraram pagantes: {deTaxa(taxas.convNaoVendeu)}.</>,
+    },
+    {
+      rotulo: `Contas novas de ${seguinte}`,
+      linha: `${num(usado.cadastros)} cadastros × ${pct(c.fracaoNoMes)} saem do teste no mês × ${pct(t.convCadastro)} viram pagantes × ${fmt0(t.mensalidadeNova)} ≈ ${num(usado.novasLojas)} lojas`,
+      valor: usado.novas,
+      detalhe: <>
+        Cadastros: {naMedia ? `média de ${mesesDaMedia} (${num(rc.media!)} por mês)` : `o ritmo de ${atual} (${num(rc.ateAgora)} até agora, ${num(rc.porDia)} por dia) × ${rc.diasDoSeguinte} dias`}.
+        {" "}Teste típico de {c.diasDeTeste} dias: quem se cadastra depois do dia {Math.max(1, rc.diasDoSeguinte - c.diasDeTeste)} só paga no mês seguinte.
+        {" "}Conversão cadastro→pagante das contas que já saíram do teste: {deTaxa(taxas.convCadastro)}.
+        {" "}Mensalidade da nova no 1º mês pago (pela conta do boleto de {seguinte}): {taxas.mensalidadeNova.reserva ? "nenhuma conta nova pagou ainda, vale o mínimo" : `média de ${taxas.mensalidadeNova.n} contas`} — {fmt(t.mensalidadeNova)}.
+      </>,
+    },
+  ];
+
+  // Gráfico: boletos por mês (real), o previsto deste mês e o projetado do próximo.
+  const barras = [
+    ...c.serie.map((s) => ({ mes: s.mes, valor: s.cobrado, pagantes: s.boletos, tipo: s.tipo as "real" | "previsto" | "projetado", faixa: null as null | [number, number] })),
+    { mes: mesSeguinte, valor: usado.total, pagantes: usado.pagantes, tipo: "projetado" as const, faixa: [cenarios.pessimista.total, cenarios.otimista.total] as [number, number] },
+  ];
+  const maior = Math.max(1, ...barras.map((b) => Math.max(b.valor, b.faixa?.[1] ?? 0)));
+  const foco = mesEmFoco !== null ? barras[mesEmFoco] : null;
+  const ALTURA = 150;
+  // Funil: os meses vazios antes do primeiro cadastro viram uma linha só.
+  const primeiroComCadastro = c.funil.findIndex((f) => f.cadastros > 0);
+  const vazios = primeiroComCadastro > 0 ? c.funil.slice(0, primeiroComCadastro) : [];
+  const mesesDoFunil = c.funil.slice(Math.max(0, primeiroComCadastro)).reverse();
+  const desde = nomeDoMes(c.funil[Math.max(0, primeiroComCadastro)].mes);
+
+  return (
+    <div className="fha-section" style={{ marginBottom: 24 }}>
+      <style>{`
+        .pj-conta { padding: 10px 0; border-bottom: 1px solid #F1F3F5; }
+        .pj-conta summary { cursor: pointer; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 14px; }
+        .pj-conta summary::-webkit-details-marker { display: none; }
+        .pj-conta[open] .pj-seta { transform: rotate(180deg); }
+        .pj-seta { display: inline-block; color: #94A3B8; font-weight: 500; transition: transform .15s; }
+        .pj-mes { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; position: relative; min-width: 0; cursor: default; }
+        .pj-mes .barra { width: 70%; max-width: 64px; border-radius: 4px 4px 0 0; min-height: 2px; box-sizing: border-box; }
+      `}</style>
+      <div className="fha-section-head">
+        <h3>{maiuscula(seguinte)} com crescimento</h3>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <button className={`pj-pill${cenario === "igual" ? " on" : ""}`} onClick={() => setCenario("igual")}>Se crescer igual a {atual}</button>
+          <button className={`pj-pill${naMedia ? " on" : ""}`} onClick={() => setCenario("media")} disabled={!cenarios.media}
+            title={cenarios.media ? undefined : "Ainda não há mês completo com cadastro"}>Média dos últimos meses</button>
+        </div>
+      </div>
+      <div style={{ padding: "14px 18px" }}>
+        <div className="pj-nota" style={{ marginBottom: 12 }}>
+          O &quot;{seguinte} no ritmo de hoje&quot; ({fmt0(noRitmo)}) só olha as lojas que já vendem. Aqui entram também quem vai parar, as lojas em teste
+          que vão virar pagantes e as contas novas que {seguinte} deve trazer — cada taxa medida nas contas cadastradas desde {desde}.
+          Por isso pode dar menos que o ritmo de hoje: ele supõe que toda loja em teste vira pagante e paga o mês cheio.
+        </div>
+        {c.historicoCurto && (
+          <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E", borderRadius: 10, padding: "9px 12px", fontSize: "0.78rem", marginBottom: 14, lineHeight: 1.5 }}>
+            <b>Histórico curto:</b> {c.historicoCurto.join("; ")}. Os números são ordem de grandeza — por isso a faixa é larga.
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: 14, marginBottom: 18 }}>
+          {[
+            { label: `Se crescer igual a ${atual}`, val: fmt0(cenarios.igual.total), sub: `${num(cenarios.igual.cadastros)} cadastros em ${seguinte} · ≈ ${num(cenarios.igual.pagantes)} pagantes`, on: !naMedia },
+            { label: "Média dos últimos meses", val: cenarios.media ? fmt0(cenarios.media.total) : "—", sub: cenarios.media ? `${num(cenarios.media.cadastros)} cadastros/mês (${mesesDaMedia}) · ≈ ${num(cenarios.media.pagantes)} pagantes` : "ainda sem mês completo com cadastro", on: naMedia },
+            { label: "Faixa", val: `${fmt0(cenarios.pessimista.total)} – ${fmt0(cenarios.otimista.total)}`, sub: "pior e melhor ponta de cada taxa", on: false },
+            { label: "Só as que já existem", val: fmt0(noRitmo), sub: `${seguinte} no ritmo de hoje: sem perda, sem novas, toda loja em teste pagando o mês cheio`, on: false },
+          ].map((k) => (
+            <div key={k.label} className="fha-kpi" style={k.on ? { borderColor: COR } : undefined}>
+              <div className="fha-kpi-lbl">{k.label}</div>
+              <div className="fha-kpi-val" style={{ color: k.on ? COR : "#0F172A", fontSize: k.label === "Faixa" ? "1.3rem" : undefined }}>{k.val}</div>
+              <div className="fha-kpi-sub">{k.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="pj-grid2" style={{ marginBottom: 18 }}>
+          <div>
+            <h3 style={{ color: "#0F172A", fontWeight: 800, margin: "0 0 2px", fontSize: "0.9rem" }}>A conta ({naMedia ? "média dos últimos meses" : `se crescer igual a ${atual}`})</h3>
+            <div className="pj-nota">Toque numa linha para ver de onde sai cada taxa.</div>
+            {contas.map((k) => (
+              <details key={k.rotulo} className="pj-conta">
+                <summary>
+                  <span style={{ fontWeight: 700, color: "#0F172A", fontSize: "0.84rem" }}>{k.rotulo} <span className="pj-seta">▾</span></span>
+                  <span className="pj-num" style={{ fontWeight: 800, color: "#0F172A" }}>{fmt0(k.valor)}</span>
+                  <span className="pj-nota" style={{ gridColumn: "1 / -1" }}>{k.linha}</span>
+                </summary>
+                <div className="pj-nota" style={{ marginTop: 6, background: "#F8FAFC", borderRadius: 8, padding: "8px 10px", color: "#334155" }}>{k.detalhe}</div>
+              </details>
+            ))}
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "12px 0 2px", fontSize: "0.9rem" }}>
+              <b style={{ color: "#0F172A" }}>{maiuscula(seguinte)} bate</b>
+              <b className="pj-num" style={{ color: COR, fontSize: "1.05rem" }}>{fmt0(usado.total)}</b>
+            </div>
+            <div className="pj-nota">
+              ≈ {num(usado.pagantes)} lojas pagantes. Fora da conta: lojas extras de iFood/99 (R$ 50 cada), taxas e o mínimo de quem só usa sem vender.
+            </div>
+          </div>
+
+          {/* Gráfico: mensalidade e pagantes por mês */}
+          <div>
+            <h3 style={{ color: "#0F172A", fontWeight: 800, margin: "0 0 2px", fontSize: "0.9rem" }}>Mensalidade por mês</h3>
+            <div className="pj-nota" style={{ minHeight: 38, color: "#334155" }}>
+              {foco ? <><b>{maiuscula(nomeDoMes(foco.mes))}</b> · {fmt0(foco.valor)} · {num(foco.pagantes)} {foco.tipo === "real" ? "boletos cobrados" : foco.tipo === "previsto" ? "boletos previstos (aposta)" : `pagantes projetadas · faixa ${fmt0(foco.faixa![0])} a ${fmt0(foco.faixa![1])}`}</>
+                : <>Boletos cobrados (real), o previsto de {atual} e {seguinte} projetado. Passe o mouse ou toque numa barra.</>}
+            </div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: ALTURA + 20, borderBottom: "1px solid #E5E7EB", marginTop: 6 }} onMouseLeave={() => setMesEmFoco(null)}>
+              {barras.map((b, i) => (
+                <div key={b.mes} className="pj-mes" onMouseEnter={() => setMesEmFoco(i)} onClick={() => setMesEmFoco(i)}
+                  title={`${nomeDoMes(b.mes)}: ${fmt0(b.valor)} · ${num(b.pagantes)} ${b.tipo === "projetado" ? "pagantes projetadas" : "boletos"}`}>
+                  {b.faixa && (
+                    // A faixa pessimista–otimista: um traço fino atrás da barra.
+                    <div style={{ position: "absolute", bottom: (b.faixa[0] / maior) * ALTURA, height: Math.max(2, ((b.faixa[1] - b.faixa[0]) / maior) * ALTURA), width: 2, background: "#94A3B8" }} />
+                  )}
+                  <span className="pj-nota" style={{
+                    fontWeight: 700, color: "#0F172A", whiteSpace: "nowrap", position: "relative",
+                    // Na barra projetada o valor fica acima do traço da faixa.
+                    marginBottom: 2 + (b.faixa ? Math.max(0, ((b.faixa[1] - b.valor) / maior) * ALTURA) : 0),
+                  }}>{fmt0(b.valor)}</span>
+                  <div className="barra" style={{
+                    height: Math.max(2, (b.valor / maior) * ALTURA),
+                    background: b.tipo === "real" ? COR : b.tipo === "previsto" ? COR_PROJETADA : "rgba(255,255,255,.6)",
+                    border: b.tipo === "projetado" ? `2px dashed ${COR}` : undefined, borderBottom: "none",
+                    opacity: mesEmFoco === null || mesEmFoco === i ? 1 : 0.55, position: "relative",
+                  }} />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+              {barras.map((b) => (
+                <div key={b.mes} className="pj-nota" style={{ flex: 1, textAlign: "center", minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, color: "#334155" }}>{nomeDoMes(b.mes).slice(0, 3)}</div>
+                  <div>{num(b.pagantes)} {b.tipo === "projetado" ? "proj." : "boletos"}</div>
+                </div>
+              ))}
+            </div>
+            <div className="pj-nota" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: COR, marginRight: 5 }} />cobrado</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: COR_PROJETADA, marginRight: 5 }} />previsto ({atual}, aposta)</span>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, border: `2px dashed ${COR}`, marginRight: 5, boxSizing: "border-box", verticalAlign: "-1px" }} />projetado · traço = faixa</span>
+            </div>
+          </div>
+        </div>
+
+        <h3 style={{ color: "#0F172A", fontWeight: 800, margin: "0 0 6px", fontSize: "0.9rem" }}>Funil por mês de cadastro</h3>
+        <div className="pj-tabela">
+          <table className="fha-table">
+            <thead>
+              <tr>
+                <th>Mês</th><th className="pj-num">Cadastros</th><th className="pj-num">Ativaram</th><th className="pj-num">Ainda em teste</th>
+                <th className="pj-num">Saíram do teste</th><th className="pj-num">Pagantes</th><th className="pj-num">Continuam</th><th className="pj-num">Pararam</th>
+                <th className="pj-num">Conversão</th>
+              </tr>
+            </thead>
+            <tbody>
+              {mesesDoFunil.map((f) => (
+                <tr key={f.mes}>
+                  <td style={{ fontWeight: 700, color: "#0F172A" }}>{maiuscula(nomeDoMes(f.mes))}{f.mes === mes && <div className="pj-nota" style={{ fontWeight: 400 }}>até hoje · deve fechar em {rc.fechaEm}</div>}</td>
+                  {f.cadastros === 0 ? <td colSpan={8} style={{ color: "#94A3B8" }}>nenhum cadastro</td> : <>
+                    <td className="pj-num">{f.cadastros}</td>
+                    <td className="pj-num">{f.ativaram} <span style={{ color: "#94A3B8" }}>· {pct(f.ativaram / f.cadastros)}</span></td>
+                    <td className="pj-num">{f.emTeste || "—"}</td>
+                    <td className="pj-num">{f.sairamDoTeste}</td>
+                    <td className="pj-num" style={{ fontWeight: 700 }}>{f.pagantes}{f.pagantes > f.pagaram && <div className="pj-nota" style={{ fontWeight: 400 }}>{f.pagaram} pagaram · {f.pagantes - f.pagaram} previstas</div>}</td>
+                    <td className="pj-num" style={{ color: "#15803D" }}>{f.continuam}</td>
+                    <td className="pj-num" style={{ color: f.pararam ? "#B91C1C" : undefined }}>{f.pararam}</td>
+                    <td className="pj-num">{f.conversao === null ? "—" : pct(f.conversao)}</td>
+                  </>}
+                </tr>
+              ))}
+              {vazios.length > 0 && (
+                <tr>
+                  <td style={{ fontWeight: 700, color: "#0F172A" }}>{vazios.length === 1 ? maiuscula(nomeDoMes(vazios[0].mes)) : `${maiuscula(nomeDoMes(vazios[0].mes))} a ${nomeDoMes(vazios[vazios.length - 1].mes)}`}</td>
+                  <td colSpan={8} style={{ color: "#94A3B8" }}>nenhum cadastro</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="pj-nota" style={{ marginTop: 10 }}>
+          <b>Regras.</b> Cadastro = conta nova (sem as isentas, as contas da casa e as lojas extras de uma conta que já existe). Ativou = fez o 1º pedido.
+          Pagante = saiu do teste e pagou um boleto ou tem boleto previsto em {atual} vendendo depois do teste (o &quot;mínimo sem venda&quot; não conta).
+          Continua = pedido há menos de 7 dias; parou = 7 dias ou mais. Conversão = pagantes ÷ saíram do teste: quem ainda está em teste fica de fora até sair.
+          A faixa usa a ponta de 90% de cada taxa (com poucas lojas ela abre) e o menor/maior dos dois cenários de cadastro.
+        </div>
+      </div>
+    </div>
   );
 }
