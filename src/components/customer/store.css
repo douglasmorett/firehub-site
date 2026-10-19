@@ -899,6 +899,22 @@
 
   .store-name {
     font-size: 1.15rem;
+    line-height: 1.2;
+  }
+
+  /* No celular os botões espremiam o nome em uma palavra por linha: ganham
+     uma linha só deles, embaixo do logo e do nome. */
+  .store-header-inner {
+    padding: 0.75rem 1rem;
+    gap: 0.6rem 0.75rem;
+  }
+
+  .store-header-actions {
+    flex-basis: 100%;
+  }
+
+  .store-header-actions .header-cart-btn {
+    margin-left: auto;
   }
 
   .product-img {
