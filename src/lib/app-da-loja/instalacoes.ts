@@ -52,6 +52,10 @@ const INSTRUCOES = [
      "removidoEm" TIMESTAMP(3),
      CONSTRAINT "AppDaLojaAparelho_pkey" PRIMARY KEY ("lojaId", "instalacaoId")
    )`,
+  // 18/10/2026: o termo de uso da 1ª abertura (apps/loja/src/lib/termo.ts).
+  // A tabela já existe em produção — coluna nova entra por ALTER.
+  `ALTER TABLE "AppDaLojaAparelho" ADD COLUMN IF NOT EXISTS "termoVersao" TEXT`,
+  `ALTER TABLE "AppDaLojaAparelho" ADD COLUMN IF NOT EXISTS "termoAceitoEm" TIMESTAMP(3)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "AppDaLojaAparelho_lojaId_pushToken_key"
      ON "AppDaLojaAparelho"("lojaId", "pushToken") WHERE "pushToken" IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS "AppDaLojaAparelho_pushToken_idx" ON "AppDaLojaAparelho"("pushToken")`,
@@ -189,8 +193,13 @@ export type Abertura = {
   plataforma?: string | null;
   versaoDoApp?: string | null;
   app?: string | null;
-  /** true/false = o cliente respondeu a pergunta da promoção; null = ainda não. */
+  /**
+   * true = recebe promoção (aceitou o termo e não desligou na aba Loja);
+   * false = desligou; null = ainda não aceitou o termo (não muda nada).
+   */
   promocoes: boolean | null;
+  /** A versão do termo de uso aceita neste celular (null = nenhuma). */
+  termoVersao?: string | null;
   /** A batida de 4 em 4 min não conta como abertura nova. */
   batida: boolean;
 };
@@ -209,6 +218,7 @@ export async function registrarAbertura(a: Abertura, agora: Date = new Date()): 
   const respondeu = a.promocoes !== null;
   const promocoes = a.promocoes === true;
   const mais = a.batida ? 0 : 1;
+  const termo = a.termoVersao && /^[0-9A-Za-z._-]{1,20}$/.test(a.termoVersao) ? a.termoVersao : null;
   const dia = naLoja(agora, a.tz).dia;
 
   await prisma.$transaction(async (tx) => {
@@ -223,9 +233,10 @@ export async function registrarAbertura(a: Abertura, agora: Date = new Date()): 
     const primeiro = primeiroDoOutro && primeiroDoOutro < agora ? primeiroDoOutro : agora;
     await tx.$executeRaw`
       INSERT INTO "AppDaLojaAparelho" ("lojaId", "instalacaoId", "pushToken", "plataforma", "versaoDoApp", "app",
-        "promocoes", "promocoesRespondidoEm", "primeiroAcesso", "ultimoAcesso", "aberturas")
+        "promocoes", "promocoesRespondidoEm", "primeiroAcesso", "ultimoAcesso", "aberturas", "termoVersao", "termoAceitoEm")
       VALUES (${a.chave}, ${a.instalacaoId}, ${token}, ${plataforma}, ${versao}, ${app},
-        ${promocoes}, ${respondeu ? emUtc(agora) : null}, ${emUtc(primeiro)}, ${emUtc(agora)}, 1)
+        ${promocoes}, ${respondeu ? emUtc(agora) : null}, ${emUtc(primeiro)}, ${emUtc(agora)}, 1,
+        ${termo}, ${termo ? emUtc(agora) : null})
       ON CONFLICT ("lojaId", "instalacaoId") DO UPDATE SET
         "pushToken" = COALESCE(EXCLUDED."pushToken", "AppDaLojaAparelho"."pushToken"),
         "plataforma" = COALESCE(EXCLUDED."plataforma", "AppDaLojaAparelho"."plataforma"),
@@ -240,6 +251,9 @@ export async function registrarAbertura(a: Abertura, agora: Date = new Date()): 
         "primeiroAcesso" = LEAST("AppDaLojaAparelho"."primeiroAcesso", EXCLUDED."primeiroAcesso"),
         "ultimoAcesso" = EXCLUDED."ultimoAcesso",
         "aberturas" = "AppDaLojaAparelho"."aberturas" + ${mais},
+        "termoAceitoEm" = CASE WHEN ${termo}::text IS NOT NULL AND ${termo}::text IS DISTINCT FROM "AppDaLojaAparelho"."termoVersao"
+          THEN EXCLUDED."ultimoAcesso" ELSE "AppDaLojaAparelho"."termoAceitoEm" END,
+        "termoVersao" = COALESCE(${termo}::text, "AppDaLojaAparelho"."termoVersao"),
         "removidoEm" = NULL`;
     await tx.$executeRaw`
       INSERT INTO "AppDaLojaAbertura" ("lojaId", "dia", "instalacaoId") VALUES (${a.chave}, ${dia}, ${a.instalacaoId})
@@ -301,7 +315,7 @@ export async function lerBase(app: Pick<AppDaConta, "chave" | "lojaIds">): Promi
   const [okA, okP] = await Promise.all([garantirEstruturaDasInstalacoes(), garantirTabelaDoAppDaLoja()]);
   const aberturas = okA
     ? await prisma.$queryRaw<AparelhoDaAbertura[]>`
-        SELECT "instalacaoId", "pushToken", "primeiroAcesso", "ultimoAcesso", "promocoes", "removidoEm"
+        SELECT "instalacaoId", "pushToken", "primeiroAcesso", "ultimoAcesso", "promocoes", "promocoesRespondidoEm", "removidoEm"
         FROM "AppDaLojaAparelho" WHERE "lojaId" = ${app.chave}`
     : [];
   const pedidos = okP

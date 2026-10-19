@@ -181,7 +181,7 @@ export default function AbaNotificacoes({ dados, avisar, recarregar }: { dados: 
       <div className="ma-compor">
         <div className="ma-cartao">
           <h2><Send size={18} /> Nova notificação</h2>
-          <p className="ma-cartao-sub">Chega no celular de quem tem o app e aceitou promoções. De graça, sem WhatsApp.</p>
+          <p className="ma-cartao-sub">Chega no celular de todo mundo que tem o app e permitiu notificação (menos quem desligou as promoções). De graça, sem WhatsApp.</p>
 
           <div className="ma-passo"><em>1</em> O que você quer?</div>
           <div className="ma-chips">
@@ -224,7 +224,7 @@ export default function AbaNotificacoes({ dados, avisar, recarregar }: { dados: 
             </select>
           )}
           <div className="ma-check" style={{ marginTop: 8 }}>
-            <Info size={15} /> <span><b>{defSeg.rotulo}:</b> {defSeg.explica} Vai para <b>{inteiro(alcance)}</b> {alcance === 1 ? "celular" : "celulares"}. Só entra quem aceitou receber promoções no app.</span>
+            <Info size={15} /> <span><b>{defSeg.rotulo}:</b> {defSeg.explica} Vai para <b>{inteiro(alcance)}</b> {alcance === 1 ? "celular" : "celulares"}. O celular só deixa mandar para quem permitiu notificação.</span>
           </div>
 
           <div className="ma-passo"><em>3</em> A mensagem</div>

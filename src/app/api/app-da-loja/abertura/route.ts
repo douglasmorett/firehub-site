@@ -1,6 +1,6 @@
 /**
  * POST /api/app-da-loja/abertura
- *   { instalacaoId, pagina, pushToken?, plataforma, versaoDoApp, app, promocoes?, batida? }
+ *   { instalacaoId, pagina, pushToken?, plataforma, versaoDoApp, app, promocoes?, batida?, termoVersao? }
  *
  * O app próprio da loja (apps/loja/src/lib/presenca.ts) avisa ao abrir, ao
  * voltar para a frente e de 4 em 4 minutos enquanto está na tela (`batida`).
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Aguarde um instante." }, { status: 429 });
     }
     const corpo = await req.json().catch(() => ({} as any));
-    const { instalacaoId, pagina, pushToken, plataforma, versaoDoApp, app, promocoes, batida } = corpo || {};
+    const { instalacaoId, pagina, pushToken, plataforma, versaoDoApp, app, promocoes, batida, termoVersao } = corpo || {};
     if (!instalacaoValida(instalacaoId)) return NextResponse.json({ error: "Instalação inválida." }, { status: 400 });
     if (!checkRateLimit(`app-loja-abertura:${instalacaoId}`, { windowMs: 60_000, maxRequests: 6 }).allowed) {
       return NextResponse.json({ error: "Aguarde um instante." }, { status: 429 });
@@ -49,6 +49,7 @@ export async function POST(req: NextRequest) {
       versaoDoApp: typeof versaoDoApp === "string" ? versaoDoApp : null,
       app: typeof app === "string" ? app : null,
       promocoes: typeof promocoes === "boolean" ? promocoes : null,
+      termoVersao: typeof termoVersao === "string" ? termoVersao : null,
       batida: batida === true,
     });
     if (!gravou) return NextResponse.json({ error: "Agora não deu." }, { status: 503 });

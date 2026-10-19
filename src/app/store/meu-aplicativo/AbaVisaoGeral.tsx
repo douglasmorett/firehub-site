@@ -103,9 +103,17 @@ export default function AbaVisaoGeral({ dados, irPara }: { dados: Dados; irPara:
           <div className="ma-hero-det">{inteiro(base.ativos7)} nos últimos 7 dias</div>
         </div>
         <div className="ma-hero-item">
-          <div className="ma-hero-rotulo"><Bell size={14} /> Aceitam promoção</div>
-          <div className="ma-hero-valor">{inteiro(p.notificacoes.segmentos.todos ?? base.recebemPromocao)}</div>
-          <div className="ma-hero-det">{base.instalacoes ? `${pct((p.notificacoes.segmentos.todos ?? base.recebemPromocao) / base.instalacoes)} da base` : "recebem notificação"}</div>
+          <div className="ma-hero-rotulo"><Bell size={14} /> Recebem notificação</div>
+          <div className="ma-hero-valor">{inteiro(base.recebemNotificacao)}</div>
+          <div className="ma-hero-det">{base.instalacoes ? `${pct(base.recebemNotificacao / base.instalacoes)} da base` : "pedido e promoções"}</div>
+        </div>
+        <div className="ma-hero-rodape">
+          <span><b>{inteiro(base.desligaramPromocoes)}</b> desligaram as promoções</span>
+          <span><b>{inteiro(base.semPermissao)}</b> não permitiram notificação no celular</span>
+          {base.aguardandoTermo + base.versaoAntiga > 0 && (
+            <span><b>{inteiro(base.aguardandoTermo + base.versaoAntiga)}</b> passam a receber quando abrirem a versão nova do app</span>
+          )}
+          <span className="ma-hero-explica">O celular só deixa mandar notificação para quem tocou em “Permitir”. Quem não permite usa o app normalmente.</span>
         </div>
       </section>
 
@@ -193,7 +201,7 @@ export default function AbaVisaoGeral({ dados, irPara }: { dados: Dados; irPara:
         </div>
         <div className="ma-cartao">
           <h2><Send size={18} /> Notificações nos últimos 30 dias</h2>
-          <p className="ma-cartao-sub">De graça, direto no celular de quem aceitou promoções.</p>
+          <p className="ma-cartao-sub">De graça, direto no celular de quem tem o app e permitiu notificação.</p>
           {n.envios ? (
             <div className="ma-envio-numeros" style={{ marginTop: 0 }}>
               <div className="ma-envio-num"><span>Enviadas</span><b>{inteiro(n.envios)}</b></div>
