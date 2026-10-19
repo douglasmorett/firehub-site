@@ -401,7 +401,7 @@ async function perguntarLideranca() {
   if (lideranca.falhas === 1 || lideranca.falhas % 10 === 0) {
     const motivo =
       r.status === 401
-        ? `HTTP 401 — a liderança só responde a chamada local: CRON_BASE_URL tem de ser http://127.0.0.1:<porta> (está ${BASE_URL})`
+        ? `HTTP 401 — a liderança só responde a chamada local com o CRON_SECRET certo (CRON_BASE_URL tem de ser http://127.0.0.1:<porta>; está ${BASE_URL}; CRON_SECRET ${CRON_SECRET ? "definido" : "NÃO definido"})`
         : r.erro || (r.json && r.json.erro) || `HTTP ${r.status}`;
     const resta = Math.max(0, lideranca.ate - Date.now());
     console.warn(

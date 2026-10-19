@@ -27,11 +27,22 @@ export const dynamic = "force-dynamic";
 const VALIDADE_DO_LIDER_MS = 90_000;
 const FOLGA_PARA_A_PREFERIDA_MS = 20_000;
 
-/** A chamada veio de dentro do container (o cron-runner), sem passar pelo proxy. */
+/**
+ * A chamada veio de dentro do container (o cron-runner), sem passar pelo proxy.
+ *
+ * Não dá para olhar "tem x-forwarded-*?": o próprio Next 16 carimba
+ * x-forwarded-host/port/proto/for em TODA requisição
+ * (node_modules/next/dist/server/base-server.js), e o for vira o endereço do
+ * socket. Então: Host local (o Traefik só encaminha Host de domínio), o for
+ * é o loopback e nada que o proxy ou o Cloudflare põem (x-real-ip,
+ * cf-connecting-ip). Medido com dois servidores locais em 19/10/2026.
+ */
 function chamadaLocal(req: NextRequest): boolean {
   const host = req.headers.get("host") || "";
-  const veioDoProxy = req.headers.has("x-forwarded-for") || req.headers.has("x-forwarded-host");
-  return !veioDoProxy && (host.startsWith("127.0.0.1") || host.startsWith("localhost"));
+  const xff = (req.headers.get("x-forwarded-for") || "").trim();
+  const hostLocal = /^(127\.0\.0\.1|localhost)(:\d+)?$/.test(host);
+  const deLoopback = xff === "" || /^(127\.0\.0\.1|::1|::ffff:127\.0\.0\.1)$/.test(xff);
+  return hostLocal && deLoopback && !req.headers.has("x-real-ip") && !req.headers.has("cf-connecting-ip");
 }
 
 export async function GET(req: NextRequest) {
