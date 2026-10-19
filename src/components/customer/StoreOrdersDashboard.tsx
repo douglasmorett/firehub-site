@@ -5034,6 +5034,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   pedido={order}
                   operador={{ role: user?.role, permissions: user?.permissions }}
                   aoFechar={() => setAbaDoRecibo("comanda")}
+                  aoCancelarPedido={order.status === "CANCELADO" || order.status === "ENCERRADO" || order.tableSessionId ? undefined : () => {
+                    // Fecha o pedido antes: a janela do motivo abre por baixo dele.
+                    setAbaDoRecibo("comanda");
+                    setViewReceiptOrderId(null);
+                    setCancelConfirmId(order.id);
+                    setCancelReason("");
+                    setTravaDoCancelamento("");
+                  }}
                   aoSalvar={async (resultado) => {
                     // O pedido mudou no banco: a lista tem que ser relida ANTES
                     // de reimprimir, senão o papel sai com os itens antigos que

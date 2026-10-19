@@ -199,12 +199,16 @@ export default function EditarPedidoPainel({
   operador,
   aoFechar,
   aoSalvar,
+  aoCancelarPedido,
 }: {
   pedido: any;
   operador: { role?: string | null; permissions?: string | null };
   aoFechar: () => void;
   /** Chamada depois que o servidor confirmou. Recarrega a lista e reimprime. */
   aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number; soDesconto?: boolean; desconto?: number }) => void;
+  /** Abre a janela de cancelamento de sempre (motivo, trava do finalizado).
+   *  No celular o Cancelar do card ficava fora de alcance (Holy Top, 19/10/2026). */
+  aoCancelarPedido?: () => void;
 }) {
   const avaliacao = useMemo(() => avaliarEdicaoNoPainel(pedido, operador), [pedido, operador]);
   const modo: ModoDeEdicao = avaliacao.modo;
@@ -1186,6 +1190,29 @@ export default function EditarPedidoPainel({
           ? "Só o desconto: a cozinha não muda, então a comanda não sai de novo. Reimprima pela aba Comanda se o entregador precisar do valor novo."
           : "A comanda sai de novo marcada como 2ª via, para a cozinha descartar a anterior."}
       </div>
+
+      {aoCancelarPedido && !ehMesa && (
+        <button
+          type="button"
+          onClick={aoCancelarPedido}
+          disabled={salvando}
+          style={{
+            width: "100%",
+            marginTop: "12px",
+            padding: "10px",
+            borderRadius: "10px",
+            border: "1.5px solid #FCA5A5",
+            background: "#FEF2F2",
+            color: "#B91C1C",
+            fontWeight: 800,
+            fontSize: "0.85rem",
+            cursor: salvando ? "default" : "pointer",
+            fontFamily: "inherit",
+          }}
+        >
+          Cancelar pedido
+        </button>
+      )}
 
       {/* A mesma janela do cardápio e da mesa: pergunta os sabores, aplica a
           regra da pizza (média, a mais cara) e devolve o preço com as
