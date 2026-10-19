@@ -58,15 +58,16 @@ export const BASES_DO_HAKIM: { chave: BaseDoHakim; nome: string; serve: string }
 ];
 
 /** O que não é esfiha: bebida, acompanhamento, sachê. */
-const NAO_E_ESFIHA = /\b(batatas?|nuggets?|doguinhos?|pastel|pasteis|refri\w*|coca|guarana|guaravita|fanta|sprite|agua|aguas|sucos?|cervejas?|maionese|molhos?|limao|ketchup|mostarda|sache\w*|brindes?|panda)\b/;
+const NAO_E_ESFIHA = /\b(pizzas?|batatas?|nuggets?|doguinhos?|pastel|pasteis|refri\w*|coca|guarana|guaravita|fanta|sprite|agua|aguas|sucos?|cervejas?|maionese|molhos?|limao|ketchup|mostarda|sache\w*|brindes?|panda)\b/;
 const DOCE = /\b(chocolates?|nutella|doces?|brigadeiro|ninho|banana|romeu|julieta|morango|beijinho|ovomaltine|sensacao|kit ?kat|m m|duo|prestigio|confete|goiabada|pacoca|oreo|churros|leite condensado)\b/;
 /** Recheio salgado que vai por cima da base de mussarela. */
-const SALGADO = /\b(esfi\w*|queijos?|mussarela|mucarela|muzzarela|frango|bacon|pepperoni|peperoni|catupiry|cheddar|requeijao|presunto|palmito|milho|atum|escarola|lombo|provolone|parmesao|brocolis|portuguesa|marguerita|margherita|napolitana|tomate)\b/;
+const SALGADO = /\b(esfi\w*|queijos?|salaminho|salame|mussarela|mucarela|muzzarela|frango|bacon|pepperoni|peperoni|catupiry|cheddar|requeijao|presunto|palmito|milho|atum|escarola|lombo|provolone|parmesao|brocolis|portuguesa|marguerita|margherita|napolitana|tomate)\b/;
 
 /** A base do Hakim de um lanche pelo nome; "doce" ou null quando não usa base. */
 export function baseDoHakim(nome: string): BaseDoHakim | "doce" | null {
   const n = chaveDoNome(nome);
-  if (!n || NAO_E_ESFIHA.test(n)) return null;
+  // "20 Esfihas do Sábio" sem escolha: são várias esfihas de sabor que o pedido não diz.
+  if (!n || NAO_E_ESFIHA.test(n) || /^\d/.test(n)) return null;
   if (DOCE.test(n)) return "doce";
   if (/\bqueijo temperado\b/.test(n)) return "queijo temperado";
   if (/\bcarnes?\b/.test(n)) return "carne";
@@ -87,6 +88,8 @@ export type PedidoDaAntecipacao = {
 export type CatalogoDaAntecipacao = Pick<ContextoDaConta, "mapasDe" | "grupos" | "vendaveisDe" | "gruposDoItem"> & {
   /** Ids dos produtos ATIVOS: o casamento solto não vai para produto desligado ("Calabresa" → "Pizza Calabresa" pausada). */
   ativos?: Set<string>;
+  /** Nomes (chaveDoNome) dos produtos que são combo no cardápio: o "Hakim Kids" do iFood chega sem a marca de combo. */
+  combos?: Set<string>;
 };
 
 /** Uma unidade contada: um lanche (ou combo) e quanto dele saiu. */
@@ -130,53 +133,224 @@ function produtoDaEscolha(nome: string, vendaveis: Map<string, Vendavel>, solto:
   return achado;
 }
 
+/**
+ * O nome que já diz quantas unidades são: "3x Esfirra de Bacon" e, sem o "x",
+ * "4 Esfirras de Carne" (plural de mais de uma palavra). Só vale quando o resto
+ * é um produto do cardápio — "5 Queijos" é o sabor, não 5 de "Queijo" (a mesma
+ * armadilha que lib/stock.ts evita).
+ */
+function unidadesNoNome(nome: string, vendaveis: Map<string, Vendavel>, ativos?: Set<string>): { nome: string; vezes: number; id: string | null } | null {
+  const m = /^(\d+)\s*(x?)\s+([^+|]+)$/i.exec(nome.trim());
+  if (!m || !(Number(m[1]) > 0)) return null;
+  const texto = chaveDoNome(m[3]);
+  const palavras = texto.split(" ");
+  if (!m[2] && !(palavras.length >= 2 && palavras[0].endsWith("s"))) return null;
+  const produto = produtoDaEscolha(texto, vendaveis, true, ativos) || produtoDaEscolha(singular(texto), vendaveis, true, ativos);
+  if (produto) return { nome: produto.nome, vezes: Number(m[1]), id: produto.id };
+  // "4 Esfirras de Calabresa" quando o cardápio já não tem a "Esfirra de
+  // Calabresa": o nome diz o sabor ("de"). "20 Esfihas do Sábio" não diz.
+  if (!m[2] && palavras[1] === "de" && palavras.length >= 3) {
+    const s = singular(texto);
+    return { nome: s.charAt(0).toUpperCase() + s.slice(1), vezes: Number(m[1]), id: null };
+  }
+  return null;
+}
+
+/** "Esfiha do sabio 5x esfirra de carne 5x esfirra de calabresa…" e "Monte seu Combo | 2x Esfirra…": o conteúdo escrito no nome. */
+function conteudoNoNome(nome: string): { nome: string; quantidade: number }[] {
+  const saida: { nome: string; quantidade: number }[] = [];
+  for (const m of nome.matchAll(/(\d+)\s*x\s+(.+?)(?=\s+\d+\s*x\s|\s*\||$)/gi)) {
+    if (Number(m[1]) > 0 && m[2].trim()) saida.push({ nome: m[2].trim(), quantidade: Number(m[1]) });
+  }
+  return saida;
+}
+
 const linha = (nome: string, combo: boolean, quantidade: number): Contado =>
   ({ chave: `${combo ? "c" : "p"}:${chaveDoNome(nome) || nome.toLowerCase()}`, nome, combo, quantidade });
 
+/**
+ * Uma peça do pedido: o item, o que o nome dele diz que vem dentro ("4
+ * Esfirras de Carne"), cada escolha. `lanche` = entra na lista de lanches; o
+ * complemento (sabor de pizza, borda) não entra, mas tem ficha técnica.
+ */
+export type Peca = Contado & {
+  produtoId: string | null;
+  origem: "item" | "nome" | "escolha";
+  lanche: boolean;
+  /** Índice do item no pedido: junta a peça ao item dela. */
+  item: number;
+};
+
 /** Os lanches de UM pedido. */
 export function lanchesDoPedido(pedido: PedidoDaAntecipacao, catalogo: CatalogoDaAntecipacao): Contado[] {
-  const saida: Contado[] = [];
+  return pecasDoPedido(pedido, catalogo)
+    .filter((p) => p.lanche)
+    .map(({ chave, nome, combo, quantidade }) => ({ chave, nome, combo, quantidade }));
+}
+
+/** As peças de UM pedido (lanches e complementos). */
+export function pecasDoPedido(pedido: PedidoDaAntecipacao, catalogo: CatalogoDaAntecipacao): Peca[] {
+  const saida: Peca[] = [];
   const mapas = catalogo.mapasDe(pedido.franchiseeId);
   const vendaveis = catalogo.vendaveisDe(pedido.franchiseeId);
-  for (const item of pedido.items) {
+  for (const [indice, item] of pedido.items.entries()) {
     const qtd = Number(item.quantity) || 0;
     if (qtd <= 0) continue;
+    const idDoItem = item.menuProductId || item.menuProduct?.id || null;
+    const peca = (c: Contado, produtoId: string | null, origem: Peca["origem"], lanche = true): Peca =>
+      ({ ...c, produtoId, origem, lanche, item: indice });
     const nome = nomeDoProduto(item);
     const categoria = categoriaDoItem(item as any, mapas);
     const ehCombo = item.menuProduct?.isCombo === true
+      || Boolean(catalogo.combos?.has(chaveDoNome(nome)))
       || FALA_DE_COMBO.test(chaveDoNome(categoria))
       || FALA_DE_COMBO.test(chaveDoNome(item.menuProduct?.category))
       || FALA_DE_COMBO.test(chaveDoNome(nome));
+    // Item que o cardápio não conhece pelo nome (o iFood manda "Oferta Hk - 5
+    // Itens a partir de 29,90"; o cardápio diz "apartir"): a escolha casa pelo
+    // nome curto, mas nome solto que não casa não vira lanche.
+    // Produto apagado ("Produto removido") não conta: sem ele não dá para
+    // saber se a opção é outra esfiha ou o recheio desta.
+    const desconhecido = !ehCombo && nome !== "Produto removido" && !vendaveis.has(chaveDoNome(nome));
     const escolhas = escolhasDoItemComGrupo(item, catalogo.grupos, {
       canal: pedido.canal,
       gruposDoProduto: catalogo.gruposDoItem?.(pedido.franchiseeId, item),
       ehPizza: produtoDePizza(nome, categoria),
     });
 
-    if (ehCombo && escolhas.length === 0) {
+    if (escolhas.length === 0 && (ehCombo || desconhecido)) {
       // "4 Esfirras de Carne": o nome diz o que vem dentro.
-      const m = /^(\d+)\s+([^+]+)$/.exec(nome.trim());
-      if (m && Number(m[1]) > 0) {
-        const texto = singular(chaveDoNome(m[2]));
-        const produto = produtoDaEscolha(texto, vendaveis, true, catalogo.ativos);
-        const nomeDoLanche = produto?.nome || texto.replace(/^\w/, (l) => l.toUpperCase());
-        saida.push(linha(nomeDoLanche, false, Number(m[1]) * qtd));
+      const n = unidadesNoNome(nome, vendaveis, catalogo.ativos);
+      if (n) {
+        // O item fica (oculto) para a ficha: o combo com ficha própria vale por ela.
+        saida.push(peca(linha(nome, true, qtd), idDoItem, "item", false));
+        saida.push(peca(linha(n.nome, false, n.vezes * qtd), n.id, "nome"));
+        continue;
+      }
+      // "Esfiha do sabio 5x esfirra de carne 5x…": o conteúdo escrito no nome.
+      const escrito = conteudoNoNome(item.menuProduct?.name || String(item.productName || ""));
+      if (escrito.length >= 2) {
+        saida.push(peca(linha(nome.split("|")[0].replace(/\s+\d+\s*x\s.*$/i, "").trim() || nome, true, qtd), idDoItem, "item"));
+        for (const c of escrito) {
+          const produto = produtoDaEscolha(c.nome, vendaveis, true, catalogo.ativos);
+          saida.push(peca(linha(produto?.nome || c.nome, false, c.quantidade * qtd), produto?.id || null, "nome"));
+        }
         continue;
       }
     }
 
-    saida.push(linha(nome, ehCombo, qtd));
+    saida.push(peca(linha(nome, ehCombo, qtd), idDoItem, "item"));
 
     for (const e of escolhas) {
-      const produto = produtoDaEscolha(e.nome, vendaveis, ehCombo, catalogo.ativos);
-      if (produto) { saida.push(linha(produto.nome, false, e.quantidade)); continue; }
+      const n = unidadesNoNome(e.nome, vendaveis, catalogo.ativos);
+      if (n) {
+        // {"name":"3x Esfirra de Frango","quantity":3}: o "3x" e a quantidade
+        // são a mesma coisa. O prefixo só multiplica quando a quantidade é 1.
+        const daOpcao = e.quantidadeInteira / qtd;
+        saida.push(peca(linha(n.nome, false, daOpcao === 1 ? n.vezes * e.quantidade : e.quantidade), n.id, "escolha"));
+        continue;
+      }
+      const produto = produtoDaEscolha(e.nome, vendaveis, ehCombo || desconhecido, catalogo.ativos);
+      if (produto) { saida.push(peca(linha(produto.nome, false, e.quantidade), produto.id, "escolha")); continue; }
+      // Borda, sabor de pizza, adicional do cadastro: não é lanche, mas tem
+      // ficha (a meia pizza já vem como fração em `e.quantidade`).
+      const complementos = complementosDaOpcao(e.nome, mapas.complementos).filter((c) => c.id);
+      if (complementos.length) {
+        for (const c of complementos) saida.push(peca(linha(c.nome, false, e.quantidade), c.id, "escolha", false));
+        continue;
+      }
       // Fora do combo, só conta a opção que é um produto. Dentro, o nome que
-      // veio — menos borda/adicional do cadastro e observação.
+      // veio — menos observação.
       if (!ehCombo) continue;
-      if (complementosDaOpcao(e.nome, mapas.complementos).length) continue;
       if (OBSERVACAO.test(chaveDoNome(e.nome))) continue;
-      saida.push(linha(e.nome, false, e.quantidade));
+      saida.push(peca(linha(e.nome, false, e.quantidade), null, "escolha"));
     }
+  }
+  return saida;
+}
+
+// ── A FICHA TÉCNICA ─────────────────────────────────────────────────────────
+//
+// A mesma regra da baixa do estoque (lib/stock.ts, deductStockForOrder): a
+// ficha do item — a dele ou, no espelho do iFood/99, a do produto ATIVO de
+// mesmo nome no cardápio — MAIS a ficha de cada opção escolhida, com a meia
+// pizza em fração. Uma diferença, de propósito: a baixa não abre o combo do
+// iFood (o espelho não tem grupos, e as escolhas ficam sem baixa); aqui ele
+// abre pelos nomes, como na lista de lanches — senão a esfiha do combo do
+// iFood, que é a maior parte do Hakim, não pediria insumo nenhum.
+
+export type LinhaDaFicha = { stockItemId: string; nome: string; unidade: string; quantidade: number };
+
+export type FichasDaLoja = {
+  /** produto → ficha (só quem tem ficha). */
+  porId: Map<string, LinhaDaFicha[]>;
+  /** `${loja}::${chaveDoNome}` → ficha do produto ativo, de verdade (não espelho), com esse nome. */
+  porNome: Map<string, LinhaDaFicha[]>;
+};
+
+/** Monta as fichas a partir dos produtos com `recipeItems` (o select da rota). */
+export function montarFichas(produtos: {
+  id: string; franchiseeId: string | null; name: string; active: boolean | null;
+  recipeItems: { stockItemId: string; quantityConsumed: number; stockItem: { name: string; unit: string } }[];
+}[]): FichasDaLoja {
+  const porId = new Map<string, LinhaDaFicha[]>();
+  const porNome = new Map<string, LinhaDaFicha[]>();
+  for (const p of produtos) {
+    if (!p.recipeItems?.length) continue;
+    const ficha = p.recipeItems.map((r) => ({ stockItemId: r.stockItemId, nome: r.stockItem.name, unidade: r.stockItem.unit, quantidade: Number(r.quantityConsumed) || 0 }));
+    porId.set(p.id, ficha);
+    const chave = `${p.franchiseeId || ""}::${chaveDoNome(p.name)}`;
+    if (p.active && !p.id.startsWith("ifood-") && !porNome.has(chave)) porNome.set(chave, ficha);
+  }
+  return { porId, porNome };
+}
+
+function fichaDaPeca(p: Peca, loja: string, fichas: FichasDaLoja): LinhaDaFicha[] | null {
+  return (p.produtoId && fichas.porId.get(p.produtoId)) || fichas.porNome.get(`${loja}::${chaveDoNome(p.nome)}`) || null;
+}
+
+export type InsumosDoPedido = {
+  insumos: Map<string, { nome: string; unidade: string; quantidade: number }>;
+  /** Lanche (ou sabor/borda) sem ficha: entra à parte, pela quantidade. */
+  semFicha: Map<string, { nome: string; quantidade: number }>;
+};
+
+/** Os insumos de UM pedido, pela ficha técnica. */
+export function insumosDoPedido(pedido: PedidoDaAntecipacao, catalogo: CatalogoDaAntecipacao, fichas: FichasDaLoja): InsumosDoPedido {
+  const saida: InsumosDoPedido = { insumos: new Map(), semFicha: new Map() };
+  const somar = (ficha: LinhaDaFicha[], vezes: number) => {
+    for (const f of ficha) {
+      const q = f.quantidade * vezes;
+      if (!(q > 0)) continue;
+      const atual = saida.insumos.get(f.stockItemId) || { nome: f.nome, unidade: f.unidade, quantidade: 0 };
+      atual.quantidade += q;
+      saida.insumos.set(f.stockItemId, atual);
+    }
+  };
+  const semFicha = (p: Peca) => {
+    const atual = saida.semFicha.get(p.chave) || { nome: p.nome, quantidade: 0 };
+    atual.quantidade += p.quantidade;
+    saida.semFicha.set(p.chave, atual);
+  };
+  const pecas = pecasDoPedido(pedido, catalogo);
+  for (const item of new Set(pecas.map((p) => p.item))) {
+    const doItem = pecas.filter((p) => p.item === item);
+    const principal = doItem.find((p) => p.origem === "item");
+    const fichaDoItem = principal ? fichaDaPeca(principal, pedido.franchiseeId, fichas) : null;
+    if (principal && fichaDoItem) somar(fichaDoItem, principal.quantidade);
+    let conteudo = 0;
+    for (const p of doItem) {
+      if (p.origem === "item") continue;
+      // "4 Esfirras de Carne" com ficha própria: vale a do combo, não a do conteúdo.
+      if (p.origem === "nome" && fichaDoItem) continue;
+      conteudo++;
+      const ficha = fichaDaPeca(p, pedido.franchiseeId, fichas);
+      if (ficha) somar(ficha, p.quantidade);
+      else semFicha(p);
+    }
+    // O item sem ficha: o lanche avulso entra à parte; o combo só quando não
+    // se sabe o que tem dentro (nenhuma escolha) — senão o conteúdo já disse.
+    if (principal && !fichaDoItem && (!principal.combo || conteudo === 0)) semFicha(principal);
   }
   return saida;
 }
@@ -189,6 +363,9 @@ export type ContagemDoDia = {
   pedidosNoDia: number;
   pedidosNaFaixa: number;
   linhas: Map<string, { nome: string; combo: boolean; quantidade: number; porHora: number[] }>;
+  /** Pela ficha técnica (só quando as fichas vêm). */
+  insumos: Map<string, { nome: string; unidade: string; quantidade: number }>;
+  semFicha: Map<string, { nome: string; quantidade: number }>;
 };
 
 /** Conta os lanches de um dia operacional, só os pedidos dentro da faixa (vazia = dia inteiro). */
@@ -199,8 +376,11 @@ export function contarDia(
   tz: string,
   horaDe: string,
   horaAte: string,
+  fichas?: FichasDaLoja,
 ): ContagemDoDia {
   const linhas: ContagemDoDia["linhas"] = new Map();
+  const insumos: ContagemDoDia["insumos"] = new Map();
+  const semFicha: ContagemDoDia["semFicha"] = new Map();
   let pedidosNaFaixa = 0;
   for (const p of pedidos) {
     const { hora, minutos } = naLoja(p.createdAt instanceof Date ? p.createdAt : new Date(p.createdAt), tz);
@@ -212,8 +392,20 @@ export function contarDia(
       l.porHora[hora] += c.quantidade;
       linhas.set(c.chave, l);
     }
+    if (!fichas) continue;
+    const doPedido = insumosDoPedido(p, catalogo, fichas);
+    for (const [k, v] of doPedido.insumos) {
+      const a = insumos.get(k) || { ...v, quantidade: 0 };
+      a.quantidade += v.quantidade;
+      insumos.set(k, a);
+    }
+    for (const [k, v] of doPedido.semFicha) {
+      const a = semFicha.get(k) || { ...v, quantidade: 0 };
+      a.quantidade += v.quantidade;
+      semFicha.set(k, a);
+    }
   }
-  return { dia, pedidosNoDia: pedidos.length, pedidosNaFaixa, linhas };
+  return { dia, pedidosNoDia: pedidos.length, pedidosNaFaixa, linhas, insumos, semFicha };
 }
 
 /**
@@ -275,16 +467,61 @@ export function preverLinhas(dias: ContagemDoDia[], fator: number): LinhaDaPrevi
   }).sort((a, b) => b.sugerido - a.sugerido || b.media - a.media || a.nome.localeCompare(b.nome, "pt-BR"));
 }
 
+/** Arredonda para cima no passo da unidade: inteiro em g/ml/unidade, centésimo em kg/l. */
+export function arredondarInsumo(quantidade: number, unidade: string): number {
+  const u = chaveDoNome(unidade);
+  if (/^(kg|kgs|quilos?|l|lt|litros?)$/.test(u)) return Math.ceil(Math.round(quantidade * 1e6) / 1e4) / 100;
+  return Math.ceil(Math.round(quantidade * 1e4) / 1e4);
+}
+
+export type PrevisaoDosInsumos = {
+  insumos: { chave: string; nome: string; unidade: string; porDia: number[]; media: number; sugerido: number }[];
+  /** Lanche, sabor ou borda que saiu sem ficha montada: a quantidade, para a equipe saber o que ficou de fora. */
+  semFicha: { nome: string; media: number; sugerido: number }[];
+};
+
+/** A média dos insumos pela ficha técnica (× feriado), maior quantidade primeiro. */
+export function preverInsumos(dias: ContagemDoDia[], fator: number): PrevisaoDosInsumos {
+  const n = Math.max(1, dias.length);
+  const insumos = new Map<string, { nome: string; unidade: string; porDia: number[] }>();
+  const semFicha = new Map<string, { nome: string; soma: number }>();
+  dias.forEach((d, i) => {
+    for (const [k, v] of d.insumos) {
+      const a = insumos.get(k) || { nome: v.nome, unidade: v.unidade, porDia: dias.map(() => 0) };
+      a.porDia[i] += v.quantidade;
+      insumos.set(k, a);
+    }
+    for (const [k, v] of d.semFicha) {
+      const a = semFicha.get(k) || { nome: v.nome, soma: 0 };
+      a.soma += v.quantidade;
+      semFicha.set(k, a);
+    }
+  });
+  const casas = (x: number) => Math.round(x * 1000) / 1000;
+  return {
+    insumos: [...insumos].map(([chave, a]) => {
+      const media = a.porDia.reduce((s, q) => s + q, 0) / n;
+      return { chave, nome: a.nome, unidade: a.unidade, porDia: a.porDia.map(casas), media: casas(media), sugerido: arredondarInsumo(media * fator, a.unidade) };
+    }).sort((x, y) => x.nome.localeCompare(y.nome, "pt-BR")),
+    semFicha: [...semFicha.values()]
+      .map((x) => ({ nome: x.nome, media: r1(x.soma / n), sugerido: Math.ceil(r1((x.soma / n) * fator)) }))
+      .sort((x, y) => y.media - x.media),
+  };
+}
+
 export type PrevisaoDasBases = {
   bases: (LinhaDaPrevisao & { serve: string; lanches: { nome: string; media: number }[] })[];
   /** Esfihas doces na média (não usam base). */
   doces: number;
+  /** O que não entrou em base nenhuma (bebida, acompanhamento, item sem sabor no pedido), para a equipe ver que nada sumiu. */
+  foraDasBases: { nome: string; media: number }[];
 };
 
 /** As 4 bases do Hakim a partir das linhas de lanche (combos ficam fora: o que vem dentro já está nas linhas). */
 export function preverBases(dias: ContagemDoDia[], fator: number): PrevisaoDasBases {
   const n = Math.max(1, dias.length);
   let doces = 0;
+  const fora = new Map<string, { nome: string; soma: number }>();
   const bases = BASES_DO_HAKIM.map((b) => ({
     ...b,
     porDia: dias.map(() => 0),
@@ -298,7 +535,12 @@ export function preverBases(dias: ContagemDoDia[], fator: number): PrevisaoDasBa
       const base = baseDoHakim(l.nome);
       if (base === "doce") { doces += l.quantidade; continue; }
       const alvo = bases.find((b) => b.chave === base);
-      if (!alvo) continue;
+      if (!alvo) {
+        const f = fora.get(chave) || { nome: l.nome, soma: 0 };
+        f.soma += l.quantidade;
+        fora.set(chave, f);
+        continue;
+      }
       alvo.porDia[i] += l.quantidade;
       alvo.soma += l.quantidade;
       l.porHora.forEach((q, h) => { alvo.porHora[h] += q; });
@@ -320,5 +562,6 @@ export function preverBases(dias: ContagemDoDia[], fator: number): PrevisaoDasBa
       };
     }),
     doces: r1(doces / n),
+    foraDasBases: [...fora.values()].map((x) => ({ nome: x.nome, media: r1(x.soma / n) })).sort((x, y) => y.media - x.media),
   };
 }

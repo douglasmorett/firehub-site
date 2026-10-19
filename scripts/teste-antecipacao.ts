@@ -6,7 +6,7 @@
  */
 import { montarCatalogo, type ProdutoDoCatalogo } from "../src/lib/relatorios/catalogo";
 import {
-  baseDoHakim, contarDia, juntarNomesCurtos, lanchesDoPedido, preverBases, preverLinhas, FATOR_DO_FERIADO,
+  arredondarInsumo, baseDoHakim, contarDia, insumosDoPedido, juntarNomesCurtos, lanchesDoPedido, montarFichas, preverBases, preverInsumos, preverLinhas, FATOR_DO_FERIADO,
   type CatalogoDaAntecipacao, type PedidoDaAntecipacao,
 } from "../src/lib/antecipacao";
 
@@ -134,6 +134,59 @@ const faixa = contarDia("2026-10-11", [
   pedido([item("Esfirra de Carne", 1)], "2026-10-12T04:30:00.000Z"),
 ], catalogo, "America/Sao_Paulo", "22:00", "02:00");
 confere("faixa que passa da meia-noite (22:00–02:00): só o pedido da 01:30", [faixa.pedidosNoDia, faixa.pedidosNaFaixa], [2, 1]);
+
+// ── Ficha técnica (a regra da baixa do estoque) ──
+const linhaDaFicha = (id: string, nome: string, unidade: string, q: number) => ({ stockItemId: id, quantityConsumed: q, stockItem: { name: nome, unit: unidade } });
+const fichas = montarFichas([
+  { id: "carne", franchiseeId: L, name: "Esfirra de Carne", active: true, recipeItems: [linhaDaFicha("massa", "Massa", "un", 1), linhaDaFicha("rcarne", "Recheio de carne", "g", 25)] },
+  { id: "calmus", franchiseeId: L, name: "Esfirra de Calabresa com Mussarela", active: true, recipeItems: [linhaDaFicha("massa", "Massa", "un", 1), linhaDaFicha("rcal", "Recheio de calabresa", "g", 25)] },
+  { id: "c10", franchiseeId: L, name: "Combo 10 Esfirras Simples", active: true, recipeItems: [linhaDaFicha("embg", "Embalagem G", "un", 2)] },
+  { id: "c4carne", franchiseeId: L, name: "4 Esfirras de Carne", active: true, recipeItems: [linhaDaFicha("massa", "Massa", "un", 4), linhaDaFicha("rcarne", "Recheio de carne", "g", 100), linhaDaFicha("embp", "Embalagem P", "un", 1)] },
+]);
+const insumos = (ped: PedidoDaAntecipacao, cat = catalogo, f = fichas) => {
+  const r = insumosDoPedido(ped, cat, f);
+  return { insumos: [...r.insumos.values()].map((x) => `${x.nome} ${x.quantidade}`).sort(), semFicha: [...r.semFicha.values()].map((x) => `${x.nome} ${x.quantidade}`) };
+};
+confere("ficha: combo do site soma a ficha do combo e a de cada esfiha escolhida",
+  insumos(pedido([{ quantity: 1, price: 39.9, productName: "Combo 10 Esfirras Simples", menuProductId: "c10", comboSelections: { g10: { "Esfirra de Carne": 2, "Esfirra de Calabresa com Mussarela": 8 } }, menuProduct: { id: "c10", name: "Combo 10 Esfirras Simples", category: "Combos", active: true, isCombo: true } }])),
+  { insumos: ["Embalagem G 2", "Massa 10", "Recheio de calabresa 200", "Recheio de carne 50"], semFicha: [] });
+confere("ficha: combo do iFood (espelho) pega a ficha do combo de mesmo nome e abre o \"Carne\"",
+  insumos(pedido([item("Combo 10 Esfirras Simples", 2, JSON.stringify([{ name: "Carne", quantity: 10 }]), { menuProduct: { id: "ifood-c10", name: "Combo 10 Esfirras Simples", category: "Combos", active: false } })])),
+  { insumos: ["Embalagem G 4", "Massa 20", "Recheio de carne 500"], semFicha: [] });
+confere("ficha: \"4 Esfirras de Carne\" com ficha própria vale a do combo (não soma as 4 de novo)",
+  insumos(pedido([item("4 Esfirras de Carne", 1, null, { menuProduct: { id: "ifood-4c", name: "4 Esfirras de Carne", category: "Combos", active: false } })])),
+  { insumos: ["Embalagem P 1", "Massa 4", "Recheio de carne 100"], semFicha: [] });
+confere("ficha: lanche sem ficha vai à parte, pela quantidade",
+  insumos(pedido([item("Esfirra de Kitkat", 2, JSON.stringify([{ name: "Chocolate ao Leite", quantity: 1 }]))])),
+  { insumos: [], semFicha: ["Esfirra de Kitkat 2"] });
+
+// Meia pizza: cada sabor entra com a metade da ficha dele.
+const P = "pizzaria";
+const PIZZARIA: ProdutoDoCatalogo[] = [
+  { id: "pg", franchiseeId: P, name: "Pizza Grande", category: "Pizzas", price: 0, cost: 0, active: true,
+    comboGroups: [{ id: "gs", title: "Sabores", priceRule: "MAIOR", items: [{ menuProductId: "scal" }, { menuProductId: "smus" }] }] },
+  { id: "scal", franchiseeId: P, name: "Calabresa", category: "Sabores de Pizza", price: 0, cost: 0, active: true, apenasEmCombo: true },
+  { id: "smus", franchiseeId: P, name: "Mussarela", category: "Sabores de Pizza", price: 0, cost: 0, active: true, apenasEmCombo: true },
+];
+const catalogoPizza: CatalogoDaAntecipacao = montarCatalogo(PIZZARIA);
+const fichasPizza = montarFichas([
+  { id: "pg", franchiseeId: P, name: "Pizza Grande", active: true, recipeItems: [linhaDaFicha("disco", "Disco de massa G", "un", 1)] },
+  { id: "scal", franchiseeId: P, name: "Calabresa", active: true, recipeItems: [linhaDaFicha("cal", "Calabresa fatiada", "g", 200)] },
+  { id: "smus", franchiseeId: P, name: "Mussarela", active: true, recipeItems: [linhaDaFicha("mus", "Mussarela", "g", 300)] },
+]);
+const meia = { franchiseeId: P, canal: "SITE", createdAt: "2026-10-11T22:00:00.000Z", items: [{ quantity: 2, price: 60, productName: "Pizza Grande", menuProductId: "pg", comboSelections: { gs: { Calabresa: 1, Mussarela: 1 } }, menuProduct: { id: "pg", name: "Pizza Grande", category: "Pizzas", active: true } }] };
+confere("ficha: 2 pizzas meio a meio = 2 discos, 200 g de calabresa e 300 g de mussarela",
+  insumos(meia, catalogoPizza, fichasPizza), { insumos: ["Calabresa fatiada 200", "Disco de massa G 2", "Mussarela 300"], semFicha: [] });
+confere("lanches da pizza: a pizza, sem os sabores", lanchesDoPedido(meia, catalogoPizza).map((c) => `${c.nome} ${c.quantidade}`), ["Pizza Grande 2"]);
+
+const doisDias = [
+  contarDia("2026-10-11", [pedido([item("4 Esfirras de Carne", 3, null, { menuProduct: { id: "ifood-4c", name: "4 Esfirras de Carne", category: "Combos", active: false } })])], catalogo, "America/Sao_Paulo", "", "", fichas),
+  contarDia("2026-10-04", [pedido([item("4 Esfirras de Carne", 1, null, { menuProduct: { id: "ifood-4c", name: "4 Esfirras de Carne", category: "Combos", active: false } })], "2026-10-04T22:00:00.000Z")], catalogo, "America/Sao_Paulo", "", "", fichas),
+];
+confere("previsão de insumos com feriado (+20%, arredondado para cima)",
+  preverInsumos(doisDias, FATOR_DO_FERIADO).insumos.map((x) => [x.nome, x.porDia, x.media, x.sugerido]),
+  [["Embalagem P", [3, 1], 2, 3], ["Massa", [12, 4], 8, 10], ["Recheio de carne", [300, 100], 200, 240]]);
+confere("kg arredonda no centésimo para cima", [arredondarInsumo(3.1234, "kg"), arredondarInsumo(7.2, "kg"), arredondarInsumo(2.4, "un")], [3.13, 7.2, 3]);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);
