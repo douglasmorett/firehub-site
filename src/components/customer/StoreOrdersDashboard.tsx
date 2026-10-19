@@ -1,4 +1,5 @@
 "use client";
+import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 import React, { useState, useEffect, useRef, useCallback, useMemo, memo } from "react";
 import { lerEntregaGratis } from "@/lib/entrega-gratis";
 import { useRouter } from "next/navigation";
@@ -1802,6 +1803,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const [motoboys, setMotoboys] = useState<any[]>(initialMotoboys || []);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
+  const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
   /** Pedido cancelado arrastado para Entregue: a pergunta antes de trocar. */
   const [entregueDoArrasto, setEntregueDoArrasto] = useState<any | null>(null);
   const [cancelReason, setCancelReason] = useState("");
@@ -1967,16 +1969,23 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
 
       let successCount = 0;
       const mudaram = new Set<string>();
+      // A senha do gerente (cancelar em lote) é pedida uma vez e vale para todos.
+      let cabDaSenha: Record<string, string> = {};
       for (const orderId of ids) {
-        const res = await fetch("/api/customer-order/status", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            orderId,
-            status: bulkTargetStatus,
-            ...(bulkTargetStatus === "CANCELADO" ? { cancelReason: bulkMotivo.trim() } : {}),
-          })
-        });
+        const pedir = (cab: Record<string, string>) => {
+          cabDaSenha = { ...cabDaSenha, ...cab };
+          return fetch("/api/customer-order/status", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json", ...cabDaSenha },
+            body: JSON.stringify({
+              orderId,
+              status: bulkTargetStatus,
+              ...(bulkTargetStatus === "CANCELADO" ? { cancelReason: bulkMotivo.trim() } : {}),
+            })
+          });
+        };
+        const res = await comSenhaDoGerente(pedir, pedirSenha);
+        if (!res) break; // o gerente cancelou
         if (res.ok) { successCount++; mudaram.add(orderId); }
       }
 
@@ -3579,15 +3588,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const finalReason = cancelReason.trim();
     setLoadingId(cancelConfirmId);
     try {
-      const res = await fetch("/api/customer-order/status", {
-        method: "PUT", headers: { "Content-Type": "application/json" },
+      // Com a senha do gerente ligada para "Cancelar pedido", pede e repete.
+      const res = await comSenhaDoGerente((cab) => fetch("/api/customer-order/status", {
+        method: "PUT", headers: { "Content-Type": "application/json", ...cab },
         body: JSON.stringify({
           orderId: cancelConfirmId,
           status: "CANCELADO",
           cancelReason: finalReason,
           cancellationCode: selectedCancelCode
         })
-      });
+      }), pedirSenha);
+      if (!res) return; // o gerente cancelou
       if (res.ok) {
         setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA" } : o));
         router.refresh();
@@ -4230,6 +4241,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     // do Ver pedido só aparecem com a emissão ligada (NotaFiscalDoPedido).
     <NotaFiscalDaLojaProvider>
     <div style={{ fontFamily: "'Inter', sans-serif" }}>
+      {modalDaSenha}
       {/* Lido pela extensão de prazo (firehub-bridge.js, pelo id). Fica aqui,
           fora das colunas: some coluna (aba no celular) e o número continua;
           e é um elemento só, então o MutationObserver dela não fica preso a

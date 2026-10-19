@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { acertosDoPeriodo, desfazerAcertoPago, registrarAcertoPago } from "@/lib/acerto-pago";
 import { fiadoDosMotoboys } from "@/lib/fiado-do-motoboy";
 import { motoboyDaLoja, quemMexeNoAcerto } from "../sessao";
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +60,8 @@ export async function DELETE(req: Request) {
   if ("erro" in s) return NextResponse.json({ error: s.erro }, { status: s.status });
   const id = new URL(req.url).searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Acerto não informado." }, { status: 400 });
+  const semSenha = await exigirSenhaDoGerente(req, s.lojaId, "desfazerAcertoDoMotoboy");
+  if (semSenha) return semSenha;
   try {
     const achou = await desfazerAcertoPago({ lojaId: s.lojaId, id, quem: s.quem });
     if (!achou) return NextResponse.json({ error: "Acerto não encontrado (talvez já desfeito)." }, { status: 404 });

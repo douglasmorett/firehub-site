@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -157,6 +158,8 @@ export async function DELETE(req: Request) {
 
   const id = new URL(req.url).searchParams.get("id") || "";
   if (!id) return NextResponse.json({ error: "Informe qual lançamento apagar." }, { status: 400 });
+  const semSenha = await exigirSenhaDoGerente(req, loja.franchiseeId, "desfazerLancamentoDoCaixa");
+  if (semSenha) return semSenha;
 
   // Só apaga lançamento DESTA loja e de turno ABERTO: turno fechado já virou
   // conferência assinada, e apagar dali mudaria um número que alguém já bateu.

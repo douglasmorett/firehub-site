@@ -14,6 +14,7 @@
  */
 import { useState } from "react";
 import type { Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
+import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 
 const fmt = (v: number) => `R$ ${(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const diaCurto = (d: string) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
@@ -37,6 +38,7 @@ export default function AcertoPago({ motoboyId, nome, de, ate, diasTrabalhados, 
   const [aberto, setAberto] = useState(false);
   const [abater, setAbater] = useState(fiadoEmAberto > 0);
   const [enviando, setEnviando] = useState(false);
+  const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
 
   const faltam = diasTrabalhados.filter((d) => !diasPagos.includes(d));
   const tudoPago = diasTrabalhados.length > 0 && faltam.length === 0;
@@ -64,7 +66,11 @@ export default function AcertoPago({ motoboyId, nome, de, ate, diasTrabalhados, 
 
   const desfazer = async (id: string) => {
     if (!window.confirm("Desfazer este acerto? Ele volta a aparecer como não pago e a baixa do fiado (se teve) é apagada.")) return;
-    const res = await fetch(`/api/motoboy-report/acerto?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => null);
+    const res = await comSenhaDoGerente(
+      (cab) => fetch(`/api/motoboy-report/acerto?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: cab }),
+      pedirSenha,
+    ).catch(() => null);
+    if (res === null) return; // o gerente cancelou
     const dados = res ? await res.json().catch(() => ({})) : {};
     if (!res?.ok) { avisar({ tipo: "erro", titulo: dados?.error || "Não deu para desfazer agora." }); return; }
     avisar({ tipo: "ok", titulo: "Acerto desfeito." });
@@ -75,6 +81,7 @@ export default function AcertoPago({ motoboyId, nome, de, ate, diasTrabalhados, 
 
   return (
     <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+      {modalDaSenha}
       {acertos.length > 0 && (
         <div style={{
           border: `3px solid ${tudoPago ? "#059669" : "#D97706"}`, background: tudoPago ? "#ECFDF5" : "#FFFBEB",

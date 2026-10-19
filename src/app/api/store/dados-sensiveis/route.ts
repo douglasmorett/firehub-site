@@ -6,6 +6,7 @@
  * completa (lib/cmv/semana-do-cmv.ts). Só para quem vê dados sensíveis
  * (lib/cmv/acesso.ts).
  */
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 import { NextRequest, NextResponse } from "next/server";
 import { exigirDadosSensiveis } from "@/lib/cmv/acesso";
 import { montarPainel } from "@/lib/cmv/painel";
@@ -19,6 +20,8 @@ export async function GET(req: NextRequest) {
   try {
     const r = await exigirDadosSensiveis();
     if (!r.ok) return r.resposta;
+    const semSenha = await exigirSenhaDoGerente(req, r.acesso.lojaId, "verDadosSensiveis");
+    if (semSenha) return semSenha;
     const { lojaId, tz, nomeDaLoja, goals } = r.acesso;
 
     const hoje = hojeNaLoja(tz);

@@ -9,6 +9,7 @@
  *
  * Salário é dado sensível: só quem tem a caixinha (lib/cmv/acesso.ts).
  */
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exigirDadosSensiveis } from "@/lib/cmv/acesso";
@@ -41,9 +42,11 @@ function ler(body: any, hoje: string): { ok: true; dados: any } | { ok: false; e
 
 const comCusto = (p: any) => ({ ...p, custoMensal: Math.round(custoMensal(p) * 100) / 100 });
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const r = await exigirDadosSensiveis();
   if (!r.ok) return r.resposta;
+  const semSenha = await exigirSenhaDoGerente(req, r.acesso.lojaId, "verDadosSensiveis");
+  if (semSenha) return semSenha;
   const pessoas = await prisma.pessoaDaFolha.findMany({ where: { franchiseeId: r.acesso.lojaId }, orderBy: [{ ate: "asc" }, { nome: "asc" }] });
   return NextResponse.json({ pessoas: pessoas.map(comCusto), hoje: hojeNaLoja(r.acesso.tz) });
 }
@@ -51,6 +54,8 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   const r = await exigirDadosSensiveis();
   if (!r.ok) return r.resposta;
+  const semSenha = await exigirSenhaDoGerente(req, r.acesso.lojaId, "verDadosSensiveis");
+  if (semSenha) return semSenha;
   const v = ler(await req.json().catch(() => ({})), hojeNaLoja(r.acesso.tz));
   if (!v.ok) return NextResponse.json({ error: v.erro }, { status: 400 });
   const p = await prisma.pessoaDaFolha.create({ data: { franchiseeId: r.acesso.lojaId, ...v.dados } });
@@ -60,6 +65,8 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const r = await exigirDadosSensiveis();
   if (!r.ok) return r.resposta;
+  const semSenha = await exigirSenhaDoGerente(req, r.acesso.lojaId, "verDadosSensiveis");
+  if (semSenha) return semSenha;
   const id = req.nextUrl.searchParams.get("id") || "";
   const v = ler(await req.json().catch(() => ({})), hojeNaLoja(r.acesso.tz));
   if (!v.ok) return NextResponse.json({ error: v.erro }, { status: 400 });
@@ -71,6 +78,8 @@ export async function PUT(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const r = await exigirDadosSensiveis();
   if (!r.ok) return r.resposta;
+  const semSenha = await exigirSenhaDoGerente(req, r.acesso.lojaId, "verDadosSensiveis");
+  if (semSenha) return semSenha;
   const id = req.nextUrl.searchParams.get("id") || "";
   const feito = await prisma.pessoaDaFolha.deleteMany({ where: { id, franchiseeId: r.acesso.lojaId } });
   if (!feito.count) return NextResponse.json({ error: "Pessoa não encontrada." }, { status: 404 });

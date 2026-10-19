@@ -35,6 +35,26 @@ export const ACOES_PROTEGIDAS = [
     rotulo: "Excluir lançamento na conferência do motoboy",
     ajuda: "O botão Excluir de uma pendência já lançada no acerto do motoboy (Motoboys → Relatório de Pagamentos).",
   },
+  {
+    chave: "desfazerAcertoDoMotoboy",
+    rotulo: "Desfazer acerto pago do motoboy",
+    ajuda: "O \"desfazer\" de um acerto já marcado como pago (Motoboys → Relatório de Pagamentos). Desfazer também apaga a baixa do fiado que o acerto fez.",
+  },
+  {
+    chave: "desfazerLancamentoDoCaixa",
+    rotulo: "Apagar sangria ou suprimento do caixa",
+    ajuda: "Desfazer um lançamento de dinheiro (sangria, suprimento, pagamento) no caixa aberto.",
+  },
+  {
+    chave: "cancelarPedido",
+    rotulo: "Cancelar pedido",
+    ajuda: "Cancelar qualquer pedido pelo painel (no card, no Editar, arrastando para Cancelados ou em lote).",
+  },
+  {
+    chave: "verDadosSensiveis",
+    rotulo: "Abrir Dados sensíveis",
+    ajuda: "A tela Dados sensíveis (CMV, custo da equipe e metas). Pede a senha ao abrir a tela.",
+  },
 ] as const;
 
 export type AcaoProtegida = (typeof ACOES_PROTEGIDAS)[number]["chave"];

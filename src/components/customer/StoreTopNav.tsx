@@ -1,4 +1,5 @@
 "use client";
+import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 import SairDaConta from "@/components/SairDaConta";
 import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 
@@ -565,8 +566,16 @@ export default function StoreTopNav({
     }
   };
 
+  const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
   const apagarMov = async (id: string) => {
-    await fetch(`/api/cash-session/movimentacao?id=${encodeURIComponent(id)}`, { method: "DELETE" }).catch(() => {});
+    const res = await comSenhaDoGerente(
+      (cab) => fetch(`/api/cash-session/movimentacao?id=${encodeURIComponent(id)}`, { method: "DELETE", headers: cab }),
+      pedirSenha,
+    ).catch(() => null);
+    if (res && !res.ok) {
+      const d = await res.json().catch(() => ({}));
+      setMovErro(d?.error || "Não consegui apagar o lançamento.");
+    }
     await Promise.all([carregarMovs(), carregarResumoDoCaixa()]);
   };
 
@@ -894,6 +903,7 @@ export default function StoreTopNav({
 
   return (
     <>
+      {modalDaSenha}
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
       {/* ── MODAL: PAUSAR LOJA ────────────────────────────── */}
       {showPauseModal && (

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -234,6 +235,12 @@ export async function PUT(req: Request) {
     const { travaDaNotaFiscal } = await import("@/lib/edicao-de-pedido");
     const trava = travaDaNotaFiscal(order, "cancelar o pedido");
     if (trava) return NextResponse.json({ error: trava }, { status: 409 });
+  }
+
+  // Senha do gerente para cancelar, se o dono ligou (Minha Loja → Senha do gerente).
+  if (status === "CANCELADO" && role !== "ADMIN") {
+    const semSenha = await exigirSenhaDoGerente(req, order.franchiseeId, "cancelarPedido");
+    if (semSenha) return semSenha;
   }
 
   const updateData: any = { status };

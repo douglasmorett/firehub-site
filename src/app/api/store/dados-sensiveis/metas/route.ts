@@ -6,6 +6,7 @@
  * existe lá (faturamento, comissão dos apps): substituir o JSON inteiro
  * apagaria as metas das outras telas.
  */
+import { exigirSenhaDoGerente } from "@/lib/senha-do-gerente";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { exigirDadosSensiveis } from "@/lib/cmv/acesso";
@@ -15,6 +16,8 @@ export const dynamic = "force-dynamic";
 export async function PUT(req: NextRequest) {
   const r = await exigirDadosSensiveis();
   if (!r.ok) return r.resposta;
+  const semSenha = await exigirSenhaDoGerente(req, r.acesso.lojaId, "verDadosSensiveis");
+  if (semSenha) return semSenha;
   const body = await req.json().catch(() => ({}));
 
   const novo: Record<string, number> = {};

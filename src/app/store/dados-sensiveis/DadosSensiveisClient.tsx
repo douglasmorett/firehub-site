@@ -14,6 +14,20 @@
  * A conta é do servidor (lib/cmv/painel.ts). Aqui só se mostra, e a tela se
  * atualiza sozinha a cada minuto — fechou a contagem do dia, o ponteiro anda.
  */
+import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
+
+// Senha do gerente ("Abrir Dados sensíveis", Minha Loja → Senha do gerente):
+// pedida uma vez ao abrir a tela e reaproveitada nas outras leituras dela.
+let cabDaSenhaSensivel: Record<string, string> = {};
+let pedirSenhaSensivel: Parameters<typeof comSenhaDoGerente>[1] | null = null;
+async function fetchSensivel(url: string, init: RequestInit = {}): Promise<Response> {
+  const fazer = (cab: Record<string, string>) => {
+    cabDaSenhaSensivel = { ...cabDaSenhaSensivel, ...cab };
+    return fetch(url, { ...init, headers: { ...(init.headers as Record<string, string> | undefined), ...cabDaSenhaSensivel } });
+  };
+  const res = pedirSenhaSensivel ? await comSenhaDoGerente(fazer, pedirSenhaSensivel) : await fazer({});
+  return res ?? new Response(JSON.stringify({ error: "Esta tela pede a senha do gerente." }), { status: 403 });
+}
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { AlertTriangle, ClipboardCheck, Info, Pencil, Plus, RefreshCw, ShoppingCart, Trash2, X } from "lucide-react";
@@ -71,6 +85,8 @@ const tomDaZona = (z: string): "ok" | "atencao" | "grave" | "neutro" => (z === "
 
 export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: string; nomeDaLoja: string }) {
   const [aba, setAba] = useState<Aba>("painel");
+  const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
+  pedirSenhaSensivel = pedirSenha;
   const [atalho, setAtalho] = useState<Atalho>("semana");
   // Nulo até a primeira resposta: a semana da loja (segue o dia da contagem
   // completa) vem do servidor, e o primeiro pedido vai sem período.
@@ -84,7 +100,7 @@ export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: strin
   const carregar = useCallback(async (silencioso = false) => {
     if (!silencioso) setCarregando(true);
     try {
-      const r = await fetch(`/api/store/dados-sensiveis${periodo ? `?de=${periodo.de}&ate=${periodo.ate}` : ""}`, { cache: "no-store" });
+      const r = await fetchSensivel(`/api/store/dados-sensiveis${periodo ? `?de=${periodo.de}&ate=${periodo.ate}` : ""}`, { cache: "no-store" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || "Não deu para carregar os números.");
       setDados(j);
@@ -115,6 +131,7 @@ export default function DadosSensiveisClient({ hoje, nomeDaLoja }: { hoje: strin
 
   return (
     <div style={{ padding: "1.5rem 1rem 3rem", maxWidth: 1280, margin: "0 auto", fontFamily: "system-ui, -apple-system, sans-serif", color: PALETA.carvao }}>
+      {modalDaSenha}
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: "0.72rem", fontWeight: 800, color: PALETA.marca, textTransform: "uppercase", letterSpacing: "0.08em" }}>🔒 Dados sensíveis · {nomeDaLoja}</div>
@@ -464,7 +481,7 @@ function AbaEquipe({ periodo }: { periodo: { de: string; ate: string } }) {
   }, [aberto, editando]);
 
   const carregar = useCallback(async () => {
-    const r = await fetch("/api/store/dados-sensiveis/equipe", { cache: "no-store" });
+    const r = await fetchSensivel("/api/store/dados-sensiveis/equipe", { cache: "no-store" });
     const j = await r.json();
     if (!r.ok) { setErro(j.error); return; }
     setPessoas(j.pessoas);
@@ -479,7 +496,7 @@ function AbaEquipe({ periodo }: { periodo: { de: string; ate: string } }) {
     setSalvando(true);
     setErro(null);
     try {
-      const r = await fetch(`/api/store/dados-sensiveis/equipe${editando ? `?id=${editando}` : ""}`, {
+      const r = await fetchSensivel(`/api/store/dados-sensiveis/equipe${editando ? `?id=${editando}` : ""}`, {
         method: editando ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(form),
@@ -493,7 +510,7 @@ function AbaEquipe({ periodo }: { periodo: { de: string; ate: string } }) {
 
   const [apagando, setApagando] = useState<string | null>(null);
   const apagar = async (id: string) => {
-    const r = await fetch(`/api/store/dados-sensiveis/equipe?id=${id}`, { method: "DELETE" });
+    const r = await fetchSensivel(`/api/store/dados-sensiveis/equipe?id=${id}`, { method: "DELETE" });
     if (r.ok) { setApagando(null); await carregar(); }
   };
 
@@ -612,7 +629,7 @@ function AbaMetas({ metas, semana, onSalvo }: { metas?: Painel["metas"]; semana?
   const previa = useMemo(() => Number(cmv.replace(",", ".")) || 33, [cmv]);
 
   const salvar = async () => {
-    const r = await fetch("/api/store/dados-sensiveis/metas", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmvPct: cmv, cmoPct: cmo, semanaDoCmv: { diaDaContagem: dia, momento } }) });
+    const r = await fetchSensivel("/api/store/dados-sensiveis/metas", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cmvPct: cmv, cmoPct: cmo, semanaDoCmv: { diaDaContagem: dia, momento } }) });
     const j = await r.json();
     setMsg(r.ok ? { ok: true, texto: "Salvo." } : { ok: false, texto: j.error });
     if (r.ok) onSalvo();
