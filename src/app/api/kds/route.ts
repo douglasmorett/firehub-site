@@ -20,6 +20,14 @@ import {
   type TelaDoKds,
 } from "@/lib/kds-telas";
 import { lerConfigDeAgendamento } from "@/lib/agendamento";
+import { lembrarPor } from "@/lib/cache-curto";
+
+/**
+ * Quem é o e-mail e a config da loja (agendamento, telas, regras do KDS) ficam
+ * 10 s em memória (lib/cache-curto.ts): cada TV relia tudo a cada 3,5 s. Mudar
+ * uma tela vale em até 10 s; os pedidos continuam lidos na hora.
+ */
+const VALIDADE_DA_CONFIG_MS = 10_000;
 
 /**
  * GET /api/kds?stage=production|finishing
@@ -72,11 +80,13 @@ export async function GET(req: NextRequest) {
       // "Nenhum pedido na fila" — o lojista lê isso como "o pedido do iFood
       // não chegou" e vai procurar defeito na integração. Um 503 faz a tela
       // dizer "reconectando" e SEGURAR os cards que já estão lá.
-      user = await withRetry(() =>
-        prisma.user.findUnique({
-          where: { email },
-          select: { id: true, ownerId: true, isFranqueadoHakim: true, storeTimezone: true },
-        })
+      user = await lembrarPor(`kds:usuario:${email}`, VALIDADE_DA_CONFIG_MS, () =>
+        withRetry(() =>
+          prisma.user.findUnique({
+            where: { email },
+            select: { id: true, ownerId: true, isFranqueadoHakim: true, storeTimezone: true },
+          })
+        )
       ).catch((err) => {
         throw new Error(`banco indisponível ao identificar a loja: ${err?.message || err}`, { cause: err });
       });
@@ -90,15 +100,6 @@ export async function GET(req: NextRequest) {
     userStoreIds = Array.from(new Set(userStoreIds.filter(Boolean)));
 
     const stage = req.nextUrl.searchParams.get("stage") || "production";
-
-    // Buscar data de abertura do caixa ativo (ou últimas 24h) para ignorar pedidos antigos esquecidos
-    const activeSession = await withRetry(() =>
-      prisma.cashSession.findFirst({
-        where: { franchiseeId: { in: userStoreIds }, status: "OPEN" },
-        orderBy: { openedAt: "desc" },
-        select: { openedAt: true },
-      })
-    ).catch(() => null);
 
     // Usar corte amplo de 48 horas para NUNCA ocultar pedidos criados antes da abertura do caixa ativo!
     const safeCutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
@@ -116,9 +117,15 @@ export async function GET(req: NextRequest) {
     // Fica fora da cozinha até faltar `liberarAntesMin` para o horário, e
     // entra pela HORA MARCADA, não pela criação: a encomenda feita na quarta
     // para sábado tem mais de 48 h e o corte abaixo a esconderia para sempre.
-    const configDaLoja = user
-      ? await prisma.user
-          .findUnique({ where: { id: user.ownerId || user.id }, select: { agendamentoConfig: true } })
+    //
+    // Uma leitura só para as três configs da conta (agendamento, telas e
+    // regras do KDS), guardada por VALIDADE_DA_CONFIG_MS. Cópia por chamada.
+    const contaDaLoja = user ? contaDasTelas(user, userStoreIds) : undefined;
+    const configDaLoja = contaDaLoja
+      ? await lembrarPor(`kds:config:${contaDaLoja}`, VALIDADE_DA_CONFIG_MS, () =>
+          prisma.user.findUnique({ where: { id: contaDaLoja }, select: { agendamentoConfig: true, kdsScreens: true, kdsConfig: true } }),
+        )
+          .then((c) => (c ? structuredClone(c) : null))
           .catch(() => null)
       : null;
     const liberarAntesMin = lerConfigDeAgendamento(configDaLoja?.agendamentoConfig).liberarAntesMin;
@@ -244,9 +251,7 @@ export async function GET(req: NextRequest) {
     if (daTela) {
       // As telas moram no DONO (onde o painel grava): `userStoreIds[0]` é a
       // conta logada, e a TV logada como funcionário ficava sem tela nenhuma.
-      const donoDasTelas = await prisma.user
-        .findUnique({ where: { id: contaDasTelas(user, userStoreIds) }, select: { kdsScreens: true } })
-        .catch(() => null);
+      const donoDasTelas = configDaLoja;
       const telas = (Array.isArray(donoDasTelas?.kdsScreens) ? donoDasTelas!.kdsScreens : []) as any[];
       minha = telas.find((t) => chaveDaTela(t) === daTela) || null;
     }
@@ -330,10 +335,7 @@ export async function GET(req: NextRequest) {
     // pedido como prioridade (a mesa da Pizzaria 17), eles passam na frente do
     // resto. A regra mora na conta do DONO, onde o painel grava — por isso o
     // `ownerId`. Falhou a leitura: fica a ordem de sempre, nunca a tela vazia.
-    const regrasDaLoja = await prisma.user
-      .findUnique({ where: { id: contaDasTelas(user, userStoreIds) }, select: { kdsConfig: true } })
-      .then((u) => lerKdsConfig(u?.kdsConfig))
-      .catch(() => null);
+    const regrasDaLoja = configDaLoja ? lerKdsConfig(configDaLoja.kdsConfig) : null;
     // Cada etapa com a sua lista: a finalização pode ter a dela (Pizzaria 17).
     visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja, stage);
 
