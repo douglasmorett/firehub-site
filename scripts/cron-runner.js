@@ -399,7 +399,10 @@ async function perguntarLideranca() {
   // Falhou: `ate` fica como estava (a vez que já é nossa continua valendo).
   lideranca.falhas++;
   if (lideranca.falhas === 1 || lideranca.falhas % 10 === 0) {
-    const motivo = r.erro || (r.json && r.json.erro) || `HTTP ${r.status}`;
+    const motivo =
+      r.status === 401
+        ? `HTTP 401 — a liderança só responde a chamada local: CRON_BASE_URL tem de ser http://127.0.0.1:<porta> (está ${BASE_URL})`
+        : r.erro || (r.json && r.json.erro) || `HTTP ${r.status}`;
     const resta = Math.max(0, lideranca.ate - Date.now());
     console.warn(
       `[cron-runner] ⚠️ liderança: não consegui perguntar (${motivo}; ${lideranca.falhas}ª falha seguida) — ` +

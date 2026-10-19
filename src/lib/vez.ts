@@ -89,3 +89,14 @@ export async function soltarVez(chave: string, dono: string = idDaInstancia()): 
 
 /** A vez do cron-runner que dispara os jobs (api/cron/lideranca). */
 export const CHAVE_DO_LIDER_DO_CRON = "cron:lider";
+
+/**
+ * No SIGTERM do `docker stop` (deploy), devolve a vez do cron para o container
+ * novo assumir na próxima pergunta dele, sem esperar a vez vencer. Tentativa
+ * só: se o Next sair antes, a vez vence sozinha em até 90 s.
+ */
+export function soltarALiderancaAoDesligar(): void {
+  process.once("SIGTERM", () => {
+    soltarVez(CHAVE_DO_LIDER_DO_CRON).catch(() => undefined);
+  });
+}
