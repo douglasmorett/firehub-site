@@ -379,6 +379,9 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // história.
     const naoPrecisaMaisDeComanda = [...STATUS_FINALIZADOS];
 
+    // ATENÇÃO: a pré-consulta (lib/fila-tem-algo.ts) cobre este recorte. Um
+    // ramo novo que AUMENTE o que entra (outra data, outro carimbo) tem de
+    // entrar lá também, senão a fila pula o pedido.
     const where: any = {
       status: { notIn: ["CRIANDO_IA", "AGUARDANDO_PAGAMENTO", ...STATUS_CANCELADOS] },
       franchiseeId,

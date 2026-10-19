@@ -14,6 +14,12 @@ export const ACTIVE_STATUSES = ["NOVO", "CRIANDO_IA", "ACEITO", "PREPARANDO", "P
 /** Teto de idade do pedido "em andamento" que ignora o período (ver o OR abaixo). */
 export const DIAS_ATIVO_SEM_PERIODO = 7;
 
+/**
+ * ATENÇÃO: `idsQueMudaram` (abaixo) tem de cobrir este filtro inteiro — a rota
+ * responde "nada mudou" sem consultar quando ele volta vazio. Ramo novo aqui
+ * com outra data (além de createdAt e scheduledDatetime) = ampliar lá também
+ * (scripts/teste-poll-nada-mudou.ts).
+ */
 export function filtroDoFeed({
   validFranchiseeIds,
   from,
