@@ -1,6 +1,7 @@
 import { segredoObrigatorio } from "./segredos";
 import { paraEnvioWhatsApp } from "./telefone";
 import { lerMemoria, textoDoAvisoDeMemoria } from "./memoria-do-servidor";
+import { descricaoDaInstancia } from "./instancia";
 /**
  * src/lib/server-monitor.ts
  * Sistema de monitoramento interno com alertas via WhatsApp.
@@ -205,6 +206,9 @@ export async function runHealthCheck(): Promise<{
       `🚨 *ALERTA FIREHUB*`,
       `Status: ${status.toUpperCase()}`,
       `Hora: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`,
+      // Qual servidor mediu (lib/instancia.ts): com dois vivos, o de memória
+      // é de um só — e o Douglas precisa saber em qual olhar.
+      `Instância: ${descricaoDaInstancia()}`,
       ``,
       ...avisar,
       ``,
@@ -238,6 +242,7 @@ export async function notifyServerBoot() {
     `Servidor reiniciou com sucesso!`,
     `Hora: ${new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })}`,
     `Memória: ${heapMB}MB`,
+    `Instância: ${descricaoDaInstancia()}`,
     ``,
     `🔗 https://firehubfood.com.br`,
   ].join("\n");

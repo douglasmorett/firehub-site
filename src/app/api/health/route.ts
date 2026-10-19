@@ -11,6 +11,7 @@ import { estadoDoNominatim } from "@/lib/geocoding";
 import { sondarNominatim, estadoDaFilaDoMapa, estadoDoGoogle } from "@/lib/geocodificacao-servidor";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { lerMemoria } from "@/lib/memoria-do-servidor";
+import { instancia, shaDaVersao } from "@/lib/instancia";
 
 export const dynamic = "force-dynamic";
 
@@ -209,6 +210,11 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(
     {
       status: allOk ? "healthy" : "degraded",
+      // Qual processo respondeu e de qual commit (lib/instancia.ts): com dois
+      // containers vivos (deploy, ou A e B atrás do balanceador) é o que diz
+      // se o deploy novo já está no ar e em quem.
+      instancia: instancia(),
+      sha: shaDaVersao(),
       uptime: uptimeSeconds,
       memory: `${heapUsedMB}MB / ${heapTotalMB}MB`,
       // Nível, piso e teto de verdade (lib/memoria-do-servidor.ts).
