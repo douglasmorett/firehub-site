@@ -33,6 +33,8 @@ import { decifrar } from "@/lib/cofre";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { vaiParaALogistica, STATUS_CONFIRMADOS, STATUS_EM_ROTA } from "./pedido";
 import { assinaturaDoWebhook } from "./credenciais";
+import { pegarVez, soltarVez } from "@/lib/vez";
+import { idDaInstancia } from "@/lib/instancia";
 
 // ── Integração ────────────────────────────────────────────────────────────────
 
@@ -374,15 +376,29 @@ export async function enviarWebhooksPendentes(integ: Integracao, opcoes: { envia
   return log;
 }
 
-/** Lojas com ciclo no ar neste processo: o cron e a ação da logística não mandam o mesmo webhook duas vezes. */
+/**
+ * Lojas com ciclo no ar neste processo: o cron e a ação da logística não
+ * mandam o mesmo webhook duas vezes. Guarda local e barata — vale mesmo com o
+ * banco soluçando e para ciclo que passe do minuto da vez abaixo.
+ */
 const CICLOS_NO_AR = new Set<string>();
+/** A vez da loja entre servidores: ciclo mais longo que isto perde a exclusividade. */
+const VEZ_DO_CICLO_MS = 60_000;
 
 /** Varre e envia uma loja — o que o cron e as ações chamam. Nunca lança. */
 export async function cicloDaLoja(integ: Integracao, temTempo?: () => boolean): Promise<string[]> {
   const log: string[] = [];
   if (CICLOS_NO_AR.has(integ.id)) return log;
   CICLOS_NO_AR.add(integ.id);
+  // Entre servidores (o container velho e o novo no deploy, ou A e B): a vez
+  // da loja no banco (lib/vez.ts). Dono por ciclo, e não por servidor, para
+  // que nem o mesmo processo "renove" a vez de um ciclo que ainda está no ar.
+  const chave = `od-saida:${integ.id}`;
+  const dono = `${idDaInstancia()}#${crypto.randomUUID().slice(0, 8)}`;
+  let pegou = false;
   try {
+    pegou = await pegarVez(chave, VEZ_DO_CICLO_MS, { dono });
+    if (!pegou) return log;
     const n = await varrerLoja(integ);
     if (n > 0) log.push(`${n} evento(s) novo(s)`);
     log.push(...(await enviarWebhooksPendentes(integ, { temTempo })));
@@ -390,6 +406,7 @@ export async function cicloDaLoja(integ: Integracao, temTempo?: () => boolean): 
     log.push(`❌ ${e?.message || e}`);
   } finally {
     CICLOS_NO_AR.delete(integ.id);
+    if (pegou) await soltarVez(chave, dono);
   }
   return log;
 }
