@@ -147,9 +147,12 @@ export function totaisDoAcertoDoMotoboy(o: { diarias: number; entregas: number; 
 export type OpcoesDoAcerto = {
   /** Débito, crédito e voucher num quadrado só ("Cartão / voucher") na conferência. */
   juntarCartaoEVale: boolean;
+  /** Atalho "Fechamento da semana anterior" (segunda a domingo) no filtro.
+   *  A Hakim Centro fecha assim e paga na quarta (Douglas, 19/10/2026). Liga por loja no banco. */
+  fechamentoSemanal: boolean;
 };
 
-export const OPCOES_DO_ACERTO_PADRAO: OpcoesDoAcerto = { juntarCartaoEVale: false };
+export const OPCOES_DO_ACERTO_PADRAO: OpcoesDoAcerto = { juntarCartaoEVale: false, fechamentoSemanal: false };
 
 /** Lê `deliveryConfig.acertoDoMotoboy`. Ausente ou estranho = padrão (desligado). */
 export function lerOpcoesDoAcerto(deliveryConfig: unknown): OpcoesDoAcerto {
@@ -157,7 +160,7 @@ export function lerOpcoesDoAcerto(deliveryConfig: unknown): OpcoesDoAcerto {
     ? (deliveryConfig as Record<string, unknown>).acertoDoMotoboy
     : null;
   const o = cfg && typeof cfg === "object" && !Array.isArray(cfg) ? (cfg as Record<string, unknown>) : {};
-  return { juntarCartaoEVale: o.juntarCartaoEVale === true };
+  return { juntarCartaoEVale: o.juntarCartaoEVale === true, fechamentoSemanal: o.fechamentoSemanal === true };
 }
 
 /** As caixas que a opção junta: as três da maquininha. */

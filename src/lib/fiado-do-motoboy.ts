@@ -167,6 +167,8 @@ export type FiadoDoMotoboy = {
   /** Tudo o que ele deve hoje (todos os fiados menos as baixas). */
   saldoEmAberto: number;
   lancamentos: { id: string; em: string; numero: number | null; valor: number; descricao: string }[];
+  /** O cadastro do fiado onde o acerto lança a baixa quando abate o fiado (lib/acerto-pago.ts). */
+  cadastroId: string;
 };
 
 /** O fiado de cada motoboy no período, por id do motoboy. */
@@ -220,6 +222,7 @@ export async function fiadoDosMotoboys(opts: {
       resultado.set(mb.id, {
         totalNoPeriodo: centavos(pedidos.reduce((t, p) => t + (p.totalAmount || 0), 0) + mesas.reduce((t, m) => t + m.valor, 0)),
         saldoEmAberto,
+        cadastroId: ids[0],
         lancamentos: [...pedidos.map((p) => ({
           id: p.id,
           em: p.createdAt.toISOString(),

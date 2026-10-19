@@ -14,6 +14,7 @@ import { acharPedidoNoAcerto } from "@/lib/achar-pedido-no-acerto";
 import { lerOpcoesDoAcerto, quadradoDaCaixa, type QuadradoDoAcerto } from "@/lib/ajustes-do-acerto-regras";
 import { AvisoNoTopo, type Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
 import { DiariasPorDia, OpcaoCartaoEVale, PendenciasDoMotoboy } from "./AjustesDoAcerto";
+import AcertoPago from "./AcertoPago";
 
 type Motoboy = { id: string; name: string; paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; active: boolean };
 
@@ -161,6 +162,15 @@ function getRange(period: string, tz = "America/Sao_Paulo") {
     start.setDate(spNow.getDate() - spNow.getDay());
     return { from: formatarYMD(start), to: hoje };
   }
+  // Fechamento semanal: segunda a domingo da semana passada (opção da loja,
+  // lib/ajustes-do-acerto-regras.ts → fechamentoSemanal).
+  if (period === "lastweek") {
+    const segunda = new Date(spNow);
+    segunda.setDate(spNow.getDate() - ((spNow.getDay() + 6) % 7) - 7);
+    const domingo = new Date(segunda);
+    domingo.setDate(segunda.getDate() + 6);
+    return { from: formatarYMD(segunda), to: formatarYMD(domingo) };
+  }
   if (period === "month") {
     const start = new Date(spNow.getFullYear(), spNow.getMonth(), 1);
     return { from: formatarYMD(start), to: hoje };
@@ -179,6 +189,7 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
   const fecharAviso = useCallback(() => setAviso(null), []);
   // Débito, crédito e voucher num quadrado só — opção da loja, desligada por padrão.
   const [juntarCartao, setJuntarCartao] = useState(() => lerOpcoesDoAcerto(deliveryConfig).juntarCartaoEVale);
+  const fechamentoSemanal = lerOpcoesDoAcerto(deliveryConfig).fechamentoSemanal;
   // A lista de diárias por dia aberta no cartão de cada motoboy.
   const [diariasAbertas, setDiariasAbertas] = useState<Record<string, boolean>>({});
   // As caixas de data nascem preenchidas com o período selecionado. O lojista
@@ -417,7 +428,7 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
           <div>
             <label style={{ fontSize: "0.78rem", fontWeight: 700, color: "#64748B", display: "block", marginBottom: 6, textTransform: "uppercase" }}>Período</label>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {PERIODS.map(p => (
+              {[...PERIODS, ...(fechamentoSemanal ? [{ label: "Fechamento da semana anterior", value: "lastweek" }] : [])].map(p => (
                 <button key={p.value} onClick={() => escolherPeriodo(p.value)}
                   style={{ padding: "6px 14px", borderRadius: 20, border: `1.5px solid ${period === p.value ? "#C92E09" : "#E2E8F0"}`, background: period === p.value ? "#C92E09" : "#fff", color: period === p.value ? "#fff" : "#475569", fontWeight: 600, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}>
                   {p.label}
@@ -927,6 +938,22 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
                       <span>TOTAL {filtrado ? "(SÓ TAXAS DAS INTEGRAÇÕES MARCADAS)" : calcMode === "fee_only" ? "(SÓ TAXAS)" : "(DIÁRIA + TAXAS)"}</span>
                       <span style={{ color: "#C92E09" }}>{fmt(payAmount)}</span>
                     </div>
+                    {!filtrado && (
+                      <AcertoPago
+                        motoboyId={r.motoboy.id}
+                        nome={r.motoboy.name}
+                        de={customFrom}
+                        ate={customTo}
+                        diasTrabalhados={r.stats.diasTrabalhados || []}
+                        diasPagos={r.diasPagos || []}
+                        acertos={r.acertosPagos || []}
+                        total={payAmount}
+                        fiadoEmAberto={r.fiado?.saldoEmAberto || 0}
+                        tz={tzLoja}
+                        avisar={setAviso}
+                        aoMudar={aposAjuste}
+                      />
+                    )}
                   </div>
                 </div>
 

@@ -45,6 +45,7 @@ import { HORA_DE_VIRADA_DO_EXPEDIENTE } from "@/lib/fuso";
 import { configDaLoja, descontoDoAcerto, lanchesDoPeriodo, type LancheDoHistorico } from "@/lib/lanche-da-equipe";
 import { fiadoDosMotoboys } from "@/lib/fiado-do-motoboy";
 import { ajustesDoPeriodo, type AjustesDoPeriodo } from "@/lib/ajustes-do-acerto";
+import { acertosDoPeriodo, type AcertoPago } from "@/lib/acerto-pago";
 import { diariasDoPeriodo, somaDasDiarias, totalDasPendencias, totaisDoAcertoDoMotoboy } from "@/lib/ajustes-do-acerto-regras";
 
 const VIRADA_MS = HORA_DE_VIRADA_DO_EXPEDIENTE * 60 * 60 * 1000;
@@ -175,6 +176,9 @@ export async function montarRelatorioDosEntregadores(opts: {
   const diaAte = diaDoExpediente(toDate, tz);
   const ajustes: AjustesDoPeriodo = await ajustesDoPeriodo({ lojaId, motoboyIds, de: diaDe, ate: diaAte })
     .catch(() => ({ diarias: new Map(), pendencias: new Map() }));
+  // Os acertos já pagos que alcançam algum dia do período (lib/acerto-pago.ts).
+  const acertosPagos: Map<string, AcertoPago[]> = await acertosDoPeriodo({ lojaId, motoboyIds, de: diaDe, ate: diaAte })
+    .catch(() => new Map());
 
   // Agrupar pedidos em memória por motoboyId
   const ordersByMotoboy: Record<string, typeof allOrders> = {};
@@ -301,6 +305,9 @@ export async function montarRelatorioDosEntregadores(opts: {
       pendencias,
       /** O fiado dele no período e o saldo em aberto (não descontado do acerto). */
       fiado: fiadoPorMotoboy.get(mb.id) || null,
+      /** Acertos já pagos que alcançam o período, e quais dias trabalhados deste período eles cobrem. */
+      acertosPagos: acertosPagos.get(mb.id) || [],
+      diasPagos: resumo.diasTrabalhados.filter((d: string) => (acertosPagos.get(mb.id) || []).some((a) => a.dias.includes(d))),
       /** Os lanches do período (o motoboy confere dia, itens e o que foi descontado). */
       lanches: lanches.filter((l) => !l.cancelado).map((l) => ({
         pedidoId: l.pedidoId, numero: l.numero, dia: l.dia, em: l.em, levar: l.levar,
