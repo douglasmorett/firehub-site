@@ -4,9 +4,9 @@
  * (lib/app-da-loja/perfis.ts) e isto só escolhe. Teste em
  * scripts/teste-meu-aplicativo.ts.
  *
- * Todo segmento é um RECORTE de quem recebe notificação: permitiu no celular,
- * aceitou o termo do app (que avisa das promoções — Apple 4.5.4) e não
- * desligou as promoções na aba Loja. Fora disso, ninguém entra em segmento nenhum.
+ * Todo segmento é um RECORTE de quem recebe notificação: permitiu no celular
+ * e aceitou o termo do app (que avisa das promoções — Apple 4.5.4). Fora
+ * disso, ninguém entra em segmento nenhum.
  *
  * O aparelho se liga ao cliente pelos pedidos feitos nele (o telefone do
  * pedido). Aparelho que nunca pediu só entra em "todos", "ativos agora",
@@ -30,7 +30,7 @@ export type TipoDeSegmento =
   | "aniversariantes";
 
 export const SEGMENTOS: { tipo: TipoDeSegmento; rotulo: string; explica: string; comValor?: "produto" | "categoria" }[] = [
-  { tipo: "todos", rotulo: "Todos", explica: "Todos que recebem notificação (permitiram no celular e não desligaram as promoções)." },
+  { tipo: "todos", rotulo: "Todos", explica: "Todos que recebem notificação (aceitaram o termo e permitiram no celular)." },
   { tipo: "ativosAgora", rotulo: "Com o app aberto agora", explica: "Abriram o app nos últimos 5 minutos." },
   { tipo: "ativos30", rotulo: "Ativos no mês", explica: "Abriram o app nos últimos 30 dias." },
   { tipo: "sumidos30", rotulo: "Sumidos há 30 dias", explica: "Já pediram, mas não pedem há 30 dias ou mais (em nenhum canal)." },

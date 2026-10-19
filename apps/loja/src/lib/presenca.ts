@@ -9,8 +9,7 @@
  *   telefone, não é o id do aparelho, e some quando o app é desinstalado;
  * - o token de aviso, SÓ se o cliente já deixou avisar (aqui não se pede
  *   permissão nenhuma);
- * - se recebe promoção (termo aceito e a chave da aba Loja ligada) e a
- *   versão do termo aceita.
+ * - se recebe promoção (termo aceito) e a versão do termo aceita.
  *
  * Nunca lança e nunca trava a tela: sem internet, o aviso só não chega.
  */
@@ -28,30 +27,22 @@ export const BATIDA_MS = 4 * 60 * 1000;
 
 /**
  * UMA permissão só (Douglas, 18/10/2026: "todo mundo que tem o app tem que
- * receber notificação"). Quem aceitou o termo (lib/termo.ts) e permitiu a
- * notificação no celular recebe pedido E promoção. A chave "Promoções e
- * novidades" da aba Loja tira só a promoção (Apple 4.5.4: opção de sair).
+ * receber notificação" e "nada de botão de tirar notificação"). Quem aceitou o
+ * termo (lib/termo.ts) e permitiu a notificação no celular recebe pedido E
+ * promoção. Sair = desligar as notificações nos ajustes do celular (a linha
+ * "Notificações" da aba Loja abre os ajustes — Apple 4.5.4).
+ *
+ * A única exceção é quem tocou "Agora não" na tela ANTIGA de promoções (antes
+ * do termo): foi uma escolha explícita e continua valendo — esse celular
+ * recebe só os avisos do pedido.
  */
-const CHAVE_DESLIGADAS = "loja.promocoes.desligadas";
-/** A resposta da tela antiga ("Quero receber" / "Agora não"), de antes do termo. */
 const CHAVE_ANTIGA = "loja.promocoes";
 
-/** O cliente desligou as promoções na aba Loja? Quem disse "Agora não" na tela antiga continua desligado. */
-export async function promocoesDesligadas(): Promise<boolean> {
+export async function recusouPromocaoNaTelaAntiga(): Promise<boolean> {
   try {
-    const v = await SecureStore.getItemAsync(CHAVE_DESLIGADAS);
-    if (v === "sim" || v === "nao") return v === "sim";
     return (await SecureStore.getItemAsync(CHAVE_ANTIGA)) === "nao";
   } catch {
     return false;
-  }
-}
-
-export async function desligarPromocoes(desligar: boolean): Promise<void> {
-  try {
-    await SecureStore.setItemAsync(CHAVE_DESLIGADAS, desligar ? "sim" : "nao");
-  } catch {
-    /* sem onde guardar: vale até fechar o app */
   }
 }
 
@@ -91,7 +82,7 @@ export async function avisarToque(envioId: unknown): Promise<void> {
 /** Avisa o servidor. `batida` = segue aberto (não conta como abertura nova). */
 export async function avisarAbertura(batida = false): Promise<void> {
   try {
-    const [instalacaoId, pushToken, desligadas, termo] = await Promise.all([idDaInstalacao(), tokenDoAparelho(false), promocoesDesligadas(), termoAceito()]);
+    const [instalacaoId, pushToken, recusou, termo] = await Promise.all([idDaInstalacao(), tokenDoAparelho(false), recusouPromocaoNaTelaAntiga(), termoAceito()]);
     // Promoção só depois do termo atual aceito; antes disso o servidor não muda nada.
     const comTermo = termo === VERSAO_DO_TERMO;
     await fetch(urlDoSite("/api/app-da-loja/abertura"), {
@@ -104,7 +95,7 @@ export async function avisarAbertura(batida = false): Promise<void> {
         plataforma: Platform.OS,
         versaoDoApp: Constants.expoConfig?.version ?? null,
         app: marca.bundleId,
-        promocoes: comTermo ? !desligadas : null,
+        promocoes: comTermo ? !recusou : null,
         termoVersao: termo,
         batida,
       }),

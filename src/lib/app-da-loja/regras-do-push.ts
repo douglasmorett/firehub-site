@@ -22,9 +22,13 @@
  * "Todo mundo que tem o app tem que receber notificação push." Recebe
  * promoção quem: abriu a versão do app com o TERMO DE USO
  * (apps/loja/src/lib/termo.ts), aceitou, e tocou em "Permitir" no pedido de
- * notificação do celular que vem logo depois — sem desligar as promoções na
- * aba Loja depois. O termo diz em destaque que as notificações incluem
- * promoções: é o aceite explícito da Apple 4.5.4 (texto no app + opção de sair).
+ * notificação do celular que vem logo depois. O termo diz em destaque que as
+ * notificações incluem promoções: é o aceite explícito da Apple 4.5.4. Sair
+ * é desligar as notificações nos ajustes do celular (a aba Loja do app tem a
+ * linha que abre os ajustes); não há chave para tirar só a promoção
+ * ("nada de botão de tirar notificação", Douglas, 18/10/2026). A exceção é
+ * quem tocou "Agora não" na tela ANTIGA de promoções: escolha explícita,
+ * continua sem promoção.
  *
  * O celular só deixa mandar para quem tocou em "Permitir": sem token, não há
  * como. E a notificação nunca é obrigatória para usar o app (4.5.4).
@@ -96,9 +100,9 @@ export type AparelhoDaBase = {
   abriuApp: boolean;
   /** Ultimo aviso de abertura (null = só conhecido por pedido). */
   ultimaAbertura: Date | null;
-  /** Recebe promoção: tem token, aceitou o termo e não desligou. */
+  /** Recebe promoção: tem token e aceitou o termo (fora quem recusou na tela antiga). */
   promocoes: boolean;
-  /** Já respondeu (termo aceito ou chave mexida) — para separar "desligou" de "ainda não aceitou". */
+  /** Já respondeu (termo aceito ou a tela antiga) — separa "recusou na tela antiga" de "ainda não aceitou". */
   respondeu: boolean;
 };
 
@@ -162,10 +166,10 @@ export type ContagemDaBase = {
   ativos7: number;
   ativos30: number;
   novosNoMes: number;
-  /** Permitiram notificação no celular, aceitaram o termo e não desligaram as promoções: quem a notificação alcança. */
+  /** Permitiram notificação no celular e aceitaram o termo: quem a notificação alcança. */
   recebemNotificacao: number;
-  /** Têm notificação permitida, mas desligaram as promoções na aba Loja (ou disseram "agora não" na tela antiga). */
-  desligaramPromocoes: number;
+  /** Têm notificação permitida, mas tocaram "Agora não" na tela ANTIGA de promoções (escolha explícita, poucos). */
+  recusaramNaTelaAntiga: number;
   /** Abriram o app e não permitiram notificação no celular (o sistema não deixa mandar). */
   semPermissao: number;
   /** Têm notificação permitida mas ainda não aceitaram o termo (abrem a versão nova e passam a receber). */
@@ -185,7 +189,7 @@ export function contarBase(
 ): ContagemDaBase {
   const limiteAgora = marcos.agora.getTime() - ATIVO_AGORA_MS;
   let ativosAgora = 0, ativos7 = 0, ativos30 = 0, novosNoMes = 0;
-  let recebemNotificacao = 0, desligaramPromocoes = 0, semPermissao = 0, aguardandoTermo = 0, versaoAntiga = 0;
+  let recebemNotificacao = 0, recusaramNaTelaAntiga = 0, semPermissao = 0, aguardandoTermo = 0, versaoAntiga = 0;
   for (const a of base) {
     if (a.ultimaAbertura && a.ultimaAbertura.getTime() >= limiteAgora) ativosAgora++;
     if (a.ultimo >= marcos.inicio7) ativos7++;
@@ -194,10 +198,10 @@ export function contarBase(
     if (!a.abriuApp) versaoAntiga++;
     else if (!a.pushToken) semPermissao++;
     else if (a.promocoes) recebemNotificacao++;
-    else if (a.respondeu) desligaramPromocoes++;
+    else if (a.respondeu) recusaramNaTelaAntiga++;
     else aguardandoTermo++;
   }
-  return { instalacoes: base.length, ativosAgora, ativos7, ativos30, novosNoMes, recebemNotificacao, desligaramPromocoes, semPermissao, aguardandoTermo, versaoAntiga };
+  return { instalacoes: base.length, ativosAgora, ativos7, ativos30, novosNoMes, recebemNotificacao, recusaramNaTelaAntiga, semPermissao, aguardandoTermo, versaoAntiga };
 }
 
 /** Os tokens que o envio alcança — quem recebe notificação (ver acima), sem repetir. */

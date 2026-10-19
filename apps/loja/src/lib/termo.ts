@@ -6,10 +6,12 @@
  *   "Push Notifications must not be required for the app to function" — quem
  *   aceita o termo e nega a permissão no celular usa o app normalmente.
  * - O termo diz, em destaque, que as notificações do app incluem PROMOÇÕES e
- *   como desligar só elas. Logo depois do "Aceito" o app abre o pedido de
- *   permissão do sistema: o texto do termo + o toque em "Permitir" são o
- *   aceite explícito de promoção que a 4.5.4 pede (consent language no app +
- *   opção de sair na aba Loja). Ver também /privacidade-app no site.
+ *   que dá para desligá-las nos ajustes do celular. Logo depois do "Aceito" o
+ *   app abre o pedido de permissão do sistema: o texto do termo + o toque em
+ *   "Permitir" são o aceite explícito de promoção que a 4.5.4 pede (consent
+ *   language no app); a opção de sair é a linha "Notificações" da aba Loja,
+ *   que abre os ajustes do celular. Não há chave para tirar só a promoção
+ *   (Douglas, 18/10/2026). Ver também /privacidade-app no site.
  * - Mudou o texto de um jeito que importa → suba VERSAO_DO_TERMO: o app pede o
  *   aceite de novo na próxima abertura. A versão aceita vai ao servidor junto
  *   com a abertura (AppDaLojaAparelho.termoVersao).
@@ -36,8 +38,8 @@ export function textoDoTermo(loja = marca.nome): TrechoDoTermo[] {
       destaque: true,
       texto:
         `O app envia notificações com o andamento do seu pedido e também com promoções e novidades da ${loja}. ` +
-        `Para recebê-las, toque em “Permitir” quando o celular perguntar. Você pode desligar só as promoções quando quiser, ` +
-        `na aba Loja › Promoções e novidades, ou todas as notificações nos ajustes do celular. O app funciona normalmente sem notificações.`,
+        `Para recebê-las, toque em “Permitir” quando o celular perguntar. ` +
+        `Você pode desligar as notificações a qualquer momento nos ajustes do celular. O app funciona normalmente sem notificações.`,
     },
     {
       titulo: "Seus dados",

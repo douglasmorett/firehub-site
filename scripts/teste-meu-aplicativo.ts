@@ -78,7 +78,7 @@ confere("não permitiram no celular: inst-2 (abriu, sem token)", c.semPermissao,
 confere("com token mas ainda sem o termo: inst-3", c.aguardandoTermo, 1);
 confere("versão antiga (só pedido): fica de fora da promoção", c.versaoAntiga, 1);
 const desligou = contarBase(juntarBase([{ ...aberturas[2], promocoesRespondidoEm: dias(1) }], []), marcos);
-confere("token, promoção desligada e respondeu: desligaram as promoções", [desligou.desligaramPromocoes, desligou.aguardandoTermo], [1, 0]);
+confere("token, sem promoção e respondeu (Agora não da tela antiga): conta à parte", [desligou.recusaramNaTelaAntiga, desligou.aguardandoTermo], [1, 0]);
 
 // ── Público ─────────────────────────────────────────────────────────────────
 confere("público todos = quem aceitou e tem token", tokensDoPublico(base, "todos", marcos.inicio30).sort(), [T(1), T(5)]);

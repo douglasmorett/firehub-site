@@ -12,7 +12,7 @@
  */
 
 export const JANELA_DE_ATRIBUICAO_MS = 24 * 60 * 60 * 1000;
-/** Quanto tempo depois do envio um "desligou as promoções"/"desinstalou" conta para ele. */
+/** Quanto tempo depois do envio um "desinstalou o app" conta para ele. */
 export const JANELA_DE_DESLIGAMENTO_MS = 48 * 60 * 60 * 1000;
 
 export type EnvioParaAtribuir = { id: string; enviadoEm: Date; destinos: Set<string> };
@@ -40,7 +40,8 @@ export function atribuirPedidos(envios: EnvioParaAtribuir[], pedidos: PedidoPara
 }
 
 /**
- * Quantos dos que receberam desligaram as promoções ou desinstalaram o app em
+ * Quantos dos que receberam desinstalaram o app (ou, nos poucos da tela antiga,
+ * desligaram as promoções) em
  * até 48 h. É o "efeito colateral" do envio — a loja vê o preço de mandar demais.
  */
 export function desligaramDepois(enviadoEm: Date, destinos: Set<string>, eventos: { chave: string; em: Date }[]): number {
