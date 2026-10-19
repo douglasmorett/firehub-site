@@ -9,7 +9,8 @@ import { useEffect, useRef } from "react";
 import { AppState } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
-import { PerguntaDasPromocoes } from "@/components/PerguntaDasPromocoes";
+import { LembreteDaNotificacao } from "@/components/LembreteDaNotificacao";
+import { TermoDeUso } from "@/components/TermoDeUso";
 import { abrirNoCardapio } from "@/lib/abrir-no-cardapio";
 import { prepararCanais } from "@/lib/avisos";
 import { BATIDA_MS, avisarAbertura, avisarToque } from "@/lib/presenca";
@@ -77,7 +78,9 @@ export default function Raiz() {
         <Stack.Screen name="(abas)" />
         <Stack.Screen name="pedido/[id]" options={{ presentation: "card" }} />
       </Stack>
-      <PerguntaDasPromocoes />
+      {/* O termo da 1ª abertura (obrigatório; a notificação, não) e o lembrete único depois do 1º pedido. */}
+      <TermoDeUso />
+      <LembreteDaNotificacao />
     </SafeAreaProvider>
   );
 }

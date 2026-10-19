@@ -16,11 +16,15 @@ export const metadata: Metadata = {
  *   "usar minha localização" no endereço;
  * - desde 17/10/2026 (tela Meu aplicativo da loja): o app avisa quando abre,
  *   com um id sorteado na instalação (AppDaLojaAparelho), e a loja pode mandar
- *   promoção por notificação SÓ a quem aceitou no app (lib/app-da-loja/
- *   notificacoes.ts) — a chave "Promoções e novidades" na aba Loja desliga.
+ *   promoção por notificação (lib/app-da-loja/notificacoes.ts);
+ * - desde 18/10/2026: UMA permissão só. Termo de uso obrigatório na 1ª
+ *   abertura (apps/loja/src/lib/termo.ts) que avisa das promoções em destaque;
+ *   logo depois, o pedido de notificação do sistema. "Permitir" = pedido +
+ *   promoção (é o aceite explícito da Apple 4.5.4); a chave "Promoções e
+ *   novidades" na aba Loja tira só a promoção. Notificação nunca é obrigatória.
  */
 
-const ATUALIZADO = "17 de outubro de 2026";
+const ATUALIZADO = "18 de outubro de 2026";
 
 export default function PrivacidadeDoApp() {
   const secao: React.CSSProperties = { maxWidth: 780, margin: "0 auto", padding: "0 1.25rem" };
@@ -55,42 +59,37 @@ export default function PrivacidadeDoApp() {
           <li><b>CPF</b> (só quando você informa): para gerar o Pix e para a nota fiscal.</li>
         </ul>
 
-        <h2 style={h2}>Avisos do pedido</h2>
+        <h2 style={h2}>Termo de uso e notificações</h2>
         <div style={caixa}>
-          <b>Para quê:</b> avisar no seu celular quando o pedido é aceito, sai para entrega, está chegando, fica pronto,
-          é entregue ou é cancelado.
+          <b>Termo de uso:</b> na primeira vez que você abre o app, ele mostra um termo curto, que você aceita
+          para usar o app. Quando o termo muda, o app mostra de novo. O termo diz, em destaque, que o app envia
+          notificações do seu pedido e também promoções e novidades da loja.
           <br /><br />
-          <b>Como:</b> se você permitir os avisos, o app gera um identificador do aparelho para notificações
-          (serviço do Expo, que usa o Firebase no Android e o serviço da Apple no iPhone) e o liga aos
-          pedidos feitos neste celular. Esse identificador não diz quem você é.
+          <b>Notificações — pedido e promoções, com uma permissão só:</b> logo depois do termo, o celular pergunta
+          se o app pode enviar notificações. Se você tocar em <b>“Permitir”</b>, recebe os avisos do pedido (aceito,
+          saiu para entrega, chegando, pronto, entregue, cancelado) e as ofertas e novidades da loja dona do app —
+          por exemplo, uma promoção do dia que abre o cardápio ou um produto dentro do app. Se não permitir, o app
+          funciona normalmente: <b>notificação nunca é obrigatória</b>. Quem não permitiu é lembrado uma única vez,
+          depois do primeiro pedido pelo app.
           <br /><br />
-          <b>Desligar:</b> nos ajustes de notificação do celular, a qualquer momento.
-        </div>
-
-        <h2 style={h2}>Promoções e novidades (só se você aceitar)</h2>
-        <div style={caixa}>
-          <b>Para quê:</b> a loja pode mandar ofertas e novidades dela por notificação — por exemplo, uma
-          promoção do dia que abre o cardápio ou um produto dentro do app.
+          <b>Como:</b> com a sua permissão, o app gera um identificador do aparelho para notificações (serviço do
+          Expo, que usa o Firebase no Android e o serviço da Apple no iPhone) e o liga aos pedidos feitos neste
+          celular. Esse identificador não diz quem você é.
           <br /><br />
-          <b>Quando:</b> só se você tocar em <b>“Ativar notificações”</b> na tela de boas-vindas do app, ou ligar a
-          chave <b>Promoções e novidades</b> na aba Loja. Se você tocar em “Agora não”, o app funciona normal e
-          pergunta de novo uma única vez, depois do seu primeiro pedido pelo app. Sem o seu sim, o app nunca
-          manda promoção — só os avisos do seu pedido.
+          <b>Sair só das promoções:</b> desligue a chave <b>Promoções e novidades</b> na aba Loja (vale na hora) — os
+          avisos do pedido continuam. <b>Sair de tudo:</b> desligue as notificações do app nos ajustes do celular.
           <br /><br />
-          <b>Sair:</b> desligue a chave <b>Promoções e novidades</b> na aba Loja (vale na hora) ou as
-          notificações do app nos ajustes do celular. Os avisos do pedido continuam funcionando se você
-          deixar as notificações ligadas.
-          <br /><br />
-          Promoção vem só da loja dona do app, nunca de outras empresas. A loja pode escolher para quem manda
-          com base nos pedidos feitos nela (por exemplo, quem não pede há um mês ou quem já pediu pizza) — sem
-          ver quem é cada pessoa: ela vê só quantos aparelhos o grupo tem.
+          Promoção vem só da loja dona do app, nunca de outras empresas. A loja pode escolher para quem manda com
+          base nos pedidos feitos nela (por exemplo, quem não pede há um mês ou quem já pediu pizza) — sem ver quem
+          é cada pessoa: ela vê só quantos aparelhos o grupo tem. Celular que permitiu notificação numa versão
+          antiga do app, só para os avisos do pedido, não recebe promoção até aceitar o termo da versão nova.
         </div>
 
         <h2 style={h2}>Uso do app pela loja</h2>
         <p style={p}>
           Quando o app abre (e de poucos em poucos minutos enquanto fica aberto), ele avisa o servidor com um
           <b> número sorteado na instalação</b>, a versão do app, se é Android ou iPhone, o identificador de
-          notificação (se você deixou) e a sua resposta sobre as promoções. Com isso a loja vê, no painel dela,
+          notificação (se você deixou), a versão do termo que você aceitou e se as promoções estão ligadas. Com isso a loja vê, no painel dela,
           números somados — quantos celulares têm o app, quantos estão com ele aberto agora, quantos pedidos
           vieram pelo app, quantas pessoas tocaram em cada notificação e quantos pedidos vieram depois dela. Esse número sorteado não é o seu telefone nem o número de série do aparelho, não diz
           quem você é e some quando você desinstala o app. Quando o app é desinstalado, o identificador de
@@ -112,7 +111,7 @@ export default function PrivacidadeDoApp() {
         <h2 style={h2}>O que fica no seu celular</h2>
         <p style={p}>
           A lista dos pedidos feitos pelo app (só o número interno de cada pedido, para a aba Pedidos), o
-          número sorteado da instalação, a sua resposta sobre as promoções e o carrinho que você ainda não
+          número sorteado da instalação, a versão do termo aceita, se as promoções estão ligadas e o carrinho que você ainda não
           fechou. Tudo some quando você desinstala o app.
         </p>
 

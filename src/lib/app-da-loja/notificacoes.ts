@@ -5,8 +5,9 @@
  *
  * - Só pela API do Expo, em lotes de 100 (como lib/app-da-loja/aparelhos.ts).
  *   NUNCA pelo WhatsApp (memória numero-do-firehub-so-responde).
- * - Só para os aparelhos que ACEITARAM promoção no app (Apple 4.5.4), e
- *   dentro deles o SEGMENTO escolhido (sumidos, fiéis, quem pediu X…).
+ * - Só para quem recebe notificação — permitiu no celular, aceitou o termo do
+ *   app e não desligou as promoções (regras-do-push.ts) — e, dentro deles, o
+ *   SEGMENTO escolhido (sumidos, fiéis, quem pediu X…).
  * - Sem limite por dia (Douglas, 17/10/2026): a tela avisa a partir do 3º e
  *   o histórico mostra quantos desligaram as promoções depois de cada envio.
  *   Proteções técnicas: confirmação na tela, o mesmo texto duas vezes em
@@ -270,7 +271,7 @@ export async function criarEnvio(p: PedidoDeEnvio, agora: Date = new Date()): Pr
   if (!agendadoPara) {
     const { tokens } = await destinosDoSegmento(app, seg, agora);
     if (tokens.length === 0) {
-      return { ok: false, erro: "Ninguém desse grupo pode receber agora (é preciso ter aceitado as promoções no app). Escolha outro grupo." };
+      return { ok: false, erro: "Ninguém desse grupo pode receber agora (o celular só deixa mandar para quem permitiu notificação no app). Escolha outro grupo." };
     }
   }
 

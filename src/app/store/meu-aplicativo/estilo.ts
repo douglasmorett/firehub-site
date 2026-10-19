@@ -33,6 +33,9 @@ export const CSS = `
 .ma-hero-valor { font-size: 2rem; font-weight: 900; line-height: 1.1; margin-top: 4px; font-variant-numeric: tabular-nums; }
 .ma-hero-valor.ouro { color: var(--ma-ouro); font-size: 2.6rem; }
 .ma-hero-det { font-size: .74rem; color: #94A3B8; margin-top: 2px; }
+.ma-hero-rodape { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 18px; border-top: 1px solid rgba(255,255,255,.08); padding-top: 12px; font-size: .78rem; color: #CBD5E1; }
+.ma-hero-rodape b { color: #fff; }
+.ma-hero-explica { flex-basis: 100%; color: #94A3B8; font-size: .74rem; }
 .ma-pulso { width: 10px; height: 10px; border-radius: 50%; background: #22C55E; box-shadow: 0 0 0 0 rgba(34,197,94,.6); animation: ma-pulso 1.8s infinite; flex-shrink: 0; }
 @keyframes ma-pulso { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,.55); } 70% { box-shadow: 0 0 0 9px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
 @media (prefers-reduced-motion: reduce) { .ma-pulso { animation: none; } .ma-esqueleto { animation: none !important; } }

@@ -3,8 +3,9 @@
  *
  * O servidor manda pelo Expo (src/lib/app-da-loja/aparelhos.ts no site) para
  * os aparelhos ligados ao pedido. O app liga este celular a cada pedido feito
- * nele (registrarNoPedido) — a permissão de aviso é pedida na hora do primeiro
- * pedido, quando o cliente entende para que ela serve.
+ * nele (registrarNoPedido). A permissão é pedida logo depois do termo da
+ * primeira abertura (components/TermoDeUso.tsx) e, para quem negou, de novo na
+ * hora do pedido enquanto o sistema deixar perguntar.
  */
 import Constants from "expo-constants";
 import * as Device from "expo-device";
@@ -41,7 +42,7 @@ async function criarCanal(): Promise<void> {
   });
   await Notifications.setNotificationChannelAsync(CANAL_DE_PROMOCOES, {
     name: "Promoções e novidades",
-    description: `Ofertas e novidades da ${marca.nome}. Só chegam se você aceitou no app.`,
+    description: `Ofertas e novidades da ${marca.nome}. Dá para desligar só estas na aba Loja do app.`,
     importance: Notifications.AndroidImportance.DEFAULT,
     lightColor: marca.cor,
     sound: "default",

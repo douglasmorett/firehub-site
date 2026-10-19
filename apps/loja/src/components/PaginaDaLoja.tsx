@@ -18,7 +18,7 @@ import { ActivityIndicator, BackHandler, Pressable, StyleSheet, Text, View } fro
 import { WebView, type WebViewMessageEvent, type WebViewNavigation } from "react-native-webview";
 import type { ShouldStartLoadRequest } from "react-native-webview/lib/WebViewTypes";
 
-import { perguntarDepoisDoPedido } from "@/components/PerguntaDasPromocoes";
+import { lembrarDepoisDoPedido } from "@/components/LembreteDaNotificacao";
 import { registrarNoPedido } from "@/lib/avisos";
 import { idDaInstalacao } from "@/lib/instalacao";
 import { scriptDaInstalacao } from "@/lib/instalacao-na-pagina";
@@ -88,9 +88,9 @@ export function PaginaDaLoja({ url, aoFazerPedido }: { url: string; aoFazerPedid
       const novo = await guardarPedido({ id: msg.pedidoId, slug: String(msg.slug || "") });
       // A página de acompanhamento repete a mensagem a cada visita: liga o aviso só uma vez.
       if (novo) {
-        registrarNoPedido(msg.pedidoId).catch(() => {});
-        // Quem recusou as promoções na entrada é perguntado de novo, uma vez só, agora.
-        perguntarDepoisDoPedido().catch(() => {});
+        // O pedido abre o pedido de notificação do sistema (se ainda dá); depois,
+        // quem já tinha negado de vez é lembrado uma vez só, com o atalho para os ajustes.
+        registrarNoPedido(msg.pedidoId).catch(() => false).then(() => lembrarDepoisDoPedido()).catch(() => {});
       }
       aoFazerPedido?.(msg.pedidoId);
     },

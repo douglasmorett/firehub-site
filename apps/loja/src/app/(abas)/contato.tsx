@@ -1,6 +1,7 @@
 /**
- * A loja: como falar com ela, onde fica, os avisos do pedido e a chave das
- * promoções neste celular (Apple 4.5.4: quem aceitou promoção tem de poder sair).
+ * A loja: como falar com ela, onde fica, as notificações deste celular e, por
+ * último e sem destaque, a chave que desliga só as promoções (Apple 4.5.4:
+ * quem recebe promoção tem de poder sair).
  */
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
@@ -15,7 +16,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { estadoDosAvisos, tokenDoAparelho, type EstadoDosAvisos } from "@/lib/avisos";
 import { logoDaMarca } from "@/lib/logo-da-marca";
 import { marca } from "@/lib/marca";
-import { avisarAbertura, guardarRespostaDasPromocoes, respostaDasPromocoes } from "@/lib/presenca";
+import { avisarAbertura, desligarPromocoes, promocoesDesligadas } from "@/lib/presenca";
 
 function Linha({ icone, titulo, detalhe, aoTocar }: { icone: keyof typeof Ionicons.glyphMap; titulo: string; detalhe?: string; aoTocar: () => void }) {
   return (
@@ -42,13 +43,13 @@ const TEXTO_DOS_AVISOS: Record<EstadoDosAvisos, string> = {
 export default function Contato() {
   const topo = useSafeAreaInsets().top;
   const [avisos, setAvisos] = useState<EstadoDosAvisos>("indisponivel");
-  const [promocoes, setPromocoes] = useState(false);
+  const [promocoes, setPromocoes] = useState(true);
   const { whatsapp, telefone, instagram, endereco } = marca.contato || {};
 
   useFocusEffect(
     useCallback(() => {
       estadoDosAvisos().then(setAvisos);
-      respostaDasPromocoes().then((r) => setPromocoes(r === "sim"));
+      promocoesDesligadas().then((d) => setPromocoes(!d));
     }, []),
   );
 
@@ -61,13 +62,10 @@ export default function Contato() {
     }
   };
 
+  // Desligar tira só a promoção; os avisos do pedido continuam (uma permissão só no celular).
   const trocarPromocoes = async (quer: boolean) => {
     setPromocoes(quer);
-    await guardarRespostaDasPromocoes(quer ? "sim" : "nao");
-    if (quer) {
-      await tokenDoAparelho(true);
-      setAvisos(await estadoDosAvisos());
-    }
+    await desligarPromocoes(!quer);
     avisarAbertura(true);
   };
 
@@ -101,28 +99,25 @@ export default function Contato() {
       <Text style={estilos.secao}>Este celular</Text>
       <View style={estilos.grupo}>
         <Linha icone="notifications" titulo="Avisos do pedido" detalhe={TEXTO_DOS_AVISOS[avisos]} aoTocar={ligarAvisos} />
-        <View style={estilos.linha}>
-          <View style={[estilos.icone, { backgroundColor: `${marca.cor}14` }]}>
-            <Ionicons name="pricetags" size={20} color={marca.cor} />
+        <Linha icone="shield-checkmark" titulo="Privacidade" detalhe="Como seus dados são usados" aoTocar={() => WebBrowser.openBrowserAsync(marca.privacidade)} />
+        {/* Sem destaque, de propósito: é a opção de sair que a Apple exige (4.5.4). */}
+        <View style={[estilos.linha, { borderBottomWidth: 0 }]}>
+          <View style={[estilos.icone, { backgroundColor: "#F1F1F1" }]}>
+            <Ionicons name="pricetags-outline" size={18} color="#8A8A8A" />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={estilos.titulo}>Promoções e novidades</Text>
             <Text style={estilos.detalhe}>
-              {promocoes
-                ? avisos === "desligados"
-                  ? "Aceitas, mas as notificações estão desligadas nos ajustes do celular."
-                  : "Você recebe as ofertas da loja por notificação."
-                : "Desligadas — você não recebe ofertas por notificação."}
+              {promocoes ? "Chegam junto com os avisos do pedido." : "Desligadas — você recebe só os avisos do pedido."}
             </Text>
           </View>
           <Switch
             value={promocoes}
             onValueChange={trocarPromocoes}
-            trackColor={{ true: marca.cor, false: "#D4D4D4" }}
+            trackColor={{ true: "#9CA3AF", false: "#D4D4D4" }}
             accessibilityLabel="Receber promoções e novidades"
           />
         </View>
-        <Linha icone="shield-checkmark" titulo="Privacidade" detalhe="Como seus dados são usados" aoTocar={() => WebBrowser.openBrowserAsync(marca.privacidade)} />
       </View>
 
       <Text style={estilos.rodape}>

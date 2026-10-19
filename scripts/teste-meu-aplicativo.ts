@@ -73,8 +73,12 @@ confere("aparelho só de pedido nunca é 'ativo agora'", contarBase([{ ...base.f
 confere("ativos 7 dias: inst-1, inst-2 e o do pedido de 3 dias", c.ativos7, 3);
 confere("ativos 30 dias: + inst-3 (20 dias)", c.ativos30, 4);
 confere("novos no mês: inst-2 e o do pedido de 3 dias", c.novosNoMes, 2);
-confere("recebem promoção: inst-1 e inst-5", c.recebemPromocao, 2);
-confere("sem resposta (só pedido, versão velha)", c.semResposta, 1);
+confere("recebem notificação: inst-1 e inst-5 (token + termo aceito)", c.recebemNotificacao, 2);
+confere("não permitiram no celular: inst-2 (abriu, sem token)", c.semPermissao, 1);
+confere("com token mas ainda sem o termo: inst-3", c.aguardandoTermo, 1);
+confere("versão antiga (só pedido): fica de fora da promoção", c.versaoAntiga, 1);
+const desligou = contarBase(juntarBase([{ ...aberturas[2], promocoesRespondidoEm: dias(1) }], []), marcos);
+confere("token, promoção desligada e respondeu: desligaram as promoções", [desligou.desligaramPromocoes, desligou.aguardandoTermo], [1, 0]);
 
 // ── Público ─────────────────────────────────────────────────────────────────
 confere("público todos = quem aceitou e tem token", tokensDoPublico(base, "todos", marcos.inicio30).sort(), [T(1), T(5)]);
