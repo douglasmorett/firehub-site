@@ -1,7 +1,8 @@
 import { segredoObrigatorio } from "./segredos";
 import { paraEnvioWhatsApp } from "./telefone";
 import { lerMemoria, textoDoAvisoDeMemoria } from "./memoria-do-servidor";
-import { descricaoDaInstancia } from "./instancia";
+import { descricaoDaInstancia, idDaInstancia } from "./instancia";
+import { randomUUID } from "node:crypto";
 /**
  * src/lib/server-monitor.ts
  * Sistema de monitoramento interno com alertas via WhatsApp.
@@ -33,6 +34,26 @@ function canAlert(alertType: string, cooldownMs = COOLDOWN_MS): boolean {
   if (Date.now() - last < cooldownMs) return false;
   alertCooldowns.set(alertType, Date.now());
   return true;
+}
+
+/**
+ * O mesmo intervalo, valendo para TODOS os servidores vivos: com dois (o
+ * velho e o novo no deploy, ou A e B), cada um tem o seu `alertCooldowns` e o
+ * Douglas recebia o mesmo alerta duas vezes. A vez "alerta:<tipo>" no banco
+ * (lib/vez.ts) dura o intervalo; dono novo a cada aviso, para que nem o
+ * próprio servidor a "renove" antes de vencer.
+ *
+ * Banco fora (justamente o alerta de banco inacessível): a vez não responde e
+ * o aviso SAI — com dois servidores, duas mensagens; melhor que nenhuma.
+ */
+async function canAlertNoCluster(alertType: string, cooldownMs = COOLDOWN_MS): Promise<boolean> {
+  if (!canAlert(alertType, cooldownMs)) return false;
+  try {
+    const { pegarVez } = await import("./vez");
+    return await pegarVez(`alerta:${alertType}`, cooldownMs, { dono: `${idDaInstancia()}#${randomUUID()}`, seFalhar: true });
+  } catch {
+    return true;
+  }
 }
 
 /** A instância do FireHub — a que fala quando a da loja é justamente a que caiu. */
@@ -142,7 +163,7 @@ export async function alertarFalhaDeIntegracao(
   loja: string,
   detalhe: string
 ): Promise<void> {
-  if (!canAlert(`integracao_${canal}`)) return;
+  if (!(await canAlertNoCluster(`integracao_${canal}`))) return;
   const msg =
     `🚨 *FireHub — pedido não entrou*\n\n` +
     `Canal: *${canal}*\n` +
@@ -196,7 +217,8 @@ export async function runHealthCheck(): Promise<{
   // (5 min); a memória em atenção no máximo a cada 30 min — é aviso cedo,
   // não pode virar enxurrada que ninguém mais lê —, e em crítico a cada 10.
   const avisar: string[] = [];
-  if (doBanco.length > 0 && canAlert("health")) avisar.push(...doBanco);
+  if (doBanco.length > 0 && (await canAlertNoCluster("health"))) avisar.push(...doBanco);
+  // A memória é DESTE processo: cada servidor avisa a sua (fica no intervalo local).
   if (daMemoria && canAlert(`memoria_${memoria.nivel}`, memoria.nivel === "critico" ? 10 * 60_000 : 30 * 60_000)) {
     avisar.push(daMemoria);
   }
@@ -233,6 +255,13 @@ export async function notifyServerBoot() {
 
   // Aguardar 30s para o servidor estabilizar antes de notificar
   await new Promise((r) => setTimeout(r, 30000));
+
+  // Dois servidores subindo juntos (deploy de A e B) mandam UM aviso só; o
+  // que subir sozinho depois disso (reinício de um deles) avisa normalmente.
+  if (!(await canAlertNoCluster("boot", 3 * 60_000))) {
+    console.log("[Monitor] Notificação de boot já enviada por outro servidor agora há pouco — pulei.");
+    return;
+  }
 
   const mem = process.memoryUsage();
   const heapMB = Math.round(mem.heapUsed / 1024 / 1024);
