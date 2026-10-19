@@ -35,6 +35,7 @@ import { normalizeStoreHours } from "@/lib/store-hours";
 import { precoMinimoDoProduto, pisoDoPreco, completarEscolhasExigidas, precoVariaPorEscolha, minimoExigidoDoGrupo, precoUnitarioDoItem, regraDoGrupo, tabelaDaOpcao } from "./preco-combo";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, motivoForaDoCardapio, textoDoHorario } from "./cardapio-interno";
 import { aplicarPrecoNoCardapio } from "./preco-por-canal";
+import { lerCardapioDoRobo } from "./cardapio-do-robo-em-cache";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
 import { pedidoEhDoCliente, primeiroNomeDe } from "./pedido-do-cliente";
@@ -384,8 +385,12 @@ export async function processChatbotAI(
   const idsDasLojasDoRobo = lojasDoGrupoDoRobo.length > 0 ? lojasDoGrupoDoRobo.map((l) => l.id) : [targetFranchiseeId];
   const nomeDaLojaDoGrupo = new Map(lojasDoGrupoDoRobo.map((l) => [l.id, String(l.storeName || "").trim()]));
 
-  // Buscar cardápio ao vivo da loja, pedidos por código/telefone e nome do cliente
-  const [produtosCrus, categories, searchedOrders, customerCandidates] = await Promise.all([
+  // Buscar cardápio ao vivo da loja, pedidos por código/telefone e nome do cliente.
+  // O cardápio (produtos + categorias) vem de lib/cardapio-do-robo-em-cache.ts:
+  // a mesma leitura, reaproveitada enquanto a versão do cardápio no banco não
+  // muda — pausar ou mudar qualquer coisa vale já na mensagem seguinte.
+  const [[produtosCrus, categories], searchedOrders, customerCandidates] = await Promise.all([
+    lerCardapioDoRobo(prisma as any, targetFranchiseeId, () => Promise.all([
     prisma.menuProduct.findMany({
       // O espelho do iFood/Jotajá/99Food fica de FORA do que o robô oferece.
       // São cópias do mesmo prato criadas pela sincronização, muitas vezes com
@@ -461,6 +466,7 @@ export async function processChatbotAI(
       select: { name: true, emoji: true },
       orderBy: { sortOrder: "asc" },
     }),
+    ])),
     orderOrConditions.length > 0 ? prisma.customerOrder.findMany({
       where: {
         franchiseeId: { in: idsDasLojasDoRobo },
