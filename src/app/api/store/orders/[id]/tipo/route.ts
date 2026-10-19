@@ -8,6 +8,9 @@ import { ehPagoOnline } from "@/lib/pagamento-na-entrega";
 import { lerPartes } from "@/lib/pagamento-dividido";
 import { avisoDaDiferencaDeTotal } from "@/lib/entrega-do-pedido";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
+import { camposDaEntrega, cotacaoDoPedido, entregaDaCotacao } from "@/lib/entrega-do-pedido";
+import { modoDaArea } from "@/lib/area-de-entrega";
+import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import {
   ROTULO_DO_DESTINO,
   ROTULO_DO_TIPO,
@@ -16,6 +19,7 @@ import {
   avaliarTrocaDeTipo,
   etiquetaDaTroca,
   tipoAtualDoPedido,
+  retiradaEsperandoNoBalcao,
   totalComATaxa,
   totalSemATaxa,
   type TipoDeDestino,
@@ -26,7 +30,7 @@ import {
  *
  *   GET   → se dá para trocar e para onde, e as mesas da loja (livres e
  *           ocupadas) quando mesa é um dos destinos.
- *   PATCH { destino: "MESA" | "BALCAO", tableId? }
+ *   PATCH { destino: "MESA" | "BALCAO" | "DELIVERY", tableId?, endereco?, taxa?, cotacao? }
  *         → grava o tipo novo, tira a taxa e a entrega (motoboy, rota,
  *           repasse) e, na mesa, põe o pedido na conta dela — abrindo a mesa
  *           no nome do cliente se estiver livre.
@@ -37,7 +41,7 @@ import {
 const CAMPOS = {
   id: true, franchiseeId: true, status: true, source: true, deliveryType: true, tableSessionId: true,
   totalAmount: true, deliveryFee: true, notes: true, editHistory: true, dailyOrderNumber: true,
-  customerName: true, customerAddress: true, motoboyId: true, dispatchedAt: true,
+  customerName: true, customerAddress: true, motoboyId: true, dispatchedAt: true, readyAt: true,
   paymentMethod: true, gatewayPaymentId: true, paymentMethods: true, paymentPaidAt: true,
   ifoodOrderId: true, openDeliveryOrderId: true, openDeliveryChannel: true,
   fiscalStatus: true, fiscalInfo: true,
@@ -146,15 +150,52 @@ async function virarEntrega({ corpo, operador, lojaId, order, taxa, partesGravad
     tipoAntes: order.deliveryType,
     tipoDepois: TIPO_GRAVADO.DELIVERY,
     taxaAntes: taxa,
+    taxaDepois: taxaNova,
     enderecoAntes: order.customerAddress || null,
+    enderecoDepois: endereco,
     pagamentoAntes: order.paymentMethod || null,
   };
   const notas = `${String(order.notes || "").trim()} ${etiquetaDaTroca(de, "Entrega")}`.trim();
 
+  // A cotação assinada que a tela recebeu de /api/delivery-fee (a mesma do
+  // PDV, lib/venda-presencial.ts): com ela o pedido grava o ponto, a
+  // distância e o repasse do motoboy sem consultar o mapa de novo. Sem ela
+  // (taxa na mão, endereço que o mapa não achou), o cron mede pelo texto.
+  let medida: ReturnType<typeof camposDaEntrega> | null = null;
+  if (typeof corpo?.cotacao === "string" && corpo.cotacao) {
+    try {
+      const loja = await prisma.user.findUnique({
+        where: { id: lojaId },
+        select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, storeAddress: true, city: true },
+      });
+      const texto = (v: unknown) => (typeof v === "string" ? v : undefined);
+      const cotacao = loja && cotacaoDoPedido(corpo.cotacao, {
+        loja: lojaId,
+        endereco: {
+          street: texto(corpo.customerStreet), number: texto(corpo.customerNumber), neighborhood: texto(corpo.customerNeighborhood),
+          address: endereco,
+        },
+        coords: null,
+      });
+      if (loja && cotacao) {
+        medida = camposDaEntrega(entregaDaCotacao(cotacao, modoDaArea(loja as any), null), lerRegraDeRepasse(loja.deliveryConfig), loja.deliveryZones);
+      }
+    } catch (e: any) {
+      // Medida é informação, não trava: a troca sai e o cron mede depois.
+      console.warn(`[Troca de tipo] pedido ${order.id} sem medida da entrega:`, e?.message || e);
+    }
+  }
+
+  // Retirada que estava "esperando no balcão" (SAIU_ENTREGA sem motoboy):
+  // volta para PRONTO, esperando o motoboy, e o carimbo de saída sai.
+  const esperandoNoBalcao = retiradaEsperandoNoBalcao(order);
+
   const r = await prisma.customerOrder.updateMany({
     where: {
       id: order.id, franchiseeId: lojaId, tableSessionId: null,
-      status: { in: [...STATUS_QUE_TROCAM] }, dispatchedAt: null,
+      ...(esperandoNoBalcao
+        ? { status: order.status, motoboyId: null }
+        : { status: { in: [...STATUS_QUE_TROCAM] }, dispatchedAt: null }),
       totalAmount: order.totalAmount, deliveryFee: order.deliveryFee, fiscalStatus: order.fiscalStatus,
     },
     data: {
@@ -162,11 +203,13 @@ async function virarEntrega({ corpo, operador, lojaId, order, taxa, partesGravad
       customerAddress: endereco,
       deliveryFee: taxaNova,
       totalAmount: totalDepois,
-      // O ponto e a distância eram de outro lugar (ou de nenhum): o cron mede
-      // o endereço novo pelo texto, e o repasse do motoboy sai dele.
-      customerLatLng: Prisma.DbNull,
-      deliveryDistance: null,
-      motoboyFee: null,
+      // Sem cotação, o ponto e a distância eram de outro lugar (ou de
+      // nenhum): o cron mede o endereço novo pelo texto.
+      customerLatLng: medida?.customerLatLng ? (medida.customerLatLng as any) : Prisma.DbNull,
+      deliveryDistance: medida?.deliveryDistance ?? null,
+      motoboyFee: medida?.motoboyFee ?? null,
+      // readyAt explícito: sem ele o carimbo de status (lib/prisma.ts) trocaria a hora do pronto.
+      ...(esperandoNoBalcao ? { status: "PRONTO", dispatchedAt: null, readyAt: order.readyAt ?? new Date() } : {}),
       notes: notas,
       editHistory: empilharEdicao(order.editHistory, registro as unknown as RegistroDeEdicao) as any,
     },

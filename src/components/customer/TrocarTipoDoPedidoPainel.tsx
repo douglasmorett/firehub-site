@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { consultaDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
+import { useSession } from "next-auth/react";
+import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@/lib/entrega-no-checkout";
+import { digitosNacionais, preencherBalcao, type ClienteSugerido } from "@/lib/busca-de-clientes";
 import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import {
   ROTULO_DO_DESTINO,
@@ -66,36 +68,81 @@ export default function TrocarTipoDoPedidoPainel({
   const [mesaId, setMesaId] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoDaTroca | null>(null);
-  // Virar ENTREGA: o endereço e a taxa. A taxa vem da mesma cotação do balcão
-  // (/api/delivery-fee) e a loja pode mudar.
-  const [endereco, setEndereco] = useState<string>(String(pedido?.customerAddress || ""));
+  // Virar ENTREGA: o endereço e a taxa, como no PDV (venda-presencial): rua e
+  // número, o bairro da lista quando a loja entrega por bairro, a taxa da
+  // mesma cotação (/api/delivery-fee) e editável. "Balcão" no endereço é o
+  // que o PDV grava na retirada — não é endereço.
+  const { data: sessao } = useSession();
+  const cidadeDaLoja = String((sessao?.user as any)?.city ?? "");
+  const enderecoInicial = String(pedido?.customerAddress || "").trim();
+  const [endereco, setEndereco] = useState<string>(/^(balc[aã]o|retirada.*)$/i.test(enderecoInicial) ? "" : enderecoInicial);
+  const [bairrosDaLoja, setBairrosDaLoja] = useState<{ name: string; fee: number }[]>([]);
+  const [bairro, setBairro] = useState("");
+  /** O último endereço de entrega do cliente (a mesma busca do PDV), para um toque. */
+  const [ultimoDoCliente, setUltimoDoCliente] = useState<ClienteSugerido | null>(null);
   const [taxaTexto, setTaxaTexto] = useState("");
+  // Mexeu na taxa: a cotação não apaga o que foi combinado com o cliente,
+  // até o endereço mudar (a mesma regra do PDV).
+  const [taxaNaMao, setTaxaNaMao] = useState(false);
+  const [cotacao, setCotacao] = useState<{ token: string; endereco: string } | null>(null);
   const [cotando, setCotando] = useState(false);
   const [avisoDaTaxa, setAvisoDaTaxa] = useState<string | null>(null);
+  const enderecoDaEntrega = [endereco.trim(), bairro].filter(Boolean).join(" - ");
+
+  // Os bairros da loja e o último endereço do cliente, uma vez, quando a
+  // entrega é escolhida. Falhou: o campo livre continua.
+  useEffect(() => {
+    if (destino !== "DELIVERY") return;
+    let vivo = true;
+    fetch("/api/store-settings/balcao").then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!vivo || !Array.isArray(d?.bairros)) return;
+      setBairrosDaLoja(
+        d.bairros
+          .filter((b: any) => b && typeof b.name === "string" && b.name.trim())
+          .map((b: any) => ({ name: b.name.trim(), fee: Number(b.fee) || 0 }))
+          .filter((b: { name: string }, i: number, todos: { name: string }[]) => todos.findIndex((o) => o.name === b.name) === i)
+          .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name, "pt-BR")),
+      );
+    }).catch(() => {});
+    const digitos = digitosNacionais(pedido?.customerPhone);
+    if (digitos.length >= 10 && !/^0+$/.test(digitos)) {
+      fetch(`/api/store/clientes/buscar?q=${encodeURIComponent(digitos)}`).then((r) => (r.ok ? r.json() : null)).then((d) => {
+        if (!vivo) return;
+        const c = (Array.isArray(d?.clientes) ? d.clientes : []).find((x: ClienteSugerido) => x.telefone === digitos) as ClienteSugerido | undefined;
+        if (c && (c.endereco || c.enderecoTexto)) setUltimoDoCliente(c);
+      }).catch(() => {});
+    }
+    return () => { vivo = false; };
+  }, [destino, pedido?.customerPhone]);
+
+  useEffect(() => { setTaxaNaMao(false); }, [enderecoDaEntrega]);
 
   useEffect(() => {
     if (destino !== "DELIVERY") return;
-    const texto = endereco.trim();
-    if (texto.length < 6) { setAvisoDaTaxa(null); return; }
+    const texto = enderecoDaEntrega;
+    if (texto.length < 6 && !bairro) { setAvisoDaTaxa(null); setCotacao(null); return; }
+    if (taxaNaMao) return;
     let vivo = true;
     const controle = new AbortController();
     setCotando(true);
+    setCotacao(null);
     const agendado = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/delivery-fee?${consultaDoBalcao(texto)}`, { signal: controle.signal });
+        const res = await fetch(`/api/delivery-fee?${consultaDoBalcao(texto, cidadeDaLoja)}`, { signal: controle.signal });
         const d = await res.json().catch(() => null);
         if (!vivo) return;
         const lida = lerCotacaoNoBalcao(res.ok ? d : null, d?.message);
-        if (lida.taxa != null) setTaxaTexto(String(lida.taxa).replace(".", ","));
+        setTaxaTexto(lida.taxa != null ? String(lida.taxa).replace(".", ",") : "");
         setAvisoDaTaxa(lida.texto || null);
+        setCotacao(lida.cotacao ? { token: lida.cotacao, endereco: texto } : null);
       } catch {
         if (vivo) setAvisoDaTaxa("Não consegui calcular a taxa. Digite o valor na mão.");
       } finally {
         if (vivo) setCotando(false);
       }
     }, 600);
-    return () => { vivo = false; controle.abort(); clearTimeout(agendado); };
-  }, [destino, endereco]);
+    return () => { vivo = false; controle.abort(); clearTimeout(agendado); setCotando(false); };
+  }, [destino, enderecoDaEntrega, bairro, taxaNaMao, cidadeDaLoja]);
 
   // A tela não tem todos os campos (pagamento confirmado, saída); a avaliação
   // daqui só decide se o botão aparece. Quem decide de verdade é o GET.
@@ -116,7 +163,7 @@ export default function TrocarTipoDoPedidoPainel({
         {resultado.aviso && <div style={{ ...avisoAmarelo, marginTop: 6 }}>⚠️ {resultado.aviso}</div>}
         <div style={{ fontSize: "0.74rem", color: "#475569", marginTop: 6 }}>
           {resultado.deliveryType === "DELIVERY"
-            ? "A comanda que já saiu impressa ainda diz retirada. Reimprima pela aba Comanda e escolha o motoboy no card."
+            ? "A comanda sai de novo, agora com o endereço. Escolha o motoboy no card."
             : "A comanda que já saiu impressa ainda diz delivery. Reimprima pela aba Comanda se a cozinha precisar."}
         </div>
         <div style={{ textAlign: "right", marginTop: 6 }}>
@@ -181,7 +228,9 @@ export default function TrocarTipoDoPedidoPainel({
         body: JSON.stringify({
           destino,
           tableId: destino === "MESA" ? mesaId : undefined,
-          ...(destino === "DELIVERY" ? { endereco: endereco.trim(), taxa: taxaNumero } : {}),
+          ...(destino === "DELIVERY"
+            ? { endereco: enderecoDaEntrega, taxa: taxaNumero, ...entregaNoPedidoDoBalcao(enderecoDaEntrega, cotacao, taxaNaMao, cidadeDaLoja) }
+            : {}),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -220,7 +269,7 @@ export default function TrocarTipoDoPedidoPainel({
   const taxaValida = String(taxaTexto).trim() !== "" && Number.isFinite(taxaNumero) && taxaNumero >= 0;
   const prontoParaConfirmar = !!destino
     && (destino !== "MESA" || !!mesaEscolhida)
-    && (destino !== "DELIVERY" || (endereco.trim().length >= 6 && taxaValida));
+    && (destino !== "DELIVERY" || (enderecoDaEntrega.length >= 6 && taxaValida));
 
   return (
     <div style={caixaAberta}>
@@ -288,21 +337,46 @@ export default function TrocarTipoDoPedidoPainel({
 
           {destino === "DELIVERY" && (
             <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+              {ultimoDoCliente && (
+                <button
+                  type="button"
+                  style={{ ...botaoLeve, textAlign: "left", whiteSpace: "normal" }}
+                  onClick={() => {
+                    const p = preencherBalcao(ultimoDoCliente, bairrosDaLoja);
+                    setEndereco(p.endereco);
+                    setBairro(p.bairro);
+                    setUltimoDoCliente(null);
+                  }}
+                >
+                  📍 Usar o último endereço do cliente: {ultimoDoCliente.endereco?.texto || ultimoDoCliente.enderecoTexto}
+                </button>
+              )}
               <label style={{ fontSize: "0.74rem", fontWeight: 800, color: "#115E59" }}>
-                Endereço de entrega
+                {bairrosDaLoja.length > 0 ? "Rua e número (complemento)" : "Endereço de entrega"}
                 <input
                   value={endereco}
                   onChange={(e) => setEndereco(e.target.value)}
-                  placeholder="Rua, número - Bairro (complemento)"
+                  placeholder={bairrosDaLoja.length > 0 ? "Rua, número (complemento)" : "Rua, número - Bairro (complemento)"}
                   autoFocus
                   style={campoDeTexto}
                 />
               </label>
+              {bairrosDaLoja.length > 0 && (
+                <label style={{ fontSize: "0.74rem", fontWeight: 800, color: "#115E59" }}>
+                  Bairro
+                  <select value={bairro} onChange={(e) => setBairro(e.target.value)} style={campoDeTexto}>
+                    <option value="">Escolha o bairro…</option>
+                    {bairrosDaLoja.map((b) => (
+                      <option key={b.name} value={b.name}>{b.name} — {dinheiro(b.fee)}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label style={{ fontSize: "0.74rem", fontWeight: 800, color: "#115E59" }}>
                 Taxa de entrega (R$)
                 <input
                   value={taxaTexto}
-                  onChange={(e) => setTaxaTexto(e.target.value)}
+                  onChange={(e) => { setTaxaTexto(e.target.value); setTaxaNaMao(true); }}
                   inputMode="decimal"
                   placeholder={cotando ? "calculando…" : "0,00"}
                   style={{ ...campoDeTexto, maxWidth: 140 }}

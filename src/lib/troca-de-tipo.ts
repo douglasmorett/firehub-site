@@ -71,7 +71,17 @@ export type PedidoParaTroca = PedidoParaEdicao & {
   deliveryFee?: number | null;
   paymentPaidAt?: Date | string | null;
   dispatchedAt?: Date | string | null;
+  motoboyId?: string | null;
 };
+
+/** Status "saiu" que, na retirada, quer dizer "pronto, esperando o cliente no balcão". */
+export const STATUS_DA_RETIRADA_ESPERANDO = ["SAIU_ENTREGA", "SAIU_PARA_ENTREGA"] as const;
+
+/** Retirada na coluna de transporte, sem motoboy: ainda está no balcão. */
+export function retiradaEsperandoNoBalcao(pedido: { status?: string | null; motoboyId?: string | null }): boolean {
+  const status = String(pedido.status || "").toUpperCase();
+  return (STATUS_DA_RETIRADA_ESPERANDO as readonly string[]).includes(status) && !pedido.motoboyId;
+}
 
 /** O tipo atual em palavras, para a tela: "Delivery", "Balcão / retirada", "Mesa". */
 export function tipoAtualDoPedido(pedido: { deliveryType?: string | null; tableSessionId?: string | null }): "DELIVERY" | "BALCAO" | "MESA" {
@@ -106,11 +116,19 @@ export function avaliarTrocaDeTipo(pedido: PedidoParaTroca | null | undefined, o
   }
 
   const status = String(pedido.status || "").toUpperCase();
+  const atual = tipoAtualDoPedido(pedido);
+  // Retirada "saiu" é retirada esperando no balcão: quem arrasta para a coluna
+  // de transporte grava SAIU_ENTREGA (e o carimbo de saída), mas nenhum
+  // motoboy levou nada. É justamente quando o cliente liga "manda entregar"
+  // (Hakim Centro, 18/10/2026, #74: foi preciso mudar no banco). Só vira
+  // entrega, e volta para PRONTO, esperando o motoboy.
+  if (atual === "BALCAO" && retiradaEsperandoNoBalcao(pedido)) {
+    return { pode: true, destinos: ["DELIVERY"], barrados: {} };
+  }
   if (!(STATUS_QUE_TROCAM as readonly string[]).includes(status) || pedido.dispatchedAt) {
     return { pode: false, motivo: "O pedido já saiu. A troca de tipo é só antes de sair." };
   }
 
-  const atual = tipoAtualDoPedido(pedido);
   // Balcão/retirada também vira ENTREGA: o atendente lançou "retirada no
   // local" num pedido que era para o endereço do cliente (Lapastine,
   // 09/10/2026: "não sei como editar para colocar o endereço do cara e a taxa").

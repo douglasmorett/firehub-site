@@ -5014,6 +5014,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   pedido={order}
                   operador={operadorDaEdicao}
                   aoTrocar={async (r) => {
+                    // Virou entrega: a comanda sai de novo com o endereço, como
+                    // depois de editar os itens (o motoboy precisa dele no papel).
+                    if (r.deliveryType === "DELIVERY") {
+                      showToast(`Pedido #${order.dailyOrderNumber ?? ""} virou entrega. Reimprimindo a comanda...`, "#0F766E");
+                      const atualizados = await recarregarPedidos();
+                      const atual = (atualizados || []).find((o: any) => o.id === order.id);
+                      if (atual) reimprimirAposEdicao(pedidoComAcrescimos(atual, atualizados || []));
+                      return;
+                    }
                     showToast(
                       r.mesa != null ? `Pedido #${order.dailyOrderNumber ?? ""} passou para a Mesa ${r.mesa}.` : `Pedido #${order.dailyOrderNumber ?? ""} passou para o balcão.`,
                       "#0F766E"
