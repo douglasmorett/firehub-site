@@ -555,7 +555,8 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       const carimbo = { printQueuePolledAt: new Date() };
       // A cópia em memória tem o carimbo antigo: sem esquecê-la, as próximas
       // consultas dos 10 s achariam que falta carimbar e gravariam de novo.
-      esquecer(chaveDoDono);
+      // Esquecida DEPOIS da gravação: antes, uma consulta no meio do caminho
+      // relia o carimbo velho e o guardava por mais 10 s.
       prisma.user
         .update({
           where: { id: franchiseeId },
@@ -567,7 +568,8 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           prisma.user
             .update({ where: { id: franchiseeId }, data: carimbo })
             .catch((err) => console.error("[PrintQueue] carimbo do poll:", err))
-        );
+        )
+        .finally(() => esquecer(chaveDoDono));
       prisma.printRequest
         .deleteMany({ where: { franchiseeId, createdAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) } } })
         .catch(() => { /* tabela ainda não existe: nada a apagar */ });

@@ -79,10 +79,11 @@ export async function lerCardapioDoRobo<T>(
 
   const valor = await buscar();
   if (versao) {
-    if (guardados.size >= TETO_DE_LOJAS && !guardados.has(lojaId)) {
-      for (const [k, v] of guardados) if (agora - v.em >= VALIDADE_MS) guardados.delete(k);
-      if (guardados.size >= TETO_DE_LOJAS) guardados.clear();
-    }
+    // Cópia vencida não serve mais para nada: sai da memória a cada gravação,
+    // senão o cardápio de toda loja que já conversou (até 1,5 MB cada) ficava
+    // guardado para sempre.
+    for (const [k, v] of guardados) if (agora - v.em >= VALIDADE_MS) guardados.delete(k);
+    if (guardados.size >= TETO_DE_LOJAS && !guardados.has(lojaId)) guardados.clear();
     guardados.set(lojaId, { versao, em: agora, valor: structuredClone(valor) });
   }
   return valor;
