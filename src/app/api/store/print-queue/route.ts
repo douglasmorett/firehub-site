@@ -32,6 +32,8 @@ import { chaveDoAssistente, registrarAssistente, trabalhosDoAssistente } from "@
 import { marcarAssistente } from "@/lib/sinais-da-loja";
 import { bebidaDecididaPeloServidor } from "@/lib/bebida-para-o-assistente";
 import { qtdPedidosDosClientes } from "@/lib/qtd-pedidos-do-cliente";
+import { esquecer, lembrarPor } from "@/lib/cache-curto";
+import { filaTemAlgo } from "@/lib/fila-tem-algo";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -271,19 +273,27 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       /** Cidade da loja: separa "…, Operário, Rio das Ostras" em bairro e cidade (lib/endereco-impresso.ts). */
       city?: string | null;
     };
+    //
+    // A config da loja fica 10 s em memória (lib/cache-curto.ts): mudar a
+    // impressora ou o modelo vale em até 10 s; o carimbo gravado logo abaixo
+    // apaga a cópia, para a próxima consulta já ler o carimbo novo. Cada
+    // chamada recebe uma CÓPIA — quem mexer no objeto não mexe no guardado.
     let owner: DonoDaFila | null = null;
-    try {
-      owner = await prisma.user.findUnique({
-        where: { id: franchiseeId },
-        select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true, city: true, printQueuePolledAt: true, printQueueEstado: true },
-      });
-    } catch (err) {
-      console.error("[PrintQueue] printQueuePolledAt ausente? (falta db push)", (err as any)?.code || err);
-      owner = await prisma.user.findUnique({
-        where: { id: franchiseeId },
-        select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true, city: true },
-      });
-    }
+    const chaveDoDono = `fila:dono:${franchiseeId}`;
+    owner = structuredClone(await lembrarPor(chaveDoDono, 10_000, async (): Promise<DonoDaFila | null> => {
+      try {
+        return await prisma.user.findUnique({
+          where: { id: franchiseeId },
+          select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true, city: true, printQueuePolledAt: true, printQueueEstado: true },
+        });
+      } catch (err) {
+        console.error("[PrintQueue] printQueuePolledAt ausente? (falta db push)", (err as any)?.code || err);
+        return await prisma.user.findUnique({
+          where: { id: franchiseeId },
+          select: { printerConfig: true, storeName: true, name: true, slug: true, storeLoyalty: true, city: true },
+        });
+      }
+    }));
     const pc: any = (owner?.printerConfig as any) || null;
 
     // ── MODELO DA COMANDA (lib/comanda-modelo.ts) ─────────────────────────
@@ -480,12 +490,32 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           }
         }
       });
+    // ── NADA NOVO? UMA CONSULTA SÓ (lib/fila-tem-algo.ts) ──────────────────
+    //
+    // Quase toda consulta do Assistente volta vazia, e a fila vazia custava
+    // duas consultas (pedidos e impressões avulsas). Esta pergunta as duas
+    // coisas de uma vez, num recorte MAIOR que o das consultas de verdade:
+    // "não" aqui garante que elas viriam vazias. Qualquer "sim" — ou erro —
+    // segue pelo caminho de sempre. Pedido novo nunca fica de fora
+    // (scripts/teste-fila-tem-algo.ts).
+    const temAlgo = await filaTemAlgo(prisma, {
+      franchiseeId,
+      desde: inicioDoAtraso && inicioDoAtraso < sinceDate ? inicioDoAtraso : sinceDate,
+      desdeDaAvulsa: sinceDate,
+      statusQueNaoEntram: where.status.notIn,
+      tambemPeloFimDoKds: esperaOFimDoKds(pc),
+    });
+
     let recentOrders: Awaited<ReturnType<typeof consulta>>;
-    try {
-      recentOrders = await consulta(true);
-    } catch (err) {
-      console.error("[PrintQueue] printedAt ausente? (falta db push)", (err as any)?.code || err);
-      recentOrders = await consulta(false);
+    if (temAlgo && !temAlgo.pedidos) {
+      recentOrders = [];
+    } else {
+      try {
+        recentOrders = await consulta(true);
+      } catch (err) {
+        console.error("[PrintQueue] printedAt ausente? (falta db push)", (err as any)?.code || err);
+        recentOrders = await consulta(false);
+      }
     }
 
     // ── O ITEM DO iFOOD GANHA A CATEGORIA REAL, COMO NO KDS ────────────────
@@ -520,6 +550,9 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
       !!estadoDoAssistente && assistenteImprimeDanfe(estadoDoAssistente) !== assistenteImprimeDanfe((owner as any)?.printQueueEstado);
     if (owner && "printQueuePolledAt" in owner && (versaoMudou || danfeMudou || Date.now() - (owner.printQueuePolledAt?.getTime() ?? 0) > 60_000)) {
       const carimbo = { printQueuePolledAt: new Date() };
+      // A cópia em memória tem o carimbo antigo: sem esquecê-la, as próximas
+      // consultas dos 10 s achariam que falta carimbar e gravariam de novo.
+      esquecer(chaveDoDono);
       prisma.user
         .update({
           where: { id: franchiseeId },
@@ -890,7 +923,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           orderBy: { createdAt: "asc" },
           select: { id: true, payload: true, createdAt: true, kind: true },
         });
-      avulsas = await buscar(true).catch(() => buscar(false));
+      avulsas = temAlgo && !temAlgo.avulsas ? [] : await buscar(true).catch(() => buscar(false));
     } catch (err) {
       console.error("[PrintQueue] PrintRequest indisponível (falta db push?)", (err as any)?.code || err);
     }

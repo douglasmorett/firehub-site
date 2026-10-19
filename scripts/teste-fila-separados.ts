@@ -114,6 +114,9 @@ async function main() {
 
   console.log("\n[2] A mesma loja em \"Agrupados\": nada muda");
   separarNaLoja = false;
+  // A config da loja fica 10 s em memória na fila (lib/cache-curto.ts): aqui
+  // é como se a troca tivesse sido feita há mais de 10 s.
+  (await import("../src/lib/cache-curto")).esquecerTudo();
   const r2 = await consultar();
   const job2 = r2.jobs.find((j) => String(j?.order?.id || j?.id || "").includes("cm_pedido_frangoso_1"));
   const linhas2 = doResumo(papelDoAssistente(job2, job2?.destinos?.[0]));
