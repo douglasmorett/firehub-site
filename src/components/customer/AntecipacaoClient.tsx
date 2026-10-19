@@ -25,7 +25,12 @@ type Resposta = {
   lanches: Linha[];
   combos: Linha[];
   ehHakim: boolean;
-  bases: { bases: Base[]; doces: number } | null;
+  bases: { bases: Base[]; doces: number; foraDasBases: { nome: string; media: number }[] } | null;
+  fichaTecnica: {
+    insumos: { chave: string; nome: string; unidade: string; porDia: number[]; media: number; sugerido: number }[];
+    semFicha: { nome: string; media: number; sugerido: number }[];
+    produtosComFicha: number;
+  };
   pedidos: { dia: string; lista: { id: string; hora: string; canal: string; itens: { quantidade: number; nome: string }[] }[] }[];
 };
 
@@ -41,6 +46,18 @@ const diaCurto = (dia: string) => {
   return `${DIAS_CURTOS[new Date(Date.UTC(a, m - 1, d, 12)).getUTCDay()]} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
 };
 const num = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+const somarDias = (dia: string, n: number) => {
+  const [a, m, d] = dia.split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d + n, 12)).toISOString().slice(0, 10);
+};
+/** Quantidade de insumo na unidade dele; grama e ml grandes ganham o kg/l ao lado. */
+const qtdInsumo = (q: number, unidade: string) => {
+  const u = unidade.trim().toLowerCase();
+  const base = `${q.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} ${unidade}`;
+  if ((u === "g" || u === "gr" || u === "gramas") && q >= 1000) return `${base} (${(q / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} kg)`;
+  if (u === "ml" && q >= 1000) return `${base} (${(q / 1000).toLocaleString("pt-BR", { maximumFractionDigits: 2 })} l)`;
+  return base;
+};
 
 function Abas<T extends string>({ valor, opcoes, onChange, rotulo }: { valor: T; opcoes: { chave: T; nome: React.ReactNode }[]; onChange: (v: T) => void; rotulo: string }) {
   const i = Math.max(0, opcoes.findIndex((o) => o.chave === valor));
@@ -56,13 +73,14 @@ function Abas<T extends string>({ valor, opcoes, onChange, rotulo }: { valor: T;
 }
 
 export default function AntecipacaoClient() {
-  const [dia, setDia] = useState<"hoje" | "amanha">("hoje");
+  /** "hoje" ou a data (AAAA-MM-DD) escolhida. */
+  const [dia, setDia] = useState<string>("hoje");
   const [horario, setHorario] = useState<Horario>("dia");
   const [proximas, setProximas] = useState(3);
   const [horaDe, setHoraDe] = useState("18:00");
   const [horaAte, setHoraAte] = useState("21:00");
   const [feriado, setFeriado] = useState<"auto" | "sim" | "nao">("auto");
-  const [visao, setVisao] = useState<"bases" | "lanches">("bases");
+  const [visao, setVisao] = useState<"bases" | "insumos" | "lanches">("bases");
   const [busca, setBusca] = useState("");
   const [abertos, setAbertos] = useState<Record<string, boolean>>({});
   const [diaDosPedidos, setDiaDosPedidos] = useState(0);
@@ -71,8 +89,9 @@ export default function AntecipacaoClient() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
 
-  // "Próximas horas" é de hoje: amanhã volta para o dia inteiro.
-  const horarioValido: Horario = dia === "amanha" && horario === "proximas" ? "dia" : horario;
+  // "Próximas horas" é de hoje: outro dia volta para o dia inteiro.
+  const ehHoje = dia === "hoje" || dia === dados?.hoje;
+  const horarioValido: Horario = !ehHoje && horario === "proximas" ? "dia" : horario;
 
   const query = useMemo(() => {
     const sp = new URLSearchParams({ dia, feriado });
@@ -99,7 +118,10 @@ export default function AntecipacaoClient() {
   useEffect(() => { carregar(); }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Loja que não é Hakim não tem a visão de bases.
-  const visaoAtual = dados?.ehHakim ? visao : "lanches";
+  const visaoAtual = !dados?.ehHakim && visao === "bases" ? "lanches" : visao;
+  const nomeDoDia = (d: string) => !dados ? diaCurto(d) : d === dados.hoje ? "Hoje" : d === somarDias(dados.hoje, 1) ? "Amanhã" : diaCurto(d);
+  // Os próximos 8 dias em botão; mais longe, pelo calendário.
+  const proximosDias = dados ? Array.from({ length: 8 }, (_, i) => somarDias(dados.hoje, i)) : [];
   const n = dados?.referencias.length || 0;
   const lanches = (dados?.lanches || []).filter((l) => l.nome.toLowerCase().includes(busca.trim().toLowerCase()));
   const totalDeLanches = (dados?.lanches || []).reduce((s, l) => s + l.sugerido, 0);
@@ -137,19 +159,32 @@ export default function AntecipacaoClient() {
 
       {/* ── O QUE E QUANDO ── */}
       <section className="fh-card fh-sem-impressao" style={{ padding: 18, marginBottom: 16 }}>
-        <div className="ant-controles">
-          <div className="fh-campo">
-            <label><CalendarDays size={13} style={{ verticalAlign: -2 }} /> Para qual dia</label>
-            <Abas rotulo="Dia" valor={dia} onChange={setDia} opcoes={[
-              { chave: "hoje", nome: dados ? `Hoje · ${diaCurto(dados.hoje)}` : "Hoje" },
-              { chave: "amanha", nome: "Amanhã" },
-            ]} />
+        <div className="fh-campo" style={{ marginBottom: 16 }}>
+          <label><CalendarDays size={13} style={{ verticalAlign: -2 }} /> Para qual dia</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {proximosDias.map((d) => {
+              const ativo = dados?.dia === d;
+              return (
+                <button key={d} type="button" onClick={() => setDia(d)}
+                  className={`fh-btn ${ativo ? "fh-btn--primario" : "fh-btn--secundario"}`}
+                  style={{ height: 40, padding: "0 12px", borderRadius: 12, fontSize: 14 }}>
+                  {d === dados?.hoje ? `Hoje · ${diaCurto(d)}` : d === somarDias(dados!.hoje, 1) ? `Amanhã · ${diaCurto(d)}` : diaCurto(d)}
+                </button>
+              );
+            })}
+            {dados && (
+              <input type="date" aria-label="Outra data" min={dados.hoje} max={somarDias(dados.hoje, 120)}
+                value={dados.dia} onChange={(e) => e.target.value && setDia(e.target.value)}
+                style={{ width: 170 }} />
+            )}
           </div>
+        </div>
+        <div className="ant-controles">
           <div className="fh-campo">
             <label><Clock size={13} style={{ verticalAlign: -2 }} /> Horário</label>
             <Abas rotulo="Horário" valor={horarioValido} onChange={setHorario} opcoes={[
               { chave: "dia", nome: "Dia inteiro" },
-              ...(dia === "hoje" ? [{ chave: "proximas" as Horario, nome: "Próximas horas" }] : []),
+              ...(ehHoje ? [{ chave: "proximas" as Horario, nome: "Próximas horas" }] : []),
               { chave: "faixa", nome: "De … até" },
             ]} />
           </div>
@@ -196,7 +231,7 @@ export default function AntecipacaoClient() {
           <div>
             <strong>Modo feriado ativado.</strong>{" "}
             {dados.feriado.doDia
-              ? <>{dados.dia === dados.hoje ? "Hoje" : "Amanhã"} é feriado: <strong>{dados.feriado.doDia}</strong>. </>
+              ? <>{nomeDoDia(dados.dia)} é feriado: <strong>{dados.feriado.doDia}</strong>. </>
               : <>Ligado na mão. </>}
             A antecipação está <strong>{dados.feriado.pct}% acima</strong> do normal.
           </div>
@@ -205,7 +240,7 @@ export default function AntecipacaoClient() {
       {dados && !dados.feriado.ativo && dados.feriado.doDia && dados.feriado.modo === "nao" && (
         <div className="fh-aviso fh-aviso--info" style={{ marginBottom: 16 }}>
           <Info size={20} style={{ flexShrink: 0 }} />
-          <div>{dados.dia === dados.hoje ? "Hoje" : "Amanhã"} é feriado ({dados.feriado.doDia}), mas o modo feriado está desligado: a conta é a de um dia normal.</div>
+          <div>{nomeDoDia(dados.dia)} é feriado ({dados.feriado.doDia}), mas o modo feriado está desligado: a conta é a de um dia normal.</div>
         </div>
       )}
 
@@ -226,8 +261,8 @@ export default function AntecipacaoClient() {
         <div style={{ opacity: carregando ? 0.55 : 1, transition: "opacity .15s" }}>
           {/* ── DE ONDE SAI A MÉDIA ── */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16, fontSize: 14, color: "var(--fh-t3)" }}>
-            <span style={{ fontWeight: 800, color: "var(--fh-t1)" }}>{diaCurto(dados.dia)}, {janelaTexto}</span>
-            <span>· média de</span>
+            <span style={{ fontWeight: 800, color: "var(--fh-t1)" }}>{nomeDoDia(dados.dia) === diaCurto(dados.dia) ? diaCurto(dados.dia) : `${nomeDoDia(dados.dia)} (${diaCurto(dados.dia)})`}, {janelaTexto}</span>
+            <span>· <strong>base usada:</strong> média de</span>
             {dados.referencias.map((r) => (
               <span key={r.dia} className="fh-chip">{diaCurto(r.dia)} · {r.pedidosNaFaixa} pedido{r.pedidosNaFaixa === 1 ? "" : "s"}</span>
             ))}
@@ -237,16 +272,73 @@ export default function AntecipacaoClient() {
             ))}
           </div>
 
-          {dados.ehHakim && (
-            <div className="fh-sem-impressao" style={{ maxWidth: 520, marginBottom: 16 }}>
-              <Abas rotulo="Visão" valor={visaoAtual} onChange={setVisao} opcoes={[
-                { chave: "bases", nome: `Bases (${totalDasBases})` },
-                { chave: "lanches", nome: `Lanches completos (${totalDeLanches})` },
-              ]} />
-            </div>
-          )}
+          <div className="fh-sem-impressao" style={{ maxWidth: dados.ehHakim ? 720 : 480, marginBottom: 16 }}>
+            <Abas rotulo="Visão" valor={visaoAtual} onChange={setVisao} opcoes={[
+              ...(dados.ehHakim ? [{ chave: "bases" as const, nome: `Bases (${totalDasBases})` }] : []),
+              { chave: "insumos" as const, nome: "Insumos (ficha técnica)" },
+              { chave: "lanches" as const, nome: `Lanches completos (${totalDeLanches})` },
+            ]} />
+          </div>
 
-          {visaoAtual === "bases" && dados.bases ? (
+          {visaoAtual === "insumos" ? (
+            <>
+              {dados.fichaTecnica.produtosComFicha === 0 ? (
+                <div className="fh-card" style={{ padding: 28, textAlign: "center", marginBottom: 18 }}>
+                  <Info size={26} style={{ color: "var(--fh-t4)" }} />
+                  <p style={{ margin: "8px 0 0", fontWeight: 800 }}>A loja ainda não tem ficha técnica montada.</p>
+                  <p style={{ margin: "4px 0 0", fontSize: 14, color: "var(--fh-t4)" }}>Monte a ficha dos produtos em Estoque para ver aqui quanto de cada insumo deixar pronto.</p>
+                </div>
+              ) : (
+                <section className="fh-card" style={{ overflow: "hidden", marginBottom: 18 }}>
+                  <div className="fh-card__head">
+                    <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900 }}>Insumos para deixar pronto ({dados.fichaTecnica.insumos.length})</h2>
+                    <span style={{ fontSize: 13, color: "var(--fh-t4)" }}>A previsão de lanches convertida pela ficha técnica, somada por insumo — combo e meia pizza pela mesma conta da baixa do estoque.</span>
+                  </div>
+                  {dados.fichaTecnica.insumos.length === 0 ? (
+                    <p style={{ padding: 24, margin: 0, textAlign: "center", color: "var(--fh-t4)" }}>Nenhum lanche com ficha saiu nesse horário nos dias da base.</p>
+                  ) : (
+                    <div style={{ overflowX: "auto" }}>
+                      <table className="ant-tabela">
+                        <thead><tr><th>Insumo</th><th className="num">Deixar pronto</th><th className="num">Média</th>{dados.referencias.map((r) => <th key={r.dia} className="num">{diaCurto(r.dia)}</th>)}</tr></thead>
+                        <tbody>
+                          {dados.fichaTecnica.insumos.map((x) => (
+                            <tr key={x.chave}>
+                              <td style={{ fontWeight: 700, color: "var(--fh-t1)" }}>{x.nome}</td>
+                              <td className="num" style={{ fontSize: 18, fontWeight: 900, color: "var(--fh-marca)" }}>{qtdInsumo(x.sugerido, x.unidade)}</td>
+                              <td className="num">{qtdInsumo(Math.round(x.media * 100) / 100, x.unidade)}</td>
+                              {x.porDia.map((q, k) => <td key={k} className="num">{qtdInsumo(Math.round(q * 100) / 100, x.unidade)}</td>)}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </section>
+              )}
+              {dados.fichaTecnica.semFicha.length > 0 && (
+                <section className="fh-card" style={{ overflow: "hidden", marginBottom: 18 }}>
+                  <div className="fh-card__head">
+                    <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900 }}>Sem ficha técnica ({dados.fichaTecnica.semFicha.length})</h2>
+                    <span style={{ fontSize: 13, color: "var(--fh-t4)" }}>Saíram nos dias da base, mas não têm ficha montada: não estão na conta de insumos acima. Prepare pela quantidade.</span>
+                  </div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="ant-tabela">
+                      <thead><tr><th>Lanche / opção</th><th className="num">Deixar pronto</th><th className="num">Média</th></tr></thead>
+                      <tbody>
+                        {dados.fichaTecnica.semFicha.map((x) => (
+                          <tr key={x.nome}>
+                            <td style={{ fontWeight: 700, color: "var(--fh-t1)" }}>{x.nome}</td>
+                            <td className="num" style={{ fontWeight: 900 }}>{x.sugerido}</td>
+                            <td className="num">{num(x.media)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+            </>
+          ) : visaoAtual === "bases" && dados.bases ? (
             <>
               <div className="ant-grade" style={{ marginBottom: 16 }}>
                 {dados.bases.bases.map((b) => {
@@ -281,8 +373,11 @@ export default function AntecipacaoClient() {
                   );
                 })}
               </div>
-              <p style={{ margin: "0 0 18px", fontSize: 13, color: "var(--fh-t4)" }}>
-                Esfiha doce não usa base ({num(dados.bases.doces)} doces na média) — está em Lanches completos, com bebida e acompanhamento.
+              <p style={{ margin: "0 0 18px", fontSize: 13, color: "var(--fh-t4)", lineHeight: 1.5 }}>
+                Esfiha doce não usa base ({num(dados.bases.doces)} doces na média) — está em Lanches completos.
+                {dados.bases.foraDasBases.length > 0 && (
+                  <> Também ficou fora das bases (média): {dados.bases.foraDasBases.map((f) => `${f.nome} ${num(f.media)}`).join(" · ")}.</>
+                )}
               </p>
 
               {horasComVenda.length > 0 && (
