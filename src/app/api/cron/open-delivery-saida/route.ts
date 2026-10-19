@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { pegarVez } from "@/lib/vez";
 import { cicloDaLoja, integracoesAtivas } from "@/lib/open-delivery-saida/eventos";
 
 /**
@@ -14,6 +15,12 @@ export const maxDuration = 55;
 
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  // Cinto do cron-runner (que já só dispara no líder): com dois containers
+  // vivos — o velho e o novo no deploy, ou A e B —, só um roda esta volta.
+  // Vale 16 s (~0,8 do intervalo) e é renovada pelo mesmo servidor (lib/vez.ts).
+  if (!(await pegarVez("job:open-delivery-saida", 16_000))) {
+    return NextResponse.json({ ok: true, pulada: "outro servidor está nesta volta" });
+  }
 
   const inicio = Date.now();
   const temTempo = () => Date.now() - inicio < 40_000;

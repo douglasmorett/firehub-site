@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { pegarVez } from "@/lib/vez";
 import { cardapiowebConfigurada } from "@/lib/cardapioweb/api";
 import { cicloDoCardapioWeb } from "@/lib/cardapioweb/eventos";
 
@@ -26,6 +27,12 @@ export const maxDuration = 55;
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!cardapiowebConfigurada()) return NextResponse.json({ ok: true, desligada: true });
+  // Cinto do cron-runner (que já só dispara no líder): com dois containers
+  // vivos — o velho e o novo no deploy, ou A e B —, só um roda esta volta.
+  // Vale 24 s (~0,8 do intervalo) e é renovada pelo mesmo servidor (lib/vez.ts).
+  if (!(await pegarVez("job:cardapioweb-poll", 24_000))) {
+    return NextResponse.json({ ok: true, pulada: "outro servidor está nesta volta" });
+  }
 
   try {
     const r = await cicloDoCardapioWeb();

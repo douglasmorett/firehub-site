@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { pegarVez } from "@/lib/vez";
 import { keetaConfigurada, eventosDaKeeta, confirmarLeitura, acaoNoPedidoKeeta, type EventoKeeta } from "@/lib/keeta/api";
 import { processarEventoKeeta } from "@/lib/keeta/eventos";
 import { lojaDoMerchant, merchantsAtivos } from "@/lib/keeta/lojas";
@@ -27,6 +28,12 @@ export const maxDuration = 55;
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!keetaConfigurada()) return NextResponse.json({ ok: true, desligada: true });
+  // Cinto do cron-runner (que já só dispara no líder): com dois containers
+  // vivos — o velho e o novo no deploy, ou A e B —, só um roda esta volta.
+  // Vale 24 s (~0,8 do intervalo) e é renovada pelo mesmo servidor (lib/vez.ts).
+  if (!(await pegarVez("job:keeta-poll", 24_000))) {
+    return NextResponse.json({ ok: true, pulada: "outro servidor está nesta volta" });
+  }
 
   const inicio = Date.now();
   const temTempo = () => Date.now() - inicio < 45_000;

@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { closeBillingCycle, getCurrentYearMonth, garantirCiclosDoMes } from "@/lib/billing";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { pegarVez } from "@/lib/vez";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -14,6 +15,12 @@ export const maxDuration = 60;
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Cinto do cron-runner (que já só dispara no líder): com dois containers
+  // vivos — o velho e o novo no deploy, ou A e B —, só um roda esta volta.
+  // Vale 48 min (~0,8 do intervalo) e é renovada pelo mesmo servidor (lib/vez.ts).
+  if (!(await pegarVez("job:billing-close", 48 * 60_000))) {
+    return NextResponse.json({ ok: true, pulada: "outro servidor está nesta volta" });
   }
 
   const log: string[] = [];

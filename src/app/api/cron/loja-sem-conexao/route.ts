@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { pegarVez } from "@/lib/vez";
 import { estadoDaLoja, turnoAgora, FUSO_PADRAO } from "@/lib/loja-aberta";
 import { alertaLigado, avisarDono, numerosDoDono } from "@/lib/alertas-do-dono";
 import { contextoIfood, ErroIfood, type ContextoIfood } from "@/lib/ifood-token";
@@ -82,6 +83,12 @@ function maisRecente(a: number | null, b: number | null): number | null {
 export async function GET(req: NextRequest) {
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+  // Cinto do cron-runner (que já só dispara no líder): com dois containers
+  // vivos — o velho e o novo no deploy, ou A e B —, só um roda esta volta.
+  // Vale 48 s (~0,8 do intervalo) e é renovada pelo mesmo servidor (lib/vez.ts).
+  if (!(await pegarVez("job:loja-sem-conexao", 48_000))) {
+    return NextResponse.json({ ok: true, pulada: "outro servidor está nesta volta" });
   }
 
   // Uma rodada por vez neste processo. O cron-runner também segura

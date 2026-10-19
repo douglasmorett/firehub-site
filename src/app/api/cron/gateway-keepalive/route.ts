@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { segredoObrigatorio } from "@/lib/segredos";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { pegarVez } from "@/lib/vez";
 import { avisarLojistaPeloFireHub } from "@/lib/server-monitor";
 import { paraEnvioWhatsApp } from "@/lib/telefone";
 
@@ -25,6 +26,12 @@ export async function GET(req: NextRequest) {
   // reconexões — abuso de recurso e mapa da operação de graça.
   if (!verifyCronAuth(req)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  // Cinto do cron-runner (que já só dispara no líder): com dois containers
+  // vivos — o velho e o novo no deploy, ou A e B —, só um roda esta volta.
+  // Vale 4 min (~0,8 do intervalo) e é renovada pelo mesmo servidor (lib/vez.ts).
+  if (!(await pegarVez("job:gateway-keepalive", 4 * 60_000))) {
+    return NextResponse.json({ ok: true, pulada: "outro servidor está nesta volta" });
   }
 
   const gatewayUrl = (process.env.EVOLUTION_API_URL || "https://firehub-whatsapp-gateway-production.up.railway.app").replace(/\/$/, "");

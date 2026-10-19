@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { FUSO_PADRAO, dataDaLoja, horaDaLoja } from "@/lib/fuso";
 import { Prisma } from "@prisma/client";
 import { verifyCronAuth } from "@/lib/cron-auth";
+import { pegarVez } from "@/lib/vez";
 import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
 import { telefoneDeVerdade, paraEnvioWhatsApp } from "@/lib/telefone";
 import { RECUPERACAO_PELO_QR_LIGADA } from "@/lib/disparo-em-massa";
@@ -85,6 +86,12 @@ export async function GET(req: NextRequest) {
   // Pausada desde 13/10/2026: saía pelo QR Code (lib/disparo-em-massa.ts).
   if (!RECUPERACAO_PELO_QR_LIGADA) {
     return NextResponse.json({ ok: true, pausada: "recuperação pelo QR desligada — volta pela API oficial" });
+  }
+  // Cinto do cron-runner (que já só dispara no líder): com dois containers
+  // vivos — o velho e o novo no deploy, ou A e B —, só um roda esta volta.
+  // Vale 48 min (~0,8 do intervalo) e é renovada pelo mesmo servidor (lib/vez.ts).
+  if (!(await pegarVez("job:recuperacao-clientes", 48 * 60_000))) {
+    return NextResponse.json({ ok: true, pulada: "outro servidor está nesta volta" });
   }
 
   const log: string[] = [];
