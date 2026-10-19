@@ -20,8 +20,9 @@ export const metadata: Metadata = {
  * - desde 18/10/2026: UMA permissão só. Termo de uso obrigatório na 1ª
  *   abertura (apps/loja/src/lib/termo.ts) que avisa das promoções em destaque;
  *   logo depois, o pedido de notificação do sistema. "Permitir" = pedido +
- *   promoção (é o aceite explícito da Apple 4.5.4); a chave "Promoções e
- *   novidades" na aba Loja tira só a promoção. Notificação nunca é obrigatória.
+ *   promoção (é o aceite explícito da Apple 4.5.4). Sair = desligar nos
+ *   ajustes do celular (a aba Loja abre os ajustes); não há chave só da
+ *   promoção. Notificação nunca é obrigatória.
  */
 
 const ATUALIZADO = "18 de outubro de 2026";
@@ -76,8 +77,9 @@ export default function PrivacidadeDoApp() {
           Expo, que usa o Firebase no Android e o serviço da Apple no iPhone) e o liga aos pedidos feitos neste
           celular. Esse identificador não diz quem você é.
           <br /><br />
-          <b>Sair só das promoções:</b> desligue a chave <b>Promoções e novidades</b> na aba Loja (vale na hora) — os
-          avisos do pedido continuam. <b>Sair de tudo:</b> desligue as notificações do app nos ajustes do celular.
+          <b>Desligar:</b> a qualquer momento, nos ajustes de notificação do celular — a linha <b>Notificações</b> na
+          aba Loja do app leva direto para lá. Desligando, você para de receber todas as notificações do app (pedido e
+          promoções); o app continua funcionando normalmente.
           <br /><br />
           Promoção vem só da loja dona do app, nunca de outras empresas. A loja pode escolher para quem manda com
           base nos pedidos feitos nela (por exemplo, quem não pede há um mês ou quem já pediu pizza) — sem ver quem
@@ -145,8 +147,8 @@ export default function PrivacidadeDoApp() {
           Fale com a loja ou escreva para{" "}
           <a href="mailto:contato@firehubfood.com.br" style={{ color: "#DC2626", fontWeight: 700 }}>contato@firehubfood.com.br</a>{" "}
           com o telefone usado no pedido. Atendemos em até 30 dias, exceto o que a lei fiscal obriga a manter
-          (e dizemos o quê e por quanto tempo). Para parar as promoções, desligue a chave na aba Loja; para
-          parar todos os avisos, desligue as notificações no celular ou desinstale o app.
+          (e dizemos o quê e por quanto tempo). Para parar as notificações, desligue-as nos ajustes do
+          celular (aba Loja › Notificações) ou desinstale o app.
         </p>
 
         <h2 style={h2}>Quem é o responsável</h2>

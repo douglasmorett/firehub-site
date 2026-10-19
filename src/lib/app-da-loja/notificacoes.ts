@@ -5,18 +5,18 @@
  *
  * - Só pela API do Expo, em lotes de 100 (como lib/app-da-loja/aparelhos.ts).
  *   NUNCA pelo WhatsApp (memória numero-do-firehub-so-responde).
- * - Só para quem recebe notificação — permitiu no celular, aceitou o termo do
- *   app e não desligou as promoções (regras-do-push.ts) — e, dentro deles, o
- *   SEGMENTO escolhido (sumidos, fiéis, quem pediu X…).
+ * - Só para quem recebe notificação — aceitou o termo do app e permitiu no
+ *   celular (regras-do-push.ts) — e, dentro deles, o SEGMENTO escolhido
+ *   (sumidos, fiéis, quem pediu X…).
  * - Sem limite por dia (Douglas, 17/10/2026): a tela avisa a partir do 3º e
- *   o histórico mostra quantos desligaram as promoções depois de cada envio.
+ *   o histórico mostra quantos apagaram o app depois de cada envio.
  *   Proteções técnicas: confirmação na tela, o mesmo texto duas vezes em
  *   menos de 2 min é barrado (clique duplo), lotes de 100.
  * - Agendado sai pelo cron /api/cron/app-da-loja-notificacoes (a cada
  *   minuto), que também: pergunta ao Expo os recibos (entregue/erro, 15 min
  *   depois), tira da base o aparelho de onde o app saiu (DeviceNotRegistered)
  *   e APURA cada envio das últimas 72 h — abertos (toques), pedidos e
- *   faturamento atribuídos (24 h) e quantos desligaram (48 h).
+ *   faturamento atribuídos (24 h) e quantos apagaram o app (48 h).
  *
  * Tabelas em SQL cru, criadas no primeiro uso:
  *   AppDaLojaNotificacao         um envio (texto, segmento, contas, resultado)
@@ -476,7 +476,7 @@ export async function registrarToque(envioId: string, instalacaoId: string): Pro
 /**
  * Cron: apura os envios das últimas 72 h de cada conta — toques, pedidos e
  * faturamento atribuídos (24 h, regra em resultado-dos-envios.ts) e quantos
- * desligaram as promoções ou desinstalaram (48 h). Grava no envio; a tela só
+ * desinstalaram o app (48 h). Grava no envio; a tela só
  * lê. Depois de 72 h o envio fica com o último resultado e os destinos saem.
  */
 export async function apurarEnvios(): Promise<number> {

@@ -194,8 +194,9 @@ export type Abertura = {
   versaoDoApp?: string | null;
   app?: string | null;
   /**
-   * true = recebe promoção (aceitou o termo e não desligou na aba Loja);
-   * false = desligou; null = ainda não aceitou o termo (não muda nada).
+   * true = recebe promoção (aceitou o termo);
+   * false = tocou "Agora não" na tela antiga de promoções;
+   * null = ainda não aceitou o termo (não muda nada).
    */
   promocoes: boolean | null;
   /** A versão do termo de uso aceita neste celular (null = nenhuma). */

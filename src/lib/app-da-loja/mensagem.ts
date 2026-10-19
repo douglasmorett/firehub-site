@@ -55,7 +55,7 @@ export function avaliarTexto(t: { titulo: string; mensagem: string }, ctx: { hor
   }
   if (ctx.hora >= 23 || ctx.hora < 9) avisos.push({ nivel: "atencao", texto: `Envio às ${ctx.hora}h: de madrugada a notificação incomoda e a pessoa desliga as promoções.` });
   if (ctx.enviosNoDia >= 2) {
-    avisos.push({ nivel: "atencao", texto: `Você já mandou ${ctx.enviosNoDia} hoje. Muitos envios fazem o cliente desligar as promoções ou apagar o app.` });
+    avisos.push({ nivel: "atencao", texto: `Você já mandou ${ctx.enviosNoDia} hoje. Muitos envios fazem o cliente desligar as notificações ou apagar o app.` });
   } else if (ctx.enviosNoDia === 1) {
     avisos.push({ nivel: "dica", texto: "Já saiu uma hoje: a segunda do mesmo dia costuma render menos." });
   }

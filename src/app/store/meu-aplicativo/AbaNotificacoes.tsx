@@ -164,7 +164,7 @@ export default function AbaNotificacoes({ dados, avisar, recarregar }: { dados: 
             <div className="ma-envio-numeros" style={{ marginTop: 0 }}>
               <div className="ma-envio-num bom"><span>Vendido depois</span><b>{reais(r30.faturamento)}</b></div>
               <div className="ma-envio-num"><span>Envios</span><b>{inteiro(r30.envios)}</b></div>
-              <div className={`ma-envio-num${r30.entregues && r30.desligaram / r30.entregues > 0.02 ? " ruim" : ""}`}><span>Desligaram</span><b>{inteiro(r30.desligaram)}</b><small>{r30.entregues ? pct(r30.desligaram / r30.entregues, 1) : ""}</small></div>
+              <div className={`ma-envio-num${r30.entregues && r30.desligaram / r30.entregues > 0.02 ? " ruim" : ""}`}><span>Apagaram o app</span><b>{inteiro(r30.desligaram)}</b><small>{r30.entregues ? pct(r30.desligaram / r30.entregues, 1) : ""}</small></div>
               <div className="ma-envio-num"><span>Custaria no WhatsApp</span><b>{reaisCurto(r30.entregues * N.precoWhatsApp)}</b><small className="bloco">no app: R$ 0,00</small></div>
             </div>
           </div>
@@ -181,7 +181,7 @@ export default function AbaNotificacoes({ dados, avisar, recarregar }: { dados: 
       <div className="ma-compor">
         <div className="ma-cartao">
           <h2><Send size={18} /> Nova notificação</h2>
-          <p className="ma-cartao-sub">Chega no celular de todo mundo que tem o app e permitiu notificação (menos quem desligou as promoções). De graça, sem WhatsApp.</p>
+          <p className="ma-cartao-sub">Chega no celular de todo mundo que tem o app e permitiu notificação. De graça, sem WhatsApp.</p>
 
           <div className="ma-passo"><em>1</em> O que você quer?</div>
           <div className="ma-chips">
@@ -324,7 +324,7 @@ export default function AbaNotificacoes({ dados, avisar, recarregar }: { dados: 
         <h2><Clock size={18} /> Enviadas e resultado</h2>
         <p className="ma-cartao-sub">
           Entregues = confirmação do Google/Apple · Abertas = tocaram na notificação · Pedidos = pelo app, em até 24 h, num celular que recebeu ·
-          Desligaram = desligaram as promoções ou apagaram o app em até 48 h.
+          Apagaram = desinstalaram o app em até 48 h.
         </p>
         {N.envios.length === 0 ? (
           <div className="ma-vazio"><div className="ma-vazio-icone"><Radio size={20} /></div><b>Nenhuma notificação ainda</b>O resultado de cada envio aparece aqui.</div>
@@ -355,7 +355,7 @@ export default function AbaNotificacoes({ dados, avisar, recarregar }: { dados: 
                         <div className="ma-envio-num"><span>Abertas</span><b>{inteiro(e.abertos)}</b><small>{entregues ? pct(e.abertos / entregues, 1) : ""}</small></div>
                         <div className={`ma-envio-num${e.pedidos ? " bom" : ""}`}><span>Pedidos</span><b>{inteiro(e.pedidos)}</b><small>{entregues && e.pedidos ? pct(e.pedidos / entregues, 1) : ""}</small></div>
                         <div className={`ma-envio-num${e.faturamento ? " bom" : ""}`}><span>Vendido</span><b>{reaisCurto(e.faturamento)}</b></div>
-                        <div className={`ma-envio-num${entregues && e.desligaram / entregues > 0.02 ? " ruim" : ""}`}><span>Desligaram</span><b>{inteiro(e.desligaram)}</b><small>{entregues ? pct(e.desligaram / entregues, 1) : ""}</small></div>
+                        <div className={`ma-envio-num${entregues && e.desligaram / entregues > 0.02 ? " ruim" : ""}`}><span>Apagaram o app</span><b>{inteiro(e.desligaram)}</b><small>{entregues ? pct(e.desligaram / entregues, 1) : ""}</small></div>
                       </div>
                       <div className="ma-envio-rodape">
                         <span>{recente ? "Resultado parcial: a conta fecha 24 h depois do envio (desligamentos, 48 h)." : `Pelo WhatsApp oficial custaria ${reais(e.custoNoWhatsApp)}; no app, R$ 0.`}</span>
@@ -396,7 +396,7 @@ export default function AbaNotificacoes({ dados, avisar, recarregar }: { dados: 
                 <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
                   {atencoes.map((a) => <li key={a.texto}>{a.texto}</li>)}
                   {enviosNoDia + 1 >= regras.avisarAPartirDe && !atencoes.some((a) => a.texto.startsWith("Você já mandou")) && (
-                    <li>Esta será a {enviosNoDia + 1}ª de hoje. Muitos envios fazem o cliente desligar as promoções ou apagar o app.</li>
+                    <li>Esta será a {enviosNoDia + 1}ª de hoje. Muitos envios fazem o cliente desligar as notificações ou apagar o app.</li>
                   )}
                 </ul>
               </div>
@@ -434,7 +434,7 @@ function OQueFunciona({ N }: { N: Dados["painel"]["notificacoes"] }) {
         <li>Diga o prazo: “só hoje”, “até as 23h”.</li>
         <li>Um emoji no começo; mais de 2 cansa.</li>
         <li>Uma hora antes do pico; nunca de madrugada.</li>
-        <li>1 a 2 por semana. Muitos envios fazem desligar as promoções.</li>
+        <li>1 a 2 por semana. Muitos envios fazem desligar as notificações ou apagar o app.</li>
       </ul>
     </div>
   );

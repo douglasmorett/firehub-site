@@ -25,7 +25,7 @@ export type Envio = {
 export type Sugestao = { objetivo: string; titulo: string; mensagem: string; segmento: TipoDeSegmento; produtoId: string | null; porque: string };
 export type Painel = {
   periodo: { chave: Periodo; de: string; ate: string; dias: number; anteriorDe: string; anteriorAte: string };
-  base: { instalacoes: number; ativosAgora: number; ativos7: number; ativos30: number; novosNoMes: number; recebemNotificacao: number; desligaramPromocoes: number; semPermissao: number; aguardandoTermo: number; versaoAntiga: number };
+  base: { instalacoes: number; ativosAgora: number; ativos7: number; ativos30: number; novosNoMes: number; recebemNotificacao: number; recusaramNaTelaAntiga: number; semPermissao: number; aguardandoTermo: number; versaoAntiga: number };
   canais: NumerosDoCanal[];
   canaisAnterior: NumerosDoCanal[];
   total: { pedidos: number; faturamento: number; ticketMedio: number };

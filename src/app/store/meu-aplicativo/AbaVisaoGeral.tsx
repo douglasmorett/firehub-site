@@ -108,8 +108,12 @@ export default function AbaVisaoGeral({ dados, irPara }: { dados: Dados; irPara:
           <div className="ma-hero-det">{base.instalacoes ? `${pct(base.recebemNotificacao / base.instalacoes)} da base` : "pedido e promoções"}</div>
         </div>
         <div className="ma-hero-rodape">
-          <span><b>{inteiro(base.desligaramPromocoes)}</b> desligaram as promoções</span>
           <span><b>{inteiro(base.semPermissao)}</b> não permitiram notificação no celular</span>
+          {base.recusaramNaTelaAntiga > 0 && (
+            <span title="Tocaram “Agora não” na tela de promoções da versão anterior do app: recebem só os avisos do pedido.">
+              <b>{inteiro(base.recusaramNaTelaAntiga)}</b> recusaram promoção na versão anterior
+            </span>
+          )}
           {base.aguardandoTermo + base.versaoAntiga > 0 && (
             <span><b>{inteiro(base.aguardandoTermo + base.versaoAntiga)}</b> passam a receber quando abrirem a versão nova do app</span>
           )}

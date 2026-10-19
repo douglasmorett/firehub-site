@@ -1,22 +1,18 @@
 /**
- * A loja: como falar com ela, onde fica, as notificações deste celular e, por
- * último e sem destaque, a chave que desliga só as promoções (Apple 4.5.4:
- * quem recebe promoção tem de poder sair).
+ * A loja: como falar com ela, onde fica, a privacidade e, por último e sem
+ * destaque, a linha que abre os ajustes de notificação do celular (a opção de
+ * sair da Apple 4.5.4).
  */
 import { Ionicons } from "@expo/vector-icons";
 import Constants from "expo-constants";
 import { Image } from "expo-image";
 import * as Linking from "expo-linking";
-import { useFocusEffect } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import { useCallback, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { estadoDosAvisos, tokenDoAparelho, type EstadoDosAvisos } from "@/lib/avisos";
 import { logoDaMarca } from "@/lib/logo-da-marca";
 import { marca } from "@/lib/marca";
-import { avisarAbertura, desligarPromocoes, promocoesDesligadas } from "@/lib/presenca";
 
 function Linha({ icone, titulo, detalhe, aoTocar }: { icone: keyof typeof Ionicons.glyphMap; titulo: string; detalhe?: string; aoTocar: () => void }) {
   return (
@@ -33,41 +29,9 @@ function Linha({ icone, titulo, detalhe, aoTocar }: { icone: keyof typeof Ionico
   );
 }
 
-const TEXTO_DOS_AVISOS: Record<EstadoDosAvisos, string> = {
-  ligados: "Ligados — você é avisado quando o pedido é aceito, sai para entrega e chega.",
-  desligados: "Desligados. Toque para ligar nos ajustes do celular.",
-  "nao-perguntado": "Toque para ligar e saber quando o pedido sair para entrega.",
-  indisponivel: "Indisponíveis neste aparelho.",
-};
-
 export default function Contato() {
   const topo = useSafeAreaInsets().top;
-  const [avisos, setAvisos] = useState<EstadoDosAvisos>("indisponivel");
-  const [promocoes, setPromocoes] = useState(true);
   const { whatsapp, telefone, instagram, endereco } = marca.contato || {};
-
-  useFocusEffect(
-    useCallback(() => {
-      estadoDosAvisos().then(setAvisos);
-      promocoesDesligadas().then((d) => setPromocoes(!d));
-    }, []),
-  );
-
-  const ligarAvisos = async () => {
-    if (avisos === "nao-perguntado") {
-      await tokenDoAparelho(true);
-      setAvisos(await estadoDosAvisos());
-    } else if (avisos === "desligados") {
-      Linking.openSettings();
-    }
-  };
-
-  // Desligar tira só a promoção; os avisos do pedido continuam (uma permissão só no celular).
-  const trocarPromocoes = async (quer: boolean) => {
-    setPromocoes(quer);
-    await desligarPromocoes(!quer);
-    avisarAbertura(true);
-  };
 
   return (
     <ScrollView style={{ flex: 1, backgroundColor: "#F6F6F7" }} contentContainerStyle={{ paddingBottom: 32 }}>
@@ -98,26 +62,12 @@ export default function Contato() {
 
       <Text style={estilos.secao}>Este celular</Text>
       <View style={estilos.grupo}>
-        <Linha icone="notifications" titulo="Avisos do pedido" detalhe={TEXTO_DOS_AVISOS[avisos]} aoTocar={ligarAvisos} />
         <Linha icone="shield-checkmark" titulo="Privacidade" detalhe="Como seus dados são usados" aoTocar={() => WebBrowser.openBrowserAsync(marca.privacidade)} />
-        {/* Sem destaque, de propósito: é a opção de sair que a Apple exige (4.5.4). */}
-        <View style={[estilos.linha, { borderBottomWidth: 0 }]}>
-          <View style={[estilos.icone, { backgroundColor: "#F1F1F1" }]}>
-            <Ionicons name="pricetags-outline" size={18} color="#8A8A8A" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={estilos.titulo}>Promoções e novidades</Text>
-            <Text style={estilos.detalhe}>
-              {promocoes ? "Chegam junto com os avisos do pedido." : "Desligadas — você recebe só os avisos do pedido."}
-            </Text>
-          </View>
-          <Switch
-            value={promocoes}
-            onValueChange={trocarPromocoes}
-            trackColor={{ true: "#9CA3AF", false: "#D4D4D4" }}
-            accessibilityLabel="Receber promoções e novidades"
-          />
-        </View>
+        {/* A opção de sair que a Apple exige (4.5.4: "provide a method in your app for a user
+            to opt out"): uma linha discreta que só abre os ajustes do app no celular. Não há
+            chave para tirar só a promoção — Douglas, 18/10/2026: "nada de botão de tirar
+            notificação". Quem desliga nos ajustes para de receber tudo (pedido e promoção). */}
+        <Linha icone="notifications-outline" titulo="Notificações" detalhe="Ativar ou desativar nos ajustes do celular" aoTocar={() => Linking.openSettings().catch(() => {})} />
       </View>
 
       <Text style={estilos.rodape}>

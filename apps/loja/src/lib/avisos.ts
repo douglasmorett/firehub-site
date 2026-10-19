@@ -42,7 +42,7 @@ async function criarCanal(): Promise<void> {
   });
   await Notifications.setNotificationChannelAsync(CANAL_DE_PROMOCOES, {
     name: "Promoções e novidades",
-    description: `Ofertas e novidades da ${marca.nome}. Dá para desligar só estas na aba Loja do app.`,
+    description: `Ofertas e novidades da ${marca.nome}.`,
     importance: Notifications.AndroidImportance.DEFAULT,
     lightColor: marca.cor,
     sound: "default",
