@@ -48,7 +48,11 @@ RUN cd contingencia/supervisor && NODE_ENV=development npm ci --no-audit --no-fu
 
 # Step 3: Production runner (imagem final leve)
 FROM base AS runner
-RUN apk add --no-cache openssl
+# tini: o PID 1 que recolhe processo morto. Sem ele o PID 1 é o node, que não
+# recolhe órfão: cada `wget` do healthcheck do Coolify que estoura o tempo vira
+# zumbi (138 contados em 18/10/2026). curl: o healthcheck do Coolify tenta
+# curl primeiro e só cai no wget sem ele.
+RUN apk add --no-cache openssl tini curl
 WORKDIR /app
 
 ENV NODE_ENV=production
@@ -101,4 +105,8 @@ USER nextjs
 
 EXPOSE 3000
 
+# `-g`: o SIGTERM do `docker stop` vai para o GRUPO inteiro — o node do site
+# (que fecha as conexões e solta a vez do cron, src/instrumentation.ts) e o
+# cron-runner, que antes só morria no SIGKILL, 10 s depois.
+ENTRYPOINT ["/sbin/tini", "-g", "--"]
 CMD ["sh", "./scripts/entrypoint.sh"]
