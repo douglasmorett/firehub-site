@@ -31,7 +31,7 @@ import { feriadoLocal } from "@/lib/holidays";
 import { nomeDoProduto } from "@/lib/relatorios/itens-vendidos";
 import { chaveDoNome } from "@/lib/categoria-do-item";
 import {
-  FATOR_DO_FERIADO, contarDia, juntarNomesCurtos, montarFichas, preverBases, preverInsumos, preverLinhas, type ContagemDoDia, type PedidoDaAntecipacao,
+  APELIDOS_DO_HAKIM, FATOR_DO_FERIADO, contarDia, juntarNomesCurtos, montarFichas, preverBases, preverInsumos, preverLinhas, type ContagemDoDia, type PedidoDaAntecipacao,
 } from "@/lib/antecipacao";
 
 export const dynamic = "force-dynamic";
@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
     ...doRelatorio,
     ativos: new Set(produtos.filter((p) => p.active).map((p) => p.id)),
     combos: new Set(produtos.filter((p) => p.isCombo).map((p) => chaveDoNome(p.name))),
+    apelidos: ehHakim ? APELIDOS_DO_HAKIM : undefined,
   };
 
   type PedidoLido = PedidoDaAntecipacao & { id: string; createdAt: Date };

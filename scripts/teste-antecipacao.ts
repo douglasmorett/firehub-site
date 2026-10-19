@@ -6,7 +6,7 @@
  */
 import { montarCatalogo, type ProdutoDoCatalogo } from "../src/lib/relatorios/catalogo";
 import {
-  arredondarInsumo, baseDoHakim, contarDia, insumosDoPedido, juntarNomesCurtos, lanchesDoPedido, montarFichas, preverBases, preverInsumos, preverLinhas, FATOR_DO_FERIADO,
+  APELIDOS_DO_HAKIM, arredondarInsumo, baseDoHakim, contarDia, insumosDoPedido, juntarNomesCurtos, lanchesDoPedido, montarFichas, preverBases, preverInsumos, preverLinhas, FATOR_DO_FERIADO,
   type CatalogoDaAntecipacao, type PedidoDaAntecipacao,
 } from "../src/lib/antecipacao";
 
@@ -134,6 +134,17 @@ const faixa = contarDia("2026-10-11", [
   pedido([item("Esfirra de Carne", 1)], "2026-10-12T04:30:00.000Z"),
 ], catalogo, "America/Sao_Paulo", "22:00", "02:00");
 confere("faixa que passa da meia-noite (22:00–02:00): só o pedido da 01:30", [faixa.pedidosNoDia, faixa.pedidosNaFaixa], [2, 1]);
+
+// ── Nomes de antes da renomeação de 12/10 (confirmados pelo Douglas) ──
+const comApelidos: CatalogoDaAntecipacao = { ...catalogo, apelidos: APELIDOS_DO_HAKIM };
+const antigo = pedido([item("Combo 10 Esfirras Simples", 1, JSON.stringify([{ name: "Esfirra de Queijo", quantity: 6 }, { name: "Esfirra de Calabresa", quantity: 4 }]), { menuProduct: { id: "ifood-c10", name: "Combo 10 Esfirras Simples", category: "Combos", active: false } })]);
+confere("apelido: \"Esfirra de Queijo\" antiga é a de queijo temperado; \"Esfirra de Calabresa\", a com mussarela",
+  lanchesDoPedido(antigo, comApelidos).filter((c) => !c.combo).map((c) => `${c.nome} ${c.quantidade}`),
+  ["Esfirra de Queijo Temperado 6", "Esfirra de Calabresa com Mussarela 4"]);
+confere("apelido vale também para o avulso e para o nome curto do iFood",
+  lanchesDoPedido(pedido([item("Esfirra de Queijo", 3), item("Combo 10 Esfirras Simples", 1, JSON.stringify([{ name: "Calabresa", quantity: 10 }]), { menuProduct: { id: "ifood-c10", name: "Combo 10 Esfirras Simples", category: "Combos", active: false } })]), comApelidos)
+    .filter((c) => !c.combo).map((c) => `${c.nome} ${c.quantidade}`),
+  ["Esfirra de Queijo Temperado 3", "Esfirra de Calabresa com Mussarela 10"]);
 
 // ── Ficha técnica (a regra da baixa do estoque) ──
 const linhaDaFicha = (id: string, nome: string, unidade: string, q: number) => ({ stockItemId: id, quantityConsumed: q, stockItem: { name: nome, unit: unidade } });

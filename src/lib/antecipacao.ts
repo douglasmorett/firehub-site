@@ -90,7 +90,23 @@ export type CatalogoDaAntecipacao = Pick<ContextoDaConta, "mapasDe" | "grupos" |
   ativos?: Set<string>;
   /** Nomes (chaveDoNome) dos produtos que são combo no cardápio: o "Hakim Kids" do iFood chega sem a marca de combo. */
   combos?: Set<string>;
+  /** Nome antigo (chaveDoNome) → nome de hoje, para pedido de antes de uma renomeação (`APELIDOS_DO_HAKIM`). */
+  apelidos?: Map<string, string>;
 };
+
+/**
+ * Os nomes que o Hakim usava até 11/10/2026, quando o cardápio do site e do
+ * iFood foi refeito e as esfihas renomeadas. Confirmados pelo Douglas em
+ * 18/10/2026: a "Esfirra de Calabresa" é a com mussarela e a "Esfirra de
+ * Queijo" é a de queijo temperado. Sem isto, os dias de base de antes de 12/10
+ * mostravam a esfiha sem ficha e punham a de queijo na base de mussarela.
+ */
+export const APELIDOS_DO_HAKIM = new Map<string, string>([
+  ["esfirra de calabresa", "Esfirra de Calabresa com Mussarela"],
+  // O mesmo item, como o combo do iFood mandava antes de 12/10.
+  ["calabresa", "Esfirra de Calabresa com Mussarela"],
+  ["esfirra de queijo", "Esfirra de Queijo Temperado"],
+]);
 
 /** Uma unidade contada: um lanche (ou combo) e quanto dele saiu. */
 export type Contado = { chave: string; nome: string; combo: boolean; quantidade: number };
@@ -193,13 +209,14 @@ export function pecasDoPedido(pedido: PedidoDaAntecipacao, catalogo: CatalogoDaA
   const saida: Peca[] = [];
   const mapas = catalogo.mapasDe(pedido.franchiseeId);
   const vendaveis = catalogo.vendaveisDe(pedido.franchiseeId);
+  const renomear = (n: string) => catalogo.apelidos?.get(chaveDoNome(n)) ?? n;
   for (const [indice, item] of pedido.items.entries()) {
     const qtd = Number(item.quantity) || 0;
     if (qtd <= 0) continue;
     const idDoItem = item.menuProductId || item.menuProduct?.id || null;
     const peca = (c: Contado, produtoId: string | null, origem: Peca["origem"], lanche = true): Peca =>
       ({ ...c, produtoId, origem, lanche, item: indice });
-    const nome = nomeDoProduto(item);
+    const nome = renomear(nomeDoProduto(item));
     const categoria = categoriaDoItem(item as any, mapas);
     const ehCombo = item.menuProduct?.isCombo === true
       || Boolean(catalogo.combos?.has(chaveDoNome(nome)))
@@ -216,7 +233,7 @@ export function pecasDoPedido(pedido: PedidoDaAntecipacao, catalogo: CatalogoDaA
       canal: pedido.canal,
       gruposDoProduto: catalogo.gruposDoItem?.(pedido.franchiseeId, item),
       ehPizza: produtoDePizza(nome, categoria),
-    });
+    }).map((e) => ({ ...e, nome: renomear(e.nome) }));
 
     if (escolhas.length === 0 && (ehCombo || desconhecido)) {
       // "4 Esfirras de Carne": o nome diz o que vem dentro.
