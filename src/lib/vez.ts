@@ -86,3 +86,6 @@ export async function soltarVez(chave: string, dono: string = idDaInstancia()): 
     console.warn(`[Vez] não consegui soltar "${chave}": ${String(err?.message || err).slice(0, 120)}`);
   }
 }
+
+/** A vez do cron-runner que dispara os jobs (api/cron/lideranca). */
+export const CHAVE_DO_LIDER_DO_CRON = "cron:lider";

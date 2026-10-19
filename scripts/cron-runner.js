@@ -146,6 +146,10 @@ const jobs = [
     name: 'health-check',
     path: '/api/cron/health-check',
     intervalMs: 5 * 60_000, // 5 minutos — monitora saúde + alerta WhatsApp
+    // Em TODA instância, líder ou não: mede o próprio processo (memória,
+    // banco visto daqui). Os avisos que valem para o cluster inteiro saem uma
+    // vez só pela vez do alerta (src/lib/server-monitor.ts).
+    todasAsInstancias: true,
   },
   {
     // Fotos de cardápio importado (MenuDino etc.) baixadas para o volume da
@@ -316,6 +320,136 @@ const falhasSeguidas = {};
 /** Job `exclusivo` com chamada ainda aberta: a próxima rodada é pulada. */
 const emAndamento = {};
 
+// ── UM cron-runner dispara por vez no cluster ────────────────────────
+//
+// Cada container sobe o seu cron-runner (scripts/entrypoint.sh). No deploy o
+// velho e o novo ficam vivos juntos, e com dois servidores atrás do
+// balanceador, o tempo todo: sem isto TODO job rodava em dobro — a Keeta
+// acima do limite de 2 consultas por minuto, o aviso do lojista repetido.
+//
+// Antes de disparar, o runner pergunta ao PRÓPRIO servidor se é o líder
+// (/api/cron/lideranca, que pega ou renova a vez "cron:lider" por 90 s no
+// banco). A resposta vale ~30 s; quem não é líder não dispara nada e marca o
+// job como pendente — se virar líder (o outro caiu ou foi desligado), roda os
+// pendentes logo, como o container novo sempre fez no boot.
+//
+// Se a pergunta falhar (banco fora, servidor ocupado): segue líder só
+// enquanto a vez que já tinha ainda vale — ninguém pode pegá-la antes de
+// vencer, então não há risco de dois —, e depois para. Os jobs dependem do
+// banco de qualquer jeito; o health-check (que roda em todas as instâncias)
+// é quem avisa que o banco caiu.
+const LIDERANCA_PATH = '/api/cron/lideranca';
+const PERGUNTAR_A_CADA_MS = 30_000;
+/** Para de se achar líder um pouco antes de a vez vencer no banco. */
+const MARGEM_DA_VEZ_MS = 15_000;
+/** A instância que não é a preferida espera esta folga antes da 1ª pergunta. */
+const FOLGA_DA_NAO_PREFERIDA_MS = 20_000;
+const PREFERIDO = process.env.CRON_PREFERIDO === '1';
+
+const lideranca = {
+  /** Até quando (relógio local) este runner pode disparar. */
+  ate: 0,
+  perguntadaEm: 0,
+  emCurso: null,
+  /** Último estado anunciado no log (null = ainda nenhum). */
+  era: null,
+  falhas: 0,
+};
+
+/** GET local que devolve o JSON (ou null em erro de rede/HTTP). */
+function pedirJson(path, timeoutMs = 10_000) {
+  return new Promise((resolve) => {
+    const url = new URL(path, BASE_URL);
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port || 3000,
+        path: url.pathname,
+        method: 'GET',
+        family: 4,
+        timeout: timeoutMs,
+        headers: CRON_SECRET ? { Authorization: `Bearer ${CRON_SECRET}` } : {},
+      },
+      (res) => {
+        let body = '';
+        res.on('data', (c) => { body += c; });
+        res.on('end', () => {
+          let json = null;
+          try { json = JSON.parse(body); } catch {}
+          resolve({ status: res.statusCode, json });
+        });
+      },
+    );
+    req.on('error', (err) => resolve({ status: 0, json: null, erro: err.message }));
+    req.on('timeout', () => { req.destroy(); resolve({ status: 0, json: null, erro: 'timeout' }); });
+    req.end();
+  });
+}
+
+async function perguntarLideranca() {
+  const inicio = Date.now();
+  const r = await pedirJson(LIDERANCA_PATH);
+  lideranca.perguntadaEm = Date.now();
+  if (r.status === 200 && r.json && typeof r.json.lider === 'boolean') {
+    lideranca.falhas = 0;
+    const validade = Number(r.json.validadeMs) || 90_000;
+    lideranca.ate = r.json.lider ? inicio + validade - MARGEM_DA_VEZ_MS : 0;
+    return;
+  }
+  // Falhou: `ate` fica como estava (a vez que já é nossa continua valendo).
+  lideranca.falhas++;
+  if (lideranca.falhas === 1 || lideranca.falhas % 10 === 0) {
+    const motivo = r.erro || (r.json && r.json.erro) || `HTTP ${r.status}`;
+    const resta = Math.max(0, lideranca.ate - Date.now());
+    console.warn(
+      `[cron-runner] ⚠️ liderança: não consegui perguntar (${motivo}; ${lideranca.falhas}ª falha seguida) — ` +
+        (resta > 0 ? `sigo líder pela vez que já tenho, por mais ${Math.round(resta / 1000)} s.` : 'não disparo nada até responder.'),
+    );
+  }
+}
+
+/** Este runner pode disparar agora? Pergunta ao servidor no máximo a cada ~30 s. */
+async function souLider() {
+  if (Date.now() - lideranca.perguntadaEm >= PERGUNTAR_A_CADA_MS) {
+    if (!lideranca.emCurso) {
+      lideranca.emCurso = perguntarLideranca().finally(() => { lideranca.emCurso = null; });
+    }
+    await lideranca.emCurso;
+  }
+  const agora = Date.now() < lideranca.ate;
+  if (agora !== lideranca.era) {
+    lideranca.era = agora;
+    console.log(
+      agora
+        ? `[cron-runner] 👑 este container é o LÍDER do cron — dispara os jobs${PREFERIDO ? ' (preferido)' : ''}.`
+        : lideranca.falhas > 0
+          ? `[cron-runner] 💤 sem resposta da liderança e a vez venceu — este container não dispara até responder (só o health-check).`
+          : `[cron-runner] 💤 outro container é o líder do cron — este não dispara (só o health-check).`,
+    );
+    if (agora) dispararPendentes();
+  }
+  return agora;
+}
+
+/** Os jobs que deixaram de rodar enquanto este runner não era o líder. */
+function dispararPendentes() {
+  for (const job of jobs) {
+    if (!job.pendente) continue;
+    job.pendente = false;
+    setTimeout(() => { tick(job); }, Math.random() * 10_000);
+  }
+}
+
+/** Uma rodada do job: só no líder (exceto os de todas as instâncias). */
+async function tick(job) {
+  if (!job.todasAsInstancias && !(await souLider())) {
+    job.pendente = true;
+    return;
+  }
+  job.pendente = false;
+  return callEndpoint(job);
+}
+
 // ── Função para chamar um endpoint ───────────────────────────────────
 function callEndpoint(job) {
   if (job.exclusivo) {
@@ -406,7 +540,9 @@ function waitForServer(maxWaitMs = 120_000) {
         // vazava dados das lojas e agora responde 404 em producao.
         // 127.0.0.1 pelo mesmo motivo do BASE_URL: "localhost" pode ir para ::1
         // e esta sonda nunca enxergaria um servidor que está de pé em IPv4.
-        { hostname: '127.0.0.1', family: 4, port: 3000, path: '/api/health', method: 'GET', timeout: 3000 },
+        // A porta é a do BASE_URL (3000 no container; outra no teste com dois
+        // servidores na mesma máquina).
+        { hostname: '127.0.0.1', family: 4, port: new URL(BASE_URL).port || 3000, path: '/api/health', method: 'GET', timeout: 3000 },
         (res) => {
           res.resume();
           console.log('[cron-runner] ✅ Servidor Next.js pronto!');
@@ -439,23 +575,35 @@ async function main() {
   
   await waitForServer();
 
+  // A liderança é renovada no seu próprio ritmo, não só quando um job bate:
+  // a vez no banco não pode vencer num intervalo sem job.
+  if (!PREFERIDO) {
+    // A não preferida dá a folga antes da 1ª pergunta: subindo as duas juntas,
+    // a preferida pega a vez primeiro.
+    lideranca.perguntadaEm = Date.now() - PERGUNTAR_A_CADA_MS + FOLGA_DA_NAO_PREFERIDA_MS;
+  }
+  setInterval(() => { souLider().catch(() => {}); }, 5_000);
+
   // Agendar cada job com seu intervalo
   for (const job of jobs) {
     // Primeira execução com delay escalonado (evita thundering herd)
     const initialDelay = Math.random() * 10_000;
-    
+
     setTimeout(() => {
-      // Executar imediatamente
-      callEndpoint(job);
+      // Executar imediatamente (se este runner for o líder; senão fica pendente)
+      tick(job);
 
       // Agendar repetição
       setInterval(() => {
-        callEndpoint(job);
+        tick(job);
       }, job.intervalMs);
     }, initialDelay);
 
-    console.log(`[cron-runner] ⏰ ${job.name} agendado a cada ${job.intervalMs / 1000}s`);
+    console.log(`[cron-runner] ⏰ ${job.name} agendado a cada ${job.intervalMs / 1000}s${job.todasAsInstancias ? ' (em todas as instâncias)' : ''}`);
   }
 }
 
-main().catch(console.error);
+// Exportado para scripts/teste-cron-runner.ts; no container roda o main.
+module.exports = { jobs, lideranca, souLider, tick, dispararPendentes, PERGUNTAR_A_CADA_MS, MARGEM_DA_VEZ_MS };
+
+if (require.main === module) main().catch(console.error);

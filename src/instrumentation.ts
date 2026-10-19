@@ -37,6 +37,17 @@ export async function register() {
   const { garantirTabelasDeCoordenacao } = await import("./lib/ddl-do-boot");
   await garantirTabelasDeCoordenacao();
 
+  // No `docker stop` do deploy, devolve a vez do cron (api/cron/lideranca)
+  // para o container novo assumir na próxima pergunta dele (~30 s), em vez de
+  // esperar os 90 s da vez vencerem. Tentativa só: se não der tempo antes de o
+  // Next sair, a vez vence sozinha. Fora do computador da loja.
+  if (process.env.FIREHUB_LOCAL !== "1") {
+    const { soltarVez, CHAVE_DO_LIDER_DO_CRON } = await import("./lib/vez");
+    process.once("SIGTERM", () => {
+      soltarVez(CHAVE_DO_LIDER_DO_CRON).catch(() => undefined);
+    });
+  }
+
   const {
     garantirColunasDePreco,
     garantirColunasDoSchema,
