@@ -108,12 +108,15 @@ export const LIMITE_DE_MUDANCAS = 150;
 
 /**
  * Os pedidos da loja atualizados depois de `desde`, dentro da janela em que um
- * pedido pode estar na lista (em andamento até 7 dias, ou criado no período).
+ * pedido pode estar na lista (em andamento até 7 dias, criado no período, ou
+ * com a HORA MARCADA nessa janela — a encomenda agendada com mais de 7 dias de
+ * antecedência).
  *
- * É o índice (franchiseeId, createdAt) que deixa isto barato — sem o corte, o
- * banco varreria o histórico inteiro da loja a cada rodada. O pedido agendado
- * criado antes da janela que SAIR do filtro não é visto aqui; a lista completa
- * que o navegador pede a cada 60 s o tira.
+ * O recorte é MAIOR que o de `filtroDoFeed` de propósito: lista vazia aqui
+ * garante que a consulta de "só o que mudou" também viria vazia, e a rota
+ * responde "nada mudou" sem fazê-la (api/customer-order/poll,
+ * scripts/teste-poll-nada-mudou.ts). Até 18/10/2026 a hora marcada não
+ * entrava, e a encomenda antiga que mudava só aparecia pela consulta do feed.
  *
  * Devolve null quando mudaram mais de LIMITE_DE_MUDANCAS: aí a resposta volta
  * completa, por segurança.
@@ -124,7 +127,11 @@ export async function idsQueMudaram(
 ): Promise<string[] | null> {
   const desdeDaJanela = new Date(Math.min(from.getTime(), ATIVO_SEM_PERIODO_DESDE.getTime()));
   const rows = await db.customerOrder.findMany({
-    where: { franchiseeId: { in: validFranchiseeIds }, createdAt: { gte: desdeDaJanela }, updatedAt: { gte: desde } },
+    where: {
+      franchiseeId: { in: validFranchiseeIds },
+      updatedAt: { gte: desde },
+      OR: [{ createdAt: { gte: desdeDaJanela } }, { scheduledDatetime: { gte: desdeDaJanela } }],
+    },
     select: { id: true },
     take: LIMITE_DE_MUDANCAS + 1,
   });

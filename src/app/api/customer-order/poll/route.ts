@@ -14,6 +14,18 @@ import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from
 import { marcarPainelAberto } from "@/lib/sinais-da-loja";
 import { LIMITE as LIMITE_DO_FEED } from "@/lib/feed-de-pedidos";
 import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
+import { lembrarPor } from "@/lib/cache-curto";
+
+/**
+ * Configuração relida a cada rodada deste feed (o usuário do e-mail, se a loja
+ * tem JotaJá/Brendi ligado): fica 15 s em memória (lib/cache-curto.ts). Ligar
+ * uma integração vale em até 15 s; pedido e status continuam lidos na hora.
+ */
+const VALIDADE_DA_CONFIG_MS = 15_000;
+
+/** A faxina dos rascunhos do robô (20/30 min parados) roda no máximo 1×/min por loja, não a cada rodada. */
+const FAXINA_DOS_RASCUNHOS_MS = 60_000;
+const ultimaFaxinaDosRascunhos = new Map<string, number>();
 
 /** Teto de pedidos por rodada do feed (ver o findMany abaixo); o navegador corta no MESMO número (lib/feed-de-pedidos.ts). */
 const TETO_DO_FEED = LIMITE_DO_FEED;
@@ -705,7 +717,7 @@ async function pollJotajaEvents(sessionUserId?: string) {
     // Só loja com a integração LIGADA. Antes rodava para toda loja: com a
     // credencial gravada e a integração desligada, o painel aberto já puxava a
     // fila inteira do JotaJá.
-    if (!(await lojaComJotajaLigado(sessionUserId))) return;
+    if (!(await lembrarPor(`poll:jotaja:${sessionUserId}`, VALIDADE_DA_CONFIG_MS, () => lojaComJotajaLigado(sessionUserId)))) return;
 
     // Usar credenciais da loja do usuário logado
     const res = await jotajaFetch("/v1/events:polling", { method: "GET" }, sessionUserId).catch(err => {
@@ -812,8 +824,11 @@ async function pollBrendiEvents(franchiseeId?: string) {
     // Gate real: flag `brendiConnected` gravada só após o oauth/token da Brendi
     // autenticar de verdade. Loja sem credencial (ou com colunas brendi* ainda
     // não criadas) devolve null aqui e o poll simplesmente não roda.
-    const creds = await getBrendiCredentials(franchiseeId);
-    if (!creds || !creds.connected) return;
+    const ligada = await lembrarPor(`poll:brendi:${franchiseeId}`, VALIDADE_DA_CONFIG_MS, async () => {
+      const creds = await getBrendiCredentials(franchiseeId);
+      return !!(creds && creds.connected);
+    });
+    if (!ligada) return;
 
     const res = await brendiFetch("/v1/events:polling", franchiseeId).catch(err => {
       console.warn("[Brendi Poll] Erro de rede no polling:", err.message);
@@ -890,7 +905,8 @@ export async function GET(req: NextRequest) {
     } catch {}
 
     let user = email
-      ? await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, storeTimezone: true, role: true } })
+      ? await lembrarPor(`poll:usuario:${email}`, VALIDADE_DA_CONFIG_MS, () =>
+          prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, storeTimezone: true, role: true } }))
       : null;
 
     if (!user) {
@@ -986,12 +1002,44 @@ export async function GET(req: NextRequest) {
     const desde = desdeData && !isNaN(desdeData.getTime()) ? desdeData : null;
     const agora = new Date();
 
+    // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela).
+    // Uma vez por minuto por loja: rodava a cada rodada de cada aba, e o
+    // prazo é de 20 min — um minuto a mais não muda nada.
+    if (Date.now() - (ultimaFaxinaDosRascunhos.get(targetFranchiseeId) || 0) >= FAXINA_DOS_RASCUNHOS_MS) {
+      ultimaFaxinaDosRascunhos.set(targetFranchiseeId, Date.now());
+      try {
+        const { checkAndCleanupStaleAiDrafts } = await import("@/lib/chatbot-ai");
+        checkAndCleanupStaleAiDrafts(targetFranchiseeId).catch(() => {});
+      } catch {}
+    }
+
+    const headers = {
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+      // De onde o próximo `desde` parte (lib/feed-de-pedidos.ts). Vai no
+      // cabeçalho para a resposta completa continuar sendo a lista pura.
+      "X-Feed-Agora": agora.toISOString(),
+    };
+
     // O que mudou na loja desde `desde` (lib/filtro-do-feed.ts). Mudança em
     // massa volta como lista completa, por segurança.
     const mudados = desde
       ? await withRetry(() => idsQueMudaram(prisma, { validFranchiseeIds, from, ATIVO_SEM_PERIODO_DESDE, desde }))
       : null;
     const modoDelta = desde !== null && mudados !== null;
+
+    // ── NADA MUDOU: a resposta vazia sem a consulta pesada ─────────────────
+    //
+    // `idsQueMudaram` olha um recorte MAIOR que o do feed (mesmas lojas,
+    // createdAt desde o começo da janela, updatedAt desde `desde`), então
+    // lista vazia ali garante que a consulta do feed também viria vazia — e o
+    // pedido novo, que nasce com updatedAt de agora, sempre cai nela
+    // (scripts/teste-poll-nada-mudou.ts).
+    if (modoDelta && mudados!.length === 0) {
+      return NextResponse.json({ pedidos: [], removidos: [], agora: agora.toISOString() }, { headers });
+    }
+
     const filtro = filtroDoFeed({ validFranchiseeIds, from, to, ATIVO_SEM_PERIODO_DESDE });
 
     const orders = await withRetry(() => prisma.customerOrder.findMany({
@@ -1157,20 +1205,6 @@ export async function GET(req: NextRequest) {
     const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
     const ordersWithDailyNum = await resolverCategoriasDosPedidos(orders as any[]).catch(() => orders);
 
-    // 🤖 Executa verificação de inatividade de rascunhos IA (20 min pergunta / 30 min cancela)
-    try {
-      const { checkAndCleanupStaleAiDrafts } = await import("@/lib/chatbot-ai");
-      checkAndCleanupStaleAiDrafts(targetFranchiseeId).catch(() => {});
-    } catch {}
-
-    const headers = {
-      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
-      "Pragma": "no-cache",
-      "Expires": "0",
-      // De onde o próximo `desde` parte (lib/feed-de-pedidos.ts). Vai no
-      // cabeçalho para a resposta completa continuar sendo a lista pura.
-      "X-Feed-Agora": agora.toISOString(),
-    };
     if (modoDelta) {
       // Mudou e não voltou na lista = saiu do filtro (encerrado, checkout do
       // site cancelado sem pagar…). O navegador tira da lista dele.
