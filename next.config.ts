@@ -1,7 +1,22 @@
 import type { NextConfig } from "next";
 
+// O commit da imagem (build-arg GIT_SHA do .github/workflows/deploy.yml).
+// Vazio quando a montagem não o passa (Coolify montando sozinho, dev local).
+const GIT_SHA = (process.env.GIT_SHA || "").trim();
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  // ── Proteção contra versão misturada no deploy ──────────────────────────
+  //
+  // No deploy, o container velho e o novo atendem juntos por alguns segundos
+  // (e, com dois servidores atrás do balanceador, o tempo todo): o painel
+  // aberto com o JS de um pode pedir a página ao outro. Com o deploymentId,
+  // o Next carimba os assets com ?dpl=<id> e, quando a navegação cai num
+  // servidor de outra versão, recarrega a página inteira em vez de misturar
+  // as duas (node_modules/next/dist/docs/01-app/02-guides/self-hosting.md,
+  // "Version Skew"). Só quando a montagem informou o commit: um id fixo de
+  // mentira faria todo deploy parecer a mesma versão.
+  ...(GIT_SHA ? { deploymentId: GIT_SHA } : {}),
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "**.vercel-storage.com" },

@@ -63,9 +63,12 @@ jobs:
           # Só para o `next build` importar lib/prisma.ts e lib/auth.ts, que
           # param sem elas. Não são as de produção: o build não conecta no
           # banco, e as verdadeiras chegam ao container pelo Coolify.
+          # GIT_SHA: o deploymentId do next.config.ts (versão misturada no
+          # deploy recarrega a página) e o "sha" do /api/health.
           build-args: |
             DATABASE_URL=postgresql://montagem@127.0.0.1:5432/montagem
             NEXTAUTH_SECRET=so-para-a-montagem
+            GIT_SHA=${{ github.sha }}
           # Modo Contingência: a chave que ASSINA o pacote que vai para o
           # computador das lojas (scripts/contingencia/assinar-pacote.mjs).
           # Entra só na etapa que assina, pelo BuildKit, e não fica na imagem.

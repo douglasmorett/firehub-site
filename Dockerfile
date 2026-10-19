@@ -30,6 +30,12 @@ RUN npx prisma generate
 ARG DATABASE_URL
 ARG NEXTAUTH_SECRET
 
+# O commit (build-arg do .github/workflows/deploy.yml): vira o deploymentId do
+# next.config.ts. Sem ele (Coolify montando sozinho) a montagem segue igual,
+# só sem a proteção de versão misturada. Declarado aqui, depois do COPY, para
+# não invalidar o cache das etapas de cima.
+ARG GIT_SHA=""
+
 # Build Next.js standalone (sem rodar prisma db push)
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npx next build
@@ -84,6 +90,12 @@ RUN --mount=type=secret,id=contingencia_chave,required=false \
 # do primeiro upload falharia por permissao.
 RUN mkdir -p /app/uploads /app/public/uploads \
     && chown -R nextjs:nodejs /app/uploads /app/public/uploads
+
+# O commit também no container: /api/health e /api/vivo dizem qual versão
+# respondeu (lib/instancia.ts). Por último, para não invalidar as camadas de
+# cima a cada commit.
+ARG GIT_SHA=""
+ENV GIT_SHA=${GIT_SHA}
 
 USER nextjs
 
