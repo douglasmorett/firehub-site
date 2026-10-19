@@ -6,7 +6,7 @@ import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import TutorialDaTela from "@/components/TutorialDaTela";
-import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, Zap, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode, Mic, Smartphone, LayoutGrid } from "lucide-react";
+import { Home, ClipboardList, Store, Users, ShoppingBag, ExternalLink, LogOut, UtensilsCrossed, Bike, BarChart2, Printer, X, AlertTriangle, History, PieChart, Package, Monitor, Bot, Send, Puzzle, Receipt, CheckCircle2, Tag, TabletSmartphone, Trash2, LineChart, Copy, Check, QrCode, Mic, Smartphone, LayoutGrid } from "lucide-react";
 import { useState, useTransition, useEffect, useRef, useCallback } from "react";
 import StoreSelector from "./StoreSelector";
 import SimularPedidos from "./SimularPedidos";
@@ -131,13 +131,11 @@ export function valorParaNumero(bruto: string | number): number {
 export default function StoreTopNav({
   userName, userCity, userSlug, showCompras, isAdmin = false,
   initialStoreOpen = true, initialCashOpen = false,
-  showAntecipacao = false,
   semNavegacao = false,
   lojaDeDemonstracao = false,
 }: {
   userName: string; userCity: string; userSlug?: string | null;
   showCompras: boolean; isAdmin?: boolean; initialStoreOpen?: boolean; initialCashOpen?: boolean;
-  showAntecipacao?: boolean;
   /** A navegação virou barra lateral (StoreSidebar); aqui fica só o status. */
   semNavegacao?: boolean;
   /** Loja de demonstração do vendedor: botão "Simular pedidos" e as linhas fixas do online no fechamento. */
@@ -145,14 +143,6 @@ export default function StoreTopNav({
 }) {
   const pathname = usePathname();
   const baseItems = [...NAV_ITEMS];
-  if (showAntecipacao) {
-    const finIdx = baseItems.findIndex(i => i.href === "/store/financeiro");
-    if (finIdx !== -1) {
-      baseItems.splice(finIdx + 1, 0, { href: "/store/antecipacao", label: "Antecipação", icon: Zap });
-    } else {
-      baseItems.push({ href: "/store/antecipacao", label: "Antecipação", icon: Zap });
-    }
-  }
   const menuItems = baseItems;
   const router = useRouter();
   const [, startTransition] = useTransition();

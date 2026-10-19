@@ -99,8 +99,11 @@ export { inicioOperacional, janelaDoPeriodo };
  * dono, e só com "Relatórios" ou "Financeiro" marcados) e o ADMIN — este, na
  * loja ativa do cookie, ou na própria. O ADMIN não recebe mais "todas as lojas
  * do sistema" por padrão: era o que podia estourar a memória do servidor.
+ *
+ * `tela` é a página cuja caixinha o funcionário precisa ter — a Antecipação,
+ * que é da cozinha, abre com "KDS" (lib/permissao-da-tela.ts).
  */
-export async function contextoDoRelatorio(req: NextRequest): Promise<Resultado<ContextoDoRelatorio>> {
+export async function contextoDoRelatorio(req: NextRequest, tela = "/store/relatorios"): Promise<Resultado<ContextoDoRelatorio>> {
   const session = await getServerSession(authOptions).catch(() => null);
   const email = session?.user?.email;
   if (!email) return erro(401, "Não autorizado");
@@ -111,9 +114,11 @@ export async function contextoDoRelatorio(req: NextRequest): Promise<Resultado<C
   });
   if (!usuario) return erro(404, "Usuário não encontrado");
   if (!["FRANCHISEE", "ADMIN", "STAFF"].includes(String(usuario.role))) return erro(403, "Sem acesso aos relatórios");
-  // A caixinha do funcionário: a mesma regra da página /store/relatorios.
-  if (usuario.role === "STAFF" && !funcionarioAbre("/store/relatorios", usuario.permissions)) {
-    return erro(403, "Sem acesso aos relatórios: peça ao dono da loja para marcar \"Relatórios\" (ou \"Financeiro\") no seu cadastro em Equipe.");
+  // A caixinha do funcionário: a mesma regra da página.
+  if (usuario.role === "STAFF" && !funcionarioAbre(tela, usuario.permissions)) {
+    return erro(403, tela === "/store/relatorios"
+      ? "Sem acesso aos relatórios: peça ao dono da loja para marcar \"Relatórios\" (ou \"Financeiro\") no seu cadastro em Equipe."
+      : "Sem acesso a esta tela: peça ao dono da loja para liberar no seu cadastro em Equipe.");
   }
 
   const cookieLoja = req.cookies.get("firehub_active_store")?.value || "";

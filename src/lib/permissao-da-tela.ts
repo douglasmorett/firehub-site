@@ -63,7 +63,9 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/cardapio", abre: ["cardapio"] },
 
   { prefixo: "/store/financeiro", abre: ["financeiro"] },
-  { prefixo: "/store/antecipacao", abre: ["financeiro"] },
+  // A cozinha consulta todo dia o que deixar pronto (Douglas, 18/10/2026). Só
+  // quantidade de lanche — nada de valor.
+  { prefixo: "/store/antecipacao", abre: ["kds", "relatorios", "financeiro"] },
   { prefixo: "/store/fiscal", abre: ["financeiro"] },
   { prefixo: "/store/funcionarios", abre: ["financeiro"] },
   { prefixo: "/store/notas-compras", abre: ["financeiro"] },

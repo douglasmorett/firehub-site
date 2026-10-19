@@ -1,1569 +1,398 @@
 "use client";
+/**
+ * A aba Antecipação: o que a cozinha deixa pronto antes do pedido chegar, pela
+ * média dos dois últimos dias iguais da semana (a conta: lib/antecipacao.ts,
+ * a rota: api/store/antecipacao). Toda loja vê os lanches completos; o Hakim
+ * vê também as 4 bases (carne, calabresa, queijo temperado, mussarela).
+ *
+ * Só quantidade — nada de valor: a tela abre para o funcionário da cozinha.
+ */
+import React, { useEffect, useMemo, useState } from "react";
+import { AlertTriangle, CalendarDays, ChevronDown, ChevronUp, Clock, Info, PartyPopper, Printer, RefreshCw } from "lucide-react";
 
-import React, { useState, useEffect } from "react";
-import { Clock, AlertTriangle, Info, Settings, Plus, Trash2, X, Check } from "lucide-react";
+type Linha = { chave: string; nome: string; combo: boolean; porDia: number[]; media: number; sugerido: number; porHora: number[] };
+type Base = Linha & { serve: string; lanches: { nome: string; media: number }[] };
+type Resposta = {
+  lojas: string[];
+  hoje: string;
+  dia: string;
+  diaSemana: number;
+  horaDe: string;
+  horaAte: string;
+  feriado: { doDia: string | null; modo: "auto" | "sim" | "nao"; ativo: boolean; pct: number };
+  referencias: { dia: string; pedidosNoDia: number; pedidosNaFaixa: number }[];
+  pulados: { dia: string; motivo: string }[];
+  lanches: Linha[];
+  combos: Linha[];
+  ehHakim: boolean;
+  bases: { bases: Base[]; doces: number } | null;
+  pedidos: { dia: string; lista: { id: string; hora: string; canal: string; itens: { quantidade: number; nome: string }[] }[] }[];
+};
 
-interface AntecipacaoClientProps {
-  userName: string;
-  storeName: string;
+type Horario = "dia" | "proximas" | "faixa";
+
+const DIAS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+const DIAS_CURTOS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+/** As horas na ordem do expediente: o dia vira às 5h. */
+const HORAS_DO_DIA = [...Array.from({ length: 19 }, (_, i) => i + 5), 0, 1, 2, 3, 4];
+
+const diaCurto = (dia: string) => {
+  const [a, m, d] = dia.split("-").map(Number);
+  return `${DIAS_CURTOS[new Date(Date.UTC(a, m - 1, d, 12)).getUTCDay()]} ${String(d).padStart(2, "0")}/${String(m).padStart(2, "0")}`;
+};
+const num = (n: number) => n.toLocaleString("pt-BR", { maximumFractionDigits: 1 });
+
+function Abas<T extends string>({ valor, opcoes, onChange, rotulo }: { valor: T; opcoes: { chave: T; nome: React.ReactNode }[]; onChange: (v: T) => void; rotulo: string }) {
+  const i = Math.max(0, opcoes.findIndex((o) => o.chave === valor));
+  return (
+    <div role="tablist" aria-label={rotulo} className="fh-abas" style={{ ["--n" as any]: opcoes.length, ["--i" as any]: i }}>
+      {opcoes.map((o) => (
+        <button key={o.chave} type="button" role="tab" aria-selected={o.chave === valor} className="fh-aba" onClick={() => onChange(o.chave)}>
+          {o.nome}
+        </button>
+      ))}
+    </div>
+  );
 }
 
-interface Shift {
-  id: string;
-  name: string;
-  startTime: string; // "HH:MM"
-  endTime: string;   // "HH:MM"
-}
+export default function AntecipacaoClient() {
+  const [dia, setDia] = useState<"hoje" | "amanha">("hoje");
+  const [horario, setHorario] = useState<Horario>("dia");
+  const [proximas, setProximas] = useState(3);
+  const [horaDe, setHoraDe] = useState("18:00");
+  const [horaAte, setHoraAte] = useState("21:00");
+  const [feriado, setFeriado] = useState<"auto" | "sim" | "nao">("auto");
+  const [visao, setVisao] = useState<"bases" | "lanches">("bases");
+  const [busca, setBusca] = useState("");
+  const [abertos, setAbertos] = useState<Record<string, boolean>>({});
+  const [diaDosPedidos, setDiaDosPedidos] = useState(0);
 
-const BASE_FLAVOR_LABELS: Record<string, string> = {
-  carne: "Carne",
-  calabresa: "Calabresa",
-  queijo: "Queijo",
-  "queijo temperado": "Queijo Temperado",
-  "quatro queijos": "Quatro Queijos",
-  "massa vazia": "Massa Vazia (Doces)",
-};
+  const [dados, setDados] = useState<Resposta | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [erro, setErro] = useState<string | null>(null);
 
-const BASE_FLAVOR_EMOJIS: Record<string, string> = {
-  carne: "🥩",
-  calabresa: "🍕",
-  queijo: "🧀",
-  "queijo temperado": "🍃",
-  "quatro queijos": "🧀🧀",
-  "massa vazia": "🍫",
-};
+  // "Próximas horas" é de hoje: amanhã volta para o dia inteiro.
+  const horarioValido: Horario = dia === "amanha" && horario === "proximas" ? "dia" : horario;
 
-const BASE_FLAVOR_DESCS: Record<string, string> = {
-  carne: "Base de carne moída temperada",
-  calabresa: "Base de calabresa moída/fatiada",
-  queijo: "Base de queijo muçarela",
-  "queijo temperado": "Base de queijo com ervas/temperos",
-  "quatro queijos": "Mescla especial de 4 queijos",
-  "massa vazia": "Massa aberta (para chocolate, ninho, etc.)",
-};
+  const query = useMemo(() => {
+    const sp = new URLSearchParams({ dia, feriado });
+    if (horarioValido === "proximas") sp.set("proximas", String(proximas));
+    if (horarioValido === "faixa" && horaDe && horaAte) { sp.set("horaDe", horaDe); sp.set("horaAte", horaAte); }
+    return sp.toString();
+  }, [dia, feriado, horarioValido, proximas, horaDe, horaAte]);
 
-const DAYS_OF_WEEK = [
-  "Domingo",
-  "Segunda-feira",
-  "Terça-feira",
-  "Quarta-feira",
-  "Quinta-feira",
-  "Sexta-feira",
-  "Sábado"
-];
-
-const DEFAULT_SHIFTS: Shift[] = [
-  { id: "1", name: "Almoço", startTime: "11:00", endTime: "15:00" },
-  { id: "2", name: "Jantar", startTime: "18:00", endTime: "22:00" },
-  { id: "3", name: "Madrugada", startTime: "22:00", endTime: "02:00" }
-];
-
-export default function AntecipacaoClient({ userName, storeName }: AntecipacaoClientProps) {
-  // Estados do Dispositivo/Computador
-  const [deviceTime, setDeviceTime] = useState<string>("");
-  const [deviceDayName, setDeviceDayName] = useState<string>("");
-  const [deviceDayOfWeek, setDeviceDayOfWeek] = useState<number>(0);
-
-  // Estados dos Turnos
-  const [shifts, setShifts] = useState<Shift[]>([]);
-  const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
-  const [showConfigModal, setShowConfigModal] = useState<boolean>(false);
-
-  // Estados do Formulário de Turno
-  const [newShiftName, setNewShiftName] = useState<string>("");
-  const [newShiftStart, setNewShiftStart] = useState<string>("18:00");
-  const [newShiftEnd, setNewShiftEnd] = useState<string>("22:00");
-
-  // Estados dos Dados e Cálculo
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"day1" | "day2">("day1");
-
-  // Modo de antecipação: "hours" (Antecipar N Horas) ou "shift" (Turnos predefinidos)
-  const [antecipacaoMode, setAntecipacaoMode] = useState<"hours" | "shift">("hours");
-  const [startHour, setStartHour] = useState<string>("18:00");
-  const [durationHours, setDurationHours] = useState<number>(2);
-
-  // Sub-aba de visualização: "products" (Produtos do Cardápio) ou "bases" (Insumos Base)
-  const [viewTab, setViewTab] = useState<"products" | "bases">("products");
-  const [searchTerm, setSearchTerm] = useState<string>("");
-
-  // Relógio do computador & hora inicial padrão
-  useEffect(() => {
-    const updateTime = () => {
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, "0");
-      setDeviceTime(`${pad(now.getHours())}:${pad(now.getMinutes())}`);
-      setDeviceDayName(DAYS_OF_WEEK[now.getDay()]);
-      setDeviceDayOfWeek(now.getDay());
-    };
-    updateTime();
-
-    // Define hora inicial padrão arredondada para a hora atual
-    const currentH = new Date().getHours();
-    setStartHour(`${String(currentH).padStart(2, "0")}:00`);
-
-    const interval = setInterval(updateTime, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  // Carregar turnos do localStorage
-  useEffect(() => {
-    const stored = localStorage.getItem("firehub_antecipacao_shifts");
-    let loadedShifts = DEFAULT_SHIFTS;
-    if (stored) {
-      try {
-        loadedShifts = JSON.parse(stored);
-      } catch (e) {
-        console.error("Erro ao carregar turnos do localStorage:", e);
-      }
-    }
-    setShifts(loadedShifts);
-
-    const now = new Date();
-    const currentHM = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-    
-    const active = loadedShifts.find(s => {
-      const { startTime, endTime } = s;
-      if (startTime <= endTime) {
-        return currentHM >= startTime && currentHM <= endTime;
-      } else {
-        return currentHM >= startTime || currentHM <= endTime;
-      }
-    });
-
-    setSelectedShift(active || loadedShifts[0] || null);
-  }, []);
-
-  // Buscar dados de cálculo do backend
-  const fetchData = async () => {
-    setLoading(true);
-    setError(null);
+  const carregar = async () => {
+    setCarregando(true);
+    setErro(null);
     try {
-      const now = new Date();
-      
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, "0");
-      const day = String(now.getDate()).padStart(2, "0");
-      const clientDateStr = `${year}-${month}-${day}`;
-
-      const d1 = new Date(now);
-      d1.setDate(now.getDate() - 7);
-      
-      const d2 = new Date(now);
-      d2.setDate(now.getDate() - 14);
-
-      let startHM = "18:00";
-      let endHM = "20:00";
-
-      if (antecipacaoMode === "hours") {
-        startHM = startHour || "18:00";
-        const [h, m] = startHM.split(":").map(Number);
-        const endH = (h + Number(durationHours)) % 24;
-        endHM = `${String(endH).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-      } else if (selectedShift) {
-        startHM = selectedShift.startTime;
-        endHM = selectedShift.endTime;
-      }
-
-      const [startH, startM] = startHM.split(":").map(Number);
-      const [endH, endM] = endHM.split(":").map(Number);
-
-      const start1 = new Date(d1);
-      start1.setHours(startH, startM, 0, 0);
-      const end1 = new Date(d1);
-      end1.setHours(endH, endM, 0, 0);
-      if (end1 < start1) {
-        end1.setDate(end1.getDate() + 1);
-      }
-
-      const start2 = new Date(d2);
-      start2.setHours(startH, startM, 0, 0);
-      const end2 = new Date(d2);
-      end2.setHours(endH, endM, 0, 0);
-      if (end2 < start2) {
-        end2.setDate(end2.getDate() + 1);
-      }
-
-      const params = new URLSearchParams({
-        start1: start1.toISOString(),
-        end1: end1.toISOString(),
-        start2: start2.toISOString(),
-        end2: end2.toISOString(),
-        clientDate: clientDateStr
-      });
-
-      const res = await fetch(`/api/store/antecipacao?${params.toString()}`);
-      if (!res.ok) {
-        const errData = await res.json();
-        throw new Error(errData.error || "Erro ao carregar os dados.");
-      }
-      const json = await res.json();
-      setData(json);
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Erro desconhecido");
+      const res = await fetch(`/api/store/antecipacao?${query}`, { cache: "no-store" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "Não deu para carregar a antecipação.");
+      setDados(json);
+      setDiaDosPedidos(0);
+    } catch (e: any) {
+      setErro(e.message || "Não deu para carregar a antecipação.");
     } finally {
-      setLoading(false);
+      setCarregando(false);
     }
   };
+  useEffect(() => { carregar(); }, [query]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
-    fetchData();
-  }, [antecipacaoMode, startHour, durationHours, selectedShift, deviceDayOfWeek]);
-
-  // Cadastrar Turno
-  const handleAddShift = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newShiftName || !newShiftStart || !newShiftEnd) return;
-
-    const newShift: Shift = {
-      id: Date.now().toString(),
-      name: newShiftName,
-      startTime: newShiftStart,
-      endTime: newShiftEnd
-    };
-
-    const updated = [...shifts, newShift].sort((a, b) => a.startTime.localeCompare(b.startTime));
-    setShifts(updated);
-    localStorage.setItem("firehub_antecipacao_shifts", JSON.stringify(updated));
-
-    setNewShiftName("");
-    setNewShiftStart("18:00");
-    setNewShiftEnd("22:00");
-  };
-
-  // Excluir Turno
-  const handleDeleteShift = (id: string) => {
-    const updated = shifts.filter(s => s.id !== id);
-    setShifts(updated);
-    localStorage.setItem("firehub_antecipacao_shifts", JSON.stringify(updated));
-    
-    if (selectedShift?.id === id) {
-      setSelectedShift(updated[0] || null);
-    }
-  };
-
-  // Calcular o horário de fim da antecipação por horas
-  const calcEndHourString = () => {
-    if (!startHour) return "20:00";
-    const [h, m] = startHour.split(":").map(Number);
-    const endH = (h + Number(durationHours)) % 24;
-    return `${String(endH).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-  };
-
-  const isGenericName = (nameStr: string) => {
-    if (!nameStr) return true;
-    const n = nameStr.trim().toLowerCase();
-    return (
-      n === "item de integração" ||
-      n === "item de integracao" ||
-      n === "outros" ||
-      n === "item sem nome" ||
-      n.startsWith("pedido ifood") ||
-      n.startsWith("pedido 99food") ||
-      n.startsWith("pedido jotaja") ||
-      n.startsWith("item #")
-    );
-  };
-
-  // Filtrar produtos válidos do cardápio por termo de busca
-  const filteredProducts = (data?.productAverages || [])
-    .filter((p: any) => p.name && !isGenericName(p.name))
-    .filter((p: any) => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Loja que não é Hakim não tem a visão de bases.
+  const visaoAtual = dados?.ehHakim ? visao : "lanches";
+  const n = dados?.referencias.length || 0;
+  const lanches = (dados?.lanches || []).filter((l) => l.nome.toLowerCase().includes(busca.trim().toLowerCase()));
+  const totalDeLanches = (dados?.lanches || []).reduce((s, l) => s + l.sugerido, 0);
+  const totalDasBases = (dados?.bases?.bases || []).reduce((s, b) => s + b.sugerido, 0);
+  const janelaTexto = !dados ? "" : dados.horaDe || dados.horaAte ? `das ${dados.horaDe} às ${dados.horaAte}` : "o dia inteiro";
+  // As horas da tabela hora a hora: só as que tiveram venda na média.
+  const horasComVenda = HORAS_DO_DIA.filter((h) => (dados?.bases?.bases || []).some((b) => b.porHora[h] > 0));
 
   return (
-    <div className="antecipacao-container">
-      {/* HEADER SECTION */}
-      <div className="header-card">
-        <div className="header-glow"></div>
-        <div className="header-content">
-          <div className="header-info">
-            <span className="badge">🔮 MÓDULO EXCLUSIVO</span>
-            <h1>Antecipação de Produção</h1>
-            <p>
-              Previsão Inteligente de Demandas para <strong>{storeName}</strong> baseado no histórico das últimas duas semanas.
-            </p>
+    <div className="ant-raiz" style={{ padding: "1.5rem 1rem 3rem", maxWidth: 1180, margin: "0 auto", color: "var(--fh-t1)", fontFamily: "Inter, system-ui, sans-serif" }}>
+      <style>{`
+        @media print { .fh-sem-impressao, nav, aside, [data-fh-nav] { display: none !important; } body { background: #fff !important; } }
+        .ant-grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+        .ant-tabela { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
+        .ant-tabela th { text-align: left; font: 800 12px/1.2 Inter, system-ui, sans-serif; letter-spacing: .04em; text-transform: uppercase; color: var(--fh-t3); padding: 10px 12px; background: var(--fh-n3); border-bottom: 1px solid var(--fh-linha); }
+        .ant-tabela td { padding: 10px 12px; border-bottom: 1px solid var(--fh-linha-fraca); color: var(--fh-t2); }
+        .ant-tabela .num { text-align: right; white-space: nowrap; }
+        .ant-controles { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+        @media (max-width: 560px) { .ant-raiz .fh-abas { overflow-x: visible; } .ant-raiz .fh-aba { padding: 0 4px; font-size: 13px; height: 46px; white-space: normal; text-align: center; line-height: 1.15; } }
+      `}</style>
+
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap", marginBottom: 18 }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ margin: 0, fontSize: "1.6rem", fontWeight: 900, letterSpacing: "-0.01em" }}>Antecipação de produção</h1>
+          <p style={{ margin: "4px 0 0", fontSize: "0.92rem", color: "var(--fh-t4)", maxWidth: 720 }}>
+            O que deixar pronto antes do pedido chegar: a média do que saiu nos <strong>dois últimos {dados ? DIAS[dados.diaSemana].toLowerCase() + "s" : "dias iguais da semana"}</strong>
+            {dados?.lojas.length ? <> em <strong>{dados.lojas.join(", ")}</strong></> : null}. O que vem dentro dos combos já está somado em cada lanche.
+          </p>
+        </div>
+        <div className="fh-sem-impressao" style={{ display: "flex", gap: 8 }}>
+          <button type="button" className="fh-btn fh-btn--secundario" onClick={carregar}><RefreshCw size={16} /> Atualizar</button>
+          <button type="button" className="fh-btn fh-btn--secundario" onClick={() => window.print()}><Printer size={16} /> Imprimir</button>
+        </div>
+      </header>
+
+      {/* ── O QUE E QUANDO ── */}
+      <section className="fh-card fh-sem-impressao" style={{ padding: 18, marginBottom: 16 }}>
+        <div className="ant-controles">
+          <div className="fh-campo">
+            <label><CalendarDays size={13} style={{ verticalAlign: -2 }} /> Para qual dia</label>
+            <Abas rotulo="Dia" valor={dia} onChange={setDia} opcoes={[
+              { chave: "hoje", nome: dados ? `Hoje · ${diaCurto(dados.hoje)}` : "Hoje" },
+              { chave: "amanha", nome: "Amanhã" },
+            ]} />
           </div>
-          <div className="header-device-time">
-            <Clock size={16} />
-            <span>Dispositivo: <strong>{deviceDayName}</strong>, <strong>{deviceTime}</strong></span>
+          <div className="fh-campo">
+            <label><Clock size={13} style={{ verticalAlign: -2 }} /> Horário</label>
+            <Abas rotulo="Horário" valor={horarioValido} onChange={setHorario} opcoes={[
+              { chave: "dia", nome: "Dia inteiro" },
+              ...(dia === "hoje" ? [{ chave: "proximas" as Horario, nome: "Próximas horas" }] : []),
+              { chave: "faixa", nome: "De … até" },
+            ]} />
+          </div>
+          <div className="fh-campo">
+            <label><PartyPopper size={13} style={{ verticalAlign: -2 }} /> Modo feriado (+{dados?.feriado.pct ?? 20}%)</label>
+            <Abas rotulo="Modo feriado" valor={feriado} onChange={setFeriado} opcoes={[
+              { chave: "auto", nome: "Automático" },
+              { chave: "sim", nome: "Ligado" },
+              { chave: "nao", nome: "Desligado" },
+            ]} />
           </div>
         </div>
-      </div>
 
-      {/* EXPLANATORY BANNER REQUESTED BY USER */}
-      <div style={{ background: "linear-gradient(135deg, #FAF6F2 0%, #FAF6F2 100%)", border: "1.5px solid #E7DDD3", borderRadius: "1rem", padding: "1.25rem 1.5rem", marginBottom: "1.5rem", color: "#1C1917", boxShadow: "0 4px 12px rgba(28, 25, 23, 0.08)" }}>
-        <div style={{ display: "flex", gap: "14px", alignItems: "flex-start" }}>
-          <Info size={24} style={{ color: "#1C1917", flexShrink: 0, marginTop: "2px" }} />
-          <div>
-            <h3 style={{ margin: "0 0 6px 0", fontSize: "1rem", fontWeight: 850, color: "#1C1917" }}>💡 Como funciona a Antecipação de Produção:</h3>
-            <p style={{ margin: "0 0 8px 0", fontSize: "0.93rem", lineHeight: 1.55, color: "#1C1917" }}>
-              Este módulo é feito para que você possa <strong>preparar o lanche do seu cliente antes mesmo dele ser pedido</strong>. Fazemos uma média das últimas duas semanas (no mesmo dia da semana e no horário configurado) e te damos, no horário definido, quanto sai de cada produto do seu cardápio, <strong>ordenado do mais vendido para o menos vendido</strong>, seguindo o padrão dos seus clientes.
-            </p>
-            <span style={{ fontSize: "0.83rem", color: "#1C1917", fontStyle: "italic", display: "block" }}>
-              ⚠️ <em>Lembrando que é uma média explicativa para auxiliar na previsibilidade da sua cozinha: a demanda real pode variar conforme o dia da semana, feriado, clima e comportamento do cliente. É uma ferramenta de apoio.</em>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* ANTECIPATION CONFIGURATION & TIME CONTROLS */}
-      <div className="control-card">
-        <div className="control-header" style={{ marginBottom: "1rem" }}>
-          <h2><Clock size={18} /> Configurar Tempo de Antecipação</h2>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button
-              onClick={() => setAntecipacaoMode("hours")}
-              style={{ padding: "8px 14px", borderRadius: "8px", border: antecipacaoMode === "hours" ? "2px solid #FF4D00" : "1px solid #CBD5E1", background: antecipacaoMode === "hours" ? "#FFF2EC" : "#FFF", color: antecipacaoMode === "hours" ? "#FF4D00" : "#475569", fontWeight: 800, cursor: "pointer", fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "6px" }}
-            >
-              ⏱️ Por Horas (Personalizado)
-            </button>
-            <button
-              onClick={() => setAntecipacaoMode("shift")}
-              style={{ padding: "8px 14px", borderRadius: "8px", border: antecipacaoMode === "shift" ? "2px solid #FF4D00" : "1px solid #CBD5E1", background: antecipacaoMode === "shift" ? "#FFF2EC" : "#FFF", color: antecipacaoMode === "shift" ? "#FF4D00" : "#475569", fontWeight: 800, cursor: "pointer", fontSize: "0.85rem", display: "inline-flex", alignItems: "center", gap: "6px" }}
-            >
-              📅 Por Turno de Trabalho
-            </button>
-          </div>
-        </div>
-
-        {antecipacaoMode === "hours" ? (
-          <div style={{ background: "#F8FAFC", padding: "1.25rem", borderRadius: "0.85rem", border: "1px solid #E2E8F0" }}>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "1.5rem", alignItems: "center" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#475569", marginBottom: "6px" }}>Horário de Início</label>
-                <input
-                  type="time"
-                  value={startHour}
-                  onChange={e => setStartHour(e.target.value)}
-                  style={{ padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", fontSize: "0.95rem", fontWeight: 700, background: "#FFF" }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#475569", marginBottom: "6px" }}>Quantas Horas Deseja Antecipar?</label>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  {[1, 2, 3, 4].map(h => (
-                    <button
-                      key={h}
-                      onClick={() => setDurationHours(h)}
-                      style={{ padding: "8px 16px", borderRadius: "8px", border: durationHours === h ? "2px solid #FF4D00" : "1px solid #CBD5E1", background: durationHours === h ? "#FF4D00" : "#FFF", color: durationHours === h ? "#FFF" : "#0F172A", fontWeight: 800, cursor: "pointer", fontSize: "0.85rem" }}
-                    >
-                      {h} {h === 1 ? "Hora" : "Horas"}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div style={{ marginLeft: "auto", background: "#FFF", padding: "10px 16px", borderRadius: "10px", border: "1.5px solid #FF4D00", textAlign: "right" }}>
-                <span style={{ display: "block", fontSize: "0.75rem", color: "#64748B", fontWeight: 700, textTransform: "uppercase" }}>Janela de Produção Calculada</span>
-                <strong style={{ fontSize: "1.1rem", color: "#FF4D00" }}>{startHour} às {calcEndHourString()}</strong>
-                <span style={{ display: "block", fontSize: "0.75rem", color: "#475569" }}>({durationHours} {durationHours === 1 ? "hora" : "horas"} de antecipação)</span>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-              <span style={{ fontSize: "0.85rem", color: "#64748B" }}>Escolha o turno desejado para analisar o volume total de vendas:</span>
-              <button className="btn-config-shifts" onClick={() => setShowConfigModal(true)}>
-                <Settings size={15} /> Cadastrar / Editar Turnos
+        {horarioValido === "proximas" && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginTop: 14 }}>
+            <span style={{ fontSize: 14, color: "var(--fh-t3)", fontWeight: 700 }}>Da hora cheia de agora até daqui a</span>
+            {[1, 2, 3, 4, 6, 8, 12].map((h) => (
+              <button key={h} type="button" onClick={() => setProximas(h)}
+                className={`fh-btn ${proximas === h ? "fh-btn--primario" : "fh-btn--secundario"}`}
+                style={{ height: 40, padding: "0 14px", borderRadius: 12 }}>
+                {h} h
               </button>
+            ))}
+          </div>
+        )}
+        {horarioValido === "faixa" && (
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginTop: 14 }}>
+            <div className="fh-campo" style={{ width: 150 }}>
+              <label htmlFor="ant-de">De</label>
+              <input id="ant-de" type="time" value={horaDe} onChange={(e) => setHoraDe(e.target.value)} />
             </div>
+            <div className="fh-campo" style={{ width: 150 }}>
+              <label htmlFor="ant-ate">Até</label>
+              <input id="ant-ate" type="time" value={horaAte} onChange={(e) => setHoraAte(e.target.value)} />
+            </div>
+            <span style={{ fontSize: 13, color: "var(--fh-t4)", paddingBottom: 12 }}>Pode passar da meia-noite (18:00 até 02:00).</span>
+          </div>
+        )}
+      </section>
 
-            {shifts.length === 0 ? (
-              <div className="no-shifts-alert">
-                <Info size={16} />
-                <span>Nenhum turno cadastrado. Clique em "Cadastrar Turnos" para configurar.</span>
-              </div>
-            ) : (
-              <div className="shifts-list-grid">
-                {shifts.map(shift => {
-                  const active = selectedShift?.id === shift.id;
+      {dados?.feriado.ativo && (
+        <div className="fh-aviso fh-aviso--atencao" style={{ marginBottom: 16 }}>
+          <PartyPopper size={20} style={{ flexShrink: 0 }} />
+          <div>
+            <strong>Modo feriado ativado.</strong>{" "}
+            {dados.feriado.doDia
+              ? <>{dados.dia === dados.hoje ? "Hoje" : "Amanhã"} é feriado: <strong>{dados.feriado.doDia}</strong>. </>
+              : <>Ligado na mão. </>}
+            A antecipação está <strong>{dados.feriado.pct}% acima</strong> do normal.
+          </div>
+        </div>
+      )}
+      {dados && !dados.feriado.ativo && dados.feriado.doDia && dados.feriado.modo === "nao" && (
+        <div className="fh-aviso fh-aviso--info" style={{ marginBottom: 16 }}>
+          <Info size={20} style={{ flexShrink: 0 }} />
+          <div>{dados.dia === dados.hoje ? "Hoje" : "Amanhã"} é feriado ({dados.feriado.doDia}), mas o modo feriado está desligado: a conta é a de um dia normal.</div>
+        </div>
+      )}
+
+      {carregando && !dados ? (
+        <div className="fh-card" style={{ padding: 40, textAlign: "center", color: "var(--fh-t4)" }}>Calculando pelo histórico de pedidos…</div>
+      ) : erro ? (
+        <div className="fh-aviso fh-aviso--erro">
+          <AlertTriangle size={20} style={{ flexShrink: 0 }} />
+          <div>{erro} <button type="button" className="fh-btn fh-btn--secundario" style={{ height: 34, marginLeft: 8 }} onClick={carregar}>Tentar de novo</button></div>
+        </div>
+      ) : dados && n === 0 ? (
+        <div className="fh-card" style={{ padding: 32, textAlign: "center" }}>
+          <Info size={28} style={{ color: "var(--fh-t4)" }} />
+          <p style={{ margin: "8px 0 0", fontWeight: 800 }}>Ainda não há {DIAS[dados.diaSemana].toLowerCase()} com venda para fazer a média.</p>
+          <p style={{ margin: "4px 0 0", fontSize: 14, color: "var(--fh-t4)" }}>Olhamos as últimas 8 semanas{dados.pulados.length ? ` (pulados: ${dados.pulados.map((p) => `${diaCurto(p.dia)} — ${p.motivo}`).join("; ")})` : ""}.</p>
+        </div>
+      ) : dados ? (
+        <div style={{ opacity: carregando ? 0.55 : 1, transition: "opacity .15s" }}>
+          {/* ── DE ONDE SAI A MÉDIA ── */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16, fontSize: 14, color: "var(--fh-t3)" }}>
+            <span style={{ fontWeight: 800, color: "var(--fh-t1)" }}>{diaCurto(dados.dia)}, {janelaTexto}</span>
+            <span>· média de</span>
+            {dados.referencias.map((r) => (
+              <span key={r.dia} className="fh-chip">{diaCurto(r.dia)} · {r.pedidosNaFaixa} pedido{r.pedidosNaFaixa === 1 ? "" : "s"}</span>
+            ))}
+            {n === 1 && <span style={{ color: "var(--fh-atencao)", fontWeight: 700 }}>(só um dia com venda: a conta usa ele sozinho)</span>}
+            {dados.pulados.map((p) => (
+              <span key={p.dia} style={{ fontSize: 13, color: "var(--fh-t4)" }}>· {diaCurto(p.dia)} ficou de fora: {p.motivo}</span>
+            ))}
+          </div>
+
+          {dados.ehHakim && (
+            <div className="fh-sem-impressao" style={{ maxWidth: 520, marginBottom: 16 }}>
+              <Abas rotulo="Visão" valor={visaoAtual} onChange={setVisao} opcoes={[
+                { chave: "bases", nome: `Bases (${totalDasBases})` },
+                { chave: "lanches", nome: `Lanches completos (${totalDeLanches})` },
+              ]} />
+            </div>
+          )}
+
+          {visaoAtual === "bases" && dados.bases ? (
+            <>
+              <div className="ant-grade" style={{ marginBottom: 16 }}>
+                {dados.bases.bases.map((b) => {
+                  const aberto = abertos[b.chave];
                   return (
-                    <button
-                      key={shift.id}
-                      onClick={() => setSelectedShift(shift)}
-                      className={`shift-badge-btn ${active ? "active" : ""}`}
-                    >
-                      <span className="shift-name">{shift.name}</span>
-                      <span className="shift-hours">{shift.startTime} às {shift.endTime}</span>
-                    </button>
+                    <div key={b.chave} className="fh-card" style={{ padding: 18, borderTop: "4px solid var(--fh-marca-brasa)" }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--fh-t3)" }}>Base de {b.nome.toLowerCase()}</div>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, margin: "6px 0 2px" }}>
+                        <span style={{ fontSize: 46, fontWeight: 900, lineHeight: 1, color: "var(--fh-marca)" }}>{b.sugerido}</span>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: "var(--fh-t3)" }}>esfihas</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: "var(--fh-t4)" }}>{b.serve}</div>
+                      <div style={{ fontSize: 13, color: "var(--fh-t3)", marginTop: 10 }}>
+                        Média {num(b.media)} · {dados.referencias.map((r, i) => `${diaCurto(r.dia)}: ${num(b.porDia[i])}`).join(" · ")}
+                      </div>
+                      {b.lanches.length > 0 && (
+                        <button type="button" className="fh-btn fh-btn--fantasma fh-sem-impressao" style={{ height: 32, padding: "0 8px", marginTop: 8, fontSize: 13 }}
+                          onClick={() => setAbertos((a) => ({ ...a, [b.chave]: !aberto }))}>
+                          {aberto ? <ChevronUp size={15} /> : <ChevronDown size={15} />} De quais lanches ({b.lanches.length})
+                        </button>
+                      )}
+                      {aberto && (
+                        <ul style={{ margin: "6px 0 0", padding: 0, listStyle: "none", fontSize: 13, color: "var(--fh-t2)" }}>
+                          {b.lanches.map((l) => (
+                            <li key={l.nome} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "3px 0", borderBottom: "1px solid var(--fh-linha-fraca)" }}>
+                              <span>{l.nome}</span><strong>{num(l.media)}</strong>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   );
                 })}
               </div>
-            )}
-          </div>
-        )}
+              <p style={{ margin: "0 0 18px", fontSize: 13, color: "var(--fh-t4)" }}>
+                Esfiha doce não usa base ({num(dados.bases.doces)} doces na média) — está em Lanches completos, com bebida e acompanhamento.
+              </p>
 
-        <div className="control-helper" style={{ marginTop: "1rem" }}>
-          <Info size={14} />
-          <span>
-            Analisando vendas do período <strong>{antecipacaoMode === "hours" ? `${startHour} às ${calcEndHourString()}` : selectedShift ? `${selectedShift.name} (${selectedShift.startTime} às ${selectedShift.endTime})` : ""}</strong> nas últimas duas <strong>{deviceDayName}s</strong>.
-          </span>
-        </div>
-      </div>
-
-      {/* LOADING & ERROR STATES */}
-      {loading ? (
-        <div className="loading-state">
-          <div className="spinner"></div>
-          <p>Analisando histórico real de pedidos e calculando a estimativa de antecipação...</p>
-        </div>
-      ) : error ? (
-        <div className="error-state">
-          <AlertTriangle size={36} />
-          <h3>Erro ao carregar dados</h3>
-          <p>{error}</p>
-          <button onClick={fetchData} className="btn-retry">
-            Tentar Novamente
-          </button>
-        </div>
-      ) : (
-        <>
-          {data?.isHoliday && (
-            <div className="holiday-alert-banner">
-              <AlertTriangle size={18} />
-              <span>
-                <strong>Dia de Feriado ({data.holidayName}):</strong> A meta de antecipação foi aumentada automaticamente em <strong>30%</strong> devido ao feriado.
-              </span>
-            </div>
-          )}
-
-          {/* SEARCH FILTER & SECTION TITLE */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "1rem", marginBottom: "1.25rem" }}>
-            <div className="section-title" style={{ margin: 0 }}>
-              <h2 style={{ margin: 0 }}>Previsão por Produto do Cardápio ({filteredProducts.length})</h2>
-              <span className="subtitle">Produtos ordenados do maior para o menor volume de vendas</span>
-            </div>
-
-            <input
-              type="text"
-              placeholder="🔍 Buscar produto no cardápio..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              style={{ padding: "8px 14px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.9rem", minWidth: "260px" }}
-            />
-          </div>
-
-          {filteredProducts.length === 0 ? (
-            <div className="empty-history" style={{ padding: "2rem", background: "#FFF", borderRadius: "1rem", border: "1px solid #E2E8F0", textAlign: "center" }}>
-              <Info size={32} style={{ color: "#94A3B8", marginBottom: "8px" }} />
-              <p style={{ margin: 0, fontWeight: 700, color: "#64748B" }}>Nenhum produto com vendas registradas nesta janela de horário.</p>
-              <span style={{ fontSize: "0.85rem", color: "#94A3B8" }}>Tente aumentar a quantidade de horas ou selecionar outro horário.</span>
-            </div>
-          ) : (
-            <div className="cards-grid">
-              {filteredProducts.map((item: any, index: number) => {
-                const hasDemand = item.suggested > 0;
-                return (
-                  <div key={item.name} className={`prediction-card ${hasDemand ? "active-demand" : ""}`}>
-                    <div className="card-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                        <span style={{ background: index === 0 ? "linear-gradient(135deg, #B45309, #B45309)" : index === 1 ? "linear-gradient(135deg, #94A3B8, #64748B)" : index === 2 ? "linear-gradient(135deg, #B45309, #78350F)" : "#334155", color: "#FFF", padding: "2px 8px", borderRadius: "6px", fontWeight: 900, fontSize: "0.75rem" }}>
-                          #{index + 1}
-                        </span>
-                        <h3 style={{ fontSize: "1.05rem", fontWeight: 800, margin: 0, color: "#0F172A", lineHeight: 1.3 }}>{item.name}</h3>
-                      </div>
-                    </div>
-
-                    <div className="card-body" style={{ marginTop: "12px" }}>
-                      <div className="suggested-box">
-                        <span className="suggested-number">{item.suggested}</span>
-                        <span className="suggested-label">deixar pronto</span>
-                      </div>
-
-                      <div className="details-box">
-                        <div className="detail-row">
-                          <span>7 dias atrás:</span>
-                          <strong>{item.qtyDay1} un.</strong>
-                        </div>
-                        <div className="detail-row">
-                          <span>14 dias atrás:</span>
-                          <strong>{item.qtyDay2} un.</strong>
-                        </div>
-                        <div className="detail-row divider">
-                          <span>Média real:</span>
-                          <span>{item.average.toFixed(1)} un.</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* DETAILED HISTORICAL SALES */}
-          <div className="history-section">
-            <div className="history-header">
-              <h2>Histórico de Pedidos Utilizados no Cálculo</h2>
-              <div className="tabs">
-                <button
-                  className={`tab-btn ${activeTab === "day1" ? "active" : ""}`}
-                  onClick={() => setActiveTab("day1")}
-                >
-                  Há 7 dias ({data?.labelDay1.split(" ")[0]})
-                  <span className="tab-badge">{data?.ordersDay1?.length || 0}</span>
-                </button>
-                <button
-                  className={`tab-btn ${activeTab === "day2" ? "active" : ""}`}
-                  onClick={() => setActiveTab("day2")}
-                >
-                  Há 14 dias ({data?.labelDay2.split(" ")[0]})
-                  <span className="tab-badge">{data?.ordersDay2?.length || 0}</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="tab-content">
-              {activeTab === "day1" ? (
-                data?.ordersDay1?.length === 0 ? (
-                  <div className="empty-history">
-                    <Info size={28} />
-                    <p>Nenhum pedido registrado nesta janela de horário há 7 dias ({data?.labelDay1}).</p>
-                  </div>
-                ) : (
-                  <div className="orders-table-wrapper">
-                    <table className="orders-table">
-                      <thead>
-                        <tr>
-                          <th>Horário</th>
-                          <th>Cliente</th>
-                          <th>Itens Vendidos</th>
-                          <th>Total</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
+              {horasComVenda.length > 0 && (
+                <section className="fh-card" style={{ overflow: "hidden", marginBottom: 18 }}>
+                  <div className="fh-card__head"><h2 style={{ margin: 0, fontSize: 17, fontWeight: 900 }}>Hora a hora</h2>
+                    <span style={{ fontSize: 13, color: "var(--fh-t4)" }}>o que sai em cada hora, para ter pronto antes dela (arredondado para cima)</span></div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="ant-tabela">
+                      <thead><tr><th>Hora</th>{dados.bases.bases.map((b) => <th key={b.chave} className="num">{b.nome}</th>)}</tr></thead>
                       <tbody>
-                        {data.ordersDay1.map((order: any) => (
-                          <tr key={order.id}>
-                            <td className="time-col">
-                              {new Date(order.createdAt).toLocaleTimeString("pt-BR", {
-                                hour: "2-digit",
-                                minute: "2-digit"
-                              })}
-                            </td>
-                            <td className="client-col">{order.customerName}</td>
-                            <td className="items-col">
-                              {order.items.map((it: any, idx: number) => (
-                                <span key={idx} className="item-pill">
-                                  {it.quantity}x {it.name}
-                                </span>
-                              ))}
-                            </td>
-                            <td className="price-col">R$ {order.totalAmount.toFixed(2).replace(".", ",")}</td>
-                            <td>
-                              <span className={`status-pill status-${order.status.toLowerCase()}`}>
-                                {order.status}
-                              </span>
-                            </td>
+                        {horasComVenda.map((h) => (
+                          <tr key={h}>
+                            <td style={{ fontWeight: 800, color: "var(--fh-t1)" }}>{String(h).padStart(2, "0")}h</td>
+                            {dados.bases!.bases.map((b) => <td key={b.chave} className="num">{b.porHora[h] > 0 ? Math.ceil(b.porHora[h]) : "—"}</td>)}
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
-                )
-              ) : data?.ordersDay2?.length === 0 ? (
-                <div className="empty-history">
-                  <Info size={28} />
-                  <p>Nenhum pedido registrado nesta janela de horário há 14 dias ({data?.labelDay2}).</p>
-                </div>
-              ) : (
-                <div className="orders-table-wrapper">
-                  <table className="orders-table">
-                    <thead>
-                      <tr>
-                        <th>Horário</th>
-                        <th>Cliente</th>
-                        <th>Itens Vendidos</th>
-                        <th>Total</th>
-                        <th>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.ordersDay2.map((order: any) => (
-                        <tr key={order.id}>
-                          <td className="time-col">
-                            {new Date(order.createdAt).toLocaleTimeString("pt-BR", {
-                              hour: "2-digit",
-                              minute: "2-digit"
-                            })}
-                          </td>
-                          <td className="client-col">{order.customerName}</td>
-                          <td className="items-col">
-                            {order.items.map((it: any, idx: number) => (
-                              <span key={idx} className="item-pill">
-                                {it.quantity}x {it.name}
-                              </span>
-                            ))}
-                          </td>
-                          <td className="price-col">R$ {order.totalAmount.toFixed(2).replace(".", ",")}</td>
-                          <td>
-                            <span className={`status-pill status-${order.status.toLowerCase()}`}>
-                              {order.status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                </section>
               )}
-            </div>
-          </div>
-        </>
-      )}
-
-      {/* MODAL: CADASTRO DE TURNOS */}
-      {showConfigModal && (
-        <div className="modal-overlay" onClick={() => setShowConfigModal(false)}>
-          <div className="modal-card modal-large" onClick={e => e.stopPropagation()}>
-            <button className="btn-close" onClick={() => setShowConfigModal(false)}><X size={20} /></button>
-            <h2>Gerenciamento de Turnos</h2>
-            <p className="modal-subtitle">Configure seus turnos de produção. Eles ficam salvos no seu navegador.</p>
-
-            <div className="modal-shifts-layout">
-              {/* Formulário Novo Turno */}
-              <form onSubmit={handleAddShift} className="new-shift-form">
-                <h3>Adicionar Novo Turno</h3>
-                <div className="form-group">
-                  <label>Nome do Turno</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Ex: Almoço, Jantar de Sexta"
-                    value={newShiftName}
-                    onChange={e => setNewShiftName(e.target.value)}
-                  />
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Início (Hora)</label>
-                    <input
-                      type="time"
-                      required
-                      value={newShiftStart}
-                      onChange={e => setNewShiftStart(e.target.value)}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Fim (Hora)</label>
-                    <input
-                      type="time"
-                      required
-                      value={newShiftEnd}
-                      onChange={e => setNewShiftEnd(e.target.value)}
-                    />
+            </>
+          ) : (
+            <>
+              <section className="fh-card" style={{ overflow: "hidden", marginBottom: 18 }}>
+                <div className="fh-card__head" style={{ justifyContent: "space-between" }}>
+                  <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900 }}>Lanches para deixar pronto ({dados.lanches.length})</h2>
+                  <div className="fh-campo fh-sem-impressao" style={{ width: 260 }}>
+                    <input type="search" placeholder="Buscar lanche…" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Buscar lanche" />
                   </div>
                 </div>
-                <button type="submit" className="btn-submit-shift">
-                  <Plus size={15} /> Adicionar Turno
-                </button>
-              </form>
-
-              {/* Lista de Turnos */}
-              <div className="modal-shifts-list-side">
-                <h3>Turnos Configurados</h3>
-                {shifts.length === 0 ? (
-                  <p className="no-shifts-inside">Nenhum turno cadastrado ainda.</p>
+                {lanches.length === 0 ? (
+                  <p style={{ padding: 24, margin: 0, textAlign: "center", color: "var(--fh-t4)" }}>Nenhum lanche vendido nesse horário nos dias da média.</p>
                 ) : (
-                  <div className="modal-shifts-scroll">
-                    {shifts.map(shift => (
-                      <div key={shift.id} className="modal-shift-row">
-                        <div className="modal-shift-info">
-                          <strong>{shift.name}</strong>
-                          <span>{shift.startTime} às {shift.endTime}</span>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn-delete-shift"
-                          onClick={() => handleDeleteShift(shift.id)}
-                        >
-                          <Trash2 size={14} />
-                        </button>
-                      </div>
-                    ))}
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="ant-tabela">
+                      <thead><tr><th>#</th><th>Lanche</th><th className="num">Deixar pronto</th><th className="num">Média</th>{dados.referencias.map((r) => <th key={r.dia} className="num">{diaCurto(r.dia)}</th>)}</tr></thead>
+                      <tbody>
+                        {lanches.map((l, i) => (
+                          <tr key={l.chave}>
+                            <td style={{ color: "var(--fh-t4)" }}>{i + 1}</td>
+                            <td style={{ fontWeight: 700, color: "var(--fh-t1)" }}>{l.nome}</td>
+                            <td className="num" style={{ fontSize: 20, fontWeight: 900, color: "var(--fh-marca)" }}>{l.sugerido}</td>
+                            <td className="num">{num(l.media)}</td>
+                            {l.porDia.map((q, k) => <td key={k} className="num">{num(q)}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
+              </section>
+
+              {dados.combos.length > 0 && (
+                <section className="fh-card" style={{ overflow: "hidden", marginBottom: 18 }}>
+                  <div className="fh-card__head">
+                    <h2 style={{ margin: 0, fontSize: 17, fontWeight: 900 }}>Combos vendidos ({dados.combos.length})</h2>
+                    <span style={{ fontSize: 13, color: "var(--fh-t4)" }}>O que o cliente escolheu dentro do combo já está nos lanches acima. O que vem FIXO no combo (sem escolha) não está — confira aqui.</span>
+                  </div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="ant-tabela">
+                      <thead><tr><th>Combo</th><th className="num">Média</th>{dados.referencias.map((r) => <th key={r.dia} className="num">{diaCurto(r.dia)}</th>)}</tr></thead>
+                      <tbody>
+                        {dados.combos.map((l) => (
+                          <tr key={l.chave}>
+                            <td style={{ fontWeight: 700, color: "var(--fh-t1)" }}>{l.nome}</td>
+                            <td className="num">{num(l.media)}</td>
+                            {l.porDia.map((q, k) => <td key={k} className="num">{num(q)}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+            </>
+          )}
+
+          {/* ── OS PEDIDOS DA CONTA ── */}
+          <details className="fh-card fh-sem-impressao" style={{ overflow: "hidden" }}>
+            <summary style={{ padding: "16px 20px", cursor: "pointer", fontWeight: 900, fontSize: 16 }}>
+              Pedidos usados na conta ({dados.pedidos.reduce((s, d) => s + d.lista.length, 0)})
+            </summary>
+            <div style={{ padding: "0 20px 20px" }}>
+              <div style={{ maxWidth: 420, marginBottom: 12 }}>
+                <Abas rotulo="Dia dos pedidos" valor={String(diaDosPedidos)} onChange={(v) => setDiaDosPedidos(Number(v))}
+                  opcoes={dados.pedidos.map((d, i) => ({ chave: String(i), nome: `${diaCurto(d.dia)} (${d.lista.length})` }))} />
+              </div>
+              <div style={{ overflowX: "auto", maxHeight: 520 }}>
+                <table className="ant-tabela">
+                  <thead><tr><th>Hora</th><th>Canal</th><th>Itens</th></tr></thead>
+                  <tbody>
+                    {(dados.pedidos[diaDosPedidos]?.lista || []).map((p) => (
+                      <tr key={p.id}>
+                        <td style={{ fontWeight: 800, color: "var(--fh-t1)" }}>{p.hora}</td>
+                        <td>{p.canal}</td>
+                        <td>{p.itens.map((it) => `${it.quantidade}x ${it.nome}`).join(" · ")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
+          </details>
 
-            <div className="modal-footer">
-              <button className="btn-secondary" onClick={() => setShowConfigModal(false)}>
-                Fechar
-              </button>
-            </div>
-          </div>
+          <p style={{ margin: "16px 0 0", fontSize: 13, color: "var(--fh-t4)", lineHeight: 1.5 }}>
+            Como a conta é feita: o dia vira às 5h (pedido da 1h da manhã é do dia anterior). Pedido cancelado e reposição não entram. Combo pedido em dobro conta em dobro; meia pizza conta meia de cada sabor. Feriado e dia sem venda não servem de base — a conta pula para a semana anterior. É uma média: chuva, jogo e promoção mudam o movimento.
+          </p>
         </div>
-      )}
-
-      {/* COMPONENT STYLING */}
-      <style jsx global>{`
-        .antecipacao-container {
-          max-width: 1400px;
-          margin: 0 auto;
-          padding: 1.5rem;
-          font-family: Inter, system-ui, sans-serif;
-          color: #1e293b;
-          animation: fadeIn 0.4s ease-out;
-        }
-
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* HEADER */
-        .header-card {
-          position: relative;
-          background: linear-gradient(135deg, #1e293b, #0f172a);
-          border-radius: 1.25rem;
-          padding: 2.25rem;
-          color: white;
-          overflow: hidden;
-          margin-bottom: 1.5rem;
-          box-shadow: 0 10px 30px -10px rgba(15, 23, 42, 0.3);
-        }
-
-        .header-glow {
-          position: absolute;
-          top: -20%;
-          right: -10%;
-          width: 300px;
-          height: 300px;
-          background: radial-gradient(circle, rgba(198, 40, 40, 0.45) 0%, rgba(0,0,0,0) 70%);
-          pointer-events: none;
-        }
-
-        .header-content {
-          position: relative;
-          z-index: 2;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 1.5rem;
-        }
-
-        .header-info h1 {
-          font-size: 2rem;
-          font-weight: 850;
-          margin: 0.5rem 0;
-          letter-spacing: -0.025em;
-        }
-
-        .header-info p {
-          color: #94a3b8;
-          font-size: 0.95rem;
-          margin: 0;
-        }
-
-        .header-device-time {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          background: rgba(255, 255, 255, 0.1);
-          border: 1px solid rgba(255, 255, 255, 0.2);
-          padding: 0.5rem 1rem;
-          border-radius: 0.75rem;
-          font-size: 0.85rem;
-        }
-
-        .badge {
-          display: inline-block;
-          background: rgba(198, 40, 40, 0.2);
-          border: 1px solid rgba(198, 40, 40, 0.4);
-          color: #E8360C;
-          font-size: 0.72rem;
-          font-weight: 700;
-          padding: 0.25rem 0.65rem;
-          border-radius: 9999px;
-          letter-spacing: 0.05em;
-        }
-
-        /* CONTROL CARD */
-        .control-card {
-          background: white;
-          border-radius: 1rem;
-          padding: 1.5rem;
-          margin-bottom: 1.75rem;
-          border: 1px solid #e2e8f0;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
-        }
-
-        .control-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 1.25rem;
-        }
-
-        .control-header h2 {
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 1.1rem;
-          font-weight: 800;
-          margin: 0;
-          color: #0f172a;
-        }
-
-        .btn-config-shifts {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.35rem;
-          background: #f1f5f9;
-          border: 1px solid #cbd5e1;
-          color: #475569;
-          font-weight: 700;
-          font-size: 0.78rem;
-          padding: 0.5rem 1rem;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          transition: all 0.2s;
-        }
-
-        .btn-config-shifts:hover {
-          background: #e2e8f0;
-          color: #0f172a;
-        }
-
-        .no-shifts-alert {
-          background: #FFF7E6;
-          border: 1px solid #fde68a;
-          color: #b45309;
-          border-radius: 0.75rem;
-          padding: 1rem;
-          display: flex;
-          align-items: center;
-          gap: 0.5rem;
-          font-size: 0.85rem;
-          font-weight: 600;
-        }
-
-        .holiday-alert-banner {
-          display: flex;
-          align-items: center;
-          gap: 0.75rem;
-          background: #fff5f5;
-          border: 1px solid rgba(198, 40, 40, 0.2);
-          color: #C92E09;
-          border-radius: 0.85rem;
-          padding: 1rem 1.25rem;
-          margin-bottom: 1.5rem;
-          font-size: 0.88rem;
-          font-weight: 600;
-          box-shadow: 0 4px 12px rgba(198, 40, 40, 0.05);
-          animation: slideDown 0.3s ease-out;
-        }
-
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        .shifts-list-grid {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.75rem;
-          margin-bottom: 1rem;
-        }
-
-        .shift-badge-btn {
-          flex: 1;
-          min-width: 160px;
-          max-width: 250px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 0.85rem 1rem;
-          border-radius: 0.75rem;
-          border: 2px solid #e2e8f0;
-          background: #f8fafc;
-          cursor: pointer;
-          transition: all 0.2s;
-          font-family: inherit;
-        }
-
-        .shift-badge-btn:hover {
-          border-color: #cbd5e1;
-          background: #f1f5f9;
-        }
-
-        .shift-badge-btn.active {
-          border-color: #C92E09;
-          background: #fff5f5;
-          box-shadow: 0 4px 12px rgba(198, 40, 40, 0.12);
-        }
-
-        .shift-badge-btn.active .shift-name {
-          color: #C92E09;
-        }
-
-        .shift-name {
-          font-size: 0.95rem;
-          font-weight: 850;
-          color: #334155;
-        }
-
-        .shift-hours {
-          font-size: 0.72rem;
-          font-weight: 650;
-          color: #64748b;
-          margin-top: 0.15rem;
-        }
-
-        .control-helper {
-          display: flex;
-          align-items: center;
-          gap: 0.4rem;
-          font-size: 0.8rem;
-          color: #475569;
-          background: #f1f5f9;
-          padding: 0.65rem 1rem;
-          border-radius: 0.5rem;
-          margin-top: 0.75rem;
-        }
-
-        /* SECTIONS */
-        .section-title {
-          margin: 2rem 0 1rem;
-        }
-
-        .section-title h2 {
-          font-size: 1.35rem;
-          font-weight: 900;
-          color: #0f172a;
-          margin: 0;
-        }
-
-        .subtitle {
-          font-size: 0.82rem;
-          color: #64748b;
-          font-weight: 500;
-        }
-
-        /* CARDS GRID */
-        .cards-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-          gap: 1.25rem;
-          margin-bottom: 2.5rem;
-        }
-
-        .prediction-card {
-          background: white;
-          border: 1px solid #e2e8f0;
-          border-radius: 1.25rem;
-          padding: 1.5rem;
-          transition: all 0.3s ease;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .prediction-card:hover {
-          transform: translateY(-4px);
-          box-shadow: 0 12px 20px -8px rgba(0, 0, 0, 0.08);
-          border-color: #cbd5e1;
-        }
-
-        .prediction-card.active-demand {
-          border-color: rgba(198, 40, 40, 0.2);
-          background: linear-gradient(to bottom, #fff5f5, #ffffff 60%);
-        }
-
-        .prediction-card.active-demand::before {
-          content: "";
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 4px;
-          background: linear-gradient(to right, #C92E09, #C92E09);
-        }
-
-        .card-header {
-          display: flex;
-          gap: 0.85rem;
-          align-items: flex-start;
-          margin-bottom: 1.25rem;
-        }
-
-        .card-emoji {
-          font-size: 2rem;
-          line-height: 1;
-        }
-
-        .card-header h3 {
-          font-size: 1.05rem;
-          font-weight: 800;
-          margin: 0;
-          color: #0f172a;
-        }
-
-        .card-desc {
-          font-size: 0.72rem;
-          color: #64748b;
-          margin: 0.15rem 0 0 0;
-        }
-
-        .card-body {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 1rem;
-        }
-
-        .suggested-box {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          background: #f8fafc;
-          border-radius: 0.85rem;
-          padding: 0.75rem;
-          width: 85px;
-          height: 85px;
-          flex-shrink: 0;
-          border: 1px solid #e2e8f0;
-          transition: all 0.2s ease;
-        }
-
-        .active-demand .suggested-box {
-          background: linear-gradient(135deg, #C92E09, #C92E09);
-          color: white;
-          border: none;
-          box-shadow: 0 4px 10px rgba(198, 40, 40, 0.25);
-        }
-
-        .suggested-number {
-          font-size: 2.2rem;
-          font-weight: 900;
-          line-height: 1;
-        }
-
-        .suggested-label {
-          font-size: 0.58rem;
-          font-weight: 800;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-          text-align: center;
-          margin-top: 0.15rem;
-          opacity: 0.95;
-        }
-
-        .details-box {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          gap: 0.35rem;
-          font-size: 0.78rem;
-        }
-
-        .detail-row {
-          display: flex;
-          justify-content: space-between;
-          color: #475569;
-        }
-
-        .detail-row strong {
-          color: #0f172a;
-        }
-
-        .detail-row.divider {
-          border-top: 1px dashed #e2e8f0;
-          padding-top: 0.35rem;
-          margin-top: 0.15rem;
-          font-weight: 700;
-          color: #0f172a;
-        }
-
-        /* LOADING & ERROR STATES */
-        .loading-state {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 5rem 2rem;
-          background: white;
-          border-radius: 1rem;
-          border: 1px solid #e2e8f0;
-          text-align: center;
-        }
-
-        .spinner {
-          width: 40px;
-          height: 40px;
-          border: 3.5px solid #f1f5f9;
-          border-top-color: #C92E09;
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-          margin-bottom: 1.25rem;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .loading-state p {
-          font-size: 0.95rem;
-          color: #64748b;
-          font-weight: 600;
-        }
-
-        .error-state {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 4rem 2rem;
-          background: #fff5f5;
-          border: 1px dashed #fca5a5;
-          border-radius: 1rem;
-          text-align: center;
-          color: #c53030;
-        }
-
-        .error-state h3 {
-          margin: 0.75rem 0 0.25rem 0;
-          font-weight: 800;
-        }
-
-        .error-state p {
-          font-size: 0.88rem;
-          margin-bottom: 1.25rem;
-          color: #742a2a;
-        }
-
-        .btn-retry {
-          background: #c53030;
-          color: white;
-          border: none;
-          padding: 0.6rem 1.25rem;
-          border-radius: 0.5rem;
-          font-weight: 700;
-          cursor: pointer;
-        }
-
-        /* HISTORY SECTION */
-        .history-section {
-          background: white;
-          border: 1px solid #e2e8f0;
-          border-radius: 1.25rem;
-          overflow: hidden;
-          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02);
-        }
-
-        .history-header {
-          padding: 1.5rem;
-          border-bottom: 1px solid #e2e8f0;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          flex-wrap: wrap;
-          gap: 1rem;
-        }
-
-        .history-header h2 {
-          font-size: 1.15rem;
-          font-weight: 850;
-          color: #0f172a;
-          margin: 0;
-        }
-
-        .tabs {
-          display: flex;
-          background: #f1f5f9;
-          padding: 0.25rem;
-          border-radius: 0.75rem;
-          gap: 0.15rem;
-        }
-
-        .tab-btn {
-          border: none;
-          background: none;
-          padding: 0.5rem 1rem;
-          border-radius: 0.6rem;
-          font-size: 0.82rem;
-          font-weight: 700;
-          color: #475569;
-          cursor: pointer;
-          transition: all 0.2s ease;
-          display: flex;
-          align-items: center;
-          gap: 0.4rem;
-        }
-
-        .tab-btn.active {
-          background: white;
-          color: #C92E09;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.06);
-        }
-
-        .tab-badge {
-          background: #e2e8f0;
-          color: #475569;
-          font-size: 0.7rem;
-          font-weight: 800;
-          padding: 0.1rem 0.4rem;
-          border-radius: 9999px;
-        }
-
-        .tab-btn.active .tab-badge {
-          background: rgba(198, 40, 40, 0.1);
-          color: #C92E09;
-        }
-
-        .tab-content {
-          padding: 1rem;
-        }
-
-        .empty-history {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 4rem 2rem;
-          color: #64748b;
-          text-align: center;
-          gap: 0.5rem;
-        }
-
-        .empty-history p {
-          font-size: 0.88rem;
-          margin: 0;
-          font-weight: 550;
-        }
-
-        .orders-table-wrapper {
-          overflow-x: auto;
-        }
-
-        .orders-table {
-          width: 100%;
-          border-collapse: collapse;
-          text-align: left;
-          font-size: 0.85rem;
-        }
-
-        .orders-table th {
-          background: #f8fafc;
-          padding: 0.85rem 1rem;
-          font-weight: 700;
-          color: #475569;
-          border-bottom: 2px solid #e2e8f0;
-        }
-
-        .orders-table td {
-          padding: 1rem;
-          border-bottom: 1px solid #f1f5f9;
-          vertical-align: middle;
-        }
-
-        .orders-table tr:last-child td {
-          border-bottom: none;
-        }
-
-        .time-col {
-          font-weight: 800;
-          color: #C92E09;
-        }
-
-        .client-col {
-          font-weight: 700;
-          color: #0f172a;
-        }
-
-        .items-col {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 0.4rem;
-        }
-
-        .item-pill {
-          background: #f1f5f9;
-          color: #334155;
-          padding: 0.25rem 0.55rem;
-          border-radius: 0.38rem;
-          font-weight: 600;
-          font-size: 0.78rem;
-          border: 1px solid #e2e8f0;
-        }
-
-        .price-col {
-          font-weight: 700;
-          color: #0f172a;
-        }
-
-        .status-pill {
-          display: inline-block;
-          font-size: 0.7rem;
-          font-weight: 800;
-          padding: 0.2rem 0.5rem;
-          border-radius: 9999px;
-          letter-spacing: 0.025em;
-          text-transform: uppercase;
-        }
-
-        .status-encerrado, .status-entregue, .status-concluido {
-          background: #F0FDFA;
-          color: #0F766E;
-        }
-
-        .status-novo {
-          background: #FAF6F2;
-          color: #1C1917;
-        }
-
-        /* MODALS */
-        .modal-overlay {
-          position: fixed;
-          inset: 0;
-          background: rgba(15, 23, 42, 0.6);
-          backdrop-filter: blur(4px);
-          z-index: 1000;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 1rem;
-        }
-
-        .modal-card {
-          background: white;
-          border-radius: 1.25rem;
-          width: 100%;
-          max-width: 480px;
-          padding: 1.75rem;
-          position: relative;
-          box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-          animation: slideUp 0.3s ease-out;
-        }
-
-        .modal-card.modal-large {
-          max-width: 720px;
-        }
-
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        .btn-close {
-          position: absolute;
-          top: 1rem;
-          right: 1rem;
-          background: none;
-          border: none;
-          cursor: pointer;
-          color: #64748b;
-          padding: 0.25rem;
-          border-radius: 0.25rem;
-        }
-
-        .btn-close:hover {
-          background: #f1f5f9;
-        }
-
-        .modal-card h2 {
-          font-size: 1.25rem;
-          font-weight: 900;
-          color: #0f172a;
-          margin: 0 0 0.5rem 0;
-        }
-
-        .modal-subtitle {
-          font-size: 0.85rem;
-          color: #64748b;
-          margin-bottom: 1.5rem;
-        }
-
-        .modal-shifts-layout {
-          display: grid;
-          grid-template-columns: 1fr 1.2fr;
-          gap: 1.5rem;
-          margin-bottom: 1.5rem;
-        }
-
-        .new-shift-form {
-          border-right: 1px solid #e2e8f0;
-          padding-right: 1.5rem;
-        }
-
-        .new-shift-form h3,
-        .modal-shifts-list-side h3 {
-          font-size: 0.95rem;
-          font-weight: 800;
-          color: #334155;
-          margin: 0 0 1rem 0;
-        }
-
-        .form-group {
-          display: flex;
-          flex-direction: column;
-          gap: 0.35rem;
-          margin-bottom: 1rem;
-        }
-
-        .form-row {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 1rem;
-        }
-
-        .form-group label {
-          font-size: 0.75rem;
-          font-weight: 700;
-          color: #475569;
-          text-transform: uppercase;
-        }
-
-        .form-group input {
-          padding: 0.65rem 0.8rem;
-          border-radius: 0.5rem;
-          border: 1.5px solid #cbd5e1;
-          font-size: 0.88rem;
-          font-weight: 600;
-          outline: none;
-          background: #f8fafc;
-        }
-
-        .form-group input:focus {
-          border-color: #C92E09;
-          background: white;
-        }
-
-        .btn-submit-shift {
-          width: 100%;
-          padding: 0.75rem;
-          background: linear-gradient(135deg, #C92E09, #b71c1c);
-          color: white;
-          font-weight: 800;
-          font-size: 0.88rem;
-          border: none;
-          border-radius: 0.5rem;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 0.35rem;
-          box-shadow: 0 4px 10px rgba(198, 40, 40, 0.2);
-          transition: all 0.2s;
-        }
-
-        .btn-submit-shift:hover {
-          filter: brightness(1.08);
-        }
-
-        .modal-shifts-list-side {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .no-shifts-inside {
-          font-size: 0.85rem;
-          color: #94a3b8;
-          font-style: italic;
-        }
-
-        .modal-shifts-scroll {
-          max-height: 250px;
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-          gap: 0.5rem;
-          padding-right: 0.5rem;
-        }
-
-        .modal-shift-row {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          background: #f8fafc;
-          border: 1px solid #e2e8f0;
-          padding: 0.65rem 0.85rem;
-          border-radius: 0.65rem;
-        }
-
-        .modal-shift-info {
-          display: flex;
-          flex-direction: column;
-        }
-
-        .modal-shift-info strong {
-          font-size: 0.88rem;
-          color: #1e293b;
-        }
-
-        .modal-shift-info span {
-          font-size: 0.72rem;
-          color: #64748b;
-          font-weight: 600;
-        }
-
-        .btn-delete-shift {
-          background: none;
-          border: none;
-          color: #C92E09;
-          cursor: pointer;
-          padding: 0.35rem;
-          border-radius: 0.35rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .btn-delete-shift:hover {
-          background: #fee2e2;
-        }
-
-        .modal-footer {
-          display: flex;
-          justify-content: flex-end;
-          border-top: 1px solid #e2e8f0;
-          padding-top: 1rem;
-        }
-
-        .btn-secondary {
-          background: #f1f5f9;
-          color: #475569;
-          border: none;
-          padding: 0.6rem 1.25rem;
-          border-radius: 0.5rem;
-          font-weight: 700;
-          font-size: 0.85rem;
-          cursor: pointer;
-        }
-
-        .btn-secondary:hover {
-          background: #e2e8f0;
-        }
-
-        @media (max-width: 768px) {
-          .header-content {
-            flex-direction: column;
-            align-items: flex-start;
-          }
-          .header-device-time {
-            width: 100%;
-            justify-content: center;
-          }
-          .modal-shifts-layout {
-            grid-template-columns: 1fr;
-          }
-          .new-shift-form {
-            border-right: none;
-            border-bottom: 1px solid #e2e8f0;
-            padding-right: 0;
-            padding-bottom: 1.5rem;
-          }
-        }
-      `}</style>
+      ) : null}
     </div>
   );
 }

@@ -214,7 +214,6 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           logo={storeOwner?.storeLogo || user?.storeLogo || null}
           cidade={(session.user as any)?.city || storeOwner?.city || user?.city || ""}
           slug={storeOwner?.slug || user?.slug}
-          mostrarAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || storeOwner?.email?.toLowerCase() === "contatohakim@gmail.com"}
           mostrarCompras={storeOwner?.isFranqueadoHakim === true}
           mostrarMeuAplicativo={meuAplicativo}
           isAdmin={isAdmin}
@@ -241,7 +240,6 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           isAdmin={isAdmin}
           initialStoreOpen={storeOwner?.storeOpen ?? true}
           initialCashOpen={storeOwner?.cashOpen ?? false}
-          showAntecipacao={session.user?.email?.toLowerCase() === "contatohakim@gmail.com" || storeOwner?.email?.toLowerCase() === "contatohakim@gmail.com"}
           semNavegacao
           lojaDeDemonstracao={ehLojaDeDemonstracao(storeOwner?.id || user?.id)}
         />

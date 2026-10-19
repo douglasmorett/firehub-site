@@ -25,7 +25,7 @@ export type ItemDoMenu = {
   /** Bolinha de destaque (é por onde o pedido entra). */
   destaque?: boolean;
   /** Só aparece quando a loja tem o benefício ligado. */
-  somenteCom?: "antecipacao" | "compras";
+  somenteCom?: "compras";
   /**
    * Abre em outra guia. Vale para a tela que a loja usa AO LADO do painel,
    * não no lugar dele: a roteirização fica aberta no mapa enquanto o
@@ -79,7 +79,7 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       // mostra, não — achado no teste na Hakim, 15/10/2026.
       { href: "/store/bill", label: "Bill, seu assessor", icone: "Mic", selo: "NOVO" },
       { href: "/store/financeiro", label: "Financeiro", icone: "BarChart2" },
-      { href: "/store/antecipacao", label: "Antecipação", icone: "Zap", somenteCom: "antecipacao" },
+      { href: "/store/antecipacao", label: "Antecipação", icone: "Zap" },
       { href: "/store/relatorios", label: "Relatórios", icone: "LineChart" },
       // CMV real, CMO e folha (lib/cmv). Funcionário só vê com a caixinha
       // "Dados sensíveis", que nasce desmarcada (lib/permissao-da-tela.ts).
@@ -155,7 +155,6 @@ export function itemAtivo(pathname: string | null | undefined): ItemDoMenu | nul
  * botão que não leva a lugar nenhum é pior que botão nenhum.
  */
 export function menuDaLoja(opcoes: {
-  antecipacao?: boolean;
   compras?: boolean;
   permissoesDoFuncionario?: string | null;
 }): GrupoDoMenu[] {
