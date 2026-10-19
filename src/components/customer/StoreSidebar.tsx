@@ -45,7 +45,6 @@ export default function StoreSidebar({
   logo,
   cidade,
   slug,
-  mostrarAntecipacao = false,
   mostrarCompras = false,
   mostrarMeuAplicativo = false,
   isAdmin = false,
@@ -57,7 +56,6 @@ export default function StoreSidebar({
   logo?: string | null;
   cidade?: string | null;
   slug?: string | null;
-  mostrarAntecipacao?: boolean;
   mostrarCompras?: boolean;
   /**
    * Plano do aplicativo próprio ligado e quem entrou é o dono (ou o admin):
@@ -174,7 +172,7 @@ export default function StoreSidebar({
     });
   };
 
-  const grupos = menuDaLoja({ antecipacao: mostrarAntecipacao, compras: mostrarCompras, permissoesDoFuncionario });
+  const grupos = menuDaLoja({ compras: mostrarCompras, permissoesDoFuncionario });
 
   // O caminho COM o # — é o que distingue "Entrega" de "Pagamento", que são
   // a mesma rota. `usePathname` não enxerga hash, então vem do próprio
