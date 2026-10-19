@@ -7,7 +7,7 @@
  * Disparo oficial para; o resto do painel nem percebe. Os models entram no
  * schema.prisma no MESMO commit.
  */
-import { prisma } from "@/lib/prisma";
+import { executarDDL } from "@/lib/ddl-do-boot";
 
 const INSTRUCOES = [
   `CREATE TABLE IF NOT EXISTS "WhatsappOficial" (
@@ -132,7 +132,7 @@ export async function garantirEstruturaDoDisparoOficial(): Promise<boolean> {
   }
 
   try {
-    for (const sql of INSTRUCOES) await prisma.$executeRawUnsafe(sql);
+    await executarDDL("disparo-oficial", INSTRUCOES);
     ok = true;
     console.log("[Boot] ✅ Tabelas do Disparo oficial garantidas.");
     return true;

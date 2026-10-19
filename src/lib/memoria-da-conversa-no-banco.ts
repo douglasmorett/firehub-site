@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { prisma } from "@/lib/prisma";
+import { executarComTrava } from "@/lib/ddl-do-boot";
 import {
   historicoAoLer,
   historicoParaAIa,
@@ -43,7 +44,7 @@ export async function garantirColunaDaMemoria(): Promise<boolean> {
       WHERE table_name = 'ChatbotConversationState' AND column_name = 'history' LIMIT 1
     `;
     if (existe.length === 0) {
-      await prisma.$executeRawUnsafe(`ALTER TABLE "ChatbotConversationState" ADD COLUMN IF NOT EXISTS "history" JSONB`);
+      await executarComTrava(`ALTER TABLE "ChatbotConversationState" ADD COLUMN IF NOT EXISTS "history" JSONB`);
       console.log("[Boot] ✅ Coluna ChatbotConversationState.history criada (memória da conversa do robô).");
     }
     colunaOk = true;

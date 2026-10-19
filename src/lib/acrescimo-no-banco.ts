@@ -23,6 +23,7 @@
 
 import { randomUUID } from "crypto";
 import { prisma } from "./prisma";
+import { executarDDL } from "./ddl-do-boot";
 import { registerBotReply } from "./loop-guard";
 import { sendEvolutionMessage } from "./whatsapp-evolution";
 import { registrarMensagemDaLoja } from "./memoria-da-conversa-no-banco";
@@ -45,7 +46,8 @@ export async function garantirTabelaDeAcrescimos(): Promise<boolean> {
   if (tabelaOk) return true;
   if (!/^postgres/i.test(String(process.env.DATABASE_URL || ""))) return false;
   try {
-    await prisma.$executeRawUnsafe(`
+    await executarDDL("acrescimos", [
+      `
       CREATE TABLE IF NOT EXISTS "AcrescimoDoPedido" (
         "id" TEXT PRIMARY KEY,
         "franchiseeId" TEXT NOT NULL,
@@ -60,10 +62,9 @@ export async function garantirTabelaDeAcrescimos(): Promise<boolean> {
         "respondidoPor" TEXT,
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
         "respondidoEm" TIMESTAMP(3)
-      )`);
-    await prisma.$executeRawUnsafe(
-      `CREATE INDEX IF NOT EXISTS "AcrescimoDoPedido_loja_status" ON "AcrescimoDoPedido" ("franchiseeId", "status")`
-    );
+      )`,
+      `CREATE INDEX IF NOT EXISTS "AcrescimoDoPedido_loja_status" ON "AcrescimoDoPedido" ("franchiseeId", "status")`,
+    ]);
     tabelaOk = true;
     return true;
   } catch (err: any) {

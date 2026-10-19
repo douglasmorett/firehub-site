@@ -18,6 +18,7 @@
  * loga. A baixa do pedido chama `avisarMovimentoDeEstoque`, que nem espera.
  */
 import { prisma } from "@/lib/prisma";
+import { executarDDL } from "@/lib/ddl-do-boot";
 import { SEM_PRODUTO_DE_INTEGRACAO } from "@/lib/cardapio-interno";
 import { mudarPausaDosProdutos } from "@/lib/pausar-produtos";
 import { decidirPausaPeloEstoque, insumoAcabou, type FichaDoProduto } from "@/lib/pausa-pelo-estoque";
@@ -53,7 +54,7 @@ export async function garantirEstruturaDaPausaPeloEstoque(): Promise<boolean> {
     return true;
   }
   try {
-    for (const sql of INSTRUCOES) await prisma.$executeRawUnsafe(sql);
+    await executarDDL("pausa-pelo-estoque", INSTRUCOES);
     pronto = true;
     console.log("[Boot] ✅ Tabelas da pausa pelo estoque garantidas.");
   } catch (err: any) {

@@ -29,6 +29,14 @@ export async function register() {
     instalarBloqueioDeSaida();
   }
 
+  // As duas tabelas que coordenam os servidores entre si ("BootDDL" e "Vez",
+  // lib/ddl-do-boot.ts) ANTES de toda DDL abaixo: é com elas que um grupo de
+  // instruções já aplicado neste banco é pulado, e que dois boots ao mesmo
+  // tempo não aplicam o mesmo grupo juntos. Nunca lança — sem elas, a DDL roda
+  // como sempre rodou.
+  const { garantirTabelasDeCoordenacao } = await import("./lib/ddl-do-boot");
+  await garantirTabelasDeCoordenacao();
+
   const {
     garantirColunasDePreco,
     garantirColunasDoSchema,

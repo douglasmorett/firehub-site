@@ -16,6 +16,7 @@
  * garantia dos lotes.
  */
 import { prisma } from "@/lib/prisma";
+import { executarDDL, esquecerDDL } from "@/lib/ddl-do-boot";
 
 const INSTRUCOES = [
   // ── Insumo: preparo, rendimento, local, contagem do dia, fora do CMV ──────
@@ -172,7 +173,7 @@ export async function garantirEstruturaDoCmv(): Promise<boolean> {
 
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
     try {
-      for (const sql of INSTRUCOES) await prisma.$executeRawUnsafe(sql);
+      await executarDDL("cmv", INSTRUCOES);
 
       const cols = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
         SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
@@ -193,6 +194,7 @@ export async function garantirEstruturaDoCmv(): Promise<boolean> {
 
       if (faltando.length > 0) {
         console.error(`[Boot] 🛑 Estrutura do CMV incompleta: falta ${faltando.join(", ")}.`);
+        await esquecerDDL("cmv", INSTRUCOES);
         if (tentativa < 3) { await new Promise((r) => setTimeout(r, 2000 * tentativa)); continue; }
         return false;
       }

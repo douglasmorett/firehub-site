@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { executarComTrava } from "@/lib/ddl-do-boot";
 import { lerEstadoSemConexao, type EstadoSemConexao } from "./loja-sem-conexao";
 
 /**
@@ -42,7 +43,7 @@ export async function garantirColunaDaLojaSemConexao(): Promise<boolean> {
       WHERE table_name = 'User' AND column_name = 'semConexaoEstado' LIMIT 1
     `;
     if (existe.length === 0) {
-      await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "semConexaoEstado" JSONB`);
+      await executarComTrava(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "semConexaoEstado" JSONB`);
       console.log("[Boot] ✅ Coluna User.semConexaoEstado criada (loja sem conexão).");
     }
     colunaOk = true;

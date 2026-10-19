@@ -21,6 +21,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { executarDDL } from "@/lib/ddl-do-boot";
 import { horaEmUtc } from "@/lib/cashback-no-banco";
 import type { AjusteDaDiaria, PendenciaDoAcerto } from "@/lib/ajustes-do-acerto-regras";
 
@@ -31,7 +32,8 @@ export async function garantirTabelasDoAcerto(): Promise<boolean> {
   if (tabelasOk) return true;
   if (!/^postgres/i.test(process.env.DATABASE_URL || "")) return false;
   try {
-    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "MotoboyDiariaDoDia" (
+    await executarDDL("ajustes-do-acerto", [
+      `CREATE TABLE IF NOT EXISTS "MotoboyDiariaDoDia" (
       "id" TEXT NOT NULL,
       "lojaId" TEXT NOT NULL,
       "motoboyId" TEXT NOT NULL,
@@ -42,10 +44,10 @@ export async function garantirTabelasDoAcerto(): Promise<boolean> {
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "MotoboyDiariaDoDia_pkey" PRIMARY KEY ("id")
-    )`);
-    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "MotoboyDiariaDoDia_motoboyId_dia_key" ON "MotoboyDiariaDoDia"("motoboyId", "dia")`);
-    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MotoboyDiariaDoDia_lojaId_dia_idx" ON "MotoboyDiariaDoDia"("lojaId", "dia")`);
-    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "MotoboyPendencia" (
+    )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "MotoboyDiariaDoDia_motoboyId_dia_key" ON "MotoboyDiariaDoDia"("motoboyId", "dia")`,
+      `CREATE INDEX IF NOT EXISTS "MotoboyDiariaDoDia_lojaId_dia_idx" ON "MotoboyDiariaDoDia"("lojaId", "dia")`,
+      `CREATE TABLE IF NOT EXISTS "MotoboyPendencia" (
       "id" TEXT NOT NULL,
       "lojaId" TEXT NOT NULL,
       "motoboyId" TEXT NOT NULL,
@@ -57,8 +59,9 @@ export async function garantirTabelasDoAcerto(): Promise<boolean> {
       "excluidoEm" TIMESTAMP(3),
       "excluidoPor" TEXT,
       CONSTRAINT "MotoboyPendencia_pkey" PRIMARY KEY ("id")
-    )`);
-    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "MotoboyPendencia_lojaId_motoboyId_dia_idx" ON "MotoboyPendencia"("lojaId", "motoboyId", "dia")`);
+    )`,
+      `CREATE INDEX IF NOT EXISTS "MotoboyPendencia_lojaId_motoboyId_dia_idx" ON "MotoboyPendencia"("lojaId", "motoboyId", "dia")`,
+    ]);
     tabelasOk = true;
     return true;
   } catch (err: any) {

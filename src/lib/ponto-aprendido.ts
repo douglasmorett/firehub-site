@@ -47,6 +47,7 @@
  * correção não tem linha: nada muda para ela.
  */
 import { prisma } from "@/lib/prisma";
+import { executarDDL } from "@/lib/ddl-do-boot";
 import { chavesDoAprendizado, chaveDaVizinhanca, distanciaKm, lerPontoGravado, type Ponto } from "@/lib/ponto-do-pedido";
 import { ancorasDasEntregas, type Ancora } from "@/lib/ancora-do-cep";
 import { cepDoEndereco } from "@/lib/cep";
@@ -78,7 +79,8 @@ export async function garantirTabelaDePontosAprendidos(): Promise<boolean> {
   if (tabelaOk) return true;
   if (!/^postgres/i.test(String(process.env.DATABASE_URL || ""))) return false;
   try {
-    await prisma.$executeRawUnsafe(`
+    await executarDDL("pontos-aprendidos", [
+      `
       CREATE TABLE IF NOT EXISTS "PontoAprendido" (
         "franchiseeId" TEXT NOT NULL,
         "chave" TEXT NOT NULL,
@@ -93,11 +95,10 @@ export async function garantirTabelaDePontosAprendidos(): Promise<boolean> {
         "ultimoUso" TIMESTAMP(3) NOT NULL DEFAULT (NOW() AT TIME ZONE 'UTC'),
         "vizinhanca" TEXT,
         CONSTRAINT "PontoAprendido_pkey" PRIMARY KEY ("franchiseeId", "chave")
-      )`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "PontoAprendido" ADD COLUMN IF NOT EXISTS "vizinhanca" TEXT`);
-    await prisma.$executeRawUnsafe(
+      )`,
+      `ALTER TABLE "PontoAprendido" ADD COLUMN IF NOT EXISTS "vizinhanca" TEXT`,
       `CREATE INDEX IF NOT EXISTS "PontoAprendido_vizinhanca_idx" ON "PontoAprendido" ("franchiseeId", "vizinhanca")`,
-    );
+    ]);
     tabelaOk = true;
   } catch (err: any) {
     console.error(`[Ponto aprendido] não consegui criar a tabela: ${err?.message}`);

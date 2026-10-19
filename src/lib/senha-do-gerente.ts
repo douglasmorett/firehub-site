@@ -22,6 +22,7 @@ import bcrypt from "bcryptjs";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { executarDDL } from "@/lib/ddl-do-boot";
 import { horaEmUtc } from "@/lib/cashback-no-banco";
 import {
   CABECALHO_DA_SENHA,
@@ -43,14 +44,16 @@ export async function garantirTabelaDaSenhaDoGerente(): Promise<boolean> {
   if (tabelaOk) return true;
   if (!/^postgres/i.test(process.env.DATABASE_URL || "")) return false;
   try {
-    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "SenhaDoGerente" (
+    await executarDDL("senha-do-gerente", [
+      `CREATE TABLE IF NOT EXISTS "SenhaDoGerente" (
       "lojaId" TEXT NOT NULL,
       "hash" TEXT,
       "exige" JSONB NOT NULL DEFAULT '{}',
       "atualizadoPor" TEXT,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "SenhaDoGerente_pkey" PRIMARY KEY ("lojaId")
-    )`);
+    )`,
+    ]);
     tabelaOk = true;
     return true;
   } catch (err: any) {

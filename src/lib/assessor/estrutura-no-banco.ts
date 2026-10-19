@@ -6,7 +6,7 @@
  * idempotente. Tabelas próprias, sem coluna nova em tabela que já existe: se
  * faltarem, só o assessor para — o robô de vendas e o estoque seguem inteiros.
  */
-import { prisma } from "@/lib/prisma";
+import { executarDDL } from "@/lib/ddl-do-boot";
 
 const INSTRUCOES = [
   `CREATE TABLE IF NOT EXISTS "AssessorAssinatura" (
@@ -56,7 +56,7 @@ export async function garantirEstruturaDoAssessor(): Promise<boolean> {
     return true;
   }
   try {
-    for (const sql of INSTRUCOES) await prisma.$executeRawUnsafe(sql);
+    await executarDDL("assessor", INSTRUCOES);
     pronto = true;
     console.log("[Boot] ✅ Tabelas do Bill garantidas.");
   } catch (err: any) {

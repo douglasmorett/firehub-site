@@ -20,6 +20,7 @@
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { executarDDL } from "@/lib/ddl-do-boot";
 import { horaEmUtc } from "@/lib/cashback-no-banco";
 
 let tabelaOk = false;
@@ -29,7 +30,8 @@ export async function garantirTabelaDoFiadoDaMesa(): Promise<boolean> {
   if (tabelaOk) return true;
   if (!/^postgres/i.test(process.env.DATABASE_URL || "")) return false;
   try {
-    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "FiadoDaMesa" (
+    await executarDDL("fiado-da-mesa", [
+      `CREATE TABLE IF NOT EXISTS "FiadoDaMesa" (
       "id" TEXT NOT NULL,
       "lojaId" TEXT NOT NULL,
       "employeeId" TEXT NOT NULL,
@@ -40,9 +42,10 @@ export async function garantirTabelaDoFiadoDaMesa(): Promise<boolean> {
       "criadoPor" TEXT,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "FiadoDaMesa_pkey" PRIMARY KEY ("id")
-    )`);
-    await prisma.$executeRawUnsafe(`CREATE UNIQUE INDEX IF NOT EXISTS "FiadoDaMesa_tableSessionId_key" ON "FiadoDaMesa"("tableSessionId")`);
-    await prisma.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS "FiadoDaMesa_employeeId_idx" ON "FiadoDaMesa"("employeeId")`);
+    )`,
+      `CREATE UNIQUE INDEX IF NOT EXISTS "FiadoDaMesa_tableSessionId_key" ON "FiadoDaMesa"("tableSessionId")`,
+      `CREATE INDEX IF NOT EXISTS "FiadoDaMesa_employeeId_idx" ON "FiadoDaMesa"("employeeId")`,
+    ]);
     tabelaOk = true;
     return true;
   } catch (err: any) {

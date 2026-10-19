@@ -25,6 +25,7 @@
  * No computador da loja (`FIREHUB_LOCAL=1`) nada disto roda.
  */
 import { prisma } from "@/lib/prisma";
+import { executarDDL } from "@/lib/ddl-do-boot";
 import { TABELAS_DA_COPIA, type TabelaDaCopia } from "./catalogo";
 
 const TABELAS = [
@@ -162,9 +163,12 @@ async function existeTabela(nome: string): Promise<boolean> {
 export async function garantirEstruturaDaContingencia(): Promise<void> {
   if (process.env.FIREHUB_LOCAL === "1") return;
   try {
-    for (const sql of TABELAS) await prisma.$executeRawUnsafe(sql);
+    await executarDDL("contingencia-tabelas", TABELAS);
 
     if (process.env.CONTINGENCIA_SEM_GATILHOS === "1") {
+      // Os gatilhos vão sair: o grupo que os cria não pode mais ser pulado
+      // quando a contingência voltar (lib/ddl-do-boot.ts guarda o hash).
+      await prisma.$executeRawUnsafe(`DELETE FROM "BootDDL" WHERE "nome" = 'contingencia-gatilhos'`).catch(() => undefined);
       for (const t of tabelasComGatilho()) {
         if (await existeTabela(t.nome)) await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS "contingencia_anota" ON ${q(t.nome)}`);
       }
@@ -174,14 +178,17 @@ export async function garantirEstruturaDaContingencia(): Promise<void> {
 
     let comGatilho = 0;
     const faltando: string[] = [];
+    const gatilhos: string[] = [];
     for (const t of tabelasComGatilho()) {
       // Tabela criada por SQL na primeira vez que alguém usa (ex.: ClienteDaLoja)
       // pode ainda não existir: ganha o gatilho no próximo boot.
       if (!(await existeTabela(t.nome))) { faltando.push(t.nome); continue; }
-      await prisma.$executeRawUnsafe(sqlDaFuncao(t));
-      await prisma.$executeRawUnsafe(sqlDoGatilho(t));
+      gatilhos.push(sqlDaFuncao(t), sqlDoGatilho(t));
       comGatilho++;
     }
+    // Mesma ordem de antes (função, gatilho, por tabela). O hash muda quando
+    // muda o texto de um gatilho OU quando uma tabela que faltava aparece.
+    await executarDDL("contingencia-gatilhos", gatilhos);
     // O diário guarda 7 dias: a cópia pergunta a cada poucos segundos, e quem
     // ficou mais tempo sem perguntar refaz a foto.
     await prisma.$executeRawUnsafe(`DELETE FROM "ContingenciaMudanca" WHERE "em" < now() - interval '7 days'`);

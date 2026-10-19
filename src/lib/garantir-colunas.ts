@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { executarDDL, executarComTrava, esquecerDDL } from "@/lib/ddl-do-boot";
 
 /**
  * A coluna de quem abriu o caixa (a lista INSTRUCOES_COLUNAS_DO_SCHEMA a
@@ -205,9 +206,8 @@ export async function garantirColunasDePreco(): Promise<void> {
 
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
     try {
-      for (const sql of INSTRUCOES) {
-        await prisma.$executeRawUnsafe(sql);
-      }
+      // Pula se este banco já aplicou exatamente estas instruções (lib/ddl-do-boot.ts).
+      await executarDDL("precos", INSTRUCOES);
 
       // Depois das colunas existirem, e nunca antes.
       const carimbados = await prisma.$executeRawUnsafe(CARIMBO_DE_COMPLEMENTO);
@@ -245,6 +245,7 @@ export async function garantirColunasDePreco(): Promise<void> {
       // ADD COLUMN sem erro mas coluna ausente não deveria acontecer nunca;
       // se acontecer, é melhor o log gritar do que o cardápio servir 500 mudo.
       console.error(`[Boot] 🛑 Colunas ausentes mesmo após o ALTER: ${faltando.join(", ")}.`);
+      await esquecerDDL("precos", INSTRUCOES);
       return;
     } catch (err: any) {
       console.error(
@@ -328,9 +329,7 @@ export async function garantirColunasBrendi(): Promise<void> {
   }
 
   try {
-    for (const sql of INSTRUCOES_BRENDI) {
-      await prisma.$executeRawUnsafe(sql);
-    }
+    await executarDDL("brendi", INSTRUCOES_BRENDI);
     brendiColunasOk = true;
     console.log("[Boot] ✅ Colunas da integração Brendi garantidas no banco.");
   } catch (err: any) {
@@ -363,9 +362,7 @@ export async function garantirColunasWabiz(): Promise<void> {
     return;
   }
   try {
-    for (const sql of INSTRUCOES_WABIZ) {
-      await prisma.$executeRawUnsafe(sql);
-    }
+    await executarDDL("wabiz", INSTRUCOES_WABIZ);
     wabizColunasOk = true;
     console.log("[Boot] ✅ Colunas da integração Wabiz garantidas no banco.");
   } catch (err: any) {
@@ -536,9 +533,7 @@ export async function garantirEstruturaDeLotes(): Promise<void> {
   // que já derrubou /loja duas vezes.
   for (let tentativa = 1; tentativa <= 3; tentativa++) {
     try {
-      for (const sql of INSTRUCOES_LOTES) {
-        await prisma.$executeRawUnsafe(sql);
-      }
+      await executarDDL("lotes", INSTRUCOES_LOTES);
 
       // Conferir a tabela não basta: as COLUNAS novas em tabelas que já existem
       // são o perigo de verdade. Uma delas faltando faz toda consulta ao
@@ -576,6 +571,7 @@ export async function garantirEstruturaDeLotes(): Promise<void> {
 
       if (faltando.length > 0) {
         console.error(`[Boot] 🛑 Estrutura de lotes incompleta: falta ${faltando.join(", ")}.`);
+        await esquecerDDL("lotes", INSTRUCOES_LOTES);
         if (tentativa < 3) { await new Promise((r) => setTimeout(r, 2000 * tentativa)); continue; }
         return;
       }
@@ -666,15 +662,14 @@ export async function garantirEstruturaDeCaixa(): Promise<void> {
   }
 
   try {
-    for (const sql of INSTRUCOES_CAIXA) {
-      await prisma.$executeRawUnsafe(sql);
-    }
+    await executarDDL("caixa", INSTRUCOES_CAIXA);
     const rows = await prisma.$queryRaw<{ tabela: string }[]>`
       SELECT table_name AS tabela FROM information_schema.tables
       WHERE table_schema = current_schema() AND table_name IN ('CashMovement', 'CashSessionEdicao')
     `;
     if (rows.length < 2) {
       console.error("[Boot] 🛑 Tabela CashMovement ou CashSessionEdicao ausente mesmo após o CREATE TABLE.");
+      await esquecerDDL("caixa", INSTRUCOES_CAIXA);
       return;
     }
     caixaOk = true;
@@ -719,9 +714,7 @@ export async function garantirEstruturaDeDespesas(): Promise<boolean> {
   }
 
   try {
-    for (const sql of INSTRUCOES_DESPESAS) {
-      await prisma.$executeRawUnsafe(sql);
-    }
+    await executarDDL("despesas", INSTRUCOES_DESPESAS);
     despesasOk = true;
     console.log("[Boot] ✅ Tabela DespesaLancada (despesas do DRE) garantida.");
   } catch (err: any) {
@@ -1103,7 +1096,8 @@ async function garantirChaveDaImpressao(): Promise<void> {
     SELECT conname FROM pg_constraint WHERE conname = 'PrintRequest_franchiseeId_fkey'
   `;
   if (existe.length > 0) return;
-  await prisma.$executeRawUnsafe(
+  // Só quando falta (conferido acima): sem hash, mas com a trava do cluster.
+  await executarComTrava(
     `ALTER TABLE "PrintRequest" ADD CONSTRAINT "PrintRequest_franchiseeId_fkey" ` +
       `FOREIGN KEY ("franchiseeId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE`
   );
@@ -1172,9 +1166,7 @@ export async function garantirEstruturaDePrazos(): Promise<void> {
   }
 
   try {
-    for (const sql of INSTRUCOES_PRAZOS) {
-      await prisma.$executeRawUnsafe(sql);
-    }
+    await executarDDL("prazos", INSTRUCOES_PRAZOS);
     prazosOk = true;
     console.log("[Boot] ✅ Tabela PrazoConta (FireHub Prazos) garantida.");
   } catch (err: any) {
@@ -1315,9 +1307,7 @@ export async function garantirEstruturaDoCrm(): Promise<boolean> {
   }
 
   try {
-    for (const sql of INSTRUCOES_CRM) {
-      await prisma.$executeRawUnsafe(sql);
-    }
+    await executarDDL("crm", INSTRUCOES_CRM);
     crmOk = true;
     console.log("[Boot] ✅ Tabelas do CRM (contatos, conversa do FireHub, agenda) garantidas.");
     return true;
@@ -1344,13 +1334,9 @@ export async function garantirEstruturaDeMesa(): Promise<void> {
   try {
     // Catch por instrução: uma que falhe (tabela ausente numa loja antiga) não
     // pode levar as outras junto — é o mesmo desenho das garantias acima.
-    for (const sql of INSTRUCOES_MESA) {
-      try {
-        await prisma.$executeRawUnsafe(sql);
-      } catch (err: any) {
-        console.error(`[Boot] Instrução de mesa falhou: ${err?.message}`);
-      }
-    }
+    await executarDDL("mesa", INSTRUCOES_MESA, {
+      porInstrucao: (_sql, err) => console.error(`[Boot] Instrução de mesa falhou: ${err?.message}`),
+    });
 
     try {
       await garantirChaveDaImpressao();
@@ -1375,6 +1361,7 @@ export async function garantirEstruturaDeMesa(): Promise<void> {
       console.error(
         `[Boot] 🛑 Estrutura de mesa incompleta: ${faltando} coluna(s) e ${tabela.length === 0 ? "a tabela PrintRequest" : "nenhuma tabela"} faltando.`
       );
+      await esquecerDDL("mesa", INSTRUCOES_MESA);
       return;
     }
     mesaOk = true;
@@ -1431,23 +1418,28 @@ export async function garantirColunasDoSchema(): Promise<void> {
     return;
   }
 
-  let aplicadas = 0;
   const falhas: string[] = [];
 
-  for (const sql of INSTRUCOES_COLUNAS_DO_SCHEMA) {
-    try {
-      await prisma.$executeRawUnsafe(sql);
-      aplicadas++;
-    } catch (err: any) {
-      // O try/catch é POR INSTRUÇÃO, e não em volta do laço. O caso esperado é
-      // tabela que não existe ("relation does not exist") num banco que nunca
-      // recebeu o módulo de mesa ou de maquininha. Com o catch em volta do
-      // laço, a primeira dessas abortaria justamente as que evitam o 500 do
-      // cardápio e do pedido.
-      const tabela = sql.match(/ALTER TABLE "(\w+)"/)?.[1] ?? "?";
-      const coluna = sql.match(/IF NOT EXISTS "(\w+)"/)?.[1] ?? "?";
-      falhas.push(`${tabela}.${coluna}: ${String(err?.message || "").slice(0, 90)}`);
-    }
+  // O erro é POR INSTRUÇÃO, e não em volta do laço. O caso esperado é tabela
+  // que não existe ("relation does not exist") num banco que nunca recebeu o
+  // módulo de mesa ou de maquininha. Com o catch em volta do laço, a primeira
+  // dessas abortaria justamente as que evitam o 500 do cardápio e do pedido.
+  // Pula o grupo inteiro se este banco já o aplicou sem falha (lib/ddl-do-boot.ts).
+  let aplicadas = INSTRUCOES_COLUNAS_DO_SCHEMA.length;
+  try {
+    const r = await executarDDL("colunas-do-schema", INSTRUCOES_COLUNAS_DO_SCHEMA, {
+      porInstrucao: (sql, err) => {
+        const tabela = sql.match(/ALTER TABLE "(\w+)"/)?.[1] ?? "?";
+        const coluna = sql.match(/IF NOT EXISTS "(\w+)"/)?.[1] ?? "?";
+        falhas.push(`${tabela}.${coluna}: ${String(err?.message || "").slice(0, 90)}`);
+      },
+    });
+    aplicadas -= r.falhas.length;
+  } catch (err: any) {
+    // Com porInstrucao o executarDDL não lança por instrução; isto é o cinto:
+    // nada aqui pode derrubar o boot.
+    aplicadas = 0;
+    falhas.push(`colunas do schema: ${String(err?.message || "").slice(0, 90)}`);
   }
 
   // Depois de a coluna existir, e nunca antes.
@@ -1536,16 +1528,14 @@ export async function garantirEstruturaDeAcompanhamento(): Promise<boolean> {
   }
 
   try {
-    for (const sql of INSTRUCOES_ACOMPANHAMENTO) {
-      await prisma.$executeRawUnsafe(sql);
-    }
+    await executarDDL("acompanhamento", INSTRUCOES_ACOMPANHAMENTO);
     // A chave estrangeira vem depois do CREATE, e só se faltar: Postgres não
     // tem ADD CONSTRAINT IF NOT EXISTS.
     const existe: unknown[] = await prisma.$queryRaw`
       SELECT 1 FROM pg_constraint WHERE conname = 'AcompanhamentoRelatorio_clienteId_fkey'
     `;
     if (existe.length === 0) {
-      await prisma.$executeRawUnsafe(
+      await executarComTrava(
         `ALTER TABLE "AcompanhamentoRelatorio" ADD CONSTRAINT "AcompanhamentoRelatorio_clienteId_fkey" ` +
           `FOREIGN KEY ("clienteId") REFERENCES "AcompanhamentoIfood"("id") ON DELETE CASCADE ON UPDATE CASCADE`
       );
@@ -1624,9 +1614,7 @@ export async function garantirEstruturaDaOpenDeliverySaida(): Promise<boolean> {
     return false;
   }
   try {
-    for (const sql of INSTRUCOES_OPEN_DELIVERY_SAIDA) {
-      await prisma.$executeRawUnsafe(sql);
-    }
+    await executarDDL("open-delivery-saida", INSTRUCOES_OPEN_DELIVERY_SAIDA);
     openDeliverySaidaOk = true;
     return true;
   } catch (err: any) {

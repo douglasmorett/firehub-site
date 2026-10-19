@@ -23,6 +23,7 @@
 import { randomUUID } from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
+import { executarDDL } from "./ddl-do-boot";
 import {
   extratoDoCashback,
   gastoEm30Dias,
@@ -58,7 +59,8 @@ export async function garantirTabelaDeAjustes(): Promise<boolean> {
   if (tabelaOk) return true;
   if (!/^postgres/i.test(process.env.DATABASE_URL || "")) return false;
   try {
-    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "CashbackAjuste" (
+    await executarDDL("cashback-ajustes", [
+      `CREATE TABLE IF NOT EXISTS "CashbackAjuste" (
       "id" TEXT NOT NULL,
       "lojaId" TEXT NOT NULL,
       "telefone" TEXT NOT NULL,
@@ -69,10 +71,9 @@ export async function garantirTabelaDeAjustes(): Promise<boolean> {
       "criadoPor" TEXT,
       "createdAt" TIMESTAMP(3) NOT NULL,
       CONSTRAINT "CashbackAjuste_pkey" PRIMARY KEY ("id")
-    )`);
-    await prisma.$executeRawUnsafe(
+    )`,
       `CREATE INDEX IF NOT EXISTS "CashbackAjuste_lojaId_telefone_idx" ON "CashbackAjuste"("lojaId", "telefone")`,
-    );
+    ]);
     tabelaOk = true;
     return true;
   } catch (err: any) {

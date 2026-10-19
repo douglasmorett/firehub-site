@@ -20,6 +20,7 @@
  */
 import { randomUUID } from "crypto";
 import { prisma } from "./prisma";
+import { executarDDL } from "./ddl-do-boot";
 import {
   abaterCreditos,
   cicloGeraCredito,
@@ -46,7 +47,8 @@ export async function garantirTabelaDeIndicacoes(): Promise<boolean> {
   if (tabelaOk) return true;
   if (!/^postgres/i.test(process.env.DATABASE_URL || "")) return false;
   try {
-    await prisma.$executeRawUnsafe(`CREATE TABLE IF NOT EXISTS "IndicacaoLojista" (
+    await executarDDL("indique-e-ganhe", [
+      `CREATE TABLE IF NOT EXISTS "IndicacaoLojista" (
       "id" TEXT NOT NULL,
       "indicadoraId" TEXT NOT NULL,
       "indicadaId" TEXT NOT NULL,
@@ -59,15 +61,12 @@ export async function garantirTabelaDeIndicacoes(): Promise<boolean> {
       "usos" JSONB NOT NULL DEFAULT '[]'::jsonb,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "IndicacaoLojista_pkey" PRIMARY KEY ("id")
-    )`);
-    // A trava do "um por loja indicada": duas indicações para a mesma loja
-    // não existem, e o crédito mora na linha dela.
-    await prisma.$executeRawUnsafe(
+    )`,
+      // A trava do "um por loja indicada": duas indicações para a mesma loja
+      // não existem, e o crédito mora na linha dela.
       `CREATE UNIQUE INDEX IF NOT EXISTS "IndicacaoLojista_indicadaId_key" ON "IndicacaoLojista"("indicadaId")`,
-    );
-    await prisma.$executeRawUnsafe(
       `CREATE INDEX IF NOT EXISTS "IndicacaoLojista_indicadoraId_idx" ON "IndicacaoLojista"("indicadoraId")`,
-    );
+    ]);
     tabelaOk = true;
     return true;
   } catch (err: any) {
