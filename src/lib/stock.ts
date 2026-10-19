@@ -1,5 +1,6 @@
 import { prisma } from "./prisma";
 import { avisarMovimentoDeEstoque } from "./pausa-pelo-estoque-no-banco";
+import { PREFIXOS_DE_ESPELHO } from "./cardapio-interno";
 import {
   ROTULO_DA_ETAPA, ehPedidoCancelado, etapaAntesDoCancelamento, marcaDoDesperdicio, type EtapaDoDesperdicio,
 } from "./desperdicio-do-cancelado";
@@ -21,7 +22,7 @@ type EscolhaDeCombo = {
 };
 
 /** Opção de um grupo de combo com a ficha técnica do produto que ela entrega. */
-type OpcaoDeCombo = {
+export type OpcaoDeCombo = {
   id: string;
   comboGroupId: string;
   menuProductId: string;
@@ -46,7 +47,44 @@ type IndiceDeOpcoes = {
    * o insumo errado é pior do que não baixar.
    */
   porChave: Map<string, OpcaoDeCombo | null>;
+  /** Todas as opções, para o casamento pelo nome curto (`acharOpcaoDoCombo`). */
+  todas: OpcaoDeCombo[];
 };
+
+/** Nome sem acento, caixa e pontuação: "Esfirra de Carne c/ Catupiry" → "esfirra de carne c catupiry". */
+function nomeSolto(valor: string): string {
+  return valor.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/**
+ * Tempo da transação da baixa e da devolução. O padrão do Prisma é 5 s, e a
+ * baixa faz três idas ao banco por insumo (movimento, saldo, saldo depois):
+ * pedido com muito insumo estourava o tempo e a baixa INTEIRA voltava atrás,
+ * com uma linha de erro no log que ninguém lê. Hakim, 12 a 18/10/2026: com
+ * 1 a 4 insumos, 5 de 39 pedidos ficaram sem baixa; com 9 a 12, 12 de 15; com
+ * 13 a 20, 7 de 8.
+ */
+const TEMPO_DA_TRANSACAO = { maxWait: 15_000, timeout: 60_000 };
+
+/** O que a baixa lê de cada opção de combo (o formato de `OpcaoDeCombo`). */
+const SELECT_DA_OPCAO = {
+  id: true,
+  comboGroupId: true,
+  menuProductId: true,
+  comboGroup: { select: { menuProductId: true, priceRule: true } },
+  menuProduct: {
+    select: {
+      name: true,
+      recipeItems: {
+        select: {
+          stockItemId: true,
+          quantityConsumed: true,
+          stockItem: { select: { name: true, unit: true } },
+        },
+      },
+    },
+  },
+} as const;
 
 /** Grupo de sabores de pizza: cada escolha é uma fração da mesma pizza (preco-combo.ts). */
 export function ehGrupoDeFracao(priceRule: unknown): boolean {
@@ -70,7 +108,7 @@ function chaveNormalizada(valor: string): string {
  * do mesmo combo (a "Esfirra de Carne" inclusa e a segunda esfirra paga), e é
  * o grupo que diz qual das duas o cliente marcou.
  */
-function normalizarEscolhasDoCombo(bruto: unknown): EscolhaDeCombo[] {
+export function normalizarEscolhasDoCombo(bruto: unknown): EscolhaDeCombo[] {
   if (!bruto) return [];
 
   let dados: any = bruto;
@@ -159,7 +197,7 @@ function chavesDaOpcao(opcao: OpcaoDeCombo): string[] {
   ].filter(Boolean);
 }
 
-function indexarOpcoes(opcoes: OpcaoDeCombo[]): IndiceDeOpcoes {
+export function indexarOpcoes(opcoes: OpcaoDeCombo[]): IndiceDeOpcoes {
   const porGrupo = new Map<string, OpcaoDeCombo>();
   const porChave = new Map<string, OpcaoDeCombo | null>();
 
@@ -176,7 +214,7 @@ function indexarOpcoes(opcoes: OpcaoDeCombo[]): IndiceDeOpcoes {
     }
   }
 
-  return { porGrupo, porChave };
+  return { porGrupo, porChave, todas: opcoes };
 }
 
 /**
@@ -185,7 +223,7 @@ function indexarOpcoes(opcoes: OpcaoDeCombo[]): IndiceDeOpcoes {
  * pode não bater mais porque o lojista remontou o combo e os ComboGroups
  * nasceram com ids novos, e nesse caso a chave sozinha ainda resolve.
  */
-function acharOpcaoDoCombo(indice: IndiceDeOpcoes, escolha: EscolhaDeCombo): OpcaoDeCombo | null {
+export function acharOpcaoDoCombo(indice: IndiceDeOpcoes, escolha: EscolhaDeCombo): OpcaoDeCombo | null {
   for (const chave of escolha.chaves) {
     const normalizada = chaveNormalizada(chave);
     if (!normalizada) continue;
@@ -197,6 +235,24 @@ function acharOpcaoDoCombo(indice: IndiceDeOpcoes, escolha: EscolhaDeCombo): Opc
 
     const unica = indice.porChave.get(normalizada);
     if (unica) return unica;
+  }
+
+  // O iFood manda o nome curto dentro do combo: "Carne", "Queijo Temperado",
+  // "Guaravita" (Hakim, out/2026). Casa com a ÚNICA opção do combo cujo nome
+  // termina ou começa com ele ("Esfirra de Carne", "Guaravita 280ml"). Duas
+  // candidatas de produtos diferentes = não baixa, como no índice acima.
+  for (const chave of escolha.chaves) {
+    const curto = nomeSolto(chave);
+    if (curto.length < 3) continue;
+    let achada: OpcaoDeCombo | null = null;
+    let ambigua = false;
+    for (const opcao of indice.todas) {
+      const nome = nomeSolto(opcao.menuProduct.name || "");
+      if (nome !== curto && !nome.endsWith(` ${curto}`) && !nome.startsWith(`${curto} `)) continue;
+      if (achada && achada.menuProductId !== opcao.menuProductId) { ambigua = true; break; }
+      achada = opcao;
+    }
+    if (achada && !ambigua) return achada;
   }
   return null;
 }
@@ -324,24 +380,7 @@ export async function deductStockForOrder(orderId: string) {
       if (idsDeProdutosComEscolha.length > 0) {
         const opcoes = await tx.comboGroupItem.findMany({
           where: { comboGroup: { menuProductId: { in: idsDeProdutosComEscolha } } },
-          select: {
-            id: true,
-            comboGroupId: true,
-            menuProductId: true,
-            comboGroup: { select: { menuProductId: true, priceRule: true } },
-            menuProduct: {
-              select: {
-                name: true,
-                recipeItems: {
-                  select: {
-                    stockItemId: true,
-                    quantityConsumed: true,
-                    stockItem: { select: { name: true, unit: true } },
-                  },
-                },
-              },
-            },
-          },
+          select: SELECT_DA_OPCAO,
         });
 
         for (const opcao of opcoes) {
@@ -353,6 +392,8 @@ export async function deductStockForOrder(orderId: string) {
       }
 
       const indicesPorProduto = new Map<string, IndiceDeOpcoes>();
+      // Lido uma vez por pedido, só se aparecer combo de marketplace sem combo de mesmo nome.
+      let produtosAvulsosComFicha: OpcaoDeCombo[] | null = null;
 
       let deducted = false;
 
@@ -454,20 +495,95 @@ export async function deductStockForOrder(orderId: string) {
 
         const escolhas = normalizarEscolhasDoCombo(item.comboSelections);
         if (escolhas.length > 0) {
-          const opcoes = item.menuProductId ? opcoesPorProduto.get(item.menuProductId) ?? [] : [];
+          let opcoes = item.menuProductId ? opcoesPorProduto.get(item.menuProductId) ?? [] : [];
+          let donoDasOpcoes = item.menuProductId;
+
+          // ── O COMBO DO MARKETPLACE ABRE PELO COMBO DO CARDÁPIO ───────────
+          //
+          // O pedido do iFood/99 aponta para um ESPELHO (`ifood-...`) sem
+          // grupos: as escolhas ficavam sem baixa, e a esfiha do combo do iFood
+          // — a maior parte da Hakim — não tirava nada do estoque. O mesmo
+          // critério da ficha, logo acima: o produto ATIVO de mesmo nome no
+          // cardápio, com grupos, empresta as opções dele.
+          if (opcoes.length === 0 && rotuloDoItem && rotuloDoItem !== "produto removido") {
+            const real = await tx.menuProduct.findFirst({
+              where: {
+                franchiseeId: order.franchiseeId,
+                active: true,
+                name: { equals: rotuloDoItem, mode: "insensitive" },
+                NOT: { id: { startsWith: "ifood-" } },
+                comboGroups: { some: {} },
+              },
+              select: { id: true },
+            });
+            if (real) {
+              if (!opcoesPorProduto.has(real.id)) {
+                opcoesPorProduto.set(real.id, await tx.comboGroupItem.findMany({
+                  where: { comboGroup: { menuProductId: real.id } },
+                  select: SELECT_DA_OPCAO,
+                }));
+              }
+              opcoes = opcoesPorProduto.get(real.id) ?? [];
+              donoDasOpcoes = real.id;
+            }
+          }
+
+          // Combo que só existe no marketplace ("Combo Imperial Mix" no iFood
+          // da Hakim, sem combo de mesmo nome no cardápio): cada escolha casa
+          // com o produto AVULSO do cardápio que tem ficha ("Esfirra de
+          // Carne"). Combo e nome que começa com número ("4 Esfirras de
+          // Carne") ficam fora: também terminam em "carne" e tornariam o nome
+          // curto ambíguo. Só para o espelho que o cardápio NÃO conhece pelo
+          // nome: a "Esfirra de M&M" do iFood traz a opção "Chocolate ao Leite",
+          // que é o recheio dela, não outra esfiha. Produto de verdade sem
+          // grupo segue sem baixa das escolhas, como sempre.
+          const ehEspelho = PREFIXOS_DE_ESPELHO.some((p) => String(item.menuProductId || "").startsWith(p));
+          const conhecidoPeloNome = ehEspelho && opcoes.length === 0 && Boolean(await tx.menuProduct.findFirst({
+            where: {
+              franchiseeId: order.franchiseeId,
+              active: true,
+              name: { equals: rotuloDoItem, mode: "insensitive" },
+              NOT: { id: { startsWith: "ifood-" } },
+            },
+            select: { id: true },
+          }));
+          if (opcoes.length === 0 && ehEspelho && !conhecidoPeloNome) {
+            if (!produtosAvulsosComFicha) {
+              const avulsos = await tx.menuProduct.findMany({
+                where: {
+                  franchiseeId: order.franchiseeId,
+                  active: true,
+                  isCombo: false,
+                  NOT: { id: { startsWith: "ifood-" } },
+                  recipeItems: { some: {} },
+                },
+                select: { id: true, name: true, recipeItems: SELECT_DA_OPCAO.menuProduct.select.recipeItems },
+              });
+              produtosAvulsosComFicha = avulsos
+                .filter((p) => !/^\s*\d/.test(p.name))
+                .map((p) => ({
+                  id: `cardapio:${p.id}`,
+                  comboGroupId: "cardapio",
+                  menuProductId: p.id,
+                  comboGroup: { menuProductId: "", priceRule: null },
+                  menuProduct: { name: p.name, recipeItems: p.recipeItems },
+                }));
+            }
+            opcoes = produtosAvulsosComFicha;
+            donoDasOpcoes = "cardapio-da-loja";
+          }
 
           if (opcoes.length === 0) {
-            // Acontece no pedido importado de marketplace: o "combo" é um
-            // produto espelho (`ifood-...`) e as opções são texto, nunca foram
-            // cadastradas como grupo. Não há o que resolver, e a venda segue.
+            // Produto sem grupo e sem combo de mesmo nome: não há o que
+            // resolver, e a venda segue.
             console.warn(
               `[Stock] Pedido ${order.id}: "${rotuloDoItem}" veio com ${escolhas.length} escolha(s), mas o produto não tem grupos de combo cadastrados. Nada a baixar por elas.`
             );
           } else {
-            let indice = item.menuProductId ? indicesPorProduto.get(item.menuProductId) : undefined;
+            let indice = donoDasOpcoes ? indicesPorProduto.get(donoDasOpcoes) : undefined;
             if (!indice) {
               indice = indexarOpcoes(opcoes);
-              if (item.menuProductId) indicesPorProduto.set(item.menuProductId, indice);
+              if (donoDasOpcoes) indicesPorProduto.set(donoDasOpcoes, indice);
             }
 
             const naoResolvidas: string[] = [];
@@ -607,7 +723,7 @@ export async function deductStockForOrder(orderId: string) {
       }
 
       return { skipped: false, deducted };
-    });
+    }, TEMPO_DA_TRANSACAO);
 
     if (result.skipped) {
       console.log(`[Stock] Baixa já processada para pedido: ${orderId}`);
@@ -754,7 +870,7 @@ export async function restoreStockForOrder(orderId: string) {
       }
 
       return { skipped: false, restored };
-    });
+    }, TEMPO_DA_TRANSACAO);
 
     if (result.skipped) {
       console.log(`[Stock] Devolução já processada para pedido: ${orderId}`);

@@ -563,6 +563,27 @@ async function pollIfoodEvents(sessionUserId?: string) {
             }, { timeout: 20000 });
             console.log(`[iFood Poll] ✅ Pedido ${orderId} criado com sucesso! (evento: ${code}/${event.fullCode}, status: ${initialStatus}, franchisee: ${eventFranchisee.id})`);
 
+            // Baixa de estoque, como no cron (lib/ifood-eventos.ts). Este
+            // caminho — o que roda com o painel aberto, no movimento — criava o
+            // pedido sem baixa: Hakim, 12 a 18/10/2026, 227 de 238 pedidos do
+            // iFood sem baixa nenhuma. Idempotente e sem await: não segura a
+            // importação.
+            try {
+              const pedidoCriado = await prisma.customerOrder.findFirst({
+                where: { ifoodOrderId: orderId, franchiseeId: eventFranchisee.id } as any,
+                select: { id: true },
+                orderBy: { createdAt: "desc" },
+              });
+              if (pedidoCriado) {
+                const { deductStockForOrder } = await import("@/lib/stock");
+                deductStockForOrder(pedidoCriado.id).catch((e) =>
+                  console.error(`[iFood Poll] Baixa de estoque falhou para ${orderId}:`, e?.message)
+                );
+              }
+            } catch (e: any) {
+              console.error(`[iFood Poll] Não consegui disparar a baixa de ${orderId}:`, e?.message);
+            }
+
             // Auto-confirm to iFood se ainda é PLACED
             if (isPlaced) {
               await fetch(
