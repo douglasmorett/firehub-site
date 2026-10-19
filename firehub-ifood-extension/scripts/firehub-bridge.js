@@ -300,17 +300,17 @@ function showIfoodDisconnectedBanner(reasonText, opcoes) {
   const alertContainer = document.createElement("div");
   alertContainer.id = id;
   alertContainer.style.cssText = `
-    position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 999999;
+    position: fixed; top: 16px; left: 0; right: 0; margin: 0 auto; width: fit-content; z-index: 999999;
     background: #FEF2F2; border: 2px solid #EF4444; color: #991B1B;
     padding: 12px 20px; border-radius: 16px; box-shadow: 0 10px 30px rgba(239,68,68,0.25);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 14px;
-    max-width: 90vw; animation: firehubSlideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 10px 14px;
+    flex-wrap: wrap; box-sizing: border-box; max-width: calc(100vw - 24px); animation: firehubSlideDown 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   `;
 
   alertContainer.innerHTML = `
     <span style="font-size: 18px;">⚠️</span>
-    <div style="flex: 1;">
+    <div style="flex: 1 1 220px; min-width: 0;">
       <div style="font-size: 14px; font-weight: 900; color: #7F1D1D;">${o.titulo || "O Portal iFood foi desconectado!"}</div>
       <div style="font-size: 12px; font-weight: 600; color: #991B1B;">${o.titulo ? reasonText : "Sua extensão do iFood foi desconectada ou a sessão deslogou. Clique no botão ao lado para relogar no iFood."}</div>
     </div>

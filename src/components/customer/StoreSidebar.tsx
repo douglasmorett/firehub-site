@@ -752,6 +752,10 @@ const ESTILO = `
   .fh-menu-barra{ display:flex; }
   .fh-menu-botao{ display:flex; }
   .fh-menu-cortina{ display:block; }
+  /* Acima do Bill e do "Fale conosco" (z 9999-10001), que cobriam os itens. */
+  .fh-menu-barra{ z-index:10002; }
+  .fh-menu-cortina{ z-index:10003; }
+  .fh-menu{ z-index:10004; }
   /* Alvo de dedo: 44px e o minimo para quem opera em pe, no salao. */
   .fh-menu-item{ min-height:44px; font-size:.86rem; }
   .fh-menu-filho{ min-height:40px; display:flex; align-items:center; font-size:.8rem; }

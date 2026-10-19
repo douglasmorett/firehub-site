@@ -1791,7 +1791,7 @@ export default function StoreTopNav({
               </div>
             </div>
           ) : (
-            <a href="/store" style={{ display:"flex", alignItems:"center", gap:7, textDecoration:"none" }}>
+            <a href="/store" className="fh-topo-logo" style={{ display:"flex", alignItems:"center", gap:7, textDecoration:"none" }}>
               <img src="/firehub-flame.png" alt="FireHub" style={{ width:30, height:30, borderRadius:7, objectFit:"cover" }} />
               <div style={{ display:"flex", flexDirection:"column", lineHeight:1.1 }}>
                 <span style={{ color:"#fff", fontWeight:900, fontSize:"0.95rem" }}>Fire<span style={{ color:"#FF6B35" }}>Hub</span></span>
@@ -1852,7 +1852,7 @@ export default function StoreTopNav({
           </div>
         </div>
 
-        <div style={{ display:"flex", alignItems:"center", gap:"0.35rem", flexWrap:"wrap" }}>
+        <div className="fh-topo-atalhos" style={{ display:"flex", alignItems:"center", gap:"0.35rem", flexWrap:"wrap" }}>
           {/* Saiu o botão "Indique e Ganhe": o programa de indicação aberto a
               qualquer lojista foi encerrado. Embaixador agora é cadastrado à mão
               pela equipe, e quem quiser se candidatar usa /seja-embaixador. */}
@@ -2056,6 +2056,15 @@ export default function StoreTopNav({
 
       <style>{`
         @media (max-width: 520px) { .nav-user-label { display: none !important; } .nav-view-store { display: none !important; } }
+        /* Celular: o menu lateral já mostra o nome da loja e o logo, e os
+           atalhos quebravam em 3 linhas (metade da tela vermelha antes do
+           conteúdo). Fica uma linha só, que rola de lado. */
+        @media (max-width: 900px) {
+          .fh-topo-logo { display: none !important; }
+          .fh-topo-atalhos { flex-wrap: nowrap !important; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+          .fh-topo-atalhos::-webkit-scrollbar { display: none; }
+          .fh-topo-atalhos > * { flex-shrink: 0; }
+        }
         /* Degraus mais finos e começando mais cedo: com 15 itens, o notebook de
            1920px já estourava a linha. Diminuir a letra é o que o dono pediu
            antes de deixar quebrar — e o selo "EM TESTES" encolhe junto, senão
