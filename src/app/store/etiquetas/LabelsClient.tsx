@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { saveLabelData, updateStoreLabelInfo } from "@/app/actions/labels";
 import { createKitchenItem, updateKitchenItem, deleteKitchenItem, fillNutritionWithAI } from "@/app/actions/kitchenItems";
 import { Printer, Settings, AlertTriangle, Save, Plus, Trash2, Store, Sparkles, Tag, Sliders, Check, XCircle, Info } from "lucide-react";
 import EtiquetaPapel from "./EtiquetaPapel";
 import AbaLayoutDaEtiqueta from "./AbaLayoutDaEtiqueta";
 import { BandejaDaEtiqueta, EtiquetaFantasma } from "./PreviaDaEtiqueta";
-import { CSS_DA_ETIQUETA } from "./etiqueta-css";
+import { imprimirEtiquetas } from "./imprimir-etiquetas";
 import { salvarConfigDaEtiqueta } from "@/app/actions/labels";
 import {
   resolverCamposDaEtiqueta,
@@ -88,6 +88,8 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
   // Só imprime DEPOIS que o React pintou as etiquetas com o QR na tela —
   // imprimir no mesmo tick copiaria o innerHTML sem as imagens.
   const [imprimirQuandoPronto, setImprimirQuandoPronto] = useState(false);
+  const impressaoEmAndamento = useRef(false);
+  const pedidoDeImpressao = useRef({ etiquetas: 1, unico: true });
   const [fabDate, setFabDate] = useState("");
   const [valDate, setValDate] = useState("");
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
@@ -415,6 +417,11 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
    * etiqueta sem rastreio do que loja sem conseguir etiquetar a comida.
    */
   const prepararEImprimir = async () => {
+    if (impressaoEmAndamento.current) return;
+    impressaoEmAndamento.current = true;
+    pedidoDeImpressao.current = { etiquetas: quantidade, unico: codigoUnico };
+    setPreparando(true);
+    setUltimaImpressao(null);
     setErroLote("");
 
     if (!usarQr) {
@@ -423,7 +430,6 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
       return;
     }
 
-    setPreparando(true);
     try {
       const { criarLotesDaImpressao } = await import("@/app/actions/lotes");
       const QRCode = (await import("qrcode")).default;
@@ -482,67 +488,34 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
       setErroLote("Não consegui gerar o QR agora — a etiqueta vai sair sem ele.");
       setEtiquetas(Array.from({ length: quantidade }, () => ({ code: "", qr: "" })));
       setImprimirQuandoPronto(true);
-    } finally {
-      setPreparando(false);
     }
   };
 
-  // Espera o React pintar as etiquetas antes de copiar o innerHTML para o
-  // iframe. Sem esse intervalo, o QR sai em branco.
+  // O efeito já roda depois do commit: o HTML contém os QR gerados. Agendar um
+  // timer e limpar o estado aqui cancelava o próprio timer no próximo render.
   useEffect(() => {
     if (!imprimirQuandoPronto) return;
     setImprimirQuandoPronto(false);
-    const t = setTimeout(() => handlePrint(), 120);
-    return () => clearTimeout(t);
-  }, [imprimirQuandoPronto]);
-
-  const handlePrint = () => {
     const printArea = document.querySelector<HTMLElement>(".print-area");
-    if (!printArea) return;
-
-    const old = document.getElementById("label-print-frame");
-    if (old) old.remove();
-
-    const iframe = document.createElement("iframe");
-    iframe.id = "label-print-frame";
-    iframe.style.cssText = "position:fixed;left:-9999px;top:-9999px;width:384px;height:576px;border:none;";
-    document.body.appendChild(iframe);
-
-    const doc = iframe.contentWindow?.document;
-    if (!doc) return;
-
-    doc.open();
-    doc.write(`<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<style>${CSS_DA_ETIQUETA}</style>
-</head>
-<body>
-${printArea.innerHTML}
-</body>
-</html>`);
-    doc.close();
-
-    iframe.onload = () => {
-      setTimeout(() => {
-        iframe.contentWindow?.focus();
-        iframe.contentWindow?.print();
-        setTimeout(() => {
-          iframe.remove();
-          // A prévia volta para o QR de exemplo.
-          //
-          // Sem isto, os códigos REAIS recém-gravados ficam desenhados na tela
-          // depois da impressão — e qualquer pessoa que aponte a câmera para o
-          // monitor movimenta um lote que ainda está saindo da impressora. O
-          // StockLot é gravado ANTES de o papel sair, então o código na tela
-          // vale tanto quanto o do papel.
-          setEtiquetas([]);
-          setUltimaImpressao({ etiquetas: quantidade, unico: codigoUnico });
-        }, 2000);
-      }, 500);
-    };
-  };
+    const pedido = pedidoDeImpressao.current;
+    void (async () => {
+      try {
+        if (!printArea) throw new Error("Selecione o produto novamente para imprimir a etiqueta.");
+        // imprimirEtiquetas copia o HTML antes do primeiro await. Retirar os
+        // códigos reais da prévia evita que sejam escaneados pelo monitor.
+        const impressao = imprimirEtiquetas(printArea);
+        setEtiquetas([]);
+        await impressao;
+        setUltimaImpressao(pedido);
+      } catch (erro) {
+        setErroLote(erro instanceof Error ? erro.message : "Não consegui abrir a impressão. Tente novamente.");
+      } finally {
+        setEtiquetas([]);
+        setPreparando(false);
+        impressaoEmAndamento.current = false;
+      }
+    })();
+  }, [imprimirQuandoPronto]);
 
   const handleSaveConfig = async () => {
     if (!selectedProductId) return;
@@ -1085,8 +1058,8 @@ ${printArea.innerHTML}
                 <div style={{ flex: 1 }}>
                   <strong>
                     {ultimaImpressao.etiquetas > 1
-                      ? `${ultimaImpressao.etiquetas} etiquetas foram para a impressora.`
-                      : "A etiqueta foi para a impressora."}
+                      ? `Impressão de ${ultimaImpressao.etiquetas} etiquetas aberta no navegador.`
+                      : "Impressão da etiqueta aberta no navegador."}
                   </strong>{" "}
                   {ultimaImpressao.etiquetas > 1 && (ultimaImpressao.unico ? "Todas com o mesmo código. " : "Cada uma com o código próprio. ")}
                   O estoque só se mexe quando alguém <strong>escanear o QR</strong> — cole na embalagem e escaneie
@@ -1164,7 +1137,8 @@ ${printArea.innerHTML}
               </p>
             )}
             <p className="fh-campo__dica" style={{ marginTop: 8, textAlign: "center" }}>
-              Na janela de impressão do navegador, deixe a margem em &quot;Nenhuma&quot; para a etiqueta sair no tamanho certo.
+              Na janela de impressão, escolha a impressora e o papel de 4 × 6 pol. (101,6 × 152,4 mm).
+              Use escala 100%, margem &quot;Nenhuma&quot; e desative cabeçalhos e rodapés.
             </p>
           </div>
         )}
