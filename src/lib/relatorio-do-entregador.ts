@@ -79,7 +79,7 @@ export async function montarRelatorioDosEntregadores(opts: {
   // distância daquela entrega.
   const donoDaLoja = await prisma.user.findUnique({
     where: { id: lojaId },
-    select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true },
+    select: { deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, city: true },
   }).catch(() => null);
   const regraDeRepasse = lerRegraDeRepasse(donoDaLoja?.deliveryConfig);
 
@@ -228,6 +228,7 @@ export async function montarRelatorioDosEntregadores(opts: {
         pedido: o,
         regraDaLoja: regraDeRepasse,
         zonas: donoDaLoja?.deliveryZones,
+        cidadeDaLoja: donoDaLoja?.city,
         ehMarketplace: canalDoPedido(o).ehMarketplace,
       });
 

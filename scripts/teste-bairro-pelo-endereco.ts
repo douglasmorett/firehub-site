@@ -166,5 +166,32 @@ const porEntrega = lerAcerto({ paymentType: "PER_DELIVERY", perDeliveryRate: 4 }
 conferir("acordo individual por entrega continua antes da tabela",
   ig(ganhoDoPedido({ acerto: porEntrega, pedido: { deliveryFee: 6.99, customerAddress: "Q 3, 0 - Sobradinho - Brasília" }, regraDaLoja: regra, zonas: NIK, ehMarketplace: true }), 4, "POR_ENTREGA"));
 
+// Cidade no endereço não é o bairro que por acaso contém o nome da cidade.
+const zonasShow = [
+  { name: "Residencial Rio das Ostras", motoboyFee: 10 },
+  { name: "Âncora", motoboyFee: 5 },
+  { name: "Village Rio das Ostras", motoboyFee: 5 },
+  { name: "Recanto", motoboyFee: 10 },
+];
+const ganhoShow = (endereco: string, extra: Record<string, unknown> = {}, cidade = "Rio das Ostras") => ganhoDoPedido({
+  acerto: lerAcerto({ paymentType: "PER_DELIVERY" }),
+  pedido: { customerAddress: endereco, deliveryFee: 5, motoboyFee: null, ...extra },
+  regraDaLoja: regra, zonas: zonasShow, cidadeDaLoja: cidade, ehMarketplace: true,
+});
+conferir("Showrrascão: Âncora paga 5, cidade com UF não vira Residencial de 10",
+  ig(ganhoShow("Rua Exemplo, 12 - Âncora - Rio das Ostras/RJ"), 5, "REGRA_DA_LOJA"));
+conferir("cidade com UF no cadastro também é reconhecida",
+  ig(ganhoShow("Rua Exemplo, 12 - Âncora - Rio das Ostras, RJ", {}, "Rio das Ostras - RJ"), 5, "REGRA_DA_LOJA"));
+conferir("nome real Village Rio das Ostras é preservado",
+  ig(ganhoShow("Rua Exemplo, 12 - Village Rio das Ostras - Rio das Ostras/RJ"), 5, "REGRA_DA_LOJA"));
+conferir("bairro Residencial Rio das Ostras de verdade continua pagando 10",
+  ig(ganhoShow("Rua Exemplo, 12 - Residencial Rio das Ostras - Rio das Ostras/RJ"), 10, "REGRA_DA_LOJA"));
+conferir("Recanto continua com seu repasse de 10",
+  ig(ganhoShow("Rua Exemplo, 12 - Recanto - Rio das Ostras/RJ"), 10, "REGRA_DA_LOJA"));
+conferir("cidade sozinha não inventa bairro: conserva taxa do pedido",
+  ig(ganhoShow("Rua Exemplo, 12 - Rio das Ostras/RJ"), 5, "TAXA_DO_CLIENTE"));
+conferir("valor histórico gravado continua vencendo",
+  ig(ganhoShow("Rua Exemplo, 12 - Âncora - Rio das Ostras/RJ", { motoboyFee: 8 }), 8, "GRAVADO"));
+
 console.log(falhas ? `\n${falhas} FALHA(S)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

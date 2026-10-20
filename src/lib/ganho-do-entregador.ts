@@ -161,9 +161,11 @@ export function ganhoDoPedido(args: {
   /** A regra da loja e as zonas — ausentes, o passo 3 simplesmente não acontece. */
   regraDaLoja?: RegraDeRepasse | null;
   zonas?: unknown;
+  /** Cidade da loja: o sufixo do endereço não identifica um bairro de mesmo nome. */
+  cidadeDaLoja?: string | null;
   ehMarketplace?: boolean;
 }): { valor: number; origem: OrigemDoGanho } {
-  const { acerto, pedido, zonas, ehMarketplace } = args;
+  const { acerto, pedido, zonas, ehMarketplace, cidadeDaLoja } = args;
   const centavos = (n: number) => Math.round(n * 100) / 100;
 
   // ── A ESCOLHA DO ENTREGADOR VENCE A DA LOJA ──────────────────────────
@@ -221,7 +223,7 @@ export function ganhoDoPedido(args: {
       regra: regraDaLoja,
       zonas,
       km: pedido.deliveryDistance,
-      bairro: bairroDoPedidoDeApp(pedido, regraDaLoja, zonas, ehMarketplace),
+      bairro: bairroDoPedidoDeApp(pedido, regraDaLoja, zonas, ehMarketplace, cidadeDaLoja),
       taxaDaEntrega: taxaDaCorrida(pedido),
       ehMarketplace,
     });
@@ -262,11 +264,27 @@ function bairroDoPedidoDeApp(
   regra: RegraDeRepasse,
   zonas: unknown,
   ehMarketplace: boolean | undefined,
+  cidadeDaLoja?: string | null,
 ): string | null {
   if (!ehMarketplace || !regra.separado || regra.marketplace !== "TABELA") return null;
   const endereco = typeof pedido.customerAddress === "string" ? pedido.customerAddress : null;
   if (!endereco) return null;
-  return bairroPeloEndereco(endereco, zonas)?.name ?? null;
+  // Showrrascão: "Rua ... - Âncora - Rio das Ostras/RJ" casava a CIDADE
+  // com "Residencial Rio das Ostras" (R$10), antes de olhar Âncora (R$5).
+  // Retira apenas o trecho que é a cidade inteira (com UF/país opcionais).
+  // Não tira palavras de bairros como "Village Rio das Ostras", nem o nome
+  // completo "Residencial Rio das Ostras" quando é o bairro de verdade.
+  const normalizar = (v: string) => v.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const cidade = normalizar(cidadeDaLoja || "");
+  const cidadeBase = cidade.replace(/ (ac|al|ap|am|ba|ce|df|es|go|ma|mt|ms|mg|pa|pb|pr|pe|pi|rj|rn|rs|ro|rr|sc|sp|se|to)$/, "");
+  const semCidade = !cidadeBase ? endereco : endereco.split(/(\s+[-–—]\s+|,)/)
+    .filter((trecho) => {
+      const n = normalizar(trecho).replace(/ (brasil|brazil)$/, "")
+        .replace(/ (ac|al|ap|am|ba|ce|df|es|go|ma|mt|ms|mg|pa|pb|pr|pe|pi|rj|rn|rs|ro|rr|sc|sp|se|to)$/, "");
+      return n !== cidadeBase;
+    }).join("");
+  return bairroPeloEndereco(semCidade, zonas)?.name ?? null;
 }
 
 /** Número >= 0 gravado no pedido, ou null. Vazio, texto e negativo são "não gravado". */

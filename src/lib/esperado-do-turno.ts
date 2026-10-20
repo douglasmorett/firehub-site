@@ -303,7 +303,7 @@ export async function calcularEsperadoDoTurno(
           where: { id: { in: ids }, franchiseeId: targetId },
           select: { id: true, name: true, paymentType: true, dailyRate: true, perDeliveryRate: true, perKmRate: true, faixasDeKm: true },
         }),
-        prisma.user.findUnique({ where: { id: targetId }, select: { deliveryZones: true, deliveryConfig: true } }),
+        prisma.user.findUnique({ where: { id: targetId }, select: { deliveryZones: true, deliveryConfig: true, city: true } }),
       ]);
       const regraDaLoja = lerRegraDeRepasse(loja?.deliveryConfig);
       // "Pagar diferente nos pedidos de app", do cadastro de cada um — por SQL
@@ -335,7 +335,7 @@ export async function calcularEsperadoDoTurno(
         }
         if (mb) {
           const acerto = lerAcerto(mb as any);
-          const g = ganhoDoPedido({ acerto, pedido: e.pedido, regraDaLoja, zonas: loja?.deliveryZones, ehMarketplace: e.ehMarketplace });
+          const g = ganhoDoPedido({ acerto, pedido: e.pedido, regraDaLoja, zonas: loja?.deliveryZones, cidadeDaLoja: loja?.city, ehMarketplace: e.ehMarketplace });
           atual.taxas += g.valor;
           if (g.origem === "SEM_DISTANCIA") atual.semDistancia += 1;
           if (g.origem === "TAXA_DO_CLIENTE") atual.pelaTaxaDoCliente += 1;
@@ -360,7 +360,7 @@ export async function calcularEsperadoDoTurno(
         atual.canceladasComCorrida = (atual.canceladasComCorrida || 0) + 1;
         if (mb) {
           const acerto = lerAcerto(mb as any);
-          const g = ganhoDoPedido({ acerto, pedido: e.pedido, regraDaLoja, zonas: loja?.deliveryZones, ehMarketplace: e.ehMarketplace });
+          const g = ganhoDoPedido({ acerto, pedido: e.pedido, regraDaLoja, zonas: loja?.deliveryZones, cidadeDaLoja: loja?.city, ehMarketplace: e.ehMarketplace });
           atual.taxas += g.valor;
           if (g.origem === "SEM_DISTANCIA") atual.semDistancia += 1;
           if (g.origem === "TAXA_DO_CLIENTE") atual.pelaTaxaDoCliente += 1;

@@ -189,9 +189,9 @@ export default async function StoreRelatoriosPage() {
   try {
     const donos = await prisma.user.findMany({
       where: { id: { in: lojaIds } },
-      select: { id: true, deliveryConfig: true, deliveryZones: true },
+      select: { id: true, deliveryConfig: true, deliveryZones: true, city: true },
     });
-    const daLoja = new Map(donos.map((d) => [d.id, { regra: lerRegraDeRepasse(d.deliveryConfig), zonas: d.deliveryZones }]));
+    const daLoja = new Map(donos.map((d) => [d.id, { regra: lerRegraDeRepasse(d.deliveryConfig), zonas: d.deliveryZones, cidade: d.city }]));
     const entregadores = await prisma.motoboy.findMany({ where: { franchiseeId: { in: lojaIds } } });
     const acertoDe = new Map(entregadores.map((m) => [m.id, lerAcerto(m as any)]));
 
@@ -207,6 +207,7 @@ export default async function StoreRelatoriosPage() {
         pedido: o,
         regraDaLoja: loja?.regra,
         zonas: loja?.zonas,
+        cidadeDaLoja: loja?.cidade,
         ehMarketplace: canalDoPedido(o).ehMarketplace,
       }).valor);
     }
