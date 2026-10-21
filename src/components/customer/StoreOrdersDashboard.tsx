@@ -7852,6 +7852,28 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {/* Os links das lojas de aplicativo (App Store e Google Play). */}
             <LinksDoAppDoEntregador linkDaLoja={() => `${origemParaLinkDeFora(window.location.origin)}/loja/${user.slug || "sua-loja"}/motoboy`} />
 
+            {/* ── Localização do entregador ── (Douglas, 20/10/2026) */}
+            <div style={{
+              background: "#F8FAFC", border: "1.5px solid #CBD5E1", borderRadius: "10px",
+              padding: "1rem", marginBottom: "1.25rem"
+            }}>
+              <label style={{ fontSize: "0.76rem", fontWeight: 800, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: 4 }}>
+                Localização do entregador
+              </label>
+              <label style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", cursor: "pointer", borderTop: "1px solid #E2E8F0" }}>
+                <input
+                  type="checkbox"
+                  checked={appMotoboyCfg.permitirSemLocalizacao}
+                  onChange={(e) => salvarAppMotoboy({ ...appMotoboyCfg, permitirSemLocalizacao: e.target.checked })}
+                  style={{ marginTop: 3, width: 18, height: 18, accentColor: "#1C1917", flexShrink: 0 }}
+                />
+                <span>
+                  <span style={{ display: "block", fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>📍 Deixar o motoboy usar o app com a localização desligada</span>
+                  <span style={{ display: "block", fontSize: "0.76rem", color: "#64748B", marginTop: 2 }}>Desmarcado, quem abrir o app com a localização desligada só vê as entregas depois de ativar.</span>
+                </span>
+              </label>
+            </div>
+
             {/* ── O que o app faz na hora de confirmar a entrega ── */}
             <div style={{
               background: "#F8FAFC", border: "1.5px solid #CBD5E1", borderRadius: "10px",

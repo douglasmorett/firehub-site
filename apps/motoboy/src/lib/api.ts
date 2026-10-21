@@ -128,6 +128,7 @@ export type ListaDePedidos = {
     relatorioLiberado?: boolean;
     relatorioDias?: number;
     permitirSemCodigo?: boolean;
+    permitirSemLocalizacao?: boolean;
   };
   /** Os minutos de amarelo/vermelho da loja (os do KDS). */
   alertaDeTempo?: { amareloAtivo: boolean; amareloMin: number; vermelhoAtivo: boolean; vermelhoMin: number };

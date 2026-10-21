@@ -41,6 +41,12 @@ export type AppMotoboyConfig = {
    * (04/10/2026) quis a escolha na mão da loja; padrão: liberado (como era).
    */
   permitirSemCodigo: boolean;
+  /**
+   * Desmarcado, o app só mostra as entregas com a localização ligada: aberto
+   * com ela desligada, bloqueada ou pausada, pede para ativar (Douglas,
+   * 20/10/2026, Hakim Centro). Padrão: liberado (como era).
+   */
+  permitirSemLocalizacao: boolean;
 };
 
 /** As escolhas que o painel oferece para `relatorioDias`. */
@@ -54,6 +60,7 @@ export const APP_MOTOBOY_PADRAO: AppMotoboyConfig = {
   relatorioLiberado: true,
   relatorioDias: 45,
   permitirSemCodigo: true,
+  permitirSemLocalizacao: true,
 };
 
 export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
@@ -66,6 +73,7 @@ export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
     if (typeof o.pedirCodigo99Food === "boolean") cfg.pedirCodigo99Food = o.pedirCodigo99Food;
     if (typeof o.relatorioLiberado === "boolean") cfg.relatorioLiberado = o.relatorioLiberado;
     if (typeof o.permitirSemCodigo === "boolean") cfg.permitirSemCodigo = o.permitirSemCodigo;
+    if (typeof o.permitirSemLocalizacao === "boolean") cfg.permitirSemLocalizacao = o.permitirSemLocalizacao;
     const dias = Math.round(Number(o.relatorioDias));
     if (o.relatorioDias != null && Number.isFinite(dias) && dias >= 1) cfg.relatorioDias = Math.min(45, dias);
   }

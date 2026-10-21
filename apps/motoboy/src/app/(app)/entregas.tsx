@@ -88,6 +88,8 @@ export default function Entregas() {
   /** Os minutos de amarelo/vermelho da loja e o que ela liberou no app. */
   const [limites, setLimites] = useState<ListaDePedidos["alertaDeTempo"] | null>(null);
   const [permitirSemCodigo, setPermitirSemCodigo] = useState(true);
+  /** A loja desmarcou "usar o app com a localização desligada" (App Motoboys). */
+  const [exigeLocalizacao, setExigeLocalizacao] = useState(false);
   const [sincronizou, setSincronizou] = useState(false);
   const [erroSync, setErroSync] = useState<"rede" | "servidor" | null>(null);
   const [ultimaSync, setUltimaSync] = useState<Date | null>(null);
@@ -155,6 +157,7 @@ export default function Entregas() {
       if (r.formasDePagamento?.length) setFormas(r.formasDePagamento);
       if (r.alertaDeTempo) setLimites(r.alertaDeTempo);
       setPermitirSemCodigo(r.appConfig?.permitirSemCodigo !== false);
+      setExigeLocalizacao(r.appConfig?.permitirSemLocalizacao === false);
       setSincronizou(true);
       setErroSync(null);
       setUltimaSync(new Date());
@@ -422,6 +425,8 @@ export default function Entregas() {
   const corDoGps = gps === "ligado" ? "#22C55E" : gps === "ligando" ? "#F59E0B" : gps === "pausado" ? "#94A3B8" : "#EF4444";
   const textoDoGps =
     gps === "ligado" ? "GPS ligado" : gps === "ligando" ? "Ligando o GPS…" : gps === "pausado" ? "GPS pausado" : "GPS desligado";
+  // Loja que exige a localização: sem ela, a tela de entregas não abre.
+  const travadoSemGps = exigeLocalizacao && (gps === "pausado" || gps === "negado" || gps === "desligado-no-celular");
 
   if (!sessao) return null;
 
@@ -442,7 +447,9 @@ export default function Entregas() {
         </View>
         <Pressable
           onPress={() => {
-            if (gps === "ligado") {
+            if (gps === "ligado" && exigeLocalizacao) {
+              Alert.alert("Localização ligada", "A loja pede a localização ligada enquanto você usa o app.");
+            } else if (gps === "ligado") {
               Alert.alert("Pausar a localização?", "A loja deixa de te ver no mapa até você ligar de novo.", [
                 { text: "Continuar ligado", style: "cancel" },
                 {
@@ -467,6 +474,28 @@ export default function Entregas() {
         </Pressable>
       </View>
 
+      {travadoSemGps ? (
+        <View style={s.conteudo}>
+          <View style={s.vazio}>
+            <Ionicons name="location" size={40} color={cor.vermelho} />
+            <Text style={s.vazioTitulo}>Ative a localização para usar o aplicativo</Text>
+            <Text style={s.vazioTexto}>
+              {gps === "negado"
+                ? "A localização está bloqueada para o app. Libere nas configurações do celular."
+                : gps === "desligado-no-celular"
+                  ? "A localização do celular está desligada. Ligue nas configurações rápidas e toque no botão."
+                  : "A loja pede a localização ligada para você ver as entregas."}
+            </Text>
+            <Botao
+              titulo={gps === "negado" ? "Abrir configurações" : "Ativar a localização"}
+              aoTocar={() => {
+                if (gps === "negado") Linking.openSettings();
+                else ligar();
+              }}
+            />
+          </View>
+        </View>
+      ) : (
       <ScrollView
         contentContainerStyle={s.conteudo}
         refreshControl={
@@ -638,6 +667,7 @@ export default function Entregas() {
           </View>
         ) : null}
       </ScrollView>
+      )}
 
       {/* Montado só enquanto aberto: cada entrega começa do primeiro passo. */}
       {emEntrega ? (
