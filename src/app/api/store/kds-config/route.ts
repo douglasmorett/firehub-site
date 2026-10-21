@@ -59,6 +59,8 @@ export async function PUT(req: NextRequest) {
     // A da finalização, quando a tela de finalização separou (lib/kds-telas.ts,
     // `prioridadeDaEtapa`). `null` = segue a da produção.
     prioridadeNaFinalizacao: "prioridadeNaFinalizacao" in bruto ? enviado.prioridadeNaFinalizacao : gravado.prioridadeNaFinalizacao,
+    // As escolhas de combo na tela que as faz (lib/kds-telas.ts, linhasDeOpcaoDaTela).
+    opcaoDoComboNaTelaDela: "opcaoDoComboNaTelaDela" in bruto ? enviado.opcaoDoComboNaTelaDela : gravado.opcaoDoComboNaTelaDela,
   };
 
   await prisma.user.update({

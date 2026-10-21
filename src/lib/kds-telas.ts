@@ -38,6 +38,8 @@
  */
 
 /** Uma tela configurada na loja (`User.kdsScreens`). */
+import { isBeverageCategory } from "@/lib/beverage";
+
 export type TelaDoKds = {
   id?: string | null;
   name?: string | null;
@@ -225,11 +227,120 @@ export function itensDaTela<T extends ItemParaTela>(tela: TelaDoKds, itens: T[] 
  */
 export function telaTemPendencia<T extends ItemParaTela & { prontoEm?: Date | string | null }>(
   tela: TelaDoKds,
-  itens: T[] | null | undefined
+  itens: T[] | null | undefined,
+  baixas?: unknown,
+  config?: KdsConfig | null
 ): boolean {
-  const meus = itensDaTela(tela, itens);
-  if (meus.length === 0) return false;
-  return meus.some((i) => !itemPronto(i));
+  if (itensDaTela(tela, itens).some((i) => !itemPronto(i))) return true;
+  return linhasDeOpcaoDaTela(tela, itens as ItemComOpcoes[] | null | undefined, baixas, config).some((l) => !l.prontoEm);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   A OPÇÃO DO COMBO QUE OUTRA TELA FAZ
+
+   Hakim Centro, 20/10/2026: "Combo Pizza Grande + 4 Esfirras Doces" está em
+   "Combos de Pizza" e vai para a tela Pizza — mas as 4 esfirras doces são
+   feitas na tela Esfirra. O pronto é do ITEM, e o item é o combo inteiro: sem
+   isto, a tela Esfirra nem recebia o pedido e as doces ficavam só no cartão
+   do pizzaiolo. Douglas: "o KDS bagunça… tem que saber qual pizza, qual pedido
+   é referente a qual, para chegar no KDS certinho".
+
+   A escolha do combo já sai com a categoria do produto dela
+   (`opcoesParaImpressao`, lib/categoria-do-item.ts) — é como a impressora
+   manda o suco do combo para a cozinha do suco. Aqui ela vira uma LINHA na
+   tela filtrada que lista aquela categoria e não mostra o combo:
+   "4x Esfirra de Nutella (do Combo Pizza Grande…)".
+
+   O pronto da linha mora na baixa da tela (`kdsBaixas`, id `<item>#op<n>`):
+   dar baixa na Esfirra carimba as doces e NÃO o combo, que segue na tela
+   Pizza; desfazer a baixa tira a entrada e as doces voltam. Bebida escolhida
+   no combo não vira linha: ela vai com o combo na finalização.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const MARCA_DA_OPCAO = "#op";
+
+/** Uma escolha do combo com a categoria do produto dela. */
+export type OpcaoComCategoria = { name?: string | null; quantity?: number | null; category?: string | null };
+
+export type ItemComOpcoes = ItemParaTela & {
+  id?: string | null;
+  quantity?: number | null;
+  productName?: string | null;
+  prontoEm?: Date | string | null;
+  menuProduct?: { name?: string | null; category?: string | null } | null;
+  opcoesParaImpressao?: OpcaoComCategoria[] | null;
+};
+
+/** A linha que a tela desenha e carimba como se fosse um item. */
+export type LinhaDeOpcao = {
+  id: string;
+  paiId: string;
+  quantity: number;
+  productName: string;
+  category: string;
+  menuProduct: { name: string; category: string };
+  prontoEm: string | null;
+  comboSelections: null;
+  daOpcaoDoCombo: true;
+};
+
+/** O id é de uma linha de opção, e não de um CustomerOrderItem? */
+export function ehLinhaDeOpcao(id: unknown): boolean {
+  return String(id ?? "").includes(MARCA_DA_OPCAO);
+}
+
+/** As linhas de opção já carimbadas por alguma baixa da produção, com a hora. */
+function opcoesProntas(baixas: unknown): Map<string, string> {
+  const prontas = new Map<string, string>();
+  for (const b of lerBaixas(baixas)) {
+    if (b.estagio !== "production") continue;
+    for (const id of b.itens) if (ehLinhaDeOpcao(id) && !prontas.has(id)) prontas.set(id, b.em);
+  }
+  return prontas;
+}
+
+/**
+ * As escolhas de combo que ESTA tela faz, num pedido cujo combo ela não mostra.
+ * Tela sem filtro já mostra o combo inteiro, com as escolhas embaixo: nada.
+ * Só na loja que ligou `opcaoDoComboNaTelaDela`.
+ */
+export function linhasDeOpcaoDaTela(
+  tela: TelaDoKds,
+  itens: ItemComOpcoes[] | null | undefined,
+  baixas?: unknown,
+  config?: KdsConfig | null
+): LinhaDeOpcao[] {
+  if (!config?.opcaoDoComboNaTelaDela) return [];
+  const filtros = (tela.categoryFilter || []).map(texto).filter(Boolean);
+  if (filtros.length === 0) return [];
+  const prontas = opcoesProntas(baixas);
+  const linhas: LinhaDeOpcao[] = [];
+  for (const item of itens || []) {
+    const opcoes = item?.opcoesParaImpressao;
+    if (!item?.id || !Array.isArray(opcoes) || opcoes.length === 0) continue;
+    if (telaMostraItem(tela, item)) continue;
+    const doCombo = Number(item.quantity) > 0 ? Number(item.quantity) : 1;
+    const pai = String(item.productName ?? item.menuProduct?.name ?? "").trim() || "combo";
+    opcoes.forEach((op, n) => {
+      const categoria = String(op?.category ?? "").trim();
+      if (!categoria || !filtros.includes(texto(categoria)) || isBeverageCategory(categoria)) return;
+      const nome = String(op?.name ?? "").trim();
+      if (!nome) return;
+      const id = `${item.id}${MARCA_DA_OPCAO}${n}`;
+      linhas.push({
+        id,
+        paiId: item.id!,
+        quantity: (Number(op?.quantity) > 0 ? Number(op?.quantity) : 1) * doCombo,
+        productName: `${nome} (do ${pai})`,
+        category: categoria,
+        menuProduct: { name: nome, category: categoria },
+        prontoEm: prontas.get(id) ?? null,
+        comboSelections: null,
+        daOpcaoDoCombo: true,
+      });
+    });
+  }
+  return linhas;
 }
 
 /**
@@ -403,7 +514,8 @@ export function faltaNaProducao(
     | null
     | undefined,
   pedido?: { numero?: unknown; deliveryType?: string | null } | null,
-  config?: KdsConfig | null
+  config?: KdsConfig | null,
+  baixas?: unknown
 ): FaltaNaProducao[] {
   const producao = (telas || [])
     .filter((t) => texto(t?.stage) === "production")
@@ -422,6 +534,21 @@ export function faltaNaProducao(
     const atual = porChave.get(chave) || { qtd: 0, nome, tela };
     atual.qtd += Number(i?.quantity) > 0 ? Number(i?.quantity) : 1;
     porChave.set(chave, atual);
+  }
+  // As escolhas de combo que outra tela faz (as doces do combo de pizza na
+  // tela Esfirra) também seguram: sem isto a finalização fechava o pedido com
+  // as doces por fazer. A mesma linha em duas telas conta uma vez.
+  const vistas = new Set<string>();
+  for (const t of producao) {
+    for (const l of linhasDeOpcaoDaTela(t, itens as ItemComOpcoes[] | null | undefined, baixas, config)) {
+      if (l.prontoEm || vistas.has(l.id) || categoriaSoNaFinalizacao(config, l.category, t.categoryFilter)) continue;
+      vistas.add(l.id);
+      const tela = String(t?.name ?? "").trim() || "produção";
+      const chave = `${texto(l.productName)}|${tela}`;
+      const atual = porChave.get(chave) || { qtd: 0, nome: l.productName, tela };
+      atual.qtd += l.quantity;
+      porChave.set(chave, atual);
+    }
   }
   return [...porChave.values()].map((f) => ({ item: `${f.qtd}× ${f.nome}`, tela: f.tela }));
 }
@@ -527,7 +654,16 @@ export function pedidoNaTela<I extends ItemParaTela, P extends { items: I[] }>(
     const cat = categoriaDoItem(item);
     return cat === "" || ativos.includes(cat);
   });
-  return items.length > 0 ? { ...pedido, items } : null;
+  // A escolha de combo que é desta tela entra como linha (as doces do combo
+  // de pizza na tela Esfirra) — ver `linhasDeOpcaoDaTela`.
+  const linhas = linhasDeOpcaoDaTela(
+    { categoryFilter: opts.filtroDestaTela },
+    pedido.items as unknown as ItemComOpcoes[],
+    (pedido as { kdsBaixas?: unknown }).kdsBaixas,
+    opts.config
+  ) as unknown as I[];
+  const todos = [...items, ...linhas];
+  return todos.length > 0 ? { ...pedido, items: todos } : null;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -558,6 +694,14 @@ export type KdsConfig = {
    * `null` = a mesma da produção (como sempre foi). Ver `prioridadeDaEtapa`.
    */
   prioridadeNaFinalizacao?: TipoDePrioridade[] | null;
+  /**
+   * A escolha do combo que outra tela faz aparece nela, com baixa própria (as
+   * doces do combo de pizza na tela Esfirra — ver `linhasDeOpcaoDaTela`).
+   * Ligado por loja: o nome da escolha casa com o produto, e numa loja onde o
+   * sabor de pizza tem o nome de um burger ("Bacon", Ragnar) a linha iria para
+   * a tela errada.
+   */
+  opcaoDoComboNaTelaDela?: boolean;
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -603,6 +747,7 @@ export function lerKdsConfig(bruto: unknown): KdsConfig {
     soNaFinalizacao: [...new Set(lista.map((v: unknown) => String(v ?? "").trim()).filter(Boolean))] as string[],
     prioridade: tipos(prioridade),
     prioridadeNaFinalizacao: Array.isArray(obj.prioridadeNaFinalizacao) ? tipos(obj.prioridadeNaFinalizacao) : null,
+    opcaoDoComboNaTelaDela: obj.opcaoDoComboNaTelaDela === true,
   };
 }
 

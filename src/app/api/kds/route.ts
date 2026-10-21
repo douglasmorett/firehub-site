@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import {
@@ -11,6 +12,7 @@ import {
   itensDaTela,
   juntarPedidosDaProducao,
   lerKdsConfig,
+  linhasDeOpcaoDaTela,
   ordenarPelaPrioridade,
   telaTemPendencia,
   lerTelasProntas,
@@ -195,6 +197,9 @@ export async function GET(req: NextRequest) {
           // Quais telas ja deram baixa: e o que permite esconder o pedido de
           // quem ja terminou sem tira-lo das outras (lib/kds-telas.ts).
           kdsTelasProntas: true,
+          // O pronto das escolhas de combo que outra tela faz mora aqui
+          // (lib/kds-telas.ts, linhasDeOpcaoDaTela).
+          kdsBaixas: true,
           createdAt: true,
           updatedAt: true,
           items: {
@@ -279,7 +284,19 @@ export async function GET(req: NextRequest) {
               status: where.status,
               createdAt: { gte: new Date(Date.now() - ADIANTADO_AINDA_NA_PRODUCAO_MS) },
               kdsStage: "FINISHING",
-              items: { some: { prontoEm: null } },
+              // Também o de combo com escolhas: a tela Pizza carimba o combo e
+              // as doces dele continuam por fazer na tela Esfirra, sem item
+              // nenhum sem carimbo (lib/kds-telas.ts, linhasDeOpcaoDaTela).
+              // Só tela com filtro, na loja que ligou, tem linha de opção.
+              ...(lerKdsConfig(configDaLoja?.kdsConfig).opcaoDoComboNaTelaDela &&
+              (minha.categoryFilter || []).some((c) => String(c ?? "").trim())
+                ? {
+                    OR: [
+                      { items: { some: { prontoEm: null } } },
+                      { items: { some: { comboSelections: { not: Prisma.DbNull } } } },
+                    ],
+                  }
+                : { items: { some: { prontoEm: null } } }),
             },
             [{ createdAt: "desc" }],
           ),
@@ -325,7 +342,8 @@ export async function GET(req: NextRequest) {
           return temAlgoPronto(o?.items);
         });
       } else if (stage === "production" && minha) {
-        visiveis = visiveis.filter((o) => telaTemPendencia(minha, o?.items || []));
+        const regras = lerKdsConfig(configDaLoja?.kdsConfig);
+        visiveis = visiveis.filter((o) => telaTemPendencia(minha, o?.items || [], o?.kdsBaixas, regras));
       }
     }
 
@@ -409,7 +427,10 @@ export async function PUT(req: NextRequest) {
       // `productName` entra porque o item de plataforma aponta para o espelho
       // (categoria literal "iFood") e a categoria real é resolvida pelo nome —
       // a mesma regra do GET, em lib/categoria-do-item.ts.
-      items: { select: { id: true, prontoEm: true, productName: true, quantity: true, menuProduct: { select: { id: true, name: true, category: true } } } },
+      // `comboSelections` (e `active`, como no GET): a escolha do combo que
+      // outra tela faz vira linha nela (lib/kds-telas.ts, linhasDeOpcaoDaTela),
+      // e a baixa precisa enxergar as mesmas linhas que a tela desenhou.
+      items: { select: { id: true, prontoEm: true, productName: true, quantity: true, comboSelections: true, menuProduct: { select: { id: true, active: true, name: true, category: true } } } },
       // De qual loja do 99Food é o pedido: o "pronto" sai com o token DELA
       // primeiro (lib/food99-status.ts), em vez de tentar o da conta e só
       // depois os das outras — que numa conta com três lojas estourava o
@@ -506,6 +527,19 @@ export async function PUT(req: NextRequest) {
     // lista que o desfazer apaga — e só ela, para não tirar o pronto que
     // outra tela deu.
     const carimbados = aCarimbar.filter((i: any) => i?.id && !i?.prontoEm).map((i: any) => i.id);
+    // As escolhas de combo que esta tela faz (as doces do combo de pizza na
+    // tela Esfirra): o pronto delas vai na baixa desta tela, não no combo, que
+    // segue na tela dele. Todas entram na baixa (as já prontas também), porque
+    // a baixa nova substitui a anterior desta tela.
+    const regras = minhaTela
+      ? await prisma.user
+          .findUnique({ where: { id: order.franchiseeId! }, select: { kdsConfig: true } })
+          .then((u) => lerKdsConfig(u?.kdsConfig))
+          .catch(() => null)
+      : null;
+    const linhas = minhaTela ? linhasDeOpcaoDaTela(minhaTela, itens, (order as any).kdsBaixas, regras) : [];
+    const idsDeOpcao = linhas.map((l) => l.id);
+    carimbados.push(...linhas.filter((l) => !l.prontoEm).map((l) => l.id));
     const agora = new Date();
     if (ids.length) {
       await prisma.customerOrderItem.updateMany({
@@ -537,7 +571,7 @@ export async function PUT(req: NextRequest) {
           : {}),
         // A baixa DESTA tela, com a hora e o que ela mostrava: é o que o
         // relatório de tempos mede por tela (lib/kds-telas.ts, BaixaDoKds).
-        kdsBaixas: registrarBaixa((order as any).kdsBaixas, { tela: chaveDaTelaQueDeuBaixa, nome: minhaTela?.name, estagio: "production", em: agora, itens: ids }) as any,
+        kdsBaixas: registrarBaixa((order as any).kdsBaixas, { tela: chaveDaTelaQueDeuBaixa, nome: minhaTela?.name, estagio: "production", em: agora, itens: [...ids, ...idsDeOpcao] }) as any,
         kdsStationId: null,
         status: order.status === "ACEITO" ? "PREPARANDO" : undefined,
       },
@@ -612,7 +646,7 @@ export async function PUT(req: NextRequest) {
         .findUnique({ where: { id: order.franchiseeId! }, select: { kdsConfig: true } })
         .then((u) => lerKdsConfig(u?.kdsConfig))
         .catch(() => null);
-      const faltam = faltaNaProducao(telasFim, itensParaFiltro, pedidoParaFiltro, regras);
+      const faltam = faltaNaProducao(telasFim, itensParaFiltro, pedidoParaFiltro, regras, (order as any).kdsBaixas);
       if (faltam.length > 0) {
         return NextResponse.json({ success: false, precisaConfirmar: true, faltam });
       }
