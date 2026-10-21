@@ -519,7 +519,9 @@ async function listarLojas() {
     } catch (e) { saida.ifood.erro = String(e && e.message ? e.message : e); }
   }
   const aba99 = await abaDe(N99_URL_MATCH);
-  if (!aba99) saida.n99.erro = "Abra o 99Food Admin (logado) e clique em Atualizar.";
+  const com99 = await chrome.permissions.contains({ origins: [N99_URL_MATCH] }).catch(() => false);
+  if (!com99) saida.n99.erro = "clique em Abrir 99 e permita o acesso ao 99Food.";
+  else if (!aba99) saida.n99.erro = "Abra o 99Food Admin (logado) e clique em Atualizar.";
   else {
     try {
       await ensureTabReady(aba99.id);
@@ -528,8 +530,27 @@ async function listarLojas() {
       else saida.n99.erro = (r && r.erro) || "nao consegui ler as lojas";
     } catch (e) { saida.n99.erro = String(e && e.message ? e.message : e); }
   }
+  // Grava aqui, não no popup: o pedido de permissão do 99 fecha o popup e a
+  // lista lida se perdia (21/10/2026).
+  const s = await chrome.storage.local.get(["lojasIfood", "lojas99"]);
+  const novo = {};
+  if (saida.ifood.ok) novo.lojasIfood = juntarLojas(saida.ifood.lojas, s.lojasIfood, (l) => l.uuid);
+  if (saida.n99.ok) novo.lojas99 = juntarLojas(saida.n99.lojas, s.lojas99, (l) => l.shopId);
+  if (Object.keys(novo).length) await chrome.storage.local.set(novo);
   return saida;
 }
+
+/** Junta a lista nova com as marcações salvas. Loja nova entra marcada só se for a única. */
+function juntarLojas(novas, salvas, id) {
+  const antes = new Map((salvas || []).map((l) => [id(l), l.ativa]));
+  return novas.map((l) => ({
+    ...l,
+    ativa: antes.has(id(l)) ? antes.get(id(l)) : (!salvas && novas.length === 1),
+  }));
+}
+
+// Permitiu o 99Food (o popup já fechou nessa hora): lê as lojas de novo.
+chrome.permissions.onAdded.addListener(() => { listarLojas().catch(() => {}); });
 
 /**
  * Lojas do iFood marcadas. Quem atualizou da 1.0.1 nunca marcou nada: se o

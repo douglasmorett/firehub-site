@@ -684,42 +684,28 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  /** Junta a lista nova com as marcações salvas. Loja nova entra marcada só se for a única. */
-  function juntar(novas, salvas, id) {
-    const antes = new Map((salvas || []).map((l) => [id(l), l.ativa]));
-    return novas.map((l) => ({
-      ...l,
-      ativa: antes.has(id(l)) ? antes.get(id(l)) : (!salvas && novas.length === 1),
-    }));
-  }
-
-  btnListarLojas.addEventListener("click", () => {
+  // O background lê e grava as lojas; a lista se redesenha pelo storage.onChanged.
+  // Sem pedir a permissão do 99 aqui: o pedido fecha o popup e a leitura se
+  // perdia (21/10/2026). Ela fica no botão Abrir 99.
+  function listarLojas() {
     erroLojasEl.style.display = "none";
     btnListarLojas.textContent = "⏳ Lendo as lojas...";
-    // A permissão do 99Food é opcional (não desliga a extensão de quem só usa
-    // iFood na atualização): o Chrome só pergunta dentro do clique.
-    chrome.permissions.request({ origins: ["https://merchant.99app.com/*"] }, () => {
-      chrome.runtime.sendMessage({ action: "LISTAR_LOJAS" }, (r) => {
-        btnListarLojas.textContent = "🔄 Atualizar lista de lojas";
-        if (chrome.runtime.lastError || !r || !r.success) {
-          erroLojasEl.textContent = "Não consegui ler as lojas. Tente de novo.";
-          erroLojasEl.style.display = "block";
-          return;
-        }
-        chrome.storage.local.get(["lojasIfood", "lojas99"], (s) => {
-          const novo = {};
-          if (r.ifood.ok) novo.lojasIfood = juntar(r.ifood.lojas, s.lojasIfood, (l) => l.uuid);
-          if (r.n99.ok) novo.lojas99 = juntar(r.n99.lojas, s.lojas99, (l) => l.shopId);
-          chrome.storage.local.set(novo, renderLojas);
-        });
-        const erros = [r.ifood.ok ? null : "iFood: " + r.ifood.erro, r.n99.ok ? null : "99Food: " + r.n99.erro].filter(Boolean);
-        if (erros.length) {
-          erroLojasEl.textContent = erros.join(" · ");
-          erroLojasEl.style.display = "block";
-        }
-      });
+    chrome.runtime.sendMessage({ action: "LISTAR_LOJAS" }, (r) => {
+      btnListarLojas.textContent = "🔄 Atualizar lista de lojas";
+      if (chrome.runtime.lastError || !r || !r.success) {
+        erroLojasEl.textContent = "Não consegui ler as lojas. Tente de novo.";
+        erroLojasEl.style.display = "block";
+        return;
+      }
+      const erros = [r.ifood.ok ? null : "iFood: " + r.ifood.erro, r.n99.ok ? null : "99Food: " + r.n99.erro].filter(Boolean);
+      if (erros.length) {
+        erroLojasEl.textContent = erros.join(" · ");
+        erroLojasEl.style.display = "block";
+      }
     });
-  });
+  }
+
+  btnListarLojas.addEventListener("click", listarLojas);
 
   desconto99El.addEventListener("change", () => {
     const v = Math.max(0, Math.min(120, parseInt(desconto99El.value, 10) || 0));
@@ -768,4 +754,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   renderLojas();
   renderStatusDasPlataformas();
+  // Sem lista ainda: lê das abas abertas ao abrir, sem esperar o clique.
+  chrome.storage.local.get(["lojasIfood", "lojas99"], (s) => {
+    if (!Array.isArray(s.lojasIfood) && !Array.isArray(s.lojas99)) listarLojas();
+  });
 });
