@@ -130,6 +130,8 @@ export type ListaDePedidos = {
     permitirSemCodigo?: boolean;
     permitirSemLocalizacao?: boolean;
   };
+  /** Fora do horário da loja (com folga) e sem entrega na mão: o GPS fica desligado. */
+  gpsForaDoHorario?: boolean;
   /** Os minutos de amarelo/vermelho da loja (os do KDS). */
   alertaDeTempo?: { amareloAtivo: boolean; amareloMin: number; vermelhoAtivo: boolean; vermelhoMin: number };
 };

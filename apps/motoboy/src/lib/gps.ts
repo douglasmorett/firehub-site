@@ -39,6 +39,14 @@ export function ouvirEnvios(fn: (quando: number) => void): () => void {
 
 export const ultimaPosicaoAceita = () => ultimaAceita;
 
+const ouvintesDoHorario = new Set<() => void>();
+
+/** A tela ouve para mostrar "fora do horário" quando o serviço se desliga sozinho. */
+export function ouvirForaDoHorario(fn: () => void): () => void {
+  ouvintesDoHorario.add(fn);
+  return () => ouvintesDoHorario.delete(fn);
+}
+
 /**
  * Manda uma posição. `forcar` ignora o intervalo: a confirmação de entrega é
  * uma posição que vale a pena registrar sempre (o entregador está na porta).
@@ -50,7 +58,19 @@ export async function enviarPosicao(lat: number, lng: number, forcar = false): P
   const sessao = await lerSessao();
   if (!sessao) return;
   try {
-    await chamar("/api/motoboys/location", { metodo: "POST", token: sessao.token, corpo: { lat, lng }, limite: 10_000 });
+    const r = await chamar<{ foraDoHorario?: boolean }>("/api/motoboys/location", {
+      metodo: "POST",
+      token: sessao.token,
+      corpo: { lat, lng },
+      limite: 10_000,
+    });
+    // Fora do horário da loja o servidor não grava: o serviço para, também com
+    // o app no bolso — é a própria tarefa do GPS que recebe esta resposta.
+    if (r?.foraDoHorario) {
+      await desligarGps();
+      ouvintesDoHorario.forEach((fn) => fn());
+      return;
+    }
     ultimaAceita = Date.now();
     ouvintes.forEach((fn) => fn(ultimaAceita!));
   } catch (e) {

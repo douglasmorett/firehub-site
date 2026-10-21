@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
+import { gpsForaDoHorario } from "@/lib/app-motoboy/gps-no-horario";
 import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { cobrancaNaEntrega, FORMAS_DE_PAGAMENTO_NA_ENTREGA } from "@/lib/pagamento-na-entrega";
 import { camposDoApp, pontoNoMapa } from "@/lib/app-motoboy/pedido-no-app";
@@ -239,6 +240,8 @@ export async function GET(req: NextRequest) {
       orders: ordersComSequencia,
       customBeverageKeywords,
       appConfig,
+      // Fora do horário da loja o app não liga o GPS (lib/app-motoboy/gps-no-horario.ts).
+      ...(formatoDoApp ? { gpsForaDoHorario: await gpsForaDoHorario(storeId, motoboyId) } : {}),
       // As cores de urgência: os mesmos minutos do KDS e do painel (Alertas de
       // Produção). A conta é no celular, porque o relógio anda entre as buscas.
       alertaDeTempo: limitesDoAlerta(storeOwner?.timeAlertConfig),

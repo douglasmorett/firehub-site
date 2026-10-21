@@ -42,7 +42,7 @@ import { cor, raio, reais } from "@/components/tema";
 import { chamar, ErroDaApi, type ListaDePedidos, type Pedido, type RespostaDaBaixa } from "@/lib/api";
 import { ATUALIZAR_LISTA_MS } from "@/lib/config";
 import { gravarGpsPausado, lerGpsPausado } from "@/lib/guardado";
-import { desligarGps, ligarGps, ouvirEnvios, registrarPosicaoAgora, ultimaPosicaoAceita } from "@/lib/gps";
+import { desligarGps, ligarGps, ouvirEnvios, ouvirForaDoHorario, registrarPosicaoAgora, ultimaPosicaoAceita } from "@/lib/gps";
 import { lerComanda } from "@/lib/loja";
 import { registrarAvisos } from "@/lib/notificacoes";
 import { useSessao } from "@/lib/sessao";
@@ -57,13 +57,19 @@ const FINALIZADO = (s: string) => s === "ENTREGUE" || s === "ENCERRADO";
 const CANCELADO = (s: string) => s === "CANCELADO" || s === "CANCELED" || s === "CANCELLED";
 const SESSAO_CAIU = "Sua entrada terminou (senha trocada ou acesso encerrado pela loja). Entre de novo.";
 
-type EstadoDoGps = "ligando" | "ligado" | "pausado" | "negado" | "desligado-no-celular";
+type EstadoDoGps = "ligando" | "ligado" | "pausado" | "negado" | "desligado-no-celular" | "fora-do-horario";
 
 /**
- * Onde o GPS deve estar agora. Pausado pelo entregador fica pausado (a não
- * ser que ele mesmo toque em Ligar); fora isso, liga.
+ * Onde o GPS deve estar agora. Fora do horário da loja fica desligado (o
+ * servidor decide: lib/app-motoboy/gps-no-horario.ts no site). Pausado pelo
+ * entregador fica pausado (a não ser que ele mesmo toque em Ligar); fora
+ * isso, liga.
  */
-async function resolverGps(peloEntregador: boolean): Promise<{ estado: EstadoDoGps; erro?: string }> {
+async function resolverGps(peloEntregador: boolean, foraDoHorario: boolean): Promise<{ estado: EstadoDoGps; erro?: string }> {
+  if (foraDoHorario) {
+    await desligarGps();
+    return { estado: "fora-do-horario" };
+  }
   if (!peloEntregador && (await lerGpsPausado())) return { estado: "pausado" };
   // Ligado ou não, passa pelo ligarGps: ele reaplica as opções da tarefa
   // (quem atualizou o app ficava com as da versão anterior).
@@ -90,6 +96,8 @@ export default function Entregas() {
   const [permitirSemCodigo, setPermitirSemCodigo] = useState(true);
   /** A loja desmarcou "usar o app com a localização desligada" (App Motoboys). */
   const [exigeLocalizacao, setExigeLocalizacao] = useState(false);
+  /** Fora do horário da loja: o GPS não liga. Null até a primeira lista chegar. */
+  const [foraDoHorario, setForaDoHorario] = useState<boolean | null>(null);
   const [sincronizou, setSincronizou] = useState(false);
   const [erroSync, setErroSync] = useState<"rede" | "servidor" | null>(null);
   const [ultimaSync, setUltimaSync] = useState<Date | null>(null);
@@ -158,6 +166,7 @@ export default function Entregas() {
       if (r.alertaDeTempo) setLimites(r.alertaDeTempo);
       setPermitirSemCodigo(r.appConfig?.permitirSemCodigo !== false);
       setExigeLocalizacao(r.appConfig?.permitirSemLocalizacao === false);
+      setForaDoHorario(r.gpsForaDoHorario === true);
       setSincronizou(true);
       setErroSync(null);
       setUltimaSync(new Date());
@@ -205,17 +214,30 @@ export default function Entregas() {
 
   const ligar = useCallback(() => {
     setGps("ligando");
-    resolverGps(true).then(aplicarGps);
-  }, [aplicarGps]);
+    resolverGps(true, foraDoHorario === true).then(aplicarGps);
+  }, [aplicarGps, foraDoHorario]);
 
+  // Espera a primeira lista dizer se é horário da loja: ligar antes acendia a
+  // notificação "você está trabalhando" por um instante fora do expediente.
   const conferirGps = useCallback(() => {
-    resolverGps(false).then(aplicarGps);
-  }, [aplicarGps]);
+    if (foraDoHorario === null) return;
+    resolverGps(false, foraDoHorario).then(aplicarGps);
+  }, [aplicarGps, foraDoHorario]);
 
   useEffect(() => {
     conferirGps();
     return ouvirEnvios((quando) => setUltimoGps(quando));
   }, [conferirGps]);
+
+  // A loja fechou com o app aberto: o serviço já parou sozinho (lib/gps.ts).
+  useEffect(
+    () =>
+      ouvirForaDoHorario(() => {
+        setForaDoHorario(true);
+        setGps("fora-do-horario");
+      }),
+    [],
+  );
 
   // Volta ao app: lista e GPS na hora (o serviço pode ter sido parado pelo
   // sistema, ou a permissão mudada nas configurações).
@@ -422,9 +444,18 @@ export default function Entregas() {
   const cancelados = useMemo(() => pedidos.filter((o) => CANCELADO(o.status)), [pedidos]);
 
   const gpsParado = gps === "ligado" && ultimoGps !== null && agora - ultimoGps > 120_000;
-  const corDoGps = gps === "ligado" ? "#22C55E" : gps === "ligando" ? "#F59E0B" : gps === "pausado" ? "#94A3B8" : "#EF4444";
+  const corDoGps =
+    gps === "ligado" ? "#22C55E" : gps === "ligando" ? "#F59E0B" : gps === "pausado" || gps === "fora-do-horario" ? "#94A3B8" : "#EF4444";
   const textoDoGps =
-    gps === "ligado" ? "GPS ligado" : gps === "ligando" ? "Ligando o GPS…" : gps === "pausado" ? "GPS pausado" : "GPS desligado";
+    gps === "ligado"
+      ? "GPS ligado"
+      : gps === "ligando"
+        ? "Ligando o GPS…"
+        : gps === "pausado"
+          ? "GPS pausado"
+          : gps === "fora-do-horario"
+            ? "GPS desligado fora do horário"
+            : "GPS desligado";
   // Loja que exige a localização: sem ela, a tela de entregas não abre.
   const travadoSemGps = exigeLocalizacao && (gps === "pausado" || gps === "negado" || gps === "desligado-no-celular");
 
@@ -447,7 +478,12 @@ export default function Entregas() {
         </View>
         <Pressable
           onPress={() => {
-            if (gps === "ligado" && exigeLocalizacao) {
+            if (gps === "fora-do-horario") {
+              Alert.alert(
+                "Fora do horário da loja",
+                "A localização fica desligada fora do horário da loja. Ela liga quando você abrir o app no horário ou pegar uma entrega.",
+              );
+            } else if (gps === "ligado" && exigeLocalizacao) {
               Alert.alert("Localização ligada", "A loja pede a localização ligada enquanto você usa o app.");
             } else if (gps === "ligado") {
               Alert.alert("Pausar a localização?", "A loja deixa de te ver no mapa até você ligar de novo.", [

@@ -47,6 +47,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Coordenada inválida" }, { status: 400 });
     }
 
+    // Fora do horário da loja o app desliga o GPS (lib/app-motoboy/gps-no-horario.ts).
+    if (daSessao) {
+      const { gpsForaDoHorario } = await import("@/lib/app-motoboy/gps-no-horario");
+      if (await gpsForaDoHorario(daSessao.franchiseeId, daSessao.id)) {
+        return NextResponse.json({ success: true, foraDoHorario: true });
+      }
+    }
+
     // updateMany condicional: o escopo (loja + ativo) faz parte da ESCRITA.
     // App antigo ainda não manda storeId — aceita, mas `active: true` vale
     // sempre: entregador desativado no painel para de gravar posição na hora.
