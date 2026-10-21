@@ -373,10 +373,11 @@ export default function KDSHubClient() {
                 </p>
 
                 <div style={{ display: "flex", gap: "8px" }}>
+                  {/* Na mesma aba: navegador de Smart TV ignora nova aba e o
+                      botão parecia não clicar (Hakim, 21/10). A tela tem o
+                      link de voltar para esta lista. */}
                   <a
                     href={telaUrl}
-                    target="_blank"
-                    rel="noopener"
                     style={{
                       flex: 1, padding: "11px", border: "none", borderRadius: "10px", fontWeight: 800,
                       fontSize: "0.9rem", cursor: "pointer", fontFamily: "inherit", textAlign: "center",
