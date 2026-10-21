@@ -42,29 +42,36 @@ export async function lojasDeOrigemDaConta(ownerId: string, accountGroupId: stri
     grupo.length > 1 && l.id !== ownerId ? ` (${nomeDaLoja(l)})` : "";
 
   // iFood: a tabela multi-loja + o merchant principal do User, que pode não
-  // ter linha na tabela. O nome do principal vem do último pedido dele — o
-  // User guarda só o UUID.
+  // ter linha na tabela. O nome vem do último pedido daquela loja — é o nome
+  // que o app do iFood mostra HOJE. O rótulo da tabela é o de quando a loja
+  // foi ligada e não acompanha a troca de nome no iFood: a Ducky Pizza seguiu
+  // "Hakim - Lanches Rápidos" no painel depois de renomeada (21/10/2026).
   const integracoes = await prisma.ifoodIntegration.findMany({
     where: { userId: { in: grupo.map((l) => l.id) }, active: true },
     select: { userId: true, label: true, merchantId: true },
     orderBy: { createdAt: "asc" },
   });
+  const nomeNoUltimoPedido = async (lojaId: string, merchantId: string): Promise<string | null> => {
+    const ultimo = await (prisma.customerOrder as any).findFirst({
+      where: { franchiseeId: lojaId, ifoodStoreMerchant: merchantId, ifoodStoreName: { not: null } },
+      orderBy: { createdAt: "desc" },
+      select: { ifoodStoreName: true },
+    }).catch(() => null);
+    return ultimo?.ifoodStoreName || null;
+  };
   const ifood: LojaDeOrigem[] = [];
   const vistos = new Set<string>();
   for (const l of grupo) {
     for (const i of integracoes.filter((x) => x.userId === l.id)) {
       if (!i.merchantId || vistos.has(i.merchantId)) continue;
       vistos.add(i.merchantId);
-      ifood.push({ chave: chaveIfood(i.merchantId), nome: (i.label || "Loja iFood") + sufixo(l), emoji: "🍔", origem: "iFood" });
+      const nome = (await nomeNoUltimoPedido(l.id, i.merchantId)) || i.label || "Loja iFood";
+      ifood.push({ chave: chaveIfood(i.merchantId), nome: nome + sufixo(l), emoji: "🍔", origem: "iFood" });
     }
     if (l.ifoodMerchantId && !vistos.has(l.ifoodMerchantId)) {
       vistos.add(l.ifoodMerchantId);
-      const ultimo = await (prisma.customerOrder as any).findFirst({
-        where: { franchiseeId: l.id, ifoodStoreMerchant: l.ifoodMerchantId, ifoodStoreName: { not: null } },
-        orderBy: { createdAt: "desc" },
-        select: { ifoodStoreName: true },
-      }).catch(() => null);
-      ifood.push({ chave: chaveIfood(l.ifoodMerchantId), nome: (ultimo?.ifoodStoreName || "Loja principal") + sufixo(l), emoji: "🍔", origem: "iFood" });
+      const nome = (await nomeNoUltimoPedido(l.id, l.ifoodMerchantId)) || "Loja principal";
+      ifood.push({ chave: chaveIfood(l.ifoodMerchantId), nome: nome + sufixo(l), emoji: "🍔", origem: "iFood" });
     }
   }
 

@@ -331,6 +331,8 @@ export async function GET(req: NextRequest) {
                   franchiseeId: user.id,
                   dailyOrderNumber: await generateDailyOrderNumber(user.id),
                   ifoodOrderId: event.orderId,
+                  ifoodStoreMerchant: orderData.merchant?.id ?? undefined,
+                  ifoodStoreName: orderData.merchant?.name ?? undefined,
                   ifoodReference: orderData.displayId ?? undefined,
                   source: "IFOOD",
                   customerName: customer.name ?? "Cliente iFood",

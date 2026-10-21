@@ -405,6 +405,12 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
         data: {
           franchiseeId:     franchisee.id,
           ifoodOrderId:     orderId,
+          // De qual loja do iFood veio. Sem isto o pedido que este caminho
+          // ganhava na corrida caía na chave da própria loja e o painel da
+          // Hakim Centro mostrava "site, WhatsApp, mesa e balcão" em pedido
+          // do iFood (21/10/2026) — lib/loja-de-origem.ts.
+          ifoodStoreMerchant: (merchantId || orderData.merchant?.id) ?? undefined,
+          ifoodStoreName:   orderData.merchant?.name ?? undefined,
           ifoodReference:   orderData.displayId ?? undefined,
           ifoodPickupCode:  ifoodPickupCode ?? undefined,
           scheduledDatetime,

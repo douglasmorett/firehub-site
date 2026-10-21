@@ -243,6 +243,8 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
       franchiseeId: franchisee.id,
       dailyOrderNumber: await generateDailyOrderNumber(franchisee.id),
       ifoodOrderId: orderId,
+      ifoodStoreMerchant: orderData.merchant?.id ?? undefined,
+      ifoodStoreName: orderData.merchant?.name ?? undefined,
       ifoodReference: orderData.displayId ?? undefined,
       ifoodPickupCode: ifoodPickupCode ?? undefined,
       scheduledDatetime: scheduledDatetime ?? deliveryDeadline,

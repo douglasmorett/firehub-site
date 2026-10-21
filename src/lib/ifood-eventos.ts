@@ -392,6 +392,8 @@ export async function processarEventosIfood(opts: {
                       franchiseeId: cancelFranchisee.id,
                       dailyOrderNumber: numeroCancelado,
                       ifoodOrderId: orderId,
+                      ifoodStoreMerchant: (merchantId || cancelOrderData.merchant?.id) ?? undefined,
+                      ifoodStoreName: cancelOrderData.merchant?.name ?? undefined,
                       ifoodReference: cancelOrderData.displayId ?? undefined,
                       source: "IFOOD",
                       customerName: cancelOrderData.customer?.name ?? "Cliente iFood",

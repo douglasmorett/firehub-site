@@ -346,6 +346,8 @@ async function createOrderFromIfoodData(orderId: string, orderData: any, franchi
       franchiseeId,
       deliveryBy,
       ifoodOrderId: orderId,
+      ifoodStoreMerchant: orderData.merchant?.id ?? undefined,
+      ifoodStoreName: orderData.merchant?.name ?? undefined,
       ifoodReference: orderData.displayId ?? undefined,
       scheduledDatetime: scheduledDatetime ?? deliveryDeadline,
       changeAmount,
