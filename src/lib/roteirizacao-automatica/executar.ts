@@ -414,8 +414,14 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
   // A ordem das paradas é refeita pela rua aqui, na gravação (o planejador e a
   // prévia ficam em linha reta). Sem pino não há rota nenhuma a gravar.
   const fimDaRua = Date.now() + ORDEM_POR_RUA_NO_CICLO_MS;
+  // Só com roteador configurado (OSRM próprio, Geoapify ou ORS). No demo
+  // público do OSRM (1 pergunta/s), as pernas cliente→cliente nunca estão no
+  // cache: estourariam os 3 s, e duas falhas seguidas desligam o roteador por
+  // 60 s — o que derruba a cotação de frete de TODAS as lojas (22/10/2026).
+  const temRoteador = !!(process.env.OSRM_URL || process.env.GEOAPIFY_API_KEY || process.env.ORS_API_KEY);
   const pelaRua = async (ids: string[]): Promise<OrdemDasParadas> => {
     if (!plano.loja) return { ordem: ids, fonte: "linha-reta" };
+    if (!temRoteador) return { ordem: ids, fonte: "linha-reta", falha: "sem roteador configurado" };
     const tetoMs = Math.min(TETO_DA_ORDEM_POR_RUA_MS, fimDaRua - Date.now());
     return ordenarParadasPorMedida(plano.loja, ids.map((id) => ({ id, ponto: plano.pontoDe(id) })), medirPelaRua, { tetoMs });
   };
