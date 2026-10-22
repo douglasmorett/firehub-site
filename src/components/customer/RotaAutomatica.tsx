@@ -399,7 +399,7 @@ function PainelDaPrevia({
               <p style={subtitulo}>ROTAS AUTOMÁTICAS JÁ ABERTAS</p>
               {outras.map((a, i) => (
                 <div key={`o${i}`} style={linha}>
-                  {a.tipo === "acrescentar" && <>Entraria o {nums(a.numeros).join(", ")} na {a.routeNumber ?? "rota"} (parada {a.posicao})</>}
+                  {a.tipo === "acrescentar" && <>Entraria o {nums(a.numeros).join(", ")} na {a.routeNumber ?? "rota"} (parada {a.posicao}){a.rotaChamada ? " — já chamada e ninguém puxou: avisaria de novo que a rota mudou" : ""}</>}
                   {a.tipo === "tirar-da-rota" && <>Sairia o {nums(a.numeros).join(", ")} da {a.routeNumber ?? "rota"} ({a.motivo === "cancelado" ? "cancelado" : "o mais urgente já esperou demais"})</>}
                   {a.tipo === "chamar" && <>Chamaria <b>{quem(a.motoboyNome)}</b> para a {a.routeNumber ?? "rota"}</>}
                   {a.tipo === "apagar-rota" && <>Apagaria a {a.routeNumber ?? "rota"} (ficou vazia)</>}

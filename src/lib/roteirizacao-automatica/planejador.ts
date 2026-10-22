@@ -32,10 +32,20 @@
  *   2. chamar (D9/D10): rota com tudo pronto, ou cujo pedido mais urgente
  *      está pronto há `esperaMaxMin` (os não prontos saem e voltam ao bolo);
  *      chamada há mais de 60 min sem ninguém puxar é chamada de novo (D13).
- *      Rota chamada congela (D8). Com `quemPuxa: "qualquer"` a chamada é
- *      sempre para todos os livres (D11) — quem escanear primeiro leva;
+ *      Com `quemPuxa: "qualquer"` a chamada é sempre para todos os livres
+ *      (D11) — quem escanear primeiro leva;
  *   3. acrescentar: rota aberta (não chamada) que tem vaga recebe o pedido
- *      novo que cabe nela;
+ *      novo que cabe nela. D8 revisto em 22/10/2026 (Douglas: "montou rota
+ *      com um só, não tinha motoboy na loja, ficou mais algum pronto que dá
+ *      para ir junto — reconfigura e avisa; antes do motoboy puxar. Puxou,
+ *      acabou"): rota JÁ CHAMADA que ninguém puxou ainda também recebe, mas
+ *      só pedido PRONTO (ela espera motoboy; um pedido na chapa a atrasaria),
+ *      pelas mesmas regras e o mesmo teto. A ação vem com `rotaChamada` e
+ *      quem grava reenvia a chamada ("Rota #1 atualizada · agora 2
+ *      entregas"). Rota rechamada neste ciclo (D13) só cresce no seguinte —
+ *      um push por vez. Rota com qualquer pedido puxado (com motoboy) ou que
+ *      saiu de PENDING segue congelada: "puxou, acabou" — e a gravação
+ *      confere isso de novo no banco (executar.ts);
  *   4. criar: do que sobrou, rotas novas. Pedido sem companhia só vira rota
  *      de 1 quando fica pronto — e aí ainda espera `esperaMaxMin` por alguém
  *      antes de ser chamado (passo 2 do ciclo seguinte).
@@ -93,8 +103,12 @@ export type MotoboyLivre = { id: string; nome: string; naLojaDesde: Date | null;
 
 export type Acao =
   | { tipo: "criar-rota"; pedidos: string[] /* na ordem das paradas */; motivo: string }
-  /** `ordem` = a rota inteira na nova ordem das paradas (quem grava regrava a sequência de todos). */
-  | { tipo: "acrescentar"; rotaId: string; pedidoId: string; posicao: number; ordem: string[] }
+  /**
+   * `ordem` = a rota inteira na nova ordem das paradas (quem grava regrava a
+   * sequência de todos). `rotaChamada`: a rota já estava chamada e ninguém
+   * tinha puxado (D8 revisto, 22/10) — quem grava avisa o chamado que ela mudou.
+   */
+  | { tipo: "acrescentar"; rotaId: string; pedidoId: string; posicao: number; ordem: string[]; rotaChamada?: true }
   | { tipo: "tirar-da-rota"; rotaId: string; pedidoId: string; motivo: "cancelado" | "espera-estourada" }
   | { tipo: "chamar"; rotaId: string; motoboyId: string | null /* null = avisar todos os livres */ }
   | { tipo: "apagar-rota"; rotaId: string }
@@ -278,11 +292,15 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
   // D11: com "quem escanear primeiro", a chamada é sempre para todos os livres.
   const proximoMotoboy = () => (config.quemPuxa === "qualquer" ? null : fila.shift()?.id ?? null);
 
-  const abertas: RotaViva[] = [];
+  // As que podem crescer no passo 3, na ordem das sementes. `chamada`: já
+  // chamada e ninguém puxou (as puxadas nem chegam aqui) — só pedido pronto.
+  const crescem: { v: RotaViva; chamada: boolean }[] = [];
   for (const v of vivas) {
     if (v.rota.chamadaEm) {
+      // Rechamada (D13) agora: só cresce no ciclo seguinte, um push por vez.
       if (rechamar(v.rota)) acoes.push({ tipo: "chamar", rotaId: v.rota.id, motoboyId: proximoMotoboy() });
-      continue; // chamada congela (D8)
+      else crescem.push({ v, chamada: true });
+      continue;
     }
     const sem = semente(v.membros);
     const todosProntos = v.membros.every((p) => p.pronto);
@@ -299,7 +317,7 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
       }
       acoes.push({ tipo: "chamar", rotaId: v.rota.id, motoboyId: proximoMotoboy() });
     } else {
-      abertas.push(v);
+      crescem.push({ v, chamada: false });
     }
   }
   bolo.sort(porId);
@@ -308,19 +326,24 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
   const grupos: { semente: PedidoParaDespacho; cheio: boolean }[] = [];
   const naRota = new Set<string>();
 
-  // ── 3. Acrescentar em rota aberta ────────────────────────────────────────
-  for (const v of abertas) {
+  // ── 3. Acrescentar em rota aberta (e na chamada que ninguém puxou) ──────
+  for (const { v, chamada } of crescem) {
     const membros = [...v.membros];
     while (membros.length < max) {
       const sem = semente(membros);
-      const [melhor] = candidatosQueCabem(loja, sem, bolo.filter((p) => !naRota.has(p.id)), config);
+      const [melhor] = candidatosQueCabem(loja, sem, bolo.filter((p) => !naRota.has(p.id) && (!chamada || p.pronto)), config);
       if (!melhor) break;
       naRota.add(melhor.id);
       membros.push(melhor);
       const ordem = ordenarParadas(loja, membros);
-      acoes.push({ tipo: "acrescentar", rotaId: v.rota.id, pedidoId: melhor.id, posicao: ordem.indexOf(melhor.id) + 1, ordem });
+      acoes.push({
+        tipo: "acrescentar", rotaId: v.rota.id, pedidoId: melhor.id, posicao: ordem.indexOf(melhor.id) + 1, ordem,
+        ...(chamada ? { rotaChamada: true as const } : {}),
+      });
     }
-    grupos.push({ semente: semente(membros), cheio: membros.length >= max });
+    // A chamada não conta como grupo para o motivo de quem sobrou: ela só
+    // aceita pronto, e "rota cheia"/"longe" do não pronto viria dela à toa.
+    if (!chamada) grupos.push({ semente: semente(membros), cheio: membros.length >= max });
   }
 
   // ── 4. Criar rotas novas ─────────────────────────────────────────────────
