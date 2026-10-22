@@ -124,6 +124,10 @@ const INSTRUCOES = [
   `ALTER TABLE "RouteSchedule" ADD COLUMN IF NOT EXISTS "chamadaEm" TIMESTAMP(3)`,
   `ALTER TABLE "RouteSchedule" ADD COLUMN IF NOT EXISTS "chamadaMotoboyId" TEXT`,
   `ALTER TABLE "Motoboy" ADD COLUMN IF NOT EXISTS "naLojaDesde" TIMESTAMP(3)`,
+  // Fase 2: o pedido que a LOJA tirou de uma rota automática (desfez a rota
+  // ou tirou o pedido dela). O cron deixa de agrupá-lo até o "voltar" da
+  // Roteirização — sem isto, 20 s depois do Desfazer tudo se juntava de novo.
+  `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "semRotaAutomaticaEm" TIMESTAMP(3)`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -160,6 +164,7 @@ const ESPERADAS = [
   "RouteSchedule.chamadaEm",
   "RouteSchedule.chamadaMotoboyId",
   "Motoboy.naLojaDesde",
+  "CustomerOrder.semRotaAutomaticaEm",
 ];
 
 /**
@@ -245,7 +250,7 @@ export async function garantirColunasDePreco(): Promise<void> {
             'storeBannerVideo', 'reviewsMinStars', 'availableHours',
             'agendamentoConfig', 'agendado',
             'painelDeSenhas', 'numeracaoAleatoria',
-            'origem', 'chamadaEm', 'chamadaMotoboyId', 'naLojaDesde'
+            'origem', 'chamadaEm', 'chamadaMotoboyId', 'naLojaDesde', 'semRotaAutomaticaEm'
           )
       `;
       const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));

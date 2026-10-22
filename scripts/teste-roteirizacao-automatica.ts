@@ -10,6 +10,14 @@
  * os não prontos; chamada escolhe quem chegou primeiro; ninguém na loja →
  * motoboyId null; cancelado sai; rota vazia apaga; determinismo.
  *
+ * Fase 2 (a chamada do motoboy): a chamada grava `chamadaEm`/`chamadaMotoboyId`
+ * e não toca `CustomerOrder.motoboyId`; ninguém na loja → push a todos os
+ * livres; `quemPuxa: "qualquer"` → todos; rechamada só depois de 60 min (no
+ * planejador e na gravação); rota que terminou sozinha → "fechar-rota";
+ * pedido tirado pela loja (`semRotaAutomaticaEm`) fica de fora com motivo, e
+ * sem a marca (o "voltar") volta a ser agrupado. A chamada (`chamarARota`)
+ * roda com um Prisma falso e o `fetch` do Expo interceptado.
+ *
  *   npx tsx scripts/teste-roteirizacao-automatica.ts
  *
  * Sem banco e sem rede. O prazo.ts importa lib/painel-do-dono (que importa o
@@ -315,8 +323,8 @@ async function main() {
       { tipo: "chamar", rotaId: "MANUAL1", motoboyId: null },
     ];
     const g = gravacoesDasAcoes(acoes, [{ id: "R1", pedidoIds: ["p09"] }]);
-    conferir("rota fora das AUTO abertas (manual): nenhuma gravação, nada pendente",
-      g.passos.length === 0 && g.pendentes.length === 0 && g.ignoradas.length === 4 && g.ignoradas.every((i) => i.motivo === "rota-desconhecida"), g);
+    conferir("rota fora das AUTO abertas (manual): nenhuma gravação",
+      g.passos.length === 0 && g.ignoradas.length === 4 && g.ignoradas.every((i) => i.motivo === "rota-desconhecida"), g);
   }
   {
     // Cancelado sozinho na rota: sai, e a rota (vazia) é apagada.
@@ -335,13 +343,13 @@ async function main() {
     conferir("… tirar um de dois e mandar apagar: sai um, a rota fica", tipos(g2.passos) === "sair-da-rota" && g2.ignoradas[0]?.motivo === "rota-com-pedido", g2);
   }
   {
-    // Espera estourada: o não pronto sai; a chamada fica para a Fase 2.
+    // Espera estourada: o não pronto sai; depois (Fase 2) a rota é chamada.
     const aberta = rota("R1", [pedido(1, em(2), 20, pronto(10)), pedido(2, em(2.2), 25)]);
     const r = plano([], [aberta]);
     const g = gravacoesDasAcoes(r.acoes, lidas([aberta]));
     const sai = g.passos[0] as Extract<Passo, { tipo: "sair-da-rota" }> | undefined;
-    conferir("espera estourada: o não pronto sai da rota", tipos(g.passos) === "sair-da-rota" && sai?.pedidoId === "p02" && sai?.motivo === "espera-estourada", g);
-    conferir("chamar NÃO é gravado nesta fase: fica pendente", g.pendentes.length === 1 && g.pendentes[0].tipo === "chamar" && !g.passos.some((p) => (p as any).tipo === "chamar"), g);
+    conferir("espera estourada: o não pronto sai da rota e DEPOIS a rota é chamada",
+      tipos(g.passos) === "sair-da-rota,chamar" && sai?.pedidoId === "p02" && sai?.motivo === "espera-estourada", g);
   }
   {
     // Pedido que entrou numa rota aberta não entra também numa rota nova; tirar quem não está na rota é ignorado.
@@ -373,6 +381,204 @@ async function main() {
     conferir("ponto da rota automática: o do cliente vale", !!pontoParaRotaAutomatica({ ...p, origem: "pino" }, false, area));
     conferir("… o centro do bairro NÃO (D3)", pontoParaRotaAutomatica({ ...p, origem: "bairro" }, false, area) === null);
     conferir("… sem nada gravado, nada", pontoParaRotaAutomatica(null, false, area) === null);
+  }
+
+  // ── Fase 2: a chamada do motoboy ─────────────────────────────────────────
+  const { chamadaVencida, MOTIVO_EM_PORTUGUES } = await import("../src/lib/roteirizacao-automatica/planejador");
+  const { avisoDaRotaPronta, avisoDaRotaFoiComOutro, quemRecebeAChamada, quemPerdeAChamada } = await import("../src/lib/roteirizacao-automatica/chamada");
+  const naLoja = (id: string, nome: string, haMin: number): Motoboy => ({ id, nome, naLojaDesde: min(-haMin), gpsFresco: true });
+  const prontaComDois = (id: string, extra: Partial<Rota> = {}) =>
+    rota(id, [pedido(1, em(2), 20, pronto(2)), pedido(2, em(2.1), 22, pronto(1))], extra);
+
+  console.log("\n== Fase 2: quem é chamado ==");
+  {
+    const r = plano([], [prontaComDois("R1")], [naLoja("m1", "Maicon", 10)], { ...CFG, quemPuxa: "qualquer" });
+    conferir("quemPuxa 'qualquer': chamada sempre para todos (motoboyId null), mesmo com motoboy na loja",
+      chamadas(r.acoes).length === 1 && chamadas(r.acoes)[0].motoboyId === null, r.acoes);
+    const r2 = plano([], [prontaComDois("R1")], [naLoja("m1", "Maicon", 10)]);
+    conferir("… e com 'chamado' (padrão) vai para quem está na loja", chamadas(r2.acoes)[0]?.motoboyId === "m1", r2.acoes);
+    const r3 = plano([], [rota("R1", [pedido(1, em(2), 20, pronto(70))], { chamadaEm: min(-61), chamadaMotoboyId: "m1" })], [naLoja("m2", "Kaio", 5)], { ...CFG, quemPuxa: "qualquer" });
+    conferir("… rechamada no 'qualquer' também é para todos", chamadas(r3.acoes)[0]?.motoboyId === null, r3.acoes);
+  }
+  {
+    conferir("chamadaVencida: nunca chamada não venceu", !chamadaVencida(null, AGORA));
+    conferir("chamadaVencida: 59 e 60 min não, 61 min sim",
+      !chamadaVencida(min(-59), AGORA) && !chamadaVencida(min(-60), AGORA) && chamadaVencida(min(-61), AGORA));
+    const r = plano([], [rota("R1", [pedido(1, em(2), 20, pronto(70))], { chamadaEm: min(-59), chamadaMotoboyId: "m1" })], [naLoja("m1", "Maicon", 3)]);
+    conferir("rota chamada há 59 min: não chama de novo (um push por hora)", chamadas(r.acoes).length === 0, r.acoes);
+  }
+
+  console.log("\n== Fase 2: a rota que terminou sozinha ==");
+  {
+    const comMotoboy = { fora: "ja-com-motoboy" as const };
+    const r = plano([], [rota("R1", [pedido(1, em(2), 20, comMotoboy), pedido(2, em(2.1), 22, comMotoboy)])]);
+    conferir("todos puxados um a um ('Só este'): fechar-rota, sem chamar",
+      r.acoes.length === 1 && r.acoes[0].tipo === "fechar-rota" && (r.acoes[0] as any).rotaId === "R1", r.acoes);
+    const r2 = plano([], [rota("R1", [pedido(1, em(2), 20, comMotoboy), pedido(2, em(2.1), 22, { finalizado: true })])]);
+    conferir("um puxado + um já entregue: fechar-rota", r2.acoes.map((a) => a.tipo).join() === "fechar-rota", r2.acoes);
+    const r3 = plano([], [rota("R1", [pedido(1, em(2), 20, comMotoboy), pedido(2, em(2.1), 22, { cancelado: true })])]);
+    conferir("um puxado + um cancelado: o cancelado sai e a rota fecha", r3.acoes.map((a) => a.tipo).join() === "tirar-da-rota,fechar-rota", r3.acoes);
+    const r4 = plano([], [rota("R1", [pedido(1, em(2), 20, comMotoboy), pedido(2, em(2.1), 22, pronto(1))])]);
+    conferir("um puxado + um esperando: a rota segue aberta (nada a fazer)", r4.acoes.length === 0, r4.acoes);
+    const r5 = plano([pedido(3, em(2.05), 21)], [rota("R1", [pedido(1, em(2), 20, { finalizado: true }), pedido(2, em(2.1), 22)])]);
+    conferir("entregue sem motoboy não conta como companhia: a rota não é chamada com ele", chamadas(r5.acoes).length === 0, r5.acoes);
+
+    const g = gravacoesDasAcoes(r3.acoes, lidas([rota("R1", [pedido(1, em(2), 20), pedido(2, em(2.1), 22)])]));
+    conferir("gravação: sair-da-rota e depois fechar-rota (DISPATCHED sem efeitos, sem push)", tipos(g.passos) === "sair-da-rota,fechar-rota", g);
+    const g2 = gravacoesDasAcoes([{ tipo: "fechar-rota", rotaId: "MANUAL1" }], [{ id: "R1", pedidoIds: ["p01"] }]);
+    conferir("fechar-rota de rota que não é AUTO aberta: ignorada", g2.passos.length === 0 && g2.ignoradas[0]?.motivo === "rota-desconhecida", g2);
+  }
+
+  console.log("\n== Fase 2: a gravação da chamada ==");
+  {
+    const g = gravacoesDasAcoes([{ tipo: "chamar", rotaId: "R1", motoboyId: "m1" }], [{ id: "R1", pedidoIds: ["p01", "p02"] }]);
+    const c = g.passos[0] as Extract<Passo, { tipo: "chamar" }> | undefined;
+    conferir("chamar vira o passo 'chamar' com o motoboy (e nada nos pedidos)",
+      g.passos.length === 1 && c?.tipo === "chamar" && c.rotaId === "R1" && c.motoboyId === "m1" && !("pedidoId" in (c as any)) && !("pedidoIds" in (c as any)), g);
+    const g2 = gravacoesDasAcoes([{ tipo: "chamar", rotaId: "R1", motoboyId: null }], [{ id: "R1", pedidoIds: ["p01"] }]);
+    conferir("chamar todos: passo com motoboyId null", (g2.passos[0] as any)?.motoboyId === null, g2);
+    const g3 = gravacoesDasAcoes(
+      [{ tipo: "tirar-da-rota", rotaId: "R1", pedidoId: "p01", motivo: "cancelado" }, { tipo: "chamar", rotaId: "R1", motoboyId: "m1" }],
+      [{ id: "R1", pedidoIds: ["p01"] }],
+    );
+    conferir("chamar rota que ficou vazia no ciclo: ignorada", !g3.passos.some((p) => p.tipo === "chamar") && g3.ignoradas.some((i) => i.motivo === "vazia"), g3);
+  }
+
+  console.log("\n== Fase 2: o push ==");
+  {
+    const a = avisoDaRotaPronta({ id: "R7", routeNumber: "Rota #7" }, [18, 12, 15], false);
+    conferir("ROTA_PRONTA para o chamado: título e corpo do plano",
+      a.titulo === "🛵 Rota #7 pronta na loja" && a.corpo === "3 entregas: #12, #15, #18. Vai lá buscar." && a.dados.tipo === "ROTA_PRONTA" && a.dados.rotaId === "R7", a);
+    const t = avisoDaRotaPronta({ id: "R7", routeNumber: "Rota #7" }, [12, 15, 18], true);
+    conferir("… para todos: 'Quem chegar primeiro sai com ela.'", t.corpo === "3 entregas: #12, #15, #18. Quem chegar primeiro sai com ela.", t);
+    conferir("… uma entrega no singular", avisoDaRotaPronta({ id: "R7", routeNumber: "Rota #7" }, [12], false).corpo === "1 entrega: #12. Vai lá buscar.");
+    const o = avisoDaRotaFoiComOutro({ id: "R7", routeNumber: "Rota #7" }, "Maicon Souza");
+    conferir("ROTA_FOI_COM_OUTRO: 'Rota #7 foi com Maicon'",
+      o.titulo === "Rota #7 foi com Maicon" && o.corpo === "A loja trocou o entregador desta rota." && o.dados.tipo === "ROTA_FOI_COM_OUTRO", o);
+    conferir("quem recebe: o chamado sozinho; null = todos os livres",
+      quemRecebeAChamada("m1", ["m1", "m2"]).join() === "m1" && quemRecebeAChamada(null, ["m1", "m2", "m2"]).join() === "m1,m2");
+    conferir("quem perde: só o chamado anterior trocado por OUTRO motoboy",
+      quemPerdeAChamada("m1", "m2") === "m1" && quemPerdeAChamada("m1", "m1") === null && quemPerdeAChamada("m1", null) === null && quemPerdeAChamada(null, "m2") === null);
+  }
+
+  // ── chamarARota com um Prisma falso e o Expo interceptado ────────────────
+  console.log("\n== Fase 2: chamarARota (Prisma falso) ==");
+  {
+    const fake = (globalThis as any).prisma;
+    const chamadas: { onde: string; args: any }[] = [];
+    let rotaNoBanco: any = null;
+    const numeros = [18, 12, 15];
+    fake.routeSchedule = {
+      findFirst: async (args: any) => { chamadas.push({ onde: "routeSchedule.findFirst", args }); return rotaNoBanco; },
+      updateMany: async (args: any) => { chamadas.push({ onde: "routeSchedule.updateMany", args }); return { count: rotaNoBanco ? 1 : 0 }; },
+    };
+    fake.customerOrder = {
+      findMany: async (args: any) => {
+        chamadas.push({ onde: "customerOrder.findMany", args });
+        if (args?.distinct) return [{ motoboyId: "m3" }]; // m3 está com pedido: não é livre
+        return numeros.map((n) => ({ dailyOrderNumber: n }));
+      },
+      updateMany: async (args: any) => { chamadas.push({ onde: "customerOrder.updateMany", args }); return { count: 1 }; },
+      update: async (args: any) => { chamadas.push({ onde: "customerOrder.update", args }); return {}; },
+    };
+    fake.motoboy = {
+      findMany: async () => [
+        { id: "m1", name: "Maicon Souza", lastLocationUpdate: AGORA, naLojaDesde: min(-5) },
+        { id: "m2", name: "Kaio", lastLocationUpdate: AGORA, naLojaDesde: null },
+        { id: "m3", name: "Ocupado", lastLocationUpdate: AGORA, naLojaDesde: null },
+      ],
+    };
+    // lib/app-motoboy/aparelhos.ts: a tabela "existe" e cada motoboy tem um aparelho.
+    fake.$executeRawUnsafe = async () => 0;
+    fake.$executeRaw = async () => 0;
+    fake.$queryRaw = async (_partes: TemplateStringsArray, ...valores: any[]) => [{ pushToken: `ExponentPushToken[aparelho-${valores[0]}]` }];
+    const pushes: { para: string; titulo: string; corpo: string; tipo: string }[] = [];
+    const fetchDeVerdade = globalThis.fetch;
+    (globalThis as any).fetch = async (_url: string, init: any) => {
+      for (const m of JSON.parse(init.body)) pushes.push({ para: m.to, titulo: m.title, corpo: m.body, tipo: m.data?.tipo });
+      return { ok: true, json: async () => ({ data: [] }) };
+    };
+    const esperarPushes = () => new Promise((r) => setTimeout(r, 30));
+    const { chamarARota } = await import("../src/lib/roteirizacao-automatica/executar");
+    const aparelho = (id: string) => `ExponentPushToken[aparelho-${id}]`;
+
+    try {
+      // 1. Chamada para o Maicon (quem está na loja).
+      rotaNoBanco = { id: "R7", routeNumber: "Rota #7", chamadaEm: null, chamadaMotoboyId: null };
+      const r = await chamarARota({ lojaId: "L1", rotaId: "R7", motoboyId: "m1", soSeVencida: true, agora: AGORA });
+      await esperarPushes();
+      const grav = chamadas.find((c) => c.onde === "routeSchedule.updateMany");
+      conferir("chamada grava chamadaEm = agora e chamadaMotoboyId na ROTA",
+        r.ok && grav?.args.data.chamadaEm.getTime() === AGORA.getTime() && grav?.args.data.chamadaMotoboyId === "m1" && Object.keys(grav?.args.data).length === 2, grav?.args);
+      conferir("… só rota AUTO aberta desta loja, condicional ao chamadaEm lido",
+        grav?.args.where.origem === "AUTO" && grav?.args.where.status === "PENDING" && grav?.args.where.franchiseeId === "L1" && grav?.args.where.chamadaEm === null, grav?.args.where);
+      conferir("… e NÃO toca CustomerOrder.motoboyId (nenhuma escrita em pedido)",
+        !chamadas.some((c) => c.onde === "customerOrder.updateMany" || c.onde === "customerOrder.update"), chamadas.map((c) => c.onde));
+      conferir("… push ROTA_PRONTA só para o chamado",
+        pushes.length === 1 && pushes[0].para === aparelho("m1") && pushes[0].tipo === "ROTA_PRONTA" && pushes[0].corpo === "3 entregas: #12, #15, #18. Vai lá buscar.", pushes);
+
+      // 2. Ninguém na loja: todos os ativos e livres (o m3 está com pedido).
+      chamadas.length = 0; pushes.length = 0;
+      rotaNoBanco = { id: "R8", routeNumber: "Rota #8", chamadaEm: null, chamadaMotoboyId: null };
+      const r2 = await chamarARota({ lojaId: "L1", rotaId: "R8", motoboyId: null, soSeVencida: true, agora: AGORA });
+      await esperarPushes();
+      const paraQuem = pushes.map((p) => p.para).sort().join();
+      conferir("ninguém na loja (null): push a todos os livres, não a quem está com pedido",
+        r2.ok && paraQuem === [aparelho("m1"), aparelho("m2")].sort().join() && pushes.every((p) => p.corpo.endsWith("Quem chegar primeiro sai com ela.")), pushes);
+      conferir("… e chamadaMotoboyId null na rota",
+        chamadas.find((c) => c.onde === "routeSchedule.updateMany")?.args.data.chamadaMotoboyId === null);
+
+      // 3. Rechamada antes da hora: nada gravado, nada enviado.
+      chamadas.length = 0; pushes.length = 0;
+      rotaNoBanco = { id: "R7", routeNumber: "Rota #7", chamadaEm: min(-30), chamadaMotoboyId: "m1" };
+      const r3 = await chamarARota({ lojaId: "L1", rotaId: "R7", motoboyId: "m2", soSeVencida: true, agora: AGORA });
+      await esperarPushes();
+      conferir("cron chamando de novo com 30 min: recusa, sem gravar e sem push",
+        !r3.ok && !chamadas.some((c) => c.onde === "routeSchedule.updateMany") && pushes.length === 0, { r3, chamadas, pushes });
+
+      // 4. Rechamada depois de 61 min, agora para o Kaio: o Maicon fica sabendo.
+      chamadas.length = 0; pushes.length = 0;
+      rotaNoBanco = { id: "R7", routeNumber: "Rota #7", chamadaEm: min(-61), chamadaMotoboyId: "m1" };
+      const r4 = await chamarARota({ lojaId: "L1", rotaId: "R7", motoboyId: "m2", soSeVencida: true, agora: AGORA });
+      await esperarPushes();
+      const pronta = pushes.find((p) => p.tipo === "ROTA_PRONTA");
+      const foi = pushes.find((p) => p.tipo === "ROTA_FOI_COM_OUTRO");
+      conferir("rechamada depois de 61 min: ROTA_PRONTA ao novo e ROTA_FOI_COM_OUTRO ao anterior",
+        r4.ok && pushes.length === 2 && pronta?.para === aparelho("m2") && foi?.para === aparelho("m1") && foi?.titulo === "Rota #7 foi com Kaio", pushes);
+
+      // 5. A loja ("Chamar de novo") chama na hora, sem esperar a hora: o mesmo motoboy, sem ROTA_FOI_COM_OUTRO.
+      chamadas.length = 0; pushes.length = 0;
+      rotaNoBanco = { id: "R7", routeNumber: "Rota #7", chamadaEm: min(-2), chamadaMotoboyId: "m1" };
+      const r5 = await chamarARota({ lojaId: "L1", rotaId: "R7", motoboyId: "m1", agora: AGORA });
+      await esperarPushes();
+      conferir("'Chamar de novo' da loja: grava na hora e só o ROTA_PRONTA ao mesmo",
+        r5.ok && pushes.length === 1 && pushes[0].para === aparelho("m1") && pushes[0].tipo === "ROTA_PRONTA", pushes);
+
+      // 6. Rota que já saiu (ou não é AUTO): nada.
+      chamadas.length = 0; pushes.length = 0;
+      rotaNoBanco = null;
+      const r6 = await chamarARota({ lojaId: "L1", rotaId: "R9", motoboyId: "m1", agora: AGORA });
+      await esperarPushes();
+      conferir("rota que não está aberta: recusa, sem push", !r6.ok && pushes.length === 0);
+    } finally {
+      (globalThis as any).fetch = fetchDeVerdade;
+    }
+  }
+
+  console.log("\n== Fase 2: fora da automática (tirado pela loja) ==");
+  {
+    const r = plano([pedido(1, em(1), 20, { fora: "tirado-pela-loja" }), pedido(2, em(1.2), 22, { fora: "tirado-pela-loja" })]);
+    conferir("pedidos tirados pela loja não viram rota", criadas(r.acoes).length === 0, r.acoes);
+    conferir("… e saem como descartados com o motivo 'tirado-pela-loja'",
+      motivoDe(r, "p01") === "tirado-pela-loja" && motivoDe(r, "p02") === "tirado-pela-loja", r.descartados);
+    conferir("… com o texto em português no mapa de motivos", /tirou da rota automática/.test(MOTIVO_EM_PORTUGUES["tirado-pela-loja"]));
+    const voltou = plano([pedido(1, em(1), 20), pedido(2, em(1.2), 22, { fora: "tirado-pela-loja" })]);
+    conferir("um voltou (marca limpa), o outro não: o que voltou não leva o outro junto",
+      !criadas(voltou.acoes).some((g) => g.includes("p02")) && motivoDe(voltou, "p02") === "tirado-pela-loja", voltou);
+    const os2 = plano([pedido(1, em(1), 20), pedido(2, em(1.2), 22)]);
+    conferir("'voltar' limpa a marca: no ciclo seguinte os dois se juntam de novo", criadas(os2.acoes).length === 1 && mesmoConjunto(criadas(os2.acoes)[0], ["p01", "p02"]), os2.acoes);
+    const naRota = plano([], [rota("R1", [pedido(1, em(2), 20, { ...pronto(2), fora: null }), pedido(2, em(2.1), 22, pronto(1))])], [naLoja("m1", "Maicon", 3)]);
+    conferir("pedido de rota AUTO aberta não é afetado (a marca só vale fora de rota)", chamadas(naRota.acoes).length === 1, naRota.acoes);
   }
 
   console.log(`\n${ok} ok, ${falhou} falharam`);

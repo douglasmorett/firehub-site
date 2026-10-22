@@ -30,7 +30,8 @@
  *   2. chamar (D9/D10): rota com tudo pronto, ou cujo pedido mais urgente
  *      está pronto há `esperaMaxMin` (os não prontos saem e voltam ao bolo);
  *      chamada há mais de 60 min sem ninguém puxar é chamada de novo (D13).
- *      Rota chamada congela (D8);
+ *      Rota chamada congela (D8). Com `quemPuxa: "qualquer"` a chamada é
+ *      sempre para todos os livres (D11) — quem escanear primeiro leva;
  *   3. acrescentar: rota aberta (não chamada) que tem vaga recebe o pedido
  *      novo que cabe nela;
  *   4. criar: do que sobrou, rotas novas. Pedido sem companhia só vira rota
@@ -40,8 +41,13 @@
 import { distanciaKm, type Ponto } from "@/lib/ponto-do-pedido";
 import type { RoteirizacaoAutomaticaConfig } from "./config";
 
-/** Os cortes de D4 que quem monta a entrada já decidiu (executar.ts); aqui só são relatados. */
-export type CorteDaEntrada = "agendado" | "parceiro" | "ja-com-motoboy" | "rota-manual";
+/**
+ * Os cortes de D4 que quem monta a entrada já decidiu (executar.ts); aqui só
+ * são relatados. "tirado-pela-loja": a loja desfez a rota automática dele ou
+ * o tirou dela (`CustomerOrder.semRotaAutomaticaEm`) — sem isto, 20 s depois
+ * do Desfazer o cron agrupava tudo de novo. Volta pelo "voltar" da lista.
+ */
+export type CorteDaEntrada = "agendado" | "parceiro" | "ja-com-motoboy" | "rota-manual" | "tirado-pela-loja";
 
 export type MotivoDoDescarte =
   | "sem-ponto"
@@ -68,6 +74,8 @@ export type PedidoParaDespacho = {
   fora?: CorteDaEntrada | null;
   /** Só para pedido de rota aberta: cancelado sai da rota (D13). */
   cancelado?: boolean;
+  /** Só para pedido de rota aberta: entregue/encerrado não espera mais nada. */
+  finalizado?: boolean;
 };
 
 export type RotaAberta = {
@@ -87,7 +95,13 @@ export type Acao =
   | { tipo: "acrescentar"; rotaId: string; pedidoId: string; posicao: number; ordem: string[] }
   | { tipo: "tirar-da-rota"; rotaId: string; pedidoId: string; motivo: "cancelado" | "espera-estourada" }
   | { tipo: "chamar"; rotaId: string; motoboyId: string | null /* null = avisar todos os livres */ }
-  | { tipo: "apagar-rota"; rotaId: string };
+  | { tipo: "apagar-rota"; rotaId: string }
+  /**
+   * A rota "terminou sozinha": cada pedido dela foi puxado um a um ("Só
+   * este") ou já fechou. Vira DISPATCHED sem efeito nenhum — cada pedido já
+   * saiu pelo próprio puxar — e para de contar como aberta.
+   */
+  | { tipo: "fechar-rota"; rotaId: string };
 
 export type Descartado = { pedidoId: string; motivo: MotivoDoDescarte };
 
@@ -103,6 +117,16 @@ export type EntradaDoPlanejador = {
 /** Chamada sem ninguém puxar por mais que isto é feita de novo (D13). */
 export const RECHAMAR_DEPOIS_MIN = 60;
 
+/**
+ * A chamada venceu (D13): feita há mais de RECHAMAR_DEPOIS_MIN sem ninguém
+ * puxar. O planejador chama de novo; a gravação (executar.ts, `chamarARota`)
+ * confere a mesma regra no banco — no máximo um push por hora por rota, mesmo
+ * com dois ciclos no ar.
+ */
+export function chamadaVencida(chamadaEm: Date | null | undefined, agora: Date): boolean {
+  return !!chamadaEm && agora.getTime() - chamadaEm.getTime() > RECHAMAR_DEPOIS_MIN * 60_000;
+}
+
 /** Como a prévia escreve cada motivo para o lojista. */
 export const MOTIVO_EM_PORTUGUES: Record<MotivoDoDescarte, string> = {
   "sem-ponto": "📍 sem localização no mapa — rota manual",
@@ -110,6 +134,7 @@ export const MOTIVO_EM_PORTUGUES: Record<MotivoDoDescarte, string> = {
   parceiro: "entrega do parceiro (iFood/99 levam)",
   "ja-com-motoboy": "já está com um motoboy",
   "rota-manual": "já está numa rota montada à mão",
+  "tirado-pela-loja": "✋ a loja tirou da rota automática — volta pelo \"voltar\" na lista",
   "fora-do-raio": "longe dos outros pedidos — vai sozinho quando ficar pronto",
   "prazo-incompativel": "prazo muito diferente dos vizinhos — espera outra rota",
   "rota-cheia": "a rota que passa perto já está cheia",
@@ -225,15 +250,19 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
     }
     const restantes = membros.filter((p) => !p.cancelado);
     if (restantes.length === 0) { acoes.push({ tipo: "apagar-rota", rotaId: rota.id }); continue; }
+    // Ninguém mais espera nada: puxados um a um ou já entregues. A rota
+    // terminou sozinha — fecha, senão ficava "aberta" para sempre no card.
+    const esperando = restantes.filter((p) => p.fora !== "ja-com-motoboy" && !p.finalizado);
+    if (esperando.length === 0) { acoes.push({ tipo: "fechar-rota", rotaId: rota.id }); continue; }
     // Um pedido da rota já foi puxado (está com motoboy): a rota está saindo.
     // Não cresce, não é chamada, não perde ninguém — quem puxar o resto leva.
     if (restantes.some((p) => p.fora === "ja-com-motoboy")) continue;
-    vivas.push({ rota, membros: restantes });
+    vivas.push({ rota, membros: esperando });
   }
   vivas.sort((a, b) => antesComoSemente(semente(a.membros), semente(b.membros)));
 
   // ── 2. Chamar ────────────────────────────────────────────────────────────
-  const rechamar = (r: RotaAberta) => !!r.chamadaEm && agora.getTime() - r.chamadaEm.getTime() > RECHAMAR_DEPOIS_MIN * 60_000;
+  const rechamar = (r: RotaAberta) => chamadaVencida(r.chamadaEm, agora);
   // Motoboy já chamado para uma rota que ainda vale está ocupado com ela.
   const ocupados = new Set(
     vivas.filter((v) => v.rota.chamadaEm && !rechamar(v.rota)).map((v) => v.rota.chamadaMotoboyId).filter(Boolean) as string[],
@@ -242,7 +271,8 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
   const fila = entrada.motoboys
     .filter((m) => m.naLojaDesde && m.gpsFresco && !ocupados.has(m.id))
     .sort((a, b) => (a.naLojaDesde as Date).getTime() - (b.naLojaDesde as Date).getTime() || porId(a, b));
-  const proximoMotoboy = () => fila.shift()?.id ?? null;
+  // D11: com "quem escanear primeiro", a chamada é sempre para todos os livres.
+  const proximoMotoboy = () => (config.quemPuxa === "qualquer" ? null : fila.shift()?.id ?? null);
 
   const abertas: RotaViva[] = [];
   for (const v of vivas) {

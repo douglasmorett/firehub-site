@@ -11,7 +11,7 @@
  *
  * Desde a Fase 1 (22/10/2026), `ativo: true` LIGA: o cron de 20 s
  * (api/cron/roteirizacao-automatica) passa a criar as rotas e pedir
- * prioridade no KDS desta loja. Chamar o motoboy é a Fase 2.
+ * prioridade no KDS desta loja; desde a Fase 2, também chama o motoboy.
  *
  * Por que uma rota própria e não o PUT /api/store-settings: a regra passa por
  * `limparRoteirizacaoAutomatica` (só chaves conhecidas, limites) e pela trava

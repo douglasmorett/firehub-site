@@ -16,8 +16,12 @@
  *     de TODAS as paradas é regravada, uma vez por rota, com a última ordem do
  *     ciclo (duas entradas na mesma rota = duas ações, uma sequência);
  *   - "apagar-rota" só quando a rota ficou vazia depois das saídas do ciclo;
- *   - "chamar" ainda não é gravada: é a Fase 2 (avisar o motoboy). Volta como
- *     pendente, para o resumo mostrar.
+ *   - "chamar" (Fase 2) vira o passo "chamar" — `chamadaEm`/`chamadaMotoboyId`
+ *     e o push ROTA_PRONTA — e NUNCA toca `CustomerOrder.motoboyId` (D7: quem
+ *     vira dono é quem escaneia o QR). Vai depois das saídas da mesma rota
+ *     (espera estourada), e só para rota que ainda tem pedido;
+ *   - "fechar-rota" (a rota que terminou sozinha) vira DISPATCHED sem efeito
+ *     nenhum: nada de push, nada de iFood — cada pedido já saiu pelo puxar.
  *
  * SEM IMPORTS de valor (só tipos): o teste carrega sem banco.
  */
@@ -35,20 +39,21 @@ export type Passo =
   | { tipo: "sair-da-rota"; rotaId: string; pedidoId: string; motivo: "cancelado" | "espera-estourada" }
   /** A ordem inteira da rota: `routeSequence` = posição + 1, de cada pedido. */
   | { tipo: "sequencia"; rotaId: string; pedidoIds: string[] }
-  | { tipo: "apagar-rota"; rotaId: string };
+  | { tipo: "apagar-rota"; rotaId: string }
+  /** Chamada: `chamadaEm = agora`, `chamadaMotoboyId` (null = todos os livres) e o push. Só a rota. */
+  | { tipo: "chamar"; rotaId: string; motoboyId: string | null }
+  /** Terminou sozinha: DISPATCHED + dispatchedAt, sem efeitos. */
+  | { tipo: "fechar-rota"; rotaId: string };
 
 export type AcaoIgnorada = { acao: Acao; motivo: "rota-desconhecida" | "rota-com-pedido" | "pedido-repetido" | "fora-da-rota" | "vazia" };
 
 export type Gravacoes = {
   passos: Passo[];
-  /** Decididas mas não gravadas nesta fase ("chamar" — Fase 2). */
-  pendentes: Acao[];
   ignoradas: AcaoIgnorada[];
 };
 
 export function gravacoesDasAcoes(acoes: Acao[], rotasLidas: RotaLida[]): Gravacoes {
   const passos: Passo[] = [];
-  const pendentes: Acao[] = [];
   const ignoradas: AcaoIgnorada[] = [];
 
   // Quem está em cada rota, andando junto com as ações (sair tira, entrar põe).
@@ -101,9 +106,18 @@ export function gravacoesDasAcoes(acoes: Acao[], rotasLidas: RotaLida[]): Gravac
         break;
       }
       case "chamar": {
-        // Fase 2: chamadaEm/chamadaMotoboyId + push ROTA_PRONTA.
+        const naRota = membros.get(a.rotaId);
+        if (!naRota) { ignoradas.push({ acao: a, motivo: "rota-desconhecida" }); break; }
+        // Todos saíram neste ciclo: não há o que buscar.
+        if (naRota.size === 0) { ignoradas.push({ acao: a, motivo: "vazia" }); break; }
+        passos.push({ tipo: "chamar", rotaId: a.rotaId, motoboyId: a.motoboyId });
+        break;
+      }
+      case "fechar-rota": {
         if (!membros.has(a.rotaId)) { ignoradas.push({ acao: a, motivo: "rota-desconhecida" }); break; }
-        pendentes.push(a);
+        membros.delete(a.rotaId);
+        ordemFinal.delete(a.rotaId);
+        passos.push({ tipo: "fechar-rota", rotaId: a.rotaId });
         break;
       }
     }
@@ -114,5 +128,5 @@ export function gravacoesDasAcoes(acoes: Acao[], rotasLidas: RotaLida[]): Gravac
     if (pedidoIds.length > 0) passos.push({ tipo: "sequencia", rotaId, pedidoIds });
   }
 
-  return { passos, pendentes, ignoradas };
+  return { passos, ignoradas };
 }

@@ -7,7 +7,8 @@
  * a loja de demonstração; o JSON sozinho não liga nada), um ciclo de
  * `rodarRoteirizacaoDaLoja(loja, { gravar: true })`: cria a rota dos pedidos
  * que vão juntos, acrescenta em rota aberta, tira o cancelado e apaga a rota
- * AUTO que ficou vazia. Chamar o motoboy é a Fase 2 (plano no vault, §5).
+ * AUTO que ficou vazia; desde a Fase 2, chama o motoboy da rota pronta (push
+ * ROTA_PRONTA) e fecha a rota cujos pedidos saíram um a um.
  *
  * A loja de demonstração NÃO é pulada (§4.6): é nela que o simulador ensaia.
  *

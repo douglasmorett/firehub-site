@@ -897,6 +897,8 @@ model CustomerOrder {
   reposicao        Json?
   /// Vai para o topo da produção no KDS, acima da rota prioritária.
   prioridadeNaCozinha Boolean        @default(false)
+  /// A loja tirou o pedido de uma rota automática (desfez a rota ou tirou o pedido dela): o cron não o agrupa mais até o "voltar" (lib/roteirizacao-automatica).
+  semRotaAutomaticaEm DateTime?
   /// Rastro de quem tirou/acrescentou item depois do pedido lançado, em ordem:
   /// [{ quando, quem, acao, descricao, totalAntes, totalDepois }].
   /// Ver lib/edicao-de-pedido.ts. É o contrapeso de deixar apagar item de

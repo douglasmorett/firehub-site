@@ -2,8 +2,8 @@
  * POST /api/store/roteirizacao-automatica/rodar-agora — um ciclo da Rota 100%
  * automatizada AGORA, gravando, sem esperar o cron de 20 s. Para teste (§4.7
  * do plano, vault "FireHub - Plano despacho automático"): devolve o resumo do
- * ciclo — o que foi feito (`aplicadas`), o que fica para a Fase 2
- * (`pendentes`: chamar o motoboy) e o que o banco recusou (`falhas`).
+ * ciclo — o que foi feito (`aplicadas`, chamadas do motoboy inclusive) e o
+ * que o banco recusou (`falhas`).
  *
  * Só com a regra LIGADA e a loja na liberação: desligada, quem quer ver a
  * decisão sem gravar usa a prévia (GET …/previa). 404 fora da liberação, como
