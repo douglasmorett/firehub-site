@@ -166,6 +166,8 @@ export async function POST(req: NextRequest) {
         notes: orderData.extraInfo || "",
         source: "IFOOD",
         ifoodOrderId: actualOrderId,
+        ifoodStoreMerchant: orderData.merchant?.id ?? undefined,
+        ifoodStoreName: orderData.merchant?.name ?? undefined,
         ifoodReference: orderData.displayId || reference || "",
         ifoodPickupCode: ifoodPickupCode ?? undefined,
         discountMerchant,
