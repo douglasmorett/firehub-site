@@ -80,6 +80,54 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
   const [showScanner, setShowScanner] = useState(false);
   const [scannerErro, setScannerErro] = useState("");
   const scannerRef = useRef<any>(null);
+  /**
+   * Rota 100% automatizada (22/10/2026): o pedido puxado tem companhia na
+   * rota e a página pergunta "puxar também?" — é por aqui que o freelancer
+   * sem o app leva a rota no modo "quem escanear primeiro". Só os NÚMEROS dos
+   * outros, como a confirmação do puxar.
+   */
+  const [rotaParaPuxar, setRotaParaPuxar] = useState<{ codigo: string; routeNumber: string; outros: number[] } | null>(null);
+  /** A rota chamada é de outro entregador (ROTA_DE_OUTRO): a mensagem do servidor. */
+  const [rotaDeOutro, setRotaDeOutro] = useState<string | null>(null);
+
+  /** "Sim, puxar todos": o servidor leva a rota inteira e ela sai com ele. */
+  const puxarRotaInteira = async (codigo: string) => {
+    if (!session?.token || puxando) return;
+    setPuxando(true);
+    try {
+      const res = await fetch("/api/motoboys/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.token}` },
+        body: JSON.stringify({ codigo, puxarRota: true }),
+      });
+      const data = await res.json().catch(() => ({} as any));
+      if (res.ok && data.success) {
+        setRotaParaPuxar(null);
+        const quantos = Array.isArray(data.numeros) ? data.numeros.length : 1;
+        setToastMsg(quantos > 1 ? `✅ ${quantos} pedidos são seus. Boa entrega.` : "✅ O pedido é seu. Boa entrega.");
+        setTimeout(() => setToastMsg(null), 3500);
+        fetchMotoboyOrders();
+      } else if (data.precisaLogin) {
+        setRotaParaPuxar(null);
+        setToastMsg("🔑 Sua entrada expirou. Entre de novo.");
+        setTimeout(() => setToastMsg(null), 4000);
+        handleLogout();
+      } else if (data.erro === "ROTA_DE_OUTRO") {
+        setRotaParaPuxar(null);
+        setRotaDeOutro(String(data.error || "Peça para a loja trocar o entregador da rota."));
+      } else {
+        setRotaParaPuxar(null);
+        setToastMsg(`⚠️ ${data.error || "Não consegui puxar a rota. Confirme com a loja."}`);
+        setTimeout(() => setToastMsg(null), 5000);
+      }
+    } catch {
+      // A pergunta fica aberta: tocar de novo tenta de novo.
+      setToastMsg("⚠️ Sem conexão — os outros pedidos NÃO foram puxados. Tente de novo.");
+      setTimeout(() => setToastMsg(null), 4500);
+    } finally {
+      setPuxando(false);
+    }
+  };
 
   /** Puxa o pedido do código confirmado. A autorização é a sessão assinada. */
   const puxarPedido = async (codigo: string) => {
@@ -107,10 +155,16 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
         setToastMsg(data.jaEraSeu ? "✅ Este pedido já era seu!" : `✅ Pedido #${data.numero} é seu! Boa entrega.`);
         setTimeout(() => setToastMsg(null), 3500);
         fetchMotoboyOrders();
+        const outros: number[] = Array.isArray(data.rota?.outros) ? data.rota.outros.map((o: any) => Number(o.numero)) : [];
+        if (data.rota && outros.length > 0) setRotaParaPuxar({ codigo, routeNumber: String(data.rota.routeNumber || "A rota"), outros });
       } else if (data.precisaLogin) {
         setToastMsg("🔑 Sua entrada expirou. Entre de novo.");
         setTimeout(() => setToastMsg(null), 4000);
         handleLogout();
+      } else if (data.erro === "ROTA_DE_OUTRO") {
+        // A rota chamada é de outro entregador: trocar é com a loja.
+        setCodigoPuxar(null);
+        setRotaDeOutro(String(data.error || "Peça para a loja trocar o entregador da rota."));
       } else {
         setToastMsg(`⚠️ ${data.error || "Não consegui puxar. Confirme com a loja."}`);
         setTimeout(() => setToastMsg(null), 5000);
@@ -1903,6 +1957,53 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               disabled={puxando}
               style={{ width: "100%", marginTop: 8, padding: "12px", borderRadius: 12, border: "none", background: "#F1F5F9", color: "#475569", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
             >Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      {/* ── ROTA 100% AUTOMATIZADA: "puxar também?" — de novo só os NÚMEROS
+             dos outros pedidos da rota, que ainda não são dele. ── */}
+      {rotaParaPuxar && session && (
+        <div
+          onClick={() => { if (!puxando) setRotaParaPuxar(null); }}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.85)", backdropFilter: "blur(4px)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: 360, padding: "1.5rem", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+            <div style={{ width: 60, height: 60, borderRadius: "50%", background: "#F5F3FF", color: "#7C3AED", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "0.9rem", fontSize: "1.8rem" }}>🛵</div>
+            <h3 style={{ margin: "0 0 6px", fontSize: "1.2rem", fontWeight: 900, color: "#0F172A" }}>{rotaParaPuxar.routeNumber}</h3>
+            <p style={{ margin: "0 0 1.1rem", fontSize: "0.9rem", color: "#475569" }}>
+              Este pedido tem mais {rotaParaPuxar.outros.length} com ele ({rotaParaPuxar.outros.map((n) => `#${n}`).join(", ")}). Puxar também?
+            </p>
+            <button
+              onClick={() => puxarRotaInteira(rotaParaPuxar.codigo)}
+              disabled={puxando}
+              style={{ width: "100%", padding: "14px", borderRadius: 12, border: "none", background: "linear-gradient(135deg,#7C3AED,#6D28D9)", color: "#fff", fontWeight: 900, fontSize: "1rem", cursor: puxando ? "wait" : "pointer", opacity: puxando ? 0.75 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+            >
+              {puxando ? <><Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /> Puxando…</> : "Sim, puxar todos"}
+            </button>
+            <button
+              onClick={() => setRotaParaPuxar(null)}
+              disabled={puxando}
+              style={{ width: "100%", marginTop: 8, padding: "12px", borderRadius: 12, border: "none", background: "#F1F5F9", color: "#475569", fontWeight: 800, fontSize: "0.9rem", cursor: "pointer" }}
+            >Só este</button>
+          </div>
+        </div>
+      )}
+
+      {/* A rota chamada é de outro entregador: o recado do servidor, e trocar é com a loja. */}
+      {rotaDeOutro && (
+        <div
+          onClick={() => setRotaDeOutro(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.85)", backdropFilter: "blur(4px)", zIndex: 10001, display: "flex", alignItems: "center", justifyContent: "center", padding: "1rem" }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", width: "100%", maxWidth: 360, padding: "1.5rem", textAlign: "center", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)" }}>
+            <div style={{ width: 60, height: 60, borderRadius: "50%", background: "#FEF3C7", color: "#B45309", display: "inline-flex", alignItems: "center", justifyContent: "center", marginBottom: "0.9rem", fontSize: "1.8rem" }}>✋</div>
+            <h3 style={{ margin: "0 0 6px", fontSize: "1.2rem", fontWeight: 900, color: "#0F172A" }}>Esta rota é de outro entregador</h3>
+            <p style={{ margin: "0 0 1.1rem", fontSize: "0.9rem", color: "#475569" }}>{rotaDeOutro}</p>
+            <button
+              onClick={() => setRotaDeOutro(null)}
+              style={{ width: "100%", padding: "13px", borderRadius: 12, border: "none", background: "#0F172A", color: "#fff", fontWeight: 900, fontSize: "0.95rem", cursor: "pointer" }}
+            >Entendi</button>
           </div>
         </div>
       )}

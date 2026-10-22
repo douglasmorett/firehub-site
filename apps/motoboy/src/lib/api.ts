@@ -136,6 +136,25 @@ export type ListaDePedidos = {
   alertaDeTempo?: { amareloAtivo: boolean; amareloMin: number; vermelhoAtivo: boolean; vermelhoMin: number };
 };
 
+/**
+ * POST /api/motoboys/orders { codigo, puxarRota? } — puxar pela comanda.
+ *
+ * `rota` só vem quando o pedido é de uma Rota 100% automatizada com outros
+ * pedidos ainda sem entregador (22/10/2026): só os NÚMEROS deles, como a
+ * folha de puxar — nada do cliente antes de o pedido ser dele. Com
+ * `puxarRota: true` o servidor leva a rota inteira e devolve `numeros`.
+ */
+export type RespostaDoPuxar = {
+  success?: boolean;
+  orderId?: string;
+  numero?: number;
+  jaEraSeu?: boolean;
+  saiuParaEntrega?: boolean;
+  /** Com `puxarRota`: todos os pedidos da rota que agora são dele. */
+  numeros?: number[];
+  rota?: { id: string; routeNumber: string; origem: "AUTO"; outros: { numero: number }[] };
+};
+
 export type RespostaDaBaixa = {
   success?: boolean;
   jaEntregue?: boolean;

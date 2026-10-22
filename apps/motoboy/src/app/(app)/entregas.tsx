@@ -39,7 +39,7 @@ import { Folha } from "@/components/Folha";
 import { FluxoDaEntrega, type ExtraDaBaixa, type ResultadoDaBaixa, type ResultadoDaConferencia } from "@/components/FluxoDaEntrega";
 import { LeitorDeQr } from "@/components/LeitorDeQr";
 import { cor, raio, reais } from "@/components/tema";
-import { chamar, ErroDaApi, type ListaDePedidos, type Pedido, type RespostaDaBaixa } from "@/lib/api";
+import { chamar, ErroDaApi, type ListaDePedidos, type Pedido, type RespostaDaBaixa, type RespostaDoPuxar } from "@/lib/api";
 import { ATUALIZAR_LISTA_MS } from "@/lib/config";
 import { gravarGpsPausado, lerGpsPausado } from "@/lib/guardado";
 import { desligarGps, ligarGps, ouvirEnvios, ouvirForaDoHorario, registrarPosicaoAgora, ultimaPosicaoAceita } from "@/lib/gps";
@@ -261,9 +261,25 @@ export default function Entregas() {
   }, [sessao, avisar]);
 
   // Chegou aviso (com o app aberto) ou ele tocou num aviso: a lista na hora.
+  //
+  // "🛵 Rota #7 pronta na loja" (ROTA_PRONTA, Rota 100% automatizada,
+  // 22/10/2026): tocado, a tela já abre com o leitor — o próximo gesto dele é
+  // escanear a comanda. Com o app aberto quando chega, só atualiza a lista:
+  // abrir a câmera sozinha no meio de uma entrega assustaria.
   useEffect(() => {
+    const abrirOLeitorSeForRota = (r: Notifications.NotificationResponse | null) => {
+      if (r?.notification.request.content.data?.tipo !== "ROTA_PRONTA") return;
+      setLendo(true);
+      // Consumido: voltar a esta tela depois não reabre o leitor.
+      Notifications.clearLastNotificationResponse();
+    };
+    // O app estava FECHADO e abriu pelo toque: a resposta já chegou antes desta tela.
+    abrirOLeitorSeForRota(Notifications.getLastNotificationResponse());
     const recebido = Notifications.addNotificationReceivedListener(() => atualizar());
-    const tocado = Notifications.addNotificationResponseReceivedListener(() => atualizar());
+    const tocado = Notifications.addNotificationResponseReceivedListener((r) => {
+      atualizar();
+      abrirOLeitorSeForRota(r);
+    });
     return () => {
       recebido.remove();
       tocado.remove();
@@ -276,17 +292,62 @@ export default function Entregas() {
     if (!sessao || puxando) return;
     setPuxando(true);
     try {
-      const r = await chamar<any>("/api/motoboys/orders", { metodo: "POST", token: sessao.token, corpo: { codigo } });
+      const r = await chamar<RespostaDoPuxar>("/api/motoboys/orders", { metodo: "POST", token: sessao.token, corpo: { codigo } });
       setCodigoPuxar(null);
       avisar(r.jaEraSeu ? "✅ Este pedido já era seu!" : `✅ Pedido #${r.numero} é seu! Boa entrega.`, "ok");
       atualizar();
+      // Rota 100% automatizada (22/10/2026): o pedido tem companhia na rota.
+      // A pergunta só mostra os NÚMEROS — os outros ainda não são dele.
+      const outros = r.rota?.outros ?? [];
+      if (r.rota && outros.length > 0) {
+        const lista = outros.map((o) => `#${o.numero}`).join(", ");
+        Alert.alert(
+          r.rota.routeNumber,
+          `Este pedido tem mais ${outros.length} com ele (${lista}). Puxar também?`,
+          [
+            { text: "Só este", style: "cancel" },
+            { text: "Sim, puxar todos", onPress: () => puxarARota(codigo) },
+          ],
+        );
+      }
     } catch (e) {
       if (await quandoSessaoCai(e)) return;
-      if (e instanceof ErroDaApi && e.tipo === "rede") {
+      if (e instanceof ErroDaApi && e.corpo?.erro === "ROTA_DE_OUTRO") {
+        // A rota chamada é de outro entregador: trocar é com a loja.
+        setCodigoPuxar(null);
+        Alert.alert("Esta rota é de outro entregador", e.message);
+      } else if (e instanceof ErroDaApi && e.tipo === "rede") {
         avisar("⚠️ Sem conexão — o pedido NÃO foi puxado. Tente de novo.", "erro", 4500);
       } else {
         setCodigoPuxar(null);
         avisar(`⚠️ ${(e as Error)?.message || "Não consegui puxar. Confirme com a loja."}`, "erro", 5000);
+      }
+    } finally {
+      setPuxando(false);
+    }
+  }
+
+  /** "Sim, puxar todos": o servidor leva a rota inteira e ela sai com ele. */
+  async function puxarARota(codigo: string) {
+    if (!sessao) return;
+    setPuxando(true);
+    try {
+      const r = await chamar<RespostaDoPuxar>("/api/motoboys/orders", {
+        metodo: "POST",
+        token: sessao.token,
+        corpo: { codigo, puxarRota: true },
+      });
+      const quantos = r.numeros?.length ?? 1;
+      avisar(quantos > 1 ? `✅ ${quantos} pedidos são seus. Boa entrega.` : "✅ O pedido é seu. Boa entrega.", "ok");
+      atualizar();
+    } catch (e) {
+      if (await quandoSessaoCai(e)) return;
+      if (e instanceof ErroDaApi && e.corpo?.erro === "ROTA_DE_OUTRO") {
+        Alert.alert("Esta rota é de outro entregador", e.message);
+      } else if (e instanceof ErroDaApi && e.tipo === "rede") {
+        avisar("⚠️ Sem conexão — os outros pedidos NÃO foram puxados. Tente de novo.", "erro", 4500);
+      } else {
+        avisar(`⚠️ ${(e as Error)?.message || "Não consegui puxar a rota. Confirme com a loja."}`, "erro", 5000);
       }
     } finally {
       setPuxando(false);
