@@ -13,8 +13,8 @@
  * SEM IMPORTS de propósito (o teste e qualquer rota usam sem banco).
  */
 
-/** Hakim Centro (contatohakim@gmail.com, slug hakim-contato). */
-const LOJAS_COM_ROTEIRIZACAO_AUTOMATICA = new Set<string>(["cmpx96phr0000ujf0sb0qk5vr"]);
+/** Hakim Centro (contatohakim@gmail.com, slug hakim-contato) e a loja de demonstração do Victor (para ensaiar com o simulador). */
+const LOJAS_COM_ROTEIRIZACAO_AUTOMATICA = new Set<string>(["cmpx96phr0000ujf0sb0qk5vr", "cmupkiesh0000ujmcjwtpd706"]);
 
 export function liberadaPara(lojaId: string | null | undefined): boolean {
   return !!lojaId && LOJAS_COM_ROTEIRIZACAO_AUTOMATICA.has(lojaId);
