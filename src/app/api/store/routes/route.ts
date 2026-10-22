@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { criarRotaDaLoja } from "@/lib/rotas-da-loja";
+import { criarRotaDaLoja, pedePrioridadeNaRota } from "@/lib/rotas-da-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -221,6 +221,69 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "ID da rota não informado" }, { status: 400 });
     }
 
+    // ── EDITAR OS PEDIDOS DA ROTA (✏️ Editar do card) ─────────────────────
+    //
+    // Tudo conferido ANTES de qualquer escrita, porque daqui sai pedido do
+    // app do motoboy e entra pedido na rota:
+    //   - a rota é desta loja (não havia conferência nenhuma no PATCH);
+    //   - a rota ainda não saiu: depois de despachada ela é o histórico do
+    //     acerto do entregador (a mesma regra da lixeira, no DELETE) — trocar
+    //     o ENTREGADOR continua liberado, mexer nos pedidos não;
+    //   - a rota não fica vazia (desfazer é a lixeira);
+    //   - quem entra é desta loja, está em aberto e não está em outra rota.
+    let idsDaEdicao: string[] | null = null;
+    if (Array.isArray(orderIds)) {
+      const user = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true },
+      });
+      if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+      const validFranchiseeIds = await getValidFranchiseeIds(user.id);
+
+      const rota = (await prisma.routeSchedule.findFirst({
+        where: { id: routeId, franchiseeId: { in: validFranchiseeIds } },
+        select: { id: true, status: true, dispatchedAt: true, routeNumber: true } as any,
+      })) as unknown as { id: string; status: string; dispatchedAt: Date | null; routeNumber: string } | null;
+      if (!rota) return NextResponse.json({ error: "Rota não encontrada" }, { status: 404 });
+      if (rota.status === "DISPATCHED" || rota.dispatchedAt) {
+        return NextResponse.json(
+          {
+            error: `A ${rota.routeNumber} já saiu com o entregador e os pedidos dela não mudam mais. Se saiu no nome errado, troque o entregador da rota.`,
+            podeTrocarEntregador: true,
+          },
+          { status: 409 },
+        );
+      }
+
+      const ids = [...new Set(orderIds.map((id: unknown) => String(id || "")).filter(Boolean))];
+      if (ids.length === 0) {
+        return NextResponse.json(
+          { error: "A rota não pode ficar sem pedido. Para desfazer a rota inteira, use a lixeira." },
+          { status: 400 },
+        );
+      }
+
+      const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
+      const aceitos = await prisma.customerOrder.findMany({
+        where: {
+          id: { in: ids },
+          franchiseeId: { in: validFranchiseeIds },
+          OR: [
+            { routeId },
+            { routeId: null, status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (aceitos.length !== ids.length) {
+        return NextResponse.json(
+          { error: "Algum pedido não pode entrar nesta rota: já está em outra rota, saiu ou foi cancelado. Feche e abra o editar de novo." },
+          { status: 409 },
+        );
+      }
+      idsDaEdicao = ids;
+    }
+
     const updatedRoute = await prisma.routeSchedule.update({
       where: { id: routeId },
       data: {
@@ -281,37 +344,81 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    // Se orderIds foram atualizados na rota
-    if (Array.isArray(orderIds)) {
+    // Se orderIds foram atualizados na rota (já conferidos lá em cima)
+    if (idsDaEdicao) {
+      const ficam = idsDaEdicao;
+      const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
+      const doMotoboyDaRota = motoboyId || updatedRoute.motoboyId || null;
+      const jaNaRota = await prisma.customerOrder.findMany({ where: { routeId }, select: { id: true } });
+      const novos = ficam.filter((id) => !jaNaRota.some((o) => o.id === id));
+
+      // Quem sai da rota sai também do APP do entregador — a mesma regra da
+      // lixeira (DELETE): só pedido em aberto que a rota pôs lá, nunca o que
+      // o motoboy puxou pelo QR (esse já está com ele na rua).
+      await prisma.customerOrder.updateMany({
+        where: {
+          routeId,
+          id: { notIn: ficam },
+          status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] },
+          motoboyPuxadoEm: null,
+          ...(updatedRoute.motoboyId ? { motoboyId: updatedRoute.motoboyId } : {}),
+        },
+        data: { motoboyId: null, motoboyPuxadoEm: null },
+      });
+
       // Tirado de uma rota AUTOMÁTICA pela loja: o cron não o agrupa de novo
       // (`semRotaAutomaticaEm`, "tirado-pela-loja") até o "voltar" da lista —
       // senão, 20 s depois, ele voltava para uma rota. `origem` é coluna da
       // Fase 0: o client do build a conhece; o `as any` é do client local.
       if ((updatedRoute as any).origem === "AUTO") {
         await (prisma.customerOrder as any).updateMany({
-          where: { routeId, id: { notIn: orderIds } },
+          where: { routeId, id: { notIn: ficam } },
           data: { semRotaAutomaticaEm: new Date() },
         });
       }
 
       // Remove pedidos antigos que saíram da rota
       await prisma.customerOrder.updateMany({
-        where: { routeId, id: { notIn: orderIds } },
+        where: { routeId, id: { notIn: ficam } },
         data: { routeId: null, isRoutePriority: false },
       });
 
-      // Adiciona novos pedidos à rota
-      for (const id of orderIds) {
-        const ord = await prisma.customerOrder.findUnique({ where: { id }, select: { status: true } });
-        const isNotReady = ord && ord.status !== "PRONTO" && ord.status !== "SAIU_ENTREGA" && ord.status !== "ENTREGUE";
-        await prisma.customerOrder.update({
-          where: { id },
-          data: {
-            routeId,
-            motoboyId: motoboyId || undefined,
-            isRoutePriority: !!isNotReady,
-          },
-        });
+      // Adiciona os novos pedidos à rota, com o entregador da rota (se ela já
+      // tem um) e a PRIORIDADE PARA ROTA no KDS se ainda não estiverem prontos.
+      // Quem já estava na rota fica como estava.
+      const entraram = await prisma.customerOrder.findMany({
+        where: { id: { in: novos } },
+        select: { id: true, status: true, dailyOrderNumber: true, customerAddress: true },
+      });
+      await Promise.all(
+        entraram.map((o) =>
+          prisma.customerOrder.update({
+            where: { id: o.id },
+            data: { routeId, motoboyId: doMotoboyDaRota || undefined, isRoutePriority: pedePrioridadeNaRota(o.status) },
+          }),
+        ),
+      );
+
+      // A ordem das paradas: a da lista que a tela mandou (os que ficaram,
+      // depois os que entraram) — o mesmo `routeSequence` da criação. Quem
+      // saiu perde a posição. Coluna fora do schema.prisma, daí o SQL cru.
+      const sairam = jaNaRota.map((o) => o.id).filter((id) => !ficam.includes(id));
+      try {
+        if (sairam.length > 0) {
+          await prisma.$executeRaw`UPDATE "CustomerOrder" SET "routeSequence" = NULL WHERE "id" = ANY(${sairam})`;
+        }
+        await Promise.all(
+          ficam.map((id, i) => prisma.$executeRaw`UPDATE "CustomerOrder" SET "routeSequence" = ${i + 1} WHERE "id" = ${id}`),
+        );
+      } catch (e: any) {
+        console.warn("[Rotas] routeSequence não gravada (coluna ausente?):", e?.message?.slice(0, 120));
+      }
+
+      // Rota com entregador: os que entraram aparecem no app dele agora.
+      if (doMotoboyDaRota && entraram.length > 0) {
+        import("@/lib/app-motoboy/aparelhos")
+          .then((m) => m.avisarPedidosNovos(String(doMotoboyDaRota), entraram, updatedRoute.routeNumber))
+          .catch(() => {});
       }
     }
 

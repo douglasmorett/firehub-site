@@ -501,6 +501,11 @@ export default function RoteirizacaoModal({
   const [aviso, setAviso] = useState<Aviso | null>(null);
   const fecharAviso = useCallback(() => setAviso(null), []);
 
+  // ✏️ Editar do card da rota (antes de despachar): `ids` é a rota como vai
+  // ficar — tirar e incluir mexem só aqui; o Salvar manda para o PATCH.
+  const [rotaEmEdicao, setRotaEmEdicao] = useState<{ routeId: string; ids: string[] } | null>(null);
+  const [salvandoEdicao, setSalvandoEdicao] = useState(false);
+
   // Trava do despacho que vale JÁ no clique. O `isDispatching` é estado do
   // React e só chega ao botão no próximo desenho — e na criação da rota ele
   // nem era ligado: o botão seguia clicável e sem "carregando" durante a
@@ -2640,6 +2645,54 @@ ${mapsUrl}`;
     }
   };
 
+  // ── ✏️ EDITAR A ROTA: TIRAR OU INCLUIR PEDIDO ANTES DE DESPACHAR ────────
+  //
+  // PATCH /api/store/routes com a lista nova. O servidor confere tudo (rota
+  // desta loja, ainda não despachada, não vazia, quem entra está livre) e
+  // tira do app do entregador quem saiu. Quem sai de rota AUTOMÁTICA fica
+  // "✋ fora da automática" na lista até o "voltar".
+  const salvarEdicaoDaRota = async () => {
+    if (!rotaEmEdicao || salvandoEdicao) return;
+    const rota = createdRoutes.find((r) => r.id === rotaEmEdicao.routeId);
+    if (!rota) { setRotaEmEdicao(null); return; }
+    const { ids } = rotaEmEdicao;
+    if (ids.length === 0) {
+      setAviso({ tipo: "atencao", titulo: "A rota não pode ficar vazia", detalhe: "Para desfazer a rota inteira, use a lixeira 🗑️ do card." });
+      return;
+    }
+    const antes = rota.orders.map((o) => o.id);
+    const numero = (id: string) => `#${getOrderDisplayNumber(orders.find((o: any) => o.id === id) || rota.orders.find((o) => o.id === id) || { id })}`;
+    const sairam = antes.filter((id) => !ids.includes(id));
+    const entraram = ids.filter((id) => !antes.includes(id));
+    if (sairam.length === 0 && entraram.length === 0) { setRotaEmEdicao(null); return; }
+    setSalvandoEdicao(true);
+    try {
+      const res = await fetch("/api/store/routes", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routeId: rota.id, orderIds: ids }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setAviso({ tipo: "erro", titulo: "A rota não foi alterada", detalhe: err.error || "Não consegui salvar a rota agora. Tente de novo." });
+        return;
+      }
+      setRotaEmEdicao(null);
+      await recarregarRotas();
+      if (onRefreshOrders) onRefreshOrders();
+      const partes = [
+        sairam.length ? `Saíram: ${sairam.map(numero).join(", ")}.` : "",
+        entraram.length ? `Entraram: ${entraram.map(numero).join(", ")}.` : "",
+        sairam.length && rota.origem === "AUTO" ? "Quem saiu não volta para a rota automática sozinho: use “voltar” na lista de pendentes." : "",
+      ];
+      setAviso({ tipo: "ok", titulo: `${rota.routeNumber} atualizada`, detalhe: partes.filter(Boolean).join(" ") });
+    } catch (err: any) {
+      setAviso({ tipo: "erro", titulo: "A rota não foi alterada", detalhe: err?.message || String(err) });
+    } finally {
+      setSalvandoEdicao(false);
+    }
+  };
+
   return (
     <div style={{
       position: "fixed", inset: 0, zIndex: 99999, background: "rgba(15, 23, 42, 0.75)",
@@ -2647,6 +2700,124 @@ ${mapsUrl}`;
       padding: modoIndependente ? 0 : "1rem"
     }}>
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
+      {/* ─── ✏️ EDITAR A ROTA (tirar / incluir pedido antes de despachar) ─── */}
+      {rotaEmEdicao && (() => {
+        const rota = createdRoutes.find((r) => r.id === rotaEmEdicao.routeId);
+        // A lista chega a cada 4 s: a rota pode ter saído (QR, outro aparelho)
+        // ou sido desfeita enquanto o editar estava aberto.
+        const travada = !rota || rotaJaDespachada(rota);
+        const { ids } = rotaEmEdicao;
+        // Os que podem entrar: os mesmos pendentes da lista (de entrega, sem
+        // rota, não saíram), mais os que acabaram de ser tirados desta rota.
+        const livres = deliveryOrders.filter(
+          (o: any) => !o.__jaDespachado && !createdRoutes.some((r) => r.orders.some((ro) => ro.id === o.id)),
+        );
+        const candidatos = [...(rota?.orders || []), ...livres].filter((o) => !ids.includes(o.id));
+        const pedido = (id: string): any => orders.find((o: any) => o.id === id) || rota?.orders.find((o) => o.id === id) || { id };
+        const linha = (o: any, botao: React.ReactNode) => {
+          const addr = o.customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`.trim();
+          const bairro = (bairrosDaLoja?.length
+            ? bairroPeloEndereco(addr, bairrosDaLoja, { cidades: [storeCity] })?.name
+            : null) || (addr ? parseAddressDetails(addr).neighborhood : "");
+          const min = o.createdAt ? Math.max(0, Math.floor((Date.now() - new Date(o.createdAt).getTime()) / 60000)) : null;
+          return (
+            <div key={o.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: "1px solid #F1F5F9" }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 900, fontSize: "0.86rem", color: "#0F172A" }}>
+                  #{getOrderDisplayNumber(o)}
+                  {bairro ? <span style={{ fontWeight: 700, color: "#92400E" }}> · {bairro}</span> : null}
+                  {min !== null ? <span style={{ fontWeight: 700, color: "#64748B" }}> · há {min} min</span> : null}
+                </div>
+                <div style={{ fontSize: "0.74rem", color: "#64748B", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  📍 {addr || "Endereço a confirmar"}
+                </div>
+              </div>
+              {botao}
+            </div>
+          );
+        };
+        const estiloDoBotao = (cor: string, fundo: string): React.CSSProperties => ({
+          padding: "5px 10px", borderRadius: "6px", border: `1.5px solid ${cor}`, background: fundo, color: cor,
+          fontWeight: 800, fontSize: "0.76rem", cursor: travada ? "not-allowed" : "pointer", fontFamily: "inherit", flexShrink: 0,
+        });
+        const mudar = (proximos: string[]) => setRotaEmEdicao({ routeId: rotaEmEdicao.routeId, ids: proximos });
+        return (
+          <div
+            onClick={() => !salvandoEdicao && setRotaEmEdicao(null)}
+            style={{ position: "fixed", inset: 0, zIndex: 100001, background: "rgba(15, 23, 42, 0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              onClick={(e) => e.stopPropagation()}
+              style={{ width: "min(480px, 100%)", maxHeight: "85vh", display: "flex", flexDirection: "column", background: "#FFFFFF", borderRadius: 14, boxShadow: "0 20px 50px rgba(15,23,42,.3)", overflow: "hidden" }}
+            >
+              <div style={{ padding: "14px 16px", borderBottom: "1px solid #E2E8F0" }}>
+                <div style={{ fontWeight: 900, fontSize: "1rem", color: "#0F172A" }}>✏️ Editar {rota?.routeNumber || "rota"}</div>
+                {travada ? (
+                  <div style={{ fontSize: "0.78rem", color: "#B45309", marginTop: 4, fontWeight: 700 }}>
+                    Esta rota já saiu com o entregador (ou foi desfeita) e não dá mais para mexer nos pedidos dela.
+                  </div>
+                ) : rota?.origem === "AUTO" ? (
+                  <div style={{ fontSize: "0.76rem", color: "#5B21B6", marginTop: 4 }}>
+                    Quem você tirar fica ✋ fora da rota automática até você tocar em “voltar” na lista de pendentes.
+                  </div>
+                ) : null}
+              </div>
+
+              <div style={{ flex: 1, overflowY: "auto", padding: "8px 16px" }}>
+                <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.05em", marginTop: 6 }}>
+                  Na rota ({ids.length})
+                </div>
+                {ids.length === 0 ? (
+                  <p style={{ fontSize: "0.78rem", color: "#B45309", margin: "6px 0" }}>A rota não pode ficar vazia. Para desfazer a rota inteira, use a lixeira 🗑️.</p>
+                ) : (
+                  ids.map((id) => linha(pedido(id), (
+                    <button type="button" disabled={travada || salvandoEdicao} onClick={() => mudar(ids.filter((x) => x !== id))} style={estiloDoBotao("#DC2626", "#FEF2F2")}>
+                      Tirar
+                    </button>
+                  )))
+                )}
+
+                <div style={{ fontSize: "0.7rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.05em", marginTop: 14 }}>
+                  Podem entrar ({candidatos.length})
+                </div>
+                {candidatos.length === 0 ? (
+                  <p style={{ fontSize: "0.78rem", color: "#94A3B8", margin: "6px 0" }}>Nenhum pedido pendente sem rota agora.</p>
+                ) : (
+                  candidatos.map((o) => linha(pedido(o.id), (
+                    <button type="button" disabled={travada || salvandoEdicao} onClick={() => mudar([...ids, o.id])} style={estiloDoBotao("#0F766E", "#F0FDFA")}>
+                      Incluir
+                    </button>
+                  )))
+                )}
+              </div>
+
+              <div style={{ display: "flex", gap: 8, padding: "12px 16px", borderTop: "1px solid #E2E8F0", background: "#F8FAFC" }}>
+                <button
+                  type="button"
+                  disabled={salvandoEdicao}
+                  onClick={() => setRotaEmEdicao(null)}
+                  style={{ flex: 1, padding: "9px", borderRadius: "8px", border: "1.5px solid #CBD5E1", background: "#FFFFFF", color: "#334155", fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  disabled={travada || salvandoEdicao}
+                  onClick={salvarEdicaoDaRota}
+                  style={{
+                    flex: 2, padding: "9px", borderRadius: "8px", border: "none", background: travada ? "#94A3B8" : "#0F766E",
+                    color: "#FFFFFF", fontWeight: 900, fontSize: "0.82rem", cursor: travada ? "not-allowed" : "pointer", fontFamily: "inherit",
+                  }}
+                >
+                  {salvandoEdicao ? "Salvando…" : "Salvar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {/* ─── CONFIRMAÇÃO DO LOTE (no topo, sem confirm() do navegador) ─── */}
       {confirmacaoDoLote && (() => {
         const n = confirmacaoDoLote.ids.length;
@@ -3177,8 +3348,11 @@ ${mapsUrl}`;
                           boxShadow: "0 2px 6px rgba(0,0,0,0.03)"
                         }}
                       >
-                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: "0.5rem" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        {/* flex-wrap nas duas linhas: com "🤖 Automática" e "Ver no
+                            mapa" ao lado, o selo "⏳ Aguardando Despacho" estourava
+                            o card à direita na largura da lista. Agora desce. */}
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexWrap: "wrap", gap: 6, marginBottom: "0.5rem" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", minWidth: 0 }}>
                             {/* Route Color Marker */}
                             <div style={{
                               width: "16px", height: "16px", borderRadius: "50%",
@@ -3354,6 +3528,24 @@ ${mapsUrl}`;
                               }}
                             >
                               <Navigation size={14} /> 🚀 Despachar Rota
+                            </button>
+                          )}
+
+                          {/* Tirar ou incluir pedido: só antes de despachar (depois
+                              dela sair, a rota é o histórico do acerto). */}
+                          {!isDispatched && (
+                            <button
+                              type="button"
+                              onClick={() => setRotaEmEdicao({ routeId: route.id, ids: route.orders.map((o) => o.id) })}
+                              title="Tirar ou incluir pedido nesta rota"
+                              style={{
+                                flex: 1, padding: "8px", border: "1.5px solid #1C1917",
+                                borderRadius: "8px", background: "#FFFFFF", color: "#1C1917",
+                                fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                                display: "flex", alignItems: "center", justifyContent: "center", gap: 4
+                              }}
+                            >
+                              ✏️ Editar
                             </button>
                           )}
 
