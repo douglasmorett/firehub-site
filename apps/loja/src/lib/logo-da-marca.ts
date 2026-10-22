@@ -8,6 +8,7 @@ import { marca } from "./marca";
 
 const logos: Record<string, number> = {
   hakim: require("../../marcas/hakim/icon.png"),
+  "gusto-divino": require("../../marcas/gusto-divino/icon.png"),
 };
 
 export const logoDaMarca: number | { uri: string } | null =

@@ -25,6 +25,25 @@
         "MARCA": "hakim"
       },
       "environment": "production"
+    },
+    "teste-gusto-divino": {
+      "extends": "base",
+      "distribution": "internal",
+      "env": {
+        "MARCA": "gusto-divino"
+      },
+      "android": {
+        "buildType": "apk"
+      },
+      "environment": "preview"
+    },
+    "producao-gusto-divino": {
+      "extends": "base",
+      "autoIncrement": true,
+      "env": {
+        "MARCA": "gusto-divino"
+      },
+      "environment": "production"
     }
   },
   "submit": {

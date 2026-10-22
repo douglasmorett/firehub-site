@@ -1,0 +1,25 @@
+{
+  "id": "gusto-divino",
+  "nome": "Gusto Divino",
+  "nomeNaLoja": "GUSTO DIVINO",
+  "bundleId": "br.com.gustodivino.app",
+  "esquema": "gustodivino",
+  "site": "https://firehubfood.com.br",
+  "paginaInicial": "/loja/gusto-divino",
+  "logo": "https://firehubfood.com.br/uploads/lojas/1792631295834-4e9cdf13-IMG_3951.webp",
+  "dominiosDaLoja": [
+    "firehubfood.com.br",
+    "www.firehubfood.com.br"
+  ],
+  "cor": "#111820",
+  "corDoTexto": "#D9925A",
+  "corDoIconeAndroid": "#111820",
+  "contato": {
+    "whatsapp": "5535997695904",
+    "telefone": "(35) 99769-5904",
+    "instagram": "",
+    "endereco": "Rua Manuel Antônio Soares de Souza, 35 — Villagio D'Italia, Passos/MG"
+  },
+  "privacidade": "https://firehubfood.com.br/privacidade-app",
+  "easProjectId": ""
+}
