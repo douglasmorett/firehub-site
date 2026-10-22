@@ -344,9 +344,12 @@ async function secaoDispatch() {
   confere("a NFC-e só é disparada para os ids da loja", idsFiscais, ["meu"]);
   const fonteDispatch = leRota("motoboys/dispatch-whatsapp/route.ts");
   verdade("o updateMany filtra por franchiseeId/OR da loja", /updateMany\(\{\s*where:\s*\{\s*id:\s*\{\s*in:\s*idsDaLoja\s*\},\s*\.\.\.daLojaEDespachavel/.test(fonteDispatch));
+  // A trava mora em lib/despacho-da-rota.ts desde a Rota 100% automatizada (22/10/2026):
+  // o /dispatch resolve a loja e chama despacharRota, que exige rota e motoboy da loja.
   const fonteRota = leRota("store/routes/dispatch/route.ts");
-  verdade("routes/dispatch carrega o usuário e exige a rota da loja", fonteRota.includes("user.ownerId || user.id") && fonteRota.includes("routeSchedule.findFirst") && fonteRota.includes("...daLoja"));
-  verdade("routes/dispatch exige o motoboy da loja", fonteRota.includes("motoboy.findFirst") && fonteRota.includes("String(finalMotoboyId), ...daLoja"));
+  const fonteLib = readFileSync(join(RAIZ, "src", "lib", "despacho-da-rota.ts"), "utf8");
+  verdade("routes/dispatch carrega o usuário e exige a rota da loja", fonteRota.includes("user.ownerId || user.id") && fonteRota.includes("despacharRota({ lojaId") && fonteLib.includes("routeSchedule.findFirst") && fonteLib.includes("...daLoja"));
+  verdade("routes/dispatch exige o motoboy da loja", fonteLib.includes("motoboy.findFirst") && fonteLib.includes("String(finalMotoboyId), ...daLoja"));
 }
 
 // ── 9. produto avulso é só do titular ────────────────────────────────────────
