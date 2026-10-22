@@ -97,9 +97,12 @@ export default async function StoreCardapioPage() {
   }
 
 
-  // Multimarcas: só o dono contrata (funcionário não abre a tela; admin vê todas as lojas).
-  const mostrarMultimarcas = user.role === "FRANCHISEE";
-  const multimarcasAtivo = mostrarMultimarcas ? await multimarcasEstaLigado(targetFranchiseeId) : false;
+  // Multimarcas: o dono vê o convite (contratar é dele); o funcionário do
+  // cardápio só vê a faixa com o módulo ativo, para montar as marcas
+  // (lib/multimarcas/sessao.ts). Admin vê todas as lojas: sem faixa.
+  const podeVerMultimarcas = user.role === "FRANCHISEE" || user.role === "STAFF";
+  const multimarcasAtivo = podeVerMultimarcas ? await multimarcasEstaLigado(targetFranchiseeId) : false;
+  const mostrarMultimarcas = user.role === "FRANCHISEE" || (user.role === "STAFF" && multimarcasAtivo);
   const slugDaLoja = mostrarMultimarcas && multimarcasAtivo
     ? (await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { slug: true } }).catch(() => null))?.slug ?? null
     : null;

@@ -827,7 +827,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     const aplicativo = await cobrancaDoAppNoMes(franchiseeId, monthStart, monthEnd);
     if (aplicativo > 0) {
       taxasExtras += aplicativo;
-      linhasExtras.push(`Aplicativo da loja R${aplicativo.toFixed(2)}`);
+      linhasExtras.push(`Aplicativo da loja R$${aplicativo.toFixed(2)}`);
     }
     // Multimarcas: a página das marcas da mesma cozinha (lib/multimarcas/assinatura.ts),
     // R$ 97 À PARTE da mensalidade de cada loja; ativo em algum dia do mês = o mês inteiro.
@@ -835,7 +835,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
     const multimarcas = await cobrancaDoMultimarcasNoMes(franchiseeId, monthStart, monthEnd);
     if (multimarcas > 0) {
       taxasExtras += multimarcas;
-      linhasExtras.push(`Multimarcas R${multimarcas.toFixed(2)}`);
+      linhasExtras.push(`Multimarcas R$${multimarcas.toFixed(2)}`);
     }
   }
 
