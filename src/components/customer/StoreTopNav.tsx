@@ -1853,9 +1853,15 @@ export default function StoreTopNav({
         </div>
 
         <div className="fh-topo-atalhos" style={{ display:"flex", alignItems:"center", gap:"0.35rem", flexWrap:"wrap" }}>
-          {/* Saiu o botão "Indique e Ganhe": o programa de indicação aberto a
-              qualquer lojista foi encerrado. Embaixador agora é cadastrado à mão
-              pela equipe, e quem quiser se candidatar usa /seja-embaixador. */}
+          {/* "Indique e ganhe" entre lojistas (lib/indique-e-ganhe.ts): R$ 100 por
+              indicado que paga a 1ª mensalidade e isenção a partir de 10. Leva à
+              página que explica tudo (Douglas, 22/10/2026). O antigo, de
+              embaixador, segue fechado: candidatura em /seja-embaixador. */}
+          {!isAdmin && (
+            <a href="/store/indique-e-ganhe" title="Indique o FireHub e ganhe desconto na mensalidade" style={{ display:"inline-flex", alignItems:"center", gap:5, padding:"0.38rem 0.65rem", borderRadius:8, background:"#fff", color:"#C2410C", fontWeight:800, fontSize:"0.72rem", textDecoration:"none", whiteSpace:"nowrap", border:"1px solid rgba(255,255,255,0.3)" }}>
+              🎁 Indique e ganhe
+            </a>
+          )}
           {/* O vídeo de como usar a tela aberta. Some sozinho em tela sem vídeo
               (lib/tutoriais.ts) — por isso mora aqui, uma vez, e não em cada página. */}
           <TutorialDaTela />

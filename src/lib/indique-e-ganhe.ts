@@ -5,7 +5,7 @@
  * restaurante pelo link da loja dele. Quando a loja indicada PAGA a primeira
  * mensalidade, quem indicou ganha R$ 100,00 de desconto na PRÓXIMA mensalidade.
  * O indicado não ganha nada. E quem passa de 10 indicados ativos e pagantes
- * (11 ou mais) fica isento da mensalidade de UMA loja enquanto continuar assim.
+ * (10 ou mais) fica isento da mensalidade de UMA loja enquanto continuar assim.
  *
  * ── O QUE ISTO NÃO É ────────────────────────────────────────────────────────
  *
@@ -24,7 +24,7 @@
  * (`accountGroupId || id`). O link de qualquer loja da conta grava a indicação
  * na principal, e é na mensalidade da principal que o crédito abate e que a
  * isenção vale. É o que faz "isento de 1 loja" ter uma resposta só: a conta
- * com três lojas e 11 indicados fica sem a mensalidade da principal; as
+ * com três lojas e 10 indicados fica sem a mensalidade da principal; as
  * filiais continuam pagando as delas.
  *
  * Este arquivo não importa banco de propósito: o teste
@@ -35,8 +35,8 @@ import { mensalidadeDoCiclo, type CicloNasRegras } from "./parceiro/regras";
 /** O desconto por loja indicada que pagou a primeira mensalidade. */
 export const VALOR_DO_CREDITO = 100;
 
-/** "Mais de 10": a partir de 11 indicados ativos e pagantes a mensalidade da loja principal sai zerada. */
-export const INDICADOS_PARA_ISENCAO = 11;
+/** A partir de 10 indicados ativos e pagantes a mensalidade da loja principal sai zerada (Douglas, 22/10/2026: era "mais de 10"). */
+export const INDICADOS_PARA_ISENCAO = 10;
 
 /** O parâmetro do link. Diferente do `ref` do embaixador para nunca colidir com ele. */
 export const PARAMETRO_DO_LINK = "indicacao";
@@ -215,7 +215,7 @@ export function previsaoDoAbatimento(creditos: CreditoDaIndicacao[], mensalidade
   return c2(Math.min(saldoTotal(creditos), Math.max(0, mensalidade || 0)));
 }
 
-// ── A isenção: mais de 10 indicados ativos e pagantes ───────────────────────
+// ── A isenção: a partir de 10 indicados ativos e pagantes ───────────────────────
 
 export type IndicadaNaContagem = {
   id: string;

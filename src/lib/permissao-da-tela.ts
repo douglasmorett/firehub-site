@@ -63,6 +63,9 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/cardapio", abre: ["cardapio"] },
 
   { prefixo: "/store/financeiro", abre: ["financeiro"] },
+  // Indique e ganhe: a explicação abre para qualquer funcionário; o link e os
+  // números vêm de /api/store/indique-e-ganhe, que segue a regra do Financeiro.
+  { prefixo: "/store/indique-e-ganhe", abre: LIVRE },
   // A cozinha consulta todo dia o que deixar pronto (Douglas, 18/10/2026). Só
   // quantidade de lanche — nada de valor.
   { prefixo: "/store/antecipacao", abre: ["kds", "relatorios", "financeiro"] },

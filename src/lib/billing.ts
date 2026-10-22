@@ -750,7 +750,7 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
   // iam junto (ver o bloco de taxas extras abaixo).
   //
   // INDIQUE E GANHE (lib/indique-e-ganhe.ts): a loja principal de uma conta
-  // com mais de 10 indicados ativos e pagantes não paga a mensalidade dela
+  // a partir de 10 indicados ativos e pagantes não paga a mensalidade dela
   // enquanto a condição durar — conferida a cada fechamento, então cair para
   // 10 volta a cobrar no mês seguinte. Só a MENSALIDADE: tráfego pago, totem,
   // Bill e loja extra continuam no boleto, como no teste.
@@ -1117,7 +1117,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
   }
 
   // Indique e Ganhe (lib/indique-e-ganhe.ts): a mesma conta do fechamento —
-  // isenta com mais de 10 indicados ativos e pagantes, e o saldo de créditos
+  // isenta a partir de 10 indicados ativos e pagantes, e o saldo de créditos
   // abatendo a mensalidade (nunca as taxas). Só prevê: quem grava o uso do
   // crédito é o fechamento.
   const loja = { id: franchiseeId, accountGroupId: user?.accountGroupId ?? null };

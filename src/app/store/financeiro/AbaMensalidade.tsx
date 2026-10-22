@@ -181,7 +181,7 @@ export default function AbaMensalidade({ ciclo, tz }: { ciclo: VisaoDoCiclo | nu
           {(ciclo.taxas?.aplicativo || 0) > 0 && linha("Aplicativo da loja (Play Store / App Store)", fmtR(ciclo.taxas.aplicativo || 0), "Plano ativado com a FireHub; cobrado inteiro no mês em que fica ativo")}
           {(ciclo.taxas?.multimarcas || 0) > 0 && linha("Multimarcas (página das suas marcas)", fmtR(ciclo.taxas.multimarcas || 0), "À parte da mensalidade; cobrado inteiro no mês em que ficou ativo depois dos 7 dias grátis (termo aceito ao ativar)")}
           {(ciclo.amountOffset || 0) > 0 && linha("Já abatido por pagamentos online", `- ${fmtR(Math.min(ciclo.amountOffset, mensalidade))}`)}
-          {ciclo.indiqueEGanhe?.isenta && linha("Mensalidade isenta (Indique e Ganhe)", fmtR(0), `${ciclo.indiqueEGanhe.ativosPagantes} restaurantes indicados ativos e pagantes — vale enquanto forem mais de 10`)}
+          {ciclo.indiqueEGanhe?.isenta && linha("Mensalidade isenta (Indique e Ganhe)", fmtR(0), `${ciclo.indiqueEGanhe.ativosPagantes} restaurantes indicados ativos e pagantes — vale enquanto forem 10 ou mais`)}
           {(ciclo.indiqueEGanhe?.abate || 0) > 0 && linha(
             "Desconto Indique e Ganhe",
             `- ${fmtR(ciclo.indiqueEGanhe.abate)}`,

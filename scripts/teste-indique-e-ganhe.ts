@@ -1,7 +1,7 @@
 /**
  * Teste do Indique e Ganhe entre lojistas (lib/indique-e-ganhe.ts): quem pode
  * indicar, o gatilho do crédito, o abatimento na próxima mensalidade e a
- * isenção com mais de 10 indicados ativos e pagantes. Sem banco. Rodar:
+ * isenção a partir de 10 indicados ativos e pagantes. Sem banco. Rodar:
  *
  * JITI_ALIAS='{"@":"<worktree>/src"}' node node_modules/jiti/lib/jiti-cli.mjs scripts/teste-indique-e-ganhe.ts
  */
@@ -95,14 +95,15 @@ const pago = (ym: string) => ciclo(ym, { status: "PAID", amountPending: 0, paidA
 const ativa = (id: string): IndicadaNaContagem => ({ id, role: "FRANCHISEE", trialEndsAt: "2026-09-01", ciclos: [pago("2026-10")] });
 const hoje = new Date("2026-12-01T06:00:00Z");
 
-const dez = Array.from({ length: 10 }, (_, i) => ativa(`l${i}`));
-confere("10 ativos pagantes → cobra", isentaPorIndicacoes(indicadosAtivosPagantes(dez, hoje)), false);
-const onze = [...dez, ativa("l10")];
-confere("11 ativos pagantes → isento", isentaPorIndicacoes(indicadosAtivosPagantes(onze, hoje)), true);
+// A partir de 10 (Douglas, 22/10/2026; era "mais de 10").
+const nove = Array.from({ length: 9 }, (_, i) => ativa(`l${i}`));
+confere("9 ativos pagantes → cobra", isentaPorIndicacoes(indicadosAtivosPagantes(nove, hoje)), false);
+const dez = [...nove, ativa("l9")];
+confere("10 ativos pagantes → isento", isentaPorIndicacoes(indicadosAtivosPagantes(dez, hoje)), true);
 
 // Boleto de outubro vencido (venceu 05/11) e não pago: sai da conta.
 const emAtraso: IndicadaNaContagem = { id: "l10", role: "FRANCHISEE", trialEndsAt: "2026-08-01", ciclos: [pago("2026-09"), ciclo("2026-10", {})] };
-confere("11 com um em atraso → cobra", isentaPorIndicacoes(indicadosAtivosPagantes([...dez, emAtraso], hoje)), false);
+confere("10 com um em atraso → cobra", isentaPorIndicacoes(indicadosAtivosPagantes([...nove, emAtraso], hoje)), false);
 
 // O boleto de novembro acabou de sair (vence 05/12): a VENCER não tira ninguém.
 const aVencer: IndicadaNaContagem = { id: "l10", role: "FRANCHISEE", trialEndsAt: "2026-08-01", ciclos: [pago("2026-10"), ciclo("2026-11", {})] };

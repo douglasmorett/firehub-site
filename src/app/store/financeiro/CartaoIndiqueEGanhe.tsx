@@ -68,7 +68,7 @@ export default function CartaoIndiqueEGanhe() {
       </h2>
       <p style={{ margin: 0, fontSize: "0.88rem", color: "#475569" }}>
         Ganhe {fmtR(dados.valorDoCredito)} de desconto na sua mensalidade para cada restaurante indicado que pagar a primeira mensalidade.
-        Com mais de {meta - 1} indicados ativos e pagantes, você fica isento da mensalidade{dados.lojaPrincipal ? " da loja principal" : ""}.
+        A partir de {meta} indicados ativos e pagantes, você fica isento da mensalidade{dados.lojaPrincipal ? " da loja principal" : ""}.
       </p>
       {dados.lojaPrincipal && (
         <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "#64748B" }}>
