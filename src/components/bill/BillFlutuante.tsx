@@ -43,9 +43,9 @@ export default function BillFlutuante({ ligadoInicial }: { ligadoInicial: boolea
     return () => window.removeEventListener(EVENTO_BILL_LIGADO, ouvir);
   }, []);
 
-  // Na tela do KDS (TV da cozinha) a bolinha ficava em cima dos cartões:
+  // Nas telas do KDS (TV da cozinha) a bolinha ficava em cima dos cartões:
   // o toque no pedido abria o Bill em vez de dar pronto.
-  if (!ligado || caminho?.startsWith("/store/bill") || caminho?.startsWith("/store/kds/tela")) return null;
+  if (!ligado || caminho?.startsWith("/store/bill") || caminho?.startsWith("/store/kds")) return null;
 
   return (
     <>
