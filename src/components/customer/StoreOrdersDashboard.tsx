@@ -719,9 +719,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
         : decorrido;
   const timerColor = isLate ? PALETA.grave : isUrgent ? PALETA.atencao : PALETA.areiaTinta;
 
-  // O finalizado também arrasta, mas só para Cancelado, e com trava
-  // (handleDrop → janela de cancelamento).
-  const canDrag = order.status !== "CANCELADO" && order.status !== "ENCERRADO";
+  // Finalizado e Cancelado também arrastam: para Cancelado (finalizado) com a
+  // trava de escrever "cancelar", e de volta para qualquer coluna com a
+  // pergunta "tem certeza?" (handleDrop → voltaDoArrasto).
+  const canDrag = order.status !== "ENCERRADO";
 
   const isAiCreating = order.status === "CRIANDO_IA";
   const cardBackground = isDragging
@@ -1806,6 +1807,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
   /** Pedido cancelado arrastado para Entregue: a pergunta antes de trocar. */
   const [entregueDoArrasto, setEntregueDoArrasto] = useState<any | null>(null);
+  /** Pedido finalizado/cancelado arrastado de volta: espera o "sim" da pessoa. */
+  const [voltaDoArrasto, setVoltaDoArrasto] = useState<{ order: any; status: string; coluna: string } | null>(null);
+  const pedirVoltaDoArrasto = (order: any, columnId: string) => {
+    const status = columnId === "col-prontos" ? "PRONTO" : columnId === "col-transporte" ? "SAIU_ENTREGA" : "PREPARANDO";
+    const coluna = columnId === "col-prontos" ? "Prontos" : columnId === "col-transporte" ? "Em Transporte" : "Em Produção";
+    setVoltaDoArrasto({ order, status, coluna });
+  };
   const [cancelReason, setCancelReason] = useState("");
   // Trava do cancelamento de pedido FINALIZADO: só sai escrevendo "cancelar".
   const [travaDoCancelamento, setTravaDoCancelamento] = useState("");
@@ -3702,13 +3710,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
-    // Pedido FINALIZADO só vai para Cancelado, e pela janela com a trava de
-    // escrever "cancelar". Voltar para outra coluna reabriria o pedido e
-    // repetiria os efeitos da entrega (WhatsApp, nota, faturamento).
+    // Pedido FINALIZADO vai para Cancelado pela janela com a trava de escrever
+    // "cancelar"; para qualquer outra coluna, só depois da pergunta "tem
+    // certeza?" (voltaDoArrasto) — voltar é contra-intuitivo e não pode ser
+    // um arrasto sem querer (Douglas, 21/10/2026).
     if (finalizadoPedeTrava(order)) {
       if (columnId === "col-finalizado") return;
       if (columnId !== "col-cancelados") {
-        showToast("Pedido finalizado só pode ir para Cancelado.", "#B45309");
+        pedirVoltaDoArrasto(order, columnId);
         return;
       }
       if (order.tableSessionId) {
@@ -3718,6 +3727,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       setCancelConfirmId(order.id);
       setCancelReason("");
       setTravaDoCancelamento("");
+      return;
+    }
+
+    // Cancelado arrastado para uma coluna de trabalho (Produção, Prontos,
+    // Transporte): volta com a pergunta. Para Entregue vale a regra própria abaixo.
+    if (ehPedidoCancelado(order.status) && columnId !== "col-finalizado" && columnId !== "col-cancelados") {
+      pedirVoltaDoArrasto(order, columnId);
       return;
     }
 
@@ -4251,6 +4267,35 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           a integração ligada e com falha recente). */}
       <AvisosDaFoody />
       {/* MODAL CANCELAR PEDIDO */}
+      {voltaDoArrasto && (() => {
+        const { order: p, status, coluna } = voltaDoArrasto;
+        const cancelado = ehPedidoCancelado(p.status);
+        const doParceiro = Boolean(p.ifoodOrderId || p.openDeliveryOrderId);
+        const fechar = () => setVoltaDoArrasto(null);
+        return (
+          <div role="dialog" aria-modal="true" onClick={fechar}
+            style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: "#FFF", borderRadius: 14, padding: 18, width: "min(440px, 100%)", boxShadow: "0 20px 50px rgba(0,0,0,0.25)", fontFamily: "system-ui, sans-serif" }}>
+              <div style={{ fontSize: "0.78rem", color: "#64748B", marginBottom: 6 }}>
+                Pedido #{p.dailyOrderNumber ?? ""} — {p.customerName || ""}
+              </div>
+              <div style={{ fontWeight: 700, fontSize: "1rem", color: "#1C1917", marginBottom: 8 }}>
+                Esse pedido já foi {cancelado ? "cancelado" : "finalizado"}. Tem certeza que quer colocar ele de volta em {coluna}?
+              </div>
+              {doParceiro && (
+                <div style={{ fontSize: "0.8rem", color: "#B45309", marginBottom: 8 }}>
+                  📱 {nomeDoCanal(p)}: o app deles pode não aceitar a volta. Se recusar, aparece um aviso aqui.
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+                <button onClick={fechar} style={{ padding: "8px 16px", borderRadius: 10, border: "1px solid #E7E5E4", background: "#fff", cursor: "pointer", fontWeight: 600 }}>Não</button>
+                <button onClick={() => { fechar(); updateStatus(p.id, status); }}
+                  style={{ padding: "8px 16px", borderRadius: 10, border: "none", background: "#1C1917", color: "#fff", cursor: "pointer", fontWeight: 700 }}>Sim, voltar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       {entregueDoArrasto && (
         <div role="dialog" aria-modal="true" onClick={() => setEntregueDoArrasto(null)}
           style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.55)", zIndex: 10000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>

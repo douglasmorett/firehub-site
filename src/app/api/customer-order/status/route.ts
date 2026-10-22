@@ -285,9 +285,17 @@ export async function PUT(req: Request) {
   }
 
   // ── Auto-set KDS stage ──
+  // Pedido ENTREGUE/CANCELADO que o painel reabre (arrastado de volta, com
+  // confirmação): sai do fim de linha — o KDS volta à produção e o carimbo de
+  // entrega/cancelamento deixa de valer (Douglas, 21/10/2026).
+  const reabre = ["ENTREGUE", "CANCELADO"].includes(order.status) && !["ENTREGUE", "CANCELADO"].includes(status);
+  if (reabre) {
+    if (order.status === "ENTREGUE") updateData.deliveredAt = null;
+    if (order.status === "CANCELADO") updateData.cancelledAt = null;
+  }
   if (status === "ACEITO" || status === "PREPARANDO") {
     // Apenas atribui PRODUCTION se o pedido ainda não tiver nenhum estágio no KDS
-    if (!order.kdsStage) {
+    if (!order.kdsStage || reabre) {
       updateData.kdsStage = "PRODUCTION";
       updateData.kdsProductionAt = new Date();
     }
