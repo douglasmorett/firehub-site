@@ -3541,7 +3541,7 @@ ${mapsUrl}`;
                               style={{
                                 flex: 1, padding: "8px", border: "1.5px solid #1C1917",
                                 borderRadius: "8px", background: "#FFFFFF", color: "#1C1917",
-                                fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit",
+                                fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
                                 display: "flex", alignItems: "center", justifyContent: "center", gap: 4
                               }}
                             >
