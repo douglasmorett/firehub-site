@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { lojaDoAssessorDaSessao } from "@/lib/assessor/loja-da-sessao";
+import { lojaDoMultimarcasDaSessao } from "@/lib/multimarcas/sessao";
 import { DIAS_DE_TESTE_DO_MULTIMARCAS, TermoNaoAceitoError, estadoDoMultimarcas, ligarOuDesligarMultimarcas } from "@/lib/multimarcas/assinatura";
 import { FIREHUB_PLAN } from "@/lib/firehub-billing";
 import { PRECOS_DO_APP } from "@/lib/app-da-loja/plano";
@@ -11,7 +12,9 @@ import { PRECOS_DO_APP } from "@/lib/app-da-loja/plano";
  *        explicar que os R$ 97 são à parte).
  * POST { ligar: true, aceite: { versao } } — ativa, com o termo aceito (lib/multimarcas/termo.ts).
  * POST { ligar: false } — desativa; o mês seguinte não é cobrado.
- * Só o dono (ou o ADMIN dentro da loja): a mesma porta do Bill.
+ * GET: também o funcionário com acesso à tela (lib/multimarcas/sessao.ts) —
+ * ele monta as marcas, mas `podeContratar` sai falso.
+ * POST: só o dono (ou o ADMIN dentro da loja), a mesma porta do Bill.
  */
 const publico = (e: Awaited<ReturnType<typeof estadoDoMultimarcas>>) => ({
   ativo: e.ativo, cobradoEsteMes: e.cobradoEsteMes, testeAte: e.testeAte, emTeste: e.emTeste, jaTestou: e.jaTestou, isento: e.isento, cortesia: e.cortesia, desligaEm: e.desligaEm, fimDoMes: e.fimDoMes,
@@ -30,11 +33,12 @@ async function atualizarPaginasDaLoja(franchiseeId: string) {
 }
 
 export async function GET() {
-  const s = await lojaDoAssessorDaSessao();
-  if (!s) return NextResponse.json({ error: "Só o dono da loja contrata o Multimarcas." }, { status: 403 });
+  const s = await lojaDoMultimarcasDaSessao();
+  if (!s) return NextResponse.json({ error: "Seu acesso não abre o Multimarcas. Peça ao dono da loja." }, { status: 403 });
   const estado = await estadoDoMultimarcas(s.franchiseeId);
   return NextResponse.json({
     estado: publico(estado),
+    podeContratar: s.podeContratar,
     preco: estado.preco,
     diasDeTeste: DIAS_DE_TESTE_DO_MULTIMARCAS,
     precoDoAppCompleto: PRECOS_DO_APP.ambos,

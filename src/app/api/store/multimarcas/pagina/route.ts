@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { lojaDoAssessorDaSessao } from "@/lib/assessor/loja-da-sessao";
+import { lojaDoMultimarcasDaSessao } from "@/lib/multimarcas/sessao";
 import { multimarcasEstaLigado } from "@/lib/multimarcas/assinatura";
 import { gravarConfigDaPagina, lerConfigDaPagina, LIMITES, type ConfigDaPagina } from "@/lib/multimarcas/pagina";
 import { SELECT_DA_LOJA_NO_CARDAPIO } from "@/lib/cardapio-publico";
@@ -11,7 +11,7 @@ import { vitrineDaLoja } from "@/lib/multimarcas/carga";
  * GET — a página montada (ou um começo), as categorias do cardápio, os
  *       produtos para a prévia e nomes sugeridos (as lojas da conta no iFood/99).
  * PUT { config } — grava (lib/multimarcas/pagina.ts limpa tudo antes).
- * Só o dono (ou o ADMIN na loja), com o Multimarcas ativo.
+ * O dono, o ADMIN na loja ou o funcionário com acesso à tela (lib/multimarcas/sessao.ts), com o Multimarcas ativo.
  */
 export const dynamic = "force-dynamic";
 
@@ -46,8 +46,8 @@ async function sugestoesDeMarcas(franchiseeId: string): Promise<string[]> {
 }
 
 export async function GET() {
-  const s = await lojaDoAssessorDaSessao();
-  if (!s) return NextResponse.json({ error: "Só o dono da loja monta a página das marcas." }, { status: 403 });
+  const s = await lojaDoMultimarcasDaSessao();
+  if (!s) return NextResponse.json({ error: "Seu acesso não abre o Multimarcas. Peça ao dono da loja." }, { status: 403 });
   const franchisee = await prisma.user.findUnique({ where: { id: s.franchiseeId }, select: SELECT_DA_LOJA_NO_CARDAPIO });
   if (!franchisee) return NextResponse.json({ error: "Loja não encontrada." }, { status: 404 });
   const nomeDaLoja = franchisee.storeName || franchisee.name || "Minhas marcas";
@@ -81,15 +81,15 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
-  const s = await lojaDoAssessorDaSessao();
-  if (!s) return NextResponse.json({ error: "Só o dono da loja monta a página das marcas." }, { status: 403 });
+  const s = await lojaDoMultimarcasDaSessao();
+  if (!s) return NextResponse.json({ error: "Seu acesso não abre o Multimarcas. Peça ao dono da loja." }, { status: 403 });
   if (!(await multimarcasEstaLigado(s.franchiseeId))) {
     return NextResponse.json({ error: "Ative o Multimarcas para montar a página das marcas." }, { status: 403 });
   }
   let corpo: any = {};
   try { corpo = await req.json(); } catch {}
   try {
-    const config = await gravarConfigDaPagina(s.franchiseeId, corpo?.config, s.loja.storeName || s.loja.name || undefined);
+    const config = await gravarConfigDaPagina(s.franchiseeId, corpo?.config, s.nomeDaLoja);
     await atualizarPaginasDaLoja(s.franchiseeId);
     return NextResponse.json({ ok: true, config });
   } catch (err: any) {

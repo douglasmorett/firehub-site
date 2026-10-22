@@ -11,8 +11,11 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
+  // STAFF entra: o funcionário que monta o Multimarcas sobe logo e banner das
+  // marcas (lib/multimarcas/sessao.ts). Aqui só se guarda o arquivo; quem grava
+  // a URL na loja é a rota de cada tela, com a regra dela.
   const role = (session.user as any).role;
-  if (role !== "ADMIN" && role !== "FRANCHISEE") {
+  if (role !== "ADMIN" && role !== "FRANCHISEE" && role !== "STAFF") {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 

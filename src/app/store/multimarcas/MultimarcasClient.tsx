@@ -36,6 +36,8 @@ export type DadosDoMultimarcas = {
   /** O Aplicativo da loja completo (Android + Apple): quem paga, ganha o Multimarcas de cortesia. */
   precoDoAppCompleto: number;
   mensalidade: { percentual: number; minimo: number; teto: number; lojaExtraMarketplace: number };
+  /** Falso para o funcionário: ele monta as marcas, mas ligar e desligar é do dono (lib/multimarcas/sessao.ts). */
+  podeContratar?: boolean;
 };
 type Aviso = { tipo: "ok" | "erro"; titulo: string; detalhe?: string };
 
@@ -125,7 +127,7 @@ export default function MultimarcasClient({ previa }: { previa?: DadosDoMultimar
         <Ativo dados={dados} previa={!!previa} onAviso={(tipo, titulo, detalhe) => setAviso({ tipo, titulo, detalhe })} salvando={salvando}
           onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} />
       ) : (
-        <OfertaDoMultimarcas dados={dados} salvando={salvando} onAtivar={() => setTermoAberto(true)} />
+        <OfertaDoMultimarcas dados={dados} salvando={salvando} podeContratar={dados.podeContratar !== false} onAtivar={() => setTermoAberto(true)} />
       )}
 
       {termoAberto && <Termo preco={dados.preco} diasDeTeste={dados.diasDeTeste} comTeste={!estado.jaTestou && !estado.isento} cortesia={estado.cortesia}
@@ -149,9 +151,14 @@ function Ativo({ dados, previa, onAviso, salvando, onDesligar, onContinuar }: {
       </div>
       <p className={s.sub}>A página com todas as suas marcas, banners e a sacola única.</p>
 
-      {/* O liga/desliga com a regra da cobrança escrita (components/modulos/InterruptorDoModulo). */}
-      <InterruptorDoModulo nome="o Multimarcas" preco={dados.preco} estado={e} salvando={salvando}
-        onLigar={() => {}} onDesligar={onDesligar} onContinuar={onContinuar} />
+      {/* O liga/desliga com a regra da cobrança escrita (components/modulos/InterruptorDoModulo).
+          Funcionário não vê: desligar mexe no boleto, é do dono. */}
+      {dados.podeContratar !== false ? (
+        <InterruptorDoModulo nome="o Multimarcas" preco={dados.preco} estado={e} salvando={salvando}
+          onLigar={() => {}} onDesligar={onDesligar} onContinuar={onContinuar} />
+      ) : (
+        <p className={s.sub}>Ligar e desligar o Multimarcas é com o dono da loja. Você pode montar as marcas aqui embaixo.</p>
+      )}
 
       {previa ? (
       <section className={s.montagem}>

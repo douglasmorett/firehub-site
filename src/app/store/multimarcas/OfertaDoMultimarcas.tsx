@@ -35,12 +35,14 @@ const iniciais = (nome: string) => nome.split(/\s+/).filter((p) => p.length > 2)
 const BURGUER = { marca: marca("smash"), produto: produto("s1") };
 const FRANGO = { marca: marca("frango"), produto: produto("f1") };
 
-export default function OfertaDoMultimarcas({ dados, salvando, onAtivar }: { dados: DadosDoMultimarcas; salvando: boolean; onAtivar: () => void }) {
+export default function OfertaDoMultimarcas({ dados, salvando: ocupado, podeContratar = true, onAtivar }: { dados: DadosDoMultimarcas; salvando: boolean; podeContratar?: boolean; onAtivar: () => void }) {
+  // Funcionário vê a apresentação, mas o botão não ativa: quem contrata é o dono.
+  const salvando = ocupado || !podeContratar;
   const m = dados.mensalidade;
   const isento = dados.estado.isento;
   const cortesia = !isento && dados.estado.cortesia;
   const comTeste = !isento && !cortesia && !dados.estado.jaTestou;
-  const botao = salvando ? "Ativando…" : cortesia ? "Ativar de cortesia" : comTeste ? `Ativar com ${dados.diasDeTeste} dias grátis` : "Ativar o Multimarcas";
+  const botao = !podeContratar ? "Só o dono da loja ativa" : ocupado ? "Ativando…" : cortesia ? "Ativar de cortesia" : comTeste ? `Ativar com ${dados.diasDeTeste} dias grátis` : "Ativar o Multimarcas";
   const precoCurto = isento ? "Liberado para a sua conta" : cortesia ? <><strong>Cortesia</strong> · você tem o Aplicativo da loja completo</> : <><strong>{reais(dados.preco)}/mês</strong> · à parte da mensalidade</>;
 
   return (

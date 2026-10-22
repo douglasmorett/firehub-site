@@ -35,7 +35,8 @@ confere("sem nenhuma caixinha, a conta dele", primeiraTelaDoFuncionario(""), "/s
 confere("relatórios abre com a caixinha antiga 'relatorios'", funcionarioAbre("/store/relatorios", "relatorios"), true);
 
 const menuDoCaixa = menuDaLoja({ permissoesDoFuncionario: CAIXA }).flatMap((g) => g.itens.map((i) => i.href));
-confere("menu do caixa", menuDoCaixa, ["/store/pedidos-clientes", "/store/kds", "/store/mesas", "/store/venda-presencial", "/store/roteirizacao", "/store/cardapio", "/store/antecipacao", "/store/motoboys", "/store/impressoras"]);
+// Multimarcas abre com "cardapio" (montar as marcas é trabalho de cardápio; contratar segue do dono). 22/10/2026.
+confere("menu do caixa", menuDoCaixa, ["/store/pedidos-clientes", "/store/kds", "/store/painel-de-senhas", "/store/mesas", "/store/venda-presencial", "/store/roteirizacao", "/store/cardapio", "/store/multimarcas", "/store/antecipacao", "/store/motoboys", "/store/impressoras"]);
 const menuDoDono = menuDaLoja({ permissoesDoFuncionario: null }).flatMap((g) => g.itens.map((i) => i.href));
 confere("dono vê o menu inteiro", menuDoDono.includes("/store/financeiro") && menuDoDono.includes("/store/minha-loja"), true);
 
