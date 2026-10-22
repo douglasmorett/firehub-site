@@ -1287,10 +1287,19 @@ export default function KDSTelaPage() {
       // cada leitura e é o que se aperta num botão focado — o pedido mais
       // antigo saía da tela sem ninguém ter dado pronto ("lancei no balcão e
       // ele deu pronto sozinho"). O "0" continua fazendo isso de propósito.
-      if (e.code.startsWith("Digit")) {
-        num = parseInt(e.code.replace("Digit", ""), 10);
-      } else if (e.code.startsWith("Numpad")) {
-        num = parseInt(e.code.replace("Numpad", ""), 10);
+      // Navegador de Smart TV manda o número do controle sem `code` (vazio
+      // ou nem existe): aí vale a tecla ou o keyCode (48–57, 96–105).
+      const codigo = e.code || "";
+      if (codigo.startsWith("Digit")) {
+        num = parseInt(codigo.replace("Digit", ""), 10);
+      } else if (codigo.startsWith("Numpad")) {
+        num = parseInt(codigo.replace("Numpad", ""), 10);
+      } else if (/^[0-9]$/.test(e.key || "")) {
+        num = Number(e.key);
+      } else if (e.keyCode >= 48 && e.keyCode <= 57) {
+        num = e.keyCode - 48;
+      } else if (e.keyCode >= 96 && e.keyCode <= 105) {
+        num = e.keyCode - 96;
       }
 
       if (num === null || isNaN(num)) return;
