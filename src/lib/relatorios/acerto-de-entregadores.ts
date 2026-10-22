@@ -17,7 +17,7 @@
  *
  * Esta lib não importa nada do servidor: recebe o resultado já montado.
  */
-import { c2, fmtReais, naLoja } from "@/lib/relatorios/base";
+import { c2, ehCancelado, fmtReais, naLoja } from "@/lib/relatorios/base";
 
 /** O que a conta lê de cada motoboy (o formato de `montarRelatorioDosEntregadores`). */
 export type MotoboyDoAcerto = {
@@ -349,4 +349,65 @@ export function acertoDaEquipe(porLoja: { loja: string; report: MotoboyDoAcerto[
   }
 
   return { linhas, semEntrega, total: totaisDoAcerto(linhas, diasComEntrega), dias: listaDeDias, horas: listaDeHoras, avisos };
+}
+
+// ── ROTAS AUTOMÁTICAS ───────────────────────────────────────────────────────
+//
+// A Rota 100% automatizada (lib/roteirizacao-automatica) no período: quantas
+// rotas o FireHub montou e saíram, quantas entregas cada uma levou e quanto o
+// motoboy chamado levou para puxar. É a régua do aceite da Fase 3 (plano no
+// vault, "FireHub - Plano despacho automático"): o "pronto → saiu" tem de cair.
+
+/** Uma linha por pedido de rota AUTO despachada no período (rota sem pedido: uma linha com `status` nulo). */
+export type PedidoDaRotaAutomatica = {
+  rotaId: string;
+  /** Quando a rota pronta chamou o motoboy (`RouteSchedule.chamadaEm`). */
+  chamadaEm: Date | string | null;
+  status: string | null;
+  /** Quando o motoboy puxou este pedido pelo app (`CustomerOrder.motoboyPuxadoEm`). */
+  motoboyPuxadoEm: Date | string | null;
+};
+
+export type RotasAutomaticasDoPeriodo = {
+  /** Rotas AUTO despachadas no período. */
+  rotas: number;
+  /** Pedidos não cancelados nessas rotas. */
+  entregas: number;
+  entregasPorRota: number | null;
+  /** Média, em minutos, da chamada até o 1º pedido puxado — só das rotas que têm os dois. */
+  chamadaAtePuxarMin: number | null;
+  /** Quantas rotas entraram na média acima. */
+  rotasComTempo: number;
+};
+
+const instante = (v: Date | string | null) => (v == null ? null : new Date(v).getTime());
+
+/**
+ * A conta das rotas automáticas, pura (scripts/teste-rotas-automaticas-no-relatorio.ts).
+ * Cancelado não é entrega (a régua de base.ts, `ehCancelado`), mas o puxar
+ * dele conta: o motoboy puxou a rota quando puxou o primeiro pedido, qualquer
+ * que seja. Puxado ANTES da chamada (o motoboy escaneou a rota que ainda não
+ * tinha chamado ninguém) não mede a chamada e fica fora da média; rota que a
+ * loja despachou pela Roteirização (sem puxar pelo app) também.
+ */
+export function rotasAutomaticasDoPeriodo(linhas: PedidoDaRotaAutomatica[]): RotasAutomaticasDoPeriodo {
+  const rotas = new Map<string, { chamadaEm: number | null; primeiroPuxado: number | null; entregas: number }>();
+  for (const l of linhas) {
+    const r = rotas.get(l.rotaId) ?? { chamadaEm: instante(l.chamadaEm), primeiroPuxado: null, entregas: 0 };
+    if (l.status != null && !ehCancelado(l.status)) r.entregas++;
+    const puxado = instante(l.motoboyPuxadoEm);
+    if (puxado != null && (r.primeiroPuxado == null || puxado < r.primeiroPuxado)) r.primeiroPuxado = puxado;
+    rotas.set(l.rotaId, r);
+  }
+  const tempos = [...rotas.values()]
+    .filter((r) => r.chamadaEm != null && r.primeiroPuxado != null && r.primeiroPuxado >= r.chamadaEm)
+    .map((r) => ((r.primeiroPuxado as number) - (r.chamadaEm as number)) / 60_000);
+  const entregas = [...rotas.values()].reduce((t, r) => t + r.entregas, 0);
+  return {
+    rotas: rotas.size,
+    entregas,
+    entregasPorRota: div(entregas, rotas.size),
+    chamadaAtePuxarMin: tempos.length ? Math.round((tempos.reduce((t, m) => t + m, 0) / tempos.length) * 10) / 10 : null,
+    rotasComTempo: tempos.length,
+  };
 }

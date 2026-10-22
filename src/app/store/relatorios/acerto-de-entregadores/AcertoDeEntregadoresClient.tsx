@@ -22,9 +22,11 @@ import { fmtDia, fmtQtd, fmtReais, DIAS_CURTOS } from "@/lib/relatorios/base";
 import BarraDeFiltros from "@/components/relatorios/BarraDeFiltros";
 import ModeloDoRelatorio, { BarraDePct, Bloco, Cartao, GradeDeCartoes, Vazio, Variacao } from "@/components/relatorios/ModeloDoRelatorio";
 import { useFiltros, useOpcoesDosFiltros, useRelatorio, type InicioDosFiltros } from "@/components/relatorios/useRelatorio";
-import type { LinhaDoMotoboy, ResultadoDoAcerto, TotaisDoAcerto } from "@/lib/relatorios/acerto-de-entregadores";
+import type { LinhaDoMotoboy, ResultadoDoAcerto, RotasAutomaticasDoPeriodo, TotaisDoAcerto } from "@/lib/relatorios/acerto-de-entregadores";
 
 type Resposta = ResultadoDoAcerto & {
+  /** Rota 100% automatizada no período; null = loja sem ela (o bloco não aparece). */
+  rotasAutomaticas?: RotasAutomaticasDoPeriodo | null;
   lojas: string[];
   periodo: { de: string; ate: string };
   periodoAnterior: { de: string; ate: string } | null;
@@ -376,6 +378,22 @@ export default function AcertoDeEntregadoresClient({ inicio }: { inicio: InicioD
                 detalhe={`${fmtQtd(pico.mediaPorDia)} entregas/dia com ${fmtQtd(pico.motoboysNaHora)} motoboy${pico.motoboysNaHora >= 1.5 ? "s" : ""} na rua`} />
             )}
           </GradeDeCartoes>
+
+          {/* Rota 100% automatizada: só na loja que tem (ou teve rota no período). */}
+          {dados.rotasAutomaticas && (
+            <Bloco titulo="🤖 Rotas automáticas" subtitulo="As rotas que o FireHub montou sozinho e saíram no período, e quanto o motoboy chamado levou para puxar a rota.">
+              <GradeDeCartoes>
+                <Cartao rotulo="Rotas que saíram" valor={dados.rotasAutomaticas.rotas.toLocaleString("pt-BR")}
+                  detalhe={plural(dados.rotasAutomaticas.entregas, "entrega", "entregas")} />
+                <Cartao rotulo="Entregas por rota" valor={dados.rotasAutomaticas.entregasPorRota === null ? "—" : fmtQtd(dados.rotasAutomaticas.entregasPorRota)}
+                  detalhe="Média de pedidos em cada rota" />
+                <Cartao rotulo="Da chamada ao puxar" valor={dados.rotasAutomaticas.chamadaAtePuxarMin === null ? "—" : `${fmtQtd(dados.rotasAutomaticas.chamadaAtePuxarMin)} min`}
+                  detalhe={dados.rotasAutomaticas.rotasComTempo
+                    ? `Média de ${plural(dados.rotasAutomaticas.rotasComTempo, "rota", "rotas")} chamada${dados.rotasAutomaticas.rotasComTempo === 1 ? "" : "s"} e puxada${dados.rotasAutomaticas.rotasComTempo === 1 ? "" : "s"} pelo app`
+                    : "Nenhuma rota chamada e puxada pelo app"} />
+              </GradeDeCartoes>
+            </Bloco>
+          )}
 
           <Podio linhas={dados.linhas} />
 

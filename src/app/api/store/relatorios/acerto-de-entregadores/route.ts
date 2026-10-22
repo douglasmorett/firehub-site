@@ -16,7 +16,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { cabecalhoDoRelatorio, contextoDoRelatorio, janelaDoPeriodo } from "@/lib/relatorios/servidor";
 import { fmtDia, fmtReais, naLoja, periodoAnterior } from "@/lib/relatorios/base";
 import { montarRelatorioDosEntregadores } from "@/lib/relatorio-do-entregador";
-import { acertoDaEquipe, type MotoboyDoAcerto } from "@/lib/relatorios/acerto-de-entregadores";
+import { acertoDaEquipe, rotasAutomaticasDoPeriodo, type MotoboyDoAcerto, type PedidoDaRotaAutomatica } from "@/lib/relatorios/acerto-de-entregadores";
+import { prisma } from "@/lib/prisma";
+import { liberadaPara } from "@/lib/roteirizacao-automatica/liberacao";
 import { montarPlanilha, respostaDePlanilha, type Celula, type LinhaDaPlanilha } from "@/lib/planilha-xlsx";
 import { ROTULO_DA_ORIGEM, type OrigemDoGanho } from "@/lib/ganho-do-entregador";
 
@@ -40,20 +42,44 @@ export async function GET(req: NextRequest) {
       return { loja: nomeDaLoja(lojaId), report: report as unknown as MotoboyDoAcerto[] };
     }));
 
-  const [atual, doAnterior] = await Promise.all([
+  // Rota 100% automatizada: as rotas AUTO que SAÍRAM no período (a janela do
+  // dia operacional, a mesma do acerto), pela hora do despacho. `origem` e
+  // `chamadaEm` são colunas novas (SQL cru). Banco sem as colunas: sem o bloco.
+  const rotasAuto = (async (): Promise<PedidoDaRotaAutomatica[]> => {
+    try {
+      return await prisma.$queryRaw<PedidoDaRotaAutomatica[]>`
+        SELECT r."id" AS "rotaId", r."chamadaEm", o."status", o."motoboyPuxadoEm"
+        FROM "RouteSchedule" r
+        LEFT JOIN "CustomerOrder" o ON o."routeId" = r."id"
+        WHERE r."franchiseeId" = ANY(${ctx.lojaIds}) AND r."origem" = 'AUTO'
+          AND r."dispatchedAt" >= ${ctx.inicio} AND r."dispatchedAt" < ${ctx.fim}
+      `;
+    } catch (e: any) {
+      console.warn("[Acerto] rotas automáticas não lidas:", e?.message?.slice(0, 120));
+      return [];
+    }
+  })();
+
+  const [atual, doAnterior, linhasDasRotasAuto] = await Promise.all([
     montar({ inicio: ctx.inicio, fim: ctx.fim }),
     comparar ? montar(janelaDoPeriodo(anterior.de, anterior.ate, ctx.tz)) : Promise.resolve(null),
+    rotasAuto,
   ]);
 
   const resultado = acertoDaEquipe(atual, ctx.tz);
   const resultadoAnterior = doAnterior ? acertoDaEquipe(doAnterior, ctx.tz) : null;
   const cabecalho = cabecalhoDoRelatorio(ctx);
+  // O bloco só aparece na loja liberada (liberacao.ts) ou quando houve rota
+  // automática no período — para as outras lojas, o relatório fica igual.
+  const doPeriodo = rotasAutomaticasDoPeriodo(linhasDasRotasAuto);
+  const rotasAutomaticas = ctx.lojaIds.some((id) => liberadaPara(id)) || doPeriodo.rotas > 0 ? doPeriodo : null;
 
   if (sp.get("formato") !== "xlsx") {
     return NextResponse.json({
       ...cabecalho,
       periodoAnterior: comparar ? anterior : null,
       ...resultado,
+      rotasAutomaticas,
       anterior: resultadoAnterior
         ? {
             total: resultadoAnterior.total,
