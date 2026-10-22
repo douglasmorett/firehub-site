@@ -397,6 +397,11 @@ model RouteSchedule {
   status       String          @default("PENDING") // PENDING | DISPATCHED | CANCELLED
   color        String?         @default("#3B82F6")
   dispatchedAt DateTime?
+  /// Rota 100% automatizada (lib/roteirizacao-automatica): "AUTO" = criada pelo servidor; nulo/"MANUAL" = montada pela loja.
+  origem           String?
+  /// Quando a rota pronta foi chamada (aviso "pode vir buscar") e quem foi chamado — chamado não é dono: o motoboyId só entra no QR (D7/D10).
+  chamadaEm        DateTime?
+  chamadaMotoboyId String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
   franchisee   User?           @relation(fields: [franchiseeId], references: [id], onDelete: Cascade)
@@ -1447,6 +1452,8 @@ model Motoboy {
   lastLat          Float?          // Latitude em tempo real
   lastLng          Float?          // Longitude em tempo real
   lastLocationUpdate DateTime?     // Data/hora da última atualização de GPS
+  /// Desde quando o GPS diz que está na loja (a até raioDaLojaM do pino) — "quem chegou primeiro" da Rota 100% automatizada. Nulo = na rua.
+  naLojaDesde      DateTime?
   // Tipo: "PER_DELIVERY" | "DAILY_RATE" | "BOTH" | "PER_KM"
   paymentType      String          @default("PER_DELIVERY")
   dailyRate        Float?          // Diária fixa (R$/dia)

@@ -228,7 +228,11 @@ export async function PUT(req: Request) {
   if (body.deliveryConfig !== undefined && body.deliveryConfig !== null) {
     const atual = (loja as any)?.deliveryConfig;
     const base = atual && typeof atual === "object" && !Array.isArray(atual) ? atual : {};
-    const novo = typeof body.deliveryConfig === "object" && !Array.isArray(body.deliveryConfig) ? body.deliveryConfig : {};
+    const novo = typeof body.deliveryConfig === "object" && !Array.isArray(body.deliveryConfig) ? { ...body.deliveryConfig } : {};
+    // A Rota 100% automatizada só se grava por api/store/roteirizacao-automatica
+    // (liberação, requisitos e limites). Aqui a chave é ignorada — e a gravada
+    // fica: tela que reenvia o deliveryConfig inteiro lido antes não a desfaz.
+    delete novo.roteirizacaoAutomatica;
     daLoja.deliveryConfig = { ...base, ...novo };
   }
 

@@ -116,6 +116,14 @@ const INSTRUCOES = [
   // contagem 1, 2, 3 de sempre.
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "painelDeSenhas" JSONB`,
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "numeracaoAleatoria" BOOLEAN NOT NULL DEFAULT false`,
+  // ROTA 100% AUTOMATIZADA (lib/roteirizacao-automatica, 22/10/2026): de onde
+  // veio a rota ("AUTO" = o servidor montou; nulo = a loja, como toda rota
+  // já gravada), quando e quem foi chamado para buscá-la, e desde quando o
+  // motoboy está na loja pelo GPS. Nuláveis: nada muda para quem não liga.
+  `ALTER TABLE "RouteSchedule" ADD COLUMN IF NOT EXISTS "origem" TEXT`,
+  `ALTER TABLE "RouteSchedule" ADD COLUMN IF NOT EXISTS "chamadaEm" TIMESTAMP(3)`,
+  `ALTER TABLE "RouteSchedule" ADD COLUMN IF NOT EXISTS "chamadaMotoboyId" TEXT`,
+  `ALTER TABLE "Motoboy" ADD COLUMN IF NOT EXISTS "naLojaDesde" TIMESTAMP(3)`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -148,6 +156,10 @@ const ESPERADAS = [
   "CustomerOrder.agendado",
   "User.painelDeSenhas",
   "User.numeracaoAleatoria",
+  "RouteSchedule.origem",
+  "RouteSchedule.chamadaEm",
+  "RouteSchedule.chamadaMotoboyId",
+  "Motoboy.naLojaDesde",
 ];
 
 /**
@@ -222,7 +234,7 @@ export async function garantirColunasDePreco(): Promise<void> {
       // alarme que ninguém lê no dia em que a coluna faltar de verdade.
       const rows = await prisma.$queryRaw<{ tabela: string; coluna: string }[]>`
         SELECT table_name AS tabela, column_name AS coluna FROM information_schema.columns
-        WHERE table_name IN ('MenuProduct', 'ComboGroup', 'ComboGroupItem', 'CustomerOrder', 'Motoboy', 'User')
+        WHERE table_name IN ('MenuProduct', 'ComboGroup', 'ComboGroupItem', 'CustomerOrder', 'Motoboy', 'User', 'RouteSchedule')
           AND column_name IN (
             'priceSalao', 'priceDelivery', 'priceTotem', 'promoPrice', 'apenasEmCombo',
             'priceRule',
@@ -232,7 +244,8 @@ export async function garantirColunasDePreco(): Promise<void> {
             'estoqueQtd', 'estoqueDesde', 'estoquePausar',
             'storeBannerVideo', 'reviewsMinStars', 'availableHours',
             'agendamentoConfig', 'agendado',
-            'painelDeSenhas', 'numeracaoAleatoria'
+            'painelDeSenhas', 'numeracaoAleatoria',
+            'origem', 'chamadaEm', 'chamadaMotoboyId', 'naLojaDesde'
           )
       `;
       const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));

@@ -55,6 +55,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Rota 100% automatizada: "chegou na loja?" (lib/roteirizacao-automatica/
+    // motoboy-na-loja.ts). Só com a sessão assinada — o id do corpo não prova
+    // quem está andando. ANTES de gravar a posição: o carimbo precisa saber
+    // se a posição anterior já tinha esfriado (chegada nova, não a de ontem).
+    if (daSessao) {
+      const { carimbarChegadaNaLoja } = await import("@/lib/roteirizacao-automatica/motoboy-na-loja");
+      await carimbarChegadaNaLoja(daSessao.id, daSessao.franchiseeId, latitude, longitude);
+    }
+
     // updateMany condicional: o escopo (loja + ativo) faz parte da ESCRITA.
     // App antigo ainda não manda storeId — aceita, mas `active: true` vale
     // sempre: entregador desativado no painel para de gravar posição na hora.
@@ -137,7 +146,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Esta loja não é sua" }, { status: 403 });
     }
 
-    const motoboys = await prisma.motoboy.findMany({
+    // `naLojaDesde`: o 🏠 "na loja há X min" da Rota 100% automatizada
+    // (lib/roteirizacao-automatica/motoboy-na-loja.ts). Coluna nova — o
+    // `as any` é porque o client local ainda não a conhece.
+    const motoboys = await (prisma.motoboy as any).findMany({
       where: {
         franchiseeId: storeId,
         active: true
@@ -148,7 +160,8 @@ export async function GET(req: NextRequest) {
         phone: true,
         lastLat: true,
         lastLng: true,
-        lastLocationUpdate: true
+        lastLocationUpdate: true,
+        naLojaDesde: true,
       }
     });
 
