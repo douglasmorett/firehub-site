@@ -171,7 +171,27 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    return NextResponse.json({ success: true, motoboys });
+    // Posição de antes do último fechamento de caixa não aparece no mapa: o
+    // entregador de ontem sumia só com o "Sair" do app, e quem esquece ficava
+    // lá no dia seguinte ("Jefim Bahia · 21/10, 23:54" — Douglas, 22/10/2026:
+    // "tem que sair todo dia quando o caixa fechar"). Sem fechamento (loja que
+    // não fecha caixa), vale o teto de 12 h. Só esconde na resposta: a posição
+    // nova que o app mandar depois aparece normal.
+    const ultimoFechamento = await prisma.cashSession.findFirst({
+      where: { franchiseeId: storeId, status: "CLOSED", closedAt: { not: null } },
+      orderBy: { closedAt: "desc" },
+      select: { closedAt: true },
+    }).catch(() => null);
+    const limite = Math.max(
+      ultimoFechamento?.closedAt ? new Date(ultimoFechamento.closedAt).getTime() : 0,
+      Date.now() - 12 * 60 * 60 * 1000,
+    );
+    const noMapa = motoboys.map((m: any) => {
+      const em = m.lastLocationUpdate ? new Date(m.lastLocationUpdate).getTime() : 0;
+      return em && em >= limite ? m : { ...m, lastLat: null, lastLng: null, lastLocationUpdate: null };
+    });
+
+    return NextResponse.json({ success: true, motoboys: noMapa });
   } catch (err) {
     console.error("[Motoboy Location GET Error]", err);
     return NextResponse.json({ error: "Erro ao buscar motoboys" }, { status: 500 });
