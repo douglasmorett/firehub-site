@@ -69,9 +69,9 @@ export default function PrivacidadeDoApp() {
           <b>Notificações — pedido e promoções, com uma permissão só:</b> logo depois do termo, o celular pergunta
           se o app pode enviar notificações. Se você tocar em <b>“Permitir”</b>, recebe os avisos do pedido (aceito,
           saiu para entrega, chegando, pronto, entregue, cancelado) e as ofertas e novidades da loja dona do app —
-          por exemplo, uma promoção do dia que abre o cardápio ou um produto dentro do app. Se não permitir, o app
-          funciona normalmente: <b>notificação nunca é obrigatória</b>. Quem não permitiu é lembrado uma única vez,
-          depois do primeiro pedido pelo app.
+          por exemplo, uma promoção do dia que abre o cardápio ou um produto dentro do app. Para usar o app, as
+          notificações precisam estar permitidas: no Android o app só abre com elas ligadas; no iPhone, quem não
+          permitiu vê um pedido para ativá-las a cada vez que abre o app e pode continuar sem avisos.
           <br /><br />
           <b>Como:</b> com a sua permissão, o app gera um identificador do aparelho para notificações (serviço do
           Expo, que usa o Firebase no Android e o serviço da Apple no iPhone) e o liga aos pedidos feitos neste

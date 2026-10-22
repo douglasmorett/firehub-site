@@ -117,7 +117,7 @@ export default function AbaVisaoGeral({ dados, irPara }: { dados: Dados; irPara:
           {base.aguardandoTermo + base.versaoAntiga > 0 && (
             <span><b>{inteiro(base.aguardandoTermo + base.versaoAntiga)}</b> passam a receber quando abrirem a versão nova do app</span>
           )}
-          <span className="ma-hero-explica">O celular só deixa mandar notificação para quem tocou em “Permitir”. Quem não permite usa o app normalmente.</span>
+          <span className="ma-hero-explica">Para usar o app, o cliente precisa permitir a notificação. No Android o app não abre sem ela; no iPhone a Apple exige deixar continuar, então o app pede de novo a cada abertura.</span>
         </div>
       </section>
 

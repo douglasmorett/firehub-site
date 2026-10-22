@@ -7,9 +7,9 @@
  * notificações incluem promoções e como desligá-las; tocar em "Permitir" ali é
  * o aceite explícito da Apple 4.5.4.
  *
- * O que NÃO pode (e não acontece): condicionar o app à notificação. Quem nega
- * no celular entra no cardápio do mesmo jeito (4.5.4: "Push Notifications
- * must not be required for the app to function").
+ * Quem nega: components/PortaDaNotificacao.tsx. No Android o app não abre sem
+ * a permissão; no iPhone (4.5.4: "Push Notifications must not be required for
+ * the app to function") a porta volta a cada abertura, com "Continuar sem avisos".
  */
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
@@ -19,6 +19,7 @@ import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, View
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { tokenDoAparelho } from "@/lib/avisos";
+import { termoRespondido } from "@/components/PortaDaNotificacao";
 import { logoDaMarca } from "@/lib/logo-da-marca";
 import { marca } from "@/lib/marca";
 import { avisarAbertura } from "@/lib/presenca";
@@ -39,8 +40,9 @@ export function TermoDeUso() {
   const aceitar = async () => {
     await guardarAceite();
     setEstado("aceito");
-    // O pedido do sistema, direto. Negou? O app segue normal (nada aqui depende disso).
+    // O pedido do sistema, direto. Negou? A PortaDaNotificacao cobre o app (no iPhone dá para pular).
     await tokenDoAparelho(true);
+    termoRespondido();
     avisarAbertura(true);
   };
 

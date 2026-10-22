@@ -10,6 +10,7 @@ import { AppState } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { LembreteDaNotificacao } from "@/components/LembreteDaNotificacao";
+import { PortaDaNotificacao } from "@/components/PortaDaNotificacao";
 import { TermoDeUso } from "@/components/TermoDeUso";
 import { abrirNoCardapio } from "@/lib/abrir-no-cardapio";
 import { prepararCanais } from "@/lib/avisos";
@@ -78,9 +79,11 @@ export default function Raiz() {
         <Stack.Screen name="(abas)" />
         <Stack.Screen name="pedido/[id]" options={{ presentation: "card" }} />
       </Stack>
-      {/* O termo da 1ª abertura (obrigatório; a notificação, não) e o lembrete único depois do 1º pedido. */}
+      {/* O termo da 1ª abertura (obrigatório) e a porta da notificação e o lembrete único depois do 1º pedido. */}
       <TermoDeUso />
       <LembreteDaNotificacao />
+      {/* Sem notificação não usa: trava no Android; no iPhone volta a cada abertura (Apple 4.5.4). */}
+      <PortaDaNotificacao />
     </SafeAreaProvider>
   );
 }
