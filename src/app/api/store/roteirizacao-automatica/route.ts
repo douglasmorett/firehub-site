@@ -107,7 +107,10 @@ export async function PUT(req: Request) {
 
     // Mesclado, nunca substituído (o mesmo de api/store-settings): frete
     // grátis, áreas de risco e o repasse moram no mesmo deliveryConfig.
-    const atual = loja.deliveryConfig;
+    // Gravado como texto JSON por algum caminho antigo? Lê antes de mesclar,
+    // senão as outras chaves iriam embora.
+    let atual: unknown = loja.deliveryConfig;
+    if (typeof atual === "string") { try { atual = JSON.parse(atual); } catch { atual = null; } }
     const base = atual && typeof atual === "object" && !Array.isArray(atual) ? (atual as Record<string, unknown>) : {};
     await prisma.user.update({
       where: { id: lojaId },
