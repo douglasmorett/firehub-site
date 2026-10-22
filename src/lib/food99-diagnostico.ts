@@ -27,7 +27,7 @@
 import { prisma } from "@/lib/prisma";
 import { detalheDoPedido } from "@/lib/food99-api";
 import { tokenDeUmId } from "@/lib/food99-status";
-import { codigoDeColetaDoParceiro } from "@/lib/codigo-de-coleta";
+import { codigoDeColetaDo99 } from "@/lib/codigo-de-coleta";
 
 /** Campos cujo NOME sugere código de coleta — estes saem com valor. */
 const CARA_DE_CODIGO = /code|pickup|coleta|verif|pin|otp|fetch|collect|take/i;
@@ -103,7 +103,7 @@ export async function diagnosticoDePedido99(lojaId: string, orderId?: string) {
     },
     // O que o leitor de hoje encontraria neste pedido — nulo é a resposta que
     // manda procurar na lista de campos abaixo.
-    codigoQueOLeitorAcha: codigoDeColetaDoParceiro(cru, cru?.delivery, cru?.rider, cru?.logistics),
+    codigoQueOLeitorAcha: codigoDeColetaDo99(cru),
     camposComCaraDeCodigo: campos.filter((c) => CARA_DE_CODIGO.test(c.campo)),
     todosOsCampos: campos,
   };

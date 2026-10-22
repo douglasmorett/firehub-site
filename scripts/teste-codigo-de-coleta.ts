@@ -7,7 +7,7 @@
  * pedido de 19 dígitos tem nome parecido ("order_code") e, se entrasse, a
  * comanda mandaria o atendente conferir um número que o entregador não tem.
  */
-import { codigoDeColetaDoParceiro, chavesParaLog } from "../src/lib/codigo-de-coleta";
+import { codigoDeColetaDoParceiro, codigoDeColetaDo99, chavesParaLog } from "../src/lib/codigo-de-coleta";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -28,14 +28,10 @@ confere("dentro de lista", codigoDeColetaDoParceiro({ riders: [{ nome: "x" }, { 
 
 console.log("\n── o formato REAL do 99Food (pedido #403003, 16/09/2026) ──");
 //
-// Confirmado no `order/detail` de um pedido de verdade da Brazza Burguer, com
-// entrega do 99. Vêm DOIS códigos, e não são a mesma coisa:
-//
-//   pickup_code   → o que o entregador fala no BALCÃO, para levar o pedido
-//   handover_code → o da entrega ao cliente, no fim da corrida
-//
-// Trocar um pelo outro manda o atendente conferir o número errado e segurar um
-// pedido que estava certo.
+// `order/detail` de um pedido de verdade da Brazza Burguer, com entrega do 99.
+// Vêm DOIS códigos. O que o motoboy fala no balcão é o `handover_code` — o
+// "Código de verificação" do painel do 99 (Delícia de Casa, 22/10/2026: #73
+// saiu 9695 do pickup_code, e o certo era 3332).
 const pedido99Real = {
   order_id: "5764687210926376219",
   pickup_code: "8728",
@@ -43,7 +39,9 @@ const pedido99Real = {
   receive_address: { calling_code: "+55", country_code: "BR", postal_code: "28890-000" },
   shop: { shop_phone: [{ calling_code: 55 }] },
 };
-confere("pega o pickup_code, não o handover_code", codigoDeColetaDoParceiro(pedido99Real), "8728");
+confere("99: pega o handover_code, não o pickup_code", codigoDeColetaDo99(pedido99Real), "2610");
+confere("99 sem handover_code cai no leitor geral", codigoDeColetaDo99({ pickup_code: "8728" }), "8728");
+confere("99 com handover_code inválido cai no leitor geral", codigoDeColetaDo99({ handover_code: "", pickup_code: "8728" }), "8728");
 confere(
   "não confunde com CEP nem com código de país",
   codigoDeColetaDoParceiro({ receive_address: pedido99Real.receive_address, shop: pedido99Real.shop }),

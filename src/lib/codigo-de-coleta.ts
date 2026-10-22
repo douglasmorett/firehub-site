@@ -34,14 +34,12 @@
  *
  * ── O 99Food, confirmado em pedido real (#403003, 16/09/2026) ──────────────
  *
- * Eles mandam DOIS códigos, e não são a mesma coisa:
- *
- *   `pickup_code`    → o que o entregador fala no BALCÃO, para levar o pedido.
- *                      É este. Está na lista.
- *   `handover_code`  → o da entrega ao cliente, no fim da corrida. NÃO está na
- *                      lista de propósito: na comanda da loja ele mandaria o
- *                      atendente conferir o número errado e segurar um pedido
- *                      que estava certo.
+ * Eles mandam DOIS códigos, e não são a mesma coisa. Em 16/09 lemos o
+ * `pickup_code` como o do balcão; em 22/10 a Delícia de Casa desmentiu na
+ * prática: o motoboy do 99 fala o "Código de verificação" do painel do 99
+ * (#73: 3332), e o `pickup_code` (9695) se repetia em pedidos diferentes. O do
+ * 99 tem leitor próprio, `codigoDeColetaDo99`, que prefere o `handover_code`.
+ * Ele não entra nesta lista porque a lista é dos outros parceiros.
  */
 const NOMES = [
   "pickupcode",
@@ -95,6 +93,18 @@ export function codigoDeColetaDoParceiro(...fontes: unknown[]): string | null {
     if (achado) return achado;
   }
   return null;
+}
+
+/**
+ * O do 99Food: o `handover_code` é o "Código de verificação" que o painel do 99
+ * mostra e que o motoboy fala no balcão (Delícia de Casa, 22/10/2026). Sem ele,
+ * cai no leitor geral.
+ */
+export function codigoDeColetaDo99(o: any): string | null {
+  return (
+    codigoValido(o?.handover_code) ??
+    codigoDeColetaDoParceiro(o, o?.delivery, o?.rider, o?.logistics)
+  );
 }
 
 function procurar(obj: unknown, nivel: number): string | null {

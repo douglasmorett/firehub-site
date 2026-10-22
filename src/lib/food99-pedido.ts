@@ -459,7 +459,7 @@ export interface PedidoTraduzido {
  * `event.order`; quem chama resolve isso antes.
  */
 import { chavesDoEndereco, coordenadasDoParceiro } from "./coordenadas-do-parceiro";
-import { codigoDeColetaDoParceiro, chavesParaLog } from "@/lib/codigo-de-coleta";
+import { codigoDeColetaDo99, chavesParaLog } from "@/lib/codigo-de-coleta";
 
 export function traduzirPedido99Food(order: any): PedidoTraduzido {
   const o = order || {};
@@ -488,7 +488,7 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
   // o objeto REALMENTE tem — é o que fecha o assunto no próximo pedido real,
   // sem depender de acesso ao ambiente deles.
   const entreguePor = quemEntrega99(o.delivery_type);
-  const codigoDeColeta = codigoDeColetaDoParceiro(o, o.delivery, o.rider, o.logistics);
+  const codigoDeColeta = codigoDeColetaDo99(o);
   if (!codigoDeColeta && entreguePor === "99FOOD") {
     console.warn(
       `[99Food] pedido ${o.order_id ?? "?"} com entrega do 99 e SEM código de coleta; ` +
