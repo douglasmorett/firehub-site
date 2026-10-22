@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { chaveDoTelefone, jidDoTelefone } from "@/lib/crm/telefone";
+import { chaveDoTelefone, jidDoTelefone, telefoneParaExibir } from "@/lib/crm/telefone";
 import { registrarEvento } from "@/lib/crm/contatos";
 import type { Canal } from "@/lib/crm/mensagens";
+import { WHATSAPP_DE_VENDAS } from "@/lib/app-da-loja/solicitacao";
 
 /**
  * O CHAT DE SUPORTE DENTRO DO PAINEL — a aba "Suporte FireHub" do balão do
@@ -28,7 +29,30 @@ import type { Canal } from "@/lib/crm/mensagens";
  * Quem escreve aqui passou pelo login, e isso vale mais que o número do
  * WhatsApp: as ferramentas do robô que mexem na conta (lojaDoNumero em
  * ferramentas.ts) aceitam a conversa do painel como prova de que é a loja.
+ *
+ * ── A equipe atende pelo WhatsApp, não aqui ─────────────────────────────────
+ *
+ * Ninguém da equipe fica olhando este chat: o robô chamava uma pessoa, dizia
+ * "alguém responde por aqui" e calava — o Sushi Dojo mandou o link do iFood e
+ * ficou mais de 30 min falando sozinho (Douglas, 22/10/2026). Agora, no
+ * painel, quando precisa da equipe o robô manda chamar no WhatsApp do FireHub
+ * (os textos abaixo) e continua respondendo as dúvidas: a conversa do painel
+ * não fica "esperando uma pessoa" (chamarPessoa em ferramentas.ts).
  */
+
+/** O WhatsApp do atendimento do FireHub (o mesmo do site, do login e do pedido do app da loja). */
+export const WHATSAPP_DO_FIREHUB_NA_TELA = telefoneParaExibir(WHATSAPP_DE_VENDAS);
+export const LINK_DO_WHATSAPP_DO_FIREHUB = `https://wa.me/${WHATSAPP_DE_VENDAS}`;
+const CHAME_NO_WHATSAPP = `chama a gente no WhatsApp do FireHub, ${WHATSAPP_DO_FIREHUB_NA_TELA}: ${LINK_DO_WHATSAPP_DO_FIREHUB}`;
+
+/** Precisa da equipe (pediu pessoa, cobrança, a equipe fazer algo na conta). */
+export const PAINEL_PRECISA_DA_EQUIPE = `Isso quem resolve é a nossa equipe, e ela atende pelo WhatsApp: ${CHAME_NO_WHATSAPP}. Eu continuo aqui para as outras dúvidas.`;
+/** Pediu para puxar/montar o cardápio: o iFood bloqueia a cópia pelo link público, então a equipe precisa do login do portal (ou de outro cardápio, ou fotos). */
+export const PAINEL_MONTAR_O_CARDAPIO = `Para a nossa equipe puxar o seu cardápio, ${CHAME_NO_WHATSAPP} e manda lá o login do Portal do Parceiro do iFood (o iFood bloqueia a cópia pelo link público), o link de outro cardápio digital ou fotos/PDF do cardápio. Eu continuo aqui para as outras dúvidas.`;
+/** A revisão barrou a resposta (conferente.ts): no painel, "alguém te responde por aqui" deixava a pessoa esperando. */
+export const PAINEL_NAO_SABE = `Essa eu prefiro confirmar com a nossa equipe para não te passar nada errado: ${CHAME_NO_WHATSAPP}. Eu continuo aqui para as outras dúvidas.`;
+/** Pediu para a equipe mexer na loja e o robô ia dizer que já tinha feito (conferente.ts). */
+export const PAINEL_NAO_FAZ = `Essa mudança quem faz é a nossa equipe, e ela atende pelo WhatsApp: ${CHAME_NO_WHATSAPP}. Se preferir fazer agora, eu te passo o passo a passo por aqui.`;
 
 /** O contato da loja no CRM; cria quando a loja ainda não tem (mesma regra do "Trazer as lojas"). */
 export async function contatoDoPainel(lojaId: string) {

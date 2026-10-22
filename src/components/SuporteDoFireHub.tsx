@@ -7,8 +7,9 @@ import { Bot, Hand, PlayCircle, Send, UserRound } from "lucide-react";
  * A ABA "SUPORTE FIREHUB" do balão do painel (HumanSupportFloatingWidget).
  *
  * O lojista fala com o FireHub sem sair do painel e sem WhatsApp: o robô do
- * atendimento responde aqui (passo a passo e o vídeo do assunto) e chama a
- * equipe quando precisa; a equipe responde pela tela de Atendimento do admin.
+ * atendimento responde aqui (passo a passo e o vídeo do assunto) e, quando
+ * precisa da equipe, manda chamar no WhatsApp do FireHub — ninguém da equipe
+ * lê este chat (Douglas, 22/10/2026).
  * Servidor em /api/store/suporte e lib/atendimento/painel.ts.
  *
  * Existe porque o número do FireHub já foi banido duas vezes, e a cada queda
@@ -182,7 +183,7 @@ export default function SuporteDoFireHub() {
           // A saudação é da tela, não da conversa: não vai para o banco nem para o robô.
           balaoDaEquipe({
             id: "saudacao", de: "ROBO", nome: null, em: estado.mensagens[0]?.em || new Date().toISOString(),
-            texto: "Oi! Sou o assistente do FireHub. Me conta o que você precisa: eu explico o passo a passo, mando o vídeo do assunto e, se for o caso, chamo alguém da equipe. Pode escolher um assunto abaixo ou escrever.",
+            texto: "Oi! Sou o assistente do FireHub. Me conta o que você precisa: eu explico o passo a passo, mando o vídeo do assunto e, se precisar da equipe, te passo o WhatsApp dela. Pode escolher um assunto abaixo ou escrever.",
           })
         )}
 
@@ -208,8 +209,9 @@ export default function SuporteDoFireHub() {
               <div style={{ fontSize: "0.62rem", color: "#9A3412", textAlign: "right", marginTop: 2, opacity: 0.7 }}>{hora(m.em)}</div>
             </div>
           ) : m.de === "SISTEMA" ? (
-            <div key={m.id} style={{ alignSelf: "center", maxWidth: "92%", background: "#F1F5F9", color: "#475569", padding: "6px 12px", borderRadius: 10, fontSize: "0.74rem", textAlign: "center" }}>
-              {m.texto}
+            <div key={m.id} style={{ alignSelf: "center", maxWidth: "92%", background: "#F1F5F9", color: "#475569", padding: "6px 12px", borderRadius: 10, fontSize: "0.74rem", textAlign: "center", overflowWrap: "anywhere" }}>
+              {/* O link do WhatsApp do FireHub tem que ser clicável. */}
+              {textoRico(m.texto)}
             </div>
           ) : (
             balaoDaEquipe(m)
@@ -226,7 +228,7 @@ export default function SuporteDoFireHub() {
 
       {estado?.aguardandoPessoa && (
         <div style={{ background: "#FFF7ED", borderTop: "1px solid #FED7AA", color: "#9A3412", fontSize: "0.74rem", fontWeight: 700, padding: "7px 12px", display: "flex", gap: 6, alignItems: "center" }}>
-          <Hand size={14} aria-hidden style={{ flexShrink: 0 }} /> A equipe foi avisada. A resposta chega aqui, neste chat.
+          <Hand size={14} aria-hidden style={{ flexShrink: 0 }} /> A equipe foi avisada e te responde pelo WhatsApp do FireHub.
         </div>
       )}
       {erro && <div style={{ background: "#FEF2F2", color: "#B91C1C", fontSize: "0.74rem", fontWeight: 700, padding: "6px 12px" }}>{erro}</div>}

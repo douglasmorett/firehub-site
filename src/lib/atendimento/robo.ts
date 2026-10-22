@@ -12,6 +12,9 @@ import { enviarTexto } from "./whatsapp";
 import { consertarLinksDeVideo, manualDosVideos, videosJaEnviados } from "./videos";
 import { videosNoAr } from "./videos-no-ar";
 import { midiaGuardada, midiaSendoLida } from "./midias";
+import {
+  LINK_DO_WHATSAPP_DO_FIREHUB, PAINEL_MONTAR_O_CARDAPIO, PAINEL_NAO_FAZ, PAINEL_NAO_SABE, PAINEL_PRECISA_DA_EQUIPE, WHATSAPP_DO_FIREHUB_NA_TELA,
+} from "./painel";
 
 /**
  * O ROBÔ DO FIREHUB — atende no número do próprio FireHub: suporte para quem
@@ -173,7 +176,7 @@ export function instrucoes(
     `- Nome: ${contato.nome || "não sabemos ainda"}`,
     `- Loja: ${contato.nomeDaLoja || "não sabemos ainda"}${contato.cidade ? ` (${contato.cidade})` : ""}`,
     canal === "PAINEL" && contato.userId
-      ? "- É LOJISTA e está escrevendo de DENTRO do painel da loja dele, já logado (a conta está confirmada pelo login). Modo SUPORTE. Ele está com o painel aberto agora: pode dizer \"aí no menu…\", \"clique em…\". Se pedir uma pessoa, a equipe responde aqui mesmo, neste chat."
+      ? "- É LOJISTA e está escrevendo de DENTRO do painel da loja dele, já logado (a conta está confirmada pelo login). Modo SUPORTE. Ele está com o painel aberto agora: pode dizer \"aí no menu…\", \"clique em…\". Ninguém da equipe responde neste chat: quando precisar da equipe, mande chamar no WhatsApp do FireHub (veja \"Chat do painel\")."
       : contato.userId
       ? "- É LOJISTA: a loja dele foi reconhecida pelo número que está escrevendo. Modo SUPORTE."
       : lojaInformada
@@ -229,7 +232,7 @@ O FireHub quer o mínimo de atendimento humano: quem resolve é você, passo a p
 3. alguém precisa FAZER algo na conta por ela (mudar cadastro, cobrança, configuração que só a equipe faz) e você não tem ferramenta para isso;
 4. a base e os vídeos não cobrem o assunto (você não sabe);
 5. você já guiou o passo a passo e a pessoa diz que não resolveu, ou o problema continua depois dos Problemas comuns.
-Fora disso, não chame: responda. Ao chamar, avise que alguém da equipe vai responder por aqui.
+Fora disso, não chame: responda. ${canal === "PAINEL" ? "Ao chamar, mande para o WhatsApp do FireHub (veja \"Chat do painel\")." : "Ao chamar, avise que alguém da equipe vai responder por aqui."}
 - Não fale de Checklist, Ponto nem Auditoria (é outro produto).
 - Quem quer PEDIR comida (cliente final de um restaurante) não é lead: explique com gentileza que o FireHub é o sistema que os restaurantes usam e que o pedido é com o próprio restaurante. Não venda nada para essa pessoa.
 - Fornecedor, parceiro ou assunto pessoal: não venda; diga que vai passar o recado e use chamar_pessoa.
@@ -264,7 +267,12 @@ Fora disso, não chame: responda. Ao chamar, avise que alguém da equipe vai res
 - A loja e os valores que aparecem nos vídeos são de demonstração: não fale deles como se fossem da pessoa.
 - Interessado que quer ver como funciona: mande o vídeo do assunto (ou "Um passeio pelo painel", se estiver na base).
 - Nenhum vídeo é do assunto? Responda pela base, como sempre.
-
+${canal === "PAINEL" ? `
+# Chat do painel: a equipe atende pelo WhatsApp (vale mais que as regras acima)
+- Ninguém da equipe lê este chat. Sempre que as regras mandam chamar a equipe (pediu pessoa, cobrança, cancelamento, a equipe fazer algo na conta, você não sabe), use chamar_pessoa e peça para a pessoa chamar no WhatsApp do FireHub: ${WHATSAPP_DO_FIREHUB_NA_TELA}, ${LINK_DO_WHATSAPP_DO_FIREHUB}. Nunca diga que alguém vai responder por aqui, que a equipe avisa quando estiver feito, nem peça para esperar.
+- Pediu para puxar, copiar ou montar o cardápio (mandou link do iFood ou de outro cardápio, ou quer que a equipe lance): use montar_loja e peça para mandar no WhatsApp do FireHub o login do Portal do Parceiro do iFood (o iFood bloqueia a cópia pelo link público), o link de outro cardápio digital ou fotos/PDF do cardápio.
+- Depois de mandar para o WhatsApp, você continua aqui: siga respondendo as dúvidas normalmente.
+` : ""}
 # BASE
 ${CONHECIMENTO_DO_FIREHUB}${videos.manual ? `\n\n${videos.manual}` : ""}
 ${config.instrucoesExtras.trim() ? `\n# Recados do dono (valem mais que a base)\n${config.instrucoesExtras.trim()}\n` : ""}
@@ -314,7 +322,6 @@ async function responder(contatoId: string) {
 
   const contato = await prisma.crmContato.findUnique({ where: { id: contatoId } });
   if (!contato || contato.roboDesligado) return;
-  if (contato.aguardandoHumanoDesde) return;
   if (contato.roboPausadoAte && contato.roboPausadoAte.getTime() > Date.now()) return;
 
   const historico = await mensagensDoContato(contato.id, 40);
@@ -326,6 +333,10 @@ async function responder(contatoId: string) {
   // depende do WhatsApp: é para ele continuar de pé quando o número cai.
   const canal: Canal = ultima.canal === "PAINEL" ? "PAINEL" : "WHATSAPP";
   if (canal === "PAINEL" ? !config.roboNoPainel : (!config.roboLigado || config.conexao.conectado === false || !contato.jid)) return;
+  // Esperando uma pessoa cala o robô só no WhatsApp: no painel ninguém da
+  // equipe responde, e a espera (vinda de uma conversa no WhatsApp) deixava o
+  // lojista falando sozinho ali (Douglas, 22/10/2026; chamarPessoa em ferramentas.ts).
+  if (contato.aguardandoHumanoDesde && canal !== "PAINEL") return;
   // As ferramentas que mexem na conta aceitam o login do painel como prova da loja (ferramentas.ts).
   (contato as any).canalDaConversa = canal;
 
@@ -394,7 +405,7 @@ async function responder(contatoId: string) {
   }
   // Link de vídeo sai sempre no formato certo e só de vídeo que existe (videos.ts).
   const doModelo = consertarLinksDeVideo(paraOWhatsApp(resposta), idsDosVideos);
-  resposta = doModelo || respostaDeReserva(acoes);
+  resposta = doModelo || respostaDeReserva(acoes, canal);
   if (!resposta) return;
 
   // O que o contato perguntou: as mensagens dele desde a última resposta (um
@@ -405,7 +416,7 @@ async function responder(contatoId: string) {
   const feitoInventado = doModelo ? acaoDitaSemFerramenta(doModelo, acoes) : null;
   if (feitoInventado) {
     console.warn(`[Atendimento] Robô disse que fez sem ter feito, para ${contato.id}: "${feitoInventado}"`);
-    resposta = RESPOSTA_DE_QUEM_NAO_FAZ;
+    resposta = canal === "PAINEL" ? PAINEL_NAO_FAZ : RESPOSTA_DE_QUEM_NAO_FAZ;
     if (!acoes.some((a) => a.nome === "chamar_pessoa")) {
       await chamarPessoa(contato, `Pediu para a equipe mexer na loja: "${pergunta}". O robô ia dizer que já tinha feito: "${feitoInventado.slice(0, 300)}" (barrado: ele não mexe na loja).`);
     } else {
@@ -446,7 +457,7 @@ async function responder(contatoId: string) {
     }
     if (veredito?.inventou) {
       console.warn(`[Atendimento] Revisor barrou a resposta para ${contato.id}: "${veredito.trecho}"`);
-      resposta = RESPOSTA_DE_QUEM_NAO_SABE;
+      resposta = canal === "PAINEL" ? PAINEL_NAO_SABE : RESPOSTA_DE_QUEM_NAO_SABE;
       // Quem atende precisa ver o que o robô ia dizer, para responder certo
       // (e para a base ganhar o que estava faltando).
       if (!acoes.some((a) => a.nome === "chamar_pessoa")) {
@@ -531,14 +542,15 @@ export function paraOWhatsApp(texto: string): string {
 
 /**
  * O texto quando o modelo agiu mas não chegou a escrever (caiu, devolveu
- * vazio): a pessoa não pode ficar sem saber que a conta foi criada.
+ * vazio): a pessoa não pode ficar sem saber que a conta foi criada. No chat
+ * do painel, chamar a equipe é mandar para o WhatsApp do FireHub (painel.ts).
  */
-function respostaDeReserva(acoes: AcaoFeita[]): string {
+export function respostaDeReserva(acoes: AcaoFeita[], canal: Canal = "WHATSAPP"): string {
   const ultima = (nome: string) => [...acoes].reverse().find((a) => a.nome === nome && (a.resultado as any)?.ok);
   const conta = ultima("criar_conta");
   if (conta) return `Pronto, sua conta no FireHub está criada e o teste grátis começou! Mandei no e-mail ${(conta.resultado as any).email} o link para você criar a senha. Pra gente deixar sua loja pronta, sem custo, é só mandar o link do cardápio que você usa hoje ou uma foto dele.`;
-  if (ultima("montar_loja")) return "Recebi o seu cardápio! Nossa equipe já vai continuar por aqui para deixar a sua loja prontinha. 🔥";
-  if (ultima("chamar_pessoa")) return "Já chamei alguém da nossa equipe — em instantes te respondem por aqui. 🙏";
+  if (ultima("montar_loja")) return canal === "PAINEL" ? PAINEL_MONTAR_O_CARDAPIO : "Recebi o seu cardápio! Nossa equipe já vai continuar por aqui para deixar a sua loja prontinha. 🔥";
+  if (ultima("chamar_pessoa")) return canal === "PAINEL" ? PAINEL_PRECISA_DA_EQUIPE : "Já chamei alguém da nossa equipe — em instantes te respondem por aqui. 🙏";
   const senha = ultima("enviar_link_de_senha");
   if (senha) return `Mandei o link para criar uma senha nova no e-mail ${(senha.resultado as any).email}. Ele vale por 1 hora.`;
   if (ultima("reiniciar_whatsapp_da_loja")) return "Reiniciei a conexão do WhatsApp da sua loja. Manda um \"oi\" de outro celular daqui a 1 minuto para testar?";

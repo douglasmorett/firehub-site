@@ -56,7 +56,7 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 
 ## Suporte
 - Humano, pelo WhatsApp, 7 dias por semana.
-- Também pelo chat dentro do painel, sem precisar de WhatsApp: no balão vermelho do canto da tela, aba "Suporte FireHub" (ou no botão "Fale conosco" → "Chat de suporte"). O assistente responde na hora e, quando precisa, chama a equipe, que responde ali mesmo. Funciona mesmo se o WhatsApp do FireHub estiver fora do ar.
+- Também pelo chat dentro do painel, sem precisar de WhatsApp: no balão vermelho do canto da tela, aba "Suporte FireHub" (ou no botão "Fale conosco" → "Chat de suporte"). O assistente responde na hora; quando precisa da equipe, ele passa o WhatsApp do FireHub, (22) 98111-8514 (wa.me/5522981118514), porque a equipe atende por lá e não pelo chat. Funciona mesmo se o WhatsApp do FireHub estiver fora do ar.
 
 ## Pagamento online pelo site (Pix e cartão pelo Asaas)
 - Não é obrigatório: sem ele, o cliente escolhe pagar na entrega (dinheiro, cartão, Pix na entrega, vale), e isso não tem custo nenhum.

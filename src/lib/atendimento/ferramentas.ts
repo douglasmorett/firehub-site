@@ -6,6 +6,7 @@ import { estadoDaLojaParaSuporte } from "./estado-da-loja";
 import { cardapioParaOSuporte } from "./cardapio-para-o-suporte";
 import { avisarDono } from "./avisos";
 import { criarContaPeloWhatsApp } from "./cadastro";
+import { PAINEL_MONTAR_O_CARDAPIO, PAINEL_PRECISA_DA_EQUIPE } from "./painel";
 
 /**
  * AS FERRAMENTAS DO ROBÔ DO FIREHUB — o que ele pode consultar e fazer.
@@ -35,6 +36,9 @@ export const FERRAMENTAS_COM_EFEITO = new Set(["chamar_pessoa", "montar_loja", "
  * ninguém religar por engano. Quem quer falar com alguém → chamar_pessoa, e o
  * vendedor da carteira entra em contato pelo portal dele.
  */
+
+/** A conversa é a do chat do painel (robo.ts e a rota do suporte marcam `canalDaConversa`). */
+const peloPainel = (contato: unknown) => (contato as any)?.canalDaConversa === "PAINEL";
 
 /** A loja do contato, se o número que está escrevendo é mesmo o dela (o da loja ou o do proprietário). */
 async function lojaDoNumero(contato: Contato) {
@@ -92,7 +96,7 @@ export const DECLARACOES = [
   },
   {
     name: "chamar_pessoa",
-    description: "Passa a conversa para uma pessoa da equipe: o robô para de responder aqui e a equipe é avisada. Só quando: pediram atendente/humano; é decisão da equipe (cobrança contestada, cancelamento, desconto, exceção, reclamação séria); alguém precisa fazer algo na conta por ela; a base e os vídeos não cobrem o assunto; ou você já guiou o passo a passo e não resolveu. Dúvida de como usar o painel NÃO é motivo: responda.",
+    description: "Passa a conversa para uma pessoa da equipe e a equipe é avisada (o resultado diz o que falar para a pessoa). Só quando: pediram atendente/humano; é decisão da equipe (cobrança contestada, cancelamento, desconto, exceção, reclamação séria); alguém precisa fazer algo na conta por ela; a base e os vídeos não cobrem o assunto; ou você já guiou o passo a passo e não resolveu. Dúvida de como usar o painel NÃO é motivo: responda.",
     parametersJsonSchema: {
       type: "object",
       properties: { motivo: { type: "string", description: "Em uma frase, o que a pessoa precisa." } },
@@ -205,6 +209,8 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
     case "chamar_pessoa": {
       const motivo = String(args?.motivo || "Pediu para falar com uma pessoa.").slice(0, 300);
       await chamarPessoa(contato, motivo);
+      // No painel ninguém da equipe responde: manda para o WhatsApp e segue atendendo (painel.ts).
+      if (peloPainel(contato)) return { ok: true, aviso: `Diga, curto e nestas palavras ou quase: "${PAINEL_PRECISA_DA_EQUIPE}" Depois continue respondendo as dúvidas normalmente.` };
       return { ok: true, aviso: "Avise que uma pessoa da equipe vai responder por aqui em breve. Não continue o atendimento." };
     }
 
@@ -258,6 +264,13 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
 
     case "montar_loja": {
       const link = String(args?.linkDoCardapio || "").trim().slice(0, 500);
+      // No painel a equipe não continua por ali, e o link público do iFood não
+      // deixa copiar: o robô manda para o WhatsApp com o que levar (painel.ts).
+      // O pedido (e o link, se veio) fica na ficha para quem atender lá.
+      if (peloPainel(contato)) {
+        await chamarPessoa(contato, `Montar a loja / puxar o cardápio${link ? `. Mandou pelo painel: ${link}` : ""}`);
+        return { ok: true, aviso: `Diga, curto e nestas palavras ou quase: "${PAINEL_MONTAR_O_CARDAPIO}" Depois continue respondendo as dúvidas normalmente.` };
+      }
       const nomeDaLoja = String(args?.nomeDaLoja || "").trim().slice(0, 120);
       const ehLink = /^(https?:\/\/)?[\w-]+(\.[\w-]+)+\S*$/i.test(link);
       // "Mandou foto" é conferido na conversa, não na palavra do modelo: a equipe abre o WhatsApp esperando as fotos.
@@ -305,12 +318,31 @@ export async function executarFerramenta(nome: string, args: any, contato: Conta
  * Para o robô na conversa e avisa o dono. Usada também pela trava de respostas.
  * O vendedor não é avisado: a conversa aparece no portal dele, no filtro
  * "Pediram pessoa" (lib/atendimento/avisos.ts).
+ *
+ * No chat do PAINEL é diferente (Douglas, 22/10/2026): ninguém da equipe
+ * responde ali, então a pessoa é mandada para o WhatsApp do FireHub (painel.ts)
+ * e o robô NÃO para — sem `aguardandoHumanoDesde`, que calaria o robô e
+ * deixaria a tela em "esperando uma pessoa". Fica só o evento na ficha (quem
+ * atender no WhatsApp já vê o motivo e o link do cardápio, se veio) e o aviso
+ * ao dono, no máximo um por hora por conversa: sem a trava da espera, cada
+ * pedido de pessoa viraria uma mensagem no WhatsApp dele.
  */
+const PREFIXO_DO_PAINEL = "Mandou chamar no WhatsApp do FireHub: ";
 export async function chamarPessoa(contato: Pick<Contato, "id" | "nome" | "nomeDaLoja" | "vendedorId" | "userId">, motivo: string) {
+  const quem = contato.nomeDaLoja || contato.nome || "Um contato";
+  if (peloPainel(contato)) {
+    const avisadoHaPouco = await prisma.crmEvento.findFirst({
+      where: { contatoId: contato.id, texto: { startsWith: PREFIXO_DO_PAINEL }, criadoEm: { gte: new Date(Date.now() - 60 * 60_000) } },
+      select: { id: true },
+    });
+    await registrarEvento(contato.id, "ROBO", `${PREFIXO_DO_PAINEL}${motivo}`, AUTOR_ROBO);
+    if (!avisadoHaPouco) {
+      void avisarDono(`📲 ${quem} foi mandado pelo chat do painel para o WhatsApp do FireHub.\nMotivo: ${motivo}\nConversa: https://firehubfood.com.br/admin?aba=atendimento&contato=${contato.id}`).catch(() => null);
+    }
+    return;
+  }
   await prisma.crmContato.update({ where: { id: contato.id }, data: { aguardandoHumanoDesde: new Date() } });
   await registrarEvento(contato.id, "ROBO", `Chamou uma pessoa: ${motivo}`, AUTOR_ROBO);
-  const quem = contato.nomeDaLoja || contato.nome || "Um contato";
-  const onde = (contato as any).canalDaConversa === "PAINEL" ? "no chat de suporte do painel" : "no WhatsApp do FireHub";
-  const texto = `🙋 ${quem} precisa de uma pessoa ${onde}.\nMotivo: ${motivo}\nResponda em https://firehubfood.com.br/admin?aba=atendimento&contato=${contato.id}`;
+  const texto = `🙋 ${quem} precisa de uma pessoa no WhatsApp do FireHub.\nMotivo: ${motivo}\nResponda em https://firehubfood.com.br/admin?aba=atendimento&contato=${contato.id}`;
   void avisarDono(texto).catch(() => null);
 }

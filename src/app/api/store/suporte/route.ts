@@ -9,6 +9,7 @@ import { agendarRespostaDoRobo } from "@/lib/atendimento/robo";
 import { chamarPessoa } from "@/lib/atendimento/ferramentas";
 import {
   contatoDoPainel, contatoExistenteDoPainel, mensagensDoPainel, JANELA_DO_LOJISTA_MS, MAXIMO_DO_LOJISTA_NA_JANELA,
+  LINK_DO_WHATSAPP_DO_FIREHUB, WHATSAPP_DO_FIREHUB_NA_TELA,
 } from "@/lib/atendimento/painel";
 
 export const dynamic = "force-dynamic";
@@ -18,14 +19,16 @@ export const dynamic = "force-dynamic";
  *
  * GET            → a conversa do painel e o estado (robô respondendo, esperando a equipe).
  * GET ?resumo=1  → só quando saiu a última resposta (o balão fechado desenha o aviso).
- * POST { texto } → mensagem do lojista; o robô responde (robo.ts) ou a equipe pela tela do admin.
- * POST { pedirPessoa: true } → chama a equipe direto, sem passar pelo robô.
+ * POST { texto } → mensagem do lojista; o robô responde (robo.ts) ou, com ele desligado, o WhatsApp do FireHub.
+ * POST { pedirPessoa: true } → manda para o WhatsApp do FireHub, sem passar pelo robô.
  *
  * Abrir o balão não cria contato no CRM: só a primeira mensagem cria.
  */
 
+// Ninguém da equipe lê este chat (Douglas, 22/10/2026: o lojista ficava
+// esperando aqui): quem quer uma pessoa vai para o WhatsApp do FireHub.
 const RESPOSTA_DE_QUEM_PEDIU_PESSOA =
-  "Pronto, avisei a nossa equipe. A resposta chega aqui mesmo, neste chat. Se quiser, já vai escrevendo o que precisa que a gente lê tudo.";
+  `Para falar com uma pessoa da nossa equipe, chama a gente no WhatsApp do FireHub, ${WHATSAPP_DO_FIREHUB_NA_TELA}: ${LINK_DO_WHATSAPP_DO_FIREHUB}`;
 
 async function quemEsta() {
   const session = await getServerSession(authOptions);
@@ -54,8 +57,9 @@ async function estadoDaConversa(contato: Awaited<ReturnType<typeof contatoExiste
       em: m.criadoEm.toISOString(),
     })),
     aguardandoPessoa: !!contato.aguardandoHumanoDesde,
-    // O balão mostra "digitando…" só quando o robô vai mesmo responder.
-    roboAtende: config.roboNoPainel && !contato.roboDesligado && !pausado && !contato.aguardandoHumanoDesde,
+    // O balão mostra "digitando…" só quando o robô vai mesmo responder (esperar
+    // uma pessoa não cala o robô no painel: robo.ts).
+    roboAtende: config.roboNoPainel && !contato.roboDesligado && !pausado,
   };
 }
 
@@ -111,8 +115,15 @@ export async function POST(req: NextRequest) {
     if (!contato.aguardandoHumanoDesde) await chamarPessoa(paraAEquipe, "Pediu uma pessoa pelo chat do painel.");
     await gravarMensagem({ contatoId: contato.id, direcao: "SAIDA", autor: "SISTEMA", autorNome: "Sistema", texto: RESPOSTA_DE_QUEM_PEDIU_PESSOA, canal: "PAINEL" });
   } else if (!config.roboNoPainel || contato.roboDesligado) {
-    // Ninguém responde sozinho: a conversa precisa chegar a uma pessoa (uma vez só).
+    // Ninguém responde sozinho: a pessoa vai para o WhatsApp (o aviso, uma vez
+    // só seguida: escrever de novo não repete o mesmo texto embaixo).
     if (!contato.aguardandoHumanoDesde) await chamarPessoa(paraAEquipe, `Escreveu pelo chat do painel: "${texto.slice(0, 200)}"`);
+    const ultimaSaida = await prisma.crmMensagem.findFirst({
+      where: { contatoId: contato.id, canal: "PAINEL", direcao: "SAIDA" }, orderBy: { criadoEm: "desc" }, select: { texto: true },
+    });
+    if (ultimaSaida?.texto !== RESPOSTA_DE_QUEM_PEDIU_PESSOA) {
+      await gravarMensagem({ contatoId: contato.id, direcao: "SAIDA", autor: "SISTEMA", autorNome: "Sistema", texto: RESPOSTA_DE_QUEM_PEDIU_PESSOA, canal: "PAINEL" });
+    }
   } else {
     agendarRespostaDoRobo(contato.id);
   }
