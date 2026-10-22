@@ -314,16 +314,28 @@ const rotaDaTela = (r: any): RouteItem => ({
 
 /**
  * A linha de estado do card da rota automática. Fase 1: a rota nasce, cresce
- * e espera a cozinha — "aguardando cozinha · 2/3 prontos". A Fase 2 (chamar o
- * motoboy) acrescenta aqui "chamada · Maicon (há 2 min)" / "chamada · todos os
- * entregadores" pelo `chamadaEm`/`chamadaMotoboyId`; a despachada já tem o selo
- * "🚀 Despachada" do card.
+ * e espera a cozinha — "aguardando cozinha · 2/3 prontos". Fase 2: chamada
+ * pelo servidor, "chamada · Maicon (há 2 min)" / "chamada · todos os
+ * entregadores (há 2 min)" pelo `chamadaEm`/`chamadaMotoboyId`; e
+ * "despachada · Maicon" quando saiu (puxada pelo QR, ou terminou sozinha).
  */
-const estadoDaRotaAutomatica = (route: RouteItem): string | null => {
-  if (route.origem !== "AUTO" || rotaJaDespachada(route)) return null;
+const estadoDaRotaAutomatica = (route: RouteItem, nomeDoMotoboy: (id: string) => string, agora = Date.now()): string | null => {
+  if (route.origem !== "AUTO") return null;
+  if (rotaJaDespachada(route)) {
+    const quem = route.motoboyId ? nomeDoMotoboy(route.motoboyId) : "";
+    return quem ? `despachada · ${quem}` : "despachada";
+  }
+  if (route.chamadaEm) {
+    const min = Math.max(0, Math.floor((agora - new Date(route.chamadaEm).getTime()) / 60_000));
+    const ha = min < 1 ? "agora" : `há ${min} min`;
+    const quem = route.chamadaMotoboyId ? nomeDoMotoboy(route.chamadaMotoboyId) || "o entregador" : "todos os entregadores";
+    return `chamada · ${quem} (${ha})`;
+  }
   // O que já saiu (puxado sozinho pelo QR) também não espera mais a cozinha.
   const prontos = route.orders.filter((o) => pedidoJaEstaPronto(o) || o.status === "SAIU_ENTREGA" || o.status === "ENTREGUE").length;
-  // Tudo pronto e ainda sem chamada: até a Fase 2, quem despacha é a loja (o select do card).
+  // Tudo pronto e ainda sem chamada: o cron chama no próximo ciclo (a rota de
+  // 1 espera companhia até `esperaMaxMin`); até lá, e com a automática
+  // desligada, quem despacha é a loja (o select do card).
   if (route.orders.length > 0 && prontos === route.orders.length) return "pronta · escolha o motoboy para despachar";
   return `aguardando cozinha · ${prontos}/${route.orders.length} pronto${route.orders.length > 1 ? "s" : ""}`;
 };
@@ -460,6 +472,9 @@ export default function RoteirizacaoModal({
 
   // Custom Created Routes State
   const [createdRoutes, setCreatedRoutes] = useState<RouteItem[]>([]);
+  // Os pedidos que a loja tirou de uma rota automática (Desfazer ou tirados
+  // dela): o cron não os agrupa até o "voltar". Vem com o GET das rotas.
+  const [foraDaAutomatica, setForaDaAutomatica] = useState<Set<string>>(() => new Set());
 
   // Saipos Roteirização Configuration Settings
   const [showConfigModal, setShowConfigModal] = useState(false);
@@ -818,6 +833,7 @@ export default function RoteirizacaoModal({
         if (Array.isArray(data.routes)) {
           ultimoCorpoDasRotas.current = corpo;
           setCreatedRoutes(data.routes.map(rotaDaTela));
+          setForaDaAutomatica(new Set(Array.isArray(data.foraDaAutomatica) ? data.foraDaAutomatica : []));
         }
       }
     } catch (err) {
@@ -2378,6 +2394,75 @@ export default function RoteirizacaoModal({
     }
   };
 
+  // ── ROTA AUTOMÁTICA: CHAMAR DE NOVO / TROCAR QUEM É CHAMADO ─────────────
+  //
+  // POST /api/store/routes/chamar, NUNCA o PATCH acima: o PATCH grava o
+  // motoboy nos pedidos, e na rota automática o pedido só ganha dono quando o
+  // entregador escaneia o QR (o puxar decide quem leva). `null` = todos os
+  // livres ("quem chegar primeiro sai com ela").
+  const chamarEntregadorDaRota = async (route: RouteItem, motoboyId: string | null, deNovo: boolean) => {
+    setIsDispatching(true);
+    const titulo = deNovo ? "O entregador não foi chamado de novo" : "O entregador não foi trocado";
+    try {
+      const res = await fetch("/api/store/routes/chamar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ routeId: route.id, motoboyId }),
+      });
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setAviso({ tipo: "erro", titulo, detalhe: d?.error || "Tente de novo." });
+        return;
+      }
+      await recarregarRotas();
+      const quem = motoboyId ? nomeDoMotoboy(motoboyId) || "o entregador" : "todos os entregadores";
+      setAviso({ tipo: "ok", titulo: `${route.routeNumber}: ${quem} ${motoboyId ? "chamado" : "chamados"}`, detalhe: "O aviso chega no app do entregador." });
+    } catch (err: any) {
+      setAviso({ tipo: "erro", titulo, detalhe: err?.message || String(err) });
+    } finally {
+      setIsDispatching(false);
+    }
+  };
+
+  // ── "✋ FORA DA AUTOMÁTICA · VOLTAR" ─────────────────────────────────────
+  //
+  // O pedido que a loja tirou de rota automática volta a ser agrupado pelo
+  // cron. O palpite some o selo na hora, por 20 s como o pronto e a
+  // prioridade, e cai quando a próxima consulta das rotas confirma.
+  const [voltasOtimistas, setVoltasOtimistas] = useState<Record<string, number>>({});
+  const estaForaDaAutomatica = (id: string) => foraDaAutomatica.has(id) && !((voltasOtimistas[id] ?? 0) > Date.now());
+  useEffect(() => {
+    setVoltasOtimistas((atual) => {
+      const ids = Object.keys(atual);
+      if (ids.length === 0) return atual;
+      const agora = Date.now();
+      const proximo: Record<string, number> = {};
+      for (const id of ids) if (foraDaAutomatica.has(id) && atual[id] > agora) proximo[id] = atual[id];
+      return Object.keys(proximo).length === ids.length ? atual : proximo;
+    });
+  }, [foraDaAutomatica]);
+  const voltarParaAutomatica = async (orderId: string) => {
+    setVoltasOtimistas((a) => ({ ...a, [orderId]: Date.now() + 20000 }));
+    const desfazerPalpite = () => setVoltasOtimistas((a) => tirarDoPalpite(a, [orderId]));
+    try {
+      const res = await fetch(`/api/store/orders/${orderId}/rota-automatica`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ voltar: true }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        desfazerPalpite();
+        setAviso({ tipo: "erro", titulo: "O pedido não voltou para a rota automática", detalhe: err?.error || "Tente de novo." });
+        return;
+      }
+      recarregarRotas();
+    } catch (err: any) {
+      desfazerPalpite();
+      setAviso({ tipo: "erro", titulo: "O pedido não voltou para a rota automática", detalhe: err?.message || String(err) });
+    }
+  };
+
   // Despachar Rota Existente (Move pedidos para SAIU_ENTREGA e notifica WhatsApp)
   const handleDispatchExistingRoute = async (routeId: string, assignedMotoboyId?: string) => {
     const finalMbId = assignedMotoboyId || selectedMotoboyId;
@@ -2938,6 +3023,23 @@ ${mapsUrl}`;
                                           📍 sem localização — rota manual
                                         </span>
                                       )}
+
+                                      {/* A loja tirou este de uma rota automática: o cron não o
+                                          junta de novo. "voltar" devolve ele ao agrupamento. */}
+                                      {rotaAutoLigada && estaForaDaAutomatica(order.id) && (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); voltarParaAutomatica(order.id); }}
+                                          title="A loja tirou este pedido de uma rota automática, e a Rota 100% automatizada não o junta mais. Clique para ele voltar a ser agrupado."
+                                          style={{
+                                            background: "#F5F3FF", color: "#5B21B6", border: "1px solid #DDD6FE",
+                                            padding: "2px 7px", borderRadius: "5px", fontWeight: 800, fontSize: "0.72rem",
+                                            cursor: "pointer", fontFamily: "inherit",
+                                          }}
+                                        >
+                                          ✋ fora da automática · voltar
+                                        </button>
+                                      )}
                                     </div>
 
                                     <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#1E293B", margin: 0, lineHeight: 1.35, wordBreak: "break-word" }}>
@@ -3129,8 +3231,49 @@ ${mapsUrl}`;
 
                         <div style={{ fontSize: "0.8rem", color: "#475569", marginBottom: "0.75rem" }}>
                           <p style={{ margin: "0 0 4px 0", fontWeight: 700 }}>📦 {route.orders.length} {route.orders.length > 1 ? "Pedidos" : "Pedido"}: {route.orders.map(o => getOrderDisplayNumber(o)).join(", ")}</p>
-                          {estadoDaRotaAutomatica(route) && (
-                            <p style={{ margin: "0 0 4px 0", fontWeight: 800, color: "#5B21B6" }}>🤖 {estadoDaRotaAutomatica(route)}</p>
+                          {estadoDaRotaAutomatica(route, nomeDoMotoboy) && (
+                            <p style={{ margin: "0 0 4px 0", fontWeight: 800, color: "#5B21B6" }}>🤖 {estadoDaRotaAutomatica(route, nomeDoMotoboy)}</p>
+                          )}
+
+                          {/* Rota automática já chamada: a loja chama de novo ou troca
+                              quem é chamado — sem dar o pedido a ninguém (o dono é quem
+                              escaneia o QR). Despachar à mão segue no select abaixo. */}
+                          {!isDispatched && route.origem === "AUTO" && route.chamadaEm && (
+                            <div style={{ display: "flex", gap: 6, alignItems: "center", margin: "6px 0 8px 0", flexWrap: "wrap" }}>
+                              <button
+                                type="button"
+                                disabled={isDispatching}
+                                onClick={() => chamarEntregadorDaRota(route, route.chamadaMotoboyId || null, true)}
+                                style={{
+                                  padding: "6px 10px", borderRadius: "6px", border: "1.5px solid #DDD6FE", background: "#F5F3FF",
+                                  color: "#5B21B6", fontWeight: 800, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit",
+                                }}
+                              >
+                                🔔 Chamar de novo
+                              </button>
+                              <select
+                                value=""
+                                disabled={isDispatching}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (!val) return;
+                                  chamarEntregadorDaRota(route, val === "__todos__" ? null : val, false);
+                                }}
+                                title="Chama outro entregador para esta rota (ele recebe o aviso no app)."
+                                style={{
+                                  flex: 1, minWidth: 150, padding: "6px 8px", borderRadius: "6px", border: "1.5px solid #DDD6FE",
+                                  fontSize: "0.76rem", fontWeight: 700, background: "#FFFFFF", color: "#5B21B6", fontFamily: "inherit",
+                                }}
+                              >
+                                <option value="">Trocar entregador…</option>
+                                {route.chamadaMotoboyId && <option value="__todos__">Todos os entregadores (quem chegar primeiro)</option>}
+                                {motoboys
+                                  .filter((m) => (m as any).active !== false && m.id !== route.chamadaMotoboyId)
+                                  .map((m) => (
+                                    <option key={m.id} value={m.id}>🛵 {m.name}</option>
+                                  ))}
+                              </select>
+                            </div>
                           )}
                           <p style={{ margin: "0 0 8px 0" }}>🛵 Entregador: <b>{route.motoboyName || "ainda não escolhido"}</b></p>
 

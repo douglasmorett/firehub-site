@@ -403,6 +403,7 @@ function PainelDaPrevia({
                   {a.tipo === "tirar-da-rota" && <>Sairia o {nums(a.numeros).join(", ")} da {a.routeNumber ?? "rota"} ({a.motivo === "cancelado" ? "cancelado" : "o mais urgente já esperou demais"})</>}
                   {a.tipo === "chamar" && <>Chamaria <b>{quem(a.motoboyNome)}</b> para a {a.routeNumber ?? "rota"}</>}
                   {a.tipo === "apagar-rota" && <>Apagaria a {a.routeNumber ?? "rota"} (ficou vazia)</>}
+                  {a.tipo === "fechar-rota" && <>Fecharia a {a.routeNumber ?? "rota"} como despachada (os pedidos já saíram um a um)</>}
                 </div>
               ))}
             </>
