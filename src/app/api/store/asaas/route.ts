@@ -32,7 +32,7 @@ import {
 } from "@/lib/asaas-da-loja";
 import {
   mensagemDePixOnlineAtivado,
-  SPLIT_FIREHUB_PERCENTUAL,
+  SPLIT_FIREHUB_FIXO,
   VERSAO_DAS_REGRAS,
   type FormaOnline,
 } from "@/lib/pix-online";
@@ -109,7 +109,7 @@ async function estadoDaLoja(lojaId: string, titular: boolean, contaAoVivo?: Cont
     cartaoAtivo,
     mesmaContaDoFireHub,
     podeEditar: titular,
-    splitPercentual: SPLIT_FIREHUB_PERCENTUAL,
+    splitFixo: SPLIT_FIREHUB_FIXO,
     versaoDasRegras: VERSAO_DAS_REGRAS,
     avisosNoWhatsApp: String(loja?.notificationPhone || "").replace(/\D/g, "").length >= 10,
     conta: conectado

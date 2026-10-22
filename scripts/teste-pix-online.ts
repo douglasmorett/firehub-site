@@ -5,7 +5,7 @@
  * lib/asaas-da-loja.ts, lib/cofre.ts).
  *
  * Trava o que o lojista aceitou nas regras e o que o Asaas exige:
- *   - o split do FireHub é 1% do PEDIDO, mandado em reais (o percentual do
+ *   - o split do FireHub é R$ 0,30 fixos por venda (era 1% até 22/10/2026), mandado em reais (o percentual do
  *     Asaas incide sobre o líquido e daria menos);
  *   - o cliente do Asaas nasce SEM notificação (cada uma é cobrada da loja);
  *   - a cobrança vai com a referência do pedido, Pix, vencimento hoje e split;
@@ -112,34 +112,34 @@ async function main() {
   } = await import("../src/lib/pix-online");
   const { cifrar, decifrar, mesmoSegredo } = await import("../src/lib/cofre");
 
-  console.log("\n== O split é 1% do pedido, em reais ==");
-  conferir("pedido de R$ 50 → R$ 0,50", splitDoFireHub(50), 0.5);
+  console.log("\n== O split é R$ 0,30 fixos por venda ==");
+  conferir("pedido de R$ 50 → R$ 0,30", splitDoFireHub(50), 0.3);
   conferir("pedido de R$ 30 → R$ 0,30", splitDoFireHub(30), 0.3);
-  conferir("pedido de R$ 100 → R$ 1,00", splitDoFireHub(100), 1);
-  conferir("pedido de R$ 33,33 → R$ 0,33", splitDoFireHub(33.33), 0.33);
-  conferir("pedido de R$ 7,90 → R$ 0,08", splitDoFireHub(7.9), 0.08);
+  conferir("pedido de R$ 100 → R$ 0,30", splitDoFireHub(100), 0.3);
+  conferir("pedido de R$ 7,90 → R$ 0,30", splitDoFireHub(7.9), 0.3);
+  conferir("pedido de R$ 2,10 → só o que sobra da tarifa (R$ 0,11)", splitDoFireHub(2.1), 0.11);
   conferir("pedido menor que a tarifa → sem split", splitDoFireHub(1.5), 0);
-  conferir("loja recebe R$ 47,51 de R$ 50 (1,99 + 0,50)", liquidoDaLoja(50), 47.51);
-  conferir("loja recebe R$ 97,01 de R$ 100", liquidoDaLoja(100), 97.01);
+  conferir("loja recebe R$ 47,71 de R$ 50 (1,99 + 0,30)", liquidoDaLoja(50), 47.71);
+  conferir("loja recebe R$ 97,71 de R$ 100", liquidoDaLoja(100), 97.71);
   // Em todo lugar o lojista vê o custo SOMADO; a regra que ele aceita é o
-  // único lugar que divide — e ela tem que continuar dizendo que 1% é do FireHub.
-  conferir("as regras falam da taxa de 1%", REGRAS_DO_PIX_ONLINE.some((r) => r.texto.includes("taxa do pagamento online de 1%")), true);
-  conferir("as regras dizem que o 1% é do FireHub", REGRAS_DO_PIX_ONLINE.some((r) => /1% do pedido é do FireHub/.test(r.texto)), true);
+  // único lugar que divide — e ela tem que continuar dizendo que os R$ 0,30 são do FireHub.
+  conferir("as regras falam da taxa de R$ 0,30", REGRAS_DO_PIX_ONLINE.some((r) => /taxa do pagamento online de R\$\s0,30 por venda/.test(r.texto)), true);
+  conferir("as regras dizem que os R$ 0,30 são do FireHub", REGRAS_DO_PIX_ONLINE.some((r) => /R\$\s0,30 por venda é do FireHub/.test(r.texto)), true);
   conferir("as regras mostram o custo somado", REGRAS_DO_PIX_ONLINE.some((r) => r.texto.includes(CUSTO_POR_VENDA_PIX) && r.texto.includes(CUSTO_POR_VENDA_CARTAO)), true);
   conferir("o WhatsApp mostra o custo somado", mensagemDePixOnlineAtivado("Loja X", "Conta Y", { pix: true, cartao: true }).includes(CUSTO_POR_VENDA_CARTAO), true);
   conferir("o WhatsApp nunca diz que o 1% é do Asaas", /tarifa do Asaas de 1%|1% (do|de tarifa do) Asaas/i.test(mensagemDePixOnlineAtivado("Loja X", "Conta Y")), false);
   conferir("nenhuma regra chama o total de tarifa do Asaas", REGRAS_DO_PIX_ONLINE.some((r) => /tarifa do Asaas:? (de )?(R\$|\d)/i.test(r.texto)), false);
-  conferir("custo de um Pix de R$ 50: R$ 2,49", custoDaVenda(50), 2.49);
-  conferir("custo de um cartão de R$ 100: R$ 4,48", custoDaVenda(100, "cartao"), 4.48);
-  conferir("promoção: Pix R$ 0,99 + 1%", CUSTO_POR_VENDA_PIX_PROMOCIONAL.replace(/\s/g, " "), "R$ 0,99 + 1%");
-  conferir("promoção: cartão 2,99% + R$ 0,49", CUSTO_POR_VENDA_CARTAO_PROMOCIONAL.replace(/\s/g, " "), "2,99% + R$ 0,49");
+  conferir("custo de um Pix de R$ 50: R$ 2,29", custoDaVenda(50), 2.29);
+  conferir("custo de um cartão de R$ 100: R$ 3,78", custoDaVenda(100, "cartao"), 3.78);
+  conferir("promoção: Pix R$ 1,29", CUSTO_POR_VENDA_PIX_PROMOCIONAL.replace(/\s/g, " "), "R$ 1,29");
+  conferir("promoção: cartão 1,99% + R$ 0,79", CUSTO_POR_VENDA_CARTAO_PROMOCIONAL.replace(/\s/g, " "), "1,99% + R$ 0,79");
   conferir("cartão de R$ 50: tarifa do Asaas R$ 1,99 (2,99% + 0,49)", tarifaDoAsaas(50, "cartao"), 1.99);
   conferir("cartão de R$ 100: tarifa R$ 3,48", tarifaDoAsaas(100, "cartao"), 3.48);
-  conferir("cartão de R$ 100: taxa online R$ 1,00", splitDoFireHub(100, "cartao"), 1);
+  conferir("cartão de R$ 100: taxa online R$ 0,30", splitDoFireHub(100, "cartao"), 0.3);
   // O resumo da tela mostra o custo SOMADO; o "R$" do Intl vem com espaço fixo.
-  conferir("custo por venda no Pix: R$ 1,99 + 1%", CUSTO_POR_VENDA_PIX.replace(/\s/g, " "), "R$ 1,99 + 1%");
-  conferir("custo por venda no cartão: 3,99% + R$ 0,49", CUSTO_POR_VENDA_CARTAO.replace(/\s/g, " "), "3,99% + R$ 0,49");
-  conferir("cartão de R$ 100: loja recebe R$ 95,52", liquidoDaLoja(100, "cartao"), 95.52);
+  conferir("custo por venda no Pix: R$ 2,29", CUSTO_POR_VENDA_PIX.replace(/\s/g, " "), "R$ 2,29");
+  conferir("custo por venda no cartão: 2,99% + R$ 0,79", CUSTO_POR_VENDA_CARTAO.replace(/\s/g, " "), "2,99% + R$ 0,79");
+  conferir("cartão de R$ 100: loja recebe R$ 96,22", liquidoDaLoja(100, "cartao"), 96.22);
   conferir("as regras dizem quando o cartão cai", REGRAS_DO_PIX_ONLINE.some((r) => r.texto.includes("até 2 dias úteis")), true);
 
   console.log("\n== A chave da loja só vai ao banco cifrada ==");
@@ -229,7 +229,7 @@ async function main() {
   conferir("referência do pedido", cobranca?.externalReference, "pedido:ckxyz");
   conferir("vencimento hoje (YYYY-MM-DD)", /^\d{4}-\d{2}-\d{2}$/.test(cobranca?.dueDate || ""), true);
   conferir("split para a carteira do FireHub", cobranca?.split?.[0]?.walletId, "wal-firehub-sandbox");
-  conferir("split em valor fixo de R$ 0,50", cobranca?.split?.[0]?.fixedValue, 0.5);
+  conferir("split em valor fixo de R$ 0,30", cobranca?.split?.[0]?.fixedValue, 0.3);
   conferir("sem percentualValue (seria sobre o líquido)", cobranca?.split?.[0]?.percentualValue, undefined);
   conferir("copia e cola", pix.dados?.copiaECola?.startsWith("000201"), true);
   conferir("imagem do QR", pix.dados?.imagemBase64, "iVBORw0KGgo=");
@@ -265,7 +265,7 @@ async function main() {
   conferir("NENHUM dado de cartão sai do FireHub", corpoCartao?.creditCard === undefined && corpoCartao?.creditCardHolderInfo === undefined, true);
   conferir("devolve a página do Asaas", cartao.dados?.linkDePagamento, "https://www.asaas.com/i/abc123");
   conferir("não pede QR de Pix", chamadas.some((c) => c.caminho.includes("pixQrCode")), false);
-  conferir("taxa online de R$ 1,00 no split", corpoCartao?.split?.[0]?.fixedValue, 1);
+  conferir("taxa online de R$ 0,30 no split", corpoCartao?.split?.[0]?.fixedValue, 0.3);
 
   console.log("\n== Split recusado: a venda não para ==");
   chamadas.length = 0;

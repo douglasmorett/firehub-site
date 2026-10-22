@@ -6,7 +6,7 @@
  * Integrações → Asaas. Daí em diante o FireHub cria a cobrança de cada pedido
  * do cardápio pago online COM A CHAVE DELE: a cobrança sai no nome da loja, o
  * dinheiro cai na conta Asaas da loja, e o Asaas separa sozinho a taxa do
- * pagamento online (1% do pedido) para a carteira do FireHub, por split
+ * pagamento online (R$ 0,30 por venda) para a carteira do FireHub, por split
  * (lib/asaas-da-loja.ts, `walletDoFireHub`). Pedido pago na entrega não passa
  * pelo Asaas e não tem taxa nenhuma.
  *
@@ -26,8 +26,12 @@
 
 export type FormaOnline = "pix" | "cartao";
 
-/** A taxa do pagamento online, sobre o valor do pedido. Vai por split. */
-export const SPLIT_FIREHUB_PERCENTUAL = 1;
+/**
+ * A taxa do pagamento online: valor fixo por venda paga pelo site, vai por
+ * split. Era 1% do pedido até 22/10/2026 (Douglas: "fica puxado por cliente");
+ * o `taxaOnline` gravado em cada pedido guarda o valor da época.
+ */
+export const SPLIT_FIREHUB_FIXO = 0.3;
 
 /**
  * Quanto tempo o cliente tem para pagar. Depois disso o pedido é cancelado e a
@@ -51,9 +55,9 @@ export const TARIFA_ASAAS_SAQUE_PJ = 2.0;
 /**
  * Versão das regras. Sobe quando o texto muda de um jeito que o lojista
  * precisa aceitar de novo — a tela compara com a versão que ele aceitou.
- * 2 = cartão pelo site (27/09/2026).
+ * 2 = cartão pelo site (27/09/2026). 3 = taxa fixa de R$ 0,30 no lugar de 1% (22/10/2026).
  */
-export const VERSAO_DAS_REGRAS = 2;
+export const VERSAO_DAS_REGRAS = 3;
 
 const arred = (v: number) => Math.round(v * 100) / 100;
 
@@ -65,18 +69,14 @@ export function tarifaDoAsaas(valor: number, forma: FormaOnline = "pix"): number
 }
 
 /**
- * A taxa do pagamento online em reais, calculada AQUI e mandada como valor
- * fixo no split.
- *
- * O `percentualValue` do Asaas incide sobre o valor LÍQUIDO (depois da tarifa):
- * 1% de um Pix de R$ 50 viraria 1% de R$ 48,01. O combinado é 1% do pedido,
- * então o FireHub manda o valor exato. Nunca passa do que sobra depois da
- * tarifa, senão o Asaas bloqueia o recebimento por divergência de split.
+ * A taxa do pagamento online em reais, mandada como valor fixo no split.
+ * Nunca passa do que sobra depois da tarifa, senão o Asaas bloqueia o
+ * recebimento por divergência de split.
  */
 export function splitDoFireHub(valorDoPedido: number, forma: FormaOnline = "pix"): number {
   const valor = Number(valorDoPedido) || 0;
   if (valor <= 0) return 0;
-  const split = arred((valor * SPLIT_FIREHUB_PERCENTUAL) / 100);
+  const split = SPLIT_FIREHUB_FIXO;
   const teto = arred(valor - tarifaDoAsaas(valor, forma));
   if (teto <= 0) return 0;
   return Math.max(0.01, Math.min(split, teto));
@@ -100,18 +100,19 @@ export const TEXTO_TARIFA_CARTAO = `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL)} + ${r
  * O custo de uma venda paga pelo site, SOMADO — tarifa do Asaas + taxa do
  * pagamento online. É o número que o lojista vê em todo lugar (selo, tabela,
  * tela de conectado, WhatsApp), como compara com a maquininha (dono,
- * 28/09/2026). A divisão — 1% do FireHub, o resto do Asaas — fica numa
+ * 28/09/2026). A divisão — R$ 0,30 do FireHub, o resto do Asaas — fica numa
  * linha só, na regra de custo que ele aceita (REGRAS_DO_PIX_ONLINE): o split
  * aparece no extrato do Asaas com o nome do FireHub, e cobrança fora do
  * aceite vira reclamação. Nunca dizer que o total é tarifa do Asaas.
  */
-export const CUSTO_POR_VENDA_PIX = `${reais(TARIFA_ASAAS_PIX)} + ${pct(SPLIT_FIREHUB_PERCENTUAL)}`;
-/** "3,99% + R$ 0,49" */
-export const CUSTO_POR_VENDA_CARTAO = `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL + SPLIT_FIREHUB_PERCENTUAL)} + ${reais(TARIFA_ASAAS_CARTAO_FIXA)}`;
+/** "R$ 2,29" */
+export const CUSTO_POR_VENDA_PIX = reais(arred(TARIFA_ASAAS_PIX + SPLIT_FIREHUB_FIXO));
+/** "2,99% + R$ 0,79" */
+export const CUSTO_POR_VENDA_CARTAO = `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL)} + ${reais(arred(TARIFA_ASAAS_CARTAO_FIXA + SPLIT_FIREHUB_FIXO))}`;
 /** Nos 3 primeiros meses da conta Asaas, com a tarifa promocional dele. */
-export const CUSTO_POR_VENDA_PIX_PROMOCIONAL = `${reais(TARIFA_ASAAS_PIX_PROMOCIONAL)} + ${pct(SPLIT_FIREHUB_PERCENTUAL)}`;
+export const CUSTO_POR_VENDA_PIX_PROMOCIONAL = reais(arred(TARIFA_ASAAS_PIX_PROMOCIONAL + SPLIT_FIREHUB_FIXO));
 export const CUSTO_POR_VENDA_CARTAO_PROMOCIONAL =
-  `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL_PROMOCIONAL + SPLIT_FIREHUB_PERCENTUAL)} + ${reais(TARIFA_ASAAS_CARTAO_FIXA)}`;
+  `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL_PROMOCIONAL)} + ${reais(arred(TARIFA_ASAAS_CARTAO_FIXA + SPLIT_FIREHUB_FIXO))}`;
 
 /** O custo somado em reais numa venda deste valor (tarifa cheia do Asaas). */
 export function custoDaVenda(valorDoPedido: number, forma: FormaOnline = "pix"): number {
@@ -140,7 +141,7 @@ export const REGRAS_DO_PIX_ONLINE: Regra[] = [
       `Pix: ${CUSTO_POR_VENDA_PIX}. Cartão: ${CUSTO_POR_VENDA_CARTAO}. Já sai descontado do que cai na sua conta — nada é cobrado à parte. ` +
       `Nos 3 primeiros meses da sua conta Asaas: Pix ${CUSTO_POR_VENDA_PIX_PROMOCIONAL} e cartão ${CUSTO_POR_VENDA_CARTAO_PROMOCIONAL}. ` +
       // A ÚNICA linha que divide o custo — ver CUSTO_POR_VENDA_PIX.
-      `Desse custo, a taxa do pagamento online de ${SPLIT_FIREHUB_PERCENTUAL}% do pedido é do FireHub e o resto é a tarifa do Asaas. ` +
+      `Desse custo, a taxa do pagamento online de ${reais(SPLIT_FIREHUB_FIXO)} por venda é do FireHub e o resto é a tarifa do Asaas. ` +
       "Pedido pago na entrega não tem custo nenhum.",
   },
   {

@@ -14,7 +14,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { DATA_DOS_TERMOS } from "@/lib/termos-versao";
 import { FIREHUB_PLAN, VIRADA_DOS_2_POR_CENTO } from "@/lib/firehub-billing";
 import { MULTA_POR_ATRASO_PCT, JUROS_AO_MES_PCT } from "@/lib/prazo-da-mensalidade";
-import { SPLIT_FIREHUB_PERCENTUAL } from "@/lib/pix-online";
+import { SPLIT_FIREHUB_FIXO } from "@/lib/pix-online";
 
 /** "04/10/2026" e "03/10/2026" — saem da mesma data que a cobrança usa. */
 const dataBr = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
@@ -91,7 +91,7 @@ export default function TextoDosTermos({ compacto = false }: { compacto?: boolea
         <Item n="4.2"><strong>Mensalidade:</strong> {FIREHUB_PLAN.PERCENT_RATE}% do faturamento do mês registrado no FireHub, no mínimo {reais(FIREHUB_PLAN.MIN_MONTHLY)} e no máximo {reais(FIREHUB_PLAN.MAX_MONTHLY)}. Entra todo pedido de todos os canais (cardápio digital, WhatsApp, mesa, balcão, totem, iFood, 99Food, Jotajá e demais integrações), pelo valor cheio antes de cupons e descontos. A partir de {DATA_DA_VIRADA}, <strong>pedidos cancelados também entram</strong>, porque passaram pelo sistema e geraram custo de processamento (antes dessa data, ficam de fora); só não entram o rascunho do robô que não virou pedido e o pedido do totem que não foi pago. O percentual de {FIREHUB_PLAN.PERCENT_RATE}% vale para as vendas a partir de {DATA_DA_VIRADA}; as vendas até {DIA_ANTES_DA_VIRADA} são cobradas a 1%, e o mínimo e o máximo valem sobre o total do mês.</Item>
         <Item n="4.3">Mês sem nenhuma venda e sem uso do sistema: R$ 0,00. Mês sem venda, mas com uso ativo (robô conectado, integrações ligadas, financeiro ou estoque em uso): cobra-se o mínimo.</Item>
         <Item n="4.4"><strong>Serviços adicionais</strong>, cobrados na mesma fatura: cada loja adicional ligada a um mesmo marketplace, {reais(FIREHUB_PLAN.EXTRA_STORE_FEE)} por mês (a primeira é gratuita); totem, R$ 100,00 por mês por totem; tráfego pago, R$ 50,00 por semana de campanha ativa, independentemente do resultado. A verba dos anúncios é paga pelo Lojista diretamente à Meta.</Item>
-        <Item n="4.5"><strong>Pagamento online pelo site:</strong> é processado na conta Asaas do próprio Lojista. Sobre cada pedido pago online, o FireHub fica com {SPLIT_FIREHUB_PERCENTUAL}% do valor, além das tarifas do Asaas, que são do Asaas.</Item>
+        <Item n="4.5"><strong>Pagamento online pelo site:</strong> é processado na conta Asaas do próprio Lojista. Sobre cada pedido pago online, o FireHub fica com {reais(SPLIT_FIREHUB_FIXO)} por pedido, além das tarifas do Asaas, que são do Asaas.</Item>
         <Item n="4.6"><strong>Fatura e vencimento:</strong> o mês fecha no dia 1 do mês seguinte (horário de Brasília) e o boleto/Pix sai pelo Asaas com <strong>vencimento no dia 5</strong>. Depois do vencimento incidem multa de {MULTA_POR_ATRASO_PCT}% e juros de {JUROS_AO_MES_PCT}% ao mês, proporcionais aos dias de atraso.</Item>
         <Item n="4.7"><strong>Bloqueio:</strong> sem pagamento até o dia 10, o painel é bloqueado até a compensação, e o desbloqueio é automático. O bloqueio por falta de pagamento não gera direito a indenização.</Item>
         <Item n="4.8">Discordou de algum valor da fatura? Avise o suporte até o vencimento, indicando o pedido ou o valor contestado.</Item>

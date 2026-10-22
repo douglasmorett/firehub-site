@@ -34,7 +34,7 @@ export type EstadoPagamentoOnline = {
   /** A conta conectada é a mesma que recebe pelo FireHub: sem split. */
   mesmaContaDoFireHub?: boolean;
   podeEditar: boolean;
-  splitPercentual: number;
+  splitFixo: number;
   avisosNoWhatsApp: boolean;
   conta: null | {
     nome: string;

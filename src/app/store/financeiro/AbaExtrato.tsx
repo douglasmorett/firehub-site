@@ -56,7 +56,7 @@ function lancamentosDoPeriodo(pedidos: PedidoDoFinanceiro[], comissoes: Comissoe
       : online
         ? (p.marketplace ? `Repasse do ${canal}` : "Sua conta Asaas")
         : "Caixa da loja";
-    // A taxa que se sabe por pedido: o 1% do FireHub no pago pelo site, e a
+    // A taxa que se sabe por pedido: a do FireHub no pago pelo site (gravada no pedido), e a
     // comissão do app pelo percentual que a loja cadastrou (estimada).
     let taxa = 0, estimada = false;
     if (!cancelado) {
@@ -126,7 +126,7 @@ export function AbaExtrato({ dados, comissoes, repasseConfig }: { dados: DadosDo
           <p style={{ fontSize: "1.9rem", fontWeight: 900, color: "#0F766E", margin: "4px 0" }}>{fmtR(receb.site.total)}</p>
           <div style={{ fontSize: "0.8rem", color: "#475569", lineHeight: 1.7 }}>
             {fmtNum(receb.site.pedidos)} pedidos · Pix {fmtR(receb.site.pix)} · cartão {fmtR(receb.site.cartao)}<br />
-            Taxa do FireHub (1%, gravada em cada pedido): − {fmtR(receb.site.taxaFireHub)}<br />
+            Taxa do FireHub (gravada em cada pedido): − {fmtR(receb.site.taxaFireHub)}<br />
             {receb.site.pedidosEstornados > 0 && <>Pagos e depois cancelados: {fmtNum(receb.site.pedidosEstornados)} ({fmtR(receb.site.estornos)}) — confira o estorno no Asaas<br /></>}
             <strong>Líquido: {fmtR(receb.site.liquido)}</strong> (a tarifa do próprio Asaas sai no extrato do Asaas)
           </div>
@@ -281,7 +281,7 @@ export function AbaRelatorio({ dados, dre }: { dados: DadosDoPeriodo; dre: Resul
         <Cartao titulo="Pago online pelo site (conta Asaas)">
           <Linha rotulo="Pix" valor={fmtR(receb.site.pix)} />
           <Linha rotulo="Cartão" valor={fmtR(receb.site.cartao)} />
-          <Linha rotulo="Taxa do FireHub (1%)" valor={`- ${fmtR(receb.site.taxaFireHub)}`} />
+          <Linha rotulo="Taxa do FireHub" valor={`- ${fmtR(receb.site.taxaFireHub)}`} />
           <Linha rotulo="Líquido (antes da tarifa do Asaas)" valor={fmtR(receb.site.liquido)} forte />
         </Cartao>
       </div>

@@ -37,7 +37,7 @@ import {
   mesmoDominio,
   walletDoFireHub,
 } from "@/lib/asaas-da-loja";
-import { MINUTOS_PARA_PAGAR, SPLIT_FIREHUB_PERCENTUAL, reais, splitDoFireHub, type FormaOnline } from "@/lib/pix-online";
+import { MINUTOS_PARA_PAGAR, SPLIT_FIREHUB_FIXO, reais, splitDoFireHub, type FormaOnline } from "@/lib/pix-online";
 import { cpfValido } from "@/lib/fiscal-validacao";
 import { avisarDono, avisarAdminDoSistema } from "@/lib/alertas-do-dono";
 
@@ -363,7 +363,7 @@ export async function gerarCobrancaDoPedido(orderId: string): Promise<Resultado<
     const situacaoDoSplit = c.split > 0 ? "ENVIADO" : c.splitRecusado ? "RECUSADO" : mesmaConta ? "MESMA_CONTA" : "SEM_CARTEIRA";
     const taxaOnline = {
       forma,
-      percentual: SPLIT_FIREHUB_PERCENTUAL,
+      fixo: SPLIT_FIREHUB_FIXO,
       valor: taxa,
       walletId: carteira,
       split: situacaoDoSplit,
