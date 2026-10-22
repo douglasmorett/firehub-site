@@ -37,7 +37,7 @@ import { createPortal } from "react-dom";
 import { usePathname } from "next/navigation";
 import { Check, ListVideo, Play, PlayCircle, X } from "lucide-react";
 import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
-import { arquivosDoTutorial, duracaoEmMinutos, indiceInicial, nomeDaTela, relogio, titulosCurtos, tutoriaisDaTela, type Tutorial } from "@/lib/tutoriais";
+import { arquivosDoTutorial, duracaoEmMinutos, EVENTO_TUTORIAIS_OCULTOS, indiceInicial, nomeDaTela, ocultarTutoriaisDaLoja, relogio, titulosCurtos, tutoriaisDaTela, type Tutorial } from "@/lib/tutoriais";
 
 export const CHAVE_VISTO = "firehub_tutorial_visto:";
 export const VELOCIDADES = [1, 1.25, 1.5];
@@ -213,6 +213,7 @@ export default function TutorialDaTela({
   chamada = CHAMADA_PADRAO,
   ocultavel = true,
   estilo,
+  ocultosNaLoja = false,
 }: {
   /**
    * De qual tela é o vídeo, quando não é a da URL: a Roteirização também abre
@@ -237,6 +238,8 @@ export default function TutorialDaTela({
   ocultavel?: boolean;
   /** Margem da faixa onde ela é montada. */
   estilo?: React.CSSProperties;
+  /** O dono já pediu "não mostrar mais": a faixa some em todas as telas (lib/tutoriais.ts › ocultarTutoriaisDaLoja). */
+  ocultosNaLoja?: boolean;
 } = {}) {
   const pathname = usePathname();
   const tutoriais = tutoriaisDaTela(rota || pathname, useTutoriaisEnviados());
@@ -255,6 +258,12 @@ export default function TutorialDaTela({
   // A resposta guarda de qual tela ela é: ao trocar para uma tela escondida, a faixa não pisca.
   const [faixaLiberada, setFaixaLiberada] = useState<string | null>(null);
   const telaDaFaixa = tutoriais[0]?.id;
+  const [todasOcultas, setTodasOcultas] = useState(ocultosNaLoja);
+  useEffect(() => {
+    const ocultar = () => setTodasOcultas(true);
+    window.addEventListener(EVENTO_TUTORIAIS_OCULTOS, ocultar);
+    return () => window.removeEventListener(EVENTO_TUTORIAIS_OCULTOS, ocultar);
+  }, []);
   // A faixa mora no layout e não remonta ao trocar de tela: relê a escolha a cada tela.
   useEffect(() => {
     if (variante !== "faixa" || !telaDaFaixa) return;
@@ -422,8 +431,9 @@ export default function TutorialDaTela({
       if (telaDaFaixa) localStorage.setItem(CHAVE_FAIXA_OCULTA + telaDaFaixa, "1");
     } catch {}
     setFaixaLiberada(null);
+    ocultarTutoriaisDaLoja();
   };
-  if (variante === "faixa" && faixaLiberada !== telaDaFaixa) return null;
+  if (variante === "faixa" && (todasOcultas || faixaLiberada !== telaDaFaixa)) return null;
 
   return (
     <>

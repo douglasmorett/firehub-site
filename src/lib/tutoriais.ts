@@ -244,6 +244,20 @@ export function relogio(segundos: number): string {
 export const MARCA_CENTRAL_FECHADA = "fh_central_tutoriais_fechada";
 export const CHAVE_CENTRAL_NAO_MOSTRAR = "fh_central_tutoriais_nao_mostrar:";
 
+/**
+ * "Não mostrar mais" do DONO (na central ou na faixa de qualquer tela) vale
+ * para a loja toda, em todo aparelho: fica em `onboardingData.tutoriaisOcultos`
+ * do dono. O localStorage não segurava na TV da cozinha — o navegador da Smart
+ * TV esquece e o tutorial voltava a cada vez que ligavam (Hakim, 22/10/2026).
+ * O botão "Tutorial" do topo e o do menu continuam para quem quiser assistir.
+ */
+export const EVENTO_TUTORIAIS_OCULTOS = "firehub:tutoriais-ocultos";
+
+export function ocultarTutoriaisDaLoja() {
+  fetch("/api/store/tutoriais-ocultos", { method: "POST" }).catch(() => {});
+  window.dispatchEvent(new Event(EVENTO_TUTORIAIS_OCULTOS));
+}
+
 export function esquecerCentralFechada() {
   try {
     document.cookie = `${MARCA_CENTRAL_FECHADA}=; Max-Age=0; path=/; SameSite=Lax`;

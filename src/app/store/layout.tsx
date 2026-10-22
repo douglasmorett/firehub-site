@@ -65,7 +65,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
   try {
     user = await prisma.user.findUnique({
       where: { email: session.user?.email || "" },
-      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, permissions: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true, storeLogo: true },
+      select: { id: true, name: true, email: true, city: true, slug: true, role: true, ownerId: true, permissions: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true, storeLogo: true, onboardingData: true },
     });
     console.log("[StoreLayout] Session Email:", session.user?.email, "| User Email from DB:", user?.email);
   } catch (err) {
@@ -77,13 +77,15 @@ export default async function StoreLayout({ children }: { children: React.ReactN
     try {
       const owner = await prisma.user.findUnique({
         where: { id: user.ownerId },
-        select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true, storeLogo: true },
+        select: { id: true, name: true, email: true, city: true, slug: true, role: true, cpfCnpj: true, storeOpen: true, cashOpen: true, createdAt: true, isFranqueadoHakim: true, trialEndsAt: true, storeName: true, storeLogo: true, onboardingData: true },
       });
       if (owner) storeOwner = owner;
     } catch (e) {}
   }
 
   const isFranqueado = user?.role === "FRANCHISEE" || user?.role === "STAFF";
+  // O dono pediu "não mostrar mais" nos tutoriais: vale para a loja toda (lib/tutoriais.ts).
+  const tutoriaisOcultos = (storeOwner?.onboardingData as any)?.tutoriaisOcultos === true;
   const isAdmin = user?.role === "ADMIN";
 
   // === TRIAL / BENEFÍCIO: dias restantes da conta proprietária ===
@@ -250,7 +252,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         {user?.id && (
           <CentralDeTutoriais
             // Com a tela dos Termos aberta, a central espera o próximo acesso.
-            abrirSozinha={isFranqueado && !(session.user as any)?.impersonatedBy && !precisaAceitarTermos}
+            abrirSozinha={isFranqueado && !(session.user as any)?.impersonatedBy && !precisaAceitarTermos && !tutoriaisOcultos}
             usuarioId={user.id}
             // Conta antiga guarda o nome da LOJA em `name`: aí a saudação vai sem nome.
             primeiroNome={user.name && user.name.trim() !== (storeOwner?.storeName || user.storeName || "").trim() ? user.name.trim().split(/\s+/)[0] : ""}
@@ -275,7 +277,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
         {/* "Tem um tutorial desta tela": a faixa no alto de cada tela que tem
             vídeo (some sozinha onde não tem). Acréscimo ao botão do topo e ao
             do menu lateral, que continuam. */}
-        <TutorialDaTela variante="faixa" estilo={{ margin: "0.75rem 1.5rem 0" }} />
+        <TutorialDaTela variante="faixa" estilo={{ margin: "0.75rem 1.5rem 0" }} ocultosNaLoja={tutoriaisOcultos} />
         <AvisoImpressaoParada />
         <HideOnCompras>
           <div style={{ padding: "1rem 1.5rem 0" }}>

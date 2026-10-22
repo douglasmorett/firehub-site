@@ -35,7 +35,7 @@ import { buscarNosTutoriais, type IndiceDaBusca } from "@/lib/busca-nos-tutoriai
 import { useTutoriaisEnviados } from "@/components/TutoriaisEnviados";
 import { ABRIR_CENTRAL, CHAVE_VISTO, ESTILO, useNaAreaVisivel, VELOCIDADES } from "@/components/TutorialDaTela";
 import {
-  arquivosDoTutorial, CHAVE_CENTRAL_NAO_MOSTRAR, duracaoEmMinutos, MARCA_CENTRAL_FECHADA, relogio, todosOsTutoriais,
+  arquivosDoTutorial, CHAVE_CENTRAL_NAO_MOSTRAR, duracaoEmMinutos, MARCA_CENTRAL_FECHADA, ocultarTutoriaisDaLoja, relogio, todosOsTutoriais,
 } from "@/lib/tutoriais";
 
 const SEM_ABRIR_SOZINHA = ["/store/totem", "/store/kds"];
@@ -190,6 +190,7 @@ export default function CentralDeTutoriais({
     try {
       if (naoMostrarMais) localStorage.setItem(CHAVE_CENTRAL_NAO_MOSTRAR + usuarioId, "1");
     } catch {}
+    if (naoMostrarMais) ocultarTutoriaisDaLoja();
     document.cookie = `${MARCA_CENTRAL_FECHADA}=${usuarioId}; path=/; SameSite=Lax`;
     setAberto(false);
     if (abriuSozinha.current) requestAnimationFrame(() => setSeta(medirSeta()));
