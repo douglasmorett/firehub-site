@@ -42,6 +42,7 @@ import { rotaJaDespachada, rotasComLinha, pontosDaLinha, podarCoordenadas } from
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
 import { bairroPeloEndereco, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
+import RotaAutomatica, { type PreviaDaRotaAutomatica, type RotaAutomaticaConfig, type RotaAutomaticaEstado } from "@/components/customer/RotaAutomatica";
 
 // ── Aviso que desce do topo (no lugar do alert()) ─────────────────────────
 // Mesma interface do components/AvisoNoTopo.tsx de outra frente, que ainda não
@@ -654,6 +655,60 @@ export default function RoteirizacaoModal({
       }
     } catch (e) {}
   }, []);
+
+  // ── ROTA 100% AUTOMATIZADA (o botão roxo ao lado do seletor dos modos) ──
+  //
+  // O estado vem do servidor ao abrir o quadro de Configurações: loja fora da
+  // liberação (hoje só a Hakim Centro) recebe `liberada: false` e o botão nem
+  // aparece. Salvar é o PUT da mesma rota, que devolve o estado novo.
+  // Plano: vault "FireHub - Plano despacho automático".
+  const [rotaAuto, setRotaAuto] = useState<RotaAutomaticaEstado | null>(null);
+  const [salvandoRotaAuto, setSalvandoRotaAuto] = useState(false);
+  const carregarRotaAuto = useCallback(async () => {
+    try {
+      const r = await fetch("/api/store/roteirizacao-automatica", { cache: "no-store" });
+      const d = await r.json().catch(() => null);
+      setRotaAuto(r.ok && d?.liberada ? d : null);
+    } catch {
+      setRotaAuto(null);
+    }
+  }, []);
+  useEffect(() => {
+    if (showConfigModal) carregarRotaAuto();
+  }, [showConfigModal, carregarRotaAuto]);
+  const salvarRotaAuto = async (config: RotaAutomaticaConfig) => {
+    const ligando = config.ativo && !rotaAuto?.config.ativo;
+    const desligando = !config.ativo && !!rotaAuto?.config.ativo;
+    setSalvandoRotaAuto(true);
+    try {
+      const r = await fetch("/api/store/roteirizacao-automatica", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ roteirizacaoAutomatica: config }),
+      });
+      const d = await r.json().catch(() => null);
+      if (!r.ok) {
+        setAviso({ tipo: "erro", titulo: "A rota automática não foi salva", detalhe: d?.error || "Tente de novo." });
+        return;
+      }
+      if (d?.liberada) setRotaAuto(d);
+      else await carregarRotaAuto();
+      setAviso({
+        tipo: "ok",
+        titulo: ligando ? "Roteirização automática ligada" : desligando ? "Roteirização automática desligada" : "Regras da rota automática salvas",
+      });
+    } catch (err: any) {
+      setAviso({ tipo: "erro", titulo: "A rota automática não foi salva", detalhe: err?.message || String(err) });
+    } finally {
+      setSalvandoRotaAuto(false);
+    }
+  };
+  const carregarPreviaRotaAuto = async (): Promise<PreviaDaRotaAutomatica> => {
+    const r = await fetch("/api/store/roteirizacao-automatica/previa", { cache: "no-store" });
+    const d = await r.json().catch(() => null);
+    if (!r.ok) throw new Error(d?.error || "Não consegui montar a prévia agora.");
+    return d;
+  };
 
   // Save config to localStorage
   const handleSaveConfig = () => {
@@ -3454,18 +3509,31 @@ ${mapsUrl}`;
                 <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 800, color: "#334155", marginBottom: 4 }}>
                   Escolha a modalidade de roteirização que deseja habilitar:
                 </label>
-                <select
-                  value={routeMode}
-                  onChange={(e: any) => setRouteMode(e.target.value)}
-                  style={{
-                    width: "100%", padding: "10px", borderRadius: "8px", border: "1.5px solid #1C1917",
-                    fontSize: "0.9rem", fontWeight: 800, color: "#1C1917", background: "#FAF6F2"
-                  }}
-                >
-                  <option value="Manual">Manual</option>
-                  <option value="Automatizada">Automatizada</option>
-                  <option value="Inteligente">Inteligente</option>
-                </select>
+                {/* O seletor dos três modos à esquerda e a Rota 100% automatizada
+                    à direita, na mesma linha (Douglas, 21/10/2026); em tela
+                    estreita o botão desce para a linha de baixo. */}
+                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                  <select
+                    value={routeMode}
+                    onChange={(e: any) => setRouteMode(e.target.value)}
+                    style={{
+                      flex: "1 1 200px", minWidth: 0, padding: "10px", borderRadius: "8px", border: "1.5px solid #1C1917",
+                      fontSize: "0.9rem", fontWeight: 800, color: "#1C1917", background: "#FAF6F2"
+                    }}
+                  >
+                    <option value="Manual">Manual</option>
+                    <option value="Automatizada">Automatizada</option>
+                    <option value="Inteligente">Inteligente</option>
+                  </select>
+                  {rotaAuto && (
+                    <RotaAutomatica
+                      estado={rotaAuto}
+                      salvando={salvandoRotaAuto}
+                      onSalvar={salvarRotaAuto}
+                      carregarPrevia={carregarPreviaRotaAuto}
+                    />
+                  )}
+                </div>
               </div>
 
               {routeMode !== "Manual" && (

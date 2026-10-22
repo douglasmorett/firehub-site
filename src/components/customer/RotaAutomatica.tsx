@@ -14,29 +14,23 @@
  * esta janela; só "Entendi, ativar" liga, depois de ler as regras, as
  * configurações e a cobrança.
  */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import {
+  ROTEIRIZACAO_AUTOMATICA_PADRAO,
+  type QuemPuxa,
+  type RoteirizacaoAutomaticaConfig,
+} from "@/lib/roteirizacao-automatica/config";
+// Só o tipo (apagado na compilação): executar.ts é do servidor.
+import type { ResumoDaRoteirizacao } from "@/lib/roteirizacao-automatica/executar";
 
-export type QuemPuxa = "chamado" | "qualquer";
+// A regra mora em lib/roteirizacao-automatica/config.ts (o servidor lê a
+// mesma); os nomes daqui ficam para quem já usa o componente.
+export type { QuemPuxa };
+export type RotaAutomaticaConfig = RoteirizacaoAutomaticaConfig;
+export const ROTA_AUTOMATICA_PADRAO: RotaAutomaticaConfig = ROTEIRIZACAO_AUTOMATICA_PADRAO;
 
-export type RotaAutomaticaConfig = {
-  ativo: boolean;
-  maxEntregasPorRota: number;
-  raioDoGrupoKm: number;
-  janelaDePrazoMin: number;
-  esperaMaxMin: number;
-  raioDaLojaM: number;
-  quemPuxa: QuemPuxa;
-};
-
-export const ROTA_AUTOMATICA_PADRAO: RotaAutomaticaConfig = {
-  ativo: false,
-  maxEntregasPorRota: 3,
-  raioDoGrupoKm: 2,
-  janelaDePrazoMin: 15,
-  esperaMaxMin: 8,
-  raioDaLojaM: 150,
-  quemPuxa: "chamado",
-};
+/** A resposta de GET /api/store/roteirizacao-automatica/previa. */
+export type PreviaDaRotaAutomatica = ResumoDaRoteirizacao;
 
 export type RotaAutomaticaEstado = {
   config: RotaAutomaticaConfig;
@@ -74,10 +68,13 @@ export default function RotaAutomatica({
   estado,
   salvando,
   onSalvar,
+  carregarPrevia,
 }: {
   estado: RotaAutomaticaEstado;
   salvando: boolean;
   onSalvar: (config: RotaAutomaticaConfig) => void;
+  /** "Ver o que o sistema faria agora". Sem ele o botão fica desabilitado. */
+  carregarPrevia?: () => Promise<PreviaDaRotaAutomatica>;
 }) {
   const [aberta, setAberta] = useState(false);
   if (!estado.liberada) return null;
@@ -116,6 +113,7 @@ export default function RotaAutomatica({
         <JanelaDaRotaAutomatica
           estado={estado}
           salvando={salvando}
+          carregarPrevia={carregarPrevia}
           onFechar={() => setAberta(false)}
           onSalvar={(c) => {
             onSalvar(c);
@@ -138,17 +136,29 @@ const limites: Record<keyof Omit<RotaAutomaticaConfig, "ativo" | "quemPuxa">, { 
 function JanelaDaRotaAutomatica({
   estado,
   salvando,
+  carregarPrevia,
   onFechar,
   onSalvar,
 }: {
   estado: RotaAutomaticaEstado;
   salvando: boolean;
+  carregarPrevia?: () => Promise<PreviaDaRotaAutomatica>;
   onFechar: () => void;
   onSalvar: (config: RotaAutomaticaConfig) => void;
 }) {
   const [cfg, setCfg] = useState<RotaAutomaticaConfig>(estado.config);
   const [liTudo, setLiTudo] = useState(false);
   const [confirmandoDesligar, setConfirmandoDesligar] = useState(false);
+  const [previa, setPrevia] = useState<{ carregando: boolean; erro?: string; dados?: PreviaDaRotaAutomatica } | null>(null);
+  const verPrevia = async () => {
+    if (!carregarPrevia) return;
+    setPrevia({ carregando: true });
+    try {
+      setPrevia({ carregando: false, dados: await carregarPrevia() });
+    } catch (e: any) {
+      setPrevia({ carregando: false, erro: e?.message || "Não consegui montar a prévia agora." });
+    }
+  };
   useEffect(() => setCfg(estado.config), [estado.config]);
 
   const ligada = estado.config.ativo;
@@ -262,9 +272,17 @@ function JanelaDaRotaAutomatica({
             </label>
           )}
 
+          {previa && !previa.carregando && <PainelDaPrevia previa={previa} onFechar={() => setPrevia(null)} />}
+
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "flex-end", borderTop: "1px solid #E2E8F0", paddingTop: 14 }}>
-            <button type="button" disabled title="Chega na próxima etapa" style={botao("#fff", "#94A3B8", "1px solid #CBD5E1")}>
-              🔍 Ver o que o sistema faria agora
+            <button
+              type="button"
+              onClick={verPrevia}
+              disabled={!carregarPrevia || previa?.carregando}
+              title={carregarPrevia ? "Mostra a decisão com os pedidos de agora, sem gravar nada" : "Chega na próxima etapa"}
+              style={carregarPrevia ? botao("#fff", "#334155", "1px solid #CBD5E1") : botao("#fff", "#94A3B8", "1px solid #CBD5E1")}
+            >
+              {previa?.carregando ? "Olhando os pedidos…" : "🔍 Ver o que o sistema faria agora"}
             </button>
             {ligada ? (
               <>
@@ -315,6 +333,110 @@ function JanelaDaRotaAutomatica({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+const nums = (lista: (number | null)[] | undefined) => (lista ?? []).map((n) => (n == null ? "#?" : `#${n}`));
+
+/** "há 4 min" a partir de um ISO, contra o relógio da resposta (não o do aparelho). */
+function haQuanto(iso: string, agoraIso: string): string {
+  const min = Math.max(0, Math.round((new Date(agoraIso).getTime() - new Date(iso).getTime()) / 60_000));
+  return min < 1 ? "agora" : min < 60 ? `há ${min} min` : `há ${Math.floor(min / 60)} h ${min % 60} min`;
+}
+
+/**
+ * A resposta da prévia, dentro da janela: rotas que seriam criadas (paradas na
+ * ordem), quem seria chamado, motoboys na loja e o porquê de cada pedido fora.
+ * Nada aqui grava — o título diz isso, para ninguém achar que ligou.
+ */
+function PainelDaPrevia({
+  previa,
+  onFechar,
+}: {
+  previa: { erro?: string; dados?: PreviaDaRotaAutomatica };
+  onFechar: () => void;
+}) {
+  const d = previa.dados;
+  // O painel nasce no fim da janela, abaixo das regras: sem rolar até ele, o
+  // clique parecia não ter feito nada.
+  const caixa = useRef<HTMLDivElement>(null);
+  useEffect(() => caixa.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), []);
+  const linha: React.CSSProperties = { fontSize: "0.86rem", lineHeight: 1.45, padding: "6px 10px", borderRadius: 8, background: "#fff", border: "1px solid #E9D5FF" };
+  const subtitulo: React.CSSProperties = { margin: "4px 0 0", fontSize: "0.78rem", fontWeight: 900, color: "#5B21B6", letterSpacing: ".3px" };
+  const quem = (nome: string | null | undefined) => (nome ? nome : "todos os livres");
+  const outras = d ? d.acoes.filter((a) => a.tipo !== "criar-rota") : [];
+  return (
+    <div ref={caixa} style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 12, padding: "12px 14px", display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+        <h3 style={{ margin: 0, fontSize: "1rem", fontWeight: 900 }}>🔍 O que o sistema faria agora</h3>
+        <button type="button" onClick={onFechar} style={{ border: 0, background: "transparent", color: "#64748B", fontWeight: 800, cursor: "pointer" }}>Fechar</button>
+      </div>
+      <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Prévia com os pedidos de agora. Nada foi gravado, nenhuma rota foi criada.</p>
+
+      {previa.erro && <p style={{ margin: 0, color: "#B91C1C", fontWeight: 700, fontSize: "0.86rem" }}>{previa.erro}</p>}
+
+      {d && !d.temPino && (
+        <p style={{ margin: 0, color: "#B91C1C", fontWeight: 700, fontSize: "0.86rem" }}>Sem o pino da loja no mapa não dá para planejar rota nenhuma.</p>
+      )}
+
+      {d && d.temPino && (
+        <>
+          <p style={subtitulo}>ROTAS QUE SERIAM CRIADAS</p>
+          {d.acoes.filter((a) => a.tipo === "criar-rota").length === 0 ? (
+            <div style={linha}>Nenhuma rota nova agora.</div>
+          ) : (
+            d.acoes.filter((a) => a.tipo === "criar-rota").map((a, i) => (
+              <div key={`c${i}`} style={linha}>
+                <b>Rota nova:</b> {nums(a.numeros).join(" → ")}
+                <span style={{ display: "block", color: "#475569", fontSize: "0.8rem" }}>Quando ficar pronta, chama: <b>{quem(a.motoboyNome)}</b></span>
+              </div>
+            ))
+          )}
+
+          {outras.length > 0 && (
+            <>
+              <p style={subtitulo}>ROTAS AUTOMÁTICAS JÁ ABERTAS</p>
+              {outras.map((a, i) => (
+                <div key={`o${i}`} style={linha}>
+                  {a.tipo === "acrescentar" && <>Entraria o {nums(a.numeros).join(", ")} na {a.routeNumber ?? "rota"} (parada {a.posicao})</>}
+                  {a.tipo === "tirar-da-rota" && <>Sairia o {nums(a.numeros).join(", ")} da {a.routeNumber ?? "rota"} ({a.motivo === "cancelado" ? "cancelado" : "o mais urgente já esperou demais"})</>}
+                  {a.tipo === "chamar" && <>Chamaria <b>{quem(a.motoboyNome)}</b> para a {a.routeNumber ?? "rota"}</>}
+                  {a.tipo === "apagar-rota" && <>Apagaria a {a.routeNumber ?? "rota"} (ficou vazia)</>}
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      )}
+
+      {d && (
+        <>
+          <p style={subtitulo}>MOTOBOYS</p>
+          {d.motoboys.length === 0 ? (
+            <div style={linha}>Nenhum motoboy ativo.</div>
+          ) : (
+            d.motoboys.map((m) => (
+              <div key={m.id} style={linha}>
+                {m.naLoja && m.naLojaDesde ? `🏠 ${m.nome} · na loja ${haQuanto(m.naLojaDesde, d.agora)}` : `🛵 ${m.nome} · na rua`}
+                {!m.livre && <span style={{ color: "#64748B" }}> · com entrega</span>}
+                {m.gpsHaSeg == null && <span style={{ color: "#64748B" }}> · sem GPS</span>}
+              </div>
+            ))
+          )}
+
+          {d.descartados.length > 0 && (
+            <>
+              <p style={subtitulo}>PEDIDOS FORA</p>
+              {d.descartados.map((x) => (
+                <div key={x.pedidoId} style={linha}>
+                  <b>{x.numero == null ? "#?" : `#${x.numero}`}</b> — {x.texto}
+                </div>
+              ))}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }

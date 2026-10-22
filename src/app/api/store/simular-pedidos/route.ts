@@ -3,6 +3,8 @@
  *
  *   GET    → quantos pedidos simulados estão na tela
  *   POST   → joga a simulação (recusa se já houver uma: o botão vira "retirar")
+ *            `{ motoboysNaLoja: true }` → põe os motoboys ativos no pino da loja
+ *            (ensaio da chamada da Rota 100% automatizada), sem criar pedido
  *   DELETE → apaga só os pedidos simulados
  *
  * Qualquer loja fora da lista de demonstração recebe 404 — a rota não existe
@@ -12,7 +14,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { apagarSimulacao, contarSimulados, criarSimulacao, ehLojaDeDemonstracao } from "@/lib/pedidos-simulados";
+import { apagarSimulacao, contarSimulados, criarSimulacao, ehLojaDeDemonstracao, porMotoboysNaLoja } from "@/lib/pedidos-simulados";
 
 async function lojaDaSessao(): Promise<string | null> {
   const session = await getServerSession(authOptions);
@@ -31,9 +33,17 @@ export async function GET() {
   return NextResponse.json({ quantidade: await contarSimulados(lojaId) });
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const lojaId = await lojaDaSessao();
   if (!lojaId) return naoExiste();
+  const corpo = await req.json().catch(() => null);
+  if (corpo?.motoboysNaLoja === true) {
+    try {
+      return NextResponse.json({ ok: true, motoboys: await porMotoboysNaLoja(lojaId) });
+    } catch (e: any) {
+      return NextResponse.json({ error: e?.message || "Não consegui pôr os motoboys na loja." }, { status: 409 });
+    }
+  }
   const jaTem = await contarSimulados(lojaId);
   if (jaTem > 0) {
     return NextResponse.json({ error: `Já há ${jaTem} pedidos simulados na tela. Retire antes de simular de novo.` }, { status: 409 });

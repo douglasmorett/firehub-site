@@ -35,6 +35,8 @@
  */
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
+import { lerPontoDaLoja, type Ponto } from "@/lib/ponto-da-loja";
+import { distanciaKm } from "@/lib/ponto-do-pedido";
 
 /** Lojas (User.id) que têm o botão. Victor Henriques (demonstração), criada em 01/10/2026. */
 const LOJAS_DE_DEMONSTRACAO = new Set<string>(["cmupkiesh0000ujmcjwtpd706"]);
@@ -106,6 +108,29 @@ const RUAS = [
 
 const centavos = (n: number) => Math.round(n * 100) / 100;
 
+/** `km` quilômetros do pino na direção `graus` (0 = norte, 90 = leste). */
+function aoRedor(pino: Ponto, km: number, graus: number): Ponto {
+  const rad = (graus * Math.PI) / 180;
+  return {
+    lat: Number((pino.lat + (km * Math.cos(rad)) / 111.32).toFixed(6)),
+    lng: Number((pino.lng + (km * Math.sin(rad)) / (111.32 * Math.cos((pino.lat * Math.PI) / 180))).toFixed(6)),
+  };
+}
+
+/**
+ * ONDE A ENTREGA SIMULADA FICA NO MAPA (Rota 100% automatizada, 22/10/2026).
+ * Sem coordenada, a roteirização e a prévia da rota automática não tinham o
+ * que agrupar na demonstração. Determinístico pelo número do roteiro: ângulo
+ * n × 137° (o ângulo de ouro espalha os pontos sem empilhar) e raio de 0,4 a
+ * 3 km do pino da loja. Origem "pino" = o cliente marcou no mapa, a fonte
+ * mais confiável da regra do ponto (lib/ponto-do-pedido.ts).
+ */
+function pontoDaEntregaSimulada(pino: Ponto, n: number) {
+  const km = 0.4 + (2.6 * ((n * 7) % 11)) / 10;
+  const p = aoRedor(pino, km, (n * 137) % 360);
+  return { customerLatLng: { lat: p.lat, lng: p.lng, origem: "pino" }, deliveryDistance: centavos(distanciaKm(pino, p)) };
+}
+
 /** Status → etapa do KDS, como o painel e a cozinha gravam. */
 function etapaDoKds(status: Roteiro["status"], minutos: number, agora: number) {
   const em = (m: number) => new Date(agora - m * 60_000);
@@ -176,6 +201,7 @@ export async function criarSimulacao(lojaId: string): Promise<{ quantidade: numb
   const bebidas = base.filter((p) => p.isBeverage);
 
   const agora = Date.now();
+  const pino = lerPontoDaLoja((await prisma.user.findUnique({ where: { id: lojaId }, select: { storeLatLng: true } }))?.storeLatLng);
 
   // ── CAIXA ──────────────────────────────────────────────────────────────
   // O esperado do fechamento só conta pedido feito depois da abertura; o
@@ -260,6 +286,7 @@ export async function criarSimulacao(lojaId: string): Promise<{ quantidade: numb
           : {}),
         ...(r.canal === "IFOOD" && r.entregaParceira ? { ifoodPickupCode: String(1000 + n * 53).slice(-4) } : {}),
         ...(tableSessionId ? { tableSessionId } : {}),
+        ...(pino && r.tipo === "DELIVERY" ? pontoDaEntregaSimulada(pino, n) : {}),
         ...etapaDoKds(r.status, r.minutos, agora),
         createdAt: criadoEm,
         printedAt: new Date(agora),
@@ -270,6 +297,35 @@ export async function criarSimulacao(lojaId: string): Promise<{ quantidade: numb
     quantidade++;
   }
   return { quantidade, caixaAberto };
+}
+
+/**
+ * "MOTOBOYS NA LOJA" para ensaiar a chamada da Rota 100% automatizada (D10:
+ * chama quem chegou primeiro). Põe cada motoboy ativo da demonstração no pino
+ * da loja (a até ~15 m, dentro de qualquer raio da loja), com o GPS de agora
+ * e a chegada escalonada: o 1º da lista chegou agora, o 2º há 1 min, o 3º há
+ * 2 min… Só a loja de demonstração (a rota confere `ehLojaDeDemonstracao`).
+ * O app de verdade de um desses motoboys, se estiver aberto, sobrescreve a
+ * posição no próximo envio — é o esperado.
+ */
+export async function porMotoboysNaLoja(lojaId: string): Promise<number> {
+  const pino = lerPontoDaLoja((await prisma.user.findUnique({ where: { id: lojaId }, select: { storeLatLng: true } }))?.storeLatLng);
+  if (!pino) throw new Error("A loja de demonstração não tem o pino no mapa (Minha Loja › Endereço).");
+  const motoboys = await prisma.motoboy.findMany({
+    where: { franchiseeId: lojaId, active: true },
+    select: { id: true },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+  });
+  const agora = Date.now();
+  for (const [i, m] of motoboys.entries()) {
+    const p = aoRedor(pino, 0.015, (i * 137) % 360);
+    // naLojaDesde: coluna nova (garantir-colunas) — o client local ainda não a conhece.
+    await (prisma.motoboy as any).update({
+      where: { id: m.id },
+      data: { lastLat: p.lat, lastLng: p.lng, lastLocationUpdate: new Date(agora), naLojaDesde: new Date(agora - i * 60_000) },
+    });
+  }
+  return motoboys.length;
 }
 
 /**
