@@ -24,8 +24,10 @@
  * motoboy, a ordem e o isolamento dos efeitos — com dependências falsas, sem
  * banco nem rede).
  */
-import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
+import { STATUS_CANCELADOS, STATUS_FINALIZADOS, STATUS_PUXAVEIS } from "@/lib/status-pedido";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
+import { infoDaEntrega } from "@/lib/entrega-parceira";
+import type { QuemPuxa } from "@/lib/roteirizacao-automatica/config";
 
 /** O pedido como a rota de despacho o leu, ANTES de gravar o SAIU_ENTREGA. */
 export type PedidoDaRota = {
@@ -61,6 +63,14 @@ export type ContextoDoDespacho = {
   motoboy: MotoboyDoDespacho;
   /** O retrato de antes do despacho: é por ele que se sabe quem saiu AGORA. */
   pedidos: PedidoDaRota[];
+  /**
+   * Quem despacha é o PRÓPRIO motoboy, que puxou a rota pelo QR
+   * (api/motoboys/orders, `puxarRota`, 22/10/2026): ele está com os pedidos
+   * na mão e o app já refaz a lista — o push "N entregas para você" seria um
+   * aviso dele para ele mesmo. O claim já grava o `motoboyId` antes, então
+   * `quemChegouAoEntregador` também daria vazio; isto deixa o porquê escrito.
+   */
+  semPushAoMotoboy?: boolean;
 };
 
 /** Quem já estava na rua, entregue ou cancelado: não muda com este despacho. */
@@ -295,7 +305,7 @@ export async function efeitosDoDespacho(ctx: ContextoDoDespacho, portas: PortasD
   efeitos.push(portas.emitirNfce(pedidos.map((o) => o.id)).catch(() => {}));
 
   const chegaramAgora = quemChegouAoEntregador(pedidos, motoboy.id);
-  if (chegaramAgora.length > 0) {
+  if (chegaramAgora.length > 0 && !ctx.semPushAoMotoboy) {
     efeitos.push(portas.avisarApp(motoboy.id, chegaramAgora, rota.routeNumber).catch(() => {}));
   }
 
@@ -324,4 +334,238 @@ export async function efeitosDoDespacho(ctx: ContextoDoDespacho, portas: PortasD
   }
 
   await Promise.allSettled(efeitos);
+}
+
+// ── DESPACHAR: a gravação ────────────────────────────────────────────────────
+//
+// Morava dentro de api/store/routes/dispatch. Saiu para cá em 22/10/2026
+// porque agora são DOIS caminhos que despacham uma rota: o lojista na
+// Roteirização e o motoboy que escaneia a comanda de uma rota automática e
+// responde "Sim, puxar todos" (api/motoboys/orders, `puxarRota` — plano
+// "despacho automático", §4.8). Um caminho só de gravação: a mesma transação,
+// o mesmo filtro de status, a mesma trava contra o segundo clique.
+
+export type ErroDoDespacho = "ROTA_NAO_ENCONTRADA" | "SEM_MOTOBOY" | "MOTOBOY_NAO_ENCONTRADO";
+
+export type ResultadoDoDespacho =
+  | { ok: false; erro: ErroDoDespacho }
+  | {
+      ok: true;
+      /** false = a rota já tinha saído com este motoboy: nada gravado, nenhum efeito agendado. */
+      mudou: boolean;
+      rota: { id: string; routeNumber: string };
+      motoboy: MotoboyDoDespacho;
+      /** O retrato de ANTES da gravação (o mesmo que vai para os efeitos). */
+      pedidos: PedidoDaRota[];
+    };
+
+/**
+ * Despacha a rota: rota DISPATCHED com o motoboy e a hora; os pedidos abertos
+ * dela em SAIU_ENTREGA com o motoboy, sem prioridade de rota e com a hora da
+ * saída. Quando mudou, entrega `efeitosDoDespacho` a `agendar` — a rota de API
+ * passa o `after()` do Next, que roda depois da resposta.
+ *
+ * Lança se o banco falhar no meio (a transação desfaz tudo e nada é agendado);
+ * quem chama decide o 500.
+ */
+export async function despacharRota(opcoes: {
+  /** A LOJA (ownerId || id). A rota, o motoboy e os pedidos têm de ser dela. */
+  lojaId: string;
+  rotaId: string;
+  /** Vazio = o motoboy que a rota já tem (o /dispatch sempre aceitou assim). */
+  motoboyId?: string | null;
+  /**
+   * Só estes pedidos da rota andam. O puxar em grupo passa os que ESTE
+   * motoboy ganhou no claim: um pedido da mesma rota que outro entregador
+   * puxou sozinho antes não pode trocar de dono aqui. Vazio = todos (o /dispatch).
+   */
+  pedidoIds?: string[];
+  semPushAoMotoboy?: boolean;
+  agendar: (efeitos: () => Promise<void>) => void;
+}): Promise<ResultadoDoDespacho> {
+  const { prisma } = await import("@/lib/prisma");
+  const { lojaId, rotaId, pedidoIds } = opcoes;
+  // "Da loja" é a loja ou um usuário dela: a rota nasce com o PRIMEIRO id de
+  // `getValidFranchiseeIds` (api/store/routes), que pode ser o de um
+  // funcionário da própria loja — exigir só `franchiseeId === loja`
+  // recusaria rota legítima.
+  const daLoja = { OR: [{ franchiseeId: lojaId }, { franchisee: { ownerId: lojaId } }] };
+
+  // Rota de outra loja responde como rota inexistente: a resposta não conta
+  // que o id existe.
+  const route = await prisma.routeSchedule.findFirst({
+    where: { id: String(rotaId), ...daLoja },
+    select: { id: true, routeNumber: true, motoboyId: true, franchiseeId: true },
+  });
+  if (!route) return { ok: false, erro: "ROTA_NAO_ENCONTRADA" };
+
+  const finalMotoboyId = opcoes.motoboyId || route.motoboyId;
+  if (!finalMotoboyId) return { ok: false, erro: "SEM_MOTOBOY" };
+
+  const motoboy = await prisma.motoboy.findFirst({
+    where: { id: String(finalMotoboyId), ...daLoja },
+    select: { id: true, name: true, phone: true },
+  });
+  if (!motoboy) return { ok: false, erro: "MOTOBOY_NAO_ENCONTRADO" };
+
+  // Os pedidos da rota que são DESTA loja. A montagem da rota
+  // (api/store/routes) grava o `routeId` nos ids que o corpo mandou; um
+  // pedido de outra loja pendurado aqui não sai, não recebe aviso nem nota.
+  const pedidosDaRota: PedidoDaRota[] = await prisma.customerOrder.findMany({
+    where: { routeId: route.id, ...daLoja, ...(pedidoIds ? { id: { in: pedidoIds } } : {}) },
+    select: {
+      id: true, franchiseeId: true, status: true, source: true, deliveryType: true, deliveryBy: true,
+      customerName: true, customerPhone: true, customerAddress: true, dailyOrderNumber: true,
+      ifoodOrderId: true, ifoodReference: true, ifoodStoreMerchant: true,
+      openDeliveryOrderId: true, openDeliveryChannel: true, openDeliveryReference: true,
+      motoboyId: true,
+    },
+  });
+  const idsDaRota = pedidosDaRota.map((o) => o.id);
+
+  // ── A ROTA E OS PEDIDOS SAEM JUNTOS, OU NÃO SAEM ──────────────────────
+  //
+  // As duas gravações do despacho numa transação: se a dos pedidos falhar,
+  // a rota volta a "aguardando" e o lojista despacha de novo. Separadas, a
+  // rota ficava DISPATCHED com os pedidos ainda na cozinha.
+  //
+  // E a mesma rota duas vezes: dois cliques (ou duas abas) despachando com o
+  // mesmo entregador chegavam aqui juntos, os dois liam a rota PENDING e o
+  // motoboy recebia duas vezes o WhatsApp das paradas. A troca de estado
+  // agora é condicional — só quem de fato a fez segue para os efeitos.
+  // Despachar de novo com OUTRO entregador continua passando, como sempre.
+  const mudou = await prisma.$transaction(async (tx) => {
+    // 1. Atualiza status da rota no banco
+    const virou = await tx.routeSchedule.updateMany({
+      where: {
+        id: route.id,
+        OR: [{ status: { not: "DISPATCHED" } }, { motoboyId: null }, { motoboyId: { not: motoboy.id } }],
+      },
+      data: {
+        status: "DISPATCHED",
+        motoboyId: motoboy.id,
+        dispatchedAt: new Date(),
+      },
+    });
+    if (virou.count === 0) return false;
+
+    // 2. Atualiza todos os pedidos para SAIU_ENTREGA e vincula ao motoboy
+    // ── REDE DE SEGURANÇA NO BANCO ────────────────────────────────────
+    //
+    // Sem o filtro de status, despachar uma rota reescrevia QUALQUER pedido
+    // ligado a ela — inclusive um que já foi entregue ou que já está na rua
+    // com outro entregador. O pedido voltava para a rota, trocava de motoboy,
+    // e quem estava com a comida na mão levava 404 ao dar baixa. A tela já
+    // impede selecionar esses pedidos; isto impede o resto.
+    if (idsDaRota.length > 0) {
+      await tx.customerOrder.updateMany({
+        where: {
+          id: { in: idsDaRota },
+          routeId: route.id,
+          status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS, "SAIU_ENTREGA"] },
+        },
+        data: {
+          status: "SAIU_ENTREGA",
+          motoboyId: motoboy.id,
+          isRoutePriority: false, // Pedido saiu da cozinha!
+          // O carimbo que lib/prisma.ts põe em todo SAIU_ENTREGA, escrito
+          // aqui para não depender da extensão dentro da transação (o
+          // acerto do motoboy conta a saída por ele).
+          dispatchedAt: new Date(),
+        },
+      });
+    }
+    return true;
+  });
+
+  const rota = { id: route.id, routeNumber: route.routeNumber };
+  if (!mudou) return { ok: true, mudou: false, rota, motoboy, pedidos: pedidosDaRota };
+
+  // 3. O resto é consequência e roda DEPOIS da resposta ──────────────────
+  //
+  // Aviso ao cliente, NFC-e, aviso no app do entregador, o "saiu" no
+  // iFood/99Food/Brendi/Wabiz/Keeta/JotaJá e o WhatsApp das paradas para o
+  // motoboy (efeitosDoDespacho, acima). Nenhum deles desfaz o despacho se
+  // falhar. Só é agendado aqui, com tudo gravado: um erro acima não dispara
+  // efeito nenhum.
+  //
+  // `pedidosDaRota` é o retrato de ANTES das gravações: é ele que diz quem
+  // saiu agora (aviso ao cliente) e quem chegou ao celular do entregador.
+  opcoes.agendar(() =>
+    efeitosDoDespacho({
+      lojaId,
+      rota,
+      motoboy,
+      pedidos: pedidosDaRota,
+      semPushAoMotoboy: opcoes.semPushAoMotoboy,
+    }),
+  );
+  return { ok: true, mudou: true, rota, motoboy, pedidos: pedidosDaRota };
+}
+
+// ── PUXAR A ROTA INTEIRA pelo QR (Rota 100% automatizada, 22/10/2026) ───────
+//
+// As regras puras do puxar em grupo (api/motoboys/orders). Plano "despacho
+// automático": D11 (quem pode puxar a rota chamada) e D12 (o que o app
+// oferece). Teste: scripts/teste-puxar-a-rota.ts.
+
+/** O que a rota precisa ter para o puxar oferecer/aceitar levar o grupo. */
+export type RotaParaPuxar = { origem?: string | null; status?: string | null };
+
+/**
+ * Só a rota AUTOMÁTICA ainda aberta. Rota montada à mão (origem nula ou
+ * "MANUAL") continua como sempre foi — o lojista despacha pela Roteirização
+ * (v1); rota já despachada ou cancelada não tem grupo para levar.
+ */
+export function ofereceARota(rota: RotaParaPuxar | null | undefined): boolean {
+  return !!rota && rota.origem === "AUTO" && (rota.status ?? "PENDING") === "PENDING";
+}
+
+/**
+ * D11. Antes de ser chamada, a rota não é de ninguém. Chamada, com "só o
+ * chamado" (o padrão) ela é do motoboy chamado — chamada para TODOS
+ * (`chamadaMotoboyId` nulo, ninguém estava na loja) é de quem escanear
+ * primeiro. Com "qualquer", quem escanear primeiro leva sempre.
+ */
+export function podePuxarARota(r: {
+  quemPuxa: QuemPuxa;
+  chamadaEm?: Date | string | null;
+  chamadaMotoboyId: string | null | undefined;
+  motoboyId: string;
+}): boolean {
+  if (!r.chamadaEm) return true;
+  if (r.quemPuxa === "qualquer") return true;
+  return !r.chamadaMotoboyId || r.chamadaMotoboyId === r.motoboyId;
+}
+
+/** O pedido da rota como o puxar o lê (só o que decide; nada do cliente). */
+export type PedidoParaPuxar = {
+  id: string;
+  dailyOrderNumber: number | null;
+  motoboyId: string | null;
+  deliveryType: string | null;
+  deliveryBy: string | null;
+  status: string;
+  source?: string | null;
+  openDeliveryChannel?: string | null;
+  ifoodDriverName?: string | null;
+  ifoodDriverStatus?: string | null;
+  ifoodPickupCode?: string | null;
+};
+
+/**
+ * Os OUTROS pedidos da rota que este puxar pode levar junto: sem motoboy,
+ * entrega da loja (DELIVERY, nem o entregador do iFood nem outro parceiro —
+ * o mesmo corte do puxar de um pedido) e num status puxável.
+ */
+export function outrosDaRota<T extends PedidoParaPuxar>(pedidos: T[], pedidoId: string): T[] {
+  return pedidos.filter(
+    (p) =>
+      p.id !== pedidoId &&
+      !p.motoboyId &&
+      p.deliveryType === "DELIVERY" &&
+      String(p.deliveryBy || "").toUpperCase() !== "IFOOD" &&
+      !infoDaEntrega(p).parceira &&
+      (STATUS_PUXAVEIS as readonly string[]).includes(p.status),
+  );
 }
