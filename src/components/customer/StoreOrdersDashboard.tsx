@@ -20,6 +20,7 @@ import { inicioDoExpedienteDaLoja, inicioDoDiaDaLoja } from "@/lib/fuso";
 import { hojeNaLoja, somarDias } from "@/lib/relatorios/base";
 import type { ResumoDasVendas } from "@/lib/resumo-das-vendas";
 import { dataDoPedido, prontoNaCozinha, contarPedidosDoPrazo, inicioDaJanelaDoQuadro } from "@/lib/pedidos-na-cozinha";
+import { chipsDasRotasAutomaticas } from "@/lib/roteirizacao-automatica/chip-da-rota";
 import { corrigirPeriodo } from "@/lib/periodo-do-quadro";
 import { tempoNaEtapa, textoDoTempo, mesmosCarimbos } from "@/lib/tempo-na-etapa";
 import ModalTempoDeEntrega from "./ModalTempoDeEntrega";
@@ -636,6 +637,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   lojasDeOrigem,
   /** Painel clean (engrenagem → Colunas do painel): o card fechado vira duas linhas. */
   compacto = false,
+  /** "🤖 Rota #7 · 2/3 prontos" — só pedido em Rota 100% automatizada (lib/roteirizacao-automatica/chip-da-rota.ts). */
+  rotaAuto,
 }: any) {
   // O resumo que abria ao passar o mouse no número do pedido mudou de tela:
   // aqui ele não servia (o dono, 13/09/2026), e a informação foi para o MAPA da
@@ -772,6 +775,13 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   // A regra mora em `vaiPorEntregador`, que as ações em massa também usam.
   const recebeMotoboy = vaiPorEntregador(order);
   const puxouPeloApp = Boolean((order as any).motoboyPuxadoEm && order.motoboyId);
+  // A rota quem monta é o servidor: o chip diz em que pé ela está, para a
+  // loja não montar outra à mão nem chamar motoboy por fora.
+  const chipDaRotaAuto = rotaAuto ? (
+    <span title="Rota 100% automatizada: o FireHub montou esta rota sozinho e chama o motoboy quando ela fica pronta" style={{ ...ETIQUETA_NEUTRA, fontWeight: 800, whiteSpace: "nowrap" }}>
+      {rotaAuto}
+    </span>
+  ) : null;
 
   // ── PAINEL CLEAN ─────────────────────────────────────────────────────────
   //
@@ -894,6 +904,8 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               : isLate ? `⚠ -${Math.abs(remainingMins)}min` : `⏱ ${remainingMins}min`}
           </span>
         </div>
+        {/* No card clean, a rota automática ganha a terceira linha só quando existe. */}
+        {chipDaRotaAuto && <div style={{ marginTop: 3, paddingLeft: 21 }}>{chipDaRotaAuto}</div>}
       </div>
     );
   }
@@ -1610,7 +1622,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
           {/* Motoboy select / Partner Motoboy Badge — grupo próprio. O `flex` e o
               `order` dele ficam no <style> (.pedido-acoes-motoboy): linha inteira
               embaixo no card estreito, no meio da linha no card largo. */}
-          {(recebeMotoboy || puxouPeloApp) && <div className="pedido-acoes-motoboy" style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", maxWidth: "100%" }}>
+          {(recebeMotoboy || puxouPeloApp || chipDaRotaAuto) && <div className="pedido-acoes-motoboy" style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", maxWidth: "100%" }}>
             {recebeMotoboy && (() => {
               const pInfo = getPartnerDeliveryInfo(order);
               return pInfo.isPartner ? (
@@ -1702,6 +1714,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 🛵 puxou {new Date((order as any).motoboyPuxadoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
+            {chipDaRotaAuto}
           </div>}
         </div>
       </div>
@@ -4029,6 +4042,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     ...(colProntos ? preparoBase.filter(o => !prontoNaCozinha(o)) : preparoBase),
   ].sort(sortByOrderNumberAsc);
   const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA").sort(sortByOrderNumberAsc);
+  // 🤖 Rota 100% automatizada: o chip de cada rota, pela lista inteira (não a
+  // filtrada) — o "2/3 prontos" conta a rota toda, mesmo com filtro na tela.
+  // Vai para o card como texto: o `memo` do card não refaz à toa.
+  const chipsDasRotas = useMemo(() => chipsDasRotasAutomaticas(orders as any[]), [orders]);
   // ── COLUNAS DE ENCERRADOS VÃO DO MAIS RECENTE PARA O MAIS ANTIGO ──────────
   // As colunas ativas (Novos, Em Produção, Saiu para Entrega) são FIFO: o mais
   // antigo primeiro, porque é a ordem de atendimento. Já em Finalizado e
@@ -7369,6 +7386,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               {aguardandoPagamento.map(o => (
                 <DashboardOrderCard
                   lojasDeOrigem={lojasDeOrigem}
+                  rotaAuto={o.routeId ? chipsDasRotas.get(o.routeId) : undefined}
                   key={o.id}
                   order={o}
                   expanded={expandedId === o.id}
@@ -7442,6 +7460,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {novos.map(o => (
               <DashboardOrderCard
                   lojasDeOrigem={lojasDeOrigem}
+                  rotaAuto={o.routeId ? chipsDasRotas.get(o.routeId) : undefined}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
@@ -7486,6 +7505,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {preparo.map(o => (
               <DashboardOrderCard
                   lojasDeOrigem={lojasDeOrigem}
+                  rotaAuto={o.routeId ? chipsDasRotas.get(o.routeId) : undefined}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
@@ -7526,6 +7546,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {prontos.map(o => (
               <DashboardOrderCard
                   lojasDeOrigem={lojasDeOrigem}
+                  rotaAuto={o.routeId ? chipsDasRotas.get(o.routeId) : undefined}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
@@ -7563,6 +7584,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {transporte.map(o => (
               <DashboardOrderCard
                   lojasDeOrigem={lojasDeOrigem}
+                  rotaAuto={o.routeId ? chipsDasRotas.get(o.routeId) : undefined}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}
@@ -7599,6 +7621,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {finalizados.map(o => (
               <DashboardOrderCard
                   lojasDeOrigem={lojasDeOrigem}
+                  rotaAuto={o.routeId ? chipsDasRotas.get(o.routeId) : undefined}
                 key={o.id}
                 order={o}
                 destacarCancelado={!colCancelados}
@@ -7639,6 +7662,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             {cancelados.map(o => (
               <DashboardOrderCard
                   lojasDeOrigem={lojasDeOrigem}
+                  rotaAuto={o.routeId ? chipsDasRotas.get(o.routeId) : undefined}
                 key={o.id}
                 order={o}
                 expanded={expandedId === o.id}

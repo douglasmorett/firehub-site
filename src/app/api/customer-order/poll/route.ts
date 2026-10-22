@@ -15,6 +15,7 @@ import { marcarPainelAberto } from "@/lib/sinais-da-loja";
 import { LIMITE as LIMITE_DO_FEED } from "@/lib/feed-de-pedidos";
 import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
 import { lembrarPor } from "@/lib/cache-curto";
+import { liberadaPara } from "@/lib/roteirizacao-automatica/liberacao";
 
 /**
  * Configuração relida a cada rodada deste feed (o usuário do e-mail, se a loja
@@ -1225,6 +1226,32 @@ export async function GET(req: NextRequest) {
     // todas". Falhou a leitura do cardápio? Os pedidos seguem como estavam.
     const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
     const ordersWithDailyNum = await resolverCategoriasDosPedidos(orders as any[]).catch(() => orders);
+
+    // ── 🤖 A ROTA AUTOMÁTICA DO PEDIDO ───────────────────────────────────────
+    // O card mostra "🤖 Rota #7 · 2/3 prontos" / "· chamada" / "· saiu"
+    // (lib/roteirizacao-automatica/chip-da-rota.ts; os prontos a tela conta
+    // pelos pedidos do mesmo routeId que ela já tem). `origem` e `chamadaEm`
+    // são colunas novas (SQL cru). Uma consulta só quando há pedido em rota de
+    // loja liberada (liberacao.ts) — nas outras lojas, nenhuma. A chamada não
+    // mexe no pedido, então no modo `desde` ela aparece na lista completa
+    // seguinte (≤ 60 s) ou quando o pedido muda.
+    const idsDasRotas = [...new Set((ordersWithDailyNum as any[]).filter((o) => o.routeId && liberadaPara(o.franchiseeId)).map((o) => o.routeId as string))];
+    if (idsDasRotas.length > 0) {
+      try {
+        const rotas = await prisma.$queryRaw<{ id: string; routeNumber: string; status: string; dispatchedAt: Date | null; chamadaEm: Date | null }[]>`
+          SELECT "id", "routeNumber", "status", "dispatchedAt", "chamadaEm" FROM "RouteSchedule"
+          WHERE "id" = ANY(${idsDasRotas}) AND "origem" = 'AUTO'
+        `;
+        const porId = new Map(rotas.map((r) => [r.id, r]));
+        for (const o of ordersWithDailyNum as any[]) {
+          const r = o.routeId ? porId.get(o.routeId) : undefined;
+          if (r) o.rotaAuto = { numero: r.routeNumber, chamadaEm: r.chamadaEm, saiu: r.status === "DISPATCHED" || r.dispatchedAt != null };
+        }
+      } catch (e: any) {
+        // Sem a coluna (banco antes do garantir-colunas): o card fica sem o chip.
+        console.warn("[Poll] rota automática não lida:", e?.message?.slice(0, 120));
+      }
+    }
 
     if (modoDelta) {
       // Mudou e não voltou na lista = saiu do filtro (encerrado, checkout do

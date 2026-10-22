@@ -692,6 +692,14 @@ export async function PUT(req: NextRequest) {
       data: updateData,
     });
 
+    // Rota 100% automatizada: o pronto da cozinha é o que deixa a rota pronta
+    // para chamar o motoboy — o ciclo roda agora, sem esperar os 20 s do cron
+    // (lib/roteirizacao-automatica/empurrao.ts; nas outras lojas não custa nada).
+    if (!isPickup) {
+      const { empurrarRoteirizacao } = await import("@/lib/roteirizacao-automatica/empurrao");
+      empurrarRoteirizacao(order.franchiseeId, "pronto no KDS");
+    }
+
     // 🚀 Sincronizar com iFood, Jotajá e WhatsApp de forma assíncrona (não-bloqueante para resposta instantânea no KDS)
     (async () => {
       // Com a credencial do dono do pedido — o token central só alcança a

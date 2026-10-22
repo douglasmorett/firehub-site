@@ -704,6 +704,15 @@ export async function PUT(req: Request) {
       .catch(() => {});
   }
 
+  // Rota 100% automatizada: entrega cancelada sai da rota agora (e a rota que
+  // ficou vazia some), sem esperar os 20 s do cron — o motoboy chamado não
+  // pode sair com a sacola do pedido cancelado (lib/roteirizacao-automatica/
+  // empurrao.ts; nas outras lojas não custa nada).
+  if (status === "CANCELADO" && order.deliveryType === "DELIVERY") {
+    const { empurrarRoteirizacao } = await import("@/lib/roteirizacao-automatica/empurrao");
+    empurrarRoteirizacao(order.franchiseeId, "pedido cancelado");
+  }
+
   // Estorno Automático para Pagamentos Online no Cancelamento
   //
   // Pix pelo site (conta Asaas da loja): pago → estorna do saldo da loja;

@@ -20,6 +20,10 @@
  *
  * Só nas lojas liberadas (liberacao.ts): nas outras o GPS não paga nem uma
  * consulta a mais. Nunca lança — a posição do motoboy importa mais que isto.
+ *
+ * Devolve `chegouAgora`: true só quando ESTA posição carimbou a chegada (o
+ * banco gravou). É o empurrão da Fase 3 (empurrao.ts): o motoboy que acabou
+ * de chegar é quem a rota pronta chama primeiro, sem esperar o cron.
  */
 import { prisma } from "@/lib/prisma";
 import { lerPontoDaLoja, type Ponto } from "@/lib/ponto-da-loja";
@@ -51,16 +55,16 @@ export function esquecerLojaDoCarimbo(lojaId: string) {
   cache.delete(lojaId);
 }
 
-export async function carimbarChegadaNaLoja(motoboyId: string, franchiseeId: string, lat: number, lng: number): Promise<void> {
+export async function carimbarChegadaNaLoja(motoboyId: string, franchiseeId: string, lat: number, lng: number): Promise<{ chegouAgora: boolean }> {
   try {
-    if (!liberadaPara(franchiseeId)) return;
+    if (!liberadaPara(franchiseeId)) return { chegouAgora: false };
     const { ponto, raioM } = await daLoja(franchiseeId);
-    if (!ponto) return;
+    if (!ponto) return { chegouAgora: false };
     const dentro = linhaRetaKm(ponto.lat, ponto.lng, lat, lng) * 1000 <= raioM;
     const motoboy = prisma.motoboy as any; // naLojaDesde: coluna nova (garantir-colunas)
     if (dentro) {
       const agora = new Date();
-      await motoboy.updateMany({
+      const { count } = await motoboy.updateMany({
         where: {
           id: motoboyId,
           franchiseeId,
@@ -73,14 +77,16 @@ export async function carimbarChegadaNaLoja(motoboyId: string, franchiseeId: str
         },
         data: { naLojaDesde: agora },
       });
-    } else {
-      // Só grava quando muda: o GPS na rua chega a cada 12 s.
-      await motoboy.updateMany({
-        where: { id: motoboyId, franchiseeId, naLojaDesde: { not: null } },
-        data: { naLojaDesde: null },
-      });
+      return { chegouAgora: count > 0 };
     }
+    // Só grava quando muda: o GPS na rua chega a cada 12 s.
+    await motoboy.updateMany({
+      where: { id: motoboyId, franchiseeId, naLojaDesde: { not: null } },
+      data: { naLojaDesde: null },
+    });
+    return { chegouAgora: false };
   } catch (e: any) {
     console.warn("[Rota automática] carimbo de chegada falhou:", e?.message?.slice(0, 160));
+    return { chegouAgora: false };
   }
 }

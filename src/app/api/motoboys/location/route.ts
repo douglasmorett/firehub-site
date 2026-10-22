@@ -59,9 +59,15 @@ export async function POST(req: NextRequest) {
     // motoboy-na-loja.ts). Só com a sessão assinada — o id do corpo não prova
     // quem está andando. ANTES de gravar a posição: o carimbo precisa saber
     // se a posição anterior já tinha esfriado (chegada nova, não a de ontem).
+    // Chegou agora (e não "continua na loja"): a rota pronta chama quem chegou
+    // primeiro, então o ciclo roda já, depois da resposta (empurrao.ts).
     if (daSessao) {
       const { carimbarChegadaNaLoja } = await import("@/lib/roteirizacao-automatica/motoboy-na-loja");
-      await carimbarChegadaNaLoja(daSessao.id, daSessao.franchiseeId, latitude, longitude);
+      const { chegouAgora } = await carimbarChegadaNaLoja(daSessao.id, daSessao.franchiseeId, latitude, longitude);
+      if (chegouAgora) {
+        const { empurrarRoteirizacao } = await import("@/lib/roteirizacao-automatica/empurrao");
+        empurrarRoteirizacao(daSessao.franchiseeId, "motoboy chegou na loja");
+      }
     }
 
     // updateMany condicional: o escopo (loja + ativo) faz parte da ESCRITA.
