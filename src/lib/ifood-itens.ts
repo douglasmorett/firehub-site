@@ -55,16 +55,48 @@ type OpcaoDoItem = { name: string; quantity: number; price: number };
  * Opções do item no payload do iFood. O nome do campo muda conforme a versão da
  * API e o caminho de importação, por isso a lista de tentativas.
  */
-function opcoesDoItem(i: any): OpcaoDoItem[] {
+export function opcoesDoItem(i: any): OpcaoDoItem[] {
   const lista = i?.options || i?.subItems || i?.garnishItems || i?.items || [];
   if (!Array.isArray(lista) || lista.length === 0) return [];
+  const meias = saboresQueSaoMeia(nomeDoItemIfood(i), lista);
   return lista
-    .map((s: any) => ({
-      name: nomeDaOpcaoDePizza(s?.name || s?.label || s?.productName || ""),
+    .map((s: any, idx: number) => ({
+      name: (meias.get(idx) || "") + nomeDaOpcaoDePizza(s?.name || s?.label || s?.productName || ""),
       quantity: s?.quantity || 1,
       price: s?.price || s?.unitPrice || s?.addition || 0,
     }))
     .filter((s: OpcaoDoItem) => s.name);
+}
+
+/**
+ * A pizza meio a meio DENTRO de um combo, com a fração na frente do sabor.
+ *
+ * A pizza de 2 sabores do iFood já chega "1/2 Bacon com Catupiry". O combo,
+ * não: no "Combo Pizza Grande + 4 Esfirras Doces + Coca-Cola 21" os dois
+ * sabores vinham "Calabresa com Catupiry" e "Bacon com Catupiry", e a comanda
+ * dava a entender duas pizzas (Douglas, 22/10/2026).
+ *
+ * Vira meia quando: o grupo da opção fala de sabor (e não de esfirra/bebida),
+ * tem 2 ou mais sabores escolhidos, cada um uma vez, e o combo é de UMA pizza
+ * (o grupo diz "pizza", ou o nome do item diz "pizza" e não "pizzas"). Sem o
+ * `groupName` no payload, nada muda. Devolve índice da opção → "1/N ".
+ */
+export function saboresQueSaoMeia(nomeDoItem: string, opcoes: any[]): Map<number, string> {
+  const saida = new Map<number, string>();
+  const umaPizzaNoNome = /\bpizza\b/i.test(nomeDoItem) && !/\bpizzas\b/i.test(nomeDoItem);
+  const grupos = new Map<string, number[]>();
+  opcoes.forEach((s, idx) => {
+    const grupo = String(s?.groupName || "").trim();
+    if (grupo) grupos.set(grupo, [...(grupos.get(grupo) || []), idx]);
+  });
+  for (const [grupo, idxs] of grupos) {
+    if (!/sabor/i.test(grupo) || /esf[ií]h?r?r?a|bebida|refri|suco/i.test(grupo)) continue;
+    if (!/\bpizza\b/i.test(grupo) && !umaPizzaNoNome) continue;
+    if (idxs.length < 2 || idxs.some((k) => Number(opcoes[k]?.quantity || 1) !== 1)) continue;
+    if (idxs.some((k) => /^\s*\d+\s*\/\s*\d+/.test(String(opcoes[k]?.name || "")))) continue;
+    for (const k of idxs) saida.set(k, `1/${idxs.length} `);
+  }
+  return saida;
 }
 
 /**
