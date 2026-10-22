@@ -9,9 +9,9 @@
  *         chaves do deliveryConfig ficam). 403 fora da liberação; 409 ao
  *         tentar ligar sem o pino da loja ou sem motoboy ativo (§4.1 do plano).
  *
- * FASE 0 (22/10/2026): `ativo: true` é GRAVADO, mas nada roda — não há cron
- * nem gravação de rota ainda (lib/roteirizacao-automatica/executar.ts só faz
- * a prévia). O interruptor fica guardado para a Fase 1 ler.
+ * Desde a Fase 1 (22/10/2026), `ativo: true` LIGA: o cron de 20 s
+ * (api/cron/roteirizacao-automatica) passa a criar as rotas e pedir
+ * prioridade no KDS desta loja. Chamar o motoboy é a Fase 2.
  *
  * Por que uma rota própria e não o PUT /api/store-settings: a regra passa por
  * `limparRoteirizacaoAutomatica` (só chaves conhecidas, limites) e pela trava

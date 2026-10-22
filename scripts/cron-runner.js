@@ -89,6 +89,19 @@ const jobs = [
     exclusivo: true,
   },
   {
+    // Rota 100% automatizada: nas lojas que ligaram o interruptor (e estão na
+    // liberação), junta os pedidos de entrega que vão juntos, cria a rota e
+    // pede prioridade no KDS (src/lib/roteirizacao-automatica/executar.ts). A
+    // cada 20 s porque o pedido novo tem de entrar na rota antes de a cozinha
+    // começar. Sem loja ligada é uma consulta e volta — custo zero.
+    name: 'roteirizacao-automatica',
+    path: '/api/cron/roteirizacao-automatica',
+    intervalMs: 20_000, // 20 segundos
+    // Ciclo ainda no ar não ganha outro por cima; a vez por loja no banco
+    // (roteirizacao:<loja>) segura o resto (o "rodar agora", dois servidores).
+    exclusivo: true,
+  },
+  {
     // CardápioWeb: a rede PRINCIPAL dos pedidos dele, não um enfeite — o
     // webhook do CardápioWeb pausa depois de 15 falhas e só volta por e-mail.
     // Lista o que mudou desde o último ciclo, reprocessa aviso parado e repete

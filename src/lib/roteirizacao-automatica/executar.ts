@@ -2,11 +2,21 @@
  * Rota 100% automatizada — a EXECUÇÃO: lê a loja no banco, monta a entrada do
  * planejador (planejador.ts, puro) e devolve o que ele decidiu.
  *
- * FASE 0 (22/10/2026): só `gravar: false`. É a prévia que o Douglas olha antes
- * de ligar (D15 do plano, vault "FireHub - Plano despacho automático") —
- * nenhuma rota é criada, nenhum pedido muda, nenhum motoboy é avisado. A
- * Fase 1 acrescenta o modo que grava (criar-rota pela mesma gravação do POST
- * manual de api/store/routes) e o cron de 20 s.
+ * Dois modos:
+ *   - `gravar: false` — a PRÉVIA que o Douglas olha antes de ligar (D15 do
+ *     plano, vault "FireHub - Plano despacho automático"): nada é gravado;
+ *   - `gravar: true` (Fase 1, 22/10/2026) — o cron de 20 s
+ *     (api/cron/roteirizacao-automatica) e o "rodar agora": cria a rota
+ *     (lib/rotas-da-loja.ts, a mesma gravação do POST manual), acrescenta,
+ *     tira e apaga rota AUTO vazia. A tradução das ações em gravações é pura
+ *     (gravacoes.ts); aqui ficam as travas de SQL. "chamar" (avisar o
+ *     motoboy) é a Fase 2: volta como pendente no resumo.
+ *
+ * Gravando, o ciclo inteiro (ler → planejar → gravar) roda sob a vez
+ * "roteirizacao:<loja>" (lib/vez.ts) com um dono novo por chamada: nem dois
+ * servidores nem o cron e o "rodar agora" do mesmo servidor criam a mesma
+ * rota duas vezes. E nunca se mexe em rota MANUAL nem em pedido que já tem
+ * motoboy (D4/D8): toda gravação confere de novo no banco.
  *
  * ── A entrada ────────────────────────────────────────────────────────────
  *   - pedidos (D4): entrega da loja (DELIVERY, sem tableSession), aceitos e
@@ -27,13 +37,19 @@
 import { prisma } from "@/lib/prisma";
 import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
-import { areaDaLoja, lerPontoGravado, pontoGravadoVale } from "@/lib/ponto-do-pedido";
+import { areaDaLoja } from "@/lib/ponto-do-pedido";
+import { pontoParaRotaAutomatica } from "./ponto";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { infoDaEntrega } from "@/lib/entrega-parceira";
 import { prontoNaCozinha } from "@/lib/pedidos-na-cozinha";
 import { STATUS_ANTES_DE_SAIR, STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { POSICAO_VALE_MS } from "@/lib/entrega-ao-vivo";
 import { lerConfigDeAgendamento } from "@/lib/agendamento";
+import { pegarVez, soltarVez } from "@/lib/vez";
+import { idDaInstancia } from "@/lib/instancia";
+import { criarRotaDaLoja, pedePrioridadeNaRota } from "@/lib/rotas-da-loja";
+import { liberadaPara } from "./liberacao";
+import { gravacoesDasAcoes, type Passo } from "./gravacoes";
 import { lerRoteirizacaoAutomatica, type RoteirizacaoAutomaticaConfig } from "./config";
 import { prazoDoPedido, agendadoParaDepois } from "./prazo";
 import {
@@ -92,16 +108,33 @@ export type ResumoDaRoteirizacao = {
   acoes: AcaoNaPrevia[];
   descartados: { pedidoId: string; numero: number | null; motivo: MotivoDoDescarte; texto: string }[];
   rotasAbertas: { id: string; routeNumber: string; chamadaEm: string | null; numeros: (number | null)[] }[];
-  gravou: false;
+  /** true = este ciclo gravou (modo `gravar: true`, ligada e liberada). */
+  gravou: boolean;
+  /** Gravando: o que foi feito, escrito ("criou Rota #7 (#12, #15)"). */
+  aplicadas?: string[];
+  /** Gravando: decidido mas ainda não gravado nesta fase ("chamar" — Fase 2). */
+  pendentes?: AcaoNaPrevia[];
+  /** Gravando: o que falhou ou o banco recusou (pedido puxado no meio, rota que saiu). */
+  falhas?: string[];
+  /** Gravando: outro ciclo desta loja estava no ar — este não gravou. */
+  pulada?: string;
 };
 
 const numeroDo = (p: { dailyOrderNumber?: number | null }) => (p.dailyOrderNumber ?? null) as number | null;
 
-export async function rodarRoteirizacaoDaLoja(lojaId: string, opcoes: { gravar: false; agora?: Date }): Promise<ResumoDaRoteirizacao> {
-  // Fase 0: o tipo só aceita `gravar: false`. Quem quiser gravar espera a Fase 1.
-  if (opcoes.gravar !== false) throw new Error("Rota automática: gravar ainda não existe (Fase 0).");
-  const agora = opcoes.agora ?? new Date();
+/** O que o ciclo leu e decidiu — a prévia é o `resumo`; quem grava usa o resto. */
+type Planejado = {
+  resumo: ResumoDaRoteirizacao;
+  acoes: Acao[];
+  rotasAbertas: RotaAberta[];
+  virada: Date;
+  /** Número do pedido pelo id (para escrever o que foi feito). */
+  num: (id: string) => number | null;
+  /** Status do pedido pelo id (a prioridade no KDS ao entrar na rota). */
+  statusDe: (id: string) => string | null;
+};
 
+async function lerEPlanejar(lojaId: string, agora: Date): Promise<Planejado> {
   const loja = await prisma.user.findUnique({
     where: { id: lojaId },
     select: { storeLatLng: true, deliveryConfig: true, deliveryZones: true, deliveryZoneType: true, storeTimezone: true, agendamentoConfig: true },
@@ -178,8 +211,7 @@ export async function rodarRoteirizacaoDaLoja(lojaId: string, opcoes: { gravar: 
   const paraDespacho = (o: Linha): PedidoParaDespacho => {
     numeros.set(o.id, numeroDo(o));
     const ehMarketplace = canalDoPedido(o).ehMarketplace;
-    const gravado = lerPontoGravado(o.customerLatLng, ehMarketplace);
-    const ponto = gravado && gravado.fonte !== "bairro" && pontoGravadoVale(gravado, area, ehMarketplace) ? gravado.ponto : null;
+    const ponto = pontoParaRotaAutomatica(o.customerLatLng, ehMarketplace, area);
     let fora: CorteDaEntrada | null = null;
     if (infoDaEntrega(o).parceira) fora = "parceiro";
     else if (o.routeId && !idsDasRotasAuto.has(o.routeId)) fora = "rota-manual";
@@ -219,8 +251,14 @@ export async function rodarRoteirizacaoDaLoja(lojaId: string, opcoes: { gravar: 
     rotasAbertas: rotasAbertas.map((r) => ({ id: r.id, routeNumber: r.routeNumber, chamadaEm: r.chamadaEm?.toISOString() ?? null, numeros: r.pedidos.map((p) => p.numero) })),
     gravou: false,
   });
+  const status = new Map([...candidatos, ...dasRotas].map((o) => [o.id, o.status as string]));
+  const planejado = (resumo: ResumoDaRoteirizacao, acoes: Acao[]): Planejado => ({
+    resumo, acoes, rotasAbertas, virada,
+    num: (id) => numeros.get(id) ?? null,
+    statusDe: (id) => status.get(id) ?? null,
+  });
   // Sem pino não há "perto da loja" nem ordem de paradas: nada a planejar.
-  if (!pino) return resumoVazio();
+  if (!pino) return planejado(resumoVazio(), []);
 
   const { acoes, descartados } = planejar({ loja: pino, config, pedidos, rotasAbertas, motoboys: livres, agora });
 
@@ -247,9 +285,175 @@ export async function rodarRoteirizacaoDaLoja(lojaId: string, opcoes: { gravar: 
     }
   });
 
-  return {
-    ...resumoVazio(),
-    acoes: legiveis,
-    descartados: descartados.map((d) => ({ ...d, numero: num(d.pedidoId), texto: MOTIVO_EM_PORTUGUES[d.motivo] })),
+  return planejado(
+    {
+      ...resumoVazio(),
+      acoes: legiveis,
+      descartados: descartados.map((d) => ({ ...d, numero: num(d.pedidoId), texto: MOTIVO_EM_PORTUGUES[d.motivo] })),
+    },
+    acoes,
+  );
+}
+
+/** A vez de um ciclo que grava: cobre ler + planejar + gravar com folga. */
+const VEZ_DO_CICLO_MS = 15_000;
+
+/**
+ * Um ciclo da loja. `gravar: false` = a prévia (nada muda). `gravar: true` =
+ * grava o que o planejador decidiu, só com a regra ligada e a loja liberada
+ * (liberacao.ts) — o cron já filtra, mas o "rodar agora" e um desligar no
+ * meio do caminho passam por aqui também.
+ */
+export async function rodarRoteirizacaoDaLoja(lojaId: string, opcoes: { gravar: boolean; agora?: Date }): Promise<ResumoDaRoteirizacao> {
+  const agora = opcoes.agora ?? new Date();
+  if (!opcoes.gravar) return (await lerEPlanejar(lojaId, agora)).resumo;
+
+  const chave = `roteirizacao:${lojaId}`;
+  // Dono novo por chamada (lib/vez.ts): com o dono da instância, o "rodar
+  // agora" renovaria a vez do cron do mesmo servidor e os dois gravariam juntos.
+  const dono = `${idDaInstancia()}:${agora.getTime()}:${Math.random().toString(36).slice(2, 8)}`;
+  if (!(await pegarVez(chave, VEZ_DO_CICLO_MS, { dono }))) {
+    const { resumo } = await lerEPlanejar(lojaId, agora);
+    return { ...resumo, pulada: "outro ciclo desta loja está gravando agora" };
+  }
+  try {
+    const plano = await lerEPlanejar(lojaId, agora);
+    const { resumo } = plano;
+    // Desligada no meio do caminho (D14), fora da liberação ou sem o pino: só a prévia.
+    if (!resumo.config.ativo || !liberadaPara(lojaId) || !resumo.temPino) return resumo;
+    return await gravar(lojaId, plano);
+  } finally {
+    await soltarVez(chave, dono);
+  }
+}
+
+/** A rota ainda é AUTO, desta loja, e não saiu? (a Roteirização pode ter despachado no meio) */
+async function rotaAutoAberta(lojaId: string, rotaId: string): Promise<boolean> {
+  const linhas = await prisma.$queryRaw<{ ok: number }[]>`
+    SELECT 1 AS ok FROM "RouteSchedule"
+    WHERE "id" = ${rotaId} AND "franchiseeId" = ${lojaId} AND "origem" = 'AUTO'
+      AND "status" = 'PENDING' AND "dispatchedAt" IS NULL
+  `;
+  return linhas.length > 0;
+}
+
+async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteirizacao> {
+  const { resumo, num, statusDe } = plano;
+  const { passos, pendentes } = gravacoesDasAcoes(
+    plano.acoes,
+    plano.rotasAbertas.map((r) => ({ id: r.id, pedidoIds: r.pedidos.map((p) => p.id) })),
+  );
+  const numeroDaRota = new Map(plano.rotasAbertas.map((r) => [r.id, r.routeNumber]));
+  const rotulo = (id: string) => `#${num(id) ?? id.slice(-4)}`;
+  const nomeDaRota = (id: string) => numeroDaRota.get(id) ?? `rota ${id.slice(-4)}`;
+  const aplicadas: string[] = [];
+  const falhas: string[] = [];
+  const acoes = resumo.acoes.map((a) => ({ ...a }));
+
+  // Cada rota é conferida no banco uma vez por ciclo, antes da 1ª gravação nela.
+  const aberta = new Map<string, boolean>();
+  const conferirRota = async (rotaId: string) => {
+    if (!aberta.has(rotaId)) aberta.set(rotaId, await rotaAutoAberta(lojaId, rotaId));
+    return aberta.get(rotaId) as boolean;
   };
+
+  const aplicar = async (passo: Passo) => {
+    switch (passo.tipo) {
+      case "criar-rota": {
+        // De novo no banco: o pedido pode ter sido puxado pelo QR, ido para
+        // uma rota manual ou cancelado depois da leitura (D4).
+        const livres = new Set(
+          (await prisma.customerOrder.findMany({
+            where: { id: { in: passo.pedidoIds }, franchiseeId: lojaId, motoboyId: null, routeId: null, status: { in: [...STATUS_DO_DESPACHO] } },
+            select: { id: true },
+          })).map((o) => o.id),
+        );
+        const ids = passo.pedidoIds.filter((id) => livres.has(id));
+        if (ids.length === 0) { falhas.push(`rota de ${passo.pedidoIds.map(rotulo).join(", ")} não criada: os pedidos mudaram`); return; }
+        // D7: sem motoboy. A numeração conta desde a mesma virada que lê as rotas abertas.
+        const { rota } = await criarRotaDaLoja({ lojaId, orderIds: ids, origem: "AUTO", virada: plano.virada });
+        numeroDaRota.set(rota.id, rota.routeNumber);
+        aberta.set(rota.id, true);
+        const legivel = acoes.find((a) => a.tipo === "criar-rota" && a.pedidos.includes(ids[0]));
+        if (legivel) legivel.routeNumber = rota.routeNumber;
+        aplicadas.push(`criou ${rota.routeNumber} (${ids.map(rotulo).join(", ")})`);
+        return;
+      }
+      case "entrar-na-rota": {
+        if (!(await conferirRota(passo.rotaId))) { falhas.push(`${rotulo(passo.pedidoId)} não entrou: ${nomeDaRota(passo.rotaId)} já saiu ou não é automática`); return; }
+        const { count } = await prisma.customerOrder.updateMany({
+          where: { id: passo.pedidoId, franchiseeId: lojaId, motoboyId: null, routeId: null },
+          data: { routeId: passo.rotaId, isRoutePriority: pedePrioridadeNaRota(statusDe(passo.pedidoId)) },
+        });
+        if (count === 0) { falhas.push(`${rotulo(passo.pedidoId)} não entrou na ${nomeDaRota(passo.rotaId)}: o pedido mudou`); return; }
+        aplicadas.push(`${rotulo(passo.pedidoId)} entrou na ${nomeDaRota(passo.rotaId)}`);
+        return;
+      }
+      case "sair-da-rota": {
+        if (!(await conferirRota(passo.rotaId))) return;
+        const { count } = await prisma.customerOrder.updateMany({
+          where: { id: passo.pedidoId, routeId: passo.rotaId, motoboyId: null },
+          data: { routeId: null, isRoutePriority: false },
+        });
+        if (count === 0) return;
+        try {
+          await prisma.$executeRaw`UPDATE "CustomerOrder" SET "routeSequence" = NULL WHERE "id" = ${passo.pedidoId} AND "routeId" IS NULL`;
+        } catch (e: any) {
+          console.warn("[rota-automatica] routeSequence não limpa (coluna ausente?):", e?.message?.slice(0, 120));
+        }
+        aplicadas.push(`${rotulo(passo.pedidoId)} saiu da ${nomeDaRota(passo.rotaId)} (${passo.motivo === "cancelado" ? "cancelado" : "espera estourada"})`);
+        return;
+      }
+      case "sequencia": {
+        if (!(await conferirRota(passo.rotaId))) return;
+        // Mesma coluna crua do POST manual (lib/rotas-da-loja.ts). Só quem
+        // ainda está nesta rota ganha número.
+        try {
+          await Promise.all(
+            passo.pedidoIds.map((id, i) => prisma.$executeRaw`
+              UPDATE "CustomerOrder" SET "routeSequence" = ${i + 1} WHERE "id" = ${id} AND "routeId" = ${passo.rotaId}
+            `),
+          );
+        } catch (e: any) {
+          console.warn("[rota-automatica] routeSequence não gravada (coluna ausente?):", e?.message?.slice(0, 120));
+        }
+        return;
+      }
+      case "apagar-rota": {
+        // Só a AUTO desta loja, ainda PENDING e sem pedido nenhum — o banco confere.
+        const apagadas = await prisma.$executeRaw`
+          DELETE FROM "RouteSchedule"
+          WHERE "id" = ${passo.rotaId} AND "franchiseeId" = ${lojaId} AND "origem" = 'AUTO'
+            AND "status" = 'PENDING' AND "dispatchedAt" IS NULL
+            AND NOT EXISTS (SELECT 1 FROM "CustomerOrder" WHERE "routeId" = ${passo.rotaId})
+        `;
+        if (apagadas > 0) aplicadas.push(`apagou ${nomeDaRota(passo.rotaId)} (ficou vazia)`);
+        return;
+      }
+    }
+  };
+
+  for (const passo of passos) {
+    try {
+      await aplicar(passo);
+    } catch (e: any) {
+      // Uma gravação que falha não derruba as outras; o ciclo seguinte (20 s)
+      // vê o banco como ficou e decide de novo (rota que nasceu vazia é apagada).
+      falhas.push(`${passo.tipo}: ${String(e?.message || e).slice(0, 160)}`);
+    }
+  }
+
+  // Fase 2: "chamar" (chamadaEm, chamadaMotoboyId e o push ROTA_PRONTA).
+  const rotasPendentes = new Set(pendentes.flatMap((p) => (p.tipo === "chamar" ? [p.rotaId] : [])));
+  const pendentesLegiveis = acoes.filter((a) => a.tipo === "chamar" && rotasPendentes.has(a.rotaId));
+
+  if (aplicadas.length > 0 || falhas.length > 0) {
+    console.log(
+      `[rota-automatica] loja ${lojaId} ações: ${aplicadas.join("; ") || "nenhuma"}` +
+        (pendentesLegiveis.length > 0 ? ` | pendente (Fase 2): chamar ${pendentesLegiveis.map((a) => a.routeNumber ?? "?").join(", ")}` : "") +
+        (falhas.length > 0 ? ` | falhas: ${falhas.join("; ")}` : ""),
+    );
+  }
+
+  return { ...resumo, acoes, gravou: true, aplicadas, pendentes: pendentesLegiveis, falhas };
 }

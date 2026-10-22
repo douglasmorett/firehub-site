@@ -270,6 +270,111 @@ async function main() {
     conferir("agendado para daqui a 50 min: já entra", !agendadoParaDepois({ ...agendado, scheduledDatetime: "2026-10-22T22:50:00.000Z" }, 60, AGORA));
   }
 
+  // ── Fase 1: o que GRAVAR (gravacoes.ts) a partir das ações ───────────────
+  const { gravacoesDasAcoes } = await import("../src/lib/roteirizacao-automatica/gravacoes");
+  const { pedePrioridadeNaRota } = await import("../src/lib/rotas-da-loja");
+  const { pontoParaRotaAutomatica } = await import("../src/lib/roteirizacao-automatica/ponto");
+  type Passo = import("../src/lib/roteirizacao-automatica/gravacoes").Passo;
+  const lidas = (rotas: Rota[]) => rotas.map((r) => ({ id: r.id, pedidoIds: r.pedidos.map((p) => p.id) }));
+  const tipos = (passos: Passo[]) => passos.map((p) => p.tipo).join(",");
+
+  console.log("\n== Fase 1: as gravações ==");
+  {
+    const r = plano([pedido(1, em(1), 20), pedido(2, em(1.2), 22)]);
+    const g = gravacoesDasAcoes(r.acoes, []);
+    const criar = g.passos.find((p) => p.tipo === "criar-rota") as Extract<Passo, { tipo: "criar-rota" }> | undefined;
+    conferir("criar-rota vira UMA rota nova com os pedidos na ordem das paradas (sequência = posição)",
+      g.passos.length === 1 && criar?.pedidoIds.join() === (criadas(r.acoes)[0] ?? []).join() && criar?.pedidoIds.join() === "p01,p02", g);
+  }
+  {
+    // Rota aberta R1 com o #1; o #2 (mais perto da loja) entra na frente.
+    const aberta = rota("R1", [pedido(1, em(2), 20)]);
+    const r = plano([pedido(2, em(1, 0.2), 25)], [aberta]);
+    const g = gravacoesDasAcoes(r.acoes, lidas([aberta]));
+    const seq = g.passos.find((p) => p.tipo === "sequencia") as Extract<Passo, { tipo: "sequencia" }> | undefined;
+    conferir("acrescentar: o pedido entra e a sequência da rota INTEIRA é regravada na ordem nova",
+      tipos(g.passos) === "entrar-na-rota,sequencia" && seq?.rotaId === "R1" && seq?.pedidoIds.join() === "p02,p01", g);
+  }
+  {
+    // Duas entradas na mesma rota no mesmo ciclo: uma sequência só, com a última ordem.
+    const acoes: Acao[] = [
+      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 1, ordem: ["p02", "p01"] },
+      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p03", posicao: 2, ordem: ["p02", "p03", "p01"] },
+    ];
+    const g = gravacoesDasAcoes(acoes, [{ id: "R1", pedidoIds: ["p01"] }]);
+    const seqs = g.passos.filter((p) => p.tipo === "sequencia") as Extract<Passo, { tipo: "sequencia" }>[];
+    conferir("duas entradas na mesma rota: uma sequência, a última, depois das entradas",
+      tipos(g.passos) === "entrar-na-rota,entrar-na-rota,sequencia" && seqs.length === 1 && seqs[0].pedidoIds.join() === "p02,p03,p01", g);
+  }
+  {
+    // Rota que não está entre as AUTO abertas lidas (a manual, a que saiu): não se mexe.
+    const acoes: Acao[] = [
+      { tipo: "acrescentar", rotaId: "MANUAL1", pedidoId: "p02", posicao: 1, ordem: ["p02"] },
+      { tipo: "tirar-da-rota", rotaId: "MANUAL1", pedidoId: "p01", motivo: "cancelado" },
+      { tipo: "apagar-rota", rotaId: "MANUAL1" },
+      { tipo: "chamar", rotaId: "MANUAL1", motoboyId: null },
+    ];
+    const g = gravacoesDasAcoes(acoes, [{ id: "R1", pedidoIds: ["p09"] }]);
+    conferir("rota fora das AUTO abertas (manual): nenhuma gravação, nada pendente",
+      g.passos.length === 0 && g.pendentes.length === 0 && g.ignoradas.length === 4 && g.ignoradas.every((i) => i.motivo === "rota-desconhecida"), g);
+  }
+  {
+    // Cancelado sozinho na rota: sai, e a rota (vazia) é apagada.
+    const r = plano([], [rota("R1", [pedido(1, em(2), 20, { cancelado: true })])]);
+    const g = gravacoesDasAcoes(r.acoes, lidas([rota("R1", [pedido(1, em(2), 20)])]));
+    conferir("cancelado sai e a rota vazia é apagada (nesta ordem)", tipos(g.passos) === "sair-da-rota,apagar-rota", g);
+  }
+  {
+    // apagar-rota de rota que ainda tem pedido: recusada.
+    const g = gravacoesDasAcoes([{ tipo: "apagar-rota", rotaId: "R1" }], [{ id: "R1", pedidoIds: ["p01", "p02"] }]);
+    conferir("apagar-rota só se vazia: com pedido, não apaga", g.passos.length === 0 && g.ignoradas[0]?.motivo === "rota-com-pedido", g);
+    const g2 = gravacoesDasAcoes(
+      [{ tipo: "tirar-da-rota", rotaId: "R1", pedidoId: "p01", motivo: "cancelado" }, { tipo: "apagar-rota", rotaId: "R1" }],
+      [{ id: "R1", pedidoIds: ["p01", "p02"] }],
+    );
+    conferir("… tirar um de dois e mandar apagar: sai um, a rota fica", tipos(g2.passos) === "sair-da-rota" && g2.ignoradas[0]?.motivo === "rota-com-pedido", g2);
+  }
+  {
+    // Espera estourada: o não pronto sai; a chamada fica para a Fase 2.
+    const aberta = rota("R1", [pedido(1, em(2), 20, pronto(10)), pedido(2, em(2.2), 25)]);
+    const r = plano([], [aberta]);
+    const g = gravacoesDasAcoes(r.acoes, lidas([aberta]));
+    const sai = g.passos[0] as Extract<Passo, { tipo: "sair-da-rota" }> | undefined;
+    conferir("espera estourada: o não pronto sai da rota", tipos(g.passos) === "sair-da-rota" && sai?.pedidoId === "p02" && sai?.motivo === "espera-estourada", g);
+    conferir("chamar NÃO é gravado nesta fase: fica pendente", g.pendentes.length === 1 && g.pendentes[0].tipo === "chamar" && !g.passos.some((p) => (p as any).tipo === "chamar"), g);
+  }
+  {
+    // Pedido que entrou numa rota aberta não entra também numa rota nova; tirar quem não está na rota é ignorado.
+    const acoes: Acao[] = [
+      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 2, ordem: ["p01", "p02"] },
+      { tipo: "criar-rota", pedidos: ["p02", "p03"], motivo: "teste" },
+      { tipo: "tirar-da-rota", rotaId: "R1", pedidoId: "p07", motivo: "cancelado" },
+    ];
+    const g = gravacoesDasAcoes(acoes, [{ id: "R1", pedidoIds: ["p01"] }]);
+    const criar = g.passos.find((p) => p.tipo === "criar-rota") as Extract<Passo, { tipo: "criar-rota" }> | undefined;
+    conferir("pedido repetido no ciclo: só a primeira rota leva", criar?.pedidoIds.join() === "p03", g);
+    conferir("tirar pedido que não está na rota: ignorado", g.ignoradas.some((i) => i.motivo === "fora-da-rota") && !g.passos.some((p) => p.tipo === "sair-da-rota"), g);
+  }
+  {
+    // Saída depois de entrada na mesma rota: a sequência não leva quem saiu.
+    const acoes: Acao[] = [
+      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 1, ordem: ["p02", "p01"] },
+      { tipo: "tirar-da-rota", rotaId: "R1", pedidoId: "p01", motivo: "cancelado" },
+    ];
+    const g = gravacoesDasAcoes(acoes, [{ id: "R1", pedidoIds: ["p01"] }]);
+    const seq = g.passos.find((p) => p.tipo === "sequencia") as Extract<Passo, { tipo: "sequencia" }> | undefined;
+    conferir("sequência regravada só com quem ficou na rota", seq?.pedidoIds.join() === "p02", g);
+  }
+  {
+    conferir("prioridade no KDS: na cozinha pede, pronto/saiu/entregue não",
+      pedePrioridadeNaRota("ACEITO") && pedePrioridadeNaRota("PREPARANDO") && !pedePrioridadeNaRota("PRONTO") && !pedePrioridadeNaRota("SAIU_ENTREGA") && !pedePrioridadeNaRota("ENTREGUE"));
+    const area = { centro: LOJA, raioKm: 8, raioDoParceiroKm: 12, base: "faixas" as const };
+    const p = em(1.5);
+    conferir("ponto da rota automática: o do cliente vale", !!pontoParaRotaAutomatica({ ...p, origem: "pino" }, false, area));
+    conferir("… o centro do bairro NÃO (D3)", pontoParaRotaAutomatica({ ...p, origem: "bairro" }, false, area) === null);
+    conferir("… sem nada gravado, nada", pontoParaRotaAutomatica(null, false, area) === null);
+  }
+
   console.log(`\n${ok} ok, ${falhou} falharam`);
   process.exitCode = falhou ? 1 : 0;
 }
