@@ -21,7 +21,11 @@
  *     vira dono é quem escaneia o QR). Vai depois das saídas da mesma rota
  *     (espera estourada), e só para rota que ainda tem pedido;
  *   - "fechar-rota" (a rota que terminou sozinha) vira DISPATCHED sem efeito
- *     nenhum: nada de push, nada de iFood — cada pedido já saiu pelo puxar.
+ *     nenhum: nada de push, nada de iFood — cada pedido já saiu pelo puxar;
+ *   - "acrescentar" com `rotaChamada` (D8 revisto em 22/10/2026: a rota já
+ *     chamada que ninguém puxou recebe pedido pronto) vira, além da entrada e
+ *     da sequência, UM passo "avisar-mudanca" por rota, o último de todos:
+ *     reenviar a chamada a quem foi chamado, com a rota já na forma final.
  *
  * SEM IMPORTS de valor (só tipos): o teste carrega sem banco.
  */
@@ -33,8 +37,8 @@ export type RotaLida = { id: string; pedidoIds: string[] };
 export type Passo =
   /** Rota nova sem motoboy (D7), pedidos na ordem das paradas: `routeSequence` = posição + 1. */
   | { tipo: "criar-rota"; pedidoIds: string[] }
-  /** O pedido entra na rota (routeId + prioridade no KDS). */
-  | { tipo: "entrar-na-rota"; rotaId: string; pedidoId: string }
+  /** O pedido entra na rota (routeId + prioridade no KDS). `rotaChamada`: a rota já estava chamada. */
+  | { tipo: "entrar-na-rota"; rotaId: string; pedidoId: string; rotaChamada?: true }
   /** O pedido sai: routeId, prioridade e sequência zerados. */
   | { tipo: "sair-da-rota"; rotaId: string; pedidoId: string; motivo: "cancelado" | "espera-estourada" }
   /** A ordem inteira da rota: `routeSequence` = posição + 1, de cada pedido. */
@@ -43,7 +47,9 @@ export type Passo =
   /** Chamada: `chamadaEm = agora`, `chamadaMotoboyId` (null = todos os livres) e o push. Só a rota. */
   | { tipo: "chamar"; rotaId: string; motoboyId: string | null }
   /** Terminou sozinha: DISPATCHED + dispatchedAt, sem efeitos. */
-  | { tipo: "fechar-rota"; rotaId: string };
+  | { tipo: "fechar-rota"; rotaId: string }
+  /** A rota chamada cresceu: a chamada sai de novo ("Rota #1 atualizada · agora 2 entregas"). */
+  | { tipo: "avisar-mudanca"; rotaId: string };
 
 export type AcaoIgnorada = { acao: Acao; motivo: "rota-desconhecida" | "rota-com-pedido" | "pedido-repetido" | "fora-da-rota" | "vazia" };
 
@@ -63,6 +69,8 @@ export function gravacoesDasAcoes(acoes: Acao[], rotasLidas: RotaLida[]): Gravac
   const jaColocados = new Set<string>();
   // A última ordem de cada rota que cresceu, na ordem em que as rotas cresceram.
   const ordemFinal = new Map<string, string[]>();
+  // As rotas chamadas que ganharam pedido neste ciclo (o aviso de que mudou).
+  const mudaram = new Set<string>();
 
   for (const a of acoes) {
     switch (a.tipo) {
@@ -79,7 +87,8 @@ export function gravacoesDasAcoes(acoes: Acao[], rotasLidas: RotaLida[]): Gravac
         if (jaColocados.has(a.pedidoId) || naRota.has(a.pedidoId)) { ignoradas.push({ acao: a, motivo: "pedido-repetido" }); break; }
         jaColocados.add(a.pedidoId);
         naRota.add(a.pedidoId);
-        passos.push({ tipo: "entrar-na-rota", rotaId: a.rotaId, pedidoId: a.pedidoId });
+        passos.push({ tipo: "entrar-na-rota", rotaId: a.rotaId, pedidoId: a.pedidoId, ...(a.rotaChamada ? { rotaChamada: true as const } : {}) });
+        if (a.rotaChamada) mudaram.add(a.rotaId);
         // Só quem está na rota entra na sequência (a ordem do planejador é a
         // rota inteira; um id estranho nela não vira parada).
         ordemFinal.delete(a.rotaId);
@@ -126,6 +135,10 @@ export function gravacoesDasAcoes(acoes: Acao[], rotasLidas: RotaLida[]): Gravac
   // A sequência vai por último: depois de todas as entradas e saídas do ciclo.
   for (const [rotaId, pedidoIds] of ordemFinal) {
     if (pedidoIds.length > 0) passos.push({ tipo: "sequencia", rotaId, pedidoIds });
+  }
+  // E o aviso por último: a rota que ficou vazia ou fechou no ciclo não avisa.
+  for (const rotaId of mudaram) {
+    if ((membros.get(rotaId)?.size ?? 0) > 0) passos.push({ tipo: "avisar-mudanca", rotaId });
   }
 
   return { passos, ignoradas };

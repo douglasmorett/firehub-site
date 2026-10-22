@@ -16,6 +16,11 @@
  *     Fase 3 (22/10/2026): a rota é gravada com as paradas na ordem PELA RUA
  *     (ordem-por-rua.ts, `rotaEntre`, teto de 3 s), e a chamada "para todos"
  *     que alguém levou avisa os outros (`avisarQueARotaJaSaiu`).
+ *     D8 revisto (22/10/2026): a rota JÁ CHAMADA que ninguém puxou recebe
+ *     pedido pronto que cabe nela; a entrada confere no MESMO UPDATE que a
+ *     rota segue AUTO, PENDING e sem nenhum pedido com motoboy ("puxou,
+ *     acabou"), e a chamada sai de novo para o mesmo chamado com o texto
+ *     "atualizada" (`chamarARota` com `rotaMudou`).
  *
  * Gravando, o ciclo inteiro (ler → planejar → gravar) roda sob a vez
  * "roteirizacao:<loja>" (lib/vez.ts) com um dono novo por chamada: nem dois
@@ -58,7 +63,7 @@ import { criarRotaDaLoja, pedePrioridadeNaRota } from "@/lib/rotas-da-loja";
 import { liberadaPara } from "./liberacao";
 import { gravacoesDasAcoes, type Passo } from "./gravacoes";
 import { avisarMotoboy } from "@/lib/app-motoboy/aparelhos";
-import { avisoDaRotaFoiComOutro, avisoDaRotaJaSaiu, avisoDaRotaPronta, quemPerdeAChamada, quemRecebeAChamada, quemSabeQueARotaJaSaiu } from "./chamada";
+import { avisoDaRotaAtualizada, avisoDaRotaFoiComOutro, avisoDaRotaJaSaiu, avisoDaRotaPronta, quemPerdeAChamada, quemRecebeAChamada, quemSabeQueARotaJaSaiu } from "./chamada";
 import { rotaEntre } from "@/lib/distancia-por-rota";
 import type { Ponto } from "@/lib/ponto-do-pedido";
 import { ordenarParadasPorMedida, TETO_DA_ORDEM_POR_RUA_MS, type OrdemDasParadas } from "./ordem-por-rua";
@@ -434,6 +439,8 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
     if (!aberta.has(rotaId)) aberta.set(rotaId, await rotaAutoAberta(lojaId, rotaId));
     return aberta.get(rotaId) as boolean;
   };
+  // As rotas chamadas em que algum pedido entrou DE FATO (o aviso de que mudou).
+  const mudaramDeFato = new Set<string>();
 
   const aplicar = async (passo: Passo) => {
     switch (passo.tipo) {
@@ -464,12 +471,28 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
       }
       case "entrar-na-rota": {
         if (!(await conferirRota(passo.rotaId))) { falhas.push(`${rotulo(passo.pedidoId)} não entrou: ${nomeDaRota(passo.rotaId)} já saiu ou não é automática`); return; }
-        const { count } = await prisma.customerOrder.updateMany({
-          where: { id: passo.pedidoId, franchiseeId: lojaId, motoboyId: null, routeId: null, semRotaAutomaticaEm: null } as any,
-          data: { routeId: passo.rotaId, isRoutePriority: pedePrioridadeNaRota(statusDe(passo.pedidoId)) },
-        });
-        if (count === 0) { falhas.push(`${rotulo(passo.pedidoId)} não entrou na ${nomeDaRota(passo.rotaId)}: o pedido mudou`); return; }
-        aplicadas.push(`${rotulo(passo.pedidoId)} entrou na ${nomeDaRota(passo.rotaId)}`);
+        // Um UPDATE só, com as travas no WHERE: o pedido segue livre e a rota
+        // segue AUTO, PENDING e sem NENHUM pedido com motoboy (cancelado não
+        // conta, como no planejador). Um motoboy que puxou entre a leitura e
+        // aqui — rota chamada ou não — barra a entrada: "puxou, acabou" (D8).
+        const count = await prisma.$executeRaw`
+          UPDATE "CustomerOrder"
+          SET "routeId" = ${passo.rotaId}, "isRoutePriority" = ${pedePrioridadeNaRota(statusDe(passo.pedidoId))}, "updatedAt" = NOW()
+          WHERE "id" = ${passo.pedidoId} AND "franchiseeId" = ${lojaId}
+            AND "motoboyId" IS NULL AND "routeId" IS NULL AND "semRotaAutomaticaEm" IS NULL
+            AND EXISTS (
+              SELECT 1 FROM "RouteSchedule"
+              WHERE "id" = ${passo.rotaId} AND "franchiseeId" = ${lojaId} AND "origem" = 'AUTO'
+                AND "status" = 'PENDING' AND "dispatchedAt" IS NULL
+            )
+            AND NOT EXISTS (
+              SELECT 1 FROM "CustomerOrder" o
+              WHERE o."routeId" = ${passo.rotaId} AND o."motoboyId" IS NOT NULL AND o."status" <> ALL(${[...STATUS_CANCELADOS]})
+            )
+        `;
+        if (count === 0) { falhas.push(`${rotulo(passo.pedidoId)} não entrou na ${nomeDaRota(passo.rotaId)}: o pedido mudou ou a rota foi puxada`); return; }
+        if (passo.rotaChamada) mudaramDeFato.add(passo.rotaId);
+        aplicadas.push(`${rotulo(passo.pedidoId)} entrou na ${nomeDaRota(passo.rotaId)}${passo.rotaChamada ? " (já chamada, ninguém tinha puxado)" : ""}`);
         return;
       }
       case "sair-da-rota": {
@@ -545,6 +568,16 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
         if (count > 0) aplicadas.push(`fechou ${nomeDaRota(passo.rotaId)} (os pedidos saíram um a um)`);
         return;
       }
+      case "avisar-mudanca": {
+        // A rota chamada cresceu (D8 revisto): a chamada sai de novo para o
+        // mesmo chamado, com "atualizada". Só se algum pedido entrou mesmo.
+        if (!mudaramDeFato.has(passo.rotaId)) return;
+        const r = await chamarARota({ lojaId, rotaId: passo.rotaId, motoboyId: null, rotaMudou: true, motoboys: resumo.motoboys });
+        if (!r.ok) { falhas.push(`${nomeDaRota(passo.rotaId)} mudou, mas o aviso não saiu: foi puxada ou saiu no meio`); return; }
+        const quem = r.rota.chamadaMotoboyId ? resumo.motoboys.find((m) => m.id === r.rota.chamadaMotoboyId)?.nome ?? "o chamado" : "todos os livres";
+        aplicadas.push(`avisou ${quem} que a ${nomeDaRota(passo.rotaId)} mudou (agora ${r.entregas} entrega${r.entregas === 1 ? "" : "s"})${r.avisados.length === 0 ? ", ninguém livre para avisar" : ""}`);
+        return;
+      }
     }
   };
 
@@ -595,10 +628,18 @@ export async function chamarARota(opcoes: {
    * 60 min) — no máximo um push por hora por rota. A loja chama na hora.
    */
   soSeVencida?: boolean;
+  /**
+   * A rota chamada ganhou pedido (D8 revisto, 22/10/2026): a chamada sai de
+   * novo para quem JÁ é o chamado no banco (o `motoboyId` passado é
+   * ignorado), com o texto "atualizada". Só se ela já foi chamada e nenhum
+   * pedido dela está com motoboy — conferido no mesmo UPDATE. `chamadaEm`
+   * vira agora: a rechamada de 60 min (D13) conta do último push.
+   */
+  rotaMudou?: boolean;
   /** Já lidos no ciclo (o resumo); sem eles, lidos aqui. */
   motoboys?: MotoboyNaPrevia[];
   agora?: Date;
-}): Promise<{ ok: true; rota: RotaChamada; avisados: string[] } | { ok: false }> {
+}): Promise<{ ok: true; rota: RotaChamada; avisados: string[]; entregas: number } | { ok: false }> {
   const agora = opcoes.agora ?? new Date();
   const daRotaAberta = { id: opcoes.rotaId, franchiseeId: opcoes.lojaId, origem: "AUTO", status: "PENDING", dispatchedAt: null };
   const antes: { id: string; routeNumber: string; chamadaEm: Date | null; chamadaMotoboyId: string | null } | null =
@@ -608,12 +649,22 @@ export async function chamarARota(opcoes: {
     });
   if (!antes) return { ok: false };
   if (opcoes.soSeVencida && antes.chamadaEm && !chamadaVencida(new Date(antes.chamadaEm), agora)) return { ok: false };
+  if (opcoes.rotaMudou && !antes.chamadaEm) return { ok: false };
+  const motoboyId = opcoes.rotaMudou ? antes.chamadaMotoboyId : opcoes.motoboyId;
 
   // A troca é condicional (o mesmo `chamadaEm` que foi lido): dois ciclos, ou
-  // o ciclo e a loja, chamando juntos — só um grava e só um avisa.
+  // o ciclo e a loja, chamando juntos — só um grava e só um avisa. Rota que
+  // mudou: também o mesmo chamado (o QR pode ter trocado) e nenhum pedido
+  // dela com motoboy — puxou, acabou.
   const { count } = await (prisma.routeSchedule as any).updateMany({
-    where: { ...daRotaAberta, chamadaEm: antes.chamadaEm ?? null },
-    data: { chamadaEm: agora, chamadaMotoboyId: opcoes.motoboyId },
+    where: {
+      ...daRotaAberta,
+      chamadaEm: antes.chamadaEm ?? null,
+      ...(opcoes.rotaMudou
+        ? { chamadaMotoboyId: antes.chamadaMotoboyId, orders: { none: { motoboyId: { not: null }, status: { notIn: [...STATUS_CANCELADOS] } } } }
+        : {}),
+    },
+    data: { chamadaEm: agora, chamadaMotoboyId: motoboyId },
   });
   if (count === 0) return { ok: false };
 
@@ -623,10 +674,10 @@ export async function chamarARota(opcoes: {
   });
   const motoboys = opcoes.motoboys ?? (await lerMotoboysDaLoja(opcoes.lojaId, agora));
   const rota = { id: antes.id, routeNumber: antes.routeNumber };
-  const destinos = quemRecebeAChamada(opcoes.motoboyId, motoboys.filter((m) => m.livre).map((m) => m.id));
-  const aviso = avisoDaRotaPronta(rota, pedidos.map((p) => p.dailyOrderNumber), !opcoes.motoboyId);
-  const perdeu = quemPerdeAChamada(antes.chamadaMotoboyId, opcoes.motoboyId);
-  const nomeDoNovo = motoboys.find((m) => m.id === opcoes.motoboyId)?.nome ?? null;
+  const destinos = quemRecebeAChamada(motoboyId, motoboys.filter((m) => m.livre).map((m) => m.id));
+  const aviso = (opcoes.rotaMudou ? avisoDaRotaAtualizada : avisoDaRotaPronta)(rota, pedidos.map((p) => p.dailyOrderNumber), !motoboyId);
+  const perdeu = quemPerdeAChamada(antes.chamadaMotoboyId, motoboyId);
+  const nomeDoNovo = motoboys.find((m) => m.id === motoboyId)?.nome ?? null;
   void Promise.all([
     ...destinos.map((id) => avisarMotoboy(id, aviso)),
     perdeu ? avisarMotoboy(perdeu, avisoDaRotaFoiComOutro(rota, nomeDoNovo)) : null,
@@ -634,8 +685,9 @@ export async function chamarARota(opcoes: {
 
   return {
     ok: true,
-    rota: { ...rota, chamadaEm: agora.toISOString(), chamadaMotoboyId: opcoes.motoboyId },
+    rota: { ...rota, chamadaEm: agora.toISOString(), chamadaMotoboyId: motoboyId },
     avisados: destinos,
+    entregas: pedidos.length,
   };
 }
 

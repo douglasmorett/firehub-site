@@ -46,6 +46,20 @@ export function avisoDaRotaPronta(
   };
 }
 
+/**
+ * A rota chamada ganhou pedido antes de alguém puxar (D8 revisto, 22/10/2026):
+ * "🛵 Rota #1 atualizada" · "Agora 2 entregas: #12, #15. Vai lá buscar." O
+ * tipo continua ROTA_PRONTA: o app abre a mesma tela da chamada.
+ */
+export function avisoDaRotaAtualizada(
+  rota: { id: string; routeNumber: string },
+  numeros: (number | null | undefined)[],
+  paraTodos: boolean,
+): AvisoDaChamada {
+  const pronta = avisoDaRotaPronta(rota, numeros, paraTodos);
+  return { ...pronta, titulo: `🛵 ${rota.routeNumber} atualizada`, corpo: `Agora ${pronta.corpo}` };
+}
+
 /** Para quem ERA o chamado e deixou de ser (troca pela loja ou rechamada para outro). */
 export function avisoDaRotaFoiComOutro(rota: { id: string; routeNumber: string }, nomeDoNovo: string | null | undefined): AvisoDaChamada {
   const primeiroNome = String(nomeDoNovo || "").trim().split(/\s+/)[0];

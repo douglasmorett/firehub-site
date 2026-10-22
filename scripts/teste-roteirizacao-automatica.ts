@@ -23,6 +23,10 @@
  * lança e teto de tempo estourado caem na linha reta. E o ROTA_JA_SAIU: a
  * chamada para todos que alguém levou avisa os outros livres, nunca quem levou.
  *
+ * D8 revisto (22/10/2026): rota chamada que ninguém puxou recebe pedido
+ * PRONTO que cabe (nunca o da chapa; nunca a já puxada; teto respeitado) e a
+ * chamada sai de novo, "atualizada", para o mesmo chamado.
+ *
  *   npx tsx scripts/teste-roteirizacao-automatica.ts
  *
  * Sem banco e sem rede. O prazo.ts importa lib/painel-do-dono (que importa o
@@ -168,8 +172,58 @@ async function main() {
   {
     const chamada = rota("R1", [pedido(1, em(2), 20, pronto(2))], { chamadaEm: min(-5), chamadaMotoboyId: "m1" });
     const r = plano([pedido(2, em(2.1), 22)], [chamada]);
-    conferir("não mexe em rota chamada: nada é acrescentado nem chamado de novo",
+    conferir("rota chamada + pedido NÃO pronto: não acrescenta (ela espera motoboy) nem chama de novo",
       !r.acoes.some((x) => "rotaId" in x && x.rotaId === "R1"), r.acoes);
+  }
+
+  console.log("\n== Rota chamada que ninguém puxou (D8 revisto, 22/10) ==");
+  const acrescimos = (acoes: Acao[]) => acoes.filter((a): a is Extract<Acao, { tipo: "acrescentar" }> => a.tipo === "acrescentar");
+  {
+    // (a) Rota de 1 chamada, ninguém na loja puxou; o #2 ficou pronto e cabe.
+    const chamada = rota("R1", [pedido(1, em(2), 20, pronto(4))], { chamadaEm: min(-3), chamadaMotoboyId: null });
+    const r = plano([pedido(2, em(2.1), 22, pronto(1))], [chamada]);
+    const a = acrescimos(r.acoes);
+    conferir("(a) chamada não puxada + pedido pronto que cabe: acrescenta e marca para reavisar",
+      a.length === 1 && a[0].rotaId === "R1" && a[0].pedidoId === "p02" && a[0].rotaChamada === true && mesmoConjunto(a[0].ordem, ["p01", "p02"]), r.acoes);
+    conferir("… sem chamar de novo pelo passo 2 nem criar rota", chamadas(r.acoes).length === 0 && criadas(r.acoes).length === 0, r.acoes);
+    const aberta = plano([pedido(2, em(2.1), 22)], [rota("R1", [pedido(1, em(2), 20)])]);
+    conferir("… rota aberta (não chamada) não leva a marca", acrescimos(aberta.acoes)[0] && !acrescimos(aberta.acoes)[0].rotaChamada, aberta.acoes);
+  }
+  {
+    // (a') Pronto mas longe / prazo fora da janela: as mesmas regras de candidato.
+    const chamada = rota("R1", [pedido(1, em(2), 20, pronto(4))], { chamadaEm: min(-3) });
+    const longe = plano([pedido(2, em(-3), 22, pronto(1))], [chamada]);
+    const prazo = plano([pedido(3, em(2.1), 50, pronto(1))], [chamada]);
+    conferir("(a') pronto fora do raio ou da janela de prazo: não entra na chamada",
+      acrescimos(longe.acoes).length === 0 && acrescimos(prazo.acoes).length === 0, { longe: longe.acoes, prazo: prazo.acoes });
+  }
+  {
+    // (b) Chamada + um pronto e um ainda na chapa, os dois cabem: só o pronto.
+    const chamada = rota("R1", [pedido(1, em(2), 20, pronto(4))], { chamadaEm: min(-3), chamadaMotoboyId: "m1" });
+    const r = plano([pedido(2, em(2.1), 22), pedido(3, em(2.05), 23, pronto(0))], [chamada]);
+    const a = acrescimos(r.acoes);
+    conferir("(b) chamada: o não pronto não entra, o pronto sim", a.length === 1 && a[0].pedidoId === "p03" && a[0].rotaChamada === true, r.acoes);
+  }
+  {
+    // (c) Já puxada: um pedido dela está com motoboy — congelada, mesmo chamada.
+    const puxada = rota("R1", [pedido(1, em(2), 20, { ...pronto(4), fora: "ja-com-motoboy" }), pedido(2, em(2.1), 21, pronto(3))], { chamadaEm: min(-3), chamadaMotoboyId: "m1" });
+    const r = plano([pedido(3, em(2.05), 22, pronto(1))], [puxada]);
+    conferir("(c) rota chamada já puxada: não acrescenta (puxou, acabou)", acrescimos(r.acoes).length === 0, r.acoes);
+  }
+  {
+    // (d) Teto: max 2, chamada com 1, três prontos que cabem — só um entra.
+    const chamada = rota("R1", [pedido(1, em(2), 20, pronto(4))], { chamadaEm: min(-3) });
+    const r = plano([pedido(2, em(2.1), 22, pronto(1)), pedido(3, em(2.05), 21, pronto(1)), pedido(4, em(2.15), 23, pronto(1))], [chamada], [], { ...CFG, maxEntregasPorRota: 2 });
+    conferir("(d) teto max respeitado na rota chamada: 1 + 1 = 2", acrescimos(r.acoes).length === 1, r.acoes);
+    const cheia = rota("R2", [pedido(5, em(2), 20, pronto(4)), pedido(6, em(2.1), 21, pronto(4))], { chamadaEm: min(-3) });
+    const r2 = plano([pedido(7, em(2.05), 22, pronto(1))], [cheia], [], { ...CFG, maxEntregasPorRota: 2 });
+    conferir("… chamada já cheia não recebe nada", acrescimos(r2.acoes).length === 0, r2.acoes);
+  }
+  {
+    // Rechamada agora (D13): um push por vez — cresce só no ciclo seguinte.
+    const vencida = rota("R1", [pedido(1, em(2), 20, pronto(70))], { chamadaEm: min(-(RECHAMAR_DEPOIS_MIN + 1)) });
+    const r = plano([pedido(2, em(2.1), 22, pronto(1))], [vencida]);
+    conferir("rota rechamada neste ciclo não cresce no mesmo ciclo", chamadas(r.acoes).length === 1 && acrescimos(r.acoes).every((x) => x.rotaId !== "R1"), r.acoes);
   }
   {
     const chamada = rota("R1", [pedido(1, em(2), 20, pronto(70))], { chamadaEm: min(-(RECHAMAR_DEPOIS_MIN + 1)) });
@@ -379,6 +433,23 @@ async function main() {
     conferir("sequência regravada só com quem ficou na rota", seq?.pedidoIds.join() === "p02", g);
   }
   {
+    // D8 revisto: a rota chamada que cresceu avisa UMA vez, por último, com a rota pronta.
+    const chamada = rota("R1", [pedido(1, em(2), 20, pronto(4))], { chamadaEm: min(-3) });
+    const r = plano([pedido(2, em(2.1), 22, pronto(1)), pedido(3, em(2.05), 21, pronto(1))], [chamada]);
+    const g = gravacoesDasAcoes(r.acoes, lidas([chamada]));
+    const entradas = g.passos.filter((p): p is Extract<Passo, { tipo: "entrar-na-rota" }> => p.tipo === "entrar-na-rota");
+    conferir("rota chamada que cresceu: entradas marcadas, sequência e UM avisar-mudanca no fim",
+      tipos(g.passos) === "entrar-na-rota,entrar-na-rota,sequencia,avisar-mudanca" && entradas.every((p) => p.rotaChamada === true), g);
+    const aberta = rota("R2", [pedido(5, em(2), 20)]);
+    const g2 = gravacoesDasAcoes(plano([pedido(6, em(2.1), 22)], [aberta]).acoes, lidas([aberta]));
+    conferir("… rota aberta que cresceu: sem aviso", tipos(g2.passos) === "entrar-na-rota,sequencia", g2);
+    const g3 = gravacoesDasAcoes(
+      [{ tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 1, ordem: ["p02", "p01"], rotaChamada: true }, { tipo: "fechar-rota", rotaId: "R1" }],
+      [{ id: "R1", pedidoIds: ["p01"] }],
+    );
+    conferir("… rota que fechou no mesmo ciclo: nada de aviso", !g3.passos.some((p) => p.tipo === "avisar-mudanca"), g3);
+  }
+  {
     conferir("prioridade no KDS: na cozinha pede, pronto/saiu/entregue não",
       pedePrioridadeNaRota("ACEITO") && pedePrioridadeNaRota("PREPARANDO") && !pedePrioridadeNaRota("PRONTO") && !pedePrioridadeNaRota("SAIU_ENTREGA") && !pedePrioridadeNaRota("ENTREGUE"));
     const area = { centro: LOJA, raioKm: 8, raioDoParceiroKm: 12, base: "faixas" as const };
@@ -571,6 +642,34 @@ async function main() {
       const r6 = await chamarARota({ lojaId: "L1", rotaId: "R9", motoboyId: "m1", agora: AGORA });
       await esperarPushes();
       conferir("rota que não está aberta: recusa, sem push", !r6.ok && pushes.length === 0);
+
+      // 6b. D8 revisto: a rota chamada para o Maicon cresceu — a chamada sai de
+      //     novo para ELE (o motoboyId passado é ignorado), com "atualizada".
+      chamadas.length = 0; pushes.length = 0;
+      rotaNoBanco = { id: "R7", routeNumber: "Rota #7", chamadaEm: min(-5), chamadaMotoboyId: "m1" };
+      const r6b = await chamarARota({ lojaId: "L1", rotaId: "R7", motoboyId: "m2", rotaMudou: true, agora: AGORA });
+      await esperarPushes();
+      const g6b = chamadas.find((c) => c.onde === "routeSchedule.updateMany")?.args;
+      conferir("rota mudou: reenvia ao MESMO chamado, título 'atualizada', tipo ROTA_PRONTA",
+        r6b.ok && r6b.entregas === 3 && pushes.length === 1 && pushes[0].para === aparelho("m1") && pushes[0].tipo === "ROTA_PRONTA" &&
+          pushes[0].titulo === "🛵 Rota #7 atualizada" && pushes[0].corpo === "Agora 3 entregas: #12, #15, #18. Vai lá buscar.", { r6b, pushes });
+      conferir("… trava no UPDATE: mesma chamada, mesmo chamado e nenhum pedido com motoboy",
+        g6b?.where.chamadaEm?.getTime() === min(-5).getTime() && g6b?.where.chamadaMotoboyId === "m1" &&
+          g6b?.where.orders?.none?.motoboyId?.not === null && g6b?.data.chamadaMotoboyId === "m1", g6b);
+      chamadas.length = 0; pushes.length = 0;
+      rotaNoBanco = { id: "R7", routeNumber: "Rota #7", chamadaEm: null, chamadaMotoboyId: null };
+      const r6c = await chamarARota({ lojaId: "L1", rotaId: "R7", motoboyId: null, rotaMudou: true, agora: AGORA });
+      await esperarPushes();
+      conferir("… rota que nunca foi chamada: o aviso de mudança não sai",
+        !r6c.ok && pushes.length === 0 && !chamadas.some((c) => c.onde === "routeSchedule.updateMany"), { r6c, pushes });
+      chamadas.length = 0; pushes.length = 0;
+      rotaNoBanco = { id: "R7", routeNumber: "Rota #7", chamadaEm: min(-5), chamadaMotoboyId: "m1" };
+      const updateDeVerdade = fake.routeSchedule.updateMany;
+      fake.routeSchedule.updateMany = async (args: any) => { chamadas.push({ onde: "routeSchedule.updateMany", args }); return { count: 0 }; };
+      const r6d = await chamarARota({ lojaId: "L1", rotaId: "R7", motoboyId: null, rotaMudou: true, agora: AGORA });
+      fake.routeSchedule.updateMany = updateDeVerdade;
+      await esperarPushes();
+      conferir("… puxada entre a leitura e o aviso (UPDATE casa 0): sem push", !r6d.ok && pushes.length === 0, { r6d, pushes });
 
       // 7. A chamada para todos da Rota #8 foi levada pelo Kaio: o Maicon
       //    (livre) fica sabendo; o Kaio não; o m3 (com pedido) não.
