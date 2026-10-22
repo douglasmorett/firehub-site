@@ -278,6 +278,18 @@ export type MesaDoQr = {
   mesas: { id: string; numero: number; rotulo: string | null }[];
   /** O lanche dos motoboys (components/lanche/LancheDaEquipe.tsx): o modo mesa com outro envio. */
   equipe?: EquipeNoCardapio | null;
+  /** O tablet preso à mesa (app/tablet/mesa): a faixa dele no lugar da faixa verde, nome opcional e nada lembrado entre clientes. */
+  tablet?: TabletNoCardapio | null;
+};
+
+/** O Tablet na mesa (lib/tablet-da-mesa): mesmo modo mesa, outra faixa no topo. */
+export type TabletNoCardapio = {
+  /** A faixa do tablet: mesa, Chamar garçom, Pedir a conta, Minha conta. */
+  topo: React.ReactNode;
+  /** O nome do pedido quando ninguém digita ("Mesa 5"). */
+  nomePadrao: string;
+  /** Pedido enviado: a faixa atualiza a conta. */
+  depoisDoPedido?: () => void;
 };
 
 /**
@@ -2977,7 +2989,8 @@ export default function CustomerStorePage({
   const [nomeNaMesa, setNomeNaMesa] = useState("");
   const [obsDaMesa, setObsDaMesa] = useState("");
   useEffect(() => {
-    if (!mesa) return;
+    // No tablet o próximo cliente não herda o nome do anterior.
+    if (!mesa || mesa.tablet) return;
     try {
       const nome = localStorage.getItem("fh_nome_na_mesa");
       if (nome) setNomeNaMesa((atual) => atual || nome);
@@ -3255,7 +3268,7 @@ export default function CustomerStorePage({
       avisar({ titulo: "Qual é a sua mesa?", texto: "Escolha o número da mesa onde você está.", campo: "mesa-escolha" });
       return;
     }
-    if (!nomeNaMesa.trim()) {
+    if (!nomeNaMesa.trim() && !mesa.tablet) {
       avisar({ titulo: "Qual é o seu nome?", texto: "O garçom chama você pelo nome.", campo: "mesa-nome" });
       return;
     }
@@ -3267,7 +3280,7 @@ export default function CustomerStorePage({
           codigo: mesa.codigo,
           slug: franchisee.slug,
           mesaId: mesa.mesaId ? null : mesaDoPedido.id,
-          nome: nomeNaMesa.trim(),
+          nome: nomeNaMesa.trim() || mesa.tablet?.nomePadrao || "",
           observacao: obsDaMesa.trim(),
           itens: cart.map(i => ({ menuProductId: idDoProduto(i), quantity: i.quantity, comboSelections: i.comboSelections || null, notes: i.notes || "" })),
         }),
@@ -3277,7 +3290,10 @@ export default function CustomerStorePage({
         avisar({ tipo: "erro", titulo: "O pedido não foi enviado", texto: d?.error || "Tente de novo ou chame o garçom." });
         return;
       }
-      try { localStorage.setItem("fh_nome_na_mesa", nomeNaMesa.trim()); } catch { /* sem storage */ }
+      if (!mesa.tablet) {
+        try { localStorage.setItem("fh_nome_na_mesa", nomeNaMesa.trim()); } catch { /* sem storage */ }
+      }
+      mesa.tablet?.depoisDoPedido?.();
       clearCart();
       setObsDaMesa("");
       setIsCheckout(false);
@@ -3377,7 +3393,7 @@ export default function CustomerStorePage({
         </div>
       )}
       <div>
-        <label className="checkout-label" htmlFor="mesa-nome">Seu nome *</label>
+        <label className="checkout-label" htmlFor="mesa-nome">{mesa.tablet ? "Seu nome (opcional)" : "Seu nome *"}</label>
         <input id="mesa-nome" value={nomeNaMesa} onChange={(e) => setNomeNaMesa(e.target.value)} maxLength={60} autoComplete="given-name" placeholder="Como o garçom chama você" className="checkout-input" style={{ width: "100%" }} />
       </div>
       <div>
@@ -4893,7 +4909,8 @@ export default function CustomerStorePage({
       {equipe?.topo}
 
       {/* A MESA: quem escaneou o QR sabe onde está pedindo, e que não paga agora. */}
-      {mesa && !equipe && (
+      {mesa?.tablet?.topo}
+      {mesa && !equipe && !mesa.tablet && (
         <div style={{ background: "linear-gradient(135deg,#065F46,#059669)", color: "#fff", padding: "0.8rem 1.25rem", textAlign: "center" }}>
           <p style={{ fontWeight: 900, fontSize: "1.05rem", margin: 0 }}>
             🍽️ {mesaDoPedido ? `Você está na ${nomeDaMesa(mesaDoPedido)}` : "Pedido na mesa"}

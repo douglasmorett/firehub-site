@@ -837,6 +837,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += multimarcas;
       linhasExtras.push(`Multimarcas R$${multimarcas.toFixed(2)}`);
     }
+    // Tablet na mesa: R$ 29,90 por tablet que funcionou no mês, fora dos dias
+    // grátis (lib/tablet-da-mesa/assinatura.ts), à parte da mensalidade.
+    const { cobrancaDoTabletNoMes } = await import("@/lib/tablet-da-mesa/assinatura");
+    const tabletNaMesa = await cobrancaDoTabletNoMes(franchiseeId, monthStart, monthEnd);
+    if (tabletNaMesa > 0) {
+      taxasExtras += tabletNaMesa;
+      linhasExtras.push(`Tablet na mesa R${tabletNaMesa.toFixed(2)}`);
+    }
   }
 
   const ifoodExtraCharge = taxasExtras;
@@ -1231,7 +1239,10 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // Multimarcas — a mesma conta do fechamento.
   const { cobrancaDoMultimarcasNoMes } = await import("@/lib/multimarcas/assinatura");
   const multimarcas = await cobrancaDoMultimarcasNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
-  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas;
+  // Tablet na mesa — a mesma conta do fechamento.
+  const { cobrancaDoTabletNoMes } = await import("@/lib/tablet-da-mesa/assinatura");
+  const tabletNaMesa = await cobrancaDoTabletNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
+  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + tabletNaMesa;
 
   const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
@@ -1251,7 +1262,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     // Discriminado para o painel poder mostrar a linha em vez de só inflar o
     // total — "por que subiu R$ 200?" tem que ter resposta na tela.
     mensalidadePrevista,
-    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas },
+    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, tabletNaMesa },
     lojasExtras,
     status: cycle.status,
     isExempt: false,
@@ -1299,7 +1310,8 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
   const { cobrancaDoMultimarcasNoMes } = await import("@/lib/multimarcas/assinatura");
   const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0) + (await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd))
     + (await cobrancaDoAppNoMes(franchiseeId, monthStart, monthEnd))
-    + (await cobrancaDoMultimarcasNoMes(franchiseeId, monthStart, monthEnd));
+    + (await cobrancaDoMultimarcasNoMes(franchiseeId, monthStart, monthEnd))
+    + (await (await import("@/lib/tablet-da-mesa/assinatura")).cobrancaDoTabletNoMes(franchiseeId, monthStart, monthEnd));
   if (inicio === null) {
     // Teste no mês inteiro: mensalidade e lojas extras perdoadas; tráfego e
     // totem são serviço prestado e o fechamento cobra.

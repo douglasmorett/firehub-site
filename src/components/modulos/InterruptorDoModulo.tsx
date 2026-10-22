@@ -42,10 +42,12 @@ const nomeDoMes = (iso: string, delta = 0) => {
   return d.toLocaleDateString("pt-BR", { month: "long" });
 };
 
-export default function InterruptorDoModulo({ nome, preco, estado, salvando, onLigar, onDesligar, onContinuar }: {
+export default function InterruptorDoModulo({ nome, preco, precoTexto, estado, salvando, onLigar, onDesligar, onContinuar }: {
   /** Como o módulo é chamado na frase: "o Bill", "o Multimarcas". */
   nome: string;
   preco: number;
+  /** O preço por extenso, quando não é fixo ("R$ 29,90 por tablet usado no mês"). */
+  precoTexto?: string;
   estado: EstadoDoModulo;
   salvando: boolean;
   /** Desligado → ligar: a tela abre o termo de contratação. */
@@ -55,6 +57,7 @@ export default function InterruptorDoModulo({ nome, preco, estado, salvando, onL
   onContinuar: () => void;
 }) {
   const [confirmar, setConfirmar] = useState(false);
+  const valor = precoTexto ?? reais(preco);
   const e = estado;
   const fim = e.fimDoMes;
   const ligado = e.ativo;
@@ -75,15 +78,15 @@ export default function InterruptorDoModulo({ nome, preco, estado, salvando, onL
     texto = "Cortesia: enquanto o Aplicativo da loja estiver ativo no Android e no iPhone, não é cobrado.";
   } else if (ligado && e.emTeste && e.testeAte) {
     titulo = `${cap(nome)} ligado · teste grátis`;
-    texto = <>Grátis até <b>{dia(e.testeAte)}</b>. Depois disso, se continuar ligado, o mês entra <b>inteiro</b> no boleto: {reais(preco)}. Para não pagar nada, desligue antes de {dia(e.testeAte)}.</>;
+    texto = <>Grátis até <b>{dia(e.testeAte)}</b>. Depois disso, se continuar ligado, o mês entra <b>inteiro</b> no boleto: {valor}. Para não pagar nada, desligue antes de {dia(e.testeAte)}.</>;
   } else if (ligado) {
     titulo = `${cap(nome)} ligado`;
-    texto = <>{reais(preco)} por mês, no boleto da mensalidade. {fim ? <>O mês de {nomeDoMes(fim)} já está no boleto (inteiro, sem valor proporcional).</> : null}</>;
+    texto = <>{precoTexto ?? `${valor} por mês`}, no boleto da mensalidade. {fim ? <>O mês de {nomeDoMes(fim)} já está no boleto (inteiro, sem valor proporcional).</> : null}</>;
   } else {
     cor = "#94A3B8";
     titulo = `${cap(nome)} desligado`;
     texto = e.jaTestou
-      ? <>O teste grátis já foi usado: ligando, o mês entra inteiro no boleto ({reais(preco)}).</>
+      ? <>O teste grátis já foi usado: ligando, o mês entra inteiro no boleto ({valor}).</>
       : "Ligue quando quiser.";
   }
 
@@ -126,13 +129,13 @@ export default function InterruptorDoModulo({ nome, preco, estado, salvando, onL
                 {e.emTeste && e.testeAte ? (
                   <>
                     <p style={S.p}>Você está no <b>teste grátis</b> (até {dia(e.testeAte)}). Desligando agora, ele para <b>na hora</b> e <b>nada é cobrado</b>.</p>
-                    <p style={S.alerta}>O teste grátis é uma vez só: se ligar de novo depois, o mês já entra inteiro no boleto ({reais(preco)}).</p>
+                    <p style={S.alerta}>O teste grátis é uma vez só: se ligar de novo depois, o mês já entra inteiro no boleto ({valor}).</p>
                   </>
                 ) : e.cortesia ? (
                   <p style={S.p}>Ele não está sendo cobrado (cortesia do Aplicativo da loja). Continua liberado até <b>{fim ? ultimoDia(fim) : "o fim do mês"}</b> e desliga sozinho na virada do mês.</p>
                 ) : (
                   <>
-                    <p style={S.p}>Como ele já foi usado este mês, <b>{fim ? nomeDoMes(fim) : "este mês"} já está no boleto</b> ({reais(preco)}). <b>Não existe cobrança proporcional</b>, nem devolução.</p>
+                    <p style={S.p}>Como ele já foi usado este mês, <b>{fim ? nomeDoMes(fim) : "este mês"} já está no boleto</b> ({valor}). <b>Não existe cobrança proporcional</b>, nem devolução.</p>
                     <p style={S.p}>Por isso ele continua <b>liberado para você até {fim ? ultimoDia(fim) : "o fim do mês"}</b> e desliga sozinho na virada do mês. {fim ? <>Em {nomeDoMes(fim, 1)}</> : <>No mês que vem</>} não é cobrado nada.</p>
                   </>
                 )}

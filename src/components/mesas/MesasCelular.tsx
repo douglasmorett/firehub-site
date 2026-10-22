@@ -64,6 +64,8 @@ interface Mesa {
     /** Conta impressa e nada lançado depois: mesa em fechamento (lib/mesa-em-fechamento.ts). */
     contaPedidaEm?: string | null;
   } | null;
+  /** O tablet da mesa chamou o garçom ou pediu a conta (lib/tablet-da-mesa); sai quando alguém entra na mesa. */
+  chamado?: { motivo: "GARCOM" | "CONTA"; em: string } | null;
 }
 
 interface PedidoDaMesa {
@@ -1099,10 +1101,24 @@ export default function MesasCelular({
                     <button
                       key={m.id}
                       className={`mc-mesa${s ? " ocupada" : ""}${emFechamento ? " fechando" : ""}${minha ? " minha" : ""}`}
-                      onClick={() => entrarNaMesa(m)}
+                      onClick={() => {
+                        // O tablet da mesa chamou: quem entra na mesa atende.
+                        if (m.chamado) {
+                          setMesas((antes) => antes.map((x) => (x.id === m.id ? { ...x, chamado: null } : x)));
+                          void chamar("/api/store/tablet-na-mesa/chamados", {
+                            method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tableId: m.id }),
+                          }).catch(() => {});
+                        }
+                        entrarNaMesa(m);
+                      }}
                       aria-label={`Mesa ${m.number}${s ? `, ${emFechamento ? "em fechamento" : "ocupada"}${s.customerName ? `, ${s.customerName}` : ""}${s.waiterName ? `, garçom ${s.waiterName}` : ""}, ${fmt(s.totalAmount)}` : ", livre"}`}
                     >
                       <b>{String(m.number).padStart(2, "0")}</b>
+                      {m.chamado && (
+                        <span style={{ fontSize: 11, fontWeight: 900, borderRadius: 6, padding: "2px 6px", background: "#FACC15", color: "#422006" }}>
+                          {m.chamado.motivo === "CONTA" ? "🧾 Pediu a conta" : "🙋 Chamando"}
+                        </span>
+                      )}
                       {s ? (
                         <>
                           {/* Cliente e garçom à vista, como no cartão da versão

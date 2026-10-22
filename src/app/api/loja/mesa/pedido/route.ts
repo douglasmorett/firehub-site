@@ -18,6 +18,9 @@ import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
 import { caixaEstaAberto } from "@/lib/caixa-aberto-servidor";
 import { lancarNaMesa } from "@/lib/lancar-na-mesa";
 import { lerCodigo, valeParaALoja, valeParaAMesa } from "@/lib/mesa-qr";
+import { tabletDaRequisicao } from "@/lib/tablet-da-mesa/no-tablet";
+import { sinalDoTablet } from "@/lib/tablet-da-mesa/tablets";
+import { avisarPedidoDaMesa } from "@/lib/app-firehub/aviso-de-pedido";
 
 export const dynamic = "force-dynamic";
 
@@ -120,6 +123,13 @@ export async function POST(req: Request) {
       const interno = r.error === "Session not found" || r.error === "Session is not open" || r.error === "Items are required";
       return recusa(interno ? "A conta da mesa acabou de ser fechada. Chame o garçom." : r.error, r.status);
     }
+
+    // O tablet preso a esta mesa (lib/tablet-da-mesa) pede por esta mesma rota,
+    // com o cookie dele: o aviso diz "pelo tablet" e o pedido conta como uso.
+    const tablet = await tabletDaRequisicao();
+    const doTablet = tablet?.mesa.id === mesa.id;
+    if (doTablet) await sinalDoTablet(tablet!).catch(() => {});
+    void avisarPedidoDaMesa(franchiseeId, { pedidoId: r.order.id, mesa: mesa.number, totalAmount: r.order.totalAmount, origem: doTablet ? "TABLET" : "QR" });
 
     return NextResponse.json({ ok: true, numero: r.order.dailyOrderNumber, mesa: mesa.number });
   } catch (err) {

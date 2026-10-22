@@ -9,13 +9,16 @@
 
 const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export default function ResumoDaCobranca({ preco, diasDeTeste, comTeste, cortesia }: {
+export default function ResumoDaCobranca({ preco, precoTexto, diasDeTeste, comTeste, cortesia }: {
   preco: number;
+  /** O preço por extenso, quando não é fixo ("R$ 29,90 por tablet usado no mês"). */
+  precoTexto?: string;
   diasDeTeste: number;
   /** Primeira ativação: tem os dias grátis. */
   comTeste: boolean;
   cortesia?: boolean;
 }) {
+  const valor = precoTexto ?? reais(preco);
   const hoje = new Date();
   const fimDoTeste = new Date(hoje.getTime() + diasDeTeste * 24 * 60 * 60 * 1000).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
   const mes = hoje.toLocaleDateString("pt-BR", { month: "long" });
@@ -25,9 +28,9 @@ export default function ResumoDaCobranca({ preco, diasDeTeste, comTeste, cortesi
       {cortesia ? (
         <div>Com o Aplicativo da loja ativo no Android e no iPhone, <b>não é cobrado</b> (cortesia).</div>
       ) : comTeste ? (
-        <div>Hoje começam <b>{diasDeTeste} dias grátis, até {fimDoTeste}</b>. Se continuar ligado depois disso, o mês em que o teste acabar entra <b>inteiro</b> no boleto: <b>{reais(preco)}</b>. Para não pagar nada, desligue antes de {fimDoTeste}.</div>
+        <div>Hoje começam <b>{diasDeTeste} dias grátis, até {fimDoTeste}</b>. Se continuar ligado depois disso, o mês em que o teste acabar entra <b>inteiro</b> no boleto: <b>{valor}</b>. Para não pagar nada, desligue antes de {fimDoTeste}.</div>
       ) : (
-        <div>Você já usou o teste grátis. Ligando agora, <b>{mes} já entra inteiro no boleto: {reais(preco)}</b>. Não tem valor proporcional — fica liberado o mês todo.</div>
+        <div>Você já usou o teste grátis. Ligando agora, <b>{mes} já entra inteiro no boleto: {valor}</b>. Não tem valor proporcional — fica liberado o mês todo.</div>
       )}
       <div style={{ marginTop: 6, color: "#475569", fontSize: 13 }}>
         Desligar depois: no teste grátis, para na hora e não cobra; depois do teste, fica liberado até o fim do mês (que já está pago) e desliga sozinho na virada.

@@ -108,6 +108,8 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   // Multimarcas: montar as marcas é trabalho de cardápio; contratar continua
   // só do dono (a API barra o funcionário no liga/desliga: lib/multimarcas/sessao.ts).
   { prefixo: "/store/multimarcas", abre: ["minha_loja", "cardapio"] },
+  // Tablet na mesa: ligar cobra no boleto, é do dono (a API também só atende o dono).
+  { prefixo: "/store/tablet-na-mesa", abre: ["minha_loja"] },
   // Meu aplicativo (base de clientes do app e notificação push): a tela e a
   // API só atendem o dono; a caixinha aqui só evita o proxy mandar o
   // funcionário para outra tela antes de a página explicar.

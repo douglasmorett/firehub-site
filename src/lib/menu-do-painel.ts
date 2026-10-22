@@ -51,6 +51,8 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       // A TV do salão que chama a senha (lib/painel-de-senhas.ts).
       { href: "/store/painel-de-senhas", label: "Painel de senhas", icone: "Tv", selo: "NOVO" },
       { href: "/store/mesas", label: "Mesas", icone: "UtensilsCrossed" },
+      // O cliente pede pelo tablet preso à mesa (R$ 29,90 por tablet ativo — lib/tablet-da-mesa, Douglas, 22/10/2026).
+      { href: "/store/tablet-na-mesa", label: "Tablet na mesa", icone: "TabletSmartphone", selo: "NOVO" },
       { href: "/store/venda-presencial", label: "Balcão", icone: "ShoppingBag" },
       { href: "/store/roteirizacao", label: "Roteirização", icone: "MapPin", novaAba: true },
       // A extensão que muda o prazo do iFood, do 99 e do site pela fila (cortesia para

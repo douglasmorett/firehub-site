@@ -49,6 +49,8 @@ interface TableItem {
     /** Conta impressa e nada lançado depois: mesa em fechamento (lib/mesa-em-fechamento.ts). */
     contaPedidaEm?: string | null;
   } | null;
+  /** O tablet da mesa chamou o garçom ou pediu a conta (lib/tablet-da-mesa); sai quando alguém abre a mesa. */
+  chamado?: { motivo: "GARCOM" | "CONTA"; em: string } | null;
 }
 
 interface MenuItem {
@@ -282,6 +284,8 @@ const ESTILO_TABLET = `
     .mesa-cortina { display: block !important; }
   }
   @keyframes mesa-sobe { from { transform: translateY(14px); opacity: .7; } to { transform: none; opacity: 1; } }
+  @keyframes mesaChamando { from { transform: scale(1); } to { transform: scale(1.08); } }
+  @media (prefers-reduced-motion: reduce) { .mesa-chamado { animation: none !important; } }
   /* Só existe no celular: em tela larga o painel é uma coluna, não uma gaveta. */
   .mesa-cortina { display: none; position: fixed; inset: 0; background: rgba(15,23,42,.38); z-index: 899; }
 
@@ -2133,6 +2137,14 @@ export default function MesasApp({
   // A mesa aberta mostra o NOME do cliente e a OBSERVAÇÃO escrita ao ocupar
   // a mesa, à vista de quem passa pelo salão (pedido do dono, 24/09/2026).
   // Texto longo é cortado no cartão; o inteiro está no painel da mesa.
+  // O tablet da mesa chamou: quem abre a mesa atende (a marca sai na hora e no servidor).
+  const atenderChamado = (tableId: string) => {
+    setTables((lista) => lista.map((t) => (t.id === tableId ? { ...t, chamado: null } : t)));
+    void chamar("/api/store/tablet-na-mesa/chamados", {
+      method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ tableId }),
+    }).catch(() => {});
+  };
+
   const cartaoDaMesa = (table: TableItem) => {
     const occupied = !!table.openSession;
     const isSelected = selectedTable?.id === table.id;
@@ -2148,6 +2160,7 @@ export default function MesasApp({
       <button
         key={table.id}
         onClick={() => {
+          if (table.chamado) atenderChamado(table.id);
           if (occupied) {
             setSelectedTable(table);
             if (table.openSession) fetchSessionDetail(table.openSession.id);
@@ -2191,6 +2204,14 @@ export default function MesasApp({
 
         {/* Status indicator */}
         <span style={{ fontSize: 18 }}>{contaPedida ? "🟣" : occupied ? "🔴" : "🟢"}</span>
+        {table.chamado && (
+          <span className="mesa-chamado" style={{
+            fontSize: 11.5, fontWeight: 900, lineHeight: 1.2, borderRadius: 6, padding: "3px 7px",
+            background: "#FACC15", color: "#422006", animation: "mesaChamando 1s ease-in-out infinite alternate",
+          }}>
+            {table.chamado.motivo === "CONTA" ? "🧾 Pediu a conta" : "🙋 Chamando"}
+          </span>
+        )}
         {contaPedida && (
           <span style={{
             fontSize: 11, fontWeight: 800, lineHeight: 1.2, borderRadius: 6, padding: "2px 6px",

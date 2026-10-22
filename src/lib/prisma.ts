@@ -94,6 +94,29 @@ function foodyDoStatus(ids: string[]) {
   }, 1_500)
 }
 
+// ── O AVISO NO CELULAR DA LOJA (app FireHub), EM TODO CAMINHO ──────────────
+//
+// Pelo mesmo motivo da Foody: pedido nasce em uma dúzia de lugares. Chama na
+// criação e quando o status vira "de entrada" (o rascunho do robô e o Pix pago
+// viram pedido por update). Quem decide se avisa — e garante um aviso só — é
+// lib/app-firehub/aviso-de-pedido.ts, que relê o pedido.
+const STATUS_DE_ENTRADA = new Set(['NOVO', 'PENDENTE', 'CONFIRMADO', 'RECEBIDO', 'ACEITO'])
+
+function avisoDeEntrada(data: unknown): boolean {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return false
+  const status = (data as Record<string, unknown>).status
+  return typeof status === 'string' && STATUS_DE_ENTRADA.has(status.toUpperCase())
+}
+
+function avisarCelularDaLoja(id: unknown) {
+  if (typeof window !== 'undefined' || typeof id !== 'string') return
+  setTimeout(() => {
+    import('./app-firehub/aviso-de-pedido')
+      .then(({ avisarPedidoNovo }) => avisarPedidoNovo(id))
+      .catch((e) => console.error('[App FireHub] Erro ao carregar o aviso:', e?.message || e))
+  }, 1_500)
+}
+
 function criarClient() {
   const base = new PrismaClient()
   return base.$extends({
@@ -107,6 +130,7 @@ function criarClient() {
             const id = (resultado as { id?: unknown })?.id
             if (typeof id === 'string') foodyDoStatus([id])
           }
+          avisarCelularDaLoja((resultado as { id?: unknown })?.id)
           return resultado
         },
         async update({ args, query }) {
@@ -119,6 +143,9 @@ function criarClient() {
           if (interessaAFoody(args.data)) {
             const id = typeof args.where?.id === 'string' ? args.where.id : (resultado as { id?: unknown })?.id
             if (typeof id === 'string') foodyDoStatus([id])
+          }
+          if (avisoDeEntrada(args.data)) {
+            avisarCelularDaLoja(typeof args.where?.id === 'string' ? args.where.id : (resultado as { id?: unknown })?.id)
           }
           return resultado
         },
@@ -146,6 +173,11 @@ function criarClient() {
                 ? ((alvo as { in: unknown[] }).in.filter((x) => typeof x === 'string') as string[])
                 : []
             if (daFoody.length && daFoody.length <= 20 && (resultado as { count?: number })?.count) foodyDoStatus(daFoody)
+          }
+          // A escrita condicional de um pedido só (rascunho do robô → pedido).
+          const alvoDoAviso = (args.where as { id?: unknown } | undefined)?.id
+          if (avisoDeEntrada(args.data) && typeof alvoDoAviso === 'string' && (resultado as { count?: number })?.count) {
+            avisarCelularDaLoja(alvoDoAviso)
           }
           return resultado
         },

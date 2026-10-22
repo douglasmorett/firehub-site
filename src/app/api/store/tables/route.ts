@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { lerAndares } from "@/lib/andares-da-mesa";
 import { contaPedidaEm } from "@/lib/mesa-em-fechamento";
+import { chamadosDaLoja } from "@/lib/tablet-da-mesa/tablets";
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,6 +44,8 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const chamadoPorMesa = new Map((await chamadosDaLoja(targetFranchiseeId)).map((c) => [c.tableId, { motivo: c.motivo, em: c.em }]));
+
     const formattedTables = tables.map((table: any) => {
       const activeSession = table.sessions[0] || null;
       let openSession = null;
@@ -77,6 +80,8 @@ export async function GET(req: NextRequest) {
         capacity: table.capacity,
         isActive: table.isActive,
         openSession,
+        // "Chamou o garçom" / "pediu a conta" pelo tablet da mesa (lib/tablet-da-mesa).
+        chamado: chamadoPorMesa.get(table.id) ?? null,
       };
     });
 
