@@ -98,6 +98,7 @@ Sistema para delivery e restaurantes (hamburgueria, pizzaria, esfiharia, lanchon
 - Contas a pagar (boletos, acordos, contas sem código de barras): menu "Financeiro" → Contas a Pagar → "Lançar conta", pela foto do boleto (a IA preenche) ou digitando. Código de barras e categoria são opcionais; a categoria se escolhe da lista ou se escreve uma nova, e dá para pôr ou trocar depois clicando em "+ categoria" na conta. O sistema não categoriza sozinho.
 - Nota fiscal (NFC-e): menu "Fiscal".
 - Motoboys, Garçons, KDS, Estoque, Relatórios: cada um tem o seu item no menu.
+- Rota 100% automatizada (o FireHub junta sozinho as entregas que vão para o mesmo lado, prioriza na cozinha e, quando a rota fica pronta, chama o motoboy que chegou primeiro na loja): ainda em TESTE, só na Hakim Centro. O lojista comum ainda não tem — não aparece no painel e não dá para ligar. Depois do teste vira módulo pago à parte: R$ 97/mês, com 7 dias grátis. Quem quiser, a equipe avisa quando liberar. Montar a rota à mão continua incluído no plano: em "Pedidos", botão "Roteirização" no topo.
 - Esqueci a senha: firehubfood.com.br/esqueci-senha (o link chega no e-mail da conta).
 
 # Problemas comuns
