@@ -118,7 +118,25 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ routes });
+    // ── FORA DA AUTOMÁTICA ────────────────────────────────────────────────
+    //
+    // Os pedidos que a loja tirou de uma rota automática (Desfazer, ou tirados
+    // da rota): a lista de pendentes mostra "✋ fora da automática · voltar".
+    // Coluna da Fase 2 fora do client local, daí o SQL cru; o recorte por
+    // loja e pelas últimas 24 h anda no índice (franchiseeId, createdAt).
+    let foraDaAutomatica: string[] = [];
+    try {
+      const marcados = await prisma.$queryRaw<{ id: string }[]>`
+        SELECT "id" FROM "CustomerOrder"
+        WHERE "franchiseeId" = ANY(${validFranchiseeIds}) AND "createdAt" >= ${twentyFourHoursAgo}
+          AND "semRotaAutomaticaEm" IS NOT NULL
+      `;
+      foraDaAutomatica = marcados.map((m) => m.id);
+    } catch (e: any) {
+      console.warn("[Rotas] semRotaAutomaticaEm não lida (coluna ausente?):", e?.message?.slice(0, 120));
+    }
+
+    return NextResponse.json({ routes, foraDaAutomatica });
   } catch (err: any) {
     console.error("[GET /api/store/routes Error]:", err);
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -265,6 +283,17 @@ export async function PATCH(req: NextRequest) {
 
     // Se orderIds foram atualizados na rota
     if (Array.isArray(orderIds)) {
+      // Tirado de uma rota AUTOMÁTICA pela loja: o cron não o agrupa de novo
+      // (`semRotaAutomaticaEm`, "tirado-pela-loja") até o "voltar" da lista —
+      // senão, 20 s depois, ele voltava para uma rota. `origem` é coluna da
+      // Fase 0: o client do build a conhece; o `as any` é do client local.
+      if ((updatedRoute as any).origem === "AUTO") {
+        await (prisma.customerOrder as any).updateMany({
+          where: { routeId, id: { notIn: orderIds } },
+          data: { semRotaAutomaticaEm: new Date() },
+        });
+      }
+
       // Remove pedidos antigos que saíram da rota
       await prisma.customerOrder.updateMany({
         where: { routeId, id: { notIn: orderIds } },
@@ -320,10 +349,10 @@ export async function DELETE(req: NextRequest) {
     if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
     const validFranchiseeIds = await getValidFranchiseeIds(user.id);
 
-    const rota = await prisma.routeSchedule.findFirst({
+    const rota = (await prisma.routeSchedule.findFirst({
       where: { id: routeId, franchiseeId: { in: validFranchiseeIds } },
-      select: { id: true, motoboyId: true, status: true, dispatchedAt: true, routeNumber: true },
-    });
+      select: { id: true, motoboyId: true, status: true, dispatchedAt: true, routeNumber: true, origem: true } as any,
+    })) as unknown as { id: string; motoboyId: string | null; status: string; dispatchedAt: Date | null; routeNumber: string; origem: string | null } | null;
     if (!rota) {
       return NextResponse.json({ error: "Rota não encontrada" }, { status: 404 });
     }
@@ -364,6 +393,16 @@ export async function DELETE(req: NextRequest) {
       },
       data: { motoboyId: null, motoboyPuxadoEm: null },
     });
+
+    // Desfazer uma rota AUTOMÁTICA é a loja dizendo "estes não": os pedidos
+    // abertos dela ficam fora do cron (`semRotaAutomaticaEm`) até o "voltar"
+    // da lista — sem isto, 20 s depois o cron montava a mesma rota de novo.
+    if (rota.origem === "AUTO") {
+      await (prisma.customerOrder as any).updateMany({
+        where: { routeId, status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] } },
+        data: { semRotaAutomaticaEm: new Date() },
+      });
+    }
 
     // O resto dos pedidos da rota (entregues, cancelados, ou de outro
     // entregador) perde só o vínculo com a rota.

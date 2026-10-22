@@ -14,6 +14,7 @@ import { codigoJaConferido, jaSaiuNoParceiro } from "@/lib/codigo-de-entrega";
 import { podeMarcarEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-cancelado";
 import { despacharRota, ofereceARota, outrosDaRota, podePuxarARota } from "@/lib/despacho-da-rota";
 import { lerRoteirizacaoAutomatica, type QuemPuxa } from "@/lib/roteirizacao-automatica/config";
+import { avisoDaRotaFoiComOutro, quemPerdeAChamada } from "@/lib/roteirizacao-automatica/chamada";
 
 export async function GET(req: NextRequest) {
   try {
@@ -417,7 +418,7 @@ export async function POST(req: NextRequest) {
       // O pedido que já é dele (duplo toque) não muda de dono: só barra quem
       // vai levar algo — o pedido livre, ou o resto da rota.
       if (rota.chamadaEm && (!alvo.motoboyId || querARota)) {
-        const recusa = await reservarARota(rota, quemPuxa, mb.id);
+        const recusa = await reservarARota(rota, quemPuxa, mb);
         if (recusa) return recusa;
       }
     }
@@ -640,12 +641,19 @@ async function recusaRotaDeOutro(chamadaMotoboyId: string) {
  * chamado VIRA o chamado. Condicional como o claim: dois motoboys escaneando
  * a rota chamada para todos no mesmo segundo — o Postgres decide e, com "só o
  * chamado", o segundo recebe a recusa.
+ *
+ * O push ROTA_FOI_COM_OUTRO só sai quando havia um chamado DE NOME e outro
+ * levou: com "só o chamado" isso não acontece (o outro é barrado acima, e a
+ * chamada para todos não tem nome); com "quem escanear primeiro" acontece se
+ * a loja trocou para um entregador (card da rota) e outro escaneou antes.
  */
-async function reservarARota(rota: RotaAutomatica, quemPuxa: QuemPuxa, motoboyId: string): Promise<NextResponse | null> {
+async function reservarARota(rota: RotaAutomatica, quemPuxa: QuemPuxa, mb: MotoboyDaSessao): Promise<NextResponse | null> {
+  const motoboyId = mb.id;
   if (!podePuxarARota({ quemPuxa, chamadaEm: rota.chamadaEm, chamadaMotoboyId: rota.chamadaMotoboyId, motoboyId })) {
     return recusaRotaDeOutro(rota.chamadaMotoboyId!);
   }
   if (rota.chamadaMotoboyId === motoboyId) return null;
+  const anterior = rota.chamadaMotoboyId;
   const r = await prisma.routeSchedule.updateMany({
     where: {
       id: rota.id,
@@ -660,6 +668,12 @@ async function reservarARota(rota: RotaAutomatica, quemPuxa: QuemPuxa, motoboyId
       select: { chamadaMotoboyId: true } as any,
     })) as unknown as { chamadaMotoboyId: string | null } | null;
     if (agora?.chamadaMotoboyId && agora.chamadaMotoboyId !== motoboyId) return recusaRotaDeOutro(agora.chamadaMotoboyId);
+  }
+  const perdeu = r.count > 0 ? quemPerdeAChamada(anterior, motoboyId) : null;
+  if (perdeu) {
+    import("@/lib/app-motoboy/aparelhos")
+      .then(({ avisarMotoboy }) => avisarMotoboy(perdeu, avisoDaRotaFoiComOutro(rota, mb.name)))
+      .catch(() => {});
   }
   rota.chamadaMotoboyId = motoboyId;
   return null;
