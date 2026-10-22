@@ -38,8 +38,12 @@ import { aplicarPrecoNoCardapio } from "./preco-por-canal";
 import { lerCardapioDoRobo } from "./cardapio-do-robo-em-cache";
 import { marcarTravadoPelaPausa, mensagemDaPausaNaTag, opcaoPausada, pausaNaTagDoRobo, semOpcoesPausadas } from "./opcao-pausada";
 import { mesmoTelefone, telefoneCanonico } from "./telefone";
-import { pedidoEhDoCliente, primeiroNomeDe } from "./pedido-do-cliente";
+import { CANAIS_DA_LOJA, pedidoEhDoCliente, primeiroNomeDe } from "./pedido-do-cliente";
 import { ehNumeroDoDono } from "./numeros-do-dono";
+import {
+  blocoDoUltimoEndereco, conversaJaTemEndereco, cotacaoGuardada, enderecoSalvoFechaSemPergunta, ultimoEnderecoDoCliente,
+  JANELA_DO_ULTIMO_ENDERECO_DIAS, STATUS_SEM_ENDERECO_APROVEITAVEL, type UltimoEndereco,
+} from "./ultimo-endereco-do-cliente";
 import { horaDaLoja, inicioDoExpedienteDaLoja } from "./fuso";
 import { ehSoUmaSaudacao, ehPrimeiraMensagemDoDia, linkDoCardapioDaLoja, mensagemDeBoasVindasDoDia } from "./saudacao-do-dia";
 import { tipoDoPedidoDoRobo, clientePediuRetirada } from "./tipo-do-pedido-do-robo";
@@ -858,11 +862,15 @@ export async function processChatbotAI(
   let memoriaDoPedido = "";
   // Os pedidos desta conversa: o cupom não os conta como "já pediu" (ver CUPONS).
   let idsDaConversa: string[] = [];
+  // Os endereços que os pedidos desta conversa já têm: com o histórico perdido
+  // (deploy), é por eles que se sabe que a conversa já tem endereço.
+  let enderecosDaConversa: string[] = [];
   if (aiOrderingEnabled && clientPhoneDigits.length >= 10) {
     try {
       const agoraDaMemoria = Date.now();
       const daConversa = await pedidosQueATagPodeTocar(targetFranchiseeId, clientPhoneDigits, agoraDaMemoria);
       idsDaConversa = daConversa.map((p: any) => String(p.id));
+      enderecosDaConversa = daConversa.map((p: any) => String(p.customerAddress || "").trim()).filter(Boolean);
 
       // ── O PEDIDO DE HOJE QUE O ROBÔ JÁ NÃO ALTERA SOZINHO ─────────────────
       // (lib/acrescimo-do-pedido.ts) Aceito, em preparo, pronto ou a caminho,
@@ -1162,7 +1170,52 @@ export async function processChatbotAI(
   const localizacaoDecide = Boolean(coordsDoCliente) && modoDaAreaDaLoja !== "BAIRRO";
   const medePorPonto = modoDaAreaDaLoja === "KM" || modoDaAreaDaLoja === "POLIGONO";
 
-  if (modoDaAreaDaLoja !== "SEM_AREA" && (Boolean(enderecoDigitado) || bairroNoTexto || localizacaoDecide)) {
+  // ── O ENDEREÇO DA ÚLTIMA ENTREGA (lib/ultimo-endereco-do-cliente.ts) ───────
+  //
+  // Lapastine, 22/10/2026: quem já pediu pelo robô mandava o endereço de novo
+  // em todo pedido. Conversa sem endereço nenhum (nem digitado, nem
+  // localização, nem no rascunho) de quem tem entrega anterior pelos canais da
+  // loja: o endereço salvo entra na cotação abaixo, e só é oferecido se a loja
+  // o atende hoje com taxa firme. Fora disso, o robô pede o endereço como hoje.
+  // O funil dos 4 últimos dígitos é o mesmo dos pedidos do dia (o hífen da
+  // máscara — ver `orderOrConditions`); quem decide é `mesmoTelefone`, com DDD.
+  let enderecoSalvo: UltimoEndereco | null = null;
+  /** O endereço salvo que a cotação aprovou e o robô oferece: a gravação mede por ele. */
+  let enderecoSalvoOferecido: UltimoEndereco | null = null;
+  const conversaSemEndereco =
+    !enderecoDigitado && !bairroNoTexto && !coordsDoCliente && !estadoDoPonto.descartadaPeloCliente &&
+    !conversaJaTemEndereco([
+      ...(Array.isArray(history) ? history : []).filter((h: any) => h && h.sender === "user").map((h: any) => String(h.text || "")),
+      String(message || ""),
+    ]);
+  if (
+    aiOrderingEnabled && modoDaAreaDaLoja !== "SEM_AREA" && conversaSemEndereco &&
+    telefoneCanonico(clientPhoneDigits) && !ehNumeroDoDono(user.notificationPhone, user.chatbotConfig, clientPhoneDigits)
+  ) {
+    try {
+      const pedidosComEndereco = await prisma.customerOrder.findMany({
+        where: {
+          franchiseeId: { in: idsDasLojasDoRobo },
+          customerPhone: { contains: clientPhoneDigits.slice(-4) },
+          source: { in: CANAIS_DA_LOJA },
+          deliveryType: "DELIVERY",
+          status: { notIn: STATUS_SEM_ENDERECO_APROVEITAVEL },
+          customerAddress: { not: null },
+          createdAt: { gte: new Date(Date.now() - JANELA_DO_ULTIMO_ENDERECO_DIAS * 24 * 60 * 60 * 1000) },
+        },
+        select: { customerPhone: true, customerAddress: true, customerLatLng: true, deliveryType: true, status: true, source: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      });
+      const achado = ultimoEnderecoDoCliente(pedidosComEndereco, clientPhoneDigits);
+      // Rascunho com OUTRO endereço (histórico perdido no deploy): vale o dele.
+      if (achado && enderecosDaConversa.every((e) => mesmoEnderecoDeEntrega(e, achado.endereco))) enderecoSalvo = achado;
+    } catch (e: any) {
+      console.error("[Chatbot AI] Não consegui ler o endereço da última entrega do cliente:", e?.message || e);
+    }
+  }
+
+  if (modoDaAreaDaLoja !== "SEM_AREA" && (Boolean(enderecoDigitado) || bairroNoTexto || localizacaoDecide || Boolean(enderecoSalvo))) {
     try {
       // O endereço digitado DEPOIS da localização é conferido contra ela; sem
       // localização, vale o endereço digitado. Rua, número e bairro vão em
@@ -1170,13 +1223,23 @@ export async function processChatbotAI(
       // do bairro, e a conversa dizia "não achei" para o endereço que a
       // gravação achava (a taxa mudava no fechamento — R1).
       const textoDepoisDoPonto = coordsDoCliente && medePorPonto ? localizacaoDoCliente?.enderecoDigitadoDepois || null : null;
-      const enderecoDaCotacao = textoDepoisDoPonto || enderecoDigitado || potentialAddressText;
-      const avaliacao = await avaliarEntregaDoRobo((p) => avaliarEntrega(user, p), {
+      const enderecoDaCotacao = textoDepoisDoPonto || enderecoDigitado || enderecoSalvo?.endereco || potentialAddressText;
+      // O endereço salvo mede pelo ponto que o cliente deu naquele pedido, se
+      // deu — sem mapa. E é medido uma vez por conversa (`cotacaoGuardada`).
+      const gpsDaCotacao = coordsDoCliente || enderecoSalvo?.ponto || null;
+      const cotar = () => avaliarEntregaDoRobo((p) => avaliarEntrega(user, p), {
         endereco: enderecoDaCotacao,
         partes: partesDoEnderecoDigitado(enderecoDaCotacao, (user as any).city),
-        gps: coordsDoCliente,
+        gps: gpsDaCotacao,
         textoDepoisDoPonto,
       });
+      const avaliacao = enderecoSalvo
+        ? await cotacaoGuardada(
+            `${targetFranchiseeId}|${enderecoDaCotacao}|${gpsDaCotacao ? `${gpsDaCotacao.lat},${gpsDaCotacao.lng}` : ""}`,
+            cotar,
+            (a) => a.veredito.resultado !== "DESCONHECIDO",
+          )
+        : await cotar();
       const v = avaliacao.veredito;
       /** O ponto do cliente que ficou valendo (null se o endereço digitado venceu). */
       const coordsQueValem = avaliacao.coords;
@@ -1186,7 +1249,7 @@ export async function processChatbotAI(
       // Com a localização, o "endereço no mapa" pode nem existir: o ponto é o do aparelho.
       // O modelo copia o bairro deste texto para o resumo: tem de ser o nome que
       // a cidade usa, não o "Vila …" do mapa (lib/bairro-dos-correios.ts).
-      const enderecoNoMapa = v.enderecoNoMapa
+      const enderecoNoMapa = v.enderecoNoMapa && !enderecoSalvo
         ? await enderecoDoMapaComBairroDosCorreios(v.enderecoNoMapa, (user as any).city)
         : "";
       const ondeFoiMedido = coordsQueValem && !enderecoNoMapa
@@ -1197,7 +1260,20 @@ export async function processChatbotAI(
         : coordsQueValem
           ? `\n- O cliente mandou a LOCALIZAÇÃO pelo WhatsApp e a área e a taxa foram conferidas por ela. Se ele ainda não disse rua, número e complemento/ponto de referência, peça — o entregador precisa do endereço escrito. O endereço escrito NÃO muda a taxa e NÃO é motivo para pedir a localização de novo.`
           : "";
-      if (v.resultado === "ATENDE") {
+      if (enderecoSalvo) {
+        // Só oferece o que fecha sem pergunta (ATENDE com taxa firme). FORA,
+        // não achado, aproximado ou sem bairro: nada aqui, e o robô pede o
+        // endereço como hoje.
+        if (enderecoSalvoFechaSemPergunta(v, pedirLocalizacao)) {
+          enderecoSalvoOferecido = enderecoSalvo;
+          addressValidationText = blocoDoUltimoEndereco({
+            endereco: enderecoSalvo.endereco,
+            quando: enderecoSalvo.quando,
+            taxa: v.taxa ?? 0,
+            tempoMin: v.tempoMin && prazoDaLoja.temDado ? v.tempoMin : null,
+          });
+        }
+      } else if (v.resultado === "ATENDE") {
         addressValidationText = `
 🗺️ VALIDAÇÃO DA ÁREA DE ENTREGA (feita pelo sistema agora):
 - ${v.modo === "BAIRRO"
@@ -2072,6 +2148,8 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                   coordsDoCliente: localizacaoDoCliente,
                   localizacaoDescartada: estadoDoPonto.descartadaPeloCliente,
                   jaPediuLocalizacao: roboJaPediuLocalizacao(history),
+                  // O endereço da última entrega que o robô ofereceu nesta conversa.
+                  enderecoSalvo: enderecoSalvoOferecido,
                   cupons: {
                     lista: user.storeCoupons,
                     campanha: (user as any).storeLoyalty,
@@ -2544,6 +2622,7 @@ async function syncAiOrderToDatabase({
   coordsDoCliente,
   localizacaoDescartada,
   jaPediuLocalizacao,
+  enderecoSalvo,
   cupons,
   cashback,
   carimbos,
@@ -2583,6 +2662,11 @@ async function syncAiOrderToDatabase({
   localizacaoDescartada?: boolean;
   /** O robô já pediu a localização nesta conversa? Na segunda vez não pede: segura ou segue. */
   jaPediuLocalizacao?: boolean;
+  /**
+   * O endereço da última entrega que o robô ofereceu (lib/ultimo-endereco-do-cliente.ts).
+   * Confirmado na tag, o ponto daquele pedido mede a entrega, como na cotação.
+   */
+  enderecoSalvo?: UltimoEndereco | null;
   /** Os cupons da loja e o que o robô pode dar (lib/cupom-do-robo.ts). Ausente = pedido sem cupom. */
   cupons?: { lista: unknown; campanha: unknown; chatbotConfig: unknown; timeZone: string | null | undefined };
   /** A regra de cashback da loja (`User.storeLoyalty`). Ausente = pedido sem cashback. */
@@ -3365,6 +3449,14 @@ async function syncAiOrderToDatabase({
       coords = pontoDoRascunho;
       textoDepoisDoPonto = enderecoFoiDigitado ? enderecoDoPedido : null;
     }
+  }
+  // O cliente confirmou o endereço da última entrega que o robô ofereceu: o
+  // ponto que ele deu naquele pedido mede, como mediu na cotação da conversa.
+  // Sem isto a gravação procuraria o texto no mapa e a taxa podia mudar no
+  // fechamento (R1). Endereço reescrito pelo modelo ("casa 2", "…, Centro")
+  // ainda é o mesmo (`mesmoEnderecoDeEntrega`); outro endereço, não.
+  if (!coords && enderecoSalvo?.ponto && !localizacaoDescartada && mesmoEnderecoDeEntrega(enderecoSalvo.endereco, enderecoDoPedido)) {
+    coords = { lat: enderecoSalvo.ponto.lat, lng: enderecoSalvo.ponto.lng };
   }
   // Rua, número e bairro separados, quando o modelo mandou na tag: é o que faz
   // o mapa achar a casa em vez do centro do bairro. Sem eles na tag, os que

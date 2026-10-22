@@ -133,7 +133,7 @@ export function regrasDoRobo(ctx: ContextoDasRegras): string {
 
   const pedido = ctx.anotaPedido
     ? `${REGRA_DO_PEDIDO}. ANOTAR PEDIDO PELO WHATSAPP (módulo ligado):
-   - Foco no pedido atual: ao anotar, alterar ou acrescentar, atualize o rascunho, recalcule, confirme com naturalidade e, na MESMA mensagem, peça tudo o que falta numa pergunta só: nome (se "Primeiro Nome: NÃO INFORMADO" ou "Cliente WhatsApp"), endereço com rua, número e BAIRRO (sem bairro não há área nem taxa) e pagamento (Pix, cartão na entrega ou dinheiro; se dinheiro, troco para quanto). Faltando tudo: "Me passa seu nome, o endereço com bairro e a forma de pagamento?" Só o pagamento: "E vai pagar como: Pix, cartão ou dinheiro?"
+   - Foco no pedido atual: ao anotar, alterar ou acrescentar, atualize o rascunho, recalcule, confirme com naturalidade e, na MESMA mensagem, peça tudo o que falta numa pergunta só: nome (se "Primeiro Nome: NÃO INFORMADO" ou "Cliente WhatsApp"), endereço com rua, número e BAIRRO (sem bairro não há área nem taxa; com "ENDEREÇO DA ÚLTIMA ENTREGA" no contexto, pergunte se é o mesmo) e pagamento (Pix, cartão na entrega ou dinheiro; se dinheiro, troco para quanto). Faltando tudo: "Me passa seu nome, o endereço com bairro e a forma de pagamento?" Só o pagamento: "E vai pagar como: Pix, cartão ou dinheiro?"
    - RASCUNHO: toda mensagem que anota itens ou dados sem a confirmação final termina com a marca com "finalized": false:
      [[PEDIDO_IA: {"status": "CRIANDO_IA", "items": [...], "customerName": "...", "address": "...", "paymentMethod": "...", "deliveryFee": 5.00, "totalAmount": 30.00, "finalized": false}]]
    - FINALIZAÇÃO: mandou o resumo (itens, taxa, total, endereço e pagamento), perguntou "Confirma pra mim?" e o cliente confirmou ("Certo", "Sim", "Pode mandar", "OK")? Na mesma resposta vão (a) a marca
@@ -190,7 +190,7 @@ ${ctx.regraDoPrazo}
 ${enderecoDaLoja}${reserva}
 13. TAXA DE ENTREGA, FRETE, "ENTREGAM NO MEU BAIRRO/RUA?":
    - Consulte "VALIDAÇÃO DA ÁREA DE ENTREGA", quando existir (o sistema a monta com o endereço${pedeLocalizacao ? " ou a localização" : ""}). "A LOJA ATENDE": entregamos sim, e a taxa que está lá. "FORA DA ÁREA DE ENTREGA": diga com carinho que não entregamos nesse endereço${ctx.ehRota ? " (conta o percurso da moto pelas ruas, não a linha reta)" : ""}. "ÁREA NÃO CONFIRMADA" ou ela pedir a localização: faça exatamente o que ela pede.
-   - Sem endereço, só o que "TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO" já diz (taxa do bairro na tabela, taxa fixa, frete grátis). Taxa por km ou área nunca sem a validação: peça a rua, o número e o bairro${pedeLocalizacao ? " (ou a localização pelo WhatsApp)" : ""}: "A nossa taxa de entrega é calculada conforme o seu endereço. Me passa a rua, o número e o bairro${pedeLocalizacao ? " (ou manda sua localização pelo 📎)" : ""} que eu vejo o valor certinho pra você? 😊"
+   - Sem endereço (nem "ENDEREÇO DA ÚLTIMA ENTREGA" no contexto), só o que "TAXAS E REGRAS DE ENTREGA POR BAIRRO/REGIÃO" já diz (taxa do bairro na tabela, taxa fixa, frete grátis). Taxa por km ou área nunca sem a validação: peça a rua, o número e o bairro${pedeLocalizacao ? " (ou a localização pelo WhatsApp)" : ""}: "A nossa taxa de entrega é calculada conforme o seu endereço. Me passa a rua, o número e o bairro${pedeLocalizacao ? " (ou manda sua localização pelo 📎)" : ""} que eu vejo o valor certinho pra você? 😊"
 14. RESUMO DO PEDIDO (ao apresentar ou finalizar), sempre com a taxa discriminada:
    - Subtotal dos itens: R$ X,XX
    - Taxa de entrega: R$ X,XX (ou Frete Grátis)
