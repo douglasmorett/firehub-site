@@ -2495,6 +2495,31 @@ function OrderCard({
         </div>
       )}
 
+      {/* ⏫ PRIORIDADE PEDIDA PELA LOJA: o botão da Roteirização (PATCH
+          orders/[id]/prioridade, Douglas 21/10/2026) — quem despacha viu no
+          mapa que o pedido pode ir junto. Mesma cor e pulso da reposição,
+          porque é a mesma marca; sem ela a cozinha veria o pedido pular para
+          a frente sem saber por quê. */}
+      {order.prioridadeNaCozinha && !order.reposicao && (
+        <div
+          style={{
+            width: "100%",
+            padding: "6px 12px",
+            borderRadius: 10,
+            background: "linear-gradient(135deg, #7C3AED 0%, #5B21B6 100%)",
+            color: "#FFFFFF",
+            fontSize: 14,
+            fontWeight: 900,
+            letterSpacing: "0.5px",
+            boxShadow: "0 0 16px rgba(124, 58, 237, 0.6)",
+            border: "1px solid #C4B5FD",
+            animation: "kds-pulse-empty 2s ease-in-out infinite",
+          }}
+        >
+          ⏫ PRIORIDADE · pedida pela loja
+        </div>
+      )}
+
       {/* ⏩ PRIORIDADE DA LOJA (Configurações do KDS → Prioridade). Só quando
           não há faixa mais forte: reposição e rota já dizem por que o pedido
           está na frente. */}

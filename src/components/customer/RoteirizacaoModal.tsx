@@ -25,6 +25,7 @@ import {
 } from "@/lib/geocodificacao";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
+import { lerRespostaDoLote, resumoDoLote, tirarDoPalpite, type AcaoDoLote } from "@/lib/lote-da-roteirizacao";
 import {
   ESPERA_SEM_RESPOSTA_MS,
   NOME_DA_FONTE,
@@ -957,6 +958,127 @@ export default function RoteirizacaoModal({
     }
   };
 
+  // ── PEDIR PRIORIDADE NO KDS SEM SAIR DO MAPA (Douglas, 21/10/2026) ────────
+  //
+  // "O cara viu no mapa que aquela podia ir junto": o pedido vai para a frente
+  // da cozinha (`prioridadeNaCozinha`, a marca da reposição) sem precisar criar
+  // a rota. Liga e desliga, então o palpite guarda o VALOR, não só o prazo —
+  // mesmos 20 s do pronto, e cai quando o poll confirma.
+  const [prioridadesOtimistas, setPrioridadesOtimistas] = useState<Record<string, { valor: boolean; ate: number }>>({});
+  const [marcandoPrioridade, setMarcandoPrioridade] = useState<string | null>(null);
+
+  const estaPriorizado = useCallback(
+    (o: any) => {
+      const palpite = prioridadesOtimistas[o?.id];
+      if (palpite && palpite.ate > Date.now()) return palpite.valor;
+      return Boolean(o?.prioridadeNaCozinha);
+    },
+    [prioridadesOtimistas]
+  );
+
+  useEffect(() => {
+    setPrioridadesOtimistas((atual) => {
+      const ids = Object.keys(atual);
+      if (ids.length === 0) return atual;
+      const agora = Date.now();
+      const proximo: Record<string, { valor: boolean; ate: number }> = {};
+      for (const id of ids) {
+        const doServidor = orders.find((o: any) => o.id === id);
+        if (doServidor && Boolean((doServidor as any).prioridadeNaCozinha) === atual[id].valor) continue;
+        if (atual[id].ate <= agora) continue;
+        proximo[id] = atual[id];
+      }
+      return Object.keys(proximo).length === ids.length ? atual : proximo;
+    });
+  }, [orders]);
+
+  const pedirPrioridade = async (order: any, valor: boolean) => {
+    if (marcandoPrioridade) return;
+    const id = order?.id;
+    if (!id) return;
+
+    setMarcandoPrioridade(id);
+    setPrioridadesOtimistas((a) => ({ ...a, [id]: { valor, ate: Date.now() + 20000 } }));
+    const desfazerPalpite = () => setPrioridadesOtimistas((a) => tirarDoPalpite(a, [id]));
+    const titulo = valor ? "A prioridade não foi pedida" : "A prioridade não foi desfeita";
+
+    try {
+      const res = await fetch(`/api/store/orders/${id}/prioridade`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prioridade: valor }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        desfazerPalpite();
+        setAviso({ tipo: "erro", titulo, detalhe: err?.error || "Tente de novo." });
+        return;
+      }
+      if (onRefreshOrders) onRefreshOrders();
+    } catch (err: any) {
+      desfazerPalpite();
+      setAviso({ tipo: "erro", titulo, detalhe: err?.message || String(err) });
+    } finally {
+      setMarcandoPrioridade(null);
+    }
+  };
+
+  // ── PRONTO E PRIORIDADE EM LOTE, PELA SELEÇÃO (Douglas, 21/10/2026) ───────
+  //
+  // "Selecionar mais de um pedido e dar pronto junto; só um aviso e faz tudo
+  // de uma vez." Uma confirmação com os números, depois cada pedido pelo
+  // caminho de sempre, em paralelo. O pronto vai com `forcar: true`: o
+  // lojista acabou de confirmar, e sem ele o KDS pode responder
+  // `precisaConfirmar` e o pedido ficar sem pronto. O aviso e o desfazer do
+  // palpite saem de lib/lote-da-roteirizacao.ts (testado sem React).
+  const [confirmacaoDoLote, setConfirmacaoDoLote] = useState<{ acao: AcaoDoLote; ids: string[] } | null>(null);
+  const [executandoLote, setExecutandoLote] = useState(false);
+
+  const executarLote = async () => {
+    const lote = confirmacaoDoLote;
+    if (!lote || executandoLote) return;
+    setExecutandoLote(true);
+    const prazo = Date.now() + 20000;
+    if (lote.acao === "pronto") {
+      setProntosOtimistas((a) => ({ ...a, ...Object.fromEntries(lote.ids.map((id) => [id, prazo])) }));
+    } else {
+      setPrioridadesOtimistas((a) => ({ ...a, ...Object.fromEntries(lote.ids.map((id) => [id, { valor: true, ate: prazo }])) }));
+    }
+
+    const respostas = await Promise.allSettled(
+      lote.ids.map(async (id) => {
+        const res =
+          lote.acao === "pronto"
+            ? await fetch("/api/kds", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ orderId: id, action: "finish_order", forcar: true }),
+              })
+            : await fetch(`/api/store/orders/${id}/prioridade`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prioridade: true }),
+              });
+        const corpo = await res.json().catch(() => ({}));
+        return lerRespostaDoLote(res.ok, corpo);
+      })
+    );
+    const resultados = respostas.map((r, i) => {
+      const id = lote.ids[i];
+      const numero = getOrderDisplayNumber(orders.find((o: any) => o.id === id) || { id });
+      return r.status === "fulfilled"
+        ? { id, numero, ...r.value }
+        : { id, numero, ok: false, motivo: (r.reason as any)?.message || "sem conexão" };
+    });
+    const resumo = resumoDoLote(lote.acao, resultados);
+    if (lote.acao === "pronto") setProntosOtimistas((a) => tirarDoPalpite(a, resumo.falharam));
+    else setPrioridadesOtimistas((a) => tirarDoPalpite(a, resumo.falharam));
+    setAviso({ tipo: resumo.tipo, titulo: resumo.titulo, detalhe: resumo.detalhe });
+    setConfirmacaoDoLote(null);
+    setExecutandoLote(false);
+    if (onRefreshOrders) onRefreshOrders();
+  };
+
   // Contagem de todos os pedidos elegíveis de entrega
   // Só o que falta roteirizar. Os despachados agora vivem no mapa, mas
   // contá-los aqui fazia o botão dizer "Mostrar Todos (14)" com 5 linhas na
@@ -1769,6 +1891,13 @@ export default function RoteirizacaoModal({
         zIdx = 500;
       }
 
+      // Prioridade pedida no KDS: um anel roxo por fora da gota, por cima de
+      // qualquer cor — o vermelho continua dizendo "na cozinha", o anel diz
+      // "na frente da fila". Só enquanto está na cozinha, como o botão.
+      if (!prontoNaCozinha && !jaDespachado && !recemEntregue && estaPriorizado(order)) {
+        shadowCss = `0 0 0 3px #7C3AED, ${shadowCss}`;
+      }
+
       // Gota clássica de mapa: a ponta toca o endereço e o número fica numa
       // bola branca dentro dela. Pedidos empilhados abrem em leque — a gota
       // inclina em torno da própria ponta, com um cabo afilado da mesma cor
@@ -2045,7 +2174,7 @@ export default function RoteirizacaoModal({
       }).addTo(map);
       polylinesRef.current.push(routePoly);
     });
-  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, rotaEmFoco, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa, estaPronto, infoDoPino]);
+  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, rotaEmFoco, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa, estaPronto, estaPriorizado, infoDoPino]);
 
   // O pino verde do recém-entregue precisa SUMIR sozinho ao completar os 10 s.
   // Sem um tique, ele só sairia no próximo evento que redesenhasse o mapa — e
@@ -2389,6 +2518,55 @@ ${mapsUrl}`;
       padding: modoIndependente ? 0 : "1rem"
     }}>
       <AvisoNoTopo aviso={aviso} onFechar={fecharAviso} />
+      {/* ─── CONFIRMAÇÃO DO LOTE (no topo, sem confirm() do navegador) ─── */}
+      {confirmacaoDoLote && (() => {
+        const n = confirmacaoDoLote.ids.length;
+        const numeros = confirmacaoDoLote.ids
+          .map((id) => `#${getOrderDisplayNumber(orders.find((o: any) => o.id === id) || { id })}`)
+          .join(", ");
+        const pergunta = confirmacaoDoLote.acao === "pronto"
+          ? `${n === 1 ? "Será dado como pronto este pedido" : `Serão dados como prontos estes ${n} pedidos`}: ${numeros}. Ok?`
+          : `Será pedida prioridade no KDS para ${n === 1 ? "este pedido" : `estes ${n} pedidos`}: ${numeros}. Ok?`;
+        const cor = confirmacaoDoLote.acao === "pronto" ? "#0F766E" : "#7C3AED";
+        return (
+          <div
+            role="dialog"
+            aria-modal="false"
+            style={{
+              position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 100001,
+              width: "min(460px, calc(100vw - 24px))", background: "#FFFFFF", borderLeft: `4px solid ${cor}`,
+              borderRadius: 12, padding: "14px 16px", boxShadow: "0 10px 30px rgba(15,23,42,.25)",
+            }}
+          >
+            <div style={{ fontWeight: 800, fontSize: 14, color: "#0F172A", lineHeight: 1.4 }}>{pergunta}</div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 12 }}>
+              <button
+                type="button"
+                disabled={executandoLote}
+                onClick={() => setConfirmacaoDoLote(null)}
+                style={{
+                  background: "#F1F5F9", color: "#334155", border: "1px solid #E2E8F0", borderRadius: 8,
+                  padding: "7px 14px", fontWeight: 700, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={executandoLote}
+                onClick={executarLote}
+                style={{
+                  background: cor, color: "#FFFFFF", border: "none", borderRadius: 8,
+                  padding: "7px 14px", fontWeight: 800, fontSize: "0.82rem", fontFamily: "inherit",
+                  cursor: executandoLote ? "wait" : "pointer", display: "inline-flex", alignItems: "center", gap: 6,
+                }}
+              >
+                {executandoLote ? <><Loader2 size={13} className="animate-spin" /> Enviando...</> : "Sim, todos"}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
       <div style={{
         background: "#F8FAFC", width: "100%", maxWidth: modoIndependente ? "none" : "1400px", height: modoIndependente ? "100vh" : "92vh",
         borderRadius: modoIndependente ? 0 : "16px", boxShadow: "0 25px 50px -12px rgba(0,0,0,0.5)",
@@ -2593,6 +2771,8 @@ ${mapsUrl}`;
                       const displayNum = getOrderDisplayNumber(order);
                       const prontoNaCozinha = estaPronto(order);
                       const marcandoEste = marcandoPronto === order.id;
+                      const priorizado = estaPriorizado(order);
+                      const priorizandoEste = marcandoPrioridade === order.id;
                       const addrText = (order as any).customerAddress || order.address || `${order.street || ""} ${order.number || ""} ${order.neighborhood || ""}` || "Endereço a confirmar";
 
                       return (
@@ -2719,7 +2899,7 @@ ${mapsUrl}`;
                                   isso, senão dar pronto selecionava o pedido junto. Já
                                   pronto vira selo — a mesma cor roxa do pino no mapa, para
                                   a lista e o mapa contarem a mesma história. */}
-                              <div style={{ marginTop: 7 }} onClick={(e) => e.stopPropagation()}>
+                              <div style={{ marginTop: 7, display: "flex", flexWrap: "wrap", gap: 6 }} onClick={(e) => e.stopPropagation()}>
                                 {prontoNaCozinha ? (
                                   <span style={{
                                     display: "inline-flex", alignItems: "center", gap: 5,
@@ -2749,6 +2929,39 @@ ${mapsUrl}`;
                                       <><Loader2 size={13} className="animate-spin" /> Marcando...</>
                                     ) : (
                                       <><Check size={13} /> Dar como pronto</>
+                                    )}
+                                  </button>
+                                )}
+                                {/* Prioridade só faz sentido enquanto o pedido está na
+                                    cozinha: pronto, o botão some. Roxo como a faixa que
+                                    o KDS mostra (kds/tela, "PRIORIDADE · pedida pela loja"). */}
+                                {!prontoNaCozinha && (
+                                  <button
+                                    type="button"
+                                    disabled={priorizandoEste}
+                                    onClick={() => pedirPrioridade(order, !priorizado)}
+                                    title={priorizado
+                                      ? "Tira o pedido da frente da fila da cozinha (KDS)"
+                                      : "Manda o pedido para a frente da fila da cozinha (KDS), com a faixa roxa"}
+                                    style={{
+                                      display: "inline-flex", alignItems: "center", gap: 6,
+                                      background: priorizado ? "#F5F3FF" : "linear-gradient(135deg, #7C3AED, #5B21B6)",
+                                      color: priorizado ? "#5B21B6" : "#FFFFFF",
+                                      border: priorizado ? "1px solid #C4B5FD" : "none", borderRadius: "7px",
+                                      padding: "5px 11px", fontWeight: 800, fontSize: "0.76rem",
+                                      fontFamily: "inherit",
+                                      cursor: priorizandoEste ? "wait" : "pointer",
+                                      opacity: priorizandoEste ? 0.7 : 1,
+                                      boxShadow: priorizado || priorizandoEste ? "none" : "0 2px 6px rgba(124, 58, 237,0.30)",
+                                      transition: "all 0.15s ease"
+                                    }}
+                                  >
+                                    {priorizandoEste ? (
+                                      <><Loader2 size={13} className="animate-spin" /> Salvando...</>
+                                    ) : priorizado ? (
+                                      <>⏫ Prioridade pedida · desfazer</>
+                                    ) : (
+                                      <>⏫ Pedir prioridade no KDS</>
                                     )}
                                   </button>
                                 )}
@@ -3297,6 +3510,51 @@ ${mapsUrl}`;
                     ⚡ Otimizar Trajeto
                   </button>
                 )}
+
+                {/* Lote pela seleção: o número é de quem AINDA falta — pronto
+                    não é dado de novo (o parceiro receberia dois "pronto"), e
+                    prioritário ou já pronto não entra na prioridade. Zero, o
+                    botão some. */}
+                {(() => {
+                  const selecionados = selectedOrderIds
+                    .map((id) => deliveryOrders.find((o) => o.id === id))
+                    .filter(Boolean) as any[];
+                  const paraPronto = selecionados.filter((o) => !estaPronto(o)).map((o) => o.id);
+                  const paraPrioridade = selecionados.filter((o) => !estaPronto(o) && !estaPriorizado(o)).map((o) => o.id);
+                  const estilo = (fundo: string, sombra: string) => ({
+                    background: fundo, color: "#FFFFFF", border: "none",
+                    padding: "8px 14px", borderRadius: "20px", fontWeight: 800,
+                    fontSize: "0.82rem", cursor: executandoLote ? "wait" : "pointer", display: "flex",
+                    alignItems: "center", gap: 6, boxShadow: `0 4px 12px ${sombra}`,
+                    opacity: executandoLote ? 0.7 : 1,
+                  });
+                  return (
+                    <>
+                      {paraPronto.length > 0 && (
+                        <button
+                          type="button"
+                          disabled={executandoLote}
+                          onClick={() => setConfirmacaoDoLote({ acao: "pronto", ids: paraPronto })}
+                          style={estilo("linear-gradient(135deg, #0F766E, #0F766E)", "rgba(15, 118, 110,0.3)")}
+                          title="Dá como prontos na cozinha os pedidos selecionados que ainda não estão — o mesmo pronto do botão de cada pedido"
+                        >
+                          ✓ Dar pronto ({paraPronto.length})
+                        </button>
+                      )}
+                      {paraPrioridade.length > 0 && (
+                        <button
+                          type="button"
+                          disabled={executandoLote}
+                          onClick={() => setConfirmacaoDoLote({ acao: "prioridade", ids: paraPrioridade })}
+                          style={estilo("linear-gradient(135deg, #7C3AED, #5B21B6)", "rgba(124, 58, 237,0.3)")}
+                          title="Manda para a frente da fila da cozinha (KDS) os pedidos selecionados que ainda estão na cozinha"
+                        >
+                          ⏫ Pedir prioridade ({paraPrioridade.length})
+                        </button>
+                      )}
+                    </>
+                  );
+                })()}
 
                 <button
                   onClick={handleOpenDispatch}
