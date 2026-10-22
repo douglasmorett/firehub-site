@@ -30,7 +30,7 @@ export async function contaDaMesa(tableId: string): Promise<ContaNoTablet> {
       id: true,
       orders: {
         where: { status: { notIn: [...STATUS_CANCELADOS] } },
-        select: { items: { select: { productName: true, quantity: true, price: true } } },
+        select: { items: { select: { productName: true, quantity: true, price: true, menuProduct: { select: { name: true } } } } },
       },
     },
   });
@@ -38,7 +38,8 @@ export async function contaDaMesa(tableId: string): Promise<ContaNoTablet> {
   const porItem = new Map<string, { nome: string; quantidade: number; valor: number }>();
   for (const o of sessao.orders) {
     for (const i of o.items) {
-      const nome = i.productName || "Item";
+      // O pedido de mesa grava o produto pelo id, sem o nome: o nome vem do cardápio.
+      const nome = i.productName || i.menuProduct?.name || "Item";
       const chave = `${nome}|${i.price}`;
       const atual = porItem.get(chave) ?? { nome, quantidade: 0, valor: 0 };
       atual.quantidade += i.quantity;

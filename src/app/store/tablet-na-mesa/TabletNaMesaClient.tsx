@@ -9,7 +9,7 @@
  * tablet" (o número de 6 dígitos que o tablet digita em /tablet).
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { BellRing, ChefHat, Plus, Receipt, TabletSmartphone, Trash2, Wifi, WifiOff } from "lucide-react";
 import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
 import ResumoDaCobranca from "@/components/modulos/ResumoDaCobranca";
@@ -77,12 +77,17 @@ export default function TabletNaMesaClient() {
     const t = setTimeout(() => setAviso(null), 7000);
     return () => clearTimeout(t);
   }, [aviso]);
-  // O código some da tela quando o tablet entra (ele sai da lista de pendentes).
+  // O código some da tela quando o tablet entra: estava na lista de pendentes e saiu.
+  // (Só depois de ter aparecido nela — logo ao gerar, a lista ainda é a de antes.)
+  const codigoNaLista = useRef(false);
   useEffect(() => {
-    if (pareando && dados && !dados.tablets.some((t) => t.codigo === pareando.codigo)) {
-      setPareando(null);
-      setAviso({ tipo: "ok", texto: `Tablet da ${pareando.mesa} pronto! Ele já mostra o cardápio.` });
-    }
+    if (!pareando || !dados) return;
+    const esta = dados.tablets.some((t) => t.codigo === pareando.codigo);
+    if (esta) { codigoNaLista.current = true; return; }
+    if (!codigoNaLista.current) return;
+    codigoNaLista.current = false;
+    setPareando(null);
+    setAviso({ tipo: "ok", texto: `Tablet da ${pareando.mesa} pronto! Ele já mostra o cardápio.` });
   }, [dados, pareando]);
 
   async function ligar(ligar: boolean) {
@@ -107,6 +112,7 @@ export default function TabletNaMesaClient() {
     if (!mesa) return;
     try {
       const j = await chamar("POST", { acao: "parear", tableId });
+      codigoNaLista.current = false;
       setPareando({ codigo: j.codigo, ate: j.ate, mesa: nomeDaMesa(mesa) });
       void carregar();
     } catch (e: any) {

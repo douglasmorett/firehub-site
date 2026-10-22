@@ -1,0 +1,5 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": { "modules": ["ImpressoraBluetoothModule"] },
+  "android": { "modules": ["expo.modules.impressorabluetooth.ImpressoraBluetoothModule"] }
+}

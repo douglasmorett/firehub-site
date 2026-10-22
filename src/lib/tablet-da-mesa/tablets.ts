@@ -72,14 +72,14 @@ export async function novoCodigoDePareamento(lojaId: string, tableId: string): P
   const mesa = await prisma.table.findFirst({ where: { id: tableId, franchiseeId: lojaId }, select: { id: true } });
   if (!mesa) return null;
   // Códigos vencidos de tablet que nunca entrou saem, para não ocupar número.
-  await prisma.$executeRawUnsafe(`DELETE FROM "TabletDaMesa" WHERE "tokenHash" IS NULL AND "codigoAte" < NOW()`);
+  await prisma.$executeRawUnsafe(`DELETE FROM "TabletDaMesa" WHERE "tokenHash" IS NULL AND "codigoAte" < (NOW() AT TIME ZONE 'UTC')`);
   const ate = new Date(Date.now() + VALIDADE_DO_CODIGO_MS);
   for (let tentativa = 0; tentativa < 8; tentativa++) {
     const codigo = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
     try {
       await prisma.$executeRawUnsafe(
-        `INSERT INTO "TabletDaMesa" ("id", "lojaId", "tableId", "codigo", "codigoAte", "criadoEm") VALUES ($1, $2, $3, $4, $5, NOW())`,
-        crypto.randomUUID(), lojaId, tableId, codigo, ate,
+        `INSERT INTO "TabletDaMesa" ("id", "lojaId", "tableId", "codigo", "codigoAte", "criadoEm") VALUES ($1, $2, $3, $4, ($5::timestamptz AT TIME ZONE 'UTC'), (NOW() AT TIME ZONE 'UTC'))`,
+        crypto.randomUUID(), lojaId, tableId, codigo, ate.toISOString(),
       );
       return { codigo, ate };
     } catch {
@@ -96,7 +96,7 @@ export async function novoCodigoDePareamento(lojaId: string, tableId: string): P
 export async function parearTablet(codigo: string, modelo: string | null): Promise<{ token: string; lojaId: string; tabletId: string } | null> {
   if (!/^\d{6}$/.test(codigo) || !(await garantirEstruturaDoTablet())) return null;
   const linhas = await prisma.$queryRawUnsafe<{ id: string; lojaId: string }[]>(
-    `SELECT "id", "lojaId" FROM "TabletDaMesa" WHERE "codigo" = $1 AND "tokenHash" IS NULL AND "codigoAte" > NOW()`,
+    `SELECT "id", "lojaId" FROM "TabletDaMesa" WHERE "codigo" = $1 AND "tokenHash" IS NULL AND "codigoAte" > (NOW() AT TIME ZONE 'UTC')`,
     codigo,
   );
   const t = linhas[0];
@@ -143,12 +143,12 @@ const usoJaMarcado = new Map<string, string>();
  * desempata (chave tablet + dia).
  */
 export async function sinalDoTablet(t: TabletAutenticado, agora: Date = new Date()): Promise<void> {
-  await prisma.$executeRawUnsafe(`UPDATE "TabletDaMesa" SET "ultimoSinal" = $2 WHERE "id" = $1`, t.tabletId, agora);
+  await prisma.$executeRawUnsafe(`UPDATE "TabletDaMesa" SET "ultimoSinal" = ($2::timestamptz AT TIME ZONE 'UTC') WHERE "id" = $1`, t.tabletId, agora.toISOString());
   const dia = diaDeHoje(agora);
   if (usoJaMarcado.get(t.tabletId) === dia) return;
   await prisma.$executeRawUnsafe(
-    `INSERT INTO "TabletDaMesaUso" ("tabletId", "lojaId", "dia", "em") VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
-    t.tabletId, t.lojaId, dia, agora,
+    `INSERT INTO "TabletDaMesaUso" ("tabletId", "lojaId", "dia", "em") VALUES ($1, $2, $3, ($4::timestamptz AT TIME ZONE 'UTC')) ON CONFLICT DO NOTHING`,
+    t.tabletId, t.lojaId, dia, agora.toISOString(),
   );
   usoJaMarcado.set(t.tabletId, dia);
 }
@@ -177,7 +177,7 @@ export type ChamadoDaMesa = { tableId: string; motivo: MotivoDoChamado; em: stri
 export async function chamarNaMesa(t: TabletAutenticado, motivo: MotivoDoChamado): Promise<void> {
   if (!(await garantirEstruturaDoTablet())) return;
   await prisma.$executeRawUnsafe(
-    `INSERT INTO "TabletDaMesaChamado" ("tableId", "lojaId", "motivo", "em") VALUES ($1, $2, $3, NOW())
+    `INSERT INTO "TabletDaMesaChamado" ("tableId", "lojaId", "motivo", "em") VALUES ($1, $2, $3, (NOW() AT TIME ZONE 'UTC'))
      ON CONFLICT ("tableId") DO UPDATE SET
        "motivo" = CASE WHEN "TabletDaMesaChamado"."motivo" = 'CONTA' THEN 'CONTA' ELSE EXCLUDED."motivo" END,
        "em" = EXCLUDED."em"`,

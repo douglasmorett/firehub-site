@@ -3501,7 +3501,7 @@ export default function CustomerStorePage({
                   clique de comprar de novo. Quem tem pedido carregado repete
                   direto; quem não está identificado recebe o convite para
                   entrar, em vez de um vazio sem saída. */}
-              {mesa?.equipe ? null : ultimoPedido ? (
+              {mesa?.equipe || mesa?.tablet ? null : ultimoPedido ? (
                 <div style={{ marginTop: 20, borderTop: "1px dashed #E2E8F0", paddingTop: 18 }}>
                   <p style={{ fontSize: "0.8rem", color: "#475569", margin: "0 0 10px", lineHeight: 1.5 }}>
                     Seu último pedido foi<br />
@@ -5465,7 +5465,7 @@ export default function CustomerStorePage({
         {/* ===== DESKTOP SIDEBAR ===== */}
         <div className={`desk-cart${isCheckout ? " checkout-aberto" : ""}`} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
           {/* CARD DINÂMICO DE BENEFÍCIOS, VIP, CARIMBOS E INDIQUE & GANHE (fora do lanche da equipe) */}
-          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #E2E8F0", padding: "1.1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: mesa?.equipe ? "none" : "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ background: "#FFFFFF", borderRadius: "16px", border: "1.5px solid #E2E8F0", padding: "1.1rem", boxShadow: "0 2px 8px rgba(0,0,0,0.03)", display: mesa?.equipe || mesa?.tablet ? "none" : "flex", flexDirection: "column", gap: "10px" }}>
             {/* Header Geral de Benefícios */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>

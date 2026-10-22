@@ -3,6 +3,9 @@
  * Multimarcas e o App da loja). Se faltarem, só o módulo para: cobrança zero,
  * tablet mostra "chame o garçom".
  *
+ * Horas em TIMESTAMP sem fuso, em UTC, como o Prisma grava: quem escreve usa
+ * `(… AT TIME ZONE 'UTC')` (o padrão de lib/cashback-no-banco.ts → horaEmUtc).
+ *
  * - TabletDaMesaAssinatura: o liga/desliga (trechos, lib/modulo-pago.ts).
  * - TabletDaMesa: cada aparelho, preso a UMA mesa. `tokenHash` é o sha256 do
  *   cookie do tablet; `codigo` é o número de 6 dígitos do pareamento, que vale

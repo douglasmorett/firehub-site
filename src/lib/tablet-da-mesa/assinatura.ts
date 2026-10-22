@@ -120,8 +120,8 @@ async function mesCorrente(lojaId: string) {
 
 async function usosNoIntervalo(lojaId: string, inicio: Date, fim: Date): Promise<UsoDoTablet[]> {
   return prisma.$queryRawUnsafe<UsoDoTablet[]>(
-    `SELECT "tabletId", "em" FROM "TabletDaMesaUso" WHERE "lojaId" = $1 AND "em" >= $2 AND "em" < $3`,
-    lojaId, inicio, fim,
+    `SELECT "tabletId", "em" FROM "TabletDaMesaUso" WHERE "lojaId" = $1 AND "em" >= ($2::timestamptz AT TIME ZONE 'UTC') AND "em" < ($3::timestamptz AT TIME ZONE 'UTC')`,
+    lojaId, inicio.toISOString(), fim.toISOString(),
   );
 }
 
@@ -201,9 +201,9 @@ export async function ligarOuDesligarTablet(
     const testeAte = atual?.testeAte ?? new Date(agora.getTime() + DIAS_DE_TESTE_DO_TABLET * DIA_MS);
     await prisma.$executeRawUnsafe(
       `INSERT INTO "TabletDaMesaAssinatura" ("franchiseeId", "ativo", "testeAte", "trechos", "atualizadoEm")
-       VALUES ($1, true, $2, $3::jsonb, NOW())
-       ON CONFLICT ("franchiseeId") DO UPDATE SET "ativo" = true, "testeAte" = $2, "trechos" = $3::jsonb, "atualizadoEm" = NOW()`,
-      lojaId, testeAte, JSON.stringify(trechos),
+       VALUES ($1, true, ($2::timestamptz AT TIME ZONE 'UTC'), $3::jsonb, NOW())
+       ON CONFLICT ("franchiseeId") DO UPDATE SET "ativo" = true, "testeAte" = ($2::timestamptz AT TIME ZONE 'UTC'), "trechos" = $3::jsonb, "atualizadoEm" = NOW()`,
+      lojaId, new Date(testeAte).toISOString(), JSON.stringify(trechos),
     );
   } else {
     if (!ligado) return estadoDoTablet(lojaId, agora);
