@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
+import { criarRotaDaLoja } from "@/lib/rotas-da-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -23,6 +23,9 @@ const CAMPOS_DO_PEDIDO_NA_ROTA = {
   ifoodReference: true,
   openDeliveryReference: true,
   isRoutePriority: true,
+  // "aguardando cozinha · 2/3 prontos" no card da rota automática: o pronto
+  // do KDS (READY/FINISHED) vem antes do status PRONTO (pedidoJaEstaPronto).
+  kdsStage: true,
   totalAmount: true,
   createdAt: true,
 } as const;
@@ -75,6 +78,10 @@ export async function GET(req: NextRequest) {
     const validFranchiseeIds = await getValidFranchiseeIds(user.id);
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
+    // Sem `select` na rota: vêm todas as colunas dela — `origem` ("AUTO" =
+    // Rota 100% automatizada, o selo 🤖 do card), `chamadaEm` e
+    // `chamadaMotoboyId` inclusive (colunas da Fase 0 no schema.prisma; o
+    // client do build as conhece).
     const routes = await prisma.routeSchedule.findMany({
       where: {
         franchiseeId: { in: validFranchiseeIds },
@@ -144,91 +151,18 @@ export async function POST(req: NextRequest) {
     const validFranchiseeIds = await getValidFranchiseeIds(user.id);
     const primaryFranchiseeId = validFranchiseeIds[0] || user.id;
 
-    // Gera número sequencial de rota se não enviado
-    // Expediente da loja: o contador de rotas zerava as 21:00 de Brasilia (fuso
-    // do container e UTC) e a rota da noite nascia como "Rota #1" de novo,
-    // duplicando o numero com a rota da tarde.
-    // Das 5h, não da meia-noite: a rota da noite seguia a contagem das rotas
-    // da madrugada, que são do turno anterior.
-    const todayStart = viradaDoExpedienteDaLoja();
-
-    const existingTodayCount = await prisma.routeSchedule.count({
-      where: {
-        franchiseeId: { in: validFranchiseeIds },
-        createdAt: { gte: todayStart },
-      },
+    // A gravação mora em lib/rotas-da-loja.ts — a mesma da Rota 100%
+    // automatizada (o cron), para a rota da loja e a do servidor nascerem
+    // iguais: número do expediente, prioridade no KDS e ordem das paradas.
+    const { rota: newRoute } = await criarRotaDaLoja({
+      lojaId: primaryFranchiseeId,
+      idsDaLoja: validFranchiseeIds,
+      orderIds,
+      motoboyId,
+      color,
+      routeNumber,
+      origem: "MANUAL",
     });
-
-    const finalRouteNumber = routeNumber || `Rota #${existingTodayCount + 1}`;
-
-    // Cria o registro da Rota
-    const newRoute = await prisma.routeSchedule.create({
-      data: {
-        franchiseeId: primaryFranchiseeId,
-        routeNumber: finalRouteNumber,
-        motoboyId: motoboyId || null, // Permite criar sem motoboy!
-        color: color || "#3B82F6",
-        status: "PENDING",
-      },
-    });
-
-    // Associa os pedidos à rota e ativa PRIORIDADE PARA ROTA no KDS se o pedido não estiver PRONTO
-    const ordersToUpdate = await prisma.customerOrder.findMany({
-      where: { id: { in: orderIds } },
-      select: { id: true, status: true, motoboyId: true, dailyOrderNumber: true, customerAddress: true },
-    });
-
-    // Uma gravação por pedido, como sempre — mas todas de uma vez, não uma
-    // esperando a outra. Em fila, cada pedido da rota somava uma ida e volta
-    // ao banco antes de a tela ouvir "rota criada" (e esta chamada é a
-    // primeira do botão "Despachar Rota agora").
-    await Promise.all(
-      ordersToUpdate.map((ord) => {
-        const isNotReady = ord.status !== "PRONTO" && ord.status !== "SAIU_ENTREGA" && ord.status !== "ENTREGUE";
-        return prisma.customerOrder.update({
-          where: { id: ord.id },
-          data: {
-            routeId: newRoute.id,
-            motoboyId: motoboyId || undefined,
-            isRoutePriority: isNotReady, // 🚨 Marca PRIORIDADE PARA ROTA no KDS se não estiver pronto!
-          },
-        });
-      }),
-    );
-
-    // Rota montada já com entregador: os pedidos aparecem no app dele agora,
-    // então o aviso no celular sai agora (lib/app-motoboy/aparelhos.ts).
-    if (motoboyId) {
-      const novosParaEle = ordersToUpdate.filter((o) => o.motoboyId !== motoboyId && o.status !== "ENTREGUE");
-      if (novosParaEle.length > 0) {
-        import("@/lib/app-motoboy/aparelhos")
-          .then((m) => m.avisarPedidosNovos(String(motoboyId), novosParaEle, finalRouteNumber))
-          .catch(() => {});
-      }
-    }
-
-    // ── A ORDEM das paradas, que morria aqui ────────────────────────────────
-    //
-    // `orderIds` chega na sequência que a loja montou no mapa (1º, 2º, 3º…) e
-    // essa ordem não era gravada em lugar nenhum: o app do motoboy ordenava
-    // por data de criação DESC e o entregador rodava a rota de trás pra
-    // frente. A coluna `routeSequence` vive FORA do schema.prisma (ver
-    // /api/admin/coluna-sequencia-rota), daí o SQL cru — e o try/catch:
-    // enquanto a coluna não existir, a rota continua funcionando sem
-    // sequência, exatamente como sempre funcionou.
-    // A posição de cada parada é a do índice em `orderIds` — as gravações
-    // podem ir juntas, cada uma leva o seu número.
-    try {
-      await Promise.all(
-        orderIds.map(
-          (id: unknown, i: number) => prisma.$executeRaw`
-            UPDATE "CustomerOrder" SET "routeSequence" = ${i + 1} WHERE "id" = ${String(id)}
-          `,
-        ),
-      );
-    } catch (e: any) {
-      console.warn("[Rotas] routeSequence não gravada (coluna ausente?):", e?.message?.slice(0, 120));
-    }
 
     // A rota volta com o que a roteirização mostra no card (o mesmo recorte
     // do GET). Voltava com `orders: true` — todas as colunas de cada pedido,
