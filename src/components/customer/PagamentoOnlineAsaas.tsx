@@ -18,6 +18,7 @@ import {
   CUSTO_POR_VENDA_CARTAO_PROMOCIONAL,
   CUSTO_POR_VENDA_PIX,
   CUSTO_POR_VENDA_PIX_PROMOCIONAL,
+  TEXTO_DO_CUSTO,
   REGRAS_DO_PIX_ONLINE,
   custoDaVenda,
   liquidoDaLoja,
@@ -130,8 +131,7 @@ function TabelaDeCustos() {
         </div>
       ))}
       <p style={{ fontSize: "0.74rem", color: cor.suave, margin: "6px 0 0", lineHeight: 1.5 }}>
-        Custo por venda: Pix {CUSTO_POR_VENDA_PIX} e cartão {CUSTO_POR_VENDA_CARTAO}, já descontado (nos 3 primeiros meses da sua conta
-        Asaas, Pix {CUSTO_POR_VENDA_PIX_PROMOCIONAL} e cartão {CUSTO_POR_VENDA_CARTAO_PROMOCIONAL}). Sem mensalidade no Asaas. Pedido
+        {TEXTO_DO_CUSTO} Já descontado de cada venda. Sem mensalidade no Asaas. Pedido
         pago na entrega não tem custo nenhum.
       </p>
     </div>
@@ -363,7 +363,7 @@ export default function PagamentoOnlineAsaas({ estadoInicial }: { estadoInicial?
             {e.mesmaContaDoFireHub ? (
               <Item ok titulo="Esta é a conta que recebe pelo FireHub" texto="Nesta loja o custo é só a tarifa do Asaas: ele não divide com a própria conta." />
             ) : (
-              <Item ok titulo={`Custo por venda: Pix ${CUSTO_POR_VENDA_PIX} · Cartão ${CUSTO_POR_VENDA_CARTAO}`} texto="Já descontado de cada venda paga pelo site." />
+              <Item ok titulo="Custo por venda paga pelo site" texto={`${TEXTO_DO_CUSTO} Já descontado de cada venda.`} />
             )}
             {conta.verificadoEm && (
               <div style={{ fontSize: "0.72rem", color: "#94A3B8", marginTop: 4 }}>
@@ -446,7 +446,8 @@ export default function PagamentoOnlineAsaas({ estadoInicial }: { estadoInicial?
             {[
               { t: "⚡ Pix cai na hora", bg: "#ECFDF5", c: "#065F46" },
               { t: "💳 Cartão em até 2 dias úteis", bg: "#EFF6FF", c: "#1E40AF" },
-              { t: `Custo por venda: Pix ${CUSTO_POR_VENDA_PIX} · Cartão ${CUSTO_POR_VENDA_CARTAO}`, bg: "#F8FAFC", c: "#334155" },
+              { t: `Pix: ${CUSTO_POR_VENDA_PIX_PROMOCIONAL} nos 3 primeiros meses, depois ${CUSTO_POR_VENDA_PIX}`, bg: "#F8FAFC", c: "#334155" },
+              { t: `Cartão: ${CUSTO_POR_VENDA_CARTAO_PROMOCIONAL} nos 3 primeiros meses, depois ${CUSTO_POR_VENDA_CARTAO}`, bg: "#F8FAFC", c: "#334155" },
             ].map((s) => (
               <span key={s.t} style={{ background: s.bg, color: s.c, fontWeight: 800, fontSize: "0.76rem", padding: "5px 10px", borderRadius: 99, border: "1px solid #E2E8F0" }}>
                 {s.t}

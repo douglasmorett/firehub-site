@@ -114,6 +114,14 @@ export const CUSTO_POR_VENDA_PIX_PROMOCIONAL = reais(arred(TARIFA_ASAAS_PIX_PROM
 export const CUSTO_POR_VENDA_CARTAO_PROMOCIONAL =
   `${pct(TARIFA_ASAAS_CARTAO_PERCENTUAL_PROMOCIONAL)} + ${reais(arred(TARIFA_ASAAS_CARTAO_FIXA + SPLIT_FIREHUB_FIXO))}`;
 
+/**
+ * O custo explicado em uma frase, com a promoção do Asaas e o depois (Douglas,
+ * 22/10/2026: "deixa bem explicado: nos primeiros 3 meses é tanto, depois é tanto").
+ */
+export const TEXTO_DO_CUSTO =
+  `Nos 3 primeiros meses da sua conta Asaas: Pix ${CUSTO_POR_VENDA_PIX_PROMOCIONAL} e cartão ${CUSTO_POR_VENDA_CARTAO_PROMOCIONAL} por venda. ` +
+  `Depois disso: Pix ${CUSTO_POR_VENDA_PIX} e cartão ${CUSTO_POR_VENDA_CARTAO} por venda.`;
+
 /** O custo somado em reais numa venda deste valor (tarifa cheia do Asaas). */
 export function custoDaVenda(valorDoPedido: number, forma: FormaOnline = "pix"): number {
   const valor = Number(valorDoPedido) || 0;
@@ -138,8 +146,7 @@ export const REGRAS_DO_PIX_ONLINE: Regra[] = [
   {
     titulo: "Custo por venda paga pelo site",
     texto:
-      `Pix: ${CUSTO_POR_VENDA_PIX}. Cartão: ${CUSTO_POR_VENDA_CARTAO}. Já sai descontado do que cai na sua conta — nada é cobrado à parte. ` +
-      `Nos 3 primeiros meses da sua conta Asaas: Pix ${CUSTO_POR_VENDA_PIX_PROMOCIONAL} e cartão ${CUSTO_POR_VENDA_CARTAO_PROMOCIONAL}. ` +
+      `${TEXTO_DO_CUSTO} Já sai descontado do que cai na sua conta — nada é cobrado à parte. ` +
       // A ÚNICA linha que divide o custo — ver CUSTO_POR_VENDA_PIX.
       `Desse custo, a taxa do pagamento online de ${reais(SPLIT_FIREHUB_FIXO)} por venda é do FireHub e o resto é a tarifa do Asaas. ` +
       "Pedido pago na entrega não tem custo nenhum.",
@@ -241,7 +248,7 @@ export function mensagemDePixOnlineAtivado(nomeDaLoja: string, nomeDaConta: stri
     "",
     "*Como funciona*",
     "• Pix cai na sua conta Asaas na hora; cartão à vista, em até 2 dias úteis. Para levar ao banco, faça um Pix de saída no app do Asaas.",
-    `• Custo por venda paga pelo site: ${CUSTO_POR_VENDA_PIX} no Pix e ${CUSTO_POR_VENDA_CARTAO} no cartão, já descontado. Pedido pago na entrega não tem custo.`,
+    `• Custo por venda paga pelo site (já descontado). ${TEXTO_DO_CUSTO} Pedido pago na entrega não tem custo.`,
     "• O pedido só entra na cozinha depois de pago. Você não precisa aceitar à mão.",
     `• O cliente tem ${MINUTOS_PARA_PAGAR} min para pagar; depois o pedido é cancelado sozinho.`,
     "• Cancelou pedido pago? O dinheiro volta para o cliente sozinho, do seu saldo no Asaas.",
