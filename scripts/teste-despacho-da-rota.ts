@@ -10,7 +10,11 @@
  *   [3] a rota POST /api/store/routes/dispatch: grava, agenda os efeitos no
  *       `after()` e responde ANTES de qualquer efeito; a mesma rota com o
  *       mesmo motoboy uma segunda vez não manda nada de novo; erro na
- *       gravação não agenda efeito.
+ *       gravação não agenda efeito;
+ *   [3d] a rota automática chamada para TODOS e despachada pela loja: os
+ *       outros livres recebem o ROTA_JA_SAIU, também depois da resposta;
+ *   [4] DELETE /api/store/routes (Desfazer): o pedido que o motoboy PUXOU
+ *       pelo app/QR continua com ele — na rota automática e na montada à mão.
  *
  *   npx tsx scripts/teste-despacho-da-rota.ts
  *
@@ -56,6 +60,8 @@ function casaCampo(valor: any, filtro: any): boolean {
     else if (op === "in") { if (!(alvo as unknown[]).includes(valor)) return false; }
     else if (op === "notIn") { if ((alvo as unknown[]).includes(valor)) return false; }
     else if (op === "equals") { if (!igual(valor, alvo)) return false; }
+    // Os livres da loja (ROTA_JA_SAIU) contam só pedido das últimas 12 h.
+    else if (op === "gte") { if (!(valor != null && new Date(valor).getTime() >= new Date(alvo as any).getTime())) return false; }
     else throw new Error(`operador não previsto no banco falso: ${op}`);
   }
   return true;
@@ -87,6 +93,7 @@ const delegado = (modelo: keyof typeof db) => ({
   findFirst: async (a: any) => { const l = db[modelo].find((x) => casa(x, a.where)); return l ? projetar(l, a.select) : null; },
   findMany: async (a: any = {}) => db[modelo].filter((x) => casa(x, a.where)).map((l) => projetar(l, a.select)),
   update: async (a: any) => { const l = db[modelo].find((x) => casa(x, a.where)); if (!l) throw new Error(`update ${modelo} não achou`); Object.assign(l, copia(a.data)); gravacoes.push(`${modelo}.update`); return projetar(l, a.select); },
+  delete: async (a: any) => { const i = db[modelo].findIndex((x) => casa(x, a.where)); if (i < 0) throw new Error(`delete ${modelo} não achou`); const [l] = db[modelo].splice(i, 1); return l; },
   updateMany: async (a: any) => {
     if (modelo === "customerOrder" && quebrarGravacaoDePedidos) throw new Error("banco caiu no meio");
     const alvos = db[modelo].filter((x) => casa(x, a.where));
@@ -137,8 +144,10 @@ stub("../src/lib/fiscal-automatico", {
   emitirNfceDosPedidos: async (w: any) => { efeitos.push(`nfce:${w.id.in.join(",")}`); },
   emitirNfceAutomatica: async () => {},
 });
+const avisos: { para: string; tipo: string; titulo: string; corpo: string }[] = [];
 stub("../src/lib/app-motoboy/aparelhos", {
   avisarPedidosNovos: async (mb: string, ps: any[], rota: string) => { efeitos.push(`app:${mb}:${ps.map((p) => p.id).join(",")}:${rota}`); },
+  avisarMotoboy: async (mb: string, a: any) => { avisos.push({ para: mb, tipo: a?.dados?.tipo, titulo: a?.titulo, corpo: a?.corpo }); },
 });
 const canal = (c: string) => (p: any) => Boolean(p.openDeliveryOrderId) && String(p.openDeliveryChannel || "").toUpperCase() === c;
 stub("../src/lib/food99-status", { ehPedido99Food: canal("99FOOD"), sincronizar99Food: async (p: any) => { efeitos.push(`99food:${p.openDeliveryOrderId}:${p.entregador?.nome}`); } });
@@ -337,6 +346,69 @@ ${mapsUrl}`;
   const r5 = await despachar({ routeId: "rota2", motoboyId: "mb1" });
   conferir("…e despachar de novo funciona", r5.status === 200 && !r5.json.jaDespachada && linha("p5").status === "SAIU_ENTREGA" && agendados.length === agendadosAntes + 1, r5);
   conferir("o pedido que saiu leva a hora da saída (o acerto do motoboy conta por ela)", Boolean(linha("p5").dispatchedAt));
+
+  console.log("\n[3d] Rota automática chamada para todos, despachada pela loja");
+  db.motoboy.push(
+    { id: "mb3", name: "KAIO LIMA", phone: null, franchiseeId: "dono", active: true },
+    { id: "mb4", name: "ZECA", phone: null, franchiseeId: "dono", active: true },
+    { id: "mb5", name: "LEO", phone: null, franchiseeId: "dono", active: true },
+  );
+  db.routeSchedule.push(
+    { id: "rota3", routeNumber: "Rota #9", motoboyId: null, franchiseeId: "dono", status: "PENDING", dispatchedAt: null, origem: "AUTO", chamadaEm: new Date(), chamadaMotoboyId: null },
+    { id: "rota4", routeNumber: "Rota #10", motoboyId: null, franchiseeId: "dono", status: "PENDING", dispatchedAt: null, origem: "AUTO", chamadaEm: new Date(), chamadaMotoboyId: "mb4" },
+  );
+  db.customerOrder.push(
+    { ...pedido({ id: "p6", customerAddress: "Rua F, 60", createdAt: new Date() }), routeId: "rota3", isRoutePriority: false },
+    { ...pedido({ id: "p7", customerAddress: "Rua G, 70", createdAt: new Date() }), routeId: "rota4", isRoutePriority: false },
+    // O Leo está na rua com outra entrega: não é livre.
+    { ...pedido({ id: "p8", status: "SAIU_ENTREGA", motoboyId: "mb5", createdAt: new Date() }), routeId: null },
+  );
+  const agendadosAntesDaAuto = agendados.length;
+  const r6 = await despachar({ routeId: "rota3", motoboyId: "mb3" });
+  conferir("despachada: 200, e DOIS after() — os efeitos e o aviso aos outros", r6.status === 200 && agendados.length === agendadosAntesDaAuto + 2, { r6, agendados: agendados.length });
+  conferir("…nenhum aviso antes da resposta", avisos.length === 0, avisos);
+  while (agendados.length > agendadosAntesDaAuto) await agendados.pop()!();
+  conferir("…depois: ROTA_JA_SAIU ao Zeca (livre); nem ao Kaio (levou) nem ao Leo (com entrega)",
+    avisos.length === 1 && avisos[0].para === "mb4" && avisos[0].tipo === "ROTA_JA_SAIU" && avisos[0].titulo === "Rota #9 já saiu" && avisos[0].corpo === "KAIO levou a Rota #9.", avisos);
+  avisos.length = 0;
+  const r7 = await despachar({ routeId: "rota4", motoboyId: "mb4" });
+  conferir("chamada com NOME despachada pela loja: só os efeitos (um after()), sem ROTA_JA_SAIU",
+    r7.status === 200 && agendados.length === agendadosAntesDaAuto + 1, { r7, agendados: agendados.length });
+  while (agendados.length > agendadosAntesDaAuto) await agendados.pop()!();
+  conferir("…e ninguém recebe aviso de rota", avisos.length === 0, avisos);
+
+  // ── [4] Desfazer a rota não tira o pedido de quem já puxou ──────────────
+  console.log("\n[4] DELETE /api/store/routes: o puxado pelo app fica com o motoboy");
+  const puxouEm = new Date(Date.now() - 2 * 60_000);
+  db.routeSchedule.push(
+    { id: "rota5", routeNumber: "Rota #11", motoboyId: null, franchiseeId: "dono", status: "PENDING", dispatchedAt: null, origem: "AUTO", chamadaEm: new Date(), chamadaMotoboyId: null },
+    { id: "rota6", routeNumber: "Rota #12", motoboyId: "mb3", franchiseeId: "dono", status: "PENDING", dispatchedAt: null, origem: "MANUAL", chamadaEm: null, chamadaMotoboyId: null },
+  );
+  db.customerOrder.push(
+    // Rota automática: o Zeca puxou um pedido pelo QR ("Só este"); o outro ainda espera.
+    { ...pedido({ id: "p9", status: "SAIU_ENTREGA", motoboyId: "mb4", motoboyPuxadoEm: puxouEm }), routeId: "rota5", isRoutePriority: false },
+    { ...pedido({ id: "p10", status: "PRONTO" }), routeId: "rota5", isRoutePriority: true },
+    // Rota à mão com o Kaio: um pedido a rota pôs no app dele, o outro ele puxou pelo QR.
+    { ...pedido({ id: "p11", status: "PRONTO", motoboyId: "mb3" }), routeId: "rota6", isRoutePriority: true },
+    { ...pedido({ id: "p12", status: "SAIU_ENTREGA", motoboyId: "mb3", motoboyPuxadoEm: puxouEm }), routeId: "rota6", isRoutePriority: false },
+  );
+  const { DELETE } = await import("../src/app/api/store/routes/route");
+  const desfazer = async (routeId: string) => {
+    // A rota lê o id por `req.nextUrl` (NextRequest): o Request comum ganha o `nextUrl`.
+    const url = `http://teste/api/store/routes?routeId=${routeId}`;
+    const res = await DELETE(Object.assign(new Request(url, { method: "DELETE" }), { nextUrl: new URL(url) }) as any);
+    return { status: res.status, json: await res.json() };
+  };
+  const d1 = await desfazer("rota5");
+  conferir("rota automática desfeita (200) e apagada", d1.status === 200 && !db.routeSchedule.some((r) => r.id === "rota5"), d1);
+  conferir("…o puxado pelo QR continua com o Zeca, com a hora do puxar",
+    linha("p9").motoboyId === "mb4" && linha("p9").motoboyPuxadoEm?.getTime?.() === puxouEm.getTime() && linha("p9").status === "SAIU_ENTREGA", linha("p9"));
+  conferir("…e perde só o vínculo com a rota", linha("p9").routeId === null && linha("p9").isRoutePriority === false, linha("p9"));
+  conferir("…o que esperava sai da rota sem motoboy, fora da automática", linha("p10").routeId === null && !linha("p10").motoboyId && !!linha("p10").semRotaAutomaticaEm, linha("p10"));
+  const d2 = await desfazer("rota6");
+  conferir("rota à mão desfeita (200)", d2.status === 200 && !db.routeSchedule.some((r) => r.id === "rota6"), d2);
+  conferir("…o pedido que a ROTA pôs no app do Kaio sai do app dele", !linha("p11").motoboyId && linha("p11").routeId === null, linha("p11"));
+  conferir("…o que ele PUXOU pelo QR continua com ele", linha("p12").motoboyId === "mb3" && !!linha("p12").motoboyPuxadoEm && linha("p12").routeId === null, linha("p12"));
 
   console.log(`\n${ok} ok, ${falhou} falharam`);
   process.exitCode = falhou ? 1 : 0;

@@ -13,6 +13,9 @@
  *     "chamar" grava `chamadaEm`/`chamadaMotoboyId` e manda o push
  *     ROTA_PRONTA (`chamarARota`, também do card da Roteirização), e a rota
  *     que terminou sozinha (todos puxados um a um) vira DISPATCHED calada.
+ *     Fase 3 (22/10/2026): a rota é gravada com as paradas na ordem PELA RUA
+ *     (ordem-por-rua.ts, `rotaEntre`, teto de 3 s), e a chamada "para todos"
+ *     que alguém levou avisa os outros (`avisarQueARotaJaSaiu`).
  *
  * Gravando, o ciclo inteiro (ler → planejar → gravar) roda sob a vez
  * "roteirizacao:<loja>" (lib/vez.ts) com um dono novo por chamada: nem dois
@@ -55,7 +58,10 @@ import { criarRotaDaLoja, pedePrioridadeNaRota } from "@/lib/rotas-da-loja";
 import { liberadaPara } from "./liberacao";
 import { gravacoesDasAcoes, type Passo } from "./gravacoes";
 import { avisarMotoboy } from "@/lib/app-motoboy/aparelhos";
-import { avisoDaRotaFoiComOutro, avisoDaRotaPronta, quemPerdeAChamada, quemRecebeAChamada } from "./chamada";
+import { avisoDaRotaFoiComOutro, avisoDaRotaJaSaiu, avisoDaRotaPronta, quemPerdeAChamada, quemRecebeAChamada, quemSabeQueARotaJaSaiu } from "./chamada";
+import { rotaEntre } from "@/lib/distancia-por-rota";
+import type { Ponto } from "@/lib/ponto-do-pedido";
+import { ordenarParadasPorMedida, TETO_DA_ORDEM_POR_RUA_MS, type OrdemDasParadas } from "./ordem-por-rua";
 import { lerRoteirizacaoAutomatica, type RoteirizacaoAutomaticaConfig } from "./config";
 import { prazoDoPedido, agendadoParaDepois } from "./prazo";
 import {
@@ -137,6 +143,9 @@ type Planejado = {
   num: (id: string) => number | null;
   /** Status do pedido pelo id (a prioridade no KDS ao entrar na rota). */
   statusDe: (id: string) => string | null;
+  /** O pino da loja e o ponto de cada pedido: a ordem das paradas pela rua, ao gravar. */
+  loja: Ponto | null;
+  pontoDe: (id: string) => Ponto | null;
 };
 
 /**
@@ -239,10 +248,12 @@ async function lerEPlanejar(lojaId: string, agora: Date): Promise<Planejado> {
 
   type Linha = (typeof candidatos)[number];
   const numeros = new Map<string, number | null>();
+  const pontos = new Map<string, Ponto | null>();
   const paraDespacho = (o: Linha): PedidoParaDespacho => {
     numeros.set(o.id, numeroDo(o));
     const ehMarketplace = canalDoPedido(o).ehMarketplace;
     const ponto = pontoParaRotaAutomatica(o.customerLatLng, ehMarketplace, area);
+    pontos.set(o.id, ponto);
     let fora: CorteDaEntrada | null = null;
     if (infoDaEntrega(o).parceira) fora = "parceiro";
     else if (o.routeId && !idsDasRotasAuto.has(o.routeId)) fora = "rota-manual";
@@ -289,6 +300,8 @@ async function lerEPlanejar(lojaId: string, agora: Date): Promise<Planejado> {
     resumo, acoes, rotasAbertas, virada,
     num: (id) => numeros.get(id) ?? null,
     statusDe: (id) => status.get(id) ?? null,
+    loja: pino,
+    pontoDe: (id) => pontos.get(id) ?? null,
   });
   // Sem pino não há "perto da loja" nem ordem de paradas: nada a planejar.
   if (!pino) return planejado(resumoVazio(), []);
@@ -332,6 +345,19 @@ async function lerEPlanejar(lojaId: string, agora: Date): Promise<Planejado> {
 
 /** A vez de um ciclo que grava: cobre ler + planejar + gravar com folga. */
 const VEZ_DO_CICLO_MS = 15_000;
+/**
+ * O tempo que o ciclo INTEIRO tem para ordenar paradas pela rua (cada rota
+ * tem até 3 s dentro dele). Um pico com várias rotas novas e o roteador lento
+ * não pode passar da vez de 15 s — outro ciclo pegaria a vez no meio da
+ * gravação. Acabou o tempo, as rotas que faltam saem em linha reta.
+ */
+const ORDEM_POR_RUA_NO_CICLO_MS = 8_000;
+
+/** Km de rua pelo roteador da cotação de frete (cache de 60 dias); null = sem medida. */
+const medirPelaRua = async (a: Ponto, b: Ponto, prazo: number) => {
+  const r = await rotaEntre(a, b, { prazo });
+  return r.ok ? r.km : null;
+};
 
 /**
  * Um ciclo da loja. `gravar: false` = a prévia (nada muda). `gravar: true` =
@@ -385,6 +411,17 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
   const falhas: string[] = [];
   const acoes = resumo.acoes.map((a) => ({ ...a }));
 
+  // A ordem das paradas é refeita pela rua aqui, na gravação (o planejador e a
+  // prévia ficam em linha reta). Sem pino não há rota nenhuma a gravar.
+  const fimDaRua = Date.now() + ORDEM_POR_RUA_NO_CICLO_MS;
+  const pelaRua = async (ids: string[]): Promise<OrdemDasParadas> => {
+    if (!plano.loja) return { ordem: ids, fonte: "linha-reta" };
+    const tetoMs = Math.min(TETO_DA_ORDEM_POR_RUA_MS, fimDaRua - Date.now());
+    return ordenarParadasPorMedida(plano.loja, ids.map((id) => ({ id, ponto: plano.pontoDe(id) })), medirPelaRua, { tetoMs });
+  };
+  /** Só a falha vai para o log do ciclo: "ordem em linha reta (passou de 3000 ms)". */
+  const notaDaOrdem = (o: OrdemDasParadas) => (o.falha ? ` · ordem em linha reta (${o.falha})` : "");
+
   // Cada rota é conferida no banco uma vez por ciclo, antes da 1ª gravação nela.
   const aberta = new Map<string, boolean>();
   const conferirRota = async (rotaId: string) => {
@@ -404,15 +441,19 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
             select: { id: true },
           })).map((o) => o.id),
         );
-        const ids = passo.pedidoIds.filter((id) => livres.has(id));
-        if (ids.length === 0) { falhas.push(`rota de ${passo.pedidoIds.map(rotulo).join(", ")} não criada: os pedidos mudaram`); return; }
+        const livresNaOrdem = passo.pedidoIds.filter((id) => livres.has(id));
+        if (livresNaOrdem.length === 0) { falhas.push(`rota de ${passo.pedidoIds.map(rotulo).join(", ")} não criada: os pedidos mudaram`); return; }
+        // A ordem gravada é a da rua (criarRotaDaLoja grava `routeSequence`
+        // na ordem de `orderIds`); sem rua, a linha reta do planejador.
+        const ordem = await pelaRua(livresNaOrdem);
+        const ids = ordem.ordem;
         // D7: sem motoboy. A numeração conta desde a mesma virada que lê as rotas abertas.
         const { rota } = await criarRotaDaLoja({ lojaId, orderIds: ids, origem: "AUTO", virada: plano.virada });
         numeroDaRota.set(rota.id, rota.routeNumber);
         aberta.set(rota.id, true);
         const legivel = acoes.find((a) => a.tipo === "criar-rota" && a.pedidos.includes(ids[0]));
         if (legivel) legivel.routeNumber = rota.routeNumber;
-        aplicadas.push(`criou ${rota.routeNumber} (${ids.map(rotulo).join(", ")})`);
+        aplicadas.push(`criou ${rota.routeNumber} (${ids.map(rotulo).join(", ")})${notaDaOrdem(ordem)}`);
         return;
       }
       case "entrar-na-rota": {
@@ -442,11 +483,15 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
       }
       case "sequencia": {
         if (!(await conferirRota(passo.rotaId))) return;
+        // A rota que cresceu: a ordem inteira de novo, pela rua (a do
+        // planejador, em linha reta, é a reserva).
+        const ordem = await pelaRua(passo.pedidoIds);
+        if (ordem.falha) console.log(`[rota-automatica] ${nomeDaRota(passo.rotaId)}${notaDaOrdem(ordem)}`);
         // Mesma coluna crua do POST manual (lib/rotas-da-loja.ts). Só quem
         // ainda está nesta rota ganha número.
         try {
           await Promise.all(
-            passo.pedidoIds.map((id, i) => prisma.$executeRaw`
+            ordem.ordem.map((id, i) => prisma.$executeRaw`
               UPDATE "CustomerOrder" SET "routeSequence" = ${i + 1} WHERE "id" = ${id} AND "routeId" = ${passo.rotaId}
             `),
           );
@@ -586,4 +631,35 @@ export async function chamarARota(opcoes: {
     rota: { ...rota, chamadaEm: agora.toISOString(), chamadaMotoboyId: opcoes.motoboyId },
     avisados: destinos,
   };
+}
+
+/**
+ * A chamada "para todos" teve dono: avisa os OUTROS motoboys livres da loja
+ * — os que receberam o "quem chegar primeiro sai com ela" — que a rota já
+ * saiu ("Maicon levou a Rota #7."), para ninguém atravessar a cidade atrás
+ * de uma rota que não existe mais. Nunca ao próprio que levou.
+ *
+ * Quem chama: o puxar pelo QR (api/motoboys/orders, quando a rota chamada
+ * para todos ganha o primeiro dono) e o despacho pela loja
+ * (api/store/routes/dispatch). Quem recebeu o ROTA_PRONTA não fica gravado:
+ * os livres de AGORA, pela mesma régua da chamada (`lerMotoboysDaLoja`, com o
+ * id da loja dono da rota, o mesmo que o cron usou para chamar), são a melhor
+ * aproximação — quem pegou outro pedido no meio-tempo já não vem buscar esta.
+ *
+ * Em segundo plano e NUNCA lança: o puxar e o despacho não esperam por isto.
+ */
+export async function avisarQueARotaJaSaiu(opcoes: { rotaId: string; quemLevou: { id: string; nome: string | null } }): Promise<void> {
+  try {
+    const rota = await prisma.routeSchedule.findUnique({
+      where: { id: opcoes.rotaId },
+      select: { id: true, routeNumber: true, franchiseeId: true },
+    });
+    if (!rota?.franchiseeId) return;
+    const motoboys = await lerMotoboysDaLoja(rota.franchiseeId, new Date());
+    const destinos = quemSabeQueARotaJaSaiu(motoboys.filter((m) => m.livre).map((m) => m.id), opcoes.quemLevou.id);
+    const aviso = avisoDaRotaJaSaiu(rota, opcoes.quemLevou.nome);
+    await Promise.all(destinos.map((id) => avisarMotoboy(id, aviso)));
+  } catch (e: any) {
+    console.warn("[rota-automatica] aviso de rota que já saiu falhou:", e?.message?.slice(0, 120));
+  }
 }

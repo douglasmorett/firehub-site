@@ -128,8 +128,11 @@ stub("../src/lib/fiscal-automatico", {
   emitirNfceDosPedidos: async (w: any) => { efeitos.push(`nfce:${w.id.in.join(",")}`); },
   emitirNfceAutomatica: async (id: string) => { efeitos.push(`nfce1:${id}`); },
 });
+// Os pushes da rota automática (ROTA_FOI_COM_OUTRO, ROTA_JA_SAIU) ficam à parte dos efeitos do despacho.
+const avisos: { para: string; tipo: string; titulo: string; corpo: string }[] = [];
 stub("../src/lib/app-motoboy/aparelhos", {
   avisarPedidosNovos: async (mb: string, ps: any[]) => { efeitos.push(`app:${mb}:${ps.map((p) => p.id).join(",")}`); },
+  avisarMotoboy: async (mb: string, a: any) => { avisos.push({ para: mb, tipo: a?.dados?.tipo, titulo: a?.titulo, corpo: a?.corpo }); },
 });
 const canal = (c: string) => (p: any) => Boolean(p.openDeliveryOrderId) && String(p.openDeliveryChannel || "").toUpperCase() === c;
 stub("../src/lib/food99-status", { ehPedido99Food: canal("99FOOD"), sincronizar99Food: async () => ({ erros: [] }) });
@@ -222,6 +225,8 @@ async function main() {
   db.motoboy.push(
     { id: "mbA", name: "MAICON SILVA", phone: "(22) 99888-7766", franchiseeId: "dono", active: true },
     { id: "mbB", name: "FRED", phone: null, franchiseeId: "dono", active: true },
+    // Livre o tempo todo: é quem recebe o ROTA_JA_SAIU quando a chamada para todos tem dono.
+    { id: "mbC", name: "KAIO", phone: null, franchiseeId: "dono", active: true },
   );
   const { POST } = await import("../src/app/api/motoboys/orders/route");
   const puxar = async (motoboyId: string, corpo: Record<string, unknown>) => {
@@ -284,8 +289,18 @@ async function main() {
   const r4 = await puxar("mbB", { codigo: "30" });
   conferir("Fred puxa e recebe a oferta do resto", r4.status === 200 && igual(r4.json.rota?.outros, [{ numero: 31 }]), r4);
   conferir("…e vira o chamado da rota", rotaDe("r8").chamadaMotoboyId === "mbB");
+  await esperar();
+  const jaSaiu = avisos.filter((a) => a.tipo === "ROTA_JA_SAIU");
+  conferir("…e os outros livres ficam sabendo: ROTA_JA_SAIU ao Kaio, não ao Fred (quem levou)",
+    jaSaiu.length === 1 && jaSaiu[0].para === "mbC" && jaSaiu[0].titulo === "Rota #8 já saiu" && jaSaiu[0].corpo === "FRED levou a Rota #8.", avisos);
+  conferir("…nem ao Maicon, que está na rua com outra rota (não é livre)", !jaSaiu.some((a) => a.para === "mbA"), avisos);
   const r5 = await puxar("mbA", { codigo: "31" });
   conferir("Maicon escaneia o outro pedido: agora é do Fred", r5.status === 409 && r5.json.error === "Esta rota é do FRED. Peça para a loja trocar." && !linha("p31").motoboyId, r5);
+  const r5b = await puxar("mbB", { codigo: "30", puxarRota: true });
+  await esperar();
+  conferir("o \"Sim\" do Fred leva o resto, sem um 2º ROTA_JA_SAIU (o aviso é de quando a chamada ganhou dono)",
+    r5b.status === 200 && igual(r5b.json.numeros, [30, 31]) && avisos.filter((a) => a.tipo === "ROTA_JA_SAIU").length === 1, { r5b, avisos });
+  await rodarAgendados();
 
   console.log("\n[3e] \"Quem escanear primeiro\": outro passa e vira o chamado");
   db.user[0].deliveryConfig = { roteirizacaoAutomatica: { ativo: true, quemPuxa: "qualquer" } };
@@ -295,6 +310,10 @@ async function main() {
   const r6 = await puxar("mbB", { codigo: "40", puxarRota: true });
   conferir("Fred (sem ser o chamado) leva a rota inteira num POST só", r6.status === 200 && igual(r6.json.numeros, [40, 41]), r6);
   conferir("…vira o chamado e a rota sai com ele", rotaDe("r9").chamadaMotoboyId === "mbB" && rotaDe("r9").status === "DISPATCHED" && rotaDe("r9").motoboyId === "mbB");
+  await esperar();
+  conferir("chamada com NOME (Maicon) levada por outro: ROTA_FOI_COM_OUTRO ao Maicon, e nenhum ROTA_JA_SAIU",
+    avisos.some((a) => a.tipo === "ROTA_FOI_COM_OUTRO" && a.para === "mbA" && a.titulo === "Rota #9 foi com FRED") &&
+      avisos.filter((a) => a.tipo === "ROTA_JA_SAIU").length === 1, avisos);
   conferir("…os dois pedidos na rua com ele", ["p40", "p41"].every((id) => linha(id).status === "SAIU_ENTREGA" && linha(id).motoboyId === "mbB"));
   await esperar();
   await rodarAgendados();

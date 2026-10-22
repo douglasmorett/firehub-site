@@ -42,6 +42,17 @@ export async function POST(req: NextRequest) {
     // automática pelo QR despacha pelo mesmo caminho. Os efeitos (cliente,
     // NFC-e, app, parceiros, WhatsApp) vão para o `after()` e rodam depois
     // desta resposta.
+    //
+    // A chamada da rota automática é lida ANTES: despachada pela loja quando
+    // estava chamada para TODOS, os outros livres que receberam o "quem
+    // chegar primeiro sai com ela" ficam sabendo que ela já saiu
+    // (ROTA_JA_SAIU). Coluna da Fase 0, daí o `as any`; ilegível = sem aviso.
+    const chamada = (await prisma.routeSchedule
+      .findFirst({
+        where: { id: String(routeId), OR: [{ franchiseeId: lojaId }, { franchisee: { ownerId: lojaId } }] },
+        select: { origem: true, chamadaEm: true, chamadaMotoboyId: true } as any,
+      })
+      .catch(() => null)) as unknown as { origem: string | null; chamadaEm: Date | null; chamadaMotoboyId: string | null } | null;
     const r = await despacharRota({ lojaId, rotaId: String(routeId), motoboyId, agendar: after });
 
     if (!r.ok) {
@@ -58,6 +69,11 @@ export async function POST(req: NextRequest) {
         jaDespachada: true,
         message: `A rota ${r.rota.routeNumber} já tinha saído com o motoboy ${r.motoboy.name}.`,
       });
+    }
+
+    if (chamada?.origem === "AUTO" && chamada.chamadaEm && !chamada.chamadaMotoboyId) {
+      const quemLevou = { id: r.motoboy.id, nome: r.motoboy.name };
+      after(() => import("@/lib/roteirizacao-automatica/executar").then((m) => m.avisarQueARotaJaSaiu({ rotaId: r.rota.id, quemLevou })).catch(() => {}));
     }
 
     return NextResponse.json({

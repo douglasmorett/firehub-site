@@ -18,6 +18,11 @@
  * sem a marca (o "voltar") volta a ser agrupado. A chamada (`chamarARota`)
  * roda com um Prisma falso e o `fetch` do Expo interceptado.
  *
+ * Fase 3: a ordem das paradas pela rua (ordem-por-rua.ts) com um `medir`
+ * falso — a rua muda a ordem da linha reta; perna sem medida, `medir` que
+ * lança e teto de tempo estourado caem na linha reta. E o ROTA_JA_SAIU: a
+ * chamada para todos que alguém levou avisa os outros livres, nunca quem levou.
+ *
  *   npx tsx scripts/teste-roteirizacao-automatica.ts
  *
  * Sem banco e sem rede. O prazo.ts importa lib/painel-do-dono (que importa o
@@ -385,7 +390,7 @@ async function main() {
 
   // ── Fase 2: a chamada do motoboy ─────────────────────────────────────────
   const { chamadaVencida, MOTIVO_EM_PORTUGUES } = await import("../src/lib/roteirizacao-automatica/planejador");
-  const { avisoDaRotaPronta, avisoDaRotaFoiComOutro, quemRecebeAChamada, quemPerdeAChamada } = await import("../src/lib/roteirizacao-automatica/chamada");
+  const { avisoDaRotaPronta, avisoDaRotaFoiComOutro, avisoDaRotaJaSaiu, quemRecebeAChamada, quemPerdeAChamada, quemSabeQueARotaJaSaiu } = await import("../src/lib/roteirizacao-automatica/chamada");
   const naLoja = (id: string, nome: string, haMin: number): Motoboy => ({ id, nome, naLojaDesde: min(-haMin), gpsFresco: true });
   const prontaComDois = (id: string, extra: Partial<Rota> = {}) =>
     rota(id, [pedido(1, em(2), 20, pronto(2)), pedido(2, em(2.1), 22, pronto(1))], extra);
@@ -459,6 +464,12 @@ async function main() {
       quemRecebeAChamada("m1", ["m1", "m2"]).join() === "m1" && quemRecebeAChamada(null, ["m1", "m2", "m2"]).join() === "m1,m2");
     conferir("quem perde: só o chamado anterior trocado por OUTRO motoboy",
       quemPerdeAChamada("m1", "m2") === "m1" && quemPerdeAChamada("m1", "m1") === null && quemPerdeAChamada("m1", null) === null && quemPerdeAChamada(null, "m2") === null);
+    const j = avisoDaRotaJaSaiu({ id: "R7", routeNumber: "Rota #7" }, "Maicon Souza");
+    conferir("ROTA_JA_SAIU: 'Rota #7 já saiu' · 'Maicon levou a Rota #7.'",
+      j.titulo === "Rota #7 já saiu" && j.corpo === "Maicon levou a Rota #7." && j.dados.tipo === "ROTA_JA_SAIU" && j.dados.rotaId === "R7", j);
+    conferir("… sem nome: 'Outro entregador levou a Rota #7.'", avisoDaRotaJaSaiu({ id: "R7", routeNumber: "Rota #7" }, "  ").corpo === "Outro entregador levou a Rota #7.");
+    conferir("quem sabe que saiu: os livres sem repetir, NUNCA quem levou",
+      quemSabeQueARotaJaSaiu(["m1", "m2", "m2", "m3"], "m2").join() === "m1,m3" && quemSabeQueARotaJaSaiu(["m2"], "m2").length === 0);
   }
 
   // ── chamarARota com um Prisma falso e o Expo interceptado ────────────────
@@ -560,6 +571,23 @@ async function main() {
       const r6 = await chamarARota({ lojaId: "L1", rotaId: "R9", motoboyId: "m1", agora: AGORA });
       await esperarPushes();
       conferir("rota que não está aberta: recusa, sem push", !r6.ok && pushes.length === 0);
+
+      // 7. A chamada para todos da Rota #8 foi levada pelo Kaio: o Maicon
+      //    (livre) fica sabendo; o Kaio não; o m3 (com pedido) não.
+      pushes.length = 0;
+      fake.routeSchedule.findUnique = async (args: any) => {
+        chamadas.push({ onde: "routeSchedule.findUnique", args });
+        return { id: "R8", routeNumber: "Rota #8", franchiseeId: "L1" };
+      };
+      const { avisarQueARotaJaSaiu } = await import("../src/lib/roteirizacao-automatica/executar");
+      await avisarQueARotaJaSaiu({ rotaId: "R8", quemLevou: { id: "m2", nome: "Kaio" } });
+      conferir("ROTA_JA_SAIU aos outros livres, nunca a quem levou nem a quem está com pedido",
+        pushes.length === 1 && pushes[0].para === aparelho("m1") && pushes[0].tipo === "ROTA_JA_SAIU" &&
+          pushes[0].titulo === "Rota #8 já saiu" && pushes[0].corpo === "Kaio levou a Rota #8.", pushes);
+      fake.routeSchedule.findUnique = async () => { throw new Error("banco fora"); };
+      let lancou = false;
+      try { await avisarQueARotaJaSaiu({ rotaId: "R8", quemLevou: { id: "m2", nome: "Kaio" } }); } catch { lancou = true; }
+      conferir("… e com o banco fora não lança (o puxar e o despacho não esperam por isto)", !lancou);
     } finally {
       (globalThis as any).fetch = fetchDeVerdade;
     }
@@ -579,6 +607,54 @@ async function main() {
     conferir("'voltar' limpa a marca: no ciclo seguinte os dois se juntam de novo", criadas(os2.acoes).length === 1 && mesmoConjunto(criadas(os2.acoes)[0], ["p01", "p02"]), os2.acoes);
     const naRota = plano([], [rota("R1", [pedido(1, em(2), 20, { ...pronto(2), fora: null }), pedido(2, em(2.1), 22, pronto(1))])], [naLoja("m1", "Maicon", 3)]);
     conferir("pedido de rota AUTO aberta não é afetado (a marca só vale fora de rota)", chamadas(naRota.acoes).length === 1, naRota.acoes);
+  }
+
+  // ── Fase 3: a ordem das paradas pela rua ─────────────────────────────────
+  console.log("\n== Fase 3: a ordem das paradas pela rua ==");
+  {
+    const { ordenarParadasPorMedida } = await import("../src/lib/roteirizacao-automatica/ordem-por-rua");
+    // A ao lado da loja na reta, mas do outro lado do rio: 5 km de rua.
+    const A = em(1), B = em(0, 1.5), C = em(2);
+    const nomeDo = (p: Ponto) => (p === LOJA ? "L" : p === A ? "A" : p === B ? "B" : p === C ? "C" : "?");
+    const rua: Record<string, number> = { "L>A": 5, "L>B": 1.6, "L>C": 6, "B>A": 2.0, "B>C": 2.5, "A>C": 1, "A>B": 2.0, "C>A": 1, "C>B": 2.5 };
+    const pernas: string[] = [];
+    const medirFalso = (falhar?: string) => async (a: Ponto, b: Ponto) => {
+      const perna = `${nomeDo(a)}>${nomeDo(b)}`;
+      pernas.push(perna);
+      return perna === falhar ? null : rua[perna] ?? null;
+    };
+    const paradas = [{ id: "pA", ponto: A }, { id: "pB", ponto: B }, { id: "pC", ponto: C }];
+    const reta = ordenarParadas(LOJA, paradas);
+    const r = await ordenarParadasPorMedida(LOJA, paradas, medirFalso());
+    conferir("linha reta: A, C, B (A é a mais perto da loja no mapa)", reta.join() === "pA,pC,pB", reta);
+    conferir("pela rua: B, A, C — o vizinho mais próximo de MOTO, diferente da reta", r.fonte === "rua" && r.ordem.join() === "pB,pA,pC" && !r.falha, r);
+    conferir("… medindo só as pernas que decidem (3 da loja + 2 de B; a última não mede)", pernas.length === 5 && pernas.slice(0, 3).sort().join() === "L>A,L>B,L>C", pernas);
+
+    pernas.length = 0;
+    const f = await ordenarParadasPorMedida(LOJA, paradas, medirFalso("B>C"));
+    conferir("uma perna sem medida (B>C): a rota inteira fica em linha reta", f.fonte === "linha-reta" && f.ordem.join() === reta.join() && !!f.falha, f);
+
+    const lanca = await ordenarParadasPorMedida(LOJA, paradas, async () => { throw new Error("rede"); });
+    conferir("`medir` que lança: linha reta, sem lançar", lanca.fonte === "linha-reta" && lanca.ordem.join() === reta.join(), lanca);
+
+    const t0 = Date.now();
+    const lenta = await ordenarParadasPorMedida(LOJA, paradas, (a, b) => new Promise((ok) => setTimeout(() => ok(rua[`${nomeDo(a)}>${nomeDo(b)}`] ?? null), 200)), { tetoMs: 30 });
+    const levou = Date.now() - t0;
+    conferir("teto estourado (30 ms, cada perna 200 ms): linha reta, sem esperar o roteador", lenta.fonte === "linha-reta" && lenta.ordem.join() === reta.join() && /passou de 30 ms/.test(lenta.falha || "") && levou < 150, { lenta, levou });
+
+    let prazoVisto = 0;
+    await ordenarParadasPorMedida(LOJA, paradas, async (a, b, prazo) => { prazoVisto = prazo; return rua[`${nomeDo(a)}>${nomeDo(b)}`] ?? null; });
+    conferir("o `medir` recebe o fim do tempo (3 s por padrão) para passar ao rotaEntre", prazoVisto > Date.now() + 2_000 && prazoVisto <= Date.now() + 3_000, prazoVisto - Date.now());
+
+    pernas.length = 0;
+    const comSemPonto = await ordenarParadasPorMedida(LOJA, [...paradas, { id: "pD", ponto: null }], medirFalso());
+    conferir("pedido sem ponto vai para o fim, sem perna medida para ele", comSemPonto.ordem.join() === "pB,pA,pC,pD" && pernas.every((x) => !x.includes("?")), { comSemPonto, pernas });
+
+    pernas.length = 0;
+    const uma = await ordenarParadasPorMedida(LOJA, [{ id: "pA", ponto: A }], medirFalso());
+    conferir("uma parada só: nada a medir, nenhuma falha a relatar", uma.ordem.join() === "pA" && pernas.length === 0 && !uma.falha, { uma, pernas });
+    const semTempo = await ordenarParadasPorMedida(LOJA, paradas, medirFalso(), { tetoMs: 0 });
+    conferir("sem tempo no ciclo (teto 0): linha reta sem perguntar", semTempo.fonte === "linha-reta" && semTempo.ordem.join() === reta.join() && pernas.length === 0, semTempo);
   }
 
   console.log(`\n${ok} ok, ${falhou} falharam`);

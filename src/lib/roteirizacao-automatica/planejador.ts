@@ -19,7 +19,9 @@
  *   - e, novidade daqui, o prazo do candidato cabe na janela: até
  *     `janelaDePrazoMin` de diferença do prazo da semente (ver `encaixe`);
  *   - até `maxEntregasPorRota`; ordem das paradas = vizinho mais próximo a
- *     partir da loja, em linha reta (OSRM fica para a Fase 3).
+ *     partir da loja, em linha reta. É a ordem que a PRÉVIA mostra; ao gravar,
+ *     executar.ts a refaz pela rua (ordem-por-rua.ts, `rotaEntre`) e volta a
+ *     esta quando a rua não responde — o planejador fica puro, sem rede.
  *
  * A distância é `distanciaKm` de lib/ponto-do-pedido.ts — o mesmo Haversine de
  * `linhaRetaKm` (lib/geocoding.ts), mas de um arquivo sem banco: geocoding.ts
@@ -159,6 +161,8 @@ const semente = (membros: PedidoParaDespacho[]) => [...membros].sort(antesComoSe
  * Vizinho mais próximo a partir da loja — porte de `optimizeRouteSequence`
  * (RoteirizacaoModal.tsx). Empate de distância fica com o menor id, para a
  * mesma entrada dar sempre a mesma ordem. Pedido sem ponto vai para o fim.
+ * Em linha reta: a prévia mostra esta; a gravada sai pela rua quando dá
+ * (ordem-por-rua.ts, que cai nesta como reserva).
  */
 export function ordenarParadas(loja: Ponto, pedidos: { id: string; ponto: Ponto | null }[]): string[] {
   const comPonto = pedidos.filter((p) => p.ponto).sort(porId);

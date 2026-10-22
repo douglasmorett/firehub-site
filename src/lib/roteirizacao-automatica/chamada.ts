@@ -14,7 +14,7 @@
 export type AvisoDaChamada = {
   titulo: string;
   corpo: string;
-  dados: { tipo: "ROTA_PRONTA" | "ROTA_FOI_COM_OUTRO"; rotaId: string };
+  dados: { tipo: "ROTA_PRONTA" | "ROTA_FOI_COM_OUTRO" | "ROTA_JA_SAIU"; rotaId: string };
 };
 
 /** "#12, #15, #18" — em ordem de número; pedido sem número não aparece. */
@@ -54,6 +54,26 @@ export function avisoDaRotaFoiComOutro(rota: { id: string; routeNumber: string }
     corpo: "A loja trocou o entregador desta rota.",
     dados: { tipo: "ROTA_FOI_COM_OUTRO", rotaId: rota.id },
   };
+}
+
+/**
+ * Para os OUTROS que receberam a chamada para todos, quando alguém levou a
+ * rota (puxou pelo QR ou a loja despachou): "Rota #7 já saiu" · "Maicon levou
+ * a Rota #7." — sem isto, o "quem chegar primeiro sai com ela" ficava valendo
+ * e o segundo motoboy chegava à loja para nada.
+ */
+export function avisoDaRotaJaSaiu(rota: { id: string; routeNumber: string }, nomeDeQuemLevou: string | null | undefined): AvisoDaChamada {
+  const primeiroNome = String(nomeDeQuemLevou || "").trim().split(/\s+/)[0];
+  return {
+    titulo: `${rota.routeNumber} já saiu`,
+    corpo: `${primeiroNome || "Outro entregador"} levou a ${rota.routeNumber}.`,
+    dados: { tipo: "ROTA_JA_SAIU", rotaId: rota.id },
+  };
+}
+
+/** Quem fica sabendo que a rota saiu: os livres (como na chamada para todos), menos quem levou. */
+export function quemSabeQueARotaJaSaiu(livres: string[], quemLevou: string): string[] {
+  return quemRecebeAChamada(null, livres).filter((id) => id !== quemLevou);
 }
 
 /** D10: o chamado recebe sozinho; chamada sem nome (null) vai para todos os livres. */

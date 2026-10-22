@@ -448,6 +448,7 @@ export async function POST(req: NextRequest) {
         // vermelha aqui seria pior que o problema.
         // É também o caminho do "Sim, puxar todos": o pedido do QR já é dele
         // desde o primeiro POST, e agora leva o resto da rota.
+        avisarSeLevouAChamadaDeTodos(rota, mb);
         if (rota && querARota) return puxarARota(rota, lojaId, mb, alvo.id, numero);
         const daRota = rota ? await rotaNaResposta(rota, quemPuxa, mb, alvo.id) : undefined;
         return NextResponse.json({ success: true, jaEraSeu: true, orderId: alvo.id, numero, ...(daRota ? { rota: daRota } : {}) });
@@ -466,6 +467,8 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[Motoboy Puxou] pedido ${alvo.id} #${numero} loja ${mb.franchiseeId} por ${mb.id}/${mb.name}`);
+    // Só depois do claim: o puxar que perdeu a corrida do pedido não "levou" nada.
+    avisarSeLevouAChamadaDeTodos(rota, mb);
 
     // "Sim, puxar todos" mandado já no primeiro POST: o pedido do QR sai junto
     // com o resto, pelo despacho da rota (um caminho só de efeitos).
@@ -603,6 +606,8 @@ type RotaAutomatica = {
   origem: string | null;
   chamadaEm: Date | null;
   chamadaMotoboyId: string | null;
+  /** Só nesta requisição: este puxar tirou a rota da chamada para todos (ver `reservarARota`). */
+  levouAChamadaDeTodos?: boolean;
 };
 type MotoboyDaSessao = { id: string; name: string; franchiseeId: string };
 
@@ -675,8 +680,26 @@ async function reservarARota(rota: RotaAutomatica, quemPuxa: QuemPuxa, mb: Motob
       .then(({ avisarMotoboy }) => avisarMotoboy(perdeu, avisoDaRotaFoiComOutro(rota, mb.name)))
       .catch(() => {});
   }
+  // A chamada era para TODOS e este é o primeiro dono: os outros livres
+  // receberam "quem chegar primeiro sai com ela" e precisam saber que alguém
+  // chegou (ROTA_JA_SAIU). O aviso sai depois do claim do pedido
+  // (`avisarSeLevouAChamadaDeTodos`), não aqui — o claim ainda pode perder.
+  // Com "só o chamado" a rota agora é dele (os outros são barrados acima);
+  // com "quem escanear primeiro" o resto ainda pode ser escaneado por outro,
+  // mas a corrida que o push anunciou tem vencedor — e é a ele que o app
+  // oferece o resto.
+  if (r.count > 0 && !anterior) rota.levouAChamadaDeTodos = true;
   rota.chamadaMotoboyId = motoboyId;
   return null;
+}
+
+/** O ROTA_JA_SAIU aos outros livres (executar.ts), em segundo plano, uma vez por requisição. */
+function avisarSeLevouAChamadaDeTodos(rota: RotaAutomatica | null, mb: MotoboyDaSessao) {
+  if (!rota?.levouAChamadaDeTodos) return;
+  rota.levouAChamadaDeTodos = false;
+  import("@/lib/roteirizacao-automatica/executar")
+    .then(({ avisarQueARotaJaSaiu }) => avisarQueARotaJaSaiu({ rotaId: rota.id, quemLevou: { id: mb.id, nome: mb.name } }))
+    .catch(() => {});
 }
 
 /** Os pedidos da rota, só com o que decide o puxar — nada do cliente. */

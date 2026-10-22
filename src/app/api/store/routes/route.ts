@@ -384,11 +384,21 @@ export async function DELETE(req: NextRequest) {
     // Só desatribui de quem a ROTA pôs lá, e só pedido em aberto: entregue e
     // cancelado são história, e reescrever o motoboy neles moveria o pagamento
     // da entrega para quem não a fez.
+    //
+    // E NUNCA o que o motoboy PUXOU pelo app/QR (`motoboyPuxadoEm`): puxar é
+    // ele com o saco na mão saindo para entregar (o puxar já põe o pedido em
+    // SAIU_ENTREGA). Desfazer a rota desfaz o AGRUPAMENTO, não tira a comida
+    // da mão de quem já está na rua — o pedido sumiria do app dele no meio da
+    // entrega. Vale para a rota automática (chamada "para todos", ou "Só
+    // este" de um pedido dela) e para a montada à mão (o puxar pelo QR de um
+    // pedido dela é o de sempre): ele mantém `motoboyId` e `motoboyPuxadoEm` e
+    // perde só o vínculo com a rota (abaixo). Trocar quem leva é o PATCH.
     const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
     await prisma.customerOrder.updateMany({
       where: {
         routeId,
         status: { notIn: [...STATUS_FINALIZADOS, ...STATUS_CANCELADOS] },
+        motoboyPuxadoEm: null,
         ...(rota.motoboyId ? { motoboyId: rota.motoboyId } : {}),
       },
       data: { motoboyId: null, motoboyPuxadoEm: null },
@@ -404,8 +414,17 @@ export async function DELETE(req: NextRequest) {
       });
     }
 
-    // O resto dos pedidos da rota (entregues, cancelados, ou de outro
-    // entregador) perde só o vínculo com a rota.
+    // A parada "2ª da rota" também morre com ela: o puxado continua no app do
+    // motoboy, que ordena por `routeSequence` (coluna fora do schema.prisma,
+    // daí o SQL cru; sem a coluna, nada a limpar).
+    try {
+      await prisma.$executeRaw`UPDATE "CustomerOrder" SET "routeSequence" = NULL WHERE "routeId" = ${routeId}`;
+    } catch (e: any) {
+      console.warn("[Rotas] routeSequence não limpa (coluna ausente?):", e?.message?.slice(0, 120));
+    }
+
+    // O resto dos pedidos da rota (entregues, cancelados, puxados pelo app ou
+    // de outro entregador) perde só o vínculo com a rota.
     await prisma.customerOrder.updateMany({
       where: { routeId },
       data: { routeId: null, isRoutePriority: false },
