@@ -49,6 +49,18 @@
  *   4. criar: do que sobrou, rotas novas. Pedido sem companhia só vira rota
  *      de 1 quando fica pronto — e aí ainda espera `esperaMaxMin` por alguém
  *      antes de ser chamado (passo 2 do ciclo seguinte).
+ *
+ * ── Uma rota por vez, cheia (Douglas, 22/10/2026 20h45) ────────────────────
+ * "Tem quatro rotas montadas, todas com dois pedidos. Você monta só uma rota.
+ * Despachou ela, aí você cria outra. Se o limite é três, fazer uma força para
+ * que saia com o limite máximo." Então:
+ *   - no passo 3, quem não cabe pela regra normal ainda entra com FOLGA
+ *     (`FOLGA_PARA_ENCHER`: raio, desvio e janela de prazo multiplicados);
+ *   - no passo 4, rota nova só nasce quando nenhuma rota aberta (chamada ou
+ *     não, que ninguém puxou) tem vaga — e no máximo UMA por ciclo, também
+ *     enchida com folga. Quem sobra espera a próxima ("proxima-rota"). A
+ *     exceção é o pedido pronto há `esperaMaxMin` que não coube em nenhuma:
+ *     esse abre a dele, para não esfriar esperando a vez.
  */
 import { distanciaKm, type Ponto } from "@/lib/ponto-do-pedido";
 import type { RoteirizacaoAutomaticaConfig } from "./config";
@@ -68,7 +80,9 @@ export type MotivoDoDescarte =
   | "prazo-incompativel"
   | "rota-cheia"
   /** Sozinho na loja (não há outro pedido nem rota para comparar) e ainda não pronto. */
-  | "esperando-companhia";
+  | "esperando-companhia"
+  /** Uma rota por vez: a que está montando ainda não saiu (ou já nasceu uma neste ciclo). */
+  | "proxima-rota";
 
 export type PedidoParaDespacho = {
   id: string;
@@ -155,7 +169,15 @@ export const MOTIVO_EM_PORTUGUES: Record<MotivoDoDescarte, string> = {
   "prazo-incompativel": "prazo muito diferente dos vizinhos — espera outra rota",
   "rota-cheia": "a rota que passa perto já está cheia",
   "esperando-companhia": "único pedido de entrega agora — vai sozinho quando ficar pronto",
+  "proxima-rota": "vai na próxima rota — uma por vez: a que está montando ainda não saiu",
 };
+
+/**
+ * Quanto a regra afrouxa para encher a rota até o máximo (raio, desvio "no
+ * caminho" e janela de prazo vezes isto). Só depois que a regra normal não
+ * achou ninguém.
+ */
+export const FOLGA_PARA_ENCHER = 1.5;
 
 const porId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
 
@@ -203,35 +225,44 @@ type Encaixe =
   | { ok: false; motivo: "fora-do-raio" | "prazo-incompativel" };
 
 /** O candidato cabe na rota desta semente? (a regra do Auto-Agrupar + a janela de prazo) */
-export function encaixe(loja: Ponto, sem: PedidoParaDespacho, cand: PedidoParaDespacho, config: RoteirizacaoAutomaticaConfig): Encaixe {
+export function encaixe(loja: Ponto, sem: PedidoParaDespacho, cand: PedidoParaDespacho, config: RoteirizacaoAutomaticaConfig, folga = 1): Encaixe {
   if (!sem.ponto || !cand.ponto) return { ok: false, motivo: "fora-do-raio" };
-  const raio = config.raioDoGrupoKm;
+  const raio = config.raioDoGrupoKm * folga;
   const lojaSemente = distanciaKm(loja, sem.ponto);
   const lojaCand = distanciaKm(loja, cand.ponto);
   const candSemente = distanciaKm(cand.ponto, sem.ponto);
   const desvio = lojaCand + candSemente - lojaSemente;
   const perto = candSemente <= raio;
-  const noCaminho = desvio <= Math.min(1.8, Math.max(1, raio * 0.75)) && lojaCand <= lojaSemente + 1;
+  const noCaminho = desvio <= Math.min(1.8, Math.max(1, config.raioDoGrupoKm * 0.75)) * folga && lojaCand <= lojaSemente + folga;
   if (!perto && !noCaminho) return { ok: false, motivo: "fora-do-raio" };
   // A janela vale para os dois lados. Com a semente sendo o mais urgente é o
   // "até X min depois" do plano; mas o pedido que não achou companhia como
   // semente vira candidato da semente seguinte (menos urgente), e só "depois"
   // deixaria o #1 (prazo 20) entrar na rota do #2 (prazo 40) com janela de 15.
-  if (Math.abs(cand.prazo.getTime() - sem.prazo.getTime()) > config.janelaDePrazoMin * 60_000) {
+  if (Math.abs(cand.prazo.getTime() - sem.prazo.getTime()) > config.janelaDePrazoMin * folga * 60_000) {
     return { ok: false, motivo: "prazo-incompativel" };
   }
   return { ok: true, nota: desvio * 0.6 + candSemente * 0.4 };
 }
 
 /** Os candidatos que cabem, do melhor para o pior (nota, depois prazo, depois id). */
-function candidatosQueCabem(loja: Ponto, sem: PedidoParaDespacho, lista: PedidoParaDespacho[], config: RoteirizacaoAutomaticaConfig) {
+function candidatosQueCabem(loja: Ponto, sem: PedidoParaDespacho, lista: PedidoParaDespacho[], config: RoteirizacaoAutomaticaConfig, folga = 1) {
   const bons: { p: PedidoParaDespacho; nota: number }[] = [];
   for (const p of lista) {
     if (p.id === sem.id) continue;
-    const e = encaixe(loja, sem, p, config);
+    const e = encaixe(loja, sem, p, config, folga);
     if (e.ok) bons.push({ p, nota: e.nota });
   }
   return bons.sort((a, b) => a.nota - b.nota || a.p.prazo.getTime() - b.p.prazo.getTime() || porId(a.p, b.p)).map((b) => b.p);
+}
+
+/** Até `vagas` companheiros: primeiro pela regra normal, depois com folga (rota cheia, uma por vez). */
+function companhiaParaEncher(loja: Ponto, sem: PedidoParaDespacho, lista: PedidoParaDespacho[], config: RoteirizacaoAutomaticaConfig, vagas: number) {
+  const certos = candidatosQueCabem(loja, sem, lista, config).slice(0, vagas);
+  if (certos.length >= vagas) return certos;
+  const ja = new Set(certos.map((p) => p.id));
+  const comFolga = candidatosQueCabem(loja, sem, lista.filter((p) => !ja.has(p.id)), config, FOLGA_PARA_ENCHER);
+  return [...certos, ...comFolga].slice(0, vagas);
 }
 
 const rotulo = (p: PedidoParaDespacho) => `#${p.numero ?? p.id.slice(-4)}`;
@@ -295,11 +326,16 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
   // As que podem crescer no passo 3, na ordem das sementes. `chamada`: já
   // chamada e ninguém puxou (as puxadas nem chegam aqui) — só pedido pronto.
   const crescem: { v: RotaViva; chamada: boolean }[] = [];
+  // Uma rota por vez: alguma rota que ninguém puxou ainda tem vaga? Então
+  // não nasce outra neste ciclo (passo 4).
+  let algumaComVaga = false;
   for (const v of vivas) {
     if (v.rota.chamadaEm) {
       // Rechamada (D13) agora: só cresce no ciclo seguinte, um push por vez.
-      if (rechamar(v.rota)) acoes.push({ tipo: "chamar", rotaId: v.rota.id, motoboyId: proximoMotoboy() });
-      else crescem.push({ v, chamada: true });
+      if (rechamar(v.rota)) {
+        acoes.push({ tipo: "chamar", rotaId: v.rota.id, motoboyId: proximoMotoboy() });
+        if (v.membros.length < max) algumaComVaga = true;
+      } else crescem.push({ v, chamada: true });
       continue;
     }
     const sem = semente(v.membros);
@@ -309,6 +345,7 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
     const estourou = sem.pronto && (!sem.prontoEm || agora.getTime() - sem.prontoEm.getTime() >= esperaMs);
     if (todosProntos && (v.membros.length >= 2 || v.membros.length >= max || estourou)) {
       acoes.push({ tipo: "chamar", rotaId: v.rota.id, motoboyId: proximoMotoboy() });
+      if (v.membros.length < max) algumaComVaga = true;
     } else if (estourou && !todosProntos) {
       for (const p of v.membros) {
         if (p.pronto) continue;
@@ -316,6 +353,7 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
         voltarAoBolo(p);
       }
       acoes.push({ tipo: "chamar", rotaId: v.rota.id, motoboyId: proximoMotoboy() });
+      if (v.membros.filter((p) => p.pronto).length < max) algumaComVaga = true;
     } else {
       crescem.push({ v, chamada: false });
     }
@@ -331,7 +369,7 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
     const membros = [...v.membros];
     while (membros.length < max) {
       const sem = semente(membros);
-      const [melhor] = candidatosQueCabem(loja, sem, bolo.filter((p) => !naRota.has(p.id) && (!chamada || p.pronto)), config);
+      const [melhor] = companhiaParaEncher(loja, sem, bolo.filter((p) => !naRota.has(p.id) && (!chamada || p.pronto)), config, 1);
       if (!melhor) break;
       naRota.add(melhor.id);
       membros.push(melhor);
@@ -341,17 +379,21 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
         ...(chamada ? { rotaChamada: true as const } : {}),
       });
     }
+    if (membros.length < max) algumaComVaga = true;
     // A chamada não conta como grupo para o motivo de quem sobrou: ela só
     // aceita pronto, e "rota cheia"/"longe" do não pronto viria dela à toa.
     if (!chamada) grupos.push({ semente: semente(membros), cheio: membros.length >= max });
   }
 
-  // ── 4. Criar rotas novas ─────────────────────────────────────────────────
+  // ── 4. Criar rota nova: só com todas as abertas cheias, uma por ciclo ───
   const restantes = bolo.filter((p) => !naRota.has(p.id)).sort(antesComoSemente);
-  for (const sem of restantes) {
-    if (naRota.has(sem.id)) continue;
-    const livres = restantes.filter((p) => !naRota.has(p.id));
-    const companhia = candidatosQueCabem(loja, sem, livres, config).slice(0, max - 1);
+  let criou = false;
+  // Com rota aberta com vaga, só abre outra o pedido PRONTO que não coube em
+  // nenhuma e já esperou `esperaMaxMin` — senão esfria esperando a vez.
+  const esfriando = (p: PedidoParaDespacho) => p.pronto && (!p.prontoEm || agora.getTime() - p.prontoEm.getTime() >= esperaMs);
+  for (const sem of algumaComVaga ? restantes.filter(esfriando) : restantes) {
+    const livres = restantes.filter((p) => p.id !== sem.id);
+    const companhia = companhiaParaEncher(loja, sem, livres, config, max - 1);
     // Sozinho e ainda na cozinha: espera companhia (ou ficar pronto).
     if (companhia.length === 0 && !sem.pronto) continue;
     const grupo = [sem, ...companhia];
@@ -363,7 +405,11 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
       : `${rotulo(sem)} sozinho e pronto (${porque})`;
     acoes.push({ tipo: "criar-rota", pedidos: ordem, motivo });
     grupos.push({ semente: sem, cheio: grupo.length >= max });
+    criou = true;
+    break;
   }
+  // Ficou de fora só porque é uma rota por vez: o motivo é esse, não a distância.
+  const esperaAProxima = algumaComVaga || criou;
 
   // ── Quem ficou no bolo, e por quê ────────────────────────────────────────
   const sobraram = restantes.filter((p) => !naRota.has(p.id));
@@ -383,6 +429,7 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
       }
     }
     if (!motivo) motivo = grupos.length > 0 || sobraram.length > 1 ? "fora-do-raio" : "esperando-companhia";
+    if (esperaAProxima && motivo !== "prazo-incompativel") motivo = "proxima-rota";
     descartados.push({ pedidoId: p.id, motivo });
   }
 

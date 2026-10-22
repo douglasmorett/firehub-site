@@ -97,10 +97,12 @@ async function main() {
 
   console.log("\n== Semente e agrupamento ==");
   {
-    // Dois pedidos prontos longe um do outro: duas rotas de 1, a do menor prazo primeiro.
+    // Dois pedidos prontos longe um do outro: uma rota por vez (Douglas, 22/10
+    // 20h45) — nasce a do menor prazo; o outro espera a próxima.
     const r = plano([pedido(1, em(3), 40, pronto(1)), pedido(2, em(-3), 20, pronto(1))]);
     const c = criadas(r.acoes);
-    conferir("semente = menor prazo: a primeira rota criada é a do #2", c.length === 2 && c[0][0] === "p02", c);
+    conferir("semente = menor prazo: a rota criada é a do #2 (uma por ciclo)", c.length === 1 && c[0][0] === "p02", c);
+    conferir("… o outro espera a próxima rota", motivoDe(r, "p01") === "proxima-rota", r.descartados);
   }
   {
     // O #3 tem prioridade pedida à mão e o maior prazo: é ele a semente.
@@ -128,17 +130,20 @@ async function main() {
     conferir("… e a ordem das paradas é o do caminho primeiro", (criadas(r.acoes)[0] ?? []).join() === "p02,p01", r.acoes);
   }
   {
-    // Perto, mas prazo 20 min depois da semente (janela 15).
-    const r = plano([pedido(1, em(1), 20), pedido(2, em(1.3), 40)]);
-    conferir("janela de prazo: prazo 20 min depois não entra", criadas(r.acoes).length === 0, r.acoes);
+    // Perto, mas prazo 30 min depois da semente (janela 15, com folga 22,5).
+    const r = plano([pedido(1, em(1), 20), pedido(2, em(1.3), 50)]);
+    conferir("janela de prazo: prazo 30 min depois não entra nem com folga", criadas(r.acoes).length === 0, r.acoes);
     conferir("… motivo prazo-incompativel", motivoDe(r, "p02") === "prazo-incompativel", r.descartados);
+    // 20 min depois: fora da janela normal, dentro da folga — entra para encher a rota.
+    const r2 = plano([pedido(1, em(1), 20), pedido(2, em(1.3), 40)]);
+    conferir("… 20 min depois entra com folga (encher a rota)", mesmoConjunto(criadas(r2.acoes)[0] ?? [], ["p01", "p02"]), r2.acoes);
   }
   {
     // Três vizinhos, máximo 2: o terceiro fica de fora por rota cheia.
     const r = plano([pedido(1, em(1), 20), pedido(2, em(1.1), 21), pedido(3, em(1.2), 22)], [], [], { ...CFG, maxEntregasPorRota: 2 });
     const c = criadas(r.acoes);
     conferir("rota cheia: só 2 por rota", c.length === 1 && c[0].length === 2 && c[0].includes("p01"), c);
-    conferir("… o que sobrou é rota-cheia", motivoDe(r, "p03") === "rota-cheia", r.descartados);
+    conferir("… o que sobrou espera a próxima rota", motivoDe(r, "p03") === "proxima-rota", r.descartados);
   }
   {
     const r = plano([pedido(1, null, 20, pronto(5))]);
@@ -176,8 +181,45 @@ async function main() {
       !r.acoes.some((x) => "rotaId" in x && x.rotaId === "R1"), r.acoes);
   }
 
-  console.log("\n== Rota chamada que ninguém puxou (D8 revisto, 22/10) ==");
   const acrescimos = (acoes: Acao[]) => acoes.filter((a): a is Extract<Acao, { tipo: "acrescentar" }> => a.tipo === "acrescentar");
+
+  console.log("\n== Uma rota por vez, cheia (Douglas, 22/10 20h45) ==");
+  {
+    // Rota aberta com 2 (na cozinha), máx 3; o #3 está a 2,5 km da semente:
+    // fora do raio 2, dentro da folga (3) — entra nela em vez de abrir outra.
+    const aberta = rota("R1", [pedido(1, em(2), 20), pedido(2, em(2, 0.3), 22)]);
+    const r = plano([pedido(3, em(2, 2.5), 24)], [aberta]);
+    const a = acrescimos(r.acoes);
+    conferir("rota aberta com vaga recebe o vizinho que só cabe com folga", a.length === 1 && a[0].rotaId === "R1" && a[0].pedidoId === "p03", r.acoes);
+    conferir("… e não nasce rota nova", criadas(r.acoes).length === 0, r.acoes);
+  }
+  {
+    // Rota aberta com vaga; chegam dois pedidos longe dela (juntos entre si):
+    // não monta a segunda enquanto a primeira não sair.
+    const aberta = rota("R1", [pedido(1, em(2), 20)]);
+    const r = plano([pedido(2, em(-4), 22, pronto(1)), pedido(3, em(-4.2), 23)], [aberta]);
+    conferir("rota aberta com vaga: não monta outra rota com os de longe", criadas(r.acoes).length === 0, r.acoes);
+    conferir("… eles esperam a próxima rota", motivoDe(r, "p02") === "proxima-rota" && motivoDe(r, "p03") === "proxima-rota", r.descartados);
+  }
+  {
+    // Exceção: pronto há 10 min (espera 8), longe da rota aberta — abre a dele.
+    const aberta = rota("R1", [pedido(1, em(2), 20)]);
+    const r = plano([pedido(2, em(-4), 22, pronto(10))], [aberta]);
+    conferir("pronto esfriando (10 min) que não cabe na aberta: abre a rota dele", criadas(r.acoes).length === 1 && criadas(r.acoes)[0].join() === "p02", r.acoes);
+  }
+  {
+    // Todas as abertas cheias: nasce UMA rota nova por ciclo, enchida até o máximo.
+    const cheia = rota("R1", [pedido(1, em(5), 20), pedido(2, em(5.1), 20), pedido(3, em(5.2), 20)]);
+    const r = plano([
+      pedido(4, em(-1), 20), pedido(5, em(-1.2), 21), pedido(6, em(-1.4), 22),
+      pedido(7, em(-1.1, 0.2), 23), pedido(8, em(-1.3, 0.2), 24),
+    ], [cheia]);
+    const c = criadas(r.acoes);
+    conferir("abertas cheias: uma rota nova só, com 3", c.length === 1 && c[0].length === 3, c);
+    conferir("… os outros esperam a próxima", r.descartados.filter((d) => d.motivo === "proxima-rota").length === 2, r.descartados);
+  }
+
+  console.log("\n== Rota chamada que ninguém puxou (D8 revisto, 22/10) ==");
   {
     // (a) Rota de 1 chamada, ninguém na loja puxou; o #2 ficou pronto e cabe.
     const chamada = rota("R1", [pedido(1, em(2), 20, pronto(4))], { chamadaEm: min(-3), chamadaMotoboyId: null });
@@ -247,7 +289,7 @@ async function main() {
     const tirados = r.acoes.filter((x) => x.tipo === "tirar-da-rota");
     conferir("espera estourada: o não pronto sai da rota", tirados.length === 1 && (tirados[0] as any).pedidoId === "p02" && (tirados[0] as any).motivo === "espera-estourada", r.acoes);
     conferir("… e a rota é chamada com o pronto", chamadas(r.acoes).length === 1 && chamadas(r.acoes)[0].rotaId === "R1", r.acoes);
-    conferir("… o que saiu volta ao bolo (sozinho e na cozinha: esperando)", motivoDe(r, "p02") === "esperando-companhia", r.descartados);
+    conferir("… o que saiu volta ao bolo (sozinho e na cozinha: espera a próxima rota)", motivoDe(r, "p02") === "proxima-rota", r.descartados);
     const r2 = plano([], [rota("R1", [pedido(1, em(2), 20, pronto(3)), pedido(2, em(2.2), 25)])]);
     conferir("espera NÃO estourada (3 min): nada muda", r2.acoes.length === 0, r2.acoes);
   }
