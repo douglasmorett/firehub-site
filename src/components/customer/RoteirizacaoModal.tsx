@@ -44,6 +44,8 @@ import TutorialDaTela from "@/components/TutorialDaTela";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
 import { bairroPeloEndereco, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
 import RotaAutomatica, { type PreviaDaRotaAutomatica, type RotaAutomaticaConfig, type RotaAutomaticaEstado } from "@/components/customer/RotaAutomatica";
+import { pontoParaRotaAutomatica } from "@/lib/roteirizacao-automatica/ponto";
+import { infoDaEntrega } from "@/lib/entrega-parceira";
 
 // ── Aviso que desce do topo (no lugar do alert()) ─────────────────────────
 // Mesma interface do components/AvisoNoTopo.tsx de outra frente, que ainda não
@@ -268,6 +270,11 @@ interface RouteItem {
   orders: CustomerOrder[];
   createdAt: string;
   status: string;
+  /** "AUTO" = criada pela Rota 100% automatizada (selo 🤖); nulo/"MANUAL" = montada pela loja. */
+  origem?: string | null;
+  /** Fase 2: quando a rota automática pronta chamou o motoboy, e quem. */
+  chamadaEm?: string | null;
+  chamadaMotoboyId?: string | null;
 }
 
 /**
@@ -294,11 +301,32 @@ const rotaDaTela = (r: any): RouteItem => ({
     customerPhone: o.customerPhone,
     address: o.customerAddress,
     status: o.status,
+    // O pronto do KDS, para o "2/3 prontos" da rota automática (pedidoJaEstaPronto).
+    kdsStage: o.kdsStage,
     totalAmount: o.totalAmount,
   })),
   createdAt: new Date(r.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
   status: r.status === "DISPATCHED" ? "🚀 Despachada" : "⏳ Aguardando Despacho",
+  origem: r.origem ?? null,
+  chamadaEm: r.chamadaEm ?? null,
+  chamadaMotoboyId: r.chamadaMotoboyId ?? null,
 });
+
+/**
+ * A linha de estado do card da rota automática. Fase 1: a rota nasce, cresce
+ * e espera a cozinha — "aguardando cozinha · 2/3 prontos". A Fase 2 (chamar o
+ * motoboy) acrescenta aqui "chamada · Maicon (há 2 min)" / "chamada · todos os
+ * entregadores" pelo `chamadaEm`/`chamadaMotoboyId`; a despachada já tem o selo
+ * "🚀 Despachada" do card.
+ */
+const estadoDaRotaAutomatica = (route: RouteItem): string | null => {
+  if (route.origem !== "AUTO" || rotaJaDespachada(route)) return null;
+  // O que já saiu (puxado sozinho pelo QR) também não espera mais a cozinha.
+  const prontos = route.orders.filter((o) => pedidoJaEstaPronto(o) || o.status === "SAIU_ENTREGA" || o.status === "ENTREGUE").length;
+  // Tudo pronto e ainda sem chamada: até a Fase 2, quem despacha é a loja (o select do card).
+  if (route.orders.length > 0 && prontos === route.orders.length) return "pronta · escolha o motoboy para despachar";
+  return `aguardando cozinha · ${prontos}/${route.orders.length} pronto${route.orders.length > 1 ? "s" : ""}`;
+};
 
 interface RoteirizacaoModalProps {
   isOpen: boolean;
@@ -674,9 +702,25 @@ export default function RoteirizacaoModal({
       setRotaAuto(null);
     }
   }, []);
+  // Também ao abrir a Roteirização (uma vez, não a cada consulta): ligada, a
+  // lista de pendentes marca o pedido que a rota automática deixa de fora
+  // por falta de localização.
   useEffect(() => {
-    if (showConfigModal) carregarRotaAuto();
-  }, [showConfigModal, carregarRotaAuto]);
+    if (showConfigModal || isOpen) carregarRotaAuto();
+  }, [showConfigModal, isOpen, carregarRotaAuto]);
+  const rotaAutoLigada = !!rotaAuto?.config.ativo;
+  /**
+   * Ligada, o pedido sem ponto confiável (o centro do bairro não serve) fica
+   * fora da rota automática — D3. A regra é a do servidor
+   * (lib/roteirizacao-automatica/ponto.ts), medida aqui com a área da tela:
+   * sem perguntar ao servidor a cada consulta. Entrega do parceiro e pedido
+   * já com motoboy nem entram na rota automática: não ganham o aviso.
+   */
+  const semPontoParaRotaAuto = (order: any): boolean =>
+    rotaAutoLigada &&
+    !order?.motoboyId &&
+    !infoDaEntrega(order).parceira &&
+    !pontoParaRotaAutomatica(order?.customerLatLng, canalDoPedido(order).ehMarketplace, areaDaTela);
   const salvarRotaAuto = async (config: RotaAutomaticaConfig) => {
     const ligando = config.ativo && !rotaAuto?.config.ativo;
     const desligando = !config.ativo && !!rotaAuto?.config.ativo;
@@ -2880,6 +2924,20 @@ ${mapsUrl}`;
                                           {local?.aproximado ? "≈ centro do bairro · corrigir" : "📍 Corrigir local"}
                                         </button>
                                       )}
+
+                                      {/* Rota automática ligada: este a loja monta à mão (D3).
+                                          Posicionar no mapa grava o ponto e ele entra no ciclo seguinte. */}
+                                      {semPontoParaRotaAuto(order) && (
+                                        <span
+                                          title="A Rota 100% automatizada só junta pedido com localização confiável no mapa. Posicione o pedido ou monte esta rota à mão."
+                                          style={{
+                                            background: "#F5F3FF", color: "#5B21B6", border: "1px solid #DDD6FE",
+                                            padding: "2px 7px", borderRadius: "5px", fontWeight: 800, fontSize: "0.72rem",
+                                          }}
+                                        >
+                                          📍 sem localização — rota manual
+                                        </span>
+                                      )}
                                     </div>
 
                                     <p style={{ fontWeight: 700, fontSize: "0.82rem", color: "#1E293B", margin: 0, lineHeight: 1.35, wordBreak: "break-word" }}>
@@ -3028,6 +3086,18 @@ ${mapsUrl}`;
                             <span style={{ fontWeight: 900, fontSize: "1rem", color: "#0F172A" }}>
                               {route.routeNumber}
                             </span>
+                            {/* Criada pelo servidor (Rota 100% automatizada), não pela loja. */}
+                            {route.origem === "AUTO" && (
+                              <span
+                                title="Rota criada pela Rota 100% automatizada. Dá para desfazer ou despachar à mão como qualquer rota."
+                                style={{
+                                  padding: "2px 7px", borderRadius: "6px", background: "#F5F3FF", color: "#5B21B6",
+                                  border: "1px solid #DDD6FE", fontSize: "0.7rem", fontWeight: 900, whiteSpace: "nowrap",
+                                }}
+                              >
+                                🤖 Automática
+                              </span>
+                            )}
                             {/* Ver a rota é escolha de quem olha, não o padrão da tela. */}
                             <button
                               type="button"
@@ -3059,6 +3129,9 @@ ${mapsUrl}`;
 
                         <div style={{ fontSize: "0.8rem", color: "#475569", marginBottom: "0.75rem" }}>
                           <p style={{ margin: "0 0 4px 0", fontWeight: 700 }}>📦 {route.orders.length} {route.orders.length > 1 ? "Pedidos" : "Pedido"}: {route.orders.map(o => getOrderDisplayNumber(o)).join(", ")}</p>
+                          {estadoDaRotaAutomatica(route) && (
+                            <p style={{ margin: "0 0 4px 0", fontWeight: 800, color: "#5B21B6" }}>🤖 {estadoDaRotaAutomatica(route)}</p>
+                          )}
                           <p style={{ margin: "0 0 8px 0" }}>🛵 Entregador: <b>{route.motoboyName || "ainda não escolhido"}</b></p>
 
                           {/* ── TROCAR O ENTREGADOR DE UMA ROTA JÁ DESPACHADA ──
