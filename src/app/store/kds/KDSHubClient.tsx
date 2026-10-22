@@ -324,7 +324,12 @@ export default function KDSHubClient() {
             // pedido sair DESTA tela e continuar nas outras ate a ultima
             // terminar (lib/kds-telas.ts). Link salvo antes disto segue
             // funcionando, com a baixa valendo para o pedido inteiro.
-            const telaUrl = "/store/kds/tela?stage=" + screen.stage + "&filter=" + screen.filter + "&name=" + encodeURIComponent(screen.name) + catParam + "&tela=" + encodeURIComponent(screen.id);
+            // Com o id da tela, o filtro de categoria vem do painel (a tela lê
+            // User.kdsScreens) e sai do link. A TV da Hakim não abria só a tela
+            // com 8 categorias no link; as sem filtro abriam (22/10/2026).
+            // O nome continua: é o título da tela e a chave do "desfazer".
+            const telaUrl = "/store/kds/tela?stage=" + screen.stage + "&filter=" + screen.filter + "&name=" + encodeURIComponent(screen.name)
+              + (screen.id ? "&tela=" + encodeURIComponent(screen.id) : catParam);
             return (
               <div key={screen.id} style={{
                 background: "#1C1917", borderRadius: "14px", padding: "1.5rem",
