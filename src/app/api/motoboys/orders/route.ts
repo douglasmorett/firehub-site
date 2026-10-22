@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
@@ -12,6 +12,8 @@ import { limitesDoAlerta } from "@/lib/relatorios/tempos";
 import { ehPedido99Food } from "@/lib/food99-status";
 import { codigoJaConferido, jaSaiuNoParceiro } from "@/lib/codigo-de-entrega";
 import { podeMarcarEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-cancelado";
+import { despacharRota, ofereceARota, outrosDaRota, podePuxarARota } from "@/lib/despacho-da-rota";
+import { lerRoteirizacaoAutomatica, type QuemPuxa } from "@/lib/roteirizacao-automatica/config";
 
 export async function GET(req: NextRequest) {
   try {
@@ -311,7 +313,9 @@ export async function POST(req: NextRequest) {
     const rl = checkRateLimit(`motoboy-puxar:${mb.id}`, { windowMs: 60_000, maxRequests: 20 });
     if (!rl.allowed) return NextResponse.json({ error: "Aguarde um instante." }, { status: 429 });
 
-    const { codigo } = await req.json().catch(() => ({} as any));
+    const { codigo, puxarRota } = await req.json().catch(() => ({} as any));
+    // "Sim, puxar todos": levar a rota automática inteira deste pedido (§4.8).
+    const querARota = puxarRota === true;
     const bruto = String(codigo || "").trim();
     // QR: AAAAMMDD-numero. Digitado: só o numero.
     const mQr = bruto.match(/^(\d{8})-(\d{1,6})$/);
@@ -363,6 +367,8 @@ export async function POST(req: NextRequest) {
           // Para avisar os parceiros que o pedido saiu (bloco depois do claim).
           franchiseeId: true, ifoodOrderId: true, openDeliveryOrderId: true,
           openDeliveryReference: true, food99AppShopId: true,
+          // A rota do pedido: a automática oferece levar o grupo (§4.8).
+          routeId: true,
         },
       });
       candidatos.push(...achados);
@@ -389,6 +395,33 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Há mais de um pedido com este número. Confirme com a loja." }, { status: 409 });
     }
 
+    // ── A ROTA 100% AUTOMATIZADA: DE QUEM É A ROTA CHAMADA ──────────────────
+    //
+    // 22/10/2026 (plano "despacho automático", D11/D12): o servidor monta a
+    // rota sem motoboy e, quando fica pronta, CHAMA um (o que chegou primeiro
+    // na loja) ou todos (ninguém na loja). Com "só o chamado" (o padrão), outro
+    // entregador que escanear um pedido dela é barrado ANTES do claim — nem um
+    // pedido só sai do grupo; trocar é com a loja, no card da rota. Chamada
+    // para todos, ou com "quem escanear primeiro", passa e ele vira o chamado.
+    // Rota montada à mão não entra aqui (v1): o puxar segue como sempre.
+    const rota = alvo.routeId ? await rotaAutomaticaAberta(alvo.routeId) : null;
+    let quemPuxa: QuemPuxa = "chamado";
+    let lojaId = mb.franchiseeId;
+    if (rota) {
+      const dono = await prisma.user.findUnique({ where: { id: mb.franchiseeId }, select: { ownerId: true, deliveryConfig: true } });
+      const loja = dono?.ownerId
+        ? await prisma.user.findUnique({ where: { id: dono.ownerId }, select: { deliveryConfig: true } })
+        : dono;
+      lojaId = dono?.ownerId || mb.franchiseeId;
+      quemPuxa = lerRoteirizacaoAutomatica(loja?.deliveryConfig).quemPuxa;
+      // O pedido que já é dele (duplo toque) não muda de dono: só barra quem
+      // vai levar algo — o pedido livre, ou o resto da rota.
+      if (rota.chamadaEm && (!alvo.motoboyId || querARota)) {
+        const recusa = await reservarARota(rota, quemPuxa, mb.id);
+        if (recusa) return recusa;
+      }
+    }
+
     // ── ESCRITA ATÔMICA: o Postgres decide a corrida de dois motoboys ───────
     // `motoboyId: null` no WHERE — o segundo scan espera o lock, reavalia
     // contra o commit do primeiro, casa zero linhas. Sem findFirst+update, que
@@ -412,7 +445,11 @@ export async function POST(req: NextRequest) {
       if (agora2?.motoboyId === mb.id) {
         // Duplo toque ou 4G repetindo o request: o pedido já é dele. Tela
         // vermelha aqui seria pior que o problema.
-        return NextResponse.json({ success: true, jaEraSeu: true, orderId: alvo.id, numero });
+        // É também o caminho do "Sim, puxar todos": o pedido do QR já é dele
+        // desde o primeiro POST, e agora leva o resto da rota.
+        if (rota && querARota) return puxarARota(rota, lojaId, mb, alvo.id, numero);
+        const daRota = rota ? await rotaNaResposta(rota, quemPuxa, mb, alvo.id) : undefined;
+        return NextResponse.json({ success: true, jaEraSeu: true, orderId: alvo.id, numero, ...(daRota ? { rota: daRota } : {}) });
       }
       if (agora2?.motoboyId) {
         const primeiroNome = String(agora2.motoboy?.name || "outro entregador").split(/\s+/)[0];
@@ -428,6 +465,10 @@ export async function POST(req: NextRequest) {
     }
 
     console.log(`[Motoboy Puxou] pedido ${alvo.id} #${numero} loja ${mb.franchiseeId} por ${mb.id}/${mb.name}`);
+
+    // "Sim, puxar todos" mandado já no primeiro POST: o pedido do QR sai junto
+    // com o resto, pelo despacho da rota (um caminho só de efeitos).
+    if (rota && querARota) return puxarARota(rota, lojaId, mb, alvo.id, numero);
 
     // ── PUXOU = SAIU PARA ENTREGA ───────────────────────────────────────────
     //
@@ -537,11 +578,182 @@ export async function POST(req: NextRequest) {
 
     // Resposta MÍNIMA de propósito: o app refaz o GET. Devolver o pedido aqui
     // transformaria o claim num endpoint de leitura paginada de clientes.
-    return NextResponse.json({ success: true, orderId: alvo.id, numero, saiuParaEntrega: saiuAgora });
+    // A rota automática vai junto só com os NÚMEROS dos outros pedidos dela —
+    // é o que a pergunta "puxar também?" mostra, antes de serem dele.
+    const daRota = rota ? await rotaNaResposta(rota, quemPuxa, mb, alvo.id) : undefined;
+    return NextResponse.json({ success: true, orderId: alvo.id, numero, saiuParaEntrega: saiuAgora, ...(daRota ? { rota: daRota } : {}) });
   } catch (err: any) {
     console.error("[Motoboy Puxar Error]", err);
     return NextResponse.json({ error: "Erro ao puxar o pedido" }, { status: 500 });
   }
+}
+
+// ── PUXAR A ROTA INTEIRA (Rota 100% automatizada, 22/10/2026) ──────────────
+//
+// O motoboy escaneia UM pedido de uma rota automática e o app pergunta "tem
+// mais 2 com ele, puxar também?" (plano "despacho automático", D12). As
+// regras puras (quem pode, quem é "outro da rota") moram em
+// lib/despacho-da-rota.ts, com teste em scripts/teste-puxar-a-rota.ts.
+
+type RotaAutomatica = {
+  id: string;
+  routeNumber: string;
+  status: string;
+  origem: string | null;
+  chamadaEm: Date | null;
+  chamadaMotoboyId: string | null;
+};
+type MotoboyDaSessao = { id: string; name: string; franchiseeId: string };
+
+/**
+ * A rota do pedido, se for AUTOMÁTICA e ainda aberta. `origem`, `chamadaEm` e
+ * `chamadaMotoboyId` estão no schema, mas o client gerado de alguns ambientes
+ * ainda não as conhece — daí o `as any`. Erro de leitura (coluna ainda não
+ * criada pelo garantir-colunas) = sem rota: o puxar de um pedido nunca para
+ * por causa disto.
+ */
+async function rotaAutomaticaAberta(routeId: string): Promise<RotaAutomatica | null> {
+  try {
+    const r = (await prisma.routeSchedule.findUnique({
+      where: { id: routeId },
+      select: { id: true, routeNumber: true, status: true, origem: true, chamadaEm: true, chamadaMotoboyId: true } as any,
+    })) as unknown as RotaAutomatica | null;
+    return r && ofereceARota(r) ? r : null;
+  } catch (e: any) {
+    console.warn("[Motoboy Puxou] rota automática ilegível:", e?.message);
+    return null;
+  }
+}
+
+/** O 409 de quem escaneou a rota chamada para OUTRO, com o primeiro nome dele. */
+async function recusaRotaDeOutro(chamadaMotoboyId: string) {
+  const outro = await prisma.motoboy.findUnique({ where: { id: chamadaMotoboyId }, select: { name: true } }).catch(() => null);
+  const nome = String(outro?.name || "").trim().split(/\s+/)[0];
+  return NextResponse.json(
+    { erro: "ROTA_DE_OUTRO", error: `Esta rota é ${nome ? `do ${nome}` : "de outro entregador"}. Peça para a loja trocar.` },
+    { status: 409 },
+  );
+}
+
+/**
+ * D11. Barra quem não pode levar a rota chamada; quem pode e ainda não era o
+ * chamado VIRA o chamado. Condicional como o claim: dois motoboys escaneando
+ * a rota chamada para todos no mesmo segundo — o Postgres decide e, com "só o
+ * chamado", o segundo recebe a recusa.
+ */
+async function reservarARota(rota: RotaAutomatica, quemPuxa: QuemPuxa, motoboyId: string): Promise<NextResponse | null> {
+  if (!podePuxarARota({ quemPuxa, chamadaEm: rota.chamadaEm, chamadaMotoboyId: rota.chamadaMotoboyId, motoboyId })) {
+    return recusaRotaDeOutro(rota.chamadaMotoboyId!);
+  }
+  if (rota.chamadaMotoboyId === motoboyId) return null;
+  const r = await prisma.routeSchedule.updateMany({
+    where: {
+      id: rota.id,
+      chamadaEm: { not: null },
+      ...(quemPuxa === "chamado" ? { OR: [{ chamadaMotoboyId: null }, { chamadaMotoboyId: motoboyId }] } : {}),
+    },
+    data: { chamadaMotoboyId: motoboyId },
+  } as any);
+  if (r.count === 0 && quemPuxa === "chamado") {
+    const agora = (await prisma.routeSchedule.findUnique({
+      where: { id: rota.id },
+      select: { chamadaMotoboyId: true } as any,
+    })) as unknown as { chamadaMotoboyId: string | null } | null;
+    if (agora?.chamadaMotoboyId && agora.chamadaMotoboyId !== motoboyId) return recusaRotaDeOutro(agora.chamadaMotoboyId);
+  }
+  rota.chamadaMotoboyId = motoboyId;
+  return null;
+}
+
+/** Os pedidos da rota, só com o que decide o puxar — nada do cliente. */
+function pedidosDaRotaParaPuxar(rotaId: string, franchiseeId: string) {
+  return prisma.customerOrder.findMany({
+    where: { routeId: rotaId, franchiseeId },
+    select: {
+      id: true, dailyOrderNumber: true, motoboyId: true, deliveryType: true, deliveryBy: true, status: true,
+      source: true, openDeliveryChannel: true, ifoodDriverName: true, ifoodDriverStatus: true, ifoodPickupCode: true,
+    },
+  });
+}
+
+/** Só os NÚMEROS, em ordem: é tudo o que a folha mostra antes de o pedido ser dele. */
+const numerosDe = (pedidos: { dailyOrderNumber: number | null }[]): { numero: number }[] =>
+  pedidos
+    .map((p) => p.dailyOrderNumber)
+    .filter((n): n is number => n != null)
+    .sort((a, b) => a - b)
+    .map((numero) => ({ numero }));
+
+/** O `rota` da resposta: só quando há outros para levar e ESTE motoboy pode levá-los. */
+async function rotaNaResposta(rota: RotaAutomatica, quemPuxa: QuemPuxa, mb: MotoboyDaSessao, alvoId: string) {
+  if (!podePuxarARota({ quemPuxa, chamadaEm: rota.chamadaEm, chamadaMotoboyId: rota.chamadaMotoboyId, motoboyId: mb.id })) return undefined;
+  try {
+    const outros = numerosDe(outrosDaRota(await pedidosDaRotaParaPuxar(rota.id, mb.franchiseeId), alvoId));
+    if (outros.length === 0) return undefined;
+    return { id: rota.id, routeNumber: rota.routeNumber, origem: "AUTO" as const, outros };
+  } catch (e: any) {
+    console.warn("[Motoboy Puxou] outros da rota:", e?.message);
+    return undefined;
+  }
+}
+
+/**
+ * "Sim, puxar todos". O claim atômico de TODOS os puxáveis da rota (o mesmo
+ * `motoboyId: null` no WHERE do pedido único: o que outro entregador pegou no
+ * meio fica com ele) e o despacho da rota pelo caminho do /dispatch — rota
+ * DISPATCHED, SAIU_ENTREGA, cliente avisado, iFood/99/Brendi/…, NFC-e e o
+ * WhatsApp das paradas, depois da resposta. Sem o push "N entregas para
+ * você": quem puxou foi ele.
+ */
+async function puxarARota(rota: RotaAutomatica, lojaId: string, mb: MotoboyDaSessao, alvoId: string, numero: number) {
+  const { STATUS_PUXAVEIS, STATUS_ANTES_DE_SAIR } = await import("@/lib/status-pedido");
+  const livres = outrosDaRota(await pedidosDaRotaParaPuxar(rota.id, mb.franchiseeId), alvoId);
+  if (livres.length > 0) {
+    await prisma.customerOrder.updateMany({
+      where: {
+        id: { in: livres.map((p) => p.id) },
+        routeId: rota.id,
+        franchiseeId: mb.franchiseeId,
+        motoboyId: null,
+        deliveryType: "DELIVERY",
+        status: { in: [...STATUS_PUXAVEIS] },
+      },
+      data: { motoboyId: mb.id, motoboyPuxadoEm: new Date() },
+    });
+  }
+
+  // Saem agora os da rota que são DELE e ainda não saíram: os que acabou de
+  // ganhar, o do QR quando veio direto com `puxarRota` (do primeiro POST ele
+  // já saiu sozinho) e um claim que ficou pela metade numa tentativa anterior
+  // — repetir o "Sim" conserta. A rota vira DISPATCHED mesmo sem nenhum: os
+  // pedidos dela já estão todos na rua com ele.
+  const aSair = await prisma.customerOrder.findMany({
+    where: { routeId: rota.id, franchiseeId: mb.franchiseeId, motoboyId: mb.id, status: { in: [...STATUS_ANTES_DE_SAIR] } },
+    select: { id: true },
+  });
+  const d = await despacharRota({
+    lojaId,
+    rotaId: rota.id,
+    motoboyId: mb.id,
+    pedidoIds: aSair.map((p) => p.id),
+    semPushAoMotoboy: true,
+    agendar: after,
+  });
+  if (!d.ok) console.warn(`[Motoboy Puxou a Rota] ${rota.id}: despacho recusado (${d.erro})`);
+
+  const depois = await pedidosDaRotaParaPuxar(rota.id, mb.franchiseeId);
+  const meus = depois.filter((p) => p.motoboyId === mb.id && p.id !== alvoId && !(STATUS_CANCELADOS as readonly string[]).includes(p.status));
+  const numeros = [numero, ...numerosDe(meus).map((n) => n.numero)];
+  console.log(`[Motoboy Puxou a Rota] ${rota.routeNumber} (${rota.id}) loja ${mb.franchiseeId} por ${mb.id}/${mb.name}: #${numeros.join(", #")}`);
+
+  return NextResponse.json({
+    success: true,
+    orderId: alvoId,
+    numero,
+    numeros,
+    saiuParaEntrega: true,
+    rota: { id: rota.id, routeNumber: rota.routeNumber, origem: "AUTO", outros: numerosDe(outrosDaRota(depois, alvoId)) },
+  });
 }
 
 /** Soltar um pedido puxado por engano — só o PRÓPRIO, e só por 10 minutos. */
