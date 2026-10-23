@@ -83,7 +83,11 @@ export async function processJotajaEvent(
   targetFranchiseeId?: string,
   opcoes: { pedidoAntigoEntra?: boolean } = {},
 ): Promise<ProcessResult> {
-  const { code, orderId } = event || {} as JotajaEvent;
+  const { code } = event || {} as JotajaEvent;
+  // Só texto: o webhook não confere assinatura sem segredo, e um objeto aqui
+  // viraria filtro do Prisma (openDeliveryOrderId: { ... }) no cancelamento.
+  const orderIdBruto: unknown = event?.orderId;
+  const orderId = typeof orderIdBruto === "string" || typeof orderIdBruto === "number" ? String(orderIdBruto) : "";
   if (!orderId) return { action: "skipped", orderId: "", message: "sem orderId" };
   if (!targetFranchiseeId) {
     return { action: "error", orderId, message: "evento sem loja — pedido do JotaJá só entra na loja dona da credencial" };

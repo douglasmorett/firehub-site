@@ -26,7 +26,10 @@ export const dynamic = "force-dynamic";
 const semCache = { "Cache-Control": "no-store" };
 
 const celula = (v: unknown) => {
-  const s = String(v ?? "");
+  let s = String(v ?? "");
+  // O nome vem do cliente: "=HYPERLINK(...)" viraria fórmula no Excel. Começo de
+  // fórmula ganha apóstrofo — menos número/telefone puro ("-5,00", "+55 22 ...").
+  if (/^[=+\-@\t\r]/.test(s) && !/^[\d\s()+\-.,]*$/.test(s)) s = `'${s}`;
   return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 const reais = (n: number) => n.toFixed(2).replace(".", ",");

@@ -50,13 +50,16 @@ export type OverdueInfo = {
 };
 
 export async function checkAsaasOverdue(cpfCnpj: string | null): Promise<OverdueInfo> {
-  if (!cpfCnpj) return { blocked: false, payments: [] };
+  // Só os dígitos, e codificado: o documento é editável pela loja e entrava cru
+  // na query da chave mestre do Asaas ("&offset=7" trazia cobrança de outro cliente).
+  const doc = (cpfCnpj || "").replace(/\D/g, "");
+  if (!doc) return { blocked: false, payments: [] };
   
   const asaasKey = getAsaasKey();
   if (!asaasKey) return { blocked: false, payments: [] };
 
   try {
-    const customerRes = await fetch(`https://api.asaas.com/v3/customers?cpfCnpj=${cpfCnpj}`, {
+    const customerRes = await fetch(`https://api.asaas.com/v3/customers?cpfCnpj=${encodeURIComponent(doc)}`, {
       headers: ASAAS_HEADERS(asaasKey)
     });
     const customerData = await customerRes.json();
@@ -107,13 +110,15 @@ export type PendingBoletosInfo = {
 };
 
 export async function checkAsaasPendingBoletos(cpfCnpj: string | null): Promise<PendingBoletosInfo> {
-  if (!cpfCnpj) return { blocked: false, pendingCount: 0, payments: [] };
+  // Mesmo cuidado do checkAsaasOverdue: só dígitos e codificado na query.
+  const doc = (cpfCnpj || "").replace(/\D/g, "");
+  if (!doc) return { blocked: false, pendingCount: 0, payments: [] };
 
   const asaasKey = getAsaasKey();
   if (!asaasKey) return { blocked: false, pendingCount: 0, payments: [] };
 
   try {
-    const customerRes = await fetch(`https://api.asaas.com/v3/customers?cpfCnpj=${cpfCnpj}`, {
+    const customerRes = await fetch(`https://api.asaas.com/v3/customers?cpfCnpj=${encodeURIComponent(doc)}`, {
       headers: ASAAS_HEADERS(asaasKey)
     });
     const customerData = await customerRes.json();

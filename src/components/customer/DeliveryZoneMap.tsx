@@ -975,6 +975,9 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
     const { map, L } = ref;
     riscoRef.current.forEach((c) => map.removeLayer(c));
     riscoRef.current = [];
+    // O tooltip do Leaflet entra como HTML e o nome da área é texto livre: escapa (XSS).
+    const esc = (t: unknown) =>
+      String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 
     // As áreas de ENTREGA: contorno cheio e colorido, uma cor por área, para a
     // loja conferir de bater o olho o que desenhou e quanto cobra em cada uma.
@@ -985,7 +988,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         color: cor, weight: 2, fillColor: cor, fillOpacity: 0.15,
       }).addTo(map);
       contorno.bindTooltip(
-        `${area.nome} — ${formatarReais(area.fee ?? 0)} · ${area.time ?? "?"} min`,
+        `${esc(area.nome)} — ${formatarReais(area.fee ?? 0)} · ${area.time ?? "?"} min`,
         { sticky: true },
       );
       riscoRef.current.push(contorno);
@@ -1003,7 +1006,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         fillOpacity: vale ? 0.08 : 0.04,
       }).addTo(map);
       contorno.bindTooltip(
-        `✅ ${limite.nome}${limite.ativa === false ? " (desligado)" : porDesenho ? " (não vale em 'Desenhar no mapa')" : " — a loja entrega só aqui dentro"}`,
+        `✅ ${esc(limite.nome)}${limite.ativa === false ? " (desligado)" : porDesenho ? " (não vale em 'Desenhar no mapa')" : " — a loja entrega só aqui dentro"}`,
         { sticky: true },
       );
       riscoRef.current.push(contorno);
@@ -1017,7 +1020,7 @@ export default function DeliveryZoneMap({ initialAddress, initialLatLng, initial
         fillColor: area.ativa === false ? "#94A3B8" : "#C92E09",
         fillOpacity: area.ativa === false ? 0.08 : 0.2,
       }).addTo(map);
-      poligono.bindTooltip(`🚫 ${area.nome}${area.ativa === false ? " (desligada)" : ""}`, { sticky: true });
+      poligono.bindTooltip(`🚫 ${esc(area.nome)}${area.ativa === false ? " (desligada)" : ""}`, { sticky: true });
       riscoRef.current.push(poligono);
     }
 
