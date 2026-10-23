@@ -20,7 +20,8 @@ const texto = (b64: string) => Buffer.from(b64, "base64").toString("binary");
 // 1. O gerado está em dia com o Assistente.
 confere(
   "comanda-escpos.gerado.ts igual ao recorte do server.js (rode node scripts/gerar-comanda-do-celular.mjs)",
-  fs.readFileSync(DESTINO, "utf8") === gerar(),
+  // Sem o \r: no Windows o git devolve os dois arquivos em CRLF.
+  fs.readFileSync(DESTINO, "utf8").replace(/\r/g, "") === gerar().replace(/\r/g, ""),
 );
 
 const pedido = {
