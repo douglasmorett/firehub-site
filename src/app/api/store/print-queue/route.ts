@@ -33,7 +33,7 @@ import { marcarAssistente } from "@/lib/sinais-da-loja";
 import { bebidaDecididaPeloServidor } from "@/lib/bebida-para-o-assistente";
 import { qtdPedidosDosClientes } from "@/lib/qtd-pedidos-do-cliente";
 import { esquecer, lembrarPor } from "@/lib/cache-curto";
-import { filaTemAlgo } from "@/lib/fila-tem-algo";
+import { filaTemAlgoGuardado } from "@/lib/fila-tem-algo";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -501,7 +501,7 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // "não" aqui garante que elas viriam vazias. Qualquer "sim" — ou erro —
     // segue pelo caminho de sempre. Pedido novo nunca fica de fora
     // (scripts/teste-fila-tem-algo.ts).
-    const temAlgo = await filaTemAlgo(prisma, {
+    const temAlgo = await filaTemAlgoGuardado(prisma, {
       franchiseeId,
       desde: inicioDoAtraso && inicioDoAtraso < sinceDate ? inicioDoAtraso : sinceDate,
       desdeDaAvulsa: sinceDate,

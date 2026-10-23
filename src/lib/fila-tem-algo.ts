@@ -19,6 +19,7 @@
  * parâmetro não pode depender do fuso da sessão do banco.
  */
 import { Prisma } from "@prisma/client";
+import { nadaMudouDesde, PRAZO_MS } from "@/lib/novidade-da-loja";
 
 export type NovidadeDaFila = { pedidos: boolean; avulsas: boolean };
 
@@ -73,4 +74,44 @@ export async function filaTemAlgo(
     console.error("[PrintQueue] pré-consulta da fila falhou; seguindo pelo caminho de sempre:", (err as any)?.code || (err as any)?.message || err);
     return null;
   }
+}
+
+// ── "NADA" SEM IR AO BANCO (lib/novidade-da-loja.ts) ──────────────────────
+//
+// Mesmo a pré-consulta acima, a cada 3 s por Assistente, era a chamada mais
+// frequente do servidor (232 de 607 por minuto no almoço de 23/10/2026). A
+// fila vazia fica guardada até a loja ter qualquer gravação de pedido, item ou
+// impressão — ou por 15 s, o que vier antes. Só o "nada" é guardado: "sim"
+// sempre vai ao banco.
+//
+// A janela anda para a frente a cada consulta. O "nada" de uma janela vale
+// para outra que começa no mesmo ponto ou DEPOIS (contém menos); a que começa
+// antes (o Assistente voltando de um atraso) vai ao banco.
+const NADA: NovidadeDaFila = { pedidos: false, avulsas: false };
+const nadaGuardado = new Map<string, { lidaEm: number; desde: number; desdeDaAvulsa: number }>();
+
+export async function filaTemAlgoGuardado(
+  db: { $queryRaw: <T = unknown>(sql: Prisma.Sql) => Promise<T> },
+  p: PerguntaDaFila,
+): Promise<NovidadeDaFila | null> {
+  const chave = `${p.franchiseeId}|${p.tambemPeloFimDoKds ? 1 : 0}|${p.statusQueNaoEntram.join(",")}`;
+  const g = nadaGuardado.get(chave);
+  if (
+    g &&
+    Date.now() - g.lidaEm < PRAZO_MS &&
+    p.desde.getTime() >= g.desde &&
+    p.desdeDaAvulsa.getTime() >= g.desdeDaAvulsa &&
+    nadaMudouDesde([p.franchiseeId], g.lidaEm)
+  ) {
+    return { ...NADA };
+  }
+  const lidaEm = Date.now();
+  const r = await filaTemAlgo(db, p);
+  if (r && !r.pedidos && !r.avulsas) {
+    if (nadaGuardado.size > 5_000) nadaGuardado.clear();
+    nadaGuardado.set(chave, { lidaEm, desde: p.desde.getTime(), desdeDaAvulsa: p.desdeDaAvulsa.getTime() });
+  } else {
+    nadaGuardado.delete(chave);
+  }
+  return r;
 }

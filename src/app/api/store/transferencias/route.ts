@@ -25,6 +25,8 @@ import {
   transferenciasDaVisao,
   transferenciaPendenteDoPedido,
 } from "@/lib/transferencia-no-banco";
+import { lembrarPor } from "@/lib/cache-curto";
+import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +34,9 @@ async function sessao() {
   const session = await getServerSession(authOptions).catch(() => null);
   const email = session?.user?.email || "";
   if (!email) return null;
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, role: true, name: true } });
+  // 15 s em memória: o GET roda a cada 8 s por aba (lib/cache-curto.ts).
+  const user = await lembrarPor(`transferencias:usuario:${email}`, 15_000, () =>
+    prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, role: true, name: true } }));
   if (!user) return null;
   const lojaId = user.ownerId || user.id;
   const cookieStore = await cookies();
@@ -69,7 +73,8 @@ export async function GET(req: Request) {
         pendente: pedido ? await transferenciaPendenteDoPedido(pedidoId) : null,
       });
     }
-    return NextResponse.json(await transferenciasDaVisao(s.lojaIds));
+    // A lista só muda com gravação de pedido ou transferência (lib/novidade-da-loja.ts).
+    return NextResponse.json(await lerEnquantoNadaMuda(`transferencias:${s.lojaIds.join(",")}`, s.lojaIds, () => transferenciasDaVisao(s.lojaIds)));
   } catch (e: any) {
     // Sem a tabela ou com o banco fora: nada a mostrar, sem 500 em loop no console.
     console.error("[Transferência] Não consegui listar:", e?.message);

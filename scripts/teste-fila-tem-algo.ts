@@ -107,7 +107,10 @@ async function semBanco() {
     const res = await GET(new NextRequest(`https://firehubfood.com.br/api/store/print-queue?franchiseeId=${LOJA}&v=1.2.34&pendentes=0&abertoHaSeg=7200`, { headers: { "x-forwarded-for": "10.7.7.7" } }));
     return (await res.json()) as { jobs: any[] };
   };
-  const zerar = () => { chamadas.preConsulta = 0; chamadas.pedidos = 0; chamadas.avulsas = 0; esquecerTudo(); };
+  // O banco falso não passa pelo lib/prisma.ts: cada troca de cenário avisa a
+  // novidade como a gravação de verdade avisaria (lib/novidade-da-loja.ts).
+  const { marcarNovidade } = await import("../src/lib/novidade-da-loja");
+  const zerar = () => { chamadas.preConsulta = 0; chamadas.pedidos = 0; chamadas.avulsas = 0; esquecerTudo(); marcarNovidade(LOJA); };
 
   console.log("\n[2] Fila vazia: uma pré-consulta e nada mais");
   pedidos = [pedido("ja_impresso", { printedAt: new Date() }), pedido("rascunho", { status: "CRIANDO_IA" }), pedido("acrescimo", { parentOrderId: "x" })];

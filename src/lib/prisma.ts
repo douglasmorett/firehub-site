@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { carimboDeStatus } from './order-stages'
+import { lojaDaGravacao, marcarNovidade, operacaoGrava, sqlGravaNaFila } from './novidade-da-loja'
 
 /**
  * Injeta os marcos de tempo (acceptedAt, readyAt, dispatchedAt, deliveredAt)
@@ -188,7 +189,43 @@ function criarClient() {
         },
       },
     },
+  }).$extends({
+    // ── A NOVIDADE DA LOJA, EM TODO CAMINHO (lib/novidade-da-loja.ts) ──────
+    //
+    // A fila do Assistente e o painel respondem "nada novo" pela memória
+    // enquanto nada da loja foi gravado. Então TODA gravação de pedido, item e
+    // impressão avulsa avisa aqui — depois de gravar, e só se gravou. SQL
+    // direto nessas tabelas (e nas de acréscimo e transferência, que só
+    // existem por SQL) avisa "pode ser qualquer loja".
+    query: {
+      customerOrder: { $allOperations: comNovidade },
+      customerOrderItem: { $allOperations: comNovidade },
+      printRequest: { $allOperations: comNovidade },
+      $queryRaw: comNovidadeDoSql,
+      $executeRaw: comNovidadeDoSql,
+      $queryRawUnsafe: comNovidadeDoSql,
+      $executeRawUnsafe: comNovidadeDoSql,
+    },
   })
+}
+
+async function comNovidade({ operation, args, query }: { operation: string; args: any; query: (args: any) => Promise<any> }) {
+  const resultado = await query(args)
+  if (operacaoGrava(operation)) {
+    marcarNovidade(lojaDaGravacao(args, resultado))
+    // Pedido que muda de loja (transferência): a de antes também precisa saber.
+    const mudaALoja = operation.startsWith('update')
+      ? args?.data?.franchiseeId !== undefined
+      : operation === 'upsert' && args?.update?.franchiseeId !== undefined
+    if (mudaALoja) marcarNovidade(null)
+  }
+  return resultado
+}
+
+async function comNovidadeDoSql({ args, query }: { args: any; query: (args: any) => Promise<any> }) {
+  const resultado = await query(args)
+  if (sqlGravaNaFila(args)) marcarNovidade(null)
+  return resultado
 }
 
 type ClientEstendido = ReturnType<typeof criarClient>

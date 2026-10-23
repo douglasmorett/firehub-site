@@ -47,16 +47,33 @@ async function pcVivo(lojaId: string): Promise<boolean> {
   return !!visto && computadorRecebeTelas(visto.vistoEm, visto);
 }
 
+// ── "O BANCO RESPONDE?" UMA VEZ A CADA 3 s PARA TODO MUNDO ────────────────
+//
+// Toda aba do /store pergunta a cada 5 s, e cada pergunta fazia o próprio
+// SELECT 1 — no almoço de 23/10/2026 era a 3ª rota mais chamada. A resposta
+// (boa ou ruim) vale 3 s para todas as abas e lojas; quem chega durante a
+// consulta espera a mesma.
+const VALIDADE_DO_SINAL_MS = 3_000;
+let sinal: { em: number; resposta: Promise<void> } | null = null;
+
+function bancoResponde(): Promise<void> {
+  if (sinal && Date.now() - sinal.em < VALIDADE_DO_SINAL_MS) return sinal.resposta;
+  const resposta = Promise.race([
+    prisma.$queryRaw`SELECT 1`.then(() => undefined),
+    new Promise<void>((_, falha) => setTimeout(() => falha(new Error("banco demorou")), 4000)),
+  ]);
+  resposta.catch(() => { /* quem chamou trata; aqui só não deixa a rejeição solta */ });
+  sinal = { em: Date.now(), resposta };
+  return resposta;
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
 export async function GET(req: NextRequest) {
   try {
-    await Promise.race([
-      prisma.$queryRaw`SELECT 1`,
-      new Promise((_, falha) => setTimeout(() => falha(new Error("banco demorou")), 4000)),
-    ]);
+    await bancoResponde();
     const loja = req.nextUrl.searchParams.get("loja");
     const pc = loja ? await pcVivo(loja) : undefined;
     return NextResponse.json({ ok: true, em: new Date().toISOString(), pc }, { headers: CORS });

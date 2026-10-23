@@ -14,6 +14,8 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { FUSO_PADRAO } from "@/lib/fuso";
 import { avisosDoDia, marcarCiente, marcarCienteParcial } from "@/lib/avisos-do-dia";
+import { lembrarPor } from "@/lib/cache-curto";
+import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,9 @@ async function lojasDaSessao() {
   const session = await getServerSession(authOptions).catch(() => null);
   const email = session?.user?.email || "";
   if (!email) return null;
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, name: true } });
+  // 15 s em memória: esta rota roda a cada 8 s por aba (lib/cache-curto.ts).
+  const user = await lembrarPor(`avisos:usuario:${email}`, 15_000, () =>
+    prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, name: true } }));
   if (!user) return null;
   const lojaId = user.ownerId || user.id;
   const ids = [...new Set([lojaId, user.id, user.ownerId].filter(Boolean))] as string[];
@@ -32,9 +36,12 @@ async function lojasDaSessao() {
 export async function GET() {
   const s = await lojasDaSessao();
   if (!s) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
-  const loja = await prisma.user.findUnique({ where: { id: s.lojaId }, select: { storeTimezone: true } });
+  const loja = await lembrarPor(`avisos:fuso:${s.lojaId}`, 60_000, () =>
+    prisma.user.findUnique({ where: { id: s.lojaId }, select: { storeTimezone: true } }));
+  const fuso = loja?.storeTimezone || FUSO_PADRAO;
   try {
-    return NextResponse.json(await avisosDoDia(s.ids, loja?.storeTimezone || FUSO_PADRAO));
+    // A lista só muda com gravação de pedido destas lojas (lib/novidade-da-loja.ts).
+    return NextResponse.json(await lerEnquantoNadaMuda(`avisos:${s.ids.join(",")}|${fuso}`, s.ids, () => avisosDoDia(s.ids, fuso)));
   } catch (e: any) {
     // Coluna ainda não criada (boot que falhou) ou banco fora: sem aviso, mas
     // sem 500 em loop no console da loja a cada poucos segundos.

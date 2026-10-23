@@ -16,6 +16,7 @@ import { LIMITE as LIMITE_DO_FEED } from "@/lib/feed-de-pedidos";
 import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
 import { lembrarPor } from "@/lib/cache-curto";
 import { liberadaPara } from "@/lib/roteirizacao-automatica/liberacao";
+import { nadaMudouDesde, PRAZO_MS } from "@/lib/novidade-da-loja";
 
 /**
  * Configuração relida a cada rodada deste feed (o usuário do e-mail, se a loja
@@ -27,6 +28,8 @@ const VALIDADE_DA_CONFIG_MS = 15_000;
 /** A faxina dos rascunhos do robô (20/30 min parados) roda no máximo 1×/min por loja, não a cada rodada. */
 const FAXINA_DOS_RASCUNHOS_MS = 60_000;
 const ultimaFaxinaDosRascunhos = new Map<string, number>();
+/** Quando o feed destas lojas foi de verdade ao banco (o atalho da novidade vale 15 s). */
+const ultimaConferenciaDoFeed = new Map<string, number>();
 
 /** Teto de pedidos por rodada do feed (ver o findMany abaixo); o navegador corta no MESMO número (lib/feed-de-pedidos.ts). */
 const TETO_DO_FEED = LIMITE_DO_FEED;
@@ -1043,6 +1046,25 @@ export async function GET(req: NextRequest) {
       // cabeçalho para a resposta completa continuar sendo a lista pura.
       "X-Feed-Agora": agora.toISOString(),
     };
+
+    // ── NADA MUDOU, NEM PERGUNTA AO BANCO (lib/novidade-da-loja.ts) ─────────
+    //
+    // Pedido nenhum destas lojas foi gravado depois de `desde`: a consulta
+    // abaixo viria vazia. Pelo menos uma vez a cada 15 s ela roda de verdade
+    // mesmo assim — é o que pega a gravação que não passou por este processo
+    // (script, outra instância), ainda dentro da folga de 30 s do `desde`.
+    const chaveDaConferencia = validFranchiseeIds.join(",");
+    if (
+      desde &&
+      Date.now() - (ultimaConferenciaDoFeed.get(chaveDaConferencia) || 0) < PRAZO_MS &&
+      nadaMudouDesde(validFranchiseeIds, desde.getTime())
+    ) {
+      return NextResponse.json({ pedidos: [], removidos: [], agora: agora.toISOString() }, { headers });
+    }
+    if (desde) {
+      if (ultimaConferenciaDoFeed.size > 5_000) ultimaConferenciaDoFeed.clear();
+      ultimaConferenciaDoFeed.set(chaveDaConferencia, agora.getTime());
+    }
 
     // O que mudou na loja desde `desde` (lib/filtro-do-feed.ts). Mudança em
     // massa volta como lista completa, por segurança.
