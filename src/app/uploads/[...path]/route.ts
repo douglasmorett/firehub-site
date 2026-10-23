@@ -22,7 +22,7 @@ import { readFile, stat } from "fs/promises";
 import { Readable } from "stream";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
-import { LEGACY_PUBLIC_ROOT, UPLOADS_ROOT } from "@/lib/storage";
+import { LEGACY_PUBLIC_ROOT, trazerDoBucket, UPLOADS_ROOT } from "@/lib/storage";
 import { pedacoPedido } from "@/lib/pedaco-do-arquivo";
 
 export const runtime = "nodejs";
@@ -129,10 +129,22 @@ export async function GET(
   // Raiz nova (volume persistente) primeiro; public/uploads fica como legado,
   // para as imagens que foram enviadas antes desta mudança continuarem no ar.
   const extras = partes[0] === "tutoriais" ? DE_QUALQUER_SITE : {};
+  let caminho: string | null = null;
   for (const raiz of [UPLOADS_ROOT, LEGACY_PUBLIC_ROOT]) {
-    const caminho = resolverDentroDe(raiz, partes);
-    if (!caminho || !(await arquivoLegivel(caminho))) continue;
+    const alvo = resolverDentroDe(raiz, partes);
+    if (alvo && (await arquivoLegivel(alvo))) {
+      caminho = alvo;
+      break;
+    }
+  }
 
+  // Não está no disco desta instância: com duas atrás do balanceador, o
+  // arquivo pode ter sido enviado para a outra. Vem do bucket para o disco
+  // daqui (lib/storage.ts, trazerDoBucket) e sai como qualquer outro — com
+  // Range no vídeo. Sem o bucket configurado, é o 404 de sempre.
+  if (!caminho) caminho = await trazerDoBucket(partes.join("/"));
+
+  if (caminho) {
     if (tipo.startsWith("video/")) return servirVideo(req, caminho, (await stat(caminho)).size, tipo, extras);
 
     const conteudo = await readFile(caminho);

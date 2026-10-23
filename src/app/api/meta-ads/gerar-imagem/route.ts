@@ -20,7 +20,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { UPLOADS_ROOT } from "@/lib/storage";
+import { espelharNoBucket, UPLOADS_ROOT } from "@/lib/storage";
 import { prepararImagemDeAnuncio } from "@/lib/imagem-anuncio";
 import {
   gerarImagemDeAnuncio,
@@ -67,6 +67,8 @@ async function gravarCriativoDaIA(dataUri: string, lojaId: string): Promise<stri
 
   await mkdir(destino, { recursive: true });
   await writeFile(path.join(destino, nome), bytes);
+  // A cópia no bucket, para o criativo abrir na outra instância (lib/storage.ts).
+  await espelharNoBucket(`marketing/${loja}/${nome}`, bytes);
 
   return `/uploads/marketing/${loja}/${nome}`;
 }

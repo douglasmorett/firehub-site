@@ -27,7 +27,9 @@
  *
  * A segunda cópia, fora do servidor, é o pacote mensal do contador
  * (lib/contador-pacote.ts), que já vai por e-mail. O backup do volume no
- * Coolify deve estar ligado — é a primeira cópia.
+ * Coolify deve estar ligado — é a primeira cópia. Com o bucket R2 configurado
+ * (lib/arquivos-no-bucket.ts), cada arquivo também vai, cifrado, para
+ * "fiscal/" no bucket privado: é dali que a outra instância lê.
  *
  * Só servidor.
  */
@@ -35,6 +37,7 @@ import { mkdir, readFile, rename, writeFile } from "fs/promises";
 import path from "path";
 import { createHash, randomBytes } from "crypto";
 import { UPLOADS_ROOT } from "@/lib/storage";
+import { baixarDoBucket, subirAoBucket } from "@/lib/arquivos-no-bucket";
 import { cifrarBytes, decifrarBytes, nomeOpaco } from "@/lib/fiscal-credenciais";
 
 /** Onde fica o cofre. FH_FISCAL_DIR existe para testes e para o dia em que o volume mudar. */
@@ -57,6 +60,37 @@ export type ArquivoGuardado = {
 };
 
 const LOJA_OK = /^[a-zA-Z0-9_-]{1,64}$/;
+
+/**
+ * Onde o cofre fica no bucket (lib/arquivos-no-bucket.ts): "fiscal/", fora do
+ * "uploads/" que a rota /uploads consulta — nenhuma URL pública chega aqui. O
+ * bucket inteiro é privado; só o servidor, com a chave, lê.
+ */
+export const chaveNoBucket = (relativo: string) => `fiscal/${relativo.split(path.sep).join("/")}`;
+
+/**
+ * O arquivo cifrado: do disco; se não estiver aqui (gravado pela outra
+ * instância), do bucket — e fica no disco para a próxima leitura.
+ */
+async function lerCifrado(relativo: string): Promise<Buffer> {
+  const destino = dentroDoCofre(relativo);
+  try {
+    return await readFile(destino);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code !== "ENOENT") throw e;
+    const doBucket = await baixarDoBucket(chaveNoBucket(relativo));
+    if (!doBucket) throw e;
+    try {
+      await mkdir(path.dirname(destino), { recursive: true });
+      const temporario = `${destino}.${randomBytes(6).toString("hex")}.tmp`;
+      await writeFile(temporario, doBucket, { mode: 0o600 });
+      await rename(temporario, destino);
+    } catch {
+      /* sem a cópia no disco, a próxima leitura busca de novo no bucket */
+    }
+    return doBucket;
+  }
+}
 
 function dentroDoCofre(relativo: string): string {
   const raiz = path.resolve(/*turbopackIgnore: true*/ raizDoCofre());
@@ -88,8 +122,12 @@ export async function guardarArquivoFiscal(p: {
   const destino = dentroDoCofre(relativo);
   await mkdir(path.dirname(destino), { recursive: true });
   const temporario = `${destino}.${randomBytes(6).toString("hex")}.tmp`;
-  await writeFile(temporario, cifrarBytes(claro), { mode: 0o600 });
+  const cifrado = cifrarBytes(claro);
+  await writeFile(temporario, cifrado, { mode: 0o600 });
   await rename(temporario, destino);
+  // A cópia no bucket, para a outra instância ler (duas instâncias). Já vai
+  // cifrada, e falha dela não desfaz a nota: o arquivo está no disco.
+  await subirAoBucket(chaveNoBucket(relativo), cifrado, "application/octet-stream");
   return {
     caminho: relativo,
     sha256: createHash("sha256").update(claro).digest("hex"),
@@ -100,7 +138,7 @@ export async function guardarArquivoFiscal(p: {
 
 /** Lê e decifra. Com `sha256`, confere a integridade e recusa arquivo trocado. */
 export async function lerArquivoFiscal(caminho: string, sha256?: string | null): Promise<Buffer> {
-  const claro = decifrarBytes(await readFile(dentroDoCofre(caminho)));
+  const claro = decifrarBytes(await lerCifrado(caminho));
   if (sha256) {
     const conferido = createHash("sha256").update(claro).digest("hex");
     if (conferido !== sha256) throw new Error("Arquivo fiscal não confere com o que foi guardado.");
