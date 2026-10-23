@@ -301,11 +301,11 @@ export const VENDAS_PARA_ATIVAR = 10;
 /** Comissão de marketplace usada só na ESTIMATIVA do argumento do App (dito como estimativa). */
 export const COMISSAO_ESTIMADA_DO_MARKETPLACE = 0.2;
 
-const MARKETPLACES: ChaveDeCanal[] = ["IFOOD", "99FOOD", "KEETA", "BRENDI", "WABIZ", "JOTAJA"];
+const MARKETPLACES: ChaveDeCanal[] = ["IFOOD", "99FOOD", "KEETA", "AIQFOME", "BRENDI", "WABIZ", "JOTAJA"];
 
 export const NOME_DO_CANAL: Record<ChaveDeCanal, string> = {
   IFOOD: "iFood", "99FOOD": "99Food", BRENDI: "Brendi", WABIZ: "Wabiz", JOTAJA: "Jotajá", KEETA: "Keeta",
-  CARDAPIOWEB: "CardápioWeb", ANOTAAI: "Anota AI", WHATSAPP_IA: "Robô (WhatsApp)", PDV: "Balcão", TOTEM: "Totem", MESA: "Mesa",
+  CARDAPIOWEB: "CardápioWeb", AIQFOME: "aiqfome", ANOTAAI: "Anota AI", WHATSAPP_IA: "Robô (WhatsApp)", PDV: "Balcão", TOTEM: "Totem", MESA: "Mesa",
   SITE: "Cardápio digital", DESCONHECIDO: "Outro",
 };
 

@@ -29,6 +29,7 @@ export type ChaveDeCanal =
   | "KEETA"
   | "CARDAPIOWEB"
   | "ANOTAAI"
+  | "AIQFOME"
   | "WHATSAPP_IA"
   | "PDV"
   | "TOTEM"
@@ -73,6 +74,9 @@ const CORES: Record<ChaveDeCanal, { nome: string; emoji: string; fundo: string; 
   // o CardápioWeb (o pago online é repasse no caixa). Azul-céu, puxado do
   // azul do Anota AI e mais claro que o azul do Jotajá; 📝 de "anota".
   ANOTAAI:     { nome: "Anota AI", emoji: "📝", fundo: "#E0F2FE", texto: "#0369A1", marketplace: true },
+  // O roxo forte do aiqfome ("o roxinho"), com o texto rosa-claro da marca —
+  // escuro para não se confundir com o lilás-claro da Brendi.
+  AIQFOME:     { nome: "aiqfome", emoji: "🟣", fundo: "#6B21A8", texto: "#F5D0FE", marketplace: true },
   WHATSAPP_IA: { nome: "IA Whats", emoji: "🤖", fundo: "#F3E8FF", texto: "#7C3AED", marketplace: false },
   PDV:         { nome: "PDV",     emoji: "🧾", fundo: "#E0E7FF", texto: "#4338CA", marketplace: false },
   TOTEM:       { nome: "Totem",   emoji: "🖥️", fundo: "#CFFAFE", texto: "#0E7490", marketplace: false },
@@ -113,6 +117,8 @@ export function chaveDoCanal(pedido: PedidoParaCanal | null | undefined): ChaveD
   if (src === "CARDAPIOWEB" || od === "CARDAPIOWEB" || /^cardapioweb_/.test(String(pedido.openDeliveryOrderId || ""))) return "CARDAPIOWEB";
   // O Anota AI, idem (anotaai_<página>_<id>, lib/anotaai/id-do-pedido.ts).
   if (src === "ANOTAAI" || od === "ANOTAAI" || /^anotaai_/.test(String(pedido.openDeliveryOrderId || ""))) return "ANOTAAI";
+  // O aiqfome também (aiqfome_<loja>_<id>, lib/aiqfome/id-do-pedido.ts).
+  if (src === "AIQFOME" || od === "AIQFOME" || /^aiqfome_/.test(String(pedido.openDeliveryOrderId || ""))) return "AIQFOME";
   // OPEN_DELIVERY é o rótulo genérico antigo: o canal fino vem no
   // openDeliveryChannel, e sem ele o resto do Open Delivery era o JotaJá.
   if (src === "OPEN_DELIVERY") return od.includes("99") ? "99FOOD" : od === "BRENDI" ? "BRENDI" : "JOTAJA";

@@ -98,7 +98,7 @@ export type PedidoParaEndereco = {
  * enderecoDoPedido), que escreve a cidade no fim, e a cidade é obrigatória
  * no endereço dele.
  */
-const CANAIS_COM_CIDADE_NO_FIM = new Set(["IFOOD", "BRENDI", "JOTAJA", "CARDAPIOWEB", "ANOTAAI"]);
+const CANAIS_COM_CIDADE_NO_FIM = new Set(["IFOOD", "BRENDI", "JOTAJA", "CARDAPIOWEB", "AIQFOME", "ANOTAAI"]);
 
 const UFS = new Set([
   "AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA",

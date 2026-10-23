@@ -122,8 +122,9 @@ export async function POST(req: NextRequest) {
           const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
           const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
           const { ehPedidoAnotaAi, sincronizarAnotaAi } = await import("@/lib/anotaai/status");
+          const { ehPedidoAiqfome, sincronizarAiqfome } = await import("@/lib/aiqfome/status");
           for (const ord of orders) {
-            // Keeta e CardápioWeb antes de tudo: fora desta cadeia cairiam no ramo do JotaJá.
+            // Keeta, CardápioWeb e aiqfome antes de tudo: fora desta cadeia cairiam no ramo do JotaJá.
             if (ehPedidoKeeta(ord)) {
               await sincronizarKeeta(
                 { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status, deliveryBy: ord.deliveryBy, deliveryType: (ord as any).deliveryType },
@@ -142,6 +143,12 @@ export async function POST(req: NextRequest) {
                 "SAIU_ENTREGA",
                 { limiteMs: 30_000 }
               ).catch((err: any) => console.warn(`[Motoboy Dispatch → Anota AI] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
+            } else if (ehPedidoAiqfome(ord)) {
+              await sincronizarAiqfome(
+                { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status, deliveryBy: ord.deliveryBy, deliveryType: (ord as any).deliveryType },
+                "SAIU_ENTREGA",
+                { limiteMs: 30_000 }
+              ).catch((err: any) => console.warn(`[Motoboy Dispatch → aiqfome] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
             } else if (ehPedidoWabiz(ord)) {
               await sincronizarWabiz(
                 {

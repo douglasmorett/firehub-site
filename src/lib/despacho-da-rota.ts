@@ -146,6 +146,7 @@ export async function sincronizarPedidoNasPlataformas(
   const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
   const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
   const { ehPedidoAnotaAi, sincronizarAnotaAi } = await import("@/lib/anotaai/status");
+  const { ehPedidoAiqfome, sincronizarAiqfome } = await import("@/lib/aiqfome/status");
 
   // ── Sync Brendi ──
   //
@@ -233,8 +234,18 @@ export async function sincronizarPedidoNasPlataformas(
       { limiteMs: 30_000 }
     ).catch((err: any) => console.warn(`[Route Dispatch → Anota AI] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
   }
+  // ── Sync aiqfome ──
+  // A loja de lá sai do próprio id; "saiu" lá só garante o "pronto" (a V2 não
+  // tem despachar). O que falhar vai para a fila do polling.
+  if (ehPedidoAiqfome(ord)) {
+    await sincronizarAiqfome(
+      { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status, deliveryBy: ord.deliveryBy, deliveryType: ord.deliveryType },
+      "SAIU_ENTREGA",
+      { limiteMs: 30_000 }
+    ).catch((err: any) => console.warn(`[Route Dispatch → aiqfome] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
+  }
   // ── Sync Jotajá (Open Delivery) ──
-  if (ord.openDeliveryOrderId && !ehPedido99Food(ord) && !ehPedidoWabiz(ord) && !ehPedidoBrendi(ord) && !ehPedidoKeeta(ord) && !ehPedidoCardapioWeb(ord) && !ehPedidoAnotaAi(ord)) {
+  if (ord.openDeliveryOrderId && !ehPedido99Food(ord) && !ehPedidoWabiz(ord) && !ehPedidoBrendi(ord) && !ehPedidoKeeta(ord) && !ehPedidoCardapioWeb(ord) && !ehPedidoAiqfome(ord) && !ehPedidoAnotaAi(ord)) {
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");
       const odId = ord.openDeliveryOrderId;

@@ -110,6 +110,8 @@ import {
 } from "./fiscal-momento";
 import { chaveDoCanal } from "./canal-do-pedido";
 import {
+  CANAIS_SEM_INTERMEDIADOR_CONHECIDO,
+  MOTIVO_DO_CANAL_SEM_INTERMEDIADOR,
   ehIntegracaoDaNota,
   entregaSemDocumento,
   formasDoCanal,
@@ -825,6 +827,7 @@ export async function emitirNfceAutomatica(orderId: string): Promise<ResultadoAu
     // A lista do canal: a integração com lista própria usa a dela; o resto,
     // a das vendas da loja (lib/fiscal-modo → formasDoCanal).
     const canal = chaveDoCanal(order);
+    if (CANAIS_SEM_INTERMEDIADOR_CONHECIDO.includes(canal)) return foraDaAutomatica(MOTIVO_DO_CANAL_SEM_INTERMEDIADOR);
     const chaves: ChaveDePagamento[] = chavesDoPagamento(order);
     if (!formaEntraNaAutomatica(chaves, formasDoCanal(config, canal))) {
       const onde = ehIntegracaoDaNota(canal) ? ` do ${nomeDaIntegracao(canal)}` : "";
@@ -1413,7 +1416,7 @@ export async function emitirNotasEsquecidas(opcoes: {
       take: 500,
     });
     const daVez = candidatos
-      .filter((c) => deveEmitirNoStatus(c, momento) && formaEntraNaAutomatica(chavesDoPagamento(c), formasDoCanal(config, chaveDoCanal(c))))
+      .filter((c) => deveEmitirNoStatus(c, momento) && !CANAIS_SEM_INTERMEDIADOR_CONHECIDO.includes(chaveDoCanal(c)) && formaEntraNaAutomatica(chavesDoPagamento(c), formasDoCanal(config, chaveDoCanal(c))))
       .slice(0, opcoes.limite ?? 30);
 
     let tentadas = 0;

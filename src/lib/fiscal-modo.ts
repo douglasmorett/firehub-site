@@ -70,6 +70,16 @@ export const INTEGRACOES_DA_NOTA = [
 
 export type IntegracaoDaNota = (typeof INTEGRACOES_DA_NOTA)[number]["canal"];
 
+/**
+ * Marketplace cujo CNPJ de intermediador o FireHub ainda NÃO tem
+ * (lib/fiscal-emissao → INTERMEDIADORES_CONHECIDOS): a venda intermediada
+ * exige o grupo infIntermed, e inventar o CNPJ é rejeição em toda nota. Sem
+ * ele, a nota deste canal não sai sozinha. Quando o CNPJ entrar lá, tirar daqui.
+ */
+export const CANAIS_SEM_INTERMEDIADOR_CONHECIDO: readonly string[] = ["AIQFOME"];
+
+export const MOTIVO_DO_CANAL_SEM_INTERMEDIADOR = "o FireHub ainda não tem o CNPJ do aiqfome como intermediador — a nota deste canal não sai sozinha";
+
 export function ehIntegracaoDaNota(canal: unknown): canal is IntegracaoDaNota {
   return INTEGRACOES_DA_NOTA.some((i) => i.canal === canal);
 }

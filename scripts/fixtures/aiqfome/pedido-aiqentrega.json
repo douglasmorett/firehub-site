@@ -1,0 +1,115 @@
+{
+  "data": {
+    "id": 68661238,
+    "delivery_time": "15 - 30",
+    "created_at": "2025-09-22 16:34:36",
+    "is_ready": true,
+    "is_read": false,
+    "is_cancelled": false,
+    "is_in_separation": false,
+    "is_delivered": false,
+    "order_observations": "",
+    "is_aiqentrega_delivery": true,
+    "is_pickup": false,
+    "pickup_at": null,
+    "coupon_hash": null,
+    "user_rating_value": null,
+    "is_scheduled": false,
+    "scheduled_dates": null,
+    "items": [
+      {
+        "id": "8d82e047-9778-3d9a-859f-d6f8cbccea76",
+        "order_item_id": 118058808,
+        "name": "esponja multiuso brilhus leve 4 pague 3",
+        "replacement_type": 2,
+        "status": 1,
+        "sku": "item01",
+        "category_name": "balas, pirulitos e chicletes",
+        "size": "Unidade",
+        "unit_value": 10,
+        "promotional_value": null,
+        "quantity": 1,
+        "discount_tax": null,
+        "description": "esponja multiuso brilhus leve 4 pague 3",
+        "observations": "",
+        "unit_packing_fee": "0.00",
+        "order_mandatory_items": [],
+        "order_additional_items": [],
+        "order_item_subitems": []
+      }
+    ],
+    "cancelled_items": [],
+    "replaced_items": [],
+    "shipment_status": {
+      "latest": null,
+      "logs": []
+    },
+    "user": {
+      "uuid": "4444444444444444444",
+      "name": "luiz",
+      "surname": "do aiq",
+      "mobile_phone": "(61) 9-9953-7666",
+      "phone_number": "(61) 9-9953-7666",
+      "email": "luiz.silva@aiqfome.coma",
+      "order_count": 26,
+      "document_receipt": null,
+      "address": {
+        "street_name": "Rua Maringá",
+        "number": "5555",
+        "complement": "sss",
+        "reference": "ss",
+        "phone": "(34) 2421-23232",
+        "mobile_phone": null,
+        "neighborhood_name": "Jardim Aclimação",
+        "city_name": "Maringá",
+        "state_uf": "PR",
+        "ibge_code": "4115200",
+        "zip_code": "87050-740",
+        "latitude": -23.4454996,
+        "longitude": -51.9201468
+      }
+    },
+    "payment_method": {
+      "id": 186,
+      "name": "Visa Débito",
+      "subtotal": "10.00",
+      "delivery_tax": "7.00",
+      "total_packing_fee": 0,
+      "change": 0,
+      "coupon_value": "0.00",
+      "pre_paid": false,
+      "service_fee": {
+        "store": 0,
+        "aiq": 1,
+        "total": 1
+      },
+      "total_cancelled_replaced": 0,
+      "original_subtotal": 10,
+      "total": 18,
+      "taxable_total": 17
+    },
+    "store": {
+      "id": 96225,
+      "name": "loja qa luiz catalogo e aiqentrega teste sync store merchant api",
+      "phones": "(99) 9999-9999",
+      "preparation_time": 10
+    },
+    "timeline": {
+      "created_at": "2025-09-22 16:34:36",
+      "read_at": "2025-11-11 17:54:38",
+      "cancelled_at": null,
+      "ready_at": "2025-09-22 16:52:19",
+      "timezone": "America/Fortaleza"
+    },
+    "aiqentrega": {
+      "ride_id": 2002236,
+      "call_at": "2025-09-22 16:50:06",
+      "current_status": "delivering",
+      "delivered_at": "2025-09-22 16:52:55",
+      "last_status": "RideStepCompleted/collected",
+      "last_status_at": "2025-09-22 16:51:15",
+      "driver_name": "Gianluca Bine",
+      "driver_phone": "+5542991044320"
+    }
+  }
+}
