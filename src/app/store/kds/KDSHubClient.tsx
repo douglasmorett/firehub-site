@@ -335,6 +335,7 @@ export default function KDSHubClient() {
                 background: "#1C1917", borderRadius: "14px", padding: "1.5rem",
                 border: "1px solid #292524", position: "relative",
                 borderLeft: `4px solid ${accent}`,
+                display: "flex", flexDirection: "column",
               }}>
                 <button
                   onClick={() => removeScreen(screen.id)}
@@ -377,7 +378,10 @@ export default function KDSHubClient() {
                   Dentro da tela você pode trocar o filtro a qualquer momento.
                 </p>
 
-                <div style={{ display: "flex", gap: "8px" }}>
+                {/* No pé do card: o controle da TV anda em linha reta, e o
+                    botão da Esfirra, empurrado pela etiqueta das categorias,
+                    ficava abaixo dos outros e o cursor pulava ele (Hakim, 22/10). */}
+                <div style={{ display: "flex", gap: "8px", marginTop: "auto" }}>
                   {/* Na mesma aba: navegador de Smart TV ignora nova aba e o
                       botão parecia não clicar (Hakim, 21/10). A tela tem o
                       link de voltar para esta lista. */}
