@@ -7,7 +7,7 @@
  */
 const express = require("express");
 const cors = require("cors");
-const { execSync, exec } = require("child_process");
+const { execSync, exec, execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const os = require("os");
@@ -18,6 +18,25 @@ const impressaoWindows = require("./impressao-windows");
 
 const PORT = 7891;
 const app = express();
+
+/**
+ * Quem pode chamar este servidor pelo navegador. Era `*` com Private-Network:
+ * qualquer site aberto no PC da loja mandava imprimir comanda falsa ou trocar
+ * o domínio da nuvem (/config), que o atualizador usava para baixar e rodar
+ * o instalador. Ficam o FireHub, o próprio PC e a rede da loja (contingência:
+ * o painel abre por http://<ip-do-computador>). Sem Origin (programa, curl)
+ * não é navegador e segue como antes.
+ */
+function origemAceita(origem) {
+  if (!origem) return true;
+  let u;
+  try { u = new URL(String(origem)); } catch { return false; }
+  const h = u.hostname.toLowerCase();
+  if (u.protocol === "https:" && (h === "firehubfood.com.br" || h.endsWith(".firehubfood.com.br"))) return true;
+  if (u.protocol !== "http:" && u.protocol !== "https:") return false;
+  if (h === "localhost" || h === "127.0.0.1" || h === "[::1]") return true;
+  return /^(10\.\d+|192\.168|172\.(1[6-9]|2\d|3[01]))\.\d+\.\d+$/.test(h);
+}
 
 app.use((req, res, next) => {
   // As rotas do TEF (pinpad) não respondem a qualquer site: só a página do
@@ -33,7 +52,15 @@ app.use((req, res, next) => {
     if (req.method === "OPTIONS") return res.sendStatus(204);
     return next();
   }
-  res.header("Access-Control-Allow-Origin", "*");
+  if (!origemAceita(req.headers.origin)) {
+    // Sem cabeçalho de CORS o navegador barra o pedido (o JSON exige a
+    // checagem prévia); a resposta aqui é para quem não é navegador.
+    if (req.method === "OPTIONS") return res.sendStatus(403);
+    if (req.method !== "GET") return res.status(403).json({ error: "origem não autorizada" });
+    return next();
+  }
+  res.header("Access-Control-Allow-Origin", req.headers.origin ? String(req.headers.origin) : "*");
+  res.header("Vary", "Origin");
   res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
   res.header("Access-Control-Allow-Headers", "*");
   res.header("Access-Control-Allow-Private-Network", "true");
@@ -41,7 +68,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const corsPadrao = cors({ origin: true, credentials: true });
+const corsPadrao = cors({ origin: (origem, cb) => cb(null, origemAceita(origem)), credentials: true });
 app.use((req, res, next) => (req.path.startsWith("/tef/") ? next() : corsPadrao(req, res, next)));
 app.use(express.json({ limit: "5mb" }));
 
@@ -709,8 +736,11 @@ function rawPrint(printerName, dataBuffer) {
     const payload = Buffer.isBuffer(dataBuffer) ? dataBuffer : Buffer.from(String(dataBuffer), "latin1");
     fs.writeFileSync(tmpFile, payload);
 
-    const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${PS_SCRIPT_PATH}" -PrinterName "${printerName}" -FilePath "${tmpFile}" -DllPath "${RAWPRINT_DLL}"`;
-    exec(cmd, { timeout: PRAZO_IMPRESSAO_MS, windowsHide: true }, (err, stdout, stderr) => {
+    // execFile, não exec: o nome da impressora vem da tela e da fila da nuvem,
+    // e dentro da linha do cmd.exe um `"` no nome fechava as aspas e o resto
+    // virava comando. Assim cada argumento vai inteiro para o PowerShell.
+    const args = ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", PS_SCRIPT_PATH, "-PrinterName", String(printerName), "-FilePath", tmpFile, "-DllPath", RAWPRINT_DLL];
+    execFile("powershell", args, { timeout: PRAZO_IMPRESSAO_MS, windowsHide: true }, (err, stdout, stderr) => {
       const saiu = fs.existsSync(marcador);
       try { fs.unlinkSync(tmpFile); } catch (_) {}
       try { fs.unlinkSync(marcador); } catch (_) {}
@@ -2909,8 +2939,11 @@ app.post("/config", (req, res) => {
   // O host do FireHub, mandado pela tela de Impressoras. Sem ele o Assistente
   // usava um padrão MORTO (firehubfood.com, sem .br) e a fila da nuvem nunca
   // respondeu para ninguém. Só hostname válido entra — nada de URL completa.
-  if (typeof domain === "string" && /^[a-z0-9.-]+$/i.test(domain.trim()) && domain.trim().length > 3) {
-    currentConfig.domain = domain.trim();
+  // E só do FireHub: o atualizador e a fila usam este host, e um site
+  // qualquer apontava o Assistente para um servidor dele.
+  const host = typeof domain === "string" ? domain.trim().toLowerCase() : "";
+  if (host === "firehubfood.com.br" || host.endsWith(".firehubfood.com.br")) {
+    currentConfig.domain = host;
   }
   if (printer) currentConfig.printer = printer;
   if (paperWidth) currentConfig.paperWidth = paperWidth;
@@ -4002,11 +4035,18 @@ function tentarDeNovoQuandoAInternetVoltar(motivo) {
 let atualizacaoPedidaAMao = false;
 let reconsultaAgendada = false;
 
+/** Host do FireHub para versão e download: o da config só se for do FireHub
+ *  (uma config antiga pode ter guardado outro, quando o /config aceitava). */
+function hostDoFireHub(domain) {
+  const h = String(domain || "").trim().toLowerCase();
+  return h === "firehubfood.com.br" || h.endsWith(".firehubfood.com.br") ? h : "firehubfood.com.br";
+}
+
 function urlDaChecagemDeVersao(domain, franchiseeId, versaoLocal, pedidoAMao) {
   const q = [`v=${encodeURIComponent(versaoLocal || "")}`];
   if (franchiseeId) q.push(`franchiseeId=${encodeURIComponent(franchiseeId)}`);
   if (pedidoAMao) q.push("pedido=1");
-  return `https://${domain || "firehubfood.com.br"}/api/assistente/versao?${q.join("&")}`;
+  return `https://${hostDoFireHub(domain)}/api/assistente/versao?${q.join("&")}`;
 }
 
 function perguntarDeNovoEm(segundos, motivo) {
@@ -4034,6 +4074,14 @@ async function verificarAtualizacao() {
       return;
     }
     if (!info?.versao || !info?.url) { tentarDeNovoQuandoAInternetVoltar("Resposta da versão veio sem versão/url"); return; }
+    // A versão vira nome de arquivo e entra na linha do cmd.exe que instala; a
+    // URL é de onde vem o .exe que roda como a loja. Só número e só o FireHub.
+    let hostDoDownload = "";
+    try { hostDoDownload = new URL(String(info.url)).protocol === "https:" ? new URL(String(info.url)).hostname.toLowerCase() : ""; } catch {}
+    if (!/^\d+(\.\d+){1,3}$/.test(String(info.versao)) || hostDoFireHub(hostDoDownload) !== hostDoDownload) {
+      logUpdate(`Resposta de versão recusada (versão "${String(info.versao).slice(0, 20)}", download de "${hostDoDownload || "?"}").`);
+      return;
+    }
 
     versaoAlvo = info.versao;
     if (!versaoRemotaEhMaisNova(info.versao, VERSAO_LOCAL_UPDATE)) return;
