@@ -69,6 +69,21 @@ export default function KDSHubClient() {
     }
   };
 
+  // Item que a loja não vende mais: sai da lista (a rota explica o que muda).
+  const excluirDaLista = async (id: string) => {
+    setSalvandoItem(id);
+    try {
+      const r = await fetch("/api/store/kds-sem-categoria", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (r.ok) setSemCategoria((lista) => lista.filter((i) => i.id !== id));
+    } finally {
+      setSalvandoItem(null);
+    }
+  };
+
   // Form state
   const [formName, setFormName] = useState("");
   const [formStage, setFormStage] = useState<"production" | "finishing">("production");
@@ -305,6 +320,15 @@ export default function KDSHubClient() {
                     <option value="">Escolher categoria…</option>
                     {categoriasDaLoja.map((c) => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  <button
+                    type="button"
+                    disabled={salvandoItem === it.id}
+                    onClick={() => excluirDaLista(it.id)}
+                    title="Tirar da lista: item que a loja não vende mais"
+                    style={{ padding: "6px 10px", borderRadius: 6, background: "transparent", color: "#fca5a5", border: "1px solid #7f1d1d", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    Excluir
+                  </button>
                 </div>
               ))}
             </div>

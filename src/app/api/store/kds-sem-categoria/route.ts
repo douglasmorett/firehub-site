@@ -93,3 +93,32 @@ export async function PATCH(req: NextRequest) {
   await prisma.menuProduct.update({ where: { id }, data: { category: existe.category } });
   return NextResponse.json({ ok: true, categoria: existe.category });
 }
+
+/**
+ * "Excluir" da lista o item que a loja não vende mais (Hakim, 22/10/2026: o
+ * Trio Duplo Artesanal, lanche que saiu do cardápio e não tem categoria que
+ * sirva). O espelho NÃO é apagado — os pedidos antigos apontam para ele. Só
+ * deixa de ter a categoria da plataforma, e a lista (GET) só mostra quem
+ * ainda tem. Na cozinha nada muda: a categoria nova não é da loja, então
+ * `categoriaResolvida` segue procurando pelo nome e, sem achar, o item
+ * continua aparecendo em toda tela se um dia voltar a chegar.
+ */
+export async function DELETE(req: NextRequest) {
+  const lojaId = await lojaDaSessao();
+  if (!lojaId) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
+
+  const corpo = await req.json().catch(() => null);
+  const id = String(corpo?.id || "");
+  if (!id) return NextResponse.json({ error: "Informe o item" }, { status: 400 });
+
+  const produto = await prisma.menuProduct.findFirst({
+    where: { id, franchiseeId: lojaId },
+    select: { id: true, active: true },
+  });
+  if (!produto || !ehEspelho(produto)) {
+    return NextResponse.json({ error: "Item de integração não encontrado nesta loja" }, { status: 404 });
+  }
+
+  await prisma.menuProduct.update({ where: { id }, data: { category: "Não vende mais" } });
+  return NextResponse.json({ ok: true });
+}
