@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { chaveDoContador } from "@/lib/order-number";
 import { criarRotaDaLoja, pedePrioridadeNaRota } from "@/lib/rotas-da-loja";
 import { lerHistoricoDaRota, quemNaSessao, registrarNaRota } from "@/lib/roteirizacao-automatica/historico-da-rota";
 
@@ -83,10 +84,20 @@ export async function GET(req: NextRequest) {
     // Rota 100% automatizada, o selo 🤖 do card), `chamadaEm` e
     // `chamadaMotoboyId` inclusive (colunas da Fase 0 no schema.prisma; o
     // client do build as conhece).
+    // As rotas recomeçam quando a loja fecha o caixa, igual à numeração dos
+    // pedidos (lib/order-number): o período de cada loja vai do último
+    // fechamento de caixa até agora, não das últimas 24 horas.
+    // Loja que nunca fechou caixa (início em 1970) segue as últimas 24 horas,
+    // para a lista não trazer todas as rotas da história.
+    const desdeDoCaixa = await Promise.all(
+      validFranchiseeIds.map(async (id) => {
+        const { desde } = await chaveDoContador(prisma, id);
+        return { id, desde: desde.getTime() === 0 ? twentyFourHoursAgo : desde };
+      })
+    );
     const routes = await prisma.routeSchedule.findMany({
       where: {
-        franchiseeId: { in: validFranchiseeIds },
-        createdAt: { gte: twentyFourHoursAgo },
+        OR: desdeDoCaixa.map((x) => ({ franchiseeId: x.id, createdAt: { gte: x.desde } })),
       },
       include: {
         motoboy: {

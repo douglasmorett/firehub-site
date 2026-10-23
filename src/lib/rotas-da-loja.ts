@@ -12,7 +12,7 @@
  * SEM motoboy (quem leva é decidido na chamada, Fase 2).
  */
 import { prisma } from "@/lib/prisma";
-import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
+import { chaveDoContador } from "@/lib/order-number";
 
 /**
  * O pedido ainda na cozinha pede prioridade no KDS ("⚡ PRIORIDADE PARA
@@ -58,7 +58,8 @@ export async function criarRotaDaLoja(nova: NovaRota) {
   // duplicando o numero com a rota da tarde.
   // Das 5h, não da meia-noite: a rota da noite seguia a contagem das rotas
   // da madrugada, que são do turno anterior.
-  const todayStart = nova.virada ?? viradaDoExpedienteDaLoja();
+  // O contador zera quando a loja fecha o caixa, igual à numeração dos pedidos.
+  const todayStart = nova.virada ?? (await chaveDoContador(prisma, lojaId)).desde;
 
   const existingTodayCount = await prisma.routeSchedule.count({
     where: {

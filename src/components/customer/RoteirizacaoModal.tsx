@@ -2294,7 +2294,8 @@ export default function RoteirizacaoModal({
       if (points.length === 0) return;
       const emFoco = route.id === rotaEmFoco;
       const routePoly = L.polyline(points, {
-        color: route.color || "#0F766E",
+        // A rota em foco ("Ver no mapa") fica roxa para se destacar das outras.
+        color: emFoco ? "#7C3AED" : route.color || "#0F766E",
         weight: emFoco ? 6 : 4,
         opacity: emFoco ? 0.95 : 0.8,
       }).addTo(map);
