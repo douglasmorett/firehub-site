@@ -775,7 +775,10 @@ async function handleIncomingMessage(body: any, instance: string) {
 
     if (!base64Data && audioObj?.url) {
       try {
-        const audioRes = await fetch(audioObj.url);
+        // A URL vem do corpo do webhook (sem login): só host público, com prazo.
+        // O gateway do FireHub manda o áudio em base64; isto é só o fallback.
+        const { fetchExterno } = await import('@/lib/url-externa');
+        const audioRes = await fetchExterno(String(audioObj.url), { signal: AbortSignal.timeout(20_000) });
         if (audioRes.ok) {
           const buffer = await audioRes.arrayBuffer();
           base64Data = Buffer.from(buffer).toString("base64");

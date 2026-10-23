@@ -54,8 +54,8 @@ async function main() {
   // 3. Testar autenticação Jotajá
   console.log('\n═══ 3. TESTE DE AUTENTICAÇÃO JOTAJÁ ═══');
   const BASE = 'https://api.jotaja.com/openDelivery';
-  const CID = '92c66502-57ce-4563-a9e3-0df07dda5a38';
-  const CSEC = 'bf6798ba-5abe-43b8-a5d7-adca54643492';
+  const CID = process.env.JOTAJA_CLIENT_ID; // credencial fora do git: node --env-file=.env diagnose-jotaja.js
+  const CSEC = process.env.JOTAJA_CLIENT_SECRET;
 
   try {
     const tokenRes = await fetch(`${BASE}/oauth/token`, {

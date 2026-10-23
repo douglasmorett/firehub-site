@@ -12,8 +12,8 @@ const { PrismaClient } = require('@prisma/client');
 const prisma = new PrismaClient();
 
 const BASE = 'https://api.jotaja.com/openDelivery';
-const CID = '92c66502-57ce-4563-a9e3-0df07dda5a38';
-const CSEC = 'bf6798ba-5abe-43b8-a5d7-adca54643492';
+const CID = process.env.JOTAJA_CLIENT_ID; // credencial fora do git: node --env-file=.env pull-jotaja-orders.js
+const CSEC = process.env.JOTAJA_CLIENT_SECRET;
 
 // Jajá display IDs conhecidos das screenshots (para matching)
 const KNOWN_DISPLAY_IDS = ['4689', '4696', '4700', '4701', '4702', '4703'];

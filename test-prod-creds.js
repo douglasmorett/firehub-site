@@ -6,8 +6,8 @@ async function main() {
   const BASE = 'https://api.jotaja.com/openDelivery';
   
   // Credenciais do .env / .env.local (funcionam localmente)
-  const LOCAL_CID = '92c66502-57ce-4563-a9e3-0df07dda5a38';
-  const LOCAL_CSEC = 'bf6798ba-5abe-43b8-a5d7-adca54643492';
+  const LOCAL_CID = process.env.JOTAJA_CLIENT_ID; // credencial fora do git: node --env-file=.env test-prod-creds.js
+  const LOCAL_CSEC = process.env.JOTAJA_CLIENT_SECRET;
 
   // 1. Auth com credenciais locais e verificar merchantId da resposta
   console.log('═══ CREDENCIAIS LOCAIS (.env) ═══');
@@ -45,8 +45,8 @@ async function main() {
     console.log('');
     console.log('   SOLUÇÃO: Adicionar no Vercel Dashboard (Settings > Environment Variables):');
     console.log(`     JOTAJA_BASE_URL = https://api.jotaja.com/openDelivery`);
-    console.log(`     JOTAJA_CLIENT_ID = ${LOCAL_CID}`);
-    console.log(`     JOTAJA_CLIENT_SECRET = ${LOCAL_CSEC}`);
+    console.log(`     JOTAJA_CLIENT_ID = (o valor do seu .env)`);
+    console.log(`     JOTAJA_CLIENT_SECRET = (o valor do seu .env)`);
     console.log(`     JOTAJA_MERCHANT_ID = 22238`);
   } else if (events.length > 0 && prodData.events > 0) {
     console.log('✅ Ambos encontram eventos — o problema é intermitente');
