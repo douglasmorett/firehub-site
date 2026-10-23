@@ -1,6 +1,9 @@
 import { createHash } from "crypto";
 import { segredoObrigatorio } from "@/lib/segredos";
 import { paraEnvioWhatsApp } from "@/lib/telefone";
+import { prisma } from "@/lib/prisma";
+import { comPrazo } from "@/lib/com-prazo";
+import { faxinaDeTempoEmTempo, garantirTabelasDoRobo } from "@/lib/robo-no-banco";
 import { configDoAtendimento, INSTANCIA_DO_ATENDIMENTO } from "./config";
 
 /**
@@ -147,6 +150,13 @@ export async function reiniciarNoGateway(): Promise<boolean> {
 // a da tela já está gravada. O que distingue é o registro abaixo, feito ANTES
 // de o texto sair: mesmo texto, mesma conversa, poucos minutos → é eco.
 // (Mesmo raciocínio do `botSentHashes` do robô das lojas, lib/loop-guard.ts.)
+//
+// O registro vai para a memória E para o banco (tabela "EcoDoAtendimento",
+// lib/robo-no-banco.ts). Com dois servidores, a tela do atendimento cai em
+// qualquer um e o webhook fica fixo em A: o que a tela mandou de B voltava a A
+// como "digitado no celular" — gravado duas vezes na conversa e o robô calado
+// 10 min sem ninguém ter assumido. A memória responde primeiro (é o caso de
+// sempre, com um servidor); o banco só é consultado quando ela não conhece.
 
 type Envio = { conversa: string; em: number };
 const JANELA_DO_ECO_MS = 3 * 60_000;
@@ -160,15 +170,31 @@ function envios(): Map<string, Envio[]> {
 const hashDoTexto = (t: string) => createHash("sha1").update(String(t || "").trim()).digest("hex");
 const conversaDoJid = (jid: string) => String(jid || "").split("@")[0].replace(/\D/g, "").slice(-8);
 
-function lembrarEnvio(jid: string, texto: string) {
+/** Registra o envio. Espera o banco (com teto): o eco volta em milissegundos. Nunca lança. */
+async function lembrarEnvio(jid: string, texto: string): Promise<void> {
   const mapa = envios();
   const agora = Date.now();
   const chave = hashDoTexto(texto);
+  const conversa = conversaDoJid(jid);
   const lista = (mapa.get(chave) || []).filter((e) => agora - e.em < JANELA_DO_ECO_MS);
-  lista.push({ conversa: conversaDoJid(jid), em: agora });
+  lista.push({ conversa, em: agora });
   mapa.set(chave, lista);
   if (mapa.size > 500) {
     for (const [k, v] of mapa) if (v.every((e) => agora - e.em >= JANELA_DO_ECO_MS)) mapa.delete(k);
+  }
+  try {
+    if (!(await garantirTabelasDoRobo())) return;
+    await comPrazo(
+      prisma.$executeRaw`
+        INSERT INTO "EcoDoAtendimento" ("hash", "conversa", "em") VALUES (${chave}, ${conversa}, now())
+        ON CONFLICT ("hash", "conversa") DO UPDATE SET "em" = now()`,
+      3_000,
+    );
+    faxinaDeTempoEmTempo("eco-do-atendimento", 10 * 60_000, () =>
+      prisma.$executeRaw`DELETE FROM "EcoDoAtendimento" WHERE "em" < now() - interval '10 minutes'`,
+    );
+  } catch (err: any) {
+    console.warn(`[Atendimento] eco não registrado no banco (${String(err?.message || err).slice(0, 120)}) — só este servidor o reconhece.`);
   }
 }
 
@@ -180,12 +206,23 @@ function lembrarEnvio(jid: string, texto: string) {
  * 12 h numa conversa em que ninguém assumiu. Ele vence sozinho pela janela.
  * (Mesmo desenho do `botSentHashes` do robô das lojas, lib/loop-guard.ts.)
  */
-export function ehEcoDoFireHub(jids: string[], texto: string): boolean {
-  const lista = envios().get(hashDoTexto(texto));
-  if (!lista?.length) return false;
+export async function ehEcoDoFireHub(jids: string[], texto: string): Promise<boolean> {
+  const chave = hashDoTexto(texto);
   const agora = Date.now();
-  const conversas = new Set(jids.map(conversaDoJid).filter(Boolean));
-  return lista.some((e) => agora - e.em < JANELA_DO_ECO_MS && conversas.has(e.conversa));
+  const conversas = [...new Set(jids.map(conversaDoJid).filter(Boolean))];
+  const lista = envios().get(chave);
+  if (lista?.some((e) => agora - e.em < JANELA_DO_ECO_MS && conversas.includes(e.conversa))) return true;
+  // Mandado por OUTRO servidor? Banco fora: não é eco, como antes.
+  try {
+    if (!conversas.length || !(await garantirTabelasDoRobo())) return false;
+    const linhas = await prisma.$queryRaw<{ ok: number }[]>`
+      SELECT 1 AS ok FROM "EcoDoAtendimento"
+      WHERE "hash" = ${chave} AND "conversa" = ANY(${conversas}) AND "em" > now() - (${JANELA_DO_ECO_MS}::float8 * interval '1 millisecond')
+      LIMIT 1`;
+    return linhas.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -210,7 +247,7 @@ export async function enviarTexto(destino: string, texto: string, opcoes: { como
   // marcado como enviado (o mesmo defeito contado em cron/gateway-keepalive).
   const numero = destino.includes("@") ? destino : paraEnvioWhatsApp(destino);
   if (!numero) return { ok: false, erro: "Número de WhatsApp inválido (use DDD + número)." };
-  lembrarEnvio(numero, conteudo);
+  await lembrarEnvio(numero, conteudo);
   try {
     const { url, headers } = await gateway();
     const res = await fetch(`${url}/message/sendText/${inst()}`, {
