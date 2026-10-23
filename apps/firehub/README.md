@@ -32,6 +32,8 @@ npx expo prebuild --platform android      # gera android/ (fora do git)
 cd android && ./gradlew assembleRelease   # APK em android/app/build/outputs/apk/release
 ```
 
+O Gradle padrão do prebuild (2 GB, Metaspace 512 MB) estoura com `OutOfMemoryError: Metaspace`. Antes do `assembleRelease`, em `android/gradle.properties`: `org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1536m`. Para teste rápido, `-PreactNativeArchitectures=arm64-v8a` (APK de 48 MB, 3 min).
+
 Ou na nuvem: `eas init` (uma vez, cria o projeto no Expo) → `eas build -p android --profile preview`.
 
 ## Antes de publicar (pendente)

@@ -53,3 +53,6 @@ google-services.json
 
 # Firebase de cada marca (aviso no Android): vem do console do Firebase, não vai para o git
 marcas/*/google-services.json
+
+# Saída do Gradle do módulo local da impressora
+modules/*/android/build/
