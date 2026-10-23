@@ -9,7 +9,7 @@ import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/l
 import { SEM_PRODUTO_DE_INTEGRACAO, disponivelAgora } from "@/lib/cardapio-interno";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
-import { opcoesBloqueadasEscolhidas } from "@/lib/preco-combo";
+import { opcoesBloqueadasEscolhidas, perguntasObrigatoriasSemResposta } from "@/lib/preco-combo";
 import { lerDocumentoDoCliente, normalizarDocumento, problemaDoDocumento } from "@/lib/documento-do-cliente";
 
 export const dynamic = "force-dynamic";
@@ -248,6 +248,12 @@ export async function POST(req: NextRequest) {
       const pausadas = [...opcoesPausadasEscolhidas(product as any, item.comboSelections), ...opcoesBloqueadasEscolhidas(product as any, item.comboSelections)];
       if (pausadas.length > 0) {
         opcoesIndisponiveis.push({ produto: product.name, frase: fraseDaOpcaoIndisponivel(product.name, pausadas) });
+        continue;
+      }
+      // Pergunta obrigatória sem resposta também volta (lib/preco-combo.ts).
+      const semResposta = perguntasObrigatoriasSemResposta(product as any, item.comboSelections);
+      if (semResposta.length > 0) {
+        opcoesIndisponiveis.push({ produto: product.name, frase: `Falta escolher em "${product.name}": ${semResposta.join(", ")}.` });
         continue;
       }
 

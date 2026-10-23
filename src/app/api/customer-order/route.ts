@@ -12,7 +12,7 @@ import { motivoForaDoCardapio, textoDoHorario } from "@/lib/cardapio-interno";
 import { camposDoPedidoAgendado, conferirAgendamento, lerConfigDeAgendamento, marcaDoAgendamento } from "@/lib/agendamento";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { fraseDaOpcaoIndisponivel, opcoesPausadasEscolhidas } from "@/lib/opcao-pausada";
-import { opcoesBloqueadasEscolhidas } from "@/lib/preco-combo";
+import { opcoesBloqueadasEscolhidas, perguntasObrigatoriasSemResposta } from "@/lib/preco-combo";
 import { estadoDaLoja, TEXTO_DA_INSTABILIDADE } from "@/lib/loja-aberta";
 import { lojaFechadaPelaQueda } from "@/lib/loja-sem-conexao-no-banco";
 import { dataDaLoja } from "@/lib/fuso";
@@ -478,6 +478,16 @@ export async function POST(req: Request) {
         throw Object.assign(
           new Error(`${fraseDaOpcaoIndisponivel(product.name, pausadas)} Troque a opção e tente de novo.`),
           { statusCode: 409 }
+        );
+      }
+      // E a PERGUNTA OBRIGATÓRIA sem resposta não sai: o "COMBO SIMPLES" da
+      // Lapastine chegou sem tamanho nem sabor (22/10/2026, pedido 4) e a
+      // cozinha não tinha o que fazer (lib/preco-combo.ts).
+      const semResposta = perguntasObrigatoriasSemResposta(product as any, item.comboSelections);
+      if (semResposta.length > 0) {
+        throw Object.assign(
+          new Error(`Falta escolher em "${product.name}": ${semResposta.join(", ")}. Abra o item, escolha e tente de novo.`),
+          { statusCode: 400 }
         );
       }
       // ── PREÇO COM AS OPÇÕES ESCOLHIDAS ────────────────────────────────

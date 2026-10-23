@@ -23,6 +23,7 @@
  * O preço do produto-opção NÃO entra: ele é o valor de vender aquele item
  * avulso no cardápio. Dentro do combo, o que vale é o `additionalPrice`.
  */
+import { ehPerguntaDeMeio } from "./meio-a-meio";
 
 export type ItemDeGrupo = {
   additionalPrice?: number | null;
@@ -137,6 +138,47 @@ export function opcoesBloqueadasEscolhidas(produto: ProdutoComCombo | null | und
     // borda da Lapastine tem uma por tamanho. Bloqueada só se TODAS estiverem.
     const itens = (doGrupo.length ? doGrupo : grupos).flatMap((g) => g?.items || []).filter((i) => String(i?.menuProduct?.name || "").trim() === e.nome);
     if (itens.length && itens.every((i) => !opcaoDisponivel(i, nomes))) saida.push(e.nome);
+  }
+  return saida;
+}
+
+/**
+ * As perguntas OBRIGATÓRIAS que ficaram sem o mínimo de escolhas, pelo título.
+ * O POST do site e do totem recusam.
+ *
+ * Lapastine, 22/10/2026, pedido 4: o "COMBO SIMPLES" chegou do site sem
+ * tamanho, sabor, cebola nem nada — e as cinco perguntas eram obrigatórias.
+ * O ComboModal não deixa confirmar assim, mas o servidor só conferia opção
+ * pausada e preço, então a sacola que pulou o modal entrou vazia na cozinha.
+ *
+ * A conta é a do ComboModal (`allComplete`): pergunta sem opção ativa, ou
+ * escondida pela escolha de outra (a borda que espera o tamanho), não conta.
+ * Só julga o formato do cardápio ({ grupoId: { nome: qtd } }) — a lista do
+ * PDV não diz de que pergunta é cada nome — e desiste quando a sacola cita
+ * uma pergunta que não existe mais (`escolhasNosGruposAtuais` não casou):
+ * recusar por não saber seria pior do que a falha que se quer barrar.
+ */
+export function perguntasObrigatoriasSemResposta(produto: ProdutoComCombo | null | undefined, escolhas: EscolhasDoCombo): string[] {
+  const grupos = produto?.comboGroups || [];
+  if (grupos.length === 0) return [];
+  let bruto: any = escolhas;
+  if (typeof bruto === "string") {
+    try { bruto = JSON.parse(bruto); } catch { return []; }
+  }
+  if (Array.isArray(bruto)) return [];
+  const lista = normalizarEscolhas(bruto);
+  const ids = new Set(grupos.map((g) => g?.id).filter(Boolean));
+  if (lista.some((e) => !e.grupoId || !ids.has(e.grupoId))) return [];
+  const nomes = nomesEscolhidos(lista);
+  const saida: string[] = [];
+  for (const g of grupos) {
+    const exigidos = minimoExigidoDoGrupo(g);
+    if (exigidos <= 0 || !g.id) continue;
+    const ativos = (g.items || []).filter((i) => i && (i.menuProduct as { active?: boolean | null } | null | undefined)?.active !== false);
+    if (ativos.length === 0 || !ativos.some((i) => opcaoDisponivel(i, nomes))) continue;
+    if (!ehPerguntaDeMeio(g.title) && grupoAguardaEscolha(ativos, bruto)) continue;
+    const tem = lista.filter((e) => e.grupoId === g.id).reduce((s, e) => s + e.qtd, 0);
+    if (tem < exigidos) saida.push(String(g.title || "").trim() || "uma pergunta");
   }
   return saida;
 }
