@@ -11,7 +11,8 @@ import {
   MOTIVO_PAUSA_DO_PAINEL,
   PAUSA_DO_PAINEL_MS as PAUSA_DO_PAINEL,
 } from "@/lib/loop-guard";
-import { pausarRobo, roboEstaPausado, retomarRobo } from "@/lib/pausa-do-robo";
+import { conversasPausadas, pausarRobo, roboEstaPausado, retomarRobo } from "@/lib/pausa-do-robo";
+import { encerrarChamado, respostaDaLoja } from "@/lib/fila-de-atendimento-humano";
 import {
   conversaParaOPainel,
   listarConversasDoRobo,
@@ -162,9 +163,10 @@ export async function GET(req: NextRequest) {
     if (pedido) {
       const jid = jidDeCliente(pedido);
       if (!jid) return NextResponse.json({ error: "Conversa inválida" }, { status: 400 });
-      const [mensagens, comHumano] = await Promise.all([
+      const [mensagens, comHumano, pausadoAqui] = await Promise.all([
         conversaParaOPainel(loja.userId, jid),
         conversaEstaComHumano(loja.userId, jid),
+        roboEstaPausado(loja.userId, jid),
       ]);
       return NextResponse.json({
         success: true,
@@ -174,18 +176,18 @@ export async function GET(req: NextRequest) {
         // deploy (que é a cada push) a tela dizia "robô atendendo" numa conversa
         // travada no banco por 12 h — e escondia justamente o botão que a
         // destravaria.
-        pausado: comHumano || roboEstaPausado(loja.userId, jid),
+        pausado: comHumano || pausadoAqui,
       });
     }
 
-    // A lista. `pausado` é conferido aqui porque a pausa curta mora na memória
-    // do processo, não no banco (lib/pausa-do-robo.ts).
-    const cruas = await listarConversasDoRobo(loja.userId);
+    // A lista. `pausado` também confere a pausa do robô (lib/pausa-do-robo.ts),
+    // que não é a trava `comHumano` — numa consulta só para a lista inteira.
+    const [cruas, pausadas] = await Promise.all([listarConversasDoRobo(loja.userId), conversasPausadas(loja.userId)]);
     const nomes = await nomesDosClientes(loja.userId, cruas.map((c) => c.telefone));
     const conversas = cruas.map((c) => ({
       ...c,
       nome: nomes.get(c.telefone.slice(-9)) || "",
-      pausado: c.comHumano || roboEstaPausado(loja.userId, c.remoteJid),
+      pausado: c.comHumano || pausadas.has(c.remoteJid),
     }));
 
     return NextResponse.json({
@@ -216,26 +218,23 @@ export async function POST(req: NextRequest) {
     }
 
     // ── PAUSAR O ROBÔ NESTA CONVERSA ──────────────────────────────────────
-    // As duas travas, como no resto do sistema: a de memória (conferida antes
-    // de qualquer resposta) e a do banco (sobrevive ao deploy, que aqui é a
-    // cada push). Só uma delas deixaria o robô voltar a falar sozinho.
+    // As duas travas, como no resto do sistema: a pausa do robô (conferida
+    // antes de qualquer resposta, lib/pausa-do-robo.ts) e a do atendimento
+    // humano (lib/loop-guard.ts). Só uma delas deixaria o robô voltar a falar
+    // sozinho. As duas no banco: o webhook que as lê pode estar em outro servidor.
     if (action === "pausar") {
-      pausarRobo(loja.userId, jid, PAUSA_DO_PAINEL_MS);
+      await pausarRobo(loja.userId, jid, PAUSA_DO_PAINEL_MS);
       await passarParaAtendimentoHumano(loja.userId, jid, MOTIVO_DO_PAINEL);
       return NextResponse.json({ success: true, pausado: true });
     }
 
     if (action === "retomar") {
-      retomarRobo(loja.userId, jid);
+      await retomarRobo(loja.userId, jid);
       await clearLoopGuard(loja.userId, jid);
       // A conversa também sai da fila de "clientes chamando": sem isto ela
       // continuaria piscando na outra aba, pedindo um atendimento que o
       // lojista acabou de devolver ao robô.
-      const naFila = global.__humanSupportChats?.get(`${loja.userId}_${jid}`);
-      if (naFila) {
-        naFila.status = "CLOSED";
-        naFila.unreadCount = 0;
-      }
+      await encerrarChamado(loja.userId, jid);
       return NextResponse.json({ success: true, pausado: false });
     }
 
@@ -268,20 +267,13 @@ export async function POST(req: NextRequest) {
 
       // A mensagem SAIU: agora sim a conversa é de quem digitou. Deixar o robô
       // solto faria os dois responderem à mesma pergunta, um por cima do outro.
-      pausarRobo(loja.userId, jid, PAUSA_DO_PAINEL_MS);
+      await pausarRobo(loja.userId, jid, PAUSA_DO_PAINEL_MS);
       await passarParaAtendimentoHumano(loja.userId, jid, MOTIVO_DO_PAINEL);
       await registrarMensagemDaLoja(loja.userId, jid, texto, "atendente");
       // Este cliente está SENDO atendido: o chamado dele para de piscar na
       // outra aba, senão o balãozinho fica com um número vermelho preso por
       // alguém que já foi respondido.
-      const chamado = global.__humanSupportChats?.get(`${loja.userId}_${jid}`);
-      if (chamado && chamado.status !== "CLOSED") {
-        chamado.status = "ACTIVE";
-        chamado.unreadCount = 0;
-        chamado.messages.push({ sender: "attendant", text: texto, timestamp: Date.now() });
-        chamado.lastMessage = texto;
-        chamado.updatedAt = Date.now();
-      }
+      await respostaDaLoja(loja.userId, jid, texto, { peloRobo: true });
       return NextResponse.json({ success: true, pausado: true });
     }
 

@@ -31,6 +31,15 @@ import { detectarPedidoDeAtendente, FRASE_DE_CHAMAR_ATENDENTE } from '@/lib/pedi
 import { pausarRobo, roboEstaPausado, retomarRobo } from '@/lib/pausa-do-robo';
 import { registrarIncidenteDaIa, registrarSucessoDaIa } from '@/lib/saude-da-ia';
 import {
+  acrescentarDoCliente,
+  chamadoDaConversa,
+  entrarNaFila,
+  tirarDaFila,
+  tirarSeSoPelaQuedaDaIa,
+  type MensagemDoChamado,
+} from '@/lib/fila-de-atendimento-humano';
+import { devolverAvisoUnico, pegarAvisoUnico } from '@/lib/aviso-unico';
+import {
   alertaDeIaForaDoArParaALoja,
   alertaDeIaForaDoArParaOAdmin,
   classificarFalhaDaIa,
@@ -64,11 +73,22 @@ const TETO_DA_RESPOSTA_TARDIA_MS = 60_000;
  */
 const TETO_DA_VEZ_DA_CONVERSA_MS = 35_000;
 
-// Estado dos alertas de "IA fora do ar". Memória do processo de propósito: depois
-// de um deploy o alerta pode repetir UMA vez, e no meio de um incidente isso é
-// informação, não ruído (lib/falha-da-ia.ts).
+// Estado dos alertas de "IA fora do ar". A CONTAGEM de falhas é memória do
+// processo de propósito: depois de um deploy o alerta pode repetir UMA vez, e no
+// meio de um incidente isso é informação, não ruído (lib/falha-da-ia.ts) — e o
+// webhook fica fixo num servidor só (A), que vê todas as mensagens. O FREIO do
+// envio também passa pelo banco (lib/aviso-unico.ts): dois processos recebendo
+// o webhook ao mesmo tempo (o deploy, o DNS trocado para B) não mandam o mesmo
+// alerta duas vezes.
 const falhasDaIaPorLoja = new Map<string, number[]>();
 const alertasDeIaEnviados = new Map<string, number>();
+/**
+ * Conversas que PODEM estar na fila só pela queda da IA (entraram por este
+ * processo, ou a conferência da fila as viu assim). A resposta boa da IA só vai
+ * ao banco tirá-las de lá quando estão aqui — sem isto, toda resposta do robô
+ * custaria uma gravação a mais.
+ */
+const naFilaPelaQuedaDaIa = new Set<string>();
 /** Conversa → quando o cliente leu o aviso de instabilidade. Não se repete em 2 h. */
 const clientesAvisadosDaFalha = new Map<string, number>();
 const DUAS_HORAS_MS = 2 * 60 * 60 * 1000;
@@ -448,8 +468,12 @@ async function replyToCustomer(userId: string, remoteJid: string, text: string, 
  *
  * A montagem era a mesma em dois pontos e agora em três; ficar copiando o
  * formato do registro é como uma das cópias acaba divergindo em silêncio.
+ *
+ * A fila mora no banco (lib/fila-de-atendimento-humano.ts): o painel que a lê
+ * pode estar em outro servidor. A regra de status, motivo e "só pela queda da
+ * IA" é a mesma de quando era um Map, num comando atômico. Nunca lança.
  */
-function enqueueHumanSupport(
+async function enqueueHumanSupport(
   userId: string,
   remoteJid: string,
   cleanPhone: string,
@@ -463,50 +487,34 @@ function enqueueHumanSupport(
    * primeiro é a diferença entre atender e apagar incêndio.
    */
   motivo?: string
-) {
-  if (!global.__humanSupportChats) {
-    global.__humanSupportChats = new Map();
-  }
-  const humanKey = `${userId}_${remoteJid}`;
-  const existing = global.__humanSupportChats.get(humanKey);
+): Promise<void> {
   const formattedPhone = cleanPhone ? `+55 ${cleanPhone.replace(/^55/, "")}` : remoteJid;
 
-  const messages = existing ? existing.messages : [];
-  messages.push({ sender: "user", text: userText, timestamp: now });
+  const messages: MensagemDoChamado[] = [{ sender: "user", text: userText, timestamp: now }];
   // Sem texto do robô não se inventa uma fala dele: quando a conversa já está
   // com a equipe, o robô não respondeu nada — e um balão vazio no histórico
   // faria a atendente achar que ele falou algo que ela não consegue ler.
   if (botText) messages.push({ sender: "bot", text: botText, timestamp: Date.now() });
 
-  global.__humanSupportChats.set(humanKey, {
-    id: humanKey,
+  if (motivo === MOTIVO_IA_FORA_DO_AR) naFilaPelaQuedaDaIa.add(`${userId}_${remoteJid}`);
+  await entrarNaFila({
     userId,
     jid: remoteJid,
-    phone: formattedPhone,
-    clientName: pushName || formattedPhone,
-    // Quem a atendente JÁ assumiu continua ACTIVE. Isto regravava "PENDING" a
-    // cada mensagem do cliente — e é o status que decide, mais abaixo, se uma
-    // conversa que entrou só pela queda da IA pode voltar para o robô: sem
-    // preservar, o robô entraria no meio de um atendimento humano.
-    status: existing?.status === "ACTIVE" ? "ACTIVE" : "PENDING",
-    unreadCount: (existing?.unreadCount || 0) + 1,
-    lastMessage: userText,
-    updatedAt: Date.now(),
-    messages,
-    // Um motivo antigo não é apagado por uma entrada nova sem motivo: quem
-    // entrou na fila reclamando de atraso continua sendo o caso urgente.
-    motivo: motivo || (existing as any)?.motivo,
-    // A conversa está aqui SÓ porque a IA caiu? Campo próprio, e não comparação
-    // do texto do motivo: qualquer outro caminho de transferência (pediu
-    // atendente, reclamação, anti-loop) o derruba, e aí a equipe segura a
-    // conversa como sempre. Entrada nova nasce `true` só pelo motivo da queda.
-    soPorIaForaDoAr:
-      motivo === MOTIVO_IA_FORA_DO_AR
-        ? (existing ? (existing as any).soPorIaForaDoAr === true : true)
-        : motivo
-          ? false
-          : (existing as any)?.soPorIaForaDoAr === true,
-  } as any);
+    telefone: formattedPhone,
+    nomeDoCliente: pushName || formattedPhone,
+    textoDoCliente: userText,
+    mensagens: messages,
+    // Quem a atendente JÁ assumiu continua ACTIVE (é o status que decide, mais
+    // abaixo, se uma conversa que entrou só pela queda da IA pode voltar para o
+    // robô). Um motivo antigo não é apagado por uma entrada nova sem motivo:
+    // quem entrou reclamando de atraso continua sendo o caso urgente. E "só
+    // pela queda da IA" é campo próprio, não comparação do texto do motivo:
+    // qualquer outro caminho de transferência (pediu atendente, reclamação,
+    // anti-loop) o derruba, e aí a equipe segura a conversa como sempre.
+    motivo,
+    motivoDaIaForaDoAr: MOTIVO_IA_FORA_DO_AR,
+    agora: Date.now(),
+  });
 }
 
 const MOTIVO_IA_FORA_DO_AR = "IA fora do ar";
@@ -879,7 +887,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     // A loja pode ter assumido esta conversa (botão do painel, pedido de
     // atendente): a checagem geral só vem mais abaixo, e até aqui o robô
     // respondia por cima de quem estava atendendo.
-    if (roboEstaPausado(user.id, remoteJid)) return;
+    if (await roboEstaPausado(user.id, remoteJid)) return;
     // Sem `target` cortado: tirar o "@lid" do endereço mandava a resposta para
     // "55<LID>@s.whatsapp.net" — um número que não existe (ou o de outra
     // pessoa). O envio já sabe endereçar @lid e telefone.
@@ -1053,7 +1061,7 @@ async function handleIncomingMessage(body: any, instance: string) {
 
     // Idem: com a conversa nas mãos da equipe, o robô não entra com o
     // "obrigado pela preferência" no meio do atendimento.
-    if (!roboEstaPausado(user.id, remoteJid)) {
+    if (!(await roboEstaPausado(user.id, remoteJid))) {
       await replyToCustomer(user.id, remoteJid, thankMsg).catch(() => {});
     }
     return;
@@ -1072,8 +1080,8 @@ async function handleIncomingMessage(body: any, instance: string) {
   // quieto — mas a mensagem tem que CHEGAR à fila. Aqui havia um `return` seco:
   // a atendente via só a primeira mensagem no balãozinho, e tudo o que o cliente
   // escrevia depois era descartado sem ninguém ler.
-  if (roboEstaPausado(user.id, remoteJid)) {
-    enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, "", Date.now());
+  if (await roboEstaPausado(user.id, remoteJid)) {
+    await enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, "", Date.now());
     // A conversa continua aparecendo no painel, com o que o cliente escreve
     // enquanto a equipe atende — é o ponto de poder acompanhar de lá.
     void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
@@ -1108,7 +1116,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     // guarda do caminho de reclamação, logo abaixo).
     if (stopOnHuman && (await conversaEstaComHumano(user.id, remoteJid))) {
       pausarRobo(user.id, remoteJid);
-      enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, "", now, "Pediu atendente");
+      await enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, "", now, "Pediu atendente");
       return;
     }
 
@@ -1122,7 +1130,11 @@ async function handleIncomingMessage(body: any, instance: string) {
     // por ninguém — nem pelo robô, que acabou de calar. No modo "não pausar" o
     // robô segue respondendo, então o alerta tem freio por conversa (30 min):
     // sem ele, cada "atendente??" do mesmo cliente viraria mais um alerta.
-    if (stopOnHuman || podeAlertarAgora(alertasDeIaEnviados, `atendente:${user.id}_${remoteJid}`, now, 30 * 60 * 1000)) {
+    if (
+      stopOnHuman ||
+      (podeAlertarAgora(alertasDeIaEnviados, `atendente:${user.id}_${remoteJid}`, now, 30 * 60 * 1000) &&
+        (await pegarAvisoUnico(`atendente:${user.id}_${remoteJid}`, 30 * 60 * 1000)))
+    ) {
       avisarDono(
         user.id,
         "pedido_de_atendente",
@@ -1148,7 +1160,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       // cliente pode estar com a IA neste instante; ela confere a pausa antes de
       // enviar (mais abaixo) — e só enxerga o que já foi gravado.
       pausarRobo(user.id, remoteJid);
-      enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, FRASE_DE_CHAMAR_ATENDENTE, now, "Pediu atendente");
+      await enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, FRASE_DE_CHAMAR_ATENDENTE, now, "Pediu atendente");
 
       await replyToCustomer(user.id, remoteJid, FRASE_DE_CHAMAR_ATENDENTE, remoteJid || data.from || "").catch(() => {});
 
@@ -1185,7 +1197,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     // cada nova mensagem de quem está bravo é piorar o atendimento, e o alerta
     // ao dono viraria enxurrada.
     if (problema.escalar && (await conversaEstaComHumano(user.id, remoteJid))) {
-      enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, "", now);
+      await enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, "", now);
       return;
     }
 
@@ -1205,7 +1217,7 @@ async function handleIncomingMessage(body: any, instance: string) {
       // pausa antes de enviar — senão o cliente leria a resposta do robô logo
       // depois de "vou chamar uma pessoa".
       pausarRobo(user.id, remoteJid);
-      enqueueHumanSupport(
+      await enqueueHumanSupport(
         user.id, remoteJid, cleanPhone, data.pushName, textMessage, FRASE_DE_TRANSFERENCIA, now,
         problema.motivo === "cobranca_repetida" ? "Cobrou o pedido de novo" : "Reclamação"
       );
@@ -1237,21 +1249,23 @@ async function handleIncomingMessage(body: any, instance: string) {
     }
   }
 
-  // Se a conversa já estiver na fila de atendimento humano
+  // Se a conversa já estiver na fila de atendimento humano (no banco: o painel
+  // que a mexe pode estar em outro servidor — lib/fila-de-atendimento-humano.ts)
   const pausedKey = `${user.id}_${remoteJid}`;
-  if (global.__humanSupportChats?.has(pausedKey)) {
-    const chat = global.__humanSupportChats.get(pausedKey)!;
+  const chat = await chamadoDaConversa(user.id, remoteJid);
+  if (chat) {
+    if (chat.soPorIaForaDoAr && chat.status === "PENDING") naFilaPelaQuedaDaIa.add(pausedKey);
     // Se passaram mais de 30 minutos sem atendimento humano, expira e faz o robô voltar a atender
     const INACTIVITY_TIMEOUT = 30 * 60 * 1000;
     if (Date.now() - chat.updatedAt > INACTIVITY_TIMEOUT) {
       console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Atendimento humano expirou por inatividade para ${remoteJid}. Reativando robô.`);
-      chat.status = "CLOSED";
-      global.__humanSupportChats.delete(pausedKey);
-      retomarRobo(user.id, remoteJid);
+      await tirarDaFila(user.id, remoteJid);
+      naFilaPelaQuedaDaIa.delete(pausedKey);
+      await retomarRobo(user.id, remoteJid);
       // Zera também o estado persistido, senão a conversa que caiu na trava
       // ficaria sem robô para sempre.
       await clearLoopGuard(user.id, remoteJid);
-    } else if ((chat as any).soPorIaForaDoAr === true && chat.status === "PENDING") {
+    } else if (chat.soPorIaForaDoAr === true && chat.status === "PENDING") {
       // Está na fila SÓ porque a IA caiu, e ninguém da equipe assumiu: a mensagem
       // segue para a IA de novo. Se ela ainda estiver fora, o cliente (já avisado)
       // não lê nada repetido e a mensagem entra na fila, mais abaixo; se o crédito
@@ -1259,13 +1273,10 @@ async function handleIncomingMessage(body: any, instance: string) {
       // aqui era o que deixava a conversa muda muito depois de a IA voltar — o
       // `updatedAt` se renova a cada mensagem, e o prazo de 30 min nunca vencia.
     } else if (chat.status !== "CLOSED") {
-      chat.messages.push({ sender: "user", text: textMessage, timestamp: Date.now() });
+      await acrescentarDoCliente(user.id, remoteJid, textMessage);
       // Também no histórico: a aba do robô mostra a conversa inteira, e esta
-      // mensagem só existia dentro da fila em memória, que morre no deploy.
+      // mensagem só existia dentro da fila.
       void registrarMensagemDoCliente(user.id, remoteJid, textoDoClienteParaOPainel);
-      chat.lastMessage = textMessage;
-      chat.updatedAt = Date.now();
-      chat.unreadCount = (chat.unreadCount || 0) + 1;
       return;
     }
   }
@@ -1340,7 +1351,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     // Motivo explícito: além de dizer à atendente por que a conversa caiu aqui,
     // é o que derruba a marca "só por IA fora do ar" — conversa que o anti-loop
     // tirou do robô não volta para ele sozinha.
-    enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, guard.message, now, "Loop suspeito");
+    await enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, textMessage, guard.message, now, "Loop suspeito");
     registrarTrace({
       instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
       estagio: "guard-degradou", detalhe: guard.reason,
@@ -1467,9 +1478,8 @@ async function handleIncomingMessage(body: any, instance: string) {
       if (!falhaDaIa) {
         registrarSucessoDaIa(user.id);
         ultimaRespostaDaIa.set(chaveDaConversa, Date.now());
-        const naFila = global.__humanSupportChats?.get(chaveDaConversa);
-        if (naFila && (naFila as any).soPorIaForaDoAr === true && naFila.status === "PENDING") {
-          global.__humanSupportChats!.delete(chaveDaConversa);
+        if (naFilaPelaQuedaDaIa.delete(chaveDaConversa)) {
+          void tirarSeSoPelaQuedaDaIa(user.id, remoteJid);
         }
         clientesAvisadosDaFalha.delete(chaveDaConversa);
       }
@@ -1514,7 +1524,10 @@ async function handleIncomingMessage(body: any, instance: string) {
               clientesAvisadosDaFalha.set(chaveDaConversa, now);
             }
           }
-          if (podeAlertarAgora(alertasDeIaEnviados, `loja:${user.id}`, now, 30 * 60 * 1000)) {
+          if (
+            podeAlertarAgora(alertasDeIaEnviados, `loja:${user.id}`, now, 30 * 60 * 1000) &&
+            (await pegarAvisoUnico(`ia-fora-do-ar:loja:${user.id}`, 30 * 60 * 1000))
+          ) {
             avisarDono(
               user.id,
               "ia_fora_do_ar",
@@ -1535,7 +1548,17 @@ async function handleIncomingMessage(body: any, instance: string) {
         // gravar só no sucesso deixaria todas passarem pela checagem antes do
         // primeiro envio terminar. Se o envio falhar, o freio é solto para a
         // próxima loja tentar.
-        if (incidente && falhaDaIa.doSistema && podeAlertarAgora(alertasDeIaEnviados, "admin", now, 60 * 60 * 1000)) {
+        // O freio do banco vem DEPOIS do da memória (que é síncrono e segura as
+        // lojas deste processo); ele segura as do outro processo.
+        const donoDoAvisoAoAdmin =
+          incidente && falhaDaIa.doSistema && podeAlertarAgora(alertasDeIaEnviados, "admin", now, 60 * 60 * 1000)
+            ? await pegarAvisoUnico("ia-fora-do-ar:admin", 60 * 60 * 1000)
+            : null;
+        if (donoDoAvisoAoAdmin) {
+          const soltarOFreio = () => {
+            alertasDeIaEnviados.delete("admin");
+            void devolverAvisoUnico("ia-fora-do-ar:admin", donoDoAvisoAoAdmin);
+          };
           avisarAdminDoSistema(
             user.id,
             alertaDeIaForaDoArParaOAdmin({
@@ -1544,8 +1567,8 @@ async function handleIncomingMessage(body: any, instance: string) {
               quando: new Date(now).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" }),
             })
           )
-            .then((saiu) => { if (!saiu) alertasDeIaEnviados.delete("admin"); })
-            .catch(() => { alertasDeIaEnviados.delete("admin"); });
+            .then((saiu) => { if (!saiu) soltarOFreio(); })
+            .catch(soltarOFreio);
         }
       }
 
@@ -1642,8 +1665,8 @@ async function handleIncomingMessage(body: any, instance: string) {
       // segundos depois, "quero falar com um atendente". Sem esta conferência o
       // cliente leria a resposta do robô ao "oi" logo depois de "uma pessoa vai te
       // responder": o mesmo sintoma da Hakim, por outro caminho.
-      if (roboEstaPausado(user.id, remoteJid)) {
-        enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, transcription || textMessage, "", now);
+      if (await roboEstaPausado(user.id, remoteJid)) {
+        await enqueueHumanSupport(user.id, remoteJid, cleanPhone, data.pushName, transcription || textMessage, "", now);
         void registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel);
         console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: ${remoteJid} passou para a equipe enquanto ela era gerada.`);
         return;
@@ -1749,7 +1772,7 @@ async function handleIncomingMessage(body: any, instance: string) {
         // a IA de novo; quando o crédito voltar, o robô responde na hora e a
         // entrada sai da fila. Com a trava de 12 h, o cliente ficaria sem robô
         // muito depois de tudo normalizar.
-        enqueueHumanSupport(
+        await enqueueHumanSupport(
           user.id, remoteJid, cleanPhone, data.pushName, transcription || textMessage,
           silenciarResposta ? "" : replyText, now, motivoDaTransferencia
         );
@@ -1838,13 +1861,13 @@ async function handleIncomingMessage(body: any, instance: string) {
      * IA está de pé — não é falha, não entra na conta de incidente.
      */
     const conversaJaAndou = () => (ultimaRespostaDaIa.get(`${user.id}_${remoteJid}`) ?? 0) > iaInicio;
-    const pedirOQueFicouParaTras = (motivo: string) => {
+    const pedirOQueFicouParaTras = async (motivo: string) => {
       console.warn(`[${new Date().toISOString()}] [WhatsApp Webhook] ⏳ Mensagem de ${remoteJid} ficou para trás (${motivo}); a conversa já tinha sido respondida — não conta como falha da IA.`);
       registrarTrace({
         instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace,
         estagio: "ia-timeout", detalhe: `ficou para trás (${motivo}): a conversa já tinha sido respondida`,
       });
-      if (roboEstaPausado(user.id, remoteJid)) return;
+      if (await roboEstaPausado(user.id, remoteJid)) return;
       replyToCustomer(user.id, remoteJid, FRASE_DA_MENSAGEM_QUE_FICOU_PARA_TRAS, remoteJid || data.from || "")
         .then(() => trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: remoteJid || data.from || "" }))
         .catch(() => {});
@@ -1937,7 +1960,7 @@ async function handleIncomingMessage(body: any, instance: string) {
     // se sabe se a IA falhou. Conversa que passou para a equipe nesse meio-tempo
     // não recebe nada do robô. A vez da conversa segue presa até a resposta
     // tardia ou o vigia (acima) — ou o teto da vez.
-    if (!roboEstaPausado(user.id, remoteJid)) {
+    if (!(await roboEstaPausado(user.id, remoteJid))) {
       await replyToCustomer(user.id, remoteJid, FRASE_DE_SO_UM_INSTANTE, remoteJid || data.from || "");
       trackWhatsAppMessage(user.id, "OUTBOUND", "SERVICE", { remoteJid: remoteJid || data.from || "" });
     }

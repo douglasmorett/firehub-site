@@ -133,7 +133,7 @@ async function chegouMensagem(body: any) {
   // ── Saiu do número do FireHub ────────────────────────────────────────────
   if (key.fromMe === true) {
     if (!texto && !audio && !midia) return;
-    if (texto && ehEcoDoFireHub(jidsDaConversa, texto)) return;
+    if (texto && (await ehEcoDoFireHub(jidsDaConversa, texto))) return;
     const contato = await silenciarSeForDaEquipe(await contatoDaConversa({ telefone, jid }), telefone);
     // Print mandado pelo celular sem legenda também é a equipe na conversa: o
     // robô tem de calar do mesmo jeito (antes, sem texto, nem era gravado).

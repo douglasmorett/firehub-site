@@ -154,6 +154,12 @@ export async function register() {
   // boot, e não na primeira mensagem de um cliente.
   const { garantirColunaDaMemoria } = await import("./lib/memoria-da-conversa-no-banco");
   await garantirColunaDaMemoria();
+  // O estado do robô que o painel lê e muda — pausa, fila de atendimento
+  // humano, saúde da IA, eco do número do FireHub (lib/robo-no-banco.ts).
+  // Tabelas próprias por SQL cru; se faltarem, cada módulo segue pela memória
+  // do processo, como antes (certo com um servidor só). Nunca lança.
+  const { garantirTabelasDoRobo } = await import("./lib/robo-no-banco");
+  await garantirTabelasDoRobo();
   // Modo Contingência: as tabelas e o diário da cópia das lojas ativadas
   // (lib/contingencia/estrutura-no-banco.ts). Nunca lança e não roda no
   // computador da loja.
