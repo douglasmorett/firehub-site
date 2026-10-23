@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import MotoboyDashboard from "@/components/customer/MotoboyDashboard";
 import { LOJAS_COM_LANCHE_DA_EQUIPE } from "@/lib/lanche-da-equipe-regras";
+import { estaNaSenhaPadrao } from "@/lib/motoboy-senha";
 
 export default async function MotoboysPage() {
   const session = await getServerSession(authOptions);
@@ -23,10 +24,17 @@ export default async function MotoboysPage() {
     ? await prisma.user.findUnique({ where: { id: targetFranchiseeId }, select: { deliveryConfig: true, slug: true, storeName: true } }).catch(() => null)
     : null;
 
-  const motoboys = await prisma.motoboy.findMany({
+  const doBanco = await prisma.motoboy.findMany({
     where: { franchiseeId: targetFranchiseeId },
     orderBy: [{ active: "desc" }, { name: "asc" }],
   });
+  // A lista vai para o navegador (props do componente de cliente): sem a senha
+  // (hash, ou texto puro nas antigas) e sem o PIN — o mesmo que api/motoboys
+  // faz. A tela só precisa saber quem ainda está na senha padrão.
+  const motoboys = await Promise.all(doBanco.map(async ({ password, pinCode, ...mb }) => ({
+    ...mb,
+    senhaPadrao: await estaNaSenhaPadrao(password),
+  })));
 
   return (
     <div className="container" style={{ marginTop: "1.5rem" }}>

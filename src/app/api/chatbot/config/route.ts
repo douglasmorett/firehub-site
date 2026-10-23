@@ -5,6 +5,8 @@ import { prisma } from "@/lib/prisma";
 import { linkDeAvaliacaoNoGoogle } from "@/lib/avaliacao-no-google";
 import { lerOutrosNumerosDoDono } from "@/lib/numeros-do-dono";
 import { limparPixDaLoja } from "@/lib/pix-da-loja";
+import { configSemCredenciais } from "@/lib/gateway-da-loja";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 /**
  * A configuração do robô é da LOJA: qualquer login dela (dono ou equipe) vê e
@@ -14,12 +16,15 @@ import { limparPixDaLoja } from "@/lib/pix-da-loja";
  * em branco ("só delivery", sem reserva) e o que ela salvasse ficava na conta
  * dela, onde o robô da loja nunca lê.
  */
-async function idDaLoja(email: string): Promise<string | null> {
-  const quemPediu = await prisma.user.findUnique({
+async function quemPediu(email: string) {
+  return prisma.user.findUnique({
     where: { email },
-    select: { id: true, ownerId: true },
+    select: { id: true, ownerId: true, role: true, permissions: true },
   });
-  return quemPediu ? quemPediu.ownerId || quemPediu.id : null;
+}
+async function idDaLoja(email: string): Promise<string | null> {
+  const quem = await quemPediu(email);
+  return quem ? quem.ownerId || quem.id : null;
 }
 
 export async function GET() {
@@ -76,7 +81,9 @@ export async function GET() {
   const storedConfig = (user.chatbotConfig as any) || {};
 
   return NextResponse.json({
-    config: { ...defaultConfig, ...storedConfig },
+    // Ler continua para qualquer login (Integrações mostra se o WhatsApp está
+    // ligado), mas sem as chaves: lib/gateway-da-loja.ts, configSemCredenciais.
+    config: configSemCredenciais({ ...defaultConfig, ...storedConfig }),
     coupons: Array.isArray(user.storeCoupons) ? user.storeCoupons : [],
     stats: {
       productCount,
@@ -98,7 +105,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   }
 
-  const lojaId = await idDaLoja(session.user.email);
+  // Gravar é da tela do robô (/store/chatbot, caixinha "Minha loja"): o caixa
+  // com só "Pedidos" trocava a chave Pix que o robô manda ao cliente.
+  const quem = await quemPediu(session.user.email);
+  if (quem && !podeComoNaTela(quem, "/store/chatbot")) {
+    return NextResponse.json({ error: "Sua conta não tem acesso ao Robô: peça ao dono da loja para marcar \"Minha loja\" em Equipe." }, { status: 403 });
+  }
+  const lojaId = quem ? quem.ownerId || quem.id : null;
   const user = lojaId
     ? await prisma.user.findUnique({
         where: { id: lojaId },
@@ -238,7 +251,7 @@ export async function POST(req: NextRequest) {
 
     // `recusados` volta para a tela: sem isso o lojista via "salvo!" em verde
     // enquanto o campo era descartado aqui, e ninguém descobria por meses.
-    return NextResponse.json({ success: true, config: updatedConfig, recusados, ...(erroDoPix ? { erroDoPix } : {}) });
+    return NextResponse.json({ success: true, config: configSemCredenciais(updatedConfig), recusados, ...(erroDoPix ? { erroDoPix } : {}) });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Erro ao salvar configurações" }, { status: 500 });
   }

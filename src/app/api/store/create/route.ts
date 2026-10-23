@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { ehDonoOuAdmin } from "@/lib/permissoes-da-equipe";
 
 export async function POST(req: Request) {
   try {
@@ -20,6 +21,10 @@ export async function POST(req: Request) {
     const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    }
+    // Loja nova gera mensalidade: só o dono abre (o funcionário não).
+    if (!ehDonoOuAdmin(user)) {
+      return NextResponse.json({ error: "Só o dono da conta cadastra loja nova." }, { status: 403 });
     }
 
     const franchiseeId = user.ownerId || user.id;
@@ -78,7 +83,10 @@ export async function POST(req: Request) {
           vendedorAtribuidoEm: new Date(),
         }),
         ...(embaixadorDaConta && { ambassadorId: embaixadorDaConta.id }),
-      }
+      },
+      // A resposta vai ao navegador: nada de hash de senha nem dado da conta.
+      // (A cópia do hash para a filial, acima, é o achado F143 — fica à parte.)
+      select: { id: true, storeName: true, slug: true },
     });
 
     return NextResponse.json({

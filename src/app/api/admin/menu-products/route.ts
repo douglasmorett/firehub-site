@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, lerHorarioDoProduto, comDisponibilidadeAnotada } from "@/lib/cardapio-interno";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
@@ -34,7 +35,10 @@ type Scope = {
 };
 
 async function resolveScope(
-  req: NextRequest
+  req: NextRequest,
+  // Gravar (POST/PUT/DELETE/PATCH) é da tela Cardápio: o funcionário só com a
+  // caixinha "Cardápio". Ler continua livre — PDV, mesas e editar pedido leem daqui.
+  escrita = false
 ): Promise<{ scope: Scope; error: null } | { scope: null; error: NextResponse }> {
   const session = await getServerSession(authOptions);
   if (!session) {
@@ -43,10 +47,13 @@ async function resolveScope(
 
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, role: true, ownerId: true },
+    select: { id: true, role: true, ownerId: true, permissions: true },
   });
   if (!user) {
     return { scope: null, error: NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 }) };
+  }
+  if (escrita && !podeComoNaTela(user, "/store/cardapio")) {
+    return { scope: null, error: NextResponse.json({ error: "Sua conta não tem acesso ao Cardápio." }, { status: 403 }) };
   }
 
   const isAdmin = user.role === "ADMIN";
@@ -478,7 +485,7 @@ function saneiaEstoque(dados: any): string | null {
 }
 
 export async function POST(req: NextRequest) {
-  const { scope, error } = await resolveScope(req);
+  const { scope, error } = await resolveScope(req, true);
   if (!scope) return error;
 
   const data = await req.json();
@@ -574,7 +581,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
-  const { scope, error } = await resolveScope(req);
+  const { scope, error } = await resolveScope(req, true);
   if (!scope) return error;
 
   const data = await req.json();
@@ -684,7 +691,7 @@ export async function PUT(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const { scope, error } = await resolveScope(req);
+  const { scope, error } = await resolveScope(req, true);
   if (!scope) return error;
 
   const data = await req.json();
@@ -739,7 +746,7 @@ export async function DELETE(req: NextRequest) {
  * requisição inteira em vez de gravar metade.
  */
 export async function PATCH(req: NextRequest) {
-  const { scope, error } = await resolveScope(req);
+  const { scope, error } = await resolveScope(req, true);
   if (!scope) return error;
 
   // Sem a coluna no banco não há onde gravar. Melhor dizer isso com todas as

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { ehAdminNoBanco } from "@/lib/permissoes-da-equipe";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { lerTrace } from "@/lib/webhook-trace";
 import { loopGuardBackend } from "@/lib/loop-guard";
@@ -9,20 +9,20 @@ import { loopGuardBackend } from "@/lib/loop-guard";
 export const dynamic = "force-dynamic";
 
 /**
- * Aceita dois caminhos: sessão de lojista/admin ou CRON_SECRET.
+ * Aceita dois caminhos: sessão de ADMIN ou CRON_SECRET.
  *
  * A sessão existe para que dê para abrir a URL no navegador já logado, na hora
  * em que o cliente reclama. Exigir só o token empurraria quem está depurando a
  * copiar segredo de produção para o terminal — é a hora em que segredo vaza.
+ *
+ * O rastro é de TODAS as lojas (instância, final do telefone, trecho da
+ * reclamação): aceitava qualquer login, e o cadastro de loja é aberto. Agora só
+ * o ADMIN, com o papel lido do banco (o do cookie é o do dia do login). Nenhuma
+ * tela de loja chama esta rota.
  */
 async function autorizado(req: NextRequest): Promise<boolean> {
   const session = await getServerSession(authOptions).catch(() => null);
-  if (session?.user?.email) {
-    const user = await prisma.user
-      .findUnique({ where: { email: session.user.email }, select: { id: true } })
-      .catch(() => null);
-    if (user) return true;
-  }
+  if (await ehAdminNoBanco(session)) return true;
   return verifyCronAuth(req);
 }
 

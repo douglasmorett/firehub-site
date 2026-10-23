@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { getServerSession } from "next-auth/next";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
@@ -26,9 +27,11 @@ async function lojaDaSessao(req: NextRequest): Promise<{ loja: string } | { erro
   if (!session) return { erro: NextResponse.json({ error: "Não autorizado" }, { status: 401 }) };
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, role: true, ownerId: true },
+    select: { id: true, role: true, ownerId: true, permissions: true },
   });
   if (!user) return { erro: NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 }) };
+  // Cadastrar pizza é da tela Cardápio: o funcionário só com essa caixinha.
+  if (!podeComoNaTela(user, "/store/cardapio")) return { erro: NextResponse.json({ error: "Sua conta não tem acesso ao Cardápio." }, { status: 403 }) };
   if (user.role === "ADMIN") {
     const ativa = req.nextUrl.searchParams.get("storeId") || req.cookies.get("firehub_active_store")?.value || null;
     if (!ativa || ativa === "all") return { erro: NextResponse.json({ error: "Escolha a loja antes de cadastrar a pizza." }, { status: 400 }) };

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { lerFaixasDoMotoboy } from "@/lib/faixas-do-motoboy";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { authOptions } from "@/lib/auth";
 import { hashDeSenha } from "@/lib/motoboy-senha";
 import { renomearNoFiado, tirarDoFiado } from "@/lib/fiado-do-motoboy";
@@ -16,6 +17,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 
   const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  // Editar, redefinir a senha e apagar entregador é da tela Motoboys: o
+  // funcionário só com essa caixinha (a régua de api/motoboy-report/sessao.ts).
+  if (!podeComoNaTela(user, "/store/motoboys")) {
+    return NextResponse.json({ error: "Sua conta não tem acesso à tela Motoboys." }, { status: 403 });
+  }
 
   const targetFranchiseeId = user.ownerId || user.id;
 
@@ -75,6 +81,11 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
 
   const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  // Editar, redefinir a senha e apagar entregador é da tela Motoboys: o
+  // funcionário só com essa caixinha (a régua de api/motoboy-report/sessao.ts).
+  if (!podeComoNaTela(user, "/store/motoboys")) {
+    return NextResponse.json({ error: "Sua conta não tem acesso à tela Motoboys." }, { status: 403 });
+  }
 
   const targetFranchiseeId = user.ownerId || user.id;
 

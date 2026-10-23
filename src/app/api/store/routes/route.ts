@@ -230,6 +230,28 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "ID da rota não informado" }, { status: 400 });
     }
 
+    // A rota e o entregador são desta loja — conferido SEMPRE, não só no
+    // ✏️ Editar: o "trocar entregador" (sem orderIds) atualizava a rota de
+    // qualquer loja pelo id e devolvia os pedidos dela (auditoria 23/10/2026).
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true },
+    });
+    if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    const validFranchiseeIds = await getValidFranchiseeIds(user.id);
+    const daLoja = await prisma.routeSchedule.findFirst({
+      where: { id: routeId, franchiseeId: { in: validFranchiseeIds } },
+      select: { id: true },
+    });
+    if (!daLoja) return NextResponse.json({ error: "Rota não encontrada" }, { status: 404 });
+    if (motoboyId) {
+      const motoboyDaLoja = await prisma.motoboy.findFirst({
+        where: { id: String(motoboyId), franchiseeId: { in: validFranchiseeIds } },
+        select: { id: true },
+      });
+      if (!motoboyDaLoja) return NextResponse.json({ error: "Entregador não encontrado nesta loja" }, { status: 404 });
+    }
+
     // ── EDITAR OS PEDIDOS DA ROTA (✏️ Editar do card) ─────────────────────
     //
     // Tudo conferido ANTES de qualquer escrita, porque daqui sai pedido do
@@ -242,13 +264,6 @@ export async function PATCH(req: NextRequest) {
     //   - quem entra é desta loja, está em aberto e não está em outra rota.
     let idsDaEdicao: string[] | null = null;
     if (Array.isArray(orderIds)) {
-      const user = await prisma.user.findUnique({
-        where: { email: session.user.email },
-        select: { id: true },
-      });
-      if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
-      const validFranchiseeIds = await getValidFranchiseeIds(user.id);
-
       const rota = (await prisma.routeSchedule.findFirst({
         where: { id: routeId, franchiseeId: { in: validFranchiseeIds } },
         select: { id: true, status: true, dispatchedAt: true, routeNumber: true } as any,
@@ -452,9 +467,13 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
+    // O mesmo recorte do GET: `motoboy: true` mandava a senha do entregador.
     const route = await prisma.routeSchedule.findUnique({
       where: { id: routeId },
-      include: { motoboy: true, orders: true },
+      include: {
+        motoboy: { select: { id: true, name: true, phone: true } },
+        orders: { select: CAMPOS_DO_PEDIDO_NA_ROTA },
+      },
     });
 
     return NextResponse.json({ success: true, route });
