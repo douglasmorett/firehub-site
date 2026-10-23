@@ -43,6 +43,8 @@ export type TraceStage =
   | "ia-tardia"
   /** Mensagem do dono respondida pelo Bill, seu assessor (lib/assessor). */
   | "assessor-bill"
+  /** Dono sem o Bill: recebeu a oferta, ativou ou recusou (lib/assessor/oferta-no-whatsapp). */
+  | "dono-sem-bill"
   | "pedido-gravado"
   | "pedido-nao-gravado"
   | "enviado"
