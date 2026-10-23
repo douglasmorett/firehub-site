@@ -255,6 +255,14 @@ export default function GlobalPrintListener() {
           return;
         }
 
+        // O Assistente de cada loja da tela já puxa a fila da nuvem e imprime
+        // por ela (api/store/printer-config, `assistenteNaNuvem`): este laço
+        // só dobraria o trabalho do servidor. A config é relida a cada minuto;
+        // se o Assistente parar, o navegador volta a imprimir sozinho.
+        if (printerConfig?.assistenteNaNuvem === true) {
+          return;
+        }
+
         if (!feedRef.current) feedRef.current = criarFeedDePedidos();
         const rodada = await feedRef.current.buscar("");
         if (rodada.ok && active) {

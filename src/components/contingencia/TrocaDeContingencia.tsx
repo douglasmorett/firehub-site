@@ -284,11 +284,13 @@ export default function TrocaDeContingencia({ tipo }: { tipo: "painel" | "garcom
       if (Object.keys(prefs).length) fragmento.set("p", JSON.stringify(prefs));
       window.location.href = `${destino}/contingencia/entrar#${fragmento.toString()}`;
     };
-    // Uma conferência por vez: a próxima começa 5 s depois de a anterior acabar.
+    // Uma conferência por vez: a próxima começa 5 s depois de a anterior acabar
+    // — 20 s com a aba escondida, que não tem tela para levar ao computador da
+    // loja (toda aba aberta do /store faz esta pergunta ao servidor).
     let relogio: ReturnType<typeof setTimeout> | null = null;
     const rodar = async () => {
       try { await conferir(); } catch { /* a próxima confere */ }
-      if (vivo && !indo.current) relogio = setTimeout(rodar, 5000);
+      if (vivo && !indo.current) relogio = setTimeout(rodar, document.hidden ? 20_000 : 5000);
     };
     relogio = setTimeout(rodar, 5000);
     return () => {

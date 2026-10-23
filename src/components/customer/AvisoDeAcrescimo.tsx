@@ -18,6 +18,7 @@ import { PALETA } from "@/lib/paleta-brasa";
  */
 
 const INTERVALO_DA_CONSULTA = 8000;
+const INTERVALO_COM_A_ABA_ESCONDIDA = 20_000;
 const INTERVALO_DO_SOM = 6000;
 
 const MOTIVOS_PRONTOS = [
@@ -74,7 +75,14 @@ export default function AvisoDeAcrescimo() {
 
   useEffect(() => {
     consultar();
-    const t = setInterval(consultar, INTERVALO_DA_CONSULTA);
+    // Aba escondida pergunta a cada 20 s, não a cada 8 (volta na hora ao
+    // reaparecer): cada aba aberta do painel era uma pergunta a mais no pico.
+    let ultima = Date.now();
+    const t = setInterval(() => {
+      if (document.hidden && Date.now() - ultima < INTERVALO_COM_A_ABA_ESCONDIDA) return;
+      ultima = Date.now();
+      consultar();
+    }, INTERVALO_DA_CONSULTA);
     const aoVoltar = () => { if (document.visibilityState === "visible") consultar(); };
     document.addEventListener("visibilitychange", aoVoltar);
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", aoVoltar); };

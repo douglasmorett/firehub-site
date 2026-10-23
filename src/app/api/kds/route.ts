@@ -23,6 +23,7 @@ import {
 } from "@/lib/kds-telas";
 import { lerConfigDeAgendamento } from "@/lib/agendamento";
 import { lembrarPor } from "@/lib/cache-curto";
+import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
 
 /**
  * Quem é o e-mail e a config da loja (agendamento, telas, regras do KDS) ficam
@@ -62,7 +63,55 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 4, delayMs = 600): P
   throw lastErr;
 }
 
+// ── A TV SÓ RELÊ A COZINHA QUANDO ALGO MUDOU (lib/novidade-da-loja.ts) ────
+//
+// Cada TV pergunta a cada 3,5 s e a resposta lê até 100 pedidos com itens.
+// Quase sempre nada mudou: a resposta da mesma conta + etapa + tela fica
+// guardada até a próxima gravação de pedido/item das lojas dela, ou 15 s (o
+// que também cobre o pedido agendado que entra na cozinha pela hora).
+// Erro (503) nunca é guardado.
 export async function GET(req: NextRequest) {
+  let email = "";
+  try {
+    email = (await getServerSession(authOptions))?.user?.email || "";
+  } catch {}
+  const lojas = email ? await lojasDaCozinha(email).catch(() => null) : null;
+  if (!lojas) return kdsDeVerdade(req);
+
+  const p = req.nextUrl.searchParams;
+  const chave = `kds:${email}|${p.get("stage") || "production"}|${p.get("tela") || ""}`;
+  let falhou: NextResponse | null = null;
+  const corpo = await lerEnquantoNadaMuda(
+    chave,
+    lojas,
+    async () => {
+      const r = await kdsDeVerdade(req);
+      if (r.status !== 200) {
+        falhou = r;
+        return null;
+      }
+      return (await r.json()) as unknown;
+    },
+    (v) => v !== null,
+  );
+  if (corpo === null) return falhou!;
+  return NextResponse.json(corpo, {
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate", "Pragma": "no-cache", "Expires": "0" },
+  });
+}
+
+/** As lojas cujos pedidos a cozinha desta conta mostra (o `storeCondition` abaixo), 60 s em memória. */
+function lojasDaCozinha(email: string): Promise<string[] | null> {
+  return lembrarPor(`kds:lojas:${email}`, 60_000, async () => {
+    const u = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } });
+    if (!u) return null;
+    const ids = [u.id, u.ownerId].filter((x): x is string => !!x);
+    const contas = await prisma.user.findMany({ where: { ownerId: { in: ids } }, select: { id: true } });
+    return [...new Set([...ids, ...contas.map((c) => c.id)])];
+  });
+}
+
+async function kdsDeVerdade(req: NextRequest) {
   try {
     let email: string | null = null;
     try {
