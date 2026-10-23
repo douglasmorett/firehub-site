@@ -9,7 +9,7 @@
  * Sem banco: a fila usa um banco falso que conta as consultas.
  */
 import {
-  esquecerTudoDaNovidade, lerEnquantoNadaMuda, lojaDaGravacao, marcarNovidade,
+  aoMarcarNovidade, esquecerTudoDaNovidade, lerEnquantoNadaMuda, lojaDaGravacao, marcarNovidade, marcarNovidadeDeOutraInstancia,
   nadaMudouDesde, PRAZO_MS, sqlGravaNaFila, operacaoGrava, gravouAlgo,
 } from "../src/lib/novidade-da-loja";
 import { filaTemAlgoGuardado, type PerguntaDaFila } from "../src/lib/fila-tem-algo";
@@ -134,6 +134,25 @@ async function main() {
   anda(PRAZO_MS);
   const rf = await filaTemAlgoGuardado(falhando, pergunta(1_800_000));
   confere(rf === null, "erro na pré-consulta: null (a rota segue pelo caminho de sempre)");
+
+  console.log("\nEntre instâncias (o gancho do lib/laco-entre-instancias.ts)");
+  {
+    const levadas: (string | null)[] = [];
+    aoMarcarNovidade((l) => levadas.push(l));
+    marcarNovidade("LOJA");
+    marcarNovidade(null);
+    confere(JSON.stringify(levadas) === JSON.stringify(["LOJA", null]), "a marca daqui vai para as outras (loja e \"todas\")");
+    const antes = Date.now();
+    anda(1);
+    marcarNovidadeDeOutraInstancia("FORA");
+    confere(!nadaMudouDesde(["FORA"], antes), "a marca que veio de fora invalida o que esta instância guardou");
+    confere(levadas.length === 2, "…e não volta para o banco (sem eco)");
+    aoMarcarNovidade(() => { throw new Error("banco fora"); });
+    let estourou = false;
+    try { marcarNovidade("LOJA"); } catch { estourou = true; }
+    confere(!estourou, "o gancho falhando nunca atrapalha a marca daqui");
+    aoMarcarNovidade(undefined);
+  }
 
   console.log(`\n${ok} ok, ${falhas} falha(s)`);
   process.exit(falhas ? 1 : 0);

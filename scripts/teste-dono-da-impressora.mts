@@ -1,4 +1,4 @@
-import { chaveDoAssistente, registrarAssistente, trabalhosDoAssistente, donoDaImpressora, compararVersoes, esquecerAssistentes, VALIDADE_DO_DONO_MS } from "../src/lib/dono-da-impressora.ts";
+import { chaveDoAssistente, registrarAssistente, trabalhosDoAssistente, donoDaImpressora, compararVersoes, esquecerAssistentes, VALIDADE_DO_DONO_MS, tirarAssistentesParaOBanco } from "../src/lib/dono-da-impressora.ts";
 let falhas = 0;
 const ok = (n, c, d) => { console.log((c ? "  ok    " : "  FALHA ") + n + (c ? "" : " " + JSON.stringify(d))); if (!c) falhas++; };
 
@@ -65,6 +65,42 @@ console.log("\nDois Assistentes da mesma versão no mesmo PC (portas diferentes)
   registrarAssistente("loja", kb, b, T + 10);
   ok("empate de versão: o que chegou primeiro", donoDaImpressora("loja", "X", T + 10) === ka);
   ok("o segundo não recebe", trabalhosDoAssistente([job("p", "X")], "loja", kb, T + 10).length === 0);
+}
+
+console.log("\nDuas instâncias: cada uma viu um Assistente primeiro (o banco desempata igual)");
+{
+  esquecerAssistentes();
+  const caixa = { versao: "1.2.36", porta: 7899, impressoras: ["ELGIN i8"] };
+  const cozinha = { versao: "1.2.36", porta: 7899, impressoras: ["ELGIN i8"] };
+  const kCaixa = chaveDoAssistente("10.0.0.1", caixa), kCozinha = chaveDoAssistente("10.0.0.2", cozinha);
+  // ESTA instância (B) só viu a cozinha; o caixa consultou só a outra (A).
+  registrarAssistente("loja", kCozinha, cozinha, T);
+  ok("só pela memória: a cozinha é a dona aqui (em A seria o caixa: papel em dobro)", donoDaImpressora("loja", "ELGIN i8", T) === kCozinha);
+  const doBanco = [
+    { chave: kCaixa, versao: "1.2.36", impressoras: ["elgin i8"], desdeHaMs: 60_000, vistoHaMs: 4_000 },
+    { chave: kCozinha, versao: "1.2.36", impressoras: ["elgin i8"], desdeHaMs: 20_000, vistoHaMs: 1_000 },
+  ];
+  ok("com o banco: o caixa (visto antes no cluster) é o dono aqui também", donoDaImpressora("loja", "ELGIN i8", T, doBanco) === kCaixa);
+  ok("…e a cozinha não recebe a comanda por esta instância", trabalhosDoAssistente([job("p", "ELGIN i8")], "loja", kCozinha, T, doBanco).length === 0);
+  ok("linha do banco velha (> 20 s) não faz dono quem esta instância não vê", donoDaImpressora("loja", "ELGIN i8", T, [{ ...doBanco[0], vistoHaMs: 25_000 }, doBanco[1]]) === kCozinha);
+  ok("mesmo desde e mesma versão: a chave desempata (igual nos dois servidores)", donoDaImpressora("loja", "ELGIN i8", T, doBanco.map((b) => ({ ...b, desdeHaMs: 30_000 }))) === [kCaixa, kCozinha].sort()[0]);
+  ok("banco vazio (falhou): como antes, só a memória", donoDaImpressora("loja", "ELGIN i8", T, []) === kCozinha);
+}
+
+console.log("\nO que vai para o banco");
+{
+  esquecerAssistentes();
+  const novo = { versao: "1.2.36", porta: 7899, impressoras: ["ELGIN i8"] };
+  const k = chaveDoAssistente("ip", novo);
+  registrarAssistente("loja", k, novo, T);
+  registrarAssistente("loja", k, novo, T + 3_000);
+  registrarAssistente("loja", chaveDoAssistente("ip", null), null, T);
+  const fila = tirarAssistentesParaOBanco();
+  ok("a cada 3 s na memória, uma linha só para o banco (e o antigo, sem impressora, nenhuma)", fila.length === 1 && fila[0].chave === k, fila);
+  registrarAssistente("loja", k, novo, T + 9_000);
+  ok("antes de 10 s: nada", tirarAssistentesParaOBanco().length === 0);
+  registrarAssistente("loja", k, novo, T + 10_000);
+  ok("10 s depois: de novo", tirarAssistentesParaOBanco().length === 1);
 }
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");

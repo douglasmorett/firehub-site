@@ -6,6 +6,7 @@
 
 import { prisma } from "./prisma";
 import { segredoObrigatorio } from "./segredos";
+import { chaveDaRenovacao, renovarUmaVez } from "./renovar-uma-vez";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
 
@@ -102,37 +103,54 @@ export async function getTokenDaLojaIfood(userId: string): Promise<string | null
   }
 
   try {
-    const res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grantType: "refresh_token",
-        clientId,
-        clientSecret,
-        refreshToken: u.ifoodRefreshToken,
-      }),
-    });
+    // Um de cada vez no cluster, relendo a linha: o feed do painel, o cron e
+    // o outro servidor pedem o token ao mesmo tempo (lib/renovar-uma-vez.ts).
+    const renovado = await renovarUmaVez(chaveDaRenovacao("ifood", u.ifoodRefreshToken), {
+      ler: () =>
+        prisma.user.findUnique({
+          where: { id: userId },
+          select: { ifoodAccessToken: true, ifoodRefreshToken: true, ifoodTokenExpiresAt: true },
+        }),
+      jaVale: (l) =>
+        l.ifoodAccessToken && l.ifoodTokenExpiresAt && l.ifoodTokenExpiresAt.getTime() - margem > Date.now()
+          ? l.ifoodAccessToken
+          : null,
+      renovar: async (l) => {
+        if (!l.ifoodRefreshToken) return null;
+        const res = await fetch(`${IFOOD_BASE}/authentication/v1.0/oauth/token`, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            grantType: "refresh_token",
+            clientId,
+            clientSecret,
+            refreshToken: l.ifoodRefreshToken,
+          }),
+        });
 
-    if (!res.ok) {
-      const err = await res.text().catch(() => "");
-      console.error(`[iFood] refresh_token falhou para a loja ${userId}: ${res.status} ${err.slice(0, 200)}`);
-      return u.ifoodAccessToken ?? null;
-    }
+        if (!res.ok) {
+          const err = await res.text().catch(() => "");
+          console.error(`[iFood] refresh_token falhou para a loja ${userId}: ${res.status} ${err.slice(0, 200)}`);
+          return null;
+        }
 
-    const data = await res.json();
-    if (!data?.accessToken) return u.ifoodAccessToken ?? null;
+        const data = await res.json();
+        if (!data?.accessToken) return null;
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: {
-        ifoodAccessToken: data.accessToken,
-        ifoodRefreshToken: data.refreshToken || u.ifoodRefreshToken,
-        ifoodTokenExpiresAt: new Date(Date.now() + ((data.expiresIn ?? 3600) - 60) * 1000),
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            ifoodAccessToken: data.accessToken,
+            ifoodRefreshToken: data.refreshToken || l.ifoodRefreshToken,
+            ifoodTokenExpiresAt: new Date(Date.now() + ((data.expiresIn ?? 3600) - 60) * 1000),
+          },
+        });
+
+        console.log(`[iFood] Token da loja ${userId} renovado.`);
+        return data.accessToken as string;
       },
     });
-
-    console.log(`[iFood] Token da loja ${userId} renovado.`);
-    return data.accessToken as string;
+    return renovado ?? u.ifoodAccessToken ?? null;
   } catch (e: any) {
     console.error(`[iFood] Erro ao renovar token da loja ${userId}:`, e?.message);
     return u.ifoodAccessToken ?? null;
