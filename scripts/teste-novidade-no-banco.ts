@@ -9,6 +9,7 @@
  *   DATABASE_URL="postgresql://postgres@127.0.0.1:55491/novidade" npx tsx scripts/teste-novidade-no-banco.ts
  * Recusa qualquer banco que não seja local.
  */
+import { Prisma } from "@prisma/client";
 import { prisma } from "../src/lib/prisma";
 import { nadaMudouDesde } from "../src/lib/novidade-da-loja";
 
@@ -72,6 +73,12 @@ async function main() {
   confere(r.loja && r.outra, "UPDATE por SQL direto marca todas");
   r = await marca(() => prisma.$executeRawUnsafe(`UPDATE "CustomerOrder" SET "notes" = 'z' WHERE "id" = $1`, pedidoId));
   confere(r.loja, "UPDATE por SQL direto (Unsafe) marca");
+  r = await marca(() => prisma.$executeRaw(Prisma.sql`UPDATE "CustomerOrder" SET "notes" = 'nfce' WHERE "id" = ${pedidoId}`));
+  confere(r.loja, "$executeRaw com o objeto Prisma.sql (jeito da NFC-e) marca");
+  r = await marca(() => prisma.printRequest.deleteMany({ where: { franchiseeId: LOJA, createdAt: { lt: new Date(0) } } }));
+  confere(!r.loja && !r.outra, "faxina que não apagou nada não marca");
+  r = await marca(() => prisma.$executeRaw`UPDATE "CustomerOrder" SET "notes" = 'x' WHERE "id" = ${"nao-existe"}`);
+  confere(!r.loja && !r.outra, "SQL direto que não mexeu em linha nenhuma não marca");
   r = await marca(() => prisma.$transaction(async (tx) => tx.$executeRawUnsafe(`UPDATE "CustomerOrder" SET "notes" = 'w' WHERE "id" = $1`, pedidoId)));
   confere(r.loja, "SQL direto dentro de transação (subida da contingência) marca");
 

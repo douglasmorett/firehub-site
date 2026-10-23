@@ -32,14 +32,23 @@ export const PRAZO_MS = 15_000;
 /** As repetições da marca, para a gravação que estava dentro de uma transação. */
 const REPETIR_EM_MS = [2_000, 8_000];
 
-const ultimaPorLoja = new Map<string, number>();
-// O processo acabou de subir: tudo conta como "pode ter mudado".
-let ultimaGeral = Date.now();
+// Em globalThis, e não em variável do módulo: o Next pode carregar uma cópia
+// deste arquivo por pacote de rota, e o sinal precisa ser UM só por processo
+// (quem grava e quem pergunta podem estar em rotas diferentes).
+type Estado = {
+  ultimaPorLoja: Map<string, number>;
+  /** O processo acabou de subir: tudo conta como "pode ter mudado". */
+  ultimaGeral: number;
+  guardadas: Map<string, { lidaEm: number; valor: unknown }>;
+};
+const g = globalThis as unknown as { __novidadeDaLoja?: Estado };
+const estado: Estado = (g.__novidadeDaLoja ??= { ultimaPorLoja: new Map(), ultimaGeral: Date.now(), guardadas: new Map() });
+const { ultimaPorLoja, guardadas } = estado;
 
 function marcarAgora(lojaId: string | null) {
   const agora = Date.now();
   if (lojaId) ultimaPorLoja.set(lojaId, agora);
-  else ultimaGeral = agora;
+  else estado.ultimaGeral = agora;
 }
 
 /** Algo da loja mudou. Sem loja (gravação em lote, SQL direto): vale para todas. */
@@ -54,7 +63,7 @@ export function marcarNovidade(lojaId?: string | null) {
 
 /** A hora (ms) da última novidade que vale para alguma destas lojas. */
 export function ultimaNovidade(lojaIds: readonly string[]): number {
-  let ultima = ultimaGeral;
+  let ultima = estado.ultimaGeral;
   for (const id of lojaIds) {
     const t = ultimaPorLoja.get(id);
     if (t !== undefined && t > ultima) ultima = t;
@@ -67,8 +76,6 @@ export function nadaMudouDesde(lojaIds: readonly string[], desde: number): boole
   return ultimaNovidade(lojaIds) < desde;
 }
 
-type Guardada = { lidaEm: number; valor: unknown };
-const guardadas = new Map<string, Guardada>();
 const LIMITE_DE_GUARDADAS = 2_000;
 
 /**
@@ -104,10 +111,10 @@ export async function lerEnquantoNadaMuda<T>(
 }
 
 /** Só para teste. */
-export function esquecerTudoDaNovidade() {
+export function esquecerTudoDaNovidade(ultimaGeral = Date.now()) {
   ultimaPorLoja.clear();
   guardadas.clear();
-  ultimaGeral = Date.now();
+  estado.ultimaGeral = ultimaGeral;
 }
 
 // ── QUEM GRAVA O QUÊ (usado por lib/prisma.ts) ──────────────────────────────
@@ -136,7 +143,8 @@ export function textoDoSql(args: unknown): string {
     const primeiro = args[0];
     if (typeof primeiro === "string") return primeiro;
     if (Array.isArray(primeiro)) return primeiro.join("?");
-    return "";
+    // $executeRaw(Prisma.sql`…`) chamado com o objeto (a NFC-e grava assim).
+    return primeiro && typeof primeiro === "object" ? textoDoSql(primeiro) : "";
   }
   if (args && typeof args === "object") {
     const a = args as { strings?: unknown; sql?: unknown; text?: unknown };
@@ -149,6 +157,21 @@ export function textoDoSql(args: unknown): string {
 
 export function sqlGravaNaFila(args: unknown): boolean {
   return SQL_QUE_GRAVA.test(textoDoSql(args));
+}
+
+/**
+ * A gravação mexeu em alguma linha? `{ count: 0 }` (updateMany/deleteMany que
+ * não achou nada, como a faxina da fila a cada minuto) e `0` do $executeRaw
+ * não mudam nada — e marcar "todas as lojas" por eles apagaria o que está
+ * guardado das ~50 lojas. Na dúvida (qualquer outro formato), mexeu.
+ */
+export function gravouAlgo(resultado: unknown): boolean {
+  if (typeof resultado === "number") return resultado !== 0;
+  if (resultado && typeof resultado === "object" && !Array.isArray(resultado)) {
+    const n = (resultado as { count?: unknown }).count;
+    if (typeof n === "number" && Object.keys(resultado).length === 1) return n !== 0;
+  }
+  return true;
 }
 
 /**

@@ -10,7 +10,7 @@
  */
 import {
   esquecerTudoDaNovidade, lerEnquantoNadaMuda, lojaDaGravacao, marcarNovidade,
-  nadaMudouDesde, PRAZO_MS, sqlGravaNaFila, operacaoGrava,
+  nadaMudouDesde, PRAZO_MS, sqlGravaNaFila, operacaoGrava, gravouAlgo,
 } from "../src/lib/novidade-da-loja";
 import { filaTemAlgoGuardado, type PerguntaDaFila } from "../src/lib/fila-tem-algo";
 import { Prisma } from "@prisma/client";
@@ -82,6 +82,9 @@ async function main() {
   confere(sqlGravaNaFila(['INSERT INTO "AcrescimoDoPedido" ("id") VALUES ($1)', "x"]), "SQL $executeRawUnsafe INSERT acréscimo");
   confere(sqlGravaNaFila(Prisma.sql`\n    INSERT INTO "TransferenciaDoPedido" ("id") VALUES (${"x"})`), "INSERT transferência com quebra de linha");
   confere(sqlGravaNaFila(['DELETE FROM "PrintRequest" WHERE 1=1']), "DELETE PrintRequest");
+  confere(sqlGravaNaFila([Prisma.sql`UPDATE "CustomerOrder" SET "fiscalStatus" = ${"x"} WHERE id = ${"y"}`]), "$executeRaw chamado com o objeto Prisma.sql (NFC-e)");
+  confere(!gravouAlgo({ count: 0 }) && !gravouAlgo(0), "updateMany/deleteMany/$executeRaw que não mexeu em nada não conta");
+  confere(gravouAlgo({ count: 2 }) && gravouAlgo(1) && gravouAlgo([]) && gravouAlgo({ id: "p", count: 0 }), "o resto conta (na dúvida, mexeu)");
   confere(!sqlGravaNaFila(Prisma.sql`SELECT 1`), "SELECT não conta");
   confere(!sqlGravaNaFila(Prisma.sql`SELECT * FROM "CustomerOrder" WHERE id = ${"x"}`), "SELECT do pedido não conta");
   confere(!sqlGravaNaFila(Prisma.sql`UPDATE "CustomerOrderPayment" SET x = 1`), "outra tabela com o mesmo começo de nome não conta");

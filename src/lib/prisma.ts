@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client'
 import { carimboDeStatus } from './order-stages'
-import { lojaDaGravacao, marcarNovidade, operacaoGrava, sqlGravaNaFila } from './novidade-da-loja'
+import { gravouAlgo, lojaDaGravacao, marcarNovidade, operacaoGrava, sqlGravaNaFila } from './novidade-da-loja'
 
 /**
  * Injeta os marcos de tempo (acceptedAt, readyAt, dispatchedAt, deliveredAt)
@@ -211,7 +211,7 @@ function criarClient() {
 
 async function comNovidade({ operation, args, query }: { operation: string; args: any; query: (args: any) => Promise<any> }) {
   const resultado = await query(args)
-  if (operacaoGrava(operation)) {
+  if (operacaoGrava(operation) && gravouAlgo(resultado)) {
     marcarNovidade(lojaDaGravacao(args, resultado))
     // Pedido que muda de loja (transferência): a de antes também precisa saber.
     const mudaALoja = operation.startsWith('update')
@@ -224,7 +224,7 @@ async function comNovidade({ operation, args, query }: { operation: string; args
 
 async function comNovidadeDoSql({ args, query }: { args: any; query: (args: any) => Promise<any> }) {
   const resultado = await query(args)
-  if (sqlGravaNaFila(args)) marcarNovidade(null)
+  if (sqlGravaNaFila(args) && gravouAlgo(resultado)) marcarNovidade(null)
   return resultado
 }
 

@@ -12,7 +12,7 @@ import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from "@/lib/filtro-do-feed";
 import { marcarPainelAberto } from "@/lib/sinais-da-loja";
-import { LIMITE as LIMITE_DO_FEED } from "@/lib/feed-de-pedidos";
+import { FOLGA_MS as FOLGA_DO_FEED_MS, LIMITE as LIMITE_DO_FEED } from "@/lib/feed-de-pedidos";
 import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
 import { lembrarPor } from "@/lib/cache-curto";
 import { liberadaPara } from "@/lib/roteirizacao-automatica/liberacao";
@@ -28,8 +28,6 @@ const VALIDADE_DA_CONFIG_MS = 15_000;
 /** A faxina dos rascunhos do robô (20/30 min parados) roda no máximo 1×/min por loja, não a cada rodada. */
 const FAXINA_DOS_RASCUNHOS_MS = 60_000;
 const ultimaFaxinaDosRascunhos = new Map<string, number>();
-/** Quando o feed destas lojas foi de verdade ao banco (o atalho da novidade vale 15 s). */
-const ultimaConferenciaDoFeed = new Map<string, number>();
 
 /** Teto de pedidos por rodada do feed (ver o findMany abaixo); o navegador corta no MESMO número (lib/feed-de-pedidos.ts). */
 const TETO_DO_FEED = LIMITE_DO_FEED;
@@ -1050,20 +1048,20 @@ export async function GET(req: NextRequest) {
     // ── NADA MUDOU, NEM PERGUNTA AO BANCO (lib/novidade-da-loja.ts) ─────────
     //
     // Pedido nenhum destas lojas foi gravado depois de `desde`: a consulta
-    // abaixo viria vazia. Pelo menos uma vez a cada 15 s ela roda de verdade
-    // mesmo assim — é o que pega a gravação que não passou por este processo
-    // (script, outra instância), ainda dentro da folga de 30 s do `desde`.
-    const chaveDaConferencia = validFranchiseeIds.join(",");
-    if (
-      desde &&
-      Date.now() - (ultimaConferenciaDoFeed.get(chaveDaConferencia) || 0) < PRAZO_MS &&
-      nadaMudouDesde(validFranchiseeIds, desde.getTime())
-    ) {
-      return NextResponse.json({ pedidos: [], removidos: [], agora: agora.toISOString() }, { headers });
-    }
+    // abaixo viria vazia. A resposta do atalho NÃO avança o relógio da aba
+    // (`agora` = o da última consulta de verdade, `desde` + folga), então o
+    // `desde` seguinte é o mesmo; passados 15 s desde aquela consulta, esta aba
+    // vai ao banco de verdade. É o que pega, por aba, a gravação que não passou
+    // por este processo (script, outra instância) — ainda dentro da folga.
     if (desde) {
-      if (ultimaConferenciaDoFeed.size > 5_000) ultimaConferenciaDoFeed.clear();
-      ultimaConferenciaDoFeed.set(chaveDaConferencia, agora.getTime());
+      const ultimaDeVerdade = desde.getTime() + FOLGA_DO_FEED_MS;
+      if (Date.now() - ultimaDeVerdade < PRAZO_MS && nadaMudouDesde(validFranchiseeIds, desde.getTime())) {
+        const agoraDaAba = new Date(ultimaDeVerdade).toISOString();
+        return NextResponse.json(
+          { pedidos: [], removidos: [], agora: agoraDaAba },
+          { headers: { ...headers, "X-Feed-Agora": agoraDaAba } },
+        );
+      }
     }
 
     // O que mudou na loja desde `desde` (lib/filtro-do-feed.ts). Mudança em
