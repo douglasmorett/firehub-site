@@ -115,6 +115,17 @@ const jobs = [
     exclusivo: true,
   },
   {
+    // Anota AI: o caminho INTEIRO dos pedidos dele (a doc recomenda ler a
+    // lista a cada ~30 s; o webhook não tem formato documentado). O Anota AI
+    // NEGA o pedido que fica 15 min sem aceite — o ciclo é o que aceita a
+    // tempo na loja que aceita sozinha. Sem ANOTAAI_* no servidor a rota
+    // responde na hora sem tocar no banco.
+    name: 'anotaai-poll',
+    path: '/api/cron/anotaai-poll',
+    intervalMs: 30_000, // 30 segundos
+    exclusivo: true,
+  },
+  {
     // Mantem a loja ABERTA no 99Food sem ninguem abrir o gestor deles.
     //
     // O lojista fechava o app do 99Food e a loja ficava offline la. O swagger

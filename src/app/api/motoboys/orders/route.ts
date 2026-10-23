@@ -535,6 +535,7 @@ export async function POST(req: NextRequest) {
             const { ehPedidoWabiz, sincronizarWabiz } = await import("@/lib/wabiz-status");
             const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
             const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
+            const { ehPedidoAnotaAi, sincronizarAnotaAi } = await import("@/lib/anotaai/status");
             const base = { openDeliveryOrderId: String(pedido.openDeliveryOrderId), franchiseeId: pedido.franchiseeId, status: pedido.status, deliveryBy: pedido.deliveryBy };
             if (ehPedidoKeeta(pedido)) {
               // Keeta antes de tudo: fora desta cadeia ela cairia no ramo do JotaJá.
@@ -544,6 +545,10 @@ export async function POST(req: NextRequest) {
               // CardápioWeb também antes do ramo do JotaJá, pelo mesmo motivo.
               const r = await sincronizarCardapioWeb({ ...base, deliveryType: pedido.deliveryType }, "SAIU_ENTREGA", { limiteMs: 30_000 });
               if (r.erros.length > 0) console.error(`[${rotulo} CardápioWeb] ${pedido.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+            } else if (ehPedidoAnotaAi(pedido)) {
+              // Anota AI também antes do ramo do JotaJá.
+              const r = await sincronizarAnotaAi(base, "SAIU_ENTREGA", { limiteMs: 30_000 });
+              if (r.erros.length > 0) console.error(`[${rotulo} Anota AI] ${pedido.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
             } else if (ehPedido99Food(pedido)) {
               // O 99Food quer saber quem leva: o mesmo entregador que puxou.
               const entregador = await prisma.motoboy
@@ -1244,7 +1249,8 @@ export async function PATCH(req: NextRequest) {
           const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
           const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
           const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
-          // Keeta e CardápioWeb antes de tudo: fora desta cadeia cairiam no ramo do JotaJá.
+          const { ehPedidoAnotaAi, sincronizarAnotaAi } = await import("@/lib/anotaai/status");
+          // Keeta, CardápioWeb e Anota AI antes de tudo: fora desta cadeia cairiam no ramo do JotaJá.
           if (ehPedidoKeeta(order as any)) {
             await sincronizarKeeta(
               {
@@ -1267,6 +1273,13 @@ export async function PATCH(req: NextRequest) {
                 deliveryType: (order as any).deliveryType,
                 notes: (order as any).notes,
               },
+              "ENTREGUE",
+              { limiteMs: 30_000 }
+            );
+          } else if (ehPedidoAnotaAi(order as any)) {
+            // Sobe o que faltar (pronto) e finaliza lá.
+            await sincronizarAnotaAi(
+              { openDeliveryOrderId: (order as any).openDeliveryOrderId, franchiseeId: order.franchiseeId, status: order.status },
               "ENTREGUE",
               { limiteMs: 30_000 }
             );

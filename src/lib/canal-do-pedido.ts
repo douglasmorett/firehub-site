@@ -28,6 +28,7 @@ export type ChaveDeCanal =
   | "JOTAJA"
   | "KEETA"
   | "CARDAPIOWEB"
+  | "ANOTAAI"
   | "WHATSAPP_IA"
   | "PDV"
   | "TOTEM"
@@ -68,6 +69,10 @@ const CORES: Record<ChaveDeCanal, { nome: string; emoji: string; fundo: string; 
   // plataforma no caixa, não dinheiro da gaveta. Rosa para não se confundir
   // com nenhum outro selo; 🌐 de "web".
   CARDAPIOWEB: { nome: "CardápioWeb", emoji: "🌐", fundo: "#FCE7F3", texto: "#BE185D", marketplace: true },
+  // Cardápio digital e robô do Anota AI: venda da loja que VEIO DE FORA, como
+  // o CardápioWeb (o pago online é repasse no caixa). Azul-céu, puxado do
+  // azul do Anota AI e mais claro que o azul do Jotajá; 📝 de "anota".
+  ANOTAAI:     { nome: "Anota AI", emoji: "📝", fundo: "#E0F2FE", texto: "#0369A1", marketplace: true },
   WHATSAPP_IA: { nome: "IA Whats", emoji: "🤖", fundo: "#F3E8FF", texto: "#7C3AED", marketplace: false },
   PDV:         { nome: "PDV",     emoji: "🧾", fundo: "#E0E7FF", texto: "#4338CA", marketplace: false },
   TOTEM:       { nome: "Totem",   emoji: "🖥️", fundo: "#CFFAFE", texto: "#0E7490", marketplace: false },
@@ -106,6 +111,8 @@ export function chaveDoCanal(pedido: PedidoParaCanal | null | undefined): ChaveD
   // lib/cardapioweb/id-do-pedido.ts) — o id entra na conta para que nem um
   // pedido gravado sem o canal seja lido como JotaJá.
   if (src === "CARDAPIOWEB" || od === "CARDAPIOWEB" || /^cardapioweb_/.test(String(pedido.openDeliveryOrderId || ""))) return "CARDAPIOWEB";
+  // O Anota AI, idem (anotaai_<página>_<id>, lib/anotaai/id-do-pedido.ts).
+  if (src === "ANOTAAI" || od === "ANOTAAI" || /^anotaai_/.test(String(pedido.openDeliveryOrderId || ""))) return "ANOTAAI";
   // OPEN_DELIVERY é o rótulo genérico antigo: o canal fino vem no
   // openDeliveryChannel, e sem ele o resto do Open Delivery era o JotaJá.
   if (src === "OPEN_DELIVERY") return od.includes("99") ? "99FOOD" : od === "BRENDI" ? "BRENDI" : "JOTAJA";

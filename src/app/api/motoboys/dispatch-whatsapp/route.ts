@@ -121,6 +121,7 @@ export async function POST(req: NextRequest) {
           const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
           const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
           const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
+          const { ehPedidoAnotaAi, sincronizarAnotaAi } = await import("@/lib/anotaai/status");
           for (const ord of orders) {
             // Keeta e CardápioWeb antes de tudo: fora desta cadeia cairiam no ramo do JotaJá.
             if (ehPedidoKeeta(ord)) {
@@ -134,6 +135,13 @@ export async function POST(req: NextRequest) {
                 "SAIU_ENTREGA",
                 { limiteMs: 30_000 }
               ).catch((err: any) => console.warn(`[Motoboy Dispatch → CardápioWeb] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
+            } else if (ehPedidoAnotaAi(ord)) {
+              // O Anota AI não tem "saiu": o "pronto para entrega" deles é o que sobe.
+              await sincronizarAnotaAi(
+                { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status },
+                "SAIU_ENTREGA",
+                { limiteMs: 30_000 }
+              ).catch((err: any) => console.warn(`[Motoboy Dispatch → Anota AI] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
             } else if (ehPedidoWabiz(ord)) {
               await sincronizarWabiz(
                 {

@@ -145,6 +145,7 @@ export async function sincronizarPedidoNasPlataformas(
   const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
   const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
   const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
+  const { ehPedidoAnotaAi, sincronizarAnotaAi } = await import("@/lib/anotaai/status");
 
   // ── Sync Brendi ──
   //
@@ -224,8 +225,16 @@ export async function sincronizarPedidoNasPlataformas(
       { limiteMs: 30_000 }
     ).catch((err: any) => console.warn(`[Route Dispatch → CardápioWeb] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
   }
+  // ── Sync Anota AI ──
+  if (ehPedidoAnotaAi(ord)) {
+    await sincronizarAnotaAi(
+      { openDeliveryOrderId: ord.openDeliveryOrderId!, franchiseeId: ord.franchiseeId, status: ord.status },
+      "SAIU_ENTREGA",
+      { limiteMs: 30_000 }
+    ).catch((err: any) => console.warn(`[Route Dispatch → Anota AI] Erro sync ${ord.openDeliveryOrderId}:`, err?.message));
+  }
   // ── Sync Jotajá (Open Delivery) ──
-  if (ord.openDeliveryOrderId && !ehPedido99Food(ord) && !ehPedidoWabiz(ord) && !ehPedidoBrendi(ord) && !ehPedidoKeeta(ord) && !ehPedidoCardapioWeb(ord)) {
+  if (ord.openDeliveryOrderId && !ehPedido99Food(ord) && !ehPedidoWabiz(ord) && !ehPedidoBrendi(ord) && !ehPedidoKeeta(ord) && !ehPedidoCardapioWeb(ord) && !ehPedidoAnotaAi(ord)) {
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");
       const odId = ord.openDeliveryOrderId;

@@ -298,5 +298,5 @@ export const ESTILO_DO_PERFIL = `
 /** A cor de cada canal na barra (a do selo do painel, mais forte). */
 export const COR_DO_CANAL: Record<string, string> = {
   IFOOD: "#EA1D2C", "99FOOD": "#F5B800", BRENDI: "#7C3AED", WABIZ: "#65A30D", JOTAJA: "#2563EB", KEETA: "#1F2937",
-  CARDAPIOWEB: "#DB2777", WHATSAPP_IA: "#9333EA", PDV: "#4F46E5", TOTEM: "#0891B2", MESA: "#EA580C", SITE: "#16A34A", DESCONHECIDO: "#94A3B8",
+  CARDAPIOWEB: "#DB2777", ANOTAAI: "#0EA5E9", WHATSAPP_IA: "#9333EA", PDV: "#4F46E5", TOTEM: "#0891B2", MESA: "#EA580C", SITE: "#16A34A", DESCONHECIDO: "#94A3B8",
 };

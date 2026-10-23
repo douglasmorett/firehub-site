@@ -42,7 +42,7 @@ export default function IntegracoesHubClient({
   initialIfoodIntegrations?: {id:string;label:string;merchantId:string;connected:boolean;active:boolean;widgetId?:string|null;createdAt:string}[];
 }) {
   const [activeTab, setActiveTab] = useState<"all" | "channels" | "marketing" | "payments">("all");
-  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | "keeta" | "cardapioweb" | "foody" | null>(null);
+  const [openModal, setOpenModal] = useState<"pixel" | "google" | "whatsapp" | "jotaja" | "ifood" | "asaas" | "99food" | "brendi" | "wabiz" | "keeta" | "cardapioweb" | "anotaai" | "foody" | null>(null);
 
   // ── FOODY / VOE DELIVERY (motoboy terceirizado) ──
   // O cartão da lista lê o estado de /api/store/integracoes/foody; o modal
@@ -321,6 +321,73 @@ export default function IntegracoesHubClient({
     return soData
       ? d.toLocaleDateString("pt-BR")
       : d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  };
+
+  // ── ANOTA AI (cardápio digital + robô; API de parceiros v2) ──
+  // O lojista cola a "Chave de integração" do admin do Anota AI; o servidor
+  // vincula a loja ao FireHub e prova lendo os pedidos dela. Uma chave por
+  // marca: N lojas na mesma conta, como no CardápioWeb.
+  type LojaAnotaAiTela = { pageId: string; nome: string; conectadaEm: string; ultimoPedidoEm: string | null; ultimoPollingEm: string | null; ultimoErro: string | null };
+  const [aa, setAa] = useState<{
+    carregando: boolean;
+    lido: boolean;
+    configurada: boolean;
+    lojas: LojaAnotaAiTela[];
+    chave: string;
+    nome: string;
+    erro: string;
+    salvando: boolean;
+    confirmarSaida: string | null;
+  }>({ carregando: true, lido: false, configurada: false, lojas: [], chave: "", nome: "", erro: "", salvando: false, confirmarSaida: null });
+  const lerAnotaAi = () =>
+    fetch("/api/store/integracoes/anotaai", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return setAa((c) => ({ ...c, carregando: false }));
+        setAa((c) => ({ ...c, carregando: false, lido: true, configurada: !!d.configurada, lojas: Array.isArray(d.lojas) ? d.lojas : [] }));
+      })
+      .catch(() => setAa((c) => ({ ...c, carregando: false })));
+  useEffect(() => {
+    lerAnotaAi();
+  }, []);
+  // Relê ao abrir (o "último pedido" muda com a tela aberta); ao fechar, a
+  // chave digitada e o "Desconectar?" pendente não ficam para a próxima vez.
+  useEffect(() => {
+    if (openModal === "anotaai") lerAnotaAi();
+    else setAa((c) => ({ ...c, erro: "", confirmarSaida: null, chave: "" }));
+  }, [openModal]);
+  const conectarAnotaAi = async () => {
+    setAa((c) => ({ ...c, salvando: true, erro: "" }));
+    try {
+      const r = await fetch("/api/store/integracoes/anotaai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "conectar", chave: aa.chave, nome: aa.nome }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.ok) {
+        setAa((c) => ({ ...c, salvando: false, chave: "", nome: "" }));
+        showToast("✅ Loja do Anota AI conectada!", "#0F766E");
+        lerAnotaAi();
+        return;
+      }
+      setAa((c) => ({ ...c, salvando: false, erro: d.error || "O Anota AI não respondeu. Tente de novo." }));
+    } catch {
+      setAa((c) => ({ ...c, salvando: false, erro: "Sem conexão com o servidor. Tente de novo." }));
+    }
+  };
+  const desconectarAnotaAi = async (loja: LojaAnotaAiTela) => {
+    setAa((c) => ({ ...c, salvando: true, erro: "" }));
+    try {
+      const r = await fetch("/api/store/integracoes/anotaai", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "desconectar", pageId: loja.pageId }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && d.ok) {
+        setAa((c) => ({ ...c, salvando: false, confirmarSaida: null, lojas: c.lojas.filter((l) => l.pageId !== loja.pageId) }));
+        showToast(`${loja.nome} desconectada do Anota AI.`, "#475569");
+        return;
+      }
+      setAa((c) => ({ ...c, salvando: false }));
+      showToast(`⚠️ ${d.error || "Não consegui desconectar. Tente de novo."}`, "#C92E09");
+    } catch {
+      setAa((c) => ({ ...c, salvando: false }));
+      showToast("⚠️ Sem conexão com o servidor. Tente de novo.", "#C92E09");
+    }
   };
 
   // Meta Pixel state
@@ -1506,6 +1573,24 @@ export default function IntegracoesHubClient({
             ? { text: "⏳ Em homologação", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" }
             : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Pedidos do seu cardápio CardápioWeb entram direto no FireHub (painel, cozinha e impressora) e o status volta sozinho. Conecte cada marca em um clique.",
+    },
+    {
+      id: "anotaai" as const,
+      category: "channels",
+      title: "Anota AI",
+      subtitle: "Cardápio digital + robô no WhatsApp — integração oficial",
+      icon: "📝",
+      // Ícone oficial do site do Anota AI (anota.ai/astro-content/favicon.svg).
+      logo: "/images/logos/anotaai.svg",
+      gradient: "linear-gradient(135deg, #099BFD, #0369A1)",
+      badge: aa.lojas.some((l) => l.ultimoErro)
+        ? { text: "🟠 Conferir conexão", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" }
+        : aa.lojas.length > 0
+          ? { text: aa.lojas.length > 1 ? `🟢 ${aa.lojas.length} lojas conectadas` : "🟢 Conectado & Ativo", bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" }
+          : aa.lido && !aa.configurada
+            ? { text: "⏳ Em homologação", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" }
+            : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      description: "Pedidos do seu cardápio e do robô do Anota AI entram direto no FireHub (painel, cozinha e impressora) e o status volta sozinho para o Anota AI.",
     },
     {
       id: "foody" as const,
@@ -3240,6 +3325,162 @@ export default function IntegracoesHubClient({
                   >
                     {cw.lojas.length > 0 ? <Plus size={16} /> : <ExternalLink size={16} />}{" "}
                     {cw.salvando ? "Abrindo o CardápioWeb…" : cw.lojas.length > 0 ? "Conectar outra loja" : "Conectar loja do CardápioWeb"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* 📝 MODAL: ANOTA AI */}
+            {openModal === "anotaai" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px", paddingRight: "40px" }}>
+                  <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "#fff", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", padding: "6px", flexShrink: 0 }}>
+                    <img src="/images/logos/anotaai.svg" alt="Anota AI" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                  </div>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Anota AI</h2>
+                    <span style={{ fontSize: "0.78rem", color: "#64748B" }}>Integração oficial (API de parceiros)</span>
+                  </div>
+                </div>
+
+                <p style={{ fontSize: "0.84rem", color: "#475569", lineHeight: 1.5, marginBottom: "16px" }}>
+                  Os pedidos do seu cardápio e do robô do Anota AI entram aqui no FireHub (painel, cozinha e impressora) e o status
+                  volta sozinho para o Anota AI. Tem mais de uma marca lá? Conecte a chave de cada uma.
+                </p>
+
+                {aa.carregando ? (
+                  <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.9rem", fontWeight: 700, color: "#475569" }}>Consultando o Anota AI…</div>
+                  </div>
+                ) : !aa.lido ? (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "14px", borderRadius: "14px", marginBottom: "20px", fontSize: "0.8rem", color: "#B71C1C", lineHeight: 1.5 }}>
+                    Não consegui consultar a integração com o Anota AI agora.{" "}
+                    <button
+                      onClick={() => { setAa((c) => ({ ...c, carregando: true })); lerAnotaAi(); }}
+                      style={{ background: "none", border: "none", padding: 0, color: "#B71C1C", fontWeight: 800, fontSize: "inherit", fontFamily: "inherit", textDecoration: "underline", cursor: "pointer" }}
+                    >
+                      Tentar de novo
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {!aa.configurada && (
+                      <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                        <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#B45309" }}>⏳ Integração em homologação com o Anota AI — em breve.</div>
+                        <div style={{ fontSize: "0.78rem", color: "#92400E", marginTop: 4, lineHeight: 1.5 }}>
+                          Assim que o Anota AI liberar o FireHub, o botão abaixo funciona. Não precisa fazer nada agora.
+                        </div>
+                      </div>
+                    )}
+
+                    {aa.lojas.length > 0 && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+                        {aa.lojas.map((l) => {
+                          const confirmando = aa.confirmarSaida === l.pageId;
+                          return (
+                            <div key={l.pageId} style={{ background: l.ultimoErro ? "#FFF7E6" : "#F0FDFA", border: `1px solid ${l.ultimoErro ? "#FDE68A" : "#99F6E4"}`, borderRadius: "14px", padding: "12px 14px" }}>
+                              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: "0.92rem", fontWeight: 900, color: "#0F172A" }}>{l.nome}</div>
+                                  <div style={{ fontSize: "0.8rem", fontWeight: 800, color: l.ultimoErro ? "#B45309" : "#0F766E", marginTop: 2 }}>
+                                    {l.ultimoErro ? "🟠 O Anota AI não respondeu na última consulta" : "🟢 Conectada — recebendo pedidos"}
+                                  </div>
+                                  <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 3, lineHeight: 1.5 }}>
+                                    {l.ultimoPedidoEm ? `Último pedido: ${quandoCw(l.ultimoPedidoEm)}` : "Nenhum pedido recebido ainda"}
+                                    {l.conectadaEm && ` · conectada em ${quandoCw(l.conectadaEm, true)}`}
+                                  </div>
+                                </div>
+                                {!confirmando && (
+                                  <button
+                                    onClick={() => setAa((c) => ({ ...c, confirmarSaida: l.pageId }))}
+                                    disabled={aa.salvando}
+                                    style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #FCA5A5", background: "#fff", color: "#B71C1C", fontWeight: 700, fontSize: "0.76rem", cursor: "pointer", fontFamily: "inherit" }}
+                                  >
+                                    Desconectar
+                                  </button>
+                                )}
+                              </div>
+                              {confirmando && (
+                                <div style={{ background: "#fff", border: "1px solid #FCA5A5", borderRadius: "10px", padding: "10px 12px", marginTop: 10 }}>
+                                  <div style={{ fontSize: "0.8rem", color: "#7F1D1D", lineHeight: 1.5 }}>
+                                    Desconectar <b>{l.nome}</b>? Os pedidos dessa loja do Anota AI param de entrar no FireHub.
+                                  </div>
+                                  <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap", marginTop: 8 }}>
+                                    <button
+                                      onClick={() => setAa((c) => ({ ...c, confirmarSaida: null }))}
+                                      disabled={aa.salvando}
+                                      style={{ padding: "6px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", color: "#475569", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit" }}
+                                    >
+                                      Cancelar
+                                    </button>
+                                    <button
+                                      onClick={() => desconectarAnotaAi(l)}
+                                      disabled={aa.salvando}
+                                      style={{ padding: "6px 12px", borderRadius: "8px", border: "none", background: "#B71C1C", color: "#fff", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", opacity: aa.salvando ? 0.6 : 1 }}
+                                    >
+                                      {aa.salvando ? "Desconectando…" : "Sim, desconectar"}
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "16px" }}>
+                  <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#0F172A", marginBottom: 8 }}>Como conectar</div>
+                  <ol style={{ margin: 0, paddingLeft: 18, fontSize: "0.82rem", color: "#475569", lineHeight: 1.7 }}>
+                    <li>No painel do Anota AI, abra <b>Configuração Geral › Integrações</b> e copie a <b>Chave de integração (Token)</b>.</li>
+                    <li>Cole a chave aqui embaixo e clique em <b>Conectar</b>.</li>
+                    <li>Com o aceite automático ligado aqui, o FireHub aceita o pedido no Anota AI na hora. Pedido parado 15 min sem aceite o Anota AI recusa.</li>
+                    <li>Escolha <b>um só emissor de NFC-e</b> e <b>uma só impressora</b>: o FireHub <b>ou</b> o Anota AI, para não sair em dobro.</li>
+                  </ol>
+                  <div style={{ fontSize: "0.74rem", color: "#64748B", marginTop: 8, lineHeight: 1.5 }}>
+                    Pedidos do iFood que passam pelo Anota AI e pedidos de mesa/garçom dele não entram por aqui (o iFood e o salão já são do FireHub).
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
+                  <input
+                    value={aa.chave}
+                    onChange={(e) => setAa((c) => ({ ...c, chave: e.target.value }))}
+                    placeholder="Cole aqui a Chave de integração do Anota AI"
+                    disabled={!aa.configurada || aa.salvando}
+                    autoComplete="off"
+                    spellCheck={false}
+                    style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "monospace" }}
+                  />
+                  <input
+                    value={aa.nome}
+                    onChange={(e) => setAa((c) => ({ ...c, nome: e.target.value }))}
+                    placeholder="Nome da marca (opcional, ex.: Pizzaria do Centro)"
+                    disabled={!aa.configurada || aa.salvando}
+                    maxLength={80}
+                    style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #CBD5E1", fontSize: "0.85rem", fontFamily: "inherit" }}
+                  />
+                </div>
+
+                {aa.erro && (
+                  <div style={{ background: "#FEF2F2", border: "1px solid #FCA5A5", padding: "12px", borderRadius: "12px", marginBottom: "16px", fontSize: "0.8rem", color: "#B71C1C", lineHeight: 1.5 }}>
+                    {aa.erro}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end", flexWrap: "wrap" }}>
+                  <button onClick={() => setOpenModal(null)} style={{ padding: "10px 20px", borderRadius: "10px", border: "1px solid #CBD5E1", background: "#fff", fontWeight: 700, fontSize: "0.85rem", cursor: "pointer" }}>
+                    Fechar
+                  </button>
+                  <button
+                    onClick={conectarAnotaAi}
+                    disabled={aa.salvando || !aa.configurada || aa.chave.trim().length < 20}
+                    style={{ padding: "10px 20px", borderRadius: "10px", border: "none", background: "#0369A1", color: "#fff", fontWeight: 800, fontSize: "0.85rem", cursor: aa.configurada && !aa.salvando ? "pointer" : "not-allowed", display: "flex", alignItems: "center", gap: "6px", opacity: aa.salvando || !aa.configurada || aa.chave.trim().length < 20 ? 0.6 : 1 }}
+                  >
+                    {aa.lojas.length > 0 ? <Plus size={16} /> : null}
+                    {aa.salvando ? "Conectando…" : aa.lojas.length > 0 ? "Conectar outra loja" : "Conectar"}
                   </button>
                 </div>
               </div>

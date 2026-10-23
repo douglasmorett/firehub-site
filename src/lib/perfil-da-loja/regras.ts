@@ -305,7 +305,7 @@ const MARKETPLACES: ChaveDeCanal[] = ["IFOOD", "99FOOD", "KEETA", "BRENDI", "WAB
 
 export const NOME_DO_CANAL: Record<ChaveDeCanal, string> = {
   IFOOD: "iFood", "99FOOD": "99Food", BRENDI: "Brendi", WABIZ: "Wabiz", JOTAJA: "Jotajá", KEETA: "Keeta",
-  CARDAPIOWEB: "CardápioWeb", WHATSAPP_IA: "Robô (WhatsApp)", PDV: "Balcão", TOTEM: "Totem", MESA: "Mesa",
+  CARDAPIOWEB: "CardápioWeb", ANOTAAI: "Anota AI", WHATSAPP_IA: "Robô (WhatsApp)", PDV: "Balcão", TOTEM: "Totem", MESA: "Mesa",
   SITE: "Cardápio digital", DESCONHECIDO: "Outro",
 };
 

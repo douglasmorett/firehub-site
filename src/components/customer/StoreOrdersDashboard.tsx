@@ -3488,6 +3488,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         // E a Brendi — a falha dela só ia para o log (levantamento de 27/09/2026).
         if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
         if (data?.avisoKeeta) showToast(`⚠️ Keeta não acompanhou: ${data.avisoKeeta}`, "#B45309");
+        if (data?.avisoAnotaAi) showToast(`⚠️ Anota AI não acompanhou: ${data.avisoAnotaAi}`, "#B45309");
         // Pix pelo site: estorno que não saiu na hora (sem saldo no Asaas,
         // esperando autorização no app). Também vai para o WhatsApp do dono.
         if (data?.avisoEstorno) showToast(`⚠️ Estorno do Pix: ${data.avisoEstorno}`, "#B45309");
@@ -3630,6 +3631,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
         if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
         if (data?.avisoKeeta) showToast(`⚠️ Keeta não acompanhou: ${data.avisoKeeta}`, "#B45309");
+        if (data?.avisoAnotaAi) showToast(`⚠️ Anota AI não acompanhou: ${data.avisoAnotaAi}`, "#B45309");
         if (data?.avisoEstorno) showToast(`⚠️ Estorno do Pix: ${data.avisoEstorno}`, "#B45309");
       } else {
         const erro = await res.json().catch(() => null);
@@ -3908,19 +3910,20 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     const isWabiz = o.source === "WABIZ" || o.openDeliveryChannel === "WABIZ";
     const isKeeta = o.source === "KEETA" || o.openDeliveryChannel === "KEETA";
     const isCardapioWeb = o.source === "CARDAPIOWEB" || o.openDeliveryChannel === "CARDAPIOWEB";
+    const isAnotaAi = o.source === "ANOTAAI" || o.openDeliveryChannel === "ANOTAAI";
     // O JotaJá era o "resto" do Open Delivery (todo pedido com
     // openDeliveryOrderId que não fosse 99Food) — com a Brendi gravando o id
     // dela no MESMO campo, o pedido dela cairia aqui e o filtro Brendi do
     // usuário não teria efeito nenhum. Canal decide; presença de campo não.
-    const isJotaja = !isBrendi && !isWabiz && !isKeeta && !isCardapioWeb && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
+    const isJotaja = !isBrendi && !isWabiz && !isKeeta && !isCardapioWeb && !isAnotaAi && (o.source === "JOTAJA" || (o.source === "OPEN_DELIVERY" && !String(o.openDeliveryChannel).includes("99")) || Boolean(o.openDeliveryOrderId && !o.ifoodOrderId && o.openDeliveryChannel !== "99FOOD"));
     // "Loja" é tudo que não veio de marketplace: site, robô do WhatsApp,
     // balcão, mesa, totem. Retirada saiu daqui — ela é TIPO, não origem, e
     // mora no filtro ao lado.
-    const isSite = !isIfood && !is99Food && !isBrendi && !isWabiz && !isKeeta && !isCardapioWeb && !isJotaja;
+    const isSite = !isIfood && !is99Food && !isBrendi && !isWabiz && !isKeeta && !isCardapioWeb && !isAnotaAi && !isJotaja;
 
     // CardápioWeb ainda sem botão próprio na barra: aparece sempre. Esconder
     // pedido atrás de um filtro que não existe é pior que mostrar a mais.
-    if (isCardapioWeb) return true;
+    if (isCardapioWeb || isAnotaAi) return true;
     if (isIfood && selectedChannels.ifood) return true;
     if (is99Food && selectedChannels["99food"]) return true;
     if (isBrendi && selectedChannels.brendi) return true;
