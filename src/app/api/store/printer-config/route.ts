@@ -85,6 +85,29 @@ export async function GET(req: NextRequest) {
   });
 
   const pConfig = (user?.printerConfig as any) || { autoprint: true, printers: [] };
+
+  // ── O ASSISTENTE JÁ PUXA A FILA DA NUVEM? ────────────────────────────────
+  //
+  // O ouvinte de impressão do navegador (GlobalPrintListener) roda em TODA aba
+  // do /store e pede o feed de pedidos a cada 5 s — e só imprime por um
+  // Assistente (o deste PC, ou jogando na fila da nuvem). Quando o Assistente
+  // de cada loja da tela consultou a fila da nuvem há pouco, ele já imprime
+  // tudo por ela e o laço do navegador é trabalho dobrado no servidor (pico de
+  // 17/10/2026: ~11 feeds/s). O carimbo é gravado 1×/min; 150 s de folga.
+  // Só na config principal (sem ?loja=), que é a que o ouvinte relê.
+  let assistenteNaNuvem = false;
+  if (!pedida) {
+    try {
+      const { lojasDaVisao } = await import("@/lib/loja-ativa");
+      const visao = await lojasDaVisao(currentUser, req.cookies.get("firehub_active_store")?.value);
+      const lojas = await prisma.user.findMany({ where: { id: { in: visao.lojaIds } }, select: { printQueuePolledAt: true } });
+      const limite = Date.now() - 150_000;
+      assistenteNaNuvem = lojas.length === visao.lojaIds.length && lojas.every((l) => (l.printQueuePolledAt?.getTime() ?? 0) > limite);
+    } catch {
+      // Na dúvida, o navegador continua imprimindo como sempre.
+    }
+  }
+
   return NextResponse.json({
     ...pConfig,
     storeName: user?.storeName || user?.name || "FIREHUB",
@@ -100,5 +123,6 @@ export async function GET(req: NextRequest) {
     // ("Rua Paranaíba, 470, Operário, Rio das Ostras" — lib/endereco-impresso.ts).
     // A fila da nuvem lê a mesma coluna (User.city).
     cidadeDaLoja: user?.city || "",
+    assistenteNaNuvem,
   });
 }

@@ -31,6 +31,7 @@ import { PALETA } from "@/lib/paleta-brasa";
 import type { AvisoDeCancelamento, AvisoDeCancelamentoParcial, AvisoDeDisputa } from "@/lib/avisos-do-dia";
 
 const INTERVALO_DA_CONSULTA = 8000;
+const INTERVALO_COM_A_ABA_ESCONDIDA = 20_000;
 const INTERVALO_DO_SOM = 6000;
 
 const reais = (v: number) => `R$ ${Number(v || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -77,7 +78,8 @@ export default function AvisosDoDia() {
       } catch {
         // Sem rede: tenta de novo na próxima volta. O aviso não some por isso.
       }
-      if (vivo) timer = setTimeout(consultar, INTERVALO_DA_CONSULTA);
+      // Aba escondida pergunta a cada 20 s (volta na hora ao reaparecer).
+      if (vivo) timer = setTimeout(consultar, document.hidden ? INTERVALO_COM_A_ABA_ESCONDIDA : INTERVALO_DA_CONSULTA);
     };
     consultar();
     const aoVoltar = () => { if (document.visibilityState === "visible") consultar(); };
