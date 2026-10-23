@@ -28,7 +28,7 @@
  */
 
 const COMPLETA_A_CADA_MS = 60_000;
-const FOLGA_MS = 30_000;
+export const FOLGA_MS = 30_000;
 /** O MESMO teto do servidor (TETO_DO_FEED em api/customer-order/poll). Era 200 e escondia os pedidos mais antigos de um dia cheio. */
 export const LIMITE = 1500;
 

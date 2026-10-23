@@ -12,10 +12,11 @@ import { MESA_DO_QUADRO } from "@/lib/mesa-na-comanda";
 import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed, idsQueMudaram, soOQueMudou } from "@/lib/filtro-do-feed";
 import { marcarPainelAberto } from "@/lib/sinais-da-loja";
-import { LIMITE as LIMITE_DO_FEED } from "@/lib/feed-de-pedidos";
+import { FOLGA_MS as FOLGA_DO_FEED_MS, LIMITE as LIMITE_DO_FEED } from "@/lib/feed-de-pedidos";
 import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
 import { lembrarPor } from "@/lib/cache-curto";
 import { liberadaPara } from "@/lib/roteirizacao-automatica/liberacao";
+import { nadaMudouDesde, PRAZO_MS } from "@/lib/novidade-da-loja";
 
 /**
  * Configuração relida a cada rodada deste feed (o usuário do e-mail, se a loja
@@ -1043,6 +1044,25 @@ export async function GET(req: NextRequest) {
       // cabeçalho para a resposta completa continuar sendo a lista pura.
       "X-Feed-Agora": agora.toISOString(),
     };
+
+    // ── NADA MUDOU, NEM PERGUNTA AO BANCO (lib/novidade-da-loja.ts) ─────────
+    //
+    // Pedido nenhum destas lojas foi gravado depois de `desde`: a consulta
+    // abaixo viria vazia. A resposta do atalho NÃO avança o relógio da aba
+    // (`agora` = o da última consulta de verdade, `desde` + folga), então o
+    // `desde` seguinte é o mesmo; passados 15 s desde aquela consulta, esta aba
+    // vai ao banco de verdade. É o que pega, por aba, a gravação que não passou
+    // por este processo (script, outra instância) — ainda dentro da folga.
+    if (desde) {
+      const ultimaDeVerdade = desde.getTime() + FOLGA_DO_FEED_MS;
+      if (Date.now() - ultimaDeVerdade < PRAZO_MS && nadaMudouDesde(validFranchiseeIds, desde.getTime())) {
+        const agoraDaAba = new Date(ultimaDeVerdade).toISOString();
+        return NextResponse.json(
+          { pedidos: [], removidos: [], agora: agoraDaAba },
+          { headers: { ...headers, "X-Feed-Agora": agoraDaAba } },
+        );
+      }
+    }
 
     // O que mudou na loja desde `desde` (lib/filtro-do-feed.ts). Mudança em
     // massa volta como lista completa, por segurança.

@@ -11,6 +11,8 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { acrescimosPendentes, responderAcrescimo } from "@/lib/acrescimo-no-banco";
+import { lembrarPor } from "@/lib/cache-curto";
+import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +21,9 @@ async function lojasDaSessao() {
   const session = await getServerSession(authOptions).catch(() => null);
   const email = session?.user?.email || "";
   if (!email) return null;
-  const user = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, name: true } });
+  // 15 s em memória: esta rota roda a cada 8 s por aba (lib/cache-curto.ts).
+  const user = await lembrarPor(`acrescimos:usuario:${email}`, 15_000, () =>
+    prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, name: true } }));
   if (!user) return null;
   const lojaId = user.ownerId || user.id;
   const ids = [...new Set([lojaId, user.id, user.ownerId].filter(Boolean))] as string[];
@@ -30,7 +34,9 @@ export async function GET() {
   const s = await lojasDaSessao();
   if (!s) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
   try {
-    return NextResponse.json({ acrescimos: await acrescimosPendentes(s.ids) });
+    // A lista só muda com gravação de pedido ou acréscimo (lib/novidade-da-loja.ts).
+    const acrescimos = await lerEnquantoNadaMuda(`acrescimos:${s.ids.join(",")}`, s.ids, () => acrescimosPendentes(s.ids));
+    return NextResponse.json({ acrescimos });
   } catch (e: any) {
     // Sem a tabela ou com o banco fora: lista vazia, sem 500 em loop no console.
     console.error("[Acréscimo] Não consegui listar os acréscimos:", e?.message);

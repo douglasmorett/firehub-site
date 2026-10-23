@@ -80,6 +80,7 @@ const pedido = (id: string, p: Partial<any>) => ({
   fiscalStatus: null, tableSession: null, motoboy: null, items: [], dailyOrderNumber: 1, ...p,
 });
 let consultasDoFeed = 0;
+let consultasQuemMudou = 0;
 const vazio = (metodo: string) => async () =>
   metodo.startsWith("findMany") || metodo.startsWith("groupBy") ? [] : metodo.startsWith("count") ? 0 : metodo.endsWith("Many") ? { count: 0 } : null;
 const tabela = (feitos: Record<string, any> = {}) => new Proxy(feitos, { get: (t, k) => (k in t ? (t as any)[k] : vazio(String(k))) });
@@ -92,6 +93,7 @@ const tabela = (feitos: Record<string, any> = {}) => new Proxy(feitos, { get: (t
     customerOrder: tabela({
       findMany: async ({ where, select, take }: any) => {
         if (select?.items) consultasDoFeed++; // a consulta pesada do feed (a de "quem mudou" seleciona só o id)
+        else consultasQuemMudou++;
         const achados = pedidos.filter((p) => casa(p, where)).sort((a, b) => b.createdAt - a.createdAt);
         return JSON.parse(JSON.stringify(take ? achados.slice(0, take) : achados), (k, v) => (/At$|Datetime$/.test(k) && typeof v === "string" ? new Date(v) : v));
       },
@@ -102,6 +104,9 @@ const tabela = (feitos: Record<string, any> = {}) => new Proxy(feitos, { get: (t
 
 async function main() {
   const { GET } = await import("../src/app/api/customer-order/poll/route");
+  // O banco falso não passa pelo lib/prisma.ts: cada gravação dele avisa a
+  // novidade como a gravação de verdade avisaria (lib/novidade-da-loja.ts).
+  const { marcarNovidade: gravou } = await import("../src/lib/novidade-da-loja");
   const { NextRequest } = await import("next/server");
   const { idsQueMudaram, filtroDoFeed, soOQueMudou, DIAS_ATIVO_SEM_PERIODO } = await import("../src/lib/filtro-do-feed");
 
@@ -123,6 +128,7 @@ async function main() {
 
   console.log("\n[2] Pedido novo SEMPRE aparece");
   pedidos.push(pedido("p_novo", { status: "NOVO", createdAt: new Date(), updatedAt: new Date() }));
+  gravou(LOJA);
   const comNovo = await rodada(new Date(Date.now() - 30_000));
   confere(ids(comNovo) === "p_novo", `o pedido novo vem na rodada (${ids(comNovo)})`);
   confere(comNovo.consultasDoFeed === 1, "a consulta do feed roda quando há mudança");
@@ -130,13 +136,36 @@ async function main() {
   console.log("\n[3] Status mudado aparece");
   pedidos.find((p) => p.id === "p_antigo")!.status = "PRONTO";
   pedidos.find((p) => p.id === "p_antigo")!.updatedAt = new Date();
+  gravou(LOJA);
   const comStatus = await rodada(new Date(Date.now() - 10_000));
   confere(ids(comStatus).includes("p_antigo"), `o pedido com status novo vem (${ids(comStatus)})`);
 
   console.log("\n[4] Encomenda agendada há mais de 7 dias, para hoje, mudou agora");
   pedidos = [pedido("p_encomenda", { status: "ACEITO", agendado: true, createdAt: new Date(agora - 10 * dia), scheduledDatetime: new Date(agora + 2 * 60 * min), updatedAt: new Date() })];
+  gravou(LOJA);
   const encomenda = await rodada(new Date(Date.now() - 30_000));
   confere(ids(encomenda) === "p_encomenda", `a encomenda vem na rodada, não só na lista completa de 60 s (${ids(encomenda)})`);
+
+  console.log("\n[4b] Atalho da novidade (lib/novidade-da-loja.ts): sem gravação, nem pergunta ao banco");
+  const { esquecerTudoDaNovidade, marcarNovidade } = await import("../src/lib/novidade-da-loja");
+  pedidos = [pedido("p_quieto", { status: "ACEITO" })];
+  esquecerTudoDaNovidade(Date.now() - 120_000);
+  const desdeDaAba = new Date(Date.now() - 32_000); // a última consulta de verdade desta aba foi há 2 s
+  consultasQuemMudou = 0;
+  const atalho = await rodada(desdeDaAba);
+  confere(consultasQuemMudou === 0 && atalho.consultasDoFeed === 0 && atalho.corpo?.pedidos?.length === 0, "sem novidade: nenhuma consulta, lista vazia");
+  confere(atalho.corpo?.agora === new Date(desdeDaAba.getTime() + 30_000).toISOString(), "o `agora` da aba não avança (o próximo `desde` é o mesmo)");
+  consultasQuemMudou = 0;
+  await rodada(new Date(Date.now() - 50_000)); // a última de verdade foi há 20 s
+  confere(consultasQuemMudou === 1, "passados 15 s da última consulta de verdade desta aba, vai ao banco");
+  marcarNovidade(LOJA);
+  pedidos.push(pedido("p_gravado", { status: "NOVO", createdAt: new Date(), updatedAt: new Date() }));
+  const comGravacao = await rodada(new Date(Date.now() - 32_000));
+  confere(ids(comGravacao) === "p_gravado", `gravação da loja: o pedido vem na rodada seguinte (${ids(comGravacao)})`);
+  marcarNovidade("outra_loja");
+  consultasQuemMudou = 0;
+  await rodada(new Date(Date.now() - 32_000));
+  confere(consultasQuemMudou === 1, "a gravação da loja (antes do desde+folga) ainda faz esta aba conferir");
 
   console.log("\n[5] Recorte: todo pedido do 'só o que mudou' está em idsQueMudaram");
   let semente = 42;
