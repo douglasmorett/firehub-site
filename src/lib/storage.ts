@@ -278,7 +278,7 @@ export async function espelharNoBucket(relativo: string, bytes: Buffer): Promise
 /** O mesmo, para um arquivo que já está no disco (o tutorial montado em pedaços). Só o que está dentro de UPLOADS_ROOT. */
 export async function espelharArquivoNoBucket(caminhoNoDisco: string): Promise<void> {
   if (!bucketLigado()) return;
-  const relativo = path.relative(path.resolve(/*turbopackIgnore: true*/ UPLOADS_ROOT), path.resolve(/*turbopackIgnore: true*/ caminhoNoDisco));
+  const relativo = path.relative(/*turbopackIgnore: true*/ path.resolve(/*turbopackIgnore: true*/ UPLOADS_ROOT), path.resolve(/*turbopackIgnore: true*/ caminhoNoDisco));
   if (!relativo || relativo.startsWith("..") || path.isAbsolute(relativo)) return;
   try {
     await espelharNoBucket(relativo.split(path.sep).join("/"), await readFile(/*turbopackIgnore: true*/ caminhoNoDisco));

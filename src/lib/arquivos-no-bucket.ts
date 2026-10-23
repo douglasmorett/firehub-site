@@ -171,7 +171,7 @@ const TIPOS: Record<string, string> = {
   ".webp": "image/webp", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".gif": "image/gif",
   ".pdf": "application/pdf", ".mp4": "video/mp4", ".webm": "video/webm", ".vtt": "text/vtt",
 };
-export const tipoPelaExtensao = (nome: string) => TIPOS[path.extname(nome).toLowerCase()] || "application/octet-stream";
+export const tipoPelaExtensao = (nome: string) => TIPOS[path.extname(/*turbopackIgnore: true*/ nome).toLowerCase()] || "application/octet-stream";
 
 /**
  * Sobe uma cópia. Devolve false se não subiu (o arquivo continua no disco).
@@ -221,7 +221,7 @@ export async function baixarDoBucketParaODisco(chave: string, destino: string, m
       if (r.status !== 404) console.warn(`[bucket] não baixou ${chave}: HTTP ${r.status}`);
       return false;
     }
-    await mkdir(/*turbopackIgnore: true*/ path.dirname(destino), { recursive: true });
+    await mkdir(path.dirname(/*turbopackIgnore: true*/ destino), { recursive: true });
     await pipeline(
       Readable.fromWeb(r.body as unknown as import("stream/web").ReadableStream),
       createWriteStream(/*turbopackIgnore: true*/ temporario, modo ? { mode: modo } : {})

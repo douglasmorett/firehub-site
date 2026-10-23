@@ -98,7 +98,7 @@ function servirVideo(req: NextRequest, caminho: string, tamanho: number, tipo: s
     return new Response(null, { status: 416, headers: { ...cabecalhos, "Content-Range": `bytes */${tamanho}` } });
   }
   const { ini, fim } = pedaco ?? { ini: 0, fim: tamanho - 1 };
-  const fluxo = Readable.toWeb(createReadStream(caminho, { start: ini, end: fim })) as unknown as ReadableStream;
+  const fluxo = Readable.toWeb(createReadStream(/*turbopackIgnore: true*/ caminho, { start: ini, end: fim })) as unknown as ReadableStream;
   return new Response(fluxo, {
     status: pedaco ? 206 : 200,
     headers: {
@@ -145,9 +145,9 @@ export async function GET(
   if (!caminho) caminho = await trazerDoBucket(partes.join("/"));
 
   if (caminho) {
-    if (tipo.startsWith("video/")) return servirVideo(req, caminho, (await stat(caminho)).size, tipo, extras);
+    if (tipo.startsWith("video/")) return servirVideo(req, caminho, (await stat(/*turbopackIgnore: true*/ caminho)).size, tipo, extras);
 
-    const conteudo = await readFile(caminho);
+    const conteudo = await readFile(/*turbopackIgnore: true*/ caminho);
     return new NextResponse(new Uint8Array(conteudo), {
       headers: {
         ...extras,
