@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -29,8 +30,13 @@ export async function POST(req: NextRequest) {
 
     const dbUser = await prisma.user.findUnique({
       where: { email: session.user?.email || "" },
-      select: { id: true, ownerId: true }
+      select: { id: true, ownerId: true, role: true, permissions: true }
     });
+    // Lança despesa APROVADA no Financeiro: o funcionário só com a caixinha
+    // "Financeiro" (a tela de notas mora lá — api/invoices).
+    if (!podeComoNaTela(dbUser, "/store/financeiro")) {
+      return NextResponse.json({ error: "Sua conta não tem acesso ao Financeiro: peça ao dono da loja para marcar \"Financeiro\" em Equipe." }, { status: 403 });
+    }
     const targetFranchiseeId = dbUser?.ownerId || dbUser?.id || null;
 
     const invoice = await prisma.purchaseInvoice.create({

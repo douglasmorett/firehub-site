@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { generateApiKeyPair } from "@/lib/api-key";
+import { ehDonoOuAdmin } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
 
@@ -53,11 +54,16 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true },
     });
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+    }
+    // A chave abre pedidos (com dados do cliente) e cardápio da loja inteira e
+    // não morre quando o funcionário sai: criar e revogar é só do dono.
+    if (!ehDonoOuAdmin(user)) {
+      return NextResponse.json({ error: "Só o dono da loja cria ou revoga chave de API." }, { status: 403 });
     }
 
     const targetFranchiseeId = user.ownerId || user.id;
@@ -107,11 +113,16 @@ export async function DELETE(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true },
     });
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+    }
+    // A chave abre pedidos (com dados do cliente) e cardápio da loja inteira e
+    // não morre quando o funcionário sai: criar e revogar é só do dono.
+    if (!ehDonoOuAdmin(user)) {
+      return NextResponse.json({ error: "Só o dono da loja cria ou revoga chave de API." }, { status: 403 });
     }
 
     const targetFranchiseeId = user.ownerId || user.id;

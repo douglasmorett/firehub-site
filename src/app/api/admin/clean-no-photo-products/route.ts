@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
 
@@ -29,8 +30,12 @@ export async function POST(req: Request) {
     let franchiseeId: string | null = null;
     const u = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true }
+      select: { id: true, ownerId: true, role: true, permissions: true }
     });
+    // Apaga em lote o cardápio: o funcionário só com a caixinha "Cardápio".
+    if (u && !podeComoNaTela(u, "/store/cardapio")) {
+      return NextResponse.json({ error: "Sua conta não tem acesso ao Cardápio." }, { status: 403 });
+    }
     if (u) franchiseeId = u.ownerId || u.id;
 
     if (!franchiseeId) {

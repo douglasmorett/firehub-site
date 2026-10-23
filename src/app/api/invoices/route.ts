@@ -4,6 +4,13 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { GoogleGenAI } from "@google/genai";
 import { lerImagemEnviada } from "@/lib/imagem-enviada";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
+
+// As notas de compra moram no Financeiro (DREClient): o funcionário só mexe
+// nelas com a caixinha "Financeiro", a mesma que o proxy confere na página.
+const SEM_FINANCEIRO = { error: "Sua conta não tem acesso ao Financeiro: peça ao dono da loja para marcar \"Financeiro\" em Equipe." };
+const quemPede = (email: string | null | undefined) =>
+  prisma.user.findUnique({ where: { email: email || "" }, select: { role: true, ownerId: true, permissions: true } });
 
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
@@ -13,6 +20,9 @@ export const runtime = "nodejs";
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (!podeComoNaTela(await quemPede(session.user?.email), "/store/financeiro")) {
+    return NextResponse.json(SEM_FINANCEIRO, { status: 403 });
+  }
 
   // Qualquer usuário autenticado pode inserir notas (FRANCHISEE, ADMIN, STAFF)
   const role = (session.user as any).role;
@@ -180,8 +190,11 @@ export async function GET(req: NextRequest) {
   const userEmail = session.user?.email;
   const dbUser = await prisma.user.findUnique({
     where: { email: userEmail || "" },
-    select: { id: true, ownerId: true, role: true }
+    select: { id: true, ownerId: true, role: true, permissions: true }
   });
+  if (!podeComoNaTela(dbUser, "/store/financeiro")) {
+    return NextResponse.json(SEM_FINANCEIRO, { status: 403 });
+  }
   const targetFranchiseeId = dbUser?.ownerId || dbUser?.id || null;
 
   const category = req.nextUrl.searchParams.get("category") || undefined;
@@ -190,6 +203,8 @@ export async function GET(req: NextRequest) {
     where: {
       ...(dbUser?.role === "ADMIN" ? {} : { OR: [{ franchiseeId: targetFranchiseeId || "" }, { uploadedBy: userEmail || "" }] }),
       ...(category ? { category } : {}),
+      // As notas PESSOAIS são do dono: a tela já não as mostra ao funcionário.
+      ...(dbUser?.role === "STAFF" ? { NOT: { category: "PERSONAL" } } : {}),
     },
     orderBy: { createdAt: "desc" },
   });
@@ -203,6 +218,9 @@ export async function DELETE(req: NextRequest) {
 
   const role = (session.user as any).role;
   const userEmail = session.user?.email;
+  if (!podeComoNaTela(await quemPede(userEmail), "/store/financeiro")) {
+    return NextResponse.json(SEM_FINANCEIRO, { status: 403 });
+  }
 
   try {
     const { id } = await req.json();

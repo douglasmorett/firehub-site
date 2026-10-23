@@ -22,6 +22,26 @@ export function gatewayDaLoja(chatbotConfig: unknown): { baseUrl: string; apiKey
 }
 
 /**
+ * As credenciais do robô que ficam no `chatbotConfig` da loja. O navegador não
+ * as vê (api/chatbot/config, GET e resposta do POST): qualquer login da loja lia
+ * a chave do gateway e a do Gemini (auditoria de 23/10/2026). A tela só precisa
+ * saber se existem (`Boolean(config.evolutionUrl)`, "no gateway novo"), então
+ * vai um marcador no lugar do valor. A gravação já recusa esses campos, então o
+ * marcador que a tela devolve ao salvar nunca sobrescreve a chave salva.
+ */
+const CREDENCIAIS_DO_ROBO = ["evolutionUrl", "evolutionApiKey", "geminiApiKey", "cloudApiAccessToken"] as const;
+export const CREDENCIAL_SALVA = "••••••";
+
+export function configSemCredenciais<T>(config: T): T {
+  if (!config || typeof config !== "object") return config;
+  const copia: Record<string, unknown> = { ...(config as Record<string, unknown>) };
+  for (const campo of CREDENCIAIS_DO_ROBO) {
+    if (campo in copia) copia[campo] = copia[campo] ? CREDENCIAL_SALVA : copia[campo];
+  }
+  return copia as T;
+}
+
+/**
  * O gateway das CONEXÕES NOVAS: o de Baileys 7, que entende conta com aparelho
  * hospedado (API oficial da Meta em coexistência). Divinos, Map Grill e China
  * pow só voltaram a receber mensagem depois de irem para ele (25–30/09/2026).

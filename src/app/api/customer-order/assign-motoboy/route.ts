@@ -94,7 +94,9 @@ export async function PATCH(req: NextRequest) {
       motoboyPuxadoEm: null,
     },
     include: {
-      motoboy: true,
+      // Só o que o aviso usa: `motoboy: true` trazia a senha (hash, ou texto
+      // puro nas antigas) e o PIN do entregador, e a resposta devolvia tudo.
+      motoboy: { select: { id: true, name: true, phone: true } },
       franchisee: true,
     },
   });

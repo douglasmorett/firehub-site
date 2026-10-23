@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { ehAdminNoBanco } from "@/lib/permissoes-da-equipe";
 
 /**
  * TEMPORÁRIO — Verifica e corrige role de usuário.
@@ -9,7 +10,8 @@ import { prisma } from "@/lib/prisma";
  */
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user || (session.user as any).role !== "ADMIN") {
+  // Papel lido do banco: com o do cookie, o ADMIN rebaixado se promovia de volta.
+  if (!(await ehAdminNoBanco(session))) {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
 
@@ -43,7 +45,8 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
-  if (!session?.user || (session.user as any).role !== "ADMIN") {
+  // Papel lido do banco: com o do cookie, o ADMIN rebaixado se promovia de volta.
+  if (!(await ehAdminNoBanco(session))) {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
 

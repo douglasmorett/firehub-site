@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { montarPacoteDoContador, zipDoPacote } from "@/lib/contador-pacote";
 import { limiteDeDia } from "@/lib/timezone";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
 // Baixar os XMLs um a um do provedor leva tempo num mês cheio.
@@ -24,9 +25,14 @@ export async function GET(req: Request) {
 
   const u = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true, storeName: true, name: true, storeTimezone: true },
+    select: { id: true, ownerId: true, role: true, permissions: true, storeName: true, name: true, storeTimezone: true },
   });
   if (!u) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  // XMLs com CPF e endereço do cliente: a mesma caixinha da tela Fiscal
+  // ("Financeiro"), como no DANFE (api/store/fiscal/danfe).
+  if (!podeComoNaTela(u, "/store/fiscal")) {
+    return NextResponse.json({ error: "Sem acesso às notas fiscais: peça ao dono da loja para marcar \"Financeiro\" no seu cadastro em Equipe." }, { status: 403 });
+  }
   const lojaId = u.ownerId || u.id;
 
   const url = new URL(req.url);

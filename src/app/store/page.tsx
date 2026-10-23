@@ -19,7 +19,12 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   });
   if (!session) redirect("/login");
 
-  const role = (session.user as any)?.role;
+  // O papel vem do banco, não do cookie: o do cookie é o do dia do login, e o
+  // ADMIN rebaixado continuava vendo os pedidos de todas as lojas aqui.
+  const role = (await prisma.user.findUnique({
+    where: { email: session.user?.email || "" },
+    select: { role: true },
+  }).catch(() => null))?.role;
   if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/login");
 
   const resolvedParams = await searchParams;
@@ -97,7 +102,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
   // "Todas as Lojas" soma o grupo no Início; senão é a loja da sessão
   // (lib/loja-ativa.ts).
   const { lojaIds } = await lojasDaVisao(
-    { id: user.id, ownerId: (user as any).ownerId, role: (session.user as any)?.role },
+    { id: user.id, ownerId: (user as any).ownerId, role },
     (await cookies()).get(COOKIE_DA_LOJA_ATIVA)?.value,
   );
 
