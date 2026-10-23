@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { registrarBrendi } from "@/lib/webhook-brendi-log";
 import { parseJson99Food } from "@/lib/json-ids-longos";
 import { processBrendiEvent } from "@/lib/processBrendiEvent";
+import { pegarVez } from "@/lib/vez";
+import { idDaInstancia } from "@/lib/instancia";
 import {
   verificarAssinaturaHmac,
   avisarWebhookSemSegredo,
@@ -69,6 +71,12 @@ export const dynamic = "force-dynamic";
  * Se ele reiniciar no meio, o aviso se perde: é o lado seguro, porque a perda
  * de verdade continua visível no cron (que alerta no "SEM ACK") e no
  * diagnóstico.
+ *
+ * Com DUAS instâncias do servidor, o reenvio da Brendi pode cair na outra, e
+ * cada uma arma o seu timer (o `aguardandoConfirmacao` é por processo): dois
+ * alertas para o mesmo pedido. Na hora de alertar, quem avisa pega a vez do
+ * pedido no banco (lib/vez.ts) — só a primeira avisa. Custa uma consulta só
+ * quando o alerta já ia sair; banco fora = avisa, como antes.
  */
 const JANELA_DE_RECUPERACAO_MS = 100_000;
 const aguardandoConfirmacao = new Set<string>();
@@ -91,6 +99,11 @@ function avisarSeNaoEntrar(orderId: string, marca: string | null, detalhe: strin
       });
       if (entrou) {
         console.log(`[Brendi Webhook] ${orderId}: falhou no push mas ENTROU depois (#${entrou.dailyOrderNumber}) — sem alerta`);
+        return;
+      }
+      const dono = `${idDaInstancia()}#${Math.random().toString(36).slice(2, 10)}`;
+      if (!(await pegarVez(`aviso:brendi-webhook:${orderId}`, 10 * 60_000, { dono }))) {
+        console.log(`[Brendi Webhook] ${orderId}: o alerta já saiu pelo outro servidor`);
         return;
       }
       const m = await import("@/lib/server-monitor");

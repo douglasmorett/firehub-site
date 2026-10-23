@@ -22,7 +22,9 @@ import {
   type DecisaoSemConexao, type EstadoSemConexao, type ResultadoDaPausa, type SinaisDeVida, type SituacaoDaLoja,
 } from "../src/lib/loja-sem-conexao";
 import { estadoDaLoja, instrucaoDeHorario, TEXTO_DA_INSTABILIDADE } from "../src/lib/loja-aberta";
-import { assistenteVistoEm, marcarAssistente, marcarPainelAberto, painelVistoEm } from "../src/lib/sinais-da-loja";
+import {
+  assistenteVistoEm, marcarAssistente, marcarPainelAberto, painelVistoEm, sinalDeOutraInstancia, tirarSinaisParaOBanco,
+} from "../src/lib/sinais-da-loja";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -438,6 +440,33 @@ marcarAssistente("loja-a", 2_000);
 confere("painel marcado para a loja e o grupo", [painelVistoEm("loja-a"), painelVistoEm("loja-b"), painelVistoEm("loja-c")], [1_000, 1_000, null]);
 confere("Assistente marcado", [assistenteVistoEm("loja-a"), assistenteVistoEm("loja-b")], [2_000, null]);
 confere("guardado no globalThis (um só por processo, para todas as rotas)", (globalThis as any).__firehubSinaisDaLoja?.painel.get("loja-b"), 1_000);
+
+console.log("\n— Sinais de OUTRA instância (o banco, gravado no máximo a cada 30 s) —");
+{
+  confere("nenhuma outra instância viu a loja: null", sinalDeOutraInstancia(null, T0), null);
+  confere("linha de agora: no máximo agora, nunca no futuro", sinalDeOutraInstancia(0, T0), T0);
+  confere("linha de 50 s: conta como 20 s atrás (a outra pode ter visto até 30 s depois)", sinalDeOutraInstancia(50_000, T0), T0 - 20_000);
+
+  tirarSinaisParaOBanco();
+  marcarPainelAberto(["l1"], 100_000);
+  marcarPainelAberto(["l1"], 105_000);
+  marcarAssistente("l1", 106_000);
+  confere("painel a cada 5 s vira UMA linha para o banco (e o Assistente outra)", tirarSinaisParaOBanco().map((s) => `${s.tipo}:${s.lojaId}`), ["painel:l1", "assistente:l1"]);
+  marcarPainelAberto(["l1"], 129_000);
+  confere("antes de 30 s: nada para o banco", tirarSinaisParaOBanco().length, 0);
+  marcarPainelAberto(["l1"], 130_000);
+  confere("30 s depois: de novo", tirarSinaisParaOBanco().length, 1);
+
+  // O dono olha o painel no celular, preso (cookie do balanceador) ao OUTRO
+  // servidor; o Assistente está fechado há 3 min. Este cron não viu painel.
+  confere("sem o sinal de fora: apagou (o defeito com dois servidores)", decide().evento, "apagou");
+  const deFora = (haMs: number) => decide({ s: { painelNaMemoria: sinalDeOutraInstancia(haMs, T0) } });
+  confere("painel visto pela outra há 10 s: não apaga", deFora(10_000).evento === "apagou", false);
+  confere("…nem com a linha de 2 min (pode ter sido visto até 1,5 min atrás)", deFora(2 * MIN).evento === "apagou", false);
+  confere("linha de 2,5 min: aí sim (os mesmos 2 min de um servidor só, do lado seguro)", deFora(2.5 * MIN + 1_000).evento, "apagou");
+  const emQueda = decide().estado;
+  confere("em queda, painel visto pela outra há 50 s: voltou", decide({ estado: emQueda, s: { painelNaMemoria: sinalDeOutraInstancia(50_000, T0) } }).evento, "voltou");
+}
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

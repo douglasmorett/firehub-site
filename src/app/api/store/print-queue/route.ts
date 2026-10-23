@@ -29,6 +29,7 @@ import { pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
 import { lojasQueEstePcAtende } from "@/lib/lojas-no-mesmo-pc-no-banco";
 import { juntarJobsDasLojas } from "@/lib/lojas-no-mesmo-pc";
 import { chaveDoAssistente, registrarAssistente, trabalhosDoAssistente } from "@/lib/dono-da-impressora";
+import { assistentesNoBanco } from "@/lib/laco-entre-instancias";
 import { marcarAssistente } from "@/lib/sinais-da-loja";
 import { bebidaDecididaPeloServidor } from "@/lib/bebida-para-o-assistente";
 import { qtdPedidosDosClientes } from "@/lib/qtd-pedidos-do-cliente";
@@ -136,7 +137,11 @@ export async function GET(req: NextRequest) {
     registrarAssistente(loja, chave, estado);
     const corpo = await resposta.clone().json();
     if (!Array.isArray(corpo?.jobs) || corpo.jobs.length === 0) return resposta;
-    const meus = trabalhosDoAssistente(corpo.jobs, loja, chave);
+    // Com DUAS instâncias, a outra pode ter visto um Assistente que esta não
+    // viu (ou em outra ordem): o banco desempata igual nas duas. Só aqui, com
+    // trabalho na fila — a consulta vazia não lê nada a mais. Falha = só a memória.
+    const doBanco = await assistentesNoBanco(loja);
+    const meus = trabalhosDoAssistente(corpo.jobs, loja, chave, Date.now(), doBanco);
     if (meus.length === corpo.jobs.length && meus.every((j: unknown, i: number) => j === corpo.jobs[i])) return resposta;
     return NextResponse.json({ ...corpo, jobs: meus });
   } catch {

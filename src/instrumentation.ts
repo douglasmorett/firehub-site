@@ -46,6 +46,17 @@ export async function register() {
     soltarALiderancaAoDesligar();
   }
 
+  // O laço entre instâncias (lib/laco-entre-instancias.ts): o pedido gravado
+  // no outro servidor tira a fila e o painel daqui do "nada novo" em ~1–2 s,
+  // e o painel/Assistente vistos aqui contam para o cron e para o dono da
+  // impressora do outro. Cedo, antes da DDL longa: vale também para o
+  // container velho e o novo juntos no deploy. Nunca lança. Fora do
+  // computador da loja (lá o servidor é um só).
+  if (process.env.FIREHUB_LOCAL !== "1") {
+    const { iniciarLacoEntreInstancias } = await import("./lib/laco-entre-instancias");
+    await iniciarLacoEntreInstancias();
+  }
+
   const {
     garantirColunasDePreco,
     garantirColunasDoSchema,

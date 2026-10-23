@@ -1,4 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { randomUUID } from "node:crypto";
+import { pegarVez } from "@/lib/vez";
+import { idDaInstancia } from "@/lib/instancia";
 import {
   getAuthToken,
   refreshAuthToken,
@@ -96,6 +99,18 @@ export async function tokenDeUmId(id: string): Promise<{ auth_token: string; tok
 
   const venceEm = r.token.token_expiration_time * 1000;
   if (venceEm - RENOVAR_FALTANDO_MS > Date.now()) return r.token;
+
+  // ── UMA renovação por loja a cada 2 min, no CLUSTER ──────────────────────
+  //
+  // O webhook, a mudança de status e — com dois servidores — a outra
+  // instância chegam aqui juntos no último dia do token. Duas renovações que
+  // passam geram dois tokens: quem guardou o primeiro no cacheToken (que vale
+  // semanas) seguiria com um token que o 99Food já trocou, e a integração
+  // daquele servidor pararia. A vez no banco (lib/vez.ts) deixa uma só; quem
+  // não pega segue com o token atual, como já seguia quando o 99Food recusa a
+  // renovação. Banco fora: a vez segue (como antes).
+  const dono = `${idDaInstancia()}#${randomUUID().slice(0, 8)}`;
+  if (!(await pegarVez(`renovar:99food:${id}`, 2 * 60_000, { dono }))) return r.token;
 
   console.log(`[99Food] Token de ${id} vence em ${new Date(venceEm).toISOString()} — renovando`);
   const renovou = await refreshAuthToken(id);

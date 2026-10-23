@@ -49,6 +49,22 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 3, delay = 50
 
 
 // Throttle iFood polling — max once every 5s for faster order detection
+//
+// ── E COM DUAS INSTÂNCIAS? (avaliado em 23/10/2026) ──────────────────────────
+//
+// Este freio e os do JotaJá e da Brendi abaixo são por PROCESSO: com A e B no
+// ar, a mesma loja pode ser puxada pelos dois ao mesmo tempo (o painel de um
+// sócio preso a A, o do outro a B). Ficaram em memória de propósito — duplicar
+// aqui só gasta um pouco mais, não duplica pedido nem ACK que importe:
+//   • o pedido nasce uma vez só: ifoodOrderId e openDeliveryOrderId são
+//     @unique, e a corrida (P2002) já é tratada — é a mesma corrida que o
+//     cron, o webhook e este feed já fazem entre si com um servidor só;
+//   • o ACK só sai com o pedido já no banco (quem perde a corrida no iFood
+//     não dá ACK; no JotaJá e na Brendi confere a gravação antes) — no pior
+//     caso o mesmo evento recebe dois ACKs, o que o cron e o webhook já fazem;
+//   • mudança de status é idempotente (sobe de etapa, nunca desce).
+// Pôr a vez no banco aqui seria uma consulta por rodada por loja, no caminho
+// mais quente do servidor.
 let lastIfoodPoll = 0;
 
 
