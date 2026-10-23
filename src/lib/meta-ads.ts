@@ -37,6 +37,7 @@ const META_BASE = `https://graph.facebook.com/${META_API_VERSION}`;
 const META_OAUTH_VERSION = "v25.0";
 
 import { segredoObrigatorio } from "./segredos";
+import { fetchExterno } from "./url-externa";
 import { criarState } from "./meta-oauth-state";
 import { segmentacaoDaMeta, type FaixaDeIdade, type GeneroDoPublico } from "./publico-do-anuncio";
 
@@ -1336,7 +1337,8 @@ const LIMITE_DA_FOTO_BYTES = 15 * 1024 * 1024;
  * maior), que é o que o /adimages recebe em `bytes`. Ver createMetaCampaign.
  */
 async function imagemEmJpegBase64(url: string): Promise<string> {
-  const r = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_META_MS) });
+  // adImageUrl vem do corpo da requisição: endereço interno é recusado (SSRF).
+  const r = await fetchExterno(url, { signal: AbortSignal.timeout(TIMEOUT_META_MS) });
   if (!r.ok) throw new Error(`não consegui baixar a foto (${r.status})`);
   const original = Buffer.from(await r.arrayBuffer());
   if (!original.length) throw new Error("a foto veio vazia");

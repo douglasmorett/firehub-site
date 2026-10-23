@@ -8,6 +8,9 @@ import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
 import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
 import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
 import { registrarChamadaWebhook } from "@/lib/ifood-webhook-registro";
+import { verifyCronAuth } from "@/lib/cron-auth";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
 
 
 import { parseOrderPaymentInfo } from "@/lib/payment-parser";
@@ -166,6 +169,21 @@ export function HEAD() {
 
 // Polling de eventos (alternativa/backup ao webhook)
 export async function GET(req: NextRequest) {
+  // Só cron ou ADMIN (papel relido do banco). Aberto, qualquer um na internet
+  // via os eventos de todas as lojas do app central e dava o ACK — o pedido
+  // sumia da fila antes do polling de verdade (/api/cron/ifood-poll) pegar.
+  // Ninguém do sistema chama este GET: o iFood usa o POST e o cron, o ifood-poll.
+  if (!verifyCronAuth(req)) {
+    const session = await getServerSession(authOptions);
+    const email = session?.user?.email;
+    const quem = email
+      ? await prisma.user.findUnique({ where: { email }, select: { role: true } })
+      : null;
+    if (quem?.role !== "ADMIN") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
   const { getIfoodToken } = await import("@/lib/ifood-api");
 
   let token: string;

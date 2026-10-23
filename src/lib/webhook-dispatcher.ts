@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { prisma } from "@/lib/prisma";
+import { fetchExterno } from "@/lib/url-externa";
 
 export interface OutboundWebhookEvent {
   event: "order.created" | "order.status_updated" | "order.canceled" | "menu.updated";
@@ -50,8 +51,9 @@ export async function dispatchOutboundWebhook(
 
       const signature = signWebhookPayload(payloadStr, sub.secret);
 
-      // Disparo assíncrono com timeout de 5 segundos
-      fetch(sub.url, {
+      // Disparo assíncrono com timeout de 5 segundos. A URL é cadastrada pela
+      // loja: fetchExterno recusa endereço interno (SSRF) e confere redirecionamento.
+      fetchExterno(sub.url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

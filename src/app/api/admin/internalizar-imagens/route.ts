@@ -32,6 +32,7 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { saveUploadedFile } from "@/lib/storage";
+import { fetchExterno } from "@/lib/url-externa";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 54 fotos a ~1s cada cabem com folga
@@ -152,12 +153,14 @@ function caminhoAlternativoDoIfood(url: string): string | null {
 }
 
 async function baixar(url: string): Promise<Response> {
-  const direto = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+  // fetchExterno: a URL é gravada pela loja; endereço interno (127.0.0.1,
+  // metadata da nuvem, rede privada) é recusado, inclusive por redirecionamento.
+  const direto = await fetchExterno(url, { signal: AbortSignal.timeout(20_000) });
   if (direto.ok || !barrado(direto)) return direto;
 
   // 2ª tentativa: como navegador. Requisição sem `User-Agent` vinda de faixa de
   // datacenter é exatamente o que um WAF barra.
-  const comoNavegador = await fetch(url, {
+  const comoNavegador = await fetchExterno(url, {
     signal: AbortSignal.timeout(20_000),
     headers: cabecalhoDeNavegador(url),
   });
@@ -169,7 +172,7 @@ async function baixar(url: string): Promise<Response> {
   // então não é bloqueio geral: é regra daquele host.
   const alternativo = caminhoAlternativoDoIfood(url);
   if (!alternativo) return comoNavegador;
-  const porTransformacao = await fetch(alternativo, {
+  const porTransformacao = await fetchExterno(alternativo, {
     signal: AbortSignal.timeout(20_000),
     headers: cabecalhoDeNavegador(alternativo),
   });
