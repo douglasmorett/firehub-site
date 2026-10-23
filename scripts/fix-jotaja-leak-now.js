@@ -2,7 +2,7 @@ const { neon } = require('@neondatabase/serverless');
 require('dotenv').config({ path: '.env.local' });
 require('dotenv').config();
 
-const dbUrl = "postgresql://neondb_owner:npg_9C4DXWRhvBUo@ep-soft-water-amzwjl9k-pooler.c-5.us-east-1.aws.neon.tech/firehub_db?sslmode=require";
+const dbUrl = process.env.DATABASE_URL;
 const sql = neon(dbUrl);
 
 async function main() {

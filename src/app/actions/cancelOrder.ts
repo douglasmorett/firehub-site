@@ -3,15 +3,15 @@
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { ehEquipeInterna } from "@/lib/equipe-interna";
 import { revalidatePath } from "next/cache";
 import { getAsaasKey } from "@/lib/asaas";
 import bcrypt from "bcryptjs";
 
 export async function cancelOrder(orderId: string, adminPassword?: string, reason?: string) {
   const session = await getServerSession(authOptions);
-  const role = (session?.user as any)?.role;
 
-  if (!session || !session.user || (role !== "ADMIN" && role !== "STAFF")) {
+  if (!session || !session.user || !(await ehEquipeInterna(session))) {
     throw new Error("Não autorizado.");
   }
 

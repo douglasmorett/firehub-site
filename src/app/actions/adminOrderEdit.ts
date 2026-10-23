@@ -3,13 +3,14 @@
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { ehEquipeInterna } from "@/lib/equipe-interna";
 import { revalidatePath } from "next/cache";
 import { createAsaasPayment, getAsaasKey } from "@/lib/asaas";
 
 export async function adminUpdateOrderItems(orderId: string, items: { productId: string, quantity: number, price?: number }[]) {
   const session = await getServerSession(authOptions);
   
-  if (!session || ((session.user as any)?.role !== "ADMIN" && (session.user as any)?.role !== "STAFF")) {
+  if (!session || !(await ehEquipeInterna(session))) {
     throw new Error("Não autorizado");
   }
 

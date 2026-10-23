@@ -6,6 +6,8 @@ import { getCurrentYearMonth, intervaloDoMes, lojaIsenta } from "@/lib/billing";
 import { inicioDoDiaDaLojaAtras } from "@/lib/fuso";
 import { atividadeDasLojas } from "@/lib/atividade-da-loja";
 import { indicadorasDasLojas } from "@/lib/indique-e-ganhe-no-banco";
+import { ehEquipeInterna } from "@/lib/equipe-interna";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "FireHub Admin — Visão Geral" };
@@ -15,6 +17,8 @@ const daysSince = (d: Date) => Math.floor((Date.now() - new Date(d).getTime()) /
 
 export default async function AdminPage() {
   const session = await getServerSession(authOptions);
+  // Também aqui, não só no layout: esta página lê CPF/CNPJ e Pix de todas as lojas.
+  if (!(await ehEquipeInterna(session))) redirect("/store");
 
   // ── Lojistas ──────────────────────────────────────────────
   const lojistas = await prisma.user.findMany({

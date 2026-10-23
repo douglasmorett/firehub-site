@@ -5,6 +5,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { hasPermission } from "@/lib/permissions";
+import { ehEquipeInterna } from "@/lib/equipe-interna";
 
 export async function createProduct(formData: FormData) {
   const session = await getServerSession(authOptions);
@@ -13,7 +14,7 @@ export async function createProduct(formData: FormData) {
   const role = (session.user as any).role;
   const perms = (session.user as any).permissions || "";
   
-  if (role !== "ADMIN" && !(role === "STAFF" && hasPermission(perms, "products", role))) {
+  if (!(await ehEquipeInterna(session)) || (role !== "ADMIN" && !hasPermission(perms, "products", role))) {
     throw new Error("Não autorizado");
   }
 
@@ -46,7 +47,7 @@ export async function deleteProduct(id: string) {
   const role = (session.user as any).role;
   const perms = (session.user as any).permissions || "";
   
-  if (role !== "ADMIN" && !(role === "STAFF" && hasPermission(perms, "products", role))) {
+  if (!(await ehEquipeInterna(session)) || (role !== "ADMIN" && !hasPermission(perms, "products", role))) {
     throw new Error("Não autorizado");
   }
 
@@ -65,7 +66,7 @@ export async function updateProduct(id: string, formData: FormData) {
   const role = (session.user as any).role;
   const perms = (session.user as any).permissions || "";
   
-  if (role !== "ADMIN" && !(role === "STAFF" && hasPermission(perms, "products", role))) {
+  if (!(await ehEquipeInterna(session)) || (role !== "ADMIN" && !hasPermission(perms, "products", role))) {
     throw new Error("Não autorizado");
   }
 

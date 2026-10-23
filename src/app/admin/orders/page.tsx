@@ -6,6 +6,7 @@ import AdminSidebar from "@/components/AdminSidebar";
 import AdminOrderCard from "@/components/AdminOrderCard";
 import { getNextDeliveryInfo } from "@/lib/deliveryDates";
 import { sincronizarComCobranca } from "@/lib/pedido-cobranca";
+import { ehEquipeInterna } from "@/lib/equipe-interna";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "FireHub Admin — Pedidos de Insumos" };
@@ -16,7 +17,7 @@ export default async function AdminOrdersPage() {
 
   const role = (session.user as any)?.role;
   const perms = (session.user as any)?.permissions || "";
-  if (role !== "ADMIN" && role !== "STAFF") redirect("/store");
+  if (!(await ehEquipeInterna(session))) redirect("/store");
 
   // Buscar TODOS os pedidos de insumos (model Order), incluindo dados do user e itens
   const consulta = {

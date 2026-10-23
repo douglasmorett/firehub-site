@@ -277,7 +277,10 @@ export function enderecoDoCliente(receiveAddress: any): string {
   const partes = [a.poi_address, a.house_number, a.poi_display_name, a.city].map(util);
 
   const [rua, numero] = partes;
-  if (numero && rua && new RegExp(`(^|[\\s,])${numero}\\s*$`).test(rua)) partes[1] = "";
+  // Comparação de texto, não RegExp montada com o número: o house_number vem
+  // do pedido da 99 sem assinatura, e um "(a+)+$" ali travava o servidor inteiro.
+  const fimDaRua = rua?.trimEnd() || "";
+  if (numero && fimDaRua.endsWith(numero) && /(^|[\s,])$/.test(fimDaRua.slice(0, fimDaRua.length - numero.length))) partes[1] = "";
 
   const juntas: string[] = [];
   for (const p of partes) {

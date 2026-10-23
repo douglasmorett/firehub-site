@@ -528,6 +528,21 @@ async function subidaNoPostgres(): Promise<void> {
     r4.aplicadas === 1 && r4.conflitos === 1 && p3?.status === "SAIU" && p3?.routeId === "r1",
     { r4, p3 },
   );
+  // Subida forjada com a chave da contingência: papel e grupo não sobem, o
+  // que é da operação (loja aberta) sobe.
+  await pg.exec(`ALTER TABLE "User" ADD COLUMN "role" TEXT NOT NULL DEFAULT 'FRANCHISEE', ADD COLUMN "accountGroupId" TEXT, ADD COLUMN "storeOpen" BOOLEAN NOT NULL DEFAULT false`);
+  const viraAdmin = [linha(9, {
+    tabela: "User", operacao: "UPDATE", registro: "L",
+    antes: null,
+    depois: { id: "L", role: "ADMIN", accountGroupId: "outra-loja", storeOpen: true },
+  })];
+  const r5 = await pg.transaction((tx: any) => aplicarLote(banco(tx), "L", "banco-1", viraAdmin, null, true));
+  const dono = (await pg.query(`SELECT role, "accountGroupId", "storeOpen" FROM "User" WHERE id = 'L'`)).rows[0] as { role: string; accountGroupId: string | null; storeOpen: boolean };
+  confere(
+    "a subida não grava role nem accountGroupId na linha da loja (o storeOpen sobe)",
+    dono?.role === "FRANCHISEE" && dono?.accountGroupId === null && dono?.storeOpen === true,
+    { r5, dono },
+  );
   await pg.close();
 }
 

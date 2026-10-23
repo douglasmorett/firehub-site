@@ -349,25 +349,30 @@ export default function StoreDashboardMap({
           const isJotaja = !isCardapioWeb && ((o.source || "").toUpperCase() === "JOTAJA" || Boolean(o.openDeliveryReference));
 
           const pinBg = isIfood ? "#EA1D2C" : isCardapioWeb ? "#BE185D" : isJotaja ? "#FF6C00" : "#0F766E";
+          // Nome e endereço vêm do cliente (site, iFood, robô) e o Leaflet monta
+          // o popup como HTML: sem escapar, um nome com <img onerror=...> rodava
+          // script no painel da loja (e no do admin, que abre o mesmo mapa).
+          const esc = (t: unknown) =>
+            String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
           const displayNum = o.ifoodReference ? `#${o.ifoodReference}` : o.openDeliveryReference ? `#${o.openDeliveryReference}` : `#${o.id.slice(-4).toUpperCase()}`;
 
           const popupContent = `
             <div style="font-family: system-ui, sans-serif; padding: 6px; min-width: 190px;">
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-                <strong style="font-size: 14px; color: #0F172A;">${displayNum}</strong>
+                <strong style="font-size: 14px; color: #0F172A;">${esc(displayNum)}</strong>
                 <span style="background: ${pinBg}; color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 12px;">
                   ${isIfood ? "iFood" : isCardapioWeb ? "CardápioWeb" : isJotaja ? "Jotajá" : "Site"}
                 </span>
               </div>
               <div style="font-size: 13px; font-weight: 700; color: #1E293B; margin-bottom: 4px;">
-                👤 ${o.customerName || "Cliente"}
+                👤 ${esc(o.customerName || "Cliente")}
               </div>
               <div style="font-size: 11px; color: #64748B; margin-bottom: 6px; line-height: 1.3;">
-                🏠 ${o.customerAddress || "Endereço não informado"}
+                🏠 ${esc(o.customerAddress || "Endereço não informado")}
               </div>
               <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid #E2E8F0; padding-top: 6px; margin-top: 6px;">
                 <span style="font-size: 12px; font-weight: 800; color: #0F766E;">R$ ${o.totalAmount.toFixed(2)}</span>
-                <span style="font-size: 10px; font-weight: 700; color: #475569; background: #F1F5F9; padding: 2px 6px; border-radius: 4px;">${o.status}</span>
+                <span style="font-size: 10px; font-weight: 700; color: #475569; background: #F1F5F9; padding: 2px 6px; border-radius: 4px;">${esc(o.status)}</span>
               </div>
             </div>
           `;
@@ -381,7 +386,7 @@ export default function StoreDashboardMap({
             opacity: 1,
             fillOpacity: 0.85,
           })
-            .bindTooltip(`<b>${displayNum}</b> — ${o.customerName || "Cliente"}`, { direction: "top", offset: [0, -5] })
+            .bindTooltip(`<b>${esc(displayNum)}</b> — ${esc(o.customerName || "Cliente")}`, { direction: "top", offset: [0, -5] })
             .bindPopup(popupContent)
             .addTo(map);
 

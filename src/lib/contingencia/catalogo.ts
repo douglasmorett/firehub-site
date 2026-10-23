@@ -40,6 +40,12 @@ export type TabelaDaCopia = {
   /** Colunas secretas pela regra geral que esta tabela PRECISA (ex.: senha do garçom). */
   permitirColunas?: string[];
   /**
+   * Colunas que DESCEM (o painel do computador lê) mas nunca SOBEM: a subida
+   * é montada pelo computador da loja, e o corpo pode ser forjado com a chave
+   * da contingência, que qualquer dono ativa.
+   */
+  naoSobem?: string[];
+  /**
    * Mudança só nestas colunas não conta (o Assistente grava
    * `printQueuePolledAt` a cada 3 s: sem isto, cada consulta da fila desceria
    * a linha inteira da loja).
@@ -92,6 +98,17 @@ export const TABELAS_DA_COPIA: TabelaDaCopia[] = [
     // na regra geral por ter "senha" no nome, mas não é segredo: sem ele, a
     // TV do salão não acha a loja na cópia e o PC gera um código novo.
     permitirColunas: ["painelDeSenhas"],
+    // Papel, dono, grupo, plano, cobrança e vínculos: com eles na subida, o
+    // dono gravava role ADMIN ou o accountGroupId de outra loja na própria
+    // linha. Nada disso muda durante uma queda de internet.
+    naoSobem: [
+      "email", "role", "permissions", "ownerId", "accountGroupId", "isPrimaryStore", "isFireHubSystem",
+      "isFranqueadoHakim", "planPercent", "trialEndsAt", "slug", "slugsAntigos", "cpfCnpj",
+      "ambassadorId", "vendedorId", "vendedorStatus", "vendedorAtribuidoEm", "vendedorAtendidoEm",
+      "referredById", "asaasWalletId", "pagarmeRecipientId", "mpSellerId", "celcoinAccountId",
+      "metaAdsEnabled", "metaAdsWeeklyFee", "metaIaGeracoesUsadas", "metaIaSemanaReferencia",
+      "employeeAccountEnabled", "totemEnabled", "ifoodMerchantId", "ifoodClientId", "jotajaMerchantId",
+    ],
     ignorarMudancaDe: ["printQueuePolledAt", "printQueueEstado", "updatedAt"],
     semLinhaNova: true,
     mescla: { storeOrderCount: "soma" },

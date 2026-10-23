@@ -4,8 +4,8 @@
  * Após o iFood liberar o app para produção e você solicitar acesso no Portal do Desenvolvedor.
  */
 
-const clientId     = 'f003da60-a255-4a6f-a1fb-f94819c6f286';
-const clientSecret = '107a0sf9as7pyuq2fuxahnlvurw8fngt2pkm049j10otj10pgme8874hf0u8ayxcjv9pkndicdposictjzv4708jtmy3p0q6mx51';
+const clientId     = process.env.IFOOD_CLIENT_ID;
+const clientSecret = process.env.IFOOD_CLIENT_SECRET;
 
 async function run() {
   console.log('🔑 Obtendo token...');

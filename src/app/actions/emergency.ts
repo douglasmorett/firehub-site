@@ -2,19 +2,22 @@
 
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { ehEquipeInterna } from "@/lib/equipe-interna";
 import { prisma } from "@/lib/prisma";
 import { revalidatePath } from "next/cache";
 import { createAsaasPayment } from "@/lib/asaas";
 
 export async function approveEmergencyOrder(orderId: string) {
   const session = await getServerSession(authOptions);
-  const role = (session?.user as any)?.role;
-  if (!session || (role !== "ADMIN" && role !== "STAFF")) {
+  if (!session || !(await ehEquipeInterna(session))) {
     throw new Error("Não autorizado");
   }
 
   const order = await prisma.order.findUnique({ where: { id: orderId }, include: { user: true } });
   if (!order) throw new Error("Pedido não encontrado");
+  if (!order.isEmergency || order.emergencyStatus !== "PENDING_APPROVAL") {
+    throw new Error("Este pedido não é uma emergência aguardando aprovação.");
+  }
 
   // Gerar boleto Asaas automaticamente após aprovação
   const shortId = order.id.slice(-6).toUpperCase();
@@ -62,8 +65,7 @@ export async function approveEmergencyOrder(orderId: string) {
 
 export async function rejectEmergencyOrder(orderId: string, reason: string) {
   const session = await getServerSession(authOptions);
-  const role = (session?.user as any)?.role;
-  if (!session || (role !== "ADMIN" && role !== "STAFF")) {
+  if (!session || !(await ehEquipeInterna(session))) {
     throw new Error("Não autorizado");
   }
 

@@ -3,6 +3,7 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hasPermission } from "@/lib/permissions";
+import { ehEquipeInterna } from "@/lib/equipe-interna";
 import ProductsClient from "@/components/ProductsClient";
 import AdminSidebar from "@/components/AdminSidebar";
 
@@ -46,7 +47,9 @@ export default async function AdminProductsPage() {
   // quem não pode salvar, em vez de deixar a pessoa preencher e tomar erro.
   const role = (session.user as any)?.role;
   const perms = (session.user as any)?.permissions || "";
-  if (role !== "ADMIN" && !(role === "STAFF" && hasPermission(perms, "products", role))) {
+  // A permissão "products" sozinha não basta: o dono da loja marca qualquer
+  // permissão no funcionário dele. Tem que ser da equipe interna.
+  if (!(await ehEquipeInterna(session)) || (role !== "ADMIN" && !hasPermission(perms, "products", role))) {
     redirect("/store");
   }
 

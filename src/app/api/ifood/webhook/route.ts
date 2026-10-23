@@ -229,7 +229,9 @@ export async function GET(req: NextRequest) {
  */
 async function processIfoodEvent(event: any, franchiseeIdOverride?: string, origemConfiavel = false) {
   const { code, orderId, merchantId } = event;
-  if (!orderId) return;
+  // Só texto: um objeto aqui virava filtro do Prisma (`{ not: "" }` casa com
+  // todos os pedidos iFood) nos updateMany abaixo.
+  if (!orderId || typeof orderId !== "string") return;
 
   const eventCode = code || event.fullCode || "";
   console.log(`[iFood Webhook] 📋 Evento: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);

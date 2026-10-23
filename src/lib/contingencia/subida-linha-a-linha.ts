@@ -178,7 +178,7 @@ async function aplicarLinha(
     return { tipo: "recusada", motivo: "a linha da nuvem é de outra loja" };
   }
   const colunasNaNuvem = await db.colunas(t.nome);
-  const proibidas = new Set(colunasQueNaoDescem(t, colunasNaNuvem));
+  const proibidas = new Set([...colunasQueNaoDescem(t, colunasNaNuvem), ...(t.naoSobem || [])]);
   const decisao = decidir(t, s, naNuvem, proibidas);
 
   if (decisao.tipo === "recusar") return { tipo: "recusada", motivo: decisao.motivo };

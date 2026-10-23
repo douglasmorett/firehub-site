@@ -9,7 +9,8 @@ const p = new PrismaClient();
 
 async function main() {
   const email = 'admin@firehubfood.com.br';
-  const password = 'FireHub@Admin2026!';
+  const password = process.env.ADMIN_PASSWORD;
+  if (!password) throw new Error('Defina ADMIN_PASSWORD (a senha não fica no código).');
   
   const existing = await p.user.findUnique({ where: { email } });
   if (existing) {

@@ -31,6 +31,9 @@ export async function GET(req: NextRequest) {
     select: { id: true, role: true, ifoodMerchantId: true, ownerId: true },
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  // Só ADMIN: o GET esvazia a fila do app central do iFood (de TODAS as lojas)
+  // e gravava os pedidos na loja de quem chamou. Nenhuma tela usa esta rota.
+  if (user.role !== "ADMIN") return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
 
   let merchantId = user.ifoodMerchantId;
   const targetFranchiseeId = user.ownerId || user.id;
@@ -180,9 +183,12 @@ export async function POST(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true },
+    select: { id: true, ownerId: true, role: true },
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
+  // Só ADMIN: o POST "consertava" o dono do pedido, passando para a loja de
+  // quem chamou um pedido iFood de qualquer outra loja.
+  if (user.role !== "ADMIN") return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
 
   const targetFranchiseeId = user.ownerId || user.id;
   if (await lojaBloqueadaPorMensalidade(targetFranchiseeId)) {
