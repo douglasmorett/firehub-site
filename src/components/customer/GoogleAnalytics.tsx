@@ -94,25 +94,37 @@ export default function GoogleAnalytics({
 
     // ── Google Tag Manager ──────────────────────────────────────────────────
     let noscript: HTMLElement | null = null;
+    let desmontado = false;
     if (container.startsWith("GTM-")) {
-      if (!jaIniciados.has(container)) {
-        window.dataLayer.push({ "gtm.start": Date.now(), event: "gtm.js" });
-        carregarScript(
-          `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(container)}`,
-          `gtm-${container}`
-        );
-        jaIniciados.add(container);
-      }
-      gtmAtivo = true;
+      // O contêiner é JavaScript que a LOJA escolhe, rodando no domínio do
+      // FireHub: para quem está logado no painel (dono, admin) abrindo um
+      // cardápio, ele chamava as APIs com a sessão da pessoa. Só carrega para
+      // quem não está logado — o cliente do cardápio, que é quem a loja mede.
+      fetch("/api/auth/session", { credentials: "same-origin" })
+        .then((r) => r.json())
+        .catch(() => null)
+        .then((sessao) => {
+          if (desmontado || sessao?.user) return;
+          if (!jaIniciados.has(container)) {
+            window.dataLayer.push({ "gtm.start": Date.now(), event: "gtm.js" });
+            carregarScript(
+              `https://www.googletagmanager.com/gtm.js?id=${encodeURIComponent(container)}`,
+              `gtm-${container}`
+            );
+            jaIniciados.add(container);
+          }
+          gtmAtivo = true;
 
-      noscript = document.createElement("noscript");
-      noscript.innerHTML =
-        `<iframe src="https://www.googletagmanager.com/ns.html?id=${container}" ` +
-        `height="0" width="0" style="display:none;visibility:hidden"></iframe>`;
-      document.body.appendChild(noscript);
+          noscript = document.createElement("noscript");
+          noscript.innerHTML =
+            `<iframe src="https://www.googletagmanager.com/ns.html?id=${encodeURIComponent(container)}" ` +
+            `height="0" width="0" style="display:none;visibility:hidden"></iframe>`;
+          document.body.appendChild(noscript);
+        });
     }
 
     return () => {
+      desmontado = true;
       noscript?.remove();
       if (medicaoDaLojaAtual === medicao) medicaoDaLojaAtual = null;
       if (container) gtmAtivo = false;

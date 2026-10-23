@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { chaveDoGateway } from '@/lib/chave-do-gateway';
 import { registrarEstadoDoRobo } from '@/lib/whatsapp-estado';
 import { hospedadoVaiParaOGatewayNovo, levarHospedadoAoGatewayNovo } from '@/lib/gateway-da-loja';
 import { sendEvolutionMessage } from '@/lib/whatsapp-evolution';
@@ -131,11 +132,23 @@ function cleanCache() {
 }
 
 
+// ── QUEM PODE FALAR COMO GATEWAY (lib/chave-do-gateway.ts) ───────────────
+// Enquanto houver gateway na versão antiga, nada é recusado: só fica no log
+// quem chega sem a chave (ou com outra), com a instância. Quando o log
+// mostrar só "ok", EXIGIR_CHAVE_DO_GATEWAY vira true e o resto é recusado.
+const EXIGIR_CHAVE_DO_GATEWAY = false;
+
 export async function POST(req: NextRequest) {
   // ── REGRA CRÍTICA: SEMPRE retornar 200 para a Evolution API ──
   // Se retornarmos 500, a Evolution API pode desativar o webhook
   // e o bot para de receber mensagens completamente.
   try {
+    const chave = chaveDoGateway(req.headers.get("apikey"));
+    if (chave !== "ok" && EXIGIR_CHAVE_DO_GATEWAY) {
+      console.warn(`[WhatsApp Webhook] 🔒 Evento RECUSADO: chave do gateway ${chave}.`);
+      return NextResponse.json({ status: "ignored" });
+    }
+
     cleanCache();
     // No máximo uma vez por hora, sem esperar: conversa de cliente não fica guardada.
     void limparMemoriasVencidas();
@@ -146,6 +159,7 @@ export async function POST(req: NextRequest) {
     const time = new Date().toISOString();
 
     console.log(`[${time}] [WhatsApp Webhook] Evento recebido: "${event}" para instância "${instance}"`);
+    if (chave !== "ok") console.warn(`[WhatsApp Webhook] ⚠️ Evento com chave do gateway ${chave}: "${event}" da instância "${instance}".`);
 
     // ── 0. O NÚMERO DO PRÓPRIO FIREHUB ───────────────────────────────────────
     // O gateway manda todas as instâncias para esta rota, e a do atendimento do

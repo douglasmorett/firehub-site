@@ -563,6 +563,16 @@ function registrarPedidoDeRetransmissao(instanceName, key) {
   }
 }
 
+/**
+ * Cabeçalhos de todo aviso ao FireHub. A `apikey` é a mesma chave que o
+ * FireHub usa para chamar este gateway (API_KEY = EVOLUTION_API_KEY lá): sem
+ * ela, qualquer um que soubesse o nome da instância forjava mensagem de
+ * cliente ou queda do robô de qualquer loja no webhook.
+ */
+function cabecalhosDoWebhook() {
+  return { "Content-Type": "application/json", apikey: process.env.API_KEY || "" };
+}
+
 /** URL do webhook do FireHub. Uma só, para os avisos não divergirem. */
 function urlDoWebhook() {
   return process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
@@ -577,7 +587,7 @@ function urlDoWebhook() {
 function avisarFireHubDaSaude(instanceName, estado) {
   fetch(urlDoWebhook(), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: cabecalhosDoWebhook(),
     body: JSON.stringify({
       event: "SAUDE_DO_VINCULO",
       instance: instanceName,
@@ -879,7 +889,7 @@ async function criarSocket(instanceName) {
         const webhookUrl = urlDoWebhook();
         await fetch(webhookUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: cabecalhosDoWebhook(),
           body: JSON.stringify({
             event: "CONNECTION_UPDATE",
             instance: instanceName,
@@ -970,7 +980,7 @@ async function criarSocket(instanceName) {
           const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
           await fetch(webhookUrl, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: cabecalhosDoWebhook(),
             body: JSON.stringify({
               event: "CONNECTION_UPDATE",
               instance: instanceName,
@@ -1203,7 +1213,7 @@ async function criarSocket(instanceName) {
         const webhookUrl = process.env.FIREHUB_WEBHOOK_URL || "https://firehubfood.com.br/api/webhook/whatsapp";
         await fetch(webhookUrl, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: cabecalhosDoWebhook(),
           body: JSON.stringify({
             event: "MESSAGES_UPSERT",
             instance: instanceName,
