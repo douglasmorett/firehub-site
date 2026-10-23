@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { orderByCardapio, podeOrdenarProdutos } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
+import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
@@ -436,6 +437,20 @@ function saneiaHorario(dados: any): string | null {
   return null;
 }
 
+/**
+ * Só colunas do próprio produto chegam ao Prisma. O corpo ia inteiro para o
+ * create/update, e uma chave de relação (`franchisee`, `orderItems`,
+ * `pausaPeloEstoque`...) com escrita aninhada mexia em outras tabelas: um
+ * `franchisee: { update: { role: "ADMIN" } }` tornava o lojista ADMIN.
+ * `id` e `franchiseeId` também saem: quem decide a loja é a sessão.
+ */
+const COLUNAS_DO_PRODUTO = new Set<string>(Object.values(Prisma.MenuProductScalarFieldEnum));
+function soColunasDoProduto(dados: any) {
+  for (const k of Object.keys(dados)) {
+    if (!COLUNAS_DO_PRODUTO.has(k) || k === "id" || k === "franchiseeId") delete dados[k];
+  }
+}
+
 function saneiaEstoque(dados: any): string | null {
   const informado = dados?.estoque;
   const pausar = dados?.estoquePausar;
@@ -499,6 +514,7 @@ export async function POST(req: NextRequest) {
   if (erroHorario) return NextResponse.json({ error: erroHorario }, { status: 400 });
 
   await normalizarImagem(rest);
+  soColunasDoProduto(rest);
   const safeComboGroups = await keepOwnComboItems(comboGroups, franchiseeId);
 
   const { recipeItems: fichaDoOriginal, fiscalBreakdown, comboConfig, ...copiaDoOriginal } = original || { recipeItems: [] };
@@ -596,6 +612,7 @@ export async function PUT(req: NextRequest) {
 
   // Converte imagem base64 em arquivo ANTES de gravar (rede de seguranca).
   await normalizarImagem(updateData);
+  soColunasDoProduto(updateData);
 
   const product = await prisma.menuProduct.update({
     where: { id },

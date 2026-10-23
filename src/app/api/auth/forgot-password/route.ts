@@ -30,6 +30,14 @@ export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY || "placeholder");
   const { email, newPassword, token } = await req.json();
 
+  // Só texto entra no Prisma: um objeto no lugar do token (ex.: { "not": "" })
+  // vira operador de filtro e casa com o token de outra pessoa.
+  if ((email != null && typeof email !== "string") ||
+      (token != null && typeof token !== "string") ||
+      (newPassword != null && typeof newPassword !== "string")) {
+    return NextResponse.json({ error: "Dados inválidos." }, { status: 400 });
+  }
+
   // FLUXO 1 — Solicitar recuperação de senha
   if (email && !token) {
     const cleanEmail = email.trim().toLowerCase();
@@ -115,6 +123,17 @@ export async function POST(req: NextRequest) {
 
   // FLUXO 2 — Redefinir senha com token
   if (token && newPassword) {
+    // Os tokens são gerados com randomBytes(32).toString("hex") (aqui e no
+    // cadastro pelo robô). Qualquer outro formato nem chega a consultar.
+    if (!/^[a-f0-9]{64}$/.test(token)) {
+      return NextResponse.json({ error: "Token inválido ou expirado." }, { status: 400 });
+    }
+
+    // Antes da consulta, para a resposta não revelar se o token existe.
+    if (newPassword.trim().length < 6) {
+      return NextResponse.json({ error: "A senha deve ter no mínimo 6 caracteres." }, { status: 400 });
+    }
+
     const user = await prisma.user.findFirst({
       where: {
         resetToken: token,
@@ -126,11 +145,6 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "Token inválido ou expirado." }, { status: 400 });
     }
-
-    if (newPassword.trim().length < 6) {
-      return NextResponse.json({ error: "A senha deve ter no mínimo 6 caracteres." }, { status: 400 });
-    }
-
 
     const hashed = await bcrypt.hash(newPassword, 12);
     await prisma.user.update({
