@@ -13,19 +13,38 @@
  * (D6 do plano, vault "FireHub - Plano despacho automático"):
  *   - semente = o pedido em que a loja pediu prioridade à mão e, sem nenhum, o
  *     de MENOR PRAZO (no navegador era o mais velho);
- *   - candidato entra se está a até `raioDoGrupoKm` da semente OU "no caminho"
- *     (desvio ≤ min(1,8; max(1; raio × 0,75)) e não mais longe da loja que a
- *     semente + 1 km); nota = desvio × 0,6 + distância × 0,4 (menor primeiro);
+ *   - candidato entra se está a até `raioDoGrupoKm` de QUALQUER parada da
+ *     rota OU "no caminho" de qualquer parada (desvio ≤ o próprio raio — era
+ *     min(1,8; max(1; raio × 0,75)) até 22/10/2026, ver `desvioMaximo` — e
+ *     não mais longe da loja que a parada + 1 km); nota = desvio ×
+ *     0,6 + distância × 0,4, a melhor entre as paradas (menor primeiro);
  *   - e, novidade daqui, o prazo do candidato cabe na janela: até
- *     `janelaDePrazoMin` de diferença do prazo da semente (ver `encaixe`);
- *   - até `maxEntregasPorRota`; ordem das paradas = vizinho mais próximo a
- *     partir da loja, em linha reta. É a ordem que a PRÉVIA mostra; ao gravar,
- *     executar.ts a refaz pela rua (ordem-por-rua.ts, `rotaEntre`) e volta a
- *     esta quando a rua não responde — o planejador fica puro, sem rede.
+ *     `janelaDePrazoMin` de diferença do prazo da SEMENTE (ver `encaixeNaRota`);
+ *   - a rota cresce um a um até `maxEntregasPorRota`: quem entrou já serve de
+ *     parada para o próximo. Douglas, 22/10/2026 21h15 (Rota da Hakim: #34
+ *     perto da loja, #33 na Maria Turri): "o #35 fica no caminho do #33" — e
+ *     ficava de fora porque só se comparava com a semente (o #34);
+ *   - ordem das paradas = MENOR PERCURSO TOTAL saindo da loja, sem volta
+ *     (`ordemDeMenorPercurso`, força bruta até 6 paradas), em linha reta. É a
+ *     ordem que a PRÉVIA mostra; ao gravar, executar.ts a refaz pela rua
+ *     (ordem-por-rua.ts, `rotaEntre`) e volta a esta quando a rua não
+ *     responde. O vizinho mais próximo, guloso, gravou 34 → 33 → 35 na Rota
+ *     #11 (22/10, 21h20): do 34 foi ao 33 e teve de voltar ao 35.
  *
- * A distância é `distanciaKm` de lib/ponto-do-pedido.ts — o mesmo Haversine de
- * `linhaRetaKm` (lib/geocoding.ts), mas de um arquivo sem banco: geocoding.ts
- * importa o Prisma, e o planejador tem de rodar no teste sem DATABASE_URL.
+ * ── A distância: pela RUA quando há medida, linha reta quando não ─────────
+ *
+ * Douglas, 22/10/2026 21h15: "o pedido 34 não dá para ir com o 26 — tem um
+ * rio, um valão, o motoboy não passa; tem que subir para a pista". Em linha
+ * reta os dois estavam a menos de 2 km. Por isso o raio, o desvio e a nota
+ * usam km de RUA (`pelaRua` na entrada): uma reta de 1,5 km que dá 4 km de
+ * rua não junta. A tabela vem pronta de fora (executar.ts mede pelo
+ * `rotaEntre`, com cache de 60 dias e teto de tempo por ciclo) — o planejador
+ * continua puro, sem rede. Par sem medida cai em `distanciaKm` (linha reta,
+ * lib/ponto-do-pedido.ts — o Haversine de `linhaRetaKm`, num arquivo sem
+ * banco), e o "no caminho" nunca mistura as duas réguas: as três pernas
+ * (loja→candidato, candidato→parada, loja→parada) são todas de rua, ou todas
+ * de reta (par medido pela rua sem as pernas da loja: só o "perto" vale).
+ * Sem tabela (testes antigos, roteador fora), é a linha reta de antes.
  *
  * ── A ordem de um ciclo (§4.4) ─────────────────────────────────────────────
  *   1. limpar: pedido cancelado sai da rota; rota que ficou vazia é apagada;
@@ -51,9 +70,15 @@
  *      antes de ser chamado (passo 2 do ciclo seguinte). UMA ROTA POR VEZ
  *      (Douglas, 22/10/2026 20h50: "seguir a mesma regra que já tem; se não
  *      saiu ainda e dá para incluir, faça; e não sair criando mil rotas — só
- *      cria uma rota depois de sair a que já está pronta"): enquanto houver
- *      rota aberta que ninguém puxou, não nasce outra — quem não coube nela
- *      espera ("proxima-rota"). Sem rota aberta, nasce uma só por ciclo.
+ *      cria uma rota depois de sair a que já está pronta"). Revisto às 21h30:
+ *      a trava é a VAGA, não a rota aberta. Enquanto alguma rota aberta que
+ *      ninguém puxou (chamada ou não) tem menos paradas que
+ *      `maxEntregasPorRota` ("se mudar o teto, muda a regra"), não nasce
+ *      outra — quem não coube nela espera ("proxima-rota"). Todas no teto, a
+ *      próxima já pode nascer, para a cozinha adiantar a segunda com
+ *      prioridade. A vaga é contada depois dos passos 2 e 3 (o não pronto
+ *      que saiu devolve vaga; quem cresceu pode ter enchido). Nasce no
+ *      máximo uma rota por ciclo.
  */
 import { distanciaKm, type Ponto } from "@/lib/ponto-do-pedido";
 import type { RoteirizacaoAutomaticaConfig } from "./config";
@@ -128,6 +153,16 @@ export type Acao =
 
 export type Descartado = { pedidoId: string; motivo: MotivoDoDescarte };
 
+/** O id da loja na tabela de distâncias pela rua (`EntradaDoPlanejador.pelaRua`). */
+export const LOJA_NA_TABELA = "loja";
+
+/**
+ * Km de RUA entre dois lugares — ids de pedido, ou LOJA_NA_TABELA —, ou
+ * null/undefined = sem medida (aí vale a linha reta). Lida como simétrica:
+ * quem monta mede cada par uma vez, no sentido de quem sai da loja.
+ */
+export type KmPelaRua = (a: string, b: string) => number | null | undefined;
+
 export type EntradaDoPlanejador = {
   loja: Ponto;
   config: RoteirizacaoAutomaticaConfig;
@@ -135,6 +170,8 @@ export type EntradaDoPlanejador = {
   rotasAbertas: RotaAberta[];
   motoboys: MotoboyLivre[];
   agora: Date;
+  /** A tabela de km de rua (executar.ts). Sem ela, tudo em linha reta. */
+  pelaRua?: KmPelaRua;
 };
 
 /** Chamada sem ninguém puxar por mais que isto é feita de novo (D13). */
@@ -162,7 +199,7 @@ export const MOTIVO_EM_PORTUGUES: Record<MotivoDoDescarte, string> = {
   "prazo-incompativel": "prazo muito diferente dos vizinhos — espera outra rota",
   "rota-cheia": "a rota que passa perto já está cheia",
   "esperando-companhia": "único pedido de entrega agora — vai sozinho quando ficar pronto",
-  "proxima-rota": "vai na próxima rota — uma por vez: a que está aberta ainda não saiu",
+  "proxima-rota": "vai na próxima rota — uma por vez: a que está aberta ainda tem vaga e não saiu",
 };
 
 const porId = (a: { id: string }, b: { id: string }) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
@@ -179,30 +216,75 @@ function antesComoSemente(a: PedidoParaDespacho, b: PedidoParaDespacho): number 
 
 const semente = (membros: PedidoParaDespacho[]) => [...membros].sort(antesComoSemente)[0];
 
+/** Acima disto a força bruta cresce demais (9! = 362 880): vizinho mais próximo. Não acontece: `maxEntregasPorRota` vai até 6. */
+const MAX_PARADAS_NA_FORCA_BRUTA = 8;
+
 /**
- * Vizinho mais próximo a partir da loja — porte de `optimizeRouteSequence`
- * (RoteirizacaoModal.tsx). Empate de distância fica com o menor id, para a
- * mesma entrada dar sempre a mesma ordem. Pedido sem ponto vai para o fim.
- * Em linha reta: a prévia mostra esta; a gravada sai pela rua quando dá
- * (ordem-por-rua.ts, que cai nesta como reserva).
+ * A ordem de MENOR PERCURSO TOTAL saindo da loja, sem a volta: todas as
+ * ordens possíveis (até 6 paradas são 720), a de menos km. O vizinho mais
+ * próximo era guloso — na Rota #11 da Hakim (22/10/2026) foi do 34 ao 33,
+ * "mais perto", e teve de voltar ao 35, que ficava no caminho.
+ *
+ * `daLoja(id)` e `entre(a, b)` são os km de cada perna (rua ou reta, quem
+ * chama decide; `entre` pode não ser simétrica — mão única). As ordens são
+ * vistas em ordem alfabética de id e só uma ESTRITAMENTE menor troca a
+ * melhor: empate fica com a de menor id, e a mesma entrada dá a mesma ordem.
+ */
+export function ordemDeMenorPercurso(ids: string[], daLoja: (id: string) => number, entre: (a: string, b: string) => number): string[] {
+  const lista = [...ids].sort();
+  const n = lista.length;
+  if (n <= 1) return lista;
+  if (n > MAX_PARADAS_NA_FORCA_BRUTA) {
+    const ordem: string[] = [];
+    const resto = [...lista];
+    let atual: string | null = null;
+    while (resto.length > 0) {
+      const de = atual;
+      const km = (id: string) => (de == null ? daLoja(id) : entre(de, id));
+      let melhor = 0;
+      for (let i = 1; i < resto.length; i++) if (km(resto[i]) < km(resto[melhor])) melhor = i;
+      atual = resto.splice(melhor, 1)[0];
+      ordem.push(atual);
+    }
+    return ordem;
+  }
+  const L = lista.map((id) => daLoja(id));
+  const D = lista.map((a) => lista.map((b) => (a === b ? 0 : entre(a, b))));
+  let melhorSoma = Infinity;
+  let melhorOrdem: number[] = lista.map((_, i) => i);
+  const usado = new Array<boolean>(n).fill(false);
+  const atual: number[] = [];
+  const visitar = (ultimo: number, soma: number) => {
+    // Corta o ramo que já não ganha (empate também: a primeira ordem fica).
+    if (soma >= melhorSoma - 1e-9) return;
+    if (atual.length === n) { melhorSoma = soma; melhorOrdem = [...atual]; return; }
+    for (let i = 0; i < n; i++) {
+      if (usado[i]) continue;
+      usado[i] = true;
+      atual.push(i);
+      visitar(i, soma + (ultimo < 0 ? L[i] : D[ultimo][i]));
+      atual.pop();
+      usado[i] = false;
+    }
+  };
+  visitar(-1, 0);
+  return melhorOrdem.map((i) => lista[i]);
+}
+
+/**
+ * A ordem das paradas em LINHA RETA: menor percurso total a partir da loja
+ * (`ordemDeMenorPercurso`). Pedido sem ponto vai para o fim. É a da prévia;
+ * a gravada sai pela rua quando dá (ordem-por-rua.ts, que cai nesta como
+ * reserva).
  */
 export function ordenarParadas(loja: Ponto, pedidos: { id: string; ponto: Ponto | null }[]): string[] {
-  const comPonto = pedidos.filter((p) => p.ponto).sort(porId);
+  const ponto = new Map(pedidos.filter((p) => p.ponto).map((p) => [p.id, p.ponto as Ponto]));
   const semPonto = pedidos.filter((p) => !p.ponto).sort(porId);
-  const ordem: string[] = [];
-  let atual = loja;
-  const resto = [...comPonto];
-  while (resto.length > 0) {
-    let melhor = 0;
-    let menor = Infinity;
-    for (let i = 0; i < resto.length; i++) {
-      const d = distanciaKm(atual, resto[i].ponto as Ponto);
-      if (d < menor) { menor = d; melhor = i; }
-    }
-    const [proximo] = resto.splice(melhor, 1);
-    ordem.push(proximo.id);
-    atual = proximo.ponto as Ponto;
-  }
+  const ordem = ordemDeMenorPercurso(
+    [...ponto.keys()],
+    (id) => distanciaKm(loja, ponto.get(id) as Ponto),
+    (a, b) => distanciaKm(ponto.get(a) as Ponto, ponto.get(b) as Ponto),
+  );
   return [...ordem, ...semPonto.map((p) => p.id)];
 }
 
@@ -210,42 +292,158 @@ type Encaixe =
   | { ok: true; nota: number }
   | { ok: false; motivo: "fora-do-raio" | "prazo-incompativel" };
 
-/** O candidato cabe na rota desta semente? (a regra do Auto-Agrupar + a janela de prazo) */
-export function encaixe(loja: Ponto, sem: PedidoParaDespacho, cand: PedidoParaDespacho, config: RoteirizacaoAutomaticaConfig): Encaixe {
-  if (!sem.ponto || !cand.ponto) return { ok: false, motivo: "fora-do-raio" };
-  const raio = config.raioDoGrupoKm;
-  const lojaSemente = distanciaKm(loja, sem.ponto);
-  const lojaCand = distanciaKm(loja, cand.ponto);
-  const candSemente = distanciaKm(cand.ponto, sem.ponto);
-  const desvio = lojaCand + candSemente - lojaSemente;
-  const perto = candSemente <= raio;
-  const noCaminho = desvio <= Math.min(1.8, Math.max(1, raio * 0.75)) && lojaCand <= lojaSemente + 1;
-  if (!perto && !noCaminho) return { ok: false, motivo: "fora-do-raio" };
+/** Km de rua da tabela, nos dois sentidos; null = sem medida. */
+function kmDaRua(rua: KmPelaRua | undefined, a: string, b: string): number | null {
+  if (!rua) return null;
+  const km = rua(a, b) ?? rua(b, a);
+  return km != null && Number.isFinite(km) && km >= 0 ? km : null;
+}
+
+/**
+ * O "no caminho" aceita até o próprio raio de desvio. Era o do Auto-Agrupar,
+ * min(1,8; max(1; raio × 0,75)) = 1,5 km com raio 2 — e barrava o #39
+ * (Costazul) a caminho do #36/#37 pela orla: ~2 km de desvio. Douglas,
+ * 22/10/2026 21h35: "a regra é 2 km" — a mesma do "perto", agora pela rua.
+ */
+const desvioMaximo = (raio: number) => raio;
+
+/**
+ * O candidato cabe junto DESTA parada? Perto (a até o raio, pela rua quando
+ * há medida) ou no caminho dela. A nota é a do Auto-Agrupar; null = não cabe.
+ */
+function encaixeNaParada(loja: Ponto, parada: PedidoParaDespacho, cand: PedidoParaDespacho, raio: number, rua?: KmPelaRua): number | null {
+  if (!parada.ponto || !cand.ponto) return null;
+  const ruaLC = kmDaRua(rua, LOJA_NA_TABELA, cand.id);
+  const ruaCP = kmDaRua(rua, cand.id, parada.id);
+  const ruaLP = kmDaRua(rua, LOJA_NA_TABELA, parada.id);
+  const retaCP = distanciaKm(cand.ponto, parada.ponto);
+  // Perto é uma perna só: a de rua, quando medida, decide sozinha (o rio).
+  const perto = (ruaCP ?? retaCP) <= raio;
+  // O desvio compara três pernas: ou todas de rua, ou todas de reta — km de
+  // rua menos km de reta não mede desvio nenhum. Se o par já foi medido pela
+  // rua e falta uma perna da loja, o "no caminho" não vale: a rua já
+  // desmentiu a reta entre os dois (o rio), e só o "perto" decide.
+  const tudoPelaRua = ruaLC != null && ruaCP != null && ruaLP != null;
+  const lc = tudoPelaRua ? (ruaLC as number) : distanciaKm(loja, cand.ponto);
+  const cp = tudoPelaRua ? (ruaCP as number) : retaCP;
+  const lp = tudoPelaRua ? (ruaLP as number) : distanciaKm(loja, parada.ponto);
+  const desvio = lc + cp - lp;
+  const noCaminho = (tudoPelaRua || ruaCP == null) && desvio <= desvioMaximo(raio) && lc <= lp + 1;
+  if (!perto && !noCaminho) return null;
+  return desvio * 0.6 + (ruaCP ?? cp) * 0.4;
+}
+
+/**
+ * O candidato cabe nesta rota? Perto de, ou no caminho de, QUALQUER parada
+ * (a melhor nota entre elas), e o prazo dentro da janela da `ancora` — a
+ * semente, o mais urgente (a regra do Auto-Agrupar + a janela de prazo).
+ */
+export function encaixeNaRota(
+  loja: Ponto,
+  ancora: PedidoParaDespacho,
+  paradas: PedidoParaDespacho[],
+  cand: PedidoParaDespacho,
+  config: RoteirizacaoAutomaticaConfig,
+  rua?: KmPelaRua,
+): Encaixe {
+  let melhor: number | null = null;
+  for (const parada of paradas) {
+    if (parada.id === cand.id) continue;
+    const nota = encaixeNaParada(loja, parada, cand, config.raioDoGrupoKm, rua);
+    if (nota != null && (melhor == null || nota < melhor)) melhor = nota;
+  }
+  if (melhor == null) return { ok: false, motivo: "fora-do-raio" };
   // A janela vale para os dois lados. Com a semente sendo o mais urgente é o
   // "até X min depois" do plano; mas o pedido que não achou companhia como
   // semente vira candidato da semente seguinte (menos urgente), e só "depois"
   // deixaria o #1 (prazo 20) entrar na rota do #2 (prazo 40) com janela de 15.
-  if (Math.abs(cand.prazo.getTime() - sem.prazo.getTime()) > config.janelaDePrazoMin * 60_000) {
+  if (Math.abs(cand.prazo.getTime() - ancora.prazo.getTime()) > config.janelaDePrazoMin * 60_000) {
     return { ok: false, motivo: "prazo-incompativel" };
   }
-  return { ok: true, nota: desvio * 0.6 + candSemente * 0.4 };
+  return { ok: true, nota: melhor };
 }
 
-/** Os candidatos que cabem, do melhor para o pior (nota, depois prazo, depois id). */
-function candidatosQueCabem(loja: Ponto, sem: PedidoParaDespacho, lista: PedidoParaDespacho[], config: RoteirizacaoAutomaticaConfig) {
+/** O candidato cabe na rota desta semente sozinha? (`encaixeNaRota` com uma parada só) */
+export function encaixe(loja: Ponto, sem: PedidoParaDespacho, cand: PedidoParaDespacho, config: RoteirizacaoAutomaticaConfig, rua?: KmPelaRua): Encaixe {
+  return encaixeNaRota(loja, sem, [sem], cand, config, rua);
+}
+
+/** Os candidatos que cabem na rota, do melhor para o pior (nota, depois prazo, depois id). */
+function candidatosQueCabem(
+  loja: Ponto, ancora: PedidoParaDespacho, paradas: PedidoParaDespacho[], lista: PedidoParaDespacho[],
+  config: RoteirizacaoAutomaticaConfig, rua?: KmPelaRua,
+) {
+  const naRota = new Set(paradas.map((p) => p.id));
   const bons: { p: PedidoParaDespacho; nota: number }[] = [];
   for (const p of lista) {
-    if (p.id === sem.id) continue;
-    const e = encaixe(loja, sem, p, config);
+    if (naRota.has(p.id)) continue;
+    const e = encaixeNaRota(loja, ancora, paradas, p, config, rua);
     if (e.ok) bons.push({ p, nota: e.nota });
   }
   return bons.sort((a, b) => a.nota - b.nota || a.p.prazo.getTime() - b.p.prazo.getTime() || porId(a.p, b.p)).map((b) => b.p);
 }
 
+/**
+ * Os pares que o encaixe pode precisar medir PELA RUA neste ciclo, do mais
+ * importante para o menos — quem monta a tabela (executar.ts) mede na ordem
+ * até acabar o tempo, e o resto fica em linha reta.
+ *
+ * Primeiro a loja → cada pedido (entra em todo "no caminho" e quase sempre
+ * já está no cache da cotação de frete). Depois os pares que PODEM caber
+ * juntos, do mais perto ao mais longe:
+ *   - ao menos um dos dois fora de rota: rota não se junta com rota, e as
+ *     paradas de uma mesma rota não se comparam no encaixe;
+ *   - prazos a até 2 × a janela (os dois têm de caber na janela da semente);
+ *   - em linha reta a até o raio, ou "no caminho" um do outro com folga de
+ *     1,5 × no desvio. O que fica de fora não cabe nem em linha reta (a rua
+ *     é sempre ≥ a reta para o "perto"), e a reta o recusa do mesmo jeito.
+ * Rota já puxada (algum pedido com motoboy) não cresce: não entra.
+ */
+export function paresParaMedirPelaRua(entrada: Pick<EntradaDoPlanejador, "loja" | "config" | "pedidos" | "rotasAbertas">): [string, string][] {
+  const { loja, config } = entrada;
+  type Lugar = { id: string; ponto: Ponto; prazo: number; rotaId: string | null; daLoja: number };
+  const lugares: Lugar[] = [];
+  const vistos = new Set<string>();
+  const lugar = (p: PedidoParaDespacho, rotaId: string | null) => {
+    if (!p.ponto || vistos.has(p.id)) return;
+    vistos.add(p.id);
+    lugares.push({ id: p.id, ponto: p.ponto, prazo: p.prazo.getTime(), rotaId, daLoja: distanciaKm(loja, p.ponto) });
+  };
+  for (const r of [...entrada.rotasAbertas].sort(porId)) {
+    if (r.pedidos.some((p) => !p.cancelado && p.fora === "ja-com-motoboy")) continue;
+    for (const p of [...r.pedidos].sort(porId)) if (!p.cancelado && !p.finalizado) lugar(p, r.id);
+  }
+  const idsEmRota = new Set(entrada.rotasAbertas.flatMap((r) => r.pedidos.map((p) => p.id)));
+  for (const p of [...entrada.pedidos].sort(porId)) {
+    if (!idsEmRota.has(p.id) && !p.cancelado && !p.fora) lugar(p, null);
+  }
+
+  const daLoja: [string, string][] = [...lugares]
+    .sort((a, b) => a.daLoja - b.daLoja || porId(a, b))
+    .map((l) => [LOJA_NA_TABELA, l.id]);
+  const raio = config.raioDoGrupoKm;
+  const folgaDoDesvio = desvioMaximo(raio) * 1.5;
+  const janelaMs = 2 * config.janelaDePrazoMin * 60_000;
+  const pares: { par: [string, string]; reta: number }[] = [];
+  for (let i = 0; i < lugares.length; i++) {
+    for (let j = i + 1; j < lugares.length; j++) {
+      const a = lugares[i], b = lugares[j];
+      if (a.rotaId && b.rotaId) continue;
+      if (Math.abs(a.prazo - b.prazo) > janelaMs) continue;
+      const reta = distanciaKm(a.ponto, b.ponto);
+      const noCaminho = Math.min(a.daLoja + reta - b.daLoja, b.daLoja + reta - a.daLoja) <= folgaDoDesvio;
+      if (reta > raio && !noCaminho) continue;
+      pares.push({ par: a.id < b.id ? [a.id, b.id] : [b.id, a.id], reta });
+    }
+  }
+  pares.sort((x, y) => x.reta - y.reta || (x.par.join() < y.par.join() ? -1 : 1));
+  return [...daLoja, ...pares.map((p) => p.par)];
+}
+
 const rotulo = (p: PedidoParaDespacho) => `#${p.numero ?? p.id.slice(-4)}`;
 
 export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descartados: Descartado[] } {
-  const { loja, config, agora } = entrada;
+  const { loja, config, agora, pelaRua: rua } = entrada;
   const max = Math.max(1, config.maxEntregasPorRota);
   const esperaMs = config.esperaMaxMin * 60_000;
   const acoes: Acao[] = [];
@@ -303,6 +501,9 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
   // As que podem crescer no passo 3, na ordem das sementes. `chamada`: já
   // chamada e ninguém puxou (as puxadas nem chegam aqui) — só pedido pronto.
   const crescem: { v: RotaViva; chamada: boolean }[] = [];
+  // Quantas paradas cada rota viva tem depois dos passos 2 e 3 (a vaga do
+  // "uma rota por vez", no passo 4).
+  const paradasDaRota = new Map(vivas.map((v) => [v.rota.id, v.membros.length]));
   for (const v of vivas) {
     if (v.rota.chamadaEm) {
       // Rechamada (D13) agora: só cresce no ciclo seguinte, um push por vez.
@@ -323,6 +524,8 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
         acoes.push({ tipo: "tirar-da-rota", rotaId: v.rota.id, pedidoId: p.id, motivo: "espera-estourada" });
         voltarAoBolo(p);
       }
+      // Os não prontos saíram: ela volta a ter vaga.
+      paradasDaRota.set(v.rota.id, v.membros.filter((p) => p.pronto).length);
       acoes.push({ tipo: "chamar", rotaId: v.rota.id, motoboyId: proximoMotoboy() });
     } else {
       crescem.push({ v, chamada: false });
@@ -331,15 +534,16 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
   bolo.sort(porId);
 
   // Os grupos desta rodada, para explicar depois por que um pedido ficou de fora.
-  const grupos: { semente: PedidoParaDespacho; cheio: boolean }[] = [];
+  const grupos: { semente: PedidoParaDespacho; membros: PedidoParaDespacho[]; cheio: boolean }[] = [];
   const naRota = new Set<string>();
 
   // ── 3. Acrescentar em rota aberta (e na chamada que ninguém puxou) ──────
   for (const { v, chamada } of crescem) {
     const membros = [...v.membros];
     while (membros.length < max) {
+      // Qualquer parada da rota serve de vizinha; a janela é a da semente.
       const sem = semente(membros);
-      const [melhor] = candidatosQueCabem(loja, sem, bolo.filter((p) => !naRota.has(p.id) && (!chamada || p.pronto)), config);
+      const [melhor] = candidatosQueCabem(loja, sem, membros, bolo.filter((p) => !naRota.has(p.id) && (!chamada || p.pronto)), config, rua);
       if (!melhor) break;
       naRota.add(melhor.id);
       membros.push(melhor);
@@ -349,22 +553,33 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
         ...(chamada ? { rotaChamada: true as const } : {}),
       });
     }
+    paradasDaRota.set(v.rota.id, membros.length);
     // A chamada não conta como grupo para o motivo de quem sobrou: ela só
     // aceita pronto, e "rota cheia"/"longe" do não pronto viria dela à toa.
-    if (!chamada) grupos.push({ semente: semente(membros), cheio: membros.length >= max });
+    if (!chamada) grupos.push({ semente: semente(membros), membros, cheio: membros.length >= max });
   }
 
   // ── 4. Criar rota nova: só quando a que está aberta saiu, uma por vez ───
   const restantes = bolo.filter((p) => !naRota.has(p.id)).sort(antesComoSemente);
-  const umaPorVez = vivas.length > 0;
+  // Uma rota por vez: trava enquanto alguma rota aberta (que ninguém puxou,
+  // chamada ou não) ainda tem VAGA. Todas no teto: a próxima já pode nascer.
+  const umaPorVez = [...paradasDaRota.values()].some((n) => n < max);
   let criou = false;
   for (const sem of restantes) {
     if (umaPorVez || criou) break;
     const livres = restantes.filter((p) => !naRota.has(p.id));
-    const companhia = candidatosQueCabem(loja, sem, livres, config).slice(0, max - 1);
+    // O grupo cresce um a um, como a rota aberta do passo 3: quem entrou já
+    // serve de parada para o próximo (o #35 no caminho do #33, não do #34).
+    // A janela de prazo fica ancorada na semente.
+    const grupo = [sem];
+    while (grupo.length < max) {
+      const [melhor] = candidatosQueCabem(loja, sem, grupo, livres, config, rua);
+      if (!melhor) break;
+      grupo.push(melhor);
+    }
+    const companhia = grupo.slice(1);
     // Sozinho e ainda na cozinha: espera companhia (ou ficar pronto).
     if (companhia.length === 0 && !sem.pronto) continue;
-    const grupo = [sem, ...companhia];
     for (const p of grupo) naRota.add(p.id);
     const ordem = ordenarParadas(loja, grupo);
     const porque = sem.prioridadeManual ? "prioridade pedida pela loja" : "menor prazo";
@@ -372,7 +587,7 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
       ? `${rotulo(sem)} (${porque}) + ${companhia.map(rotulo).join(", ")}`
       : `${rotulo(sem)} sozinho e pronto (${porque})`;
     acoes.push({ tipo: "criar-rota", pedidos: ordem, motivo });
-    grupos.push({ semente: sem, cheio: grupo.length >= max });
+    grupos.push({ semente: sem, membros: grupo, cheio: grupo.length >= max });
     criou = true;
   }
 
@@ -381,15 +596,15 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
   for (const p of sobraram) {
     let motivo: MotivoDoDescarte | null = null;
     for (const g of grupos) {
-      const e = encaixe(loja, g.semente, p, config);
+      const e = encaixeNaRota(loja, g.semente, g.membros, p, config, rua);
       if (e.ok && g.cheio) { motivo = "rota-cheia"; break; }
       if (!e.ok && e.motivo === "prazo-incompativel") motivo = "prazo-incompativel";
     }
     if (!motivo) {
       for (const q of sobraram) {
         if (q.id === p.id) continue;
-        const e1 = encaixe(loja, q, p, config);
-        const e2 = encaixe(loja, p, q, config);
+        const e1 = encaixe(loja, q, p, config, rua);
+        const e2 = encaixe(loja, p, q, config, rua);
         if ((!e1.ok && e1.motivo === "prazo-incompativel") || (!e2.ok && e2.motivo === "prazo-incompativel")) { motivo = "prazo-incompativel"; break; }
       }
     }

@@ -39,7 +39,7 @@ import {
   type PedidoNoMapa,
   type Resolucao,
 } from "@/lib/ponto-do-pedido";
-import { rotaJaDespachada, rotasComLinha, pontosDaLinha, podarCoordenadas } from "@/lib/rotas-no-mapa";
+import { rotaJaDespachada, rotasComLinha, pontosDaLinha, podarCoordenadas, pernasDaLinha, linhaPelaRua, PERNAS_POR_PEDIDO_DE_DESENHO } from "@/lib/rotas-no-mapa";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
 import { bairroPeloEndereco, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
@@ -1727,6 +1727,60 @@ export default function RoteirizacaoModal({
     return { displayCoordinatesMap: dispMap, clusterCentersMap: centersMap, clusterFanMap: fanMap };
   }, [deliveryOrders, geocodedMap]);
 
+  // ── A LINHA DA ROTA PELA RUA, COMO NO GOOGLE ──────────────────────────────
+  //
+  // Douglas, 22/10/2026 21h15: a linha reta passava "por cima de muros e
+  // casas". As pernas das rotas que têm linha agora (lib/rotas-no-mapa.ts:
+  // as que não saíram e a que o lojista pediu para ver) são pedidas ao
+  // servidor (POST /api/store/routes/desenho), em lotes de 12, e guardadas
+  // aqui pela chave da perna — a consulta de 4 s não pede de novo. Perna que
+  // não veio fica reta e é pedida outra vez depois de 1 min.
+  const [desenhosPelaRua, setDesenhosPelaRua] = useState<Record<string, [number, number][]>>({});
+  const desenhoPedidoEm = useRef<Map<string, number>>(new Map());
+  const [tiqueDoDesenho, setTiqueDoDesenho] = useState(0);
+  const pernasVisiveis = useMemo(() => {
+    if (!isOpen) return [];
+    const loja = temPontoDaLoja ? defaultCenter : null;
+    return rotasComLinha(createdRoutes, { aba: activeTab, rotaEmFoco })
+      .flatMap((route) => pernasDaLinha(pontosDaLinha(route, displayCoordinatesMap, loja)));
+  }, [isOpen, createdRoutes, activeTab, rotaEmFoco, displayCoordinatesMap, temPontoDaLoja, defaultCenter]);
+  useEffect(() => {
+    const agora = Date.now();
+    const lote = [...new Map(pernasVisiveis.map((p) => [p.chave, p])).values()]
+      .filter((p) => !desenhosPelaRua[p.chave] && agora - (desenhoPedidoEm.current.get(p.chave) || 0) > 60_000)
+      .slice(0, PERNAS_POR_PEDIDO_DE_DESENHO);
+    if (lote.length === 0) return;
+    let vivo = true;
+    const t = setTimeout(async () => {
+      for (const p of lote) desenhoPedidoEm.current.set(p.chave, Date.now());
+      try {
+        const r = await fetch("/api/store/routes/desenho", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pernas: lote.map((p) => [p.de[0], p.de[1], p.para[0], p.para[1]]) }),
+        });
+        if (r.status === 429) {
+          // Pediu cedo demais: pede o mesmo lote daqui a 2 s.
+          for (const p of lote) desenhoPedidoEm.current.delete(p.chave);
+          setTimeout(() => { if (vivo) setTiqueDoDesenho((n) => n + 1); }, 2000);
+          return;
+        }
+        const d = await r.json().catch(() => null);
+        const novos: Record<string, [number, number][]> = {};
+        if (r.ok && Array.isArray(d?.pernas)) {
+          lote.forEach((p, i) => {
+            const pts = d.pernas[i];
+            if (Array.isArray(pts) && pts.length >= 2) novos[p.chave] = pts;
+          });
+        }
+        if (Object.keys(novos).length > 0) setDesenhosPelaRua((atual) => ({ ...atual, ...novos }));
+        // Sobrou perna (mais de 12)? O tique pede o próximo lote.
+        else setTiqueDoDesenho((n) => n + 1);
+      } catch {}
+    }, 600);
+    return () => { vivo = false; clearTimeout(t); };
+  }, [pernasVisiveis, desenhosPelaRua, tiqueDoDesenho]);
+
   // Ampliar e diminuir pelos botões. A roda do mouse continua funcionando —
   // mas ela não é óbvia, e em notebook com touchpad é briga. Pedido do lojista
   // em 19/09/2026: "coloca um + e um - para ampliar e diminuir o mapa".
@@ -1949,10 +2003,12 @@ export default function RoteirizacaoModal({
         scaleCss = "scale(1.2)";
         zIdx = 900;
       } else if (assignedRoute && !jaDespachado && !recemEntregue) {
-        // A cor da rota só enquanto ela é montada. Saiu com o motoboy, o pino
-        // volta a dizer o estado — "em entrega é azul" é o que o lojista lê.
-        bgColor = assignedRoute.color || "#0F766E"; // Route specific color
-        borderColor = "#ffffff";
+        // Na rota montada o fundo CONTINUA dizendo o estado: vermelho na
+        // cozinha, roxo pronto. Pintar com a cor da rota (o padrão é azul)
+        // deixava o 36 e o 37 azuis, e azul na legenda é "Saiu para entrega"
+        // (Douglas, 22/10/2026 21h35). A rota só marca a BORDA da gota — o
+        // anel roxo da prioridade é outro, por fora dela (box-shadow).
+        borderColor = assignedRoute.color || "#0F766E";
         zIdx = 500;
       }
 
@@ -2229,7 +2285,8 @@ export default function RoteirizacaoModal({
     // pedido fica embolado" (Lucas, 13/10/2026). A linha liga só pinos que
     // estão no mapa (`displayCoordinatesMap`), nunca ponto de pedido entregue.
     rotasComLinha(createdRoutes, { aba: activeTab, rotaEmFoco }).forEach(route => {
-      const points = pontosDaLinha(route, displayCoordinatesMap, temPontoDaLoja ? defaultCenter : null);
+      // Pela rua onde já há desenho da perna; reta onde não há (ver acima).
+      const points = linhaPelaRua(pontosDaLinha(route, displayCoordinatesMap, temPontoDaLoja ? defaultCenter : null), (k) => desenhosPelaRua[k]);
       if (points.length === 0) return;
       const emFoco = route.id === rotaEmFoco;
       const routePoly = L.polyline(points, {
@@ -2239,7 +2296,7 @@ export default function RoteirizacaoModal({
       }).addTo(map);
       polylinesRef.current.push(routePoly);
     });
-  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, rotaEmFoco, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa, estaPronto, estaPriorizado, infoDoPino]);
+  }, [leafletLoaded, defaultCenter, temPontoDaLoja, deliveryOrders, geocodedMap, displayCoordinatesMap, clusterCentersMap, clusterFanMap, selectedOrderIds, createdRoutes, activeTab, rotaEmFoco, desenhosPelaRua, hoveredOrderId, motoboys, mostrarMotoboys, storeAddress, storeCity, tiqueDoMapa, estadosNoMapa, estaPronto, estaPriorizado, infoDoPino]);
 
   // O pino verde do recém-entregue precisa SUMIR sozinho ao completar os 10 s.
   // Sem um tique, ele só sairia no próximo evento que redesenhasse o mapa — e
@@ -3506,8 +3563,58 @@ ${mapsUrl}`;
                           )}
                         </div>
 
-                        {/* Action Buttons */}
-                        <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                        {/* Os botões do card: em cima Editar, COPIAR e a lixeira (cabendo
+                            na coluna de ~280 px — a lixeira saía para fora da caixa com
+                            os quatro numa linha só); embaixo o Despachar, na largura toda
+                            (Douglas, 22/10/2026: "o despacho pode ficar na parte de
+                            baixo, mais compridinho, fica até mais bonito"). */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+                        <div style={{ display: "flex", alignItems: "stretch", gap: "0.5rem", minWidth: 0 }}>
+                          {/* Tirar ou incluir pedido: só antes de despachar (depois
+                              dela sair, a rota é o histórico do acerto). */}
+                          {!isDispatched && (
+                            <button
+                              type="button"
+                              onClick={() => setRotaEmEdicao({ routeId: route.id, ids: route.orders.map((o) => o.id) })}
+                              title="Tirar ou incluir pedido nesta rota"
+                              style={{
+                                flex: 1, minWidth: 0, padding: "8px 6px", border: "1.5px solid #1C1917",
+                                borderRadius: "8px", background: "#FFFFFF", color: "#1C1917",
+                                fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                                display: "flex", alignItems: "center", justifyContent: "center", gap: 4, boxSizing: "border-box"
+                              }}
+                            >
+                              ✏️ Editar
+                            </button>
+                          )}
+
+                          <button
+                            onClick={() => handleCopyRouteText(route)}
+                            style={{
+                              flex: 1, minWidth: 0, padding: "8px 6px", border: "1.5px solid #1C1917",
+                              borderRadius: "8px", background: copiedRouteId === route.id ? "#F0FDFA" : "#FFFFFF",
+                              color: copiedRouteId === route.id ? "#0F766E" : "#1C1917",
+                              fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", whiteSpace: "nowrap",
+                              display: "flex", alignItems: "center", justifyContent: "center", gap: 4, boxSizing: "border-box"
+                            }}
+                          >
+                            {copiedRouteId === route.id ? <Check size={14} /> : <Copy size={14} />}
+                            {copiedRouteId === route.id ? "COPIADO!" : "COPIAR"}
+                          </button>
+
+                          <button
+                            onClick={() => handleDeleteRoute(route.id)}
+                            style={{
+                              flex: "0 0 auto", padding: "8px 10px", border: "1px solid #CBD5E1",
+                              borderRadius: "8px", background: "#F8FAFC", color: "#64748B",
+                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box"
+                            }}
+                            title="Desfazer/Excluir rota"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+
                           {!isDispatched && (
                             <button
                               onClick={() => {
@@ -3520,60 +3627,16 @@ ${mapsUrl}`;
                               }}
                               disabled={isDispatching}
                               style={{
-                                flex: 2, padding: "8px", border: "none",
+                                width: "100%", padding: "10px 8px", border: "none",
                                 borderRadius: "8px", background: "linear-gradient(135deg, #0F766E, #0F766E)",
-                                color: "#FFFFFF", fontWeight: 900, fontSize: "0.82rem", cursor: "pointer",
+                                color: "#FFFFFF", fontWeight: 900, fontSize: "0.86rem", cursor: "pointer",
                                 display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                                boxShadow: "0 2px 8px rgba(15, 118, 110,0.3)"
+                                boxShadow: "0 2px 8px rgba(15, 118, 110,0.3)", boxSizing: "border-box"
                               }}
                             >
                               <Navigation size={14} /> 🚀 Despachar Rota
                             </button>
                           )}
-
-                          {/* Tirar ou incluir pedido: só antes de despachar (depois
-                              dela sair, a rota é o histórico do acerto). */}
-                          {!isDispatched && (
-                            <button
-                              type="button"
-                              onClick={() => setRotaEmEdicao({ routeId: route.id, ids: route.orders.map((o) => o.id) })}
-                              title="Tirar ou incluir pedido nesta rota"
-                              style={{
-                                flex: 1, padding: "8px", border: "1.5px solid #1C1917",
-                                borderRadius: "8px", background: "#FFFFFF", color: "#1C1917",
-                                fontWeight: 800, fontSize: "0.78rem", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                                display: "flex", alignItems: "center", justifyContent: "center", gap: 4
-                              }}
-                            >
-                              ✏️ Editar
-                            </button>
-                          )}
-
-                          <button
-                            onClick={() => handleCopyRouteText(route)}
-                            style={{
-                              flex: 1, padding: "8px", border: "1.5px solid #1C1917",
-                              borderRadius: "8px", background: copiedRouteId === route.id ? "#F0FDFA" : "#FFFFFF",
-                              color: copiedRouteId === route.id ? "#0F766E" : "#1C1917",
-                              fontWeight: 800, fontSize: "0.78rem", cursor: "pointer",
-                              display: "flex", alignItems: "center", justifyContent: "center", gap: 4
-                            }}
-                          >
-                            {copiedRouteId === route.id ? <Check size={14} /> : <Copy size={14} />}
-                            {copiedRouteId === route.id ? "COPIADO!" : "COPIAR"}
-                          </button>
-
-                          <button
-                            onClick={() => handleDeleteRoute(route.id)}
-                            style={{
-                              padding: "8px 10px", border: "1px solid #CBD5E1",
-                              borderRadius: "8px", background: "#F8FAFC", color: "#64748B",
-                              cursor: "pointer"
-                            }}
-                            title="Desfazer/Excluir rota"
-                          >
-                            <Trash2 size={14} />
-                          </button>
                         </div>
 
                       </div>

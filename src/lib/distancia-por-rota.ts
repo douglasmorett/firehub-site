@@ -809,6 +809,20 @@ export async function desenhoDaRota(origem: Ponto, destino: Ponto): Promise<Dese
     return { ok: false, motivo: "ponto inválido" };
   }
   const tentativas: { id: IdDoRoteador; nome: string; intervaloMs: number; pedir: () => Promise<Response | Extract<Resposta, { ok: false }>>; ler: (d: any) => { metros: number; segundos: number; geometria: any } | null }[] = [];
+  // O OSRM próprio primeiro, quando há (sem cota nem termos de terceiros):
+  // o desenho das rotas da Roteirização pede várias pernas por noite. O demo
+  // público não entra — a política dele não cobre uso comercial.
+  const proprio = (process.env.OSRM_URL || "").trim().replace(/\/+$/, "");
+  if (proprio && !servidorPublico(proprio)) {
+    tentativas.push({
+      id: "proprio", nome: `OSRM próprio (${proprio})`, intervaloMs: 0,
+      pedir: () => buscar(`${proprio}/route/v1/driving/${origem.lng},${origem.lat};${destino.lng},${destino.lat}?overview=full&geometries=geojson&alternatives=false&steps=false`, PRAZO_PRIMEIRA_MS),
+      ler: (d) => {
+        const rota = d?.code === "Ok" && Array.isArray(d?.routes) ? d.routes[0] : null;
+        return rota ? { metros: Number(rota.distance), segundos: Number(rota.duration), geometria: rota.geometry } : null;
+      },
+    });
+  }
   const geoapify = chaveDoGeoapify();
   if (geoapify) {
     const wp = encodeURIComponent(`${origem.lat},${origem.lng}|${destino.lat},${destino.lng}`);
@@ -858,6 +872,51 @@ export async function desenhoDaRota(origem: Ponto, destino: Ponto): Promise<Dese
     };
   }
   return { ok: false, motivo };
+}
+
+// ── O DESENHO DAS PERNAS DA ROTA (a linha do mapa da Roteirização) ────────
+//
+// Douglas, 22/10/2026 21h15: a linha da rota no mapa era reta, "passando por
+// cima de muros e casas" — tem que seguir as ruas como o Google. Cada perna
+// (loja → 1ª parada → …) é um `desenhoDaRota`, guardado na memória do
+// processo: a tela consulta as rotas a cada 4 s, e a cota grátis do roteador
+// é da cotação de frete dos clientes. Só as rotas abertas/visíveis pedem.
+
+/** Desenhos guardados (LRU). O ponto do cliente não muda: a perna serve a noite inteira. */
+const desenhosNaMemoria = new Map<string, { pontos: [number, number][] | null; em: number }>();
+const TETO_DOS_DESENHOS = 2000;
+/** Perna que o roteador não desenhou: não se pergunta de novo por 5 min. */
+const DESENHO_FALHOU_VALE_MS = 5 * 60_000;
+/** Desenho guardado vale isto (a rua não muda de uma noite para a outra). */
+const DESENHO_VALE_MS = 24 * 60 * 60_000;
+
+/** ~1 m: o desenho não precisa de mais, e a resposta fica leve. */
+const casas5 = (n: number) => Math.round(n * 1e5) / 1e5;
+
+/**
+ * O desenho de uma perna, [lat, lng][], do cache ou do roteador; null = sem
+ * desenho (a tela fica com a reta). `prazo` (epoch ms): passado dele, nem
+ * pergunta — quem chama pede várias pernas e não pode passar do tempo dele.
+ */
+export async function desenhoDaPerna(origem: Ponto, destino: Ponto, prazo: number): Promise<[number, number][] | null> {
+  const chave = chaveDaRota(origem, destino);
+  const guardado = desenhosNaMemoria.get(chave);
+  if (guardado && Date.now() - guardado.em < (guardado.pontos ? DESENHO_VALE_MS : DESENHO_FALHOU_VALE_MS)) {
+    desenhosNaMemoria.delete(chave);
+    desenhosNaMemoria.set(chave, guardado);
+    return guardado.pontos;
+  }
+  if (Date.now() >= prazo) return null;
+  const d = await desenhoDaRota(origem, destino);
+  const pontos = d.ok ? d.pontos.map(([lat, lng]) => [casas5(lat), casas5(lng)] as [number, number]) : null;
+  desenhosNaMemoria.delete(chave);
+  desenhosNaMemoria.set(chave, { pontos, em: Date.now() });
+  if (desenhosNaMemoria.size > TETO_DOS_DESENHOS) {
+    const maisVelho = desenhosNaMemoria.keys().next().value;
+    if (maisVelho !== undefined) desenhosNaMemoria.delete(maisVelho);
+  }
+  if (!d.ok) console.warn("[desenho da rota] perna sem desenho:", d.motivo);
+  return pontos;
 }
 
 /**

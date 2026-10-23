@@ -20,6 +20,12 @@
  *     desenhada à parte pela tela);
  *   - a linha só liga pinos que estão no mapa.
  *
+ * E a linha segue a RUA (Douglas, 22/10/2026 21h15: a linha reta passava
+ * "por cima de muros e casas"; tem que ser como o Google): cada perna (loja →
+ * 1ª parada → … na ordem gravada, a `routeSequence`) vem desenhada pelo
+ * roteador (POST /api/store/routes/desenho, `chaveDaPerna`/`linhaPelaRua`);
+ * perna sem desenho fica reta, como antes.
+ *
  * Puro, sem React nem Leaflet: scripts/teste-rotas-no-mapa.ts.
  */
 
@@ -82,4 +88,42 @@ export function podarCoordenadas<T>(mapa: Record<string, T>, ficam: Set<string>)
   const novo = { ...mapa };
   for (const id of saem) delete novo[id];
   return novo;
+}
+
+/** Quantas pernas a tela pede de uma vez ao desenho pela rua (a API recusa mais). */
+export const PERNAS_POR_PEDIDO_DE_DESENHO = 12;
+
+/**
+ * A chave de uma perna (de → para) a ~1 m (5 casas): a mesma perna da mesma
+ * rota a cada 4 s da consulta acha o desenho já guardado, sem pedir de novo.
+ */
+export function chaveDaPerna(de: [number, number], para: [number, number]): string {
+  const c = (n: number) => n.toFixed(5);
+  return `${c(de[0])},${c(de[1])}>${c(para[0])},${c(para[1])}`;
+}
+
+/** As pernas da linha, em ordem: loja → 1ª parada, 1ª → 2ª, … */
+export function pernasDaLinha(pontos: [number, number][]): { de: [number, number]; para: [number, number]; chave: string }[] {
+  const pernas: { de: [number, number]; para: [number, number]; chave: string }[] = [];
+  for (let i = 1; i < pontos.length; i++) pernas.push({ de: pontos[i - 1], para: pontos[i], chave: chaveDaPerna(pontos[i - 1], pontos[i]) });
+  return pernas;
+}
+
+/**
+ * A linha da rota pela rua: cada perna com desenho entra com o desenho dele
+ * (que começa e termina na rua, perto dos pinos — a linha vai do pino até a
+ * rua e volta, para não ficar solta); perna sem desenho fica reta, como antes.
+ */
+export function linhaPelaRua(
+  pontos: [number, number][],
+  desenhoDe: (chave: string) => [number, number][] | null | undefined,
+): [number, number][] {
+  if (pontos.length < 2) return pontos;
+  const linha: [number, number][] = [pontos[0]];
+  for (const perna of pernasDaLinha(pontos)) {
+    const desenho = desenhoDe(perna.chave);
+    if (desenho && desenho.length >= 2) linha.push(...desenho);
+    linha.push(perna.para);
+  }
+  return linha;
 }

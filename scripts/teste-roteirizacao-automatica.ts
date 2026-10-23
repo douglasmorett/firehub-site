@@ -27,6 +27,14 @@
  * PRONTO que cabe (nunca o da chapa; nunca a já puxada; teto respeitado) e a
  * chamada sai de novo, "atualizada", para o mesmo chamado.
  *
+ * Pela rua (22/10/2026, 21h15–21h30): o encaixe mede pela RUA quando há
+ * medida (`pelaRua` falso) — a reta de 1,5 km que dá 4 km de rua (o rio) não
+ * junta; sem medida, a linha reta de sempre; o candidato cabe perto de
+ * QUALQUER parada (o #35 no caminho do #33, com as coordenadas reais da
+ * Hakim); a ordem das paradas é o MENOR PERCURSO TOTAL (34 → 35 → 33, não o
+ * guloso 34 → 33 → 35); e "uma rota por vez" trava só enquanto a rota aberta
+ * tem vaga.
+ *
  *   npx tsx scripts/teste-roteirizacao-automatica.ts
  *
  * Sem banco e sem rede. O prazo.ts importa lib/painel-do-dono (que importa o
@@ -60,7 +68,7 @@ const AGORA = new Date("2026-10-22T22:00:00.000Z");
 const min = (m: number) => new Date(AGORA.getTime() + m * 60_000);
 
 async function main() {
-  const { planejar, ordenarParadas, RECHAMAR_DEPOIS_MIN } = await import("../src/lib/roteirizacao-automatica/planejador");
+  const { planejar, ordenarParadas, ordemDeMenorPercurso, paresParaMedirPelaRua, LOJA_NA_TABELA, RECHAMAR_DEPOIS_MIN } = await import("../src/lib/roteirizacao-automatica/planejador");
   const { lerRoteirizacaoAutomatica, limparRoteirizacaoAutomatica, ROTEIRIZACAO_AUTOMATICA_PADRAO } = await import("../src/lib/roteirizacao-automatica/config");
   const { liberadaPara, lojaDoUsuario } = await import("../src/lib/roteirizacao-automatica/liberacao");
   const { prazoDoPedido, agendadoParaDepois } = await import("../src/lib/roteirizacao-automatica/prazo");
@@ -88,8 +96,8 @@ async function main() {
   const rota = (id: string, pedidos: Pedido[], extra: Partial<Rota> = {}): Rota => ({
     id, routeNumber: `Rota #${id}`, pedidos: pedidos.map((p) => ({ ...p, rotaId: id })), chamadaEm: null, ...extra,
   });
-  const plano = (pedidos: Pedido[], rotasAbertas: Rota[] = [], motoboys: Motoboy[] = [], config = CFG) =>
-    planejar({ loja: LOJA, config, pedidos, rotasAbertas, motoboys, agora: AGORA });
+  const plano = (pedidos: Pedido[], rotasAbertas: Rota[] = [], motoboys: Motoboy[] = [], config = CFG, pelaRua?: (a: string, b: string) => number | null) =>
+    planejar({ loja: LOJA, config, pedidos, rotasAbertas, motoboys, agora: AGORA, pelaRua });
   const criadas = (acoes: Acao[]) => acoes.filter((a): a is Extract<Acao, { tipo: "criar-rota" }> => a.tipo === "criar-rota").map((a) => a.pedidos);
   const chamadas = (acoes: Acao[]) => acoes.filter((a): a is Extract<Acao, { tipo: "chamar" }> => a.tipo === "chamar");
   const motivoDe = (r: ReturnType<typeof plano>, id: string) => r.descartados.find((d) => d.pedidoId === id)?.motivo;
@@ -181,18 +189,42 @@ async function main() {
 
   console.log("\n== Uma rota por vez (Douglas, 22/10 20h50) ==");
   {
-    // Rota aberta com 2 (máx 3); o #3 cabe pela regra (1 km da semente): entra nela.
-    const aberta = rota("R1", [pedido(1, em(2), 20), pedido(2, em(2, 0.3), 22)]);
+    // Rota aberta com 1 (máx 3); o #3 cabe pela regra (1 km da semente): entra
+    // nela, e ela segue com vaga (2/3).
+    const aberta = rota("R1", [pedido(1, em(2), 20)]);
     const r = plano([pedido(3, em(2, 1), 24), pedido(4, em(-3), 25, pronto(1))], [aberta]);
     const a = acrescimos(r.acoes);
     conferir("rota aberta recebe o que cabe pela regra de sempre", a.length === 1 && a[0].pedidoId === "p03", r.acoes);
-    conferir("… e o de longe NÃO vira rota nova enquanto ela não sai", criadas(r.acoes).length === 0 && motivoDe(r, "p04") === "proxima-rota", { acoes: r.acoes, d: r.descartados });
+    conferir("… com vaga ainda (2/3): o de longe NÃO vira rota nova", criadas(r.acoes).length === 0 && motivoDe(r, "p04") === "proxima-rota", { acoes: r.acoes, d: r.descartados });
   }
   {
-    // Rota aberta cheia e esperando motoboy: mesmo assim não nasce outra.
+    // Rota aberta com 2; o #3 entra e ela ENCHE (3/3) no passo 3: o de longe
+    // já pode virar a próxima rota (Douglas, 21h30).
+    const aberta = rota("R1", [pedido(1, em(2), 20), pedido(2, em(2, 0.3), 22)]);
+    const r = plano([pedido(3, em(2, 1), 24), pedido(4, em(-3), 25, pronto(1))], [aberta]);
+    conferir("rota que encheu no passo 3: o de longe vira a próxima rota",
+      acrescimos(r.acoes).length === 1 && criadas(r.acoes).length === 1 && criadas(r.acoes)[0].join() === "p04", r.acoes);
+  }
+  {
+    // Rota aberta cheia (3/3) esperando motoboy: a próxima já pode nascer —
+    // UMA só, mesmo com dois grupos possíveis.
     const cheia = rota("R1", [pedido(1, em(5), 20, pronto(1)), pedido(2, em(5.1), 20, pronto(1)), pedido(3, em(5.2), 20, pronto(1))], { chamadaEm: min(-2) });
-    const r = plano([pedido(4, em(-1), 20), pedido(5, em(-1.2), 21)], [cheia]);
-    conferir("rota cheia que não saiu: nenhuma rota nova", criadas(r.acoes).length === 0, r.acoes);
+    const r = plano([pedido(4, em(-1), 20), pedido(5, em(-1.2), 21), pedido(6, em(0, 4), 22), pedido(7, em(0.2, 4), 23)], [cheia]);
+    const c = criadas(r.acoes);
+    conferir("rota aberta cheia (3/3) + pedidos novos: nasce UMA rota nova", c.length === 1 && mesmoConjunto(c[0], ["p04", "p05"]), r.acoes);
+    conferir("… e o outro grupo espera a próxima (a nova ainda tem vaga)", motivoDe(r, "p06") === "proxima-rota" && motivoDe(r, "p07") === "proxima-rota", r.descartados);
+    // Teto 4: a mesma rota de 3 tem vaga — não nasce nada.
+    const r4 = plano([pedido(4, em(-1), 20), pedido(5, em(-1.2), 21)], [cheia], [], { ...CFG, maxEntregasPorRota: 4 });
+    conferir("se mudar o teto, muda a regra: com teto 4 a rota de 3 tem vaga — não nasce", criadas(r4.acoes).length === 0 && motivoDe(r4, "p04") === "proxima-rota", r4);
+  }
+  {
+    // Rota cheia cujo não pronto saiu (espera estourada): voltou a ter vaga.
+    const r = plano(
+      [pedido(4, em(-3), 25), pedido(5, em(-3.1), 26)],
+      [rota("R1", [pedido(1, em(2), 20, pronto(9)), pedido(2, em(2.1), 21), pedido(3, em(2.2), 22, pronto(9))])],
+    );
+    conferir("rota cheia que perdeu o não pronto volta a ter vaga: não nasce outra",
+      r.acoes.some((x) => x.tipo === "tirar-da-rota") && criadas(r.acoes).length === 0, r.acoes);
   }
   {
     // Sem rota aberta: nasce UMA só, mesmo com dois grupos possíveis.
@@ -319,7 +351,7 @@ async function main() {
   console.log("\n== Ordem das paradas e determinismo ==");
   {
     const ordem = ordenarParadas(LOJA, [{ id: "c", ponto: em(3) }, { id: "a", ponto: em(1) }, { id: "x", ponto: null }, { id: "b", ponto: em(2) }]);
-    conferir("vizinho mais próximo a partir da loja; sem ponto vai para o fim", ordem.join() === "a,b,c,x", ordem);
+    conferir("menor percurso a partir da loja; sem ponto vai para o fim", ordem.join() === "a,b,c,x", ordem);
   }
   {
     const pedidos = [
@@ -738,7 +770,7 @@ async function main() {
     // A ao lado da loja na reta, mas do outro lado do rio: 5 km de rua.
     const A = em(1), B = em(0, 1.5), C = em(2);
     const nomeDo = (p: Ponto) => (p === LOJA ? "L" : p === A ? "A" : p === B ? "B" : p === C ? "C" : "?");
-    const rua: Record<string, number> = { "L>A": 5, "L>B": 1.6, "L>C": 6, "B>A": 2.0, "B>C": 2.5, "A>C": 1, "A>B": 2.0, "C>A": 1, "C>B": 2.5 };
+    const rua: Record<string, number> = { "L>A": 5, "L>B": 1.6, "L>C": 3, "B>A": 4, "A>B": 4, "B>C": 2.5, "C>B": 2.5, "A>C": 1, "C>A": 1 };
     const pernas: string[] = [];
     const medirFalso = (falhar?: string) => async (a: Ponto, b: Ponto) => {
       const perna = `${nomeDo(a)}>${nomeDo(b)}`;
@@ -748,9 +780,9 @@ async function main() {
     const paradas = [{ id: "pA", ponto: A }, { id: "pB", ponto: B }, { id: "pC", ponto: C }];
     const reta = ordenarParadas(LOJA, paradas);
     const r = await ordenarParadasPorMedida(LOJA, paradas, medirFalso());
-    conferir("linha reta: A, C, B (A é a mais perto da loja no mapa)", reta.join() === "pA,pC,pB", reta);
-    conferir("pela rua: B, A, C — o vizinho mais próximo de MOTO, diferente da reta", r.fonte === "rua" && r.ordem.join() === "pB,pA,pC" && !r.falha, r);
-    conferir("… medindo só as pernas que decidem (3 da loja + 2 de B; a última não mede)", pernas.length === 5 && pernas.slice(0, 3).sort().join() === "L>A,L>B,L>C", pernas);
+    conferir("linha reta: B, A, C (o menor percurso no mapa)", reta.join() === "pB,pA,pC", reta);
+    conferir("pela rua: B, C, A — o menor percurso de MOTO, diferente da reta", r.fonte === "rua" && r.ordem.join() === "pB,pC,pA" && !r.falha, r);
+    conferir("… medindo cada perna uma vez: 3 da loja + 6 entre as paradas (os dois sentidos)", pernas.length === 9 && new Set(pernas).size === 9, pernas);
 
     pernas.length = 0;
     const f = await ordenarParadasPorMedida(LOJA, paradas, medirFalso("B>C"));
@@ -766,11 +798,11 @@ async function main() {
 
     let prazoVisto = 0;
     await ordenarParadasPorMedida(LOJA, paradas, async (a, b, prazo) => { prazoVisto = prazo; return rua[`${nomeDo(a)}>${nomeDo(b)}`] ?? null; });
-    conferir("o `medir` recebe o fim do tempo (3 s por padrão) para passar ao rotaEntre", prazoVisto > Date.now() + 2_000 && prazoVisto <= Date.now() + 3_000, prazoVisto - Date.now());
+    conferir("o `medir` recebe o fim do tempo (4 s por padrão) para passar ao rotaEntre", prazoVisto > Date.now() + 3_000 && prazoVisto <= Date.now() + 4_000, prazoVisto - Date.now());
 
     pernas.length = 0;
     const comSemPonto = await ordenarParadasPorMedida(LOJA, [...paradas, { id: "pD", ponto: null }], medirFalso());
-    conferir("pedido sem ponto vai para o fim, sem perna medida para ele", comSemPonto.ordem.join() === "pB,pA,pC,pD" && pernas.every((x) => !x.includes("?")), { comSemPonto, pernas });
+    conferir("pedido sem ponto vai para o fim, sem perna medida para ele", comSemPonto.ordem.join() === "pB,pC,pA,pD" && pernas.every((x) => !x.includes("?")), { comSemPonto, pernas });
 
     pernas.length = 0;
     const uma = await ordenarParadasPorMedida(LOJA, [{ id: "pA", ponto: A }], medirFalso());
@@ -779,6 +811,111 @@ async function main() {
     conferir("sem tempo no ciclo (teto 0): linha reta sem perguntar", semTempo.fonte === "linha-reta" && semTempo.ordem.join() === reta.join() && pernas.length === 0, semTempo);
   }
 
+  // ── Pela rua (Douglas, 22/10/2026 21h15–21h30) ───────────────────────────
+  console.log("\n== Encaixe pela rua: o rio, qualquer parada, menor percurso ==");
+  const { encaixe } = await import("../src/lib/roteirizacao-automatica/planejador");
+  /** Tabela falsa de km de rua, simétrica, por par de ids ("loja" = LOJA_NA_TABELA). */
+  const tabela = (km: Record<string, number>) => (a: string, b: string) => km[`${a}|${b}`] ?? km[`${b}|${a}`] ?? null;
+  {
+    // O #34 e o #26 da Hakim: 1,5 km em linha reta, mas um valão no meio —
+    // de moto são 4 km (tem que subir para a pista).
+    const p1 = pedido(1, em(3), 20), p2 = pedido(2, em(3, 1.5), 25);
+    const reta = plano([p1, p2]);
+    conferir("rio: em linha reta (sem medida) os dois a 1,5 km se juntam", mesmoConjunto(criadas(reta.acoes)[0] ?? [], ["p01", "p02"]), reta.acoes);
+    const rio = plano([p1, p2], [], [], CFG, tabela({ "p01|p02": 4, [`${LOJA_NA_TABELA}|p01`]: 3.4, [`${LOJA_NA_TABELA}|p02`]: 3.9 }));
+    conferir("rio: reta de 1,5 km que dá 4 km de rua NÃO junta", criadas(rio.acoes).length === 0 && motivoDe(rio, "p02") === "fora-do-raio", rio);
+    const soOPar = plano([p1, p2], [], [], CFG, tabela({ "p01|p02": 4 }));
+    conferir("… e sem as pernas da loja (o par pela rua já desmentiu a reta) o \"no caminho\" em reta não junta", criadas(soOPar.acoes).length === 0, soOPar);
+    const vazia = plano([p1, p2], [], [], CFG, () => null);
+    conferir("fallback: tabela sem medida nenhuma = a linha reta de antes", JSON.stringify(vazia) === JSON.stringify(reta), { vazia, reta });
+    const perto = plano([p1, p2], [], [], CFG, tabela({ "p01|p02": 1.9 }));
+    conferir("rua de 1,9 km (≤ 2): junta", mesmoConjunto(criadas(perto.acoes)[0] ?? [], ["p01", "p02"]), perto.acoes);
+  }
+  {
+    // Rota da Hakim (22/10, 21h15), coordenadas reais: #34 perto da loja
+    // (semente, o mais urgente), #33 na Maria Turri; o #35 (Nova Aliança)
+    // fica no caminho da loja até o #33, mas longe do #34.
+    const HAKIM: Ponto = { lat: -22.5187175, lng: -41.9418978 };
+    const p33 = pedido(33, { lat: -22.5229604, lng: -41.9817868 }, 25);
+    const p34 = pedido(34, { lat: -22.510523, lng: -41.953844 }, 20);
+    const p35 = pedido(35, { lat: -22.530717, lng: -41.95746 }, 28);
+    conferir("#35 não cabe com a semente (#34) sozinha — era o que barrava", !encaixe(HAKIM, p34, p35, CFG).ok);
+    const r = planejar({ loja: HAKIM, config: CFG, pedidos: [p35], rotasAbertas: [rota("R11", [p34, p33])], motoboys: [], agora: AGORA });
+    const a = acrescimos(r.acoes);
+    conferir("qualquer parada: o #35 entra na rota de 33 + 34 pela parada 33", a.length === 1 && a[0].rotaId === "R11" && a[0].pedidoId === "p35", r.acoes);
+    conferir("… e a ordem (menor percurso, linha reta) é 34 → 35 → 33", a[0]?.ordem.join() === "p34,p35,p33", a[0]);
+    // Janela ancorada na semente: o #35 com prazo 40 (20 min depois do #34) não entra.
+    const fora = planejar({ loja: HAKIM, config: CFG, pedidos: [{ ...p35, prazo: min(40) }], rotasAbertas: [rota("R11", [p34, p33])], motoboys: [], agora: AGORA });
+    conferir("… a janela de prazo continua ancorada na semente (#34)", acrescimos(fora.acoes).length === 0, fora.acoes);
+  }
+  {
+    // Hakim, 22/10 21h35: rota aberta (chamada, ninguém puxou) com #36 e #37
+    // prontos; o #39 (Costazul) pronto, fora de rota. Caminho do Douglas:
+    // loja → desce para a avenida → #39 → sobe pela orla → #36/#37. Desvio
+    // ~2 km: passava do limite antigo do "no caminho" (1,5 km), cabe no raio.
+    const HAKIM: Ponto = { lat: -22.5187175, lng: -41.9418978 };
+    const P36: Ponto = { lat: -22.498627, lng: -41.917278 }, P37: Ponto = { lat: -22.497458, lng: -41.921505 }, P39: Ponto = { lat: -22.523739, lng: -41.921258 };
+    const p36 = pedido(36, P36, 20, pronto(3)), p37 = pedido(37, P37, 22, pronto(2)), p39 = pedido(39, P39, 25, pronto(1));
+    const aberta = rota("R12", [p36, p37], { chamadaEm: min(-1), chamadaMotoboyId: null });
+    const ruaFalsa = tabela({
+      [`${LOJA_NA_TABELA}|p39`]: 2.6, [`${LOJA_NA_TABELA}|p37`]: 3.9, [`${LOJA_NA_TABELA}|p36`]: 4.1,
+      "p37|p39": 3.2, "p36|p39": 3.4, "p36|p37": 0.6,
+    });
+    for (const [nomeDaRegua, rua] of [["linha reta", undefined], ["rua", ruaFalsa]] as const) {
+      const r = planejar({ loja: HAKIM, config: CFG, pedidos: [p39], rotasAbertas: [aberta], motoboys: [], agora: AGORA, pelaRua: rua });
+      const a = acrescimos(r.acoes);
+      conferir(`#39 no caminho do #36/#37 pela orla (desvio ~2 km ≤ raio) entra na rota chamada — ${nomeDaRegua}`,
+        a.length === 1 && a[0].pedidoId === "p39" && a[0].rotaChamada === true, r);
+    }
+    const { ordenarParadasPorMedida } = await import("../src/lib/roteirizacao-automatica/ordem-por-rua");
+    const nome = (p: Ponto) => (p === HAKIM ? "L" : p === P36 ? "36" : p === P37 ? "37" : p === P39 ? "39" : "?");
+    const km: Record<string, number> = { "L>39": 2.6, "L>37": 3.9, "L>36": 4.1, "39>37": 3.2, "37>39": 3.2, "39>36": 3.4, "36>39": 3.4, "37>36": 0.6, "36>37": 0.6 };
+    const ordem = await ordenarParadasPorMedida(HAKIM, [{ id: "p36", ponto: P36 }, { id: "p37", ponto: P37 }, { id: "p39", ponto: P39 }], async (x, y) => km[`${nome(x)}>${nome(y)}`] ?? null);
+    conferir("… e a rota sai 39 → 37 → 36 (o menor percurso pela rua)", ordem.fonte === "rua" && ordem.ordem.join() === "p39,p37,p36", ordem);
+    // O rio continua barrado com o desvio de 2 km: 1,5 km de reta, 4 de rua.
+    const rio = plano([pedido(1, em(3), 20), pedido(2, em(3, 1.5), 25)], [], [], CFG, tabela({ "p01|p02": 4, [`${LOJA_NA_TABELA}|p01`]: 3.4, [`${LOJA_NA_TABELA}|p02`]: 3.9 }));
+    conferir("… e o rio (34 × 26) continua barrado com o desvio no raio", criadas(rio.acoes).length === 0, rio);
+  }
+  {
+    // Passo 4 cresce um a um: C está a 1,8 km de B e a 3,6 km de A (a semente).
+    const A = pedido(1, em(3), 20), B = pedido(2, em(3, 1.8), 22), C = pedido(3, em(3, 3.6), 24);
+    const r = plano([A, B, C]);
+    conferir("rota nova cresce um a um: quem entrou traz o vizinho dele (A + B + C)", mesmoConjunto(criadas(r.acoes)[0] ?? [], ["p01", "p02", "p03"]), r.acoes);
+    const dois = plano([A, B, C], [], [], { ...CFG, maxEntregasPorRota: 2 });
+    conferir("… até o teto: com 2 por rota, C espera a próxima", mesmoConjunto(criadas(dois.acoes)[0] ?? [], ["p01", "p02"]) && motivoDe(dois, "p03") === "proxima-rota", dois);
+  }
+  {
+    const iguais = ordemDeMenorPercurso(["b", "c", "a"], () => 1, () => 1);
+    conferir("menor percurso: empate fica com a ordem de menor id", iguais.join() === "a,b,c", iguais);
+    // Rota #11 da Hakim (22/10, 21h20): o guloso gravou 34 → 33 → 35.
+    const { ordenarParadasPorMedida } = await import("../src/lib/roteirizacao-automatica/ordem-por-rua");
+    const HAKIM: Ponto = { lat: -22.5187175, lng: -41.9418978 };
+    const P33: Ponto = { lat: -22.5229604, lng: -41.9817868 }, P34: Ponto = { lat: -22.510523, lng: -41.953844 }, P35: Ponto = { lat: -22.530717, lng: -41.95746 };
+    const nome = (p: Ponto) => (p === HAKIM ? "L" : p === P33 ? "33" : p === P34 ? "34" : p === P35 ? "35" : "?");
+    // Do 34, o 33 é "mais perto" (2,5 < 2,8), mas voltar do 33 ao 35 custa 4
+    // e descer do 35 ao 33 pela orla custa 1,2.
+    const km: Record<string, number> = {
+      "L>34": 1.8, "L>33": 5.5, "L>35": 2.6, "34>33": 2.5, "33>34": 2.5, "34>35": 2.8, "35>34": 2.8, "33>35": 4.0, "35>33": 1.2,
+    };
+    const r = await ordenarParadasPorMedida(HAKIM, [{ id: "p33", ponto: P33 }, { id: "p34", ponto: P34 }, { id: "p35", ponto: P35 }], async (a, b) => km[`${nome(a)}>${nome(b)}`] ?? null);
+    conferir("Rota #11: menor percurso pela rua é 34 → 35 → 33 (o guloso dava 34 → 33 → 35)", r.fonte === "rua" && r.ordem.join() === "p34,p35,p33", r);
+    const reta = ordenarParadas(HAKIM, [{ id: "p33", ponto: P33 }, { id: "p34", ponto: P34 }, { id: "p35", ponto: P35 }]);
+    conferir("… e a reserva em linha reta (a da prévia) também dá 34 → 35 → 33", reta.join() === "p34,p35,p33", reta);
+  }
+  {
+    // Os pares que o executar mede: loja primeiro; nunca dois da mesma rota,
+    // nem par que não cabe nem em linha reta, nem prazos longe demais.
+    const pares = paresParaMedirPelaRua({
+      loja: LOJA, config: CFG,
+      pedidos: [pedido(3, em(2, 0.5), 22), pedido(4, em(-6), 22), pedido(5, em(2.2), 90), pedido(6, em(2.1), 21, { fora: "parceiro" })],
+      rotasAbertas: [rota("R1", [pedido(1, em(2), 20), pedido(2, em(2.3), 21)])],
+    });
+    const txt = pares.map((p) => p.join("|"));
+    conferir("pares: as pernas da loja vêm primeiro", txt.slice(0, 4).every((t) => t.startsWith(`${LOJA_NA_TABELA}|`)) && txt.length >= 4, txt);
+    conferir("… o do bolo com as paradas da rota entra; os dois da mesma rota não", txt.includes("p01|p03") && txt.includes("p02|p03") && !txt.includes("p01|p02"), txt);
+    conferir("… longe (6 km do outro lado), prazo fora de 2 × janela e corte de D4 ficam de fora",
+      !txt.some((t) => t.includes("p04") && !t.startsWith(LOJA_NA_TABELA)) && !txt.some((t) => t.includes("p05") && !t.startsWith(LOJA_NA_TABELA)) && !txt.some((t) => t.includes("p06")), txt);
+  }
   console.log(`\n${ok} ok, ${falhou} falharam`);
   process.exitCode = falhou ? 1 : 0;
 }

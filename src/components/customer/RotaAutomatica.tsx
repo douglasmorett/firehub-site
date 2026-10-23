@@ -127,7 +127,7 @@ export default function RotaAutomatica({
 
 const limites: Record<keyof Omit<RotaAutomaticaConfig, "ativo" | "quemPuxa">, { min: number; max: number; passo: number; rotulo: string; ajuda: string }> = {
   maxEntregasPorRota: { min: 1, max: 6, passo: 1, rotulo: "Entregas por rota", ajuda: "Quantas entregas um motoboy leva de uma vez." },
-  raioDoGrupoKm: { min: 0.5, max: 10, passo: 0.5, rotulo: "Distância entre as entregas (km)", ajuda: "Só junta pedidos a até esta distância um do outro." },
+  raioDoGrupoKm: { min: 0.5, max: 10, passo: 0.5, rotulo: "Distância entre as entregas (km)", ajuda: "Só junta pedidos a até esta distância (pela rua) de algum pedido da rota, ou no caminho dele." },
   janelaDePrazoMin: { min: 5, max: 60, passo: 5, rotulo: "Janela de prazo (min)", ajuda: "Só junta pedidos com prazo até X min depois do mais urgente." },
   esperaMaxMin: { min: 0, max: 30, passo: 1, rotulo: "Espera do pedido pronto (min)", ajuda: "Um pedido pronto espera no máximo isto pelos outros da rota. Depois vai sozinho." },
   raioDaLojaM: { min: 50, max: 500, passo: 10, rotulo: "Raio da loja (m)", ajuda: "Motoboy a até esta distância do pino da loja conta como 'na loja'." },
@@ -200,7 +200,7 @@ function JanelaDaRotaAutomatica({
           <Secao titulo="Como funciona, passo a passo">
             <ol style={{ margin: 0, paddingLeft: 20, display: "flex", flexDirection: "column", gap: 8, fontSize: "0.9rem", lineHeight: 1.45 }}>
               <li><b>Escolhe o mais urgente.</b> A cada 20 segundos o sistema olha os pedidos de entrega da sua loja e pega o que tem o menor prazo ("Entregar até"). Pedido em que você pediu prioridade à mão vai primeiro.</li>
-              <li><b>Junta os vizinhos.</b> Procura outros pedidos que podem ir na mesma viagem: a até <b>{cfg.raioDoGrupoKm} km</b> um do outro, com prazo parecido (até <b>{cfg.janelaDePrazoMin} min</b> depois do mais urgente) e no máximo <b>{cfg.maxEntregasPorRota}</b> entregas por rota. Pedido sem endereço localizado no mapa fica de fora, para você montar a rota à mão.</li>
+              <li><b>Junta os vizinhos.</b> Procura outros pedidos que podem ir na mesma viagem: a até <b>{cfg.raioDoGrupoKm} km</b> pela rua de algum pedido da rota (ou no caminho dele — rio e valão contam), com prazo parecido (até <b>{cfg.janelaDePrazoMin} min</b> depois do mais urgente) e no máximo <b>{cfg.maxEntregasPorRota}</b> entregas por rota. Pedido sem endereço localizado no mapa fica de fora, para você montar a rota à mão.</li>
               <li><b>Pede prioridade na cozinha.</b> Os pedidos da rota sobem no KDS com o selo "⚡ PRIORIDADE PARA ROTA · Rota #N", para ficarem prontos juntos.</li>
               <li><b>Espera ficar pronto.</b> A rota só é chamada quando a cozinha dá "Pronto" em todos. Se o mais urgente ficou pronto e os outros demoram mais de <b>{cfg.esperaMaxMin} min</b>, ele vai sozinho e os outros voltam para a fila.</li>
               <li><b>Chama o motoboy.</b> O app avisa o motoboy que chegou primeiro na loja (pelo GPS, a até <b>{cfg.raioDaLojaM} m</b> do seu pino): "Rota #7 pronta na loja · 3 entregas". Se ninguém está na loja, avisa todos os motoboys livres: quem chegar primeiro sai com a rota.</li>
@@ -373,6 +373,15 @@ function PainelDaPrevia({
         <button type="button" onClick={onFechar} style={{ border: 0, background: "transparent", color: "#64748B", fontWeight: 800, cursor: "pointer" }}>Fechar</button>
       </div>
       <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>Prévia com os pedidos de agora. Nada foi gravado, nenhuma rota foi criada.</p>
+      {d?.distancias && d.distancias.pares > 0 && (
+        // Como as distâncias foram medidas: pela rua (como o cron) ou, onde
+        // faltou medida, em linha reta. A ordem mostrada é a de linha reta;
+        // ao gravar, ela é refeita pela rua.
+        <p style={{ margin: 0, fontSize: "0.78rem", color: "#64748B" }}>
+          📏 Distâncias pela rua: {d.distancias.pelaRua} de {d.distancias.pares}
+          {d.distancias.motivo ? ` (${d.distancias.motivo})` : ""}. A ordem das paradas aqui é em linha reta; ao criar a rota, ela sai pela rua.
+        </p>
+      )}
 
       {previa.erro && <p style={{ margin: 0, color: "#B91C1C", fontWeight: 700, fontSize: "0.86rem" }}>{previa.erro}</p>}
 

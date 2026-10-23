@@ -14,13 +14,19 @@
  *     ROTA_PRONTA (`chamarARota`, também do card da Roteirização), e a rota
  *     que terminou sozinha (todos puxados um a um) vira DISPATCHED calada.
  *     Fase 3 (22/10/2026): a rota é gravada com as paradas na ordem PELA RUA
- *     (ordem-por-rua.ts, `rotaEntre`, teto de 3 s), e a chamada "para todos"
+ *     (ordem-por-rua.ts, `rotaEntre`, menor percurso total, teto de 4 s), e a chamada "para todos"
  *     que alguém levou avisa os outros (`avisarQueARotaJaSaiu`).
  *     D8 revisto (22/10/2026): a rota JÁ CHAMADA que ninguém puxou recebe
  *     pedido pronto que cabe nela; a entrada confere no MESMO UPDATE que a
  *     rota segue AUTO, PENDING e sem nenhum pedido com motoboy ("puxou,
  *     acabou"), e a chamada sai de novo para o mesmo chamado com o texto
  *     "atualizada" (`chamarARota` com `rotaMudou`).
+ *     Pela rua (22/10/2026, 21h15): antes de planejar, o ciclo mede pela
+ *     RUA os pares que podem caber juntos (`medirOEncaixePelaRua`,
+ *     `paresParaMedirPelaRua` do planejador; até 5 s, duas perguntas por vez,
+ *     cache de 60 dias) — a linha reta juntava pedidos separados por rio. O
+ *     que não deu tempo de medir fica em linha reta. A prévia usa a mesma
+ *     tabela: decide como o cron decidiria.
  *
  * Gravando, o ciclo inteiro (ler → planejar → gravar) roda sob a vez
  * "roteirizacao:<loja>" (lib/vez.ts) com um dono novo por chamada: nem dois
@@ -65,16 +71,19 @@ import { gravacoesDasAcoes, type Passo } from "./gravacoes";
 import { avisarMotoboy } from "@/lib/app-motoboy/aparelhos";
 import { avisoDaRotaAtualizada, avisoDaRotaFoiComOutro, avisoDaRotaJaSaiu, avisoDaRotaPronta, quemPerdeAChamada, quemRecebeAChamada, quemSabeQueARotaJaSaiu } from "./chamada";
 import { rotaEntre } from "@/lib/distancia-por-rota";
-import type { Ponto } from "@/lib/ponto-do-pedido";
+import { distanciaKm, type Ponto } from "@/lib/ponto-do-pedido";
 import { ordenarParadasPorMedida, TETO_DA_ORDEM_POR_RUA_MS, type OrdemDasParadas } from "./ordem-por-rua";
 import { lerRoteirizacaoAutomatica, type RoteirizacaoAutomaticaConfig } from "./config";
 import { prazoDoPedido, agendadoParaDepois } from "./prazo";
 import {
   planejar,
+  paresParaMedirPelaRua,
+  LOJA_NA_TABELA,
   chamadaVencida,
   MOTIVO_EM_PORTUGUES,
   type Acao,
   type CorteDaEntrada,
+  type KmPelaRua,
   type MotivoDoDescarte,
   type MotoboyLivre,
   type PedidoParaDespacho,
@@ -134,6 +143,11 @@ export type ResumoDaRoteirizacao = {
   falhas?: string[];
   /** Gravando: outro ciclo desta loja estava no ar — este não gravou. */
   pulada?: string;
+  /**
+   * Como o encaixe mediu as distâncias neste ciclo: `pelaRua` dos `pares`
+   * que podiam caber juntos (o resto em linha reta); `motivo` quando faltou.
+   */
+  distancias?: { pelaRua: number; pares: number; motivo?: string };
 };
 
 const numeroDo = (p: { dailyOrderNumber?: number | null }) => (p.dailyOrderNumber ?? null) as number | null;
@@ -311,7 +325,11 @@ async function lerEPlanejar(lojaId: string, agora: Date): Promise<Planejado> {
   // Sem pino não há "perto da loja" nem ordem de paradas: nada a planejar.
   if (!pino) return planejado(resumoVazio(), []);
 
-  const { acoes, descartados } = planejar({ loja: pino, config, pedidos, rotasAbertas, motoboys: livres, agora });
+  // A tabela de km de RUA do encaixe (o rio, o valão): o planejador continua
+  // puro e cai na linha reta onde ela não tem medida.
+  const pares = paresParaMedirPelaRua({ loja: pino, config, pedidos, rotasAbertas });
+  const medidas = await medirOEncaixePelaRua(pino, pares, (id) => pontos.get(id) ?? null);
+  const { acoes, descartados } = planejar({ loja: pino, config, pedidos, rotasAbertas, motoboys: livres, agora, pelaRua: medidas.pelaRua });
 
   const nomeDoMotoboy = new Map(motoboys.map((m) => [m.id, m.nome]));
   const numeroDaRota = new Map(rotasAbertas.map((r) => [r.id, r.routeNumber]));
@@ -343,18 +361,24 @@ async function lerEPlanejar(lojaId: string, agora: Date): Promise<Planejado> {
       ...resumoVazio(),
       acoes: legiveis,
       descartados: descartados.map((d) => ({ ...d, numero: num(d.pedidoId), texto: MOTIVO_EM_PORTUGUES[d.motivo] })),
+      distancias: medidas.resumo,
     },
     acoes,
   );
 }
 
-/** A vez de um ciclo que grava: cobre ler + planejar + gravar com folga. */
-const VEZ_DO_CICLO_MS = 15_000;
+/**
+ * A vez de um ciclo que grava: cobre ler + medir o encaixe pela rua (até
+ * 5 s) + planejar + gravar (a ordem pela rua, até 8 s) com folga. Era 15 s
+ * antes da medida do encaixe; o cron roda a cada 20 s.
+ */
+const VEZ_DO_CICLO_MS = 20_000;
 /**
  * O tempo que o ciclo INTEIRO tem para ordenar paradas pela rua (cada rota
- * tem até 3 s dentro dele). Um pico com várias rotas novas e o roteador lento
- * não pode passar da vez de 15 s — outro ciclo pegaria a vez no meio da
- * gravação. Acabou o tempo, as rotas que faltam saem em linha reta.
+ * tem até 4 s dentro dele). Um pico com várias rotas novas e o roteador lento
+ * não pode passar da vez de 20 s (o encaixe já gastou até 5 s) — outro
+ * ciclo pegaria a vez no meio da gravação. Acabou o tempo, as rotas que
+ * faltam saem em linha reta.
  */
 const ORDEM_POR_RUA_NO_CICLO_MS = 8_000;
 
@@ -363,6 +387,66 @@ const medirPelaRua = async (a: Ponto, b: Ponto, prazo: number) => {
   const r = await rotaEntre(a, b, { prazo });
   return r.ok ? r.km : null;
 };
+
+/**
+ * Só com roteador configurado (OSRM próprio, Geoapify ou ORS). No demo
+ * público do OSRM (1 pergunta/s), as pernas cliente→cliente nunca estão no
+ * cache: estourariam o tempo, e duas falhas seguidas desligam o roteador por
+ * 60 s — o que derruba a cotação de frete de TODAS as lojas (22/10/2026).
+ */
+const temRoteador = () => !!(process.env.OSRM_URL || process.env.GEOAPIFY_API_KEY || process.env.ORS_API_KEY);
+
+/** O tempo que o ciclo tem para medir pela rua os pares do encaixe. */
+const MEDIR_O_ENCAIXE_NO_CICLO_MS = 5_000;
+/**
+ * Duas perguntas por vez: o limitador do roteador é de TODAS as lojas, e a
+ * cotação de frete do cliente no checkout espera na mesma fila. Com 20
+ * perguntas de uma vez, ela esperaria 5 s pela vez.
+ */
+const MEDIDAS_EM_PARALELO = 2;
+/** Abaixo disto de tempo restante o `rotaEntre` nem pergunta. */
+const TEMPO_MINIMO_DA_MEDIDA_MS = 400;
+
+/**
+ * Mede pela rua os pares do encaixe (`paresParaMedirPelaRua`), na ordem —
+ * loja → cada pedido primeiro, depois os pares do mais perto ao mais longe —
+ * até acabar o tempo. Cada par é medido UMA vez, no sentido de quem sai da
+ * loja (do mais perto da loja para o mais longe, em linha reta): é o sentido
+ * do "no caminho", e a ordem pela rua da gravação acha a mesma perna no cache.
+ * O Hakim no pico tem 10–15 entregas abertas: ~15 pernas da loja (quase todas
+ * já no cache da cotação de frete) e algumas dezenas de pares — a primeira
+ * vez de cada pedido novo pergunta ao roteador; as seguintes são do cache.
+ */
+async function medirOEncaixePelaRua(
+  loja: Ponto,
+  pares: [string, string][],
+  pontoDe: (id: string) => Ponto | null,
+): Promise<{ pelaRua?: KmPelaRua; resumo: NonNullable<ResumoDaRoteirizacao["distancias"]> }> {
+  if (pares.length === 0) return { resumo: { pelaRua: 0, pares: 0 } };
+  if (!temRoteador()) return { resumo: { pelaRua: 0, pares: pares.length, motivo: "sem roteador configurado — tudo em linha reta" } };
+  const chave = (a: string, b: string) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  const km = new Map<string, number>();
+  const fim = Date.now() + MEDIR_O_ENCAIXE_NO_CICLO_MS;
+  let proximo = 0;
+  const trabalhar = async () => {
+    while (proximo < pares.length && fim - Date.now() > TEMPO_MINIMO_DA_MEDIDA_MS) {
+      const [a, b] = pares[proximo++];
+      const pa = a === LOJA_NA_TABELA ? loja : pontoDe(a);
+      const pb = b === LOJA_NA_TABELA ? loja : pontoDe(b);
+      if (!pa || !pb) continue;
+      const paraFora = a === LOJA_NA_TABELA || (b !== LOJA_NA_TABELA && distanciaKm(loja, pa) <= distanciaKm(loja, pb));
+      const r = await rotaEntre(paraFora ? pa : pb, paraFora ? pb : pa, { prazo: fim });
+      if (r.ok) km.set(chave(a, b), r.km);
+    }
+  };
+  await Promise.all(Array.from({ length: MEDIDAS_EM_PARALELO }, trabalhar));
+  const faltaram = pares.length - km.size;
+  if (faltaram > 0) console.log(`[rota-automatica] encaixe: ${km.size} de ${pares.length} pares pela rua, o resto em linha reta`);
+  return {
+    pelaRua: (a, b) => km.get(chave(a, b)) ?? null,
+    resumo: { pelaRua: km.size, pares: pares.length, ...(faltaram > 0 ? { motivo: `${faltaram} sem medida de rua a tempo — em linha reta` } : {}) },
+  };
+}
 
 /**
  * Um ciclo da loja. `gravar: false` = a prévia (nada muda). `gravar: true` =
@@ -416,17 +500,13 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
   const falhas: string[] = [];
   const acoes = resumo.acoes.map((a) => ({ ...a }));
 
-  // A ordem das paradas é refeita pela rua aqui, na gravação (o planejador e a
-  // prévia ficam em linha reta). Sem pino não há rota nenhuma a gravar.
+  // A ordem das paradas é refeita pela rua aqui, na gravação (a do planejador e
+  // da prévia é em linha reta). Sem pino não há rota nenhuma a gravar.
   const fimDaRua = Date.now() + ORDEM_POR_RUA_NO_CICLO_MS;
-  // Só com roteador configurado (OSRM próprio, Geoapify ou ORS). No demo
-  // público do OSRM (1 pergunta/s), as pernas cliente→cliente nunca estão no
-  // cache: estourariam os 3 s, e duas falhas seguidas desligam o roteador por
-  // 60 s — o que derruba a cotação de frete de TODAS as lojas (22/10/2026).
-  const temRoteador = !!(process.env.OSRM_URL || process.env.GEOAPIFY_API_KEY || process.env.ORS_API_KEY);
+  // Só com roteador configurado (`temRoteador`).
   const pelaRua = async (ids: string[]): Promise<OrdemDasParadas> => {
     if (!plano.loja) return { ordem: ids, fonte: "linha-reta" };
-    if (!temRoteador) return { ordem: ids, fonte: "linha-reta", falha: "sem roteador configurado" };
+    if (!temRoteador()) return { ordem: ids, fonte: "linha-reta", falha: "sem roteador configurado" };
     const tetoMs = Math.min(TETO_DA_ORDEM_POR_RUA_MS, fimDaRua - Date.now());
     return ordenarParadasPorMedida(plano.loja, ids.map((id) => ({ id, ponto: plano.pontoDe(id) })), medirPelaRua, { tetoMs });
   };

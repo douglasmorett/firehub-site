@@ -9,6 +9,8 @@
  *   - a linha liga só pinos que estão no mapa, nunca ponto de pedido entregue;
  *   - a poda das coordenadas tira quem saiu e devolve o MESMO objeto quando
  *     não há o que tirar (sem redesenho à toa).
+ *   - a linha segue a RUA perna a perna, na ordem gravada; perna sem desenho
+ *     fica reta (22/10/2026).
  *
  *   npx tsx scripts/teste-rotas-no-mapa.ts
  *
@@ -18,7 +20,7 @@
 // deste arquivo colidiriam com as de outros testes no mesmo escopo global.
 export {};
 
-import { podarCoordenadas, pontosDaLinha, rotaJaDespachada, rotasComLinha } from "../src/lib/rotas-no-mapa";
+import { chaveDaPerna, linhaPelaRua, pernasDaLinha, podarCoordenadas, pontosDaLinha, rotaJaDespachada, rotasComLinha } from "../src/lib/rotas-no-mapa";
 
 let ok = 0, falhou = 0;
 function conferir(nome: string, cond: boolean, detalhe?: unknown) {
@@ -101,6 +103,26 @@ conferir("tira quem não tem mais pino", igual(Object.keys(podado).sort(), ["a",
 conferir("não mexe no objeto original", Object.keys(mapa).length === 3);
 conferir("nada a tirar → o MESMO objeto (o React não redesenha)", podarCoordenadas(mapa, new Set(["a", "b", "c", "d"])) === mapa);
 conferir("mapa vazio → o mesmo objeto", (() => { const v = {}; return podarCoordenadas(v, new Set()) === v; })());
+
+console.log("\n[5] A linha pela rua (22/10/2026)");
+{
+  const loja: [number, number] = [-22.5187175, -41.9418978];
+  const p34: [number, number] = [-22.510523, -41.953844];
+  const p35: [number, number] = [-22.530717, -41.95746];
+  const p33: [number, number] = [-22.5229604, -41.9817868];
+  // A ordem gravada da Rota #11 depois do conserto: loja → 34 → 35 → 33.
+  const pontos = [loja, p34, p35, p33];
+  const pernas = pernasDaLinha(pontos);
+  conferir("três pernas, na ordem da rota (loja → 34 → 35 → 33)", pernas.length === 3 && igual(pernas[0].de, loja) && igual(pernas[1].para, p35) && igual(pernas[2].para, p33), pernas);
+  conferir("a chave tem sentido (34 → 35 não é 35 → 34)", chaveDaPerna(p34, p35) !== chaveDaPerna(p35, p34));
+  const curva: [number, number][] = [[-22.515, -41.950], [-22.525, -41.955]];
+  const desenhos: Record<string, [number, number][]> = { [chaveDaPerna(p34, p35)]: curva };
+  const linha = linhaPelaRua(pontos, (k) => desenhos[k]);
+  conferir("perna com desenho entra pela rua; as outras ficam retas",
+    igual(linha, [loja, p34, ...curva, p35, p33]), linha);
+  conferir("sem desenho nenhum: a linha reta de antes", igual(linhaPelaRua(pontos, () => null), pontos));
+  conferir("um ponto só: nada a desenhar", igual(linhaPelaRua([loja], () => curva), [loja]));
+}
 
 console.log(`\n${ok} ok, ${falhou} falharam`);
 process.exit(falhou ? 1 : 0);
