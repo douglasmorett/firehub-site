@@ -97,7 +97,10 @@ const dinheiro = (v: number) => Number(v || 0).toFixed(2).replace(".", ",");
 /** CSV para Excel brasileiro: ponto e vírgula, vírgula decimal, BOM no começo. */
 function montarCsv(cabecalho: string[], linhas: (string | number)[][]): string {
   const escapar = (c: string | number) => {
-    const s = String(c ?? "");
+    let s = String(c ?? "");
+    // O nome do cliente é livre: "=HYPERLINK(...)" viraria fórmula no Excel do
+    // contador. Começo de fórmula ganha apóstrofo — menos número puro ("-5,00").
+    if (/^[=+\-@\t\r]/.test(s) && !/^[\d\s()+\-.,]*$/.test(s)) s = `'${s}`;
     return /[;"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   const corpo = [cabecalho, ...linhas].map((l) => l.map(escapar).join(";")).join("\r\n");

@@ -73,6 +73,10 @@ export async function POST(req: NextRequest) {
     });
 
     const resetUrl = `${APP_URL}/redefinir-senha?token=${resetToken}`;
+    // O nome é livre no cadastro: cru no HTML, virava botão/link falso dentro
+    // de um e-mail legítimo do FireHub.
+    const esc = (t: unknown) =>
+      String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 
     const emailHtml = `
       <div style="font-family: Inter, sans-serif; max-width: 520px; margin: 0 auto; background: #fff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 24px rgba(0,0,0,0.08); border: 1px solid #E2E8F0;">
@@ -82,7 +86,7 @@ export async function POST(req: NextRequest) {
         <div style="padding: 40px 32px;">
           <h2 style="color: #1E293B; font-size: 1.2rem; margin: 0 0 12px; font-weight: 700;">Redefinição de senha</h2>
           <p style="color: #64748B; font-size: 0.95rem; line-height: 1.6; margin: 0 0 28px;">
-            Olá, <strong>${user.name || "Restaurante"}</strong>.<br>
+            Olá, <strong>${esc(user.name || "Restaurante")}</strong>.<br>
             Recebemos uma solicitação para redefinir a senha da sua conta FireHub.<br>
             Clique no botão abaixo para criar sua nova senha com segurança.
           </p>

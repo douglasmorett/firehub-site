@@ -25,21 +25,31 @@
  *    não resolveu. Foi exatamente o padrão da conversa real.
  */
 
-/** Reclamação explícita: uma só já basta para chamar gente. */
+/**
+ * Reclamação explícita: uma só já basta para chamar gente.
+ *
+ * Sem `.*` cru entre duas partes nem `\s+X?\s*`: com texto longo de cliente
+ * (ou webhook forjado) isso voltava quadrático e travava o servidor (ReDoS,
+ * auditoria 23/10/2026). O trecho do meio agora para no próximo começo da
+ * primeira parte, e o número só começa no início da sequência de dígitos —
+ * cada caractere é varrido uma vez e as frases detectadas são as mesmas
+ * (scripts/teste-problema-no-pedido-redos.ts compara com a versão antiga).
+ */
 const RECLAMACAO = [
   // Demora e atraso. Só as formas que descrevem algo JÁ acontecendo ou passado:
   // "demora" cru é pergunta de quem nem pediu ainda ("quanto tempo demora?").
   /demor(ando|ou|ei|aram|ada)/i,
   /atras(o|ado|ada|ando)/i,
-  /\b(uma|um|1)\s*h(ora)?\b.*\b(esper|aguard)/i,
-  /\b(esper|aguard)\w*\b.*\b(uma|um|1|\d+)\s*(h\b|hora|minuto)/i,
-  /\d+\s*(h|hora|minuto|min)\w*\s*(de\s*)?(esper|aguard)/i,
+  /\b(uma|um|1)\s*h(ora)?\b(?:(?!\b(?:uma|um|1)\s*h(?:ora)?\b).)*\b(esper|aguard)/i,
+  /\b(esper|aguard)\w*\b(?:(?!\b(?:esper|aguard)).)*\b(uma|um|1|\d+)\s*(h\b|hora|minuto)/i,
+  /(?<!\d)\d+\s*(h|hora|minuto|min)(?:(?!(?<!\d)\d+(?:h|min))\w)*\s*(de\s*)?(esper|aguard)/i,
   /(t[áa]|est[áa]|ficou|tem)\s+(muito\s+)?(tempo|demorado)/i,
 
   // Não chegou
   /n[ãa]o\s+(chegou|chegaram|recebi|veio|entregaram)/i,
   /(nada\s+(da|do|de)\s+(entrega|pedido|comida|lanche))/i,
-  /(cad[êe]|onde)\s+(t[áa]|est[áa])?\s*(a\s+)?(entrega|comida|lanche|meu\s+pedido).*(ainda|at[ée]\s+agora)/i,
+  // O meio não atravessa outro "cadê a entrega" — salvo quando ele termina no "a" de um "ainda" colado ("comidainda").
+  /(cad[êe]|onde)\s+(?:(t[áa]|est[áa])\s*)?(a\s+)?(entrega|comida|lanche|meu\s+pedido)(?:(?!(?:cad[êe]|onde)\s+(?:(?:t[áa]|est[áa])\s*)?(?:a\s+)?(?:entrega|comida|lanche|meu\s+pedido)(?:(?<!a)|(?!inda|t[ée]\s+agora))).)*(ainda|at[ée]\s+agora)/i,
   /at[ée]\s+agora\s+nada/i,
   /sem\s+(o\s+)?(pedido|entrega)\s+at[ée]/i,
 
@@ -73,7 +83,8 @@ const RECLAMACAO = [
  * Deliberadamente mais frouxa que RECLAMACAO — só age no segundo tempo.
  */
 const COBRANCA_DE_PEDIDO = [
-  /(cad[êe]|onde)\s+(t[áa]|est[áa]|anda)?\s*(o\s+|a\s+|meu\s+|minha\s+)?(pedido|entrega|comida|lanche|motoboy|entregador)/i,
+  // \s+(X\s*)? em vez de \s+X?\s*: mesmo texto, sem dividir os espaços de dois jeitos (ReDoS).
+  /(cad[êe]|onde)\s+(?:(t[áa]|est[áa]|anda)\s*)?(o\s+|a\s+|meu\s+|minha\s+)?(pedido|entrega|comida|lanche|motoboy|entregador)/i,
   /(pedido|entrega|lanche|comida|motoboy|entregador)\s*(j[áa]\s+)?(saiu|vem|chega|t[áa]\s+longe|demora)/i,
   /(quanto\s+tempo|falta\s+muito|vai\s+demorar|demora\s+mais)/i,
   /(previs[ãa]o|posi[çc][ãa]o)\s+(do|da)\s+(pedido|entrega)/i,

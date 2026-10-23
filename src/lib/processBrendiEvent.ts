@@ -303,7 +303,9 @@ export async function processBrendiEvent(
   evento: BrendiEvent,
   opcoes?: ProcessBrendiOptions,
 ): Promise<ProcessResult> {
-  const orderId = evento?.orderId ?? "";
+  // Só texto: vem do corpo do webhook, e um objeto aqui viraria filtro do Prisma.
+  const orderIdBruto: unknown = evento?.orderId;
+  const orderId = typeof orderIdBruto === "string" || typeof orderIdBruto === "number" ? String(orderIdBruto) : "";
   if (!orderId) return { action: "skipped", orderId: "", message: "sem orderId" };
 
   const targetFranchiseeId = opcoes?.targetFranchiseeId;
@@ -348,13 +350,14 @@ export async function processBrendiEvent(
         expiresAt: meta.expiresAt || "",
         requestedAt: meta.createdAt || new Date().toISOString(),
       };
-      // startsWith cobre o registro de fallback '{uuid}_recovered' — a disputa
+      // O '{uuid}_recovered' cobre o registro de fallback (igualdade, não mais
+      // startsWith: o orderId vem do corpo e % ou _ nele virariam curinga) — a disputa
       // tem que alcançar o pedido mesmo quando ele entrou pela via de resgate.
       await (prisma.customerOrder as any).updateMany({
         where: {
           OR: [
             { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+            { openDeliveryOrderId: `${orderId}_recovered` },
           ],
         } as any,
         data: { cancelDispute: disputeData },
@@ -369,7 +372,7 @@ export async function processBrendiEvent(
         where: {
           OR: [
             { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+            { openDeliveryOrderId: `${orderId}_recovered` },
           ],
         } as any,
         select: { id: true, notes: true } as any,
@@ -395,7 +398,7 @@ export async function processBrendiEvent(
         where: {
           OR: [
             { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+            { openDeliveryOrderId: `${orderId}_recovered` },
           ],
         } as any,
         select: { cancelledBy: true } as any,
@@ -408,13 +411,13 @@ export async function processBrendiEvent(
         where: {
           OR: [
             { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+            { openDeliveryOrderId: `${orderId}_recovered` },
           ],
         } as any,
         data: cancelData,
       });
       // Cancelado pela Brendi com NFC-e de pé: não trava (o cliente já foi estornado lá), avisa na tela fiscal.
-      import("./fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ OR: [{ openDeliveryOrderId: orderId }, { openDeliveryOrderId: { startsWith: `${orderId}_` } }] }, "Brendi")).catch(() => {});
+      import("./fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ OR: [{ openDeliveryOrderId: orderId }, { openDeliveryOrderId: `${orderId}_recovered` }] }, "Brendi")).catch(() => {});
       return { action: "cancelled", orderId };
     }
 
@@ -427,7 +430,7 @@ export async function processBrendiEvent(
     // loja + canal ('BRENDI') juntos.
     const idempotencyConditions: any[] = [
       { openDeliveryOrderId: orderId },
-      { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+      { openDeliveryOrderId: `${orderId}_recovered` },
     ];
     if (targetFranchiseeId) {
       idempotencyConditions.push({
@@ -1307,7 +1310,7 @@ export async function processBrendiEvent(
       if (!createSuccess) {
         // FALLBACK: gravar dados mínimos como última barreira — nunca perder
         // venda. O sufixo _recovered mantém o UUID rastreável e a dupla
-        // barreira de idempotência (startsWith) reconhece este registro.
+        // barreira de idempotência (`${orderId}_recovered`) reconhece este registro.
         console.error(`[Brendi] 🚨 PEDIDO PERDIDO APÓS 3 TENTATIVAS — orderId=${orderId}, cliente=${customerName}, total=${total}`);
         try {
           // Gerar novo número sequencial para o fallback (pode ter mudado desde o primeiro try)
@@ -1432,7 +1435,7 @@ export async function processBrendiEvent(
         if (newRank >= currentRank) {
           const updateConditions: any[] = [
             { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+            { openDeliveryOrderId: `${orderId}_recovered` },
           ];
           if (targetFranchiseeId) {
             // O canal na condição por reference é obrigatório: sem ele o update

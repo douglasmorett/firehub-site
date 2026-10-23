@@ -17,6 +17,11 @@ export async function POST(req: Request) {
     if (!items || items.length === 0) {
       return NextResponse.json({ error: "Carrinho vazio" }, { status: 400 });
     }
+    // Quantidade só inteira e positiva: negativa abatia do total recalculado
+    // (20 de A + -17 de B fechava o mínimo e o boleto saía menor que a mercadoria).
+    if (!Array.isArray(items) || items.some((i: any) => !Number.isInteger(i?.quantity) || i.quantity < 1)) {
+      return NextResponse.json({ error: "Quantidade inválida no carrinho." }, { status: 400 });
+    }
 
     const userId = (session.user as any).id;
     const user = await prisma.user.findUnique({

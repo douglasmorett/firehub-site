@@ -1909,6 +1909,10 @@ export default function RoteirizacaoModal({
     if (!L) return;
 
     const map = leafletMapRef.current;
+    // O divIcon, o popup e o tooltip do Leaflet entram como HTML: nome do
+    // entregador e endereço da loja são texto livre e saem escapados (XSS).
+    const esc = (t: unknown) =>
+      String(t ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
 
     // Clear existing markers and polylines
     markersRef.current.forEach(m => m.remove());
@@ -1928,7 +1932,7 @@ export default function RoteirizacaoModal({
           display: flex; align-items: center; justify-content: center;
           box-shadow: 0 4px 12px rgba(28, 25, 23,0.5); border: 3px solid #fff;
           font-size: 1.2rem; cursor: pointer;
-        " title="Sua Loja - ${storeAddress || storeCity}">
+        " title="Sua Loja - ${esc(storeAddress || storeCity)}">
           🏠
         </div>
       `;
@@ -1941,7 +1945,7 @@ export default function RoteirizacaoModal({
 
       const storeMarker = L.marker([defaultCenter.lat, defaultCenter.lng], { icon: storeIcon })
         .addTo(map)
-        .bindPopup(`<b>🏠 ${storeAddress || "Sua Loja"}</b><br/>Ponto Inicial de Entrega`);
+        .bindPopup(`<b>🏠 ${esc(storeAddress || "Sua Loja")}</b><br/>Ponto Inicial de Entrega`);
       markersRef.current.set("STORE", storeMarker);
     }
 
@@ -2220,7 +2224,7 @@ export default function RoteirizacaoModal({
             box-shadow: 0 2px 6px rgba(0,0,0,0.3); text-transform: uppercase; white-space: nowrap;
             margin-top: 2px;
           ">
-            ${mb.name}${emEntrega ? ` · ${entregasNaRua}` : ""}
+            ${esc(mb.name)}${emEntrega ? ` · ${entregasNaRua}` : ""}
           </div>
         </div>
       `;
@@ -2242,7 +2246,7 @@ export default function RoteirizacaoModal({
         : null;
       const mbMarker = L.marker([mbLat, mbLng], { icon: mbIcon, zIndexOffset: 950 })
         .addTo(map)
-        .bindPopup(`<b>🛵 Entregador ${mb.name}</b> <span style="color:${emEntrega ? "#B71C1C" : "#0F766E"};font-weight:700;">${emEntrega ? `${entregasNaRua} entrega(s) na rua` : "livre"}</span><br/>📍 ${
+        .bindPopup(`<b>🛵 Entregador ${esc(mb.name)}</b> <span style="color:${emEntrega ? "#B71C1C" : "#0F766E"};font-weight:700;">${emEntrega ? `${entregasNaRua} entrega(s) na rua` : "livre"}</span><br/>📍 ${
           minAtras === null ? "Localização GPS"
             : minAtras <= 1 ? "Atualizado agora"
             : recente ? `Atualizado há ${minAtras} min`
@@ -2250,7 +2254,7 @@ export default function RoteirizacaoModal({
             // lê tem que saber que está vendo o ÚLTIMO lugar onde ele apareceu.
             : `Visto por último há ${minAtras >= 60 ? `${Math.floor(minAtras / 60)}h${String(minAtras % 60).padStart(2, "0")}` : `${minAtras} min`}`
         }${dataHora ? `<br/><span style="color:#64748B;font-size:0.78rem;">🕒 ${dataHora}</span>` : ""}`)
-        .bindTooltip(dataHora ? `${mb.name} · ${dataHora}` : mb.name, { direction: "top", offset: [0, -12] });
+        .bindTooltip(dataHora ? `${esc(mb.name)} · ${dataHora}` : esc(mb.name), { direction: "top", offset: [0, -12] });
 
       markersRef.current.set(`MOTOBOY_${mb.id}`, mbMarker);
     });
