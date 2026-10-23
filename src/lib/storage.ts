@@ -19,10 +19,11 @@
  * as imagens sobrevivem aos deploys. Estar dentro de public/ deixou de ser
  * problema no momento em que a entrega passou a ser feita pela rota.
  */
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 import crypto from "crypto";
 import { conferirVideo } from "@/lib/video-enviado";
+import { baixarDoBucketParaODisco, bucketLigado, subirAoBucket } from "@/lib/arquivos-no-bucket";
 
 /**
  * Raiz dos uploads no disco. O padrao e public/uploads porque e ali que o
@@ -161,6 +162,7 @@ export async function saveUploadedFile(file: File, folder?: string | null): Prom
 
   await mkdir(destDir, { recursive: true });
   await writeFile(path.join(/*turbopackIgnore: true*/ destDir, fileName), buffer);
+  await espelharNoBucket(`${dir}/${fileName}`, buffer);
 
   return {
     url: `${PUBLIC_PREFIX}/${dir}/${fileName}`,
@@ -188,6 +190,7 @@ export async function saveUploadedVideo(file: File, folder?: string | null): Pro
 
   await mkdir(destDir, { recursive: true });
   await writeFile(path.join(/*turbopackIgnore: true*/ destDir, fileName), bytes);
+  await espelharNoBucket(`${dir}/${fileName}`, bytes);
 
   return {
     url: `${PUBLIC_PREFIX}/${dir}/${fileName}`,
@@ -223,6 +226,7 @@ export async function saveDataUrl(dataUrl: string, folder?: string | null): Prom
 
   await mkdir(destDir, { recursive: true });
   await writeFile(path.join(/*turbopackIgnore: true*/ destDir, fileName), buffer);
+  await espelharNoBucket(`${dir}/${fileName}`, buffer);
 
   return {
     url: `${PUBLIC_PREFIX}/${dir}/${fileName}`,
@@ -234,4 +238,89 @@ export async function saveDataUrl(dataUrl: string, folder?: string | null): Prom
 /** true se o valor guardado e uma imagem embutida em base64 (o problema a migrar). */
 export function isDataUrl(value: string | null | undefined): boolean {
   return typeof value === "string" && value.startsWith("data:");
+}
+
+// ─── A cópia no bucket (duas instâncias) ────────────────────────────────────
+//
+// Com duas instâncias, cada uma tem o próprio disco: a foto enviada para a A
+// não existe na B. Por isso toda gravação daqui também sobe ao bucket
+// (lib/arquivos-no-bucket.ts, Cloudflare R2), e quem não acha o arquivo no
+// disco traz de lá — a rota /uploads, a leitura de nota pela IA, a imagem do
+// link do cardápio. Sem as variáveis R2_* nada disso sai para a rede.
+
+/** Prefixo dos arquivos públicos no bucket. O cofre fiscal fica em "fiscal/" (lib/nfce/armazenamento) e nunca cai aqui. */
+const NO_BUCKET = "uploads/";
+
+/**
+ * O caminho relativo (o que vem depois de /uploads/) limpo, ou null. Recusa
+ * "..", barra invertida e byte nulo — o caminho chega da URL ou do banco — e
+ * o cofre fiscal: ele mora dentro do volume de uploads, mas não é público.
+ */
+function relativoSeguro(relativo: string): string | null {
+  if (typeof relativo !== "string" || relativo.includes("\\") || relativo.includes("\0")) return null;
+  const partes = relativo.split("/").filter(Boolean);
+  if (!partes.length || partes.some((p) => p === "." || p === "..")) return null;
+  if (partes[0].toLowerCase() === "_fiscal") return null;
+  return partes.join("/");
+}
+
+/**
+ * Sobe a cópia do arquivo que acabou de ir para o disco. Espera a subida, para
+ * a URL devolvida ao lojista já abrir na outra instância; mas falha do bucket
+ * só vai para o log — o arquivo está no disco e a gravação vale.
+ */
+export async function espelharNoBucket(relativo: string, bytes: Buffer): Promise<void> {
+  const rel = relativoSeguro(relativo);
+  if (!rel || !bucketLigado()) return;
+  await subirAoBucket(NO_BUCKET + rel, bytes);
+}
+
+/** O mesmo, para um arquivo que já está no disco (o tutorial montado em pedaços). Só o que está dentro de UPLOADS_ROOT. */
+export async function espelharArquivoNoBucket(caminhoNoDisco: string): Promise<void> {
+  if (!bucketLigado()) return;
+  const relativo = path.relative(/*turbopackIgnore: true*/ path.resolve(/*turbopackIgnore: true*/ UPLOADS_ROOT), path.resolve(/*turbopackIgnore: true*/ caminhoNoDisco));
+  if (!relativo || relativo.startsWith("..") || path.isAbsolute(relativo)) return;
+  try {
+    await espelharNoBucket(relativo.split(path.sep).join("/"), await readFile(/*turbopackIgnore: true*/ caminhoNoDisco));
+  } catch (e) {
+    console.warn("[storage] não consegui ler para subir ao bucket:", (e as Error)?.message);
+  }
+}
+
+// Pedido que acabou de voltar "não tem" não pergunta de novo por 30 s: robô
+// pedindo /uploads/qualquer-coisa não pode virar uma ida ao bucket por acesso.
+const NAO_TEM_MS = 30_000;
+const naoTem = new Map<string, number>();
+const trazendo = new Map<string, Promise<string | null>>();
+
+/**
+ * Traz do bucket para o disco desta instância um arquivo que não está aqui, e
+ * devolve o caminho no disco (null = não tem no bucket, bucket desligado ou
+ * fora do ar). Da segunda vez em diante o arquivo já está no disco: o bucket
+ * é consultado uma vez por arquivo por instância. Dois pedidos do mesmo
+ * arquivo ao mesmo tempo esperam a mesma descida.
+ */
+export function trazerDoBucket(relativo: string): Promise<string | null> {
+  const rel = relativoSeguro(relativo);
+  if (!rel || !bucketLigado()) return Promise.resolve(null);
+  const raiz = path.resolve(/*turbopackIgnore: true*/ UPLOADS_ROOT);
+  const destino = path.resolve(/*turbopackIgnore: true*/ raiz, rel);
+  if (!destino.startsWith(raiz + path.sep)) return Promise.resolve(null);
+
+  const agora = Date.now();
+  if ((naoTem.get(rel) ?? 0) > agora) return Promise.resolve(null);
+  const jaVindo = trazendo.get(rel);
+  if (jaVindo) return jaVindo;
+
+  const vindo = baixarDoBucketParaODisco(NO_BUCKET + rel, destino)
+    .then((ok) => {
+      if (ok) return destino;
+      if (naoTem.size > 5000) naoTem.clear();
+      naoTem.set(rel, Date.now() + NAO_TEM_MS);
+      return null;
+    })
+    .catch(() => null)
+    .finally(() => trazendo.delete(rel));
+  trazendo.set(rel, vindo);
+  return vindo;
 }

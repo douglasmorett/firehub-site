@@ -40,7 +40,8 @@ import { createHash, X509Certificate } from "node:crypto";
 import { unlink } from "node:fs/promises";
 import path from "node:path";
 import { carregarCertificado, ErroDoCertificado, type CertificadoCarregado } from "./assinatura";
-import { raizDoCofre, type ArquivoGuardado } from "./armazenamento";
+import { chaveNoBucket, raizDoCofre, type ArquivoGuardado } from "./armazenamento";
+import { apagarDoBucket, bucketLigado } from "@/lib/arquivos-no-bucket";
 import { cnpjFormatado, cnpjLimpo, raizDoCnpj, situacaoDoA1 } from "./cadastro-do-emissor";
 import type { CertificadoDaLoja } from "./config-da-loja";
 
@@ -216,10 +217,13 @@ export async function apagarDoCofre(caminho: string | null | undefined): Promise
   const raiz = path.resolve(/*turbopackIgnore: true*/ raizDoCofre());
   const alvo = path.resolve(/*turbopackIgnore: true*/ raiz, caminho);
   if (!alvo.startsWith(raiz + path.sep)) return false;
+  // A cópia do bucket vai junto (duas instâncias): senão o certificado velho
+  // ficava guardado lá para sempre, mesmo cifrado.
+  const doBucket = bucketLigado() ? await apagarDoBucket(chaveNoBucket(path.relative(raiz, alvo))) : false;
   try {
     await unlink(alvo);
     return true;
   } catch {
-    return false;
+    return doBucket;
   }
 }

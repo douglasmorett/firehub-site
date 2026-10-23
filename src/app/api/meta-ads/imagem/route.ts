@@ -33,7 +33,7 @@ import crypto from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { UPLOADS_ROOT } from "@/lib/storage";
+import { espelharNoBucket, UPLOADS_ROOT } from "@/lib/storage";
 import { prepararImagemDeAnuncio } from "@/lib/imagem-anuncio";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +65,8 @@ async function gravarCriativo(bytes: Buffer, lojaId: string): Promise<string> {
 
   await mkdir(destino, { recursive: true });
   await writeFile(path.join(destino, nome), bytes);
+  // A cópia no bucket, para o criativo abrir na outra instância (lib/storage.ts).
+  await espelharNoBucket(`marketing/${loja}/${nome}`, bytes);
 
   return `/uploads/marketing/${loja}/${nome}`;
 }

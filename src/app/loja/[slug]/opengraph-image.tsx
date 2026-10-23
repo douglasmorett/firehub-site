@@ -28,7 +28,7 @@ import { readFile } from "fs/promises";
 import path from "path";
 import sharp from "sharp";
 import { prisma } from "@/lib/prisma";
-import { LEGACY_PUBLIC_ROOT, UPLOADS_ROOT } from "@/lib/storage";
+import { LEGACY_PUBLIC_ROOT, trazerDoBucket, UPLOADS_ROOT } from "@/lib/storage";
 
 export const runtime = "nodejs";
 /** A logo muda raramente; o WhatsApp cacheia a prévia por muito mais que isso. */
@@ -79,7 +79,9 @@ async function baixar(url: string): Promise<Buffer | null> {
         /* tenta a próxima raiz */
       }
     }
-    return null;
+    // Logo enviada pela outra instância (duas atrás do balanceador): do bucket.
+    const trazido = await trazerDoBucket(relativo);
+    return trazido ? await readFile(trazido) : null;
   } catch {
     return null;
   }

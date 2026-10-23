@@ -22,7 +22,7 @@ import { readFile, stat } from "fs/promises";
 import { Readable } from "stream";
 import path from "path";
 import { NextRequest, NextResponse } from "next/server";
-import { LEGACY_PUBLIC_ROOT, UPLOADS_ROOT } from "@/lib/storage";
+import { LEGACY_PUBLIC_ROOT, trazerDoBucket, UPLOADS_ROOT } from "@/lib/storage";
 import { pedacoPedido } from "@/lib/pedaco-do-arquivo";
 
 export const runtime = "nodejs";
@@ -98,7 +98,7 @@ function servirVideo(req: NextRequest, caminho: string, tamanho: number, tipo: s
     return new Response(null, { status: 416, headers: { ...cabecalhos, "Content-Range": `bytes */${tamanho}` } });
   }
   const { ini, fim } = pedaco ?? { ini: 0, fim: tamanho - 1 };
-  const fluxo = Readable.toWeb(createReadStream(caminho, { start: ini, end: fim })) as unknown as ReadableStream;
+  const fluxo = Readable.toWeb(createReadStream(/*turbopackIgnore: true*/ caminho, { start: ini, end: fim })) as unknown as ReadableStream;
   return new Response(fluxo, {
     status: pedaco ? 206 : 200,
     headers: {
@@ -129,13 +129,25 @@ export async function GET(
   // Raiz nova (volume persistente) primeiro; public/uploads fica como legado,
   // para as imagens que foram enviadas antes desta mudança continuarem no ar.
   const extras = partes[0] === "tutoriais" ? DE_QUALQUER_SITE : {};
+  let caminho: string | null = null;
   for (const raiz of [UPLOADS_ROOT, LEGACY_PUBLIC_ROOT]) {
-    const caminho = resolverDentroDe(raiz, partes);
-    if (!caminho || !(await arquivoLegivel(caminho))) continue;
+    const alvo = resolverDentroDe(raiz, partes);
+    if (alvo && (await arquivoLegivel(alvo))) {
+      caminho = alvo;
+      break;
+    }
+  }
 
-    if (tipo.startsWith("video/")) return servirVideo(req, caminho, (await stat(caminho)).size, tipo, extras);
+  // Não está no disco desta instância: com duas atrás do balanceador, o
+  // arquivo pode ter sido enviado para a outra. Vem do bucket para o disco
+  // daqui (lib/storage.ts, trazerDoBucket) e sai como qualquer outro — com
+  // Range no vídeo. Sem o bucket configurado, é o 404 de sempre.
+  if (!caminho) caminho = await trazerDoBucket(partes.join("/"));
 
-    const conteudo = await readFile(caminho);
+  if (caminho) {
+    if (tipo.startsWith("video/")) return servirVideo(req, caminho, (await stat(/*turbopackIgnore: true*/ caminho)).size, tipo, extras);
+
+    const conteudo = await readFile(/*turbopackIgnore: true*/ caminho);
     return new NextResponse(new Uint8Array(conteudo), {
       headers: {
         ...extras,
