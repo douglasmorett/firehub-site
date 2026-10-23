@@ -23,6 +23,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chamarARota } from "@/lib/roteirizacao-automatica/executar";
+import { quemNaSessao } from "@/lib/roteirizacao-automatica/historico-da-rota";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +67,8 @@ export async function POST(req: NextRequest) {
       if (!motoboy) return NextResponse.json({ error: "Entregador não encontrado (ou inativo)." }, { status: 404 });
     }
 
-    const r = await chamarARota({ lojaId, rotaId: rota.id, motoboyId });
+    // `quem`: o "Chamar de novo"/"Trocar entregador" vai para o histórico oculto da rota.
+    const r = await chamarARota({ lojaId, rotaId: rota.id, motoboyId, quem: quemNaSessao(session.user as any) });
     if (!r.ok) {
       // Entre a leitura e a gravação a rota saiu (puxada pelo QR) ou outro
       // ciclo a chamou: nada foi gravado.

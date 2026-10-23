@@ -128,6 +128,10 @@ const INSTRUCOES = [
   // ou tirou o pedido dela). O cron deixa de agrupá-lo até o "voltar" da
   // Roteirização — sem isto, 20 s depois do Desfazer tudo se juntava de novo.
   `ALTER TABLE "CustomerOrder" ADD COLUMN IF NOT EXISTS "semRotaAutomaticaEm" TIMESTAMP(3)`,
+  // O HISTÓRICO OCULTO da rota (lib/roteirizacao-automatica/historico-da-rota.ts,
+  // 22/10/2026): quem pôs/tirou cada pedido, quando e por quê. Fica FORA do
+  // schema.prisma — só SQL cru —, então a ordem coluna→campo nem se aplica.
+  `ALTER TABLE "RouteSchedule" ADD COLUMN IF NOT EXISTS "historico" JSONB`,
 ];
 
 /** `tabela.coluna` — a conferência é por par, porque agora são duas tabelas. */
@@ -165,6 +169,7 @@ const ESPERADAS = [
   "RouteSchedule.chamadaMotoboyId",
   "Motoboy.naLojaDesde",
   "CustomerOrder.semRotaAutomaticaEm",
+  "RouteSchedule.historico",
 ];
 
 /**
@@ -250,7 +255,8 @@ export async function garantirColunasDePreco(): Promise<void> {
             'storeBannerVideo', 'reviewsMinStars', 'availableHours',
             'agendamentoConfig', 'agendado',
             'painelDeSenhas', 'numeracaoAleatoria',
-            'origem', 'chamadaEm', 'chamadaMotoboyId', 'naLojaDesde', 'semRotaAutomaticaEm'
+            'origem', 'chamadaEm', 'chamadaMotoboyId', 'naLojaDesde', 'semRotaAutomaticaEm',
+            'historico'
           )
       `;
       const existentes = new Set(rows.map((r) => `${r.tabela}.${r.coluna}`));

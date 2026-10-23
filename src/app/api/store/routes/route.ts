@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { criarRotaDaLoja, pedePrioridadeNaRota } from "@/lib/rotas-da-loja";
+import { lerHistoricoDaRota, quemNaSessao, registrarNaRota } from "@/lib/roteirizacao-automatica/historico-da-rota";
 
 export const dynamic = "force-dynamic";
 
@@ -182,6 +183,14 @@ export async function POST(req: NextRequest) {
       origem: "MANUAL",
     });
 
+    // O histórico oculto da rota (historico-da-rota.ts): quem montou e com quais pedidos.
+    const numerosDaNova = await prisma.customerOrder.findMany({ where: { routeId: newRoute.id }, select: { dailyOrderNumber: true } });
+    await registrarNaRota(newRoute.id, [{
+      quem: quemNaSessao(session.user as any),
+      acao: "criou",
+      motivo: `${newRoute.routeNumber} à mão: ${numerosDaNova.map((o) => `#${o.dailyOrderNumber ?? "?"}`).join(", ")}`,
+    }]);
+
     // A rota volta com o que a roteirização mostra no card (o mesmo recorte
     // do GET). Voltava com `orders: true` — todas as colunas de cada pedido,
     // as de JSON inclusive — para a tela usar só o id.
@@ -290,7 +299,17 @@ export async function PATCH(req: NextRequest) {
         motoboyId: motoboyId === null ? null : (motoboyId || undefined),
         color: color || undefined,
       },
+      include: { motoboy: { select: { name: true } } },
     });
+    // Quem fez, para o histórico oculto da rota (historico-da-rota.ts).
+    const quem = quemNaSessao(session.user as any);
+    if (motoboyId !== undefined) {
+      await registrarNaRota(routeId, [{
+        quem,
+        acao: "trocou o entregador",
+        motivo: updatedRoute.motoboy?.name ? `para ${updatedRoute.motoboy.name}` : "tirou o entregador da rota",
+      }]);
+    }
 
     // ── TROCAR O ENTREGADOR DA ROTA ───────────────────────────────────
     //
@@ -349,7 +368,7 @@ export async function PATCH(req: NextRequest) {
       const ficam = idsDaEdicao;
       const { STATUS_CANCELADOS, STATUS_FINALIZADOS } = await import("@/lib/status-pedido");
       const doMotoboyDaRota = motoboyId || updatedRoute.motoboyId || null;
-      const jaNaRota = await prisma.customerOrder.findMany({ where: { routeId }, select: { id: true } });
+      const jaNaRota = await prisma.customerOrder.findMany({ where: { routeId }, select: { id: true, dailyOrderNumber: true } });
       const novos = ficam.filter((id) => !jaNaRota.some((o) => o.id === id));
 
       // Quem sai da rota sai também do APP do entregador — a mesma regra da
@@ -413,6 +432,17 @@ export async function PATCH(req: NextRequest) {
       } catch (e: any) {
         console.warn("[Rotas] routeSequence não gravada (coluna ausente?):", e?.message?.slice(0, 120));
       }
+
+      // O ✏️ Editar no histórico oculto: quem incluiu e quem tirou cada pedido.
+      const tirados = jaNaRota.filter((o) => !ficam.includes(o.id));
+      const automatica = (updatedRoute as any).origem === "AUTO";
+      await registrarNaRota(routeId, [
+        ...entraram.map((o) => ({ quem, acao: "incluiu" as const, pedido: o.dailyOrderNumber, motivo: "pelo ✏️ Editar" })),
+        ...tirados.map((o) => ({
+          quem, acao: "tirou" as const, pedido: o.dailyOrderNumber,
+          motivo: automatica ? "pelo ✏️ Editar · fica fora da automática até o voltar" : "pelo ✏️ Editar",
+        })),
+      ]);
 
       // Rota com entregador: os que entraram aparecem no app dele agora.
       if (doMotoboyDaRota && entraram.length > 0) {
@@ -536,6 +566,14 @@ export async function DELETE(req: NextRequest) {
       where: { routeId },
       data: { routeId: null, isRoutePriority: false },
     });
+
+    // A linha vai sumir com o histórico oculto dela (historico-da-rota.ts):
+    // o que ele guardava e quem desfez ficam no log do servidor.
+    const historico = await lerHistoricoDaRota(routeId);
+    console.log(
+      `[Rotas] ${rota.routeNumber} (${routeId}, ${rota.origem || "MANUAL"}) desfeita na lixeira por ${quemNaSessao(session.user as any)}` +
+        (historico.length > 0 ? ` · histórico: ${JSON.stringify(historico)}` : ""),
+    );
 
     await prisma.routeSchedule.delete({
       where: { id: routeId },

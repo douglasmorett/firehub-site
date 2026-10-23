@@ -35,6 +35,12 @@
  * guloso 34 → 33 → 35); e "uma rota por vez" trava só enquanto a rota aberta
  * tem vaga.
  *
+ * Histórico oculto da rota (22/10/2026, 22h20 — o #47 na Rota #15 da Hakim):
+ * o planejador diz POR QUÊ cada pedido entrou ("#35 entrou: no caminho do
+ * #33 — desvio 0,8 km pela rua"; a semente "abriu a rota"), e o
+ * `registrarNaRota` (historico-da-rota.ts) acrescenta com o teto de 60
+ * entradas e nunca lança — com um Prisma falso que faz o papel do SQL.
+ *
  *   npx tsx scripts/teste-roteirizacao-automatica.ts
  *
  * Sem banco e sem rede. O prazo.ts importa lib/painel-do-dono (que importa o
@@ -420,8 +426,8 @@ async function main() {
   {
     // Duas entradas na mesma rota no mesmo ciclo: uma sequência só, com a última ordem.
     const acoes: Acao[] = [
-      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 1, ordem: ["p02", "p01"] },
-      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p03", posicao: 2, ordem: ["p02", "p03", "p01"] },
+      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 1, ordem: ["p02", "p01"], porque: "teste" },
+      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p03", posicao: 2, ordem: ["p02", "p03", "p01"], porque: "teste" },
     ];
     const g = gravacoesDasAcoes(acoes, [{ id: "R1", pedidoIds: ["p01"] }]);
     const seqs = g.passos.filter((p) => p.tipo === "sequencia") as Extract<Passo, { tipo: "sequencia" }>[];
@@ -431,7 +437,7 @@ async function main() {
   {
     // Rota que não está entre as AUTO abertas lidas (a manual, a que saiu): não se mexe.
     const acoes: Acao[] = [
-      { tipo: "acrescentar", rotaId: "MANUAL1", pedidoId: "p02", posicao: 1, ordem: ["p02"] },
+      { tipo: "acrescentar", rotaId: "MANUAL1", pedidoId: "p02", posicao: 1, ordem: ["p02"], porque: "teste" },
       { tipo: "tirar-da-rota", rotaId: "MANUAL1", pedidoId: "p01", motivo: "cancelado" },
       { tipo: "apagar-rota", rotaId: "MANUAL1" },
       { tipo: "chamar", rotaId: "MANUAL1", motoboyId: null },
@@ -468,8 +474,8 @@ async function main() {
   {
     // Pedido que entrou numa rota aberta não entra também numa rota nova; tirar quem não está na rota é ignorado.
     const acoes: Acao[] = [
-      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 2, ordem: ["p01", "p02"] },
-      { tipo: "criar-rota", pedidos: ["p02", "p03"], motivo: "teste" },
+      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 2, ordem: ["p01", "p02"], porque: "teste" },
+      { tipo: "criar-rota", pedidos: ["p02", "p03"], motivo: "teste", porques: {} },
       { tipo: "tirar-da-rota", rotaId: "R1", pedidoId: "p07", motivo: "cancelado" },
     ];
     const g = gravacoesDasAcoes(acoes, [{ id: "R1", pedidoIds: ["p01"] }]);
@@ -480,7 +486,7 @@ async function main() {
   {
     // Saída depois de entrada na mesma rota: a sequência não leva quem saiu.
     const acoes: Acao[] = [
-      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 1, ordem: ["p02", "p01"] },
+      { tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 1, ordem: ["p02", "p01"], porque: "teste" },
       { tipo: "tirar-da-rota", rotaId: "R1", pedidoId: "p01", motivo: "cancelado" },
     ];
     const g = gravacoesDasAcoes(acoes, [{ id: "R1", pedidoIds: ["p01"] }]);
@@ -499,7 +505,7 @@ async function main() {
     const g2 = gravacoesDasAcoes(plano([pedido(6, em(2.1), 22)], [aberta]).acoes, lidas([aberta]));
     conferir("… rota aberta que cresceu: sem aviso", tipos(g2.passos) === "entrar-na-rota,sequencia", g2);
     const g3 = gravacoesDasAcoes(
-      [{ tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 1, ordem: ["p02", "p01"], rotaChamada: true }, { tipo: "fechar-rota", rotaId: "R1" }],
+      [{ tipo: "acrescentar", rotaId: "R1", pedidoId: "p02", posicao: 1, ordem: ["p02", "p01"], rotaChamada: true, porque: "teste" }, { tipo: "fechar-rota", rotaId: "R1" }],
       [{ id: "R1", pedidoIds: ["p01"] }],
     );
     conferir("… rota que fechou no mesmo ciclo: nada de aviso", !g3.passos.some((p) => p.tipo === "avisar-mudanca"), g3);
@@ -916,6 +922,93 @@ async function main() {
     conferir("… longe (6 km do outro lado), prazo fora de 2 × janela e corte de D4 ficam de fora",
       !txt.some((t) => t.includes("p04") && !t.startsWith(LOJA_NA_TABELA)) && !txt.some((t) => t.includes("p05") && !t.startsWith(LOJA_NA_TABELA)) && !txt.some((t) => t.includes("p06")), txt);
   }
+  // ── O porquê de cada entrada e o histórico oculto (22/10/2026, 22h20) ────
+  console.log("\n== Histórico da rota: o porquê e o registro ==");
+  {
+    // O caso 33/34/35 da Hakim, coordenadas reais: o #35 entra "no caminho
+    // do #33" (não do #34, a semente).
+    const HAKIM: Ponto = { lat: -22.5187175, lng: -41.9418978 };
+    const p33 = pedido(33, { lat: -22.5229604, lng: -41.9817868 }, 25);
+    const p34 = pedido(34, { lat: -22.510523, lng: -41.953844 }, 20);
+    const p35 = pedido(35, { lat: -22.530717, lng: -41.95746 }, 28);
+    const reta = acrescimos(planejar({ loja: HAKIM, config: CFG, pedidos: [p35], rotasAbertas: [rota("R11", [p34, p33])], motoboys: [], agora: AGORA }).acoes);
+    conferir("porquê em linha reta: \"#35 entrou: no caminho do #33 — desvio X km em linha reta\"",
+      /^#35 entrou: no caminho do #33 — desvio \d+,\d km em linha reta$/.test(reta[0]?.porque ?? ""), reta[0]?.porque);
+    // Pela rua: 35→33 2,5 km (não é "perto"), loja→35 2,6, loja→33 4,3 → desvio 0,8.
+    const rua = tabela({
+      [`${LOJA_NA_TABELA}|p33`]: 4.3, [`${LOJA_NA_TABELA}|p34`]: 1.8, [`${LOJA_NA_TABELA}|p35`]: 2.6,
+      "p33|p35": 2.5, "p34|p35": 2.8,
+    });
+    const pelaRua = acrescimos(planejar({ loja: HAKIM, config: CFG, pedidos: [p35], rotasAbertas: [rota("R11", [p34, p33])], motoboys: [], agora: AGORA, pelaRua: rua }).acoes);
+    conferir("porquê pela rua: \"#35 entrou: no caminho do #33 — desvio 0,8 km pela rua\"",
+      pelaRua[0]?.porque === "#35 entrou: no caminho do #33 — desvio 0,8 km pela rua", pelaRua[0]?.porque);
+    // Perto ganha do "no caminho" no texto quando vale: 35→33 a 1,2 km de rua.
+    const perto = acrescimos(planejar({
+      loja: HAKIM, config: CFG, pedidos: [p35], rotasAbertas: [rota("R11", [p34, p33])], motoboys: [], agora: AGORA,
+      pelaRua: tabela({ [`${LOJA_NA_TABELA}|p33`]: 4.3, [`${LOJA_NA_TABELA}|p34`]: 1.8, [`${LOJA_NA_TABELA}|p35`]: 2.6, "p33|p35": 1.2, "p34|p35": 2.8 }),
+    }).acoes);
+    conferir("porquê \"perto\": \"#35 entrou: perto do #33 — 1,2 km pela rua\"", perto[0]?.porque === "#35 entrou: perto do #33 — 1,2 km pela rua", perto[0]?.porque);
+  }
+  {
+    // Rota nova: a semente "abriu a rota", a companhia "entrou" com a distância.
+    const p1 = pedido(1, em(3), 20), p2 = pedido(2, em(3, 1.5), 25);
+    const criada = (r: ReturnType<typeof plano>) => r.acoes.find((a): a is Extract<Acao, { tipo: "criar-rota" }> => a.tipo === "criar-rota");
+    const reta = criada(plano([p1, p2]));
+    conferir("criar-rota: a semente \"#1 abriu a rota (menor prazo)\"", reta?.porques.p01 === "#1 abriu a rota (menor prazo)", reta?.porques);
+    conferir("… e \"#2 entrou: perto do #1 — 1,5 km em linha reta\"", reta?.porques.p02 === "#2 entrou: perto do #1 — 1,5 km em linha reta", reta?.porques);
+    const rua = criada(plano([p1, p2], [], [], CFG, tabela({ "p01|p02": 1.9 })));
+    conferir("… pela rua: \"#2 entrou: perto do #1 — 1,9 km pela rua\"", rua?.porques.p02 === "#2 entrou: perto do #1 — 1,9 km pela rua", rua?.porques);
+    const sozinho = criada(plano([pedido(3, em(2), 20, pronto(1))]));
+    conferir("… sozinho e pronto: \"#3 abriu a rota sozinho e pronto (menor prazo)\"", sozinho?.porques.p03 === "#3 abriu a rota sozinho e pronto (menor prazo)", sozinho?.porques);
+    const priorizado = criada(plano([pedido(4, em(2), 30, { prioridadeManual: true }), pedido(5, em(2.2), 25)], [], [], { ...CFG, janelaDePrazoMin: 30 }));
+    conferir("… priorizado à mão: \"(prioridade pedida pela loja)\"", priorizado?.porques.p04 === "#4 abriu a rota (prioridade pedida pela loja)", priorizado?.porques);
+  }
+  {
+    const { registrarNaRota, quemNaSessao, TETO_DO_HISTORICO, QUEM_AUTOMATICA } = await import("../src/lib/roteirizacao-automatica/historico-da-rota");
+    // Prisma falso: guarda o histórico por rota e faz o que o UPDATE faz —
+    // anexa as novas ao fim e fica com as últimas `teto` entradas.
+    const linhas = new Map<string, any[]>();
+    const sqls: string[] = [];
+    let quebrar = false;
+    const banco = {
+      $executeRaw: (async (strings: TemplateStringsArray, ...valores: any[]) => {
+        if (quebrar) throw new Error('column "historico" does not exist');
+        sqls.push(strings.join("?"));
+        const [novas, , teto, rotaId] = valores;
+        if (!linhas.has(rotaId)) return 0;
+        const tudo = [...(linhas.get(rotaId) ?? []), ...JSON.parse(novas)];
+        linhas.set(rotaId, tudo.slice(Math.max(0, tudo.length - teto)));
+        return 1;
+      }) as any,
+    };
+    linhas.set("R15", Array.from({ length: 58 }, (_, i) => ({ em: "2026-10-22T22:00:00.000Z", quem: QUEM_AUTOMATICA, acao: "entrou", pedido: i + 1 })));
+    const gravou = await registrarNaRota("R15", [
+      { quem: QUEM_AUTOMATICA, acao: "entrou", pedido: 46, motivo: "#46 abriu a rota (menor prazo)" },
+      { quem: QUEM_AUTOMATICA, acao: "entrou", pedido: 48, motivo: "#48 entrou: perto do #46 — 0,9 km pela rua" },
+      { quem: "Maria (maria@hakim.com)", acao: "incluiu", pedido: 47, motivo: "pelo ✏️ Editar" },
+      { quem: "motoboy Maicon", acao: "despachou", motivo: "x".repeat(500) },
+      { quem: QUEM_AUTOMATICA, acao: "fechou" },
+    ], banco);
+    const h = linhas.get("R15") ?? [];
+    conferir("registrar: anexa ao fim e corta as mais antigas no teto (58 + 5 → 60)", gravou && h.length === TETO_DO_HISTORICO && h[0].pedido === 4 && h[59].acao === "fechou", { n: h.length, primeiro: h[0], ultimo: h[59] });
+    conferir("… a ordem fica: o #47 do ✏️ Editar com quem fez", h[57]?.pedido === 47 && h[57]?.quem === "Maria (maria@hakim.com)" && h[57]?.acao === "incluiu", h[57]);
+    conferir("… cada entrada ganha a hora (ISO) e o motivo longo é cortado", typeof h[59]?.em === "string" && !Number.isNaN(Date.parse(h[59].em)) && h[58]?.motivo.length === 240 && !("motivo" in h[59]), h.slice(58));
+    conferir("… num UPDATE só, anexando ao que já havia", sqls.length === 1 && /COALESCE\("historico", '\[\]'::jsonb\) \|\|/.test(sqls[0]) && /WHERE "id" = \?/.test(sqls[0]), sqls);
+    quebrar = true;
+    let lancou = false;
+    let r: boolean | undefined;
+    const avisoOriginal = console.warn;
+    console.warn = () => {};
+    try { r = await registrarNaRota("R15", [{ quem: QUEM_AUTOMATICA, acao: "chamou" }], banco); } catch { lancou = true; } finally { console.warn = avisoOriginal; }
+    conferir("… coluna ausente (ou banco fora): não lança, devolve false", !lancou && r === false);
+    quebrar = false;
+    conferir("… sem rota ou sem entrada: nem pergunta ao banco", (await registrarNaRota(null, [{ quem: "x", acao: "chamou" }], banco)) === false && (await registrarNaRota("R15", [], banco)) === false && sqls.length === 1);
+    conferir("quem na sessão: nome (e-mail); suporte entrando como a loja não vira o dono",
+      quemNaSessao({ name: "Maria", email: "maria@hakim.com" }) === "Maria (maria@hakim.com)"
+        && quemNaSessao({ email: "loja@hakim.com" }) === "loja@hakim.com"
+        && quemNaSessao({ name: "Hakim Centro", email: "loja@hakim.com", impersonatedBy: "adm1" }) === "Suporte FireHub (como Hakim Centro (loja@hakim.com))");
+  }
+
   console.log(`\n${ok} ok, ${falhou} falharam`);
   process.exitCode = falhou ? 1 : 0;
 }

@@ -15,6 +15,7 @@ import { podeMarcarEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-ca
 import { despacharRota, ofereceARota, outrosDaRota, podePuxarARota } from "@/lib/despacho-da-rota";
 import { lerRoteirizacaoAutomatica, type QuemPuxa } from "@/lib/roteirizacao-automatica/config";
 import { avisoDaRotaFoiComOutro, quemPerdeAChamada } from "@/lib/roteirizacao-automatica/chamada";
+import { registrarNaRota } from "@/lib/roteirizacao-automatica/historico-da-rota";
 
 export async function GET(req: NextRequest) {
   try {
@@ -474,6 +475,10 @@ export async function POST(req: NextRequest) {
     // com o resto, pelo despacho da rota (um caminho só de efeitos).
     if (rota && querARota) return puxarARota(rota, lojaId, mb, alvo.id, numero);
 
+    // Puxou um pedido só de uma rota: vai para o histórico oculto dela
+    // (historico-da-rota.ts). O "puxar todos" anota no `puxarARota`.
+    if (alvo.routeId) await registrarNaRota(alvo.routeId, [{ quem: `motoboy ${mb.name}`, acao: "puxou", pedido: numero, motivo: "só este, pelo QR" }]);
+
     // ── PUXOU = SAIU PARA ENTREGA ───────────────────────────────────────────
     //
     // O entregador escaneia a comanda com o saco na mão, na porta da loja. Isso
@@ -777,6 +782,9 @@ async function puxarARota(rota: RotaAutomatica, lojaId: string, mb: MotoboyDaSes
     agendar: after,
   });
   if (!d.ok) console.warn(`[Motoboy Puxou a Rota] ${rota.id}: despacho recusado (${d.erro})`);
+  else if (d.mudou) {
+    await registrarNaRota(rota.id, [{ quem: `motoboy ${mb.name}`, acao: "despachou", pedido: numero, motivo: "puxou a rota toda pelo QR" }]);
+  }
 
   const depois = await pedidosDaRotaParaPuxar(rota.id, mb.franchiseeId);
   const meus = depois.filter((p) => p.motoboyId === mb.id && p.id !== alvoId && !(STATUS_CANCELADOS as readonly string[]).includes(p.status));

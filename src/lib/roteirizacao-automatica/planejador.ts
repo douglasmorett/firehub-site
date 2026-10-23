@@ -134,13 +134,20 @@ export type RotaAberta = {
 export type MotoboyLivre = { id: string; nome: string; naLojaDesde: Date | null; gpsFresco: boolean };
 
 export type Acao =
-  | { tipo: "criar-rota"; pedidos: string[] /* na ordem das paradas */; motivo: string }
+  /**
+   * `porques`: por id de pedido, por que ele está na rota nova — a semente
+   * ("#46 abriu a rota (menor prazo)") e cada companhia ("#47 entrou: perto do
+   * #48 — 1,2 km pela rua"). Vai para o histórico da rota (historico-da-rota.ts).
+   */
+  | { tipo: "criar-rota"; pedidos: string[] /* na ordem das paradas */; motivo: string; porques: Record<string, string> }
   /**
    * `ordem` = a rota inteira na nova ordem das paradas (quem grava regrava a
    * sequência de todos). `rotaChamada`: a rota já estava chamada e ninguém
    * tinha puxado (D8 revisto, 22/10) — quem grava avisa o chamado que ela mudou.
+   * `porque`: a regra que o fez entrar, com a distância ("#35 entrou: no
+   * caminho do #33 — desvio 0,8 km pela rua"), para o histórico da rota.
    */
-  | { tipo: "acrescentar"; rotaId: string; pedidoId: string; posicao: number; ordem: string[]; rotaChamada?: true }
+  | { tipo: "acrescentar"; rotaId: string; pedidoId: string; posicao: number; ordem: string[]; rotaChamada?: true; porque: string }
   | { tipo: "tirar-da-rota"; rotaId: string; pedidoId: string; motivo: "cancelado" | "espera-estourada" }
   | { tipo: "chamar"; rotaId: string; motoboyId: string | null /* null = avisar todos os livres */ }
   | { tipo: "apagar-rota"; rotaId: string }
@@ -288,9 +295,31 @@ export function ordenarParadas(loja: Ponto, pedidos: { id: string; ponto: Ponto 
   return [...ordem, ...semPonto.map((p) => p.id)];
 }
 
+const rotulo = (p: { id: string; numero: number | null }) => `#${p.numero ?? p.id.slice(-4)}`;
+
+/**
+ * POR QUE o candidato coube: a parada que deu a melhor nota, se foi "perto"
+ * dela (km entre os dois) ou "no caminho" dela (km de desvio), e se a medida
+ * foi pela rua ou em linha reta. Douglas, 22/10/2026 22h20: o #47 apareceu na
+ * Rota #15 da Hakim e não havia como saber se foi a regra ou alguém pelo
+ * ✏️ Editar — daqui pra frente o histórico da rota guarda isto.
+ */
+export type PorqueDoEncaixe = { paradaId: string; parada: string; tipo: "perto" | "no caminho"; km: number; fonte: "rua" | "reta" };
+
 type Encaixe =
-  | { ok: true; nota: number }
+  | { ok: true; nota: number; porque: PorqueDoEncaixe }
   | { ok: false; motivo: "fora-do-raio" | "prazo-incompativel" };
+
+/** "1,2" — km com uma casa, vírgula decimal (desvio de rua pode dar -0,1: vira 0). */
+const km1 = (km: number) => Math.max(0, km).toFixed(1).replace(".", ",");
+
+/** "perto do #48 — 1,2 km pela rua" / "no caminho do #33 — desvio 0,8 km em linha reta". */
+export function textoDoPorque(p: PorqueDoEncaixe): string {
+  const regua = p.fonte === "rua" ? "pela rua" : "em linha reta";
+  return p.tipo === "perto"
+    ? `perto do ${p.parada} — ${km1(p.km)} km ${regua}`
+    : `no caminho do ${p.parada} — desvio ${km1(p.km)} km ${regua}`;
+}
 
 /** Km de rua da tabela, nos dois sentidos; null = sem medida. */
 function kmDaRua(rua: KmPelaRua | undefined, a: string, b: string): number | null {
@@ -310,8 +339,12 @@ const desvioMaximo = (raio: number) => raio;
 /**
  * O candidato cabe junto DESTA parada? Perto (a até o raio, pela rua quando
  * há medida) ou no caminho dela. A nota é a do Auto-Agrupar; null = não cabe.
+ * O porquê diz "perto" quando o perto vale (é o mais fácil de conferir no
+ * mapa), senão "no caminho" — cada um com a régua que decidiu.
  */
-function encaixeNaParada(loja: Ponto, parada: PedidoParaDespacho, cand: PedidoParaDespacho, raio: number, rua?: KmPelaRua): number | null {
+function encaixeNaParada(
+  loja: Ponto, parada: PedidoParaDespacho, cand: PedidoParaDespacho, raio: number, rua?: KmPelaRua,
+): { nota: number; porque: PorqueDoEncaixe } | null {
   if (!parada.ponto || !cand.ponto) return null;
   const ruaLC = kmDaRua(rua, LOJA_NA_TABELA, cand.id);
   const ruaCP = kmDaRua(rua, cand.id, parada.id);
@@ -330,7 +363,10 @@ function encaixeNaParada(loja: Ponto, parada: PedidoParaDespacho, cand: PedidoPa
   const desvio = lc + cp - lp;
   const noCaminho = (tudoPelaRua || ruaCP == null) && desvio <= desvioMaximo(raio) && lc <= lp + 1;
   if (!perto && !noCaminho) return null;
-  return desvio * 0.6 + (ruaCP ?? cp) * 0.4;
+  const porque: PorqueDoEncaixe = perto
+    ? { paradaId: parada.id, parada: rotulo(parada), tipo: "perto", km: ruaCP ?? retaCP, fonte: ruaCP != null ? "rua" : "reta" }
+    : { paradaId: parada.id, parada: rotulo(parada), tipo: "no caminho", km: desvio, fonte: tudoPelaRua ? "rua" : "reta" };
+  return { nota: desvio * 0.6 + (ruaCP ?? cp) * 0.4, porque };
 }
 
 /**
@@ -346,11 +382,11 @@ export function encaixeNaRota(
   config: RoteirizacaoAutomaticaConfig,
   rua?: KmPelaRua,
 ): Encaixe {
-  let melhor: number | null = null;
+  let melhor: { nota: number; porque: PorqueDoEncaixe } | null = null;
   for (const parada of paradas) {
     if (parada.id === cand.id) continue;
-    const nota = encaixeNaParada(loja, parada, cand, config.raioDoGrupoKm, rua);
-    if (nota != null && (melhor == null || nota < melhor)) melhor = nota;
+    const e = encaixeNaParada(loja, parada, cand, config.raioDoGrupoKm, rua);
+    if (e && (melhor == null || e.nota < melhor.nota)) melhor = e;
   }
   if (melhor == null) return { ok: false, motivo: "fora-do-raio" };
   // A janela vale para os dois lados. Com a semente sendo o mais urgente é o
@@ -360,7 +396,7 @@ export function encaixeNaRota(
   if (Math.abs(cand.prazo.getTime() - ancora.prazo.getTime()) > config.janelaDePrazoMin * 60_000) {
     return { ok: false, motivo: "prazo-incompativel" };
   }
-  return { ok: true, nota: melhor };
+  return { ok: true, nota: melhor.nota, porque: melhor.porque };
 }
 
 /** O candidato cabe na rota desta semente sozinha? (`encaixeNaRota` com uma parada só) */
@@ -368,19 +404,19 @@ export function encaixe(loja: Ponto, sem: PedidoParaDespacho, cand: PedidoParaDe
   return encaixeNaRota(loja, sem, [sem], cand, config, rua);
 }
 
-/** Os candidatos que cabem na rota, do melhor para o pior (nota, depois prazo, depois id). */
+/** Os candidatos que cabem na rota, do melhor para o pior (nota, depois prazo, depois id), com o porquê de cada um. */
 function candidatosQueCabem(
   loja: Ponto, ancora: PedidoParaDespacho, paradas: PedidoParaDespacho[], lista: PedidoParaDespacho[],
   config: RoteirizacaoAutomaticaConfig, rua?: KmPelaRua,
 ) {
   const naRota = new Set(paradas.map((p) => p.id));
-  const bons: { p: PedidoParaDespacho; nota: number }[] = [];
+  const bons: { p: PedidoParaDespacho; nota: number; porque: PorqueDoEncaixe }[] = [];
   for (const p of lista) {
     if (naRota.has(p.id)) continue;
     const e = encaixeNaRota(loja, ancora, paradas, p, config, rua);
-    if (e.ok) bons.push({ p, nota: e.nota });
+    if (e.ok) bons.push({ p, nota: e.nota, porque: e.porque });
   }
-  return bons.sort((a, b) => a.nota - b.nota || a.p.prazo.getTime() - b.p.prazo.getTime() || porId(a.p, b.p)).map((b) => b.p);
+  return bons.sort((a, b) => a.nota - b.nota || a.p.prazo.getTime() - b.p.prazo.getTime() || porId(a.p, b.p));
 }
 
 /**
@@ -439,8 +475,6 @@ export function paresParaMedirPelaRua(entrada: Pick<EntradaDoPlanejador, "loja" 
   pares.sort((x, y) => x.reta - y.reta || (x.par.join() < y.par.join() ? -1 : 1));
   return [...daLoja, ...pares.map((p) => p.par)];
 }
-
-const rotulo = (p: PedidoParaDespacho) => `#${p.numero ?? p.id.slice(-4)}`;
 
 export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descartados: Descartado[] } {
   const { loja, config, agora, pelaRua: rua } = entrada;
@@ -543,14 +577,16 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
     while (membros.length < max) {
       // Qualquer parada da rota serve de vizinha; a janela é a da semente.
       const sem = semente(membros);
-      const [melhor] = candidatosQueCabem(loja, sem, membros, bolo.filter((p) => !naRota.has(p.id) && (!chamada || p.pronto)), config, rua);
-      if (!melhor) break;
+      const [bom] = candidatosQueCabem(loja, sem, membros, bolo.filter((p) => !naRota.has(p.id) && (!chamada || p.pronto)), config, rua);
+      if (!bom) break;
+      const melhor = bom.p;
       naRota.add(melhor.id);
       membros.push(melhor);
       const ordem = ordenarParadas(loja, membros);
       acoes.push({
         tipo: "acrescentar", rotaId: v.rota.id, pedidoId: melhor.id, posicao: ordem.indexOf(melhor.id) + 1, ordem,
         ...(chamada ? { rotaChamada: true as const } : {}),
+        porque: `${rotulo(melhor)} entrou: ${textoDoPorque(bom.porque)}`,
       });
     }
     paradasDaRota.set(v.rota.id, membros.length);
@@ -572,10 +608,12 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
     // serve de parada para o próximo (o #35 no caminho do #33, não do #34).
     // A janela de prazo fica ancorada na semente.
     const grupo = [sem];
+    const porqueDe = new Map<string, PorqueDoEncaixe>();
     while (grupo.length < max) {
-      const [melhor] = candidatosQueCabem(loja, sem, grupo, livres, config, rua);
-      if (!melhor) break;
-      grupo.push(melhor);
+      const [bom] = candidatosQueCabem(loja, sem, grupo, livres, config, rua);
+      if (!bom) break;
+      grupo.push(bom.p);
+      porqueDe.set(bom.p.id, bom.porque);
     }
     const companhia = grupo.slice(1);
     // Sozinho e ainda na cozinha: espera companhia (ou ficar pronto).
@@ -586,7 +624,11 @@ export function planejar(entrada: EntradaDoPlanejador): { acoes: Acao[]; descart
     const motivo = companhia.length > 0
       ? `${rotulo(sem)} (${porque}) + ${companhia.map(rotulo).join(", ")}`
       : `${rotulo(sem)} sozinho e pronto (${porque})`;
-    acoes.push({ tipo: "criar-rota", pedidos: ordem, motivo });
+    const porques: Record<string, string> = {
+      [sem.id]: companhia.length > 0 ? `${rotulo(sem)} abriu a rota (${porque})` : `${rotulo(sem)} abriu a rota sozinho e pronto (${porque})`,
+    };
+    for (const p of companhia) porques[p.id] = `${rotulo(p)} entrou: ${textoDoPorque(porqueDe.get(p.id) as PorqueDoEncaixe)}`;
+    acoes.push({ tipo: "criar-rota", pedidos: ordem, motivo, porques });
     grupos.push({ semente: sem, membros: grupo, cheio: grupo.length >= max });
     criou = true;
   }

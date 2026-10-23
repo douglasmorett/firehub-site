@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { despacharRota } from "@/lib/despacho-da-rota";
+import { quemNaSessao, registrarNaRota } from "@/lib/roteirizacao-automatica/historico-da-rota";
 
 export const dynamic = "force-dynamic";
 
@@ -70,6 +71,9 @@ export async function POST(req: NextRequest) {
         message: `A rota ${r.rota.routeNumber} já tinha saído com o motoboy ${r.motoboy.name}.`,
       });
     }
+
+    // O histórico oculto da rota (historico-da-rota.ts): quem despachou e com quem. Nunca lança.
+    await registrarNaRota(r.rota.id, [{ quem: quemNaSessao(session.user as any), acao: "despachou", motivo: `com ${r.motoboy.name} · pela tela da loja` }]);
 
     if (chamada?.origem === "AUTO" && chamada.chamadaEm && !chamada.chamadaMotoboyId) {
       const quemLevou = { id: r.motoboy.id, nome: r.motoboy.name };

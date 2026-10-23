@@ -74,6 +74,7 @@ import { rotaEntre } from "@/lib/distancia-por-rota";
 import { distanciaKm, type Ponto } from "@/lib/ponto-do-pedido";
 import { ordenarParadasPorMedida, TETO_DA_ORDEM_POR_RUA_MS, type OrdemDasParadas } from "./ordem-por-rua";
 import { lerRoteirizacaoAutomatica, type RoteirizacaoAutomaticaConfig } from "./config";
+import { registrarNaRota, QUEM_AUTOMATICA, type EntradaDoHistorico } from "./historico-da-rota";
 import { prazoDoPedido, agendadoParaDepois } from "./prazo";
 import {
   planejar,
@@ -522,6 +523,17 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
   // As rotas chamadas em que algum pedido entrou DE FATO (o aviso de que mudou).
   const mudaramDeFato = new Set<string>();
 
+  // O HISTÓRICO OCULTO da rota (historico-da-rota.ts): o porquê de cada
+  // entrada vem do planejador; só é anotado o que a gravação aplicou DE
+  // FATO, logo depois dela — a ordem das entradas é a ordem dos passos.
+  const porqueDaEntrada = new Map<string, string>();
+  for (const a of plano.acoes) {
+    if (a.tipo === "acrescentar") porqueDaEntrada.set(`${a.rotaId}|${a.pedidoId}`, a.porque);
+    if (a.tipo === "criar-rota") for (const [id, texto] of Object.entries(a.porques)) porqueDaEntrada.set(`nova|${id}`, texto);
+  }
+  const anotar = (rotaId: string, entradas: Omit<EntradaDoHistorico, "em" | "quem">[]) =>
+    registrarNaRota(rotaId, entradas.map((e) => ({ ...e, quem: QUEM_AUTOMATICA })));
+
   const aplicar = async (passo: Passo) => {
     switch (passo.tipo) {
       case "criar-rota": {
@@ -547,6 +559,10 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
         const legivel = acoes.find((a) => a.tipo === "criar-rota" && a.pedidos.includes(ids[0]));
         if (legivel) legivel.routeNumber = rota.routeNumber;
         aplicadas.push(`criou ${rota.routeNumber} (${ids.map(rotulo).join(", ")})${notaDaOrdem(ordem)}`);
+        await anotar(rota.id, [
+          { acao: "criou", motivo: `${rota.routeNumber}: ${ids.map(rotulo).join(", ")}${notaDaOrdem(ordem)}` },
+          ...ids.map((id) => ({ acao: "entrou" as const, pedido: num(id), motivo: porqueDaEntrada.get(`nova|${id}`) })),
+        ]);
         return;
       }
       case "entrar-na-rota": {
@@ -573,6 +589,11 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
         if (count === 0) { falhas.push(`${rotulo(passo.pedidoId)} não entrou na ${nomeDaRota(passo.rotaId)}: o pedido mudou ou a rota foi puxada`); return; }
         if (passo.rotaChamada) mudaramDeFato.add(passo.rotaId);
         aplicadas.push(`${rotulo(passo.pedidoId)} entrou na ${nomeDaRota(passo.rotaId)}${passo.rotaChamada ? " (já chamada, ninguém tinha puxado)" : ""}`);
+        const porque = porqueDaEntrada.get(`${passo.rotaId}|${passo.pedidoId}`);
+        await anotar(passo.rotaId, [{
+          acao: "entrou", pedido: num(passo.pedidoId),
+          motivo: `${porque ?? `${rotulo(passo.pedidoId)} entrou`}${passo.rotaChamada ? " · rota já chamada, ninguém tinha puxado" : ""}`,
+        }]);
         return;
       }
       case "sair-da-rota": {
@@ -588,6 +609,10 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
           console.warn("[rota-automatica] routeSequence não limpa (coluna ausente?):", e?.message?.slice(0, 120));
         }
         aplicadas.push(`${rotulo(passo.pedidoId)} saiu da ${nomeDaRota(passo.rotaId)} (${passo.motivo === "cancelado" ? "cancelado" : "espera estourada"})`);
+        await anotar(passo.rotaId, [{
+          acao: "saiu", pedido: num(passo.pedidoId),
+          motivo: passo.motivo === "cancelado" ? "cancelado" : "espera estourada: não ficou pronto a tempo e a rota foi chamada sem ele",
+        }]);
         return;
       }
       case "sequencia": {
@@ -624,7 +649,7 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
         if (!(await conferirRota(passo.rotaId))) return;
         // Só se nunca chamada ou chamada vencida (D13), conferido no banco:
         // outro ciclo, ou a loja no "Chamar de novo", pode ter chamado agora.
-        const r = await chamarARota({ lojaId, rotaId: passo.rotaId, motoboyId: passo.motoboyId, soSeVencida: true, motoboys: resumo.motoboys });
+        const r = await chamarARota({ lojaId, rotaId: passo.rotaId, motoboyId: passo.motoboyId, soSeVencida: true, motoboys: resumo.motoboys, quem: QUEM_AUTOMATICA });
         if (!r.ok) return;
         const nome = passo.motoboyId ? resumo.motoboys.find((m) => m.id === passo.motoboyId)?.nome ?? "motoboy" : "todos os livres";
         aplicadas.push(`chamou ${nomeDaRota(passo.rotaId)} (${nome}${r.avisados.length === 0 ? ", ninguém livre para avisar" : ""})`);
@@ -645,14 +670,17 @@ async function gravar(lojaId: string, plano: Planejado): Promise<ResumoDaRoteiri
           // Um motoboy só levou tudo: o card mostra "despachada · Maicon".
           data: { status: "DISPATCHED", dispatchedAt: new Date(), ...(donos.length === 1 ? { motoboyId: donos[0] } : {}) },
         });
-        if (count > 0) aplicadas.push(`fechou ${nomeDaRota(passo.rotaId)} (os pedidos saíram um a um)`);
+        if (count > 0) {
+          aplicadas.push(`fechou ${nomeDaRota(passo.rotaId)} (os pedidos saíram um a um)`);
+          await anotar(passo.rotaId, [{ acao: "fechou", motivo: "os pedidos saíram um a um (ou já fecharam)" }]);
+        }
         return;
       }
       case "avisar-mudanca": {
         // A rota chamada cresceu (D8 revisto): a chamada sai de novo para o
         // mesmo chamado, com "atualizada". Só se algum pedido entrou mesmo.
         if (!mudaramDeFato.has(passo.rotaId)) return;
-        const r = await chamarARota({ lojaId, rotaId: passo.rotaId, motoboyId: null, rotaMudou: true, motoboys: resumo.motoboys });
+        const r = await chamarARota({ lojaId, rotaId: passo.rotaId, motoboyId: null, rotaMudou: true, motoboys: resumo.motoboys, quem: QUEM_AUTOMATICA });
         if (!r.ok) { falhas.push(`${nomeDaRota(passo.rotaId)} mudou, mas o aviso não saiu: foi puxada ou saiu no meio`); return; }
         const quem = r.rota.chamadaMotoboyId ? resumo.motoboys.find((m) => m.id === r.rota.chamadaMotoboyId)?.nome ?? "o chamado" : "todos os livres";
         aplicadas.push(`avisou ${quem} que a ${nomeDaRota(passo.rotaId)} mudou (agora ${r.entregas} entrega${r.entregas === 1 ? "" : "s"})${r.avisados.length === 0 ? ", ninguém livre para avisar" : ""}`);
@@ -719,6 +747,12 @@ export async function chamarARota(opcoes: {
   /** Já lidos no ciclo (o resumo); sem eles, lidos aqui. */
   motoboys?: MotoboyNaPrevia[];
   agora?: Date;
+  /**
+   * Quem chamou, para o histórico oculto da rota (historico-da-rota.ts):
+   * QUEM_AUTOMATICA no cron, o nome de quem está logado no card. Sem ele,
+   * nada é anotado.
+   */
+  quem?: string;
 }): Promise<{ ok: true; rota: RotaChamada; avisados: string[]; entregas: number } | { ok: false }> {
   const agora = opcoes.agora ?? new Date();
   const daRotaAberta = { id: opcoes.rotaId, franchiseeId: opcoes.lojaId, origem: "AUTO", status: "PENDING", dispatchedAt: null };
@@ -758,6 +792,20 @@ export async function chamarARota(opcoes: {
   const aviso = (opcoes.rotaMudou ? avisoDaRotaAtualizada : avisoDaRotaPronta)(rota, pedidos.map((p) => p.dailyOrderNumber), !motoboyId);
   const perdeu = quemPerdeAChamada(antes.chamadaMotoboyId, motoboyId);
   const nomeDoNovo = motoboys.find((m) => m.id === motoboyId)?.nome ?? null;
+  if (opcoes.quem) {
+    const nomeDoAntigo = motoboys.find((m) => m.id === antes.chamadaMotoboyId)?.nome ?? null;
+    const trocou = !!antes.chamadaEm && antes.chamadaMotoboyId !== motoboyId;
+    const para = motoboyId ? `para ${nomeDoNovo ?? "o entregador"}` : "para todos os livres";
+    await registrarNaRota(antes.id, [{
+      quem: opcoes.quem,
+      acao: opcoes.rotaMudou ? "atualizou a chamada" : !antes.chamadaEm ? "chamou" : trocou ? "trocou o entregador" : "chamou de novo",
+      motivo: [
+        trocou ? `era ${antes.chamadaMotoboyId ? nomeDoAntigo ?? "outro entregador" : "todos os livres"}, agora ${para.replace(/^para /, "")}` : para,
+        `${pedidos.length} entrega${pedidos.length === 1 ? "" : "s"}`,
+        destinos.length === 0 ? "ninguém livre para avisar" : `${destinos.length} avisado${destinos.length === 1 ? "" : "s"}`,
+      ].join(" · "),
+    }]);
+  }
   void Promise.all([
     ...destinos.map((id) => avisarMotoboy(id, aviso)),
     perdeu ? avisarMotoboy(perdeu, avisoDaRotaFoiComOutro(rota, nomeDoNovo)) : null,
