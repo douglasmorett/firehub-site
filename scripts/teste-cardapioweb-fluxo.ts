@@ -851,8 +851,8 @@ async function main() {
       fonte("src/app/api/motoboys/orders/route.ts").split("ehPedidoCardapioWeb(").length - 1 >= 2,
       antesDoJotaja("src/app/api/motoboys/dispatch-whatsapp/route.ts", 'await import("@/lib/jotaja-api")'),
       antesDoJotaja("src/lib/despacho-da-rota.ts", 'await import("@/lib/jotaja-api")'),
-      /!ehPedidoKeeta\(order\) && !ehPedidoCardapioWeb\(order\)\)/.test(fonte("src/app/api/customer-order/status/route.ts")),
-      /!ehPedidoKeeta\(ord\) && !ehPedidoCardapioWeb\(ord\)\)/.test(fonte("src/lib/despacho-da-rota.ts")),
+      /!ehPedidoKeeta\(order\) && !ehPedidoCardapioWeb\(order\)(\)| &&)/.test(fonte("src/app/api/customer-order/status/route.ts")),
+      /!ehPedidoKeeta\(ord\) && !ehPedidoCardapioWeb\(ord\)(\)| &&)/.test(fonte("src/lib/despacho-da-rota.ts")),
     ],
     [true, true, true, true, true, true, true, true],
   );

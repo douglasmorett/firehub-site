@@ -1,0 +1,148 @@
+{
+  "data": {
+    "id": 68670787,
+    "delivery_time": "60 - 90",
+    "created_at": "2026-01-07 17:10:52",
+    "is_ready": false,
+    "is_read": false,
+    "is_cancelled": false,
+    "is_in_separation": false,
+    "is_delivered": false,
+    "order_observations": "Deixe o pedido na portaria.",
+    "is_aiqentrega_delivery": false,
+    "is_pickup": false,
+    "pickup_at": null,
+    "coupon_hash": null,
+    "user_rating_value": null,
+    "is_scheduled": false,
+    "scheduled_dates": null,
+    "items": [
+      {
+        "id": "8b1c0df6-a3b7-4272-b880-0590854a42d4",
+        "order_item_id": 118070082,
+        "name": "guarana",
+        "replacement_type": 0,
+        "status": 1,
+        "sku": "",
+        "category_name": "Sem categoria",
+        "size": "",
+        "unit_value": 5,
+        "promotional_value": null,
+        "quantity": 5,
+        "discount_tax": null,
+        "description": "",
+        "observations": "Gelado pls!",
+        "unit_packing_fee": "0.00",
+        "order_mandatory_items": [],
+        "order_additional_items": [],
+        "order_item_subitems": []
+      }
+    ],
+    "cancelled_items": [],
+    "replaced_items": [],
+    "shipment_status": {
+      "latest": {
+        "status": "order_delivered",
+        "metadata": [],
+        "created_at": "2026-01-07 17:12:26"
+      },
+      "logs": [
+        {
+          "status": "pickup_ongoing",
+          "metadata": {
+            "driver_name": "Nome do Entregador",
+            "driver_phone": "1234567890"
+          },
+          "created_at": "2026-01-07 17:11:47"
+        },
+        {
+          "status": "arrived_at_merchant",
+          "metadata": [],
+          "created_at": "2026-01-07 17:11:56"
+        },
+        {
+          "status": "delivery_ongoing",
+          "metadata": [],
+          "created_at": "2026-01-07 17:12:04"
+        },
+        {
+          "status": "arrived_at_customer",
+          "metadata": [],
+          "created_at": "2026-01-07 17:12:12"
+        },
+        {
+          "status": "order_delivered",
+          "metadata": [],
+          "created_at": "2026-01-07 17:12:26"
+        }
+      ]
+    },
+    "user": {
+      "uuid": "613d3a07-a7ee-11ed-9de5-02c11a0dd08c",
+      "name": "luiz",
+      "surname": "do aiq",
+      "mobile_phone": "(61) 9-9953-7682",
+      "phone_number": "(61) 9-9953-7682",
+      "email": "luiz.silva@aiqfome.com",
+      "order_count": 19,
+      "document_receipt": null,
+      "address": {
+        "street_name": "rua do teste hmo",
+        "number": "5242-5",
+        "complement": "Apto 45",
+        "reference": "Próximo ao shopping",
+        "phone": null,
+        "mobile_phone": null,
+        "neighborhood_name": "CENTRO SUL",
+        "city_name": "BARRA DE SAO FRANCISCO",
+        "state_uf": "MG",
+        "ibge_code": null,
+        "zip_code": "37417-210",
+        "latitude": null,
+        "longitude": null
+      }
+    },
+    "payment_method": {
+      "id": 0,
+      "name": "PIX - Perto de Você",
+      "subtotal": "25.00",
+      "delivery_tax": "5.00",
+      "total_packing_fee": 0,
+      "change": 0,
+      "coupon_value": "5.00",
+      "pre_paid": false,
+      "service_fee": {
+        "store": 0,
+        "aiq": 0,
+        "total": 1
+      },
+      "total_cancelled_replaced": 0,
+      "original_subtotal": 25,
+      "total": 26,
+      "taxable_total": 25
+    },
+    "store": {
+      "id": 96236,
+      "name": "qa-luiz-teste-integrador-entregas",
+      "phones": "(99) 9999-9999",
+      "preparation_time": 10
+    },
+    "timeline": {
+      "created_at": "2026-01-07 17:10:52",
+      "read_at": null,
+      "cancelled_at": null,
+      "ready_at": null,
+      "timezone": null
+    },
+    "aiqentrega": {
+      "ride_id": null,
+      "call_at": null,
+      "current_status": null,
+      "delivered_at": null,
+      "last_status": null,
+      "last_status_at": null,
+      "driver_name": null,
+      "driver_phone": null
+    }
+  }
+}

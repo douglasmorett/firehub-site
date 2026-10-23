@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
 import { lojas99DaConta } from "@/lib/food99-lojas";
-import { chaveIfood, chave99Food, chaveCardapioWeb, chaveLojaPropria, type LojaDeOrigem } from "@/lib/loja-de-origem";
+import { chaveIfood, chave99Food, chaveCardapioWeb, chaveAiqfome, chaveLojaPropria, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { instalacoesDasLojas } from "@/lib/cardapioweb/instalacoes";
+import { instalacoesDasLojas as instalacoesAiqfome } from "@/lib/aiqfome/instalacoes";
 import { chaveDaLojaCW } from "@/lib/cardapioweb/id-do-pedido";
 
 /**
@@ -102,7 +103,17 @@ export async function lojasDeOrigemDaConta(ownerId: string, accountGroupId: stri
     }
   }
 
-  const haOQueSeparar = ifood.length > 1 || food99.length > 1 || cardapioweb.length > 1 || grupo.length > 1;
+  // aiqfome: um token pode liberar várias lojas, todas na mesma conta
+  // (lib/aiqfome/instalacoes.ts). Falha ao ler não derruba a tela.
+  const aiqfome: LojaDeOrigem[] = [];
+  const lojasAiq = await instalacoesAiqfome(grupo.map((l) => l.id)).catch(() => []);
+  for (const l of grupo) {
+    for (const i of lojasAiq.filter((x) => x.franchiseeId === l.id)) {
+      aiqfome.push({ chave: chaveAiqfome(i.storeId), nome: (i.nome || `Loja ${i.storeId}`) + sufixo(l), emoji: "🟣", origem: "aiqfome" });
+    }
+  }
+
+  const haOQueSeparar = ifood.length > 1 || food99.length > 1 || cardapioweb.length > 1 || aiqfome.length > 1 || grupo.length > 1;
   if (!haOQueSeparar) return [];
 
   // A própria loja: o que entra pelos canais dela (site, WhatsApp, mesa,
@@ -115,5 +126,5 @@ export async function lojasDeOrigemDaConta(ownerId: string, accountGroupId: stri
     origem: "Loja",
   }));
 
-  return [...ifood, ...food99, ...cardapioweb, ...proprias];
+  return [...ifood, ...food99, ...cardapioweb, ...aiqfome, ...proprias];
 }

@@ -115,6 +115,18 @@ const jobs = [
     exclusivo: true,
   },
   {
+    // aiqfome (API V2): a rede PRINCIPAL dos pedidos — a doc não garante a
+    // entrega do webhook. Pedidos em aberto (o que falta entrar, o que avançou
+    // lá), cancelados a cada 60 s, aviso parado e ações pendentes. 1 a 2
+    // chamadas por loja por volta, bem abaixo do limite por rota. Ciclo ainda
+    // no ar não ganha outro por cima. Sem AIQFOME_* no servidor a rota
+    // responde na hora sem tocar no banco — custo zero.
+    name: 'aiqfome-poll',
+    path: '/api/cron/aiqfome-poll',
+    intervalMs: 30_000, // 30 segundos
+    exclusivo: true,
+  },
+  {
     // Mantem a loja ABERTA no 99Food sem ninguem abrir o gestor deles.
     //
     // O lojista fechava o app do 99Food e a loja ficava offline la. O swagger
