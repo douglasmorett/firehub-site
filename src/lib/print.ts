@@ -81,6 +81,20 @@ export function versaoAssistenteAoMenos(versao: string | null | undefined, minim
   return true;
 }
 
+/**
+ * Mais de três versões atrás da atual, o Assistente não está se atualizando
+ * sozinho. O mais comum: foi instalado "para todos os usuários" (Program
+ * Files), pasta em que a atualização silenciosa não tem permissão de gravar —
+ * ela baixa, tenta e falha calada uma vez por dia. Visto no PC do Douglas em
+ * 24/10/2026: preso na 1.2.37 com a 1.2.46 no ar.
+ */
+export function assistenteTravadoNaVersao(versao: string | null | undefined): boolean {
+  if (!versao) return false;
+  const [maior, menor, patch] = VERSAO_ASSISTENTE_ATUAL.split(".").map((n) => parseInt(n, 10) || 0);
+  if (patch < 4) return false;
+  return !versaoAssistenteAoMenos(versao, `${maior}.${menor}.${patch - 3}`);
+}
+
 /** Antes desta, cada reinício reimprimia as últimas horas: não havia confirmação no servidor. */
 export const VERSAO_QUE_CONFIRMA_IMPRESSAO = "1.2.7";
 /** Desde a 1.2.0 ele se atualiza sozinho — e, desde 24/09/2026, só com a loja parada. */

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
+  assistenteTravadoNaVersao,
   deveMandarTokenAoAssistente,
   fetchAssistente,
   localhostSemPergunta,
@@ -336,6 +337,14 @@ export default function AvisoImpressaoParada() {
       `Nessa versão, toda vez que ele fecha e abre de novo — inclusive quando se atualiza sozinho — as comandas das últimas 2 horas saem OUTRA VEZ. ` +
       `A versão ${VERSAO_ASSISTENTE_ATUAL} confirma no servidor cada comanda que já saiu, então nada se repete. ` +
       `Baixe em Impressoras e instale por cima, no PC do caixa: a configuração e as impressoras continuam como estão.`;
+  } else if (!filaMuda && assistenteTravadoNaVersao(versaoRelatada)) {
+    // Calado até sair versão mais nova; aí, se continuar parado, volta.
+    ocorrencia = `travado:${VERSAO_ASSISTENTE_ATUAL}`;
+    titulo = `O Assistente de Impressão do PC do caixa não está se atualizando sozinho (v${versaoRelatada}, a atual é ${VERSAO_ASSISTENTE_ATUAL})`;
+    texto =
+      `Costuma acontecer quando ele foi instalado "para todos os usuários": o Windows não deixa a atualização automática gravar na pasta. ` +
+      `No PC do caixa, baixe em Impressoras e abra o instalador com o botão direito → "Executar como administrador". ` +
+      `A configuração e as impressoras continuam como estão.`;
   } else {
     return null;
   }
