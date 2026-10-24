@@ -4,7 +4,7 @@
  * GERADO por scripts/gerar-comanda-do-assistente.mjs — NÃO EDITE AQUI.
  *
  * É o código que monta a comanda no Assistente de Impressão
- * (firehub-print-assistant/server.js, versão 1.2.45), copiado para a prévia
+ * (firehub-print-assistant/server.js, versão 1.2.44), copiado para a prévia
  * de "Personalizar impressão" desenhar o papel com o MESMO código que imprime.
  * Mudou o server.js? Rode o script de novo; `--conferir` falha enquanto esta
  * cópia estiver velha.
@@ -1838,10 +1838,10 @@ function buildEscPos(order, storeName, columns = 48, profile = "safe") {
   return Buffer.from(res, "binary");
 }
 
-export const VERSAO_DO_ASSISTENTE = "1.2.45";
+export const VERSAO_DO_ASSISTENTE = "1.2.44";
 export const ASSINATURA_DO_CODIGO = "eed7172cd4c29171";
 
-/** Os bytes ESC/POS da comanda, como o Assistente 1.2.45 manda para a impressora. */
+/** Os bytes ESC/POS da comanda, como o Assistente 1.2.44 manda para a impressora. */
 export function comandaDoAssistente(order, storeName, columns, profile = "safe") {
   return buildEscPos(order, storeName, columns, profile);
 }
