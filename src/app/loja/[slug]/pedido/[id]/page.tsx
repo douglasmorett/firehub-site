@@ -30,6 +30,7 @@ export default async function OrderTrackingPage({
   return (
     <OrderTrackingClient
       orderId={order.id}
+      numeroDoPedido={order.dailyOrderNumber ?? null}
       initialStatus={order.status}
       customerName={order.customerName}
       deliveryType={order.deliveryType}

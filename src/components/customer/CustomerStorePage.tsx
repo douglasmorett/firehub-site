@@ -3028,23 +3028,35 @@ export default function CustomerStorePage({
     { key: "CANCELADO", label: "Cancelado", icon: "❌", desc: "Pedido cancelado pela loja" },
   ];
 
+  // O número do dia do pedido (o "34" que o cliente fala para a loja). No Pix
+  // e no cartão online ele só nasce quando o pagamento é aprovado, então vem
+  // da consulta de status, e não da resposta da criação.
+  const [numeroDoPedido, setNumeroDoPedido] = useState<number | null>(null);
   useEffect(() => {
     if (!orderSuccess) return;
-    const poll = setInterval(async () => {
-      // Em segundo plano nao gasta bateria/rede do cliente.
-      if (document.visibilityState === "hidden") return;
+    setNumeroDoPedido(null);
+    let poll: ReturnType<typeof setInterval> | null = null;
+    const consultar = async () => {
       try {
         const r = await fetch(`/api/customer-order/status?id=${orderSuccess}`);
         if (r.ok) {
           const d = await r.json();
           setTrackingStatus(d.status);
+          if (typeof d.dailyOrderNumber === "number" && d.dailyOrderNumber > 0) setNumeroDoPedido(d.dailyOrderNumber);
           // Estado final: nada mais vai mudar — para de consultar.
           const fim = etapaDoAcompanhamento(d.status, null);
-          if (fim === "ENTREGUE" || fim === "CANCELADO") clearInterval(poll);
+          if ((fim === "ENTREGUE" || fim === "CANCELADO") && poll) clearInterval(poll);
         }
       } catch {}
+    };
+    // Na hora, para o número aparecer já na primeira tela.
+    consultar();
+    poll = setInterval(() => {
+      // Em segundo plano nao gasta bateria/rede do cliente.
+      if (document.visibilityState === "hidden") return;
+      consultar();
     }, 5000);
-    return () => clearInterval(poll);
+    return () => { if (poll) clearInterval(poll); };
   }, [orderSuccess]);
 
   if (orderSuccess) {
@@ -3060,8 +3072,8 @@ export default function CustomerStorePage({
           <h1 className="order-success-title">{isCancelled ? "Pedido Cancelado" : isDelivered ? (trackingRetirada ? "Pedido Retirado!" : "Pedido Entregue!") : "Acompanhe seu Pedido"}</h1>
           <p className="order-success-sub">Pedido recebido por <strong>{storeName}</strong></p>
           <div className="order-code-box">
-            <p className="order-code-label">Código do Pedido</p>
-            <p className="order-code">#{orderSuccess.slice(-6).toUpperCase()}</p>
+            <p className="order-code-label">{numeroDoPedido ? "Número do Pedido" : "Código do Pedido"}</p>
+            <p className="order-code">{numeroDoPedido ? `Nº ${numeroDoPedido}` : `#${orderSuccess.slice(-6).toUpperCase()}`}</p>
           </div>
 
           {!isCancelled && (
@@ -5967,7 +5979,12 @@ export default function CustomerStorePage({
                 myOrdersList.map(o => (
                   <div key={o.id} style={{ background: "#FFFFFF", border: "1.5px solid #E2E8F0", borderRadius: "14px", padding: "14px" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                      <span style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>#{o.id.slice(-6).toUpperCase()}</span>
+                      {/* O número do dia repete a cada dia: vai com a data. */}
+                      <span style={{ fontWeight: 800, fontSize: "0.92rem", color: "#0F172A" }}>
+                        {o.dailyOrderNumber
+                          ? `Nº ${o.dailyOrderNumber} · ${new Date(o.createdAt).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}`
+                          : `#${o.id.slice(-6).toUpperCase()}`}
+                      </span>
                       <span style={{ padding: "2px 8px", borderRadius: "6px", fontSize: "0.7rem", fontWeight: 800, background: o.status === "ENTREGUE" ? "#DCFCE7" : "#FEF3C7", color: o.status === "ENTREGUE" ? "#15803D" : "#B45309" }}>
                         {o.status}
                       </span>
