@@ -12,6 +12,9 @@
  * parada na fila, ligando ao lado do Hakim (22238). Os pedidos têm o formato
  * de um pedido real da Duga, sem os dados do cliente.
  */
+// Módulo, não script global: sem isto `pedidos`, `falhas` e `confere` colidem
+// (TS2451) com qualquer outro script sem import/export no mesmo tsc.
+export {};
 if (!/127\.0\.0\.1:5481/.test(process.env.DATABASE_URL || "")) throw new Error("DATABASE_URL não é o PGlite local (127.0.0.1:5481)");
 if (!/127\.0\.0\.1:9\b/.test(process.env.EVOLUTION_API_URL || "")) throw new Error("EVOLUTION_API_URL tem de ser a porta morta");
 delete process.env.CRON_SECRET;
