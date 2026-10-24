@@ -35,6 +35,7 @@ import { qtdPedidosDosClientes } from "@/lib/qtd-pedidos-do-cliente";
 import { esquecer, lembrarPor } from "@/lib/cache-curto";
 import { filaTemAlgoGuardado } from "@/lib/fila-tem-algo";
 import { barrarChamadaDaFila } from "@/lib/token-do-assistente";
+import { sessaoDaLojaNaFila } from "@/lib/sessao-da-loja-na-fila";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -66,8 +67,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Token do Assistente (lib/token-do-assistente.ts): o de outra loja ou
-    // adulterado não passa; sem token segue como sempre (fase 1).
-    const barrado = barrarChamadaDaFila(req.headers, targetId, "reimpressao");
+    // adulterado não passa; sem token segue como sempre (fase 1). A sessão da
+    // loja (reimpressão do painel) vale como credencial.
+    const barrado = await barrarChamadaDaFila(req.headers, targetId, "reimpressao", () => sessaoDaLojaNaFila(targetId, session));
     if (barrado) return barrado;
 
     // ── REIMPRESSÃO PEDIDA NA MÃO ────────────────────────────────────────
@@ -131,7 +133,7 @@ export async function GET(req: NextRequest) {
   // Token do Assistente (lib/token-do-assistente.ts), ANTES de tudo: quem
   // manda token de outra loja não lê a fila nem se registra como dono de
   // impressora. Sem token segue como sempre (fase 1).
-  const barrado = barrarChamadaDaFila(req.headers, new URL(req.url).searchParams.get("franchiseeId"), "fila");
+  const barrado = await barrarChamadaDaFila(req.headers, new URL(req.url).searchParams.get("franchiseeId"), "fila");
   if (barrado) return barrado;
   const resposta = await filaParaOAssistente(req);
   // ── UM ASSISTENTE POR IMPRESSORA (lib/dono-da-impressora.ts) ──────────

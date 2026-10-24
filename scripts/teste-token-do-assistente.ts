@@ -2,6 +2,9 @@
  * scripts/teste-token-do-assistente.ts — o token da loja na fila da nuvem
  * (lib/token-do-assistente.ts), fase 1: token certo passa, de outra loja ou
  * adulterado é 403, sem token passa como sempre (Assistente 1.2.45 e antes).
+ * Preparação da fase 2: a sessão da loja vale como credencial no POST e no
+ * /ack (a de outra loja não), e o painel entrega o token sozinho ao 1.2.46+
+ * sem token (lib/print.ts, deveMandarTokenAoAssistente).
  *
  *   npx tsx scripts/teste-token-do-assistente.ts
  *
@@ -21,6 +24,7 @@ const confere = (c: boolean, m: string) => { c ? ok++ : falhas++; console.log(c 
 
 const LOJA = "loja_token_teste";
 const OUTRA = "loja_token_outra";
+const FILIAL = "loja_token_filial";
 
 // ── Banco falso (o mesmo desenho de teste-fila-tem-algo.ts) ────────────────
 const pedidoNovo = {
@@ -45,7 +49,14 @@ const tabela = (feitos: Record<string, any> = {}) => new Proxy(feitos, { get: (t
   {
     user: tabela({
       findUnique: async ({ where }: any) =>
-        where?.id === LOJA ? dono() : where?.email === "garcom@loja.teste" ? { id: "func_1", ownerId: LOJA } : null,
+        where?.id === LOJA ? dono()
+        : where?.email === "garcom@loja.teste" ? { id: "func_1", ownerId: LOJA, role: "STAFF" }
+        : where?.email === "dono@loja.teste" ? { id: LOJA, ownerId: null, role: "FRANCHISEE" }
+        : where?.email === "dono@outra.teste" ? { id: OUTRA, ownerId: null, role: "FRANCHISEE" }
+        : null,
+      // lojasDoGrupo: a LOJA é a principal e a FILIAL aponta para ela.
+      findMany: async ({ where }: any) =>
+        where?.OR?.some((c: any) => c.id === LOJA || c.accountGroupId === LOJA) ? [{ id: LOJA }, { id: FILIAL }] : [],
       update: async () => dono(),
     }),
     customerOrder: tabela({
@@ -93,18 +104,55 @@ async function main() {
 
   process.env.FIREHUB_LOCAL = "1";
   confere(conferirTokenDoAssistente(daOutra, LOJA) === "local", "no FireHub local (contingência) o token é ignorado");
-  confere(barrarChamadaDaFila(new Headers({ [H]: adulterado }), LOJA, "fila") === null, "no FireHub local nem token ruim barra");
+  confere((await barrarChamadaDaFila(new Headers({ [H]: adulterado }), LOJA, "fila")) === null, "no FireHub local nem token ruim barra");
   delete process.env.FIREHUB_LOCAL;
 
   console.log("\n[2] A porta das rotas");
-  confere(barrarChamadaDaFila(new Headers({ [H]: certo }), LOJA, "fila") === null, "token certo passa");
-  const recusa = barrarChamadaDaFila(new Headers({ [H]: daOutra }), LOJA, "fila");
+  confere((await barrarChamadaDaFila(new Headers({ [H]: certo }), LOJA, "fila")) === null, "token certo passa");
+  const recusa = await barrarChamadaDaFila(new Headers({ [H]: daOutra }), LOJA, "fila");
   confere(recusa?.status === 403, "token de outra loja: 403");
   confere((await recusa?.json())?.motivo === RECUSA_DO_TOKEN, "o 403 leva a marca que o Assistente reconhece");
-  confere(barrarChamadaDaFila(new Headers(), LOJA, "fila") === null, "sem token passa (fase 1)");
-  confere(barrarChamadaDaFila(new Headers({ cookie: "__Secure-next-auth.session-token=abc" }), LOJA, "ack") === null, "navegador com sessão e sem token passa");
+  confere((await barrarChamadaDaFila(new Headers(), LOJA, "fila")) === null, "sem token passa (fase 1)");
+  const COOKIE = { cookie: "__Secure-next-auth.session-token=abc" };
+  confere((await barrarChamadaDaFila(new Headers(COOKIE), LOJA, "ack", async () => true)) === null, "navegador com sessão da loja e sem token passa");
   confere((semTokenDoAssistente().get(`fila|${LOJA}|nao`)?.vezes || 0) >= 1, "chamada sem token do Assistente fica contada");
-  confere((semTokenDoAssistente().get(`ack|${LOJA}|sim`)?.vezes || 0) >= 1, "chamada sem token do navegador fica contada à parte");
+  confere((semTokenDoAssistente().get(`ack|${LOJA}|sim`)?.vezes || 0) >= 1, "chamada com sessão da loja fica contada à parte (sessao=sim)");
+  const vezes = (k: string) => semTokenDoAssistente().get(k)?.vezes || 0;
+  let antes = vezes(`ack|${LOJA}|nao`);
+  confere((await barrarChamadaDaFila(new Headers(COOKIE), LOJA, "ack", async () => false)) === null && vezes(`ack|${LOJA}|nao`) === antes + 1,
+    "cookie sem ser sessão da loja: passa hoje, mas conta como sessao=nao (a fase 2 recusa)");
+  let perguntou = false;
+  await barrarChamadaDaFila(new Headers(), LOJA, "ack", async () => { perguntou = true; return true; });
+  confere(!perguntou, "sem cookie de sessão (o Assistente) a sessão nem é consultada");
+  perguntou = false;
+  await barrarChamadaDaFila(new Headers({ ...COOKIE, [H]: certo }), LOJA, "ack", async () => { perguntou = true; return true; });
+  confere(!perguntou, "com token válido a sessão nem é consultada");
+  confere((await barrarChamadaDaFila(new Headers({ ...COOKIE, [H]: daOutra }), LOJA, "ack", async () => true))?.status === 403, "token de outra loja: 403 mesmo com sessão da loja");
+  antes = vezes(`ack|${LOJA}|nao`);
+  confere((await barrarChamadaDaFila(new Headers(COOKIE), LOJA, "ack", async () => { throw new Error("x"); })) === null && vezes(`ack|${LOJA}|nao`) === antes + 1,
+    "falha ao ler a sessão: passa hoje e conta como sessao=nao (nunca erro)");
+
+  console.log("\n[2b] A sessão como credencial (sessaoValeComoCredencial)");
+  const { sessaoValeComoCredencial } = lib;
+  confere(sessaoValeComoCredencial({ id: LOJA }, LOJA), "dono da loja: vale");
+  confere(sessaoValeComoCredencial({ id: "func_1", ownerId: LOJA, role: "STAFF" }, LOJA), "funcionário da loja: vale");
+  confere(!sessaoValeComoCredencial({ id: OUTRA }, LOJA), "dono de outra loja: não vale");
+  confere(!sessaoValeComoCredencial({ id: OUTRA }, LOJA, [OUTRA]), "grupo que não tem a loja: não vale");
+  confere(sessaoValeComoCredencial({ id: LOJA, role: "FRANCHISEE" }, FILIAL, [LOJA, FILIAL]), "principal em \"Todas as lojas\" confirmando a filial do grupo: vale");
+  confere(!sessaoValeComoCredencial({ id: "func_1", ownerId: LOJA, role: "STAFF" }, FILIAL, [LOJA, FILIAL]), "funcionário não vale para a filial");
+  confere(!sessaoValeComoCredencial(null, LOJA) && !sessaoValeComoCredencial({ id: LOJA }, null), "sem conta ou sem loja: não vale");
+
+  const { sessaoDaLojaNaFila } = await import("../src/lib/sessao-da-loja-na-fila");
+  sessao = "dono@loja.teste";
+  confere(await sessaoDaLojaNaFila(LOJA), "sessaoDaLojaNaFila: sessão do dono vale para a loja");
+  confere(await sessaoDaLojaNaFila(FILIAL), "sessaoDaLojaNaFila: sessão da principal vale para a filial");
+  sessao = "garcom@loja.teste";
+  confere(await sessaoDaLojaNaFila(LOJA), "sessaoDaLojaNaFila: funcionário vale para a loja dele");
+  confere(!(await sessaoDaLojaNaFila(FILIAL)), "sessaoDaLojaNaFila: funcionário não vale para a filial");
+  sessao = "dono@outra.teste";
+  confere(!(await sessaoDaLojaNaFila(LOJA)), "sessaoDaLojaNaFila: sessão de outra loja não vale");
+  sessao = null;
+  confere(!(await sessaoDaLojaNaFila(LOJA)), "sessaoDaLojaNaFila: sem sessão não vale");
 
   console.log("\n[3] GET /api/store/print-queue (rota de verdade, banco falso)");
   const { GET, POST } = await import("../src/app/api/store/print-queue/route");
@@ -140,6 +188,15 @@ async function main() {
   confere(ackCerto.status === 200 && ackCerto.gravou, "token certo: carimba");
   const ackOutro = await confirmar({ [H]: daOutra });
   confere(ackOutro.status === 403 && !ackOutro.gravou, "token de outra loja: 403 e nada carimbado");
+  sessao = "dono@loja.teste";
+  antes = vezes(`ack|${LOJA}|sim`);
+  const ackSessao = await confirmar(COOKIE);
+  confere(ackSessao.status === 200 && ackSessao.gravou && vezes(`ack|${LOJA}|sim`) === antes + 1, "navegador com sessão da loja: carimba e conta como credencial (sessao=sim)");
+  sessao = "dono@outra.teste";
+  antes = vezes(`ack|${LOJA}|nao`);
+  const ackSessaoOutra = await confirmar(COOKIE);
+  confere(ackSessaoOutra.status === 200 && vezes(`ack|${LOJA}|nao`) === antes + 1, "sessão de OUTRA loja: passa hoje (fase 1), mas conta como sessao=nao");
+  sessao = null;
 
   console.log("\n[5] POST /api/store/print-queue (reimpressão)");
   const reimprimir = async (headers: Record<string, string>) => {
@@ -156,6 +213,15 @@ async function main() {
   confere(reCerto.status === 200 && reCerto.gravou, "token certo: enfileira");
   const reOutro = await reimprimir({ [H]: daOutra });
   confere(reOutro.status === 403 && !reOutro.gravou, "token de outra loja: 403 e nada enfileirado");
+  sessao = "dono@loja.teste";
+  antes = vezes(`reimpressao|${LOJA}|sim`);
+  const reSessao = await reimprimir(COOKIE);
+  confere(reSessao.status === 200 && reSessao.gravou && vezes(`reimpressao|${LOJA}|sim`) === antes + 1, "reimpressão do painel com sessão da loja: enfileira e conta como credencial");
+  sessao = "dono@outra.teste";
+  antes = vezes(`reimpressao|${LOJA}|nao`);
+  const reSessaoOutra = await reimprimir(COOKIE);
+  confere(reSessaoOutra.status === 200 && vezes(`reimpressao|${LOJA}|nao`) === antes + 1, "sessão de OUTRA loja na reimpressão: passa hoje, mas conta como sessao=nao");
+  sessao = null;
 
   console.log("\n[6] O lado do Assistente (firehub-print-assistant/token-da-nuvem.js)");
   const A = doAssistente;
@@ -169,7 +235,7 @@ async function main() {
   confere(Object.keys(A.cabecalhosDaFila({ franchiseeId: OUTRA, token: certo })).length === 0, "token de outra loja guardado: não vai");
   confere(Object.keys(A.cabecalhosDaFila({ franchiseeId: LOJA, token: certo }, { naContingencia: true })).length === 0, "contingência (fila do computador): não vai");
   confere(Object.keys(A.cabecalhosDaFila({ franchiseeId: LOJA, token: certo }, { recusado: true })).length === 0, "depois da recusa: não vai");
-  const r403 = barrarChamadaDaFila(new Headers({ [H]: daOutra }), LOJA, "fila")!;
+  const r403 = (await barrarChamadaDaFila(new Headers({ [H]: daOutra }), LOJA, "fila"))!;
   confere(await A.ehRecusaDoToken(r403) === true, "reconhece o 403 da recusa do token");
   confere(await A.ehRecusaDoToken(new Response("<html>bloqueado</html>", { status: 403 })) === false, "403 qualquer do caminho não larga o token");
   confere(await A.ehRecusaDoToken(new Response("{}", { status: 500 })) === false, "500 não larga o token");
@@ -185,6 +251,22 @@ async function main() {
   confere((await (await TOKEN()).json()).token === null, "no FireHub local: sem token");
   delete process.env.FIREHUB_LOCAL;
   sessao = null;
+
+  console.log("\n[8] O painel entrega o token sozinho (lib/print.ts, deveMandarTokenAoAssistente)");
+  const { deveMandarTokenAoAssistente } = await import("../src/lib/print");
+  const local = (o: Record<string, unknown>) => ({ versao: "1.2.46", franchiseeId: LOJA, temToken: false, ...o }) as any;
+  confere(deveMandarTokenAoAssistente(local({}), LOJA), "1.2.46 da loja, sem token: manda");
+  confere(deveMandarTokenAoAssistente(local({ versao: "1.2.50" }), LOJA), "versão mais nova sem token: manda");
+  confere(!deveMandarTokenAoAssistente(local({ temToken: true }), LOJA), "já tem token: não manda");
+  confere(!deveMandarTokenAoAssistente(local({ temToken: undefined }), LOJA), "sem o campo temToken (antigo): não manda");
+  confere(!deveMandarTokenAoAssistente(local({ versao: "1.2.45" }), LOJA), "1.2.45: não manda");
+  confere(!deveMandarTokenAoAssistente(local({ versao: "?" }), LOJA), "versão desconhecida: não manda");
+  confere(!deveMandarTokenAoAssistente(local({ franchiseeId: OUTRA }), LOJA), "vinculado a outra loja: não manda (é o Vincular agora)");
+  confere(!deveMandarTokenAoAssistente(local({ franchiseeId: "" }), LOJA), "sem loja nenhuma: não manda (é o vínculo automático)");
+  confere(!deveMandarTokenAoAssistente(local({}), "") && !deveMandarTokenAoAssistente(null, LOJA), "sem loja logada ou sem Assistente: não manda");
+  // O /status de verdade do Assistente (configParaMostrar em server.js) devolve temToken.
+  const fonteDoAssistente = req_("fs").readFileSync(req_.resolve("../firehub-print-assistant/server.js"), "utf8");
+  confere(/temToken: typeof token === "string" && token\.length > 0/.test(fonteDoAssistente), "o /status do Assistente devolve temToken");
 }
 
 main()

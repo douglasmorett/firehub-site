@@ -4,10 +4,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import {
+  deveMandarTokenAoAssistente,
   fetchAssistente,
+  localhostSemPergunta,
   printersParaAssistente,
   tokenDoAssistenteDaLoja,
   VERSAO_ASSISTENTE_ATUAL,
+  VERSAO_ASSISTENTE_COM_TOKEN,
   VERSAO_QUE_CONFIRMA_IMPRESSAO,
   VERSAO_TETO_ZERO,
   versaoAssistenteAoMenos,
@@ -68,7 +71,10 @@ type Estado = {
 };
 
 /** O Assistente que responde NESTE computador (o do navegador aberto). */
-type AssistenteLocal = { url: string; versao: string; franchiseeId: string };
+type AssistenteLocal = { url: string; versao: string; franchiseeId: string; temToken?: unknown };
+
+/** Uma entrega automática do token por carregamento de página (ver o efeito). */
+let tokenJaOferecido = false;
 
 async function sondarAssistenteLocal(): Promise<AssistenteLocal | null> {
   for (const porta of PORTAS_DO_ASSISTENTE) {
@@ -80,6 +86,7 @@ async function sondarAssistenteLocal(): Promise<AssistenteLocal | null> {
           url: `http://localhost:${porta}`,
           versao: String(d.version || "?"),
           franchiseeId: String(d.config?.franchiseeId || ""),
+          temToken: d.config?.temToken,
         };
       }
     } catch {}
@@ -193,6 +200,32 @@ export default function AvisoImpressaoParada() {
     // `vincular` muda a cada render; o ref já garante uma tentativa só.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [local, meuId]);
+
+  // ── TOKEN DA FILA SEM CLIQUE (lib/token-do-assistente.ts) ───────────────
+  // O Assistente que se atualizou sozinho para a 1.2.46 só recebia o token
+  // salvando Impressoras ou no "Vincular agora". Com o painel aberto, entrega
+  // aqui: uma vez por carregamento, só se a fila já viu um 1.2.46+, e só ao
+  // deste PC sem token e vinculado a esta loja. O /config leva SÓ franchiseeId
+  // (o mesmo) e token: o server.js só troca o que recebe — impressoras, papel
+  // e domínio ficam como estão.
+  const versaoNaFila = estado?.versaoAssistente || null;
+  useEffect(() => {
+    if (tokenJaOferecido || !meuId || !versaoAssistenteAoMenos(versaoNaFila, VERSAO_ASSISTENTE_COM_TOKEN)) return;
+    tokenJaOferecido = true;
+    (async () => {
+      if (!(await localhostSemPergunta())) return;
+      const a = await sondarAssistenteLocal();
+      if (!a || !deveMandarTokenAoAssistente(a, meuId)) return;
+      const token = await tokenDoAssistenteDaLoja();
+      if (!token) return;
+      await fetchAssistente(`${a.url}/config`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ franchiseeId: meuId, token }),
+        signal: AbortSignal.timeout(8000),
+      });
+    })().catch(() => {});
+  }, [meuId, versaoNaFila]);
 
   // /store/compras é módulo à parte (o HideOnCompras esconde tudo lá).
   if (pathname?.startsWith("/store/compras")) return null;

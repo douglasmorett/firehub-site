@@ -275,6 +275,42 @@ export async function tokenDoAssistenteDaLoja(): Promise<string | null> {
   }
 }
 
+/** A partir daqui o Assistente guarda o token e diz `temToken` no /status. */
+export const VERSAO_ASSISTENTE_COM_TOKEN = "1.2.46";
+
+/**
+ * O painel entrega o token sozinho ao Assistente deste PC? Só ao 1.2.46+ que
+ * diz `temToken: false` (o antigo nem tem o campo) e está vinculado à loja
+ * logada — vinculado a outra loja, ou a nenhuma, é assunto do "Vincular agora".
+ */
+export function deveMandarTokenAoAssistente(
+  assistente: { versao?: string | null; franchiseeId?: string | null; temToken?: unknown } | null | undefined,
+  lojaLogada: string | null | undefined,
+): boolean {
+  if (!assistente || !lojaLogada) return false;
+  if (!versaoAssistenteAoMenos(assistente.versao, VERSAO_ASSISTENTE_COM_TOKEN)) return false;
+  return assistente.temToken === false && String(assistente.franchiseeId || "") === lojaLogada;
+}
+
+/**
+ * O Chrome já deixa este site falar com o localhost sem perguntar? Sondar o
+ * Assistente por conta própria não pode abrir "quer acessar dispositivos na
+ * sua rede" num celular ou PC que nunca imprimiu por aqui. Navegador que não
+ * conhece a permissão nunca pergunta.
+ */
+export async function localhostSemPergunta(): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.permissions?.query) return true;
+  let conhecida = false;
+  for (const name of ["loopback-network", "local-network-access"]) {
+    try {
+      const st = await navigator.permissions.query({ name } as any);
+      if (st.state === "granted") return true;
+      conhecida = true;
+    } catch {}
+  }
+  return !conhecida;
+}
+
 /* Impressora virtual não põe papel na mesa: PDF, XPS, OneNote, fax, "enviar
    para arquivo". A lista do Assistente vem na ordem do registro do Windows,
    onde essas costumam aparecer ANTES da térmica — e "a primeira da lista"

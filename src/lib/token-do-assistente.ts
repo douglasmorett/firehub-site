@@ -28,6 +28,8 @@ import { NextResponse } from "next/server";
  * fica contado/registrado em `semTokenDoAssistente`.
  *
  * Fase 2: `EXIGIR_TOKEN_DO_ASSISTENTE = true`. Ver o comentário da constante.
+ * Até lá a sessão da loja (navegador do painel) já conta como credencial no
+ * POST e no /ack (src/lib/sessao-da-loja-na-fila.ts).
  *
  * ── CONTINGÊNCIA ────────────────────────────────────────────────────────────
  *
@@ -41,17 +43,19 @@ import { NextResponse } from "next/server";
 /**
  * Liga a exigência do token nas três rotas da fila.
  *
- * Só ligar quando TODAS estas condições valerem:
- *   1. as lojas estão no Assistente 1.2.46+ e já salvaram Impressoras (ou
- *      passaram pelo "Vincular agora") depois de atualizar — é aí que o
- *      Assistente recebe o token. O log `[Fila sem token]` fica mudo para as
- *      chamadas sem sessão (`sessao=nao`) por alguns dias de operação;
- *   2. as chamadas do NAVEGADOR (reimpressão do painel no POST e /ack do
- *      GlobalPrintListener e do quadro de pedidos) passaram a ser aceitas pela
- *      SESSÃO da loja — hoje elas não levam token e seriam barradas;
- *   3. existe um caminho para o Assistente sem token se revincular sozinho
- *      (a faixa do painel), porque ligar isto com loja sem token PARA A
- *      IMPRESSÃO dela.
+ * Credencial válida (fase 2 em diante): token do Assistente da loja OU, no
+ * POST e no /ack, a SESSÃO do painel da loja (reimpressão e confirmação que o
+ * navegador faz — ver `sessaoValeComoCredencial`). Sem nenhum dos dois: hoje
+ * passa e conta; ligado, 401.
+ *
+ * O painel aberto entrega o token sozinho ao Assistente 1.2.46+ que está sem
+ * ele (lib/print.ts, `deveMandarTokenAoAssistente`).
+ *
+ * CRITÉRIO PARA LIGAR: o log `[Fila sem token] ... sessao=nao` ZERADO por 2
+ * dias seguidos de operação (todas as lojas, rotas fila/ack/reimpressao).
+ * `sessao=sim` não conta: são chamadas do navegador com sessão da loja, que
+ * continuam aceitas. Ligar com `sessao=nao` aparecendo PARA A IMPRESSÃO da
+ * loja que aparece.
  */
 export const EXIGIR_TOKEN_DO_ASSISTENTE = false;
 
@@ -137,14 +141,36 @@ function temCookieDeSessao(cabecalhos: Headers): boolean {
 }
 
 /**
+ * A sessão do painel vale como credencial da loja pedida? A loja da conta
+ * (`ownerId || id`) ou, para quem não é funcionário, uma loja do mesmo grupo
+ * (`grupo`, de lib/loja-ativa.ts `lojasDoGrupo`): em "Todas as lojas" a
+ * sessão fica na principal e o navegador confirma pedidos das filiais com o
+ * franchiseeId do pedido. Mesma regra do `?loja=` de api/store/printer-config.
+ */
+export function sessaoValeComoCredencial(
+  conta: { id: string; ownerId?: string | null; role?: string | null } | null | undefined,
+  lojaId: string | null | undefined,
+  grupo: readonly string[] = [],
+): boolean {
+  if (!conta?.id || !lojaId) return false;
+  if ((conta.ownerId || conta.id) === lojaId) return true;
+  if (String(conta.role || "").toUpperCase() === "STAFF") return false;
+  return grupo.includes(lojaId);
+}
+
+/**
  * A porta das três rotas da fila. Devolve a resposta de recusa (403/401) ou
  * `null` para seguir como sempre.
+ *
+ * `sessaoDaLoja` (POST e /ack): confere a sessão do painel só quando não veio
+ * token e há cookie de sessão — o Assistente nunca paga essa consulta.
  */
-export function barrarChamadaDaFila(
+export async function barrarChamadaDaFila(
   cabecalhos: Headers,
   lojaId: string | null | undefined,
   rota: "fila" | "reimpressao" | "ack",
-): NextResponse | null {
+  sessaoDaLoja?: () => Promise<boolean>,
+): Promise<NextResponse | null> {
   const conferencia = conferirTokenDoAssistente(cabecalhos.get(CABECALHO_DO_TOKEN_DO_ASSISTENTE), lojaId);
   if (conferencia === "valido" || conferencia === "local") return null;
   if (conferencia === "invalido") {
@@ -152,7 +178,14 @@ export function barrarChamadaDaFila(
     return NextResponse.json({ error: "Credencial do Assistente inválida para esta loja.", motivo: RECUSA_DO_TOKEN }, { status: 403 });
   }
   if (ehFirehubLocal()) return null;
-  anotarSemToken(rota, String(lojaId || "-"), temCookieDeSessao(cabecalhos));
+  let comSessao = false;
+  if (sessaoDaLoja && temCookieDeSessao(cabecalhos)) {
+    try { comSessao = await sessaoDaLoja(); } catch { comSessao = false; }
+  }
+  // `sessao=sim` = sessão da própria loja (vale como credencial); `nao` = o
+  // que a fase 2 recusa.
+  anotarSemToken(rota, String(lojaId || "-"), comSessao);
+  if (comSessao) return null;
   if (EXIGIR_TOKEN_DO_ASSISTENTE) {
     return NextResponse.json({ error: "Credencial do Assistente ausente. Abra Impressoras no painel e salve." }, { status: 401 });
   }
