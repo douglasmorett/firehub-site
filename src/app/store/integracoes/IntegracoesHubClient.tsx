@@ -1699,9 +1699,9 @@ export default function IntegracoesHubClient({
       category: "channels",
       title: "Anota AI",
       subtitle: "Cardápio digital + robô no WhatsApp — integração oficial",
+      // Sem o logo do Anota AI: os termos de parceiro deles (item 3.g) proíbem
+      // usar a marca sem autorização expressa. Fica o emoji até autorizarem.
       icon: "📝",
-      // Ícone oficial do site do Anota AI (anota.ai/astro-content/favicon.svg).
-      logo: "/images/logos/anotaai.svg",
       gradient: "linear-gradient(135deg, #099BFD, #0369A1)",
       badge: aa.lojas.some((l) => l.ultimoErro)
         ? { text: "🟠 Conferir conexão", bg: "#FFF7E6", color: "#B45309", border: "#FDE68A" }
@@ -3473,7 +3473,7 @@ export default function IntegracoesHubClient({
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "14px", marginBottom: "16px", paddingRight: "40px" }}>
                   <div style={{ width: "48px", height: "48px", borderRadius: "14px", background: "#fff", border: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "center", padding: "6px", flexShrink: 0 }}>
-                    <img src="/images/logos/anotaai.svg" alt="Anota AI" style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+                    <span style={{ fontSize: "1.6rem" }} aria-hidden="true">📝</span>
                   </div>
                   <div>
                     <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 900, color: "#0F172A" }}>Anota AI</h2>
