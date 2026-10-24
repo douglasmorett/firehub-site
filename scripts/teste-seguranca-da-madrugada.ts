@@ -86,7 +86,7 @@ const getServerSession = async () => sessao;
 stub("next-auth/next", { getServerSession });
 stub("next-auth", { getServerSession, default: () => null });
 stub("next/cache", { revalidatePath: () => {}, revalidateTag: () => {} });
-stub("../src/lib/auth", { authOptions: {} });
+stub("../src/lib/auth", { authOptions: {}, renovarMarcaDaSessao: async () => {} });
 let whatsappEnviou = 0;
 stub("../src/lib/whatsapp-evolution", { sendEvolutionMessage: async () => (whatsappEnviou++, true) });
 stub("../src/lib/loop-guard", { clearLoopGuard: async () => {}, registerBotReply: async () => {} });
