@@ -108,13 +108,17 @@ const pedido = (id, criadoEm) => ({ id, dailyOrderNumber: id.slice(-2), customer
   // Mesmo recorte do teste-auto-update.js: pelas chaves, que o server.js tem
   // fim de linha do Windows e um "\n}\n" nao o acha.
   const fonte = fs.readFileSync(SERVER, "utf8");
-  const ini = fonte.indexOf("function urlDaChecagemDeVersao(");
-  let nivel = 0, i = fonte.indexOf("{", ini);
-  for (; i < fonte.length; i++) {
-    if (fonte[i] === "{") nivel++;
-    else if (fonte[i] === "}") { nivel--; if (nivel === 0) break; }
-  }
-  const urlDaChecagemDeVersao = new Function(`${fonte.slice(ini, i + 1)}; return urlDaChecagemDeVersao;`)();
+  const recortar = (nome) => {
+    const ini = fonte.indexOf(`function ${nome}(`);
+    let nivel = 0, i = fonte.indexOf("{", ini);
+    for (; i < fonte.length; i++) {
+      if (fonte[i] === "{") nivel++;
+      else if (fonte[i] === "}") { nivel--; if (nivel === 0) break; }
+    }
+    return fonte.slice(ini, i + 1);
+  };
+  // hostDoFireHub vai junto: a checagem só pergunta ao domínio do FireHub.
+  const urlDaChecagemDeVersao = new Function(`${recortar("hostDoFireHub")}; ${recortar("urlDaChecagemDeVersao")}; return urlDaChecagemDeVersao;`)();
   const automatica = urlDaChecagemDeVersao("firehubfood.com.br", "loja_x", "1.2.25", false);
   ok("checagem de versao leva a loja e a versao", /franchiseeId=loja_x/.test(automatica) && /v=1\.2\.25/.test(automatica) && !/pedido=1/.test(automatica), automatica);
   ok("so o pedido a mao leva pedido=1", /pedido=1/.test(urlDaChecagemDeVersao("firehubfood.com.br", "loja_x", "1.2.25", true)));
