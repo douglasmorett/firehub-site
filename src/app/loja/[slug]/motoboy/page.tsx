@@ -701,7 +701,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     try {
       const res = await fetch("/api/motoboys/orders", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        // Com o token, a baixa não depende do motoboyId/storeId do corpo (que
+        // qualquer um monta); sessão antiga sem token segue como antes.
+        headers: { "Content-Type": "application/json", ...(session.token ? { Authorization: `Bearer ${session.token}` } : {}) },
         body: JSON.stringify({
           orderId: alvo.id, motoboyId: session.motoboyId, storeId: session.storeId,
           entregueMesmoCancelado: true, pagamento: formaDoCancelado,
@@ -742,7 +744,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     try {
       const res = await fetch("/api/motoboys/orders", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        // Com o token, a baixa não depende do motoboyId/storeId do corpo (que
+        // qualquer um monta); sessão antiga sem token segue como antes.
+        headers: { "Content-Type": "application/json", ...(session.token ? { Authorization: `Bearer ${session.token}` } : {}) },
         body: JSON.stringify({ orderId: order.id, motoboyId: session.motoboyId, storeId: session.storeId, codigo, apenasConferirCodigo: true }),
       });
       const data = await res.json().catch(() => ({}));
@@ -817,7 +821,9 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
     try {
       const res = await fetch("/api/motoboys/orders", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        // Com o token, a baixa não depende do motoboyId/storeId do corpo (que
+        // qualquer um monta); sessão antiga sem token segue como antes.
+        headers: { "Content-Type": "application/json", ...(session.token ? { Authorization: `Bearer ${session.token}` } : {}) },
         body: JSON.stringify({ orderId, motoboyId: session.motoboyId, storeId: session.storeId, ...extra })
       });
       const data = await res.json().catch(() => ({}));

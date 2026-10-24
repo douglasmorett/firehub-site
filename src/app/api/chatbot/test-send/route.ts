@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +16,16 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true, permissions: true },
     });
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    }
+    // O teste manda WhatsApp para QUALQUER número pelo robô da loja: é da tela
+    // do robô (/store/chatbot, caixinha "Minha loja"), como gravar a config.
+    if (!podeComoNaTela(user, "/store/chatbot")) {
+      return NextResponse.json({ error: "Sua conta não tem acesso ao Robô: peça ao dono da loja para marcar \"Minha loja\" em Equipe." }, { status: 403 });
     }
 
     const { phone, message } = await req.json();
