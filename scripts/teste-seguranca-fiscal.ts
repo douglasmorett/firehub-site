@@ -408,7 +408,8 @@ function secaoEstatica() {
   console.log("\n[3,4,11] Conferências estáticas");
   const servidor = readFileSync(join(RAIZ, "src", "lib", "relatorios", "servidor.ts"), "utf8");
   verdade("[3] o grupo sai de usuario.accountGroupId || donoId (regra do switch)", servidor.includes("usuario.accountGroupId || donoId"));
-  verdade("[4] STAFF precisa da caixinha (funcionarioAbre /store/relatorios)", servidor.includes('funcionarioAbre("/store/relatorios", usuario.permissions)'));
+  // Desde ca812977 a tela é parâmetro (a Antecipação passa "/store/antecipacao"); o padrão continua /store/relatorios.
+  verdade("[4] STAFF precisa da caixinha (funcionarioAbre /store/relatorios)", servidor.includes('tela = "/store/relatorios"') && servidor.includes('usuario.role === "STAFF" && !funcionarioAbre(tela, usuario.permissions)'));
   const invoices = leRota("store/fiscal/invoices/route.ts");
   verdade("[4] invoices: STAFF precisa de Financeiro", invoices.includes('funcionarioAbre("/store/fiscal", user.permissions)'));
   const danfe = leRota("store/fiscal/danfe/route.ts");

@@ -80,6 +80,8 @@ const delegado = (modelo: keyof typeof db) => ({
   findUnique: async (a: any) => { const l = db[modelo].find((x) => casa(x, a.where)); return l ? projetar(l, a.select) : null; },
   findFirst: async (a: any) => { const l = db[modelo].find((x) => casa(x, a.where)); return l ? projetar(l, a.select) : null; },
   findMany: async (a: any = {}) => db[modelo].filter((x) => casa(x, a.where)).map((l) => projetar(l, a.select)),
+  // A trava das 8 entregas na rua (fa246231) conta antes de puxar.
+  count: async (a: any = {}) => db[modelo].filter((x) => casa(x, a.where)).length,
   updateMany: async (a: any) => {
     const alvos = db[modelo].filter((x) => casa(x, a.where));
     for (const l of alvos) Object.assign(l, copia(a.data));
