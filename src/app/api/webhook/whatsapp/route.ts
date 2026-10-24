@@ -296,7 +296,7 @@ export async function POST(req: NextRequest) {
     // 2. Recebimento de mensagens e chamadas (MESSAGES_UPSERT, CALL, etc.)
     if ((event.includes("MESSAGE") || event.includes("UPSERT") || event.includes("CALL") || body.data?.message || body.data?.call) && instance) {
       try {
-        await handleIncomingMessage(body, instance);
+        await handleIncomingMessage(body, instance, chave);
       } catch (msgErr: any) {
         // Loga o erro mas NUNCA retorna 500 — o bot deve continuar funcionando
         console.error(`[${new Date().toISOString()}] [WhatsApp Webhook] ❌ Erro ao processar mensagem:`, msgErr?.message || msgErr);
@@ -511,7 +511,7 @@ const MOTIVO_IA_FORA_DO_AR = "IA fora do ar";
  * Processa uma mensagem recebida do cliente.
  * Isolada em função separada para que erros aqui NUNCA derrubem o webhook.
  */
-async function handleIncomingMessage(body: any, instance: string) {
+async function handleIncomingMessage(body: any, instance: string, chave: ReturnType<typeof chaveDoGateway>) {
   const data = body.data || body;
   const key = data.key || data.message?.key || {};
   const fromMe = key.fromMe;
@@ -1326,7 +1326,8 @@ async function handleIncomingMessage(body: any, instance: string) {
       return;
     }
     const { respostaAoDonoSemBill } = await import("@/lib/assessor/oferta-no-whatsapp");
-    const r = await respostaAoDonoSemBill({ franchiseeId: lojaDoAssessor, telefone: cleanPhone, texto: rawText || "" });
+    // Ligar o Bill (cobrança) só com a chave do gateway: sem ela o remetente pode ser forjado.
+    const r = await respostaAoDonoSemBill({ franchiseeId: lojaDoAssessor, telefone: cleanPhone, texto: rawText || "", comChaveDoGateway: chave === "ok" });
     await replyToCustomer(user.id, remoteJid, r.resposta, remoteJid || data.from || "").catch(() => {});
     registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "dono-sem-bill", detalhe: r.acao });
     return;

@@ -13,6 +13,10 @@
  * O "sim" só vale logo depois de o termo ter sido mostrado (JANELA_DO_SIM): a
  * oferta guardada é a prova do que ele leu. Guardada na memória do servidor —
  * reiniciou no meio, ele recebe a oferta de novo, e só.
+ *
+ * E só com a chave do gateway (lib/chave-do-gateway.ts): o webhook aceita sem
+ * ela a instância que ainda não a mandou, e aí o "sim" do dono pode ser forjado
+ * por quem sabe o número dele. Ligar o Bill é cobrança: sem a chave, não liga.
  */
 import { CLAUSULAS_DO_TERMO_DO_BILL, VERSAO_DO_TERMO_DO_BILL } from "./termo";
 
@@ -52,15 +56,20 @@ export function textoDaOferta(o: { nomeDaLoja: string; preco: number; jaTestou: 
 export const TEXTO_CURTO_DA_OFERTA =
   "Isso é com o *Bill, seu assessor*, que ainda não está ativo na sua loja. Responda *SIM* para ativar (termo na mensagem acima) ou *NÃO* para deixar para depois.";
 
+export const TEXTO_SEM_CHAVE =
+  "Por aqui não consegui confirmar a ativação. Ative no painel, em *Bill, seu assessor* — é um clique.";
+
 export const TEXTO_DO_NAO =
   "Tudo bem! Quando quiser, é só me mandar *SIM* por aqui ou ativar no painel, em *Bill, seu assessor*.";
 
-export type RespostaAoDono = { resposta: string; acao: "oferta" | "lembrete" | "ativou" | "recusou" | "falhou" };
+export type RespostaAoDono = { resposta: string; acao: "oferta" | "lembrete" | "ativou" | "recusou" | "falhou" | "sem-chave" };
 
 export async function respostaAoDonoSemBill(e: {
   franchiseeId: string;
   telefone: string;
   texto: string;
+  /** O evento chegou com a chave certa do gateway (chaveDoGateway === "ok"). */
+  comChaveDoGateway: boolean;
   agora?: Date;
 }): Promise<RespostaAoDono> {
   const agora = e.agora ?? new Date();
@@ -70,6 +79,11 @@ export async function respostaAoDonoSemBill(e: {
   const { estadoDoAssessor, ligarOuDesligarAssessor } = await import("./assinatura");
 
   if (ofertaValendo && ehSim(e.texto)) {
+    if (!e.comChaveDoGateway) {
+      // A oferta fica valendo: o "sim" de verdade, com a chave, ainda liga.
+      console.warn(`[Bill pelo WhatsApp] "Sim" sem a chave do gateway: NÃO ativei ${e.franchiseeId} (+${e.telefone.slice(-4)}).`);
+      return { acao: "sem-chave", resposta: TEXTO_SEM_CHAVE };
+    }
     try {
       const estado = await ligarOuDesligarAssessor(
         e.franchiseeId,
