@@ -12,15 +12,16 @@
  * serviço ("abre um prompt, reinicia e imprime tudo de novo" — Brasa Burguer,
  * 06/09/2026).
  *
- * Sem autenticação, como o GET que alimenta o Assistente (só o id da loja,
- * que está no HTML do cardápio). Quem forjar um ack só consegue calar a
- * comanda automática de um pedido daquela loja — e o pedido continua no
- * painel e no navegador; nada de dado sai daqui.
+ * Ainda sem autenticação obrigatória, como o GET que alimenta o Assistente
+ * (só o id da loja, que está no HTML do cardápio). O Assistente 1.2.46+ manda
+ * o token da loja (lib/token-do-assistente.ts): token de outra loja ou
+ * adulterado é recusado; sem token passa, até a fase 2 ligar a exigência.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { lojasQueEstePcConfirma } from "@/lib/lojas-no-mesmo-pc-no-banco";
 import { SUFIXO_DA_CHEGADA } from "@/lib/momento-da-impressao";
+import { barrarChamadaDaFila } from "@/lib/token-do-assistente";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +42,9 @@ export async function POST(req: NextRequest) {
   if (!franchiseeId || ids.length === 0) {
     return NextResponse.json({ ok: false, error: "franchiseeId e ids são obrigatórios" }, { status: 400 });
   }
+
+  const barrado = barrarChamadaDaFila(req.headers, franchiseeId, "ack");
+  if (barrado) return barrado;
 
   try {
     const agora = new Date();

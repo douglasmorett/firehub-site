@@ -68,7 +68,7 @@ type PrintOrder = {
 // public/downloads pelo build correspondente. Anunciar versão nova com
 // instalador velho no site faz o auto-update de TODAS as lojas baixar e
 // reinstalar a versão antiga em loop, a cada 6 horas, para sempre.
-export const VERSAO_ASSISTENTE_ATUAL = "1.2.45";
+export const VERSAO_ASSISTENTE_ATUAL = "1.2.46";
 
 /** "1.2.10" é mais nova que "1.2.9": compara por número, não por texto. */
 export function versaoAssistenteAoMenos(versao: string | null | undefined, minima: string): boolean {
@@ -257,6 +257,22 @@ export function printersParaAssistente(printers: Array<Pick<PrinterEntry, "name"
     // esquecido aqui simplesmente nao existe para o Assistente.
     modeloId: pr.modeloId || "",
   }));
+}
+
+/**
+ * O token da loja para o POST /config do Assistente (lib/token-do-assistente.ts),
+ * pedido pelas mesmas duas telas. Falhou? `null`, e o /config sai sem ele como
+ * sempre saiu: o Assistente segue com o token que já tinha.
+ */
+export async function tokenDoAssistenteDaLoja(): Promise<string | null> {
+  try {
+    const r = await fetch("/api/store/token-do-assistente", { cache: "no-store" });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return typeof j?.token === "string" && j.token ? j.token : null;
+  } catch {
+    return null;
+  }
 }
 
 /* Impressora virtual não põe papel na mesa: PDF, XPS, OneNote, fax, "enviar

@@ -6,6 +6,7 @@ import { useSession } from "next-auth/react";
 import {
   fetchAssistente,
   printersParaAssistente,
+  tokenDoAssistenteDaLoja,
   VERSAO_ASSISTENTE_ATUAL,
   VERSAO_QUE_CONFIRMA_IMPRESSAO,
   VERSAO_TETO_ZERO,
@@ -152,6 +153,7 @@ export default function AvisoImpressaoParada() {
       const cfg = await fetch("/api/store/printer-config", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
       const printers = printersParaAssistente(Array.isArray(cfg?.printers) ? cfg.printers : []);
       const primeira = printers[0];
+      const token = await tokenDoAssistenteDaLoja();
       const r = await fetchAssistente(`${local.url}/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -160,6 +162,7 @@ export default function AvisoImpressaoParada() {
           domain: window.location.hostname,
           ...(primeira ? { printer: primeira.name, paperWidth: primeira.paperWidth } : {}),
           printers,
+          ...(token ? { token } : {}),
         }),
         signal: AbortSignal.timeout(8000),
       });

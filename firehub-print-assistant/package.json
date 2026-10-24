@@ -1,6 +1,6 @@
 {
   "name": "firehub-print-assistant",
-  "version": "1.2.45",
+  "version": "1.2.46",
   "description": "Assistente FireHub de Impressão — servidor local para impressoras térmicas",
   "main": "main.js",
   "scripts": {
@@ -29,6 +29,7 @@
       "qr-code.js",
       "impressao-windows.js",
       "contingencia.js",
+      "token-da-nuvem.js",
       "tef/**/*",
       "package.json",
       "assets/**/*"

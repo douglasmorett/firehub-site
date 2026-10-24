@@ -18,6 +18,7 @@ import { exigirUsuarioDoApp } from "@/lib/app-firehub/sessao";
 import { trabalhosParaOCelular, type LarguraDoCelular } from "@/lib/app-firehub/impressao";
 import { GET as filaDoAssistente } from "@/app/api/store/print-queue/route";
 import { POST as confirmarNaFila } from "@/app/api/store/print-queue/ack/route";
+import { CABECALHO_DO_TOKEN_DO_ASSISTENTE, criarTokenDoAssistente } from "@/lib/token-do-assistente";
 
 export const dynamic = "force-dynamic";
 
@@ -40,7 +41,9 @@ export async function GET(req: NextRequest) {
   if (Number.isFinite(aberto) && aberto >= 0) url.searchParams.set("abertoHaSeg", String(Math.floor(aberto)));
 
   const resposta = await filaDoAssistente(
-    new NextRequest(url, { headers: { "x-forwarded-for": enderecoDoAparelho(req) } }),
+    // O token da loja da sessão do app: a fila confere como confere o do
+    // Assistente do PC (lib/token-do-assistente.ts).
+    new NextRequest(url, { headers: { "x-forwarded-for": enderecoDoAparelho(req), [CABECALHO_DO_TOKEN_DO_ASSISTENTE]: criarTokenDoAssistente(u.lojaId) } }),
   );
   if (!resposta.ok) return NextResponse.json({ error: "Fila indisponível agora." }, { status: 503 });
   const corpo = await resposta.json().catch(() => null);
@@ -57,7 +60,7 @@ export async function POST(req: NextRequest) {
   return confirmarNaFila(
     new NextRequest(new URL("/api/store/print-queue/ack", req.url), {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", [CABECALHO_DO_TOKEN_DO_ASSISTENTE]: criarTokenDoAssistente(u.lojaId) },
       body: JSON.stringify({ franchiseeId: u.lojaId, ids }),
     }),
   );
