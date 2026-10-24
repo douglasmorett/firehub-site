@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { novoIdDaTela } from "@/lib/kds-telas";
+import { chaveDaTela } from "@/lib/kds-link-curto";
 import { AvisoNoTopo, type Aviso } from "@/components/mesas/SelecionarItensParaImpressao";
 
 interface KDSScreenConfig {
@@ -339,7 +340,7 @@ export default function KDSHubClient() {
       {/* Screen cards */}
       {screens.length > 0 && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1rem" }}>
-          {screens.map((screen) => {
+          {screens.map((screen, indice) => {
             const isProd = screen.stage === "production";
             const accent = isProd ? "#E8590C" : "#64748B";
             const cats = screen.categoryFilter || [];
@@ -430,6 +431,15 @@ export default function KDSHubClient() {
                 <p style={{ fontSize: "0.78rem", color: "#64748b", margin: 0 }}>
                   Dentro da tela você pode trocar o filtro a qualquer momento.
                 </p>
+
+                {/* O link curto para digitar na TV (lib/kds-link-curto.ts). */}
+                {chaveDaTela(screen.name) && (
+                  <p style={{ fontSize: "0.78rem", color: "#CBD5E1", margin: "8px 0 0", lineHeight: 1.5 }}>
+                    📺 Na TV, digite:{" "}
+                    <strong style={{ color: "#fff", fontFamily: "monospace", fontSize: "0.82rem" }}>firehubfood.com.br/kds/{chaveDaTela(screen.name)}</strong>
+                    <span style={{ display: "block", color: "#94a3b8" }}>ou só <strong style={{ color: "#fff", fontFamily: "monospace" }}>firehubfood.com.br/kds/{indice + 1}</strong></span>
+                  </p>
+                )}
               </div>
             );
           })}
