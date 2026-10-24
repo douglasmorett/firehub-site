@@ -39,13 +39,15 @@ const ler = (rel: string) => readFileSync(join(__dirname, "..", rel), "utf8");
 // ── Banco falso ──────────────────────────────────────────────────────────────
 const SENHA_CERTA = "senha-certa";
 const HASH = bcrypt.hashSync(SENHA_CERTA, 4);
-type Usuario = { id: string; email: string; role: string; ownerId: string | null; permissions: string | null; slug?: string; password?: string; storeName?: string; reviewsMinStars?: number };
+type Usuario = { id: string; email: string; role: string; ownerId: string | null; permissions: string | null; slug?: string; password?: string; storeName?: string; reviewsMinStars?: number; food99MerchantId?: string; food99AppId?: string };
 const USUARIOS: Usuario[] = [
   { id: "cl0dono0001", email: "dono@loja", role: "FRANCHISEE", ownerId: null, permissions: null, slug: "loja-do-dono", password: HASH, storeName: "Loja do Dono", reviewsMinStars: 3 },
   { id: "outra-dona", email: "outra@loja", role: "FRANCHISEE", ownerId: null, permissions: null, password: HASH },
   { id: "caixa", email: "caixa@loja", role: "STAFF", ownerId: "cl0dono0001", permissions: "orders,kds" },
   { id: "cozinha", email: "cozinha@loja", role: "STAFF", ownerId: "cl0dono0001", permissions: "kds" },
   { id: "admin", email: "admin@firehub", role: "ADMIN", ownerId: null, permissions: null },
+  // Loja que gravou nomes de campo do 99Food como os ids dela (F7).
+  { id: "cl0esperto01", email: "esperto@loja", role: "FRANCHISEE", ownerId: null, permissions: null, food99MerchantId: "app_shop_id", food99AppId: "orderNew" },
 ];
 const recorta = (u: any, select?: any) => (u && select ? Object.fromEntries(Object.keys(select).map((k) => [k, u[k] ?? null])) : u);
 const gravados: Record<string, any[]> = {};
@@ -245,6 +247,10 @@ async function main() {
   confere("?appShopId= de outra loja não é testado", testados.includes("outra-dona"), false);
   confere("?vincular= e ?hosts=1 não rodam para a loja", [vinculosTentados, sondagens, daLoja.tentativaDeVinculo, daLoja.shopListPorHost], [0, 0, null, null]);
   confere("o diagnóstico da loja continua", [daLoja.ok, daLoja.parou_em, daLoja.autorizacao.autorizada], [true, "nada", true]);
+  naSessao("esperto@loja");
+  const doEsperto = await (await diag.GET(req("/api/99food/diagnostico"))).json();
+  confere("id gravado que é pedaço de todo evento (\"app_shop_id\", \"orderNew\") não abre os eventos dos outros", doEsperto.webhook.ultimosEventos.length, 0);
+  confere("…nem as listas", [doEsperto.lojasAutorizadasV3.lojas.length, doEsperto.lojasVinculadasAoApp.lojas.length], [0, 0]);
   naSessao("admin@firehub");
   const doAdmin = await (await diag.GET(req("/api/99food/diagnostico?appShopId=outra-dona&hosts=1"))).json();
   confere("ADMIN vê tudo", [doAdmin.lojasAutorizadasV3.lojas.length, doAdmin.lojasVinculadasAoApp.lojas.length, doAdmin.webhook.ultimosEventos.length, doAdmin.lojasVinculadasAoApp.cru], [2, 2, 2, { tudo: "de todos" }]);
