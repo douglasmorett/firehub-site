@@ -79,6 +79,47 @@ export function chaveDoNome(nome: unknown): string {
     .trim();
 }
 
+/**
+ * A categoria de verdade, nesta loja, de cada nome que chegou num pedido de
+ * plataforma — para o produto que a integração cria sozinha nascer nela, e não
+ * na categoria da plataforma (lib/food99-pedido.ts › itens99ParaPrisma).
+ *
+ * Vale o produto de mesmo nome (chaveDoNome), o ativo primeiro. O inativo
+ * também conta — na Ragnar (23/10/2026) o "Combo Tadala" só existia na cópia
+ * do iFood, inativa, em "Combos" —, mas só com categoria que algum produto
+ * ativo da loja usa: categoria de espelho de outra plataforma não é da loja.
+ * Nome sem par fica fora do mapa.
+ */
+export async function categoriasPeloNome(lojaId: string, nomes: string[]): Promise<Map<string, string>> {
+  const resposta = new Map<string, string>();
+  const porChave = new Map<string, string[]>();
+  for (const nome of nomes) {
+    const chave = chaveDoNome(nome);
+    if (chave) porChave.set(chave, [...(porChave.get(chave) ?? []), nome]);
+  }
+  if (porChave.size === 0) return resposta;
+
+  const produtos = await prisma.menuProduct.findMany({
+    where: { franchiseeId: lojaId },
+    select: { name: true, category: true, active: true },
+  });
+  const limpa = (c: unknown) => String(c ?? "").trim();
+  const daLoja = new Set(
+    produtos
+      .filter((p) => p.active === true && limpa(p.category) && !ehCategoriaDeIntegracao(p.category))
+      .map((p) => limpa(p.category).toLowerCase()),
+  );
+  const ativosPrimeiro = [...produtos].sort((a, b) => Number(b.active === true) - Number(a.active === true));
+  for (const p of ativosPrimeiro) {
+    const categoria = limpa(p.category);
+    if (!categoria || !daLoja.has(categoria.toLowerCase())) continue;
+    for (const nome of porChave.get(chaveDoNome(p.name)) ?? []) {
+      if (!resposta.has(nome)) resposta.set(nome, categoria);
+    }
+  }
+  return resposta;
+}
+
 /** Prefixo mais curto que aceito casar: abaixo disso é palavra solta, não nome. */
 const PREFIXO_MINIMO = 15;
 

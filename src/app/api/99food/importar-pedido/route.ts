@@ -5,6 +5,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { detalheDoPedido } from "@/lib/food99-api";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
+import { categoriasPeloNome } from "@/lib/categoria-do-item";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 
 export const dynamic = "force-dynamic";
@@ -124,7 +125,11 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const items = itens99ParaPrisma(p.itens, lojaId);
+  const items = itens99ParaPrisma(
+    p.itens,
+    lojaId,
+    await categoriasPeloNome(lojaId, p.itens.map((i) => i.nome)).catch(() => undefined),
+  );
 
   const criado = await (prisma.customerOrder as any).create({
     data: {

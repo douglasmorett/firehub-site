@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { generateDailyOrderNumber } from "@/lib/order-number";
+import { generateDailyOrderNumberTx } from "@/lib/order-number";
 import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 import { registrar99Food } from "@/lib/webhook-99food-log";
 import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 import { parseJson99Food } from "@/lib/json-ids-longos";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
+import { categoriasPeloNome } from "@/lib/categoria-do-item";
 import { aplicarPedidoAlterado99, sincronizar99Food } from "@/lib/food99-status";
 import { donoDoAppShopId, donoDoShopId } from "@/lib/food99-lojas";
 import { detalheDoPedido } from "@/lib/food99-api";
@@ -546,7 +547,11 @@ export async function POST(req: NextRequest) {
         {
           const p = pedido;
 
-          const items = itens99ParaPrisma(p.itens, franchisee!.id);
+          const items = itens99ParaPrisma(
+            p.itens,
+            franchisee!.id,
+            await categoriasPeloNome(franchisee!.id, p.itens.map((i) => i.nome)).catch(() => undefined),
+          );
 
           // Quantos km — sem isto a escada de km do entregador não tem o que
           // comparar e o acerto cai no valor por entrega.
@@ -560,10 +565,16 @@ export async function POST(req: NextRequest) {
           const aceitaSozinho = await aceitaSozinhoAgora(franchisee);
 
           try {
-            await (prisma.customerOrder as any).create({
+            // Número e pedido na MESMA transação, como no iFood
+            // (lib/ifood-eventos.ts). Fora dela, a entrega que perdia a corrida
+            // do reenvio já tinha gastado um número antes do P2002, e o
+            // contador seguia: na Ragnar (23/10/2026) foram 43 números sem
+            // pedido numa noite, e o lojista lê o buraco como pedido sumido.
+            // Com a transação, a perdedora devolve o número junto.
+            await prisma.$transaction(async (tx) => (tx.customerOrder as any).create({
               data: {
                 franchiseeId: franchisee.id,
-                dailyOrderNumber: await generateDailyOrderNumber(franchisee.id),
+                dailyOrderNumber: await generateDailyOrderNumberTx(tx, franchisee.id),
                 customerName: p.cliente.nome,
                 customerPhone: p.cliente.telefone,
                 customerAddress: p.cliente.endereco,
@@ -640,7 +651,7 @@ export async function POST(req: NextRequest) {
                 ...(p.codigoDeColeta ? { openDeliveryPickupCode: p.codigoDeColeta } : {}),
                 items: { create: items },
               },
-            });
+            }), { timeout: 20000 });
 
             // ── Confirmar no 99Food, quando a loja aceita sozinha ─────────
             //
