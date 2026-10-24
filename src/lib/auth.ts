@@ -3,7 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "./prisma";
 import bcrypt from "bcryptjs";
 import { COOKIE_SEGURO } from "./modo-local";
-import { decode } from "next-auth/jwt";
+import { decode, encode } from "next-auth/jwt";
 import {
   verificarFreioDeLogin,
   registrarFalhaDeLogin,
@@ -19,6 +19,7 @@ import {
   trocarDePainel,
 } from "./paineis-do-dono";
 import { podeTrocarParaLoja } from "./loja-ativa";
+import { conferirSessao, esquecerConta, marcaDaSenha } from "./sessao-conferida";
 
 if (!process.env.NEXTAUTH_SECRET) {
   throw new Error('NEXTAUTH_SECRET environment variable is not defined. Please set it in your .env file.');
@@ -45,7 +46,10 @@ export const authOptions: NextAuthOptions = {
           if (sessionTokenMatch) {
             const tokenValue = sessionTokenMatch[1];
             try {
-              const decoded = await decode({ token: tokenValue, secret: process.env.NEXTAUTH_SECRET! });
+              // Conferido no banco (lib/sessao-conferida.ts): admin rebaixado ou
+              // com a senha trocada não entra como loja com o cookie antigo.
+              const lido = await decode({ token: tokenValue, secret: process.env.NEXTAUTH_SECRET! });
+              const decoded = lido ? await conferirSessao(lido) : null;
               if (decoded?.role === "ADMIN") {
                 const targetUser = await prisma.user.findUnique({ where: { id: credentials.impersonateId } });
                 if (targetUser) {
@@ -64,6 +68,10 @@ export const authOptions: NextAuthOptions = {
                     // precisaria para desfazer. A única saída era sair e entrar
                     // de novo, a cada atendimento.
                     impersonatedBy: (decoded as any).id || decoded.sub || null,
+                    // A sessão vira a da loja (marca da senha DELA); a do admin
+                    // vai junto para o "Voltar ao admin" recusar se ele trocou a senha.
+                    marcaDaSenha: marcaDaSenha(targetUser.password),
+                    marcaDoAdmin: (decoded as any).marcaDaSenha ?? null,
                   } as any;
                 }
               }
@@ -89,12 +97,16 @@ export const authOptions: NextAuthOptions = {
           const sessionTokenMatch = cookies.match(/(?:next-auth\.session-token|__Secure-next-auth\.session-token)=([^;]+)/);
           if (!sessionTokenMatch) return null;
           try {
-            const decoded = await decode({ token: sessionTokenMatch[1], secret: process.env.NEXTAUTH_SECRET! });
+            const lido = await decode({ token: sessionTokenMatch[1], secret: process.env.NEXTAUTH_SECRET! });
+            const decoded = lido ? await conferirSessao(lido) : null;
             const adminId = (decoded as any)?.impersonatedBy;
             if (!adminId) return null;
 
             const admin = await prisma.user.findUnique({ where: { id: String(adminId) } });
             if (!admin || admin.role !== "ADMIN") return null;
+            // Admin que trocou a senha depois de entrar na loja não volta por aqui.
+            const marcaDoAdmin = (decoded as any).marcaDoAdmin;
+            if (marcaDoAdmin && marcaDoAdmin !== marcaDaSenha(admin.password)) return null;
 
             return {
               id: admin.id,
@@ -104,6 +116,7 @@ export const authOptions: NextAuthOptions = {
               city: admin.city as string | null,
               storeName: admin.storeName || admin.name,
               permissions: admin.permissions as string,
+              marcaDaSenha: marcaDaSenha(admin.password),
               // Volta a ser sessão normal: sem isto o admin ficaria marcado
               // como "impersonando" para sempre, e a faixa nunca sumiria.
               impersonatedBy: null,
@@ -145,6 +158,7 @@ export const authOptions: NextAuthOptions = {
           return {
             ...identidadeDaLoja(destino as any, { ...papeisAtuais, loja: destino.id } as any),
             impersonatedBy: (atual as any)?.impersonatedBy ?? null,
+            marcaDoAdmin: (atual as any)?.marcaDoAdmin ?? null,
           } as any;
         }
 
@@ -222,10 +236,19 @@ export const authOptions: NextAuthOptions = {
         // As contas que esta sessão provou (lib/paineis-do-dono.ts). Mesma
         // regra do campo acima: login sem o campo APAGA o anterior.
         (token as any).papeis = (user as any).papeis ?? null;
+        // A marca da senha da conta da sessão (lib/sessao-conferida.ts).
+        (token as any).marcaDaSenha = (user as any).marcaDaSenha ?? null;
+        (token as any).marcaDoAdmin = (user as any).marcaDoAdmin ?? null;
+        return token;
       }
-      return token;
+      // Cada leitura da sessão confere a conta: senha trocada ou conta apagada
+      // encerram; role e permissions passam a ser os do banco. Token vazio é
+      // sessão encerrada (o `session` abaixo devolve nada).
+      return ((await conferirSessao(token)) ?? {}) as typeof token;
     },
     async session({ session, token }) {
+      // Sessão encerrada no `jwt`: objeto vazio faz o getServerSession dar null.
+      if (!token?.id && !token?.sub) return {} as any;
       if (session.user) {
         (session.user as any).id = token.id || token.sub;
         (session.user as any).role = token.role;
@@ -259,3 +282,26 @@ export const authOptions: NextAuthOptions = {
   },
   secret: process.env.NEXTAUTH_SECRET!,
 };
+
+/**
+ * Quem trocou a própria senha segue logado NESTE navegador: o cookie da
+ * sessão é regravado com a marca nova. As outras sessões da conta caem.
+ * Só para server action / route handler (precisa gravar cookie).
+ */
+export async function renovarMarcaDaSessao(userId: string, novoHash: string) {
+  esquecerConta(userId);
+  try {
+    const { cookies } = await import("next/headers");
+    const jar = await cookies();
+    const { name, options } = authOptions.cookies!.sessionToken!;
+    const atual = jar.get(name)?.value;
+    if (!atual) return;
+    const token = await decode({ token: atual, secret: process.env.NEXTAUTH_SECRET! });
+    if (!token || String(token.id || token.sub) !== userId) return;
+    const maxAge = authOptions.session!.maxAge!;
+    const novo = await encode({ token: { ...token, marcaDaSenha: marcaDaSenha(novoHash) }, secret: process.env.NEXTAUTH_SECRET!, maxAge });
+    jar.set(name, novo, { ...options, maxAge });
+  } catch (e) {
+    console.error("[sessão] Não consegui renovar a marca da senha:", (e as Error)?.message);
+  }
+}

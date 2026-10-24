@@ -34,6 +34,7 @@ import { decode } from "next-auth/jwt";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import { verificarFreioDeLogin, registrarFalhaDeLogin, limparFreioDeLogin, origemDaRequisicao } from "./login-throttle";
+import { conferirSessao, marcaDaSenha } from "./sessao-conferida";
 
 export type Painel = "loja" | "parceiro";
 
@@ -98,6 +99,7 @@ export function identidadeDaLoja(loja: Loja, papeis: PapeisProvados) {
     city: loja.city as string | null,
     storeName: loja.storeName || loja.name,
     permissions: loja.permissions as string,
+    marcaDaSenha: marcaDaSenha(loja.password),
     papeis,
   };
 }
@@ -112,19 +114,26 @@ export function identidadeDoParceiro(parceiro: Parceiro, papeis: PapeisProvados)
     city: null,
     storeName: parceiro.name,
     permissions: "[]",
+    marcaDaSenha: marcaDaSenha(parceiro.password),
     papeis,
   };
 }
 
 type TokenDaSessao = { id?: string; sub?: string; email?: string; role?: string; papeis?: PapeisProvados | null; impersonatedBy?: string | null };
 
-/** O token da sessão que JÁ está aberta neste navegador (o cookie vem na requisição do login). */
+/**
+ * O token da sessão que JÁ está aberta neste navegador (o cookie vem na
+ * requisição do login), conferido com o banco (lib/sessao-conferida.ts):
+ * sessão encerrada por senha trocada ou conta apagada não serve de ponte
+ * para trocar de loja ou de painel.
+ */
 export async function tokenDaSessaoAtual(req: any): Promise<TokenDaSessao | null> {
   const cookies: string = req?.headers?.cookie || "";
   const m = cookies.match(/(?:next-auth\.session-token|__Secure-next-auth\.session-token)=([^;]+)/);
   if (!m) return null;
   try {
-    return ((await decode({ token: m[1], secret: process.env.NEXTAUTH_SECRET! })) as TokenDaSessao | null) ?? null;
+    const token = (await decode({ token: m[1], secret: process.env.NEXTAUTH_SECRET! })) as TokenDaSessao | null;
+    return token ? await conferirSessao(token) : null;
   } catch {
     return null;
   }

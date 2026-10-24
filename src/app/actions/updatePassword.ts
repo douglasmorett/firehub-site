@@ -1,7 +1,7 @@
 "use server";
 
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
+import { authOptions, renovarMarcaDaSessao } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { checkRateLimit } from "@/lib/rateLimit";
@@ -47,6 +47,8 @@ export async function updatePassword(currentPassword: string, newPassword: strin
     where: { id: user.id },
     data: { password: hashedPassword }
   });
+  // As outras sessões da conta caem (lib/sessao-conferida.ts); esta segue.
+  await renovarMarcaDaSessao(user.id, hashedPassword);
 
   return { success: true };
 }
