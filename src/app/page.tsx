@@ -742,6 +742,7 @@ export default function Home() {
                 <div className="lp-logo"><img src="/images/logos/99.svg" alt="99Food" style={{ maxHeight: 36 }} /></div>
                 <div className="lp-logo"><img src="/images/logos/jotaja.png" alt="Jotajá" /></div>
                 <div className="lp-logo"><img src="/images/logos/brendi.webp" alt="Brendi" style={{ maxHeight: 34 }} /></div>
+                <div className="lp-logo"><img src="/images/logos/anotaai-logo.svg" alt="Anota AI" style={{ maxHeight: 34 }} /></div>
                 <div className="lp-logo lp-logo-txt" style={{ color: "#7C3AED" }}>wabiz</div>
                 <div className="lp-logo"><img src="/images/logos/foody.png" alt="Foody Delivery" style={{ maxHeight: 40 }} /></div>
               </div>
