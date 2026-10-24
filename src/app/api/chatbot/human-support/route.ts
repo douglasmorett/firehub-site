@@ -7,8 +7,22 @@ import { clearLoopGuard, registerBotReply } from "@/lib/loop-guard";
 import { retomarRobo } from "@/lib/pausa-do-robo";
 import { registrarMensagemDaLoja } from "@/lib/memoria-da-conversa-no-banco";
 import { contaOficialDoWhatsApp } from "@/lib/contas-oficiais-whatsapp";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
+
+/**
+ * A mesma régua da rota irmã (api/chatbot/conversas, caixinha "orders"): a
+ * conversa tem nome, telefone e endereço do cliente, e daqui sai mensagem pelo
+ * WhatsApp da loja para o jid que vier no corpo. O funcionário só da cozinha
+ * mandava mensagem para qualquer número (auditoria de 23/10/2026).
+ */
+const TELA_DAS_CONVERSAS = "/store/pedidos-clientes";
+const semAcesso = () =>
+  NextResponse.json(
+    { error: "Você não tem acesso às conversas do WhatsApp. O dono da loja libera em Configurações → Equipe, no Painel de Pedidos." },
+    { status: 403 },
+  );
 
 // In-memory store for pending human support chats
 // In production serverless environments, this can also sync via global cache or DB
@@ -52,12 +66,13 @@ export async function GET(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true, permissions: true },
     });
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
     }
+    if (!podeComoNaTela(user, TELA_DAS_CONVERSAS)) return semAcesso();
 
     const targetUserId = user.ownerId || user.id;
     const store = getSupportStore();
@@ -92,12 +107,13 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true, permissions: true },
     });
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
     }
+    if (!podeComoNaTela(user, TELA_DAS_CONVERSAS)) return semAcesso();
 
     const targetUserId = user.ownerId || user.id;
     const { action, chatId, message, jid } = await req.json();

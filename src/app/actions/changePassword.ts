@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import bcrypt from "bcryptjs";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 export async function changePassword(currentPassword: string, newPassword: string) {
   const session = await getServerSession(authOptions);
@@ -30,6 +31,13 @@ export async function changePassword(currentPassword: string, newPassword: strin
 
   if (!user) {
     throw new Error("Usuário não encontrado.");
+  }
+
+  // Sem teto, quem pega a sessão aberta no PC da loja testava senhas aqui à
+  // vontade, fora do freio do login. A chave é do usuário e a mesma nas duas
+  // telas de troca (changePassword/updatePassword), para não somar limites.
+  if (!checkRateLimit(`senha-atual:${user.id}`, { windowMs: 15 * 60_000, maxRequests: 5 }).allowed) {
+    throw new Error("Muitas tentativas. Espere 15 minutos e tente de novo.");
   }
 
   const passwordMatch = await bcrypt.compare(currentPassword, user.password);

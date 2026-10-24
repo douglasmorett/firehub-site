@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { ehDonoOuAdmin } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
 
@@ -15,7 +16,7 @@ export async function GET() {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true },
     });
 
     if (!user) {
@@ -29,6 +30,11 @@ export async function GET() {
       orderBy: { createdAt: "desc" },
     });
 
+    // O `secret` assina o que a loja manda para fora: só o dono o vê (a mesma
+    // regra das chaves de API). O funcionário vê a lista, sem ele.
+    if (!ehDonoOuAdmin(user)) {
+      return NextResponse.json({ subscriptions: subscriptions.map(({ secret: _s, ...resto }) => resto) });
+    }
     return NextResponse.json({ subscriptions });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -44,11 +50,17 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true },
     });
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+    }
+    // Webhook manda os pedidos da loja (com dados do cliente) para a URL que
+    // vier: cadastrar e apagar é só do dono, como as chaves de API
+    // (auditoria de 23/10/2026).
+    if (!ehDonoOuAdmin(user)) {
+      return NextResponse.json({ error: "Só o dono da loja cadastra ou apaga webhook." }, { status: 403 });
     }
 
     const targetFranchiseeId = user.ownerId || user.id;
@@ -89,11 +101,17 @@ export async function DELETE(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true },
     });
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado." }, { status: 404 });
+    }
+    // Webhook manda os pedidos da loja (com dados do cliente) para a URL que
+    // vier: cadastrar e apagar é só do dono, como as chaves de API
+    // (auditoria de 23/10/2026).
+    if (!ehDonoOuAdmin(user)) {
+      return NextResponse.json({ error: "Só o dono da loja cadastra ou apaga webhook." }, { status: 403 });
     }
 
     const targetFranchiseeId = user.ownerId || user.id;
