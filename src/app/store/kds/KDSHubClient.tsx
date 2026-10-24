@@ -359,7 +359,6 @@ export default function KDSHubClient() {
                 background: "#1C1917", borderRadius: "14px", padding: "1.5rem",
                 border: "1px solid #292524", position: "relative",
                 borderLeft: `4px solid ${accent}`,
-                display: "flex", flexDirection: "column",
               }}>
                 <button
                   onClick={() => removeScreen(screen.id)}
@@ -375,37 +374,10 @@ export default function KDSHubClient() {
                   {screen.name}
                 </div>
 
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "0.75rem" }}>
-                  <span style={{
-                    padding: "3px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
-                    background: `${accent}22`, color: accent,
-                  }}>
-                    {isProd ? "🔥 Produção" : "📦 Finalização"}
-                  </span>
-                  <span style={{
-                    padding: "3px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
-                    background: "#334155", color: "#CBD5E1",
-                  }}>
-                    {filterLabel(screen.filter)}
-                  </span>
-                  {cats.length > 0 && (
-                    <span style={{
-                      padding: "3px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
-                      background: "#134e4a", color: "#5eead4",
-                    }}>
-                      🏷️ {cats.join(", ")}
-                    </span>
-                  )}
-                </div>
-
-                <p style={{ fontSize: "0.78rem", color: "#64748b", margin: "0 0 1rem 0" }}>
-                  Dentro da tela você pode trocar o filtro a qualquer momento.
-                </p>
-
-                {/* No pé do card: o controle da TV anda em linha reta, e o
-                    botão da Esfirra, empurrado pela etiqueta das categorias,
-                    ficava abaixo dos outros e o cursor pulava ele (Hakim, 22/10). */}
-                <div style={{ display: "flex", gap: "8px", marginTop: "auto" }}>
+                {/* Botão logo abaixo do nome e as etiquetas embaixo dele: o
+                    controle da TV anda em linha reta, e a etiqueta das categorias
+                    da Esfirra empurrava o botão dela para fora da linha (Hakim, 22-24/10). */}
+                <div style={{ display: "flex", gap: "8px", marginBottom: "0.75rem" }}>
                   {/* Na mesma aba: navegador de Smart TV ignora nova aba e o
                       botão parecia não clicar (Hakim, 21/10). A tela tem o
                       link de voltar para esta lista. */}
@@ -431,6 +403,33 @@ export default function KDSHubClient() {
                     ✏️
                   </button>
                 </div>
+
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+                  <span style={{
+                    padding: "3px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
+                    background: `${accent}22`, color: accent,
+                  }}>
+                    {isProd ? "🔥 Produção" : "📦 Finalização"}
+                  </span>
+                  <span style={{
+                    padding: "3px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
+                    background: "#334155", color: "#CBD5E1",
+                  }}>
+                    {filterLabel(screen.filter)}
+                  </span>
+                  {cats.length > 0 && (
+                    <span style={{
+                      padding: "3px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700,
+                      background: "#134e4a", color: "#5eead4",
+                    }}>
+                      🏷️ {cats.join(", ")}
+                    </span>
+                  )}
+                </div>
+
+                <p style={{ fontSize: "0.78rem", color: "#64748b", margin: 0 }}>
+                  Dentro da tela você pode trocar o filtro a qualquer momento.
+                </p>
               </div>
             );
           })}
