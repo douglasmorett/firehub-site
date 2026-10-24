@@ -740,9 +740,12 @@ export default function CustomerStorePage({
   // pedido ficava esperando um pagamento que ele não tinha mais como fazer.
   const pixPendenteKey = `fh_pix_${franchisee.slug || franchisee.id}`;
   // `forma` também vai: sem ela, o cartão reaberto caía na tela do Pix.
-  const lembrarPixPendente = (orderId: string | null, amount = 0, forma: "pix" | "cartao" = "pix") => {
+  // `codigo` (lib/codigo-do-pedido) é o que deixa desistir do Pix: o id sozinho
+  // não cancela mais, e o código só vem na resposta de quem criou o pedido.
+  const codigoDoPendente = useRef("");
+  const lembrarPixPendente = (orderId: string | null, amount = 0, forma: "pix" | "cartao" = "pix", codigo = "") => {
     try {
-      if (orderId) localStorage.setItem(pixPendenteKey, JSON.stringify({ orderId, amount, forma, at: Date.now() }));
+      if (orderId) localStorage.setItem(pixPendenteKey, JSON.stringify({ orderId, amount, forma, codigo, at: Date.now() }));
       else localStorage.removeItem(pixPendenteKey);
     } catch { /* storage bloqueado: segue sem */ }
   };
@@ -767,6 +770,7 @@ export default function CustomerStorePage({
       if (valendo && (!voltouDoAsaas || salvo.orderId === voltouDoAsaas)) {
         if (salvo.forma === "cartao" || voltouDoAsaas) setPaymentMethod("CREDITO_ONLINE");
         setPendingOrderId(salvo.orderId);
+        codigoDoPendente.current = typeof salvo.codigo === "string" ? salvo.codigo : "";
         setPendingAmount(Number(salvo.amount) || 0);
         setShowPayment(true);
         return;
@@ -2892,9 +2896,10 @@ export default function CustomerStorePage({
         if (isOnline) {
           compraPendente.current = registrarCompra;
           setPendingOrderId(d.orderId);
+          codigoDoPendente.current = d.codigo || "";
           setPendingAmount(finalTotal);
           setShowPayment(true);
-          lembrarPixPendente(d.orderId, finalTotal, pmUpper === "CREDITO_ONLINE" ? "cartao" : "pix");
+          lembrarPixPendente(d.orderId, finalTotal, pmUpper === "CREDITO_ONLINE" ? "cartao" : "pix", d.codigo || "");
           // Mantém os itens no carrinho até a confirmação do pagamento
         } else {
           registrarCompra();
@@ -2964,7 +2969,7 @@ export default function CustomerStorePage({
         const r = await fetch("/api/payments/cancelar", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId: id }),
+          body: JSON.stringify({ orderId: id, codigo: codigoDoPendente.current }),
         });
         const d = await r.json().catch(() => ({} as any));
         if (d?.pago) {

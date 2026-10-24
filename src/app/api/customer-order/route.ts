@@ -8,6 +8,7 @@ import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { trackSaleForBilling } from "@/lib/billing";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { codigoDoPedido } from "@/lib/codigo-do-pedido";
 import { motivoForaDoCardapio, textoDoHorario } from "@/lib/cardapio-interno";
 import { camposDoPedidoAgendado, conferirAgendamento, lerConfigDeAgendamento, marcaDoAgendamento } from "@/lib/agendamento";
 import { conferirEstoque } from "@/lib/estoque-restante";
@@ -1237,6 +1238,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       orderId: order.id,
+      // Só quem criou recebe: é o que autoriza desistir do Pix (api/payments/cancelar).
+      codigo: codigoDoPedido(order.id),
       total: finalTotal,
       // A taxa que ficou gravada: o checkout confere com a que mostrou antes
       // de abrir o Pix (a cotação e o pedido não podem divergir calados).
