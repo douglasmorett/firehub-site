@@ -60,6 +60,8 @@ const WEBHOOKS = [{ id: "w1", franchiseeId: "cl0dono0001", url: "https://fora", 
     findUnique: async ({ where, select }: any) =>
       recorta(USUARIOS.find((u) => (where.email ? u.email === where.email : where.slug ? u.slug === where.slug : u.id === where.id)) ?? null, select),
     update: async ({ data }: any) => gravou("user.update", data),
+    // Filiais do grupo com a mesma senha (lib/senha-do-grupo.ts): nenhuma aqui.
+    findMany: async () => [],
   },
   storeReview: { findMany: async ({ where }: any) => (gravou("storeReview.findMany", where), REVIEWS.filter((r) => r.franchiseeId === where.franchiseeId)) },
   customerOrder: {
