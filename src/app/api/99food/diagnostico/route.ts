@@ -13,6 +13,7 @@ import {
   sondarListaVinculadas,
 } from "@/lib/food99-api";
 import { ler99Food } from "@/lib/webhook-99food-log";
+import { idsDoEvento99Food } from "@/lib/ids-do-evento-99food";
 import { lojas99DaConta } from "@/lib/food99-lojas";
 import { vincularParaConta } from "@/lib/food99-vinculo";
 import { ehAdminNoBanco } from "@/lib/permissoes-da-equipe";
@@ -253,9 +254,10 @@ export async function GET(req: NextRequest) {
   const daLoja = (...ids: Array<string | null | undefined>) => verTudo || ids.some((id) => !!id && idsDaLoja.has(String(id)));
   const lojasAutorizadas = autorizadasV3.ok ? autorizadasV3.lojas.filter((l) => daLoja(l.shopId, l.appShopId)) : [];
   const lojasVinculadas = vinculos.ok ? vinculos.lojas.filter((l) => daLoja(l.shop_id, l.app_shop_id)) : [];
-  const eventosVisiveis = verTudo
-    ? eventos
-    : eventos.filter((e) => [...idsDaLoja].some((id) => `${e.payload} ${e.motivo || ""}`.includes(id)));
+  // Evento da loja = um id dela IGUAL ao shop_id/app_shop_id do evento (no
+  // payload ou no motivo do webhook). Por pedaço do texto, uma loja que
+  // gravasse "app_shop_id" como id do 99Food via o evento de todo mundo.
+  const eventosVisiveis = verTudo ? eventos : eventos.filter((e) => idsDoEvento99Food(e).some((id) => idsDaLoja.has(id)));
   const pedidos99 = await prisma.customerOrder.count({
     where: { franchiseeId: lojaId, source: "99FOOD" },
   });

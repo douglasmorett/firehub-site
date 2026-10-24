@@ -106,7 +106,8 @@ conferir("retirada", papel(COM("RETIRADA"))[1] === `PREVISAO DE RETIRADA: ${HORA
 conferir("agendado leva a data", papel(COM("AGENDADO"))[1] === `AGENDADO PARA: ${DIA} ${HORA}`, papel(COM("AGENDADO")).slice(0, 3));
 {
   const ifood = papel({ ...COM("ENTREGA"), source: "IFOOD", ifoodReference: "4035" });
-  conferir("iFood: numero, previsao, depois o canal", ifood[1] === `PREVISAO DE ENTREGA: ${HORA}` && ifood[2] === "IFOOD", ifood.slice(0, 4));
+  // Desde edb326a5 (05/10/2026) o numero no app sai colado ao nosso, antes da previsao.
+  conferir("iFood: numero, numero no iFood, previsao, depois o canal", ifood[1] === "N. no iFood: 4035" && ifood[2] === `PREVISAO DE ENTREGA: ${HORA}` && ifood[3] === "IFOOD", ifood.slice(0, 4));
 }
 
 console.log("— Modelo da loja (order.blocos) —");
