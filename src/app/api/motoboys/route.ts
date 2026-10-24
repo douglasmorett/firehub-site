@@ -3,7 +3,8 @@ import { lerFaixasDoMotoboy } from "@/lib/faixas-do-motoboy";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
-import { estaNaSenhaPadrao, hashDeSenha } from "@/lib/motoboy-senha";
+import { SENHA_PADRAO, estaNaSenhaPadrao, hashDeSenha } from "@/lib/motoboy-senha";
+import { gerarSenhaDeNumeros } from "@/lib/senha-gerada";
 import { pedidoDeAppDoCorpo } from "@/lib/repasse-do-entregador";
 import { gravarPedidoDeApp } from "@/lib/pedido-de-app-no-banco";
 
@@ -67,12 +68,17 @@ export async function POST(req: Request) {
   const app = pedidoDeAppDoCorpo(body.pedidoDeApp);
   if (app.acao === "recusar") return NextResponse.json({ error: app.erro }, { status: 400 });
 
+  // Sem senha digitada, sorteia uma (era "123456" para todo mundo). Ela volta
+  // UMA vez na resposta, para o dono ver e passar ao entregador.
+  const digitada = typeof password === "string" ? password.trim() : "";
+  const senhaGerada = digitada ? null : gerarSenhaDeNumeros();
+
   const motoboy = await prisma.motoboy.create({
     data: {
       franchiseeId: targetFranchiseeId,
       name: name.trim(),
       phone: phone?.trim() || null,
-      password: await hashDeSenha(password?.trim() || "123456"),
+      password: await hashDeSenha(digitada || senhaGerada!),
       paymentType: paymentType || "PER_DELIVERY",
       dailyRate: dailyRate ? Number(dailyRate) : null,
       perDeliveryRate: perDeliveryRate ? Number(perDeliveryRate) : null,
@@ -90,7 +96,7 @@ export async function POST(req: Request) {
 
   // A resposta devolvia o registro inteiro, com o campo password dentro.
   return NextResponse.json(
-    { ...motoboy, pedidoDeApp: app.acao === "gravar" ? app.escolha : null, password: undefined, senhaPadrao: !password?.trim() },
+    { ...motoboy, pedidoDeApp: app.acao === "gravar" ? app.escolha : null, password: undefined, senhaPadrao: digitada === SENHA_PADRAO, senhaGerada },
     { status: 201 }
   );
 }

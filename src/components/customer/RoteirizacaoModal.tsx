@@ -57,7 +57,8 @@ import { infoDaEntrega } from "@/lib/entrega-parceira";
 // O alert() do despacho era o pior lugar para ele: o "OK" travava a página
 // inteira — mapa, listas e as consultas de 4 e 8 s, que disparavam todas
 // juntas ao fechar — e era o "aparece a mensagem em cima" do Lucas.
-type Aviso = { tipo: "ok" | "erro" | "atencao" | "info"; titulo: string; detalhe?: string };
+// `fixo`: não some sozinho (a senha do entregador recém-cadastrado precisa ser anotada).
+type Aviso = { tipo: "ok" | "erro" | "atencao" | "info"; titulo: string; detalhe?: string; fixo?: boolean };
 const COR_DO_AVISO: Record<Aviso["tipo"], { cor: string; fundo: string }> = {
   ok: { cor: "#059669", fundo: "#ECFDF5" },
   erro: { cor: "#DC2626", fundo: "#FEF2F2" },
@@ -67,7 +68,7 @@ const COR_DO_AVISO: Record<Aviso["tipo"], { cor: string; fundo: string }> = {
 function AvisoNoTopo({ aviso, onFechar }: { aviso: Aviso | null; onFechar: () => void }) {
   const [parado, setParado] = useState(false);
   useEffect(() => {
-    if (!aviso || parado) return;
+    if (!aviso || parado || aviso.fixo) return;
     const t = setTimeout(onFechar, aviso.tipo === "erro" ? 12000 : 6000);
     return () => clearTimeout(t);
   }, [aviso, onFechar, parado]);
@@ -2582,6 +2583,7 @@ export default function RoteirizacaoModal({
       // Se escolheu motoboy, cria a rota e despacha imediatamente!
       let motoboyId = selectedMotoboyId;
       let nome = nomeDoMotoboy(motoboyId);
+      let senhaGerada: string | null = null;
       if (!motoboyId && customMotoboyName.trim()) {
         // Se digitou nome de motoboy customizado, cria o motoboy se necessário
         try {
@@ -2597,6 +2599,8 @@ export default function RoteirizacaoModal({
             const newMb = await mbRes.json();
             motoboyId = newMb.id;
             nome = newMb.name || customMotoboyName.trim();
+            // Entregador novo nasce com senha sorteada (não é mais 123456).
+            senhaGerada = newMb.senhaGerada || null;
           }
         } catch (e) {}
       }
@@ -2611,7 +2615,9 @@ export default function RoteirizacaoModal({
         setAviso({
           tipo: "ok",
           titulo: `🚀 ${rota.routeNumber} despachada${nome ? ` com ${nome}` : ""}`,
-          detalhe: `${idsDaRota.length} pedido(s) em "Saiu para entrega".`,
+          detalhe: `${idsDaRota.length} pedido(s) em "Saiu para entrega".`
+            + (senhaGerada ? ` Senha do app de ${nome}: ${senhaGerada} — passe para ele (toque para fechar).` : ""),
+          fixo: !!senhaGerada,
         });
       } else {
         // O entregador digitado não foi cadastrado: a rota existe, sem ele.

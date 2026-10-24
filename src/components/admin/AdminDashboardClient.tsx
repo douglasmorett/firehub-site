@@ -98,6 +98,39 @@ type FiltroDeAtividade = "todas" | StatusDaAtividade;
 const diasEmTexto = (d: number | null) => (d === null ? "nunca vendeu" : d === 0 ? "última hoje" : d === 1 ? "última ontem" : `última há ${d} dias`);
 
 /** "hoje", "ontem", "há 12 dias", "nunca vendeu". */
+// Aviso que desce do topo (cópia local, como nas outras telas): retorno do
+// "Redefinir senha" sem alert(). z-index acima do fundo dos modais (999).
+type Aviso = { tipo: "ok" | "erro" | "atencao" | "info"; titulo: string; detalhe?: string };
+const COR_DO_AVISO: Record<Aviso["tipo"], { cor: string; fundo: string }> = {
+  ok: { cor: "#059669", fundo: "#ECFDF5" },
+  erro: { cor: "#DC2626", fundo: "#FEF2F2" },
+  atencao: { cor: "#D97706", fundo: "#FFFBEB" },
+  info: { cor: "#2563EB", fundo: "#EFF6FF" },
+};
+function AvisoNoTopo({ aviso, onFechar }: { aviso: Aviso | null; onFechar: () => void }) {
+  useEffect(() => {
+    if (!aviso) return;
+    const t = setTimeout(onFechar, aviso.tipo === "erro" ? 12000 : 6000);
+    return () => clearTimeout(t);
+  }, [aviso, onFechar]);
+  if (!aviso) return null;
+  const { cor, fundo } = COR_DO_AVISO[aviso.tipo];
+  return (
+    <div
+      role={aviso.tipo === "erro" ? "alert" : "status"}
+      onClick={onFechar}
+      style={{
+        position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 100002,
+        width: "min(440px, calc(100vw - 24px))", background: fundo, borderLeft: `4px solid ${cor}`,
+        borderRadius: 12, padding: "12px 14px", boxShadow: "0 10px 30px rgba(15,23,42,.18)", cursor: "pointer",
+      }}
+    >
+      <div style={{ fontWeight: 800, fontSize: 14, color: "#0F172A" }}>{aviso.titulo}</div>
+      {aviso.detalhe && <div style={{ fontSize: 13, color: "#475569", marginTop: 2 }}>{aviso.detalhe}</div>}
+    </div>
+  );
+}
+
 function textoDoUltimoPedido(a: Atividade | null): string {
   if (!a || a.diasSemPedido === null) return "nunca vendeu";
   if (a.diasSemPedido === 0) return "hoje";
@@ -184,6 +217,8 @@ export default function AdminDashboardClient({
   const [resetPalavra, setResetPalavra] = useState("");
   const [resetting, setResetting] = useState(false);
   const [resetFeito, setResetFeito] = useState<string | null>(null);
+  const [resetCopiada, setResetCopiada] = useState(false);
+  const [aviso, setAviso] = useState<Aviso | null>(null);
 
   // Lixeira: apagar a loja inteira, com "EXCLUIR" digitado duas vezes.
   const [excluirModalUser, setExcluirModalUser] = useState<Lojista | null>(null);
@@ -392,6 +427,7 @@ export default function AdminDashboardClient({
   const abrirReset = (l: Lojista) => {
     setResetPalavra("");
     setResetFeito(null);
+    setResetCopiada(false);
     setResetModalUser(l);
   };
 
@@ -412,10 +448,11 @@ export default function AdminDashboardClient({
         body: JSON.stringify({ userId: resetModalUser.id, confirmacao: resetPalavra }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok && data.ok) setResetFeito(data.senha || "123456");
-      else alert(data.error || "Não foi possível redefinir a senha.");
+      // A senha nova é sorteada no servidor e só existe nesta resposta.
+      if (res.ok && data.ok && data.senha) setResetFeito(data.senha);
+      else setAviso({ tipo: "erro", titulo: "Não foi possível redefinir a senha", detalhe: data.error });
     } catch {
-      alert("Erro de conexão ao redefinir a senha.");
+      setAviso({ tipo: "erro", titulo: "Erro de conexão ao redefinir a senha" });
     } finally {
       setResetting(false);
     }
@@ -633,7 +670,7 @@ export default function AdminDashboardClient({
         {impersonatingId === l.id ? "Entrando..." : "Acessar"}
       </button>
       <button onClick={() => setGrantModalUser(l)} className="fha-btn" title="Liberar dias de benefício">+Dias</button>
-      <button onClick={() => abrirReset(l)} className="fha-btn" title="Voltar a senha da conta para 123456">Senha</button>
+      <button onClick={() => abrirReset(l)} className="fha-btn" title="Gerar uma senha nova para a conta">Senha</button>
       <button onClick={() => setExpandedId(expandedId === l.id ? null : l.id)} className={`fha-btn${expandedId === l.id ? " on" : ""}`} title="Ver dados completos do cadastro">
         Dados
       </button>
@@ -817,6 +854,7 @@ export default function AdminDashboardClient({
 
   return (
     <div className="fha">
+      <AvisoNoTopo aviso={aviso} onFechar={() => setAviso(null)} />
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
         .fha { min-height: 100vh; display: flex; font-family: 'Inter', sans-serif; background: #F6F7F9; color: #0F172A; }
@@ -1259,9 +1297,17 @@ export default function AdminDashboardClient({
                   <div style={{ color: "#166534", fontWeight: 800, fontSize: "0.95rem" }}>Senha redefinida</div>
                   <div style={{ color: "#334155", fontSize: "0.85rem", marginTop: 6 }}>
                     <strong>{resetModalUser.storeName || resetModalUser.name}</strong> entra com<br />
-                    login <strong>{resetModalUser.email}</strong> e senha <strong style={{ color: "#B45309" }}>{resetFeito}</strong>.
+                    login <strong>{resetModalUser.email}</strong> e senha <strong style={{ color: "#B45309", fontFamily: "monospace", fontSize: "1rem", letterSpacing: 1 }}>{resetFeito}</strong>.
                   </div>
-                  <div style={{ color: "#64748B", fontSize: "0.78rem", marginTop: 8 }}>Peça para o lojista trocar a senha assim que entrar.</div>
+                  <button
+                    type="button"
+                    onClick={() => { navigator.clipboard?.writeText(resetFeito).then(() => setResetCopiada(true)).catch(() => {}); }}
+                    className="fha-btn"
+                    style={{ marginTop: 10, padding: "6px 12px", fontSize: "0.8rem" }}
+                  >
+                    {resetCopiada ? "✅ Copiada" : "Copiar senha"}
+                  </button>
+                  <div style={{ color: "#64748B", fontSize: "0.78rem", marginTop: 8 }}>Ela não aparece de novo depois de fechar. Peça para o lojista trocar a senha assim que entrar.</div>
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <button type="button" onClick={fecharReset} className="fha-btn" style={{ padding: "8px 16px", fontSize: "0.85rem" }}>Fechar</button>
@@ -1271,7 +1317,7 @@ export default function AdminDashboardClient({
               <>
                 <p style={{ color: "#475569", fontSize: "0.86rem", margin: "0 0 16px" }}>
                   A senha de <strong style={{ color: "#0F172A" }}>{resetModalUser.storeName || resetModalUser.name}</strong> ({resetModalUser.email}) vai
-                  voltar para <strong style={{ color: "#B45309" }}>123456</strong>. A senha atual deixa de funcionar na hora.
+                  ganhar uma <strong style={{ color: "#B45309" }}>senha nova, sorteada agora</strong> e mostrada aqui. A senha atual deixa de funcionar na hora.
                 </p>
 
                 <label style={{ display: "block", fontSize: "0.78rem", fontWeight: 700, color: "#334155", marginBottom: 8 }}>
