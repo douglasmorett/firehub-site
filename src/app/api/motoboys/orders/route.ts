@@ -326,6 +326,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Código inválido. Use o número da comanda." }, { status: 400 });
     }
 
+    // Trava pedida pelo Douglas (23/10/2026): com esse número de entregas já na
+    // rua, o entregador não puxa mais até finalizar algumas.
+    const naRua = await prisma.customerOrder.count({ where: { motoboyId: mb.id, status: "SAIU_ENTREGA" } });
+    if (naRua >= LIMITE_DE_ENTREGAS_NA_RUA) {
+      return NextResponse.json(
+        { error: `Você já tem ${naRua} entregas na rua. Finalize algumas antes de pegar mais.` },
+        { status: 409 }
+      );
+    }
+
     const { chaveDoDiaSP, inicioDoDiaSP } = await import("@/lib/qr-puxar");
     const numero = Number(mQr ? mQr[2] : mNum![1]);
 
@@ -729,6 +739,9 @@ function pedidosDaRotaParaPuxar(rotaId: string, franchiseeId: string) {
 }
 
 /** Só os NÚMEROS, em ordem: é tudo o que a folha mostra antes de o pedido ser dele. */
+/** Quantas entregas um entregador pode ter na rua antes de puxar mais (pedido do Douglas, 23/10/2026). */
+const LIMITE_DE_ENTREGAS_NA_RUA = 8;
+
 const numerosDe = (pedidos: { dailyOrderNumber: number | null }[]): { numero: number }[] =>
   pedidos
     .map((p) => p.dailyOrderNumber)
