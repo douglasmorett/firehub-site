@@ -1,0 +1,149 @@
+{
+  "data": {
+    "id": 24340321,
+    "delivery_time": "40 - 60",
+    "created_at": "2025-12-16 15:10:53",
+    "is_ready": false,
+    "is_read": false,
+    "is_cancelled": false,
+    "is_in_separation": false,
+    "is_delivered": false,
+    "order_observations": "",
+    "is_aiqentrega_delivery": false,
+    "is_pickup": true,
+    "pickup_at": "2025-12-16 15:40:00",
+    "coupon_hash": "TESTE",
+    "coupon": {
+      "totalDiscountInCents": 450,
+      "origin": "AIQFOME"
+    },
+    "user_rating_value": null,
+    "is_scheduled": false,
+    "scheduled_dates": null,
+    "items": [
+      {
+        "id": "39536367-4042-329b-8e57-c4c4ccc8f9a4",
+        "order_item_id": 42572242,
+        "name": "Pizza do Chef (Em Oferta)",
+        "replacement_type": 0,
+        "status": 1,
+        "sku": "PZ0001G",
+        "category_name": "pizzas gourmet",
+        "size": "G",
+        "unit_value": 50,
+        "promotional_value": null,
+        "quantity": 3,
+        "discount_tax": null,
+        "description": "Calabresa, bacon, cebola e toque de pimenta.",
+        "observations": "",
+        "unit_packing_fee": "0.50",
+        "order_mandatory_items": [
+          {
+            "id": 40513822,
+            "group": "escolha a borda",
+            "name": "Borda de Queijo (+8)",
+            "value": 8,
+            "sku": "BORDA_QUEIJO",
+            "quantity": 1
+          },
+          {
+            "id": 40513823,
+            "group": "escolha a bebida updated",
+            "name": "Coca-Cola 600ml updated",
+            "value": 17.49,
+            "sku": "COCA600-updated",
+            "quantity": 1
+          },
+          {
+            "id": 40513824,
+            "group": "escolha a bebida updated",
+            "name": "Coca-Cola 600ml updated",
+            "value": 17.49,
+            "sku": "COCA600-updated",
+            "quantity": 1
+          },
+          {
+            "id": 40513825,
+            "group": "tipo de base",
+            "name": "Molho de Tomate Tradicional",
+            "value": 0,
+            "sku": "BASE_TRAD",
+            "quantity": 1
+          },
+          {
+            "id": 40513826,
+            "group": "molho grátis",
+            "name": "Maionese Artesanal",
+            "value": 0,
+            "sku": "MOLHO_MAYO",
+            "quantity": 1
+          }
+        ],
+        "order_additional_items": [
+          {
+            "id": 10357349,
+            "name": "Azeitona Extra",
+            "value": 2,
+            "sku": "ADD_AZEI"
+          }
+        ],
+        "order_item_subitems": []
+      }
+    ],
+    "cancelled_items": [],
+    "replaced_items": [],
+    "user": {
+      "uuid": "55554",
+      "name": "Henrique",
+      "surname": "Teste",
+      "mobile_phone": "(31) 9-9988-7777",
+      "phone_number": "(31) 9-9988-7777",
+      "email": "henrique@aiqfome.com",
+      "order_count": 19,
+      "document_receipt": null,
+      "address": null
+    },
+    "payment_method": {
+      "id": 123,
+      "name": "Dinheiro",
+      "subtotal": "286.44",
+      "delivery_tax": "0.00",
+      "total_packing_fee": 1.5,
+      "change": 300,
+      "coupon_value": "0.00",
+      "pre_paid": false,
+      "service_fee": {
+        "store": 0,
+        "aiq": 0,
+        "total": 0
+      },
+      "total_cancelled_replaced": 0,
+      "original_subtotal": 286.44,
+      "total": 286.44,
+      "taxable_total": 286.44
+    },
+    "store": {
+      "id": 53852,
+      "name": "Loja Cardápio",
+      "phones": "(99) 9999-9999",
+      "preparation_time": 30
+    },
+    "timeline": {
+      "created_at": "2025-12-16 15:10:53",
+      "read_at": null,
+      "cancelled_at": null,
+      "ready_at": null,
+      "timezone": "America/Fortaleza"
+    },
+    "aiqentrega": {
+      "ride_id": null,
+      "call_at": null,
+      "current_status": null,
+      "delivered_at": null,
+      "last_status": null,
+      "last_status_at": null,
+      "driver_name": null,
+      "driver_phone": null
+    }
+  }
+}

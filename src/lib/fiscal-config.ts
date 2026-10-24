@@ -461,9 +461,10 @@ const CAMPOS_DO_TITULAR = new Set<string>([
 /**
  * Os canais em que a loja pode ajustar o intermediador (lib/fiscal-emissao →
  * intermediadorDoPedido). O CardápioWeb é venda própria (sem intermediador,
- * como a Brendi): entra aqui só para a loja com contrato diferente poder ligar.
+ * como a Brendi), e o Anota AI também: entram aqui só para a loja com contrato
+ * diferente poder ligar.
  */
-export const CANAIS_DO_INTERMEDIADOR = ["IFOOD", "99FOOD", "BRENDI", "WABIZ", "JOTAJA", "CARDAPIOWEB"] as const;
+export const CANAIS_DO_INTERMEDIADOR = ["IFOOD", "99FOOD", "BRENDI", "WABIZ", "JOTAJA", "CARDAPIOWEB", "ANOTAAI"] as const;
 
 export type AjusteDoIntermediador = { cnpj?: string | null; id?: string | null; ativo?: boolean };
 

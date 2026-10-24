@@ -346,9 +346,11 @@ export default function StoreDashboardMap({
           const isIfood = (o.source || "").toUpperCase() === "IFOOD" || Boolean(o.ifoodReference);
           // CardápioWeb antes do JotaJá: ele também grava openDeliveryReference.
           const isCardapioWeb = !isIfood && (o.source || "").toUpperCase() === "CARDAPIOWEB";
-          const isJotaja = !isCardapioWeb && ((o.source || "").toUpperCase() === "JOTAJA" || Boolean(o.openDeliveryReference));
+          const isAnotaAi = !isIfood && !isCardapioWeb && (o.source || "").toUpperCase() === "ANOTAAI";
+          const isAiqfome = !isIfood && (o.source || "").toUpperCase() === "AIQFOME";
+          const isJotaja = !isCardapioWeb && !isAiqfome && !isAnotaAi && ((o.source || "").toUpperCase() === "JOTAJA" || Boolean(o.openDeliveryReference));
 
-          const pinBg = isIfood ? "#EA1D2C" : isCardapioWeb ? "#BE185D" : isJotaja ? "#FF6C00" : "#0F766E";
+          const pinBg = isIfood ? "#EA1D2C" : isCardapioWeb ? "#BE185D" : isAiqfome ? "#6B21A8" : isAnotaAi ? "#0284C7" : isJotaja ? "#FF6C00" : "#0F766E";
           // Nome e endereço vêm do cliente (site, iFood, robô) e o Leaflet monta
           // o popup como HTML: sem escapar, um nome com <img onerror=...> rodava
           // script no painel da loja (e no do admin, que abre o mesmo mapa).
@@ -361,7 +363,7 @@ export default function StoreDashboardMap({
               <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
                 <strong style="font-size: 14px; color: #0F172A;">${esc(displayNum)}</strong>
                 <span style="background: ${pinBg}; color: #ffffff; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 12px;">
-                  ${isIfood ? "iFood" : isCardapioWeb ? "CardápioWeb" : isJotaja ? "Jotajá" : "Site"}
+                  ${isIfood ? "iFood" : isCardapioWeb ? "CardápioWeb" : isAiqfome ? "aiqfome" : isAnotaAi ? "Anota AI" : isJotaja ? "Jotajá" : "Site"}
                 </span>
               </div>
               <div style="font-size: 13px; font-weight: 700; color: #1E293B; margin-bottom: 4px;">

@@ -1,0 +1,164 @@
+{
+  "data": {
+    "id": 68672852,
+    "delivery_time": "15 - 30",
+    "created_at": "2026-01-20 15:23:59",
+    "is_ready": false,
+    "is_read": false,
+    "is_cancelled": false,
+    "is_in_separation": false,
+    "is_delivered": false,
+    "order_observations": "obs do pedido, buzinar 3 vezes ",
+    "is_aiqentrega_delivery": false,
+    "is_pickup": true,
+    "pickup_at": "2026-01-20 15:33:00",
+    "coupon_hash": null,
+    "user_rating_value": null,
+    "is_scheduled": false,
+    "scheduled_dates": null,
+    "items": [
+      {
+        "id": null,
+        "order_item_id": 118072485,
+        "name": "pizza flamengo + pizza frangon + pizza milho com bancon",
+        "replacement_type": 0,
+        "status": 1,
+        "sku": null,
+        "category_name": "pizza vário sabores alfredo",
+        "size": "grande",
+        "unit_value": 10,
+        "promotional_value": null,
+        "quantity": 1,
+        "discount_tax": null,
+        "description": "pizza flamengo: pizza flamengo\npizza frangon: pizza frango\npizza milho com bancon: pizza milho com bancon",
+        "observations": "obs do item faz a boa",
+        "unit_packing_fee": "5.00",
+        "order_mandatory_items": [
+          {
+            "id": 130182959,
+            "group": "borda super",
+            "name": "borda prato",
+            "value": 20,
+            "sku": "",
+            "quantity": 1
+          },
+          {
+            "id": 130182960,
+            "group": "borda super",
+            "name": "borda catupiry",
+            "value": 30,
+            "sku": "",
+            "quantity": 1
+          },
+          {
+            "id": 130182961,
+            "group": "sachês",
+            "name": "Sachê de Ketchup",
+            "value": 0,
+            "sku": "",
+            "quantity": 1
+          },
+          {
+            "id": 130182962,
+            "group": "sachês",
+            "name": "Sachê de Maionese",
+            "value": 0,
+            "sku": "",
+            "quantity": 1
+          },
+          {
+            "id": 130182963,
+            "group": "sachês",
+            "name": "Sachê de Mostarda",
+            "value": 1.5,
+            "sku": "",
+            "quantity": 1
+          }
+        ],
+        "order_additional_items": [],
+        "order_item_subitems": [
+          {
+            "id": "4a9263f7-fc83-38a4-95a5-ff70bdabe8a7",
+            "name": "pizza flamengo",
+            "nome": "pizza flamengo",
+            "description": "pizza flamengo",
+            "sku": "grande"
+          },
+          {
+            "id": "789b06dc-2dd2-3148-90f2-0df486b287e8",
+            "name": "pizza frangon",
+            "nome": "pizza frangon",
+            "description": "pizza frango",
+            "sku": "grande"
+          },
+          {
+            "id": "8cb7aed2-6123-39e9-9d3d-06aa96ad3b46",
+            "name": "pizza milho com bancon",
+            "nome": "pizza milho com bancon",
+            "description": "pizza milho com bancon",
+            "sku": "grande"
+          }
+        ]
+      }
+    ],
+    "cancelled_items": [],
+    "replaced_items": [],
+    "shipment_status": {
+      "latest": null,
+      "logs": []
+    },
+    "user": {
+      "uuid": "4444444444444444444",
+      "name": "luiz",
+      "surname": "do aiq",
+      "mobile_phone": "(61) 9-9953-7666",
+      "phone_number": "(61) 9-9953-7666",
+      "email": "luiz.silva@aiqfome.coma",
+      "order_count": 9,
+      "document_receipt": null,
+      "address": null
+    },
+    "payment_method": {
+      "id": 185,
+      "name": "Mastercard Crédito",
+      "subtotal": "66.50",
+      "delivery_tax": "0.00",
+      "total_packing_fee": 5,
+      "change": 0,
+      "coupon_value": "0.00",
+      "pre_paid": false,
+      "service_fee": {
+        "store": 0,
+        "aiq": 0,
+        "total": 0
+      },
+      "total_cancelled_replaced": 0,
+      "original_subtotal": 66.5,
+      "total": 66.5,
+      "taxable_total": 66.5
+    },
+    "store": {
+      "id": 96236,
+      "name": "qa-luiz-teste-integrador-entregas",
+      "phones": "(99) 9999-9999",
+      "preparation_time": 10
+    },
+    "timeline": {
+      "created_at": "2026-01-20 15:23:59",
+      "read_at": null,
+      "cancelled_at": null,
+      "ready_at": null,
+      "timezone": "America/Fortaleza"
+    },
+    "aiqentrega": {
+      "ride_id": null,
+      "call_at": null,
+      "current_status": null,
+      "delivered_at": null,
+      "last_status": null,
+      "last_status_at": null,
+      "driver_name": null,
+      "driver_phone": null
+    }
+  }
+}

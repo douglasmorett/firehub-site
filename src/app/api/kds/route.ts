@@ -766,9 +766,11 @@ export async function PUT(req: NextRequest) {
       const { ehPedidoBrendi, sincronizarBrendi } = await import("@/lib/brendi-status");
       const { ehPedidoKeeta, sincronizarKeeta } = await import("@/lib/keeta/status");
       const { ehPedidoCardapioWeb, sincronizarCardapioWeb } = await import("@/lib/cardapioweb/status");
+      const { ehPedidoAnotaAi, sincronizarAnotaAi } = await import("@/lib/anotaai/status");
+      const { ehPedidoAiqfome, sincronizarAiqfome } = await import("@/lib/aiqfome/status");
 
-      // Keeta e CardápioWeb primeiro: os dois também usam openDeliveryOrderId,
-      // e fora desta cadeia cairiam no "senão é JotaJá" lá embaixo.
+      // Keeta, CardápioWeb, Anota AI e aiqfome primeiro: os quatro também usam
+      // openDeliveryOrderId, e fora desta cadeia cairiam no "senão é JotaJá" lá embaixo.
       if (ehPedidoKeeta(order)) {
         await sincronizarKeeta(
           { openDeliveryOrderId: order.openDeliveryOrderId!, franchiseeId: order.franchiseeId, status: order.status, deliveryBy: order.deliveryBy, deliveryType: order.deliveryType },
@@ -781,6 +783,19 @@ export async function PUT(req: NextRequest) {
           "PRONTO",
           { limiteMs: 30_000 }
         ).catch((e) => console.warn("[KDS CardápioWeb Sync Error]:", e?.message));
+      } else if (ehPedidoAnotaAi(order)) {
+        await sincronizarAnotaAi(
+          { openDeliveryOrderId: order.openDeliveryOrderId!, franchiseeId: order.franchiseeId, status: order.status },
+          "PRONTO",
+          { limiteMs: 30_000 }
+        ).catch((e) => console.warn("[KDS Anota AI Sync Error]:", e?.message));
+      } else if (ehPedidoAiqfome(order)) {
+        // PRONTO sobe o que faltar lá (lido + pronto).
+        await sincronizarAiqfome(
+          { openDeliveryOrderId: order.openDeliveryOrderId!, franchiseeId: order.franchiseeId, status: order.status, deliveryBy: order.deliveryBy, deliveryType: order.deliveryType },
+          "PRONTO",
+          { limiteMs: 30_000 }
+        ).catch((e) => console.warn("[KDS aiqfome Sync Error]:", e?.message));
       } else if (ehPedidoWabiz(order)) {
         await sincronizarWabiz(
           {

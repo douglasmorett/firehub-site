@@ -9,6 +9,8 @@ import { ehPedidoBrendi, sincronizarBrendi } from "@/lib/brendi-status";
 import { ehPedidoWabiz, sincronizarWabiz } from "@/lib/wabiz-status";
 import { ehPedidoKeeta, sincronizarKeeta } from "@/lib/keeta/status";
 import { ehPedidoCardapioWeb, sincronizarCardapioWeb } from "@/lib/cardapioweb/status";
+import { ehPedidoAnotaAi, sincronizarAnotaAi } from "@/lib/anotaai/status";
+import { ehPedidoAiqfome, sincronizarAiqfome } from "@/lib/aiqfome/status";
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR } from "@/lib/motivo-do-cancelamento";
 import { empilharEdicao } from "@/lib/edicao-de-pedido";
 
@@ -324,6 +326,8 @@ export async function PUT(req: Request) {
   let avisoBrendi: string | null = null;
   let avisoKeeta: string | null = null;
   let avisoCardapioWeb: string | null = null;
+  let avisoAnotaAi: string | null = null;
+  let avisoAiqfome: string | null = null;
   if (order.ifoodOrderId) {
     try {
       const { acaoNoPedidoIfood, despacharNoIfood } = await import("@/lib/ifood-pedido");
@@ -527,7 +531,50 @@ export async function PUT(req: Request) {
     }
   }
 
-  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order) && !ehPedidoWabiz(order) && !ehPedidoKeeta(order) && !ehPedidoCardapioWeb(order)) {
+  // ── Sync with Anota AI ──────────────────────────────────────────────────
+  // Mesmo caso do CardápioWeb: `openDeliveryOrderId` = anotaai_<página>_<id>,
+  // ANTES do ramo JotaJá e excluído dele (lib/anotaai/status.ts).
+  if (ehPedidoAnotaAi(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarAnotaAi(
+      { openDeliveryOrderId: order.openDeliveryOrderId!, franchiseeId: order.franchiseeId, status: order.status },
+      status,
+      { motivo: cancelReason }
+    );
+    if (r.erros.length > 0) {
+      console.error(`[Anota AI Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+      avisoAnotaAi = r.erros[0].replace(/^[^:]+:\s*/, "");
+    }
+  }
+
+  // ── Sync with aiqfome ───────────────────────────────────────────────────
+  // Também usa `openDeliveryOrderId` (aiqfome_<loja>_<id>): entra ANTES do
+  // ramo JotaJá e é excluído dele. A V2 não cancela pedido de restaurante:
+  // cancelar aqui devolve o aviso para a loja cancelar também no Geraldo.
+  if (ehPedidoAiqfome(order)) {
+    if (status === "CANCELADO") {
+      updateData.cancelledBy = "LOJA";
+      if (cancelReason) updateData.cancelReason = cancelReason;
+    }
+    const r = await sincronizarAiqfome(
+      {
+        openDeliveryOrderId: order.openDeliveryOrderId!,
+        franchiseeId: order.franchiseeId,
+        status: order.status,
+        deliveryBy: order.deliveryBy,
+        deliveryType: (order as any).deliveryType,
+        notes: order.notes,
+      },
+      status
+    );
+    if (r.erros.length > 0) console.error(`[aiqfome Sync] ❌ FALHAS em ${order.openDeliveryOrderId}: ${r.erros.join(" | ")}`);
+    avisoAiqfome = r.aviso || (r.erros[0] ? r.erros[0].replace(/^[^:]+:\s*/, "") : null);
+  }
+
+  if (order.openDeliveryOrderId && !ehPedido99Food(order) && !ehPedidoBrendi(order) && !ehPedidoWabiz(order) && !ehPedidoKeeta(order) && !ehPedidoCardapioWeb(order) && !ehPedidoAiqfome(order) && !ehPedidoAnotaAi(order)) {
     const syncErrors: string[] = [];
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");
@@ -806,7 +853,7 @@ export async function PUT(req: Request) {
   const pedido = saiDoRascunhoDoRobo
     ? { dailyOrderNumber: updateData.dailyOrderNumber, createdAt: updateData.createdAt, printedAt: null, notes: updateData.notes }
     : undefined;
-  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoKeeta, avisoCardapioWeb, avisoEstorno, ...(pedido ? { pedido } : {}) });
+  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoKeeta, avisoCardapioWeb, avisoAiqfome, avisoAnotaAi, avisoEstorno, ...(pedido ? { pedido } : {}) });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });

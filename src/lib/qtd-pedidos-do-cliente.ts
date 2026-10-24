@@ -32,7 +32,7 @@ import { prisma } from "@/lib/prisma";
 import { canalDoPedido } from "@/lib/canal-do-pedido";
 import { digitosDoTelefone } from "@/lib/campanha-converter";
 
-const ORIGENS_DE_MARKETPLACE = ["IFOOD", "99FOOD", "BRENDI", "WABIZ", "JOTAJA", "KEETA", "CARDAPIOWEB", "OPEN_DELIVERY"];
+const ORIGENS_DE_MARKETPLACE = ["IFOOD", "99FOOD", "BRENDI", "WABIZ", "JOTAJA", "KEETA", "CARDAPIOWEB", "AIQFOME", "ANOTAAI", "OPEN_DELIVERY"];
 const STATUS_QUE_NAO_CONTAM = ["CANCELADO", "CANCELLED", "CANCELED", "CRIANDO_IA", "AGUARDANDO_PAGAMENTO"];
 
 export type PedidoParaContar = {
