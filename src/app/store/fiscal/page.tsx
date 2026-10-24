@@ -423,6 +423,14 @@ export default function StoreFiscalPage() {
   const [products, setProducts] = useState<FiscalProduct[]>([]);
   const [searchProduct, setSearchProduct] = useState("");
   const [editingProduct, setEditingProduct] = useState<FiscalProduct | null>(null);
+  // DECLARAR EM LOTE (Douglas, 24/10/2026): marcar vários produtos e digitar a
+  // tributação uma vez — PUT { lote, manual: true }, tudo ou nada.
+  const [marcadosNoLote, setMarcadosNoLote] = useState<Set<string>>(new Set());
+  const [loteAberto, setLoteAberto] = useState(false);
+  const [dadosDoLote, setDadosDoLote] = useState({ ncm: "", cest: "", cfop: "5102", csosn: "102" });
+  const [gravandoLote, setGravandoLote] = useState(false);
+  const [erroDoLote, setErroDoLote] = useState<{ mensagem: string; problemas: string[] } | null>(null);
+  const [resultadoDoLote, setResultadoDoLote] = useState("");
   const [editingCombo, setEditingCombo] = useState<FiscalProduct | null>(null);
   const [fiscalItemsDraft, setFiscalItemsDraft] = useState<any[]>([]);
   const [comboDetails, setComboDetails] = useState<any>(null);
@@ -996,6 +1004,36 @@ export default function StoreFiscalPage() {
       }
     } catch {
       alert("Erro ao salvar produto.");
+    }
+  };
+
+  const handleDeclararEmLote = async () => {
+    const ids = [...marcadosNoLote];
+    if (ids.length === 0) return;
+    setGravandoLote(true);
+    setErroDoLote(null);
+    try {
+      const res = await fetch("/api/store/fiscal/products", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          manual: true,
+          lote: ids.map(productId => ({ productId, ...dadosDoLote, regra: "manual" })),
+        }),
+      });
+      const dados = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setErroDoLote({ mensagem: dados.mensagem || dados.error || "Não consegui gravar o lote.", problemas: Array.isArray(dados.problemas) ? dados.problemas : [] });
+        return;
+      }
+      setLoteAberto(false);
+      setMarcadosNoLote(new Set());
+      setResultadoDoLote(dados.mensagem || `${ids.length} produto(s) com a tributação declarada.`);
+      fetchProducts();
+    } catch {
+      setErroDoLote({ mensagem: "Não consegui falar com o servidor. Tente de novo.", problemas: [] });
+    } finally {
+      setGravandoLote(false);
     }
   };
 
@@ -2534,14 +2572,53 @@ ${dados.aviso}` : "")
                 <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
                   <div style={{ position: "relative", flex: 1, maxWidth: 320 }}>
                     <Search size={14} aria-hidden style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#94A3B8" }} />
-                    <input aria-label="Pesquisar produto" value={searchProduct} onChange={e => setSearchProduct(e.target.value)} placeholder="Pesquise pelo produto" style={{ width: "100%", padding: "7px 10px 7px 30px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.82rem" }} />
+                    <input aria-label="Pesquisar produto" value={searchProduct} onChange={e => setSearchProduct(e.target.value)} placeholder="Pesquise pelo produto ou categoria" style={{ width: "100%", padding: "7px 10px 7px 30px", borderRadius: 8, border: "1px solid #CBD5E1", fontSize: "0.82rem" }} />
                   </div>
                 </div>
+
+                {/* Declarar em lote: marque os produtos (a caixinha do título
+                    marca todos os que a pesquisa mostra) e digite uma vez. */}
+                {ehTitular && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12, padding: "8px 12px", borderRadius: 10, background: marcadosNoLote.size > 0 ? "#FAF6F2" : "#F8FAFC", border: "1px solid #E7DDD3", fontSize: "0.8rem", color: "#475569" }}>
+                    {marcadosNoLote.size > 0 ? (
+                      <>
+                        <strong style={{ color: "#1C1917" }}>{marcadosNoLote.size} {marcadosNoLote.size === 1 ? "produto selecionado" : "produtos selecionados"}</strong>
+                        <button type="button" onClick={() => { setErroDoLote(null); setResultadoDoLote(""); setLoteAberto(true); }} style={{ padding: "6px 14px", borderRadius: 8, border: "none", background: "#1C1917", color: "#fff", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
+                          Declarar em lote
+                        </button>
+                        <button type="button" onClick={() => setMarcadosNoLote(new Set())} style={{ background: "none", border: "none", color: "#64748B", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", textDecoration: "underline" }}>
+                          Limpar seleção
+                        </button>
+                      </>
+                    ) : (
+                      <span>Para declarar vários de uma vez: marque os produtos na tabela (pesquise &quot;pizza&quot; e marque a caixinha do título para pegar todas) e clique em <strong>Declarar em lote</strong>.</span>
+                    )}
+                    {resultadoDoLote && <span role="status" style={{ color: "#0F766E", fontWeight: 700 }}>✓ {resultadoDoLote}</span>}
+                  </div>
+                )}
 
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
                     <thead>
                       <tr style={{ background: "#F1F5F9", textTransform: "uppercase", fontSize: "0.7rem", color: "#475569" }}>
+                        {ehTitular && (
+                          <th scope="col" style={{ padding: "8px 10px", width: 32 }}>
+                            <input
+                              type="checkbox"
+                              aria-label="Marcar todos os produtos da lista"
+                              checked={filteredProducts.length > 0 && filteredProducts.every(p => marcadosNoLote.has(p.id))}
+                              onChange={e => {
+                                const marcar = e.target.checked;
+                                setMarcadosNoLote(atual => {
+                                  const novo = new Set(atual);
+                                  for (const p of filteredProducts) { if (marcar) novo.add(p.id); else novo.delete(p.id); }
+                                  return novo;
+                                });
+                              }}
+                              style={{ accentColor: "#1C1917", width: 16, height: 16 }}
+                            />
+                          </th>
+                        )}
                         <th scope="col" style={{ padding: "8px 10px", textAlign: "left" }}>Categoria</th>
                         <th scope="col" style={{ padding: "8px 10px", textAlign: "left" }}>Produto</th>
                         <th scope="col" style={{ padding: "8px 10px", textAlign: "right" }}>Preço</th>
@@ -2561,7 +2638,22 @@ ${dados.aviso}` : "")
                         const sugestaoAplicada = isRegular && ehSugestaoAplicada(p);
                         const sugestao = sugestaoPorProduto.get(p.id);
                         return (
-                          <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                          <tr key={p.id} style={{ borderBottom: "1px solid #F1F5F9", background: marcadosNoLote.has(p.id) ? "#FAF6F2" : undefined }}>
+                            {ehTitular && (
+                              <td style={{ padding: "8px 10px" }}>
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Marcar ${p.name} para declarar em lote`}
+                                  checked={marcadosNoLote.has(p.id)}
+                                  onChange={() => setMarcadosNoLote(atual => {
+                                    const novo = new Set(atual);
+                                    if (novo.has(p.id)) novo.delete(p.id); else novo.add(p.id);
+                                    return novo;
+                                  })}
+                                  style={{ accentColor: "#1C1917", width: 16, height: 16 }}
+                                />
+                              </td>
+                            )}
                             <td style={{ padding: "8px 10px", color: "#64748B" }}>{p.category}</td>
                             <td style={{ padding: "8px 10px", fontWeight: 700, color: "#1E293B" }}>{p.name}</td>
                             <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700 }}>{fmt(p.price)}</td>
@@ -3521,6 +3613,62 @@ ${dados.aviso}` : "")
             <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
               <button type="button" onClick={() => setEditingProduct(null)} style={{ padding: "8px 14px", borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
               <button type="button" onClick={handleSaveProductTax} style={{ padding: "8px 18px", borderRadius: 6, border: "none", background: "#1C1917", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>Salvar Tributação</button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
+      {/* ── MODAL 4b: DECLARAR EM LOTE ── a mesma tributação para os
+          produtos marcados. Tudo ou nada: um produto que não passa recusa o
+          lote e a lista diz qual (api/store/fiscal/products, aplicarLote). */}
+      {loteAberto && (() => {
+        const marcados = products.filter(p => marcadosNoLote.has(p.id));
+        const campo = (id: string, rotulo: string, chave: keyof typeof dadosDoLote, placeholder?: string) => (
+          <div>
+            <label htmlFor={id} style={{ fontSize: "0.75rem", fontWeight: 700, color: "#475569", display: "block" }}>{rotulo}</label>
+            <input id={id} value={dadosDoLote[chave]} onChange={e => setDadosDoLote(d => ({ ...d, [chave]: e.target.value }))} placeholder={placeholder} inputMode="numeric" style={{ width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid #CBD5E1", fontSize: "0.82rem", marginTop: 2, boxSizing: "border-box" }} />
+          </div>
+        );
+        return (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}
+          onClick={() => setLoteAberto(false)}
+          onKeyDown={e => { if (e.key === "Escape") setLoteAberto(false); }}
+        >
+          <div role="dialog" aria-modal="true" aria-labelledby="lote-tributacao-titulo" style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 520, maxHeight: "92vh", overflowY: "auto", padding: "1.25rem", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }} onClick={e => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, borderBottom: "1px solid #E2E8F0", paddingBottom: 8 }}>
+              <h2 id="lote-tributacao-titulo" style={{ margin: 0, fontSize: "1.1rem", fontWeight: 800, color: "#1E293B" }}>Declarar em lote</h2>
+              <button type="button" aria-label="Fechar" onClick={() => setLoteAberto(false)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "1.1rem" }}>✕</button>
+            </div>
+
+            <p style={{ margin: "0 0 6px", fontSize: "0.85rem", fontWeight: 700, color: "#1C1917" }}>
+              A mesma tributação para {marcados.length} {marcados.length === 1 ? "produto" : "produtos"}:
+            </p>
+            <p style={{ margin: "0 0 14px", fontSize: "0.78rem", color: "#64748B", lineHeight: 1.5 }}>
+              {marcados.slice(0, 8).map(p => p.name).join(", ")}{marcados.length > 8 ? ` e mais ${marcados.length - 8}` : ""}.
+              {" "}O que estiver gravado nesses produtos é substituído. Confira os códigos com o contador.
+            </p>
+
+            <div className="fiscal-grade-2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
+              {campo("lote-ncm", "NCM *", "ncm", "8 dígitos, ex.: 1905.90.90")}
+              {campo("lote-cest", "CEST", "cest", "7 dígitos (vazio se não se aplica)")}
+              {campo("lote-cfop", "CFOP *", "cfop")}
+              {campo("lote-csosn", "CSOSN / CST *", "csosn")}
+            </div>
+
+            {erroDoLote && (
+              <div role="alert" style={{ margin: "0 0 14px", padding: "10px 12px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 10, fontSize: "0.78rem", color: "#991B1B", lineHeight: 1.5 }}>
+                <strong>{erroDoLote.mensagem}</strong>
+                {erroDoLote.problemas.slice(0, 8).map(p => <span key={p} style={{ display: "block", marginTop: 2 }}>{p}</span>)}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button type="button" onClick={() => setLoteAberto(false)} style={{ padding: "8px 14px", borderRadius: 6, border: "1px solid #CBD5E1", background: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer" }}>Cancelar</button>
+              <button type="button" onClick={handleDeclararEmLote} disabled={gravandoLote} style={{ padding: "8px 18px", borderRadius: 6, border: "none", background: "#1C1917", color: "#fff", fontSize: "0.82rem", fontWeight: 700, cursor: "pointer", opacity: gravandoLote ? 0.6 : 1 }}>
+                {gravandoLote ? "Gravando..." : marcados.length === 1 ? "Gravar no produto" : `Gravar nos ${marcados.length} produtos`}
+              </button>
             </div>
           </div>
         </div>

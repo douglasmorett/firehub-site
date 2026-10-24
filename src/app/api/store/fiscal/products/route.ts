@@ -205,6 +205,10 @@ const MAXIMO_DO_LOTE = 500;
  * nenhum.
  *
  * Cada produto gravado ganha a marca de sugestão (`fiscalConfig.ncmAssistido`).
+ *
+ * `manual: true` — o "Declarar em lote" da tela (Douglas, 24/10/2026): o
+ * lojista marca os produtos e digita a tributação uma vez. É a edição à mão de
+ * cada um, só que junta: mesmas regras, e a marca de sugestão SAI em vez de entrar.
  */
 async function aplicarLote(body: Record<string, any>, ctx: { user: { id: string; role: string | null; email: string | null }; franchiseeId: string }) {
   const bloqueio = soTitular(ctx.user.role);
@@ -271,6 +275,16 @@ async function aplicarLote(body: Record<string, any>, ctx: { user: { id: string;
   await prisma.$transaction(
     gravar.map((g) => prisma.menuProduct.updateMany({ where: { id: g.id, franchiseeId: ctx.franchiseeId }, data: g.data }))
   );
+
+  if (body.manual === true) {
+    // Falhar aqui não desfaz a gravação dos produtos (como no avulso).
+    try {
+      await tirarMarcas(ctx.franchiseeId, gravar.map((g) => g.id));
+    } catch (e: any) {
+      console.error("[Fiscal Produtos lote manual] marca do NCM assistido não saiu:", String(e?.message ?? "").slice(0, 200));
+    }
+    return NextResponse.json({ success: true, count: gravar.length, mensagem: `${gravar.length} produto(s) com a tributação declarada.` });
+  }
 
   const agora = new Date().toISOString();
   try {
