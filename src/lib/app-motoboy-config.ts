@@ -47,6 +47,14 @@ export type AppMotoboyConfig = {
    * 20/10/2026, Hakim Centro). Padrão: liberado (como era).
    */
   permitirSemLocalizacao: boolean;
+  /**
+   * O ranking dos entregadores no app (lib/relatorios/ranking-de-entregadores.ts):
+   * quem está em primeiro e os números de cada um. Douglas, 24/10/2026: "só
+   * mostrar para o motoboy se ativarem". Padrão: DESLIGADO. Muda só pelo
+   * Motoboys › Ranking (api/store/relatorios/ranking-de-entregadores, PUT);
+   * o salvar do "App Motoboys" no painel preserva o que está gravado.
+   */
+  rankingNoApp: boolean;
 };
 
 /** As escolhas que o painel oferece para `relatorioDias`. */
@@ -61,6 +69,7 @@ export const APP_MOTOBOY_PADRAO: AppMotoboyConfig = {
   relatorioDias: 45,
   permitirSemCodigo: true,
   permitirSemLocalizacao: true,
+  rankingNoApp: false,
 };
 
 export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
@@ -74,6 +83,7 @@ export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
     if (typeof o.relatorioLiberado === "boolean") cfg.relatorioLiberado = o.relatorioLiberado;
     if (typeof o.permitirSemCodigo === "boolean") cfg.permitirSemCodigo = o.permitirSemCodigo;
     if (typeof o.permitirSemLocalizacao === "boolean") cfg.permitirSemLocalizacao = o.permitirSemLocalizacao;
+    if (typeof o.rankingNoApp === "boolean") cfg.rankingNoApp = o.rankingNoApp;
     const dias = Math.round(Number(o.relatorioDias));
     if (o.relatorioDias != null && Number.isFinite(dias) && dias >= 1) cfg.relatorioDias = Math.min(45, dias);
   }
