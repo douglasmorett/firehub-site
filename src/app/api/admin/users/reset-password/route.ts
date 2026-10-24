@@ -1,8 +1,9 @@
 /**
  * POST /api/admin/users/reset-password  { userId, confirmacao: "redefinir" }
  *
- * Redefine a senha de uma conta de loja para a senha padrão de suporte
- * (SENHA_PADRAO) — só ADMIN. O lojista troca depois, se quiser.
+ * Redefine a senha de uma conta de loja para uma senha SORTEADA na hora, que
+ * volta na resposta para o admin passar ao lojista — só ADMIN. Era "123456"
+ * fixo para todo mundo: quem soubesse o e-mail de uma loja redefinida entrava.
  *
  * Existe porque "esqueci a senha" depende de e-mail chegar, e o e-mail nem
  * sempre chega (Hotmail joga em spam, o cadastro tem e-mail antigo): a NIK
@@ -15,12 +16,9 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
+import { gerarSenhaLegivel } from "@/lib/senha-gerada";
 
 export const dynamic = "force-dynamic";
-
-// Senha padrão de suporte. Não é exportada: arquivo de rota só pode exportar
-// os handlers e as configs do Next.
-const SENHA_PADRAO = "123456";
 
 export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -49,13 +47,15 @@ export async function POST(req: NextRequest) {
   }
 
   // Mesmo custo de hash do fluxo "esqueci a senha" (forgot-password).
-  const hashed = await bcrypt.hash(SENHA_PADRAO, 12);
+  const senha = gerarSenhaLegivel();
+  const hashed = await bcrypt.hash(senha, 12);
   await prisma.user.update({
     where: { id: alvo.id },
     // Token de recuperação pendente cai junto: a senha nova é esta.
     data: { password: hashed, resetToken: null, resetTokenExp: null },
   });
 
-  console.log(`[admin/reset-password] ${session.user.email} redefiniu a senha de ${alvo.email} (${alvo.storeName || alvo.id}) para a padrão.`);
-  return NextResponse.json({ ok: true, email: alvo.email, storeName: alvo.storeName, senha: SENHA_PADRAO });
+  console.log(`[admin/reset-password] ${session.user.email} redefiniu a senha de ${alvo.email} (${alvo.storeName || alvo.id})`);
+  // A senha só sai aqui, para a tela do admin — nunca no log.
+  return NextResponse.json({ ok: true, email: alvo.email, storeName: alvo.storeName, senha });
 }

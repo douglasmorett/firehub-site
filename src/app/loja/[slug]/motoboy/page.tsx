@@ -1013,7 +1013,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
               </label>
               <input
                 type="password"
-                placeholder="Senha (Padrão: 123456)"
+                placeholder="Senha que a loja passou para você"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 style={{
@@ -1041,7 +1041,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
 
           <div style={{ marginTop: "1.5rem", padding: "10px", background: "#F8FAFC", borderRadius: "10px", textAlign: "center", fontSize: "0.76rem", color: "#64748B" }}>
             🔒 Acesso restrito e isolado para motoboys cadastrados da loja.<br />
-            💡 <b>Senha padrão:</b> 123456
+            💡 Esqueceu a senha? Peça para a loja gerar uma nova.
           </div>
 
           {/* O vídeo de como usar o app: a primeira dúvida do entregador é como entrar. */}
@@ -1842,7 +1842,7 @@ export default function MotoboyPortalPage({ params }: { params: Promise<{ slug: 
                 </label>
                 <input
                   type="password"
-                  placeholder="Sua senha atual (Padrão: 123456)"
+                  placeholder="Sua senha atual"
                   value={currentPassInput}
                   onChange={(e) => setCurrentPassInput(e.target.value)}
                   style={{ width: "100%", padding: "10px 12px", borderRadius: "8px", border: "1.5px solid #CBD5E1", fontSize: "0.9rem", boxSizing: "border-box" }}

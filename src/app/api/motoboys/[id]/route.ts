@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { authOptions } from "@/lib/auth";
-import { hashDeSenha } from "@/lib/motoboy-senha";
+import { SENHA_PADRAO, hashDeSenha } from "@/lib/motoboy-senha";
+import { gerarSenhaDeNumeros } from "@/lib/senha-gerada";
 import { renomearNoFiado, tirarDoFiado } from "@/lib/fiado-do-motoboy";
 import { pedidoDeAppDoCorpo } from "@/lib/repasse-do-entregador";
 import { gravarPedidoDeApp } from "@/lib/pedido-de-app-no-banco";
@@ -40,6 +41,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   if (app.acao === "recusar") return NextResponse.json({ error: app.erro }, { status: 400 });
   if (app.acao === "gravar") await gravarPedidoDeApp(id, app.escolha);
 
+  // "Gerar senha nova" da tela: o servidor sorteia e devolve UMA vez, para o
+  // dono passar ao entregador. Vence a senha digitada.
+  const senhaGerada = body.gerarSenha === true ? gerarSenhaDeNumeros() : null;
+  const senhaNova = senhaGerada || (typeof password === "string" ? password.trim() : "");
+
   const motoboy = await prisma.motoboy.update({
     where: { id },
     data: {
@@ -49,7 +55,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       // padrão". Do jeito anterior, salvar qualquer outro dado do cadastro com o
       // campo vazio rebaixava a senha do entregador para 123456 sem avisar
       // ninguém — inclusive a de quem já tinha trocado.
-      ...(password?.trim() ? { password: await hashDeSenha(password.trim()) } : {}),
+      ...(senhaNova ? { password: await hashDeSenha(senhaNova) } : {}),
       ...(paymentType !== undefined && { paymentType }),
       ...(dailyRate !== undefined && { dailyRate: dailyRate ? Number(dailyRate) : null }),
       ...(perDeliveryRate !== undefined && { perDeliveryRate: perDeliveryRate ? Number(perDeliveryRate) : null }),
@@ -70,7 +76,10 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   // A escolha gravada volta na resposta mesmo com um cliente do Prisma de
   // antes da coluna (lib/pedido-de-app-no-banco.ts).
   const pedidoDeApp = app.acao === "gravar" ? app.escolha : ((motoboy as any).pedidoDeApp ?? null);
-  return NextResponse.json({ ...motoboy, pedidoDeApp, password: undefined });
+  return NextResponse.json({
+    ...motoboy, pedidoDeApp, password: undefined,
+    ...(senhaNova ? { senhaPadrao: senhaNova === SENHA_PADRAO, senhaGerada } : {}),
+  });
 }
 
 // DELETE - remover motoboy

@@ -19,6 +19,8 @@ type Motoboy = {
   // password só existe na ida (definir/redefinir). A API não devolve mais o
   // valor — devolve senhaPadrao, dizendo se o entregador ainda não trocou.
   id: string; name: string; phone?: string; password?: string; senhaPadrao?: boolean; active: boolean;
+  /** Só na ida: pede ao servidor para sortear uma senha nova (editar). */
+  gerarSenha?: boolean;
   paymentType: string; dailyRate?: number; perDeliveryRate?: number; perKmRate?: number; notes?: string;
   faixasDeKm?: FaixaDoMotoboy[];
   /** Id do modelo de onde este acerto foi copiado (lib/modelos-de-pagamento.ts). */
@@ -72,6 +74,10 @@ export default function MotoboyManager({ initialMotoboys, regraDaLoja = null }: 
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  // A senha sorteada pelo servidor aparece UMA vez, até o dono fechar: ela não
+  // fica guardada em lugar nenhum que dê para consultar depois.
+  const [senhaNova, setSenhaNova] = useState<{ nome: string; senha: string } | null>(null);
+  const [copiada, setCopiada] = useState(false);
 
   // ── OS ACERTOS SALVOS ──────────────────────────────────────────────────
   //
@@ -213,9 +219,11 @@ export default function MotoboyManager({ initialMotoboys, regraDaLoja = null }: 
         setMsg(`❌ ${d?.error || "Erro ao salvar."}`);
         return;
       }
-      const saved: Motoboy = await res.json();
-      if (editingId) setMotoboys(prev => prev.map(m => m.id === editingId ? saved : m));
+      const { senhaGerada, ...saved }: Motoboy & { senhaGerada?: string | null } = await res.json();
+      // Mescla: o PUT não devolve senhaPadrao quando a senha não mudou.
+      if (editingId) setMotoboys(prev => prev.map(m => m.id === editingId ? { ...m, ...saved } : m));
       else setMotoboys(prev => [...prev, saved]);
+      if (senhaGerada) { setSenhaNova({ nome: saved.name, senha: senhaGerada }); setCopiada(false); }
       setMsg("✅ Salvo!");
       cancel();
     } catch { setMsg("❌ Erro ao salvar."); } finally { setSaving(false); }
@@ -223,7 +231,7 @@ export default function MotoboyManager({ initialMotoboys, regraDaLoja = null }: 
 
   const toggle = async (mb: Motoboy) => {
     const res = await fetch(`/api/motoboys/${mb.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ active: !mb.active }) });
-    if (res.ok) { const saved = await res.json(); setMotoboys(prev => prev.map(m => m.id === mb.id ? saved : m)); }
+    if (res.ok) { const saved = await res.json(); setMotoboys(prev => prev.map(m => m.id === mb.id ? { ...m, ...saved } : m)); }
   };
 
   const remove = async (id: string) => {
@@ -565,17 +573,27 @@ export default function MotoboyManager({ initialMotoboys, regraDaLoja = null }: 
             className="input-field"
             type="password"
             value={editing.password ?? ""}
-            onChange={e => setEditing(p => ({ ...p, password: e.target.value }))}
-            placeholder={editingId ? "Deixe em branco para manter a senha atual" : "Mínimo 6 caracteres (padrão: 123456)"}
+            onChange={e => setEditing(p => ({ ...p, password: e.target.value, gerarSenha: false }))}
+            disabled={!!editing.gerarSenha}
+            placeholder={editing.gerarSenha ? "Uma senha nova será gerada ao salvar" : editingId ? "Deixe em branco para manter a senha atual" : "Deixe em branco para gerar uma senha"}
           />
+          {editingId && (
+            <button
+              type="button"
+              onClick={() => setEditing(p => ({ ...p, password: "", gerarSenha: !p?.gerarSenha }))}
+              style={{ marginTop: 6, background: "none", border: "none", color: "#C92E09", fontSize: "0.76rem", fontWeight: 700, cursor: "pointer", textDecoration: "underline", padding: "2px 0", fontFamily: "inherit" }}
+            >
+              {editing.gerarSenha ? "Não gerar (manter a senha atual)" : "🎲 Gerar senha nova"}
+            </button>
+          )}
           <div style={{ fontSize: "0.72rem", color: "#64748B", marginTop: 4 }}>
-            A senha fica guardada criptografada e não pode mais ser consultada — nem por você. Se o
-            entregador esquecer, defina uma nova aqui.
+            A senha fica guardada criptografada e não pode mais ser consultada — nem por você. Em
+            branco, o sistema gera uma e mostra aqui na tela ao salvar. Se o entregador esquecer, gere uma nova.
           </div>
           {editingId && editing.senhaPadrao && (
             <div style={{ fontSize: "0.75rem", color: "#B45309", marginTop: 6, fontWeight: 600 }}>
               ⚠️ Este entregador ainda usa a senha padrão 123456. Qualquer pessoa que saiba o nome dele
-              entra no app de entregas — defina uma senha própria.
+              entra no app de entregas — gere uma senha nova ou defina uma própria.
             </div>
           )}
         </div>
@@ -598,6 +616,24 @@ export default function MotoboyManager({ initialMotoboys, regraDaLoja = null }: 
   return (
     <div>
       {msg && <div style={{ padding: "10px 14px", borderRadius: 8, marginBottom: 12, background: msg.startsWith("✅") ? "#F0FDFA" : "#fef2f2", color: msg.startsWith("✅") ? "#0F766E" : "#C92E09", border: `1px solid ${msg.startsWith("✅") ? "#99F6E4" : "#fecaca"}`, fontSize: "0.85rem" }}>{msg}</div>}
+
+      {senhaNova && (
+        <div style={{ padding: "12px 14px", borderRadius: 10, marginBottom: 12, background: "#FFFBEB", border: "1.5px solid #FDE68A", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 200, fontSize: "0.85rem", color: "#334155" }}>
+            🔑 Senha do app de <b>{senhaNova.nome}</b>:{" "}
+            <b style={{ fontSize: "1.15rem", letterSpacing: 2, color: "#0F172A", fontFamily: "monospace" }}>{senhaNova.senha}</b>
+            <div style={{ fontSize: "0.74rem", color: "#92400E", marginTop: 2 }}>Passe para o entregador agora — depois de fechar ela não aparece mais.</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => { navigator.clipboard?.writeText(senhaNova.senha).then(() => setCopiada(true)).catch(() => {}); }}
+            style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #FDE68A", background: "#fff", cursor: "pointer", fontSize: "0.78rem", fontWeight: 700, color: "#92400E" }}
+          >
+            {copiada ? "✅ Copiada" : "Copiar"}
+          </button>
+          <button type="button" onClick={() => setSenhaNova(null)} title="Fechar" style={{ background: "none", border: "none", color: "#94A3B8", cursor: "pointer", display: "flex" }}><X size={16} /></button>
+        </div>
+      )}
 
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
@@ -660,6 +696,7 @@ export default function MotoboyManager({ initialMotoboys, regraDaLoja = null }: 
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontWeight: 700, fontSize: "0.95rem", color: "#1E293B", overflowWrap: "anywhere" }}>{mb.name}
                     {!mb.active && <span style={{ marginLeft: 8, fontSize: "0.7rem", background: "#FEE2E2", color: "#C92E09", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>Inativo</span>}
+                    {mb.senhaPadrao && <span title="Ainda entra com 123456 — abra Editar e gere uma senha nova" style={{ marginLeft: 8, fontSize: "0.7rem", background: "#FFFBEB", color: "#B45309", padding: "2px 8px", borderRadius: 6, fontWeight: 600 }}>🔑 Senha padrão</span>}
                   </div>
                   {mb.phone && <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 2 }}><Phone size={11} style={{ marginRight: 3 }} />{mb.phone}</div>}
                 </div>
