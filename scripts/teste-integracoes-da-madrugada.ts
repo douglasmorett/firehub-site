@@ -5,6 +5,7 @@
  *   npx tsx scripts/teste-integracoes-da-madrugada.ts
  */
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -15,10 +16,9 @@ const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
 const ler = (arquivo: string) => readFileSync(arquivo, "utf8");
 
 async function main() {
-  // ── F99: a mídia do gateway (recorte de whatsapp-gateway/server.js) ──────
+  // ── F99: a mídia do gateway (whatsapp-gateway/midia-do-envio.js; o download
+  // com redirecionamento e rebinding está em scripts/teste-midia-do-gateway.ts) ──
   const gw = ler("whatsapp-gateway/server.js");
-  const corpo = gw.match(/async function midiaRecusada\(url\) \{[\s\S]*?\n\}\n/)?.[0];
-  confere("o gateway tem a checagem da mídia", !!corpo, true);
   const dnsFalso: Record<string, string[]> = {
     "firehubfood.com.br": ["104.21.10.10", "2606:4700::6810:a0a"],
     "static-images.ifood.com.br": ["13.33.1.1"],
@@ -26,14 +26,12 @@ async function main() {
     "interno.exemplo.com": ["10.0.0.5"],
     "metade.exemplo.com": ["8.8.8.8", "192.168.1.10"],
   };
-  const requireFalso = (m: string) => m === "dns"
-    ? { promises: { lookup: async (h: string) => {
-        if (!dnsFalso[h]) throw new Error("ENOTFOUND");
-        return dnsFalso[h].map((address) => ({ address, family: address.includes(":") ? 6 : 4 }));
-      } } }
-    : require(m);
-  const midiaRecusada = new Function("require", `${corpo}; return midiaRecusada;`)(requireFalso) as (u: string) => Promise<string | null>;
-  const passa = async (u: string) => (await midiaRecusada(u)) === null;
+  const resolverFalso = async (h: string) => {
+    if (!dnsFalso[h]) throw new Error("ENOTFOUND");
+    return dnsFalso[h];
+  };
+  const { conferirEndereco } = createRequire(import.meta.url)("../whatsapp-gateway/midia-do-envio.js");
+  const passa = async (u: string) => { try { await conferirEndereco(u, resolverFalso); return true; } catch { return false; } };
   for (const u of [
     "https://firehubfood.com.br/uploads/cardapio-loja.pdf",
     "https://firehubfood.com.br/uploads/respostas/foto.jpg?v=2",
@@ -50,8 +48,8 @@ async function main() {
   ]) confere(`mídia recusada: ${u}`, await passa(u), false);
   confere("172.32 é público (fora do 172.16/12)", await passa("http://172.32.0.1/"), true);
   const rota = gw.slice(gw.indexOf('app.post("/message/sendMedia/'));
-  confere("o sendMedia confere a URL antes do sendMessage",
-    rota.indexOf("midiaRecusada(mediaUrl)") > 0 && rota.indexOf("midiaRecusada(mediaUrl)") < rota.indexOf("sock.sendMessage"), true);
+  confere("o sendMedia baixa e confere a mídia antes do sendMessage",
+    rota.indexOf("baixarMidia(mediaUrl") > 0 && rota.indexOf("baixarMidia(mediaUrl") < rota.indexOf("sock.sendMessage"), true);
 
   // ── JotaJá: igualdade, não startsWith (o orderId vem do corpo do webhook) ─
   const jj = ler("src/lib/processJotajaEvent.ts");
