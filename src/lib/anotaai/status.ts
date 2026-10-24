@@ -99,6 +99,13 @@ async function sincronizar(pedido: PedidoParaSincronizar, novoStatus: string, op
   if (!anotaAiConfigurado()) return { ok: true, ignorado: true, acoes, erros: ["Anota AI não configurado no servidor"], pendentes };
   const loja = await lojaAnotaAiAtiva(id.pageId);
   if (!loja) return { ok: false, ignorado: true, acoes, erros: ["a loja do Anota AI deste pedido está desligada no FireHub — nada foi enviado"], pendentes };
+  // O token é um só (do parceiro) e a página sai do id gravado no pedido: só
+  // age se a página for da MESMA conta do pedido — senão um id copiado
+  // aceitaria ou cancelaria o pedido de outro restaurante.
+  if (loja.franchiseeId !== pedido.franchiseeId) {
+    console.warn(`[Anota AI Sync] ⛔ ${pedido.openDeliveryOrderId}: a página ${id.pageId} é da conta ${loja.franchiseeId}, o pedido é da ${pedido.franchiseeId} — nada enviado`);
+    return { ok: false, ignorado: true, acoes, erros: ["a loja do Anota AI deste pedido não é desta conta — nada foi enviado"], pendentes };
+  }
 
   const pedidoId = pedido.openDeliveryOrderId;
   const prazo = Date.now() + (opts.limiteMs ?? 12_000);

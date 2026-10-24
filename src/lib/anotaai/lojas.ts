@@ -108,16 +108,23 @@ export async function lojasAnotaAiDaConta(franchiseeIds: string[]): Promise<Loja
 /**
  * Liga (ou religa) a página nesta conta. Recusa — com motivo — a página ATIVA
  * em outra conta do FireHub: é o erro que faz o pedido de uma loja cair no
- * painel da outra. (Re)ligar move o `importarDesde` para agora: o que foi
+ * painel da outra. A DESLIGADA de outra conta também não troca de dono sozinha
+ * (`podeTrocarDono` = ADMIN): "desligar" não solta a página no Anota AI, e
+ * religar em outra conta seria levar os pedidos de outro restaurante.
+ * (Re)ligar move o `importarDesde` para agora: o que foi
  * pedido antes já foi atendido pelo Anota AI, e entrar agora seria comanda
  * velha saindo na cozinha.
  */
-export async function ligarLojaAnotaAi(n: { pageId: string; franchiseeId: string; nome: string | null; quem: string }): Promise<{ ok: true; loja: LojaAnotaAi } | { ok: false; motivo: string }> {
+export async function ligarLojaAnotaAi(n: { pageId: string; franchiseeId: string; nome: string | null; quem: string; podeTrocarDono?: boolean }): Promise<{ ok: true; loja: LojaAnotaAi } | { ok: false; motivo: string }> {
   await garantirTabela();
   const linhas = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "AnotaAiLoja" WHERE "pageId" = $1`, n.pageId);
   const existente = linhas[0] ? ler(linhas[0]) : null;
+  // O nome gravado é o da OUTRA conta: não vai na mensagem.
   if (existente && existente.ativa && existente.franchiseeId !== n.franchiseeId) {
-    return { ok: false, motivo: `A loja "${n.nome || existente.nome || n.pageId}" do Anota AI já está ligada a outra conta do FireHub. Desligue lá antes de ligar aqui.` };
+    return { ok: false, motivo: `A loja "${n.nome || n.pageId}" do Anota AI já está ligada a outra conta do FireHub. Desligue lá antes de ligar aqui.` };
+  }
+  if (existente && !existente.ativa && existente.franchiseeId !== n.franchiseeId && !n.podeTrocarDono) {
+    return { ok: false, motivo: `A loja "${n.nome || n.pageId}" do Anota AI já foi ligada a outra conta do FireHub. Fale com o suporte do FireHub para trazê-la para esta conta.` };
   }
   if (existente && existente.ativa) {
     // Mesma conta conectando de novo: nada a mudar (nem o importarDesde — o

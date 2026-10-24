@@ -22,14 +22,15 @@ export const dynamic = "force-dynamic";
  * que o Anota AI devolve e PROVA o vínculo lendo a lista de pedidos com ele —
  * só então liga. A chave em si não é guardada.
  *
- * Também aceita o "Token da unidade" do Portal de Integração (o JWT com
- * `idpartner` e `idpage`), para o caso de o vínculo ter sido feito à mão
- * pelo FireHub no portal.
+ * O "Token da unidade" do Portal de Integração (o JWT com `idpartner` e
+ * `idpage`, vínculo feito à mão pelo FireHub no portal) só vale para ADMIN:
+ * a assinatura dele não é conferida aqui, e um JWT montado à mão ligaria a
+ * página de outro restaurante. Lojista sempre passa pelo `linkpage-by-token`.
  *
  * A loja é SEMPRE a da sessão (molde da rota do CardápioWeb).
  */
 
-async function lojaDaRequisicao(req: NextRequest): Promise<{ lojaId: string; email: string } | { erro: NextResponse }> {
+async function lojaDaRequisicao(req: NextRequest): Promise<{ lojaId: string; email: string; admin: boolean } | { erro: NextResponse }> {
   const session = await getServerSession(authOptions).catch(() => null);
   const email = session?.user?.email;
   if (!email) return { erro: NextResponse.json({ error: "Faça login no painel." }, { status: 401 }) };
@@ -39,7 +40,8 @@ async function lojaDaRequisicao(req: NextRequest): Promise<{ lojaId: string; ema
   }
   const lojaId = await lojaDaSessao(email, req.nextUrl.searchParams.get("storeId") || req.cookies.get("firehub_active_store")?.value || null);
   if (!lojaId) return { erro: NextResponse.json({ error: "Loja não encontrada." }, { status: 404 }) };
-  return { lojaId, email };
+  // Papel lido do banco agora (não o do cookie do login).
+  return { lojaId, email, admin: usuario?.role === "ADMIN" };
 }
 
 export async function GET(req: NextRequest) {
@@ -81,16 +83,19 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Cole a Chave de integração inteira (Anota AI › Configuração Geral › Integrações)." }, { status: 400 });
       }
 
-      // Token da unidade do Portal de Integração: já vinculado, só falta o idpage.
+      // Token da unidade do Portal de Integração (já vinculado): o idpage sai
+      // de um JWT sem assinatura conferida — só o ADMIN usa este atalho.
       const dadosDoToken = payloadDoJwt(chave);
-      let pageId = dadosDoToken?.idpartner ? idPageDoToken(chave) : null;
+      let pageId = s.admin && dadosDoToken?.idpartner ? idPageDoToken(chave) : null;
       if (!pageId) {
         const v = await vincularPaginaAnotaAi(chave, s.lojaId);
         if (!v.ok) {
           console.warn(`[Anota AI] vínculo recusado para a loja ${s.lojaId}: ${v.erro}`);
-          return NextResponse.json({ error: `O Anota AI não aceitou esta chave (${v.erro}). Confira se copiou a Chave de integração inteira.` }, { status: 400 });
+          const dica = dadosDoToken?.idpartner ? " Isto parece o Token da unidade do Portal de Integração: cole a Chave de integração do admin do Anota AI." : " Confira se copiou a Chave de integração inteira.";
+          return NextResponse.json({ error: `O Anota AI não aceitou esta chave (${v.erro}).${dica}` }, { status: 400 });
         }
-        pageId = idPageDoToken(v.dados?.info?.token) || idPageDoToken(chave);
+        // Só o idpage que o Anota AI DEVOLVEU: o da chave colada não prova nada.
+        pageId = idPageDoToken(v.dados?.info?.token);
         if (!pageId) {
           // Doc de parceiro é promessa: o formato do `info.token` não está
           // descrito. Só as CHAVES vão para o log, nunca o valor.
@@ -105,7 +110,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: `A loja foi encontrada, mas o Anota AI não liberou os pedidos dela para o FireHub (${prova.erro}).` }, { status: 502 });
       }
 
-      const r = await ligarLojaAnotaAi({ pageId, franchiseeId: s.lojaId, nome, quem: s.email });
+      const r = await ligarLojaAnotaAi({ pageId, franchiseeId: s.lojaId, nome, quem: s.email, podeTrocarDono: s.admin });
       if (!r.ok) return NextResponse.json({ error: r.motivo }, { status: 409 });
       console.log(`[Anota AI] 🔗 loja ${s.lojaId} ligou a página ${pageId} — ${s.email}`);
       return NextResponse.json({ ok: true, pageId });

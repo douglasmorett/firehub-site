@@ -189,6 +189,10 @@ export async function POST(req: NextRequest) {
     // com o total) para a cozinha produzir; o lojista confere os itens no
     // painel da Brendi.
     const refTag = cleanRef || "MANUAL";
+    // Só referência com cara de Brendi (UUID ou número, sem "_") vira o id do
+    // pedido: "aiqfome_…", "anotaai_…" imitariam o id de outro canal e o status
+    // daqui iria para o pedido de outra loja lá.
+    const idBrendi = /^[0-9A-Za-z-]{1,80}$/.test(cleanRef) ? cleanRef : "";
 
     // ANTI-DUPLICATA: se o cron/webhook importar o mesmo pedido depois (ou já
     // tiver importado), não pode haver dois registros. A condição por
@@ -198,8 +202,8 @@ export async function POST(req: NextRequest) {
     const alreadyExists = await prisma.customerOrder.findFirst({
       where: {
         OR: [
-          cleanRef ? { openDeliveryOrderId: cleanRef } : undefined,
-          cleanRef ? { openDeliveryOrderId: { startsWith: `${cleanRef}_` } } : undefined,
+          idBrendi ? { openDeliveryOrderId: idBrendi } : undefined,
+          idBrendi ? { openDeliveryOrderId: { startsWith: `${idBrendi}_` } } : undefined,
           cleanRef
             ? { openDeliveryReference: cleanRef, franchiseeId: targetFranchiseeId, openDeliveryChannel: "BRENDI" }
             : undefined,
@@ -224,7 +228,7 @@ export async function POST(req: NextRequest) {
         // Com cleanRef, o UUID/displayId vira a chave — é o que permite à
         // 2ª barreira do processBrendiEvent amarrar o evento real a ESTE
         // registro depois, em vez de duplicar.
-        openDeliveryOrderId: cleanRef || `manual_brendi_${Date.now()}`,
+        openDeliveryOrderId: idBrendi || `manual_brendi_${Date.now()}`,
         openDeliveryReference: refTag,
         customerName: customerName || `Cliente Brendi #${refTag}`,
         customerPhone: customerPhone || "",

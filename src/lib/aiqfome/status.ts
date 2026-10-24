@@ -93,6 +93,12 @@ async function sincronizar(pedido: PedidoParaSincronizar, novoStatus: string, op
   if (RANK_DO_FIREHUB[alvo] === undefined) return { ok: true, ignorado: true, acoes, erros, pendentes };
   const inst = await instalacaoAtiva(id.storeId);
   if (!inst) return { ok: false, ignorado: true, acoes, erros: ["a loja do aiqfome deste pedido está desligada no FireHub — nada foi enviado"], pendentes };
+  // A loja do aiqfome sai do id gravado no pedido: só age se a instalação for
+  // da MESMA conta do pedido — senão um id copiado mexeria no pedido de outra loja.
+  if (inst.franchiseeId !== pedido.franchiseeId) {
+    console.warn(`[aiqfome Sync] ⛔ ${pedido.openDeliveryOrderId}: a loja ${id.storeId} do aiqfome é da conta ${inst.franchiseeId}, o pedido é da ${pedido.franchiseeId} — nada enviado`);
+    return { ok: false, ignorado: true, acoes, erros: ["a loja do aiqfome deste pedido não é desta conta — nada foi enviado"], pendentes };
+  }
 
   const pedidoId = pedido.openDeliveryOrderId;
   const prazo = Date.now() + (opts.limiteMs ?? 12_000);
