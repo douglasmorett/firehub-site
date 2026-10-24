@@ -15,13 +15,15 @@
  * Ainda sem autenticação obrigatória, como o GET que alimenta o Assistente
  * (só o id da loja, que está no HTML do cardápio). O Assistente 1.2.46+ manda
  * o token da loja (lib/token-do-assistente.ts): token de outra loja ou
- * adulterado é recusado; sem token passa, até a fase 2 ligar a exigência.
+ * adulterado é recusado; sem token passa, até a fase 2 ligar a exigência. A
+ * sessão da loja (o /ack do navegador do painel) vale como credencial.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { lojasQueEstePcConfirma } from "@/lib/lojas-no-mesmo-pc-no-banco";
 import { SUFIXO_DA_CHEGADA } from "@/lib/momento-da-impressao";
 import { barrarChamadaDaFila } from "@/lib/token-do-assistente";
+import { sessaoDaLojaNaFila } from "@/lib/sessao-da-loja-na-fila";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +45,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, error: "franchiseeId e ids são obrigatórios" }, { status: 400 });
   }
 
-  const barrado = barrarChamadaDaFila(req.headers, franchiseeId, "ack");
+  // O /ack do navegador (GlobalPrintListener, quadro de pedidos) vai sem token:
+  // a sessão da loja vale como credencial (lib/sessao-da-loja-na-fila.ts).
+  const barrado = await barrarChamadaDaFila(req.headers, franchiseeId, "ack", () => sessaoDaLojaNaFila(franchiseeId));
   if (barrado) return barrado;
 
   try {
