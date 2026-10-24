@@ -210,6 +210,14 @@ export async function POST(req: NextRequest) {
         ].filter(Boolean) as any[],
       } as any,
     });
+    // A busca pelo id é global porque a coluna é única no banco inteiro; o
+    // pedido achado só volta na resposta se for desta loja.
+    if (alreadyExists && alreadyExists.franchiseeId !== targetFranchiseeId) {
+      return NextResponse.json(
+        { error: `O pedido #${refTag} já foi importado por outra loja.` },
+        { status: 409 },
+      );
+    }
     if (alreadyExists) {
       return NextResponse.json({
         ok: true,
