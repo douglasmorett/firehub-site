@@ -170,6 +170,14 @@ async function pollIfoodEvents(sessionUserId?: string) {
         const { code, orderId, merchantId } = event;
         if (!orderId) continue;
 
+        // Entregador Sob Demanda já ligado ao pedido da loja
+        // (lib/ifood-sob-demanda.ts): nada aqui importa nem muda o original.
+        const { sobDemandaJaVinculado, vincularSobDemanda } = await import("@/lib/ifood-sob-demanda");
+        if (await sobDemandaJaVinculado(prisma, orderId)) {
+          if (event.id) processedEventIds.push({ id: event.id, orderId, eventType: event.fullCode || event.code || "" });
+          continue;
+        }
+
         // Log de debug para identificar códigos de eventos
         console.log(`[iFood Poll] Evento recebido: code=${code}, fullCode=${event.fullCode}, orderId=${orderId}`);
 
@@ -304,6 +312,15 @@ async function pollIfoodEvents(sessionUserId?: string) {
               : null);
             if (!eventFranchisee) {
               console.error(`[iFood Poll] ❌ Nenhum franqueado encontrado para merchantId: ${eventMerchantId} no pedido ${orderId}`);
+              continue;
+            }
+
+            // Entregador Sob Demanda de um pedido que a loja já tem: liga ao
+            // original em vez de criar outro (e imprimir de novo).
+            if (await vincularSobDemanda(prisma, {
+              ifoodOrderId: orderId, orderData, franchiseeId: eventFranchisee.id, merchantId: eventMerchantId,
+            })) {
+              if (event.id) processedEventIds.push({ id: event.id, orderId, eventType: event.fullCode || event.code || "" });
               continue;
             }
 

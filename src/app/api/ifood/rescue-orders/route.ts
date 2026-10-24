@@ -8,6 +8,7 @@ import { authOptions } from "@/lib/auth";
 import { getIfoodToken } from "@/lib/ifood-api";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
+import { vincularSobDemanda } from "@/lib/ifood-sob-demanda";
 
 /**
  * GET /api/ifood/rescue-orders
@@ -239,6 +240,10 @@ export async function POST(req: NextRequest) {
 
 // Shared helper to create order from iFood data
 async function createOrderFromIfoodData(orderId: string, orderData: any, franchiseeId: string, token: string) {
+  // Entregador Sob Demanda de um pedido que a loja já tem: liga ao original
+  // em vez de criar outro (lib/ifood-sob-demanda.ts).
+  if (await vincularSobDemanda(prisma, { ifoodOrderId: orderId, orderData, franchiseeId })) return;
+
   const items = await montarItensDoPedidoIfood(orderData.items ?? [], {
     franchiseeId,
   });
