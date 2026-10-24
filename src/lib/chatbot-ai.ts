@@ -4009,6 +4009,16 @@ async function syncAiOrderToDatabase({
     total: totalOrderAmount,
   });
 
+  // O bairro vai no ENDEREÇO, não só na observação (Showrrascão, 18/10/2026):
+  // a comanda e o card mostram o endereço no topo, e "Rua 2 casa 63" sem o
+  // bairro fazia a loja ler a observação para saber para onde o pedido ia.
+  // Endereço que já cita o bairro fica como está.
+  const comBairro = (endereco: string | null | undefined): string | null | undefined => {
+    if (!endereco || !bairroDaEntrega) return endereco;
+    const simples = (v: string) => v.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+    return simples(endereco).includes(simples(bairroDaEntrega)) ? endereco : `${endereco} - ${bairroDaEntrega}`;
+  };
+
   // O texto é RECOMPOSTO do zero a cada gravação, nunca anexado ao que já está
   // no banco: o sync roda a cada mensagem do rascunho, e anexar duplicaria a
   // observação a cada turno.
@@ -4099,7 +4109,7 @@ async function syncAiOrderToDatabase({
       data: {
         customerName: finalCustomerName,
         customerPhone: formattedCustomerPhone,
-        customerAddress: payload.address || existingDraft.customerAddress || (deliveryType === "DELIVERY" && enderecoDaLocalizacao) || null,
+        customerAddress: comBairro(payload.address || existingDraft.customerAddress || (deliveryType === "DELIVERY" && enderecoDaLocalizacao) || null),
         paymentMethod: payload.paymentMethod || existingDraft.paymentMethod,
         ...(documentoDaTag ? { customerCpfCnpj: documentoDaTag } : {}),
         changeAmount: trocoParaGravar,
@@ -4161,7 +4171,7 @@ async function syncAiOrderToDatabase({
         franchiseeId,
         customerName: finalCustomerName,
         customerPhone: formattedCustomerPhone,
-        customerAddress: payload.address || (deliveryType === "DELIVERY" && enderecoDaLocalizacao) || null,
+        customerAddress: comBairro(payload.address || (deliveryType === "DELIVERY" && enderecoDaLocalizacao) || null),
         paymentMethod: payload.paymentMethod || null,
         ...(documentoDaTag ? { customerCpfCnpj: documentoDaTag } : {}),
         changeAmount: trocoParaGravar,

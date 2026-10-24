@@ -1300,9 +1300,10 @@ async function handleIncomingMessage(body: any, instance: string) {
   // Com o serviço ligado (R$ 49,90/mês, lib/assessor/assinatura.ts), a
   // mensagem do dono — áudio, texto ou foto — não vai para o robô de vendas:
   // vai para o assessor, que grava ("comprei 10 Coca lata, paguei 45" →
-  // estoque + financeiro) e responde relatório. Sem o serviço, segue o modo
-  // dono de sempre (só leitura), que oferece o assessor quando ele pede para
-  // gravar algo. Depois da porteira acima: "atendente assumiu" vale para ele também.
+  // estoque + financeiro) e responde relatório. Sem o serviço, desde 23/10/2026
+  // não há mais modo dono de graça: ele recebe a oferta do Bill e, respondendo
+  // SIM, o Bill liga ali mesmo (lib/assessor/oferta-no-whatsapp.ts). Depois da
+  // porteira acima: "atendente assumiu" vale para ele também.
   if (ehODono) {
     const lojaDoAssessor = (user as any).ownerId || user.id;
     const { assessorEstaLigado } = await import("@/lib/assessor/assinatura");
@@ -1324,6 +1325,11 @@ async function handleIncomingMessage(body: any, instance: string) {
       }
       return;
     }
+    const { respostaAoDonoSemBill } = await import("@/lib/assessor/oferta-no-whatsapp");
+    const r = await respostaAoDonoSemBill({ franchiseeId: lojaDoAssessor, telefone: cleanPhone, texto: rawText || "" });
+    await replyToCustomer(user.id, remoteJid, r.resposta, remoteJid || data.from || "").catch(() => {});
+    registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "dono-sem-bill", detalhe: r.acao });
+    return;
   }
 
   if (guard.action === "degrade") {

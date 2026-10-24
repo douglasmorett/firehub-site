@@ -611,7 +611,16 @@ export function traduzirPedido99Food(order: any): PedidoTraduzido {
  * cardápio. Um id fixo casaria com um produto real de outra loja; este não sai
  * do par (loja, nome).
  */
-export function itens99ParaPrisma(itens: ItemTraduzido[], lojaId: string) {
+export function itens99ParaPrisma(
+  itens: ItemTraduzido[],
+  lojaId: string,
+  /**
+   * A categoria de verdade de cada nome (lib/categoria-do-item.ts ›
+   * categoriasPeloNome). Só vale para o produto que nasce agora; sem ela, ou
+   * sem o nome nela, ele nasce em "99Food" como sempre.
+   */
+  categorias?: Map<string, string>,
+) {
   return itens.map((i) => ({
     price: i.precoUnitario,
     quantity: i.quantidade,
@@ -642,7 +651,11 @@ export function itens99ParaPrisma(itens: ItemTraduzido[], lojaId: string) {
           name: i.nome,
           price: i.precoUnitario,
           description: "",
-          category: "99Food",
+          // Em "99Food" nenhuma tela do KDS o reconhece e ele cai na tela
+          // errada: na Ragnar (23/10/2026) o "Combo Tadala" de burger saiu
+          // no KDS da Pizza. Com a categoria do produto de mesmo nome da
+          // loja, ele nasce onde a cozinha espera.
+          category: categorias?.get(i.nome) ?? "99Food",
           franchiseeId: lojaId,
         },
       },
