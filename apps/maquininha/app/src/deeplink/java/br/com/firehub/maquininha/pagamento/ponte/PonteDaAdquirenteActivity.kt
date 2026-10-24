@@ -108,7 +108,9 @@ class PonteDaAdquirenteActivity : Activity() {
         }
     }
 
-    @Deprecated("startActivityForResult é o que o app da Getnet entende.")
+    // A mensagem do @Deprecated vai compilada para o APK: não citar adquirente
+    // nela (cada uma reprova APK que cite a concorrente). Quem usa é a Getnet.
+    @Deprecated("startActivityForResult é o que o app de pagamento entende.")
     override fun onActivityResult(pedido: Int, codigo: Int, dados: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(pedido, codigo, dados)
