@@ -108,6 +108,12 @@ export const TABELAS_DA_COPIA: TabelaDaCopia[] = [
       "referredById", "asaasWalletId", "pagarmeRecipientId", "mpSellerId", "celcoinAccountId",
       "metaAdsEnabled", "metaAdsWeeklyFee", "metaIaGeracoesUsadas", "metaIaSemanaReferencia",
       "employeeAccountEnabled", "totemEnabled", "ifoodMerchantId", "ifoodClientId", "jotajaMerchantId",
+      // Vínculos e "conectado" dos canais, Meta, Asaas e o estado da queda: só
+      // a nuvem grava (a rota de cada um confere se o id já é de outra loja).
+      "ifoodConnected", "ifoodWidgetId", "ifoodTokenExpiresAt", "jotajaClientId", "jotajaConnected",
+      "food99MerchantId", "food99AppId", "food99Connected", "brendiClientId", "brendiMerchantId",
+      "brendiConnected", "wabizUsername", "wabizConnected", "metaFbPageId", "metaAdAccountId", "metaPixelId",
+      "pixOnlineAtivo", "cartaoOnlineAtivo", "semConexaoEstado",
     ],
     ignorarMudancaDe: ["printQueuePolledAt", "printQueueEstado", "updatedAt"],
     semLinhaNova: true,
