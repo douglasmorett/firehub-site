@@ -18,13 +18,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
-import { confereCodigoDoPedido } from "@/lib/codigo-do-pedido";
+import { autorizaPeloCodigo } from "@/lib/codigo-do-pedido";
 
 export const dynamic = "force-dynamic";
-
-// Data da publicação do código do pedido. Pedido criado antes dela veio de uma
-// página antiga, que não recebeu código: continua cancelando só com o id.
-const CORTE_DO_CODIGO = new Date("2026-10-25T03:00:00Z");
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
@@ -42,10 +38,8 @@ export async function POST(req: NextRequest) {
     select: { status: true, paymentPaidAt: true, gatewayProvider: true, createdAt: true },
   });
   if (!pedido) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
-  const autorizado = codigo
-    ? confereCodigoDoPedido(orderId, codigo)
-    : pedido.createdAt < CORTE_DO_CODIGO;
-  if (!autorizado) return NextResponse.json({ error: "Não autorizado." }, { status: 403 });
+  // Pedido de página antiga (antes do CORTE_DO_CODIGO) cancela só com o id.
+  if (!autorizaPeloCodigo(orderId, codigo, pedido.createdAt)) return NextResponse.json({ error: "Não autorizado." }, { status: 403 });
 
   if (pedido.gatewayProvider === "asaas") {
     const { cancelarPeloCliente } = await import("@/lib/pix-online-pedido");

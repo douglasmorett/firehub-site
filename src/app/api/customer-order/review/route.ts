@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { autorizaPeloCodigo } from "@/lib/codigo-do-pedido";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { orderId, rating, comment } = body;
+    const { orderId, rating, comment, codigo } = body;
 
     if (!orderId || !rating || rating < 1 || rating > 5) {
       return NextResponse.json({ error: "orderId e nota (1 a 5 estrelas) são obrigatórios" }, { status: 400 });
@@ -72,11 +73,17 @@ export async function POST(req: NextRequest) {
         franchiseeId: true,
         customerId: true,
         customerName: true,
+        createdAt: true,
       },
     });
 
     if (!order) {
       return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
+    }
+    // O id sai na lista pública de avaliações: quem avalia prova com o código
+    // do pedido (lib/codigo-do-pedido), que vem no link do "pedido entregue".
+    if (!autorizaPeloCodigo(orderId, codigo, order.createdAt)) {
+      return NextResponse.json({ error: "Não autorizado." }, { status: 403 });
     }
 
     // ── AVALIAÇÃO SE ESCREVE UMA VEZ ────────────────────────────────────────
