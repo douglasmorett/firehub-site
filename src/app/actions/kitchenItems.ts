@@ -113,6 +113,16 @@ export async function deleteKitchenItem(id: string) {
 import { GoogleGenAI } from '@google/genai';
 
 export async function fillNutritionWithAI(itemName: string) {
+  // Sem sessão nem teto, a action servia de IA de graça na chave do FireHub
+  // (auditoria de 23/10/2026): só login de loja, e o nome do item cortado.
+  try {
+    await lojaDaSessao();
+  } catch {
+    return { error: "Não autorizado. Entre de novo no painel." };
+  }
+  const nome = String(itemName ?? "").replace(/["\s]+/g, " ").trim().slice(0, 120);
+  if (!nome) return { error: "Informe o nome do item." };
+
   try {
     if (!process.env.GEMINI_API_KEY) {
       return { error: "GEMINI_API_KEY não configurada no servidor." };
@@ -120,7 +130,7 @@ export async function fillNutritionWithAI(itemName: string) {
 
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
     
-    const prompt = `Gere uma tabela nutricional realista e detalhada para 100g de "${itemName}" para vigilância sanitária. 
+    const prompt = `Gere uma tabela nutricional realista e detalhada para 100g de "${nome}" para vigilância sanitária. 
     Retorne APENAS um JSON válido e puro com a seguinte estrutura (sem markdown, sem \`\`\`json):
     {
       "ingredients": "Ingrediente 1, Ingrediente 2, etc.",

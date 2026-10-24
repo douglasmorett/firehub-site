@@ -13,14 +13,15 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "orderId é obrigatório" }, { status: 400 });
     }
 
+    // Rota pública, e os ids de pedido saem na lista pública de avaliações:
+    // devolvia telefone, nome e valor do cliente para quem pedisse
+    // (auditoria de 23/10/2026). Vai só o que a tela de avaliar desenha
+    // (loja/[slug]/avaliar/[orderId]): a loja, o número e a nota já dada.
     const order = await prisma.customerOrder.findUnique({
       where: { id: orderId },
       select: {
         id: true,
         franchiseeId: true,
-        customerName: true,
-        customerPhone: true,
-        totalAmount: true,
         status: true,
         createdAt: true,
         ifoodReference: true,
@@ -28,13 +29,12 @@ export async function GET(req: NextRequest) {
         franchisee: {
           select: {
             id: true,
-            name: true,
             storeName: true,
             slug: true,
             storeLogo: true,
           },
         },
-        review: true,
+        review: { select: { rating: true, comment: true, reply: true, replyAt: true, createdAt: true } },
       },
     });
 

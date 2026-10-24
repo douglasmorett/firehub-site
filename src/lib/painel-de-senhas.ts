@@ -50,9 +50,25 @@ export const CHAVE_DO_CODIGO = "firehub-tv-codigo";
 const ALFABETO_DO_CODIGO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 export const TAMANHO_DO_CODIGO = 6;
 
-export function novoCodigo(aleatorio: () => number = Math.random): string {
+/**
+ * Sorteio de 0 a max-1 com o gerador criptográfico. O código é a única senha
+ * da TV, e o Math.random dá para prever vendo os códigos que ele já soltou
+ * (auditoria de 23/10/2026). Web Crypto em vez de node:crypto: este arquivo
+ * também roda no navegador (tv/DigitarCodigo.tsx). Descarta o topo para não
+ * puxar o sorteio para as primeiras letras.
+ */
+function sorteioSeguro(max: number): number {
+  const teto = Math.floor(0x100000000 / max) * max;
+  const n = new Uint32Array(1);
+  do globalThis.crypto.getRandomValues(n);
+  while (n[0] >= teto);
+  return n[0] % max;
+}
+
+/** Mesmo formato de sempre (6 do alfabeto acima): os códigos já emitidos seguem valendo. */
+export function novoCodigo(sorteio: (max: number) => number = sorteioSeguro): string {
   let c = "";
-  for (let i = 0; i < TAMANHO_DO_CODIGO; i++) c += ALFABETO_DO_CODIGO[Math.floor(aleatorio() * ALFABETO_DO_CODIGO.length)];
+  for (let i = 0; i < TAMANHO_DO_CODIGO; i++) c += ALFABETO_DO_CODIGO[sorteio(ALFABETO_DO_CODIGO.length)];
   return c;
 }
 

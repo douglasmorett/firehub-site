@@ -15,6 +15,7 @@ import {
 import { ler99Food } from "@/lib/webhook-99food-log";
 import { lojas99DaConta } from "@/lib/food99-lojas";
 import { vincularParaConta } from "@/lib/food99-vinculo";
+import { ehAdminNoBanco } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +73,18 @@ export async function GET(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const lojaId = user.ownerId || user.id;
+
+  // As listas do app no 99Food (autorizadas, vinculadas, eventos do webhook)
+  // são de TODOS os clientes do FireHub: iam inteiras para qualquer login de
+  // loja (auditoria de 23/10/2026). Inteiras só para o ADMIN — também quando
+  // ele entra como a loja pelo Admin (`impersonatedBy`, gravado no token
+  // assinado), que é como o aviso de queda manda abrir esta página. A loja vê
+  // só o que é dela.
+  const impersonador = (session.user as any).impersonatedBy;
+  const verTudo =
+    (await ehAdminNoBanco(session)) ||
+    (!!impersonador &&
+      (await prisma.user.findUnique({ where: { id: String(impersonador) }, select: { role: true } }).catch(() => null))?.role === "ADMIN");
 
   // Os campos de 99Food que valem são os da LOJA, não os do usuário logado: um
   // funcionário carrega os dele, sempre vazios, e o diagnóstico apontaria falta
@@ -131,7 +144,10 @@ export async function GET(req: NextRequest) {
   // de autorização, ou o id de outra loja do FireHub quando a suspeita é que o
   // link foi gerado no painel errado. Não grava nada no banco; o único efeito
   // colateral é o refresh de token no 99Food, que é o conserto documentado.
-  const aMao = String(req.nextUrl.searchParams.get("appShopId") || "").trim();
+  // Testar id à mão é do ADMIN: para a loja, é perguntar pelo token de outra.
+  // (id vazio ou curto casaria com qualquer evento no filtro de baixo)
+  const idsDaLoja = new Set(candidatos.map((c) => String(c.appShopId || "").trim()).filter((id) => id.length >= 6));
+  const aMao = verTudo ? String(req.nextUrl.searchParams.get("appShopId") || "").trim() : "";
   if (aMao && !candidatos.some((c) => c.appShopId === aMao)) {
     candidatos.push({ rotulo: "informado na URL (?appShopId=)", appShopId: aMao });
   }
@@ -207,7 +223,7 @@ export async function GET(req: NextRequest) {
   // só quando pedido (`?hosts=1`): cada chamada gasta a única permitida a cada
   // 20s, e três seguidas viram 10005 em todas — inclusive na lista de cima.
   const shopListPorHost =
-    req.nextUrl.searchParams.get("hosts") === "1"
+    verTudo && req.nextUrl.searchParams.get("hosts") === "1"
       ? {
           didiFood: await sondarListaVinculadas("didi-food"),
           food99: await sondarListaVinculadas("99food"),
@@ -218,7 +234,10 @@ export async function GET(req: NextRequest) {
   // o que o 99Food respondeu — inclusive o motivo de recusa. É a única forma
   // de saber, sem achismo, se uma loja "vinculada" está presa a outro
   // integrador. Só faz efeito se der certo; recusa não muda nada.
-  const vincular = String(req.nextUrl.searchParams.get("vincular") || "").trim();
+  // Também só do ADMIN: com o shop_id de outra loja (que saía na lista de
+  // cima), qualquer conta amarrava a loja do 99Food dos outros a si. A loja
+  // vincula pela tela de Integrações.
+  const vincular = verTudo ? String(req.nextUrl.searchParams.get("vincular") || "").trim() : "";
   const tentativaDeVinculo = vincular
     ? await vincularParaConta(lojaId, {
         shopId: vincular,
@@ -227,6 +246,16 @@ export async function GET(req: NextRequest) {
     : null;
 
   const eventos = ler99Food();
+
+  // O que a sessão enxerga: tudo para o ADMIN; para a loja, só as linhas com
+  // um id dela. O diagnóstico abaixo lê o mesmo recorte, para não mandar a
+  // loja olhar uma lista que ela não recebe.
+  const daLoja = (...ids: Array<string | null | undefined>) => verTudo || ids.some((id) => !!id && idsDaLoja.has(String(id)));
+  const lojasAutorizadas = autorizadasV3.ok ? autorizadasV3.lojas.filter((l) => daLoja(l.shopId, l.appShopId)) : [];
+  const lojasVinculadas = vinculos.ok ? vinculos.lojas.filter((l) => daLoja(l.shop_id, l.app_shop_id)) : [];
+  const eventosVisiveis = verTudo
+    ? eventos
+    : eventos.filter((e) => [...idsDaLoja].some((id) => `${e.payload} ${e.motivo || ""}`.includes(id)));
   const pedidos99 = await prisma.customerOrder.count({
     where: { franchiseeId: lojaId, source: "99FOOD" },
   });
@@ -243,7 +272,8 @@ export async function GET(req: NextRequest) {
     // autorizada com o app vazio, e mandar "autorize de novo" no primeiro caso
     // é o conselho errado: o lojista já autorizou, o vínculo é que nasceu com
     // outro app_shop_id (link gerado no painel de outra loja, por exemplo).
-    const temVinculos = vinculos.ok && vinculos.lojas.length > 0;
+    // (Conselho de quem enxerga a lista toda; a loja recebe o de autorizar.)
+    const temVinculos = verTudo && vinculos.ok && vinculos.lojas.length > 0;
     diagnostico = temVinculos
       ? `Nenhum app_shop_id testado tem autorização, MAS o app tem ${vinculos.ok ? vinculos.lojas.length : 0} ` +
         "vínculo(s) no 99Food. Ou seja: alguém autorizou, e o vínculo não ficou com o id desta loja. " +
@@ -251,13 +281,13 @@ export async function GET(req: NextRequest) {
       : "Nenhum app_shop_id testado tem autorização no 99Food. Enquanto isso não mudar, " +
         "nenhum pedido será entregue aqui — o lojista precisa abrir a URL de autorização " +
         "e concluir com a conta 99Food da loja.";
-  } else if (eventos.length === 0) {
+  } else if (eventosVisiveis.length === 0) {
     parou_em = "webhook";
     diagnostico =
       `A loja ESTÁ autorizada (app_shop_id "${autorizada.appShopId}"), mas o 99Food nunca chamou ` +
       "o nosso webhook. Isso é configuração no portal de desenvolvedor deles: o Callback " +
       "address do app precisa apontar para a URL abaixo. Nada no nosso código conserta isso.";
-  } else if (pedidos99 === 0 && eventos.some((e) => e.motivo?.startsWith("RECUSADO"))) {
+  } else if (pedidos99 === 0 && eventosVisiveis.some((e) => e.motivo?.startsWith("RECUSADO"))) {
     // Recusa por amarração e parser que não entendeu chegam aqui do mesmo
     // jeito — nenhum pedido no banco — mas o conserto é em lugares opostos:
     // um é um campo no banco, o outro é código. Separar os dois é o que evita
@@ -297,34 +327,34 @@ export async function GET(req: NextRequest) {
     lojasAutorizadasV3: autorizadasV3.ok
       ? {
           ok: true,
-          quantidade: autorizadasV3.lojas.length,
-          semVinculo: autorizadasV3.lojas.filter((l) => !l.vinculada).length,
-          lojas: autorizadasV3.lojas,
-          cru: autorizadasV3.cru,
+          quantidade: lojasAutorizadas.length,
+          semVinculo: lojasAutorizadas.filter((l) => !l.vinculada).length,
+          lojas: lojasAutorizadas,
+          cru: verTudo ? autorizadasV3.cru : null,
         }
-      : { ok: false, errno: autorizadasV3.errno, erro: autorizadasV3.erro, cru: autorizadasV3.cru ?? null },
+      : { ok: false, errno: autorizadasV3.errno, erro: autorizadasV3.erro, cru: verTudo ? autorizadasV3.cru ?? null : null },
     shopListPorHost,
     lojasVinculadasAoApp: vinculos.ok
       ? {
           ok: true,
-          quantidade: vinculos.lojas.length,
+          quantidade: lojasVinculadas.length,
           variante: vinculos.variante,
-          lojas: vinculos.lojas,
+          lojas: lojasVinculadas,
           // O payload CRU, sempre. Em 06/09/2026 esta consulta voltou
           // `ok: true` com zero lojas tendo duas vinculadas de verdade, e não
           // havia como saber se o formato mudou ou se a lista estava vazia
           // mesmo — as duas coisas viravam "0". Sem isto, descobrir exige
           // terminal no servidor de produção.
-          cru: vinculos.cru ?? null,
+          cru: verTudo ? vinculos.cru ?? null : null,
         }
       : { ok: false, erro: vinculos.erro, tentativas: vinculos.tentativas },
     webhook: {
       urlQueDeveEstarNoPortal: "https://firehubfood.com.br/api/99food/webhook",
-      eventosRecebidos: eventos.length,
+      eventosRecebidos: eventosVisiveis.length,
       // Some no restart do container — um deploy recente zera esta lista, e
       // lista vazia logo após deploy não prova que o 99Food não chamou.
       observacao: "Registro em memória: reinicia junto com o container.",
-      ultimosEventos: eventos,
+      ultimosEventos: eventosVisiveis,
     },
     pedidos99NoBanco: pedidos99,
   });

@@ -6,7 +6,7 @@ import { entraNoCardapio, minimoDeEstrelas, notaDasAvaliacoes } from "@/lib/aval
 
 export const dynamic = "force-dynamic";
 
-// GET /api/store-reviews?slug=xxx ou franchiseeId=xxx
+// GET /api/store-reviews?slug=xxx (cardápio) ou sem parâmetro (painel, pela sessão)
 //
 // Com `slug` é o CARDÁPIO: só as avaliações que a loja deixa aparecer (a
 // partir do mínimo de estrelas, lib/avaliacoes-no-cardapio.ts). Sem `slug` é
@@ -16,7 +16,11 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const slug = searchParams.get("slug");
-    let franchiseeId = searchParams.get("franchiseeId");
+    // O `?franchiseeId=` da query caía na visão do PAINEL (todas, inclusive as
+    // que a loja escondeu) sem login nenhum — e o id da loja é público no
+    // cardápio (auditoria de 23/10/2026). Ninguém o usa: o painel chama sem
+    // parâmetro e a loja sai da sessão; o cardápio chama com `slug`.
+    let franchiseeId: string | null = null;
     const doCardapio = Boolean(slug);
 
     // Se veio slug (cardápio público), busca o franqueado
