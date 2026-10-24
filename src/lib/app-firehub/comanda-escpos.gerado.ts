@@ -1,6 +1,6 @@
 // @ts-nocheck
 /* eslint-disable */
-// GERADO por scripts/gerar-comanda-do-celular.mjs a partir de firehub-print-assistant/server.js (Assistente 1.2.44).
+// GERADO por scripts/gerar-comanda-do-celular.mjs a partir de firehub-print-assistant/server.js (Assistente 1.2.46).
 // NÃO EDITE AQUI: mude no Assistente e rode o script de novo.
 
 function cleanAscii(str) {
