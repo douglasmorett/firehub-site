@@ -34,6 +34,7 @@ import { bebidaDecididaPeloServidor } from "@/lib/bebida-para-o-assistente";
 import { qtdPedidosDosClientes } from "@/lib/qtd-pedidos-do-cliente";
 import { esquecer, lembrarPor } from "@/lib/cache-curto";
 import { filaTemAlgoGuardado } from "@/lib/fila-tem-algo";
+import { barrarChamadaDaFila } from "@/lib/token-do-assistente";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -63,6 +64,11 @@ export async function POST(req: NextRequest) {
     if (!targetId) {
       return NextResponse.json({ error: "Franchisee ID obrigatorio" }, { status: 400 });
     }
+
+    // Token do Assistente (lib/token-do-assistente.ts): o de outra loja ou
+    // adulterado não passa; sem token segue como sempre (fase 1).
+    const barrado = barrarChamadaDaFila(req.headers, targetId, "reimpressao");
+    if (barrado) return barrado;
 
     // ── REIMPRESSÃO PEDIDA NA MÃO ────────────────────────────────────────
     //
@@ -122,6 +128,11 @@ export async function POST(req: NextRequest) {
  * Sem a opção ligada, é exatamente a fila de sempre.
  */
 export async function GET(req: NextRequest) {
+  // Token do Assistente (lib/token-do-assistente.ts), ANTES de tudo: quem
+  // manda token de outra loja não lê a fila nem se registra como dono de
+  // impressora. Sem token segue como sempre (fase 1).
+  const barrado = barrarChamadaDaFila(req.headers, new URL(req.url).searchParams.get("franchiseeId"), "fila");
+  if (barrado) return barrado;
   const resposta = await filaParaOAssistente(req);
   // ── UM ASSISTENTE POR IMPRESSORA (lib/dono-da-impressora.ts) ──────────
   // Dois Assistentes da loja que enxergam a mesma impressora imprimiam o

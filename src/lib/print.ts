@@ -259,6 +259,22 @@ export function printersParaAssistente(printers: Array<Pick<PrinterEntry, "name"
   }));
 }
 
+/**
+ * O token da loja para o POST /config do Assistente (lib/token-do-assistente.ts),
+ * pedido pelas mesmas duas telas. Falhou? `null`, e o /config sai sem ele como
+ * sempre saiu: o Assistente segue com o token que já tinha.
+ */
+export async function tokenDoAssistenteDaLoja(): Promise<string | null> {
+  try {
+    const r = await fetch("/api/store/token-do-assistente", { cache: "no-store" });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return typeof j?.token === "string" && j.token ? j.token : null;
+  } catch {
+    return null;
+  }
+}
+
 /* Impressora virtual não põe papel na mesa: PDF, XPS, OneNote, fax, "enviar
    para arquivo". A lista do Assistente vem na ordem do registro do Windows,
    onde essas costumam aparecer ANTES da térmica — e "a primeira da lista"

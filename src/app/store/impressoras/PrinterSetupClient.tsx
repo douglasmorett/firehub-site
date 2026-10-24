@@ -7,6 +7,7 @@ import {
   VERSAO_TETO_ZERO,
   fetchAssistente,
   printersParaAssistente,
+  tokenDoAssistenteDaLoja,
   versaoAssistenteAoMenos,
 } from "@/lib/print";
 import {
@@ -322,6 +323,9 @@ export default function PrinterSetupClient({
       // sem imprimir sozinhos. Sem impressora cadastrada o Assistente cai na
       // impressora padrao do Windows, que e melhor do que nao imprimir nada.
       const firstPrinter = config.printers[0];
+      // Credencial da loja na fila da nuvem (lib/token-do-assistente.ts). Sem
+      // ela (falhou a rota) o POST sai como sempre saiu.
+      const token = await tokenDoAssistenteDaLoja();
       const ports = [7899, 7900, 7901, 7891];
       for (const p of ports) {
         fetchAssistente(`http://localhost:${p}/config`, {
@@ -350,6 +354,9 @@ export default function PrinterSetupClient({
             // Mapeamento compartilhado com a faixa "Vincular agora" do painel
             // (lib/print.ts): um só, para as duas telas nunca divergirem.
             printers: printersParaAssistente(config.printers),
+            // Campo novo (1.2.46+): o Assistente manda no cabeçalho da fila da
+            // nuvem. O antigo ignora.
+            ...(token ? { token } : {}),
           }),
         }).catch(() => {});
       }

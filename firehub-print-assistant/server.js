@@ -86,6 +86,42 @@ try {
   console.error("[Contingência] Módulo não carregou:", e && e.message);
 }
 
+/* ─── Token da loja na fila da nuvem (token-da-nuvem.js, 1.2.46+) ───────────
+ * Se o módulo falhar ao carregar, a fila segue sem token, como a 1.2.45. */
+let tokenDaNuvem = null;
+try {
+  tokenDaNuvem = require("./token-da-nuvem");
+} catch (e) {
+  tokenDaNuvem = null;
+  console.error("[Token] Módulo não carregou:", e && e.message);
+}
+/* O servidor recusou o token (token de outra chave, por exemplo): para de
+   mandar até o próximo /config e a fila segue sem ele. */
+let tokenRecusado = false;
+function cabecalhosDaFila() {
+  if (!tokenDaNuvem) return {};
+  try {
+    const naContingencia = !!(contingencia && contingencia.baseDaFilaNaContingencia());
+    return tokenDaNuvem.cabecalhosDaFila(currentConfig, { naContingencia, recusado: tokenRecusado });
+  } catch {
+    return {};
+  }
+}
+async function conferirRecusaDoToken(res, cabecalhos) {
+  if (!tokenDaNuvem || !cabecalhos || !Object.keys(cabecalhos).length) return;
+  try {
+    if (await tokenDaNuvem.ehRecusaDoToken(res)) {
+      tokenRecusado = true;
+      console.warn("[Token] A nuvem recusou o token desta loja: a fila segue sem ele até salvar Impressoras de novo.");
+    }
+  } catch {}
+}
+/* A config para o /status, o /config e o console: o token nunca sai daqui. */
+function configParaMostrar() {
+  const { token, ...resto } = currentConfig || {};
+  return { ...resto, temToken: typeof token === "string" && token.length > 0 };
+}
+
 /* ─── TEF no totem (tef/index.js) ─────────────────────────────────────────────
  * Pinpad PayGo Web pela PGWebLib.dll, num processo filho de 32 bits. Dorme
  * até a loja ligar o TEF numa licença do totem (painel › Totem › TEF no
@@ -2934,8 +2970,18 @@ function resolvePrinterProfile(printerName, jobHints) {
 }
 
 app.post("/config", (req, res) => {
-  const { franchiseeId, printer, paperWidth, printers, escposProfile, domain } = req.body || {};
+  const { franchiseeId, printer, paperWidth, printers, escposProfile, domain, token } = req.body || {};
   if (franchiseeId) currentConfig.franchiseeId = franchiseeId;
+  // Token da loja na fila da nuvem (token-da-nuvem.js): só fica o que é da
+  // loja configurada; trocou a loja sem token novo, o velho sai.
+  if (tokenDaNuvem) {
+    try {
+      const novo = tokenDaNuvem.tokenDepoisDoConfig(currentConfig.token, token, currentConfig.franchiseeId);
+      if (novo) currentConfig.token = novo;
+      else delete currentConfig.token;
+      tokenRecusado = false;
+    } catch {}
+  }
   // O host do FireHub, mandado pela tela de Impressoras. Sem ele o Assistente
   // usava um padrão MORTO (firehubfood.com, sem .br) e a fila da nuvem nunca
   // respondeu para ninguém. Só hostname válido entra — nada de URL completa.
@@ -2955,8 +3001,8 @@ app.post("/config", (req, res) => {
   } catch (e) {
     console.error("[Config] ⚠️ Não foi possível gravar", CONFIG_FILE, "-", e.message);
   }
-  console.log("[Config] Configuração atualizada:", currentConfig);
-  res.json({ ok: true, config: currentConfig });
+  console.log("[Config] Configuração atualizada:", configParaMostrar());
+  res.json({ ok: true, config: configParaMostrar() });
 });
 
 /* ─── Deduplicação de Impressões ─
@@ -3430,13 +3476,15 @@ async function confirmarImpressos(fetchFn, base) {
   if (confirmados.size === 0) return;
   const ids = [...confirmados].slice(0, 200);
   try {
+    const token = cabecalhosDaFila();
     const res = await fetchFn(`${base}/api/store/print-queue/ack`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...token },
       body: JSON.stringify({ franchiseeId: currentConfig.franchiseeId, ids }),
       signal: AbortSignal.timeout(10_000),
     });
     if (res.ok) for (const id of ids) confirmados.delete(id);
+    else await conferirRecusaDoToken(res, token);
   } catch {
     // Sem rede agora: os ids ficam e vao na proxima rodada.
   }
@@ -3477,9 +3525,10 @@ setInterval(async () => {
     // pelo cliente. Sem isto, tudo que o Assistente sabia morria no console
     // de um programa sem janela.
     const url = `${base}/api/store/print-queue?franchiseeId=${encodeURIComponent(currentConfig.franchiseeId)}${parametrosDeEstado()}`;
-    const res = await fetchFn(url, { signal: AbortSignal.timeout(10_000) });
+    const token = cabecalhosDaFila();
+    const res = await fetchFn(url, { headers: token, signal: AbortSignal.timeout(10_000) });
     aprenderRelogioDoServidor(res);
-    if (!res.ok) return;
+    if (!res.ok) { await conferirRecusaDoToken(res, token); return; }
     const data = await res.json();
     const rawJobs = Array.isArray(data.jobs) ? data.jobs : [];
     // Sem corte de idade aqui: quem decide a janela e o servidor, que passou a
@@ -3640,7 +3689,7 @@ app.get("/status", async (req, res) => {
     // Comandas esperando a impressora responder (o Assistente insiste ate
     // sair). Antes isso so existia no console de um programa sem janela.
     pendentes: listarPendentes(),
-    config: currentConfig
+    config: configParaMostrar()
   });
 });
 /* Procurar atualizacao AGORA, sem esperar o ciclo de 6 h.
