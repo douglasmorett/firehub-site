@@ -261,6 +261,13 @@ async function main() {
   naSessao("dono@loja", { impersonatedBy: "outra-dona" });
   confere("impersonatedBy que não é ADMIN não abre", (await (await diag.GET(req("/api/99food/diagnostico"))).json()).lojasAutorizadasV3.lojas.length, 1);
 
+  // A tela de Integrações › 99Food mostrava o log de TODAS as lojas.
+  const integ = await import("../src/app/api/store/integracoes/99food/route");
+  naSessao("dono@loja");
+  confere("Integrações › 99Food: a loja vê só os eventos dela", (await (await integ.GET(req("/api/store/integracoes/99food"))).json()).ultimosEventos99Food.map((e: any) => e.em), ["x"]);
+  naSessao("esperto@loja");
+  confere("…e a loja esperta não vê nenhum", (await (await integ.GET(req("/api/store/integracoes/99food"))).json()).ultimosEventos99Food.length, 0);
+
   console.log(falhas ? `\n${falhas} falha(s).` : "\nTudo certo.");
   process.exit(falhas ? 1 : 0);
 }

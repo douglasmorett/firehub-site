@@ -13,6 +13,7 @@ import {
   sondarListaVinculadas,
 } from "@/lib/food99-api";
 import { ler99Food } from "@/lib/webhook-99food-log";
+import { idsDoEvento99Food } from "@/lib/ids-do-evento-99food";
 import { lojas99DaConta } from "@/lib/food99-lojas";
 import { vincularParaConta } from "@/lib/food99-vinculo";
 import { ehAdminNoBanco } from "@/lib/permissoes-da-equipe";
@@ -256,11 +257,7 @@ export async function GET(req: NextRequest) {
   // Evento da loja = um id dela IGUAL ao shop_id/app_shop_id do evento (no
   // payload ou no motivo do webhook). Por pedaço do texto, uma loja que
   // gravasse "app_shop_id" como id do 99Food via o evento de todo mundo.
-  const idsDoEvento = (e: { payload: string; motivo?: string }) => [
-    ...e.payload.matchAll(/"(?:app_shop_id|appShopId|shop_id|shopId|merchantId|storeId)"\s*:\s*"?([^",}\s]+)/g),
-    ...(e.motivo || "").matchAll(/(?:shop_id "|app_shop_id do evento: |da conta )([^"\s)]+)/g),
-  ].map((m) => m[1]);
-  const eventosVisiveis = verTudo ? eventos : eventos.filter((e) => idsDoEvento(e).some((id) => idsDaLoja.has(id)));
+  const eventosVisiveis = verTudo ? eventos : eventos.filter((e) => idsDoEvento99Food(e).some((id) => idsDaLoja.has(id)));
   const pedidos99 = await prisma.customerOrder.count({
     where: { franchiseeId: lojaId, source: "99FOOD" },
   });

@@ -3,8 +3,20 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ler99Food } from "@/lib/webhook-99food-log";
+import { idsDoEvento99Food } from "@/lib/ids-do-evento-99food";
+import { lojas99DaConta } from "@/lib/food99-lojas";
 
 export const dynamic = "force-dynamic";
+
+/** Os eventos do 99Food cujos ids de loja são, exatamente, ids desta loja (mesma regra do diagnóstico). */
+async function eventosDaLoja(user: { id: string; ownerId: string | null; food99MerchantId: string | null; food99AppId: string | null }) {
+  const lojaId = user.ownerId || user.id;
+  const ids = [lojaId, user.food99MerchantId, user.food99AppId];
+  for (const l of await lojas99DaConta(lojaId).catch(() => [])) ids.push(l.appShopId, l.shopId);
+  // id vazio ou curto casaria com qualquer evento
+  const daLoja = new Set(ids.map((id) => String(id || "").trim()).filter((id) => id.length >= 6));
+  return ler99Food().filter((e) => idsDoEvento99Food(e).some((id) => daLoja.has(id)));
+}
 
 // GET: Retorna as credenciais salvas do 99Food para o usuário logado
 export async function GET(req: NextRequest) {
@@ -18,6 +30,7 @@ export async function GET(req: NextRequest) {
       where: { email: session.user.email },
       select: {
         id: true,
+        ownerId: true,
         email: true,
         food99MerchantId: true,
         food99AppId: true,
@@ -71,7 +84,10 @@ export async function GET(req: NextRequest) {
       // Vazio depois de um pedido de teste = o 99Food não está chamando o
       // webhook, e o problema está na configuração do Callback address no
       // portal deles, não aqui dentro.
-      ultimosEventos99Food: ler99Food(),
+      //
+      // Só os eventos DESTA loja: o log guarda os de todas, com nome, telefone
+      // e endereço de cliente no payload.
+      ultimosEventos99Food: await eventosDaLoja(user),
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
