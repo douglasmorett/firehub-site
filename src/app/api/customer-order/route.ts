@@ -1239,7 +1239,8 @@ export async function POST(req: Request) {
     return NextResponse.json({
       orderId: order.id,
       // Só quem criou recebe: é o que autoriza desistir do Pix (api/payments/cancelar).
-      codigo: codigoDoPedido(order.id),
+      // Sem o segredo no ambiente o pedido já está gravado: segue sem código em vez de dar erro.
+      codigo: (() => { try { return codigoDoPedido(order.id); } catch { return ""; } })(),
       total: finalTotal,
       // A taxa que ficou gravada: o checkout confere com a que mostrou antes
       // de abrir o Pix (a cotação e o pedido não podem divergir calados).
