@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { avisarOApp } from "@/lib/app-da-loja/ponte";
+import { codigoDoPedidoNoNavegador } from "@/lib/codigo-do-pedido-no-navegador";
 import { ehRetirada, etapaDoAcompanhamento } from "@/lib/status-para-o-cliente";
 import { CheckCircle, Clock, ChefHat, Bike, Package, X, Phone, ArrowLeft, Star } from "lucide-react";
 import Link from "next/link";
@@ -107,7 +108,8 @@ export default function OrderTrackingClient({
     await fetch(`/api/customer-order/${orderId}/rating`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ rating: ratingValue, comment: ratingComment }),
+      // O código do pedido (o `?c=` do link ou o guardado): o id sozinho não avalia.
+      body: JSON.stringify({ rating: ratingValue, comment: ratingComment, codigo: codigoDoPedidoNoNavegador(orderId) }),
     });
     setRatingDone(true);
   };

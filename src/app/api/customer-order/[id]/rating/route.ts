@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { autorizaPeloCodigo } from "@/lib/codigo-do-pedido";
 
 export async function POST(
   req: NextRequest,
@@ -7,7 +8,7 @@ export async function POST(
 ) {
   const { id } = await params;
   const body = await req.json();
-  const { rating, comment } = body;
+  const { rating, comment, codigo } = body;
 
   // Rate limiting por IP
   const { checkRateLimit, getClientIp } = await import("@/lib/rateLimit");
@@ -23,9 +24,12 @@ export async function POST(
 
   const order = await prisma.customerOrder.findUnique({
     where: { id },
-    select: { franchiseeId: true, customerId: true, id: true, rating: true },
+    select: { franchiseeId: true, customerId: true, id: true, rating: true, createdAt: true },
   });
   if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
+  // O id vaza; quem avalia prova com o código do pedido (lib/codigo-do-pedido),
+  // que vem nos links do WhatsApp e na tela que criou o pedido.
+  if (!autorizaPeloCodigo(id, codigo, order.createdAt)) return NextResponse.json({ error: "Não autorizado." }, { status: 403 });
   if (order.rating !== null) return NextResponse.json({ error: "Este pedido já foi avaliado." }, { status: 400 });
   if (!order.customerId) return NextResponse.json({ error: "Cliente não identificado" }, { status: 400 });
 

@@ -28,3 +28,23 @@ export function confereCodigoDoPedido(orderId: string, codigo: unknown): boolean
   const veio = Buffer.from(codigo);
   return veio.length === certo.length && timingSafeEqual(veio, certo);
 }
+
+// Data da publicação do código do pedido. Pedido criado antes dela veio de uma
+// página ou de um link antigo, sem código: continua valendo só com o id.
+export const CORTE_DO_CODIGO = new Date("2026-10-25T03:00:00Z");
+
+/** Veio código: tem que conferir. Não veio: só pedido criado antes do corte. */
+export function autorizaPeloCodigo(orderId: string, codigo: unknown, criadoEm: Date): boolean {
+  return codigo ? confereCodigoDoPedido(orderId, codigo) : criadoEm < CORTE_DO_CODIGO;
+}
+
+/** O link que vai para o cliente (acompanhamento, avaliação) levando o código em `?c=`. */
+export function linkComCodigo(url: string, orderId: string): string {
+  try {
+    return `${url}${url.includes("?") ? "&" : "?"}c=${codigoDoPedido(orderId)}`;
+  } catch (e: any) {
+    // Sem o segredo não há código: o link sai sem ele (a avaliação do pedido novo recusa).
+    console.warn(`[codigo-do-pedido] link do pedido ${orderId} sem código: ${e?.message || e}`);
+    return url;
+  }
+}

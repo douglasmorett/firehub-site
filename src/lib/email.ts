@@ -1,4 +1,5 @@
 import { sendEmail } from "@/lib/mail";
+import { linkComCodigo } from "@/lib/codigo-do-pedido";
 
 const FROM = process.env.EMAIL_FROM || process.env.RESEND_FROM_EMAIL || "FireHub <noreply@firehubfood.com.br>";
 
@@ -136,7 +137,7 @@ export async function sendOrderDeliveredEmail(
         <div style="padding:1.5rem 2rem;text-align:center;">
           <p style="color:#475569;">Olá <strong>${customerName}</strong>! Seu pedido em <strong>${storeName}</strong> foi entregue. Bom apetite! 😋</p>
           <p style="color:#475569;margin-top:1.25rem;">O que achou? Avalie sua experiência:</p>
-          <a href="https://www.firehubfood.com.br/loja/${slug}/pedido/${orderId}" style="display:inline-block;margin-top:8px;padding:12px 28px;background:linear-gradient(135deg,#F59E0B,#EF4444);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">
+          <a href="${linkComCodigo(`https://www.firehubfood.com.br/loja/${slug}/pedido/${orderId}`, orderId)}" style="display:inline-block;margin-top:8px;padding:12px 28px;background:linear-gradient(135deg,#F59E0B,#EF4444);color:#fff;border-radius:10px;text-decoration:none;font-weight:700;">
             ⭐ Avaliar pedido
           </a>
         </div>

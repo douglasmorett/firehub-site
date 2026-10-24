@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Star, CheckCircle, Store, Send, Frown, Smile, Heart, Award, ArrowLeft, Loader2 } from "lucide-react";
+import { codigoDoPedidoNoNavegador } from "@/lib/codigo-do-pedido-no-navegador";
 
 export default function CustomerReviewPage() {
   const params = useParams();
@@ -48,7 +49,8 @@ export default function CustomerReviewPage() {
       const res = await fetch("/api/customer-order/review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId, rating, comment }),
+        // O código do pedido vem no `?c=` do link do WhatsApp: o id sozinho não avalia.
+        body: JSON.stringify({ orderId, rating, comment, codigo: codigoDoPedidoNoNavegador(orderId) }),
       });
 
       if (res.ok) {

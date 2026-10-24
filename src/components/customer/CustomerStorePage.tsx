@@ -83,6 +83,7 @@ import ConviteDoApp from "./clube/ConviteDoApp";
 import { descontoDoClube as calcularDescontoDoClube } from "@/lib/clube/regras";
 import { categoriaEntraNaMarca, siglaDaMarca, type MarcasNoCardapio } from "@/lib/multimarcas/no-cardapio";
 import { ehRetirada, etapaDoAcompanhamento } from "@/lib/status-para-o-cliente";
+import { codigoGuardado, guardarCodigoDoPedido } from "@/lib/codigo-do-pedido-no-navegador";
 
 /** "12345678901" → "123.456.789-01", enquanto digita. */
 function formatarCpf(v: string): string {
@@ -2847,6 +2848,9 @@ export default function CustomerStorePage({
         if (d.indicacao && !pagaPeloAsaas) esquecerIndicacao();
         // O funil conta o pedido feito (o Pix ainda pendente também: a pessoa chegou até o fim).
         marcarNoFunil("pedido");
+        // O código do pedido fica neste navegador: é o que deixa avaliar depois
+        // (link do acompanhamento abaixo, "Meus pedidos", app da loja).
+        guardarCodigoDoPedido(d.orderId, d.codigo || "");
         // A venda para o Pixel e o GA4. Pedido pago na entrega registra agora;
         // pedido com Pix pelo site só quando o Pix cai (onPaid do modal) —
         // quem desiste na tela do QR não pode virar venda, a mesma regra do
@@ -3105,7 +3109,7 @@ export default function CustomerStorePage({
 
           {!isCancelled && (
             <a
-              href={`/loja/${franchisee.slug}/pedido/${orderSuccess}`}
+              href={`/loja/${franchisee.slug}/pedido/${orderSuccess}${codigoGuardado(orderSuccess) ? `?c=${codigoGuardado(orderSuccess)}` : ""}`}
               style={{
                 display: "block", width: "100%", padding: "12px", borderRadius: "14px",
                 background: "linear-gradient(135deg, #1E293B, #0F172A)", color: "#fff",

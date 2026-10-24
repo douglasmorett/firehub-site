@@ -11,6 +11,7 @@ import { formaCanonica } from "./pagamento-na-entrega";
 import { nomeDaFormaPropria } from "./formas-proprias";
 import { lojaQueEnviaOAviso } from "./remetente-do-aviso";
 import { avisarAparelhosDoPedido } from "./app-da-loja/aparelhos";
+import { linkComCodigo } from "./codigo-do-pedido";
 
 /**
  * A forma de pagamento como o cliente lê: o site grava "CARTAO_CREDITO",
@@ -198,8 +199,9 @@ export async function sendOrderNotification(
 
     let message = "";
     // A página do pedido, onde o cliente vê o entregador no mapa (lib/entrega-ao-vivo.ts).
+    // Leva o código do pedido: é o que deixa avaliar por ela (lib/codigo-do-pedido).
     const slugDoLink = order.franchisee?.slug && order.franchisee.slug !== "minha-loja" ? order.franchisee.slug : "loja";
-    const linkDoPedido = `${(process.env.NEXTAUTH_URL || "https://firehubfood.com.br").replace(/\/$/, "")}/loja/${slugDoLink}/pedido/${order.id}`;
+    const linkDoPedido = linkComCodigo(`${(process.env.NEXTAUTH_URL || "https://firehubfood.com.br").replace(/\/$/, "")}/loja/${slugDoLink}/pedido/${order.id}`, order.id);
 
     switch (type) {
       case "CREATED": {
@@ -276,7 +278,7 @@ Se tiver qualquer dúvida, basta nos responder por aqui.`;
         const rawSlug = (order.franchisee as any)?.slug;
         const storeSlug = rawSlug && rawSlug !== "minha-loja" ? rawSlug : "loja";
         const baseUrl = process.env.NEXTAUTH_URL || "https://firehubfood.com.br";
-        const reviewUrl = `${baseUrl.replace(/\/$/, "")}/loja/${storeSlug}/avaliar/${order.id}`;
+        const reviewUrl = linkComCodigo(`${baseUrl.replace(/\/$/, "")}/loja/${storeSlug}/avaliar/${order.id}`, order.id);
         // Em pedido de RETIRADA ninguém entregou nada: o cliente veio buscar.
         // "Foi entregue 🛵" num pedido de balcão faz o cliente achar que houve
         // entrega — e, quando ele ainda não passou na loja, que alguém pegou o
