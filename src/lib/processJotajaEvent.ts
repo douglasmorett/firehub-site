@@ -138,7 +138,8 @@ export async function processJotajaEvent(
     // ── Cancelamento e negociação: só em pedido DESTA loja ─────────────────
     if (isCancellationRequest || isCancelled) {
       // Exato ou o recuperado ("<uuid>_recovered").
-      const doPedido = { OR: [{ openDeliveryOrderId: orderId }, { openDeliveryOrderId: { startsWith: `${orderId}_` } }] };
+      // Igualdade, não startsWith: o orderId vem do corpo do webhook e `%`/`_` virariam curinga do LIKE.
+      const doPedido = { OR: [{ openDeliveryOrderId: orderId }, { openDeliveryOrderId: `${orderId}_recovered` }] };
       const pedidoNoBanco: any = await prisma.customerOrder.findFirst({
         where: doPedido as any,
         select: { id: true, franchiseeId: true, cancelledBy: true } as any,
@@ -206,7 +207,7 @@ export async function processJotajaEvent(
     // status", vinha o ACK e o pedido novo sumia. Por isso exige canal + loja.
     const idempotencyConditions: any[] = [
       { openDeliveryOrderId: orderId },
-      { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+      { openDeliveryOrderId: `${orderId}_recovered` }, // único sufixo gravado (resgate manual)
       { openDeliveryReference: orderId, franchiseeId: targetFranchiseeId, openDeliveryChannel: "JOTAJA" },
     ];
     const displayRef = (event as any).displayId || (event as any).orderSeqNumber;
@@ -907,7 +908,7 @@ export async function processJotajaEvent(
             franchiseeId: targetFranchiseeId,
             OR: [
               { openDeliveryOrderId: orderId },
-              { openDeliveryOrderId: { startsWith: `${orderId}_` } },
+              { openDeliveryOrderId: `${orderId}_recovered` }, // único sufixo gravado (resgate manual)
               { openDeliveryReference: orderId },
             ],
           };

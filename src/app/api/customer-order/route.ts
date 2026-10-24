@@ -37,7 +37,7 @@ import { premioDoCliente, premioDosCarimbosNoPedido } from "@/lib/premio-no-pedi
 import { etiquetaDoPremioDosCarimbos, NOTA_DO_ITEM_DO_PREMIO } from "@/lib/carimbos";
 import { efeitoDoPremio } from "@/lib/trilha-premiada";
 import { cashbackDoPedido, lerCashback, regraNoCanal, resgateMaximo } from "@/lib/cashback";
-import { cashbackDoCliente } from "@/lib/cashback-no-banco";
+import { cashbackDoCliente, chaveDoSaldo, extratoDoCliente } from "@/lib/cashback-no-banco";
 import { etiquetaDaIndicacao, regraParaUsarOSaldo, type ResgateDaIndicacao } from "@/lib/indicacao";
 import { indicacaoNoPedido } from "@/lib/indicacao-no-banco";
 import { cpfValido, documentoValido } from "@/lib/fiscal-validacao";
@@ -1045,7 +1045,7 @@ export async function POST(req: Request) {
     // é o que a comanda, o KDS e o painel mostram (lib/multimarcas/itens.ts).
     const itensParaGravar = (await aplicarMarcasNosItens(franchisee.id, orderItems as any[], menuProducts as any)) as typeof orderItems;
 
-    const order = await prisma.customerOrder.create({
+    const criarPedido = (db: Pick<typeof prisma, "customerOrder">) => db.customerOrder.create({
       data: {
         franchiseeId: franchisee.id,
         dailyOrderNumber,
@@ -1115,6 +1115,27 @@ export async function POST(req: Request) {
         items: { create: itensParaGravar }
       }
     });
+    // O saldo do cashback é a soma dos pedidos (não há contador): dois pedidos
+    // em paralelo liam o mesmo saldo e gastavam duas vezes. Quem usa saldo grava
+    // sob a MESMA trava por telefone do lançamento do painel, relendo o saldo
+    // dentro dela (lib/cashback-no-banco.ts, lancarAjuste). Sem saldo em uso, nada muda.
+    const order = cashbackUsado > 0
+      ? await prisma.$transaction(
+          async (tx) => {
+            await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"cashback:" + franchisee.id + ":" + chaveDoSaldo(customerPhone)}))`;
+            const db = tx as unknown as NonNullable<Parameters<typeof extratoDoCliente>[4]>; // lê o saldo na conexão da trava
+            const agora = await extratoDoCliente(franchisee.id, franchisee.storeLoyalty, customerPhone, new Date(), db);
+            if (agora.saldo + 0.004 < cashbackUsado) {
+              throw Object.assign(
+                new Error("Seu saldo de cashback acabou de ser usado em outro pedido. Atualize a página e finalize de novo."),
+                { statusCode: 409 },
+              );
+            }
+            return criarPedido(db);
+          },
+          { timeout: 20_000, maxWait: 10_000 },
+        )
+      : await criarPedido(prisma);
 
     if (descontoClube) {
       await registrarDescontoDoClube({
