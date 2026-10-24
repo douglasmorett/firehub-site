@@ -16,6 +16,7 @@ const {
   USyncUser,
 } = require("@whiskeysockets/baileys");
 const saude = require("./saude-do-vinculo");
+const { baixarMidia } = require("./midia-do-envio");
 
 // A libsignal escreve cada "Bad MAC" e cada sessão inteira no console: centenas
 // de linhas por segundo, e o processo parado escrevendo (queda geral de
@@ -1926,39 +1927,6 @@ app.post("/message/sendText/:instanceName", async (req, res) => {
   }
 });
 
-// O Baileys baixa a mídia daqui de dentro: endereço que não seja http/https
-// vira leitura de arquivo local, e host interno vira porta para a rede do
-// gateway (SSRF). Só passa http/https para host que resolve SÓ para IP
-// público — foto do /uploads do site, CDN do iFood etc. continuam passando.
-// Limite: o Baileys segue redirecionamento e resolve o DNS de novo sozinho.
-async function midiaRecusada(url) {
-  const net = require("net");
-  let u;
-  try { u = new URL(String(url)); } catch { return "URL inválida"; }
-  if (u.protocol !== "http:" && u.protocol !== "https:") return `protocolo ${u.protocol}`;
-  const host = u.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-  if (!host || host === "localhost" || host.endsWith(".localhost")) return "endereço interno";
-  const interno = (ip) => {
-    if (net.isIP(ip) === 4) {
-      const [a, b] = ip.split(".").map(Number);
-      return a === 0 || a === 127 || a === 10 || (a === 172 && b >= 16 && b <= 31) ||
-        (a === 192 && b === 168) || (a === 169 && b === 254) || (a === 100 && b >= 64 && b <= 127) || a >= 224;
-    }
-    if (net.isIP(ip) === 6) {
-      const s = ip.toLowerCase();
-      // ::, ::1, IPv4 embutido (::ffff:127.0.0.1), fc00::/7, fe80::/10, multicast
-      return s.startsWith("::") || /^f[cd]/.test(s) || /^fe[89ab]/.test(s) || s.startsWith("ff");
-    }
-    return true;
-  };
-  let ips;
-  try {
-    ips = net.isIP(host) ? [host] : (await require("dns").promises.lookup(host, { all: true })).map((r) => r.address);
-  } catch { return "host não resolve"; }
-  if (ips.length === 0 || ips.some(interno)) return "endereço interno";
-  return null;
-}
-
 // 4.1 Enviar Mídia (Imagem com legenda)
 app.post("/message/sendMedia/:instanceName", async (req, res) => {
   const { instanceName } = req.params;
@@ -1984,31 +1952,35 @@ app.post("/message/sendMedia/:instanceName", async (req, res) => {
   if (!mediaUrl) {
     return res.status(400).json({ error: "URL da mídia é obrigatória" });
   }
-  const motivoDaRecusa = await midiaRecusada(mediaUrl);
-  if (motivoDaRecusa) {
-    console.warn(`[WhatsApp Gateway] ⛔ Mídia recusada (${motivoDaRecusa}): "${String(mediaUrl).slice(0, 80)}"`);
+  // PDF enviado como "image" chega quebrado no aparelho: documento vai como
+  // documento, com nome de arquivo — é o que o FireHub manda em mediatype.
+  const ehDocumento = (mediaMessage?.mediatype || "").toLowerCase() === "document";
+
+  // O gateway baixa a mídia (midia-do-envio.js) e o Baileys só recebe os
+  // bytes: com `{ url }` ele seguia redirecionamento e DNS sem conferir (SSRF).
+  let midia;
+  try {
+    midia = await baixarMidia(mediaUrl, { tipo: ehDocumento ? "document" : "image" });
+  } catch (err) {
+    console.warn(`[WhatsApp Gateway] ⛔ Mídia recusada (${err.message}): "${String(mediaUrl).slice(0, 80)}"`);
     // Como na mídia que falha (abaixo): a legenda ainda vai como texto — a
     // campanha não tem outro reenvio e o cliente não fica sem a mensagem.
     try {
       if (caption) await session.sock.sendMessage(jid, { text: caption });
     } catch {}
-    return res.status(400).json({ error: `URL da mídia recusada: ${motivoDaRecusa}` });
+    return res.status(400).json({ error: `URL da mídia recusada: ${err.message}` });
   }
-
-  // PDF enviado como "image" chega quebrado no aparelho: documento vai como
-  // documento, com nome de arquivo — é o que o FireHub manda em mediatype.
-  const ehDocumento = (mediaMessage?.mediatype || "").toLowerCase() === "document";
 
   try {
     const enviada = await session.sock.sendMessage(jid, ehDocumento
       ? {
-          document: { url: mediaUrl },
-          mimetype: /\.pdf(\?|$)/i.test(mediaUrl) ? "application/pdf" : undefined,
+          document: midia.buffer,
+          mimetype: midia.mimetype,
           fileName: mediaMessage?.fileName || "arquivo.pdf",
           caption: caption || undefined,
         }
       : {
-          image: { url: mediaUrl },
+          image: midia.buffer,
           caption: caption || undefined,
         });
     lembrarEnviada(instanceName, enviada);
