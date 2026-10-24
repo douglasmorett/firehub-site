@@ -1,5 +1,6 @@
 import BotaoImprimirCaixa from "@/components/customer/BotaoImprimirCaixa";
 import CorrigirCaixaFechado from "@/components/customer/CorrigirCaixaFechado";
+import ForaDaGavetaDoCaixaFechado from "@/components/customer/ForaDaGavetaDoCaixaFechado";
 import MovimentacoesDoCaixaFechado from "@/components/customer/MovimentacoesDoCaixaFechado";
 import { VendasPorTipoDoHistorico } from "@/components/customer/VendasPorTipoDoCaixa";
 import { FORMAS_DA_CONFERENCIA, conferenciaGravada, porQueSemConferencia } from "@/lib/conferencia-do-caixa";
@@ -172,7 +173,7 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
 
             {/* Tabela detalhada: o esperado e o contado de cada forma; a forma
                 que ninguém contou diz isso, em vez de "R$ 0,00 | falta". */}
-            {linhas.length > 0 && (
+            {(linhas.length > 0 || conf.online > 0.005) && (
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.83rem" }}>
                 <thead>
                   <tr style={{ background: "#F8FAFC" }}>
@@ -198,6 +199,8 @@ export default async function CaixaHistoricoPage({ searchParams }: { searchParam
                       </td>
                     </tr>
                   ))}
+                  {/* O fora da gaveta linha a linha, como no fechamento. */}
+                  <ForaDaGavetaDoCaixaFechado sessionId={s.id} />
                 </tbody>
                 <tfoot>
                   {/* Igual com igual: só as formas contadas, dos dois lados. */}

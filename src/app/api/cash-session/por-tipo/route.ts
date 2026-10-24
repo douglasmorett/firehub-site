@@ -7,8 +7,9 @@
  *
  * Apurado na hora, na janela do caixa (abertura → fechamento), pela mesma
  * função do papel e da 2ª via (lib/esperado-do-turno.ts) — o retrato do turno
- * não é gravado em lugar nenhum. Só na hora do clique: o histórico lista 60
- * caixas, e apurar todos ao abrir a página seria 60 varreduras de pedidos.
+ * não é gravado em lugar nenhum. Só quando o caixa aparece na tela: o
+ * histórico lista 60 caixas, e apurar todos ao abrir a página seria 60
+ * varreduras de pedidos.
  */
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
@@ -42,5 +43,13 @@ export async function GET(req: Request) {
     cupomDaPlataforma: d.detalhe.cupomDaPlataforma,
     porTipo: d.detalhe.porTipo,
     trocoDasMesas: { valor: d.detalhe.mesas.troco || 0, qtd: d.detalhe.mesas.trocoQtd || 0 },
+    // As linhas fora da gaveta, como no modal de fechamento: o pago online por
+    // canal, o cobrado pelo entregador do app, o aguardando pagamento e o que
+    // ficou fora da conferência (Douglas, 24/10/2026: "igual quando a gente tá
+    // fechando o caixa").
+    onlinePorCanal: d.detalhe.onlinePorCanal,
+    cobradoPeloApp: d.detalhe.cobradoPeloApp || [],
+    pendentes: { valor: d.pendentesValor, quantidade: d.pendentesQuantidade },
+    foraDaConferencia: d.foraDaConferencia,
   });
 }
