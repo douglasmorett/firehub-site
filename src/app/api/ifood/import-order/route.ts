@@ -77,8 +77,10 @@ export async function POST(req: NextRequest) {
       where: { ifoodOrderId: actualOrderId },
     });
     if (existing) {
-      log.push(`⚠️ Pedido já existe no sistema (ID: ${existing.id})`);
-      return NextResponse.json({ ok: true, log, message: "Pedido já existe no sistema", orderId: existing.id });
+      // O id interno só para a própria loja (o de outra loja abre o acompanhamento do pedido).
+      const daLoja = existing.franchiseeId === franchiseeId;
+      log.push(daLoja ? `⚠️ Pedido já existe no sistema (ID: ${existing.id})` : "⚠️ Pedido já existe no sistema");
+      return NextResponse.json({ ok: true, log, message: "Pedido já existe no sistema", ...(daLoja ? { orderId: existing.id } : {}) });
     }
 
     // Detalhes completos
@@ -94,6 +96,22 @@ export async function POST(req: NextRequest) {
 
     const orderData = await orderRes.json();
     log.push(`✅ Detalhes obtidos: ${orderData.displayId || actualOrderId}`);
+
+    // O token central abre pedido de QUALQUER loja do iFood: sem isto, quem
+    // soubesse o id copiava para a própria loja o pedido (nome, telefone,
+    // endereço) de outro restaurante. Só entra se o merchant do pedido é desta loja.
+    const [dono, integracoes] = await Promise.all([
+      prisma.user.findUnique({ where: { id: franchiseeId }, select: { ifoodMerchantId: true } }),
+      prisma.ifoodIntegration.findMany({ where: { userId: franchiseeId }, select: { merchantId: true } }),
+    ]);
+    const merchantsDaLoja = new Set(
+      [dono?.ifoodMerchantId, ...integracoes.map((i) => i.merchantId)].filter(Boolean),
+    );
+    const merchantDoPedido = orderData.merchant?.id;
+    if (!merchantDoPedido || !merchantsDaLoja.has(merchantDoPedido)) {
+      log.push("⛔ O pedido é de uma loja do iFood que não está ligada a esta conta");
+      return NextResponse.json({ ok: false, log, error: "Este pedido não é de uma loja do iFood ligada a esta conta." }, { status: 403 });
+    }
 
     // O id do espelho aqui era `i.id || "dummy_id"`, sem o prefixo `ifood-` que
     // todos os outros caminhos usam: dois itens sem id casavam no MESMO produto

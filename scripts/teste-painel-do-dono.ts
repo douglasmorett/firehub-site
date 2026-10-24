@@ -77,7 +77,7 @@ async function main() {
   contem("vendas, lançamentos e ticket pela régua", texto, "Vendas hoje: 4 (a mesa conta uma vez; 5 lançamentos) — ticket médio R$ 62,50 (valor vendido ÷ vendas)");
   contem("canal com nome dos Relatórios", texto, "Por canal hoje: iFood 2 vendas (R$ 120,00), Mesa 1 venda — 2 lançamentos (R$ 100,00), PDV 1 venda (R$ 30,00)");
   naoContem("nenhum código cru de canal", texto, "PRESENCIAL");
-  contem("o atrasado de retirada com a frase dele", texto, "#12 (Ana, PDV, retirada): entrou 20:00, prazo 40 min, já são 52 min — 12 min ALÉM do prazo; ainda não ficou pronto para retirada.");
+  contem("o atrasado de retirada com a frase dele", texto, "#12 (\"Ana\", PDV, retirada): entrou 20:00, prazo 40 min, já são 52 min — 12 min ALÉM do prazo; ainda não ficou pronto para retirada.");
   contem("os prazos, inclusive o da retirada e a mesa sem prazo", texto, "entrega 50 minutos (a área de entrega mais longa); retirada e balcão 40 minutos");
   contem("contas com milhar", texto, "Vencidas: 1 conta(s), R$ 1.234,50");
   confere("prazo de entrega: a área mais longa; sem área, 45 min", [prazoDeEntregaMin([{ time: 30 }, { time: "50" }]), prazoDeEntregaMin(null)], [50, 45]);
