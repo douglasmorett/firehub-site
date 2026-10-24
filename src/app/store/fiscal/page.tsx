@@ -1330,6 +1330,22 @@ ${dados.aviso}` : "")
     );
   }, [orders, searchOrder]);
 
+  // ── MARCAR PEDIDOS NA LISTA PARA EMITIR JUNTOS ────────────────────────────
+  // Douglas, 24/10/2026: "selecionar mais de um pedido para declarar tudo de
+  // uma vez quando não tá automático". O lote só existia no modal, com TODOS os
+  // pendentes já marcados. As mesmas travas da pré-seleção do lote: emitida,
+  // cancelada (pedido ou nota) e em processamento na SEFAZ não entram.
+  const podeEntrarNoLote = (o: any) =>
+    o.fiscalStatus !== "EMITTED" &&
+    o.fiscalStatus !== "CANCELED" &&
+    o.orderStatus !== "CANCELADO" &&
+    !o.fiscalInfo?.processando;
+  // O "marcar todos" pula a rodada de mesa (a nota é da conta inteira); quem
+  // quiser a da mesa marca uma rodada.
+  const marcaveisDaLista = useMemo(() => filteredOrders.filter(o => podeEntrarNoLote(o) && !o.tableSessionId), [filteredOrders]);
+  const marcarPedido = (id: string) =>
+    setSelectedBatchOrderIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
   const orderStats = useMemo(() => {
     const totalVendas = filteredOrders.length;
     const valVendas = filteredOrders.reduce((s, o) => s + o.totalAmount, 0);
@@ -2791,11 +2807,45 @@ ${dados.aviso}` : "")
               </div>
             </div>
 
+            {/* Os pedidos marcados na lista: o lote abre com eles, para conferir
+                antes de mandar à SEFAZ (o mesmo modal e a mesma emissão, uma
+                por vez). */}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12, padding: "8px 12px", borderRadius: 10, background: selectedBatchOrderIds.length > 0 ? "#FAF6F2" : "#F8FAFC", border: "1px solid #E7DDD3", fontSize: "0.8rem", color: "#475569" }}>
+              {selectedBatchOrderIds.length > 0 ? (
+                <>
+                  <strong style={{ color: "#1C1917" }}>{selectedBatchOrderIds.length} {selectedBatchOrderIds.length === 1 ? "pedido selecionado" : "pedidos selecionados"}</strong>
+                  <button type="button" onClick={() => setShowBatchEmitModal(true)} disabled={batchEmitting} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, border: "none", background: "#1C1917", color: "#fff", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer" }}>
+                    <Receipt size={14} /> {selectedBatchOrderIds.length === 1 ? "Emitir a nota" : `Emitir as ${selectedBatchOrderIds.length} notas`}
+                  </button>
+                  <button type="button" onClick={() => setSelectedBatchOrderIds([])} style={{ background: "none", border: "none", color: "#64748B", fontWeight: 700, fontSize: "0.8rem", cursor: "pointer", textDecoration: "underline" }}>
+                    Limpar seleção
+                  </button>
+                </>
+              ) : (
+                <span>Para emitir várias de uma vez: marque os pedidos na lista (a caixinha do título marca todos os que ainda não têm nota) e clique em <strong>Emitir as notas</strong>.</span>
+              )}
+            </div>
+
             {/* Table of Orders & Invoices (Exact Cardápio Web Table Format) */}
             <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: 14, padding: "1rem", overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
                 <thead>
                   <tr style={{ background: "#F1F5F9", textTransform: "uppercase", fontSize: "0.7rem", color: "#475569" }}>
+                    <th style={{ padding: "10px", width: 32 }}>
+                      <input
+                        type="checkbox"
+                        aria-label="Marcar todos os pedidos sem nota da lista"
+                        disabled={marcaveisDaLista.length === 0}
+                        checked={marcaveisDaLista.length > 0 && marcaveisDaLista.every(o => selectedBatchOrderIds.includes(o.id))}
+                        onChange={e => {
+                          const ids = marcaveisDaLista.map(o => o.id);
+                          setSelectedBatchOrderIds(prev => e.target.checked
+                            ? [...prev, ...ids.filter(id => !prev.includes(id))]
+                            : prev.filter(id => !ids.includes(id)));
+                        }}
+                        style={{ accentColor: "#1C1917", width: 16, height: 16 }}
+                      />
+                    </th>
                     <th style={{ padding: "10px", textAlign: "left" }}>Pedido</th>
                     <th style={{ padding: "10px", textAlign: "left" }}>Data do pedido</th>
                     <th style={{ padding: "10px", textAlign: "right" }}>Total</th>
@@ -2843,8 +2893,22 @@ ${dados.aviso}` : "")
                         new Date(order.fiscalInfo.emittedAt).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
                       : null;
 
+                    const marcavel = podeEntrarNoLote(order);
+                    const marcado = selectedBatchOrderIds.includes(order.id);
+
                     return (
-                      <tr key={order.id} style={{ borderBottom: "1px solid #F1F5F9" }}>
+                      <tr key={order.id} style={{ borderBottom: "1px solid #F1F5F9", background: marcado ? "#FAF6F2" : undefined }}>
+                        <td style={{ padding: "10px" }}>
+                          {marcavel && (
+                            <input
+                              type="checkbox"
+                              aria-label={`Marcar o pedido ${order.dailyOrderNumber} para emitir a nota`}
+                              checked={marcado}
+                              onChange={() => marcarPedido(order.id)}
+                              style={{ accentColor: "#1C1917", width: 16, height: 16 }}
+                            />
+                          )}
+                        </td>
                         <td style={{ padding: "10px", fontWeight: 700, color: "#1E293B" }}>
                           Nº {order.dailyOrderNumber}
                           <span style={{ fontSize: "0.68rem", color: "#94A3B8", display: "block" }}>#{order.id.slice(-8)}</span>
