@@ -94,6 +94,8 @@ interface NfeItem {
 export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 0, recebidos: 0, baixas: 0, disponivel: false } }: EstoqueClientProps) {
   const [activeTab, setActiveTab] = useState<"items" | "lotes" | "nfe" | "history" | "recipes" | "desperdicio">("items");
   const [mostrarScanner, setMostrarScanner] = useState(false);
+  // O "Lançar perda / descarte" do topo abre o lançamento na aba (1 = abrir).
+  const [pedidoDePerda, setPedidoDePerda] = useState(0);
   const [lotes, setLotes] = useState<any[]>([]);
   const [contadoresDeLote, setContadoresDeLote] = useState<any>({ aguardando: 0, geladeira: 0, vencendo: 0, vencidos: 0 });
   const [filtroDeLote, setFiltroDeLote] = useState<"todos" | "aguardando" | "geladeira" | "vencendo" | "vencidos">("todos");
@@ -655,6 +657,11 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           <button className="fh-btn fh-btn--secundario" onClick={() => setMostrarScanner(true)}>
             <ScanLine size={18} /> Escanear etiqueta
           </button>
+          {/* Perda e descarte por item do cardápio (Douglas, 24/10/2026): à
+              vista no topo, não só dentro da aba. */}
+          <button className="fh-btn fh-btn--secundario" onClick={() => { setActiveTab("desperdicio"); setPedidoDePerda(1); }}>
+            <Trash2 size={18} /> Lançar perda / descarte
+          </button>
           <button className="fh-btn fh-btn--secundario fh-btn--icone" onClick={loadData} aria-label="Atualizar">
             <RefreshCw size={18} className={loading ? "spin" : ""} />
           </button>
@@ -851,7 +858,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           onClick={() => setActiveTab("desperdicio")}
         >
           <Trash2 size={16} />
-          Desperdício
+          Perdas e descarte
         </button>
       </div>
 
@@ -1289,7 +1296,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
 
           {/* TAB DESPERDÍCIO: produto do cardápio (pela ficha) ou insumo, e os
               pedidos cancelados já produzidos (components/estoque/DesperdicioDoEstoque). */}
-          {activeTab === "desperdicio" && <DesperdicioDoEstoque onLancou={recarregarSaldos} />}
+          {activeTab === "desperdicio" && <DesperdicioDoEstoque onLancou={recarregarSaldos} pedidoDeAbrir={pedidoDePerda} onAbriu={() => setPedidoDePerda(0)} />}
 
           {/* TAB 4: RECIPES */}
           {activeTab === "recipes" && (
@@ -1498,7 +1505,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                 </div>
                 {moveType === "WASTE" && (
                   <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "#B45309", fontWeight: 600 }}>
-                    Foi um produto pronto (pizza, lanche)? Lance na aba <button type="button" onClick={() => { setShowMoveModal(false); setActiveTab("desperdicio"); }} style={{ background: "none", border: "none", padding: 0, color: "#B45309", fontWeight: 800, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Desperdício</button>: ela baixa todos os insumos pela ficha técnica.
+                    Foi um produto pronto (pizza, lanche)? Lance em <button type="button" onClick={() => { setShowMoveModal(false); setActiveTab("desperdicio"); setPedidoDePerda(1); }} style={{ background: "none", border: "none", padding: 0, color: "#B45309", fontWeight: 800, textDecoration: "underline", cursor: "pointer", font: "inherit" }}>Perdas e descarte</button>: ele baixa todos os insumos pela ficha técnica.
                   </p>
                 )}
                 {moveType === "INPUT" && (

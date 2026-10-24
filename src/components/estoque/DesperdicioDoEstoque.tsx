@@ -63,12 +63,17 @@ type Dados = {
 
 const MOTIVOS = ["Caiu no chão", "Queimou", "Saiu errado", "Venceu", "Cliente devolveu"];
 
+// Uma linha do lançamento: vários itens do cardápio (ou insumos) de uma vez,
+// cada um com a sua quantidade (Douglas, 24/10/2026: "seleciona os itens do
+// cardápio para saber a perda correta").
+type LinhaDaPerda = { tipo: "PRODUTO" | "INSUMO"; id: string; rotulo: string; unidade: string; quantidade: string };
+
 const fmtR = (v: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v || 0);
 const fmtQtd = (q: number | null, u: string | null) =>
   q == null ? "—" : `${q.toLocaleString("pt-BR", { maximumFractionDigits: 3 })}${u ? ` ${u === "un" ? "un." : u}` : ""}`;
 const quandoBr = (iso: string) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-export default function DesperdicioDoEstoque({ onLancou }: { onLancou?: () => void }) {
+export default function DesperdicioDoEstoque({ onLancou, pedidoDeAbrir = 0, onAbriu }: { onLancou?: () => void; pedidoDeAbrir?: number; onAbriu?: () => void }) {
   const [dados, setDados] = useState<Dados | null>(null);
   const [carregando, setCarregando] = useState(true);
   const [de, setDe] = useState("");
@@ -83,6 +88,7 @@ export default function DesperdicioDoEstoque({ onLancou }: { onLancou?: () => vo
   const [escolhido, setEscolhido] = useState("");
   const [quantidade, setQuantidade] = useState("1");
   const [motivo, setMotivo] = useState("");
+  const [linhas, setLinhas] = useState<LinhaDaPerda[]>([]);
   const [enviando, setEnviando] = useState(false);
 
   const carregar = useCallback(async (periodo?: { de: string; ate: string }) => {
@@ -116,37 +122,82 @@ export default function DesperdicioDoEstoque({ onLancou }: { onLancou?: () => vo
   const insumo = tipo === "INSUMO" ? dados?.insumos.find((i) => i.id === escolhido) : undefined;
 
   const abrir = () => {
-    setTipo("PRODUTO"); setBusca(""); setEscolhido(""); setQuantidade("1"); setMotivo(""); setAberto(true);
+    setTipo("PRODUTO"); setBusca(""); setEscolhido(""); setQuantidade("1"); setMotivo(""); setLinhas([]); setAberto(true);
+  };
+
+  // O botão "Lançar perda / descarte" do topo do Controle de estoque abre direto
+  // aqui; o pedido volta a zero para a aba não reabrir o modal ao voltar a ela.
+  useEffect(() => {
+    if (pedidoDeAbrir > 0) { abrir(); onAbriu?.(); }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedidoDeAbrir]);
+
+  // O item escolhido agora, como linha da lista.
+  const linhaEscolhida = (): LinhaDaPerda | null => {
+    if (produto) return { tipo: "PRODUTO", id: produto.id, rotulo: produto.nome, unidade: "un.", quantidade };
+    if (insumo) return { tipo: "INSUMO", id: insumo.id, rotulo: insumo.nome, unidade: insumo.unidade, quantidade };
+    return null;
+  };
+  const quantidadeValida = (q: string) => Number(q.replace(",", ".")) > 0;
+
+  const adicionar = () => {
+    const l = linhaEscolhida();
+    if (!l) { setAviso({ tipo: "atencao", titulo: tipo === "PRODUTO" ? "Escolha o produto" : "Escolha o insumo" }); return; }
+    if (!quantidadeValida(l.quantidade)) { setAviso({ tipo: "atencao", titulo: "Digite a quantidade" }); return; }
+    setLinhas((atual) => [...atual, l]);
+    setEscolhido(""); setBusca(""); setQuantidade(tipo === "PRODUTO" ? "1" : "");
   };
 
   const lancar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!escolhido) { setAviso({ tipo: "atencao", titulo: tipo === "PRODUTO" ? "Escolha o produto" : "Escolha o insumo" }); return; }
+    // O item escolhido e ainda não adicionado entra junto: lançar um só
+    // continua sendo escolher e confirmar.
+    const atual = linhaEscolhida();
+    const todas = atual ? [...linhas, atual] : linhas;
+    if (todas.length === 0) { setAviso({ tipo: "atencao", titulo: "Escolha o que foi perdido", detalhe: "Selecione os itens do cardápio (ou os insumos) e a quantidade." }); return; }
+    if (atual && !quantidadeValida(atual.quantidade)) { setAviso({ tipo: "atencao", titulo: "Digite a quantidade" }); return; }
     if (motivo.trim().length < 3) { setAviso({ tipo: "atencao", titulo: "Escreva o motivo", detalhe: "Ex.: caiu no chão, queimou, saiu errado." }); return; }
     setEnviando(true);
-    try {
-      const r = await fetch("/api/store/estoque/desperdicio", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(tipo === "PRODUTO"
-          ? { tipo, produtoId: escolhido, quantidade, motivo }
-          : { tipo, insumoId: escolhido, quantidade, motivo }),
-      });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d?.error || "Não deu para lançar.");
-      setAberto(false);
-      setAviso({
-        tipo: d.aviso ? "atencao" : "ok",
-        titulo: `Desperdício lançado: ${d.item}${d.valor != null ? ` · ${fmtR(d.valor)}` : ""}`,
-        detalhe: d.aviso || (d.baixas > 0 ? `Saiu do estoque (${d.baixas} ${d.baixas === 1 ? "insumo" : "insumos"}) e entra no CMV como desperdício.` : undefined),
-      });
-      carregar({ de, ate });
-      onLancou?.();
-    } catch (e: any) {
-      setAviso({ tipo: "erro", titulo: "Não lançou", detalhe: e?.message });
-    } finally {
-      setEnviando(false);
+    // Um por vez, pela mesma rota de sempre: cada item tem a sua baixa pela
+    // ficha e o seu aviso (sem ficha, sem custo). O que falhou fica na lista.
+    const falharam: LinhaDaPerda[] = [];
+    const erros: string[] = [];
+    const avisos: string[] = [];
+    let lancados = 0;
+    let total = 0;
+    let comValor = false;
+    for (const l of todas) {
+      try {
+        const r = await fetch("/api/store/estoque/desperdicio", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(l.tipo === "PRODUTO"
+            ? { tipo: l.tipo, produtoId: l.id, quantidade: l.quantidade, motivo }
+            : { tipo: l.tipo, insumoId: l.id, quantidade: l.quantidade, motivo }),
+        });
+        const d = await r.json().catch(() => null);
+        if (!r.ok || !d) throw new Error(d?.error || "Não deu para lançar.");
+        lancados += 1;
+        if (d.valor != null) { total += Number(d.valor) || 0; comValor = true; }
+        if (d.aviso) avisos.push(`${l.rotulo}: ${d.aviso}`);
+      } catch (err: any) {
+        falharam.push(l);
+        erros.push(`${l.rotulo}: ${err?.message || "não lançou"}`);
+      }
     }
+    setEnviando(false);
+    if (lancados > 0) { carregar({ de, ate }); onLancou?.(); }
+    if (falharam.length > 0) {
+      setLinhas(falharam); setEscolhido("");
+      setAviso({ tipo: "erro", titulo: lancados > 0 ? `${lancados} lançado(s), ${falharam.length} não` : "Não lançou", detalhe: erros.join(" · ") });
+      return;
+    }
+    setAberto(false);
+    setAviso({
+      tipo: avisos.length > 0 ? "atencao" : "ok",
+      titulo: `Perda lançada: ${todas.length === 1 ? todas[0].rotulo : `${todas.length} itens`}${comValor ? ` · ${fmtR(total)}` : ""}`,
+      detalhe: avisos.length > 0 ? avisos.join(" · ") : "Saiu do estoque pela ficha técnica e entra no CMV como desperdício.",
+    });
   };
 
   const veValor = Boolean(dados?.veDadosSensiveis);
@@ -169,13 +220,13 @@ export default function DesperdicioDoEstoque({ onLancou }: { onLancou?: () => vo
         </button>
         <div style={{ flex: 1 }} />
         <button type="button" className="btn-primary" onClick={abrir}>
-          <Plus size={16} /> Lançar desperdício
+          <Plus size={16} /> Lançar perda / descarte
         </button>
       </div>
 
       <p style={{ fontSize: "0.82rem", color: "#475569", margin: "0 0 1rem", lineHeight: 1.5 }}>
-        Caiu no chão, queimou, saiu errado: lance aqui o <strong>produto do cardápio</strong> (sai do estoque pela ficha técnica)
-        ou o <strong>insumo</strong>. O custo entra no CMV como desperdício. Pedido cancelado só vira desperdício se foi cancelado
+        Caiu no chão, queimou, saiu errado, venceu: selecione os <strong>itens do cardápio</strong> perdidos (saem do estoque pela ficha técnica)
+        ou os <strong>insumos</strong>, vários de uma vez. O custo entra no CMV como desperdício. Pedido cancelado só vira desperdício se foi cancelado
         <strong> depois de sair da produção</strong> (produção do KDS, pronto ou saiu para entrega) — antes disso o insumo volta para o estoque.
       </p>
 
@@ -197,7 +248,7 @@ export default function DesperdicioDoEstoque({ onLancou }: { onLancou?: () => vo
         <div className="empty-state">
           <Trash2 size={40} />
           <h3>{carregando ? "Carregando..." : "Nenhum desperdício lançado no período"}</h3>
-          <p>Use “Lançar desperdício” quando algo for para o lixo.</p>
+          <p>Use “Lançar perda / descarte” quando algo for para o lixo.</p>
         </div>
       ) : (
         <div className="items-table-wrapper">
@@ -278,7 +329,7 @@ export default function DesperdicioDoEstoque({ onLancou }: { onLancou?: () => vo
         <div className="modal-overlay" onClick={() => setAberto(false)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <button className="btn-close" onClick={() => setAberto(false)}><X size={20} /></button>
-            <h2>Lançar desperdício</h2>
+            <h2>Lançar perda / descarte</h2>
             <form onSubmit={lancar}>
               <div className="form-group">
                 <label>O que foi para o lixo</label>
@@ -295,7 +346,7 @@ export default function DesperdicioDoEstoque({ onLancou }: { onLancou?: () => vo
               <div className="form-group">
                 <label>{tipo === "PRODUTO" ? "Produto" : "Insumo"} *</label>
                 <input type="text" placeholder="Pesquisar..." value={busca} onChange={(e) => setBusca(e.target.value)} />
-                <select required value={escolhido} onChange={(e) => setEscolhido(e.target.value)}>
+                <select value={escolhido} onChange={(e) => setEscolhido(e.target.value)}>
                   <option value="">{opcoes.length ? "Selecione..." : "Nada encontrado"}</option>
                   {opcoes.map((o) => <option key={o.id} value={o.id}>{o.rotulo}</option>)}
                 </select>
@@ -311,13 +362,35 @@ export default function DesperdicioDoEstoque({ onLancou }: { onLancou?: () => vo
               <div className="form-row">
                 <div className="form-group">
                   <label>Quantidade *</label>
-                  <input type="text" inputMode="decimal" required value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder={tipo === "PRODUTO" ? "Ex: 1" : "Ex: 500"} />
+                  <input type="text" inputMode="decimal" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} placeholder={tipo === "PRODUTO" ? "Ex: 1" : "Ex: 500"} />
                 </div>
                 <div className="form-group">
                   <label>Unidade</label>
                   <input type="text" disabled value={tipo === "PRODUTO" ? "unidade(s)" : insumo?.unidade || "—"} />
                 </div>
               </div>
+
+              <button type="button" className="btn-secondary" onClick={adicionar} style={{ width: "100%", marginBottom: "0.75rem" }}>
+                <Plus size={16} /> Adicionar à lista e escolher outro item
+              </button>
+
+              {linhas.length > 0 && (
+                <div className="form-group">
+                  <label>Itens desta perda ({linhas.length})</label>
+                  <div style={{ border: "1px solid #E7DDD3", borderRadius: 10, overflow: "hidden" }}>
+                    {linhas.map((l, i) => (
+                      <div key={`${l.id}-${i}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderTop: i > 0 ? "1px solid #F1F5F9" : "none", fontSize: "0.85rem" }}>
+                        <span style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{l.tipo === "PRODUTO" ? "🍕" : "🧀"} {l.rotulo}</span>
+                        <span style={{ whiteSpace: "nowrap", fontWeight: 700 }}>{l.quantidade} {l.unidade === "un" ? "un." : l.unidade}</span>
+                        <button type="button" aria-label={`Tirar ${l.rotulo}`} onClick={() => setLinhas((atual) => atual.filter((_, j) => j !== i))}
+                          style={{ background: "none", border: "none", color: "#C92E09", cursor: "pointer", padding: 2, display: "flex" }}>
+                          <X size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="form-group">
                 <label>Motivo *</label>
@@ -333,7 +406,7 @@ export default function DesperdicioDoEstoque({ onLancou }: { onLancou?: () => vo
               </div>
 
               <button type="submit" className="btn-submit" disabled={enviando}>
-                {enviando ? "Lançando..." : "Confirmar desperdício"}
+                {enviando ? "Lançando..." : linhas.length + (escolhido ? 1 : 0) > 1 ? `Confirmar perda de ${linhas.length + (escolhido ? 1 : 0)} itens` : "Confirmar perda"}
               </button>
             </form>
           </div>
