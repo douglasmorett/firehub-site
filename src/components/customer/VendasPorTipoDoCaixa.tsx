@@ -212,6 +212,29 @@ export default function VendasPorTipoDoCaixa({ dados, abertoDeInicio = false }: 
   );
 }
 
+/** O caixa fechado apurado na hora: as vendas por tipo e as linhas fora da gaveta. */
+export type CaixaFechadoApurado = VendasPorTipo & {
+  onlinePorCanal?: ParteDoRetrato[];
+  cobradoPeloApp?: ParteDoRetrato[];
+  pendentes?: { valor: number; quantidade: number };
+  foraDaConferencia?: { fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; proprias?: ParteDoRetrato[] };
+};
+
+// Uma apuração por caixa na página: as linhas fora da gaveta e o "Vendas por
+// tipo" leem a mesma resposta. A que falhou sai, para o "tentar de novo".
+const apurados = new Map<string, Promise<CaixaFechadoApurado | null>>();
+export function buscarCaixaFechado(sessionId: string) {
+  let p = apurados.get(sessionId);
+  if (!p) {
+    p = fetch(`/api/cash-session/por-tipo?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" })
+      .then(async (r) => (r.ok ? await r.json().catch(() => null) : null))
+      .catch(() => null);
+    apurados.set(sessionId, p);
+    p.then((j) => { if (!j) apurados.delete(sessionId); });
+  }
+  return p;
+}
+
 /**
  * No Histórico: o caixa já fechado não tem o retrato gravado, então busca
  * (api/cash-session/por-tipo) só quando o lojista pede.
@@ -222,15 +245,10 @@ export function VendasPorTipoDoHistorico({ sessionId }: { sessionId: string }) {
 
   const carregar = async () => {
     setEstado("carregando");
-    try {
-      const r = await fetch(`/api/cash-session/por-tipo?sessionId=${encodeURIComponent(sessionId)}`, { cache: "no-store" });
-      const j = await r.json().catch(() => null);
-      if (!r.ok || !j) { setEstado("erro"); return; }
-      setDados(j);
-      setEstado("parado");
-    } catch {
-      setEstado("erro");
-    }
+    const j = await buscarCaixaFechado(sessionId);
+    if (!j) { setEstado("erro"); return; }
+    setDados(j);
+    setEstado("parado");
   };
 
   if (dados) {
