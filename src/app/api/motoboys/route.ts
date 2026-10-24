@@ -3,6 +3,7 @@ import { lerFaixasDoMotoboy } from "@/lib/faixas-do-motoboy";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { SENHA_PADRAO, estaNaSenhaPadrao, hashDeSenha } from "@/lib/motoboy-senha";
 import { gerarSenhaDeNumeros } from "@/lib/senha-gerada";
 import { pedidoDeAppDoCorpo } from "@/lib/repasse-do-entregador";
@@ -56,6 +57,11 @@ export async function POST(req: Request) {
 
   const user = await prisma.user.findUnique({ where: { email: session.user?.email || "" } });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  // Cadastrar entregador é da tela Motoboys — e de quem despacha, que digita o
+  // nome dele na roteirização (aberta pelos Pedidos ou pela tela Roteirização).
+  if (!["/store/motoboys", "/store/roteirizacao", "/store/pedidos-clientes"].some((tela) => podeComoNaTela(user, tela))) {
+    return NextResponse.json({ error: "Sua conta não tem acesso à tela Motoboys." }, { status: 403 });
+  }
 
   const targetFranchiseeId = user.ownerId || user.id;
   const body = await req.json();

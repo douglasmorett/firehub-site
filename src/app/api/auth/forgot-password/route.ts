@@ -9,6 +9,7 @@ import { Resend } from "resend";
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { checkRateLimit, getClientIp } from "@/lib/rateLimit";
+import { gravarSenhaNova } from "@/lib/senha-do-grupo";
 
 const rawAppUrl = process.env.NEXTAUTH_URL || "";
 const APP_URL = (rawAppUrl && !rawAppUrl.includes("[SENSITIVE]") && rawAppUrl.startsWith("http"))
@@ -151,10 +152,8 @@ export async function POST(req: NextRequest) {
     }
 
     const hashed = await bcrypt.hash(newPassword, 12);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { password: hashed, resetToken: null, resetTokenExp: null },
-    });
+    // Na principal, as filiais na mesma senha recebem a nova (lib/senha-do-grupo.ts).
+    await gravarSenhaNova(user.id, hashed, { resetToken: null, resetTokenExp: null });
 
     return NextResponse.json({ ok: true });
   }

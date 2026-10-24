@@ -17,6 +17,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { gerarSenhaLegivel } from "@/lib/senha-gerada";
+import { gravarSenhaNova } from "@/lib/senha-do-grupo";
 
 export const dynamic = "force-dynamic";
 
@@ -49,11 +50,9 @@ export async function POST(req: NextRequest) {
   // Mesmo custo de hash do fluxo "esqueci a senha" (forgot-password).
   const senha = gerarSenhaLegivel();
   const hashed = await bcrypt.hash(senha, 12);
-  await prisma.user.update({
-    where: { id: alvo.id },
-    // Token de recuperação pendente cai junto: a senha nova é esta.
-    data: { password: hashed, resetToken: null, resetTokenExp: null },
-  });
+  // Token de recuperação pendente cai junto: a senha nova é esta. Na
+  // principal, vale também nas filiais que usavam a mesma (lib/senha-do-grupo.ts).
+  await gravarSenhaNova(alvo.id, hashed, { resetToken: null, resetTokenExp: null });
 
   console.log(`[admin/reset-password] ${session.user.email} redefiniu a senha de ${alvo.email} (${alvo.storeName || alvo.id})`);
   // A senha só sai aqui, para a tela do admin — nunca no log.

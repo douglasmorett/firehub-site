@@ -85,7 +85,7 @@ export async function POST(req: Request) {
         ...(embaixadorDaConta && { ambassadorId: embaixadorDaConta.id }),
       },
       // A resposta vai ao navegador: nada de hash de senha nem dado da conta.
-      // (A cópia do hash para a filial, acima, é o achado F143 — fica à parte.)
+      // (A cópia do hash acompanha as trocas de senha da principal: lib/senha-do-grupo.ts.)
       select: { id: true, storeName: true, slug: true },
     });
 

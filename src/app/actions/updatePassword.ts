@@ -5,6 +5,7 @@ import { authOptions, renovarMarcaDaSessao } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import bcrypt from "bcryptjs";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { gravarSenhaNova } from "@/lib/senha-do-grupo";
 
 export async function updatePassword(currentPassword: string, newPassword: string) {
   const session = await getServerSession(authOptions);
@@ -43,10 +44,8 @@ export async function updatePassword(currentPassword: string, newPassword: strin
 
   const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { password: hashedPassword }
-  });
+  // Na principal, as filiais na mesma senha recebem a nova (lib/senha-do-grupo.ts).
+  await gravarSenhaNova(user.id, hashedPassword);
   // As outras sessões da conta caem (lib/sessao-conferida.ts); esta segue.
   await renovarMarcaDaSessao(user.id, hashedPassword);
 
