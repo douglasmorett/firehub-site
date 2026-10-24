@@ -4,7 +4,7 @@
  *   npx tsx scripts/teste-chave-do-gateway.ts
  */
 import { readFileSync } from "node:fs";
-import { chaveDoGateway } from "../src/lib/chave-do-gateway";
+import { aceitarEventoDoGateway, chaveDoGateway } from "../src/lib/chave-do-gateway";
 
 let falhas = 0;
 function confere(nome: string, ok: boolean, obtido?: unknown) {
@@ -21,6 +21,15 @@ confere("cabeçalho vazio: ausente", chaveDoGateway("", [atual]) === "ausente");
 confere("outra chave: errada", chaveDoGateway("chave-de-outro", [atual]) === "errada");
 confere("prefixo da chave: errada", chaveDoGateway(atual.slice(0, 10), [atual]) === "errada");
 confere("sem chave configurada no FireHub: nada passa", chaveDoGateway(atual, [undefined, undefined]) === "errada");
+
+// Exigência por instância: aprende com a chave certa.
+confere("instância nova sem chave passa (Evolution oficial, gateway antigo)", aceitarEventoDoGateway("loja_a", "ausente"));
+confere("com a chave certa passa", aceitarEventoDoGateway("loja_a", "ok"));
+confere("depois disso, a MESMA instância sem chave é recusada (forjado)", !aceitarEventoDoGateway("loja_a", "ausente"));
+confere("...e com chave errada também", !aceitarEventoDoGateway("loja_a", "errada"));
+confere("...e com a chave certa continua passando", aceitarEventoDoGateway("loja_a", "ok"));
+confere("outra instância que nunca mandou chave segue passando", aceitarEventoDoGateway("atendimento_firehub", "ausente"));
+confere("sem nome de instância e sem chave: passa (nada aprendido)", aceitarEventoDoGateway(undefined, "ausente"));
 
 // O gateway manda a chave nas QUATRO chamadas ao webhook.
 const gw = readFileSync("whatsapp-gateway/server.js", "utf8");
