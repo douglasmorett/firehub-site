@@ -934,6 +934,13 @@ export default function RoteirizacaoModal({
 
       if (isPickupType) return false;
 
+      // ── ENTREGADOR DO PARCEIRO NÃO É ROTA DA LOJA ──────────────────────
+      // O iFood (ou o 99) manda o entregador dele buscar: o pedido não vai
+      // para motoboy da loja e no mapa só confundia — com pino, aviso de "sem
+      // localização" e na lista de pendentes (Douglas, 24/10/2026). A regra é
+      // a do painel (lib/entrega-parceira.ts), a mesma do "ENTREGA PARCEIRA".
+      if (infoDaEntrega(o).parceira) return false;
+
       const addrRaw = String(o.customerAddress || o.address || `${o.street || ""} ${o.number || ""} ${o.neighborhood || ""}`).toLowerCase();
       if (
         addrRaw.includes("retirada") ||
