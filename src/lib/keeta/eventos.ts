@@ -24,6 +24,7 @@ import { buscarPedidoKeeta, decifrar, metadataDoEvento, acaoNoPedidoKeeta, type 
 import { lojaDoMerchant } from "./lojas";
 import { registrarAcaoPendente } from "./acoes-pendentes";
 import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
+import { aplicarEventoSemAssinatura, estadoDoLastEvent, type Pretendido } from "@/lib/evento-sem-assinatura";
 
 export const CANAL_KEETA: CanalOD = { chave: "KEETA", nome: "Keeta", prefixo: "keeta" };
 
@@ -56,7 +57,7 @@ async function decifrarPedido(pedido: any): Promise<void> {
 
 async function pedidoNoBanco(orderId: string) {
   return prisma.customerOrder.findFirst({
-    where: { openDeliveryOrderId: idDoPedidoNoBanco(CANAL_KEETA, orderId) } as any,
+    where: { openDeliveryOrderId: idDoPedidoNoBanco(CANAL_KEETA, orderId), openDeliveryChannel: CANAL_KEETA.chave } as any,
     select: { id: true, status: true, notes: true, cancelledBy: true, deliveryBy: true, franchiseeId: true } as any,
   }) as Promise<any>;
 }
@@ -151,16 +152,35 @@ function linhaNasNotas(notes: string | null | undefined, linha: string): string 
   return atual.includes(linha) ? atual : [atual, linha].filter(Boolean).join("\n");
 }
 
-export async function processarEventoKeeta(evento: EventoKeeta, opts: { merchantDoCabecalho?: string | null } = {}): Promise<ResultadoEvento> {
+/**
+ * `conferirNaApi`: o webhook veio com assinatura que NÃO confere (o padrão é só
+ * observar, ver api/keeta/webhook). Aí cancelamento e avanço de status só valem
+ * depois de o GET do pedido confirmar o `lastEvent` (lib/evento-sem-assinatura.ts).
+ * O polling não passa isto: o evento dele veio da API autenticada.
+ */
+export async function processarEventoKeeta(
+  evento: EventoKeeta,
+  opts: { merchantDoCabecalho?: string | null; conferirNaApi?: boolean } = {},
+): Promise<ResultadoEvento> {
   if (!evento?.orderId || !evento?.eventType) return { confirmar: true, acao: "ignorado", mensagem: "evento sem orderId/eventType" };
   const tipo = String(evento.eventType).toUpperCase();
   const meta = metadataDoEvento(evento);
   const existente = await pedidoNoBanco(evento.orderId);
+  const confirmadoNaKeeta = (pretendido: Pretendido): Promise<boolean> | boolean =>
+    opts.conferirNaApi !== true ||
+    aplicarEventoSemAssinatura("Keeta", evento.orderId, tipo, pretendido, async () => {
+      const r = await buscarPedidoKeeta(evento.orderId);
+      if (!r.ok) return { ok: false, motivo: r.erro || `HTTP ${r.status}`, naoExiste: r.status === 404 };
+      return { ok: true, estado: estadoDoLastEvent(r.dados?.lastEvent), bruto: r.dados?.lastEvent };
+    });
+  // 204 de propósito: o evento verdadeiro também está no polling, que o aplica.
+  const IGNORADO: ResultadoEvento = { confirmar: true, acao: "ignorado", mensagem: "evento sem assinatura não confere com a API" };
 
   // ── Cancelado pela Keeta (cliente antes do aceite, timeout, sem entregador, suporte) ──
   if (tipo === "CANCELLED") {
     if (!existente) return { confirmar: true, acao: "ignorado", mensagem: "cancelado antes de entrar" };
     if (existente.status === "CANCELADO") return { confirmar: true, acao: "ja-cancelado" };
+    if (!(await confirmadoNaKeeta("CANCELADO"))) return IGNORADO;
     const motivo = String(meta.cancelReason || meta.reason || "Cancelado pela Keeta");
     await (prisma.customerOrder as any).update({
       where: { id: existente.id },
@@ -215,6 +235,7 @@ export async function processarEventoKeeta(evento: EventoKeeta, opts: { merchant
     : null;
   if (!alvo) return { confirmar: true, acao: "informativo" };
   if ((RANK[existente.status] ?? 0) >= RANK[alvo]) return { confirmar: true, acao: "sem-mudanca" };
+  if (!(await confirmadoNaKeeta(alvo as Pretendido))) return IGNORADO;
   await (prisma.customerOrder as any).update({ where: { id: existente.id }, data: { status: alvo } });
   return { confirmar: true, acao: `status-${alvo}`, pedidoId: existente.id };
 }

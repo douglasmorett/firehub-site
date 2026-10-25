@@ -8,6 +8,7 @@ import { parseJson99Food } from "@/lib/json-ids-longos";
 import { traduzirPedido99Food, itens99ParaPrisma } from "@/lib/food99-pedido";
 import { categoriasPeloNome } from "@/lib/categoria-do-item";
 import { aplicarPedidoAlterado99, sincronizar99Food } from "@/lib/food99-status";
+import { aplicarStatusDoEvento99 } from "@/lib/food99-status-do-evento";
 import { donoDoAppShopId, donoDoShopId } from "@/lib/food99-lojas";
 import { detalheDoPedido } from "@/lib/food99-api";
 import { verificarAssinaturaHmac, avisarWebhookSemSegredo } from "@/lib/webhook-assinatura";
@@ -739,29 +740,14 @@ export async function POST(req: NextRequest) {
         const newStatus = statusDoEvento(eventType);
 
         let aplicado = 0;
+        let ignoradoPelaApi = false;
         if (newStatus) {
-          // ── Não ressuscitar pedido encerrado ────────────────────────────
-          //
-          // O 99Food reenvia evento quando não recebe o ACK em 6s, e reenvio
-          // não chega na ordem original. Sem guarda, um `deliveryStatus`
-          // atrasado rebaixa para SAIU_ENTREGA um pedido que já foi ENTREGUE,
-          // e a comanda volta para a tela da cozinha depois de fechada. Pior:
-          // um `orderFinish` atrasado marcaria como entregue um pedido que a
-          // loja cancelou.
-          //
-          // CANCELADO é a exceção e passa por cima de tudo: cancelamento
-          // depois da entrega é estorno, e a loja precisa ficar sabendo.
-          const r = await (prisma.customerOrder as any).updateMany({
-            where: {
-              openDeliveryOrderId: orderId,
-              ...(newStatus === "CANCELADO" ? {} : { status: { notIn: ["ENTREGUE", "CANCELADO"] } }),
-            },
-            data: { status: newStatus },
-          });
-          aplicado = r?.count ?? 0;
+          // Só pedido do 99Food; sem assinatura válida, o order/detail confirma
+          // antes (lib/food99-status-do-evento.ts).
+          const r = await aplicarStatusDoEvento99(String(orderId), newStatus, eventType, assinatura99.estado !== "valida");
+          aplicado = r.aplicado;
+          ignoradoPelaApi = r.ignorado === true;
           if (aplicado > 0) updated++;
-          // NFC-e: no avanço, lib/fiscal-momento decide se é a hora; no cancelamento, avisa na tela fiscal se havia nota (não trava).
-          if (aplicado > 0) import("@/lib/fiscal-automatico").then(async (m) => { if (newStatus === "CANCELADO") await m.alertarCancelamentoComNota({ openDeliveryOrderId: orderId }, "99Food"); else await m.emitirNfceDosPedidos({ openDeliveryOrderId: orderId }); }).catch(() => {});
         }
 
         // Logística do 99: não mexe no status do pedido, mas dizer QUEM vem
@@ -782,6 +768,8 @@ export async function POST(req: NextRequest) {
             ? "evento não reconhecido"
             : aplicado > 0
             ? `status → ${newStatus}`
+            : ignoradoPelaApi
+            ? `status ${newStatus} ignorado: evento sem assinatura não confere com o order/detail`
             : `status ${newStatus} ignorado: pedido ${orderId} já encerrado ou inexistente aqui`,
           payload: event,
         });

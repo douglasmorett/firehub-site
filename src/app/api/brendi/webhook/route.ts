@@ -323,7 +323,9 @@ export async function POST(req: NextRequest) {
           metadata: event?.metadata && typeof event.metadata === "object" ? event.metadata : undefined,
         } as any;
 
-        const result = await processBrendiEvent(eventoMinimo);
+        // Sem assinatura válida, cancelamento/disputa/status só valem depois
+        // de o GET /v1/orders confirmar (lib/evento-sem-assinatura.ts).
+        const result = await processBrendiEvent(eventoMinimo, { conferirNaApi: assinaturaBrendi.estado !== "valida" });
 
         if (result.action === "error") {
           // ── REENVIAR RESOLVE, OU NÃO? ────────────────────────────────────
@@ -402,7 +404,10 @@ export async function POST(req: NextRequest) {
         // ackado apagaria o evento do feed para sempre. A consulta abaixo é a
         // prova de vida — e é dela que sai o franchiseeId dono da credencial
         // que assina o acknowledgment.
-        if (eventoId) {
+        if (eventoId && result.naoConferiuNaApi) {
+          // Sem ACK: o evento real volta pelo polling, que aplica sem conferir.
+          console.warn(`[Brendi Webhook] SEM ACK ${orderId}: evento sem assinatura não confere com a API — fica para o polling`);
+        } else if (eventoId) {
           const gravado = await prisma.customerOrder.findFirst({
             where: {
               OR: [

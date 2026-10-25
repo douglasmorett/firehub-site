@@ -67,7 +67,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const r = await processarEventoKeeta(evento as EventoKeeta, { merchantDoCabecalho: merchant });
+    // Assinatura que não confere: cancelamento e status só valem depois de o
+    // GET do pedido confirmar (lib/evento-sem-assinatura.ts).
+    const r = await processarEventoKeeta(evento as EventoKeeta, { merchantDoCabecalho: merchant, conferirNaApi: !assinaturaOk });
     console.log(`[Keeta] webhook ${evento?.eventType} ${evento?.orderId}: ${r.acao}${r.mensagem ? ` — ${r.mensagem}` : ""}`);
     return r.confirmar ? new NextResponse(null, { status: 204 }) : NextResponse.json({ title: r.mensagem || r.acao, status: 500 }, { status: 500 });
   } catch (e: any) {
