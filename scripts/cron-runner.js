@@ -89,6 +89,15 @@ const jobs = [
     exclusivo: true,
   },
   {
+    // Saipos (PDV): manda os pedidos do FireHub das lojas ligadas pelo admin
+    // (sentido unico FireHub -> Saipos), repete falhas e avisa cancelamentos.
+    // Sem SAIPOS_SECRET ou sem loja ligada responde na hora - custo zero.
+    name: 'saipos-pedidos',
+    path: '/api/cron/saipos-pedidos',
+    intervalMs: 20_000, // 20 segundos
+    exclusivo: true,
+  },
+  {
     // Rota 100% automatizada: nas lojas que ligaram o interruptor (e estão na
     // liberação), junta os pedidos de entrega que vão juntos, cria a rota e
     // pede prioridade no KDS (src/lib/roteirizacao-automatica/executar.ts). A

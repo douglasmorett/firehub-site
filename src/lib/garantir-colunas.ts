@@ -1629,6 +1629,64 @@ const INSTRUCOES_OPEN_DELIVERY_SAIDA = [
 
 let openDeliverySaidaOk = false;
 
+/**
+ * Duas tabelas NOVAS do envio de pedidos ao Saipos (lib/saipos), lidas por SQL cru
+ * como as do Open Delivery de saída — a rota funciona num client Prisma gerado antes.
+ */
+const INSTRUCOES_SAIPOS = [
+  `CREATE TABLE IF NOT EXISTS "SaiposIntegracao" (
+     "id" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "codStore" TEXT NOT NULL,
+     "idPartnerCifrado" TEXT NOT NULL,
+     "ativo" BOOLEAN NOT NULL DEFAULT true,
+     "ligadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "catalogo" TEXT,
+     "catalogoEm" TIMESTAMP(3),
+     "catalogoErro" TEXT,
+     "ultimaVarredura" TIMESTAMP(3),
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "SaiposIntegracao_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "SaiposIntegracao_franchiseeId_key" ON "SaiposIntegracao"("franchiseeId")`,
+  `CREATE TABLE IF NOT EXISTS "SaiposPedido" (
+     "id" TEXT NOT NULL,
+     "integracaoId" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "orderId" TEXT NOT NULL,
+     "status" TEXT NOT NULL,
+     "tentativas" INTEGER NOT NULL DEFAULT 0,
+     "proximaEm" TIMESTAMP(3),
+     "erro" TEXT,
+     "avisos" TEXT,
+     "enviadoEm" TIMESTAMP(3),
+     "canceladoEm" TIMESTAMP(3),
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "SaiposPedido_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "SaiposPedido_integracaoId_orderId_key" ON "SaiposPedido"("integracaoId", "orderId")`,
+  `CREATE INDEX IF NOT EXISTS "SaiposPedido_integracaoId_status_proximaEm_idx" ON "SaiposPedido"("integracaoId", "status", "proximaEm")`,
+];
+
+let saiposOk = false;
+
+/** As tabelas do Saipos existem? Uma vez por processo — e só marca DEPOIS de conseguir. */
+export async function garantirEstruturaDoSaipos(): Promise<boolean> {
+  if (saiposOk) return true;
+  const url = process.env.DATABASE_URL || "";
+  if (!/^postgres/i.test(url)) return false;
+  try {
+    await executarDDL("saipos", INSTRUCOES_SAIPOS);
+    saiposOk = true;
+    return true;
+  } catch (err: any) {
+    console.error(`[Boot] 🛑 Estrutura do Saipos falhou: ${err?.message}`);
+    return false;
+  }
+}
+
 /** As tabelas do Open Delivery de saída existem? Uma vez por processo — e só marca DEPOIS de conseguir. */
 export async function garantirEstruturaDaOpenDeliverySaida(): Promise<boolean> {
   if (openDeliverySaidaOk) return true;

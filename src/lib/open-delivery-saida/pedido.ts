@@ -164,7 +164,7 @@ function coordenadas(latLng: unknown): { latitude: number; longitude: number } |
 }
 
 /** UF da loja pelo fim do endereço ou da cidade ("Rio das Ostras - RJ", ".../RJ"). */
-function ufDaLoja(loja: LojaParaOD): string {
+export function ufDaLoja(loja: LojaParaOD): string {
   for (const t of [loja.city, loja.storeAddress]) {
     const m = String(t || "").match(/(?:^|[\s,\/-])([A-Z]{2})\s*(?:,?\s*\d{5}-?\d{3})?\s*$/);
     if (m) return `BR-${m[1]}`;
@@ -172,7 +172,7 @@ function ufDaLoja(loja: LojaParaOD): string {
   return "";
 }
 
-function cidadeDaLoja(loja: LojaParaOD): string {
+export function cidadeDaLoja(loja: LojaParaOD): string {
   return String(loja.city || "").replace(/\s*[-\/,]\s*[A-Z]{2}\s*$/, "").trim();
 }
 
