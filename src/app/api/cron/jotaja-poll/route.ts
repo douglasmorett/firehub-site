@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { semLojasBloqueadas } from "@/lib/loja-bloqueada";
 import { donasDasCredenciais } from "@/lib/jotaja-loja";
+import { comNovaTentativa, reenviarAcoesPendentes, registrarFalhaDaFila, registrarVoltaDaFila } from "@/lib/jotaja-instavel";
 
 /**
  * GET /api/cron/jotaja-poll
@@ -90,20 +91,27 @@ export async function GET(req: NextRequest) {
         try {
           const { jotajaFetch, jotajaMutate } = await import("@/lib/jotaja-api");
 
-          // Autenticar com as credenciais DESTA loja
+          // Autenticar com as credenciais DESTA loja. Erro de rede ou 5xx do
+          // JotaJá repete até 3x aqui mesmo; se continuar, a falha fica
+          // registrada e, na 2ª rodada seguida, a loja e o FireHub são
+          // avisados (lib/jotaja-instavel.ts) — em 24/10/2026 a API deles
+          // ficou uma hora respondendo 500 e ninguém soube.
           let res: Response;
           try {
-            res = await jotajaFetch("/v1/events:polling", { method: "GET" }, storeId);
+            res = await comNovaTentativa(() => jotajaFetch("/v1/events:polling", { method: "GET" }, storeId));
           } catch (err: any) {
             log.push(`❌ [${storeName}] Polling falhou: ${err.message}`);
+            await registrarFalhaDaFila(storeId, storeName, `erro de rede: ${err.message}`);
             return;
           }
 
           if (!res.ok) {
             const errBody = await res.text().catch(() => "");
             log.push(`❌ [${storeName}] events:polling: ${res.status} — ${errBody.slice(0, 200)}`);
+            await registrarFalhaDaFila(storeId, storeName, `events:polling HTTP ${res.status}`);
             return;
           }
+          await registrarVoltaDaFila(storeId, storeName);
 
           const eventsText = await res.text();
           let events: any[] = [];
@@ -193,6 +201,20 @@ export async function GET(req: NextRequest) {
 
           }
 
+          // ── O que o JotaJá recusou com 5xx volta daqui ──────────────────
+          // Confirmação, preparo, despacho e entrega guardados pelas rotas de
+          // status e do motoboy (lib/jotaja-instavel.ts › guardarAcaoPendente).
+          // Sem isto o pedido fica "aguardando aceite" no portal do JotaJá
+          // enquanto já está na cozinha.
+          try {
+            const re = await reenviarAcoesPendentes(storeId, (path, opts) => jotajaMutate(path, opts, storeId));
+            if (re.enviadas || re.pendentes || re.descartadas) {
+              log.push(`🔁 [${storeName}] ações pendentes no JotaJá: ${re.enviadas} reenviada(s), ${re.pendentes} ainda pendente(s), ${re.descartadas} descartada(s)`);
+            }
+          } catch (e: any) {
+            log.push(`⚠️ [${storeName}] reenvio de ações pendentes falhou: ${e?.message}`);
+          }
+
           // ── RECONCILIAÇÃO PROATIVA PER-STORE ────────────────────────────
           // ⚠️ ESTAVA DENTRO DO `else` DO "0 eventos": a única rede de segurança
           // do sistema só rodava quando JÁ havia evento na fila — nunca no caso
@@ -279,7 +301,7 @@ export async function GET(req: NextRequest) {
     // "jotaja-poll ok (200)" no log do container sem uma linha sobre pedido
     // nenhum — inclusive quando um pedido se perdia. Agora vai para o stdout.
     const houveFalha = log.some(l => l.startsWith("❌") || l.includes("⛔"));
-    if (totalEvents > 0 || houveFalha) {
+    if (totalEvents > 0 || houveFalha || log.some(l => l.startsWith("🔁"))) {
       for (const linha of log) {
         if (linha.startsWith("❌") || linha.includes("⛔")) console.error(`[Jotajá Cron] ${linha}`);
         else console.log(`[Jotajá Cron] ${linha}`);

@@ -203,6 +203,8 @@ export async function POST(req: NextRequest) {
                 const { jotajaMutate } = await import("@/lib/jotaja-api");
                 const r = await jotajaMutate(`/v1/orders/${ord.openDeliveryOrderId}/dispatch`, { method: "POST" }, ord.franchiseeId);
                 console.log(`[Motoboy Dispatch → Jotajá] dispatch ${ord.openDeliveryOrderId}: ${r.status}`);
+                // JotaJá fora do ar: o cron reenvia (lib/jotaja-instavel.ts).
+                if (r.status >= 500) await (await import("@/lib/jotaja-instavel")).guardarAcaoPendente(ord.franchiseeId, String(ord.openDeliveryOrderId), `/v1/orders/${ord.openDeliveryOrderId}/dispatch`, "dispatch");
               } catch (err: any) {
                 console.warn(`[Motoboy Dispatch → Jotajá] Erro sync ${ord.openDeliveryOrderId}:`, err?.message);
               }

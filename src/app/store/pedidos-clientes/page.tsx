@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import StoreOrdersDashboard from "@/components/customer/StoreOrdersDashboard";
 import AvisosDoDia from "@/components/customer/AvisosDoDia";
+import AvisoParceiroInstavel from "@/components/customer/AvisoParceiroInstavel";
 import AvisoDeAcrescimo from "@/components/customer/AvisoDeAcrescimo";
 import AvisoDeTransferencia from "@/components/customer/AvisoDeTransferencia";
 import { lojasDeOrigemDaConta } from "@/lib/lojas-de-origem-da-conta";
@@ -238,6 +239,8 @@ export default async function FranchiseeCustomerOrdersPage() {
           no layout, abria em cima do KDS; o dono quer o aviso aqui e em mais
           lugar nenhum (25/09/2026). Regras em lib/avisos-do-dia.ts. */}
       <AvisosDoDia />
+      {/* JotaJá fora do ar: pedido de lá pode não entrar (lib/jotaja-instavel.ts). */}
+      <AvisoParceiroInstavel />
       {/* Cliente pedindo pelo WhatsApp para acrescentar num pedido que já está
           na cozinha: a loja aceita ou recusa (lib/acrescimo-do-pedido.ts). */}
       <AvisoDeAcrescimo />
