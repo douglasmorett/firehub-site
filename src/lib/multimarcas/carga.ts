@@ -8,6 +8,7 @@ import { prisma } from "@/lib/prisma";
 import { propsDoCardapio } from "@/lib/cardapio-publico";
 import { estadoDaLoja } from "@/lib/loja-aberta";
 import { filtroDoCardapio, minimoDeEstrelas } from "@/lib/avaliacoes-no-cardapio";
+import { ordenarComoALoja } from "@/lib/cardapio-da-loja";
 import { chaveDaCategoria, mapaDeCategorias, type ConfigDaPagina } from "./pagina";
 import { MARCA_DOS_EXTRAS, type ConfigDaVitrine, type ProdutoDaVitrine } from "./vitrine";
 
@@ -60,7 +61,11 @@ export async function vitrineDaLoja(franchisee: any, config: ConfigDaPagina): Pr
   const estado = estadoDaLoja({ storeHours: franchisee.storeHours, storePause: franchisee.storePause, storeOpen: franchisee.storeOpen, timezone: franchisee.storeTimezone });
   const dc = (franchisee.deliveryConfig || {}) as any;
 
-  const produtos: ProdutoDaVitrine[] = ((cardapio.menuProducts as any[]) || []).map((p) => ({
+  // O banco entrega os produtos por NOME da categoria; a página segue a ordem
+  // que a loja escolheu em "Reordenar Cardápio" (Lucas, 23/10: "vai para a
+  // ordem alfabética, não vai na ordem que a gente tem").
+  const ordem = new Map(((cardapio.storeCategories as any[]) || []).map((c, i) => [chaveDaCategoria(c.name), i]));
+  const produtos: ProdutoDaVitrine[] = ordenarComoALoja(((cardapio.menuProducts as any[]) || []), ordem).map((p: any) => ({
     id: String(p.id),
     marca: mapa.get(chaveDaCategoria(p.category)) ?? MARCA_DOS_EXTRAS,
     categoria: String(p.category || ""),
@@ -87,6 +92,7 @@ export async function vitrineDaLoja(franchisee: any, config: ConfigDaPagina): Pr
         aberta: estado.aberta,
       })),
       banners: config.banners,
+      destaques: config.destaques,
     },
   };
 }

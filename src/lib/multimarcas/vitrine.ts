@@ -24,8 +24,9 @@ export type BannerDaVitrine = {
   titulo: string;
   texto: string;
   imagem: string | null;
-  /** Para onde o banner leva: uma marca ou nada. */
+  /** Para onde o banner leva: um produto, uma marca ou nada (aviso, cupom). */
   marca: string | null;
+  produto?: string | null;
   ativo: boolean;
 };
 
@@ -43,6 +44,8 @@ export type ConfigDaVitrine = {
   entrega: { taxa: number | null; min: number | null; max: number | null; minimo: number };
   marcas: MarcaDaVitrine[];
   banners: BannerDaVitrine[];
+  /** Ids dos produtos da fileira de destaques; vazio = um com foto por marca. */
+  destaques?: string[];
 };
 
 export type ProdutoDaVitrine = {

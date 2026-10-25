@@ -151,6 +151,9 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
         && (p.nome.toLowerCase().includes(termo) || p.descricao.toLowerCase().includes(termo) || p.categoria.toLowerCase().includes(termo)))
     : [];
 
+  // A busca acha a MARCA também (pelo nome ou tipo), como no iFood: "burguer" traz a loja e os lanches.
+  const marcasAchadas = termo.length >= 2 ? marcas.filter((m) => m.nome.toLowerCase().includes(termo) || m.tipo.toLowerCase().includes(termo)) : [];
+
   const marcaAtual = tela.tipo === "marca" ? marcaPorId.get(tela.id) ?? null : null;
   const abrirMarca = (id: string | null): Acao => (publica ? (id ? { href: linkDaMarca(publica, id) } : {}) : { onClick: () => { if (id) irPara({ tipo: "marca", id }); } });
   const abrirProduto = (p: ProdutoDaVitrine): Acao => (publica ? { href: linkDoProduto(publica, marcaDoProduto(p), p.id) } : { onClick: () => setAberto(p) });
@@ -191,7 +194,15 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
 
           {termo.length >= 2 ? (
             <section className={s.secao}>
-              <h2 className={s.tituloSecao}>{achados.length ? `${achados.length} resultado${achados.length > 1 ? "s" : ""}` : "Nada encontrado"}</h2>
+              {marcasAchadas.length > 0 && (
+                <>
+                  <h2 className={s.tituloSecao}>Lojas</h2>
+                  <div className={s.gradeDeLojas}>
+                    {marcasAchadas.map((m) => <CartaoDaMarca key={m.id} marca={m} config={config} toque={abrirMarca(m.id)} />)}
+                  </div>
+                </>
+              )}
+              <h2 className={s.tituloSecao}>{achados.length ? `${achados.length} ite${achados.length > 1 ? "ns" : "m"}` : marcasAchadas.length ? "Nenhum item com esse nome" : "Nada encontrado"}</h2>
               <div className={s.listaProdutos}>
                 {achados.map((p) => (
                   <LinhaDoProduto key={p.id} p={p} marca={marcaPorId.get(p.marca) ?? null} mostrarMarca
@@ -202,7 +213,7 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
             </section>
           ) : (
             <>
-              <Banners config={config} marcaPorId={marcaPorId} abrir={abrirMarca} />
+              <Banners config={config} marcaPorId={marcaPorId} abrir={abrirMarca} abrirItem={abrirProduto} />
 
               {marcas.length > 1 && (
                 <div className={s.faixaUmaEntrega}>
@@ -230,7 +241,7 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
                 </div>
               </section>
 
-              <Destaques marcaPorId={marcaPorId} toque={abrirProduto} />
+              <Destaques marcaPorId={marcaPorId} escolhidos={config.destaques} toque={abrirProduto} />
             </>
           )}
         </main>
@@ -279,7 +290,10 @@ export default function Vitrine({ config, produtos, embutida = false, publica }:
 
 // ─── Início ──────────────────────────────────────────────────────────────
 
-function Banners({ config, marcaPorId, abrir }: { config: ConfigDaVitrine; marcaPorId: Map<string, MarcaDaVitrine>; abrir: (id: string | null) => Acao }) {
+function Banners({ config, marcaPorId, abrir, abrirItem }: {
+  config: ConfigDaVitrine; marcaPorId: Map<string, MarcaDaVitrine>; abrir: (id: string | null) => Acao; abrirItem: (p: ProdutoDaVitrine) => Acao;
+}) {
+  const PRODUTO = useCatalogo().porId;
   const ativos = config.banners.filter((b) => b.ativo && (b.titulo || b.imagem));
   const [atual, setAtual] = useState(0);
   if (!ativos.length) return null;
@@ -288,8 +302,11 @@ function Banners({ config, marcaPorId, abrir }: { config: ConfigDaVitrine; marca
       <div className={s.trilho}
         onScroll={(e) => { const el = e.currentTarget; setAtual(Math.round(el.scrollLeft / (el.firstElementChild as HTMLElement).offsetWidth)); }}>
         {ativos.map((b) => {
-          const marca = b.marca ? marcaPorId.get(b.marca) : null;
-          const toque = marca && !marca.oculta ? abrir(marca.id) : {};
+          // Abre o produto (se ainda está no cardápio), senão a marca; sem os dois é aviso ou cupom.
+          const produto = b.produto ? PRODUTO.get(b.produto) ?? null : null;
+          const marca = b.marca ? marcaPorId.get(b.marca) : produto ? marcaPorId.get(produto.marca) : null;
+          const toque = produto ? abrirItem(produto) : marca && !marca.oculta ? abrir(marca.id) : {};
+          const abre = Boolean(toque.href || toque.onClick);
           return (
             <Toque key={b.id} className={s.banner} {...toque} disabled={!toque.href && !toque.onClick}
               style={{ background: marca?.cor ?? config.cor }}>
@@ -299,7 +316,7 @@ function Banners({ config, marcaPorId, abrir }: { config: ConfigDaVitrine; marca
                 {marca && b.titulo && <span className={s.bannerMarca}>{marca.nome}</span>}
                 {b.titulo && <strong>{b.titulo}</strong>}
                 {b.texto && <span>{b.texto}</span>}
-                {marca && b.titulo && <span className={s.bannerAcao}>Pedir agora <ChevronRight size={14} /></span>}
+                {abre && b.titulo && <span className={s.bannerAcao}>Pedir agora <ChevronRight size={14} /></span>}
               </span>
             </Toque>
           );
@@ -332,24 +349,28 @@ function CartaoDaMarca({ marca, config, toque }: { marca: MarcaDaVitrine; config
   );
 }
 
-function Destaques({ marcaPorId, toque }: { marcaPorId: Map<string, MarcaDaVitrine>; toque: (p: ProdutoDaVitrine) => Acao }) {
-  const { produtos } = useCatalogo();
-  // Um produto com foto por marca visível: a fileira mostra a variedade da rede.
+function Destaques({ marcaPorId, escolhidos, toque }: { marcaPorId: Map<string, MarcaDaVitrine>; escolhidos?: string[]; toque: (p: ProdutoDaVitrine) => Acao }) {
+  const { produtos, porId } = useCatalogo();
+  const visivel = (p: ProdutoDaVitrine) => p.marca === MARCA_DOS_EXTRAS || (marcaPorId.get(p.marca) && !marcaPorId.get(p.marca)!.oculta);
+  // Os itens que o dono escolheu no editor, na ordem dele. Sem escolha: um
+  // produto com foto por marca visível, para mostrar a variedade da rede.
   const vistas = new Set<string>();
-  const lista = produtos.filter((p) => {
-    const m = marcaPorId.get(p.marca);
-    if (!p.foto || !m || m.oculta || vistas.has(p.marca)) return false;
-    vistas.add(p.marca);
-    return true;
-  });
-  if (lista.length < 2) return null;
+  const lista = escolhidos?.length
+    ? escolhidos.map((id) => porId.get(id)).filter((p): p is ProdutoDaVitrine => !!p && !!visivel(p))
+    : produtos.filter((p) => {
+        const m = marcaPorId.get(p.marca);
+        if (!p.foto || !m || m.oculta || vistas.has(p.marca)) return false;
+        vistas.add(p.marca);
+        return true;
+      });
+  if (lista.length < (escolhidos?.length ? 1 : 2)) return null;
   return (
     <section className={s.secao}>
       <h2 className={s.tituloSecao}>Para abrir o apetite</h2>
       <div className={s.carrossel}>
         {lista.map((p) => (
           <Toque key={p.id} className={s.miniProduto} {...toque(p)}>
-            <img src={p.foto!} alt="" loading="lazy" />
+            {p.foto ? <img src={p.foto} alt="" loading="lazy" /> : <span className={s.miniSemFoto} style={{ background: marcaPorId.get(p.marca)?.cor }}>{iniciais(p.nome)}</span>}
             <span className={s.miniMarca}>{marcaPorId.get(p.marca)?.nome}</span>
             <strong>{p.nome}</strong>
             <span className={s.miniPreco}>{reais(p.preco)}</span>

@@ -35,8 +35,10 @@ export type BannerDaPagina = {
   titulo: string;
   texto: string;
   imagem: string | null;
-  /** A marca que o banner abre (null = só aviso). */
+  /** A marca que o banner abre (null = só aviso ou cupom). */
   marca: string | null;
+  /** O produto que o banner abre (vence a marca). null = não abre produto. */
+  produto: string | null;
   ativo: boolean;
 };
 
@@ -46,9 +48,14 @@ export type ConfigDaPagina = {
   cor: string;
   marcas: MarcaDaPagina[];
   banners: BannerDaPagina[];
+  /**
+   * Os itens da fileira de destaques, na ordem escolhida (ids de produto).
+   * Vazio = a fileira escolhe sozinha (um item com foto por marca).
+   */
+  destaques: string[];
 };
 
-export const LIMITES = { marcas: 30, banners: 12, categoriasPorMarca: 60 } as const;
+export const LIMITES = { marcas: 30, banners: 12, categoriasPorMarca: 60, destaques: 20 } as const;
 export const CORES_DAS_MARCAS = ["#1F1F23", "#E8590C", "#C92A2A", "#F08C00", "#2B8A3E", "#1864AB", "#7048E8", "#C2255C", "#0B7285", "#5C940D"];
 
 export const chaveDaCategoria = (nome: string) => String(nome || "").trim().toLowerCase();
@@ -62,6 +69,11 @@ const imagem = (v: unknown): string | null => {
   if (!u || u.length > 600) return null;
   if (u.startsWith("/") && !u.startsWith("//")) return u;
   try { return new URL(u).protocol === "https:" ? u : null; } catch { return null; }
+};
+/** Id de produto (cuid): só letras, números, _ e -. */
+const idDeProduto = (v: unknown): string | null => {
+  const s = typeof v === "string" ? v.trim() : "";
+  return /^[a-z0-9_-]{1,40}$/i.test(s) ? s : null;
 };
 const id = (v: unknown, prefixo: string, i: number) => {
   const s = typeof v === "string" ? v.replace(/[^a-z0-9_-]/gi, "").slice(0, 24) : "";
@@ -112,6 +124,7 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
       texto: texto(x?.texto, 90),
       imagem: imagem(x?.imagem),
       marca: typeof x?.marca === "string" && idsDasMarcas.has(x.marca) ? x.marca : null,
+      produto: idDeProduto(x?.produto),
       ativo: x?.ativo !== false,
     };
   }).filter((x: BannerDaPagina) => x.titulo || x.imagem);
@@ -121,6 +134,7 @@ export function limparConfig(bruto: unknown, nomeDaLoja = "Minhas marcas"): Conf
     cor: cor(b.cor, "#E8590C"),
     marcas,
     banners,
+    destaques: [...new Set((Array.isArray(b.destaques) ? b.destaques : []).map(idDeProduto).filter(Boolean) as string[])].slice(0, LIMITES.destaques),
   };
 }
 

@@ -46,6 +46,24 @@ ok(() => assert.equal(c.banners[1].marca, null)); // marca inexistente vira avis
 ok(() => assert.equal(limparConfig(null, "Loja X").nome, "Loja X"));
 ok(() => assert.equal(limparConfig({ marcas: Array.from({ length: 50 }, (_, i) => ({ nome: `M${i}` })) }).marcas.length, 30));
 
+// ─── destaques e banner que abre item (Lucas, 25/10) ───
+const comItens = limparConfig({
+  marcas: [{ id: "smash", nome: "Smash", categorias: ["Burguers"] }],
+  banners: [
+    { id: "b1", titulo: "Smash em dobro", produto: "cmprod123", marca: "smash" },
+    { id: "b2", titulo: "Cupom PRIMEIRA10" },
+    { id: "b3", titulo: "Id ruim", produto: "<script>" },
+  ],
+  destaques: ["p1", "p1", "p2", 42, "x y", ...Array.from({ length: 30 }, (_, i) => `q${i}`)],
+});
+ok(() => assert.equal(comItens.banners[0].produto, "cmprod123"));
+ok(() => assert.equal(comItens.banners[1].produto, null)); // cupom: só aviso
+ok(() => assert.equal(comItens.banners[1].marca, null));
+ok(() => assert.equal(comItens.banners[2].produto, null)); // id inválido não passa
+ok(() => assert.deepEqual(comItens.destaques.slice(0, 3), ["p1", "p2", "q0"])); // repetido e inválido saem
+ok(() => assert.equal(comItens.destaques.length, 20)); // limite
+ok(() => assert.deepEqual(limparConfig(null).destaques, []));
+
 // ─── categoria → marca ───
 ok(() => assert.equal(marcaDaCategoria(c, "  BURGUERS")?.id, "smash"));
 ok(() => assert.equal(marcaDaCategoria(c, "Bebidas"), null));
