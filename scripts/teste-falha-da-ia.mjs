@@ -69,12 +69,15 @@ conferir("cliente: não vaza detalhe técnico", !/gemini|cr[eé]dito|429|chave|a
 conferir("cliente: sem link não inventa link", !/card[aá]pio/i.test(mensagemDeIaForaDoAr({})));
 const f = classificarFalhaDaIa(SEM_CREDITO);
 const loja = alertaDeIaForaDoArParaALoja({ falha: f, nomeDoCliente: "Bianca", telefone: "21999997320", mensagemDoCliente: "quero falar com alguém" });
-conferir("loja: avisa que não volta sozinho", /N[ÃA]O volta sozinho/.test(loja), loja);
+conferir("loja: diz que foi um imprevisto com a IA do Google e pede para avisar o atendimento", /imprevisto com a intelig[eê]ncia artificial do Google/.test(loja) && /avise nosso atendimento/.test(loja), loja);
+conferir("loja: NÃO fala de crédito, saldo nem chave", !/cr[eé]dito|saldo|pr[eé]-pago|chave|gemini/i.test(loja), loja);
 conferir("loja: traz a mensagem do cliente", /quero falar com algu/.test(loja), loja);
 const lojaSemTransferir = alertaDeIaForaDoArParaALoja({ falha: f, nomeDoCliente: "Bianca", telefone: "21999997320", mensagemDoCliente: "cadê meu pedido?", transferido: false });
 conferir("loja: quem só recebeu status NÃO é citado como 'esperando uma pessoa'", !/Bianca/.test(lojaSemTransferir) && !/esperando uma pessoa/.test(lojaSemTransferir), lojaSemTransferir);
 const dono = m.mensagemDeIaForaDoArParaODono(f);
 conferir("dono: não lê 'já avisei a equipe' (a equipe é ele)", !/avisei/i.test(dono) && /fora do ar/i.test(dono), dono);
+conferir("dono: NÃO fala de crédito, saldo nem chave", !/cr[eé]dito|saldo|pr[eé]-pago|chave|gemini/i.test(dono), dono);
+conferir("faixa do painel: sem crédito pede para avisar o atendimento", /avise nosso atendimento/.test(m.causaParaALoja(f)) && !/cr[eé]dito|saldo/i.test(m.causaParaALoja(f)));
 const admin = alertaDeIaForaDoArParaOAdmin({ falha: f, loja: "Hakim Centro", quando: "18/09 18:30" });
 conferir("admin: manda recarregar no AI Studio", /ai\.studio\/projects/.test(admin), admin);
 conferir("admin: diz que são TODAS as lojas", /TODAS as lojas/.test(admin), admin);
