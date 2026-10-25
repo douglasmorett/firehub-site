@@ -100,11 +100,15 @@ export default function GoogleAnalytics({
       // FireHub: para quem está logado no painel (dono, admin) abrindo um
       // cardápio, ele chamava as APIs com a sessão da pessoa. Só carrega para
       // quem não está logado — o cliente do cardápio, que é quem a loja mede.
+      //
+      // Fecha no erro: sem uma resposta OK confirmando que NÃO há sessão (o
+      // NextAuth devolve `{}`), não carrega — antes, consulta que falhava
+      // virava null e o contêiner subia mesmo para quem estava logado.
       fetch("/api/auth/session", { credentials: "same-origin" })
-        .then((r) => r.json())
+        .then((r) => (r.ok ? r.json() : null))
         .catch(() => null)
         .then((sessao) => {
-          if (desmontado || sessao?.user) return;
+          if (desmontado || !sessao || typeof sessao !== "object" || sessao.user) return;
           if (!jaIniciados.has(container)) {
             window.dataLayer.push({ "gtm.start": Date.now(), event: "gtm.js" });
             carregarScript(

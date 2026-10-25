@@ -124,6 +124,16 @@ export async function PUT(req: Request) {
     if (body[key] !== undefined) data[key] = body[key];
   }
 
+  // O contêiner do GTM vira um <script> do Google no cardápio: só o formato
+  // dele passa (auditoria F84). Vazio continua valendo para apagar.
+  if (data.gtmContainerId !== undefined && data.gtmContainerId !== null) {
+    const gtm = String(data.gtmContainerId).trim().toUpperCase();
+    if (gtm && !/^GTM-[A-Z0-9]{4,12}$/.test(gtm)) {
+      return NextResponse.json({ error: "Container do Google Tag Manager inválido. Ele tem o formato GTM-XXXXXXX (ex.: GTM-AB12CD3)." }, { status: 400 });
+    }
+    data.gtmContainerId = gtm;
+  }
+
   // Formas de pagamento PRÓPRIAS (lib/formas-proprias.ts) moram dentro de
   // paymentFees: conferidas aqui, para o PDV, a mesa, o cardápio e o robô
   // lerem sempre a lista limpa (nome único, sem parêntese, canais em booleano).

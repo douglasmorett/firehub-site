@@ -48,6 +48,7 @@ import {
   LIMIAR_DA_QUEDA_MS,
   MANTER_LIGADO_NA_ENTRADA_MS,
   nuvemCaiu,
+  pedidoDoProprioComputador,
   type ModoDoSupervisor,
 } from "./regras";
 
@@ -181,9 +182,8 @@ async function principal(): Promise<void> {
     // módulo manda). A nuvem passa a contar como fora por 2 minutos, e o ciclo
     // inteiro roda de verdade — a queda, as telas, a volta e a subida.
     if (url.startsWith("/__contingencia/testar")) {
-      const remoto = req.socket.remoteAddress || "";
-      const daqui = remoto === "127.0.0.1" || remoto === "::1" || remoto === "::ffff:127.0.0.1";
-      if (!daqui || req.method !== "POST") return { tipo: "responder", status: 403, corpo: { error: "Só do computador da loja." } };
+      // Navegador (Origin/Sec-Fetch-Site) fica de fora: ver pedidoDoProprioComputador.
+      if (!pedidoDoProprioComputador({ remoto: req.socket.remoteAddress, metodo: req.method, cabecalhos: req.headers })) return { tipo: "responder", status: 403, corpo: { error: "Só do computador da loja." } };
       if (!copiaPronta()) return { tipo: "responder", status: 409, corpo: { error: "A cópia da loja ainda está sendo preparada." } };
       simularQuedaAte = Date.now() + 2 * 60_000;
       registro("Teste da contingência: nuvem tratada como fora por 2 minutos.");
@@ -220,9 +220,7 @@ async function principal(): Promise<void> {
     // Parar com cuidado (o Assistente pede antes de atualizar ou desativar):
     // desliga o FireHub local e o banco, sem deixar processo órfão.
     if (url.startsWith("/__contingencia/parar")) {
-      const remoto = req.socket.remoteAddress || "";
-      const daqui = remoto === "127.0.0.1" || remoto === "::1" || remoto === "::ffff:127.0.0.1";
-      if (!daqui || req.method !== "POST") return { tipo: "responder", status: 403, corpo: { error: "Só do computador da loja." } };
+      if (!pedidoDoProprioComputador({ remoto: req.socket.remoteAddress, metodo: req.method, cabecalhos: req.headers })) return { tipo: "responder", status: 403, corpo: { error: "Só do computador da loja." } };
       setTimeout(() => void sair(), 100);
       return { tipo: "responder", status: 200, corpo: { ok: true, pendentes } };
     }

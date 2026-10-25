@@ -68,20 +68,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Telefone/Nome e senha são obrigatórios" }, { status: 400 });
     }
 
-    // Sem limite, um laço testa a senha padrão contra a lista inteira de
-    // entregadores da loja em segundos.
-    const limite = checkRateLimit(`motoboy-login:${getClientIp(req)}:${storeSlug}`, {
-      windowMs: 60_000,
-      maxRequests: 10,
-    });
-    if (!limite.allowed) {
-      return NextResponse.json(
-        { error: "Muitas tentativas. Aguarde um minuto e tente de novo." },
-        { status: 429 }
-      );
-    }
+    const cleanSlug = String(storeSlug).toLowerCase().trim();
 
-    const cleanSlug = storeSlug.toLowerCase().trim();
+    // Sem limite, um laço testa a senha padrão contra a lista inteira de
+    // entregadores da loja em segundos. A chave é o slug JÁ normalizado (como
+    // a busca da loja usa): "LOJA" e " loja" não abrem contas novas no limite.
+    const muitas = () => NextResponse.json(
+      { error: "Muitas tentativas. Aguarde um minuto e tente de novo." },
+      { status: 429 }
+    );
+    if (!checkRateLimit(`motoboy-login:${getClientIp(req)}:${cleanSlug}`, { windowMs: 60_000, maxRequests: 10 }).allowed) {
+      return muitas();
+    }
     const slugName = cleanSlug.replace(/-/g, " ");
 
     // MULTI-TENANT: Busca a loja EXCLUSIVAMENTE pelo slug — sem fallbacks
@@ -104,6 +102,11 @@ export async function POST(req: NextRequest) {
 
     if (!storeUser) {
       return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
+    }
+    // A busca também acha a loja por pedaço do nome: o mesmo limite vale pela
+    // loja achada, para "pizz", "pizza" e o slug não somarem 10 cada.
+    if (!checkRateLimit(`motoboy-login-loja:${getClientIp(req)}:${storeUser.id}`, { windowMs: 60_000, maxRequests: 10 }).allowed) {
+      return muitas();
     }
 
     // MULTI-TENANT: Busca motoboys APENAS desta loja — sem fallback global

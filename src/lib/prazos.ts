@@ -29,7 +29,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { lerTokenDePrazos } from "@/lib/prazos-token";
+import { lerTokenDePrazos, tokenValeParaASenha } from "@/lib/prazos-token";
 
 export const CORS_PRAZOS = {
   "Access-Control-Allow-Origin": "*",
@@ -289,7 +289,10 @@ export async function resolverConta(req: NextRequest) {
   const token = req.nextUrl.searchParams.get("token") || req.headers.get("x-prazos-token");
   const leitura = lerTokenDePrazos(token);
   if (!leitura.valido) return null;
-  return prisma.prazoConta.findUnique({ where: { id: leitura.contaId } });
+  const conta = await prisma.prazoConta.findUnique({ where: { id: leitura.contaId } });
+  // Senha trocada depois do login: o token com a marca antiga não vale mais.
+  if (conta && !tokenValeParaASenha(leitura, conta.senhaHash)) return null;
+  return conta;
 }
 
 /** O que o popup precisa saber da conta — sem hash, sem nada além do necessário. */

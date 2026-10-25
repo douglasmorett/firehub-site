@@ -1,6 +1,11 @@
 const { chromium } = require('playwright');
 
 (async () => {
+  // Login e senha de loja real não ficam no código.
+  const email = process.env.TEST_EMAIL;
+  const senha = process.env.TEST_PASSWORD;
+  if (!email || !senha) throw new Error('Defina TEST_EMAIL e TEST_PASSWORD.');
+
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -28,8 +33,8 @@ const { chromium } = require('playwright');
     console.log("1. Navegando para login...");
     await page.goto('https://www.firehubfood.com.br/login');
     
-    await page.fill('input[type="email"]', 'paulocoutinhocastilho@gmail.com');
-    await page.fill('input[type="password"]', '123456');
+    await page.fill('input[type="email"]', email);
+    await page.fill('input[type="password"]', senha);
     await page.click('button[type="submit"]');
 
     await page.waitForURL('**/store');

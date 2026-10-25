@@ -388,6 +388,8 @@ document.addEventListener("DOMContentLoaded", () => {
     $("btnSenhaSalvar").disabled = true;
     try {
       const { res, dados } = await api("/api/prazos/senha", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ senhaAtual: atual, novaSenha: nova }) });
+      // Senha nova derruba o token antigo: o servidor devolve o novo, e é ele que fica.
+      if (res.ok && dados.success && dados.token) { estado.token = dados.token; await chrome.storage.local.set({ token: dados.token }); }
       if (res.ok && dados.success) { msg.style.color = "#34D399"; msg.textContent = "✓ Senha trocada. Use a nova no próximo login."; $("senhaAtual").value = ""; $("senhaNova").value = ""; $("senhaNova2").value = ""; }
       else msg.textContent = dados.error || "Não consegui trocar a senha.";
     } catch (e) { msg.textContent = "Servidor indisponível."; }

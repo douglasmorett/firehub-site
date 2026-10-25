@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
 
   return respostaPrazos({
     success: true,
-    token: criarTokenDePrazos(conta.id),
+    token: criarTokenDePrazos(conta.id, atualizada.senhaHash),
     conta: contaParaExtensao(atualizada),
   });
 }

@@ -9,6 +9,7 @@ import { NextRequest } from "next/server";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
 import { respostaPrazos, resolverConta } from "@/lib/prazos";
+import { criarTokenDePrazos } from "@/lib/prazos-token";
 
 export const dynamic = "force-dynamic";
 
@@ -31,8 +32,12 @@ export async function POST(req: NextRequest) {
     const confere = await bcrypt.compare(atual, conta.senhaHash).catch(() => false);
     if (!confere) return respostaPrazos({ error: "Senha atual incorreta" }, { status: 401 });
 
-    await prisma.prazoConta.update({ where: { id: conta.id }, data: { senhaHash: await bcrypt.hash(nova, 10) } });
-    return respostaPrazos({ success: true });
+    const senhaHash = await bcrypt.hash(nova, 10);
+    await prisma.prazoConta.update({ where: { id: conta.id }, data: { senhaHash } });
+    // Senha nova derruba os tokens com a marca antiga (lib/prazos-token.ts),
+    // inclusive o desta extensão: o token novo volta aqui para ela seguir
+    // logada (a extensão que grava `token` desta resposta não precisa relogar).
+    return respostaPrazos({ success: true, token: criarTokenDePrazos(conta.id, senhaHash) });
   } catch (err: any) {
     console.error("[Prazos senha]", err?.message);
     return respostaPrazos({ error: "Erro ao trocar a senha" }, { status: 500 });

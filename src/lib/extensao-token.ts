@@ -22,7 +22,23 @@ import crypto from "crypto";
  * quem está usando agora, o id cru continua valendo para LEITURA — mas nunca
  * mais para ESCRITA. Assim que o lojista fizer login na extensão de novo, ela
  * recebe o token assinado e a escrita volta a funcionar.
+ *
+ * ── DUAS FASES (mesmo desenho do lib/token-do-assistente.ts) ───────────────
+ *
+ * Fase 1 (agora): o id cru segue valendo para leitura, e cada loja que ainda
+ * usa vira uma linha `[Extensão sem assinatura]` no log (no máximo 1 por loja
+ * por hora). Fase 2: `EXIGIR_TOKEN_ASSINADO_DA_EXTENSAO = true`.
  */
+
+/**
+ * Liga a recusa do id cru também na LEITURA (dynamic-eta e GET de
+ * eta-config): a extensão antiga passa a receber 401 até relogar.
+ *
+ * CRITÉRIO PARA LIGAR: o log `[Extensão sem assinatura]` zerado por 2 dias
+ * seguidos de operação. Loja que aparecer lá precisa refazer o login na
+ * extensão antes.
+ */
+export const EXIGIR_TOKEN_ASSINADO_DA_EXTENSAO = false;
 
 function chave(): string {
   const s = process.env.NEXTAUTH_SECRET;
@@ -50,7 +66,10 @@ export type LeituraDoToken =
  * Interpreta o token recebido. `exigirAssinatura` é o que separa leitura de
  * escrita: quem escreve precisa de token assinado.
  */
-export function lerTokenDeExtensao(token: string | null | undefined): LeituraDoToken {
+export function lerTokenDeExtensao(
+  token: string | null | undefined,
+  exigirAssinado: boolean = EXIGIR_TOKEN_ASSINADO_DA_EXTENSAO,
+): LeituraDoToken {
   const bruto = String(token || "").trim();
   if (!bruto) return { valido: false };
 
@@ -66,6 +85,26 @@ export function lerTokenDeExtensao(token: string | null | undefined): LeituraDoT
     return { valido: false };
   }
 
-  // Formato antigo: o id cru. Aceito só onde a leitura basta.
+  // Formato antigo: o id cru. Aceito só onde a leitura basta (até a fase 2).
+  if (exigirAssinado) return { valido: false };
   return { valido: true, assinado: false, userId: bruto };
+}
+
+// ── Log de quem ainda usa o id cru ──────────────────────────────────────────
+// Em memória (por processo), no máximo uma linha por loja por hora: a extensão
+// consulta a cada poucos segundos. É o que diz quando a fase 2 pode ser ligada.
+
+const INTERVALO_DO_LOG_MS = 60 * 60_000;
+const logadoEm = new Map<string, number>();
+
+/** Chamar quando o id cru foi ACEITO e achou a loja (id vindo do banco). */
+export function anotarTokenCruDaExtensao(lojaId: string, rota: string, agora = Date.now()): boolean {
+  const ultimo = logadoEm.get(lojaId);
+  if (ultimo !== undefined && agora - ultimo < INTERVALO_DO_LOG_MS) return false;
+  console.log(`[Extensão sem assinatura] loja=${lojaId} rota=${rota}`);
+  logadoEm.delete(lojaId);
+  logadoEm.set(lojaId, agora);
+  // Teto de memória: o mais antigo sai primeiro.
+  if (logadoEm.size > 5000) logadoEm.delete(logadoEm.keys().next().value as string);
+  return true;
 }

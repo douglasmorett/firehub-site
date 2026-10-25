@@ -597,7 +597,9 @@ export default function IntegracoesHubClient({
         showToast("✅ Google Analytics configurado com sucesso!", "#0F766E");
         setOpenModal(null);
       } else {
-        showToast("⚠️ Erro ao salvar configuração do Google", "#C92E09");
+        // O servidor diz o que está errado (ex.: container do GTM fora do formato).
+        const d = await res.json().catch(() => ({}));
+        showToast(`⚠️ ${d?.error || "Erro ao salvar configuração do Google"}`, "#C92E09");
       }
     } catch {
       showToast("⚠️ Erro de conexão ao salvar", "#C92E09");

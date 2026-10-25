@@ -33,7 +33,7 @@ const J = (o) => ({ method: o.m || "POST", headers: { "Content-Type": "applicati
   ok("senha errada → 401", r.s === 401);
   r = await api("/api/prazos/login", J({ b: { email: EMAIL, senha: SENHA } }));
   ok("login → token, cota 2, robô desligado", r.s === 200 && r.d.token && r.d.conta.lojasIncluidas === 2 && r.d.conta.config.roboLigado === false);
-  const token = r.d.token, q = "?token=" + encodeURIComponent(token);
+  let token = r.d.token, q = "?token=" + encodeURIComponent(token);
 
   r = await api("/api/prazos/calcular" + q, J({ b: { pedidos: 5 } }));
   ok("2 motoboys, 5 pedidos → 58 min", r.d.minutos === 58 && r.d.pausar === false, r.d.rotulo);
@@ -72,7 +72,12 @@ const J = (o) => ({ method: o.m || "POST", headers: { "Content-Type": "applicati
   r = await api("/api/prazos/senha" + q, J({ b: { senhaAtual: SENHA, novaSenha: "abc" } }));
   ok("senha curta → 400", r.s === 400);
   r = await api("/api/prazos/senha" + q, J({ b: { senhaAtual: SENHA, novaSenha: "novasenha1" } }));
-  ok("troca de senha", r.s === 200 && r.d.success);
+  ok("troca de senha", r.s === 200 && r.d.success && r.d.token);
+  // A senha nova derruba o token antigo; o novo vem na resposta.
+  const velho = q;
+  token = r.d.token; q = "?token=" + encodeURIComponent(token);
+  r = await api("/api/prazos/estado" + velho);
+  ok("token de antes da troca → 401", r.s === 401);
   r = await api("/api/prazos/login", J({ b: { email: EMAIL, senha: "novasenha1" } }));
   ok("login com a senha nova", r.s === 200 && r.d.success);
 
