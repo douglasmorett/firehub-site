@@ -819,6 +819,32 @@ export function ordenarPelaPrioridade<
   );
 }
 
+/**
+ * O pedido dos tipos que a loja pôs na frente, como filtro do banco.
+ *
+ * Existe por causa da janela da consulta do KDS (`take: 100` em ordem de
+ * chegada): com mais de 100 pedidos na produção, a prioridade só reordenava os
+ * 100 MAIS ANTIGOS, e a mesa nova — a que devia furar a fila — nem entrava na
+ * lista (Ragnar, 24/10/2026: 122 na produção, 23 de mesa). Esta consulta
+ * extra traz só os prioritários e a rota junta com o resto.
+ *
+ * MESA e DELIVERY pelo `deliveryType`. Balcão e retirada são "o que não é mesa
+ * nem delivery" (quem separa os dois é a origem, e a ordenação em memória cuida
+ * disso): traz os dois, sobra para a ordenação. Sem tipo marcado: null.
+ */
+export function filtroDosTiposPrioritarios(tipos: readonly TipoDePrioridade[] | null | undefined): Record<string, unknown> | null {
+  const marcados = new Set(tipos || []);
+  if (marcados.size === 0) return null;
+  const ou: Record<string, unknown>[] = [];
+  if (marcados.has("MESA")) ou.push({ deliveryType: "MESA" });
+  if (marcados.has("DELIVERY")) ou.push({ deliveryType: "DELIVERY" });
+  if (marcados.has("BALCAO") || marcados.has("RETIRADA")) {
+    ou.push({ deliveryType: { notIn: ["MESA", "DELIVERY"] } });
+    ou.push({ deliveryType: null });
+  }
+  return { OR: ou };
+}
+
 /** Este pedido está na frente por ser de um tipo prioritário da loja? (o selo no card) */
 export function furaAFila(pedido: { deliveryType?: string | null; source?: string | null }, config: KdsConfig | null | undefined, etapa?: string | null): boolean {
   return prioridadeDaEtapa(config, etapa).includes(tipoNaFila(pedido));
