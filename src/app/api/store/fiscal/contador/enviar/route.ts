@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { enviarPacoteParaContador } from "@/lib/contador-envio";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -20,9 +21,14 @@ export async function POST(req: Request) {
 
   const u = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true },
+    select: { id: true, ownerId: true, role: true, permissions: true },
   });
   if (!u) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  // Manda os XMLs com CPF dos clientes por e-mail: a caixinha da tela Fiscal,
+  // como no exportar.
+  if (!podeComoNaTela(u, "/store/fiscal")) {
+    return NextResponse.json({ error: "Sem acesso às notas fiscais: peça ao dono da loja para marcar \"Financeiro\" no seu cadastro em Equipe." }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const de = String(body.de || "").trim();

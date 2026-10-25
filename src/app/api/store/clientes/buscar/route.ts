@@ -8,7 +8,11 @@
  * De onde vem: pedidos da loja (qualquer canal) e cadastros ligados a ela
  * (StoreCustomer.lojaDeOrigemId — a base importada). O cadastro solto só
  * entra quando o número veio INTEIRO: StoreCustomer é global, e por prefixo
- * ele mostraria a clientela de todas as lojas a qualquer lojista.
+ * ele mostraria a clientela de todas as lojas a qualquer lojista. E entra só
+ * com o NOME: o endereço do cadastro solto é o que o cliente deu em OUTRA loja
+ * (auditoria de 23/10/2026). O endereço vem dos pedidos desta loja ou do
+ * cadastro trazido por ela — para quem já pediu aqui, sugerirClientes usa o
+ * endereço dos pedidos, não o do cadastro.
  *
  * O telefone está gravado de qualquer jeito ("(22) 99276-1161",
  * "5522992761161", "22992761161"): o SQL normaliza para só dígitos sem o 55 e
@@ -122,7 +126,8 @@ async function pedidosPorChave(lojas: Prisma.Sql, chaves: string[]): Promise<Ped
 async function buscarCadastros(lojas: Prisma.Sql, filtro: Prisma.Sql, numeroInteiro: string | null): Promise<CadastroParaBusca[]> {
   try {
     return await prisma.$queryRaw<CadastroParaBusca[]>(Prisma.sql`
-      SELECT "name", "phone", "address"
+      SELECT "name", "phone",
+        CASE WHEN "lojaDeOrigemId" IN (${lojas}) THEN "address" END AS "address"
       FROM "StoreCustomer"
       WHERE ("lojaDeOrigemId" IN (${lojas}) AND ${filtro})
          ${numeroInteiro ? Prisma.sql`OR ${nacional(Prisma.sql`"phone"`)} = ${numeroInteiro}` : Prisma.empty}

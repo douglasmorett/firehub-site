@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
 
@@ -51,14 +52,19 @@ export const CONTADOR_PADRAO: ConfigDoContador = {
 async function resolverLoja(email: string) {
   const u = await prisma.user.findUnique({
     where: { email },
-    select: { id: true, ownerId: true, fiscalConfig: true },
+    select: { id: true, ownerId: true, role: true, permissions: true, fiscalConfig: true },
   });
   if (!u) return null;
+  // O e-mail que recebe todo mês os XMLs com CPF dos clientes: a mesma
+  // caixinha da tela Fiscal ("Financeiro"), como no exportar e no DANFE.
+  const pode = podeComoNaTela(u, "/store/fiscal");
   const lojaId = u.ownerId || u.id;
-  if (lojaId === u.id) return { lojaId, fiscalConfig: (u.fiscalConfig as any) || {} };
+  if (lojaId === u.id) return { lojaId, pode, fiscalConfig: (u.fiscalConfig as any) || {} };
   const dono = await prisma.user.findUnique({ where: { id: lojaId }, select: { fiscalConfig: true } });
-  return { lojaId, fiscalConfig: (dono?.fiscalConfig as any) || {} };
+  return { lojaId, pode, fiscalConfig: (dono?.fiscalConfig as any) || {} };
 }
+
+const SEM_ACESSO_AO_FISCAL = "Sem acesso às notas fiscais: peça ao dono da loja para marcar \"Financeiro\" no seu cadastro em Equipe.";
 
 export function lerConfigDoContador(fiscalConfig: any): ConfigDoContador {
   const c = (fiscalConfig?.contador as Partial<ConfigDoContador>) || {};
@@ -75,6 +81,7 @@ export async function GET() {
 
   const loja = await resolverLoja(session.user.email);
   if (!loja) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  if (!loja.pode) return NextResponse.json({ error: SEM_ACESSO_AO_FISCAL }, { status: 403 });
 
   return NextResponse.json({ contador: lerConfigDoContador(loja.fiscalConfig) });
 }
@@ -85,6 +92,7 @@ export async function POST(req: Request) {
 
   const loja = await resolverLoja(session.user.email);
   if (!loja) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  if (!loja.pode) return NextResponse.json({ error: SEM_ACESSO_AO_FISCAL }, { status: 403 });
 
   const body = await req.json().catch(() => ({}));
   const atual = lerConfigDoContador(loja.fiscalConfig);

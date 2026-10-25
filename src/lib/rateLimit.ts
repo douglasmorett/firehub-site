@@ -47,6 +47,16 @@ export function checkRateLimit(
 }
 
 /**
+ * Já gastou as `maxRequests` da janela? Só consulta, não conta. Para limitar
+ * só o que dá ERRADO (senha, código): confere com isto antes e chama
+ * checkRateLimit na falha — quem acerta nunca gasta cota.
+ */
+export function limiteEstourado(identifier: string, maxRequests: number): boolean {
+  const entry = rateLimitMap.get(identifier);
+  return !!entry && Date.now() <= entry.resetTime && entry.count >= maxRequests;
+}
+
+/**
  * Origem da requisição, para contagem de rate limit.
  *
  * Lia o PRIMEIRO endereço de X-Forwarded-For — que é justamente o que o cliente

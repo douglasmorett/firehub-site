@@ -201,9 +201,12 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // 3. Processa conversas salvas no atendimento humano e na memória da aplicação
+    // 3. Processa conversas salvas no atendimento humano e na memória da aplicação.
+    // As duas memórias são do processo inteiro, com as conversas de TODAS as
+    // lojas (chave `${userId}_${jid}`, api/webhook/whatsapp): só entra a desta.
     if (global.__humanSupportChats) {
       for (const chat of (global.__humanSupportChats as Map<string, any>).values()) {
+        if (chat?.userId !== targetFranchiseeId) continue;
         const cleanDigits = (chat.phone || chat.jid || "").replace(/\D/g, "");
         if (cleanDigits && cleanDigits.length >= 10 && !cleanDigits.startsWith("0800") && !cleanDigits.startsWith("550800")) {
           const formattedPhone = cleanDigits.startsWith("55") ? `+${cleanDigits}` : `+55${cleanDigits}`;
@@ -222,6 +225,7 @@ export async function GET(req: NextRequest) {
 
     if ((global as any).__whatsappActiveContacts) {
       for (const contact of (global as any).__whatsappActiveContacts.values()) {
+        if (contact?.userId !== targetFranchiseeId) continue;
         const cleanDigits = (contact.phone || "").replace(/\D/g, "");
         if (cleanDigits && cleanDigits.length >= 10 && !cleanDigits.startsWith("0800") && !cleanDigits.startsWith("550800")) {
           const formattedPhone = cleanDigits.startsWith("55") ? `+${cleanDigits}` : `+55${cleanDigits}`;

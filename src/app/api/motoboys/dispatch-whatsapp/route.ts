@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { paraEnvioWhatsApp } from "@/lib/telefone";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +18,17 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true, permissions: true },
     });
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    }
+    // Despacha pedido e manda WhatsApp pelo número da loja: quem despacha, com
+    // as mesmas telas do cadastro de entregador (api/motoboys POST) — Motoboys,
+    // Roteirização ou Pedidos. O funcionário só da cozinha não (auditoria de 23/10/2026).
+    if (!["/store/motoboys", "/store/roteirizacao", "/store/pedidos-clientes"].some((tela) => podeComoNaTela(user, tela))) {
+      return NextResponse.json({ error: "Sua conta não tem acesso ao despacho dos pedidos." }, { status: 403 });
     }
 
     const targetFranchiseeId = user.ownerId || user.id;

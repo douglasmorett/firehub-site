@@ -7,6 +7,7 @@ import { ehEquipeInterna } from "@/lib/equipe-interna";
 import { revalidatePath } from "next/cache";
 import { getAsaasKey } from "@/lib/asaas";
 import bcrypt from "bcryptjs";
+import { checkRateLimit, limiteEstourado } from "@/lib/rateLimit";
 
 export async function cancelOrder(orderId: string, adminPassword?: string, reason?: string) {
   const session = await getServerSession(authOptions);
@@ -32,9 +33,18 @@ export async function cancelOrder(orderId: string, adminPassword?: string, reaso
     throw new Error("Usuário não encontrado.");
   }
 
+  // Sem teto, a sessão aberta testava a senha da equipe aqui à vontade, fora do
+  // freio do login (auditoria de 23/10/2026). Só a senha ERRADA conta: cancelar
+  // vários pedidos seguidos com a senha certa nunca trava.
+  const chaveDoFreio = `cancelar-pedido:${currentUser.id}`;
+  if (limiteEstourado(chaveDoFreio, 5)) {
+    throw new Error("Muitas tentativas com a senha errada. Espere 15 minutos e tente de novo.");
+  }
+
   // Verifica a senha
   const passwordMatch = await bcrypt.compare(adminPassword, currentUser.password);
   if (!passwordMatch) {
+    checkRateLimit(chaveDoFreio, { windowMs: 15 * 60_000, maxRequests: 5 });
     throw new Error("Senha incorreta. O pedido não foi cancelado.");
   }
 

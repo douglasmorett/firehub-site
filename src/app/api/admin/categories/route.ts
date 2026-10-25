@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { chaveDaCategoria, planoDeApagar, planoDeRenomear, renomearNasConfigs } from "@/lib/categoria-renomear";
+import { podeComoNaTela, type QuemPede } from "@/lib/permissoes-da-equipe";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes: PUT e DELETE já conferiam o dono, mas o PATCH
@@ -19,7 +20,13 @@ type Scope = {
   isAdmin: boolean;
   targetFranchiseeId: string;  // loja do usuário logado (funcionário usa a do dono)
   adminStoreId: string | null; // loja ativa escolhida pelo ADMIN
+  quem: QuemPede;
 };
+
+// Criar, renomear, reordenar e apagar categoria é da tela Cardápio: o
+// funcionário só com a caixinha "Cardápio", como em menu-products. Ler continua
+// livre — KDS e PDV leem daqui (auditoria de 23/10/2026).
+const semCardapio = () => NextResponse.json({ error: "Sua conta não tem acesso ao Cardápio." }, { status: 403 });
 
 async function getScope(
   req: NextRequest
@@ -31,7 +38,7 @@ async function getScope(
 
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, role: true, ownerId: true },
+    select: { id: true, role: true, ownerId: true, permissions: true },
   });
   if (!user) {
     return { scope: null, error: NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 }) };
@@ -48,6 +55,7 @@ async function getScope(
       isAdmin,
       targetFranchiseeId: user.ownerId || user.id,
       adminStoreId: isAdmin && activeStoreId && activeStoreId !== "all" ? activeStoreId : null,
+      quem: user,
     },
     error: null,
   };
@@ -101,6 +109,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const { scope, error } = await getScope(req);
   if (!scope) return error;
+  if (!podeComoNaTela(scope.quem, "/store/cardapio")) return semCardapio();
 
   const { name, emoji = "🍽️", color = "#64748B", sortOrder = 0, imageUrl = null } = await req.json();
 
@@ -132,6 +141,12 @@ export async function PUT(req: NextRequest) {
   if (!scope) return error;
 
   const { id, nomeAntigo, name, emoji, color, sortOrder, imageUrl } = await req.json();
+  // A foto da categoria também se troca na tela do Totem (caixinha "Minha
+  // loja"), que manda só { id, imageUrl }.
+  const soAFoto = name === undefined && emoji === undefined && color === undefined && sortOrder === undefined;
+  if (!podeComoNaTela(scope.quem, "/store/cardapio") && !(soAFoto && podeComoNaTela(scope.quem, "/store/totem"))) {
+    return semCardapio();
+  }
   const idReal = id && !String(id).startsWith("virtual-") ? String(id) : null;
   if (!idReal && !String(nomeAntigo ?? "").trim()) {
     return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
@@ -246,6 +261,7 @@ async function renomearNasConfigsDaLoja(tx: any, loja: string, antigo: string, n
 export async function PATCH(req: NextRequest) {
   const { scope, error } = await getScope(req);
   if (!scope) return error;
+  if (!podeComoNaTela(scope.quem, "/store/cardapio")) return semCardapio();
 
   const body = await req.json();
   const { orderedIds, orderedCategories } = body;
@@ -353,6 +369,7 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   const { scope, error } = await getScope(req);
   if (!scope) return error;
+  if (!podeComoNaTela(scope.quem, "/store/cardapio")) return semCardapio();
 
   const { id, name, destino } = await req.json();
   const idReal = id && !String(id).startsWith("virtual-") ? String(id) : null;

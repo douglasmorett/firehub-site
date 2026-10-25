@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { lerConfigDoPainel, normalizarCodigo, separarSenhas } from "@/lib/painel-de-senhas";
 import { linkDoCardapioDaLoja } from "@/lib/saudacao-do-dia";
+import { getClientIp } from "@/lib/rateLimit";
+import { contarCodigoErrado, tvBloqueada } from "@/lib/codigo-errado-da-tv";
 
 /**
  * O que a TV do Painel de senhas desenha (lib/painel-de-senhas.ts).
@@ -25,6 +27,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Código inválido" }, { status: 400 });
   }
 
+  // Teto só para o código errado (lib/codigo-errado-da-tv.ts). 429 e não 410:
+  // a TV não apaga o código guardado, mostra "sem conexão" e volta sozinha
+  // quando a janela passa.
+  const ip = getClientIp(req);
+  if (tvBloqueada(ip)) {
+    return NextResponse.json({ error: "Muitas tentativas com código errado. Espere alguns minutos." }, { status: 429 });
+  }
+
   const chave = `${lojaId}:${codigo}`;
   const pronto = guardado.get(chave);
   if (pronto && Date.now() - pronto.em < VALIDADE_MS) {
@@ -39,6 +49,7 @@ export async function GET(req: NextRequest) {
     .catch(() => null);
   const config = lerConfigDoPainel(loja?.painelDeSenhas);
   if (!loja || !config.codigo || config.codigo !== codigo) {
+    contarCodigoErrado(ip, chave);
     // 410: a TV para de perguntar e volta para a tela do código.
     return NextResponse.json({ error: "Este código não vale mais. Peça o código novo no painel da loja." }, { status: 410 });
   }

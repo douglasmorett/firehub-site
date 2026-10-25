@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { montarRelatorioDosEntregadores, periodoDoRelatorio } from "@/lib/relatorio-do-entregador";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 // GET /api/motoboy-report?motoboyId=xxx&from=2026-05-01&to=2026-05-31
 //
@@ -16,9 +17,14 @@ export async function GET(req: Request) {
   // Segurança e otimização: buscar apenas o id do usuário e timezone
   const user = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, ownerId: true, storeTimezone: true }
+    select: { id: true, ownerId: true, storeTimezone: true, role: true, permissions: true }
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+  // Nome e endereço dos clientes e quanto cada entregador recebe: a caixinha da
+  // tela Motoboys, a mesma das rotas irmãs do acerto (./sessao.ts).
+  if (!podeComoNaTela(user, "/store/motoboys")) {
+    return NextResponse.json({ error: "Sua conta não tem acesso à tela Motoboys." }, { status: 403 });
+  }
 
   const url = new URL(req.url);
   const tz = user.storeTimezone || "America/Sao_Paulo";

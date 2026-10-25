@@ -8,6 +8,7 @@ import { retomarRobo } from "@/lib/pausa-do-robo";
 import { registrarMensagemDaLoja } from "@/lib/memoria-da-conversa-no-banco";
 import { contaOficialDoWhatsApp } from "@/lib/contas-oficiais-whatsapp";
 import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
+import { ehConversaDeCliente } from "@/lib/jid-de-cliente";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,23 @@ export interface HumanSupportChat {
 // Global cache for human support requests
 declare global {
   var __humanSupportChats: Map<string, HumanSupportChat> | undefined;
+}
+
+/**
+ * A conversa existe para esta loja no banco? A mesma consulta de
+ * api/chatbot/conversas — a fila em memória some no deploy, e a tela aberta
+ * antes dele ainda responde à conversa que estava lendo.
+ */
+async function conversaExiste(userId: string, jid: string): Promise<boolean> {
+  try {
+    const linhas = await prisma.$queryRaw<{ existe: number }[]>`
+      SELECT 1 AS existe FROM "ChatbotConversationState"
+      WHERE "userId" = ${userId} AND "remoteJid" = ${jid} LIMIT 1
+    `;
+    return linhas.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 function getSupportStore(): Map<string, HumanSupportChat> {
@@ -127,6 +145,14 @@ export async function POST(req: NextRequest) {
 
       const key = `${targetUserId}_${jid}`;
       let chat = store.get(key);
+
+      // Só responde a conversa de cliente que já existe nesta loja (na fila ou
+      // no banco): sem isto, o jid do corpo fazia do WhatsApp da loja um
+      // disparador para qualquer número ou grupo. A régua do jid é a do webhook
+      // (lib/jid-de-cliente.ts), que aceita o número cru e o @c.us que a fila guarda.
+      if (!ehConversaDeCliente(jid) || (!chat && !(await conversaExiste(targetUserId, String(jid))))) {
+        return NextResponse.json({ error: "Conversa não encontrada nesta loja" }, { status: 404 });
+      }
 
       const success = await sendEvolutionMessage(targetUserId, jid, message);
 

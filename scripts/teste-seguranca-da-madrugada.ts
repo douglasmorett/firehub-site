@@ -170,6 +170,13 @@ async function main() {
   confere("funcionário só da cozinha não manda WhatsApp (403)", [(await atendimento.POST(req("/api/chatbot/human-support", enviar))).status, whatsappEnviou], [403, 0]);
   confere("…nem encerra (que também manda mensagem)", (await atendimento.POST(req("/api/chatbot/human-support", { method: "POST", body: { action: "close_chat", jid: "x@s.whatsapp.net" } }))).status, 403);
   confere("…nem lê a fila", (await atendimento.GET(req("/api/chatbot/human-support"))).status, 403);
+  // Responder é só para conversa que existe nesta loja (teste-permissoes-n6.ts):
+  // a do cliente está na fila do atendimento.
+  (globalThis as any).__humanSupportChats ||= new Map();
+  (globalThis as any).__humanSupportChats.set("cl0dono0001_5511999999999@s.whatsapp.net", {
+    id: "cl0dono0001_5511999999999@s.whatsapp.net", userId: "cl0dono0001", jid: "5511999999999@s.whatsapp.net", phone: "+55 11999999999",
+    clientName: "Cliente", status: "PENDING", unreadCount: 1, lastMessage: "oi", updatedAt: Date.now(), messages: [],
+  });
   naSessao("caixa@loja");
   confere("funcionário com Painel de Pedidos responde (200)", [(await atendimento.POST(req("/api/chatbot/human-support", enviar))).status, whatsappEnviou], [200, 1]);
   naSessao("dono@loja");

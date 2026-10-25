@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
+import { checkRateLimit } from "@/lib/rateLimit";
 
 /**
  * Resolve QUAL LOJA e a da sessao — `ownerId || id`.
@@ -112,13 +113,24 @@ export async function deleteKitchenItem(id: string) {
 
 import { GoogleGenAI } from '@google/genai';
 
+/** O que a tela de etiquetas espera da IA: só isto volta, e só valor simples. */
+const CAMPOS_DA_TABELA_NUTRICIONAL = [
+  "ingredients", "allergens", "preparation", "shelfLifeDays", "energy", "carbs", "sugars",
+  "addedSugars", "proteins", "fatTotal", "fatSat", "sodium", "highSugar", "highSodium", "highFat",
+] as const;
+
 export async function fillNutritionWithAI(itemName: string) {
   // Sem sessão nem teto, a action servia de IA de graça na chave do FireHub
   // (auditoria de 23/10/2026): só login de loja, e o nome do item cortado.
+  let loja: string;
   try {
-    await lojaDaSessao();
+    loja = await lojaDaSessao();
   } catch {
     return { error: "Não autorizado. Entre de novo no painel." };
+  }
+  // Teto folgado por loja: preencher item a item cabe; virar IA de graça, não.
+  if (!checkRateLimit(`ia-nutricional:${loja}`, { windowMs: 10 * 60_000, maxRequests: 30 }).allowed) {
+    return { error: "Muitos pedidos à IA em pouco tempo. Espere alguns minutos e tente de novo." };
   }
   const nome = String(itemName ?? "").replace(/["\s]+/g, " ").trim().slice(0, 120);
   if (!nome) return { error: "Informe o nome do item." };
@@ -157,7 +169,15 @@ export async function fillNutritionWithAI(itemName: string) {
 
     const text = response.text || "";
     const jsonStr = text.match(/\{[\s\S]*\}/)?.[0] || "{}";
-    return JSON.parse(jsonStr);
+    // A resposta inteira voltava ao navegador: qualquer chave que a IA
+    // inventasse (ou que um nome de item mandasse ela escrever) ia junto.
+    const lido = JSON.parse(jsonStr) || {};
+    const tabela: Record<string, string | number | boolean> = {};
+    for (const campo of CAMPOS_DA_TABELA_NUTRICIONAL) {
+      const v = lido[campo];
+      if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") tabela[campo] = v;
+    }
+    return tabela;
   } catch (error: any) {
     console.error("Erro AI:", error);
     return { error: "Falha ao gerar dados com IA." };
