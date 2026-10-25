@@ -10,7 +10,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { getIfoodToken, merchantsDoToken } from "@/lib/ifood-api";
 import { appEscolhido, credenciaisDoApp, ErroCredencialApp } from "@/lib/ifood-app";
-import { lojaDaSessao } from "@/lib/ifood-token";
+import { lojaDaSessao, merchantDeOutraLoja } from "@/lib/ifood-token";
 import { prisma } from "@/lib/prisma";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
@@ -498,6 +498,16 @@ export async function POST(req: NextRequest) {
   // Se o usuário digitou diretamente um Merchant UUID (formato 8-4-4-4-12)
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawCode);
   if (isUuid && storeId) {
+    // UUID colado não prova posse: merchant que já é de OUTRA loja é recusado,
+    // como no link-merchant. A própria loja reconecta o dela normalmente.
+    if (await merchantDeOutraLoja(rawCode, storeId)) {
+      console.warn(`[iFood Auth] BLOQUEADO: loja ${storeId} tentou vincular por UUID o merchant ${rawCode}, já de outra loja.`);
+      return NextResponse.json({
+        error: "Este Merchant ID já está vinculado a outra loja no FireHub.",
+        details:
+          "Cada loja iFood pode pertencer a uma única franquia. Se este merchant é realmente seu, peça para a loja atual desvincular primeiro ou fale com o suporte.",
+      }, { status: 409 });
+    }
     const userRec = await prisma.user.findUnique({
       where: { id: storeId },
       select: {
