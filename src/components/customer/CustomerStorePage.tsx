@@ -4947,13 +4947,16 @@ export default function CustomerStorePage({
 
       {/* Loja manualmente fechada — ou fechada pela proteção de loja sem
           conexão, que no horário não é "fechada": é instabilidade passageira. */}
+      {/* `data-nosnippet`: o Google tirava o resumo da busca desta faixa —
+          "Loja fechada no momento · Em breve voltamos!" no Showrrascão, lido
+          pelo robô num horário fechado (24/10/2026). O cliente ainda vê. */}
       {!mesa && !isPaused && franchisee.storeOpen === false && (
         semConexaoAgora ? (
-          <div style={{ background: "#B45309", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
+          <div data-nosnippet="" style={{ background: "#B45309", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
             ⚠️ Estamos com instabilidade no sistema e não conseguimos receber pedidos agora. Volte em alguns minutos!
           </div>
         ) : (
-          <div style={{ background: "#374151", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
+          <div data-nosnippet="" style={{ background: "#374151", color: "#fff", padding: "0.6rem 1.5rem", textAlign: "center", fontSize: "0.85rem", fontWeight: 700 }}>
             🔴 Loja fechada no momento · {configDoAgendamento.ativo && diasParaAgendar.length > 0 ? "Você pode agendar o seu pedido." : "Em breve voltamos!"}
           </div>
         )
@@ -5014,7 +5017,7 @@ export default function CustomerStorePage({
             <div className="store-meta">
               {/* No lanche da equipe quem manda é o caixa aberto, não o horário do site. */}
               {!mesa?.equipe && (
-              <span className={`store-status ${storeStatus.open ? "open" : "closed"}`}>
+              <span data-nosnippet="" className={`store-status ${storeStatus.open ? "open" : "closed"}`}>
                 <Clock size={12} /> {storeStatus.text}
               </span>
               )}
