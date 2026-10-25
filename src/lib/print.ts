@@ -199,6 +199,8 @@ export type PrinterEntry = {
   comandaInteiraNoMisto?: boolean;
   /** A comanda desta avisa o que saiu nas outras impressoras (lib/outros-setores-na-comanda.ts). */
   avisarOutrosSetores?: boolean;
+  /** Papel "PEDIDO CANCELADO" quando o pedido da cozinha é cancelado (lib/aviso-de-cancelamento.ts). */
+  avisoDeCancelamento?: boolean;
   /** true = uma linha por unidade ("1x X-Bacon" cinco vezes). Ausente = agrupado. */
   separarItens?: boolean;
   /* Quais mundos esta impressora atende: salao, delivery, ou os dois.

@@ -36,6 +36,7 @@ import { esquecer, lembrarPor } from "@/lib/cache-curto";
 import { filaTemAlgoGuardado } from "@/lib/fila-tem-algo";
 import { barrarChamadaDaFila } from "@/lib/token-do-assistente";
 import { sessaoDaLojaNaFila } from "@/lib/sessao-da-loja-na-fila";
+import { KIND_CANCELAMENTO, TETO_DO_AVISO_MS, blocosDoAvisoDeCancelamento, idDoAvisoDeCancelamento, impressorasDoAvisoDeCancelamento, pedidoPedeAvisoDeCancelamento } from "@/lib/aviso-de-cancelamento";
 
 export function pushJobToPrintQueue(targetId: string, order: any, storeName?: string, paperWidth?: string) {
   // A fila do PEDIDO é lida direto do banco pelo GET: pedido novo não precisa
@@ -514,6 +515,17 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // "não" aqui garante que elas viriam vazias. Qualquer "sim" — ou erro —
     // segue pelo caminho de sempre. Pedido novo nunca fica de fora
     // (scripts/teste-fila-tem-algo.ts).
+    // ── PEDIDO CANCELADO NA COZINHA (lib/aviso-de-cancelamento.ts) ────────
+    // Só com impressora marcada "Avisar cancelamento". O papel nasce uma vez,
+    // em PrintRequest, antes da pré-consulta (que então já o enxerga), e sai
+    // pela leitura das impressões avulsas, lá embaixo.
+    const impressorasDoCancelamento = impressorasDoAvisoDeCancelamento(Array.isArray(pc?.printers) ? pc.printers : []);
+    if (impressorasDoCancelamento.length > 0) {
+      await criarAvisosDeCancelamento(franchiseeId, sinceDate).catch((err) =>
+        console.error("[PrintQueue] aviso de cancelamento:", (err as any)?.code || err)
+      );
+    }
+
     const temAlgo = await filaTemAlgoGuardado(prisma, {
       franchiseeId,
       desde: inicioDoAtraso && inicioDoAtraso < sinceDate ? inicioDoAtraso : sinceDate,
@@ -964,7 +976,9 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // PrintRequest, e não é conta da mesa: sem esta exclusão ele cairia em
     // `contas` e iria para a impressora da conta como se fosse um pedido.
     const ehDanfe = (a: { kind?: string }) => a.kind === KIND_DANFE_NFCE;
-    const contas = avulsas.filter((a) => a.kind !== KIND_REIMPRESSAO && !ehDoCaixa(a) && !ehDanfe(a));
+    const ehCancelamento = (a: { kind?: string }) => a.kind === KIND_CANCELAMENTO;
+    const contas = avulsas.filter((a) => a.kind !== KIND_REIMPRESSAO && !ehDoCaixa(a) && !ehDanfe(a) && !ehCancelamento(a));
+    const cancelamentos = avulsas.filter(ehCancelamento);
     const doCaixa = avulsas.filter(ehDoCaixa);
     const reimpressoes = avulsas.filter((a) => a.kind === KIND_REIMPRESSAO);
     const danfes = avulsas.filter(ehDanfe);
@@ -1072,6 +1086,56 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           ...(blocosDoDestino(d.impressora) ? { blocos: blocosDoDestino(d.impressora) } : {}),
           ...(avisosDaImpressora(d.impressora as any) ? { avisos: avisosDaImpressora(d.impressora as any) } : {}),
           ...(modeloSemValores(d.impressora) ? { semValores: true } : {}),
+        })),
+        createdAt: pedida.createdAt.toISOString(),
+      };
+    });
+
+    // "PEDIDO CANCELADO" nas impressoras marcadas (lib/aviso-de-cancelamento.ts).
+    // Desmarcou todas depois de o papel nascer: ele fica no banco e some em 24 h.
+    const jobsDoCancelamento = (impressorasDoCancelamento.length === 0 ? [] : cancelamentos).map((pedida) => {
+      const order: any = pedida.payload || {};
+      const blocos = blocosDoAvisoDeCancelamento(order);
+      // Pizza e burger em cozinhas separadas, as duas marcadas: o aviso vai
+      // para a que recebeu item do pedido, com esses itens — a mesma divisão
+      // da comanda. Nenhuma marcada recebeu item? Sai em todas as marcadas.
+      const roteados = destinosDoPedido(impressorasDoCancelamento, order, { palavrasDeBebida: pc?.customBeverageKeywords });
+      const destinos = roteados.length > 0
+        ? roteados
+        : impressorasDoCancelamento.map((impressora: any) => ({ impressora, itens: Array.isArray(order.items) ? order.items : [] }));
+      return {
+        id: "job_" + pedida.id,
+        order: {
+          ...order,
+          ...camposDoEnderecoParaImpressao(order, owner?.city),
+          ...camposDeEntregaParaImpressao(order),
+          // Id próprio: o Assistente guarda "já impresso" por id, e o do pedido já saiu.
+          id: pedida.id,
+          blocos,
+          semValores: true,
+        },
+        storeName: owner?.storeName || owner?.name || "FIREHUB",
+        paperWidth: destinos[0]?.impressora?.paperWidth || pc?.defaultPaperWidth || "80mm",
+        columns: destinos[0]?.impressora?.columns,
+        escposProfile: destinos[0]?.impressora?.escposProfile,
+        printerConfig: {
+          autoprint: pc?.autoprint !== false,
+          autoBeverageTag: pc?.autoBeverageTag !== false,
+          customBeverageKeywords: pc?.customBeverageKeywords || "",
+          defaultPaperWidth: pc?.defaultPaperWidth || "80mm",
+          printers,
+        },
+        destinos: destinos.map(({ impressora: d, itens }: any) => ({
+          printer: d.name,
+          copies: 1,
+          paperWidth: d.paperWidth || pc?.defaultPaperWidth || "80mm",
+          columns: d.columns ?? undefined,
+          escposProfile: d.escposProfile ?? undefined,
+          somenteBebidas: false,
+          separarItens: false,
+          items: itens,
+          blocos,
+          semValores: true,
         })),
         createdAt: pedida.createdAt.toISOString(),
       };
@@ -1222,13 +1286,70 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // para o pedido, a via do entregador e a reimpressão; o que não é pedido
     // (conta, caixa, DANFE) passa intacto. Na dúvida, o job segue como veio.
     const comCamposDoSite = (job: any) => { try { return trabalhoParaOAssistente(job); } catch { return job; } };
-    return NextResponse.json({ jobs: [...jobs, ...jobsDaChegada, ...jobsDasVias, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe].map(comCamposDoSite).map(comBebidaCerta) });
+    return NextResponse.json({ jobs: [...jobs, ...jobsDaChegada, ...jobsDasVias, ...jobsDoCancelamento, ...jobsAvulsos, ...jobsDoCaixa, ...jobsReimpressos, ...jobsDanfe].map(comCamposDoSite).map(comBebidaCerta) });
   } catch (err: any) {
     // Sem autenticação neste GET: a mensagem crua do Prisma (com caminho de
     // arquivo do servidor e nome de coluna) não pode sair para quem chamar.
     console.error("[PrintQueue GET]", err);
     return NextResponse.json({ error: "fila indisponível" }, { status: 500 });
   }
+}
+
+/**
+ * O papel "PEDIDO CANCELADO", uma vez por pedido (lib/aviso-de-cancelamento.ts).
+ * Id fixo + skipDuplicates: duas consultas ao mesmo tempo não criam dois. O
+ * payload é o pedido como a comanda o lê; quem desenha são os blocos da lib.
+ */
+async function criarAvisosDeCancelamento(franchiseeId: string, desde: Date) {
+  const recentes = await prisma.customerOrder.findMany({
+    where: {
+      franchiseeId,
+      parentOrderId: null,
+      status: { in: [...STATUS_CANCELADOS] },
+      cancelledAt: { gt: desde },
+      createdAt: { gt: new Date(desde.getTime() - TETO_DO_AVISO_MS) },
+    },
+    select: { id: true, createdAt: true, cancelledAt: true, printedAt: true, printedNaChegadaAt: true, kdsStage: true },
+  });
+  const candidatos = recentes.filter(pedidoPedeAvisoDeCancelamento);
+  if (candidatos.length === 0) return;
+  const feitos = new Set(
+    (await prisma.printRequest.findMany({
+      where: { id: { in: candidatos.map((p) => idDoAvisoDeCancelamento(p.id)) } },
+      select: { id: true },
+    })).map((r) => r.id)
+  );
+  const faltam = candidatos.filter((p) => !feitos.has(idDoAvisoDeCancelamento(p.id)));
+  if (faltam.length === 0) return;
+  const pedidos = await prisma.customerOrder.findMany({
+    where: { id: { in: faltam.map((p) => p.id) }, franchiseeId },
+    include: {
+      tableSession: MESA_DA_COMANDA,
+      // O que o roteamento lê para mandar o aviso à cozinha certa.
+      items: { include: { menuProduct: { select: { id: true, active: true, name: true, category: true, isBeverage: true } } } },
+    },
+  });
+  // O item do iFood/99 ganha a categoria real, como na comanda (lib/categoria-do-item.ts).
+  const { resolverCategoriasDosPedidos } = await import("@/lib/categoria-do-item");
+  const resolvidos = await resolverCategoriasDosPedidos(pedidos as any).catch(() => pedidos);
+  await prisma.printRequest.createMany({
+    data: (resolvidos as typeof pedidos).map(({ tableSession, ...p }) => ({
+      id: idDoAvisoDeCancelamento(p.id),
+      franchiseeId,
+      kind: KIND_CANCELAMENTO,
+      payload: JSON.parse(JSON.stringify({
+        ...p,
+        customerName: nomeDoClienteNaComanda({ ...p, tableSession } as any) || p.customerName,
+        ...camposDaMesaParaImpressao({ ...p, tableSession } as any),
+        items: p.items.map((i: any) => ({
+          ...i,
+          name: i.comboSelections ? nomeDoItemParaComanda(i, "Combo") : nomeDoItem(i, "Item"),
+          comboSelections: comboParaImpressao(i.comboSelections),
+        })),
+      })),
+    })),
+    skipDuplicates: true,
+  });
 }
 
 /**

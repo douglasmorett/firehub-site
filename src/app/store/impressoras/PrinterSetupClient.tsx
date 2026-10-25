@@ -85,6 +85,9 @@ type PrinterEntry = {
   // A comanda desta termina com o que saiu nas outras impressoras
   // ("TAMBEM NESTE PEDIDO"). lib/outros-setores-na-comanda.ts.
   avisarOutrosSetores?: boolean;
+  // Pedido cancelado depois de chegar na cozinha: papel "PEDIDO CANCELADO"
+  // nesta impressora. lib/aviso-de-cancelamento.ts.
+  avisoDeCancelamento?: boolean;
   // QR "puxar pedido" do motoboy no rodape da comanda de entrega.
   // Ausente = LIGADO: nasce marcado em todas, a loja desmarca onde nao quer.
   qrPuxar?: boolean;
@@ -1702,6 +1705,30 @@ export default function PrinterSetupClient({
                 )}
               </div>
             )}
+
+            {/* ── Aviso de cancelamento ──
+                Ragnar (Fabiano, 24/10/2026): "avisar a cozinha dos
+                cancelamentos". Desligado por padrão; a loja marca onde quer o
+                papel (lib/aviso-de-cancelamento.ts). */}
+            <button
+              onClick={() => updatePrinter(printer.id, { avisoDeCancelamento: !printer.avisoDeCancelamento })}
+              style={{
+                width: "100%", textAlign: "left", cursor: "pointer", fontFamily: "inherit",
+                padding: "10px 12px", borderRadius: 12, marginTop: 8,
+                border: printer.avisoDeCancelamento ? "2px solid #1C1917" : "1.5px solid #E2E8F0",
+                background: printer.avisoDeCancelamento ? "#FAF6F2" : "#fff",
+                color: printer.avisoDeCancelamento ? "#1C1917" : "#64748B",
+              }}
+            >
+              <div style={{ fontWeight: 800, fontSize: "0.85rem" }}>
+                {printer.avisoDeCancelamento ? "✓" : "○"} 🚫 Receber aviso de cancelamento nesta impressora
+              </div>
+              <div style={{ fontSize: "0.72rem", fontWeight: 500, marginTop: 2, lineHeight: 1.35, opacity: 0.9 }}>
+                Quando um pedido que já foi para a cozinha é cancelado (até 1 hora depois de entrar), sai aqui um papel
+                &quot;PEDIDO CANCELADO - NÃO PREPARAR&quot; com o número e os itens. Com mais de uma marcada, sai na que
+                recebe os itens daquele pedido.
+              </div>
+            </button>
 
             {/* Botão de teste individual */}
             {printer.name && (

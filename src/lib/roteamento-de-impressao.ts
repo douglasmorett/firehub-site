@@ -74,6 +74,12 @@ export type ImpressoraConfigurada = {
    */
   avisarOutrosSetores?: boolean | null;
   /**
+   * Pedido que já estava na cozinha e foi cancelado: sai aqui um papel
+   * "PEDIDO CANCELADO". Ausente = desligado. Ver lib/aviso-de-cancelamento.ts
+   * (Ragnar, 24/10/2026).
+   */
+  avisoDeCancelamento?: boolean | null;
+  /**
    * Pedido que é SÓ bebida não sai aqui (nem em outra, se só esta pede
    * Bebidas): a NIK (14/10/2026) imprime o refrigerante avulso à mão no balcão.
    */
