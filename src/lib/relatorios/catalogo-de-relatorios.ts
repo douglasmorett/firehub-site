@@ -81,8 +81,8 @@ export const RELATORIOS: RelatorioDoMenu[] = [
     busca: "dre lucro resultado financeiro despesas" },
   // CMV pela contagem (lib/cmv). Só abre com a caixinha "Dados sensíveis".
   { slug: "dados-sensiveis", secao: "Financeiro", titulo: "🔒 CMV real e CMO", href: "/store/dados-sensiveis",
-    descricao: "CMV pela contagem de estoque e pelas compras, dia a dia, semana e mês; CMO e custo primário.",
-    busca: "cmv real cmo mão de obra custo primário contagem estoque dados sensíveis ponteiro folha" },
+    descricao: "CMV pela contagem de estoque e pelas compras, dia a dia, semana e mês; CMO e custo primário (prime cost).",
+    busca: "cmv real cmo mão de obra custo primário prime cost primecost contagem estoque dados sensíveis ponteiro folha" },
   // ── Fiscal ──
   { slug: "notas", secao: "Fiscal", titulo: "Notas fiscais (NFC-e)", href: "/store/fiscal",
     descricao: "Notas emitidas, canceladas e com erro, e o pacote de XMLs do contador.",

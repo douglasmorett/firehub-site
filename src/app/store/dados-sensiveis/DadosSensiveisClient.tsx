@@ -233,7 +233,7 @@ function PainelDoCmv({ dados, carregando }: { dados: Painel; carregando: boolean
           <Cartao rotulo="Compras lançadas" valor={fmtReais(dados.compras.total)} detalhe={dados.compras.foraDoCmv > 0 ? `+ ${fmtReais(dados.compras.foraDoCmv)} fora do CMV (limpeza etc.)` : "pelo dia em que a mercadoria chegou"} />
           <Cartao rotulo="CMO (mão de obra)" valor={dados.cmo.pct != null ? fmtPct(dados.cmo.pct) : "—"} tom={tomDaZona(dados.cmo.zona)}
             detalhe={<>{fmtReais(dados.cmo.total)} · meta {metas.cmo}%</>} />
-          <Cartao rotulo="Custo primário" valor={dados.custoPrimario?.pct != null ? fmtPct(dados.custoPrimario.pct) : "—"}
+          <Cartao rotulo="Custo primário (prime cost)" valor={dados.custoPrimario?.pct != null ? fmtPct(dados.custoPrimario.pct) : "—"}
             tom={dados.custoPrimario?.pct == null ? "neutro" : dados.custoPrimario.pct <= metas.cmv + metas.cmo ? "ok" : dados.custoPrimario.pct <= metas.cmv + metas.cmo + 5 ? "atencao" : "grave"}
             detalhe={dados.custoPrimario ? <>CMV + CMO de {ddmm(dados.custoPrimario.de)} a {ddmm(dados.custoPrimario.ate)} · meta {metas.cmv + metas.cmo}%</> : "aparece com o CMV"} />
           <Cartao rotulo="Perdas registradas" valor={fmtReais(dados.perdas.valor)} tom={dados.perdas.valor > 0 ? "atencao" : "neutro"} detalhe={[
