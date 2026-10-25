@@ -992,7 +992,10 @@ async function acrescentarColado(entrada: {
     Math.round(novosItens.reduce((s, i) => s + i.price * i.quantity, 0) * 100) / 100;
   const descricao = novosItens.map((i) => `+${i.quantity}x ${comEscolhas(i)}`).join(", ");
 
-  const numero = await generateDailyOrderNumber(lojaId);
+  // O MESMO número do pedido principal: para a loja é o mesmo pedido. Um número
+  // novo virava "pedido 11" só com a bebida, a contagem de pedidos do dia
+  // subia e a cozinha despachava em separado (Lucas/Frangoso, 24/10/2026).
+  const numero = order.dailyOrderNumber ?? (await generateDailyOrderNumber(lojaId));
   const novo = await prisma.customerOrder.create({
     data: {
       franchiseeId: lojaId,

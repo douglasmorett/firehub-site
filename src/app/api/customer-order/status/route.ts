@@ -702,6 +702,12 @@ export async function PUT(req: Request) {
     });
   }
 
+  // O acréscimo do marketplace (pedido colado) anda junto com o principal.
+  {
+    const { acrescimosSeguemOPai } = await import("@/lib/acrescimo-segue-o-pai");
+    await acrescimosSeguemOPai(orderId, status);
+  }
+
   // Lanche da equipe cancelado: a bebida que foi para o fiado do motoboy cai junto.
   if (status === "CANCELADO" && order.source === "EQUIPE") {
     const { cancelarFiadoDoLanche } = await import("@/lib/lanche-da-equipe");

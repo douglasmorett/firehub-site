@@ -52,5 +52,12 @@ confere("os dois entram", dois.items!.map((i: any) => i.id), ["i1", "i2", "i5"])
 confere("uma linha de cobrança por acréscimo", dois.notes!.split("\n").length, 3);
 confere("Pix sem parênteses fica como está", dois.notes!.split("\n")[1], `${MARCA_DO_ACRESCIMO}: R$ 6,00 COBRAR À PARTE (Pix)`);
 
+console.log("\n— Pedido principal já pago no app —");
+const paiPago = { ...pai, paymentMethod: "Pago Online (iFood)", totalAmount: 50 };
+const pago = pedidoComAcrescimos(paiPago, [paiPago, filho]);
+confere("diz que o resto já está pago e que só cobra o acréscimo",
+  pago.notes, `${MARCA_DO_ACRESCIMO}: R$ 21,99 COBRAR À PARTE (Crédito)\nRESTO DO PEDIDO JÁ PAGO (R$ 50,00): COBRAR SÓ O ACRÉSCIMO\nSem cebola`);
+confere("pago na entrega não ganha essa linha", junto.notes!.includes("JÁ PAGO"), false);
+
 console.log(falhas ? `\n${falhas} falha(s).` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

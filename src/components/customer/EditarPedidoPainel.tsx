@@ -205,7 +205,7 @@ export default function EditarPedidoPainel({
   operador: { role?: string | null; permissions?: string | null };
   aoFechar: () => void;
   /** Chamada depois que o servidor confirmou. Recarrega a lista e reimprime. */
-  aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number; soDesconto?: boolean; desconto?: number }) => void;
+  aoSalvar: (resultado: { cancelado?: boolean; acrescimo?: any; totalAmount?: number; soDesconto?: boolean; desconto?: number; reimprimir?: boolean }) => void;
   /** Abre a janela de cancelamento de sempre (motivo, trava do finalizado).
    *  No celular o Cancelar do card ficava fora de alcance (Holy Top, 19/10/2026). */
   aoCancelarPedido?: () => void;
@@ -232,6 +232,9 @@ export default function EditarPedidoPainel({
   const [itemRemontando, setItemRemontando] = useState<ItemDoPedido | null>(null);
   const [trocas, setTrocas] = useState<Record<string, TrocaDoRascunho>>({});
   const [pagamento, setPagamento] = useState("Dinheiro");
+  // Reimprimir é escolha: o pedido de balcão já entregue em que o cliente pede
+  // mais um item não precisa de papel novo (Lucas/Frangoso, 25/10/2026).
+  const [reimprimir, setReimprimir] = useState(true);
   const caixaDoMotivo = useRef<HTMLDivElement | null>(null);
 
   const [cardapio, setCardapio] = useState<ProdutoDoCardapio[]>([]);
@@ -514,7 +517,7 @@ export default function EditarPedidoPainel({
         setErro(data?.error || "Não consegui salvar a alteração.");
         return;
       }
-      aoSalvar(data);
+      aoSalvar({ ...data, reimprimir });
     } catch {
       setErro("Sem conexão — nada foi alterado.");
     } finally {
@@ -1181,14 +1184,19 @@ export default function EditarPedidoPainel({
             fontFamily: "inherit",
           }}
         >
-          {salvando ? "Salvando..." : soDesconto ? "Salvar desconto" : "Salvar e reimprimir comanda"}
+          {salvando ? "Salvando..." : soDesconto ? "Salvar desconto" : reimprimir ? "Salvar e reimprimir comanda" : "Salvar sem imprimir"}
         </button>
       </div>
 
       <div style={{ marginTop: "8px", fontSize: "0.73rem", color: "#64748B", textAlign: "center", lineHeight: 1.4 }}>
         {soDesconto
           ? "Só o desconto: a cozinha não muda, então a comanda não sai de novo. Reimprima pela aba Comanda se o entregador precisar do valor novo."
-          : "A comanda sai de novo marcada como 2ª via, para a cozinha descartar a anterior."}
+          : (
+            <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", cursor: "pointer", fontWeight: 700, color: "#334155" }}>
+              <input type="checkbox" checked={reimprimir} onChange={(e) => setReimprimir(e.target.checked)} />
+              {reimprimir ? "Reimprimir a comanda (sai como 2ª via, para a cozinha descartar a anterior)" : "Reimprimir a comanda"}
+            </label>
+          )}
       </div>
 
       {aoCancelarPedido && !ehMesa && (
