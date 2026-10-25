@@ -7,8 +7,9 @@
  * se lê, decide, age e grava.
  *
  * Por loja, a ordem é sempre a mesma:
- *   1. lê os sinais (banco + memória do processo, lib/sinais-da-loja.ts) e o
- *      estado gravado (User.semConexaoEstado, com versão);
+ *   1. lê os sinais (banco + memória do processo, lib/sinais-da-loja.ts, +
+ *      o que as OUTRAS instâncias do servidor viram, lib/laco-entre-instancias.ts)
+ *      e o estado gravado (User.semConexaoEstado, com versão);
  *   2. decide;
  *   3. GRAVA a decisão antes de agir, condicionada à versão lida e com o
  *      "Site aberto" na mesma instrução. Quem perde a corrida não age — é o
@@ -25,7 +26,8 @@ import { alertaLigado, avisarDono, numerosDoDono } from "@/lib/alertas-do-dono";
 import { contextoIfood, ErroIfood, type ContextoIfood } from "@/lib/ifood-token";
 import { chamarComContexto } from "@/lib/ifood-http";
 import { lerStatusDoMerchant } from "@/lib/ifood-disponibilidade";
-import { assistenteVistoEm, esquecerSinaisVelhos, painelVistoEm, servidorSubiuEm } from "@/lib/sinais-da-loja";
+import { assistenteVistoEm, esquecerSinaisVelhos, painelVistoEm, servidorSubiuEm, sinalDeOutraInstancia } from "@/lib/sinais-da-loja";
+import { sinaisDasOutrasInstancias } from "@/lib/laco-entre-instancias";
 import { gravarEstadoSemConexao, lerEstadosSemConexao } from "@/lib/loja-sem-conexao-no-banco";
 import { contingenciaAtivada, subidasDesde } from "@/lib/contingencia/aviso-ao-dono";
 import {
@@ -142,6 +144,11 @@ export async function GET(req: NextRequest) {
 
     const bootEm = servidorSubiuEm(inicio);
     const supervisores = await contatoDosSupervisores(lojas.map((l) => l.id));
+    // Com dois servidores, o painel do dono pode estar preso (cookie do
+    // balanceador) ao OUTRO: sem isto, este cron não o via e pausava o iFood
+    // de quem está com o painel aberto. Só as linhas das outras instâncias —
+    // a memória daqui é mais fresca. Falhou = mapa vazio, como antes.
+    const deFora = await sinaisDasOutrasInstancias();
 
     for (const loja of lojas) {
       resumo.lojas++;
@@ -163,8 +170,11 @@ export async function GET(req: NextRequest) {
           sinais: {
             agora, bootEm,
             assistenteNoBanco: loja.printQueuePolledAt ? loja.printQueuePolledAt.getTime() : null,
-            assistenteNaMemoria: maisRecente(assistenteVistoEm(loja.id), supervisores.get(loja.id) ?? null),
-            painelNaMemoria: painelVistoEm(loja.id),
+            assistenteNaMemoria: maisRecente(
+              maisRecente(assistenteVistoEm(loja.id), supervisores.get(loja.id) ?? null),
+              sinalDeOutraInstancia(deFora.get(loja.id)?.assistenteHaMs, agora),
+            ),
+            painelNaMemoria: maisRecente(painelVistoEm(loja.id), sinalDeOutraInstancia(deFora.get(loja.id)?.painelHaMs, agora)),
           },
           loja: { turno: turno?.chave ?? null, emPausa, storeOpen: loja.storeOpen, protecaoLigada: protecaoLigada(config) },
           ifood: merchants.map((m) => ({ merchantId: m.merchantId, nome: m.nome })),

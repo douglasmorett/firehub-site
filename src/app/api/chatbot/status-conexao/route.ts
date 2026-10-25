@@ -101,7 +101,7 @@ export async function GET() {
       precisaReconectar,
       desde: precisaReconectar ? cfg.desconectadoDesde : null,
       // A IA do robô está fora do ar? (faixa AvisoIaForaDoAr; lib/saude-da-ia.ts)
-      ia: saudeDaIa(lojaId),
+      ia: await saudeDaIa(lojaId),
     });
   } catch (err: any) {
     // Falha aqui nunca pode quebrar o painel: sem resposta, sem faixa.

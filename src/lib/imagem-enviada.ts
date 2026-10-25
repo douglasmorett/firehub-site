@@ -22,7 +22,7 @@
  */
 import { readFile, stat } from "fs/promises";
 import path from "path";
-import { LEGACY_PUBLIC_ROOT, UPLOADS_ROOT } from "@/lib/storage";
+import { LEGACY_PUBLIC_ROOT, trazerDoBucket, UPLOADS_ROOT } from "@/lib/storage";
 
 /** Único prefixo público aceito — é o que saveUploadedFile gera. */
 const PREFIXO_PUBLICO = "/uploads/";
@@ -160,6 +160,17 @@ export async function lerImagemEnviada(imageUrl: unknown, req?: Request): Promis
 
     const conteudo = await readFile(caminho);
     return { ok: true, base64: conteudo.toString("base64"), mimeType, caminho };
+  }
+
+  // Enviada pela outra instância (duas atrás do balanceador): vem do bucket
+  // para o disco daqui. Continua sem rede para fora — só o nosso bucket.
+  const trazido = await trazerDoBucket(relativo);
+  if (trazido) {
+    const conteudo = await readFile(trazido);
+    if (conteudo.length > MAX_BYTES) {
+      return { ok: false, erro: `Imagem muito grande (${(conteudo.length / 1024 / 1024).toFixed(1)} MB). O limite é 12 MB.` };
+    }
+    return { ok: true, base64: conteudo.toString("base64"), mimeType, caminho: trazido };
   }
 
   return { ok: false, erro: "Não foi possível ler a imagem enviada. Tire a foto novamente." };

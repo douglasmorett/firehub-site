@@ -23,6 +23,7 @@ import { prisma } from "@/lib/prisma";
 import fichas from "@/lib/tutoriais-fichas.json";
 import { ARQUIVOS_DO_TUTORIAL } from "@/lib/tutoriais";
 import { caminhoDoArquivoDoTutorial, esquecerTutoriaisEnviados, tutoriaisEnviados } from "@/lib/tutoriais-no-servidor";
+import { espelharArquivoNoBucket } from "@/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -87,6 +88,9 @@ export async function POST(req: NextRequest) {
   const recebido = inicio + pedaco.length;
   if (recebido < tamanho) return NextResponse.json({ recebido });
   await rename(/*turbopackIgnore: true*/ parcial, /*turbopackIgnore: true*/ destino);
+  // A cópia no bucket, para o botão aparecer também na outra instância
+  // (lib/tutoriais-no-servidor.ts traz de lá o que falta).
+  await espelharArquivoNoBucket(destino);
   esquecerTutoriaisEnviados();
   return NextResponse.json({ recebido, pronto: true });
 }
