@@ -883,6 +883,22 @@ async function main() {
     conferir("… e o rio (34 × 26) continua barrado com o desvio no raio", criadas(rio.acoes).length === 0, rio);
   }
   {
+    // Hakim Centro, 25/10/2026, Rota #4, coordenadas e km de rua REAIS: o #13
+    // (Hospital, a 0,3 km da loja) serviu de ponte — o #14 coube "perto do
+    // #13" (1,9 km) e o #12 (Chácara Mariléa) ficou a 6 km de rua do #14.
+    const HAKIM: Ponto = { lat: -22.5187175, lng: -41.9418978 };
+    const p12 = pedido(12, { lat: -22.503306, lng: -41.9347504 }, 20), p13 = pedido(13, { lat: -22.516792, lng: -41.943676 }, 22), p14 = pedido(14, { lat: -22.502664, lng: -41.947971 }, 24);
+    const ruaReal = tabela({
+      [`${LOJA_NA_TABELA}|p12`]: 4.38, [`${LOJA_NA_TABELA}|p13`]: 0.33, [`${LOJA_NA_TABELA}|p14`]: 2.18,
+      "p12|p13": 4.72, "p13|p14": 1.97, "p12|p14": 5.82,
+    });
+    const rota4 = planejar({ loja: HAKIM, config: CFG, pedidos: [p12, p13, p14], rotasAbertas: [], motoboys: [], agora: AGORA, pelaRua: ruaReal });
+    const grupo4 = criadas(rota4.acoes)[0] ?? [];
+    conferir("ponte: o #14 não entra na rota do #12 + #13 (alonga 3,6 km de rua)", !grupo4.includes("p14"), rota4.acoes);
+    const emLinhaReta = planejar({ loja: HAKIM, config: CFG, pedidos: [p12, p13, p14], rotasAbertas: [], motoboys: [], agora: AGORA });
+    conferir("… em linha reta (sem medida) os três ainda se juntam, como antes", mesmoConjunto(criadas(emLinhaReta.acoes)[0] ?? [], ["p12", "p13", "p14"]), emLinhaReta.acoes);
+  }
+  {
     // Passo 4 cresce um a um: C está a 1,8 km de B e a 3,6 km de A (a semente).
     const A = pedido(1, em(3), 20), B = pedido(2, em(3, 1.8), 22), C = pedido(3, em(3, 3.6), 24);
     const r = plano([A, B, C]);

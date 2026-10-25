@@ -370,6 +370,31 @@ function encaixeNaParada(
 }
 
 /**
+ * Quantos km A MAIS a rota passa a ter com o candidato: o menor percurso
+ * (loja → paradas, sem volta) COM ele menos o SEM ele, tudo em km de RUA.
+ * null = alguma perna sem medida — aí não se julga (vale o encaixe de antes).
+ *
+ * Existe porque "perto de QUALQUER parada" deixa uma parada colada na loja
+ * servir de ponte. Hakim Centro, 25/10/2026, Rota #4: o #13 (a 0,3 km da loja)
+ * entrou no caminho do #12 (4,4 km de rua); o #14 entrou "perto do #13"
+ * (1,9 km) — mas do #14 ao #12 são 6 km de rua. A rota virou loja → 13 → 14 →
+ * 12: 3,6 km a mais para quem leva o #12. Douglas: "o #12 não deveria ir junto".
+ */
+function alongamentoPelaRua(paradas: PedidoParaDespacho[], cand: PedidoParaDespacho, rua?: KmPelaRua): number | null {
+  if (!rua) return null;
+  const percurso = (lista: PedidoParaDespacho[]): number | null => {
+    const ids = lista.map((p) => p.id);
+    for (const id of ids) if (kmDaRua(rua, LOJA_NA_TABELA, id) == null) return null;
+    for (const a of ids) for (const b of ids) if (a !== b && kmDaRua(rua, a, b) == null) return null;
+    const ordem = ordemDeMenorPercurso(ids, (id) => kmDaRua(rua, LOJA_NA_TABELA, id) as number, (a, b) => kmDaRua(rua, a, b) as number);
+    return ordem.reduce((soma, id, i) => soma + (i === 0 ? (kmDaRua(rua, LOJA_NA_TABELA, id) as number) : (kmDaRua(rua, ordem[i - 1], id) as number)), 0);
+  };
+  const sem = percurso(paradas);
+  const com = percurso([...paradas, cand]);
+  return sem == null || com == null ? null : com - sem;
+}
+
+/**
  * O candidato cabe nesta rota? Perto de, ou no caminho de, QUALQUER parada
  * (a melhor nota entre elas), e o prazo dentro da janela da `ancora` — a
  * semente, o mais urgente (a regra do Auto-Agrupar + a janela de prazo).
@@ -389,6 +414,10 @@ export function encaixeNaRota(
     if (e && (melhor == null || e.nota < melhor.nota)) melhor = e;
   }
   if (melhor == null) return { ok: false, motivo: "fora-do-raio" };
+  // A rota inteira, não só a parada mais perto: com ele a rota não pode
+  // crescer mais que o raio (km de rua; sem medida de todas as pernas, não julga).
+  const alonga = alongamentoPelaRua(paradas.filter((p) => p.id !== cand.id && p.ponto), cand, rua);
+  if (alonga != null && alonga > desvioMaximo(config.raioDoGrupoKm) + 1e-9) return { ok: false, motivo: "fora-do-raio" };
   // A janela vale para os dois lados. Com a semente sendo o mais urgente é o
   // "até X min depois" do plano; mas o pedido que não achou companhia como
   // semente vira candidato da semente seguinte (menos urgente), e só "depois"
