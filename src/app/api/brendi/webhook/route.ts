@@ -404,7 +404,10 @@ export async function POST(req: NextRequest) {
         // ackado apagaria o evento do feed para sempre. A consulta abaixo é a
         // prova de vida — e é dela que sai o franchiseeId dono da credencial
         // que assina o acknowledgment.
-        if (eventoId) {
+        if (eventoId && result.naoConferiuNaApi) {
+          // Sem ACK: o evento real volta pelo polling, que aplica sem conferir.
+          console.warn(`[Brendi Webhook] SEM ACK ${orderId}: evento sem assinatura não confere com a API — fica para o polling`);
+        } else if (eventoId) {
           const gravado = await prisma.customerOrder.findFirst({
             where: {
               OR: [

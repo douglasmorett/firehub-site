@@ -143,6 +143,8 @@ async function main() {
   const rb1 = await processBrendiEvent({ orderId: "b-forjado", eventType: "CANCELLED" }, { conferirNaApi: true });
   confere("forjado, API diz CONFIRMED: NÃO cancela", [rb1.action, b1.status], ["skipped", "ACEITO"]);
   confere("…e loga o aviso combinado", avisos.some((a) => a.includes("[Brendi] evento sem assinatura não confere com a API: ignorado")), true);
+  confere("…e marca para o webhook não dar ACK (o polling aplica o real)", rb1.naoConferiuNaApi, true);
+  confere("API confirmando não marca", (await processBrendiEvent({ orderId: "b-forjado", eventType: "PICKUP_AREA_ASSIGNED" }, { conferirNaApi: true })).naoConferiuNaApi, undefined);
 
   const b2 = novoPedido("b-real", "BRENDI");
   naApi.brendi["b-real"] = { id: "b-real", lastEvent: "CANCELLED" };
@@ -309,6 +311,8 @@ async function main() {
   const ler = (f: string) => readFileSync(f, "utf8");
   confere("Brendi webhook: confere na API quando a assinatura não é válida",
     ler("src/app/api/brendi/webhook/route.ts").includes('processBrendiEvent(eventoMinimo, { conferirNaApi: assinaturaBrendi.estado !== "valida" })'), true);
+  confere("Brendi webhook: evento que não conferiu fica sem ACK",
+    /if \(eventoId && result\.naoConferiuNaApi\) \{[\s\S]{0,300}?\} else if \(eventoId\) \{\s*const gravado/.test(ler("src/app/api/brendi/webhook/route.ts")), true);
   confere("Brendi polling não confere (evento veio da API)",
     /processBrendiEvent\(event, \{ targetFranchiseeId: storeId \}\)/.test(ler("src/app/api/cron/brendi-poll/route.ts")), true);
   confere("Keeta webhook: confere quando a assinatura não bate",

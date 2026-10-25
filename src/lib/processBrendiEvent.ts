@@ -91,6 +91,12 @@ export interface ProcessResult {
    */
   ignoradoDeProposito?: boolean;
   /**
+   * Evento do webhook sem assinatura que a API da Brendi não confirmou. O
+   * webhook NÃO dá ACK: o `lastEvent` da API às vezes atrasa, e o evento real
+   * volta pelo polling (origem confiável), que aplica sem conferir.
+   */
+  naoConferiuNaApi?: boolean;
+  /**
    * Só para `action: "error"`: reenviar este evento tem chance de dar certo?
    *
    * Banco fora, rede até a Brendi, GET que falhou — sim, e é por isso que o
@@ -386,7 +392,7 @@ export async function processBrendiEvent(
       // tem que alcançar o pedido mesmo quando ele entrou pela via de resgate.
       if (opcoes?.conferirNaApi) {
         const alvo: any = await prisma.customerOrder.findFirst({ where: doPedidoBrendi as any, select: { franchiseeId: true } as any });
-        if (!(await confirmadoNaBrendi(alvo?.franchiseeId, "DISPUTA"))) return { action: "skipped", orderId, message: IGNORADO };
+        if (!(await confirmadoNaBrendi(alvo?.franchiseeId, "DISPUTA"))) return { action: "skipped", orderId, message: IGNORADO, naoConferiuNaApi: true };
       }
       await (prisma.customerOrder as any).updateMany({
         where: doPedidoBrendi as any,
@@ -405,7 +411,7 @@ export async function processBrendiEvent(
       if (!pedido) {
         return { action: "skipped", orderId, message: "negativa de cancelamento para pedido desconhecido" };
       }
-      if (!(await confirmadoNaBrendi(pedido.franchiseeId, "DISPUTA_NEGADA"))) return { action: "skipped", orderId, message: IGNORADO };
+      if (!(await confirmadoNaBrendi(pedido.franchiseeId, "DISPUTA_NEGADA"))) return { action: "skipped", orderId, message: IGNORADO, naoConferiuNaApi: true };
       await (prisma.customerOrder as any).update({
         where: { id: pedido.id },
         data: {
@@ -424,7 +430,7 @@ export async function processBrendiEvent(
         where: doPedidoBrendi as any,
         select: { cancelledBy: true, franchiseeId: true } as any,
       });
-      if (!(await confirmadoNaBrendi(existente?.franchiseeId, "CANCELADO"))) return { action: "skipped", orderId, message: IGNORADO };
+      if (!(await confirmadoNaBrendi(existente?.franchiseeId, "CANCELADO"))) return { action: "skipped", orderId, message: IGNORADO, naoConferiuNaApi: true };
       const cancelData: any = { status: "CANCELADO", cancelDispute: { pending: false } };
       if (!existente?.cancelledBy || existente.cancelledBy !== "LOJA") {
         cancelData.cancelledBy = "BRENDI";
@@ -1451,7 +1457,7 @@ export async function processBrendiEvent(
 
         if (newRank >= currentRank) {
           if (!(await confirmadoNaBrendi(existing?.franchiseeId, newStatus as Pretendido))) {
-            return { action: "skipped", orderId, message: IGNORADO };
+            return { action: "skipped", orderId, message: IGNORADO, naoConferiuNaApi: true };
           }
           const updateConditions: any[] = [
             { openDeliveryOrderId: orderId },
