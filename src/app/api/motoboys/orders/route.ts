@@ -592,6 +592,8 @@ export async function POST(req: NextRequest) {
               }
               const r = await jotajaMutate(`/v1/orders/${odId}/dispatch`, { method: "POST" }, pedido.franchiseeId);
               console.log(`[${rotulo} JotaJá] dispatch ${odId}: ${r.status}`);
+              // JotaJá fora do ar: o cron reenvia (lib/jotaja-instavel.ts).
+              if (r.status >= 500) await (await import("@/lib/jotaja-instavel")).guardarAcaoPendente(pedido.franchiseeId, odId, `/v1/orders/${odId}/dispatch`, "dispatch");
             }
           } catch (e: any) {
             console.warn(`[${rotulo}] erro:`, e?.message);
@@ -1367,6 +1369,8 @@ export async function PATCH(req: NextRequest) {
             const { jotajaMutate } = await import("@/lib/jotaja-api");
             const r = await jotajaMutate(`/v1/orders/${(order as any).openDeliveryOrderId}/delivered`, { method: "POST" }, order.franchiseeId);
             console.log(`[Motoboy Entrega → Jotajá] delivered ${(order as any).openDeliveryOrderId}: ${r.status}`);
+            // JotaJá fora do ar: o cron reenvia (lib/jotaja-instavel.ts).
+            if (r.status >= 500) await (await import("@/lib/jotaja-instavel")).guardarAcaoPendente(order.franchiseeId, String((order as any).openDeliveryOrderId), `/v1/orders/${(order as any).openDeliveryOrderId}/delivered`, "delivered");
           }
         } catch (e: any) {
           console.warn("[Motoboy Entrega → parceiro] erro:", e?.message);

@@ -578,9 +578,12 @@ export async function PUT(req: Request) {
     const syncErrors: string[] = [];
     try {
       const { jotajaMutate } = await import("@/lib/jotaja-api");
+      const { guardarAcaoPendente } = await import("@/lib/jotaja-instavel");
       const odId = order.openDeliveryOrderId;
 
-      // Retry helper: tenta até 2x com 1s de intervalo
+      // Retry helper: tenta até 2x com 1s de intervalo. Se o JotaJá seguir
+      // fora do ar (5xx / rede), a ação fica guardada e o cron reenvia
+      // (lib/jotaja-instavel.ts) — o pedido não fica "aguardando aceite" lá.
       const jotajaCall = async (path: string, label: string): Promise<Response> => {
         for (let attempt = 1; attempt <= 2; attempt++) {
           try {
@@ -592,11 +595,17 @@ export async function PUT(req: Request) {
             const errBody = await r.text().catch(() => "");
             console.warn(`[Jotajá Sync] ⚠️ ${label} ${odId} tentativa ${attempt}: ${r.status} — ${errBody.slice(0, 300)}`);
             if (attempt < 2) await new Promise(res => setTimeout(res, 1000));
-            if (attempt === 2) syncErrors.push(`${label}: ${r.status} ${errBody.slice(0, 100)}`);
+            if (attempt === 2) {
+              syncErrors.push(`${label}: ${r.status} ${errBody.slice(0, 100)}`);
+              if (r.status >= 500) await guardarAcaoPendente(order.franchiseeId, odId, path, label);
+            }
           } catch (err: any) {
             console.warn(`[Jotajá Sync] ⚠️ ${label} ${odId} tentativa ${attempt}: ${err.message}`);
             if (attempt < 2) await new Promise(res => setTimeout(res, 1000));
-            if (attempt === 2) syncErrors.push(`${label}: ${err.message}`);
+            if (attempt === 2) {
+              syncErrors.push(`${label}: ${err.message}`);
+              await guardarAcaoPendente(order.franchiseeId, odId, path, label);
+            }
           }
         }
         return new Response(null, { status: 500 });

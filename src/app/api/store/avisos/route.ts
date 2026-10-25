@@ -41,7 +41,13 @@ export async function GET() {
   const fuso = loja?.storeTimezone || FUSO_PADRAO;
   try {
     // A lista só muda com gravação de pedido destas lojas (lib/novidade-da-loja.ts).
-    return NextResponse.json(await lerEnquantoNadaMuda(`avisos:${s.ids.join(",")}|${fuso}`, s.ids, () => avisosDoDia(s.ids, fuso)));
+    const [avisos, parceiroInstavel] = await Promise.all([
+      lerEnquantoNadaMuda(`avisos:${s.ids.join(",")}|${fuso}`, s.ids, () => avisosDoDia(s.ids, fuso)),
+      // JotaJá fora do ar (lib/jotaja-instavel.ts): faixa no painel de pedidos. 30 s em memória.
+      lembrarPor(`avisos:parceiro:${s.lojaId}`, 30_000, () =>
+        import("@/lib/jotaja-instavel").then((m) => m.parceiroInstavel(s.lojaId)).catch(() => null)),
+    ]);
+    return NextResponse.json({ ...avisos, parceiroInstavel });
   } catch (e: any) {
     // Coluna ainda não criada (boot que falhou) ou banco fora: sem aviso, mas
     // sem 500 em loop no console da loja a cada poucos segundos.

@@ -179,6 +179,25 @@ export async function alertarFalhaDeIntegracao(
 }
 
 /**
+ * Parceiro (JotaJá) fora do ar numa loja, e a volta (lib/jotaja-instavel.ts).
+ * O dono recebe pelo robô da loja; aqui o FireHub fica sabendo também. Uma
+ * vez por loja a cada 10 min para a queda, e uma para a volta.
+ */
+export async function alertarParceiroForaDoAr(
+  canal: string,
+  loja: string,
+  chave: "queda" | "volta",
+  texto: string
+): Promise<void> {
+  if (!(await canAlertNoCluster(`parceiro_${canal}_${loja}_${chave}`, 10 * 60 * 1000))) return;
+  try {
+    await sendWhatsAppAlert(texto);
+  } catch (err: any) {
+    console.error("[Monitor] Falha ao alertar parceiro fora do ar:", err?.message);
+  }
+}
+
+/**
  * Verifica a saúde do servidor e envia alertas se necessário.
  * Chamado pelo cron-runner a cada 5 minutos.
  */

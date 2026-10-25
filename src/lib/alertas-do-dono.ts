@@ -90,7 +90,13 @@ export type TipoDeAlerta =
    * que ficou pendente ou falhou, Pix pago depois do cancelamento, chave do
    * Asaas desativada. É dinheiro de cliente — a loja precisa saber na hora.
    */
-  | "pix_online";
+  | "pix_online"
+  /**
+   * O JotaJá está fora do ar nesta loja — pedido de lá pode não entrar — e
+   * quando voltou (lib/jotaja-instavel.ts). Na Duga Burguer, 24/10/2026, três
+   * pedidos ficaram só no portal por uma hora sem ninguém saber.
+   */
+  | "parceiro_fora_do_ar";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
@@ -112,6 +118,7 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   // Ligado: é o único jeito de o dono saber que o FireHub pausou os canais.
   loja_sem_conexao: true,
   pix_online: true,
+  parceiro_fora_do_ar: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -129,6 +136,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   ifood_fechado: "A loja está fechada no iFood dentro do horário de funcionamento",
   loja_sem_conexao: "A loja ficou sem conexão no horário (iFood, site e robô pausados) e quando a conexão voltou",
   pix_online: "Pix pelo site: estorno pendente, Pix pago em pedido cancelado, chave do Asaas desativada",
+  parceiro_fora_do_ar: "JotaJá fora do ar (pedidos de lá podem não entrar) e quando voltou",
 };
 
 // Os números do dono (principal + outros) moram em lib/numeros-do-dono.ts,
