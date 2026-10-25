@@ -323,7 +323,9 @@ export async function POST(req: NextRequest) {
           metadata: event?.metadata && typeof event.metadata === "object" ? event.metadata : undefined,
         } as any;
 
-        const result = await processBrendiEvent(eventoMinimo);
+        // Sem assinatura válida, cancelamento/disputa/status só valem depois
+        // de o GET /v1/orders confirmar (lib/evento-sem-assinatura.ts).
+        const result = await processBrendiEvent(eventoMinimo, { conferirNaApi: assinaturaBrendi.estado !== "valida" });
 
         if (result.action === "error") {
           // ── REENVIAR RESOLVE, OU NÃO? ────────────────────────────────────

@@ -24,6 +24,7 @@ import {
   pedidoDeAntesDaLigacao,
 } from "@/lib/jotaja-loja";
 import { ligadoEmDaLoja } from "@/lib/jotaja-api";
+import { aplicarEventoSemAssinatura, estadoDoLastEvent, type Pretendido } from "@/lib/evento-sem-assinatura";
 
 export interface JotajaEvent {
   id?: string;
@@ -75,13 +76,18 @@ async function buscarPedidoJotaja(
  *
  * `targetFranchiseeId` é a loja cuja credencial buscou o evento — e a ÚNICA
  * loja em que o pedido pode entrar (lib/jotaja-loja.ts).
+ *
+ * `conferirNaApi`: o evento veio do webhook SEM assinatura (JOTAJA_WEBHOOK_SECRET
+ * ainda não existe). Cancelamento, disputa e status só valem depois de o
+ * GET /v1/orders confirmar o `lastEvent` (lib/evento-sem-assinatura.ts). O
+ * polling não passa isto: o evento dele veio da API autenticada.
  */
 export async function processJotajaEvent(
   event: JotajaEvent,
   jotajaFetch: (path: string, options?: RequestInit) => Promise<Response>,
   jotajaMutate: (path: string, options?: RequestInit) => Promise<Response>,
   targetFranchiseeId?: string,
-  opcoes: { pedidoAntigoEntra?: boolean } = {},
+  opcoes: { pedidoAntigoEntra?: boolean; conferirNaApi?: boolean } = {},
 ): Promise<ProcessResult> {
   const { code } = event || {} as JotajaEvent;
   // Só texto: o webhook não confere assinatura sem segredo, e um objeto aqui
@@ -134,12 +140,28 @@ export async function processJotajaEvent(
     return null;
   };
 
+  /**
+   * Evento sem assinatura: relê o pedido no JotaJá (credencial desta loja, que
+   * é a dona — as buscas abaixo filtram por ela) antes de mexer nele.
+   * Não confere → "error" de propósito: sem ACK, o evento verdadeiro fica na
+   * fila e o polling (autenticado) o aplica; o forjado não existe lá.
+   */
+  const confirmadoNoJotaja = (pretendido: Pretendido): Promise<boolean> | boolean =>
+    opcoes.conferirNaApi !== true ||
+    aplicarEventoSemAssinatura("JotaJá", orderId, et || event.fullCode || code || "", pretendido, async () => {
+      const busca = await buscarPedidoJotaja(jotajaFetch, orderId);
+      if (!busca.ok) return { ok: false, motivo: busca.erro };
+      return { ok: true, estado: estadoDoLastEvent(busca.dados?.lastEvent), bruto: busca.dados?.lastEvent };
+    });
+  const IGNORADO: ProcessResult = { action: "error", orderId, message: "evento sem assinatura não confere com a API: ignorado (sem ACK; o polling decide)" };
+
   try {
     // ── Cancelamento e negociação: só em pedido DESTA loja ─────────────────
     if (isCancellationRequest || isCancelled) {
       // Exato ou o recuperado ("<uuid>_recovered").
       // Igualdade, não startsWith: o orderId vem do corpo do webhook e `%`/`_` virariam curinga do LIKE.
-      const doPedido = { OR: [{ openDeliveryOrderId: orderId }, { openDeliveryOrderId: `${orderId}_recovered` }] };
+      // Só pedido do JotaJá: o mesmo id em outro canal não é deste evento.
+      const doPedido = { openDeliveryChannel: "JOTAJA", OR: [{ openDeliveryOrderId: orderId }, { openDeliveryOrderId: `${orderId}_recovered` }] };
       const pedidoNoBanco: any = await prisma.customerOrder.findFirst({
         where: doPedido as any,
         select: { id: true, franchiseeId: true, cancelledBy: true } as any,
@@ -176,6 +198,7 @@ export async function processJotajaEvent(
             expiresAt: meta.expiresAt || "",
             requestedAt: meta.createdAt || new Date().toISOString(),
           };
+          if (!(await confirmadoNoJotaja("DISPUTA"))) return IGNORADO;
           await (prisma.customerOrder as any).updateMany({
             where: naLoja as any,
             data: { cancelDispute: disputeData },
@@ -186,6 +209,7 @@ export async function processJotajaEvent(
       }
 
       // ── Cancelamento definitivo ──────────────────────────────────────────
+      if (!(await confirmadoNoJotaja("CANCELADO"))) return IGNORADO;
       const cancelData: any = { status: "CANCELADO", cancelDispute: { pending: false } };
       if (!pedidoNoBanco.cancelledBy || pedidoNoBanco.cancelledBy !== "LOJA") {
         cancelData.cancelledBy = "JOTAJA";
@@ -903,9 +927,11 @@ export async function processJotajaEvent(
         const newRank = STATUS_RANK[newStatus] || 0;
 
         if (newRank >= currentRank) {
-          // Só nesta loja (a da credencial).
+          if (!(await confirmadoNoJotaja(newStatus as Pretendido))) return IGNORADO;
+          // Só nesta loja (a da credencial) e só pedido do JotaJá.
           const naLoja = {
             franchiseeId: targetFranchiseeId,
+            openDeliveryChannel: "JOTAJA",
             OR: [
               { openDeliveryOrderId: orderId },
               { openDeliveryOrderId: `${orderId}_recovered` }, // único sufixo gravado (resgate manual)

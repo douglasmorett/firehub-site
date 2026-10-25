@@ -33,6 +33,7 @@ import { brendiFetch, confirmarPedidoBrendi } from "@/lib/brendi-api";
 // mora em lib/opcoes-open-delivery.ts para não voltar a ser duas cópias.
 import { extrairOpcoesDoItem, valorOpenDelivery } from "@/lib/opcoes-open-delivery";
 import { corrigirNomeDoEspelho } from "@/lib/espelho-do-parceiro";
+import { aplicarEventoSemAssinatura, estadoDoLastEvent, type Pretendido } from "@/lib/evento-sem-assinatura";
 
 export interface BrendiEvent {
   id?: string;
@@ -66,6 +67,13 @@ export interface ProcessBrendiOptions {
   targetFranchiseeId?: string;
   /** true = traduz e devolve { traduzido, cru } sem tocar no banco. */
   apenasPrever?: boolean;
+  /**
+   * true = veio do webhook SEM assinatura válida (BRENDI_WEBHOOK_SECRET ainda
+   * não existe). Cancelamento, disputa e status de pedido existente só valem
+   * depois de o GET /v1/orders confirmar (lib/evento-sem-assinatura.ts).
+   * Polling e import não passam isto: o evento deles veio da API autenticada.
+   */
+  conferirNaApi?: boolean;
 }
 
 export interface ProcessResult {
@@ -325,6 +333,29 @@ export async function processBrendiEvent(
   const isCancelDenied   = et === "CANCELLATION_REQUEST_DENIED";
   const isCancelled      = et === "CANCELLED";
 
+  // Pedido DA BRENDI com este id (exato ou o resgatado). O canal na condição:
+  // sem ele, um orderId de 99Food, JotaJá ou Keeta casava aqui e o evento da
+  // Brendi cancelava pedido de outro canal (F17/F68).
+  const doPedidoBrendi = {
+    openDeliveryChannel: "BRENDI",
+    OR: [
+      { openDeliveryOrderId: orderId },
+      { openDeliveryOrderId: `${orderId}_recovered` },
+    ],
+  };
+  // Evento sem assinatura: relê o pedido na Brendi com a credencial da loja
+  // dona antes de mexer nele. Sem pedido no banco não há o que conferir.
+  const confirmadoNaBrendi = async (lojaId: string | null | undefined, pretendido: Pretendido): Promise<boolean> => {
+    if (opcoes?.conferirNaApi !== true || !lojaId) return true;
+    return aplicarEventoSemAssinatura("Brendi", orderId, et, pretendido, async () => {
+      const res = await brendiFetch(`/v1/orders/${encodeURIComponent(orderId)}`, lojaId);
+      if (!res.ok) return { ok: false, motivo: `HTTP ${res.status}`, naoExiste: res.status === 404 };
+      const dados = await res.json();
+      return { ok: true, estado: estadoDoLastEvent(dados?.lastEvent), bruto: dados?.lastEvent };
+    });
+  };
+  const IGNORADO = "evento sem assinatura não confere com a API: ignorado";
+
   try {
     // ── Eventos que atuam sobre pedido JÁ EXISTENTE ────────────────────────
     // No modo apenasPrever nada disso roda: o objetivo é ver a tradução, não
@@ -353,13 +384,12 @@ export async function processBrendiEvent(
       // O '{uuid}_recovered' cobre o registro de fallback (igualdade, não mais
       // startsWith: o orderId vem do corpo e % ou _ nele virariam curinga) — a disputa
       // tem que alcançar o pedido mesmo quando ele entrou pela via de resgate.
+      if (opcoes?.conferirNaApi) {
+        const alvo: any = await prisma.customerOrder.findFirst({ where: doPedidoBrendi as any, select: { franchiseeId: true } as any });
+        if (!(await confirmadoNaBrendi(alvo?.franchiseeId, "DISPUTA"))) return { action: "skipped", orderId, message: IGNORADO };
+      }
       await (prisma.customerOrder as any).updateMany({
-        where: {
-          OR: [
-            { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: `${orderId}_recovered` },
-          ],
-        } as any,
+        where: doPedidoBrendi as any,
         data: { cancelDispute: disputeData },
       });
       return { action: "dispute", orderId, message: `disputeId=${disputeData.disputeId}` };
@@ -369,17 +399,13 @@ export async function processBrendiEvent(
     // sem a nota, o lojista via a disputa sumir e não sabia o desfecho.
     if (isCancelDenied && !apenasPrever) {
       const pedido: any = await prisma.customerOrder.findFirst({
-        where: {
-          OR: [
-            { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: `${orderId}_recovered` },
-          ],
-        } as any,
-        select: { id: true, notes: true } as any,
+        where: doPedidoBrendi as any,
+        select: { id: true, notes: true, franchiseeId: true } as any,
       });
       if (!pedido) {
         return { action: "skipped", orderId, message: "negativa de cancelamento para pedido desconhecido" };
       }
+      if (!(await confirmadoNaBrendi(pedido.franchiseeId, "DISPUTA_NEGADA"))) return { action: "skipped", orderId, message: IGNORADO };
       await (prisma.customerOrder as any).update({
         where: { id: pedido.id },
         data: {
@@ -395,29 +421,20 @@ export async function processBrendiEvent(
     // própria loja já tinha cancelado, senão o relatório culpa o canal errado.
     if (isCancelled && !apenasPrever) {
       const existente: any = await prisma.customerOrder.findFirst({
-        where: {
-          OR: [
-            { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: `${orderId}_recovered` },
-          ],
-        } as any,
-        select: { cancelledBy: true } as any,
+        where: doPedidoBrendi as any,
+        select: { cancelledBy: true, franchiseeId: true } as any,
       });
+      if (!(await confirmadoNaBrendi(existente?.franchiseeId, "CANCELADO"))) return { action: "skipped", orderId, message: IGNORADO };
       const cancelData: any = { status: "CANCELADO", cancelDispute: { pending: false } };
       if (!existente?.cancelledBy || existente.cancelledBy !== "LOJA") {
         cancelData.cancelledBy = "BRENDI";
       }
       await (prisma.customerOrder as any).updateMany({
-        where: {
-          OR: [
-            { openDeliveryOrderId: orderId },
-            { openDeliveryOrderId: `${orderId}_recovered` },
-          ],
-        } as any,
+        where: doPedidoBrendi as any,
         data: cancelData,
       });
       // Cancelado pela Brendi com NFC-e de pé: não trava (o cliente já foi estornado lá), avisa na tela fiscal.
-      import("./fiscal-automatico").then((m) => m.alertarCancelamentoComNota({ OR: [{ openDeliveryOrderId: orderId }, { openDeliveryOrderId: `${orderId}_recovered` }] }, "Brendi")).catch(() => {});
+      import("./fiscal-automatico").then((m) => m.alertarCancelamentoComNota(doPedidoBrendi, "Brendi")).catch(() => {});
       return { action: "cancelled", orderId };
     }
 
@@ -1433,6 +1450,9 @@ export async function processBrendiEvent(
         const newRank = STATUS_RANK[newStatus] || 0;
 
         if (newRank >= currentRank) {
+          if (!(await confirmadoNaBrendi(existing?.franchiseeId, newStatus as Pretendido))) {
+            return { action: "skipped", orderId, message: IGNORADO };
+          }
           const updateConditions: any[] = [
             { openDeliveryOrderId: orderId },
             { openDeliveryOrderId: `${orderId}_recovered` },
@@ -1447,12 +1467,13 @@ export async function processBrendiEvent(
               openDeliveryChannel: "BRENDI",
             });
           }
+          // Só pedido da Brendi: o `existing` acima é busca global por id.
           await (prisma.customerOrder as any).updateMany({
-            where: { OR: updateConditions } as any,
+            where: { openDeliveryChannel: "BRENDI", OR: updateConditions } as any,
             data: { status: newStatus },
           });
           // NFC-e: lib/fiscal-momento decide se este status é a hora; sem esta linha a nota só saía pela varredura do cron.
-          import("./fiscal-automatico").then((m) => m.emitirNfceDosPedidos({ OR: updateConditions })).catch(() => {});
+          import("./fiscal-automatico").then((m) => m.emitirNfceDosPedidos({ openDeliveryChannel: "BRENDI", OR: updateConditions })).catch(() => {});
           return { action: "updated", orderId, message: `→ ${newStatus}` };
         } else {
           return { action: "skipped", orderId, message: `ignorado regresso de status ${existing?.status} → ${newStatus}` };

@@ -115,7 +115,11 @@ export async function POST(req: NextRequest) {
             event,
             (path: string, opts?: RequestInit) => jotajaFetch(path, opts, lojaId),
             (path: string, opts?: RequestInit) => jotajaMutate(path, opts, lojaId),
-            lojaId
+            lojaId,
+            // Sem o segredo, nada foi verificado (com ele, assinatura errada já
+            // levou 401): cancelamento, disputa e status só valem depois de o
+            // GET do pedido confirmar (lib/evento-sem-assinatura.ts).
+            { conferirNaApi: !process.env.JOTAJA_WEBHOOK_SECRET }
           );
           console.log(`[Jotajá Webhook] ${result.action} — ${result.orderId}${result.message ? ": " + result.message : ""}`);
 
