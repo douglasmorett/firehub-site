@@ -80,7 +80,46 @@
 .chipMarcado { background: var(--tinta); border-color: var(--tinta); color: #fff; }
 .chipMarcado small { color: rgba(255,255,255,.65); }
 .alerta { margin: 0; font-size: 13px; color: #b45309; font-weight: 600; }
-.acompanhar { font-size: 13px; color: var(--tinta-2); line-height: 1.5; padding: 10px 12px; background: #faf8f6; border-radius: 12px; }
+/* Marca recolhida: uma linha com logo, nome e quantas categorias; abre uma por vez. */
+.marcaCabeca { display: flex; align-items: center; gap: 8px; }
+.marcaResumo { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: none; padding: 0; text-align: left; color: var(--tinta); }
+.marcaResumo img, .marcaSigla { width: 42px; height: 42px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+.marcaSigla { display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 14px; }
+.marcaResumo > span { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.marcaResumo b { font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.marcaResumo small { font-size: 12px; color: var(--tinta-3); }
+.marcaResumo .textoAlerta { color: #b45309; font-weight: 700; }
+.seta, .setaAberta { color: var(--tinta-3); flex-shrink: 0; transition: transform .2s; }
+.setaAberta { transform: rotate(180deg); }
+@media (max-width: 560px) { .marcaCabeca { flex-wrap: wrap; } .marcaCabeca .botoesDoItem { width: auto; } }
+
+/* Onde cada categoria aparece. */
+.tabelaCategorias { display: flex; flex-direction: column; border: 1px solid var(--linha); border-radius: 12px; overflow: hidden; }
+.linhaCategoria { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; font-size: 14px; font-weight: 600; color: var(--tinta); }
+.linhaCategoria + .linhaCategoria { border-top: 1px solid var(--linha); }
+.linhaCategoria small { font-size: 11px; color: var(--tinta-3); font-weight: 600; margin-left: 4px; }
+.editor .linhaCategoria select { width: 200px; flex-shrink: 0; height: 36px; }
+.editor .linhaCategoria select.selectTodas { background: #fff4e6; border-color: #ffc078; font-weight: 700; }
+@media (max-width: 560px) { .linhaCategoria { flex-wrap: wrap; } .editor .linhaCategoria select { width: 100%; } }
+
+/* Destaques e banners pelo item. */
+.escolhidos { display: flex; flex-direction: column; gap: 6px; }
+.buscaItem { display: flex; align-items: center; gap: 8px; border: 1px solid var(--linha); border-radius: 10px; padding: 0 10px; color: var(--tinta-3); }
+.editor .buscaItem input { border: 0 !important; padding: 0 !important; }
+.listaItens { max-height: 460px; overflow-y: auto; border: 1px solid var(--linha); border-radius: 12px; }
+.grupoTitulo { position: sticky; top: 0; z-index: 1; background: #faf8f6; padding: 7px 10px; font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--tinta-2); border-bottom: 1px solid var(--linha); }
+.grupoTitulo small { color: var(--tinta-3); margin-left: 4px; }
+.itemLinha { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid #f2eee9; }
+.itemFoto { width: 40px; height: 40px; border-radius: 8px; object-fit: cover; background: #f4f2ef; flex-shrink: 0; }
+.itemInfo { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.itemInfo b { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.itemInfo small { font-size: 12px; color: var(--tinta-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.botaoLigado, .botaoDesligado { display: inline-flex; align-items: center; gap: 4px; height: 32px; padding: 0 10px; border-radius: 999px; font-size: 12px; font-weight: 700; flex-shrink: 0; }
+.botaoDesligado { border: 1px solid var(--linha); background: #fff; color: var(--tinta-2); }
+.botaoLigado { border: 1px solid var(--laranja); background: var(--laranja); color: #fff; }
+.botaoDesligado:disabled { opacity: .45; cursor: not-allowed; }
+@media (max-width: 560px) { .itemLinha { flex-wrap: wrap; } .itemInfo { flex-basis: calc(100% - 48px); } }
+
 
 .previa { position: sticky; top: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 /* transform: os position:fixed da vitrine (barra da sacola, folhas) ficam presos na moldura. */

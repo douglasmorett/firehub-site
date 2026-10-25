@@ -53,7 +53,7 @@ export async function GET() {
   const nomeDaLoja = franchisee.storeName || franchisee.name || "Minhas marcas";
 
   const salva = await lerConfigDaPagina(s.franchiseeId, nomeDaLoja);
-  const config: ConfigDaPagina = salva ?? { nome: nomeDaLoja, frase: "", cor: "#E8590C", marcas: [], banners: [] };
+  const config: ConfigDaPagina = salva ?? { nome: nomeDaLoja, frase: "", cor: "#E8590C", marcas: [], banners: [], destaques: [] };
 
   const [categorias, contagem, sugestoes, vitrine] = await Promise.all([
     prisma.menuCategory.findMany({ where: { franchiseeId: s.franchiseeId }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { name: true, emoji: true } }),
