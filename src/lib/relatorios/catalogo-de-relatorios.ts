@@ -70,6 +70,9 @@ export const RELATORIOS: RelatorioDoMenu[] = [
     descricao: "Taxa de serviço por garçom e vendas por origem (mesa, balcão, delivery).",
     busca: "garçom garçons taxa de serviço acerto de garçons salão" },
   // ── Financeiro ──
+  { slug: "ranking-de-entregadores", secao: "Operação", titulo: "Ranking de entregadores", href: "/store/relatorios/ranking-de-entregadores",
+    descricao: "O melhor motoboy do período: entregas, cancelados com ele, tempo de entrega, no prazo, coleta e volta à loja.",
+    busca: "motoboy motoboys entregador entregadores ranking melhor score prazo coleta volta desempenho" },
   { slug: "motoboys", secao: "Financeiro", titulo: "Acerto de entregadores", href: "/store/relatorios/acerto-de-entregadores",
     descricao: "Quanto pagar a cada motoboy, o dinheiro com ele e o saldo; custo por entrega, pódio e horários da equipe.",
     busca: "motoboy motoboys entregador entregadores acerto diária recibo custo por entrega escala" },

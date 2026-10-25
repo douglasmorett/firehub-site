@@ -365,8 +365,13 @@ export async function PUT(req: Request) {
   // O que o app dos entregadores faz na hora da entrega — só as chaves
   // conhecidas, só booleano (lib/app-motoboy-config.ts).
   if (body.appMotoboyConfig !== undefined) {
-    const { limparAppMotoboyConfig } = await import("@/lib/app-motoboy-config");
-    data.appMotoboyConfig = limparAppMotoboyConfig(body.appMotoboyConfig);
+    const { lerAppMotoboyConfig, limparAppMotoboyConfig } = await import("@/lib/app-motoboy-config");
+    const limpo = limparAppMotoboyConfig(body.appMotoboyConfig);
+    // O ranking no app só muda pelo Motoboys › Ranking: o painel aberto de
+    // manhã mandaria o valor velho e desligaria o ranking sem ninguém ver.
+    data.appMotoboyConfig = limpo
+      ? { ...limpo, rankingNoApp: lerAppMotoboyConfig((currentUser as any).appMotoboyConfig).rankingNoApp }
+      : limpo;
   }
 
   // ── Abre e fecha sozinha no horário (lib/abertura-da-loja.ts) ──────────

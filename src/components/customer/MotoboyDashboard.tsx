@@ -2,6 +2,7 @@
 import { useState } from "react";
 import MotoboyManager from "./MotoboyManager";
 import MotoboyReport from "./MotoboyReport";
+import RankingDosMotoboys from "./RankingDosMotoboys";
 import type { OperadorDaEdicao } from "@/lib/edicao-de-pedido";
 import LancheDaEquipePainel from "@/components/lanche/LancheDaEquipePainel";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
@@ -11,7 +12,7 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
   /** O lanche dos motoboys (lib/lanche-da-equipe.ts): só nas lojas que têm a tela. */
   lanche?: { slug: string; loja: string } | null,
 }) {
-  const [tab, setTab] = useState<"cadastro" | "relatorio" | "lanche">("cadastro");
+  const [tab, setTab] = useState<"cadastro" | "ranking" | "relatorio" | "lanche">("cadastro");
   const [motoboys, setMotoboys] = useState(initialMotoboys);
 
   const TAB_STYLE = (active: boolean) => ({
@@ -24,9 +25,14 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
 
   return (
     <div>
-      <div style={{ display: "flex", borderBottom: "1px solid #E2E8F0", marginBottom: 20 }}>
+      <div style={{ display: "flex", flexWrap: "wrap", borderBottom: "1px solid #E2E8F0", marginBottom: 20 }}>
         <button style={TAB_STYLE(tab === "cadastro")} onClick={() => setTab("cadastro")}>
           🏍️ Cadastro de Motoboys
+        </button>
+        {/* Em destaque (Douglas, 24/10/2026): o ranking de quem entrega melhor. */}
+        <button style={{ ...TAB_STYLE(tab === "ranking"), color: tab === "ranking" ? "#B7791F" : "#92400E", borderBottom: tab === "ranking" ? "3px solid #D4A017" : "3px solid transparent", fontWeight: 800 }} onClick={() => setTab("ranking")}>
+          🏆 Ranking
+          <span style={{ marginLeft: 6, padding: "1px 7px", borderRadius: 999, background: "#D4A017", color: "#fff", fontSize: "0.65rem", fontWeight: 900, verticalAlign: "middle" }}>NOVO</span>
         </button>
         <button style={TAB_STYLE(tab === "relatorio")} onClick={() => setTab("relatorio")}>
           📊 Relatório de Pagamentos
@@ -46,6 +52,7 @@ export default function MotoboyDashboard({ initialMotoboys, storeTimezone, deliv
         // o que vale para quem nunca escolheu.
         <MotoboyManager initialMotoboys={motoboys} regraDaLoja={lerRegraDeRepasse(deliveryConfig)} />
       )}
+      {tab === "ranking" && <RankingDosMotoboys />}
       {tab === "relatorio" && (
         <MotoboyReport motoboys={motoboys} storeTimezone={storeTimezone} operador={operador} deliveryConfig={deliveryConfig} />
       )}
