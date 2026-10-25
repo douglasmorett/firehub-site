@@ -370,28 +370,25 @@ function encaixeNaParada(
 }
 
 /**
- * Quantos km A MAIS a rota passa a ter com o candidato: o menor percurso
- * (loja → paradas, sem volta) COM ele menos o SEM ele, tudo em km de RUA.
+ * A MAIOR PERNA entre duas paradas seguidas, em km de RUA, na ordem de menor
+ * percurso da rota COM o candidato (a da loja até a primeira parada não conta).
  * null = alguma perna sem medida — aí não se julga (vale o encaixe de antes).
  *
- * Existe porque "perto de QUALQUER parada" deixa uma parada colada na loja
- * servir de ponte. Hakim Centro, 25/10/2026, Rota #4: o #13 (a 0,3 km da loja)
- * entrou no caminho do #12 (4,4 km de rua); o #14 entrou "perto do #13"
- * (1,9 km) — mas do #14 ao #12 são 6 km de rua. A rota virou loja → 13 → 14 →
- * 12: 3,6 km a mais para quem leva o #12. Douglas: "o #12 não deveria ir junto".
+ * É a regra do Douglas (25/10/2026): "saiu da loja, entregou lá, foi na outra:
+ * do último lugar onde ele está, 2 km até o outro pedido". "Perto de QUALQUER
+ * parada" deixava uma parada colada na loja servir de ponte. Hakim Centro,
+ * Rota #4: o #13 (a 0,3 km da loja) entrou no caminho do #12 (4,4 km de rua)
+ * e o #14 entrou "perto do #13" (1,9 km) — mas do #14 ao #12 são 6 km de rua.
  */
-function alongamentoPelaRua(paradas: PedidoParaDespacho[], cand: PedidoParaDespacho, rua?: KmPelaRua): number | null {
+function maiorPernaPelaRua(paradas: PedidoParaDespacho[], cand: PedidoParaDespacho, rua?: KmPelaRua): number | null {
   if (!rua) return null;
-  const percurso = (lista: PedidoParaDespacho[]): number | null => {
-    const ids = lista.map((p) => p.id);
-    for (const id of ids) if (kmDaRua(rua, LOJA_NA_TABELA, id) == null) return null;
-    for (const a of ids) for (const b of ids) if (a !== b && kmDaRua(rua, a, b) == null) return null;
-    const ordem = ordemDeMenorPercurso(ids, (id) => kmDaRua(rua, LOJA_NA_TABELA, id) as number, (a, b) => kmDaRua(rua, a, b) as number);
-    return ordem.reduce((soma, id, i) => soma + (i === 0 ? (kmDaRua(rua, LOJA_NA_TABELA, id) as number) : (kmDaRua(rua, ordem[i - 1], id) as number)), 0);
-  };
-  const sem = percurso(paradas);
-  const com = percurso([...paradas, cand]);
-  return sem == null || com == null ? null : com - sem;
+  const ids = [...paradas, cand].map((p) => p.id);
+  for (const id of ids) if (kmDaRua(rua, LOJA_NA_TABELA, id) == null) return null;
+  for (const a of ids) for (const b of ids) if (a !== b && kmDaRua(rua, a, b) == null) return null;
+  const ordem = ordemDeMenorPercurso(ids, (id) => kmDaRua(rua, LOJA_NA_TABELA, id) as number, (a, b) => kmDaRua(rua, a, b) as number);
+  let maior = 0;
+  for (let k = 1; k < ordem.length; k++) maior = Math.max(maior, kmDaRua(rua, ordem[k - 1], ordem[k]) as number);
+  return maior;
 }
 
 /**
@@ -414,10 +411,9 @@ export function encaixeNaRota(
     if (e && (melhor == null || e.nota < melhor.nota)) melhor = e;
   }
   if (melhor == null) return { ok: false, motivo: "fora-do-raio" };
-  // A rota inteira, não só a parada mais perto: com ele a rota não pode
-  // crescer mais que o raio (km de rua; sem medida de todas as pernas, não julga).
-  const alonga = alongamentoPelaRua(paradas.filter((p) => p.id !== cand.id && p.ponto), cand, rua);
-  if (alonga != null && alonga > desvioMaximo(config.raioDoGrupoKm) + 1e-9) return { ok: false, motivo: "fora-do-raio" };
+  // De uma parada à seguinte, no máximo o raio (km de rua; sem medida de todas as pernas, não julga).
+  const perna = maiorPernaPelaRua(paradas.filter((p) => p.id !== cand.id && p.ponto), cand, rua);
+  if (perna != null && perna > config.raioDoGrupoKm + 1e-9) return { ok: false, motivo: "fora-do-raio" };
   // A janela vale para os dois lados. Com a semente sendo o mais urgente é o
   // "até X min depois" do plano; mas o pedido que não achou companhia como
   // semente vira candidato da semente seguinte (menos urgente), e só "depois"

@@ -867,11 +867,15 @@ async function main() {
       [`${LOJA_NA_TABELA}|p39`]: 2.6, [`${LOJA_NA_TABELA}|p37`]: 3.9, [`${LOJA_NA_TABELA}|p36`]: 4.1,
       "p37|p39": 3.2, "p36|p39": 3.4, "p36|p37": 0.6,
     });
-    for (const [nomeDaRegua, rua] of [["linha reta", undefined], ["rua", ruaFalsa]] as const) {
-      const r = planejar({ loja: HAKIM, config: CFG, pedidos: [p39], rotasAbertas: [aberta], motoboys: [], agora: AGORA, pelaRua: rua });
+    {
+      const r = planejar({ loja: HAKIM, config: CFG, pedidos: [p39], rotasAbertas: [aberta], motoboys: [], agora: AGORA });
       const a = acrescimos(r.acoes);
-      conferir(`#39 no caminho do #36/#37 pela orla (desvio ~2 km ≤ raio) entra na rota chamada — ${nomeDaRegua}`,
+      conferir("#39 no caminho do #36/#37 pela orla (desvio ~2 km ≤ raio) entra na rota chamada — linha reta (sem medida)",
         a.length === 1 && a[0].pedidoId === "p39" && a[0].rotaChamada === true, r);
+      // Douglas, 25/10/2026: "do último lugar onde ele está, 2 km até o outro pedido". Com a rua medida,
+      // 39 → 37 são 3,2 km: a perna passa do raio, e o #39 não entra mais por estar "no caminho".
+      const medida = planejar({ loja: HAKIM, config: CFG, pedidos: [p39], rotasAbertas: [aberta], motoboys: [], agora: AGORA, pelaRua: ruaFalsa });
+      conferir("… com a rua medida, a perna 39 → 37 (3,2 km) passa de 2 km: não entra (regra de 25/10)", acrescimos(medida.acoes).length === 0, medida);
     }
     const { ordenarParadasPorMedida } = await import("../src/lib/roteirizacao-automatica/ordem-por-rua");
     const nome = (p: Ponto) => (p === HAKIM ? "L" : p === P36 ? "36" : p === P37 ? "37" : p === P39 ? "39" : "?");
@@ -894,7 +898,7 @@ async function main() {
     });
     const rota4 = planejar({ loja: HAKIM, config: CFG, pedidos: [p12, p13, p14], rotasAbertas: [], motoboys: [], agora: AGORA, pelaRua: ruaReal });
     const grupo4 = criadas(rota4.acoes)[0] ?? [];
-    conferir("ponte: o #14 não entra na rota do #12 + #13 (alonga 3,6 km de rua)", !grupo4.includes("p14"), rota4.acoes);
+    conferir("ponte: o #12 fica de fora (13 → 12 são 4,7 km de rua, > 2 km do último ponto); #13 + #14 (2,0 km) vão juntos", mesmoConjunto(grupo4, ["p13", "p14"]), rota4.acoes);
     const emLinhaReta = planejar({ loja: HAKIM, config: CFG, pedidos: [p12, p13, p14], rotasAbertas: [], motoboys: [], agora: AGORA });
     conferir("… em linha reta (sem medida) os três ainda se juntam, como antes", mesmoConjunto(criadas(emLinhaReta.acoes)[0] ?? [], ["p12", "p13", "p14"]), emLinhaReta.acoes);
   }
