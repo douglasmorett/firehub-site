@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { merchantDeOutraLoja } from "@/lib/ifood-token";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 export async function POST(req: Request) {
   try {
@@ -19,11 +21,23 @@ export async function POST(req: Request) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, role: true, permissions: true },
     });
     if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
+    // Vincular loja iFood é coisa da tela de Integrações: o funcionário sem a
+    // caixinha do iFood não cria (e não gera cobrança de loja adicional).
+    if (!podeComoNaTela(user, "/store/integracoes")) {
+      return NextResponse.json({ error: "Sua conta não tem acesso às integrações do iFood." }, { status: 403 });
+    }
+
     const franchiseeId = user.ownerId || user.id;
+
+    // Merchant de OUTRA loja — também a antiga, que só tem User.ifoodMerchantId
+    // e nenhuma linha de integração — é recusado (F87).
+    if (await merchantDeOutraLoja(merchantId, franchiseeId)) {
+      return NextResponse.json({ error: "Este Merchant ID já está vinculado a outra loja no FireHub." }, { status: 409 });
+    }
 
     // Verificar se merchantId já está em uso
     const existing = await prisma.ifoodIntegration.findFirst({

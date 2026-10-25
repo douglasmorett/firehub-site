@@ -20,20 +20,28 @@ import {
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
-  return comContextoIfood(req, async ({ ctx, corpo }) => {
+  return comContextoIfood(req, async ({ ctx, email, corpo }) => {
     const orderId: string = corpo?.orderId ?? "";
     const etapa: ChaveEtapa = corpo?.etapa;
     if (!orderId || !etapa) {
       return NextResponse.json({ error: "Informe o pedido e a etapa." }, { status: 400 });
     }
 
-    const pedido = await prisma.customerOrder.findUnique({
-      where: { ifoodOrderId: orderId },
-      select: { id: true, ifoodDriverStatus: true },
-    });
+    // Só pedido DESTA loja: o orderId vem do corpo e a cascata de tokens cai no
+    // central, então sem esta conferência a etapa valia para pedido de outra
+    // loja (auditoria 23/10/2026, F79). A tela só lista os pedidos da loja.
+    const quem = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } });
+    const pedido = quem
+      ? await prisma.customerOrder.findFirst({
+          where: { ifoodOrderId: orderId, franchiseeId: quem.ownerId || quem.id },
+          select: { id: true, ifoodDriverStatus: true },
+        })
+      : null;
+    if (!pedido) {
+      return NextResponse.json({ error: "Pedido não encontrado nesta loja." }, { status: 404 });
+    }
 
-    // Sem registro local ainda, a viagem começa do zero.
-    const estadoAtual = pedido?.ifoodDriverStatus ?? null;
+    const estadoAtual = pedido.ifoodDriverStatus ?? null;
     conferirSequencia(estadoAtual, etapa);   // lança ErroSequencia → 400 com texto pronto
 
     const r = etapa === "assignDriver"

@@ -19,10 +19,22 @@ import { validarCodigoEntrega, exigeCodigo } from "@/lib/ifood-logistics";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest) {
-  return comContextoIfood(req, async ({ ctx, corpo }) => {
+  return comContextoIfood(req, async ({ ctx, email, corpo }) => {
     const orderId: string = corpo?.orderId ?? "";
     if (!orderId) {
       return NextResponse.json({ error: "Informe o pedido." }, { status: 400 });
+    }
+
+    // Só pedido DESTA loja (F79): a cascata cai no token central, e sem isto o
+    // código de entrega valia para pedido de outra loja. A tela só lista os
+    // pedidos gravados da loja — o `forcar` abaixo também é sobre eles.
+    const quem = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } });
+    const franchiseeId = quem ? quem.ownerId || quem.id : null;
+    const daLoja = franchiseeId
+      ? await prisma.customerOrder.findFirst({ where: { ifoodOrderId: orderId, franchiseeId }, select: { id: true } })
+      : null;
+    if (!daLoja) {
+      return NextResponse.json({ error: "Pedido não encontrado nesta loja." }, { status: 404 });
     }
 
     // Elegibilidade primeiro: o endpoint só deve ser chamado para pedidos que

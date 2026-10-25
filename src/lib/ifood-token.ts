@@ -405,6 +405,33 @@ export async function lojaDaSessao(
   return u.ownerId || u.id;
 }
 
+/**
+ * O merchant já é de OUTRA loja do FireHub? A régua do link-merchant: vale o
+ * vínculo principal (User.ifoodMerchantId) e o multi-loja (IfoodIntegration).
+ * Registro da própria loja — inclusive o de um funcionário dela, resquício do
+ * bug antigo — não bloqueia: reconectar o próprio merchant tem que funcionar.
+ *
+ * Sem isto, colar o UUID de outra loja dava a ela o "vínculo" que o contexto
+ * aceita como posse — e o token central agia no merchant alheio (auditoria
+ * 23/10/2026, F29/F34/F87).
+ */
+export async function merchantDeOutraLoja(merchantId: string, storeId: string): Promise<boolean> {
+  const [usuarios, integracoes] = await Promise.all([
+    prisma.user.findMany({
+      where: { ifoodMerchantId: merchantId },
+      select: { id: true, ownerId: true },
+    }),
+    prisma.ifoodIntegration.findMany({
+      where: { merchantId },
+      select: { userId: true, user: { select: { ownerId: true } } },
+    }),
+  ]);
+  return (
+    usuarios.some((u) => (u.ownerId || u.id) !== storeId) ||
+    integracoes.some((i) => (i.user?.ownerId || i.userId) !== storeId)
+  );
+}
+
 /** Um token e as lojas iFood que ele pode puxar numa única chamada. */
 export type GrupoPolling = {
   token: string;

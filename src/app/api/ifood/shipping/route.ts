@@ -26,13 +26,39 @@ import {
   confirmarEnderecoDoCliente, pedirTrocaDeEndereco, aceitarTrocaDeEndereco,
   recusarTrocaDeEndereco, motivosDeCancelamento, cancelarPedido, rastreioDoPedido,
   confiancaDaEntrega, validarCodigoDeColeta, gravarPedidoShipping, gravarDisplayId,
-  listarPedidosShipping, distanciaEmMetros, LIMITE_TROCA_ENDERECO_M,
+  listarPedidosShipping, distanciaEmMetros, LIMITE_TROCA_ENDERECO_M, garantirTabelaDoShipping,
 } from "@/lib/ifood-shipping";
 
 async function franquiaDe(email: string): Promise<string | null> {
   const u = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } });
   return u ? u.ownerId || u.id : null;
 }
+
+/**
+ * O pedido é desta loja? Sem isto o orderId do corpo valia para pedido de
+ * qualquer loja — e a cascata de tokens, que cai no central, cancelava ou
+ * trocava o endereço de pedido alheio (auditoria 23/10/2026, F79). Os pedidos
+ * da tela saem da lista desta loja: Shipping registrado aqui (ou Sob Demanda)
+ * ou pedido gravado no painel.
+ */
+async function pedidoDaLoja(email: string, orderId: string): Promise<boolean> {
+  const franchiseeId = await franquiaDe(email);
+  if (!franchiseeId) return false;
+  if (await garantirTabelaDoShipping(prisma)) {
+    const linhas: unknown[] = await prisma.$queryRaw<unknown[]>`
+      SELECT 1 FROM "IfoodShippingPedido"
+       WHERE "ifoodOrderId" = ${orderId} AND "franchiseeId" = ${franchiseeId}
+       LIMIT 1`.catch(() => []);
+    if (linhas.length > 0) return true;
+  }
+  const pedido = await prisma.customerOrder.findFirst({
+    where: { ifoodOrderId: orderId, franchiseeId },
+    select: { id: true },
+  });
+  return !!pedido;
+}
+
+const naoEDaLoja = () => NextResponse.json({ error: "Pedido não encontrado nesta loja." }, { status: 404 });
 
 const orderIdValido = (s: unknown) => typeof s === "string" && /^[0-9a-f-]{36}$/i.test(s);
 
@@ -53,6 +79,7 @@ export async function GET(req: NextRequest) {
     }
 
     if (!orderIdValido(orderId)) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
+    if (!(await pedidoDaLoja(email, orderId))) return naoEDaLoja();
 
     if (acao === "detalhe") {
       const r = await detalhesDoPedido(ctx, orderId);
@@ -100,6 +127,7 @@ export async function POST(req: NextRequest) {
 
     const orderId = corpo?.orderId;
     if (!orderIdValido(orderId)) return NextResponse.json({ error: "Pedido inválido." }, { status: 400 });
+    if (!(await pedidoDaLoja(email, orderId))) return naoEDaLoja();
 
     switch (acao) {
       case "confirmar":
