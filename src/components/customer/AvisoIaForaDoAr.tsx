@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { causaParaALoja } from "@/lib/falha-da-ia";
 
 /**
  * Faixa do painel: a inteligência artificial do robô está fora do ar.
@@ -71,10 +72,8 @@ export default function AvisoIaForaDoAr() {
         <div style={{ color: "#B71C1C", fontSize: "0.88rem", marginTop: 2, lineHeight: 1.45 }}>
           Ele NÃO está atendendo: avisa cada cliente e passa a conversa para a equipe. Responda pelo WhatsApp da loja
           ou pelo balãozinho vermelho.{" "}
-          {ia.exigeAcao
-            ? "Isso não volta sozinho — o suporte do FireHub precisa agir."
-            : "Costuma voltar sozinho em alguns minutos."}
-          {ia.resumo ? ` (${ia.resumo})` : ""}
+          {/* A causa técnica (crédito, chave) fica só para o administrador (lib/falha-da-ia.ts → causaParaALoja). */}
+          {causaParaALoja(ia)}
         </div>
       </div>
     </div>

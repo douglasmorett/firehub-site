@@ -158,6 +158,21 @@ export function virouIncidente(
   return falha.exigeAcao || recentes.length >= limite;
 }
 
+/**
+ * O que a LOJA lê sobre a causa (alerta, mensagem do dono, faixa do painel).
+ *
+ * Nunca "crédito", "saldo" ou "chave": é problema do FireHub, não da loja, e o
+ * Douglas não quer o lojista lendo que o sistema ficou sem saldo (24/10/2026,
+ * crédito do Gemini acabou às 21h de um sábado). O motivo real vai só para o
+ * administrador (`alertaDeIaForaDoArParaOAdmin`).
+ */
+export const IMPREVISTO_DA_IA = "Tivemos um imprevisto com a inteligência artificial do Google.";
+export const AVISE_O_ATENDIMENTO = "Por favor, avise nosso atendimento no WhatsApp do FireHub: (22) 98111-8514.";
+
+export function causaParaALoja(falha: { exigeAcao: boolean }): string {
+  return `${IMPREVISTO_DA_IA} ${falha.exigeAcao ? AVISE_O_ATENDIMENTO : "Costuma voltar sozinho em alguns minutos."}`;
+}
+
 /** O alerta para o dono da LOJA: o que fazer agora é atender na mão. */
 export function alertaDeIaForaDoArParaALoja(e: {
   falha: FalhaDaIa;
@@ -178,10 +193,7 @@ export function alertaDeIaForaDoArParaALoja(e: {
       : `*${e.nomeDoCliente}* (${e.telefone}) está esperando uma pessoa` + (trecho ? `:\n_"${trecho}"_` : ".");
   return (
     `🚨 *O robô está sem inteligência artificial agora*\n\n` +
-    `Motivo: ${e.falha.resumo}.\n` +
-    (e.falha.exigeAcao
-      ? `Isso NÃO volta sozinho — o suporte do FireHub já foi avisado.\n\n`
-      : `Costuma voltar sozinho em alguns minutos.\n\n`) +
+    `${causaParaALoja(e.falha)}\n\n` +
     `Enquanto isso o robô NÃO está atendendo: ele avisa o cliente e passa a conversa para a equipe. ` +
     quemEspera +
     `\n\nResponda pelo WhatsApp ou pelo balãozinho vermelho do painel.`
@@ -191,8 +203,7 @@ export function alertaDeIaForaDoArParaALoja(e: {
 /** O que o DONO lê quando é ele quem escreve ao robô durante a queda — sem "já avisei a equipe": a equipe é ele. */
 export function mensagemDeIaForaDoArParaODono(falha: FalhaDaIa): string {
   return (
-    `⚠️ A inteligência artificial do robô está fora do ar agora: ${falha.resumo}. ` +
-    (falha.exigeAcao ? `Isso não volta sozinho — o suporte do FireHub já foi avisado. ` : `Costuma voltar em alguns minutos. `) +
+    `⚠️ A inteligência artificial do robô está fora do ar agora. ${causaParaALoja(falha)} ` +
     `Enquanto isso o robô avisa os clientes e passa as conversas para a equipe (balãozinho vermelho do painel).`
   );
 }
