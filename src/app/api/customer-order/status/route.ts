@@ -101,6 +101,9 @@ export async function GET(req: NextRequest) {
     where: { id: orderId },
     select: {
       id: true,
+      // O número do dia é o que o cliente fala para a loja ("pedido 34"); o
+      // final do id ninguém acha no painel.
+      dailyOrderNumber: true,
       status: true,
       totalAmount: true,
       deliveryType: true,

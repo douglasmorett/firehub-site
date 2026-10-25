@@ -204,6 +204,7 @@ export async function GET(req: Request) {
     take: PEDIDOS_DO_CARDAPIO + 1,
     select: {
       id: true,
+      dailyOrderNumber: true,
       status: true,
       totalAmount: true,
       createdAt: true,

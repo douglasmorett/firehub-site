@@ -48,10 +48,10 @@ const RETIRADA_NO_LUGAR: Record<string, { label: string; icon: typeof Package; e
 function fmtR(v: number) { return `R$ ${v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 
 export default function OrderTrackingClient({
-  orderId, initialStatus, customerName, deliveryType, totalAmount, deliveryFee,
+  orderId, numeroDoPedido, initialStatus, customerName, deliveryType, totalAmount, deliveryFee,
   paymentMethod, items, createdAt, storeName, storeLogo, storePhone, slug,
 }: {
-  orderId: string; initialStatus: string; customerName: string; deliveryType: string;
+  orderId: string; numeroDoPedido: number | null; initialStatus: string; customerName: string; deliveryType: string;
   totalAmount: number; deliveryFee: number; paymentMethod: string;
   items: Item[]; createdAt: string; storeName: string; storeLogo: string | null;
   storePhone: string | null; slug: string;
@@ -214,7 +214,8 @@ export default function OrderTrackingClient({
             </button>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "#64748B", marginBottom: "4px" }}>
-            <span>Pedido #{orderId.slice(-8).toUpperCase()}</span>
+            {/* O número do dia é o que a loja acha no painel; o final do id fica só de reserva. */}
+            <span>{numeroDoPedido ? `Pedido nº ${numeroDoPedido}` : `Pedido #${orderId.slice(-8).toUpperCase()}`}</span>
             <span>{new Date(createdAt).toLocaleString("pt-BR", { hour: "2-digit", minute: "2-digit", day: "2-digit", month: "2-digit" })}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.82rem", color: "#64748B", marginBottom: "4px" }}>
