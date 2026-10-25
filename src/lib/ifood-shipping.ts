@@ -358,6 +358,8 @@ const INSTRUCOES = [
      CONSTRAINT "IfoodShippingPedido_pkey" PRIMARY KEY ("ifoodOrderId")
    )`,
   `CREATE INDEX IF NOT EXISTS "IfoodShippingPedido_franchiseeId_createdAt_idx" ON "IfoodShippingPedido"("franchiseeId", "createdAt")`,
+  // O pedido da loja que o Sob Demanda atende (lib/ifood-sob-demanda.ts).
+  `ALTER TABLE "IfoodShippingPedido" ADD COLUMN IF NOT EXISTS "pedidoDoFireHub" TEXT`,
 ];
 
 let tabelaOk = false;
@@ -432,7 +434,7 @@ export async function listarPedidosShipping(prisma: any, franchiseeId: string) {
            s."enderecoOriginal", s."eventos", s."createdAt",
            o."status" AS "statusNoSistema", o."dailyOrderNumber"
       FROM "IfoodShippingPedido" s
-      LEFT JOIN "CustomerOrder" o ON o."ifoodOrderId" = s."ifoodOrderId"
+      LEFT JOIN "CustomerOrder" o ON o."ifoodOrderId" = s."ifoodOrderId" OR o."id" = s."pedidoDoFireHub"
      WHERE s."franchiseeId" = ${franchiseeId}
        AND s."createdAt" > NOW() - INTERVAL '3 days'
      ORDER BY s."createdAt" DESC

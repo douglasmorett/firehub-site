@@ -19,6 +19,7 @@ import { dataHoraDaLoja } from "./fuso";
 import { generateDailyOrderNumber, generateDailyOrderNumberTx } from "./order-number";
 import { ehEventoDeCodigo, marcarExigeCodigo } from "./ifood-logistics";
 import { registrarEventoDeShipping } from "./ifood-shipping";
+import { sobDemandaJaVinculado, vincularSobDemanda } from "./ifood-sob-demanda";
 import { montarItensDoPedidoIfood } from "./ifood-itens";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
@@ -238,6 +239,16 @@ export async function processarEventosIfood(opts: {
         // troca de endereço e o cancelamento chegando. UPDATE pela chave —
         // para os outros pedidos não acha linha. Nunca lança.
         await registrarEventoDeShipping(prisma, event);
+
+        // Entregador Sob Demanda já ligado ao pedido da loja
+        // (lib/ifood-sob-demanda.ts): o evento ficou guardado acima, e nada
+        // aqui pode importar, cancelar ou mudar o status do pedido original.
+        if (await sobDemandaJaVinculado(prisma, orderId)) {
+          if (event.id) {
+            processedEventIds.push({ id: event.id, orderId, eventType: event.fullCode || event.code || "" });
+          }
+          continue;
+        }
 
         const isPlaced = code === "PLC" || event.fullCode === "PLACED";
         const isConfirmed = code === "CFM" || event.fullCode === "CONFIRMED";
@@ -478,6 +489,19 @@ export async function processarEventosIfood(opts: {
 
           if (!eventFranchisee) {
             log.push(`  ❌ Nenhum franqueado encontrado para merchantId: ${eventMerchantId} no pedido ${orderId}`);
+            continue;
+          }
+
+          // Entregador Sob Demanda de um pedido que a loja já tem: liga ao
+          // original em vez de criar outro (e imprimir de novo).
+          const original = await vincularSobDemanda(prisma, {
+            ifoodOrderId: orderId, orderData, franchiseeId: eventFranchisee.id, merchantId: eventMerchantId,
+          });
+          if (original) {
+            log.push(`  🛵 Sob Demanda ${orderId} ligado ao pedido ${original} — não importado`);
+            if (event.id) {
+              processedEventIds.push({ id: event.id, orderId, eventType: event.fullCode || event.code || "" });
+            }
             continue;
           }
 

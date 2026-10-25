@@ -7,6 +7,7 @@ import { dataHoraDaLoja } from "@/lib/fuso";
 import { toLocalISODate, getStartOfDayUTC } from "@/lib/timezone";
 import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
 import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
+import { vincularSobDemanda } from "@/lib/ifood-sob-demanda";
 import { registrarChamadaWebhook } from "@/lib/ifood-webhook-registro";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { getServerSession } from "next-auth/next";
@@ -297,6 +298,10 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
       console.error(`[iFood Webhook] ❌ Falha ao buscar detalhes do pedido ${orderId}`);
       return;
     }
+
+    // Entregador Sob Demanda de um pedido que a loja já tem: liga ao original
+    // em vez de criar outro (lib/ifood-sob-demanda.ts).
+    if (await vincularSobDemanda(prisma, { ifoodOrderId: orderId, orderData, franchiseeId: franchisee.id, merchantId })) return;
 
     // Extrai itens e sub-itens (comboSelections)
     const rawItems = orderData.items ?? [];
