@@ -7,7 +7,7 @@
  * de delivery. A loja marca "Mesa" e a mesa passa na frente — sem passar por
  * cima do item faltante nem da rota criada, que já eram prioridade.
  */
-import { furaAFila, lerKdsConfig, ordenarPelaPrioridade, tipoNaFila } from "../src/lib/kds-telas";
+import { filtroDosTiposPrioritarios, furaAFila, lerKdsConfig, ordenarPelaPrioridade, tipoNaFila } from "../src/lib/kds-telas";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -70,6 +70,23 @@ confere("mesa e balcão marcados: os dois pela chegada, depois o resto", ids(ord
 confere("selo na mesa quando mesa é prioridade", furaAFila({ deliveryType: "MESA", source: "PRESENCIAL" }, lerKdsConfig({ prioridade: ["MESA"] })), true);
 confere("sem selo no delivery", furaAFila({ deliveryType: "DELIVERY", source: "IFOOD" }, lerKdsConfig({ prioridade: ["MESA"] })), false);
 confere("sem configuração, sem selo", furaAFila({ deliveryType: "MESA", source: "PRESENCIAL" }, null), false);
+
+// ── a busca extra dos prioritários (a janela de 100 do KDS) ──
+confere("sem tipo marcado, nada a buscar", filtroDosTiposPrioritarios([]), null);
+confere("sem configuração, nada a buscar", filtroDosTiposPrioritarios(null), null);
+confere("mesa: pelo tipo MESA", filtroDosTiposPrioritarios(["MESA"]), { OR: [{ deliveryType: "MESA" }] });
+confere("delivery: pelo tipo DELIVERY", filtroDosTiposPrioritarios(["DELIVERY"]), { OR: [{ deliveryType: "DELIVERY" }] });
+confere("balcão e retirada juntos: o que não é mesa nem delivery (inclui sem tipo), uma vez só",
+  filtroDosTiposPrioritarios(["BALCAO", "RETIRADA"]),
+  { OR: [{ deliveryType: { notIn: ["MESA", "DELIVERY"] } }, { deliveryType: null }] });
+confere("Ragnar: mesa, balcão e retirada",
+  filtroDosTiposPrioritarios(["MESA", "BALCAO", "RETIRADA"]),
+  { OR: [{ deliveryType: "MESA" }, { deliveryType: { notIn: ["MESA", "DELIVERY"] } }, { deliveryType: null }] });
+// A mesa nova (fora dos 100 mais antigos) entra na lista e passa à frente.
+const cem = Array.from({ length: 100 }, (_, i) => p(`d${i}`, "DELIVERY", "IFOOD", `20:${String(i % 60).padStart(2, "0")}`));
+const mesaNova = p("mesaNova", "MESA", "PRESENCIAL", "23:30");
+confere("a mesa nova, trazida pela busca extra, fura os 100 mais antigos",
+  ids(ordenarPelaPrioridade([...cem, mesaNova], lerKdsConfig({ prioridade: ["MESA"] }))).slice(0, 2), ["mesaNova", "d0"]);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\ntudo certo");
 process.exit(falhas ? 1 : 0);

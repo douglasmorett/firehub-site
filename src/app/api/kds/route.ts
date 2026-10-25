@@ -11,9 +11,11 @@ import {
   itemPronto,
   itensDaTela,
   juntarPedidosDaProducao,
+  filtroDosTiposPrioritarios,
   lerKdsConfig,
   linhasDeOpcaoDaTela,
   ordenarPelaPrioridade,
+  prioridadeDaEtapa,
   telaTemPendencia,
   lerTelasProntas,
   registrarBaixa,
@@ -290,9 +292,28 @@ async function kdsDeVerdade(req: NextRequest) {
         take: 100,
       });
 
-    const orders = await withRetry(() =>
+    let orders = await withRetry(() =>
       buscarPedidos(where, [{ prioridadeNaCozinha: "desc" }, { isRoutePriority: "desc" }, { createdAt: "asc" }]),
     );
+    // ── A PRIORIDADE DA LOJA TAMBÉM FORA DA JANELA DE 100 ────────────────
+    // `take: 100` pega os mais antigos, e a prioridade (mais abaixo) só
+    // reordena o que veio. Loja com mais de 100 pedidos na produção (baixa
+    // que ninguém dá no KDS) não via a mesa nova furar a fila: ela nem
+    // chegava na lista (Ragnar, 24/10/2026). Falhou a busca extra: fica como
+    // era — nunca a tela vazia.
+    if (orders.length >= 100 && configDaLoja) {
+      const filtroDaPrioridade = filtroDosTiposPrioritarios(prioridadeDaEtapa(lerKdsConfig(configDaLoja.kdsConfig), stage));
+      if (filtroDaPrioridade) {
+        const prioritarios = await withRetry(
+          () => buscarPedidos({ ...where, AND: [...(where.AND || []), filtroDaPrioridade] }, [{ prioridadeNaCozinha: "desc" }, { isRoutePriority: "desc" }, { createdAt: "asc" }]),
+          1,
+          300,
+        ).catch(() => [] as typeof orders);
+        const jaTem = new Set(orders.map((o) => o.id));
+        const novos = prioritarios.filter((o) => !jaTem.has(o.id));
+        if (novos.length > 0) orders = [...orders, ...novos];
+      }
+    }
     // Sem `.catch(() => [])` aqui, e é de propósito: lista vazia por falha de
     // banco é indistinguível de cozinha vazia para quem olha a TV. O erro sobe
     // para o catch do fim, que responde 503 — e a tela mantém o que está na
