@@ -23,6 +23,8 @@
  * impressora (lib/categoria-do-item.ts). A marca vai na observação do item.
  */
 
+import { ehPagoOnline } from "./pagamento-na-entrega";
+
 const CANCELADOS = new Set(["CANCELADO", "CANCELLED", "CANCELED"]);
 
 export const MARCA_DO_ACRESCIMO = "➕ ACRÉSCIMO";
@@ -72,6 +74,13 @@ export function pedidoComAcrescimos<T extends PedidoComItens>(pai: T, todos: rea
     const forma = String(f.paymentMethod || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
     return `${MARCA_DO_ACRESCIMO}: ${reais(Number(f.totalAmount) || 0)} COBRAR À PARTE${forma ? ` (${forma})` : ""}`;
   });
+
+  // Pedido principal já pago no app: o entregador cobra SÓ o acréscimo. Sem
+  // esta linha, quem lê "cobrar à parte" não sabe se o resto também é na porta
+  // (Lucas/Frangoso, 24/10/2026: "já pago no iFood R$ X + cobrar R$ Y").
+  if (ehPagoOnline(pai as any)) {
+    cobrancas.push(`RESTO DO PEDIDO JÁ PAGO (${reais(Number(pai.totalAmount) || 0)}): COBRAR SÓ O ACRÉSCIMO`);
+  }
 
   const original = String(pai.notes || "").trim();
   return {

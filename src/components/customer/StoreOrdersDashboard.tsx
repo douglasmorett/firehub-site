@@ -3953,8 +3953,17 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     origemDaVenda(o).toLowerCase() as "mesa" | "delivery" | "balcao" | "retirada";
   const matchesTypeFilter = (o: any) => selectedTypes[tipoDoPedido(o)];
 
+  // ── ACRÉSCIMO NÃO É CARD PRÓPRIO ──────────────────────────────────────
+  //
+  // O acréscimo do pedido de marketplace é um pedido colado no banco (repasse
+  // e caixa — ver api/store/orders/[id]/itens), mas para a loja é o MESMO
+  // pedido: com o principal no quadro, ele não ganha card (virava um "pedido
+  // novo" só com a bebida, e saía em outra entrega — Lucas, 24/10/2026). Os
+  // itens e o "cobrar à parte" aparecem dentro do card do principal.
+  const idsNoQuadro = new Set(orders.map((o: any) => o.id));
   const filteredOrders = orders.filter(o => {
     if (o.status === "ENCERRADO") return false;
+    if (o.parentOrderId && idsNoQuadro.has(o.parentOrderId)) return false;
     if (!matchesChannelFilter(o)) return false;
     if (!matchesTypeFilter(o)) return false;
     
@@ -4012,7 +4021,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       (o.notes || "").toLowerCase().includes(s) ||
       String(o.dailyOrderNumber || "").includes(s)
     );
-  });
+  }).map(o => pedidoComAcrescimos(o, orders));
 
 
 
@@ -5151,8 +5160,10 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         "#0F766E"
                       );
                     } else {
-                      showToast("Pedido alterado. Reimprimindo a comanda...", "#0F766E");
+                      showToast(resultado?.reimprimir === false ? "Pedido alterado." : "Pedido alterado. Reimprimindo a comanda...", "#0F766E");
                     }
+                    // A pessoa desmarcou "Reimprimir a comanda" (balcão já entregue).
+                    if (resultado?.reimprimir === false) return;
                     // Um papel só, com o pedido inteiro: o acréscimo de
                     // marketplace (pedido colado, que não imprime sozinho) entra
                     // junto, lido da lista que acabou de ser relida.
