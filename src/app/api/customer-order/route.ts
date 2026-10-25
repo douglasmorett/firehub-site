@@ -71,7 +71,7 @@ import { problemaDaFormaPropria } from "@/lib/formas-proprias";
 import { lerSessaoDoCliente } from "@/lib/sessao-do-cliente";
 import { finalDoTelefone } from "@/lib/pedidos-do-telefone";
 import { descontoDoClube, ehDoAplicativo, etiquetaDoClube, instalacaoDoCorpo, veredictoDoClube } from "@/lib/clube/regras";
-import { clubeValendoNaLoja, instalacaoDaMarca, registrarDescontoDoClube, situacaoDoTelefone } from "@/lib/clube/no-banco";
+import { clubeValendoNaLoja, instalacaoDaMarca, registrarDescontoDoClube, situacaoDoTelefone, socioEhDoCliente } from "@/lib/clube/no-banco";
 
 export async function POST(req: Request) {
   try {
@@ -858,7 +858,13 @@ export async function POST(req: Request) {
         const sessao = lerSessaoDoCliente(body.sessaoDoCliente);
         const clube = sessao ? await clubeValendoNaLoja(franchisee.id) : null;
         if (sessao && clube) {
-          const { situacao, assinante } = await situacaoDoTelefone(clube.chave, customerPhone);
+          let { situacao, assinante } = await situacaoDoTelefone(clube.chave, customerPhone);
+          // A assinatura achada pelo final do telefone tem que ser da conta da
+          // sessão (no-banco.ts `socioEhDoCliente`): senão é de outra pessoa.
+          if (assinante && !(await socioEhDoCliente(assinante, { id: sessao.clienteId, phone: sessao.telefone }))) {
+            situacao = "nao_assinante";
+            assinante = null;
+          }
           const veredicto = veredictoDoClube({
             userAgent: req.headers.get("user-agent"),
             cobranca: clube.config.cobranca,

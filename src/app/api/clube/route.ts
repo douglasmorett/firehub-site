@@ -26,6 +26,7 @@ import {
   instalacaoDaMarca,
   paraAssinatura,
   prepararAssinatura,
+  socioEhDoCliente,
 } from "@/lib/clube/no-banco";
 import { linkDoCheckoutDoCliente } from "@/lib/clube/cakto";
 import { ehDoAplicativo, instalacaoDoCorpo, situacaoDaAssinatura } from "@/lib/clube/regras";
@@ -65,6 +66,8 @@ export async function GET(req: NextRequest) {
   if (!clube) return NextResponse.json({ clube: null, cliente, situacao: "nao_assinante", pagoAte: null });
 
   let assinante = cliente ? await assinanteDoTelefone(clube.chave, cliente.phone) : null;
+  // Mesmo final de telefone, outra conta: a assinatura não é desta pessoa (no-banco.ts).
+  if (assinante && cliente && !(await socioEhDoCliente(assinante, cliente))) assinante = null;
   if (assinante && clube.config.cobranca === "asaas") assinante = await sincronizarSeVelho(clube.chave, assinante);
   const situacao = assinante ? situacaoDaAssinatura(paraAssinatura(assinante)) : "nao_assinante";
   return NextResponse.json({
@@ -101,10 +104,18 @@ export async function POST(req: NextRequest) {
 
   if (body?.acao === "cancelar") {
     const socio = await assinanteDoTelefone(clube.chave, cliente.phone);
-    if (!socio) return NextResponse.json({ error: "Não achamos a sua assinatura." }, { status: 404 });
+    // Só a assinatura DESTA conta: o final do telefone sozinho achava a de outra pessoa.
+    if (!socio || !(await socioEhDoCliente(socio, cliente))) return NextResponse.json({ error: "Não achamos a sua assinatura." }, { status: 404 });
     const r = await cancelarSocio(clube.chave, socio, "cliente");
     if (!r.ok) return NextResponse.json({ error: r.erro }, { status: 400 });
     return NextResponse.json({ ok: true });
+  }
+
+  // Assinar grava esta conta como dona da linha do telefone (prepararAssinatura):
+  // a linha de OUTRA conta com o mesmo final não pode trocar de dono por aqui.
+  const jaExiste = await assinanteDoTelefone(clube.chave, cliente.phone);
+  if (jaExiste && !(await socioEhDoCliente(jaExiste, cliente))) {
+    return NextResponse.json({ error: "Este telefone já tem uma assinatura do clube em outra conta. Entre com a conta em que você assinou." }, { status: 409 });
   }
 
   try {

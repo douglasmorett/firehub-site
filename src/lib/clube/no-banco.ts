@@ -303,6 +303,37 @@ export async function assinanteDoTelefone(chave: string, telefone: string): Prom
   return rows[0] ? linha(rows[0]) : null;
 }
 
+/** DDD + número, sem o 55 nem o 0 da frente: as grafias do mesmo telefone. */
+function telefoneNacional(t: string | null | undefined): string {
+  let d = String(t || "").replace(/\D/g, "");
+  if (d.startsWith("55") && d.length >= 12) d = d.slice(2);
+  return d.replace(/^0+/, "");
+}
+
+/**
+ * A assinatura achada pelos 8 finais é MESMO deste cliente? (auditoria
+ * F47/F61) A sessão do cliente prova a conta, não o telefone: cadastrar o
+ * mesmo final com outro DDD (ou com 55/0 na frente) achava a assinatura de
+ * outra pessoa — e dava para cancelar a dela ou usar o desconto que ela paga.
+ *
+ * Com dono (`clienteId`, gravado quando ela apertou "Assinar"): só a conta
+ * dona. Sem dono (comprou pelo link da Cakto) ou com a conta dona excluída:
+ * o telefone inteiro decide, não só o final.
+ */
+export async function socioEhDoCliente(
+  socio: Pick<LinhaDoAssinante, "clienteId" | "telefone">,
+  cliente: { id: string; phone: string },
+): Promise<boolean> {
+  if (socio.clienteId && socio.clienteId === cliente.id) return true;
+  if (socio.clienteId) {
+    const dono = await prisma.storeCustomer.findUnique({ where: { id: socio.clienteId }, select: { phone: true } });
+    // A conta dona ainda existe com este telefone: a assinatura é dela.
+    if (dono && finalDoTelefone(dono.phone) === finalDoTelefone(socio.telefone)) return false;
+  }
+  const meu = telefoneNacional(cliente.phone);
+  return !!meu && meu === telefoneNacional(socio.telefone);
+}
+
 export async function situacaoDoTelefone(chave: string, telefone: string, agora = new Date()): Promise<{ situacao: SituacaoNoCardapio; assinante: LinhaDoAssinante | null }> {
   const assinante = await assinanteDoTelefone(chave, telefone);
   return { situacao: situacaoDaAssinatura(assinante ? paraAssinatura(assinante) : null, agora), assinante };
