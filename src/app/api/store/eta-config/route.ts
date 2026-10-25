@@ -55,7 +55,7 @@ async function resolveStore(req: NextRequest, paraEscrita = false) {
     // Agora escrita exige token ASSINADO (lib/extensao-token). O formato
     // antigo segue valendo so para leitura, para nao derrubar a extensao ja
     // instalada ate o proximo login dela.
-    const { lerTokenDeExtensao } = await import("@/lib/extensao-token");
+    const { lerTokenDeExtensao, anotarTokenCruDaExtensao } = await import("@/lib/extensao-token");
     const leitura = lerTokenDeExtensao(urlToken);
 
     if (!leitura.valido) return null;
@@ -68,6 +68,8 @@ async function resolveStore(req: NextRequest, paraEscrita = false) {
       where: { id: leitura.userId },
       select: { id: true, ownerId: true, role: true, name: true },
     });
+    // Fase 1 do token assinado: conta quem ainda lê com o id cru.
+    if (user && !leitura.assinado) anotarTokenCruDaExtensao(user.id, "eta-config");
   }
 
   if (!user) return null;

@@ -58,13 +58,15 @@ export async function GET(req: NextRequest) {
       //
       // Aqui é LEITURA, então os dois formatos passam. Escrita continua
       // exigindo assinatura, em /eta-config.
-      const { lerTokenDeExtensao } = await import("@/lib/extensao-token");
+      const { lerTokenDeExtensao, anotarTokenCruDaExtensao } = await import("@/lib/extensao-token");
       const leitura = lerTokenDeExtensao(urlToken);
       if (leitura.valido) {
         tokenUser = await prisma.user.findFirst({
           where: { id: leitura.userId },
           select: { id: true, name: true, ownerId: true, email: true, role: true },
         });
+        // Fase 1 do token assinado: conta quem ainda lê com o id cru.
+        if (tokenUser && !leitura.assinado) anotarTokenCruDaExtensao(tokenUser.id, "dynamic-eta");
       }
     }
 
