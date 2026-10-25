@@ -199,3 +199,21 @@ export function passoDaVolta(r: { subiu: boolean; falhasSeguidas: number; penden
   if (!r.subiu && r.falhasSeguidas >= FALHAS_DA_SUBIDA_ATE_DESISTIR) return "normal-com-pendentes";
   return "seguir-voltando";
 }
+
+/**
+ * "Testar agora" e "parar" só do PRÓPRIO computador e só por programa: o
+ * Assistente (fetch do Node) e o instalador (PowerShell) não mandam `Origin`
+ * nem `Sec-Fetch-Site`; o navegador manda. Sem isto, um site qualquer aberto
+ * no navegador da loja conseguia forjar a queda ou desligar a contingência
+ * (auditoria F127/F133) — o pedido sai do próprio PC, então o IP não basta.
+ */
+export function pedidoDoProprioComputador(p: {
+  remoto: string | undefined;
+  metodo: string | undefined;
+  cabecalhos: Record<string, string | string[] | undefined>;
+}): boolean {
+  const remoto = p.remoto || "";
+  const daqui = remoto === "127.0.0.1" || remoto === "::1" || remoto === "::ffff:127.0.0.1";
+  if (!daqui || p.metodo !== "POST") return false;
+  return p.cabecalhos["origin"] === undefined && p.cabecalhos["sec-fetch-site"] === undefined;
+}
