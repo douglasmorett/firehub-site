@@ -4,7 +4,8 @@ const prisma = new PrismaClient();
 
 async function main() {
   const email = 'teste@firehubfood.com.br';
-  const password = 'FireHub@2026';
+  const password = process.env.TEST_PASSWORD;
+  if (!password) throw new Error('Defina TEST_PASSWORD (a senha não fica no código).');
   const hash = await bcrypt.hash(password, 12);
 
   const existing = await prisma.user.findUnique({ where: { email } });
@@ -28,7 +29,7 @@ async function main() {
 
   console.log('\n=== CREDENCIAIS DE TESTE ===');
   console.log('Email:', email);
-  console.log('Senha:', password);
+  console.log('Senha: a de TEST_PASSWORD');
   console.log('URL:', 'https://firehubfood.com.br/login');
 
   await prisma.$disconnect();

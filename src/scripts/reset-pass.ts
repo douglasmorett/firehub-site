@@ -11,7 +11,8 @@ const prisma = new PrismaClient({
 
 async function main() {
   const email = "contatohakim@gmail.com";
-  const newPass = "hakim123";
+  const newPass = process.env.NEW_PASSWORD;
+  if (!newPass) throw new Error("Defina NEW_PASSWORD (a senha não fica no código).");
 
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
@@ -27,7 +28,7 @@ async function main() {
     data: { password: hash }
   });
 
-  console.log(`✅ SUCCESS! Password for ${email} reset to '${newPass}'.`);
+  console.log(`✅ SUCCESS! Password for ${email} reset (NEW_PASSWORD).`);
 }
 
 main().catch(console.error).finally(() => prisma.$disconnect());

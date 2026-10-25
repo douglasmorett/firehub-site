@@ -5,7 +5,8 @@ const p = new PrismaClient();
 async function main() {
   const oldEmail = 'tst.fabiano.andrade@gmail.com';
   const newEmail = 'viniciusmenezes.ofc@gmail.com';
-  const newPassword = '123456';
+  const newPassword = process.env.NEW_PASSWORD;
+  if (!newPassword) throw new Error('Defina NEW_PASSWORD (a senha não fica no código).');
 
   // 1) Check the old user exists
   const user = await p.user.findUnique({ where: { email: oldEmail } });

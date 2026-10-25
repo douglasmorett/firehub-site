@@ -5,7 +5,8 @@ const prisma = new PrismaClient();
 
 async function main() {
   const email = 'tester@firehubfood.com.br';
-  const password = await bcrypt.hash('123456', 10);
+  if (!process.env.TESTER_PASSWORD) throw new Error('Defina TESTER_PASSWORD (a senha não fica no código).');
+  const password = await bcrypt.hash(process.env.TESTER_PASSWORD, 10);
   await prisma.user.upsert({
     where: { email },
     update: { password, role: 'FRANCHISEE' },
