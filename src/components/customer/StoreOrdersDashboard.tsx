@@ -47,6 +47,7 @@ import { foiEntregueDepoisDeCancelado, podeMarcarEntregueDepoisDeCancelado } fro
 import { ehPedidoCancelado } from "@/lib/desperdicio-do-cancelado";
 import CorrigirTaxaDeEntregaPainel from "@/components/customer/CorrigirTaxaDeEntregaPainel";
 import CorrigirEnderecoPainel from "@/components/customer/CorrigirEnderecoPainel";
+import ClienteDoPedidoPainel from "@/components/customer/ClienteDoPedidoPainel";
 import FinalizarPedidoDoRobo from "@/components/customer/FinalizarPedidoDoRobo";
 import AvisoPedidoEsperandoLoja from "@/components/customer/AvisoPedidoEsperandoLoja";
 import FoodyNoPedido from "@/components/customer/FoodyNoPedido";
@@ -5059,6 +5060,22 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     ? { ...o, customerAddress: r.customerAddress, ...(r.distanciaRefeita ? { deliveryDistance: r.distanciaKm } : {}) }
                     : o));
                   showToast("Endereço do pedido corrigido.", "#0F766E");
+                  await recarregarPedidos();
+                }}
+              />
+
+              {/* Incluir ou corrigir o cliente (nome e telefone) de um pedido
+                  já lançado — o balcão sem cliente (Divinos Burguer,
+                  24/10/2026). A regra é lib/cliente-do-pedido.ts. */}
+              <ClienteDoPedidoPainel
+                key={`cliente-${order.id}`}
+                pedido={order}
+                operador={operadorDaEdicao}
+                aoSalvar={async (r) => {
+                  setOrders(prev => prev.map(o => o.id === order.id
+                    ? { ...o, customerName: r.customerName, customerPhone: r.customerPhone }
+                    : o));
+                  showToast("Cliente do pedido atualizado.", "#0F766E");
                   await recarregarPedidos();
                 }}
               />

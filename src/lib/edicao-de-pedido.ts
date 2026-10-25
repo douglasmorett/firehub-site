@@ -780,7 +780,7 @@ export type RegistroDeEdicao = {
    * ENDERECO: a loja corrigiu o endereço de entrega (api/store/orders/[id]/endereco,
    * lib/correcao-de-endereco.ts); o total não muda.
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "ESCOLHAS" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU" | "ENTREGUE_DEPOIS_DE_CANCELADO" | "ENDERECO";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "ESCOLHAS" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU" | "ENTREGUE_DEPOIS_DE_CANCELADO" | "ENDERECO" | "CLIENTE";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;
