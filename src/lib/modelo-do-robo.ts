@@ -23,8 +23,9 @@
  * (scripts/teste-modelo-do-robo.mjs).
  */
 
-export const MODELO_BARATO = "gemini-3.1-flash-lite";
-export const MODELO_DE_PEDIDO = "gemini-3.6-flash";
+// As variáveis FIREHUB_AB_* só existem para o laboratório de A/B (scripts/ab-do-robo.ts); em produção ficam vazias.
+export const MODELO_BARATO = process.env.FIREHUB_AB_MODELO_BARATO || "gemini-3.1-flash-lite";
+export const MODELO_DE_PEDIDO = process.env.FIREHUB_AB_MODELO_DE_PEDIDO || "gemini-3.6-flash";
 
 export type EscolhaDoModelo = { modelo: string; motivo: string | null };
 
@@ -58,7 +59,7 @@ const ENTREGA_EM_ANDAMENTO = /\b(cade|demor\w*|saiu|chegou|chegando|chega|entreg
  * para o dia em que o preço do 3.6 dobrar (01/01/2027) e a conta precisar ser
  * refeita.
  */
-export const TUDO_NO_MODELO_DE_PEDIDO = true;
+export const TUDO_NO_MODELO_DE_PEDIDO = process.env.FIREHUB_AB_ROTEADOR === "1" ? false : true;
 
 export function escolherModeloDoRobo(entrada: {
   /** Há rascunho ou pedido ainda alterável deste cliente (memória do pedido no prompt). */

@@ -1672,7 +1672,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         // texto do `systemInstruction`, lido com 90% de desconto. Só no modelo de
         // pedido e fora do modo dono (o prompt do dono é outro, e raro). Sem
         // cache pronto, esta chamada vai como sempre e ele é criado para as próximas.
-        const cacheDoPrompt = !ehOBarato && mName === MODELO_DE_PEDIDO && !ownerContext && !semCacheNestaMensagem && apiKey
+        const cacheDoPrompt = !ehOBarato && mName === MODELO_DE_PEDIDO && !ownerContext && !semCacheNestaMensagem && apiKey && process.env.FIREHUB_AB_SEM_CACHE !== "1"
           ? cacheDoPromptDaLoja(ai, {
               loja: userId, modelo: mName, apiKey, prompt: systemPrompt,
               custo: (c) => trackGeminiCacheStorage(c.loja, c.modelo, c.tokens, c.segundos, { motivo: c.motivo }),
@@ -1745,7 +1745,10 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           // cobra a entrada e o pensamento do mesmo jeito. Fire-and-forget.
           try {
             const usage = (response as any)?.usageMetadata;
-            if (usage) {
+            if (usage && process.env.FIREHUB_AB_SEM_REGISTRO === "1") {
+              // Laboratório de A/B: guarda o uso na memória e NÃO grava no UsageLog.
+              ((globalThis as any).__abUsos ||= []).push({ modelo: mName, usage });
+            } else if (usage) {
               trackGeminiUsage(
                 userId,
                 mName,
@@ -1769,6 +1772,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
 
           if (response && response.text) {
             generatedText = response.text;
+            if (process.env.FIREHUB_AB_SEM_REGISTRO === "1") ((globalThis as any).__abBrutos ||= []).push(response.text); // laboratório de A/B: o texto bruto, com as marcas
             break;
           }
           // Respondeu sem texto (bloqueio de segurança, resposta vazia): também é falha.
@@ -2123,6 +2127,9 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                     `Loja=${targetFranchiseeId} itens=${orderPayload.items.length}. ` +
                     "A IA precisa perguntar o WhatsApp do cliente (ALERTA DE TELEFONE do prompt)."
                 );
+              } else if (process.env.FIREHUB_AB_SEM_GRAVAR === "1") {
+                // Laboratório de A/B: o pedido NUNCA é gravado.
+                resultadoDoSync = { gravado: false, motivo: "laboratório de A/B: nada é gravado" };
               } else {
                 resultadoDoSync = await syncAiOrderToDatabase({
                   franchiseeId: targetFranchiseeId,

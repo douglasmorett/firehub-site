@@ -96,6 +96,7 @@ export function trackGeminiUsage(
   metadata?: Record<string, any>,
   extra?: { thoughtsTokens?: number; cachedTokens?: number }
 ) {
+  if (process.env.FIREHUB_AB_SEM_REGISTRO === "1") return; // laboratório de A/B: nada vai ao UsageLog
   const preco = precoDoModelo(model);
   const thoughtsTokens = Math.max(0, Number(extra?.thoughtsTokens) || 0);
   const cachedTokens = Math.min(Math.max(0, Number(extra?.cachedTokens) || 0), inputTokens);
@@ -129,6 +130,7 @@ const DIARIA_DO_CACHE_USD_POR_MILHAO_HORA: Record<string, number> = {
  * esconderia a diária que o Google cobra à parte.
  */
 export function trackGeminiCacheStorage(franchiseeId: string, model: string, tokens: number, segundos: number, metadata?: Record<string, any>) {
+  if (process.env.FIREHUB_AB_SEM_REGISTRO === "1") return; // laboratório de A/B: nada vai ao UsageLog
   const precoHora = DIARIA_DO_CACHE_USD_POR_MILHAO_HORA[model] ?? DIARIA_DO_CACHE_USD_POR_MILHAO_HORA["gemini-3.6-flash"];
   const custo = (tokens / 1_000_000) * precoHora * (Math.max(0, segundos) / 3600) * COTACAO_DOLAR;
   prisma.usageLog.create({
@@ -162,6 +164,7 @@ export function trackDivergenciaDePreco(
   gravidade: GravidadeDaDivergencia,
   detalhe: Record<string, any>
 ) {
+  if (process.env.FIREHUB_AB_SEM_REGISTRO === "1") return; // laboratório de A/B: nada vai ao UsageLog
   prisma.usageLog.create({
     data: {
       franchiseeId,
@@ -181,6 +184,7 @@ export function trackVisionUsage(
   franchiseeId: string,
   metadata?: Record<string, any>
 ) {
+  if (process.env.FIREHUB_AB_SEM_REGISTRO === "1") return; // laboratório de A/B: nada vai ao UsageLog
   prisma.usageLog.create({
     data: {
       franchiseeId,
