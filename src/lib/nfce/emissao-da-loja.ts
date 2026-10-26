@@ -989,6 +989,34 @@ export function proximaTransmissaoDaContingencia(info: unknown, opcoes: { manual
 }
 
 /**
+ * Esta nota do emissor próprio está na VEZ do cron — a consulta ou a
+ * transmissão automática faria alguma coisa agora? Sem ir à SEFAZ: são as
+ * mesmas condições em que `sincronizarNotaNaSefaz` volta sem gravar (o recuo
+ * da transmissão, o ritmo da consulta do envio, a emissão ainda no ar, o que
+ * foi para uma pessoa).
+ *
+ * É o que o passo 1 do cron (lib/fiscal-automatico → rodadaDaLoja) usa para
+ * escolher os 40 da rodada: sem isto, 40 notas em recuo no topo da lista
+ * ocupavam a rodada inteira, e as de baixo esperavam sem vez.
+ */
+export function naVezDoCron(grupo: { info: unknown; fiscalStatus: string | null | undefined }, agora: Date = agoraDoEmissor()): boolean {
+  const info = objeto(grupo.info);
+  const aberta = grupo.fiscalStatus !== "EMITTED" && grupo.fiscalStatus !== "CANCELED";
+  const envio = envioDoFiscalInfo(info);
+  const contingenciaSemGravacao = aberta && info.processando === true && !envio && !emissaoEmCurso(info, agora) && Boolean(ponteiroValido(info.xmlDaContingencia));
+  if ((grupo.fiscalStatus === "EMITTED" && info.contingencia === true) || contingenciaSemGravacao) {
+    if (info.contingenciaParaPessoa) return false;
+    return proximaTransmissaoDaContingencia(info) <= agora.getTime();
+  }
+  if (envio && envio.chave !== info.nfceKey && aberta) {
+    if (emissaoEmCurso(info, agora) || envio.situacao === "para_pessoa") return false;
+    return proximaConsultaDoEnvio(envio) <= agora.getTime();
+  }
+  if (aberta && info.processando === true) return !emissaoEmCurso(info, agora);
+  return true;
+}
+
+/**
  * O que uma nota do emissor próprio é de verdade agora — e o que fazer:
  *
  *  - em CONTINGÊNCIA: transmite a NFe guardada, sem mexer (mesma chave);

@@ -61,6 +61,22 @@ const ESPERA_DO_TENTADO_MS = 10 * 60_000;
 const JANELA_DO_TENTADO_MS = 31 * 24 * 60 * 60_000;
 /** O recuo entre conferências do tentado: 10, 20, 40, 80... min, com teto de 6 h. */
 const TETO_DO_RECUO_DO_TENTADO_MS = 6 * 60 * 60_000;
+/**
+ * Quantos pedidos cada passo lê para escolher os da vez. A escolha é em
+ * memória, pelo ritmo de cada um: com um `take` pequeno direto no banco, os
+ * que estão no recuo (ou foram para uma pessoa) ocupavam a vez dos outros.
+ */
+const CANDIDATOS_DA_ROTINA = 200;
+
+/**
+ * O certificado serve para falar com a SEFAZ AGORA? O vencido abre (o .pfx é
+ * lido), mas toda consulta e todo evento voltam recusados — e a conferência do
+ * número tentado conta tentativa: com o A1 vencido por um fim de semana, o
+ * tentado iria "para uma pessoa" sem que a SEFAZ tivesse sido ouvida uma vez.
+ */
+function certificadoValendo(cert: { validoDe: Date; validoAte: Date }, agora: Date): boolean {
+  return cert.validoDe.getTime() <= agora.getTime() && cert.validoAte.getTime() > agora.getTime();
+}
 /** Conferências sem desfecho até o tentado ir para uma pessoa. */
 export const MAXIMO_DE_CONFERENCIAS_DO_TENTADO = 8;
 /** Cancelamento por substituição: até 168 h da autorização (Ajuste SINIEF 19/16, cl. 15ª-A). */
@@ -110,13 +126,15 @@ export async function conferirNumerosTentados(p: { lojaId: string; config: Confi
     },
     select: { id: true, fiscalStatus: true, fiscalInfo: true },
     orderBy: { createdAt: "desc" },
-    take: p.limite ?? 20,
+    take: CANDIDATOS_DA_ROTINA,
   });
   // A conta da mesa grava o mesmo tentado em todos os pedidos: um por chave.
+  // Só os da VEZ (fora do recuo), e até `limite` chaves por rodada.
   const porChave = new Map<string, { ids: string[]; info: Registro; fiscalStatus: string | null }>();
   for (const o of pedidos) {
     const t = objeto(objeto(o.fiscalInfo).numeroTentado);
     if (!chaveValida(String(t.chave ?? ""))) continue;
+    if (!porChave.has(t.chave) && (proximaConferenciaDoTentado(t) > agora.getTime() || porChave.size >= (p.limite ?? 20))) continue;
     const g = porChave.get(t.chave) ?? { ids: [], info: objeto(o.fiscalInfo), fiscalStatus: o.fiscalStatus ?? null };
     g.ids.push(o.id);
     porChave.set(t.chave, g);
@@ -130,6 +148,7 @@ export async function conferirNumerosTentados(p: { lojaId: string; config: Confi
     if (e instanceof FaltaNoEmissor) return 0;
     throw e;
   }
+  if (!certificadoValendo(certificado, agora)) return 0;
   const uf = String(p.config.uf ?? "").toUpperCase();
   let resolvidos = 0;
 
@@ -138,7 +157,6 @@ export async function conferirNumerosTentados(p: { lojaId: string; config: Confi
     // Um 656 nesta rodada (outra conferência, outra nota): para tudo.
     if (sefazBloqueadaAte(p.lojaId, p.config)) break;
     const t = objeto(g.info.numeroTentado);
-    if (proximaConferenciaDoTentado(t) > agora.getTime()) continue;
     const ambiente: Ambiente = Number(t.ambiente) === 1 ? 1 : 2;
     const partes = lerChave(chave);
     const numero = Number(t.numero) || partes.numero;
@@ -395,11 +413,12 @@ export async function reconciliarEnviosSemDesfecho(p: { lojaId: string; config: 
     },
     select: { id: true, fiscalStatus: true, fiscalInfo: true },
     orderBy: { createdAt: "desc" },
-    take: p.limite ?? 40,
+    take: CANDIDATOS_DA_ROTINA,
   });
   if (pedidos.length === 0) return 0;
   const { sincronizarNota } = await import("../fiscal-automatico");
   const { idDaNotaDoPedido } = await import("../fiscal-momento");
+  // Só os da VEZ (fora do ritmo e sem ter ido para uma pessoa), até `limite` notas.
   const porNota = new Map<string, { ids: string[]; info: Registro; fiscalStatus: string | null; lojaId: string }>();
   for (const o of pedidos) {
     const info = objeto(o.fiscalInfo);
@@ -407,6 +426,7 @@ export async function reconciliarEnviosSemDesfecho(p: { lojaId: string; config: 
     if (!envio || envio.chave === info.nfceKey || envio.situacao === "para_pessoa") continue;
     if (proximaConsultaDoEnvio(envio) > agora.getTime()) continue;
     const id = idDaNotaDoPedido(o);
+    if (!porNota.has(id) && porNota.size >= (p.limite ?? 40)) continue;
     const g = porNota.get(id) ?? { ids: [], info, fiscalStatus: o.fiscalStatus ?? null, lojaId: p.lojaId };
     g.ids.push(o.id);
     porNota.set(id, g);
@@ -420,12 +440,28 @@ export async function reconciliarEnviosSemDesfecho(p: { lojaId: string; config: 
   return conferidos;
 }
 
-export type ResumoDaRotinaDaSefaz = { tentadosConferidos: number; enviosReconciliados: number; faixasInutilizadas: number; errosDaInutilizacao: number };
+export type ResumoDaRotinaDaSefaz = {
+  tentadosConferidos: number;
+  enviosReconciliados: number;
+  faixasInutilizadas: number;
+  errosDaInutilizacao: number;
+  /** XML autorizado ou de cancelamento que voltou ao cofre (`xmlPendente`/`xmlCancelamentoPendente`). */
+  xmlsRecuperados?: number;
+};
 
-/** O passo do cron para uma loja do emissor próprio. Nunca lança: o cron segue para a próxima loja. */
+/**
+ * O passo do cron para uma loja do emissor próprio. Nunca lança: o cron segue
+ * para a próxima loja.
+ *
+ * Roda com a emissão LIGADA OU NÃO (lib/fiscal-automatico →
+ * retentarNotasFiscais): o número tentado, o envio sem desfecho e o buraco do
+ * mês são obrigações do que já saiu — desligar a emissão não pode deixar o
+ * número sem inutilização nem a nota autorizada sem cancelamento por
+ * substituição.
+ */
 export async function rotinaDoEmissorProprio(p: { lojaId: string; config: ConfigDaLoja; agora?: Date; acabou?: () => boolean }): Promise<ResumoDaRotinaDaSefaz> {
   const resumo: ResumoDaRotinaDaSefaz = { tentadosConferidos: 0, enviosReconciliados: 0, faixasInutilizadas: 0, errosDaInutilizacao: 0 };
-  if (!usaEmissorProprio(p.config) || p.config.enabled !== true) return resumo;
+  if (!usaEmissorProprio(p.config)) return resumo;
   try {
     resumo.tentadosConferidos = await conferirNumerosTentados(p);
   } catch (e: any) {
@@ -439,7 +475,7 @@ export async function rotinaDoEmissorProprio(p: { lojaId: string; config: Config
   }
   if (p.acabou?.() || sefazBloqueadaAte(p.lojaId, p.config)) return resumo;
   try {
-    const mensal = await inutilizarBuracosDoMes({ lojaId: p.lojaId, config: p.config, agora: p.agora });
+    const mensal = await inutilizarBuracosDoMes({ lojaId: p.lojaId, config: p.config, agora: p.agora, acabou: p.acabou });
     resumo.faixasInutilizadas = mensal.faixas.length;
     resumo.errosDaInutilizacao = mensal.erros.length;
   } catch (e: any) {

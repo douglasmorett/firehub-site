@@ -220,8 +220,14 @@ async function main() {
     const u = daLoja(id);
     u.fiscalConfig = f(u.fiscalConfig);
   };
-  /** Tira a loja do cron: as rodadas dos casos seguintes não a tocam. */
-  const encerrar = (id: string) => mudar(id, (c) => ({ ...c, enabled: false }));
+  /**
+   * Tira a loja do cron: as rodadas dos casos seguintes não a tocam. Desligar
+   * a emissão não basta: o pós-emissão do emissor próprio (contingência,
+   * tentado, inutilização) roda com a loja desligada — de propósito
+   * (lib/fiscal-automatico → retentarNotasFiscais). Sem o provedor, o cron não
+   * a lista.
+   */
+  const encerrar = (id: string) => mudar(id, (c) => ({ ...c, enabled: false, provedor: "fora-do-teste" }));
   const em = (t0: number, min: number) => new Date(t0 + min * MIN);
   const irPara = (t0: number, min: number) => loja.usarRelogioDeTeste(() => em(t0, min));
   /** Uma rodada do cron no minuto `min` (o relógio do emissor e o `agora` da rodada juntos). */

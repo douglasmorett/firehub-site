@@ -1495,6 +1495,8 @@ export type ResumoDaRetentativa = {
   enviosReconciliados?: number;
   /** Emissor próprio: faixas inutilizadas pela inutilização mensal. */
   faixasInutilizadas?: number;
+  /** Emissor próprio: XML autorizado ou de cancelamento que voltou ao cofre (`xmlPendente`). */
+  xmlsRecuperados?: number;
   /** Lojas puladas porque outra rodada do cron ainda estava nelas (a concessão). */
   lojasEmOutraRodada?: number;
 };
@@ -1582,11 +1584,22 @@ async function encerrarRetentativa(pedidos: { id: string; fiscalInfo: unknown }[
  *   4. Emissor próprio: número tentado, envios sem desfecho de pedidos que
  *      falharam e inutilização mensal (lib/nfce/rotina-da-sefaz).
  *
- * Só entram lojas com a emissão LIGADA — hoje nenhuma, e o cron custa uma
- * leitura. A config é a NORMALIZADA (`configNormalizada`): com o legado cru,
- * "producao" por extenso virava homologação na reemissão. Cada loja passa
- * pela CONCESSÃO da rodada (ver `sqlPegarConcessaoDaRodada`): duas rodadas
- * nunca trabalham a mesma loja ao mesmo tempo.
+ * ── Quem entra ──────────────────────────────────────────────────────────────
+ *
+ * EMITIR (passos 2 e 3) é só para a loja com a emissão LIGADA e o cadastro sem
+ * pendência. ACOMPANHAR o que já saiu (passos 1 e 4) não depende disso: a
+ * contingência que o cliente levou tem prazo para chegar à SEFAZ, o número
+ * tentado tem de ser conferido e o buraco, inutilizado até o dia 10 — com a
+ * emissão desligada, o certificado vencido ou um campo do cadastro errado. O
+ * cron pulava a loja inteira nesses casos e, somado à busca pela última
+ * gravação (48 h), a nota nunca mais voltava (reproduzido em 30/09/2026 —
+ * scripts/teste-nfce-ciclo.ts). Entram as lojas ligadas e as do emissor
+ * próprio; a da Focus desligada continua fora (lá, quem acompanha é a Focus).
+ *
+ * A config é a NORMALIZADA (`configNormalizada`): com o legado cru, "producao"
+ * por extenso virava homologação na reemissão. Cada loja passa pela CONCESSÃO
+ * da rodada (ver `sqlPegarConcessaoDaRodada`): duas rodadas nunca trabalham a
+ * mesma loja ao mesmo tempo.
  *
  * Agendado em scripts/cron-runner.js a cada 2 minutos (`fiscal-retentativa`).
  */
@@ -1599,7 +1612,12 @@ export async function retentarNotasFiscais(opcoes: { orcamentoMs?: number; agora
   const dono = randomUUID();
 
   const lojas = await prisma.user.findMany({
-    where: { fiscalConfig: { path: ["enabled"], equals: true } },
+    where: {
+      OR: [
+        { fiscalConfig: { path: ["enabled"], equals: true } },
+        { fiscalConfig: { path: ["provedor"], equals: PROVEDOR_PROPRIO } },
+      ],
+    },
     select: { id: true, fiscalConfig: true },
   });
   resumo.lojas = lojas.length;
@@ -1607,7 +1625,10 @@ export async function retentarNotasFiscais(opcoes: { orcamentoMs?: number; agora
   for (const loja of lojas) {
     if (acabou()) { resumo.parouPeloRelogio = true; break; }
     const config = configNormalizada(loja.fiscalConfig);
-    if (!config?.enabled || pendenciasParaEmitir(config).length > 0) continue;
+    if (!config) continue;
+    const ligada = config.enabled === true;
+    if (!ligada && !usaEmissorProprio(config)) continue;
+    const podeEmitir = ligada && pendenciasParaEmitir(config).length === 0;
     // O relógio de verdade (não o `agora` da rodada, que o teste adianta): a
     // concessão é sobre rodadas que existem ao mesmo tempo.
     const pegou = Number(await prisma.$executeRaw(sqlPegarConcessaoDaRodada(loja.id, dono, Date.now())).catch(() => 1));
@@ -1617,7 +1638,7 @@ export async function retentarNotasFiscais(opcoes: { orcamentoMs?: number; agora
     }
     let parar = false;
     try {
-      parar = await rodadaDaLoja(loja.id, config, resumo, { agora, acabou });
+      parar = await rodadaDaLoja(loja.id, config, resumo, { agora, acabou, podeEmitir });
     } finally {
       await prisma.$executeRaw(sqlSoltarConcessaoDaRodada(loja.id, dono)).catch(() => {});
     }
@@ -1627,12 +1648,17 @@ export async function retentarNotasFiscais(opcoes: { orcamentoMs?: number; agora
   return resumo;
 }
 
+/** Quantas notas "processando"/em contingência a rodada lê para escolher as da vez. */
+const CANDIDATOS_DA_CONSULTA = 300;
+/** Quantas notas uma rodada consulta ou transmite, no máximo, por loja. */
+const NOTAS_POR_RODADA = 40;
+
 /** O trabalho de UMA loja numa rodada (ver `retentarNotasFiscais`). Devolve true se o relógio acabou. */
 async function rodadaDaLoja(
   lojaId: string,
   config: ConfigDaLoja,
   resumo: ResumoDaRetentativa,
-  o: { agora: Date; acabou: () => boolean }
+  o: { agora: Date; acabou: () => boolean; podeEmitir: boolean }
 ): Promise<boolean> {
   const { agora, acabou } = o;
   const loja = { id: lojaId };
@@ -1641,36 +1667,71 @@ async function rodadaDaLoja(
 
     // ── 1. Processando e contingência ─────────────────────────────────────
     // A nota em contingência off-line é EMITTED com a marca `contingencia`
-    // (ver `gravarResultado`): consulta até a SEFAZ efetivar ou recusar. A
-    // janela é a da NOTA (a última gravação), não a do pedido: a nota à mão de
-    // uma venda antiga também é acompanhada (`JANELA_DA_VENDA_CONSULTADA_MS`).
-    const processando = await prisma.customerOrder.findMany({
+    // (ver `gravarResultado`): consulta até a SEFAZ efetivar ou recusar.
+    //
+    // A busca é pelo ESTADO da nota, com o piso de 31 dias do índice
+    // (franchiseeId, createdAt — `JANELA_DA_VENDA_CONSULTADA_MS`): a nota
+    // "processando" ou em contingência fica na fila até a SEFAZ dar o
+    // desfecho, por mais que demore. A busca pela última gravação (48 h)
+    // deixava órfã, para sempre, a nota do emissor próprio que passou dois
+    // dias sem ser tocada (loja desligada, certificado vencido, credencial
+    // ilegível — reproduzido em 30/09/2026). Na Focus a janela de 48 h
+    // continua: lá quem acompanha a nota é o provedor.
+    //
+    // Quem está no recuo, com a emissão no ar ou "para uma pessoa" não ocupa
+    // lugar na rodada (lib/nfce/emissao-da-loja → `naVezDoCron`): 40 notas
+    // presas no topo deixavam as de baixo sem vez. Das que estão na vez, as
+    // "processando" primeiro (o balcão e o motoboy estão esperando, a mais
+    // recente antes) e depois as contingências, pelo prazo de transmissão.
+    const candidatos = await prisma.customerOrder.findMany({
       where: {
         franchiseeId: loja.id,
         createdAt: { gte: new Date(agora.getTime() - JANELA_DA_VENDA_CONSULTADA_MS) },
-        updatedAt: { gte: new Date(agora.getTime() - JANELA_DA_NOTA_CONSULTADA_MS) },
         OR: [
           { fiscalStatus: "PENDING", fiscalInfo: { path: ["processando"], equals: true } },
           { fiscalStatus: "EMITTED", fiscalInfo: { path: ["contingencia"], equals: true } },
         ],
       },
-      select: { id: true, fiscalStatus: true, fiscalInfo: true },
-      // O mais recente primeiro: é o que o balcão e o motoboy estão esperando.
+      select: { id: true, fiscalStatus: true, fiscalInfo: true, createdAt: true, updatedAt: true },
       orderBy: { createdAt: "desc" },
-      take: 40,
+      take: CANDIDATOS_DA_CONSULTA,
     });
+    if (candidatos.length >= CANDIDATOS_DA_CONSULTA) {
+      console.warn(`[Fiscal Auto] Loja ${loja.id}: ${CANDIDATOS_DA_CONSULTA}+ notas processando ou em contingência — a rodada olha as mais recentes.`);
+    }
+    // O relógio do emissor próprio (o mesmo que `sincronizarNotaNaSefaz` usa).
+    const emissor = candidatos.some((p) => objeto(p.fiscalInfo).provedor === PROVEDOR_PROPRIO) || usaEmissorProprio(config) ? await import("./nfce/emissao-da-loja") : null;
+    const relogio = emissor ? emissor.agoraDoEmissor() : agora;
     // Os pedidos da mesma nota (a conta da mesa) viram UMA consulta.
-    const porNota = new Map<string, NotaParaConsultar>();
-    for (const p of processando) {
+    type NaFila = NotaParaConsultar & { contingencia: boolean; prazo: number; criadoEm: number };
+    const porNota = new Map<string, NaFila>();
+    for (const p of candidatos) {
+      const info = objeto(p.fiscalInfo);
+      if (!notaVaiPelaSefaz(info, config) && new Date(p.updatedAt).getTime() < agora.getTime() - JANELA_DA_NOTA_CONSULTADA_MS) continue;
       const id = idDaNotaDoPedido(p);
-      const grupo = porNota.get(id) ?? { ids: [], info: objeto(p.fiscalInfo), fiscalStatus: p.fiscalStatus, lojaId: loja.id };
+      const prazo = Date.parse(String(info.contingenciaPrazo ?? ""));
+      const grupo = porNota.get(id) ?? {
+        ids: [], info, fiscalStatus: p.fiscalStatus, lojaId: loja.id,
+        contingencia: p.fiscalStatus === "EMITTED", prazo: Number.isFinite(prazo) ? prazo : Number.MAX_SAFE_INTEGER, criadoEm: new Date(p.createdAt).getTime(),
+      };
       grupo.ids.push(p.id);
       porNota.set(id, grupo);
     }
-    for (const [idDaNota, grupo] of porNota) {
+    const daVez = [...porNota.entries()]
+      .filter(([, g]) => !emissor || !notaVaiPelaSefaz(g.info, config) || emissor.naVezDoCron(g, relogio))
+      .sort(([, a], [, b]) => (a.contingencia === b.contingencia ? (a.contingencia ? a.prazo - b.prazo || b.criadoEm - a.criadoEm : b.criadoEm - a.criadoEm) : a.contingencia ? 1 : -1))
+      .slice(0, NOTAS_POR_RODADA);
+    for (const [idDaNota, grupo] of daVez) {
       if (acabou()) { resumo.parouPeloRelogio = true; break; }
-      await sincronizarNota(grupo, idDaNota, config);
+      await sincronizarNota({ ids: grupo.ids, info: grupo.info, fiscalStatus: grupo.fiscalStatus, lojaId: grupo.lojaId }, idDaNota, config);
       resumo.consultadas++;
+    }
+
+    // Emitir é só com a emissão ligada e o cadastro sem pendência. O que já
+    // saiu (acima) e o pós-emissão do emissor próprio (passo 4) seguem.
+    if (!o.podeEmitir) {
+      if (usaEmissorProprio(config)) return rotinaDoProprio(loja.id, config, resumo, o);
+      return false;
     }
 
     // ── 2. Falhas transitórias ────────────────────────────────────────────
@@ -1742,21 +1803,29 @@ async function rodadaDaLoja(
     if (acabou()) { resumo.parouPeloRelogio = true; return true; }
     resumo.esquecidas += await emitirNotasEsquecidas({ franchiseeId: loja.id, config, acabou });
 
-    // ── 4. Emissor próprio: número tentado, envios sem desfecho e
-    // inutilização mensal ──────────────────────────────────────────────────
-    // A Focus cuidava disso do lado dela; com a transmissão direta, é nosso:
-    // conferir o número que foi sem resposta (cancelar ou inutilizar), o
-    // envio que ficou sem desfecho num pedido que falhou, e inutilizar os
-    // buracos do mês anterior até o dia 10 (lib/nfce/rotina-da-sefaz).
-    if (usaEmissorProprio(config)) {
-      if (acabou()) { resumo.parouPeloRelogio = true; return true; }
-      const { rotinaDoEmissorProprio } = await import("./nfce/rotina-da-sefaz");
-      const r = await rotinaDoEmissorProprio({ lojaId: loja.id, config, agora, acabou });
-      resumo.tentadosConferidos = (resumo.tentadosConferidos ?? 0) + r.tentadosConferidos;
-      resumo.enviosReconciliados = (resumo.enviosReconciliados ?? 0) + r.enviosReconciliados;
-      resumo.faixasInutilizadas = (resumo.faixasInutilizadas ?? 0) + r.faixasInutilizadas;
-    }
+    // ── 4. Emissor próprio ────────────────────────────────────────────────
+    if (usaEmissorProprio(config)) return rotinaDoProprio(loja.id, config, resumo, o);
   }
+  return false;
+}
+
+/**
+ * O passo 4 da rodada: número tentado, envios sem desfecho e inutilização
+ * mensal do emissor próprio. A Focus cuidava disso do lado dela; com a
+ * transmissão direta, é nosso: conferir o número que foi sem resposta
+ * (cancelar ou inutilizar), o envio que ficou sem desfecho num pedido que
+ * falhou, e inutilizar os buracos do mês anterior até o dia 10
+ * (lib/nfce/rotina-da-sefaz). Roda com a emissão ligada ou não. Devolve true
+ * se o relógio acabou.
+ */
+async function rotinaDoProprio(lojaId: string, config: ConfigDaLoja, resumo: ResumoDaRetentativa, o: { agora: Date; acabou: () => boolean }): Promise<boolean> {
+  if (o.acabou()) { resumo.parouPeloRelogio = true; return true; }
+  const { rotinaDoEmissorProprio } = await import("./nfce/rotina-da-sefaz");
+  const r = await rotinaDoEmissorProprio({ lojaId, config, agora: o.agora, acabou: o.acabou });
+  resumo.tentadosConferidos = (resumo.tentadosConferidos ?? 0) + r.tentadosConferidos;
+  resumo.enviosReconciliados = (resumo.enviosReconciliados ?? 0) + r.enviosReconciliados;
+  resumo.faixasInutilizadas = (resumo.faixasInutilizadas ?? 0) + r.faixasInutilizadas;
+  resumo.xmlsRecuperados = (resumo.xmlsRecuperados ?? 0) + (r.xmlsRecuperados ?? 0);
   return false;
 }
 

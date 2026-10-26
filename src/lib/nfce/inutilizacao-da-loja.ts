@@ -319,16 +319,23 @@ export type ResumoDaInutilizacaoMensal = {
 /**
  * Inutiliza os buracos de numeração de PRODUÇÃO que ficaram para trás (ver
  * `buracosParaInutilizar`, lib/nfce/numeracao), série a série. Só para loja
- * com emissão ligada e provedor "sefaz" (quem chama confere a emissão; aqui se
- * confere de novo). Grava o que fez em fiscalConfig.sefaz.inutilizacaoMensal
+ * do provedor "sefaz" — com a emissão ligada OU NÃO: o buraco do mês é
+ * obrigação da numeração que já foi usada (Ajuste SINIEF 19/16, cl. 16ª), e
+ * a loja que desligou a emissão no dia 30 continua devendo a inutilização até
+ * o dia 10. Grava o que fez em fiscalConfig.sefaz.inutilizacaoMensal
  * — { mes, verificadoEm, faixas, erros, pendente } — e cada faixa em
  * fiscalConfig.inutilizacoes. Homologação não tem valor fiscal: fica de fora.
+ *
+ * `acabou`: o relógio da rodada do cron. Cada faixa pode esperar a SEFAZ até
+ * 30 s; sem olhar o relógio, um mês com muitos buracos passava da concessão
+ * da rodada (5 min) e outra rodada entrava na mesma loja. O que não coube fica
+ * `pendente` e sai na próxima verificação.
  */
-export async function inutilizarBuracosDoMes(p: { lojaId: string; config: ConfigDaLoja; agora?: Date; forcar?: boolean }): Promise<ResumoDaInutilizacaoMensal> {
+export async function inutilizarBuracosDoMes(p: { lojaId: string; config: ConfigDaLoja; agora?: Date; forcar?: boolean; acabou?: () => boolean }): Promise<ResumoDaInutilizacaoMensal> {
   const agora = p.agora ?? agoraDoEmissor();
   const { inicioDoMes, mesAnterior } = mesDaLoja(String(p.config.uf ?? ""), agora);
   const resumo: ResumoDaInutilizacaoMensal = { mes: mesAnterior, faixas: [], erros: [], reservasSoltas: 0 };
-  if (!usaEmissorProprio(p.config) || p.config.enabled !== true) return { ...resumo, pulou: "emissão própria desligada" };
+  if (!usaEmissorProprio(p.config)) return { ...resumo, pulou: "a loja não usa o emissor próprio" };
   const feito = objeto((configDoEmissorProprio(p.config) as Registro).inutilizacaoMensal);
   if (!p.forcar && feito.mes === mesAnterior && feito.pendente !== true) return { ...resumo, pulou: "mês já conferido" };
   const ultima = ultimaVerificacao.get(p.lojaId);
@@ -345,6 +352,10 @@ export async function inutilizarBuracosDoMes(p: { lojaId: string; config: Config
   let pendente = false;
 
   for (const serie of series) {
+    if (p.acabou?.()) {
+      pendente = true;
+      break;
+    }
     // Dentro da trava: calcula os buracos e solta as reservas vencidas que
     // caíram neles — ninguém reusa um número que vai ser inutilizado.
     const calculo = await banco.$transaction(
@@ -379,6 +390,10 @@ export async function inutilizarBuracosDoMes(p: { lojaId: string; config: Config
       continue;
     }
     for (const f of calculo.faixas) {
+      if (p.acabou?.()) {
+        pendente = true;
+        break;
+      }
       const r = await inutilizarFaixaNaSefaz({
         lojaId: p.lojaId,
         config: p.config,
