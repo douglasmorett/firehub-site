@@ -125,6 +125,9 @@ function ehDoCofreFiscal(pathname: string): boolean {
 const DOMINIOS_DE_LOJA: Record<string, string> = {
   // Luiz Carlos, 09/10/2026: "redirecionar pro site" o domínio do Registro.br.
   "divinosburger.com.br": "divinos-burger",
+  // Karen (PasteLê e Annalu), 26/10/2026: domínio direto no sistema, mantendo o TXT de verificação do Facebook no Registro.br.
+  "pasteledocarioca.com.br": "pastel-do-carioca-yg9c",
+  "annalupizzaria.com.br": "annalu-pizzas",
 };
 
 // Next 16 renomeou a convenção `middleware` para `proxy` (roda no runtime
