@@ -36,9 +36,23 @@ export const INSTRUCOES_DO_EVOPDV = [
    )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "VendaExterna_franchiseeId_origem_vendaId_key" ON "VendaExterna"("franchiseeId", "origem", "vendaId")`,
   `CREATE INDEX IF NOT EXISTS "VendaExterna_franchiseeId_createdAt_idx" ON "VendaExterna"("franchiseeId", "createdAt")`,
+  `CREATE TABLE IF NOT EXISTS "IntegracaoEvopdv" (
+     "id" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "cnpj" TEXT NOT NULL,
+     "chaveHash" TEXT NOT NULL,
+     "email" TEXT,
+     "assinatura" JSONB,
+     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "IntegracaoEvopdv_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "IntegracaoEvopdv_franchiseeId_key" ON "IntegracaoEvopdv"("franchiseeId")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "IntegracaoEvopdv_cnpj_key" ON "IntegracaoEvopdv"("cnpj")`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "IntegracaoEvopdv_chaveHash_key" ON "IntegracaoEvopdv"("chaveHash")`,
 ];
 
-const TABELAS_ESPERADAS = ["VendaExterna"];
+const TABELAS_ESPERADAS = ["VendaExterna", "IntegracaoEvopdv"];
 
 let ok = false;
 
@@ -68,7 +82,7 @@ export async function garantirEstruturaDoEvopdv(): Promise<boolean> {
         return false;
       }
       ok = true;
-      console.log("[Boot] ✅ Tabelas do EvoPDV (VendaExterna) garantidas.");
+      console.log("[Boot] ✅ Tabelas do EvoPDV (VendaExterna, IntegracaoEvopdv) garantidas.");
       return true;
     } catch (err: any) {
       console.error(`[Boot] 🛑 Estrutura do EvoPDV (tentativa ${tentativa}/3): ${err?.message}`);

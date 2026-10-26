@@ -73,6 +73,7 @@ import { CAMPOS_DA_NOTA_NA_TELA, notaParaTela } from "./edicao-de-pedido";
 import { normalizarConfigFiscal } from "./fiscal-config";
 import { tokenDoAmbiente } from "./fiscal-credenciais";
 import { PROVEDOR_PROPRIO, usaEmissorProprio } from "./nfce/config-da-loja";
+import { delegadoDaTabela, type TabelaFiscal } from "./nfce/numeracao";
 import { lerPagamentos, somarPagamentos } from "./pagamentos-da-mesa";
 import {
   alertaDoCancelamento,
@@ -252,25 +253,30 @@ const oMesmoFiscalInfo = (lido: unknown): Prisma.CustomerOrderWhereInput => ({
  *
  * `obrigatorio`: se três leituras seguidas mudaram no meio, grava assim mesmo
  * (sem a condição) — a nota autorizada não pode ficar sem registro.
+ *
+ * `tabela`: onde a nota mora (padrão o pedido; a venda de fora do EvoPDV é
+ * VendaExterna, com as mesmas colunas fiscais — lib/nfce/numeracao).
  */
 async function gravarNosPedidos(
   pedidos: string[],
   onde: Prisma.CustomerOrderWhereInput,
   montar: (marcas: Record<string, unknown>) => Prisma.CustomerOrderUpdateManyMutationInput,
   marcasConhecidas: Record<string, unknown> | null,
-  opcoes: { obrigatorio?: boolean } = {}
+  opcoes: { obrigatorio?: boolean; tabela?: TabelaFiscal } = {}
 ): Promise<void> {
+  // As colunas fiscais são as mesmas nas duas tabelas: o `where` e o `data` servem às duas.
+  const tabela = (prisma as any)[delegadoDaTabela(opcoes.tabela)] as typeof prisma.customerOrder;
   if (marcasConhecidas) {
-    await prisma.customerOrder.updateMany({ where: { id: { in: pedidos }, ...onde }, data: montar(marcasConhecidas) });
+    await tabela.updateMany({ where: { id: { in: pedidos }, ...onde }, data: montar(marcasConhecidas) });
     return;
   }
   for (const id of pedidos) {
     let gravou = false;
     let ultimo: unknown = null;
     for (let tentativa = 0; tentativa < 3; tentativa++) {
-      const lido = (await prisma.customerOrder.findUnique({ where: { id }, select: { fiscalInfo: true } }))?.fiscalInfo;
+      const lido = (await tabela.findUnique({ where: { id }, select: { fiscalInfo: true } }))?.fiscalInfo;
       ultimo = lido;
-      const r = await prisma.customerOrder.updateMany({
+      const r = await tabela.updateMany({
         where: { AND: [{ id }, onde, oMesmoFiscalInfo(lido)] },
         data: montar(marcasDaLoja(objeto(lido))),
       });
@@ -278,11 +284,11 @@ async function gravarNosPedidos(
         gravou = true;
         break;
       }
-      const depois = (await prisma.customerOrder.findUnique({ where: { id }, select: { fiscalInfo: true } }))?.fiscalInfo;
+      const depois = (await tabela.findUnique({ where: { id }, select: { fiscalInfo: true } }))?.fiscalInfo;
       if (JSON.stringify(depois ?? null) === JSON.stringify(lido ?? null)) break;
     }
     if (!gravou && opcoes.obrigatorio) {
-      await prisma.customerOrder.updateMany({ where: { AND: [{ id }, onde] }, data: montar(marcasDaLoja(objeto(ultimo))) });
+      await tabela.updateMany({ where: { AND: [{ id }, onde] }, data: montar(marcasDaLoja(objeto(ultimo))) });
     }
   }
 }
@@ -505,8 +511,15 @@ async function gravarResultado(
      * contingência efetivada pelo cron horas depois não reimprime nada.
      */
     imprimirDanfe?: boolean;
+    /**
+     * Onde a nota mora (padrão: o pedido). A venda de fora (VendaExterna, o
+     * EvoPDV) não é pedido: não vai para a fila de impressão nem tem aviso de
+     * pedido cancelado.
+     */
+    tabela?: TabelaFiscal;
   }
 ): Promise<ResultadoAutomatico> {
+  const ehPedido = (contexto.tabela ?? "CustomerOrder") === "CustomerOrder";
   // Outra emissão do MESMO pedido está transmitindo agora (lib/nfce/numeracao):
   // é ela que grava. Gravar "processando" aqui poderia cobrir o resultado dela.
   if (!resultado.ok && "naoGravar" in resultado && resultado.naoGravar) {
@@ -538,7 +551,7 @@ async function gravarResultado(
   const gravar = (
     onde: Prisma.CustomerOrderWhereInput,
     montar: (marcas: Record<string, unknown>) => Prisma.CustomerOrderUpdateManyMutationInput
-  ) => gravarNosPedidos(pedidos, onde, montar, contexto.deConsulta ? null : marcasDaLoja(fiscalAtual));
+  ) => gravarNosPedidos(pedidos, onde, montar, contexto.deConsulta ? null : marcasDaLoja(fiscalAtual), { tabela: contexto.tabela });
 
   // ── CONTINGÊNCIA OFF-LINE: EMITTED, com a marca ──────────────────────────
   //
@@ -572,7 +585,7 @@ async function gravarResultado(
       const aviso = objeto(marcas.alerta);
       if (!contexto.deConsulta && typeof aviso.origem === "string") avisosDaViagem.push(aviso.origem);
       return montarAutorizada(marcas);
-    }, null, { obrigatorio: true });
+    }, null, { obrigatorio: true, tabela: contexto.tabela });
     console.log(
       emContingencia
         ? `[Fiscal Auto] ⏳ NFC-e em contingência off-line (${resultado.chaveDeAcesso}) — pedido(s) ${pedidos.join(", ")}; o cron consulta até a SEFAZ efetivar.`
@@ -586,10 +599,10 @@ async function gravarResultado(
     // DANFE-NFC-e correspondente [...] no mesmo tipo de papel utilizado para
     // imprimir o DANFE-NFC-e original" (Ajuste SINIEF 19/16, cl. 11ª § 1º III, c).
     const refeita = Boolean(provedor.contingenciaRefeita) && !contexto.deConsulta;
-    if (!contexto.deConsulta && (contexto.imprimirDanfe !== false || refeita) && provedor.provedor === PROVEDOR_PROPRIO && pedidos[0]) {
+    if (ehPedido && !contexto.deConsulta && (contexto.imprimirDanfe !== false || refeita) && provedor.provedor === PROVEDOR_PROPRIO && pedidos[0]) {
       imprimirCupomFiscal(pedidos[0], refeita ? { forcar: true } : {});
     }
-    if (!contexto.deConsulta) await avisarSeCanceladoNaEmissao(pedidos, avisosDaViagem[0] ?? null);
+    if (ehPedido && !contexto.deConsulta) await avisarSeCanceladoNaEmissao(pedidos, avisosDaViagem[0] ?? null);
     return { acao: "emitida", motivo: resultado.chaveDeAcesso };
   }
 
@@ -927,6 +940,7 @@ type AlvoDaGravacao = {
   nota?: Record<string, unknown>;
   manual?: boolean;
   substituiCancelada?: boolean;
+  tabela?: TabelaFiscal;
 };
 
 /**
@@ -943,6 +957,7 @@ async function gravarExcecao(alvo: AlvoDaGravacao, respondido: ResultadoDaEmissa
       nota: respondido ? alvo.nota : undefined,
       manual: alvo.manual,
       substituiCancelada: alvo.substituiCancelada,
+      tabela: alvo.tabela,
     });
   } catch (err2: any) {
     console.error(`[Fiscal Auto] Não gravou a exceção da nota (pedido(s) ${alvo.pedidos.join(", ")}):`, err2?.message);
@@ -1017,6 +1032,65 @@ export async function emitirNfceDoPedidoPelaTela(
     console.error(`[Fiscal Emitir] Erro na nota do pedido ${order.id}:`, mensagem);
     await gravarExcecao(alvo, respondido, mensagem, "A NFC-e do pedido");
     return { resultado: oQueGravarNaExcecao(respondido, mensagem, "A NFC-e do pedido"), reemissao, ref };
+  }
+}
+
+/**
+ * A NFC-e de uma VENDA DE FORA (lib/evopdv — o EvoPDV emitindo pelo FireHub):
+ * o mesmo caminho do botão Emitir (`emitirNfceDoPedidoPelaTela`), na tabela
+ * VendaExterna. A mesma reserva, a mesma gravação (`gravarResultado`,
+ * `manual`) com a trava de nota viva e a marca de contingência; sem cupom na
+ * fila de impressão (quem imprime é o PDV) e sem aviso de pedido cancelado
+ * (não é pedido). A nota CANCELADA reemitida sai com ref nova (`<id>-2`) e a
+ * cancelada vai para `notasAnteriores`, como no pedido.
+ */
+export async function emitirNfceDaVendaExterna(
+  venda: { id: string; franchiseeId: string; fiscalStatus?: string | null; fiscalInfo?: unknown },
+  nota: NotaParaEmitir,
+  config: ConfigDaLoja,
+  opcoes: { vendaSemConexao?: { em: Date; motivo: string } | null; verProc?: string } = {}
+): Promise<ResultadoDaEmissao | FalhaInterna> {
+  const info = objeto(venda.fiscalInfo);
+  const reemissao = venda.fiscalStatus === "CANCELED" && Boolean(info.nfceKey);
+  const ref = reemissao ? refDaReemissao(idDaNotaDoPedido(venda), venda.id) : refDoPedidoComum(venda.id, info);
+  const identidade: Record<string, unknown> = ref !== venda.id ? { idDaNota: ref } : {};
+  if (reemissao) identidade.notasAnteriores = notasAnterioresComA(venda);
+  const alvo: AlvoDaGravacao = {
+    pedidos: [venda.id],
+    principal: reemissao ? {} : info,
+    ambiente: Number(config.ambiente) === 1 ? 1 : 2,
+    extra: identidade,
+    extraSemResposta: identidade,
+    nota: dadosDaNota(nota),
+    manual: true,
+    substituiCancelada: reemissao,
+    tabela: "VendaExterna",
+  };
+  let respondido: ResultadoDaEmissao | null = null;
+  try {
+    respondido = await emitirNfce(config, { ...nota, id: ref }, {
+      lojaId: venda.franchiseeId,
+      pedidos: alvo.pedidos,
+      tabela: "VendaExterna",
+      vendaSemConexao: opcoes.vendaSemConexao ?? null,
+      ...(opcoes.verProc ? { verProc: opcoes.verProc } : {}),
+    });
+    await gravarResultado(alvo.pedidos, respondido, {
+      fiscalAtual: alvo.principal,
+      ambiente: alvo.ambiente,
+      extra: alvo.extra,
+      nota: alvo.nota,
+      manual: true,
+      substituiCancelada: reemissao,
+      imprimirDanfe: false,
+      tabela: "VendaExterna",
+    });
+    return respondido;
+  } catch (err: any) {
+    const mensagem = String(err?.message || err);
+    console.error(`[Fiscal EvoPDV] Erro na nota da venda ${venda.id}:`, mensagem);
+    await gravarExcecao(alvo, respondido, mensagem, "A NFC-e da venda");
+    return oQueGravarNaExcecao(respondido, mensagem, "A NFC-e da venda");
   }
 }
 
@@ -1696,6 +1770,23 @@ async function rodadaDaLoja(
       orderBy: { createdAt: "desc" },
       take: CANDIDATOS_DA_CONSULTA,
     });
+    // A venda de fora (VendaExterna, o EvoPDV) também: a contingência dela tem
+    // o mesmo prazo de transmissão, e ela só existe no emissor próprio.
+    const deFora = usaEmissorProprio(config)
+      ? await prisma.vendaExterna.findMany({
+          where: {
+            franchiseeId: loja.id,
+            createdAt: { gte: new Date(agora.getTime() - JANELA_DA_VENDA_CONSULTADA_MS) },
+            OR: [
+              { fiscalStatus: "PENDING", fiscalInfo: { path: ["processando"], equals: true } },
+              { fiscalStatus: "EMITTED", fiscalInfo: { path: ["contingencia"], equals: true } },
+            ],
+          },
+          select: { id: true, fiscalStatus: true, fiscalInfo: true, createdAt: true, updatedAt: true },
+          orderBy: { createdAt: "desc" },
+          take: CANDIDATOS_DA_CONSULTA,
+        })
+      : [];
     if (candidatos.length >= CANDIDATOS_DA_CONSULTA) {
       console.warn(`[Fiscal Auto] Loja ${loja.id}: ${CANDIDATOS_DA_CONSULTA}+ notas processando ou em contingência — a rodada olha as mais recentes.`);
     }
@@ -1705,13 +1796,17 @@ async function rodadaDaLoja(
     // Os pedidos da mesma nota (a conta da mesa) viram UMA consulta.
     type NaFila = NotaParaConsultar & { contingencia: boolean; prazo: number; criadoEm: number };
     const porNota = new Map<string, NaFila>();
-    for (const p of candidatos) {
+    const naRodada = [
+      ...candidatos.map((c) => ({ ...c, tabela: "CustomerOrder" as TabelaFiscal })),
+      ...deFora.map((v) => ({ ...v, tabela: "VendaExterna" as TabelaFiscal })),
+    ];
+    for (const p of naRodada) {
       const info = objeto(p.fiscalInfo);
       if (!notaVaiPelaSefaz(info, config) && new Date(p.updatedAt).getTime() < agora.getTime() - JANELA_DA_NOTA_CONSULTADA_MS) continue;
       const id = idDaNotaDoPedido(p);
       const prazo = Date.parse(String(info.contingenciaPrazo ?? ""));
       const grupo = porNota.get(id) ?? {
-        ids: [], info, fiscalStatus: p.fiscalStatus, lojaId: loja.id,
+        ids: [], info, fiscalStatus: p.fiscalStatus, lojaId: loja.id, tabela: p.tabela,
         contingencia: p.fiscalStatus === "EMITTED", prazo: Number.isFinite(prazo) ? prazo : Number.MAX_SAFE_INTEGER, criadoEm: new Date(p.createdAt).getTime(),
       };
       grupo.ids.push(p.id);
@@ -1723,7 +1818,7 @@ async function rodadaDaLoja(
       .slice(0, NOTAS_POR_RODADA);
     for (const [idDaNota, grupo] of daVez) {
       if (acabou()) { resumo.parouPeloRelogio = true; break; }
-      await sincronizarNota({ ids: grupo.ids, info: grupo.info, fiscalStatus: grupo.fiscalStatus, lojaId: grupo.lojaId }, idDaNota, config);
+      await sincronizarNota({ ids: grupo.ids, info: grupo.info, fiscalStatus: grupo.fiscalStatus, lojaId: grupo.lojaId, tabela: grupo.tabela }, idDaNota, config);
       resumo.consultadas++;
     }
 
@@ -1835,7 +1930,7 @@ async function rotinaDoProprio(lojaId: string, config: ConfigDaLoja, resumo: Res
  * Os pedidos de UMA nota, com o fiscalInfo e o status fiscal de um deles. A
  * loja vai junto para o emissor próprio (o cofre dos XMLs é por loja).
  */
-export type NotaParaConsultar = { ids: string[]; info: Record<string, any>; fiscalStatus: string | null | undefined; lojaId?: string };
+export type NotaParaConsultar = { ids: string[]; info: Record<string, any>; fiscalStatus: string | null | undefined; lojaId?: string; tabela?: TabelaFiscal };
 
 /**
  * A nota é do emissor próprio? A gravada diz (`provedor: "sefaz"`); a que
@@ -1893,6 +1988,7 @@ export async function sincronizarNota(
       ambiente: s.ambiente,
       deConsulta: true,
       deContingencia: s.deContingencia,
+      tabela: grupo.tabela,
     });
     return { resultado: s.resultado, gravou: true };
   }

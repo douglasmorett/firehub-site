@@ -2858,3 +2858,21 @@ model VendaExterna {
   @@unique([franchiseeId, origem, vendaId])
   @@index([franchiseeId, createdAt])
 }
+
+/// A conta fiscal de um CNPJ do EvoPDV no FireHub (lib/evopdv/conta.ts): a
+/// loja (`User`, role "EVOPDV", planPercent 0 — invisível no Admin e isenta)
+/// criada pelo provisionamento servidor-a-servidor, e a chave Bearer com que o
+/// EvoPDV chama /api/integracoes/evopdv — guardada só pelo sha256.
+model IntegracaoEvopdv {
+  id           String   @id @default(cuid())
+  franchiseeId String   @unique
+  /// Só dígitos (ou o alfanumérico da NT 2026.004), 14 posições.
+  cnpj         String   @unique
+  chaveHash    String   @unique
+  /// O e-mail da licença do EvoPDV: a assinatura fiscal é conferida por ele (`fiscal:<email>` na Vercel).
+  email        String?
+  /// O cache da conferência da assinatura: { ativa, conferidaEm, ultimaAtivaEm, falhouEm }.
+  assinatura   Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}

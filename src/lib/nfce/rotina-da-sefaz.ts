@@ -49,7 +49,7 @@ import {
   transporteDoEmissor,
 } from "./emissao-da-loja";
 import { inutilizarBuracosDoMes, inutilizarFaixaNaSefaz } from "./inutilizacao-da-loja";
-import { sqlMesclarNoFiscalInfo, type Ambiente } from "./numeracao";
+import { TABELAS_FISCAIS, delegadoDaTabela, sqlMesclarNoFiscalInfo, type Ambiente, type TabelaFiscal } from "./numeracao";
 
 type ConfigDaLoja = { uf?: string | null; cnpj?: string | null; ambiente?: number | null; enabled?: boolean; [chave: string]: unknown };
 type Registro = Record<string, any>;
@@ -84,8 +84,32 @@ const PRAZO_DA_SUBSTITUICAO_MS = 168 * 60 * 60_000;
 /** A reconciliação alcança pedidos de até 31 dias + os 7 dias do envio. */
 const JANELA_DA_RECONCILIACAO_MS = 38 * 24 * 60 * 60_000;
 
-async function gravarTentado(ids: string[], tentado: Registro, extra: Registro = {}): Promise<void> {
-  await bancoDoEmissor().$executeRaw(sqlMesclarNoFiscalInfo(ids, { numeroTentado: tentado, ...extra }));
+async function gravarNumeroTentado(ids: string[], tentado: Registro, extra: Registro = {}, tabela?: TabelaFiscal): Promise<void> {
+  await bancoDoEmissor().$executeRaw(sqlMesclarNoFiscalInfo(ids, { numeroTentado: tentado, ...extra }, [], tabela));
+}
+
+type Linha = { id: string; fiscalStatus: string | null; fiscalInfo: unknown; createdAt: Date; tabela: TabelaFiscal };
+
+/**
+ * A mesma busca nos pedidos e nas vendas de fora (VendaExterna, o EvoPDV): as
+ * duas dividem a série da loja (lib/nfce/numeracao), e o que uma deixou a
+ * conferir é obrigação igual. Cada linha volta com a tabela, para a gravação ir
+ * ao lugar certo.
+ */
+async function dasDuasTabelas(where: Registro): Promise<Linha[]> {
+  const banco = bancoDoEmissor();
+  const lidas: Linha[] = [];
+  for (const tabela of TABELAS_FISCAIS) {
+    const linhas: Array<{ id: string; fiscalStatus: string | null; fiscalInfo: unknown; createdAt: Date }> = await banco[delegadoDaTabela(tabela)].findMany({
+      where,
+      select: { id: true, fiscalStatus: true, fiscalInfo: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: CANDIDATOS_DA_ROTINA,
+    });
+    lidas.push(...linhas.map((l) => ({ ...l, tabela })));
+  }
+  // O mais recente primeiro, nas duas juntas (como a busca de uma tabela só).
+  return lidas.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, CANDIDATOS_DA_ROTINA);
 }
 
 /** Quando o tentado pode ser conferido de novo (ms). */
@@ -117,25 +141,19 @@ async function guardarNoCofre(lojaId: string, tipo: "nota" | "evento", identific
 export async function conferirNumerosTentados(p: { lojaId: string; config: ConfigDaLoja; agora?: Date; acabou?: () => boolean; limite?: number }): Promise<number> {
   const agora = p.agora ?? agoraDoEmissor();
   if (sefazBloqueadaAte(p.lojaId, p.config, agora)) return 0;
-  const banco = bancoDoEmissor();
-  const pedidos: Array<{ id: string; fiscalStatus: string | null; fiscalInfo: unknown }> = await banco.customerOrder.findMany({
-    where: {
-      franchiseeId: p.lojaId,
-      createdAt: { gte: new Date(agora.getTime() - JANELA_DO_TENTADO_MS) },
-      fiscalInfo: { path: ["numeroTentado", "situacao"], equals: "a_conferir" },
-    },
-    select: { id: true, fiscalStatus: true, fiscalInfo: true },
-    orderBy: { createdAt: "desc" },
-    take: CANDIDATOS_DA_ROTINA,
+  const pedidos = await dasDuasTabelas({
+    franchiseeId: p.lojaId,
+    createdAt: { gte: new Date(agora.getTime() - JANELA_DO_TENTADO_MS) },
+    fiscalInfo: { path: ["numeroTentado", "situacao"], equals: "a_conferir" },
   });
   // A conta da mesa grava o mesmo tentado em todos os pedidos: um por chave.
   // Só os da VEZ (fora do recuo), e até `limite` chaves por rodada.
-  const porChave = new Map<string, { ids: string[]; info: Registro; fiscalStatus: string | null }>();
+  const porChave = new Map<string, { ids: string[]; info: Registro; fiscalStatus: string | null; tabela: TabelaFiscal }>();
   for (const o of pedidos) {
     const t = objeto(objeto(o.fiscalInfo).numeroTentado);
     if (!chaveValida(String(t.chave ?? ""))) continue;
     if (!porChave.has(t.chave) && (proximaConferenciaDoTentado(t) > agora.getTime() || porChave.size >= (p.limite ?? 20))) continue;
-    const g = porChave.get(t.chave) ?? { ids: [], info: objeto(o.fiscalInfo), fiscalStatus: o.fiscalStatus ?? null };
+    const g = porChave.get(t.chave) ?? { ids: [], info: objeto(o.fiscalInfo), fiscalStatus: o.fiscalStatus ?? null, tabela: o.tabela };
     g.ids.push(o.id);
     porChave.set(t.chave, g);
   }
@@ -165,6 +183,7 @@ export async function conferirNumerosTentados(p: { lojaId: string; config: Confi
     const tentativa: Registro = { ...t, conferencias, ultimaConferenciaEm: agora.toISOString() };
     const cupom = String(g.info.nfceNumber ?? "");
     const contingencia = String(g.info.nfceKey ?? "");
+    const gravarTentado = (ids: string[], tentado: Registro, extra: Registro = {}) => gravarNumeroTentado(ids, tentado, extra, g.tabela);
     const ctx = { certificado, uf, ambiente, transporte: transporteDoEmissor() };
     /** A conferência não resolveu: registra e, na 8ª, vai para uma pessoa. */
     const semDesfecho = async (erro: string) => {
@@ -404,22 +423,17 @@ function comNotaAnterior(
 export async function reconciliarEnviosSemDesfecho(p: { lojaId: string; config: ConfigDaLoja; agora?: Date; acabou?: () => boolean; limite?: number }): Promise<number> {
   const agora = p.agora ?? agoraDoEmissor();
   if (sefazBloqueadaAte(p.lojaId, p.config, agora)) return 0;
-  const pedidos: Array<{ id: string; fiscalStatus: string | null; fiscalInfo: unknown }> = await bancoDoEmissor().customerOrder.findMany({
-    where: {
-      franchiseeId: p.lojaId,
-      fiscalStatus: "FAILED",
-      createdAt: { gte: new Date(agora.getTime() - JANELA_DA_RECONCILIACAO_MS) },
-      fiscalInfo: { path: ["envioSefaz", "aConferir"], equals: true },
-    },
-    select: { id: true, fiscalStatus: true, fiscalInfo: true },
-    orderBy: { createdAt: "desc" },
-    take: CANDIDATOS_DA_ROTINA,
+  const pedidos = await dasDuasTabelas({
+    franchiseeId: p.lojaId,
+    fiscalStatus: "FAILED",
+    createdAt: { gte: new Date(agora.getTime() - JANELA_DA_RECONCILIACAO_MS) },
+    fiscalInfo: { path: ["envioSefaz", "aConferir"], equals: true },
   });
   if (pedidos.length === 0) return 0;
   const { sincronizarNota } = await import("../fiscal-automatico");
   const { idDaNotaDoPedido } = await import("../fiscal-momento");
   // Só os da VEZ (fora do ritmo e sem ter ido para uma pessoa), até `limite` notas.
-  const porNota = new Map<string, { ids: string[]; info: Registro; fiscalStatus: string | null; lojaId: string }>();
+  const porNota = new Map<string, { ids: string[]; info: Registro; fiscalStatus: string | null; lojaId: string; tabela: TabelaFiscal }>();
   for (const o of pedidos) {
     const info = objeto(o.fiscalInfo);
     const envio = envioDoFiscalInfo(info);
@@ -427,7 +441,7 @@ export async function reconciliarEnviosSemDesfecho(p: { lojaId: string; config: 
     if (proximaConsultaDoEnvio(envio) > agora.getTime()) continue;
     const id = idDaNotaDoPedido(o);
     if (!porNota.has(id) && porNota.size >= (p.limite ?? 40)) continue;
-    const g = porNota.get(id) ?? { ids: [], info, fiscalStatus: o.fiscalStatus ?? null, lojaId: p.lojaId };
+    const g = porNota.get(id) ?? { ids: [], info, fiscalStatus: o.fiscalStatus ?? null, lojaId: p.lojaId, tabela: o.tabela };
     g.ids.push(o.id);
     porNota.set(id, g);
   }

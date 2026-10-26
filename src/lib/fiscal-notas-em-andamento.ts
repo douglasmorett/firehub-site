@@ -32,6 +32,9 @@
  * Venda de até 31 dias (`JANELA_DA_VENDA_CONSULTADA_MS`, a mesma do cron): é
  * o piso do índice (franchiseeId, createdAt), e o que é mais antigo o cron
  * também não acompanha — fica com o "Consultar situação" da tela.
+ *
+ * A venda de fora (VendaExterna — o EvoPDV emitindo pelo FireHub) conta igual:
+ * ela tem as mesmas colunas fiscais e é acompanhada pelo mesmo cron.
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -86,6 +89,15 @@ type BancoDasNotas = {
       take: number;
     }): Promise<Array<{ id: string; dailyOrderNumber: number | null; fiscalStatus: string | null; fiscalInfo: unknown }>>;
   };
+  /** A venda de fora (opcional no banco dos testes). */
+  vendaExterna?: {
+    findMany(args: {
+      where: Prisma.VendaExternaWhereInput;
+      select: { id: true; vendaId: true; fiscalStatus: true; fiscalInfo: true };
+      orderBy: { createdAt: "desc" };
+      take: number;
+    }): Promise<Array<{ id: string; vendaId: string; fiscalStatus: string | null; fiscalInfo: unknown }>>;
+  };
 };
 
 /** Até `limite` pedidos da loja com nota em andamento. Vazio = pode trocar. */
@@ -101,10 +113,25 @@ export async function notasEmAndamentoDaLoja(
     take: opcoes.limite ?? 5,
   });
   // O banco já filtrou; a regra pura confere de novo e diz o motivo.
-  return pedidos.flatMap((p) => {
+  const doPainel = pedidos.flatMap((p) => {
     const motivo = notaEmAndamento(p);
     return motivo ? [{ id: p.id, dailyOrderNumber: p.dailyOrderNumber ?? null, motivo }] : [];
   });
+  const limite = opcoes.limite ?? 5;
+  if (doPainel.length >= limite || !banco.vendaExterna) return doPainel;
+  const deFora = await banco.vendaExterna.findMany({
+    where: ondeHaNotaEmAndamento(lojaId, opcoes.agora) as Prisma.VendaExternaWhereInput,
+    select: { id: true, vendaId: true, fiscalStatus: true, fiscalInfo: true },
+    orderBy: { createdAt: "desc" },
+    take: limite - doPainel.length,
+  });
+  return [
+    ...doPainel,
+    ...deFora.flatMap((v) => {
+      const motivo = notaEmAndamento(v);
+      return motivo ? [{ id: v.id, dailyOrderNumber: null, motivo }] : [];
+    }),
+  ];
 }
 
 /** A resposta 409 das rotas que trocam de emissor ou de ambiente. */

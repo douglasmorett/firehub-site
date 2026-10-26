@@ -395,9 +395,11 @@ export function bancoFalso() {
     estado.sqlVistos.push(m);
     await pausa();
     const ler = await numeros();
-    // As duas tabelas dividem a série (lib/nfce/numeracao → fonteDaLoja).
+    // As duas tabelas dividem a série (lib/nfce/numeracao → fonteDaLoja): a
+    // venda de fora só entra se o SQL de verdade a lê.
+    const comVendas = /"VendaExterna"/.test(String(sql?.sql ?? ""));
     const daLoja = (lojaId: string, desde?: Date) =>
-      [...db.customerOrder, ...db.vendaExterna]
+      [...db.customerOrder, ...(comVendas ? db.vendaExterna : [])]
         .filter((o) => o.franchiseeId === lojaId && o.fiscalInfo != null && (!desde || o.createdAt.getTime() >= desde.getTime()))
         .flatMap((o) => ler(o as any));
     if (m === "maior-numero" || m === "maior-numero-recente") {
