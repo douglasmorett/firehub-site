@@ -543,6 +543,18 @@ model KitchenItem {
   /// Vazio = 60x60. Escolhido POR PRODUTO, como o dono pediu.
   labelSize     String?
 
+  /// ETIQUETA DE VALIDADE (src/lib/etiqueta-validade.ts). Conservação padrão
+  /// do item: AMBIENTE | REFRIGERADO | CONGELADO | DESCONGELANDO. Vazio = a
+  /// tela pergunta na hora de imprimir (antes saía "congelado" em tudo).
+  conservacao   String?
+  /// Prazo por conservação: { "REFRIGERADO": { "valor": 3, "unidade": "d",
+  /// "temperatura": "até 4 °C" }, ... }. Unidade "h" (horas) ou "d" (dias).
+  /// Sem prazo para a conservação, vale `shelfLifeDays` (só na padrão).
+  prazos        Json?
+  /// Saem na etiqueta de PRODUTO ABERTO (Portaria CVS 3/2026, art. 37). Opcionais.
+  marca         String?
+  fornecedor    String?
+
   @@index([franchiseeId])
 }
 
@@ -2169,7 +2181,9 @@ model StockLot {
 
   /// ATIVO | CONSUMIDO | VENCIDO | DESCARTADO
   status        String   @default("ATIVO")
-  /// ETIQUETA | NFE | MANUAL
+  /// ETIQUETA | ETIQUETA_SEM_QR | NFE | MANUAL. ETIQUETA_SEM_QR é a etiqueta
+  /// impressa sem QR: fica no histórico e na lista de vencimento, mas não
+  /// aparece como "aguardando" no estoque, porque ninguém vai escanear.
   origem        String   @default("ETIQUETA")
 
   criadoPor     String?
@@ -2177,6 +2191,25 @@ model StockLot {
   /// O que gera lote novo é transformação real do alimento (descongelou,
   /// porcionou, mudou a validade).
   impressoes    Int      @default(1)
+
+  /// A ETIQUETA DE VALIDADE como saiu no papel — congelada no ato, como o
+  /// nome. Reimprimir lê DAQUI e nunca recalcula: é vedado revalidar
+  /// (Portaria CVS 3/2026, art. 46). `fabricadoEm`/`validoAte` continuam com
+  /// o DIA, que é o que o estoque e o scan leem.
+  /// ABERTO | MANIPULADO | DESCONGELANDO | AMOSTRA
+  tipoEtiqueta    String?
+  /// AMBIENTE | REFRIGERADO | CONGELADO | DESCONGELANDO
+  conservacao     String?
+  /// Instante da manipulação (data E hora).
+  manipuladoEm    DateTime?
+  /// Instante do fim da validade: a hora exata quando o prazo é em horas; o
+  /// fim do dia quando é em dias.
+  venceEm         DateTime?
+  validadeComHora Boolean  @default(false)
+  /// Quem imprimiu (nome digitado ou escolhido na tela; `criadoPor` é o login).
+  responsavel     String?
+  marca           String?
+  fornecedor      String?
 
   /// QUEM RECEBEU. `franchiseeId` é quem IMPRIMIU a etiqueta — na franquia, a
   /// fábrica. A loja que recebe a mercadoria lê o QR e é NESSE momento que o

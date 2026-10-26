@@ -24,6 +24,7 @@ const bundle = `(() => {
   const helper = { exports: {} };
   ((exports, require) => { ${helper} })(helper.exports, () => css.exports);
   window.imprimirEtiquetas = helper.exports.imprimirEtiquetas;
+  window.TAMANHOS = css.exports.TAMANHOS;
 })();`;
 const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6VxAAAAAASUVORK5CYII=", "base64");
 const browser = await chromium.launch({ headless: true });
@@ -67,15 +68,15 @@ try {
   });
   await page.goto("http://etiquetas.test/");
   await page.addScriptTag({ content: bundle });
-  const iniciar = async html => page.evaluate(html => {
+  const iniciar = async (html, tamanho) => page.evaluate(([html, tamanho]) => {
     // Template mantém as imagens inertes até o helper copiar para o iframe.
     const template = document.createElement("template");
     template.innerHTML = `<div>${html}</div>`;
     window.__resultado = "pendente";
-    window.__operacao = window.imprimirEtiquetas(template.content.firstElementChild)
+    window.__operacao = window.imprimirEtiquetas(template.content.firstElementChild, tamanho)
       .then(() => { window.__resultado = "ok"; })
       .catch(erro => { window.__resultado = erro.message; });
-  }, html);
+  }, [html, tamanho]);
   const fechar = () => page.evaluate(() => {
     document.querySelector("#label-print-frame")?.contentWindow.dispatchEvent(new Event("afterprint"));
   });
@@ -112,6 +113,25 @@ try {
   confere((pdf.match(/\/Type \/Page\b/g) || []).length === 3, "PDF tem três páginas sem folha extra");
   confere((pdf.match(/\/MediaBox \[0 0 288 432\]/g) || []).length === 3, "cada página mede 4 × 6 polegadas (288 × 432 pontos)");
   await fechar();
+
+  // Cada tamanho de papel gera o @page dele, e o PDF sai do tamanho certo
+  // (1 mm = 72 / 25,4 pontos). Duas etiquetas por tamanho: sem folha extra.
+  const tamanhos = await page.evaluate(() => Object.fromEntries(Object.entries(window.TAMANHOS).map(([k, t]) => [k, t])));
+  for (const [id, t] of Object.entries(tamanhos)) {
+    await iniciar(`<div class="label-page">${id} 1</div><div class="label-page">${id} 2</div>`, id);
+    await page.waitForFunction(() => window.__resultado === "ok");
+    const feito = await page.evaluate(() => window.__impressoes.at(-1));
+    confere(feito.html.includes(`size: ${t.largura} ${t.altura}`), `${id}: o @page é ${t.largura} × ${t.altura}`);
+    const folha = await context.newPage();
+    await folha.setContent(feito.html);
+    const bruto = (await folha.pdf({ preferCSSPageSize: true, printBackground: true })).toString("latin1");
+    const caixas = [...bruto.matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)].map(m => [Number(m[1]), Number(m[2])]);
+    const pt = mm => (mm * 72) / 25.4;
+    confere(caixas.length === 2 && caixas.every(([l, a]) => Math.abs(l - pt(t.larguraMm)) < 1 && Math.abs(a - pt(t.alturaMm)) < 1),
+      `${id}: PDF com 2 páginas de ${t.larguraMm} × ${t.alturaMm} mm (${caixas.map(c => c.join("×")).join(", ")} pt)`);
+    await folha.close();
+    await fechar();
+  }
   await context.close();
 
   const preview = process.env.PREVIEW_ETIQUETAS_URL;
@@ -132,8 +152,9 @@ try {
     } });
     await tela.goto(`${url.origin}/store/etiquetas`, { timeout: 120000 });
     await tela.locator("#insumo").selectOption({ label: "Frango desfiado - teste" });
-    await tela.locator('input[type="date"]').nth(0).fill("2026-10-20");
-    await tela.locator('input[type="date"]').nth(1).fill("2026-10-23");
+    await tela.locator("#conservacao").selectOption("REFRIGERADO");
+    await tela.locator("#manipulacao").fill("2026-10-20T10:00");
+    if (await tela.locator('#validade[type="date"]').count()) await tela.locator("#validade").fill("2026-10-23");
     await tela.getByRole("button", { name: "Imprimir etiqueta", exact: true }).click();
     await tela.waitForFunction(() => window.__impressoes.length === 1, undefined, { timeout: 30000 });
     confere(await tela.evaluate(() => window.__impressoes[0].paginas === 1 && window.__impressoes[0].imagens.length > 0 && !window.__impressoes[0].html.includes("LOLOLOLO") && window.__impressoes[0].imagens.every(i => i.completa && i.largura > 0)), "botão React abre impressão após gerar QR e renderizar a etiqueta");

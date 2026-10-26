@@ -1,4 +1,4 @@
-import { CSS_DA_ETIQUETA } from "./etiqueta-css";
+import { cssDaEtiqueta, type TamanhoDaEtiqueta } from "./etiqueta-css";
 
 const TEMPO_PARA_CARREGAR = 15000;
 
@@ -29,8 +29,11 @@ async function esperarImagens(doc: Document) {
   }));
 }
 
-/** Abre a seleção de impressora do navegador, com uma página por etiqueta. */
-export async function imprimirEtiquetas(area: HTMLElement): Promise<void> {
+/**
+ * Abre a seleção de impressora do navegador, com uma página por etiqueta.
+ * O `@page` sai do tamanho escolhido: é ele que diz ao Chrome o papel certo.
+ */
+export async function imprimirEtiquetas(area: HTMLElement, tamanho: TamanhoDaEtiqueta = "4x6"): Promise<void> {
   document.getElementById("label-print-frame")?.remove();
   const iframe = document.createElement("iframe");
   iframe.id = "label-print-frame";
@@ -47,7 +50,7 @@ export async function imprimirEtiquetas(area: HTMLElement): Promise<void> {
         resolve();
       };
       iframe.srcdoc = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>Etiquetas de validade</title><style>${CSS_DA_ETIQUETA}</style>
+<title>Etiquetas de validade</title><style>${cssDaEtiqueta(tamanho)}</style>
 </head><body>${area.innerHTML}</body></html>`;
       document.body.appendChild(iframe);
     });

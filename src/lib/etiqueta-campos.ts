@@ -35,6 +35,7 @@ export const CHAVES_DE_TEXTO = [
   "conservacaoResfriado",
   "conservacaoSeco",
   "conservacaoAmbiente",
+  "conservacaoDescongelando",
   "transgenico",
   "porcao",
 ] as const;
@@ -75,9 +76,16 @@ export const TEXTOS_PADRAO: Record<ChaveDeTexto, string> = {
   // farinha seca e pão, onde ela contradiz a validade impressa três linhas
   // abaixo, no mesmo papel que a vigilância lê.
   conservacaoCongelado: "Congelador: Até -12ºC = 30 dias\nFreezer: -18ºC = Vide validade",
-  conservacaoResfriado: "Manter refrigerado entre 0ºC e 4ºC. Consumir em até 5 dias.",
+  // Até 26/10/2026 só o texto do congelado chegava ao papel (a chave nunca
+  // trocava). Os outros saíram dos prazos que traziam ("Consumir em até 5
+  // dias", "Depois de aberto, manter refrigerado"): o prazo agora é do
+  // PRODUTO, e um texto que contradiz a validade impressa no mesmo papel é
+  // pior que texto nenhum.
+  conservacaoResfriado: "Manter refrigerado entre 0ºC e 4ºC.",
   conservacaoSeco: "Manter em local seco e arejado, ao abrigo da luz.",
-  conservacaoAmbiente: "Conservar em temperatura ambiente. Depois de aberto, manter refrigerado.",
+  conservacaoAmbiente: "Conservar em temperatura ambiente, em local seco e arejado.",
+  // RDC 216, 4.8.11 e 4.8.12: abaixo de 5 ºC, e o que descongelou não volta ao freezer.
+  conservacaoDescongelando: "Descongelando sob refrigeração, abaixo de 5ºC. Não recongelar.",
   // Estava escrita dentro do JSX: um produto que só tem soja transgênica saía
   // declarando milho.
   transgenico: "Contém derivados de milho e soja transgênicos.",

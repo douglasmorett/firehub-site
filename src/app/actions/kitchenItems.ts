@@ -5,6 +5,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { revalidatePath } from "next/cache";
 import { checkRateLimit } from "@/lib/rateLimit";
+import { Prisma } from "@prisma/client";
+import { sanitizarPrazos, lerConservacao } from "@/lib/etiqueta-validade";
 
 /**
  * Resolve QUAL LOJA e a da sessao — `ownerId || id`.
@@ -56,12 +58,21 @@ const CAMPOS_DO_ITEM = [
   //     insumo novo pelo nome da etiqueta.
   //   labelSize: o preset da etiqueta escolhido por produto.
   "stockItemId", "labelSize",
+  // A etiqueta de validade (lib/etiqueta-validade.ts): conservação padrão,
+  // prazo por conservação, e marca/fornecedor do produto aberto.
+  "conservacao", "prazos", "marca", "fornecedor",
 ] as const;
 
 function apenasCamposConhecidos(data: any) {
   const limpo: Record<string, any> = {};
   for (const campo of CAMPOS_DO_ITEM) {
     if (data && Object.prototype.hasOwnProperty.call(data, campo)) limpo[campo] = data[campo];
+  }
+  // O Json não vira saco sem fundo, e conservação fora da lista vira vazio.
+  if ("prazos" in limpo) limpo.prazos = sanitizarPrazos(limpo.prazos) ?? Prisma.DbNull;
+  if ("conservacao" in limpo) limpo.conservacao = lerConservacao(limpo.conservacao);
+  for (const c of ["marca", "fornecedor"]) {
+    if (c in limpo) limpo[c] = String(limpo[c] ?? "").trim().slice(0, 80) || null;
   }
   return limpo;
 }

@@ -60,17 +60,21 @@ export async function GET(req: Request) {
     // é quem recebeu, `franchiseeId` é quem imprimiu, e numa franquia esses
     // dois são lojas diferentes.
     const daMinhaLoja = { recebidoPorId: franchiseeId, active: true, status: "ATIVO" as const };
+    // A etiqueta impressa SEM QR também vira lote (histórico e vencimento, na
+    // tela de etiquetas), mas não está "aguardando": ninguém vai escanear. E a
+    // fechada pelo "usei/descartei" de lá também sai daqui.
+    const naoRecebidas = { franchiseeId, recebidoPorId: null, active: true, status: "ATIVO", origem: { not: "ETIQUETA_SEM_QR" } };
 
     const onde: any =
       filtro === "aguardando"
-        ? { franchiseeId, recebidoPorId: null, active: true }
+        ? naoRecebidas
         : filtro === "vencendo"
           ? { ...daMinhaLoja, validoAte: { gte: agora, lte: em3dias } }
           : filtro === "vencidos"
             ? { ...daMinhaLoja, validoAte: { lt: agora } }
             : filtro === "geladeira"
               ? daMinhaLoja
-              : { OR: [{ franchiseeId, recebidoPorId: null, active: true }, daMinhaLoja] };
+              : { OR: [naoRecebidas, daMinhaLoja] };
 
     const lotes = await prisma.stockLot.findMany({
       where: onde,
@@ -92,7 +96,7 @@ export async function GET(req: Request) {
     }));
 
     const [aguardando, geladeira, vencendo, vencidos] = await Promise.all([
-      prisma.stockLot.count({ where: { franchiseeId, recebidoPorId: null, active: true } }),
+      prisma.stockLot.count({ where: naoRecebidas }),
       prisma.stockLot.count({ where: daMinhaLoja }),
       prisma.stockLot.count({ where: { ...daMinhaLoja, validoAte: { gte: agora, lte: em3dias } } }),
       prisma.stockLot.count({ where: { ...daMinhaLoja, validoAte: { lt: agora } } }),
