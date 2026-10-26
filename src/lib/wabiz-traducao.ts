@@ -179,7 +179,25 @@ function opcoesDaParte(parte: WabizParte): OpcaoDaParte[] {
   // No pedido real da sandbox (12/09/2026) a borda NÃO veio em `edge`, como a
   // doc mostra: veio em `others` com o grupo chamado "Bordas". Sem o rótulo a
   // comanda dizia só "Catupiry Original", que a cozinha lê como recheio.
-  for (const g of c?.others || []) juntar(/borda/i.test(texto(g?.name)) ? "Borda" : null, g?.options);
+  // ── O GRUPO SEM NOME REPETE A ESCOLHA ────────────────────────────────────
+  // NIK, 26/10/2026 (Wabiz #4981): "6 Esfihas Tradicionais" chegou com um
+  // grupo de nome vazio (4 carne + 2 frango) ALÉM do "Escolha suas esfihas"
+  // (4 carne + 1 frango + 1 calabresa). Somar os dois mandou 12 esfihas para a
+  // cozinha num combo de 6 — e todo "6 Esfihas" das 48 h anteriores veio assim.
+  // O grupo sem nome só repete opções que já estão num grupo com nome: quando
+  // todas as dele aparecem em outro grupo da mesma parte, ele fica de fora.
+  const nomeadas = new Set(
+    (c?.others || [])
+      .filter((g) => texto(g?.name))
+      .flatMap((g) => (g?.options || []).map((o) => texto(o?.name)))
+      .filter(Boolean),
+  );
+  const repete = (g: { name?: string | null; options?: Array<{ name?: string | null }> | null }) =>
+    !texto(g?.name) && (g?.options || []).length > 0 && (g?.options || []).every((o) => nomeadas.has(texto(o?.name)));
+  for (const g of c?.others || []) {
+    if (repete(g)) continue;
+    juntar(/borda/i.test(texto(g?.name)) ? "Borda" : null, g?.options);
+  }
   for (const g of c?.additionals || []) juntar(null, g?.options);
   return saida;
 }

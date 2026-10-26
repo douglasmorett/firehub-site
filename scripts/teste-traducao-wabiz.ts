@@ -243,6 +243,57 @@ const comCupom: any = {
   confere("combo: três sabores distintos, três opções", sel.length, 3);
 }
 
+// ── Grupo sem nome repete a escolha (NIK, Wabiz #4981, 26/10/2026) ────────
+// O "6 Esfihas" chegou com um grupo de nome vazio além do "Escolha suas
+// esfihas", e a soma dos dois mandou 12 esfihas para a cozinha.
+{
+  const seis: any = {
+    ...delivery, orderNumber: 4981, internalKey: "seis-1",
+    items: [{ groupName: "Combos", products: [{ pos: 1, qty: 1, price: 49.9, unity: "un", parts: [{
+      name: "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L", price: 49.9, externalCode: "37841462",
+      customization: { additionals: [], edge: {}, others: [
+        { name: "", options: [
+          { externalCode: "37841462.25828762", name: "Esfiha Carne", price: 0, qty: 4 },
+          { externalCode: "37841462.25828763", name: "Esfiha Frango", price: 0, qty: 2 },
+        ] },
+        { name: "Escolha suas esfihas", options: [
+          { externalCode: "37841462.25828762", name: "Esfiha Carne", price: 0, qty: 4 },
+          { externalCode: "37841462.25828763", name: "Esfiha Frango", price: 0, qty: 1 },
+          { externalCode: "37841462.25828764", name: "Esfiha Calabresa", price: 0, qty: 1 },
+        ] },
+        { name: "Guaraná Mineiro 1,5l Grátis", options: [
+          { externalCode: "37841462.25828767", name: "Guaraná Mineiro 1,5l", price: 0, qty: 1 },
+        ] },
+      ] },
+      obs: null,
+    }] }] }],
+  };
+  const { items } = traduzirPedidoWabiz(seis, ctx);
+  const sel = JSON.parse(items[0].comboSelections);
+  const qtd = (n: string) => sel.find((x: any) => x.name === n)?.quantity;
+  confere("6 esfihas: grupo sem nome não soma", [qtd("Esfiha Carne"), qtd("Esfiha Frango"), qtd("Esfiha Calabresa")], [4, 1, 1]);
+  confere("6 esfihas: total de esfihas é 6", sel.filter((x: any) => /Esfiha/.test(x.name)).reduce((s: number, x: any) => s + x.quantity, 0), 6);
+  confere("6 esfihas: guaraná continua", qtd("Guaraná Mineiro 1,5l"), 1);
+}
+
+// Grupo sem nome com opção que NÃO está em outro grupo continua valendo.
+{
+  const solto: any = {
+    ...delivery, orderNumber: 4982, internalKey: "solto-1",
+    items: [{ groupName: "Combos", products: [{ pos: 1, qty: 1, price: 30, unity: "un", parts: [{
+      name: "Combo X", price: 30, externalCode: "cx",
+      customization: { additionals: [], edge: {}, others: [
+        { name: "", options: [{ externalCode: "b1", name: "Batata Frita", price: 0, qty: 1 }] },
+        { name: "Bebida", options: [{ externalCode: "b2", name: "Coca Lata", price: 0, qty: 1 }] },
+      ] },
+      obs: null,
+    }] }] }],
+  };
+  const { items } = traduzirPedidoWabiz(solto, ctx);
+  const nomes = JSON.parse(items[0].comboSelections).map((x: any) => x.name);
+  confere("grupo sem nome com opção própria fica", nomes, ["Batata Frita", "Coca Lata"]);
+}
+
 // ── Mesa é MESA ───────────────────────────────────────────────────────────
 // `service.type = "table"` caía em RETIRADA e o "pronto" da cozinha avisava
 // "pode retirar" a um cliente sentado na mesa.
