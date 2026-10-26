@@ -2,6 +2,7 @@
 
 import { AlertTriangle } from "lucide-react";
 import type { ChaveDeCampo } from "@/lib/etiqueta-campos";
+import { FAIXA_DO_TIPO, textosDasDatas, type DadosDoPapel } from "@/lib/etiqueta-validade";
 
 /**
  * O papel. Uma folha de 4x6in, e nada mais.
@@ -21,11 +22,6 @@ import type { ChaveDeCampo } from "@/lib/etiqueta-campos";
  * para vigiar.
  */
 
-function dataDaEtiqueta(iso: string): string {
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || "");
-  return m ? `${m[3]}/${m[2]}/${m[1]}` : "--";
-}
-
 export type PropsDaEtiqueta = {
   etq: { code: string; qr: string };
   nomeDoProduto: string;
@@ -39,9 +35,10 @@ export type PropsDaEtiqueta = {
   nomeDaLoja: string;
   cnpj: string;
   endereco: string;
-  fabDate: string;
-  valDate: string;
-  lote: string;
+  /** Tipo, datas com hora, conservação, responsável e lote — os mesmos na reimpressão. */
+  dados: DadosDoPapel;
+  /** Produto embalado para venda: a data continua "Fabricado em". */
+  paraVenda: boolean;
 };
 
 export default function EtiquetaPapel({
@@ -57,11 +54,15 @@ export default function EtiquetaPapel({
   nomeDaLoja,
   cnpj,
   endereco,
-  fabDate,
-  valDate,
-  lote,
+  dados,
+  paraVenda,
 }: PropsDaEtiqueta) {
   const temAlerta = mostrarSeloAltoEm && (config.highSugar || config.highSodium || config.highFat);
+  const datas = textosDasDatas(dados, { paraVenda });
+  // A faixa do tipo não entra no rótulo de VENDA do que foi fabricado aqui:
+  // "MANIPULADO" no pacote do cliente não informa nada a ele.
+  const mostrarTipo = !(paraVenda && dados.tipo === "MANIPULADO");
+  const lote = dados.lote || etq.code;
 
   return (
     <div
@@ -82,11 +83,24 @@ export default function EtiquetaPapel({
 
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", borderBottom: "0.5mm solid black", paddingBottom: "2mm", marginBottom: "3mm" }}>
           <div style={{ flex: 1, paddingRight: "2mm" }}>
+            {mostrarTipo && (
+              <div style={{ display: "inline-block", background: "#000", color: "#fff", fontWeight: "900", fontSize: "3mm", padding: "0.6mm 2mm", marginBottom: "1.5mm", letterSpacing: "0.2mm" }}>
+                {FAIXA_DO_TIPO[dados.tipo]}
+              </div>
+            )}
             <div style={{ fontSize: "5mm", fontWeight: "900", textTransform: "uppercase", lineHeight: "1.15" }}>
               {nomeDoProduto}
             </div>
             {campos.peso && (
               <div style={{ fontSize: "3.5mm", fontWeight: "700", marginTop: "1mm" }}>{config.weightStr}</div>
+            )}
+            {/* Marca e fornecedor: o que a CVS 3/2026, art. 37, pede no produto aberto. */}
+            {dados.tipo === "ABERTO" && (dados.marca || dados.fornecedor) && (
+              <div style={{ fontSize: "3mm", marginTop: "1mm" }}>
+                {dados.marca && <>Marca: <strong>{dados.marca}</strong></>}
+                {dados.marca && dados.fornecedor && " · "}
+                {dados.fornecedor && <>Fornecedor: <strong>{dados.fornecedor}</strong></>}
+              </div>
             )}
           </div>
           {temAlerta && (
@@ -177,9 +191,10 @@ export default function EtiquetaPapel({
       <div className="label-footer" style={{ borderTop: "0.5mm solid black", paddingTop: "2mm", marginTop: "auto", flexShrink: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1mm" }}>
           <div style={{ fontSize: "3.5mm", fontWeight: "bold", lineHeight: "1.5" }}>
-            <div>Fab: {dataDaEtiqueta(fabDate)}</div>
-            <div>Val: {dataDaEtiqueta(valDate)}</div>
+            <div>{datas.rotuloDaData}: {datas.data}</div>
+            <div>Validade: {datas.validade}</div>
             {campos.loteInterno && <div>Lote: {lote || "--"}</div>}
+            {dados.responsavel && <div style={{ fontSize: "3mm" }}>Resp.: {dados.responsavel}</div>}
           </div>
 
           {/* O QR: 20mm de símbolo, com o código em texto embaixo.

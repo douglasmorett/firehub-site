@@ -5,6 +5,9 @@ import { saveLabelData, updateStoreLabelInfo } from "@/app/actions/labels";
 import { createKitchenItem, updateKitchenItem, deleteKitchenItem, fillNutritionWithAI } from "@/app/actions/kitchenItems";
 import { Printer, Settings, AlertTriangle, Save, Plus, Trash2, Store, Sparkles, Tag, Sliders, Check, XCircle, Info } from "lucide-react";
 import EtiquetaPapel from "./EtiquetaPapel";
+import EtiquetaCompacta from "./EtiquetaCompacta";
+import VencimentosDasEtiquetas from "./VencimentosDasEtiquetas";
+import { TAMANHOS, lerTamanho, pxDoMm, type TamanhoDaEtiqueta } from "./etiqueta-css";
 import AbaLayoutDaEtiqueta from "./AbaLayoutDaEtiqueta";
 import { BandejaDaEtiqueta, EtiquetaFantasma } from "./PreviaDaEtiqueta";
 import { imprimirEtiquetas } from "./imprimir-etiquetas";
@@ -15,14 +18,18 @@ import {
   PADRAO,
   type ChaveDeCampo,
   type PresetDaEtiqueta,
-  textoDeConservacao,
   quantidadeDaEtiqueta,
   textoDeQuantidade,
   presetDoItem,
   seloAltoEmSuprimido,
   TEXTOS_PADRAO,
-  type ChaveDeTexto,
 } from "@/lib/etiqueta-campos";
+import {
+  TIPOS_DE_ETIQUETA, NOME_DO_TIPO, CONSERVACOES, NOME_DA_CONSERVACAO, PRAZOS_DE_REFERENCIA,
+  lerConservacao, conservacaoDaEtiqueta, prazoDaConservacao, sanitizarPrazos, calcularVencimento,
+  instanteDaHoraLocal, fimDoDiaLocal, horaLocal, diaLocal, textoDaConservacaoNoPapel, dadosDaReimpressao,
+  type TipoDeEtiqueta, type Conservacao, type DadosDoPapel, type LoteDaEtiqueta, type Prazo,
+} from "@/lib/etiqueta-validade";
 
 /**
  * Formata a data da etiqueta SEM passar por `Date`.
@@ -46,7 +53,7 @@ function dataDaEtiqueta(iso: string): string {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : "--";
 }
 
-export default function LabelsClient({ products, kitchenItems, storeAddress, storeCnpj, storeName, storeLogo, labelFieldsConfig, stockItems = [] }: { products: any[], kitchenItems: any[], storeAddress: string, storeCnpj: string, storeName: string, storeLogo: string, labelFieldsConfig?: any, stockItems?: { id: string, name: string, unit: string }[] }) {
+export default function LabelsClient({ products, kitchenItems, storeAddress, storeCnpj, storeName, storeLogo, labelFieldsConfig, stockItems = [], lojaId, nomeDoUsuario = "", funcionarios = [] }: { products: any[], kitchenItems: any[], storeAddress: string, storeCnpj: string, storeName: string, storeLogo: string, labelFieldsConfig?: any, stockItems?: { id: string, name: string, unit: string }[], lojaId: string, nomeDoUsuario?: string, funcionarios?: string[] }) {
   const [selectedProductId, setSelectedProductId] = useState("");
   const [mode, setMode] = useState<"print" | "layout" | "config">("print");
   const [items, setItems] = useState<any[]>(kitchenItems.map(ki => ({ ...ki, isKitchenItem: true })));
@@ -90,9 +97,37 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
   const [imprimirQuandoPronto, setImprimirQuandoPronto] = useState(false);
   const impressaoEmAndamento = useRef(false);
   const pedidoDeImpressao = useRef({ etiquetas: 1, unico: true });
-  const [fabDate, setFabDate] = useState("");
-  const [valDate, setValDate] = useState("");
+  // ── A MANIPULAÇÃO E A VALIDADE, COM HORA ─────────────────────────────────
+  //
+  // Antes eram dois <input type="date"> e o prazo só em dias: o arroz
+  // temperado de 8 h e o molho de 6 h não tinham como sair certos (CVS 3/2026,
+  // art. 63 pede data E hora). A manipulação é sempre data e hora; a validade
+  // ganha a hora quando o prazo da conservação é em horas.
+  const [manipulacao, setManipulacao] = useState("");   // "YYYY-MM-DDTHH:MM"
+  const [validade, setValidade] = useState("");         // "YYYY-MM-DD" ou "YYYY-MM-DDTHH:MM"
+  const [validadeComHora, setValidadeComHora] = useState(false);
+  const [tipo, setTipo] = useState<TipoDeEtiqueta>("MANIPULADO");
+  const [conservacaoEscolhida, setConservacaoEscolhida] = useState<Conservacao | null>(null);
+  const [responsavel, setResponsavel] = useState(nomeDoUsuario);
+  const [tamanho, setTamanho] = useState<TamanhoDaEtiqueta>("4x6");
+  // A REIMPRESSÃO: o papel sai do lote gravado, e não da tela — reimprimir
+  // não pode revalidar (Portaria CVS 3/2026, art. 46).
+  const [reimpressao, setReimpressao] = useState<{ dados: DadosDoPapel; nome: string } | null>(null);
+  const [reimprimirPendente, setReimprimirPendente] = useState(false);
   const todayStr = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(new Date());
+
+  useEffect(() => {
+    // Na montagem, e não no useState: o servidor e o tablet não têm o mesmo relógio.
+    setManipulacao(horaLocal(new Date()));
+    try {
+      const r = localStorage.getItem("etiquetaResponsavel");
+      if (r) setResponsavel(r);
+      // O papel é da IMPRESSORA deste aparelho, não da loja: fica no navegador.
+      setTamanho(lerTamanho(localStorage.getItem("etiquetaTamanho")));
+    } catch {
+      // Sem localStorage (aba anônima): vale o padrão.
+    }
+  }, []);
 
   // Config State
   const [saving, setSaving] = useState(false);
@@ -120,7 +155,11 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
     // pela fábrica da rede), que não pode sair rotulado com o CNPJ desta loja.
     customCnpj: "",
     customAddress: "",
-    stockItemId: ""
+    stockItemId: "",
+    conservacao: "",
+    prazos: {} as any,
+    marca: "",
+    fornecedor: "",
   });
 
   const selectedProduct = items.find(p => p.id === selectedProductId);
@@ -133,7 +172,12 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
   // religaria sozinho tudo o que o lojista tinha acabado de desligar, na cara
   // dele, sem nada explicando.
   const [layout, setLayout] = useState<any>(labelFieldsConfig || null);
-  const [chaveDeConservacao, setChaveDeConservacao] = useState<ChaveDeTexto>("conservacaoCongelado");
+  // A conservação sai do PRODUTO, ou da escolha na tela. Era um estado que
+  // nascia em "conservacaoCongelado" e nada trocava: o molho da geladeira saía
+  // com "Congelador: Até -12ºC = 30 dias".
+  const conservacao = conservacaoDaEtiqueta(tipo, conservacaoEscolhida);
+  // Da ficha que está na tela (como o resto da prévia), mesmo antes de salvar.
+  const prazo: Prazo | null = prazoDaConservacao(config, conservacao);
 
   const preset = presetDoItem(selectedProduct?.labelSize);
 
@@ -350,7 +394,11 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
           sodium: selectedProduct.sodium || "0",
           customCnpj: selectedProduct.customCnpj || "",
           customAddress: selectedProduct.customAddress || "",
-          stockItemId: selectedProduct.stockItemId || ""
+          stockItemId: selectedProduct.stockItemId || "",
+          conservacao: selectedProduct.conservacao || "",
+          prazos: sanitizarPrazos(selectedProduct.prazos) || {},
+          marca: selectedProduct.marca || "",
+          fornecedor: selectedProduct.fornecedor || "",
         });
       } else if (selectedProduct.labelData) {
         setConfig({ ...config, ...selectedProduct.labelData });
@@ -366,18 +414,60 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
           transgenic: false,
           weightStr: "1,00 kg",
           energy: "0", carbs: "0", sugars: "0", addedSugars: "0", proteins: "0", fatTotal: "0", fatSat: "0", sodium: "0",
-          customCnpj: "", customAddress: "", stockItemId: ""
+          customCnpj: "", customAddress: "", stockItemId: "",
+          conservacao: "", prazos: {}, marca: "", fornecedor: "",
         });
       }
       
-      const days = selectedProduct.isKitchenItem ? selectedProduct.shelfLifeDays : selectedProduct.labelData?.shelfLifeDays;
-      if (fabDate && days) {
-        const date = new Date(fabDate);
-        date.setDate(date.getDate() + Number(days));
-        setValDate(date.toISOString().split("T")[0]);
-      }
     }
-  }, [selectedProductId, fabDate, items]);
+    // A data saiu das dependências: mudar a manipulação reescrevia a ficha
+    // inteira, inclusive o que o lojista ainda não tinha salvo.
+  }, [selectedProductId, items]);
+
+  // Trocou de item: a conservação vem da ficha dele.
+  useEffect(() => {
+    setConservacaoEscolhida(lerConservacao(selectedProduct?.conservacao));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProductId]);
+
+  // A validade se preenche sozinha: manipulação + prazo da conservação.
+  // Sem prazo cadastrado para a conservação, fica em branco e a tela pede.
+  useEffect(() => {
+    const m = instanteDaHoraLocal(manipulacao);
+    if (!m || !prazo) {
+      setValidade("");
+      setValidadeComHora(prazo?.unidade === "h");
+      return;
+    }
+    const v = calcularVencimento(m, prazo);
+    setValidadeComHora(v.comHora);
+    setValidade(v.comHora ? horaLocal(v.venceEm) : diaLocal(v.venceEm));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manipulacao, prazo?.valor, prazo?.unidade, selectedProductId]);
+
+  const manipuladoEm = instanteDaHoraLocal(manipulacao);
+  const venceEm = validadeComHora ? instanteDaHoraLocal(validade) : validade ? fimDoDiaLocal(validade) : null;
+  const validadeAntesDaManipulacao = !!(manipuladoEm && venceEm && venceEm.getTime() <= manipuladoEm.getTime());
+
+  // O que vai no papel: o da tela, ou — na reimpressão — o do lote gravado.
+  const dadosDoPapel: DadosDoPapel = reimpressao?.dados ?? {
+    tipo,
+    conservacao,
+    manipuladoEm,
+    manipulacaoComHora: true,
+    venceEm,
+    comHora: validadeComHora,
+    responsavel: responsavel.trim(),
+    lote: lote.trim(),
+    marca: String(config.marca || "").trim(),
+    fornecedor: String(config.fornecedor || "").trim(),
+  };
+  const textoConservacaoNoPapel = textoDaConservacaoNoPapel(
+    layout,
+    dadosDoPapel.conservacao,
+    prazoDaConservacao(config, dadosDoPapel.conservacao)?.temperatura,
+  );
+  const medidas = TAMANHOS[tamanho];
 
   const handleCreateNewItem = async () => {
     if (!newItemName) return;
@@ -423,23 +513,30 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
     setPreparando(true);
     setUltimaImpressao(null);
     setErroLote("");
+    setReimpressao(null);
+    try { localStorage.setItem("etiquetaResponsavel", responsavel.trim()); } catch { }
 
-    if (!usarQr) {
-      setEtiquetas(Array.from({ length: quantidade }, () => ({ code: "", qr: "" })));
-      setImprimirQuandoPronto(true);
-      return;
+    // Item sem conservação padrão: a escolha desta impressão vira a padrão,
+    // para a próxima já vir certa. Melhor esforço — não segura o papel.
+    if (selectedProduct?.isKitchenItem && !lerConservacao(selectedProduct.conservacao) && conservacaoEscolhida) {
+      updateKitchenItem(selectedProductId, { conservacao: conservacaoEscolhida }).catch(() => { });
     }
 
+    // O lote é gravado MESMO SEM QR: toda etiqueta entra no histórico e na
+    // lista de vencimento. Sem QR, ela só não aparece como "aguardando" no
+    // estoque (origem ETIQUETA_SEM_QR), porque ninguém vai escanear.
     try {
       const { criarLotesDaImpressao } = await import("@/app/actions/lotes");
-      const QRCode = (await import("qrcode")).default;
+      const QRCode = usarQr ? (await import("qrcode")).default : null;
 
       const r = await criarLotesDaImpressao({
         kitchenItemId: selectedProduct?.isKitchenItem ? selectedProductId : null,
         productName: selectedProduct?.name || "",
         loteRef: lote || null,
-        fabricadoEm: fabDate || null,
-        validoAte: valDate || null,
+        // O DIA continua nas colunas de sempre (estoque e scan leem delas);
+        // o instante, com a hora, vai em manipuladoEm/venceEm.
+        fabricadoEm: manipuladoEm ? diaLocal(manipuladoEm) : null,
+        validoAte: venceEm ? diaLocal(venceEm) : null,
         weightStr: config.weightStr || null,
         // O peso da etiqueta, multiplicado pelas etiquetas da fornada. O
         // servidor divide de volta por lote conforme a escolha da numeração.
@@ -451,6 +548,15 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
         stockItemId: config.stockItemId || selectedProduct?.stockItemId || null,
         etiquetas: quantidade,
         codigoUnicoParaTodas: codigoUnico,
+        tipoEtiqueta: tipo,
+        conservacao,
+        manipuladoEm: manipuladoEm?.toISOString() || null,
+        venceEm: venceEm?.toISOString() || null,
+        validadeComHora,
+        responsavel: responsavel.trim() || null,
+        marca: String(config.marca || "").trim() || null,
+        fornecedor: String(config.fornecedor || "").trim() || null,
+        comQr: usarQr,
       });
 
       if (!r.ok || r.lotes.length === 0) {
@@ -467,6 +573,7 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
         // Um código para a fornada inteira, ou um por etiqueta — a escolha da
         // tela. O modelo aguenta os dois sem mudança nenhuma.
         const code = codigoUnico ? r.lotes[0].code : r.lotes[i].code;
+        if (!QRCode) { geradas.push({ code, qr: "" }); continue; }
         const url = `HTTPS://${host.toUpperCase()}/E/${code}`;
         const qr = await QRCode.toDataURL(url, {
           // Correção 25%: cozinha tem gordura, condensação e atrito. O mínimo
@@ -491,6 +598,56 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
     }
   };
 
+  /**
+   * Reimprime a etiqueta de um lote com a MESMA data e a MESMA validade.
+   *
+   * A action devolve o lote gravado e o papel sai dele (dadosDaReimpressao),
+   * sem passar pelo prazo do produto nem pelo relógio. Etiqueta nova, com
+   * validade nova, só com uma manipulação nova — pelo botão Imprimir.
+   */
+  const reimprimir = async (l: LoteDaEtiqueta) => {
+    if (impressaoEmAndamento.current) return;
+    const item = items.find(i => i.id === l.kitchenItemId);
+    if (!item) {
+      avisar("erro", "O item desta etiqueta foi apagado da cozinha, então não dá para montar o mesmo papel. Faça uma etiqueta nova.");
+      return;
+    }
+    impressaoEmAndamento.current = true;
+    pedidoDeImpressao.current = { etiquetas: 1, unico: true };
+    setPreparando(true);
+    setUltimaImpressao(null);
+    setErroLote("");
+    try {
+      const { registrarReimpressao } = await import("@/app/actions/lotes");
+      const r = await registrarReimpressao(l.code);
+      if (!r.ok || !r.lote) throw new Error("Não achei esta etiqueta para reimprimir.");
+      let qr = "";
+      if (r.lote.origem !== "ETIQUETA_SEM_QR") {
+        const QRCode = (await import("qrcode")).default;
+        qr = await QRCode.toDataURL(`HTTPS://${window.location.hostname.toUpperCase()}/E/${r.lote.code}`, {
+          errorCorrectionLevel: "Q", margin: 4, scale: 8, color: { dark: "#000000", light: "#FFFFFF" },
+        });
+      }
+      setSelectedProductId(item.id);
+      setMode("print");
+      setReimpressao({ dados: dadosDaReimpressao(r.lote), nome: r.lote.productName });
+      setEtiquetas([{ code: r.lote.code, qr }]);
+      // Um render a mais antes de imprimir: a ficha do item (config) é
+      // carregada por efeito, e o papel copiado tem de estar com ela.
+      setReimprimirPendente(true);
+    } catch (e: any) {
+      avisar("erro", e?.message || "Não consegui reimprimir. Tente de novo.");
+      setPreparando(false);
+      impressaoEmAndamento.current = false;
+    }
+  };
+
+  useEffect(() => {
+    if (!reimprimirPendente) return;
+    setReimprimirPendente(false);
+    setImprimirQuandoPronto(true);
+  }, [reimprimirPendente]);
+
   // O efeito já roda depois do commit: o HTML contém os QR gerados. Agendar um
   // timer e limpar o estado aqui cancelava o próprio timer no próximo render.
   useEffect(() => {
@@ -503,7 +660,7 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
         if (!printArea) throw new Error("Selecione o produto novamente para imprimir a etiqueta.");
         // imprimirEtiquetas copia o HTML antes do primeiro await. Retirar os
         // códigos reais da prévia evita que sejam escaneados pelo monitor.
-        const impressao = imprimirEtiquetas(printArea);
+        const impressao = imprimirEtiquetas(printArea, tamanho);
         setEtiquetas([]);
         await impressao;
         setUltimaImpressao(pedido);
@@ -511,6 +668,7 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
         setErroLote(erro instanceof Error ? erro.message : "Não consegui abrir a impressão. Tente novamente.");
       } finally {
         setEtiquetas([]);
+        setReimpressao(null);
         setPreparando(false);
         impressaoEmAndamento.current = false;
       }
@@ -675,6 +833,11 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
           </div>
         )}
 
+        {/* ── VENCE HOJE / AMANHÃ / VENCEU ──────────────────────────────
+            Fica em cima, sem precisar escolher insumo: é a primeira coisa
+            que a cozinha olha de manhã. */}
+        <VencimentosDasEtiquetas lojaId={lojaId} onReimprimir={reimprimir} />
+
         {/* ── ESCOLHER O INSUMO ──────────────────────────────────────── */}
         <div className="fh-card" style={{ marginTop: "var(--fh-s6)" }}>
           <div className="fh-card__body">
@@ -771,9 +934,79 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
                 </button>
               </div>
               
+              {/* ── VALIDADE E CONSERVAÇÃO ─────────────────────────────────
+                  O prazo depende de COMO o item está guardado: o mesmo molho
+                  dura dias na geladeira e semanas no freezer. Um prazo por
+                  conservação, em horas ou em dias. */}
               <div style={{ marginBottom: "12px" }}>
-                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Validade em Dias (Shelf Life)</label>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Conservação padrão</label>
+                <select value={config.conservacao || ""} onChange={e => setConfig({ ...config, conservacao: e.target.value })}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff" }}>
+                  <option value="">Perguntar na hora de imprimir</option>
+                  {CONSERVACOES.map(c => <option key={c} value={c}>{NOME_DA_CONSERVACAO[c]}</option>)}
+                </select>
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Prazo de validade por conservação</label>
+                {CONSERVACOES.map(c => {
+                  const p = (config.prazos || {})[c] || {};
+                  const mudar = (campo: string, valor: any) => {
+                    const prox = { ...(config.prazos || {}), [c]: { unidade: "d", ...p, [campo]: valor } };
+                    setConfig({ ...config, prazos: prox });
+                  };
+                  return (
+                    <div key={c} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+                      <span style={{ width: 150, fontSize: "0.82rem" }}>{NOME_DA_CONSERVACAO[c]}</span>
+                      <input type="number" min={1} inputMode="numeric" aria-label={`Prazo ${NOME_DA_CONSERVACAO[c]}`} value={p.valor ?? ""} placeholder="—"
+                             onChange={e => mudar("valor", e.target.value === "" ? "" : Number(e.target.value))}
+                             style={{ width: 70, padding: "6px 8px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
+                      <select aria-label={`Unidade ${NOME_DA_CONSERVACAO[c]}`} value={p.unidade || "d"} onChange={e => mudar("unidade", e.target.value)}
+                              style={{ padding: "6px 8px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff" }}>
+                        <option value="d">dias</option>
+                        <option value="h">horas</option>
+                      </select>
+                      <input type="text" aria-label={`Temperatura ${NOME_DA_CONSERVACAO[c]}`} value={p.temperatura || ""} placeholder="temperatura (ex.: até 4 °C)"
+                             onChange={e => mudar("temperatura", e.target.value)}
+                             style={{ flex: 1, minWidth: 120, padding: "6px 8px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
+                    </div>
+                  );
+                })}
+                <select value="" onChange={e => {
+                          const ref = PRAZOS_DE_REFERENCIA.find(r => r.id === e.target.value);
+                          if (ref) setConfig({ ...config, prazos: { ...(config.prazos || {}), [ref.conservacao]: { ...ref.prazo } } });
+                        }}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff", marginTop: 4 }}>
+                  <option value="">Sugerir prazo pela tabela da Portaria CVS 3/2026 (art. 44)…</option>
+                  {PRAZOS_DE_REFERENCIA.map(r => (
+                    <option key={r.id} value={r.id}>{r.nome} — {r.prazo.temperatura}, {r.prazo.valor} {r.prazo.valor === 1 ? "dia" : "dias"}</option>
+                  ))}
+                </select>
+                <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6, lineHeight: 1.45 }}>
+                  A tabela é a sugestão da vigilância de São Paulo para quando o fabricante não informa o prazo.
+                  <strong> Confira os prazos com a vigilância sanitária da sua cidade</strong> e com o que o fabricante diz na embalagem.
+                </div>
+              </div>
+              <div style={{ marginBottom: "12px" }}>
+                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Validade padrão em dias</label>
                 <input type="number" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={config.shelfLifeDays} onChange={e => setConfig({...config, shelfLifeDays: Number(e.target.value)})} />
+                <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: 6 }}>
+                  Vale para a conservação padrão quando ela não tem prazo próprio acima. Nunca vale para &quot;descongelando&quot;.
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: "12px" }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Marca (opcional)</label>
+                  <input type="text" value={config.marca} onChange={e => setConfig({ ...config, marca: e.target.value })} placeholder="Ex.: Hellmann's"
+                         style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Fornecedor ou fabricante (opcional)</label>
+                  <input type="text" value={config.fornecedor} onChange={e => setConfig({ ...config, fornecedor: e.target.value })} placeholder="Ex.: Atacadão"
+                         style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
+                </div>
+              </div>
+              <div style={{ fontSize: "0.78rem", color: "#64748B", marginTop: -6, marginBottom: 12 }}>
+                Marca e fornecedor saem na etiqueta de <strong>produto aberto</strong> (Portaria CVS 3/2026, art. 37).
               </div>
               {/* ── QUANTO VEM NA EMBALAGEM — obrigatório, e sem campo livre ──
                   Era um texto livre ("Ex: 0,90kg"). Vazio, o sistema supunha
@@ -959,8 +1192,48 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
           <div className="fh-card" style={{ padding: 24 }}>
             <h2 className="fh-h2" style={{ marginBottom: 4 }}>Dados da impressão</h2>
             <p className="fh-corpo" style={{ marginBottom: 20 }}>
-              A data de validade se preenche sozinha a partir do prazo cadastrado na ficha do produto.
+              A validade se preenche sozinha: a hora da manipulação mais o prazo da conservação, cadastrado na ficha do produto.
             </p>
+
+            {reimpressao && (
+              <div className="fh-aviso fh-aviso--info" role="status" style={{ marginBottom: 16 }}>
+                <Info size={18} style={{ flexShrink: 0, marginTop: 1 }} />
+                <span>Reimprimindo com a mesma data e a mesma validade da primeira impressão.</span>
+              </div>
+            )}
+
+            <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "6px" }}>Tipo da etiqueta</label>
+            <div role="radiogroup" aria-label="Tipo da etiqueta" style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+              {TIPOS_DE_ETIQUETA.map(t => (
+                <button key={t} role="radio" aria-checked={tipo === t} onClick={() => setTipo(t)}
+                        style={{ flex: "1 1 130px", padding: "10px 12px", borderRadius: 12, cursor: "pointer", fontWeight: 800, fontSize: "0.88rem",
+                                 border: tipo === t ? "2px solid #E8360C" : "1px solid #E2E8F0",
+                                 background: tipo === t ? "#FFF4EF" : "#FFF", color: tipo === t ? "#C92E09" : "#334155" }}>
+                  {NOME_DO_TIPO[t]}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", marginBottom: 16 }}>
+              <div style={{ flex: 1, minWidth: "200px" }}>
+                <label htmlFor="conservacao" style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Conservação</label>
+                <select id="conservacao" value={conservacao || ""} disabled={tipo === "DESCONGELANDO"}
+                        onChange={e => setConservacaoEscolhida(lerConservacao(e.target.value))}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${conservacao ? "#CBD5E1" : "#FCA5A5"}`, background: "#fff" }}>
+                  <option value="">Escolha como vai ser guardado…</option>
+                  {CONSERVACOES.map(c => <option key={c} value={c}>{NOME_DA_CONSERVACAO[c]}</option>)}
+                </select>
+              </div>
+              <div style={{ flex: 1, minWidth: "200px" }}>
+                <label htmlFor="responsavel" style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Responsável</label>
+                <input id="responsavel" list="responsaveis" type="text" value={responsavel} onChange={e => setResponsavel(e.target.value)} placeholder="Quem manipulou"
+                       style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} />
+                <datalist id="responsaveis">
+                  {[...new Set([nomeDoUsuario, ...funcionarios].filter(Boolean))].map(n => <option key={n} value={n} />)}
+                </datalist>
+              </div>
+            </div>
+
             <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: "200px" }}>
                 <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Lote (Opcional)</label>
@@ -976,17 +1249,47 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
                 </div>
               </div>
               <div style={{ flex: 1, minWidth: "200px" }}>
-                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Data de Fabricação</label>
+                <label htmlFor="manipulacao" style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>
+                  {tipo === "ABERTO" ? "Aberto em" : tipo === "DESCONGELANDO" ? "Começou a descongelar em" : tipo === "AMOSTRA" ? "Coletada em" : "Manipulado em"} (data e hora)
+                </label>
                 {/* SEM `min`: com ele era literalmente impossível etiquetar o
                     que foi preparado ONTEM — o caso mais comum de cozinha, e
                     justamente o que mais precisa de etiqueta. O `min` continua
                     fazendo sentido na validade, que não pode nascer vencida. */}
-                <input type="date" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={fabDate} onChange={e => setFabDate(e.target.value)} />
+                <input id="manipulacao" type="datetime-local" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={manipulacao} onChange={e => setManipulacao(e.target.value)} />
               </div>
               <div style={{ flex: 1, minWidth: "200px" }}>
-                <label style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Data de Validade</label>
-                <input type="date" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={valDate} onChange={e => setValDate(e.target.value)} min={todayStr} />
+                <label htmlFor="validade" style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>
+                  Validade{validadeComHora ? " (data e hora)" : ""}
+                </label>
+                {validadeComHora ? (
+                  <input id="validade" type="datetime-local" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={validade} onChange={e => setValidade(e.target.value)} />
+                ) : (
+                  <input id="validade" type="date" style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1" }} value={validade} onChange={e => setValidade(e.target.value)} min={todayStr} />
+                )}
+                <span className="fh-campo__dica">
+                  {prazo
+                    ? `Prazo da ficha: ${prazo.valor} ${prazo.unidade === "h" ? (prazo.valor === 1 ? "hora" : "horas") : (prazo.valor === 1 ? "dia" : "dias")}${conservacao ? ` (${NOME_DA_CONSERVACAO[conservacao].toLowerCase()})` : ""}.`
+                    : conservacao
+                      ? "Sem prazo cadastrado para esta conservação: preencha a validade, ou cadastre o prazo na Ficha do produto."
+                      : "Escolha a conservação para calcular a validade."}
+                </span>
               </div>
+            </div>
+
+            <div style={{ marginTop: 16 }}>
+              <label htmlFor="tamanho" style={{ display: "block", fontSize: "0.85rem", fontWeight: "bold", marginBottom: "4px" }}>Tamanho do papel</label>
+              <select id="tamanho" value={tamanho}
+                      onChange={e => { const t = lerTamanho(e.target.value); setTamanho(t); try { localStorage.setItem("etiquetaTamanho", t); } catch { } }}
+                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #CBD5E1", background: "#fff" }}>
+                {(Object.keys(TAMANHOS) as TamanhoDaEtiqueta[]).map(t => <option key={t} value={t}>{TAMANHOS[t].nome}</option>)}
+              </select>
+              <span className="fh-campo__dica">
+                {medidas.completa
+                  ? "A de 4 × 6 leva a etiqueta completa, com tabela nutricional e ingredientes."
+                  : "Etiqueta compacta: tipo, produto, datas, conservação, responsável e lote."}
+                {tamanho.startsWith("bobina") && " Use bobina ADESIVA térmica na impressora da comanda; faça um teste antes de imprimir em quantidade."}
+              </span>
             </div>
 
             {/* ── QR DE RASTREIO ────────────────────────────────────────────
@@ -1120,7 +1423,7 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
               className="fh-btn fh-btn--primario fh-btn--cozinha"
               style={{ width: "100%", marginTop: 16 }}
               onClick={prepararEImprimir}
-              disabled={!fabDate || !valDate || preparando || !porEtiqueta.reconhecido}
+              disabled={!manipuladoEm || !venceEm || !conservacao || validadeAntesDaManipulacao || preparando || !porEtiqueta.reconhecido}
             >
               <Printer size={22} />
               {preparando
@@ -1129,15 +1432,19 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
                   ? `Imprimir ${quantidade} etiquetas`
                   : "Imprimir etiqueta"}
             </button>
-            {(!fabDate || !valDate || !porEtiqueta.reconhecido) && (
+            {(!manipuladoEm || !venceEm || !conservacao || validadeAntesDaManipulacao || !porEtiqueta.reconhecido) && (
               <p className="fh-campo__dica" style={{ marginTop: 8, textAlign: "center" }}>
                 {!porEtiqueta.reconhecido
                   ? "Informe quanto vem na embalagem, na aba Ficha do produto, para liberar a impressão."
-                  : "Preencha a data de fabricação para liberar a impressão."}
+                  : !conservacao
+                    ? "Escolha a conservação para liberar a impressão."
+                    : validadeAntesDaManipulacao
+                      ? "A validade está antes da manipulação. Confira as duas datas."
+                      : "Preencha a data e hora da manipulação e a validade para liberar a impressão."}
               </p>
             )}
             <p className="fh-campo__dica" style={{ marginTop: 8, textAlign: "center" }}>
-              Na janela de impressão, escolha a impressora e o papel de 4 × 6 pol. (101,6 × 152,4 mm).
+              Na janela de impressão, escolha a impressora e o papel de {medidas.nome}.
               Use escala 100%, margem &quot;Nenhuma&quot; e desative cabeçalhos e rodapés.
             </p>
           </div>
@@ -1153,8 +1460,9 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
               mentira que o lojista só descobre depois de gastar a etiqueta. */}
           <div style={{ position: "sticky", top: 16 }}>
             {selectedProduct ? (
-              <BandejaDaEtiqueta quantidade={quantidade} preparando={preparando} avisos={camposDoPapel.avisos}>
-            <div className="print-area">
+              <BandejaDaEtiqueta quantidade={quantidade} preparando={preparando} avisos={camposDoPapel.avisos}
+                                 larguraPx={pxDoMm(medidas.larguraMm)} alturaPx={pxDoMm(medidas.alturaMm)}>
+            <div className="print-area" style={{ width: medidas.largura, height: medidas.altura }}>
               {/* Uma página por etiqueta. O @page de 4x6in pagina sozinho, então
                   imprimir 20 etiquetas é renderizar 20 blocos — antes um clique
                   produzia exatamente uma, e a cozinha imprimia 20 vezes na mão.
@@ -1162,14 +1470,26 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
                   O markup do papel saiu daqui e virou <EtiquetaPapel>, o MESMO
                   componente que a prévia desenha: enquanto eram dois blocos de JSX,
                   nada impedia a tela e o papel de divergirem em silêncio. */}
-              {(etiquetas.length > 0 ? etiquetas : [{ code: "LOLOLOLO", qr: qrDeExemplo }]).map((etq, idx) => (
+              {(etiquetas.length > 0 ? etiquetas : [{ code: "LOLOLOLO", qr: qrDeExemplo }]).map((etq, idx) => !medidas.completa ? (
+                <EtiquetaCompacta
+                  key={idx}
+                  medidas={medidas}
+                  etq={etq}
+                  nomeDoProduto={reimpressao?.nome || selectedProduct.name}
+                  dados={dadosDoPapel}
+                  textoConservacao={camposDoPapel.campos.conservacao ? textoConservacaoNoPapel : ""}
+                  mostrarQr={camposDoPapel.campos.qr}
+                  mostrarLote={camposDoPapel.campos.loteInterno}
+                  nomeDaLoja={camposDoPapel.campos.nomeDaLoja ? storeName : ""}
+                />
+              ) : (
                 <EtiquetaPapel
                   key={idx}
                   etq={etq}
-                  nomeDoProduto={selectedProduct.name}
+                  nomeDoProduto={reimpressao?.nome || selectedProduct.name}
                   config={config}
                   campos={camposDoPapel.campos}
-                  textoConservacao={textoDeConservacao(layout, chaveDeConservacao)}
+                  textoConservacao={textoConservacaoNoPapel}
                   textoTransgenico={(layout?.textos?.transgenico || TEXTOS_PADRAO.transgenico)}
                   textoPorcao={(layout?.textos?.porcao || TEXTOS_PADRAO.porcao)}
                   mostrarSeloAltoEm={!seloAltoEmSuprimido(preset)}
@@ -1181,9 +1501,8 @@ export default function LabelsClient({ products, kitchenItems, storeAddress, sto
                   // sempre e a etiqueta simplesmente os ignorava.
                   cnpj={config.customCnpj?.trim() || storeCnpj}
                   endereco={config.customAddress?.trim() || storeAddress}
-                  fabDate={fabDate}
-                  valDate={valDate}
-                  lote={lote}
+                  dados={dadosDoPapel}
+                  paraVenda={preset !== "cozinha"}
                 />
               ))}
             </div>

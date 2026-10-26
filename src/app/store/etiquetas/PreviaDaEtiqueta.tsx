@@ -45,13 +45,18 @@ export function BandejaDaEtiqueta({
   quantidade,
   preparando,
   avisos,
+  larguraPx = 384,
+  alturaPx = 576,
 }: {
   children: React.ReactNode;
   quantidade: number;
   preparando: boolean;
   avisos: { chave: string; texto: string }[];
+  /** O papel em pixel CSS. A etiqueta pequena é AMPLIADA até a largura da de 4x6, para dar para ler. */
+  larguraPx?: number;
+  alturaPx?: number;
 }) {
-  const k = useEscalaDoPapel();
+  const k = useEscalaDoPapel() * Math.min(2.5, 384 / larguraPx);
 
   return (
     <div className="fh-previa">
@@ -64,8 +69,8 @@ export function BandejaDaEtiqueta({
         </span>
       </div>
 
-      <div className="fh-bandeja" style={{ minHeight: `calc(576px * ${k} + 64px)`, padding: k >= 1 ? 32 : 24 }}>
-        <div className="fh-folha" style={{ ["--k" as any]: k }}>
+      <div className="fh-bandeja" style={{ minHeight: `calc(${alturaPx}px * ${k} + 64px)`, padding: k >= 1 ? 32 : 24 }}>
+        <div className="fh-folha" style={{ ["--k" as any]: k, width: larguraPx * k, height: alturaPx * k }}>
           {children}
         </div>
 

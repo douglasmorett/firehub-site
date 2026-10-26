@@ -20,13 +20,16 @@ export default async function LabelsPage() {
   let storeName = "";
   let storeLogo = "";
   let currentUserId: string | undefined;
+  // Quem está imprimindo: o primeiro nome sugerido para "Responsável".
+  let nomeDoUsuario = "";
 
   if (session?.user?.email) {
     const me = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true },
+      select: { id: true, ownerId: true, name: true, email: true },
     });
     if (me) {
+      nomeDoUsuario = me.name || me.email.split("@")[0];
       // `ownerId || id`, a convencao do projeto. Aqui era `user.id` cru, e por
       // isso a tela abria VAZIA para funcionario: os produtos e itens de cozinha
       // pertencem ao dono, e a busca era feita no id de quem estava logado.
@@ -92,9 +95,21 @@ export default async function LabelsPage() {
     stockItems = [];
   }
 
+  // Os funcionários cadastrados viram a lista do "Responsável" da etiqueta.
+  let funcionarios: string[] = [];
+  try {
+    funcionarios = (await prisma.storeEmployee.findMany({
+      where: { franchiseeId: currentUserId, active: true },
+      select: { name: true },
+      orderBy: { name: "asc" },
+    })).map((f) => f.name);
+  } catch {
+    funcionarios = [];
+  }
+
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto" }}>
-      <LabelsClient products={products} kitchenItems={kitchenItems} storeAddress={storeAddress} storeCnpj={storeCnpj} storeName={storeName} storeLogo={storeLogo} labelFieldsConfig={labelFieldsConfig as any} stockItems={stockItems} />
+      <LabelsClient products={products} kitchenItems={kitchenItems} storeAddress={storeAddress} storeCnpj={storeCnpj} storeName={storeName} storeLogo={storeLogo} labelFieldsConfig={labelFieldsConfig as any} stockItems={stockItems} lojaId={currentUserId} nomeDoUsuario={nomeDoUsuario} funcionarios={funcionarios} />
     </div>
   );
 }
