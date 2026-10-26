@@ -37,7 +37,9 @@ export default function EtiquetaCompacta({
   const datas = textosDasDatas(dados);
   const t = medidas.textoMm;
   const qr = mostrarQr && medidas.qrMm > 0 && etq.qr;
-  const lote = dados.lote || etq.code;
+  // Com o QR, o código já sai embaixo dele: repetir na linha do responsável
+  // só cortaria o nome na etiqueta pequena.
+  const lote = dados.lote && dados.lote !== etq.code ? dados.lote : qr ? "" : etq.code;
 
   return (
     <div
