@@ -5,6 +5,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { temEstruturaDeLotes, garantirEstruturaDeLotes } from "@/lib/garantir-colunas";
 import { gerarCodigoDeLote } from "@/lib/lote";
+import { lerTipo, lerConservacao, diaLocal, somarDias, instanteDaHoraLocal, fimDoDiaLocal } from "@/lib/etiqueta-validade";
+import { gravarPerda, PREFIXO_DO_FIREHUB } from "@/lib/cmv/desperdicio";
+import crypto from "crypto";
 
 /**
  * Cria os lotes de uma impressão de etiquetas.
@@ -56,7 +59,31 @@ export type PedidoDeLote = {
   codigoUnicoParaTodas: boolean;
   /** Quanto este lote representa em estoque, no total. */
   quantidadeTotal?: number | null;
+  // ── A etiqueta de validade (lib/etiqueta-validade.ts) ──
+  tipoEtiqueta?: string | null;
+  conservacao?: string | null;
+  manipuladoEm?: string | null;  // ISO, instante
+  venceEm?: string | null;       // ISO, instante
+  validadeComHora?: boolean;
+  responsavel?: string | null;
+  marca?: string | null;
+  fornecedor?: string | null;
+  /**
+   * false = a etiqueta sai SEM QR. O lote é gravado mesmo assim, porque toda
+   * etiqueta entra no histórico e na lista de vencimento; só não aparece como
+   * "aguardando" no estoque, já que ninguém vai escanear.
+   */
+  comQr?: boolean;
 };
+
+function instante(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const d = new Date(String(iso));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+const texto = (v: unknown, max = 80) => String(v ?? "").trim().slice(0, max) || null;
+const DIA = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * Converte "YYYY-MM-DD" em meia-noite UTC.
@@ -110,8 +137,16 @@ export async function criarLotesDaImpressao(pedido: PedidoDeLote) {
     validoAte: diaParaData(pedido.validoAte),
     weightStr: pedido.weightStr || null,
     unit: pedido.unit || "un",
-    origem: "ETIQUETA",
+    origem: pedido.comQr === false ? "ETIQUETA_SEM_QR" : "ETIQUETA",
     criadoPor: userId,
+    tipoEtiqueta: lerTipo(pedido.tipoEtiqueta),
+    conservacao: lerConservacao(pedido.conservacao),
+    manipuladoEm: instante(pedido.manipuladoEm),
+    venceEm: instante(pedido.venceEm),
+    validadeComHora: pedido.validadeComHora === true,
+    responsavel: texto(pedido.responsavel),
+    marca: texto(pedido.marca),
+    fornecedor: texto(pedido.fornecedor),
   };
 
   const lotes: { code: string; id: string }[] = [];
@@ -140,14 +175,125 @@ export async function criarLotesDaImpressao(pedido: PedidoDeLote) {
  * — descongelou, porcionou, mudou a validade. Reimprimir porque a etiqueta
  * rasgou não é lote novo, e tratar como se fosse encheria o estoque de lotes
  * fantasma que nunca serão baixados.
+ *
+ * Devolve o lote GRAVADO, e a tela imprime dele: a data e a validade da
+ * reimpressão são as da primeira impressão (Portaria CVS 3/2026, art. 46 —
+ * "é vedada a revalidação"). Nada aqui escreve data nenhuma.
  */
 export async function registrarReimpressao(code: string, quantas = 1) {
   const { franchiseeId } = await lojaDaSessao();
-  if (!(await temEstruturaDeLotes())) return { ok: false as const };
+  if (!(await temEstruturaDeLotes())) return { ok: false as const, lote: null };
 
+  const codigo = String(code || "").toUpperCase();
   const { count } = await prisma.stockLot.updateMany({
-    where: { code: String(code || "").toUpperCase(), franchiseeId },
+    where: { code: codigo, franchiseeId },
     data: { impressoes: { increment: Math.max(1, Math.floor(quantas)) } },
   });
-  return { ok: count > 0 };
+  if (count === 0) return { ok: false as const, lote: null };
+  const lote = await prisma.stockLot.findFirst({ where: { code: codigo, franchiseeId }, select: CAMPOS_DA_LISTA });
+  return { ok: true as const, lote };
+}
+
+// ── A lista de vencimento e o histórico da tela de etiquetas ─────────────
+
+const CAMPOS_DA_LISTA = {
+  code: true, productName: true, kitchenItemId: true, stockItemId: true, franchiseeId: true,
+  recebidoPorId: true, tipoEtiqueta: true, conservacao: true, manipuladoEm: true, venceEm: true,
+  validadeComHora: true, fabricadoEm: true, validoAte: true, responsavel: true, criadoPor: true,
+  loteRef: true, marca: true, fornecedor: true, impressoes: true, status: true,
+  quantidadeRestante: true, unit: true, createdAt: true, origem: true,
+} as const;
+
+const ORIGENS_DE_ETIQUETA = ["ETIQUETA", "ETIQUETA_SEM_QR"];
+
+/**
+ * `vencimento`: o que vence até amanhã (e o que já venceu), ainda em uso.
+ * `historico`: toda etiqueta emitida no período ("YYYY-MM-DD", fuso da loja;
+ * sem período, os últimos 30 dias).
+ *
+ * O responsável de etiqueta antiga (de antes do campo) sai do login que
+ * imprimiu, para o histórico não ficar com a coluna vazia.
+ */
+export async function listarEtiquetas(modo: "vencimento" | "historico", de?: string, ate?: string) {
+  const { franchiseeId } = await lojaDaSessao();
+  if (!(await temEstruturaDeLotes())) return { ok: false as const, lotes: [] };
+
+  const hoje = diaLocal(new Date());
+  const minhas = { OR: [{ franchiseeId, recebidoPorId: null }, { recebidoPorId: franchiseeId }] };
+
+  const where: any =
+    modo === "vencimento"
+      ? {
+          ...minhas, active: true, status: "ATIVO", origem: { in: ORIGENS_DE_ETIQUETA },
+          // `validoAte` é o DIA (meia-noite UTC): até amanhã, inclusive.
+          validoAte: { lte: new Date(`${somarDias(hoje, 1)}T00:00:00Z`) },
+        }
+      : {
+          franchiseeId, origem: { in: ORIGENS_DE_ETIQUETA },
+          createdAt: {
+            gte: instanteDaHoraLocal(`${de && DIA.test(de) ? de : somarDias(hoje, -30)}T00:00`)!,
+            lte: fimDoDiaLocal(ate && DIA.test(ate) ? ate : hoje)!,
+          },
+        };
+
+  const lotes = await prisma.stockLot.findMany({
+    where,
+    select: CAMPOS_DA_LISTA,
+    orderBy: modo === "vencimento" ? [{ validoAte: "asc" }] : [{ createdAt: "desc" }],
+    take: modo === "vencimento" ? 300 : 3000,
+  });
+
+  const semNome = [...new Set(lotes.filter((l) => !l.responsavel && l.criadoPor).map((l) => l.criadoPor!))];
+  const nomes = new Map<string, string>();
+  if (semNome.length) {
+    for (const u of await prisma.user.findMany({ where: { id: { in: semNome } }, select: { id: true, name: true, email: true } })) {
+      nomes.set(u.id, u.name || u.email.split("@")[0]);
+    }
+  }
+  return {
+    ok: true as const,
+    lotes: lotes.map((l) => ({ ...l, responsavel: l.responsavel || (l.criadoPor ? nomes.get(l.criadoPor) || null : null) })),
+  };
+}
+
+/**
+ * "Usei" / "Descartei" de uma etiqueta que NÃO entrou no estoque (sem QR, ou
+ * ninguém escaneou). A que entrou vai pela rota do QR (/api/lote/<código>),
+ * que dá a baixa no insumo — ver `comoFechar` em lib/etiqueta-validade.ts.
+ *
+ * O descarte entra no Desperdício do Estoque (a mesma linha do "Lançar
+ * desperdício"), sem valor: não houve entrada, então não há insumo a baixar.
+ */
+export async function fecharEtiquetaSemEstoque(code: string, acao: "USEI" | "DESCARTEI") {
+  const session = await getServerSession(authOptions);
+  const { franchiseeId, userId } = await lojaDaSessao();
+  if (!(await temEstruturaDeLotes())) return { ok: false as const, erro: "Recurso indisponível nesta loja." };
+
+  const lote = await prisma.stockLot.findFirst({
+    where: { code: String(code || "").toUpperCase(), franchiseeId, recebidoPorId: null, active: true, status: "ATIVO" },
+  });
+  if (!lote) return { ok: false as const, erro: "Etiqueta não encontrada, ou já fechada." };
+
+  // Primeiro o lote: dois cliques no "Descartei" não podem lançar o
+  // desperdício duas vezes — só quem virou o status grava a linha.
+  const { count } = await prisma.stockLot.updateMany({
+    where: { id: lote.id, franchiseeId, status: "ATIVO" },
+    data: { status: acao === "DESCARTEI" ? "DESCARTADO" : "CONSUMIDO" },
+  });
+  if (count === 0) return { ok: true as const };
+
+  if (acao === "DESCARTEI") {
+    const quem = session?.user?.name || session?.user?.email || "";
+    await gravarPerda({
+      lojaId: franchiseeId, userId, custos: new Map(), baixas: [], prefixo: "descarte",
+      nota: `Descarte pela etiqueta ${lote.code}: ${lote.productName}`.slice(0, 500),
+      linha: {
+        idExterno: `${PREFIXO_DO_FIREHUB}${crypto.randomUUID()}`, item: lote.productName,
+        quantidade: lote.quantidadeRestante, unidade: lote.unit, valorEstimado: null,
+        motivo: `Etiqueta ${lote.code} (lista de vencimento)`, funcionario: String(quem).slice(0, 120) || null, foto: null,
+        registradoEm: new Date(), situacao: "SEM_CUSTO", casouCom: null, valor: null,
+      },
+    });
+  }
+  return { ok: true as const };
 }

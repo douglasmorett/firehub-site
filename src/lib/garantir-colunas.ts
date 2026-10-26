@@ -502,6 +502,23 @@ const INSTRUCOES_LOTES = [
   `ALTER TABLE "KitchenItem" ADD COLUMN IF NOT EXISTS "stockItemId" TEXT`,
   `ALTER TABLE "KitchenItem" ADD COLUMN IF NOT EXISTS "labelSize" TEXT`,
 
+  // A etiqueta de validade por tipo (aberto, preparado, descongelando,
+  // amostra), com data E hora, conservação e responsável — congelada no lote,
+  // porque reimprimir não pode revalidar (Portaria CVS 3/2026, art. 46). E,
+  // no item de cozinha, a conservação padrão e o prazo de cada conservação.
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "tipoEtiqueta" TEXT`,
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "conservacao" TEXT`,
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "manipuladoEm" TIMESTAMP(3)`,
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "venceEm" TIMESTAMP(3)`,
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "validadeComHora" BOOLEAN NOT NULL DEFAULT false`,
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "responsavel" TEXT`,
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "marca" TEXT`,
+  `ALTER TABLE "StockLot" ADD COLUMN IF NOT EXISTS "fornecedor" TEXT`,
+  `ALTER TABLE "KitchenItem" ADD COLUMN IF NOT EXISTS "conservacao" TEXT`,
+  `ALTER TABLE "KitchenItem" ADD COLUMN IF NOT EXISTS "prazos" JSONB`,
+  `ALTER TABLE "KitchenItem" ADD COLUMN IF NOT EXISTS "marca" TEXT`,
+  `ALTER TABLE "KitchenItem" ADD COLUMN IF NOT EXISTS "fornecedor" TEXT`,
+
   // Config de quais campos saem na etiqueta — UMA regra por loja. Json em User
   // é o padrão da casa para configuração de loja (printerConfig, totemConfig,
   // kdsScreens), e não sofre a armadilha da coluna escalar ausente do mesmo
@@ -576,10 +593,11 @@ export async function garantirEstruturaDeLotes(): Promise<void> {
         WHERE table_schema = current_schema()
           AND (
             (table_name = 'StockTransaction' AND column_name IN ('stockLotId','franchiseeId','userId','sourceRef'))
-            OR (table_name = 'KitchenItem'    AND column_name IN ('stockItemId','labelSize'))
+            OR (table_name = 'KitchenItem'    AND column_name IN ('stockItemId','labelSize','conservacao','prazos','marca','fornecedor'))
             OR (table_name = 'User'           AND column_name IN ('labelFieldsConfig','metaCapiToken'))
             OR (table_name = 'StockItem'      AND column_name IN ('active'))
-            OR (table_name = 'StockLot'       AND column_name IN ('recebidoPorId','recebidoEm'))
+            OR (table_name = 'StockLot'       AND column_name IN ('recebidoPorId','recebidoEm','tipoEtiqueta','conservacao',
+                                                               'manipuladoEm','venceEm','validadeComHora','responsavel','marca','fornecedor'))
           )
       `;
       const tem = new Set(cols.map((c) => `${c.tabela}.${c.coluna}`));
@@ -589,6 +607,9 @@ export async function garantirEstruturaDeLotes(): Promise<void> {
         "KitchenItem.stockItemId", "KitchenItem.labelSize",
         "User.labelFieldsConfig", "User.metaCapiToken", "StockItem.active",
         "StockLot.recebidoPorId", "StockLot.recebidoEm",
+        "StockLot.tipoEtiqueta", "StockLot.conservacao", "StockLot.manipuladoEm", "StockLot.venceEm",
+        "StockLot.validadeComHora", "StockLot.responsavel", "StockLot.marca", "StockLot.fornecedor",
+        "KitchenItem.conservacao", "KitchenItem.prazos", "KitchenItem.marca", "KitchenItem.fornecedor",
       ]) {
         if (!tem.has(esperada)) faltando.push(esperada);
       }
