@@ -44,6 +44,7 @@ const quantas = (onde: string) => gravados[onde]?.length ?? 0;
 const envios: string[] = [];
 let consultasSql: string[] = [];
 let conversasNoBanco: string[] = [];
+let filaNoBanco: any[] = [];
 
 async function prepararMocks() {
   const na = require("next-auth/next");
@@ -86,6 +87,12 @@ async function prepararMocks() {
   p.$queryRaw = async (sql: any, ...valores: any[]) => {
     const texto = Array.isArray(sql) ? sql.join("?") : String(sql?.sql ?? sql?.text ?? "");
     consultasSql.push(texto);
+    if (texto.includes('FROM "AtendimentoHumano"')) {
+      // A fila mora no banco (lib/fila-de-atendimento-humano.ts): filtra por
+      // loja e, quando a consulta pede, pelo jid — como o Postgres faria.
+      const v = Array.isArray(sql) ? valores : sql?.values ?? [];
+      return filaNoBanco.filter((l) => l.userId === v[0] && (v.length < 2 || l.jid === v[1]));
+    }
     if (texto.includes('FROM "ChatbotConversationState"')) {
       const jid = Array.isArray(sql) ? valores[1] : sql?.values?.[1];
       return conversasNoBanco.includes(jid) ? [{ existe: 1 }] : [];
@@ -185,10 +192,11 @@ async function main() {
 
   // ── F74: contatos do marketing ───────────────────────────────────────────
   console.log("\n── /api/store/marketing ──");
-  (globalThis as any).__humanSupportChats = new Map([
-    ["dono_5522911110000@s.whatsapp.net", { userId: "dono", jid: "5522911110000@s.whatsapp.net", phone: "+55 22911110000", clientName: "Cliente da Loja", updatedAt: Date.now(), messages: [] }],
-    ["outra_5521977770000@s.whatsapp.net", { userId: "outra-loja", jid: "5521977770000@s.whatsapp.net", phone: "+55 21977770000", clientName: "Cliente de Outra Loja", updatedAt: Date.now(), messages: [] }],
-  ]);
+  (globalThis as any).__firehubTabelasDoRobo = Promise.resolve(true);
+  filaNoBanco = [
+    { userId: "dono", jid: "5522911110000@s.whatsapp.net", telefone: "+55 22911110000", nomeDoCliente: "Cliente da Loja", status: "PENDING", motivo: null, soPorIaForaDoAr: false, naoLidas: 0, ultimaMensagem: "", mensagens: [], atualizadoEm: new Date() },
+    { userId: "outra-loja", jid: "5521977770000@s.whatsapp.net", telefone: "+55 21977770000", nomeDoCliente: "Cliente de Outra Loja", status: "PENDING", motivo: null, soPorIaForaDoAr: false, naoLidas: 0, ultimaMensagem: "", mensagens: [], atualizadoEm: new Date() },
+  ];
   (globalThis as any).__whatsappActiveContacts = new Map([
     ["a", { userId: "outra-loja", phone: "5521966660000", name: "Contato de Outra Loja" }],
   ]);

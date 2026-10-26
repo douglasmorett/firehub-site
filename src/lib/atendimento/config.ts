@@ -103,6 +103,11 @@ export async function configDoAtendimento(): Promise<ConfigDoAtendimento> {
 }
 
 export async function salvarConfigDoAtendimento(mudancas: Partial<ConfigDoAtendimento>): Promise<ConfigDoAtendimento> {
+  // Lida do BANCO, não do cache: a gravação regrava o objeto inteiro. Com dois
+  // servidores, o webhook (A) grava a conexão e a tela (qualquer um) grava o
+  // "robô ligado" — com a cópia de até 15 s de um, a gravação do outro sumia
+  // (ligar o robô em B e A desligá-lo de novo ao registrar uma reconexão).
+  cache = null;
   const atual = await configDoAtendimento();
   const novo = lerConfig({ ...atual, ...mudancas, conexao: { ...atual.conexao, ...(mudancas.conexao || {}) } });
   await prisma.crmConfig.upsert({

@@ -12,6 +12,8 @@ import { enviarTexto } from "./whatsapp";
 import { consertarLinksDeVideo, manualDosVideos, videosJaEnviados } from "./videos";
 import { videosNoAr } from "./videos-no-ar";
 import { midiaGuardada, midiaSendoLida } from "./midias";
+import { pegarVez, soltarVez } from "@/lib/vez";
+import { idDaInstancia } from "@/lib/instancia";
 import {
   LINK_DO_WHATSAPP_DO_FIREHUB, PAINEL_MONTAR_O_CARDAPIO, PAINEL_NAO_FAZ, PAINEL_NAO_SABE, PAINEL_PRECISA_DA_EQUIPE, WHATSAPP_DO_FIREHUB_NA_TELA,
 } from "./painel";
@@ -60,6 +62,8 @@ import {
  */
 
 const ESPERA_MS = 6_000;
+/** Teto da vez de responder um contato (dois modelos, ferramentas e a revisão cabem com folga). */
+const VEZ_DO_ROBO_MS = 3 * 60_000;
 /**
  * Trava de laço: tantas respostas do robô nesta janela = algo respondendo
  * sozinho do outro lado. Era 20; baixou para 12 em 08/10/2026, quando o número
@@ -102,11 +106,27 @@ async function rodar(contatoId: string) {
     return;
   }
   e.rodando.add(contatoId);
+  // ── UM SERVIDOR RESPONDE ESTE CONTATO DE CADA VEZ ─────────────────────────
+  // A espera e o "rodando" acima são do processo. Com dois servidores, a
+  // mensagem do contato chega ao webhook (A) e o "devolver ao robô" da tela,
+  // ou a mensagem seguinte do lojista pelo chat do painel, cai em qualquer um:
+  // os dois respondiam a mesma conversa juntos — duas respostas, duas ações.
+  // Quem não pega a vez espera a próxima volta; quando ela vier, a última
+  // mensagem já é a resposta do outro e o `responder` não fala de novo.
+  // Banco fora: segue, como antes (lib/vez.ts).
+  const vez = `atendimento:robo:${contatoId}`;
+  const dono = `${idDaInstancia()}#${Math.random().toString(36).slice(2, 10)}`;
+  if (!(await pegarVez(vez, VEZ_DO_ROBO_MS, { dono }))) {
+    e.rodando.delete(contatoId);
+    agendarRespostaDoRobo(contatoId);
+    return;
+  }
   try {
     await responder(contatoId);
   } catch (err: any) {
     console.error(`[Atendimento] Robô falhou no contato ${contatoId}: ${err?.message}`);
   } finally {
+    await soltarVez(vez, dono);
     e.rodando.delete(contatoId);
     if (e.deNovo.delete(contatoId)) agendarRespostaDoRobo(contatoId);
   }

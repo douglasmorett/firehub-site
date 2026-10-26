@@ -14,7 +14,8 @@ import fs from "fs";
 import path from "path";
 import fichas from "./tutoriais-fichas.json";
 import { BASE_DOS_TUTORIAIS, ARQUIVOS_DO_TUTORIAL } from "./tutoriais";
-import { UPLOADS_ROOT } from "./storage";
+import { trazerDoBucket, UPLOADS_ROOT } from "./storage";
+import { bucketLigado, listarDoBucket } from "./arquivos-no-bucket";
 
 type Ficha = { id: string; versao: string };
 const FICHAS = fichas as Record<string, Ficha>;
@@ -68,7 +69,33 @@ export function tutoriaisEnviados(): string[] | null {
       .map((f) => f.id);
   }
   lembrado = { em: Date.now(), ids };
+  if (pasta === path.join(/*turbopackIgnore: true*/ UPLOADS_ROOT, "tutoriais")) puxarDoBucket();
   return ids;
+}
+
+// ─── Duas instâncias: o vídeo enviado para a outra ─────────────────────────
+//
+// O botão só aparece com os arquivos NO DISCO, e o envio (/api/admin/tutoriais)
+// grava no disco de uma instância só. A outra lista o bucket (uma chamada a
+// cada 10 min, não uma por arquivo que falta) e traz o que é da versão atual
+// e ainda não tem; na conta seguinte o botão aparece. Sem bucket, nada muda.
+const INTERVALO_DO_BUCKET_MS = 10 * 60_000;
+let puxouEm = 0;
+
+function puxarDoBucket() {
+  if (!bucketLigado() || Date.now() - puxouEm < INTERVALO_DO_BUCKET_MS) return;
+  puxouEm = Date.now();
+  const atuais = new Set(Object.values(FICHAS).flatMap((f) => ARQUIVOS_DO_TUTORIAL.map((a) => `tutoriais/${f.id}/${f.versao}/${a}`)));
+  void (async () => {
+    const noBucket = await listarDoBucket("uploads/tutoriais/");
+    let trouxe = 0;
+    for (const { chave } of noBucket || []) {
+      const relativo = chave.slice("uploads/".length);
+      if (!atuais.has(relativo) || fs.existsSync(/*turbopackIgnore: true*/ path.join(/*turbopackIgnore: true*/ UPLOADS_ROOT, relativo))) continue;
+      if (await trazerDoBucket(relativo)) trouxe++;
+    }
+    if (trouxe) esquecerTutoriaisEnviados();
+  })().catch(() => {});
 }
 
 /** Depois de um envio, a lista é refeita na hora (sem esperar os 30 s). */

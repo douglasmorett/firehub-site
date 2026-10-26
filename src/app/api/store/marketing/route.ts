@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage, sendEvolutionMediaUrl } from "@/lib/whatsapp-evolution";
 import { segredoObrigatorio } from "@/lib/segredos";
 import { DISPARO_EM_MASSA_LIBERADO, MOTIVO_DISPARO_DESLIGADO } from "@/lib/disparo-em-massa";
+import { contatosDaFila } from "@/lib/fila-de-atendimento-humano";
 
 export const dynamic = "force-dynamic";
 
@@ -201,30 +202,28 @@ export async function GET(req: NextRequest) {
       }
     });
 
-    // 3. Processa conversas salvas no atendimento humano e na memória da aplicação.
-    // As duas memórias são do processo inteiro, com as conversas de TODAS as
-    // lojas (chave `${userId}_${jid}`, api/webhook/whatsapp): só entra a desta.
-    if (global.__humanSupportChats) {
-      for (const chat of (global.__humanSupportChats as Map<string, any>).values()) {
-        if (chat?.userId !== targetFranchiseeId) continue;
-        const cleanDigits = (chat.phone || chat.jid || "").replace(/\D/g, "");
-        if (cleanDigits && cleanDigits.length >= 10 && !cleanDigits.startsWith("0800") && !cleanDigits.startsWith("550800")) {
-          const formattedPhone = cleanDigits.startsWith("55") ? `+${cleanDigits}` : `+55${cleanDigits}`;
-          if (!customerMap.has(cleanDigits)) {
-            customerMap.set(cleanDigits, {
-              id: cleanDigits,
-              name: chat.clientName || "Cliente WhatsApp",
-              phone: formattedPhone,
-              totalOrders: 0,
-              updatedAt: new Date(chat.updatedAt || Date.now()),
-            });
-          }
+    // 3. Processa conversas que passaram pelo atendimento humano DESTA loja (a
+    // fila mora no banco: lib/fila-de-atendimento-humano.ts). Quando era a
+    // memória do processo, o laço lia a fila de todas as lojas.
+    for (const chat of await contatosDaFila(user.id)) {
+      const cleanDigits = (chat.telefone || chat.jid || "").replace(/\D/g, "");
+      if (cleanDigits && cleanDigits.length >= 10 && !cleanDigits.startsWith("0800") && !cleanDigits.startsWith("550800")) {
+        const formattedPhone = cleanDigits.startsWith("55") ? `+${cleanDigits}` : `+55${cleanDigits}`;
+        if (!customerMap.has(cleanDigits)) {
+          customerMap.set(cleanDigits, {
+            id: cleanDigits,
+            name: chat.nome || "Cliente WhatsApp",
+            phone: formattedPhone,
+            totalOrders: 0,
+            updatedAt: new Date(chat.atualizadoEm || Date.now()),
+          });
         }
       }
     }
 
     if ((global as any).__whatsappActiveContacts) {
       for (const contact of (global as any).__whatsappActiveContacts.values()) {
+        // Memória do processo inteiro, com os contatos de TODAS as lojas.
         if (contact?.userId !== targetFranchiseeId) continue;
         const cleanDigits = (contact.phone || "").replace(/\D/g, "");
         if (cleanDigits && cleanDigits.length >= 10 && !cleanDigits.startsWith("0800") && !cleanDigits.startsWith("550800")) {

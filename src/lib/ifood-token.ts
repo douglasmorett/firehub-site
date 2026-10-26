@@ -35,6 +35,7 @@
  */
 import { prisma } from "./prisma";
 import { getIfoodToken, getTokenDaLojaIfood } from "./ifood-api";
+import { chaveDaRenovacao, renovarUmaVez } from "./renovar-uma-vez";
 
 const IFOOD_BASE = "https://merchant-api.ifood.com.br";
 
@@ -131,18 +132,30 @@ async function tokenDaIntegracao(integ: {
   if (integ.accessToken && aindaVale(integ.tokenExpiresAt)) return integ.accessToken;
 
   if (integ.refreshToken) {
-    const novo = await renovar(integ.refreshToken, integ.clientId, integ.clientSecret);
-    if (novo) {
-      await prisma.ifoodIntegration.update({
-        where: { id: integ.id },
-        data: {
-          accessToken: novo.accessToken,
-          refreshToken: novo.refreshToken,
-          tokenExpiresAt: novo.expiresAt,
-        },
-      });
-      return novo.accessToken;
-    }
+    // Um de cada vez no cluster, relendo a linha (lib/renovar-uma-vez.ts).
+    const token = await renovarUmaVez(chaveDaRenovacao("ifood", integ.refreshToken), {
+      ler: () =>
+        prisma.ifoodIntegration.findUnique({
+          where: { id: integ.id },
+          select: { accessToken: true, refreshToken: true, tokenExpiresAt: true, clientId: true, clientSecret: true },
+        }),
+      jaVale: (l) => (l.accessToken && aindaVale(l.tokenExpiresAt) ? l.accessToken : null),
+      renovar: async (l) => {
+        if (!l.refreshToken) return null;
+        const novo = await renovar(l.refreshToken, l.clientId, l.clientSecret);
+        if (!novo) return null;
+        await prisma.ifoodIntegration.update({
+          where: { id: integ.id },
+          data: {
+            accessToken: novo.accessToken,
+            refreshToken: novo.refreshToken,
+            tokenExpiresAt: novo.expiresAt,
+          },
+        });
+        return novo.accessToken;
+      },
+    });
+    if (token) return token;
   }
   // Última chance: um token que ainda não venceu de fato vale a tentativa.
   // Se o iFood recusar, o fallback por 401/403 assume — que é justamente o
@@ -160,18 +173,30 @@ async function tokenDoUsuario(userId: string): Promise<string | null> {
   if (u.ifoodAccessToken && aindaVale(u.ifoodTokenExpiresAt)) return u.ifoodAccessToken;
 
   if (u.ifoodRefreshToken) {
-    const novo = await renovar(u.ifoodRefreshToken);
-    if (novo) {
-      await prisma.user.update({
-        where: { id: userId },
-        data: {
-          ifoodAccessToken: novo.accessToken,
-          ifoodRefreshToken: novo.refreshToken,
-          ifoodTokenExpiresAt: novo.expiresAt,
-        },
-      });
-      return novo.accessToken;
-    }
+    // Um de cada vez no cluster, relendo a linha (lib/renovar-uma-vez.ts).
+    const token = await renovarUmaVez(chaveDaRenovacao("ifood", u.ifoodRefreshToken), {
+      ler: () =>
+        prisma.user.findUnique({
+          where: { id: userId },
+          select: { ifoodAccessToken: true, ifoodRefreshToken: true, ifoodTokenExpiresAt: true },
+        }),
+      jaVale: (l) => (l.ifoodAccessToken && aindaVale(l.ifoodTokenExpiresAt) ? l.ifoodAccessToken : null),
+      renovar: async (l) => {
+        if (!l.ifoodRefreshToken) return null;
+        const novo = await renovar(l.ifoodRefreshToken);
+        if (!novo) return null;
+        await prisma.user.update({
+          where: { id: userId },
+          data: {
+            ifoodAccessToken: novo.accessToken,
+            ifoodRefreshToken: novo.refreshToken,
+            ifoodTokenExpiresAt: novo.expiresAt,
+          },
+        });
+        return novo.accessToken;
+      },
+    });
+    if (token) return token;
   }
   return u.ifoodAccessToken && naoVenceu(u.ifoodTokenExpiresAt) ? u.ifoodAccessToken : null;
 }

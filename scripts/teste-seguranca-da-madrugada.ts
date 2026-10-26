@@ -93,6 +93,16 @@ stub("next/cache", { revalidatePath: () => {}, revalidateTag: () => {} });
 stub("../src/lib/auth", { authOptions: {}, renovarMarcaDaSessao: async () => {} });
 let whatsappEnviou = 0;
 stub("../src/lib/whatsapp-evolution", { sendEvolutionMessage: async () => (whatsappEnviou++, true) });
+// A fila do atendimento mora no banco (lib/fila-de-atendimento-humano.ts):
+// aqui ela conhece só as conversas postas em `filaDoTeste`.
+const filaDoTeste = new Map<string, any>();
+stub("../src/lib/fila-de-atendimento-humano", {
+  chamadoDaConversa: async (userId: string, jid: string) => filaDoTeste.get(`${userId}_${jid}`) ?? null,
+  chamadosAbertos: async () => [],
+  respostaDaLoja: async () => true,
+  marcarLido: async () => true,
+  encerrarChamado: async () => ({ existia: false }),
+});
 stub("../src/lib/loop-guard", { clearLoopGuard: async () => {}, registerBotReply: async () => {} });
 stub("../src/lib/pausa-do-robo", { retomarRobo: () => {} });
 stub("../src/lib/memoria-da-conversa-no-banco", { registrarMensagemDaLoja: async () => {} });
@@ -172,8 +182,7 @@ async function main() {
   confere("…nem lê a fila", (await atendimento.GET(req("/api/chatbot/human-support"))).status, 403);
   // Responder é só para conversa que existe nesta loja (teste-permissoes-n6.ts):
   // a do cliente está na fila do atendimento.
-  (globalThis as any).__humanSupportChats ||= new Map();
-  (globalThis as any).__humanSupportChats.set("cl0dono0001_5511999999999@s.whatsapp.net", {
+  filaDoTeste.set("cl0dono0001_5511999999999@s.whatsapp.net", {
     id: "cl0dono0001_5511999999999@s.whatsapp.net", userId: "cl0dono0001", jid: "5511999999999@s.whatsapp.net", phone: "+55 11999999999",
     clientName: "Cliente", status: "PENDING", unreadCount: 1, lastMessage: "oi", updatedAt: Date.now(), messages: [],
   });

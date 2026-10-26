@@ -8,6 +8,8 @@ import { retomarRobo } from "@/lib/pausa-do-robo";
 import { registrarMensagemDaLoja } from "@/lib/memoria-da-conversa-no-banco";
 import { contaOficialDoWhatsApp } from "@/lib/contas-oficiais-whatsapp";
 import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
+import { lembrarPor } from "@/lib/cache-curto";
+import { chamadoDaConversa, chamadosAbertos, encerrarChamado, marcarLido, respostaDaLoja } from "@/lib/fila-de-atendimento-humano";
 import { ehConversaDeCliente } from "@/lib/jid-de-cliente";
 
 export const dynamic = "force-dynamic";
@@ -25,36 +27,13 @@ const semAcesso = () =>
     { status: 403 },
   );
 
-// In-memory store for pending human support chats
-// In production serverless environments, this can also sync via global cache or DB
-export interface HumanSupportChat {
-  id: string;
-  userId: string;
-  jid: string;
-  phone: string;
-  clientName: string;
-  status: "PENDING" | "ACTIVE" | "CLOSED";
-  /** Por que caiu na fila ("Reclamação", "Pediu atendente"). Vazio = entrada antiga. */
-  motivo?: string;
-  unreadCount: number;
-  lastMessage: string;
-  updatedAt: number;
-  messages: Array<{
-    sender: "user" | "attendant" | "bot";
-    text: string;
-    timestamp: number;
-  }>;
-}
-
-// Global cache for human support requests
-declare global {
-  var __humanSupportChats: Map<string, HumanSupportChat> | undefined;
-}
+// A fila mora no banco (lib/fila-de-atendimento-humano.ts): o webhook do robô
+// que a enche fica num servidor, e este painel pode cair em outro.
 
 /**
  * A conversa existe para esta loja no banco? A mesma consulta de
- * api/chatbot/conversas — a fila em memória some no deploy, e a tela aberta
- * antes dele ainda responde à conversa que estava lendo.
+ * api/chatbot/conversas — a tela ainda responde à conversa que estava lendo
+ * depois que o chamado sai da fila.
  */
 async function conversaExiste(userId: string, jid: string): Promise<boolean> {
   try {
@@ -68,13 +47,6 @@ async function conversaExiste(userId: string, jid: string): Promise<boolean> {
   }
 }
 
-function getSupportStore(): Map<string, HumanSupportChat> {
-  if (!global.__humanSupportChats) {
-    global.__humanSupportChats = new Map<string, HumanSupportChat>();
-  }
-  return global.__humanSupportChats;
-}
-
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -82,10 +54,11 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true, ownerId: true, role: true, permissions: true },
-    });
+    // 15 s em memória: o balãozinho pergunta a cada 4–10 s por aba, e a
+    // consulta que importa aqui é a da fila (lib/cache-curto.ts).
+    const email = session.user.email;
+    const user = await lembrarPor(`fila-humana:usuario:${email}`, 15_000, () =>
+      prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, role: true, permissions: true } }));
 
     if (!user) {
       return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
@@ -93,16 +66,8 @@ export async function GET(req: NextRequest) {
     if (!podeComoNaTela(user, TELA_DAS_CONVERSAS)) return semAcesso();
 
     const targetUserId = user.ownerId || user.id;
-    const store = getSupportStore();
-
-    const chats: HumanSupportChat[] = [];
-    for (const chat of store.values()) {
-      if (chat.userId === targetUserId && chat.status !== "CLOSED") {
-        chats.push(chat);
-      }
-    }
-
-    chats.sort((a, b) => b.updatedAt - a.updatedAt);
+    // Já vem sem as fechadas e na ordem (a mais recente primeiro).
+    const chats = await chamadosAbertos(targetUserId);
 
     const totalUnread = chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
@@ -135,7 +100,6 @@ export async function POST(req: NextRequest) {
 
     const targetUserId = user.ownerId || user.id;
     const { action, chatId, message, jid } = await req.json();
-    const store = getSupportStore();
 
     // 1. Responder mensagem ao cliente pelo WhatsApp
     if (action === "send_message") {
@@ -143,14 +107,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Dados incompletos" }, { status: 400 });
       }
 
-      const key = `${targetUserId}_${jid}`;
-      let chat = store.get(key);
-
       // Só responde a conversa de cliente que já existe nesta loja (na fila ou
       // no banco): sem isto, o jid do corpo fazia do WhatsApp da loja um
       // disparador para qualquer número ou grupo. A régua do jid é a do webhook
       // (lib/jid-de-cliente.ts), que aceita o número cru e o @c.us que a fila guarda.
-      if (!ehConversaDeCliente(jid) || (!chat && !(await conversaExiste(targetUserId, String(jid))))) {
+      if (
+        !ehConversaDeCliente(jid) ||
+        (!(await chamadoDaConversa(targetUserId, String(jid)).catch(() => null)) &&
+          !(await conversaExiste(targetUserId, String(jid))))
+      ) {
         return NextResponse.json({ error: "Conversa não encontrada nesta loja" }, { status: 404 });
       }
 
@@ -164,39 +129,20 @@ export async function POST(req: NextRequest) {
       // as duas abas contam a mesma história, vista de ângulos diferentes.
       await registrarMensagemDaLoja(targetUserId, jid, message, "atendente").catch(() => {});
 
-      if (chat) {
-        chat.messages.push({
-          sender: "attendant",
-          text: message,
-          timestamp: Date.now(),
-        });
-        chat.lastMessage = message;
-        chat.updatedAt = Date.now();
-        chat.status = "ACTIVE";
-      }
+      await respostaDaLoja(targetUserId, jid, message);
 
       return NextResponse.json({ success: true, message: "Mensagem enviada com sucesso" });
     }
 
     // 2. Marcar como lido ao abrir a conversa
     if (action === "mark_read") {
-      const key = `${targetUserId}_${jid}`;
-      const chat = store.get(key);
-      if (chat) {
-        chat.unreadCount = 0;
-        chat.status = "ACTIVE";
-      }
+      await marcarLido(targetUserId, jid);
       return NextResponse.json({ success: true });
     }
 
     // 3. Encerrar atendimento (Robô volta a atender e a conversa é fechada)
     if (action === "close_chat") {
-      const key = `${targetUserId}_${jid}`;
-      const chat = store.get(key);
-      if (chat) {
-        chat.status = "CLOSED";
-        chat.unreadCount = 0;
-      }
+      const chat = await encerrarChamado(targetUserId, jid);
 
       // ── CONTA OFICIAL DO WHATSAPP: FECHA SEM FALAR NADA ────────────────────
       //
@@ -221,11 +167,12 @@ export async function POST(req: NextRequest) {
       // o prazo de 12 h vencer — mesmo com o atendimento já resolvido.
       await clearLoopGuard(targetUserId, jid).catch(() => {});
 
-      // E a pausa em MEMÓRIA, que é conferida antes de tudo no webhook. Ela
+      // E a pausa do robô, que é conferida antes de tudo no webhook. Ela
       // vivia num Map privado de lá, fora do alcance desta rota: o cliente lia
       // "nosso robô continuará te ajudando por aqui" e o robô seguia mudo por
-      // até 12 horas (lib/pausa-do-robo.ts).
-      retomarRobo(targetUserId, jid);
+      // até 12 horas (lib/pausa-do-robo.ts). Hoje está no banco — o webhook
+      // pode estar em outro servidor.
+      await retomarRobo(targetUserId, jid);
 
       // Conversa que caiu na fila pelo ANTI-LOOP é, quase sempre, com outro
       // robô (maquininha, banco, marketplace). Mandar "atendimento finalizado"

@@ -19,8 +19,11 @@
  *
  * As duas travas que tornam isso seguro:
  *   • PRAZO: a guardada vale no máximo `PRAZO_MS` (15 s). Gravação que não
- *     passe pelo lib/prisma.ts (script no banco, outro processo, uma segunda
- *     instância) aparece com até 15 s de atraso — nunca se perde;
+ *     passe pelo lib/prisma.ts (script no banco, outro processo) aparece com
+ *     até 15 s de atraso — nunca se perde. A gravação da OUTRA instância do
+ *     servidor (A e B atrás do balanceador, ou o container velho e o novo no
+ *     deploy) chega em ~1–2 s pelo laço de lib/laco-entre-instancias.ts; se
+ *     o banco soluçar, o prazo segura;
  *   • DEPOIS DO COMMIT: dentro de uma transação a gravação marca antes de o
  *     commit existir. Por isso cada marca se repete 2 s e 8 s depois — uma
  *     leitura que entrou no meio da transação fica inválida quando o commit
@@ -40,15 +43,26 @@ type Estado = {
   /** O processo acabou de subir: tudo conta como "pode ter mudado". */
   ultimaGeral: number;
   guardadas: Map<string, { lidaEm: number; valor: unknown }>;
+  /** Quem leva a marca às outras instâncias (lib/laco-entre-instancias.ts). Sem ele, só a memória. */
+  aoMarcar?: (lojaId: string | null) => void;
 };
 const g = globalThis as unknown as { __novidadeDaLoja?: Estado };
 const estado: Estado = (g.__novidadeDaLoja ??= { ultimaPorLoja: new Map(), ultimaGeral: Date.now(), guardadas: new Map() });
 const { ultimaPorLoja, guardadas } = estado;
 
-function marcarAgora(lojaId: string | null) {
+function marcarAgora(lojaId: string | null, levarAsOutras = true) {
   const agora = Date.now();
   if (lojaId) ultimaPorLoja.set(lojaId, agora);
   else estado.ultimaGeral = agora;
+  // As repetições de 2 s e 8 s também viajam: a outra instância pode ter lido
+  // no meio da transação daqui, e é a repetição que invalida aquela leitura lá.
+  if (levarAsOutras && estado.aoMarcar) {
+    try {
+      estado.aoMarcar(lojaId);
+    } catch {
+      /* levar às outras nunca atrapalha a marca daqui */
+    }
+  }
 }
 
 /** Algo da loja mudou. Sem loja (gravação em lote, SQL direto): vale para todas. */
@@ -59,6 +73,22 @@ export function marcarNovidade(lojaId?: string | null) {
     const t = setTimeout(() => marcarAgora(loja), ms);
     (t as { unref?: () => void }).unref?.();
   }
+}
+
+/**
+ * Uma marca que veio de OUTRA instância (lib/laco-entre-instancias.ts). Vale
+ * a partir de AGORA no relógio daqui — nunca a hora de lá: invalida tudo que
+ * esta instância guardou antes de saber, sem depender de os relógios dos
+ * servidores concordarem. Não repete (quem gravou já repete e manda de novo)
+ * e não volta para o banco.
+ */
+export function marcarNovidadeDeOutraInstancia(lojaId?: string | null) {
+  marcarAgora(typeof lojaId === "string" && lojaId ? lojaId : null, false);
+}
+
+/** Liga quem leva as marcas daqui às outras instâncias. Um só por processo. */
+export function aoMarcarNovidade(fn: ((lojaId: string | null) => void) | undefined) {
+  estado.aoMarcar = fn;
 }
 
 /** A hora (ms) da última novidade que vale para alguma destas lojas. */

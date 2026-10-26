@@ -27,7 +27,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { segredoOpcional } from "@/lib/segredos";
-import { LEGACY_PUBLIC_ROOT, UPLOADS_ROOT } from "@/lib/storage";
+import { LEGACY_PUBLIC_ROOT, trazerDoBucket, UPLOADS_ROOT } from "@/lib/storage";
 
 /**
  * Espelha MINIMO_ACEITAVEL de lib/imagem-anuncio.ts, que não é exportado.
@@ -65,6 +65,17 @@ async function medirImagemLocal(imageUrl: string): Promise<{ largura: number; al
       if (meta.width && meta.height) return { largura: meta.width, altura: meta.height };
     } catch {
       // Arquivo sumiu do disco ou não é imagem legível: tenta a outra raiz.
+    }
+  }
+
+  // Foto enviada pela outra instância (duas atrás do balanceador): do bucket.
+  const trazido = await trazerDoBucket(partes.join("/"));
+  if (trazido) {
+    try {
+      const meta = await sharp(trazido).metadata();
+      if (meta.width && meta.height) return { largura: meta.width, altura: meta.height };
+    } catch {
+      /* não é imagem legível */
     }
   }
 
