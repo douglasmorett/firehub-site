@@ -185,7 +185,7 @@ async function main() {
       const pedido = new Request(url.toString(), {
         method: req.method,
         headers: Object.fromEntries(Object.entries(req.headers).filter(([, v]) => typeof v === "string") as Array<[string, string]>),
-        ...(req.method !== "GET" && corpo.length ? { body: corpo } : {}),
+        ...(req.method !== "GET" && corpo.length ? { body: new Uint8Array(corpo) } : {}),
       });
       const resposta: Response = await modulo[req.method!](pedido, m[1] ? { params: Promise.resolve({ vendaId: m[1] }) } : undefined);
       if (perderRespostas > 0 && req.method === "POST" && caminho === "/notas") {
