@@ -72,6 +72,7 @@ import type { ChaveDeCanal } from "./canal-do-pedido";
 import { documentoDeVerdade, lerEnderecoDeEntrega, nomeServeDeDestinatario, normalizarDocumento } from "./documento-do-cliente";
 import { usaEmissorProprio, type ConfigDoEmissorProprio } from "./nfce/config-da-loja";
 import { dadosDoEmissorParaConferencia, pendenciasDoEmissorProprio, serieDoEmissor } from "./nfce/pendencias";
+import type { AlvoDaLoja } from "./nfce/emissao-da-loja";
 
 export type ItemDaNota = {
   codigo: string;
@@ -1235,9 +1236,9 @@ export function montarCorpoDaNfce(
 /**
  * Os pedidos que a nota cobre e a loja deles — o emissor próprio precisa para
  * reservar o número no fiscalInfo de cada um (lib/nfce/numeracao). Um pedido,
- * ou os da conta da mesa.
+ * ou os da conta da mesa — ou a venda de fora (`tabela` VendaExterna, lib/evopdv).
  */
-export type AlvoDaEmissao = { lojaId: string; pedidos: string[] };
+export type AlvoDaEmissao = AlvoDaLoja;
 
 /**
  * Emite a NFC-e.

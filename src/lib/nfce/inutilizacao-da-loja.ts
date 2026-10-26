@@ -49,6 +49,7 @@ import {
   sqlDaTrava,
   sqlDosNumerosDaLoja,
   sqlLiberarReserva,
+  TABELAS_FISCAIS,
   type Ambiente,
   type NumeroGravado,
 } from "./numeracao";
@@ -370,12 +371,17 @@ export async function inutilizarBuracosDoMes(p: { lojaId: string; config: Config
         const b = buracosParaInutilizar({ numeros, inutilizadas, numeroInicial: inicio, inicioDoMes, agora });
         if (b.total === 0 || b.total > LIMITE_DE_BURACOS_AUTOMATICOS) return b;
         for (const v of b.reservasVencidas) {
-          const r = await tx.$executeRaw(
-            sqlLiberarReserva(v.pedido, { numero: v.numero, serie, ambiente, em: v.em }, {
-              reservaLiberada: { numero: v.numero, serie, ambiente, reservadaEm: v.em, liberadaEm: agora.toISOString(), motivo: `inutilização mensal ${mesAnterior}` },
-            })
-          );
-          resumo.reservasSoltas += Number(r) || 0;
+          // A reserva pode ser de um pedido ou de uma venda de fora (a série é
+          // uma só — lib/nfce/numeracao): o id é de uma tabela, a outra não acha.
+          for (const tabela of TABELAS_FISCAIS) {
+            const r = await tx.$executeRaw(
+              sqlLiberarReserva(v.pedido, { numero: v.numero, serie, ambiente, em: v.em }, {
+                reservaLiberada: { numero: v.numero, serie, ambiente, reservadaEm: v.em, liberadaEm: agora.toISOString(), motivo: `inutilização mensal ${mesAnterior}` },
+              }, tabela)
+            );
+            resumo.reservasSoltas += Number(r) || 0;
+            if (Number(r) > 0) break;
+          }
         }
         return b;
       },

@@ -78,11 +78,13 @@ import {
 } from "./emissor";
 import {
   emissaoEmCurso,
+  delegadoDaTabela,
   reservarNumero,
   reservarNumeroDeContingencia,
   sqlMesclarNoFiscalInfo,
   sqlMarcarEmEmissao,
   type Ambiente,
+  type TabelaFiscal,
 } from "./numeracao";
 import { ambienteDaLoja, numeroInicialDoEmissor, serieDoEmissor, ufsDoEmissorProprio } from "./pendencias";
 import { urlsDaUf } from "./qrcode";
@@ -461,22 +463,38 @@ async function registroDoCancelamentoAchado(lojaId: string, chave: string, r: Re
 
 class NotaJaEmitida extends Error {}
 
+/** Os pedidos da nota e a loja deles — ver `emitirNaSefazDaLoja`. */
+export type AlvoDaLoja = {
+  lojaId: string;
+  pedidos: string[];
+  tabela?: TabelaFiscal;
+  /** A venda feita sem conexão (fila do EvoPDV): a hora dela e o motivo (xJust, 15+ caracteres). */
+  vendaSemConexao?: { em: Date; motivo: string } | null;
+  /** verProc da nota (padrão: o do FireHub). */
+  verProc?: string;
+};
+
 /**
  * Emite a NFC-e pela SEFAZ para os pedidos de `alvo` (ver o cabeçalho). O
  * corpo é o de `montarCorpoDaNfce` (lib/fiscal-emissao), com a série do
  * emissor. Nunca lança por falha da SEFAZ; lança só defeito de programação
  * (o chamador — lib/fiscal-automatico — registra como erro interno).
+ *
+ * `alvo.tabela`: onde os pedidos estão (padrão CustomerOrder; a venda de fora
+ * do EvoPDV é VendaExterna). `alvo.vendaSemConexao`: a venda foi feita SEM
+ * conexão naquela hora (a fila do EvoPDV) — a nota sai direto em contingência
+ * off-line com dhEmi e dhCont = a hora da venda (ver lib/evopdv/venda).
  */
 export async function emitirNaSefazDaLoja(
   config: ConfigDaLoja,
   ref: string,
   corpo: CorpoDaNfce,
-  alvo: { lojaId: string; pedidos: string[] } | undefined
+  alvo: AlvoDaLoja | undefined
 ): Promise<ResultadoDaEmissao> {
   if (!alvo?.lojaId || !alvo.pedidos?.length) {
     return { ok: false, motivo: "nao_configurado", mensagem: `Emissão pelo emissor próprio sem os pedidos da nota (${ref}). Nada foi enviado.` };
   }
-  const { lojaId } = alvo;
+  const { lojaId, tabela } = alvo;
   const pedidos = [...new Set(alvo.pedidos)];
   const ambiente = ambienteDaLoja(config);
   const serie = serieDoEmissor(config);
@@ -497,6 +515,14 @@ export async function emitirNaSefazDaLoja(
   // 2. A loja bloqueada (656): sem contingência, a nota fica pendente — sem
   // gastar número e sem contar tentativa (`esperaSefazAte`, lib/fiscal-automatico).
   const bloqueio = sefazBloqueadaAte(lojaId, config);
+  const semConexao = alvo.vendaSemConexao ?? null;
+  if (semConexao && base.contingenciaOffline === false) {
+    return {
+      ok: false,
+      motivo: "dados_incompletos",
+      mensagem: "A venda foi feita sem conexão e a contingência off-line está desligada nesta loja: a nota de uma venda passada só sai em contingência. Nada foi enviado.",
+    };
+  }
   if (bloqueio && base.contingenciaOffline === false) {
     return {
       ok: false,
@@ -508,7 +534,7 @@ export async function emitirNaSefazDaLoja(
   }
 
   // 3. O número.
-  const reserva = await reservarNumero({ lojaId, pedidos, serie, ambiente, numeroInicial, agora: agoraDoEmissor(), banco });
+  const reserva = await reservarNumero({ lojaId, pedidos, serie, ambiente, numeroInicial, agora: agoraDoEmissor(), tabela, banco });
   if (!reserva.ok) {
     // Outra emissão do mesmo pedido está no ar, ou a nota já saiu por outro
     // caminho: quem grava é o outro — nada aqui.
@@ -580,7 +606,7 @@ export async function emitirNaSefazDaLoja(
         { serie: envioAnterior.serie, numero: envioAnterior.numero, ambiente: envioAnterior.ambiente, motivo: conferido.motivo, em: agoraDoEmissor().toISOString(), chave: envioAnterior.chave },
       ];
       if (envioAnterior.numero === numero && envioAnterior.serie === serie && envioAnterior.ambiente === ambiente) {
-        const nova = await reservarNumero({ lojaId, pedidos, serie, ambiente, numeroInicial, agora: agoraDoEmissor(), descartar: [numero], ignorarEmCurso: true, banco });
+        const nova = await reservarNumero({ lojaId, pedidos, serie, ambiente, numeroInicial, agora: agoraDoEmissor(), descartar: [numero], ignorarEmCurso: true, tabela, banco });
         if (!nova.ok) {
           if (nova.motivo === "ja_emitida") return { ok: false, motivo: "processando", mensagem: nova.mensagem, naoGravar: true };
           return { ok: false, motivo: "nao_configurado", mensagem: nova.mensagem };
@@ -620,11 +646,15 @@ export async function emitirNaSefazDaLoja(
     ...base,
     numero,
     transporte: transporteDoEmissor(),
-    agora: relogioDoEmissor(),
-    contingenciaDireta: bloqueio ? `SEFAZ bloqueada por consumo indevido (656) ate ${horaNaLoja(bloqueio, uf)}; emissao em contingencia off-line` : null,
+    // A venda sem conexão: a nota é da hora da VENDA (dhEmi = dhCont).
+    agora: semConexao ? () => semConexao.em : relogioDoEmissor(),
+    contingenciaDireta: bloqueio
+      ? `SEFAZ bloqueada por consumo indevido (656) ate ${horaNaLoja(bloqueio, uf)}; emissao em contingencia off-line`
+      : semConexao?.motivo ?? null,
     refazerContingencia: refazer,
+    ...(alvo.verProc ? { verProc: alvo.verProc } : {}),
     reservarNumeroDeContingencia: async () => {
-      feito.contingencia = await reservarNumeroDeContingencia({ lojaId, pedidos, serie, ambiente, numeroInicial, agora: agoraDoEmissor(), banco });
+      feito.contingencia = await reservarNumeroDeContingencia({ lojaId, pedidos, serie, ambiente, numeroInicial, agora: agoraDoEmissor(), tabela, banco });
       return feito.contingencia;
     },
     aoAssinar: async (nota) => {
@@ -649,7 +679,7 @@ export async function emitirNaSefazDaLoja(
       // por lá que um 539 futuro reconhece uma chave deste pedido.
       historico = comNoHistorico(historico, envioDoFiscalInfo(lido)?.chave === nota.chave ? null : envioDoFiscalInfo(lido));
       const n = await banco.$executeRaw(
-        sqlMarcarEmEmissao(pedidos, { processando: true, provedor: PROVEDOR_PROPRIO, ambiente, envioSefaz: registro, enviosAnteriores: historicoComoRegistro(historico) })
+        sqlMarcarEmEmissao(pedidos, { processando: true, provedor: PROVEDOR_PROPRIO, ambiente, envioSefaz: registro, enviosAnteriores: historicoComoRegistro(historico) }, tabela)
       );
       if (Number(n) < pedidos.length) throw new NotaJaEmitida("Outro caminho autorizou a nota deste pedido agora mesmo.");
       feito.envio = registro;
@@ -665,7 +695,7 @@ export async function emitirNaSefazDaLoja(
     if (!feito.assinada) {
       if (e instanceof NotaJaEmitida) {
         // A reserva que ficou no pedido autorizado não vai ser usada: sai.
-        await banco.$executeRaw(sqlMesclarNoFiscalInfo(pedidos, {}, ["numeroReservado"])).catch(() => {});
+        await banco.$executeRaw(sqlMesclarNoFiscalInfo(pedidos, {}, ["numeroReservado"], tabela)).catch(() => {});
         return { ok: false, motivo: "processando", mensagem: `${msg} Nada foi enviado de novo.`, naoGravar: true };
       }
       return {
@@ -1040,7 +1070,7 @@ export function naVezDoCron(grupo: { info: unknown; fiscalStatus: string | null 
  * (mas respeita o bloqueio e o mínimo de 2 min entre consultas da mesma chave).
  */
 export async function sincronizarNotaNaSefaz(
-  grupo: { ids: string[]; info: Registro; fiscalStatus: string | null | undefined },
+  grupo: { ids: string[]; info: Registro; fiscalStatus: string | null | undefined; tabela?: TabelaFiscal },
   config: ConfigDaLoja,
   lojaId: string,
   opcoes: { manual?: boolean } = {}
@@ -1191,7 +1221,7 @@ export async function sincronizarNotaNaSefaz(
     }
     if (conferido.consultou) {
       await bancoDoEmissor()
-        .$executeRaw(sqlMesclarNoFiscalInfo(grupo.ids, { envioSefaz: envioComoRegistro(conferido.envio) }))
+        .$executeRaw(sqlMesclarNoFiscalInfo(grupo.ids, { envioSefaz: envioComoRegistro(conferido.envio) }, [], grupo.tabela))
         .catch(() => {});
     }
     return semGravar(
@@ -1301,7 +1331,7 @@ function reemissaoInterrompida(pedidoId: string, info: Registro): Registro {
 
 /** A contingência: transmitir (ou conferir) — ver `sincronizarNotaNaSefaz`. */
 async function sincronizarContingencia(p: {
-  grupo: { ids: string[]; info: Registro; fiscalStatus: string | null | undefined };
+  grupo: { ids: string[]; info: Registro; fiscalStatus: string | null | undefined; tabela?: TabelaFiscal };
   info: Registro;
   lojaId: string;
   uf: string;
@@ -1372,7 +1402,7 @@ async function sincronizarContingencia(p: {
     }
     if (r.statusSefaz !== "217" && r.motivo !== "rejeitada") {
       await conferirO656(lojaId, r.statusSefaz, "consulta da contingência");
-      await marcarTransmissao(p.grupo.ids, info, agora, r, { aConferir: true });
+      await marcarTransmissao(p.grupo.ids, info, agora, r, { aConferir: true }, p.grupo.tabela);
       return p.semGravar(r, ambienteDaNota, true);
     }
     // 217: não chegou — transmite. Denegada: a transmissão diz.
@@ -1435,7 +1465,7 @@ async function sincronizarContingencia(p: {
           },
         }
       : {}),
-  });
+  }, p.grupo.tabela);
   const prazo = Date.parse(String(info.contingenciaPrazo ?? ""));
   if (Number.isFinite(prazo) && agora.getTime() > prazo) {
     console.error(`[NFC-e] ⏰ Contingência ${info.nfceKey} passou do prazo de transmissão (${info.contingenciaPrazo}) e a SEFAZ ainda não recebeu: ${r.mensagem}`);
@@ -1458,7 +1488,8 @@ async function marcarTransmissao(
   info: Registro,
   agora: Date,
   r: ResultadoDaEmissaoSefaz,
-  o: { aConferir: boolean; recusasDoLote?: number; paraPessoa?: Registro }
+  o: { aConferir: boolean; recusasDoLote?: number; paraPessoa?: Registro },
+  tabela?: TabelaFiscal
 ): Promise<void> {
   const prazo = Date.parse(String(info.contingenciaPrazo ?? ""));
   await bancoDoEmissor()
@@ -1471,7 +1502,7 @@ async function marcarTransmissao(
         recusasDoLoteDaContingencia: o.recusasDoLote ?? null,
         ...(o.paraPessoa ? { contingenciaParaPessoa: o.paraPessoa } : {}),
         ...(Number.isFinite(prazo) && agora.getTime() > prazo ? { contingenciaVencida: true } : {}),
-      })
+      }, [], tabela)
     )
     .catch(() => {});
 }
@@ -1493,6 +1524,8 @@ export async function cancelarNotaDoPedidoNaSefaz(p: {
   pedidosDaNota: string[];
   ambiente: Ambiente | null;
   justificativa: string;
+  /** Onde o pedido está (padrão CustomerOrder; a venda do EvoPDV é VendaExterna). */
+  tabela?: TabelaFiscal;
 }): Promise<{ status: number; corpo: Record<string, unknown> }> {
   const info = objeto(p.pedido.fiscalInfo);
   const chave = String(info.nfceKey ?? "");
@@ -1542,7 +1575,7 @@ export async function cancelarNotaDoPedidoNaSefaz(p: {
   const banco = bancoDoEmissor();
   const daNota: Array<{ id: string; fiscalInfo: unknown }> =
     p.pedidosDaNota.length > 1
-      ? await banco.customerOrder.findMany({ where: { id: { in: p.pedidosDaNota }, franchiseeId: p.lojaId }, select: { id: true, fiscalInfo: true } })
+      ? await banco[delegadoDaTabela(p.tabela)].findMany({ where: { id: { in: p.pedidosDaNota }, franchiseeId: p.lojaId }, select: { id: true, fiscalInfo: true } })
       : [{ id: p.pedido.id, fiscalInfo: p.pedido.fiscalInfo }];
   const alvos = daNota.filter((o) => o.id === p.pedido.id || objeto(o.fiscalInfo).nfceKey === chave);
   const registro = {
@@ -1554,7 +1587,7 @@ export async function cancelarNotaDoPedidoNaSefaz(p: {
   };
   await banco.$transaction(
     alvos.map((o) =>
-      banco.customerOrder.update({
+      banco[delegadoDaTabela(p.tabela)].update({
         where: { id: o.id },
         data: { fiscalStatus: "CANCELED", fiscalInfo: { ...objeto(o.fiscalInfo), ...registro } as Prisma.InputJsonValue },
       })

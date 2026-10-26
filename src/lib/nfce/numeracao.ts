@@ -68,6 +68,15 @@
  * mensal e o banco falso usam); scripts/nfce-conferir-sql-da-numeracao.ts
  * confere, num Postgres de verdade e só lendo, que o SQL e ela concordam.
  *
+ * ── Duas tabelas, uma sequência ─────────────────────────────────────────────
+ *
+ * A nota do emissor próprio mora no pedido (`CustomerOrder`) ou na venda de
+ * fora (`VendaExterna` — o EvoPDV emitindo pelo FireHub, lib/evopdv). As duas
+ * usam a MESMA série da loja: a leitura do maior número e a dos números da loja
+ * (`fonteDaLoja`) unem as duas, senão a venda e o pedido sairiam com o mesmo
+ * número (539) e a inutilização mensal pegaria número usado. As gravações
+ * recebem a `tabela` (padrão `CustomerOrder` — o caminho de sempre não muda).
+ *
  * Só servidor.
  */
 import { createHash } from "node:crypto";
@@ -75,6 +84,15 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
 export type Ambiente = 1 | 2;
+
+/** Onde a nota está gravada: o pedido do FireHub ou a venda de fora (ver o cabeçalho). */
+export type TabelaFiscal = "CustomerOrder" | "VendaExterna";
+export const TABELAS_FISCAIS: readonly TabelaFiscal[] = ["CustomerOrder", "VendaExterna"];
+/** O nome da tabela no SQL — só um dos dois, nunca texto de fora. */
+const tabelaNoSql = (t: TabelaFiscal = "CustomerOrder"): Prisma.Sql => Prisma.raw(t === "VendaExterna" ? '"VendaExterna"' : '"CustomerOrder"');
+/** O delegate do Prisma da tabela. */
+export const delegadoDaTabela = (t: TabelaFiscal = "CustomerOrder"): "customerOrder" | "vendaExterna" => (t === "VendaExterna" ? "vendaExterna" : "customerOrder");
+
 export type PapelDoNumero = "nota" | "anterior" | "reserva" | "envio" | "tentado" | "contingencia" | "queimado";
 
 export type NumeroGravado = {
@@ -195,14 +213,17 @@ WHERE x.numero IS NOT NULL`;
 }
 
 /**
- * Os pedidos da loja que têm fiscalInfo — pelo índice (franchiseeId). Com
- * `desde`, só os criados de lá para cá, pelo índice (franchiseeId, createdAt):
- * a consulta rápida da reserva (ver `JANELA_DA_NUMERACAO_MS`).
+ * Os pedidos E as vendas de fora da loja que têm fiscalInfo — pelo índice
+ * (franchiseeId) de cada tabela. Com `desde`, só os criados de lá para cá,
+ * pelo índice (franchiseeId, createdAt): a consulta rápida da reserva (ver
+ * `JANELA_DA_NUMERACAO_MS`). As duas tabelas dividem a série (ver o cabeçalho).
  */
-export const fonteDaLoja = (lojaId: string, desde?: Date): Prisma.Sql =>
+const fonteDaTabela = (t: TabelaFiscal, lojaId: string, desde?: Date): Prisma.Sql =>
   desde
-    ? Prisma.sql`SELECT "id" AS id, "fiscalStatus" AS fs, "fiscalInfo" AS j FROM "CustomerOrder" WHERE "franchiseeId" = ${lojaId} AND "createdAt" >= ${desde} AND "fiscalInfo" IS NOT NULL`
-    : Prisma.sql`SELECT "id" AS id, "fiscalStatus" AS fs, "fiscalInfo" AS j FROM "CustomerOrder" WHERE "franchiseeId" = ${lojaId} AND "fiscalInfo" IS NOT NULL`;
+    ? Prisma.sql`SELECT "id" AS id, "fiscalStatus" AS fs, "fiscalInfo" AS j FROM ${tabelaNoSql(t)} WHERE "franchiseeId" = ${lojaId} AND "createdAt" >= ${desde} AND "fiscalInfo" IS NOT NULL`
+    : Prisma.sql`SELECT "id" AS id, "fiscalStatus" AS fs, "fiscalInfo" AS j FROM ${tabelaNoSql(t)} WHERE "franchiseeId" = ${lojaId} AND "fiscalInfo" IS NOT NULL`;
+export const fonteDaLoja = (lojaId: string, desde?: Date): Prisma.Sql =>
+  Prisma.sql`${fonteDaTabela("CustomerOrder", lojaId, desde)} UNION ALL ${fonteDaTabela("VendaExterna", lojaId, desde)}`;
 
 /**
  * A consulta rápida da reserva olha só os pedidos CRIADOS nos últimos 32 dias.
@@ -324,8 +345,8 @@ export const sqlDaTrava = (chave: string): Prisma.Sql => Prisma.sql`/* fh:trava 
  * `updatedAt` vai à mão: o @updatedAt do Prisma não vale em SQL cru, e o cron
  * (lib/fiscal-automatico) acha as notas a consultar por ele.
  */
-export function sqlMesclarNoFiscalInfo(ids: string[], dados: Record<string, unknown>, remover: string[] = []): Prisma.Sql {
-  return Prisma.sql`/* fh:mesclar-fiscal-info */ UPDATE "CustomerOrder"
+export function sqlMesclarNoFiscalInfo(ids: string[], dados: Record<string, unknown>, remover: string[] = [], tabela: TabelaFiscal = "CustomerOrder"): Prisma.Sql {
+  return Prisma.sql`/* fh:mesclar-fiscal-info */ UPDATE ${tabelaNoSql(tabela)}
 SET "fiscalInfo" = ((CASE WHEN jsonb_typeof("fiscalInfo") = 'object' THEN "fiscalInfo" ELSE '{}'::jsonb END) - ${remover}::text[]) || ${JSON.stringify(dados)}::jsonb,
     "updatedAt" = NOW()
 WHERE "id" = ANY(${ids}::text[])`;
@@ -341,13 +362,13 @@ WHERE "id" = ANY(${ids}::text[])`;
  *    pedido ficaria PENDING com a reserva e nenhum passo do cron o veria;
  *  - no "vai sair agora" (aoAssinar), com a chave e o XML assinado.
  */
-export function sqlMarcarEmEmissao(ids: string[], dados: Record<string, unknown>): Prisma.Sql {
-  return Prisma.sql`/* fh:marcar-em-emissao */ UPDATE "CustomerOrder"
+export function sqlMarcarEmEmissao(ids: string[], dados: Record<string, unknown>, tabela: TabelaFiscal = "CustomerOrder"): Prisma.Sql {
+  return Prisma.sql`/* fh:marcar-em-emissao */ UPDATE ${tabelaNoSql(tabela)}
 SET "fiscalStatus" = 'PENDING',
     "fiscalInfo" = (CASE WHEN jsonb_typeof("fiscalInfo") = 'object' THEN "fiscalInfo" ELSE '{}'::jsonb END) || ${JSON.stringify(dados)}::jsonb,
     "updatedAt" = NOW()
 WHERE "id" = ANY(${ids}::text[])
-  AND NOT EXISTS (SELECT 1 FROM "CustomerOrder" o WHERE o."id" = ANY(${ids}::text[]) AND o."fiscalStatus" = 'EMITTED')`;
+  AND NOT EXISTS (SELECT 1 FROM ${tabelaNoSql(tabela)} o WHERE o."id" = ANY(${ids}::text[]) AND o."fiscalStatus" = 'EMITTED')`;
 }
 
 /**
@@ -358,13 +379,14 @@ WHERE "id" = ANY(${ids}::text[])
 export function sqlLiberarReserva(
   pedido: string,
   reserva: { numero: number; serie: number; ambiente: Ambiente; em: string | null },
-  registro: Record<string, unknown>
+  registro: Record<string, unknown>,
+  tabela: TabelaFiscal = "CustomerOrder"
 ): Prisma.Sql {
   const mesmaData =
     reserva.em == null
       ? Prisma.sql`"fiscalInfo"->'numeroReservado'->>'em' IS NULL`
       : Prisma.sql`"fiscalInfo"->'numeroReservado'->>'em' = ${reserva.em}`;
-  return Prisma.sql`/* fh:liberar-reserva */ UPDATE "CustomerOrder"
+  return Prisma.sql`/* fh:liberar-reserva */ UPDATE ${tabelaNoSql(tabela)}
 SET "fiscalInfo" = ("fiscalInfo" - 'numeroReservado') || ${JSON.stringify(registro)}::jsonb, "updatedAt" = NOW()
 WHERE "id" = ${pedido}
   AND jsonb_typeof("fiscalInfo") = 'object'
@@ -503,6 +525,8 @@ export async function reservarNumero(p: {
   descartar?: number[];
   /** A própria emissão pedindo outro número (a marca de "em curso" é dela). */
   ignorarEmCurso?: boolean;
+  /** Onde os `pedidos` estão (padrão: CustomerOrder). A leitura do maior número une as duas. */
+  tabela?: TabelaFiscal;
   banco?: BancoDaNumeracao;
 }): Promise<ReservaFeita> {
   const pedidos = [...new Set(p.pedidos.filter(Boolean))];
@@ -511,7 +535,7 @@ export async function reservarNumero(p: {
   const banco = p.banco ?? bancoPadrao();
   return banco.$transaction(async (tx: any) => {
     await tx.$executeRaw(sqlDaTrava(chaveDaTrava(p.lojaId, p.serie, p.ambiente)));
-    const brutos: Array<{ id: string; fiscalStatus: string | null; fiscalInfo: unknown }> = await tx.customerOrder.findMany({
+    const brutos: Array<{ id: string; fiscalStatus: string | null; fiscalInfo: unknown }> = await tx[delegadoDaTabela(p.tabela)].findMany({
       where: { id: { in: pedidos } },
       select: { id: true, fiscalStatus: true, fiscalInfo: true },
     });
@@ -538,7 +562,7 @@ export async function reservarNumero(p: {
     }
     const reservadaEm = agora.toISOString();
     const reserva = { serie: p.serie, numero, ambiente: p.ambiente, em: reservadaEm, emissaoEmCurso: reservadaEm };
-    const marcados = await tx.$executeRaw(sqlMarcarEmEmissao(pedidos, { numeroReservado: reserva, provedor: "sefaz", processando: true, ambiente: p.ambiente }));
+    const marcados = await tx.$executeRaw(sqlMarcarEmEmissao(pedidos, { numeroReservado: reserva, provedor: "sefaz", processando: true, ambiente: p.ambiente }, p.tabela));
     if (Number(marcados) < pedidos.length) {
       // Um pedido da nota foi autorizado por outro caminho no meio: a nota
       // dele existe, e esta emissão não tem o que fazer.
@@ -563,6 +587,7 @@ export async function reservarNumeroDeContingencia(p: {
   ambiente: Ambiente;
   numeroInicial?: number | null;
   agora?: Date;
+  tabela?: TabelaFiscal;
   banco?: BancoDaNumeracao;
 }): Promise<number> {
   const agora = p.agora ?? new Date();
@@ -572,7 +597,7 @@ export async function reservarNumeroDeContingencia(p: {
     const numero = (await maiorOcupado(tx, p, agora)) + 1;
     if (numero > NUMERO_MAXIMO) throw new Error("A série chegou ao número máximo (999.999.999).");
     await tx.$executeRaw(
-      sqlMesclarNoFiscalInfo(p.pedidos, { numeroDeContingencia: { serie: p.serie, numero, ambiente: p.ambiente, em: agora.toISOString() } })
+      sqlMesclarNoFiscalInfo(p.pedidos, { numeroDeContingencia: { serie: p.serie, numero, ambiente: p.ambiente, em: agora.toISOString() } }, [], p.tabela)
     );
     await tx.$executeRaw(sqlMarcarMaiorNumero(p.lojaId, p.serie, p.ambiente, numero));
     return numero;

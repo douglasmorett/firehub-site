@@ -119,6 +119,11 @@ export async function register() {
   // StockTransaction, StockInvoice e Payable: faltando, o estoque serve 500.
   const { garantirEstruturaDoCmv } = await import("./lib/cmv/estrutura-no-banco");
   await garantirEstruturaDoCmv();
+  // A venda do EvoPDV que emite NFC-e pelo FireHub (lib/evopdv). A numeração
+  // da NFC-e une pedidos e vendas de fora (lib/nfce/numeracao): sem a tabela,
+  // a emissão do emissor próprio para — por isso antes do primeiro request.
+  const { garantirEstruturaDoEvopdv } = await import("./lib/evopdv/estrutura-no-banco");
+  await garantirEstruturaDoEvopdv();
   // Pausa pelo estoque (lib/pausa-pelo-estoque.ts): o interruptor da loja e
   // a marca do produto pausado pelo estoque. Tabelas próprias; se faltarem, só
   // a pausa automática para.

@@ -2828,3 +2828,33 @@ model DisparoDescadastro {
 
   @@unique([franchiseeId, telefone])
 }
+
+/// A venda de FORA do FireHub que emite NFC-e pelo emissor do FireHub — hoje,
+/// o EvoPDV (lib/evopdv). Tem as MESMAS colunas fiscais do pedido
+/// (`fiscalStatus`, `fiscalInfo`) e divide a série da loja com ele: a
+/// numeração e a inutilização unem as duas tabelas (lib/nfce/numeracao). Não é
+/// pedido: não entra no cardápio, na régua da venda, na mensalidade, no
+/// painel, no KDS, na impressão nem no robô. A tabela nasce no boot
+/// (lib/evopdv/estrutura-no-banco.ts).
+model VendaExterna {
+  id            String   @id @default(cuid())
+  franchiseeId  String
+  /// "evopdv"
+  origem        String   @default("evopdv")
+  /// O id da venda no sistema de origem (Sale.id do EvoPDV): a emissão é idempotente por ele.
+  vendaId       String
+  /// A venda como chegou (itens, pagamentos, valores em centavos) — é dela que a nota é montada.
+  venda         Json
+  /// sha256 da venda: o mesmo vendaId com outro conteúdo é recusado.
+  hashDaVenda   String
+  totalCentavos Int
+  /// A hora da venda no caixa (a fila sem internet manda depois).
+  vendaEm       DateTime
+  fiscalStatus  String?
+  fiscalInfo    Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([franchiseeId, origem, vendaId])
+  @@index([franchiseeId, createdAt])
+}

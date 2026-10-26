@@ -168,7 +168,8 @@ export type Linha = Record<string, any>;
  * `await import(...)` depois de `bancoFalso()`.
  */
 export function bancoFalso() {
-  const db: { user: Linha[]; customerOrder: Linha[]; tableSession: Linha[] } = { user: [], customerOrder: [], tableSession: [] };
+  // `vendaExterna`: a venda do EvoPDV (lib/evopdv), que divide a série com os pedidos.
+  const db: { user: Linha[]; customerOrder: Linha[]; tableSession: Linha[]; vendaExterna: Linha[] } = { user: [], customerOrder: [], tableSession: [], vendaExterna: [] };
   const estado = {
     travaLigada: true,
     esperasNaTrava: 0,
@@ -232,7 +233,7 @@ export function bancoFalso() {
       estado.chamadas.push("tableSession.orders");
       saida.orders = ordenar(db.customerOrder.filter((o) => o.tableSessionId === linha.id), args.select.orders.orderBy).map((o) => ({ ...o, fiscalInfo: copia(o.fiscalInfo) }));
     }
-    if (modelo === "customerOrder") saida.fiscalInfo = copia(linha.fiscalInfo);
+    if (modelo === "customerOrder" || modelo === "vendaExterna") saida.fiscalInfo = copia(linha.fiscalInfo);
     if (modelo === "user") saida.fiscalConfig = copia(linha.fiscalConfig);
     return saida;
   }
@@ -255,14 +256,14 @@ export function bancoFalso() {
     updateMany: async (args: any) => {
       estado.chamadas.push(`${modelo}.updateMany`);
       const alvos = db[modelo].filter((x) => casa(x, args.where));
-      for (const a of alvos) Object.assign(a, copia(args.data), modelo === "customerOrder" ? { updatedAt: new Date() } : {});
+      for (const a of alvos) Object.assign(a, copia(args.data), modelo === "customerOrder" || modelo === "vendaExterna" ? { updatedAt: new Date() } : {});
       return { count: alvos.length };
     },
     update: async (args: any) => {
       estado.chamadas.push(`${modelo}.update`);
       const a = db[modelo].find((x) => casa(x, args.where));
       if (!a) throw new Error(`update: ${modelo} não encontrado`);
-      Object.assign(a, copia(args.data), modelo === "customerOrder" ? { updatedAt: new Date() } : {});
+      Object.assign(a, copia(args.data), modelo === "customerOrder" || modelo === "vendaExterna" ? { updatedAt: new Date() } : {});
       return projetar(a, {}, modelo);
     },
   });
@@ -291,6 +292,8 @@ export function bancoFalso() {
     };
   }
   const marcador = (sql: any) => /fh:([a-z-]+)/.exec(String(sql?.sql ?? ""))?.[1] ?? "";
+  /** A tabela do UPDATE (lib/nfce/numeracao → `tabela`): o pedido ou a venda de fora. */
+  const tabelaDo = (sql: any): Linha[] => (/UPDATE "VendaExterna"/.test(String(sql?.sql ?? "")) ? db.vendaExterna : db.customerOrder);
   const comoNumero = (v: unknown) => (typeof v === "number" ? v : /^[0-9]{1,9}$/.test(String(v ?? "")) ? Number(v) : 0);
 
   async function executar(sql: any, soltas: Array<() => void>): Promise<number> {
@@ -305,7 +308,7 @@ export function bancoFalso() {
     if (m === "mesclar-fiscal-info") {
       const [remover, dados, ids] = v as [string[], string, string[]];
       let n = 0;
-      for (const o of db.customerOrder.filter((x) => ids.includes(x.id))) {
+      for (const o of tabelaDo(sql).filter((x) => ids.includes(x.id))) {
         const base = { ...objetoDe(o.fiscalInfo) };
         for (const k of remover) delete base[k];
         o.fiscalInfo = { ...base, ...JSON.parse(dados) };
@@ -316,7 +319,7 @@ export function bancoFalso() {
     }
     if (m === "marcar-em-emissao") {
       const [dados, ids] = v as [string, string[]];
-      const alvos = db.customerOrder.filter((x) => ids.includes(x.id));
+      const alvos = tabelaDo(sql).filter((x) => ids.includes(x.id));
       if (alvos.some((o) => o.fiscalStatus === "EMITTED")) return 0;
       for (const o of alvos) {
         o.fiscalStatus = "PENDING";
@@ -328,7 +331,7 @@ export function bancoFalso() {
     }
     if (m === "liberar-reserva") {
       const [registro, pedido, numero, serie, ambiente, em] = v;
-      const o = db.customerOrder.find((x) => x.id === pedido);
+      const o = tabelaDo(sql).find((x) => x.id === pedido);
       const r = objetoDe(objetoDe(o?.fiscalInfo).numeroReservado);
       const mesmaData = v.length >= 6 ? r.em != null && String(r.em) === String(em) : r.em == null;
       if (!o || String(r.numero) !== numero || String(r.serie) !== serie || String(r.ambiente) !== ambiente || !mesmaData) return 0;
@@ -392,12 +395,15 @@ export function bancoFalso() {
     estado.sqlVistos.push(m);
     await pausa();
     const ler = await numeros();
+    // As duas tabelas dividem a série (lib/nfce/numeracao → fonteDaLoja).
     const daLoja = (lojaId: string, desde?: Date) =>
-      db.customerOrder
+      [...db.customerOrder, ...db.vendaExterna]
         .filter((o) => o.franchiseeId === lojaId && o.fiscalInfo != null && (!desde || o.createdAt.getTime() >= desde.getTime()))
         .flatMap((o) => ler(o as any));
     if (m === "maior-numero" || m === "maior-numero-recente") {
-      const [lojaId, desde, serie, ambiente] = m === "maior-numero" ? [v[0], undefined, v[1], v[2]] : v;
+      // A fonte une pedidos e vendas de fora (loja e data se repetem uma vez por
+      // tabela): a loja e a data são as primeiras; série e ambiente, as últimas.
+      const [lojaId, desde, serie, ambiente] = [v[0], m === "maior-numero" ? undefined : v[1], v[v.length - 2], v[v.length - 1]];
       const nums = daLoja(lojaId, desde).filter((t) => t.serie === Number(serie) && t.ambiente === Number(ambiente)).map((t) => t.numero as number);
       return [{ maior: nums.length ? BigInt(Math.max(...nums)) : null }];
     }
@@ -410,6 +416,7 @@ export function bancoFalso() {
     user: delegado("user"),
     customerOrder: delegado("customerOrder"),
     tableSession: delegado("tableSession"),
+    vendaExterna: delegado("vendaExterna"),
     $executeRaw: (sql: any) => executar(sql, []),
     $queryRaw: (sql: any) => consultar(sql),
     $transaction: async (arg: any) => {
