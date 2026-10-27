@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { gerarTokenDeTerminal, PROVEDORES_COM_APP, NOME_DO_PROVEDOR, ehProvedorComApp } from "@/lib/terminal-app";
+import { criarCodigoCurto } from "@/lib/codigo-curto-da-maquininha";
 
 export const dynamic = "force-dynamic";
 
@@ -112,6 +113,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         codigoDePareamento: novo,
+        codigoCurto: (await criarCodigoCurto(terminalId)).codigo,
         aviso: "O aparelho anterior parou de funcionar. Digite este código no app da maquininha.",
       });
     }
@@ -148,6 +150,7 @@ export async function POST(req: NextRequest) {
       success: true,
       terminal: { id: criado.id, label: criado.label },
       codigoDePareamento: criado.deviceToken,
+      codigoCurto: (await criarCodigoCurto(criado.id)).codigo,
       instrucoes: [
         "Abra o app FireHub na maquininha.",
         "Digite este código na tela de pareamento.",

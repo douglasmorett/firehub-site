@@ -180,6 +180,24 @@ object ApiDoFireHub {
         }
     }
 
+    /**
+     * Troca os 8 números do painel pelo token de 64 caracteres. Devolve o
+     * token, ou falha com a mensagem para a tela (código errado, vencido, sem
+     * rede). O código vale uma vez: só chamar quando o operador tocar no botão.
+     */
+    fun trocarCodigoCurto(codigo: String): Result<String> {
+        val endereco = Ajustes.ENDERECO_DO_FIREHUB + Ajustes.CAMINHO_DO_CODIGO_CURTO
+        val resposta = try {
+            chamar(endereco, "POST", JSONObject().put("codigo", codigo).toString())
+        } catch (erro: Exception) {
+            return Result.failure(Exception(descreverFalha(erro)))
+        }
+        val json = resposta.comoJson()
+        val token = json?.textoOuNulo("token")
+        return if (resposta.status == 200 && token != null) Result.success(token)
+        else Result.failure(Exception(json?.textoOuNulo("error") ?: "O servidor respondeu " + resposta.status + "."))
+    }
+
     // ---------------------------------------------------------------- interno
 
     private class Resposta(val status: Int, val corpo: String) {

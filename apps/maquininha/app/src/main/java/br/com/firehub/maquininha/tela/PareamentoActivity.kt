@@ -43,9 +43,12 @@ class PareamentoActivity : AppCompatActivity() {
 
     private fun tentarParear() {
         val digitado = normalizar(campo.text?.toString())
+        val curto = digitado.length == Ajustes.TAMANHO_DO_CODIGO_CURTO && digitado.all { it in '0'..'9' }
 
-        if (digitado.length != Ajustes.TAMANHO_DO_TOKEN) {
-            val faltam = Ajustes.TAMANHO_DO_TOKEN - digitado.length
+        if (!curto && digitado.length != Ajustes.TAMANHO_DO_TOKEN) {
+            // Até 8 conta para o curto; passou disso, a pessoa está no longo.
+            val alvo = if (digitado.length < Ajustes.TAMANHO_DO_CODIGO_CURTO) Ajustes.TAMANHO_DO_CODIGO_CURTO else Ajustes.TAMANHO_DO_TOKEN
+            val faltam = alvo - digitado.length
             avisar(
                 if (faltam > 0) getString(R.string.pareamento_tamanho, faltam)
                 else getString(R.string.pareamento_invalido),
@@ -59,14 +62,25 @@ class PareamentoActivity : AppCompatActivity() {
         // Validar é literalmente perguntar pela fila com o código novo: 200
         // significa que o servidor conhece esta maquininha. Não existe rota só
         // de validação, e criar uma seria mais uma superfície para manter.
+        // Os 8 números do painel viram o token de 64 antes de tudo; dali para
+        // frente o pareamento é o mesmo. O curto vale uma vez, então a troca só
+        // acontece aqui, no toque do botão.
         TrabalhoDeTela.fazer(
-            tarefa = { ApiDoFireHub.buscarCobranca(digitado) },
+            tarefa = {
+                val token = if (curto) ApiDoFireHub.trocarCodigoCurto(digitado).getOrElse { erro ->
+                    throw CodigoCurtoRecusado(erro.message ?: "")
+                } else digitado
+                token to ApiDoFireHub.buscarCobranca(token)
+            },
             aoTerminar = { resultado ->
                 trabalhando(false)
                 resultado.fold(
-                    onSuccess = { resposta -> tratar(digitado, resposta) },
+                    onSuccess = { (token, resposta) -> tratar(token, resposta) },
                     onFailure = { erro ->
-                        avisar(getString(R.string.pareamento_sem_rede, erro.message ?: ""))
+                        avisar(
+                            if (erro is CodigoCurtoRecusado) erro.message.orEmpty()
+                            else getString(R.string.pareamento_sem_rede, erro.message ?: ""),
+                        )
                     },
                 )
             },
@@ -121,6 +135,9 @@ class PareamentoActivity : AppCompatActivity() {
         texto.orEmpty().filter { caractere ->
             caractere in '0'..'9' || caractere in 'a'..'f' || caractere in 'A'..'F'
         }.lowercase()
+
+    /** Código curto errado, vencido ou já usado: a mensagem do servidor vai direto para a tela. */
+    private class CodigoCurtoRecusado(mensagem: String) : Exception(mensagem)
 
     private fun trabalhando(ocupado: Boolean) {
         botao.isEnabled = !ocupado

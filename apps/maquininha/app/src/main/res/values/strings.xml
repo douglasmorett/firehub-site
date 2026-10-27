@@ -67,11 +67,11 @@
 
     <!-- Tela de pareamento -->
     <string name="pareamento_titulo">Ligar esta maquininha a uma loja</string>
-    <string name="pareamento_explicacao">No painel do FireHub, abra Maquininhas, gere o código de pareamento e digite os 64 caracteres abaixo. O código aparece uma única vez.</string>
+    <string name="pareamento_explicacao">No painel do FireHub, abra Maquininhas, gere o código de pareamento e digite os 8 números abaixo (valem 10 minutos). Também aceita o código longo de 64 caracteres.</string>
     <string name="pareamento_campo">Código de pareamento</string>
     <string name="pareamento_botao">Ligar à loja</string>
     <string name="pareamento_validando">Falando com o FireHub…</string>
-    <string name="pareamento_tamanho">O código tem 64 caracteres, só números e as letras de A a F. Faltam %1$d.</string>
+    <string name="pareamento_tamanho">Digite os 8 números do painel (ou o código longo de 64 caracteres). Faltam %1$d.</string>
     <string name="pareamento_invalido">Este código tem caracteres que não fazem parte do código de pareamento. Confira e digite de novo.</string>
     <string name="pareamento_ok">Maquininha ligada à loja %1$s.</string>
     <string name="pareamento_desconhecido">O FireHub não reconheceu este código. Gere um novo no painel, em Maquininhas, e digite de novo.</string>

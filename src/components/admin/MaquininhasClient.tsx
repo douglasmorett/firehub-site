@@ -36,7 +36,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
   const [nome, setNome] = useState("");
   const [totemEscolhido, setTotemEscolhido] = useState("");
   const [provedor, setProvedor] = useState("PAGBANK_APP");
-  const [codigoNovo, setCodigoNovo] = useState<{ codigo: string; label: string } | null>(null);
+  const [codigoNovo, setCodigoNovo] = useState<{ codigo: string; curto?: string; label: string } | null>(null);
   const [aviso, setAviso] = useState<{ texto: string; erro?: boolean } | null>(null);
 
   const mostrar = (texto: string, erro = false) => {
@@ -77,7 +77,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
       });
       const dados = await res.json();
       if (!res.ok) { mostrar(dados.error || "Não consegui criar a maquininha.", true); return; }
-      setCodigoNovo({ codigo: dados.codigoDePareamento, label: dados.terminal.label });
+      setCodigoNovo({ codigo: dados.codigoDePareamento, curto: dados.codigoCurto, label: dados.terminal.label });
       setNome("");
       setTotemEscolhido("");
       carregar();
@@ -98,7 +98,7 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
       });
       const dados = await res.json();
       if (!res.ok) { mostrar(dados.error || "Não consegui gerar o código.", true); return; }
-      setCodigoNovo({ codigo: dados.codigoDePareamento, label });
+      setCodigoNovo({ codigo: dados.codigoDePareamento, curto: dados.codigoCurto, label });
       carregar();
     } catch { mostrar("Erro de conexão.", true); }
   };
@@ -152,6 +152,20 @@ export default function MaquininhasClient({ totens }: { totens: { id: string; la
           <p style={{ fontSize: 13, color: "#78350F", margin: "0 0 12px" }}>
             Digite no app da maquininha, na tela de pareamento. Este código não aparece de novo.
           </p>
+          {/* Os 8 números são o que se digita no POS; valem 10 minutos e uma vez.
+              Os 64 caracteres ficam embaixo para o app antigo, que só aceita eles. */}
+          {codigoNovo.curto && (
+            <div style={{ marginBottom: 12 }}>
+              <div style={{
+                padding: "12px 14px", background: "#fff", borderRadius: 8, border: "1px solid #FDE68A",
+                fontFamily: "ui-monospace, monospace", fontSize: 32, fontWeight: 800, letterSpacing: 6, textAlign: "center",
+              }}>{codigoNovo.curto.slice(0, 4)} {codigoNovo.curto.slice(4)}</div>
+              <p style={{ fontSize: 12, color: "#78350F", margin: "6px 0 0" }}>
+                Vale por 10 minutos. Venceu? Toque em &quot;Novo código&quot; na maquininha abaixo.
+                App antigo da maquininha? Use o código longo:
+              </p>
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
             <code style={{
               flex: 1, padding: "12px 14px", background: "#fff", borderRadius: 8, border: "1px solid #FDE68A",

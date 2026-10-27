@@ -16,9 +16,13 @@ object Ajustes {
 
     const val CAMINHO_DA_FILA = "/api/pos/terminal/pendente"
     const val CAMINHO_DO_RESULTADO = "/api/pos/terminal/resultado"
+    const val CAMINHO_DO_CODIGO_CURTO = "/api/pos/terminal/codigo-curto"
 
     /** O código de pareamento gerado no painel tem 32 bytes em hexadecimal. */
     const val TAMANHO_DO_TOKEN = 64
+
+    /** Os 8 números que o painel mostra junto: o app troca pelo token. */
+    const val TAMANHO_DO_CODIGO_CURTO = 8
 
     const val TEMPO_DE_CONEXAO_MS = 10_000
 
