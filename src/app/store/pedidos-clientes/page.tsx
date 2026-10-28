@@ -96,6 +96,13 @@ export default async function FranchiseeCustomerOrdersPage() {
     .findUnique({ where: { id: targetFranchiseeId }, select: { agendamentoConfig: true, allowScheduledOrders: true, storeHours: true, storePause: true, storeTimezone: true } })
     .catch(() => null);
 
+  // O "App Motoboys" também é da LOJA: o app do entregador lê o dono
+  // (api/motoboys/orders). Lido do funcionário, a tela mostrava o que não vale.
+  const appMotoboyDaLojaP = prisma.user
+    .findUnique({ where: { id: targetFranchiseeId }, select: { appMotoboyConfig: true } })
+    .then((l) => l?.appMotoboyConfig ?? null)
+    .catch(() => null);
+
   // === MULTI-LOJAS: Resolver IDs das lojas ativas ===
   const cookieStore = await cookies();
   const activeStore = cookieStore.get('firehub_active_store')?.value;
@@ -255,6 +262,7 @@ export default async function FranchiseeCustomerOrdersPage() {
           bairrosDaLoja,
           areaDoMapa,
           lojaDoMapaId: idDaLojaNoMapa,
+          appMotoboyConfig: await appMotoboyDaLojaP,
         }}
         orders={orders}
         // De qual MARCA é cada pedido. Sem isto o selo da loja só saía para o

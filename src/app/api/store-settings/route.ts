@@ -134,6 +134,17 @@ export async function PUT(req: Request) {
     data.gtmContainerId = gtm;
   }
 
+  // Pixel, API de Conversões, GA4 e GTM são DA LOJA: o cardápio e a venda pelo
+  // servidor leem a linha do dono. A agência da Frangoso (login de equipe)
+  // salvou o pixel na linha dela e a tela mostrava "Pixel Ativo" com o
+  // cardápio carregando só o pixel do FireHub (27/10/2026).
+  for (const key of ["facebookPixelId", "metaPixelId", "metaCapiToken", "gaMeasurementId", "gaApiSecret", "gtmContainerId"]) {
+    if (data[key] !== undefined) {
+      daLoja[key] = data[key];
+      delete data[key];
+    }
+  }
+
   // Formas de pagamento PRÓPRIAS (lib/formas-proprias.ts) moram dentro de
   // paymentFees: conferidas aqui, para o PDV, a mesa, o cardápio e o robô
   // lerem sempre a lista limpa (nome único, sem parêntese, canais em booleano).
@@ -379,8 +390,10 @@ export async function PUT(req: Request) {
     const limpo = limparAppMotoboyConfig(body.appMotoboyConfig);
     // O ranking no app só muda pelo Motoboys › Ranking: o painel aberto de
     // manhã mandaria o valor velho e desligaria o ranking sem ninguém ver.
-    data.appMotoboyConfig = limpo
-      ? { ...limpo, rankingNoApp: lerAppMotoboyConfig((currentUser as any).appMotoboyConfig).rankingNoApp }
+    // Vai para a LOJA (o app do entregador lê o dono), também quando quem
+    // salva é funcionário.
+    daLoja.appMotoboyConfig = limpo
+      ? { ...limpo, rankingNoApp: lerAppMotoboyConfig((loja as any).appMotoboyConfig).rankingNoApp }
       : limpo;
   }
 

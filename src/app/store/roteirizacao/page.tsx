@@ -8,6 +8,7 @@ import { resolverLojaNoMapa } from "@/lib/ponto-da-loja-servidor";
 import { lojasDaVisao } from "@/lib/loja-ativa";
 import { zonasDeBairro } from "@/lib/bairro-pelo-endereco";
 import { areaParaOMapa } from "@/lib/ponto-do-pedido";
+import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +89,11 @@ export default async function RoteirizacaoPage() {
 
   const noMapa = await resolverLojaNoMapa(lojaDoMapa);
 
+  // "Só motoboy online no despacho" é do App Motoboys da LOJA (o dono).
+  const appMotoboyDaLoja = await prisma.user
+    .findUnique({ where: { id: targetFranchiseeId }, select: { appMotoboyConfig: true } })
+    .catch(() => null);
+
   let orders: any[] = [];
   try {
     orders = await prisma.customerOrder.findMany({
@@ -123,6 +129,7 @@ export default async function RoteirizacaoPage() {
         // só os dois raios vão para o navegador, nunca as zonas.
         areaDoMapa: areaParaOMapa(lojaDoMapa, noMapa),
         lojaDoMapaId: lojaDoMapa.id,
+        soMotoboyOnline: lerAppMotoboyConfig(appMotoboyDaLoja?.appMotoboyConfig).despachoSoOnline,
       }}
       initialOrders={orders}
     />

@@ -32,6 +32,8 @@ export default function RoteirizacaoIndependente({
     areaDoMapa?: { raioKm: number; raioDoParceiroKm: number } | null;
     /** A loja dona do mapa (o funcionário logado não é ela). */
     lojaDoMapaId?: string | null;
+    /** appMotoboyConfig.despachoSoOnline da loja (lib/motoboy-online.ts). */
+    soMotoboyOnline?: boolean;
   };
   initialOrders: any[];
 }) {
@@ -99,6 +101,7 @@ export default function RoteirizacaoIndependente({
       bairrosDaLoja={user.bairrosDaLoja}
       areaDoMapa={user.areaDoMapa}
       lojaDoMapaId={user.lojaDoMapaId}
+      soMotoboyOnline={user.soMotoboyOnline}
       onRefreshOrders={() => { ultimoCorpo.current = ""; void carregar(); }}
     />
   );

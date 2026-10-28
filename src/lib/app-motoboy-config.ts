@@ -55,6 +55,14 @@ export type AppMotoboyConfig = {
    * o salvar do "App Motoboys" no painel preserva o que está gravado.
    */
   rankingNoApp: boolean;
+  /**
+   * No "Despachar Rota de Entrega", a lista mostra só quem está com o app
+   * aberto mandando localização (últimos 30 min). O Lucas (Frangoso, 26/10/2026)
+   * tem a lista cheia de quem já rodou, com nomes repetidos, e a equipe mandava
+   * a rota para o motoboy errado. Vale no PAINEL, não no celular. Padrão:
+   * DESLIGADO (quem não usa o app ficaria com a lista vazia).
+   */
+  despachoSoOnline: boolean;
 };
 
 /** As escolhas que o painel oferece para `relatorioDias`. */
@@ -70,6 +78,7 @@ export const APP_MOTOBOY_PADRAO: AppMotoboyConfig = {
   permitirSemCodigo: true,
   permitirSemLocalizacao: true,
   rankingNoApp: false,
+  despachoSoOnline: false,
 };
 
 export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
@@ -84,6 +93,7 @@ export function lerAppMotoboyConfig(bruto: unknown): AppMotoboyConfig {
     if (typeof o.permitirSemCodigo === "boolean") cfg.permitirSemCodigo = o.permitirSemCodigo;
     if (typeof o.permitirSemLocalizacao === "boolean") cfg.permitirSemLocalizacao = o.permitirSemLocalizacao;
     if (typeof o.rankingNoApp === "boolean") cfg.rankingNoApp = o.rankingNoApp;
+    if (typeof o.despachoSoOnline === "boolean") cfg.despachoSoOnline = o.despachoSoOnline;
     const dias = Math.round(Number(o.relatorioDias));
     if (o.relatorioDias != null && Number.isFinite(dias) && dias >= 1) cfg.relatorioDias = Math.min(45, dias);
   }

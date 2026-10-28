@@ -7890,6 +7890,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         bairrosDaLoja={user.bairrosDaLoja}
         areaDoMapa={user.areaDoMapa}
         lojaDoMapaId={user.lojaDoMapaId}
+        soMotoboyOnline={appMotoboyCfg.despachoSoOnline}
         onRefreshOrders={() => router.refresh()}
         onUpdateOrderStatus={updateStatus}
       />
@@ -7975,6 +7976,18 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 <span>
                   <span style={{ display: "block", fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>📍 Deixar o motoboy usar o app com a localização desligada</span>
                   <span style={{ display: "block", fontSize: "0.76rem", color: "#64748B", marginTop: 2 }}>Desmarcado, quem abrir o app com a localização desligada só vê as entregas depois de ativar.</span>
+                </span>
+              </label>
+              <label style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "9px 0", cursor: "pointer", borderTop: "1px solid #E2E8F0" }}>
+                <input
+                  type="checkbox"
+                  checked={appMotoboyCfg.despachoSoOnline}
+                  onChange={(e) => salvarAppMotoboy({ ...appMotoboyCfg, despachoSoOnline: e.target.checked })}
+                  style={{ marginTop: 3, width: 18, height: 18, accentColor: "#1C1917", flexShrink: 0 }}
+                />
+                <span>
+                  <span style={{ display: "block", fontWeight: 800, fontSize: "0.88rem", color: "#0F172A" }}>🟢 No despacho da rota, mostrar só os motoboys online no app</span>
+                  <span style={{ display: "block", fontSize: "0.76rem", color: "#64748B", marginTop: 2 }}>A lista do "Despachar Rota" mostra só quem está com o app aberto e a localização ligada. Quem não usa o app deixe desmarcado.</span>
                 </span>
               </label>
             </div>

@@ -46,6 +46,7 @@ import { bairroPeloEndereco, type ZonaComApelidos } from "@/lib/bairro-pelo-ende
 import RotaAutomatica, { type PreviaDaRotaAutomatica, type RotaAutomaticaConfig, type RotaAutomaticaEstado } from "@/components/customer/RotaAutomatica";
 import { pontoParaRotaAutomatica } from "@/lib/roteirizacao-automatica/ponto";
 import { infoDaEntrega } from "@/lib/entrega-parceira";
+import { estaOnlineNoApp } from "@/lib/motoboy-online";
 
 // ── Aviso que desce do topo (no lugar do alert()) ─────────────────────────
 // Mesma interface do components/AvisoNoTopo.tsx de outra frente, que ainda não
@@ -382,6 +383,12 @@ interface RoteirizacaoModalProps {
    * `storeId` não serve: é o usuário da sessão (o funcionário, quando é ele).
    */
   lojaDoMapaId?: string | null;
+  /**
+   * "No despacho da rota, mostrar só os motoboys online no app"
+   * (appMotoboyConfig.despachoSoOnline, lib/motoboy-online.ts). Desligado =
+   * a lista inteira, como sempre foi.
+   */
+  soMotoboyOnline?: boolean;
 }
 
 /**
@@ -433,6 +440,7 @@ export default function RoteirizacaoModal({
   bairrosDaLoja,
   areaDoMapa = null,
   lojaDoMapaId = null,
+  soMotoboyOnline = false,
   modoIndependente = false
 }: RoteirizacaoModalProps) {
   const [activeTab, setActiveTab] = useState<"PENDING" | "ROTAS">("PENDING");
@@ -470,6 +478,10 @@ export default function RoteirizacaoModal({
   });
   const [hoveredOrderId, setHoveredOrderId] = useState<string | null>(null);
   const [motoboys, setMotoboys] = useState<Motoboy[]>([]);
+  // Com "só online" ligado, o "Mostrar todos" do despacho abre a lista inteira.
+  const [verTodosMotoboys, setVerTodosMotoboys] = useState(false);
+  const filtrarOnline = soMotoboyOnline && !verTodosMotoboys;
+  const motoboysDoDespacho = filtrarOnline ? motoboys.filter((m) => estaOnlineNoApp(m as any)) : motoboys;
 
   // Custom Created Routes State
   const [createdRoutes, setCreatedRoutes] = useState<RouteItem[]>([]);
@@ -4147,12 +4159,21 @@ ${mapsUrl}`;
                     fontSize: "0.9rem", fontWeight: 700, background: "#FFFFFF", outline: "none"
                   }}
                 >
-                  <option value="">-- Escolha um Motoboy Cadastrado --</option>
-                  {motoboys.map(m => (
+                  <option value="">{filtrarOnline ? (motoboysDoDespacho.length ? "-- Escolha um Motoboy online no app --" : "-- Nenhum motoboy online no app agora --") : "-- Escolha um Motoboy Cadastrado --"}</option>
+                  {motoboysDoDespacho.map(m => (
                     <option key={m.id} value={m.id}>🛵 {m.name} {m.phone ? `(${m.phone})` : ""}</option>
                   ))}
                 </select>
               ) : null}
+              {soMotoboyOnline && motoboys.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setVerTodosMotoboys((v) => !v)}
+                  style={{ marginTop: 6, background: "none", border: "none", padding: 0, color: "#2563EB", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}
+                >
+                  {verTodosMotoboys ? "Mostrar só os online no app" : `Mostrar todos os cadastrados (${motoboys.length})`}
+                </button>
+              )}
 
               {!selectedMotoboyId && (
                 <div style={{ marginTop: "0.75rem", display: "flex", flexDirection: "column", gap: "6px" }}>

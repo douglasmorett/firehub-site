@@ -50,6 +50,9 @@ export default async function IntegracoesPage() {
           select: {
             name: true, storeName: true,
             ifoodWidgetId: true, ifoodMerchantId: true, ifoodConnected: true,
+            // Pixel, GA4 e GTM também são da loja (a rota grava no dono).
+            facebookPixelId: true, metaPixelId: true,
+            gaMeasurementId: true, gtmContainerId: true, gaApiSecret: true,
           },
         })
       : user;
@@ -120,10 +123,10 @@ export default async function IntegracoesPage() {
       ifoodClientId={clientId}
       ifoodWidgetId={loja?.ifoodWidgetId || undefined}
       ifoodConnected={!!loja?.ifoodConnected}
-      facebookPixelId={user?.facebookPixelId || user?.metaPixelId || ""}
-      gaMeasurementId={user?.gaMeasurementId || ""}
-      gtmContainerId={user?.gtmContainerId || ""}
-      gaHasApiSecret={!!user?.gaApiSecret}
+      facebookPixelId={loja?.facebookPixelId || loja?.metaPixelId || ""}
+      gaMeasurementId={loja?.gaMeasurementId || ""}
+      gtmContainerId={loja?.gtmContainerId || ""}
+      gaHasApiSecret={!!loja?.gaApiSecret}
       pagarmeRecipientId={user?.pagarmeRecipientId || undefined}
       mpConnected={!!(user?.mpAccessToken || user?.mpSellerId)}
       brendiClientId={brendi.clientId}
