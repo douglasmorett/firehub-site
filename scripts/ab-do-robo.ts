@@ -52,6 +52,8 @@ type Cenario = {
   informativo?: boolean;
   /** Com objetivo, depois da 1ª fala quem responde ao robô é um CLIENTE SIMULADO (Gemini 2.5 Flash, o mesmo nas duas variantes) até o pedido fechar. */
   objetivo?: string;
+  /** Foto que o cliente manda junto com a 1ª fala (base64), como chega do WhatsApp. */
+  foto?: { base64: string; mimeType: string };
 };
 
 const emojis = (t: string) => (t.match(/\p{Extended_Pictographic}/gu) || []).length;
@@ -102,7 +104,7 @@ async function main() {
   for (const loja of lojas) {
     const produtos = await prisma.menuProduct.findMany({
       where: { franchiseeId: loja.id, active: true, apenasEmCombo: false },
-      select: { name: true, price: true, isCombo: true, isBeverage: true },
+      select: { name: true, price: true, isCombo: true, isBeverage: true, imageUrl: true },
     });
     const comuns = produtos.filter((p) => !p.isCombo && !p.isBeverage && p.price > 10);
     if (comuns.length < 2) {
@@ -115,6 +117,18 @@ async function main() {
     const p2 = porPreco[1] || comuns[Math.min(5, comuns.length - 1)];
     // Loja só de delivery recusa retirada com razão: ali o fechamento vira só observação.
     const soDelivery = Boolean((loja as any).storeDeliveryOnly);
+    // A foto de um produto do próprio cardápio (o cliente manda a foto e pergunta o preço).
+    // imageUrl vem relativo ("/uploads/produtos/...webp"), servido pelo site.
+    const urlDaFoto = (u?: string | null) => (u ? (u.startsWith("/") ? `https://firehubfood.com.br${u}` : u) : "");
+    const comFoto = comuns.find((p) => /^https?:/.test(urlDaFoto(p.imageUrl)) && p !== p1);
+    let foto: { base64: string; mimeType: string } | undefined;
+    if (comFoto) {
+      try {
+        const r = await fetch(urlDaFoto(comFoto.imageUrl));
+        const tipo = (r.headers.get("content-type") || "image/jpeg").split(";")[0];
+        if (r.ok && tipo.startsWith("image/")) foto = { base64: Buffer.from(await r.arrayBuffer()).toString("base64"), mimeType: tipo };
+      } catch { /* sem foto, sem cenário */ }
+    }
     const precos = [...new Set(produtos.map((p) => p.price).filter((x) => x > 0))].slice(0, 200);
     // Um valor "cabe" se é taxa/adicional (até R$ 12) ou está a até R$ 12 de uma soma de até 3 preços do cardápio.
     const valido = (v: number) => {
@@ -210,6 +224,20 @@ async function main() {
           { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
         ],
       },
+      ...(foto && comFoto
+        ? [{
+            nome: "foto-produto",
+            falas: ["quanto é esse?"],
+            foto,
+            checa: ({ visivel }: Resp & { todas: Resp[] }) => [
+              {
+                ok: reais(visivel).some((n) => Math.abs(n - comFoto.price) < 0.01) || visivel.toLowerCase().includes(comFoto.name.toLowerCase().split(" ")[0]),
+                motivo: `não reconheceu ${comFoto.name} (R$ ${comFoto.price}) pela foto`,
+              },
+              { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
+            ],
+          } as Cenario]
+        : []),
       {
         nome: "fecha-simulado-retirada",
         informativo: soDelivery,
@@ -252,7 +280,17 @@ async function main() {
           const fala = falas[i];
           try {
             const antesBrutos = g.__abBrutos.length;
-            const res: any = await processChatbotAI(loja.id, fala, historico, remoteJid, undefined, "Cliente Teste");
+            // Queda de conexão com o banco do LABORATÓRIO (vários processos em paralelo) não é erro do modelo: tenta de novo até 2 vezes.
+            let res: any;
+            for (let t = 0; ; t++) {
+              try {
+                res = await processChatbotAI(loja.id, fala, historico, remoteJid, undefined, "Cliente Teste", i === 0 && cen.foto ? { imagem: cen.foto } : undefined);
+                break;
+              } catch (e: any) {
+                if (t >= 2 || !/prisma|Can't reach database|connection/i.test(String(e?.message || e))) throw e;
+                await new Promise((ok) => setTimeout(ok, 3000));
+              }
+            }
             const visivel = String(res?.reply || "");
             const bruto = g.__abBrutos.length > antesBrutos ? String(g.__abBrutos[g.__abBrutos.length - 1]) : visivel;
             todas.push({ visivel, bruto });

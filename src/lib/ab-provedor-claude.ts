@@ -38,13 +38,35 @@ export async function abClaudeCli(params: { model: string; contents: Conteudo[];
     .join("\n\n");
   const entrada = `${transcricao}\n\nCLIENTE: ${textoDe(ultimo)}\n\nResponda agora como o atendente, só com a mensagem que o cliente vai ler (e as marcas [[...]] se as regras mandarem).`;
 
+  // Foto do cliente nesta fala: vai como bloco de imagem (entrada em stream-json), como iria pela API.
+  const imagens = (ultimo?.parts || []).filter((p: any) => p.inlineData?.mimeType?.startsWith("image/")) as any[];
+  const comFoto = imagens.length > 0;
+  const base = ["-p", "--model", params.model, "--system-prompt-file", arq, "--tools", "", "--disable-slash-commands"];
   const r = spawnSync(
     process.platform === "win32" ? "claude.exe" : "claude",
-    ["-p", "--model", params.model, "--system-prompt-file", arq, "--tools", "", "--output-format", "json", "--disable-slash-commands"],
-    { input: entrada, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 180_000 },
+    comFoto ? [...base, "--input-format", "stream-json", "--output-format", "stream-json", "--verbose"] : [...base, "--output-format", "json"],
+    {
+      input: comFoto
+        ? JSON.stringify({
+            type: "user",
+            message: {
+              role: "user",
+              content: [
+                ...imagens.map((p) => ({ type: "image", source: { type: "base64", media_type: p.inlineData.mimeType, data: p.inlineData.data } })),
+                { type: "text", text: entrada },
+              ],
+            },
+          }) + "\n"
+        : entrada,
+      encoding: "utf8",
+      maxBuffer: 64 * 1024 * 1024,
+      timeout: 180_000,
+    },
   );
   if (r.error || !r.stdout) throw new Error(`claude-cli falhou: ${r.error?.message || r.stderr?.slice(0, 200)}`);
-  const j = JSON.parse(r.stdout);
+  const j = comFoto
+    ? r.stdout.split("\n").filter((l) => l.trim().startsWith("{")).map((l) => JSON.parse(l)).reverse().find((o) => o.type === "result") || {}
+    : JSON.parse(r.stdout);
   if (j.is_error) throw new Error(`claude-cli erro: ${String(j.result || "").slice(0, 200)}`);
   const u = j.usage || {};
   const modelo = Object.values<any>(j.modelUsage || {})[0] || {};
