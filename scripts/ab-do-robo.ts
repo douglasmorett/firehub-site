@@ -88,6 +88,7 @@ async function main() {
   const { prisma } = await import("../src/lib/prisma");
   const { processChatbotAI } = await import("../src/lib/chatbot-ai");
   const { modoDaArea, bairrosAtendidos } = await import("../src/lib/area-de-entrega");
+  const { SEM_PRODUTO_DE_INTEGRACAO } = await import("../src/lib/cardapio-interno");
 
   const lojas = await prisma.user.findMany({
     where: SLUGS.length ? { slug: { in: SLUGS } } : { storeName: { in: ["Pizzaria Lapastine", "PIZZARIA 17", "Divinos burger"] } },
@@ -106,12 +107,23 @@ async function main() {
   g.__abUsos ||= [];
   g.__abBrutos ||= [];
   const resultados: any[] = [];
+  // Leitura do banco por loja com 2 novas tentativas: em 28/10 um "Timed out fetching a new connection" derrubou o grupo inteiro.
+  const tenta = async <T,>(f: () => Promise<T>): Promise<T> => {
+    for (let t = 0; ; t++) {
+      try { return await f(); } catch (e: any) {
+        if (t >= 2 || !/prisma|Can't reach database|connection/i.test(String(e?.message || e))) throw e;
+        await new Promise((ok) => setTimeout(ok, 5000));
+      }
+    }
+  };
 
   for (const loja of lojas) {
-    const produtos = await prisma.menuProduct.findMany({
-      where: { franchiseeId: loja.id, active: true, apenasEmCombo: false },
+    const produtos = await tenta(() => prisma.menuProduct.findMany({
+      // O mesmo filtro do robô (chatbot-ai.ts): sem o espelho do iFood/99 e sem o que está desligado no
+      // delivery. Sem ele, o cenário pedia o "Galera Brazza" da categoria 99Food, que o robô não enxerga (28/10).
+      where: { franchiseeId: loja.id, active: true, activeDelivery: true, apenasEmCombo: false, ...SEM_PRODUTO_DE_INTEGRACAO },
       select: { name: true, price: true, isCombo: true, isBeverage: true, imageUrl: true },
-    });
+    }));
     const comuns = produtos.filter((p) => !p.isCombo && !p.isBeverage && p.price > 10);
     if (comuns.length < 2) {
       console.error(`${loja.storeName}: poucos produtos`);
