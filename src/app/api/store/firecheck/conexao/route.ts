@@ -81,6 +81,9 @@ export async function POST(req: NextRequest) {
         firehubLojaNome: r.acesso.nomeDaLoja,
         chave,
         urlDoFirehub: URL_DO_FIREHUB_PARA_O_FIRECHECK,
+        // Conta vencida ou bloqueada também conecta: o dono vai ligar o módulo
+        // pelo boleto do FireHub (lib/firecheck-modulos/).
+        paraLigarModulo: true,
       }),
     });
   } catch {
@@ -115,6 +118,9 @@ export async function DELETE() {
   const r = await acessoDoCmv();
   if (!r.ok) return r.resposta;
   if (r.acesso.papel === "STAFF") return negar(403, "Só o dono da loja desconecta o FireCheck.");
+  // Com módulo no boleto, a ligação é por onde o FireCheck sabe o que está pago.
+  const { temModuloLigado } = await import("@/lib/firecheck-modulos/assinatura");
+  if (await temModuloLigado(r.acesso.lojaId)) return negar(409, "Desligue o Checklist e o Controle de ponto antes de desconectar o FireCheck.");
   const loja = await prisma.user.findUnique({ where: { id: r.acesso.lojaId }, select: { firecheckIntegracao: true } });
   const l = lerLigacao(loja?.firecheckIntegracao);
   if (!l) return NextResponse.json({ ok: true, conectado: false });

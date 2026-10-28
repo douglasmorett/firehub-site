@@ -24,7 +24,7 @@ type Status = {
 const data = (iso?: string) => (iso ? new Date(iso).toLocaleDateString("pt-BR") : "");
 const dataHora = (iso: string) => new Date(iso).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
-export default function ConexaoDoFirecheck() {
+export default function ConexaoDoFirecheck({ onMudou }: { onMudou?: () => void } = {}) {
   const [status, setStatus] = useState<Status | null>(null);
   const [abrir, setAbrir] = useState(false);
   const [email, setEmail] = useState("");
@@ -56,6 +56,7 @@ export default function ConexaoDoFirecheck() {
       if (!r.ok) { setErro(j.error || "Não deu para conectar."); return; }
       setSenha(""); setAbrir(false); setEntendi(false);
       await carregar();
+      onMudou?.();
     } catch {
       setErro("Sem conexão. Tente de novo.");
     } finally {
@@ -66,9 +67,12 @@ export default function ConexaoDoFirecheck() {
   async function desconectar() {
     setEnviando(true);
     try {
-      await fetch("/api/store/firecheck/conexao", { method: "DELETE" });
+      const r = await fetch("/api/store/firecheck/conexao", { method: "DELETE" });
       setConfirmarSaida(false);
+      // Com módulo ligado no boleto, desconectar é recusado: mostra o porquê.
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setErro(j.error || "Não deu para desconectar."); return; }
       await carregar();
+      onMudou?.();
     } finally {
       setEnviando(false);
     }
@@ -106,6 +110,7 @@ export default function ConexaoDoFirecheck() {
             <button onClick={() => setConfirmarSaida(false)} style={{ ...botao("#FFF"), color: "#334155", border: "1px solid #CBD5E1" }}>Voltar</button>
           </div>
         )}
+        {erro && <div style={{ marginTop: 12, background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", borderRadius: 10, padding: "10px 12px", fontSize: "0.86rem" }}>{erro}</div>}
         {!!status.ultimos?.length && (
           <div style={{ marginTop: 12, fontSize: "0.82rem", color: "#475569" }}>
             {status.ultimos.map((d, i) => (

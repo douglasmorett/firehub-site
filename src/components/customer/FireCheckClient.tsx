@@ -2,83 +2,18 @@
 
 import { useState } from "react";
 import { 
-  Flame, Zap, Building2, ShieldCheck, CheckCircle2, 
+  Flame, ShieldCheck, CheckCircle2, 
   ExternalLink, Bot, MessageSquare, Smartphone, Camera, 
-  MapPin, Check, ArrowRight, Award, Lock, Monitor
+  MapPin, ArrowRight, Award, Lock, Monitor
 } from "lucide-react";
 import ConexaoDoFirecheck from "@/components/cmv/ConexaoDoFirecheck";
+import ModulosNoBoleto from "@/components/firecheck/ModulosNoBoleto";
 
 export default function FireCheckClient({ user }: { user: { id: string; storeName?: string | null; email: string } }) {
-  const [billingCycle, setBillingCycle] = useState<"anual" | "mensal">("anual");
+  // A conexão e os módulos se recarregam juntos quando um dos dois muda a ligação.
+  const [versao, setVersao] = useState(0);
   const [activeTab, setActiveTab] = useState<"presentation" | "app">("presentation");
   const [iframeLoaded, setIframeLoaded] = useState(false);
-
-  const PLANS = [
-    {
-      id: "checklists",
-      name: "Só Checklists",
-      icon: <Flame size={28} color="#FF4500" />,
-      price: billingCycle === "anual" ? "R$ 97" : "R$ 149",
-      cycle: "/mês",
-      note: billingCycle === "anual" ? "Faturado R$ 1.164/ano (Economiza R$ 624)" : "Cobrado mensalmente",
-      color: "#FF4500",
-      highlight: false,
-      features: [
-        "Checklists ILIMITADOS",
-        "Até 30 colaboradores cadastrados",
-        "Auditoria visual por IA",
-        "Alertas de irregularidade no WhatsApp",
-        "Bloqueio de fotos falsas da galeria",
-        "Relatórios exportáveis em PDF e Excel"
-      ],
-      caktoLink: billingCycle === "anual" ? "https://pay.cakto.com.br/e7c88df" : "https://pay.cakto.com.br/3eph5ko_856837",
-    },
-    {
-      id: "combo",
-      name: "Combo Tudo em 1",
-      icon: <Zap size={28} color="#FF4D00" />,
-      price: billingCycle === "anual" ? "R$ 167" : "R$ 197",
-      cycle: "/mês",
-      note: billingCycle === "anual" ? "12x R$ 167 (Economiza R$ 360/ano)" : "Economize R$ 101/mês vs 2 separados",
-      color: "#FF4D00",
-      highlight: true,
-      badge: "🔥 MAIS VENDIDO • MELHOR CUSTO",
-      features: [
-        "🎁 BÔNUS: Até 50 colaboradores (+20 grátis!)",
-        "TUDO do Módulo Checklist Ilimitado",
-        "TUDO do Módulo Controle de Ponto IA",
-        "Reconhecimento facial + Trava de GPS",
-        "Alertas de atraso/saída no WhatsApp",
-        "Assistente Bill IA 24h no WhatsApp",
-        "Suporte VIP com gerente de conta"
-      ],
-      caktoLink: billingCycle === "anual" ? "https://pay.cakto.com.br/36m7kzq" : "https://pay.cakto.com.br/pavdwiz_869704",
-    },
-    {
-      id: "ponto",
-      name: "Só Ponto IA",
-      icon: <Building2 size={28} color="#1C1917" />,
-      price: billingCycle === "anual" ? "R$ 97" : "R$ 149",
-      cycle: "/mês",
-      note: billingCycle === "anual" ? "Faturado R$ 1.164/ano (Economiza R$ 624)" : "Cobrado mensalmente",
-      color: "#1C1917",
-      highlight: false,
-      features: [
-        "Reconhecimento Facial com IA",
-        "Até 30 colaboradores cadastrados",
-        "Trava de Geolocalização (GPS)",
-        "Alerta de atraso automático no WhatsApp",
-        "Relatório diário de espelho de ponto",
-        "Folha de ponto pronta pro contador"
-      ],
-      caktoLink: billingCycle === "anual" ? "https://pay.cakto.com.br/o2xichf" : "https://pay.cakto.com.br/kfx3fri_869702",
-    },
-  ];
-
-  const handleChoosePlan = (caktoLink: string) => {
-    const checkoutUrl = `${caktoLink}?email=${encodeURIComponent(user.email)}`;
-    window.open(checkoutUrl, "_blank");
-  };
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "0 0 3rem" }}>
@@ -136,7 +71,7 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
         </div>
       </div>
 
-      <ConexaoDoFirecheck />
+      <ConexaoDoFirecheck key={`c${versao}`} onMudou={() => setVersao((v) => v + 1)} />
 
       {activeTab === "presentation" ? (
         <>
@@ -207,125 +142,8 @@ export default function FireCheckClient({ user }: { user: { id: string; storeNam
             </div>
           </div>
 
-          {/* SEÇÃO DE PLANOS & ASSINATURA */}
-          <div id="planos-firecheck" style={{ scrollMarginTop: 40, textAlign: "center", marginBottom: "2rem" }}>
-            <h2 style={{ fontSize: "1.75rem", fontWeight: 900, color: "#0F172A", margin: "0 0 8px" }}>
-              Escolha o Plano Ideal para a sua Operação
-            </h2>
-            <p style={{ fontSize: "0.9rem", color: "#64748B", margin: "0 0 20px" }}>
-              Contrate pelo gateway oficial Cakto/Cactus com ativação instantânea para sua equipe.
-            </p>
-
-            {/* SELETOR ANUAL / MENSAL */}
-            <div style={{ display: "inline-flex", background: "#F1F5F9", padding: "4px", borderRadius: "12px", gap: "4px", marginBottom: "2rem" }}>
-              <button
-                onClick={() => setBillingCycle("anual")}
-                style={{
-                  padding: "8px 20px",
-                  borderRadius: "8px",
-                  border: "none",
-                  background: billingCycle === "anual" ? "#FF4D00" : "transparent",
-                  color: billingCycle === "anual" ? "#FFF" : "#64748B",
-                  fontWeight: 800,
-                  fontSize: "0.85rem",
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6
-                }}
-              >
-                ⚡ Plano Anual (Economize até R$ 624)
-              </button>
-              <button
-                onClick={() => setBillingCycle("mensal")}
-                style={{
-                  padding: "8px 20px",
-                  borderRadius: "8px",
-                  border: "none",
-                  background: billingCycle === "mensal" ? "#FFF" : "transparent",
-                  color: billingCycle === "mensal" ? "#0F172A" : "#64748B",
-                  fontWeight: 700,
-                  fontSize: "0.85rem",
-                  cursor: "pointer"
-                }}
-              >
-                Mensal Sem Fidelidade
-              </button>
-            </div>
-          </div>
-
-          {/* CARDS DOS PLANOS */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1.5rem", alignItems: "stretch" }}>
-            {PLANS.map((plan) => (
-              <div
-                key={plan.id}
-                style={{
-                  background: "#FFF",
-                  borderRadius: "20px",
-                  border: plan.highlight ? "2px solid #FF4D00" : "1px solid #E2E8F0",
-                  padding: "24px",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "space-between",
-                  boxShadow: plan.highlight ? "0 20px 40px rgba(255,77,0,0.12)" : "0 4px 6px rgba(0,0,0,0.02)",
-                  position: "relative"
-                }}
-              >
-                {plan.badge && (
-                  <div style={{ position: "absolute", top: -14, left: "50%", transform: "translateX(-50%)", background: "linear-gradient(135deg,#FF4D00,#E8590C)", color: "#FFF", fontSize: "0.7rem", fontWeight: 900, padding: "4px 14px", borderRadius: 20, letterSpacing: 0.5, whiteSpace: "nowrap" }}>
-                    {plan.badge}
-                  </div>
-                )}
-
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                    {plan.icon}
-                    <h3 style={{ fontSize: "1.25rem", fontWeight: 800, color: "#0F172A", margin: 0 }}>{plan.name}</h3>
-                  </div>
-
-                  <div style={{ marginBottom: 16 }}>
-                    <span style={{ fontSize: "2.2rem", fontWeight: 900, color: "#0F172A" }}>{plan.price}</span>
-                    <span style={{ fontSize: "0.85rem", color: "#64748B", fontWeight: 600 }}>{plan.cycle}</span>
-                    <div style={{ fontSize: "0.76rem", color: "#0F766E", fontWeight: 700, marginTop: 2 }}>{plan.note}</div>
-                  </div>
-
-                  <hr style={{ border: "none", borderTop: "1px solid #F1F5F9", margin: "16px 0" }} />
-
-                  <ul style={{ listStyle: "none", padding: 0, margin: "0 0 24px", display: "flex", flexDirection: "column", gap: "10px" }}>
-                    {plan.features.map((feat, idx) => (
-                      <li key={idx} style={{ fontSize: "0.85rem", color: "#334155", display: "flex", alignItems: "flex-start", gap: 8, lineHeight: 1.4 }}>
-                        <Check size={16} color="#0F766E" style={{ flexShrink: 0, marginTop: 2 }} />
-                        <span>{feat}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-
-                <button
-                  onClick={() => handleChoosePlan(plan.caktoLink)}
-                  style={{
-                    width: "100%",
-                    padding: "14px",
-                    borderRadius: "12px",
-                    border: "none",
-                    background: plan.highlight ? "#FF4D00" : "#0F172A",
-                    color: "#FFF",
-                    fontWeight: 800,
-                    fontSize: "0.92rem",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 8,
-                    boxShadow: plan.highlight ? "0 8px 16px rgba(255,77,0,0.25)" : "none",
-                    transition: "transform 0.15s ease"
-                  }}
-                >
-                  Assinar Agora pelo Cakto <ExternalLink size={16} />
-                </button>
-              </div>
-            ))}
-          </div>
+          {/* LIGAR NO BOLETO DO FIREHUB (no lugar do checkout da Cakto) */}
+          <ModulosNoBoleto key={`m${versao}`} onConectou={() => setVersao((v) => v + 1)} />
         </>
       ) : (
         /* ABA APP INTEGRADO / IFRAME DO FIRECHECK */
