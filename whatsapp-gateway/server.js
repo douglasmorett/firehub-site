@@ -1367,7 +1367,11 @@ app.all(/^\/proxy\/anotaai(\/.*)$/, async (req, res) => {
   if (req.method !== "GET" && req.method !== "HEAD") {
     // express.json() já leu o JSON; o token do parceiro vem em form-urlencoded,
     // que ninguém leu — esse sai do stream como veio.
-    corpo = req.is("application/json")
+    // POST sem corpo (Content-Length 0, como a doc deles pede) continua vazio:
+    // o express.json() o transforma em {} e isso não pode virar "{}" lá.
+    corpo = String(req.headers["content-length"] || "") === "0"
+      ? ""
+      : req.is("application/json")
       ? JSON.stringify(req.body ?? {})
       : await new Promise((ok, erro) => {
           const partes = [];
