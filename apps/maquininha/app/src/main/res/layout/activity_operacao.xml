@@ -22,6 +22,35 @@
         android:orientation="vertical"
         android:padding="16dp">
 
+        <!-- Logo e nome da loja no topo: quem está no balcão vê de cara que é o
+             app do FireHub e que a maquininha está ligada à loja certa. -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingBottom="6dp">
+
+            <ImageView
+                android:layout_width="40dp"
+                android:layout_height="40dp"
+                android:contentDescription="@string/nome_do_app"
+                android:src="@drawable/logo_firehub" />
+
+            <TextView
+                android:id="@+id/txtLoja"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/nome_do_app"
+                android:textColor="@color/texto"
+                android:textSize="19sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
         <TextView
             android:id="@+id/txtTerminal"
             android:layout_width="match_parent"

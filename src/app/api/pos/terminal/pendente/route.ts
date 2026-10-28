@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
       where: { id: terminal.id },
       // O slug da loja vem na mesma viagem do ping: o modo garçom do app
       // precisa dele para o login (/api/garcom/login pede { slug, login, senha }).
-      select: { franchisee: { select: { slug: true } } },
+      select: { franchisee: { select: { slug: true, storeName: true } } },
       data: {
         lastSeenAt: agora,
         ...(req.nextUrl.searchParams.get("versao")
@@ -61,7 +61,13 @@ export async function GET(req: NextRequest) {
     // terminalId vai no POST da cobrança de mesa (para cair nesta máquina) e o
     // slug no login do garçom. Vai em TODA resposta 200, com ou sem cobrança;
     // a versão do app que não conhece os campos simplesmente os ignora.
-    const identidade = { terminalId: terminal.id, lojaSlug: atualizado.franchisee?.slug ?? null };
+    // O nome vai para o topo da tela do app: quem está no balcão confere que a
+    // maquininha está ligada à loja certa.
+    const identidade = {
+      terminalId: terminal.id,
+      lojaSlug: atualizado.franchisee?.slug ?? null,
+      lojaNome: atualizado.franchisee?.storeName ?? null,
+    };
 
     const extras =
       provedor === "CIELO_APP" && process.env.CIELO_CLIENT_ID && process.env.CIELO_ACCESS_TOKEN

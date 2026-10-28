@@ -35,6 +35,7 @@ class OperacaoActivity : AppCompatActivity() {
 
     private lateinit var raiz: FrameLayout
     private lateinit var txtTerminal: TextView
+    private lateinit var txtLoja: TextView
     private lateinit var txtRede: TextView
     private lateinit var txtTitulo: TextView
     private lateinit var txtValor: TextView
@@ -85,6 +86,7 @@ class OperacaoActivity : AppCompatActivity() {
 
         raiz = findViewById(R.id.raiz)
         txtTerminal = findViewById(R.id.txtTerminal)
+        txtLoja = findViewById(R.id.txtLoja)
         txtRede = findViewById(R.id.txtRede)
         txtTitulo = findViewById(R.id.txtTitulo)
         txtValor = findViewById(R.id.txtValor)
@@ -332,6 +334,7 @@ class OperacaoActivity : AppCompatActivity() {
         txtTerminal.text = situacao.terminal
             ?: CofreDoToken.rotulo(this)
             ?: getString(R.string.operacao_sem_nome)
+        CofreDoToken.lojaNome(this)?.let { txtLoja.text = it }
         // "Conectado - Stone": quem está no balcão sabe na hora em qual
         // adquirente esta maquininha cobra, sem abrir configuração nenhuma.
         txtRede.text = getString(
@@ -462,5 +465,6 @@ class OperacaoActivity : AppCompatActivity() {
         txtAvisos.visibility = View.GONE
         txtTitulo.text = getString(R.string.operacao_verificando)
         txtTerminal.text = CofreDoToken.rotulo(this) ?: getString(R.string.operacao_sem_nome)
+        CofreDoToken.lojaNome(this)?.let { txtLoja.text = it }
     }
 }

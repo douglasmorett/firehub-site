@@ -56,6 +56,7 @@ object ApiDoFireHub {
                 val identidade = IdentidadeDoTerminal(
                     terminalId = json.textoOuNulo("terminalId"),
                     lojaSlug = json.textoOuNulo("lojaSlug"),
+                    lojaNome = json.textoOuNulo("lojaNome"),
                 )
                 val cobranca = json.optJSONObject("cobranca")
                 if (cobranca == null) {

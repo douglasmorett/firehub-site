@@ -115,6 +115,7 @@ object CofreDoToken {
 
     private const val CHAVE_TERMINAL_ID = "id_do_terminal"
     private const val CHAVE_LOJA_SLUG = "slug_da_loja"
+    private const val CHAVE_LOJA_NOME = "nome_da_loja"
 
     /**
      * Cópia em memória do que está no disco. O polling chama atualizarIdentidade
@@ -130,12 +131,16 @@ object CofreDoToken {
     /** O slug da loja a que esta maquininha pertence (usado no login do garçom). */
     fun lojaSlug(context: Context): String? = identidade(context).lojaSlug
 
+    /** O nome da loja, para o topo da tela: confere que está ligada à loja certa. */
+    fun lojaNome(context: Context): String? = identidade(context).lojaNome
+
     private fun identidade(context: Context): IdentidadeDoTerminal {
         identidadeEmMemoria?.let { return it }
         val cofre = abrir(context)
         val lida = IdentidadeDoTerminal(
             terminalId = cofre?.getString(CHAVE_TERMINAL_ID, null)?.ifBlank { null },
             lojaSlug = cofre?.getString(CHAVE_LOJA_SLUG, null)?.ifBlank { null },
+            lojaNome = cofre?.getString(CHAVE_LOJA_NOME, null)?.ifBlank { null },
         )
         identidadeEmMemoria = lida
         return lida
@@ -152,12 +157,14 @@ object CofreDoToken {
         val mesclada = IdentidadeDoTerminal(
             terminalId = nova.terminalId ?: atual.terminalId,
             lojaSlug = nova.lojaSlug ?: atual.lojaSlug,
+            lojaNome = nova.lojaNome ?: atual.lojaNome,
         )
         if (mesclada == atual) return
         identidadeEmMemoria = mesclada
         abrir(context)?.edit()
             ?.putString(CHAVE_TERMINAL_ID, mesclada.terminalId)
             ?.putString(CHAVE_LOJA_SLUG, mesclada.lojaSlug)
+            ?.putString(CHAVE_LOJA_NOME, mesclada.lojaNome)
             ?.apply()
     }
 

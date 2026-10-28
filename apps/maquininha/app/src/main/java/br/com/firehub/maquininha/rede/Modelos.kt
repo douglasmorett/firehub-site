@@ -174,7 +174,7 @@ fun JSONObject.textoOuNulo(chave: String): String? {
  * loja (o login do garçom pede). Vem em toda resposta 200 do polling; servidor
  * antigo não manda e os dois ficam nulos.
  */
-data class IdentidadeDoTerminal(val terminalId: String?, val lojaSlug: String?)
+data class IdentidadeDoTerminal(val terminalId: String?, val lojaSlug: String?, val lojaNome: String? = null)
 
 /** Resposta de GET /api/pos/terminal/pendente. */
 sealed class RespostaDaFila {
