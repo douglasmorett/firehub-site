@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Só no app FireHub Motoboy: a tela do motoboy e a localização pelo GPS da
+  maquininha. Os apps do Totem e do Garçom não pedem localização (a análise da
+  adquirente pergunta por que o app quer cada permissão).
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <!-- Android 14+: serviço em primeiro plano do tipo localização. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+    <application>
+        <!-- Task própria, como a do garçom: a tela de cobrança vem para a frente
+             sem destruir a entrega que o motoboy está recebendo. -->
+        <activity
+            android:name=".tela.MotoboyActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="br.com.firehub.maquininha.motoboy"
+            android:screenOrientation="portrait"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="keyboard|keyboardHidden|screenSize|smallestScreenSize|screenLayout|orientation" />
+
+        <service
+            android:name=".servico.ServicoDeLocalizacao"
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="location" />
+    </application>
+</manifest>

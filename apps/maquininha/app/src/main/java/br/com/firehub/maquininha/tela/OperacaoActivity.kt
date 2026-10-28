@@ -259,9 +259,9 @@ class OperacaoActivity : AppCompatActivity() {
         // Task própria (taskAffinity no manifesto): a tela de cobrança pode vir
         // para a frente a qualquer momento sem destruir o pedido que o garçom
         // está montando.
-        startActivity(
-            Intent(this, GarcomActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        )
+        // O app do Motoboy usa a mesma passagem de bastão, com a tela dele.
+        val tela = if (BuildConfig.PRODUTO == "MOTOBOY") MotoboyActivity::class.java else GarcomActivity::class.java
+        startActivity(Intent(this, tela).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     private fun mandarParear() {
@@ -348,7 +348,8 @@ class OperacaoActivity : AppCompatActivity() {
         txtTitulo.text = getString(R.string.operacao_aguardando)
         // Só o app do Garçom tem o botão; o do Totem fica só cobrando. No do
         // Garçom a tela do garçom abre sozinha uma vez, ao ligar.
-        if (BuildConfig.PRODUTO == "GARCOM") {
+        if (BuildConfig.PRODUTO == "GARCOM" || BuildConfig.PRODUTO == "MOTOBOY") {
+            if (BuildConfig.PRODUTO == "MOTOBOY") botaoGarcom.text = "🏍️ Minhas entregas"
             botaoGarcom.visibility = View.VISIBLE
             if (!jaAbriGarcom) { jaAbriGarcom = true; abrirModoGarcom() }
         } else {

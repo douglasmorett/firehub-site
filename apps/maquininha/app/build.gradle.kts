@@ -44,13 +44,13 @@ android {
 
         // Tem que ser unico e sempre crescente: o portal do PagBank recusa
         // upload com versionCode repetido ou menor que o ja publicado.
-        versionCode = 3
-        versionName = "1.0.2"
+        versionCode = 4
+        versionName = "1.0.3"
 
         // O mesmo texto vai no parametro ?versao= do polling, para o painel do
         // FireHub mostrar qual versao esta rodando em cada balcao sem ninguem
         // precisar ir ate a loja olhar.
-        buildConfigField("String", "VERSAO_DO_APP", "\"1.0.2\"")
+        buildConfigField("String", "VERSAO_DO_APP", "\"1.0.3\"")
 
         // Nao ha teste instrumentado neste app: qualquer teste de verdade
         // depende do terminal de debug fisico, entao um runner declarado aqui so

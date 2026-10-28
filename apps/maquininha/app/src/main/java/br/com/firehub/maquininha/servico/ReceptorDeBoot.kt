@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import br.com.firehub.maquininha.BuildConfig
 import br.com.firehub.maquininha.CofreDoToken
 
 /**
@@ -31,6 +32,8 @@ class ReceptorDeBoot : BroadcastReceiver() {
 
         Log.i(ETIQUETA, "Boot concluído; subindo o serviço de cobrança.")
         ServicoDeCobranca.ligar(context)
+        // App do Motoboy: a localização volta sozinha com a maquininha.
+        if (BuildConfig.PRODUTO == "MOTOBOY") ServicoDeLocalizacao.ligar(context)
     }
 
     private companion object {
