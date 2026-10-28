@@ -339,6 +339,7 @@ export default function StoreTopNav({
   const [pendentes, setPendentes] = useState<{ valor: number; quantidade: number }>({ valor: 0, quantidade: 0 });
   // Fiado da equipe e forma que o sistema nao soube ler: existem como venda,
   // nao como cedula. Ficam fora da conferencia e visiveis na tela.
+  const [naMaquininha, setNaMaquininha] = useState<Record<string, { valor: number; qtd: number }> | null>(null);
   const [foraConf, setForaConf] = useState<{ fiado: number; fiadoQtd: number; naoIdentificado: number; naoIdentificadoQtd: number; mesasAbertas?: number; mesasAbertasQtd?: number; proprias?: { nome: string; valor: number; qtd: number }[] }>({ fiado: 0, fiadoQtd: 0, naoIdentificado: 0, naoIdentificadoQtd: 0, mesasAbertas: 0, mesasAbertasQtd: 0 });
   const [actual, setActual]     = useState<Record<string,string>>({ cash:"", debit:"", credit:"", pix:"", voucher:"" });
   /* Vendas de antes deste caixa abrir: o dinheiro delas está na gaveta e não
@@ -578,6 +579,7 @@ export default function StoreTopNav({
     fetch("/api/cash-session").then(r => r.json()).then(d => {
       if (d.expected) setExpected(d.expected);
       setOnlineDoSite(Number(d.onlineDoSite) || 0);
+      setNaMaquininha(d.naMaquininha || null);
       if (d.pendentesDePagamento) setPendentes(d.pendentesDePagamento);
       if (d.foraDaConferencia) setForaConf(d.foraDaConferencia);
       if (d.foraDoTurno) setForaDoTurno(d.foraDoTurno);
@@ -1470,6 +1472,14 @@ export default function StoreTopNav({
                           {/* Troco feito pelo Pix da loja (lib/troco-no-pix.ts):
                               a nota inteira ficou na gaveta; o Pix do troco
                               saiu da conta da loja, fora do caixa. */}
+                          {/* Passado na maquininha do motoboy (FireHub Motoboy):
+                              valor e forma vieram da adquirente, não do que
+                              alguém digitou. */}
+                          {(naMaquininha?.[m.key]?.qtd || 0) > 0 && (
+                            <span style={{ display:"block", fontSize:"0.7rem", fontWeight:700, color:"#1D4ED8" }}>
+                              ✓ {fmt(naMaquininha![m.key].valor)} conferido na maquininha ({naMaquininha![m.key].qtd} {naMaquininha![m.key].qtd === 1 ? "passada" : "passadas"})
+                            </span>
+                          )}
                           {trocoNoPix && trocoNoPix.qtd > 0 && m.key === "cash" && (
                             <span style={{ display:"block", fontSize:"0.7rem", fontWeight:500, color:"#64748B" }}>
                               {`inclui ${fmt(trocoNoPix.valor)} de nota inteira (troco feito pelo Pix da loja, ${trocoNoPix.qtd} ${trocoNoPix.qtd === 1 ? "pedido" : "pedidos"}; o Pix saiu da conta, fora do caixa)`}

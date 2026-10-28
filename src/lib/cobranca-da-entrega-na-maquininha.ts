@@ -348,6 +348,27 @@ export async function receberEntrega(params: {
   return { ok: true, paymentMethod };
 }
 
+export type ConferidoNaMaquininha = Record<"debit" | "credit" | "pix" | "voucher", { valor: number; qtd: number }>;
+
+/**
+ * O que passou na maquininha do motoboy nos pedidos do turno, por forma do
+ * fechamento do caixa: a linha "✓ conferido na maquininha" embaixo de Débito,
+ * Crédito, Pix e Vale. Informação — o esperado continua o mesmo.
+ */
+export function somarConferidoNaMaquininha(pedidos: { posDadosTransacao?: unknown }[]): ConferidoNaMaquininha {
+  const soma: ConferidoNaMaquininha = { debit: { valor: 0, qtd: 0 }, credit: { valor: 0, qtd: 0 }, pix: { valor: 0, qtd: 0 }, voucher: { valor: 0, qtd: 0 } };
+  for (const p of pedidos) {
+    if (!conferidoNaMaquininha(p.posDadosTransacao)) continue;
+    for (const passada of (p.posDadosTransacao as any).maquininha.passadas) {
+      const forma = passada?.forma;
+      const chave = forma === "Cartão Débito" ? "debit" : forma === "Cartão Crédito" ? "credit" : forma === "Vale-refeição" ? "voucher" : "pix";
+      soma[chave].valor = Math.round((soma[chave].valor + (Number(passada?.valor) || 0)) * 100) / 100;
+      soma[chave].qtd += 1;
+    }
+  }
+  return soma;
+}
+
 /** O pedido foi conferido na maquininha? (acerto do motoboy e caixa) */
 export function conferidoNaMaquininha(posDadosTransacao: unknown): boolean {
   const m = (posDadosTransacao as any)?.maquininha;

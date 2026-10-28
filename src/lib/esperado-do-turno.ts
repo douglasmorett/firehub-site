@@ -36,6 +36,7 @@ import { apurarVendasDoTurno, PAGO_ONLINE, type MesaDoTurno } from "@/lib/apurac
 import type { DetalheDoTurno, ParteDoRetrato } from "@/lib/cupom-do-caixa";
 import { itensCanceladosNoTurno, quemCancelouPeloRastro } from "@/lib/cancelamentos-do-turno";
 import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
+import { somarConferidoNaMaquininha } from "@/lib/cobranca-da-entrega-na-maquininha";
 
 export { PAGO_ONLINE };
 
@@ -120,7 +121,10 @@ export async function calcularEsperadoDoTurno(
       reposicao: true,
       // Troco feito pelo Pix (lib/troco-no-pix.ts): muda a gaveta e o Pix
       // esperados e o dinheiro a entregar do motoboy.
-      ...SELECT_TROCO_NO_PIX },
+      ...SELECT_TROCO_NO_PIX,
+      // O comprovante da maquininha do motoboy (FireHub Motoboy): o selo
+      // "conferido na maquininha" do fechamento.
+      posDadosTransacao: true },
   });
 
   // ── AS CONTAS DE MESA FECHADAS NESTE TURNO ────────────────────────────
@@ -432,6 +436,7 @@ export async function calcularEsperadoDoTurno(
     movimentacaoEntradas,
     movimentacaoSaidas,
     onlineProprio,
+    naMaquininha: somarConferidoNaMaquininha(orders.filter((o) => o.status !== "AGUARDANDO_PAGAMENTO")),
     // O retrato do turno — só informação, não entra em conta nenhuma.
     detalhe,
   };
