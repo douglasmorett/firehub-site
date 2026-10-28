@@ -10,6 +10,7 @@ import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
 import { enderecoDoMapaComBairroDosCorreios } from "@/lib/bairro-dos-correios";
 import { validarFormasProprias } from "@/lib/formas-proprias";
+import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 
 /**
  * GET: o cadastro de entrega GRAVADO da loja da sessão.
@@ -77,7 +78,10 @@ export async function PUT(req: Request) {
   // cadastrava as 9 faixas da Divinos gravava na linha DELE: a tela dizia
   // "salvo" e o cardápio continuava cobrando pela tabela do dono.
   //
-  // Os outros campos seguem como sempre foram (na linha de quem salvou).
+  // O mesmo vale para o resto do cadastro da loja (horário, pagamento, cupons,
+  // pausa, logo, pixel…): ver "O QUE É DA LOJA VAI PARA A LOJA", lá embaixo.
+  // Na linha de quem salvou ficam só nome, e-mail, o som do alerta e a barra
+  // do painel dele.
   const donoId = (currentUser as any).ownerId as string | null | undefined;
   const loja = donoId ? await prisma.user.findUnique({ where: { id: donoId } }) : currentUser;
   if (!loja) return NextResponse.json({ error: "Loja não encontrada" }, { status: 404 });
@@ -132,17 +136,6 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Container do Google Tag Manager inválido. Ele tem o formato GTM-XXXXXXX (ex.: GTM-AB12CD3)." }, { status: 400 });
     }
     data.gtmContainerId = gtm;
-  }
-
-  // Pixel, API de Conversões, GA4 e GTM são DA LOJA: o cardápio e a venda pelo
-  // servidor leem a linha do dono. A agência da Frangoso (login de equipe)
-  // salvou o pixel na linha dela e a tela mostrava "Pixel Ativo" com o
-  // cardápio carregando só o pixel do FireHub (27/10/2026).
-  for (const key of ["facebookPixelId", "metaPixelId", "metaCapiToken", "gaMeasurementId", "gaApiSecret", "gtmContainerId"]) {
-    if (data[key] !== undefined) {
-      daLoja[key] = data[key];
-      delete data[key];
-    }
   }
 
   // Formas de pagamento PRÓPRIAS (lib/formas-proprias.ts) moram dentro de
@@ -221,15 +214,15 @@ export async function PUT(req: Request) {
   if (data.storeName !== undefined && String(data.storeName || "").trim()) {
     const troca = slugAposRenomear(
       data.storeName,
-      (currentUser as any)?.slug,
-      (currentUser as any)?.slugsAntigos,
+      (loja as any)?.slug,
+      (loja as any)?.slugsAntigos,
     );
     if (troca) {
       // Slug é único no banco: se outra loja já ocupa esse endereço, mantém o
       // atual em vez de derrubar o salvamento inteiro. O nome muda, o link
       // não — e isso é melhor que a loja não conseguir salvar nada.
       const ocupado = await prisma.user.findFirst({
-        where: { slug: troca.slug, NOT: { id: currentUser.id } },
+        where: { slug: troca.slug, NOT: { id: loja.id } },
         select: { id: true },
       }).catch(() => null);
       if (!ocupado) {
@@ -330,7 +323,7 @@ export async function PUT(req: Request) {
   if (typeof data.storeAddress === "string" && data.storeAddress.trim()) {
     data.storeAddress = await enderecoDoMapaComBairroDosCorreios(
       data.storeAddress,
-      data.city !== undefined ? data.city : currentUser.city,
+      data.city !== undefined ? data.city : loja.city,
     );
   }
 
@@ -340,8 +333,8 @@ export async function PUT(req: Request) {
   // "America/Sao_Paulo" esquecido no cadastro fechava o delivery uma hora antes.
   if (data.city !== undefined || data.storeAddress !== undefined || data.storeTimezone !== undefined) {
     const peloEndereco = fusoPorEndereco({
-      city: data.city !== undefined ? data.city : currentUser.city,
-      storeAddress: data.storeAddress !== undefined ? data.storeAddress : currentUser.storeAddress,
+      city: data.city !== undefined ? data.city : loja.city,
+      storeAddress: data.storeAddress !== undefined ? data.storeAddress : loja.storeAddress,
     });
     if (peloEndereco) data.storeTimezone = peloEndereco.fuso;
   }
@@ -390,11 +383,43 @@ export async function PUT(req: Request) {
     const limpo = limparAppMotoboyConfig(body.appMotoboyConfig);
     // O ranking no app só muda pelo Motoboys › Ranking: o painel aberto de
     // manhã mandaria o valor velho e desligaria o ranking sem ninguém ver.
-    // Vai para a LOJA (o app do entregador lê o dono), também quando quem
-    // salva é funcionário.
-    daLoja.appMotoboyConfig = limpo
+    // Vai para a LOJA (o app do entregador lê o dono): ver "O QUE É DA LOJA".
+    data.appMotoboyConfig = limpo
       ? { ...limpo, rankingNoApp: lerAppMotoboyConfig((loja as any).appMotoboyConfig).rankingNoApp }
       : limpo;
+  }
+
+  // ── O QUE É DA LOJA VAI PARA A LOJA ──────────────────────────────────
+  //
+  // O cardápio, o robô, o app do entregador e a própria Minha Loja leem a
+  // linha do dono. O funcionário que salvava horário, pagamento ou pixel
+  // gravava na linha DELE: a tela dizia "salvo" e nada mudava. Foi assim com o
+  // pixel da Frangoso, salvo pelo login da agência (27/10/2026).
+  //
+  // Funcionário só grava com a caixinha da tela que edita o campo — antes o
+  // salvar dele não valia para nada; agora vale de verdade.
+  const TELA_DO_CAMPO: Record<string, string[]> = {};
+  for (const k of [
+    "storeName", "slug", "slugsAntigos", "cpfCnpj", "city", "storeTimezone",
+    "storePhone", "notificationPhone", "storeAddress", "storeBanner", "storeLogo",
+    "storeHours", "paymentFees", "storeCoupons", "storePause", "storeLoyalty",
+    "repasseConfig", "storeDeliveryOnly", "showAddressOnMenu", "showReviewsOnMenu",
+  ]) TELA_DO_CAMPO[k] = ["/store/minha-loja"];
+  for (const k of ["facebookPixelId", "metaPixelId", "metaCapiToken", "gaMeasurementId", "gaApiSecret", "gtmContainerId"]) {
+    TELA_DO_CAMPO[k] = ["/store/integracoes", "/store/minha-loja"];
+  }
+  // O App Motoboys fica no painel de pedidos.
+  TELA_DO_CAMPO.appMotoboyConfig = ["/store/pedidos-clientes"];
+  for (const [campo, telas] of Object.entries(TELA_DO_CAMPO)) {
+    if (data[campo] === undefined) continue;
+    if (!telas.some((t) => podeComoNaTela(currentUser as any, t))) {
+      return NextResponse.json(
+        { error: "Seu login não tem permissão para mudar isso na loja. Peça ao dono para liberar ou para alterar." },
+        { status: 403 },
+      );
+    }
+    daLoja[campo] = data[campo];
+    delete data[campo];
   }
 
   // ── Abre e fecha sozinha no horário (lib/abertura-da-loja.ts) ──────────
@@ -419,7 +444,7 @@ export async function PUT(req: Request) {
   if (loja.id === currentUser.id) {
     await prisma.user.update({ where: { id: currentUser.id }, data: { ...data, ...daLoja } });
   } else {
-    // Conta de funcionário: o dele na linha dele, a entrega na do dono — as
+    // Conta de funcionário: o dele na linha dele, o da loja na do dono — as
     // duas juntas ou nenhuma.
     await prisma.$transaction([
       prisma.user.update({ where: { id: currentUser.id }, data }),
@@ -428,15 +453,15 @@ export async function PUT(req: Request) {
   }
 
   // ── Sincronizar cidade e dados da loja para todos os funcionários da equipe ──
-  if (data.city !== undefined || data.storeName !== undefined || data.cpfCnpj !== undefined || data.storeTimezone !== undefined) {
+  if (daLoja.city !== undefined || daLoja.storeName !== undefined || daLoja.cpfCnpj !== undefined || daLoja.storeTimezone !== undefined) {
     const staffUpdates: any = {};
-    if (data.city !== undefined) staffUpdates.city = data.city;
-    if (data.storeName !== undefined) staffUpdates.storeName = data.storeName;
-    if (data.cpfCnpj !== undefined) staffUpdates.cpfCnpj = data.cpfCnpj;
-    if (data.storeTimezone !== undefined) staffUpdates.storeTimezone = data.storeTimezone;
+    if (daLoja.city !== undefined) staffUpdates.city = daLoja.city;
+    if (daLoja.storeName !== undefined) staffUpdates.storeName = daLoja.storeName;
+    if (daLoja.cpfCnpj !== undefined) staffUpdates.cpfCnpj = daLoja.cpfCnpj;
+    if (daLoja.storeTimezone !== undefined) staffUpdates.storeTimezone = daLoja.storeTimezone;
 
     await prisma.user.updateMany({
-      where: { ownerId: currentUser.id },
+      where: { ownerId: loja.id },
       data: staffUpdates,
     });
   }

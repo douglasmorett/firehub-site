@@ -47,6 +47,10 @@ function reiniciar() {
       id: "gerente", email: "gerente@divinos.test", role: "FRANCHISEE", ownerId: "dono", slug: null, city: "Cabo Frio",
       deliveryZoneType: null, deliveryZones: null, storeLatLng: null, storeAddress: null, deliveryConfig: null,
     }],
+    // Logins de equipe (STAFF) com caixinhas diferentes — o caso da Frangoso, 27/10/2026.
+    ["agencia", { id: "agencia", email: "agencia@divinos.test", role: "STAFF", ownerId: "dono", permissions: "cardapio,ifood" }],
+    ["caixa", { id: "caixa", email: "caixa@divinos.test", role: "STAFF", ownerId: "dono", permissions: "orders,kds" }],
+    ["gerente2", { id: "gerente2", email: "gerente2@divinos.test", role: "STAFF", ownerId: "dono", permissions: "orders,minha_loja" }],
   ]);
   escritas = [];
 }
@@ -124,7 +128,7 @@ async function main() {
       dono.deliveryConfig);
     confere("nada de entrega na linha do gerente",
       gerente.deliveryZones == null && gerente.storeLatLng == null && gerente.deliveryConfig == null, gerente);
-    confere("o resto continua na linha de quem salvou (como sempre foi)", gerente.storePhone === "22999990000" && dono.storePhone === undefined);
+    confere("o telefone da loja também vai para o dono (não fica na linha do gerente)", dono.storePhone === "22999990000" && gerente.storePhone === undefined, { dono: dono.storePhone, gerente: gerente.storePhone });
 
     // A conferência da tela (GET depois do PUT) enxerga o que foi gravado.
     const g: any = await (await GET()).json();
@@ -169,6 +173,48 @@ async function main() {
       escritas);
     const g: any = await (await GET()).json();
     confere("GET do dono: a linha dele", g.entrega.deliveryZones.length === 9);
+  }
+
+  // ── Funcionário (STAFF): o que é da loja vai para a loja, com a caixinha da tela
+  {
+    // A agência (caixinha iFood/Integrações) salva o pixel: vai para o dono.
+    reiniciar();
+    sessao = { user: { email: "agencia@divinos.test" } };
+    const r = await put({ facebookPixelId: "1720241455977414", metaPixelId: "1720241455977414", metaCapiToken: "tok" });
+    const dono = linhas.get("dono")!, agencia = linhas.get("agencia")!;
+    confere("agência: pixel e CAPI na linha do dono", r.status === 200 && dono.metaPixelId === "1720241455977414" && dono.metaCapiToken === "tok", dono);
+    confere("agência: nada de pixel na linha dela", agencia.metaPixelId === undefined && agencia.facebookPixelId === undefined, agencia);
+
+    // A mesma agência não mexe no horário (não tem Minha Loja).
+    reiniciar();
+    const h = await put({ storeHours: [{ dia: 1 }] });
+    confere("agência sem Minha Loja: horário recusado (403) e nada gravado", h.status === 403 && escritas.length === 0, { status: h.status, escritas });
+
+    // O gerente com Minha Loja salva horário, pagamento, cupom e pausa: tudo no dono.
+    reiniciar();
+    sessao = { user: { email: "gerente2@divinos.test" } };
+    const g = await put({ storeHours: [{ dia: 2 }], paymentFees: { PIX: { rate: 0 } }, storeCoupons: [{ code: "X" }], storePause: { ate: "x" }, storeLogo: "logo.png" });
+    const d2 = linhas.get("dono")!, g2 = linhas.get("gerente2")!;
+    confere("gerente com Minha Loja: horário, pagamento, cupom, pausa e logo no dono",
+      g.status === 200 && d2.storeHours?.[0]?.dia === 2 && d2.paymentFees?.PIX && d2.storeCoupons?.[0]?.code === "X" && d2.storePause && d2.storeLogo === "logo.png", d2);
+    confere("…e nada disso na linha do gerente", g2.storeHours === undefined && g2.paymentFees === undefined && g2.storeLogo === undefined, g2);
+
+    // O caixa (só Pedidos) liga uma opção do App Motoboys: vai para o dono.
+    reiniciar();
+    sessao = { user: { email: "caixa@divinos.test" } };
+    const a = await put({ appMotoboyConfig: { despachoSoOnline: true } });
+    confere("caixa: App Motoboys gravado no dono", a.status === 200 && linhas.get("dono")!.appMotoboyConfig?.despachoSoOnline === true, linhas.get("dono")!.appMotoboyConfig);
+    confere("…não na linha do caixa", linhas.get("caixa")!.appMotoboyConfig === undefined);
+
+    // O caixa não troca a logo da loja.
+    reiniciar();
+    const l = await put({ storeLogo: "outra.png" });
+    confere("caixa sem Minha Loja: logo recusada (403)", l.status === 403 && escritas.length === 0, { status: l.status, escritas });
+
+    // A barra do painel continua de cada um.
+    reiniciar();
+    await put({ painelPedidosConfig: { relogio: false } });
+    confere("barra do painel fica na linha de quem salvou", linhas.get("caixa")!.painelPedidosConfig?.relogio === false && linhas.get("dono")!.painelPedidosConfig === undefined);
   }
 
   // ── Sem sessão ───────────────────────────────────────────────────────────
