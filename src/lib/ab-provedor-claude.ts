@@ -22,7 +22,8 @@ type Conteudo = { role: string; parts?: Parte[] };
 const textoDe = (c: Conteudo) => (c.parts || []).map((p) => p.text || "").join("\n").trim();
 
 export async function abClaudeCli(params: { model: string; contents: Conteudo[]; config?: any }) {
-  const sistema = String(params.config?.systemInstruction || "");
+  // FIREHUB_AB_INSTRUCAO_EXTRA: uma linha a mais no fim do prompt, para medir ajuste de prompt só no Claude.
+  const sistema = String(params.config?.systemInstruction || "") + (process.env.FIREHUB_AB_INSTRUCAO_EXTRA ? `\n\n${process.env.FIREHUB_AB_INSTRUCAO_EXTRA}` : "");
   const dir = path.join(os.tmpdir(), "ab-claude");
   fs.mkdirSync(dir, { recursive: true });
   const arq = path.join(dir, `${crypto.createHash("sha1").update(sistema).digest("hex")}.txt`);
