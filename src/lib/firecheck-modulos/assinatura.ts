@@ -238,8 +238,12 @@ export async function ligarOuDesligarModulo(
   } else {
     if (!ligado) return estadoDoFirecheck(franchiseeId, agora);
     const { monthEnd } = await mesCorrente(franchiseeId);
-    const { ate } = quandoDesliga(testes[modulo], monthEnd, agora);
+    const { naHora, ate } = quandoDesliga(testes[modulo], monthEnd, agora);
     for (const t of doModulo) if (!t.ate || new Date(t.ate).getTime() > agora.getTime()) t.ate = ate.toISOString();
+    // Desligou no teste: o teste acaba aqui. É o que a tela e o termo dizem ("o
+    // teste não volta; ligando de novo, o mês entra inteiro") — sem isto, religar
+    // dentro dos 7 dias continuaria grátis até o fim da janela.
+    if (naHora) testes[modulo] = iso;
   }
   await prisma.$executeRawUnsafe(
     `INSERT INTO "FireCheckAssinatura" ("franchiseeId", "trechos", "testes", "atualizadoEm")
