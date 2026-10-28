@@ -73,7 +73,9 @@ async function clienteSimulado(objetivo: string, historico: { sender: string; te
       systemInstruction: `Você é um cliente comum pedindo comida pelo WhatsApp. ${objetivo}
 Regras: responda curto e direto, como gente no WhatsApp, só ao que o atendente perguntou. Se perguntarem tamanho, sabor, bebida, ponto ou adicional, escolha a PRIMEIRA opção que o atendente citou (ou a mais comum, se ele não citar). Não peça nada além do seu objetivo. Se o atendente pedir para confirmar, confirme. Se o atendente disser que o pedido foi confirmado/enviado/anotado para a cozinha, ou se a conversa não tiver como avançar, responda só FIM.`,
       temperature: 0.2,
-      maxOutputTokens: 200,
+      // Sem pensamento: com ele o 2.5 gastava o limite pensando e mandava a mensagem cortada ("acho que cortou aqui", 28/10).
+      maxOutputTokens: 400,
+      thinkingConfig: { thinkingBudget: 0 },
     },
   });
   return String(r.text || "").trim();
