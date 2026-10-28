@@ -134,6 +134,34 @@ function quantidadeDaOpcao(o: { qty?: unknown; quantity?: unknown; amount?: unkn
   return 1;
 }
 
+/**
+ * Os grupos de `others` sem a cópia que a Wabiz às vezes manda.
+ *
+ * ── "A promoção é de 6 esfihas e está saindo 12" ────────────────────────────
+ *
+ * NIK, pedido Wabiz #5009 (27/10/2026): "6 Esfihas Tradicionais + Guaraná"
+ * chegou com as esfihas DUAS vezes na mesma parte — um grupo sem nome
+ * ("Esfiha Carne" × 6) e o grupo "Escolha suas esfihas" (× 6). Como
+ * `opcoesDaParte` soma sabor igual, a cozinha recebeu "12x Esfiha Carne".
+ * Medido no PayloadDoParceiro: 12 pedidos de 16 a 28/10, todos dessa promoção.
+ * Em #4536 (16/10) o grupo sem nome era o ÚNICO com as esfihas — então ele não
+ * é sempre lixo.
+ *
+ * O grupo sem nome sai só quando um grupo COM nome traz a mesma quantidade
+ * total: aí é a mesma escolha repetida. Sem par, ele fica (como em #4536).
+ */
+function gruposSemCopia<G extends { name?: string | null; options?: Array<{ qty?: unknown; quantity?: unknown; amount?: unknown; qtd?: unknown }> | null }>(
+  grupos: G[]
+): G[] {
+  const total = (g: G) => (g?.options || []).reduce((s, o) => s + quantidadeDaOpcao(o), 0);
+  const comNome = grupos.filter((g) => texto(g?.name));
+  return grupos.filter((g) => {
+    if (texto(g?.name)) return true;
+    const n = total(g);
+    return n === 0 || !comNome.some((outro) => total(outro) === n);
+  });
+}
+
 /** Borda, adicionais e "outros" (sabores do combo, bebida grátis) de UMA parte. */
 function opcoesDaParte(parte: WabizParte): OpcaoDaParte[] {
   const c = parte.customization;
@@ -179,7 +207,7 @@ function opcoesDaParte(parte: WabizParte): OpcaoDaParte[] {
   // No pedido real da sandbox (12/09/2026) a borda NÃO veio em `edge`, como a
   // doc mostra: veio em `others` com o grupo chamado "Bordas". Sem o rótulo a
   // comanda dizia só "Catupiry Original", que a cozinha lê como recheio.
-  for (const g of c?.others || []) juntar(/borda/i.test(texto(g?.name)) ? "Borda" : null, g?.options);
+  for (const g of gruposSemCopia(c?.others || [])) juntar(/borda/i.test(texto(g?.name)) ? "Borda" : null, g?.options);
   for (const g of c?.additionals || []) juntar(null, g?.options);
   return saida;
 }

@@ -289,5 +289,34 @@ const comCupom: any = {
   confere("NIK #3698: o id do espelho não muda (o espelho antigo é o mesmo)", items[1].menuProduct.connectOrCreate.where.id, "wabiz-loja-teste-35265889.23734216");
 }
 
+// ── As esfihas que vieram duas vezes (NIK, #5009, 27/10/2026) ────────────
+// Grupo sem nome + "Escolha suas esfihas", as duas listas com as 6 esfihas: a
+// cozinha recebeu "12x Esfiha Carne". Em #4536 (16/10) o sem nome era o único
+// e tem de continuar valendo.
+{
+  const promo = (others: any[]): any => ({
+    ...delivery, orderNumber: 5009, internalKey: "nik-5009",
+    items: [{ groupName: "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L por R$49,90", products: [{ pos: 1, qty: 1, price: 49.9, unity: "un", parts: [
+      { name: "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L", price: 49.9, externalCode: "37841462", customization: { additionals: [], edge: {}, others } },
+    ] }] }],
+  });
+  const guarana = { name: "Guaraná Mineiro 1,5l Grátis", options: [{ externalCode: "37841462.25828767", name: "Guaraná Mineiro 1,5l", price: 0, qty: 1 }] };
+  const dobrado = promo([
+    { name: "", options: [{ externalCode: "37841462.25828762", name: "Esfiha Carne", price: 0, qty: 6 }] },
+    { name: "Escolha suas esfihas", options: [{ externalCode: "37841462.25828762", name: "Esfiha Carne", price: 0, qty: 6 }] },
+    guarana,
+  ]);
+  confere("NIK #5009: 6 esfihas são 6, não 12", traduzirPedidoWabiz(dobrado, ctx).items[0].productName,
+    "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L | 6x Esfiha Carne | Guaraná Mineiro 1,5l");
+  const soSemNome = promo([
+    { name: "", options: [
+      { name: "Esfiha Carne", price: 0, qty: 4 }, { name: "Esfiha Calabresa", price: 0, qty: 1 }, { name: "Esfiha Pizza", price: 0, qty: 1 },
+    ] },
+    guarana,
+  ]);
+  confere("NIK #4536: grupo sem nome sozinho continua valendo", traduzirPedidoWabiz(soSemNome, ctx).items[0].productName,
+    "6 Esfihas Tradicionais + Guaraná Mineiro 1,5L | 4x Esfiha Carne | Esfiha Calabresa | Esfiha Pizza | Guaraná Mineiro 1,5l");
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);
