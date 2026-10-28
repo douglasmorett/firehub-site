@@ -21,7 +21,7 @@ type Conteudo = { role: string; parts?: Parte[] };
 
 function paraMensagem(c: Conteudo) {
   const role = c.role === "model" ? "assistant" : "user";
-  const partes = (c.parts || []).flatMap((p) => {
+  const partes = (c.parts || []).flatMap((p): any[] => {
     if (p.text) return [{ type: "text", text: p.text }];
     // Imagem vai; áudio não (no robô de verdade o áudio continua no Gemini).
     if (p.inlineData && p.inlineData.mimeType.startsWith("image/"))
