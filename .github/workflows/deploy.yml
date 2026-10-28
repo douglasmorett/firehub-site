@@ -86,7 +86,7 @@ jobs:
     steps:
       - name: Pedir a publicação do commit (sem forçar montagem)
         run: |
-          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "http://107.170.79.194:8000/api/v1/deploy" \
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://coolify.firehubfood.com.br/api/v1/deploy" \
             -H "Authorization: Bearer ${{ secrets.COOLIFY_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{"uuid":"binibyxzlgkm4qhfcydy6ocj","commit":"${{ github.sha }}"}' \
