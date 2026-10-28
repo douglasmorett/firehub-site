@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { NextResponse } from "next/server";
+import { anotarUsoLegado } from "@/lib/uso-legado";
 
 /**
  * /src/lib/token-do-assistente.ts
@@ -131,6 +132,8 @@ function anotarSemToken(rota: string, lojaId: string, comSessao: boolean, agora 
     c.logadoEm = agora;
   }
   contagem.set(k, c);
+  // No banco, por loja e dia (lib/uso-legado.ts): o log zera a cada deploy.
+  anotarUsoLegado("assistente-sem-token", lojaId, `rota=${rota} sessao=${comSessao ? "sim" : "nao"}`);
   // Teto de memória: muitas lojas × rotas cabem; lixo de id inventado não cresce sem fim.
   if (contagem.size > 5000) contagem.delete(contagem.keys().next().value as string);
 }

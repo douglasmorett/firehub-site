@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { checkRateLimit } from "@/lib/rateLimit";
 import { avisarSeEstaChegando } from "@/lib/entrega-ao-vivo";
+import { anotarUsoLegado } from "@/lib/uso-legado";
 
 // POST: Motoboy envia sua localização em tempo real
 //
@@ -88,6 +89,9 @@ export async function POST(req: NextRequest) {
     if (r.count === 0) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
     }
+    // Par solto do corpo (sem sessão assinada) que gravou: contado para a fase 2
+    // (lib/uso-legado.ts). App antigo sem storeId não diz a loja e fica de fora.
+    if (!daSessao && storeId) anotarUsoLegado("motoboy-sem-sessao", String(storeId), "location POST");
 
     // "Seu pedido está chegando" — sem esperar: o app só precisa do GPS gravado
     // (lib/entrega-ao-vivo.ts).

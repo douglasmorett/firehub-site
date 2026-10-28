@@ -16,6 +16,7 @@ import { despacharRota, ofereceARota, outrosDaRota, podePuxarARota } from "@/lib
 import { lerRoteirizacaoAutomatica, type QuemPuxa } from "@/lib/roteirizacao-automatica/config";
 import { avisoDaRotaFoiComOutro, quemPerdeAChamada } from "@/lib/roteirizacao-automatica/chamada";
 import { registrarNaRota } from "@/lib/roteirizacao-automatica/historico-da-rota";
+import { anotarUsoLegado } from "@/lib/uso-legado";
 
 export async function GET(req: NextRequest) {
   try {
@@ -45,6 +46,8 @@ export async function GET(req: NextRequest) {
     if (!motoboy) {
       return NextResponse.json({ error: "Acesso encerrado. Fale com a loja.", precisaRelogar: true }, { status: 401 });
     }
+    // Par solto da URL (sem sessão assinada): contado para a fase 2 (lib/uso-legado.ts).
+    if (!daSessao) anotarUsoLegado("motoboy-sem-sessao", storeId, "orders GET");
 
     const storeOwner = await prisma.user.findUnique({
       where: { id: storeId },
@@ -893,6 +896,8 @@ export async function PATCH(req: NextRequest) {
     if (!motoboyAtivo) {
       return NextResponse.json({ error: "Acesso encerrado. Fale com a loja.", precisaRelogar: true }, { status: 401 });
     }
+    // Par solto do corpo (sem sessão assinada): contado para a fase 2 (lib/uso-legado.ts).
+    if (!daSessao) anotarUsoLegado("motoboy-sem-sessao", String(storeId), "orders PATCH");
 
     const order = await prisma.customerOrder.findFirst({
       where: { id: String(orderId), franchiseeId: String(storeId), motoboyId: String(motoboyId) },

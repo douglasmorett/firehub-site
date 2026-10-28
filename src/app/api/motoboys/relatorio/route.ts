@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { montarRelatorioDosEntregadores, periodoDoRelatorio } from "@/lib/relatorio-do-entregador";
+import { anotarUsoLegado } from "@/lib/uso-legado";
 
 /** Teto do período: o app é para conferir turno e semana, não o ano. */
 const TETO_DO_PERIODO_MS = 45 * 24 * 60 * 60 * 1000;
@@ -41,6 +42,8 @@ export async function GET(req: NextRequest) {
     if (!motoboy) {
       return NextResponse.json({ error: "Acesso encerrado. Fale com a loja.", precisaRelogar: true }, { status: 401 });
     }
+    // Par solto da URL (sem sessão assinada): contado para a fase 2 (lib/uso-legado.ts).
+    if (!daSessao) anotarUsoLegado("motoboy-sem-sessao", storeId, "relatorio GET");
 
     const loja = await prisma.user.findUnique({ where: { id: storeId }, select: { storeTimezone: true, appMotoboyConfig: true } });
     const tz = loja?.storeTimezone || "America/Sao_Paulo";

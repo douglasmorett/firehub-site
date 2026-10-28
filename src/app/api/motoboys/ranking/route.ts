@@ -18,6 +18,7 @@ import { lerRankingDeEntregadores } from "@/lib/relatorios/ranking-de-entregador
 import { PESOS } from "@/lib/relatorios/ranking-de-entregadores";
 import { hojeNaLoja, periodoDoAtalho } from "@/lib/relatorios/base";
 import { janelaDoPeriodo } from "@/lib/relatorios/janela";
+import { anotarUsoLegado } from "@/lib/uso-legado";
 
 export const dynamic = "force-dynamic";
 
@@ -37,6 +38,8 @@ export async function GET(req: NextRequest) {
 
     const motoboy = await prisma.motoboy.findFirst({ where: { id: motoboyId, franchiseeId: storeId, active: true }, select: { id: true } });
     if (!motoboy) return NextResponse.json({ error: "Acesso encerrado. Fale com a loja.", precisaRelogar: true }, { status: 401 });
+    // Par solto da URL (sem sessão assinada): contado para a fase 2 (lib/uso-legado.ts).
+    if (!daSessao) anotarUsoLegado("motoboy-sem-sessao", storeId, "ranking GET");
 
     const loja = await prisma.user.findUnique({ where: { id: storeId }, select: { storeTimezone: true, appMotoboyConfig: true } });
     if (!lerAppMotoboyConfig(loja?.appMotoboyConfig).rankingNoApp) return NextResponse.json({ ativo: false });

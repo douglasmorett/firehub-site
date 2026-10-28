@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { anotarUsoLegado } from "@/lib/uso-legado";
 
 /**
  * /src/lib/extensao-token.ts
@@ -99,6 +100,8 @@ const logadoEm = new Map<string, number>();
 
 /** Chamar quando o id cru foi ACEITO e achou a loja (id vindo do banco). */
 export function anotarTokenCruDaExtensao(lojaId: string, rota: string, agora = Date.now()): boolean {
+  // No banco, toda chamada (somada em memória, lib/uso-legado.ts): o log zera a cada deploy.
+  anotarUsoLegado("extensao-token-cru", lojaId, rota);
   const ultimo = logadoEm.get(lojaId);
   if (ultimo !== undefined && agora - ultimo < INTERVALO_DO_LOG_MS) return false;
   console.log(`[Extensão sem assinatura] loja=${lojaId} rota=${rota}`);
