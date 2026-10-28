@@ -1,6 +1,8 @@
 "use client";
 
 import LinksDoAppFireHub from "@/components/customer/LinksDoAppFireHub";
+import AppNaMaquininha from "@/components/admin/AppNaMaquininha";
+import MaquininhasClient from "@/components/admin/MaquininhasClient";
 import { useEffect, useState, useMemo } from "react";
 import { Plus, Edit2, Trash2, Users, DollarSign, Loader2, ArrowLeft, Calendar, FileText, CheckCircle2, XCircle, Link2, Copy, Check, KeyRound, Eye, EyeOff, ExternalLink, Percent } from "lucide-react";
 import { useSession } from "next-auth/react";
@@ -477,6 +479,11 @@ export default function GarconsPage() {
               </table>
             </div>
           )}
+
+          {/* O app FireHub Garçom na maquininha: o garçom tira o pedido e cobra
+              a mesa nela. O cadastro (código de 8 números) fica logo abaixo. */}
+          <AppNaMaquininha produto="GARCOM" />
+          <MaquininhasClient totens={[]} />
         </>
       ) : (
         /* ─── REPORT VIEW ─── */

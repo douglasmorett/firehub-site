@@ -12,6 +12,7 @@ import {
 } from "./actions";
 import TotemCategoriesClient from "@/components/admin/TotemCategoriesClient";
 import MaquininhasClient from "@/components/admin/MaquininhasClient";
+import AppNaMaquininha from "@/components/admin/AppNaMaquininha";
 import TefDoTotemClient from "@/components/admin/TefDoTotemClient";
 
 export default function TotemModuleClient({ store, categories }: { store: any, categories?: any[] }) {
@@ -433,6 +434,7 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
           função do totem: é nela que o cliente paga o pedido que fecha na tela
           ao lado. Separar em outro menu obrigaria o lojista a descobrir sozinho
           que os dois se ligam. */}
+      {store.totemEnabled && <AppNaMaquininha produto="TOTEM" />}
       {store.totemEnabled && (
         <MaquininhasClient
           totens={(store.totemLicenses || []).map((l: any) => ({ id: l.id, label: l.label }))}

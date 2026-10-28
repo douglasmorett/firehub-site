@@ -3,6 +3,8 @@ import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import MotoboyDashboard from "@/components/customer/MotoboyDashboard";
+import AppNaMaquininha from "@/components/admin/AppNaMaquininha";
+import MaquininhasClient from "@/components/admin/MaquininhasClient";
 import { LOJAS_COM_LANCHE_DA_EQUIPE } from "@/lib/lanche-da-equipe-regras";
 import { estaNaSenhaPadrao } from "@/lib/motoboy-senha";
 
@@ -54,6 +56,9 @@ export default async function MotoboysPage() {
           ? { slug: (dono as any)?.slug || (user as any).slug || "", loja: (dono as any)?.storeName || (user as any).storeName || "" }
           : null}
       />
+      {/* O app FireHub Motoboy na maquininha: entregas, cobrança na porta e GPS. */}
+      <AppNaMaquininha produto="MOTOBOY" />
+      <MaquininhasClient totens={[]} />
     </div>
   );
 }
