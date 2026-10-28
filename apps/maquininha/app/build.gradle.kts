@@ -72,7 +72,12 @@ android {
     //  - rede: Intent pronta do SDK da Rede (.aar) aberta com
     //    startActivityForResult no app "Pagamentos" da Rede. Também não lê
     //    cartão; usa a mesma ponte de Activity dos deeplinks.
-    flavorDimensions += "adquirente"
+    // Duas dimensões: a adquirente (qual maquininha) e o produto (qual app do
+    // FireHub). Cada produto é um app separado na loja da adquirente, com ícone
+    // e nome próprios: o garçom e o motoboy acham o app pela cor (pedido do
+    // Douglas, 27/10/2026). O totem não leva sufixo para manter o pacote que já
+    // está homologado (no PagBank, "br.com.firehub.maquininha").
+    flavorDimensions += listOf("adquirente", "produto")
     productFlavors {
         create("pagbank") {
             dimension = "adquirente"
@@ -118,6 +123,35 @@ android {
             // Se o .aar estava na pasta quando este APK foi gerado. Falso =
             // APK sem o SDK: cobra nada e diz por quê.
             buildConfigField("boolean", "SDK_DA_REDE_NO_APK", aarDaRede.exists().toString())
+        }
+        create("totem") {
+            dimension = "produto"
+            buildConfigField("String", "PRODUTO", "\"TOTEM\"")
+            // Esquema da volta do app de pagamento (Cielo/Stone): um por app,
+            // senão com dois apps FireHub na mesma maquininha o Android pergunta
+            // para qual devolver o resultado do cartão.
+            manifestPlaceholders["sufixoDoEsquema"] = ""
+            buildConfigField("String", "SUFIXO_DO_ESQUEMA", "\"\"")
+        }
+        create("garcom") {
+            dimension = "produto"
+            applicationIdSuffix = ".garcom"
+            buildConfigField("String", "PRODUTO", "\"GARCOM\"")
+            // Esquema da volta do app de pagamento (Cielo/Stone): um por app,
+            // senão com dois apps FireHub na mesma maquininha o Android pergunta
+            // para qual devolver o resultado do cartão.
+            manifestPlaceholders["sufixoDoEsquema"] = "garcom"
+            buildConfigField("String", "SUFIXO_DO_ESQUEMA", "\"garcom\"")
+        }
+        create("motoboy") {
+            dimension = "produto"
+            applicationIdSuffix = ".motoboy"
+            buildConfigField("String", "PRODUTO", "\"MOTOBOY\"")
+            // Esquema da volta do app de pagamento (Cielo/Stone): um por app,
+            // senão com dois apps FireHub na mesma maquininha o Android pergunta
+            // para qual devolver o resultado do cartão.
+            manifestPlaceholders["sufixoDoEsquema"] = "motoboy"
+            buildConfigField("String", "SUFIXO_DO_ESQUEMA", "\"motoboy\"")
         }
     }
 

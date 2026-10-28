@@ -1,5 +1,6 @@
 package br.com.firehub.maquininha.pagamento
 
+import br.com.firehub.maquininha.BuildConfig
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -31,7 +32,7 @@ object CobradorStone : CobradorPorDeeplink() {
     private const val ETIQUETA = "CobradorStone"
 
     /** Tem que bater com o scheme do intent-filter da ponte no manifesto. */
-    private const val ESQUEMA_DE_VOLTA = "firehubmaquininha"
+    private val ESQUEMA_DE_VOLTA = "firehubmaquininha" + BuildConfig.SUFIXO_DO_ESQUEMA
 
     override val nome = "Stone"
 

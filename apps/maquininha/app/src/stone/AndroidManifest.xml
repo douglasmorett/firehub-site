@@ -37,7 +37,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="firehubmaquininha" android:host="pay-response" />
+                <data android:scheme="firehubmaquininha${sufixoDoEsquema}" android:host="pay-response" />
             </intent-filter>
         </activity>
     </application>

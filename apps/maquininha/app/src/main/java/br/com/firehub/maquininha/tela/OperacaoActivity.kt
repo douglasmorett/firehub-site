@@ -1,5 +1,6 @@
 package br.com.firehub.maquininha.tela
 
+import br.com.firehub.maquininha.BuildConfig
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -52,6 +53,7 @@ class OperacaoActivity : AppCompatActivity() {
     private lateinit var botaoCancelar: Button
     private lateinit var botaoAcao: Button
     private lateinit var botaoGarcom: Button
+    private var jaAbriGarcom = false
     private lateinit var txtAvisos: TextView
 
     /**
@@ -344,7 +346,14 @@ class OperacaoActivity : AppCompatActivity() {
         )
         txtRede.visibility = View.VISIBLE
         txtTitulo.text = getString(R.string.operacao_aguardando)
-        botaoGarcom.visibility = View.VISIBLE
+        // Só o app do Garçom tem o botão; o do Totem fica só cobrando. No do
+        // Garçom a tela do garçom abre sozinha uma vez, ao ligar.
+        if (BuildConfig.PRODUTO == "GARCOM") {
+            botaoGarcom.visibility = View.VISIBLE
+            if (!jaAbriGarcom) { jaAbriGarcom = true; abrirModoGarcom() }
+        } else {
+            botaoGarcom.visibility = View.GONE
+        }
 
         situacao.detalhe?.let { detalhe ->
             txtAndamento.text = detalhe

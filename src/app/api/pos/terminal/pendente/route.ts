@@ -91,6 +91,12 @@ export async function GET(req: NextRequest) {
       data: { posStatus: ESTADOS_DA_COBRANCA.aguardando },
     });
 
+    // Qual app do FireHub está perguntando (TOTEM, GARCOM ou MOTOBOY). App
+    // antigo não manda e conta como TOTEM. O do garçom e o do motoboy só levam
+    // o que foi endereçado a eles: o pedido do totem sem dono é do totem.
+    const produto = (req.nextUrl.searchParams.get("produto") || "TOTEM").toUpperCase();
+    const soEnderecado = produto === "GARCOM" || produto === "MOTOBOY";
+
     // A fila desta maquininha: pedido endereçado a ela, ou ainda sem dono.
     const candidato = await prisma.customerOrder.findFirst({
       where: {
@@ -98,7 +104,7 @@ export async function GET(req: NextRequest) {
         posStatus: ESTADOS_DA_COBRANCA.aguardando,
         paymentPaidAt: null,
         status: { not: "CANCELADO" },
-        OR: [{ posTerminalId: terminal.id }, { posTerminalId: null }],
+        OR: soEnderecado ? [{ posTerminalId: terminal.id }] : [{ posTerminalId: terminal.id }, { posTerminalId: null }],
       },
       orderBy: { createdAt: "asc" },
       select: {
@@ -111,7 +117,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (!candidato) {
-      return responderComMesaOuNada(terminal, extrasComIdentidade);
+      return responderComMesaOuNada(terminal, extrasComIdentidade, produto);
     }
 
     // A reserva: só sai da fila se AINDA estiver aguardando. Se outro aparelho
@@ -130,7 +136,7 @@ export async function GET(req: NextRequest) {
     });
 
     if (reservado.count === 0) {
-      return responderComMesaOuNada(terminal, extrasComIdentidade);
+      return responderComMesaOuNada(terminal, extrasComIdentidade, produto);
     }
 
     const identificacao = candidato.dailyOrderNumber
@@ -172,8 +178,10 @@ export async function GET(req: NextRequest) {
 async function responderComMesaOuNada(
   terminal: { id: string; franchiseeId: string; label: string },
   extras: Record<string, unknown>,
+  produto: string,
 ) {
-  const mesa = await reservarCobrancaDaMesa(terminal);
+  // Conta de mesa é do totem e do garçom; o app do motoboy não leva.
+  const mesa = produto === "MOTOBOY" ? null : await reservarCobrancaDaMesa(terminal);
   if (!mesa) return NextResponse.json({ cobranca: null, terminal: terminal.label, ...extras });
   const numero = mesa.dados?.mesa;
   return NextResponse.json({

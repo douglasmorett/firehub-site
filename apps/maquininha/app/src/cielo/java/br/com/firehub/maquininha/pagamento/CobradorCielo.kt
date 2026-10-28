@@ -1,5 +1,6 @@
 package br.com.firehub.maquininha.pagamento
 
+import br.com.firehub.maquininha.BuildConfig
 import android.content.Intent
 import android.net.Uri
 import android.util.Base64
@@ -37,7 +38,7 @@ import org.json.JSONObject
 object CobradorCielo : CobradorPorDeeplink() {
 
     private const val ETIQUETA = "CobradorCielo"
-    private const val CALLBACK = "firehubcielo://response"
+    private val CALLBACK = "firehubcielo" + BuildConfig.SUFIXO_DO_ESQUEMA + "://response"
 
     override val nome = "Cielo"
 

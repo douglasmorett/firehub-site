@@ -40,7 +40,10 @@ object ApiDoFireHub {
             // PAGBANK, STONE, CIELO ou GETNET. O servidor grava em qual
             // adquirente este terminal cobra (e só manda credencial de
             // adquirente para o APK que precisa dela).
-            "&adquirente=" + URLEncoder.encode(BuildConfig.ADQUIRENTE, "UTF-8")
+            "&adquirente=" + URLEncoder.encode(BuildConfig.ADQUIRENTE, "UTF-8") +
+            // TOTEM, GARCOM ou MOTOBOY: o app do garçom e o do motoboy só levam
+            // cobrança endereçada a eles, nunca o pedido do totem sem dono.
+            "&produto=" + URLEncoder.encode(BuildConfig.PRODUTO, "UTF-8")
 
         val resposta = try {
             chamar(endereco, "GET", null)
