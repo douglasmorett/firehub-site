@@ -50,6 +50,8 @@ type Cenario = {
   checa: (c: Resp & { todas: Resp[] }) => { ok: boolean; motivo?: string }[];
   /** Cenário só de observação (não entra na taxa de acerto). */
   informativo?: boolean;
+  /** Com objetivo, depois da 1ª fala quem responde ao robô é um CLIENTE SIMULADO (Gemini 2.5 Flash, o mesmo nas duas variantes) até o pedido fechar. */
+  objetivo?: string;
 };
 
 const emojis = (t: string) => (t.match(/\p{Extended_Pictographic}/gu) || []).length;
@@ -58,6 +60,24 @@ const reais = (t: string) =>
   [...t.matchAll(/R\$\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)/g)]
     .map((m) => Number(m[1].replace(",", ".")))
     .filter((n) => Number.isFinite(n));
+
+/** O cliente do outro lado: responde curto ao que o atendente perguntou, até o pedido fechar. Sempre o mesmo modelo, para as variantes serem comparáveis. */
+async function clienteSimulado(objetivo: string, historico: { sender: string; text: string }[]): Promise<string> {
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+  const conversa = historico.map((m) => `${m.sender === "user" ? "VOCÊ" : "ATENDENTE"}: ${m.text}`).join("\n");
+  const r = await ai.models.generateContent({
+    model: "gemini-2.5-flash",
+    contents: `${conversa}\n\nEscreva só a sua próxima mensagem.`,
+    config: {
+      systemInstruction: `Você é um cliente comum pedindo comida pelo WhatsApp. ${objetivo}
+Regras: responda curto e direto, como gente no WhatsApp, só ao que o atendente perguntou. Se perguntarem tamanho, sabor, bebida, ponto ou adicional, escolha a PRIMEIRA opção que o atendente citou (ou a mais comum, se ele não citar). Não peça nada além do seu objetivo. Se o atendente pedir para confirmar, confirme. Se o atendente disser que o pedido foi confirmado/enviado/anotado para a cozinha, ou se a conversa não tiver como avançar, responda só FIM.`,
+      temperature: 0.2,
+      maxOutputTokens: 200,
+    },
+  });
+  return String(r.text || "").trim();
+}
 
 async function main() {
   const { prisma } = await import("../src/lib/prisma");
@@ -169,7 +189,8 @@ async function main() {
       },
       {
         nome: "fecha-pedido-retirada",
-        informativo: soDelivery,
+        // Roteiro fixo não responde tamanho/sabor/nome: o robô (certo) não fecha. Fica só como observação; quem mede é o simulado.
+        informativo: true,
         falas: [`quero 1 ${p1.name}`, "vou retirar aí", "no dinheiro", "pode confirmar"],
         checa: ({ todas, visivel }) => [
           { ok: temMarca(todas), motivo: "esqueceu a marca [[PEDIDO_IA]] no pedido" },
@@ -179,10 +200,30 @@ async function main() {
       },
       {
         nome: "fecha-pedido-2-itens",
-        informativo: soDelivery,
+        informativo: true,
         falas: [`quero 1 ${p1.name} e 1 ${p2.name}`, "retirada", "pix", "confirma"],
         checa: ({ todas, visivel }) => [
           { ok: temMarca(todas), motivo: "esqueceu a marca [[PEDIDO_IA]] no pedido" },
+          { ok: fechou(todas), motivo: "não fechou o pedido (finalized)" },
+          { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
+        ],
+      },
+      {
+        nome: "fecha-simulado-retirada",
+        informativo: soDelivery,
+        falas: [`oi, quero 1 ${p1.name} pra retirar aí`],
+        objetivo: `Você quer 1 ${p1.name}, vai RETIRAR no balcão e pagar no PIX. Seu nome é Carlos Souza.`,
+        checa: ({ todas, visivel }) => [
+          { ok: fechou(todas), motivo: "não fechou o pedido (finalized)" },
+          { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
+        ],
+      },
+      {
+        nome: "fecha-simulado-2-itens",
+        informativo: soDelivery,
+        falas: [`boa noite, quero 1 ${p1.name} e 1 ${p2.name}`],
+        objetivo: `Você quer 1 ${p1.name} e 1 ${p2.name}, vai RETIRAR no balcão e pagar em DINHEIRO, sem troco. Seu nome é Ana Lima.`,
+        checa: ({ todas, visivel }) => [
           { ok: fechou(todas), motivo: "não fechou o pedido (finalized)" },
           { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
         ],
@@ -196,7 +237,7 @@ async function main() {
     ];
 
     for (let r = 1; r <= RODADAS; r++) {
-      for (const cen of cenarios) {
+      for (const cen of cenarios.filter((c) => !process.env.FIREHUB_AB_CENARIOS || process.env.FIREHUB_AB_CENARIOS.split(",").some((n) => c.nome.startsWith(n)))) {
         const historico: { sender: string; text: string }[] = [];
         // Telefone de mentira (um por conversa): o robô só o usa para ler o rascunho do cliente; nada é gravado (FIREHUB_AB_SEM_GRAVAR).
         const remoteJid = `5599${String(900000000 + lojas.indexOf(loja) * 100000 + r * 1000 + cenarios.indexOf(cen))}@s.whatsapp.net`;
@@ -204,7 +245,9 @@ async function main() {
         let erro: string | null = null;
         const antesUsos = g.__abUsos.length;
         const t0 = Date.now();
-        for (const fala of cen.falas) {
+        const falas = [...cen.falas];
+        for (let i = 0; i < falas.length && i < 9; i++) {
+          const fala = falas[i];
           try {
             const antesBrutos = g.__abBrutos.length;
             const res: any = await processChatbotAI(loja.id, fala, historico, remoteJid, undefined, "Cliente Teste");
@@ -212,6 +255,10 @@ async function main() {
             const bruto = g.__abBrutos.length > antesBrutos ? String(g.__abBrutos[g.__abBrutos.length - 1]) : visivel;
             todas.push({ visivel, bruto });
             historico.push({ sender: "user", text: fala }, { sender: "bot", text: visivel });
+            if (cen.objetivo && i === falas.length - 1 && !fechou(todas)) {
+              const prox = await clienteSimulado(cen.objetivo, historico);
+              if (prox && !/^FIM/i.test(prox)) falas.push(prox);
+            }
           } catch (e: any) {
             erro = String(e?.message || e).slice(0, 200);
             break;
