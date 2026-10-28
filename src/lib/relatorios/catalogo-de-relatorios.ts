@@ -42,6 +42,10 @@ export const RELATORIOS: RelatorioDoMenu[] = [
   { slug: "formas-de-pagamento", secao: "Vendas", titulo: "Vendas por forma de pagamento", href: "/store/relatorios/formas-de-pagamento",
     descricao: "Quanto entrou em dinheiro, Pix, crédito, débito, vale e pago online.",
     busca: "pix dinheiro cartão crédito débito voucher pagamento" },
+  // Pedido do Douglas (27/10/2026): cada app por forma de pagamento e o repasse pela comissão cadastrada.
+  { slug: "plataformas", secao: "Vendas", titulo: "Plataformas e repasses", href: "/store/relatorios/plataformas",
+    descricao: "iFood, 99, Keeta, site e app da loja: crédito, débito, Pix e dinheiro de cada um, e quanto cada app tem que repassar.",
+    busca: "ifood 99food keeta site app aplicativo repasse comissão marketplace plataforma detalhado cupom semanal" },
   { slug: "data-hora", secao: "Vendas", titulo: "Vendas por dia e hora", href: "/store/relatorios/data-hora",
     descricao: "O mapa de calor da semana: o melhor horário e o melhor dia de vendas.",
     busca: "horário de pico mapa de calor movimento dia da semana hora" },
