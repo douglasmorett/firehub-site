@@ -32,9 +32,9 @@ export const MAQUININHAS_COMPATIVEIS: MaquininhaCompativel[] = [
   {
     adquirente: "Mercado Pago",
     modelos: "Point Smart",
-    situacao: "disponivel",
+    situacao: "em-breve",
     produtos: ["TOTEM"],
-    ondeBaixar: "Não precisa de app: o totem cobra pela conta Mercado Pago da loja",
+    ondeBaixar: "Sem app: o totem cobra pela conta Mercado Pago da loja (em teste)",
   },
   { adquirente: "PagBank", modelos: "Smart (P2 e A930)", situacao: "em-breve", produtos: ["TOTEM", "GARCOM", "MOTOBOY"], ondeBaixar: "Loja de apps do PagBank" },
   { adquirente: "Stone", modelos: "Stone Smart", situacao: "em-breve", produtos: ["TOTEM", "GARCOM", "MOTOBOY"], ondeBaixar: "Loja de apps da Stone" },
@@ -59,6 +59,6 @@ export const APP_DA_MAQUININHA: Record<ProdutoDaMaquininha, { nome: string; icon
     nome: "FireHub Motoboy",
     icone: "/images/maquininha/app-motoboy.png",
     cor: "#1D4ED8",
-    serve: "O motoboy leva a maquininha: vê as entregas, cobra na porta (até dividido em dinheiro e cartão) e a localização vai junto. O acerto e o caixa já saem conferidos.",
+    serve: "O motoboy leva a maquininha: vê as entregas, cobra na porta (até dividido em dinheiro e cartão) e a localização vai junto. O acerto do motoboy já sai conferido.",
   },
 };
