@@ -31,9 +31,31 @@
 const TEMPO_MS = 10_000;
 const BASE_PADRAO = "https://gateway-partners.anota.ai";
 
-/** Só o teste troca o host (Anota AI falso); em produção é sempre o gateway deles. */
-function base(): string {
-  return String(process.env.ANOTAAI_BASE_URL || BASE_PADRAO).replace(/\/+$/, "");
+/**
+ * Para onde vai a chamada.
+ *
+ * ── O Cloudflare deles barra o nosso servidor ──────────────────────────────
+ *
+ * 28/10/2026, primeira loja a conectar (Dellatorre): "O Anota AI não aceitou
+ * esta chave (sem token do parceiro)". As credenciais estavam certas — o
+ * gateway-partners.anota.ai devolve 403 em HTML para o IP do servidor do
+ * FireHub (DigitalOcean), qualquer que seja o User-Agent, e 401/200 normais
+ * para o PC e para a Railway. Por isso a chamada vai pelo gateway do WhatsApp
+ * (Railway, `/proxy/anotaai`), com a `apikey` de sempre (EVOLUTION_API_KEY).
+ *
+ * `ANOTAAI_BASE_URL` continua mandando quando existe (o teste aponta para um
+ * Anota AI falso).
+ */
+const GATEWAY_DO_ANOTAAI = "https://whatsapp-gateway-teste-production.up.railway.app";
+
+function destino(caminho: string): { url: string; extras: Record<string, string> } {
+  const direto = String(process.env.ANOTAAI_BASE_URL || "").trim();
+  // O gateway das lojas (o mesmo de chatbotConfig.evolutionUrl), não o
+  // EVOLUTION_API_URL antigo: só este tem a passagem /proxy/anotaai.
+  const gateway = String(process.env.ANOTAAI_GATEWAY_URL || GATEWAY_DO_ANOTAAI).trim().replace(/\/+$/, "");
+  const chave = String(process.env.EVOLUTION_API_KEY || "").trim();
+  if (!direto && gateway && chave) return { url: `${gateway}/proxy/anotaai${caminho}`, extras: { apikey: chave } };
+  return { url: `${(direto || BASE_PADRAO).replace(/\/+$/, "")}${caminho}`, extras: {} };
 }
 
 const ROTA_DO_TOKEN = "/integ/integ-oauth-api/oauth-client/token";
@@ -65,9 +87,10 @@ async function pedirToken(): Promise<string | null> {
     client_id: String(process.env.ANOTAAI_CLIENT_ID || "").trim(),
     client_secret: String(process.env.ANOTAAI_CLIENT_SECRET || "").trim(),
   }).toString();
-  const res = await fetch(`${base()}${ROTA_DO_TOKEN}`, {
+  const { url, extras } = destino(ROTA_DO_TOKEN);
+  const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT },
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "User-Agent": USER_AGENT, ...extras },
     body: corpo,
     signal: AbortSignal.timeout(TEMPO_MS),
   });
@@ -114,10 +137,11 @@ async function chamar<T = any>(
     // inclusive "Content-Length: 0" no POST sem corpo, que é o que a doc pede.
     if (metodo === "POST") headers["Content-Type"] = "application/json";
     let res: Response;
+    const { url, extras } = destino(caminho);
     try {
-      res = await fetch(`${base()}${caminho}`, {
+      res = await fetch(url, {
         method: metodo,
-        headers,
+        headers: { ...headers, ...extras },
         body: metodo === "POST" ? corpo : undefined,
         signal: AbortSignal.timeout(TEMPO_MS),
       });
