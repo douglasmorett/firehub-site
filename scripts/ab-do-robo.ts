@@ -188,7 +188,7 @@ async function main() {
           { ok: paragrafos(visivel) <= 3, motivo: "parágrafos demais" },
           // Completude (revisão de 25/10): loja aberta tem que dizer até que horas.
           {
-            ok: !/(aberto|aberta|abertos|funcionando|já estamos)/i.test(visivel) || /fechad/i.test(visivel) || /(até|fecha\w*)\s*(as|às|a)?\s*\d{1,2}/i.test(visivel),
+            ok: !/(aberto|aberta|abertos|funcionando|já estamos)/i.test(visivel) || /fechad/i.test(visivel) || /(até|fecha\w*|às|as)\s*(as|às|a)?\s*\d{1,2}/i.test(visivel), // "das 17h às 22h" também diz a hora de fechar
             motivo: "disse que está aberto sem a hora de fechar",
           },
         ],
