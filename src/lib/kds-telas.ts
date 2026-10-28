@@ -702,6 +702,12 @@ export type KdsConfig = {
    * a tela errada.
    */
   opcaoDoComboNaTelaDela?: boolean;
+  /**
+   * O pedido só entra na FINALIZAÇÃO quando a produção inteira deu o pronto,
+   * e não na primeira baixa (ver `esperaTodaAProducao`). Ligado por loja: a
+   * regra de sempre (22/09) continua valendo para quem não ligou.
+   */
+  finalizacaoSoComTudoPronto?: boolean;
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -748,7 +754,55 @@ export function lerKdsConfig(bruto: unknown): KdsConfig {
     prioridade: tipos(prioridade),
     prioridadeNaFinalizacao: Array.isArray(obj.prioridadeNaFinalizacao) ? tipos(obj.prioridadeNaFinalizacao) : null,
     opcaoDoComboNaTelaDela: obj.opcaoDoComboNaTelaDela === true,
+    finalizacaoSoComTudoPronto: obj.finalizacaoSoComTudoPronto === true,
   };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   A FINALIZAÇÃO QUE ESPERA A PRODUÇÃO INTEIRA
+
+   NIK Esfihas e Pizzas, 28/10/2026, pedido #22 (2 esfihas doces + 1 pizza +
+   Coca): a Produção Esfiha deu pronto às 22:04 e, pela regra de 22/09 (o
+   pedido vai para a finalização na PRIMEIRA baixa), a pizza apareceu ao mesmo
+   tempo na Produção Pizza e na Finalização Pizza, com o relógio da finalização
+   correndo seis minutos antes de ela sair do forno (22:10).
+
+   Com `finalizacaoSoComTudoPronto` ligado, o pedido só aparece na finalização
+   quando não falta nada que uma tela de PRODUÇÃO precisa carimbar — a mesma
+   régua de `faltaNaProducao`, com as escolhas de combo que outra tela faz. O
+   que nenhuma tela de produção carimba (a bebida, o item órfão sem categoria)
+   não segura o pedido: senão ele nunca chegaria. O relógio (`kdsFinishingAt`)
+   e a ordem passam a contar da ÚLTIMA baixa da produção (api/kds,
+   finish_production). Com uma tela de produção só (ou nenhuma) a primeira
+   baixa já é a última: fica como sempre foi.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Esta loja segura a finalização até a produção inteira dar o pronto? */
+export function esperaTodaAProducao(telas: TelaDoKds[] | null | undefined, config: KdsConfig | null | undefined): boolean {
+  if (!config?.finalizacaoSoComTudoPronto) return false;
+  const deProducao = new Set(
+    (telas || []).filter((t) => texto(t?.stage) === "production").map(chaveDaTela).filter(Boolean),
+  );
+  return deProducao.size >= 2;
+}
+
+/**
+ * A produção já entregou tudo deste pedido para a finalização?
+ * Sempre `true` na loja que não liga `finalizacaoSoComTudoPronto`.
+ */
+export function producaoLiberouAFinalizacao(
+  telas: TelaDoKds[] | null | undefined,
+  pedido: {
+    items?: Parameters<typeof faltaNaProducao>[1];
+    kdsBaixas?: unknown;
+    dailyOrderNumber?: unknown;
+    deliveryType?: string | null;
+  },
+  config: KdsConfig | null | undefined
+): boolean {
+  if (!esperaTodaAProducao(telas, config)) return true;
+  const doPedido = { numero: pedido?.dailyOrderNumber, deliveryType: pedido?.deliveryType };
+  return faltaNaProducao(telas, pedido?.items, doPedido, config, pedido?.kdsBaixas).length === 0;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -779,7 +833,11 @@ export function finalizacaoSeparada(config: KdsConfig | null | undefined): boole
   return Array.isArray(config?.prioridadeNaFinalizacao);
 }
 
-/** Quando o pedido chegou na finalização: a primeira baixa de item da produção. */
+/**
+ * Quando o pedido chegou na finalização: a primeira baixa de item da produção.
+ * Na loja que espera a produção inteira (`esperaTodaAProducao`), quem conta é
+ * o `kdsFinishingAt`, gravado na última — ver `ordenarPelaPrioridade`.
+ */
 export function chegadaNaFinalizacao(pedido: { items?: { prontoEm?: Date | string | null }[] | null; createdAt?: Date | string | null }): number {
   let menor = Infinity;
   for (const i of pedido?.items || []) {
@@ -799,13 +857,20 @@ export function chegadaNaFinalizacao(pedido: { items?: { prontoEm?: Date | strin
  * entrou — que é a ordem que a consulta e `juntarPedidosDaProducao` já dão.
  */
 export function ordenarPelaPrioridade<
-  T extends { isRoutePriority?: boolean | null; prioridadeNaCozinha?: boolean | null; deliveryType?: string | null; source?: string | null; createdAt?: Date | string | null; items?: { prontoEm?: Date | string | null }[] | null },
->(pedidos: T[], config: KdsConfig | null | undefined, etapa?: string | null): T[] {
+  T extends { isRoutePriority?: boolean | null; prioridadeNaCozinha?: boolean | null; deliveryType?: string | null; source?: string | null; createdAt?: Date | string | null; kdsFinishingAt?: Date | string | null; items?: { prontoEm?: Date | string | null }[] | null },
+>(pedidos: T[], config: KdsConfig | null | undefined, etapa?: string | null, telas?: TelaDoKds[] | null): T[] {
   const marcados = new Set(prioridadeDaEtapa(config, etapa));
+  // A finalização que espera a produção inteira: o pedido chega nela na
+  // ÚLTIMA baixa da produção, que é o `kdsFinishingAt` (o relógio da tela).
+  const naUltimaBaixa = etapa === "finishing" && esperaTodaAProducao(telas, config);
   // Finalização separada: a ordem de chegada NELA, mesmo sem tipo marcado.
-  const pelaChegadaNaFinalizacao = etapa === "finishing" && finalizacaoSeparada(config);
+  const pelaChegadaNaFinalizacao = (etapa === "finishing" && finalizacaoSeparada(config)) || naUltimaBaixa;
   if (marcados.size === 0 && !pelaChegadaNaFinalizacao) return pedidos;
   const quando = (p: T) => {
+    if (naUltimaBaixa) {
+      const ms = p?.kdsFinishingAt ? new Date(p.kdsFinishingAt as any).getTime() : NaN;
+      if (Number.isFinite(ms)) return ms;
+    }
     if (pelaChegadaNaFinalizacao) return chegadaNaFinalizacao(p);
     const ms = new Date(p?.createdAt as any).getTime();
     return Number.isFinite(ms) ? ms : 0;

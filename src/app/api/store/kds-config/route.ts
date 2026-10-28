@@ -61,6 +61,9 @@ export async function PUT(req: NextRequest) {
     prioridadeNaFinalizacao: "prioridadeNaFinalizacao" in bruto ? enviado.prioridadeNaFinalizacao : gravado.prioridadeNaFinalizacao,
     // As escolhas de combo na tela que as faz (lib/kds-telas.ts, linhasDeOpcaoDaTela).
     opcaoDoComboNaTelaDela: "opcaoDoComboNaTelaDela" in bruto ? enviado.opcaoDoComboNaTelaDela : gravado.opcaoDoComboNaTelaDela,
+    // A finalização que espera a produção inteira (lib/kds-telas.ts,
+    // `esperaTodaAProducao`). Sem esta linha, salvar a prioridade na TV apagava a regra.
+    finalizacaoSoComTudoPronto: "finalizacaoSoComTudoPronto" in bruto ? enviado.finalizacaoSoComTudoPronto : gravado.finalizacaoSoComTudoPronto,
   };
 
   await prisma.user.update({

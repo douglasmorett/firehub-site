@@ -6,6 +6,7 @@ import { authOptions } from "@/lib/auth";
 import {
   chaveDaTela,
   contaDasTelas,
+  esperaTodaAProducao,
   faltaFinalizacao,
   faltaNaProducao,
   itemPronto,
@@ -16,6 +17,7 @@ import {
   linhasDeOpcaoDaTela,
   ordenarPelaPrioridade,
   prioridadeDaEtapa,
+  producaoLiberouAFinalizacao,
   telaTemPendencia,
   lerTelasProntas,
   registrarBaixa,
@@ -403,7 +405,18 @@ async function kdsDeVerdade(req: NextRequest) {
     // 22/09/2026) — é isso que deixa a expedição saber o que já veio e o que
     // ainda vem. E some só da tela que deu a baixa DELA: duas telas de
     // finalização são estações diferentes e cada uma fecha a sua.
+    //
+    // A loja que liga `finalizacaoSoComTudoPronto` (NIK, 28/10/2026) troca a
+    // primeira baixa pela ÚLTIMA: o pedido só aparece na finalização quando
+    // nenhuma tela de produção tem mais o que carimbar nele (lib/kds-telas.ts,
+    // `producaoLiberouAFinalizacao`). Vale também na tela aberta sem `tela`.
     let visiveis: any[] = ordersWithDailyNum as any[];
+    const telasDaLoja = (Array.isArray(configDaLoja?.kdsScreens) ? configDaLoja!.kdsScreens : []) as TelaDoKds[];
+    const regrasDaLoja = configDaLoja ? lerKdsConfig(configDaLoja.kdsConfig) : null;
+
+    if (stage === "finishing" && esperaTodaAProducao(telasDaLoja, regrasDaLoja)) {
+      visiveis = visiveis.filter((o) => producaoLiberouAFinalizacao(telasDaLoja, o, regrasDaLoja));
+    }
 
     if (daTela) {
       if (stage === "finishing") {
@@ -423,9 +436,10 @@ async function kdsDeVerdade(req: NextRequest) {
     // pedido como prioridade (a mesa da Pizzaria 17), eles passam na frente do
     // resto. A regra mora na conta do DONO, onde o painel grava — por isso o
     // `ownerId`. Falhou a leitura: fica a ordem de sempre, nunca a tela vazia.
-    const regrasDaLoja = configDaLoja ? lerKdsConfig(configDaLoja.kdsConfig) : null;
     // Cada etapa com a sua lista: a finalização pode ter a dela (Pizzaria 17).
-    visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja, stage);
+    // As telas entram para a finalização que espera a produção inteira sair na
+    // ordem em que chegou nela (a última baixa).
+    visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja, stage, telasDaLoja);
 
     return NextResponse.json(visiveis, {
       headers: {
@@ -632,16 +646,29 @@ export async function PUT(req: NextRequest) {
     // a informação de que ela precisa para se organizar.
     const jaTemAlgoPronto = temAlgoPronto(depois);
     const aindaFalta = (depois as any[]).some((i) => !itemPronto(i));
+    // A baixa DESTA tela, com a hora e o que ela mostrava: é o que o
+    // relatório de tempos mede por tela (lib/kds-telas.ts, BaixaDoKds).
+    const baixasDepois = registrarBaixa((order as any).kdsBaixas, { tela: chaveDaTelaQueDeuBaixa, nome: minhaTela?.name, estagio: "production", em: agora, itens: [...ids, ...idsDeOpcao] });
+
+    // O relógio da finalização. Na loja que espera a produção inteira
+    // (lib/kds-telas.ts, `esperaTodaAProducao`), ele recomeça na baixa que
+    // FECHA a produção — é quando o pedido aparece na finalização. Nas outras,
+    // a primeira baixa, como sempre.
+    let entradaNaFinalizacao = order.kdsFinishingAt || agora;
+    if (esperaTodaAProducao(telas, regras)) {
+      const doPedido = { dailyOrderNumber: (order as any).dailyOrderNumber, deliveryType: order.deliveryType };
+      const liberavaAntes = producaoLiberouAFinalizacao(telas, { ...doPedido, items: itens, kdsBaixas: (order as any).kdsBaixas }, regras);
+      const liberaAgora = producaoLiberouAFinalizacao(telas, { ...doPedido, items: depois, kdsBaixas: baixasDepois }, regras);
+      if (liberaAgora && !liberavaAntes) entradaNaFinalizacao = agora;
+    }
 
     await prisma.customerOrder.update({
       where: { id: orderId },
       data: {
         ...(jaTemAlgoPronto && order.kdsStage !== "FINISHED"
-          ? { kdsStage: "FINISHING", kdsFinishingAt: order.kdsFinishingAt || agora }
+          ? { kdsStage: "FINISHING", kdsFinishingAt: entradaNaFinalizacao }
           : {}),
-        // A baixa DESTA tela, com a hora e o que ela mostrava: é o que o
-        // relatório de tempos mede por tela (lib/kds-telas.ts, BaixaDoKds).
-        kdsBaixas: registrarBaixa((order as any).kdsBaixas, { tela: chaveDaTelaQueDeuBaixa, nome: minhaTela?.name, estagio: "production", em: agora, itens: [...ids, ...idsDeOpcao] }) as any,
+        kdsBaixas: baixasDepois as any,
         kdsStationId: null,
         status: order.status === "ACEITO" ? "PREPARANDO" : undefined,
       },
