@@ -7,7 +7,6 @@ const crypto = require("crypto");
 const {
   default: makeWASocket,
   DisconnectReason,
-  useMultiFileAuthState,
   fetchLatestBaileysVersion,
   downloadMediaMessage,
   // Opcionais: só para conferir os aparelhos da conta ao conectar. Se a versão
@@ -16,6 +15,8 @@ const {
   USyncUser,
 } = require("@whiskeysockets/baileys");
 const saude = require("./saude-do-vinculo");
+// Sessão num arquivo SQLite em vez de um JSON por chave (inodes). Ver sessao-compacta.js.
+const sessaoCompacta = require("./sessao-compacta");
 const { baixarMidia } = require("./midia-do-envio");
 // O mesmo upsert duas vezes não vira duas respostas (mensagem-repetida.js).
 const jaVista = require("./mensagem-repetida").criarFiltroDeRepetidas();
@@ -254,11 +255,9 @@ function apagarSessaoDoContato(instanceName, jid) {
 
   let apagados = 0;
   try {
-    for (const arquivo of fs.readdirSync(pastaDaSessao(instanceName))) {
-      if (!arquivoDeSessaoDe(arquivo, numero)) continue;
-      fs.rmSync(path.join(pastaDaSessao(instanceName), arquivo), { force: true });
-      apagados++;
-    }
+    const doContato = sessaoCompacta.listarNomes(pastaDaSessao(instanceName)).filter((arquivo) => arquivoDeSessaoDe(arquivo, numero));
+    sessaoCompacta.apagarNomes(pastaDaSessao(instanceName), doContato);
+    apagados = doContato.length;
   } catch (err) {
     console.warn(`[WhatsApp Gateway] Aviso ao apagar sessão de ${jid}:`, err.message);
   }
@@ -790,7 +789,7 @@ async function criarSocket(instanceName) {
   const authFolder = path.join(__dirname, "data", "sessions", instanceName);
   fs.mkdirSync(authFolder, { recursive: true });
 
-  const { state, saveCreds } = await useMultiFileAuthState(authFolder);
+  const { state, saveCreds } = await sessaoCompacta.abrirEstado(authFolder, instanceName);
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: [2, 3000, 1017531287] }));
 
   const sock = makeWASocket({
@@ -1547,7 +1546,8 @@ app.post("/instance/renovar-chaves/:instanceName", async (req, res) => {
   const proprias = identidadesDaPropriaConta(instanceName);
   let sessoesDescartadas = 0;
   try {
-    for (const arquivo of fs.readdirSync(pastaDaSessao(instanceName))) {
+    const descartar = [];
+    for (const arquivo of sessaoCompacta.listarNomes(pastaDaSessao(instanceName))) {
       if (!arquivo.startsWith("session-")) continue;
       // NUNCA a própria conta: toda mensagem 1:1 é cifrada também para os
       // aparelhos da loja, e apagar essa sessão quebra de uma vez a cópia de
@@ -1556,9 +1556,10 @@ app.post("/instance/renovar-chaves/:instanceName", async (req, res) => {
         console.warn(`[WhatsApp Gateway] 🛡️ Preservando ${arquivo} (própria conta de ${instanceName})`);
         continue;
       }
-      fs.rmSync(path.join(pastaDaSessao(instanceName), arquivo), { force: true });
-      sessoesDescartadas++;
+      descartar.push(arquivo);
     }
+    sessaoCompacta.apagarNomes(pastaDaSessao(instanceName), descartar);
+    sessoesDescartadas = descartar.length;
   } catch (err) {
     console.warn(`[WhatsApp Gateway] Aviso ao descartar sessões de ${instanceName}:`, err.message);
   }
@@ -1662,7 +1663,8 @@ app.get("/instance/diagnostico-sessao/:instanceName", (req, res) => {
 
   let arquivos = [];
   try {
-    arquivos = fs.readdirSync(pasta);
+    if (!fs.existsSync(pasta)) throw new Error("sem pasta");
+    arquivos = sessaoCompacta.listarNomes(pasta);
   } catch {
     return res.status(404).json({ error: "Instância sem pasta de sessão", instanceName });
   }
@@ -1673,7 +1675,7 @@ app.get("/instance/diagnostico-sessao/:instanceName", (req, res) => {
   const corrompidos = [];
   for (const arquivo of arquivos) {
     try {
-      JSON.parse(fs.readFileSync(path.join(pasta, arquivo), "utf8"));
+      JSON.parse(sessaoCompacta.lerJson(pasta, arquivo));
     } catch (err) {
       corrompidos.push({ arquivo, erro: err.message });
     }
@@ -1783,15 +1785,17 @@ app.post("/instance/renegociar-todas-as-conversas/:instanceName", (req, res) => 
     const proprias = identidadesDaPropriaConta(instancia);
     let apagados = 0;
     try {
-      for (const arquivo of fs.readdirSync(path.join(raiz, instancia))) {
+      const descartar = [];
+      for (const arquivo of sessaoCompacta.listarNomes(path.join(raiz, instancia))) {
         // SÓ "session-". "pre-key-", "sender-key-", "app-state-" e "creds.json"
         // são nossos e apagá-los derrubaria a loja.
         if (!arquivo.startsWith("session-")) continue;
         // E nunca a própria conta — ver `apagarSessaoDoContato`.
         if (proprias.some((n) => arquivoDeSessaoDe(arquivo, n))) continue;
-        fs.rmSync(path.join(raiz, instancia, arquivo), { force: true });
-        apagados++;
+        descartar.push(arquivo);
       }
+      sessaoCompacta.apagarNomes(path.join(raiz, instancia), descartar);
+      apagados = descartar.length;
     } catch (err) {
       console.warn(`[WhatsApp Gateway] Aviso ao renegociar ${instancia}:`, err.message);
     }
