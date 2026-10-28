@@ -29,13 +29,6 @@ export const MAQUININHAS_COMPATIVEIS: MaquininhaCompativel[] = [
     produtos: ["TOTEM", "GARCOM", "MOTOBOY"],
     ondeBaixar: "Cielo Store, na própria maquininha",
   },
-  {
-    adquirente: "Mercado Pago",
-    modelos: "Point Smart",
-    situacao: "em-breve",
-    produtos: ["TOTEM"],
-    ondeBaixar: "Sem app: o totem cobra pela conta Mercado Pago da loja (em teste)",
-  },
   { adquirente: "PagBank", modelos: "Smart (P2 e A930)", situacao: "em-breve", produtos: ["TOTEM", "GARCOM", "MOTOBOY"], ondeBaixar: "Loja de apps do PagBank" },
   { adquirente: "Stone", modelos: "Stone Smart", situacao: "em-breve", produtos: ["TOTEM", "GARCOM", "MOTOBOY"], ondeBaixar: "Loja de apps da Stone" },
   { adquirente: "Getnet", modelos: "Get Smart", situacao: "em-breve", produtos: ["TOTEM", "GARCOM", "MOTOBOY"], ondeBaixar: "Get Store" },
