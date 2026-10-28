@@ -1352,6 +1352,44 @@ app.use((req, res, next) => {
   next();
 });
 
+// ── O Anota AI pelo gateway ────────────────────────────────────────────────
+//
+// O gateway-partners.anota.ai (Cloudflare) devolve 403 em HTML para o IP do
+// servidor do FireHub (DigitalOcean) e aceita o da Railway (28/10/2026, primeira
+// loja a conectar: Dellatorre). O FireHub manda as chamadas do Anota AI para cá
+// com a mesma `apikey` de sempre, e daqui elas seguem iguais. Só repassa os
+// cabeçalhos que a API deles usa — a `apikey` do gateway não sai daqui.
+const ANOTAAI_HOST = "https://gateway-partners.anota.ai";
+app.all(/^\/proxy\/anotaai(\/.*)$/, async (req, res) => {
+  const caminho = req.originalUrl.replace(/^\/proxy\/anotaai/, "");
+  if (!/^\/(integ|api-old)\//.test(caminho)) return res.status(400).json({ error: "caminho fora da API do Anota AI" });
+  let corpo;
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    // express.json() já leu o JSON; o token do parceiro vem em form-urlencoded,
+    // que ninguém leu — esse sai do stream como veio.
+    corpo = req.is("application/json")
+      ? JSON.stringify(req.body ?? {})
+      : await new Promise((ok, erro) => {
+          const partes = [];
+          req.on("data", (p) => partes.push(p));
+          req.on("end", () => ok(Buffer.concat(partes)));
+          req.on("error", erro);
+        });
+  }
+  const headers = {};
+  for (const h of ["authorization", "x-page-id", "content-type", "accept", "user-agent"]) {
+    if (req.headers[h]) headers[h] = req.headers[h];
+  }
+  try {
+    const r = await fetch(ANOTAAI_HOST + caminho, { method: req.method, headers, body: corpo, signal: AbortSignal.timeout(20000) });
+    const tipo = r.headers.get("content-type");
+    if (tipo) res.set("content-type", tipo);
+    res.status(r.status).send(Buffer.from(await r.arrayBuffer()));
+  } catch (e) {
+    res.status(502).json({ error: "Anota AI indisponível pelo gateway", detalhe: String(e?.message || e).slice(0, 200) });
+  }
+});
+
 // 1. Estado da Conexão
 app.get("/instance/connectionState/:instanceName", async (req, res) => {
   const { instanceName } = req.params;
