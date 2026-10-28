@@ -33,6 +33,7 @@
  * entram AQUI, para chegar iguais à tela Motoboys, ao app do entregador e ao
  * relatório Acerto de entregadores (lib/ajustes-do-acerto-regras.ts).
  */
+import { conferidoNaMaquininha } from "@/lib/cobranca-da-entrega-na-maquininha";
 import { canalDoPedido, chaveDoCanal } from "@/lib/canal-do-pedido";
 import { foiEntregueDepoisDeCancelado, podeMarcarEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-cancelado";
 import { lerRegraDeRepasse } from "@/lib/repasse-do-entregador";
@@ -128,6 +129,9 @@ export async function montarRelatorioDosEntregadores(opts: {
       // O rastro das edições: a linha marca "editado" e o "Ver pedido" mostra.
       editHistory: true,
       changeAmount: true,
+      // A prova do app FireHub Motoboy: cada passada de cartão na maquininha
+      // (lib/cobranca-da-entrega-na-maquininha.ts). A linha marca "MAQUININHA".
+      posDadosTransacao: true,
       items: true,
       notes: true,
       dailyOrderNumber: true,
@@ -401,6 +405,8 @@ export async function montarRelatorioDosEntregadores(opts: {
           openDeliveryChannel: o.openDeliveryChannel,
           tableSessionId: o.tableSessionId,
           deliveryType: "DELIVERY",
+          /** Pago na porta pela maquininha do FireHub Motoboy: valor e forma conferidos. */
+          conferidoNaMaquininha: conferidoNaMaquininha((o as any).posDadosTransacao),
           /** Quantas vezes o pedido foi mexido depois de lançado (editHistory). */
           edicoes: Array.isArray(o.editHistory) ? o.editHistory.length : 0,
           /** O "Ver pedido" (janela na própria tela) lista o que foi mexido. */

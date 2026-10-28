@@ -1025,6 +1025,12 @@ export default function MotoboyReport({ motoboys, storeTimezone, operador, deliv
                               {numDisplay ? <strong style={{ color: "#0F172A", marginRight: 4 }}>{numDisplay}</strong> : null}
                               {o.customerName} {o.customerAddress ? `— ${o.customerAddress.substring(0, 20)}...` : ""}
                               {/* Mexido depois de lançado: o histórico está no Ver pedido. */}
+                              {/* Cobrado na porta pela maquininha (app FireHub Motoboy): forma e valor conferidos. */}
+                              {o.conferidoNaMaquininha && (
+                                <span title="Recebido na maquininha pelo app FireHub Motoboy: forma e valor conferidos pela adquirente" style={{ marginLeft: 6, background: "#DBEAFE", color: "#1D4ED8", border: "1px solid #BFDBFE", padding: "1px 6px", borderRadius: 4, fontWeight: 800, fontSize: "0.66rem", whiteSpace: "nowrap" }}>
+                                  ✓ MAQUININHA
+                                </span>
+                              )}
                               {o.edicoes > 0 && (
                                 <span title="Este pedido foi alterado depois de lançado — o histórico está em Ver pedido" style={{ marginLeft: 6, background: "#FEF3C7", color: "#92400E", border: "1px solid #FDE68A", padding: "1px 6px", borderRadius: 4, fontWeight: 800, fontSize: "0.66rem", whiteSpace: "nowrap" }}>
                                   ✏️ EDITADO

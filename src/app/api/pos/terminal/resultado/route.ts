@@ -1,3 +1,4 @@
+import { idDaCobrancaDaEntrega, registrarResultadoDaEntrega } from "@/lib/cobranca-da-entrega-na-maquininha";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import {
@@ -46,6 +47,25 @@ export async function POST(req: NextRequest) {
         { error: "Informe pedidoId e aprovado (true/false)." },
         { status: 400 },
       );
+    }
+
+    // Cobrança da entrega ("entrega:<id>", app do motoboy): fica conferida na
+    // cobrança; o pedido só recebe as formas quando o motoboy fecha o
+    // recebimento (lib/cobranca-da-entrega-na-maquininha.ts).
+    const cobrancaDaEntrega = idDaCobrancaDaEntrega(pedidoId);
+    if (cobrancaDaEntrega) {
+      const r = await registrarResultadoDaEntrega({
+        terminal,
+        cobrancaId: cobrancaDaEntrega,
+        aprovado,
+        dados: {
+          terminal: terminal.label, terminalId: terminal.id, provedor: terminal.provider,
+          bandeira: bandeira ?? null, nsu: nsu ?? null, autorizacao: autorizacao ?? null,
+          parcelas: parcelas ?? null, tipo: tipo ?? null, referencia: referencia ?? null,
+          motivo: motivoRecusa ?? null, idsDaAdquirente,
+        },
+      });
+      return NextResponse.json(r.corpo, { status: r.status });
     }
 
     // Cobrança de mesa ("mesa:<id>") vira baixa na conta da mesa, não pedido pago.

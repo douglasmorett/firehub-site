@@ -6,6 +6,7 @@ import {
   MINUTOS_ATE_DESTRAVAR,
   provedorDaAdquirente,
 } from "@/lib/terminal-app";
+import { reservarCobrancaDaEntrega, PREFIXO_DA_ENTREGA } from "@/lib/cobranca-da-entrega-na-maquininha";
 import { reservarCobrancaDaMesa, PREFIXO_DA_MESA } from "@/lib/cobranca-da-mesa-na-maquininha";
 
 export const dynamic = "force-dynamic";
@@ -180,8 +181,30 @@ async function responderComMesaOuNada(
   extras: Record<string, unknown>,
   produto: string,
 ) {
-  // Conta de mesa é do totem e do garçom; o app do motoboy não leva.
-  const mesa = produto === "MOTOBOY" ? null : await reservarCobrancaDaMesa(terminal);
+  // O app do motoboy leva a cobrança da entrega que ele mesmo pediu (a conta
+  // de mesa é do totem e do garçom).
+  if (produto === "MOTOBOY") {
+    const entrega = await reservarCobrancaDaEntrega(terminal);
+    if (!entrega) return NextResponse.json({ cobranca: null, terminal: terminal.label, ...extras });
+    const pedido = await prisma.customerOrder.findUnique({
+      where: { id: entrega.orderId },
+      select: { dailyOrderNumber: true, customerName: true },
+    });
+    return NextResponse.json({
+      cobranca: {
+        pedidoId: `${PREFIXO_DA_ENTREGA}${entrega.id}`,
+        valorEmCentavos: entrega.valorCentavos,
+        descricao: pedido?.dailyOrderNumber != null ? `Entrega #${pedido.dailyOrderNumber}` : "Entrega",
+        cliente: pedido?.customerName || null,
+        tentativa: entrega.tentativas,
+        referencia: `${PREFIXO_DA_ENTREGA}${entrega.id}`,
+        tipo: "ENTREGA",
+      },
+      terminal: terminal.label,
+      ...extras,
+    });
+  }
+  const mesa = await reservarCobrancaDaMesa(terminal);
   if (!mesa) return NextResponse.json({ cobranca: null, terminal: terminal.label, ...extras });
   const numero = mesa.dados?.mesa;
   return NextResponse.json({
