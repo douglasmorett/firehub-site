@@ -1688,10 +1688,13 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), modelTimeout);
 
-          // Laboratório de A/B: com FIREHUB_AB_PROVEDOR=claude-cli e um modelo "claude-*", quem responde é o Claude Code (src/lib/ab-provedor-claude.ts). Em produção a variável não existe.
+          // Laboratório de A/B: com FIREHUB_AB_PROVEDOR=claude-cli e um modelo "claude-*", quem responde é o Claude Code (src/lib/ab-provedor-claude.ts);
+          // com FIREHUB_AB_PROVEDOR=openrouter e um modelo "fornecedor/modelo", o OpenRouter (src/lib/ab-provedor-openrouter.ts). Em produção a variável não existe.
           const geraResposta: (p: any) => Promise<any> = process.env.FIREHUB_AB_PROVEDOR === "claude-cli" && mName.startsWith("claude-")
             ? (await import("./ab-provedor-claude")).abClaudeCli
-            : (p: any) => ai.models.generateContent(p);
+            : process.env.FIREHUB_AB_PROVEDOR === "openrouter" && mName.includes("/")
+              ? (await import("./ab-provedor-openrouter")).abOpenRouter
+              : (p: any) => ai.models.generateContent(p);
           const response = await geraResposta({
             model: mName,
             contents: conteudoParaOModelo(ehOBarato),

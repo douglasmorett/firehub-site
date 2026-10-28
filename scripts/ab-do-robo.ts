@@ -121,6 +121,11 @@ async function main() {
         checa: ({ visivel }) => [
           { ok: /\d{1,2}\s*(h|:)/i.test(visivel) || /fechad|abre|abert/i.test(visivel), motivo: "não falou horário/estado" },
           { ok: paragrafos(visivel) <= 3, motivo: "parágrafos demais" },
+          // Completude (revisão de 25/10): loja aberta tem que dizer até que horas.
+          {
+            ok: !/(aberto|aberta|abertos|funcionando|já estamos)/i.test(visivel) || /fechad/i.test(visivel) || /(até|fecha\w*)\s*(as|às|a)?\s*\d{1,2}/i.test(visivel),
+            motivo: "disse que está aberto sem a hora de fechar",
+          },
         ],
       },
       {
@@ -220,6 +225,7 @@ async function main() {
             saida: u.usage.candidatesTokenCount || 0,
             pensamento: u.usage.thoughtsTokenCount || 0,
             cache: u.usage.cachedContentTokenCount || 0,
+            custoUsd: u.usage.custoUsd || 0,
           })),
         });
         process.stdout.write(resultados[resultados.length - 1].ok ? "." : "F");
@@ -231,6 +237,13 @@ async function main() {
   fs.writeFileSync(out, JSON.stringify(resultados, null, 1));
   const valem = resultados.filter((x) => !x.informativo);
   console.log(`${variante}: ${valem.filter((x) => x.ok).length}/${valem.length} cenários ok → ${out}`);
+  // Quem respondeu DE VERDADE: em 25/10 o "teste do Haiku" saiu inteiro do 2.5 Flash de reserva e ninguém viu.
+  const usos = resultados.flatMap((x) => x.usos);
+  const testado = process.env.FIREHUB_AB_MODELO_DE_PEDIDO || "gemini-3.6-flash";
+  const doTestado = usos.filter((u: any) => u.modelo === testado).length;
+  console.log(`respondido por ${testado}: ${doTestado}/${usos.length} chamadas${doTestado < usos.length ? " — ATENÇÃO: o resto caiu na reserva" : ""}`);
+  const custo = usos.reduce((s: number, u: any) => s + (u.custoUsd || 0), 0);
+  if (custo) console.log(`custo real (OpenRouter): US$ ${custo.toFixed(4)} no total, US$ ${(custo / Math.max(doTestado, 1)).toFixed(5)} por resposta`);
   process.exit(0);
 }
 main().catch((e) => {
