@@ -65,7 +65,7 @@ async function main() {
 
   const lojas = await prisma.user.findMany({
     where: SLUGS.length ? { slug: { in: SLUGS } } : { storeName: { in: ["Pizzaria Lapastine", "PIZZARIA 17", "Divinos burger"] } },
-    select: { id: true, storeName: true, slug: true },
+    select: { id: true, storeName: true, slug: true, storeDeliveryOnly: true },
   });
   if (!lojas.length) {
     console.error("nenhuma loja achada");
@@ -87,8 +87,12 @@ async function main() {
       console.error(`${loja.storeName}: poucos produtos`);
       continue;
     }
-    const p1 = comuns[0];
-    const p2 = comuns[Math.min(5, comuns.length - 1)];
+    // Os dois mais caros (até R$ 150): o pedido passa do mínimo da loja e dá para fechar (28/10: a porção de R$ 26,99 parava no mínimo de R$ 50).
+    const porPreco = [...comuns].filter((p) => p.price <= 150).sort((a, b) => b.price - a.price);
+    const p1 = porPreco[0] || comuns[0];
+    const p2 = porPreco[1] || comuns[Math.min(5, comuns.length - 1)];
+    // Loja só de delivery recusa retirada com razão: ali o fechamento vira só observação.
+    const soDelivery = Boolean((loja as any).storeDeliveryOnly);
     const precos = [...new Set(produtos.map((p) => p.price).filter((x) => x > 0))].slice(0, 200);
     // Um valor "cabe" se é taxa/adicional (até R$ 12) ou está a até R$ 12 de uma soma de até 3 preços do cardápio.
     const valido = (v: number) => {
@@ -103,6 +107,8 @@ async function main() {
       return false;
     };
     const temMarca = (todas: Resp[]) => /\[\[\s*PEDIDO_IA/i.test(todas.map((t) => t.bruto).join("\n"));
+    // Fechou de verdade: a marca do pedido com "finalized": true em alguma resposta.
+    const fechou = (todas: Resp[]) => todas.some((t) => /\[\[\s*PEDIDO_IA[\s\S]*"finalized"\s*:\s*true/i.test(t.bruto));
 
     const cenarios: Cenario[] = [
       {
@@ -163,17 +169,21 @@ async function main() {
       },
       {
         nome: "fecha-pedido-retirada",
+        informativo: soDelivery,
         falas: [`quero 1 ${p1.name}`, "vou retirar aí", "no dinheiro", "pode confirmar"],
         checa: ({ todas, visivel }) => [
           { ok: temMarca(todas), motivo: "esqueceu a marca [[PEDIDO_IA]] no pedido" },
+          { ok: fechou(todas), motivo: "não fechou o pedido (finalized)" },
           { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
         ],
       },
       {
         nome: "fecha-pedido-2-itens",
+        informativo: soDelivery,
         falas: [`quero 1 ${p1.name} e 1 ${p2.name}`, "retirada", "pix", "confirma"],
         checa: ({ todas, visivel }) => [
           { ok: temMarca(todas), motivo: "esqueceu a marca [[PEDIDO_IA]] no pedido" },
+          { ok: fechou(todas), motivo: "não fechou o pedido (finalized)" },
           { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
         ],
       },

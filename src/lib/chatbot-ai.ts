@@ -757,7 +757,8 @@ export async function processChatbotAI(
   const estadoBrutoDaLoja = estadoDaLoja({
     storeHours: user.storeHours,
     storePause: (user as any).storePause,
-    storeOpen: (user as any).storeOpen,
+    // Laboratório de A/B: FIREHUB_AB_LOJA_ABERTA=1 testa o fechamento de pedido com o "Site aberto" ligado (em produção a variável não existe).
+    storeOpen: process.env.FIREHUB_AB_LOJA_ABERTA === "1" ? true : (user as any).storeOpen,
     timezone: user.storeTimezone,
     // "Site aberto" desligado pela proteção de LOJA SEM CONEXÃO: o cliente
     // ouve "instabilidade, volte em alguns minutos", não "fechado". Só se
