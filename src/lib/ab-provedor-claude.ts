@@ -38,9 +38,9 @@ export async function abClaudeCli(params: { model: string; contents: Conteudo[];
   const entrada = `${transcricao}\n\nCLIENTE: ${textoDe(ultimo)}\n\nResponda agora como o atendente, só com a mensagem que o cliente vai ler (e as marcas [[...]] se as regras mandarem).`;
 
   const r = spawnSync(
-    "claude",
+    process.platform === "win32" ? "claude.exe" : "claude",
     ["-p", "--model", params.model, "--system-prompt-file", arq, "--tools", "", "--output-format", "json", "--disable-slash-commands"],
-    { input: entrada, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 180_000, shell: process.platform === "win32" },
+    { input: entrada, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 180_000 },
   );
   if (r.error || !r.stdout) throw new Error(`claude-cli falhou: ${r.error?.message || r.stderr?.slice(0, 200)}`);
   const j = JSON.parse(r.stdout);
