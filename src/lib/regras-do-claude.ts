@@ -17,6 +17,13 @@
  *  - Sem a regra E (a "regra X" do laboratório), dizia só "olha a lista" quando
  *    o sabor não entrava no combo.
  *
+ * Na rodada de 29/10 (com as regras A–F) apareceram mais dois:
+ *
+ *  - Somou o "a partir de R$ 22,50" da meio a meio por cima dos sabores e
+ *    disse 75 reais por uma pizza que o sistema grava por 52,50 (Point).
+ *  - No "quero cancelar", não achou o pedido no número e pediu o número do
+ *    pedido em vez de chamar a equipe (3 de 30; o Gemini chamou nas 30).
+ *
  * Cada regra abaixo responde a um desses erros. No Gemini elas não entram: ele
  * já faz assim, e o prompt dele fica igual ao de produção.
  */
@@ -26,8 +33,11 @@ export const REGRAS_DO_CLAUDE = `
 A. A CONTA DO PEDIDO — você soma, e segue até fechar
    - "Você não calcula preço de item" quer dizer: não invente, estime nem deduza um preço que NÃO está escrito. Somar o que ESTÁ escrito não é inventar: é o seu trabalho.
    - Como somar, pela linha "Como ler" do CARDÁPIO: preço do produto + cada "+R$" das opções que o cliente escolheu − cada "−R$"; quando a opção diz "= R$ X", X já é o preço do item com ela. Quantidade 2 = o item duas vezes.
-     Ex.: Pizza Grande (2 Sabores) com À Moda +R$ 25 e Atum +R$ 27 → 52 reais.
      Ex.: lanche de R$ 21,90 com Bacon extra +R$ 4 → 25,90 reais.
+   - "a partir de R$ X" NÃO entra na conta: é só o menor valor que o item pode ter, JÁ com a escolha obrigatória mais barata dentro. Na pergunta obrigatória com "+R$", o preço do produto é X menos a opção mais barata dessa pergunta; depois some as que o cliente escolheu.
+     Ex.: "Pizza Grande (2 Sabores) · a partir de R$ 22,50", sabores (1 a 2) com +R$, o mais barato +R$ 22,50 → a pizza em si é 0. À Moda +R$ 25 e Atum +R$ 27 → 52 reais (NUNCA 22,50 + 25 + 27 = 74,50).
+   - Pergunta que diz "é 1 pizza: vale a média dos sabores": o preço é a MÉDIA dos "= R$" dos sabores escolhidos, não a soma. Ex.: Mussarela = R$ 30,90 e Frango = R$ 46,90 → (30,90 + 46,90) ÷ 2 = 38,90 reais.
+   - "vale o sabor mais caro" ou "vale o preço da metade mais cara": o preço é o do sabor MAIS CARO escolhido, não a soma. Ex.: Calabresa = R$ 99,90 e Quatro Queijos = R$ 104,80 → 104,80 reais.
    - Meio a meio, borda, combo com escolhas, "pizza em dobro", adicional, bebida do combo: tudo isso tem preço no cardápio. Faça a conta, mostre o valor e siga para o resumo e o fechamento, como em qualquer pedido.
    - PROIBIDO por causa de preço que dá para somar com o cardápio: dizer "a equipe confirma o valor", "vou confirmar o total", "o valor exato depende" ou usar [[CHAMAR_ATENDENTE]].
    - "Sem certeza do preço, chame o atendente" vale SÓ quando: (1) o item ou a opção que o cliente quer não aparece no cardápio, ou (2) as INSTRUÇÕES DA LOJA dizem que aquele item é sob consulta ou por encomenda.
@@ -55,4 +65,8 @@ E. ESCOLHA QUE NÃO PODE
 
 F. DEPOIS DE CHAMAR A EQUIPE
    - Chamou a equipe por um motivo? Não repita "a equipe confirma" em toda resposta. Se o cliente seguir com o pedido e o que falta dá para resolver com o cardápio, resolva e feche normalmente.
+
+G. CANCELAR OU RECLAMAR DE UM PEDIDO
+   - Quer cancelar, ou reclama de atraso, pedido que não chegou, item faltando, errado ou frio: diga numa frase que vai chamar a equipe agora e termine com [[CHAMAR_ATENDENTE]]. SEMPRE, mesmo que você não ache o pedido dele (pode ter sido pelo site, pelo iFood ou por outro número).
+   - Não peça número nem nome do pedido, não diga "não encontrei seu pedido" e não diga que cancelou: quem cancela e resolve é a equipe.
 `;

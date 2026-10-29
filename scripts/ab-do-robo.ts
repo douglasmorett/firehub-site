@@ -108,6 +108,39 @@ async function main() {
   const { processChatbotAI } = await import("../src/lib/chatbot-ai");
   const { modoDaArea, bairrosAtendidos } = await import("../src/lib/area-de-entrega");
   const { SEM_PRODUTO_DE_INTEGRACAO } = await import("../src/lib/cardapio-interno");
+  const { escolhasDoItem } = await import("../src/lib/item-do-robo");
+  const { precoUnitarioDoItem, completarEscolhasExigidas, pisoDoPreco } = await import("../src/lib/preco-combo");
+
+  // A conta que o sistema faria ao gravar (syncAiOrderToDatabase, chatbot-ai.ts): o mesmo casamento de nome e o mesmo
+  // preço por opção. Serve para ver se o total que o robô DISSE ao cliente é o que ia ser gravado (29/10: o Haiku somou o
+  // "a partir de" da meio a meio por cima dos sabores e disse 75 reais por uma pizza de 52,50).
+  const chave = (t: string) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+  // Opção que o sistema não casa (Point, 29/10: o cadastro chama o sabor de "Calabresa - Calabresa e cebola.") vai em
+  // `naoCasadas`: aí a diferença é do casamento do sistema, igual nos dois modelos, e a conta não conta como erro do robô.
+  const contaDoSistema = (payload: any, produtos: any[]): { total: number; naoCasadas: string[] } | null => {
+    let soma = 0;
+    const naoCasadas: string[] = [];
+    for (const it of payload?.items || []) {
+      const pedido = chave(it.name);
+      let exato = produtos.filter((sp) => chave(sp.name) === pedido);
+      const rotulo = String(it.name || "").match(/^(.*)\(([^()]+)\)\s*$/);
+      if (!exato.length && rotulo) {
+        const doNome = produtos.filter((sp) => chave(sp.name) === chave(rotulo[1]));
+        const daCategoria = doNome.filter((sp) => chave(sp.category || "") === chave(rotulo[2]));
+        exato = daCategoria.length ? daCategoria : doNome;
+      }
+      const candidatos = exato.length ? exato : produtos.filter((sp) => { const n = chave(sp.name); return n.startsWith(pedido + " ") || n.includes(" " + pedido + " ") || n.endsWith(" " + pedido); });
+      const p = candidatos.length === 1 ? candidatos[0] : exato.length > 1
+        ? exato.reduce((m: any, sp: any) => (escolhasDoItem(it, sp).naoCasadas.length < escolhasDoItem(it, m).naoCasadas.length ? sp : m))
+        : exato[0];
+      if (!p) return null; // item que o sistema descartaria: a conta não se compara
+      const doItem = escolhasDoItem(it, p);
+      naoCasadas.push(...doItem.naoCasadas);
+      const comEscolhas = (p.comboGroups || []).length ? precoUnitarioDoItem(p, completarEscolhasExigidas(p, doItem.comboSelections)) : Number(p.price) || 0;
+      soma += Math.round(Math.max(comEscolhas, pisoDoPreco(p)) * 100) / 100 * Math.min(200, Math.max(1, parseInt(it.quantity) || 1));
+    }
+    return { total: Math.round(soma * 100) / 100, naoCasadas };
+  };
 
   const lojas = await prisma.user.findMany({
     where: SLUGS.length ? { slug: { in: SLUGS } } : { storeName: { in: ["Pizzaria Lapastine", "PIZZARIA 17", "Divinos burger"] } },
@@ -125,6 +158,7 @@ async function main() {
   const g: any = globalThis;
   g.__abUsos ||= [];
   g.__abBrutos ||= [];
+  g.__abPedidos ||= [];
   const resultados: any[] = [];
   // Leitura do banco por loja com 2 novas tentativas: em 28/10 um "Timed out fetching a new connection" derrubou o grupo inteiro.
   const tenta = async <T,>(f: () => Promise<T>): Promise<T> => {
@@ -141,7 +175,7 @@ async function main() {
       // O mesmo filtro do robô (chatbot-ai.ts): sem o espelho do iFood/99 e sem o que está desligado no
       // delivery. Sem ele, o cenário pedia o "Galera Brazza" da categoria 99Food, que o robô não enxerga (28/10).
       where: { franchiseeId: loja.id, active: true, activeDelivery: true, apenasEmCombo: false, ...SEM_PRODUTO_DE_INTEGRACAO },
-      select: { name: true, price: true, isCombo: true, isBeverage: true, imageUrl: true, description: true },
+      select: { name: true, price: true, promoPrice: true, isCombo: true, isBeverage: true, imageUrl: true, description: true },
     }));
     const comuns = produtos.filter((p) => !p.isCombo && !p.isBeverage && p.price > 10);
     if (comuns.length < 2) {
@@ -231,7 +265,7 @@ async function main() {
         nome: "preco-exato",
         falas: [`quanto é a ${p1.name}?`],
         checa: ({ visivel }) => [
-          { ok: reais(visivel).length === 0 || reais(visivel).some((n) => Math.abs(n - p1.price) < 0.01), motivo: `preço de ${p1.name} (R$ ${p1.price}) não bate` },
+          { ok: reais(visivel).length === 0 || reais(visivel).some((n) => Math.abs(n - p1.price) < 0.01 || (p1.promoPrice != null && Math.abs(n - p1.promoPrice) < 0.01)), motivo: `preço de ${p1.name} (R$ ${p1.price}) não bate` },
           { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
         ],
       },
@@ -458,7 +492,7 @@ async function main() {
         falas: ["quero cancelar o pedido que eu fiz agora há pouco"],
         checa: ({ visivel, bruto }) => [
           { ok: /CHAMAR_ATENDENTE/.test(bruto), motivo: "não chamou a equipe para o cancelamento" },
-          { ok: !/(já|foi|está|tá) cancelad|cancelei|pedido cancelado/i.test(visivel), motivo: "disse que cancelou por conta própria" },
+          { ok: !/(já|foi|está|tá) cancelad|cancelei/i.test(visivel), motivo: "disse que cancelou por conta própria" },
         ],
       },
       {
@@ -516,6 +550,7 @@ async function main() {
         const todas: Resp[] = [];
         let erro: string | null = null;
         const antesUsos = g.__abUsos.length;
+        const antesPedidos = g.__abPedidos.length;
         const t0 = Date.now();
         const falas = [...cen.falas];
         for (let i = 0; i < falas.length && i < 9; i++) {
@@ -548,6 +583,18 @@ async function main() {
         }
         const ultimo = todas[todas.length - 1] || { visivel: "", bruto: "" };
         const checagens = erro ? [{ ok: false, motivo: `erro: ${erro}` }] : cen.checa({ ...ultimo, todas });
+        // O total que o robô disse × o que o sistema gravaria, no último pedido fechado da conversa (sem o frete, que o sistema refaz).
+        const fechados = g.__abPedidos.slice(antesPedidos).filter((x: any) => x.payload?.finalized === true);
+        const ultimoPedido = fechados[fechados.length - 1];
+        let conta: any = null;
+        if (ultimoPedido && !erro) {
+          const doSistema = contaDoSistema(ultimoPedido.payload, ultimoPedido.produtos);
+          const sistema = doSistema?.total ?? null;
+          const dito = Number(ultimoPedido.payload.totalAmount) - (Number(ultimoPedido.payload.deliveryFee) || 0);
+          conta = { dito: Math.round(dito * 100) / 100, sistema, naoCasadas: doSistema?.naoCasadas || [], tag: ultimoPedido.payload.items };
+          if (sistema != null && !conta.naoCasadas.length && Number.isFinite(dito) && Math.abs(dito - sistema) > 0.05)
+            checagens.push({ ok: false, motivo: `conta: disse ${dito.toFixed(2)} nos itens, o sistema grava ${sistema.toFixed(2)}` });
+        }
         resultados.push({
           variante,
           loja: loja.storeName,
@@ -557,6 +604,7 @@ async function main() {
           ok: checagens.every((c) => c.ok),
           falhas: checagens.filter((c) => !c.ok).map((c) => c.motivo),
           respostas: todas.map((t) => t.visivel),
+          conta,
           ms: Date.now() - t0,
           usos: g.__abUsos.slice(antesUsos).map((u: any) => ({
             modelo: u.modelo,

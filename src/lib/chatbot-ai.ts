@@ -2136,7 +2136,8 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                     "A IA precisa perguntar o WhatsApp do cliente (ALERTA DE TELEFONE do prompt)."
                 );
               } else if (process.env.FIREHUB_AB_SEM_GRAVAR === "1") {
-                // Laboratório de A/B: o pedido NUNCA é gravado.
+                // Laboratório de A/B: o pedido NUNCA é gravado. A tag e o cardápio vão para o laboratório refazer a conta do sistema.
+                ((globalThis as any).__abPedidos ||= []).push({ payload: orderPayload, produtos: products });
                 resultadoDoSync = { gravado: false, motivo: "laboratório de A/B: nada é gravado" };
               } else {
                 resultadoDoSync = await syncAiOrderToDatabase({
