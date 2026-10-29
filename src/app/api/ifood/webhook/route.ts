@@ -135,9 +135,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ received: true, events: 0 });
   }
 
+  // KEEPALIVE é a sonda de presença/healthcheck do iFood (a cada 30 s), e a
+  // doc pede 202: "Resposta com 202 Accepted → todos os merchants ficam
+  // online. Qualquer outro código → todos os merchants ficam offline"
+  // (developer.ifood.com.br › Events › Presença). Ia o 200 dos eventos. Não
+  // tem pedido a processar, então sai aqui mesmo.
+  const ehKeepalive = events.length === 1 && (events[0]?.code === "KEEPALIVE" || events[0]?.fullCode === "KEEPALIVE");
+
   // A tela de homologação (aba Eventos) mostra as últimas chamadas recebidas
   // como prova viva de "webhook configurado e respondendo 200".
-  registrarChamadaWebhook(String(events[0]?.fullCode || events[0]?.code || "evento"), 200);
+  registrarChamadaWebhook(String(events[0]?.fullCode || events[0]?.code || "evento"), ehKeepalive ? 202 : 200);
+  if (ehKeepalive) return new NextResponse(null, { status: 202 });
 
   // Processa eventos assincronicamente no background para não estourar o Timeout da Vercel
   after(async () => {
