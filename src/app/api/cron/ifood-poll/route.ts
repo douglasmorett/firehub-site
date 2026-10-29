@@ -4,6 +4,7 @@ import { verifyCronAuth } from "@/lib/cron-auth";
 import { processarEventosIfood, puxarEventosIfood } from "@/lib/ifood-eventos";
 import { merchantsDoToken } from "@/lib/ifood-api";
 import { gruposDePollingIfood } from "@/lib/ifood-token";
+import { conferirAutorizacaoIfood } from "@/lib/ifood-autorizacao";
 import { lojaBloqueadaPorMensalidade } from "@/lib/loja-bloqueada";
 
 /**
@@ -397,6 +398,19 @@ export async function GET(req: NextRequest) {
 
       if (adiadas > 0) {
         log.push(`[distribuído] ${adiadas} loja(s) adiada(s) por tempo — entram na próxima rodada`);
+      }
+
+      // ── O iFOOD AINDA AUTORIZA? (regra de 16/11/2026, lib/ifood-autorizacao.ts)
+      // Loja parada há 90 dias perde a autorização e tudo dela vira 403. Uma
+      // loja por rodada — a da vez no giro —, então cada uma é conferida a
+      // cada N minutos (N = lojas conectadas) com uma chamada a mais por minuto.
+      const daVez = fila[0];
+      if (daVez && Date.now() - startTime < LIMITE_MS) {
+        try {
+          await conferirAutorizacaoIfood(daVez.id, daVez.storeName || daVez.email || daVez.id, log);
+        } catch (e: any) {
+          log.push(`[autorização] erro: ${e?.message}`);
+        }
       }
     } catch (e: any) {
       distribuido.erros++;

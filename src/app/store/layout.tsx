@@ -12,6 +12,7 @@ import { diaEMes, diasAte, vencimentoDoBoleto } from "@/lib/prazo-da-mensalidade
 import { cicloBloqueia, ehLojaEspecial } from "@/lib/loja-bloqueada";
 import HideOnCompras from "@/components/HideOnCompras";
 import AvisoRoboDesconectado from "@/components/customer/AvisoRoboDesconectado";
+import AvisoIfoodSemAutorizacao from "@/components/customer/AvisoIfoodSemAutorizacao";
 import AvisoIaForaDoAr from "@/components/customer/AvisoIaForaDoAr";
 import AvisoCaixaAberto24h from "@/components/customer/AvisoCaixaAberto24h";
 import AvisoImpressaoParada from "@/components/customer/AvisoImpressaoParada";
@@ -283,6 +284,7 @@ export default async function StoreLayout({ children }: { children: React.ReactN
           <div style={{ padding: "1rem 1.5rem 0" }}>
             <AvisoCaixaAberto24h />
             <AvisoRoboDesconectado />
+            <AvisoIfoodSemAutorizacao />
             <AvisoIaForaDoAr />
           </div>
         </HideOnCompras>
