@@ -29,7 +29,7 @@ export function gatewayDaLoja(chatbotConfig: unknown): { baseUrl: string; apiKey
  * vai um marcador no lugar do valor. A gravação já recusa esses campos, então o
  * marcador que a tela devolve ao salvar nunca sobrescreve a chave salva.
  */
-const CREDENCIAIS_DO_ROBO = ["evolutionUrl", "evolutionApiKey", "geminiApiKey", "cloudApiAccessToken"] as const;
+const CREDENCIAIS_DO_ROBO = ["evolutionUrl", "evolutionApiKey", "geminiApiKey", "anthropicApiKey", "cloudApiAccessToken"] as const;
 export const CREDENCIAL_SALVA = "••••••";
 
 export function configSemCredenciais<T>(config: T): T {

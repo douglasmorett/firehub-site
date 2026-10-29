@@ -14,8 +14,10 @@
  *
  * Loja a loja: `chatbotConfig.modeloDoRobo = "claude-haiku-5-5"`
  * (scripts/robo-no-claude.ts liga e desliga; a tela do lojista não mexe no
- * campo) E a variável ANTHROPIC_API_KEY no servidor. Faltando qualquer um, o
- * robô segue no Gemini, exatamente como antes. O modo dono continua no Gemini.
+ * campo) E a chave da Anthropic: ANTHROPIC_API_KEY no servidor ou, como a do
+ * Gemini, `anthropicApiKey` no chatbotConfig da conta matriz (isFireHubSystem;
+ * o navegador não a vê, lib/gateway-da-loja.ts). Faltando a marca ou a chave,
+ * o robô segue no Gemini, exatamente como antes. O modo dono continua no Gemini.
  *
  * ── O que muda em relação ao Gemini ─────────────────────────────────────────
  *
@@ -34,23 +36,45 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { GoogleGenAI } from "@google/genai";
+import { prisma } from "@/lib/prisma";
 import { REGRAS_DO_CLAUDE } from "./regras-do-claude";
 
 export const MODELO_CLAUDE = "claude-haiku-5-5";
 const MODELO_DA_TRANSCRICAO = "gemini-3.6-flash";
 
-/** A loja responde pelo Claude: marcada no chatbotConfig e com a chave da Anthropic no servidor. */
-export function lojaNoClaude(chatbotConfig: any): boolean {
-  return chatbotConfig?.modeloDoRobo === MODELO_CLAUDE && Boolean(process.env.ANTHROPIC_API_KEY);
+let cacheDaChave: { valor: string | null; expiraEm: number } | null = null;
+
+/** A chave da Anthropic: o ambiente e, sem ele, a conta matriz (cache de 5 min, como a do Gemini em chatbot-ai.ts). */
+export async function chaveDoClaude(): Promise<string | null> {
+  if (process.env.ANTHROPIC_API_KEY) return process.env.ANTHROPIC_API_KEY;
+  if (cacheDaChave && cacheDaChave.expiraEm > Date.now()) return cacheDaChave.valor;
+  try {
+    const matriz = await prisma.user.findFirst({ where: { isFireHubSystem: true }, select: { chatbotConfig: true } });
+    const valor = ((matriz?.chatbotConfig as any)?.anthropicApiKey as string) || null;
+    // A ausência também fica 5 min: sem chave é o caso comum, e seria uma consulta por mensagem.
+    cacheDaChave = { valor, expiraEm: Date.now() + 5 * 60 * 1000 };
+    return valor;
+  } catch (err) {
+    console.error("[Robô no Claude] Falha ao ler a chave da conta matriz:", (err as Error)?.message);
+    return null;
+  }
+}
+
+/** A loja responde pelo Claude: marcada no chatbotConfig e com a chave da Anthropic. */
+export function lojaNoClaude(chatbotConfig: any, chave: string | null): boolean {
+  return chatbotConfig?.modeloDoRobo === MODELO_CLAUDE && Boolean(chave);
 }
 
 type Parte = { text?: string; inlineData?: { data: string; mimeType: string } };
 type Conteudo = { role: string; parts: Parte[] };
 type UsoDoGemini = { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number; cachedContentTokenCount?: number };
 
-let cliente: Anthropic | null = null;
+let cliente: { chave: string; sdk: Anthropic } | null = null;
 // Sem nova tentativa no SDK: quem tenta de novo é o Gemini, logo em seguida.
-const claude = () => (cliente ||= new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0 }));
+const claude = (chave: string) => {
+  if (cliente?.chave !== chave) cliente = { chave, sdk: new Anthropic({ apiKey: chave, maxRetries: 0 }) };
+  return cliente.sdk;
+};
 
 async function transcrever(audio: { data: string; mimeType: string }, apiKey: string, signal: AbortSignal) {
   const r = await new GoogleGenAI({ apiKey }).models.generateContent({
@@ -70,6 +94,8 @@ export async function respostaDoClaude(p: {
   contents: Conteudo[];
   systemInstruction: string;
   signal: AbortSignal;
+  /** A chave da Anthropic (`chaveDoClaude`). */
+  chave: string;
   /** A chave do Gemini, para transcrever o áudio. */
   geminiApiKey: string;
 }): Promise<{ text: string; usageMetadata: UsoDoGemini; usoDaTranscricao?: UsoDoGemini; motivoSemTexto?: string }> {
@@ -99,7 +125,7 @@ export async function respostaDoClaude(p: {
     else mensagens.push({ role, content: blocos });
   }
 
-  const r = await claude().messages.create(
+  const r = await claude(p.chave).messages.create(
     {
       model: MODELO_CLAUDE,
       // O pensamento conta dentro do max_tokens: folga para ele e para o resumo do pedido.

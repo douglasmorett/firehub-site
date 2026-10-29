@@ -52,7 +52,7 @@ import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeIn
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
 import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
-import { lojaNoClaude, MODELO_CLAUDE, respostaDoClaude } from "./robo-no-claude";
+import { chaveDoClaude, lojaNoClaude, MODELO_CLAUDE, respostaDoClaude } from "./robo-no-claude";
 import { regrasDoRobo } from "./regras-do-robo";
 import { cardapioParaORobo } from "./cardapio-para-o-robo";
 import { lojasDoGrupo } from "./loja-ativa";
@@ -1660,7 +1660,8 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
       });
       // Loja marcada para o Claude (lib/robo-no-claude.ts): o Haiku responde e o
       // 3.6 fica de reserva na mesma mensagem. O modo dono continua no Gemini.
-      const modelNames = !ownerContext && lojaNoClaude(chatbotConfig)
+      const chaveClaude = !ownerContext && chatbotConfig?.modeloDoRobo === MODELO_CLAUDE ? await chaveDoClaude() : null;
+      const modelNames = !ownerContext && lojaNoClaude(chatbotConfig, chaveClaude)
         ? [MODELO_CLAUDE, MODELO_DE_PEDIDO]
         : escolhaDoModelo.modelo === MODELO_BARATO
           ? [MODELO_BARATO, MODELO_DE_PEDIDO]
@@ -1695,7 +1696,7 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           const timeoutId = setTimeout(() => controller.abort(), modelTimeout);
 
           const response: any = mName === MODELO_CLAUDE
-            ? await respostaDoClaude({ contents: conteudoParaOModelo(false), systemInstruction: systemPrompt, signal: controller.signal, geminiApiKey: apiKey || "" })
+            ? await respostaDoClaude({ contents: conteudoParaOModelo(false), systemInstruction: systemPrompt, signal: controller.signal, chave: chaveClaude!, geminiApiKey: apiKey || "" })
             : await ai.models.generateContent({
             model: mName,
             contents: conteudoParaOModelo(ehOBarato),

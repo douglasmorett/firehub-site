@@ -34,7 +34,9 @@ async function main() {
   const porta = (servidor.address() as any).port;
   process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${porta}`;
   process.env.ANTHROPIC_API_KEY = "sk-teste";
-  const { respostaDoClaude, lojaNoClaude, MODELO_CLAUDE } = await import("../src/lib/robo-no-claude");
+  // lib/prisma exige a variável ao carregar; o teste nunca chega ao banco (a chave do ambiente vem antes).
+  process.env.DATABASE_URL ||= "postgresql://teste@127.0.0.1:1/teste";
+  const { respostaDoClaude, lojaNoClaude, chaveDoClaude, MODELO_CLAUDE } = await import("../src/lib/robo-no-claude");
   const { REGRAS_DO_CLAUDE } = await import("../src/lib/regras-do-claude");
   const sinal = () => new AbortController().signal;
 
@@ -50,7 +52,7 @@ async function main() {
 
   // 1. Requisição: sistema com cache + regras, falas alternadas, foto como imagem, nada de temperatura.
   proximaResposta = { status: 200, corpo: resposta("Essa é a Calabresa, 49,90 reais 😊") };
-  const r1 = await respostaDoClaude({ contents, systemInstruction: "PROMPT DA LOJA", signal: sinal(), geminiApiKey: "" });
+  const r1 = await respostaDoClaude({ contents, systemInstruction: "PROMPT DA LOJA", signal: sinal(), chave: "sk-teste", geminiApiKey: "" });
   const c = ultimaRequisicao.corpo;
   assert.equal(ultimaRequisicao.url, "/v1/messages");
   assert.equal(c.model, MODELO_CLAUDE);
@@ -70,9 +72,9 @@ async function main() {
 
   // 3. Recusa e resposta cortada voltam SEM texto: o robô passa para o Gemini.
   proximaResposta = { status: 200, corpo: resposta("meio", { stop_reason: "refusal" }) };
-  assert.equal((await respostaDoClaude({ contents, systemInstruction: "P", signal: sinal(), geminiApiKey: "" })).text, "");
+  assert.equal((await respostaDoClaude({ contents, systemInstruction: "P", signal: sinal(), chave: "sk-teste", geminiApiKey: "" })).text, "");
   proximaResposta = { status: 200, corpo: resposta("cortad", { stop_reason: "max_tokens" }) };
-  const cortada = await respostaDoClaude({ contents, systemInstruction: "P", signal: sinal(), geminiApiKey: "" });
+  const cortada = await respostaDoClaude({ contents, systemInstruction: "P", signal: sinal(), chave: "sk-teste", geminiApiKey: "" });
   assert.equal(cortada.text, "");
   assert.equal(cortada.motivoSemTexto, "max_tokens");
 
@@ -80,17 +82,17 @@ async function main() {
   let chamadas = 0;
   servidor.on("request", () => chamadas++);
   proximaResposta = { status: 400, corpo: { type: "error", error: { type: "invalid_request_error", message: "Your credit balance is too low" } } };
-  await assert.rejects(respostaDoClaude({ contents, systemInstruction: "P", signal: sinal(), geminiApiKey: "" }));
+  await assert.rejects(respostaDoClaude({ contents, systemInstruction: "P", signal: sinal(), chave: "sk-teste", geminiApiKey: "" }));
   proximaResposta = { status: 529, corpo: { type: "error", error: { type: "overloaded_error", message: "Overloaded" } } };
-  await assert.rejects(respostaDoClaude({ contents, systemInstruction: "P", signal: sinal(), geminiApiKey: "" }));
+  await assert.rejects(respostaDoClaude({ contents, systemInstruction: "P", signal: sinal(), chave: "sk-teste", geminiApiKey: "" }));
   assert.equal(chamadas, 2, "sem nova tentativa: quem tenta de novo é o Gemini");
 
-  // 5. A marca da loja só vale com a chave no servidor.
-  assert.equal(lojaNoClaude({ modeloDoRobo: MODELO_CLAUDE }), true);
-  assert.equal(lojaNoClaude({}), false);
-  assert.equal(lojaNoClaude(null), false);
-  delete process.env.ANTHROPIC_API_KEY;
-  assert.equal(lojaNoClaude({ modeloDoRobo: MODELO_CLAUDE }), false);
+  // 5. A marca da loja só vale com a chave; a do ambiente vem antes da matriz.
+  assert.equal(lojaNoClaude({ modeloDoRobo: MODELO_CLAUDE }, "sk-teste"), true);
+  assert.equal(lojaNoClaude({}, "sk-teste"), false);
+  assert.equal(lojaNoClaude(null, "sk-teste"), false);
+  assert.equal(lojaNoClaude({ modeloDoRobo: MODELO_CLAUDE }, null), false);
+  assert.equal(await chaveDoClaude(), "sk-teste");
 
   console.log("ok: robô no Claude — requisição, resposta, recusa, erro e marca da loja");
   servidor.close();

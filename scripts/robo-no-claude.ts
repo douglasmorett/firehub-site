@@ -1,7 +1,8 @@
 /**
  * Liga (ou desliga) o robô no Claude Haiku 5.5 em uma ou mais lojas:
  * `chatbotConfig.modeloDoRobo = "claude-haiku-5-5"` (lib/robo-no-claude.ts).
- * Sem a ANTHROPIC_API_KEY no servidor a marca não faz nada: o robô segue no Gemini.
+ * Sem a chave da Anthropic (ANTHROPIC_API_KEY no servidor ou `anthropicApiKey` na conta matriz,
+ * scripts/chave-do-claude-na-matriz.ts) a marca não faz nada: o robô segue no Gemini.
  *
  *   npx tsx scripts/robo-no-claude.ts <lojaId> [<lojaId> ...]               # só mostra
  *   npx tsx scripts/robo-no-claude.ts <lojaId> [<lojaId> ...] --ligar       # liga
@@ -28,7 +29,8 @@ if (!lojas.length || (ligar && desligar)) {
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log(`ANTHROPIC_API_KEY neste ambiente: ${process.env.ANTHROPIC_API_KEY ? "sim" : "NÃO (vale a do servidor)"}`);
+  const matriz = await prisma.user.findFirst({ where: { isFireHubSystem: true }, select: { chatbotConfig: true } });
+  console.log(`Chave da Anthropic na conta matriz: ${(matriz?.chatbotConfig as any)?.anthropicApiKey ? "sim" : "NÃO (só vale se estiver no ambiente do servidor)"}`);
   for (const lojaId of lojas) {
     const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { id: true, name: true, storeName: true, chatbotConfig: true } });
     if (!loja) {
