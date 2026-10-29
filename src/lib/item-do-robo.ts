@@ -37,7 +37,8 @@ export type GrupoDoProduto = {
   /** "MAIOR"/"MEDIA" na pergunta de sabores da pizza; nulo nas outras. */
   priceRule?: string | null;
   sortOrder?: number | null;
-  items?: Array<{ additionalPrice?: number | null; menuProduct?: { name?: string | null } | null } | null> | null;
+  /** `precoPorEscolha`: `{ "Grande": null }` = a opção não existe com Grande escolhido (lib/preco-combo.ts). */
+  items?: Array<{ additionalPrice?: number | null; precoPorEscolha?: unknown; menuProduct?: { name?: string | null } | null } | null> | null;
 };
 
 export type ProdutoParaOItem = {
@@ -173,6 +174,23 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
   const naoCasadas: string[] = [];
   let somaDasOpcoes = 0;
 
+  // Tudo o que a tag escolheu ("Grande", "1/2 Frango"…), para saber que opção não existe com isso (`preferida`).
+  const pedidasNaTag = new Set<string>();
+  for (const b of brutas) {
+    const texto = (b && typeof b === "object" ? (b as any).name ?? (b as any).nome : b) ?? "";
+    pedidasNaTag.add(chaveDeNome(texto));
+    const lido = quantidadeENome(b);
+    if (lido) pedidasNaTag.add(chaveDeNome(lido.nome));
+  }
+  const bloqueadaPelaTag = (opcao: unknown): boolean => {
+    let tabela: any = (opcao as any)?.precoPorEscolha;
+    if (typeof tabela === "string") {
+      try { tabela = JSON.parse(tabela); } catch { return false; }
+    }
+    if (!tabela || typeof tabela !== "object" || Array.isArray(tabela)) return false;
+    return Object.entries(tabela).some(([nome, v]) => v === null && pedidasNaTag.has(chaveDeNome(nome)));
+  };
+
   /**
    * O mesmo nome em mais de uma pergunta: qual delas o cliente quis.
    *
@@ -184,8 +202,16 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
    * Vence a pergunta que ainda tem vaga, e entre elas a de sabores (a que tem
    * regra de preço: mais caro/média), depois a ordem do cardápio (sortOrder).
    * Sem vaga em nenhuma, a primeira pela mesma ordem.
+   *
+   * Antes de tudo sai a opção que NÃO EXISTE com o que a tag escolheu. Lapastine,
+   * 29/10/2026 (laboratório do robô): a borda é uma pergunta por tamanho, com os
+   * mesmos nomes — "BORDA DE CATUPIRY" +R$ 5 na da Média (`{ "Grande": null }`),
+   * +R$ 7 na da Grande. A Grande com borda caía na da Média, a primeira na
+   * ordem, e saía R$ 2 mais barata do que o robô tinha dito ao cliente.
    */
-  const preferida = <T extends { grupo: GrupoDoProduto }>(lista: T[]): T | null => {
+  const preferida = <T extends { grupo: GrupoDoProduto; opcao?: unknown }>(entrada: T[]): T | null => {
+    const existentes = entrada.filter((a) => !bloqueadaPelaTag(a.opcao));
+    const lista = existentes.length ? existentes : entrada;
     if (lista.length <= 1) return lista[0] ?? null;
     const temVaga = (g: GrupoDoProduto) => {
       const maximo = Number(g.maxQty);
@@ -208,7 +234,7 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
    * adicional, senão a que não é de sabores). Sem dizer, a `preferida`.
    */
   type Intencao = "sabor" | "adicional" | null;
-  const pelaIntencao = <T extends { grupo: GrupoDoProduto }>(lista: T[], intencao: Intencao): T | null => {
+  const pelaIntencao = <T extends { grupo: GrupoDoProduto; opcao?: unknown }>(lista: T[], intencao: Intencao): T | null => {
     if (lista.length > 1 && intencao === "adicional") {
       const porTitulo = lista.filter((a) => ehPerguntaDeAdicional(a.grupo));
       if (porTitulo.length) return preferida(porTitulo);

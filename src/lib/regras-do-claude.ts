@@ -34,6 +34,7 @@ A. A CONTA DO PEDIDO — você soma, e segue até fechar
    - "Você não calcula preço de item" quer dizer: não invente, estime nem deduza um preço que NÃO está escrito. Somar o que ESTÁ escrito não é inventar: é o seu trabalho.
    - Como somar, pela linha "Como ler" do CARDÁPIO: preço do produto + cada "+R$" das opções que o cliente escolheu − cada "−R$"; quando a opção diz "= R$ X", X já é o preço do item com ela. Quantidade 2 = o item duas vezes.
      Ex.: lanche de R$ 21,90 com Bacon extra +R$ 4 → 25,90 reais.
+   - Some os centavos com cuidado, item por item, antes de escrever o subtotal: 39,90 + 29,90 = 69,80 (não 69,90); 2 × 9,90 = 19,80; 49,90 + 7,00 = 56,90.
    - "a partir de R$ X" NÃO entra na conta: é só o menor valor que o item pode ter, JÁ com a escolha obrigatória mais barata dentro. Na pergunta obrigatória com "+R$", o preço do produto é X menos a opção mais barata dessa pergunta; depois some as que o cliente escolheu.
      Ex.: "Pizza Grande (2 Sabores) · a partir de R$ 22,50", sabores (1 a 2) com +R$, o mais barato +R$ 22,50 → a pizza em si é 0. À Moda +R$ 25 e Atum +R$ 27 → 52 reais (NUNCA 22,50 + 25 + 27 = 74,50).
    - Pergunta que diz "é 1 pizza: vale a média dos sabores": o preço é a MÉDIA dos "= R$" dos sabores escolhidos, não a soma. Ex.: Mussarela = R$ 30,90 e Frango = R$ 46,90 → (30,90 + 46,90) ÷ 2 = 38,90 reais.

@@ -249,5 +249,28 @@ igual("1 cobertura e 2 complementos estão dentro", escolhasDoItem({ options: ["
 igual("opção repetida conta: 2x Menta em cobertura de 1", escolhasDoItem({ options: ["2x Menta"] }, acai).passouDoMaximo?.escolhas, ["Menta x2"]);
 igual("opção que não casou não conta para o máximo", escolhasDoItem({ options: ["Chocomenta", "Menta"] }, acai).passouDoMaximo, null);
 
+console.log("\n9) Mesma opção em uma pergunta por tamanho (borda da Lapastine, 29/10/2026)");
+const borda = (precos) => [
+  ["BORDA DE CATUPIRY", precos[0]], ["BORDA DE CHEDDAR", precos[1]],
+].map(([nome, p]) => ({ additionalPrice: Object.values(p).find((v) => v != null), precoPorEscolha: p, menuProduct: { name: nome } }));
+const mista = { name: "PIZZA MISTA", comboGroups: [
+  { id: "g_tam", title: "Tamanho", minQty: 1, maxQty: 1, sortOrder: 1, items: [
+    { additionalPrice: 38, menuProduct: { name: "Média" } }, { additionalPrice: 43, menuProduct: { name: "Grande" } }, { additionalPrice: 48, menuProduct: { name: "Família" } }] },
+  { id: "g_borda_m", title: "Vamos de borda hoje?", minQty: 0, maxQty: 3, sortOrder: 2,
+    items: borda([{ Grande: null, "Média": 5, "Família": null }, { Grande: null, "Média": 6, "Família": null }]) },
+  { id: "g_borda_g", title: "Vamos de borda hoje?", minQty: 0, maxQty: 1, sortOrder: 3,
+    items: borda([{ Grande: 7, "Média": null, "Família": null }, { Grande: 8, "Média": null, "Família": null }]) },
+  { id: "g_borda_f", title: "Vamos de borda hoje?", minQty: 0, maxQty: 1, sortOrder: 4,
+    items: borda([{ Grande: null, "Média": null, "Família": 8 }, { Grande: null, "Média": null, "Família": 10 }]) },
+] };
+igual("Grande + borda vai na pergunta da Grande (+7), não na da Média (+5)",
+  escolhasDoItem({ options: ["Grande", "BORDA DE CATUPIRY"] }, mista).comboSelections, { g_tam: { Grande: 1 }, g_borda_g: { "BORDA DE CATUPIRY": 1 } });
+igual("a borda antes do tamanho na tag também acha a da Grande",
+  escolhasDoItem({ options: ["borda de catupiry", "grande"] }, mista).comboSelections, { g_borda_g: { "BORDA DE CATUPIRY": 1 }, g_tam: { Grande: 1 } });
+igual("Família + borda vai na da Família",
+  escolhasDoItem({ options: ["Família", "BORDA DE CHEDDAR"] }, mista).comboSelections, { g_tam: { "Família": 1 }, g_borda_f: { "BORDA DE CHEDDAR": 1 } });
+igual("sem tamanho na tag: a primeira pela ordem, como antes",
+  escolhasDoItem({ options: ["BORDA DE CATUPIRY"] }, mista).comboSelections, { g_borda_m: { "BORDA DE CATUPIRY": 1 } });
+
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);
