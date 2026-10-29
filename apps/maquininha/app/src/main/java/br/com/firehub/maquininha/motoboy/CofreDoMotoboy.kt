@@ -17,6 +17,8 @@ object CofreDoMotoboy {
     private const val CHAVE_TOKEN = "token"
     private const val CHAVE_NOME = "nome"
     private const val CHAVE_LOGIN = "login"
+    private const val CHAVE_ID = "motoboy_id"
+    private const val CHAVE_TROCAR_SENHA = "trocar_senha"
 
     @Volatile
     private var cofre: SharedPreferences? = null
@@ -53,15 +55,38 @@ object CofreDoMotoboy {
     fun nome(context: Context): String? = abrir(context)?.getString(CHAVE_NOME, null)?.ifBlank { null }
     fun ultimoLogin(context: Context): String? = abrir(context)?.getString(CHAVE_LOGIN, null)?.ifBlank { null }
 
-    fun guardar(context: Context, token: String, nome: String?, login: String) {
+    /**
+     * O id do cadastro, para trocar a senha. A sessão aberta na 1.0.4 não o
+     * guardou: sai do próprio token (v1.<motoboyId>.<loja>.<validade>.<assinatura>).
+     */
+    fun motoboyId(context: Context): String? =
+        abrir(context)?.getString(CHAVE_ID, null)?.ifBlank { null }
+            ?: token(context)?.split(".")?.takeIf { it.size == 5 && it[0] == "v1" }?.get(1)?.ifBlank { null }
+
+    /** Ainda na senha padrão (`mustChangePassword` do login): a lista pede a troca. */
+    fun trocarSenha(context: Context): Boolean = abrir(context)?.getBoolean(CHAVE_TROCAR_SENHA, false) ?: false
+
+    fun guardar(context: Context, token: String, nome: String?, login: String, motoboyId: String?, trocarSenha: Boolean) {
         abrir(context)?.edit()
             ?.putString(CHAVE_TOKEN, token)
             ?.putString(CHAVE_NOME, nome)
             ?.putString(CHAVE_LOGIN, login)
+            ?.putString(CHAVE_ID, motoboyId)
+            ?.putBoolean(CHAVE_TROCAR_SENHA, trocarSenha)
             ?.apply()
     }
 
+    /**
+     * Senha trocada: o token antigo deixou de valer e o servidor devolveu um
+     * novo. Sem guardá-lo, a maquininha cai no próximo pedido de lista.
+     */
+    fun senhaTrocada(context: Context, tokenNovo: String?) {
+        val edicao = abrir(context)?.edit() ?: return
+        if (!tokenNovo.isNullOrBlank()) edicao.putString(CHAVE_TOKEN, tokenNovo)
+        edicao.putBoolean(CHAVE_TROCAR_SENHA, false).apply()
+    }
+
     fun sair(context: Context) {
-        abrir(context)?.edit()?.remove(CHAVE_TOKEN)?.remove(CHAVE_NOME)?.apply()
+        abrir(context)?.edit()?.remove(CHAVE_TOKEN)?.remove(CHAVE_NOME)?.remove(CHAVE_ID)?.remove(CHAVE_TROCAR_SENHA)?.apply()
     }
 }
