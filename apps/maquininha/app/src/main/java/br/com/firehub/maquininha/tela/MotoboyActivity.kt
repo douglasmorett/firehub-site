@@ -6,14 +6,18 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.Editable
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import br.com.firehub.maquininha.CofreDoToken
 import br.com.firehub.maquininha.R
@@ -53,6 +57,9 @@ class MotoboyActivity : AppCompatActivity() {
     private var aberto: JSONObject? = null
     private val relogio = Handler(Looper.getMainLooper())
 
+    /** A tela está na frente (onResume..onPause): só então a lista se atualiza sozinha. */
+    private var naTela = false
+
     override fun onCreate(estadoSalvo: Bundle?) {
         super.onCreate(estadoSalvo)
         pecas = Pecas(this)
@@ -62,6 +69,7 @@ class MotoboyActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        naTela = true
         ModoGarcom.voltarAoGarcom = false
         val pedido = aberto
         when {
@@ -72,6 +80,7 @@ class MotoboyActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        naTela = false
         relogio.removeCallbacksAndMessages(null)
         super.onPause()
     }
@@ -248,6 +257,34 @@ class MotoboyActivity : AppCompatActivity() {
             conteudo.addView(cartao)
         }
         botaoAtualizar()
+        relogio.postDelayed({ atualizarSozinho() }, ATUALIZAR_LISTA_MS)
+    }
+
+    /**
+     * A lista se atualiza sozinha enquanto está na tela (Douglas, 29/10/2026:
+     * a entrega nova só aparecia tocando em "Atualizar"). Sem "Carregando…":
+     * redesenha quando a resposta chega e guarda a rolagem. Abrir um pedido
+     * (limpar) ou sair da tela (onPause) desliga o relógio.
+     */
+    private fun atualizarSozinho() {
+        if (aberto != null || !naTela) return
+        val token = CofreDoMotoboy.token(this) ?: return
+        TrabalhoDeTela.fazer(
+            tarefa = { ApiDoMotoboy.entregas(token) },
+            aoTerminar = { r ->
+                if (aberto != null || !naTela) return@fazer
+                when (val resp = r.getOrNull()) {
+                    is ApiDoMotoboy.Resposta.Ok -> {
+                        val rolagemAntes = rolagem.scrollY
+                        desenharEntregas(resp.json)
+                        rolagem.post { rolagem.scrollTo(0, rolagemAntes) }
+                    }
+                    is ApiDoMotoboy.Resposta.SessaoExpirada -> sessaoCaiu()
+                    // Sem rede ou recusa: fica a lista que está na tela e tenta de novo.
+                    else -> relogio.postDelayed({ atualizarSozinho() }, ATUALIZAR_LISTA_MS)
+                }
+            },
+        )
     }
 
     // ------------------------------------------------------------------ receber
@@ -310,30 +347,47 @@ class MotoboyActivity : AppCompatActivity() {
         val campoCodigo = if (pedeCodigo) pecas.campo("Código de entrega do cliente", InputType.TYPE_CLASS_NUMBER, maximo = 8, margemTopo = 14) else null
         campoCodigo?.let { conteudo.addView(it) }
 
-        if (cobrarNaEntrega != null && falta > 0) {
+        // Cartão e dinheiro andam juntos: o que não vai no cartão vai no dinheiro
+        // e vice-versa, e a entrega só fecha com o total coberto (Douglas,
+        // 29/10/2026: "não pode ficar faltando pagamento").
+        val id = pedido.optString("id")
+        val temQueCobrar = cobrarNaEntrega != null && falta > 0
+        var campoDinheiro: EditText? = null
+        if (temQueCobrar) {
+            val clienteVaiDeDinheiro = textoDe(cobrarNaEntrega!!, "metodo")?.contains("Dinheiro", ignoreCase = true) == true
+            val restoNoDinheiro = if (naMaquininha > 0) id in RESTO_EM_DINHEIRO else clienteVaiDeDinheiro
+
             // Cartão/Pix na maquininha: o valor que faltar (ou parte dele).
             conteudo.addView(pecas.texto("No cartão ou Pix (maquininha)", 16f, R.color.texto_fraco, negrito = true, margemTopo = 16))
-            val campoCartao = pecas.campo("Valor", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL)
-            campoCartao.setText(Dinheiro.paraCampo(falta))
+            val campoCartao = campoDeValor("Valor")
+            campoCartao.setText(Dinheiro.paraCampo(if (restoNoDinheiro) 0L else falta))
             conteudo.addView(campoCartao)
             conteudo.addView(pecas.botao("💳 Cobrar na maquininha") {
                 val valor = Dinheiro.lerCampo(campoCartao.text.toString())
-                if (valor == null || valor <= 0 || valor > falta) {
-                    telaDeReceber(pedido, "Valor do cartão entre R$ 0,01 e " + Dinheiro.formatar(falta) + ".")
-                } else cobrar(pedido, valor)
+                when {
+                    valor == null || valor <= 0 || valor > falta ->
+                        telaDeReceber(pedido, "Valor do cartão entre R$ 0,01 e " + Dinheiro.formatar(falta) + ".")
+                    valor < falta -> AlertDialog.Builder(this)
+                        .setTitle("Faltam " + Dinheiro.formatar(falta - valor))
+                        .setMessage("O cartão vai cobrir " + Dinheiro.formatar(valor) + " de " + Dinheiro.formatar(falta) + ". Como o cliente paga o resto?")
+                        .setPositiveButton("Resto em dinheiro") { _, _ -> RESTO_EM_DINHEIRO.add(id); cobrar(pedido, valor) }
+                        .setNeutralButton("Outro cartão ou Pix") { _, _ -> RESTO_EM_DINHEIRO.remove(id); cobrar(pedido, valor) }
+                        .setNegativeButton("Voltar", null)
+                        .show()
+                    else -> { RESTO_EM_DINHEIRO.remove(id); cobrar(pedido, valor) }
+                }
             })
-        }
 
-        // Dinheiro: o que sobrar depois da maquininha. Troco é da parte em dinheiro.
-        val campoDinheiro = if (cobrarNaEntrega != null && falta > 0) {
-            conteudo.addView(pecas.texto("Ou o resto em dinheiro", 16f, R.color.texto_fraco, negrito = true, margemTopo = 16))
-            pecas.campo("Dinheiro recebido", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL, margemTopo = 4).also {
-                it.setText(Dinheiro.paraCampo(falta))
-                conteudo.addView(it)
-            }
-        } else null
+            // Dinheiro: o que sobrar depois da maquininha. Troco é da parte em dinheiro.
+            conteudo.addView(pecas.texto("O resto em dinheiro", 16f, R.color.texto_fraco, negrito = true, margemTopo = 16))
+            val dinheiroDaEntrega = campoDeValor("Dinheiro recebido", margemTopo = 4)
+            dinheiroDaEntrega.setText(Dinheiro.paraCampo(if (restoNoDinheiro) falta else 0L))
+            conteudo.addView(dinheiroDaEntrega)
+            ligarCartaoEDinheiro(campoCartao, dinheiroDaEntrega, falta)
+            campoDinheiro = dinheiroDaEntrega
+        }
         val campoTroco = campoDinheiro?.let {
-            pecas.campo("Troco para (nota do cliente, opcional)", InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL).also { c -> conteudo.addView(c) }
+            campoDeValor("Troco para (nota do cliente, opcional)").also { c -> conteudo.addView(c) }
         }
 
         rodape.addView(pecas.botao("✅ Entregar") {
@@ -342,11 +396,62 @@ class MotoboyActivity : AppCompatActivity() {
                 telaDeReceber(pedido, "Peça ao cliente o código de entrega.")
                 return@botao
             }
-            val dinheiro = campoDinheiro?.let { Dinheiro.lerCampo(it.text.toString()) } ?: 0L
             val trocoPara = campoTroco?.let { Dinheiro.lerCampo(it.text.toString()) }
-            entregar(pedido, naMaquininha, dinheiro, trocoPara, codigo, cobrarNaEntrega != null)
+            if (!temQueCobrar) {
+                entregar(pedido, naMaquininha, 0L, trocoPara, codigo, cobrarNaEntrega != null)
+                return@botao
+            }
+            val dinheiro = campoDinheiro?.let { Dinheiro.lerCampo(it.text.toString()) } ?: 0L
+            when {
+                dinheiro < falta -> avisoNaTela(
+                    "Faltam " + Dinheiro.formatar(falta - dinheiro) + ". Cobre na maquininha ou receba em dinheiro: " +
+                        "a entrega só fecha com o total do pedido.",
+                )
+                dinheiro > falta -> avisoNaTela(
+                    "O dinheiro (" + Dinheiro.formatar(dinheiro) + ") passou do que falta (" + Dinheiro.formatar(falta) + "). " +
+                        "Se o cliente deu nota maior, ponha em \"Troco para\".",
+                )
+                else -> AlertDialog.Builder(this)
+                    .setTitle("Receber em dinheiro?")
+                    .setMessage("Confirma " + Dinheiro.formatar(dinheiro) + " em dinheiro para fechar o pedido?")
+                    .setPositiveButton("Sim, recebi") { _, _ ->
+                        RESTO_EM_DINHEIRO.remove(id)
+                        entregar(pedido, naMaquininha, dinheiro, trocoPara, codigo, true)
+                    }
+                    .setNegativeButton("Voltar", null)
+                    .show()
+            }
         })
         rodape.addView(pecas.botao("Voltar às entregas", principal = false, alturaDp = 48) { carregarEntregas() })
+    }
+
+    /** Campo de reais que aceita vírgula e ponto, como o do garçom (Dinheiro.lerCampo lê os dois). */
+    private fun campoDeValor(dica: String, margemTopo: Int = 8): EditText =
+        pecas.campo(dica, InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL, margemTopo = margemTopo).apply {
+            keyListener = android.text.method.DigitsKeyListener.getInstance("0123456789,.")
+        }
+
+    /** O que sai de um campo entra no outro: cartão + dinheiro = o que falta. */
+    private fun ligarCartaoEDinheiro(cartao: EditText, dinheiro: EditText, falta: Long) {
+        var mexendo = false
+        fun espelhar(de: EditText, para: EditText) = de.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, inicio: Int, antes: Int, depois: Int) {}
+            override fun onTextChanged(s: CharSequence?, inicio: Int, antes: Int, depois: Int) {}
+            override fun afterTextChanged(s: Editable?) {
+                if (mexendo) return
+                val valor = Dinheiro.lerCampo(s?.toString().orEmpty()) ?: return
+                mexendo = true
+                para.setText(Dinheiro.paraCampo((falta - valor).coerceAtLeast(0L)))
+                mexendo = false
+            }
+        })
+        espelhar(cartao, dinheiro)
+        espelhar(dinheiro, cartao)
+    }
+
+    /** Recado que não apaga o que o motoboy digitou (o telaDeReceber redesenha). */
+    private fun avisoNaTela(texto: String) {
+        AlertDialog.Builder(this).setMessage(texto).setPositiveButton("Ok", null).show()
     }
 
     private fun cobrar(pedido: JSONObject, valorCentavos: Long) {
@@ -428,5 +533,13 @@ class MotoboyActivity : AppCompatActivity() {
 
     private companion object {
         const val PEDIDO_DE_LOCALIZACAO = 41
+        const val ATUALIZAR_LISTA_MS = 15_000L
+
+        /**
+         * Pedidos em que o motoboy escolheu "resto em dinheiro" ao passar só parte
+         * no cartão. Fica fora da Activity porque a tela da adquirente vem para a
+         * frente e a volta pode recriar esta tela.
+         */
+        val RESTO_EM_DINHEIRO = mutableSetOf<String>()
     }
 }
