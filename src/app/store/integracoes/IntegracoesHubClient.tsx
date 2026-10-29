@@ -67,8 +67,11 @@ export default function IntegracoesHubClient({
   useEffect(() => {
     lerAsaas();
     // Atalho de Minha Loja → Pagamentos: /store/integracoes?abrir=asaas
+    // e da faixa "o iFood tirou a autorização": /store/integracoes?abrir=ifood
     try {
-      if (new URLSearchParams(window.location.search).get("abrir") === "asaas") setOpenModal("asaas");
+      const abrir = new URLSearchParams(window.location.search).get("abrir");
+      if (abrir === "asaas") setOpenModal("asaas");
+      if (abrir === "ifood") setOpenModal("ifood");
     } catch { /* sem window */ }
   }, []);
   useEffect(() => {
@@ -1618,7 +1621,10 @@ export default function IntegracoesHubClient({
       subtitle: "Loja Oficial iFood",
       icon: "🔴",
       gradient: "linear-gradient(135deg, #E8590C, #9A3412)",
-      badge: (ifoodIntegrations.length > 0 || ifMerchant || initialIfoodConnected) ? { text: `🟢 ${ifoodIntegrations.length || 1} Integração(ões)`, bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
+      // `connected` false = o iFood tirou a autorização (lib/ifood-autorizacao.ts).
+      badge: ifoodIntegrations.some(i => i.active && i.connected === false)
+        ? { text: "🔴 Autorize de novo", bg: "#FFF4EF", color: "#9A3412", border: "#FFD3C2" }
+        : (ifoodIntegrations.length > 0 || ifMerchant || initialIfoodConnected) ? { text: `🟢 ${ifoodIntegrations.length || 1} Integração(ões)`, bg: "#F0FDFA", color: "#0F766E", border: "#99F6E4" } : { text: "⚪ Não Conectado", bg: "#F8FAFC", color: "#64748B", border: "#E2E8F0" },
       description: "Gerencie suas integrações iFood. Conecte múltiplas lojas e acompanhe o status.",
     },
     {
@@ -2378,7 +2384,11 @@ export default function IntegracoesHubClient({
                             );
                           })()}
                         </div>
-                        <span style={{ fontSize: "0.7rem", background: "#F0FDFA", color: "#0F766E", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🟢 Ativa</span>
+                        {ifoodIntegrations.find(i => i.merchantId === ifMerchant)?.connected === false ? (
+                          <span style={{ fontSize: "0.7rem", background: "#FFF4EF", color: "#9A3412", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🔴 iFood tirou a autorização — conecte de novo</span>
+                        ) : (
+                          <span style={{ fontSize: "0.7rem", background: "#F0FDFA", color: "#0F766E", padding: "3px 8px", borderRadius: 6, fontWeight: 700 }}>🟢 Ativa</span>
+                        )}
                         <button
                           onClick={async () => {
                             // O merchant vai na URL de propósito: sem ele a rota
@@ -2435,6 +2445,11 @@ export default function IntegracoesHubClient({
                             loja adicional parecer uma cobrança em vez de uma
                             loja funcionando — e não dizia o que o lojista mais
                             quer saber olhando aqui: se ela está recebendo. */}
+                        {integ.active && integ.connected === false ? (
+                          <span style={{ fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700, background: "#FFF4EF", color: "#9A3412" }}>
+                            🔴 iFood tirou a autorização — conecte de novo
+                          </span>
+                        ) : (
                         <span style={{
                           fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
                           background: integ.active ? "#F0FDFA" : "#F1F5F9",
@@ -2442,6 +2457,7 @@ export default function IntegracoesHubClient({
                         }}>
                           {integ.active ? "🟢 Ativa" : "⚪ Inativa"}
                         </span>
+                        )}
                         <span style={{
                           fontSize: "0.7rem", padding: "3px 8px", borderRadius: 6, fontWeight: 700,
                           background: "#FFF7E6", color: "#92400E",

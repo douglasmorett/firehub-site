@@ -87,9 +87,14 @@ async function pollIfoodEvents(sessionUserId?: string) {
       if (u?.ifoodMerchantId) merchantPrincipal = u.ifoodMerchantId;
       const integracoes = await prisma.ifoodIntegration.findMany({
         where: { userId: sessionUserId, active: true },
-        select: { merchantId: true },
+        select: { merchantId: true, connected: true },
       });
-      merchants = [...new Set([merchantPrincipal, ...integracoes.map((i) => i.merchantId)].filter(Boolean))];
+      // Loja que o iFood deixou de autorizar (lib/ifood-autorizacao.ts) fica de
+      // fora do header: com ela, o polling inteiro voltava 403 a cada rodada.
+      const semAutorizacao = new Set(integracoes.filter((i) => !i.connected).map((i) => i.merchantId));
+      merchants = [...new Set([merchantPrincipal, ...integracoes.map((i) => i.merchantId)].filter(Boolean))]
+        .filter((m) => !semAutorizacao.has(m));
+      if (semAutorizacao.has(merchantPrincipal)) merchantPrincipal = merchants[0] || "";
     } else if (merchantPrincipal) {
       merchants = [merchantPrincipal];
     }
