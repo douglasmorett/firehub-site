@@ -149,6 +149,23 @@ class Pecas(private val context: Context) {
         ).apply { topMargin = dp(margemTopo) }
     }
 
+    /** Etiqueta pequena com fundo de cor livre (a cor da rota vem do servidor). */
+    fun selo(conteudo: String, corDoFundo: Int): TextView = TextView(context).apply {
+        text = conteudo
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+        setTextColor(cor(R.color.texto))
+        setTypeface(typeface, Typeface.BOLD)
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = dp(6).toFloat()
+            setColor(corDoFundo)
+        }
+        setPadding(dp(8), dp(3), dp(8), dp(3))
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { rightMargin = dp(6) }
+    }
+
     /** Linha "rótulo ........ valor" do resumo da conta. */
     fun linhaDeValor(rotulo: String, valor: String, grande: Boolean = false, corId: Int = R.color.texto): LinearLayout =
         linha().apply {
