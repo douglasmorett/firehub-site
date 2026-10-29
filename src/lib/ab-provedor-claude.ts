@@ -15,6 +15,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import crypto from "node:crypto";
+import { REGRAS_DO_CLAUDE } from "./regras-do-claude";
 
 type Parte = { text?: string };
 type Conteudo = { role: string; parts?: Parte[] };
@@ -22,8 +23,12 @@ type Conteudo = { role: string; parts?: Parte[] };
 const textoDe = (c: Conteudo) => (c.parts || []).map((p) => p.text || "").join("\n").trim();
 
 export async function abClaudeCli(params: { model: string; contents: Conteudo[]; config?: any }) {
-  // FIREHUB_AB_INSTRUCAO_EXTRA: uma linha a mais no fim do prompt, para medir ajuste de prompt só no Claude.
-  const sistema = String(params.config?.systemInstruction || "") + (process.env.FIREHUB_AB_INSTRUCAO_EXTRA ? `\n\n${process.env.FIREHUB_AB_INSTRUCAO_EXTRA}` : "");
+  // As regras do Claude (lib/regras-do-claude.ts) vão sempre no fim, como iriam em produção; FIREHUB_AB_SEM_REGRAS_DO_CLAUDE=1
+  // mede sem elas. FIREHUB_AB_INSTRUCAO_EXTRA: uma linha a mais, para medir outro ajuste de prompt só no Claude.
+  const sistema =
+    String(params.config?.systemInstruction || "") +
+    (process.env.FIREHUB_AB_SEM_REGRAS_DO_CLAUDE === "1" ? "" : `\n\n${REGRAS_DO_CLAUDE}`) +
+    (process.env.FIREHUB_AB_INSTRUCAO_EXTRA ? `\n\n${process.env.FIREHUB_AB_INSTRUCAO_EXTRA}` : "");
   const dir = path.join(os.tmpdir(), "ab-claude");
   fs.mkdirSync(dir, { recursive: true });
   const arq = path.join(dir, `${crypto.createHash("sha1").update(sistema).digest("hex")}.txt`);
