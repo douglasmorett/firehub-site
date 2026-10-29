@@ -568,6 +568,8 @@ async function main() {
           })),
         });
         process.stdout.write(resultados[resultados.length - 1].ok ? "." : "F");
+        // Parcial a cada conversa (28/10: a sessão caiu às 21h57 e o grupo inteiro se perdeu, só gravava no fim).
+        fs.writeFileSync(`${process.env.OUT || path.join(process.cwd(), `ab-${variante}.json`)}.parcial`, JSON.stringify(resultados));
       }
     }
   }
