@@ -12,6 +12,7 @@
     "prazos:build": "node scripts/build-prazos-chrome.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "0.134.0",
     "@google/genai": "^1.50.1",
     "@prisma/client": "^6.19.3",
     "@types/leaflet": "^1.9.21",

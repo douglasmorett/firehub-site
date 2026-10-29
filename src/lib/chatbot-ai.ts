@@ -52,6 +52,7 @@ import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeIn
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
 import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
 import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
+import { lojaNoClaude, MODELO_CLAUDE, respostaDoClaude } from "./robo-no-claude";
 import { regrasDoRobo } from "./regras-do-robo";
 import { cardapioParaORobo } from "./cardapio-para-o-robo";
 import { lojasDoGrupo } from "./loja-ativa";
@@ -1657,9 +1658,13 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         temAudio: Boolean(audioData?.base64),
         anotaPedido: aiOrderingEnabled,
       });
-      const modelNames = escolhaDoModelo.modelo === MODELO_BARATO
-        ? [MODELO_BARATO, MODELO_DE_PEDIDO]
-        : [MODELO_DE_PEDIDO, "gemini-2.5-flash"];
+      // Loja marcada para o Claude (lib/robo-no-claude.ts): o Haiku responde e o
+      // 3.6 fica de reserva na mesma mensagem. O modo dono continua no Gemini.
+      const modelNames = !ownerContext && lojaNoClaude(chatbotConfig)
+        ? [MODELO_CLAUDE, MODELO_DE_PEDIDO]
+        : escolhaDoModelo.modelo === MODELO_BARATO
+          ? [MODELO_BARATO, MODELO_DE_PEDIDO]
+          : [MODELO_DE_PEDIDO, "gemini-2.5-flash"];
 
       let generatedText = "";
       /** O Google não achou o prompt guardado nesta mensagem: o resto dela vai sem o cache. */
@@ -1681,14 +1686,17 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
         const baseTimeout = audioData?.base64 ? 35000 : imagem ? 20000 : 12000;
         // O Lite responde em ~1,2 s (A/B de 03/10/2026): 8 s parado é falha, e
         // o 3.6 que vem depois dele precisa do prazo cheio (~4,5 s pensando).
+        // O 3.6 de reserva do Claude também leva o prazo cheio: é ele quem responde de verdade.
         const modelTimeout = ehOBarato
           ? baseTimeout - 4000
-          : idx === 0 || modelNames[0] === MODELO_BARATO ? baseTimeout : (baseTimeout - 5000);
+          : idx === 0 || modelNames[0] === MODELO_BARATO || modelNames[0] === MODELO_CLAUDE ? baseTimeout : (baseTimeout - 5000);
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), modelTimeout);
 
-          const response = await ai.models.generateContent({
+          const response: any = mName === MODELO_CLAUDE
+            ? await respostaDoClaude({ contents: conteudoParaOModelo(false), systemInstruction: systemPrompt, signal: controller.signal, geminiApiKey: apiKey || "" })
+            : await ai.models.generateContent({
             model: mName,
             contents: conteudoParaOModelo(ehOBarato),
             config: {
@@ -1765,11 +1773,27 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
                 { thoughtsTokens: usage.thoughtsTokenCount, cachedTokens: usage.cachedContentTokenCount }
               );
             }
+            // Áudio na loja do Claude: a transcrição foi feita pelo Gemini 3.6 (lib/robo-no-claude.ts).
+            const transcricao = response?.usoDaTranscricao;
+            if (transcricao) {
+              trackGeminiUsage(
+                userId,
+                "gemini-3.6-flash",
+                transcricao.promptTokenCount || 0,
+                transcricao.candidatesTokenCount || 0,
+                { remoteJid, transcricaoParaOClaude: true },
+                { thoughtsTokens: transcricao.thoughtsTokenCount }
+              );
+            }
           } catch (_) { /* tracking should never break chatbot */ }
 
           if (response && response.text) {
             generatedText = response.text;
             break;
+          }
+          if (mName === MODELO_CLAUDE) {
+            console.warn(`[Chatbot AI] Claude sem texto (${response?.motivoSemTexto || "vazia"}); respondendo pelo Gemini.`);
+            continue;
           }
           // Respondeu sem texto (bloqueio de segurança, resposta vazia): também é falha.
           falhasDosModelos.push(classificarFalhaDaIa("resposta vazia"));
@@ -1788,6 +1812,10 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           const isTimeout = mErr?.name === "AbortError" || mErr?.message?.includes("abort");
           const errDetail = mErr?.message || mErr?.status || JSON.stringify(mErr).slice(0, 200);
           console.warn(`[Chatbot AI] Modelo ${mName} ${isTimeout ? "⏳ timeout" : "❌ falhou"} (${modelTimeout}ms): ${errDetail}`);
+          // Falha do Claude (chave, crédito ou lentidão da Anthropic, áudio que não
+          // transcreveu) não é falha do Gemini: não abre incidente nem para o robô.
+          // O 3.6, logo a seguir, responde esta mensagem.
+          if (mName === MODELO_CLAUDE) continue;
           const falha = classificarFalhaDaIa(mErr);
           falhasDosModelos.push(falha);
           // Crédito esgotado e chave recusada são do PROJETO, não do modelo: o

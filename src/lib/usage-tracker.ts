@@ -78,6 +78,9 @@ const PRECO_GEMINI_USD: Record<string, { entrada: number; saida: number; cache: 
   // Conversa comum do robô desde 03/10/2026 (lib/modelo-do-robo.ts). O Google
   // prevê desligar em 07/05/2027 e indica o 3.5 Flash-Lite (0,30 / 2,50 / 0,03).
   "gemini-3.1-flash-lite": { entrada: 0.25, saida: 1.5, cache: 0.025 },
+  // Robô nas lojas marcadas para o Claude (lib/robo-no-claude.ts). Tabela de
+  // prompt até 100 mil tokens; acima disso a Anthropic cobra 0,50 / 2,50.
+  "claude-haiku-5-5": { entrada: 0.1, saida: 0.5, cache: 0.01 },
 };
 
 function precoDoModelo(model: string) {
