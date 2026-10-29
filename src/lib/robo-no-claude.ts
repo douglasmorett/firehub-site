@@ -76,7 +76,8 @@ const claude = (chave: string) => {
   return cliente.sdk;
 };
 
-async function transcrever(audio: { data: string; mimeType: string }, apiKey: string, signal: AbortSignal) {
+/** O Gemini 3.6 transcreve o áudio do cliente (o Claude não ouve). Também usado pelo assessor no Claude. */
+export async function transcrever(audio: { data: string; mimeType: string }, apiKey: string, signal: AbortSignal) {
   const r = await new GoogleGenAI({ apiKey }).models.generateContent({
     model: MODELO_DA_TRANSCRICAO,
     contents: [{ role: "user", parts: [

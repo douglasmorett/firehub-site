@@ -26,6 +26,8 @@ import { hojeNaLoja, NOMES_DOS_DIAS } from "@/lib/relatorios/base";
 import { gravarFala, historicoParaOModelo } from "./conversa";
 import { oQueMudouNaLoja } from "./o-que-mudou";
 import { DECLARACOES_DO_ASSESSOR, FERRAMENTAS_QUE_GRAVAM, executarFerramentaDoAssessor, type ContextoDoAssessor } from "./ferramentas";
+import { chaveDoClaude, lojaNoClaude, MODELO_CLAUDE } from "@/lib/robo-no-claude";
+import { rodarAssessorNoClaude } from "./assessor-no-claude";
 
 export const MODELOS_DO_ASSESSOR = ["gemini-3.6-flash", "gemini-2.5-flash"];
 
@@ -121,6 +123,13 @@ ${mudou}`;
 // Primeira pessoa e o ✅: "não há nada registrado hoje" é resposta honesta.
 const DIZ_QUE_GRAVOU = /\b(lancei|registrei|anotei|gravei|dei entrada|dei baixa|marquei como pag[oa]|desfiz|pausei|reativei|fechei|reabri)\b|✅/i;
 /**
+ * A ação NEGADA não conta: "não lancei de novo, para não duplicar" é a resposta
+ * honesta. Teste do Haiku, 29/10/2026: ele viu a nota já lançada, explicou e
+ * perguntou — e a frase virava "Não consegui fazer isso agora".
+ */
+const ACAO_NEGADA = /\bn[ãa]o\s+(?:\S+\s+){0,2}?(lancei|registrei|anotei|gravei|dei entrada|dei baixa|marquei como pag[oa]|desfiz|pausei|reativei|fechei|reabri)\b/gi;
+export const dizQueGravou = (t: string) => DIZ_QUE_GRAVOU.test(t.replace(ACAO_NEGADA, ""));
+/**
  * Cara de ação feita ("foram fechados", "⏸️ Pausado"). Só vale quando NENHUMA
  * ferramenta rodou: aí o modelo ganha outra chance. Não apaga resposta — a
  * lista de pausados usa ⏸ com toda a razão.
@@ -145,6 +154,8 @@ function respostaDeReserva(acoes: AcaoDoAssessor[]): string {
 export async function conversarComOAssessor(
   ctx: ContextoDoAssessor,
   entrada: { texto?: string | null; audio?: MidiaDoDono | null; imagem?: MidiaDoDono | null },
+  /** Só para o teste (scripts/teste-assessor-nos-modelos.ts): força a lista de modelos. */
+  opcoes?: { modelos?: string[] },
 ): Promise<RespostaDoAssessor> {
   const deOnde = ctx.canal === "PAINEL" ? `painel${ctx.autor ? `, ${ctx.autor}` : ""}` : "WhatsApp";
   const acoes: AcaoDoAssessor[] = [];
@@ -167,7 +178,12 @@ export async function conversarComOAssessor(
   if (entrada.imagem?.base64) ctx = { ...ctx, comFoto: true };
   const sistema = await montarSistema(ctx);
   let resposta = "";
-  let modeloUsado = MODELOS_DO_ASSESSOR[0];
+  let ouviDoClaude: string | null = null;
+  // Loja com o robô no Claude (lib/robo-no-claude.ts): o assessor também, com o Gemini de reserva.
+  const loja = await prisma.user.findUnique({ where: { id: ctx.franchiseeId }, select: { chatbotConfig: true } });
+  const chaveClaude = (loja?.chatbotConfig as any)?.modeloDoRobo === MODELO_CLAUDE ? await chaveDoClaude() : null;
+  const modelos = opcoes?.modelos || (lojaNoClaude(loja?.chatbotConfig, chaveClaude) ? [MODELO_CLAUDE, ...MODELOS_DO_ASSESSOR] : MODELOS_DO_ASSESSOR);
+  let modeloUsado = modelos[0];
   const uso = { entrada: 0, saida: 0, pensamento: 0, cache: 0 };
 
   /** Uma rodada: o modelo chama ferramentas até escrever a resposta. */
@@ -204,16 +220,34 @@ export async function conversarComOAssessor(
     return "";
   }
 
-  for (const modelo of MODELOS_DO_ASSESSOR) {
+  for (const modelo of modelos) {
     modeloUsado = modelo;
     try {
+      if (modelo === MODELO_CLAUDE) {
+        const r = await rodarAssessorNoClaude({
+          chave: chaveClaude || (await chaveDoClaude()) || "",
+          geminiApiKey: key,
+          sistema,
+          anteriores,
+          entrada: { rotulo: `[${deOnde}]`, texto, audio: entrada.audio, imagem: entrada.imagem },
+          ctx,
+          acoes,
+          uso,
+          afirmaAcao: (t) => AFIRMA_ACAO.test(t) || dizQueGravou(t),
+        });
+        resposta = r.resposta;
+        ouviDoClaude = r.ouvi;
+        // Respondeu vazio sem ter gravado nada: o Gemini tenta a mesma fala.
+        if (!resposta && !acoes.some((a) => FERRAMENTAS_QUE_GRAVAM.has(a.nome))) throw new Error("Claude respondeu sem texto");
+        break;
+      }
       resposta = await rodar(modelo);
       // ── AFIRMOU SEM FAZER ─────────────────────────────────────────────────
       // Teste de 14/10/2026: "tô sem motoboy, fecha a loja" → "🔒 Loja/Site
       // fechado!" sem chamar ferramenta nenhuma; o site continuou aberto. Sem
       // nenhuma ferramenta na rodada e com cara de ação feita, o modelo ouve
       // que nada mudou e tem mais uma chance de fazer de verdade.
-      if (acoes.length === 0 && (AFIRMA_ACAO.test(resposta) || DIZ_QUE_GRAVOU.test(resposta))) {
+      if (acoes.length === 0 && (AFIRMA_ACAO.test(resposta) || dizQueGravou(resposta))) {
         conversa.push({ role: "model", parts: [{ text: resposta }] });
         conversa.push({
           role: "user",
@@ -233,7 +267,7 @@ export async function conversarComOAssessor(
     trackGeminiUsage(ctx.franchiseeId, modeloUsado, uso.entrada, uso.saida, { origem: "assessor_bill", canal: ctx.canal }, { thoughtsTokens: uso.pensamento, cachedTokens: uso.cache });
   }
 
-  let ouvi: string | null = null;
+  let ouvi: string | null = ouviDoClaude;
   const m = resposta.match(/\[\[OUVI:\s*([\s\S]*?)\]\]/i);
   if (m) {
     ouvi = m[1].trim();
@@ -241,7 +275,7 @@ export async function conversarComOAssessor(
   }
 
   const gravou = acoes.some((a) => FERRAMENTAS_QUE_GRAVAM.has(a.nome) && (a.resultado as any)?.ok);
-  if (!resposta.trim() || (!gravou && DIZ_QUE_GRAVOU.test(resposta) && !/\?\s*$/.test(resposta.trim()))) {
+  if (!resposta.trim() || (!gravou && dizQueGravou(resposta) && !/\?\s*$/.test(resposta.trim()))) {
     resposta = respostaDeReserva(acoes);
   }
   // As marcas que o histórico leva ("[ferramentas desta resposta: …]",
