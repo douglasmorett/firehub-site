@@ -21,6 +21,9 @@
  */
 import fs from "node:fs";
 import path from "node:path";
+import os from "node:os";
+import crypto from "node:crypto";
+import { execFileSync } from "node:child_process";
 import dotenv from "dotenv";
 
 const pasta = process.env.ENV_DIR || process.cwd();
@@ -54,6 +57,8 @@ type Cenario = {
   objetivo?: string;
   /** Foto que o cliente manda junto com a 1ª fala (base64), como chega do WhatsApp. */
   foto?: { base64: string; mimeType: string };
+  /** A 1ª fala vai como ÁUDIO do WhatsApp (ogg/opus com a voz do Windows): o texto é o que o cliente fala. */
+  audio?: string;
 };
 
 const emojis = (t: string) => (t.match(/\p{Extended_Pictographic}/gu) || []).length;
@@ -63,6 +68,20 @@ const reais = (t: string) =>
   [...t.matchAll(/R\$\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)|([0-9]{1,4}(?:[.,][0-9]{1,2})?)\s*reais/gi)]
     .map((m) => Number((m[1] || m[2]).replace(",", ".")))
     .filter((n) => Number.isFinite(n));
+
+/** A fala do cliente em áudio de WhatsApp (ogg/opus), com a voz Maria do Windows; guardada por texto. */
+function vozDoCliente(texto: string): { base64: string; mimeType: string } {
+  const dir = path.join(os.tmpdir(), "ab-voz");
+  fs.mkdirSync(dir, { recursive: true });
+  const base = path.join(dir, crypto.createHash("sha1").update(texto).digest("hex"));
+  if (!fs.existsSync(`${base}.ogg`)) {
+    fs.writeFileSync(`${base}.txt`, texto, "utf8");
+    execFileSync("powershell", ["-NoProfile", "-Command",
+      `Add-Type -AssemblyName System.Speech; $s=New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.SelectVoice('Microsoft Maria Desktop'); $s.SetOutputToWaveFile('${base}.wav'); $s.Speak([IO.File]::ReadAllText('${base}.txt')); $s.Dispose()`]);
+    execFileSync("ffmpeg", ["-y", "-loglevel", "error", "-i", `${base}.wav`, "-c:a", "libopus", "-b:a", "24k", `${base}.ogg`]);
+  }
+  return { base64: fs.readFileSync(`${base}.ogg`).toString("base64"), mimeType: "audio/ogg; codecs=opus" };
+}
 
 /** O cliente do outro lado: responde curto ao que o atendente perguntou, até o pedido fechar. Sempre o mesmo modelo, para as variantes serem comparáveis. */
 async function clienteSimulado(objetivo: string, historico: { sender: string; text: string }[]): Promise<string> {
@@ -122,7 +141,7 @@ async function main() {
       // O mesmo filtro do robô (chatbot-ai.ts): sem o espelho do iFood/99 e sem o que está desligado no
       // delivery. Sem ele, o cenário pedia o "Galera Brazza" da categoria 99Food, que o robô não enxerga (28/10).
       where: { franchiseeId: loja.id, active: true, activeDelivery: true, apenasEmCombo: false, ...SEM_PRODUTO_DE_INTEGRACAO },
-      select: { name: true, price: true, isCombo: true, isBeverage: true, imageUrl: true },
+      select: { name: true, price: true, isCombo: true, isBeverage: true, imageUrl: true, description: true },
     }));
     const comuns = produtos.filter((p) => !p.isCombo && !p.isBeverage && p.price > 10);
     if (comuns.length < 2) {
@@ -168,6 +187,21 @@ async function main() {
     const temMarca = (todas: Resp[]) => /\[\[\s*PEDIDO_IA/i.test(todas.map((t) => t.bruto).join("\n"));
     // Fechou de verdade: a marca do pedido com "finalized": true em alguma resposta.
     const fechou = (todas: Resp[]) => todas.some((t) => /\[\[\s*PEDIDO_IA[\s\S]*"finalized"\s*:\s*true/i.test(t.bruto));
+
+    // O pedido fechado ([[PEDIDO_IA ... "finalized": true]]) lido como JSON, para conferir item e quantidade.
+    const pedidoFechado = (todas: Resp[]): any => {
+      const t = [...todas].reverse().find((x) => /"finalized"\s*:\s*true/i.test(x.bruto));
+      const m = t?.bruto.match(/\[\[\s*PEDIDO_IA:\s*([\s\S]*?)\]\]/);
+      if (!m) return null;
+      try { return JSON.parse(m[1]); } catch { return { items: [], cru: m[1] }; }
+    };
+    const sem = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+    const qtdNoPedido = (ped: any, nome: string) =>
+      (ped?.items || [])
+        .filter((it: any) => sem(String(it.name || "")).includes(sem(nome)) || sem(nome).includes(sem(String(it.name || "\u0000"))))
+        .reduce((n: number, it: any) => n + Number(it.quantity ?? it.qty ?? it.quantidade ?? 1), 0);
+    // Para o cenário de ingrediente: um produto com descrição de verdade (3+ palavras longas).
+    const comDescricao = comuns.find((p) => (p.description || "").split(/[^\p{L}]+/u).filter((w) => w.length > 4).length >= 3);
 
     const cenarios: Cenario[] = [
       {
@@ -361,6 +395,111 @@ async function main() {
           { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
         ],
       },
+
+      // ── BATERIA SEVERA (28/10/2026, pedido do Douglas: "teste severo, para a gente mudar e os clientes não sentir") ──
+      {
+        nome: "severo-audio-pedido",
+        falas: [""],
+        audio: `Boa noite! Eu queria pedir ${soDelivery ? "pra entregar" : "pra retirar aí na loja"} um ${p1.name}. Vou pagar no pix. Meu nome é Carla Mendes.`,
+        objetivo: `Você mandou um áudio pedindo 1 ${p1.name}, ${soDelivery ? "para ENTREGA na Rua das Palmeiras, 45, Centro" : "para RETIRAR no balcão"}, pagando no PIX. Seu nome é Carla Mendes. Agora responda por texto.`,
+        informativo: soDelivery,
+        checa: ({ todas, visivel }: Resp & { todas: Resp[] }) => [
+          { ok: fechou(todas), motivo: "não fechou o pedido feito por áudio" },
+          { ok: qtdNoPedido(pedidoFechado(todas), p1.name) >= 1, motivo: `o pedido fechado não tem o ${p1.name} do áudio` },
+          { ok: reais(visivel).every(valido), motivo: "preço fora do cardápio" },
+        ],
+      },
+      {
+        nome: "severo-audio-pergunta",
+        falas: [""],
+        audio: "Oi, boa noite. Vocês ficam abertos até que horas hoje? E aceitam cartão de crédito?",
+        checa: ({ visivel }) => [
+          { ok: /\d{1,2}\s*(h|:)/i.test(visivel), motivo: "não respondeu o horário do áudio" },
+          { ok: /cart[ãa]o|crédito|credito/i.test(visivel), motivo: "não respondeu o cartão do áudio" },
+        ],
+      },
+      {
+        nome: "severo-acrescenta-depois-do-resumo",
+        informativo: soDelivery,
+        falas: [`oi, quero 1 ${p1.name} pra retirar, pago no pix, meu nome é Bruno Alves`],
+        objetivo: `Você quer 1 ${p1.name}, RETIRADA, PIX, nome Bruno Alves. Quando o atendente mandar o RESUMO e pedir para confirmar, NÃO confirme ainda: responda "antes de confirmar, acrescenta 1 ${p2.name}". Depois que ele mandar o resumo novo, confirme.`,
+        checa: ({ todas }: Resp & { todas: Resp[] }) => {
+          const ped = pedidoFechado(todas);
+          return [
+            { ok: !!ped, motivo: "não fechou depois do acréscimo" },
+            { ok: !ped || qtdNoPedido(ped, p2.name) >= 1, motivo: `esqueceu o ${p2.name} acrescentado depois do resumo` },
+            { ok: !ped || qtdNoPedido(ped, p1.name) >= 1, motivo: `perdeu o ${p1.name} ao acrescentar` },
+          ];
+        },
+      },
+      {
+        nome: "severo-quantidades",
+        informativo: soDelivery,
+        falas: [`boa noite, quero 3 ${p1.name} e 2 ${p2.name} pra retirar`],
+        objetivo: `Você quer 3 ${p1.name} e 2 ${p2.name}, RETIRADA, pagamento em DINHEIRO sem troco, nome Eduardo Lima. Se perguntarem sabor/opção, a primeira citada para todos.`,
+        checa: ({ todas }: Resp & { todas: Resp[] }) => {
+          const ped = pedidoFechado(todas);
+          return [
+            { ok: !!ped, motivo: "não fechou o pedido com quantidades" },
+            { ok: !ped || qtdNoPedido(ped, p1.name) === 3, motivo: `${p1.name}: pedido com ${qtdNoPedido(ped, p1.name)}, o cliente pediu 3` },
+            { ok: !ped || qtdNoPedido(ped, p2.name) === 2, motivo: `${p2.name}: pedido com ${qtdNoPedido(ped, p2.name)}, o cliente pediu 2` },
+          ];
+        },
+      },
+      {
+        nome: "severo-pergunta-no-meio",
+        informativo: soDelivery,
+        falas: [`quero 1 ${p1.name}`],
+        objetivo: `Você quer 1 ${p1.name}, RETIRADA, PIX, nome Marina Rocha. Na sua SEGUNDA mensagem, antes de responder o que o atendente perguntou, pergunte só "demora quanto pra ficar pronto?". Na mensagem seguinte, responda o que faltava.`,
+        checa: ({ todas }: Resp & { todas: Resp[] }) => [{ ok: fechou(todas), motivo: "não fechou depois da pergunta no meio" }],
+      },
+      {
+        nome: "severo-cancelar",
+        falas: ["quero cancelar o pedido que eu fiz agora há pouco"],
+        checa: ({ visivel, bruto }) => [
+          { ok: /CHAMAR_ATENDENTE/.test(bruto), motivo: "não chamou a equipe para o cancelamento" },
+          { ok: !/(já|foi|está|tá) cancelad|cancelei|pedido cancelado/i.test(visivel), motivo: "disse que cancelou por conta própria" },
+        ],
+      },
+      {
+        nome: "severo-chave-pix",
+        falas: [`quero 1 ${p1.name}`, "me passa a chave pix pra eu já ir pagando"],
+        checa: ({ todas }: Resp & { todas: Resp[] }) => [
+          {
+            ok: !todas.some((t) => /\b\d{11,14}\b|\b\d{3}\.\d{3}\.\d{3}-\d{2}\b|[\w.+-]+@[\w-]+\.[\w.]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(t.visivel)),
+            motivo: "digitou uma chave Pix na resposta",
+          },
+        ],
+      },
+      {
+        nome: "severo-espanhol",
+        informativo: soDelivery,
+        falas: [`hola! quiero una ${p1.name} para recoger, pago en efectivo`],
+        objetivo: `Eres un cliente que solo habla ESPAÑOL. Quieres 1 ${p1.name} para RECOGER en el local, pagas en EFECTIVO sin cambio, te llamas Juan Pérez. Responde siempre en español.`,
+        checa: ({ todas }: Resp & { todas: Resp[] }) => [
+          { ok: fechou(todas), motivo: "não fechou o pedido em espanhol" },
+          { ok: todas.slice(0, 2).some((t) => /gracias|usted|tu pedido|su pedido|¿|perfecto|efectivo|recoger|nombre/i.test(t.visivel)), motivo: "não respondeu em espanhol" },
+        ],
+      },
+      ...(comDescricao
+        ? [{
+            nome: "severo-ingrediente",
+            falas: [`o ${comDescricao.name} vem com o quê?`],
+            checa: ({ visivel }: Resp & { todas: Resp[] }) => {
+              const palavras = (comDescricao.description || "").split(/[^\p{L}]+/u).filter((w) => w.length > 4).map(sem);
+              return [{ ok: palavras.filter((w) => sem(visivel).includes(w)).length >= 2, motivo: `não usou a descrição do cardápio (${(comDescricao.description || "").slice(0, 60)})` }];
+            },
+          } as Cenario]
+        : []),
+      {
+        // Roda à parte, sem FIREHUB_AB_LOJA_ABERTA e com o relógio fora do horário: a loja está fechada de verdade.
+        nome: "fechada-pedido",
+        falas: [`quero 1 ${p1.name} pra entregar agora`],
+        checa: ({ todas, visivel }: Resp & { todas: Resp[] }) => [
+          { ok: !fechou(todas), motivo: "fechou pedido com a loja fechada" },
+          { ok: /fechad|abr(e|imos|iremos)|a partir d|\d{1,2}\s*(h|:)/i.test(visivel), motivo: "não disse que está fechada nem quando abre" },
+        ],
+      },
       {
         nome: "combo-ambiguo(info)",
         falas: [`quero 1 ${p1.name}`, "e do combo?", "quero esse mesmo"],
@@ -387,7 +526,7 @@ async function main() {
             let res: any;
             for (let t = 0; ; t++) {
               try {
-                res = await processChatbotAI(loja.id, fala, historico, remoteJid, undefined, "Cliente Teste", i === 0 && cen.foto ? { imagem: cen.foto } : undefined);
+                res = await processChatbotAI(loja.id, fala, historico, remoteJid, i === 0 && cen.audio ? vozDoCliente(cen.audio) : undefined, "Cliente Teste", i === 0 && cen.foto ? { imagem: cen.foto } : undefined);
                 break;
               } catch (e: any) {
                 if (t >= 2 || !/prisma|Can't reach database|connection/i.test(String(e?.message || e))) throw e;
@@ -397,7 +536,7 @@ async function main() {
             const visivel = String(res?.reply || "");
             const bruto = g.__abBrutos.length > antesBrutos ? String(g.__abBrutos[g.__abBrutos.length - 1]) : visivel;
             todas.push({ visivel, bruto });
-            historico.push({ sender: "user", text: fala }, { sender: "bot", text: visivel });
+            historico.push({ sender: "user", text: i === 0 && cen.audio ? `🎤 (áudio) ${cen.audio}` : fala }, { sender: "bot", text: visivel });
             if (cen.objetivo && i === falas.length - 1 && !fechou(todas)) {
               const prox = await clienteSimulado(cen.objetivo, historico);
               if (prox && !/^FIM/i.test(prox)) falas.push(prox);

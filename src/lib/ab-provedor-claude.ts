@@ -22,6 +22,22 @@ type Conteudo = { role: string; parts?: Parte[] };
 
 const textoDe = (c: Conteudo) => (c.parts || []).map((p) => p.text || "").join("\n").trim();
 
+/** O Gemini transcreve o áudio (FIREHUB_AB_MODELO_TRANSCRICAO, padrão gemini-3.6-flash sem pensamento). */
+async function transcreveComGemini(base64: string, mimeType: string): Promise<string> {
+  const { GoogleGenAI } = await import("@google/genai");
+  const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY! });
+  const modelo = process.env.FIREHUB_AB_MODELO_TRANSCRICAO || "gemini-3.6-flash";
+  const r = await ai.models.generateContent({
+    model: modelo,
+    contents: [{ role: "user", parts: [
+      { inlineData: { data: base64, mimeType: mimeType.split(";")[0] } },
+      { text: "Transcreva exatamente o que o cliente falou neste áudio de WhatsApp, em português, sem comentar nada." },
+    ] }],
+    config: { temperature: 0, maxOutputTokens: 400, thinkingConfig: modelo.includes("lite") ? undefined : ({ thinkingBudget: 0 } as any) },
+  });
+  return String(r.text || "").trim().replace(/"/g, "'");
+}
+
 export async function abClaudeCli(params: { model: string; contents: Conteudo[]; config?: any }) {
   // As regras do Claude (lib/regras-do-claude.ts) vão sempre no fim, como iriam em produção; FIREHUB_AB_SEM_REGRAS_DO_CLAUDE=1
   // mede sem elas. FIREHUB_AB_INSTRUCAO_EXTRA: uma linha a mais, para medir outro ajuste de prompt só no Claude.
@@ -33,6 +49,18 @@ export async function abClaudeCli(params: { model: string; contents: Conteudo[];
   fs.mkdirSync(dir, { recursive: true });
   const arq = path.join(dir, `${crypto.createHash("sha1").update(sistema).digest("hex")}.txt`);
   if (!fs.existsSync(arq)) fs.writeFileSync(arq, sistema);
+
+  // Áudio do cliente: o Claude não ouve. O Gemini transcreve (o mesmo caminho que iria para produção) e a
+  // transcrição entra no lugar do áudio; a regra 20 do prompt continua pedindo a linha [[TRANSCRICAO: ...]].
+  const ultimoBruto = params.contents[params.contents.length - 1];
+  const audio = (ultimoBruto?.parts || []).find((p: any) => p.inlineData?.mimeType?.startsWith("audio/")) as any;
+  if (audio) {
+    const transcricao = await transcreveComGemini(audio.inlineData.data, audio.inlineData.mimeType);
+    ultimoBruto.parts = [
+      ...(ultimoBruto.parts || []).filter((p: any) => p !== audio && !/O cliente enviou uma mensagem de voz/.test(p.text || "")),
+      { text: `[O cliente mandou um ÁUDIO. Transcrição automática do que ele falou: "${transcricao}"]` },
+    ];
+  }
 
   // O contexto da conversa (primeira mensagem de "user") e o histórico viram uma transcrição; a última fala do cliente fecha.
   const turnos = params.contents.filter((c) => textoDe(c));
