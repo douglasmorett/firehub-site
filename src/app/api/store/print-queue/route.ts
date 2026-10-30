@@ -34,6 +34,7 @@ import { marcarAssistente } from "@/lib/sinais-da-loja";
 import { bebidaDecididaPeloServidor } from "@/lib/bebida-para-o-assistente";
 import { qtdPedidosDosClientes } from "@/lib/qtd-pedidos-do-cliente";
 import { esquecer, lembrarPor } from "@/lib/cache-curto";
+import { nadaMudouDesde, PRAZO_MS as PRAZO_DA_NOVIDADE_MS } from "@/lib/novidade-da-loja";
 import { filaTemAlgoGuardado } from "@/lib/fila-tem-algo";
 import { barrarChamadaDaFila } from "@/lib/token-do-assistente";
 import { sessaoDaLojaNaFila } from "@/lib/sessao-da-loja-na-fila";
@@ -525,10 +526,11 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     // em PrintRequest, antes da pré-consulta (que então já o enxerga), e sai
     // pela leitura das impressões avulsas, lá embaixo.
     const impressorasDoCancelamento = impressorasDoAvisoDeCancelamento(Array.isArray(pc?.printers) ? pc.printers : []);
-    if (impressorasDoCancelamento.length > 0) {
-      await criarAvisosDeCancelamento(franchiseeId, sinceDate).catch((err) =>
-        console.error("[PrintQueue] aviso de cancelamento:", (err as any)?.code || err)
-      );
+    if (impressorasDoCancelamento.length > 0 && precisaConferirCancelamento(franchiseeId, sinceDate)) {
+      const conferidoEm = Date.now();
+      await criarAvisosDeCancelamento(franchiseeId, sinceDate)
+        .then(() => cancelamentoConferido.set(franchiseeId, { em: conferidoEm, desde: sinceDate.getTime() }))
+        .catch((err) => console.error("[PrintQueue] aviso de cancelamento:", (err as any)?.code || err));
     }
 
     const temAlgo = await filaTemAlgoGuardado(prisma, {
@@ -1298,6 +1300,23 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
     console.error("[PrintQueue GET]", err);
     return NextResponse.json({ error: "fila indisponível" }, { status: 500 });
   }
+}
+
+/**
+ * A última conferência de cancelamento de cada loja. Cancelar é gravar no
+ * pedido, e isso marca a novidade da loja (lib/novidade-da-loja.ts): sem
+ * novidade desde a última conferência, não há cancelamento novo e a fila não
+ * repete as consultas a cada 3 s. Repete mesmo assim quando a janela pedida
+ * começa ANTES da conferida (Assistente que acabou de voltar) ou o prazo de
+ * 15 s venceu.
+ */
+const cancelamentoConferido = new Map<string, { em: number; desde: number }>();
+function precisaConferirCancelamento(franchiseeId: string, desde: Date): boolean {
+  const ultima = cancelamentoConferido.get(franchiseeId);
+  if (!ultima) return true;
+  if (Date.now() - ultima.em >= PRAZO_DA_NOVIDADE_MS) return true;
+  if (desde.getTime() < ultima.desde) return true;
+  return !nadaMudouDesde([franchiseeId], ultima.em);
 }
 
 /**

@@ -1,4 +1,5 @@
 import { prisma } from "./prisma";
+import { marcarNovidade } from "./novidade-da-loja";
 import { faxinaDeTempoEmTempo, garantirTabelasDoRobo } from "./robo-no-banco";
 
 /**
@@ -88,6 +89,23 @@ async function tentar<T>(oQue: string, seFalhar: T, fn: () => Promise<T>): Promi
 const json = (v: unknown) => JSON.stringify(v);
 
 /**
+ * A marca de novidade da fila desta loja (lib/novidade-da-loja.ts, que já leva
+ * a marca à outra instância): o GET do balãozinho guarda a lista e só relê o
+ * banco depois de uma gravação aqui (ou do prazo de 15 s). Separada da marca
+ * dos pedidos, para mensagem de cliente não invalidar a fila de impressão.
+ */
+export const marcaDaFilaHumana = (userId: string) => `humano:${userId}`;
+
+/** `tentar` de quem grava: marca a novidade da fila da loja, deu certo ou não. */
+async function gravar<T>(oQue: string, seFalhar: T, userId: string, fn: () => Promise<T>): Promise<T> {
+  try {
+    return await tentar(oQue, seFalhar, fn);
+  } finally {
+    marcarNovidade(marcaDaFilaHumana(userId));
+  }
+}
+
+/**
  * Põe (ou mantém) a conversa na fila com as mensagens novas. Quem a equipe JÁ
  * assumiu continua ACTIVE; o resto volta a PENDING. Um motivo antigo não é
  * apagado por entrada sem motivo. `soPorIaForaDoAr`: nasce verdadeiro só pelo
@@ -107,7 +125,7 @@ export function entrarNaFila(e: {
 }): Promise<boolean> {
   const motivo = e.motivo || null;
   const quando = new Date(e.agora ?? Date.now());
-  return tentar("entrar na fila", false, async () => {
+  return gravar("entrar na fila", false, e.userId, async () => {
     await prisma.$executeRaw`
       INSERT INTO "AtendimentoHumano"
         ("userId", "jid", "telefone", "nomeDoCliente", "status", "motivo", "soPorIaForaDoAr", "naoLidas", "ultimaMensagem", "mensagens", "atualizadoEm")
@@ -143,7 +161,7 @@ export function chamadoDaConversa(userId: string, jid: string): Promise<HumanSup
 
 /** O cliente escreveu de novo numa conversa que está com a equipe (não fechada). */
 export function acrescentarDoCliente(userId: string, jid: string, texto: string, agora: number = Date.now()): Promise<boolean> {
-  return tentar("acrescentar mensagem", false, async () => {
+  return gravar("acrescentar mensagem", false, userId, async () => {
     const n = await prisma.$executeRaw`
       UPDATE "AtendimentoHumano" SET
         "mensagens" = "mensagens" || ${json([{ sender: "user", text: texto, timestamp: agora }])}::jsonb,
@@ -157,7 +175,7 @@ export function acrescentarDoCliente(userId: string, jid: string, texto: string,
 
 /** Tira a conversa da fila (atendimento expirou). */
 export function tirarDaFila(userId: string, jid: string): Promise<boolean> {
-  return tentar("tirar da fila", false, async () => {
+  return gravar("tirar da fila", false, userId, async () => {
     const n = await prisma.$executeRaw`DELETE FROM "AtendimentoHumano" WHERE "userId" = ${userId} AND "jid" = ${jid}`;
     return n > 0;
   });
@@ -165,7 +183,7 @@ export function tirarDaFila(userId: string, jid: string): Promise<boolean> {
 
 /** A IA voltou a responder: sai da fila quem estava lá SÓ pela queda e ninguém assumiu. */
 export function tirarSeSoPelaQuedaDaIa(userId: string, jid: string): Promise<boolean> {
-  return tentar("tirar da fila (IA voltou)", false, async () => {
+  return gravar("tirar da fila (IA voltou)", false, userId, async () => {
     const n = await prisma.$executeRaw`
       DELETE FROM "AtendimentoHumano"
       WHERE "userId" = ${userId} AND "jid" = ${jid} AND "soPorIaForaDoAr" AND "status" = 'PENDING'`;
@@ -195,7 +213,7 @@ export function contatosDaFila(userId: string): Promise<{ jid: string; telefone:
 
 /** A atendente abriu a conversa: lida e assumida. */
 export function marcarLido(userId: string, jid: string): Promise<boolean> {
-  return tentar("marcar como lida", false, async () => {
+  return gravar("marcar como lida", false, userId, async () => {
     const n = await prisma.$executeRaw`
       UPDATE "AtendimentoHumano" SET "naoLidas" = 0, "status" = 'ACTIVE'
       WHERE "userId" = ${userId} AND "jid" = ${jid}`;
@@ -211,7 +229,7 @@ export function marcarLido(userId: string, jid: string): Promise<boolean> {
 export function respostaDaLoja(userId: string, jid: string, texto: string, opcoes: { peloRobo?: boolean; agora?: number } = {}): Promise<boolean> {
   const agora = opcoes.agora ?? Date.now();
   const peloRobo = opcoes.peloRobo === true;
-  return tentar("registrar a resposta da loja", false, async () => {
+  return gravar("registrar a resposta da loja", false, userId, async () => {
     const n = await prisma.$executeRaw`
       UPDATE "AtendimentoHumano" SET
         "mensagens" = "mensagens" || ${json([{ sender: "attendant", text: texto, timestamp: agora }])}::jsonb,
@@ -229,7 +247,7 @@ export function respostaDaLoja(userId: string, jid: string, texto: string, opcoe
  * dele — "Loop suspeito" fecha sem mandar mensagem ao cliente.
  */
 export function encerrarChamado(userId: string, jid: string): Promise<{ existia: boolean; motivo?: string }> {
-  return tentar("encerrar o chamado", { existia: false }, async () => {
+  return gravar("encerrar o chamado", { existia: false }, userId, async () => {
     const linhas = await prisma.$queryRaw<{ motivo: string | null }[]>`
       UPDATE "AtendimentoHumano" SET "status" = 'CLOSED', "naoLidas" = 0
       WHERE "userId" = ${userId} AND "jid" = ${jid}

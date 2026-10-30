@@ -9,7 +9,8 @@ import { registrarMensagemDaLoja } from "@/lib/memoria-da-conversa-no-banco";
 import { contaOficialDoWhatsApp } from "@/lib/contas-oficiais-whatsapp";
 import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { lembrarPor } from "@/lib/cache-curto";
-import { chamadoDaConversa, chamadosAbertos, encerrarChamado, marcarLido, respostaDaLoja } from "@/lib/fila-de-atendimento-humano";
+import { chamadoDaConversa, chamadosAbertos, encerrarChamado, marcaDaFilaHumana, marcarLido, respostaDaLoja } from "@/lib/fila-de-atendimento-humano";
+import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
 import { ehConversaDeCliente } from "@/lib/jid-de-cliente";
 import { lojasDaVisao, lojaPedidaNaVisao, COOKIE_DA_LOJA_ATIVA } from "@/lib/loja-ativa";
 
@@ -78,8 +79,12 @@ export async function GET(req: NextRequest) {
     const cookieDaLoja = req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value;
     const { lojaIds } = await lembrarPor(`fila-humana:lojas:${email}|${cookieDaLoja === "all" ? "todas" : ""}`, 15_000, () =>
       lojasDaVisao(user, cookieDaLoja)).catch(() => ({ lojaIds: [targetUserId] }));
-    // Já vem sem as fechadas e na ordem (a mais recente primeiro).
-    const filas = await Promise.all(lojaIds.map((lojaId) => chamadosAbertos(lojaId)));
+    // Já vem sem as fechadas e na ordem (a mais recente primeiro). O balãozinho
+    // pergunta a cada 6 s por aba: a lista de cada loja fica guardada até alguém
+    // gravar na fila dela (marcaDaFilaHumana, também vinda da outra instância)
+    // ou 15 s passarem.
+    const filas = await Promise.all(lojaIds.map((lojaId) =>
+      lerEnquantoNadaMuda(`fila-humana:${lojaId}`, [marcaDaFilaHumana(lojaId)], () => chamadosAbertos(lojaId))));
     const chats = filas.flat().sort((a, b) => b.updatedAt - a.updatedAt);
 
     const totalUnread = chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
