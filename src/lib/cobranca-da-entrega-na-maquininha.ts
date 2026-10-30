@@ -4,6 +4,8 @@ import { ESTADOS_DA_COBRANCA, ehProvedorComApp } from "@/lib/terminal-app";
 import { formaDaBaixa } from "@/lib/cobranca-da-mesa-na-maquininha";
 import { resumoDividido } from "@/lib/pagamento-dividido";
 import { empilharEdicao, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
+import { pagoNaMaquininha } from "@/lib/pagamento-na-entrega";
+import { formaDoPedido, type PedidoParaForma } from "@/lib/relatorios/formas-de-pagamento";
 
 /**
  * Cobrança da entrega na maquininha — o app FireHub Motoboy.
@@ -351,14 +353,26 @@ export async function receberEntrega(params: {
 export type ConferidoNaMaquininha = Record<"debit" | "credit" | "pix" | "voucher", { valor: number; qtd: number }>;
 
 /**
- * O que passou na maquininha do motoboy nos pedidos do turno, por forma do
- * fechamento do caixa: a linha "✓ conferido na maquininha" embaixo de Débito,
- * Crédito, Pix e Vale. Informação — o esperado continua o mesmo.
+ * O que passou na maquininha nos pedidos do turno, por forma do fechamento do
+ * caixa: a linha "✓ conferido na maquininha" embaixo de Débito, Crédito, Pix e
+ * Vale. As passadas do motoboy e o pedido do totem pago na maquininha da loja
+ * (`pagoNaMaquininha`: app do FireHub, Stone, Point), este na linha em que o
+ * esperado o soma (`formaDoPedido`). Informação — o esperado continua o mesmo.
  */
-export function somarConferidoNaMaquininha(pedidos: { posDadosTransacao?: unknown }[]): ConferidoNaMaquininha {
+export function somarConferidoNaMaquininha(
+  pedidos: ({ posDadosTransacao?: unknown; totalAmount?: number | null } & PedidoParaForma)[],
+): ConferidoNaMaquininha {
   const soma: ConferidoNaMaquininha = { debit: { valor: 0, qtd: 0 }, credit: { valor: 0, qtd: 0 }, pix: { valor: 0, qtd: 0 }, voucher: { valor: 0, qtd: 0 } };
+  const DO_TOTEM = { DEBITO: "debit", CREDITO: "credit", PIX: "pix", VALE: "voucher" } as const;
   for (const p of pedidos) {
-    if (!conferidoNaMaquininha(p.posDadosTransacao)) continue;
+    if (!conferidoNaMaquininha(p.posDadosTransacao)) {
+      const chave = pagoNaMaquininha(p) ? DO_TOTEM[formaDoPedido(p) as keyof typeof DO_TOTEM] : undefined;
+      if (chave) {
+        soma[chave].valor = Math.round((soma[chave].valor + (Number(p.totalAmount) || 0)) * 100) / 100;
+        soma[chave].qtd += 1;
+      }
+      continue;
+    }
     for (const passada of (p.posDadosTransacao as any).maquininha.passadas) {
       const forma = passada?.forma;
       const chave = forma === "Cartão Débito" ? "debit" : forma === "Cartão Crédito" ? "credit" : forma === "Vale-refeição" ? "voucher" : "pix";
