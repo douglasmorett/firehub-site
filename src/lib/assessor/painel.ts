@@ -14,7 +14,7 @@
  */
 import { periodoDoAtalho, type AtalhoDePeriodo } from "@/lib/relatorios/base";
 
-export const TIPOS_DO_REGISTRO = ["COMPRA", "SAIDA", "DESPESA", "CONTA", "CONTA_PAGA", "PAUSADO", "REATIVADO", "SITE"] as const;
+export const TIPOS_DO_REGISTRO = ["COMPRA", "SAIDA", "DESPESA", "CONTA", "CONTA_PAGA", "PAUSADO", "REATIVADO", "SITE", "ENTREGA"] as const;
 export type TipoDoRegistro = (typeof TIPOS_DO_REGISTRO)[number];
 
 export type GrupoDoRegistro = "Estoque" | "Financeiro" | "Cardápio" | "Loja";
@@ -28,6 +28,7 @@ export const ROTULO_DO_REGISTRO: Record<TipoDoRegistro, { texto: string; cor: st
   PAUSADO: { texto: "Pausado", cor: "#B45309", grupo: "Cardápio" },
   REATIVADO: { texto: "Reativado", cor: "#0891B2", grupo: "Cardápio" },
   SITE: { texto: "Site aberto/fechado", cor: "#475569", grupo: "Loja" },
+  ENTREGA: { texto: "Entrega por bairro", cor: "#0D9488", grupo: "Loja" },
 };
 
 export function rotuloDoRegistro(tipo: string) {
@@ -44,6 +45,7 @@ export function ondeVer(tipo: string): { href: string; rotulo: string } | null {
     case "CONTA_PAGA": return { href: "/store/financeiro?tab=contasapagar", rotulo: "Contas a pagar" };
     case "PAUSADO":
     case "REATIVADO": return { href: "/store/cardapio", rotulo: "Cardápio" };
+    case "ENTREGA": return { href: "/store/minha-loja#entrega", rotulo: "Minha Loja › Entrega" };
     default: return null;
   }
 }

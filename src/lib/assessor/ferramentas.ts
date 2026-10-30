@@ -10,6 +10,9 @@
  *   registrar_conta_a_pagar → Payable PENDING (Contas a Pagar)
  *   marcar_conta_paga       → o "Paguei" das Contas a Pagar
  *   consultar_*             → só leitura
+ *   alterar_taxa_de_bairro, → a tela de Entrega (PUT api/store-settings →
+ *   cadastrar_bairro,          cadastroParaGravar), só loja por bairro
+ *   remover_bairro             (entrega.ts)
  *   desfazer_ultimo_registro→ o desfazer de cada tela (compra desfeita com
  *                              estorno, despesa apagada, conta reaberta…)
  *
@@ -28,6 +31,7 @@ import { hojeNaLoja } from "@/lib/relatorios/base";
 import { garantirEstruturaDeDespesas } from "@/lib/garantir-colunas";
 import { comAutor } from "./painel";
 import { buscarNoCardapio, pausarOuReativar, listarPausados, abrirOuFecharSite, desfazerNoCardapio } from "./cardapio";
+import { consultarTaxasDeEntrega, alterarTaxaDeBairro, cadastrarBairro, removerBairro, desfazerNaEntrega } from "./entrega";
 
 export type ContextoDoAssessor = {
   franchiseeId: string;
@@ -203,6 +207,53 @@ export const DECLARACOES_DO_ASSESSOR = [
     parameters: { type: Type.OBJECT, properties: { aberto: { type: Type.BOOLEAN } }, required: ["aberto"] },
   },
   {
+    name: "consultar_taxas_de_entrega",
+    description: "Como a loja cobra a entrega e quanto: por bairro (cada bairro com taxa e tempo), ou se é por raio/km ou por área desenhada. Use para 'quanto está a entrega do bairro X?', 'quais bairros eu atendo?'.",
+    parameters: { type: Type.OBJECT, properties: { busca: { type: Type.STRING, description: "parte do nome do bairro; vazio = todos" } } },
+  },
+  {
+    name: "alterar_taxa_de_bairro",
+    description: "Muda a taxa de entrega de um ou mais bairros JÁ cadastrados ('muda a taxa do Centro para 8', 'Vivendas Bela Vista 13 reais', 'entrega grátis no Centro' = taxa 0). Mande o nome como ele disse: o sistema acha sem acento/maiúscula. Se não achar, NADA muda e volta a lista de parecidos: pergunte qual é (ou se é bairro novo). Só loja que cobra por bairro.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        bairros: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              nome: { type: Type.STRING, description: "nome do bairro como o dono disse" },
+              taxa: { type: Type.NUMBER, description: "nova taxa em reais (13,50 = 13.5; 0 = entrega grátis)" },
+            },
+            required: ["nome", "taxa"],
+          },
+        },
+        confirmarMotoboyAcimaDaTaxa: { type: Type.BOOLEAN, description: "true só depois que o dono confirmou, quando a ferramenta avisou que o motoboy recebe mais do que a nova taxa" },
+      },
+      required: ["bairros"],
+    },
+  },
+  {
+    name: "cadastrar_bairro",
+    description: "Cadastra um bairro NOVO na entrega, com taxa (e tempo, se ele disser): 'começa a entregar no Morada do Sol por 9'. Nunca use no lugar de alterar_taxa_de_bairro quando o nome não foi achado — pergunte antes.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        nome: { type: Type.STRING },
+        taxa: { type: Type.NUMBER, description: "taxa em reais (0 = entrega grátis)" },
+        tempo: { type: Type.NUMBER, description: "minutos de entrega; omita = o mesmo do último bairro" },
+        motoboyRecebe: { type: Type.NUMBER, description: "quanto o motoboy recebe neste bairro — só quando a ferramenta pedir" },
+        confirmarMotoboyAcimaDaTaxa: { type: Type.BOOLEAN, description: "true só depois que o dono confirmou, quando a ferramenta avisou que o motoboy recebe mais do que a taxa" },
+      },
+      required: ["nome", "taxa"],
+    },
+  },
+  {
+    name: "remover_bairro",
+    description: "Tira um bairro da entrega ('não entrego mais no X'): endereço desse bairro passa a ficar fora da área. Se não achar o nome, nada muda e volta a lista de parecidos.",
+    parameters: { type: Type.OBJECT, properties: { nome: { type: Type.STRING } }, required: ["nome"] },
+  },
+  {
     name: "desfazer_ultimo_registro",
     description: "Desfaz o último lançamento feito pelo assessor ('desfaz', 'errei', 'cancela isso').",
     parameters: { type: Type.OBJECT, properties: {} },
@@ -213,6 +264,7 @@ export const DECLARACOES_DO_ASSESSOR = [
 export const FERRAMENTAS_QUE_GRAVAM = new Set([
   "registrar_compra", "registrar_saida", "registrar_despesa", "registrar_conta_a_pagar", "marcar_conta_paga", "desfazer_ultimo_registro",
   "pausar_ou_reativar_itens", "abrir_ou_fechar_site",
+  "alterar_taxa_de_bairro", "cadastrar_bairro", "remover_bairro",
 ]);
 
 // ── Execução ──────────────────────────────────────────────────────────────
@@ -232,6 +284,10 @@ export async function executarFerramentaDoAssessor(nome: string, args: any, ctx:
       case "pausar_ou_reativar_itens": return await pausarOuReativar(args, ctx);
       case "listar_itens_pausados": return await listarPausados(args, ctx);
       case "abrir_ou_fechar_site": return await abrirOuFecharSite(args, ctx);
+      case "consultar_taxas_de_entrega": return await consultarTaxasDeEntrega(args, ctx);
+      case "alterar_taxa_de_bairro": return await alterarTaxaDeBairro(args, ctx);
+      case "cadastrar_bairro": return await cadastrarBairro(args, ctx);
+      case "remover_bairro": return await removerBairro(args, ctx);
       default: return { ok: false, erro: `Ferramenta desconhecida: ${nome}` };
     }
   } catch (err: any) {
@@ -535,6 +591,9 @@ async function desfazerOLancamento(ultimo: { tipo: string; resumo: string; refs:
     await conferirPausaPeloEstoque(ctx.franchiseeId, [String(refs.stockItemId)]);
   } else if (ultimo.tipo === "PAUSADO" || ultimo.tipo === "REATIVADO" || ultimo.tipo === "SITE") {
     await desfazerNoCardapio(ultimo.tipo, refs, ctx);
+  } else if (ultimo.tipo === "ENTREGA") {
+    const r = await desfazerNaEntrega(refs, ctx);
+    if (!r.ok) return r;
   } else {
     return { ok: false, erro: "Esse lançamento não se desfaz por aqui." };
   }
