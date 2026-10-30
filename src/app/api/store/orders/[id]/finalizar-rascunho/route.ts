@@ -159,7 +159,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const loja = await prisma.user.findUnique({
       where: { id: lojaId },
       select: {
-        city: true, chatbotConfig: true, storeName: true,
+        id: true, city: true, chatbotConfig: true, storeName: true,
         deliveryZones: true, deliveryZoneType: true, deliveryConfig: true, storeLatLng: true, storeAddress: true, etaConfig: true,
       },
     });

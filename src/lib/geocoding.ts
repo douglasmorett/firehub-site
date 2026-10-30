@@ -433,6 +433,26 @@ export function extrairLogradouro(texto: string): string {
   return m ? logradouroDoAchado(m) : "";
 }
 
+const TIPO_REPETIDO = /^(rua|r\.?|avenida|av\.?|travessa|tv\.?|estrada|beco)\s+(rua|travessa|tv\.?|avenida|av\.?|estrada|beco)\s+(.{3,})$/i;
+
+/**
+ * O tipo da via escrito duas vezes: "Rua travessa Monte Horebe", "Rua
+ * travessa diamante" (Divinos, 25 e 30/10/2026). O mapa conhece "Rua Monte
+ * Horebe" e "Travessa Diamante" e não acha nada com os dois tipos juntos.
+ * Devolve o escrito e, com tipo repetido, os dois jeitos com um tipo só — o
+ * de dentro primeiro (quem escreve "Rua travessa" mora na travessa).
+ */
+export function semTipoRepetido(logradouro: string): string[] {
+  const m = String(logradouro || "").trim().match(TIPO_REPETIDO);
+  if (!m) return [logradouro];
+  const tipo = (t: string) => {
+    const x = t.toLowerCase().replace(".", "");
+    const nomes: Record<string, string> = { r: "Rua", av: "Avenida", tv: "Travessa" };
+    return nomes[x] || x.charAt(0).toUpperCase() + x.slice(1);
+  };
+  return [logradouro, `${tipo(m[2])} ${m[3]}`, `${tipo(m[1])} ${m[3]}`];
+}
+
 /** Travessa, beco, servidão: a rua pequena onde a casa fica, quando o cliente cita duas. */
 const RUA_PEQUENA = /^(travessa|beco|servid[aã]o)\b/i;
 
@@ -764,6 +784,12 @@ export type OpcoesDaVerificacao = {
   prazo?: number;
   /** Como a coordenada do cliente chegou, quando chegou. Padrão: "gps". */
   origemDasCoords?: "pino" | "gps";
+  /**
+   * A rua que o mapa não tem, pelas entregas que a loja já fez nela
+   * (lib/rua-das-entregas.ts). Só é chamado quando a busca pela rua falhou.
+   * Sem ele, a cascata é a de sempre.
+   */
+  ruaNasEntregas?(ruas: string[], bairro: string | null): Promise<{ lat: number; lng: number; entregas: number; mesmoBairro: boolean; rua: string } | null>;
 };
 
 /** Texto normalizado para não mandar ao mapa a mesma pergunta com outra pontuação. */
@@ -1042,9 +1068,10 @@ export async function verifyStoreDeliveryAddress(
     //     HOMÔNIMA (R3): não se assume o mais longe (a Rua Diamante a 4,95 km
     //     para quem mora a 0,13 km); o ponto só vale com o cliente confirmando.
     if (!foundGeo) {
-      const ruas = street
+      const ruas = (street
         ? [street, ...logradourosCandidatos(street).filter((r) => r !== street)]
-        : ruasProcuradas;
+        : ruasProcuradas
+      ).flatMap(semTipoRepetido);
       const maisLonge = (lista: TrechoDeRua[]) =>
         lista
           .map((t) => ({ t, km: haversineDistanceKm(loja.lat, loja.lng, t.lat, t.lng) }))
@@ -1129,6 +1156,40 @@ export async function verifyStoreDeliveryAddress(
       const ehOBairro = v.nivel === "area" || (!!nomeDeBairro(v.bairro || "") && bairroConfere(neigh, v.bairro));
       return ehOBairro ? r : { ok: true, valor: null };
     };
+
+    // ── NÍVEL 4b: A RUA QUE O MAPA NÃO TEM ──────────────────────────────
+    //
+    // Pelas entregas que a loja já fez nela com ponto de verdade
+    // (lib/rua-das-entregas.ts). Divinos, 30/10/2026: o OSM de Cabo Frio não
+    // tem a Rua Moacir dos Santos Moreira nem a Rua Isabela, e o pedido saía
+    // "taxa pelo bairro" com o centro da Vila Monte Alegre — a loja tinha
+    // entregado lá pelo GPS na véspera. Vem antes das reservas (rua em outro
+    // bairro, homônima, centro do bairro): onde os clientes desta rua moram
+    // vale mais que o palpite do mapa. A régua é a de sempre: longe do centro
+    // do bairro que o cliente escreveu, é a homônima de outro canto.
+    if (!foundGeo && opcoes?.ruaNasEntregas) {
+      const ruasDoCliente = street ? [street] : [...ruasProcuradas, customerAddressText];
+      let r: Awaited<ReturnType<NonNullable<OpcoesDaVerificacao["ruaNasEntregas"]>>> = null;
+      try {
+        r = await opcoes.ruaNasEntregas(ruasDoCliente, neigh || null);
+      } catch {
+        // Banco fora: segue a cascata de sempre.
+      }
+      if (r) {
+        let vale = r.entregas >= 2 || r.mesmoBairro;
+        if (consultaDoBairro && temTempoNoMapa()) {
+          const b = await buscarBairro();
+          const centro = b.ok ? b.valor : null;
+          if (centro) vale = haversineDistanceKm(r.lat, r.lng, centro.lat, centro.lng) <= PERTO_DO_BAIRRO_KM;
+        }
+        if (vale) {
+          aceitar(
+            { lat: r.lat, lng: r.lng, displayName: `${r.rua}${neigh ? `, ${neigh}` : ""}${city ? `, ${city}` : ""} (pelas entregas da loja)` },
+            "rua",
+          );
+        }
+      }
+    }
 
     // ── NÍVEL G: O GOOGLE ────────────────────────────────────────────────
     //

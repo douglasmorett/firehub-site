@@ -44,8 +44,11 @@ import { foraDoLimiteDeAtendimento } from "@/lib/limite-de-atendimento";
 import { repasseDaFaixaKm, repasseDoBairro } from "@/lib/repasse-do-entregador";
 import { buscarCep, digitosDoCep } from "@/lib/cep";
 import { comPrazoDaExtensao } from "@/lib/prazo-automatico";
+import { pontoDaRuaPelasEntregasDaLoja } from "@/lib/rua-das-entregas-servidor";
 
 export type LojaParaEntrega = {
+  /** O id da loja: com ele, a rua que o mapa não tem sai das entregas dela (lib/rua-das-entregas.ts). */
+  id?: string | null;
   storeAddress?: string | null;
   storeLatLng?: unknown;
   city?: string | null;
@@ -442,10 +445,14 @@ export async function avaliarEntrega(
       };
     }
   }
+  const lojaId = typeof loja.id === "string" ? loja.id : "";
   const opcoesDoMapa = {
     geocodificador: opcoes?.donos?.length ? geocodificadorDaTaxaPara(opcoes.donos) : geocodificadorDaTaxa,
     prazo,
     origemDasCoords,
+    ...(lojaId
+      ? { ruaNasEntregas: (ruas: string[], bairro: string | null) => pontoDaRuaPelasEntregasDaLoja(lojaId, loja.city, ruas, bairro) }
+      : {}),
   };
 
   // ── ÁREA DE RISCO VENCE TUDO ─────────────────────────────────────────
