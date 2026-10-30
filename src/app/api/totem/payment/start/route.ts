@@ -487,16 +487,36 @@ export async function POST(req: NextRequest) {
     // A checagem vem ANTES do token do Mercado Pago de propósito: uma loja que
     // usa só PagBank não tem conta MP conectada, e exigir o token dela aqui
     // travaria a venda por uma credencial que ela não precisa ter.
-    const terminalComApp = await prisma.posTerminal.findFirst({
-      where: {
-        franchiseeId: pedido.franchiseeId,
-        active: true,
-        provider: { in: [...PROVEDORES_COM_APP] },
-        ...(terminalId && typeof terminalId === "string" ? { id: terminalId } : {}),
-      },
-      select: { id: true, label: true, lastSeenAt: true },
-      orderBy: { lastSeenAt: "desc" },
-    });
+    //
+    // Qual maquininha: a que a tela mandou, senão a amarrada a esta licença.
+    // Sem nenhuma das duas, a cobrança entra na fila SEM dono, e só o app
+    // FireHub Totem pega cobrança sem dono (o Garçom e o Motoboy levam apenas
+    // o que é deles). Endereçar à "que deu sinal por último" mandava o pedido
+    // do totem para a maquininha do garçom ou do motoboy, e a nunca pareada
+    // (sem sinal) vinha primeiro no "desc" do Postgres.
+    const pedida = terminalId && typeof terminalId === "string" ? terminalId : null;
+    const vinculo = pedida
+      ? null
+      : await prisma.totemLicense.findUnique({ where: { id: licenca.id }, select: { posTerminalId: true } });
+    const maquininhasComApp = {
+      franchiseeId: pedido.franchiseeId,
+      active: true,
+      provider: { in: [...PROVEDORES_COM_APP] },
+    };
+    const amarrada = vinculo?.posTerminalId
+      ? await prisma.posTerminal.findFirst({
+          where: { ...maquininhasComApp, id: vinculo.posTerminalId },
+          select: { id: true, label: true, lastSeenAt: true },
+        })
+      : null;
+    const enderecada = Boolean(pedida || amarrada);
+    const terminalComApp =
+      amarrada ??
+      (await prisma.posTerminal.findFirst({
+        where: { ...maquininhasComApp, ...(pedida ? { id: pedida } : {}) },
+        select: { id: true, label: true, lastSeenAt: true },
+        orderBy: { lastSeenAt: { sort: "desc", nulls: "last" } },
+      }));
 
     if (terminalComApp) {
       // Maquininha que não dá sinal há mais de dois minutos provavelmente está
@@ -509,7 +529,9 @@ export async function POST(req: NextRequest) {
       if (silencioEmMinutos > 2) {
         return NextResponse.json(
           {
-            error: `A maquininha "${terminalComApp.label}" não está respondendo. Verifique se ela está ligada e conectada à internet.`,
+            error: enderecada
+              ? `A maquininha "${terminalComApp.label}" não está respondendo. Verifique se ela está ligada e conectada à internet.`
+              : "Nenhuma maquininha está respondendo. Verifique se ela está ligada e conectada à internet.",
             code: "TERMINAL_OFFLINE",
             ultimoContato: terminalComApp.lastSeenAt,
           },
@@ -525,7 +547,7 @@ export async function POST(req: NextRequest) {
         where: { id: pedido.id },
         data: {
           posStatus: ESTADOS_DA_COBRANCA.aguardando,
-          posTerminalId: terminalComApp.id,
+          posTerminalId: enderecada ? terminalComApp.id : null,
           posTentativas: { increment: 1 },
           paymentMethod: FORMA_MAQUININHA,
         },
@@ -535,10 +557,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         modo: "APP_NA_MAQUININHA",
-        terminal: { id: terminalComApp.id, label: terminalComApp.label },
+        terminal: enderecada ? { id: terminalComApp.id, label: terminalComApp.label } : null,
         tentativa: posTentativas,
         // A tela do totem espera exatamente isto para entrar na tela de espera.
-        instrucao: `Pague na maquininha "${terminalComApp.label}"`,
+        instrucao: enderecada
+          ? `Pague na maquininha "${terminalComApp.label}"`
+          : "Pague na maquininha ao lado do totem",
       });
     }
 
