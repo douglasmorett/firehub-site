@@ -319,7 +319,9 @@ export function pedidoParaNota(
     enderecoDoCliente: pedido.customerAddress ?? null,
     canal: canal.chave,
     referenciaNoCanal: canal.referencia,
-    pagoOnline: ehPagoOnline(pedido as any),
+    // Totem pago na maquininha da loja tem gatewayPaymentId (a autorização) e
+    // passava como "99 Pagamento online": é cartão/Pix na POS (03/04/17).
+    pagoOnline: ehPagoOnline(pedido as any) && !/maquin/i.test(String(pedido.paymentMethod ?? "")),
     idNaPlataforma,
   };
 }

@@ -195,7 +195,8 @@ export function chavesDoPagamento(pedido: PedidoParaForma): ChaveDePagamento[] {
     const c = chaveDaFormaDePagamento(pedido.paymentMethod);
     if (c) chaves.add(c);
   }
-  if (ehPagoOnline(pedido)) chaves.add("ONLINE");
+  // Na maquininha da loja é cartão/Pix, não online (lib/pagamento-na-entrega).
+  if (ehPagoOnline(pedido) && !/maquin/i.test(String(pedido.paymentMethod ?? ""))) chaves.add("ONLINE");
   return [...chaves];
 }
 
