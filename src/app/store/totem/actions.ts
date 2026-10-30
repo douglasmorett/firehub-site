@@ -112,9 +112,12 @@ export async function deleteTotemLicense(licenseId: string) {
 
 export async function updateTotemConfig(config: Record<string, any>) {
   const franchiseeId = await getFranchiseeId();
+  // Soma ao que já está gravado: trocar uma opção não pode apagar as outras.
+  const atual = await prisma.user.findUnique({ where: { id: franchiseeId }, select: { totemConfig: true } });
+  const anterior = atual?.totemConfig && typeof atual.totemConfig === "object" ? (atual.totemConfig as Record<string, any>) : {};
   await prisma.user.update({
     where: { id: franchiseeId },
-    data: { totemConfig: config }
+    data: { totemConfig: { ...anterior, ...config } }
   });
   return { success: true };
 }

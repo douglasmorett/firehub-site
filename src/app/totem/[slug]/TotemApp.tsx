@@ -154,6 +154,8 @@ type Loja = {
   nome: string;
   logoUrl: string | null;
   mensagem: string | null;
+  /** Módulo Totem › Pagar no caixa. Desligado: só maquininha (e "Tentar de novo"). */
+  pagarNoCaixa: boolean;
 };
 
 /**
@@ -1080,6 +1082,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
         nome: auth.dados?.store?.name || "Cardápio",
         logoUrl: auth.dados?.store?.logo || null,
         mensagem: auth.dados?.store?.config?.welcomeMessage || null,
+        pagarNoCaixa: auth.dados?.store?.config?.pagarNoCaixa !== false,
       });
       setMaquininha(extrairMaquininha(auth.dados));
       const tefDaLicenca = auth.dados?.license?.tef;
@@ -3221,6 +3224,8 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
 
   if (tela === "PAGAMENTO") {
     const mostrarMaquininha = maquininha.estado !== "NAO";
+    // Sem maquininha o caixa é a única forma de pagar: aparece mesmo desligado.
+    const mostrarCaixa = loja?.pagarNoCaixa !== false || !mostrarMaquininha;
     // Os dois cartões ficavam clicáveis com um POST em voo e depois de uma
     // resposta perdida na rede — cada toque extra é uma senha a mais para a
     // mesma comida, faturada e baixada do estoque de novo. Eles não somem: a
@@ -3335,6 +3340,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
               </button>
             )}
 
+            {mostrarCaixa && (
             <button
               type="button"
               disabled={!podePagar}
@@ -3360,6 +3366,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
                 Você leva a senha ao balcão e paga com o atendente.
               </p>
             </button>
+            )}
           </div>
 
           {/* Trancar os botões sem saída deixaria o cliente com uma tela morta e
@@ -3561,7 +3568,7 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
             </button>
           )}
 
-          {acabou && (
+          {acabou && loja?.pagarNoCaixa !== false && (
             <button
               type="button"
               onClick={() => void irParaOCaixa()}
@@ -3569,6 +3576,18 @@ export default function TotemApp({ slug, token }: { slug: string; token: string 
               style={{ ...botaoSecundario, minWidth: 300, opacity: cancelandoCobranca ? 0.5 : 1 }}
             >
               <Store size={24} /> {cancelandoCobranca ? "Liberando a maquininha..." : "Pagar no caixa"}
+            </button>
+          )}
+
+          {/* Caixa desligado no módulo: a saída de quem não conseguiu pagar é
+              desistir do pedido (o mesmo "Cancelar pedido" do cabeçalho). */}
+          {acabou && loja?.pagarNoCaixa === false && (
+            <button
+              type="button"
+              onClick={() => setConfirmarCancelamento(true)}
+              style={{ ...botaoSecundario, minWidth: 300 }}
+            >
+              <Ban size={24} /> Cancelar pedido
             </button>
           )}
 

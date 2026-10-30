@@ -441,6 +441,44 @@ export default function TotemModuleClient({ store, categories }: { store: any, c
         />
       )}
 
+      {/* "Pagar no caixa" no totem: ligado por padrão (é o único jeito de
+          pagar num totem sem maquininha). Desligado, o cliente só paga na
+          maquininha e, se o cartão não passar, só tenta de novo. */}
+      {store.totemEnabled && (() => {
+        const ligado = store.totemConfig?.pagarNoCaixa !== false;
+        return (
+          <div style={{ background: "#fff", border: "1px solid #E2E8F0", borderRadius: "16px", padding: "20px", marginTop: "24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 280px" }}>
+              <h2 style={{ fontSize: "18px", fontWeight: 700, margin: "0 0 4px 0" }}>Pagar no caixa</h2>
+              <p style={{ color: "#64748B", margin: 0, fontSize: "14px", lineHeight: 1.45 }}>
+                {ligado
+                  ? "O cliente pode escolher pagar no caixa, e o botão aparece quando o cartão não passa na maquininha."
+                  : "Desligado: o cliente só paga na maquininha. Se o cartão não passar, ele só pode tentar de novo. Totem sem maquininha continua mostrando o caixa."}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={loading}
+              onClick={async () => {
+                try {
+                  setLoading(true);
+                  await updateTotemConfig({ pagarNoCaixa: !ligado });
+                  router.refresh();
+                  showFeedback(ligado ? "Pagar no caixa desligado no totem." : "Pagar no caixa ligado no totem.");
+                } catch {
+                  showFeedback("Erro ao salvar.", "error");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              style={{ padding: "10px 18px", borderRadius: "10px", border: "none", fontWeight: 700, cursor: "pointer", background: ligado ? "#0F766E" : "#E2E8F0", color: ligado ? "#fff" : "#334155", minWidth: "120px" }}
+            >
+              {ligado ? "Ligado" : "Desligado"}
+            </button>
+          </div>
+        );
+      })()}
+
       {/* Pinpad PayGo no computador do totem, pelo Assistente (TEF). */}
       {store.totemEnabled && (
         <TefDoTotemClient totens={(store.totemLicenses || []).map((l: any) => ({ id: l.id, label: l.label }))} />
