@@ -28,6 +28,7 @@ import {
 import { lerConfigDeAgendamento } from "@/lib/agendamento";
 import { lembrarPor } from "@/lib/cache-curto";
 import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
+import { COOKIE_DA_LOJA_ATIVA, lojasDaVisao } from "@/lib/loja-ativa";
 
 /**
  * Quem é o e-mail e a config da loja (agendamento, telas, regras do KDS) ficam
@@ -79,11 +80,14 @@ export async function GET(req: NextRequest) {
   try {
     email = (await getServerSession(authOptions))?.user?.email || "";
   } catch {}
-  const lojas = email ? await lojasDaCozinha(email).catch(() => null) : null;
+  // "Todas as Lojas" (cookie "all") é outra lista: a guardada de uma visão não
+  // serve para a outra, e a novidade de qualquer loja do grupo vale para ela.
+  const cookieDaLoja = req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value;
+  const lojas = email ? await lojasDaCozinha(email, cookieDaLoja).catch(() => null) : null;
   if (!lojas) return kdsDeVerdade(req);
 
   const p = req.nextUrl.searchParams;
-  const chave = `kds:${email}|${p.get("stage") || "production"}|${p.get("tela") || ""}`;
+  const chave = `kds:${email}|${cookieDaLoja === "all" ? "todas" : ""}|${p.get("stage") || "production"}|${p.get("tela") || ""}`;
   let falhou: NextResponse | null = null;
   const corpo = await lerEnquantoNadaMuda(
     chave,
@@ -104,14 +108,21 @@ export async function GET(req: NextRequest) {
   });
 }
 
-/** As lojas cujos pedidos a cozinha desta conta mostra (o `storeCondition` abaixo), 60 s em memória. */
-function lojasDaCozinha(email: string): Promise<string[] | null> {
-  return lembrarPor(`kds:lojas:${email}`, 60_000, async () => {
-    const u = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } });
+/**
+ * As lojas cujos pedidos a cozinha desta conta mostra (o `storeCondition` abaixo), 60 s em memória.
+ * Em "Todas as Lojas", o grupo inteiro (lib/loja-ativa.ts, `lojasDaVisao`):
+ * a baixa feita na tela da PasteLê tem de aparecer na cozinha aberta em
+ * "Todas", e vice-versa (Douglas, 30/10/2026).
+ */
+function lojasDaCozinha(email: string, cookieDaLoja?: string | null): Promise<string[] | null> {
+  const todas = cookieDaLoja === "all";
+  return lembrarPor(`kds:lojas:${email}${todas ? "|todas" : ""}`, 60_000, async () => {
+    const u = await prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, role: true } });
     if (!u) return null;
     const ids = [u.id, u.ownerId].filter((x): x is string => !!x);
     const contas = await prisma.user.findMany({ where: { ownerId: { in: ids } }, select: { id: true } });
-    return [...new Set([...ids, ...contas.map((c) => c.id)])];
+    const grupo = todas ? (await lojasDaVisao(u, cookieDaLoja)).lojaIds : [];
+    return [...new Set([...ids, ...contas.map((c) => c.id), ...grupo])];
   });
 }
 
@@ -139,7 +150,7 @@ async function kdsDeVerdade(req: NextRequest) {
         withRetry(() =>
           prisma.user.findUnique({
             where: { email },
-            select: { id: true, ownerId: true, isFranqueadoHakim: true, storeTimezone: true },
+            select: { id: true, ownerId: true, role: true, isFranqueadoHakim: true, storeTimezone: true },
           })
         )
       ).catch((err) => {
@@ -149,6 +160,19 @@ async function kdsDeVerdade(req: NextRequest) {
       if (user) {
         if (user.id) userStoreIds.push(user.id);
         if (user.ownerId) userStoreIds.push(user.ownerId);
+      }
+
+      // ── "TODAS AS LOJAS" NA COZINHA ─────────────────────────────────────
+      //
+      // Aberto com o cookie "all" numa conta de loja, o KDS mostra os pedidos
+      // do grupo inteiro (Douglas, 30/10/2026: "tem que chegar os pedidos de
+      // cada loja na tela do KDS se o KDS tiver sido aberto em Todas"). As
+      // telas e regras continuam as da conta da sessão (`contaDasTelas`, a
+      // principal). Funcionário fica na loja dele — `lojasDaVisao` garante.
+      const cookieDaLoja = req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value;
+      if (user && cookieDaLoja === "all") {
+        const { lojaIds } = await lembrarPor(`kds:visao:${email}`, VALIDADE_DA_CONFIG_MS, () => lojasDaVisao(user, cookieDaLoja));
+        userStoreIds.push(...lojaIds);
       }
     }
 
@@ -486,6 +510,11 @@ export async function PUT(req: NextRequest) {
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const targetFranchiseeId = user.ownerId || user.id;
+  // Em "Todas as Lojas" (cookie "all") a cozinha mostra o grupo — e dá baixa
+  // nele. Fora disso, só a loja da sessão, como sempre (lib/loja-ativa.ts).
+  const { lojaIds } = await lojasDaVisao(user, req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value).catch(() => ({
+    lojaIds: [targetFranchiseeId],
+  }));
 
   const order = await prisma.customerOrder.findUnique({
     where: { id: orderId },
@@ -528,7 +557,7 @@ export async function PUT(req: NextRequest) {
   }
 
   // Security check: only ADMIN or the order owner (franchiseeId) can update KDS
-  if (user.role !== "ADMIN" && order.franchiseeId !== targetFranchiseeId) {
+  if (user.role !== "ADMIN" && !lojaIds.includes(order.franchiseeId)) {
     return NextResponse.json({ error: "Sem permissão para este pedido." }, { status: 403 });
   }
 

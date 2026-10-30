@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 
 export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
@@ -27,7 +28,7 @@ export async function GET(req: Request) {
 
   const currentUser = await prisma.user.findUnique({
     where: { email: session.user?.email || "" },
-    select: { id: true, ownerId: true }
+    select: { id: true, ownerId: true, role: true }
   });
   if (!currentUser) {
     return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
@@ -36,7 +37,13 @@ export async function GET(req: Request) {
   const targetFranchiseeId = currentUser.ownerId || currentUser.id;
   const role = (session.user as any)?.role;
 
-  if (role !== "ADMIN" && order.franchiseeId !== targetFranchiseeId) {
+  // "Todas as Lojas" (cookie "all", lib/loja-ativa.ts): o quadro mostra o grupo,
+  // e ver os motivos de cancelamento do pedido da filial voltava 403 (Annalu + PasteLê,
+  // 30/10/2026: "agora todos é pra mexer em tudo"). Fora dele, só a loja da sessão.
+  const { lojaIds } = await lojasDaVisao(currentUser, await cookieDaVisao()).catch(() => ({
+    lojaIds: [targetFranchiseeId],
+  }));
+  if (role !== "ADMIN" && !lojaIds.includes(order.franchiseeId)) {
     return NextResponse.json({ error: "Sem permissão" }, { status: 403 });
   }
 

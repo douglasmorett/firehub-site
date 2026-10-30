@@ -11,6 +11,7 @@ import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { lembrarPor } from "@/lib/cache-curto";
 import { chamadoDaConversa, chamadosAbertos, encerrarChamado, marcarLido, respostaDaLoja } from "@/lib/fila-de-atendimento-humano";
 import { ehConversaDeCliente } from "@/lib/jid-de-cliente";
+import { lojasDaVisao, lojaPedidaNaVisao, COOKIE_DA_LOJA_ATIVA } from "@/lib/loja-ativa";
 
 export const dynamic = "force-dynamic";
 
@@ -66,8 +67,20 @@ export async function GET(req: NextRequest) {
     if (!podeComoNaTela(user, TELA_DAS_CONVERSAS)) return semAcesso();
 
     const targetUserId = user.ownerId || user.id;
+    // ── "TODAS AS LOJAS": OS CHAMADOS DO GRUPO ─────────────────────────────
+    //
+    // Em "Todas" (cookie "all", lib/loja-ativa.ts) a sessão fica na principal,
+    // e o chamado que o robô da Rush abriu ("esqueci que sem cebola", 26/10)
+    // não aparecia no balão de quem cuidava das três lojas por ali. Agora vem
+    // a fila de cada loja da visão, cada chamado com a sua (`userId`) — é ela
+    // que a tela devolve para responder e encerrar. 15 s em memória, como o
+    // usuário acima. Fora do "todas", e para funcionário, é a loja da sessão.
+    const cookieDaLoja = req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value;
+    const { lojaIds } = await lembrarPor(`fila-humana:lojas:${email}|${cookieDaLoja === "all" ? "todas" : ""}`, 15_000, () =>
+      lojasDaVisao(user, cookieDaLoja)).catch(() => ({ lojaIds: [targetUserId] }));
     // Já vem sem as fechadas e na ordem (a mais recente primeiro).
-    const chats = await chamadosAbertos(targetUserId);
+    const filas = await Promise.all(lojaIds.map((lojaId) => chamadosAbertos(lojaId)));
+    const chats = filas.flat().sort((a, b) => b.updatedAt - a.updatedAt);
 
     const totalUnread = chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 
@@ -98,8 +111,14 @@ export async function POST(req: NextRequest) {
     }
     if (!podeComoNaTela(user, TELA_DAS_CONVERSAS)) return semAcesso();
 
-    const targetUserId = user.ownerId || user.id;
-    const { action, chatId, message, jid } = await req.json();
+    const { action, chatId, message, jid, loja } = await req.json();
+    // O chamado é da loja que a lista mandou (`loja`), se ela estiver na visão
+    // ("Todas as Lojas" = o grupo); senão o da sessão, como sempre foi.
+    const lojaDaSessao = user.ownerId || user.id;
+    const { lojaIds } = await lojasDaVisao(user, req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value).catch(() => ({
+      lojaIds: [lojaDaSessao],
+    }));
+    const targetUserId = lojaPedidaNaVisao(lojaIds, loja, lojaDaSessao);
 
     // 1. Responder mensagem ao cliente pelo WhatsApp
     if (action === "send_message") {

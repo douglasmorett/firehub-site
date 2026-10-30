@@ -13,6 +13,7 @@ import { prisma } from "@/lib/prisma";
 import { acrescimosPendentes, responderAcrescimo } from "@/lib/acrescimo-no-banco";
 import { lembrarPor } from "@/lib/cache-curto";
 import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 
 export const dynamic = "force-dynamic";
 
@@ -23,10 +24,17 @@ async function lojasDaSessao() {
   if (!email) return null;
   // 15 s em memória: esta rota roda a cada 8 s por aba (lib/cache-curto.ts).
   const user = await lembrarPor(`acrescimos:usuario:${email}`, 15_000, () =>
-    prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, name: true } }));
+    prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, name: true, role: true } }));
   if (!user) return null;
   const lojaId = user.ownerId || user.id;
-  const ids = [...new Set([lojaId, user.id, user.ownerId].filter(Boolean))] as string[];
+  // "Todas as Lojas" (cookie "all", lib/loja-ativa.ts): o acréscimo pedido no
+  // robô da Rush ou da PasteLê também aparece — e se responde — na tela aberta
+  // em "Todas" (Douglas, 30/10/2026: "agora todos é pra mexer em tudo").
+  // Fora dela, e para funcionário, `lojaIds` é só a loja da sessão.
+  const { lojaIds } = await lojasDaVisao(user, await cookieDaVisao()).catch(() => ({
+    lojaIds: [lojaId],
+  }));
+  const ids = [...new Set([lojaId, user.id, user.ownerId, ...lojaIds].filter(Boolean))] as string[];
   return { lojaId, ids, quem: session?.user?.name || user.name || email };
 }
 

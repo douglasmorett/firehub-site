@@ -12,24 +12,35 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 import { prisma } from "@/lib/prisma";
 import { podeIrParaFoody } from "@/lib/foody-delivery";
 import { chamarFoody, configDaFoody, entregaDoPedido, entregaParaTela, mudarStatusNaFoody } from "@/lib/foody-no-banco";
 
 export const dynamic = "force-dynamic";
 
-async function lojaDeQuemPede() {
+/**
+ * As lojas de quem pede: a da sessão ou, em "Todas as Lojas" (cookie "all",
+ * lib/loja-ativa.ts), o grupo inteiro — a Annalu chamava a Voe para o pedido da
+ * PasteLê só trocando de página (Douglas, 30/10/2026: "agora todos é pra mexer
+ * em tudo"). A Foody usada é a da loja DO PEDIDO.
+ */
+async function lojasDeQuemPede(): Promise<string[] | null> {
   const session = await getServerSession(authOptions).catch(() => null);
   if (!session?.user?.email) return null;
-  const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true, ownerId: true } });
-  return user ? user.ownerId || user.id : null;
+  const user = await prisma.user.findUnique({ where: { email: session.user.email }, select: { id: true, ownerId: true, role: true } });
+  if (!user) return null;
+  const { lojaIds } = await lojasDaVisao(user, await cookieDaVisao()).catch(() => ({
+    lojaIds: [user.ownerId || user.id],
+  }));
+  return lojaIds;
 }
 
-async function pedidoDaLoja(id: string, lojaId: string) {
+async function pedidoDaLoja(id: string, lojaIds: string[]) {
   return prisma.customerOrder.findFirst({
-    where: { id, franchiseeId: lojaId },
+    where: { id, franchiseeId: { in: lojaIds } },
     select: {
-      id: true, status: true, deliveryType: true, customerAddress: true, source: true, deliveryBy: true,
+      id: true, franchiseeId: true, status: true, deliveryType: true, customerAddress: true, source: true, deliveryBy: true,
       ifoodOrderId: true, ifoodDriverName: true, ifoodDriverStatus: true, openDeliveryChannel: true,
       openDeliveryOrderId: true, ifoodPickupCode: true, openDeliveryPickupCode: true,
     },
@@ -37,12 +48,14 @@ async function pedidoDaLoja(id: string, lojaId: string) {
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const lojaId = await lojaDeQuemPede();
-  if (!lojaId) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  const lojaIds = await lojasDeQuemPede();
+  if (!lojaIds) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   const { id } = await params;
-  const config = await configDaFoody(lojaId);
+  // O pedido vem antes da config: é ele que diz de qual loja é a Foody. Sem
+  // pedido, a config é a da sessão (lojaIds[0]), como sempre foi.
+  const pedido = await pedidoDaLoja(id, lojaIds);
+  const config = await configDaFoody(pedido?.franchiseeId || lojaIds[0]);
   if (!config.conectada) return NextResponse.json({ ligada: false });
-  const pedido = await pedidoDaLoja(id, lojaId);
   if (!pedido) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
   const pode = podeIrParaFoody(pedido);
   return NextResponse.json({
@@ -55,11 +68,12 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const lojaId = await lojaDeQuemPede();
-  if (!lojaId) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  const lojaIds = await lojasDeQuemPede();
+  if (!lojaIds) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   const { id } = await params;
-  const pedido = await pedidoDaLoja(id, lojaId);
+  const pedido = await pedidoDaLoja(id, lojaIds);
   if (!pedido) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
+  const lojaId = pedido.franchiseeId;
   const corpo = await req.json().catch(() => ({}));
   const acao = String(corpo?.acao || "");
 

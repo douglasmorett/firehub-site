@@ -8,9 +8,10 @@ import { SENHA_PADRAO, estaNaSenhaPadrao, hashDeSenha } from "@/lib/motoboy-senh
 import { gerarSenhaDeNumeros } from "@/lib/senha-gerada";
 import { pedidoDeAppDoCorpo } from "@/lib/repasse-do-entregador";
 import { gravarPedidoDeApp } from "@/lib/pedido-de-app-no-banco";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 
 // GET - listar motoboys do franqueado
-export async function GET() {
+export async function GET(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
 
@@ -33,8 +34,21 @@ export async function GET() {
   // se é área de cadastro não precisa aparecer quanto ele fez hoje"), e as
   // outras duas telas nunca o usaram. Quanto cada um fez e recebe mora no
   // relatório de pagamentos (api/motoboy-report) e no fechamento do caixa.
+  // ── "TODAS AS LOJAS" NO PAINEL DE PEDIDOS (?daVisao=1) ─────────────────
+  //
+  // O quadro em "Todas" mostra o pedido da PasteLê, mas a lista só trazia os
+  // motoboys da principal — e o pedido só aceita motoboy da loja DELE
+  // (api/customer-order/assign-motoboy: o app do motoboy lista só a loja
+  // dele). A Annalu só despachava trocando de página (30/10/2026). Só o painel
+  // de pedidos pede `daVisao`, e ele separa a lista pela loja de cada pedido;
+  // o cadastro e a roteirização seguem com a loja da sessão. Fora do "todas"
+  // (e para funcionário) `lojaIds` é só a loja da sessão: a lista de sempre.
+  const daVisao = new URL(req.url).searchParams.get("daVisao") === "1";
+  const lojaIds = daVisao
+    ? (await lojasDaVisao(user, await cookieDaVisao()).catch(() => ({ lojaIds: [targetFranchiseeId] }))).lojaIds
+    : [targetFranchiseeId];
   const motoboys = await prisma.motoboy.findMany({
-    where: { franchiseeId: targetFranchiseeId },
+    where: { franchiseeId: { in: lojaIds } },
     orderBy: [{ active: "desc" }, { name: "asc" }],
   });
 

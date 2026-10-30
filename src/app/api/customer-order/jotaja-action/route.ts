@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 import { prisma } from "@/lib/prisma";
 
 type Action = "accept_cancellation" | "deny_cancellation" | "deny";
@@ -37,19 +38,27 @@ export async function POST(req: NextRequest) {
   // Verifica que o pedido pertence ao franqueado logado
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, ownerId: true },
+    select: { id: true, ownerId: true, role: true },
   });
   if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const targetFranchiseeId = user.ownerId || user.id;
+  // "Todas as Lojas" (cookie "all", lib/loja-ativa.ts): o pedido pode ser de
+  // qualquer loja do grupo (Annalu + PasteLê, 30/10/2026: "agora todos é pra
+  // mexer em tudo"), e a credencial do parceiro passa a ser a da loja DO
+  // PEDIDO. Fora do "todas" é a loja da sessão, como sempre foi.
+  const { lojaIds } = await lojasDaVisao(user, await cookieDaVisao()).catch(() => ({
+    lojaIds: [targetFranchiseeId],
+  }));
 
   const order = await prisma.customerOrder.findFirst({
-    where: { openDeliveryOrderId: orderId, franchiseeId: targetFranchiseeId } as any,
-    select: { id: true, openDeliveryOrderId: true, cancelDispute: true } as any,
+    where: { openDeliveryOrderId: orderId, franchiseeId: { in: lojaIds } } as any,
+    select: { id: true, openDeliveryOrderId: true, cancelDispute: true, franchiseeId: true } as any,
   });
   if (!order) {
     return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
   }
+  const lojaDoPedido: string = (order as any).franchiseeId;
 
   try {
     const { jotajaMutate } = await import("@/lib/jotaja-api");
@@ -73,7 +82,7 @@ export async function POST(req: NextRequest) {
     const res = await jotajaMutate(`/v1/orders/${orderId}/${apiEndpoint}`, {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,
-    }, targetFranchiseeId);
+    }, lojaDoPedido);
 
     if (!res.ok) {
       const errText = await res.text().catch(() => "");

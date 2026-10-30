@@ -13,6 +13,7 @@ import { ehPedidoAnotaAi, sincronizarAnotaAi } from "@/lib/anotaai/status";
 import { ehPedidoAiqfome, sincronizarAiqfome } from "@/lib/aiqfome/status";
 import { motivoDoCorpo, MENSAGEM_SEM_MOTIVO_DO_SERVIDOR } from "@/lib/motivo-do-cancelamento";
 import { empilharEdicao } from "@/lib/edicao-de-pedido";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 
 // Status que contam como venda confirmada para fins de faturamento
 // Disparado apenas em ENTREGUE para evitar contagem duplicada
@@ -171,10 +172,23 @@ export async function PUT(req: Request) {
 
   const targetFranchiseeId = currentUser.ownerId || currentUser.id;
 
+  // ── "TODAS AS LOJAS" MEXE NO GRUPO INTEIRO ────────────────────────────────
+  //
+  // Em "Todas as Lojas" (cookie "all", lib/loja-ativa.ts) a sessão fica na
+  // principal e o quadro mostra os pedidos do grupo. Aceitar, marcar saiu,
+  // entregue ou cancelar o pedido da filial voltava 403 "Sem permissão": a
+  // Annalu só mexia no pedido da PasteLê trocando para a página da PasteLê
+  // (Douglas, 30/10/2026: "agora todos é pra mexer em tudo"). Fora do "todas",
+  // e sempre para funcionário, `lojaIds` é só a loja da sessão.
+  const { lojaIds } = await lojasDaVisao(currentUser, await cookieDaVisao()).catch(() => ({
+    lojaIds: [targetFranchiseeId],
+  }));
+
   const userStoreIds = [
     currentUser.id,
     currentUser.ownerId,
-    targetFranchiseeId
+    targetFranchiseeId,
+    ...lojaIds,
   ].filter(Boolean) as string[];
 
   const isStoreMember = userStoreIds.includes(order.franchiseeId) ||

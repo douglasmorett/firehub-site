@@ -9,6 +9,7 @@ import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, lerHorarioDoProduto, comDisponibilidadeAnotada } from "@/lib/cardapio-interno";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
+import { lojasDaVisao, COOKIE_DA_LOJA_ATIVA } from "@/lib/loja-ativa";
 import { aplicarPrecoNoCardapio } from "@/lib/preco-por-canal";
 import { SELECT_DO_CARDAPIO, ordemDasCategorias, ordenarComoALoja } from "@/lib/cardapio-da-loja";
 import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante";
@@ -221,6 +222,23 @@ async function keepOwnComboItems(comboGroups: any, ownerStoreId: string | null):
 export async function GET(req: NextRequest) {
   const { scope, error } = await resolveScope(req);
   if (!scope) return error;
+
+  // ── "TODAS AS LOJAS": O CARDÁPIO DA LOJA DO PEDIDO ──────────────────────
+  //
+  // A edição de pedido manda `storeId` = a loja DO PEDIDO, e para a loja ele
+  // era ignorado (vale a sessão). Em "Todas" (cookie "all", lib/loja-ativa.ts)
+  // o pedido da PasteLê abria com o cardápio da Annalu — que a gravação
+  // (api/store/orders/[id]/itens) recusa, por não ser da loja do pedido
+  // (Douglas, 30/10/2026: "agora todos é pra mexer em tudo"). Só esta LEITURA
+  // muda, e só para loja que a sessão vê: fora do "todas", e para funcionário,
+  // o grupo é só a loja da sessão e nada muda.
+  const lojaPedida = req.nextUrl.searchParams.get("storeId");
+  if (!scope.isAdmin && lojaPedida && lojaPedida !== scope.storeId) {
+    const { lojaIds } = await lojasDaVisao({ id: scope.storeId, role: scope.role }, req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value).catch(() => ({
+      lojaIds: [scope.storeId],
+    }));
+    if (lojaIds.includes(lojaPedida)) scope.storeId = lojaPedida;
+  }
 
   // Regra única em src/lib/cardapio-interno.ts. A lista escrita aqui comparava
   // com "IFOOD" em caixa alta e a sincronização grava "iFood": o `in` do Prisma

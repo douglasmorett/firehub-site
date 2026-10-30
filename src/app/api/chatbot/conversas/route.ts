@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojasDaVisao, lojaPedidaNaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import {
@@ -83,7 +84,15 @@ async function lojaDaSessao() {
     };
   }
 
-  return { userId: user.ownerId || user.id };
+  // "Todas as Lojas" (cookie "all", lib/loja-ativa.ts): as conversas dos robôs
+  // do grupo inteiro. A sessão fica na principal, e o robô da Rush ou da
+  // PasteLê não aparecia nem se respondia dali (Douglas, 30/10/2026: "agora
+  // todos é pra mexer em tudo"). Funcionário fica na loja dele.
+  const userId = user.ownerId || user.id;
+  const { lojaIds } = await lojasDaVisao(user, await cookieDaVisao()).catch(() => ({
+    lojaIds: [userId],
+  }));
+  return { userId, lojaIds };
 }
 
 /**
@@ -163,10 +172,11 @@ export async function GET(req: NextRequest) {
     if (pedido) {
       const jid = jidDeCliente(pedido);
       if (!jid) return NextResponse.json({ error: "Conversa inválida" }, { status: 400 });
+      const daLoja = lojaPedidaNaVisao(loja.lojaIds, req.nextUrl.searchParams.get("loja"), loja.userId);
       const [mensagens, comHumano, pausadoAqui] = await Promise.all([
-        conversaParaOPainel(loja.userId, jid),
-        conversaEstaComHumano(loja.userId, jid),
-        roboEstaPausado(loja.userId, jid),
+        conversaParaOPainel(daLoja, jid),
+        conversaEstaComHumano(daLoja, jid),
+        roboEstaPausado(daLoja, jid),
       ]);
       return NextResponse.json({
         success: true,
@@ -182,13 +192,21 @@ export async function GET(req: NextRequest) {
 
     // A lista. `pausado` também confere a pausa do robô (lib/pausa-do-robo.ts),
     // que não é a trava `comHumano` — numa consulta só para a lista inteira.
-    const [cruas, pausadas] = await Promise.all([listarConversasDoRobo(loja.userId), conversasPausadas(loja.userId)]);
-    const nomes = await nomesDosClientes(loja.userId, cruas.map((c) => c.telefone));
-    const conversas = cruas.map((c) => ({
-      ...c,
-      nome: nomes.get(c.telefone.slice(-9)) || "",
-      pausado: c.comHumano || pausadas.has(c.remoteJid),
-    }));
+    // Uma lista por loja da visão (uma só fora do "todas"), cada conversa com
+    // a sua `lojaId` — é ela que a tela devolve para ler, pausar e responder.
+    const porLoja = await Promise.all(
+      loja.lojaIds.map(async (lojaId) => {
+        const [cruas, pausadas] = await Promise.all([listarConversasDoRobo(lojaId), conversasPausadas(lojaId)]);
+        const nomes = await nomesDosClientes(lojaId, cruas.map((c) => c.telefone));
+        return cruas.map((c) => ({
+          ...c,
+          lojaId,
+          nome: nomes.get(c.telefone.slice(-9)) || "",
+          pausado: c.comHumano || pausadas.has(c.remoteJid),
+        }));
+      }),
+    );
+    const conversas = porLoja.flat().sort((a, b) => b.ultimaEm - a.ultimaEm);
 
     return NextResponse.json({
       success: true,
@@ -206,14 +224,15 @@ export async function POST(req: NextRequest) {
     const loja = await lojaDaSessao();
     if ("erro" in loja) return NextResponse.json({ error: loja.erro }, { status: loja.status });
 
-    const { action, jid: jidCru, message } = await req.json();
+    const { action, jid: jidCru, message, loja: lojaPedida } = await req.json();
+    const daLoja = lojaPedidaNaVisao(loja.lojaIds, lojaPedida, loja.userId);
     const jid = jidDeCliente(jidCru);
     if (!jid) {
       return NextResponse.json({ error: "Conversa inválida" }, { status: 400 });
     }
     // Só mexe no que já é conversa DESTA loja. Sem isto, qualquer sessão podia
     // mandar mensagem para um número qualquer pelo WhatsApp da loja.
-    if (!(await conversaExiste(loja.userId, jid))) {
+    if (!(await conversaExiste(daLoja, jid))) {
       return NextResponse.json({ error: "Conversa não encontrada nesta loja" }, { status: 404 });
     }
 
@@ -223,18 +242,18 @@ export async function POST(req: NextRequest) {
     // humano (lib/loop-guard.ts). Só uma delas deixaria o robô voltar a falar
     // sozinho. As duas no banco: o webhook que as lê pode estar em outro servidor.
     if (action === "pausar") {
-      await pausarRobo(loja.userId, jid, PAUSA_DO_PAINEL_MS);
-      await passarParaAtendimentoHumano(loja.userId, jid, MOTIVO_DO_PAINEL);
+      await pausarRobo(daLoja, jid, PAUSA_DO_PAINEL_MS);
+      await passarParaAtendimentoHumano(daLoja, jid, MOTIVO_DO_PAINEL);
       return NextResponse.json({ success: true, pausado: true });
     }
 
     if (action === "retomar") {
-      await retomarRobo(loja.userId, jid);
-      await clearLoopGuard(loja.userId, jid);
+      await retomarRobo(daLoja, jid);
+      await clearLoopGuard(daLoja, jid);
       // A conversa também sai da fila de "clientes chamando": sem isto ela
       // continuaria piscando na outra aba, pedindo um atendimento que o
       // lojista acabou de devolver ao robô.
-      await encerrarChamado(loja.userId, jid);
+      await encerrarChamado(daLoja, jid);
       return NextResponse.json({ success: true, pausado: false });
     }
 
@@ -252,8 +271,8 @@ export async function POST(req: NextRequest) {
       // Registrar ANTES de enviar: o WhatsApp devolve tudo que sai do número
       // como `fromMe`, e sem o hash gravado o webhook lê a própria mensagem
       // como "alguém assumiu agora" e reinicia a contagem de silêncio.
-      await registerBotReply(loja.userId, jid, texto).catch(() => {});
-      const enviou = await sendEvolutionMessage(loja.userId, jid, texto);
+      await registerBotReply(daLoja, jid, texto).catch(() => {});
+      const enviou = await sendEvolutionMessage(daLoja, jid, texto);
       if (!enviou) {
         // NADA de pausa quando a mensagem não saiu. Pausar antes do envio
         // calava o robô por 12 h por causa de uma instabilidade de 30 segundos:
@@ -267,13 +286,13 @@ export async function POST(req: NextRequest) {
 
       // A mensagem SAIU: agora sim a conversa é de quem digitou. Deixar o robô
       // solto faria os dois responderem à mesma pergunta, um por cima do outro.
-      await pausarRobo(loja.userId, jid, PAUSA_DO_PAINEL_MS);
-      await passarParaAtendimentoHumano(loja.userId, jid, MOTIVO_DO_PAINEL);
-      await registrarMensagemDaLoja(loja.userId, jid, texto, "atendente");
+      await pausarRobo(daLoja, jid, PAUSA_DO_PAINEL_MS);
+      await passarParaAtendimentoHumano(daLoja, jid, MOTIVO_DO_PAINEL);
+      await registrarMensagemDaLoja(daLoja, jid, texto, "atendente");
       // Este cliente está SENDO atendido: o chamado dele para de piscar na
       // outra aba, senão o balãozinho fica com um número vermelho preso por
       // alguém que já foi respondido.
-      await respostaDaLoja(loja.userId, jid, texto, { peloRobo: true });
+      await respostaDaLoja(daLoja, jid, texto, { peloRobo: true });
       return NextResponse.json({ success: true, pausado: true });
     }
 

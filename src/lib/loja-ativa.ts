@@ -20,9 +20,25 @@
  * não soma lojas mostra a principal) e as telas que somam — pedidos e o feed
  * deles, Início, relatórios, roteirização — leem o grupo por aqui.
  */
+import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 
 export const COOKIE_DA_LOJA_ATIVA = "firehub_active_store";
+
+/**
+ * O cookie da visão desta requisição ("all" = Todas as Lojas), para quem não
+ * tem o `req` à mão. Fora de uma requisição do Next — o teste que chama a rota
+ * direto — `cookies()` lança e a rota inteira caía
+ * (scripts/teste-seguranca-da-rota-de-status.ts, 30/10/2026); ali não há
+ * cookie, e vale a loja da sessão, como sem o "todas".
+ */
+export async function cookieDaVisao(): Promise<string | undefined> {
+  try {
+    return (await cookies()).get(COOKIE_DA_LOJA_ATIVA)?.value;
+  } catch {
+    return undefined;
+  }
+}
 
 type ContaDeLoja = { id: string; ownerId?: string | null; role?: string | null; accountGroupId?: string | null };
 
@@ -67,4 +83,18 @@ export async function lojasDaVisao(
   const grupo = await lojasDoGrupo(base);
   if (grupo.length <= 1) return { lojaIds: [base], todas: false };
   return { lojaIds: grupo.map((l) => l.id), todas: true };
+}
+
+/**
+ * A loja de UM item que a tela aponta (o chamado do robô, a conversa): a
+ * `pedida`, se estiver nas lojas da visão (`lojasDaVisao`); senão a da sessão.
+ *
+ * Em "Todas as Lojas" a lista junta o grupo e cada item volta com a loja dele —
+ * o chamado da Rush se responde pelo WhatsApp da Rush, não pelo da Annalu
+ * (Douglas, 30/10/2026: "agora todos é pra mexer em tudo"). Fora do "todas"
+ * `lojaIds` é só a da sessão, e a resposta é sempre ela: loja de fora nunca
+ * passa. Sem banco: scripts/teste-loja-ativa.ts.
+ */
+export function lojaPedidaNaVisao(lojaIds: readonly string[], pedida: unknown, daSessao: string): string {
+  return typeof pedida === "string" && lojaIds.includes(pedida) ? pedida : daSessao;
 }
