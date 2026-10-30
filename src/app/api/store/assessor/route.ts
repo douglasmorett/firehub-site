@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { lojaDoAssessorDaSessao } from "@/lib/assessor/loja-da-sessao";
 import { estadoDoAssessor, ligarOuDesligarAssessor, DIAS_DE_TESTE_DO_ASSESSOR, TermoNaoAceitoError } from "@/lib/assessor/assinatura";
 import { garantirEstruturaDoAssessor } from "@/lib/assessor/estrutura-no-banco";
-import { numerosDoDono, digitosDoTelefoneDoDono } from "@/lib/numeros-do-dono";
+import { numerosDoDono, digitosDoTelefoneDoDono, lerOutrosNumerosDoDono } from "@/lib/numeros-do-dono";
 
 /**
  * GET  — o estado do Bill, os números que falam com ele e os últimos lançamentos.
@@ -37,6 +37,12 @@ export async function GET() {
     numeroPrincipal: digitosDoTelefoneDoDono(s.loja.notificationPhone) || null,
     diasDeTeste: DIAS_DE_TESTE_DO_ASSESSOR,
     numerosDoDono: numerosDoDono(s.loja.notificationPhone, cfg),
+    // Sócio e gerente como a aba Notificações do robô mostra — a tela do Bill
+    // edita esta lista pela mesma rota (/api/chatbot/config).
+    outrosNumerosDoDono: lerOutrosNumerosDoDono(cfg),
+    // Aquela rota grava na loja do login; o ADMIN que abriu a loja pelo
+    // seletor gravaria na conta dele. Aí a tela só mostra (entrar como a loja).
+    editaNumerosAqui: s.lojaDoLogin === s.franchiseeId,
     numeroDoRobo: String(cfg?.phone || "").replace(/\D/g, "") || null,
     registros,
   });

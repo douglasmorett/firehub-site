@@ -43,5 +43,7 @@ export async function lojaDoAssessorDaSessao() {
     select: { id: true, notificationPhone: true, chatbotConfig: true, storeTimezone: true, storeName: true, name: true },
   });
   if (!loja) return null;
-  return { franchiseeId, usuarioId: u.id, nome: u.role === "ADMIN" ? "Suporte FireHub" : (u.name || "").split(" ")[0] || null, loja };
+  // `lojaDoLogin`: a loja em que /api/chatbot/config grava para este login
+  // (ownerId || id). No ADMIN pelo seletor ela é a conta do admin, não a loja aberta.
+  return { franchiseeId, usuarioId: u.id, lojaDoLogin: u.ownerId || u.id, nome: u.role === "ADMIN" ? "Suporte FireHub" : (u.name || "").split(" ")[0] || null, loja };
 }

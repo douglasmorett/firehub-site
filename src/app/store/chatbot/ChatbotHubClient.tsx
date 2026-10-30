@@ -39,7 +39,7 @@ import { lerCupom } from "@/lib/cupons";
 import { textoDasFormasDoCupom } from "@/lib/cupom-por-forma";
 import {
   MAX_OUTROS_NUMEROS_DO_DONO,
-  digitosDoTelefoneDoDono,
+  conferirNovoNumeroDoDono,
   lerOutrosNumerosDoDono,
 } from "@/lib/numeros-do-dono";
 import {
@@ -1692,9 +1692,7 @@ export default function ChatbotHubClient() {
             // pelo WhatsApp da loja conectado aqui. Mesma limpeza e mesmo teto
             // do servidor (lib/numeros-do-dono.ts).
             const MAX_OUTROS = MAX_OUTROS_NUMEROS_DO_DONO;
-            const comDdi = digitosDoTelefoneDoDono;
             const outrosNumeros = lerOutrosNumerosDoDono(config);
-            const mesmoNumero = (a: string, b: string) => a.length >= 10 && b.length >= 10 && a.slice(-10) === b.slice(-10);
             const formatarNumero = (d: string) => {
               const local = d.startsWith("55") ? d.slice(2) : d;
               if (local.length === 11) return `(${local.slice(0, 2)}) ${local.slice(2, 7)}-${local.slice(7)}`;
@@ -1702,26 +1700,15 @@ export default function ChatbotHubClient() {
               return d;
             };
             const temPrincipal = soDigitos(telefoneDeAlerta).length >= 10;
+            // A regra mora em lib/numeros-do-dono.ts: a tela do Bill confere igual.
             const adicionarNumero = () => {
-              const d = comDdi(novoNumeroDoDono);
-              const local = d.startsWith("55") ? d.slice(2) : d;
-              if (!d || local.length < 10 || local.length > 11) {
-                showToast("⚠️ Digite o número com DDD, por exemplo (22) 99999-8888.", "#C92E09");
+              const r = conferirNovoNumeroDoDono(novoNumeroDoDono, { principal: telefoneDeAlerta, outros: outrosNumeros, robo: numeroDoRobo });
+              if (!r.ok) {
+                if (r.motivo === "repetido") showToast(r.mensagem, "#475569");
+                else showToast(`⚠️ ${r.mensagem}`, "#C92E09");
                 return;
               }
-              if (mesmoNumero(d, numeroDoRobo)) {
-                showToast("⚠️ Esse é o número do próprio robô — ele não pode avisar a si mesmo.", "#C92E09");
-                return;
-              }
-              if (mesmoNumero(d, soDigitos(telefoneDeAlerta)) || outrosNumeros.some((x) => mesmoNumero(x, d))) {
-                showToast("Esse número já recebe os alertas.", "#475569");
-                return;
-              }
-              if (outrosNumeros.length >= MAX_OUTROS) {
-                showToast(`⚠️ No máximo ${MAX_OUTROS} números além do principal.`, "#C92E09");
-                return;
-              }
-              handleSaveConfig({ outrosNumerosDoDono: [...outrosNumeros, d] });
+              handleSaveConfig({ outrosNumerosDoDono: [...outrosNumeros, r.numero] });
               setNovoNumeroDoDono("");
             };
             const removerNumero = (d: string) =>

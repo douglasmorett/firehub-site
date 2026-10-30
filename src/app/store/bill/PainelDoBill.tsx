@@ -28,6 +28,7 @@ import {
   ondeVer, rotuloDoRegistro, PERIODOS_DO_RESUMO, PERIODOS_DO_HISTORICO, TIPOS_DO_REGISTRO, ROTULO_DO_REGISTRO,
   type PeriodoDoResumo, type ResumoDoBill, type TipoDoRegistro,
 } from "@/lib/assessor/painel";
+import { MAX_OUTROS_NUMEROS_DO_DONO, conferirNovoNumeroDoDono } from "@/lib/numeros-do-dono";
 import {
   LayoutDashboard, MessageCircle, History, Settings, Search, Undo2, ExternalLink, Phone, Lightbulb, LoaderCircle,
   Package, Wallet, CirclePause, Store, RefreshCw, Plus, TriangleAlert, CalendarClock,
@@ -43,6 +44,10 @@ export type DadosDoBill = {
   preco: number;
   diasDeTeste: number;
   numerosDoDono: string[];
+  /** Sócio e gerente (chatbotConfig.outrosNumerosDoDono), editados na aba Configuração. */
+  outrosNumerosDoDono?: string[];
+  /** false = ADMIN pelo seletor de loja: /api/chatbot/config gravaria na conta dele. */
+  editaNumerosAqui?: boolean;
   numeroDoRobo: string | null;
   numeroPrincipal?: string | null;
   ligadoDesde?: string | null;
@@ -152,13 +157,15 @@ const FRASE_DO_HUMOR: Partial<Record<EmocaoDoBill, string>> = {
 
 // ── A tela ──────────────────────────────────────────────────────────────────
 
-export default function PainelDoBill({ dados, setAviso, salvando, onDesligar, onContinuar }: {
+export default function PainelDoBill({ dados, setAviso, salvando, onDesligar, onContinuar, onRecarregar }: {
   dados: DadosDoBill;
   setAviso: (a: AvisoDoBill) => void;
   salvando: boolean;
   onDesligar: () => void;
   /** Desmarca o desligamento da virada do mês. */
   onContinuar: () => void;
+  /** Relê /api/store/assessor (depois de mexer nos números). */
+  onRecarregar: () => Promise<void>;
 }) {
   const [aba, setAba] = useState<Aba>("geral");
   // Cada lançamento (conversa, desfazer, reativar) recarrega o resumo e o histórico.
@@ -290,7 +297,7 @@ export default function PainelDoBill({ dados, setAviso, salvando, onDesligar, on
 
       {aba === "historico" && <Historico versao={versao} filtroPedido={filtroPedido} onDesfazer={desfazer} />}
 
-      {aba === "config" && <Configuracao dados={dados} salvando={salvando} onDesligar={onDesligar} onContinuar={onContinuar} />}
+      {aba === "config" && <Configuracao dados={dados} salvando={salvando} onDesligar={onDesligar} onContinuar={onContinuar} setAviso={setAviso} onRecarregar={onRecarregar} />}
     </div>
   );
 }
@@ -682,9 +689,46 @@ function Historico({ versao, filtroPedido, onDesfazer }: { versao: number; filtr
 
 // ── Configuração ────────────────────────────────────────────────────────────
 
-function Configuracao({ dados, salvando, onDesligar, onContinuar }: { dados: DadosDoBill; salvando: boolean; onDesligar: () => void; onContinuar: () => void }) {
+function Configuracao({ dados, salvando, onDesligar, onContinuar, setAviso, onRecarregar }: {
+  dados: DadosDoBill; salvando: boolean; onDesligar: () => void; onContinuar: () => void;
+  setAviso: (a: AvisoDoBill) => void; onRecarregar: () => Promise<void>;
+}) {
   const { estado } = dados;
-  const extras = dados.numerosDoDono.filter((n) => !dados.numeroPrincipal || n.slice(-10) !== dados.numeroPrincipal.slice(-10));
+  // Sócio e gerente: a mesma lista da aba Notificações do robô, gravada pela
+  // mesma rota (/api/chatbot/config) e conferida pela mesma regra
+  // (lib/numeros-do-dono.ts). Douglas, 30/10/2026: "deveria ser só inserir o sócio aqui".
+  const extras = dados.outrosNumerosDoDono ?? [];
+  const [novoNumero, setNovoNumero] = useState("");
+  const [gravando, setGravando] = useState(false);
+
+  async function gravarNumeros(lista: string[], ok: AvisoDoBill) {
+    setGravando(true);
+    try {
+      const r = await fetch("/api/chatbot/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ outrosNumerosDoDono: lista }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || "Não deu para salvar.");
+      if (Array.isArray(j.recusados) && j.recusados.includes("outrosNumerosDoDono")) throw new Error("A loja recusou os números.");
+      setAviso(ok);
+      await onRecarregar();
+      return true;
+    } catch (e: any) {
+      setAviso({ tipo: "erro", titulo: "Não salvei", detalhe: e.message });
+      return false;
+    } finally {
+      setGravando(false);
+    }
+  }
+
+  async function adicionar() {
+    const r = conferirNovoNumeroDoDono(novoNumero, { principal: dados.numeroPrincipal, outros: extras, robo: dados.numeroDoRobo });
+    if (!r.ok) {
+      setAviso({ tipo: "erro", titulo: r.motivo === "repetido" ? "Já está na lista" : "Não salvei", detalhe: r.mensagem });
+      return;
+    }
+    const salvou = await gravarNumeros([...extras, r.numero], { tipo: "ok", titulo: `${fone(r.numero)} adicionado`, detalhe: "Já fala com o Bill pelo WhatsApp e recebe os avisos da loja." });
+    if (salvou) setNovoNumero("");
+  }
+
   return (
     <div className="pb-grade">
       <section className="pb-card">
@@ -696,11 +740,33 @@ function Configuracao({ dados, salvando, onDesligar, onContinuar }: { dados: Dad
             <li className="falta"><b>Sem número principal</b><small>WhatsApp do proprietário em Minha Loja</small><a href="/store/minha-loja"><Plus size={13} /> Cadastrar</a></li>
           )}
           {extras.map((n) => (
-            <li key={n}><b>{fone(n)}</b><small>outro número do dono</small><a href="/store/chatbot">Editar</a></li>
+            <li key={n}>
+              <b>{fone(n)}</b><small>sócio ou gerente</small>
+              {dados.editaNumerosAqui !== false && (
+                <button className="pb-link" disabled={gravando}
+                  onClick={() => gravarNumeros(extras.filter((x) => x !== n), { tipo: "ok", titulo: `${fone(n)} removido`, detalhe: "Não fala mais com o Bill nem recebe os avisos da loja." })}>
+                  Remover
+                </button>
+              )}
+            </li>
           ))}
         </ul>
-        <a className="pb-botao pb-botao-claro" href="/store/chatbot"><Plus size={14} /> Adicionar sócio ou gerente</a>
-        <p className="pb-nota">Sócio e gerente entram em Chatbot IA › aba Notificações (até 4 números além do principal). Eles também recebem os avisos da loja.</p>
+        {dados.editaNumerosAqui === false ? (
+          <p className="pb-nota">Você está vendo a loja pelo seletor do admin: para mexer em sócio e gerente, entre como a loja.</p>
+        ) : !dados.numeroPrincipal ? (
+          <p className="pb-nota">Cadastre primeiro o número principal em Minha Loja; sócio e gerente entram junto com ele.</p>
+        ) : extras.length < MAX_OUTROS_NUMEROS_DO_DONO ? (
+          <form className="pb-novo-numero" onSubmit={(e) => { e.preventDefault(); adicionar(); }}>
+            <input type="tel" inputMode="tel" placeholder="(22) 99999-8888" aria-label="WhatsApp do sócio ou gerente"
+              value={novoNumero} onChange={(e) => setNovoNumero(e.target.value)} />
+            <button type="submit" className="pb-botao" disabled={gravando || novoNumero.replace(/\D/g, "").length < 10}>
+              {gravando ? <LoaderCircle size={14} className="pb-gira" /> : <Plus size={14} />} Adicionar sócio ou gerente
+            </button>
+          </form>
+        ) : (
+          <p className="pb-nota">Limite de {MAX_OUTROS_NUMEROS_DO_DONO} números atingido. Remova um para colocar outro.</p>
+        )}
+        <p className="pb-nota">Até {MAX_OUTROS_NUMEROS_DO_DONO} números além do principal. Eles também recebem os avisos da loja (os mesmos de Chatbot IA › aba Notificações).</p>
       </section>
 
       <section className="pb-card">
@@ -847,6 +913,10 @@ const CSS_DO_PAINEL = `
 .pb-numeros b { font-size: 14.5px; font-variant-numeric: tabular-nums; }
 .pb-numeros small { grid-column: 1; font-size: 12px; color: #64748B; }
 .pb-numeros a { grid-column: 2; grid-row: 1 / span 2; color: #0E7490; font-weight: 800; font-size: 13px; text-decoration: none; display: inline-flex; align-items: center; gap: 3px; }
+.pb-numeros .pb-link { grid-column: 2; grid-row: 1 / span 2; font-size: 13px; }
+.pb-numeros .pb-link:disabled { opacity: .6; cursor: wait; }
+.pb-novo-numero { display: flex; gap: 8px; flex-wrap: wrap; }
+.pb-novo-numero input { flex: 1 1 170px; min-width: 0; font: inherit; font-size: 14px; border: 1px solid #CBD5E1; border-radius: 10px; background: white; color: #0F172A; padding: 8px 10px; min-height: 40px; }
 .pb-numero-loja { font-size: 22px; font-weight: 900; font-variant-numeric: tabular-nums; }
 .pb-passos { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; color: #334155; }
 .pb-desligar { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; border-top: 1px solid #F1F5F9; padding-top: 12px; }

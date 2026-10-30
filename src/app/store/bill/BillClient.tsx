@@ -114,7 +114,7 @@ export default function BillClient() {
       {termoAberto && <Termo preco={dados.preco} diasDeTeste={dados.diasDeTeste} comTeste={!estado.jaTestou && !estado.isento} salvando={salvando} onCancelar={() => setTermoAberto(false)} onAceitar={() => ligar(true)} />}
 
       {estado.ativo ? (
-        <PainelDoBill dados={dados} setAviso={setAviso} salvando={salvando} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} />
+        <PainelDoBill dados={dados} setAviso={setAviso} salvando={salvando} onDesligar={() => ligar(false)} onContinuar={() => ligar(true)} onRecarregar={carregar} />
       ) : (
         <>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
