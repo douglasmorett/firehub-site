@@ -26,6 +26,7 @@ import {
 } from "@/lib/nfce/cadastro-do-emissor";
 import { alterarFiscalConfig, ConflitoNaGravacao, LojaNaoEncontrada } from "@/lib/nfce/gravar-config-fiscal";
 import { ufsDoEmissorProprio } from "@/lib/nfce/pendencias";
+import { lojaImprimeODanfe } from "@/lib/nfce/impressao-do-danfe";
 import { notasEmAndamentoDaLoja, respostaDeNotasEmAndamento } from "@/lib/fiscal-notas-em-andamento";
 import { chaveDoCanal } from "@/lib/canal-do-pedido";
 import { ehIntegracaoDaNota, INTEGRACOES_DA_NOTA, type IntegracaoDaNota } from "@/lib/fiscal-modo";
@@ -122,6 +123,9 @@ function configParaTela(config: ConfigFiscalGravada) {
     provedorGravado: efetivo.gravado,
     provedorPadrao: efetivo.padrao,
     emissorProprio,
+    // O `sefaz` não vai para a tela: o "Sim/Não" da impressão do DANFE lê o
+    // valor que vale de verdade, pela mesma regra da fila de impressão.
+    imprimeODanfe: lojaImprimeODanfe(config),
   };
 }
 

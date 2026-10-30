@@ -76,6 +76,8 @@ export type EscolhaDaEmissao = {
   formasPorIntegracao?: Partial<Record<string, string[]>> | null;
   cpfNaEntrega?: string;
   momentoDaEmissao?: string;
+  /** O que vale hoje (api/store/fiscal → lojaImprimeODanfe), não o campo cru. */
+  imprimeODanfe?: boolean;
 };
 
 type Rascunho = {
@@ -84,6 +86,7 @@ type Rascunho = {
   integracoes: Partial<Record<IntegracaoDaNota, ChaveDePagamento[]>>;
   cpfNaEntrega: DocumentoNaEntrega;
   momento: string;
+  imprimirDanfe: boolean;
 };
 
 /** O rascunho a partir do gravado: cada integração da tela com a lista que vale hoje para ela. */
@@ -96,6 +99,7 @@ function rascunhoDo(config: EscolhaDaEmissao, integracoes: IntegracaoDaNota[]): 
     integracoes: porIntegracao,
     cpfNaEntrega: documentoNaEntrega(config),
     momento: ["aceite", "saida", "conclusao"].includes(String(config.momentoDaEmissao)) ? String(config.momentoDaEmissao) : "saida",
+    imprimirDanfe: config.imprimeODanfe !== false,
   };
 }
 
@@ -114,6 +118,7 @@ function canonico(r: Rascunho): string {
     INTEGRACOES_DA_NOTA.map((i) => (r.integracoes[i.canal] ? ordem(r.integracoes[i.canal]) : null)),
     r.cpfNaEntrega,
     r.momento,
+    r.imprimirDanfe,
   ]);
 }
 
@@ -210,6 +215,7 @@ export default function ComoANotaEEmitida({
         formasPorIntegracao,
         cpfNaEntrega: rascunho.cpfNaEntrega,
         momentoDaEmissao: rascunho.momento,
+        imprimirDanfe: rascunho.imprimirDanfe,
       });
       if (!r.ok) {
         setMensagem({ ok: false, texto: r.dados?.mensagem || r.dados?.error || "Não consegui salvar. Nada foi alterado." });
@@ -440,6 +446,33 @@ export default function ComoANotaEEmitida({
           </p>
         </>
       )}
+
+      {/* ── A impressão do cupom: vale nos dois modos ── */}
+      <span style={titulo}>Imprimir o cupom fiscal (DANFE) sozinho?</span>
+      <p style={ajuda}>
+        Quando a nota sai, o cupom com o QR Code é impresso na impressora do caixa. Desligar só para o papel: a nota continua sendo
+        emitida, e o cupom pode ser impresso pelo pedido quando o cliente pedir.
+      </p>
+      <div role="radiogroup" aria-label="Imprimir o DANFE">
+        {(
+          [
+            { valor: true, nome: "Sim, imprimir sempre que a nota sair", explicacao: "O cupom sai junto com o pedido, como hoje." },
+            { valor: false, nome: "Não imprimir sozinho", explicacao: "A nota é emitida do mesmo jeito; o papel só sai se alguém mandar imprimir." },
+          ]
+        ).map((o) => (
+          <label key={String(o.valor)} style={{ display: "flex", alignItems: "flex-start", gap: 10, marginTop: 8, cursor: podeMudar ? "pointer" : "not-allowed", fontSize: "0.82rem", fontWeight: 600, color: "#334155" }}>
+            <input
+              type="radio"
+              name="fiscal-imprimir-danfe"
+              checked={rascunho.imprimirDanfe === o.valor}
+              disabled={!podeMudar}
+              onChange={() => { setMensagem(null); setRascunho((r) => ({ ...r, imprimirDanfe: o.valor })); }}
+              style={{ accentColor: "#1C1917", marginTop: 3 }}
+            />
+            <span>{o.nome}<span style={ajuda}>{o.explicacao}</span></span>
+          </label>
+        ))}
+      </div>
 
       {/* ── Como vai ficar ── */}
       <div style={{ marginTop: 18, padding: "12px 14px", borderRadius: 10, background: "#F0FDFA", border: "1px solid #99F6E4" }} aria-live="polite">
