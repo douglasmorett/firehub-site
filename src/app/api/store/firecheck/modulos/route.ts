@@ -4,8 +4,11 @@
  *   GET  → { estado, conectado, podeContratar, precos }
  *   POST { modulo: "checklists"|"ponto", ligar: true, aceite: { versao } } — liga, com o termo.
  *   POST { modulo, ligar: false } — desliga (no teste, na hora; depois, na virada).
- *   POST { acao: "criar-conta" } — cria a conta do FireCheck do dono, já ligada à
- *        loja; a senha volta uma vez só, para a tela mostrar.
+ *   POST { acao: "abrir" } → { url } — o link que entra no FireCheck sem senha.
+ *
+ * Ligar cria a conta do FireCheck se a loja não tem (mesmo e-mail, senha do
+ * FireHub — lib/firecheck-modulos/mesma-conta.ts): não há mais "Criar minha
+ * conta". `acao: "criar-conta"` fica só para a tela aberta com a versão velha.
  *
  * Só o dono (ou o ADMIN dentro da loja) mexe — a mesma porta do Bill.
  */
@@ -20,16 +23,18 @@ import {
   DIAS_DE_TESTE_DO_FIRECHECK, PRECO_DO_COMBO, PRECO_POR_MODULO, TermoNaoAceitoError,
   estadoDoFirecheck, ligarOuDesligarModulo, type ModuloDoFirecheck,
 } from "@/lib/firecheck-modulos/assinatura";
-import { ErroDoFirecheck, conferirAntesDeLigar, criarContaNoFirecheck, pedirParaSincronizar } from "@/lib/firecheck-modulos/no-firecheck";
+import { ErroDoFirecheck, conferirAntesDeLigar, garantirContaNoFirecheck, linkParaAbrirOFirecheck, pedirParaSincronizar } from "@/lib/firecheck-modulos/no-firecheck";
+import { mesmoEmail } from "@/lib/firecheck-modulos/mesma-conta";
 
 export const dynamic = "force-dynamic";
 
 const MODULOS = new Set(["checklists", "ponto"]);
 
 async function conectado(lojaId: string) {
-  const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { firecheckIntegracao: true } });
+  const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { firecheckIntegracao: true, email: true } });
   const l = lerLigacao(loja?.firecheckIntegracao);
-  return l && l.store ? { storeName: l.storeName, email: l.email } : null;
+  // mesmoLogin: o FireCheck é o do e-mail da loja, e a senha do FireHub entra lá.
+  return l && l.store ? { storeName: l.storeName, email: l.email, mesmoLogin: mesmoEmail(l.email, loja?.email) } : null;
 }
 
 export async function GET() {
@@ -52,9 +57,13 @@ export async function POST(req: Request) {
   try { corpo = await req.json(); } catch {}
 
   try {
+    if (corpo?.acao === "abrir") {
+      return NextResponse.json({ ok: true, url: await linkParaAbrirOFirecheck(s.franchiseeId, s.usuarioId) });
+    }
+    // Tela aberta antes da atualização: o quadro velho mostra esta "senha".
     if (corpo?.acao === "criar-conta") {
-      const conta = await criarContaNoFirecheck(s.franchiseeId, s.usuarioId);
-      return NextResponse.json({ ok: true, conta });
+      const conta = await garantirContaNoFirecheck(s.franchiseeId, s.usuarioId);
+      return NextResponse.json({ ok: true, conta: { ...conta, senha: "a mesma do FireHub" } });
     }
 
     const modulo = String(corpo?.modulo || "") as ModuloDoFirecheck;
@@ -66,7 +75,11 @@ export async function POST(req: Request) {
     if (corpo.ligar) {
       const antes = await estadoDoFirecheck(s.franchiseeId);
       // Religar o que só ia desligar na virada não é contratar de novo: não confere nem pede termo.
-      if (!antes.modulos[modulo].ativo) await conferirAntesDeLigar(s.franchiseeId, modulo);
+      // Loja sem FireCheck ganha a conta aqui mesmo: é "só ativar" (Douglas, 30/10/2026).
+      if (!antes.modulos[modulo].ativo) {
+        await garantirContaNoFirecheck(s.franchiseeId, s.usuarioId);
+        await conferirAntesDeLigar(s.franchiseeId, modulo);
+      }
       const session = await getServerSession(authOptions);
       const ip = (req.headers.get("cf-connecting-ip") || req.headers.get("x-forwarded-for") || "").split(",")[0].trim() || null;
       aceite = corpo?.aceite?.versao
