@@ -410,6 +410,10 @@ const CAMPOS_PERMITIDOS = [
   "modoDaEmissao",
   "formasPorIntegracao",
   "cpfNaEntrega",
+  // Imprimir o DANFE sozinho quando a nota sai (lib/nfce/impressao-do-danfe →
+  // lojaImprimeODanfe). Garagem Burger, 29/10/2026: o cupom saía em todo
+  // pedido entregue e a loja não tinha onde desligar.
+  "imprimirDanfe",
 ] as const;
 
 /** Campos que só o responsável pela loja altera — são a identidade fiscal dela. */
@@ -624,6 +628,18 @@ export function aplicarFormularioFiscal(
     }
     if (campo === "taxaDeServicoNaNota" || campo === "pixEstatico" || campo === "entregaComoPresencial") {
       (config as Record<string, unknown>)[campo] = valor === true;
+      continue;
+    }
+    if (campo === "imprimirDanfe") {
+      // `false` em qualquer um dos dois campos desliga a impressão: ligar
+      // pela tela tem que soltar também o do bloco `sefaz`, senão a escolha
+      // "Sim" não valeria na loja que nasceu com ele desligado (EvoPDV).
+      const imprimir = valor !== false;
+      (config as Record<string, unknown>).imprimirDanfe = imprimir;
+      const sefaz = (config as Record<string, unknown>).sefaz;
+      if (imprimir && sefaz && typeof sefaz === "object" && (sefaz as Record<string, unknown>).imprimirDanfe === false) {
+        (config as Record<string, unknown>).sefaz = { ...(sefaz as Record<string, unknown>), imprimirDanfe: true };
+      }
       continue;
     }
     if (campo === "intermediadores") {

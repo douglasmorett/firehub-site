@@ -64,6 +64,7 @@ export const ROTULO_DO_CAMPO_FISCAL: Readonly<Record<string, string>> = {
   modoDaEmissao: "Como a nota é emitida (automática ou manual)",
   formasPorIntegracao: "Formas com nota automática nas integrações",
   cpfNaEntrega: "CPF/CNPJ obrigatório na entrega",
+  imprimirDanfe: "Imprimir o cupom fiscal (DANFE) sozinho",
   // ── Cadastro na Focus (lib/focus-empresas → conferirPedidoDeCadastro) ──
   senhaCertificado: "Senha do certificado",
   "csc.homologacao": "CSC de homologação",
