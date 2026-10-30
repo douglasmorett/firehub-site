@@ -585,7 +585,10 @@ function cmvDoPeriodo(validos: PedidoDoFinanceiro[], dados: DadosDoPeriodo): {
     const dia = naLoja(p.criadoEm, dados.tz).dia;
     if (dentro(dia)) {
       cItensReal += cent(p.itens);
-      cVendasReal += cent(p.totalAmount) - cent(p.deliveryFee);
+      // Nunca negativo: o desconto que passa dos itens é desconto NA ENTREGA
+      // (cortesia de 100% pelo lápis, 30/10/2026: itens 50 + taxa 8 − desconto
+      // 58 = total 0). Total − taxa daria −8 de venda; a comida vendeu 0.
+      cVendasReal += Math.max(0, cent(p.totalAmount) - cent(p.deliveryFee));
       continue;
     }
     cItensFora += cent(p.itens);

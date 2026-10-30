@@ -23,7 +23,9 @@
  *     virando um pedido colado, com forma de pagamento própria.
  *   • Dá para dar DESCONTO na mesma edição (% ou R$, com motivo — o mesmo do
  *     balcão), desde que o cliente ainda vá pagar: pago online ou no parceiro,
- *     o botão diz por que não (`descontoNaEdicao`).
+ *     o botão diz por que não (`descontoNaEdicao`). Vai até itens + entrega
+ *     (100% = pedido de graça, desde 30/10/2026), e a tela avisa quando o
+ *     desconto chega na entrega: a taxa fica no pedido para o motoboy.
  *   • Item com pergunta (sabor, borda, adicional, refri do combo) ganha
  *     "Editar escolhas": a MESMA janela do cardápio (ComboModal), aberta com o
  *     que estava marcado, e o item é trocado pelo remontado — sem motivo,
@@ -331,6 +333,8 @@ export default function EditarPedidoPainel({
   const itensOriginais: ItemDoPedido[] = pedido.items || [];
   const taxa = Number(pedido.deliveryFee) || 0;
   const desconto = Number(pedido.discountTotal) || 0;
+  // Até onde o "Ajustar o desconto" vai: itens + entrega (ajusteDoDescontoDaEdicao).
+  const tetoDoAjuste = Math.round((itensOriginais.reduce((s, i) => s + Number(i.price || 0) * Number(i.quantity || 0), 0) + taxa) * 100) / 100;
   // O acréscimo no crédito do cardápio fica de pé em reais, como no servidor
   // (recalcularTotal com `acrescimo`).
   const acrescimoNoCredito = valorDoAcrescimoGravado(pedido as any);
@@ -964,7 +968,7 @@ export default function EditarPedidoPainel({
               <div style={{ border: "1px solid #FDE68A", background: "#FFFBEB", borderRadius: "10px", padding: "10px 12px" }}>
                 <div style={{ fontWeight: 800, fontSize: "0.84rem", color: "#92400E", marginBottom: "6px" }}>✏️ Desconto total do pedido</div>
                 <div style={{ fontSize: "0.76rem", color: "#78350F", marginBottom: "8px" }}>
-                  Hoje: {fmt(desconto)}. Digite quanto deve ficar (0 tira o desconto). O total muda junto e fica no histórico do pedido.
+                  Hoje: {fmt(desconto)}. Digite quanto deve ficar (0 tira o desconto; vai até {fmt(tetoDoAjuste)}, itens + entrega). O total muda junto e fica no histórico do pedido.
                 </div>
                 <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
                   <span style={{ fontWeight: 700, color: "#92400E" }}>R$</span>
@@ -1072,7 +1076,18 @@ export default function EditarPedidoPainel({
               <div style={{ marginTop: "8px", fontSize: "0.8rem", color: contaDoDesconto.problema ? "#B71C1C" : "#92400E", fontWeight: 700 }}>
                 {contaDoDesconto.problema
                   ? contaDoDesconto.problema
-                  : `− ${fmt(contaDoDesconto.valor)} sobre ${fmt(contaDoDesconto.base)} de itens${taxa > 0 ? " (a taxa de entrega fica fora)" : ""}`}
+                  : `− ${fmt(contaDoDesconto.valor)} sobre ${fmt(contaDoDesconto.base)} ${contaDoDesconto.baseComEntrega ? "(itens + entrega)" : `de itens${taxa > 0 ? " (a entrega fica fora da %)" : ""}`}`}
+              </div>
+            )}
+            {/* O desconto chegou na entrega (cortesia da Annalu, 30/10/2026): o
+                cliente deixa de pagar, mas a taxa continua no pedido — é dela
+                que sai o repasse do motoboy. */}
+            {descontoValido && contaDoDesconto!.naEntrega > 0 && (
+              <div style={{ marginTop: "4px", fontSize: "0.76rem", color: "#78350F", lineHeight: 1.4 }}>
+                {contaDoDesconto!.total === 0
+                  ? "Pedido inteiro de graça: o cliente não paga nada."
+                  : `${fmt(contaDoDesconto!.naEntrega)} do desconto cai na entrega: o cliente não paga essa parte.`}{" "}
+                🛵 A taxa de entrega ({fmt(taxa)}) continua no pedido: o repasse do motoboy não muda.
               </div>
             )}
           </div>

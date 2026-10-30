@@ -859,12 +859,40 @@ export function descontoNaEdicao(
 }
 
 /**
+ * Sobre o que vale a PORCENTAGEM do desconto da edição. O teto do desconto,
+ * em % ou em R$, é sempre itens + entrega (ver `contaDoDescontoDaEdicao`).
+ *
+ *   • true (desde 30/10/2026): itens + entrega — "100%" zera o pedido inteiro.
+ *     A Karen (Annalu Pizzas) quis dar cortesia completa num pedido de entrega
+ *     e o 100% parava nos itens: a entrega ficava para o cliente pagar.
+ *   • false: só os itens, a regra até 30/10/2026 ("10%" é 10% da comida); o
+ *     desconto em R$ continua indo até itens + entrega.
+ *
+ * Trocar a regra é só esta linha (a tela e a API leem daqui).
+ */
+export const PORCENTAGEM_VALE_SOBRE_A_ENTREGA: boolean = true;
+
+/**
  * A conta do desconto da edição — a tela prevê com ela e a API grava com ela.
  *
- * A porcentagem vale sobre os ITENS que ficam no pedido, já tirado o desconto
- * que ele tinha (cupom, desconto do balcão): "10%" é 10% do que o cliente ia
- * pagar pela comida. A taxa de entrega fica fora, como no balcão. O desconto
- * novo SOMA ao que já existia, e nunca passa do valor dos itens.
+ * O desconto vai até o que o cliente ainda paga: ITENS + ENTREGA, já tirado o
+ * desconto que o pedido tinha (cupom, desconto do balcão). 100% é o pedido
+ * inteiro de graça, total R$ 0,00 (Douglas, 30/10/2026: "o desconto tem que
+ * conseguir abater até o valor da entrega (só manter pro motoboy)"). Até
+ * então ele parava no valor dos itens. A base da porcentagem é
+ * `PORCENTAGEM_VALE_SOBRE_A_ENTREGA`; o desconto novo SOMA ao que já existia.
+ *
+ * O MOTOBOY NÃO PERDE NADA: `deliveryFee` fica como está — o cliente deixa de
+ * pagar a entrega pelo DESCONTO, não pela taxa. O ganho do entregador sai da
+ * taxa e do repasse gravado (lib/ganho-do-entregador.ts), então o acerto, o
+ * relatório do entregador e o caixa seguem com a taxa cheia. E a conta dos
+ * relatórios fecha sem número negativo: itens + taxa − desconto = total
+ * (R$ 50 + R$ 8 − R$ 58 = R$ 0,00; scripts/teste-desconto-no-caixa.ts).
+ *
+ * O acréscimo no crédito fica FORA do teto e de pé, em reais (`recalcularTotal`).
+ *
+ * `naEntrega` é quanto do desconto do pedido, já com o novo, passa dos itens e
+ * cai na entrega — a tela mostra para o atendente ver que a taxa continua lá.
  */
 export function contaDoDescontoDaEdicao(entrada: {
   itens: { price: number; quantity: number }[];
@@ -873,16 +901,21 @@ export function contaDoDescontoDaEdicao(entrada: {
   /** Acréscimo no crédito já gravado — fica de pé, em reais (ver `recalcularTotal`). */
   acrescimo?: number | null;
   desconto: DescontoManual;
-}): { base: number; valor: number; discountTotal: number; total: number; problema: string } {
+}): { base: number; baseComEntrega: boolean; valor: number; discountTotal: number; naEntrega: number; total: number; problema: string } {
   const centavos = (n: number) => Math.round(n * 100) / 100;
   const soma = entrada.itens.reduce((acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 0), 0);
+  const taxa = Math.max(0, Number(entrada.deliveryFee) || 0);
   const descontoAtual = Number(entrada.discountTotal || 0);
-  const base = centavos(Math.max(0, soma - descontoAtual));
+  // O teto é o que o cliente ainda paga, sem o acréscimo no crédito.
+  const teto = centavos(Math.max(0, soma + taxa - descontoAtual));
+  const baseComEntrega = taxa > 0 && (entrada.desconto.tipo !== "percent" || PORCENTAGEM_VALE_SOBRE_A_ENTREGA);
+  const base = baseComEntrega ? teto : centavos(Math.max(0, soma - descontoAtual));
   const problema = problemaDoDesconto(entrada.desconto, base);
   const valor = problema ? 0 : valorDoDesconto(entrada.desconto, base);
   const discountTotal = centavos(descontoAtual + valor);
+  const naEntrega = centavos(Math.min(taxa, Math.max(0, discountTotal - soma)));
   const total = recalcularTotal({ itens: entrada.itens, deliveryFee: entrada.deliveryFee, discountTotal, acrescimo: entrada.acrescimo });
-  return { base, valor, discountTotal, total, problema };
+  return { base, baseComEntrega, valor, discountTotal, naEntrega, total, problema };
 }
 
 /**
@@ -891,9 +924,10 @@ export function contaDoDescontoDaEdicao(entrada: {
  * "Dar desconto" só SOMA: quem errou (Divinos, 09/10/2026: digitou 30 no %,
  * deu R$ 28,80 em vez de R$ 2,20) não tinha como voltar. Aqui o desconto
  * TOTAL do pedido vira `novo` — inclusive zero —, nunca negativo nem maior
- * que os itens. `delta` (novo − atual) é o que o total cai (positivo) ou
- * sobe (negativo); a parte da loja anda o mesmo `delta`
- * (descontoDaLojaDepoisDaEdicao aceita negativo).
+ * que itens + entrega (o mesmo teto de `contaDoDescontoDaEdicao`, desde
+ * 30/10/2026; a taxa do motoboy não muda). `delta` (novo − atual) é o que o
+ * total cai (positivo) ou sobe (negativo); a parte da loja anda o mesmo
+ * `delta` (descontoDaLojaDepoisDaEdicao aceita negativo).
  */
 export function ajusteDoDescontoDaEdicao(entrada: {
   itens: { price: number; quantity: number }[];
@@ -905,11 +939,12 @@ export function ajusteDoDescontoDaEdicao(entrada: {
 }): { atual: number; novo: number; delta: number; total: number; problema: string } {
   const centavos = (n: number) => Math.round(n * 100) / 100;
   const soma = centavos(entrada.itens.reduce((acc, i) => acc + Number(i.price || 0) * Number(i.quantity || 0), 0));
+  const taxa = Math.max(0, Number(entrada.deliveryFee) || 0);
   const atual = centavos(Number(entrada.discountTotal || 0));
   const novo = centavos(Number(entrada.novo));
   let problema = "";
   if (!Number.isFinite(novo) || novo < 0) problema = "Informe o desconto do pedido (zero para tirar).";
-  else if (novo > soma) problema = "O desconto é maior que o valor dos itens.";
+  else if (novo > centavos(soma + taxa)) problema = "O desconto é maior que o valor do pedido (itens + entrega).";
   else if (novo === atual) problema = "O desconto já é esse.";
   const final = problema ? atual : novo;
   const delta = centavos(final - atual);
