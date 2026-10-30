@@ -24,8 +24,10 @@ import br.com.firehub.maquininha.fila.FilaDeResultados
 import br.com.firehub.maquininha.pagamento.Adquirente
 import br.com.firehub.maquininha.pagamento.ConferenciaDaUltima
 import br.com.firehub.maquininha.pagamento.Impedimento
+import br.com.firehub.maquininha.pagamento.ResultadoDoEstorno
 import br.com.firehub.maquininha.rede.ApiDoFireHub
 import br.com.firehub.maquininha.rede.Cobranca
+import br.com.firehub.maquininha.rede.PedidoDeEstorno
 import br.com.firehub.maquininha.rede.RespostaDaFila
 import br.com.firehub.maquininha.rede.RespostaDoResultado
 import br.com.firehub.maquininha.rede.ResultadoDeCobranca
@@ -339,8 +341,14 @@ class ServicoDeCobranca : Service() {
             is RespostaDaFila.SemCobranca -> {
                 CofreDoToken.atualizarRotulo(this, resposta.terminal)
                 CofreDoToken.atualizarIdentidade(this, resposta.identidade)
-                mostrarOcioso(conectado = true, detalhe = null)
-                ritmo.intervaloMs()
+                val estorno = resposta.estorno
+                if (estorno != null) {
+                    processarEstorno(token, estorno)
+                    0L
+                } else {
+                    mostrarOcioso(conectado = true, detalhe = null)
+                    ritmo.intervaloMs()
+                }
             }
 
             is RespostaDaFila.CredencialInvalida -> {
@@ -563,6 +571,89 @@ class ServicoDeCobranca : Service() {
 
         // Segura o resultado na tela para o cliente conseguir ler antes de a
         // maquininha voltar a "aguardando pedido".
+        dormir(TEMPO_MOSTRANDO_RESULTADO_MS)
+    }
+
+    // -------------------------------------------------------------- estorno
+
+    /**
+     * Estorna a venda de um pedido que o lojista cancelou no painel.
+     *
+     * Chega pela mesma consulta da fila e nesta mesma thread, então nunca
+     * atropela uma cobrança: o laço só pergunta com a cobrança anterior
+     * fechada e sem marcador em aberto. O resultado passa pelo disco antes do
+     * envio (FilaDeResultados), como o do cartão: se o POST se perder, a fila
+     * reenvia, e o servidor não estorna de novo o que já foi estornado.
+     */
+    private fun processarEstorno(token: String, estorno: PedidoDeEstorno) {
+        ritmo.houveMovimento()
+        val naTela = estorno.comoCobranca()
+
+        // O servidor devolveu para a fila um estorno cujo resultado ainda está
+        // aqui, sem ter chegado lá: reenvia o que já houve em vez de abrir a
+        // tela de estorno de novo.
+        if (fila.pendentes().any { it.pedidoId == estorno.referencia }) {
+            Log.w(ETIQUETA, "Estorno " + estorno.estornoId + " voltou com resultado guardado; reenviando.")
+            drenarFila(token)
+            atualizarContadores()
+            return
+        }
+
+        // A ponte só abre o app da adquirente com a tela do FireHub na frente.
+        chamarOperador(naTela, getString(R.string.chamada_estorno_titulo))
+        EstadoDoTerminal.publicar(
+            EstadoDoTerminal.Situacao.Cobrando(naTela, getString(R.string.andamento_estorno_inicial)),
+        )
+
+        val desfecho = try {
+            cobrador.estornar(estorno) { andamento ->
+                EstadoDoTerminal.publicar(EstadoDoTerminal.Situacao.Cobrando(naTela, andamento))
+            }
+        } catch (erro: Throwable) {
+            // Estourou no meio: pode ter aberto a tela da adquirente. Incerto.
+            Log.e(ETIQUETA, "Falha no estorno " + estorno.estornoId + ".", erro)
+            ResultadoDoEstorno(ResultadoDoEstorno.INCERTO, erro.message ?: "falha no app")
+        }
+        limparChamado()
+
+        val resultado = ResultadoDeCobranca(
+            pedidoId = estorno.referencia,
+            referencia = estorno.referencia,
+            aprovado = desfecho.situacao == ResultadoDoEstorno.ESTORNADO,
+            bandeira = null,
+            nsu = null,
+            autorizacao = null,
+            parcelas = null,
+            tipo = null,
+            motivoRecusa = desfecho.motivo,
+            idsDaAdquirente = desfecho.idsDaAdquirente,
+            situacaoDoEstorno = desfecho.situacao,
+        )
+        fila.enfileirar(resultado)
+        when (val resposta = ApiDoFireHub.enviarResultado(token, resultado)) {
+            is RespostaDoResultado.Confirmado,
+            is RespostaDoResultado.JaConfirmado,
+            is RespostaDoResultado.RecusaRegistrada,
+            -> fila.remover(resultado)
+
+            is RespostaDoResultado.CredencialInvalida -> exigirPareamento(resposta.mensagem)
+
+            is RespostaDoResultado.RejeitadoDefinitivamente ->
+                fila.travar(resultado, resposta.mensagem + " (HTTP " + resposta.status + ")")
+
+            // A fila reenvia sozinha nas próximas voltas.
+            is RespostaDoResultado.FalhaDeRede -> fila.contarTentativa(resultado)
+        }
+        atualizarContadores()
+
+        val motivo = desfecho.motivo ?: "-"
+        val texto = when (desfecho.situacao) {
+            ResultadoDoEstorno.ESTORNADO -> getString(R.string.estorno_feito, estorno.descricao)
+            ResultadoDoEstorno.NAO_ABRIU -> getString(R.string.estorno_nao_abriu, estorno.descricao, motivo)
+            ResultadoDoEstorno.INCERTO -> getString(R.string.estorno_incerto, estorno.descricao, motivo)
+            else -> getString(R.string.estorno_recusado, estorno.descricao, motivo)
+        }
+        EstadoDoTerminal.publicar(EstadoDoTerminal.Situacao.Ocioso(CofreDoToken.rotulo(this), true, texto))
         dormir(TEMPO_MOSTRANDO_RESULTADO_MS)
     }
 
@@ -1034,12 +1125,12 @@ class ServicoDeCobranca : Service() {
      * SYSTEM_ALERT_WINDOW resolveria de outro jeito e está na lista de
      * permissões PROIBIDAS pelo PagBank, então não é opção.
      */
-    private fun chamarOperador(cobranca: Cobranca) {
+    private fun chamarOperador(cobranca: Cobranca, titulo: String = getString(R.string.chamada_titulo)) {
         val pendente = telaDeOperacao()
 
         val aviso = NotificationCompat.Builder(this, CANAL_CHAMADA)
             .setSmallIcon(R.drawable.ic_aviso)
-            .setContentTitle(getString(R.string.chamada_titulo))
+            .setContentTitle(titulo)
             .setContentText(cobranca.valorFormatado() + " - " + cobranca.descricao)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_CALL)

@@ -60,6 +60,15 @@ abstract class CobradorPorDeeplink : CobradorDaAdquirente {
         tipo: TipoDePagamento?,
     ): ResultadoDoSdk
 
+    /**
+     * Abre um Intent no app da adquirente pela ponte e espera, como a cobrança.
+     * Para o estorno da Cielo, que não passa por [cobrar].
+     */
+    protected fun abrirNaPonte(saida: Intent, identificador: String): CanalDaPonte.Desfecho {
+        val app = contexto ?: return CanalDaPonte.Desfecho.NaoAbriu("Aplicação não iniciada.")
+        return CanalDaPonte.executar(app, saida, respostaPorResultado, identificador, Ajustes.PRAZO_NO_APP_DA_ADQUIRENTE_MS)
+    }
+
     /** Um Intent qualquer do app de pagamento, só para ver se ele existe. */
     protected abstract fun intentDeTeste(): Intent
 

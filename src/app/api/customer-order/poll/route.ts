@@ -1276,6 +1276,19 @@ export async function GET(req: NextRequest) {
     const notas = await import("@/lib/fiscal-automatico").then((m) => m.notasParaOPainel(orders)).catch(() => null);
     if (notas) for (const o of orders as any[]) if (notas.has(o.id)) o.fiscalInfo = notas.get(o.id);
 
+    // Totem pago na maquininha Cielo: o modal de cancelar diz para QUAL
+    // maquininha o estorno vai, e o card do cancelado mostra como ele está
+    // (lib/estorno-na-maquininha.ts). Consulta só quando há pedido assim.
+    {
+      const { estornoAutomatico } = await import("@/lib/estorno-na-maquininha-regras");
+      const daCielo = (orders as any[]).filter((o) => estornoAutomatico(o));
+      if (daCielo.length > 0) {
+        const { estornosParaOPainel } = await import("@/lib/estorno-na-maquininha");
+        const mapa = await estornosParaOPainel(daCielo).catch(() => null);
+        if (mapa) for (const o of daCielo) if (mapa.has(o.id)) o.estornoNaMaquininha = mapa.get(o.id);
+      }
+    }
+
     // O item do iFood/99Food/Wabiz herda a categoria REAL do produto da loja,
     // casado pelo nome (lib/categoria-do-item.ts) — a mesma regra do KDS e da
     // fila da nuvem. É por este poll que o painel aberto imprime, e sem a

@@ -8,6 +8,7 @@ import {
 } from "@/lib/terminal-app";
 import { reservarCobrancaDaEntrega, PREFIXO_DA_ENTREGA } from "@/lib/cobranca-da-entrega-na-maquininha";
 import { reservarCobrancaDaMesa, PREFIXO_DA_MESA } from "@/lib/cobranca-da-mesa-na-maquininha";
+import { estornoParaOApp, reservarEstorno } from "@/lib/estorno-na-maquininha";
 
 export const dynamic = "force-dynamic";
 
@@ -203,6 +204,18 @@ async function responderComMesaOuNada(
       terminal: terminal.label,
       ...extras,
     });
+  }
+  // Estorno de pedido cancelado no painel (lib/estorno-na-maquininha.ts): só
+  // o app do TOTEM leva, e só o endereçado a esta maquininha — é ela que tem a
+  // venda. Vai sem cobrança junto (`cobranca: null`): um de cada vez. App
+  // antes da 1.0.6 nem recebe estorno (o cancelamento já nasce "faça na
+  // maquininha", lib/estorno-na-maquininha-regras.ts › appFazEstorno). Antes
+  // da mesa: quem cancelou está esperando o estorno.
+  if (produto === "TOTEM") {
+    const estorno = await reservarEstorno(terminal);
+    if (estorno) {
+      return NextResponse.json({ cobranca: null, estorno: await estornoParaOApp(estorno), terminal: terminal.label, ...extras });
+    }
   }
   const mesa = await reservarCobrancaDaMesa(terminal);
   if (!mesa) return NextResponse.json({ cobranca: null, terminal: terminal.label, ...extras });

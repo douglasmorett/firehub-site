@@ -809,6 +809,28 @@ export async function PUT(req: Request) {
     }
   }
 
+  // Totem pago na maquininha Cielo: o estorno vai para a fila da maquininha
+  // que cobrou, e o app do totem faz sozinho (lib/estorno-na-maquininha.ts).
+  // Nas outras adquirentes não entra aqui: o modal já avisou para estornar
+  // na maquininha. Falha daqui não segura o cancelamento: o aviso do painel
+  // manda fazer o estorno na maquininha.
+  let estornoNaMaquininha: import("@/lib/estorno-na-maquininha-regras").EstornoNoPainel | null = null;
+  if (status === "CANCELADO" && order.gatewayProvider === "CIELO_APP" && order.paymentPaidAt) {
+    try {
+      const { pedirEstornoAoCancelar } = await import("@/lib/estorno-na-maquininha");
+      estornoNaMaquininha = await pedirEstornoAoCancelar(orderId);
+    } catch (errEstorno: any) {
+      console.error(`[Estorno na maquininha] Erro ao pedir o estorno do pedido ${orderId}:`, errEstorno?.message);
+      estornoNaMaquininha = { situacao: "RECUSADO", motivo: "não deu para mandar para a maquininha agora" };
+    }
+  }
+  // Reaberto antes de a maquininha pegar: o estorno é desistido.
+  if (reabre && order.status === "CANCELADO" && order.gatewayProvider === "CIELO_APP" && order.paymentPaidAt) {
+    import("@/lib/estorno-na-maquininha")
+      .then(({ desistirDoEstornoAoReabrir }) => desistirDoEstornoAoReabrir(orderId))
+      .catch((e) => console.error(`[Estorno na maquininha] Erro ao desistir do estorno do pedido ${orderId}:`, e?.message));
+  }
+
   // Mercado Pago (desligado desde 23/08). Lia `(order as any).paymentId`, campo
   // que não existe no pedido — o estorno nunca rodava. O id é `gatewayPaymentId`.
   if (status === "CANCELADO" && order.gatewayProvider === "mercadopago" && order.gatewayPaymentId && order.paymentPaidAt) {
@@ -885,7 +907,7 @@ export async function PUT(req: Request) {
   const pedido = saiDoRascunhoDoRobo
     ? { dailyOrderNumber: updateData.dailyOrderNumber, createdAt: updateData.createdAt, printedAt: null, notes: updateData.notes }
     : undefined;
-  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoKeeta, avisoCardapioWeb, avisoAiqfome, avisoAnotaAi, avisoEstorno, ...(pedido ? { pedido } : {}) });
+  return NextResponse.json({ success: true, avisoIfood, aviso99Food, avisoBrendi, avisoKeeta, avisoCardapioWeb, avisoAiqfome, avisoAnotaAi, avisoEstorno, ...(estornoNaMaquininha ? { estornoNaMaquininha } : {}), ...(pedido ? { pedido } : {}) });
 } catch (err: any) {
     console.error("[PUT Status Error]:", err);
     return NextResponse.json({ error: err?.message || "Erro ao atualizar status do pedido" }, { status: 500 });

@@ -27,6 +27,14 @@
     <string name="erro_aprovado_sem_registro">O cartão foi aprovado, mas o FireHub recusou o registro deste pedido. NÃO cobre de novo: chame o responsável e anote o NSU.</string>
     <string name="erro_sem_resposta_do_terminal">A maquininha não disse se o cartão passou. NÃO cobre de novo: o app está conferindo sozinho e avisa aqui.</string>
 
+    <!-- Estorno de pedido cancelado no painel do FireHub -->
+    <string name="chamada_estorno_titulo">Estorno na maquininha</string>
+    <string name="andamento_estorno_inicial">Abrindo o cancelamento da venda…</string>
+    <string name="estorno_feito">%1$s: estorno feito.</string>
+    <string name="estorno_recusado">%1$s: estorno não feito (%2$s). Faça o cancelamento da venda nesta maquininha.</string>
+    <string name="estorno_incerto">%1$s: não deu para saber se o estorno saiu (%2$s). Confira nas últimas transações antes de refazer.</string>
+    <string name="estorno_nao_abriu">%1$s: o cancelamento não abriu (%2$s). O FireHub manda de novo em seguida.</string>
+
     <!-- Recados para quem está no balcão, fora do fluxo de uma cobrança -->
     <string name="aviso_pedido_abandonado">%1$s voltou %2$d vezes sem ninguém pagar e está segurando a fila. Cancele ou libere o pedido no painel do FireHub.</string>
     <string name="travado_ja_pago">%1$s já tem cartão aprovado nesta maquininha, mas o FireHub não aceita o registro. Não cobre de novo.</string>

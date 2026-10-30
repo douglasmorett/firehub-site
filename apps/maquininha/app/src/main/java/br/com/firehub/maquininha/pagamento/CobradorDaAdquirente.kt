@@ -3,6 +3,7 @@ package br.com.firehub.maquininha.pagamento
 import android.content.Context
 import android.content.Intent
 import br.com.firehub.maquininha.rede.Cobranca
+import br.com.firehub.maquininha.rede.PedidoDeEstorno
 import br.com.firehub.maquininha.rede.TipoDePagamento
 
 /**
@@ -99,6 +100,37 @@ interface CobradorDaAdquirente {
 
     /** A tela de ativação do terminal, se esta adquirente tiver uma no app. */
     fun intentDeAtivacao(context: Context): Intent?
+
+    /**
+     * Estorna a venda de um pedido cancelado no painel. Bloqueia como `cobrar`.
+     *
+     * Só a Cielo implementa (lio://payment-reversal); o servidor só manda
+     * estorno para maquininha Cielo, e aqui as outras recusam com motivo em vez
+     * de deixar o estorno preso. Mesma regra de dinheiro da cobrança: só diz
+     * ESTORNADO com a prova na resposta da adquirente; na dúvida, INCERTO.
+     */
+    fun estornar(estorno: PedidoDeEstorno, aoProgredir: (String) -> Unit): ResultadoDoEstorno =
+        ResultadoDoEstorno(ResultadoDoEstorno.RECUSADO, "Estorno automático não disponível nesta maquininha.")
+}
+
+/**
+ * O que houve com o estorno, no vocabulário da rota POST /api/pos/terminal/estorno.
+ *
+ * NAO_ABRIU é "o app da adquirente nem abriu": o dinheiro não mexeu e o
+ * servidor devolve o estorno para a fila. INCERTO é o app da adquirente ter
+ * aberto e não ter dito nada legível — o estorno pode ter saído.
+ */
+data class ResultadoDoEstorno(
+    val situacao: String,
+    val motivo: String?,
+    val idsDaAdquirente: Map<String, String> = emptyMap(),
+) {
+    companion object {
+        const val ESTORNADO = "ESTORNADO"
+        const val RECUSADO = "RECUSADO"
+        const val INCERTO = "INCERTO"
+        const val NAO_ABRIU = "NAO_ABRIU"
+    }
 }
 
 /**

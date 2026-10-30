@@ -9,6 +9,7 @@ import br.com.firehub.maquininha.R
 import br.com.firehub.maquininha.pagamento.ponte.CanalDaPonte
 import br.com.firehub.maquininha.pagamento.ponte.CobradorPorDeeplink
 import br.com.firehub.maquininha.rede.Cobranca
+import br.com.firehub.maquininha.rede.PedidoDeEstorno
 import br.com.firehub.maquininha.rede.TipoDePagamento
 import org.json.JSONArray
 import org.json.JSONObject
@@ -225,4 +226,108 @@ object CobradorCielo : CobradorPorDeeplink() {
         valorEmCentavos: Int,
         tipo: TipoDePagamento?,
     ): ConferenciaDaUltima = conferirPelaRespostaAtrasada(identificador, valorEmCentavos, tipo, nome)
+
+    /**
+     * Estorno (cancelamento da venda), pela mesma ponte da cobrança.
+     *
+     * Ida (docs.cielo.com.br/cielo-smart/docs/cancelamento):
+     *   lio://payment-reversal?request=<Base64(JSON)>&urlCallback=firehubcielo://response
+     *   JSON = {"id":<id da ordem>,"clientID","accessToken","cieloCode","authCode","value":<centavos, número>}
+     *
+     * Volta:
+     *   sucesso: a ordem, com payments[] — o do cancelamento traz
+     *            paymentFields.statusCode = "2" (o do pagamento, "1");
+     *   erro:    {"code":1,"reason":"CANCELADO PELO USUÁRIO"}.
+     *
+     * A documentação não fala de prazo, cartão presente nem senha. Qualquer
+     * resposta que não seja uma dessas duas é INCERTO: nunca dizer estornado
+     * sem o statusCode 2 na mão.
+     */
+    override fun estornar(estorno: PedidoDeEstorno, aoProgredir: (String) -> Unit): ResultadoDoEstorno {
+        exigirThreadDeTrabalho()
+        val app = contexto
+            ?: return ResultadoDoEstorno(ResultadoDoEstorno.NAO_ABRIU, "Aplicação não iniciada.")
+        val credenciais = estorno.credenciais
+            ?: return ResultadoDoEstorno(ResultadoDoEstorno.RECUSADO, app.getString(R.string.recusa_sem_credencial_cielo))
+        val ordem = estorno.ordemDaAdquirente
+            ?: return ResultadoDoEstorno(ResultadoDoEstorno.RECUSADO, app.getString(R.string.estorno_sem_ordem))
+
+        val pedido = JSONObject()
+            .put("id", ordem)
+            .put("clientID", credenciais.clientId)
+            .put("accessToken", credenciais.accessToken)
+            .put("cieloCode", estorno.cieloCode ?: "")
+            .put("authCode", estorno.autorizacao ?: "")
+            .put("value", estorno.valorEmCentavos)
+
+        // Mesmo cuidado da cobrança: NO_WRAP e appendQueryParameter.
+        val base64 = Base64.encodeToString(pedido.toString().toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+        val uri = Uri.Builder()
+            .scheme("lio")
+            .authority("payment-reversal")
+            .appendQueryParameter("request", base64)
+            .appendQueryParameter("urlCallback", CALLBACK)
+            .build()
+        val saida = Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
+        aoProgredir(app.getString(R.string.andamento_estorno_no_app_da_adquirente))
+
+        return when (val desfecho = abrirNaPonte(saida, "ESTORNO" + alfanumerico(estorno.estornoId))) {
+            // Nada chegou à Cielo: o servidor devolve o estorno para a fila.
+            is CanalDaPonte.Desfecho.NaoAbriu -> ResultadoDoEstorno(
+                ResultadoDoEstorno.NAO_ABRIU,
+                if (desfecho.telaForaDaFrente) app.getString(R.string.recusa_app_em_segundo_plano)
+                else app.getString(R.string.recusa_app_da_adquirente_nao_abriu),
+            )
+
+            is CanalDaPonte.Desfecho.SemResposta ->
+                ResultadoDoEstorno(ResultadoDoEstorno.INCERTO, app.getString(R.string.incerto_estorno_sem_resposta))
+
+            is CanalDaPonte.Desfecho.Respondeu -> interpretarEstorno(desfecho.resposta, ordem)
+        }
+    }
+
+    private fun interpretarEstorno(resposta: CanalDaPonte.Resposta, ordem: String): ResultadoDoEstorno {
+        val incerto = { motivo: String -> ResultadoDoEstorno(ResultadoDoEstorno.INCERTO, motivo) }
+        val uri = (resposta as? CanalDaPonte.Resposta.PorUri)?.uri
+            ?: return incerto("A Cielo respondeu num formato inesperado.")
+        val json = uri.getQueryParameter("response")?.let { decodificar(it) }
+            ?: return incerto("A resposta da Cielo veio ilegível.")
+
+        val pagamentos = json.optJSONArray("payments")
+        if (pagamentos == null || pagamentos.length() == 0) {
+            // O erro documentado: {"code":1,"reason":"..."}. Com motivo é
+            // recusa (o estorno não saiu); sem nada reconhecível, incerto.
+            val motivo = json.optString("reason", "").trim().ifBlank { null }
+            return if (motivo != null && json.has("code")) {
+                ResultadoDoEstorno(ResultadoDoEstorno.RECUSADO, motivo)
+            } else {
+                Log.e(ETIQUETA, "Estorno sem payments e sem motivo: chaves=" + json.keys().asSequence().toList())
+                incerto("A Cielo não disse se o estorno saiu.")
+            }
+        }
+
+        // A volta chega pela ponte sem dizer de qual chamada é: a ordem tem
+        // que ser a que mandamos estornar, senão é resposta atrasada de outra.
+        val ordemDeVolta = json.optString("id", "").trim()
+        if (ordemDeVolta.isNotEmpty() && ordemDeVolta != ordem) {
+            Log.e(ETIQUETA, "Estorno respondido para outra ordem: $ordemDeVolta (esperada $ordem).")
+            return incerto("A Cielo respondeu sobre outra venda.")
+        }
+
+        for (i in 0 until pagamentos.length()) {
+            val pagamento = pagamentos.optJSONObject(i) ?: continue
+            val campos = pagamento.optJSONObject("paymentFields") ?: JSONObject()
+            val status = campos.opt("statusCode")?.toString()?.trim() ?: pagamento.opt("statusCode")?.toString()?.trim()
+            if (status == "2") {
+                val ids = linkedMapOf("orderId" to ordem)
+                pagamento.optString("cieloCode", "").ifBlank { campos.optString("cieloCode", "") }
+                    .trim().ifBlank { null }?.let { ids["cieloCodeDoEstorno"] = it }
+                pagamento.optString("authCode", "").trim().ifBlank { null }?.let { ids["autorizacaoDoEstorno"] = it }
+                return ResultadoDoEstorno(ResultadoDoEstorno.ESTORNADO, null, ids)
+            }
+        }
+        Log.e(ETIQUETA, "Ordem $ordem voltou sem pagamento com statusCode 2.")
+        return incerto("A Cielo devolveu a venda sem o cancelamento.")
+    }
 }

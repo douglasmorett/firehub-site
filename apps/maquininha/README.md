@@ -31,6 +31,7 @@ O servidor já está no ar e não precisa de nada novo. São duas rotas:
 |---|---|
 | `GET /api/pos/terminal/pendente?token=…&versao=…` | Devolve a cobrança e **reserva** o pedido para esta maquininha |
 | `POST /api/pos/terminal/resultado` | Registra o que aconteceu com o cartão. É idempotente |
+| `POST /api/pos/terminal/estorno` | (1.0.6, só Cielo) Registra o estorno de pedido cancelado no painel. Idempotente |
 
 `401 TERMINAL_DESCONHECIDO` e `403 TERMINAL_DESATIVADO` são paradas definitivas:
 o app para de perguntar e pede o pareamento de novo, em vez de martelar o
@@ -561,6 +562,7 @@ quem cancela é o cliente, na tela da adquirente.
 - Manifesto: `<meta-data android:name="cs_integration_type" android:value="uri"/>`; `minSdk 24` e `targetSdk 29` **só neste flavor**; WebView proibida (o app não tem).
 - Ida: JSON em Base64 (`NO_WRAP`, codificado na query) em `lio://payment?request=…&urlCallback=firehubcielo://response`. Volta: `response` em Base64 com o pedido; aprovado = `payments[0]` (bandeira, `authCode`, `nsu`/`cieloCode`).
 - **Credenciais por loja**: `clientId` e `accessToken` vêm do servidor no campo opcional `credenciaisCielo:{clientId, accessToken, email?}` da resposta do `pendente`. Sem eles a cobrança é **recusada antes de abrir qualquer tela**, com "A loja ainda não cadastrou as credenciais da Cielo". Nunca vão para log nem para disco. O nome do campo vem de `BuildConfig.CAMPO_DE_CREDENCIAIS`, preenchido só no flavor cielo — o APK do PagBank não leva a palavra "Cielo".
+- **Estorno automático (1.0.6)**: o lojista cancela no painel um pedido do totem pago nesta maquininha e o `pendente` do app TOTEM devolve `{cobranca:null, estorno:{estornoId, referencia:"estorno:<id>", valorEmCentavos, descricao, ordemDaAdquirente, cieloCode, autorizacao}}`. O app abre `lio://payment-reversal?request=<Base64 {id, clientID, accessToken, cieloCode, authCode, value}>&urlCallback=firehubcielo://response` pela mesma ponte e devolve em `POST /api/pos/terminal/estorno` `{token, pedidoId:"estorno:<id>", situacao: ESTORNADO|RECUSADO|INCERTO|NAO_ABRIU, motivoRecusa?}`. Só é ESTORNADO com `paymentFields.statusCode = "2"` num dos `payments` da volta; `{code, reason}` é RECUSADO; o resto é INCERTO. O resultado anda pela mesma fila em disco da cobrança. Servidor: `src/lib/estorno-na-maquininha.ts`. **Conferir no terminal**: se a Cielo pede senha/cartão no estorno, prazo do cancelamento, e a volta de um estorno repetido.
 - Falta: cadastro no portal de desenvolvedores da Cielo (gera clientId/accessToken por estabelecimento), homologação do APK, POS Cielo Smart para teste.
 - Conferir no terminal: (1) **unidade de `value`/`unitPrice`** — o app manda centavos; se a tela da Cielo mostrar o valor 100× maior, é em `CobradorCielo.montarSaida`; (2) o formato da resposta de cancelamento/erro (o app aceita `code`/`reason`/`message`/`status`; sem nada reconhecível é incerto); (3) se `email` vazio é aceito; (4) se voucher refeição recusa cartão alimentação.
 

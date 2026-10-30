@@ -33,6 +33,7 @@ import { navegadorSeguraAComanda, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS 
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
 import { pagoNaMaquininha, pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
+import { estornoAutomatico, textoDoEstorno } from "@/lib/estorno-na-maquininha-regras";
 import { textoDoTrocoNoPix, trocoNoPixDoPedido } from "@/lib/troco-no-pix";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
@@ -1411,6 +1412,22 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               ✓ PAGO NA MAQUININHA — não cobrar do cliente
             </div>
           )}
+          {/* Cancelado com estorno automático na maquininha Cielo: como ele
+              está (lib/estorno-na-maquininha-regras.ts › textoDoEstorno). */}
+          {order.status === "CANCELADO" && (order as any).estornoNaMaquininha?.situacao && (() => {
+            const { texto, tom } = textoDoEstorno((order as any).estornoNaMaquininha);
+            const cor = tom === "ok" ? { background: "#DCFCE7", color: "#166534", border: "1px solid #BBF7D0" }
+              : tom === "erro" ? { background: "#FEF2F2", color: "#B91C1C", border: "1px solid #FECACA" }
+              : { background: "#DBEAFE", color: "#1D4ED8", border: "1px solid #BFDBFE" };
+            return (
+              <div style={{
+                ...cor, whiteSpace: "normal", display: "block",
+                fontWeight: 800, fontSize: "0.8rem", padding: "5px 10px", borderRadius: "8px", margin: "5px 0", lineHeight: 1.35
+              }}>
+                {texto}
+              </div>
+            );
+          })()}
 
           {/* Banner de Alerta para Entrega Parceira (iFood / 99Food / Parceiros) */}
           {(() => {
@@ -3637,11 +3654,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       }), pedirSenha);
       if (!res) return; // o gerente cancelou
       if (res.ok) {
-        setOrders(prev => prev.map(o => o.id === cancelConfirmId ? { ...o, status: "CANCELADO", cancelledBy: "LOJA" } : o));
-        router.refresh();
         // Os mesmos avisos do updateStatus: aqui eles faltavam, e é justamente
         // pelo cancelamento que sai o estorno do que foi pago pelo site.
         const data = await res.json().catch(() => ({} as any));
+        // Estorno na maquininha Cielo: o card já mostra "enviado", sem esperar o feed.
+        const estornoNaMaquininha = data?.estornoNaMaquininha;
+        setOrders(prev => prev.map(o => o.id === cancelConfirmId
+          ? { ...o, status: "CANCELADO", cancelledBy: "LOJA", ...(estornoNaMaquininha ? { estornoNaMaquininha } : {}) }
+          : o));
+        router.refresh();
+        if (estornoNaMaquininha) {
+          const { texto, tom } = textoDoEstorno(estornoNaMaquininha);
+          showToast(texto, tom === "erro" ? "#B45309" : "#1D4ED8");
+        }
         if (data?.avisoIfood) showToast(`⚠️ iFood não acompanhou: ${data.avisoIfood}`, "#B45309");
         if (data?.aviso99Food) showToast(`⚠️ 99Food não acompanhou: ${data.aviso99Food}`, "#B45309");
         if (data?.avisoBrendi) showToast(`⚠️ Brendi não acompanhou: ${data.avisoBrendi}`, "#B45309");
@@ -4406,9 +4431,16 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 ))}
               </div>
             )}
-            {/* Pago na maquininha do totem: cancelar aqui NÃO devolve o
+            {/* Pago na maquininha Cielo: o estorno vai sozinho para a
+                maquininha que cobrou (lib/estorno-na-maquininha.ts). */}
+            {estornoAutomatico(pedido) && (
+              <div style={{ background: "#DBEAFE", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "10px 12px", marginBottom: "14px", fontSize: "0.8rem", color: "#1E3A8A", lineHeight: 1.45 }}>
+                💳 <strong>Este pedido foi pago na maquininha.</strong> Ao cancelar, o estorno vai sozinho para a maquininha{(pedido as any)?.estornoNaMaquininha?.terminal ? <> <strong>{(pedido as any).estornoNaMaquininha.terminal}</strong></> : " que cobrou"}: deixe o app FireHub Totem aberto nela e conclua o cancelamento da venda na tela da Cielo, se ela pedir. A situação do estorno aparece no card do pedido.
+              </div>
+            )}
+            {/* Nas outras adquirentes, cancelar aqui NÃO devolve o
                 dinheiro. O estorno é feito na própria maquininha. */}
-            {pagoNaMaquininha(pedido) && (
+            {pagoNaMaquininha(pedido) && !estornoAutomatico(pedido) && (
               <div style={{ background: "#DBEAFE", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "10px 12px", marginBottom: "14px", fontSize: "0.8rem", color: "#1E3A8A", lineHeight: 1.45 }}>
                 💳 <strong>Este pedido foi pago na maquininha.</strong> Cancelar aqui não devolve o dinheiro ao cliente: faça o estorno (cancelamento da venda) na própria maquininha, no app da adquirente.
               </div>

@@ -17,5 +17,8 @@
     <string name="recusa_app_em_segundo_plano">A tela do FireHub não estava aberta na maquininha e o pagamento não chegou a ser aberto.</string>
     <string name="recusa_app_da_adquirente_nao_abriu">Não foi possível abrir o aplicativo de pagamento da Cielo.</string>
     <string name="incerto_sem_resposta">O aplicativo da Cielo não devolveu o resultado a tempo.</string>
+    <string name="andamento_estorno_no_app_da_adquirente">Conclua o cancelamento da venda na tela da Cielo</string>
+    <string name="estorno_sem_ordem">Faltam os dados da venda na Cielo para estornar sozinho.</string>
+    <string name="incerto_estorno_sem_resposta">O aplicativo da Cielo não disse se o estorno saiu.</string>
     <string name="recusa_sem_credencial_cielo">A loja ainda não cadastrou as credenciais da Cielo (Client ID e Access Token) no FireHub.</string>
 </resources>

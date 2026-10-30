@@ -16,6 +16,7 @@ object Ajustes {
 
     const val CAMINHO_DA_FILA = "/api/pos/terminal/pendente"
     const val CAMINHO_DO_RESULTADO = "/api/pos/terminal/resultado"
+    const val CAMINHO_DO_ESTORNO = "/api/pos/terminal/estorno"
     const val CAMINHO_DO_CODIGO_CURTO = "/api/pos/terminal/codigo-curto"
 
     /** O código de pareamento gerado no painel tem 32 bytes em hexadecimal. */

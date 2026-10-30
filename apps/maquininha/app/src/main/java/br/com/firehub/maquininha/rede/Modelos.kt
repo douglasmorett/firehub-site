@@ -71,6 +71,38 @@ data class Cobranca(
 }
 
 /**
+ * Um estorno que o servidor reservou para esta maquininha: o lojista cancelou
+ * no painel um pedido que ESTA maquininha cobrou (só o app do totem recebe, e
+ * só a Cielo estorna sozinha — nos outros APKs o cobrador recusa).
+ *
+ * `referencia` é "estorno:<id>" e é o pedidoId do resultado: o resultado do
+ * estorno anda pela mesma fila em disco da cobrança (FilaDeResultados), só que
+ * vai para outra rota (ApiDoFireHub.enviarResultado).
+ */
+data class PedidoDeEstorno(
+    val estornoId: String,
+    val referencia: String,
+    val valorEmCentavos: Int,
+    val descricao: String,
+    /** O id da ordem na adquirente (Cielo: o `id` do pedido devolvido no pagamento). */
+    val ordemDaAdquirente: String?,
+    val cieloCode: String?,
+    val autorizacao: String?,
+    val credenciais: CredenciaisDaAdquirente? = null,
+) {
+    /** Para a tela de operação, que desenha valor e descrição de uma Cobranca. */
+    fun comoCobranca() = Cobranca(
+        pedidoId = referencia,
+        valorEmCentavos = valorEmCentavos,
+        descricao = descricao,
+        cliente = null,
+        tentativa = 1,
+        referencia = referencia,
+        credenciais = credenciais,
+    )
+}
+
+/**
  * Credenciais da adquirente da loja. NUNCA vão para log nem para disco: o app
  * as usa na hora da cobrança e as esquece junto com o objeto da cobrança.
  */
@@ -101,7 +133,14 @@ data class ResultadoDeCobranca(
     /** Só para o operador saber há quanto tempo um resultado está preso. */
     val criadoEm: Long = System.currentTimeMillis(),
     val tentativasDeEnvio: Int = 0,
+    /**
+     * Só no resultado de estorno (pedidoId "estorno:<id>"): ESTORNADO,
+     * RECUSADO, INCERTO ou NAO_ABRIU. Nulo em toda cobrança.
+     */
+    val situacaoDoEstorno: String? = null,
 ) {
+    val ehEstorno: Boolean get() = pedidoId.startsWith(PREFIXO_DO_ESTORNO)
+
     fun corpoDoPost(token: String): JSONObject = JSONObject().apply {
         put("token", token)
         put("pedidoId", pedidoId)
@@ -121,6 +160,7 @@ data class ResultadoDeCobranca(
         // uma atualização do app; mandar junto não custa nada.
         put("adquirente", BuildConfig.ADQUIRENTE)
         if (idsDaAdquirente.isNotEmpty()) put("idsDaAdquirente", JSONObject(idsDaAdquirente as Map<*, *>))
+        put("situacao", situacaoDoEstorno)
     }
 
     fun paraJson(): JSONObject = JSONObject().apply {
@@ -136,6 +176,7 @@ data class ResultadoDeCobranca(
         if (idsDaAdquirente.isNotEmpty()) put("idsDaAdquirente", JSONObject(idsDaAdquirente as Map<*, *>))
         put("criadoEm", criadoEm)
         put("tentativasDeEnvio", tentativasDeEnvio)
+        put("situacaoDoEstorno", situacaoDoEstorno)
     }
 
     companion object {
@@ -154,9 +195,13 @@ data class ResultadoDeCobranca(
             } ?: emptyMap(),
             criadoEm = json.optLong("criadoEm", System.currentTimeMillis()),
             tentativasDeEnvio = json.optInt("tentativasDeEnvio", 0),
+            situacaoDoEstorno = json.textoOuNulo("situacaoDoEstorno"),
         )
     }
 }
+
+/** O pedidoId do resultado de estorno. O servidor usa o mesmo prefixo (lib/estorno-na-maquininha-regras.ts). */
+const val PREFIXO_DO_ESTORNO = "estorno:"
 
 /**
  * optString devolve a string "null" quando o campo veio nulo do servidor, e é
@@ -181,6 +226,8 @@ sealed class RespostaDaFila {
     data class SemCobranca(
         val terminal: String?,
         val identidade: IdentidadeDoTerminal? = null,
+        /** Estorno para fazer agora. Já reservado no servidor, como a cobrança. */
+        val estorno: PedidoDeEstorno? = null,
     ) : RespostaDaFila()
 
     data class ComCobranca(

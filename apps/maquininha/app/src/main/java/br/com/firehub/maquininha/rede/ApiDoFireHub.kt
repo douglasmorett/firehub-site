@@ -63,7 +63,9 @@ object ApiDoFireHub {
                 )
                 val cobranca = json.optJSONObject("cobranca")
                 if (cobranca == null) {
-                    RespostaDaFila.SemCobranca(terminal, identidade)
+                    // Servidor que não manda estorno: campo ausente, estorno nulo.
+                    val estorno = json.optJSONObject("estorno")?.let { lerEstorno(it, json) }
+                    RespostaDaFila.SemCobranca(terminal, identidade, estorno)
                 } else {
                     RespostaDaFila.ComCobranca(lerCobranca(cobranca, json), terminal, identidade)
                 }
@@ -101,6 +103,38 @@ object ApiDoFireHub {
      * "mesa:<id>" numa cobrança de mesa — nada no app pode assumir formato.
      * getString também aceita número e o devolve como texto.
      */
+    /** O `estorno` do pendente. Ilegível = nulo: o servidor devolve à fila em 5 min. */
+    private fun lerEstorno(json: JSONObject, raiz: JSONObject): PedidoDeEstorno? = try {
+        val id = json.getString("estornoId")
+        PedidoDeEstorno(
+            estornoId = id,
+            referencia = json.textoOuNulo("referencia") ?: (PREFIXO_DO_ESTORNO + id),
+            valorEmCentavos = json.getInt("valorEmCentavos"),
+            descricao = json.textoOuNulo("descricao") ?: "Estorno",
+            ordemDaAdquirente = json.textoOuNulo("ordemDaAdquirente"),
+            cieloCode = json.textoOuNulo("cieloCode"),
+            autorizacao = json.textoOuNulo("autorizacao"),
+            credenciais = lerCredenciais(json, raiz),
+        )
+    } catch (erro: Exception) {
+        Log.w(ETIQUETA, "Estorno ilegível na resposta da fila.", erro)
+        null
+    }
+
+    private fun lerCredenciais(json: JSONObject, raiz: JSONObject): CredenciaisDaAdquirente? =
+        BuildConfig.CAMPO_DE_CREDENCIAIS.takeIf { it.isNotEmpty() }
+            // Aceita dentro do objeto ou ao lado dele, na raiz da resposta.
+            ?.let { campo -> json.optJSONObject(campo) ?: raiz.optJSONObject(campo) }
+            ?.let { cred ->
+                val clientId = cred.textoOuNulo("clientId")
+                val accessToken = cred.textoOuNulo("accessToken")
+                if (clientId != null && accessToken != null) {
+                    CredenciaisDaAdquirente(clientId, accessToken, cred.textoOuNulo("email"))
+                } else {
+                    null
+                }
+            }
+
     private fun lerCobranca(json: JSONObject, raiz: JSONObject) = Cobranca(
         pedidoId = json.getString("pedidoId"),
         valorEmCentavos = json.getInt("valorEmCentavos"),
@@ -112,18 +146,7 @@ object ApiDoFireHub {
         // esta tentativa quando o app reenvia depois de uma queda de rede.
         referencia = json.textoOuNulo("referencia")
             ?: (json.getString("pedidoId") + ":" + json.optInt("tentativa", 1)),
-        credenciais = BuildConfig.CAMPO_DE_CREDENCIAIS.takeIf { it.isNotEmpty() }
-            // Aceita dentro de "cobranca" ou ao lado dela, na raiz da resposta.
-            ?.let { campo -> json.optJSONObject(campo) ?: raiz.optJSONObject(campo) }
-            ?.let { cred ->
-                val clientId = cred.textoOuNulo("clientId")
-                val accessToken = cred.textoOuNulo("accessToken")
-                if (clientId != null && accessToken != null) {
-                    CredenciaisDaAdquirente(clientId, accessToken, cred.textoOuNulo("email"))
-                } else {
-                    null
-                }
-            },
+        credenciais = lerCredenciais(json, raiz),
     )
 
     /**
@@ -134,7 +157,11 @@ object ApiDoFireHub {
      * resultado aprovado, sem medo de liberar o pedido duas vezes.
      */
     fun enviarResultado(token: String, resultado: ResultadoDeCobranca): RespostaDoResultado {
-        val endereco = Ajustes.ENDERECO_DO_FIREHUB + Ajustes.CAMINHO_DO_RESULTADO
+        // O resultado do estorno anda pela mesma fila em disco, mas tem rota
+        // própria. A resposta dela segue o contrato desta (aprovado,
+        // jaConfirmado), então o resto do caminho é o mesmo.
+        val caminho = if (resultado.ehEstorno) Ajustes.CAMINHO_DO_ESTORNO else Ajustes.CAMINHO_DO_RESULTADO
+        val endereco = Ajustes.ENDERECO_DO_FIREHUB + caminho
 
         val resposta = try {
             chamar(endereco, "POST", resultado.corpoDoPost(token).toString())
