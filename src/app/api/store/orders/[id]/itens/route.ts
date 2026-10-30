@@ -275,6 +275,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     // caixa —, então quando vêm as duas coisas na mesma chamada, a remoção é
     // gravada primeiro e o colado nasce depois.
     if (avaliacao.modo === "MARKETPLACE") {
+      let pai = order;
       if (querMexerNosOriginais || desconto) {
         const resposta = await editarItensDoMarketplace({
           order,
@@ -290,9 +291,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         if (acrescentar.length === 0) return resposta.resposta;
         // Com acréscimo junto, quem responde é o colado — a tela precisa do
         // pedido novo para imprimir a comanda dele.
+        //
+        // O colado empilha o rastro no pai a partir do histórico que recebe:
+        // com o `order` lido antes da remoção, o "REMOVEU" recém-gravado era
+        // sobrescrito e o total "antes" saía o velho (Frangoso, 29/10/2026: o
+        // lanche trocado sumiu do pedido sem rastro, com 33,99 → 33,99).
+        const relido = await prisma.customerOrder.findUnique({
+          where: { id: order.id },
+          select: { editHistory: true, totalAmount: true },
+        });
+        if (relido) pai = { ...order, ...relido };
       }
       return await acrescentarColado({
-        order,
+        order: pai,
         lojaId,
         operador,
         acrescentar,

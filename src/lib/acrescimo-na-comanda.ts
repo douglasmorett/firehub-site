@@ -17,7 +17,9 @@
  *
  * Então: o pedido colado nunca imprime sozinho (fila da nuvem, ouvinte do
  * navegador e auto-print da tela o pulam), e todo papel do pedido principal
- * leva os itens dos acréscimos dele, marcados, com o valor a cobrar à parte.
+ * leva os itens dos acréscimos dele, marcados — somados no total a cobrar
+ * quando o principal também é pago na entrega, à parte quando ele já foi pago
+ * no app.
  *
  * O NOME do item não muda — é por ele que a impressão acha a categoria e a
  * impressora (lib/categoria-do-item.ts). A marca vai na observação do item.
@@ -69,16 +71,32 @@ export function pedidoComAcrescimos<T extends PedidoComItens>(pai: T, todos: rea
     })),
   );
 
+  // ── PRINCIPAL PAGO NA ENTREGA: O ACRÉSCIMO ENTRA NO TOTAL A COBRAR ──────
+  //
+  // O papel somava os itens do acréscimo no subtotal mas cobrava só o total do
+  // principal: o Assistente fecha a conta com "Desconto" = subtotal − total, e
+  // a troca de um lanche num pedido da Brendi com cupom de R$ 8 saiu "Desconto
+  // -R$ 44,98 · COBRAR DO CLIENTE NA ENTREGA: R$ 1,00", com o acréscimo de
+  // R$ 36,98 numa linha à parte. O caixa leu R$ 1 e o funcionário lançou o
+  // acréscimo de novo achando que não tinha ido (Lucas/Frangoso, 29/10/2026).
+  // Agora o total do PAPEL é o que se cobra na porta, e o desconto volta a ser
+  // o cupom. No banco nada muda: o principal segue com o total do parceiro.
+  const pagoNoApp = ehPagoOnline(pai as any);
+  let aCobrarJunto = 0;
   const cobrancas = filhos.map((f) => {
     // "Crédito (Cobrar na Entrega)" → "Crédito": o "cobrar" já está na frase.
     const forma = String(f.paymentMethod || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
-    return `${MARCA_DO_ACRESCIMO}: ${reais(Number(f.totalAmount) || 0)} COBRAR À PARTE${forma ? ` (${forma})` : ""}`;
+    const valor = `${MARCA_DO_ACRESCIMO}: ${reais(Number(f.totalAmount) || 0)}`;
+    if (ehPagoOnline(f as any)) return `${valor} JÁ PAGO${forma ? ` (${forma})` : ""}`;
+    if (pagoNoApp) return `${valor} COBRAR À PARTE${forma ? ` (${forma})` : ""}`;
+    aCobrarJunto += Number(f.totalAmount) || 0;
+    return `${valor}${forma ? ` (${forma})` : ""} JÁ SOMADO NO TOTAL A COBRAR`;
   });
 
   // Pedido principal já pago no app: o entregador cobra SÓ o acréscimo. Sem
   // esta linha, quem lê "cobrar à parte" não sabe se o resto também é na porta
   // (Lucas/Frangoso, 24/10/2026: "já pago no iFood R$ X + cobrar R$ Y").
-  if (ehPagoOnline(pai as any)) {
+  if (pagoNoApp) {
     cobrancas.push(`RESTO DO PEDIDO JÁ PAGO (${reais(Number(pai.totalAmount) || 0)}): COBRAR SÓ O ACRÉSCIMO`);
   }
 
@@ -86,6 +104,7 @@ export function pedidoComAcrescimos<T extends PedidoComItens>(pai: T, todos: rea
   return {
     ...pai,
     __comAcrescimos: true,
+    ...(aCobrarJunto > 0 ? { totalAmount: Math.round(((Number(pai.totalAmount) || 0) + aCobrarJunto) * 100) / 100 } : {}),
     items: [...(pai.items || []), ...itensDosFilhos],
     notes: [...cobrancas, original].filter(Boolean).join("\n"),
   };
