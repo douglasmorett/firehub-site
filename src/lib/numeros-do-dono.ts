@@ -3,7 +3,8 @@
  *
  * O principal continua sendo o "WhatsApp do Proprietário" (`notificationPhone`,
  * em Minha Loja). Os outros (sócio, gerente) moram em
- * `chatbotConfig.outrosNumerosDoDono`, editados na aba Alertas do chatbot.
+ * `chatbotConfig.outrosNumerosDoDono`, editados na aba Alertas do chatbot e na
+ * aba Configuração do Bill (as duas por /api/chatbot/config).
  * Todos recebem os mesmos avisos, sempre pela instância do WhatsApp da própria
  * loja, e todos são tratados como dono quando escrevem para o robô (pedido do
  * Douglas, 01/10/2026).
@@ -32,6 +33,35 @@ export function lerOutrosNumerosDoDono(chatbotConfig: any): string[] {
     if (d && !limpos.some((x) => x.slice(-10) === d.slice(-10))) limpos.push(d);
   }
   return limpos.slice(0, MAX_OUTROS_NUMEROS_DO_DONO);
+}
+
+/**
+ * Confere o número digitado antes de entrar na lista dos outros: com DDD, não
+ * é o número do robô, ainda não recebe e cabe no teto. A mesma regra na aba
+ * Notificações do robô e na tela do Bill (Configuração › Quem fala com o Bill),
+ * as duas gravando por /api/chatbot/config.
+ */
+export function conferirNovoNumeroDoDono(
+  digitado: unknown,
+  { principal, outros, robo }: { principal: string | null | undefined; outros: string[]; robo: string | null | undefined },
+): { ok: true; numero: string } | { ok: false; motivo: "formato" | "robo" | "repetido" | "teto"; mensagem: string } {
+  const d = digitosDoTelefoneDoDono(digitado);
+  const local = d.startsWith("55") ? d.slice(2) : d;
+  if (!d || local.length < 10 || local.length > 11) {
+    return { ok: false, motivo: "formato", mensagem: "Digite o número com DDD, por exemplo (22) 99999-8888." };
+  }
+  const soDigitos = (v: unknown) => String(v ?? "").replace(/\D/g, "");
+  const mesmo = (a: string, b: string) => a.length >= 10 && b.length >= 10 && a.slice(-10) === b.slice(-10);
+  if (mesmo(d, soDigitos(robo))) {
+    return { ok: false, motivo: "robo", mensagem: "Esse é o número do próprio robô — ele não pode avisar a si mesmo." };
+  }
+  if (mesmo(d, soDigitos(principal)) || outros.some((x) => mesmo(x, d))) {
+    return { ok: false, motivo: "repetido", mensagem: "Esse número já recebe os alertas." };
+  }
+  if (outros.length >= MAX_OUTROS_NUMEROS_DO_DONO) {
+    return { ok: false, motivo: "teto", mensagem: `No máximo ${MAX_OUTROS_NUMEROS_DO_DONO} números além do principal.` };
+  }
+  return { ok: true, numero: d };
 }
 
 /**
