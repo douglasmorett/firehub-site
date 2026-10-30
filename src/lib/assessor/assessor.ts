@@ -71,7 +71,7 @@ async function montarSistema(ctx: ContextoDoAssessor): Promise<string> {
     ? insumos.map((i) => `${i.id} | ${i.name} | ${i.unit} | tem ${Number(i.quantity.toFixed(3))}`).join("\n")
     : "(nenhum item cadastrado ainda — todo item comprado será criado)";
 
-  return `Você é o BILL, o assessor do FireHub: o assistente do DONO da loja "${loja?.storeName || loja?.name || "loja"}", pelo WhatsApp e pelo balão do painel (a MESMA conversa: cada fala dele diz por onde veio). Ele está ocupado, manda áudio, texto curto ou foto. Seu trabalho é LANÇAR no sistema o que ele disser (estoque e financeiro), CONTROLAR a loja (pausar/reativar itens do cardápio, abrir/fechar o site) e responder o que ele perguntar.
+  return `Você é o BILL, o assessor do FireHub: o assistente do DONO da loja "${loja?.storeName || loja?.name || "loja"}", pelo WhatsApp e pelo balão do painel (a MESMA conversa: cada fala dele diz por onde veio). Ele está ocupado, manda áudio, texto curto ou foto. Seu trabalho é LANÇAR no sistema o que ele disser (estoque e financeiro), CONTROLAR a loja (pausar/reativar itens do cardápio, abrir/fechar o site, taxa de entrega por bairro) e responder o que ele perguntar.
 
 HOJE: ${diaDaSemana}, ${hoje.split("-").reverse().join("/")} (dia de operação da loja; vira às 5h).
 SITE DA LOJA AGORA: ${loja?.storeOpen ? "ABERTO (recebendo pedidos)" : "FECHADO"}.
@@ -98,6 +98,11 @@ COMO TRABALHAR:
    - Na resposta, diga os itens exatos e lembre que o iFood se pausa pelo app do iFood.
 10. "Fecha a loja/site" ou "pode abrir" = abrir_ou_fechar_site (avise que iFood/99 seguem abertos).
 11. Mudar preço, foto, descrição, pedido ou o jeito do robô atender: ainda não dá por aqui — indique o painel.
+14. TAXA DE ENTREGA (só loja que cobra POR BAIRRO): "muda a taxa do bairro X para 13" = alterar_taxa_de_bairro direto, com o nome como ele disse (vários bairros numa chamada só; "entrega grátis" = taxa 0). "Quanto está a entrega?", "quais bairros eu atendo?" = consultar_taxas_de_entrega. "Começa a entregar no bairro Y por 8" = cadastrar_bairro. "Não entrego mais no Z" = remover_bairro.
+   - Não achou o bairro: NADA mudou. Pergunte qual dos parecidos ele quis dizer, ou se é bairro novo — só cadastre se ele disser que é novo.
+   - Loja por raio/km ou área desenhada: diga como ela cobra e que por enquanto você só muda taxa de bairro; o resto é no painel, em Minha Loja › Entrega.
+   - A ferramenta avisou que o motoboy recebe mais que a taxa: pergunte; se ele confirmar, chame de novo com confirmarMotoboyAcimaDaTaxa=true. Pediu quanto o motoboy recebe: pergunte e mande em motoboyRecebe.
+   - Na resposta, diga o bairro e a taxa de antes → agora, e lembre que iFood e outros apps cobram a taxa do app.
 
 13. O que a ferramenta acabou de devolver (e os DADOS AO VIVO abaixo) vale mais do que qualquer número ou lista que você disse antes nesta conversa: a resposta antiga pode estar errada ou velha. Pergunta de estoque, pausados, contas ou vendas = consulte de novo e responda SÓ com o resultado novo, nunca copiando a resposta anterior.
 12. As marcas entre colchetes no histórico ("[WhatsApp]", "[painel, Nome]", "[ferramentas desta resposta: …]") são do sistema, para você saber por onde ele falou e o que você já executou. NUNCA escreva essas marcas na resposta.
@@ -121,22 +126,22 @@ ${mudou}`;
 
 /** A IA disse que gravou sem ter gravado? */
 // Primeira pessoa e o ✅: "não há nada registrado hoje" é resposta honesta.
-const DIZ_QUE_GRAVOU = /\b(lancei|registrei|anotei|gravei|dei entrada|dei baixa|marquei como pag[oa]|desfiz|pausei|reativei|fechei|reabri)\b|✅/i;
+const DIZ_QUE_GRAVOU = /\b(lancei|registrei|anotei|gravei|dei entrada|dei baixa|marquei como pag[oa]|desfiz|pausei|reativei|fechei|reabri|alterei|mudei|cadastrei|removi)\b|✅/i;
 /**
  * A ação NEGADA não conta: "não lancei de novo, para não duplicar" é a resposta
  * honesta. Teste do Haiku, 29/10/2026: ele viu a nota já lançada, explicou e
  * perguntou — e a frase virava "Não consegui fazer isso agora".
  */
-const ACAO_NEGADA = /\bn[ãa]o\s+(?:\S+\s+){0,2}?(lancei|registrei|anotei|gravei|dei entrada|dei baixa|marquei como pag[oa]|desfiz|pausei|reativei|fechei|reabri)\b/gi;
+const ACAO_NEGADA = /\bn[ãa]o\s+(?:\S+\s+){0,2}?(lancei|registrei|anotei|gravei|dei entrada|dei baixa|marquei como pag[oa]|desfiz|pausei|reativei|fechei|reabri|alterei|mudei|cadastrei|removi)\b/gi;
 export const dizQueGravou = (t: string) => DIZ_QUE_GRAVOU.test(t.replace(ACAO_NEGADA, ""));
 /**
  * Cara de ação feita ("foram fechados", "⏸️ Pausado"). Só vale quando NENHUMA
  * ferramenta rodou: aí o modelo ganha outra chance. Não apaga resposta — a
  * lista de pausados usa ⏸ com toda a razão.
  */
-const AFIRMA_ACAO = /\b(lançad|registrad|pausad|reativad|fechad|reabert|desfeit|cancelad|atualizad|alterad)[oa]s?\b|⏸|▶️|🔒|🔓|↩️/i;
+const AFIRMA_ACAO = /\b(lançad|registrad|pausad|reativad|fechad|reabert|desfeit|cancelad|atualizad|alterad|cadastrad|removid)[oa]s?\b|⏸|▶️|🔒|🔓|↩️/i;
 
-function respostaDeReserva(acoes: AcaoDoAssessor[]): string {
+export function respostaDeReserva(acoes: AcaoDoAssessor[]): string {
   const feitas = acoes.filter((a) => FERRAMENTAS_QUE_GRAVAM.has(a.nome) && (a.resultado as any)?.ok);
   if (!feitas.length) return "Não consegui fazer isso agora — nada foi alterado no sistema. Pode mandar de novo? Ex.: *comprei 10 Coca lata, paguei 45*.";
   const linhas = feitas.map((a) => {
@@ -146,6 +151,13 @@ function respostaDeReserva(acoes: AcaoDoAssessor[]): string {
     if (a.nome === "desfazer_ultimo_registro") return `↩️ Desfeito: ${r.desfeito}`;
     if (a.nome === "pausar_ou_reativar_itens") return r.pausados ? `⏸️ Pausado: ${r.pausados.join(", ")}` : `▶️ Reativado: ${(r.reativados || []).join(", ")}`;
     if (a.nome === "abrir_ou_fechar_site") return `🏪 Site ${String(r.site || "").toLowerCase()}`;
+    if (a.nome === "alterar_taxa_de_bairro") {
+      return (r.alterados || []).length
+        ? `🛵 Taxa de entrega: ${r.alterados.map((x: any) => `${x.bairro} ${x.antes} → ${x.agora}`).join("; ")}`
+        : `🛵 Taxa de entrega já estava assim: ${(r.jaEstavamAssim || []).join(", ")}`;
+    }
+    if (a.nome === "cadastrar_bairro") return `🛵 Bairro novo na entrega: ${r.bairro} — ${r.taxa}, ${r.tempo}`;
+    if (a.nome === "remover_bairro") return `🛵 Bairro removido da entrega: ${r.bairro}`;
     return `💰 ${r.lancado}`;
   });
   return `✅ *Lançado*\n${linhas.join("\n")}\nErrou? Manda *desfaz*.`;

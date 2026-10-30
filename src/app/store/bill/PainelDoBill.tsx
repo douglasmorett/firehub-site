@@ -135,6 +135,8 @@ const EXEMPLOS: { grupo: string; icone: typeof Package; cor: string; itens: { te
     itens: [
       { texto: "Tô sem motoboy, fecha o site" },
       { texto: "Pode abrir o site" },
+      { texto: "Muda a taxa do bairro Centro para 8 reais" },
+      { texto: "Quanto está a entrega de cada bairro?", consulta: true },
       { texto: "Desfaz o último lançamento" },
     ],
   },
