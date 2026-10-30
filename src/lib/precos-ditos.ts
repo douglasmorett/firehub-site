@@ -258,6 +258,15 @@ export type DivergenciaDeTotal =
 export function compararTotalDitoComGravado(e: {
   ditoPelaIa: unknown;
   gravadoPeloSistema: unknown;
+  /**
+   * O cupom que o sistema pôs no pedido. O rascunho do começo da conversa vem
+   * sem ele ("sai por 30 reais, e no primeiro pedido você ganha 10%") e, quando
+   * o texto fala de total, a linha do cupom (lib/cupom-do-robo.ts) mostra o
+   * total certo: dito = gravado + cupom não é divergência. No 1º dia do Haiku
+   * (29/10/2026) foram 13 alarmes assim na Garagem Burger, todos com o pedido
+   * fechado certo.
+   */
+  descontoDoCupom?: unknown;
 }): DivergenciaDeTotal {
   const dito = Number(e.ditoPelaIa);
   const gravado = Number(e.gravadoPeloSistema);
@@ -275,6 +284,11 @@ export function compararTotalDitoComGravado(e: {
   // Um centavo é arredondamento de ponto flutuante, não divergência.
   if (absoluta <= 0.01) {
     return { houve: false, diferenca, gravidade: "nenhuma", resumo: "total dito bate com o gravado" };
+  }
+
+  const cupom = Number(e.descontoDoCupom) || 0;
+  if (cupom > 0 && Math.abs(dito - (gravado + cupom)) <= 0.01) {
+    return { houve: false, diferenca, gravidade: "nenhuma", resumo: "dito sem o cupom, que o sistema aplica e mostra ao cliente" };
   }
 
   const gravidade: "centavos" | "real" | "grave" =

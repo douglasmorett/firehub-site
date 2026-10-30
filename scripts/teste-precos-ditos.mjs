@@ -116,5 +116,13 @@ conferir("lado certo: gravado maior = cliente ouviu MENOS", g(40, 50).resumo.inc
 conferir("lado certo: gravado menor = cliente ouviu MAIS", g(50, 40).resumo.includes("ouviu MAIS"));
 conferir("a diferença vai no resumo", g(131.4, 21.9).resumo.includes("109.50"));
 
+// 1º dia do robô no Haiku (29/10/2026), casos de produção.
+const c = (dito, gravado, cupom) => compararTotalDitoComGravado({ ditoPelaIa: dito, gravadoPeloSistema: gravado, descontoDoCupom: cupom });
+conferir("Garagem: rascunho sem o PRIMEIROPEDIDO (15,99 dito, 14,39 gravado, cupom 1,60) não diverge", c(15.99, 14.39, 1.6).houve === false);
+conferir("cupom de frete grátis: dito com a taxa (44) = gravado sem ela (39) + 5 não diverge", c(44, 39, 5).houve === false);
+conferir("cupom que não explica a diferença continua divergência", c(75.96, 61.98, 1.6).gravidade === "real");
+conferir("dito COM o desconto que o sistema não deu (40,10 × 44) continua divergência", c(40.1, 44, undefined).houve === true);
+conferir("sem cupom nada muda", c(105.8, 111.7, undefined).gravidade === "real");
+
 console.log(falhas === 0 ? "\n✅ tudo certo\n" : `\n❌ ${falhas} falha(s)\n`);
 process.exit(falhas === 0 ? 0 : 1);

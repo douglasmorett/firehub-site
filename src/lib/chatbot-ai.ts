@@ -4004,9 +4004,11 @@ async function syncAiOrderToDatabase({
   try {
     const divergencia = compararTotalDitoComGravado({
       ditoPelaIa: payload.totalAmount,
-      // O prêmio do cartão o modelo não conhece (o sistema aplica e escreve a
-      // linha para o cliente): não é divergência de preço.
-      gravadoPeloSistema: centavos(totalOrderAmount + descontoDosCarimbos),
+      // O prêmio do cartão o modelo não conhece, e o cashback o prompt proíbe
+      // de calcular (o sistema aplica e escreve a linha para o cliente): não
+      // são divergência de preço.
+      gravadoPeloSistema: centavos(totalOrderAmount + descontoDosCarimbos + cashbackUsado),
+      descontoDoCupom: cupomAplicado?.desconto,
     });
     if (divergencia.houve) {
       const linha = `[Chatbot AI Order Sync] 💸 ${divergencia.resumo} · loja ${franchiseeId} · cliente ${customerPhone}`;
