@@ -87,7 +87,21 @@ export function pagoPeloSite(
 }
 
 /**
- * Como o pedido pago pelo site vai para o PAPEL. O banco grava só "PIX"
+ * Pago na maquininha com o app do FireHub (totem): quem disse "aprovado" foi a
+ * própria adquirente (POST /api/pos/terminal/resultado → confirmOrderPayment,
+ * que carimba paymentPaidAt e grava "Cartão CREDITO (maquininha)"). Só os
+ * caminhos de pagamento confirmado carimbam paymentPaidAt: "maquininha" sem o
+ * carimbo continua sendo cobrar no balcão ou na porta.
+ */
+export function pagoNaMaquininha(
+  pedido: { gatewayProvider?: string | null; paymentPaidAt?: Date | string | null; paymentMethod?: string | null } | null | undefined
+): boolean {
+  if (!pedido?.paymentPaidAt || pedido.gatewayProvider === "asaas") return false;
+  return /maquin/i.test(String(pedido.paymentMethod || ""));
+}
+
+/**
+ * Como o pedido pago pelo site (ou na maquininha) vai para o PAPEL. O banco grava só "PIX"
  * (igual ao Pix do PDV) e a comanda do Assistente decide "pago" pelo texto e
  * pelo `isPrepaid` — sem isto saía "PIX (COBRAR NA ENTREGA)" e "!! COBRAR DO
  * CLIENTE NA ENTREGA !!" num Pix já pago (Showrrascão, 02/10/2026).
@@ -101,7 +115,14 @@ export function pagamentoPeloSiteParaImpressao(
   pedido: Parameters<typeof pagoPeloSite>[0],
 ): { paymentMethod: string; isPrepaid: true } | Record<string, never> {
   const forma = pagoPeloSite(pedido);
-  return forma ? { paymentMethod: `${forma} Pago Online`, isPrepaid: true } : {};
+  if (forma) return { paymentMethod: `${forma} Pago Online`, isPrepaid: true };
+  // Na maquininha: "Cartão CREDITO (maquininha)" tem "maquin", que o papel lia
+  // como cobrar. Mesmo "Pago Online" do site para o Assistente de qualquer versão.
+  if (pagoNaMaquininha(pedido)) {
+    const semParentese = String(pedido!.paymentMethod).replace(/\s*\(maquininha\)\s*/i, "").trim() || "Cartão";
+    return { paymentMethod: `${semParentese} Pago Online na maquininha`, isPrepaid: true };
+  }
+  return {};
 }
 
 /**

@@ -32,7 +32,7 @@ import { podeTerReposicao } from "@/lib/reposicao";
 import { navegadorSeguraAComanda, AVISO_DE_CONFIG_SALVA, RELEITURA_DA_CONFIG_MS } from "@/lib/momento-da-impressao";
 import { lerPager, ETIQUETA_DO_PAGER } from "@/lib/pager";
 import { lerDocumentoDoCliente } from "@/lib/documento-do-cliente";
-import { pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
+import { pagoNaMaquininha, pagoPeloSite, pagamentoPeloSiteParaImpressao } from "@/lib/pagamento-na-entrega";
 import { textoDoTrocoNoPix, trocoNoPixDoPedido } from "@/lib/troco-no-pix";
 import { camposDaMesaParaImpressao, nomeDoClienteNaComanda } from "@/lib/mesa-na-comanda";
 import { comandaDaMesaSemBebida } from "@/lib/bebida-da-mesa";
@@ -1400,6 +1400,16 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
               </div>
             );
           })()}
+          {/* Pago na maquininha do totem: o "aprovado" veio da própria
+              maquininha. Mesmo selo azul do acerto do motoboy. */}
+          {pagoNaMaquininha(order) && (
+            <div title="Aprovado na maquininha pelo app do FireHub: forma e valor confirmados pela adquirente" style={{
+              background: "#DBEAFE", color: "#1D4ED8", border: "1px solid #BFDBFE", whiteSpace: "normal", display: "block",
+              fontWeight: 800, fontSize: "0.8rem", padding: "5px 10px", borderRadius: "8px", margin: "5px 0", lineHeight: 1.35
+            }}>
+              ✓ PAGO NA MAQUININHA — não cobrar do cliente
+            </div>
+          )}
 
           {/* Banner de Alerta para Entrega Parceira (iFood / 99Food / Parceiros) */}
           {(() => {
@@ -4393,6 +4403,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                 ))}
               </div>
             )}
+            {/* Pago na maquininha do totem: cancelar aqui NÃO devolve o
+                dinheiro. O estorno é feito na própria maquininha. */}
+            {pagoNaMaquininha(pedido) && (
+              <div style={{ background: "#DBEAFE", border: "1px solid #BFDBFE", borderRadius: "10px", padding: "10px 12px", marginBottom: "14px", fontSize: "0.8rem", color: "#1E3A8A", lineHeight: 1.45 }}>
+                💳 <strong>Este pedido foi pago na maquininha.</strong> Cancelar aqui não devolve o dinheiro ao cliente: faça o estorno (cancelamento da venda) na própria maquininha, no app da adquirente.
+              </div>
+            )}
             <div style={{ marginBottom: "16px" }}>
               {(loadingReasons || cancellationReasons.length > 0) && (
               <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>Motivo para a plataforma:</label>
@@ -5668,6 +5685,13 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   let baseMethod = translatePayment(payMethodRaw).replace(/\s*\([^)]*\)/gi, "").trim();
                   if (!baseMethod) baseMethod = "Cartão";
 
+                  if (pagoNaMaquininha(order)) {
+                    return (
+                      <div style={{ fontWeight: "bold", marginTop: "10px", fontSize: "12px" }}>
+                        Forma de Pagamento: {baseMethod} - Pago na maquininha (NÃO COBRAR)
+                      </div>
+                    );
+                  }
                   if (isOnline) {
                     return (
                       <div style={{ fontWeight: "bold", marginTop: "10px", fontSize: "12px" }}>
