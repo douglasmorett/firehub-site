@@ -212,7 +212,11 @@ async function responderComMesaOuNada(
   // maquininha", lib/estorno-na-maquininha-regras.ts › appFazEstorno). Antes
   // da mesa: quem cancelou está esperando o estorno.
   if (produto === "TOTEM") {
-    const estorno = await reservarEstorno(terminal);
+    // Falha do estorno não pode travar a fila de cobranças desta maquininha.
+    const estorno = await reservarEstorno(terminal).catch((e) => {
+      console.error("[Estorno na maquininha] Erro ao reservar estorno:", e?.message);
+      return null;
+    });
     if (estorno) {
       return NextResponse.json({ cobranca: null, estorno: await estornoParaOApp(estorno), terminal: terminal.label, ...extras });
     }
