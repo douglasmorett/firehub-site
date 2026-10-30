@@ -50,7 +50,7 @@ import { tipoDoPedidoDoRobo, clientePediuRetirada } from "./tipo-do-pedido-do-ro
 import { rotuloDeStatusParaOModelo, rotuloDoTipoDeEntrega, fraseDeStatusDeEmergencia } from "./status-para-o-cliente";
 import { classificarFalhaDaIa, falhaQueManda, mensagemDeIaForaDoAr, mensagemDeInstabilidadePassageira, type FalhaDaIa } from "./falha-da-ia";
 import { ehPerguntaSobreOPedido } from "./problema-no-pedido";
-import { escolhasDoItem, trocoEObservacaoDoPedido } from "./item-do-robo";
+import { escolhasDoItem, opcoesPagasSemPar, trocoEObservacaoDoPedido } from "./item-do-robo";
 import { escolherModeloDoRobo, LEMBRETE_DO_MODELO_BARATO, MODELO_BARATO, MODELO_DE_PEDIDO } from "./modelo-do-robo";
 import { chaveDoClaude, lojaNoClaude, MODELO_CLAUDE, respostaDoClaude } from "./robo-no-claude";
 import { regrasDoRobo } from "./regras-do-robo";
@@ -2966,6 +2966,8 @@ async function syncAiOrderToDatabase({
   const itensDescartados: string[] = [];
   /** "Produto: sabor que não casou" de pergunta OBRIGATÓRIA que ficou incompleta (lib/item-do-robo.ts). */
   const saboresSemCasar: string[] = [];
+  /** "Produto: opção" que não casou e tem preço em outro lugar do cardápio (lib/item-do-robo.ts). */
+  const opcoesPagasPerdidas: string[] = [];
   const maximosPassados: Array<{ produto: string; pergunta: string; maximo: number; escolhas: string[] }> = [];
   const orderItemsData = (payload.items || [])
     .map((it: any) => {
@@ -3053,6 +3055,9 @@ async function syncAiOrderToDatabase({
         console.warn(
           `[Chatbot AI] opções sem correspondência em "${matchedProduct.name}": ${doItem.naoCasadas.join(", ")} — não cobradas; foram para a observação do item.`
         );
+        // A pergunta obrigatória incompleta já segura o rascunho para a loja (abaixo).
+        const pagas = doItem.grupoIncompleto ? [] : opcoesPagasSemPar(doItem.naoCasadas, storeProducts, matchedProduct);
+        if (pagas.length > 0) opcoesPagasPerdidas.push(`${matchedProduct.name}: ${pagas.join(", ")}`);
       }
 
       // Base + opções pela REGRA de cada pergunta (lib/preco-combo.ts), a
@@ -3159,6 +3164,28 @@ async function syncAiOrderToDatabase({
       chamarAtendente: true,
       mensagemParaOCliente:
         `Opa! Não consegui lançar *${perdidos.join(", ")}* no sistema 😕 ` +
+        `Já chamei alguém da loja pra conferir e fechar seu pedido por aqui — não precisa repetir nada!`,
+    };
+  }
+
+  // ── OPÇÃO PAGA SEM PAR NÃO VAI DE GRAÇA PARA A OBSERVAÇÃO ─────────────────
+  //
+  // Delícias de Casa, 29/10/2026: o robô pôs "Nuggets 6 Unidades" (R$ 13,98)
+  // como opção do Bife de Alcatra. A opção não existe no bife, foi para a
+  // observação sem cobrar, e o nuggets sairia de graça. É o item perdido com
+  // outra cara: a loja assume a conversa. "Sem cebola" não passa por aqui.
+  if (isFinal && opcoesPagasPerdidas.length > 0) {
+    console.error(
+      `[Chatbot AI Order Sync] 🛑 Pedido FINALIZADO recusado: opção paga sem par "${opcoesPagasPerdidas.join(" | ")}". Loja=${franchiseeId} tel=${phoneClean.slice(-4)}`
+    );
+    const nomes = opcoesPagasPerdidas.map((s) => s.split(": ").slice(1).join(": "));
+    return {
+      gravado: false,
+      motivo: `opção paga que não existe no produto (${opcoesPagasPerdidas.join(" | ")})`,
+      regraDeNegocio: true,
+      chamarAtendente: true,
+      mensagemParaOCliente:
+        `Opa! Não consegui lançar *${nomes.join(", ")}* do jeito que anotei no sistema 😕 ` +
         `Já chamei alguém da loja pra conferir e fechar seu pedido por aqui — não precisa repetir nada!`,
     };
   }

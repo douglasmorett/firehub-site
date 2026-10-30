@@ -12,7 +12,7 @@ import ts from "typescript";
 const js = ts.transpileModule(readFileSync("src/lib/item-do-robo.ts", "utf8"), {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { escolhasDoItem, trocoEObservacaoDoPedido, chaveDeNome } = await import("data:text/javascript," + encodeURIComponent(js));
+const { escolhasDoItem, trocoEObservacaoDoPedido, chaveDeNome, opcoesPagasSemPar } = await import("data:text/javascript," + encodeURIComponent(js));
 
 let falhas = 0;
 const conferir = (nome, ok, detalhe) => {
@@ -272,5 +272,39 @@ igual("Família + borda vai na da Família",
 igual("sem tamanho na tag: a primeira pela ordem, como antes",
   escolhasDoItem({ options: ["BORDA DE CATUPIRY"] }, mista).comboSelections, { g_borda_m: { "BORDA DE CATUPIRY": 1 } });
 
+console.log("\n10) Opção PAGA sem par não vai de graça para a observação (Delícias de Casa, 29/10/2026)");
+// No código antigo a função não existe: tudo cai na observação, e os casos pagos falham aqui.
+const pagas = (n, c, p) => (typeof opcoesPagasSemPar === "function" ? opcoesPagasSemPar(n, c, p) : []);
+const bife = { id: "p_bife", name: "Bife de Alcatra", price: 39.9, comboGroups: [
+  { id: "g_acomp", title: "Acompanhamento", minQty: 0, maxQty: 2, items: [
+    { additionalPrice: 0, menuProduct: { name: "Arroz" } }, { additionalPrice: 0, menuProduct: { name: "Feijão" } }, { additionalPrice: 0, menuProduct: { name: "Cebola" } }] },
+] };
+const nuggets = { id: "p_nug", name: "Nuggets 6 Unidades", price: 13.98, comboGroups: [] };
+const burger = { id: "p_burg", name: "X-Burguer", price: 25, comboGroups: [
+  { id: "g_ad", title: "Adicionais", minQty: 0, maxQty: 5, items: [
+    { additionalPrice: 4, menuProduct: { name: "Bacon" } }, { additionalPrice: 0, menuProduct: { name: "Molho da Casa" } }] },
+] };
+const brinde = { id: "p_brinde", name: "Sachê de Ketchup", price: 0, comboGroups: [] };
+const cardapioDelicias = [bife, nuggets, burger, brinde];
+const doBife = escolhasDoItem({ options: ["Arroz", "Nuggets 6 Unidades", "sem cebola"] }, bife);
+igual("o nuggets não casa com o bife (vai para naoCasadas, como antes)", doBife.naoCasadas, ["Nuggets 6 Unidades", "sem cebola"]);
+igual("o caso real: 'Nuggets 6 Unidades' no bife é opção PAGA sem par", pagas(doBife.naoCasadas, cardapioDelicias, bife), ["Nuggets 6 Unidades"]);
+igual("'sem cebola' continua só observação", pagas(["sem cebola"], cardapioDelicias, bife), []);
+igual("'bem passado' continua só observação", pagas(["bem passado"], cardapioDelicias, bife), []);
+igual("sem acento e caixa: 'nuggets 6 unidades' também é paga", pagas(["nuggets 6 unidades"], cardapioDelicias, bife), ["nuggets 6 unidades"]);
+igual("com quantidade na frente ('2x Nuggets 6 Unidades') também", pagas(["2x Nuggets 6 Unidades"], cardapioDelicias, bife), ["2x Nuggets 6 Unidades"]);
+igual("adicional pago de OUTRO produto (Bacon R$ 4 do X-Burguer) no bife é pago", pagas(["Bacon"], cardapioDelicias, bife), ["Bacon"]);
+igual("opção de R$ 0 de outro produto (Molho da Casa) segue para a observação", pagas(["Molho da Casa"], cardapioDelicias, bife), []);
+igual("produto de R$ 0 (sachê) segue para a observação", pagas(["Sachê de Ketchup"], cardapioDelicias, bife), []);
+igual("parecido não conta ('nuggets' sozinho)", pagas(["nuggets"], cardapioDelicias, bife), []);
+igual("as opções do PRÓPRIO produto não entram (já foram procuradas)", pagas(["Bacon"], cardapioDelicias, burger), []);
+
+// A trava no sync do robô: pedido FINALIZADO com opção paga sem par chama a loja, como o item perdido.
+const syncSrc = readFileSync("src/lib/chatbot-ai.ts", "utf8");
+conferir("chatbot-ai junta as opções pagas sem par de cada item", /opcoesPagasSemPar\(doItem\.naoCasadas, storeProducts, matchedProduct\)/.test(syncSrc));
+conferir("pergunta obrigatória incompleta continua no caminho dela (segura o rascunho)", /doItem\.grupoIncompleto \? \[\] : opcoesPagasSemPar/.test(syncSrc));
+const trava = syncSrc.match(/if \(isFinal && opcoesPagasPerdidas\.length > 0\) \{[\s\S]*?\n  \}/);
+conferir("só pedido FINALIZADO é recusado (rascunho não muda)", !!trava);
+conferir("e a loja é chamada, como no item perdido", !!trava && /chamarAtendente: true/.test(trava[0]) && /gravado: false/.test(trava[0]));
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);

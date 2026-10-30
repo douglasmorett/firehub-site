@@ -408,6 +408,42 @@ export function escolhasDoItem(item: ItemDaTag | null | undefined, produto: Prod
 }
 
 /**
+ * Das opções que não casaram (`naoCasadas`), as que CUSTAM em outro lugar do
+ * cardápio: o nome é o de um produto com preço, ou o de uma opção com preço de
+ * outro produto.
+ *
+ * Delícias de Casa, 29/10/2026: o robô anotou "Nuggets 6 Unidades" (R$ 13,98 no
+ * cardápio) como opção do Bife de Alcatra. Não casou com as perguntas do bife e
+ * foi para a observação sem cobrar — se o pedido fechasse, a loja mandava o
+ * nuggets de graça. Texto solto ("sem cebola", "bem passado") não tem preço em
+ * lugar nenhum e continua indo para a observação. Só nome IGUAL conta (sem
+ * acento e caixa): parecido não é motivo para segurar o pedido.
+ */
+export function opcoesPagasSemPar(
+  naoCasadas: string[],
+  cardapio: Array<(ProdutoParaOItem & { id?: unknown; price?: unknown }) | null> | null | undefined,
+  doItem?: { id?: unknown } | null,
+): string[] {
+  const pagos = new Set<string>();
+  for (const p of cardapio || []) {
+    if (!p) continue;
+    if ((Number(p.price) || 0) > 0) pagos.add(chaveDeNome(p.name));
+    // As opções do próprio produto já foram procuradas por escolhasDoItem.
+    if (doItem?.id != null && p.id === doItem.id) continue;
+    for (const grupo of p.comboGroups || []) {
+      for (const o of grupo?.items || []) {
+        if (o && (Number(o.additionalPrice) || 0) > 0) pagos.add(chaveDeNome(o.menuProduct?.name));
+      }
+    }
+  }
+  pagos.delete("");
+  return (naoCasadas || []).filter((texto) => {
+    const lido = quantidadeENome(texto);
+    return pagos.has(chaveDeNome(texto)) || (lido != null && pagos.has(chaveDeNome(lido.nome)));
+  });
+}
+
+/**
  * A observação do PEDIDO e o troco, vindos da tag.
  *
  * `changeFor` é a NOTA que o cliente vai entregar ("troco para 50"), a mesma
