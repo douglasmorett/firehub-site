@@ -8,7 +8,8 @@
  *   1. a regra: só o pedido que chegou na cozinha e foi cancelado até 60 min depois;
  *   2. o papel desenhado pelo código do Assistente (tarja, motivo, itens, sem R$);
  *   3. a ROTA (GET /api/store/print-queue) com banco falso: cria uma vez, sai só
- *      na impressora marcada, e a segunda consulta não cria de novo.
+ *      na impressora marcada, e a segunda consulta não cria de novo nem procura
+ *      cancelado sem novidade da loja; com novidade, o cancelamento novo sai.
  */
 export {};
 
@@ -82,6 +83,8 @@ async function main() {
   };
   const guardados: any[] = [];
   let criacoes = 0;
+  let buscasDeCancelados = 0;
+  const cancelados: any[] = [cancelado];
   const vazio = (metodo: string) => async () =>
     metodo.startsWith("findMany") || metodo.startsWith("groupBy") ? [] : metodo.startsWith("count") ? 0 : metodo.endsWith("Many") ? { count: 0 } : null;
   const tabela = (feitos: Record<string, any> = {}) => new Proxy(feitos, { get: (t, k) => (k in t ? (t as any)[k] : vazio(String(k))) });
@@ -90,8 +93,8 @@ async function main() {
       user: tabela({ findUnique: async ({ where }: any) => (where?.id === LOJA ? dono : null), update: async () => dono }),
       customerOrder: tabela({
         findMany: async ({ where }: any) => {
-          if (where?.status?.in?.includes("CANCELADO")) return [cancelado];
-          if (where?.id?.in) return where.id.in.includes(cancelado.id) ? [cancelado] : [];
+          if (where?.status?.in?.includes("CANCELADO")) { buscasDeCancelados++; return cancelados; }
+          if (where?.id?.in) return cancelados.filter((c) => where.id.in.includes(c.id));
           return [];
         },
       }),
@@ -122,6 +125,18 @@ async function main() {
   confere("o pedido cancelado não vira comanda normal", !jobs.some((j) => j?.id === "job_cm_cancel1"));
   await consultar();
   confere("segunda consulta não cria outro papel", criacoes === 1 && guardados.length === 1, { criacoes, n: guardados.length });
+  confere("…nem procura cancelado de novo: nada da loja mudou", buscasDeCancelados === 1, { buscasDeCancelados });
+
+  // Cancelar é gravar no pedido: no banco de verdade o lib/prisma.ts marca a
+  // novidade da loja. Aqui o banco é falso, então a marca vem na mão.
+  cancelados.push({ ...cancelado, id: "cm_cancel2", dailyOrderNumber: 14, cancelledAt: new Date(Date.now() - 5_000) });
+  const { marcarNovidade } = await import("../src/lib/novidade-da-loja");
+  await new Promise((r) => setTimeout(r, 5));
+  marcarNovidade(LOJA);
+  const depois = await consultar();
+  confere("cancelamento novo (com a novidade da loja): o aviso sai na consulta seguinte",
+    guardados.some((g) => g.id === "cancelamento_cm_cancel2") && depois.some((j) => j?.id === "job_cancelamento_cm_cancel2"),
+    guardados.map((g) => g.id));
 
   console.log(`\n${ok} ok, ${falhas} falha(s)`);
   process.exit(falhas ? 1 : 0);

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { lembrarPor } from "@/lib/cache-curto";
 import { estadoAoVivoDoRobo, registrarEstadoDoRobo } from "@/lib/whatsapp-estado";
 import { saudeDaIa } from "@/lib/saude-da-ia";
 
@@ -41,10 +42,9 @@ export async function GET() {
   }
 
   try {
-    const quemPediu = await prisma.user.findUnique({
-      where: { email: session.user.email },
-      select: { id: true, ownerId: true },
-    });
+    const email = session.user.email;
+    const quemPediu = await lembrarPor(`status-conexao:usuario:${email}`, 15_000, () =>
+      prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } }));
     if (!quemPediu) return NextResponse.json({ precisaReconectar: false });
 
     // Funcionário vê o estado da loja em que trabalha, não o dele.

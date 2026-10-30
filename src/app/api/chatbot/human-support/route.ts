@@ -9,7 +9,8 @@ import { registrarMensagemDaLoja } from "@/lib/memoria-da-conversa-no-banco";
 import { contaOficialDoWhatsApp } from "@/lib/contas-oficiais-whatsapp";
 import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { lembrarPor } from "@/lib/cache-curto";
-import { chamadoDaConversa, chamadosAbertos, encerrarChamado, marcarLido, respostaDaLoja } from "@/lib/fila-de-atendimento-humano";
+import { chamadoDaConversa, chamadosAbertos, encerrarChamado, marcaDaFilaHumana, marcarLido, respostaDaLoja } from "@/lib/fila-de-atendimento-humano";
+import { lerEnquantoNadaMuda } from "@/lib/novidade-da-loja";
 import { ehConversaDeCliente } from "@/lib/jid-de-cliente";
 
 export const dynamic = "force-dynamic";
@@ -66,8 +67,12 @@ export async function GET(req: NextRequest) {
     if (!podeComoNaTela(user, TELA_DAS_CONVERSAS)) return semAcesso();
 
     const targetUserId = user.ownerId || user.id;
-    // Já vem sem as fechadas e na ordem (a mais recente primeiro).
-    const chats = await chamadosAbertos(targetUserId);
+    // Já vem sem as fechadas e na ordem (a mais recente primeiro). O balãozinho
+    // pergunta a cada 6 s por aba: a lista fica guardada até alguém gravar na
+    // fila desta loja (marcaDaFilaHumana, também vinda da outra instância) ou
+    // 15 s passarem.
+    const chats = await lerEnquantoNadaMuda(`fila-humana:${targetUserId}`, [marcaDaFilaHumana(targetUserId)], () =>
+      chamadosAbertos(targetUserId));
 
     const totalUnread = chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
 

@@ -11,6 +11,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { lembrarPor } from "@/lib/cache-curto";
 
 export const dynamic = "force-dynamic";
 
@@ -18,10 +19,9 @@ export async function GET() {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
-  const eu = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, ownerId: true },
-  });
+  const email = session.user.email;
+  const eu = await lembrarPor(`print-queue-status:usuario:${email}`, 15_000, () =>
+    prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true } }));
   if (!eu) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
 
   const lojaId = eu.ownerId || eu.id;
@@ -51,10 +51,12 @@ export async function GET() {
   // fila — e não é problema nenhum. Sem esta distinção o aviso "nunca
   // consultou" ficaria aceso para sempre nessas lojas.
   const seteDias = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const [mesas, presenciais] = await Promise.all([
-    prisma.table.count({ where: { franchiseeId: lojaId } }),
-    prisma.customerOrder.count({ where: { franchiseeId: lojaId, source: "PRESENCIAL", createdAt: { gte: seteDias } } }),
-  ]);
+  // "Usa salão" olha 7 dias: 10 min em memória bastam (o aviso de cada aba pergunta a cada 2 min).
+  const [mesas, presenciais] = await lembrarPor(`print-queue-status:salao:${lojaId}`, 10 * 60_000, () =>
+    Promise.all([
+      prisma.table.count({ where: { franchiseeId: lojaId } }),
+      prisma.customerOrder.count({ where: { franchiseeId: lojaId, source: "PRESENCIAL", createdAt: { gte: seteDias } } }),
+    ]));
 
   // ── O que o Assistente contou (1.2.7+) ────────────────────────────────
   //

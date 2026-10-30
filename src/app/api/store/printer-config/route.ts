@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { lembrarPor } from "@/lib/cache-curto";
 import { lerCampanha } from "@/lib/campanha-converter";
 import { lerAndares } from "@/lib/andares-da-mesa";
 
@@ -54,10 +55,10 @@ export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) return NextResponse.json({ error: "Não autenticado" }, { status: 401 });
 
-  const currentUser = await prisma.user.findUnique({
-    where: { email: session.user.email },
-    select: { id: true, ownerId: true, role: true },
-  });
+  // 15 s em memória: o ouvinte de impressão de cada aba relê a config (lib/cache-curto.ts).
+  const email = session.user.email;
+  const currentUser = await lembrarPor(`printer-config:usuario:${email}`, 15_000, () =>
+    prisma.user.findUnique({ where: { email }, select: { id: true, ownerId: true, role: true } }));
   if (!currentUser) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
   let targetId = currentUser.ownerId || currentUser.id;
 
