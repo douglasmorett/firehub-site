@@ -217,7 +217,9 @@ export default async function FranchiseeCustomerOrdersPage() {
       prisma.motoboy.findMany({
         where: { franchiseeId: { in: franchiseeIds }, active: true },
         orderBy: { name: "asc" },
-        select: { id: true, name: true, phone: true },
+        // A loja de cada um: em "Todas as Lojas" o seletor do pedido mostra só
+        // os motoboys da loja dele (lib/motoboys-do-pedido.ts, 30/10/2026).
+        select: { id: true, name: true, phone: true, franchiseeId: true },
       }),
     ]);
 

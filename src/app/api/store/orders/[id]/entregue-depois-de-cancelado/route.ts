@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 import { prisma } from "@/lib/prisma";
 import { podeEditarPedidos } from "@/lib/edicao-de-pedido";
 import { efeitosDoEntregueDepoisDeCancelado, marcarEntregueDepoisDeCancelado } from "@/lib/entregue-depois-de-cancelado-no-banco";
@@ -40,9 +41,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const papel = String(operador.role || "").toUpperCase() === "STAFF" ? "funcionário" : operador.role === "ADMIN" ? "admin" : "dono";
   const quem = `${(operador.name || "").trim() || operador.email} (${papel})`;
 
+  // "Todas as Lojas" (cookie "all", lib/loja-ativa.ts): o pedido pode ser de
+  // qualquer loja do grupo (30/10/2026: "agora todos é pra mexer em tudo").
+  const { lojaIds } = await lojasDaVisao(operador, await cookieDaVisao()).catch(() => ({
+    lojaIds: [operador.ownerId || operador.id],
+  }));
   const r = await marcarEntregueDepoisDeCancelado({
     pedidoId: id,
-    lojaIds: [operador.ownerId || operador.id],
+    lojaIds,
     forma: corpo?.forma,
     trocoPara: corpo?.trocoPara,
     quem,

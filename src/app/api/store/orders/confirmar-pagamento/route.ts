@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 import { confirmOrderPayment } from "@/lib/order-payment-confirm";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ export async function POST(req: NextRequest) {
 
     const user = await prisma.user.findUnique({
       where: { email: session.user.email },
-      select: { id: true, ownerId: true, name: true },
+      select: { id: true, ownerId: true, name: true, role: true },
     });
     if (!user) return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
     const lojaId = user.ownerId || user.id;
@@ -46,7 +47,13 @@ export async function POST(req: NextRequest) {
     if (!pedido) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
 
     // Isolamento: um atendente não confirma pagamento de pedido de outra loja.
-    if (pedido.franchiseeId !== lojaId) {
+    // Em "Todas as Lojas" (cookie "all", lib/loja-ativa.ts) "esta loja" é o
+    // grupo que o quadro mostra (Annalu + PasteLê, 30/10/2026: "agora todos é
+    // pra mexer em tudo"); funcionário continua só na loja dele.
+    const { lojaIds } = await lojasDaVisao(user, await cookieDaVisao()).catch(() => ({
+      lojaIds: [lojaId],
+    }));
+    if (!lojaIds.includes(pedido.franchiseeId)) {
       return NextResponse.json({ error: "Este pedido não é desta loja" }, { status: 403 });
     }
 

@@ -64,6 +64,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { conferirEstoque } from "@/lib/estoque-restante";
@@ -137,14 +138,22 @@ async function contexto(params: Promise<{ id: string }>) {
   });
   if (!operador) return { erro: NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 }) };
 
-  const lojaId = operador.ownerId || operador.id;
+  // "Todas as Lojas" (cookie "all", lib/loja-ativa.ts): o pedido pode ser de
+  // qualquer loja do grupo — a Annalu não mexia no pedido da PasteLê sem trocar
+  // de página (Douglas, 30/10/2026: "agora todos é pra mexer em tudo"). Achado o
+  // pedido, "a loja" daqui em diante é a DELE; fora do "todas", e para
+  // funcionário, é a loja da sessão de sempre.
+  const { lojaIds } = await lojasDaVisao(operador, await cookieDaVisao()).catch(() => ({
+    lojaIds: [operador.ownerId || operador.id],
+  }));
   const { id } = await params;
 
   const order = await prisma.customerOrder.findFirst({
-    where: { id, franchiseeId: lojaId },
+    where: { id, franchiseeId: { in: lojaIds } },
     select: CAMPOS_DO_PEDIDO,
   });
   if (!order) return { erro: NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 }) };
+  const lojaId = order.franchiseeId;
 
   // Rodada de mesa: a régua do lápis do card de mesa (avaliarEdicaoDaMesa) e,
   // na gravação, a regra da tela de Mesas (lib/edicao-na-mesa.ts) — nunca a

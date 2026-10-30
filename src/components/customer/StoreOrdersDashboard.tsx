@@ -72,6 +72,7 @@ import ConfigDoAgendamento from "@/components/customer/ConfigDoAgendamento";
 import { lerConfigDeAgendamento, textoDoAgendamento, type ConfigDeAgendamento } from "@/lib/agendamento";
 import { motivoValido, MENSAGEM_SEM_MOTIVO, SUGESTOES_DE_MOTIVO } from "@/lib/motivo-do-cancelamento";
 import { copiarTexto, origemParaLinkDeFora } from "@/lib/copiar-texto";
+import { motoboysDosPedidos } from "@/lib/motoboys-do-pedido";
 
 const BOTAO_ACAO: React.CSSProperties = {
   padding: "5px 14px", borderRadius: "8px", border: "none",
@@ -1665,7 +1666,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   title={`O sistema detectou como Entrega Parceira ${pInfo.partnerName}. Você pode alterar se estiver incorreto.`}
                 >
                   <option value="">🛵 Motoboy {pInfo.partnerName}</option>
-                  {motoboys?.map((m: any) => (
+                  {motoboysDosPedidos(motoboys, [order]).map((m: any) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                 </select>
@@ -1693,7 +1694,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                   title={(order.status === "CANCELADO" || order.status === "CANCELED") && (order.motoboyId || (order as any).motoboy?.id) ? "Pedido CANCELADO com Motoboy atribuído" : "Atribuir Motoboy da Loja"}
                 >
                   <option value="">Motoboy</option>
-                  {motoboys?.map((m: any) => (
+                  {motoboysDosPedidos(motoboys, [order]).map((m: any) => (
                     <option key={m.id} value={m.id}>{m.name}</option>
                   ))}
                   {/* O motoboy ATRIBUÍDO aparece mesmo se foi desativado depois:
@@ -1701,7 +1702,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                       rótulo vazio "Motoboy", e a loja não via QUEM está com o
                       pedido — justamente o caso em que mais precisa ver. */}
                   {(order.motoboyId || (order as any).motoboy?.id) &&
-                    !motoboys?.some((m: any) => m.id === (order.motoboyId || (order as any).motoboy?.id)) &&
+                    !motoboysDosPedidos(motoboys, [order]).some((m: any) => m.id === (order.motoboyId || (order as any).motoboy?.id)) &&
                     (order as any).motoboy?.name && (
                     <option value={order.motoboyId || (order as any).motoboy?.id}>
                       {(order as any).motoboy.name} (inativo)
@@ -3427,9 +3428,11 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     }
   }, []);
 
-  // Carrega motoboys cadastrados
+  // Carrega motoboys cadastrados. `daVisao`: em "Todas as Lojas" vêm os do
+  // grupo, cada um com a sua loja, e cada seletor mostra só os da loja do
+  // pedido (lib/motoboys-do-pedido.ts).
   useEffect(() => {
-    fetch("/api/motoboys")
+    fetch("/api/motoboys?daVisao=1")
       .then(r => r.ok ? r.json() : [])
       .then(data => {
         if (Array.isArray(data) && data.length > 0) {
@@ -4691,7 +4694,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       }}
                     >
                       <option value="">Nenhum motoboy da loja atribuído</option>
-                      {motoboys?.map((m: any) => (
+                      {motoboysDosPedidos(motoboys, [order]).map((m: any) => (
                         <option key={m.id} value={m.id}>
                           {m.name} {m.phone ? `(${m.phone})` : ""}
                         </option>
@@ -7385,7 +7388,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       }}
                     >
                       <option value="">Escolher motoboy...</option>
-                      {motoboys.map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                      {motoboysDosPedidos(motoboys, cabem).map((m: any) => <option key={m.id} value={m.id}>{m.name}</option>)}
                       <option value={SEM_ENTREGADOR}>✖ Tirar o entregador</option>
                     </select>
                     <button

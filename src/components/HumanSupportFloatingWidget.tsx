@@ -20,6 +20,10 @@ export default function HumanSupportFloatingWidget() {
   const [chats, setChats] = useState<any[]>([]);
   const [totalUnread, setTotalUnread] = useState(0);
   const [selectedChatJid, setSelectedChatJid] = useState<string | null>(null);
+  // A loja do chamado aberto. Em "Todas as Lojas" a fila junta o grupo, e o
+  // chamado da Rush se responde pelo WhatsApp da Rush (api/chatbot/human-support,
+  // 30/10/2026). Fora do "todas" é sempre a loja da sessão.
+  const [selectedChatLoja, setSelectedChatLoja] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [sending, setSending] = useState(false);
 
@@ -31,6 +35,8 @@ export default function HumanSupportFloatingWidget() {
   const [aba, setAba] = useState<"fila" | "robo" | "suporte">("fila");
   const [conversas, setConversas] = useState<any[]>([]);
   const [conversaAberta, setConversaAberta] = useState<string | null>(null);
+  /** A loja da conversa aberta (`lojaId` da lista) — o mesmo motivo do chamado acima. */
+  const [lojaDaConversa, setLojaDaConversa] = useState<string | null>(null);
   const [mensagens, setMensagens] = useState<any[]>([]);
   const [pausado, setPausado] = useState(false);
   const [mudandoPausa, setMudandoPausa] = useState(false);
@@ -60,9 +66,9 @@ export default function HumanSupportFloatingWidget() {
     }
   };
 
-  const fetchMensagens = async (jid: string) => {
+  const fetchMensagens = async (jid: string, loja: string | null) => {
     try {
-      const res = await fetch(`/api/chatbot/conversas?jid=${encodeURIComponent(jid)}`).then((r) => r.json());
+      const res = await fetch(`/api/chatbot/conversas?jid=${encodeURIComponent(jid)}${loja ? `&loja=${encodeURIComponent(loja)}` : ""}`).then((r) => r.json());
       // A resposta demora e o lojista pode já ter voltado ou aberto OUTRA
       // conversa: sem esta conferência, o histórico do João aparecia dentro da
       // conversa da Maria.
@@ -75,16 +81,17 @@ export default function HumanSupportFloatingWidget() {
     } catch (e) {}
   };
 
-  const abrirConversa = async (jid: string) => {
+  const abrirConversa = async (jid: string, loja: string | null) => {
     conversaAbertaRef.current = jid;
     setConversaAberta(jid);
+    setLojaDaConversa(loja);
     setMensagens([]);
     // O texto digitado para um cliente não pode seguir para outro.
     setReplyText("");
     setErroDoEnvio("");
-    const daLista = conversas.find((c) => c.remoteJid === jid);
+    const daLista = conversas.find((c) => c.remoteJid === jid && (!loja || c.lojaId === loja));
     setPausado(!!daLista?.pausado);
-    await fetchMensagens(jid);
+    await fetchMensagens(jid, loja);
   };
 
   const alternarPausa = async (jid: string, pausar: boolean) => {
@@ -94,7 +101,7 @@ export default function HumanSupportFloatingWidget() {
       const res = await fetch("/api/chatbot/conversas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: pausar ? "pausar" : "retomar", jid }),
+        body: JSON.stringify({ action: pausar ? "pausar" : "retomar", jid, loja: lojaDaConversa }),
       }).then((r) => r.json());
       if (res.success) setPausado(!!res.pausado);
       fetchConversas();
@@ -112,12 +119,12 @@ export default function HumanSupportFloatingWidget() {
       const res = await fetch("/api/chatbot/conversas", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "enviar", jid: conversaAberta, message: replyText }),
+        body: JSON.stringify({ action: "enviar", jid: conversaAberta, message: replyText, loja: lojaDaConversa }),
       }).then((r) => r.json());
       if (res.success) {
         setReplyText("");
         setPausado(true);
-        await fetchMensagens(conversaAberta);
+        await fetchMensagens(conversaAberta, lojaDaConversa);
         fetchConversas();
       } else {
         // O texto FICA na caixa: deixar o atendente achar que o cliente foi
@@ -145,10 +152,10 @@ export default function HumanSupportFloatingWidget() {
 
   useEffect(() => {
     if (escondido || !open || !conversaAberta) return;
-    const t = setInterval(() => { if (!document.hidden) fetchMensagens(conversaAberta); }, 4000);
+    const t = setInterval(() => { if (!document.hidden) fetchMensagens(conversaAberta, lojaDaConversa); }, 4000);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [escondido, open, conversaAberta]);
+  }, [escondido, open, conversaAberta, lojaDaConversa]);
 
   useEffect(() => {
     // Rola a CAIXA de mensagens, não a página: scrollIntoView numa janela
@@ -218,14 +225,15 @@ export default function HumanSupportFloatingWidget() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [escondido, open]);
 
-  const activeChat = chats.find((c) => c.jid === selectedChatJid);
+  const activeChat = chats.find((c) => c.jid === selectedChatJid && (!selectedChatLoja || c.userId === selectedChatLoja));
 
-  const handleOpenChat = async (jid: string) => {
+  const handleOpenChat = async (jid: string, loja: string | null) => {
     setSelectedChatJid(jid);
+    setSelectedChatLoja(loja);
     await fetch("/api/chatbot/human-support", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "mark_read", jid }),
+      body: JSON.stringify({ action: "mark_read", jid, loja }),
     }).catch(() => {});
     fetchChats();
   };
@@ -242,6 +250,7 @@ export default function HumanSupportFloatingWidget() {
           action: "send_message",
           jid: selectedChatJid,
           message: replyText,
+          loja: selectedChatLoja,
         }),
       });
 
@@ -260,7 +269,7 @@ export default function HumanSupportFloatingWidget() {
       await fetch("/api/chatbot/human-support", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "close_chat", jid }),
+        body: JSON.stringify({ action: "close_chat", jid, loja: selectedChatLoja }),
       });
       if (selectedChatJid === jid) setSelectedChatJid(null);
       fetchChats();
@@ -383,8 +392,8 @@ export default function HumanSupportFloatingWidget() {
                 ) : (
                   conversas.map((c) => (
                     <div
-                      key={c.remoteJid}
-                      onClick={() => abrirConversa(c.remoteJid)}
+                      key={`${c.lojaId || ""}|${c.remoteJid}`}
+                      onClick={() => abrirConversa(c.remoteJid, c.lojaId || null)}
                       style={{
                         background: "#fff",
                         padding: "10px 12px",
@@ -428,7 +437,7 @@ export default function HumanSupportFloatingWidget() {
                     ← Voltar
                   </button>
                   <div style={{ fontWeight: 800, fontSize: "0.78rem", color: "#0F172A", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
-                    {conversas.find((c) => c.remoteJid === conversaAberta)?.nome ||
+                    {conversas.find((c) => c.remoteJid === conversaAberta && (!lojaDaConversa || c.lojaId === lojaDaConversa))?.nome ||
                       telefoneBonito(conversaAberta.split("@")[0])}
                   </div>
                   <button
@@ -529,8 +538,8 @@ export default function HumanSupportFloatingWidget() {
               ) : (
                 chats.map((c) => (
                   <div
-                    key={c.jid}
-                    onClick={() => handleOpenChat(c.jid)}
+                    key={`${c.userId || ""}|${c.jid}`}
+                    onClick={() => handleOpenChat(c.jid, c.userId || null)}
                     style={{
                       background: "#fff",
                       padding: "12px 14px",

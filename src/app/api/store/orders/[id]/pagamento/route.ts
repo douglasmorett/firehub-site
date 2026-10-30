@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { Prisma } from "@prisma/client";
 import { authOptions } from "@/lib/auth";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 import { prisma } from "@/lib/prisma";
 import { avisoDaNotaNaTrocaDePagamento, empilharEdicao, podeEditarPedidos, type RegistroDeEdicao } from "@/lib/edicao-de-pedido";
 import { FORMAS_DE_PAGAMENTO_NA_ENTREGA, podeTrocarPagamento } from "@/lib/pagamento-na-entrega";
@@ -56,18 +57,26 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     );
   }
 
-  const lojaId = operador.ownerId || operador.id;
+  // "Todas as Lojas" (cookie "all", lib/loja-ativa.ts): o pedido pode ser de
+  // qualquer loja do grupo — a Annalu não mexia no pedido da PasteLê sem trocar
+  // de página (Douglas, 30/10/2026: "agora todos é pra mexer em tudo"). Achado o
+  // pedido, "a loja" daqui em diante é a DELE; fora do "todas", e para
+  // funcionário, é a loja da sessão de sempre.
+  const { lojaIds } = await lojasDaVisao(operador, await cookieDaVisao()).catch(() => ({
+    lojaIds: [operador.ownerId || operador.id],
+  }));
   const { id } = await params;
   const order = await prisma.customerOrder.findFirst({
-    where: { id, franchiseeId: lojaId },
+    where: { id, franchiseeId: { in: lojaIds } },
     select: {
-      id: true, status: true, deliveryType: true, tableSessionId: true, totalAmount: true,
+      id: true, franchiseeId: true, status: true, deliveryType: true, tableSessionId: true, totalAmount: true,
       paymentMethod: true, changeAmount: true, paymentMethods: true, gatewayPaymentId: true, editHistory: true,
       fiscalStatus: true, fiscalInfo: true,
       ...SELECT_TROCO_NO_PIX,
     },
   });
   if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
+  const lojaId = order.franchiseeId;
 
   const corpo = await req.json().catch(() => ({} as any));
 

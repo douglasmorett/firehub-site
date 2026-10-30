@@ -6,6 +6,7 @@ import { STATUS_CANCELADOS } from "@/lib/status-pedido";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { paraEnvioWhatsApp } from "@/lib/telefone";
 import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 
 export const dynamic = "force-dynamic";
 
@@ -70,8 +71,19 @@ export async function POST(req: NextRequest) {
     const idsPedidos = Array.isArray(orderIds)
       ? [...new Set(orderIds.map((x: unknown) => String(x ?? "").trim()).filter(Boolean))]
       : [];
+    //
+    // ── "TODAS AS LOJAS" DESPACHA O GRUPO ───────────────────────────────────
+    //
+    // Em "Todas" (cookie "all", lib/loja-ativa.ts) a sessão fica na principal e
+    // o pedido da PasteLê caía fora deste filtro: a Annalu só despachava
+    // trocando para a página da PasteLê (Douglas, 30/10/2026: "agora todos é
+    // pra mexer em tudo"). Fora do "todas", e para funcionário, `lojaIds` é só
+    // a loja da sessão — o filtro fica o de sempre.
+    const { lojaIds } = await lojasDaVisao(user, await cookieDaVisao()).catch(() => ({
+      lojaIds: [targetFranchiseeId],
+    }));
     const daLojaEDespachavel = {
-      OR: [{ franchiseeId: { in: [targetFranchiseeId, user.id] } }, { franchisee: { ownerId: targetFranchiseeId } }],
+      OR: [{ franchiseeId: { in: [targetFranchiseeId, user.id, ...lojaIds] } }, { franchisee: { ownerId: targetFranchiseeId } }],
       status: { notIn: ["ENTREGUE", ...STATUS_CANCELADOS] },
     };
     const pedidosAntesDoDespacho = idsPedidos.length > 0

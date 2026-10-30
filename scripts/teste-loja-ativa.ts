@@ -1,12 +1,13 @@
 /**
  * Quem pode trocar de loja sem senha (lib/loja-ativa.ts, podeTrocarParaLoja),
- * a regra que lib/auth.ts usa no `trocarLoja`.
+ * a regra que lib/auth.ts usa no `trocarLoja`. E a loja de um chamado/conversa
+ * que a tela aponta em "Todas as Lojas" (lojaPedidaNaVisao, 30/10/2026).
  *
  *   npx tsx scripts/teste-loja-ativa.ts
  *
  * O caso real: China Pow (principal) e Yakisoba do San (filial), 02/10/2026.
  */
-import { podeTrocarParaLoja } from "../src/lib/loja-ativa";
+import { podeTrocarParaLoja, lojaPedidaNaVisao } from "../src/lib/loja-ativa";
 
 let falhas = 0;
 const confere = (oQue: string, obtido: unknown, esperado: unknown) => {
@@ -38,6 +39,23 @@ confere("destino que é funcionário", podeTrocarParaLoja(china, { ...funcionari
 confere("destino ADMIN", podeTrocarParaLoja(china, { ...admin, accountGroupId: china.id }), false);
 confere("sem sessão", podeTrocarParaLoja(null, yakisoba), false);
 confere("destino inexistente", podeTrocarParaLoja(china, null), false);
+
+// A Annalu em "Todas as Lojas" (30/10/2026): o chamado da Rush se responde
+// pelo WhatsApp da Rush. `lojaIds` é o que lojasDaVisao devolve.
+console.log("\n— A loja do chamado/conversa (lojaPedidaNaVisao) —");
+const annalu = "cmvjuzn3100ifps07ux2oir1q";
+const rush = "cmvjwuc1d01m3ps07yniw4dzc";
+const pastele = "cmvjx0aga01nhps07u4pbl613";
+const grupoAnnalu = [annalu, rush, pastele];
+confere("\"todas\": chamado da Rush fica na Rush", lojaPedidaNaVisao(grupoAnnalu, rush, annalu), rush);
+confere("\"todas\": chamado da PasteLê fica na PasteLê", lojaPedidaNaVisao(grupoAnnalu, pastele, annalu), pastele);
+confere("\"todas\": chamado da própria principal", lojaPedidaNaVisao(grupoAnnalu, annalu, annalu), annalu);
+confere("\"todas\": loja de fora do grupo cai na da sessão", lojaPedidaNaVisao(grupoAnnalu, "outra", annalu), annalu);
+confere("fora do \"todas\": a Rush pedida não passa, fica a da sessão", lojaPedidaNaVisao([annalu], rush, annalu), annalu);
+confere("funcionário (visão só da loja dele): outra loja não passa", lojaPedidaNaVisao([rush], annalu, rush), rush);
+confere("tela antiga sem a loja (undefined)", lojaPedidaNaVisao(grupoAnnalu, undefined, annalu), annalu);
+confere("loja vazia", lojaPedidaNaVisao(grupoAnnalu, "", annalu), annalu);
+confere("loja que não é texto", lojaPedidaNaVisao(grupoAnnalu, { id: rush }, annalu), annalu);
 
 console.log(falhas ? `\n${falhas} falha(s).` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

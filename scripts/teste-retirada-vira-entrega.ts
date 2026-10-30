@@ -44,7 +44,10 @@ const casa = (o: any, where: any) =>
           : null,
   },
   customerOrder: {
-    findFirst: async ({ where }: any) => (db.order && where.id === db.order.id && where.franchiseeId === LOJA ? { ...db.order } : null),
+    // A rota busca o pedido nas lojas da visão (`franchiseeId: { in: lojaIds }`,
+    // lib/loja-ativa.ts, 30/10/2026); fora do "todas" a lista é só a LOJA.
+    findFirst: async ({ where }: any) =>
+      db.order && where.id === db.order.id && (where.franchiseeId?.in ?? [where.franchiseeId]).includes(LOJA) ? { ...db.order } : null,
     updateMany: async ({ where, data }: any) => {
       if (!db.order || !casa(db.order, where)) return { count: 0 };
       db.gravacoes.push(data);

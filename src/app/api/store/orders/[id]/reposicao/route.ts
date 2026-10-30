@@ -20,6 +20,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 import { prisma } from "@/lib/prisma";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { podeEditarPedidos, empilharEdicao } from "@/lib/edicao-de-pedido";
@@ -58,13 +59,20 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!podeEditarPedidos(operador)) {
       return NextResponse.json({ error: "Você não tem permissão para editar pedidos." }, { status: 403 });
     }
-    const lojaId = operador.ownerId || operador.id;
+    // "Todas as Lojas" (cookie "all", lib/loja-ativa.ts): o pedido pode ser de
+    // qualquer loja do grupo — a Annalu não mexia no pedido da PasteLê sem trocar
+    // de página (Douglas, 30/10/2026: "agora todos é pra mexer em tudo"). Achado o
+    // pedido, "a loja" daqui em diante é a DELE; fora do "todas", e para
+    // funcionário, é a loja da sessão de sempre.
+    const { lojaIds } = await lojasDaVisao(operador, await cookieDaVisao()).catch(() => ({
+      lojaIds: [operador.ownerId || operador.id],
+    }));
     const { id } = await params;
 
     const order = await prisma.customerOrder.findFirst({
-      where: { id, franchiseeId: lojaId },
+      where: { id, franchiseeId: { in: lojaIds } },
       select: {
-        id: true, status: true, dailyOrderNumber: true, ifoodReference: true, openDeliveryReference: true,
+        id: true, franchiseeId: true, status: true, dailyOrderNumber: true, ifoodReference: true, openDeliveryReference: true,
         customerId: true, customerName: true, customerPhone: true, customerAddress: true, customerLatLng: true,
         deliveryType: true, editHistory: true, totalAmount: true,
         deliveryFee: true, entregaGratis: true, deliveryDistance: true,
@@ -74,6 +82,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       },
     });
     if (!order) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
+    const lojaId = order.franchiseeId;
     if (!podeTerReposicao(order)) {
       return NextResponse.json(
         { error: "A reposição é para pedido que já saiu (Saiu para entrega ou Finalizado). Antes disso, edite o pedido (lápis) — ele ainda está na loja." },

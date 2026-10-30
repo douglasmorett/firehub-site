@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { sendEvolutionMessage } from "@/lib/whatsapp-evolution";
 import { inicioDoExpedienteDaLoja } from "@/lib/fuso";
 import { linhasDePagamentoParaOMotoboy } from "@/lib/pagamento-no-whatsapp-do-motoboy";
+import { lojasDaVisao, cookieDaVisao } from "@/lib/loja-ativa";
 
 export async function PATCH(req: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -34,7 +35,14 @@ export async function PATCH(req: NextRequest) {
     select: { franchiseeId: true, status: true, motoboyId: true, totalAmount: true, editHistory: true, motoboy: { select: { name: true } } },
   });
   if (!pedidoAlvo) return NextResponse.json({ error: "Pedido não encontrado" }, { status: 404 });
-  if (usuario.role !== "ADMIN" && pedidoAlvo.franchiseeId !== lojaDaSessao) {
+  // Em "Todas as Lojas" (cookie "all", lib/loja-ativa.ts) vale o grupo: a
+  // Annalu não conseguia pôr o motoboy no pedido da PasteLê sem trocar para a
+  // página da PasteLê (30/10/2026). O motoboy continua tendo de ser da loja DO
+  // PEDIDO (abaixo): o app dele lista só os pedidos da loja dele.
+  const { lojaIds } = await lojasDaVisao(usuario, await cookieDaVisao()).catch(() => ({
+    lojaIds: [lojaDaSessao],
+  }));
+  if (usuario.role !== "ADMIN" && !lojaIds.includes(String(pedidoAlvo.franchiseeId))) {
     console.warn(`[assign-motoboy] 🚫 ${usuario.id} tentou mexer no pedido ${orderId} da loja ${pedidoAlvo.franchiseeId}.`);
     return NextResponse.json({ error: "Este pedido não é desta loja" }, { status: 403 });
   }
