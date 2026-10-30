@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { Fragment, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import { parseComboSelections } from "@/lib/parse-combo";
@@ -271,6 +271,32 @@ export default function KDSTelaPage() {
       if (nova === 0) localStorage.removeItem(chaveDaRotacao);
       else localStorage.setItem(chaveDaRotacao, String(nova));
     } catch {}
+  };
+  // ── 🔍 ZOOM DAS COMANDAS ─────────────────────────────────────────────────
+  // Na TV da Pizzaria 17 cabiam só duas comandas por vez (30/10/2026: "queria
+  // diminuir o zoom pra caber pelo menos umas quatro, seis comandas"). O − e o
+  // + mudam o tamanho das comandas da grade; menor = mais colunas. É do
+  // APARELHO e de CADA TELA, como a rotação: a TV de longe e o monitor da
+  // finalização pedem tamanhos diferentes.
+  const chaveDoZoom = `kds-zoom:${chaveDaTela || `${stage}:${screenName}`}`;
+  const ZOOM_MIN = 0.5;
+  const ZOOM_MAX = 1.5;
+  const [zoom, setZoom] = useState(1);
+  useEffect(() => {
+    try {
+      const salvo = Number(localStorage.getItem(chaveDoZoom));
+      setZoom(salvo >= ZOOM_MIN && salvo <= ZOOM_MAX ? salvo : 1);
+    } catch {}
+  }, [chaveDoZoom]);
+  const mudarZoom = (passo: number) => {
+    setZoom((atual) => {
+      const novo = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, atual + passo)) * 10) / 10;
+      try {
+        if (novo === 1) localStorage.removeItem(chaveDoZoom);
+        else localStorage.setItem(chaveDoZoom, String(novo));
+      } catch {}
+      return novo;
+    });
   };
   // ── 🔔 AVISO SONORO DE PEDIDO NOVO ───────────────────────────────────────
   // A tela do KDS era muda: o pedido novo só aparecia, e a cozinha de costas
@@ -1640,6 +1666,46 @@ export default function KDSTelaPage() {
                 </button>
               )}
 
+              {/* 🔍 − / + : tamanho das comandas (zoom da grade). */}
+              <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                {([
+                  { passo: -0.1, rotulo: "−", titulo: "Diminuir as comandas (cabem mais na tela)", desligado: zoom <= ZOOM_MIN },
+                  { passo: 0.1, rotulo: "+", titulo: "Aumentar as comandas", desligado: zoom >= ZOOM_MAX },
+                ] as const).map((b, i) => (
+                  <Fragment key={b.rotulo}>
+                    {i === 1 && (
+                      <span style={{ fontSize: 11, fontWeight: 700, color: zoom === 1 ? "#64748B" : "#E2E8F0", minWidth: 34, textAlign: "center", fontFamily: FONT }}>
+                        {Math.round(zoom * 100)}%
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => { e.currentTarget.blur(); mudarZoom(b.passo); }}
+                      disabled={b.desligado}
+                      title={b.titulo}
+                      aria-label={b.titulo}
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        border: "1px solid #292524",
+                        background: "transparent",
+                        color: b.desligado ? "#334155" : "#94A3B8",
+                        fontSize: 18,
+                        fontWeight: 800,
+                        cursor: b.desligado ? "default" : "pointer",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontFamily: FONT,
+                      }}
+                    >
+                      {b.rotulo}
+                    </button>
+                  </Fragment>
+                ))}
+              </div>
+
               {/* ⟳ Girar a tela — discreto: só quem pendurou a TV de pé precisa. */}
               <div style={{ position: "relative", flexShrink: 0 }}>
               <button
@@ -2166,8 +2232,11 @@ export default function KDSTelaPage() {
                 gridTemplateColumns:
                   "repeat(auto-fill, minmax(min(100%, 420px), 1fr))",
                 gap: 16,
-                maxWidth: 1600,
+                // Com zoom menor, a mesma largura da tela recebe mais colunas:
+                // a grade cresce na mesma proporção que as comandas encolhem.
+                maxWidth: Math.round(1600 / zoom),
                 margin: "0 auto",
+                zoom,
               }}
             >
               {filteredOrders.map((order, index) => (
