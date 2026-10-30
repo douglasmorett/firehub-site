@@ -17,7 +17,8 @@
  *
  *        { desconto: { tipo: "percent" | "valor", valor, motivo } }
  *          → desconto dado na edição, sozinho ou junto com os itens. Soma ao
- *            desconto que o pedido tinha, vale sobre os itens (sem a taxa) e
+ *            desconto que o pedido tinha, vai até itens + entrega (100% =
+ *            pedido de graça; a taxa do motoboy não muda, desde 30/10/2026) e
  *            só quando o cliente ainda vai pagar (`descontoNaEdicao`).
  *
  *        { trocar: [{ itemId, quantity, comboSelections, notes }] }
@@ -628,7 +629,9 @@ async function editarPedidoProprio(entrada: {
  *     dá, e é desse campo que o fechamento de caixa tira a linha "Desconto";
  *   • a observação ganha "[Desconto: 10% (R$ 5,90) — Pedido atrasado]", o
  *     mesmo formato do balcão (lib/desconto-manual.ts): sai na comanda e o
- *     relatório lê o motivo dali.
+ *     relatório lê o motivo dali;
+ *   • `deliveryFee` NÃO muda, nem quando o desconto chega na entrega (cortesia
+ *     de 100%, 30/10/2026): é da taxa que sai o repasse do motoboy.
  */
 function gravacaoDoDesconto(
   order: any,
@@ -647,7 +650,7 @@ function gravacaoDoDesconto(
     desconto,
   });
   if (conta.problema) return { erro: conta.problema };
-  if (!(conta.valor > 0)) return { erro: "O pedido não tem valor de item para dar desconto." };
+  if (!(conta.valor > 0)) return { erro: "Não sobrou valor no pedido para esse desconto." };
 
   const nota = notaDoDesconto(desconto, conta.base);
   const notes = [String(order.notes || "").trim(), nota].filter(Boolean).join("\n");

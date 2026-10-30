@@ -378,6 +378,10 @@ async function main() {
   confere("só contagem: diz de onde veio", soContagem.cmvDetalhe.titulo, "CMV real pela contagem do estoque de 13/10 a 19/10");
   confere("só contagem: completo, sem pendência de custo, cobertura 100%", [soContagem.completo, soContagem.pendencias, soContagem.cobertura], [true, [], 1]);
   confere("só contagem: % sobre as vendas desses dias sem a taxa de entrega", [soContagem.cmvDetalhe.real?.vendas, soContagem.cmvDetalhe.real?.pct], [300, 1166.7]);
+  // Cortesia de 100% pelo lápis (30/10/2026): itens 50 + taxa 8 − desconto 58 = R$ 0. A
+  // parte do desconto que passa dos itens é desconto na entrega: a venda sem frete é 0, não −8.
+  const comCortesia = semanaHakim([venda("2026-10-13"), venda("2026-10-15", { deliveryFee: 8, totalAmount: 0, itens: 50, pagamentos: [{ forma: "DINHEIRO", valor: 0 }] })], cmvDo());
+  confere("cortesia com a entrega: a venda sem frete não fica negativa", comCortesia.cmvDetalhe.real?.vendas, 100);
 
   // O DRE de 12/10 a 19/10: a contagem cobre 13 a 19; o dia 12 vai pela ficha.
   const parcialBoa = semanaHakim([venda("2026-10-12", { itensComCusto: 90, custo: 30, itensPelaFicha: 90, custoPelaFicha: 30 }), venda("2026-10-14")], cmvDo(), "2026-10-12", "2026-10-19");
