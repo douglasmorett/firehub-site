@@ -159,10 +159,15 @@ export const texto = (v: unknown) => (v == null ? "" : String(v).trim());
  * complemento e endereço formatado com prefixo `ENC_` e só decifra (batchDecrypt)
  * na entrega da LOJA. O que continuou cifrado não vai para a comanda: "ENC_#MQ…"
  * no lugar do bairro é pior que bairro nenhum.
+ *
+ * Na entrega da KEETA ela nem cifra: manda o texto "Proteção de Privacidade"
+ * no telefone, complemento e endereço formatado (pedido #3475, 31/10/2026) — e a
+ * comanda saía "Proteção de Privacidade - Comp: Proteção de Privacidade".
  */
+const MASCARA = /^(proteção de privacidade|privacy protection)$/i;
 export const claro = (v: unknown) => {
   const t = texto(v);
-  return t.startsWith("ENC_") ? "" : t;
+  return t.startsWith("ENC_") || MASCARA.test(t) ? "" : t;
 };
 
 /**

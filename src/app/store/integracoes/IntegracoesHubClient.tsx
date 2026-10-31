@@ -92,7 +92,8 @@ export default function IntegracoesHubClient({
     authId: string;
     erro: string;
     salvando: boolean;
-  }>({ carregando: true, disponivel: false, conectada: false, loja: null, autorizadas: [], authId: "", erro: "", salvando: false });
+    naKeeta: { status: string | null; horario: { dayOfWeek: string[]; timePeriods: { startTime: string; endTime: string } }[] | null } | null;
+  }>({ carregando: true, disponivel: false, conectada: false, loja: null, autorizadas: [], authId: "", erro: "", salvando: false, naKeeta: null });
   const lerKeeta = (authId?: string) =>
     fetch(`/api/store/integracoes/keeta${authId ? `?authId=${encodeURIComponent(authId)}` : ""}`)
       .then((r) => r.json())
@@ -105,6 +106,7 @@ export default function IntegracoesHubClient({
           loja: d.loja || null,
           autorizadas: Array.isArray(d.autorizadas) ? d.autorizadas : k.autorizadas,
           erro: d.erro || k.erro,
+          naKeeta: d.naKeeta || null,
         }))
       )
       .catch(() => setKt((k) => ({ ...k, carregando: false })));
@@ -162,6 +164,21 @@ export default function IntegracoesHubClient({
     await fetch("/api/store/integracoes/keeta", { method: "DELETE" }).catch(() => null);
     setKt((k) => ({ ...k, salvando: false, conectada: false, loja: null }));
     showToast("Keeta desconectada.", "#475569");
+  };
+  // A loja do lado da Keeta: só quando o lojista clica (lib/keeta/loja-na-keeta.ts).
+  const acaoNaLojaKeeta = async (acao: "abrir" | "pausar" | "enviar-horario" | "enviar-contato", feito: string) => {
+    if (acao === "pausar" && !window.confirm("Pausar a loja na Keeta? Ela some do app da Keeta até você abrir de novo aqui ou no portal da Keeta.")) return;
+    setKt((k) => ({ ...k, salvando: true, erro: "" }));
+    try {
+      const r = await fetch("/api/store/integracoes/keeta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao }) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) showToast(feito, "#0F766E");
+      else setKt((k) => ({ ...k, erro: d.error || "A Keeta não respondeu. Tente de novo." }));
+    } catch {
+      setKt((k) => ({ ...k, erro: "Sem conexão com o servidor. Tente de novo." }));
+    }
+    setKt((k) => ({ ...k, salvando: false }));
+    lerKeeta();
   };
 
   // ── CARDÁPIOWEB (cardápio digital; app privado do FireHub na CW App Store) ──
@@ -3165,6 +3182,37 @@ export default function IntegracoesHubClient({
                   <div style={{ background: "#FFF7E6", border: "1px solid #FDE68A", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
                     <div style={{ fontSize: "0.75rem", color: "#B45309" }}>Status da Conexão:</div>
                     <div style={{ fontSize: "0.95rem", fontWeight: 900, color: "#B45309" }}>⚪ Loja ainda não conectada</div>
+                  </div>
+                )}
+
+                {/* A loja do lado da Keeta: nada disto é automático — o horário e a pausa
+                    do FireHub não mexem na Keeta sozinhos (o 99Food ensinou o porquê). */}
+                {kt.conectada && !kt.carregando && (
+                  <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", padding: "14px", borderRadius: "14px", marginBottom: "20px" }}>
+                    <div style={{ fontSize: "0.82rem", fontWeight: 800, color: "#0F172A", marginBottom: 6 }}>
+                      Sua loja no app da Keeta:{" "}
+                      {kt.naKeeta?.status === "AVAILABLE" ? "🟢 aberta" : kt.naKeeta?.status === "UNAVAILABLE" ? "⏸️ pausada" : "status indisponível"}
+                    </div>
+                    <div style={{ fontSize: "0.75rem", color: "#64748B", marginBottom: 10, lineHeight: 1.5 }}>
+                      O horário e a pausa do FireHub não mudam a Keeta sozinhos. Use os botões quando quiser mandar.
+                    </div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {kt.naKeeta?.status === "UNAVAILABLE" ? (
+                        <button disabled={kt.salvando} onClick={() => acaoNaLojaKeeta("abrir", "✅ Loja aberta na Keeta.")} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #99F6E4", background: "#F0FDFA", color: "#0F766E", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}>
+                          Abrir na Keeta
+                        </button>
+                      ) : (
+                        <button disabled={kt.salvando} onClick={() => acaoNaLojaKeeta("pausar", "⏸️ Loja pausada na Keeta.")} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #FDE68A", background: "#FFF7E6", color: "#B45309", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}>
+                          Pausar na Keeta
+                        </button>
+                      )}
+                      <button disabled={kt.salvando} onClick={() => acaoNaLojaKeeta("enviar-horario", "✅ Horário do FireHub enviado para a Keeta.")} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#0F172A", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}>
+                        Enviar horário do FireHub
+                      </button>
+                      <button disabled={kt.salvando} onClick={() => acaoNaLojaKeeta("enviar-contato", "✅ Telefone e e-mail enviados para a Keeta.")} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#0F172A", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}>
+                        Enviar telefone e e-mail
+                      </button>
+                    </div>
                   </div>
                 )}
 

@@ -193,6 +193,12 @@ confere(
   "Av. Brasil, 10 - Costazul - Rio das Ostras",
 );
 confere("bairro que já está na rua não repete", enderecoDoPedido({ street: "Rua Centro", number: "1", district: "Centro", city: "X" }), "Rua Centro, 1 - X");
+// Entrega da Keeta: endereço mascarado em texto, sem ENC_ (pedido #3475 da loja de teste, 31/10/2026).
+confere(
+  "máscara 'Proteção de Privacidade' da Keeta não vai para a comanda",
+  enderecoDoPedido({ country: "BR", city: "Bongolava", street: "", number: "", complement: "Proteção de Privacidade", formattedAddress: "Proteção de Privacidade" }),
+  "Bongolava",
+);
 confere("INDOOR é MESA (furo da Wabiz)", tipoDoPedido({ type: "INDOOR" }), "MESA");
 confere("TAKEOUT é RETIRADA", tipoDoPedido({ type: "TAKEOUT" }), "RETIRADA");
 {

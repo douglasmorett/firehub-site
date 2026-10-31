@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { lojaDaSessao } from "@/lib/ifood-token";
 import { keetaConfigurada, linkDeAutorizacao } from "@/lib/keeta/api";
 import { lojaKeetaDoFranqueado, desligarVinculo } from "@/lib/keeta/lojas";
+import { statusNaKeeta, abrirOuPausarNaKeeta, enviarHorarioParaKeeta, enviarContatoParaKeeta } from "@/lib/keeta/loja-na-keeta";
 import {
   COOKIE_DA_CONEXAO,
   assinarConexao,
@@ -23,6 +24,7 @@ export const dynamic = "force-dynamic";
  *   GET    ?authId=          → as lojas que ele acabou de autorizar (para escolher)
  *   POST   { acao:"conectar" }                         → link oficial da Keeta
  *   POST   { acao:"escolher", authId, keetaMerchantId } → liga a loja escolhida
+ *   POST   { acao:"abrir"|"pausar"|"enviar-horario"|"enviar-contato" } → a loja na Keeta
  *   DELETE                   → desliga
  *
  * O fluxo é o "self-serve com redirect" da Keeta: o botão abre a Keeta, o
@@ -62,10 +64,18 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Status e horário como a KEETA vê — é o que o lojista confere antes de abrir/pausar.
+  let naKeeta: { status: string | null; horario: unknown } | null = null;
+  if (vinculo?.ativa) {
+    const r = await statusNaKeeta(s.lojaId!).catch(() => null);
+    if (r?.ok) naKeeta = { status: r.dados?.status ?? null, horario: r.dados?.services?.[0]?.serviceHours?.weekHours ?? null };
+  }
+
   return NextResponse.json({
     disponivel,
     conectada: !!vinculo?.ativa,
     loja: vinculo ? { nome: vinculo.nomeNaKeeta, keetaMerchantId: vinculo.keetaMerchantId, ativa: vinculo.ativa } : null,
+    ...(naKeeta ? { naKeeta } : {}),
     ...(autorizadas ? { autorizadas } : {}),
     ...(erro ? { erro } : {}),
   });
@@ -106,6 +116,21 @@ export async function POST(req: NextRequest) {
     const res = NextResponse.json({ ok: true, loja: { nome: loja.nome, keetaMerchantId: String(loja.id) } });
     res.cookies.delete(COOKIE_DA_CONEXAO);
     return res;
+  }
+
+  // Ações na loja do lado da Keeta — só quando o lojista pede (lib/keeta/loja-na-keeta.ts).
+  const acoesDaLoja: Record<string, () => Promise<{ ok: boolean; erro?: string }>> = {
+    abrir: () => abrirOuPausarNaKeeta(s.lojaId!, true),
+    pausar: () => abrirOuPausarNaKeeta(s.lojaId!, false),
+    "enviar-horario": () => enviarHorarioParaKeeta(s.lojaId!),
+    "enviar-contato": () => enviarContatoParaKeeta(s.lojaId!),
+  };
+  const acao = acoesDaLoja[String(corpo?.acao || "")];
+  if (acao) {
+    const r = await acao();
+    console.log(`[Keeta] 🏪 ${corpo.acao} da loja ${s.lojaId} por ${s.email}: ${r.ok ? "ok" : r.erro}`);
+    if (!r.ok) return NextResponse.json({ error: `A Keeta recusou: ${r.erro}` }, { status: 502 });
+    return NextResponse.json({ ok: true });
   }
 
   return NextResponse.json({ error: "ação desconhecida" }, { status: 400 });
