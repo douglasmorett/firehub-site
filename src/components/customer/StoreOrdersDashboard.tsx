@@ -816,6 +816,10 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
       return temXara ? `${primeiro} ${resto[resto.length - 1][0]}.` : primeiro;
     })();
     const parceiroQueEntrega = !entregadorDaLoja && recebeMotoboy ? getPartnerDeliveryInfo(order) : null;
+    const tipoDoCard = ehMesa ? { icone: "🍽️", nome: "Mesa" }
+      : isTakeoutOrder ? { icone: "🏪", nome: "Retirada" }
+      : order.deliveryType === "BALCAO" ? { icone: "🧾", nome: "Balcão" }
+      : { icone: "🛵", nome: "Entrega" };
     return (
       <div
         draggable={canDrag}
@@ -857,12 +861,13 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
         {/* Em coluna estreita (tela de 1366 px) o canal e o tipo encolhem com
             "…" e o tempo fica sempre inteiro — é ele que diz o que fazer. */}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2, paddingLeft: 21, fontSize: "0.72rem", color: "#64748B", fontWeight: 600, minWidth: 0, overflow: "hidden" }}>
+          {/* O ícone do tipo vem primeiro e não encolhe: no fim da linha ele
+              sumia no "…" do canal, e a loja não via qual pedido era entrega
+              (Thalyta, Garagem Burger, 31/10/2026: o #2 sem a moto, o #3 com). */}
+          <span title={tipoDoCard.nome} style={{ flexShrink: 0 }}>{tipoDoCard.icone}</span>
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, flexShrink: 1 }}>
             {rotuloDoCanal(order)}
-            {" · "}
-            {entregadorDaLoja || parceiroQueEntrega?.isPartner
-              ? null
-              : ehMesa ? "🍽️ Mesa" : isTakeoutOrder ? "🏪 Retirada" : order.deliveryType === "BALCAO" ? "🧾 Balcão" : "🛵 Entrega"}
+            {entregadorDaLoja || parceiroQueEntrega?.isPartner ? null : ` · ${tipoDoCard.nome}`}
           </span>
           {/* Com entregador, o nome entra no lugar de "Entrega" e NÃO
               encolhe: em coluna estreita quem perde letras é o canal. */}
@@ -877,7 +882,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 borderRadius: 999, padding: "0 7px", fontWeight: 800, fontSize: "0.7rem", lineHeight: "16px",
               }}
             >
-              🛵 {entregadorDaLoja}
+              {entregadorDaLoja}
             </span>
           ) : parceiroQueEntrega?.isPartner ? (
             <span
@@ -888,7 +893,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
                 borderRadius: 999, padding: "0 7px", fontWeight: 700, fontSize: "0.68rem", lineHeight: "16px",
               }}
             >
-              🛵 {parceiroQueEntrega.partnerName}
+              {parceiroQueEntrega.partnerName}
             </span>
           ) : null}
           {/* A etapa com o tempo nela ("Saiu (3 min)"), colada no relógio. Na
