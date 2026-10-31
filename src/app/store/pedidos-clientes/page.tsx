@@ -16,6 +16,7 @@ import { DIAS_ATIVO_SEM_PERIODO, filtroDoFeed } from "@/lib/filtro-do-feed";
 import { lojasDaVisao } from "@/lib/loja-ativa";
 import { zonasDeBairro, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
 import { areaParaOMapa } from "@/lib/ponto-do-pedido";
+import { integracoesDoPainel } from "@/lib/integracoes-do-painel";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +119,8 @@ export default async function FranchiseeCustomerOrdersPage() {
   // O ponto da loja no mapa só depende de QUAL loja: corre em paralelo com
   // os pedidos em vez de esperar por eles.
   const idDaLojaNoMapa = franchiseeIds.length === 1 ? franchiseeIds[0] : targetFranchiseeId;
+  // Os botões do "Filtro de integrações": só os marketplaces que a loja usa.
+  const integracoesP = integracoesDoPainel(franchiseeIds);
   const noMapaP = (async () => {
     const lojaDoMapa =
       idDaLojaNoMapa === user.id
@@ -271,6 +274,7 @@ export default async function FranchiseeCustomerOrdersPage() {
         // iFood (que grava o nome na linha do pedido) e o do 99Food vinha sem
         // marca nenhuma. Vazio quando a conta não tem o que separar.
         lojasDeOrigem={lojasDeOrigem}
+        integracoesDaLoja={await integracoesP}
         isFranqueado={user.role === "FRANCHISEE" || user.role === "STAFF"}
         initialCashSessionOpenedAt={activeCashSessionOpenedAt}
         initialMotoboys={motoboys}

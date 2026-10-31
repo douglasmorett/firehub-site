@@ -13,6 +13,7 @@ import { useLinhasEquilibradas } from "@/components/customer/useLinhasEquilibrad
 import { DIAS_DO_RELATORIO, lerAppMotoboyConfig, type AppMotoboyConfig } from "@/lib/app-motoboy-config";
 import { ESTADOS_DE_ENTREGADOR_IFOOD } from "@/lib/entrega-parceira";
 import { canalDoPedido, rotuloDoCanal, nomeDoCanal } from "@/lib/canal-do-pedido";
+import type { IntegracaoDoFiltro } from "@/lib/integracoes-do-painel";
 import { nomeDaLojaDoPedido, type LojaDeOrigem } from "@/lib/loja-de-origem";
 import { getDisplayOrderNumber } from "@/lib/order-sequence";
 import { isStoreOpen } from "@/lib/store-hours";
@@ -1800,7 +1801,7 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   );
 });
 
-export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys, activeStoreId, lojasDeOrigem = [], aceiteAutomaticoDaLoja = false, agendamentoConfigDaLoja = null, horarioDaLoja = null }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[]; activeStoreId?: string; lojasDeOrigem?: LojaDeOrigem[]; aceiteAutomaticoDaLoja?: boolean; agendamentoConfigDaLoja?: unknown; horarioDaLoja?: { storeHours?: unknown; storePause?: unknown; storeTimezone?: string | null } | null }) {
+export default function StoreOrdersDashboard({ user, orders: initialOrders, isFranqueado, initialCashSessionOpenedAt, initialMotoboys, activeStoreId, lojasDeOrigem = [], integracoesDaLoja = null, aceiteAutomaticoDaLoja = false, agendamentoConfigDaLoja = null, horarioDaLoja = null }: { user: any; orders: any[]; isFranqueado: boolean; initialCashSessionOpenedAt?: string | null; initialMotoboys?: any[]; activeStoreId?: string; lojasDeOrigem?: LojaDeOrigem[]; integracoesDaLoja?: IntegracaoDoFiltro[] | null; aceiteAutomaticoDaLoja?: boolean; agendamentoConfigDaLoja?: unknown; horarioDaLoja?: { storeHours?: unknown; storePause?: unknown; storeTimezone?: string | null } | null }) {
   const router = useRouter();
   const [orders, setOrders] = useState(initialOrders);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -4325,7 +4326,19 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   // na última linha). A chave muda quando o texto/quantidade de botões muda.
   const atalhosRef = useLinhasEquilibradas<HTMLDivElement>(6, `${altaDemanda.active ? 1 : 0}|${scheduledOrders.length}|${painelClean ? 1 : 0}|${JSON.stringify(barraConfig)}`);
   // No celular os dois filtros também (Delivery/Retirada/Balcão/Mesa = 2 + 2, não 3 + 1).
-  const integracoesRef = useLinhasEquilibradas<HTMLDivElement>(4, "", "so-no-celular");
+  // Só o botão do marketplace que a loja usa (lib/integracoes-do-painel.ts).
+  // Sem a lista (a leitura falhou) mostra todos; pedido de um canal na tela
+  // acende o botão dele, para nenhum pedido ficar sem filtro.
+  const integracoesNaBarra = useMemo(() => {
+    const doCanal: Record<string, IntegracaoDoFiltro> = { IFOOD: "ifood", "99FOOD": "99food", KEETA: "keeta", JOTAJA: "jotaja", BRENDI: "brendi", WABIZ: "wabiz" };
+    const set = new Set<IntegracaoDoFiltro>(integracoesDaLoja ?? ["ifood", "99food", "keeta", "jotaja", "brendi"]);
+    for (const o of orders) {
+      const ch = doCanal[canalDoPedido(o).chave];
+      if (ch) set.add(ch);
+    }
+    return set;
+  }, [integracoesDaLoja, orders]);
+  const integracoesRef = useLinhasEquilibradas<HTMLDivElement>(4, [...integracoesNaBarra].join("|"), "so-no-celular");
   const tiposRef = useLinhasEquilibradas<HTMLDivElement>(4, "", "so-no-celular");
 
 
@@ -6689,7 +6702,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             </div>
 
             {/* Filtro por integração (de onde o pedido veio) */}
-            {naBarra("filtroCanais") && (
+            {naBarra("filtroCanais") && integracoesNaBarra.size > 0 && (
             <div className="bp-filtro" style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: "2px" }}>
               <span style={{ fontSize: "0.60rem", fontWeight: 800, color: "#94A3B8", textTransform: "uppercase", letterSpacing: "0.04em", paddingLeft: "2px" }}>
                 Filtro de integrações
@@ -6706,135 +6719,144 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   e a fila quebra linha quando não couber. */}
               <div className="bp-equilibra" ref={integracoesRef} style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "4px", background: "#F8FAFC", padding: "2px 5px", borderRadius: "9px", border: "1px solid #E2E8F0" }}>
                 {/* iFood */}
-                <button
-                  type="button"
-                  onClick={() => toggleChannel("ifood")}
-                  title={selectedChannels.ifood ? "iFood: Ativo (Clique para filtrar)" : "iFood: Oculto (Clique para exibir)"}
-                  style={{
-                    height: "26px",
-                    flexShrink: 0,
-                    padding: "2px 6px",
-                    borderRadius: "6px",
-                    border: selectedChannels.ifood ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
-                    background: selectedChannels.ifood ? "#FFFFFF" : PALETA.areia,
-                    filter: selectedChannels.ifood ? "none" : "grayscale(100%) opacity(0.35)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: selectedChannels.ifood ? "0 1px 3px rgba(239,68,68,0.15)" : "none",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <img src="/images/logos/ifood.png" alt="iFood" style={{ height: "15px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
-                </button>
+                {integracoesNaBarra.has("ifood") && (
+                  <button
+                    type="button"
+                    onClick={() => toggleChannel("ifood")}
+                    title={selectedChannels.ifood ? "iFood: Ativo (Clique para filtrar)" : "iFood: Oculto (Clique para exibir)"}
+                    style={{
+                      height: "26px",
+                      flexShrink: 0,
+                      padding: "2px 6px",
+                      borderRadius: "6px",
+                      border: selectedChannels.ifood ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
+                      background: selectedChannels.ifood ? "#FFFFFF" : PALETA.areia,
+                      filter: selectedChannels.ifood ? "none" : "grayscale(100%) opacity(0.35)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: selectedChannels.ifood ? "0 1px 3px rgba(239,68,68,0.15)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <img src="/images/logos/ifood.png" alt="iFood" style={{ height: "15px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
+                  </button>
+                )}
 
                 {/* 99Food */}
-                <button
-                  type="button"
-                  onClick={() => toggleChannel("99food")}
-                  title={selectedChannels["99food"] ? "99Food: Ativo (Clique para filtrar)" : "99Food: Oculto (Clique para exibir)"}
-                  style={{
-                    height: "26px",
-                    flexShrink: 0,
-                    padding: "2px 5px",
-                    borderRadius: "6px",
-                    border: selectedChannels["99food"] ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
-                    background: selectedChannels["99food"] ? "#FFFFFF" : PALETA.areia,
-                    filter: selectedChannels["99food"] ? "none" : "grayscale(100%) opacity(0.35)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: selectedChannels["99food"] ? "0 1px 3px rgba(245,158,11,0.15)" : "none",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <img src="/images/logos/99.svg" alt="99Food" style={{ height: "17px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
-                </button>
+                {integracoesNaBarra.has("99food") && (
+                  <button
+                    type="button"
+                    onClick={() => toggleChannel("99food")}
+                    title={selectedChannels["99food"] ? "99Food: Ativo (Clique para filtrar)" : "99Food: Oculto (Clique para exibir)"}
+                    style={{
+                      height: "26px",
+                      flexShrink: 0,
+                      padding: "2px 5px",
+                      borderRadius: "6px",
+                      border: selectedChannels["99food"] ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
+                      background: selectedChannels["99food"] ? "#FFFFFF" : PALETA.areia,
+                      filter: selectedChannels["99food"] ? "none" : "grayscale(100%) opacity(0.35)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: selectedChannels["99food"] ? "0 1px 3px rgba(245,158,11,0.15)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <img src="/images/logos/99.svg" alt="99Food" style={{ height: "17px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
+                  </button>
+                )}
 
                 {/* Keeta */}
-                <button
-                  type="button"
-                  onClick={() => toggleChannel("keeta")}
-                  title={selectedChannels.keeta ? "Keeta: Ativo (Clique para filtrar)" : "Keeta: Oculto (Clique para exibir)"}
-                  style={{
-                    height: "26px",
-                    flexShrink: 0,
-                    padding: "2px 5px",
-                    borderRadius: "6px",
-                    border: selectedChannels.keeta ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
-                    background: selectedChannels.keeta ? "#FFFFFF" : PALETA.areia,
-                    filter: selectedChannels.keeta ? "none" : "grayscale(100%) opacity(0.35)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: selectedChannels.keeta ? "0 1px 3px rgba(250,204,21,0.25)" : "none",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <img src="/images/logos/keeta.png" alt="Keeta" style={{ height: "16px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
-                </button>
+                {integracoesNaBarra.has("keeta") && (
+                  <button
+                    type="button"
+                    onClick={() => toggleChannel("keeta")}
+                    title={selectedChannels.keeta ? "Keeta: Ativo (Clique para filtrar)" : "Keeta: Oculto (Clique para exibir)"}
+                    style={{
+                      height: "26px",
+                      flexShrink: 0,
+                      padding: "2px 5px",
+                      borderRadius: "6px",
+                      border: selectedChannels.keeta ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
+                      background: selectedChannels.keeta ? "#FFFFFF" : PALETA.areia,
+                      filter: selectedChannels.keeta ? "none" : "grayscale(100%) opacity(0.35)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: selectedChannels.keeta ? "0 1px 3px rgba(250,204,21,0.25)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <img src="/images/logos/keeta.png" alt="Keeta" style={{ height: "16px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
+                  </button>
+                )}
 
                 {/* Jotajá */}
-                <button
-                  type="button"
-                  onClick={() => toggleChannel("jotaja")}
-                  title={selectedChannels.jotaja ? "Jotajá: Ativo (Clique para filtrar)" : "Jotajá: Oculto (Clique para exibir)"}
-                  style={{
-                    height: "26px",
-                    flexShrink: 0,
-                    padding: "2px 5px",
-                    borderRadius: "6px",
-                    border: selectedChannels.jotaja ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
-                    background: selectedChannels.jotaja ? "#FFFFFF" : PALETA.areia,
-                    filter: selectedChannels.jotaja ? "none" : "grayscale(100%) opacity(0.35)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    boxShadow: selectedChannels.jotaja ? "0 1px 3px rgba(220,38,38,0.15)" : "none",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <img src="/images/logos/jotaja.png" alt="Jotajá" style={{ height: "17px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
-                </button>
+                {integracoesNaBarra.has("jotaja") && (
+                  <button
+                    type="button"
+                    onClick={() => toggleChannel("jotaja")}
+                    title={selectedChannels.jotaja ? "Jotajá: Ativo (Clique para filtrar)" : "Jotajá: Oculto (Clique para exibir)"}
+                    style={{
+                      height: "26px",
+                      flexShrink: 0,
+                      padding: "2px 5px",
+                      borderRadius: "6px",
+                      border: selectedChannels.jotaja ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
+                      background: selectedChannels.jotaja ? "#FFFFFF" : PALETA.areia,
+                      filter: selectedChannels.jotaja ? "none" : "grayscale(100%) opacity(0.35)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      boxShadow: selectedChannels.jotaja ? "0 1px 3px rgba(220,38,38,0.15)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <img src="/images/logos/jotaja.png" alt="Jotajá" style={{ height: "17px", maxWidth: "100%", objectFit: "contain", display: "block" }} />
+                  </button>
+                )}
 
                 {/* Brendi — botão textual roxo (mesma cor do badge) porque ainda
                     não existe logo dela em /images/logos; um <img> com src
                     quebrado viraria um botão invisível que o lojista clicaria
                     sem ver o estado. */}
-                <button
-                  type="button"
-                  onClick={() => toggleChannel("brendi")}
-                  title={selectedChannels.brendi ? "Brendi: Ativo (Clique para filtrar)" : "Brendi: Oculto (Clique para exibir)"}
-                  style={{
-                    height: "26px",
-                    flexShrink: 0,
-                    padding: "2px 7px",
-                    borderRadius: "6px",
-                    border: selectedChannels.brendi ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
-                    background: selectedChannels.brendi ? "#FFFFFF" : PALETA.areia,
-                    color: selectedChannels.brendi ? PALETA.carvao : PALETA.areiaTinta,
-                    filter: selectedChannels.brendi ? "none" : "grayscale(100%) opacity(0.35)",
-                    cursor: "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "3px",
-                    fontSize: "0.72rem",
-                    fontWeight: 800,
-                    boxShadow: selectedChannels.brendi ? "0 1px 3px rgba(139,92,246,0.15)" : "none",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <span style={{ fontSize: "0.82rem" }}>💬</span>
-                  <span>Brendi</span>
-                </button>
+                {integracoesNaBarra.has("brendi") && (
+                  <button
+                    type="button"
+                    onClick={() => toggleChannel("brendi")}
+                    title={selectedChannels.brendi ? "Brendi: Ativo (Clique para filtrar)" : "Brendi: Oculto (Clique para exibir)"}
+                    style={{
+                      height: "26px",
+                      flexShrink: 0,
+                      padding: "2px 7px",
+                      borderRadius: "6px",
+                      border: selectedChannels.brendi ? `1.5px solid ${PALETA.carvao}` : `1.5px solid ${PALETA.areiaBorda}`,
+                      background: selectedChannels.brendi ? "#FFFFFF" : PALETA.areia,
+                      color: selectedChannels.brendi ? PALETA.carvao : PALETA.areiaTinta,
+                      filter: selectedChannels.brendi ? "none" : "grayscale(100%) opacity(0.35)",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "3px",
+                      fontSize: "0.72rem",
+                      fontWeight: 800,
+                      boxShadow: selectedChannels.brendi ? "0 1px 3px rgba(139,92,246,0.15)" : "none",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <span style={{ fontSize: "0.82rem" }}>💬</span>
+                    <span>Brendi</span>
+                  </button>
+                )}
 
-                {/* Wabiz — só aparece para a loja que tem pedido de lá, para
-                    não encher a barra de quem nunca vai usar. */}
-                {orders.some((o: any) => o.source === "WABIZ" || o.openDeliveryChannel === "WABIZ") && (
+                {/* Wabiz: o pedido na tela também acende o botão (integracoesNaBarra). */}
+                {integracoesNaBarra.has("wabiz") && (
                   <button
                     type="button"
                     onClick={() => toggleChannel("wabiz")}
