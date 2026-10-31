@@ -2381,15 +2381,23 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
             ? recusa.motivo
             : (rawJsonPayload ? "sync não executado" : "a IA confirmou em texto sem emitir a tag PEDIDO_IA");
 
-          // Promessa só em TEXTO com o pedido já enviado: o "Pedido nº 10" da
+          // Promessa só em TEXTO com o pedido já na loja: o "Pedido nº 10" da
           // Garagem (31/10/2026) estava gravado e aceito, o cliente mandou "tá
           // certinho" e o modelo respondeu "seu pedido está confirmado" — era
           // verdade, e o robô trocou por "probleminha técnico" e chamou a equipe.
+          // Na mesma noite: Pizzaria Cardoso (nº 57 e 59, depois do "ok"),
+          // Annalu (pedido do SITE, a cliente só perguntou do pagamento) e
+          // Mangiare (nº 16). Vale pedido de qualquer canal nas últimas 3 h.
           let pedidoJaEnviado = false;
           if (!recusa && !rawJsonPayload && clientPhoneDigits.length >= 10) {
             try {
-              const recentes = await pedidosQueATagPodeTocar(targetFranchiseeId, clientPhoneDigits, Date.now());
-              pedidoJaEnviado = recentes.some((p: any) => String(p.status).toUpperCase() !== "CRIANDO_IA");
+              const desde = new Date(Date.now() - 3 * 60 * 60 * 1000);
+              const recentes = await prisma.customerOrder.findMany({
+                where: { franchiseeId: targetFranchiseeId, createdAt: { gte: desde }, status: { notIn: ["CRIANDO_IA", "CANCELADO"] } },
+                select: { customerPhone: true },
+                take: 300,
+              });
+              pedidoJaEnviado = recentes.some((p) => mesmoTelefone(p.customerPhone, clientPhoneDigits));
             } catch { /* sem a leitura, segue o caminho seguro abaixo */ }
           }
 
