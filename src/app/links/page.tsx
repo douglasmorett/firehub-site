@@ -21,6 +21,9 @@ export const metadata: Metadata = {
  * é só para dono de restaurante; o FireCheck serve para qualquer equipe
  * (academia, hotel, clínica, loja, frota). Por isso cada cartão diz para quem é,
  * antes do botão.
+ *
+ * Os dois botões levam para a landing do produto, não para o cadastro (Douglas,
+ * 31/10: "os dois têm que ir para a landing page").
  */
 const UTM = "utm_source=instagram&utm_medium=bio";
 
@@ -31,8 +34,7 @@ const PRODUTOS = [
     para: "Para restaurante e delivery",
     texto: "Pedidos do iFood, WhatsApp e site num quadro só, robô que anota pedido, mesas, KDS e nota fiscal. Tudo incluído por 2% do faturamento, no máximo R$ 400 por mês.",
     botao: "Testar 15 dias grátis",
-    url: `/cadastro?${UTM}&utm_campaign=links-firehub`,
-    mais: { texto: "Conhecer o FireHub", url: `/?${UTM}&utm_campaign=links-firehub` },
+    url: `/?${UTM}&utm_campaign=links-firehub`,
   },
   {
     logo: "/firecheck/logo.png",
@@ -41,7 +43,6 @@ const PRODUTOS = [
     texto: "Checklist com foto conferida por IA, ponto com selfie e GPS e os avisos no WhatsApp da sua empresa.",
     botao: "Testar 7 dias grátis",
     url: `https://www.firecheckapp.com.br/?${UTM}&utm_campaign=links-firecheck`,
-    mais: null,
   },
 ];
 
@@ -59,7 +60,6 @@ const css = `
 .lk-cab span{display:block;color:#FF7A38;font-size:13px;font-weight:700;line-height:1.3}
 .lk-card p{color:#D1D5DB;font-size:14.5px;line-height:1.5;margin:0 0 16px}
 .lk-btn{display:block;text-align:center;background:#FF4D00;color:#fff;font-weight:800;font-size:16px;padding:15px;border-radius:14px;text-decoration:none;box-shadow:0 10px 24px rgba(255,77,0,.35)}
-.lk-mais{display:block;text-align:center;color:#E5E7EB;font-weight:700;font-size:14px;padding:12px;text-decoration:none}
 .lk-pe{text-align:center;color:#6B7280;font-size:13px;margin-top:20px}
 `;
 
@@ -81,7 +81,6 @@ export default function Links() {
             </div>
             <p>{p.texto}</p>
             <a className="lk-btn" href={p.url}>{p.botao} →</a>
-            {p.mais && <a className="lk-mais" href={p.mais.url}>{p.mais.texto}</a>}
           </section>
         ))}
         <p className="lk-pe">Sem cartão para testar.</p>
