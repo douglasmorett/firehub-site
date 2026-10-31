@@ -25,6 +25,7 @@
  *   loop morre sozinho.
  */
 
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -190,6 +191,9 @@ export function prazoDaTrava(motivo?: string | null): number {
 
 /** Hashes de mensagens que o próprio robô enviou, para reconhecer o eco. */
 const BOT_SENT_WINDOW = 10;
+
+/** Quanto esperar por um registro do robô ainda a caminho antes de dar o `fromMe` como atendente. */
+export const ESPERA_DO_ECO_MS = 1500;
 
 export type LoopDecision =
   | {
@@ -534,11 +538,48 @@ export async function passarParaAtendimentoHumano(
  * O WhatsApp devolve as mensagens do próprio número como `fromMe`, inclusive as
  * que o robô mandou. Guardar o hash é o que permite, depois, saber se um
  * `fromMe` foi o lojista digitando ou apenas o eco da nossa própria resposta.
+ *
+ * NO BANCO, numa instrução só (Frangoso, 30/10/2026): era ler a lista, somar o
+ * hash e gravar a lista inteira. Duas respostas no mesmo minuto ("Boa noite,
+ * Leandro!..." e "Tudo sim, Leandro!") eram dois processamentos fazendo isso
+ * ao mesmo tempo — o segundo gravava por cima da lista do primeiro, o eco da
+ * mensagem que sumiu chegava como "atendente assumiu" e o robô se calou com o
+ * cliente. Somar dentro do banco não perde ninguém.
  */
 export async function registerBotReply(userId: string, remoteJid: string, text: string) {
   try {
+    const hash = hashText(text);
+    if (!usingMemory) {
+      try {
+        await prisma.$executeRawUnsafe(
+          `INSERT INTO "ChatbotConversationState" ("id", "userId", "remoteJid", "botSentHashes", "updatedAt")
+           VALUES ($1, $2, $3, jsonb_build_array($4::text), (now() AT TIME ZONE 'UTC'))
+           ON CONFLICT ("userId", "remoteJid") DO UPDATE SET
+             "botSentHashes" = (
+               SELECT coalesce(jsonb_agg(e ORDER BY i), '[]'::jsonb) FROM (
+                 SELECT e, i FROM jsonb_array_elements(
+                   CASE WHEN jsonb_typeof("ChatbotConversationState"."botSentHashes") = 'array'
+                     THEN "ChatbotConversationState"."botSentHashes" ELSE '[]'::jsonb END
+                   || jsonb_build_array($4::text)
+                 ) WITH ORDINALITY AS t(e, i)
+                 ORDER BY i DESC LIMIT $5
+               ) ultimos
+             ),
+             "updatedAt" = (now() AT TIME ZONE 'UTC')`,
+          randomUUID(),
+          userId,
+          remoteJid,
+          hash,
+          BOT_SENT_WINDOW,
+        );
+        return;
+      } catch (err: any) {
+        if (!isMissingTable(err)) throw err;
+        usingMemory = true;
+      }
+    }
     const state = await readState(userId, remoteJid);
-    const hashes = [...(state?.botSentHashes || []), hashText(text)].slice(-BOT_SENT_WINDOW);
+    const hashes = [...(state?.botSentHashes || []), hash].slice(-BOT_SENT_WINDOW);
     await writeState(userId, remoteJid, { botSentHashes: hashes });
   } catch (err) {
     console.error("[LoopGuard] Falha ao registrar resposta do robô:", err);
@@ -563,8 +604,17 @@ export async function handleOutgoingMessage(
   try {
     const state = await readState(userId, remoteJid);
 
+    const hash = hashText(text);
     const known = state?.botSentHashes || [];
-    if (known.includes(hashText(text))) return false; // eco do próprio robô
+    if (known.includes(hash)) return false; // eco do próprio robô
+
+    // Antes de calar o robô, mais uma olhada: o registro da resposta pode ainda
+    // estar a caminho do banco (outro servidor, outra mensagem do mesmo cliente
+    // sendo respondida no mesmo segundo). Atendente de verdade não perde nada
+    // com a espera; o robô calado por engano deixa o cliente sem resposta.
+    await new Promise((r) => setTimeout(r, ESPERA_DO_ECO_MS));
+    const depois = await readState(userId, remoteJid);
+    if ((depois?.botSentHashes || []).includes(hash)) return false;
 
     await writeState(userId, remoteJid, { humanTakeoverAt: new Date(now) });
     return true;
