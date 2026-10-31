@@ -28,14 +28,17 @@ export async function vincularLojaNaKeeta(params: {
 }): Promise<{ ok: boolean; motivo?: string; loja?: LojaKeeta; onboarding?: boolean }> {
   const v = await gravarVinculo(params.lojaId, params.keetaMerchantId, params.nome, params.quem);
   if (!v.ok) return { ok: false, motivo: v.motivo };
-  if (v.novo) {
+  // Religar também refaz o registro: quando o lojista revoga na Keeta, ela
+  // apaga o onboarding, e o polling da loja passa a voltar 400 "register store
+  // info first" — pedido nenhum entra (loja de teste, 31/10/2026).
+  if (v.novo || v.reativado) {
     const r = await onboardingDaLoja(v.loja!.merchantId, params.keetaMerchantId, `${params.urlBase}/api/keeta/webhook`);
     if (!r.ok) {
       await desligarVinculo({ franchiseeId: params.lojaId });
       return { ok: false, motivo: `A Keeta recusou o registro da loja: ${r.erro}` };
     }
   }
-  return { ok: true, loja: v.loja, onboarding: !!v.novo };
+  return { ok: true, loja: v.loja, onboarding: !!(v.novo || v.reativado) };
 }
 
 export type LojaAutorizada = { id: number; nome: string; endereco: string };

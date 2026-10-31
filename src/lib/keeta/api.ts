@@ -134,7 +134,11 @@ export async function chamarKeeta<T = any>(
     } catch {
       dados = texto;
     }
-    if (r.ok) return { ok: true, status: r.status, dados };
+    // A Keeta às vezes responde HTTP 200 com o erro no corpo:
+    // {"title":"You must register your merchant on Keeta.","status":400}.
+    const erroNoCorpo = r.ok && dados && typeof dados === "object" && typeof dados.status === "number" && dados.status >= 400 && typeof dados.title === "string";
+    if (r.ok && !erroNoCorpo) return { ok: true, status: r.status, dados };
+    if (erroNoCorpo) return { ok: false, status: dados.status, dados, erro: `${dados.status} ${String(dados.title).slice(0, 300)}`, repetir: false };
 
     const msg = typeof dados === "object" && dados ? dados.title || dados.message || JSON.stringify(dados) : texto;
     // Token vencido/inválido: pede outro e tenta de novo uma vez.

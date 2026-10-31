@@ -18,8 +18,8 @@ import { urlBaseDoFireHub, vincularLojaNaKeeta } from "@/lib/keeta/vinculo";
  * nome é o caminho do pedido no painel errado (iFood, Pastel → Hakim). A tela
  * de autoatendimento para o lojista vem depois, com o fluxo de URL da Keeta.
  *
- * O onboarding só roda em vínculo NOVO: refazê-lo para um par já registrado
- * apaga o histórico do mapeamento do lado da Keeta.
+ * O onboarding roda em vínculo NOVO e em vínculo RELIGADO (a revogação na
+ * Keeta apaga o registro); vínculo já ativo não refaz.
  */
 export const dynamic = "force-dynamic";
 

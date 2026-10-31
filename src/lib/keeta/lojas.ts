@@ -93,7 +93,7 @@ export async function merchantsAtivos(): Promise<string[]> {
  * Trocar o par é desligar o antigo antes, de propósito: é o erro que faz o
  * pedido de uma loja cair no painel da outra.
  */
-export async function gravarVinculo(franchiseeId: string, keetaMerchantId: number, nomeNaKeeta: string | null, quem: string): Promise<{ ok: boolean; motivo?: string; loja?: LojaKeeta; novo?: boolean }> {
+export async function gravarVinculo(franchiseeId: string, keetaMerchantId: number, nomeNaKeeta: string | null, quem: string): Promise<{ ok: boolean; motivo?: string; loja?: LojaKeeta; novo?: boolean; reativado?: boolean }> {
   await garantirTabela();
   const merchantId = merchantIdDaLoja(franchiseeId);
   const daKeeta = await prisma.$queryRawUnsafe<any[]>(`SELECT * FROM "KeetaLoja" WHERE "keetaMerchantId" = $1`, BigInt(keetaMerchantId));
@@ -110,7 +110,7 @@ export async function gravarVinculo(franchiseeId: string, keetaMerchantId: numbe
       franchiseeId,
       nomeNaKeeta,
     );
-    return { ok: true, loja: { ...doFireHub, ativa: true }, novo: false };
+    return { ok: true, loja: { ...doFireHub, ativa: true }, novo: false, reativado: !doFireHub.ativa };
   }
   await prisma.$executeRawUnsafe(
     `INSERT INTO "KeetaLoja" ("merchantId","franchiseeId","keetaMerchantId","nomeNaKeeta","vinculadaPor") VALUES ($1,$2,$3,$4,$5)`,
