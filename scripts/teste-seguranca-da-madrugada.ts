@@ -102,6 +102,7 @@ stub("../src/lib/fila-de-atendimento-humano", {
   respostaDaLoja: async () => true,
   marcarLido: async () => true,
   encerrarChamado: async () => ({ existia: false }),
+  marcaDaFilaHumana: (userId: string) => `humano:${userId}`,
 });
 stub("../src/lib/loop-guard", { clearLoopGuard: async () => {}, registerBotReply: async () => {} });
 stub("../src/lib/pausa-do-robo", { retomarRobo: () => {} });
