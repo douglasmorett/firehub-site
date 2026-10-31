@@ -2381,7 +2381,21 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
             ? recusa.motivo
             : (rawJsonPayload ? "sync não executado" : "a IA confirmou em texto sem emitir a tag PEDIDO_IA");
 
-          if (recusa?.manterRespostaDaIa) {
+          // Promessa só em TEXTO com o pedido já enviado: o "Pedido nº 10" da
+          // Garagem (31/10/2026) estava gravado e aceito, o cliente mandou "tá
+          // certinho" e o modelo respondeu "seu pedido está confirmado" — era
+          // verdade, e o robô trocou por "probleminha técnico" e chamou a equipe.
+          let pedidoJaEnviado = false;
+          if (!recusa && !rawJsonPayload && clientPhoneDigits.length >= 10) {
+            try {
+              const recentes = await pedidosQueATagPodeTocar(targetFranchiseeId, clientPhoneDigits, Date.now());
+              pedidoJaEnviado = recentes.some((p: any) => String(p.status).toUpperCase() !== "CRIANDO_IA");
+            } catch { /* sem a leitura, segue o caminho seguro abaixo */ }
+          }
+
+          if (pedidoJaEnviado) {
+            console.log(`[Chatbot AI] ✅ Promessa em texto com pedido do robô já enviado: resposta mantida. Loja=${targetFranchiseeId}.`);
+          } else if (recusa?.manterRespostaDaIa) {
             // Não houve recusa nenhuma: o pedido está na loja e a tag não
             // precisava gravar nada (alteração ainda sendo combinada, ou tag
             // repetida). O que o modelo escreveu continua verdade.
