@@ -411,7 +411,7 @@ class MotoboyActivity : AppCompatActivity() {
         if (ativos.isEmpty()) aviso("Nenhuma entrega com você agora.", R.color.texto_fraco)
         val aqui = ServicoDeLocalizacao.posicaoRecente(this)
         ativos.forEachIndexed { i, o ->
-            conteudo.addView(desenho.cartaoDaLista(o, i + 1, agora, limites, aqui, aoAbrir = { telaDeReceber(o) }, aoMapa = { abrirNoMapa(o) }))
+            conteudo.addView(desenho.cartaoDaLista(o, i + 1, agora, limites, aqui, aoAbrir = { telaDeReceber(o) }))
         }
         if (concluidas.isNotEmpty()) {
             conteudo.addView(
@@ -603,21 +603,6 @@ class MotoboyActivity : AppCompatActivity() {
         conteudo.addView(pecas.botao("Não vou levar este pedido", principal = false, alturaDp = 48, margemTopo = 18) { devolver(pedido) })
     }
 
-    // ------------------------------------------------------------------ mapa
-
-    /**
-     * Abre o endereço no app de mapa que a maquininha tiver (geo:). Sem
-     * WebView e sem Google Maps embutido: a homologação reprova os dois.
-     */
-    private fun abrirNoMapa(pedido: JSONObject) {
-        val endereco = LeituraDoPedido.enderecoDoMapa(pedido) ?: return
-        try {
-            startActivity(Intent(Intent.ACTION_VIEW, endereco))
-        } catch (e: ActivityNotFoundException) {
-            avisoNaTela("Esta maquininha não tem app de mapa. Use o endereço e a direção que aparecem na tela.")
-        }
-    }
-
     // ------------------------------------------------------------------ receber
 
     private fun telaDeReceber(pedido: JSONObject, erro: String? = null, bom: String? = null) {
@@ -686,7 +671,7 @@ class MotoboyActivity : AppCompatActivity() {
         titulo("Entrega " + (textoDe(pedido, "numero")?.let { "#$it" } ?: ""))
         desenho.urgencia(pedido, agora, limites)?.let { conteudo.addView(it) }
         conteudo.addView(pecas.texto(textoDe(pedido, "customerName") ?: "", 18f, negrito = true, margemTopo = 4))
-        conteudo.addView(desenho.endereco(pedido, ServicoDeLocalizacao.posicaoRecente(this)) { abrirNoMapa(pedido) })
+        conteudo.addView(desenho.endereco(pedido, ServicoDeLocalizacao.posicaoRecente(this)))
         desenho.telefone(pedido)?.let { conteudo.addView(it) }
         desenho.etiquetas(pedido)?.let { conteudo.addView(it) }
         desenho.troco(pedido)?.let { conteudo.addView(it) }

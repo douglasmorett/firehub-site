@@ -18,12 +18,12 @@ import org.json.JSONObject
  *
  * O que mostrar já vem pronto do servidor (formato=app); o que cada parte diz
  * é o que o app do celular diz (apps/motoboy/src/components/CartaoDoPedido.tsx).
- * Sem mapa desenhado: a maquininha não tem WebView nem Google Maps. Tocar no
- * endereço abre o app de mapa que houver, e a distância vem do GPS dela.
+ * Sem mapa: a maquininha não tem WebView nem app de mapa. O endereço vai
+ * escrito, com a distância e a direção pelo GPS dela.
  */
 class DesenhoDaEntrega(private val pecas: Pecas) {
 
-    /** O cartão da lista. Tocar abre o pedido; tocar no endereço abre o mapa. */
+    /** O cartão da lista. Tocar abre o pedido. */
     fun cartaoDaLista(
         o: JSONObject,
         ordem: Int,
@@ -31,7 +31,6 @@ class DesenhoDaEntrega(private val pecas: Pecas) {
         limites: LeituraDoPedido.Limites?,
         aqui: Location?,
         aoAbrir: () -> Unit,
-        aoMapa: () -> Unit,
     ): LinearLayout {
         val cartao = pecas.cartao(margemTopo = 10)
         val urgencia = LeituraDoPedido.urgencia(o, agora, limites)
@@ -41,7 +40,7 @@ class DesenhoDaEntrega(private val pecas: Pecas) {
         etiquetas(o)?.let { cartao.addView(it) }
         urgencia?.let { cartao.addView(textoDaUrgencia(it)) }
         cartao.addView(pecas.texto(textoDe(o, "customerName") ?: "Cliente", 18f, negrito = true, margemTopo = 4))
-        cartao.addView(endereco(o, aqui, aoMapa))
+        cartao.addView(endereco(o, aqui))
         cartao.addView(pagamento(o))
         troco(o)?.let { cartao.addView(it) }
         observacao(o)?.let { cartao.addView(it) }
@@ -82,24 +81,20 @@ class DesenhoDaEntrega(private val pecas: Pecas) {
 
     /**
      * O endereço, a distância e a direção até ele pelo GPS da maquininha, e o
-     * aviso de ponto aproximado. Tocar abre o app de mapa (geo:).
+     * aviso de ponto aproximado.
      */
-    fun endereco(o: JSONObject, aqui: Location?, aoMapa: () -> Unit): LinearLayout {
+    fun endereco(o: JSONObject, aqui: Location?): LinearLayout {
         val caixa = pecas.coluna(margemTopo = 4)
         caixa.addView(pecas.texto("📍 " + (textoDe(o, "endereco") ?: "Endereço a confirmar"), 16f, negrito = true))
         val ponto = LeituraDoPedido.ponto(o)
-        val temMapa = LeituraDoPedido.enderecoDoMapa(o) != null
-        val dicas = mutableListOf<String>()
         if (ponto != null && aqui != null) {
             val idade = (System.currentTimeMillis() - aqui.time) / 60_000
-            dicas.add(LeituraDoPedido.distanciaEDirecao(aqui, ponto) + (if (idade >= 3) " · GPS de $idade min atrás" else ""))
+            val dica = LeituraDoPedido.distanciaEDirecao(aqui, ponto) + (if (idade >= 3) " · GPS de $idade min atrás" else "")
+            caixa.addView(pecas.texto(dica, 14f, R.color.destaque, margemTopo = 2))
         }
-        if (temMapa) dicas.add("toque para abrir no mapa")
-        if (dicas.isNotEmpty()) caixa.addView(pecas.texto(dicas.joinToString(" · "), 14f, R.color.destaque, margemTopo = 2))
         if (ponto?.aproximado == true) {
             caixa.addView(pecas.texto("⚠️ Ponto aproximado (pelo bairro). Confira o número na rua.", 14f, R.color.atencao, margemTopo = 2))
         }
-        if (temMapa) caixa.setOnClickListener { aoMapa() }
         return caixa
     }
 
