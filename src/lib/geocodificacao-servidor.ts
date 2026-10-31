@@ -39,12 +39,14 @@ import {
   buscaLivreNoMapa,
   buscaDeRuaNoMapa,
   resumoDaConsulta,
+  PERTO_DO_BAIRRO_KM,
   type GeocodificadorDaTaxa,
   type RespostaDoMapa,
   type ResultadoDoMapa,
   type TrechoDeRua,
 } from "@/lib/geocoding";
 import {
+  distanciaKm,
   fonteDaGeocodificacao,
   motivoForaDaArea,
   pontoPlausivel,
@@ -55,6 +57,8 @@ import {
 } from "@/lib/ponto-do-pedido";
 import { ancorasDaLoja, pontosAprendidos, type PontoAprendidoAchado } from "@/lib/ponto-aprendido";
 import { ancoraDoPedido, chavesDaAncoraPeloCep } from "@/lib/ancora-do-cep";
+import { bairroDoEndereco } from "@/lib/bairro-do-endereco";
+import { centroDoBairroPelasEntregasDaLoja, pontoDaRuaPelasEntregasDaLoja } from "@/lib/rua-das-entregas-servidor";
 
 export type PedidoDeGeocodificacao = {
   /** Id do pedido, só para devolver o resultado casado. */
@@ -585,6 +589,56 @@ export async function resolverPontosNoServidor(
   }
   if (restantes.length === 0) return { achados, incertos };
 
+  // 2b. ONDE O MAPA SÓ SABE O BAIRRO: as entregas da própria loja
+  //     (lib/rua-das-entregas.ts). Duga Burguer, 30/10/2026: "Rua 29 ...
+  //     Extensão Serramar" do Jota Já, sem coordenada — o centro do bairro
+  //     saiu do dicionário, em cima do Recanto, e a loja tinha 73 entregas
+  //     com GPS/iFood no bairro. Primeiro a rua (as entregas nela), depois o
+  //     bairro (a mediana das entregas nele). Aproximado: o pino sai com
+  //     "confira". Nada é gravado; o cache do mapa continua o de todas as lojas.
+  // O GOOGLE NA DÚVIDA DO BAIRRO (Douglas, 30/10/2026: "na dúvida do bairro,
+  // sempre a localização do Google que o motoboy usa para ir ao endereço"). O
+  // app do entregador abre o Google Maps com o TEXTO do endereço quando o
+  // pedido não tem ponto (lib/app-motoboy/pedido-no-app.ts) e chega na casa;
+  // o mapa aberto só sabia o bairro. Só a resposta com a rua ou o número vale
+  // aqui: a do Google que também só sabe o bairro não ganha das entregas da
+  // loja. Só com GOOGLE_NA_ROTEIRIZACAO=1 e a chave (ver lib/geocodificacao-google.ts).
+  const peloGoogleNaDuvida = async (p: PedidoDeGeocodificacao, cidadeDaBusca: string): Promise<ResultadoGeocodificacao | null> => {
+    if (!googleNaRoteirizacao() || prazo - Date.now() <= 1500) return null;
+    const g = await googleNaTaxa(semRabichoDepoisDaUF(p.endereco), cidadeDaBusca || cidade, loja.centro, prazo).catch(
+      () => ({ ok: false, motivo: "google" }) as RespostaDoMapa<ResultadoDoGoogle | null>,
+    );
+    const v = g.ok ? g.valor : null;
+    if (!v || v.precisao === "bairro" || !plausivel(p, v)) return null;
+    return { id: p.id, lat: v.lat, lng: v.lng, origem: `google (${v.precisao})`, doCache: false, fonte: "google", aproximado: false };
+  };
+
+  const pelasEntregasDaLoja = async (p: PedidoDeGeocodificacao): Promise<ResultadoGeocodificacao | null> => {
+    if (!loja.franchiseeId) return null;
+    try {
+      const bairro = bairroDoEndereco(p.endereco, { cidades: [cidade] });
+      const centro = await centroDoBairroPelasEntregasDaLoja(loja.franchiseeId, cidade, bairro);
+      const rua = await pontoDaRuaPelasEntregasDaLoja(loja.franchiseeId, cidade, [p.endereco], bairro);
+      // A régua da cotação (lib/geocoding.ts, nível 4b): longe do bairro escrito, é a homônima de outro canto.
+      if (rua && (rua.entregas >= 2 || rua.mesmoBairro) && (!centro || distanciaKm(rua, centro) <= PERTO_DO_BAIRRO_KM) && plausivel(p, rua)) {
+        const n = rua.entregas;
+        return {
+          id: p.id, lat: rua.lat, lng: rua.lng, doCache: true, fonte: "vizinhanca", aproximado: true,
+          origem: `posição aproximada pela vizinhança (${n} ${n === 1 ? "entrega" : "entregas"} da loja na mesma rua)`,
+        };
+      }
+      if (centro && plausivel(p, centro)) {
+        return {
+          id: p.id, lat: centro.lat, lng: centro.lng, doCache: true, fonte: "vizinhanca", aproximado: true,
+          origem: `posição aproximada pela vizinhança (centro do bairro pelas ${centro.entregas} entregas da loja)`,
+        };
+      }
+    } catch (e: any) {
+      console.warn(`[Geocodificação] entregas da loja indisponíveis: ${e?.message}`);
+    }
+    return null;
+  };
+
   const chaves = restantes.map((p) => chaveDaBusca(p.endereco, cidade));
 
   // 1. o que já está no banco
@@ -661,6 +715,14 @@ export async function resolverPontosNoServidor(
     // O que o cache tem só vale DENTRO da área: o ponto antigo da Asa Sul de
     // um pedido de Sobradinho é refeito com as regras de agora.
     if (achado && plausivel(p, achado)) {
+      const melhor =
+        fonteDaGeocodificacao(achado.origem) === "bairro"
+          ? (await peloGoogleNaDuvida(p, cidade)) || (await pelasEntregasDaLoja(p))
+          : null;
+      if (melhor) {
+        achados.push(melhor);
+        continue;
+      }
       achados.push({
         id: p.id, lat: achado.lat, lng: achado.lng, origem: achado.origem || "cache", doCache: true,
         fonte: fonteDaGeocodificacao(achado.origem), aproximado: fonteDaGeocodificacao(achado.origem) === "bairro",
@@ -693,7 +755,9 @@ export async function resolverPontosNoServidor(
       }
       if (achou.nivel !== "nenhum" && plausivel(p, coords)) {
         const fonte = fonteDaGeocodificacao(origem);
-        achados.push({ id: p.id, lat: coords.lat, lng: coords.lng, origem, doCache: false, fonte, aproximado: achou.nivel === "bairro" });
+        const melhor =
+          achou.nivel === "bairro" ? (await peloGoogleNaDuvida(p, busca.cidade)) || (await pelasEntregasDaLoja(p)) : null;
+        achados.push(melhor || { id: p.id, lat: coords.lat, lng: coords.lng, origem, doCache: false, fonte, aproximado: achou.nivel === "bairro" });
         // Grava NA HORA, não no fim: o lote pode ser interrompido pelo prazo
         // ou pela plataforma, e o endereço que já custou uma ida à rede não
         // pode se perder — ele vale para todas as lojas, não só para esta.
@@ -723,6 +787,12 @@ export async function resolverPontosNoServidor(
           achados.push({ id: p.id, lat: v.lat, lng: v.lng, origem: `google (${v.precisao})`, doCache: false, fonte: "google", aproximado: v.precisao === "bairro" });
           continue;
         }
+      }
+
+      const pelasEntregas = await pelasEntregasDaLoja(p);
+      if (pelasEntregas) {
+        achados.push(pelasEntregas);
+        continue;
       }
 
       const motivo =

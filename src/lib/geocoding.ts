@@ -775,7 +775,7 @@ const TRECHOS_ESPALHADOS_KM = 1;
  * (lib/geocodificacao.ts): o OSM chama de "Braga" a esquina que o morador
  * chama de "Centro", e isso não é rua homônima.
  */
-const PERTO_DO_BAIRRO_KM = 2.8;
+export const PERTO_DO_BAIRRO_KM = 2.8;
 
 export type OpcoesDaVerificacao = {
   /** Quem busca no mapa. Padrão: direto no Nominatim, sem cache. */

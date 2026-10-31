@@ -177,3 +177,63 @@ export function pontoDaRuaNasEntregas(
   }
   return null;
 }
+
+// ── O CENTRO DO BAIRRO PELAS ENTREGAS DA LOJA ─────────────────────────────
+//
+// Duga Burguer, Rio das Ostras, 30/10/2026: o pedido 42 do Jota Já veio sem
+// coordenada, "Rua 29, qd 46 ... Extensão Serramar". "Rua 29" é de vários
+// bairros e o OSM não tem o Extensão Serramar: o pino foi para o dicionário de
+// bairros (lib/geocodificacao.ts), que punha o bairro 1,7 km a leste, em cima
+// do Recanto — "tá dando no Recanto, sendo que é Serramar". A loja tinha 73
+// entregas com ponto de verdade (iFood/GPS) no Extensão do Serramar; a mediana
+// delas fica no bairro. Onde os clientes do bairro moram vale mais que o
+// centro que o mapa (ou o dicionário) chuta.
+
+/** Entregas do bairro que dão o centro dele: menos que isto é palpite. */
+export const MINIMO_DE_ENTREGAS_NO_BAIRRO = 3;
+
+/** A entrega a mais que isto da mediana é de outro canto (bairro com nome repetido, endereço trocado). */
+export const RAIO_DO_BAIRRO_NAS_ENTREGAS_KM = 2;
+
+const PREFIXO_DE_BAIRRO = new Set(["bairro", "vila", "vl", "jardim", "jd", "parque", "pq", "residencial", "res", "conjunto", "loteamento", "condominio"]);
+
+/** "Extensão do Serramar" e "Extensao Serramar" → "extensao serramar"; "Vila Monte Alegre" → "monte alegre". */
+export function chaveDoBairro(bairro: unknown): string {
+  let p = String(bairro ?? "")
+    .normalize("NFD").replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter((x) => x && !LIGACOES.has(x));
+  while (p.length > 1 && PREFIXO_DE_BAIRRO.has(p[0])) p = p.slice(1);
+  return p.join(" ");
+}
+
+export type CentroDoBairro = Ponto & { entregas: number };
+
+/**
+ * O centro do bairro escrito pelo cliente, pela mediana das entregas da loja
+ * nele, ou null. Vale o MESMO nome (sem acento, "do", "Vila"); sem entregas
+ * suficientes com o mesmo nome, as de nome parecido (`bairroConfere`). As
+ * entregas longe da mediana saem, e o que sobra tem de ser a maioria.
+ */
+export function centroDoBairroNasEntregas(
+  bairro: string | null | undefined,
+  entregas: EntregaComPonto[],
+): CentroDoBairro | null {
+  const chave = chaveDoBairro(bairro);
+  if (!chave) return null;
+  const comBairro = entregas.filter((e) => temBairro(e.bairro));
+  let usadas = comBairro.filter((e) => chaveDoBairro(e.bairro) === chave);
+  if (usadas.length < MINIMO_DE_ENTREGAS_NO_BAIRRO) usadas = comBairro.filter((e) => bairroConfere(bairro, e.bairro));
+  if (usadas.length < MINIMO_DE_ENTREGAS_NO_BAIRRO) return null;
+  const meio = { lat: mediana(usadas.map((e) => e.ponto.lat)), lng: mediana(usadas.map((e) => e.ponto.lng)) };
+  const perto = usadas.filter((e) => distanciaKm(meio, e.ponto) <= RAIO_DO_BAIRRO_NAS_ENTREGAS_KM);
+  if (perto.length < MINIMO_DE_ENTREGAS_NO_BAIRRO || perto.length * 2 < usadas.length) return null;
+  return {
+    lat: mediana(perto.map((e) => e.ponto.lat)),
+    lng: mediana(perto.map((e) => e.ponto.lng)),
+    entregas: perto.length,
+  };
+}
