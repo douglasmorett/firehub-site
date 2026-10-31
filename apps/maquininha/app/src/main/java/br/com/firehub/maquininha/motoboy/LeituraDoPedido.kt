@@ -1,7 +1,6 @@
 package br.com.firehub.maquininha.motoboy
 
 import android.location.Location
-import android.net.Uri
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -129,22 +128,6 @@ object LeituraDoPedido {
         val lat = p.optDouble("lat", Double.NaN)
         val lng = p.optDouble("lng", Double.NaN)
         return if (lat.isNaN() || lng.isNaN()) null else lat to lng
-    }
-
-    /**
-     * O `geo:` que abre o app de mapa da maquininha. Ponto exato primeiro; o
-     * aproximado (centro do bairro) perde para o texto do endereço, que o app de
-     * mapa geocodifica melhor — e só vale quando não há texto.
-     */
-    fun enderecoDoMapa(o: JSONObject): Uri? {
-        val p = ponto(o)
-        val texto = o.optJSONObject("destino")?.let { textoDe(it, "texto") }
-        return when {
-            p != null && !p.aproximado -> Uri.parse("geo:${p.lat},${p.lng}?q=${p.lat},${p.lng}")
-            texto != null -> Uri.parse("geo:0,0?q=" + Uri.encode(texto))
-            p != null -> Uri.parse("geo:${p.lat},${p.lng}?q=${p.lat},${p.lng}")
-            else -> null
-        }
     }
 
     private val DIRECOES = arrayOf("ao norte", "a nordeste", "a leste", "a sudeste", "ao sul", "a sudoeste", "a oeste", "a noroeste")
