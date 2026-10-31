@@ -6,6 +6,8 @@ import { combosQueDependemDoItem, combosParaReativar, itemFixoDoGrupo } from "@/
 import { pizzasJaMontadas } from "@/lib/pizza-por-tamanho";
 import { precoMinimoDoProduto } from "@/lib/preco-combo";
 import CadastroDePizza, { EscolhaDoNovoItem, type PizzaJaMontada } from "@/components/admin/CadastroDePizza";
+import UsarPerguntaEmOutros, { TrazerPerguntaDeOutro } from "@/components/admin/UsarPerguntaEmOutros";
+import type { CopiaDaPergunta } from "@/lib/copiar-pergunta";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles, Copy } from "lucide-react";
 
@@ -175,11 +177,13 @@ function EstoqueDoItem({ product, onSalvar }: {
  * da opção — vale em todo combo que a oferece e em todo canal
  * (lib/opcao-pausada.ts).
  */
-function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao, onPausarOpcao, ativoNaTela }: {
+function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao, onPausarOpcao, ativoNaTela, onUsarEmOutros }: {
   produto: any;
   catalogo: Map<string, any>;
   onEditarCombo: () => void;
   onEditarOpcao: (opcao: any) => void;
+  /** "📋 Usar em outros produtos": abre o modal que copia esta pergunta. */
+  onUsarEmOutros?: (grupo: any) => void;
   /** 1 clique: `ativar` false pausa a opção, true a reativa. */
   onPausarOpcao?: (opcao: any, ativar: boolean) => void;
   /** O que a tela já mostra antes de o servidor confirmar (id da opção → ativa). */
@@ -227,6 +231,16 @@ function ComplementosDoCombo({ produto, catalogo, onEditarCombo, onEditarOpcao, 
                   >
                     ⚠️ Com as pausas, o combo não fecha
                   </span>
+                )}
+                {onUsarEmOutros && g.id && (
+                  <button
+                    type="button"
+                    onClick={() => onUsarEmOutros(g)}
+                    title="Copiar esta pergunta, com as mesmas opções e preços, para outros produtos"
+                    style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: "8px", border: "1px solid #99F6E4", background: "#F0FDFA", color: "#0F766E", fontSize: "0.7rem", fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}
+                  >
+                    📋 Usar em outros produtos
+                  </button>
                 )}
               </div>
 
@@ -375,6 +389,8 @@ export default function MenuProductManager({
   const ehOpcaoDeCombo = (p: any) => soOpcaoDeCombo.has(String(p?.id));
   /** Card de combo com os complementos abertos, por id do produto. */
   const [complementosAbertos, setComplementosAbertos] = useState<Record<string, boolean>>({});
+  /** Pergunta aberta no "📋 Usar em outros produtos" (components/admin/UsarPerguntaEmOutros). */
+  const [usandoPergunta, setUsandoPergunta] = useState<{ grupo: any; produto: any } | null>(null);
   const [mostrarOpcoesSemCombo, setMostrarOpcoesSemCombo] = useState(false);
   /**
    * Opção de combo pausada/reativada com 1 clique: o chip vira NA HORA, antes
@@ -1496,6 +1512,31 @@ export default function MenuProductManager({
 
   const addGroup = () => setComboGroups(prev => [...prev, { title: "", maxQty: 1, minQty: 1, priceRule: null, items: [] }]);
 
+  // "Trazer pergunta de outro produto": a cópia (lib/copiar-pergunta.ts) entra
+  // no fim da lista do formulário e é gravada pelo "Salvar" de sempre.
+  const [trazendoPergunta, setTrazendoPergunta] = useState(false);
+  const trazerPergunta = (copia: CopiaDaPergunta) => {
+    setComboGroups(prev => [...prev, {
+      title: copia.title, maxQty: copia.maxQty, minQty: copia.minQty, priceRule: copia.priceRule,
+      items: copia.items.map(it => ({
+        id: it.menuProductId,
+        additionalPrice: it.additionalPrice,
+        additionalPriceSalao: it.additionalPriceSalao,
+        additionalPriceDelivery: it.additionalPriceDelivery,
+        additionalPriceTotem: it.additionalPriceTotem,
+        maxPerItem: it.maxPerItem,
+        optionNote: it.optionNote,
+        promoAdditionalPrice: it.promoAdditionalPrice,
+      })),
+    }]);
+    // Mesma regra do openEdit: preço por canal escondido atrás de um clique
+    // faz o lojista salvar sem ver que os canais cobram diferente.
+    if (copia.items.some(it => Number(it.additionalPriceSalao) > 0 || Number(it.additionalPriceDelivery) > 0 || Number(it.additionalPriceTotem) > 0)) {
+      setPrecosCanalNoCombo(true);
+    }
+    setTrazendoPergunta(false);
+  };
+
   // ─── O QUE O COMBO LEVA ─────────────────────────────────────────────────
   // Combo é feito de itens que JÁ existem no cardápio. Cada um vira uma
   // pergunta fixa (uma opção, mínimo = máximo = quantidade): o ComboModal e o
@@ -1861,6 +1902,31 @@ export default function MenuProductManager({
             </div>
           </div>
         </div>
+      )}
+
+      {/* 📋 USAR PERGUNTA EM OUTROS PRODUTOS (painel 🧩 Complementos) */}
+      {usandoPergunta && (
+        <UsarPerguntaEmOutros
+          grupo={usandoPergunta.grupo}
+          origem={usandoPergunta.produto}
+          produtos={products || []}
+          onFechar={() => setUsandoPergunta(null)}
+          onFeito={(texto) => { setUsandoPergunta(null); showToast(texto); router.refresh(); }}
+        />
+      )}
+
+      {/* "Trazer pergunta de outro produto" (formulário): fica fora do
+          formulário, por cima dele (zIndex maior), para não ser cortado pela
+          rolagem dele. */}
+      {showForm && trazendoPergunta && (
+        <TrazerPerguntaDeOutro
+          produtos={products || []}
+          produtoAtualId={editingId}
+          franchiseeId={editingId ? produtosPorId.get(editingId)?.franchiseeId ?? null : null}
+          titulosJaUsados={comboGroups.map(g => g.title)}
+          onEscolher={trazerPergunta}
+          onFechar={() => setTrazendoPergunta(false)}
+        />
       )}
 
       {/* TOAST genérico */}
@@ -3666,9 +3732,15 @@ export default function MenuProductManager({
                   );
                 })}
 
-                <button type="button" onClick={addGroup} className="btn btn-outline" style={{ width: "100%", fontSize: "0.85rem", borderRadius: "10px" }}>
-                  <Plus size={14} style={{ marginRight: "4px" }} /> Adicionar pergunta
-                </button>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  <button type="button" onClick={addGroup} className="btn btn-outline" style={{ flex: "1 1 200px", fontSize: "0.85rem", borderRadius: "10px" }}>
+                    <Plus size={14} style={{ marginRight: "4px" }} /> Adicionar pergunta
+                  </button>
+                  <button type="button" onClick={() => setTrazendoPergunta(true)} className="btn btn-outline" style={{ flex: "1 1 200px", fontSize: "0.85rem", borderRadius: "10px" }}
+                    title="Copiar uma pergunta que outro produto já tem, com as mesmas opções e preços">
+                    <Copy size={14} style={{ marginRight: "4px" }} /> Trazer pergunta de outro produto
+                  </button>
+                </div>
               </div>
             )}
 
@@ -4121,6 +4193,7 @@ export default function MenuProductManager({
                                   onEditarOpcao={(opcao) => openEdit(opcao)}
                                   onPausarOpcao={pausarOpcaoDoCombo}
                                   ativoNaTela={opcaoNaTela}
+                                  onUsarEmOutros={(grupo) => setUsandoPergunta({ grupo, produto: p })}
                                 />
                               )}
                             </div>
