@@ -36,6 +36,13 @@ const chave = (w: any) => `${w.userId_remoteJid.userId}|${w.userId_remoteJid.rem
       return linhas.get(chave(where));
     },
   },
+  // registerBotReply soma o hash no banco numa instrução só: aqui, o mesmo efeito.
+  async $executeRawUnsafe(_sql: string, _id: string, userId: string, remoteJid: string, hash: string, janela: number) {
+    const k = `${userId}|${remoteJid}`;
+    const atual = linhas.get(k) ?? { turnCount: 0, turnsWithoutProgress: 0, recentIntervals: [], recentHashes: [], botSentHashes: [] };
+    linhas.set(k, { ...atual, botSentHashes: [...(atual.botSentHashes || []), hash].slice(-janela) });
+    return 1;
+  },
 };
 
 let ok = 0, falhas = 0;
