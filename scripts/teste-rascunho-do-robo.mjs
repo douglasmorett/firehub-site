@@ -144,6 +144,12 @@ console.log("\n6d) Tag repetida depois do ACEITE não vira pedido gêmeo");
     const alterado = destinoDaTag({ candidatos: [p], isFinal: true, itensNovos: [xtudo(2), coca(), guarana()], alteraPedido: 12, agora: AGORA });
     conferir(`${status}: alteração vira pedido separado, nunca reescreve o que está na chapa`, alterado.acao === "criar", alterado);
   }
+  // Garagem Burger, 31/10/2026: a loja finalizou à mão; o "Confirmo" trouxe pagamento/troco/observação de outro jeito.
+  const amao = enviado(base, 3, { status: "ACEITO", id: "a5", paymentMethod: "Dinheiro", changeAmount: 81, notes: "🤖 Montado pela IA no WhatsApp · 🧑‍💼 Finalizado à mão" });
+  const gemeo = destinoDaTag({ candidatos: [amao], isFinal: true, itensNovos: [coca(), xtudo(2)], endereco: "Rua A 10 - centro", pagamento: "Dinheiro (troco para 81)", troco: 81, observacao: "tem trocado", tipo: "ENTREGA", agora: AGORA });
+  conferir("finalizado à mão + 'Confirmo' com o resto escrito diferente: não nasce gêmeo", gemeo.acao === "identico" && gemeo.pedido.id === "a5", gemeo);
+  const outraCoisa = destinoDaTag({ candidatos: [amao], isFinal: true, itensNovos: [xtudo(2), coca(), guarana()], tipo: "ENTREGA", agora: AGORA });
+  conferir("aceito + itens diferentes continua virando pedido separado", outraCoisa.acao === "criar", outraCoisa);
   const velho = enviado(base, 25, { status: "ACEITO", id: "a1" });
   conferir("fora da janela: não compara", destinoDaTag({ candidatos: [velho], isFinal: true, itensNovos: [xtudo(2), coca()], agora: AGORA }).acao === "criar");
   conferir("só de comparação: pedido do site fora", candidatosSoDeComparacao([enviado(base, 3, { status: "ACEITO", source: "ONLINE" })], AGORA).length === 0);

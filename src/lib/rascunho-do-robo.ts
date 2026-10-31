@@ -243,12 +243,32 @@ export function destinoDaTag(o: {
   // tag final o repete (o "obrigado!" depois do aceite automático), não há o
   // que fazer.
   if (o.isFinal) {
-    const jaNaLoja = candidatosSoDeComparacao(o.candidatos, o.agora).find(igualA);
+    const aceitos = candidatosSoDeComparacao(o.candidatos, o.agora);
+    const jaNaLoja = aceitos.find(igualA);
     if (jaNaLoja) {
       return {
         acao: "identico",
         pedido: jaNaLoja,
         motivo: `pedido nº ${jaNaLoja.dailyOrderNumber ?? "—"} já foi aceito pela loja e a tag o repete — nada a gravar`,
+      };
+    }
+    // OS MESMOS ITENS, COM O RESTO ESCRITO DIFERENTE. A loja finalizou à mão o
+    // rascunho do robô (Garagem Burger, 31/10/2026: pedido nº 5) e o cliente,
+    // três minutos depois, disse "Confirmo": a tag final trouxe pagamento,
+    // troco ou observação escritos de outro jeito e não era "igual" — o pedido
+    // aceito não pode ser reescrito, então nascia o nº 8, gêmeo, e a loja teve
+    // de cancelar. Comida já na chapa com os mesmos itens não vira outro pedido;
+    // o que mudou, o cliente combina com a loja.
+    const mesmosItensNaLoja = aceitos.find((p) =>
+      mesmosItens(Array.isArray(p.items) ? p.items : [], o.itensNovos) &&
+      (!o.tipo || tipoCanonico(o.tipo) === tipoCanonico(p.deliveryType)) &&
+      !apontado(p),
+    );
+    if (mesmosItensNaLoja) {
+      return {
+        acao: "identico",
+        pedido: mesmosItensNaLoja,
+        motivo: `pedido nº ${mesmosItensNaLoja.dailyOrderNumber ?? "—"} já foi aceito com os mesmos itens — não abre outro`,
       };
     }
   }
