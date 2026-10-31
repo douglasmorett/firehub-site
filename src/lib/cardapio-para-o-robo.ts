@@ -178,6 +178,47 @@ type Pergunta = {
   totalDeOpcoes: number;
 };
 
+/**
+ * A pergunta GRÁTIS e a PAGA com os mesmos itens no mesmo produto (Holy Top,
+ * 31/10/2026: "Escolha seus topping (até 3, opcional)" sem preço e "Quer
+ * turbinar seu açaí?" a +R$ 3,50; a cliente pediu os 3 toppings e o robô pôs
+ * os três na pergunta paga — 62,30 num pedido de 39,80). Nada no cardápio dizia
+ * em qual das duas entra a escolha; a frase diz: os primeiros vão na grátis, a
+ * paga é só o que passar. Também Divinos (complementos do açaí) e SP Pizza
+ * (ingredientes da fogazza).
+ *
+ * Só soma × soma e com a paga opcional: a "Segunda Pizza" obrigatória de um
+ * combo repete os sabores da primeira, mas é outra pizza, não um extra. E a
+ * grátis não pode ser de sabor: no Combo 3 da Forno Doro os 2 sabores da pizza
+ * repetem metade da lista de adicionais (Bacon, Milho...), e o adicional é
+ * extra mesmo com um sabor só.
+ */
+function regraDosInclusos(g: any, produto: any, chaveSimples: (s: string) => string): string {
+  if (regraDoGrupo(g) !== "SOMA") return "";
+  const chave = (i: any) => chaveSimples(nomeDaOpcao(i).replace(/\(.*?\)/g, " "));
+  const pago = (i: any) => (Number(i.additionalPrice) || 0) > 0 || tabelaDaOpcao(i).some(([, v]) => v > 0);
+  const gratis = (o: any) =>
+    (Number(o?.maxQty) || 1) > 1 && (o?.items || []).length > 0 && !(o.items || []).some(pago) && !/sabor|pizza|metade|meia/i.test(String(o?.title || ""));
+  const pagaOpcional = (o: any) => (o?.items || []).some(pago) && minimoExigidoDoGrupo(o) === 0;
+  // `livre` é a grátis: a metade dela tem de estar na paga.
+  const parecidas = (livre: any, paga: any) => {
+    const daPaga = new Set((paga?.items || []).map(chave));
+    const comum = (livre?.items || []).filter((i: any) => daPaga.has(chave(i))).length;
+    return comum >= 3 && comum * 2 >= (livre?.items || []).length;
+  };
+  const outras = (produto?.comboGroups || []).filter((o: any) => o && o.id !== g?.id && regraDoGrupo(o) === "SOMA");
+  if (gratis(g) && outras.some((o: any) => pagaOpcional(o) && parecidas(g, o))) {
+    const max = Math.max(1, Number(g.maxQty) || 1);
+    return `; inclusos, sem custo: as ${max} primeiras escolhas do cliente vão aqui`;
+  }
+  const daGratis = pagaOpcional(g) ? outras.find((o: any) => gratis(o) && parecidas(o, g)) : null;
+  if (daGratis) {
+    const titulo = String(daGratis.title || "").trim();
+    return `; extra pago: só o que passar dos ${Math.max(1, Number(daGratis.maxQty) || 1)} inclusos de "${titulo}"`;
+  }
+  return "";
+}
+
 function prepararPergunta(g: any, original: any, produto: any, loja: Map<string, any>): Pergunta | null {
   const itens = (g?.items || []).filter((i: any) => nomeDaOpcao(i));
   // Em ordem alfabética: a mesma pergunta com as mesmas pausadas em outra
@@ -207,7 +248,8 @@ function prepararPergunta(g: any, original: any, produto: any, loja: Map<string,
   const nomeTambemESabor = regraDePreco === "SOMA" && itens.some((i: any) => nomesDosSabores.has(chaveSimples(nomeDaOpcao(i))));
   const regra =
     (!umaPizza ? "" : regraDePreco === "MEDIA" ? "; é 1 pizza: vale a média dos sabores" : "; é 1 pizza: vale o sabor mais caro") +
-    (nomeTambemESabor ? `; nome que também é sabor vai na tag como "Adicional NOME"` : "");
+    (nomeTambemESabor ? `; nome que também é sabor vai na tag como "Adicional NOME"` : "") +
+    regraDosInclusos(g, produto, chaveSimples);
 
   // Pergunta de escolha única e obrigatória (Tamanho) vai com o preço
   // ABSOLUTO de cada opção, que é como o cliente pensa ("o Grande custa X");
