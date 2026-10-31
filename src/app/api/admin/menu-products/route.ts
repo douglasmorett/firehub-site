@@ -3,9 +3,8 @@ import { revalidatePath } from "next/cache";
 import { orderByCardapio, podeOrdenarProdutos } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/auth";
-import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
+import { resolveScope, canTouch } from "@/lib/escopo-do-cardapio";
+import { comboItemId, dadosDoGrupo } from "@/lib/grupo-do-combo";
 import { isDataUrl, saveDataUrl } from "@/lib/storage";
 import { SEM_PRODUTO_DE_INTEGRACAO, idsSoDeOpcaoDeCombo, CATEGORIAS_DE_INTEGRACAO, PREFIXOS_DE_ESPELHO, lerHorarioDoProduto, comDisponibilidadeAnotada } from "@/lib/cardapio-interno";
 import { fusoDaLoja } from "@/lib/fuso-da-loja";
@@ -17,171 +16,9 @@ import { refazerMeiasDaLoja } from "@/lib/meio-a-meio-no-banco";
 import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
 import { esquecerPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 
-// ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
-// O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
-// "estar logado". Qualquer lojista autenticado podia mandar o id de um produto
-// de OUTRA franquia e (a) reescrever preço/nome/foto, (b) roubar o item para o
-// próprio cardápio mandando franchiseeId no corpo, ou (c) apagar o cardápio
-// inteiro do vizinho. Nenhum verbo conferia o dono do registro. Agora todos
-// resolvem a loja da sessão (ownerId || id — funcionário grava na loja do dono;
-// ADMIN respeita o cookie firehub_active_store, mesmo padrão de
-// /api/store/dynamic-eta) e confirmam que o alvo pertence a ela ANTES de gravar.
-
-type Scope = {
-  userId: string;
-  role: string;
-  storeId: string;             // franquia dona dos dados do usuário logado
-  isAdmin: boolean;
-  adminStoreId: string | null; // loja escolhida pelo ADMIN (cookie/querystring)
-};
-
-async function resolveScope(
-  req: NextRequest,
-  // Gravar (POST/PUT/DELETE/PATCH) é da tela Cardápio: o funcionário só com a
-  // caixinha "Cardápio". Ler continua livre — PDV, mesas e editar pedido leem daqui.
-  escrita = false
-): Promise<{ scope: Scope; error: null } | { scope: null; error: NextResponse }> {
-  const session = await getServerSession(authOptions);
-  if (!session) {
-    return { scope: null, error: NextResponse.json({ error: "Não autorizado" }, { status: 401 }) };
-  }
-
-  const user = await prisma.user.findUnique({
-    where: { email: session.user?.email || "" },
-    select: { id: true, role: true, ownerId: true, permissions: true },
-  });
-  if (!user) {
-    return { scope: null, error: NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 }) };
-  }
-  if (escrita && !podeComoNaTela(user, "/store/cardapio")) {
-    return { scope: null, error: NextResponse.json({ error: "Sua conta não tem acesso ao Cardápio." }, { status: 403 }) };
-  }
-
-  const isAdmin = user.role === "ADMIN";
-  const activeStoreId =
-    req.nextUrl.searchParams.get("storeId") || req.cookies.get("firehub_active_store")?.value || null;
-
-  return {
-    scope: {
-      userId: user.id,
-      role: user.role,
-      storeId: user.ownerId || user.id,
-      isAdmin,
-      adminStoreId: isAdmin && activeStoreId && activeStoreId !== "all" ? activeStoreId : null,
-    },
-    error: null,
-  };
-}
-
-// Regra de posse. Franqueado/funcionário: só produto da própria loja (produto
-// sem dono é invisível para eles no GET, logo também não pode ser editado).
-// ADMIN (papel da matriz FireHub, não é auto-atribuível no cadastro) mantém a
-// visão global que o suporte já usava — a tela /store/cardapio lista todas as
-// lojas para ele, então bloquear pelo cookie derrubaria o atendimento. Fica só
-// o registro no log quando ele mexe fora da loja ativa.
-function canTouch(scope: Scope, franchiseeId: string | null): boolean {
-  if (scope.isAdmin) {
-    if (scope.adminStoreId && franchiseeId !== scope.adminStoreId) {
-      console.warn(
-        `[menu-products] ADMIN ${scope.userId} alterando produto da loja ${franchiseeId} com a loja ativa ${scope.adminStoreId}.`
-      );
-    }
-    return true;
-  }
-  return !!franchiseeId && franchiseeId === scope.storeId;
-}
-
-const comboItemId = (it: any): string | null =>
-  typeof it === "string" ? it : (it?.id || it?.menuProductId || null);
-
-/** Acréscimo promocional da opção: número ≥ 0, ou NULL (sem promoção). */
-const promoDaOpcao = (v: any): number | null => {
-  if (v === null || v === undefined || String(v).trim() === "") return null;
-  const n = Number(String(v).replace(",", "."));
-  return Number.isFinite(n) && n >= 0 ? n : null;
-};
-
-/**
- * Monta o payload de um grupo de combo. POST e PUT gravam pelo mesmo caminho —
- * antes cada um montava o seu, e um campo novo entrava só na metade dos casos.
- *
- * `minQty` chega como número ou não chega. Ausente vira NULO de propósito: é o
- * que preserva a regra antiga ("exige exatamente maxQty") para todo combo
- * gravado antes da coluna existir, e para todo cliente da API que ainda não
- * sabe mandar o campo.
- */
-function dadosDoGrupo(g: any, gIdx: number) {
-  const maxQty = Number(g?.maxQty) > 0 ? Number(g.maxQty) : 1;
-  const minBruto = Number(g?.minQty);
-  const minQty =
-    g?.minQty === null || g?.minQty === undefined || !Number.isFinite(minBruto) || minBruto < 0
-      ? null
-      : Math.min(Math.trunc(minBruto), maxQty);
-
-  // Como a pergunta cobra várias escolhas. Só "MAIOR" e "MEDIA" são gravados;
-  // qualquer outra coisa (inclusive vazio) vira NULL, que é a regra de sempre
-  // — somar. Ver lib/preco-combo.ts.
-  const regra = String(g?.priceRule || "").trim().toUpperCase();
-  const priceRule = regra === "MAIOR" || regra === "MEDIA" ? regra : null;
-
-  return {
-    title: g?.title,
-    maxQty,
-    minQty,
-    priceRule,
-    sortOrder: gIdx,
-    items: {
-      create: (Array.isArray(g?.items) ? g.items : []).map((it: any, iIdx: number) => {
-        const maxItem = Number(it?.maxPerItem);
-        // Preço por canal da OPÇÃO: só grava o que é número positivo. Zero,
-        // vazio e lixo viram NULL, que é "usa o additionalPrice" — a mesma
-        // regra do preço por canal do produto, e pelo mesmo motivo: campo
-        // apagado pela metade não pode virar opção de graça no cardápio.
-        const porCanal = (v: any) => {
-          const n = Number(v);
-          return Number.isFinite(n) && n > 0 ? n : null;
-        };
-        return {
-          menuProductId: comboItemId(it) as string,
-          additionalPrice: typeof it === "object" ? (Number(it?.additionalPrice) || 0) : 0,
-          additionalPriceSalao: typeof it === "object" ? porCanal(it?.additionalPriceSalao) : null,
-          additionalPriceDelivery: typeof it === "object" ? porCanal(it?.additionalPriceDelivery) : null,
-          additionalPriceTotem: typeof it === "object" ? porCanal(it?.additionalPriceTotem) : null,
-          // Promoção da opção: aqui o zero VALE ("Grande pelo preço da
-          // Pequena"); vazio e lixo viram NULL = sem promoção.
-          promoAdditionalPrice: typeof it === "object" ? promoDaOpcao(it?.promoAdditionalPrice) : null,
-          maxPerItem: Number.isFinite(maxItem) && maxItem > 0 ? Math.trunc(maxItem) : null,
-          optionNote:
-            typeof it === "object" && typeof it?.optionNote === "string" && it.optionNote.trim()
-              ? it.optionNote.trim()
-              : null,
-          // A tabela do meio a meio por tamanho volta do jeito que veio: a
-          // tela não a edita, mas o salvamento recria as opções, e sem isto
-          // qualquer "Salvar" na pizza apagava o preço da meia no Grande.
-          // (refazerMeiasDaLoja, logo depois, recalcula de qualquer forma.)
-          precoPorEscolha: typeof it === "object" ? tabelaValida(it?.precoPorEscolha) : undefined,
-          // A ordem que o lojista arrumou com as setinhas na tela. É o índice
-          // do array, do mesmo jeito que o grupo usa `gIdx` — sem isto as
-          // setinhas mexiam na tela e nada mudava para o cliente.
-          sortOrder: iIdx,
-        };
-      }),
-    },
-  };
-}
-
-/** `{ "Grande": 15 }` com número em todo valor, ou nada. */
-function tabelaValida(t: any): Record<string, number | null> | undefined {
-  if (!t || typeof t !== "object" || Array.isArray(t)) return undefined;
-  const saida: Record<string, number | null> = {};
-  for (const [k, v] of Object.entries(t)) {
-    // null = "não existe com esta escolha" (meia pizza na Pequena, Serpa): fica.
-    if (k && v === null) { saida[k] = null; continue; }
-    const n = Number(v);
-    if (k && Number.isFinite(n)) saida[k] = n;
-  }
-  return Object.keys(saida).length > 0 ? saida : undefined;
-}
+// Escopo por loja (resolveScope/canTouch) em src/lib/escopo-do-cardapio.ts e
+// o payload da pergunta (dadosDoGrupo) em src/lib/grupo-do-combo.ts: a cópia
+// de pergunta (./copiar-pergunta) usa os mesmos.
 
 // Um combo só pode apontar para itens da MESMA loja. Antes dava para montar um
 // combo referenciando produtos de outra franquia (e vazar nome/preço deles na
@@ -676,7 +513,9 @@ export async function PUT(req: NextRequest) {
   // por até um minuto — e o POST do site o recusava (lib/opcao-pausada.ts).
   // Dia e horário também: a marmita que passou a ir até as 15h não pode
   // continuar fora da vitrine até o cache vencer.
-  if ("estoqueQtd" in updateData || "estoquePausar" in updateData || "active" in updateData || "activeDelivery" in updateData || "availableDays" in updateData || "availableHours" in updateData) {
+  // As perguntas também: salvar só as perguntas (sem mexer em pausa ou
+  // horário) deixava a vitrine com as perguntas antigas até o cache vencer.
+  if ("estoqueQtd" in updateData || "estoquePausar" in updateData || "active" in updateData || "activeDelivery" in updateData || "availableDays" in updateData || "availableHours" in updateData || comboGroups !== undefined) {
     const loja = await prisma.user.findUnique({ where: { id: existing.franchiseeId || "" }, select: { slug: true } }).catch(() => null);
     if (loja?.slug) {
       try { revalidatePath(`/loja/${loja.slug}`); } catch {}
