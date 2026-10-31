@@ -2367,7 +2367,12 @@ export default function CustomerStorePage({
         );
         if (road && pode(endereco.street)) { setCustomerStreet(road); endereco.street = road; }
         if (houseNum && pode(endereco.number)) { setCustomerNumber(houseNum); endereco.number = houseNum; numeroDoMapa = true; }
-        if (neigh && !isNeighborhoodType && pode(endereco.neighborhood)) { setCustomerNeighborhood(neigh); endereco.neighborhood = neigh; }
+        // O GPS só troca o bairro DIGITADO quando o mapa também achou a rua:
+        // bairro sem rua não confirma endereço nenhum. Divinos, 31/10/2026: o
+        // pedido saiu "Travessa Roxinol, 70 - Gamboa" para quem mora no Monte
+        // Alegre — a rua digitada ficou e só o bairro foi trocado pelo do mapa.
+        const podeOBairro = opcoes.sobrescrever && String(endereco.neighborhood ?? "").trim() ? !!road : pode(endereco.neighborhood);
+        if (neigh && !isNeighborhoodType && podeOBairro) { setCustomerNeighborhood(neigh); endereco.neighborhood = neigh; }
       } else {
         console.warn(`Reverse geocode HTTP ${rev.status}`);
       }
