@@ -124,5 +124,14 @@ conferir("cupom que não explica a diferença continua divergência", c(75.96, 6
 conferir("dito COM o desconto que o sistema não deu (40,10 × 44) continua divergência", c(40.1, 44, undefined).houve === true);
 conferir("sem cupom nada muda", c(105.8, 111.7, undefined).gravidade === "real");
 
+// 30/10/2026: frete grátis que o modelo não viu, e centavo de ponto flutuante.
+const f = (dito, gravado, taxa, cupom) => compararTotalDitoComGravado({ ditoPelaIa: dito, gravadoPeloSistema: gravado, taxaZeradaPeloFreteGratis: taxa, descontoDoCupom: cupom });
+conferir("Garagem: frete grátis acima de 70 zerou os R$ 5 que o robô cobrou (76,98 × 71,98)", f(76.98, 71.98, 5, 8).houve === false);
+conferir("Cardoso: frete grátis zerou os R$ 3 (49 × 46), sem cupom", f(49, 46, 3, undefined).houve === false);
+conferir("taxa zerada que não explica a diferença continua divergência", f(52, 46, 3, undefined).gravidade === "real");
+conferir("sem frete grátis, a taxa não perdoa nada", f(49, 46, undefined, undefined).gravidade === "real");
+conferir("um centavo depois do cupom não é alarme (57,99 × 52,18 + 5,80)", c(57.99, 52.18, 5.8).houve === false);
+conferir("dois centavos a mais depois do cupom continuam alarme", c(58.2, 52.18, 5.8).houve === true);
+
 console.log(falhas === 0 ? "\n✅ tudo certo\n" : `\n❌ ${falhas} falha(s)\n`);
 process.exit(falhas === 0 ? 0 : 1);

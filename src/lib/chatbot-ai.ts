@@ -2325,7 +2325,25 @@ Lembre-se: mensagem curta como a de uma atendente de verdade no WhatsApp — uma
           // Rascunho: o resumo que o cliente vai confirmar precisa do total com o
           // cupom. Só quando a mensagem fala de total — "anotado, mais algo?"
           // não ganha linha de cupom a cada item.
-          cleanText += mensagemDoCupom(resultadoDoSync, cleanText, false);
+          //
+          // Com item da conversa fora do rascunho (nome que não casou com o
+          // cardápio), o total gravado está INCOMPLETO: a linha dizia "o total
+          // fica R$ 20,39" logo depois de o robô somar R$ 38,38 com as duas
+          // marmitas (Garagem, 31/10/2026, "Bife de Carne" × "Bife de Gado").
+          // Nenhum total do sistema sai até o rascunho ter tudo; o fechamento
+          // com item perdido já chama a loja.
+          const linhaDoCupomNoRascunho = resultadoDoSync.itensDeFora ? "" : mensagemDoCupom(resultadoDoSync, cleanText, false);
+          cleanText += linhaDoCupomNoRascunho;
+          // O frete grátis da loja zerou a taxa que o modelo cobrou no resumo:
+          // o cliente lê agora, como já lia na confirmação, e não só no fim.
+          if (
+            !linhaDoCupomNoRascunho && !resultadoDoSync.itensDeFora && resultadoDoSync.ehEntrega &&
+            resultadoDoSync.freteGratisAcimaDe != null && resultadoDoSync.taxaDeEntrega === 0 &&
+            (resultadoDoSync.taxaDitaPelaIa ?? 0) > 0 && /total/i.test(cleanText)
+          ) {
+            const reais = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+            cleanText += `\n\n🎉 Seu pedido ganhou frete grátis (acima de ${reais(resultadoDoSync.freteGratisAcimaDe)}): o total fica ${reais(resultadoDoSync.total)}.`;
+          }
           // Horário que não vale (lib/agendamento-do-robo.ts): o rascunho foi
           // gravado sem ele, e o cliente lê as opções antes de confirmar.
           if (resultadoDoSync.avisoDoAgendamento) cleanText += `\n\n📅 ${resultadoDoSync.avisoDoAgendamento}`;
@@ -2539,6 +2557,8 @@ type SyncResultado =
       cupomRecusado?: string | null;
       /** O total que o modelo escreveu na tag. */
       totalDitoPelaIa?: number | null;
+      /** Itens da tag que não casaram com o cardápio e ficaram fora do rascunho. */
+      itensDeFora?: number;
       /** A forma de pagamento gravada ("Pix", "Dinheiro"...). */
       formaDePagamento?: string | null;
       /** Saldo de cashback abatido neste pedido. */
@@ -4036,6 +4056,7 @@ async function syncAiOrderToDatabase({
       // são divergência de preço.
       gravadoPeloSistema: centavos(totalOrderAmount + descontoDosCarimbos + cashbackUsado),
       descontoDoCupom: cupomAplicado?.desconto,
+      taxaZeradaPeloFreteGratis: freteGratisAcimaDe != null && freteValido ? centavos(freteBruto) : undefined,
     });
     if (divergencia.houve) {
       const linha = `[Chatbot AI Order Sync] 💸 ${divergencia.resumo} · loja ${franchiseeId} · cliente ${customerPhone}`;
@@ -4322,6 +4343,7 @@ async function syncAiOrderToDatabase({
     cupom: cupomAplicado,
     cupomRecusado,
     totalDitoPelaIa: Number.isFinite(Number(payload?.totalAmount)) && payload?.totalAmount != null ? centavos(Number(payload.totalAmount)) : null,
+    itensDeFora: perdidos.length,
     formaDePagamento: payload.paymentMethod || (existingDraft as any)?.paymentMethod || null,
     cashbackUsado,
     cashbackGerado,

@@ -267,6 +267,14 @@ export function compararTotalDitoComGravado(e: {
    * fechado certo.
    */
   descontoDoCupom?: unknown;
+  /**
+   * A taxa que o modelo pôs no total quando o FRETE GRÁTIS da loja a zerou. O
+   * prompt diz o mínimo, mas o modelo às vezes cobra a taxa assim mesmo; o
+   * pedido sai sem ela e a mensagem ao cliente diz "ganhou frete grátis: o
+   * total fica R$ X". Garagem Burger (grátis a partir de R$ 70) e Pizzaria
+   * Cardoso, 30/10/2026: 8 alarmes "real" assim, todos com o pedido certo.
+   */
+  taxaZeradaPeloFreteGratis?: unknown;
 }): DivergenciaDeTotal {
   const dito = Number(e.ditoPelaIa);
   const gravado = Number(e.gravadoPeloSistema);
@@ -286,9 +294,16 @@ export function compararTotalDitoComGravado(e: {
     return { houve: false, diferenca, gravidade: "nenhuma", resumo: "total dito bate com o gravado" };
   }
 
+  // Em centavos inteiros: 57,99 − (52,18 + 5,80) dá 0,0100000000000051 em
+  // ponto flutuante, e um centavo de arredondamento virava alarme "real".
+  const bate = (a: number, b: number) => Math.abs(Math.round(a * 100) - Math.round(b * 100)) <= 1;
   const cupom = Number(e.descontoDoCupom) || 0;
-  if (cupom > 0 && Math.abs(dito - (gravado + cupom)) <= 0.01) {
+  if (cupom > 0 && bate(dito, gravado + cupom)) {
     return { houve: false, diferenca, gravidade: "nenhuma", resumo: "dito sem o cupom, que o sistema aplica e mostra ao cliente" };
+  }
+  const taxaZerada = Number(e.taxaZeradaPeloFreteGratis) || 0;
+  if (taxaZerada > 0 && (bate(dito, gravado + taxaZerada) || (cupom > 0 && bate(dito, gravado + taxaZerada + cupom)))) {
+    return { houve: false, diferenca, gravidade: "nenhuma", resumo: "dito com a taxa que o frete grátis zerou; o sistema mostra o total ao cliente" };
   }
 
   const gravidade: "centavos" | "real" | "grave" =
