@@ -1245,6 +1245,16 @@ export async function processChatbotAI(
       /** O ponto do cliente que ficou valendo (null se o endereço digitado venceu). */
       const coordsQueValem = avaliacao.coords;
       const brl = (n: number) => `R$ ${n.toFixed(2).replace(".", ",")}`;
+      // ── O FRETE GRÁTIS DA LOJA VAI JUNTO COM A TAXA ──────────────────────
+      // A taxa daqui vinha com "use EXATAMENTE esta taxa no resumo", e o modelo
+      // obedecia mesmo quando o pedido já tinha o frete grátis da loja: dizia
+      // R$ 76,98 com a taxa e o pedido saía R$ 71,98 (Garagem, grátis a partir
+      // de R$ 70; Pizzaria Cardoso, a partir de R$ 10 — 30/10/2026). O robô
+      // fala o que o sistema vai cobrar; a regra da loja não muda.
+      const minimoDoGratis = minimoDoFreteGratis(user.deliveryConfig);
+      const linhaDoFreteGratis = minimoDoGratis != null && (v.taxa ?? 0) > 0
+        ? `\n- FRETE GRÁTIS DA LOJA: se a soma dos ITENS for ${brl(minimoDoGratis)} ou mais, a entrega é GRÁTIS — no resumo escreva "Entrega: grátis", some o total SEM a taxa e mande deliveryFee 0 na tag. Abaixo disso, vale a taxa acima.`
+        : "";
       const distancia = v.modo === "KM" ? frasesDaDistancia(v, ehRota) : null;
       const pedirLocalizacao = motivoParaPedirLocalizacao(v, Boolean(coordsQueValem));
       // Com a localização, o "endereço no mapa" pode nem existir: o ponto é o do aparelho.
@@ -1272,7 +1282,7 @@ export async function processChatbotAI(
             quando: enderecoSalvo.quando,
             taxa: v.taxa ?? 0,
             tempoMin: v.tempoMin && prazoDaLoja.temDado ? v.tempoMin : null,
-          });
+          }) + linhaDoFreteGratis;
         }
       } else if (v.resultado === "ATENDE") {
         addressValidationText = `
@@ -1285,7 +1295,7 @@ export async function processChatbotAI(
       ? `Endereço dentro da área de entrega da loja${v.bairro ? ` ("${v.bairro}")` : ""}${v.distanciaKm != null ? ` — ${v.distanciaKm} km da loja` : ""}`
       : `${ondeFoiMedido} — ${distancia ? distancia.distancia : `${v.distanciaKm} km da loja`}${distancia?.limite ? ` (${distancia.limite})` : ""}${v.aproximado ? ", medido pelo centro do bairro" : ""}`}
 - RESULTADO: ✅ A LOJA ATENDE. Taxa de entrega: ${brl(v.taxa ?? 0)}${v.tempoMin && prazoDaLoja.temDado ? ` (${v.tempoMin} min)` : ""}.
-- Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.${linhaDaLocalizacao}${v.peloBairro && !coordsQueValem ? `
+- Use EXATAMENTE esta taxa no resumo e no campo deliveryFee da tag PEDIDO_IA.${linhaDoFreteGratis}${linhaDaLocalizacao}${v.peloBairro && !coordsQueValem ? `
 - O mapa achou o BAIRRO do cliente, não a rua: a taxa acima é a do bairro e VALE — pode fechar o pedido com ela. NÃO peça a localização por causa disso. Só confira que o endereço escrito tem rua, número e um ponto de referência (é o que o entregador usa para achar a casa).` : ""}${pedirLocalizacao === "aproximado" ? `
 - ⚠️ O mapa só achou este endereço de forma APROXIMADA (centro do bairro, rua que existe em mais de um lugar, ou ponto longe da rua): a taxa acima é uma ESTIMATIVA. ANTES de fechar o pedido, peça a localização do cliente, numa frase só: "Pra calcular a taxa certinha, me manda sua localização? ${COMO_MANDAR_A_LOCALIZACAO}" Se ele não puder mandar, siga com a taxa estimada e diga que a loja confere o valor.` : ""}
 `;
@@ -1527,7 +1537,7 @@ ${(() => {
   if (contornos.length > 0) {
     taxaText += `\n- A LOJA DESENHOU NO MAPA O CONTORNO DE ONDE ENTREGA (${contornos.map((l) => l.nome).join(", ")}). Endereço FORA desse contorno NÃO é atendido, mesmo dentro do raio/faixa. Quem decide é a validação no mapa — NUNCA afirme que atende só pela distância.`;
   }
-  if (freeMin > 0) taxaText += `\n- FRETE GRÁTIS para pedidos acima de R$ ${Number(freeMin).toFixed(2)}`;
+  if (freeMin > 0) taxaText += `\n- FRETE GRÁTIS quando a soma dos itens for R$ ${Number(freeMin).toFixed(2)} ou mais: a entrega sai R$ 0,00 (no resumo, "Entrega: grátis"; na tag, deliveryFee 0).`;
   else taxaText += `\n- NÃO EXISTE frete grátis nesta loja. NUNCA prometa isenção de taxa por valor de pedido.`;
   return taxaText;
 })()}
