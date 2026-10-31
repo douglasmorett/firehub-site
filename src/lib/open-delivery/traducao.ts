@@ -58,6 +58,7 @@ export type OpcaoOD = {
 export type ItemOD = OpcaoOD & {
   unit?: string | null;
   optionsPrice?: ValorOD;
+  originalPrice?: ValorOD;
 };
 
 export type PedidoOD = {
@@ -527,10 +528,19 @@ export function traduzirPedidoOpenDelivery(pedido: PedidoOD, ctx: ContextoOD): T
 
     // Preço de UMA unidade do item, com as opções: `totalPrice ÷ qtd` quando o
     // parceiro mandou (é o número que ele cobrou); senão unitário + opções.
-    const precoUnidade = veio(item.totalPrice)
+    let precoUnidade = veio(item.totalPrice)
       ? valor(item.totalPrice) / qtd
       : (valor(item.unitPrice) + (veio(item.optionsPrice) ? valor(item.optionsPrice) : somaDasOpcoes)) * (porPeso ? qtdBruta : 1);
     if (!veio(item.totalPrice) && !veio(item.unitPrice)) avisos.push(`item "${nome}" sem preço`);
+    // Promoção de item da Keeta (31/10/2026): a linha já vem com o desconto
+    // (`unitPrice` 52,80, `originalPrice` 66) E os 13,20 vêm de novo em
+    // `discounts` (target ITEM, targetId = id do item). Linha líquida mais o
+    // desconto da conta desconta duas vezes na comanda; a linha volta ao preço
+    // original e o desconto fica só na conta, como no `total.itemsPrice`.
+    const temDescontoDoItem = (pedido.discounts || []).some((d) => d && texto(d.target).toUpperCase() === "ITEM" && texto(d.targetId) === texto(item.id) && texto(item.id) !== "");
+    if (temDescontoDoItem && veio(item.originalPrice) && valor(item.originalPrice) > valor(item.unitPrice)) {
+      precoUnidade += (valor(item.originalPrice) - valor(item.unitPrice)) * (porPeso ? qtdBruta : 1);
+    }
     somaDosItens += precoUnidade * qtd;
 
     const nomeCompleto = [rotuloDoPeso + nome, ...opcoes.map((o) => (o.quantidade > 1 ? `${o.quantidade}x ${o.nome}` : o.nome))].join(" | ");

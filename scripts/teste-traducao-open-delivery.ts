@@ -267,6 +267,26 @@ confere("pedido sem itens avisa", traduzirPedidoOpenDelivery({ ...entrega, items
   confere("MIN_ORDER_FEE fecha a conta e aparece nas notas", [t.avisos, t.dados.notes.includes("Complemento do pedido mínimo: R$3.00")], [[], true]);
 }
 
+// ── Promoção de item da Keeta: linha líquida + o mesmo desconto em discounts ─
+{
+  // Pedido Keeta #1756 (31/10/2026): Pepperoni 66 com 20% da loja.
+  const t = traduzirPedidoOpenDelivery(
+    {
+      ...entrega,
+      items: [{ id: "120346311", name: "Pepperoni", unit: "UN", quantity: 1, unitPrice: brl(52.8), originalPrice: brl(66), totalPrice: brl(52.8), options: [] }],
+      otherFees: [
+        { type: "SERVICE_FEE", receivedBy: "MARKETPLACE", price: brl(0.99) },
+        { type: "TIP", receivedBy: "LOGISTIC_SERVICES", price: brl(2) },
+        { type: "DELIVERY_FEE", receivedBy: "LOGISTIC_SERVICES", price: brl(1) },
+      ],
+      discounts: [{ amount: brl(13.2), target: "ITEM", targetId: "120346311", sponsorshipValues: [{ name: "MERCHANT", amount: brl(13.2), discountCode: "19203323" }] }],
+      total: { itemsPrice: brl(66), otherFees: brl(3.99), discount: brl(13.2), orderAmount: brl(56.79) },
+    },
+    ctx,
+  );
+  confere("item volta ao preço original e a conta fecha (66 + 3,99 − 13,20 = 56,79)", [t.items[0].price, t.dados.totalAmount, t.dados.discountMerchant, t.avisos], [66, 56.79, 13.2, []]);
+}
+
 // ── CHAIN (rede) é desconto do lado da loja ─────────────────────────────────
 confere(
   "CHAIN conta como loja",
