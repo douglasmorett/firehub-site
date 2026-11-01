@@ -136,6 +136,10 @@ class GarcomActivity : AppCompatActivity() {
     private var cardapio: CardapioDoSalao? = null
     private val carrinhos = HashMap<String, MutableList<ItemDoCarrinho>>()
 
+    /** Pedido indo para o servidor: o segundo toque em "Enviar" não manda outro. */
+    @Volatile
+    private var enviandoPedido = false
+
     private val ouvinte = EstadoDoTerminal.Ouvinte { situacao -> chegouCobranca(situacao) }
 
     // --------------------------------------------------------- ciclo de vida
@@ -696,6 +700,8 @@ class GarcomActivity : AppCompatActivity() {
             val conta = ApiDoGarcom.get("$base/conta?taxa=$taxa", c)
             if (conta !is ApiDoGarcom.Resposta.Ok) return@chamar conta
             val pagamentos = ApiDoGarcom.get("$base/pagamentos", c)
+            // Sem o "já pago", o "falta pagar" viraria o total e cobraria a mais.
+            if (pagamentos !is ApiDoGarcom.Resposta.Ok) return@chamar pagamentos
             val maquininha = ApiDoGarcom.get("$base/maquininha", c)
             val juntos = JSONObject()
             juntos.put("conta", conta.json ?: JSONObject())
@@ -1259,7 +1265,8 @@ class GarcomActivity : AppCompatActivity() {
      */
     private fun enviarPedido(tela: Tela.Carrinho) {
         val itens = carrinhos[tela.mesa.sessaoId].orEmpty()
-        if (itens.isEmpty()) return
+        if (itens.isEmpty() || enviandoPedido) return
+        enviandoPedido = true
         val corpo = JSONObject().put("items", JSONArray().apply {
             for (item in itens) {
                 put(JSONObject().apply {
@@ -1281,7 +1288,13 @@ class GarcomActivity : AppCompatActivity() {
         })
 
         val caminho = "/api/store/table-sessions/" + ApiDoGarcom.codificar(tela.mesa.sessaoId) + "/add-order"
-        chamar(getString(R.string.garcom_enviando_pedido), { c -> ApiDoGarcom.post(caminho, corpo, c) }) { ok ->
+        chamar(getString(R.string.garcom_enviando_pedido), { c ->
+            try {
+                ApiDoGarcom.post(caminho, corpo, c)
+            } finally {
+                enviandoPedido = false
+            }
+        }) { ok ->
             carrinhos.remove(tela.mesa.sessaoId)
             val total = ok.json?.optJSONObject("order")?.let { numero(it, "totalAmount") }
             informar(

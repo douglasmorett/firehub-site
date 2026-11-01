@@ -9,7 +9,7 @@
     <!-- Deeplink não tem "ativação" pelo nosso app: quem ativa é o app da própria adquirente. -->
     <string name="erro_terminal_nao_ativado">Este terminal ainda não está pronto para cobrar na Stone.</string>
     <string name="erro_sem_servico_adquirente">O aplicativo de pagamento da Stone não está neste aparelho. Este app só cobra numa maquininha Stone.</string>
-    <string name="travado_sem_conferencia">Não deu para saber se o cartão da venda %1 passou (%2). Confira no aplicativo de pagamento da Stone (últimas transações) antes de cobrar de novo.</string>
+    <string name="travado_sem_conferencia">Não deu para saber se o cartão da venda %1$s passou (%2$s). Confira no aplicativo de pagamento da Stone (últimas transações) antes de cobrar de novo.</string>
     <string name="recusa_sem_servico">O aplicativo de pagamento da Stone não está instalado no aparelho.</string>
     <string name="recusa_nao_ativado">Maquininha Stone não está pronta para cobrar.</string>
 
