@@ -764,12 +764,45 @@ export async function processarEventosIfood(opts: {
           // histórico, mas não se mexe nele.
           const idadeMs = event?.createdAt ? Date.now() - new Date(event.createdAt).getTime() : 0;
           const recente = idadeMs < 30 * 60 * 1000;
+          // A resposta é conferida. Antes saía "Auto-confirmado" com qualquer
+          // resposta: o confirm que falhava (rede, 5xx, token) deixava o pedido
+          // ACEITO no painel e o iFood cancelava ~9 min depois por "não
+          // confirmado pela loja" (Frangoso/Salzburg 0154, 31/10/2026; 0968 e
+          // 2496 em 20 e 24/10). Agora tenta 3 vezes com este token e, se ainda
+          // falhar, pela cascata de credenciais da loja (lib/ifood-pedido.ts).
           if (isPlaced && recente) {
-            await fetch(
-              `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/confirm`,
-              { method: "POST", headers: { Authorization: `Bearer ${token}` } }
-            );
-            log.push(`  ✅ Auto-confirmado: ${orderId}`);
+            let confirmado = false;
+            let ultimo = "";
+            for (let tentativa = 1; tentativa <= 3 && !confirmado; tentativa++) {
+              if (tentativa > 1) await new Promise((r) => setTimeout(r, tentativa * 1000));
+              try {
+                const r = await fetch(
+                  `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/confirm`,
+                  { method: "POST", headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10_000) }
+                );
+                // 409: o pedido já está confirmado lá (outra rodada chegou antes).
+                confirmado = r.ok || r.status === 409;
+                if (!confirmado) ultimo = `${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`;
+              } catch (e: any) {
+                ultimo = e?.message || "erro de rede";
+              }
+            }
+            if (!confirmado) {
+              const { acaoNoPedidoIfood } = await import("./ifood-pedido");
+              const r = await acaoNoPedidoIfood(
+                { ifoodOrderId: orderId, franchiseeId: eventFranchisee.id, ifoodStoreMerchant: eventMerchantId },
+                "confirm",
+                { rotulo: "iFood Auto-confirm" },
+              );
+              confirmado = r.ok || r.status === 409;
+              if (!confirmado) ultimo = `${r.status} ${r.texto.slice(0, 200)}`;
+            }
+            if (confirmado) {
+              log.push(`  ✅ Auto-confirmado: ${orderId}`);
+            } else {
+              console.error(`[iFood] ❌ Confirm FALHOU para ${orderId} (loja ${eventFranchisee.id}): ${ultimo}`);
+              log.push(`  ❌ Confirm FALHOU: ${orderId} (${ultimo})`);
+            }
           } else if (isPlaced) {
             log.push(`  ⏭️ Não auto-confirmado (evento de ${Math.round(idadeMs / 60000)} min atrás): ${orderId}`);
           }
