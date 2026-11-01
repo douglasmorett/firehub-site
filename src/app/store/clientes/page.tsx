@@ -623,16 +623,22 @@ function FormularioDeSaldo({
 // (lib/cadastro-do-cliente.ts): vence o que os pedidos dizem na lista, na
 // ficha e na busca do balcão. Campo vazio volta ao que veio dos pedidos.
 
-function EditarCadastro({ d, onSalvou, onCancelar, avisar }: { d: Detalhe; onSalvou: () => void; onCancelar: () => void; avisar: (a: Aviso) => void }) {
+function EditarCadastro({ d, onSalvou, onCancelar, avisar }: { d: Detalhe; onSalvou: (telefoneNovo?: string) => void; onCancelar: () => void; avisar: (a: Aviso) => void }) {
   const original = d.original || { nome: d.nome, aniversario: d.aniversario };
   const [nome, setNome] = useState(d.cadastro?.nome || d.nome || "");
   const [aniversario, setAniversario] = useState(d.cadastro?.aniversario || d.aniversario || "");
   const [endereco, setEndereco] = useState(d.cadastro?.endereco || "");
   const [observacao, setObservacao] = useState(d.cadastro?.observacao || "");
+  const [telefone, setTelefone] = useState(telefoneBonito(d.telefone));
+  // Troca de número: 1º clique pede confirmação; "juntar" = o novo já é cliente.
+  const [confirmar, setConfirmar] = useState<null | "trocar" | "juntar">(null);
+  const [jaExiste, setJaExiste] = useState("");
   const [gravando, setGravando] = useState(false);
+  const trocou = telefone.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "") !== d.telefone;
   const enderecoDosPedidos = d.enderecos.find((e) => e !== d.cadastro?.endereco) || "";
 
   const salvar = async () => {
+    if (trocou && !confirmar) { setConfirmar("trocar"); return; }
     setGravando(true);
     try {
       // O que ficou igual ao que veio dos pedidos não vira correção: o nome
@@ -647,12 +653,14 @@ function EditarCadastro({ d, onSalvou, onCancelar, avisar }: { d: Detalhe; onSal
           aniversario: !d.cadastro?.aniversario && igual(aniversario, original.aniversario) ? "" : aniversario,
           endereco,
           observacao,
+          ...(trocou ? { telefoneNovo: telefone, juntar: confirmar === "juntar" } : {}),
         }),
       });
       const j = await r.json();
+      if (r.status === 409 && j.jaExiste) { setJaExiste(j.error); setConfirmar("juntar"); return; }
       if (!r.ok) throw new Error(j.error || "Não foi possível salvar.");
-      avisar({ tipo: "ok", titulo: "Cadastro salvo" });
-      onSalvou();
+      avisar({ tipo: "ok", titulo: j.telefone ? "Telefone trocado" : "Cadastro salvo" });
+      onSalvou(j.telefone);
     } catch (e: any) {
       avisar({ tipo: "erro", titulo: "Não salvou", detalhe: e?.message });
     } finally {
@@ -665,7 +673,11 @@ function EditarCadastro({ d, onSalvou, onCancelar, avisar }: { d: Detalhe; onSal
   return (
     <div style={{ background: "#fff", border: `1.5px solid ${corDoTexto}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
       <div style={{ fontWeight: 800, marginBottom: 2 }}>Editar cadastro</div>
-      <div style={dica}>Vale só nesta loja. O telefone não muda — é ele que liga os pedidos e o saldo.</div>
+      <div style={dica}>Vale só nesta loja.</div>
+
+      <label style={rotulo}>Telefone</label>
+      <input value={telefone} onChange={(e) => { setTelefone(e.target.value); setConfirmar(null); setJaExiste(""); }} maxLength={20} placeholder="(DDD) número" inputMode="tel" style={{ ...campo, marginTop: 4 }} />
+      {trocou && <div style={dica}>Os pedidos e o histórico deste cliente passam para o novo número.</div>}
 
       <label style={rotulo}>Nome</label>
       <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} maxLength={80} placeholder="Nome do cliente" style={{ ...campo, marginTop: 4 }} />
@@ -681,9 +693,16 @@ function EditarCadastro({ d, onSalvou, onCancelar, avisar }: { d: Detalhe; onSal
       <label style={rotulo}>Observação (só a loja vê)</label>
       <textarea value={observacao} onChange={(e) => setObservacao(e.target.value)} maxLength={500} rows={3} placeholder="Ex.: prefere sem cebola; portão azul; paga só no Pix" style={{ ...campo, marginTop: 4, resize: "vertical", fontFamily: "inherit" }} />
 
+      {confirmar && (
+        <div style={{ background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 10, padding: "8px 10px", marginTop: 12, fontSize: "0.84rem", color: "#78350F" }}>
+          {confirmar === "juntar"
+            ? <>{jaExiste} Salvar junta as duas fichas: os pedidos e o saldo ficam todos no novo número.</>
+            : <>Os pedidos e o histórico deste cliente passam para o novo número. Confirma?</>}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
         <button onClick={salvar} disabled={gravando} style={botao("#fff", vermelho, { opacity: gravando ? 0.6 : 1 })}>
-          {gravando ? "Salvando…" : "Salvar"}
+          {gravando ? "Salvando…" : confirmar === "juntar" ? "Juntar e salvar" : confirmar ? "Confirmar troca" : "Salvar"}
         </button>
         <button onClick={onCancelar} style={botao(corSuave, "#F1F5F9")}>Cancelar</button>
       </div>
@@ -752,7 +771,11 @@ function FichaDoCliente({ telefone, fuso, onFechar, onMudou, avisar }: { telefon
               d={d}
               avisar={avisar}
               onCancelar={() => setEditando(false)}
-              onSalvou={() => { setEditando(false); carregar(); onMudou(); }}
+              onSalvou={(telefoneNovo) => {
+                setEditando(false);
+                // A ficha é do número antigo: com a troca, fecha e a lista recarrega no novo.
+                if (telefoneNovo) { onMudou(); onFechar(); } else { carregar(); onMudou(); }
+              }}
             />
           )}
           {!editando && d.cadastro?.observacao && (

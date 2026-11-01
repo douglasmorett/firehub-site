@@ -12,11 +12,14 @@
  * o que os pedidos dizem na lista, na ficha e na busca do balcão.
  *
  * Campo vazio = sem correção: volta a valer o que os pedidos dizem.
- * O telefone não se edita — é ele que liga os pedidos, o saldo e o cadastro.
+ * O telefone se edita desde 01/11/2026 (pedido do Flavio: o cliente digitou
+ * errado e a loja corrige). Trocar leva os pedidos, os lançamentos de saldo e
+ * esta correção DESTA loja para o número novo (trocarTelefoneDoCliente, em
+ * lib/clientes-da-loja.ts); o "de" fica em "telefoneAnterior".
  */
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { chaveDoCliente } from "@/lib/clientes-da-loja-regras";
+import { chaveDoCliente, telefoneDoCliente } from "@/lib/clientes-da-loja-regras";
 
 export type CadastroEditado = {
   nome: string | null;
@@ -54,6 +57,7 @@ export async function garantirTabelaDoCadastro(): Promise<boolean> {
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "ClienteDaLoja_pkey" PRIMARY KEY ("id")
     )`);
+    await prisma.$executeRawUnsafe(`ALTER TABLE "ClienteDaLoja" ADD COLUMN IF NOT EXISTS "telefoneAnterior" TEXT`);
     await prisma.$executeRawUnsafe(
       `CREATE UNIQUE INDEX IF NOT EXISTS "ClienteDaLoja_lojaId_chave_key" ON "ClienteDaLoja"("lojaId", "chave")`,
     );
@@ -124,6 +128,21 @@ export function lerCadastro(e: EntradaDoCadastro):
   };
 }
 
+/**
+ * O telefone digitado no "Editar cadastro". `novo: null` = não mudou (mesmos
+ * dígitos). `mesmaPessoa` = mesma chave (só pôs ou tirou o 9): não há outra
+ * ficha para juntar.
+ */
+export function lerTrocaDeTelefone(atual: string, bruto: unknown):
+  | { ok: true; novo: string | null; mesmaPessoa: boolean }
+  | { ok: false; erro: string } {
+  if (bruto === undefined || bruto === null || String(bruto).trim() === "") return { ok: true, novo: null, mesmaPessoa: true };
+  const novo = telefoneDoCliente(bruto);
+  if (!novo) return { ok: false, erro: "Telefone inválido — use DDD + número." };
+  if (novo === telefoneDoCliente(atual)) return { ok: true, novo: null, mesmaPessoa: true };
+  return { ok: true, novo, mesmaPessoa: chaveDoCliente(novo) === chaveDoCliente(atual) };
+}
+
 type LinhaDoBanco = {
   chave: string; telefone: string; nome: string | null; aniversario: string | null; endereco: string | null;
   observacao: string | null; atualizadoPor: string | null; updatedAt: Date | null;
@@ -186,22 +205,25 @@ export async function salvarCadastro(
   telefone: string,
   campos: Pick<CadastroEditado, "nome" | "aniversario" | "endereco" | "observacao">,
   quem: string,
+  /** O número de antes, quando a loja acabou de trocar o telefone (fica registrado). */
+  telefoneAnterior: string | null = null,
 ): Promise<EdicaoComChave | null> {
   const chave = chaveDoCliente(telefone);
   if (!chave) throw new Error("telefone inválido");
   if (!(await garantirTabelaDoCadastro())) throw new Error("tabela ClienteDaLoja indisponível");
   const vazio = !campos.nome && !campos.aniversario && !campos.endereco && !campos.observacao;
-  if (vazio) {
+  if (vazio && !telefoneAnterior) {
     await prisma.$executeRaw`DELETE FROM "ClienteDaLoja" WHERE "lojaId" = ${lojaId} AND "chave" = ${chave}`;
     return null;
   }
   const id = `cdl_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
   await prisma.$executeRaw`
-    INSERT INTO "ClienteDaLoja" ("id", "lojaId", "chave", "telefone", "nome", "aniversario", "endereco", "observacao", "atualizadoPor", "createdAt", "updatedAt")
-    VALUES (${id}, ${lojaId}, ${chave}, ${telefone}, ${campos.nome}, ${campos.aniversario}, ${campos.endereco}, ${campos.observacao}, ${quem}, NOW(), NOW())
+    INSERT INTO "ClienteDaLoja" ("id", "lojaId", "chave", "telefone", "nome", "aniversario", "endereco", "observacao", "atualizadoPor", "telefoneAnterior", "createdAt", "updatedAt")
+    VALUES (${id}, ${lojaId}, ${chave}, ${telefone}, ${campos.nome}, ${campos.aniversario}, ${campos.endereco}, ${campos.observacao}, ${quem}, ${telefoneAnterior}, NOW(), NOW())
     ON CONFLICT ("lojaId", "chave") DO UPDATE SET
       "telefone" = EXCLUDED."telefone", "nome" = EXCLUDED."nome", "aniversario" = EXCLUDED."aniversario",
       "endereco" = EXCLUDED."endereco", "observacao" = EXCLUDED."observacao",
-      "atualizadoPor" = EXCLUDED."atualizadoPor", "updatedAt" = NOW()`;
+      "atualizadoPor" = EXCLUDED."atualizadoPor",
+      "telefoneAnterior" = COALESCE(EXCLUDED."telefoneAnterior", "ClienteDaLoja"."telefoneAnterior"), "updatedAt" = NOW()`;
   return cadastroEditado(lojaId, telefone);
 }
