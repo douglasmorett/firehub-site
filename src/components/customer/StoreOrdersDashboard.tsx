@@ -665,6 +665,9 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
   const isTakeoutOrder =
     order.deliveryType === "RETIRADA" ||
     order.deliveryType === "TAKEOUT" ||
+    // O site grava retirada como PICKUP: sem isto o card dizia 🛵 Entrega
+    // (Garagem nº 55, 31/10/2026).
+    order.deliveryType === "PICKUP" ||
     String(order.deliveryType || "").toUpperCase().includes("RETIRADA") ||
     // A observação agora carrega TEXTO LIVRE DO CLIENTE (o robô passou a gravar
     // o que ele pede, "pode deixar na portaria, não precisa esperar a
