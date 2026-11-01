@@ -196,7 +196,8 @@ object CanalDaPonte {
     internal fun entregar(idDaChamada: Long?, resposta: Resposta) {
         val chamada = atual
         if (chamada == null || (idDaChamada != null && idDaChamada != chamada.id)) {
-            Log.w(ETIQUETA, "Resposta sem chamada correspondente; descartada: " + resposta)
+            // Sem a resposta no log: ela traz os dados do pagamento.
+            Log.w(ETIQUETA, "Resposta sem chamada correspondente; descartada.")
             fecharPonte()
             return
         }
