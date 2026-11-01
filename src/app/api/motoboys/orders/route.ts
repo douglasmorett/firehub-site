@@ -5,7 +5,7 @@ import { viradaDoExpedienteDaLoja } from "@/lib/fuso";
 import { STATUS_CANCELADOS, STATUS_FINALIZADOS } from "@/lib/status-pedido";
 import { gpsForaDoHorario } from "@/lib/app-motoboy/gps-no-horario";
 import { lerAppMotoboyConfig } from "@/lib/app-motoboy-config";
-import { cobrancaNaEntrega, FORMAS_DE_PAGAMENTO_NA_ENTREGA } from "@/lib/pagamento-na-entrega";
+import { cobrancaNaEntrega, formaParaOEntregador, FORMAS_DE_PAGAMENTO_NA_ENTREGA } from "@/lib/pagamento-na-entrega";
 import { camposDoApp, pontoNoMapa } from "@/lib/app-motoboy/pedido-no-app";
 import { previsaoDaEntrega } from "@/lib/previsao-da-entrega";
 import { limitesDoAlerta } from "@/lib/relatorios/tempos";
@@ -218,6 +218,9 @@ export async function GET(req: NextRequest) {
       const { customerLatLng, scheduledDatetime, tempoEntregaMin, ...semPonto } = o;
       const pedido = {
         ...semPonto,
+        // "PIX" pago pelo site vai como "PIX (Pago Online)": o app mostra este
+        // texto no cartão e o motoboy cobrava de novo (lib/pagamento-na-entrega.ts).
+        paymentMethod: formaParaOEntregador(o as any),
         // Até quando o cliente espera receber: o motoboy vê a hora e a cor da
         // urgência (Lucas, Frangoso, 03/10/2026: "tinha que aparecer o
         // horário da entrega").

@@ -51,7 +51,14 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   // (cadastro com a cidade escrita diferente), vale o grupo inteiro.
   const semAcento = (t: string | null | undefined) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   const daCidade = cidade ? visiveis.filter((l) => semAcento(l.city) === semAcento(cidade)) : [];
-  const lojas = daCidade.length > 0 ? daCidade : visiveis;
+  // As duas lojas do Jerrajê têm a cidade "Rio das Ostras" cadastrada, e a
+  // comparação do bairro ignora o parêntese: "Centro (Barra de São João)" caía
+  // também no "Centro" do Ex. Bosque (Gil, 31/10/2026). O bairro da lista é o
+  // nome de uma zona: vai só para as lojas que têm esse nome exato.
+  const temOBairro = (l: (typeof visiveis)[number]) =>
+    Array.isArray(l.deliveryZones) && (l.deliveryZones as any[]).some((z) => semAcento(z?.name) === semAcento(bairro));
+  const comOBairro = cidade && bairro ? (daCidade.length > 0 ? daCidade : visiveis).filter(temOBairro) : [];
+  const lojas = comOBairro.length > 0 ? comOBairro : daCidade.length > 0 ? daCidade : visiveis;
 
   const resultados: ResultadoDaLoja[] = await Promise.all(
     lojas.map(async (loja) => {

@@ -72,6 +72,18 @@ export function ehPagoOnline(pedido: (PedidoParaCobranca & { gatewayPaymentId?: 
 }
 
 /**
+ * A forma de pagamento como o ENTREGADOR lê. O Pix pago pelo site grava só
+ * "PIX", e o app do motoboy mostrava "Pagamento: PIX — R$ 40,00": o motoboy
+ * cobrava o cliente de novo (Garagem nº 34, 31/10/2026). Pago online ganha o
+ * mesmo "(Pago Online)" do card do painel.
+ */
+export function formaParaOEntregador(pedido: Parameters<typeof ehPagoOnline>[0]): string | null {
+  const forma = pedido?.paymentMethod ?? null;
+  if (!ehPagoOnline(pedido) || /online/i.test(String(forma || ""))) return forma;
+  return forma ? `${forma} (Pago Online)` : "Pago Online";
+}
+
+/**
  * Pago pelo cardápio — Pix ou cartão pelo site, na conta Asaas da loja
  * (lib/pix-online-pedido.ts) — e já confirmado. O texto da forma é só "PIX",
  * igual ao Pix do PDV, e o card de pedidos não dizia que estava pago: o
