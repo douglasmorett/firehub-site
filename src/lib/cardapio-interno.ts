@@ -118,6 +118,21 @@ export function ehProdutoDeIntegracao(
 }
 
 /**
+ * Os espelhos de integração com o MESMO nome de um produto próprio da loja:
+ * são cópia, não cardápio. A tela do cardápio mostrava os pausados dentro da
+ * categoria real (o espelho herda a categoria para o KDS), e o "Reativar
+ * categoria" reabria junto — o cliente via o combo repetido, a preço do app
+ * (Hakim, 31/10/2026). A categoria do pedido não depende deles: o mapa de
+ * lib/categoria-do-item.ts acha a mesma pelo nome do produto próprio.
+ */
+export function espelhosRepetidos(produtos: { id: string; name?: string | null }[]): Set<string> {
+  const nome = (n?: string | null) => String(n ?? "").trim().toLowerCase();
+  const ehEspelho = (id: string) => PREFIXOS_DE_ESPELHO.some((prefixo) => id.startsWith(prefixo));
+  const proprios = new Set(produtos.filter((p) => !ehEspelho(p.id)).map((p) => nome(p.name)));
+  return new Set(produtos.filter((p) => ehEspelho(p.id) && proprios.has(nome(p.name))).map((p) => p.id));
+}
+
+/**
  * Dia da semana NO RELÓGIO DA LOJA, no formato que `availableDays` grava.
  *
  * `new Date().getDay()` responde pelo fuso do servidor, que roda em UTC. Depois

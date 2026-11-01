@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useMemo } from "react";
-import { ehProdutoDeIntegracao, idsSoDeOpcaoDeCombo, combosQueUsamOpcao, lerHorarioDoProduto } from "@/lib/cardapio-interno";
+import { ehProdutoDeIntegracao, espelhosRepetidos, idsSoDeOpcaoDeCombo, combosQueUsamOpcao, lerHorarioDoProduto } from "@/lib/cardapio-interno";
 import { perguntaTravadaPelaPausa } from "@/lib/opcao-pausada";
 import { combosQueDependemDoItem, combosParaReativar, itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
 import { pizzasJaMontadas } from "@/lib/pizza-por-tamanho";
@@ -1675,9 +1675,13 @@ export default function MenuProductManager({
     }
   };
 
+  // Cópia de integração com o nome de um produto próprio: some da lista e,
+  // com isso, do "Reativar categoria" (lib/cardapio-interno.ts).
+  const repetidosDeIntegracao = useMemo(() => espelhosRepetidos(products), [products]);
   const isHiddenIntegrationItem = (p: any) => {
     const cat = (p.category || "").trim();
     if (isIntegrationCategory(cat)) return true;
+    if (repetidosDeIntegracao.has(p.id)) return true;
 
     // Fora as de integração, quem manda é o cadastro de categorias da loja.
     if (dynCategories && dynCategories.length > 0) {
