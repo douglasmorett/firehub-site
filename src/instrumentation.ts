@@ -144,6 +144,11 @@ export async function register() {
   // faltar, a mensalidade sai sem o desconto, como antes do programa.
   const { garantirTabelaDeIndicacoes } = await import("./lib/indique-e-ganhe-no-banco");
   await garantirTabelaDeIndicacoes();
+  // A base de endereços do IBGE (lib/enderecos-ibge-servidor.ts). Tabelas
+  // próprias por SQL cru, fora do schema; se faltarem, a taxa segue no mapa
+  // aberto como antes.
+  const { garantirTabelasDoIbge } = await import("./lib/enderecos-ibge-servidor");
+  await garantirTabelasDoIbge();
   const { garantirTabelaDeAcrescimos } = await import("./lib/acrescimo-no-banco");
   await garantirTabelaDeAcrescimos();
   // Diária mudada num dia e pendências do acerto do motoboy

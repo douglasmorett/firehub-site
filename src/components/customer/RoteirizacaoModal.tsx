@@ -3053,7 +3053,7 @@ ${mapsUrl}`;
           </div>
         </div>
 
-        {/* A conta do Google da loja (lib/google-maps-da-loja.ts): o aviso "Problemas no mapa?" ou "conectado ✓". */}
+        {/* A conta do Google da loja (lib/google-maps-da-loja.ts): só o "conectado ✓" de quem já conectou. */}
         <GoogleMapsDaLoja />
 
         {/* ─── MAIN CONTENT CONTAINER (2-COLUMNS: SIDEBAR + MAP) ─── */}

@@ -798,6 +798,22 @@ export type OpcoesDaVerificacao = {
   googlePrimeiro?: boolean;
   /** Avisado quando o ponto aceito veio do Google (termos: ver VeredictoDeEntrega.pontoDoGoogle). */
   aoUsarPontoDoGoogle?(): void;
+  /**
+   * A base de endereços do IBGE (CNEFE 2022) do município da loja
+   * (lib/enderecos-ibge-servidor.ts): perguntada ANTES do mapa aberto. null =
+   * município não importado ou a rua não está lá com segurança — a cascata
+   * segue a de sempre.
+   */
+  ibge?(pedido: {
+    texto: string;
+    rua: string | null;
+    numero: string | null;
+    bairro: string | null;
+    ruasDoTexto: string[];
+    cidade: string;
+    loja: Ponto;
+    raioKm: number;
+  }): Promise<{ lat: number; lng: number; displayName: string; precisao: "endereco" | "rua" } | null>;
 };
 
 /** Texto normalizado para não mandar ao mapa a mesma pergunta com outra pontuação. */
@@ -1030,8 +1046,34 @@ export async function verifyStoreDeliveryAddress(
         bairroDoGoogle = { lat: r.lat, lng: r.lng, displayName: r.displayName, cidades: r.cidades };
       }
     };
+    // ── NÍVEL I: A BASE DO IBGE, ANTES DE TUDO ───────────────────────────
+    //
+    // O CNEFE do Censo 2022 tem cada endereço do município com o ponto da
+    // casa — e as ruas que o OpenStreetMap não tem. Divinos (Cabo Frio,
+    // 02/11/2026, 396 endereços reais): o OSM achou a rua em 53%; o IBGE em
+    // 77%, a 0,1 km do GPS do cliente (mediana). Só vale a rua no bairro
+    // escrito ou num lugar só da cidade (lib/enderecos-ibge.ts, acharNoIbge);
+    // o resto segue para o mapa. Sem o município importado, nada muda.
+    if (opcoes?.ibge && city) {
+      try {
+        const r = await opcoes.ibge({
+          texto: customerAddressText,
+          rua: street || null,
+          numero: num || null,
+          bairro: neigh || null,
+          ruasDoTexto: ruasProcuradas.flatMap(semTipoRepetido),
+          cidade: city,
+          loja,
+          raioKm: maxRadiusKm,
+        });
+        if (r) aceitar({ lat: r.lat, lng: r.lng, displayName: r.displayName }, r.precisao);
+      } catch {
+        // Banco fora: segue a cascata de sempre.
+      }
+    }
+
     // ── NÍVEL G0: A CONTA DO GOOGLE DA LOJA, ANTES DO MAPA ABERTO ─────────
-    if (opcoes?.googlePrimeiro && geo.google && temTempoNoMapa()) await perguntarAoGoogle(geo.google);
+    if (!foundGeo && opcoes?.googlePrimeiro && geo.google && temTempoNoMapa()) await perguntarAoGoogle(geo.google);
 
     for (const consulta of foundGeo ? [] : consultasLivres) {
       if (!temTempoNoMapa()) { esgotouOPrazo = true; break; }
