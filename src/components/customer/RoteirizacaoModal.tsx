@@ -41,6 +41,7 @@ import {
 } from "@/lib/ponto-do-pedido";
 import { rotaJaDespachada, rotasComLinha, pontosDaLinha, podarCoordenadas, pernasDaLinha, linhaPelaRua, PERNAS_POR_PEDIDO_DE_DESENHO } from "@/lib/rotas-no-mapa";
 import TutorialDaTela from "@/components/TutorialDaTela";
+import GoogleMapsDaLoja from "@/components/customer/GoogleMapsDaLoja";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
 import { bairroPeloEndereco, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
 import RotaAutomatica, { type PreviaDaRotaAutomatica, type RotaAutomaticaConfig, type RotaAutomaticaEstado } from "@/components/customer/RotaAutomatica";
@@ -3018,6 +3019,9 @@ ${mapsUrl}`;
             </button>
           </div>
         </div>
+
+        {/* A conta do Google da loja (lib/google-maps-da-loja.ts): o aviso "Problemas no mapa?" ou "conectado ✓". */}
+        <GoogleMapsDaLoja />
 
         {/* ─── MAIN CONTENT CONTAINER (2-COLUMNS: SIDEBAR + MAP) ─── */}
         <div style={{ flex: 1, display: "flex", overflow: "hidden", position: "relative" }}>

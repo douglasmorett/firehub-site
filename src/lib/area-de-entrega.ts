@@ -37,6 +37,7 @@
 import type { MedidaDaDistancia, OrigemDoPonto } from "./cotacao-de-entrega";
 import { verifyStoreDeliveryAddress, haversineDistanceKm, PRAZO_DA_VERIFICACAO_MS, type DeliveryZoneCheckResult } from "@/lib/geocoding";
 import { geocodificadorDaTaxa, geocodificadorDaTaxaPara } from "@/lib/geocodificacao-servidor";
+import { chaveGoogleDaLoja } from "@/lib/google-maps-da-loja-servidor";
 import { coordenadaGrosseira } from "@/lib/coordenadas-do-parceiro";
 import { lerPontoDaLoja } from "@/lib/ponto-da-loja";
 import { areaDeRiscoDoPonto, dentroDoPoligono } from "@/lib/area-de-risco";
@@ -99,6 +100,14 @@ export function minimoDaZona(z: any): number | null {
 
 export type VeredictoDeEntrega = {
   modo: ModoDaArea;
+  /**
+   * O `ponto` veio do GOOGLE (a conta do Google da loja, lib/google-maps-da-
+   * loja.ts). Os termos do Google vetam mostrar esse ponto num mapa que não é
+   * o do Google e guardá-lo por mais de 30 dias: ele decide a taxa aqui no
+   * servidor, mas NÃO vai para o mapa do checkout (Leaflet) nem é gravado no
+   * pedido (api/delivery-fee, entregaDoVeredicto, pontoParaGravar).
+   */
+  pontoDoGoogle?: boolean;
   resultado: "ATENDE" | "FORA" | "DESCONHECIDO";
   /** Taxa da faixa/bairro. null quando não há como saber (SEM_AREA sem taxa fixa, ou DESCONHECIDO). */
   taxa: number | null;
@@ -401,6 +410,19 @@ export async function avaliarEntrega(
   },
   opcoes?: { prazoMs?: number; donos?: string[] },
 ): Promise<VeredictoDeEntrega> {
+  // O ponto do Google é marcado (ver `pontoDoGoogle`): com a coordenada do
+  // cliente, o ponto é dele, não do Google.
+  const marca = { google: false };
+  const v = await avaliarEntregaNoMapa(loja, pedido, opcoes, marca);
+  return marca.google && v.ponto && !coordenadaDoCliente(pedido.coords) ? { ...v, pontoDoGoogle: true } : v;
+}
+
+async function avaliarEntregaNoMapa(
+  loja: LojaParaEntrega,
+  pedido: Parameters<typeof avaliarEntrega>[1],
+  opcoes: Parameters<typeof avaliarEntrega>[2],
+  marca: { google: boolean },
+): Promise<VeredictoDeEntrega> {
   // Prazo automático iFood e 99 ligado: o tempo das áreas sobe junto com o do
   // iFood (lib/prazo-automatico.ts). Só soma quando a loja veio com etaConfig.
   loja = comPrazoDaExtensao(loja);
@@ -446,8 +468,16 @@ export async function avaliarEntrega(
     }
   }
   const lojaId = typeof loja.id === "string" ? loja.id : "";
+  // A chave do Google desta loja (lib/google-maps-da-loja-servidor.ts): a da
+  // própria conta → Google primeiro; a da plataforma → só de reserva; nenhuma
+  // → o mapa aberto de sempre.
+  const google = await chaveGoogleDaLoja(lojaId);
   const opcoesDoMapa = {
-    geocodificador: opcoes?.donos?.length ? geocodificadorDaTaxaPara(opcoes.donos) : geocodificadorDaTaxa,
+    geocodificador: opcoes?.donos?.length || google ? geocodificadorDaTaxaPara(opcoes?.donos, google) : geocodificadorDaTaxa,
+    googlePrimeiro: google?.origem === "LOJA",
+    aoUsarPontoDoGoogle: () => {
+      marca.google = true;
+    },
     prazo,
     origemDasCoords,
     ...(lojaId

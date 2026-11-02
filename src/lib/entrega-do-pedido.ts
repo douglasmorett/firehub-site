@@ -292,7 +292,8 @@ export function entregaDoVeredicto(
       motivo: "avaliação da entrega falhou",
     };
   }
-  const doVeredicto = pontoValido(v.ponto?.lat, v.ponto?.lng);
+  // O ponto do Google não fica gravado no pedido (termos: VeredictoDeEntrega.pontoDoGoogle).
+  const doVeredicto = v.pontoDoGoogle ? null : pontoValido(v.ponto?.lat, v.ponto?.lng);
   const ponto: PontoDoCliente | null = coords
     ?? (doVeredicto ? { ...doVeredicto, origem: v.ponto?.origem ?? "mapa" } : null);
   // Com coordenada do cliente (pino/GPS) NÃO se pede confirmação (R3): ele já

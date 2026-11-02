@@ -79,12 +79,13 @@ function coordenadaUsavel(c: unknown): c is Coordenada {
  * Só no ATENDE: ponto de endereço recusado não é destino de entrega.
  */
 export function pontoParaGravar(
-  veredito: Pick<VeredictoDeEntrega, "resultado" | "ponto" | "medida"> | null | undefined,
+  veredito: Pick<VeredictoDeEntrega, "resultado" | "ponto" | "medida" | "pontoDoGoogle"> | null | undefined,
   coordsDoCliente: Coordenada | null | undefined,
 ): PontoDoPedido | null {
   if (veredito && veredito.resultado !== "ATENDE") return null;
   const medida = veredito?.medida;
-  if (veredito?.ponto && coordenadaUsavel(veredito.ponto)) {
+  // O ponto do Google não fica gravado no pedido (termos: VeredictoDeEntrega.pontoDoGoogle).
+  if (veredito?.ponto && !veredito.pontoDoGoogle && coordenadaUsavel(veredito.ponto)) {
     return {
       lat: Number(veredito.ponto.lat),
       lng: Number(veredito.ponto.lng),
