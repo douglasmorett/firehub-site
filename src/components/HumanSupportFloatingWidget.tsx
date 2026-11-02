@@ -192,11 +192,66 @@ export default function HumanSupportFloatingWidget() {
     return () => window.removeEventListener(EVENTO_ABRIR_SUPORTE, abrirSuporte);
   }, []);
 
+  // ── SOM quando o robô chama atendente (Gil, Jerrajê, 01/11/2026) ──────────
+  // O balão vermelho era mudo: ninguém via o cliente chamando. Toca quando
+  // entra na fila um chamado que esta tela ainda não tinha visto. O mesmo
+  // cuidado de autoplay do AvisoDeAcrescimo: o navegador só libera o som
+  // depois do primeiro clique/toque na tela.
+  const ctxRef = useRef<AudioContext | null>(null);
+  const chamadosVistos = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (escondido) return;
+    let ctx: AudioContext;
+    try {
+      ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    } catch {
+      return;
+    }
+    ctxRef.current = ctx;
+    const destravar = () => { ctx.resume().catch(() => {}); };
+    document.addEventListener("click", destravar);
+    document.addEventListener("touchstart", destravar);
+    document.addEventListener("keydown", destravar);
+    return () => {
+      document.removeEventListener("click", destravar);
+      document.removeEventListener("touchstart", destravar);
+      document.removeEventListener("keydown", destravar);
+      ctx.close().catch(() => {});
+      ctxRef.current = null;
+    };
+  }, [escondido]);
+
+  /** "Ding-dong" duas vezes: alguém tem que ir lá responder. */
+  const tocarChamado = () => {
+    const ctx = ctxRef.current;
+    if (!ctx || ctx.state !== "running") return;
+    const t = ctx.currentTime + 0.05;
+    for (const volta of [0, 1.0]) {
+      [880, 660].forEach((f, i) => {
+        const osc = ctx.createOscillator();
+        const ganho = ctx.createGain();
+        const inicio = t + volta + i * 0.3;
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(f, inicio);
+        ganho.gain.setValueAtTime(0.0001, inicio);
+        ganho.gain.exponentialRampToValueAtTime(0.5, inicio + 0.02);
+        ganho.gain.exponentialRampToValueAtTime(0.0001, inicio + 0.45);
+        osc.connect(ganho).connect(ctx.destination);
+        osc.start(inicio);
+        osc.stop(inicio + 0.5);
+      });
+    }
+  };
+
   const fetchChats = async () => {
     try {
       const res = await fetch("/api/chatbot/human-support").then((r) => r.json());
       if (res.success) {
-        setChats(res.chats || []);
+        const lista: any[] = res.chats || [];
+        const chaves = lista.map((c) => `${c.userId || ""}:${c.jid}`);
+        if (chaves.some((k) => !chamadosVistos.current.has(k))) tocarChamado();
+        chamadosVistos.current = new Set(chaves);
+        setChats(lista);
         setTotalUnread(res.totalUnread || 0);
       }
     } catch (e) {}
