@@ -87,7 +87,15 @@ import { INDICADOS_PARA_ISENCAO } from "@/lib/indique-e-ganhe";
  */
 const VENDAS_QUE_CONTAM = {
   status: { notIn: ["CRIANDO_IA"] as string[] },
-  NOT: { status: "AGUARDANDO_PAGAMENTO", paymentPaidAt: null },
+  NOT: [
+    { status: "AGUARDANDO_PAGAMENTO", paymentPaidAt: null },
+    // Rascunho do robô que o cliente largou: sai de CRIANDO_IA direto para
+    // CANCELADO sem nunca ganhar o número do dia (que só nasce na confirmação).
+    // Não foi pedido — Divinos, 01/11/2026: "#1HIU, cliente desistiu", R$ 12,
+    // aparecia na base da mensalidade. Pedido do robô confirmado e depois
+    // cancelado tem número e continua contando.
+    { status: "CANCELADO", source: "WHATSAPP_IA", dailyOrderNumber: null },
+  ],
   OR: [
     { status: { not: "CANCELADO" } },
     { createdAt: { gte: VIRADA_DOS_2_POR_CENTO } },
@@ -811,10 +819,19 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += cycle.totemFee;
       linhasExtras.push(`Totem R$${cycle.totemFee.toFixed(2)}`);
     }
+  }
+
+  // Os serviços do painel (Bill, app, multimarcas, tablet, FireCheck) NÃO entram
+  // no mês que o teste cobriu inteiro. Antes entravam ("serviço contratado, como
+  // o totem"), e a loja em teste via débito no painel como se o teste tivesse
+  // acabado na virada do mês — dono, 01/11/2026 (Annalu, Bill R$ 49,90 com teste
+  // até 06/11): "o teste não acaba quando o mês vira, acaba quando os dias
+  // acabam". O mês em que o teste termina já cobra o serviço inteiro (regra de
+  // cada módulo: ativo em algum dia = mês inteiro).
+  if (!isSpecialStore && !isentoPorTeste) {
     // Bill, seu assessor: R$ 49,90 (29,90 no termo antigo) no mês em que ficou ativo depois dos 7 dias
     // grátis da primeira ativação, inteiro (termo
-    // aceito ao ligar — lib/assessor/termo.ts). Serviço contratado, como o
-    // totem: entra mesmo no mês em teste da mensalidade.
+    // aceito ao ligar — lib/assessor/termo.ts).
     const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
     const assessor = await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd);
     if (assessor > 0) {
@@ -1238,22 +1255,24 @@ export async function getCurrentCycleView(franchiseeId: string) {
   const trafegoPago = cycle.metaAdsFee ?? 0;
   const totem = cycle.totemFee ?? 0;
   // Bill neste mês (ativo em algum momento = o mês inteiro) — a mesma
-  // conta que o fechamento põe no boleto.
+  // conta que o fechamento põe no boleto. Mês que o teste cobre inteiro não
+  // cobra os serviços do painel (ver closeBillingCycle).
+  const cobraServicos = inicio !== null;
   const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
   const intervaloDoCiclo = intervaloDoMes(cycle.yearMonth, tz);
-  const assessor = await cobrancaDoAssessorNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
+  const assessor = cobraServicos ? await cobrancaDoAssessorNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   // Aplicativo próprio da loja — a mesma conta do fechamento.
   const { cobrancaDoAppNoMes } = await import("@/lib/app-da-loja/plano");
-  const aplicativo = await cobrancaDoAppNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
+  const aplicativo = cobraServicos ? await cobrancaDoAppNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   // Multimarcas — a mesma conta do fechamento.
   const { cobrancaDoMultimarcasNoMes } = await import("@/lib/multimarcas/assinatura");
-  const multimarcas = await cobrancaDoMultimarcasNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
+  const multimarcas = cobraServicos ? await cobrancaDoMultimarcasNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   // Tablet na mesa — a mesma conta do fechamento.
   const { cobrancaDoTabletNoMes } = await import("@/lib/tablet-da-mesa/assinatura");
-  const tabletNaMesa = await cobrancaDoTabletNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
+  const tabletNaMesa = cobraServicos ? await cobrancaDoTabletNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   // FireCheck — a mesma conta do fechamento.
   const { cobrancaDoFirecheckNoMes } = await import("@/lib/firecheck-modulos/assinatura");
-  const firecheck = await cobrancaDoFirecheckNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd);
+  const firecheck = cobraServicos ? await cobrancaDoFirecheckNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + tabletNaMesa + firecheck;
 
   const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
@@ -1320,16 +1339,17 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
   const { cobrancaDoAssessorNoMes } = await import("@/lib/assessor/assinatura");
   const { cobrancaDoAppNoMes } = await import("@/lib/app-da-loja/plano");
   const { cobrancaDoMultimarcasNoMes } = await import("@/lib/multimarcas/assinatura");
+  if (inicio === null) {
+    // Teste no mês inteiro: mensalidade, lojas extras e serviços do painel
+    // perdoados; tráfego e totem são serviço prestado e o fechamento cobra.
+    const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0);
+    return { ...nada, outrosServicos, custo: parseFloat(outrosServicos.toFixed(2)) };
+  }
   const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0) + (await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd))
     + (await cobrancaDoAppNoMes(franchiseeId, monthStart, monthEnd))
     + (await cobrancaDoMultimarcasNoMes(franchiseeId, monthStart, monthEnd))
     + (await (await import("@/lib/tablet-da-mesa/assinatura")).cobrancaDoTabletNoMes(franchiseeId, monthStart, monthEnd))
     + (await (await import("@/lib/firecheck-modulos/assinatura")).cobrancaDoFirecheckNoMes(franchiseeId, monthStart, monthEnd));
-  if (inicio === null) {
-    // Teste no mês inteiro: mensalidade e lojas extras perdoadas; tráfego e
-    // totem são serviço prestado e o fechamento cobra.
-    return { ...nada, outrosServicos, custo: parseFloat(outrosServicos.toFixed(2)) };
-  }
   const agg = await prisma.customerOrder.aggregate({
     where: { franchiseeId, ...VENDAS_QUE_CONTAM, createdAt: { gte: inicio, lt: monthEnd } },
     _sum: CAMPOS_DO_BRUTO,

@@ -77,6 +77,11 @@ export async function POST(req: Request) {
         storeAddress: storeAddress || null,
         cpfCnpj: cpfCnpj || null,
         slug: slug,
+        // Loja aberta com a conta ainda em teste fica no MESMO teste da principal.
+        // Sem isto nascia sem `trialEndsAt` = sem teste nenhum, e o fechamento
+        // cobrava a mensalidade dela (Annalu, 01/11/2026: PasteLê e Rush, abertas
+        // no dia do cadastro, receberam boleto com a conta em teste até 06/11).
+        ...(masterStore.trialEndsAt && masterStore.trialEndsAt > new Date() && { trialEndsAt: masterStore.trialEndsAt }),
         ...(vendedorDaConta && {
           vendedorId: vendedorDaConta.id,
           vendedorStatus: "AGUARDANDO",
