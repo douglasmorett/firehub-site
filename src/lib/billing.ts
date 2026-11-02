@@ -87,7 +87,15 @@ import { INDICADOS_PARA_ISENCAO } from "@/lib/indique-e-ganhe";
  */
 const VENDAS_QUE_CONTAM = {
   status: { notIn: ["CRIANDO_IA"] as string[] },
-  NOT: { status: "AGUARDANDO_PAGAMENTO", paymentPaidAt: null },
+  NOT: [
+    { status: "AGUARDANDO_PAGAMENTO", paymentPaidAt: null },
+    // Rascunho do robô que o cliente largou: sai de CRIANDO_IA direto para
+    // CANCELADO sem nunca ganhar o número do dia (que só nasce na confirmação).
+    // Não foi pedido — Divinos, 01/11/2026: "#1HIU, cliente desistiu", R$ 12,
+    // aparecia na base da mensalidade. Pedido do robô confirmado e depois
+    // cancelado tem número e continua contando.
+    { status: "CANCELADO", source: "WHATSAPP_IA", dailyOrderNumber: null },
+  ],
   OR: [
     { status: { not: "CANCELADO" } },
     { createdAt: { gte: VIRADA_DOS_2_POR_CENTO } },
