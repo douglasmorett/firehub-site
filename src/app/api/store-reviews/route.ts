@@ -193,3 +193,39 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+// DELETE /api/store-reviews?id=xxx — A loja exclui uma avaliação (Esfihão,
+// 02/11/2026: cliente em conflito). Só a avaliação DESTA loja.
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user?.email) {
+      return NextResponse.json({ error: "Sua sessão expirou. Entre de novo e tente outra vez." }, { status: 401 });
+    }
+    const user = await prisma.user.findUnique({
+      where: { email: session.user.email },
+      select: { id: true, ownerId: true },
+    });
+    if (!user) {
+      return NextResponse.json({ error: "Usuário não encontrado" }, { status: 404 });
+    }
+
+    const id = new URL(req.url).searchParams.get("id");
+    if (!id) {
+      return NextResponse.json({ error: "Parâmetros inválidos" }, { status: 400 });
+    }
+    const { count } = await prisma.storeReview.deleteMany({
+      where: { id, franchiseeId: user.ownerId || user.id },
+    });
+    if (count === 0) {
+      return NextResponse.json(
+        { error: "Esta avaliação não é desta loja (ou já foi apagada). Atualize a página e tente de novo." },
+        { status: 404 },
+      );
+    }
+    return NextResponse.json({ success: true, message: "🗑️ Avaliação excluída." });
+  } catch (err: any) {
+    console.error("[store-reviews DELETE]", err?.message || err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

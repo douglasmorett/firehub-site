@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { Star, MessageSquare, ToggleLeft, ToggleRight, Check, Send, Sparkles, Filter, Loader2, Info } from "lucide-react";
+import { Star, MessageSquare, ToggleLeft, ToggleRight, Check, Send, Sparkles, Filter, Loader2, Info, Trash2 } from "lucide-react";
 
 export default function StoreReviewsManager({ initialShowReviews }: { initialShowReviews?: boolean }) {
   const [loading, setLoading] = useState(true);
@@ -25,6 +25,7 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [savingReply, setSavingReply] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const fetchReviews = async () => {
     try {
@@ -115,6 +116,24 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
       alert("Erro de conexão ao responder.");
     } finally {
       setSavingReply(false);
+    }
+  };
+
+  const handleDelete = async (reviewId: string) => {
+    if (!confirm("Excluir esta avaliação? Ela some do painel e do cardápio e não dá para desfazer.")) return;
+    setDeletingId(reviewId);
+    try {
+      const res = await fetch(`/api/store-reviews?id=${encodeURIComponent(reviewId)}`, { method: "DELETE" });
+      if (res.ok) {
+        fetchReviews();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(`Não foi possível excluir: ${data.error || `erro ${res.status}`}`);
+      }
+    } catch {
+      alert("Erro de conexão ao excluir.");
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -392,13 +411,23 @@ export default function StoreReviewsManager({ initialShowReviews }: { initialSho
                         </div>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => { setReplyingId(r.id); setReplyText(r.reply || ""); }}
-                        style={{ background: "transparent", border: "none", color: "#1C1917", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, padding: 0 }}
-                      >
-                        <MessageSquare size={13} /> {r.reply ? "Editar Resposta" : "Responder Avaliação"}
-                      </button>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                        <button
+                          type="button"
+                          onClick={() => { setReplyingId(r.id); setReplyText(r.reply || ""); }}
+                          style={{ background: "transparent", border: "none", color: "#1C1917", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, padding: 0 }}
+                        >
+                          <MessageSquare size={13} /> {r.reply ? "Editar Resposta" : "Responder Avaliação"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(r.id)}
+                          disabled={deletingId === r.id}
+                          style={{ background: "transparent", border: "none", color: "#B91C1C", fontWeight: 700, fontSize: "0.78rem", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, padding: 0 }}
+                        >
+                          {deletingId === r.id ? <Loader2 className="animate-spin" size={13} /> : <Trash2 size={13} />} Excluir
+                        </button>
+                      </div>
                     )}
                   </div>
 
