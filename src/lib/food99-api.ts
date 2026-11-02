@@ -828,11 +828,16 @@ export async function listarLojasAutorizadas(): Promise<
   // inteira falhava, a procura caía no shop/list (que não vê loja ainda sem
   // vínculo) e a tela dizia "todas já pertencem a outra loja" para quem tinha
   // acabado de autorizar.
+  //
+  // Em 26/10/2026 a página de 50 passou a voltar errno 10001 "i/o timeout" do
+  // lado da 99 (Rush/Annalu; Kazoku em 02/11): a lista falhava e a tela dizia de
+  // novo "todas já pertencem a outra loja". Com página de 10 a 99 responde na
+  // hora; até 20 páginas (200 lojas autorizadas).
   const esperar = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
-  for (let pagina = 1; pagina <= 10; pagina++) {
+  for (let pagina = 1; pagina <= 20; pagina++) {
     if (pagina > 1) await esperar(1_100);
     const pedir = () => {
-      const base = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: pagina, page_size: 50 };
+      const base = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: pagina, page_size: 10 };
       const corpo = { ...base, sign: assinarOficial(base, cred.appSecret) };
       return chamar<any>("/v3/auth/authorization/getAuthorizedShops", {
         metodo: "POST",
