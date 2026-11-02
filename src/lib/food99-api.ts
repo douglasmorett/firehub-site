@@ -800,6 +800,10 @@ export interface LojaAutorizada {
 
 let cacheAutorizadas: { em: number; lojas: LojaAutorizada[]; cru: any } | null = null;
 const CACHE_AUTORIZADAS_MS = 15_000;
+/** A busca em andamento: telas abertas ao mesmo tempo esperam a mesma, em vez de cada uma gastar a janela de 1 chamada/s da 99. */
+let buscaAutorizadas: Promise<
+  { ok: true; lojas: LojaAutorizada[]; cru: any } | { ok: false; errno: number; erro: string; cru?: any }
+> | null = null;
 
 /**
  * Lojas que autorizaram o app — vinculadas ou não (`bound_flag`).
@@ -817,7 +821,13 @@ export async function listarLojasAutorizadas(): Promise<
   if (cacheAutorizadas && Date.now() - cacheAutorizadas.em < CACHE_AUTORIZADAS_MS) {
     return { ok: true, lojas: cacheAutorizadas.lojas, cru: cacheAutorizadas.cru };
   }
+  if (!buscaAutorizadas) buscaAutorizadas = buscarLojasAutorizadas(cred).finally(() => { buscaAutorizadas = null; });
+  return buscaAutorizadas;
+}
 
+async function buscarLojasAutorizadas(cred: NonNullable<ReturnType<typeof credenciaisDoApp>>): Promise<
+  { ok: true; lojas: LojaAutorizada[]; cru: any } | { ok: false; errno: number; erro: string; cru?: any }
+> {
   const lojas: LojaAutorizada[] = [];
   let cru: any = null;
 
@@ -832,9 +842,13 @@ export async function listarLojasAutorizadas(): Promise<
   // Em 26/10/2026 a página de 50 passou a voltar errno 10001 "i/o timeout" do
   // lado da 99 (Rush/Annalu; Kazoku em 02/11): a lista falhava e a tela dizia de
   // novo "todas já pertencem a outra loja". Com página de 10 a 99 responde na
-  // hora; até 20 páginas (200 lojas autorizadas).
+  // hora (a doc recomenda de 5 a 15).
+  //
+  // SEM TETO DE PÁGINAS (Douglas, 02/11/2026: "não pode ter limite de
+  // cadastro, a gente cresce toda hora"): lê até o `total_page` que a 99
+  // devolve. O 1000 é só trava contra laço infinito (10 mil lojas).
   const esperar = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
-  for (let pagina = 1; pagina <= 20; pagina++) {
+  for (let pagina = 1; pagina <= 1000; pagina++) {
     if (pagina > 1) await esperar(1_100);
     const pedir = () => {
       const base = { app_id: cred.appId, timestamp: Math.floor(Date.now() / 1000), page_no: pagina, page_size: 10 };
@@ -847,9 +861,12 @@ export async function listarLojasAutorizadas(): Promise<
       });
     };
     let r = await pedir();
-    // Outra tela (ou o cron) pode ter gastado a janela de 1s agora mesmo.
-    for (let tentativa = 0; tentativa < 2 && (r.errno === 10005 || /frequency/i.test(r.errmsg || "")); tentativa++) {
-      await esperar(1_100);
+    // Outra tela (ou o cron) pode ter gastado a janela de 1s agora mesmo (10005),
+    // ou a 99 deu "i/o timeout" numa página (10001): tenta a MESMA página de novo
+    // em vez de derrubar a lista inteira — com muitas páginas, uma falha solta
+    // não pode virar "todas já pertencem a outra loja".
+    for (let tentativa = 0; tentativa < 3 && (r.errno === 10005 || r.errno === 10001 || /frequency|timeout/i.test(r.errmsg || "")); tentativa++) {
+      await esperar(1_500 * (tentativa + 1));
       r = await pedir();
     }
 
