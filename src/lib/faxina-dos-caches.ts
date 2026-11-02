@@ -31,6 +31,22 @@ export function sqlDaFaxina(tabela: TabelaDaFaxina, dias: number = DIAS_SEM_USO)
   return `DELETE FROM "${tabela}" WHERE "ultimoUso" < NOW() - INTERVAL '${d} days'`;
 }
 
+/**
+ * O que veio do GOOGLE sai em 30 dias, usado ou não: os termos do Google Maps
+ * Platform não deixam guardar lat/lng por mais que isso (lib/geocodificacao-
+ * google.ts). A leitura já ignora o que passou disso (geocodificacao-servidor,
+ * armazemNoBanco); isto apaga.
+ */
+export const DIAS_DO_GOOGLE = 30;
+export const SQL_DA_FAXINA_DO_GOOGLE = `DELETE FROM "GeocodeCache" WHERE "origem" LIKE 'google%' AND "criadoEm" < NOW() - INTERVAL '${DIAS_DO_GOOGLE} days'`;
+/**
+ * O ponto do Google gravado no PEDIDO (`customerLatLng.google`, loja com a
+ * conta do Google: lib/area-de-entrega.ts, pontoDoGoogle) some em 30 dias. A
+ * distância e a taxa ficam (são nossas). A janela de 90 dias é para a busca
+ * não varrer a tabela inteira todo dia; um dia de faxina perdido ainda cabe nela.
+ */
+export const SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE = `UPDATE "CustomerOrder" SET "customerLatLng" = NULL WHERE "createdAt" < NOW() - INTERVAL '${DIAS_DO_GOOGLE} days' AND "createdAt" > NOW() - INTERVAL '${DIAS_DO_GOOGLE + 60} days' AND "customerLatLng"->>'google' = 'true'`;
+
 export type ResultadoDaFaxina = Record<TabelaDaFaxina, number | null>;
 
 /**

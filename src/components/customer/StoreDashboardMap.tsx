@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { MapPin, Navigation, Flame, Loader2 } from "lucide-react";
 import { parseAddressDetails, cleanAddressForGeocoding } from "@/lib/geocodificacao";
 import { lerPonto, type Ponto } from "@/lib/ponto-da-loja";
+import { camadaDoGoogle } from "@/lib/mapa-do-google-no-leaflet";
 
 /**
  * ── OS PONTOS DESTE MAPA ERAM INVENTADOS ──────────────────────────────────
@@ -296,8 +297,17 @@ export default function StoreDashboardMap({
           document.head.appendChild(link);
         }
 
+        // A loja que conectou a conta do Google: o fundo é o mapa do Google
+        // (lib/mapa-do-google-no-leaflet.ts) — o ponto do Google gravado no
+        // pedido só pode aparecer em mapa do Google (termos).
+        const chaveDoMapa: string | null = await fetch("/api/store/google-maps?mapa=1")
+          .then((r) => (r.ok ? r.json() : null))
+          .then((d) => (typeof d?.chaveDoMapa === "string" && d.chaveDoMapa ? d.chaveDoMapa : null))
+          .catch(() => null);
+
         if (!mapInstanceRef.current) {
           const map = Leaflet.map(mapContainerRef.current!, {
+            ...(chaveDoMapa ? { zoomAnimation: false, attributionControl: false } : {}),
             // Onde a loja está. Sem ponto nenhum (a visão de todas as lojas do
             // admin), abre no país — nunca mais numa cidade escolhida a dedo.
             center: pontoDaLoja ? [pontoDaLoja.lat, pontoDaLoja.lng] : [-14.235, -51.925],
@@ -306,10 +316,21 @@ export default function StoreDashboardMap({
             zoomControl: false,
           });
 
-          Leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-            attribution: "&copy; OpenStreetMap",
-            maxZoom: 19,
-          }).addTo(map);
+          const imagensDeAntes = () =>
+            Leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+              attribution: "&copy; OpenStreetMap",
+              maxZoom: 19,
+            }).addTo(map);
+          if (chaveDoMapa) {
+            // Se o Google não abrir, volta o de antes (a roteirização avisa o porquê).
+            const fundo = camadaDoGoogle(Leaflet, chaveDoMapa, () => {
+              try { map.removeLayer(fundo); } catch {}
+              imagensDeAntes();
+            });
+            fundo.addTo(map);
+          } else {
+            imagensDeAntes();
+          }
 
           // Quem mexeu no mapa manda nele: a partir daí o enquadramento
           // automático para de puxar a visão a cada endereço que chega.

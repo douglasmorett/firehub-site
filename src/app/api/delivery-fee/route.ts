@@ -163,6 +163,14 @@ export async function GET(req: NextRequest) {
     },
     { donos },
   );
+  // O ponto que sai para o checkout (mapa Leaflet do cliente): o do Google
+  // nunca — os termos vetam mostrá-lo fora do mapa do Google, e a chave da
+  // loja não vai para o cardápio público (lib/area-de-entrega.ts, pontoDoGoogle).
+  const pontoQueSai = v.pontoDoGoogle ? null : v.ponto ?? null;
+  // O do token (vira o customerLatLng do pedido): o do Google da LOJA vai,
+  // marcado — a roteirização dela abre no mapa do Google e a faxina apaga em
+  // 30 dias. O do FireHub (Hakim) não.
+  const pontoDoToken = v.pontoDoGoogle === "PLATAFORMA" ? null : v.ponto ?? null;
   const type = v.modo === "BAIRRO" ? "neighborhood" : v.modo === "POLIGONO" ? "poligono" : "radius";
   const porKm = v.modo === "KM";
   // Quem pergunta passou do teto de buscas no mapa (o IP ou a loja): é o laço
@@ -172,7 +180,7 @@ export async function GET(req: NextRequest) {
   // pino a 476 km da casa (o pedido, em lib/entrega-do-pedido.ts, também o
   // descarta). Sem palpite e sem o pino da loja, o mapa abre no endereço da
   // loja achado no mapa — é dele que a distância é medida.
-  const palpite = v.ponto && (v.distanciaKm == null || v.distanciaKm <= PALPITE_ABSURDO_KM) ? v.ponto : null;
+  const palpite = pontoQueSai && (v.distanciaKm == null || v.distanciaKm <= PALPITE_ABSURDO_KM) ? pontoQueSai : null;
   // Sem o pino da loja o mapa de confirmação abre no palpite do servidor, no
   // endereço da loja achado no mapa (`v.pontoDaLoja`) ou, sem nenhum dos dois,
   // no GPS do cliente — a mensagem manda para o GPS (lib/entrega-do-pedido.ts,
@@ -189,7 +197,7 @@ export async function GET(req: NextRequest) {
         medida: v.medida ?? null,
         faixaKm: v.faixaKm ?? null,
         taxaDoEntregador: daSessao ? v.taxaDoEntregador ?? null : null,
-        ponto: v.ponto ?? null,
+        ponto: pontoQueSai ?? null,
         pedeConfirmacao: v.pedeConfirmacao === true && v.peloBairro !== true,
         peloBairro: v.peloBairro === true,
         // Quem mediu a rua pede o crédito perto da distância (o plano grátis do
@@ -312,9 +320,10 @@ export async function GET(req: NextRequest) {
       cotacao = assinarCotacao({
         loja: franchiseeId,
         chave: chaveDoEndereco({ street, number, neighborhood, address, lat: coords?.lat ?? null, lng: coords?.lng ?? null }),
-        lat: v.ponto?.lat ?? null,
-        lng: v.ponto?.lng ?? null,
-        origemDoPonto: v.ponto?.origem ?? null,
+        lat: pontoDoToken?.lat ?? null,
+        lng: pontoDoToken?.lng ?? null,
+        origemDoPonto: pontoDoToken?.origem ?? null,
+        ...(v.pontoDoGoogle === "LOJA" && pontoDoToken ? { pontoDoGoogle: true as const } : {}),
         distanciaKm: v.distanciaKm ?? null,
         medida: v.medida ?? null,
         faixaKm: v.faixaKm ?? null,
@@ -348,7 +357,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     fee, available: true, type, distanceKm: v.distanciaKm, maxRadiusKm: v.raioMaxKm, matchedAddress: v.enderecoNoMapa, neighborhood: v.bairro,
     ...detalhes,
-    ...(v.modo === "POLIGONO" ? { tempoMin: v.tempoMin, ponto: v.ponto ?? null } : {}),
+    ...(v.modo === "POLIGONO" ? { tempoMin: v.tempoMin, ponto: pontoQueSai ?? null } : {}),
     // Mesmo com taxa calculada, o cliente pode conferir o pino: o mapa acha
     // rua homônima em outro bairro com a mesma facilidade com que não acha
     // nada, e aí a taxa é de outro lugar.

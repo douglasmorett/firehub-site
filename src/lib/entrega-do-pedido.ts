@@ -49,10 +49,11 @@ const DISTANCIA_ABSURDA_KM = 60;
 
 const centavos = (n: number) => Math.round(n * 100) / 100;
 
-export type PontoDoCliente = { lat: number; lng: number; origem: OrigemDoPonto };
+/** `google`: o ponto veio do Google da loja (lib/area-de-entrega.ts, pontoDoGoogle) — some em 30 dias. */
+export type PontoDoCliente = { lat: number; lng: number; origem: OrigemDoPonto; google?: true };
 
 /** O que vai em `CustomerOrder.customerLatLng`. Quem lê `{lat,lng}` continua lendo. */
-export type PontoGravado = { lat: number; lng: number; origem: OrigemDoPonto; medida?: MedidaDaDistancia };
+export type PontoGravado = { lat: number; lng: number; origem: OrigemDoPonto; medida?: MedidaDaDistancia; google?: true };
 
 /**
  * O ponto é de ENCHIMENTO? O 99Food manda (-23,-43) quando não sabe o ponto:
@@ -251,7 +252,7 @@ export function entregaDaCotacao(
 ): EntregaDoPedido {
   const doToken = pontoValido(c.lat, c.lng);
   const ponto: PontoDoCliente | null = coords
-    ?? (doToken ? { ...doToken, origem: c.origemDoPonto ?? "mapa" } : null);
+    ?? (doToken ? { ...doToken, origem: c.origemDoPonto ?? "mapa", ...(c.pontoDoGoogle ? { google: true as const } : {}) } : null);
   return {
     fonte: "cotacao",
     modo,
@@ -292,9 +293,11 @@ export function entregaDoVeredicto(
       motivo: "avaliação da entrega falhou",
     };
   }
-  const doVeredicto = pontoValido(v.ponto?.lat, v.ponto?.lng);
+  // O ponto do Google (termos: VeredictoDeEntrega.pontoDoGoogle): o da LOJA
+  // vai marcado (some em 30 dias); o do FireHub não fica no pedido.
+  const doVeredicto = v.pontoDoGoogle === "PLATAFORMA" ? null : pontoValido(v.ponto?.lat, v.ponto?.lng);
   const ponto: PontoDoCliente | null = coords
-    ?? (doVeredicto ? { ...doVeredicto, origem: v.ponto?.origem ?? "mapa" } : null);
+    ?? (doVeredicto ? { ...doVeredicto, origem: v.ponto?.origem ?? "mapa", ...(v.pontoDoGoogle === "LOJA" ? { google: true as const } : {}) } : null);
   // Com coordenada do cliente (pino/GPS) NÃO se pede confirmação (R3): ele já
   // confirmou. Pedir de novo seria prender o cliente num laço — confirma o
   // pino, o servidor pede o pino.
@@ -487,7 +490,11 @@ export function pontoParaGravar(e: EntregaDoPedido): PontoGravado | null {
   if (semDecisao(e) && !pontoDoProprioCliente(e)) return null;
   const p = pontoValido(e.ponto.lat, e.ponto.lng);
   if (!p || pontoDeEnchimento(p)) return null;
-  return { lat: p.lat, lng: p.lng, origem: e.ponto.origem, ...(e.medida && !semDecisao(e) ? { medida: e.medida } : {}) };
+  return {
+    lat: p.lat, lng: p.lng, origem: e.ponto.origem,
+    ...(e.medida && !semDecisao(e) ? { medida: e.medida } : {}),
+    ...(e.ponto.google ? { google: true as const } : {}),
+  };
 }
 
 /**

@@ -56,6 +56,8 @@ export type PontoDoPedido = {
   lng: number;
   origem: OrigemDoPonto;
   medida?: MedidaDaDistancia;
+  /** Do Google da loja (lib/area-de-entrega.ts, pontoDoGoogle): a faxina apaga em 30 dias. */
+  google?: true;
 };
 
 function coordenadaUsavel(c: unknown): c is Coordenada {
@@ -79,17 +81,20 @@ function coordenadaUsavel(c: unknown): c is Coordenada {
  * Só no ATENDE: ponto de endereço recusado não é destino de entrega.
  */
 export function pontoParaGravar(
-  veredito: Pick<VeredictoDeEntrega, "resultado" | "ponto" | "medida"> | null | undefined,
+  veredito: Pick<VeredictoDeEntrega, "resultado" | "ponto" | "medida" | "pontoDoGoogle"> | null | undefined,
   coordsDoCliente: Coordenada | null | undefined,
 ): PontoDoPedido | null {
   if (veredito && veredito.resultado !== "ATENDE") return null;
   const medida = veredito?.medida;
-  if (veredito?.ponto && coordenadaUsavel(veredito.ponto)) {
+  // O ponto do Google (termos: VeredictoDeEntrega.pontoDoGoogle): o da LOJA
+  // vai marcado (some em 30 dias); o do FireHub não fica no pedido.
+  if (veredito?.ponto && veredito.pontoDoGoogle !== "PLATAFORMA" && coordenadaUsavel(veredito.ponto)) {
     return {
       lat: Number(veredito.ponto.lat),
       lng: Number(veredito.ponto.lng),
       origem: veredito.ponto.origem || (coordsDoCliente ? "gps" : "mapa"),
       ...(medida ? { medida } : {}),
+      ...(veredito.pontoDoGoogle === "LOJA" ? { google: true as const } : {}),
     };
   }
   if (coordenadaUsavel(coordsDoCliente)) {

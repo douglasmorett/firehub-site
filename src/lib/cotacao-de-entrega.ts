@@ -53,6 +53,12 @@ export type CotacaoDeEntrega = {
   lat: number | null;
   lng: number | null;
   origemDoPonto: OrigemDoPonto | null;
+  /**
+   * O ponto é do Google da LOJA (lib/area-de-entrega.ts, pontoDoGoogle): o
+   * pedido o grava com `google: true` (a faxina apaga em 30 dias). Ausente
+   * nos tokens de antes (01/11/2026).
+   */
+  pontoDoGoogle?: true;
   distanciaKm: number | null;
   medida: MedidaDaDistancia | null;
   /** Km da faixa que decidiu a taxa (modo KM/ROTA). */

@@ -1100,6 +1100,11 @@ const INSTRUCOES_MESA = [
   // A página das suas lojas (/lojas/[slug]), na principal do grupo: título,
   // frase, cor, capa, ordem e lojas ocultas (lib/pagina-do-grupo-config.ts).
   `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "paginaDoGrupo" JSONB`,
+  // A conta do Google DA LOJA (lib/google-maps-da-loja.ts): a chave cifrada,
+  // o resumo da conexão e as buscas do mês. Nulo = mapa aberto, como sempre.
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleMapsChaveCifrada" TEXT`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleMapsConexao" JSONB`,
+  `ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "googleMapsUso" JSONB`,
   // "Esta comanda saiu": o Assistente confirma (POST print-queue/ack) e a fila
   // da nuvem nunca mais devolve o pedido — o fim do "reinstalou/reiniciou e
   // imprimiu tudo de novo" (Brasa Burguer, 06/09/2026).

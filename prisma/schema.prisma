@@ -230,6 +230,15 @@ model User {
   /// verificadoEm, desligadoEm, desligadoMotivo }.
   asaasConexao       Json?
 
+  // === A CONTA DO GOOGLE DA LOJA (lib/google-maps-da-loja.ts) ===
+  /// A chave da Google Maps Platform DA LOJA, cifrada (lib/cofre.ts). Nunca
+  /// vai à tela. Com ela, o ponto do endereço vem do Google antes do mapa aberto.
+  googleMapsChaveCifrada String?  @db.Text
+  /// { final, conectadoEm, conectadoPor } — sem segredo.
+  googleMapsConexao      Json?
+  /// Buscas que foram ao Google, por mês: { "2026-11": 123 }.
+  googleMapsUso          Json?
+
   apiKeys         ApiKey[]
   webhookSubscriptions WebhookSubscription[]
   orders          Order[]

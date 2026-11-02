@@ -64,7 +64,11 @@ export type ResultadoDoGoogle = {
 
 const URL_DO_GOOGLE = "https://maps.googleapis.com/maps/api/geocode/json";
 
-/** A chave, ou "" — sem ela o Google fica desligado. */
+/**
+ * A chave do FireHub no ambiente, ou "" — sem ela o Google de reserva fica
+ * desligado. Desde 01/11/2026 ela só vale para as lojas HAKIM; quem escolhe a
+ * chave de cada busca é `chaveGoogleDaLoja` (lib/google-maps-da-loja-servidor.ts).
+ */
 export function chaveDoGoogle(): string {
   return String(process.env.GOOGLE_MAPS_API_KEY || "").trim();
 }
@@ -126,23 +130,32 @@ export function lerRespostaDoGoogle(d: any, cidadeDaLoja?: string | null): Respo
   };
 }
 
-/** A consulta ao Google, com o viés para a região da loja (bounds ~25 km). */
-export async function buscarNoGoogle(
-  endereco: string,
-  cidade: string,
-  centro: { lat: number; lng: number } | null,
-  timeoutMs: number,
-): Promise<RespostaDoMapa<ResultadoDoGoogle | null>> {
-  const chave = chaveDoGoogle();
-  if (!chave) return { ok: true, valor: null };
+/** A URL da busca: Brasil, português, a cidade junto do texto e o viés de ~25 km em volta da loja. */
+export function urlDaBuscaNoGoogle(endereco: string, cidade: string, centro: { lat: number; lng: number } | null, chave: string): string {
   const texto = [endereco, cidade && !normal(endereco).includes(normal(cidade)) ? cidade : ""].filter(Boolean).join(", ");
   const params = new URLSearchParams({ address: texto, components: "country:BR", region: "br", language: "pt-BR", key: chave });
   if (centro) {
     const d = 0.25;
     params.set("bounds", `${centro.lat - d},${centro.lng - d}|${centro.lat + d},${centro.lng + d}`);
   }
+  return `${URL_DO_GOOGLE}?${params}`;
+}
+
+/**
+ * A consulta ao Google, com o viés para a região da loja (bounds ~25 km).
+ * `chave`: a da conta do Google DA LOJA (lib/google-maps-da-loja.ts); sem ela,
+ * a do ambiente.
+ */
+export async function buscarNoGoogle(
+  endereco: string,
+  cidade: string,
+  centro: { lat: number; lng: number } | null,
+  timeoutMs: number,
+  chave: string = chaveDoGoogle(),
+): Promise<RespostaDoMapa<ResultadoDoGoogle | null>> {
+  if (!chave) return { ok: true, valor: null };
   try {
-    const res = await fetch(`${URL_DO_GOOGLE}?${params}`, { signal: AbortSignal.timeout(Math.max(500, timeoutMs)) });
+    const res = await fetch(urlDaBuscaNoGoogle(endereco, cidade, centro, chave), { signal: AbortSignal.timeout(Math.max(500, timeoutMs)) });
     const d = await res.json().catch(() => null);
     if (!res.ok || !d) return { ok: false, motivo: `google: HTTP ${res.status}` };
     return lerRespostaDoGoogle(d, cidade);

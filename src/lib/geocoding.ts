@@ -790,6 +790,14 @@ export type OpcoesDaVerificacao = {
    * Sem ele, a cascata é a de sempre.
    */
   ruaNasEntregas?(ruas: string[], bairro: string | null): Promise<{ lat: number; lng: number; entregas: number; mesmoBairro: boolean; rua: string } | null>;
+  /**
+   * A loja conectou a PRÓPRIA conta do Google (lib/google-maps-da-loja.ts): o
+   * Google é perguntado ANTES do mapa aberto, com as mesmas réguas do nível G.
+   * Não achou (ou não bateu com a rua e o bairro do cliente): a cascata segue.
+   */
+  googlePrimeiro?: boolean;
+  /** Avisado quando o ponto aceito veio do Google (termos: ver VeredictoDeEntrega.pontoDoGoogle). */
+  aoUsarPontoDoGoogle?(): void;
 };
 
 /** Texto normalizado para não mandar ao mapa a mesma pergunta com outra pontuação. */
@@ -998,7 +1006,34 @@ export async function verifyStoreDeliveryAddress(
     /** Por que o candidato de outro bairro não foi aceito (vai no motivo do centro do bairro). */
     let motivoDoCandidato: string | null = null;
 
-    for (const consulta of consultasLivres) {
+    /**
+     * O Google achou só o BAIRRO que o cliente escreveu (sem a rua). Não decide
+     * sozinho: é o centro do bairro quando o mapa aberto não conhece o bairro —
+     * o "Jardim Esperança" que no OSM de Cabo Frio nem existe como bairro. Vale
+     * também de régua para a rua homônima e a rua de outro bairro, abaixo.
+     */
+    let bairroDoGoogle = null as { lat: number; lng: number; displayName: string; cidades?: string[] } | null;
+    let perguntouAoGoogle = false as boolean;
+    const perguntarAoGoogle = async (google: NonNullable<GeocodificadorDaTaxa["google"]>) => {
+      perguntouAoGoogle = true;
+      const g = await google(textoParaOMapa, city, loja, prazoDoMapa);
+      const r = g.ok ? g.valor : null;
+      if (r && r.precisao !== "bairro") {
+        const ruasDoCliente = street ? [street] : ruasProcuradas;
+        const ruaBate = ruasDoCliente.length === 0 || (!!r.rua && ruasDoCliente.some((x) => ruaConfere(x, r.rua)));
+        const bairroBate = !neigh || !r.bairro || bairroConfere(neigh, r.bairro);
+        if (ruaBate && bairroBate) {
+          aceitar({ lat: r.lat, lng: r.lng, displayName: r.displayName, cidades: r.cidades }, r.precisao);
+          opcoes?.aoUsarPontoDoGoogle?.();
+        }
+      } else if (r && neigh && r.bairro && bairroConfere(neigh, r.bairro)) {
+        bairroDoGoogle = { lat: r.lat, lng: r.lng, displayName: r.displayName, cidades: r.cidades };
+      }
+    };
+    // ── NÍVEL G0: A CONTA DO GOOGLE DA LOJA, ANTES DO MAPA ABERTO ─────────
+    if (opcoes?.googlePrimeiro && geo.google && temTempoNoMapa()) await perguntarAoGoogle(geo.google);
+
+    for (const consulta of foundGeo ? [] : consultasLivres) {
       if (!temTempoNoMapa()) { esgotouOPrazo = true; break; }
       const achado = valorOu(await buscarLivre(consulta), null);
       if (!achado) continue;
@@ -1199,25 +1234,8 @@ export async function verifyStoreDeliveryAddress(
     // Só vale o ponto da CASA ou da RUA, da cidade da loja, com a rua e o
     // bairro que o cliente escreveu. Falha dele não é "o mapa não respondeu":
     // o mapa aberto respondeu, e a cascata segue como sempre.
-    /**
-     * O Google achou só o BAIRRO que o cliente escreveu (sem a rua). Não decide
-     * sozinho: é o centro do bairro quando o mapa aberto não conhece o bairro —
-     * o "Jardim Esperança" que no OSM de Cabo Frio nem existe como bairro. Vale
-     * também de régua para a rua homônima e a rua de outro bairro, abaixo.
-     */
-    let bairroDoGoogle: { lat: number; lng: number; displayName: string; cidades?: string[] } | null = null;
-    if (!foundGeo && geo.google && temTempoNoMapa()) {
-      const g = await geo.google(textoParaOMapa, city, loja, prazoDoMapa);
-      const r = g.ok ? g.valor : null;
-      if (r && r.precisao !== "bairro") {
-        const ruasDoCliente = street ? [street] : ruasProcuradas;
-        const ruaBate = ruasDoCliente.length === 0 || (!!r.rua && ruasDoCliente.some((x) => ruaConfere(x, r.rua)));
-        const bairroBate = !neigh || !r.bairro || bairroConfere(neigh, r.bairro);
-        if (ruaBate && bairroBate) aceitar({ lat: r.lat, lng: r.lng, displayName: r.displayName, cidades: r.cidades }, r.precisao);
-      } else if (r && neigh && r.bairro && bairroConfere(neigh, r.bairro)) {
-        bairroDoGoogle = { lat: r.lat, lng: r.lng, displayName: r.displayName, cidades: r.cidades };
-      }
-    }
+    // (A pergunta e as réguas: `perguntarAoGoogle`, lá em cima.)
+    if (!foundGeo && !perguntouAoGoogle && geo.google && temTempoNoMapa()) await perguntarAoGoogle(geo.google);
 
     // A principal das duas ruas do texto, achada pela busca livre e guardada
     // para o encontro das duas tentar antes: ninguém achou a pequena, vale ela.
@@ -1292,6 +1310,7 @@ export async function verifyStoreDeliveryAddress(
       const centro = (r.ok ? r.valor : null) || bairroDoGoogle;
       if (centro) {
         aceitar(centro, "bairro");
+        if (centro === bairroDoGoogle) opcoes?.aoUsarPontoDoGoogle?.();
         aproximadoNoBairro = true;
         motivos.push(motivoDoCandidato ? `${motivoDoCandidato} — o ponto é o centro do bairro` : `só o bairro "${neigh}" foi achado no mapa — o ponto é o centro dele`);
       }

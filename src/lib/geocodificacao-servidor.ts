@@ -20,6 +20,9 @@
  */
 import { prisma } from "@/lib/prisma";
 import { buscarNoGoogle, chaveDoGoogle, type ResultadoDoGoogle } from "@/lib/geocodificacao-google";
+import { chaveGoogleDaLoja, contarBuscaNoGoogle, type ChaveDoGoogle } from "@/lib/google-maps-da-loja-servidor";
+import { DIAS_DO_GOOGLE } from "@/lib/faxina-dos-caches";
+import { pontoDoGoogleQueServe } from "@/lib/google-maps-da-loja";
 import {
   criarGeocodificador,
   parseAddressDetails,
@@ -474,9 +477,17 @@ function lembrarCep(cep: string, consulta: ConsultaDoCep) {
   cepsLembrados.set(cep, { ate: Date.now() + 24 * 60 * 60_000, consulta });
 }
 
-/** O Google na roteirização: com a chave E a escolha explícita (termos do Google: ver lib/geocodificacao-google.ts). */
-export function googleNaRoteirizacao(): boolean {
-  return !!chaveDoGoogle() && String(process.env.GOOGLE_NA_ROTEIRIZACAO || "").trim() === "1";
+/**
+ * O Google na roteirização:
+ *   - a loja com a PRÓPRIA conta do Google: sim — a roteirização dela abre no
+ *     mapa do Google (lib/mapa-do-google-no-leaflet.ts), que é o que os termos
+ *     pedem para mostrar o ponto do Google;
+ *   - a chave do FireHub (loja Hakim): só com GOOGLE_NA_ROTEIRIZACAO=1 — o
+ *     mapa dela é o OpenStreetMap (termos: lib/geocodificacao-google.ts).
+ */
+export function googleNaRoteirizacao(qual?: ChaveDoGoogle | null): boolean {
+  if (qual?.origem === "LOJA") return true;
+  return qual?.origem === "PLATAFORMA" && String(process.env.GOOGLE_NA_ROTEIRIZACAO || "").trim() === "1";
 }
 
 export async function resolverPontosNoServidor(
@@ -494,6 +505,8 @@ export async function resolverPontosNoServidor(
   const area: AreaDaLoja = loja.area ?? { centro: loja.centro, raioKm: RAIO_MAX_DA_LOJA_KM, raioDoParceiroKm: RAIO_MAX_DA_LOJA_KM, base: "sem-raio" };
   const raioDe = (p: PedidoDeGeocodificacao) => Math.min(RAIO_MAXIMO_KM, raioDoPedido(area, !!p.ehMarketplace));
   const plausivel = (p: PedidoDeGeocodificacao, ponto: Ponto) => pontoPlausivel(ponto, area, !!p.ehMarketplace);
+  // A chave do Google desta loja (lib/google-maps-da-loja-servidor.ts; ver googleNaRoteirizacao).
+  const daLoja = await chaveGoogleDaLoja(loja.franchiseeId);
 
   // 0. A posição que a loja já ensinou para o endereço (o operador arrastou o
   //    pino de um pedido anterior). É a palavra de quem conhece a rua. Sem a
@@ -604,8 +617,8 @@ export async function resolverPontosNoServidor(
   // aqui: a do Google que também só sabe o bairro não ganha das entregas da
   // loja. Só com GOOGLE_NA_ROTEIRIZACAO=1 e a chave (ver lib/geocodificacao-google.ts).
   const peloGoogleNaDuvida = async (p: PedidoDeGeocodificacao, cidadeDaBusca: string): Promise<ResultadoGeocodificacao | null> => {
-    if (!googleNaRoteirizacao() || prazo - Date.now() <= 1500) return null;
-    const g = await googleNaTaxa(semRabichoDepoisDaUF(p.endereco), cidadeDaBusca || cidade, loja.centro, prazo).catch(
+    if (!googleNaRoteirizacao(daLoja) || prazo - Date.now() <= 1500) return null;
+    const g = await googleNaTaxa(semRabichoDepoisDaUF(p.endereco), cidadeDaBusca || cidade, loja.centro, prazo, daLoja).catch(
       () => ({ ok: false, motivo: "google" }) as RespostaDoMapa<ResultadoDoGoogle | null>,
     );
     const v = g.ok ? g.valor : null;
@@ -708,6 +721,18 @@ export async function resolverPontosNoServidor(
   for (let i = 0; i < restantes.length; i++) {
     const p = restantes[i];
     const chave = chaves[i];
+    // A LOJA COM A CONTA DO GOOGLE: o Google ANTES do cache e do mapa aberto
+    // (Divinos Burger, 01/11/2026: o OSM não tem as ruas de Cabo Frio). Só a
+    // casa ou a rua, dentro da área; senão segue a cascata de sempre. O ponto
+    // não vai para o cache do mapa aberto (o do Google tem o seu, de 30 dias).
+    if (daLoja?.origem === "LOJA" && prazo - Date.now() > 1500) {
+      const g = await googleNaTaxa(semRabichoDepoisDaUF(p.endereco), cidade, loja.centro, prazo, daLoja).catch(() => null);
+      const v = pontoDoGoogleQueServe(g, (x) => plausivel(p, x));
+      if (v) {
+        achados.push({ id: p.id, lat: v.lat, lng: v.lng, origem: `google (${v.precisao})`, doCache: false, fonte: "google", aproximado: false });
+        continue;
+      }
+    }
     // A linha "loja: …" é o ENDEREÇO DA LOJA (pontoDeEndereco), às vezes só o
     // centro da cidade: endereço de cliente igual ao da loja não herda isso.
     const doCache = noCache.get(chave);
@@ -778,8 +803,8 @@ export async function resolverPontosNoServidor(
       }
 
       // ── NADA PLAUSÍVEL PELO MAPA ABERTO: O GOOGLE, SE LIGADO ─────────────
-      if (googleNaRoteirizacao() && prazo - Date.now() > 1500) {
-        const g = await googleNaTaxa(semRabichoDepoisDaUF(p.endereco), busca.cidade || cidade, loja.centro, prazo).catch(
+      if (googleNaRoteirizacao(daLoja) && prazo - Date.now() > 1500) {
+        const g = await googleNaTaxa(semRabichoDepoisDaUF(p.endereco), busca.cidade || cidade, loja.centro, prazo, daLoja).catch(
           () => ({ ok: false, motivo: "google" }) as RespostaDoMapa<ResultadoDoGoogle | null>,
         );
         const v = g.ok ? g.valor : null;
@@ -987,13 +1012,15 @@ export type ArmazemDaTaxa = {
 const armazemNoBanco: ArmazemDaTaxa = {
   async ler(chave) {
     await garantirTabela();
+    // O que veio do Google vale 30 dias, não 90 (termos: lib/faxina-dos-caches.ts, DIAS_DO_GOOGLE).
+    const dias = chave.startsWith("taxa|google|") ? Math.min(DIAS_DO_GOOGLE, VALIDADE_NO_BANCO_DIAS) : VALIDADE_NO_BANCO_DIAS;
     const linhas = await prisma.$queryRawUnsafe<{ resposta: string | null }[]>(
       `SELECT "resposta" FROM "GeocodeCache"
         WHERE "chave" = $1 AND "resposta" IS NOT NULL
           AND "criadoEm" > NOW() - ($2::int * INTERVAL '1 day')
         LIMIT 1`,
       chave,
-      VALIDADE_NO_BANCO_DIAS,
+      dias,
     );
     if (!linhas[0]?.resposta) return null;
     prisma
@@ -1198,13 +1225,24 @@ function lembrarDoGoogle(chave: string, valor: ResultadoDoGoogle | null) {
   memoriaDoGoogle.set(chave, { valor, em: Date.now() });
 }
 
+/**
+ * `qual`: a chave escolhida por `chaveGoogleDaLoja` (sem ela, a da
+ * plataforma). Com a da LOJA, o teto do dia é o dela (a cota é dela) e cada ida
+ * ao Google conta no "buscas no mês" da tela; a da PLATAFORMA conta no teto e
+ * na contagem do FireHub (estadoDoGoogle). O cache é o mesmo.
+ */
+const contagemPorLoja = new Map<string, { dia: string; n: number }>();
+
 async function googleNaTaxa(
   consulta: string,
   cidade: string,
   centro: Ponto | null,
   prazo: number,
+  qual?: ChaveDoGoogle | null,
 ): Promise<RespostaDoMapa<ResultadoDoGoogle | null>> {
-  if (!chaveDoGoogle()) return { ok: true, valor: null };
+  const usada = qual;
+  if (!usada) return { ok: true, valor: null };
+  const daLoja = usada.origem === "LOJA" && usada.lojaId ? { lojaId: usada.lojaId } : null;
   const chave = `taxa|google|${chaveDeCache(consulta, cidade)}`.slice(0, 400);
 
   const lembrada = memoriaDoGoogle.get(chave);
@@ -1222,19 +1260,30 @@ async function googleNaTaxa(
   }
 
   const hoje = new Date().toISOString().slice(0, 10);
-  if (contagemDoGoogle.dia !== hoje) contagemDoGoogle = { dia: hoje, n: 0, avisou: false };
-  if (contagemDoGoogle.n >= tetoDoGoogleNoDia()) {
-    if (!contagemDoGoogle.avisou) {
-      contagemDoGoogle.avisou = true;
-      console.warn(`[Google] teto do dia atingido (${tetoDoGoogleNoDia()} consultas) — até amanhã a taxa segue só com o mapa aberto`);
+  if (daLoja) {
+    let c = contagemPorLoja.get(daLoja.lojaId);
+    if (!c || c.dia !== hoje) contagemPorLoja.set(daLoja.lojaId, (c = { dia: hoje, n: 0 }));
+    if (c.n >= tetoDoGoogleNoDia()) return { ok: true, valor: null };
+  } else {
+    if (contagemDoGoogle.dia !== hoje) contagemDoGoogle = { dia: hoje, n: 0, avisou: false };
+    if (contagemDoGoogle.n >= tetoDoGoogleNoDia()) {
+      if (!contagemDoGoogle.avisou) {
+        contagemDoGoogle.avisou = true;
+        console.warn(`[Google] teto do dia atingido (${tetoDoGoogleNoDia()} consultas) — até amanhã a taxa segue só com o mapa aberto`);
+      }
+      return { ok: true, valor: null };
     }
-    return { ok: true, valor: null };
   }
   const resta = prazo - Date.now();
   if (resta < 800) return { ok: false, motivo: "prazo" };
 
-  contagemDoGoogle.n++;
-  const r = await buscarNoGoogle(consulta, cidade, centro, Math.min(4000, resta));
+  if (daLoja) {
+    contagemPorLoja.get(daLoja.lojaId)!.n++;
+    contarBuscaNoGoogle(daLoja.lojaId);
+  } else {
+    contagemDoGoogle.n++;
+  }
+  const r = await buscarNoGoogle(consulta, cidade, centro, Math.min(4000, resta), usada.chave);
   if (!r.ok) {
     // Sem o endereço no log (LGPD): o resumo correlaciona sem expor.
     console.warn(`[Google] endereço ${resumoDaConsulta(consulta)}: ${r.motivo}`);
@@ -1269,11 +1318,16 @@ export function estadoDoGoogle() {
   };
 }
 
-export function geocodificadorDaTaxaPara(donos?: string[]): GeocodificadorDaTaxa {
+export function geocodificadorDaTaxaPara(donos?: string[], qual?: ChaveDoGoogle | null): GeocodificadorDaTaxa {
   return {
-    google(consulta, cidade, centro, prazo) {
-      return googleNaTaxa(consulta, cidade, centro, prazo);
-    },
+    // Sem chave escolhida para a loja (`chaveGoogleDaLoja`), sem Google.
+    ...(qual
+      ? {
+          google(consulta: string, cidade: string, centro: Ponto | null, prazo: number) {
+            return googleNaTaxa(consulta, cidade, centro, prazo, qual);
+          },
+        }
+      : {}),
     livre(consulta, centro, prazo) {
       return resolverNaTaxa<ResultadoDoMapa | null>({
         chave: `taxa|livre|${regiao(centro)}|${chaveDeCache(consulta, "")}`.slice(0, 400),
@@ -1305,6 +1359,7 @@ export const geocodificadorDaTaxa: GeocodificadorDaTaxa = geocodificadorDaTaxaPa
 export function reiniciarGeocodificacaoParaTeste(opcoes?: { intervaloDoNominatimMs?: number }) {
   memoriaDoGoogle.clear();
   contagemDoGoogle = { dia: "", n: 0, avisou: false };
+  contagemPorLoja.clear();
   memoriaDaTaxa.clear();
   emVooDaTaxa.clear();
   emVooDoDono.clear();

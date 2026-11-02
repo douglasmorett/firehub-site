@@ -204,6 +204,15 @@ async function main() {
   const parceiro = await import("../src/lib/coordenadas-do-parceiro");
   const distancia = await import("../src/lib/distancia-da-entrega");
   const { avaliarEntrega } = area;
+  const googleDaLoja = await import("../src/lib/google-maps-da-loja-servidor");
+  // A loja no banco → memória (lib/google-maps-da-loja-servidor.ts): a chave
+  // própria e se é Hakim (a única que usa a chave do FireHub, GOOGLE_MAPS_API_KEY).
+  const lojasDoGoogle = new Map<string, { chave: string | null; hakim: boolean }>([
+    ["loja-hakim", { chave: null, hakim: true }],
+    ["loja-comum", { chave: null, hakim: false }],
+    ["loja-com-chave", { chave: "chave-da-loja", hakim: false }],
+  ]);
+  googleDaLoja.leituraDaLoja.ler = async (id: string) => lojasDoGoogle.get(id) ?? { chave: null, hakim: false };
 
   // Caches do banco → memória.
   const rotasGuardadas = new Map<string, { km: number; minutos: number | null; deslocamentoM?: number | null; criadoEm: number }>();
@@ -734,7 +743,7 @@ async function main() {
   conferir("'Ouro Verde' não é 'Ouro Preto'", !confere("Ouro Verde", "Ouro Preto"));
 
   // ════════════════════════════════════════════════════════════════════════
-  console.log("\n== Google como segunda fonte (só com GOOGLE_MAPS_API_KEY) ==");
+  console.log("\n== Google como segunda fonte (GOOGLE_MAPS_API_KEY, só nas lojas Hakim) ==");
   const casaNoGoogle = aoSul(1.2, 0.002);
   const respostaDoGoogle = (p: Ponto, cidade = "Cabo Frio") => ({
     status: "OK",
@@ -751,10 +760,11 @@ async function main() {
     }],
   });
   const enderecoSemMapa = "Rua Sem Mapa, 55 - Vila Nova";
+  const hakim = { ...divinos, id: "loja-hakim" };
 
   zerar();
   antes = chamadas.length;
-  const semChave = await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  const semChave = await avaliarEntrega(hakim, { endereco: enderecoSemMapa });
   conferir("sem a chave: o Google nem é perguntado (a cascata é a de sempre)", contar("google", antes) === 0 && semChave.resultado !== "ATENDE", { google: contar("google", antes), resultado: semChave.resultado });
 
   zerar();
@@ -762,25 +772,25 @@ async function main() {
   google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(casaNoGoogle));
   osrm.set(chave4(casaNoGoogle), osrmOk(1600));
   antes = chamadas.length;
-  const peloGoogle = await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  const peloGoogle = await avaliarEntrega(hakim, { endereco: enderecoSemMapa });
   conferir("o mapa aberto não acha, o Google acha a CASA: vale, sem confirmação (1,6 km de rua, R$ 10)",
     peloGoogle.resultado === "ATENDE" && peloGoogle.ponto?.lat === casaNoGoogle.lat && peloGoogle.pedeConfirmacao === false && peloGoogle.taxa === 10 && contar("google", antes) === 1,
     { resultado: peloGoogle.resultado, ponto: peloGoogle.ponto, taxa: peloGoogle.taxa, conf: peloGoogle.pedeConfirmacao, google: contar("google", antes) });
   antes = chamadas.length;
-  await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  await avaliarEntrega(hakim, { endereco: enderecoSemMapa });
   conferir("o mesmo endereço de novo não paga o Google outra vez (cache)", contar("google", antes) === 0, contar("google", antes));
 
   zerar();
   process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
   google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(aoSul(9, 0.01), "São Pedro da Aldeia"));
-  const outraCidadeNoGoogle = await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  const outraCidadeNoGoogle = await avaliarEntrega(hakim, { endereco: enderecoSemMapa });
   conferir("o Google achou em OUTRA cidade: não vale", outraCidadeNoGoogle.resultado !== "ATENDE" || outraCidadeNoGoogle.ponto?.lat !== aoSul(9, 0.01).lat, outraCidadeNoGoogle);
 
   zerar();
   process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
   antes = chamadas.length;
-  await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
-  await avaliarEntrega(divinos, { endereco: enderecoSemMapa });
+  await avaliarEntrega(hakim, { endereco: enderecoSemMapa });
+  await avaliarEntrega(hakim, { endereco: enderecoSemMapa });
   conferir("'não achei' do Google também fica guardado: uma consulta só", contar("google", antes) === 1, contar("google", antes));
 
   zerar();
@@ -809,24 +819,100 @@ async function main() {
   process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
   google.set(norm(`${enderecoNoSol}, Cabo Frio`), bairroNoGoogle(centroDoSol, "Loteamento Sol"));
   osrm.set(chave4(centroDoSol), osrmOk(1200));
-  const peloBairroDoGoogle = await avaliarEntrega(divinos, { endereco: enderecoNoSol });
+  const peloBairroDoGoogle = await avaliarEntrega(hakim, { endereco: enderecoNoSol });
   conferir("o mapa aberto não conhece o bairro, o Google conhece: é o centro dele, PELO BAIRRO (1,2 km, R$ 8)",
     peloBairroDoGoogle.resultado === "ATENDE" && peloBairroDoGoogle.ponto?.origem === "bairro" && peloBairroDoGoogle.ponto?.lat === centroDoSol.lat &&
     peloBairroDoGoogle.peloBairro === true && peloBairroDoGoogle.taxa === 8, peloBairroDoGoogle);
   zerar();
   process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
   google.set(norm(`${enderecoNoSol}, Cabo Frio`), bairroNoGoogle(centroDoSol, "Jardim Caiçara"));
-  const outroBairroNoGoogle = await avaliarEntrega(divinos, { endereco: enderecoNoSol });
+  const outroBairroNoGoogle = await avaliarEntrega(hakim, { endereco: enderecoNoSol });
   conferir("o Google devolveu OUTRO bairro: não vale como o centro do bairro escrito", outroBairroNoGoogle.resultado === "DESCONHECIDO" && outroBairroNoGoogle.peloBairro !== true, outroBairroNoGoogle);
   zerar();
   process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
   const centroDoSolNoOsm = aoSul(1.12, 0.0034);
   nominatim.set(norm("Loteamento Sol, Cabo Frio"), { status: 200, corpo: [lugar(centroDoSolNoOsm, { suburb: "Loteamento Sol", classe: "place", tipo: "suburb", display: "Loteamento Sol, Cabo Frio, Rio de Janeiro, Brasil" })] });
   google.set(norm(`${enderecoNoSol}, Cabo Frio`), bairroNoGoogle(centroDoSol, "Loteamento Sol"));
-  const osmPrimeiro = await avaliarEntrega(divinos, { endereco: enderecoNoSol });
+  const osmPrimeiro = await avaliarEntrega(hakim, { endereco: enderecoNoSol });
   conferir("o OSM conhece o bairro: vale o centro dele (o do Google é só a reserva)", osmPrimeiro.ponto?.lat === centroDoSolNoOsm.lat && osmPrimeiro.peloBairro === true, osmPrimeiro.ponto);
 
   zerar();
+  // ════════════════════════════════════════════════════════════════════════
+  console.log("\n== A conta do Google DA LOJA (lib/google-maps-da-loja.ts) ==");
+  const comum = { ...divinos, id: "loja-comum" };
+  const comChave = { ...divinos, id: "loja-com-chave" };
+  const casaNoOsm = aoSul(2.4, 0.004);
+  const chamadaDoGoogle = (desde: number) => chamadas.slice(desde).find((c) => c.tipo === "google")?.url || "";
+
+  zerar();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(casaNoGoogle));
+  antes = chamadas.length;
+  await avaliarEntrega(comum, { endereco: enderecoSemMapa });
+  conferir("loja que NÃO é Hakim, sem chave própria: a chave do FireHub não vale, o Google nem é perguntado", contar("google", antes) === 0, contar("google", antes));
+
+  zerar();
+  googleDaLoja.esquecerChaveDaLoja();
+  google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(casaNoGoogle));
+  nominatimPadrao = { status: 200, corpo: [lugar(casaNoOsm, { road: "Rua Sem Mapa", suburb: "Vila Nova", house_number: "55" })] };
+  osrm.set(chave4(casaNoGoogle), osrmOk(1600));
+  antes = chamadas.length;
+  const primeiroOGoogle = await avaliarEntrega(comChave, { endereco: enderecoSemMapa });
+  conferir("loja com a PRÓPRIA chave: o Google vem ANTES do mapa aberto (o ponto é o dele, o Nominatim nem é perguntado)",
+    primeiroOGoogle.resultado === "ATENDE" && primeiroOGoogle.ponto?.lat === casaNoGoogle.lat && contar("google", antes) === 1 && contar("nominatim", antes) === 0,
+    { r: primeiroOGoogle.resultado, ponto: primeiroOGoogle.ponto, google: contar("google", antes), nominatim: contar("nominatim", antes) });
+  conferir("… com a chave DA LOJA (e não a do FireHub, que nem está no ambiente)", new URL(chamadaDoGoogle(antes)).searchParams.get("key") === "chave-da-loja");
+  conferir("… e o ponto sai marcado como do Google DA LOJA", primeiroOGoogle.pontoDoGoogle === "LOJA", primeiroOGoogle.pontoDoGoogle);
+  const pedido = await import("../src/lib/entrega-do-pedido");
+  const robo = await import("../src/lib/entrega-do-robo");
+  const gravadoNoSite = pedido.pontoParaGravar(pedido.entregaDoVeredicto(primeiroOGoogle, null));
+  conferir("… o pedido do site/balcão grava o MESMO ponto da taxa, marcado google (a faxina apaga em 30 dias)",
+    gravadoNoSite?.lat === casaNoGoogle.lat && gravadoNoSite?.google === true, gravadoNoSite);
+  const gravadoNoRobo = robo.pontoParaGravar(primeiroOGoogle, null);
+  conferir("… o do robô também", gravadoNoRobo?.lat === casaNoGoogle.lat && gravadoNoRobo?.google === true, gravadoNoRobo);
+  const cotacao = await import("../src/lib/cotacao-de-entrega");
+  const token = cotacao.assinarCotacao({
+    loja: "loja-com-chave", chave: "k", lat: casaNoGoogle.lat, lng: casaNoGoogle.lng, origemDoPonto: "mapa", pontoDoGoogle: true,
+    distanciaKm: 1.6, medida: "rota", faixaKm: 2, taxa: 10, taxaDoEntregador: null, tempoMin: 30,
+  });
+  const lida = cotacao.lerCotacao(token, { loja: "loja-com-chave", chave: "k" });
+  const peloToken = lida ? pedido.pontoParaGravar(pedido.entregaDaCotacao(lida, "KM", null)) : null;
+  conferir("… e o pedido que fecha pela cotação do site (token) também grava marcado google", peloToken?.google === true && peloToken?.lat === casaNoGoogle.lat, peloToken);
+
+  zerar();
+  googleDaLoja.esquecerChaveDaLoja();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(casaNoGoogle));
+  osrm.set(chave4(casaNoGoogle), osrmOk(1600));
+  const daPlataforma = await avaliarEntrega({ ...divinos, id: "loja-hakim" }, { endereco: enderecoSemMapa });
+  conferir("loja Hakim pela chave do FireHub: o ponto decide a taxa, marcado PLATAFORMA…", daPlataforma.resultado === "ATENDE" && daPlataforma.pontoDoGoogle === "PLATAFORMA", daPlataforma.pontoDoGoogle);
+  conferir("… e não fica no pedido (a roteirização dela é OpenStreetMap)",
+    pedido.pontoParaGravar(pedido.entregaDoVeredicto(daPlataforma, null)) === null && robo.pontoParaGravar(daPlataforma, null) === null);
+
+  zerar();
+  googleDaLoja.esquecerChaveDaLoja();
+  google.set(norm(`${enderecoSemMapa}, Cabo Frio`), { status: "REQUEST_DENIED", error_message: "This API project is not authorized to use this API." });
+  nominatimPadrao = { status: 200, corpo: [lugar(casaNoOsm, { road: "Rua Sem Mapa", suburb: "Vila Nova", house_number: "55" })] };
+  osrm.set(chave4(casaNoOsm), osrmOk(3000));
+  const recusouCaiNoOsm = await avaliarEntrega(comChave, { endereco: enderecoSemMapa });
+  conferir("chave da loja recusada (API desligada, cota): cai no mapa aberto, como antes",
+    recusouCaiNoOsm.resultado === "ATENDE" && recusouCaiNoOsm.ponto?.lat === casaNoOsm.lat && !recusouCaiNoOsm.pontoDoGoogle,
+    { r: recusouCaiNoOsm.resultado, ponto: recusouCaiNoOsm.ponto, g: recusouCaiNoOsm.pontoDoGoogle });
+
+  zerar();
+  googleDaLoja.esquecerChaveDaLoja();
+  nominatimPadrao = { status: 200, corpo: [lugar(casaNoOsm, { road: "Rua Sem Mapa", suburb: "Vila Nova", house_number: "55" })] };
+  osrm.set(chave4(casaNoOsm), osrmOk(3000));
+  const naoAchouCaiNoOsm = await avaliarEntrega(comChave, { endereco: enderecoSemMapa });
+  conferir("o Google não achou (ZERO_RESULTS): cai no mapa aberto", naoAchouCaiNoOsm.ponto?.lat === casaNoOsm.lat && !naoAchouCaiNoOsm.pontoDoGoogle, naoAchouCaiNoOsm.ponto);
+
+  zerar();
+  googleDaLoja.esquecerChaveDaLoja();
+  google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(casaNoGoogle));
+  antes = chamadas.length;
+  const comPinoDaLoja = await avaliarEntrega(comChave, { endereco: enderecoSemMapa, coords: aoSul(1.1, 0.0061), origemDasCoords: "pino" });
+  conferir("com o pino do cliente: nem o Google da loja é perguntado, e o ponto é do cliente", contar("google", antes) === 0 && !comPinoDaLoja.pontoDoGoogle);
+
   const praia = aoSul(3.2, 0.01);
   nominatim.set(norm("Rua da Praia, 10 - Braga, Cabo Frio"), { status: 200, corpo: [lugar(praia, { road: "Rua da Praia", suburb: "Braga", house_number: "10" })] });
   osrm.set(chave4(praia), osrmOk(4300, 351));
