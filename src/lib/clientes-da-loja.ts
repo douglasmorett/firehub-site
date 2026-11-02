@@ -272,6 +272,36 @@ export function sqlDosPedidosDoCliente(lojaId: string, chaveDoTelefone: string) 
     LIMIT 300`;
 }
 
+/**
+ * A loja trocou o telefone do cliente (o "Editar cadastro"): os pedidos DESTA
+ * loja (os mesmos da ficha — fora mesa e iFood), os lançamentos de saldo dela
+ * e a correção de cadastro dela passam para o número novo. Cashback, trilha e
+ * carimbos são contados desses pedidos e lançamentos, então vão junto. Outras
+ * lojas e o StoreCustomer (global) não são tocados. Se o número novo já era
+ * cliente, as fichas se juntam (a correção que vale é a que a loja salva agora).
+ */
+export async function trocarTelefoneDoCliente(lojaId: string, de: string, para: string): Promise<{ pedidos: number; lancamentos: number }> {
+  const chaveDe = chaveDoCliente(de);
+  const chavePara = chaveDoCliente(para);
+  if (!chaveDe || !chavePara) throw new Error("telefone inválido");
+  await garantirTabelaDeAjustes();
+  await garantirTabelaDoCadastro();
+  const telPedido = nacional(Prisma.sql`"customerPhone"`);
+  const telAjuste = nacional(Prisma.sql`"telefone"`);
+  const [pedidos, lancamentos] = await prisma.$transaction([
+    prisma.$executeRaw(Prisma.sql`
+      UPDATE "CustomerOrder" SET "customerPhone" = ${para}
+      WHERE "franchiseeId" = ${lojaId} AND "tableSessionId" IS NULL AND "ifoodOrderId" IS NULL
+        AND ${telefoneValido(telPedido)} AND ${chave(telPedido)} = ${chaveDe}`),
+    prisma.$executeRaw(Prisma.sql`
+      UPDATE "CashbackAjuste" SET "telefone" = ${para}
+      WHERE "lojaId" = ${lojaId} AND ${telefoneValido(telAjuste)} AND ${chave(telAjuste)} = ${chaveDe}`),
+    prisma.$executeRaw(Prisma.sql`
+      DELETE FROM "ClienteDaLoja" WHERE "lojaId" = ${lojaId} AND "chave" IN (${chaveDe}, ${chavePara})`),
+  ]);
+  return { pedidos, lancamentos };
+}
+
 /** O resumo dos cartões (exportado para a prova e o teste). `limite` = agora − 30 dias. */
 export function sqlDoResumoDeClientes(lojaId: string, chaves: string[], saldos: number[], limite: Date) {
   return Prisma.sql`
