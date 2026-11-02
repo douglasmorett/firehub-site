@@ -22,6 +22,7 @@ import { prisma } from "@/lib/prisma";
 import { buscarNoGoogle, chaveDoGoogle, type ResultadoDoGoogle } from "@/lib/geocodificacao-google";
 import { chaveGoogleDaLoja, contarBuscaNoGoogle, type ChaveDoGoogle } from "@/lib/google-maps-da-loja-servidor";
 import { DIAS_DO_GOOGLE } from "@/lib/faxina-dos-caches";
+import { pontoDoGoogleQueServe } from "@/lib/google-maps-da-loja";
 import {
   criarGeocodificador,
   parseAddressDetails,
@@ -477,14 +478,15 @@ function lembrarCep(cep: string, consulta: ConsultaDoCep) {
 }
 
 /**
- * O Google na roteirização: só a chave do FireHub (loja Hakim, ver
- * `chaveGoogleDaLoja`) E a escolha explícita (termos do Google: ver
- * lib/geocodificacao-google.ts). A loja com a PRÓPRIA conta do Google ainda
- * não: o mapa daqui é o do OpenStreetMap (Leaflet), e mostrar nele o ponto do
- * Google é o que os termos vetam — entra quando esta tela tiver o mapa do
- * Google para quem conectou (próximo passo, lib/google-maps-da-loja.ts).
+ * O Google na roteirização:
+ *   - a loja com a PRÓPRIA conta do Google: sim — a roteirização dela abre no
+ *     mapa do Google (lib/mapa-do-google-no-leaflet.ts), que é o que os termos
+ *     pedem para mostrar o ponto do Google;
+ *   - a chave do FireHub (loja Hakim): só com GOOGLE_NA_ROTEIRIZACAO=1 — o
+ *     mapa dela é o OpenStreetMap (termos: lib/geocodificacao-google.ts).
  */
 export function googleNaRoteirizacao(qual?: ChaveDoGoogle | null): boolean {
+  if (qual?.origem === "LOJA") return true;
   return qual?.origem === "PLATAFORMA" && String(process.env.GOOGLE_NA_ROTEIRIZACAO || "").trim() === "1";
 }
 
@@ -503,8 +505,7 @@ export async function resolverPontosNoServidor(
   const area: AreaDaLoja = loja.area ?? { centro: loja.centro, raioKm: RAIO_MAX_DA_LOJA_KM, raioDoParceiroKm: RAIO_MAX_DA_LOJA_KM, base: "sem-raio" };
   const raioDe = (p: PedidoDeGeocodificacao) => Math.min(RAIO_MAXIMO_KM, raioDoPedido(area, !!p.ehMarketplace));
   const plausivel = (p: PedidoDeGeocodificacao, ponto: Ponto) => pontoPlausivel(ponto, area, !!p.ehMarketplace);
-  // A chave do Google desta loja (lib/google-maps-da-loja-servidor.ts): aqui só
-  // vale a do FireHub, de reserva (ver googleNaRoteirizacao).
+  // A chave do Google desta loja (lib/google-maps-da-loja-servidor.ts; ver googleNaRoteirizacao).
   const daLoja = await chaveGoogleDaLoja(loja.franchiseeId);
 
   // 0. A posição que a loja já ensinou para o endereço (o operador arrastou o
@@ -720,6 +721,18 @@ export async function resolverPontosNoServidor(
   for (let i = 0; i < restantes.length; i++) {
     const p = restantes[i];
     const chave = chaves[i];
+    // A LOJA COM A CONTA DO GOOGLE: o Google ANTES do cache e do mapa aberto
+    // (Divinos Burger, 01/11/2026: o OSM não tem as ruas de Cabo Frio). Só a
+    // casa ou a rua, dentro da área; senão segue a cascata de sempre. O ponto
+    // não vai para o cache do mapa aberto (o do Google tem o seu, de 30 dias).
+    if (daLoja?.origem === "LOJA" && prazo - Date.now() > 1500) {
+      const g = await googleNaTaxa(semRabichoDepoisDaUF(p.endereco), cidade, loja.centro, prazo, daLoja).catch(() => null);
+      const v = pontoDoGoogleQueServe(g, (x) => plausivel(p, x));
+      if (v) {
+        achados.push({ id: p.id, lat: v.lat, lng: v.lng, origem: `google (${v.precisao})`, doCache: false, fonte: "google", aproximado: false });
+        continue;
+      }
+    }
     // A linha "loja: …" é o ENDEREÇO DA LOJA (pontoDeEndereco), às vezes só o
     // centro da cidade: endereço de cliente igual ao da loja não herda isso.
     const doCache = noCache.get(chave);

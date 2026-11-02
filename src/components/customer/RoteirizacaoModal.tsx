@@ -42,6 +42,7 @@ import {
 import { rotaJaDespachada, rotasComLinha, pontosDaLinha, podarCoordenadas, pernasDaLinha, linhaPelaRua, PERNAS_POR_PEDIDO_DE_DESENHO } from "@/lib/rotas-no-mapa";
 import TutorialDaTela from "@/components/TutorialDaTela";
 import GoogleMapsDaLoja from "@/components/customer/GoogleMapsDaLoja";
+import { camadaDoGoogle } from "@/lib/mapa-do-google-no-leaflet";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
 import { bairroPeloEndereco, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
 import RotaAutomatica, { type PreviaDaRotaAutomatica, type RotaAutomaticaConfig, type RotaAutomaticaEstado } from "@/components/customer/RotaAutomatica";
@@ -567,6 +568,19 @@ export default function RoteirizacaoModal({
   const markersRef = useRef<Map<string, any>>(new Map());
   const polylinesRef = useRef<any[]>([]);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
+  // A chave do Google da loja para o FUNDO do mapa (lib/mapa-do-google-no-leaflet.ts).
+  // undefined = ainda perguntando; null = sem conta do Google (OpenStreetMap, como sempre).
+  const [chaveDoMapa, setChaveDoMapa] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let vivo = true;
+    fetch("/api/store/google-maps?mapa=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => vivo && setChaveDoMapa(typeof d?.chaveDoMapa === "string" && d.chaveDoMapa ? d.chaveDoMapa : null))
+      .catch(() => vivo && setChaveDoMapa(null));
+    return () => {
+      vivo = false;
+    };
+  }, []);
   const [geocodedMap, setGeocodedMap] = useState<Record<string, { lat: number; lng: number }>>({});
   const [geocodingLoading, setGeocodingLoading] = useState(false);
   /** Força o redesenho do mapa para o pino verde sumir na hora certa. */
@@ -1856,12 +1870,16 @@ export default function RoteirizacaoModal({
 
   // 1. Inicializa o Mapa Leaflet uma única vez (Pré-carregado em background)
   useEffect(() => {
-    if (!leafletLoaded || !mapRef.current) return;
+    if (!leafletLoaded || !mapRef.current || chaveDoMapa === undefined) return;
     const L = (window as any).L;
     if (!L) return;
 
     if (!leafletMapRef.current) {
       const map = L.map(mapRef.current, {
+        // Com o fundo do Google, o zoom não anima (o Google pula para o zoom
+        // novo e os pinos animados ficariam meio segundo fora do lugar), e o
+        // crédito do Leaflet sai do canto: ali ficam o logo e os termos do Google.
+        ...(chaveDoMapa ? { zoomAnimation: false, attributionControl: false } : {}),
         center: [defaultCenter.lat, defaultCenter.lng],
         // Sem o ponto da loja, aproximar em 13 seria apontar para um lugar
         // qualquer com cara de certeza. Abre no país e o lojista se situa.
@@ -1889,12 +1907,27 @@ export default function RoteirizacaoModal({
       // no Wi-Fi era a BUSCA de endereço, e essa já saiu do navegador (ver
       // lib/geocodificacao-servidor.ts). Trocar o provedor de imagem de novo
       // só com um que funcione sem chave e testado na tela.
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        attribution: '&copy; OpenStreetMap contributors',
-        subdomains: "abc",
-        maxZoom: 19,
-        keepBuffer: 5,
-      }).addTo(map);
+      const imagensDeAntes = () =>
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+          attribution: '&copy; OpenStreetMap contributors',
+          subdomains: "abc",
+          maxZoom: 19,
+          keepBuffer: 5,
+        }).addTo(map);
+
+      // A loja que conectou a conta do Google: o fundo é o mapa do Google
+      // (lib/mapa-do-google-no-leaflet.ts). Se o Google não abrir, volta o de
+      // antes e a tela diz o porquê.
+      if (chaveDoMapa) {
+        const fundo = camadaDoGoogle(L, chaveDoMapa, (motivo) => {
+          try { map.removeLayer(fundo); } catch {}
+          imagensDeAntes();
+          setAviso({ tipo: "erro", titulo: "O mapa do Google não abriu", detalhe: motivo, fixo: true });
+        });
+        fundo.addTo(map);
+      } else {
+        imagensDeAntes();
+      }
 
       leafletMapRef.current = map;
     }
@@ -1908,7 +1941,7 @@ export default function RoteirizacaoModal({
         leafletMapRef.current = null;
       }
     };
-  }, [leafletLoaded, defaultCenter, temPontoDaLoja]);
+  }, [leafletLoaded, defaultCenter, temPontoDaLoja, chaveDoMapa]);
 
   // 2. Reajusta dimensões do container do mapa instantaneamente ao abrir o modal
   useEffect(() => {

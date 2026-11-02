@@ -65,6 +65,12 @@ async function lerDaLoja(lojaId: string): Promise<{ chave: string | null; hakim:
   return lido;
 }
 
+/** Só a chave PRÓPRIA da loja (o fundo do mapa do painel), ou null. */
+export async function chaveDoGoogleDaLoja(lojaId: string | null | undefined): Promise<string | null> {
+  if (!lojaId) return null;
+  return (await lerDaLoja(lojaId)).chave;
+}
+
 /**
  * A chave que a loja usa — a ÚNICA escolha: a dela; sem ela, se a loja for
  * Hakim e houver a env, a do FireHub; senão null (o mapa aberto de sempre).

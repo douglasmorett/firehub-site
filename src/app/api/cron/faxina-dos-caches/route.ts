@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { verifyCronAuth } from "@/lib/cron-auth";
-import { faxinaDosCaches, SQL_DA_FAXINA_DO_GOOGLE } from "@/lib/faxina-dos-caches";
+import { faxinaDosCaches, SQL_DA_FAXINA_DO_GOOGLE, SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE } from "@/lib/faxina-dos-caches";
 import { garantirTabelaDePontosAprendidos, sqlDaFaxinaDosPontosAprendidos } from "@/lib/ponto-aprendido";
 
 export const dynamic = "force-dynamic";
@@ -20,11 +20,12 @@ export async function GET(req: NextRequest) {
   const apagados = await faxinaDosCaches((sql) => prisma.$executeRawUnsafe(sql));
   // O que veio do Google: 30 dias no máximo (termos do Google).
   const doGoogle = await prisma.$executeRawUnsafe(SQL_DA_FAXINA_DO_GOOGLE).catch(() => null);
+  const pedidosDoGoogle = await prisma.$executeRawUnsafe(SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE).catch(() => null);
   // A posição que a loja ensinou na roteirização vale mais que o cache do mapa:
   // sai só depois de um ano sem uso (lib/ponto-aprendido.ts).
   let pontosAprendidos: number | null = null;
   if (await garantirTabelaDePontosAprendidos()) {
     pontosAprendidos = await prisma.$executeRawUnsafe(sqlDaFaxinaDosPontosAprendidos()).catch(() => null);
   }
-  return NextResponse.json({ ok: true, apagados, doGoogle, pontosAprendidos });
+  return NextResponse.json({ ok: true, apagados, doGoogle, pedidosDoGoogle, pontosAprendidos });
 }

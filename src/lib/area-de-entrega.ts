@@ -101,13 +101,18 @@ export function minimoDaZona(z: any): number | null {
 export type VeredictoDeEntrega = {
   modo: ModoDaArea;
   /**
-   * O `ponto` veio do GOOGLE (a conta do Google da loja, lib/google-maps-da-
-   * loja.ts). Os termos do Google vetam mostrar esse ponto num mapa que não é
-   * o do Google e guardá-lo por mais de 30 dias: ele decide a taxa aqui no
-   * servidor, mas NÃO vai para o mapa do checkout (Leaflet) nem é gravado no
-   * pedido (api/delivery-fee, entregaDoVeredicto, pontoParaGravar).
+   * O `ponto` veio do GOOGLE, e com a chave de quem (lib/google-maps-da-loja.ts).
+   * Os termos do Google vetam mostrar esse ponto num mapa que não é o do
+   * Google e guardá-lo por mais de 30 dias. Por isso ele NUNCA vai para o mapa
+   * do checkout (Leaflet, api/delivery-fee), e:
+   *   - "LOJA": a loja conectou a conta do Google e a roteirização dela abre
+   *     no mapa do Google (lib/mapa-do-google-no-leaflet.ts) — o ponto é
+   *     gravado no pedido com `google: true` e a faxina diária o apaga em 30
+   *     dias (lib/faxina-dos-caches.ts, SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE);
+   *   - "PLATAFORMA": a chave do FireHub (lojas Hakim), roteirização no
+   *     OpenStreetMap — o ponto decide a taxa e não é gravado.
    */
-  pontoDoGoogle?: boolean;
+  pontoDoGoogle?: "LOJA" | "PLATAFORMA";
   resultado: "ATENDE" | "FORA" | "DESCONHECIDO";
   /** Taxa da faixa/bairro. null quando não há como saber (SEM_AREA sem taxa fixa, ou DESCONHECIDO). */
   taxa: number | null;
@@ -412,16 +417,16 @@ export async function avaliarEntrega(
 ): Promise<VeredictoDeEntrega> {
   // O ponto do Google é marcado (ver `pontoDoGoogle`): com a coordenada do
   // cliente, o ponto é dele, não do Google.
-  const marca = { google: false };
+  const marca: { google: "LOJA" | "PLATAFORMA" | null } = { google: null };
   const v = await avaliarEntregaNoMapa(loja, pedido, opcoes, marca);
-  return marca.google && v.ponto && !coordenadaDoCliente(pedido.coords) ? { ...v, pontoDoGoogle: true } : v;
+  return marca.google && v.ponto && !coordenadaDoCliente(pedido.coords) ? { ...v, pontoDoGoogle: marca.google } : v;
 }
 
 async function avaliarEntregaNoMapa(
   loja: LojaParaEntrega,
   pedido: Parameters<typeof avaliarEntrega>[1],
   opcoes: Parameters<typeof avaliarEntrega>[2],
-  marca: { google: boolean },
+  marca: { google: "LOJA" | "PLATAFORMA" | null },
 ): Promise<VeredictoDeEntrega> {
   // Prazo automático iFood e 99 ligado: o tempo das áreas sobe junto com o do
   // iFood (lib/prazo-automatico.ts). Só soma quando a loja veio com etaConfig.
@@ -476,7 +481,7 @@ async function avaliarEntregaNoMapa(
     geocodificador: opcoes?.donos?.length || google ? geocodificadorDaTaxaPara(opcoes?.donos, google) : geocodificadorDaTaxa,
     googlePrimeiro: google?.origem === "LOJA",
     aoUsarPontoDoGoogle: () => {
-      marca.google = true;
+      marca.google = google?.origem ?? null;
     },
     prazo,
     origemDasCoords,

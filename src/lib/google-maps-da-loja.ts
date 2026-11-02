@@ -78,13 +78,13 @@ export function lerTesteDaChave(d: any): ResultadoDoTeste {
     return { ok: false, erro: "O faturamento não está ativado no projeto do Google Cloud. Ative o faturamento (cadastre o cartão) — dentro das 10 mil buscas do mês o Google não cobra." };
   }
   if (/referer/.test(msg)) {
-    return { ok: false, erro: "A chave está restrita por site (referenciador HTTP), e o FireHub consulta pelo servidor. Em Credenciais → sua chave, deixe Restrições do aplicativo em Nenhum (pode limitar as APIs à Geocoding API)." };
+    return { ok: false, erro: "A chave está restrita por site (referenciador HTTP), e o FireHub busca os endereços pelo servidor. Em Credenciais → sua chave, deixe Restrições do aplicativo em Nenhum e use só as Restrições de API (Geocoding API e Maps JavaScript API)." };
   }
   if (/ip, site or mobile application|ip address|use this api key/.test(msg)) {
-    return { ok: false, erro: "A chave está restrita (por IP, app ou site) e o FireHub não pode usar. Em Credenciais → sua chave, deixe Restrições do aplicativo em Nenhum (pode limitar as APIs à Geocoding API)." };
+    return { ok: false, erro: "A chave está restrita (por IP, app ou site) e o FireHub não pode usar. Em Credenciais → sua chave, deixe Restrições do aplicativo em Nenhum e use só as Restrições de API (Geocoding API e Maps JavaScript API)." };
   }
   if (/not authorized to use this api|not activated|has not been used|is disabled|api project is not authorized/.test(msg)) {
-    return { ok: false, erro: "A Geocoding API não está ativada nesse projeto. No Google Cloud, vá em APIs e serviços → Biblioteca, procure Geocoding API e clique em Ativar." };
+    return { ok: false, erro: "A Geocoding API não está ativada nesse projeto (ou a chave não permite essa API). No Google Cloud, vá em APIs e serviços → Biblioteca, procure Geocoding API e clique em Ativar; e em Credenciais → sua chave → Restrições de API, deixe a Geocoding API marcada." };
   }
   if (/invalid|expired/.test(msg)) {
     return { ok: false, erro: "Essa chave não é válida (ou foi apagada). Copie de novo a chave em Credenciais no Google Cloud e cole aqui." };
@@ -114,3 +114,41 @@ export function escolherChaveDoGoogle(o: {
   if (o.hakim && o.chaveDoAmbiente) return { chave: o.chaveDoAmbiente, origem: "PLATAFORMA" };
   return null;
 }
+
+/**
+ * Na roteirização da loja com a conta do Google: quando o ponto do Google vale
+ * (e quando se cai no mapa aberto). Só com a resposta (`ok`), um ponto da CASA
+ * ou da RUA — o "só o bairro" do Google não ganha da cascata do mapa aberto,
+ * que tem as entregas da loja — e dentro da área da loja (`plausivel`).
+ * Qualquer outra coisa: null, segue o fluxo de sempre.
+ */
+export function pontoDoGoogleQueServe<T extends { precisao: string }>(
+  resposta: { ok: true; valor: T | null } | { ok: false; motivo: string } | null | undefined,
+  plausivel: (v: T) => boolean,
+): T | null {
+  if (!resposta || !resposta.ok || !resposta.valor) return null;
+  const v = resposta.valor;
+  if (v.precisao !== "endereco" && v.precisao !== "rua") return null;
+  return plausivel(v) ? v : null;
+}
+
+/**
+ * O passo a passo de conectar (a tela da roteirização e /tutoriais/google-maps
+ * mostram esta mesma lista). `**texto**` sai em negrito.
+ */
+export const PASSOS_PARA_CONECTAR: string[] = [
+  "Entre em **console.cloud.google.com** com a conta do Google da loja e crie um projeto (ex.: \"Mapa da loja\").",
+  "Ative o **faturamento**: menu Faturamento → vincular conta de faturamento e cadastre o cartão. Dentro das 10.000 buscas do mês não há cobrança.",
+  "Em **APIs e serviços → Biblioteca**, procure e ative a **Geocoding API** e a **Maps JavaScript API**.",
+  "Em **APIs e serviços → Credenciais**, clique em **Criar credenciais → Chave de API**. Na chave, em **Restrições de API**, marque \"Restringir chave\" e escolha só a **Geocoding API** e a **Maps JavaScript API** (em \"Restrições do aplicativo\" deixe Nenhum). Salve.",
+  "Copie a chave (começa com **AIza**), cole no FireHub (Roteirização → Problemas no mapa? → Conectar mapa do Google) e clique em **Conectar mapa do Google**. O FireHub testa a chave na hora.",
+];
+
+/** "a **b** c" → partes para negrito: [{t:"a "}, {t:"b", negrito:true}, {t:" c"}]. */
+export function partesDoPasso(passo: string): { t: string; negrito: boolean }[] {
+  return passo.split("**").map((t, i) => ({ t, negrito: i % 2 === 1 })).filter((x) => x.t);
+}
+
+/** O texto da faixa (Douglas, 01/11/2026). */
+export const TEXTO_DA_FAIXA =
+  "Use o mapa do Google: conecte a conta do Google da sua loja e o FireHub passa a achar endereços e bairros pelo Google e mostrar suas rotas no mapa do Google. É grátis até 10.000 buscas por mês (uma loja normalmente não chega nisso); o Google só pede um cartão cadastrado.";

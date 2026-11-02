@@ -14,10 +14,14 @@ import {
   limparChave,
   escolherChaveDoGoogle,
   mesDoUso,
+  partesDoPasso,
+  PASSOS_PARA_CONECTAR,
+  pontoDoGoogleQueServe,
   urlDoTesteDaChave,
 } from "../src/lib/google-maps-da-loja";
 import { urlDaBuscaNoGoogle } from "../src/lib/geocodificacao-google";
-import { SQL_DA_FAXINA_DO_GOOGLE } from "../src/lib/faxina-dos-caches";
+import { SQL_DA_FAXINA_DO_GOOGLE, SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE } from "../src/lib/faxina-dos-caches";
+import { lerRespostaDoGoogle } from "../src/lib/geocodificacao-google";
 
 let ok = 0, falhas = 0;
 function confere(nome: string, cond: boolean, detalhe?: unknown) {
@@ -99,6 +103,42 @@ confere("sem env e sem chave: nada (o mapa aberto de hoje)", escolherChaveDoGoog
 // ── Os termos: o que veio do Google sai em 30 dias ──────────────────────
 confere("faxina apaga o Google com mais de 30 dias, usado ou não",
   SQL_DA_FAXINA_DO_GOOGLE === `DELETE FROM "GeocodeCache" WHERE "origem" LIKE 'google%' AND "criadoEm" < NOW() - INTERVAL '30 days'`, SQL_DA_FAXINA_DO_GOOGLE);
+
+confere("faxina tira o ponto do Google dos PEDIDOS com mais de 30 dias (janela de 90 para não varrer a tabela)",
+  SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE.includes(`"customerLatLng" = NULL`) && SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE.includes(`'30 days'`) &&
+  SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE.includes(`'90 days'`) && SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE.includes(`->>'google' = 'true'`), SQL_DA_FAXINA_DOS_PEDIDOS_DO_GOOGLE);
+
+// ── Roteirização da loja com a conta do Google: quando o ponto vale ─────
+const comp = (long_name: string, ...types: string[]) => ({ long_name, short_name: long_name, types });
+const resposta = (tipoDoPonto: string, tipos: string[], partes: { numero?: string; rua?: string; bairro?: string; cidade?: string }) => ({
+  status: "OK",
+  results: [{
+    formatted_address: [partes.rua, partes.numero, partes.bairro, partes.cidade].filter(Boolean).join(", "),
+    geometry: { location: { lat: -22.8371, lng: -42.033 }, location_type: tipoDoPonto },
+    types: tipos,
+    address_components: [
+      ...(partes.numero ? [comp(partes.numero, "street_number")] : []),
+      ...(partes.rua ? [comp(partes.rua, "route")] : []),
+      ...(partes.bairro ? [comp(partes.bairro, "sublocality_level_1", "sublocality", "political")] : []),
+      comp(partes.cidade || "Cabo Frio", "administrative_area_level_2", "political"),
+    ],
+  }],
+});
+const dentro = () => true;
+const casa = lerRespostaDoGoogle(resposta("ROOFTOP", ["street_address"], { numero: "130", rua: "Travessa Pantanal", bairro: "Jardim Esperança" }), "Cabo Frio");
+const pCasa = pontoDoGoogleQueServe(casa, dentro);
+confere("casa do Google: ponto + bairro", pCasa?.precisao === "endereco" && pCasa.bairro === "Jardim Esperança" && pCasa.lat === -22.8371, pCasa);
+confere("rua do Google vale", pontoDoGoogleQueServe(lerRespostaDoGoogle(resposta("GEOMETRIC_CENTER", ["route"], { rua: "Travessa Pantanal" }), "Cabo Frio"), dentro)?.precisao === "rua");
+confere("só o bairro → cai no mapa aberto", pontoDoGoogleQueServe(lerRespostaDoGoogle(resposta("APPROXIMATE", ["sublocality", "political"], { bairro: "Jardim Esperança" }), "Cabo Frio"), dentro) === null);
+confere("fora da área → cai no mapa aberto", pontoDoGoogleQueServe(casa, () => false) === null);
+confere("outra cidade → cai no mapa aberto", pontoDoGoogleQueServe(lerRespostaDoGoogle(resposta("ROOFTOP", ["street_address"], { numero: "1", rua: "Rua A", cidade: "Búzios" }), "Cabo Frio"), dentro) === null);
+confere("cota/chave recusada → cai no mapa aberto", pontoDoGoogleQueServe(lerRespostaDoGoogle({ status: "OVER_QUERY_LIMIT" }, "Cabo Frio"), dentro) === null);
+confere("sem chave (sem resposta) → mapa aberto", pontoDoGoogleQueServe(null, dentro) === null);
+
+// ── O passo a passo ──────────────────────────────────────────────────────
+confere("negrito do passo", JSON.stringify(partesDoPasso("a **b** c")) === JSON.stringify([{ t: "a ", negrito: false }, { t: "b", negrito: true }, { t: " c", negrito: false }]));
+confere("passo a passo restringe a chave por API (Geocoding + Maps JavaScript), não por site",
+  PASSOS_PARA_CONECTAR.some((p) => /Restrições de API/.test(p) && /Geocoding API/.test(p) && /Maps JavaScript API/.test(p) && /Restrições do aplicativo\\?" deixe Nenhum/.test(p)));
 
 console.log(`\n${ok} ok, ${falhas} falha(s)`);
 if (falhas > 0) process.exit(1);

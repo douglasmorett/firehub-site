@@ -862,11 +862,32 @@ async function main() {
     primeiroOGoogle.resultado === "ATENDE" && primeiroOGoogle.ponto?.lat === casaNoGoogle.lat && contar("google", antes) === 1 && contar("nominatim", antes) === 0,
     { r: primeiroOGoogle.resultado, ponto: primeiroOGoogle.ponto, google: contar("google", antes), nominatim: contar("nominatim", antes) });
   conferir("… com a chave DA LOJA (e não a do FireHub, que nem está no ambiente)", new URL(chamadaDoGoogle(antes)).searchParams.get("key") === "chave-da-loja");
-  conferir("… e o ponto sai marcado como do Google (não vai ao mapa do checkout nem fica no pedido)", primeiroOGoogle.pontoDoGoogle === true, primeiroOGoogle.pontoDoGoogle);
-  const { entregaDoVeredicto } = await import("../src/lib/entrega-do-pedido");
-  const { pontoParaGravar } = await import("../src/lib/entrega-do-robo");
-  conferir("… o pedido do site/balcão não grava o ponto do Google", entregaDoVeredicto(primeiroOGoogle, null).ponto === null, entregaDoVeredicto(primeiroOGoogle, null).ponto);
-  conferir("… nem o do robô", pontoParaGravar(primeiroOGoogle, null) === null);
+  conferir("… e o ponto sai marcado como do Google DA LOJA", primeiroOGoogle.pontoDoGoogle === "LOJA", primeiroOGoogle.pontoDoGoogle);
+  const pedido = await import("../src/lib/entrega-do-pedido");
+  const robo = await import("../src/lib/entrega-do-robo");
+  const gravadoNoSite = pedido.pontoParaGravar(pedido.entregaDoVeredicto(primeiroOGoogle, null));
+  conferir("… o pedido do site/balcão grava o MESMO ponto da taxa, marcado google (a faxina apaga em 30 dias)",
+    gravadoNoSite?.lat === casaNoGoogle.lat && gravadoNoSite?.google === true, gravadoNoSite);
+  const gravadoNoRobo = robo.pontoParaGravar(primeiroOGoogle, null);
+  conferir("… o do robô também", gravadoNoRobo?.lat === casaNoGoogle.lat && gravadoNoRobo?.google === true, gravadoNoRobo);
+  const cotacao = await import("../src/lib/cotacao-de-entrega");
+  const token = cotacao.assinarCotacao({
+    loja: "loja-com-chave", chave: "k", lat: casaNoGoogle.lat, lng: casaNoGoogle.lng, origemDoPonto: "mapa", pontoDoGoogle: true,
+    distanciaKm: 1.6, medida: "rota", faixaKm: 2, taxa: 10, taxaDoEntregador: null, tempoMin: 30,
+  });
+  const lida = cotacao.lerCotacao(token, { loja: "loja-com-chave", chave: "k" });
+  const peloToken = lida ? pedido.pontoParaGravar(pedido.entregaDaCotacao(lida, "KM", null)) : null;
+  conferir("… e o pedido que fecha pela cotação do site (token) também grava marcado google", peloToken?.google === true && peloToken?.lat === casaNoGoogle.lat, peloToken);
+
+  zerar();
+  googleDaLoja.esquecerChaveDaLoja();
+  process.env.GOOGLE_MAPS_API_KEY = "chave-de-teste";
+  google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(casaNoGoogle));
+  osrm.set(chave4(casaNoGoogle), osrmOk(1600));
+  const daPlataforma = await avaliarEntrega({ ...divinos, id: "loja-hakim" }, { endereco: enderecoSemMapa });
+  conferir("loja Hakim pela chave do FireHub: o ponto decide a taxa, marcado PLATAFORMA…", daPlataforma.resultado === "ATENDE" && daPlataforma.pontoDoGoogle === "PLATAFORMA", daPlataforma.pontoDoGoogle);
+  conferir("… e não fica no pedido (a roteirização dela é OpenStreetMap)",
+    pedido.pontoParaGravar(pedido.entregaDoVeredicto(daPlataforma, null)) === null && robo.pontoParaGravar(daPlataforma, null) === null);
 
   zerar();
   googleDaLoja.esquecerChaveDaLoja();
@@ -875,7 +896,7 @@ async function main() {
   osrm.set(chave4(casaNoOsm), osrmOk(3000));
   const recusouCaiNoOsm = await avaliarEntrega(comChave, { endereco: enderecoSemMapa });
   conferir("chave da loja recusada (API desligada, cota): cai no mapa aberto, como antes",
-    recusouCaiNoOsm.resultado === "ATENDE" && recusouCaiNoOsm.ponto?.lat === casaNoOsm.lat && recusouCaiNoOsm.pontoDoGoogle !== true,
+    recusouCaiNoOsm.resultado === "ATENDE" && recusouCaiNoOsm.ponto?.lat === casaNoOsm.lat && !recusouCaiNoOsm.pontoDoGoogle,
     { r: recusouCaiNoOsm.resultado, ponto: recusouCaiNoOsm.ponto, g: recusouCaiNoOsm.pontoDoGoogle });
 
   zerar();
@@ -883,14 +904,14 @@ async function main() {
   nominatimPadrao = { status: 200, corpo: [lugar(casaNoOsm, { road: "Rua Sem Mapa", suburb: "Vila Nova", house_number: "55" })] };
   osrm.set(chave4(casaNoOsm), osrmOk(3000));
   const naoAchouCaiNoOsm = await avaliarEntrega(comChave, { endereco: enderecoSemMapa });
-  conferir("o Google não achou (ZERO_RESULTS): cai no mapa aberto", naoAchouCaiNoOsm.ponto?.lat === casaNoOsm.lat && naoAchouCaiNoOsm.pontoDoGoogle !== true, naoAchouCaiNoOsm.ponto);
+  conferir("o Google não achou (ZERO_RESULTS): cai no mapa aberto", naoAchouCaiNoOsm.ponto?.lat === casaNoOsm.lat && !naoAchouCaiNoOsm.pontoDoGoogle, naoAchouCaiNoOsm.ponto);
 
   zerar();
   googleDaLoja.esquecerChaveDaLoja();
   google.set(norm(`${enderecoSemMapa}, Cabo Frio`), respostaDoGoogle(casaNoGoogle));
   antes = chamadas.length;
   const comPinoDaLoja = await avaliarEntrega(comChave, { endereco: enderecoSemMapa, coords: aoSul(1.1, 0.0061), origemDasCoords: "pino" });
-  conferir("com o pino do cliente: nem o Google da loja é perguntado, e o ponto é do cliente", contar("google", antes) === 0 && comPinoDaLoja.pontoDoGoogle !== true);
+  conferir("com o pino do cliente: nem o Google da loja é perguntado, e o ponto é do cliente", contar("google", antes) === 0 && !comPinoDaLoja.pontoDoGoogle);
 
   const praia = aoSul(3.2, 0.01);
   nominatim.set(norm("Rua da Praia, 10 - Braga, Cabo Frio"), { status: 200, corpo: [lugar(praia, { road: "Rua da Praia", suburb: "Braga", house_number: "10" })] });

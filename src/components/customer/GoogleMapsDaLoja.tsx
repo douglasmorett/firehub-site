@@ -9,6 +9,9 @@
  * de salva: só o final ("••••1234").
  */
 import { useEffect, useState } from "react";
+import { testarMapaNoNavegador } from "@/lib/mapa-do-google-no-leaflet";
+import { PASSOS_PARA_CONECTAR, TEXTO_DA_FAIXA, partesDoPasso } from "@/lib/google-maps-da-loja";
+
 
 type Estado = { conectado: boolean; final: string | null; buscasNoMes: number; podeEditar: boolean };
 
@@ -42,7 +45,15 @@ export default function GoogleMapsDaLoja() {
       } else {
         setEstado(d);
         setChave("");
-        setOk("Pronto! A chave funcionou e o mapa do Google está conectado. Os próximos endereços já saem pelo Google.");
+        // A Geocoding API o servidor já testou; a Maps JavaScript API só se
+        // testa aqui, no navegador.
+        const m = await fetch("/api/store/google-maps?mapa=1").then((x) => (x.ok ? x.json() : null)).catch(() => null);
+        const falhaDoMapa = m?.chaveDoMapa ? await testarMapaNoNavegador(m.chaveDoMapa) : null;
+        if (falhaDoMapa) {
+          setErro(`A busca de endereços funcionou, mas o mapa não: ${falhaDoMapa}`);
+        } else {
+          setOk("Pronto! A chave funcionou e o mapa do Google está conectado. Os próximos endereços já saem pelo Google. Feche e abra a roteirização de novo para ver o mapa do Google.");
+        }
       }
     } catch {
       setErro("Sem conexão com o servidor. Tente de novo.");
@@ -97,9 +108,7 @@ export default function GoogleMapsDaLoja() {
           }}
         >
           <div style={{ flex: 1, minWidth: 260, fontSize: "0.83rem", color: "#1E293B", lineHeight: 1.4 }}>
-            <b style={{ color: "#1D4ED8" }}>🗺️ Problemas no mapa?</b> Use o mapa do Google: cadastre sua conta e o FireHub passa a usar o mapa do Google,
-            mais certeiro nas ruas e bairros. É grátis até 10.000 buscas por mês (uma loja normalmente não chega nisso); o Google só pede um cartão
-            cadastrado.
+            <b style={{ color: "#1D4ED8" }}>🗺️ Problemas no mapa?</b> {TEXTO_DA_FAIXA}
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <button
@@ -143,34 +152,24 @@ export default function GoogleMapsDaLoja() {
                   Chave ••••{estado?.final || "????"} · <b>{(estado?.buscasNoMes || 0).toLocaleString("pt-BR")}</b> buscas no mês (de {LIMITE_GRATIS.toLocaleString("pt-BR")} grátis)
                 </div>
                 <div style={{ fontSize: "0.8rem", color: "#475569", marginTop: 6 }}>
-                  A taxa e a área de entrega dos endereços novos (site, robô e balcão) saem pelo Google. Se o Google falhar, o sistema usa o mapa de antes sozinho.
+                  Os endereços novos (site, robô, balcão e esta tela) saem pelo Google, e a roteirização abre no mapa do Google. Se o Google falhar, o sistema usa o mapa de antes sozinho.
                 </div>
               </div>
             ) : (
               <p style={{ margin: "0 0 12px", fontSize: "0.88rem", color: "#1E293B", lineHeight: 1.5 }}>
-                <b>Problemas no mapa?</b> Use o mapa do Google: cadastre sua conta e o FireHub passa a usar o mapa do Google, mais certeiro nas ruas e
-                bairros. É grátis até <b>10.000 buscas por mês</b> (uma loja normalmente não chega nisso); o Google só pede um cartão cadastrado.
+                <b>Problemas no mapa?</b> {TEXTO_DA_FAIXA}
               </p>
             )}
 
             {!conectado && (
               <div style={{ background: "#F8FAFC", border: "1px solid #E2E8F0", borderRadius: "10px", padding: "12px 14px", marginBottom: 12 }}>
                 <div style={{ fontWeight: 800, fontSize: "0.86rem", color: "#1C1917", marginBottom: 8 }}>Como conectar (uns 10 minutos):</div>
-                <p style={passo}>
-                  1. Entre em <b>console.cloud.google.com</b> com a conta do Google da loja e crie um projeto (ex.: &quot;Mapa da loja&quot;).
-                </p>
-                <p style={passo}>
-                  2. Ative o <b>faturamento</b>: menu Faturamento → vincular conta de faturamento e cadastre o cartão. Dentro das 10.000 buscas do mês não há cobrança.
-                </p>
-                <p style={passo}>
-                  3. Em <b>APIs e serviços → Biblioteca</b>, procure e ative a <b>Geocoding API</b> e a <b>Maps JavaScript API</b>.
-                </p>
-                <p style={passo}>
-                  4. Em <b>APIs e serviços → Credenciais</b>, clique em <b>Criar credenciais → Chave de API</b>. Em &quot;Restrições do aplicativo&quot; deixe <b>Nenhum</b>.
-                </p>
-                <p style={{ ...passo, marginBottom: 0 }}>
-                  5. Copie a chave (começa com <b>AIza</b>) e cole aqui embaixo.
-                </p>
+                {PASSOS_PARA_CONECTAR.map((texto, n) => (
+                  <p key={n} style={n === PASSOS_PARA_CONECTAR.length - 1 ? { ...passo, marginBottom: 0 } : passo}>
+                    {n + 1}.{" "}
+                    {partesDoPasso(texto).map((x, k) => (x.negrito ? <b key={k}>{x.t}</b> : <span key={k}>{x.t}</span>))}
+                  </p>
+                ))}
                 <a
                   href="/tutoriais/google-maps"
                   target="_blank"

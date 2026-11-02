@@ -3,12 +3,19 @@
  * A tela é o bloco "Mapa do Google" da roteirização (RoteirizacaoModal).
  *
  *   GET                     estado: conectada?, final da chave, buscas no mês
+ *   GET ?mapa=1             { chaveDoMapa }: a chave para o FUNDO do mapa da
+ *                           roteirização (Maps JavaScript API, no navegador do
+ *                           painel — lib/mapa-do-google-no-leaflet.ts)
  *   POST { chave }          testa a chave no Geocoding API e, se funcionar, salva
  *   DELETE                  desconecta (apaga a chave; a loja volta ao mapa aberto)
  *
  * Só o titular da loja conecta ou desconecta (a conta e o cartão são dele).
- * Funcionário (STAFF) vê o estado. A chave é cifrada (lib/cofre.ts), nunca
- * volta para a tela e nunca vai para o log.
+ * Funcionário (STAFF) vê o estado. A chave é cifrada (lib/cofre.ts) e nunca
+ * vai para o log. Ela só sai inteira no `?mapa=1`, para quem está logado no
+ * painel da loja: a Maps JavaScript API roda no navegador e precisa dela (é
+ * como o Google funciona). Por isso o passo a passo restringe a chave às duas
+ * APIs (Geocoding e Maps JavaScript): quem a copiar do painel não usa para
+ * mais nada. Nunca vai para o cardápio público.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
@@ -23,7 +30,7 @@ import {
   limparChave,
   urlDoTesteDaChave,
 } from "@/lib/google-maps-da-loja";
-import { contarBuscaNoGoogle, esquecerChaveDaLoja } from "@/lib/google-maps-da-loja-servidor";
+import { chaveDoGoogleDaLoja, contarBuscaNoGoogle, esquecerChaveDaLoja } from "@/lib/google-maps-da-loja-servidor";
 
 export const dynamic = "force-dynamic";
 
@@ -55,9 +62,12 @@ async function estadoDaLoja(lojaId: string, titular: boolean) {
   };
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const quem = await quemPede();
   if (!quem) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  if (req.nextUrl.searchParams.get("mapa") === "1") {
+    return NextResponse.json({ chaveDoMapa: await chaveDoGoogleDaLoja(quem.lojaId) }, { headers: { "Cache-Control": "no-store" } });
+  }
   return NextResponse.json(await estadoDaLoja(quem.lojaId, quem.titular));
 }
 

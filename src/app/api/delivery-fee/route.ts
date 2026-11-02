@@ -163,10 +163,14 @@ export async function GET(req: NextRequest) {
     },
     { donos },
   );
-  // O ponto que sai para o checkout (mapa Leaflet) e para o token do pedido.
-  // O do Google não sai: os termos vetam mostrá-lo fora do mapa do Google e
-  // guardá-lo por mais de 30 dias (lib/area-de-entrega.ts, pontoDoGoogle).
+  // O ponto que sai para o checkout (mapa Leaflet do cliente): o do Google
+  // nunca — os termos vetam mostrá-lo fora do mapa do Google, e a chave da
+  // loja não vai para o cardápio público (lib/area-de-entrega.ts, pontoDoGoogle).
   const pontoQueSai = v.pontoDoGoogle ? null : v.ponto ?? null;
+  // O do token (vira o customerLatLng do pedido): o do Google da LOJA vai,
+  // marcado — a roteirização dela abre no mapa do Google e a faxina apaga em
+  // 30 dias. O do FireHub (Hakim) não.
+  const pontoDoToken = v.pontoDoGoogle === "PLATAFORMA" ? null : v.ponto ?? null;
   const type = v.modo === "BAIRRO" ? "neighborhood" : v.modo === "POLIGONO" ? "poligono" : "radius";
   const porKm = v.modo === "KM";
   // Quem pergunta passou do teto de buscas no mapa (o IP ou a loja): é o laço
@@ -316,9 +320,10 @@ export async function GET(req: NextRequest) {
       cotacao = assinarCotacao({
         loja: franchiseeId,
         chave: chaveDoEndereco({ street, number, neighborhood, address, lat: coords?.lat ?? null, lng: coords?.lng ?? null }),
-        lat: pontoQueSai?.lat ?? null,
-        lng: pontoQueSai?.lng ?? null,
-        origemDoPonto: pontoQueSai?.origem ?? null,
+        lat: pontoDoToken?.lat ?? null,
+        lng: pontoDoToken?.lng ?? null,
+        origemDoPonto: pontoDoToken?.origem ?? null,
+        ...(v.pontoDoGoogle === "LOJA" && pontoDoToken ? { pontoDoGoogle: true as const } : {}),
         distanciaKm: v.distanciaKm ?? null,
         medida: v.medida ?? null,
         faixaKm: v.faixaKm ?? null,
