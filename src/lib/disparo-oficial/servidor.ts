@@ -11,6 +11,7 @@ import { lojaNasRegrasDoCadastro, splitDaRecarga } from "@/lib/parceiro/regras";
 import { levarHospedadoAoGatewayNovo } from "@/lib/gateway-da-loja";
 import { FUSO_PADRAO, dataDaLoja, horaDaLoja } from "@/lib/fuso";
 import { garantirEstruturaDoDisparoOficial } from "./estrutura-no-banco";
+import { avisarVendaAprovada } from "@/lib/app-firehub/aviso-de-venda";
 import * as meta from "./meta";
 import {
   EXPIRA_SEM_ENTREGA_MS,
@@ -325,6 +326,7 @@ export async function registrarPagamentoDaRecarga(pagamento: { id?: string; exte
   if (pago && recarga.status !== "PAGA") {
     await db.disparoRecarga.update({ where: { id }, data: { status: "PAGA", pagaEm: new Date(), asaasPaymentId: recarga.asaasPaymentId || pagamento.id || null } });
     console.log(`[Disparo oficial] Recarga ${id} paga: +${recarga.disparos} disparos para ${recarga.franchiseeId}`);
+    void avisarVendaAprovada(Number(recarga.valor));
     return "PAGA";
   }
   // Estornado (inclusive pelo MED do Pix depois de pago): o crédito sai.

@@ -24,6 +24,7 @@ import { prisma } from "@/lib/prisma";
 import { getAsaasKey } from "@/lib/asaas";
 import { cicloDaReferencia, statusDePago } from "@/lib/parceiro/regras";
 import { creditarIndicacaoPelaMensalidadePaga } from "@/lib/indique-e-ganhe-no-banco";
+import { avisarVendaAprovada } from "@/lib/app-firehub/aviso-de-venda";
 
 export { cicloDaReferencia };
 
@@ -121,6 +122,7 @@ export async function registrarCobrancaDaMensalidade(c: CobrancaDoAsaas, evento?
     // indicou. Um por loja indicada — o webhook repetido e a conferência que
     // passa de novo por aqui não geram outro. Nunca lança.
     await creditarIndicacaoPelaMensalidadePaga(ciclo.id);
+    void avisarVendaAprovada(valor);
     return "PAGO";
   }
 

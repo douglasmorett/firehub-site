@@ -128,32 +128,41 @@ export async function avisarLoja(lojaId: string, aviso: AvisoALoja): Promise<voi
       ttl: 30 * 60,
     }));
 
-    const headers: Record<string, string> = {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    };
-    if (process.env.EXPO_ACCESS_TOKEN) headers.Authorization = `Bearer ${process.env.EXPO_ACCESS_TOKEN}`;
-
-    const res = await fetch(URL_DO_EXPO, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(mensagens),
-      signal: AbortSignal.timeout(8000),
-    });
-    const corpo = await res.json().catch(() => null as any);
-    if (!res.ok) {
-      console.warn(`[App FireHub] aviso para a loja ${lojaId} recusado pelo Expo: ${res.status} ${JSON.stringify(corpo).slice(0, 200)}`);
-      return;
-    }
-
-    const tickets: any[] = Array.isArray(corpo?.data) ? corpo.data : [];
-    const mortos = tickets
-      .map((t, i) => (t?.status === "error" && t?.details?.error === "DeviceNotRegistered" ? mensagens[i]?.to : null))
-      .filter((t): t is string => Boolean(t));
-    for (const token of mortos) {
-      await prisma.$executeRaw`DELETE FROM "LojaAparelho" WHERE "pushToken" = ${token}`.catch(() => {});
-    }
+    await enviarPeloExpo(mensagens, `a loja ${lojaId}`);
   } catch (err: any) {
     console.warn(`[App FireHub] aviso para a loja ${lojaId} falhou: ${err?.message}`);
+  }
+}
+
+/**
+ * Manda as mensagens ao Expo e tira da tabela o token que o Expo diz que
+ * morreu (app desinstalado). Usado pelo aviso de pedido e pelo de venda
+ * (lib/app-firehub/aviso-de-venda.ts). Lança se a rede cair — quem chama trata.
+ */
+export async function enviarPeloExpo(mensagens: { to: string }[], paraQuem: string): Promise<void> {
+  const headers: Record<string, string> = {
+    Accept: "application/json",
+    "Content-Type": "application/json",
+  };
+  if (process.env.EXPO_ACCESS_TOKEN) headers.Authorization = `Bearer ${process.env.EXPO_ACCESS_TOKEN}`;
+
+  const res = await fetch(URL_DO_EXPO, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(mensagens),
+    signal: AbortSignal.timeout(8000),
+  });
+  const corpo = await res.json().catch(() => null as any);
+  if (!res.ok) {
+    console.warn(`[App FireHub] aviso para ${paraQuem} recusado pelo Expo: ${res.status} ${JSON.stringify(corpo).slice(0, 200)}`);
+    return;
+  }
+
+  const tickets: any[] = Array.isArray(corpo?.data) ? corpo.data : [];
+  const mortos = tickets
+    .map((t, i) => (t?.status === "error" && t?.details?.error === "DeviceNotRegistered" ? mensagens[i]?.to : null))
+    .filter((t): t is string => Boolean(t));
+  for (const token of mortos) {
+    await prisma.$executeRaw`DELETE FROM "LojaAparelho" WHERE "pushToken" = ${token}`.catch(() => {});
   }
 }
