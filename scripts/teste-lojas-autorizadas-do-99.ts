@@ -8,6 +8,8 @@
  * mesma página quando ela dá 10001 "i/o timeout", e chamadas ao mesmo tempo
  * dividem uma busca só.
  */
+export {};
+
 process.env.FOOD99_APP_ID = "123";
 process.env.FOOD99_APP_SECRET = "segredo-de-teste";
 
