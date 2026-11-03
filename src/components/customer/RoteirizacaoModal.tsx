@@ -1911,8 +1911,8 @@ export default function RoteirizacaoModal({
       // lib/geocodificacao-servidor.ts). Trocar o provedor de imagem de novo
       // só com um que funcione sem chave e testado na tela.
       //
-      // 02/11/2026: o fundo padrão passou a ser o mapa vetorial sem o nome dos
-      // bairros (lib/mapa-sem-bairro.ts, OpenFreeMap, sem chave, testado na
+      // 02/11/2026: o fundo padrão passou a ser o mapa vetorial com os bairros
+      // sem "Vila" (lib/mapa-sem-bairro.ts, OpenFreeMap, sem chave, testado na
       // tela em Cabo Frio). Estas imagens ficam como reserva: sem WebGL ou com
       // o OpenFreeMap fora do ar, voltam elas.
       const imagensDeAntes = () =>
