@@ -104,11 +104,16 @@ export async function resolverLojaNoMapa(loja: DadosDaLoja, opcoes?: { prazoMs?:
   ]);
 }
 
-/** O mesmo, quando quem chama só tem o id da loja. */
+/**
+ * O mesmo, quando quem chama só tem o id da loja.
+ *
+ * Lê a loja SEMPRE, sem olhar o cache antes: o cache guarda o ponto achado
+ * pelo ENDEREÇO, e a loja que salva o pino depois ficava com a casinha no
+ * lugar antigo por até 30 min (Thalyta/Garagem Burger, 03/11/2026: "a casinha
+ * não muda"). Com o pino no cadastro, `resolverLojaNoMapa` devolve ele na hora;
+ * sem pino, o cache continua poupando a ida ao geocodificador.
+ */
 export async function lojaNoMapaPorId(lojaId: string): Promise<LojaNoMapa> {
-  const emCache = cache.get(lojaId);
-  if (emCache && emCache.exp > Date.now()) return emCache.valor;
-
   const loja = await prisma.user
     .findUnique({ where: { id: lojaId }, select: { id: true, storeLatLng: true, storeAddress: true, city: true } })
     .catch(() => null);
