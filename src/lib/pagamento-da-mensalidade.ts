@@ -122,7 +122,7 @@ export async function registrarCobrancaDaMensalidade(c: CobrancaDoAsaas, evento?
     // indicou. Um por loja indicada — o webhook repetido e a conferência que
     // passa de novo por aqui não geram outro. Nunca lança.
     await creditarIndicacaoPelaMensalidadePaga(ciclo.id);
-    void avisarVendaAprovada(valor);
+    void avisarVendaAprovada(valor, "assinatura");
     return "PAGO";
   }
 

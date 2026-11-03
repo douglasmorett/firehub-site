@@ -28,7 +28,8 @@ confere("vazio não recebe", podeReceberAvisoDeVenda(""), false);
 
 console.log("\n— texto");
 const t = textoDaVenda(149.9);
-confere("título", t.titulo, "Venda aprovada! 🔥");
+confere("título da recarga", t.titulo, "Venda aprovada! 🔥");
+confere("título da mensalidade", textoDaVenda(149.9, "assinatura").titulo, "Venda de assinatura aprovada! 🔥");
 confere("corpo com o valor em reais", t.corpo.replace(/\s/g, " "), "Valor: R$ 149,90");
 confere("milhar com ponto", textoDaVenda(1299).corpo.replace(/\s/g, " "), "Valor: R$ 1.299,00");
 

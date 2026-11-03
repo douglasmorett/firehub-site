@@ -25,13 +25,17 @@ export function podeReceberAvisoDeVenda(email: string | null | undefined): boole
   return e !== "" && CONTAS_QUE_RECEBEM.includes(e);
 }
 
-export function textoDaVenda(valor: number): { titulo: string; corpo: string } {
+/** "assinatura" = mensalidade da loja (Douglas, 03/11: "venda assinatura aprovada"). */
+export type TipoDaVenda = "assinatura" | "recarga";
+
+export function textoDaVenda(valor: number, tipo: TipoDaVenda = "recarga"): { titulo: string; corpo: string } {
   const reais = valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  return { titulo: "Venda aprovada! 🔥", corpo: `Valor: ${reais}` };
+  const titulo = tipo === "assinatura" ? "Venda de assinatura aprovada! 🔥" : "Venda aprovada! 🔥";
+  return { titulo, corpo: `Valor: ${reais}` };
 }
 
 /** NUNCA lança e nunca deve ser esperado por quem grava o pagamento. */
-export async function avisarVendaAprovada(valor: number | null | undefined): Promise<void> {
+export async function avisarVendaAprovada(valor: number | null | undefined, tipo: TipoDaVenda = "recarga"): Promise<void> {
   if (!valor || !(valor > 0)) return;
   try {
     if (!(await garantirTabelaDeAparelhosDaLoja())) return;
@@ -45,7 +49,7 @@ export async function avisarVendaAprovada(valor: number | null | undefined): Pro
     const tokens = linhas.filter((l) => podeReceberAvisoDeVenda(l.email)).map((l) => l.pushToken);
     if (tokens.length === 0) return;
 
-    const { titulo, corpo } = textoDaVenda(valor);
+    const { titulo, corpo } = textoDaVenda(valor, tipo);
     const mensagens = tokens.map((to) => ({
       to,
       title: titulo,
