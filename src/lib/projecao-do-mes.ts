@@ -20,6 +20,7 @@ import {
   type Faixa, type Situacao,
 } from "@/lib/projecao-do-mes-regras";
 import { entraNoFunil, montarCrescimento, type Boleto, type LojaNoCrescimento } from "@/lib/projecao-de-crescimento-regras";
+import { montarMesAMes } from "@/lib/projecao-mes-a-mes";
 
 const FUSO = "America/Sao_Paulo";
 /** Sem pedido há este tanto de dias, a loja que vendia entra na lista de contato. */
@@ -309,6 +310,33 @@ export async function montarProjecao(agora = new Date()) {
     perdoadas: anteriores.filter((c) => c.status === "FORGIVEN").length,
   };
 
+  // ── Mês a mês: todos os meses, na régua do card "Vendas pelo sistema" ──
+  const [vendasPorMes, ciclosPorMes] = await Promise.all([
+    prisma.$queryRaw<{ mes: string; vendas: number; pedidos: number; lojas: number }[]>`
+      SELECT to_char((o."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE COALESCE(u."storeTimezone", ${FUSO}), 'YYYY-MM') AS mes,
+        SUM(o."totalAmount" + COALESCE(o."discountTotal", 0))::float AS vendas,
+        (COUNT(*) FILTER (WHERE o.status <> 'CANCELADO'))::int AS pedidos,
+        (COUNT(DISTINCT o."franchiseeId") FILTER (WHERE o.status <> 'CANCELADO'))::int AS lojas
+      FROM "CustomerOrder" o JOIN "User" u ON u.id = o."franchiseeId"
+      WHERE o.status <> 'CRIANDO_IA'
+        AND NOT (o.status = 'AGUARDANDO_PAGAMENTO' AND o."paymentPaidAt" IS NULL)
+        AND (o.status <> 'CANCELADO' OR o."createdAt" >= ${VIRADA_DOS_2_POR_CENTO})
+      GROUP BY 1`,
+    prisma.franchiseeBillingCycle.findMany({
+      where: { yearMonth: { lt: mes }, status: { in: ["CLOSED", "PAID", "FORGIVEN"] } },
+      select: { yearMonth: true, status: true, amountDue: true, amountPending: true, paidValue: true, asaasPaymentId: true },
+    }),
+  ]);
+  const mesAMes = montarMesAMes({
+    vendas: vendasPorMes.filter((v) => v.mes <= mes),
+    ciclos: ciclosPorMes.map(({ yearMonth, ...c }) => ({ mes: yearMonth, ...c })),
+    mesAtual: mes,
+    atual: {
+      vendasPrevistas: vendasDoMes.projetado, pedidosPrevistos: vendasDoMes.pedidosProjetados,
+      seTodas: totais.seTodas, aposta: totais.aposta, boletos: linhas.length,
+    },
+  });
+
   const pedidos30d = new Map(ultimos30.map((u) => [u.id, Number(u.pedidos)]));
   for (const l of lojasNoCrescimento) l.pedidos30d = pedidos30d.get(l.id) || 0;
   const seguinte = intervaloDoMes(mesSeguinte, FUSO);
@@ -384,7 +412,7 @@ export async function montarProjecao(agora = new Date()) {
 
   return {
     mes, mesAnterior, mesSeguinte, geradoEm: agora.toISOString(),
-    totais, linhas, mesSeguinteNoRitmo, crescimento, vendasDoMes, dias, mesPassado,
+    totais, linhas, mesSeguinteNoRitmo, crescimento, vendasDoMes, dias, mesPassado, mesAMes,
     contatos: { pararam, testeAcabando, semCardapio, cardapioSemVenda },
     regras: { diasParaLigar: DIAS_PARA_LIGAR, diasParaParada: DIAS_PARA_PARADA, diasDoFimDoTeste: DIAS_DO_FIM_DO_TESTE },
   };

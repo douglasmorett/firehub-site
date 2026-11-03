@@ -486,11 +486,13 @@ export function mesmoPadrao(
 }
 
 /**
- * Quanto o mês atual cresceu sobre o que entrou de verdade no mês anterior:
- * recebido (boleto pago) × previsto agora. Os boletos do mês anterior em
- * aberto ficam à parte — são a inadimplência esperada, não receita.
+ * Quanto o mês atual cresceu sobre a mensalidade do mês anterior: o valor dos
+ * boletos (pago + em aberto) × previsto agora. Só o pago não serve de base: o
+ * boleto do mês anterior vence no mês atual, e no começo do mês quase nada
+ * entrou ainda (Douglas, 03/11: "21x" com R$ 747 pagos de R$ 9.812).
  */
 export function crescimentoDoMes(p: { recebido: number; emAberto: number; boletosEmAberto: number; lojasPagas: number; seTodas: number; aposta: number }) {
-  const vezes = (v: number) => (p.recebido > 0 ? Math.round((v / p.recebido) * 10) / 10 : null);
-  return { ...p, cobrado: Math.round((p.recebido + p.emAberto) * 100) / 100, vezesSeTodas: vezes(p.seTodas), vezesAposta: vezes(p.aposta) };
+  const cobrado = Math.round((p.recebido + p.emAberto) * 100) / 100;
+  const variacao = (v: number) => (cobrado > 0 ? v / cobrado - 1 : null);
+  return { ...p, cobrado, variacaoSeTodas: variacao(p.seTodas), variacaoAposta: variacao(p.aposta) };
 }

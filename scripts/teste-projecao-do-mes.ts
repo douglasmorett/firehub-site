@@ -11,6 +11,7 @@ import {
   chanceDePagar, faixaDaVenda, mesCheioNoRitmo, projetarMes, ritmoPorDia,
   somarDias, telefoneDoWhatsapp, totaisDaProjecao, diaNoFuso,
 } from "../src/lib/projecao-do-mes-regras";
+import { montarMesAMes } from "../src/lib/projecao-mes-a-mes";
 
 let falhas = 0;
 const confere = (nome: string, obtido: unknown, esperado: unknown) => {
@@ -68,6 +69,40 @@ confere("somar dias para trás", somarDias("2026-10-03", -7), "2026-09-26");
 confere("telefone com DDD ganha 55", telefoneDoWhatsapp("(22) 98180-8872"), "5522981808872");
 confere("telefone já com 55", telefoneDoWhatsapp("+55 86 9546-8564"), "558695468564");
 confere("telefone curto: nada", telefoneDoWhatsapp("1234"), null);
+
+// Mês a mês (Douglas, 03/11): janeiro do 1º ano até dezembro do ano atual, cada mês contra o anterior.
+{
+  const ciclo = (mes: string, status: string, amountDue: number, extra: Partial<{ amountPending: number; paidValue: number | null; asaasPaymentId: string | null }> = {}) =>
+    ({ mes, status, amountDue, amountPending: 0, paidValue: null, asaasPaymentId: "pay_1", ...extra });
+  const mm = montarMesAMes({
+    vendas: [
+      { mes: "2026-09", vendas: 100_000, pedidos: 2000, lojas: 20 },
+      { mes: "2026-10", vendas: 150_000, pedidos: 2500, lojas: 30 },
+      { mes: "2026-11", vendas: 20_000, pedidos: 300, lojas: 28 },
+    ],
+    ciclos: [
+      ciclo("2026-09", "PAID", 1000, { paidValue: 990 }),
+      ciclo("2026-09", "PAID", 0, { asaasPaymentId: null }), // nada a cobrar (teste)
+      ciclo("2026-09", "FORGIVEN", 300),
+      ciclo("2026-10", "PAID", 700),
+      ciclo("2026-10", "CLOSED", 1500, { amountPending: 1300 }),
+    ],
+    mesAtual: "2026-11",
+    atual: { vendasPrevistas: 180_000, pedidosPrevistos: 3000, seTodas: 4000, aposta: 3500, boletos: 40 },
+  });
+  confere("12 meses do ano, de janeiro a dezembro", [mm.length, mm[0].mes, mm[11].mes], [12, "2026-01", "2026-12"]);
+  const set = mm.find((x) => x.mes === "2026-09")!, out = mm.find((x) => x.mes === "2026-10")!, nov = mm.find((x) => x.mes === "2026-11")!;
+  confere("setembro: pago pelo valor pago; sem boleto e perdoado fora do valor", [set.mensalidade, set.recebido, set.boletos, set.perdoadas], [990, 990, 1, 1]);
+  confere("outubro: pago + em aberto", [out.mensalidade, out.recebido, out.emAberto, out.boletos, out.lojasPagas], [2000, 700, 1300, 2, 1]);
+  confere("outubro contra setembro", [r2(out.variacao.vendas!), r2(out.variacao.pedidos!), r2(out.variacao.mensalidade!)], [0.5, 0.25, 1.02]);
+  confere("novembro compara pelo previsto, não pelo até agora", [r2(nov.variacao.vendas!), r2(nov.variacao.pedidos!), r2(nov.variacao.mensalidade!)], [0.2, 0.2, 1]);
+  confere("novembro: até agora e previsto lado a lado", [nov.tipo, nov.vendas, nov.vendasPrevistas, nov.aposta, nov.boletos], ["atual", 20_000, 180_000, 3500, 40]);
+  confere("dezembro é futuro, sem comparação", [mm[11].tipo, mm[11].variacao.vendas], ["futuro", null]);
+  confere("agosto sem venda: setembro sem base", set.variacao.vendas, null);
+  confere("dois anos: começa no janeiro do primeiro",
+    montarMesAMes({ vendas: [{ mes: "2025-11", vendas: 1, pedidos: 1, lojas: 1 }], ciclos: [], mesAtual: "2026-02",
+      atual: { vendasPrevistas: 0, pedidosPrevistos: 0, seTodas: 0, aposta: 0, boletos: 0 } }).length, 24);
+}
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

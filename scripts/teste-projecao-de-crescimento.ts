@@ -193,13 +193,15 @@ confere("série começa no 1º mês com boleto e termina no previsto", m.serie.m
   confere("30 dias: total = 400 + 500", [m30.total, m30.totalAposta], [900, 750]);
 }
 
-// Crescimento do mês sobre o recebido (os em aberto à parte).
+// Crescimento do mês sobre o cobrado do mês anterior (pago + em aberto): o boleto vence no mês atual.
 const cr = crescimentoDoMes({ recebido: 1600, emAberto: 640, boletosEmAberto: 3, lojasPagas: 8, seTodas: 10088, aposta: 7900 });
-confere("1.600 recebidos → 10.088 = 6,3x; aposta 4,9x; cobrado 2.240", [cr.vezesSeTodas, cr.vezesAposta, cr.cobrado], [6.3, 4.9, 2240]);
-confere("sem recebido: sem 'x'", crescimentoDoMes({ recebido: 0, emAberto: 0, boletosEmAberto: 0, lojasPagas: 0, seTodas: 500, aposta: 400 }).vezesSeTodas, null);
+confere("2.240 cobrados → 10.088 = +350%; aposta +253%", [r2(cr.variacaoSeTodas!), r2(cr.variacaoAposta!), cr.cobrado], [3.5, 2.53, 2240]);
+confere("caso de 03/11: R$ 747 pagos + R$ 9.065 em aberto → R$ 15.915 = +62%, não 21x",
+  r2(crescimentoDoMes({ recebido: 747, emAberto: 9065, boletosEmAberto: 43, lojasPagas: 11, seTodas: 15915, aposta: 14470 }).variacaoSeTodas!), 0.62);
+confere("sem boleto no mês anterior: sem comparação", crescimentoDoMes({ recebido: 0, emAberto: 0, boletosEmAberto: 0, lojasPagas: 0, seTodas: 500, aposta: 400 }).variacaoSeTodas, null);
 // Na montagem acima nenhuma loja tem boleto previsto em outubro: as 3 de setembro somem (perda 100%).
 confere("montagem: perda 100% quando nenhuma de setembro tem boleto agora", [m.mesmoPadrao.doMes.perda, m.mesmoPadrao.doMes.total], [1, 0]);
-confere("montagem: crescimento sobre o recebido", m.mesmoPadrao.crescimento.vezesSeTodas, 0.3);
+confere("montagem: crescimento sobre o cobrado", r2(m.mesmoPadrao.crescimento.variacaoSeTodas!), -0.78);
 
 console.log(falhas ? `\n${falhas} falha(s)` : "\nTudo certo.");
 process.exit(falhas ? 1 : 0);

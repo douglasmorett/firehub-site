@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from "react";
 import type { ProjecaoDoMes, LinhaDaProjecao } from "@/lib/projecao-do-mes";
 import type { Crescimento, Taxa } from "@/lib/projecao-de-crescimento-regras";
+import type { LinhaDoMesAMes } from "@/lib/projecao-mes-a-mes";
 
 /**
  * Aba Projeção do admin: quanto o mês deve fechar de mensalidade e quem
@@ -169,6 +170,8 @@ export default function ProjecaoTab() {
           </div>
         ))}
       </div>
+
+      <MesAMes linhas={dados.mesAMes} />
 
       <div className="pj-grid2">
         {/* Vendas por dia: realizado + projetado */}
@@ -486,12 +489,12 @@ function MesQueVemComCrescimento({ c, mes, mesSeguinte, noRitmo }: { c: Crescime
         <h3>{maiuscula(seguinte)} se mantiver o padrão</h3>
       </div>
       <div style={{ padding: "14px 18px" }}>
-        {/* Quanto este mês cresceu sobre o que entrou de verdade no mês passado. */}
+        {/* Quanto este mês cresceu sobre os boletos do mês passado (pago + em aberto: vencem neste mês). */}
         <div style={{ background: "#F8FAFC", border: "1px solid #EEF0F3", borderRadius: 10, padding: "10px 12px", fontSize: "0.82rem", color: "#334155", marginBottom: 12, lineHeight: 1.6 }}>
-          <b>{maiuscula(anterior)}:</b> {fmt0(cr.recebido)} recebidos de {cr.lojasPagas} {cr.lojasPagas === 1 ? "loja" : "lojas"}
-          {cr.boletosEmAberto > 0 && <> <span style={{ color: "#64748B" }}>(+ {fmt0(cr.emAberto)} em aberto em {cr.boletosEmAberto} {cr.boletosEmAberto === 1 ? "boleto" : "boletos"} — a inadimplência esperada, fora da conta)</span></>}
-          {" → "}<b>{maiuscula(atual)}:</b> {fmt0(mp.mesAtual.seTodas)} se todas pagarem{cr.vezesSeTodas !== null && <> = <b>{num(cr.vezesSeTodas)}x</b> o recebido</>}
-          {" · "}{fmt0(mp.mesAtual.aposta)} na aposta{cr.vezesAposta !== null && <> = <b>{num(cr.vezesAposta)}x</b></>}.
+          <b>{maiuscula(anterior)}:</b> {fmt0(cr.cobrado)} em boletos
+          <span style={{ color: "#64748B" }}> ({fmt0(cr.recebido)} já pagos por {cr.lojasPagas} {cr.lojasPagas === 1 ? "loja" : "lojas"}{cr.boletosEmAberto > 0 && <> · {fmt0(cr.emAberto)} em aberto em {cr.boletosEmAberto} {cr.boletosEmAberto === 1 ? "boleto" : "boletos"}</>})</span>
+          {" → "}<b>{maiuscula(atual)}:</b> {fmt0(mp.mesAtual.seTodas)} se todas pagarem{cr.variacaoSeTodas !== null && <> = <Variacao v={cr.variacaoSeTodas} /> sobre {anterior}</>}
+          {" · "}{fmt0(mp.mesAtual.aposta)} na aposta{cr.variacaoAposta !== null && <> = <Variacao v={cr.variacaoAposta} /></>}.
         </div>
         {c.historicoCurto && (
           <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", color: "#92400E", borderRadius: 10, padding: "9px 12px", fontSize: "0.78rem", marginBottom: 14, lineHeight: 1.5 }}>
@@ -664,6 +667,192 @@ function MesQueVemComCrescimento({ c, mes, mesSeguinte, noRitmo }: { c: Crescime
           Continua = pedido há menos de 7 dias; parou = 7 dias ou mais. Conversão = pagantes ÷ saíram do teste: quem ainda está em teste fica de fora até sair.
           A faixa usa a ponta de 90% de cada taxa (com poucas lojas ela abre) e o menor/maior dos dois cenários de cadastro.
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** "▲ 62%" verde / "▼ 8%" vermelho, contra o mês anterior. */
+function Variacao({ v }: { v: number | null }) {
+  if (v === null) return <span style={{ color: "#94A3B8" }}>—</span>;
+  const sobe = v >= 0;
+  return (
+    <b style={{ color: sobe ? "#15803D" : "#B91C1C", whiteSpace: "nowrap" }}>
+      {sobe ? "▲" : "▼"} {(Math.abs(v) * 100).toLocaleString("pt-BR", { maximumFractionDigits: Math.abs(v) < 0.1 ? 1 : 0 })}%
+    </b>
+  );
+}
+
+/** "R$ 329 mil", "R$ 1,2 mi": cabe em cima da barra. */
+const curto = (v: number) => v >= 1_000_000 ? `R$ ${(v / 1_000_000).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`
+  : v >= 1_000 ? `R$ ${Math.round(v / 1_000).toLocaleString("pt-BR")} mil` : fmt0(v);
+
+/** "AAAA-MM" + n meses. */
+const somarMes = (ym: string, n: number) => {
+  const t = Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1 + n;
+  return `${Math.floor(t / 12)}-${String((t % 12) + 1).padStart(2, "0")}`;
+};
+
+type Metrica = "vendas" | "pedidos" | "mensalidade";
+
+/**
+ * Mês a mês do ano (Douglas, 03/11/2026: "enxergar mês a mês quanto a gente
+ * bateu"). Vendas e transações na régua do card "Vendas pelo sistema";
+ * mensalidade pelo boleto do mês (pago no mês seguinte). O mês atual entra pelo
+ * previsto, com o até agora por dentro. Dados: lib/projecao-mes-a-mes.ts.
+ */
+function MesAMes({ linhas }: { linhas: LinhaDoMesAMes[] }) {
+  const anos = [...new Set(linhas.map((l) => l.mes.slice(0, 4)))];
+  const [ano, setAno] = useState(anos[anos.length - 1]);
+  const [metrica, setMetrica] = useState<Metrica>("vendas");
+  const [emFoco, setEmFoco] = useState<number | null>(null);
+  const doAno = linhas.filter((l) => l.mes.startsWith(ano));
+
+  // Altura da barra: o mês inteiro (o atual pelo previsto). Parte cheia: o que
+  // já é fato — vendido até agora, boleto pago.
+  const previsto = (l: LinhaDoMesAMes) => metrica === "vendas" ? l.vendasPrevistas ?? l.vendas
+    : metrica === "pedidos" ? l.pedidosPrevistos ?? l.pedidos : l.mensalidade;
+  const feito = (l: LinhaDoMesAMes) => metrica === "vendas" ? l.vendas : metrica === "pedidos" ? l.pedidos
+    : l.tipo === "atual" ? 0 : l.recebido;
+  const rotulo = (v: number) => (metrica === "pedidos" ? qtd(v) : curto(v));
+  const maior = Math.max(1, ...doAno.map(previsto));
+  const ALTURA = 170;
+  const foco = emFoco !== null && doAno[emFoco]?.tipo !== "futuro" ? doAno[emFoco] : null;
+
+  // Tabela: os meses com número, o mais novo em cima, e o total do ano.
+  const comNumero = doAno.filter((l) => l.tipo !== "futuro" && (l.vendas > 0 || l.mensalidade > 0 || l.perdoadas > 0));
+  const soma = (f: (l: LinhaDoMesAMes) => number) => comNumero.reduce((s, l) => s + f(l), 0);
+
+  const METRICAS: { key: Metrica; rotulo: string }[] = [
+    { key: "vendas", rotulo: "Vendas pelo sistema" },
+    { key: "pedidos", rotulo: "Transações" },
+    { key: "mensalidade", rotulo: "Mensalidade" },
+  ];
+
+  return (
+    <div className="fha-section" style={{ marginBottom: 24 }}>
+      <style>{`
+        .pj-mm { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; height: 100%; min-width: 0; cursor: default; }
+        .pj-mm .barra { width: 72%; max-width: 56px; border-radius: 4px 4px 0 0; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; }
+        .pj-mm-val { font-size: 0.7rem; font-weight: 800; color: #0F172A; white-space: nowrap; margin-bottom: 3px; font-variant-numeric: tabular-nums; }
+        @media (max-width: 700px) { .pj-mm-val { font-size: 0.56rem; } }
+      `}</style>
+      <div className="fha-section-head" style={{ flexWrap: "wrap", gap: 10 }}>
+        <h3>Mês a mês</h3>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {METRICAS.map((m) => (
+            <button key={m.key} className={`pj-pill${metrica === m.key ? " on" : ""}`} onClick={() => setMetrica(m.key)}>{m.rotulo}</button>
+          ))}
+          {anos.length > 1 && anos.map((a) => (
+            <button key={a} className={`pj-pill${ano === a ? " on" : ""}`} onClick={() => { setAno(a); setEmFoco(null); }}>{a}</button>
+          ))}
+        </div>
+      </div>
+      <div style={{ padding: "14px 18px" }}>
+        <div className="pj-nota" style={{ minHeight: 20, color: "#334155" }}>
+          {foco ? <>
+            <b>{maiuscula(nomeDoMes(foco.mes))}</b>{" · "}
+            {metrica === "mensalidade"
+              ? foco.tipo === "atual"
+                ? <>{fmt0(foco.mensalidade)} se todas pagarem · {fmt0(foco.aposta || 0)} na aposta · {foco.boletos} boletos previstos</>
+                : <>{fmt0(foco.mensalidade)} em {foco.boletos} boletos · {fmt0(foco.recebido)} pagos · {fmt0(foco.emAberto)} em aberto</>
+              : foco.tipo === "atual"
+                ? <>{metrica === "vendas" ? fmt0(foco.vendas) : qtd(foco.pedidos)} até agora · deve fechar em {metrica === "vendas" ? fmt0(foco.vendasPrevistas!) : qtd(foco.pedidosPrevistos!)}</>
+                : <>{metrica === "vendas" ? fmt0(foco.vendas) : `${qtd(foco.pedidos)} transações`} · {foco.lojasVendendo} lojas vendendo</>}
+            {" · "}<Variacao v={foco.variacao[metrica]} /> sobre {nomeDoMes(somarMes(foco.mes, -1))}
+          </> : metrica === "mensalidade"
+            ? <>Mensalidade de cada mês = o boleto das vendas daquele mês, que vence no mês seguinte. Passe o mouse ou toque num mês.</>
+            : <>Todas as lojas, na régua do card &quot;Vendas pelo sistema&quot;. Passe o mouse ou toque num mês.</>}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: ALTURA + 22, borderBottom: "1px solid #E5E7EB", marginTop: 8 }} onMouseLeave={() => setEmFoco(null)}>
+          {doAno.map((l, i) => {
+            const total = previsto(l);
+            const cheio = Math.min(feito(l), total);
+            const vazio = l.tipo === "futuro" || total <= 0;
+            return (
+              <div key={l.mes} className="pj-mm" onMouseEnter={() => setEmFoco(i)} onClick={() => setEmFoco(i)}>
+                {!vazio && <span className="pj-mm-val">{rotulo(total)}</span>}
+                <div className="barra" style={{
+                  height: vazio ? 2 : Math.max(3, (total / maior) * ALTURA),
+                  background: vazio ? "#E5E7EB" : COR_PROJETADA,
+                  border: l.tipo === "atual" ? `2px dashed ${COR}` : undefined, borderBottom: "none",
+                  opacity: emFoco === null || emFoco === i ? 1 : 0.5,
+                }}>
+                  {cheio > 0 && <div style={{ height: `${(cheio / total) * 100}%`, background: COR }} />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+          {doAno.map((l) => (
+            <div key={l.mes} className="pj-nota" style={{ flex: 1, textAlign: "center", minWidth: 0 }}>
+              <div style={{ fontWeight: 700, color: l.tipo === "atual" ? COR : "#334155" }}>{nomeDoMes(l.mes).slice(0, 3)}</div>
+              <div style={{ fontSize: "0.68rem" }}>{l.tipo !== "futuro" && <Variacao v={l.variacao[metrica]} />}</div>
+            </div>
+          ))}
+        </div>
+        <div className="pj-nota" style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
+          <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: COR, marginRight: 5 }} />{metrica === "mensalidade" ? "boleto pago" : "realizado"}</span>
+          <span><span style={{ display: "inline-block", width: 10, height: 10, borderRadius: 2, background: COR_PROJETADA, marginRight: 5 }} />{metrica === "mensalidade" ? `em aberto · ${nomeDoMes(doAno.find((l) => l.tipo === "atual")?.mes || "")} se todas pagarem` : "o que falta no mês atual, no ritmo dos últimos 7 dias"}</span>
+          <span>▲▼ = contra o mês anterior (o mês atual pelo previsto)</span>
+        </div>
+
+        {comNumero.length > 0 && (
+          <div className="pj-tabela" style={{ marginTop: 16 }}>
+            <table className="fha-table">
+              <thead>
+                <tr>
+                  <th>Mês</th>
+                  <th className="pj-num">Vendas pelo sistema</th><th className="pj-num">vs anterior</th>
+                  <th className="pj-num">Transações</th><th className="pj-num">vs anterior</th>
+                  <th className="pj-num">Lojas vendendo</th>
+                  <th className="pj-num">Mensalidade</th><th className="pj-num">vs anterior</th>
+                  <th className="pj-num">Pago</th><th className="pj-num">Em aberto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...comNumero].reverse().map((l) => {
+                  const atual = l.tipo === "atual";
+                  return (
+                    <tr key={l.mes}>
+                      <td style={{ fontWeight: 700, color: "#0F172A" }}>
+                        {maiuscula(nomeDoMes(l.mes))}
+                        {atual && <div className="pj-nota" style={{ fontWeight: 400 }}>até agora → previsto</div>}
+                      </td>
+                      <td className="pj-num">{fmt0(l.vendas)}{atual && <div className="pj-nota">→ {fmt0(l.vendasPrevistas!)}</div>}</td>
+                      <td className="pj-num"><Variacao v={l.variacao.vendas} /></td>
+                      <td className="pj-num">{qtd(l.pedidos)}{atual && <div className="pj-nota">→ {qtd(l.pedidosPrevistos!)}</div>}</td>
+                      <td className="pj-num"><Variacao v={l.variacao.pedidos} /></td>
+                      <td className="pj-num">{l.lojasVendendo}</td>
+                      <td className="pj-num" style={{ fontWeight: 700 }}>
+                        {fmt0(l.mensalidade)}
+                        <div className="pj-nota" style={{ fontWeight: 400 }}>
+                          {atual ? `se todas pagarem · ${l.boletos} boletos` : `${l.boletos} ${l.boletos === 1 ? "boleto" : "boletos"}${l.perdoadas ? ` · ${l.perdoadas} perdoado${l.perdoadas > 1 ? "s" : ""}` : ""}`}
+                        </div>
+                      </td>
+                      <td className="pj-num"><Variacao v={l.variacao.mensalidade} /></td>
+                      <td className="pj-num" style={{ color: "#15803D" }}>{atual ? <span className="pj-nota">vence em {nomeDoMes(somarMes(l.mes, 1))}</span> : fmt0(l.recebido)}</td>
+                      <td className="pj-num" style={{ color: l.emAberto > 0 ? "#B91C1C" : undefined }}>{!atual && l.emAberto > 0 ? fmt0(l.emAberto) : "—"}</td>
+                    </tr>
+                  );
+                })}
+                <tr style={{ background: "#F8FAFC" }}>
+                  <td style={{ fontWeight: 800, color: "#0F172A" }}>{ano} até agora</td>
+                  <td className="pj-num" style={{ fontWeight: 800 }}>{fmt0(soma((l) => l.vendas))}</td><td />
+                  <td className="pj-num" style={{ fontWeight: 800 }}>{qtd(soma((l) => l.pedidos))}</td><td /><td />
+                  <td className="pj-num" style={{ fontWeight: 800 }}>
+                    {fmt0(soma((l) => (l.tipo === "atual" ? 0 : l.mensalidade)))}
+                    <div className="pj-nota" style={{ fontWeight: 400 }}>boletos fechados</div>
+                  </td><td />
+                  <td className="pj-num" style={{ fontWeight: 800, color: "#15803D" }}>{fmt0(soma((l) => l.recebido))}</td>
+                  <td className="pj-num" style={{ fontWeight: 800, color: "#B91C1C" }}>{fmt0(soma((l) => l.emAberto))}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
