@@ -1571,12 +1571,18 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                     </tr>
                   </thead>
                   <tbody>
-                    {recipeIngredients.map((row, index) => (
+                    {recipeIngredients.map((row, index) => {
+                      // A linha vazia que sobra depois de tirar o último
+                      // ingrediente não é obrigatória: salvar assim APAGA a
+                      // ficha. Com `required` nela a ficha nunca saía — não
+                      // havia como excluir (Danilo/Nike Esfirras, 03/11/2026).
+                      const obrigatoria = recipeIngredients.length > 1 || Boolean(row.stockItemId || row.quantityConsumed);
+                      return (
                       <tr key={index}>
                         <td>
                           <select 
                             value={row.stockItemId}
-                            required
+                            required={obrigatoria}
                             onChange={e => updateRecipeRow(index, "stockItemId", e.target.value)}
                           >
                             <option value="">Selecione o ingrediente...</option>
@@ -1593,7 +1599,7 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                               type="number" 
                               step="0.001"
                               min="0.001"
-                              required
+                              required={obrigatoria}
                               placeholder="Ex: 50"
                               value={row.quantityConsumed}
                               onChange={e => updateRecipeRow(index, "quantityConsumed", e.target.value)}
@@ -1613,7 +1619,8 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                           </button>
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
