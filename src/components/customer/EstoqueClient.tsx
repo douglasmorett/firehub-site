@@ -416,7 +416,9 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
         return;
       }
       setShowRecipeModal(false);
-      loadData();
+      // Sem o "carregando" da tela inteira: ele desmontava a lista e a página
+      // voltava ao topo a cada ficha salva (Danilo/Nike Esfirras, 03/11/2026).
+      recarregarSaldos();
     } catch (err) {
       alert("Erro ao salvar receita.");
     }
