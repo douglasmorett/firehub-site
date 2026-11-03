@@ -302,7 +302,11 @@ export default function LoyaltyConfigForm({
           { key: "cashback", label: "💸 Cashback Automático", badge: config.cashbackActive ? "Ativo" : null },
           { key: "stamps", label: "🎫 Cartão de Carimbos", badge: config.stampsActive ? "Ativo" : null },
           { key: "referral", label: "🎁 Indique e Ganhe", badge: config.referralActive ? "Ativo" : null },
-          { key: "birthday", label: "🎂 Aniversariantes & Chatbot", badge: config.birthdayActive ? "Ativo" : null },
+          // "🎂 Aniversariantes & Chatbot" saiu da lista (03/11/2026): a aba só
+          // gravava birthday* e nada no sistema lia — nem cupom, nem cashback em
+          // dobro, nem mensagem do robô. O lojista ligava e o cliente não
+          // ganhava nada (Léo). O conteúdo da aba fica no arquivo para quando
+          // o presente de aniversário existir de verdade.
           { key: "vip", label: "👑 Níveis VIP", badge: config.vipActive ? "Ativo" : null },
         ].map((tab: { key: string; label: string; badge: string | null; badgeRoxo?: boolean }) => (
           <button
