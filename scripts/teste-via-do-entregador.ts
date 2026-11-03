@@ -153,6 +153,12 @@ confere("QR do #50", camposDoQrPuxar(PEDIDO_50, "ragnar-burger"), {
 confere("Mesa continua sem QR", camposDoQrPuxar({ ...PEDIDO_50, source: "PRESENCIAL", deliveryType: "MESA" }, "ragnar-burger"), {});
 confere("Sem número continua sem QR", camposDoQrPuxar({ ...PEDIDO_50, dailyOrderNumber: null }, "ragnar-burger"), {});
 confere("ehEntregaDaLoja: robô sim, retirada não", [ehEntregaDaLoja(PEDIDO_50), ehEntregaDaLoja({ ...PEDIDO_50, deliveryType: "RETIRADA" })], [true, false]);
+// Thalyta, 03/11/2026: a tele lançada no PDV saía sem QR.
+const TELE_DO_PDV = { ...PEDIDO_50, source: "PRESENCIAL", deliveryType: "DELIVERY" };
+confere("Tele do PDV: com QR", Boolean(camposDoQrPuxar(TELE_DO_PDV, "ragnar-burger").qrPuxarUrl), true);
+confere("Tele do PDV: com via do entregador", nome(impressoraDaViaDoEntregador(RAGNAR, TELE_DO_PDV)), "COZINHA PIZZA");
+confere("Balcão do PDV continua sem QR", camposDoQrPuxar({ ...TELE_DO_PDV, deliveryType: "RETIRADA" }, "ragnar-burger"), {});
+confere("Acréscimo da tele do PDV: sem QR", camposDoQrPuxar({ ...TELE_DO_PDV, parentOrderId: "ped_pai" }, "ragnar-burger"), {});
 confere("Loja que nunca personalizou: sem blocos (layout embutido, que termina no QR)", blocosDaViaDoEntregador({}), undefined);
 const semQr = { comandaModelo: { versao: 1, cozinha: [{ tipo: "itens" }], completo: [{ tipo: "itens" }, { tipo: "totais" }] } };
 confere("Modelo da loja sem o bloco do QR: a via ganha o QR no fim", blocosDaViaDoEntregador(semQr)?.map((b) => b.tipo), ["itens", "totais", "avisoEntrega", "qrMotoboy"]);

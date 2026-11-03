@@ -57,6 +57,20 @@ export function qrLigadoNaImpressora(
 }
 
 /**
+ * A tele lançada no PDV: o PDV grava `source` PRESENCIAL (o módulo chama de
+ * salão, e é isso que manda a comanda para as impressoras do balcão), mas a
+ * aba Delivery grava `deliveryType` DELIVERY de propósito — o padrão do PDV é
+ * RETIRADA. Sem isto ela saía sem o QR do motoboy e sem a via do entregador
+ * (Thalyta, 03/11/2026). A reposição também entra (número novo, corrida nova).
+ * O acréscimo (parentOrderId) não: usa o número do pedido original, que o
+ * motoboy já puxou, e o QR teria o mesmo código.
+ */
+function teleDoPdv(pedido: Record<string, any>): boolean {
+  const s = String(pedido?.source || "").trim().toUpperCase();
+  return (s === "PRESENCIAL" || s === "PDV") && pedido?.deliveryType === "DELIVERY" && !pedido?.parentOrderId;
+}
+
+/**
  * Os campos do QR para ESTE pedido — ou `{}` quando não há o que puxar.
  *
  * Só em ENTREGA DA PRÓPRIA LOJA: mesa, balcão, retirada e entrega parceira
@@ -80,7 +94,7 @@ export function ehEntregaDaLoja(
   // nova que esqueça de preenchê-lo passaria na primeira pergunta. O `source`
   // é a segunda trava, a mesma pela qual o roteamento separa salão de delivery.
   const ehEntrega = (pedido?.deliveryType || "DELIVERY") === "DELIVERY"
-    && moduloDoPedido(pedido?.source as string | null | undefined) === "delivery";
+    && (moduloDoPedido(pedido?.source as string | null | undefined) === "delivery" || teleDoPdv(pedido));
   if (!ehEntrega) return false;
   try {
     return !infoDaEntrega(pedido).parceira;
