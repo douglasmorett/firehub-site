@@ -2061,7 +2061,11 @@ export default function CustomerStorePage({
     if (e && bairroValido) {
       setCustomerStreet((a) => a || e.rua);
       setCustomerNumber((a) => a || e.numero);
-      setCustomerNeighborhood((a) => a || e.bairro);
+      // Na loja por bairros, pela lista: calcDeliveryFee grava o bairro E a
+      // taxa. Só com o nome, o fechamento dizia "Escolha seu bairro" com o
+      // bairro já na tela, até o cliente escolher de novo (Vânia/Bom Cheff).
+      if (isNeighborhoodType) calcDeliveryFee({ bairro: e.bairro, forcar: true });
+      else setCustomerNeighborhood((a) => a || e.bairro);
       setCustomerComplement((a) => a || e.complemento);
       setCustomerCep((a) => a || e.cep);
       if (e.ponto && !pontoDoClienteRef.current) {
