@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     const n = await desligarVinculo({ keetaMerchantId: corpo.shopId });
     console.log(`[Keeta] 🔌 autorização revogada pela loja ${corpo.shopId} (${corpo.shopName || "?"}) — ${n} vínculo(s) desligado(s)`);
   } else if (op === 1) {
-    console.log(`[Keeta] 🔑 loja ${corpo?.shopId} (${corpo?.shopName || "?"}) autorizou o FireHub — falta vincular em /api/admin/keeta/vincular`);
+    console.log(`[Keeta] 🔑 loja ${corpo?.shopId} (${corpo?.shopName || "?"}) autorizou o FireHub — liga sozinho se veio de Integrações › Keeta; senão, /api/admin/keeta/vincular`);
   }
   // A doc pede 200 com JSON e mostra dois formatos diferentes; vão os dois.
   return NextResponse.json({ code: 0, message: "success", status: 0, title: "success" });

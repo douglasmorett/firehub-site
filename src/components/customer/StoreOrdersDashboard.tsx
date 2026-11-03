@@ -6102,6 +6102,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
         // valor e o pedido continua (lib/cancelamento-parcial.ts). Brendi e
         // JotaJá seguem com "aceitar" = cancelamento do pedido.
         const reembolsoMantemPedido = isRefund && ehDisputaParcial(dispute) && !["BRENDI", "JOTAJA"].includes(String((disputeOrder as any).source || "").toUpperCase());
+        // Keeta: o reembolso pedido no app dela abre aqui também (lib/keeta/eventos.ts).
+        const ehKeeta = String((disputeOrder as any).source || "").toUpperCase() === "KEETA";
         const isDueDate = !isParcial && (dispute.type === "DUE_DATE_CHANGE" || /previsão|atraso|tempo/i.test(dispute.reason || ""));
 
         const modalEmoji = isParcial ? "✂️" : isResend ? "📦" : isRefund ? "💰" : isDueDate ? "⏱️" : "⚠️";
@@ -6120,7 +6122,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
           : isResend
           ? `O cliente prefere o reenvio de itens para resolver o problema no iFood.`
           : isRefund
-          ? `O cliente solicitou o reembolso de um item pelo iFood.`
+          ? `O cliente solicitou o reembolso ${ehKeeta ? "pela Keeta" : "de um item pelo iFood"}.`
           : isDueDate
           ? `O cliente pediu atualização do tempo de entrega pelo iFood.`
           : `O cliente solicitou o cancelamento ${(disputeOrder as any).source === "JOTAJA" ? "pelo JotaJá" : (disputeOrder as any).source === "BRENDI" ? "pela Brendi" : "pelo iFood"}`;
@@ -6157,7 +6159,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               <div style={{ background: "#F8FAFC", borderRadius: "8px", padding: "10px", marginBottom: "16px", fontSize: "0.8rem", color: "#475569" }}>
                 <strong>Cliente:</strong> {disputeOrder.customerName} — {disputeOrder.customerPhone}<br/>
                 <strong>Valor:</strong> R$ {disputeOrder.totalAmount?.toFixed(2)}<br/>
-                {(disputeOrder.ifoodReference || disputeOrder.openDeliveryReference) && <><strong>{disputeOrder.openDeliveryReference ? ((disputeOrder as any).source === "BRENDI" ? "Brendi" : "Jotajá") : "iFood"}:</strong> #{disputeOrder.ifoodReference || disputeOrder.openDeliveryReference}</>}
+                {(disputeOrder.ifoodReference || disputeOrder.openDeliveryReference) && <><strong>{disputeOrder.openDeliveryReference ? ((disputeOrder as any).source === "BRENDI" ? "Brendi" : ehKeeta ? "Keeta" : "Jotajá") : "iFood"}:</strong> #{disputeOrder.ifoodReference || disputeOrder.openDeliveryReference}</>}
               </div>
               {isParcial && (
                 <div style={{ background: "#FFF4EF", border: "1.5px solid #FFD3C2", borderRadius: "10px", padding: "12px", marginBottom: "16px" }}>
@@ -6246,7 +6248,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       // Canal decide a rota: BRENDI antes do JotaJá porque os
                       // dois compartilham o openDeliveryOrderId — e a rota da
                       // Brendi fala `acao` (nasceu em português), não `action`.
-                      if ((disputeOrder as any).source === "BRENDI" && (disputeOrder as any).openDeliveryOrderId) {
+                      if (ehKeeta) {
+                        r = await fetch("/api/customer-order/keeta-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, acao: "deny_refund", reason }) });
+                      } else if ((disputeOrder as any).source === "BRENDI" && (disputeOrder as any).openDeliveryOrderId) {
                         r = await fetch("/api/customer-order/brendi-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, acao: "deny_cancellation", reason }) });
                       } else if ((disputeOrder as any).source === "JOTAJA" && (disputeOrder as any).openDeliveryOrderId) {
                         r = await fetch("/api/customer-order/jotaja-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, action: "deny_cancellation", reason }) });
@@ -6259,7 +6263,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                         // d.ifoodOk === false: gravou aqui, mas o iFood recusou a resposta.
                         if (d.ifoodOk === false) showToast("⚠️ Gravado aqui, mas o iFood não aceitou a resposta: " + (d.ifoodErro || "responda pelo app do iFood."), "#B45309");
                         router.refresh();
-                      }
+                      } else if (ehKeeta) showToast(d.error || "A Keeta não aceitou a resposta — responda pelo Portal da Keeta.", "#C92E09");
                     } catch {} finally { setLoadingId(null); }
                   }}
                   style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: "#0F766E", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}
@@ -6271,13 +6275,15 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                   onClick={async () => {
                     if (!confirm(isParcial
                       ? `Aceitar o cancelamento PARCIAL? Só os itens contestados são reembolsados (${fmtBR(reembolsoPedido)}); o pedido continua.`
-                      : reembolsoMantemPedido ? "Aceitar o REEMBOLSO? O valor contestado volta para o cliente pelo iFood; o pedido continua — não vai para Cancelado."
+                      : reembolsoMantemPedido ? `Aceitar o REEMBOLSO? O valor contestado volta para o cliente pel${ehKeeta ? "a Keeta" : "o iFood"}; o pedido continua — não vai para Cancelado.`
                       : isResend ? "Deseja recusar a proposta de reenvio e cancelar o pedido?" : "Tem certeza que deseja ACEITAR o cancelamento? O pedido será cancelado.")) return;
                     setLoadingId(disputeOrder.id);
                     try {
                       let r: Response;
                       // Mesma separação por canal do botão de recusa acima.
-                      if ((disputeOrder as any).source === "BRENDI" && (disputeOrder as any).openDeliveryOrderId) {
+                      if (ehKeeta) {
+                        r = await fetch("/api/customer-order/keeta-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: disputeOrder.id, acao: "accept_refund" }) });
+                      } else if ((disputeOrder as any).source === "BRENDI" && (disputeOrder as any).openDeliveryOrderId) {
                         r = await fetch("/api/customer-order/brendi-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, acao: "accept_cancellation" }) });
                       } else if ((disputeOrder as any).source === "JOTAJA" && (disputeOrder as any).openDeliveryOrderId) {
                         r = await fetch("/api/customer-order/jotaja-action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ orderId: (disputeOrder as any).openDeliveryOrderId, action: "accept_cancellation" }) });
@@ -6296,7 +6302,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                           : o));
                         if (d.ifoodOk === false) showToast("⚠️ Gravado aqui, mas o iFood não aceitou a resposta: " + (d.ifoodErro || "responda pelo app do iFood."), "#B45309");
                         router.refresh();
-                      }
+                      } else if (ehKeeta) showToast(d.error || "A Keeta não aceitou a resposta — responda pelo Portal da Keeta.", "#C92E09");
                     } catch {} finally { setLoadingId(null); }
                   }}
                   style={{ width: "100%", padding: "0.75rem", borderRadius: "8px", border: "none", background: isParcial || reembolsoMantemPedido ? "#E8590C" : "#C92E09", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: "0.92rem", fontFamily: "inherit" }}

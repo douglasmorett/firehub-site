@@ -91,7 +91,9 @@ export async function merchantsAtivos(): Promise<string[]> {
  *   - loja da Keeta já ligada a OUTRA loja do FireHub;
  *   - loja do FireHub já ligada a OUTRA loja da Keeta.
  * Trocar o par é desligar o antigo antes, de propósito: é o erro que faz o
- * pedido de uma loja cair no painel da outra.
+ * pedido de uma loja cair no painel da outra. Desligado, a troca passa: a
+ * linha guardava a loja antiga da Keeta e recusava qualquer outra para sempre
+ * (loja de entrega própria da homologação, 03/11/2026).
  */
 export async function gravarVinculo(franchiseeId: string, keetaMerchantId: number, nomeNaKeeta: string | null, quem: string): Promise<{ ok: boolean; motivo?: string; loja?: LojaKeeta; novo?: boolean; reativado?: boolean }> {
   await garantirTabela();
@@ -102,7 +104,17 @@ export async function gravarVinculo(franchiseeId: string, keetaMerchantId: numbe
   }
   const doFireHub = await lojaKeetaDoFranqueado(franchiseeId);
   if (doFireHub && doFireHub.keetaMerchantId !== String(keetaMerchantId)) {
-    return { ok: false, motivo: `Esta loja já está ligada à loja ${doFireHub.keetaMerchantId} da Keeta. Desligue antes de trocar.` };
+    if (doFireHub.ativa) {
+      return { ok: false, motivo: `Esta loja já está ligada à loja ${doFireHub.keetaMerchantId} da Keeta. Desligue antes de trocar.` };
+    }
+    await prisma.$executeRawUnsafe(
+      `UPDATE "KeetaLoja" SET "keetaMerchantId" = $2, "nomeNaKeeta" = $3, "ativa" = true, "desligadaEm" = NULL, "vinculadaEm" = now(), "vinculadaPor" = $4 WHERE "franchiseeId" = $1`,
+      franchiseeId,
+      BigInt(keetaMerchantId),
+      nomeNaKeeta,
+      quem,
+    );
+    return { ok: true, loja: { ...doFireHub, keetaMerchantId: String(keetaMerchantId), nomeNaKeeta, ativa: true }, novo: false, reativado: true };
   }
   if (doFireHub) {
     await prisma.$executeRawUnsafe(

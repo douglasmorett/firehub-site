@@ -58,7 +58,7 @@ async function decifrarPedido(pedido: any): Promise<void> {
 async function pedidoNoBanco(orderId: string) {
   return prisma.customerOrder.findFirst({
     where: { openDeliveryOrderId: idDoPedidoNoBanco(CANAL_KEETA, orderId), openDeliveryChannel: CANAL_KEETA.chave } as any,
-    select: { id: true, status: true, notes: true, cancelledBy: true, deliveryBy: true, franchiseeId: true } as any,
+    select: { id: true, status: true, notes: true, cancelledBy: true, deliveryBy: true, franchiseeId: true, cancelDispute: true } as any,
   }) as Promise<any>;
 }
 
@@ -66,6 +66,24 @@ async function alertar(loja: string, detalhe: string) {
   import("@/lib/server-monitor")
     .then((m) => m.alertarFalhaDeIntegracao("Keeta", loja, detalhe))
     .catch(() => {});
+}
+
+/** Um aviso por loja a cada 15 min: servidor fora por 20 min são vários pedidos de uma vez. */
+const ULTIMO_AVISO_DE_PAUSA = new Map<string, number>();
+
+async function avisarCanceladoAntesDeEntrar(lojaId: string, numero: string) {
+  const agora = Date.now();
+  if (agora - (ULTIMO_AVISO_DE_PAUSA.get(lojaId) ?? 0) < 15 * 60_000) return;
+  ULTIMO_AVISO_DE_PAUSA.set(lojaId, agora);
+  const { statusNaKeeta } = await import("./loja-na-keeta");
+  const s = await statusNaKeeta(lojaId).catch(() => null);
+  const fechada = !!s?.ok && String(s.dados?.status || "").toUpperCase() === "UNAVAILABLE";
+  const texto = fechada
+    ? `⚠️ *Keeta: sua loja está PAUSADA*\n\nO pedido #${numero} foi cancelado pela Keeta antes de entrar no FireHub, e a Keeta pausa a loja quando um pedido passa de 5 minutos sem confirmação.\n\nPara voltar a receber: FireHub › Integrações › Keeta › *Abrir na Keeta* (ou pelo Portal da Keeta).`
+    : `⚠️ *Keeta*: o pedido #${numero} foi cancelado pela Keeta antes de entrar no FireHub. Confira no Portal da Keeta.`;
+  const { avisarDono } = await import("@/lib/alertas-do-dono");
+  await avisarDono(lojaId, "keeta_pausada", texto).catch(() => false);
+  console.warn(`[Keeta] ⚠️ ${lojaId}: #${numero} cancelado antes de entrar${fechada ? " — loja PAUSADA na Keeta" : ""}`);
 }
 
 /** Busca, decifra, traduz, grava e confirma. */
@@ -98,9 +116,11 @@ async function importarPedido(evento: EventoKeeta, merchantDoCabecalho?: string 
     return { confirmar: false, acao: "sem-loja", mensagem: `merchant ${merchantId} sem vínculo ativo` };
   }
 
-  // Pedido que a Keeta já cancelou não entra na cozinha.
+  // Pedido que a Keeta já cancelou não entra na cozinha — mas o dono fica
+  // sabendo: se passou dos 5 min sem confirmação, a Keeta pausa a loja.
   if (String(pedido.lastEvent || "").toUpperCase() === "CANCELLED") {
     await guardarPayloadCru({ canal: "KEETA", tipo: "pedido", idNoParceiro: evento.orderId, franchiseeId: loja.franchiseeId, payload: pedido, avisos: ["já cancelado na Keeta — não gravado"] });
+    await avisarCanceladoAntesDeEntrar(loja.franchiseeId, String(pedido.displayId || evento.orderId));
     return { confirmar: true, acao: "ja-cancelado" };
   }
 
@@ -199,17 +219,25 @@ export async function processarEventoKeeta(
     return { confirmar: true, acao: "cancelado", pedidoId: existente.id };
   }
 
-  // ── Reembolso: a loja responde no Portal da Keeta (tela no FireHub ainda não existe) ──
+  // ── Reembolso: a loja responde na janela de disputa do quadro (api/customer-order/keeta-action) ──
   if (tipo === "USER_REFUND_REQUEST" || tipo === "REFUNDED" || tipo === "REFUND_FAILED") {
     if (existente) {
-      const reais = Number(meta.money) > 0 ? ` R$ ${(Number(meta.money) / 100).toFixed(2)}` : ""; // metadata em CENTAVOS
+      const valor = Number(meta.money) > 0 ? Number(meta.money) / 100 : 0; // metadata em CENTAVOS
+      const reais = valor > 0 ? ` R$ ${valor.toFixed(2)}` : "";
       const linha =
         tipo === "USER_REFUND_REQUEST"
-          ? `⚠️ Cliente pediu reembolso${reais} na Keeta (${meta.applyReason || "sem motivo"}) — responda no Portal da Keeta`
+          ? `⚠️ Cliente pediu reembolso${reais} na Keeta (${meta.applyReason || "sem motivo"})`
           : tipo === "REFUNDED"
           ? `↩️ Reembolso${reais} feito pela Keeta`
           : `✋ Reembolso recusado na Keeta`;
-      await (prisma.customerOrder as any).update({ where: { id: existente.id }, data: { notes: linhaNasNotas(existente.notes, linha) } });
+      // O pedido de reembolso abre a mesma janela das disputas do iFood: o
+      // dono aceita ou recusa ali, sem ir ao Portal da Keeta. REFUNDED e
+      // REFUND_FAILED fecham a janela, venha a resposta daqui ou de lá.
+      const disputa =
+        tipo === "USER_REFUND_REQUEST"
+          ? { pending: true, type: "REFUND_ITEMS", reason: `Reembolso${reais}: ${meta.applyReason || "sem motivo"}`, requestedAt: new Date().toISOString(), valorReembolso: valor }
+          : { ...((existente as any).cancelDispute || {}), pending: false, resolved: tipo === "REFUNDED" ? "refunded" : "refund_failed" };
+      await (prisma.customerOrder as any).update({ where: { id: existente.id }, data: { notes: linhaNasNotas(existente.notes, linha), cancelDispute: disputa } });
       console.log(`[Keeta] ${tipo} em ${evento.orderId}: ${linha}`);
     }
     return { confirmar: true, acao: tipo.toLowerCase() };

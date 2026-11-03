@@ -82,6 +82,9 @@ stub("../src/app/api/store/print-queue/route", { pushJobToPrintQueue: (_loja: st
 const alertas: string[] = [];
 stub("../src/lib/server-monitor", { alertarFalhaDeIntegracao: async (_c: string, loja: string, d: string) => void alertas.push(`${loja}: ${d}`) });
 stub("../src/lib/fiscal-automatico", { alertarCancelamentoComNota: async () => 0, emitirNfceDosPedidos: async () => {} });
+const avisosAoDono: string[] = [];
+stub("../src/lib/alertas-do-dono", { avisarDono: async (_loja: string, _tipo: string, texto: string) => (avisosAoDono.push(texto), true) });
+stub("../src/lib/keeta/loja-na-keeta", { statusNaKeeta: async () => ({ ok: true, status: 200, dados: { status: "UNAVAILABLE" } }) });
 const payloads: any[] = [];
 stub("../src/lib/open-delivery/payload-cru", { guardarPayloadCru: async (r: any) => void payloads.push(r) });
 const pendentes: any[] = [];
@@ -222,6 +225,10 @@ async function main() {
   pedidosNaKeeta["7001"] = pedidoBase("7001", { lastEvent: "CANCELLED" });
   const r9 = await processarEventoKeeta(ev("7001", "CREATED"));
   confere("já cancelado lá: não entra na cozinha", [r9.acao, db.customerOrder.some((o) => o.openDeliveryOrderId === "keeta_7001")], ["ja-cancelado", false]);
+  confere("… e o dono sabe que a loja ficou PAUSADA na Keeta", [avisosAoDono.length, /PAUSADA/.test(avisosAoDono[0] || ""), /#D7001/.test(avisosAoDono[0] || "")], [1, true, true]);
+  pedidosNaKeeta["7002"] = pedidoBase("7002", { lastEvent: "CANCELLED" });
+  await processarEventoKeeta(ev("7002", "CREATED"));
+  confere("… um aviso só a cada 15 min (servidor fora = vários pedidos)", avisosAoDono.length, 1);
 
   // 10. Status vindo da Keeta só avança
   await processarEventoKeeta(ev("1001", "CONCLUDED"));
@@ -239,6 +246,9 @@ async function main() {
   await processarEventoKeeta(ev("5001", "USER_REFUND_REQUEST", { money: 3500, applyReason: "Faltou item" }));
   const p5 = db.customerOrder.find((o) => o.openDeliveryOrderId === "keeta_5001");
   confere("reembolso: aviso nas notas, valor em reais", String(p5?.notes).includes("Cliente pediu reembolso R$ 35.00 na Keeta (Faltou item)"), true);
+  confere("… e abre a janela de disputa do quadro", [p5?.cancelDispute?.pending, p5?.cancelDispute?.type, p5?.cancelDispute?.valorReembolso], [true, "REFUND_ITEMS", 35]);
+  await processarEventoKeeta(ev("5001", "REFUNDED", { money: 3500 }));
+  confere("REFUNDED fecha a janela", [p5?.cancelDispute?.pending, p5?.cancelDispute?.resolved], [false, "refunded"]);
 
   // 13. Status da loja para a Keeta
   chamadas.length = 0;

@@ -96,7 +96,14 @@ export type TipoDeAlerta =
    * quando voltou (lib/jotaja-instavel.ts). Na Duga Burguer, 24/10/2026, três
    * pedidos ficaram só no portal por uma hora sem ninguém saber.
    */
-  | "parceiro_fora_do_ar";
+  | "parceiro_fora_do_ar"
+  /**
+   * Pedido da Keeta cancelado antes de entrar no FireHub (servidor fora mais
+   * de 5 min, por exemplo) — e a Keeta pausa a loja quando pedido passa do
+   * prazo sem confirmação (lib/keeta/eventos.ts). Sem o aviso, a loja seguia
+   * fechada lá sem ninguém saber.
+   */
+  | "keeta_pausada";
 
 export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   problema_no_pedido: true,
@@ -119,6 +126,7 @@ export const ALERTAS_PADRAO: Record<TipoDeAlerta, boolean> = {
   loja_sem_conexao: true,
   pix_online: true,
   parceiro_fora_do_ar: true,
+  keeta_pausada: true,
 };
 
 export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
@@ -137,6 +145,7 @@ export const ROTULO_DO_ALERTA: Record<TipoDeAlerta, string> = {
   loja_sem_conexao: "A loja ficou sem conexão no horário (iFood, site e robô pausados) e quando a conexão voltou",
   pix_online: "Pix pelo site: estorno pendente, Pix pago em pedido cancelado, chave do Asaas desativada",
   parceiro_fora_do_ar: "JotaJá fora do ar (pedidos de lá podem não entrar) e quando voltou",
+  keeta_pausada: "Pedido da Keeta cancelado antes de entrar no FireHub, e a loja pausada na Keeta por isso",
 };
 
 // Os números do dono (principal + outros) moram em lib/numeros-do-dono.ts,

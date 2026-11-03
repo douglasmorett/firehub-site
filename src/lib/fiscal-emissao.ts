@@ -445,6 +445,7 @@ const NOME_DO_CANAL: Partial<Record<ChaveDeCanal, string>> = {
   CARDAPIOWEB: "CardápioWeb",
   ANOTAAI: "Anota AI",
   AIQFOME: "aiqfome",
+  KEETA: "Keeta",
 };
 
 export type IntermediadorDaNota = { nome: string; cnpj: string; id: string };
