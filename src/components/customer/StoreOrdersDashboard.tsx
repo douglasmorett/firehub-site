@@ -4096,7 +4096,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   const preparoBase = filteredOrders.filter(o => (o.status === "ACEITO" || o.status === "PREPARANDO" || (o.deliveryType === "DELIVERY" && o.status === "PRONTO")) && !scheduledOrderIds.has(o.id));
   // Coluna Prontos ligada: o que já saiu da cozinha muda de coluna em vez de
   // ficar em Em Produção com o selo. Desligada (o padrão): tudo como hoje.
-  const prontos = colProntos ? preparoBase.filter(prontoNaCozinha).sort(sortByOrderNumberAsc) : [];
+  // A retirada pronta no KDS vira SAIU_ENTREGA (api/kds: é o que manda o
+  // "pronto para retirada" ao cliente) e caía em Saiu para Entrega, como se
+  // tivesse ido para a rua. Com a coluna Prontos ligada, ela espera ali até
+  // alguém dar "Entregue" no balcão (Thalyta/Garagem Burger, 03/11/2026).
+  const retiradaEsperandoNoBalcao = (o: any) => colProntos && o.deliveryType !== "DELIVERY" && o.status === "SAIU_ENTREGA";
+  const prontos = colProntos
+    ? [...preparoBase.filter(prontoNaCozinha), ...filteredOrders.filter(retiradaEsperandoNoBalcao)].sort(sortByOrderNumberAsc)
+    : [];
   // Sem a coluna Novos, o pedido NOVO aparece aqui até o aceite automático
   // (obrigatório nesse caso) o carimbar — que leva um tique. Nunca fica
   // invisível: pedido que ninguém vê é o problema que a coluna existia para
@@ -4105,7 +4112,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
     ...(colNovos ? [] : novos),
     ...(colProntos ? preparoBase.filter(o => !prontoNaCozinha(o)) : preparoBase),
   ].sort(sortByOrderNumberAsc);
-  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA").sort(sortByOrderNumberAsc);
+  const transporte = filteredOrders.filter(o => o.status === "SAIU_ENTREGA" && !retiradaEsperandoNoBalcao(o)).sort(sortByOrderNumberAsc);
   // 🤖 Rota 100% automatizada: o chip de cada rota, pela lista inteira (não a
   // filtrada) — o "2/3 prontos" conta a rota toda, mesmo com filtro na tela.
   // Vai para o card como texto: o `memo` do card não refaz à toa.
