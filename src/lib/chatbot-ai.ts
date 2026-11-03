@@ -1333,6 +1333,7 @@ export async function processChatbotAI(
 - A loja entrega POR BAIRRO e o cliente ainda NÃO disse o bairro (rua e número sozinhos não dizem o bairro).
 - RESULTADO: ❓ FALTA O BAIRRO. É PROIBIDO dizer que a loja não entrega nesse endereço ou nessa rua, cotar taxa ou finalizar a entrega.
 - Pergunte o BAIRRO, numa frase só, antes de qualquer outra coisa: "Qual é o seu bairro? 😊" Com o bairro o sistema confere a área e a taxa na hora.
+- O que descreve a CASA ("casa verde", "portão azul", "fundos", "perto do mercado") é ponto de referência, NÃO bairro: guarde como complemento e continue esperando o bairro.
 `;
       } else if (pedirLocalizacao === "desconhecido") {
         // R2: em KM/ROTA (e área desenhada), "não sei" nunca vira "faixa mais

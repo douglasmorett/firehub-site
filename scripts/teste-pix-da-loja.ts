@@ -67,6 +67,9 @@ const prompt = regraDoPixNoPrompt(pix, true);
 confere("prompt não contém a chave", prompt.includes(pix.chave) || prompt.includes("99962"), false);
 confere("prompt manda usar a marca", prompt.includes("[[ENVIAR_PIX]]"), true);
 confere("prompt sem chave proíbe inventar", /NUNCA invente/.test(regraDoPixNoPrompt(null, true)), true);
+// Garagem Burger, 03/11: chave pedida antes de saber se era entrega = cliente pagou sem a taxa.
+confere("anotando pedido: sem valor final, não manda a chave", /AINDA SEM o valor final/.test(prompt), true);
+confere("sem anotar pedido: a regra do valor final não entra", /AINDA SEM o valor final/.test(regraDoPixNoPrompt(pix, false)), false);
 for (const marca of ["[[ENVIAR_PIX]]", "[[enviar pix]]", "[[ENVIAR_PIX: sim]]", "[[ ENVIARPIX ]]"]) {
   confere(`marca ${marca} é reconhecida e some`, [`Segue 👇 ${marca}`.search(MARCA_ENVIAR_PIX) >= 0, `Segue 👇 ${marca}`.replace(MARCA_ENVIAR_PIX, "").trim()], [true, "Segue 👇"]);
 }

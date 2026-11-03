@@ -212,7 +212,10 @@ export function prazoParaORobo(deliveryZones: unknown): PrazoParaORobo {
         ? `${faixa}`
         : `${faixa}, conforme a região (o tempo de cada região está na lista de taxas abaixo)`,
     regra:
-      `   - Diga o tempo CADASTRADO pela loja: ${faixa}${menor === maior ? "" : ", conforme a região"}. Se o endereço do cliente já foi validado e a validação trouxe o tempo daquela região, diga o tempo DELA. NUNCA cite um tempo que não esteja nos dados da loja.`,
+      `   - Diga o tempo CADASTRADO pela loja: ${faixa}${menor === maior ? "" : ", conforme a região"}. Se o endereço do cliente já foi validado e a validação trouxe o tempo daquela região, diga o tempo DELA. NUNCA cite um tempo que não esteja nos dados da loja.\n` +
+      // Garagem Burger, 03/11/2026: o resumo dizia "até 11:49", a cliente
+      // perguntou "chega antes das 12?" e o robô respondeu genérico.
+      `   - Pedido já confirmado com "Previsão de entrega: até HH:MM" na conversa e o cliente pergunta se chega até um horário: responda pela previsão. Se ela é antes do horário pedido, diga que sim, a previsão é até HH:MM; se é depois, diga a previsão e que vai avisar a loja do horário que ele precisa. Não troque a previsão pela faixa genérica.`,
   };
 }
 

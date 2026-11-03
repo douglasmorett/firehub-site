@@ -187,6 +187,12 @@ export function regraDoPixNoPrompt(pix: PixDaLoja | null, robotAnotaPedido: bool
     robotAnotaPedido
       ? `    - Pedido FECHADO com pagamento no Pix: o sistema já manda o valor e a chave junto com a confirmação. Não use a marca nessa resposta.`
       : "",
+    // Garagem Burger, 03/11/2026: a cliente pediu a chave antes de dizer se era
+    // entrega, pagou o subtotal (R$ 98,07) e o pedido fechou em R$ 103,07 com
+    // a taxa — a loja teve de cobrar a diferença.
+    robotAnotaPedido
+      ? `    - Pedido em andamento AINDA SEM o valor final (falta saber se é entrega ou retirada, o endereço ou a taxa): NÃO use a marca. Diga que a chave vai junto com o valor certo assim que o pedido fechar e pergunte o que falta. Pagando antes, o cliente paga o valor errado.`
+      : "",
     `    - Comprovante: quando o cliente mandar o comprovante (imagem ou PDF) ou disser que pagou, agradeça e diga que a loja confere o pagamento. NUNCA diga que o pagamento foi confirmado ou recebido — você não vê a conta da loja.`,
   ].filter(Boolean).join("\n");
 }
