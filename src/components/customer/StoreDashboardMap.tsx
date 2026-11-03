@@ -4,6 +4,7 @@ import { MapPin, Navigation, Flame, Loader2 } from "lucide-react";
 import { parseAddressDetails, cleanAddressForGeocoding } from "@/lib/geocodificacao";
 import { lerPonto, type Ponto } from "@/lib/ponto-da-loja";
 import { camadaDoGoogle } from "@/lib/mapa-do-google-no-leaflet";
+import { camadaSemBairro } from "@/lib/mapa-sem-bairro";
 
 /**
  * ── OS PONTOS DESTE MAPA ERAM INVENTADOS ──────────────────────────────────
@@ -307,7 +308,8 @@ export default function StoreDashboardMap({
 
         if (!mapInstanceRef.current) {
           const map = Leaflet.map(mapContainerRef.current!, {
-            ...(chaveDoMapa ? { zoomAnimation: false, attributionControl: false } : {}),
+            // O fundo sem bairro (lib/mapa-sem-bairro.ts) não anima o zoom, como o do Google.
+            ...(chaveDoMapa ? { zoomAnimation: false, attributionControl: false } : { zoomAnimation: false }),
             // Onde a loja está. Sem ponto nenhum (a visão de todas as lojas do
             // admin), abre no país — nunca mais numa cidade escolhida a dedo.
             center: pontoDaLoja ? [pontoDaLoja.lat, pontoDaLoja.lng] : [-14.235, -51.925],
@@ -321,15 +323,24 @@ export default function StoreDashboardMap({
               attribution: "&copy; OpenStreetMap",
               maxZoom: 19,
             }).addTo(map);
-          if (chaveDoMapa) {
-            // Se o Google não abrir, volta o de antes (a roteirização avisa o porquê).
-            const fundo = camadaDoGoogle(Leaflet, chaveDoMapa, () => {
+          // O fundo padrão: o mapa sem o "Vila …" do OSM no nome dos bairros
+          // (lib/mapa-sem-bairro.ts). Sem WebGL ou fora do ar, as imagens de antes.
+          const fundoSemBairro = () => {
+            const fundo = camadaSemBairro(Leaflet, () => {
               try { map.removeLayer(fundo); } catch {}
               imagensDeAntes();
             });
             fundo.addTo(map);
+          };
+          if (chaveDoMapa) {
+            // Se o Google não abrir, volta o de antes (a roteirização avisa o porquê).
+            const fundo = camadaDoGoogle(Leaflet, chaveDoMapa, () => {
+              try { map.removeLayer(fundo); } catch {}
+              fundoSemBairro();
+            });
+            fundo.addTo(map);
           } else {
-            imagensDeAntes();
+            fundoSemBairro();
           }
 
           // Quem mexeu no mapa manda nele: a partir daí o enquadramento

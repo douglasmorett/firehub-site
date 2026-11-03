@@ -23,6 +23,7 @@
     "html5-qrcode": "^2.3.8",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.8.0",
+    "maplibre-gl": "^4.7.1",
     "mercadopago": "^2.12.0",
     "next": "16.2.6",
     "next-auth": "^4.24.14",

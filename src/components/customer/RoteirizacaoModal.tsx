@@ -43,6 +43,7 @@ import { rotaJaDespachada, rotasComLinha, pontosDaLinha, podarCoordenadas, perna
 import TutorialDaTela from "@/components/TutorialDaTela";
 import GoogleMapsDaLoja from "@/components/customer/GoogleMapsDaLoja";
 import { camadaDoGoogle } from "@/lib/mapa-do-google-no-leaflet";
+import { camadaSemBairro } from "@/lib/mapa-sem-bairro";
 import { linkDaRotaNoMaps } from "@/lib/link-da-rota";
 import { bairroPeloEndereco, type ZonaComApelidos } from "@/lib/bairro-pelo-endereco";
 import RotaAutomatica, { type PreviaDaRotaAutomatica, type RotaAutomaticaConfig, type RotaAutomaticaEstado } from "@/components/customer/RotaAutomatica";
@@ -1879,7 +1880,9 @@ export default function RoteirizacaoModal({
         // Com o fundo do Google, o zoom não anima (o Google pula para o zoom
         // novo e os pinos animados ficariam meio segundo fora do lugar), e o
         // crédito do Leaflet sai do canto: ali ficam o logo e os termos do Google.
-        ...(chaveDoMapa ? { zoomAnimation: false, attributionControl: false } : {}),
+        // O fundo sem bairro (lib/mapa-sem-bairro.ts) também não anima, pelo
+        // mesmo motivo.
+        ...(chaveDoMapa ? { zoomAnimation: false, attributionControl: false } : { zoomAnimation: false }),
         center: [defaultCenter.lat, defaultCenter.lng],
         // Sem o ponto da loja, aproximar em 13 seria apontar para um lugar
         // qualquer com cara de certeza. Abre no país e o lojista se situa.
@@ -1907,6 +1910,11 @@ export default function RoteirizacaoModal({
       // no Wi-Fi era a BUSCA de endereço, e essa já saiu do navegador (ver
       // lib/geocodificacao-servidor.ts). Trocar o provedor de imagem de novo
       // só com um que funcione sem chave e testado na tela.
+      //
+      // 02/11/2026: o fundo padrão passou a ser o mapa vetorial sem o nome dos
+      // bairros (lib/mapa-sem-bairro.ts, OpenFreeMap, sem chave, testado na
+      // tela em Cabo Frio). Estas imagens ficam como reserva: sem WebGL ou com
+      // o OpenFreeMap fora do ar, voltam elas.
       const imagensDeAntes = () =>
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
           attribution: '&copy; OpenStreetMap contributors',
@@ -1914,6 +1922,13 @@ export default function RoteirizacaoModal({
           maxZoom: 19,
           keepBuffer: 5,
         }).addTo(map);
+      const fundoSemBairro = () => {
+        const fundo = camadaSemBairro(L, () => {
+          try { map.removeLayer(fundo); } catch {}
+          imagensDeAntes();
+        });
+        fundo.addTo(map);
+      };
 
       // A loja que conectou a conta do Google: o fundo é o mapa do Google
       // (lib/mapa-do-google-no-leaflet.ts). Se o Google não abrir, volta o de
@@ -1921,12 +1936,12 @@ export default function RoteirizacaoModal({
       if (chaveDoMapa) {
         const fundo = camadaDoGoogle(L, chaveDoMapa, (motivo) => {
           try { map.removeLayer(fundo); } catch {}
-          imagensDeAntes();
+          fundoSemBairro();
           setAviso({ tipo: "erro", titulo: "O mapa do Google não abriu", detalhe: motivo, fixo: true });
         });
         fundo.addTo(map);
       } else {
-        imagensDeAntes();
+        fundoSemBairro();
       }
 
       leafletMapRef.current = map;
