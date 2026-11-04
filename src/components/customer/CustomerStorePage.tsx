@@ -31,7 +31,10 @@ import dynamic from "next/dynamic";
 // Fora do bundle inicial do cardapio: ~1.300 linhas que so entram em cena
 // quando o cliente abre um produto ou paga online.
 const ComboModal = dynamic(() => import("./ComboModal"), { ssr: false });
+// Só o tablet da mesa usa.
+const CardapioDoTablet = dynamic(() => import("./CardapioDoTablet"));
 const PaymentGateway = dynamic(() => import("./PaymentGateway"), { ssr: false });
+import type { VitrineDoTablet } from "@/lib/tablet-da-mesa/vitrine";
 import { PAGAMENTO_ONLINE_ATIVO } from "@/lib/pagamento-online";
 import { precoMinimoDoProduto, precoVariaPorEscolha, precoMinimoAntesDaPromocao } from "@/lib/preco-combo";
 import FacebookPixel, { trackPixelEvent } from "./FacebookPixel";
@@ -283,12 +286,18 @@ export type MesaDoQr = {
   tablet?: TabletNoCardapio | null;
 };
 
-/** O Tablet na mesa (lib/tablet-da-mesa): mesmo modo mesa, outra faixa no topo. */
+/** O Tablet na mesa (lib/tablet-da-mesa): mesmo modo mesa, outra tela (CardapioDoTablet). */
 export type TabletNoCardapio = {
-  /** A faixa do tablet: mesa, Chamar garçom, Pedir a conta, Minha conta. */
-  topo: React.ReactNode;
+  /** Chamar garçom e Minha conta, no topo do cardápio do tablet (CardapioDoTablet). */
+  acoes: React.ReactNode;
   /** O nome do pedido quando ninguém digita ("Mesa 5"). */
   nomePadrao: string;
+  /** Banners e recomendados que a loja montou (lib/tablet-da-mesa/vitrine.ts); vazio = automático. */
+  vitrine?: VitrineDoTablet | null;
+  /** A prévia do painel (app/tablet/previa): mostra tudo, não envia pedido. */
+  previa?: boolean;
+  /** Na prévia: o banner que o lojista está editando. */
+  bannerEmFoco?: number | null;
   /** Pedido enviado: a faixa atualiza a conta. */
   depoisDoPedido?: () => void;
 };
@@ -3297,6 +3306,10 @@ export default function CustomerStorePage({
       avisar({ titulo: "Qual é o seu nome?", texto: "O garçom chama você pelo nome.", campo: "mesa-nome" });
       return;
     }
+    if (mesa.tablet?.previa) {
+      avisar({ titulo: "Esta é a prévia", texto: "No tablet da mesa, este botão manda o pedido para a cozinha. Aqui nada é enviado." });
+      return;
+    }
     setLoading(true);
     try {
       const res = await fetch("/api/loja/mesa/pedido", {
@@ -4934,7 +4947,6 @@ export default function CustomerStorePage({
       {equipe?.topo}
 
       {/* A MESA: quem escaneou o QR sabe onde está pedindo, e que não paga agora. */}
-      {mesa?.tablet?.topo}
       {mesa && !equipe && !mesa.tablet && (
         <div style={{ background: "linear-gradient(135deg,#065F46,#059669)", color: "#fff", padding: "0.8rem 1.25rem", textAlign: "center" }}>
           <p style={{ fontWeight: 900, fontSize: "1.05rem", margin: 0 }}>
@@ -5005,6 +5017,30 @@ export default function CustomerStorePage({
         </a>
       )}
 
+      {/* O TABLET DA MESA: a mesma sacola e a mesma tela do produto, outra vitrine. */}
+      {mesa?.tablet ? (
+        <CardapioDoTablet
+          logo={franchisee.storeLogo || null}
+          nomeDaLoja={storeName}
+          nomeDaMesa={mesa.tablet.nomePadrao}
+          acoes={mesa.tablet.acoes}
+          porCategoria={grouped}
+          destaques={highlightProducts}
+          ofertas={promoProducts}
+          vitrine={mesa.tablet.vitrine ?? null}
+          bannerEmFoco={mesa.tablet.bannerEmFoco ?? null}
+          busca={searchTerm}
+          setBusca={setSearchTerm}
+          quantidade={getQty}
+          abrir={p => setComboProduct(p as any)}
+          preco={(p, tamanho, cor) => <PrecoDoCard produto={p} tamanho={tamanho} cor={cor} />}
+          itensNaSacola={cartCount}
+          totalDaSacola={finalTotal}
+          abrirSacola={() => setMobileCartOpen(true)}
+          sacola={mobileCartOpen ? cartContentJSX : null}
+          fecharSacola={() => setMobileCartOpen(false)}
+        />
+      ) : (<>
       {/* CAPA: a imagem e, quando a loja tem, o vídeo por cima (CapaDaLoja). Aberto por uma marca, a capa dela. */}
       {marcaAtiva ? (
         marcaAtiva.capa ? <CapaDaLoja imagem={marcaAtiva.capa} video={null} nome={nomeNoTopo} /> : null
@@ -5697,9 +5733,10 @@ export default function CustomerStorePage({
           </div>
         </div>
       </div>
+      </>)}
 
       {/* MOBILE BOTTOM BAR */}
-      {cartCount > 0 && !mobileCartOpen && (
+      {cartCount > 0 && !mobileCartOpen && !mesa?.tablet && (
         <div className="mob-bar">
           <button className="mob-bar-btn" onClick={() => setMobileCartOpen(true)}>
             <span>🛒 Ver sacola ({cartCount})</span>
@@ -5709,7 +5746,7 @@ export default function CustomerStorePage({
       )}
 
       {/* MOBILE CART BOTTOM SHEET */}
-      {mobileCartOpen && (
+      {mobileCartOpen && !mesa?.tablet && (
         <div className="mob-cart-overlay" onClick={() => setMobileCartOpen(false)}>
           <div className="mob-cart-sheet" onClick={e => e.stopPropagation()}>
             {cartContentJSX}

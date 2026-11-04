@@ -6,12 +6,14 @@
  * Desligado: o que é, como funciona, o preço por tablet com a conta pronta e o
  * termo (lib/tablet-da-mesa/termo.ts). Ligado: o liga/desliga com a regra da
  * cobrança, quanto o mês já deu, os tablets de cada mesa e o "Adicionar
- * tablet" (o número de 6 dígitos que o tablet digita em /tablet).
+ * tablet" (o número de 6 dígitos que o tablet digita em /tablet). Ligado ou
+ * não, a "Tela do tablet": banners e recomendados com a prévia ao lado.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BellRing, ChefHat, Plus, Receipt, TabletSmartphone, Trash2, Wifi, WifiOff } from "lucide-react";
 import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
+import EditorDaTelaDoTablet from "./EditorDaTelaDoTablet";
 import ResumoDaCobranca from "@/components/modulos/ResumoDaCobranca";
 import { PRECO_POR_TABLET } from "@/lib/tablet-da-mesa/preco";
 import { CLAUSULAS_DO_TERMO_DO_TABLET, TITULO_DO_TERMO_DO_TABLET, VERSAO_DO_TERMO_DO_TABLET } from "@/lib/tablet-da-mesa/termo";
@@ -207,6 +209,8 @@ export default function TabletNaMesaClient() {
         </>
       )}
 
+      <EditorDaTelaDoTablet onAviso={setAviso} />
+
       {termoAberto && (
         <Termo diasDeTeste={dados.diasDeTeste} comTeste={!estado.jaTestou && !estado.isento} salvando={salvando}
           onCancelar={() => setTermoAberto(false)} onAceitar={() => ligar(true)} />
@@ -318,7 +322,7 @@ function Termo({ diasDeTeste, comTeste, salvando, onCancelar, onAceitar }: {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  pagina: { maxWidth: 1000, margin: "0 auto", padding: "20px 16px 72px", color: "#15120F", fontFamily: "Inter, system-ui, sans-serif" },
+  pagina: { maxWidth: 1240, margin: "0 auto", padding: "20px 16px 72px", color: "#15120F", fontFamily: "Inter, system-ui, sans-serif" },
   sub: { color: "#57524C", margin: "6px 0 0", fontSize: 15, lineHeight: 1.5 },
   selo: { fontSize: 12, fontWeight: 800, color: "#2B8A3E", background: "#EBFBEE", padding: "5px 12px", borderRadius: 999 },
   avisoOk: { position: "fixed", top: 16, left: "50%", transform: "translateX(-50%)", zIndex: 10060, width: "min(520px, calc(100% - 32px))", padding: "12px 16px", borderRadius: 14, background: "#ECFDF3", border: "1px solid #A6E9BD", color: "#14532D", fontSize: 14, fontWeight: 600, boxShadow: "0 12px 30px rgba(0,0,0,.15)", cursor: "pointer" },

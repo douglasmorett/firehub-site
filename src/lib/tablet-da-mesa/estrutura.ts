@@ -14,6 +14,8 @@
  *   ativo no mês = com uso no mês).
  * - TabletDaMesaChamado: "chamou o garçom" / "pediu a conta", um por mesa,
  *   até alguém atender na tela de Mesas.
+ * - TabletDaMesaVitrine: os banners e os "Recomendados pela casa" que a loja
+ *   montou na aba do tablet (lib/tablet-da-mesa/vitrine.ts); sem linha, automático.
  */
 import { prisma } from "@/lib/prisma";
 
@@ -55,6 +57,13 @@ const INSTRUCOES = [
      "motivo" TEXT NOT NULL,
      "em" TIMESTAMP(3) NOT NULL,
      CONSTRAINT "TabletDaMesaChamado_pkey" PRIMARY KEY ("tableId")
+   )`,
+  `CREATE TABLE IF NOT EXISTS "TabletDaMesaVitrine" (
+     "lojaId" TEXT NOT NULL,
+     "banners" JSONB NOT NULL DEFAULT '[]',
+     "recomendados" JSONB NOT NULL DEFAULT '[]',
+     "atualizadoEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "TabletDaMesaVitrine_pkey" PRIMARY KEY ("lojaId")
    )`,
 ];
 

@@ -12,6 +12,7 @@ import { propsDoCardapio, SELECT_DA_LOJA_NO_CARDAPIO } from "@/lib/cardapio-publ
 import { codigoDaMesa } from "@/lib/mesa-qr";
 import { tabletEstaLigado } from "@/lib/tablet-da-mesa/assinatura";
 import { tabletDaRequisicao } from "@/lib/tablet-da-mesa/no-tablet";
+import { lerVitrine } from "@/lib/tablet-da-mesa/vitrine-no-banco";
 import TabletDaMesa from "./TabletDaMesa";
 
 export const dynamic = "force-dynamic";
@@ -40,13 +41,14 @@ export default async function CardapioDoTablet() {
   const loja = await prisma.user.findUnique({ where: { id: t.lojaId }, select: SELECT_DA_LOJA_NO_CARDAPIO });
   if (!loja?.slug) return <Aviso titulo="Chame o garçom" texto="O cardápio desta loja não está disponível agora." />;
 
-  const props = await propsDoCardapio(loja, "salao");
+  const [props, vitrine] = await Promise.all([propsDoCardapio(loja, "salao"), lerVitrine(t.lojaId)]);
   return (
     <TabletDaMesa
       cardapio={props}
       mesa={{ codigo: codigoDaMesa(t.lojaId, t.mesa.id), mesaId: t.mesa.id, numero: t.mesa.numero, rotulo: t.mesa.rotulo }}
       nomeDaLoja={(loja as any).storeName || (loja as any).name || ""}
       logo={(loja as any).storeLogo || null}
+      vitrine={vitrine}
     />
   );
 }

@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * O tablet preso à mesa: o cardápio da mesa (CustomerStorePage no modo mesa)
- * com a faixa do tablet no topo — a mesa, "Chamar garçom", "Pedir a conta" e
- * "Minha conta" — e o que um aparelho que fica na mesa precisa:
+ * O tablet preso à mesa: o cardápio da mesa (CustomerStorePage no modo mesa,
+ * que desenha o CardapioDoTablet) com "Chamar garçom" e "Minha conta" no topo
+ * — e o que um aparelho que fica na mesa precisa:
  *  - sinal a cada 20 s (/api/tablet-mesa/estado): é também o uso cobrado;
  *  - conta fechou (o garçom fechou a mesa): limpa a sacola e recarrega, para o
  *    próximo cliente não ver o pedido do anterior;
@@ -13,6 +13,8 @@
  */
 import { useCallback, useEffect, useRef, useState, type ComponentProps } from "react";
 import CustomerStorePage from "@/components/customer/CustomerStorePage";
+import css from "@/components/customer/CardapioDoTablet.module.css";
+import type { VitrineDoTablet } from "@/lib/tablet-da-mesa/vitrine";
 
 type PropsDoCardapio = Omit<ComponentProps<typeof CustomerStorePage>, "mesa">;
 type Conta = { aberta: boolean; total: number; itens: { nome: string; quantidade: number; valor: number }[] };
@@ -22,11 +24,12 @@ const SINAL_MS = 20_000;
 const DESCANSO_MS = 3 * 60_000;
 const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export default function TabletDaMesa({ cardapio, mesa, nomeDaLoja, logo }: {
+export default function TabletDaMesa({ cardapio, mesa, nomeDaLoja, logo, vitrine: vitrineInicial }: {
   cardapio: PropsDoCardapio;
   mesa: { codigo: string; mesaId: string; numero: number; rotulo: string | null };
   nomeDaLoja: string;
   logo: string | null;
+  vitrine: VitrineDoTablet;
 }) {
   const nomeDaMesa = mesa.rotulo || `Mesa ${mesa.numero}`;
   const [conta, setConta] = useState<Conta | null>(null);
@@ -34,6 +37,8 @@ export default function TabletDaMesa({ cardapio, mesa, nomeDaLoja, logo }: {
   const [verConta, setVerConta] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
   const [descanso, setDescanso] = useState(false);
+  // A loja mexeu na vitrine no painel: chega no próximo sinal, sem recarregar.
+  const [vitrine, setVitrine] = useState(vitrineInicial);
   const contaAbertaRef = useRef<boolean | null>(null);
 
   const limparParaOProximo = useCallback(() => {
@@ -52,6 +57,7 @@ export default function TabletDaMesa({ cardapio, mesa, nomeDaLoja, logo }: {
       if (d?.ligado === false) { window.location.reload(); return; }
       setConta(d.conta);
       setChamado(d.chamado ?? null);
+      if (d.vitrine) setVitrine((v) => (JSON.stringify(v) === JSON.stringify(d.vitrine) ? v : d.vitrine));
       // A conta estava aberta e fechou: o próximo cliente começa do zero.
       if (contaAbertaRef.current === true && d.conta?.aberta === false) limparParaOProximo();
       contaAbertaRef.current = Boolean(d.conta?.aberta);
@@ -107,18 +113,19 @@ export default function TabletDaMesa({ cardapio, mesa, nomeDaLoja, logo }: {
     return () => clearTimeout(t);
   }, [aviso]);
 
-  const topo = (
-    <div style={S.faixa}>
-      <div style={S.mesa}>🍽️ {nomeDaMesa}</div>
-      <div style={S.botoes}>
-        <button type="button" style={S.botao} onClick={() => void chamar("GARCOM")}>
-          🙋 {chamado?.motivo === "GARCOM" ? "Garçom chamado" : "Chamar garçom"}
-        </button>
-        <button type="button" style={S.botao} onClick={() => setVerConta(true)}>
-          🧾 Minha conta{conta?.aberta && conta.total > 0 ? ` · ${reais(conta.total)}` : ""}
-        </button>
-      </div>
-    </div>
+  const acoes = (
+    <>
+      <button type="button" className={`${css.acao} ${chamado?.motivo === "GARCOM" ? css.acaoFeita : ""}`} onClick={() => void chamar("GARCOM")}>
+        <span aria-hidden>🙋</span> {chamado?.motivo === "GARCOM" ? "Garçom a caminho" : "Chamar garçom"}
+      </button>
+      <button type="button" className={`${css.acao} ${css.acaoContorno}`} onClick={() => setVerConta(true)}>
+        <span aria-hidden>🧾</span>
+        <span className={css.acaoLinhas}>
+          Minha conta
+          {conta?.aberta && conta.total > 0 && <small>{reais(conta.total)}</small>}
+        </span>
+      </button>
+    </>
   );
 
   return (
@@ -131,7 +138,7 @@ export default function TabletDaMesa({ cardapio, mesa, nomeDaLoja, logo }: {
           numero: mesa.numero,
           rotulo: mesa.rotulo,
           mesas: [],
-          tablet: { topo, nomePadrao: nomeDaMesa, depoisDoPedido: () => void sinal() },
+          tablet: { acoes, nomePadrao: nomeDaMesa, vitrine, depoisDoPedido: () => void sinal() },
         }}
       />
 
@@ -181,10 +188,6 @@ export default function TabletDaMesa({ cardapio, mesa, nomeDaLoja, logo }: {
 }
 
 const S: Record<string, React.CSSProperties> = {
-  faixa: { position: "sticky", top: 0, zIndex: 50, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", padding: "10px 16px", background: "linear-gradient(135deg,#7C2D12,#EA580C)", color: "#fff", boxShadow: "0 2px 10px rgba(0,0,0,.15)" },
-  mesa: { fontSize: 22, fontWeight: 900 },
-  botoes: { display: "flex", gap: 8, flexWrap: "wrap" },
-  botao: { minHeight: 48, padding: "0 16px", borderRadius: 999, border: "2px solid rgba(255,255,255,.7)", background: "rgba(255,255,255,.15)", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer" },
   aviso: { position: "fixed", left: "50%", bottom: 24, transform: "translateX(-50%)", zIndex: 10080, background: "#0F172A", color: "#fff", padding: "14px 22px", borderRadius: 14, fontSize: 18, fontWeight: 700, boxShadow: "0 10px 30px rgba(0,0,0,.3)", maxWidth: "90vw", textAlign: "center" },
   fundo: { position: "fixed", inset: 0, zIndex: 10070, background: "rgba(15,23,42,.6)", display: "grid", placeItems: "center", padding: 16 },
   janela: { background: "#fff", borderRadius: 22, width: "min(560px, 100%)", padding: 22, boxShadow: "0 24px 60px rgba(0,0,0,.35)" },

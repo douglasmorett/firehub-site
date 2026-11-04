@@ -227,6 +227,16 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // A prévia do Tablet na mesa abre DENTRO da aba do painel (iframe em
+        // app/store/tablet-na-mesa/EditorDaTelaDoTablet.tsx): só ela aceita
+        // moldura, e só do próprio domínio. Vem depois da geral para vencer.
+        source: "/tablet/previa",
+        headers: [
+          { key: "X-Frame-Options", value: "SAMEORIGIN" },
+          { key: "Content-Security-Policy", value: csp.replace("frame-ancestors 'none'", "frame-ancestors 'self'") },
+        ],
+      },
+      {
         // O relatório do Acompanhamento iFood é um HTML inteiro servido no
         // domínio do admin. Mesmo CSP + sandbox SEM allow-same-origin: o script
         // do relatório roda, mas numa origem opaca, sem enxergar a sessão. A

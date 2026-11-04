@@ -331,6 +331,8 @@ export async function proxy(request: NextRequest) {
   for (const [key, value] of Object.entries(SECURITY_HEADERS)) {
     response.headers.set(key, value);
   }
+  // A prévia do tablet abre na moldura da aba Tablet na mesa (o par no next.config).
+  if (pathname === "/tablet/previa") response.headers.set("X-Frame-Options", "SAMEORIGIN");
 
   // Add CORS headers for API routes
   if (pathname.startsWith("/api") && !ROTAS_COM_CORS_PROPRIO.has(pathname)) {
