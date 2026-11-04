@@ -37,6 +37,7 @@
 import { isBeverageName } from "@/lib/beverage";
 import { coordenadasDoParceiro } from "@/lib/coordenadas-do-parceiro";
 import { dataHoraDaLoja } from "@/lib/fuso";
+import { linhaDaTaxaDoApp, linhaDaGorjeta } from "@/lib/taxa-do-app-nas-notas";
 
 // ── Contrato (o que o Open Delivery 1.x declara; o resto é tolerado) ─────────
 
@@ -647,10 +648,11 @@ export function traduzirPedidoOpenDelivery(pedido: PedidoOD, ctx: ContextoOD): T
       ? `🏷️ ${desconto.detalhes.find((d) => d.description)?.description || "Desconto"}: -R$${desconto.total.toFixed(2)}` +
         (desconto.plataforma > 0 ? ` (${canal.nome}: R$${desconto.plataforma.toFixed(2)} | Loja: R$${desconto.loja.toFixed(2)})` : "")
       : null,
-    taxaDaPlataforma > 0 ? `💳 Taxa de serviço ${canal.nome}: R$${taxaDaPlataforma.toFixed(2)} (fica com a plataforma)` : null,
+    // Lidas de volta para a conta do quadro e da comanda (lib/taxa-do-app-nas-notas.ts).
+    taxaDaPlataforma > 0 ? linhaDaTaxaDoApp(canal.nome, taxaDaPlataforma) : null,
     ...taxasDaLoja.map((f) => `💳 ${texto(f.name) || "Taxa adicional"}: R$${valor(f.price).toFixed(2)} (fica com a loja)`),
     complementoDoMinimo > 0 ? `🧾 Complemento do pedido mínimo: R$${complementoDoMinimo.toFixed(2)}` : null,
-    gorjeta > 0 ? `💝 Gorjeta: R$${gorjeta.toFixed(2)}` : null,
+    gorjeta > 0 ? linhaDaGorjeta(gorjeta) : null,
     pagamento.parteOnline > 0 ? `💳 Já pago no app: R$${pagamento.parteOnline.toFixed(2)}` : null,
     texto(pedido.extraInfo) ? `📝 OBS: ${texto(pedido.extraInfo)}` : null,
     ...notasDeItem.map((n) => `📝 ${n}`),

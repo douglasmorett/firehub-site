@@ -1,4 +1,5 @@
 import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
+import { camposDaTaxaDoAppParaImpressao } from "@/lib/taxa-do-app-nas-notas";
 import { camposDoAcrescimoParaImpressao } from "@/lib/acrescimo-no-credito";
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -771,6 +772,9 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
         // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
         // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.
         ...camposDeDesconto99ParaImpressao(order),
+        // Taxa e gorjeta da Keeta e dos outros apps do Open Delivery
+        // (lib/taxa-do-app-nas-notas.ts).
+        ...camposDaTaxaDoAppParaImpressao(order as any),
         // Acréscimo no crédito do cardápio: linha própria na comanda, no campo
         // da taxa de serviço que o Assistente já soma (lib/acrescimo-no-credito.ts).
         ...camposDoAcrescimoParaImpressao(order as any),
@@ -1056,6 +1060,9 @@ async function filaDaLoja(req: NextRequest, franchiseeId: string | null, daIrma:
           // 99Food: a parte do 99 em discountPlatform, a taxa de servico em serviceFee
           // (lib/desconto-99food.ts) — vale para pedido antigo, sem coluna gravada.
           ...camposDeDesconto99ParaImpressao(order),
+          // Taxa e gorjeta da Keeta e dos outros apps do Open Delivery
+          // (lib/taxa-do-app-nas-notas.ts).
+          ...camposDaTaxaDoAppParaImpressao(order as any),
           // Acréscimo no crédito do cardápio (lib/acrescimo-no-credito.ts).
           ...camposDoAcrescimoParaImpressao(order as any),
           ...(qrEmTodas ? qr : {}),

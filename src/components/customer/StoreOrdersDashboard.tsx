@@ -57,6 +57,7 @@ import { esperandoConferencia, motivoDeAguardarLoja } from "@/lib/finalizar-rasc
 import AvisoPedidoDoRoboParaConferir from "@/components/customer/AvisoPedidoDoRoboParaConferir";
 import { separacaoDoDesconto99, taxaDeServico99, camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
 import { acrescimoGravadoNoPedido, camposDoAcrescimoParaImpressao } from "@/lib/acrescimo-no-credito";
+import { taxasDoAppNasNotas, camposDaTaxaDoAppParaImpressao } from "@/lib/taxa-do-app-nas-notas";
 import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 import { BotaoNaoVerMais, useNaoVerMais } from "@/components/customer/NaoVerMais";
 import NotaFiscalDoPedido, { NotaFiscalDaLojaProvider, useNotaFiscalDaLoja } from "@/components/customer/NotaFiscalDoPedido";
@@ -2655,6 +2656,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       // 99Food: loja x plataforma pela régua única, também em pedido antigo;
       // a parte do 99 vai em discountPlatform (lib/desconto-99food.ts).
       ...camposDeDesconto99ParaImpressao(order),
+      // Taxa e gorjeta da Keeta e dos outros apps do Open Delivery
+      // (lib/taxa-do-app-nas-notas.ts).
+      ...camposDaTaxaDoAppParaImpressao(order as any),
       // Acréscimo no crédito do cardápio, na linha da taxa de serviço do
       // Assistente (lib/acrescimo-no-credito.ts).
       ...camposDoAcrescimoParaImpressao(order as any),
@@ -5602,15 +5606,29 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                       linha a nota não fechava: no Frangoso (17/09/2026) o item
                       dizia 44,99, o desconto 14,00 e o total 41,14 — e a
                       diferença era isto aqui mais a entrega. O lojista lia como
-                      "o cupom não deduz". Só aparece quando existe. */}
+                      "o cupom não deduz". Só aparece quando existe.
+                      Keeta e os outros apps do Open Delivery: taxa e gorjeta
+                      vêm das observações (lib/taxa-do-app-nas-notas.ts). */}
                   {(() => {
-                    const taxaServico = taxaDeServico99(order) || Number((order as any).discountDetails?.taxaServico) || 0;
-                    if (taxaServico <= 0) return null;
+                    const doApp = taxasDoAppNasNotas(order as any);
+                    const taxaServico = taxaDeServico99(order) || Number((order as any).discountDetails?.taxaServico) || doApp?.taxaServico || 0;
+                    const gorjeta = doApp?.gorjeta || 0;
+                    if (taxaServico <= 0 && gorjeta <= 0) return null;
                     return (
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span>Taxa de serviço ({nomeDoCanal(order)}):</span>
-                        <span>R$ {taxaServico.toFixed(2).replace('.', ',')}</span>
-                      </div>
+                      <>
+                        {taxaServico > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between" }}>
+                            <span>Taxa de serviço ({nomeDoCanal(order)}):</span>
+                            <span>R$ {taxaServico.toFixed(2).replace('.', ',')}</span>
+                          </div>
+                        )}
+                        {gorjeta > 0 && (
+                          <div style={{ display: "flex", justifyContent: "space-between" }}>
+                            <span>Gorjeta:</span>
+                            <span>R$ {gorjeta.toFixed(2).replace('.', ',')}</span>
+                          </div>
+                        )}
+                      </>
                     );
                   })()}
 

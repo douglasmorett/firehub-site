@@ -1,5 +1,6 @@
 "use client";
 import { camposDeDesconto99ParaImpressao } from "@/lib/desconto-99food";
+import { camposDaTaxaDoAppParaImpressao } from "@/lib/taxa-do-app-nas-notas";
 import { camposDoAcrescimoParaImpressao } from "@/lib/acrescimo-no-credito";
 import { camposDaPrevisaoParaImpressao } from "@/lib/previsao-da-entrega";
 import { useEffect, useRef, useState } from "react";
@@ -398,6 +399,9 @@ export default function GlobalPrintListener() {
                     discountMerchant: order.discountMerchant,
                     // 99Food: loja x plataforma pela régua única (lib/desconto-99food.ts).
                     ...camposDeDesconto99ParaImpressao(order),
+                    // Taxa e gorjeta da Keeta e dos outros apps do Open Delivery
+                    // (lib/taxa-do-app-nas-notas.ts).
+                    ...camposDaTaxaDoAppParaImpressao(order),
                     // Acréscimo no crédito do cardápio, na linha da taxa de
                     // serviço do Assistente (lib/acrescimo-no-credito.ts).
                     ...camposDoAcrescimoParaImpressao(order),
