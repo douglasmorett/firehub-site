@@ -187,6 +187,15 @@ export async function assessorEstaLigado(franchiseeId: string): Promise<boolean>
   }
 }
 
+/**
+ * Lojas que conversam com o Bill sem assinar, só para PERGUNTAR (vendas, caixa,
+ * estoque, cardápio, taxas): ação que grava (pausar, abrir/fechar, lançar, taxa)
+ * pede para assinar o Bill. Decisão do Douglas, 04/11/2026, só para a Map Burger,
+ * que entrou falando com o Bill de graça; o resto segue a regra normal.
+ */
+const LOJAS_COM_BILL_SO_INFORMACAO = new Set<string>(["MAP_BURGER_ID"]);
+export const billSoInformacao = (franchiseeId: string) => LOJAS_COM_BILL_SO_INFORMACAO.has(franchiseeId);
+
 export class TermoNaoAceitoError extends Error {}
 
 /**
