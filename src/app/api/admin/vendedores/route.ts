@@ -65,6 +65,21 @@ export async function GET() {
         inativos: v.carteira.filter((l) => atividade.get(l.id)?.situacao !== "ATIVA").length,
         comissaoMes: rel?.resumo.mesAtual.porPapel.VENDEDOR.comissao ?? 0,
         comissaoTotal: rel?.resumo.mesAtual.comissao ?? 0,
+        // O que ele recebe agora, das mensalidades do mês fechado — como
+        // vendedor E como embaixador, numa conta só (pedido do Douglas, 04/11/2026,
+        // pelo Victor). Garantido = boleto já pago; previsto = se todas as que
+        // têm boleto pagarem (a vencer + atrasadas). Sem boleto não entra: não há
+        // como pagar nem split para cair.
+        previsao: rel
+          ? {
+              mesFechado: rel.meses.anterior,
+              garantido: rel.resumo.mesAnterior.recebido,
+              aVencer: rel.resumo.mesAnterior.aVencer,
+              atrasado: rel.resumo.mesAnterior.atrasado,
+              previsto: Math.round((rel.resumo.mesAnterior.recebido + rel.resumo.mesAnterior.aVencer + rel.resumo.mesAnterior.atrasado) * 100) / 100,
+              comoEmbaixador: Math.round((rel.resumo.mesAtual.porPapel.EMBAIXADOR.comissao + rel.resumo.mesAtual.porPapel.REDE.comissao) * 100) / 100,
+            }
+          : null,
       };
     })
   );

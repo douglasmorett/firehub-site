@@ -18,6 +18,8 @@ type Membro = {
   comissaoMes: number;
   /** Tudo que ele recebe no mês: indicação + rede + carteira. */
   comissaoTotal: number;
+  /** Mês fechado, vendedor + embaixador juntos: garantido (pago) e previsto (se as com boleto pagarem). */
+  previsao?: { mesFechado: string; garantido: number; aVencer: number; atrasado: number; previsto: number; comoEmbaixador: number } | null;
   /** % de link do cadastro (loja que ele convidou e atende). */
   linkPercent?: number;
   /** Termo de comissionamento: último aceite (lib/parceiro/aceite-do-termo.ts). */
@@ -31,6 +33,11 @@ type Form = { name: string; email: string; phone: string; asaasWalletId: string;
 const FORM_VAZIO: Form = { name: "", email: "", phone: "", asaasWalletId: "", sellerPercent: "3" };
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+/** "2026-10" → "out/26". */
+const mesCurto = (ym: string) => {
+  const [a, m] = ym.split("-");
+  return `${["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"][Number(m) - 1]}/${a.slice(2)}`;
+};
 const PORTAL = "https://firehubfood.com.br/vendedor";
 
 export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vendedorId: string) => void }) {
@@ -124,9 +131,13 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
   };
 
   const totais = equipe.reduce(
-    (t, m) => ({ clientes: t.clientes + m.clientes, atendidos: t.atendidos + m.atendidos, aguardando: t.aguardando + m.aguardando, comissao: t.comissao + m.comissaoMes }),
-    { clientes: 0, atendidos: 0, aguardando: 0, comissao: 0 }
+    (t, m) => ({
+      clientes: t.clientes + m.clientes, atendidos: t.atendidos + m.atendidos, aguardando: t.aguardando + m.aguardando,
+      garantido: t.garantido + (m.previsao?.garantido ?? 0), previsto: t.previsto + (m.previsao?.previsto ?? 0),
+    }),
+    { clientes: 0, atendidos: 0, aguardando: 0, garantido: 0, previsto: 0 }
   );
+  const mesFechado = equipe.find((m) => m.previsao)?.previsao?.mesFechado;
 
   const mensagemDeAcesso = acesso
     ? `Olá, ${acesso.nome.split(" ")[0]}! Seu acesso ao painel de vendedor da FireHub:\n${PORTAL}\nE-mail: ${acesso.email}` +
@@ -156,7 +167,7 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
           { label: "Clientes atribuídos", val: totais.clientes, sub: "somando todas as carteiras", color: "#0F172A" },
           { label: "Já atendidos", val: totais.atendidos, sub: "contato feito", color: "#15803D" },
           { label: "Sem atendimento", val: totais.aguardando, sub: "aguardando o vendedor", color: totais.aguardando ? "#B45309" : "#0F172A" },
-          { label: "Comissões do mês", val: brl(totais.comissao), sub: "previsão pelo split", color: "#0F172A" },
+          { label: `Comissões de ${mesFechado ? mesCurto(mesFechado) : "mês fechado"}`, val: brl(totais.garantido), sub: `garantido · previsto ${brl(totais.previsto)}`, color: "#15803D" },
         ].map(k => (
           <div key={k.label} className="fha-kpi">
             <div className="fha-kpi-lbl">{k.label}</div>
@@ -184,18 +195,18 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
           <table className="fha-table">
             <thead>
               <tr>
-                <th>Vendedor</th><th>Clientes</th><th>Atendidos</th><th>Sem atendimento</th><th>Parados</th><th>Comissão do mês</th><th>Asaas</th><th>Termo aceito em</th><th>Situação</th><th>Ações</th>
+                <th>Vendedor</th><th>Clientes</th><th>Atendidos</th><th>Sem atendimento</th><th>Parados</th><th>Garantido / previsto</th><th>Mês atual</th><th>Asaas</th><th>Termo aceito em</th><th>Situação</th><th>Ações</th>
               </tr>
             </thead>
             <tbody>
               {carregando && (
-                <tr><td colSpan={10} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>Carregando a equipe...</td></tr>
+                <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "#64748B" }}>Carregando a equipe...</td></tr>
               )}
               {!carregando && erro && (
-                <tr><td colSpan={10} style={{ textAlign: "center", padding: 28, color: "#B91C1C" }}>{erro}</td></tr>
+                <tr><td colSpan={11} style={{ textAlign: "center", padding: 28, color: "#B91C1C" }}>{erro}</td></tr>
               )}
               {!carregando && !erro && equipe.length === 0 && (
-                <tr><td colSpan={10} style={{ textAlign: "center", padding: 32, color: "#64748B" }}>
+                <tr><td colSpan={11} style={{ textAlign: "center", padding: 32, color: "#64748B" }}>
                   Nenhum vendedor ainda. Cadastre o primeiro em <strong>+ Cadastrar vendedor</strong>.
                 </td></tr>
               )}
@@ -226,12 +237,24 @@ export default function VendedoresTab({ onVerCarteira }: { onVerCarteira: (vende
                     </td>
                     <td style={{ fontWeight: 800, color: m.aguardando ? "#B45309" : "#94A3B8" }}>{m.aguardando}</td>
                     <td style={{ fontWeight: 700, color: m.inativos ? "#B91C1C" : "#94A3B8" }}>{m.inativos}</td>
+                    <td title="Mensalidades do mês fechado, como vendedor e como embaixador juntos. Garantido = boleto já pago (o split caiu); previsto = se as lojas com boleto a vencer ou atrasado pagarem.">
+                      {m.previsao ? (
+                        <>
+                          <div style={{ fontWeight: 800, color: "#15803D" }}>{brl(m.previsao.garantido)} <span className="fha-sub">garantido</span></div>
+                          <div style={{ fontWeight: 700, color: "#0F172A" }}>{brl(m.previsao.previsto)} <span className="fha-sub">previsto</span></div>
+                          <div className="fha-sub">
+                            {mesCurto(m.previsao.mesFechado)} · {brl(m.previsao.aVencer)} a vencer
+                            {m.previsao.atrasado > 0 && <span style={{ color: "#B91C1C" }}> · {brl(m.previsao.atrasado)} atrasado</span>}
+                          </div>
+                        </>
+                      ) : "—"}
+                    </td>
                     <td>
-                      <div style={{ fontWeight: 800, color: "#0F172A" }}>{brl(m.comissaoMes)}</div>
+                      <div style={{ fontWeight: 800, color: "#0F172A" }}>{brl(m.comissaoTotal)}</div>
+                      <div className="fha-sub">
+                        vendedor {brl(m.comissaoMes)}{(m.previsao?.comoEmbaixador ?? 0) > 0 && <> · embaixador {brl(m.previsao!.comoEmbaixador)}</>}
+                      </div>
                       <div className="fha-sub">{m.linkPercent ?? "—"}% link · {m.sellerPercent}% atribuídas</div>
-                      {m.comissaoTotal > m.comissaoMes && (
-                        <div className="fha-sub" title="Somando a indicação e a rede dele">{brl(m.comissaoTotal)} no total</div>
-                      )}
                     </td>
                     <td>
                       {m.asaasWalletId
