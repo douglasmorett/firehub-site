@@ -1,5 +1,5 @@
 /**
- * "Venda aprovada!" no celular do Douglas, no modelo da Cakto e com a logo do
+ * "Assinatura aprovada!" no celular do Douglas, no modelo da Cakto e com a logo do
  * FireHub (é o ícone do app FireHub), a cada venda paga na conta do FireHub no
  * Asaas: mensalidade da loja (lib/pagamento-da-mensalidade.ts) e recarga do
  * Disparo oficial (lib/disparo-oficial/servidor.ts). Pedido do Douglas
@@ -27,7 +27,7 @@ export function podeReceberAvisoDeVenda(email: string | null | undefined): boole
 
 export function textoDaVenda(valor: number): { titulo: string; corpo: string } {
   const reais = valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-  return { titulo: "Venda aprovada! 🔥", corpo: `Valor: ${reais}` };
+  return { titulo: "Assinatura aprovada! 🔥", corpo: `Valor: ${reais}` };
 }
 
 /** NUNCA lança e nunca deve ser esperado por quem grava o pagamento. */
