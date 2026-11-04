@@ -172,6 +172,11 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
   const [notes, setNotes] = useState(inicial?.notes || "");
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
   const { perguntar, avisoNaTela } = useAvisoDoCardapio();
+  // Busca DENTRO do grupo (Vânia/Pizzaria Bom Cheff, 04/11/2026): a garçonete
+  // rolava os 40 sabores da meio a meio para achar um. Só aparece em grupo com
+  // muitas opções; o que já foi escolhido continua na lista mesmo fora da busca.
+  const [buscaNoGrupo, setBuscaNoGrupo] = useState<Record<string, string>>({});
+  const semAcento = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
   const [selections, setSelections] = useState<Selections>(() => {
     const init: Selections = {};
@@ -554,7 +559,12 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
               const complete = isGroupComplete(group);
               const obrigatorio = min > 0;
               const isSingle = max === 1;
-              const activeItems = itensVisiveis(group);
+              const todosOsItens = itensVisiveis(group);
+              const temBusca = todosOsItens.length >= 10;
+              const termo = semAcento((buscaNoGrupo[group.id] || "").trim());
+              const activeItems = temBusca && termo
+                ? todosOsItens.filter((i) => semAcento(i.menuProduct.name).includes(termo) || (selections[group.id]?.[i.menuProduct.name] || 0) > 0)
+                : todosOsItens;
               // Grupo opcional nunca fica "faltando": ele já nasce completo.
               const isMissing = attemptedSubmit && !complete;
 
@@ -657,6 +667,19 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
 
                   {/* GROUP ITEMS */}
                   <div style={{ padding: "0.5rem 0.75rem", display: "flex", flexDirection: "column", gap: "6px" }}>
+                    {temBusca && (
+                      <input
+                        type="search"
+                        value={buscaNoGrupo[group.id] || ""}
+                        onChange={(ev) => setBuscaNoGrupo((b) => ({ ...b, [group.id]: ev.target.value }))}
+                        placeholder="🔍 Buscar..."
+                        aria-label={`Buscar em ${group.title}`}
+                        style={{ width: "100%", padding: "9px 12px", borderRadius: "10px", border: "1.5px solid #E2E8F0", fontSize: "0.9rem", outline: "none", fontFamily: "inherit" }}
+                      />
+                    )}
+                    {temBusca && termo && activeItems.length === 0 && (
+                      <div style={{ fontSize: "0.8rem", color: "#64748B", padding: "6px 4px" }}>Nada com "{buscaNoGrupo[group.id]}".</div>
+                    )}
                     {activeItems.map(item => {
                       const optName = item.menuProduct.name;
                       const qty = selections[group.id]?.[optName] || 0;
