@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from "react";
 import { ShoppingCart, Plus, Minus, Trash2, Check, Bike, UtensilsCrossed, Users, Search, ChevronRight } from "lucide-react";
 import ComboModal from "@/components/customer/ComboModal";
 import { diaDaSemanaEmSaoPaulo, disponivelAgora, lerHorarioDoProduto } from "@/lib/cardapio-interno";
@@ -142,13 +142,29 @@ export default function VendaPresencialPage() {
     setSugestoes([]);
     setListaAberta("");
   };
+  // A lista se posiciona pela TELA, não pelo campo: os dois campos moram no
+  // .pdv-cabecalho, que rola sozinho (overflow-y: auto), e a lista "absolute"
+  // ficava cortada dentro dele em tela baixa. Notebook 1366x768 da Pizzaria
+  // Bom Cheff (Vânia, 04/11/2026): o campo perto do fim do cabeçalho e a lista
+  // inteira escondida — "não apareceu nadinha". Sem espaço embaixo, abre para cima.
+  const [ancora, setAncora] = useState<DOMRect | null>(null);
+  const marcarAncora = (e: { currentTarget: HTMLElement }) => setAncora(e.currentTarget.getBoundingClientRect());
+  const posicaoDaLista = (campo: "telefone" | "nome"): CSSProperties => {
+    if (!ancora || typeof window === "undefined") return { position: "absolute", top: "calc(100% + 4px)", ...(campo === "telefone" ? { right: 0 } : { left: 0 }) };
+    const largura = Math.min(340, window.innerWidth - 32);
+    const left = Math.max(8, Math.min(campo === "telefone" ? ancora.right - largura : ancora.left, window.innerWidth - largura - 8));
+    const cabeEmbaixo = window.innerHeight - ancora.bottom - 12 >= 160;
+    return cabeEmbaixo
+      ? { position: "fixed", left, top: ancora.bottom + 4, maxHeight: Math.min(280, window.innerHeight - ancora.bottom - 12) }
+      : { position: "fixed", left, bottom: window.innerHeight - ancora.top + 4, maxHeight: Math.min(280, ancora.top - 12) };
+  };
   const listaDeSugestoes = (campo: "telefone" | "nome") => listaAberta === campo && sugestoes.length > 0 && (
     <div
       data-campo="balcao-sugestoes"
       style={{
-        position: "absolute", top: "calc(100% + 4px)", zIndex: 40,
-        ...(campo === "telefone" ? { right: 0 } : { left: 0 }),
-        width: 340, maxWidth: "calc(100vw - 32px)", maxHeight: 280, overflowY: "auto",
+        zIndex: 10000, maxHeight: 280,
+        ...posicaoDaLista(campo),
+        width: 340, maxWidth: "calc(100vw - 32px)", overflowY: "auto",
         background: "#fff", border: "1.5px solid #CBD5E1", borderRadius: 10, boxShadow: "0 12px 30px rgba(15,23,42,0.18)",
       }}
     >
@@ -1135,8 +1151,8 @@ export default function VendaPresencialPage() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
             <div style={{ position: "relative" }}>
               <input placeholder={orderType === "BALCAO" ? "Nome (opcional)" : "Nome do cliente"} value={customerName} autoComplete="off"
-                onChange={e => { setCustomerName(e.target.value); buscarClientes("nome", e.target.value); }}
-                onFocus={() => { if (sugestoes.length > 0 && lerConsulta(customerName)?.nome) setListaAberta("nome"); }}
+                onChange={e => { marcarAncora(e); setCustomerName(e.target.value); buscarClientes("nome", e.target.value); }}
+                onFocus={(e) => { marcarAncora(e); if (sugestoes.length > 0 && lerConsulta(customerName)?.nome) setListaAberta("nome"); }}
                 onBlur={() => setListaAberta("")}
                 onKeyDown={e => { if (e.key === "Escape") setListaAberta(""); }}
                 style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", outline: "none", fontFamily: "inherit" }} />
@@ -1144,8 +1160,8 @@ export default function VendaPresencialPage() {
             </div>
             <div style={{ position: "relative" }}>
               <input placeholder="Telefone" value={customerPhone} autoComplete="off" inputMode="tel"
-                onChange={e => { setCustomerPhone(e.target.value); buscarClientes("telefone", e.target.value); }}
-                onFocus={() => { if (sugestoes.length > 0 && lerConsulta(customerPhone)?.digitos) setListaAberta("telefone"); }}
+                onChange={e => { marcarAncora(e); setCustomerPhone(e.target.value); buscarClientes("telefone", e.target.value); }}
+                onFocus={(e) => { marcarAncora(e); if (sugestoes.length > 0 && lerConsulta(customerPhone)?.digitos) setListaAberta("telefone"); }}
                 onBlur={() => setListaAberta("")}
                 onKeyDown={e => { if (e.key === "Escape") setListaAberta(""); }}
                 style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E2E8F0", fontSize: "0.85rem", outline: "none", fontFamily: "inherit" }} />
