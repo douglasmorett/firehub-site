@@ -1751,6 +1751,7 @@ export default function MesasApp({
   const modalDeCombo = comboProduct ? (
     <ComboModal
       product={comboProduct as any}
+      buscaNasOpcoes
       onClose={() => setComboProduct(null)}
       onConfirm={(selections, extraSum, qty, notes) => {
         // O ComboModal devolve { grupoId: { nome: qtd } }; o carrinho das
