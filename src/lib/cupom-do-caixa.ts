@@ -38,7 +38,7 @@
 // saía "R$ -10,00" no mesmo papel — dois jeitos de escrever falta.
 import type { ChaveDaSecao, SecoesDoFechamento } from "./secoes-do-fechamento";
 
-const reais = (v: number | null | undefined) => {
+export const reais = (v: number | null | undefined) => {
   const n = Number(v || 0);
   const abs = Math.abs(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return `${n <= -0.005 ? "-" : ""}R$ ${abs}`;
@@ -1114,7 +1114,7 @@ function fechar(
  * papel em toda versão do Assistente. `isPrepaid: true` evita o aviso de
  * "COBRAR NA ENTREGA", que não faz sentido nenhum num cupom de caixa.
  */
-function montar(e: {
+export function montar(e: {
   id: string;
   kind: string;
   titulo: string;

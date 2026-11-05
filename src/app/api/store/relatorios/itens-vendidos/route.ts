@@ -21,6 +21,10 @@ import { atendimentosDaVenda, temValorImpossivel } from "@/lib/relatorios/regua-
 import { canalDoRelatorio, fmtDia, ROTULO_DO_TIPO } from "@/lib/relatorios/base";
 import { montarPlanilha, respostaDePlanilha, type AbaDaPlanilha, type LinhaDaPlanilha } from "@/lib/planilha-xlsx";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/auth";
+import { enfileirarCupomDoCaixa, assistenteOuvindoAFila } from "@/lib/imprimir-caixa";
+import { papelDosItensVendidos } from "@/lib/relatorios/papel-dos-itens-vendidos";
 
 export const dynamic = "force-dynamic";
 
@@ -167,4 +171,33 @@ export async function GET(req: NextRequest) {
   }
   const buffer = montarPlanilha(abas);
   return respostaDePlanilha(buffer, `itens-vendidos_${ctx.filtros.de}_a_${ctx.filtros.ate}.xlsx`);
+}
+
+/**
+ * POST (mesmos filtros na query) — manda o relatório para a impressora do
+ * caixa, num papel de bobina (lib/relatorios/papel-dos-itens-vendidos.ts). O
+ * Imprimir do navegador mandava a página A4 para a térmica, metros de papel.
+ */
+export async function POST(req: NextRequest) {
+  const r = await contextoDoRelatorio(req);
+  if (!r.ok) return r.resposta;
+  const ctx = r.valor;
+
+  const resposta = await GET(req);
+  if (!resposta.ok) return resposta;
+  const dados = await resposta.json();
+
+  const session = await getServerSession(authOptions).catch(() => null);
+  const operador = session?.user?.name || session?.user?.email || "";
+  // A impressora é a da loja que está aberta na tela; em "Todas as lojas", a
+  // loja de quem pediu.
+  const lojaId = ctx.lojaIds.length === 1 ? ctx.lojaIds[0] : ctx.donoId;
+  const papel = papelDosItensVendidos(dados, {
+    loja: ctx.lojasDaConta.find((l) => l.id === lojaId)?.nome || "",
+    dataHora: new Date().toLocaleString("pt-BR", { timeZone: ctx.tz, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }),
+    operador,
+  });
+  const ok = await enfileirarCupomDoCaixa(lojaId, papel, operador);
+  if (!ok) return NextResponse.json({ error: "Não consegui enviar para a impressora." }, { status: 500 });
+  return NextResponse.json({ ok: true, assistenteOuvindo: await assistenteOuvindoAFila(lojaId) });
 }
