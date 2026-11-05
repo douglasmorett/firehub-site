@@ -18,6 +18,7 @@
  * todas as lojas — o segundo pedido para a mesma rua sai do banco, sem rede.
  * O navegador nunca mais fala com o geocodificador.
  */
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { buscarNoGoogle, chaveDoGoogle, type ResultadoDoGoogle } from "@/lib/geocodificacao-google";
 import { chaveGoogleDaLoja, contarBuscaNoGoogle, type ChaveDoGoogle } from "@/lib/google-maps-da-loja-servidor";
@@ -276,6 +277,27 @@ async function garantirTabela() {
 //   - cada DONO (o IP do cardápio público, a loja) tem um teto de buscas em voo
 //     e por minuto: 40 GETs de um IP com ruas inventadas enchiam a fila de 25 e
 //     derrubavam a cotação de todas as lojas do processo.
+//   - com vários processos no mesmo container (scripts/varios-processos.js) o
+//     IP continua um só: cada chamada pede a vez ao processo principal, que
+//     solta uma a cada 1,1 s para o container inteiro.
+
+const emVariosProcessos = !!process.env.PROCESSO_DO_SITE && typeof process.send === "function";
+const esperandoAVezDoIp = new Map<string, () => void>();
+if (emVariosProcessos) {
+  process.on("message", (m: { tipo?: string; id?: string }) => {
+    if (m?.tipo !== "vez-do-nominatim" || !m.id) return;
+    esperandoAVezDoIp.get(m.id)?.();
+    esperandoAVezDoIp.delete(m.id);
+  });
+}
+
+function vezDoIp(): Promise<void> {
+  const id = randomUUID();
+  return new Promise((resolver) => {
+    esperandoAVezDoIp.set(id, resolver);
+    process.send!({ tipo: "vez-do-nominatim", id });
+  });
+}
 
 type Prioridade = "cotacao" | "lote";
 
@@ -365,6 +387,7 @@ async function despachar() {
         await dormir(espera);
         continue;
       }
+      if (emVariosProcessos) await vezDoIp();
       const vez = tirarAProxima();
       if (!vez) continue;
       ultimaChamadaNominatim = Date.now();

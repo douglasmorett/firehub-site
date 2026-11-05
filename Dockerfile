@@ -74,6 +74,7 @@ COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 # Copy cron-runner and entrypoint
 COPY --chown=nextjs:nodejs scripts/cron-runner.js ./scripts/cron-runner.js
 COPY --chown=nextjs:nodejs scripts/entrypoint.sh ./scripts/entrypoint.sh
+COPY --chown=nextjs:nodejs scripts/varios-processos.js ./scripts/varios-processos.js
 RUN chmod +x ./scripts/entrypoint.sh
 
 # Modo Contingência: o supervisor e a lista ASSINADA do pacote que o
