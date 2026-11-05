@@ -1003,6 +1003,7 @@ export default function MesasCelular({
   const modalDeCombo = comboAberto ? (
     <ComboModal
       product={comboAberto as any}
+      buscaNasOpcoes
       onClose={() => setComboAberto(null)}
       onConfirm={(selections, extraSum, qty, notes) => {
         const lista: { name: string; quantity: number }[] = [];

@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { X, Plus, Minus, Check } from "lucide-react";
+import { X, Plus, Minus, Check, Search } from "lucide-react";
 import { precoMinimoDoProduto, somaDosAdicionais, regraDoGrupo, precoDaOpcaoNaTela, opcaoDisponivelNaTela, grupoAguardaEscolha } from "@/lib/preco-combo";
 import { useAvisoDoCardapio } from "./AvisoDoCardapio";
 import { itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
@@ -146,6 +146,8 @@ interface ComboModalProps {
   inicial?: { selections?: Selections; qty?: number; notes?: string };
   /** Texto do botão de confirmar, quando não é a sacola ("Trocar o item"). */
   rotuloDoBotao?: string;
+  /** Campo de busca nas perguntas com 10+ opções (a tela da mesa). */
+  buscaNasOpcoes?: boolean;
 }
 
 /**
@@ -166,11 +168,14 @@ interface ComboModalProps {
  *   history). Agora fecha o modal, como em app.
  * - Toque no fundo escuro descartava tudo sem perguntar.
  */
-export default function ComboModal({ product, onClose, onConfirm, inicial, rotuloDoBotao }: ComboModalProps) {
+const semAcento = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+export default function ComboModal({ product, onClose, onConfirm, inicial, rotuloDoBotao, buscaNasOpcoes }: ComboModalProps) {
   const groups = product.comboGroups || [];
   const [comboQty, setComboQty] = useState(() => Math.max(1, Math.min(99, Math.floor(Number(inicial?.qty) || 1))));
   const [notes, setNotes] = useState(inicial?.notes || "");
   const [attemptedSubmit, setAttemptedSubmit] = useState(false);
+  const [buscaNoGrupo, setBuscaNoGrupo] = useState<Record<string, string>>({});
   const { perguntar, avisoNaTela } = useAvisoDoCardapio();
 
   const [selections, setSelections] = useState<Selections>(() => {
@@ -555,6 +560,12 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
               const obrigatorio = min > 0;
               const isSingle = max === 1;
               const activeItems = itensVisiveis(group);
+              // A lupa da garçonete: pergunta com muitos sabores ganha busca
+              // (Vânia/Pizzaria Bom Cheff, 04/11/2026 — rolar a lista inteira
+              // para achar o segundo sabor da meio a meio).
+              const comBusca = Boolean(buscaNasOpcoes) && activeItems.length >= 10;
+              const termo = comBusca ? semAcento(buscaNoGrupo[group.id] || "").trim() : "";
+              const itensDaLista = termo ? activeItems.filter(i => semAcento(i.menuProduct.name).includes(termo)) : activeItems;
               // Grupo opcional nunca fica "faltando": ele já nasce completo.
               const isMissing = attemptedSubmit && !complete;
 
@@ -657,7 +668,23 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
 
                   {/* GROUP ITEMS */}
                   <div style={{ padding: "0.5rem 0.75rem", display: "flex", flexDirection: "column", gap: "6px" }}>
-                    {activeItems.map(item => {
+                    {comBusca && (
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px", border: "1.5px solid #E2E8F0", borderRadius: "10px", padding: "0 0.6rem", backgroundColor: "#F8FAFC" }}>
+                        <Search size={16} color="#64748B" />
+                        <input
+                          type="search"
+                          value={buscaNoGrupo[group.id] || ""}
+                          onChange={e => setBuscaNoGrupo(b => ({ ...b, [group.id]: e.target.value }))}
+                          placeholder={`Buscar em ${group.title.toLowerCase()}…`}
+                          aria-label={`Buscar em ${group.title}`}
+                          style={{ flex: 1, border: "none", outline: "none", background: "transparent", padding: "0.6rem 0", fontSize: "16px", fontFamily: "inherit" }}
+                        />
+                      </div>
+                    )}
+                    {termo && itensDaLista.length === 0 && (
+                      <div style={{ fontSize: "0.82rem", color: "#64748B", padding: "0.4rem 0.2rem" }}>Nada com “{buscaNoGrupo[group.id]}”.</div>
+                    )}
+                    {itensDaLista.map(item => {
                       const optName = item.menuProduct.name;
                       const qty = selections[group.id]?.[optName] || 0;
                       const isSelected = qty > 0;
@@ -677,6 +704,8 @@ export default function ComboModal({ product, onClose, onConfirm, inicial, rotul
                             // toque na linha caía no vazio ("cadê o botão?").
                             if (isSingle) handleSelectSingle(group.id, optName);
                             else updateQty(group.id, optName, 1);
+                            // Escolheu pela busca: a busca limpa para o próximo sabor.
+                            if (termo) setBuscaNoGrupo(b => ({ ...b, [group.id]: "" }));
                           }}
                           style={{
                             display: "flex",
