@@ -575,9 +575,19 @@ export async function PUT(req: NextRequest) {
   // exigir as duas travaria tudo.
   //
   // (decisões do dono, 21 e 22/09/2026)
+  //
+  // ── AS TELAS DA BAIXA SÃO AS QUE DESENHARAM O PEDIDO ────────────────────
+  //
+  // O GET desenha pelas telas da conta da SESSÃO (`contaDasTelas`, a principal
+  // em "Todas as Lojas"). A baixa lia as da loja do PEDIDO: na Annalu, a Rush
+  // tinha uma tela com o MESMO id da "Cozinha" da principal, filtrada em
+  // "Refrigerantes" — a TV mostrava a pizza da Rush, a baixa carimbava zero
+  // itens e o pedido voltava para a Produção (Karen, 03/11/2026). O ADMIN sem
+  // modo suporte não tem telas: fica com as da loja do pedido, como antes.
+  const contaDasTelasDaBaixa = user.role === "ADMIN" ? order.franchiseeId! : targetFranchiseeId;
   const telasDaLoja = async (): Promise<TelaDoKds[]> => {
     const dono = await prisma.user
-      .findUnique({ where: { id: order.franchiseeId! }, select: { kdsScreens: true } })
+      .findUnique({ where: { id: contaDasTelasDaBaixa }, select: { kdsScreens: true } })
       .catch(() => null);
     return (Array.isArray(dono?.kdsScreens) ? dono!.kdsScreens : []) as TelaDoKds[];
   };
@@ -646,7 +656,7 @@ export async function PUT(req: NextRequest) {
     // a baixa nova substitui a anterior desta tela.
     const regras = minhaTela
       ? await prisma.user
-          .findUnique({ where: { id: order.franchiseeId! }, select: { kdsConfig: true } })
+          .findUnique({ where: { id: contaDasTelasDaBaixa }, select: { kdsConfig: true } })
           .then((u) => lerKdsConfig(u?.kdsConfig))
           .catch(() => null)
       : null;
@@ -769,7 +779,7 @@ export async function PUT(req: NextRequest) {
     // repete — e aqui ela chegou, só precisa de confirmação.
     if (chaveDaTelaQueDeuBaixa && forcar !== true) {
       const regras = await prisma.user
-        .findUnique({ where: { id: order.franchiseeId! }, select: { kdsConfig: true } })
+        .findUnique({ where: { id: contaDasTelasDaBaixa }, select: { kdsConfig: true } })
         .then((u) => lerKdsConfig(u?.kdsConfig))
         .catch(() => null);
       const faltam = faltaNaProducao(telasFim, itensParaFiltro, pedidoParaFiltro, regras, (order as any).kdsBaixas);
