@@ -10,6 +10,7 @@
  */
 import React, { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { Printer } from "lucide-react";
 import { PALETA } from "@/lib/paleta-brasa";
 import { fmtQtd, fmtReais } from "@/lib/relatorios/base";
 import BarraDeFiltros from "@/components/relatorios/BarraDeFiltros";
@@ -62,6 +63,24 @@ export default function ItensVendidosClient({ inicio }: { inicio: InicioDosFiltr
   const itens = useMemo(() => filtrarArvore(dados?.itens || [], busca), [dados, busca]);
   const listaDeOpcoes = useMemo(() => (dados?.opcoes ? filtrarArvore(dados.opcoes, busca) : null), [dados, busca]);
   const todasAbertas = useMemo(() => [...chavesAbriveis(itens), ...(listaDeOpcoes ? chavesAbriveis(listaDeOpcoes) : [])], [itens, listaDeOpcoes]);
+
+  const [enviando, setEnviando] = useState(false);
+  const [avisoDaImpressao, setAvisoDaImpressao] = useState<{ ok: boolean; texto: string } | null>(null);
+  const imprimirNaComanda = async () => {
+    setEnviando(true);
+    setAvisoDaImpressao(null);
+    try {
+      const r = await fetch(`/api/store/relatorios/itens-vendidos?${query}`, { method: "POST" });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) setAvisoDaImpressao({ ok: false, texto: j.error || "Não consegui enviar para a impressora." });
+      else if (j.assistenteOuvindo === false) setAvisoDaImpressao({ ok: false, texto: "Enviado, mas o Assistente de impressão não está ligado: o papel sai quando ele abrir." });
+      else setAvisoDaImpressao({ ok: true, texto: "Enviado para a impressora do caixa ✓" });
+    } catch {
+      setAvisoDaImpressao({ ok: false, texto: "Sem conexão. Tente de novo." });
+    } finally {
+      setEnviando(false);
+    }
+  };
 
   const tituloDaTabela = opcoesPorProduto ? "Itens e opções" : "Itens";
   const produtos = useMemo(() => {
@@ -148,6 +167,12 @@ export default function ItensVendidosClient({ inicio }: { inicio: InicioDosFiltr
           style={{ padding: "8px 12px", borderRadius: 10, border: `1.5px solid ${PALETA.areiaBorda}`, fontSize: "0.85rem", fontFamily: "inherit", minWidth: 240 }} />
         <button type="button" className="btn btn-outline" style={{ padding: "7px 12px" }} onClick={() => setAbertos(new Set(todasAbertas))}>Abrir tudo</button>
         <button type="button" className="btn btn-outline" style={{ padding: "7px 12px" }} onClick={() => setAbertos(new Set())}>Fechar tudo</button>
+        {/* O Imprimir de cima é o do navegador: na térmica, a página A4 sai em metros de bobina. */}
+        <button type="button" className="btn btn-outline" style={{ padding: "7px 12px", display: "inline-flex", alignItems: "center", gap: 6 }}
+          disabled={!dados || enviando} onClick={imprimirNaComanda} title="Sai um papel curto, na impressora do caixa, com os filtros desta tela">
+          <Printer size={15} /> {enviando ? "Enviando…" : "Imprimir na impressora de comanda"}
+        </button>
+        {avisoDaImpressao && <span role="status" style={{ fontSize: "0.82rem", fontWeight: 700, color: avisoDaImpressao.ok ? PALETA.carvao2 : PALETA.grave }}>{avisoDaImpressao.texto}</span>}
       </div>
 
       {dados && (
