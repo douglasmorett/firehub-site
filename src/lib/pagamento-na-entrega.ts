@@ -128,6 +128,11 @@ export function pagamentoPeloSiteParaImpressao(
 ): { paymentMethod: string; isPrepaid: true } | Record<string, never> {
   const forma = pagoPeloSite(pedido);
   if (forma) return { paymentMethod: `${forma} Pago Online`, isPrepaid: true };
+  // Pix na chave da loja, pelo robô: o papel não manda cobrar, e pede para
+  // conferir o comprovante (o Assistente de qualquer versão lê o isPrepaid).
+  if (/chave da loja/i.test(String(pedido?.paymentMethod || ""))) {
+    return { paymentMethod: "Pix na chave da loja - conferir comprovante", isPrepaid: true };
+  }
   // Na maquininha: "Cartão CREDITO (maquininha)" tem "maquin", que o papel lia
   // como cobrar. Mesmo "Pago Online" do site para o Assistente de qualquer versão.
   if (pagoNaMaquininha(pedido)) {
@@ -274,6 +279,13 @@ export function cobrancaNaEntrega(pedido: PedidoParaCobranca | null | undefined)
   // depois. Mandar o entregador cobrar um cliente de fiado é constrangimento
   // na porta da casa dele.
   if (/fiado|anotad|caderneta/i.test(texto)) return nada;
+
+  // Pix na CHAVE da loja, pelo robô (lib/pix-da-loja.ts, FORMA_PIX_DA_CHAVE):
+  // o cliente paga antes de o motoboy sair e manda o comprovante, que a loja
+  // confere. Não é online (o caixa conta como Pix), mas também não se cobra na
+  // porta — cobrar de novo era o "o cliente já pagou no Pix e saiu cobrar na
+  // entrega" (05/11/2026).
+  if (/chave da loja/i.test(texto)) return nada;
 
   if (ehPagoOnline(pedido)) return nada;
 

@@ -84,7 +84,7 @@ import { carimbosDoClienteParaOPrompt, cashbackDoClienteParaOPrompt, comandaDoRo
 import { itensEmTexto, mensagemDoAcrescimoEnviado, pedidoAtivoParaOPrompt } from "./acrescimo-do-pedido";
 import { pedidoAtivoDoTelefone, registrarAcrescimo } from "./acrescimo-no-banco";
 import { enderecoDoMapaComBairroDosCorreios } from "./bairro-dos-correios";
-import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX } from "./pix-da-loja";
+import { lerPixDaLoja, pagaNoPix, textoDoPixNoPedido, regraDoPixNoPrompt, MARCA_ENVIAR_PIX, FORMA_PIX_DA_CHAVE } from "./pix-da-loja";
 import { formaPropriaPeloNome, nomeDaFormaPropria, problemaDaFormaPropria, rotuloDaForma, textosNoCanal } from "./formas-proprias";
 
 /**
@@ -2782,6 +2782,15 @@ async function syncAiOrderToDatabase({
     else if (problemaDaFormaPropria(formasProprias, [payload.paymentMethod], "robo")) {
       payload.paymentMethod = nomeDaFormaPropria(payload.paymentMethod) || payload.paymentMethod;
     }
+  }
+  // Pix com a chave da loja cadastrada: o robô manda a chave e pede o
+  // comprovante, o cliente paga antes da entrega (lib/pix-da-loja.ts). Forma
+  // própria e "Pix na entrega" ficam como estão.
+  if (
+    payload?.paymentMethod && pagaNoPix(payload.paymentMethod) && lerPixDaLoja(cupons?.chatbotConfig) &&
+    !/forma pr[oó]pria|entrega/i.test(payload.paymentMethod)
+  ) {
+    payload.paymentMethod = FORMA_PIX_DA_CHAVE;
   }
   const phoneClean = customerPhone.replace(/\D/g, "");
   if (!phoneClean) return { gravado: false, motivo: "telefone vazio após limpeza" };

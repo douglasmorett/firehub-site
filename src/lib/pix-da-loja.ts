@@ -147,6 +147,15 @@ export function lerPixDaLoja(chatbotConfig: any): PixDaLoja | null {
   return limpo && !("erro" in limpo) ? limpo : null;
 }
 
+/**
+ * A forma gravada no pedido do robô pago na chave da loja. O robô manda a
+ * chave logo depois de gravar e pede o comprovante: o cliente paga ANTES de o
+ * motoboy sair. Gravado só "Pix", a comanda e o app do motoboy mandavam cobrar
+ * de novo na porta (lib/pagamento-na-entrega.ts lê "chave da loja"). O caixa
+ * continua contando como Pix (formaCanonica).
+ */
+export const FORMA_PIX_DA_CHAVE = "Pix (chave da loja)";
+
 /** O pedido vai ser pago no Pix (e não no cartão/dinheiro da entrega). */
 export function pagaNoPix(formaDePagamento: unknown): boolean {
   return /\bpix\b/i.test(String(formaDePagamento ?? ""));
