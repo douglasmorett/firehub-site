@@ -6507,7 +6507,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
       {/* ===== MODAL AGENDAMENTOS ===== */}
       {showAgendamentos && (
         <div onClick={() => setShowAgendamentos(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "32px", width: "520px", maxWidth: "95vw", maxHeight: "85vh", boxShadow: "0 30px 80px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column" }}>
+          {/* Rola inteira: em notebook (768 px de altura) a config do agendamento
+              passava da janela e o "Salvar" ficava fora da tela (Gil/Jerrajê, 05/11). */}
+          <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "20px", padding: "32px", width: "520px", maxWidth: "95vw", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 30px 80px rgba(0,0,0,0.3)", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "20px" }}>
               <div style={{ width: 44, height: 44, borderRadius: "12px", background: "linear-gradient(135deg,#64748B,#1C1917)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <CalendarClock size={22} color="#fff" />
@@ -6529,7 +6531,8 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
               onAviso={showToast}
             />
 
-            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: "10px" }}>
+            {/* Sem rolagem própria: com a janela rolando, flex 1 encolhia a lista a zero. */}
+            <div style={{ flex: "1 0 auto", display: "flex", flexDirection: "column", gap: "10px" }}>
               {scheduledOrders.length === 0 ? (
                 <div style={{ textAlign: "center", padding: "3rem 1rem", color: "#94A3B8" }}>
                   <CalendarClock size={48} style={{ opacity: 0.2, marginBottom: "12px" }} />
