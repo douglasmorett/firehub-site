@@ -193,7 +193,7 @@ export async function assessorEstaLigado(franchiseeId: string): Promise<boolean>
  * pede para assinar o Bill. Decisão do Douglas, 04/11/2026, só para a Map Burger,
  * que entrou falando com o Bill de graça; o resto segue a regra normal.
  */
-const LOJAS_COM_BILL_SO_INFORMACAO = new Set<string>(["MAP_BURGER_ID"]);
+const LOJAS_COM_BILL_SO_INFORMACAO = new Set<string>(["cmumscwah017mte01ujshivvz"]); // Map Grill (map-grill)
 export const billSoInformacao = (franchiseeId: string) => LOJAS_COM_BILL_SO_INFORMACAO.has(franchiseeId);
 
 export class TermoNaoAceitoError extends Error {}
