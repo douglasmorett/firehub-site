@@ -6,6 +6,38 @@ const WA = "https://wa.me/5522981118514?text=Ol%C3%A1!%20Quero%20testar%20o%20Fi
 const TRIAL = "/cadastro";
 const LOGIN = "https://firehubfood.com.br/login";
 
+// Ficha da empresa para o Google (painel ao lado da pesquisa "firehub").
+const JSON_LD = JSON.stringify({
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://firehubfood.com.br/#empresa",
+      name: "FireHub",
+      url: "https://firehubfood.com.br",
+      logo: "https://firehubfood.com.br/icon.png",
+      description: "Sistema completo para restaurantes, pizzarias, hamburguerias e deliveries: cardápio digital, gestão de pedidos, robô de atendimento no WhatsApp com IA, integração com o iFood, PDV, app do entregador, NFC-e e controle financeiro.",
+      email: "contato@firehubfood.com.br",
+      sameAs: ["https://www.instagram.com/firehubfood"],
+      contactPoint: {
+        "@type": "ContactPoint",
+        telephone: "+55-22-98111-8514",
+        contactType: "customer support",
+        areaServed: "BR",
+        availableLanguage: "pt-BR",
+      },
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://firehubfood.com.br/#site",
+      name: "FireHub",
+      url: "https://firehubfood.com.br",
+      inLanguage: "pt-BR",
+      publisher: { "@id": "https://firehubfood.com.br/#empresa" },
+    },
+  ],
+});
+
 const SOLUTIONS = [
   {
     icon: "⚡", title: "Venda no automático", desc: "Automatize cada venda com inteligência artificial",
@@ -497,6 +529,7 @@ export default function Home() {
 
   return (
     <main>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON_LD }} />
       <div className="lp-progresso" ref={progresso} />
 
       {/* NAV */}
