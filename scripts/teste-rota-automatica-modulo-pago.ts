@@ -8,8 +8,8 @@
  *       teste para na hora (R$ 0, o teste não volta); ligar sem teste = mês inteiro; desligar depois do
  *       teste marca a virada do mês ("desliga em") e "Continuar ligada" desmarca;
  *   [3] isenta (Hakim, demonstração, planPercent 0) = R$ 0 e sempre ligada;
- *   [4] quem já estava ligada antes do módulo pago (a Bom Cheff): o teste começa sozinho, sem aceite,
- *       e desliga no fim dele se não aceitar; aceitando, segue e cobra depois;
+ *   [4] nada de graça (Douglas, 06/11): a Bom Cheff, que ia entrar pela lista fixa, não tem caminho
+ *       próprio — sem ativar com o termo, nada liga, nada é gravado e nada é cobrado;
  *   [5] o cron: uma consulta só para todas as lojas, e só as ligadas de verdade;
  *   [6] `liberadaPara` vale para qualquer loja.
  *
@@ -46,7 +46,7 @@ const usuario = (id: string, extra: Partial<Usuario> = {}) =>
 
 const juntar = (u: Usuario) => {
   const a = assinaturas.get(u.id);
-  return { ...u, testeAte: a?.testeAte ?? null, trechos: a ? JSON.parse(JSON.stringify(a.trechos)) : null, temLinha: !!a };
+  return { ...u, testeAte: a?.testeAte ?? null, trechos: a ? JSON.parse(JSON.stringify(a.trechos)) : null };
 };
 
 (globalThis as any).prisma = {
@@ -116,11 +116,6 @@ async function main() {
     conferir("desligou no teste → 0", A.valorDaRotaAutomaticaNoMes([t("2026-11-01T12:00:00Z", "2026-11-04T12:00:00Z")], "2026-11-08T12:00:00Z", ini, fim, depois) === 0);
     conferir("desligou na virada de outubro → novembro 0", A.valorDaRotaAutomaticaNoMes([t("2026-10-01T12:00:00Z", "2026-11-01T03:00:00Z")], "2026-10-08T12:00:00Z", ini, fim, depois) === 0);
     conferir("o preço gravado no trecho vale (reajuste não muda o combinado)", A.valorDaRotaAutomaticaNoMes([t("2026-10-01T12:00:00Z", null, 79)], null, ini, fim, depois) === 79);
-    const doTeste = A.trechoDoTesteSemAceite(new Date("2026-11-05T23:05:00Z"));
-    conferir("teste sem aceite: trecho termina no fim do teste e não cobra nada",
-      doTeste.trecho.ate === doTeste.testeAte.toISOString() && !doTeste.trecho.aceite
-        && A.valorDaRotaAutomaticaNoMes([doTeste.trecho], doTeste.testeAte, ini, fim, depois) === 0
-        && A.valorDaRotaAutomaticaNoMes([doTeste.trecho], doTeste.testeAte, fim, new Date("2027-01-01T03:00:00Z"), depois) === 0);
     conferir("o termo diz o preço, que é à parte e a regra de desligar",
       CLAUSULAS_DO_TERMO_DA_ROTA_AUTOMATICA.some((c) => /R\$ 97,00/.test(c) && /boleto/.test(c))
         && CLAUSULAS_DO_TERMO_DA_ROTA_AUTOMATICA.some((c) => /À PARTE/.test(c) && /mensalidade/.test(c))
@@ -140,7 +135,7 @@ async function main() {
 
     const e1 = await A.ligarOuDesligarRotaAutomatica(L, true, aceite, agora);
     const testeAte = assinaturas.get(L)?.testeAte;
-    conferir("primeira ativação: 7 dias grátis", !!testeAte && Math.abs(testeAte.getTime() - (agora.getTime() + 7 * DIA)) < 1000 && e1.emTeste && e1.ativo && !e1.isento && !e1.semAceite, e1);
+    conferir("primeira ativação: 7 dias grátis", !!testeAte && Math.abs(testeAte.getTime() - (agora.getTime() + 7 * DIA)) < 1000 && e1.emTeste && e1.ativo && !e1.isento, e1);
     conferir("… o trecho guarda o preço e o aceite (versão, quem, IP)", (() => { const tr = assinaturas.get(L)!.trechos[0]; return tr.valor === 97 && tr.ate === null && tr.aceite?.versao === VERSAO_DO_TERMO_DA_ROTA_AUTOMATICA && tr.aceite?.email === "dono@loja.com" && tr.aceite?.ip === "1.2.3.4"; })());
     conferir("… no teste o mês não cobra (o teste vai até depois de agora)", (await A.cobrancaDaRotaAutomaticaNoMes(L, mes.monthStart, new Date(agora.getTime() + 1))) === 0);
 
@@ -190,35 +185,19 @@ async function main() {
     conferir("isenção pela lista ou pela mensalidade", A.rotaAutomaticaIsentaPor(HAKIM, false) && A.rotaAutomaticaIsentaPor(DEMO, false) && A.rotaAutomaticaIsentaPor("x", true) && !A.rotaAutomaticaIsentaPor(BOM_CHEFF, false));
   }
 
-  console.log("\n[4] quem já estava ligada (Bom Cheff)");
+  console.log("\n[4] nada de graça (Bom Cheff)");
   {
-    usuario(BOM_CHEFF);
-    conferir("começa o teste só com a regra ligada, sem linha, não isenta e na lista",
-      A.comecaOTesteSemAceite(BOM_CHEFF, true, false, false) && !A.comecaOTesteSemAceite(BOM_CHEFF, false, false, false)
-        && !A.comecaOTesteSemAceite(BOM_CHEFF, true, true, false) && !A.comecaOTesteSemAceite("outra-loja", true, false, false));
-    const e = await A.estadoDaRotaAutomatica(BOM_CHEFF, { agora, configAtivo: true });
-    const linha = assinaturas.get(BOM_CHEFF);
-    conferir("primeira leitura depois do deploy: teste de 7 dias sem aceite, 'grátis até X'",
-      !!linha && e.ativo && e.emTeste && e.semAceite && e.desligaEm === null && !!e.testeAte && Math.abs(new Date(e.testeAte).getTime() - (agora.getTime() + 7 * DIA)) < 1000, e);
-    const fimDoTeste = linha!.testeAte!;
-    conferir("… sem aceite, desliga no fim do teste e não cobra", !A.rotaLigadaDeVerdade(true, false, A.lerTrechos(linha!.trechos), fimDoTeste)
-      && A.valorDaRotaAutomaticaNoMes(A.lerTrechos(linha!.trechos), fimDoTeste, mes.monthStart, new Date(fimDoTeste.getTime() + 40 * DIA), new Date(fimDoTeste.getTime() + 30 * DIA)) === 0);
-    const deNovo = await A.estadoDaRotaAutomatica(BOM_CHEFF, { agora, configAtivo: true });
-    conferir("… a segunda leitura não abre outro teste", deNovo.testeAte === e.testeAte && assinaturas.get(BOM_CHEFF)!.trechos.length === 1);
+    usuario(BOM_CHEFF); // a regra ligada no JSON, sem assinatura
+    const e = await A.estadoDaRotaAutomatica(BOM_CHEFF, { agora });
+    const daLoja = await A.rotaAutomaticaDaLoja(BOM_CHEFF, agora);
+    conferir("sem ativar: desligada, sem teste começado, nada gravado, R$ 0",
+      !e.ativo && !e.emTeste && !e.jaTestou && !e.isento && !daLoja.ligada && !assinaturas.has(BOM_CHEFF)
+        && (await A.cobrancaDaRotaAutomaticaNoMes(BOM_CHEFF, mes.monthStart, mes.monthEnd)) === 0, e);
     let lancou = false;
     try { await A.ligarOuDesligarRotaAutomatica(BOM_CHEFF, true, null, agora); } catch (x) { lancou = x instanceof A.TermoNaoAceitoError; }
-    conferir("… 'continuar' sem o termo não vale", lancou);
-    const aceitou = await A.ligarOuDesligarRotaAutomatica(BOM_CHEFF, true, aceite, agora);
-    const tr = assinaturas.get(BOM_CHEFF)!.trechos[0];
-    conferir("… aceitando no teste: o mesmo trecho segue ligado, com o aceite, e cobra depois do teste",
-      aceitou.ativo && !aceitou.semAceite && tr.ate === null && tr.aceite?.versao === VERSAO_DO_TERMO_DA_ROTA_AUTOMATICA
-        && A.valorDaRotaAutomaticaNoMes(A.lerTrechos([tr]), fimDoTeste, new Date(fimDoTeste.getTime() - DIA), new Date(fimDoTeste.getTime() + 2 * DIA), new Date(fimDoTeste.getTime() + DIA)) === 97, aceitou);
-    // Sem aceite, depois do teste: religar pede o termo e o mês entra inteiro.
-    assinaturas.set(BOM_CHEFF, { ativo: true, testeAte: new Date(agora.getTime() - DIA), trechos: [{ de: new Date(agora.getTime() - 8 * DIA).toISOString(), ate: new Date(agora.getTime() - DIA).toISOString(), valor: 97 }] });
-    const parada = await A.estadoDaRotaAutomatica(BOM_CHEFF, { agora, configAtivo: true });
-    conferir("… teste acabou sem aceite: desligada, 'já testou'", !parada.ativo && parada.jaTestou && !parada.emTeste);
-    const religou = await A.ligarOuDesligarRotaAutomatica(BOM_CHEFF, true, aceite, agora);
-    conferir("… religar com o termo: sem teste, este mês cobrado inteiro", religou.ativo && !religou.emTeste && (await A.cobrancaDaRotaAutomaticaNoMes(BOM_CHEFF, mes.monthStart, mes.monthEnd)) === 97, religou);
+    conferir("… ligar sem o termo não vale", lancou && !assinaturas.has(BOM_CHEFF));
+    const ligou = await A.ligarOuDesligarRotaAutomatica(BOM_CHEFF, true, aceite, agora);
+    conferir("… ativando com o termo: 7 dias grátis, como qualquer loja", ligou.ativo && ligou.emTeste && assinaturas.get(BOM_CHEFF)?.trechos[0]?.aceite?.versao === VERSAO_DO_TERMO_DA_ROTA_AUTOMATICA, ligou);
   }
 
   console.log("\n[5] o cron");
@@ -233,12 +212,12 @@ async function main() {
     usuario("so-o-json");                                                         // regra ligada no JSON, sem assinatura → não roda
     usuario("desligada", { deliveryConfig: { roteirizacaoAutomatica: { ativo: false } } });
     assinaturas.set("desligada", { ativo: true, testeAte: null, trechos: [{ de: new Date(agora.getTime() - DIA).toISOString(), ate: null, valor: 97 }] }); // regra desligada → não roda
-    usuario(BOM_CHEFF);                                                           // ligada antes do módulo pago → o teste começa e roda
+    usuario(BOM_CHEFF);                                                           // regra ligada no JSON, sem assinatura → não roda (nada de graça)
     leituras.length = 0;
     const lojas = await A.lojasComARotaAutomaticaLigada(agora);
-    conferir("só as ligadas de verdade (isenta, trecho ligado, teste da Bom Cheff)", JSON.stringify([...lojas].sort()) === JSON.stringify([BOM_CHEFF, HAKIM, "paga-ligada"].sort()), lojas);
+    conferir("só as ligadas de verdade (isenta, trecho ligado)", JSON.stringify([...lojas].sort()) === JSON.stringify([HAKIM, "paga-ligada"].sort()), lojas);
     conferir("uma consulta só para todas as lojas (nenhuma a mais por loja)", leituras.length === 1, leituras);
-    conferir("… e o teste da Bom Cheff ficou gravado (uma vez)", assinaturas.get(BOM_CHEFF)?.trechos.length === 1);
+    conferir("… e nada foi gravado para a Bom Cheff", !assinaturas.has(BOM_CHEFF));
     const de1 = await A.rotaAutomaticaDaLoja("paga-ligada", agora);
     const de2 = await A.rotaAutomaticaDaLoja("so-o-json", agora);
     conferir("uma loja numa consulta só (empurrão, carimbo, rodar agora)", de1.ligada && de1.configAtivo && !de2.ligada && de2.configAtivo && !!de1.storeLatLng);

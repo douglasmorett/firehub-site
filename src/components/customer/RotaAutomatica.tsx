@@ -17,9 +17,7 @@
  * Fase 4 (05/11/2026): módulo pago para todas as lojas (R$ 97/mês, 7 dias
  * grátis — lib/roteirizacao-automatica/assinatura.ts). Ligar manda o aceite
  * do termo (./termo.ts); depois do teste, desligar marca "desliga em DD/MM"
- * e a janela oferece "Continuar ligada"; o teste que começou sem o termo
- * (quem já usava antes) pede o aceite para seguir depois do teste. No alto,
- * o resultado da loja no mês.
+ * e a janela oferece "Continuar ligada". No alto, o resultado da loja no mês.
  */
 import { useEffect, useRef, useState } from "react";
 import {
@@ -60,8 +58,6 @@ export type RotaAutomaticaEstado = {
     jaTestou: boolean;
     isento: boolean;
     emTeste?: boolean;
-    /** Ligada sem o aceite do termo (teste que começou sozinho): desliga no fim do teste se não aceitar. */
-    semAceite?: boolean;
     /** Desligamento marcado para a virada do mês (ISO): "desliga em DD/MM · Continuar ligada". */
     desligaEm?: string | null;
     /** Início do mês seguinte (ISO). */
@@ -187,7 +183,6 @@ function JanelaDaRotaAutomatica({
 }) {
   const [cfg, setCfg] = useState<RotaAutomaticaConfig>(estado.config);
   const [liTudo, setLiTudo] = useState(false);
-  const [aceitouNoTeste, setAceitouNoTeste] = useState(false);
   const [confirmandoDesligar, setConfirmandoDesligar] = useState(false);
   const [previa, setPrevia] = useState<{ carregando: boolean; erro?: string; dados?: PreviaDaRotaAutomatica } | null>(null);
   const verPrevia = async () => {
@@ -208,7 +203,6 @@ function JanelaDaRotaAutomatica({
   // Módulo pago (Fase 4): ligar e desligar entram na fatura — só o dono.
   const podeContratar = cobranca.isento || estado.podeContratar !== false;
   const marcado = ligada && !cobranca.isento && !!cobranca.desligaEm;
-  const semAceite = ligada && !cobranca.isento && !!cobranca.semAceite;
   const aceite = { versao: VERSAO_DO_TERMO_DA_ROTA_AUTOMATICA };
   const num = (k: keyof typeof limites) => (
     <label key={k} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
@@ -309,13 +303,7 @@ function JanelaDaRotaAutomatica({
             <Secao titulo="Cobrança">
               <div style={{ background: "#F5F3FF", border: "1px solid #DDD6FE", borderRadius: 12, padding: "12px 14px", fontSize: "0.9rem", lineHeight: 1.5 }}>
                 {ligada ? (
-                  semAceite ? (
-                    <>
-                      <p style={{ margin: "0 0 6px" }}><b>Teste grátis até {dataCurta(cobranca.testeAte)}.</b> A rota automática virou módulo pago: R$ {cobranca.preco} por mês na fatura do FireHub. Para ela seguir ligada depois de {dataCurta(cobranca.testeAte)}, aceite o termo abaixo.</p>
-                      <p style={{ margin: 0 }}>Sem o aceite, ela desliga sozinha em {dataCurta(cobranca.testeAte)} e <b>nada é cobrado</b>. Se desligar antes, para na hora (o teste não volta).</p>
-                      <TermoDaRota />
-                    </>
-                  ) : marcado ? (
+                  marcado ? (
                     <p style={{ margin: 0 }}><b>Desliga em {dataCurta(cobranca.desligaEm)}.</b> Este mês já está pago, então ela continua funcionando <b>até {ultimoDia(cobranca.desligaEm!)}</b>. Na virada do mês ela desliga sozinha e o mês que vem <b>não é cobrado</b>. Mudou de ideia? Toque em “Continuar ligada”.</p>
                   ) : emTeste ? (
                     <p style={{ margin: 0 }}><b>Teste grátis até {dataCurta(cobranca.testeAte)}.</b> Depois, R$ {cobranca.preco} por mês na fatura do FireHub. Se desligar antes do fim do teste, para na hora e não paga nada (o teste não volta).</p>
@@ -344,12 +332,6 @@ function JanelaDaRotaAutomatica({
               <span>Li e entendi como a rota automática funciona, as regras acima{cobranca.isento ? "" : " e aceito o termo de contratação"}.</span>
             </label>
           )}
-          {semAceite && (
-            <label style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: "0.9rem", fontWeight: 700, color: "#334155", cursor: "pointer" }}>
-              <input type="checkbox" checked={aceitouNoTeste} onChange={(e) => setAceitouNoTeste(e.target.checked)} style={{ marginTop: 3, width: 18, height: 18 }} />
-              <span>Li e aceito o termo de contratação: depois de {dataCurta(cobranca.testeAte)}, R$ {cobranca.preco} por mês na fatura do FireHub.</span>
-            </label>
-          )}
           {!podeContratar && (
             <p style={{ margin: 0, fontSize: "0.82rem", color: "#92400E", fontWeight: 700 }}>
               Só o dono da loja liga ou desliga a rota automática (ela entra na fatura do FireHub). Você pode ver e ajustar as regras.
@@ -373,19 +355,9 @@ function JanelaDaRotaAutomatica({
                 <button type="button" onClick={() => onSalvar({ ...cfg, ativo: true })} disabled={salvando} style={botao("#0F172A", "#fff")}>
                   Salvar regras
                 </button>
-                {marcado ? (
+                {marcado && (
                   <button type="button" onClick={() => onSalvar({ ...cfg, ativo: true }, { continuar: true })} disabled={salvando || !podeContratar} style={{ ...botao(ROXO, "#fff"), opacity: salvando || !podeContratar ? 0.5 : 1 }}>
                     Continuar ligada
-                  </button>
-                ) : semAceite && (
-                  <button
-                    type="button"
-                    onClick={() => onSalvar({ ...cfg, ativo: true }, { continuar: true, aceite })}
-                    disabled={salvando || !aceitouNoTeste || !podeContratar}
-                    title={!aceitouNoTeste ? "Marque que aceita o termo" : ""}
-                    style={{ ...botao(ROXO, "#fff"), opacity: salvando || !aceitouNoTeste || !podeContratar ? 0.5 : 1 }}
-                  >
-                    Aceitar e seguir depois do teste
                   </button>
                 )}
                 {marcado ? null : confirmandoDesligar ? (

@@ -13,8 +13,9 @@
  * não mexer em quem chama). Quem decide se a rota automática AGE numa loja
  * deixou de ser esta lista: é a assinatura (./assinatura.ts — trecho ligado,
  * ou loja isenta) junto com a regra ligada. A Hakim Centro e a loja de
- * demonstração seguem sem pagar: são isentas lá. A Bom Cheff, que entrou sem
- * cobrança em 05/11, ganha lá o teste de 7 dias (`LOJAS_LIGADAS_ANTES_DO_MODULO_PAGO`).
+ * demonstração seguem sem pagar: são isentas lá. A Bom Cheff não chegou a usar
+ * de graça: ativa pelo botão, com o termo e os 7 dias, como qualquer loja
+ * (Douglas, 06/11: "nada de graça").
  *
  * O id é o da LOJA (`ownerId || id`): o funcionário também vê.
  *

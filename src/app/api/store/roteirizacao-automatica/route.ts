@@ -23,7 +23,7 @@
  *   - ligar: abre um trecho com o aceite do termo (`aceite: { versao }` no
  *     corpo; sem ele, 400 com `precisaDoTermo`). Loja isenta não precisa;
  *   - "Continuar ligada" (`continuar: true`): desmarca o desligamento da
- *     virada do mês (ou põe o aceite no teste que começou sem ele);
+ *     virada do mês;
  *   - desligar: no teste, para na hora; depois do teste, fica até a virada do
  *     mês — a regra segue `ativo: true` e os trechos desligam sozinhos.
  * O `config.ativo` que o GET devolve é o de VERDADE: a regra ligada E o
@@ -94,7 +94,7 @@ async function estadoDaLoja(lojaId: string, podeContratar: boolean) {
   ]);
   const config = lerRoteirizacaoAutomatica(loja?.deliveryConfig);
   const [assinatura, resultado] = await Promise.all([
-    estadoDaRotaAutomatica(lojaId, { configAtivo: config.ativo }),
+    estadoDaRotaAutomatica(lojaId),
     resultadoDoMes(lojaId, loja?.storeTimezone),
   ]);
   // Sem horário gravado o normalizeStoreHours devolve o padrão (18h–23h todo
@@ -112,7 +112,6 @@ async function estadoDaLoja(lojaId: string, podeContratar: boolean) {
       jaTestou: assinatura.jaTestou,
       isento: assinatura.isento,
       emTeste: assinatura.emTeste,
-      semAceite: assinatura.semAceite,
       desligaEm: assinatura.desligaEm,
       fimDoMes: assinatura.fimDoMes,
       cobradoEsteMes: assinatura.cobradoEsteMes,
@@ -171,12 +170,12 @@ export async function PUT(req: Request) {
     }
 
     // ── A assinatura antes da regra: termo recusado não grava nada ──────────
-    const antes = await estadoDaRotaAutomatica(lojaId, { configAtivo: lerRoteirizacaoAutomatica(loja.deliveryConfig).ativo });
+    const antes = await estadoDaRotaAutomatica(lojaId);
     // Ligada pela assinatura depois desta gravação (isenta: sempre).
     let assinaturaLigada = antes.ativo;
     if (!antes.isento) {
       const mexeNaAssinatura = regra.ativo
-        ? !antes.ativo || (continuar && (!!antes.desligaEm || antes.semAceite))
+        ? !antes.ativo || (continuar && !!antes.desligaEm)
         : antes.ativo && !antes.desligaEm;
       if (mexeNaAssinatura) {
         if (!s.podeContratar) {

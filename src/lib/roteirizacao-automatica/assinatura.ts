@@ -39,7 +39,7 @@ export const DIAS_DE_TESTE_DA_ROTA_AUTOMATICA = 7;
 const DIA_MS = 24 * 60 * 60 * 1000;
 
 export type AceiteDoTermo = { versao: string; em: string; email: string | null; ip: string | null; userAgent: string | null };
-/** Um trecho ligado. `ate` nulo = ligado agora. Sem `aceite`: o teste que começou sozinho (ver abaixo). */
+/** Um trecho ligado. `ate` nulo = ligado agora. */
 export type TrechoDaRotaAutomatica = { de: string; ate: string | null; valor: number; aceite?: AceiteDoTermo };
 
 export type EstadoDaRotaAutomatica = {
@@ -51,8 +51,6 @@ export type EstadoDaRotaAutomatica = {
   emTeste: boolean;
   jaTestou: boolean;
   isento: boolean;
-  /** Ligada por um trecho SEM o aceite do termo: desliga no fim do teste, a não ser que aceite. */
-  semAceite: boolean;
   /** Quanto esta loja paga por mês: o do trecho ligado; desligada, o de quem ativar hoje. */
   preco: number;
   /** Desligamento marcado para a virada do mês (o mês já está pago): quando desliga sozinha. */
@@ -167,52 +165,6 @@ export async function rotaAutomaticaIsenta(lojaId: string): Promise<boolean> {
   }
 }
 
-// ── Quem já estava ligada antes do módulo pago (SUPOSIÇÃO — troque aqui) ────
-//
-// A Pizzaria Bom Cheff foi liberada em 05/11/2026 sem cobrança, pela lista
-// fixa antiga. Suposição de quem pediu a Fase 4 (não é decisão do Douglas):
-// se ela estiver com a regra ligada e sem nenhum trecho, o teste de 7 dias
-// começa na primeira leitura depois do deploy (cron, tela ou empurrão), num
-// trecho SEM aceite que termina no fim do teste. A tela mostra "grátis até X"
-// e pede o termo; aceitando, o trecho segue ligado e cobra depois do teste;
-// sem aceite, desliga no fim do teste e, para religar, aceita o termo (e o mês
-// entra inteiro, porque o teste já foi usado).
-//
-// Para trocar: esvaziar a lista (a loja fica desligada até ligar aceitando o
-// termo, com os 7 dias) ou mudar `comecarTesteSemAceite`.
-const LOJAS_LIGADAS_ANTES_DO_MODULO_PAGO = new Set<string>([
-  "cmvvl39a004wns807o0ck8uk3",
-]);
-
-/** Puro: esta leitura começa o teste sem aceite? (regra ligada, sem linha, não isenta, na lista acima) */
-export function comecaOTesteSemAceite(lojaId: string, configAtivo: boolean, temLinha: boolean, isento: boolean): boolean {
-  return configAtivo && !temLinha && !isento && LOJAS_LIGADAS_ANTES_DO_MODULO_PAGO.has(lojaId);
-}
-
-/** O trecho do teste, sem aceite, de agora até o fim dos 7 dias. Puro, para o teste. */
-export function trechoDoTesteSemAceite(agora: Date): { testeAte: Date; trecho: TrechoDaRotaAutomatica } {
-  const testeAte = new Date(agora.getTime() + DIAS_DE_TESTE_DA_ROTA_AUTOMATICA * DIA_MS);
-  return { testeAte, trecho: { de: agora.toISOString(), ate: testeAte.toISOString(), valor: PRECO_DA_ROTA_AUTOMATICA } };
-}
-
-async function comecarTesteSemAceite(lojaId: string, agora: Date): Promise<boolean> {
-  try {
-    const { testeAte, trecho } = trechoDoTesteSemAceite(agora);
-    // DO NOTHING: duas leituras juntas (cron e tela) não abrem dois testes.
-    await prisma.$executeRawUnsafe(
-      `INSERT INTO "RotaAutomaticaAssinatura" ("franchiseeId", "ativo", "testeAte", "trechos", "atualizadoEm")
-       VALUES ($1, true, ($2::timestamptz AT TIME ZONE 'UTC'), $3::jsonb, NOW())
-       ON CONFLICT ("franchiseeId") DO NOTHING`,
-      lojaId, testeAte.toISOString(), JSON.stringify([trecho]),
-    );
-    console.log(`[Rota automática] loja ${lojaId}: teste de ${DIAS_DE_TESTE_DA_ROTA_AUTOMATICA} dias começou sem aceite (ligada antes do módulo pago).`);
-    return true;
-  } catch (err: any) {
-    console.error("[Rota automática] Não consegui começar o teste:", err?.message);
-    return false;
-  }
-}
-
 // ── Ligada de verdade ───────────────────────────────────────────────────────
 
 /** Puro: a regra ligada E (isenta OU trecho ligado agora). */
@@ -227,14 +179,10 @@ type LinhaDaLoja = {
   isFranqueadoHakim: boolean | null;
   testeAte: Date | null;
   trechos: unknown;
-  temLinha: boolean;
 };
 
 async function decidir(l: LinhaDaLoja, configAtivo: boolean, agora: Date): Promise<{ isento: boolean; ligada: boolean }> {
   const isento = rotaAutomaticaIsentaPor(l.id, configAtivo && !LOJAS_ISENTAS_DA_ROTA_AUTOMATICA.has(l.id) ? await isentaPelaMensalidade(l) : false);
-  if (comecaOTesteSemAceite(l.id, configAtivo, l.temLinha, isento) && pronto) {
-    return { isento, ligada: await comecarTesteSemAceite(l.id, agora) };
-  }
   return { isento, ligada: rotaLigadaDeVerdade(configAtivo, isento, lerTrechos(l.trechos), agora) };
 }
 
@@ -242,20 +190,20 @@ async function decidir(l: LinhaDaLoja, configAtivo: boolean, agora: Date): Promi
  * O cron de 20 s: as lojas com a rota automática ligada DE VERDADE, numa
  * consulta só para todas (a regra no JSON + a assinatura no mesmo SELECT).
  * Custo por ciclo: a mesma consulta de antes, com o LEFT JOIN — nenhuma a mais
- * por loja (só a escrita única do teste sem aceite, uma vez na vida).
+ * por loja.
  */
 export async function lojasComARotaAutomaticaLigada(agora: Date = new Date()): Promise<string[]> {
   const comTabela = await garantirEstruturaDaRotaAutomatica();
   // Pelo JSON, no banco: lojas sem a chave nem chegam ao Node.
   const linhas = comTabela
     ? await prisma.$queryRawUnsafe<LinhaDaLoja[]>(
-      `SELECT u."id", u."email", u."planPercent", u."isFranqueadoHakim", a."testeAte", a."trechos", (a."franchiseeId" IS NOT NULL) AS "temLinha"
+      `SELECT u."id", u."email", u."planPercent", u."isFranqueadoHakim", a."testeAte", a."trechos"
        FROM "User" u LEFT JOIN "RotaAutomaticaAssinatura" a ON a."franchiseeId" = u."id"
        WHERE u."deliveryConfig"->'roteirizacaoAutomatica'->>'ativo' = 'true'`,
     )
     // Sem a tabela: só as isentas rodam (nenhum trecho para ler).
     : await prisma.$queryRawUnsafe<LinhaDaLoja[]>(
-      `SELECT u."id", u."email", u."planPercent", u."isFranqueadoHakim", NULL::timestamp AS "testeAte", NULL::jsonb AS "trechos", false AS "temLinha"
+      `SELECT u."id", u."email", u."planPercent", u."isFranqueadoHakim", NULL::timestamp AS "testeAte", NULL::jsonb AS "trechos"
        FROM "User" u
        WHERE u."deliveryConfig"->'roteirizacaoAutomatica'->>'ativo' = 'true'`,
     );
@@ -286,11 +234,11 @@ export async function rotaAutomaticaDaLoja(lojaId: string, agora: Date = new Dat
     const linhas = await prisma.$queryRawUnsafe<(LinhaDaLoja & { deliveryConfig: unknown; storeLatLng: unknown })[]>(
       comTabela
         ? `SELECT u."id", u."email", u."planPercent", u."isFranqueadoHakim", u."deliveryConfig", u."storeLatLng",
-                  a."testeAte", a."trechos", (a."franchiseeId" IS NOT NULL) AS "temLinha"
+                  a."testeAte", a."trechos"
            FROM "User" u LEFT JOIN "RotaAutomaticaAssinatura" a ON a."franchiseeId" = u."id"
            WHERE u."id" = $1`
         : `SELECT u."id", u."email", u."planPercent", u."isFranqueadoHakim", u."deliveryConfig", u."storeLatLng",
-                  NULL::timestamp AS "testeAte", NULL::jsonb AS "trechos", false AS "temLinha"
+                  NULL::timestamp AS "testeAte", NULL::jsonb AS "trechos"
            FROM "User" u WHERE u."id" = $1`,
       lojaId,
     );
@@ -318,29 +266,21 @@ async function mesCorrente(lojaId: string) {
 const trechoAberto = (trechos: TrechoDaRotaAutomatica[], agora: Date) =>
   trechos.find((t) => new Date(t.de).getTime() <= agora.getTime() && (!t.ate || new Date(t.ate).getTime() > agora.getTime()));
 
-/**
- * O estado da assinatura. `configAtivo` (a regra gravada na loja) só serve
- * para começar o teste de quem já estava ligada antes do módulo pago.
- */
-export async function estadoDaRotaAutomatica(lojaId: string, opcoes: { agora?: Date; configAtivo?: boolean } = {}): Promise<EstadoDaRotaAutomatica> {
+/** O estado da assinatura. */
+export async function estadoDaRotaAutomatica(lojaId: string, opcoes: { agora?: Date } = {}): Promise<EstadoDaRotaAutomatica> {
   const agora = opcoes.agora ?? new Date();
   const isento = await rotaAutomaticaIsenta(lojaId);
   let fimDoMes: string | null = null;
   let mes: { monthStart: Date; monthEnd: Date } | null = null;
   try { mes = await mesCorrente(lojaId); fimDoMes = mes.monthEnd.toISOString(); } catch {}
-  const vazio: EstadoDaRotaAutomatica = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, semAceite: false, preco: PRECO_DA_ROTA_AUTOMATICA, desligaEm: null, fimDoMes, trechos: [] };
+  const vazio: EstadoDaRotaAutomatica = { ativo: isento, cobradoEsteMes: false, testeAte: null, emTeste: false, jaTestou: false, isento, preco: PRECO_DA_ROTA_AUTOMATICA, desligaEm: null, fimDoMes, trechos: [] };
   if (!(await garantirEstruturaDaRotaAutomatica())) return vazio;
-  let a = await lerLinha(lojaId);
-  if (!a && comecaOTesteSemAceite(lojaId, opcoes.configAtivo === true, false, isento)) {
-    await comecarTesteSemAceite(lojaId, agora);
-    a = await lerLinha(lojaId);
-  }
+  const a = await lerLinha(lojaId);
   if (!a) return vazio;
   const trechos = lerTrechos(a.trechos);
   // Ligada pelos trechos: o desligamento marcado para a virada do mês vale sozinho (lib/modulo-pago.ts).
   const ligado = ligadoAgora(trechos, agora);
   const aberto = trechoAberto(trechos, agora);
-  const semAceite = !isento && ligado && !!aberto && !aberto.aceite;
   let cobradoEsteMes = false;
   if (mes) cobradoEsteMes = !isento && valorDaRotaAutomaticaNoMes(trechos, a.testeAte, mes.monthStart, mes.monthEnd, agora) > 0;
   return {
@@ -350,10 +290,8 @@ export async function estadoDaRotaAutomatica(lojaId: string, opcoes: { agora?: D
     emTeste: Boolean(!isento && ligado && a.testeAte && new Date(a.testeAte).getTime() > agora.getTime()),
     jaTestou: Boolean(a.testeAte),
     isento,
-    semAceite,
     preco: ligado && aberto ? aberto.valor : PRECO_DA_ROTA_AUTOMATICA,
-    // O fim do trecho sem aceite é o fim do teste: a tela mostra "grátis até", não "desliga em".
-    desligaEm: isento || semAceite ? null : desligamentoMarcado(trechos, agora),
+    desligaEm: isento ? null : desligamentoMarcado(trechos, agora),
     fimDoMes,
     trechos,
   };
@@ -365,8 +303,7 @@ export class TermoNaoAceitoError extends Error {}
  * Liga (abre um trecho, com o aceite do termo) ou desliga — a regra do
  * Multimarcas. Desligar: no teste grátis, na hora; depois dele, marca o fim do
  * trecho para a virada do mês. Ligar com o desligamento marcado só desmarca
- * ("Continuar ligada", sem novo termo) — a não ser que o trecho não tenha
- * aceite (o teste que começou sozinho): aí o aceite entra nele.
+ * ("Continuar ligada", sem novo termo).
  */
 export async function ligarOuDesligarRotaAutomatica(
   lojaId: string,
@@ -391,13 +328,9 @@ export async function ligarOuDesligarRotaAutomatica(
 
   if (ligar) {
     if (ligado) {
-      // Desligamento marcado (virada do mês, ou o fim do teste sem aceite): desmarca.
+      // Desligamento marcado para a virada do mês: desmarca.
       const marcado = trechos.find((t) => t.ate && new Date(t.ate).getTime() > agora.getTime() && new Date(t.de).getTime() <= agora.getTime());
       if (marcado) {
-        if (!marcado.aceite) {
-          if (!termoOk) throw semTermo();
-          marcado.aceite = { ...aceite!, em: iso };
-        }
         marcado.ate = null;
         await salvar(true);
       }
