@@ -9,6 +9,7 @@ import { getIfoodItemUnitPrice } from "@/lib/ifood-api";
 import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
 import { vincularSobDemanda } from "@/lib/ifood-sob-demanda";
 import { registrarChamadaWebhook } from "@/lib/ifood-webhook-registro";
+import { semRebaixar } from "@/lib/ifood-status-do-evento";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -670,9 +671,19 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
       }
     }
 
+    // O status só sobe (lib/ifood-status-do-evento.ts): o eco do readyToPickup
+    // (RTP → PREPARANDO) devolvia para Em Produção o pedido que a loja já
+    // tinha dado como saiu/pronto, e o DISPATCHED atrasado tirava o ENTREGUE.
+    const { status: _status, ...resto } = updateData;
+    if (Object.keys(resto).length > 0) {
+      await (prisma.customerOrder as any).updateMany({
+        where: { ifoodOrderId: orderId } as any,
+        data:  resto,
+      });
+    }
     await (prisma.customerOrder as any).updateMany({
-      where: { ifoodOrderId: orderId } as any,
-      data:  updateData,
+      where: { ifoodOrderId: orderId, ...semRebaixar(firehubStatus) } as any,
+      data:  { status: firehubStatus },
     });
   }
 }
