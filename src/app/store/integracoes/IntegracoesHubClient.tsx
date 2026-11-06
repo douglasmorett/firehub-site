@@ -128,18 +128,29 @@ export default function IntegracoesHubClient({
     } catch { /* sem window */ }
     lerKeeta(authId || undefined);
   }, []);
+  // A Keeta abre em NOVA GUIA (Douglas, 06/11/2026), como o 99Food: o painel
+  // fica aberto aqui. A janela nasce no clique (senão o navegador a bloqueia) e
+  // recebe o endereço quando a API responde; a volta da Keeta cai na guia nova,
+  // que conclui sozinha. Esta guia relê a conexão quando o lojista volta a ela.
   const conectarKeeta = async () => {
     setKt((k) => ({ ...k, salvando: true, erro: "" }));
+    const janela = window.open("", "_blank");
     try {
       const r = await fetch("/api/store/integracoes/keeta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao: "conectar" }) });
       const d = await r.json().catch(() => ({}));
       if (r.ok && d.url) {
-        // Mesma aba: a Keeta devolve para cá quando o lojista confirmar.
-        window.location.href = d.url;
+        if (janela) janela.location.href = d.url;
+        else window.location.href = d.url; // popup bloqueado: vai na mesma aba
+        setKt((k) => ({ ...k, salvando: false }));
+        showToast("🔗 Autorize na guia da Keeta que abriu", "#B45309");
+        const aoVoltar = () => { lerKeeta(); window.removeEventListener("focus", aoVoltar); };
+        window.addEventListener("focus", aoVoltar);
         return;
       }
+      janela?.close();
       setKt((k) => ({ ...k, salvando: false, erro: d.error || "A Keeta não respondeu. Tente de novo." }));
     } catch {
+      janela?.close();
       setKt((k) => ({ ...k, salvando: false, erro: "Sem conexão com o servidor. Tente de novo." }));
     }
   };
