@@ -23,6 +23,13 @@ export const TELAS_SEM_WIDGET = [
   "/garcom",
   /** Balcão (PDV presencial). */
   "/store/venda-presencial",
+  /**
+   * A tela grande do WhatsApp: ela JÁ é a conversa, e o balcão dela tem o
+   * Finalizar no canto inferior direito, onde o botão ficaria por cima.
+   */
+  "/store/atendimento",
+  /** O balcão dentro da lateral do WhatsApp Web (extensao-whatsapp/). */
+  "/atendimento-lateral",
   /** KDS: tela de cozinha, ninguém conversa por ali. */
   "/store/kds",
   /** Totem: é o CLIENTE na frente, e o widget é a venda do FireHub ao lojista. */

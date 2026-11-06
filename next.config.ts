@@ -237,6 +237,18 @@ const nextConfig: NextConfig = {
         ],
       },
       {
+        // O balcão da lateral do WhatsApp Web (app/atendimento-lateral) abre
+        // dentro do painel lateral da extensão do Chrome (extensao-whatsapp/):
+        // só ela aceita moldura, e só de página de extensão. O X-Frame-Options
+        // DENY da regra geral continua saindo (aqui não há como tirá-lo, e o
+        // proxy não o remove — medido na prévia): com frame-ancestors no CSP o
+        // navegador IGNORA o X-Frame-Options (CSP nível 2), e vale o daqui.
+        source: "/atendimento-lateral",
+        headers: [
+          { key: "Content-Security-Policy", value: csp.replace("frame-ancestors 'none'", "frame-ancestors 'self' chrome-extension:") },
+        ],
+      },
+      {
         // O relatório do Acompanhamento iFood é um HTML inteiro servido no
         // domínio do admin. Mesmo CSP + sandbox SEM allow-same-origin: o script
         // do relatório roda, mas numa origem opaca, sem enxergar a sessão. A

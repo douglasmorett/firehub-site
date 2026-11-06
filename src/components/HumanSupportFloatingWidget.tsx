@@ -4,9 +4,21 @@ import { useState, useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
 import { ehTelaSemWidget } from "@/lib/telas-sem-widget";
 import { useArrastavel } from "@/lib/useArrastavel";
-import { MessageSquare, X, Send, User, CheckCircle2, Bot, ShieldCheck } from "lucide-react";
+import { MessageSquare, X, Send, User, CheckCircle2, Bot, ShieldCheck, Maximize2 } from "lucide-react";
 import SuporteDoFireHub, { useRespostaNovaDoSuporte } from "@/components/SuporteDoFireHub";
 import { EVENTO_ABRIR_SUPORTE } from "@/lib/abrir-suporte";
+
+/**
+ * O botão "Tela grande", igual nas duas conversas (robô e fila): no cabeçalho,
+ * ao lado do Pausar robô e do mesmo tamanho dele. Cheio, na cor da marca — era
+ * uma faixa de texto verde e o Douglas não viu que dava para clicar (06/11/2026).
+ */
+const BOTAO_TELA_GRANDE: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
+  background: "#C92E09", border: "1px solid #C92E09", color: "#fff",
+  padding: "4px 9px", borderRadius: "6px", fontSize: "0.7rem", fontWeight: 800,
+  cursor: "pointer", whiteSpace: "nowrap",
+};
 
 export default function HumanSupportFloatingWidget() {
   // Este botão é montado no layout de /store inteiro, então aparecia também na
@@ -163,6 +175,15 @@ export default function HumanSupportFloatingWidget() {
     const caixa = fimDaConversa.current?.parentElement;
     if (caixa) caixa.scrollTop = caixa.scrollHeight;
   }, [mensagens.length]);
+
+  // ── "ABRIR EM TELA GRANDE" ───────────────────────────────────────────────
+  // Esta janela tem 380px e não lança pedido (Túlio Lanches, 06/11/2026). A
+  // tela grande (/store/atendimento) abre numa aba NOVA, já nesta conversa, com
+  // o balcão ao lado — e o painel de pedidos continua aqui, na aba de sempre.
+  const abrirEmTelaGrande = (jid: string, loja: string | null) => {
+    const q = new URLSearchParams({ jid, ...(loja ? { loja } : {}) });
+    window.open(`/store/atendimento?${q.toString()}`, "_blank", "noopener");
+  };
 
   const telefoneBonito = (t: string) => {
     const d = String(t || "").replace(/\D/g, "").replace(/^55/, "");
@@ -488,10 +509,12 @@ export default function HumanSupportFloatingWidget() {
             ) : (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#E5DDD5", minHeight: 0 }}>
                 <div style={{ background: "#fff", padding: "8px 12px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6 }}>
-                  <button onClick={() => { conversaAbertaRef.current = null; setConversaAberta(null); setReplyText(""); setErroDoEnvio(""); }} style={{ background: "#F1F5F9", border: "none", padding: "4px 9px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#475569" }}>
-                    ← Voltar
+                  {/* Só a seta: com o "Tela grande" no cabeçalho, o "← Voltar" escrito
+                      deixava o nome do cliente reduzido a "Paula ...". */}
+                  <button onClick={() => { conversaAbertaRef.current = null; setConversaAberta(null); setReplyText(""); setErroDoEnvio(""); }} title="Voltar para a lista" style={{ background: "#F1F5F9", border: "none", padding: "4px 9px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 700, cursor: "pointer", color: "#475569", flexShrink: 0 }}>
+                    ←
                   </button>
-                  <div style={{ fontWeight: 800, fontSize: "0.78rem", color: "#0F172A", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
+                  <div style={{ flex: 1, minWidth: 0, textAlign: "center", fontWeight: 800, fontSize: "0.78rem", color: "#0F172A", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }}>
                     {conversas.find((c) => c.remoteJid === conversaAberta && (!lojaDaConversa || c.lojaId === lojaDaConversa))?.nome ||
                       telefoneBonito(conversaAberta.split("@")[0])}
                   </div>
@@ -512,6 +535,9 @@ export default function HumanSupportFloatingWidget() {
                     }}
                   >
                     {mudandoPausa ? "..." : pausado ? "▶ Voltar o robô" : "⏸ Pausar robô"}
+                  </button>
+                  <button type="button" className="fh-botao-tela-grande" onClick={() => abrirEmTelaGrande(conversaAberta, lojaDaConversa)} title="Abrir conversa + balcão em nova aba" style={BOTAO_TELA_GRANDE}>
+                    <Maximize2 size={12} /> Tela grande
                   </button>
                 </div>
 
@@ -638,7 +664,9 @@ export default function HumanSupportFloatingWidget() {
             /* CONVERSA INDIVIDUAL SELECIONADA */
             <div style={{ flex: 1, display: "flex", flexDirection: "column", background: "#E5DDD5" }}>
               {/* SUB-HEADER DA CONVERSA */}
-              <div style={{ background: "#fff", padding: "10px 14px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              {/* Quebra em duas linhas quando não cabe: o "Encerrar" é comprido e o
+                  "Tela grande" mora ao lado dele. */}
+              <div style={{ background: "#fff", padding: "10px 14px", borderBottom: "1px solid #E2E8F0", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 6 }}>
                 <button onClick={() => setSelectedChatJid(null)} style={{ background: "#F1F5F9", border: "none", padding: "4px 10px", borderRadius: "6px", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer", color: "#475569" }}>
                   ← Voltar
                 </button>
@@ -650,6 +678,9 @@ export default function HumanSupportFloatingWidget() {
                   style={{ background: "#F0FDFA", border: "1px solid #99F6E4", color: "#0F766E", padding: "4px 10px", borderRadius: "6px", fontSize: "0.72rem", fontWeight: 800, cursor: "pointer" }}
                 >
                   ✓ Encerrar &amp; Reativar Robô
+                </button>
+                <button type="button" className="fh-botao-tela-grande" onClick={() => abrirEmTelaGrande(selectedChatJid, selectedChatLoja)} title="Abrir conversa + balcão em nova aba" style={BOTAO_TELA_GRANDE}>
+                  <Maximize2 size={12} /> Tela grande
                 </button>
               </div>
 
@@ -702,7 +733,7 @@ export default function HumanSupportFloatingWidget() {
           chama ninguém que está olhando a cozinha. Com cliente esperando, o
           botão inteiro ganha um anel que se expande — visível de longe, e só
           quando há alguém de fato aguardando. */}
-      <style>{`@keyframes firehubChamando{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.9);opacity:0}}`}</style>
+      <style>{`@keyframes firehubChamando{0%{transform:scale(1);opacity:.65}100%{transform:scale(1.9);opacity:0}} .fh-botao-tela-grande:hover{background:#9A2207 !important;border-color:#9A2207 !important}`}</style>
 
       {/* O QUE ESTE BOTÃO É. Sem o rótulo, ele é só mais um círculo vermelho no
           canto — indistinguível do "Fale conosco" logo abaixo, que leva ao

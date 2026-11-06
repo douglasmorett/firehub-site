@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>FireHub — Balcão no WhatsApp · Opções</title>
+  <style>
+    body { font-family: "Segoe UI", Arial, sans-serif; max-width: 520px; margin: 32px auto; padding: 0 16px; color: #1C1917; }
+    h1 { font-size: 18px; }
+    label { display: block; margin: 10px 0; font-size: 14px; cursor: pointer; }
+    input[type=text] { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1.5px solid #D6D3D1; border-radius: 8px; font-size: 14px; margin-top: 6px; }
+    button { margin-top: 14px; padding: 10px 18px; border: none; border-radius: 10px; background: #C92E09; color: #fff; font-weight: 800; font-size: 14px; cursor: pointer; }
+    #aviso { margin-top: 10px; font-size: 13px; font-weight: 700; }
+    small { color: #78716C; }
+  </style>
+</head>
+<body>
+  <h1>🔥 Endereço do FireHub</h1>
+  <label><input type="radio" name="onde" value="https://firehubfood.com.br"> Produção — firehubfood.com.br <small>(o normal da loja)</small></label>
+  <label><input type="radio" name="onde" value="outro"> Teste no computador ou outro endereço
+    <input type="text" id="outro" placeholder="http://localhost:3144">
+    <small>Aceita firehubfood.com.br, www.firehubfood.com.br, http://localhost:&lt;porta&gt; e http://127.0.0.1:&lt;porta&gt;.</small>
+  </label>
+  <button id="salvar">Salvar</button>
+  <div id="aviso"></div>
+  <script src="config.js"></script>
+  <script src="opcoes.js"></script>
+</body>
+</html>

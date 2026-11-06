@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Balcão FireHub</title>
+  <style>
+    html, body { margin: 0; height: 100%; font-family: "Segoe UI", Arial, sans-serif; }
+    body { display: flex; flex-direction: column; background: #fff; }
+    .barra { display: flex; align-items: center; gap: 6px; padding: 4px 8px; background: #F5F5F4; border-bottom: 1px solid #E7E5E4; font-size: 11px; color: #78716C; }
+    .barra span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .barra button { border: none; background: none; cursor: pointer; font-size: 13px; color: #44403C; padding: 2px 4px; }
+    iframe { flex: 1; width: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <div class="barra">
+    <span id="endereco">carregando…</span>
+    <button id="recarregar" title="Recarregar o balcão">↻</button>
+    <button id="opcoes" title="Trocar o endereço do FireHub (produção ou teste)">⚙</button>
+  </div>
+  <iframe id="balcao" title="Balcão do FireHub" allow="clipboard-write"></iframe>
+  <script src="config.js"></script>
+  <script src="painel.js"></script>
+</body>
+</html>
