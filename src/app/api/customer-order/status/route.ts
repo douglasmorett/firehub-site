@@ -511,6 +511,8 @@ export async function PUT(req: Request) {
         status: order.status,
         deliveryBy: order.deliveryBy,
         deliveryType: (order as any).deliveryType,
+        dailyOrderNumber: (order as any).dailyOrderNumber,
+        id: order.id,
       },
       status,
       { motivo: cancelReason }

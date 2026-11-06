@@ -10,9 +10,9 @@
  * ── Por que o FireHub confirma na Keeta assim que grava ────────────────────
  *
  * Pedido não confirmado em 5 minutos é cancelado pela Keeta E a loja fica
- * fechada por um tempo (política da Keeta). O confirm sai na gravação, como na
- * Wabiz e na Brendi — é o "recebi". O status no FireHub continua seguindo o
- * aceite automático da loja (NOVO ou ACEITO); recusar depois é
+ * fechada por um tempo (política da Keeta). Com o aceite automático ligado o
+ * confirm sai na gravação, como na Wabiz e na Brendi. Desligado, sai no
+ * Aceitar do painel (lib/keeta/status.ts). Recusar depois é
  * `requestCancellation`, que a rota de status já manda.
  */
 import { prisma } from "@/lib/prisma";
@@ -130,11 +130,12 @@ async function importarPedido(evento: EventoKeeta, merchantDoCabecalho?: string 
   const dono = await prisma.user.findUnique({ where: { id: loja.franchiseeId }, select: { id: true, storeName: true, autoAcceptOrders: true } });
   if (!dono) return { confirmar: false, acao: "erro", mensagem: `loja ${loja.franchiseeId} não existe` };
 
+  // Loja SEM CONEXÃO: o pedido não nasce aceito (lib/loja-sem-conexao-no-banco.ts).
+  const aceitaSozinho = await aceitaSozinhoAgora(dono);
   const traducao = traduzirPedidoOpenDelivery(pedido, {
     lojaId: dono.id,
     fuso: await fusoDaLoja(dono.id),
-    // Loja SEM CONEXÃO: o pedido não nasce aceito (lib/loja-sem-conexao-no-banco.ts).
-    autoAcceptOrders: await aceitaSozinhoAgora(dono),
+    autoAcceptOrders: aceitaSozinho,
     canal: CANAL_KEETA,
   });
   await guardarPayloadCru({ canal: "KEETA", tipo: "pedido", idNoParceiro: evento.orderId, franchiseeId: dono.id, payload: pedido, avisos: traducao.avisos });
@@ -147,10 +148,13 @@ async function importarPedido(evento: EventoKeeta, merchantDoCabecalho?: string 
   }
 
   // ── O "recebi" para a Keeta (prazo de 5 min) ────────────────────────────
+  // Só com o aceite automático ligado. Desligado, quem confirma é o Aceitar
+  // do painel (lib/keeta/status.ts) — e sem aceite em 5 min a Keeta cancela,
+  // que é o que a loja escolheu (homologação, 06/11/2026).
   const criadoNaKeeta = new Date(String(pedido.createdAt || "")).getTime();
   const recente = Number.isFinite(criadoNaKeeta) ? Date.now() - criadoNaKeeta < JANELA_DO_CONFIRM_MS : true;
   const aindaNaoConfirmado = ["", "CREATED"].includes(String(pedido.lastEvent || "").toUpperCase());
-  if (gravado.pedidoId && recente && aindaNaoConfirmado) {
+  if (aceitaSozinho && gravado.pedidoId && recente && aindaNaoConfirmado) {
     const numero = await prisma.customerOrder.findUnique({ where: { id: gravado.pedidoId }, select: { dailyOrderNumber: true } }).catch(() => null);
     const corpo = {
       reason: "Recebido pelo FireHub",

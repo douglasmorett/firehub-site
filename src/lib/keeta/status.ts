@@ -57,7 +57,7 @@ export type ResultadoSyncKeeta = { ok: boolean; ignorado?: boolean; acoes: strin
  * cozinha começou.
  */
 export async function sincronizarKeeta(
-  pedido: { openDeliveryOrderId: string; franchiseeId: string; status?: string | null; deliveryBy?: string | null; deliveryType?: string | null },
+  pedido: { openDeliveryOrderId: string; franchiseeId: string; status?: string | null; deliveryBy?: string | null; deliveryType?: string | null; dailyOrderNumber?: number | null; id?: string },
   novoStatus: string,
   opts: { motivo?: string; codigoDoMotivo?: string; limiteMs?: number } = {},
 ): Promise<ResultadoSyncKeeta> {
@@ -103,7 +103,14 @@ export async function sincronizarKeeta(
 
   // A escada sobe a partir do que a Keeta já sabe. Status anterior perdido cai
   // no rank 0 e reenvia tudo: confirm repetido custa uma chamada.
-  if (para >= 1 && de < 1) await enviar("confirm");
+  // `createdAt` e `orderExternalCode` são obrigatórios no confirm: sem eles o
+  // Aceitar do painel não confirmava na Keeta (06/11/2026).
+  if (para >= 1 && de < 1)
+    await enviar("confirm", {
+      reason: "Aceito pela loja no FireHub",
+      createdAt: new Date().toISOString(),
+      orderExternalCode: pedido.dailyOrderNumber ? `#${pedido.dailyOrderNumber}` : pedido.id || id,
+    });
   if (para >= 3 && de < 3) await enviar("readyForPickup");
   if (para >= 4 && de < 4 && entregaDaLoja) await enviar("dispatch");
   if (para >= 5 && entregaDaLoja) await enviar("delivered");
