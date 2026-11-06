@@ -13,8 +13,17 @@
  * SEM IMPORTS de propósito (o teste e qualquer rota usam sem banco).
  */
 
-/** Hakim Centro (contatohakim@gmail.com, slug hakim-contato) e a loja de demonstração do Victor (para ensaiar com o simulador). */
-const LOJAS_COM_ROTEIRIZACAO_AUTOMATICA = new Set<string>(["cmpx96phr0000ujf0sb0qk5vr", "cmupkiesh0000ujmcjwtpd706"]);
+/**
+ * Hakim Centro (contatohakim@gmail.com, slug hakim-contato), a loja de
+ * demonstração do Victor (para ensaiar com o simulador) e a Pizzaria Bom Cheff
+ * (Vânia pediu "o site fazer sozinho" e o Douglas mandou oferecer, 05/11/2026;
+ * teste sem cobrança até o módulo pago da Fase 4 entrar).
+ */
+const LOJAS_COM_ROTEIRIZACAO_AUTOMATICA = new Set<string>([
+  "cmpx96phr0000ujf0sb0qk5vr",
+  "cmupkiesh0000ujmcjwtpd706",
+  "cmvvl39a004wns807o0ck8uk3",
+]);
 
 export function liberadaPara(lojaId: string | null | undefined): boolean {
   return !!lojaId && LOJAS_COM_ROTEIRIZACAO_AUTOMATICA.has(lojaId);
