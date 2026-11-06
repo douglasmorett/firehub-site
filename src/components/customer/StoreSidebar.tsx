@@ -21,7 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   BarChart2, Bike, PlayCircle, BookOpen, Bot, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardList,
   Contact, Gauge, Home, LayoutGrid, LifeBuoy, LineChart, LogOut, MapPin, Menu, Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt,
-  Send, ShoppingBag, Smartphone, Store, TabletSmartphone, Tag, Timer, Truck, Tv, UtensilsCrossed, Users, Wallet,
+  Scale, Send, ShoppingBag, Smartphone, Store, TabletSmartphone, Tag, Timer, Truck, Tv, UtensilsCrossed, Users, Wallet,
   X, Zap, type LucideIcon,
 } from "lucide-react";
 import { menuDaLoja, type ItemDoMenu } from "@/lib/menu-do-painel";
@@ -34,7 +34,7 @@ import { AtalhoDoOutroPainel } from "@/components/paineis/TrocarDePainel";
 
 const ICONES: Record<string, LucideIcon> = {
   BarChart2, Bike, BookOpen, Bot, CheckCircle2, ClipboardList, Contact, Gauge, Home, LayoutGrid, LifeBuoy, LineChart, MapPin,
-  Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt, Send, ShoppingBag, Store,
+  Mic, Monitor, Package, PieChart, Printer, Puzzle, Receipt, Scale, Send, ShoppingBag, Store,
   Smartphone, TabletSmartphone, Tag, Timer, Truck, Tv, UtensilsCrossed, Users, Wallet, Zap,
 };
 

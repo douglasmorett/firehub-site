@@ -16,6 +16,7 @@ import { lojaBloqueadaPorMensalidade, MENSAGEM_LOJA_INDISPONIVEL } from "@/lib/l
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { conferirEstoque } from "@/lib/estoque-restante";
 import { validarItensDoSalao, type ItemParaLancar } from "@/lib/itens-do-salao";
+import { nomeDaMesa } from "@/lib/comanda";
 
 // O formato do item que chega é o mesmo da conferência; re-exportado para
 // quem já importava daqui.
@@ -35,6 +36,13 @@ export async function lancarNaMesa(opcoes: {
   origemDaImpressao: string;
   /** Texto do "estes itens não estão no cardápio da mesa": o garçom atualiza a tela; o cliente, o cardápio. */
   comoTentarDeNovo?: string;
+  /** Produtos por quilo aceitos com `pesoKg` (só a balança passa — lib/itens-do-salao.ts). */
+  pesaveis?: string[];
+  /**
+   * O prato pesado no self-service já está na mão do cliente: o pedido nasce
+   * ENTREGUE (fora do KDS) e não imprime na cozinha. O resto nasce ACEITO.
+   */
+  jaEntregue?: boolean;
 }): Promise<ResultadoDoLancamento> {
   const { franchiseeId: targetFranchiseeId, tableSessionId: id, items } = opcoes;
   const tenteDeNovo = opcoes.comoTentarDeNovo || "Atualize a tela e lance de novo.";
@@ -65,7 +73,7 @@ export async function lancarNaMesa(opcoes: {
   // A conferência (produto da loja e do salão, dia e horário, preço do canal
   // com o combo, quantidade de 1 a 99) mora em lib/itens-do-salao.ts — a
   // mesma do pedido de balcão do garçom.
-  const conferidos = await validarItensDoSalao({ franchiseeId: targetFranchiseeId, items, comoTentarDeNovo: tenteDeNovo });
+  const conferidos = await validarItensDoSalao({ franchiseeId: targetFranchiseeId, items, comoTentarDeNovo: tenteDeNovo, pesaveis: opcoes.pesaveis });
   if (!conferidos.ok) return conferidos;
   const itensValidados = conferidos.itens;
 
@@ -94,7 +102,7 @@ export async function lancarNaMesa(opcoes: {
   const dailyOrderNumber = await generateDailyOrderNumber(targetFranchiseeId);
 
   const nomeQueVeio = String(opcoes.customerName ?? "").trim().slice(0, 80);
-  const defaultName = nomeQueVeio || tableSession.customerName || `Mesa ${tableSession.table.number}`;
+  const defaultName = nomeQueVeio || tableSession.customerName || nomeDaMesa(tableSession.table);
 
   const order = await prisma.customerOrder.create({
     data: {
@@ -102,13 +110,13 @@ export async function lancarNaMesa(opcoes: {
       dailyOrderNumber,
       customerName: defaultName,
       customerPhone: "00000000000",
-      customerAddress: `Mesa ${tableSession.table.number}`,
+      customerAddress: nomeDaMesa(tableSession.table),
       deliveryType: "MESA",
       paymentMethod: "N/A", // Payment happens at session close
       notes: String(opcoes.notes ?? "").trim().slice(0, 500),
       totalAmount,
       deliveryFee: 0,
-      status: "ACEITO",
+      status: opcoes.jaEntregue ? "ENTREGUE" : "ACEITO",
       source: "PRESENCIAL",
       tableSessionId: id,
       items: {
@@ -127,6 +135,7 @@ export async function lancarNaMesa(opcoes: {
           comboSelections: item.comboSelections ? (typeof item.comboSelections === "string" ? item.comboSelections : JSON.stringify(item.comboSelections)) : undefined,
           // Observação do item ("sem cebola"): vai para a cozinha e para a comanda.
           notes: item.notes,
+          pesoKg: item.pesoKg,
         })),
       },
     },
@@ -138,8 +147,8 @@ export async function lancarNaMesa(opcoes: {
     console.error("[Stock] Erro ao deduzir estoque de pedido de mesa:", err)
   );
 
-  // Enfileira impressão automática
-  try {
+  // Enfileira impressão automática (o prato pesado não vai para a cozinha)
+  if (!opcoes.jaEntregue) try {
     const fullOrder = await prisma.customerOrder.findUnique({
       where: { id: order.id },
       include: {

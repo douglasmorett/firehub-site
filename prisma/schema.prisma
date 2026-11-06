@@ -1172,6 +1172,11 @@ model Table {
   capacity        Int            @default(4)
   isActive        Boolean        @default(true)
   sortOrder       Int            @default(0)
+  /// "COMANDA" = cartão numerado (self-service, bar): a conta é de uma pessoa,
+  /// não de um lugar. Nulo = mesa. Divide a numeração com as mesas (o
+  /// @@unique abaixo) e fica fora do mapa de mesas — lib/comanda.ts.
+  /// Coluna garantida no boot (src/lib/garantir-colunas.ts).
+  tipo            String?
   sessions        TableSession[]
   createdAt       DateTime       @default(now())
 
@@ -1347,6 +1352,11 @@ model CustomerOrderItem {
   productName     String?       // Nome do produto na hora do pedido (preserva histórico se menu product for deletado)
   quantity        Int
   price           Float
+  /// Item vendido por PESO (balança do self-service, lib/balanca): o peso
+  /// líquido lido da balança, em kg. `quantity` fica 1 e `price` já é o
+  /// peso × o preço do quilo. A nota sai em KG (lib/fiscal-itens.ts).
+  /// Coluna garantida no boot (src/lib/garantir-colunas.ts).
+  pesoKg          Float?
   notes           String?       // Observacao do cliente POR ITEM ("sem cebola"). O front ja enviava e a impressao/KDS ja liam, mas nao havia coluna: a observacao era descartada em silencio.
   comboSelections Json?
   /// QUANDO A COZINHA DEU ESTE ITEM POR PRONTO, no KDS (ver lib/kds-telas.ts).

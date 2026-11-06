@@ -45,7 +45,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     include: {
       // O dono vem da MESA (Table.franchiseeId é a relação de verdade), como
       // no fechamento e nos pagamentos.
-      table: { select: { number: true, label: true, franchiseeId: true } },
+      table: { select: { number: true, label: true, tipo: true, franchiseeId: true } },
       waiter: { select: { name: true } },
       orders: {
         select: {
@@ -59,6 +59,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               // As escolhas do combo entram na linha da conta: "Carne moida
               // com Catupiry (2x Tradicional)". Sem isso o papel dizia "1x".
               comboSelections: true,
+              // O peso do prato da balança entra no nome da linha (lib/conta-da-mesa.ts).
+              pesoKg: true,
               menuProduct: { select: { name: true } },
             },
           },

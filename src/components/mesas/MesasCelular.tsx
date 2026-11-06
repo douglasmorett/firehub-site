@@ -44,7 +44,14 @@ import { montarCardapioDaMesa, gruposDoProduto, type ItemDaMesa } from "@/lib/ca
 import { numerosDaFaixa, type AndarDaMesa, lerAndares } from "@/lib/andares-da-mesa";
 import { caminhoParaAbrirOCaixa } from "@/lib/caixa-aberto";
 import { ROXO_DA_CONTA } from "@/lib/mesa-em-fechamento";
+import { ehComanda, nomeDaMesa } from "@/lib/comanda";
 import { FORMAS_DE_PAGAMENTO_DO_BALCAO } from "@/lib/balcao-config";
+
+/**
+ * Cartão de comanda (lib/comanda.ts) só aparece ABERTO — o garçom lança a
+ * bebida na conta de quem já pesou o prato; os livres podem ser centenas.
+ */
+const mesaNaGrade = (m: Mesa) => m.isActive !== false && (!ehComanda(m) || !!m.openSession);
 
 // ─── Tipos (os mesmos que as rotas devolvem para a tela completa) ───────────
 interface Mesa {
@@ -52,6 +59,8 @@ interface Mesa {
   number: number;
   label: string | null;
   isActive: boolean;
+  /** "COMANDA" = cartão numerado (lib/comanda.ts). */
+  tipo?: string | null;
   openSession: {
     id: string;
     customerName: string | null;
@@ -417,7 +426,7 @@ export default function MesasCelular({
       const res = await chamar("/api/store/tables");
       if (res.ok) {
         const data = await res.json();
-        setMesas((data.tables || []).filter((m: Mesa) => m.isActive !== false));
+        setMesas((data.tables || []).filter(mesaNaGrade));
         if (Array.isArray(data.andares)) setAndares(lerAndares({ andares: data.andares }));
       }
     } catch { /* o próximo ciclo tenta de novo */ } finally {
@@ -611,7 +620,7 @@ export default function MesasCelular({
       }
       const r = await chamar("/api/store/tables");
       const lista: Mesa[] = r.ok ? ((await r.json()).tables || []) : [];
-      setMesas(lista.filter((m) => m.isActive !== false));
+      setMesas(lista.filter(mesaNaGrade));
       const aberta = lista.find((m) => m.id === abrindo.id);
       setAbrindo(null);
       if (aberta?.openSession) {
@@ -1112,9 +1121,9 @@ export default function MesasCelular({
                         }
                         entrarNaMesa(m);
                       }}
-                      aria-label={`Mesa ${m.number}${s ? `, ${emFechamento ? "em fechamento" : "ocupada"}${s.customerName ? `, ${s.customerName}` : ""}${s.waiterName ? `, garçom ${s.waiterName}` : ""}, ${fmt(s.totalAmount)}` : ", livre"}`}
+                      aria-label={`${nomeDaMesa(m)}${s ? `, ${emFechamento ? "em fechamento" : "ocupada"}${s.customerName ? `, ${s.customerName}` : ""}${s.waiterName ? `, garçom ${s.waiterName}` : ""}, ${fmt(s.totalAmount)}` : ", livre"}`}
                     >
-                      <b>{String(m.number).padStart(2, "0")}</b>
+                      <b>{ehComanda(m) ? `🎫${m.number}` : String(m.number).padStart(2, "0")}</b>
                       {m.chamado && (
                         <span style={{ fontSize: 11, fontWeight: 900, borderRadius: 6, padding: "2px 6px", background: "#FACC15", color: "#422006" }}>
                           {m.chamado.motivo === "CONTA" ? "🧾 Pediu a conta" : "🙋 Chamando"}

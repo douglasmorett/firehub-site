@@ -42,7 +42,7 @@ export const MESA_DA_COMANDA = {
   select: {
     waiterName: true,
     waiter: { select: { name: true } },
-    table: { select: { number: true } },
+    table: { select: { number: true, tipo: true } },
   },
 } as const;
 
@@ -68,7 +68,7 @@ export type PedidoComMesa = {
   tableSession?: {
     waiterName?: string | null;
     waiter?: { name?: string | null } | null;
-    table?: { number?: number | string | null } | null;
+    table?: { number?: number | string | null; tipo?: string | null } | null;
   } | null;
 };
 
@@ -87,6 +87,9 @@ export function ehPedidoDeMesa(p: PedidoComMesa | null | undefined): boolean {
  */
 export function numeroDaMesa(p: PedidoComMesa | null | undefined): string {
   if (!p || !ehPedidoDeMesa(p)) return "";
+  // Cartão de comanda (lib/comanda.ts) não é mesa: o nome do pedido já diz
+  // "Comanda 155", e o papel não pode sair "MESA 155".
+  if (p.tableSession?.table?.tipo === "COMANDA") return "";
   const daConta = p.tableSession?.table?.number;
   if (daConta != null && String(daConta).trim() !== "") return String(daConta).trim();
   const m = String(p.customerAddress || "").match(/^\s*mesa\s*[:#.\-]*\s*(\d{1,4}[A-Za-z]?)(?![0-9A-Za-z])/i);

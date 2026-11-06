@@ -23,6 +23,8 @@
 
 import { parseComboSelections } from "./parse-combo";
 import { valorDoDesconto, type DescontoManual } from "./desconto-manual";
+import { nomeDaMesa } from "./comanda";
+import { textoDoPeso } from "./balanca/protocolo-toledo";
 
 const emCentavos = (v: number) => Math.round((Number(v) || 0) * 100);
 const emReais = (c: number) => Math.round(c) / 100;
@@ -35,6 +37,8 @@ export type ItemDaMesaParaConta = {
   menuProduct?: { name?: string | null } | null;
   /** As escolhas do combo, no formato que estiver gravado. */
   comboSelections?: unknown;
+  /** Prato pesado na balança (lib/balanca): o peso entra no nome da linha. */
+  pesoKg?: number | null;
 };
 
 /**
@@ -48,6 +52,7 @@ export type ItemDaMesaParaConta = {
  */
 export function nomeDaLinhaDaConta(item: ItemDaMesaParaConta): string {
   const base = item.productName || item.menuProduct?.name || "Item";
+  if (Number(item.pesoKg) > 0) return `${base} (${textoDoPeso(Number(item.pesoKg))})`;
   const escolhas = parseComboSelections(item.comboSelections, 1);
   if (escolhas.length === 0) return base;
   const detalhe = escolhas
@@ -64,7 +69,7 @@ export type PedidoDaMesaParaConta = {
 };
 
 export type MesaParaConta = {
-  table: { number: number; label: string | null };
+  table: { number: number; label: string | null; tipo?: string | null };
   orders: PedidoDaMesaParaConta[];
   waiterTip: number | null;
 };
@@ -74,7 +79,7 @@ export type PessoaDaMesa = { id: string; name: string };
 export type LinhaDaConta = { nome: string; quantidade: number; valor: number };
 
 export type ContaDaMesa = {
-  mesa: { numero: number; nome: string | null };
+  mesa: { numero: number; nome: string | null; tipo?: string | null };
   consumo: number;
   /** Desconto dado na mesa, já em reais. Zero quando não houve. */
   desconto: { valor: number; motivo: string };
@@ -202,7 +207,7 @@ export function calcularContaDaMesa(
   if (divisao.length > 0 && sobra !== 0) divisao[0].totalCentavos += sobra;
 
   return {
-    mesa: { numero: mesa.table.number, nome: mesa.table.label },
+    mesa: { numero: mesa.table.number, nome: mesa.table.label, tipo: mesa.table.tipo ?? null },
     consumo: emReais(consumoTotal),
     desconto: { valor: emReais(descontoCentavos), motivo: String(desconto?.motivo || "") },
     taxaServico: { percentual: taxaPct, valor: emReais(taxaCentavos) },
@@ -294,7 +299,7 @@ export function montarCupomDaConta(
 ) {
   const taxaSeparada = opcoes.taxaSeparada === true;
   const agora = opcoes.agora ?? new Date();
-  const rotuloDaMesa = `Mesa ${conta.mesa.numero}${conta.mesa.nome ? ` - ${conta.mesa.nome}` : ""}`;
+  const rotuloDaMesa = `${nomeDaMesa({ number: conta.mesa.numero, tipo: conta.mesa.tipo })}${conta.mesa.nome ? ` - ${conta.mesa.nome}` : ""}`;
 
   // Agrupa por (nome, preço unitário) somando as quantidades.
   const agrupados = new Map<string, { name: string; qty: number; price: number }>();

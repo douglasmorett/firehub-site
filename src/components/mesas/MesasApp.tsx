@@ -21,6 +21,8 @@ import { lerDocumentoDoCliente, mascararDocumentoDigitado, problemaDoDocumento }
 import { EVENTO_CAIXA_MUDOU, pedirAberturaDoCaixa } from "@/lib/caixa-aberto";
 import MotivoDoCancelamento from "@/components/MotivoDoCancelamento";
 import HistoricoDeMesas from "@/components/mesas/HistoricoDeMesas";
+import ComandasConfig from "@/components/mesas/ComandasConfig";
+import { ehComanda, nomeDaMesa, numeroLidoDoCartao } from "@/lib/comanda";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
 import { motivoValido } from "@/lib/motivo-do-cancelamento";
 import { rotuloDaForma } from "@/lib/formas-proprias";
@@ -36,6 +38,8 @@ interface TableItem {
   label: string | null;
   capacity: number;
   isActive: boolean;
+  /** "COMANDA" = cartão numerado (lib/comanda.ts); nulo = mesa. */
+  tipo?: string | null;
   openSession: {
     id: string;
     customerName: string | null;
@@ -372,7 +376,13 @@ export default function MesasApp({
   };
 
   // Data
-  const [tables, setTables] = useState<TableItem[]>([]);
+  const [todasAsMesas, setTables] = useState<TableItem[]>([]);
+  // Os cartões de comanda (lib/comanda.ts) vivem na mesma lista do servidor,
+  // mas fora do mapa: `tables` é só mesa, como sempre foi para o resto da tela.
+  const tables = useMemo(() => todasAsMesas.filter(t => !ehComanda(t)), [todasAsMesas]);
+  const comandas = useMemo(() => todasAsMesas.filter(ehComanda), [todasAsMesas]);
+  const [verComandas, setVerComandas] = useState(false);
+  const [comandaDigitada, setComandaDigitada] = useState("");
   const [loading, setLoading] = useState(true);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [menuCategories, setMenuCategories] = useState<string[]>([]);
@@ -862,7 +872,7 @@ export default function MesasApp({
         })
       });
       if (res.ok) {
-        showToast(`✅ Mesa ${confirmOpen.number} ocupada!`);
+        showToast(`✅ ${nomeDaMesa(confirmOpen)} aberta!`);
         setConfirmOpen(null);
         setOpenCustomerName("");
         setOpenNotes("");
@@ -906,7 +916,7 @@ export default function MesasApp({
         body: JSON.stringify({ paymentMethods: [], serviceFeePercent: 0 }),
       });
       if (res.ok) {
-        showToast(`✅ Mesa ${selectedTable.number} liberada!`);
+        showToast(`✅ ${nomeDaMesa(selectedTable)} liberada!`);
         setShowFreeConfirm(false);
         setSelectedTable(null);
         setSessionDetail(null);
@@ -941,7 +951,7 @@ export default function MesasApp({
         }),
       });
       if (res.ok) {
-        showToast(`✅ Pedido enviado para Mesa ${selectedTable.number}!`);
+        showToast(`✅ Pedido enviado para ${nomeDaMesa(selectedTable)}!`);
         setCart([]);
         setView("grid");
         await fetchTables();
@@ -1142,7 +1152,7 @@ export default function MesasApp({
         }),
       });
       if (res.ok) {
-        showToast(`✅ Mesa ${selectedTable.number} fechada com sucesso!`);
+        showToast(`✅ ${nomeDaMesa(selectedTable)} fechada com sucesso!`);
         setShowCloseModal(false);
         setSelectedTable(null);
         setSessionDetail(null);
@@ -1600,7 +1610,7 @@ export default function MesasApp({
   const SEM_ANDAR = "__sem_andar__";
   const [andares, setAndares] = useState<AndarDaMesa[]>([]);
   const [andarFiltro, setAndarFiltro] = useState<string>("todos");
-  const [abaConfig, setAbaConfig] = useState<"mesas" | "taxa" | "andares" | "qr" | "impressao">("mesas");
+  const [abaConfig, setAbaConfig] = useState<"mesas" | "comandas" | "taxa" | "andares" | "qr" | "impressao">("mesas");
   useEffect(() => {
     try {
       const salvo = localStorage.getItem(CHAVE_ANDAR);
@@ -1638,6 +1648,22 @@ export default function MesasApp({
   const occupiedTables = tables.filter(t => t.openSession);
   const tablesFechando = tables.filter(t => t.openSession?.contaPedidaEm);
   const freeTables = tables.filter(t => !t.openSession);
+  const comandasAbertas = comandas.filter(t => t.openSession);
+  // Só cartão de comanda (o self-service sem mesas): a tela abre nas comandas.
+  const mostrandoComandas = comandas.length > 0 && (verComandas || tables.length === 0);
+  /** O número do cartão lido (leitor USB = teclado + Enter) ou digitado: abre a conta dele. */
+  const abrirComanda = (texto: string) => {
+    const n = numeroLidoDoCartao(texto);
+    const c = n ? comandas.find(t => t.number === n) : null;
+    setComandaDigitada("");
+    if (!c) { showToast(`❌ ${n ? `Comanda ${n} não cadastrada` : "Número não lido"}`); return; }
+    if (c.openSession) {
+      setSelectedTable(c);
+      fetchSessionDetail(c.openSession.id);
+    } else {
+      setConfirmOpen(c);
+    }
+  };
   const totalConsumo = occupiedTables.reduce((s, t) => s + (t.openSession?.totalAmount || 0), 0);
 
   const filteredMenu = useMemo(() => {
@@ -1830,7 +1856,7 @@ export default function MesasApp({
               }}>← Voltar</button>
             <div style={{ color: "#fff" }}>
               <div style={{ fontWeight: 800, fontSize: 16 }}>
-                Pedido — Mesa {selectedTable.number}
+                Pedido — {nomeDaMesa(selectedTable)}
                 {selectedTable.label ? ` (${selectedTable.label})` : ""}
               </div>
               <div style={{ fontSize: 12, opacity: 0.8 }}>
@@ -2344,6 +2370,7 @@ export default function MesasApp({
               <span style={{ color: "#C92E09", fontWeight: 700 }}>🔴 {occupiedTables.length} ocupadas</span>
               {tablesFechando.length > 0 && <span style={{ color: ROXO_DA_CONTA.texto, fontWeight: 700 }}>🟣 {tablesFechando.length} em fechamento</span>}
               {totalConsumo > 0 && <span style={{ color: "#B45309", fontWeight: 700 }}>{fmt(totalConsumo)} em consumo</span>}
+              {comandasAbertas.length > 0 && <span style={{ color: "#0F766E", fontWeight: 700 }}>🎫 {comandasAbertas.length} comanda{comandasAbertas.length > 1 ? "s" : ""} · {fmt(comandasAbertas.reduce((s, c) => s + (c.openSession?.totalAmount || 0), 0))}</span>}
             </div>
           </div>
         </div>
@@ -2416,7 +2443,7 @@ export default function MesasApp({
           gridAutoRows: "max-content",
           gap: 12, alignContent: "start",
         }}>
-          {tables.length === 0 ? (
+          {tables.length === 0 && comandas.length === 0 ? (
             <div style={{ gridColumn: "1 / -1", textAlign: "center", padding: 60 }}>
               <div style={{ fontSize: 64, marginBottom: 16 }}>🍽️</div>
               <h2 style={{ fontSize: 20, fontWeight: 700, color: "#334155", marginBottom: 8 }}>Nenhuma mesa cadastrada</h2>
@@ -2462,7 +2489,22 @@ export default function MesasApp({
                   }}>
                   ⬆ Ocupadas no topo{ocupadasNoTopo ? " ✓" : ""}
                 </button>
-                {andares.length > 0 && (
+                {comandas.length > 0 && tables.length > 0 && (
+                  <button type="button" onClick={() => setVerComandas(v => !v)} aria-pressed={mostrandoComandas}
+                    className="mesa-chip"
+                    title={mostrandoComandas ? "Voltar para as mesas" : "Ver as comandas abertas e abrir pelo número do cartão"}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 6,
+                      padding: "7px 14px", borderRadius: 999, cursor: "pointer",
+                      fontFamily: "inherit", fontSize: 13, fontWeight: 800,
+                      background: mostrandoComandas ? "#0F766E" : "#fff",
+                      color: mostrandoComandas ? "#fff" : "#334155",
+                      border: `1.5px solid ${mostrandoComandas ? "#0F766E" : "#E2E8F0"}`,
+                    }}>
+                    🎫 Comandas{comandasAbertas.length > 0 ? ` · ${comandasAbertas.length}` : ""}
+                  </button>
+                )}
+                {andares.length > 0 && !mostrandoComandas && (
                   <>
                     <span aria-hidden style={{ width: 1, height: 22, background: "#E2E8F0", margin: "0 2px" }} />
                     {[
@@ -2496,7 +2538,30 @@ export default function MesasApp({
                   </>
                 )}
               </div>
-              {andares.length === 0 || filtroAtual !== "todos" ? (
+              {mostrandoComandas ? (
+                // Comandas: o caixa (ou o garçom) passa o cartão no leitor — que
+                // "digita" o número e um Enter — e a conta dele abre. Na grade,
+                // só as abertas: os cartões livres podem ser centenas.
+                <>
+                  <form onSubmit={e => { e.preventDefault(); abrirComanda(comandaDigitada); }}
+                    style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}>
+                    <input autoFocus inputMode="numeric" value={comandaDigitada}
+                      onChange={e => setComandaDigitada(e.target.value)}
+                      placeholder="Passe o cartão ou digite o número da comanda"
+                      aria-label="Número da comanda"
+                      style={{ flex: 1, minWidth: 0, padding: "12px 14px", borderRadius: 12, border: "2px solid #0F766E", fontSize: 16, fontWeight: 700, fontFamily: "inherit" }} />
+                    <button type="submit" style={{
+                      padding: "0 18px", borderRadius: 12, border: "none", background: "#0F766E", color: "#fff",
+                      fontSize: 15, fontWeight: 800, cursor: "pointer", fontFamily: "inherit",
+                    }}>Abrir</button>
+                  </form>
+                  {comandasAbertas.length === 0 ? (
+                    <div style={{ gridColumn: "1 / -1", color: "#64748B", fontSize: 14, padding: "12px 2px" }}>
+                      Nenhuma comanda aberta. A comanda abre na primeira pesagem da balança ou quando você passa o cartão aqui.
+                    </div>
+                  ) : comandasAbertas.map(cartaoDaMesa)}
+                </>
+              ) : andares.length === 0 || filtroAtual !== "todos" ? (
                 // Sem andares, ou um andar só na tela: a grade de sempre, com os
                 // grupos Ocupadas/Livres quando "Ocupadas no topo" está ligado.
                 (() => {
@@ -2568,7 +2633,7 @@ export default function MesasApp({
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                 <div>
                   <div style={{ fontSize: 18, fontWeight: 900 }}>
-                    Mesa {selectedTable.number}
+                    {nomeDaMesa(selectedTable)}
                     {selectedTable.label ? ` — ${selectedTable.label}` : ""}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
@@ -3077,7 +3142,7 @@ export default function MesasApp({
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 28, margin: "0 auto 12px",
               }}>🍽️</div>
-              <h3 style={{ margin: 0, fontWeight: 800, fontSize: 20 }}>Ocupar Mesa {confirmOpen.number}?</h3>
+              <h3 style={{ margin: 0, fontWeight: 800, fontSize: 20 }}>{ehComanda(confirmOpen) ? "Abrir" : "Ocupar"} {nomeDaMesa(confirmOpen)}?</h3>
               <p style={{ color: "#64748B", fontSize: 14, margin: "6px 0 0" }}>
                 {confirmOpen.label ? `"${confirmOpen.label}" · ` : ""}Capacidade: {confirmOpen.capacity} pessoas
               </p>
@@ -3303,7 +3368,7 @@ export default function MesasApp({
           }}>
             <div style={{ padding: "20px 24px 12px", borderBottom: "1px solid #F1F5F9" }}>
               <h3 style={{ margin: 0, fontWeight: 800, fontSize: 20, textAlign: "center" }}>
-                💰 Fechar Conta — Mesa {selectedTable.number}
+                💰 Fechar Conta — {nomeDaMesa(selectedTable)}
               </h3>
             </div>
 
@@ -3788,7 +3853,7 @@ export default function MesasApp({
             }}>
               <div style={{ padding: "18px 20px 10px", borderBottom: "1px solid #F1F5F9" }}>
                 <h3 style={{ margin: "0 0 4px", fontWeight: 800, fontSize: 18, color: "#0F172A" }}>
-                  📒 Mesa {selectedTable.number} no fiado
+                  📒 {nomeDaMesa(selectedTable)} no fiado
                 </h3>
                 <p style={{ margin: 0, fontSize: 13, color: "#64748B", lineHeight: 1.45 }}>
                   <b style={{ color: "#7C2D12" }}>{fmt(faltaPagar)}</b> vão para a conta do cliente no Fiado e a mesa fica livre agora.
@@ -3972,7 +4037,7 @@ export default function MesasApp({
             {/* Quebra em duas linhas quando não cabe: com "🖨️ Impressão" são
                 cinco abas, e no celular a quinta sumia da borda. */}
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6, padding: "10px 20px 0" }}>
-              {([["mesas", "🪑 Mesas"], ["taxa", "💰 Taxa"], ["andares", `🏢 Andares${andares.length ? ` (${andares.length})` : ""}`], ["qr", "📱 QR Code"], ["impressao", "🖨️ Impressão"]] as const).filter(([id]) => (id !== "taxa" && id !== "impressao") || !ehGarcom).map(([id, rotulo]) => (
+              {([["mesas", "🪑 Mesas"], ["comandas", `🎫 Comandas${comandas.length ? ` (${comandas.length})` : ""}`], ["taxa", "💰 Taxa"], ["andares", `🏢 Andares${andares.length ? ` (${andares.length})` : ""}`], ["qr", "📱 QR Code"], ["impressao", "🖨️ Impressão"]] as const).filter(([id]) => (id !== "taxa" && id !== "impressao" && id !== "comandas") || !ehGarcom).map(([id, rotulo]) => (
                 <button key={id} type="button" onClick={() => { setAbaConfig(id); if (id === "taxa") abrirConfigDaTaxa(); }} style={{
                   flex: 1, padding: "9px 10px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
                   fontSize: 14, fontWeight: 800,
@@ -4032,6 +4097,8 @@ export default function MesasApp({
                     {salvandoTaxaCfg ? "Salvando..." : "Salvar taxa"}
                   </button>
                 </div>
+              ) : abaConfig === "comandas" ? (
+                <ComandasConfig comandas={comandas} maiorMesa={tables.reduce((m, t) => Math.max(m, t.number), 0)} onMudou={fetchTables} />
               ) : abaConfig === "impressao" ? (
                 <ImpressaoDaMesaConfig />
               ) : abaConfig === "qr" ? (
@@ -4093,7 +4160,7 @@ export default function MesasApp({
               fontSize: 28, margin: "0 auto 14px",
             }}>🔓</div>
             <h3 style={{ margin: "0 0 8px", fontWeight: 800, fontSize: 20 }}>
-              Liberar Mesa {selectedTable.number}?
+              Liberar {nomeDaMesa(selectedTable)}?
             </h3>
             <p style={{ color: "#64748B", fontSize: 14, margin: "0 0 20px", lineHeight: 1.5 }}>
               A mesa será liberada e ficará disponível para novos clientes.
@@ -4136,7 +4203,7 @@ export default function MesasApp({
             <div style={{ textAlign: "center", paddingBottom: 8, borderBottom: "1px solid #F1F5F9", marginBottom: 4 }}>
               <div style={{ fontSize: 18, fontWeight: 900, color: "#1E293B" }}>👤 {acaoPessoa.nome}</div>
               <div style={{ fontSize: 12, color: "#94A3B8" }}>
-                Mesa {selectedTable?.number}
+                {selectedTable ? nomeDaMesa(selectedTable) : ""}
                 {(() => {
                   const p = pessoas.find(x => x.id === acaoPessoa.id);
                   return p && p.total > 0 ? ` · consumiu ${fmt(p.total)}` : " · ainda não pediu nada";

@@ -971,6 +971,10 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   // ── Item do pedido ──
   `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "notes" TEXT`,
   `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "tableGuestId" TEXT`,
+  // Peso do item vendido na balança do self-service (lib/balanca).
+  `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "pesoKg" DOUBLE PRECISION`,
+  // Mesa ou comanda numerada (lib/comanda.ts).
+  `ALTER TABLE "Table" ADD COLUMN IF NOT EXISTS "tipo" TEXT`,
 
   // ── Cardápio ──
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER NOT NULL DEFAULT 0`,

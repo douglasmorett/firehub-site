@@ -4,6 +4,7 @@ import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { lerAndares } from "@/lib/andares-da-mesa";
 import { contaPedidaEm } from "@/lib/mesa-em-fechamento";
 import { chamadosDaLoja } from "@/lib/tablet-da-mesa/tablets";
+import { TIPO_COMANDA, faixaDeComandas } from "@/lib/comanda";
 
 export async function GET(req: NextRequest) {
   try {
@@ -79,6 +80,8 @@ export async function GET(req: NextRequest) {
         label: table.label,
         capacity: table.capacity,
         isActive: table.isActive,
+        // "COMANDA" = cartão numerado (lib/comanda.ts): a tela tira do mapa de mesas.
+        tipo: table.tipo ?? null,
         openSession,
         // "Chamou o garçom" / "pediu a conta" pelo tablet da mesa (lib/tablet-da-mesa).
         chamado: chamadoPorMesa.get(table.id) ?? null,
@@ -120,6 +123,24 @@ export async function POST(req: NextRequest) {
     const targetFranchiseeId = operador.franchiseeId;
 
     const data = await req.json();
+
+    // Cartões de comanda numerados, numa faixa (lib/comanda.ts): { comandas: { de, ate } }.
+    if (data?.comandas) {
+      const existentes = await prisma.table.findMany({
+        where: { franchiseeId: targetFranchiseeId },
+        select: { number: true, tipo: true },
+      });
+      const faixa = faixaDeComandas(data.comandas.de, data.comandas.ate, existentes);
+      if (!faixa.ok) return NextResponse.json({ error: faixa.erro }, { status: 400 });
+      const criadas = faixa.numeros.length
+        ? await prisma.table.createMany({
+            data: faixa.numeros.map((n) => ({ franchiseeId: targetFranchiseeId, number: n, capacity: 1, isActive: true, tipo: TIPO_COMANDA })),
+            skipDuplicates: true,
+          })
+        : { count: 0 };
+      return NextResponse.json({ criadas: criadas.count });
+    }
+
     let { number, label, capacity } = data;
 
     if (!number) {
@@ -229,6 +250,20 @@ export async function DELETE(req: NextRequest) {
 
     const url = new URL(req.url);
     const id = url.searchParams.get("id");
+
+    // Apagar os cartões de comanda que NUNCA tiveram conta. Cartão já usado
+    // fica: apagar a mesa leva junto as sessões (cascata) e o histórico do
+    // caixa e das contas fechadas iria embora.
+    if (url.searchParams.get("comandasLivres") === "1") {
+      const apagadas = await prisma.table.deleteMany({
+        where: {
+          franchiseeId: targetFranchiseeId,
+          tipo: TIPO_COMANDA,
+          sessions: { none: {} },
+        },
+      });
+      return NextResponse.json({ apagadas: apagadas.count });
+    }
 
     if (!id) return NextResponse.json({ error: "Table ID is required" }, { status: 400 });
 

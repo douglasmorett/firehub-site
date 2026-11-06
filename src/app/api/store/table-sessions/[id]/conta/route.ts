@@ -28,7 +28,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const mesa = await prisma.tableSession.findUnique({
     where: { id },
     include: {
-      table: { select: { number: true, label: true } },
+      table: { select: { number: true, label: true, tipo: true } },
       orders: {
         select: {
           status: true,
@@ -41,6 +41,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
               // As escolhas do combo: é nelas que mora "2 pastéis" na Pastel
               // da Paulista. Sem elas a conta diz "1x" onde há dois.
               comboSelections: true,
+              // O peso do prato da balança entra no nome da linha (lib/conta-da-mesa.ts).
+              pesoKg: true,
               menuProduct: { select: { name: true } },
             },
           },

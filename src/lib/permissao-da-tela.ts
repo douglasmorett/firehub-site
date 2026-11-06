@@ -110,6 +110,10 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/multimarcas", abre: ["minha_loja", "cardapio"] },
   // Tablet na mesa: ligar cobra no boleto, é do dono (a API também só atende o dono).
   { prefixo: "/store/tablet-na-mesa", abre: ["minha_loja"] },
+  // Balança: configurar é do dono (ligar cobra no boleto — a API também barra);
+  // a tela de pesagem é de quem trabalha no salão, como as mesas.
+  { prefixo: "/store/balanca", abre: ["minha_loja"] },
+  { prefixo: "/store/balanca/pesar", abre: ["venda_presencial"] },
   // Meu aplicativo (base de clientes do app e notificação push): a tela e a
   // API só atendem o dono; a caixinha aqui só evita o proxy mandar o
   // funcionário para outra tela antes de a página explicar.

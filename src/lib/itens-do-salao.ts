@@ -17,6 +17,7 @@ import { fusoDaLoja } from "@/lib/fuso-da-loja";
 import { SEM_PRODUTO_DE_INTEGRACAO, motivoForaDoCardapio, textoDoHorario, textoDosDias } from "@/lib/cardapio-interno";
 import { aplicarPrecoDoCanalComCombo } from "@/lib/preco-por-canal";
 import { precoUnitarioDoItem, pisoDoPreco } from "@/lib/preco-combo";
+import { PESO_MAXIMO_KG, PESO_MINIMO_KG, textoDoPeso, valorDoPeso } from "@/lib/balanca/protocolo-toledo";
 
 export type ItemParaLancar = {
   menuProductId?: unknown;
@@ -24,6 +25,8 @@ export type ItemParaLancar = {
   comboSelections?: unknown;
   tableGuestId?: unknown;
   notes?: unknown;
+  /** Só a balança manda (lib/balanca): o peso lido, em kg. */
+  pesoKg?: unknown;
 };
 
 export type ItemDoSalao = {
@@ -33,6 +36,8 @@ export type ItemDoSalao = {
   comboSelections: any;
   tableGuestId: string | null;
   notes: string | null;
+  /** Item pesado na balança: o peso em kg (quantidade 1, preço = peso × quilo). */
+  pesoKg: number | null;
 };
 
 export async function validarItensDoSalao(opcoes: {
@@ -42,6 +47,13 @@ export async function validarItensDoSalao(opcoes: {
   comoTentarDeNovo: string;
   /** "da mesa" ou "do balcão": onde o item foi recusado, na mensagem. */
   ondeVende?: string;
+  /**
+   * Os produtos vendidos POR QUILO (lib/balanca/assinatura.ts). Só a rota da
+   * balança passa: o item com `pesoKg` precisa ser um deles, e eles ficam fora
+   * do cardápio do garçom — pedir um por unidade é recusado como qualquer
+   * produto que não está no salão.
+   */
+  pesaveis?: string[];
 }): Promise<{ ok: true; itens: ItemDoSalao[] } | { ok: false; status: number; error: string }> {
   const { franchiseeId: targetFranchiseeId, items } = opcoes;
   const tenteDeNovo = opcoes.comoTentarDeNovo;
@@ -63,7 +75,7 @@ export async function validarItensDoSalao(opcoes: {
       id: { in: idsPedidos },
       franchiseeId: targetFranchiseeId,
       active: true,
-      activeGarcom: true,
+      OR: [{ activeGarcom: true }, { id: { in: opcoes.pesaveis ?? [] } }],
       ...SEM_PRODUTO_DE_INTEGRACAO,
     },
     include: { comboGroups: { include: { items: { include: { menuProduct: true } } } } },
@@ -79,9 +91,16 @@ export async function validarItensDoSalao(opcoes: {
 
   for (const item of items) {
     const produto = porId.get(String(item?.menuProductId ?? ""));
-    if (!produto) {
+    const pesoKg = item?.pesoKg === undefined || item?.pesoKg === null ? null : Math.round(Number(item.pesoKg) * 1000) / 1000;
+    const pesavel = !!produto && (opcoes.pesaveis ?? []).includes(produto.id);
+    // Por quilo só com peso, e peso só em produto por quilo: o garçom não lança
+    // "1 self-service", e a balança não pesa o refrigerante.
+    if (!produto || (pesoKg === null ? !produto.activeGarcom : !pesavel)) {
       recusados.push(String(item?.menuProductId ?? "?"));
       continue;
+    }
+    if (pesoKg !== null && !(pesoKg >= PESO_MINIMO_KG && pesoKg <= PESO_MAXIMO_KG)) {
+      return { ok: false, status: 400, error: `Peso fora do esperado (${item.pesoKg} kg). Pese de novo.` };
     }
     // Produto de dia ou horário específico não sai fora dele; a tela pode
     // estar aberta desde ontem.
@@ -97,6 +116,21 @@ export async function validarItensDoSalao(opcoes: {
     // Piso que aceita o desconto da meia pizza mais barata (lib/preco-combo.ts).
     const minimo = pisoDoPreco(noCanal as any);
     if (preco < minimo) preco = minimo;
+    if (pesoKg !== null) {
+      // O preço do produto (o do salão, com a promoção) é o preço do QUILO.
+      // O peso vai escrito na observação: comanda impressa, conta e KDS já a
+      // mostram, sem cada tela aprender o que é item pesado.
+      itensValidados.push({
+        menuProductId: produto.id,
+        quantity: 1,
+        price: valorDoPeso(pesoKg, preco),
+        comboSelections: null,
+        tableGuestId: null,
+        notes: `${textoDoPeso(pesoKg)} × ${preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/kg`,
+        pesoKg,
+      });
+      continue;
+    }
     const quantity = Math.max(1, Math.min(99, Math.floor(Number(item.quantity) || 1)));
     itensValidados.push({
       menuProductId: produto.id,
@@ -105,6 +139,7 @@ export async function validarItensDoSalao(opcoes: {
       comboSelections: item.comboSelections ?? null,
       tableGuestId: item.tableGuestId ? String(item.tableGuestId) : null,
       notes: item.notes ? String(item.notes).trim().slice(0, 200) || null : null,
+      pesoKg: null,
     });
   }
 

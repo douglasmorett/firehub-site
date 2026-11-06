@@ -63,6 +63,8 @@ export type ItemDoPedido = {
   productName?: string | null;
   quantity: number;
   price: number;
+  /** Item pesado na balança (lib/balanca): a nota sai em KG, com o peso de quantidade. */
+  pesoKg?: number | null;
   menuProduct?: ProdutoDoItem | null;
 };
 
@@ -123,15 +125,19 @@ export function montarItensDaNota(itensDoPedido: ItemDoPedido[]): ItemDaNota[] {
     const nomeCompleto = item.productName || p?.name || "Item";
     const descricao = ((item as any).comboSelections ? nomeCompleto.split(" | ")[0].trim() || nomeCompleto : nomeCompleto).slice(0, 120);
 
+    // Pesado na balança: 0,452 KG a R$ 52,01 o quilo. O `price` gravado já é o
+    // valor do prato (arredondado em centavos); o unitário é o do quilo, e o
+    // XML acerta as casas para qCom × vUnCom fechar com o vProd (rejeição 629).
+    const pesado = Number(item.pesoKg) > 0 ? Number(item.pesoKg) : null;
     const linhaSimples = (): ItemDaNota => ({
       codigo: p?.id ?? item.id,
       descricao,
       ncm: p?.ncm ?? "",
       cest: p?.cest ?? null,
       cfop: p?.cfop ?? "5102",
-      unidadeComercial: "UN",
-      quantidade: item.quantity,
-      valorUnitario: item.price,
+      unidadeComercial: pesado ? "KG" : "UN",
+      quantidade: pesado ?? item.quantity,
+      valorUnitario: pesado ? Number((item.price / pesado).toFixed(2)) : item.price,
       valorTotal: item.price * item.quantity,
       origem: Number(p?.origem ?? 0) || 0,
       csosn: situacaoDoProduto || null,

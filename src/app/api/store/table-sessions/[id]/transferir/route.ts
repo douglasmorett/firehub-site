@@ -16,6 +16,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
+import { nomeDaMesa } from "@/lib/comanda";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       id: true,
       status: true,
       customerName: true,
-      table: { select: { id: true, number: true, franchiseeId: true } },
+      table: { select: { id: true, number: true, tipo: true, franchiseeId: true } },
     },
   });
   if (!sessao || sessao.table.franchiseeId !== lojaId) {
@@ -54,6 +55,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     select: {
       id: true,
       number: true,
+      tipo: true,
       isActive: true,
       franchiseeId: true,
       sessions: { where: { status: "OPEN" }, select: { id: true } },
@@ -69,8 +71,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: `A mesa ${destino.number} já está ocupada` }, { status: 400 });
   }
 
-  const nomeAntigo = `Mesa ${sessao.table.number}`;
-  const nomeNovo = `Mesa ${destino.number}`;
+  // "Mesa 4" ou "Comanda 155" (lib/comanda.ts): o cliente da comanda que senta
+  // numa mesa leva a conta, e o nome do pedido acompanha.
+  const nomeAntigo = nomeDaMesa(sessao.table);
+  const nomeNovo = nomeDaMesa(destino);
 
   // A checagem de "destino livre" acima é só para a mensagem bonita. A que
   // VALE é esta, dentro da transação serializável: dois garçons movendo
