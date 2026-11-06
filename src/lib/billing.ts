@@ -854,6 +854,15 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += multimarcas;
       linhasExtras.push(`Multimarcas R$${multimarcas.toFixed(2)}`);
     }
+    // Rota 100% automatizada: R$ 97 À PARTE da mensalidade
+    // (lib/roteirizacao-automatica/assinatura.ts); ativa em algum dia do mês
+    // depois dos 7 dias grátis = o mês inteiro.
+    const { cobrancaDaRotaAutomaticaNoMes } = await import("@/lib/roteirizacao-automatica/assinatura");
+    const rotaAutomatica = await cobrancaDaRotaAutomaticaNoMes(franchiseeId, monthStart, monthEnd);
+    if (rotaAutomatica > 0) {
+      taxasExtras += rotaAutomatica;
+      linhasExtras.push(`Rota automática R$${rotaAutomatica.toFixed(2)}`);
+    }
     // Tablet na mesa: R$ 29,90 por tablet que funcionou no mês, fora dos dias
     // grátis (lib/tablet-da-mesa/assinatura.ts), à parte da mensalidade.
     const { cobrancaDoTabletNoMes } = await import("@/lib/tablet-da-mesa/assinatura");
@@ -1267,13 +1276,16 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // Multimarcas — a mesma conta do fechamento.
   const { cobrancaDoMultimarcasNoMes } = await import("@/lib/multimarcas/assinatura");
   const multimarcas = cobraServicos ? await cobrancaDoMultimarcasNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
+  // Rota 100% automatizada — a mesma conta do fechamento.
+  const { cobrancaDaRotaAutomaticaNoMes } = await import("@/lib/roteirizacao-automatica/assinatura");
+  const rotaAutomatica = cobraServicos ? await cobrancaDaRotaAutomaticaNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   // Tablet na mesa — a mesma conta do fechamento.
   const { cobrancaDoTabletNoMes } = await import("@/lib/tablet-da-mesa/assinatura");
   const tabletNaMesa = cobraServicos ? await cobrancaDoTabletNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   // FireCheck — a mesma conta do fechamento.
   const { cobrancaDoFirecheckNoMes } = await import("@/lib/firecheck-modulos/assinatura");
   const firecheck = cobraServicos ? await cobrancaDoFirecheckNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
-  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + tabletNaMesa + firecheck;
+  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + rotaAutomatica + tabletNaMesa + firecheck;
 
   const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
@@ -1293,7 +1305,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     // Discriminado para o painel poder mostrar a linha em vez de só inflar o
     // total — "por que subiu R$ 200?" tem que ter resposta na tela.
     mensalidadePrevista,
-    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, tabletNaMesa, firecheck },
+    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, rotaAutomatica, tabletNaMesa, firecheck },
     lojasExtras,
     status: cycle.status,
     isExempt: false,
@@ -1348,6 +1360,7 @@ export async function previsaoDoFechamento(franchiseeId: string, yearMonth: stri
   const outrosServicos = (cycle?.metaAdsFee ?? 0) + (cycle?.totemFee ?? 0) + (await cobrancaDoAssessorNoMes(franchiseeId, monthStart, monthEnd))
     + (await cobrancaDoAppNoMes(franchiseeId, monthStart, monthEnd))
     + (await cobrancaDoMultimarcasNoMes(franchiseeId, monthStart, monthEnd))
+    + (await (await import("@/lib/roteirizacao-automatica/assinatura")).cobrancaDaRotaAutomaticaNoMes(franchiseeId, monthStart, monthEnd))
     + (await (await import("@/lib/tablet-da-mesa/assinatura")).cobrancaDoTabletNoMes(franchiseeId, monthStart, monthEnd))
     + (await (await import("@/lib/firecheck-modulos/assinatura")).cobrancaDoFirecheckNoMes(franchiseeId, monthStart, monthEnd));
   const agg = await prisma.customerOrder.aggregate({

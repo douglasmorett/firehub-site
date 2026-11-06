@@ -1,32 +1,28 @@
 /**
- * Quem vê a Rota 100% automatizada — por enquanto, só a loja do Douglas.
+ * Quem vê a Rota 100% automatizada — desde a Fase 4 (05/11/2026), TODAS as
+ * lojas.
  *
- * Douglas, 21/10/2026 (noite): a Roteirização manual continua no pacote de
- * todo mundo; a AUTOMÁTICA aparece só na Hakim Centro até ele dizer que deu
- * certo. Depois vira módulo pago (R$ 97/mês, 7 dias grátis — plano no vault,
- * §8). Mesma trava da simulação (lib/pedidos-simulados.ts,
- * `ehLojaDeDemonstracao`): lista fixa no código. Fora dela o botão não
- * aparece, a prévia responde 404 e o PUT da regra responde 403.
+ * Até aqui era uma lista fixa no código (Hakim Centro, a loja de demonstração
+ * e a Pizzaria Bom Cheff), no padrão da simulação (lib/pedidos-simulados.ts,
+ * `ehLojaDeDemonstracao`): fora dela o botão não aparecia, a prévia respondia
+ * 404 e o PUT da regra 403. Douglas, 05/11/2026: a rota automática vira
+ * módulo pago para todo mundo — R$ 97/mês, 7 dias grátis, pela mecânica dos
+ * outros módulos pagos (plano no vault, §8).
  *
- * O id é o da LOJA (`ownerId || id`): o funcionário da Hakim também vê.
+ * Por isso `liberadaPara` agora vale para qualquer loja (a função fica, para
+ * não mexer em quem chama). Quem decide se a rota automática AGE numa loja
+ * deixou de ser esta lista: é a assinatura (./assinatura.ts — trecho ligado,
+ * ou loja isenta) junto com a regra ligada. A Hakim Centro e a loja de
+ * demonstração seguem sem pagar: são isentas lá. A Bom Cheff, que entrou sem
+ * cobrança em 05/11, ganha lá o teste de 7 dias (`LOJAS_LIGADAS_ANTES_DO_MODULO_PAGO`).
+ *
+ * O id é o da LOJA (`ownerId || id`): o funcionário também vê.
  *
  * SEM IMPORTS de propósito (o teste e qualquer rota usam sem banco).
  */
 
-/**
- * Hakim Centro (contatohakim@gmail.com, slug hakim-contato), a loja de
- * demonstração do Victor (para ensaiar com o simulador) e a Pizzaria Bom Cheff
- * (Vânia pediu "o site fazer sozinho" e o Douglas mandou oferecer, 05/11/2026;
- * teste sem cobrança até o módulo pago da Fase 4 entrar).
- */
-const LOJAS_COM_ROTEIRIZACAO_AUTOMATICA = new Set<string>([
-  "cmpx96phr0000ujf0sb0qk5vr",
-  "cmupkiesh0000ujmcjwtpd706",
-  "cmvvl39a004wns807o0ck8uk3",
-]);
-
 export function liberadaPara(lojaId: string | null | undefined): boolean {
-  return !!lojaId && LOJAS_COM_ROTEIRIZACAO_AUTOMATICA.has(lojaId);
+  return !!lojaId;
 }
 
 /**

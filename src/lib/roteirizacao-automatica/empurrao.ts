@@ -17,14 +17,16 @@
  * gravando, o empurrão devolve `pulada` sem gravar nada — o cron já está
  * vendo o banco, e o próximo pega o resto.
  *
- * Custo nas outras lojas: zero. `liberadaPara` é uma lista no código e vem
- * antes de tudo; a regra (`ativo`) só é lida para a loja liberada, e já
- * dentro do `after()`. Nunca lança: o empurrão é atalho, quem garante é o cron.
+ * Custo: desde a Fase 4 (05/11/2026) a rota automática vale para qualquer
+ * loja (liberacao.ts), então toda loja paga UMA leitura — já dentro do
+ * `after()`, fora da resposta: a regra, o pino e a assinatura juntos
+ * (`rotaAutomaticaDaLoja`, assinatura.ts). O ciclo só roda com a regra ligada
+ * E o módulo ligado pela assinatura (trecho ligado, ou isenta), e não lê a
+ * assinatura de novo. Nunca lança: o empurrão é atalho, quem garante é o cron.
  */
 import { after } from "next/server";
-import { prisma } from "@/lib/prisma";
 import { liberadaPara } from "./liberacao";
-import { lerRoteirizacaoAutomatica } from "./config";
+import { rotaAutomaticaDaLoja } from "./assinatura";
 import { rodarRoteirizacaoDaLoja } from "./executar";
 
 export function empurrarRoteirizacao(lojaId: string | null | undefined, motivo: string): void {
@@ -32,9 +34,8 @@ export function empurrarRoteirizacao(lojaId: string | null | undefined, motivo: 
   try {
     after(async () => {
       try {
-        const loja = await prisma.user.findUnique({ where: { id: lojaId }, select: { deliveryConfig: true } });
-        if (!lerRoteirizacaoAutomatica(loja?.deliveryConfig).ativo) return;
-        const r = await rodarRoteirizacaoDaLoja(lojaId, { gravar: true });
+        if (!(await rotaAutomaticaDaLoja(lojaId)).ligada) return;
+        const r = await rodarRoteirizacaoDaLoja(lojaId, { gravar: true, ligadaPelaAssinatura: true });
         if (r.aplicadas?.length) console.log(`[rota-automatica] empurrão (${motivo}) loja ${lojaId}: ${r.aplicadas.join("; ")}`);
       } catch (e: any) {
         console.warn(`[rota-automatica] empurrão (${motivo}) falhou:`, e?.message?.slice(0, 160));
