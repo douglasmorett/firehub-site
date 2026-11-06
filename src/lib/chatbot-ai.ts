@@ -63,7 +63,7 @@ import { conferirEstoque, estoqueDaLojaOuVazio } from "./estoque-restante";
 import { STATUS_QUE_NAO_CONTAM } from "./estoque-do-cardapio";
 import { conferePedidoDoRobo, esperandoConferencia, MARCA_AGUARDANDO_LOJA, marcarAguardandoLoja, MOTIVO_CONFERIR_PEDIDO } from "./finalizar-rascunho";
 import { servicosSemFonte, RESPOSTA_QUANDO_NAO_SABE } from "./afirmacao-sem-fonte";
-import { destinoDaTag, cancelamentoDaTag, candidatosValidos, candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, JANELA_DO_PEDIDO_ENVIADO_MS } from "./rascunho-do-robo";
+import { destinoDaTag, cancelamentoDaTag, candidatosValidos, pedidosParaNaoDuplicar, memoriaDoPedidoParaOPrompt, JANELA_DE_COMPARACAO_MS } from "./rascunho-do-robo";
 import { minimoDeEntrega, minimoDeRetirada, linhasDoMinimoNosDados, regraDoPedidoMinimo, lembreteDoMinimo, tempoDaZona, prazoParaORobo, HORARIO_NAO_CADASTRADO, linhaDoHorarioDeHoje } from "./fatos-da-loja";
 import { comPrazoDaExtensao } from "./prazo-automatico";
 import { previsaoDaEntrega, tempoDeEntregaParaGravar } from "./previsao-da-entrega";
@@ -634,10 +634,10 @@ export async function processChatbotAI(
   // para esticar — e nem a ÁGIL, que já pedia "respostas curtas", escrevia menos
   // de 200 caracteres, porque o resto do prompt puxava para o outro lado.
   const personalityMap: Record<string, string> = {
-    SIMPATICO: "simpático e acolhedor, com carinho na medida (um emoji aqui e ali, como 😊, 🥰 ou 👏). Carinho não é mensagem comprida. NUNCA use emoji de comida que a loja não vende.",
+    SIMPATICO: "simpático e acolhedor, com carinho na medida (um emoji aqui e ali, como 😊, 🥰 ou 👏). Carinho não é mensagem comprida nem pergunta a mais: com quem quer fechar, vá direto ao pedido. NUNCA use emoji de comida que a loja não vende.",
     AGIL: "rápido e objetivo, mas sempre como uma pessoa normal no whatsapp. Respostas curtas.",
     FORMAL: "educado e cortês, mas sem parecer um robô.",
-    DIVERTIDO: "divertido, descontraído e alto astral, com humor leve — sem esticar a mensagem por causa da piada.",
+    DIVERTIDO: "divertido, descontraído e alto astral, com humor leve — sem esticar a mensagem nem fazer pergunta a mais por causa da piada.",
   };
 
   const personalityInstruction = personalityMap[personality] || personalityMap.SIMPATICO;
@@ -2528,16 +2528,17 @@ REGRA ABSOLUTA E INEGOCIÁVEL: você está sem acesso ao cardápio agora. É PRO
  * gravado formatado — ver o comentário em `syncAiOrderToDatabase`.
  */
 async function pedidosQueATagPodeTocar(franchiseeId: string, telefone: string, agora: number) {
-  const recente = new Date(agora - JANELA_DO_PEDIDO_ENVIADO_MS);
+  const recente = new Date(agora - JANELA_DE_COMPARACAO_MS);
   const lista = await prisma.customerOrder.findMany({
     where: {
       franchiseeId,
       OR: [
         { status: "CRIANDO_IA" },
-        // ACEITO/PREPARANDO/PRONTO vêm só para COMPARAÇÃO: a tag não os toca,
-        // mas precisa reconhecê-los para não criar um pedido gêmeo quando o
-        // modelo reemite a tag final depois do aceite (lib/rascunho-do-robo.ts).
-        { status: { in: ["NOVO", "ACEITO", "PREPARANDO", "PRONTO"] }, source: "WHATSAPP_IA", createdAt: { gte: recente } },
+        // ACEITO em diante vem só para COMPARAÇÃO: a tag não os toca, mas
+        // precisa reconhecê-los para não criar um pedido gêmeo quando o modelo
+        // reemite a tag depois do aceite — e para o "e uma coca" virar
+        // acréscimo do mesmo pedido (lib/rascunho-do-robo.ts).
+        { status: { in: ["NOVO", "ACEITO", "PREPARANDO", "PRONTO", "SAIU_ENTREGA", "ENTREGUE"] }, source: "WHATSAPP_IA", createdAt: { gte: recente } },
       ],
     },
     include: { items: { include: { menuProduct: { select: { name: true } } } } },
@@ -2553,7 +2554,7 @@ async function pedidosQueATagPodeTocar(franchiseeId: string, telefone: string, a
     .map((o) => ({ ...o, items: o.items.filter((i) => !ehItemDoPremioDosCarimbos(i)) }));
   const aproveitaveis = new Set([
     ...candidatosValidos(doCliente as any, agora).map((p) => p.id),
-    ...candidatosSoDeComparacao(doCliente as any, agora).map((p) => p.id),
+    ...pedidosParaNaoDuplicar(doCliente as any, agora).map((p) => p.id),
   ]);
   return doCliente.filter((o) => aproveitaveis.has(o.id));
 }
@@ -3260,11 +3261,10 @@ async function syncAiOrderToDatabase({
   // nunca pode cair no caminho de baixo — criaria um pedido só com os itens
   // novos, que é exatamente o pedido duplicado que isto existe para evitar.
   const acrescentarAoPedido = payload?.acrescentarAoPedido ?? payload?.acrescentar ?? null;
-  if (acrescentarAoPedido != null && acrescentarAoPedido !== "" && acrescentarAoPedido !== false) {
-    if (!isFinal) {
-      return { gravado: false, motivo: "acréscimo ainda sendo combinado", regraDeNegocio: true, manterRespostaDaIa: true };
-    }
-    const itensDoAcrescimo = orderItemsData.map((i: any) => ({
+  // Também chamada mais abaixo, quando `destinoDaTag` reconhece que a tag
+  // normal é o "e uma coca" de um pedido que já está na cozinha.
+  const registrarAcrescimoDaTag = async (numeroDoPedido: unknown, itens: any[]): Promise<SyncResultado> => {
+    const itensDoAcrescimo = itens.map((i: any) => ({
       menuProductId: i.menuProductId ?? null,
       productName: i.productName,
       quantity: i.quantity,
@@ -3276,13 +3276,23 @@ async function syncAiOrderToDatabase({
       franchiseeId,
       telefone: phoneClean,
       remoteJid: remoteJid ?? null,
-      numeroDoPedido: acrescentarAoPedido,
+      numeroDoPedido,
       itens: itensDoAcrescimo,
       // O cliente que digitou o telefone errado no site é achado pelo nome
       // (lib/pedido-do-cliente.ts) — o mesmo nome com que o prompt o achou.
       nomes: [customerName, payload?.customerName, payload?.nome],
     });
     if (r.ok) {
+      // Já incluído pela loja há pouco (o modelo repetiu a tag no "obrigado"):
+      // nada de segundo pop-up, e o cliente não ouve "pedi para incluir" de novo.
+      if (r.repetido && r.jaIncluido) {
+        return {
+          gravado: false,
+          motivo: "acréscimo igual já aceito pela loja",
+          regraDeNegocio: true,
+          mensagemParaOCliente: `Isso já está incluído no seu pedido nº ${r.numero ?? "—"} ✅`,
+        };
+      }
       return r.repetido
         ? { gravado: false, motivo: "acréscimo já esperando a loja", regraDeNegocio: true, manterRespostaDaIa: true }
         : {
@@ -3312,6 +3322,12 @@ async function syncAiOrderToDatabase({
         `Não consegui achar o seu pedido em andamento para incluir esses itens 😕 ` +
         `Já chamei alguém da loja para resolver com você por aqui mesmo.`,
     };
+  };
+  if (acrescentarAoPedido != null && acrescentarAoPedido !== "" && acrescentarAoPedido !== false) {
+    if (!isFinal) {
+      return { gravado: false, motivo: "acréscimo ainda sendo combinado", regraDeNegocio: true, manterRespostaDaIa: true };
+    }
+    return registrarAcrescimoDaTag(acrescentarAoPedido, orderItemsData);
   }
 
   // ── O QUE ESTA TAG FAZ COM O QUE JÁ ESTÁ NO BANCO ─────────────────────────
@@ -3331,6 +3347,7 @@ async function syncAiOrderToDatabase({
     // valor que vai ao banco é calculado mais abaixo, contra o total final.
     troco: payload.changeFor ?? payload.troco ?? payload.changeAmount,
     observacao: payload.observation ?? payload.observacao ?? payload.obs,
+    pedidoSeparado: payload.pedidoSeparado === true,
     agora: agoraDoSync,
   });
   if (destino.acao !== "criar" || candidatosDoCliente.length > 0) {
@@ -3346,6 +3363,9 @@ async function syncAiOrderToDatabase({
     // cozinha" — verdade que casava com o detector de promessa e virava
     // "probleminha técnico para registrar seu pedido" + chamada de atendente.
     return { gravado: false, motivo: destino.motivo, regraDeNegocio: true, manterRespostaDaIa: true };
+  }
+  if (destino.acao === "acrescentar") {
+    return registrarAcrescimoDaTag(destino.pedido.dailyOrderNumber ?? null, destino.itens);
   }
   if (destino.acao === "identico") {
     // O modelo repetiu a tag final (no "obrigado", por exemplo). O pedido está

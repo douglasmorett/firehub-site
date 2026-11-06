@@ -348,6 +348,28 @@ async function atendenteFalouEm(
   return em;
 }
 
+/**
+ * O lojista digitou nesta conversa DEPOIS de `desde`? É a conferência de
+ * antes de enviar: a mensagem do cliente passou pela porteira, mas enquanto a
+ * IA pensava (rajada de 3–5 s + a chamada) o dono respondeu pelo celular. Na
+ * Bella Ragazza (06/11/2026) o robô anotou "Pizza de 60 reais" 11 s depois de
+ * o dono escrever "65 total" e disse que não entregava no bairro que o dono
+ * acabava de cobrar a entrega — o cliente: "o robot tá pirado?". Nunca lança.
+ */
+export async function lojistaFalouDesde(
+  userId: string,
+  remoteJid: string,
+  desde: number,
+  outrosEnderecos?: string[],
+): Promise<boolean> {
+  try {
+    const state = await readState(userId, remoteJid);
+    return (await atendenteFalouEm(userId, remoteJid, state, outrosEnderecos)) > desde;
+  } catch {
+    return false;
+  }
+}
+
 async function evaluate(input: LoopGuardInput): Promise<LoopDecision> {
   const { userId, remoteJid, text, verifiedBizName, isAudio, now } = input;
 

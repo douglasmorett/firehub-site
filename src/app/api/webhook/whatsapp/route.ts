@@ -16,12 +16,14 @@ import {
   clearLoopGuard,
   passarParaAtendimentoHumano,
   conversaEstaComHumano,
+  lojistaFalouDesde,
 } from '@/lib/loop-guard';
 import { detectarProblemaNoPedido, FRASE_DE_TRANSFERENCIA } from '@/lib/problema-no-pedido';
 import { numeroEstaNaListaDeIgnorados, numeroDaEquipeDoFireHub } from '@/lib/numeros-ignorados';
 import { ehConversaDeCliente, conversaOriginalEhDeCliente, tipoDoJid } from '@/lib/jid-de-cliente';
 import { contaOficialDoWhatsApp } from '@/lib/contas-oficiais-whatsapp';
 import { desembrulharMensagem, localizacaoDoPayload, semLinhaDaLocalizacao, textoDaLocalizacao } from '@/lib/localizacao-do-whatsapp';
+import { ehSoReacao, respondeAStatus, AVISO_DE_RESPOSTA_A_STATUS } from '@/lib/reacao-e-status';
 import { esperarAVezDaRajada, rajadasDoRobo } from '@/lib/rajada-do-webhook';
 import { avisarDono, avisarAdminDoSistema, textoDeProblemaNoPedido } from '@/lib/alertas-do-dono';
 import { textoDoAvisoDaFicha, type FichaPreenchida } from '@/lib/respostas-prontas';
@@ -864,6 +866,15 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
   // já que "não respondeu" tem causas diferentes nos dois casos.
   const tipoTrace: "texto" | "audio" = (isAudioMessage || audioObj) ? "audio" : "texto";
 
+  // ── REAÇÃO E CORAÇÃOZINHO NUM STATUS DA LOJA: SILÊNCIO ───────────────────
+  // O cliente reagia a um status e ouvia "vamos fechar o lanche hoje?" (via
+  // Victor, 06/11/2026). Reação não é conversa; status com texto segue, com o
+  // aviso para o modelo mais abaixo (lib/reacao-e-status.ts).
+  if (ehSoReacao(conteudo, rawText)) {
+    registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "reacao-ignorada" });
+    return;
+  }
+
   // Detecção de Ligação de Voz / Chamada Perdida
   const eventName = (body.event || body.type || "").toUpperCase();
   const isCallEvent =
@@ -1674,6 +1685,16 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
         console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: ${remoteJid} passou para a equipe enquanto ela era gerada.`);
         return;
       }
+      // E o LOJISTA respondeu pelo celular enquanto ela era gerada: a resposta
+      // do robô sairia por cima da dele (Bella Ragazza, 06/11/2026). A conferência
+      // da entrada (evaluateLoopGuard) já não pega: ele digitou depois dela.
+      if (await lojistaFalouDesde(user.id, remoteJid, now, [key.remoteJid, key.remoteJidAlt, data.senderAlt].filter(
+        (j): j is string => typeof j === "string" && j !== remoteJid && ehConversaDeCliente(j),
+      ))) {
+        void registrarMensagemDoCliente(user.id, remoteJid, transcription || textoDoClienteParaOPainel);
+        console.log(`[${new Date().toISOString()}] [WhatsApp Webhook] Resposta da IA descartada: o lojista respondeu ${remoteJid} pelo celular enquanto ela era gerada.`);
+        return;
+      }
 
       const enviou = silenciarResposta ? true : await replyToCustomer(user.id, remoteJid, replyText, recipientTarget);
       if (!silenciarResposta) {
@@ -1880,7 +1901,7 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
       // `mensagemAnteriorEm` é o que diz se este "oi" é o primeiro do dia
       // (lib/saudacao-do-dia.ts): depois desta mensagem o anti-loop já
       // carimbou "agora", então só o valor de ANTES serve.
-      processChatbotAI(user.id, textMessage, aiHistory, remoteJid, audioData, data.pushName, {
+      processChatbotAI(user.id, respondeAStatus(conteudo) ? `${AVISO_DE_RESPOSTA_A_STATUS}\n${textMessage}` : textMessage, aiHistory, remoteJid, audioData, data.pushName, {
         localizacao,
         imagem: imagemData,
         // Na rajada, vale o "antes" da PRIMEIRA mensagem: "oi" + "quero pizza"

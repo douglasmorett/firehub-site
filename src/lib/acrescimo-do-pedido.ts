@@ -135,7 +135,7 @@ Este pedido está no nome de "${p.outroTelefone.nome}" com o telefone ${p.outroT
       `→ Se o cliente pedir para acrescentar ou quiser mais alguma coisa, responda antes de anotar qualquer item: ` +
       `"Seu pedido nº ${n} já saiu para entrega 🛵. Para incluir mais itens, a gente precisa fazer um pedido novo, ` +
       `e a entrega é cobrada de novo${p.entrega && p.taxaDeEntrega > 0 ? ` (a taxa foi ${reais(p.taxaDeEntrega)} no seu pedido)` : ""}. Tudo bem pra você?"\n` +
-      `→ Só depois que ele concordar, monte o pedido novo normalmente (tag normal, sem "acrescentarAoPedido"). ` +
+      `→ Só depois que ele concordar, monte o pedido novo normalmente (tag normal, sem "acrescentarAoPedido", com "pedidoSeparado": true). ` +
       `Se ele não quiser, tudo bem: não insista.`
     );
   }
@@ -151,12 +151,12 @@ Este pedido está no nome de "${p.outroTelefone.nome}" com o telefone ${p.outroT
 
   return (
     `${cabecalho}\n` +
-    `→ Se o cliente pedir QUALQUER item agora, antes de montar pedido novo pergunte: ` +
-    `"Você já tem o pedido nº ${n} com a gente (${statusParaOCliente(p.status)}). Quer acrescentar nesse pedido?"\n` +
-    `→ Se ele quiser ACRESCENTAR: confirme os itens novos e o valor deles (sem taxa de entrega nova), e só depois que ele confirmar emita ` +
+    `→ Se o cliente pedir mais algum item agora ("e uma coca"), ele vai NESTE pedido: não pergunte se é para acrescentar. ` +
+    `Numa frase, confirme o item novo e o valor dele (sem taxa de entrega nova): "Coloco 1 Coca 2L (15 reais) no seu pedido nº ${n}?"\n` +
+    `→ Ele confirmou: emita ` +
     `[[PEDIDO_IA: {"acrescentarAoPedido": ${numeroNaTag}, "items": [SÓ os itens NOVOS, no formato de sempre], "finalized": true}]]. ` +
     `Diga que vai pedir à cozinha para incluir e que avisa assim que a loja responder. NÃO diga que já foi incluído: quem decide é a loja.\n` +
-    `→ Se ele quiser um pedido SEPARADO, monte normalmente (tag normal, sem "acrescentarAoPedido").\n` +
+    `→ Só se ele disser que é OUTRO pedido (outro endereço, outra pessoa): monte normalmente, tag normal sem "acrescentarAoPedido" e com "pedidoSeparado": true em toda marca dele.\n` +
     `→ Tirar, trocar item ou cancelar este pedido não é com você: escreva [[CHAMAR_ATENDENTE]].\n` +
     `→ NUNCA emita a tag com os itens que já estão no pedido: a cozinha prepararia tudo de novo.`
   );

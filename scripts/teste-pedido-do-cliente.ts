@@ -56,7 +56,7 @@ const saiu = pedidoAtivoParaOPrompt({ ...base, status: "SAIU_ENTREGA", outroTele
 confere("saiu para entrega: avisa e oferece pedido novo", saiu.includes("JÁ SAIU PARA ENTREGA") && saiu.includes("pedido novo"), true);
 confere("telefone diferente: confirma o nome", saiu.includes('É o pedido nº 4, no nome de Alessandro martins?'), true);
 const cozinha = pedidoAtivoParaOPrompt({ ...base, status: "PREPARANDO" });
-confere("em preparo: oferece acrescentar", cozinha.includes("Quer acrescentar nesse pedido?") && cozinha.includes("acrescentarAoPedido"), true);
+confere("em preparo: o item novo vai no mesmo pedido", cozinha.includes("ele vai NESTE pedido") && cozinha.includes("acrescentarAoPedido"), true);
 confere("telefone igual: sem a pergunta do nome", cozinha.includes("no nome de"), false);
 
 console.log(`\n${falhou === 0 ? "✅" : "❌"} pedido do cliente: ${ok} ok, ${falhou} falha(s)`);
