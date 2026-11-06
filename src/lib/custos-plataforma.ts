@@ -58,10 +58,11 @@ export const SERVICOS_PAGOS: ServicoPago[] = [
     chave: "hospedagem",
     nome: "DigitalOcean (VPS do Coolify)",
     papel: "Roda a aplicação Next.js, o cron-runner e o Coolify. É quem serve firehubfood.com.br.",
-    mensalBRL: 68 * USD_BRL,
+    mensalBRL: 112 * USD_BRL,
     rateio: "pedidos",
     observacao:
-      "Plano de US$ 68/mês a partir de 01/10/2026 (antes: 2 vCPU / 4 GB / 120 GB por US$ 32; agosto/2026 fechou em US$ 12,97). " +
+      "Premium AMD 8 vCPU / 16 GB / 120 GB NVMe por US$ 112/mês desde 05/11/2026 (antes: US$ 68 a partir de 01/10/2026; " +
+      "2 vCPU / 4 GB / 120 GB por US$ 32; agosto/2026 fechou em US$ 12,97). " +
       "Droplet 107.170.79.194, região NYC (AS14061). É o serviço que sustenta a produção inteira.",
   },
   {
