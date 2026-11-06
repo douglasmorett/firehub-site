@@ -572,7 +572,7 @@ export async function POST(req: NextRequest) {
             // contador seguia: na Ragnar (23/10/2026) foram 43 números sem
             // pedido numa noite, e o lojista lê o buraco como pedido sumido.
             // Com a transação, a perdedora devolve o número junto.
-            await prisma.$transaction(async (tx) => (tx.customerOrder as any).create({
+            const criado = await prisma.$transaction(async (tx) => (tx.customerOrder as any).create({
               data: {
                 franchiseeId: franchisee.id,
                 dailyOrderNumber: await generateDailyOrderNumberTx(tx, franchisee.id),
@@ -653,6 +653,21 @@ export async function POST(req: NextRequest) {
                 items: { create: items },
               },
             }), { timeout: 20000 });
+
+            // ── BAIXA DE ESTOQUE DO PEDIDO QUE JÁ NASCE ACEITO ─────────────
+            //
+            // O único gatilho do 99Food era a TRANSIÇÃO para ACEITO
+            // (api/customer-order/status). Com o aceite automático o pedido
+            // nasce ACEITO e nunca transita: em 30 dias, 0 de 7.524 pedidos do
+            // 99Food baixaram estoque, em 22 lojas (NIK, 06/11/2026). Mesmo
+            // remédio do iFood (lib/ifood-eventos.ts): chamar na criação, sem
+            // await. Idempotente por `sourceRef`; o pedido que nasce NOVO segue
+            // baixando no aceite, pela rota de status.
+            if (aceitaSozinho && criado?.id) {
+              import("@/lib/stock")
+                .then((m) => m.deductStockForOrder(criado.id))
+                .catch((e) => console.error(`[99Food Webhook] baixa de estoque falhou para ${orderId}:`, e?.message));
+            }
 
             // ── Confirmar no 99Food, quando a loja aceita sozinha ─────────
             //

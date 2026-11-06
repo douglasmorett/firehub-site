@@ -396,6 +396,8 @@ export async function deductStockForOrder(orderId: string) {
       let produtosAvulsosComFicha: OpcaoDeCombo[] | null = null;
 
       let deducted = false;
+      // Somado por insumo no pedido inteiro; gravado depois do laço dos itens.
+      const consumoDoPedido = new Map<string, number>();
 
       for (const item of order.items) {
         const menuProduct = item.menuProduct;
@@ -654,72 +656,89 @@ export async function deductStockForOrder(orderId: string) {
             `[Stock] Deduzindo ${amountToDeduct}${consumo.unidade} de "${consumo.nome}" para ${item.quantity}x "${rotuloDoItem}" (${consumo.origens.join(" + ")})`
           );
 
-          // ── A GARANTIA DE UMA VEZ SÓ MORA NO ÍNDICE, NÃO NA BUSCA ────────
-          //
-          // A idempotência era um `notes: { contains: "id: " + orderId }`:
-          // busca por SUBSTRING, em coluna sem índice, e SEM filtro de loja —
-          // varria as movimentações de todas as lojas do sistema a cada venda.
-          // Pior: qualquer funcionário podia plantar esse texto no campo de
-          // observação de um lançamento manual e fazer a baixa automática de
-          // um pedido de OUTRA loja ser pulada para sempre.
-          //
-          // E ela não segurava a corrida real: a rota de status dispara esta
-          // função duas vezes em paralelo no mesmo request, e um findFirst sem
-          // constraint deixa as duas passarem — baixa dobrada.
-          //
-          // Agora quem garante é o banco: `sourceRef` é @unique, e a chave é
-          // determinística por (pedido, insumo). A segunda gravação viola o
-          // índice e a baixa não acontece duas vezes, aconteça o que acontecer
-          // com a ordem das chamadas.
-          await tx.stockTransaction.create({
-            data: {
-              stockItemId,
-              franchiseeId: order.franchiseeId,
-              sourceRef: `sale:${order.id}:${stockItemId}`,
-              quantity: -amountToDeduct,
-              type: "SALE",
-              notes: `Baixa automática - Pedido #${order.id.slice(-6)} (id: ${order.id})`,
-            },
-          });
-
-          // `updateMany` com franchiseeId no WHERE da escrita. O `update` por id
-          // puro escrevia no saldo sem nunca conferir de quem era o insumo —
-          // era a única escrita de estoque do sistema sem essa proteção, e a
-          // rota de pedido de mesa aceita menuProductId de outra loja.
-          const alterados = await tx.stockItem.updateMany({
-            where: { id: stockItemId, franchiseeId: order.franchiseeId },
-            data: { quantity: { decrement: amountToDeduct } },
-          });
-          if (alterados.count === 0) {
-            // Insumo de outra loja (ou apagado entre ler e gravar): aborta tudo,
-            // em vez de deixar a movimentação registrada sem saldo correspondente.
-            throw new Error(`INSUMO_FORA_DA_LOJA:${stockItemId}`);
-          }
-          const saldoDepois = (await tx.stockItem.findUnique({
-            where: { id: stockItemId },
-            select: { id: true, name: true, quantity: true, unit: true },
-          }))!;
-
-          // Saldo negativo não trava a venda: quando a baixa roda o pedido já foi
-          // aceito e a comida está com o cliente — abortar aqui só produziria um
-          // pedido cobrado sem baixa nenhuma. Mas negativo significa que a ficha
-          // técnica consumiu insumo que o sistema não tinha (quase sempre nota de
-          // entrada esquecida), e até agora isso passava mudo até o inventário.
-          // Fica uma linha por insumo, com o pedido e o saldo que sobrou.
-          insumosBaixados.add(stockItemId);
-          lojaDaBaixa = order.franchiseeId;
-
-          if (saldoDepois.quantity < 0) {
-            saldosNegativos.push({
-              insumoId: saldoDepois.id,
-              insumo: saldoDepois.name,
-              saldo: saldoDepois.quantity,
-              unidade: saldoDepois.unit,
-            });
-          }
-
-          deducted = true;
+          // Só soma: a gravação é por PEDIDO, logo abaixo, porque a chave
+          // `sale:<pedido>:<insumo>` é uma por insumo no pedido inteiro.
+          consumoDoPedido.set(stockItemId, (consumoDoPedido.get(stockItemId) || 0) + amountToDeduct);
         }
+      }
+
+      // ── UMA LINHA POR INSUMO NO PEDIDO, NÃO POR ITEM ──────────────────────
+      //
+      // A gravação ficava dentro do laço dos itens. Dois itens do mesmo pedido
+      // com o mesmo insumo — o Combo 1 e a Esfiha Banoffe, as duas com a
+      // RECEITA MASSA ESFIHA (NIK, 06/11/2026) — geravam a mesma
+      // `sale:<pedido>:<insumo>` duas vezes: a segunda batia no índice único,
+      // o P2002 desfazia a transação INTEIRA e o catch lá embaixo o lia como
+      // "corrida evitada". O pedido ficava sem baixa nenhuma, mudo. Na NIK
+      // foram 113 de 115 pedidos entregues com insumo repetido entre itens em
+      // 3 dias. Agora soma por insumo primeiro e grava uma vez.
+      for (const [stockItemId, amountToDeduct] of consumoDoPedido) {
+
+        // ── A GARANTIA DE UMA VEZ SÓ MORA NO ÍNDICE, NÃO NA BUSCA ────────
+        //
+        // A idempotência era um `notes: { contains: "id: " + orderId }`:
+        // busca por SUBSTRING, em coluna sem índice, e SEM filtro de loja —
+        // varria as movimentações de todas as lojas do sistema a cada venda.
+        // Pior: qualquer funcionário podia plantar esse texto no campo de
+        // observação de um lançamento manual e fazer a baixa automática de
+        // um pedido de OUTRA loja ser pulada para sempre.
+        //
+        // E ela não segurava a corrida real: a rota de status dispara esta
+        // função duas vezes em paralelo no mesmo request, e um findFirst sem
+        // constraint deixa as duas passarem — baixa dobrada.
+        //
+        // Agora quem garante é o banco: `sourceRef` é @unique, e a chave é
+        // determinística por (pedido, insumo). A segunda gravação viola o
+        // índice e a baixa não acontece duas vezes, aconteça o que acontecer
+        // com a ordem das chamadas.
+        await tx.stockTransaction.create({
+          data: {
+            stockItemId,
+            franchiseeId: order.franchiseeId,
+            sourceRef: `sale:${order.id}:${stockItemId}`,
+            quantity: -amountToDeduct,
+            type: "SALE",
+            notes: `Baixa automática - Pedido #${order.id.slice(-6)} (id: ${order.id})`,
+          },
+        });
+
+        // `updateMany` com franchiseeId no WHERE da escrita. O `update` por id
+        // puro escrevia no saldo sem nunca conferir de quem era o insumo —
+        // era a única escrita de estoque do sistema sem essa proteção, e a
+        // rota de pedido de mesa aceita menuProductId de outra loja.
+        const alterados = await tx.stockItem.updateMany({
+          where: { id: stockItemId, franchiseeId: order.franchiseeId },
+          data: { quantity: { decrement: amountToDeduct } },
+        });
+        if (alterados.count === 0) {
+          // Insumo de outra loja (ou apagado entre ler e gravar): aborta tudo,
+          // em vez de deixar a movimentação registrada sem saldo correspondente.
+          throw new Error(`INSUMO_FORA_DA_LOJA:${stockItemId}`);
+        }
+        const saldoDepois = (await tx.stockItem.findUnique({
+          where: { id: stockItemId },
+          select: { id: true, name: true, quantity: true, unit: true },
+        }))!;
+
+        // Saldo negativo não trava a venda: quando a baixa roda o pedido já foi
+        // aceito e a comida está com o cliente — abortar aqui só produziria um
+        // pedido cobrado sem baixa nenhuma. Mas negativo significa que a ficha
+        // técnica consumiu insumo que o sistema não tinha (quase sempre nota de
+        // entrada esquecida), e até agora isso passava mudo até o inventário.
+        // Fica uma linha por insumo, com o pedido e o saldo que sobrou.
+        insumosBaixados.add(stockItemId);
+        lojaDaBaixa = order.franchiseeId;
+
+        if (saldoDepois.quantity < 0) {
+          saldosNegativos.push({
+            insumoId: saldoDepois.id,
+            insumo: saldoDepois.name,
+            saldo: saldoDepois.quantity,
+            unidade: saldoDepois.unit,
+          });
+        }
+
+        deducted = true;
       }
 
       return { skipped: false, deducted };
