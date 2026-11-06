@@ -243,7 +243,7 @@ async function main() {
   await processarEventoKeeta(ev("1001", "DISPATCHED"));
   confere("DISPATCHED atrasado não volta o pedido", p1?.status, "ENTREGUE");
   await processarEventoKeeta(ev("4001", "CONFIRMED"));
-  confere("CONFIRMED (eco do nosso confirm) não muda o status escolhido pela loja", p4?.status, "NOVO");
+  confere("CONFIRMED (aceito no Portal da Keeta) tira de Novos: ACEITO", p4?.status, "ACEITO");
 
   // 11. Cancelado pela Keeta
   await processarEventoKeeta(ev("4001", "CANCELLED", { cancelReason: "Preparo dos alimentos demorado", cancelType: 505001 }));

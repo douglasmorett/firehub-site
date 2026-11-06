@@ -248,8 +248,8 @@ export async function processarEventoKeeta(
   }
 
   // Eventos que nós mesmos geramos ou que são só informativos.
-  if (["CANCELLATION_REQUESTED", "CONFIRMED", "PICKUP_ONGOING", "RIDER_ARRIVED_AT_STORE", "RECOMMENDED_PREPARATION_START", "PICKED_UP"].includes(tipo)) {
-    if (!existente && tipo === "CONFIRMED") return importarPedido(evento, opts.merchantDoCabecalho);
+  if (!existente && tipo === "CONFIRMED") return importarPedido(evento, opts.merchantDoCabecalho);
+  if (["CANCELLATION_REQUESTED", "PICKUP_ONGOING", "RIDER_ARRIVED_AT_STORE", "RECOMMENDED_PREPARATION_START", "PICKED_UP"].includes(tipo)) {
     return { confirmar: true, acao: "informativo" };
   }
 
@@ -259,8 +259,12 @@ export async function processarEventoKeeta(
 
   // ── Avanço de status vindo da Keeta (só para frente) ─────────────────────
   const entregadorDaKeeta = String(existente.deliveryBy || "").toUpperCase() === "LOGISTICS";
+  // CONFIRMED: aceito no Portal/app da Keeta (aceite automático desligado) —
+  // o pedido sai de Novos. Eco do nosso confirm não muda nada: já está ACEITO
+  // ou adiante e a régua abaixo só anda para frente (06/11/2026).
   const alvo =
-    tipo === "READY_FOR_PICKUP" ? "PRONTO"
+    tipo === "CONFIRMED" ? "ACEITO"
+    : tipo === "READY_FOR_PICKUP" ? "PRONTO"
     : tipo === "DISPATCHED" ? "SAIU_ENTREGA"
     : tipo === "ORDER_COLLECTED" && entregadorDaKeeta ? "SAIU_ENTREGA"
     : tipo === "DELIVERED" || tipo === "CONCLUDED" ? "ENTREGUE"
