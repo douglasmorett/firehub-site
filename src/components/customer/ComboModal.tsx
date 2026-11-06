@@ -146,7 +146,7 @@ interface ComboModalProps {
   inicial?: { selections?: Selections; qty?: number; notes?: string };
   /** Texto do botão de confirmar, quando não é a sacola ("Trocar o item"). */
   rotuloDoBotao?: string;
-  /** Campo de busca nas perguntas com 10+ opções (a tela da mesa). */
+  /** Campo de busca nas perguntas com 10+ opções (as telas da mesa e do balcão). */
   buscaNasOpcoes?: boolean;
 }
 
