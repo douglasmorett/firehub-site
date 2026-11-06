@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { orderByCardapio, podeOrdenarProdutos } from "@/lib/menu-order";
 import { prisma } from "@/lib/prisma";
@@ -16,6 +16,7 @@ import { comEstoqueAnotado, estoqueDaLojaOuVazio } from "@/lib/estoque-restante"
 import { refazerMeiasDaLoja } from "@/lib/meio-a-meio-no-banco";
 import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
 import { esquecerPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
+import { avisarKeetaDaPausa, avisarKeetaDoCardapio } from "@/lib/keeta/cardapio";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -595,6 +596,9 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  // Produto novo na loja ligada na Keeta: ela relê o cardápio (lib/keeta/cardapio.ts).
+  after(() => avisarKeetaDoCardapio(franchiseeId).catch((e) => console.error("[Keeta] aviso do cardápio:", e?.message || e)));
+
   return NextResponse.json(product);
 }
 
@@ -705,6 +709,15 @@ export async function PUT(req: NextRequest) {
     );
   }
 
+  // Loja ligada na Keeta (lib/keeta/cardapio.ts): pausar/reativar vai só com o
+  // status; qualquer outra mudança faz a Keeta reler o cardápio. Depois da
+  // resposta — a Keeta lenta não segura o salvar do lojista.
+  const lojaDoProduto = existing.franchiseeId;
+  if (lojaDoProduto) {
+    const soPausa = typeof updateData.active === "boolean" && comboGroups === undefined && Object.keys(updateData).every((k) => k === "active") && meiasJuntas === 0;
+    after(() => (soPausa ? avisarKeetaDaPausa(lojaDoProduto, [id]) : avisarKeetaDoCardapio(lojaDoProduto)).catch((e) => console.error("[Keeta] aviso do cardápio:", e?.message || e)));
+  }
+
   return NextResponse.json(meiasJuntas > 0 ? { ...product, meiasJuntas } : product);
 }
 
@@ -725,6 +738,10 @@ export async function DELETE(req: NextRequest) {
   if (!canTouch(scope, existing.franchiseeId)) {
     return NextResponse.json({ error: "Sem permissão para excluir este produto" }, { status: 403 });
   }
+
+  // Excluído na loja ligada na Keeta: ela relê o cardápio (lib/keeta/cardapio.ts).
+  const lojaDoProduto = existing.franchiseeId;
+  if (lojaDoProduto) after(() => avisarKeetaDoCardapio(lojaDoProduto).catch((e) => console.error("[Keeta] aviso do cardápio:", e?.message || e)));
 
   try {
     // 1. Remover o item dos combos DA PRÓPRIA LOJA em que ele estiver vinculado.

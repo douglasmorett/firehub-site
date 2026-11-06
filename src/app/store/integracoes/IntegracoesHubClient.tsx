@@ -166,7 +166,7 @@ export default function IntegracoesHubClient({
     showToast("Keeta desconectada.", "#475569");
   };
   // A loja do lado da Keeta: só quando o lojista clica (lib/keeta/loja-na-keeta.ts).
-  const acaoNaLojaKeeta = async (acao: "abrir" | "pausar" | "enviar-horario" | "enviar-contato", feito: string) => {
+  const acaoNaLojaKeeta = async (acao: "abrir" | "pausar" | "enviar-horario" | "enviar-contato" | "enviar-cardapio", feito: string) => {
     if (acao === "pausar" && !window.confirm("Pausar a loja na Keeta? Ela some do app da Keeta até você abrir de novo aqui ou no portal da Keeta.")) return;
     setKt((k) => ({ ...k, salvando: true, erro: "" }));
     try {
@@ -3194,7 +3194,7 @@ export default function IntegracoesHubClient({
                       {kt.naKeeta?.status === "AVAILABLE" ? "🟢 aberta" : kt.naKeeta?.status === "UNAVAILABLE" ? "⏸️ pausada" : "status indisponível"}
                     </div>
                     <div style={{ fontSize: "0.75rem", color: "#64748B", marginBottom: 10, lineHeight: 1.5 }}>
-                      O horário e a pausa do FireHub não mudam a Keeta sozinhos. Use os botões quando quiser mandar.
+                      O horário e a pausa da LOJA no FireHub não mudam a Keeta sozinhos. Use os botões quando quiser mandar. O CARDÁPIO é o do FireHub: envie pelo botão; depois cada produto salvo, pausado ou reativado aqui muda na Keeta sozinho.
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                       {kt.naKeeta?.status === "UNAVAILABLE" ? (
@@ -3208,6 +3208,9 @@ export default function IntegracoesHubClient({
                       )}
                       <button disabled={kt.salvando} onClick={() => acaoNaLojaKeeta("enviar-horario", "✅ Horário do FireHub enviado para a Keeta.")} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#0F172A", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}>
                         Enviar horário do FireHub
+                      </button>
+                      <button disabled={kt.salvando} onClick={() => acaoNaLojaKeeta("enviar-cardapio", "✅ Cardápio enviado. A Keeta leva alguns minutos para mostrar.")} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #99F6E4", background: "#F0FDFA", color: "#0F766E", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}>
+                        Enviar cardápio para a Keeta
                       </button>
                       <button disabled={kt.salvando} onClick={() => acaoNaLojaKeeta("enviar-contato", "✅ Telefone e e-mail enviados para a Keeta.")} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #E2E8F0", background: "#fff", color: "#0F172A", fontWeight: 800, fontSize: "0.78rem", cursor: "pointer" }}>
                         Enviar telefone e e-mail

@@ -14,6 +14,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { onboardingDaLoja, lojasAutorizadas } from "./api";
 import { gravarVinculo, desligarVinculo, type LojaKeeta } from "./lojas";
+import { urlDoCardapio } from "./cardapio";
 
 export function urlBaseDoFireHub(host?: string | null): string {
   return (process.env.NEXTAUTH_URL || process.env.NEXT_PUBLIC_APP_URL || (host ? `https://${host}` : "https://firehubfood.com.br")).replace(/\/+$/, "");
@@ -32,7 +33,7 @@ export async function vincularLojaNaKeeta(params: {
   // apaga o onboarding, e o polling da loja passa a voltar 400 "register store
   // info first" — pedido nenhum entra (loja de teste, 31/10/2026).
   if (v.novo || v.reativado) {
-    const r = await onboardingDaLoja(v.loja!.merchantId, params.keetaMerchantId, `${params.urlBase}/api/keeta/webhook`);
+    const r = await onboardingDaLoja(v.loja!.merchantId, params.keetaMerchantId, `${params.urlBase}/api/keeta/webhook`, urlDoCardapio(params.urlBase, v.loja!.merchantId));
     if (!r.ok) {
       await desligarVinculo({ franchiseeId: params.lojaId });
       return { ok: false, motivo: `A Keeta recusou o registro da loja: ${r.erro}` };
