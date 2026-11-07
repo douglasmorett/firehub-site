@@ -50,7 +50,7 @@ export type GrupoDoRecurso = "Canais de venda" | "Operação" | "Gestão" | "Cli
 export type ChaveDoRecurso =
   | "cardapio" | "robo" | "ifood" | "food99" | "outrosMarketplaces" | "balcao" | "mesas" | "totem" | "appDaLoja" | "pagamentoOnline"
   | "kds" | "impressao" | "motoboys" | "appDoEntregador" | "contingencia" | "balanca"
-  | "caixa" | "financeiro" | "estoque" | "fiscal" | "bill" | "firecheck"
+  | "caixa" | "financeiro" | "estoque" | "fiscal" | "bill" | "firecheck" | "cotacao"
   | "fidelidade" | "cupons" | "disparo" | "trafego" | "multimarcas" | "avaliacoes";
 
 export type RecursoDoPerfil = {
@@ -159,6 +159,7 @@ export type SinaisDaLoja = {
   trafego: { ativo: boolean; valorMensal: number | null; campanhasAtivas: number };
   multimarcas: { ativo: boolean; valorMensal: number | null };
   balanca: { ativo: boolean; valorMensal: number | null };
+  cotacao: { ativo: boolean; valorMensal: number | null };
   disparo: { conectado: boolean; campanhas30: number; saldo: number | null };
   pagamentoOnlineLigado: boolean;
   acompanhamentoIfood: boolean;
@@ -614,6 +615,12 @@ export function recursosDaLoja(s: SinaisDaLoja, agora: Date): RecursoDoPerfil[] 
     estado: s.balanca.ativo ? "LIGADO" : "NUNCA",
     evidencia: s.balanca.ativo ? "Módulo Balança contratado." : "Não contratou.",
     pago: { contratado: s.balanca.ativo, valorMensal: s.balanca.valorMensal },
+  });
+  add({
+    chave: "cotacao", nome: "Cotação automática (fornecedores)", grupo: "Gestão",
+    estado: s.cotacao.ativo ? "LIGADO" : "NUNCA",
+    evidencia: s.cotacao.ativo ? "Módulo Cotação automática contratado." : "Não contratou.",
+    pago: { contratado: s.cotacao.ativo, valorMensal: s.cotacao.valorMensal },
   });
   add({
     chave: "multimarcas", nome: "Multimarcas", grupo: "Clientes e marketing",

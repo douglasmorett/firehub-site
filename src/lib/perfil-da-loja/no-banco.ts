@@ -35,6 +35,7 @@ import { PRECO_DO_ASSESSOR } from "@/lib/assessor/assinatura";
 import { PRECOS_DO_APP } from "@/lib/app-da-loja/plano";
 import { PRECO_DO_MULTIMARCAS } from "@/lib/multimarcas/preco";
 import { PRECO_DA_BALANCA } from "@/lib/balanca/preco";
+import { PRECO_DA_COTACAO } from "@/lib/cotacao/preco";
 import {
   montarPerfil, resumirPerfil,
   type JanelaDeVendas, type PerfilDaLoja, type PrecosDeTabela, type ResumoDoPerfil, type SinaisDaLoja, type VendasDoCanal,
@@ -169,7 +170,7 @@ async function contagensDasLojas(ids: string[], desde: Date, agora: Date) {
     produtos, categorias, respostas, ia, conversas, keeta, cardapioweb, mesas, garcons, motoboys, aparelhosMotoboy,
     contingencia, episodios, caixas, contas, notas, despesas, estoque, fichas, movEstoque, descartes, clientes, avaliacoes,
     billAss, billUso, appPlano, appPedidos, appAparelhos, totens, campanhasMeta, multimarcas, whatsOficial, campanhasDisparo,
-    acompanhamento, lojasNaConta, garcomLogin, termos, balanca,
+    acompanhamento, lojasNaConta, garcomLogin, termos, balanca, cotacao,
   ] = await Promise.all([
     // Cardápio de verdade: ativo e fora das categorias de integração (o espelho do iFood/99/Keeta — lib/cardapio-interno.ts).
     c<Contagem>("produtos", () => prisma.$queryRaw`SELECT "franchiseeId" AS id, count(*)::int AS n FROM "MenuProduct"
@@ -226,13 +227,16 @@ async function contagensDasLojas(ids: string[], desde: Date, agora: Date) {
     c<{ id: string; valor: number | null }>("Balança", () => prisma.$queryRaw`SELECT a."franchiseeId" AS id,
         (SELECT max((t->>'valor')::numeric)::float FROM jsonb_array_elements(CASE WHEN jsonb_typeof(a.trechos::jsonb) = 'array' THEN a.trechos::jsonb ELSE '[]'::jsonb END) t WHERE (t->>'ate') IS NULL) AS valor
       FROM "BalancaAssinatura" a WHERE a."franchiseeId" = ANY(${ids}) AND a.ativo = true`),
+    c<{ id: string; valor: number | null }>("Cotação", () => prisma.$queryRaw`SELECT a."franchiseeId" AS id,
+        (SELECT max((t->>'valor')::numeric)::float FROM jsonb_array_elements(CASE WHEN jsonb_typeof(a.trechos::jsonb) = 'array' THEN a.trechos::jsonb ELSE '[]'::jsonb END) t WHERE (t->>'ate') IS NULL) AS valor
+      FROM "CotacaoAssinatura" a WHERE a."franchiseeId" = ANY(${ids}) AND a.ativo = true`),
   ]);
   void agora;
   return {
     produtos, categorias, respostas, ia, conversas, keeta, cardapioweb, mesas, garcons, motoboys, aparelhosMotoboy,
     contingencia, episodios, caixas, contas, notas, despesas, estoque, fichas, movEstoque, descartes, clientes, avaliacoes,
     billAss, billUso, appPlano, appPedidos, appAparelhos, totens, campanhasMeta, multimarcas, whatsOficial, campanhasDisparo,
-    acompanhamento, lojasNaConta, garcomLogin, termos, balanca,
+    acompanhamento, lojasNaConta, garcomLogin, termos, balanca, cotacao,
   };
 }
 
@@ -335,6 +339,7 @@ export async function sinaisDasLojas(ids: string[], agora = new Date()): Promise
     const app = aux.appPlano.get(id);
     const mm = aux.multimarcas.get(id);
     const bal = aux.balanca.get(id);
+    const cot = aux.cotacao.get(id);
     const totem = n(aux.totens, id);
     return {
       id,
@@ -411,6 +416,7 @@ export async function sinaisDasLojas(ids: string[], agora = new Date()): Promise
       },
       multimarcas: { ativo: !!mm, valorMensal: mm ? (mm.valor ?? PRECO_DO_MULTIMARCAS) : null },
       balanca: { ativo: !!bal, valorMensal: bal ? (bal.valor ?? PRECO_DA_BALANCA) : null },
+      cotacao: { ativo: !!cot, valorMensal: cot ? (cot.valor ?? PRECO_DA_COTACAO) : null },
       disparo: { conectado: n(aux.whatsOficial, id) > 0, campanhas30: n(aux.campanhasDisparo, id), saldo: null },
       pagamentoOnlineLigado: !!l.pagamento_online,
       acompanhamentoIfood: n(aux.acompanhamento, id) > 0,

@@ -271,6 +271,16 @@ const jobs = [
     intervalMs: 60_000, // 1 minuto
   },
   {
+    // Cotacao automatica (src/lib/cotacao): no horario que a loja marcou, pede
+    // os precos aos fornecedores pelo WhatsApp dela, manda o resumo ao
+    // comprador e solta a fila espacada (~45 s por rodada). Exclusivo: a fila
+    // que ainda esta mandando nao ganha outra por cima.
+    name: 'cotacao',
+    path: '/api/cron/cotacao',
+    intervalMs: 60_000, // 1 minuto
+    exclusivo: true,
+  },
+  {
     // A cada 5 minutos porque atraso pede reacao rapida — e quem segura a
     // repeticao e a propria rota: um aviso por PEDIDO a cada hora.
     name: 'pedidos-atrasados',

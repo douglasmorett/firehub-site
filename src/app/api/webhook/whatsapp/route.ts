@@ -874,6 +874,48 @@ async function handleIncomingMessage(body: any, instance: string, chave: ReturnT
   // já que "não respondeu" tem causas diferentes nos dois casos.
   const tipoTrace: "texto" | "audio" = (isAudioMessage || audioObj) ? "audio" : "texto";
 
+  // ── FORNECEDOR DA COTAÇÃO AUTOMÁTICA ─────────────────────────────────────
+  // O número é de um fornecedor cadastrado desta loja e a cotação está ligada
+  // (lib/cotacao/do-fornecedor.ts): a tabela de preços, o encarte, o PDF ou o
+  // áudio dele vão para a cotação, não para o robô de cliente — que ofereceria
+  // cardápio ao atacadista. Fica antes do "robô desligado" e da lista de
+  // números ignorados de propósito: o lojista costuma pôr o fornecedor ali
+  // justamente para o robô não responder, e a cotação tem de ler mesmo assim.
+  // Equipe do FireHub e dono da loja nunca passam por aqui (o dono continua dono).
+  {
+    const telefoneDeQuemEscreveu = (remoteJid || data.from || "").split("@")[0].replace(/\D/g, "");
+    if (
+      telefoneDeQuemEscreveu.length >= 10 &&
+      !numeroDaEquipeDoFireHub(telefoneDeQuemEscreveu) &&
+      !ehNumeroDoDono((user as any).notificationPhone, (user as any).chatbotConfig, telefoneDeQuemEscreveu)
+    ) {
+      const documento = conteudo.documentMessage || conteudo.documentWithCaptionMessage?.message?.documentMessage || null;
+      const { desviarSeForFornecedor } = await import("@/lib/cotacao/do-fornecedor");
+      const desviou = await desviarSeForFornecedor({
+        franchiseeId: user.id,
+        telefone: telefoneDeQuemEscreveu,
+        texto: rawText || documento?.caption || "",
+        audio: audioData || null,
+        imagem: imagemData || null,
+        documento: documento
+          ? {
+              mimeType: String(documento.mimetype || "application/octet-stream").split(";")[0].trim(),
+              nome: documento.fileName || null,
+              base64: documento.base64 || null,
+              baixar: async () => {
+                const { getEvolutionAudioBase64 } = await import("@/lib/whatsapp-evolution");
+                return getEvolutionAudioBase64(instance || user.id, key, data).catch(() => null);
+              },
+            }
+          : null,
+      });
+      if (desviou) {
+        registrarTrace({ instancia: instance, telefone: mascararTelefone(remoteJid), tipo: tipoTrace, estagio: "fornecedor-cotacao" });
+        return;
+      }
+    }
+  }
+
   // ── REAÇÃO E CORAÇÃOZINHO NUM STATUS DA LOJA: SILÊNCIO ───────────────────
   // O cliente reagia a um status e ouvia "vamos fechar o lanche hoje?" (via
   // Victor, 06/11/2026). Reação não é conversa; status com texto segue, com o
