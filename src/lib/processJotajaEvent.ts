@@ -25,6 +25,7 @@ import {
 } from "@/lib/jotaja-loja";
 import { ligadoEmDaLoja } from "@/lib/jotaja-api";
 import { aplicarEventoSemAssinatura, estadoDoLastEvent, type Pretendido } from "@/lib/evento-sem-assinatura";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 
 export interface JotajaEvent {
   id?: string;
@@ -877,8 +878,9 @@ export async function processJotajaEvent(
       // causando duplicatas massivas (7x por pedido). Cada pedido Jotajá deve existir
       // APENAS UMA VEZ, vinculado ao franchisee principal (contatohakim@gmail.com).
 
-      // Auto-confirmar pedidos PLACED
-      if (isPlaced) {
+      // Auto-confirmar pedidos PLACED — só com o aceite automático ligado;
+      // desligado, confirma o Aceitar do painel (api/customer-order/status).
+      if (isPlaced && (await aceitaSozinhoAgora(franchisee))) {
         try {
           await jotajaMutate(`/v1/orders/${orderId}/confirm`, { method: "POST" });
         } catch { /* não crítico */ }

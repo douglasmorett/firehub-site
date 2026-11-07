@@ -34,6 +34,7 @@ import { brendiFetch, confirmarPedidoBrendi } from "@/lib/brendi-api";
 import { extrairOpcoesDoItem, valorOpenDelivery } from "@/lib/opcoes-open-delivery";
 import { corrigirNomeDoEspelho } from "@/lib/espelho-do-parceiro";
 import { aplicarEventoSemAssinatura, estadoDoLastEvent, type Pretendido } from "@/lib/evento-sem-assinatura";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 
 export interface BrendiEvent {
   id?: string;
@@ -1406,7 +1407,10 @@ export async function processBrendiEvent(
       // pedido não confirmado dentro do SLA deles. Falha aqui não é crítica:
       // o Auto-aceitar do dashboard (NOVO→ACEITO via PUT /status) propaga o
       // confirm de novo pelo sincronizarBrendi.
-      if (isCreated) {
+      //
+      // Só com o aceite automático ligado: desligado, o pedido espera em Novos
+      // e o Aceitar do painel confirma na Brendi.
+      if (isCreated && (await aceitaSozinhoAgora(franchisee))) {
         try {
           await confirmarPedidoBrendi(orderId, franchisee.id);
         } catch { /* não crítico */ }

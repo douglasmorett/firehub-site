@@ -23,6 +23,7 @@ import { sobDemandaJaVinculado, vincularSobDemanda } from "./ifood-sob-demanda";
 import { montarItensDoPedidoIfood } from "./ifood-itens";
 import { coordenadasDoIfood } from "@/lib/ifood-coordenadas";
 import { pontoEDistanciaDoParceiro } from "@/lib/distancia-da-entrega";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 
 /** merchantId do iFood → conta da loja no FireHub (5 min; o vínculo quase nunca muda). */
 const lojaDoMerchant = new Map<string, { lojaId: string | null; ate: number }>();
@@ -770,7 +771,11 @@ export async function processarEventosIfood(opts: {
           // confirmado pela loja" (Frangoso/Salzburg 0154, 31/10/2026; 0968 e
           // 2496 em 20 e 24/10). Agora tenta 3 vezes com este token e, se ainda
           // falhar, pela cascata de credenciais da loja (lib/ifood-pedido.ts).
-          if (isPlaced && recente) {
+          // E só com o aceite automático ligado (lib/loja-sem-conexao-no-banco,
+          // `aceitaSozinhoAgora`): desligado, o pedido espera em Novos e quem
+          // confirma no iFood é o Aceitar do painel.
+          const aceitaSozinho = isPlaced && recente && (await aceitaSozinhoAgora(eventFranchisee));
+          if (aceitaSozinho) {
             let confirmado = false;
             let ultimo = "";
             for (let tentativa = 1; tentativa <= 3 && !confirmado; tentativa++) {
@@ -803,8 +808,10 @@ export async function processarEventosIfood(opts: {
               console.error(`[iFood] ❌ Confirm FALHOU para ${orderId} (loja ${eventFranchisee.id}): ${ultimo}`);
               log.push(`  ❌ Confirm FALHOU: ${orderId} (${ultimo})`);
             }
-          } else if (isPlaced) {
+          } else if (isPlaced && !recente) {
             log.push(`  ⏭️ Não auto-confirmado (evento de ${Math.round(idadeMs / 60000)} min atrás): ${orderId}`);
+          } else if (isPlaced) {
+            log.push(`  ⏸️ Aceite automático desligado — espera o Aceitar do painel: ${orderId}`);
           }
         } else {
           // Update existing order status

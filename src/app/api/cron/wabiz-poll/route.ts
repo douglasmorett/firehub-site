@@ -122,16 +122,22 @@ export async function GET(req: NextRequest) {
 
       // Confirma com o status que o pedido TEM agora: se a loja já adiantou (ou
       // cancelou) antes de a confirmação passar, mandar "2" seria voltar atrás.
-      const alvo = statusWabizDoFireHub(r.status || "", null) ?? WABIZ_STATUS.CONFIRMADO;
+      // Pedido em Novos (aceite automático desligado) vai como RECEBIDO e não
+      // confirmado — status 1 com isProcessed, sem avisar o cliente; o
+      // Aceitar do painel manda o "2" (lib/wabiz-status.ts).
+      const emNovos = String(r.status || "").toUpperCase() === "NOVO";
+      const alvo = emNovos
+        ? WABIZ_STATUS.NAO_CONFIRMADO
+        : statusWabizDoFireHub(r.status || "", null) ?? WABIZ_STATUS.CONFIRMADO;
       const c = await mudarStatusWabiz(
         storeId,
         { orderNumber: p.orderNumber, internalKey: p.internalKey },
-        alvo === WABIZ_STATUS.NAO_CONFIRMADO ? WABIZ_STATUS.CONFIRMADO : alvo,
-        { notificar: alvo !== WABIZ_STATUS.FINALIZADO, processado: true }
+        alvo,
+        { notificar: !emNovos && alvo !== WABIZ_STATUS.FINALIZADO, processado: true }
       );
       if (c.ok) {
         confirmados++;
-        log.push(`  ✅ #${p.orderNumber} ${r.action === "created" ? "gravado" : "já existia"} e confirmado (status ${alvo})`);
+        log.push(`  ✅ #${p.orderNumber} ${r.action === "created" ? "gravado" : "já existia"} e ${emNovos ? "recebido, esperando o Aceitar" : "confirmado"} (status ${alvo})`);
       } else {
         falhas++;
         log.push(`  ⚠️ #${p.orderNumber} gravado, mas a confirmação falhou — tenta de novo no próximo ciclo: ${c.erro}`);

@@ -17,6 +17,7 @@ import { SELECT_TROCO_NO_PIX } from "@/lib/troco-no-pix";
 import { lembrarPor } from "@/lib/cache-curto";
 import { liberadaPara } from "@/lib/roteirizacao-automatica/liberacao";
 import { nadaMudouDesde, PRAZO_MS } from "@/lib/novidade-da-loja";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 
 /**
  * Configuração relida a cada rodada deste feed (o usuário do e-mail, se a loja
@@ -624,8 +625,9 @@ async function pollIfoodEvents(sessionUserId?: string) {
               console.error(`[iFood Poll] Não consegui disparar a baixa de ${orderId}:`, e?.message);
             }
 
-            // Auto-confirm to iFood se ainda é PLACED
-            if (isPlaced) {
+            // Auto-confirm to iFood se ainda é PLACED — e só com o aceite
+            // automático ligado; desligado, confirma o Aceitar do painel.
+            if (isPlaced && (await aceitaSozinhoAgora(eventFranchisee))) {
               await fetch(
                 `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/confirm`,
                 { method: "POST", headers: { Authorization: `Bearer ${token}` } }

@@ -161,13 +161,34 @@ export async function lojaEmQueda(lojaId: string | null | undefined): Promise<bo
 
 /**
  * O aceite automático que vale AGORA para o pedido que chega de um canal que
- * o FireHub não consegue pausar (99Food, Keeta, Wabiz). Com a loja em queda,
+ * o FireHub não consegue pausar (99Food, Keeta, Wabiz). E a regra de TODA
+ * integração para confirmar o pedido na plataforma sozinha: só com o aceite
+ * automático ligado (ou a coluna Novos escondida). Desligado, quem confirma é
+ * o Aceitar do painel — confirmar lá sem a loja ter visto é dizer ao cliente
+ * que o pedido está sendo feito (Douglas, 06/11/2026). Com a loja em queda,
  * o pedido nasce NOVO em vez de ACEITO: aceito sozinho, ele esperaria numa
  * loja que não o vê. NOVO, ele toca no painel quando a loja voltar — ou o
  * canal cancela no prazo dele e avisa o cliente, o que é melhor do que o
  * cliente esperar um pedido que ninguém está fazendo.
  */
-export async function aceitaSozinhoAgora(loja: { id: string; autoAcceptOrders?: boolean | null }): Promise<boolean> {
-  if (!loja.autoAcceptOrders) return false;
+export async function aceitaSozinhoAgora(loja: {
+  id: string;
+  autoAcceptOrders?: boolean | null;
+  painelPedidosConfig?: unknown;
+}): Promise<boolean> {
+  let { autoAcceptOrders, painelPedidosConfig } = loja;
+  // Quem chama sem os campos (select enxuto) paga uma leitura — campo ausente
+  // não pode virar "aceite desligado" e parar de confirmar em silêncio.
+  if (autoAcceptOrders === undefined || painelPedidosConfig === undefined) {
+    const lida = await prisma.user
+      .findUnique({ where: { id: loja.id }, select: { autoAcceptOrders: true, painelPedidosConfig: true } })
+      .catch(() => null);
+    if (autoAcceptOrders === undefined) autoAcceptOrders = lida?.autoAcceptOrders;
+    if (painelPedidosConfig === undefined) painelPedidosConfig = lida?.painelPedidosConfig;
+  }
+  // Coluna Novos escondida: não há onde o pedido esperar o Aceitar, e o painel
+  // aceita sozinho (StoreOrdersDashboard, `aceiteObrigatorio`). Mesma regra aqui.
+  const semColunaNovos = (painelPedidosConfig as Record<string, unknown> | null)?.colunaNovos === false;
+  if (!autoAcceptOrders && !semColunaNovos) return false;
   return !(await lojaEmQueda(loja.id));
 }
