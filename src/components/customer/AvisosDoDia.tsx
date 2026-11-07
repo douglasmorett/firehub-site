@@ -29,6 +29,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PALETA } from "@/lib/paleta-brasa";
 import type { AvisoDeCancelamento, AvisoDeCancelamentoParcial, AvisoDeDisputa } from "@/lib/avisos-do-dia";
+import { somDesligado } from "@/lib/som-do-painel";
 
 const INTERVALO_DA_CONSULTA = 8000;
 const INTERVALO_COM_A_ABA_ESCONDIDA = 20_000;
@@ -139,6 +140,7 @@ export default function AvisosDoDia() {
 
   /** Três notas DESCENDO, duas vezes: o "desfaz" do cancelamento. */
   const somDeCancelamento = useCallback(() => {
+    if (somDesligado()) return;
     const ctx = ctxRef.current;
     if (!ctx || ctx.state !== "running") return;
     const t = ctx.currentTime + 0.05;
@@ -149,6 +151,7 @@ export default function AvisosDoDia() {
 
   /** Duas notas ALTERNANDO, como sirene: a disputa tem prazo. */
   const somDeDisputa = useCallback(() => {
+    if (somDesligado()) return;
     const ctx = ctxRef.current;
     if (!ctx || ctx.state !== "running") return;
     const t = ctx.currentTime + 0.05;

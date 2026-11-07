@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { isBeverageItem, isBeverageName } from "@/lib/beverage";
 import { nomeDoItem, nomeDoItemParaComanda } from "@/lib/nome-do-item";
 import { parseComboSelections, safeParseCombo } from "@/lib/parse-combo";
-import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil, Volume2, UtensilsCrossed, Bike, Receipt } from "lucide-react";
+import { Clock, MapPin, Phone, User, ChevronDown, ChevronUp, Search, ShoppingBag, ExternalLink, Settings, Store, Package, Bell, ToggleLeft, ToggleRight, GripVertical, Zap, ZapOff, Timer, CalendarClock, Printer, Copy, MessageCircle, FileText, Pencil, Volume2, VolumeX, UtensilsCrossed, Bike, Receipt } from "lucide-react";
 import RoteirizacaoModal from "@/components/customer/RoteirizacaoModal";
 import PessoasNoSiteAgora from "@/components/customer/PessoasNoSiteAgora";
 import { useLinhasEquilibradas } from "@/components/customer/useLinhasEquilibradas";
@@ -75,6 +75,7 @@ import { lerConfigDeAgendamento, textoDoAgendamento, type ConfigDeAgendamento } 
 import { motivoValido, MENSAGEM_SEM_MOTIVO, SUGESTOES_DE_MOTIVO } from "@/lib/motivo-do-cancelamento";
 import { copiarTexto, origemParaLinkDeFora } from "@/lib/copiar-texto";
 import { motoboysDosPedidos } from "@/lib/motoboys-do-pedido";
+import { somDesligado, gravarSomDesligado } from "@/lib/som-do-painel";
 
 const BOTAO_ACAO: React.CSSProperties = {
   padding: "5px 14px", borderRadius: "8px", border: "none",
@@ -1514,6 +1515,12 @@ const DashboardOrderCard = memo(function DashboardOrderCard({
             )}
             {order.status === "NOVO" && (
               <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "ACEITO"); }} style={BOTAO_ACAO}>Aceitar</button>
+            )}
+            {/* Rejeitar ao lado do Aceitar: antes só arrastando para Cancelado.
+                Abre o cancelamento de sempre (motivo + senha do gerente), que
+                avisa a plataforma do pedido. */}
+            {order.status === "NOVO" && onOpenCancelModal && (
+              <button disabled={isLoading} onClick={e => { e.stopPropagation(); onOpenCancelModal(order.id); }} style={{ ...BOTAO_ACAO, background: "#fff", color: PALETA.marca, border: `1.5px solid ${PALETA.marca}`, boxShadow: "none" }}>Rejeitar</button>
             )}
             {(order.status === "ACEITO" || order.status === "PREPARANDO") && order.deliveryType === "DELIVERY" && (
               <button disabled={isLoading} onClick={e => { e.stopPropagation(); onUpdateStatus && onUpdateStatus(order.id, "SAIU_ENTREGA"); }} style={BOTAO_ACAO}>Saiu</button>
@@ -3293,6 +3300,9 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   if (!cargaDaPaginaRef.current) cargaDaPaginaRef.current = `carga-${Date.now()}`;
   const audioCtxRef = useRef<AudioContext | null>(null);
   const [somBloqueado, setSomBloqueado] = useState(false);
+  // Som do painel desligado NESTE computador (lib/som-do-painel.ts).
+  const [somOff, setSomOff] = useState(false);
+  useEffect(() => { setSomOff(somDesligado()); }, []);
   const somNaoVerMais = useNaoVerMais("som-bloqueado", cargaDaPaginaRef.current);
   useEffect(() => {
     let ctx: AudioContext;
@@ -3347,6 +3357,7 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
   }, []);
 
   const playOrderChime = useCallback(async () => {
+    if (somDesligado()) return;
     try {
       const ctx = await audioPronto();
       if (!ctx) return;
@@ -6995,17 +7006,29 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
             <button
               type="button"
               className="bp-som"
-              onClick={testarSom}
+              onClick={() => {
+                // Liga/desliga o som neste computador. Ao ligar, toca o teste:
+                // é o mesmo clique que responde "por que não apitou?".
+                if (somOff) {
+                  gravarSomDesligado(false);
+                  setSomOff(false);
+                  testarSom();
+                } else {
+                  gravarSomDesligado(true);
+                  setSomOff(true);
+                  showToast("🔇 Som do painel desligado neste computador. Clique de novo para ligar.", "#1C1917");
+                }
+              }}
               style={{
                 alignSelf: "flex-end", height: "30px", padding: "0 9px", borderRadius: "8px",
-                border: somBloqueado ? "1.5px solid #B71C1C" : "1.5px solid #CBD5E1",
-                background: somBloqueado ? "#FEE2E2" : "#F8FAFC",
-                color: somBloqueado ? "#B71C1C" : "#475569",
-                cursor: "pointer", display: "flex", alignItems: "center", fontFamily: "inherit",
+                border: somOff || somBloqueado ? "1.5px solid #B71C1C" : "1.5px solid #CBD5E1",
+                background: somOff || somBloqueado ? "#FEE2E2" : "#F8FAFC",
+                color: somOff || somBloqueado ? "#B71C1C" : "#475569",
+                cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontFamily: "inherit", fontSize: "0.72rem", fontWeight: 800,
               }}
-              title="Testar o som de pedido novo"
+              title={somOff ? "Som desligado neste computador — clique para ligar" : "Som ligado — clique para desligar neste computador"}
             >
-              <Volume2 size={15} />
+              {somOff ? <><VolumeX size={15} /> Sem som</> : <Volume2 size={15} />}
             </button>
 
             <button
