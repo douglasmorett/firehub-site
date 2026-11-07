@@ -278,6 +278,22 @@ confere("item sem menuProduct não explode", categoriaResolvida({ productName: "
     categoriaResolvida(combo("Pizza 1/2 Moda do Chefe + 1/2 Moda do Chefe + 1/2 Portuguesa | Coca Cola Zero 1,5l", ["Coca Cola Zero 1,5l"]), semPizzaDoChefe),
     "Pizzas Tradicionais",
   );
+  // NIK, 06/11/2026: a pizza real se chama só "Calabacon Cremoso", e "Frango
+  // Especial" existe como pizza E como esfiha. A meia ia para a tela da esfiha.
+  const saborSemPizza = montarMapa([
+    { id: "p7", name: "Calabacon Cremoso", category: "Pizzas Especiais" },
+    { id: "p8", name: "Frango Especial", category: "Pizzas Especiais" },
+    { id: "e3", name: "Esfiha Frango Especial", category: "Esfihas Especiais" },
+    { id: "e4", name: "Esfiha Carne", category: "Esfihas Tradicionais" },
+    { id: "p9", name: "Pizza Calabresa", category: "Pizzas Tradicionais" },
+    { id: "p10", name: "Pizza Portuguesa", category: "Pizzas Tradicionais" },
+    { id: "p11", name: "Pizza Muçarela", category: "Pizzas Tradicionais" },
+  ]);
+  confere(
+    "Wabiz 5345: meia com sabor cadastrado sem \"Pizza\" fica na pizza",
+    categoriaResolvida({ productName: "Pizza 1/2 Calabacon Cremoso + 1/2 Frango Especial", menuProduct: { id: "wabiz-loja-3+4", active: false, name: "Pizza 1/2 Calabacon Cremoso + 1/2 Frango Especial", category: "Pizzas Grande" } }, saborSemPizza),
+    "Pizzas Especiais",
+  );
   confere(
     "Wabiz 3842: pizza com Coca no combo é pizza",
     categoriaResolvida(combo("Pizza 1/2 Portuguesa + 1/2 Moda do Chefe | Coca Cola Zero 1,5l", ["Coca Cola Zero 1,5l"]), nik),

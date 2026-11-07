@@ -449,8 +449,20 @@ function porMetadesDoNome(nome: unknown, mapa: MapaDeCategorias): string | null 
   if (!tipo) return null;
   const votos = new Map<string, number>();
   const ordem: string[] = [];
+  // O sabor também vale sem o tipo: na NIK a pizza real se chama "Calabacon
+  // Cremoso" (Pizzas Especiais), sem "Pizza" na frente. Sem isto a meia da
+  // Wabiz "Pizza 1/2 Calabacon Cremoso + 1/2 Frango Especial" não casava aqui
+  // e caía na esfiha "Frango Especial" — a pizza ia para a tela da esfiha
+  // (06/11/2026). Só aceita quando a CATEGORIA diz o tipo ("Pizzas
+  // Especiais", "Sabores de Pizza"): "Moda do Chefe" em "Esfihas Especiais"
+  // continua sem casar.
   for (const pedaco of pedacos) {
-    const categoria = mapa.porNome.get(pedaco.startsWith(`${tipo} `) ? pedaco : `${tipo} ${pedaco}`);
+    const semTipo = pedaco.startsWith(`${tipo} `) ? pedaco.slice(tipo.length + 1) : pedaco;
+    let categoria = mapa.porNome.get(`${tipo} ${semTipo}`);
+    if (!categoria) {
+      const pelaSemTipo = mapa.porNome.get(semTipo);
+      if (pelaSemTipo && chaveDoNome(pelaSemTipo).split(" ").some((w) => w.startsWith(tipo))) categoria = pelaSemTipo;
+    }
     if (!categoria || isBeverageCategory(categoria)) continue;
     if (!votos.has(categoria)) ordem.push(categoria);
     votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
