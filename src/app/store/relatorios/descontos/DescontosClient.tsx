@@ -18,7 +18,10 @@ import { filtrosParaQuery, fmtDia, fmtPct, fmtReais, type FiltrosDoRelatorio } f
 import BarraDeFiltros from "@/components/relatorios/BarraDeFiltros";
 import ModeloDoRelatorio, { Bloco, Cartao, GradeDeCartoes, Vazio, Variacao } from "@/components/relatorios/ModeloDoRelatorio";
 import { useFiltros, useOpcoesDosFiltros, useRelatorio, type InicioDosFiltros } from "@/components/relatorios/useRelatorio";
-import { detalheDosPedidosComDesconto, type LinhaDaLista, type LinhaDeOrigem, type ResultadoDosDescontos } from "@/lib/relatorios/descontos";
+import {
+  detalheDosPedidosComDesconto,
+  type DescontoManualDaLista, type DescontosPorOperador, type LinhaDaLista, type LinhaDeOrigem, type ResultadoDosDescontos,
+} from "@/lib/relatorios/descontos";
 
 type Pagina<T> = { itens: T[]; total: number; pagina: number; paginas: number; porPagina: number };
 
@@ -31,6 +34,8 @@ type Resposta = Omit<ResultadoDosDescontos, "lista"> & {
     desconto: number; loja: number; plataforma: number; pctSobreVendas: number; pedidosComDesconto: number; descontoMedio: number;
   };
   lista: Pagina<LinhaDaLista>;
+  /** O desconto manual por quem deu e motivo (descontosManuaisPorOperador). */
+  descontosManuais?: Omit<DescontosPorOperador, "lista"> & { lista: DescontoManualDaLista[] };
 };
 
 type RespostaDaLista = { lista: Pagina<LinhaDaLista> };
@@ -423,6 +428,8 @@ export default function DescontosClient({ inicio }: { inicio: InicioDosFiltros }
             </Bloco>
           )}
 
+          {dados.descontosManuais && dados.descontosManuais.vezes > 0 && <QuemDeuODesconto dados={dados.descontosManuais} />}
+
           {/* O cashback USADO está dentro do total (o checkout soma o resgate no
               desconto do pedido, e ele aparece na linha "Cashback usado" acima).
               Até 11/10/2026 este bloco dizia "fora do total" para os dois. */}
@@ -543,5 +550,64 @@ export default function DescontosClient({ inicio }: { inicio: InicioDosFiltros }
         Se o cliente deixou troco, o desconto da mesa pode aparecer menor. Pedido do 99Food anterior a 18/09/2026 tem a divisão loja × 99 calculada pelas promoções que o 99 mandou.
       </p>
     </ModeloDoRelatorio>
+  );
+}
+
+/**
+ * O desconto dado à mão por QUEM deu e por qual motivo — o "Descontos por
+ * operador" do SWFast. Clicar numa pessoa abre os descontos dela.
+ */
+function QuemDeuODesconto({ dados }: { dados: NonNullable<Resposta["descontosManuais"]> }) {
+  const [aberto, setAberto] = useState<string | null>(null);
+  const daPessoa = aberto ? dados.lista.filter((l) => l.operador === aberto) : [];
+  return (
+    <Bloco titulo="Desconto manual: quem deu e por quê" semPadding
+      subtitulo={`${fmtReais(dados.total)} em ${dados.vezes} desconto${dados.vezes === 1 ? "" : "s"} dado${dados.vezes === 1 ? "" : "s"} à mão (balcão, edição do pedido, conta da mesa). Clique numa pessoa para ver cada um.`}>
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", minWidth: 620 }}>
+          <thead>
+            <tr><th style={th}>Quem deu</th><th style={{ ...th, ...num }}>Vezes</th><th style={{ ...th, ...num }}>Desconto</th><th style={{ ...th, ...num }}>% do manual</th><th style={th}>Motivos</th></tr>
+          </thead>
+          <tbody>
+            {dados.porOperador.map((o) => (
+              <React.Fragment key={o.chave}>
+                <tr>
+                  <td style={td}>
+                    <button type="button" style={{ ...link, color: o.registrado ? PALETA.carvao : PALETA.areiaTinta }} onClick={() => setAberto((a) => (a === o.chave ? null : o.chave))}>
+                      {o.nome}
+                    </button>
+                  </td>
+                  <td style={{ ...td, ...num }}>{o.vezes}</td>
+                  <td style={{ ...td, ...num, fontWeight: 800 }}>{fmtReais(o.valor)}</td>
+                  <td style={{ ...td, ...num }}>{fmtPct(o.pct)}</td>
+                  <td style={{ ...td, fontSize: "0.78rem", color: PALETA.areiaTinta }}>
+                    {o.motivos.slice(0, 3).map((m) => `${m.motivo} (${m.vezes}×)`).join(" · ")}{o.motivos.length > 3 ? ` · +${o.motivos.length - 3}` : ""}
+                  </td>
+                </tr>
+                {aberto === o.chave && (
+                  <tr>
+                    <td colSpan={5} style={{ ...td, background: PALETA.areia }}>
+                      {daPessoa.map((l) => (
+                        <div key={`${l.tipoDeLinha}:${l.id}`} style={{ display: "flex", gap: 10, fontSize: "0.8rem", padding: "2px 0" }}>
+                          <span style={{ fontVariantNumeric: "tabular-nums", color: PALETA.areiaTinta, whiteSpace: "nowrap" }}>{fmtDia(l.dia)} {l.hora}</span>
+                          <strong style={{ whiteSpace: "nowrap" }}>{l.numero}</strong>
+                          <span style={{ flex: 1 }}>{l.motivo}</span>
+                          <strong style={{ ...num }}>{fmtReais(l.valor)}</strong>
+                        </div>
+                      ))}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {dados.semOperador > 0 && (
+        <p style={{ margin: 0, padding: "0.6rem 0.8rem", fontSize: "0.76rem", color: PALETA.areiaTinta }}>
+          “Operador não registrado”: {dados.semOperador} desconto{dados.semOperador === 1 ? "" : "s"} lançado{dados.semOperador === 1 ? "" : "s"} no balcão antes de 07/11/2026, quando o sistema passou a guardar quem deu. Na conta da mesa antiga, aparece quem fechou a mesa.
+        </p>
+      )}
+    </Bloco>
   );
 }

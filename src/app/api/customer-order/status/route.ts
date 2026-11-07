@@ -271,6 +271,7 @@ export async function PUT(req: Request) {
     updateData.editHistory = empilharEdicao((order as any).editHistory, {
       quando: new Date().toISOString(),
       quem: `${(currentUser.name || "").trim() || "Loja"} (${papel})`,
+      quemId: currentUser.id,
       acao: "CANCELOU",
       descricao: "Pedido cancelado pelo painel",
       totalAntes: Number((order as any).totalAmount) || 0,

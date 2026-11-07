@@ -5245,6 +5245,14 @@ export default function StoreOrdersDashboard({ user, orders: initialOrders, isFr
                     }
                     const atualizados = await recarregarPedidos();
                     const atual = (atualizados || []).find((o: any) => o.id === order.id);
+                    // Cortesia (lib/cortesia.ts): o item ficou a R$ 0,00; a cozinha não muda.
+                    if (resultado?.cortesia != null) {
+                      showToast(
+                        `Cortesia de R$ ${(Number(resultado.cortesia) || 0).toFixed(2).replace(".", ",")} registrada. Novo total R$ ${(Number(resultado.totalAmount) || 0).toFixed(2).replace(".", ",")}.`,
+                        "#0F766E"
+                      );
+                      return;
+                    }
                     // Só o desconto: a cozinha não tem nada novo, a comanda não sai de novo.
                     if (resultado?.soDesconto) {
                       showToast(

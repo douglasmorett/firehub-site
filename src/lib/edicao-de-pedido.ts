@@ -761,6 +761,13 @@ export type RegistroDeEdicao = {
   quando: string;
   quem: string;
   /**
+   * O id de quem estava logado (User.id; o garçom pelo link é `garcom:<Waiter.id>`),
+   * desde 07/11/2026 — nos cancelamentos, itens tirados, descontos e cortesias.
+   * O nome muda e se repete; o id é o que o relatório Cancelamentos e cortesias
+   * agrupa (lib/relatorios/cancelamentos.ts). Registro antigo não tem.
+   */
+  quemId?: string;
+  /**
    * PAGAMENTO: a forma de pagamento mudou (painel ou app do motoboy); total não muda.
    * TAXA_DE_ENTREGA: a loja corrigiu a taxa de um pedido já feito
    * (api/store/orders/[id]/taxa-de-entrega); o total muda só a diferença.
@@ -779,8 +786,11 @@ export type RegistroDeEdicao = {
    * mesmo (lib/entregue-depois-de-cancelado.ts); volta a contar como venda.
    * ENDERECO: a loja corrigiu o endereço de entrega (api/store/orders/[id]/endereco,
    * lib/correcao-de-endereco.ts); o total não muda.
+   * CORTESIA: a loja deu item(ns) de graça (api/store/orders/[id]/cortesia,
+   * lib/cortesia.ts): o item fica a R$ 0,00 e o total cai; `itensCortesia` diz
+   * o que foi e quanto teria custado.
    */
-  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "ESCOLHAS" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU" | "ENTREGUE_DEPOIS_DE_CANCELADO" | "ENDERECO" | "CLIENTE";
+  acao: "REMOVEU" | "MUDOU_QTD" | "ACRESCENTOU" | "ESCOLHAS" | "CANCELOU" | "PAGAMENTO" | "TAXA_DE_ENTREGA" | "DEVOLUCAO_FISCAL" | "TIPO" | "DESCONTO" | "REPOSICAO" | "CANCELAMENTO_PARCIAL" | "MOTOBOY" | "TRANSFERIU" | "ENTREGUE_DEPOIS_DE_CANCELADO" | "ENDERECO" | "CLIENTE" | "CORTESIA";
   /** O que mudou, em texto pronto: "Coca 2L (2x → 1x)". */
   descricao: string;
   totalAntes: number;
@@ -796,6 +806,8 @@ export type RegistroDeEdicao = {
    * que tiram item ou diminuem quantidade (e no cancelamento à mão).
    */
   itensRetirados?: { nome: string; quantidade: number; valor: number }[];
+  /** O que foi dado de cortesia (só na ação CORTESIA), com o valor que teria custado. */
+  itensCortesia?: { nome: string; quantidade: number; valor: number }[];
 };
 
 /**

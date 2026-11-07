@@ -118,4 +118,5 @@ export const ROTULO_DA_EDICAO: Record<string, string> = {
   ENTREGUE_DEPOIS_DE_CANCELADO: "Entregue depois de cancelado",
   ENDERECO: "Endereço",
   CLIENTE: "Cliente",
+  CORTESIA: "Cortesia",
 };

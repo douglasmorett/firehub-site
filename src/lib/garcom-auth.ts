@@ -268,6 +268,14 @@ export function rotuloDoOperador(op: OperadorDaMesa): string {
   return op.tipo === "garcom" ? `Garçom ${op.garcom.name}` : op.name;
 }
 
+/**
+ * O id de quem opera, para o rastro do pedido (RegistroDeEdicao.quemId): o
+ * User.id no painel, `garcom:<Waiter.id>` pelo link — os dois não colidem.
+ */
+export function idDoOperadorDaMesa(op: OperadorDaMesa): string {
+  return op.tipo === "garcom" ? `garcom:${op.garcom.id}` : op.userId;
+}
+
 /** Formato de login aceito: minúsculas, números, ponto, traço e sublinhado. */
 export const FORMATO_DO_LOGIN = /^[a-z0-9._-]{3,30}$/;
 

@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { valorDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
+import { descreverDesconto, valorDoDesconto, type DescontoManual } from "@/lib/desconto-manual";
+import { empilharEdicao } from "@/lib/edicao-de-pedido";
 import { prisma } from "@/lib/prisma";
-import { resolverOperadorDaMesa, rotuloDoOperador } from "@/lib/garcom-auth";
+import { resolverOperadorDaMesa, rotuloDoOperador, idDoOperadorDaMesa } from "@/lib/garcom-auth";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
 import { lerPagamentos, somarPagamentos } from "@/lib/pagamentos-da-mesa";
 import { comissaoDoGarcom, sanearTaxa } from "@/lib/conta-da-mesa";
@@ -317,6 +318,31 @@ export async function POST(
         await tx.customerOrder.updateMany({
           where: { tableSessionId: id, status: { not: "CANCELADO" } },
           data: { status: "ENTREGUE" }
+        });
+      }
+
+      // O desconto da conta não tem coluna (a sessão não guarda): quem deu e
+      // o MOTIVO vão para o rastro da primeira rodada — é dali que o Cupons e
+      // descontos diz quem deu e por quê (lib/relatorios/descontos.ts,
+      // `descontosManuaisPorOperador`). O total da rodada não muda: o desconto
+      // continua sendo da conta (regua-da-venda.ts, regra 4).
+      if (descontoEmReais > 0.004 && pedidosValidos[0]) {
+        const rodada = pedidosValidos[0];
+        const motivoDoDesconto = String(lerDesconto(desconto)?.motivo || "").trim();
+        await tx.customerOrder.update({
+          where: { id: rodada.id },
+          data: {
+            editHistory: empilharEdicao(rodada.editHistory, {
+              quando: new Date().toISOString(),
+              quem: rotuloDoOperador(operador),
+              quemId: idDoOperadorDaMesa(operador),
+              acao: "DESCONTO",
+              descricao: `desconto na conta da mesa: ${descreverDesconto(lerDesconto(desconto), subtotal)}`,
+              totalAntes: Number(rodada.totalAmount) || 0,
+              totalDepois: Number(rodada.totalAmount) || 0,
+              ...(motivoDoDesconto ? { motivo: motivoDoDesconto } : {}),
+            }) as any,
+          },
         });
       }
 

@@ -42,8 +42,8 @@ import {
   type ContextoDoRelatorio,
 } from "@/lib/relatorios/servidor";
 import {
-  ROTULO_DA_FATIA, cuponsDoCadastro, descontosDoPeriodo, paginar,
-  type ContaDeMesa, type ConfigDosDescontos, type CupomCadastrado, type PedidoParaDescontos, type QuemBancou,
+  ROTULO_DA_FATIA, cuponsDoCadastro, descontosDoPeriodo, descontosManuaisPorOperador, paginar, rastroDoDesconto,
+  type ContaDeMesa, type ConfigDosDescontos, type CupomCadastrado, type PedidoParaDescontos, type QuemBancou, type RastroDoDesconto,
 } from "@/lib/relatorios/descontos";
 import { mesasFechadasDoPeriodo } from "@/lib/relatorios/mesas-do-periodo";
 import { anteriorAteEsteHorario, descontoNoFechamento } from "@/lib/relatorios/regua-da-venda";
@@ -57,7 +57,9 @@ export const dynamic = "force-dynamic";
 const QUEM_VALIDO: QuemBancou[] = ["LOJA", "PLATAFORMA", "NAO_IDENTIFICADO"];
 
 /** Os pedidos e as mesas de uma janela, prontos para a conta. */
-async function buscar(ctx: ContextoDoRelatorio, janela: { inicio: Date; fim: Date }): Promise<{ pedidos: PedidoParaDescontos[]; mesas: ContaDeMesa[] }> {
+type ContaComOperador = ContaDeMesa & { fechadaPor?: string | null; rastro?: RastroDoDesconto | null };
+
+async function buscar(ctx: ContextoDoRelatorio, janela: { inicio: Date; fim: Date }): Promise<{ pedidos: (PedidoParaDescontos & { editHistory?: unknown })[]; mesas: ContaComOperador[] }> {
   const pedidos = await pedidosDoRelatorio(ctx, {
     janela,
     select: {
@@ -72,7 +74,8 @@ async function buscar(ctx: ContextoDoRelatorio, janela: { inicio: Date; fim: Dat
     .map((p) => p.id);
   const detalhes = await emLotes(comDesconto, 500, (lote) => prisma.customerOrder.findMany({
     where: { id: { in: lote } },
-    select: { id: true, notes: true, discountDetails: true, trilhaPremio: true, carimboPremio: true, indicacao: true },
+    // `editHistory`: quem deu o desconto manual (descontosManuaisPorOperador).
+    select: { id: true, notes: true, discountDetails: true, trilhaPremio: true, carimboPremio: true, indicacao: true, editHistory: true },
   }));
   const porId = new Map(detalhes.map((d) => [d.id, d]));
   const completos = pedidos.map((p) => ({ ...p, ...(porId.get(p.id) || {}) })) as PedidoParaDescontos[];
@@ -92,15 +95,22 @@ async function buscar(ctx: ContextoDoRelatorio, janela: { inicio: Date; fim: Dat
   const rotulos = comDescontoNaMesa.length
     ? await emLotes(comDescontoNaMesa, 500, (lote) => prisma.tableSession.findMany({
         where: { id: { in: lote }, franchiseeId: { in: ctx.lojaIds } },
-        select: { id: true, table: { select: { number: true, label: true } } },
+        // Quem fechou e o rastro das rodadas: quem deu o desconto da conta e o motivo.
+        select: { id: true, closedByName: true, table: { select: { number: true, label: true } }, orders: { select: { editHistory: true } } },
       }))
     : [];
   const mesaDe = new Map(rotulos.map((s) => [s.id, s.table]));
-  const mesas: ContaDeMesa[] = fechadas.map((m) => ({
-    id: m.id, franchiseeId: m.franchiseeId, fechadaEm: m.fechadaEm,
-    mesa: mesaDe.get(m.id)?.number ?? null, nome: mesaDe.get(m.id)?.label || null,
-    pago: m.pago ?? null, taxaServico: m.serviceFee ?? null, gorjeta: m.waiterTip ?? null, pedidos: m.pedidos,
-  }));
+  const daSessao = new Map(rotulos.map((s) => [s.id, s]));
+  const mesas: ContaComOperador[] = fechadas.map((m) => {
+    const s = daSessao.get(m.id);
+    return {
+      id: m.id, franchiseeId: m.franchiseeId, fechadaEm: m.fechadaEm,
+      mesa: mesaDe.get(m.id)?.number ?? null, nome: mesaDe.get(m.id)?.label || null,
+      pago: m.pago ?? null, taxaServico: m.serviceFee ?? null, gorjeta: m.waiterTip ?? null, pedidos: m.pedidos,
+      fechadaPor: s?.closedByName || null,
+      rastro: (s?.orders || []).map((o) => rastroDoDesconto(o.editHistory, true)).find(Boolean) || null,
+    };
+  });
   return { pedidos: completos, mesas };
 }
 
@@ -156,6 +166,7 @@ export async function GET(req: NextRequest) {
 
   const cfg: ConfigDosDescontos = { tz: ctx.tz, de: f.de, ate: f.ate, hoje: ctx.hoje, cupons, mostrarCuponsSemUso: siteNoFiltro, lista };
   const resultado = descontosDoPeriodo(atual.pedidos, atual.mesas, cfg);
+  const porOperador = descontosManuaisPorOperador(atual.pedidos, atual.mesas, ctx.tz);
   const antes = descontosDoPeriodo(anterior.pedidos, anterior.mesas, { ...cfg, de: ant.de, ate: ant.ate, mostrarCuponsSemUso: false, lista: {} });
   const comparacao = {
     periodo: ant,
@@ -172,7 +183,12 @@ export async function GET(req: NextRequest) {
 
   if (sp.get("formato") !== "xlsx") {
     const { lista: linhas, ...resto } = resultado;
-    return NextResponse.json({ ...cabecalho, ...resto, anterior: comparacao, lista: paginar(linhas, Number(sp.get("pagina")) || 1, 50) });
+    const { lista: manuais, ...operadores } = porOperador;
+    return NextResponse.json({
+      ...cabecalho, ...resto, anterior: comparacao, lista: paginar(linhas, Number(sp.get("pagina")) || 1, 50),
+      // A lista inteira do desconto manual é pequena (o PDV e a mesa): vai junto, sem paginar.
+      descontosManuais: { ...operadores, lista: manuais },
+    });
   }
 
   // ── A PLANILHA ──────────────────────────────────────────────────────────
@@ -282,12 +298,26 @@ export async function GET(req: NextRequest) {
     },
   ];
 
+  const operadoresAba: LinhaDaPlanilha[] = [
+    ...topo("Descontos manuais por quem deu e motivo", "Só o desconto dado à mão (balcão, edição do pedido, conta da mesa). Quem deu: o rastro do pedido; na mesa antiga, quem fechou a conta. \"Operador não registrado\": lançamento do balcão anterior a 07/11/2026."),
+    cab("Quem deu", "Vezes", "Desconto", "% do desconto manual", "Motivos"),
+    ...porOperador.porOperador.map((o) => ({ celulas: [N(o.nome), Q(o.vezes), R(o.valor), P(o.pct), o.motivos.map((m) => `${m.motivo} (${m.vezes}×, R$ ${m.valor.toFixed(2).replace(".", ",")})`).join("; ")] })),
+    { celulas: [N("TOTAL"), Q(porOperador.vezes, true), R(porOperador.total, true)] },
+    { celulas: [] },
+    cab("Motivo", "Vezes", "Desconto", "% do desconto manual"),
+    ...porOperador.porMotivo.map((m) => ({ celulas: [m.motivo, Q(m.vezes), R(m.valor), P(m.pct)] })),
+    { celulas: [] },
+    cab("Data", "Hora", "Pedido / mesa", "Quem deu", "Motivo", "Desconto"),
+    ...porOperador.lista.map((l) => ({ celulas: [fmtDia(l.dia), l.hora, l.numero, l.quem, l.motivo, R(l.valor)] })),
+  ];
+
   const abas: AbaDaPlanilha[] = [
     { nome: "Resumo", linhas: resumo, larguras: [52, 16, 14, 10], congelarLinhas: 5 },
     { nome: "Por canal e dia", linhas: porCanal, larguras: [18, 12, 14, 20, 14, 16, 14, 14, 16], congelarLinhas: 6 },
     { nome: "Cupons", linhas: cuponsAba, larguras: [20, 10, 8, 14, 14, 14, 15, 13, 22, 22, 40], congelarLinhas: 6 },
     { nome: "Campanhas e motivos", linhas: origensAba, larguras: [24, 12, 40, 16, 10, 14, 14, 14, 16, 13], congelarLinhas: 6 },
     { nome: "Pedidos", linhas: pedidosAba, larguras: [12, 7, 10, 18, 11, 10, 52, 22, 12, 12, 12, 15, 13], congelarLinhas: 6 },
+    { nome: "Por quem deu", linhas: operadoresAba, larguras: [30, 10, 40, 22, 30, 14], congelarLinhas: 6 },
   ];
   return respostaDePlanilha(montarPlanilha(abas), `cupons-e-descontos_${f.de}_a_${f.ate}.xlsx`);
 }

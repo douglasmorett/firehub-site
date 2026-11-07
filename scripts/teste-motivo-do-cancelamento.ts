@@ -102,6 +102,7 @@ stub("../src/lib/estoque-restante", { conferirEstoque: async () => ({ ok: true }
 stub("../src/lib/garcom-auth", {
   resolverOperadorDaMesa: async () => ({ tipo: "loja", franchiseeId: "p17", userId: "u1", ownerId: null, name: "Maria" }),
   rotuloDoOperador: (op: any) => (op.tipo === "garcom" ? `Garçom ${op.garcom.name}` : op.name),
+  idDoOperadorDaMesa: (op: any) => (op.tipo === "garcom" ? `garcom:${op.garcom.id}` : op.userId),
 });
 
 const corpo = (b: unknown) => ({ method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) });

@@ -273,16 +273,18 @@ export async function editarRodadaDaMesa(entrada: {
   rodada: RodadaDaMesa;
   pedido: PedidoDeEdicaoNaMesa;
   quem: string;
+  /** Id de quem está operando (RegistroDeEdicao.quemId). */
+  quemId?: string;
   podeRemoverItem: boolean;
 }): Promise<RespostaDaMesa> {
-  const { lojaId, rodada, quem } = entrada;
+  const { lojaId, rodada, quem, quemId } = entrada;
   const plano = planejarEdicaoNaMesa(rodada, entrada.pedido, entrada.podeRemoverItem);
   if (!plano.ok) return { status: plano.status, corpo: { error: plano.error } };
   const motivo = motivoDoCorpo({ motivo: entrada.pedido?.motivo });
 
   // Removeu tudo = cancelou a rodada. Mesma via do DELETE, com devolução de
   // estoque — um pedido sem itens não pode continuar valendo dinheiro.
-  if (plano.cancela) return cancelarRodadaDaMesa({ rodada, quem, motivo });
+  if (plano.cancela) return cancelarRodadaDaMesa({ rodada, quem, quemId, motivo });
 
   // Tirar dinheiro da mesa sem motivo não passa.
   if (plano.retirados.length > 0 && !motivo) return semMotivo();
@@ -297,6 +299,7 @@ export async function editarRodadaDaMesa(entrada: {
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
     quem,
+    ...(quemId ? { quemId } : {}),
     acao: plano.acao,
     descricao: plano.descricao,
     totalAntes: rodada.totalAmount || 0,
@@ -328,12 +331,13 @@ export async function editarRodadaDaMesa(entrada: {
 }
 
 /** Cancela a rodada inteira e devolve o estoque baixado no lançamento. */
-export async function cancelarRodadaDaMesa(entrada: { rodada: RodadaDaMesa; quem: string; motivo: string }): Promise<RespostaDaMesa> {
-  const { rodada, quem, motivo } = entrada;
+export async function cancelarRodadaDaMesa(entrada: { rodada: RodadaDaMesa; quem: string; quemId?: string; motivo: string }): Promise<RespostaDaMesa> {
+  const { rodada, quem, quemId, motivo } = entrada;
   if (!motivo) return semMotivo();
   const registro: RegistroDeEdicao = {
     quando: new Date().toISOString(),
     quem,
+    ...(quemId ? { quemId } : {}),
     acao: "CANCELOU",
     descricao: "Rodada da mesa cancelada (ficou sem itens ou foi cancelada na mão)",
     totalAntes: rodada.totalAmount || 0,
