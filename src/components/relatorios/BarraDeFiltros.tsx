@@ -42,7 +42,24 @@ export default function BarraDeFiltros({
     mudar({ tipos: tem ? filtros.tipos.filter((x) => x !== t) : [...filtros.tipos, t] });
   };
 
+  // No papel a barra some e fica esta linha: o que está filtrado, com os nomes.
+  const nomes = (marcados: string[], lista: { chave: string; rotulo: string }[] | undefined) =>
+    marcados.map((m) => lista?.find((o) => o.chave === m)?.rotulo || m).join(", ");
+  const filtrosNoPapel = [
+    v.horario && (filtros.horaDe || filtros.horaAte) && `Horário: ${filtros.horaDe || "00:00"} às ${filtros.horaAte || "23:59"}`,
+    v.tipos && filtros.tipos.length > 0 && `Tipo de venda: ${filtros.tipos.map((t) => ROTULO_DO_TIPO[t]).join(", ")}`,
+    v.canais && filtros.canais.length > 0 && `Canal: ${nomes(filtros.canais, opcoes?.canais)}`,
+    v.marcas && filtros.marcas.length > 0 && `Marcas: ${nomes(filtros.marcas, opcoes?.marcas)}`,
+    v.lojas && filtros.lojas.length > 0 && `Lojas: ${nomes(filtros.lojas, opcoes?.lojasDaConta.map((l) => ({ chave: l.id, rotulo: l.nome })))}`,
+    v.categorias && filtros.categorias.length > 0 && `Categoria: ${filtros.categorias.join(", ")}`,
+    v.produtos && filtros.produtos.length > 0 && `Produto: ${nomes(filtros.produtos, opcoes?.produtos.map((p) => ({ chave: p.id, rotulo: p.nome })))}`,
+  ].filter(Boolean);
+
   return (
+    <>
+    <p className="fh-so-impressao" style={{ margin: "0 0 10px", fontSize: "0.8rem", color: PALETA.carvao2 }}>
+      <strong>Filtros:</strong> {filtrosNoPapel.length ? filtrosNoPapel.join(" · ") : "nenhum — todas as vendas do período"}
+    </p>
     <section className="fh-sem-impressao" style={{ background: "#fff", border: `1px solid ${PALETA.areiaBorda}`, borderRadius: 16, padding: "1rem 1.1rem", marginBottom: "1.25rem", display: "flex", flexDirection: "column", gap: "0.9rem" }}>
       {/* Período */}
       <div>
@@ -157,5 +174,6 @@ export default function BarraDeFiltros({
 
       {children}
     </section>
+    </>
   );
 }
