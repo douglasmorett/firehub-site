@@ -14,7 +14,7 @@ import { TEXTO_CTA } from "../textos";
  */
 
 const NOMES = ["Ana", "Lucas", "Bia", "Caio", "Dani", "Edu", "Flávia", "Gui", "Hugo", "Ivo", "Júlia", "Kau", "Lia", "Nina", "Otto", "Paulo"];
-const ITENS = ["X-burguer", "Pastel de carne", "Esfiha de queijo", "Combo família", "Pizza calabresa", "Açaí 500ml", "Coxinha", "Batata frita"];
+const ITENS = ["X-burguer", "Pastel de carne", "Frango a passarinho", "Combo família", "Pizza calabresa", "Açaí 500ml", "Coxinha", "Batata frita"];
 
 type Pedido = { n: number; nome: string; item: string };
 
