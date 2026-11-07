@@ -50,12 +50,22 @@ export type BordaDaPizza = {
   precos: (number | null)[];
 };
 
+/** A massa (tradicional, integral, sem glúten…): como no iFood, o cliente escolhe UMA. */
+export type MassaDaPizza = {
+  id?: string | null;
+  nome: string;
+  /** Quanto a massa soma em cada tamanho. Nulo = não tem neste tamanho; 0 = a de sempre. */
+  precos: (number | null)[];
+};
+
 export type MontagemDaPizza = {
   categoria: string;
   regra: RegraDaPizza;
   tamanhos: TamanhoDaPizza[];
   sabores: SaborDaPizza[];
   bordas: BordaDaPizza[];
+  /** Vazio = a pizza não pergunta a massa (a maioria das pizzarias). */
+  massas: MassaDaPizza[];
 };
 
 /** Os tamanhos que o passo a passo oferece, do menor para o maior. */
@@ -70,6 +80,7 @@ export const TAMANHOS_SUGERIDOS: { nome: string; fatias: number; sabores: number
 
 export const MAX_SABORES = 4;
 export const TITULO_DA_BORDA = "Borda recheada?";
+export const TITULO_DA_MASSA = "Qual massa?";
 
 export function tituloDosSabores(n: number): string {
   return n <= 1 ? "Escolha o sabor" : `Escolha até ${n} sabores`;
@@ -83,6 +94,15 @@ export function ehPerguntaDeSabores(grupo: { title?: string | null; priceRule?: 
 
 export function ehPerguntaDeBorda(grupo: { title?: string | null } | null | undefined): boolean {
   return String(grupo?.title || "").trim().toLowerCase() === TITULO_DA_BORDA.toLowerCase();
+}
+
+export function ehPerguntaDeMassa(grupo: { title?: string | null } | null | undefined): boolean {
+  return String(grupo?.title || "").trim().toLowerCase() === TITULO_DA_MASSA.toLowerCase();
+}
+
+/** As perguntas que o passo a passo da pizza monta e remonta (as outras ficam do lojista). */
+export function ehPerguntaDaPizza(grupo: { title?: string | null; priceRule?: string | null } | null | undefined): boolean {
+  return ehPerguntaDeSabores(grupo) || ehPerguntaDeBorda(grupo) || ehPerguntaDeMassa(grupo);
 }
 
 /** "Grande" → "Pizza Grande"; quem já escreveu "Pizza Broto" não ganha "Pizza Pizza Broto". */
@@ -179,6 +199,15 @@ export function errosDaMontagem(m: MontagemDaPizza): string[] {
     if (!precos.some((p) => p !== null && p !== undefined)) erros.push(`A borda "${nome}" está sem preço. Digite quanto ela soma (0 se for grátis).`);
     if (precos.some((p) => p !== null && p !== undefined && (p < 0 || p > 9999))) erros.push(`Confira os preços da borda "${nome}".`);
   }
+  const nomesDeMassa = new Set<string>();
+  for (const b of (Array.isArray(m?.massas) ? m.massas : []).filter((b) => String(b?.nome || "").trim())) {
+    const nome = b.nome.trim();
+    if (nomesDeMassa.has(chave(nome))) erros.push(`A massa "${nome}" aparece duas vezes.`);
+    nomesDeMassa.add(chave(nome));
+    const precos = Array.isArray(b.precos) ? b.precos : [];
+    if (!precos.some((p) => p !== null && p !== undefined)) erros.push(`A massa "${nome}" está sem preço. Digite quanto ela soma (0 se não cobra a mais).`);
+    if (precos.some((p) => p !== null && p !== undefined && (p < 0 || p > 9999))) erros.push(`Confira os preços da massa "${nome}".`);
+  }
   return [...new Set(erros)];
 }
 
@@ -199,6 +228,9 @@ export function limparMontagem(m: MontagemDaPizza): MontagemDaPizza {
     bordas: m.bordas
       .filter((b) => b.nome.trim())
       .map((b) => ({ id: b.id || null, nome: b.nome.trim(), precos: ajustar(b.precos) })),
+    massas: (m.massas || [])
+      .filter((b) => b.nome.trim())
+      .map((b) => ({ id: b.id || null, nome: b.nome.trim(), precos: ajustar(b.precos) })),
   };
 }
 
@@ -214,7 +246,7 @@ export type GrupoDaPizza = {
  * As perguntas de um tamanho, com os ids já gravados de cada sabor e borda
  * (mesma ordem da montagem). Sabor sem preço no tamanho não entra nele.
  */
-export function perguntasDoTamanho(m: MontagemDaPizza, i: number, idsDosSabores: string[], idsDasBordas: string[]): GrupoDaPizza[] {
+export function perguntasDoTamanho(m: MontagemDaPizza, i: number, idsDosSabores: string[], idsDasBordas: string[], idsDasMassas: string[] = []): GrupoDaPizza[] {
   const t = m.tamanhos[i];
   const grupos: GrupoDaPizza[] = [{
     title: tituloDosSabores(t.sabores),
@@ -233,6 +265,12 @@ export function perguntasDoTamanho(m: MontagemDaPizza, i: number, idsDosSabores:
     return p === null || p === undefined ? [] : [{ id: idsDasBordas[k], additionalPrice: p }];
   });
   if (bordas.length > 0) grupos.push({ title: TITULO_DA_BORDA, minQty: 0, maxQty: 1, priceRule: null, items: bordas });
+  // Massa é escolha obrigatória de uma só (modelo do iFood); a primeira da lista é a de sempre.
+  const massas = (m.massas || []).flatMap((b, k) => {
+    const p = b.precos[i];
+    return p === null || p === undefined ? [] : [{ id: idsDasMassas[k], additionalPrice: p }];
+  });
+  if (massas.length > 0) grupos.push({ title: TITULO_DA_MASSA, minQty: 1, maxQty: 1, priceRule: null, items: massas });
   return grupos;
 }
 
@@ -309,8 +347,10 @@ export function pizzasJaMontadas(produtos: ProdutoLido[]): (MontagemDaPizza & { 
     // Preço de cada opção em cada tamanho, e a ordem dela dentro de cada tamanho.
     const precoDoSabor = new Map<string, (number | null)[]>();
     const precoDaBorda = new Map<string, (number | null)[]>();
+    const precoDaMassa = new Map<string, (number | null)[]>();
     const listasDeSabores: string[][] = [];
     const listasDeBordas: string[][] = [];
+    const listasDeMassas: string[][] = [];
     const porOrdem = <T extends { sortOrder?: number | null }>(lista: T[] | null | undefined) =>
       [...(lista || [])].sort((a, b) => (Number(a.sortOrder) || 0) - (Number(b.sortOrder) || 0));
     for (const [i, p] of ordenados.entries()) {
@@ -328,12 +368,16 @@ export function pizzasJaMontadas(produtos: ProdutoLido[]): (MontagemDaPizza & { 
       });
       listasDeSabores.push(ler(gSabores.items, precoDoSabor));
       listasDeBordas.push(ler(grupos.find(ehPerguntaDeBorda)?.items, precoDaBorda));
+      listasDeMassas.push(ler(grupos.find(ehPerguntaDeMassa)?.items, precoDaMassa));
     }
     const sabores: SaborDaPizza[] = juntarOrdens(listasDeSabores).map((id) => ({
       id, nome: String(porId.get(id)?.name || "").trim(), descricao: String(porId.get(id)?.description || "").trim(), precos: precoDoSabor.get(id)!,
     }));
     const bordas: BordaDaPizza[] = juntarOrdens(listasDeBordas).map((id) => ({
       id, nome: String(porId.get(id)?.name || "").trim(), precos: precoDaBorda.get(id)!,
+    }));
+    const massas: MassaDaPizza[] = juntarOrdens(listasDeMassas).map((id) => ({
+      id, nome: String(porId.get(id)?.name || "").trim(), precos: precoDaMassa.get(id)!,
     }));
     // A descrição do sabor que nasceu sem ingredientes é o próprio nome: na tela ela volta vazia.
     for (const s of sabores) if (s.descricao === s.nome) s.descricao = "";
@@ -347,6 +391,7 @@ export function pizzasJaMontadas(produtos: ProdutoLido[]): (MontagemDaPizza & { 
       }),
       sabores,
       bordas,
+      massas,
       ativos: ordenados.map((p) => p.active !== false),
     });
   }

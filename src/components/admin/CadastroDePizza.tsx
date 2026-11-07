@@ -12,7 +12,7 @@
  *
  * O passo a passo faz uma pergunta por tela, do jeito que a pizzaria pensa:
  * tamanhos → fatias e sabores de cada um → como cobra o meio a meio → sabores e
- * o preço da pizza inteira → borda → conferir. Quem grava é
+ * o preço da pizza inteira → borda → massa → conferir. Quem grava é
  * /api/admin/cardapio/pizzas; o modelo e as regras estão em
  * lib/pizza-por-tamanho.ts. A mesma tela edita o que ela montou ("adicionar
  * sabor, mudar preço"), sem refazer nada.
@@ -222,6 +222,7 @@ const PASSOS = [
   { id: "regra", titulo: "Meio a meio" },
   { id: "sabores", titulo: "Sabores e preços" },
   { id: "borda", titulo: "Borda" },
+  { id: "massa", titulo: "Massa" },
   { id: "conferir", titulo: "Conferir" },
 ] as const;
 type IdDoPasso = (typeof PASSOS)[number]["id"];
@@ -259,6 +260,8 @@ function telaInicial(m: PizzaJaMontada | null) {
     sabores: m ? [...linhas(m.sabores, "sabor"), linhaVazia("sabor")] : [linhaVazia("sabor"), linhaVazia("sabor"), linhaVazia("sabor")],
     bordas: m && m.bordas.length ? linhas(m.bordas, "borda") : [linhaVazia("borda")],
     temBorda: m ? m.bordas.length > 0 : null,
+    massas: m && m.massas?.length ? linhas(m.massas, "massa") : [linhaVazia("massa")],
+    temMassa: m ? (m.massas?.length || 0) > 0 : null,
     regra: m ? m.regra : null,
   };
 }
@@ -286,6 +289,8 @@ export default function CadastroDePizza({
   const [sabores, setSabores] = useState<LinhaNaTela[]>(inicial.sabores);
   const [bordas, setBordas] = useState<LinhaNaTela[]>(inicial.bordas);
   const [temBorda, setTemBorda] = useState<boolean | null>(inicial.temBorda);
+  const [massas, setMassas] = useState<LinhaNaTela[]>(inicial.massas);
+  const [temMassa, setTemMassa] = useState<boolean | null>(inicial.temMassa);
   const [regra, setRegra] = useState<RegraDaPizza | null>(inicial.regra);
   const [tela, setTela] = useState<Tela>(editar ? "sabores" : existentes.length ? "inicio" : "tamanhos");
   const [outroTamanho, setOutroTamanho] = useState("");
@@ -306,7 +311,7 @@ export default function CadastroDePizza({
   const editarExistente = (m: PizzaJaMontada) => {
     const t = telaInicial(m);
     setMontagem(m);
-    setTamanhos(t.tamanhos); setSabores(t.sabores); setBordas(t.bordas); setTemBorda(t.temBorda); setRegra(t.regra);
+    setTamanhos(t.tamanhos); setSabores(t.sabores); setBordas(t.bordas); setTemBorda(t.temBorda); setMassas(t.massas); setTemMassa(t.temMassa); setRegra(t.regra);
     setCategoria(m.categoria);
     setTela("sabores");
   };
@@ -348,6 +353,10 @@ export default function CadastroDePizza({
       id: b.id, nome: b.nome.trim(),
       precos: marcados.map((t) => precoDe(b, t)),
     })) : [],
+    massas: temMassa ? massas.filter((b) => b.nome.trim()).map((b) => ({
+      id: b.id, nome: b.nome.trim(),
+      precos: marcados.map((t) => precoDe(b, t)),
+    })) : [],
   });
 
   const problemaDoPasso = (p: Tela): string | null => {
@@ -382,6 +391,22 @@ export default function CadastroDePizza({
         const ruim = marcados.find((t) => textoRuim(b.precos[t.chave], true));
         if (ruim) return `Confira o preço da borda ${b.nome.trim()} na ${ruim.nome}.`;
         if (!marcados.some((t) => precoDe(b, t) !== null)) return `Digite quanto a borda ${b.nome.trim()} soma em pelo menos um tamanho (0 se for grátis).`;
+      }
+      return null;
+    }
+    if (p === "massa") {
+      if (temMassa === null) return "Responda: o cliente escolhe a massa?";
+      if (!temMassa) return null;
+      const comNome = massas.filter((b) => b.nome.trim());
+      if (massas.some((b) => !b.nome.trim() && marcados.some((t) => (b.precos[t.chave] || "").trim()))) return "Tem preço digitado sem o nome da massa.";
+      if (!comNome.length) return "Escreva o nome de pelo menos uma massa, ou volte e marque que não pergunta.";
+      const vistas = new Set<string>();
+      for (const b of comNome) {
+        if (vistas.has(chaveDoNome(b.nome))) return `A massa "${b.nome.trim()}" está repetida.`;
+        vistas.add(chaveDoNome(b.nome));
+        const ruim = marcados.find((t) => textoRuim(b.precos[t.chave], true));
+        if (ruim) return `Confira o preço da massa ${b.nome.trim()} na ${ruim.nome}.`;
+        if (!marcados.some((t) => precoDe(b, t) !== null)) return `Digite quanto a massa ${b.nome.trim()} soma em pelo menos um tamanho (0 se não cobra a mais).`;
       }
       return null;
     }
@@ -476,6 +501,7 @@ export default function CadastroDePizza({
                 <small>
                   {m.tamanhos.map((t) => nomeDoTamanho(t.nome)).join(", ")} · {m.sabores.length} {m.sabores.length === 1 ? "sabor" : "sabores"}
                   {m.bordas.length > 0 && ` · ${m.bordas.length} ${m.bordas.length === 1 ? "borda" : "bordas"}`}
+                  {(m.massas?.length || 0) > 0 && ` · ${m.massas.length} ${m.massas.length === 1 ? "massa" : "massas"}`}
                 </small>
               </div>
               <button type="button" className="fh-pz-btn sim" onClick={() => editarExistente(m)}>Adicionar sabor ou mudar preço <ArrowRight size={16} /></button>
@@ -683,6 +709,41 @@ export default function CadastroDePizza({
           </>
         )}
 
+        {tela === "massa" && (
+          <>
+            <h3 className="fh-pz-pergunta">O cliente escolhe a massa?</h3>
+            <p className="fh-pz-ajuda">Tradicional, integral, sem glúten… Se escolher, a pergunta aparece depois da borda e o cliente é obrigado a marcar uma (como no iFood). Ponha a de sempre primeiro, com 0.</p>
+            <div className="fh-pz-simnao">
+              <button type="button" className="fh-pz-chip" aria-pressed={temMassa === false} onClick={() => setTemMassa(false)}>
+                <span className="fh-pz-marca">{temMassa === false && <Check size={14} strokeWidth={3.5} />}</span>
+                <b>Não pergunto</b><small>Uma massa só, pular esta parte</small>
+              </button>
+              <button type="button" className="fh-pz-chip" aria-pressed={temMassa === true} onClick={() => setTemMassa(true)}>
+                <span className="fh-pz-marca">{temMassa === true && <Check size={14} strokeWidth={3.5} />}</span>
+                <b>Pergunto a massa</b><small>Cadastrar as massas</small>
+              </button>
+            </div>
+            {temMassa && (
+              <>
+                <p className="fh-pz-ajuda" style={{ marginBottom: 10 }}>Digite quanto cada massa <b>soma</b> no preço, em cada tamanho. Digite 0 na de sempre. Deixe em branco o tamanho que não tem a massa.</p>
+                <TabelaDePrecos
+                  linhas={massas}
+                  tamanhos={marcados}
+                  nome="Massa"
+                  exemploNome="Ex.: Tradicional"
+                  podeZero
+                  mostrarRuim={tentouAvancar}
+                  onNome={(chave, v) => mudarLinha(setMassas, chave, { nome: v })}
+                  onPreco={(chave, t, v) => mudarPreco(setMassas, chave, t, v)}
+                  onArrumar={(chave, t, v) => arrumarPreco(setMassas, chave, t, v, true)}
+                  onTirar={(chave) => setMassas((l) => (l.length > 1 ? l.filter((x) => x.chave !== chave) : [linhaVazia("massa")]))}
+                />
+                <button type="button" className="fh-pz-mais" onClick={() => novaLinha(setMassas, "massa")}><Plus size={18} /> Adicionar massa</button>
+              </>
+            )}
+          </>
+        )}
+
         {tela === "conferir" && (
           <Conferir
             montagem={montagemAtual(categoria === NOVA_CATEGORIA ? novaCategoria : categoria)}
@@ -756,7 +817,7 @@ function TabelaDePrecos({
                 value={l.nome}
                 onChange={(e) => onNome(l.chave, e.target.value)}
                 placeholder={exemploNome}
-                aria-label={`Nome do ${nome.toLowerCase() === "borda" ? "borda" : "sabor"}`}
+                aria-label={`Nome ${nome.toLowerCase() === "borda" ? "da borda" : nome.toLowerCase() === "massa" ? "da massa" : "do sabor"}`}
               />
             </div>
             {tamanhos.map((t) => (
@@ -879,6 +940,7 @@ function Conferir({
           )}
           <span>📋 <b>{montagem.sabores.length} {montagem.sabores.length === 1 ? "sabor" : "sabores"}:</b> {montagem.sabores.map((s) => s.nome).join(", ")}.</span>
           <span>🧀 <b>Borda:</b> {montagem.bordas.length ? montagem.bordas.map((b) => b.nome).join(", ") + "." : "não tem."}</span>
+          <span>🫓 <b>Massa:</b> {montagem.massas.length ? "o cliente escolhe entre " + montagem.massas.map((b) => b.nome).join(", ") + "." : "não pergunta."}</span>
           {editando && pausadas.length > 0 && (
             <span style={{ color: "#B45309" }}>⏸ <b>Vão ser pausadas</b> (saem do cardápio, mas não são apagadas): {pausadas.join(", ")}.</span>
           )}

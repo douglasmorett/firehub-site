@@ -5,7 +5,7 @@ import { podeComoNaTela } from "@/lib/permissoes-da-equipe";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import {
-  descricaoDoTamanho, ehPerguntaDeBorda, ehPerguntaDeSabores, errosDaMontagem, limparMontagem,
+  descricaoDoTamanho, ehPerguntaDaPizza, errosDaMontagem, limparMontagem,
   nomeDoTamanho, perguntasDoTamanho, type MontagemDaPizza,
 } from "@/lib/pizza-por-tamanho";
 
@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
   // O que veio com id tem que ser DESTA loja e do tipo certo: sabor e borda são
   // opções (apenasEmCombo); tamanho é produto de venda. Senão a tela estava
   // velha (ou o corpo foi forjado) e nada é gravado.
-  const citados = [...m.tamanhos, ...m.sabores, ...m.bordas].map((x) => x.id).filter(Boolean) as string[];
+  const citados = [...m.tamanhos, ...m.sabores, ...m.bordas, ...m.massas].map((x) => x.id).filter(Boolean) as string[];
   const existentes = await prisma.menuProduct.findMany({
     where: { id: { in: [...citados, ...pausar] }, franchiseeId: loja },
     select: { id: true, isCombo: true, apenasEmCombo: true },
@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
   const porId = new Map(existentes.map((e) => [e.id, e]));
   const opcaoValida = (id?: string | null) => !id || porId.get(id)?.apenasEmCombo === true;
   const tamanhoValido = (id?: string | null) => !id || (porId.has(id) && !porId.get(id)!.isCombo && !porId.get(id)!.apenasEmCombo);
-  if (!m.sabores.every((s) => opcaoValida(s.id)) || !m.bordas.every((b) => opcaoValida(b.id)) || !m.tamanhos.every((t) => tamanhoValido(t.id)) || !pausar.every(tamanhoValido)) {
+  if (!m.sabores.every((s) => opcaoValida(s.id)) || !m.bordas.every((b) => opcaoValida(b.id)) || !m.massas.every((b) => opcaoValida(b.id)) || !m.tamanhos.every((t) => tamanhoValido(t.id)) || !pausar.every(tamanhoValido)) {
     return NextResponse.json({ error: "O cardápio mudou enquanto você editava. Feche, abra de novo e refaça a mudança." }, { status: 409 });
   }
 
@@ -92,18 +92,20 @@ export async function POST(req: NextRequest) {
     for (const s of m.sabores) idsDosSabores.push(await gravarOpcao(s.id, s.nome, s.descricao));
     const idsDasBordas: string[] = [];
     for (const b of m.bordas) idsDasBordas.push(await gravarOpcao(b.id, b.nome, `Borda recheada de ${b.nome.replace(/^borda\s+(de\s+)?/i, "")}`));
+    const idsDasMassas: string[] = [];
+    for (const b of m.massas) idsDasMassas.push(await gravarOpcao(b.id, b.nome, `Massa ${b.nome.replace(/^massa\s+/i, "")}`));
 
     const idsDosTamanhos: string[] = [];
     for (let i = 0; i < m.tamanhos.length; i++) {
       const t = m.tamanhos[i];
-      const perguntas = perguntasDoTamanho(m, i, idsDosSabores, idsDasBordas);
+      const perguntas = perguntasDoTamanho(m, i, idsDosSabores, idsDasBordas, idsDasMassas);
       const dados = { name: nomeDoTamanho(t.nome), description: descricaoDoTamanho(t), category: m.categoria };
       let id = t.id || null;
       if (id) {
         await tx.menuProduct.update({ where: { id }, data: dados });
         // Troca só as perguntas que esta tela monta; as outras descem para depois delas.
         const antigas = await tx.comboGroup.findMany({ where: { menuProductId: id }, orderBy: { sortOrder: "asc" }, select: { id: true, title: true, priceRule: true } });
-        const daPizza = antigas.filter((g) => ehPerguntaDeSabores(g) || ehPerguntaDeBorda(g));
+        const daPizza = antigas.filter(ehPerguntaDaPizza);
         if (daPizza.length) await tx.comboGroup.deleteMany({ where: { id: { in: daPizza.map((g) => g.id) } } });
         const outras = antigas.filter((g) => !daPizza.includes(g));
         for (let k = 0; k < outras.length; k++) {
@@ -135,7 +137,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (pausar.length) await tx.menuProduct.updateMany({ where: { id: { in: pausar }, franchiseeId: loja }, data: { active: false } });
-    return { tamanhos: idsDosTamanhos, sabores: idsDosSabores, bordas: idsDasBordas };
+    return { tamanhos: idsDosTamanhos, sabores: idsDosSabores, bordas: idsDasBordas, massas: idsDasMassas };
   }, { timeout: 30_000, maxWait: 10_000 });
 
   // A vitrine é cacheada por 60 s: a pizza nova aparece na hora.

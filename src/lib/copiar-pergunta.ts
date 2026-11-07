@@ -18,7 +18,7 @@
  */
 import { itemFixoDoGrupo } from "./combo-e-pergunta";
 import { ehPerguntaDeMeio } from "./meio-a-meio";
-import { ehPerguntaDeBorda, ehPerguntaDeSabores } from "./pizza-por-tamanho";
+import { ehPerguntaDaPizza } from "./pizza-por-tamanho";
 import { ehProdutoDeIntegracao, idsSoDeOpcaoDeCombo } from "./cardapio-interno";
 
 export type OpcaoDaPergunta = {
@@ -93,8 +93,8 @@ export function motivoParaNaoCopiar(grupo: PerguntaParaCopiar, produtoOrigem?: P
   if (ehPerguntaDeMeio(grupo.title)) {
     return "O meio a meio é montado sozinho em cada pizza, com o preço da diferença dela. Ligue o meio a meio no cadastro da pizza.";
   }
-  if (ehPerguntaDeSabores(grupo) || ehPerguntaDeBorda(grupo)) {
-    return "Sabores e borda são do cadastro de pizza (🍕): ele mesmo monta essas perguntas em cada tamanho.";
+  if (ehPerguntaDaPizza(grupo)) {
+    return "Sabores, borda e massa são do cadastro de pizza (🍕): ele mesmo monta essas perguntas em cada tamanho.";
   }
   if (!(grupo.items || []).length) return "A pergunta não tem nenhuma opção.";
   return null;

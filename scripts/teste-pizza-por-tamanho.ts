@@ -41,6 +41,7 @@ const base: MontagemDaPizza = {
     { nome: "  ", descricao: "", precos: [null, null] }, // linha em branco da tela
   ],
   bordas: [{ nome: "Catupiry", precos: [5, 10] }],
+  massas: [{ nome: "Tradicional", precos: [0, 0] }, { nome: "Integral", precos: [null, 6] }],
 };
 const m = limparMontagem(base);
 confere("linha em branco não vira sabor", m.sabores.length === 3, m.sabores.map((s) => s.nome));
@@ -48,14 +49,19 @@ confere("montagem certa não tem erro", errosDaMontagem(m).length === 0, errosDa
 
 const idsSabores = ["s-cal", "s-cam", "s-mar"];
 const idsBordas = ["b-cat"];
-const gBroto = perguntasDoTamanho(m, 0, idsSabores, idsBordas);
-const gGrande = perguntasDoTamanho(m, 1, idsSabores, idsBordas);
+const idsMassas = ["m-tra", "m-int"];
+const gBroto = perguntasDoTamanho(m, 0, idsSabores, idsBordas, idsMassas);
+const gGrande = perguntasDoTamanho(m, 1, idsSabores, idsBordas, idsMassas);
 confere("Broto: 1 sabor", gBroto[0].title === "Escolha o sabor" && gBroto[0].maxQty === 1 && gBroto[0].minQty === 1, gBroto[0]);
 confere("Broto: Camarão não existe nele", gBroto[0].items.map((i) => i.id).join() === "s-cal,s-mar", gBroto[0].items);
 confere("Grande: até 2 sabores com a regra", gGrande[0].title === "Escolha até 2 sabores" && gGrande[0].maxQty === 2 && gGrande[0].priceRule === "MAIOR", gGrande[0]);
 confere("Grande: preço cheio de cada sabor", gGrande[0].items.map((i) => i.additionalPrice).join() === "50,70,55", gGrande[0].items);
 confere("borda opcional que soma", gGrande[1]?.title === "Borda recheada?" && gGrande[1].minQty === 0 && gGrande[1].maxQty === 1 && gGrande[1].priceRule === null, gGrande[1]);
-confere("sem borda = sem pergunta de borda", perguntasDoTamanho({ ...m, bordas: [] }, 1, idsSabores, []).length === 1);
+confere("massa obrigatória, uma só, depois da borda", gGrande[2]?.title === "Qual massa?" && gGrande[2].minQty === 1 && gGrande[2].maxQty === 1 && gGrande[2].items.map((i) => `${i.id}:${i.additionalPrice}`).join() === "m-tra:0,m-int:6", gGrande[2]);
+confere("Broto só tem a massa tradicional", gBroto[2]?.items.map((i) => i.id).join() === "m-tra", gBroto[2]);
+confere("sem borda nem massa = só a pergunta de sabores", perguntasDoTamanho({ ...m, bordas: [], massas: [] }, 1, idsSabores, [], []).length === 1);
+confere("massa repetida não", errosDaMontagem({ ...m, massas: [...m.massas, { nome: "integral", precos: [1, 1] }] }).some((e) => /massa "integral" aparece/.test(e)));
+confere("massa sem preço não", errosDaMontagem({ ...m, massas: [{ nome: "Fina", precos: [null, null] }] }).some((e) => /massa "Fina" está sem preço/.test(e)));
 
 // O produto como a vitrine e o pedido o leem (preço 0, opções com nome).
 const nomes: Record<string, string> = { "s-cal": "Calabresa", "s-cam": "Camarão", "s-mar": "Marguerita", "b-cat": "Catupiry" };
@@ -104,10 +110,12 @@ const gravados = [
   { id: "s-cam", name: "Camarão", description: "Camarão e catupiry", category: "Pizzas", apenasEmCombo: true, comboGroups: [] },
   { id: "s-mar", name: "Marguerita", description: "Marguerita", category: "Pizzas", apenasEmCombo: true, comboGroups: [] },
   { id: "b-cat", name: "Catupiry", description: "Borda recheada de Catupiry", category: "Pizzas", apenasEmCombo: true, comboGroups: [] },
+  { id: "m-tra", name: "Tradicional", description: "Massa Tradicional", category: "Pizzas", apenasEmCombo: true, comboGroups: [] },
+  { id: "m-int", name: "Integral", description: "Massa Integral", category: "Pizzas", apenasEmCombo: true, comboGroups: [] },
   ...[0, 1].map((i) => ({
     id: `t${i}`, name: nomeDoTamanho(m.tamanhos[i].nome), description: descricaoDoTamanho(m.tamanhos[i]), category: "Pizzas",
     isCombo: false, apenasEmCombo: false, active: i === 0 ? false : true, sortOrder: i,
-    comboGroups: perguntasDoTamanho(m, i, idsSabores, idsBordas).map((g, gi) => ({
+    comboGroups: perguntasDoTamanho(m, i, idsSabores, idsBordas, idsMassas).map((g, gi) => ({
       title: g.title, maxQty: g.maxQty, priceRule: g.priceRule, sortOrder: gi,
       items: g.items.map((it, k) => ({ additionalPrice: it.additionalPrice, sortOrder: k, menuProduct: { id: it.id } })),
     })),
@@ -125,9 +133,10 @@ confere("regra lida do tamanho de 2 sabores", l.regra === "MAIOR");
 confere("sabores com preço por tamanho", JSON.stringify(l.sabores.map((s) => [s.nome, s.precos])) === JSON.stringify([["Calabresa", [30, 50]], ["Camarão", [null, 70]], ["Marguerita", [32, 55]]]), l.sabores);
 confere("descrição igual ao nome volta vazia", l.sabores[2].descricao === "" && l.sabores[0].descricao === "Calabresa e cebola");
 confere("borda lida", l.bordas.length === 1 && l.bordas[0].nome === "Catupiry" && l.bordas[0].precos.join() === "5,10", l.bordas);
+confere("massas lidas na ordem, com preço por tamanho", JSON.stringify(l.massas.map((b) => [b.nome, b.precos])) === JSON.stringify([["Tradicional", [0, 0]], ["Integral", [null, 6]]]), l.massas);
 confere("tamanho pausado vem marcado", l.ativos.join() === "false,true", l.ativos);
 confere("a montagem lida salva sem erro", errosDaMontagem(limparMontagem(l)).length === 0, errosDaMontagem(limparMontagem(l)));
-const regravado = perguntasDoTamanho(limparMontagem(l), 1, l.sabores.map((s) => s.id!), l.bordas.map((b) => b.id!));
+const regravado = perguntasDoTamanho(limparMontagem(l), 1, l.sabores.map((s) => s.id!), l.bordas.map((b) => b.id!), l.massas.map((b) => b.id!));
 confere("ida e volta dá as mesmas perguntas", JSON.stringify(regravado) === JSON.stringify(gGrande), regravado);
 
 console.log(`\n${ok} ok, ${falhas} falha(s)`);
