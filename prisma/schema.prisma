@@ -1978,6 +1978,10 @@ model StockItem {
   /// false = fora do CMV (material de limpeza, gás): é despesa, não custo de
   /// mercadoria. Nulo conta como dentro.
   entraNoCmv      Boolean?
+  /// Estoque IDEAL: até quanto a lista de compras compra (Relatórios ›
+  /// Lista de compras). Nulo = o sistema sugere pelo consumo. Lido e gravado
+  /// por SQL em src/lib/cmv/ideal-no-banco.ts.
+  idealQuantity   Float?
   componentes     ComponenteDoPreparo[] @relation("PreparoDoComponente")
   usadoEmPreparos ComponenteDoPreparo[] @relation("InsumoDoComponente")
   contagens       ContagemItem[]

@@ -20,7 +20,7 @@ import { custosNoDia } from "@/lib/cmv/custo-do-insumo";
 import { entradasComCusto, insumosParaCusto } from "@/lib/cmv/contagem-no-banco";
 import {
   custoDoInsumoNoDia, custoDoItem, montarCatalogo,
-  type CustoDoInsumo, type CustoDoItem, type ItemParaCusto, type ProdutoParaCusto,
+  type Catalogo, type CustoDoInsumo, type CustoDoItem, type ItemParaCusto, type ProdutoParaCusto,
 } from "@/lib/financeiro/custo-pela-ficha";
 import type { CmvRealDoPeriodo } from "@/lib/financeiro/dre";
 
@@ -81,25 +81,30 @@ export type CustoDosItens = {
   usaEstoque: boolean;
 };
 
-/** Carrega o cardápio e o estoque da loja uma vez; o custo de cada insumo é calculado uma vez por dia. */
-export async function prepararCustoDosItens(lojaId: string, tz: string): Promise<CustoDosItens> {
-  const [produtos, insumos, entradas] = await Promise.all([
-    prisma.menuProduct.findMany({
-      where: { franchiseeId: lojaId },
-      select: {
-        id: true, name: true, active: true, cost: true, isCombo: true,
-        recipeItems: { select: { stockItemId: true, quantityConsumed: true, stockItem: { select: { name: true } } } },
-        comboGroups: { select: { id: true, items: { select: { id: true, menuProductId: true } } } },
-      },
-    }),
-    insumosParaCusto(lojaId),
-    entradasComCusto(lojaId, tz),
-  ]);
-  const catalogo = montarCatalogo(produtos.map((p): ProdutoParaCusto => ({
+/** O cardápio da loja no formato da conta (fichas, combos, custo digitado). Também da lista de compras e da previsão de insumos. */
+export async function carregarCatalogo(lojaId: string): Promise<Catalogo> {
+  const produtos = await prisma.menuProduct.findMany({
+    where: { franchiseeId: lojaId },
+    select: {
+      id: true, name: true, active: true, cost: true, isCombo: true,
+      recipeItems: { select: { stockItemId: true, quantityConsumed: true, stockItem: { select: { name: true } } } },
+      comboGroups: { select: { id: true, items: { select: { id: true, menuProductId: true } } } },
+    },
+  });
+  return montarCatalogo(produtos.map((p): ProdutoParaCusto => ({
     id: p.id, nome: p.name || "", ativo: p.active !== false, custo: p.cost ?? null, combo: Boolean(p.isCombo),
     ficha: p.recipeItems.map((r) => ({ insumoId: r.stockItemId, nome: r.stockItem?.name || "insumo", quantidade: Number(r.quantityConsumed) || 0 })),
     grupos: p.comboGroups.map((g) => ({ id: g.id, opcoes: g.items.map((i) => ({ id: i.id, produtoId: i.menuProductId })) })),
   })));
+}
+
+/** Carrega o cardápio e o estoque da loja uma vez; o custo de cada insumo é calculado uma vez por dia. */
+export async function prepararCustoDosItens(lojaId: string, tz: string): Promise<CustoDosItens> {
+  const [catalogo, insumos, entradas] = await Promise.all([
+    carregarCatalogo(lojaId),
+    insumosParaCusto(lojaId),
+    entradasComCusto(lojaId, tz),
+  ]);
   const porDia = new Map<string, CustoDoInsumo>();
   const doDia = (dia: string) => {
     let f = porDia.get(dia);

@@ -19,6 +19,8 @@ export type InsumoEditavel = {
   unit: string;
   quantity: number;
   minQuantity: number | null;
+  /** Estoque ideal: até quanto a Lista de compras compra. */
+  idealQuantity?: number | null;
   unitCost: number | null;
   tipo?: string | null;
   rendimento?: number | null;
@@ -41,6 +43,7 @@ export default function EditarInsumo({ item, todos, onFechar, onSalvo }: {
   const [nome, setNome] = useState(item.name);
   const [unidade, setUnidade] = useState(item.unit);
   const [minimo, setMinimo] = useState(item.minQuantity != null ? String(item.minQuantity).replace(".", ",") : "");
+  const [ideal, setIdeal] = useState(item.idealQuantity != null ? String(item.idealQuantity).replace(".", ",") : "");
   const [custo, setCusto] = useState(item.unitCost != null ? String(item.unitCost).replace(".", ",") : "");
   const [local, setLocal] = useState(item.local || "");
   const [diaria, setDiaria] = useState(Boolean(item.contagemDiaria));
@@ -90,6 +93,7 @@ export default function EditarInsumo({ item, todos, onFechar, onSalvo }: {
           name: nome.trim(),
           unit: unidade,
           minQuantity: minimo.trim() === "" ? "" : lerNumeroBr(minimo),
+          idealQuantity: ideal.trim(),
           tipo: preparo ? "PREPARO" : "INSUMO",
           rendimento: preparo ? rendimento : "",
           local,
@@ -126,6 +130,10 @@ export default function EditarInsumo({ item, todos, onFechar, onSalvo }: {
             </select>
           </label>
           <label style={rotulo}>Estoque mínimo ({unidade})<input inputMode="decimal" value={minimo} onChange={(e) => setMinimo(e.target.value)} style={campo} /></label>
+          <label style={rotulo} title="Quanto você quer ter na prateleira depois de comprar. A Lista de compras compra até ele; vazio, ela sugere pelo consumo de 7 dias.">
+            Estoque ideal ({unidade})
+            <input inputMode="decimal" value={ideal} onChange={(e) => setIdeal(e.target.value)} style={campo} placeholder="vazio = sugerido pelo consumo" />
+          </label>
           {!preparo && (
             <label style={rotulo}>Custo por {unidade} (R$)
               <input inputMode="decimal" value={custo} onChange={(e) => setCusto(e.target.value)} style={campo} placeholder="vem da última compra" />
