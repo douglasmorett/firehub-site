@@ -58,7 +58,7 @@ export const RELATORIOS: RelatorioDoMenu[] = [
     busca: "ifood 99food keeta site app aplicativo repasse comissão marketplace plataforma detalhado cupom semanal" },
   { slug: "data-hora", secao: "Vendas", titulo: "Vendas por dia e hora", href: "/store/relatorios/data-hora",
     descricao: "O mapa de calor da semana: o melhor horário e o melhor dia de vendas.",
-    busca: "horário de pico mapa de calor movimento dia da semana hora" },
+    busca: "horário de pico mapa de calor movimento dia da semana hora faturamento por hora por data grade" },
   { slug: "areas-de-entrega", secao: "Vendas", titulo: "Vendas por área de entrega", href: "/store/relatorios/areas-de-entrega",
     descricao: "Qual bairro ou área pede mais, em valor, quantidade e ticket.",
     busca: "bairro região delivery zona taxa de entrega" },
@@ -67,8 +67,8 @@ export const RELATORIOS: RelatorioDoMenu[] = [
     busca: "cupom cupons gerados promoção cashback desconto operador quem deu desconto motivo do desconto desconto por funcionário" },
   // ── Operação ──
   { slug: "tempos", secao: "Operação", titulo: "Tempo por status e produção", href: "/store/relatorios/tempos",
-    descricao: "Quanto o pedido fica em cada etapa, os atrasados e o tempo de preparo por produto.",
-    busca: "tempo de produção cozinha kds atraso entrega preparo" },
+    descricao: "Quanto o pedido fica em cada etapa, a cozinha hora a hora em faixas, o tempo por estação do KDS e o preparo por produto.",
+    busca: "tempo de produção cozinha kds atraso entrega preparo faixas por hora estação chapa fritadeira" },
   // Pedido do Douglas (16/10/2026): as abas "Faltou item" e "Veio errado
   // (troca)" do Ver pedido (lib/reposicao.ts) — quantas e quanto custaram.
   { slug: "reposicoes", secao: "Operação", titulo: "Reposições (faltou item e troca)", href: "/store/relatorios/reposicoes",
@@ -81,6 +81,9 @@ export const RELATORIOS: RelatorioDoMenu[] = [
   { slug: "cancelamentos", secao: "Operação", titulo: "Cancelamentos e cortesias", href: "/store/relatorios/cancelamentos",
     descricao: "O que a loja cancelou (pedido, rodada, item) e deu de cortesia: quem fez, quando, motivo e valor, com os alertas do que conferir.",
     busca: "cancelamento cancelamentos cancelado item cancelado estorno operador funcionário caixa motivo fraude anti-fraude conferência cortesia cortesias brinde grátis por conta da casa auditoria" },
+  { slug: "falhas-de-integracao", secao: "Operação", titulo: "Pedidos com falha na integração", href: "/store/relatorios/falhas-de-integracao",
+    descricao: "Pedido do iFood ou do 99Food que não entrou: quando, qual, por quê — e se entrou depois.",
+    busca: "integração erro pedido não entrou ifood 99food falhou sumiu marketplace app" },
   { slug: "atendentes", secao: "Operação", titulo: "Desempenho por atendente", href: "/store/relatorios/atendentes",
     descricao: "Quem lançou quantos pedidos e quanto vendeu, com as categorias.",
     busca: "atendente funcionário operador caixa ranking vendedor",
