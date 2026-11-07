@@ -9,27 +9,34 @@
  * corrige atributo divergente na hidratação e ficavam dois botões acesos.
  * Os números vêm depois, pela rota de cada relatório (lib/relatorios/servidor.ts),
  * que confere o acesso de novo.
+ *
+ * O logo e o fuso vão para o cabeçalho do PDF (app/store/relatorios/layout.tsx).
+ * O `cache` faz o layout e a página dividirem a MESMA consulta na requisição.
  */
+import { cache } from "react";
 import { getServerSession } from "next-auth/next";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { hojeNaLoja } from "@/lib/relatorios/base";
 
-export async function acessoAoRelatorio(): Promise<{ nomeDaLoja: string; hoje: string }> {
+export const acessoAoRelatorio = cache(async (): Promise<{ nomeDaLoja: string; hoje: string; logo: string | null; fuso: string | null }> => {
   const session = await getServerSession(authOptions).catch(() => null);
   if (!session?.user?.email) redirect("/login");
   const role = (session.user as any)?.role;
   if (role !== "FRANCHISEE" && role !== "ADMIN" && role !== "STAFF") redirect("/login");
   const usuario = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { storeName: true, storeTimezone: true, owner: { select: { storeName: true, storeTimezone: true } } },
+    select: { storeName: true, storeTimezone: true, storeLogo: true, owner: { select: { storeName: true, storeTimezone: true, storeLogo: true } } },
   }).catch(() => null);
+  const fuso = usuario?.owner?.storeTimezone || usuario?.storeTimezone || null;
   return {
     nomeDaLoja: usuario?.owner?.storeName || usuario?.storeName || "Minha loja",
-    hoje: hojeNaLoja(usuario?.owner?.storeTimezone || usuario?.storeTimezone),
+    hoje: hojeNaLoja(fuso),
+    logo: usuario?.owner?.storeLogo || usuario?.storeLogo || null,
+    fuso,
   };
-}
+});
 
 /** A query da URL como o Next entrega (`searchParams`), em texto. */
 export function queryDaPagina(sp: Record<string, string | string[] | undefined>): string {
