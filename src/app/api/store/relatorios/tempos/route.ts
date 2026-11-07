@@ -4,6 +4,7 @@
  * Filtros comuns (lib/relatorios/base.ts) mais:
  *   apenasAtrasados=0   a lista traz TODOS os pedidos (padrão: só os que saíram depois do prazo)
  *   formato=xlsx        baixa a planilha (as duas partes, e a lista com todos os pedidos)
+ *   faixa1=7&faixa2=14  as faixas do tempo de cozinha por hora (no prazo / atenção / atrasado)
  *
  * Categoria e produto marcados: as etapas contam os pedidos que TÊM esse item
  * ("quanto demora um pedido com pizza"), e a produção mostra só esses itens.
@@ -21,7 +22,7 @@ import { catalogoDoRelatorio } from "@/lib/relatorios/catalogo";
 import { canalDoRelatorio, DIAS_CURTOS, fmtDia, ROTULO_DO_TIPO, tipoDeVenda } from "@/lib/relatorios/base";
 import {
   aceitoNaChegada, antesDoDado, DIA_DAS_BAIXAS_POR_TELA, DIA_DO_PRONTO_POR_ITEM, DIA_DOS_CARIMBOS, ENTREGUES_PARA_LOTE, entreguesEmLote, ETAPAS,
-  JANELA_DO_LOTE_S, limitesDoAlerta, ROTULO_DA_FAIXA, rotuloDoMedirAte, temposDoRelatorio, TETO_DA_RUA_MIN,
+  fraseDaPiorHora, fraseDasEstacoes, JANELA_DO_LOTE_S, lerFaixasDaCozinha, limitesDoAlerta, ROTULO_DA_FAIXA, rotuloDoMedirAte, temposDoRelatorio, TETO_DA_RUA_MIN,
   type ChaveDaEtapa, type ConfigDosTempos, type MedirAte, type NoDaProducao, type PedidoDaProducao, type PedidoParaTempos, type ResumoDoPrazo,
 } from "@/lib/relatorios/tempos";
 import { chaveDaTela, lerBaixas, lerTelasProntas } from "@/lib/kds-telas";
@@ -139,6 +140,8 @@ export async function GET(req: NextRequest) {
       scheduledDatetime: p.scheduledDatetime,
       telasProntas: lerTelasProntas(p.kdsTelasProntas),
       baixas: lerBaixas(p.kdsBaixas),
+      // O faturamento da hora nas faixas da cozinha (a régua única).
+      valor: p.totalAmount,
       itens: (p.items || []).map((i: any) => {
         const categoria = categoriaDoItem(i, mapas) || SEM_CATEGORIA;
         const nome = nomeDoProduto(i);
@@ -168,7 +171,8 @@ export async function GET(req: NextRequest) {
     limiteDaLista: planilha ? Number.MAX_SAFE_INTEGER : LIMITE_DA_LISTA_NA_TELA,
     limitePorHora: planilha ? 0 : undefined,
     medirAte,
-    telas: telasDoKds.map((t) => ({ chave: t.chave, estagio: t.estagio, categorias: t.categorias })),
+    telas: telasDoKds.map((t) => ({ chave: t.chave, estagio: t.estagio, categorias: t.categorias, nome: t.nome })),
+    faixasDaCozinha: lerFaixasDaCozinha(sp.get("faixa1"), sp.get("faixa2")),
   };
   const resultado = temposDoRelatorio(paraConta, cfg);
   const cabecalho = cabecalhoDoRelatorio(ctx);
@@ -350,12 +354,58 @@ export async function GET(req: NextRequest) {
     { celulas: [{ v: `Tempo do pedido: da entrada na cozinha até o ÚLTIMO item dele chegar em ${rotuloDoMedirAte(medirAte)}. Média só da produção: os mesmos pedidos até o último pronto da tela de produção (a montagem). Mediana por item: cada linha de pedido é uma medição.`, estilo: "suave" }] },
   ];
 
+  // Aba 6 — a cozinha em faixas por hora, com o faturamento da hora (o SWFast).
+  const fx = resultado.faixasDaCozinha;
+  const rotulosDasFaixas = [
+    `No prazo (até ${fx.faixas.atencaoMin} min)`,
+    `Atenção (${fx.faixas.atencaoMin}–${fx.faixas.atrasadoMin} min)`,
+    `Atrasado (mais de ${fx.faixas.atrasadoMin} min)`,
+  ];
+  const linhaDasFaixas = (rotulo: Celula, x: { medidos: number; noPrazo: number; atencao: number; atrasado: number; faturamento: number }, negrito = false): LinhaDaPlanilha => ({
+    celulas: [
+      rotulo, qtd(x.medidos, negrito),
+      qtd(x.noPrazo, negrito), pct(x.noPrazo, x.medidos),
+      qtd(x.atencao, negrito), pct(x.atencao, x.medidos),
+      qtd(x.atrasado, negrito), pct(x.atrasado, x.medidos),
+      { v: x.faturamento, estilo: negrito ? "reaisNegrito" : "reais" },
+    ],
+  });
+  const abaFaixas: LinhaDaPlanilha[] = [
+    ...topo("Tempo de cozinha em faixas por hora"),
+    { celulas: [{ v: fraseDaPiorHora(fx), estilo: "negrito" }] },
+    { celulas: [] },
+    { celulas: ["Hora", "Pedidos medidos", rotulosDasFaixas[0], "%", rotulosDasFaixas[1], "%", rotulosDasFaixas[2], "%", "Faturamento da hora"], estilo: "cabecalho" },
+    ...fx.horas.map((h) => linhaDasFaixas(`${String(h.hora).padStart(2, "0")}h`, h)),
+    linhaDasFaixas({ v: "TOTAL", estilo: "negrito" }, fx, true),
+    { celulas: [] },
+    { celulas: [{ v: "Tempo de cozinha: da entrada do pedido na cozinha (a tela do KDS; balcão e mesa, o lançamento) até ficar pronto — a etapa \"Na cozinha\". A hora é a do pedido, no relógio da loja (da 0h às 4h, o fim do expediente do dia anterior).", estilo: "suave" }] },
+    { celulas: [{ v: "Faturamento da hora: tudo o que foi vendido naquela hora pela régua única (o mesmo número do Vendas por dia e hora), inclusive os pedidos sem tempo medido e os agendados. A contagem das faixas é só dos pedidos medidos.", estilo: "suave" }] },
+  ];
+
+  // Aba 7 — o tempo de cada estação do KDS (a tela).
+  const fraseDaEstacao = fraseDasEstacoes(resultado.estacoes);
+  const abaEstacoes: LinhaDaPlanilha[] = [
+    ...topo("Tempo por estação do KDS"),
+    ...(fraseDaEstacao ? [{ celulas: [{ v: fraseDaEstacao, estilo: "negrito" as const }] }, { celulas: [] }] : []),
+    { celulas: ["Estação (tela do KDS)", "Etapa", "Pedidos", "Itens", "Mínimo", "Mediana", "Média", "90% em até", "Máximo"], estilo: "cabecalho" },
+    ...resultado.estacoes.map((e) => ({
+      celulas: [
+        { v: e.nome, estilo: "negrito" as const }, e.estagio === "finishing" ? "Finalização" : "Produção", qtd(e.medidos), qtd(e.itens),
+        min(e.minimo), min(e.mediana, true), min(e.media), min(e.p90), min(e.maximo),
+      ] as Celula[],
+    })),
+    { celulas: [] },
+    { celulas: [{ v: `Da entrada do pedido na cozinha até a baixa daquela tela. A hora de cada baixa existe desde ${fmtDia(DIA_DAS_BAIXAS_POR_TELA)}; a loja que só imprime por categoria (sem KDS por estação) não tem esse carimbo.`, estilo: "suave" }] },
+  ];
+
   const buffer = montarPlanilha([
     { nome: "Etapas", congelarLinhas: 6, larguras: [30, 44, 10, 10, 12, 13, 17, 15, 10, 10, 10, 12, 10], linhas: abaEtapas },
     { nome: "Por dia", congelarLinhas: 6, larguras: [12, 13, 10, 17, 12, 13, 14, 22, 10, 16, 14, 17, 18, 13], linhas: abaPorDia },
     { nome: "Pedidos", congelarLinhas: 6, larguras: [12, 7, 7, 15, 12, 10, 10, 13, 14, 13, 14, 26, 20, 17, 12, 13, 14, 22, 10, 16, 14], linhas: abaPedidos },
     { nome: "Produção por produto", congelarLinhas: 6, larguras: [44, 11, 24, 11, 12, 10, 10, 10, 12, 10], linhas: abaProducao },
     { nome: "Produção por hora", congelarLinhas: 6, larguras: [8, 10, 15, 18, 30, 9, 30, 9, 10, 16, 12], linhas: abaPorHora },
+    { nome: "Cozinha em faixas", congelarLinhas: 8, larguras: [10, 15, 20, 8, 22, 8, 24, 8, 18], linhas: abaFaixas },
+    { nome: "Por estação", congelarLinhas: 6, larguras: [30, 12, 10, 10, 10, 10, 10, 12, 10], linhas: abaEstacoes },
   ]);
   return respostaDePlanilha(buffer, `tempos_${ctx.filtros.de}_a_${ctx.filtros.ate}.xlsx`);
 }

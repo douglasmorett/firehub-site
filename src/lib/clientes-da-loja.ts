@@ -44,8 +44,8 @@ import { nomeDoItem } from "@/lib/nome-do-item";
 import { parseComboSelections } from "@/lib/parse-combo";
 import { STATUS_FORA_DA_VENDA } from "@/lib/relatorios/base";
 import { lojasDoGrupo } from "@/lib/loja-ativa";
-import { FUSO_PADRAO } from "@/lib/fuso";
-import { chaveDoCliente, numerosDoCliente } from "@/lib/clientes-da-loja-regras";
+import { dataDaLoja, FUSO_PADRAO } from "@/lib/fuso";
+import { aniversariantes, chaveDoCliente, numerosDoCliente } from "@/lib/clientes-da-loja-regras";
 import { aniversarioBonito, cadastroEditado, garantirTabelaDoCadastro, type CadastroEditado } from "@/lib/cadastro-do-cliente";
 import { carimbosNaFicha, trilhaNaFicha, type FidelidadeNaFicha } from "@/lib/fidelidade-na-ficha";
 import { carimbosNoAr, lerCarimbos } from "@/lib/carimbos";
@@ -109,10 +109,11 @@ export async function visaoDasLojas(
   };
 }
 
-export type FiltroDeClientes = "todos" | "com_saldo" | "pediram" | "nunca" | "sumidos";
+/** `aniversario_mes`/`aniversario_semana`: quem faz aniversário no mês ou nos próximos 7 dias (lib/clientes-da-loja-regras.ts). */
+export type FiltroDeClientes = "todos" | "com_saldo" | "pediram" | "nunca" | "sumidos" | "aniversario_mes" | "aniversario_semana";
 export type OrdemDeClientes = "recentes" | "pedidos" | "gasto" | "saldo" | "nome";
 
-export const FILTROS: FiltroDeClientes[] = ["todos", "com_saldo", "pediram", "nunca", "sumidos"];
+export const FILTROS: FiltroDeClientes[] = ["todos", "com_saldo", "pediram", "nunca", "sumidos", "aniversario_mes", "aniversario_semana"];
 export const ORDENS: OrdemDeClientes[] = ["recentes", "pedidos", "gasto", "saldo", "nome"];
 
 /** Dias sem pedir para o cliente contar como "sumido". */
@@ -127,6 +128,10 @@ export type ClienteDaLista = {
   primeiro: string | null;
   importado: boolean;
   saldo: number;
+  /** Só nos filtros de aniversário: a data como a ficha mostra, o dia dela neste ano ("YYYY-MM-DD"), e se é hoje. */
+  aniversario?: string;
+  aniversarioEm?: string;
+  aniversarioHoje?: boolean;
 };
 
 export type ResumoDosClientes = {
@@ -314,6 +319,45 @@ export function sqlDoResumoDeClientes(lojaId: string, chaves: string[], saldos: 
     FROM clientes c`;
 }
 
+/** Os cadastros do site com aniversário de quem pediu nesta loja (ou foi trazido por ela). Exportada para o teste. */
+export function sqlDosAniversariosDoCadastro(lojaId: string) {
+  return Prisma.sql`
+    SELECT sc."phone", sc."birthDate" FROM "StoreCustomer" sc
+    WHERE btrim(COALESCE(sc."birthDate", '')) <> ''
+      AND (sc."lojaDeOrigemId" = ${lojaId}
+           OR sc."id" IN (SELECT DISTINCT o."customerId" FROM "CustomerOrder" o WHERE o."franchiseeId" = ${lojaId} AND o."customerId" IS NOT NULL))`;
+}
+
+/** A condição e a ordem da lista nos filtros de aniversário: só estas chaves, na ordem delas. Exportada para o teste. */
+export function sqlDoFiltroDeAniversario(chaves: string[]): { onde: Prisma.Sql; ordem: Prisma.Sql } {
+  return {
+    onde: chaves.length ? Prisma.sql`c.chave = ANY(${chaves}::text[])` : Prisma.sql`FALSE`,
+    ordem: Prisma.sql`array_position(${chaves}::text[], c.chave), lower(c.nome) ASC NULLS LAST`,
+  };
+}
+
+/**
+ * O aniversário de cada cliente da loja, pela chave (DDD + 8 últimos): o do
+ * cadastro do site (StoreCustomer de quem pediu NESTA loja, ou trazido por
+ * ela de outro sistema — a mesma regra da ficha) e, por cima, o que a loja
+ * corrigiu no "Editar cadastro" (ClienteDaLoja), que vence como na ficha.
+ */
+export async function aniversariosDaLoja(lojaId: string): Promise<Map<string, string>> {
+  const mapa = new Map<string, string>();
+  const cadastros = await prisma.$queryRaw<{ phone: string | null; birthDate: string | null }[]>(sqlDosAniversariosDoCadastro(lojaId));
+  for (const c of cadastros) {
+    const chave = chaveDoCliente(c.phone);
+    const bonito = aniversarioBonito(c.birthDate);
+    if (chave && bonito) mapa.set(chave, bonito);
+  }
+  if (await garantirTabelaDoCadastro()) {
+    const editados = await prisma.$queryRaw<{ chave: string; aniversario: string | null }[]>(Prisma.sql`
+      SELECT "chave", "aniversario" FROM "ClienteDaLoja" WHERE "lojaId" = ${lojaId} AND btrim(COALESCE("aniversario", '')) <> ''`);
+    for (const e of editados) if (e.aniversario) mapa.set(e.chave, e.aniversario);
+  }
+  return mapa;
+}
+
 export type ConsultaDaLista = {
   q?: string | null;
   filtro?: FiltroDeClientes;
@@ -365,8 +409,16 @@ export async function listarClientes(
   if (filtro === "pediram") condicoes.push(Prisma.sql`c.pedidos > 0`);
   if (filtro === "nunca") condicoes.push(Prisma.sql`c.pedidos = 0`);
   if (filtro === "sumidos") condicoes.push(Prisma.sql`c.pedidos > 0 AND c.ultimo < ${horaEmUtc(limite)}`);
+  // Aniversariantes: a lista vem na ordem da data (o de hoje e os próximos primeiro na semana).
+  const ehAniversario = filtro === "aniversario_mes" || filtro === "aniversario_semana";
+  const daVez = ehAniversario
+    ? aniversariantes(await aniversariosDaLoja(sessao.lojaId), dataDaLoja(sessao.fuso, agora), filtro === "aniversario_mes" ? "mes" : "semana")
+    : [];
+  const doAniversario = new Map(daVez.map((a) => [a.chave, a]));
+  const filtroDoAniversario = sqlDoFiltroDeAniversario(daVez.map((a) => a.chave));
+  if (ehAniversario) condicoes.push(filtroDoAniversario.onde);
 
-  const ordenar = {
+  const ordenar = ehAniversario ? filtroDoAniversario.ordem : {
     recentes: Prisma.sql`c.ultimo DESC NULLS LAST, c.saldo DESC, lower(c.nome) ASC NULLS LAST`,
     pedidos: Prisma.sql`c.pedidos DESC, c.gasto DESC`,
     gasto: Prisma.sql`c.gasto DESC, c.pedidos DESC`,
@@ -374,13 +426,13 @@ export async function listarClientes(
     nome: Prisma.sql`lower(c.nome) ASC NULLS LAST`,
   }[ordem];
 
-  type Linha = Omit<ClienteDaLista, "ultimo" | "primeiro"> & { tel: string; ultimo: Date | null; primeiro: Date | null; total: number };
+  type Linha = Omit<ClienteDaLista, "ultimo" | "primeiro"> & { chave: string; tel: string; ultimo: Date | null; primeiro: Date | null; total: number };
   type LinhaDoResumo = { clientes: number; pediram: number; ativos30: number; sumidos: number; novos30: number };
 
   const [linhas, [resumo]] = await Promise.all([
     prisma.$queryRaw<Linha[]>(Prisma.sql`
       ${sqlDaBaseDeClientes(sessao.lojaId, chaves, valores, comEdicoes)}
-      SELECT c.tel, c.nome, c.pedidos, c.gasto, c.ultimo, c.primeiro, c.importado, c.saldo,
+      SELECT c.chave, c.tel, c.nome, c.pedidos, c.gasto, c.ultimo, c.primeiro, c.importado, c.saldo,
              count(*) OVER()::int AS total
       FROM clientes c
       WHERE ${Prisma.join(condicoes, " AND ")}
@@ -390,16 +442,20 @@ export async function listarClientes(
   ]);
 
   return {
-    clientes: linhas.map((l) => ({
-      telefone: l.tel,
-      nome: l.nome,
-      pedidos: Number(l.pedidos) || 0,
-      gasto: Math.round((Number(l.gasto) || 0) * 100) / 100,
-      ultimo: l.ultimo ? new Date(l.ultimo).toISOString() : null,
-      primeiro: l.primeiro ? new Date(l.primeiro).toISOString() : null,
-      importado: Boolean(l.importado),
-      saldo: Math.round((Number(l.saldo) || 0) * 100) / 100,
-    })),
+    clientes: linhas.map((l) => {
+      const aniv = doAniversario.get(l.chave);
+      return {
+        telefone: l.tel,
+        nome: l.nome,
+        pedidos: Number(l.pedidos) || 0,
+        gasto: Math.round((Number(l.gasto) || 0) * 100) / 100,
+        ultimo: l.ultimo ? new Date(l.ultimo).toISOString() : null,
+        primeiro: l.primeiro ? new Date(l.primeiro).toISOString() : null,
+        importado: Boolean(l.importado),
+        saldo: Math.round((Number(l.saldo) || 0) * 100) / 100,
+        ...(aniv ? { aniversario: aniv.aniversario, aniversarioEm: aniv.em, aniversarioHoje: aniv.hoje } : {}),
+      };
+    }),
     total: linhas[0]?.total ?? 0,
     resumo: {
       clientes: resumo?.clientes ?? 0,

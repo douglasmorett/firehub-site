@@ -14,14 +14,18 @@
  *   motoboy —, e a lista dos que estouraram com quanto passaram;
  * - o tempo de preparo por PRODUTO, que sai das baixas de cada tela do KDS —
  *   o percurso completo (montagem + forno) e, aberto, tela por tela.
+ *
+ * E o que o SWFast mostrava ao Alex (Hambúrgueria Avenida), com a resposta em
+ * uma frase em cima: a cozinha hora a hora em faixas (no prazo / atenção /
+ * atrasado, com o faturamento da hora) e o tempo de cada estação do KDS.
  */
 import React, { useMemo, useState } from "react";
 import { PALETA } from "@/lib/paleta-brasa";
-import { DIAS_CURTOS, fmtDia, fmtPct, fmtQtd, ROTULO_DO_TIPO, type TipoDeVenda } from "@/lib/relatorios/base";
+import { DIAS_CURTOS, fmtDia, fmtPct, fmtQtd, fmtReais, ROTULO_DO_TIPO, type TipoDeVenda } from "@/lib/relatorios/base";
 import {
-  ETAPAS, fmtMin, ROTULO_DA_FAIXA, rotuloDoMedirAte,
-  type ChaveDaEtapa, type FaixaDoPrazo, type HoraDaProducao, type LinhaDoDia, type LinhaDoPedido, type LinhaDoTipo, type MedirAte, type NoDaProducao,
-  type PedidoDaProducao, type ResumoDaEtapa, type ResumoDaProducao, type ResumoDoPrazo,
+  ETAPAS, FAIXAS_DA_COZINHA_PADRAO, fmtMin, fraseDaPiorHora, fraseDasEstacoes, ROTULO_DA_FAIXA, rotuloDoMedirAte,
+  type ChaveDaEtapa, type EstacaoDaCozinha, type FaixaDoPrazo, type HoraDaProducao, type LinhaDoDia, type LinhaDoPedido, type LinhaDoTipo, type MedirAte, type NoDaProducao,
+  type PedidoDaProducao, type ResumoDaEtapa, type ResumoDaProducao, type ResumoDasFaixas, type ResumoDoPrazo,
 } from "@/lib/relatorios/tempos";
 import { canaisConhecidos } from "@/lib/canal-do-pedido";
 import BarraDeFiltros from "@/components/relatorios/BarraDeFiltros";
@@ -43,6 +47,8 @@ type Resposta = {
   totalDaLista: number;
   listaCortada: boolean;
   producao: ResumoDaProducao;
+  faixasDaCozinha: ResumoDasFaixas;
+  estacoes: EstacaoDaCozinha[];
   /** As telas do KDS da loja — as opções do "Medir até" da produção por produto. */
   telas: { chave: string; nome: string; estagio: "production" | "finishing"; loja?: string }[];
   medirAte: MedirAte;
@@ -124,7 +130,8 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
   // `medir`: até onde a produção por produto mede ("" = o percurso completo,
   // "producao" = só a montagem, "tela:<chave>") — ver lib/relatorios/tempos.ts, MedirAte.
   // Não pode se chamar `ate`: esse é a data final do período na URL.
-  const { filtros, mudar, extras, mudarExtra, query } = useFiltros(inicio, "7d", { apenasAtrasados: "", medir: "" });
+  // `faixa1`/`faixa2`: as faixas da cozinha por hora ("" = 7 e 14 min, o padrão do SWFast).
+  const { filtros, mudar, extras, mudarExtra, query } = useFiltros(inicio, "7d", { apenasAtrasados: "", medir: "", faixa1: "", faixa2: "" });
   const { dados, carregando, erro, recarregar } = useRelatorio<Resposta>("tempos", query);
   const apenasAtrasados = extras.apenasAtrasados !== "0";
   const telas = dados?.telas || [];
@@ -233,6 +240,12 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
               p.saiuAtrasado > 1 ? `e mais ${p.saiuAtrasado.toLocaleString("pt-BR")} entregas sem hora de entrega que já saíram da loja atrasadas` : "",
             ].filter(Boolean).join(" · ")} />
         </GradeDeCartoes>
+      )}
+
+      {/* ── A COZINHA HORA A HORA (a "Análise tempo de produção" do SWFast) ── */}
+      {dados?.faixasDaCozinha && (
+        <CozinhaPorHora r={dados.faixasDaCozinha} faixa1={extras.faixa1} faixa2={extras.faixa2}
+          mudar={(k, v) => mudarExtra(k, v.replace(/\D/g, "").slice(0, 3))} />
       )}
 
       {/* ── PARTE 1: TEMPO POR ETAPA ── */}
@@ -516,6 +529,7 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
               )}
             </Bloco>
 
+            <Estacoes estacoes={dados.estacoes} />
           </div>
 
           <Bloco titulo="Por hora do dia" subtitulo={`Hora em que o pedido entrou na cozinha. O tempo do pedido vai até ${rotuloDoMedirAte(medirAte)}. Toque na hora para ver os pedidos, o mais demorado primeiro, com a hora de cada tela.`} semPadding>
@@ -549,6 +563,150 @@ export default function TemposClient({ inicio }: { inicio: InicioDosFiltros }) {
         </>
       )}
     </ModeloDoRelatorio>
+  );
+}
+
+/**
+ * A cozinha hora a hora: quantos pedidos ficaram no prazo, em atenção e
+ * atrasados (as faixas do lojista, padrão 7 e 14 min), e quanto a loja vendeu
+ * na hora — com o horário que mais atrasa dito em uma frase em cima.
+ */
+function CozinhaPorHora({ r, faixa1, faixa2, mudar }: {
+  r: ResumoDasFaixas; faixa1: string; faixa2: string; mudar: (k: "faixa1" | "faixa2", v: string) => void;
+}) {
+  const cores = { noPrazo: PALETA.ok, atencao: PALETA.atencao, atrasado: PALETA.grave };
+  // Um em cada cinco atrasados na pior hora já é vermelho; abaixo, amarelo; nenhum, verde.
+  const tom = !r.piorHora ? { cor: PALETA.ok, fundo: PALETA.okClaro, borda: PALETA.okBorda }
+    : r.piorHora.parte >= 0.2 ? { cor: PALETA.grave, fundo: PALETA.graveClaro, borda: PALETA.graveBorda }
+    : { cor: PALETA.atencao, fundo: PALETA.atencaoClaro, borda: PALETA.atencaoBorda };
+  const campoMin: React.CSSProperties = { width: 52, padding: "5px 6px", borderRadius: 8, border: `1.5px solid ${PALETA.areiaBorda}`, fontSize: "0.84rem", fontFamily: "inherit", textAlign: "center" };
+  const pctDe = (n: number, de: number) => (de ? fmtPct((n / de) * 100, 0) : "—");
+  // O que foi digitado não é o que vale (o "no prazo" maior que o "atrasado"): a conta usou o padrão.
+  const digitadoNaoVale = Boolean(faixa1 || faixa2) && (
+    r.faixas.atencaoMin !== Number(faixa1 || FAIXAS_DA_COZINHA_PADRAO.atencaoMin)
+    || r.faixas.atrasadoMin !== Number(faixa2 || FAIXAS_DA_COZINHA_PADRAO.atrasadoMin));
+  const celulaDaFaixa = (n: number, de: number, forte = false, cor?: string) => (
+    <td style={{ ...td, ...num, fontWeight: forte ? 800 : 500, color: cor }}>{n.toLocaleString("pt-BR")} <span style={suave}>{pctDe(n, de)}</span></td>
+  );
+  return (
+    <Bloco titulo="A cozinha hora a hora"
+      subtitulo={`Quanto cada pedido ficou na cozinha (do KDS até ficar pronto), em faixas, e quanto a loja vendeu em cada hora · ${r.medidos.toLocaleString("pt-BR")} pedidos medidos`}
+      acoes={
+        <div className="fh-sem-impressao" style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", fontSize: "0.8rem", fontWeight: 700, color: PALETA.carvao2 }}>
+          <span style={{ color: PALETA.ok }} aria-hidden>●</span> No prazo até
+          <input name="faixa1" inputMode="numeric" aria-label="No prazo até quantos minutos" value={faixa1} placeholder={String(FAIXAS_DA_COZINHA_PADRAO.atencaoMin)}
+            onChange={(e) => mudar("faixa1", e.target.value)} style={campoMin} /> min
+          <span style={{ color: PALETA.grave, marginLeft: 6 }} aria-hidden>●</span> atrasado acima de
+          <input name="faixa2" inputMode="numeric" aria-label="Atrasado acima de quantos minutos" value={faixa2} placeholder={String(FAIXAS_DA_COZINHA_PADRAO.atrasadoMin)}
+            onChange={(e) => mudar("faixa2", e.target.value)} style={campoMin} /> min
+        </div>
+      } semPadding>
+      <p role="note" style={{ margin: "0.9rem 1.1rem 0.6rem", padding: "0.7rem 0.9rem", borderRadius: 12, background: tom.fundo, border: `1px solid ${tom.borda}`, color: tom.cor, fontWeight: 800, fontSize: "0.92rem" }}>
+        {fraseDaPiorHora(r)}
+      </p>
+      {digitadoNaoVale && (
+        <p style={{ ...suave, margin: "0 1.1rem 0.6rem" }}>
+          O “no prazo” precisa ser menor que o “atrasado”: a conta está usando {r.faixas.atencaoMin} e {r.faixas.atrasadoMin} min.
+        </p>
+      )}
+      {r.horas.length === 0 ? <Vazio texto="Nenhum pedido no período e filtros escolhidos." /> : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", minWidth: 760 }}>
+            <thead>
+              <tr style={cabecaDaTabela}>
+                <th style={th}>Hora</th>
+                <th style={{ ...th, width: 180 }} aria-label="Faixas em barra" />
+                <th style={{ ...th, ...num, color: PALETA.ok }}>No prazo (até {r.faixas.atencaoMin} min)</th>
+                <th style={{ ...th, ...num, color: PALETA.atencao }}>Atenção ({r.faixas.atencaoMin}–{r.faixas.atrasadoMin} min)</th>
+                <th style={{ ...th, ...num, color: PALETA.grave }}>Atrasado (+{r.faixas.atrasadoMin} min)</th>
+                <th style={{ ...th, ...num }}>Faturamento da hora</th>
+              </tr>
+            </thead>
+            <tbody>
+              {r.horas.map((h) => {
+                const pior = r.piorHora?.hora === h.hora;
+                return (
+                  <tr key={h.hora} style={{ borderBottom: `1px solid ${PALETA.areia}`, background: pior ? PALETA.graveClaro : undefined }}>
+                    <td style={{ ...td, fontWeight: 800, whiteSpace: "nowrap" }}>
+                      {String(h.hora).padStart(2, "0")}h
+                      {pior && <div style={{ ...suave, color: PALETA.grave, fontWeight: 800 }}>a que mais atrasa</div>}
+                    </td>
+                    <td style={{ ...td, paddingTop: 13 }}>
+                      {h.medidos > 0 ? (
+                        <div style={{ display: "flex", height: 10, borderRadius: 999, overflow: "hidden", background: PALETA.areia }}
+                          title={`${h.noPrazo} no prazo · ${h.atencao} em atenção · ${h.atrasado} atrasados`}>
+                          {(["noPrazo", "atencao", "atrasado"] as const).map((k) => h[k] > 0 && (
+                            <div key={k} style={{ width: `${(h[k] / h.medidos) * 100}%`, background: cores[k] }} />
+                          ))}
+                        </div>
+                      ) : <span style={suave}>sem tempo medido</span>}
+                    </td>
+                    {celulaDaFaixa(h.noPrazo, h.medidos)}
+                    {celulaDaFaixa(h.atencao, h.medidos)}
+                    {celulaDaFaixa(h.atrasado, h.medidos, h.atrasado > 0, h.atrasado ? PALETA.grave : undefined)}
+                    <td style={{ ...td, ...num, fontWeight: 700 }}>{fmtReais(h.faturamento)}</td>
+                  </tr>
+                );
+              })}
+              <tr style={{ background: PALETA.areia, fontWeight: 900 }}>
+                <td style={td}>Total</td>
+                <td style={td} />
+                {celulaDaFaixa(r.noPrazo, r.medidos, true)}
+                {celulaDaFaixa(r.atencao, r.medidos, true)}
+                {celulaDaFaixa(r.atrasado, r.medidos, true, r.atrasado ? PALETA.grave : undefined)}
+                <td style={{ ...td, ...num }}>{fmtReais(r.faturamento)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p style={{ ...suave, fontSize: "0.76rem", padding: "0.8rem 1.1rem", margin: 0, lineHeight: 1.5 }}>
+        A hora é a do pedido, no relógio da loja (da 0h às 4h, o fim do expediente do dia anterior). O tempo é o de “Na cozinha” lá embaixo: da entrada na tela do KDS (balcão e mesa, do lançamento) até ficar pronto — pedido sem o pronto marcado não entra nas faixas.
+        {" "}O faturamento é tudo o que a loja vendeu na hora, o mesmo número do Vendas por dia e hora (com os pedidos sem tempo medido e os agendados).
+      </p>
+    </Bloco>
+  );
+}
+
+/** O tempo de cada estação do KDS (a chapa, a fritadeira): da entrada na cozinha até a baixa daquela tela. */
+function Estacoes({ estacoes }: { estacoes: EstacaoDaCozinha[] }) {
+  const frase = fraseDasEstacoes(estacoes);
+  const escala = Math.max(1, ...estacoes.map((e) => e.p90 || 0));
+  return (
+    <Bloco titulo="Por estação (tela do KDS)" subtitulo="Da entrada do pedido na cozinha até aquela tela dar baixa — a chapa, a fritadeira, a montagem" semPadding>
+      {estacoes.length === 0 ? (
+        <Vazio texto="Nenhuma baixa de tela do KDS no período. O tempo por estação aparece quando a cozinha dá baixa em cada tela (chapa, fritadeira…); a impressora por categoria não marca a hora em que o item ficou pronto." />
+      ) : (
+        <>
+          {frase && <p style={{ margin: "0.8rem 1rem 0.2rem", fontWeight: 800, fontSize: "0.88rem", color: PALETA.carvao2 }}>{frase}</p>}
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.84rem", minWidth: 480 }}>
+              <thead>
+                <tr style={cabecaDaTabela}>
+                  <th style={th}>Estação</th><th style={{ ...th, ...num }}>Pedidos</th><th style={{ ...th, ...num }}>Mediana</th>
+                  <th style={{ ...th, width: 80 }} aria-label="Mediana em barra" /><th style={{ ...th, ...num }}>90% em até</th><th style={{ ...th, ...num }}>Máx.</th>
+                </tr>
+              </thead>
+              <tbody>
+                {estacoes.map((e) => (
+                  <tr key={e.chave} style={{ borderBottom: `1px solid ${PALETA.areia}` }}>
+                    <td style={td}>
+                      <div style={{ fontWeight: 800 }}>{e.nome}</div>
+                      <div style={suave}>{e.estagio === "finishing" ? "finalização" : "produção"} · {fmtQtd(e.itens)} itens</div>
+                    </td>
+                    <td style={{ ...td, ...num }}>{e.medidos.toLocaleString("pt-BR")}</td>
+                    <td style={{ ...td, ...num, fontWeight: 900 }}>{fmtMin(e.mediana)}</td>
+                    <td style={{ ...td, paddingTop: 14 }}><BarraDeMinutos valor={e.mediana} escala={escala} cor={e.estagio === "finishing" ? PALETA.carvao2 : PALETA.brasa} /></td>
+                    <td style={{ ...td, ...num }}>{fmtMin(e.p90)}</td>
+                    <td style={{ ...td, ...num }}>{fmtMin(e.maximo)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </Bloco>
   );
 }
 

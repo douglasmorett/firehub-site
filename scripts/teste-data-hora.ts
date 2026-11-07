@@ -16,7 +16,7 @@
  */
 import {
   FAIXA_TEXTO_CLARO, ORDEM_DAS_HORAS, RAMPA_DO_MAPA, ROTULO_DA_METRICA, arredondarMedia, avisoAntesDasVendas, avisoDoDiaEmAndamento,
-  corDoAnelDoPico, corDoTexto, faixaDe, frasesDasRespostas, numeroCurto, numeroDaMetrica, rotuloDaHora,
+  corDoAnelDoPico, corDoTexto, faixaDe, frasesDasRespostas, numeroCurto, numeroDaMetrica, picoDaGradePorData, rotuloDaHora,
   tetoDaFaixa, textoDaMetrica, vendasPorDiaEHora,
   type PedidoParaDataHora,
 } from "../src/lib/relatorios/data-hora";
@@ -245,6 +245,23 @@ confere("o anel do pico tem ≥ 3:1 com a casa em todas as faixas (antes: carvã
   RAMPA_DO_MAPA.map((cor, f) => contraste(corDoAnelDoPico(f), cor) >= 3), RAMPA_DO_MAPA.map(() => true));
 confere("o número da casa tem ≥ 4,5:1 em todas as faixas", RAMPA_DO_MAPA.map((cor, f) => contraste(corDoTexto(f), cor) >= 4.5), RAMPA_DO_MAPA.map(() => true));
 confere("a faixa do texto claro é a 4", FAIXA_TEXTO_CLARO, 4);
+
+console.log("\nGrade por data (o Faturamento por hora do SWFast: data × hora, sem média)");
+const GD = vendasPorDiaEHora([
+  ...varios(3, "2026-08-07", 20), // sexta 20h: 3 × R$ 50
+  pedido("2026-08-08", 1, 30, { totalAmount: 80 }), // 1h30 de sábado = sexta (o dia vira às 5h)
+  ...varios(2, "2026-08-09", 19, { totalAmount: 30 }),
+  pedido("2026-08-09", 21, 0, { status: "CANCELADO", totalAmount: 999 }),
+], { tz: TZ, de: "2026-08-07", ate: "2026-08-10" });
+confere("todos os dias do período, inclusive o sem venda (10/08)", GD.porData.dias, ["2026-08-07", "2026-08-08", "2026-08-09", "2026-08-10"]);
+confere("sexta 07/08: R$ 150 às 20h e R$ 80 à 1h (é da sexta), total R$ 230",
+  [GD.porData.mapa.valor[0][20], GD.porData.mapa.valor[0][1], GD.porData.doDia.valor[0]], [150, 80, 230]);
+confere("sábado 08/08 sem venda (a 1h30 foi para a sexta); o cancelado do domingo não entra",
+  [GD.porData.doDia.valor[1], GD.porData.doDia.valor[2], GD.porData.doDia.pedidos[2], GD.porData.doDia.valor[3]], [0, 60, 2, 0]);
+confere("a grade fecha com o total do período", GD.porData.doDia.valor.reduce((s, v) => s + v, 0), GD.metricas.valor.total);
+confere("pico e melhor dia da grade (valor)", picoDaGradePorData(GD.porData, "valor"),
+  { pico: { dia: "2026-08-07", hora: 20, valor: 150 }, melhorDia: { dia: "2026-08-07", valor: 230 } });
+confere("grade vazia: sem pico", picoDaGradePorData(vendasPorDiaEHora([], { tz: TZ, de: "2026-08-07", ate: "2026-08-07" }).porData, "pedidos"), { pico: null, melhorDia: null });
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

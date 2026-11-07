@@ -12,15 +12,17 @@
  *   busca: a rota devolve as três de uma vez.
  * - Sem biblioteca de gráfico: o mapa é uma tabela e as barras são divs — lê
  *   no celular, imprime e o leitor de tela entende.
+ * - "Ver por data" (o Faturamento por hora do SWFast): a grade data × hora,
+ *   cada dia do período numa linha, com o pico do período dito em cima.
  */
 import React, { useMemo } from "react";
 import Link from "next/link";
 import { PALETA } from "@/lib/paleta-brasa";
-import { NOMES_DOS_DIAS, filtrosParaQuery, fmtDia, fmtQtd, fmtReais } from "@/lib/relatorios/base";
+import { DIAS_CURTOS, NOMES_DOS_DIAS, filtrosParaQuery, fmtDia, fmtQtd, fmtReais } from "@/lib/relatorios/base";
 import {
   DIAS_DE_FIM_DE_SEMANA, DIAS_DE_SEMANA, METRICAS, ORDEM_DAS_HORAS, RAMPA_DO_MAPA, ROTULO_DA_METRICA,
   avisoAntesDasVendas, avisoDoDiaEmAndamento, corDoAnelDoPico, corDoTexto, faixaDe, frasesDasRespostas, nomeDoDia,
-  numeroCurto, numeroDaMetrica, quantosDias, rotuloDaHora, tetoDaFaixa, textoDaMetrica,
+  numeroCurto, numeroDaMetrica, picoDaGradePorData, quantosDias, rotuloDaHora, tetoDaFaixa, textoDaMetrica,
   type Metrica, type ResultadoDataHora,
 } from "@/lib/relatorios/data-hora";
 import BarraDeFiltros from "@/components/relatorios/BarraDeFiltros";
@@ -69,6 +71,86 @@ function Botoes<T extends string>({ valor, opcoes, mudar, nome }: { valor: T; op
   );
 }
 
+/**
+ * A grade por data: cada dia do período numa linha, cada hora numa coluna, o
+ * TOTAL daquela hora naquele dia (sem média) — com o pico do período e o
+ * melhor dia ditos em cima. As cores são as do mapa da semana.
+ */
+function GradePorData({ dados, metrica, horas, todasAsHoras, mudarHoras }: {
+  dados: ResultadoDataHora; metrica: Metrica; horas: number[]; todasAsHoras: boolean; mudarHoras: (v: boolean) => void;
+}) {
+  const g = dados.porData;
+  const serie = dados.metricas[metrica];
+  const max = Math.max(0, ...g.mapa[metrica].flatMap((linha) => horas.map((h) => linha[h] || 0)));
+  const { pico, melhorDia } = picoDaGradePorData(g, metrica);
+  const nomeDaData = (d: string) => `${DIAS_CURTOS[new Date(`${d}T12:00:00Z`).getUTCDay()]} ${fmtDia(d).slice(0, 5)}`;
+  const resumo = [
+    pico ? `Pico do período: ${nomeDaData(pico.dia)}, ${rotuloDaHora(pico.hora)} — ${textoDaMetrica(metrica, pico.valor)}` : "",
+    melhorDia ? `melhor dia: ${nomeDaData(melhorDia.dia)} (${textoDaMetrica(metrica, melhorDia.valor)})` : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <Bloco
+      titulo={`${ROTULO_DA_METRICA[metrica]} por data e hora`}
+      subtitulo={`${resumo || "Sem venda no período"}. Cada casa é o total daquela hora naquele dia (o dia vira às 5h).`}
+      acoes={
+        <label className="fh-sem-impressao" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: "0.82rem", fontWeight: 600, cursor: "pointer" }}>
+          <input type="checkbox" checked={todasAsHoras} onChange={(e) => mudarHoras(e.target.checked)} style={{ accentColor: PALETA.carvao }} />
+          Mostrar as 24 horas
+        </label>
+      }
+      semPadding>
+      <div style={{ overflowX: "auto", padding: "0.8rem 0.9rem 0.6rem 0" }}>
+        <table style={{ borderCollapse: "separate", borderSpacing: 2, fontVariantNumeric: "tabular-nums", minWidth: "100%" }}>
+          <caption style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>
+            {`${ROTULO_DA_METRICA[metrica]} por data e hora, total de cada hora`}
+          </caption>
+          <thead>
+            <tr>
+              <th scope="col" style={{ ...colunaFixa, textAlign: "left", ...rotulo, padding: "0 8px 4px 0.9rem" }}>Data</th>
+              {horas.map((h) => (
+                <th key={h} scope="col" style={{ ...rotulo, fontSize: "0.68rem", textAlign: "center", padding: "0 0 4px", minWidth: metrica === "valor" ? 50 : 40 }}>{h}h</th>
+              ))}
+              <th scope="col" style={{ ...rotulo, fontSize: "0.68rem", textAlign: "right", padding: "0 0 4px 10px", whiteSpace: "nowrap" }}>Dia todo</th>
+            </tr>
+          </thead>
+          <tbody>
+            {g.dias.map((d, i) => (
+              <tr key={d}>
+                <th scope="row" style={{ ...colunaFixa, textAlign: "left", fontSize: "0.78rem", fontWeight: 800, padding: "0 10px 0 0.9rem", whiteSpace: "nowrap" }}>{nomeDaData(d)}</th>
+                {horas.map((h) => {
+                  const v = g.mapa[metrica][i][h];
+                  const f = faixaDe(v, max);
+                  const ehPico = pico?.dia === d && pico?.hora === h;
+                  return (
+                    <td key={h} title={`${nomeDaData(d)}, ${rotuloDaHora(h)}: ${textoDaMetrica(metrica, v)}${ehPico ? " — pico do período" : ""}`}
+                      style={{
+                        height: 30, textAlign: "center", borderRadius: 4, fontSize: "0.7rem", fontWeight: 700, padding: "0 2px",
+                        background: f < 0 ? "#fff" : RAMPA[f], border: f < 0 ? `1px solid ${PALETA.areia}` : "1px solid transparent",
+                        color: corDoTexto(f), ...(ehPico ? anelDoPico(f) : {}), ...imprimirCor,
+                      }}>
+                      {numeroCurto(metrica, v)}
+                    </td>
+                  );
+                })}
+                <td style={{ textAlign: "right", fontSize: "0.8rem", fontWeight: 900, padding: "0 0 0 10px", whiteSpace: "nowrap", color: melhorDia?.dia === d ? PALETA.brasaTinta : undefined }}>
+                  {g.doDia[metrica][i] ? numeroDaMetrica(metrica, g.doDia[metrica][i]) : "—"}
+                </td>
+              </tr>
+            ))}
+            <tr>
+              <th scope="row" style={{ ...colunaFixa, textAlign: "left", fontSize: "0.72rem", fontWeight: 800, color: PALETA.areiaTinta, padding: "6px 10px 0 0.9rem" }}>Total</th>
+              {horas.map((h) => (
+                <td key={h} style={{ textAlign: "center", fontSize: "0.68rem", fontWeight: 800, color: PALETA.carvao2, paddingTop: 6 }}>{numeroCurto(metrica, serie.porHora.total[h])}</td>
+              ))}
+              <td style={{ textAlign: "right", fontSize: "0.8rem", fontWeight: 900, padding: "6px 0 0 10px", whiteSpace: "nowrap" }}>{numeroDaMetrica(metrica, serie.total)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </Bloco>
+  );
+}
+
 /** Barra horizontal com a ponta arredondada e o número ao lado (em tinta, não na cor da barra). */
 function LinhaDeBarra({ valor, max, destaque, texto, titulo, linhaDaMedia }: {
   valor: number; max: number; destaque?: boolean; texto: string; titulo?: string; linhaDaMedia?: number | null;
@@ -94,7 +176,8 @@ export default function DataHoraClient({ inicio }: { inicio: InicioDosFiltros })
   const opcoes = useOpcoesDosFiltros();
   // 30 dias por padrão: um mapa de semana precisa de mais de uma semana — com
   // 7 dias cada dia aparece uma vez e o "melhor dia" é só o daquela semana.
-  const { filtros, mudar, extras, mudarExtra, query } = useFiltros(inicio, "30d", { metrica: "", ver: "", horas: "" });
+  // `grade=data`: a grade data × hora no lugar do mapa da semana.
+  const { filtros, mudar, extras, mudarExtra, query } = useFiltros(inicio, "30d", { metrica: "", ver: "", horas: "", grade: "" });
   // A busca leva só os filtros: métrica, média/total e horas visíveis são da tela.
   const consulta = filtrosParaQuery(filtros);
   const { dados, carregando, erro, recarregar } = useRelatorio<Resposta>("data-hora", consulta);
@@ -102,6 +185,7 @@ export default function DataHoraClient({ inicio }: { inicio: InicioDosFiltros })
   const metrica: Metrica = (METRICAS as string[]).includes(extras.metrica) ? (extras.metrica as Metrica) : "pedidos";
   const verTotal = extras.ver === "total";
   const todasAsHoras = extras.horas === "24";
+  const porData = extras.grade === "data";
 
   const serie = dados?.metricas[metrica];
   const frases = useMemo(() => (serie ? frasesDasRespostas(serie, metrica) : []), [serie, metrica]);
@@ -189,6 +273,11 @@ export default function DataHoraClient({ inicio }: { inicio: InicioDosFiltros })
           <Botoes nome="Média ou total" valor={verTotal ? "total" : "media"} mudar={(v) => mudarExtra("ver", v === "total" ? "total" : "")}
             opcoes={[{ chave: "media", rotulo: "Média por dia" }, { chave: "total", rotulo: "Total no período" }]} />
         </span>
+        <span style={{ display: "inline-flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={rotulo}>Grade</span>
+          <Botoes nome="Grade por dia da semana ou por data" valor={porData ? "data" : "semana"} mudar={(v) => mudarExtra("grade", v === "data" ? "data" : "")}
+            opcoes={[{ chave: "semana", rotulo: "Dia da semana" }, { chave: "data", rotulo: "Cada data" }]} />
+        </span>
       </div>
 
       {dados && semVenda && <Bloco><Vazio texto={textoDoVazio} /></Bloco>}
@@ -229,8 +318,13 @@ export default function DataHoraClient({ inicio }: { inicio: InicioDosFiltros })
                 : "O dia vira às 5h"} />
           </GradeDeCartoes>
 
+          {/* ── A grade por data (o Faturamento por hora do SWFast) ── */}
+          {porData && (
+            <GradePorData dados={dados} metrica={metrica} horas={horas} todasAsHoras={todasAsHoras} mudarHoras={(v) => mudarExtra("horas", v ? "24" : "")} />
+          )}
+
           {/* ── O mapa de calor ── */}
-          <Bloco
+          {!porData && <Bloco
             titulo={`Mapa de calor — ${ROTULO_DA_METRICA[metrica].toLowerCase()}, ${modo}`}
             subtitulo="Linha = dia operacional (o pedido da 1h de sábado é da sexta). Coluna = hora no relógio da loja, começando às 5h."
             acoes={
@@ -336,7 +430,7 @@ export default function DataHoraClient({ inicio }: { inicio: InicioDosFiltros })
                 </span>
               )}
             </div>
-          </Bloco>
+          </Bloco>}
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 340px), 1fr))", gap: "0 1rem", alignItems: "start" }}>
             {/* ── Por hora: dias de semana × fim de semana ── */}

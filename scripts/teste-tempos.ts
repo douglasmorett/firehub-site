@@ -23,6 +23,7 @@
  */
 import {
   aceitoNaChegada, entreguesEmLote, estatistica, etapasDoPedido, foiParaACozinha, faixaDoPrazo, fmtMin, limitesDoAlerta, prazoDoPedido, rotuloDoMedirAte, temposDoRelatorio,
+  FAIXAS_DA_COZINHA_PADRAO, faixaDaCozinha, fraseDaPiorHora, fraseDasEstacoes, lerFaixasDaCozinha,
   type ConfigDosTempos, type ItemParaTempos, type PedidoParaTempos, type TelaParaTempos,
 } from "../src/lib/relatorios/tempos";
 
@@ -539,6 +540,79 @@ confere("a que saiu aos 47 sem 'entregue' atrasou com certeza; a que saiu aos 20
 confere("na lista dos atrasados: as 3 que chegaram atrasadas e a que saiu atrasada",
   temposDoRelatorio(viagens, cfg({ apenasAtrasados: true })).lista.map((l) => [l.faixa, l.excedeu]),
   [["estourado", 25], ["estourado", 16], ["estourado", 7], ["saiuAtrasado", 2]]);
+
+console.log("\n19) A cozinha hora a hora em faixas e o tempo por estação (o que o SWFast tem)");
+// Alex, Hambúrgueria Avenida (07/11/2026): o SWFast mostrava, por hora,
+// quantos pedidos ficaram em até 7 min, de 7 a 14 e acima de 14 na cozinha, e
+// o R$ da hora; e o tempo de preparo por local (chapa, fritadeira).
+confere("faixas: vazio = 7 e 14; 10 e 20 valem; invertido, zero ou acima de 4 h = o padrão",
+  [lerFaixasDaCozinha("", ""), lerFaixasDaCozinha("10", "20"), lerFaixasDaCozinha("20", "10"), lerFaixasDaCozinha("0", "5"), lerFaixasDaCozinha("7", "999")],
+  [{ atencaoMin: 7, atrasadoMin: 14 }, { atencaoMin: 10, atrasadoMin: 20 }, { atencaoMin: 7, atrasadoMin: 14 }, { atencaoMin: 7, atrasadoMin: 14 }, { atencaoMin: 7, atrasadoMin: 14 }]);
+confere("a faixa de um tempo: 7 min ainda é no prazo, 14 ainda é atenção, 14,1 é atrasado",
+  [7, 7.1, 14, 14.1].map((m) => faixaDaCozinha(m, FAIXAS_DA_COZINHA_PADRAO)), ["noPrazo", "atencao", "atencao", "atrasado"]);
+
+const naCozinha = (diaHora: string, min: number | null, valor = 50, x: Partial<Omit<PedidoParaTempos, "createdAt">> = {}) => {
+  const c = h(diaHora);
+  return pedido({ createdAt: c, readyAt: min === null ? null : mais(c, min), valor, ...x });
+};
+const pedidosDas20 = [5, 6, 7, 8, 14, 15, 16, 20, 25, 30].map((m, i) => naCozinha(`2026-10-20 20:${String(i * 5).padStart(2, "0")}`, m));
+const pedidosDas19 = [3, 4, 5, 6, 15].map((m, i) => naCozinha(`2026-10-20 19:${String(i * 10).padStart(2, "0")}`, m));
+const semPronto19 = naCozinha("2026-10-20 19:55", null, 30);
+// O agendado das 20h: vende na hora (entra no R$), mas a cozinha dele não conta.
+const agendado20 = naCozinha("2026-10-20 20:30", 400, 80, { scheduledDatetime: mais(h("2026-10-20 20:30"), 300) });
+const cancelado20 = naCozinha("2026-10-20 20:40", 5, 999, { status: "CANCELADO" });
+const sozinho22 = naCozinha("2026-10-20 22:15", 40);
+const rFaixas = temposDoRelatorio([...pedidosDas20, ...pedidosDas19, semPronto19, agendado20, cancelado20, sozinho22], cfg()).faixasDaCozinha;
+const daHora = (hora: number) => rFaixas.horas.find((x) => x.hora === hora);
+confere("20h: 10 medidos — 3 no prazo (5, 6, 7), 2 atenção (8, 14), 5 atrasados — e R$ 580 (os 10 + o agendado; o cancelado não)",
+  daHora(20), { hora: 20, medidos: 10, noPrazo: 3, atencao: 2, atrasado: 5, faturamento: 580 });
+confere("19h: o pedido sem pronto vende (R$ 280) e não entra nas faixas (5 medidos)",
+  [daHora(19)?.medidos, daHora(19)?.atrasado, daHora(19)?.faturamento], [5, 1, 280]);
+confere("as horas na ordem do expediente e o total", [rFaixas.horas.map((x) => x.hora), rFaixas.medidos, rFaixas.atrasado, rFaixas.faturamento], [[19, 20, 22], 16, 7, 910]);
+confere("o horário que mais atrasa: 20h (50%), não as 22h (1 de 1 = 100%, abaixo do mínimo de 5)",
+  rFaixas.piorHora, { hora: 20, atrasados: 5, medidos: 10, parte: 0.5 });
+confere("a frase", fraseDaPiorHora(rFaixas), "Das 20h às 21h, 50% dos pedidos atrasaram (mais de 14 min na cozinha): 5 de 10.");
+const rFaixas10 = temposDoRelatorio(pedidosDas20, cfg({ faixasDaCozinha: { atencaoMin: 10, atrasadoMin: 20 } })).faixasDaCozinha;
+confere("com as faixas do lojista (10 e 20): 4 / 4 / 2 às 20h, e a frase fala em 20 min",
+  [rFaixas10.horas[0].noPrazo, rFaixas10.horas[0].atencao, rFaixas10.horas[0].atrasado, fraseDaPiorHora(rFaixas10)],
+  [4, 4, 2, "Das 20h às 21h, 20% dos pedidos atrasaram (mais de 20 min na cozinha): 2 de 10."]);
+const poucos = temposDoRelatorio([naCozinha("2026-10-20 15:00", 20), naCozinha("2026-10-20 15:30", 5), naCozinha("2026-10-20 16:00", 18)], cfg()).faixasDaCozinha;
+confere("nenhuma hora com 5 pedidos: vale qualquer uma, e a frase avisa que é pouco",
+  [poucos.piorHora?.hora, fraseDaPiorHora(poucos)], [16, "Das 16h às 17h, 100% dos pedidos atrasaram (mais de 14 min na cozinha): 1 de 1. Poucos pedidos por hora no período para tirar conclusão."]);
+confere("sem atrasado: diz que nenhum passou do limite", fraseDaPiorHora(temposDoRelatorio(pedidosDas19.slice(0, 4), cfg()).faixasDaCozinha),
+  "Nenhum pedido passou de 14 min na cozinha no período.");
+confere("a 23h fecha às 0h", fraseDaPiorHora(temposDoRelatorio([naCozinha("2026-10-20 23:10", 30)], cfg()).faixasDaCozinha).slice(0, 18), "Das 23h às 0h, 100");
+
+// Estações: a chapa, a fritadeira e a expedição da hamburgueria.
+const TELAS_DO_ALEX: TelaParaTempos[] = [
+  { chave: "chapa", estagio: "production", categorias: ["Lanches"], nome: "Chapa" },
+  { chave: "frita", estagio: "production", categorias: ["Porções"], nome: "Fritadeira" },
+  { chave: "expedicao", estagio: "finishing", categorias: [], nome: "Expedição" },
+];
+const lanche = (dia: string, chapa: number, frita: number, expedicao: number) => {
+  const c = h(dia);
+  return pedido({
+    createdAt: c, kdsProductionAt: c, readyAt: mais(c, expedicao), kdsFinishedAt: mais(c, expedicao),
+    itens: [{ ...item("X-Burger", "Lanches", 2, mais(c, chapa)), id: "x1" }, { ...item("Batata", "Porções", 1, mais(c, frita)), id: "b1" }],
+    baixas: [
+      { tela: "chapa", nome: "Chapa antiga", estagio: "production", em: mais(c, chapa), itens: ["x1"] },
+      { tela: "frita", nome: "Fritadeira", estagio: "production", em: mais(c, frita), itens: ["b1"] },
+      { tela: "expedicao", nome: "Expedição", estagio: "finishing", em: mais(c, expedicao), itens: ["x1", "b1"] },
+    ],
+  });
+};
+const lanches = [[8, 4, 10], [10, 5, 12], [12, 6, 14], [9, 4, 11], [11, 5, 13]].map(([a, b, c], i) => lanche(`2026-10-21 20:${String(i * 7).padStart(2, "0")}`, a, b, c));
+// A tela largada: a cozinha ficou fora da curva (pronto 5 h depois) — a baixa dela não é preparo.
+const largado = lanche("2026-10-21 21:00", 7, 3, 300);
+const rEst = temposDoRelatorio([...lanches, largado], cfg({ telas: TELAS_DO_ALEX })).estacoes;
+confere("estações: produção primeiro (a mais lenta em cima), a finalização no fim; o nome é o de hoje, não o da baixa",
+  rEst.map((e) => [e.nome, e.estagio, e.medidos, e.mediana, e.itens]),
+  [["Chapa", "production", 5, 10, 10], ["Fritadeira", "production", 5, 5, 5], ["Expedição", "finishing", 5, 12, 15]]);
+confere("a frase das estações", fraseDasEstacoes(rEst), "Chapa é a estação que mais demora: metade dos pedidos sai dela em até 10 min (Fritadeira, em até 5 min).");
+const soBatata = temposDoRelatorio(lanches, cfg({ telas: TELAS_DO_ALEX, produtos: new Set(["id-Batata"]) })).estacoes;
+confere("com filtro na Batata: só as telas que mostraram a batata (sem a chapa), com as unidades dela",
+  soBatata.map((e) => [e.nome, e.itens]), [["Fritadeira", 5], ["Expedição", 5]]);
+confere("uma estação só não vira frase de comparação", fraseDasEstacoes(rEst.slice(0, 1)), null);
 
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

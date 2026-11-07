@@ -188,12 +188,33 @@
  * um pedido com seus carimbos. A mesa entra na cozinha e no total na loja (até
  * o prato ficar pronto); não entra no aceite, no prazo nem na rua.
  *
+ * ── Faixas da cozinha por hora e tempo por estação (o que o SWFast tem) ────
+ *
+ * A "Análise tempo de produção" do SWFast, que o Alex (Hambúrgueria Avenida)
+ * usava: por hora do dia, quantos pedidos ficaram em cada faixa do tempo de
+ * cozinha (no prazo até 7 min, atenção até 14, atrasado acima — o lojista
+ * muda) e quanto a loja vendeu naquela hora. O tempo é o da etapa "na
+ * cozinha" (o relógio do cartão do KDS); a hora é a do PEDIDO, a mesma do
+ * Vendas por dia e hora, para o faturamento da linha ser o daquela hora. O
+ * faturamento conta todo pedido da hora pela régua única (inclusive o
+ * agendado e o que não teve tempo medido); a contagem das faixas, só os
+ * medidos. E, melhor que o SWFast, a resposta em uma frase: o horário em que
+ * mais pedidos passaram do limite (`piorHora`, com um mínimo de pedidos para
+ * "1 de 1 = 100%" não ganhar).
+ *
+ * O tempo por ESTAÇÃO é o da baixa de cada tela do KDS (a chapa, a
+ * fritadeira): da entrada do pedido na cozinha até aquela tela dar baixa
+ * (`CustomerOrder.kdsBaixas`, desde 09/10/2026). A loja sem KDS por estação
+ * (só impressora por categoria) não tem esse carimbo: a impressora não diz
+ * quando o item ficou pronto.
+ *
  * Puro (sem banco). A rota (api/store/relatorios/tempos) busca os pedidos com
  * a régua comum (lib/relatorios/servidor.ts: sem cancelado, no dia operacional)
  * e resolve a categoria do item pelo cardápio.
  */
 import { minutosEntre, TETO_DE_MINUTOS_MEDIDOS } from "@/lib/order-stages";
 import { ehCancelado, naLoja, somarDias, TIPOS_DE_VENDA, type TipoDeVenda } from "@/lib/relatorios/base";
+import { cent, entraNaVenda, reais } from "@/lib/relatorios/regua-da-venda";
 
 // ── AS RÉGUAS ───────────────────────────────────────────────────────────────
 
@@ -233,6 +254,33 @@ export const CANAIS_ACEITOS_NA_CHEGADA: ReadonlySet<string> = new Set(["SITE", "
  * vieram na mesma noite (Brazza 99Food 19:15, Pastel da Paulista site 19:24).
  */
 export const ACEITE_AUTOMATICO_DESDE = "2026-09-03T16:21:07-03:00";
+
+/**
+ * As faixas do tempo de cozinha por hora (ver o topo): no prazo até
+ * `atencaoMin`, atenção até `atrasadoMin`, atrasado acima. O padrão é o do
+ * SWFast (7 e 14 min); o lojista muda na tela.
+ */
+export type FaixasDaCozinha = { atencaoMin: number; atrasadoMin: number };
+export const FAIXAS_DA_COZINHA_PADRAO: FaixasDaCozinha = { atencaoMin: 7, atrasadoMin: 14 };
+/** A hora só disputa o "horário que mais atrasa" com pelo menos isto de pedidos medidos. */
+export const MINIMO_PARA_PIOR_HORA = 5;
+
+/** As faixas que vieram da tela (`faixa1`, `faixa2`); fora do lugar (vazio, 0, invertido, > 4 h), o padrão. */
+export function lerFaixasDaCozinha(atencao: unknown, atrasado: unknown): FaixasDaCozinha {
+  const a = Number(atencao), b = Number(atrasado);
+  const ok = (n: number) => Number.isFinite(n) && n > 0 && n <= TETO_DE_MINUTOS_MEDIDOS;
+  if (!ok(a) || !ok(b) || a >= b) return { ...FAIXAS_DA_COZINHA_PADRAO };
+  return { atencaoMin: a, atrasadoMin: b };
+}
+
+export type FaixaDaCozinha = "noPrazo" | "atencao" | "atrasado";
+
+/** A faixa de um tempo de cozinha: até 7 min no prazo, até 14 atenção, acima atrasado (com as faixas do lojista). */
+export function faixaDaCozinha(minutos: number, faixas: FaixasDaCozinha): FaixaDaCozinha {
+  if (minutos <= faixas.atencaoMin) return "noPrazo";
+  if (minutos <= faixas.atrasadoMin) return "atencao";
+  return "atrasado";
+}
 
 /** Os "Alertas de Produção" do lojista. */
 export type LimitesDeAlerta = { amareloAtivo: boolean; amareloMin: number; vermelhoAtivo: boolean; vermelhoMin: number };
@@ -280,8 +328,8 @@ export type ItemParaTempos = {
   semCategoria?: boolean;
 };
 
-/** Uma tela do KDS da loja: a etapa e as categorias que ela mostra (vazio = tudo). */
-export type TelaParaTempos = { chave: string; estagio: "production" | "finishing"; categorias: string[] };
+/** Uma tela do KDS da loja: a etapa e as categorias que ela mostra (vazio = tudo). `nome`: o de hoje, para o tempo por estação. */
+export type TelaParaTempos = { chave: string; estagio: "production" | "finishing"; categorias: string[]; nome?: string };
 
 /** Uma baixa do KDS, como `CustomerOrder.kdsBaixas` guarda (lib/kds-telas.ts, BaixaDoKds). */
 export type BaixaParaTempos = {
@@ -344,6 +392,8 @@ export type PedidoParaTempos = {
   /** Cada baixa com a tela e a hora (`kdsBaixas`, desde 09/10/2026). */
   baixas?: BaixaParaTempos[];
   itens: ItemParaTempos[];
+  /** O `totalAmount` do pedido — o faturamento da hora nas faixas da cozinha (a régua única). */
+  valor?: number | null;
 };
 
 export type ConfigDosTempos = {
@@ -368,6 +418,8 @@ export type ConfigDosTempos = {
    * (loja sem telas configuradas), vale o que os carimbos do pedido contam.
    */
   telas?: TelaParaTempos[];
+  /** As faixas do tempo de cozinha por hora (sem nada: 7 e 14 min). */
+  faixasDaCozinha?: FaixasDaCozinha;
 };
 
 // ── O QUE SAI ───────────────────────────────────────────────────────────────
@@ -580,6 +632,40 @@ export type HoraDaProducao = { hora: number; quantidade: number } & Estatistica 
 /** Quantos pedidos cada hora leva para a tela (a planilha não leva a lista: tem a aba Pedidos). */
 export const LIMITE_DE_PEDIDOS_POR_HORA = 40;
 
+/** Uma hora do dia nas faixas da cozinha (ver o topo). */
+export type HoraDasFaixas = {
+  hora: number;
+  /** Pedidos com o tempo de cozinha medido, e quantos em cada faixa. */
+  medidos: number;
+  noPrazo: number;
+  atencao: number;
+  atrasado: number;
+  /** O que a loja vendeu na hora (Σ totalAmount pela régua única), medido ou não. */
+  faturamento: number;
+};
+
+export type ResumoDasFaixas = {
+  faixas: FaixasDaCozinha;
+  /** Na ordem do expediente (5h → 4h); só as horas com pedido. */
+  horas: HoraDasFaixas[];
+  medidos: number;
+  noPrazo: number;
+  atencao: number;
+  atrasado: number;
+  faturamento: number;
+  /** A hora em que a maior parte dos medidos passou do limite (ver `piorHoraDasFaixas`). */
+  piorHora: { hora: number; atrasados: number; medidos: number; parte: number } | null;
+};
+
+/** Uma estação do KDS (a tela): da entrada do pedido na cozinha até a baixa dela. */
+export type EstacaoDaCozinha = Estatistica & {
+  chave: string;
+  nome: string;
+  estagio: "production" | "finishing";
+  /** Unidades dos itens que a tela mostrava nas baixas medidas. */
+  itens: number;
+};
+
 export type ResultadoDosTempos = {
   /** Pedidos considerados (sem cancelado; com o filtro de categoria/produto). */
   pedidos: number;
@@ -594,6 +680,10 @@ export type ResultadoDosTempos = {
   totalDaLista: number;
   listaCortada: boolean;
   producao: ResumoDaProducao;
+  /** O tempo de cozinha em faixas por hora, com o faturamento da hora (o SWFast). */
+  faixasDaCozinha: ResumoDasFaixas;
+  /** O tempo de cada estação do KDS (a chapa, a fritadeira), da mais lenta para a mais rápida. */
+  estacoes: EstacaoDaCozinha[];
 };
 
 // ── CONTAS PEQUENAS ─────────────────────────────────────────────────────────
@@ -1105,11 +1195,24 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
 
   let agendados = 0;
 
+  // Faixas da cozinha por hora do pedido, com o faturamento da hora, e o
+  // tempo por estação do KDS (ver o topo).
+  const faixas = cfg.faixasDaCozinha || FAIXAS_DA_COZINHA_PADRAO;
+  type AcumDasFaixas = { medidos: number; noPrazo: number; atencao: number; atrasado: number; centavos: number };
+  const porHoraDasFaixas = new Map<number, AcumDasFaixas>();
+  const porEstacao = new Map<string, { nome: string; estagio: "production" | "finishing"; valores: number[]; itens: number }>();
+  const nomeDaTela = new Map((cfg.telas || []).filter((t) => t.nome).map((t) => [`${t.chave}|${t.estagio}`, t.nome!]));
+
   for (const p of pedidos) {
     const criado = naLoja(p.createdAt, cfg.tz);
     const agendado = ehAgendado(p);
     const prazo = faixaDoPrazo(p, cfg.limites);
     const hhmm = `${String(criado.hora).padStart(2, "0")}:${String(criado.minutos % 60).padStart(2, "0")}`;
+
+    let daHora = porHoraDasFaixas.get(criado.hora);
+    if (!daHora) { daHora = { medidos: 0, noPrazo: 0, atencao: 0, atrasado: 0, centavos: 0 }; porHoraDasFaixas.set(criado.hora, daHora); }
+    // O faturamento é de todo pedido da hora (a régua única), medido ou não.
+    if (entraNaVenda({ status: p.status, totalAmount: p.valor })) daHora.centavos += cent(p.valor);
 
     let etapas: Record<ChaveDaEtapa, MedidaDaEtapa>;
     if (agendado) {
@@ -1140,6 +1243,12 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
           doTipo.etapas[e.chave].push(m.minutos);
         } else naoMedidos[e.chave][(m as { motivo: MotivoDeFora }).motivo]++;
       }
+      // A faixa da cozinha: o mesmo tempo da etapa "na cozinha".
+      const cozinha = etapas.cozinha;
+      if (cozinha.aplica && cozinha.minutos !== null) {
+        daHora.medidos++;
+        daHora[faixaDaCozinha(cozinha.minutos, faixas)]++;
+      }
 
       // ── Produção por item ──
       // Do mesmo ponto de partida da etapa "na cozinha": o relógio do KDS.
@@ -1155,6 +1264,29 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
       const cozinhaLargada = etapas.cozinha.aplica && etapas.cozinha.minutos === null
         && (etapas.cozinha as { motivo: MotivoDeFora }).motivo === "foraDaCurva";
       const entrada = p.kdsProductionAt || p.createdAt;
+
+      // ── Tempo por estação: cada baixa de tela, da entrada até ela ──
+      // A tela largada (cozinha fora da curva) não entra, pela mesma razão do
+      // pronto por item. Com filtro de produto, só a baixa que mostrava um
+      // item do filtro.
+      if (!cozinhaLargada) {
+        const itemDoId = new Map(p.itens.filter((i) => i.id).map((i) => [i.id!, i]));
+        for (const b of p.baixas || []) {
+          const itensDaBaixa = b.itens.map((id) => itemDoId.get(id)).filter((i): i is ItemParaTempos => !!i && (!comFiltroDeItem || itemPassa(i)));
+          if (comFiltroDeItem && !itensDaBaixa.length) continue;
+          const m = minutosEntre(entrada, b.em);
+          if (m === null) continue;
+          const chave = `${b.tela}|${b.estagio}`;
+          let e = porEstacao.get(chave);
+          if (!e) {
+            e = { nome: nomeDaTela.get(chave) || b.nome || (b.estagio === "finishing" ? "Finalização" : "Produção"), estagio: b.estagio, valores: [], itens: 0 };
+            porEstacao.set(chave, e);
+          }
+          e.valores.push(m);
+          e.itens += itensDaBaixa.reduce((s, i) => s + (Number(i.quantidade) || 0), 0);
+        }
+      }
+
       const naCozinha = naLoja(entrada, cfg.tz);
       const horaDaEntrada = naCozinha.hora;
       const itensMedidos: PedidoDaProducao["itens"] = [];
@@ -1296,6 +1428,15 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
       };
     });
 
+  // ── Faixas da cozinha e estações ──
+  const horasDasFaixas: HoraDasFaixas[] = [...porHoraDasFaixas.entries()]
+    .sort(([a], [b]) => ordemDaHora(a) - ordemDaHora(b))
+    .map(([hora, x]) => ({ hora, medidos: x.medidos, noPrazo: x.noPrazo, atencao: x.atencao, atrasado: x.atrasado, faturamento: reais(x.centavos) }));
+  const somaDasHoras = (k: "medidos" | "noPrazo" | "atencao" | "atrasado") => horasDasFaixas.reduce((s, h) => s + h[k], 0);
+  const estacoes: EstacaoDaCozinha[] = [...porEstacao.entries()]
+    .map(([chave, e]) => ({ chave, nome: e.nome, estagio: e.estagio, itens: e.itens, ...estatistica(e.valores) }))
+    .sort((a, b) => (a.estagio === b.estagio ? 0 : a.estagio === "production" ? -1 : 1) || (b.mediana ?? 0) - (a.mediana ?? 0) || a.nome.localeCompare(b.nome, "pt-BR"));
+
   return {
     pedidos: pedidos.length,
     agendados,
@@ -1315,7 +1456,64 @@ export function temposDoRelatorio(pedidosBrutos: PedidoParaTempos[], cfg: Config
       categorias: nosDeCategoria,
       porHora: horas,
     },
+    faixasDaCozinha: {
+      faixas,
+      horas: horasDasFaixas,
+      medidos: somaDasHoras("medidos"),
+      noPrazo: somaDasHoras("noPrazo"),
+      atencao: somaDasHoras("atencao"),
+      atrasado: somaDasHoras("atrasado"),
+      faturamento: reais(horasDasFaixas.reduce((s, h) => s + cent(h.faturamento), 0)),
+      piorHora: piorHoraDasFaixas(horasDasFaixas),
+    },
+    estacoes,
   };
+}
+
+/**
+ * O horário que mais atrasa: a hora com a maior PARTE dos pedidos medidos
+ * acima do limite, entre as que têm pelo menos MINIMO_PARA_PIOR_HORA medidos
+ * (um pedido atrasado sozinho às 15h não é "100% atrasaram"). Sem nenhuma hora
+ * com esse mínimo, vale qualquer hora com pedido medido. No empate, a com mais
+ * atrasados; depois, a mais cedo no expediente. Sem atrasado, null.
+ */
+export function piorHoraDasFaixas(horas: HoraDasFaixas[]): ResumoDasFaixas["piorHora"] {
+  const comMinimo = horas.filter((h) => h.medidos >= MINIMO_PARA_PIOR_HORA);
+  const candidatas = (comMinimo.length ? comMinimo : horas.filter((h) => h.medidos > 0)).filter((h) => h.atrasado > 0);
+  let pior: HoraDasFaixas | null = null;
+  for (const h of candidatas) {
+    if (!pior) { pior = h; continue; }
+    const a = h.atrasado / h.medidos, b = pior.atrasado / pior.medidos;
+    if (a > b || (a === b && h.atrasado > pior.atrasado)) pior = h;
+  }
+  return pior ? { hora: pior.hora, atrasados: pior.atrasado, medidos: pior.medidos, parte: Math.round((pior.atrasado / pior.medidos) * 1000) / 1000 } : null;
+}
+
+/** "das 20h às 21h". */
+const daHoraAte = (h: number) => `das ${h}h às ${(h + 1) % 24}h`;
+
+/** A resposta das faixas em uma frase — a tela e a planilha dizem igual. */
+export function fraseDaPiorHora(r: ResumoDasFaixas): string {
+  const limite = `${r.faixas.atrasadoMin.toLocaleString("pt-BR")} min`;
+  if (!r.medidos) return "Nenhum pedido com o tempo de cozinha medido no período.";
+  if (!r.piorHora) return `Nenhum pedido passou de ${limite} na cozinha no período.`;
+  const p = r.piorHora;
+  const pct = Math.round(p.parte * 100);
+  const frase = `${daHoraAte(p.hora).replace(/^d/, "D")}, ${pct}% dos pedidos atrasaram (mais de ${limite} na cozinha): ${p.atrasados} de ${p.medidos}.`;
+  return p.medidos < MINIMO_PARA_PIOR_HORA ? `${frase} Poucos pedidos por hora no período para tirar conclusão.` : frase;
+}
+
+/**
+ * A estação que mais demora, entre as de PRODUÇÃO com pedidos suficientes (a
+ * finalização vem depois de tudo e seria sempre a "mais lenta"). Null com
+ * menos de duas para comparar.
+ */
+export function fraseDasEstacoes(estacoes: EstacaoDaCozinha[]): string | null {
+  const daProducao = estacoes.filter((e) => e.estagio === "production" && e.medidos >= MINIMO_PARA_PIOR_HORA && e.mediana !== null);
+  if (daProducao.length < 2) return null;
+  const ordem = [...daProducao].sort((a, b) => b.mediana! - a.mediana!);
+  const lenta = ordem[0], rapida = ordem[ordem.length - 1];
+  return `${lenta.nome} é a estação que mais demora: metade dos pedidos sai dela em até ${fmtMin(lenta.mediana)} (${rapida.nome}, em até ${fmtMin(rapida.mediana)}).`;
 }
 
 /** O período começa antes de o dado existir? (para o aviso na tela e na planilha) */

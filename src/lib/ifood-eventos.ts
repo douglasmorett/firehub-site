@@ -48,6 +48,20 @@ async function lojaDoMerchantIfood(merchantId: string): Promise<string | null> {
   return lojaId;
 }
 
+/**
+ * O pedido não entrou: anota para o relatório "Pedidos com falha na
+ * integração" (lib/falhas-de-integracao-no-banco.ts). Sem await e sem lançar —
+ * o polling segue exatamente como antes.
+ */
+function anotarFalhaDoIfood(merchantId: string | null | undefined, orderId: string | null | undefined, erro: string) {
+  if (!merchantId || !orderId) return;
+  void lojaDoMerchantIfood(merchantId)
+    .then((lojaId) => (lojaId
+      ? import("./falhas-de-integracao-no-banco").then((m) => m.registrarFalhaDeIntegracao({ plataforma: "IFOOD", franchiseeId: lojaId, pedidoExterno: orderId, erro }))
+      : undefined))
+    .catch(() => {});
+}
+
 /** Os merchants (dentre os informados) cuja loja está bloqueada por mensalidade agora. */
 export async function merchantsIfoodBloqueados(merchantIds: Array<string | null | undefined>): Promise<Set<string>> {
   const bloqueados = new Set<string>();
@@ -476,6 +490,7 @@ export async function processarEventosIfood(opts: {
 
           if (!orderRes.ok) {
             log.push(`  ⚠️ Detalhes do pedido ${orderId} falhou: ${orderRes.status}`);
+            anotarFalhaDoIfood(merchantId, orderId, `detalhes do pedido: HTTP ${orderRes.status}`);
             continue;
           }
 
@@ -902,6 +917,8 @@ export async function processarEventosIfood(opts: {
         }
       } catch (err: any) {
         log.push(`  ❌ Erro: ${err.message}`);
+        // Só vira falha se o pedido não estiver no banco (registrarFalhaDeIntegracao confere).
+        anotarFalhaDoIfood(event?.merchantId, event?.orderId, String(err?.message || "erro sem mensagem"));
       }
     }
 

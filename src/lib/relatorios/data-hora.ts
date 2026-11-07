@@ -39,6 +39,14 @@
  * outros dias — era só a hora do almoço. O mesmo vale para o "dia médio" do
  * período que é só hoje.
  *
+ * ── A grade por data ────────────────────────────────────────────────────────
+ *
+ * O "Faturamento por hora" do SWFast é data × hora: cada dia do período numa
+ * linha, sem média — para achar "o sábado 31/10, às 20h, quando o salão
+ * lotou". `porData` traz essa grade (o TOTAL de cada hora de cada dia
+ * operacional, todos os dias do período, inclusive o sem venda), pela mesma
+ * régua; a tela troca entre as duas visões sem nova busca.
+ *
  * ── O que entra: a régua única ──────────────────────────────────────────────
  *
  * Valor e vendas seguem lib/relatorios/regua-da-venda.ts — a MESMA régua do
@@ -199,6 +207,12 @@ export type ResultadoDataHora = {
   /** Todos os lançamentos (pedidos) que entraram — o número da lista do Vendas por período. */
   lancamentos: number;
   metricas: Record<Metrica, SerieDaMetrica>;
+  /**
+   * A grade por DATA (o "Faturamento por hora" do SWFast): cada dia
+   * operacional do período × hora do relógio (0-23), com o TOTAL de cada
+   * métrica — sem média, é o que aconteceu naquele dia. [índice do dia][hora].
+   */
+  porData: { dias: string[]; mapa: Record<Metrica, number[][]>; doDia: Record<Metrica, number[]> };
 };
 
 // ── A CONTA ─────────────────────────────────────────────────────────────────
@@ -313,12 +327,24 @@ export function vendasPorDiaEHora(pedidos: PedidoParaDataHora[], opcoes: OpcoesD
 
   // ── As somas ──
   const totais: Record<Metrica, number[][]> = { pedidos: matriz(), valor: matriz(), itens: matriz() };
+  // A grade por data: todos os dias do período, inclusive o sem venda (linha vazia).
+  const datas: string[] = [];
+  for (let d = opcoes.de, guarda = 0; d <= opcoes.ate && guarda < 800; d = proximoDia(d), guarda++) datas.push(d);
+  const indiceDaData = new Map(datas.map((d, i) => [d, i]));
+  const gradeVazia = () => datas.map(() => new Array<number>(24).fill(0));
+  const porData: Record<Metrica, number[][]> = { pedidos: gradeVazia(), valor: gradeVazia(), itens: gradeVazia() };
   const diasComVenda = new Map<number, Set<string>>();
   for (const a of lancamentos) {
     const onde = naLoja(a.instante, opcoes.tz);
     totais.pedidos[onde.diaSemana][onde.hora] += a.vendas;
     totais.valor[onde.diaSemana][onde.hora] += a.valor;
     totais.itens[onde.diaSemana][onde.hora] += a.itens;
+    const i = indiceDaData.get(onde.dia);
+    if (i !== undefined) {
+      porData.pedidos[i][onde.hora] += a.vendas;
+      porData.valor[i][onde.hora] += a.valor;
+      porData.itens[i][onde.hora] += a.itens;
+    }
     let s = diasComVenda.get(onde.hora);
     if (!s) { s = new Set(); diasComVenda.set(onde.hora, s); }
     s.add(onde.dia);
@@ -408,7 +434,36 @@ export function vendasPorDiaEHora(pedidos: PedidoParaDataHora[], opcoes: OpcoesD
     mesas,
     lancamentos: lancamentos.length,
     metricas: { pedidos: serie("pedidos"), valor: serie("valor"), itens: serie("itens") },
+    porData: {
+      dias: datas,
+      mapa: { pedidos: porData.pedidos.map((l) => l.map(c2)), valor: porData.valor.map((l) => l.map(c2)), itens: porData.itens.map((l) => l.map(c2)) },
+      doDia: {
+        pedidos: porData.pedidos.map((l) => c2(l.reduce((s, v) => s + v, 0))),
+        valor: porData.valor.map((l) => c2(l.reduce((s, v) => s + v, 0))),
+        itens: porData.itens.map((l) => c2(l.reduce((s, v) => s + v, 0))),
+      },
+    },
   };
+}
+
+/**
+ * A casa mais forte da grade por data (o dia e a hora em que a loja mais
+ * vendeu no período) e o melhor dia — para a frase em cima da grade.
+ * Empate: a mais cedo. Sem venda, null.
+ */
+export function picoDaGradePorData(g: ResultadoDataHora["porData"], m: Metrica): { pico: { dia: string; hora: number; valor: number } | null; melhorDia: { dia: string; valor: number } | null } {
+  let pico: { dia: string; hora: number; valor: number } | null = null;
+  let melhorDia: { dia: string; valor: number } | null = null;
+  for (let i = 0; i < g.dias.length; i++) {
+    const dia = g.dias[i];
+    for (const h of ORDEM_DAS_HORAS) {
+      const v = g.mapa[m][i][h];
+      if (v > 0 && (pico === null || v > pico.valor)) pico = { dia, hora: h, valor: v };
+    }
+    const t = g.doDia[m][i];
+    if (t > 0 && (melhorDia === null || t > melhorDia.valor)) melhorDia = { dia, valor: t };
+  }
+  return { pico, melhorDia };
 }
 
 // ── TEXTO (a tela e a planilha falam igual) ─────────────────────────────────

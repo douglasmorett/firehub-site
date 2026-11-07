@@ -1759,3 +1759,48 @@ export async function garantirEstruturaDaOpenDeliverySaida(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * ── Pedidos com falha na integração ─────────────────────────────────────────
+ *
+ * Uma tabela NOVA, sem coluna em tabela existente: o pedido do iFood ou do
+ * 99Food que não entrou (lib/falhas-de-integracao-no-banco.ts grava, o
+ * relatório "Pedidos com falha na integração" lê). Se o CREATE falhar, só o
+ * registro da falha fica sem banco — a integração segue igual (quem grava
+ * engole o erro).
+ *
+ * Acesso por SQL, como o Open Delivery de saída: o modelo está no schema para
+ * documentar, e a rota funciona num client gerado antes dele.
+ */
+const INSTRUCOES_FALHAS_DE_INTEGRACAO = [
+  `CREATE TABLE IF NOT EXISTS "FalhaDeIntegracao" (
+     "id" TEXT NOT NULL,
+     "franchiseeId" TEXT NOT NULL,
+     "plataforma" TEXT NOT NULL,
+     "pedidoExterno" TEXT NOT NULL,
+     "codigo" TEXT,
+     "erro" TEXT NOT NULL,
+     "tentativas" INTEGER NOT NULL DEFAULT 1,
+     "primeiraEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     "ultimaEm" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+     CONSTRAINT "FalhaDeIntegracao_pkey" PRIMARY KEY ("id")
+   )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "FalhaDeIntegracao_plataforma_pedidoExterno_key" ON "FalhaDeIntegracao"("plataforma", "pedidoExterno")`,
+  `CREATE INDEX IF NOT EXISTS "FalhaDeIntegracao_franchiseeId_primeiraEm_idx" ON "FalhaDeIntegracao"("franchiseeId", "primeiraEm")`,
+];
+
+let falhasDeIntegracaoOk = false;
+
+/** A tabela das falhas de integração existe? Uma vez por processo — e só marca DEPOIS de conseguir. */
+export async function garantirEstruturaDeFalhasDeIntegracao(): Promise<boolean> {
+  if (falhasDeIntegracaoOk) return true;
+  if (!/^postgres/i.test(process.env.DATABASE_URL || "")) return false;
+  try {
+    await executarDDL("falhas-de-integracao", INSTRUCOES_FALHAS_DE_INTEGRACAO);
+    falhasDeIntegracaoOk = true;
+    return true;
+  } catch (err: any) {
+    console.error(`[Boot] 🛑 Estrutura das falhas de integração falhou: ${err?.message}`);
+    return false;
+  }
+}

@@ -112,6 +112,99 @@ export function dataNaLoja(iso: string | null | undefined, fuso: string | null |
   return iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: fuso || FUSO_PADRAO }) : "";
 }
 
+// ── Aniversariantes (o filtro "🎂" da aba e o parabéns pelo WhatsApp) ─────────
+//
+// O SWFast lista os aniversariantes do mês; aqui a lista vem com o botão de
+// mandar parabéns (e um cupom, se a loja quiser) pelo WhatsApp do lojista —
+// um link wa.me com o texto pronto, que ele confere e envia. Nada sai sozinho.
+
+export type PeriodoDoAniversario = "mes" | "semana";
+
+/** A "semana" do aniversário: hoje e os 6 dias seguintes. */
+export const DIAS_DA_SEMANA_DO_ANIVERSARIO = 7;
+
+/** "15/03", "15/03/1990", "1990-03-15" → mês e dia; inválido → null. */
+export function mesEDiaDoAniversario(bruto: unknown): { mes: number; dia: number } | null {
+  const t = String(bruto ?? "").trim();
+  let m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t);
+  let mes: number, dia: number;
+  if (m) [mes, dia] = [Number(m[2]), Number(m[3])];
+  else if ((m = /^(\d{1,2})[/.\-](\d{1,2})(?:[/.\-]\d{2,4})?$/.exec(t))) [dia, mes] = [Number(m[1]), Number(m[2])];
+  else return null;
+  if (mes < 1 || mes > 12 || dia < 1 || dia > new Date(Date.UTC(2000, mes, 0)).getUTCDate()) return null;
+  return { mes, dia };
+}
+
+const bissexto = (a: number) => (a % 4 === 0 && a % 100 !== 0) || a % 400 === 0;
+const dataIso = (a: number, m: number, d: number) => `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+
+/** O aniversário naquele ano ("YYYY-MM-DD"); o 29/02 cai no 28/02 quando o ano não é bissexto. */
+function aniversarioNoAno(ano: number, x: { mes: number; dia: number }): string {
+  const dia = x.mes === 2 && x.dia === 29 && !bissexto(ano) ? 28 : x.dia;
+  return dataIso(ano, x.mes, dia);
+}
+
+export type Aniversariante = { chave: string; aniversario: string; em: string; hoje: boolean; jaPassou: boolean };
+
+/**
+ * Quem faz aniversário no MÊS de hoje (o mês inteiro, também os dias que já
+ * passaram — "parabéns atrasado" ainda é parabéns) ou na SEMANA (hoje e os 6
+ * dias seguintes, atravessando o fim do mês e do ano). `hoje` é o dia de
+ * calendário da loja ("YYYY-MM-DD"). Em ordem de data.
+ */
+export function aniversariantes(aniversarios: Iterable<[string, string]>, hoje: string, periodo: PeriodoDoAniversario): Aniversariante[] {
+  const [ano, mes] = hoje.split("-").map(Number);
+  const fimDaSemana = (() => {
+    const d = new Date(`${hoje}T12:00:00Z`);
+    d.setUTCDate(d.getUTCDate() + DIAS_DA_SEMANA_DO_ANIVERSARIO - 1);
+    return d.toISOString().slice(0, 10);
+  })();
+  const saida: Aniversariante[] = [];
+  for (const [chave, aniversario] of aniversarios) {
+    const x = mesEDiaDoAniversario(aniversario);
+    if (!x) continue;
+    let em: string | null = null;
+    if (periodo === "mes") em = x.mes === mes ? aniversarioNoAno(ano, x) : null;
+    else em = [aniversarioNoAno(ano, x), aniversarioNoAno(ano + 1, x)].find((d) => d >= hoje && d <= fimDaSemana) ?? null;
+    if (em) saida.push({ chave, aniversario, em, hoje: em === hoje, jaPassou: em < hoje });
+  }
+  return saida.sort((a, b) => a.em.localeCompare(b.em) || a.chave.localeCompare(b.chave));
+}
+
+/** O cupom do presente, como a tela escolhe: o código e o que ele dá ("10% de desconto"). */
+export type CupomDoPresente = { codigo: string; beneficio: string };
+
+const NOME_GENERICO = /^(cliente|consumidor|balc[aã]o|sem nome|n[aã]o informado)$/i;
+
+/** O primeiro nome, com a primeira letra maiúscula ("ana paula" → "Ana"); genérico ou vazio → null. */
+export function primeiroNome(nome: string | null | undefined): string | null {
+  const t = String(nome ?? "").trim();
+  if (!t || NOME_GENERICO.test(t)) return null;
+  const p = t.split(/\s+/)[0];
+  return p.charAt(0).toLocaleUpperCase("pt-BR") + p.slice(1).toLocaleLowerCase("pt-BR");
+}
+
+/**
+ * O texto pronto do parabéns. Curto, do jeito que o dono mandaria; o cupom em
+ * negrito do WhatsApp; o link sozinho na última linha (link com pontuação
+ * colada quebra no WhatsApp).
+ */
+export function mensagemDeAniversario(x: { nome: string | null | undefined; loja: string; cupom?: CupomDoPresente | null; link?: string | null }): string {
+  const nome = primeiroNome(x.nome);
+  const linhas = [nome ? `Feliz aniversário, ${nome}! 🎉` : "Feliz aniversário! 🎉", ""];
+  // Sem artigo antes do nome da loja: "a NIK", "o Point da esfiha" — o texto não sabe o gênero.
+  if (x.cupom) linhas.push(`${x.loja} preparou um presente pra você: use o cupom *${x.cupom.codigo}* e ganhe ${x.cupom.beneficio} no seu próximo pedido.`);
+  else linhas.push(`Um dia muito especial pra você, com carinho de ${x.loja}!`);
+  if (x.link) linhas.push("", "Peça por aqui:", x.link);
+  return linhas.join("\n");
+}
+
+/** O link wa.me com o texto pronto — abre o WhatsApp do lojista; quem envia é ele. */
+export function linkDoParabens(telefone: string, mensagem: string): string | null {
+  const t = telefoneDoCliente(telefone);
+  return t ? `https://wa.me/55${t}?text=${encodeURIComponent(mensagem)}` : null;
+}
+
 /** O nome do arquivo exportado, com o dia DA LOJA — o do UTC virava amanhã depois das 21h. */
 export function nomeDoArquivoDeClientes(agora: Date = new Date(), fuso: string | null | undefined = FUSO_PADRAO): string {
   return `clientes-${dataDaLoja(fuso || FUSO_PADRAO, agora)}.csv`;

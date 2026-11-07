@@ -20,6 +20,10 @@ import {
 } from "@/lib/clientes-da-loja";
 import { dataNaLoja, nomeDoArquivoDeClientes } from "@/lib/clientes-da-loja-regras";
 import { COOKIE_DA_LOJA_ATIVA } from "@/lib/loja-ativa";
+import { prisma } from "@/lib/prisma";
+import { dataDaLoja } from "@/lib/fuso";
+import { cupomVenceu, descreverBeneficio, lerCupons } from "@/lib/cupons";
+import { linkDoCardapioDaLoja } from "@/lib/saudacao-do-dia";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +45,27 @@ function cookie(req: Request, nome: string): string | null {
     if (k === nome) return decodeURIComponent(v.join("="));
   }
   return null;
+}
+
+/**
+ * O que o parabéns pelo WhatsApp usa (lib/clientes-da-loja-regras.ts,
+ * mensagemDeAniversario): o nome da loja, o link do cardápio e os cupons
+ * ativos e dentro da validade — o de primeiro pedido fica fora (o aniversariante
+ * já é cliente e o site recusaria).
+ */
+async function presenteDeAniversario(lojaId: string, fuso: string | undefined) {
+  const loja = await prisma.user.findUnique({
+    where: { id: lojaId },
+    select: { storeName: true, name: true, slug: true, chatbotConfig: true, storeCoupons: true },
+  });
+  const hoje = dataDaLoja(fuso);
+  return {
+    loja: loja?.storeName?.trim() || loja?.name?.trim() || "a loja",
+    link: loja ? linkDoCardapioDaLoja(loja) || null : null,
+    cupons: lerCupons(loja?.storeCoupons)
+      .filter((c) => c.active && !c.primeiroPedido && !cupomVenceu(c, hoje))
+      .map((c) => ({ codigo: c.code, beneficio: descreverBeneficio(c) })),
+  };
 }
 
 export async function GET(req: Request) {
@@ -80,6 +105,10 @@ export async function GET(req: Request) {
 
     const regra = lerCashback(sessao.storeLoyalty);
     const visao = await visaoDasLojas(sessao, cookie(req, COOKIE_DA_LOJA_ATIVA));
+    // Filtro de aniversário: o que o botão de parabéns precisa para montar o
+    // texto (o nome da loja, o link do cardápio e os cupons que valem hoje).
+    const filtro = p.get("filtro") || "";
+    const presente = filtro === "aniversario_mes" || filtro === "aniversario_semana" ? await presenteDeAniversario(sessao.lojaId, sessao.fuso) : null;
     return NextResponse.json(
       {
         clientes,
@@ -89,6 +118,7 @@ export async function GET(req: Request) {
         cashback: { ativo: regra.ativo, taxa: regra.taxa, validadeDias: regra.validadeDias, maxResgatePct: regra.maxResgatePct, canais: regra.canais },
         fuso: sessao.fuso,
         visao,
+        ...(presente ? { presente } : {}),
       },
       { headers: semCache },
     );
