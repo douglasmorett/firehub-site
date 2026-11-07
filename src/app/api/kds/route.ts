@@ -20,6 +20,7 @@ import {
   producaoLiberouAFinalizacao,
   telaTemPendencia,
   lerTelasProntas,
+  lojaNoCartao,
   registrarBaixa,
   temAlgoPronto,
   tirarBaixa,
@@ -136,6 +137,7 @@ async function kdsDeVerdade(req: NextRequest) {
 
     let userStoreIds: string[] = [];
     let user: any = null;
+    let nomesDasLojas: Record<string, string | null> = {};
 
     if (email) {
       // ── BANCO FORA DO AR NÃO É "COZINHA VAZIA" ──────────────────────────
@@ -169,10 +171,19 @@ async function kdsDeVerdade(req: NextRequest) {
       // cada loja na tela do KDS se o KDS tiver sido aberto em Todas"). As
       // telas e regras continuam as da conta da sessão (`contaDasTelas`, a
       // principal). Funcionário fica na loja dele — `lojasDaVisao` garante.
+      //
+      // Junto vem o nome de cada loja da visão (uma consulta, guardada com a
+      // visão): o cartão diz de qual loja é o pedido (lib/kds-telas.ts,
+      // `lojaNoCartao`).
       const cookieDaLoja = req.cookies.get(COOKIE_DA_LOJA_ATIVA)?.value;
       if (user && cookieDaLoja === "all") {
-        const { lojaIds } = await lembrarPor(`kds:visao:${email}`, VALIDADE_DA_CONFIG_MS, () => lojasDaVisao(user, cookieDaLoja));
-        userStoreIds.push(...lojaIds);
+        const visao = await lembrarPor(`kds:visao:${email}`, VALIDADE_DA_CONFIG_MS, async () => {
+          const { lojaIds, todas } = await lojasDaVisao(user, cookieDaLoja);
+          const lojas = todas ? await prisma.user.findMany({ where: { id: { in: lojaIds } }, select: { id: true, storeName: true } }) : [];
+          return { lojaIds, nomes: Object.fromEntries(lojas.map((l) => [l.id, l.storeName])) as Record<string, string | null> };
+        });
+        userStoreIds.push(...visao.lojaIds);
+        nomesDasLojas = visao.nomes;
       }
     }
 
@@ -464,6 +475,10 @@ async function kdsDeVerdade(req: NextRequest) {
     // As telas entram para a finalização que espera a produção inteira sair na
     // ordem em que chegou nela (a última baixa).
     visiveis = ordenarPelaPrioridade(visiveis, regrasDaLoja, stage, telasDaLoja);
+    visiveis = visiveis.map((o) => {
+      const nomeDaLoja = lojaNoCartao(nomesDasLojas, o);
+      return nomeDaLoja ? { ...o, nomeDaLoja } : o;
+    });
 
     return NextResponse.json(visiveis, {
       headers: {

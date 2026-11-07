@@ -1050,3 +1050,23 @@ export function novoIdDaTela(
   }
   return `tela-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
+
+/**
+ * O nome da loja no cartão do KDS aberto em "Todas as Lojas". A Annalu, a Rush
+ * e a PasteLê produzem na mesma cozinha: só o iFood dizia de qual loja era o
+ * pedido; o do site, do 99Food e do balcão saía sem loja (Karen, 03/11/2026).
+ *
+ * `nomesDaVisao` é id → `storeName` das lojas da visão. Com uma loja só (ou
+ * fora do "todas") ele vem com uma entrada ou vazio, e o cartão fica como
+ * sempre foi. Sem `storeName`, vale o nome da loja no iFood.
+ * Sem banco: scripts/teste-kds-nome-da-loja.ts.
+ */
+export function lojaNoCartao(
+  nomesDaVisao: Readonly<Record<string, string | null | undefined>>,
+  pedido: { franchiseeId?: string | null; ifoodStoreName?: string | null },
+): string | null {
+  if (Object.keys(nomesDaVisao).length <= 1 || !pedido.franchiseeId) return null;
+  if (!(pedido.franchiseeId in nomesDaVisao)) return null;
+  const nome = String(nomesDaVisao[pedido.franchiseeId] || pedido.ifoodStoreName || "").trim();
+  return nome || null;
+}
