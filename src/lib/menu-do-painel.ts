@@ -94,6 +94,8 @@ export const MENU_DO_PAINEL: GrupoDoMenu[] = [
       { href: "/store/dados-sensiveis", label: "Dados sensíveis", icone: "Gauge" },
       { href: "/store/fiscal", label: "Fiscal", icone: "Receipt" },
       { href: "/store/estoque", label: "Estoque", icone: "Package" },
+      // Pede os preços aos fornecedores pelo WhatsApp da loja e compara (R$ 97/mês, lib/cotacao — Douglas, 07/11/2026).
+      { href: "/store/cotacao", label: "Cotação", icone: "ShoppingCart", selo: "NOVO" },
       { href: "/store/etiquetas", label: "Validade & etiquetas", icone: "Tag" },
       { href: "/store/compras", label: "Compras", icone: "Truck", somenteCom: "compras" },
     ],

@@ -2981,3 +2981,181 @@ model IntegracaoEvopdv {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
+
+// ========== COTAÇÃO AUTOMÁTICA (lib/cotacao) ==========
+// Módulo pago (R$ 97/mês, Douglas, 07/11/2026): a loja pede os preços aos
+// fornecedores pelo WhatsApp dela, nos dias e horas que o lojista marcou, a IA
+// lê o que eles mandam (texto, foto do encarte, PDF, áudio) e a tela compara.
+// Tabelas criadas no boot por src/lib/cotacao/estrutura-no-banco.ts. Sem
+// relação com User de propósito: tabela própria, se faltar só a cotação para.
+
+/// A assinatura do módulo (o padrão dos módulos pagos, lib/modulo-pago.ts) e a
+/// configuração da loja: a agenda e para quem vai o resumo da rodada.
+model CotacaoAssinatura {
+  franchiseeId      String    @id
+  ativo             Boolean   @default(false)
+  testeAte          DateTime?
+  /// Cada trecho ligado: [{ de, ate, valor, aceite }] em ISO; `ate` nulo = ligado agora.
+  trechos           Json      @default("[]")
+  /// Os horários da cotação: [{ dias: [1,4], hora: "08:00" }] (0 = domingo), no fuso da loja. Nasce vazia.
+  agenda            Json      @default("[]")
+  /// Quantas horas depois do pedido de preços sai o resumo para o comprador.
+  horasParaResumo   Int       @default(4)
+  /// Quem recebe o resumo; vazio = o WhatsApp do proprietário.
+  compradorTelefone String?
+  compradorNome     String?
+  atualizadoEm      DateTime  @default(now())
+}
+
+/// Um fornecedor da loja. O telefone canônico (lib/telefone.ts) é o que o
+/// webhook do robô compara para saber que quem escreveu é fornecedor.
+model Fornecedor {
+  id               String   @id @default(cuid())
+  franchiseeId     String
+  nome             String
+  telefone         String?
+  telefoneCanonico String?
+  contato          String?
+  /// As categorias que ele fornece (["Hortifruti", "Bebidas"]); vazio = tudo.
+  categorias       Json     @default("[]")
+  pedidoMinimo     Float?
+  /// Dias da semana em que entrega (0 = domingo).
+  diasDeEntrega    Json     @default("[]")
+  /// Quantos dias depois do pedido ele entrega (0 = no mesmo dia).
+  prazoEntregaDias Int?
+  /// Até que horas o pedido entra para a próxima entrega ("16:00").
+  horarioLimite    String?
+  pagamento        String?
+  observacoes      String?
+  ativo            Boolean  @default(true)
+  criadoEm         DateTime @default(now())
+  atualizadoEm     DateTime @default(now())
+
+  @@index([franchiseeId])
+  @@index([franchiseeId, telefoneCanonico])
+}
+
+/// Um produto que a loja COMPRA (não o do cardápio). Ligado ao insumo do
+/// estoque quando existe: o saldo e o mínimo de lá dizem o que precisa comprar,
+/// e o pedido recebido entra no estoque com o custo.
+model ProdutoDeCompra {
+  id               String   @id @default(cuid())
+  franchiseeId     String
+  nome             String
+  categoria        String?
+  /// A unidade de compra: "cx", "kg", "fd", "un"...
+  unidade          String   @default("un")
+  quantidadePadrao Float?
+  stockItemId      String?
+  /// Quantas unidades do insumo vêm em 1 unidade de compra (1 cx = 12 un).
+  fatorDoInsumo    Float?
+  /// Os nomes com que os fornecedores escrevem este produto (aprendidos ao confirmar).
+  apelidos         Json     @default("[]")
+  ativo            Boolean  @default(true)
+  criadoEm         DateTime @default(now())
+  atualizadoEm     DateTime @default(now())
+
+  @@index([franchiseeId])
+}
+
+/// Uma rodada de cotação: a loja pediu os preços aos fornecedores.
+model CotacaoRodada {
+  id              String    @id @default(cuid())
+  franchiseeId    String
+  /// "AGENDA" ou "MANUAL".
+  origem          String    @default("MANUAL")
+  /// O horário da agenda que a criou ("2026-11-09 08:00"): a mesma não nasce duas vezes.
+  chave           String?
+  resumoApos      DateTime?
+  resumoEnviadoEm DateTime?
+  criadaEm        DateTime  @default(now())
+
+  @@unique([franchiseeId, chave])
+  @@index([franchiseeId, criadaEm])
+}
+
+/// A fila do que a loja manda pelo WhatsApp dela (pedido de preços, pedido de
+/// compra, resumo ao comprador), espaçada para não parecer disparo em massa.
+model CotacaoEnvio {
+  id           String    @id @default(cuid())
+  franchiseeId String
+  rodadaId     String?
+  fornecedorId String?
+  pedidoId     String?
+  /// "PRECOS" | "PEDIDO" | "RESUMO"
+  tipo         String
+  telefone     String
+  texto        String
+  /// "FILA" | "ENVIANDO" | "ENVIADO" | "FALHOU" | "CANCELADO"
+  status       String    @default("FILA")
+  enviarApos   DateTime  @default(now())
+  enviadoEm    DateTime?
+  erro         String?
+  criadoEm     DateTime  @default(now())
+
+  @@unique([rodadaId, fornecedorId, tipo])
+  @@index([status, enviarApos])
+  @@index([franchiseeId, criadoEm])
+}
+
+/// O que chegou de um fornecedor (texto, foto, PDF, áudio) e o que a IA leu.
+model CotacaoResposta {
+  id           String   @id @default(cuid())
+  franchiseeId String
+  fornecedorId String
+  rodadaId     String?
+  /// "TEXTO" | "IMAGEM" | "PDF" | "AUDIO"
+  tipo         String
+  texto        String?
+  /// "LENDO" | "LIDA" | "SEM_PRECO" | "FALHOU"
+  status       String   @default("LENDO")
+  linhas       Int      @default(0)
+  criadaEm     DateTime @default(now())
+
+  @@index([franchiseeId, criadaEm])
+  @@index([fornecedorId, rodadaId])
+}
+
+/// Um preço lido: fornecedor × produto × data — o histórico do comparativo.
+/// Status SUGERIDO ou SEM_PRODUTO = a IA não teve certeza; o lojista confirma.
+model CotacaoPreco {
+  id           String   @id @default(cuid())
+  franchiseeId String
+  fornecedorId String
+  produtoId    String?
+  respostaId   String?
+  rodadaId     String?
+  nomeLido     String
+  unidadeLida  String?
+  preco        Float
+  validade     String?
+  /// 0 a 1: quanto o nome lido se parece com o produto sugerido.
+  confianca    Float    @default(0)
+  /// "CONFIRMADO" | "SUGERIDO" | "SEM_PRODUTO" | "IGNORADO"
+  status       String   @default("SUGERIDO")
+  criadoEm     DateTime @default(now())
+
+  @@index([franchiseeId, criadoEm])
+  @@index([franchiseeId, produtoId, fornecedorId])
+}
+
+/// O pedido de compra que a loja mandou a um fornecedor.
+model PedidoDeCompra {
+  id             String    @id @default(cuid())
+  franchiseeId   String
+  fornecedorId   String
+  rodadaId       String?
+  /// [{ produtoId, nome, unidade, quantidade, preco }]
+  itens          Json      @default("[]")
+  total          Float     @default(0)
+  texto          String
+  /// "FILA" | "ENVIADO" | "FALHOU" | "RECEBIDO" | "CANCELADO"
+  status         String    @default("FILA")
+  enviadoEm      DateTime?
+  recebidoEm     DateTime?
+  stockInvoiceId String?
+  criadoPor      String?
+  criadoEm       DateTime  @default(now())
+
+  @@index([franchiseeId, criadoEm])
+}

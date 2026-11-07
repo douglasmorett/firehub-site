@@ -47,6 +47,8 @@ export type TraceStage =
   | "dono-sem-bill"
   /** Reação ou emoji solto num status da loja: o robô fica quieto (lib/reacao-e-status.ts). */
   | "reacao-ignorada"
+  /** Fornecedor cadastrado na Cotação automática: a mensagem foi para a cotação (lib/cotacao/do-fornecedor.ts). */
+  | "fornecedor-cotacao"
   | "pedido-gravado"
   | "pedido-nao-gravado"
   | "enviado"

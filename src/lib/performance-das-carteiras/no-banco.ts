@@ -11,7 +11,7 @@
  *     franchiseeId+createdAt) — uma linha por loja-mês;
  *   • vendas por loja nos DIAS exatos do período e do anterior (uma consulta);
  *   • os ciclos de mensalidade dos meses da janela (colunas pequenas);
- *   • as assinaturas (Bill, App, Multimarcas, Balança, totem) — uma linha por loja;
+ *   • as assinaturas (Bill, App, Multimarcas, Balança, Cotação, totem) — uma linha por loja;
  *   • recargas de disparo pagas (valor, disparos e o custo da Meta gravado);
  *   • o perfil de agora (lib/perfil-da-loja, já com cache de 5 min);
  *   • a atividade do CRM (lib/crm/desempenho.ts — a MESMA conta do antigo
@@ -33,6 +33,7 @@ import { valorDoAssessorNoMes, PRECO_DO_ASSESSOR, type Periodo } from "@/lib/ass
 import { PRECOS_DO_APP, teveAppCompletoNoMes, valorDoAppNoMes, type TrechoDoApp } from "@/lib/app-da-loja/plano";
 import { valorDoMultimarcasNoMes, type TrechoDoMultimarcas } from "@/lib/multimarcas/assinatura";
 import { valorDaBalancaNoMes, type TrechoDaBalanca } from "@/lib/balanca/assinatura";
+import { valorDaCotacaoNoMes, type TrechoDaCotacao } from "@/lib/cotacao/assinatura";
 import { custoMeta } from "@/lib/disparo-oficial/regras";
 import { desempenhoDaEquipe, type DesempenhoDoVendedor } from "@/lib/crm/desempenho";
 import { idsDeTodasAsLojas, resumosDasLojas } from "@/lib/perfil-da-loja/no-banco";
@@ -132,7 +133,7 @@ async function montarBase(nMeses: number, agora: Date): Promise<Base> {
   ]);
   const ids = lojas.map((l) => l.id);
 
-  const [vendas, ciclos, emAberto, pagamentos, bill, app, multimarcas, balancas, totens, recargas, perfis] = await Promise.all([
+  const [vendas, ciclos, emAberto, pagamentos, bill, app, multimarcas, balancas, cotacoes, totens, recargas, perfis] = await Promise.all([
     // Vendas por loja × mês, na régua dos relatórios; o mês é o do dia OPERACIONAL (vira às 5h, Brasília).
     seguro("vendas por mês", () => prisma.$queryRaw<{ id: string; mes: string; vendas: number; gmv: number }[]>`
       SELECT o."franchiseeId" AS id,
@@ -156,6 +157,8 @@ async function montarBase(nMeses: number, agora: Date): Promise<Base> {
       SELECT "franchiseeId" AS id, "testeAte", trechos FROM "MultimarcasAssinatura" WHERE "franchiseeId" = ANY(${ids})`),
     seguro("Balança", () => prisma.$queryRaw<{ id: string; testeAte: Date | null; trechos: unknown }[]>`
       SELECT "franchiseeId" AS id, "testeAte", trechos FROM "BalancaAssinatura" WHERE "franchiseeId" = ANY(${ids})`),
+    seguro("Cotação", () => prisma.$queryRaw<{ id: string; testeAte: Date | null; trechos: unknown }[]>`
+      SELECT "franchiseeId" AS id, "testeAte", trechos FROM "CotacaoAssinatura" WHERE "franchiseeId" = ANY(${ids})`),
     seguro("totens", () => prisma.totemLicense.findMany({ where: { franchiseeId: { in: ids } }, select: { franchiseeId: true, active: true, createdAt: true } })),
     seguro("recargas de disparo", () => prisma.$queryRaw<{ id: string; valor: number; disparos: number; descricao: string | null; em: Date }[]>`
       SELECT "franchiseeId" AS id, valor::float AS valor, disparos::int AS disparos, descricao, "pagaEm" AS em FROM "DisparoRecarga"
@@ -198,6 +201,7 @@ async function montarBase(nMeses: number, agora: Date): Promise<Base> {
   const appDe = new Map(app.map((a) => [a.id, a]));
   const mmDe = new Map(multimarcas.map((m) => [m.id, m]));
   const balancaDe = new Map(balancas.map((m) => [m.id, m]));
+  const cotacaoDe = new Map(cotacoes.map((m) => [m.id, m]));
   const custoAtual = custoMeta();
   let disparoEstimado = false;
 
@@ -219,6 +223,8 @@ async function montarBase(nMeses: number, agora: Date): Promise<Base> {
     const trechosMm = lerMm(mm?.trechos);
     const bal = balancaDe.get(l.id);
     const trechosBal: TrechoDaBalanca[] = lerMm(bal?.trechos);
+    const cot = cotacaoDe.get(l.id);
+    const trechosCot: TrechoDaCotacao[] = lerMm(cot?.trechos);
     const totensDaLoja = totensDe.get(l.id) || [];
     const recargasDaLoja = (recargasDe.get(l.id) || []).map((r) => {
       const custo = custoDaDescricao(r.descricao);
@@ -254,6 +260,7 @@ async function montarBase(nMeses: number, agora: Date): Promise<Base> {
         // O app completo (Android + Apple) traz o Multimarcas de cortesia.
         multimarcas: teveAppCompletoNoMes(trechosApp, inicio, fim, agora) ? 0 : valorDoMultimarcasNoMes(trechosMm, mm?.testeAte ?? null, inicio, fim, agora),
         balanca: valorDaBalancaNoMes(trechosBal, bal?.testeAte ?? null, inicio, fim, agora),
+        cotacao: valorDaCotacaoNoMes(trechosCot, cot?.testeAte ?? null, inicio, fim, agora),
         totem: totensDaLoja.filter((t) => t.active && new Date(t.createdAt).getTime() < fim.getTime()).length * PRECO_DO_TOTEM,
         disparo: c2(doMes.reduce((s, r) => s + r.margem, 0)),
         disparoBruto: c2(doMes.reduce((s, r) => s + r.bruto, 0)),
@@ -283,6 +290,7 @@ async function montarBase(nMeses: number, agora: Date): Promise<Base> {
     if (periodosBill[0]) upsell.push({ servico: "bill", em: periodosBill[0].de, valorMensal: PRECO_DO_ASSESSOR });
     if (trechosMm[0]) upsell.push({ servico: "multimarcas", em: trechosMm[0].de, valorMensal: trechosMm[0].valor });
     if (trechosBal[0]) upsell.push({ servico: "balanca", em: trechosBal[0].de, valorMensal: trechosBal[0].valor });
+    if (trechosCot[0]) upsell.push({ servico: "cotacao", em: trechosCot[0].de, valorMensal: trechosCot[0].valor });
     for (const t of totensDaLoja) upsell.push({ servico: "totem", em: new Date(t.createdAt).toISOString(), valorMensal: PRECO_DO_TOTEM });
     const primeiraRecarga = [...recargasDaLoja].sort((x, y) => x.em.getTime() - y.em.getTime())[0];
     if (primeiraRecarga) upsell.push({ servico: "disparo", em: primeiraRecarga.em.toISOString(), valorMensal: 0 });

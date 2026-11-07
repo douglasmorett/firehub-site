@@ -86,6 +86,10 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/estoque", abre: ["estoque"] },
   { prefixo: "/store/etiquetas", abre: ["estoque"] },
   { prefixo: "/store/compras", abre: ["estoque"] },
+  // Cotação automática: fornecedores, comparativo e pedido de compra são o
+  // trabalho de quem lança a compra no estoque. Ligar o módulo (R$ 97 no
+  // boleto) continua só do dono — a API barra (lib/cotacao/sessao.ts).
+  { prefixo: "/store/cotacao", abre: ["estoque"] },
   { prefixo: "/store/cart", abre: ["estoque"] },
 
   { prefixo: "/store/impressoras", abre: ["impressoras"] },

@@ -111,6 +111,10 @@ export async function register() {
   // próprias; se faltarem, só o assessor para.
   const { garantirEstruturaDoAssessor } = await import("./lib/assessor/estrutura-no-banco");
   await garantirEstruturaDoAssessor();
+  // Cotação automática (fornecedores, produtos de compra, preços lidos e
+  // pedidos — lib/cotacao). Tabelas próprias; se faltarem, só a cotação para.
+  const { garantirEstruturaDaCotacao } = await import("./lib/cotacao/estrutura-no-banco");
+  await garantirEstruturaDaCotacao();
   // Clientes e relatórios do Acompanhamento iFood (aba do admin). Tabelas
   // próprias; se faltarem, só essa aba para.
   await garantirEstruturaDeAcompanhamento();

@@ -870,6 +870,14 @@ export async function closeBillingCycle(franchiseeId: string, yearMonth: string)
       taxasExtras += balanca;
       linhasExtras.push(`Balança R$${balanca.toFixed(2)}`);
     }
+    // Cotação automática: R$ 97 À PARTE da mensalidade; ativo em algum dia do
+    // mês fora do teste = o mês inteiro (lib/cotacao/assinatura.ts).
+    const { cobrancaDaCotacaoNoMes } = await import("@/lib/cotacao/assinatura");
+    const cotacao = await cobrancaDaCotacaoNoMes(franchiseeId, monthStart, monthEnd);
+    if (cotacao > 0) {
+      taxasExtras += cotacao;
+      linhasExtras.push(`Cotação automática R$${cotacao.toFixed(2)}`);
+    }
     // FireCheck (Checklist e Controle de ponto) ligado no painel: R$ 149 cada,
     // os dois R$ 197; ligado em algum dia do mês fora do teste = o mês inteiro
     // (lib/firecheck-modulos/assinatura.ts), à parte da mensalidade.
@@ -1281,10 +1289,13 @@ export async function getCurrentCycleView(franchiseeId: string) {
   // Balança — a mesma conta do fechamento.
   const { cobrancaDaBalancaNoMes } = await import("@/lib/balanca/assinatura");
   const balanca = cobraServicos ? await cobrancaDaBalancaNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
+  // Cotação automática — a mesma conta do fechamento.
+  const { cobrancaDaCotacaoNoMes } = await import("@/lib/cotacao/assinatura");
+  const cotacao = cobraServicos ? await cobrancaDaCotacaoNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
   // FireCheck — a mesma conta do fechamento.
   const { cobrancaDoFirecheckNoMes } = await import("@/lib/firecheck-modulos/assinatura");
   const firecheck = cobraServicos ? await cobrancaDoFirecheckNoMes(franchiseeId, intervaloDoCiclo.monthStart, intervaloDoCiclo.monthEnd) : 0;
-  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + tabletNaMesa + balanca + firecheck;
+  const taxasDoCiclo = trafegoPago + totem + lojasExtras.valor + assessor + aplicativo + multimarcas + tabletNaMesa + balanca + cotacao + firecheck;
 
   const calculada = emTeste ? 0 : Math.max(cycle.amountDue, devidoAgora);
   const indique = emTeste ? SEM_INDIQUE : await indiqueDoMes(Math.max(0, calculada - cycle.amountOffset));
@@ -1304,7 +1315,7 @@ export async function getCurrentCycleView(franchiseeId: string) {
     // Discriminado para o painel poder mostrar a linha em vez de só inflar o
     // total — "por que subiu R$ 200?" tem que ter resposta na tela.
     mensalidadePrevista,
-    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, tabletNaMesa, balanca, firecheck },
+    taxas: { trafegoPago, totem, lojasExtras: lojasExtras.valor, assessor, aplicativo, multimarcas, tabletNaMesa, balanca, cotacao, firecheck },
     lojasExtras,
     status: cycle.status,
     isExempt: false,
