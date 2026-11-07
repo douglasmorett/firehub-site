@@ -366,8 +366,10 @@ async function pollIfoodEvents(sessionUserId?: string) {
             // no totem. O espelho é sempre categoria "iFood".
             const items = await montarItensDoPedidoIfood(rawIfoodItems, {
               franchiseeId: eventFranchisee.id,
+              // Sem id no item, o espelho leva o nome: com um sufixo aleatório
+              // cada pedido criava um espelho novo (07/11/2026).
               idDoItem: (i: any, idx: number) =>
-                i?.id || i?.externalCode || i?.code || `ifitem-${idx}-${Math.random().toString(36).slice(2)}`,
+                i?.id || i?.externalCode || i?.code || `ifitem-${String(i?.name || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || idx}`,
             });
 
             // Extract total

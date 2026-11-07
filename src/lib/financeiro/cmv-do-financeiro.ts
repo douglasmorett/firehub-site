@@ -12,6 +12,7 @@
  *     cardápio inteiro da loja (fichas, combos, custo digitado) e o custo de
  *     cada insumo dia a dia (lib/cmv/custo-do-insumo.ts).
  */
+import { SEM_ESPELHO } from "@/lib/espelho-de-integracao";
 import { prisma } from "@/lib/prisma";
 import { naLoja, somarDias } from "@/lib/relatorios/base";
 import { pedidoDaMarca } from "@/lib/desperdicio-do-cancelado";
@@ -84,7 +85,8 @@ export type CustoDosItens = {
 /** O cardápio da loja no formato da conta (fichas, combos, custo digitado). Também da lista de compras e da previsão de insumos. */
 export async function carregarCatalogo(lojaId: string): Promise<Catalogo> {
   const produtos = await prisma.menuProduct.findMany({
-    where: { franchiseeId: lojaId },
+    // Espelho de integração não é produto da loja (lib/espelho-de-integracao.ts).
+    where: { franchiseeId: lojaId, ...SEM_ESPELHO },
     select: {
       id: true, name: true, active: true, cost: true, isCombo: true,
       recipeItems: { select: { stockItemId: true, quantityConsumed: true, stockItem: { select: { name: true } } } },

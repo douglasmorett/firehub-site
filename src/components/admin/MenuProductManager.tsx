@@ -13,6 +13,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles, Copy } from "lucide-react";
 
+type AbaForm = "sobre" | "preco" | "perguntas" | "disponivel";
+
 const CHANNELS = [
   { key: "activePDV",      label: "PDV",      icon: "🖥️",  color: "#1C1917", desc: "Atendimento no balcão/caixa" },
   { key: "activeDelivery", label: "Delivery", icon: "🛵",  color: "#0F766E", desc: "Pedidos online pelo site" },
@@ -350,7 +352,7 @@ export default function MenuProductManager({
   // até ela: sem isso, o lojista clica em "Criar cópia" e não vê onde foi parar.
   const [copiaRecemCriada, setCopiaRecemCriada] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [tab, setTab] = useState<"all" | "items" | "combos">("all");
+  const [tab, setTab] = useState<"all" | "items" | "combos" | "complementos">("all");
   // "Novo Item" pergunta antes se é pizza ou outro item (components/admin/CadastroDePizza):
   // a pizza tem o passo a passo dela, o item vai para o formulário, o combo só pelo Novo Combo.
   const [novoItem, setNovoItem] = useState<{ categoria?: string } | null>(null);
@@ -1071,6 +1073,14 @@ export default function MenuProductManager({
     { id: "balcao", rotulo: "🧾 Balcão", campo: "activePDV" },
   ];
   const [canalChip, setCanalChip] = useState<CanalChip>("todos");
+
+  // ── ABAS DO FORMULÁRIO (modelo do iFood) ────────────────────────────────
+  // Cadastro novo anda em passos (Sobre o produto → Preço → Disponível em;
+  // o combo ganha "O que o combo leva" antes do último). Edição mostra as
+  // mesmas partes como abas, com as Perguntas. Douglas, 07/11/2026: "a
+  // galera está acostumada com o iFood".
+  const [abaForm, setAbaForm] = useState<AbaForm>("sobre");
+  const mostra = (a: AbaForm) => abaForm === a;
   useEffect(() => {
     try {
       const salvo = localStorage.getItem("cardapio.canal");
@@ -1236,6 +1246,7 @@ export default function MenuProductManager({
     setHorarioMode("all"); setHorarioDe("09:00"); setHorarioAte("14:00");
     setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
     setShowForm(false); setEditingId(null); setDuplicandoDe(null);
+    setAbaForm("sobre");
   };
 
   const openEdit = (p: any) => {
@@ -1320,7 +1331,7 @@ export default function MenuProductManager({
       );
     } else { setComboGroups([]); setPrecosCanalNoCombo(false); }
     setNovaOpcao(null); setSeletorAberto(null); setBuscaOpcao("");
-    setEditingId(p.id); setDuplicandoDe(null); setShowForm(true);
+    setEditingId(p.id); setDuplicandoDe(null); setAbaForm("sobre"); setShowForm(true);
   };
 
   /** Mesmo formulário da edição, já preenchido, mas salvando como item novo. */
@@ -1367,7 +1378,8 @@ export default function MenuProductManager({
 
   /** `opcoesConfirmadas`: a resposta da pergunta do preço nas opções (vazio = não mudar). */
   const handleSubmit = async (opcoesConfirmadas?: string[]) => {
-    if (!name || !description || !price) { alert("Preencha nome, descrição e preço."); return; }
+    if (!name || !description) { setAbaForm("sobre"); alert("Preencha nome e descrição."); return; }
+    if (!price) { setAbaForm("preco"); alert("Preencha o preço de venda."); return; }
     // O servidor recusa isto com 400 de qualquer jeito (api/admin/menu-products);
     // aqui o lojista descobre antes de perder o resto do formulário.
     if (promoDigitada.cara) {
@@ -1814,6 +1826,7 @@ export default function MenuProductManager({
 
   const itemProducts = products.filter(p => !p.isCombo && !isHiddenIntegrationItem(p) && !ehOpcaoDeCombo(p));
   const comboProducts = products.filter(p => p.isCombo && !isHiddenIntegrationItem(p) && !ehOpcaoDeCombo(p));
+  const produtosComPerguntas = [...itemProducts, ...comboProducts].filter(p => (p.comboGroups?.length || 0) > 0);
   const noPhotoCount = products.filter(p => !p.imageUrl && !isHiddenIntegrationItem(p) && !ehOpcaoDeCombo(p)).length;
 
   /**
@@ -1843,6 +1856,31 @@ export default function MenuProductManager({
 
   /** O formulário está aberto numa opção de combo, não num item do cardápio. */
   const editandoOpcao = !!editingId && soOpcaoDeCombo.has(editingId);
+  /** Cadastro novo: passos numerados com Continuar. Edição e cópia: abas livres. */
+  const modoPassos = !editingId && !duplicandoDe;
+  const abasDoForm: { id: AbaForm; rotulo: string }[] = editandoOpcao
+    ? [{ id: "sobre", rotulo: "Sobre a opção" }, { id: "preco", rotulo: "Preço" }, { id: "disponivel", rotulo: "Disponível em" }]
+    : [
+      { id: "sobre", rotulo: "Sobre o produto" },
+      { id: "preco", rotulo: "Preço" },
+      // Como no iFood, as perguntas do item entram depois de cadastrar; o combo precisa delas já no cadastro.
+      ...((modoPassos && !isCombo) ? [] : [{ id: "perguntas" as AbaForm, rotulo: isCombo ? "O que o combo leva" : "Perguntas" }]),
+      { id: "disponivel", rotulo: "Disponível em" },
+    ];
+  const idxAba = Math.max(0, abasDoForm.findIndex(a => a.id === abaForm));
+  const avancarPasso = () => {
+    if (abaForm === "sobre") {
+      if (!name.trim()) { alert("Dê um nome ao produto."); return; }
+      if (!description.trim()) { alert("Escreva a descrição: é o que o cliente lê no cardápio."); return; }
+      if (dynCategories.length === 0 || !category) { alert("Escolha a categoria."); return; }
+    }
+    if (abaForm === "preco") {
+      if (!price) { alert("Preencha o preço de venda."); return; }
+      if (promoDigitada.cara) { alert("O preço promocional precisa ser MENOR que o preço de venda."); return; }
+    }
+    const proxima = abasDoForm[idxAba + 1];
+    if (proxima) setAbaForm(proxima.id);
+  };
   const combosDaOpcaoEditada = editandoOpcao ? (usosDaOpcao.get(editingId as string) || []) : [];
 
   const handleCleanNoPhoto = async () => {
@@ -2231,15 +2269,22 @@ export default function MenuProductManager({
       {/* TABS E BOTÕES DE AÇÃO SUPERIOR (iFood style) */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", alignItems: "center", justifyContent: "space-between", marginBottom: "1rem" }}>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+          {/* As abas do iFood (Cardápio / Produtos / Complementos / PDV), mais Combos, que lá não existe */}
           <button onClick={() => setTab("all")} className={`btn ${tab === "all" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 800 }} title="Ver cardápio completo com itens e combos agrupados por categoria, exatamente como no site e no iFood">
-            📋 Cardápio Completo ({itemProducts.length + comboProducts.length})
+            📋 Cardápio ({itemProducts.length + comboProducts.length})
           </button>
           <button onClick={() => setTab("items")} className={`btn ${tab === "items" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }}>
-            🍔 Apenas Itens ({itemProducts.length})
+            🍔 Produtos ({itemProducts.length})
           </button>
           <button onClick={() => setTab("combos")} className={`btn ${tab === "combos" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }}>
-            <Package size={16} style={{ marginRight: "4px" }} /> Apenas Combos ({comboProducts.length})
+            <Package size={16} style={{ marginRight: "4px" }} /> Combos ({comboProducts.length})
           </button>
+          <button onClick={() => setTab("complementos")} className={`btn ${tab === "complementos" ? "btn-primary" : "btn-outline"}`} style={{ fontSize: "0.88rem", fontWeight: 700 }} title="Só os produtos que têm perguntas, com as perguntas e opções abertas">
+            🧩 Complementos ({produtosComPerguntas.length})
+          </button>
+          <Link href="/store/cardapio/pdv" className="btn btn-outline" style={{ fontSize: "0.88rem", fontWeight: 700, textDecoration: "none" }} title="O número de cada item, para digitar no Código PDV do iFood">
+            🔢 PDV
+          </Link>
         </div>
 
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
@@ -2272,8 +2317,7 @@ export default function MenuProductManager({
           >
             <Plus size={16} style={{ marginRight: "4px" }} /> Novo Combo
           </button>
-          {/* Código PDV (número do item para o iFood) e vínculo dos itens das integrações: lib/espelho-de-integracao.ts */}
-          <Link href="/store/cardapio/pdv" style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600, textDecoration: "none" }}>🔢 Código PDV</Link>
+          {/* Vínculo dos itens das integrações: lib/espelho-de-integracao.ts */}
           <Link href="/store/cardapio/integracoes" style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600, textDecoration: "none" }}>🔗 Itens das integrações</Link>
         </div>
       </div>
@@ -2542,6 +2586,25 @@ export default function MenuProductManager({
               </button>
             </div>
 
+            {/* ABAS / PASSOS DO FORMULÁRIO (modelo do iFood): pílulas numeradas no cadastro, abas na edição */}
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginBottom: "1.25rem" }}>
+              {abasDoForm.map((a, i) => {
+                const ativa = abaForm === a.id;
+                const feita = modoPassos && idxAba > i;
+                return (
+                  <button key={a.id} type="button" onClick={() => setAbaForm(a.id)}
+                    style={{ display: "inline-flex", alignItems: "center", gap: "6px", padding: "7px 12px", borderRadius: "999px", border: `1.5px solid ${ativa ? "#E8360C" : feita ? "#0F766E" : "#E2E8F0"}`, background: ativa ? "#FFF4EF" : feita ? "#F0FDFA" : "#FFF", color: ativa ? "#C92E09" : feita ? "#0F766E" : "#64748B", fontWeight: 800, fontSize: "0.8rem", cursor: "pointer", fontFamily: "inherit" }}>
+                    {modoPassos && (
+                      <span style={{ width: 20, height: 20, borderRadius: "50%", background: ativa ? "#E8360C" : feita ? "#0F766E" : "#E2E8F0", color: ativa || feita ? "#FFF" : "#64748B", fontSize: "0.7rem", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                        {feita ? "✓" : i + 1}
+                      </span>
+                    )}
+                    {a.rotulo}
+                  </button>
+                );
+              })}
+            </div>
+
             {/* OPÇÃO DE COMBO: quem chega aqui pelo painel "Complementos" está
                 editando um "Adicional de Catupiry", não um item à venda. Os
                 canais e as tags não valem para ela — o que a mostra é a
@@ -2714,19 +2777,19 @@ export default function MenuProductManager({
             {/* GRID DE CAMPOS DE EDIÇÃO */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1.25rem 1rem" }}>
               {/* LINHA 1: NOME & PREÇO */}
-              <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
+              {mostra("sobre") && <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
                 <div style={{ height: "24px", display: "flex", alignItems: "center", marginBottom: "6px" }}>
                   <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Nome do Produto</label>
                 </div>
                 <input className="input-field" style={{ height: "44px", boxSizing: "border-box" }} placeholder="Ex: Esfirra de Carne" value={name} onChange={e => setName(e.target.value)} />
-              </div>
+              </div>}
 
-              <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
+              {mostra("preco") && <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
                 <div style={{ height: "24px", display: "flex", alignItems: "center", marginBottom: "6px" }}>
                   <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Preço de Venda (R$)</label>
                 </div>
                 <input className="input-field" style={{ height: "44px", boxSizing: "border-box" }} type="number" step="0.01" placeholder="Ex: 9.90" value={price} onChange={e => setPrice(e.target.value)} />
-              </div>
+              </div>}
 
               {/* ─── PREÇO PROMOCIONAL ────────────────────────────────────
                   Uma FAIXA de uma linha, logo abaixo do preço de venda: os dois
@@ -2741,7 +2804,7 @@ export default function MenuProductManager({
                   o que mostrar.
 
                   Vazio = sem promoção, e é assim que ela se encerra. */}
-              <div
+              {mostra("preco") && <div
                 className="input-group"
                 style={{
                   gridColumn: "1 / -1",
@@ -2790,7 +2853,7 @@ export default function MenuProductManager({
                     Em branco, vende pelo preço normal. Preenchido, o cardápio risca o preço de venda e destaca este.
                   </span>
                 )}
-              </div>
+              </div>}
 
               {/* ─── PREÇOS POR CANAL ──────────────────────────────────────
                   A loja cobra diferente conforme onde o pedido nasce: no delivery
@@ -2800,7 +2863,7 @@ export default function MenuProductManager({
 
                   Fica fechado por padrão: quem tem um preço só não precisa nem
                   saber que isto existe. */}
-              <div className="input-group" style={{ gridColumn: "1 / -1" }}>
+              {mostra("preco") && <div className="input-group" style={{ gridColumn: "1 / -1" }}>
                 <button
                   type="button"
                   onClick={() => setAbaPrecos(v => !v)}
@@ -2887,10 +2950,10 @@ export default function MenuProductManager({
                     </div>
                   </div>
                 )}
-              </div>
+              </div>}
 
               {/* LINHA 2: CATEGORIA & CUSTO (ALINHAMENTO 100% PERFEITO EM LINHA RETA) */}
-              <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
+              {mostra("sobre") && <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
                 <div style={{ height: "24px", display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
                   <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Categoria</label>
                   <button
@@ -3013,10 +3076,10 @@ export default function MenuProductManager({
                     </div>
                   </div>
                 )}
-              </div>
+              </div>}
 
               {/* Campo Custo */}
-              <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
+              {mostra("preco") && <div className="input-group" style={{ display: "flex", flexDirection: "column" }}>
                 <div style={{ height: "24px", display: "flex", alignItems: "center", gap: "6px", marginBottom: "6px" }}>
                   <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem", margin: 0 }}>Custo do Produto (R$)</label>
                   <span style={{ fontSize: "0.68rem", background: "#FFF7E6", color: "#92400E", padding: "1px 6px", borderRadius: "4px", fontWeight: 700, lineHeight: 1 }}>
@@ -3038,10 +3101,10 @@ export default function MenuProductManager({
                     Margem bruta: {(((parseFloat(price) - parseFloat(cost)) / parseFloat(price)) * 100).toFixed(1)}%
                   </p>
                 )}
-              </div>
+              </div>}
 
               {/* DESCRIÇÃO */}
-              <div className="input-group" style={{ gridColumn: "span 2" }}>
+              {mostra("sobre") && <div className="input-group" style={{ gridColumn: "span 2" }}>
                 <label style={{ fontWeight: 700, color: "#334155", fontSize: "0.85rem" }}>Descrição do Produto</label>
                 <textarea
                   className="input-field"
@@ -3051,11 +3114,11 @@ export default function MenuProductManager({
                   onChange={e => setDescription(e.target.value)}
                   style={{ resize: "vertical" }}
                 />
-              </div>
+              </div>}
             </div>
 
             {/* TAGS DE PRODUTO */}
-            {!isCombo && !editandoOpcao && (
+            {!isCombo && !editandoOpcao && mostra("sobre") && (
               <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#FFF4EF", borderRadius: "14px", border: "1.5px solid #FDE68A" }}>
                 <p style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.6rem", color: "#92400E" }}>🏷️ Tags do Produto <span style={{ fontSize: "0.7rem", fontWeight: 400, color: "#B45309" }}>(aparecem no cardápio digital)</span></p>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
@@ -3095,7 +3158,7 @@ export default function MenuProductManager({
             )}
 
             {/* DISPONIBILIDADE POR DIAS DA SEMANA */}
-            <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
+            {mostra("disponivel") && <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>
                 <p style={{ fontWeight: 700, fontSize: "0.85rem", color: "#0F172A", margin: 0 }}>
                   📅 Dias de Disponibilidade no Cardápio
@@ -3191,10 +3254,10 @@ export default function MenuProductManager({
                   )}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* HORÁRIO DO PRODUTO: a marmita das 9h às 14h sai sozinha do cardápio */}
-            <div style={{ marginTop: "0.75rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
+            {mostra("disponivel") && <div style={{ marginTop: "0.75rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem", gap: "8px", flexWrap: "wrap" }}>
                 <p style={{ fontWeight: 700, fontSize: "0.85rem", color: "#0F172A", margin: 0 }}>
                   🕘 Horário no Cardápio
@@ -3269,10 +3332,10 @@ export default function MenuProductManager({
                   )}
                 </div>
               )}
-            </div>
+            </div>}
 
             {/* CANAIS DE VENDA */}
-            {!editandoOpcao && <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
+            {!editandoOpcao && mostra("disponivel") && <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: "#F8FAFC", borderRadius: "14px", border: "1.5px solid #E2E8F0" }}>
               <p style={{ fontWeight: 700, fontSize: "0.85rem", marginBottom: "0.6rem", color: "#0F172A" }}>📡 Canais de Venda Disponíveis</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
                 {CHANNELS.map(ch => {
@@ -3298,7 +3361,7 @@ export default function MenuProductManager({
             </div>}
 
             {/* SINALIZAÇÃO DE BEBIDA NA COMANDA */}
-            <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: isBeverage ? "#FAF6F2" : "#F8FAFC", borderRadius: "14px", border: `1.5px solid ${isBeverage ? "#1C1917" : "#E2E8F0"}`, transition: "all 0.2s" }}>
+            {mostra("sobre") && <div style={{ marginTop: "1.25rem", padding: "0.875rem 1rem", background: isBeverage ? "#FAF6F2" : "#F8FAFC", borderRadius: "14px", border: `1.5px solid ${isBeverage ? "#1C1917" : "#E2E8F0"}`, transition: "all 0.2s" }}>
               <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
                 <input
                   type="checkbox"
@@ -3315,7 +3378,7 @@ export default function MenuProductManager({
                   </p>
                 </div>
               </label>
-            </div>
+            </div>}
 
             {/* ─── PERGUNTAS DO COMBO ──────────────────────────────────────
                 A tela era um "Construtor de Combo": título, mínimo e máximo
@@ -3330,7 +3393,7 @@ export default function MenuProductManager({
                 Catupiry" no combo, a loja precisava abandonar o formulário,
                 cadastrar o produto no cardápio e voltar a montar o combo do
                 zero. */}
-            {isCombo && !editandoOpcao && (() => {
+            {isCombo && !editandoOpcao && mostra("perguntas") && (() => {
               const fixos = comboGroups.map((g, gIdx) => ({ g, gIdx })).filter(x => x.g.fixo);
               const candidatosFixos = catalogoDeOpcoes
                 .filter(item => item.id !== editingId && !ehOpcaoDeCombo(item))
@@ -3393,7 +3456,7 @@ export default function MenuProductManager({
               );
             })()}
 
-            {!editandoOpcao && (
+            {!editandoOpcao && mostra("perguntas") && (
               <div style={{ marginTop: "1.25rem", padding: "1rem", backgroundColor: "#F8FAFC", borderRadius: "14px", border: "2px dashed #CBD5E1" }}>
                 <div style={{ marginBottom: "0.9rem" }}>
                   <h4 style={{ fontWeight: 800, fontSize: "0.95rem", margin: 0, color: "#0F172A" }}>
@@ -3925,6 +3988,18 @@ export default function MenuProductManager({
               >
                 Cancelar
               </button>
+              {modoPassos && idxAba > 0 && (
+                <button type="button" onClick={() => setAbaForm(abasDoForm[idxAba - 1].id)}
+                  style={{ flex: 1, padding: "12px", borderRadius: "12px", background: "#FFF", color: "#334155", border: "1.5px solid #CBD5E1", fontWeight: 700, fontSize: "0.9rem", cursor: "pointer" }}>
+                  ← Voltar
+                </button>
+              )}
+              {modoPassos && idxAba < abasDoForm.length - 1 ? (
+                <button type="button" onClick={avancarPasso}
+                  style={{ flex: 2, padding: "12px", borderRadius: "12px", background: "linear-gradient(135deg, #E8360C, #C92E09)", color: "#FFF", border: "none", fontWeight: 800, fontSize: "0.95rem", cursor: "pointer", boxShadow: "0 4px 14px rgba(232,54,12,0.35)" }}>
+                  Continuar →
+                </button>
+              ) : (
               <button
                 type="button"
                 onClick={() => handleSubmit()}
@@ -3939,6 +4014,7 @@ export default function MenuProductManager({
               >
                 {loading ? "Salvando Alterações..." : (editingId ? "✓ Salvar Alterações" : duplicandoDe ? "✓ Cadastrar cópia" : "✓ Cadastrar Produto")}
               </button>
+              )}
             </div>
           </div>
         </div>
@@ -3953,6 +4029,7 @@ export default function MenuProductManager({
         const rawProducts =
           tab === "items" ? itemProducts :
           tab === "combos" ? comboProducts :
+          tab === "complementos" ? produtosComPerguntas :
           [...itemProducts, ...comboProducts];
         const displayedProducts = rawProducts.filter(p => {
           // Ocultar produtos temporários de integração (iFood, Jotajá, ONLINE) do painel visual de cardápio
@@ -4370,7 +4447,7 @@ export default function MenuProductManager({
                               </div>
                               </div>
 
-                              {complementosAbertos[p.id] && p.comboGroups?.length > 0 && (
+                              {(tab === "complementos" || complementosAbertos[p.id]) && p.comboGroups?.length > 0 && (
                                 <ComplementosDoCombo
                                   produto={p}
                                   catalogo={produtosPorId}
