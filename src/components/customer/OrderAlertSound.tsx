@@ -5,6 +5,7 @@
  * Sounds: bell | chime | beep | none
  */
 import { useEffect, useRef } from "react";
+import { somDesligado } from "@/lib/som-do-painel";
 
 const SOUNDS: Record<string, string> = {
   bell: "data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAA...", // placeholder — usar arquivo real
@@ -14,6 +15,7 @@ const SOUNDS: Record<string, string> = {
 
 // Gera um beep sintético via Web Audio API (funciona sem arquivo)
 function playBeep(type: string) {
+  if (somDesligado()) return;
   try {
     const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     const oscillator = ctx.createOscillator();
