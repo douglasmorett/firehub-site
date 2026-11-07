@@ -17,6 +17,7 @@ import { refazerMeiasDaLoja } from "@/lib/meio-a-meio-no-banco";
 import { PREFIXO_DA_MEIA } from "@/lib/meio-a-meio";
 import { esquecerPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
 import { avisarKeetaDaPausa, avisarKeetaDoCardapio } from "@/lib/keeta/cardapio";
+import { conferirOpcoesParaAplicar } from "@/lib/preco-da-opcao-em-todas";
 
 // ─── ESCOPO POR LOJA (isolamento multi-tenant) ──────────────────────────────
 // O que era explorável antes desta blindagem: POST/PUT/DELETE só exigiam
@@ -609,7 +610,7 @@ export async function PUT(req: NextRequest) {
   const data = await req.json();
   // franchiseeId sai do payload de propósito: era o caminho para "roubar" um
   // produto, transferindo-o para o cardápio de outra loja com um simples PUT.
-  const { id, comboGroups, franchiseeId: _ignoraFranchiseeId, ...updateData } = data;
+  const { id, comboGroups, franchiseeId: _ignoraFranchiseeId, aplicarPrecoNasOpcoes, ...updateData } = data;
 
   if (!id) return NextResponse.json({ error: "ID obrigatório" }, { status: 400 });
 
@@ -623,6 +624,30 @@ export async function PUT(req: NextRequest) {
   if (!existing) return NextResponse.json({ error: "Produto não encontrado" }, { status: 404 });
   if (!canTouch(scope, existing.franchiseeId)) {
     return NextResponse.json({ error: "Sem permissão para alterar este produto" }, { status: 403 });
+  }
+
+  // "Aplicar este valor em todos os produtos que oferecem esta opção?"
+  // (lib/preco-da-opcao-em-todas.ts). Conferido ANTES de gravar qualquer coisa:
+  // um id de outra loja ou de outra opção derruba o salvamento inteiro.
+  let opcoesParaAplicar: string[] = [];
+  if (Array.isArray(aplicarPrecoNasOpcoes) && aplicarPrecoNasOpcoes.length > 0) {
+    if (!(Number(updateData.price) > 0)) {
+      return NextResponse.json({ error: "Preço inválido para aplicar nas opções." }, { status: 400 });
+    }
+    const pedidos = aplicarPrecoNasOpcoes.map(String);
+    const linhas = await prisma.comboGroupItem.findMany({
+      where: { id: { in: pedidos } },
+      select: {
+        id: true, menuProductId: true, precoPorEscolha: true,
+        additionalPriceSalao: true, additionalPriceDelivery: true, additionalPriceTotem: true,
+        comboGroup: { select: { menuProduct: { select: { franchiseeId: true } } } },
+      },
+    });
+    const conferido = conferirOpcoesParaAplicar(pedidos, linhas, id, existing.franchiseeId);
+    if (conferido.recusadas.length > 0) {
+      return NextResponse.json({ error: "Sem permissão para alterar essas opções" }, { status: 403 });
+    }
+    opcoesParaAplicar = conferido.aplicar;
   }
 
   const erroPromo = saneiaPromocao(updateData, existing.price);
@@ -700,6 +725,15 @@ export async function PUT(req: NextRequest) {
     }
   }
 
+  let opcoesAtualizadas = 0;
+  if (opcoesParaAplicar.length > 0) {
+    const r = await prisma.comboGroupItem.updateMany({
+      where: { id: { in: opcoesParaAplicar } },
+      data: { additionalPrice: Number(updateData.price) },
+    });
+    opcoesAtualizadas = r.count;
+  }
+
   // Preço de pizza mudou: as meias dela nas outras pizzas (e as outras nela)
   // cobram a diferença calculada, que agora está velha. Falhar aqui não
   // desfaz o salvamento — só deixa a meia com o preço anterior até o próximo.
@@ -718,7 +752,7 @@ export async function PUT(req: NextRequest) {
     after(() => (soPausa ? avisarKeetaDaPausa(lojaDoProduto, [id]) : avisarKeetaDoCardapio(lojaDoProduto)).catch((e) => console.error("[Keeta] aviso do cardápio:", e?.message || e)));
   }
 
-  return NextResponse.json(meiasJuntas > 0 ? { ...product, meiasJuntas } : product);
+  return NextResponse.json({ ...product, ...(meiasJuntas > 0 ? { meiasJuntas } : {}), ...(opcoesAtualizadas > 0 ? { opcoesAtualizadas } : {}) });
 }
 
 export async function DELETE(req: NextRequest) {
