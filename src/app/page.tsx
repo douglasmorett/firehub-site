@@ -25,6 +25,13 @@ const JSON_LD = JSON.stringify({
         contactType: "customer support",
         areaServed: "BR",
         availableLanguage: "pt-BR",
+        // Suporte das 9h à meia-noite, horário de Brasília (Douglas, 06/11).
+        hoursAvailable: {
+          "@type": "OpeningHoursSpecification",
+          dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+          opens: "09:00",
+          closes: "23:59",
+        },
       },
     },
     {
