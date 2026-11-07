@@ -11,7 +11,8 @@ import UsarPerguntaEmOutros, { TrazerPerguntaDeOutro } from "@/components/admin/
 import type { CopiaDaPergunta } from "@/lib/copiar-pergunta";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles, Copy } from "lucide-react";
+import { Plus, Trash2, Edit3, X, Image as ImageIcon, Pause, Play, Package, Monitor, Truck, Tablet, UtensilsCrossed, Search, ClipboardList, ArrowUp, ArrowDown, ArrowUpDown, ChevronDown, ChevronUp, ChevronsUp, ChevronsDown, Eye, Layers, Check, Sparkles, Copy, MoreVertical, Tag, CalendarClock } from "lucide-react";
+import CriarGrupoDeComplementos from "@/components/admin/CriarGrupoDeComplementos";
 
 type AbaForm = "sobre" | "preco" | "perguntas" | "disponivel";
 
@@ -395,6 +396,10 @@ export default function MenuProductManager({
   const [complementosAbertos, setComplementosAbertos] = useState<Record<string, boolean>>({});
   /** Pergunta aberta no "📋 Usar em outros produtos" (components/admin/UsarPerguntaEmOutros). */
   const [usandoPergunta, setUsandoPergunta] = useState<{ grupo: any; produto: any } | null>(null);
+  /** "Criar grupo de complementos" da aba Complementos (3 passos, como no iFood). */
+  const [criandoGrupo, setCriandoGrupo] = useState(false);
+  /** O menu ⋮ aberto (id do produto ou "cat:<id>" da categoria), como na lista do iFood. */
+  const [menuAberto, setMenuAberto] = useState<string | null>(null);
   const [mostrarOpcoesSemCombo, setMostrarOpcoesSemCombo] = useState(false);
   /**
    * Opção de combo pausada/reativada com 1 clique: o chip vira NA HORA, antes
@@ -2096,6 +2101,16 @@ export default function MenuProductManager({
       )}
 
       {/* 📋 USAR PERGUNTA EM OUTROS PRODUTOS (painel 🧩 Complementos) */}
+      {criandoGrupo && (
+        <CriarGrupoDeComplementos
+          produtos={[...itemProducts, ...comboProducts]}
+          catalogo={catalogoDeOpcoes}
+          categorias={dynCategories}
+          onFechar={() => setCriandoGrupo(false)}
+          onFeito={(texto) => { setCriandoGrupo(false); showToast(texto); router.refresh(); }}
+        />
+      )}
+
       {usandoPergunta && (
         <UsarPerguntaEmOutros
           grupo={usandoPergunta.grupo}
@@ -4054,6 +4069,61 @@ export default function MenuProductManager({
           return true;
         });
 
+        // ABA COMPLEMENTOS (modelo do iFood): "Grupos de complementos" — um
+        // cartão por pergunta, com "Disponível em: <produto>", busca e o botão
+        // de criar grupo em 3 passos. Clicar no cartão abre o produto na aba
+        // Perguntas; "Usar em outros" copia a pergunta.
+        if (tab === "complementos") {
+          const termo = searchTerm.trim().toLowerCase();
+          const cartoes = produtosComPerguntas.flatMap(p => (p.comboGroups || []).map((g: any) => ({ p, g })))
+            .filter(({ p, g }) => !termo || String(g.title || "").toLowerCase().includes(termo) || String(p.name || "").toLowerCase().includes(termo))
+            .filter(({ p }) => selectedCategoryFilter === "TODAS" || (p.category || "").toLowerCase().trim() === selectedCategoryFilter.toLowerCase().trim());
+          return (
+            <div style={{ background: "#FFF", borderRadius: "16px", border: "1px solid #E2E8F0", padding: "1.25rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: "1rem" }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "1.15rem", fontWeight: 800, color: "#0F172A" }}>Grupos de complementos</h3>
+                  <p style={{ margin: "4px 0 0", fontSize: "0.82rem", color: "#64748B" }}>Faça ajustes nas perguntas do seu cardápio: ingredientes, adicionais, tamanhos, molhos. Cada grupo mostra em qual produto está.</p>
+                </div>
+                <button type="button" onClick={() => setCriandoGrupo(true)} className="btn btn-primary" style={{ fontSize: "0.85rem" }}>
+                  <Plus size={16} style={{ marginRight: 4 }} /> Criar grupo de complementos
+                </button>
+              </div>
+              {cartoes.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "2.5rem 1rem", color: "#94A3B8", fontSize: "0.85rem", border: "1px dashed #CBD5E1", borderRadius: 12 }}>
+                  {termo ? `Nenhum grupo com "${searchTerm}".` : "Nenhum produto tem pergunta ainda. Crie o primeiro grupo acima."}
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+                  {cartoes.map(({ p, g }) => {
+                    const nOpcoes = (g.items || []).length;
+                    const fixo = p.isCombo && itemFixoDoGrupo(g);
+                    const regra = fixo ? "Sempre vai no combo" : `${Number(g.minQty) > 0 ? "Obrigatória" : "Opcional"} · ${Number(g.maxQty) <= 1 ? "1 escolha" : `até ${g.maxQty}`}`;
+                    return (
+                      <div key={g.id} style={{ border: "1px solid #E2E8F0", borderRadius: 14, padding: "14px 16px", background: "#FFF", display: "flex", flexDirection: "column", gap: 8, cursor: "pointer", transition: "box-shadow 0.15s" }}
+                        onClick={() => { openEdit(p); setAbaForm("perguntas"); }}
+                        title="Abrir o produto na aba Perguntas">
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: "1.1rem" }}>🧩</span>
+                          <span style={{ fontWeight: 800, fontSize: "0.95rem", color: "#0F172A", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.title}</span>
+                        </div>
+                        <span style={{ fontSize: "0.76rem", color: "#64748B" }}>Disponível em: <strong style={{ color: "#334155" }}>{p.name}</strong></span>
+                        <span style={{ fontSize: "0.72rem", color: "#94A3B8" }}>{regra} · {nOpcoes} {nOpcoes === 1 ? "complemento" : "complementos"}</span>
+                        <div style={{ display: "flex", gap: 6, marginTop: 2 }} onClick={e => e.stopPropagation()}>
+                          <button type="button" onClick={() => { openEdit(p); setAbaForm("perguntas"); }} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#FFF", fontSize: "0.74rem", fontWeight: 700, color: "#334155", cursor: "pointer", fontFamily: "inherit" }}>✏️ Editar</button>
+                          {!fixo && (
+                            <button type="button" onClick={() => setUsandoPergunta({ grupo: g, produto: p })} style={{ padding: "5px 10px", borderRadius: 8, border: "1px solid #E7DDD3", background: "#FAF6F2", fontSize: "0.74rem", fontWeight: 700, color: "#1C1917", cursor: "pointer", fontFamily: "inherit" }}>📋 Usar em outros</button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        }
+
         if (displayedProducts.length === 0) {
           return (
             <div style={{ textAlign: "center", padding: "3rem 1rem", backgroundColor: "#FFF", borderRadius: "16px", border: "1px dashed #CBD5E1" }}>
@@ -4156,57 +4226,51 @@ export default function MenuProductManager({
                         onClick={() => setNovoItem({ categoria: cat.name })}
                         style={{ padding: "6px 12px", borderRadius: "8px", border: "1.5px solid #CBD5E1", background: "#FFF", fontSize: "0.78rem", fontWeight: 700, color: "#334155", cursor: "pointer" }}
                       >
-                        + Criar item
+                        + Adicionar produto
                       </button>
 
+                      {/* Como no iFood: ⏸ da categoria e o menu ⋮ com o resto (renomear, mover, excluir) */}
                       {catProds.length > 0 && (() => {
-                        // Todos pausados → oferece reativar; senão, pausar o que está ativo.
                         const todosPausados = catProds.every((p: any) => !p.active);
                         return (
                           <button
                             onClick={() => handleToggleCategoria(cat.name, catProds, !todosPausados)}
                             disabled={pausing}
                             title={todosPausados ? "Reativar todos os produtos desta categoria" : "Pausar todos os produtos desta categoria"}
-                            style={{
-                              display: "inline-flex", alignItems: "center", gap: "5px",
-                              padding: "6px 12px", borderRadius: "8px", fontSize: "0.78rem", fontWeight: 700, cursor: pausing ? "wait" : "pointer",
-                              border: `1.5px solid ${todosPausados ? "#99F6E4" : "#FDE68A"}`,
-                              background: todosPausados ? "#F0FDFA" : "#FFFBEB",
-                              color: todosPausados ? "#0F766E" : "#92400E",
-                            }}
+                            style={{ padding: "6px 9px", borderRadius: "8px", border: `1.5px solid ${todosPausados ? "#99F6E4" : "#CBD5E1"}`, background: todosPausados ? "#F0FDFA" : "#FFF", color: todosPausados ? "#0F766E" : "#334155", cursor: pausing ? "wait" : "pointer", display: "inline-flex", alignItems: "center" }}
                           >
-                            {todosPausados ? <Play size={12} /> : <Pause size={12} />}
-                            {todosPausados ? "Reativar categoria" : "Pausar categoria"}
+                            {todosPausados ? <Play size={13} /> : <Pause size={13} />}
                           </button>
                         );
                       })()}
-
-                      <div style={{ display: "flex", gap: "3px", marginLeft: "4px" }}>
+                      <div style={{ position: "relative" }}>
                         <button
-                          onClick={() => handleMoveCategoryDirect(cat.name, "up")}
-                          disabled={catIdx === 0}
-                          style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: catIdx === 0 ? "not-allowed" : "pointer", opacity: catIdx === 0 ? 0.3 : 1 }}
-                          title="Mover categoria para cima"
+                          type="button"
+                          onClick={() => setMenuAberto(menuAberto === `cat:${cat.id}` ? null : `cat:${cat.id}`)}
+                          style={{ padding: "6px 7px", borderRadius: "8px", border: "1.5px solid #CBD5E1", background: menuAberto === `cat:${cat.id}` ? "#F1F5F9" : "#FFF", color: "#334155", cursor: "pointer", display: "inline-flex", alignItems: "center" }}
+                          title="Mais ações da categoria"
                         >
-                          <ArrowUp size={13} />
+                          <MoreVertical size={15} />
                         </button>
-                        <button
-                          onClick={() => handleMoveCategoryDirect(cat.name, "down")}
-                          disabled={catIdx === categoriesToDisplay.length - 1}
-                          style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #CBD5E1", background: "#FFF", cursor: catIdx === categoriesToDisplay.length - 1 ? "not-allowed" : "pointer", opacity: catIdx === categoriesToDisplay.length - 1 ? 0.3 : 1 }}
-                          title="Mover categoria para baixo"
-                        >
-                          <ArrowDown size={13} />
-                        </button>
+                        {menuAberto === `cat:${cat.id}` && (
+                          <>
+                            <div onClick={() => setMenuAberto(null)} style={{ position: "fixed", inset: 0, zIndex: 50 }} />
+                            <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 51, background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,0.15)", minWidth: 200, padding: 6, display: "flex", flexDirection: "column" }}>
+                              {[
+                                { r: "✏️ Renomear categoria", f: () => setEditingCat({ id: cat.id, name: cat.name }) },
+                                { r: "⬆️ Mover para cima", f: () => handleMoveCategoryDirect(cat.name, "up"), off: catIdx === 0 },
+                                { r: "⬇️ Mover para baixo", f: () => handleMoveCategoryDirect(cat.name, "down"), off: catIdx === categoriesToDisplay.length - 1 },
+                                { r: "🗑️ Excluir categoria", f: () => handleDeleteCategory(cat.id, cat.name), perigo: true },
+                              ].map(op => (
+                                <button key={op.r} type="button" disabled={op.off} onClick={() => { setMenuAberto(null); op.f(); }}
+                                  style={{ textAlign: "left", padding: "8px 10px", borderRadius: 8, border: "none", background: "none", fontSize: "0.82rem", fontWeight: 700, color: op.perigo ? "#C92E09" : "#334155", cursor: op.off ? "not-allowed" : "pointer", opacity: op.off ? 0.4 : 1, fontFamily: "inherit" }}>
+                                  {op.r}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </div>
-
-                      <button
-                        onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                        style={{ padding: "6px 8px", borderRadius: "6px", border: "1px solid #FCA5A5", background: "#FEF2F2", color: "#C92E09", cursor: "pointer" }}
-                        title="Excluir categoria"
-                      >
-                        <Trash2 size={13} />
-                      </button>
                     </div>
                   </div>
 
@@ -4363,38 +4427,15 @@ export default function MenuProductManager({
                                   </span>
                                 )}
 
+                                {/* A etiqueta do preço (como no iFood) abre o produto direto na aba Preço: promoção e preço por canal */}
                                 <button
-                                  onClick={() => handleToggleDestaque(p)}
+                                  type="button"
+                                  onClick={() => { openEdit(p); setAbaForm("preco"); }}
                                   className="btn btn-outline"
-                                  style={{
-                                    padding: "4px 8px",
-                                    fontSize: "0.72rem",
-                                    borderColor: (p.tags && p.tags.includes("Destaque")) ? "#B45309" : "#CBD5E1",
-                                    background: (p.tags && p.tags.includes("Destaque")) ? "#FFF7E6" : "#FFF",
-                                    color: (p.tags && p.tags.includes("Destaque")) ? "#92400E" : "#64748B",
-                                    fontWeight: (p.tags && p.tags.includes("Destaque")) ? 800 : 600,
-                                    borderRadius: "8px",
-                                  }}
-                                  title="Exibir na vitrine de Destaques da Casa"
+                                  style={{ padding: "4px 7px", fontSize: "0.72rem", borderRadius: "8px", color: Number(p.promoPrice) > 0 ? "#C92E09" : "#64748B", borderColor: Number(p.promoPrice) > 0 ? "#FFD3C2" : "#CBD5E1" }}
+                                  title="Mudar preço, promoção ou preço por canal"
                                 >
-                                  ⭐ {(p.tags && p.tags.includes("Destaque")) ? "Destacado" : "Destacar"}
-                                </button>
-
-                                <button
-                                  onClick={() => openRecipeModal(p.id, p.name)}
-                                  className="btn btn-outline"
-                                  style={{
-                                    padding: "4px 8px",
-                                    fontSize: "0.72rem",
-                                    borderRadius: "8px",
-                                    borderColor: productsWithRecipe.has(p.id) ? "#0F766E" : "#B45309",
-                                    color: productsWithRecipe.has(p.id) ? "#0F766E" : "#92400E",
-                                    background: productsWithRecipe.has(p.id) ? "#F0FDFA" : "#FFF7E6",
-                                    fontWeight: 700,
-                                  }}
-                                  title="Ficha técnica do produto"
-                                >
-                                  <ClipboardList size={12} style={{ marginRight: 2 }} /> {productsWithRecipe.has(p.id) ? "Ficha" : "Ficha"}
+                                  <Tag size={12} />
                                 </button>
 
                                 {canalAtual.campo && (
@@ -4418,36 +4459,57 @@ export default function MenuProductManager({
                                   {p.active ? <Pause size={12} color="#64748B" /> : <Play size={12} color="#0F766E" />}
                                 </button>
 
-                                <button
-                                  onClick={() => openEdit(p)}
-                                  className="btn btn-outline"
-                                  style={{ padding: "4px 8px", fontSize: "0.72rem", borderRadius: "8px" }}
-                                  title="Editar produto"
-                                >
-                                  <Edit3 size={12} />
-                                </button>
-
-                                <button
-                                  onClick={() => openDuplicate(p)}
-                                  className="btn btn-outline"
-                                  style={{ padding: "4px 8px", fontSize: "0.72rem", borderRadius: "8px", display: "inline-flex", alignItems: "center", gap: "3px" }}
-                                  title="Duplicar: abre uma cópia deste item para você trocar foto, nome ou preço e cadastrar como item novo"
-                                >
-                                  <Copy size={12} /> Duplicar
-                                </button>
-
-                                <button
-                                  onClick={() => handleDelete(p.id, p.name)}
-                                  className="btn btn-outline"
-                                  style={{ padding: "4px 8px", fontSize: "0.72rem", borderRadius: "8px", color: "var(--danger)" }}
-                                  title="Excluir produto"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
+                                {/* Menu ⋮ como no iFood: editar, duplicar, destacar, ficha, excluir */}
+                                <div style={{ position: "relative" }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => setMenuAberto(menuAberto === p.id ? null : p.id)}
+                                    className="btn btn-outline"
+                                    style={{ padding: "4px 6px", fontSize: "0.72rem", borderRadius: "8px", background: menuAberto === p.id ? "#F1F5F9" : undefined }}
+                                    title="Mais ações"
+                                  >
+                                    <MoreVertical size={14} />
+                                  </button>
+                                  {menuAberto === p.id && (
+                                    <>
+                                      <div onClick={() => setMenuAberto(null)} style={{ position: "fixed", inset: 0, zIndex: 50 }} />
+                                      <div style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 51, background: "#FFF", border: "1px solid #E2E8F0", borderRadius: 12, boxShadow: "0 10px 30px rgba(15,23,42,0.15)", minWidth: 220, padding: 6, display: "flex", flexDirection: "column" }}>
+                                        {[
+                                          { r: "✏️ Editar produto", f: () => openEdit(p) },
+                                          { r: "📄 Duplicar", f: () => openDuplicate(p) },
+                                          { r: (p.tags && p.tags.includes("Destaque")) ? "⭐ Tirar dos destaques" : "⭐ Destacar na vitrine", f: () => handleToggleDestaque(p) },
+                                          { r: productsWithRecipe.has(p.id) ? "📋 Ficha técnica" : "📋 Criar ficha técnica", f: () => openRecipeModal(p.id, p.name) },
+                                          { r: "📅 Dias e horário", f: () => { openEdit(p); setAbaForm("disponivel"); } },
+                                          { r: "🗑️ Excluir produto", f: () => handleDelete(p.id, p.name), perigo: true },
+                                        ].map(op => (
+                                          <button key={op.r} type="button" onClick={() => { setMenuAberto(null); op.f(); }}
+                                            style={{ textAlign: "left", padding: "8px 10px", borderRadius: 8, border: "none", background: "none", fontSize: "0.82rem", fontWeight: 700, color: op.perigo ? "#C92E09" : "#334155", cursor: "pointer", fontFamily: "inherit" }}>
+                                            {op.r}
+                                          </button>
+                                        ))}
+                                      </div>
+                                    </>
+                                  )}
+                                </div>
                               </div>
                               </div>
 
-                              {(tab === "complementos" || complementosAbertos[p.id]) && p.comboGroups?.length > 0 && (
+                              {/* Faixa do iFood: "Item disponível em período específico" (dias ou horário), abre a aba Disponível em */}
+                              {(() => {
+                                const dias = (() => { try { const d = typeof p.availableDays === "string" ? JSON.parse(p.availableDays) : p.availableDays; return Array.isArray(d) && d.length > 0 && d.length < 7; } catch { return false; } })();
+                                const horario = !!lerHorarioDoProduto(p.availableHours);
+                                if (!dias && !horario) return null;
+                                return (
+                                  <button type="button" onClick={() => { openEdit(p); setAbaForm("disponivel"); }}
+                                    style={{ flexBasis: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: "6px 10px", borderRadius: 8, border: "none", background: "#F8FAFC", color: "#475569", fontSize: "0.74rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+                                    title="Ver e mudar os dias e o horário em que o item aparece">
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><CalendarClock size={13} /> Item disponível em período específico{horario ? ` · ${lerHorarioDoProduto(p.availableHours)?.de}–${lerHorarioDoProduto(p.availableHours)?.ate}` : ""}</span>
+                                    <ChevronDown size={13} style={{ transform: "rotate(-90deg)" }} />
+                                  </button>
+                                );
+                              })()}
+
+                              {complementosAbertos[p.id] && p.comboGroups?.length > 0 && (
                                 <ComplementosDoCombo
                                   produto={p}
                                   catalogo={produtosPorId}
