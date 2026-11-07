@@ -24,4 +24,4 @@ export const TEXTO_CTA = "Quero parar de me preocupar com prazo";
 export const TEXTO_CTA_CURTO = "Quero agora";
 
 /** A linha que anda colada ao botão, onde o preço não está escrito acima. */
-export const PRECO_SOB_BOTAO = "R$ 29,90 por mês · menos de R$ 1 por dia · 30 dias de garantia";
+export const PRECO_SOB_BOTAO = "R$ 29,90 por mês · menos de R$ 1 por dia · 7 dias de garantia";

@@ -145,12 +145,12 @@ export function SeletorDePlano() {
       <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "center", marginTop: 14 }}>
         <SeloPequeno />
         <div style={{ color: "#CBD5E1", fontSize: ".84rem", fontWeight: 700, lineHeight: 1.45, textAlign: "left", maxWidth: 230 }}>
-          Um mês inteiro para testar no seu movimento. Não gostou, o dinheiro volta inteiro.
+          Uma semana inteira para testar no seu movimento. Não gostou, o dinheiro volta inteiro.
         </div>
       </div>
 
       <div style={{ color: "#94A3B8", fontSize: ".78rem", marginTop: 12, lineHeight: 1.6 }}>
-        30 dias de garantia · sem fidelidade · cancele quando quiser
+        7 dias de garantia · sem fidelidade · cancele quando quiser
         <br />
         No checkout a Cakto soma R$ 0,99 de taxa de serviço: o total dessa cobrança fica{" "}
         <b style={{ color: "#CBD5E1" }}>{reais(p.centavos + TAXA_CAKTO)}</b>. Falamos antes para você não
@@ -189,7 +189,7 @@ function BarraFixa({ plano: p }: { plano: Plano }) {
         <div>
           <div style={{ fontWeight: 900, fontSize: "1rem", lineHeight: 1 }}>{p.preco}<span style={{ fontSize: ".7rem", fontWeight: 700, color: "#94A3B8" }}>/mês</span></div>
           <div style={{ fontSize: ".64rem", color: "#94A3B8" }}>
-            {p.lojas === 1 ? "30 dias de garantia" : `${p.lojas} lojas · 30 dias de garantia`}
+            {p.lojas === 1 ? "7 dias de garantia" : `${p.lojas} lojas · 7 dias de garantia`}
           </div>
         </div>
         <a href={p.url} className="cta-pulsa" style={{

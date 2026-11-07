@@ -134,7 +134,7 @@ export default function KanbanDeDemonstracao() {
           <div style={{ flex: 1, minWidth: 260 }}>
             <div style={{ fontWeight: 900, fontSize: "1.15rem", marginBottom: 4 }}>Funcionou aqui? Funciona no seu painel.</div>
             <div style={{ color: "#94A3B8", fontSize: ".9rem", lineHeight: 1.55 }}>
-              R$ 29,90 por mês · 30 dias de garantia · sem fidelidade
+              R$ 29,90 por mês · 7 dias de garantia · sem fidelidade
             </div>
           </div>
           <a href={CHECKOUT_PADRAO} style={{ background: "linear-gradient(135deg,#FF5722,#E64A19)", color: "#fff", fontWeight: 900, padding: "14px 24px", borderRadius: 12, textDecoration: "none", fontSize: "1rem", boxShadow: "0 10px 28px rgba(255,87,34,.35)", maxWidth: 260, textAlign: "center", lineHeight: 1.3 }}>

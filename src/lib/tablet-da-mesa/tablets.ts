@@ -22,6 +22,16 @@ export const TABLET_ONLINE_MS = 2 * 60 * 1000;
 
 const hash = (token: string) => crypto.createHash("sha256").update(token).digest("hex");
 
+/**
+ * Revisão do app FireHub na Google Play e na App Store (Douglas aprovou em
+ * 06/11/2026): o revisor não fala com a gente e o código normal vence em 15
+ * min. Este número fixo pareia um tablet novo na mesa 6 da Loja de Teste
+ * FireHub, e só nela. Nenhum código sorteado sai igual a ele.
+ */
+const CODIGO_DA_REVISAO = "580580";
+const LOJA_DA_REVISAO = "cmp4tjyqh0000ujog6goredgg";
+const MESA_DA_REVISAO = "cmw5j8jqw098jo607esekvrto";
+
 export type TabletDaLoja = {
   id: string;
   tableId: string;
@@ -76,6 +86,7 @@ export async function novoCodigoDePareamento(lojaId: string, tableId: string): P
   const ate = new Date(Date.now() + VALIDADE_DO_CODIGO_MS);
   for (let tentativa = 0; tentativa < 8; tentativa++) {
     const codigo = String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
+    if (codigo === CODIGO_DA_REVISAO) continue;
     try {
       await prisma.$executeRawUnsafe(
         `INSERT INTO "TabletDaMesa" ("id", "lojaId", "tableId", "codigo", "codigoAte", "criadoEm") VALUES ($1, $2, $3, $4, ($5::timestamptz AT TIME ZONE 'UTC'), (NOW() AT TIME ZONE 'UTC'))`,
@@ -95,6 +106,15 @@ export async function novoCodigoDePareamento(lojaId: string, tableId: string): P
  */
 export async function parearTablet(codigo: string, modelo: string | null): Promise<{ token: string; lojaId: string; tabletId: string } | null> {
   if (!/^\d{6}$/.test(codigo) || !(await garantirEstruturaDoTablet())) return null;
+  if (codigo === CODIGO_DA_REVISAO) {
+    const token = crypto.randomBytes(32).toString("base64url");
+    const id = crypto.randomUUID();
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "TabletDaMesa" ("id", "lojaId", "tableId", "tokenHash", "modelo", "criadoEm") VALUES ($1, $2, $3, $4, $5, (NOW() AT TIME ZONE 'UTC'))`,
+      id, LOJA_DA_REVISAO, MESA_DA_REVISAO, hash(token), modelo ? modelo.slice(0, 120) : null,
+    );
+    return { token, lojaId: LOJA_DA_REVISAO, tabletId: id };
+  }
   const linhas = await prisma.$queryRawUnsafe<{ id: string; lojaId: string }[]>(
     `SELECT "id", "lojaId" FROM "TabletDaMesa" WHERE "codigo" = $1 AND "tokenHash" IS NULL AND "codigoAte" > (NOW() AT TIME ZONE 'UTC')`,
     codigo,

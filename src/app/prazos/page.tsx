@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import DemoAoVivo from "./DemoAoVivo";
+import VideoAoVivo from "./VideoAoVivo";
 import NoiteDaCozinha from "./NoiteDaCozinha";
 import CalculadoraDePerda from "./CalculadoraDePerda";
 import { SeletorDePlano } from "./Assinar";
@@ -17,7 +18,7 @@ import { FluxoDoPrazo, EmailDeAcesso, FichaDaLoja, MarcarColuna, AbasAbertas } f
 export const metadata: Metadata = {
   title: "FireHub Prazos — o prazo do iFood muda sozinho quando a cozinha enche",
   description:
-    "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 29,90 por mês, 30 dias de garantia.",
+    "Extensão para o Chrome que olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e o tempo de preparo no 99Food. R$ 29,90 por mês, 7 dias de garantia.",
   openGraph: {
     title: "O prazo do seu iFood muda sozinho quando a cozinha enche",
     description: "A extensão olha a fila da sua cozinha e escreve o prazo certo no iFood e no 99Food. Você deixa o portal aberto e ela faz o resto.",
@@ -52,10 +53,10 @@ export const metadata: Metadata = {
  *   - números só medidos ou publicados pela plataforma, com link;
  *   - preço: R$ 29,90 = menos de R$ 1 por dia (29,90 ÷ 30 = 0,9967; nunca
  *     arredondar para "R$ 1,00", cruzar para baixo de um real é o argumento);
- *   - garantia de 30 dias (era 7, o mínimo do CDC art. 49, que comunica
- *     "fiz o mínimo"): o produto prova valor no PICO, e 7 dias pegam um fim
- *     de semana só. Trocado em 19/09/2026, decisão do dono — a oferta na
- *     Cakto tem que dizer o mesmo;
+ *   - garantia de 7 dias. Foi 30 de 19/09 a 06/11/2026; o dono voltou
+ *     para 7 porque, barato como é, 30 dias deixava assinar, pedir o
+ *     dinheiro de volta e assinar de novo. A oferta na Cakto tem que dizer
+ *     o mesmo;
  *   - um só botão, repetido, sempre com o mesmo texto.
  *
  * Acrescentado em 09/09/2026, a pedido do dono ("quero gatilhos: você sabia
@@ -79,9 +80,9 @@ const FAQ: [string, string][] = [
   ["Tenho mais de uma marca saindo da mesma cozinha. Como fica?", "Esse é o caso da faixa com desconto. Como é uma fila só, a extensão escreve o prazo nas duas (ou cinco) ao mesmo tempo: a primeira loja custa R$ 29,90 e cada uma a mais custa R$ 9,90 — um terço. Vale para as duas plataformas: mais uma no iFood e mais uma no 99Food. Só precisam estar no mesmo login do Portal do Parceiro. E você marca na extensão quais mudam de prazo; as que não marcar ficam como estão."],
   ["E se minhas lojas ficam em endereços diferentes?", "Aí é uma assinatura para cada uma, e não a faixa de 2, 3 ou 5. O motivo é simples: a extensão roda no Chrome do computador da loja e lê a fila DAQUELE painel. A cozinha do centro pode estar com 14 pedidos enquanto a da praia está vazia — uma não pode escrever o prazo da outra. Se você tem rede, chama no WhatsApp que a gente fecha as lojas juntas e organiza o acesso de todas."],
   ["O prazo do 99 é o mesmo do iFood?", "Não, e é de propósito. No 99 o cliente vê o tempo de preparo somado ao tempo de entrega da faixa que você cadastrou, então a extensão mexe só no preparo. Você configura essa regra separada."],
-  ["E se o iFood mudar a tela e ela parar?", "Acontece, e quem corre é a gente: a atualização é nossa, não sua. Enquanto isso ela segura o último prazo e avisa na tela, em vez de sumir com o prazo. Se ficar sem funcionar, você cancela na Cakto e, dentro dos 30 dias, o dinheiro volta inteiro."],
+  ["E se o iFood mudar a tela e ela parar?", "Acontece, e quem corre é a gente: a atualização é nossa, não sua. Enquanto isso ela segura o último prazo e avisa na tela, em vez de sumir com o prazo. Se ficar sem funcionar, você cancela na Cakto e, dentro dos 7 dias, o dinheiro volta inteiro."],
   ["Dá para pagar no Pix?", "Sim: Pix Automático ou cartão, pela Cakto. No Pix a renovação também é automática, sem você lembrar todo mês."],
-  ["Consigo cancelar fácil?", "Sim, direto na Cakto, sem falar com ninguém. Não tem fidelidade nem multa. E se cancelar dentro de 30 dias, o dinheiro volta inteiro."],
+  ["Consigo cancelar fácil?", "Sim, direto na Cakto, sem falar com ninguém. Não tem fidelidade nem multa. E se cancelar dentro de 7 dias, o dinheiro volta inteiro."],
   ["E se eu deixar de pagar?", "Ela para de ajustar na hora e explica na tela por quê. Pagou de novo, volta sozinha."],
 ];
 
@@ -164,8 +165,6 @@ export default function PrazosLanding() {
   const h2: React.CSSProperties = { fontSize: "clamp(1.5rem, 3.4vw, 2rem)", fontWeight: 900, margin: "0 0 8px", lineHeight: 1.15 };
   const p: React.CSSProperties = { color: "#475569", lineHeight: 1.6, fontSize: "1.05rem", margin: "0 0 14px", maxWidth: 640 };
   const card: React.CSSProperties = { background: "#fff", border: "1px solid #E2E8F0", borderRadius: 16, padding: "1.2rem 1.35rem", boxShadow: "0 6px 20px rgba(15,23,42,.05)" };
-  const tile: React.CSSProperties = { ...card, textAlign: "center", padding: "1.3rem 1rem" };
-  const emoji: React.CSSProperties = { fontSize: "2.2rem", lineHeight: 1, marginBottom: 10 };
   const detalhes: React.CSSProperties = { ...card, marginTop: 16, padding: "0.9rem 1.2rem" };
   const resumo: React.CSSProperties = { cursor: "pointer", fontWeight: 800, color: "#334155", fontSize: "1rem" };
 
@@ -219,9 +218,14 @@ export default function PrazosLanding() {
             <span style={{ color: "#FF7A59" }}> E desce quando esvazia.</span>
           </h1>
 
-          <p style={{ fontSize: "1.12rem", color: "#CBD5E1", maxWidth: 680, lineHeight: 1.55, margin: "0 0 20px" }}>
-            A extensão olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e no 99Food.
-            Feita para quem entrega com motoboy próprio. Você deixa o portal aberto e não mexe em mais nada.
+          {/* O vídeo real logo abaixo da manchete (pedido do dono, 06/11/2026):
+              no celular a versão anterior era uma parede de texto até a
+              primeira imagem. Agora a prova vem antes do preço. */}
+          <VideoAoVivo />
+
+          <p style={{ fontSize: "1.08rem", color: "#CBD5E1", maxWidth: 680, lineHeight: 1.5, margin: "0 0 20px" }}>
+            Ela olha a fila do seu painel de pedidos e escreve o prazo certo no iFood e no 99Food.
+            Para quem entrega com motoboy próprio. Você não mexe em mais nada.
           </p>
 
           <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center", marginBottom: 8 }}>
@@ -235,25 +239,10 @@ export default function PrazosLanding() {
               <span style={{ color: "#FF7A59" }}>Menos de R$ 1 por dia.</span>
             </div>
           </div>
-          {/* Quem chega de anúncio quase nunca compra no primeiro clique, e a
-              alternativa a "comprar agora" não pode ser "fechar a aba" — tem
-              que ser a demonstração, que é o melhor vendedor desta página.
-              Ela roda logo abaixo, então aqui vai só a seta: mandar para
-              /prazos/demo seria pior, porque aquela página só faz sentido
-              com a extensão JÁ instalada. */}
-          <div style={{ color: "#FF7A59", fontWeight: 800, fontSize: ".95rem", marginBottom: 10 }}>
-            ↓ Veja aqui embaixo, ao vivo: a fila enche, o prazo sobe sozinho.
-          </div>
-          <div style={{ color: "#94A3B8", fontSize: ".85rem", marginBottom: 10 }}>
-            Leva 2 minutos · Pix ou cartão · 30 dias de garantia · sem fidelidade
-          </div>
-          {/* A objeção de "extensão do Chrome" nasce no primeiro segundo, e
-              até aqui só era respondida lá embaixo na FAQ — depois do ponto
-              em que essa pessoa já tinha saído. */}
-          {/* #64748B sobre o azul do hero dá 3,2 de contraste — abaixo do
-              mínimo para texto pequeno. Mesmo cinza das outras linhas. */}
-          <div style={{ color: "#94A3B8", fontSize: ".82rem", marginBottom: 18 }}>
-            Não lê senha · não aceita nem cancela pedido · você desliga num clique
+          {/* As duas linhas miúdas viraram uma: a seta "veja embaixo" perdeu
+              o sentido com o vídeo real já acima do botão. */}
+          <div style={{ color: "#94A3B8", fontSize: ".85rem", marginBottom: 18 }}>
+            Pix ou cartão · 7 dias de garantia · sem fidelidade · não aceita nem cancela pedido
           </div>
 
           {/* Quem indica, com a cara, no primeiro segundo da página: a seção
@@ -288,8 +277,6 @@ export default function PrazosLanding() {
               </span>
             </a>
           )}
-
-          <DemoAoVivo />
         </div>
       </section>
 
@@ -358,26 +345,14 @@ export default function PrazosLanding() {
             <FluxoDoPrazo />
           </div>
 
-          {/* No desktop, a foto inteira: painel + popup lado a lado. No celular
-              ela encolheria até o popup virar um borrão — e o popup É o produto
-              (iFood 58 min · 99 preparo 43 min · Robô ligado). Então o celular
-              recebe só o recorte do popup, em pé, no tamanho de ler. */}
-          <figure style={{ margin: "22px 0 0", textAlign: "center" }}>
-            <picture>
-              <source media="(max-width: 700px)" srcSet="/prazos-popup.webp" width={320} height={590} />
-              <img
-                src="/prazos-produto.webp"
-                width={1080}
-                height={680}
-                loading="lazy"
-                alt="A extensão FireHub Prazos aberta: a coluna Em preparo marcada, 8 pedidos contados, iFood em 58 minutos e 99Food em 43 de preparo, robô ligado nas lojas marcadas"
-                style={{ maxWidth: "100%", height: "auto", borderRadius: 16, border: "1px solid #E2E8F0", boxShadow: "0 18px 45px rgba(15,23,42,.12)", display: "inline-block" }}
-              />
-            </picture>
-            <figcaption style={{ color: "#64748B", fontSize: ".9rem", marginTop: 10 }}>
-              A extensão de verdade, trabalhando.
-            </figcaption>
-          </figure>
+          {/* A animação do Chrome (aba do painel → aba do Portal → popup),
+              que era o topo até 06/11/2026, desceu para cá quando o vídeo real
+              assumiu o hero. Fundo escuro porque ela foi desenhada para ele.
+              A foto estática do popup que ficava aqui saiu: repetia a mesma
+              coisa, parada. */}
+          <div style={{ marginTop: 22, background: "linear-gradient(135deg, #0F172A 0%, #1E293B 100%)", borderRadius: 18, padding: "1.2rem 1rem" }}>
+            <DemoAoVivo />
+          </div>
 
           <div style={{ marginTop: 22, display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
             <div>
@@ -440,31 +415,6 @@ export default function PrazosLanding() {
         </div>
       </section>
 
-      {/* ─────────── O QUE ELA NUNCA FAZ ─────────── */}
-      <section style={secao}>
-        <h2 style={h2}>O que ela nunca faz</h2>
-        {/* Quatro emojis 🚫 iguais viravam ruído visual. Cada limite ganhou
-            o ícone do que ele protege, num cartão vermelho claro: isto aqui
-            é alívio, não proibição — e alívio precisa ser visto. */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginTop: 16 }}>
-          {[
-            ["🧾", "Não aceita pedido"],
-            ["🗑️", "Não cancela"],
-            ["⏸️", "Não pausa a loja"],
-            ["🏷️", "Não mexe em preço"],
-          ].map(([e, t]) => (
-            <div key={t} style={{ ...tile, background: "#FEF2F2", border: "1px solid #FECACA", position: "relative", paddingTop: "1.5rem" }}>
-              <div style={{ position: "absolute", top: 10, right: 12, color: "#DC2626", fontWeight: 900, fontSize: ".95rem" }}>✕</div>
-              <div style={emoji}>{e}</div>
-              <div style={{ fontWeight: 800, color: "#7F1D1D" }}>{t}</div>
-            </div>
-          ))}
-        </div>
-        <p style={{ ...p, marginTop: 16, marginBottom: 0 }}>
-          Ela escreve o tempo, e só. Cozinha estourou? Ela avisa em vermelho. Pausar é decisão sua.
-        </p>
-      </section>
-
       {/* ─────────── GARANTIA ───────────
           Era um retângulo verde claro com um emoji de escudo, e o dono
           resumiu bem: "sem graça". Garantia é o argumento que tira o medo de
@@ -487,13 +437,15 @@ export default function PrazosLanding() {
 
           <div style={{ flex: 1, minWidth: 280 }}>
             <div style={{ fontSize: "clamp(1.4rem, 3vw, 1.8rem)", fontWeight: 900, lineHeight: 1.15, marginBottom: 8 }}>
-              Use um mês inteiro. Não gostou, devolvemos tudo.
+              Use uma semana inteira. Não gostou, devolvemos tudo.
             </div>
             <div style={{ color: "#D1FAE5", lineHeight: 1.6, fontSize: "1.02rem", marginBottom: 14 }}>
-              {/* Quatro fins de semana é o argumento: prazo de garantia só
-                  vale se pegar o movimento em que o produto prova valor. */}
-              Trinta dias é mês fechado — <b style={{ color: "#fff" }}>quatro sextas e quatro sábados</b>,
-              que é quando a cozinha enche e o prazo importa. Não fez o que promete? Cancela na Cakto
+              {/* Era 30 dias ("quatro sextas e quatro sábados"). O dono
+                  baixou para 7 em 06/11/2026: a R$ 29,90, com 30 dias o
+                  cliente assina, pede o dinheiro de volta e assina de novo.
+                  Sete dias ainda pegam uma sexta e um sábado. */}
+              Sete dias pegam <b style={{ color: "#fff" }}>uma sexta e um sábado</b>, que é quando a
+              cozinha enche e o prazo importa. Não fez o que promete? Cancela na Cakto
               ou manda um zap: o dinheiro volta <b style={{ color: "#fff" }}>inteiro</b>.
             </div>
             <div className="pilulas-garantia" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
