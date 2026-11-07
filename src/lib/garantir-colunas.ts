@@ -975,6 +975,10 @@ const INSTRUCOES_COLUNAS_DO_SCHEMA = [
   `ALTER TABLE "CustomerOrderItem" ADD COLUMN IF NOT EXISTS "pesoKg" DOUBLE PRECISION`,
   // Mesa ou comanda numerada (lib/comanda.ts).
   `ALTER TABLE "Table" ADD COLUMN IF NOT EXISTS "tipo" TEXT`,
+  // Quantas pessoas na mesa — o ticket por pessoa do Giro de mesas e do
+  // Ticket médio (lib/pessoas-da-mesa.ts). Nulo = não informado, como toda
+  // conta já gravada continua.
+  `ALTER TABLE "TableSession" ADD COLUMN IF NOT EXISTS "pessoas" INTEGER`,
 
   // ── Cardápio ──
   `ALTER TABLE "MenuProduct" ADD COLUMN IF NOT EXISTS "sortOrder" INTEGER NOT NULL DEFAULT 0`,

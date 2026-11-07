@@ -64,6 +64,8 @@ export async function GET(req: NextRequest) {
           customerName: activeSession.customerName,
           // A observação escrita ao ocupar a mesa: sai no cartão, à vista.
           notes: activeSession.notes,
+          // Quantas pessoas (opcional, lib/pessoas-da-mesa.ts): a tela edita.
+          pessoas: activeSession.pessoas ?? null,
           waiterName: activeSession.waiterName,
           waiterId: activeSession.waiterId,
           openedAt: activeSession.openedAt,

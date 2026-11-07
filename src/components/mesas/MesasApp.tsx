@@ -45,6 +45,8 @@ interface TableItem {
     customerName: string | null;
     /** Observação escrita ao ocupar a mesa ("aniversário", "sem glúten"). */
     notes?: string | null;
+    /** Quantas pessoas (opcional) — o ticket por pessoa dos relatórios (lib/pessoas-da-mesa.ts). */
+    pessoas?: number | null;
     waiterName: string | null;
     waiterId?: string | null;
     openedAt: string;
@@ -469,9 +471,11 @@ export default function MesasApp({
   // que vai junto quando a conta muda de mesa.
   const [editCliente, setEditCliente] = useState("");
   const [editObs, setEditObs] = useState("");
+  const [editPessoas, setEditPessoas] = useState("");
   useEffect(() => {
     setEditCliente(showEditModal?.openSession?.customerName || "");
     setEditObs(showEditModal?.openSession?.notes || "");
+    setEditPessoas(showEditModal?.openSession?.pessoas ? String(showEditModal.openSession.pessoas) : "");
   }, [showEditModal]);
   const [showFreeConfirm, setShowFreeConfirm] = useState(false);
   const [imprimindoConta, setImprimindoConta] = useState(false);
@@ -487,6 +491,8 @@ export default function MesasApp({
   // Open table form
   const [openCustomerName, setOpenCustomerName] = useState("");
   const [openNotes, setOpenNotes] = useState("");
+  // "Quantas pessoas?" — opcional, vazio por padrão (lib/pessoas-da-mesa.ts).
+  const [openPessoas, setOpenPessoas] = useState("");
   const [openWaiterId, setOpenWaiterId] = useState("");
   const [waiters, setWaiters] = useState<any[]>([]);
 
@@ -867,6 +873,7 @@ export default function MesasApp({
           tableId: confirmOpen.id,
           customerName: openCustomerName,
           notes: openNotes,
+          pessoas: openPessoas,
           waiterId: waiterIdEscolhido,
           waiterName: selectedWaiter ? selectedWaiter.name : ""
         })
@@ -876,6 +883,7 @@ export default function MesasApp({
         setConfirmOpen(null);
         setOpenCustomerName("");
         setOpenNotes("");
+        setOpenPessoas("");
         setOpenWaiterId(garcomFixo);
         await fetchTables();
         // Select the now-opened table
@@ -1449,6 +1457,7 @@ export default function MesasApp({
         const mudou: Record<string, string> = {};
         if (editCliente.trim() !== (conta.customerName || "").trim()) mudou.customerName = editCliente;
         if (editObs.trim() !== (conta.notes || "").trim()) mudou.notes = editObs;
+        if (editPessoas.trim() !== (conta.pessoas ? String(conta.pessoas) : "")) mudou.pessoas = editPessoas.trim();
         if (Object.keys(mudou).length > 0) {
           const r = await chamar(`/api/store/table-sessions/${conta.id}`, {
             method: "PATCH",
@@ -3131,7 +3140,7 @@ export default function MesasApp({
         <div style={{
           position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1000,
           display: "flex", alignItems: "center", justifyContent: "center",
-        }} onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenNotes(""); setOpenWaiterId(garcomFixo); }}>
+        }} onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenNotes(""); setOpenPessoas(""); setOpenWaiterId(garcomFixo); }}>
           <div onClick={e => e.stopPropagation()} style={{
             background: "#fff", borderRadius: 20, width: "90%", maxWidth: 420,
             padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
@@ -3187,6 +3196,23 @@ export default function MesasApp({
                 }} />
             </div>
 
+            {/* Quantas pessoas: o ticket por pessoa do Giro de mesas e do
+                Ticket médio. Opcional — salão cheio não espera campo. A
+                comanda é de uma pessoa só (lib/comanda.ts): não pergunta. */}
+            {!ehComanda(confirmOpen) && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>
+                  Quantas pessoas? (opcional)
+                </label>
+                <input value={openPessoas} onChange={e => setOpenPessoas(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                  inputMode="numeric" placeholder="Ex: 4"
+                  style={{
+                    width: "100%", padding: "10px 14px", borderRadius: 10,
+                    border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit",
+                  }} />
+              </div>
+            )}
+
             <div style={{ marginBottom: 20 }}>
               {ehGarcom ? (
                 <>
@@ -3223,7 +3249,7 @@ export default function MesasApp({
             </div>
 
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenNotes(""); setOpenWaiterId(garcomFixo); }}
+              <button onClick={() => { setConfirmOpen(null); setOpenCustomerName(""); setOpenNotes(""); setOpenPessoas(""); setOpenWaiterId(garcomFixo); }}
                 style={{
                   flex: 1, padding: "12px 0", borderRadius: 12,
                   border: "1.5px solid #E2E8F0", background: "#F8FAFC",
@@ -3285,6 +3311,14 @@ export default function MesasApp({
                     placeholder="Ex: aniversário, cadeirinha de bebê, sem glúten..."
                     style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit" }} />
                 </div>
+                {!ehComanda(showEditModal) && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: "#64748B", display: "block", marginBottom: 4 }}>Quantas pessoas? (opcional)</label>
+                    <input value={editPessoas} onChange={e => setEditPessoas(e.target.value.replace(/\D/g, "").slice(0, 2))}
+                      inputMode="numeric" placeholder="Ex: 4"
+                      style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #E2E8F0", fontSize: 14, fontFamily: "inherit" }} />
+                  </div>
+                )}
               </>
             )}
             <div style={{ marginBottom: 20 }}>

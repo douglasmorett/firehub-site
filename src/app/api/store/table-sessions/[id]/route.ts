@@ -1,8 +1,9 @@
 /**
  * PATCH /api/store/table-sessions/[id]
  *
- * Corrige o NOME DO CLIENTE e a OBSERVAÇÃO de uma conta aberta.
- * Corpo: { customerName?, notes? } — o que não vier fica como está.
+ * Corrige o NOME DO CLIENTE, a OBSERVAÇÃO e QUANTAS PESSOAS de uma conta aberta.
+ * Corpo: { customerName?, notes?, pessoas? } — o que não vier fica como está;
+ * `pessoas` vazio (null, "") apaga o número (lib/pessoas-da-mesa.ts).
  *
  * Os dois eram escritos só ao ocupar a mesa. Com a mesa já aberta, o único
  * "nome" que o ✏️ deixava mudar era o Nome/Label da MESA FÍSICA — e a loja
@@ -17,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
+import { sanearPessoas } from "@/lib/pessoas-da-mesa";
 
 export const dynamic = "force-dynamic";
 
@@ -45,13 +47,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Esta conta já foi fechada" }, { status: 400 });
   }
 
-  const data: { customerName?: string | null; notes?: string | null } = {};
+  const data: { customerName?: string | null; notes?: string | null; pessoas?: number | null } = {};
   if (body?.customerName !== undefined) {
     data.customerName = String(body.customerName ?? "").trim().slice(0, 80) || null;
   }
   // Mesmo teto da abertura (POST /api/store/table-sessions).
   if (body?.notes !== undefined) {
     data.notes = String(body.notes ?? "").trim().slice(0, 200) || null;
+  }
+  // O "Quantas pessoas?" da abertura, corrigido com a mesa aberta (chegou mais
+  // um, o garçom esqueceu de pôr). Número torto vira vazio, nunca erro.
+  if (body?.pessoas !== undefined) {
+    data.pessoas = sanearPessoas(body.pessoas);
   }
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "Nada para alterar" }, { status: 400 });

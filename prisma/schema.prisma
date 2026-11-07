@@ -1206,6 +1206,12 @@ model TableSession {
   /// módulo aberto ao garçom, o fechamento precisa ter dono.
   closedByKind    String?
   closedByName    String?
+  /// Quantas pessoas sentaram na mesa — o "Quantas pessoas?" opcional da
+  /// abertura, editável com a mesa aberta. Nulo = não informado (o relatório
+  /// usa as pessoas nomeadas, TableGuest, e senão diz "sem nº de pessoas").
+  /// É o divisor do ticket por pessoa (lib/pessoas-da-mesa.ts).
+  /// Coluna garantida no boot (src/lib/garantir-colunas.ts).
+  pessoas         Int?
   orders          CustomerOrder[]
   guests          TableGuest[]
   createdAt       DateTime        @default(now())

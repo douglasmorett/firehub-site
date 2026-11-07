@@ -34,7 +34,15 @@ type Relatorio = {
     gorjetas: number;
     descontoNoFechamento: number;
     mesasComDesconto: number;
-    porGarcom: { waiterId: string | null; nome: string; mesas: number; taxaServico: number; gorjetas: number; consumo: number; desconto: number; mesasComDesconto: number }[];
+    /** A % de serviço da loja e quanto ela daria (lib/relatorios/relatorio-de-mesas.ts, taxaEsperada). */
+    taxaPct?: number | null;
+    taxaEsperada?: number;
+    pctAtingido?: number | null;
+    contasSemTaxa?: number;
+    porGarcom: {
+      waiterId: string | null; nome: string; mesas: number; taxaServico: number; gorjetas: number; consumo: number; desconto: number; mesasComDesconto: number;
+      taxaEsperada?: number; pctAtingido?: number | null; contasSemTaxa?: number;
+    }[];
   };
   vendas: {
     total: number;
@@ -122,7 +130,14 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
     </button>
   );
 
-  const colunasPorGarcom = temDesconto ? 8 : 7;
+  // Esperado × realizado (o "Taxas de serviços" do SWF): só com a % da loja.
+  // Abaixo de 95% fica laranja — o cliente recusou os 10% em parte das contas.
+  const taxaPct = dados?.mesas.taxaPct || 0;
+  const temEsperado = taxaPct > 0;
+  const fmtAtingido = (p: number | null | undefined) => (p === null || p === undefined ? "—" : `${p.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`);
+  const corDoAtingido = (p: number | null | undefined) => (p === null || p === undefined ? "#94A3B8" : p < 95 ? "#C2410C" : "#0F766E");
+
+  const colunasPorGarcom = (temDesconto ? 8 : 7) + (temEsperado ? 2 : 0);
 
   return (
     <>
@@ -178,6 +193,16 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
             <div style={{ fontSize: 13, color: "#0F766E", fontWeight: 900, marginBottom: 4 }}>Taxa de serviço arrecadada</div>
             <div style={{ fontSize: 28, fontWeight: 900, color: "#134E4A" }}>{carregando ? "…" : fmt(dados?.mesas.taxaServico || 0)}</div>
           </div>
+          {!carregando && temEsperado && (dados?.mesas.taxaEsperada || 0) > 0 && (
+            <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
+              <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Taxa atingida</div>
+              <div style={{ fontSize: 28, fontWeight: 900, color: corDoAtingido(dados?.mesas.pctAtingido) }}>{fmtAtingido(dados?.mesas.pctAtingido)}</div>
+              <div style={{ fontSize: 11, color: "#94A3B8", marginTop: 4 }}>
+                Esperado {fmt(dados!.mesas.taxaEsperada || 0)} ({taxaPct}% do consumo)
+                {(dados!.mesas.contasSemTaxa || 0) > 0 && ` · ${fmtQtd(dados!.mesas.contasSemTaxa || 0)} ${dados!.mesas.contasSemTaxa === 1 ? "conta" : "contas"} sem taxa`}
+              </div>
+            </div>
+          )}
           <div style={{ background: "#F8FAFC", padding: 20, borderRadius: 12, border: "1px solid #E2E8F0" }}>
             <div style={{ fontSize: 13, color: "#475569", fontWeight: 700, marginBottom: 4 }}>Gorjetas extras</div>
             <div style={{ fontSize: 24, fontWeight: 900, color: "#1E293B" }}>{carregando ? "…" : fmt(dados?.mesas.gorjetas || 0)}</div>
@@ -208,7 +233,9 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Ticket médio</th>
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>% do consumo</th>
               {temDesconto && <th style={{ padding: "14px 16px", color: "#9A3412", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Desconto</th>}
+              {temEsperado && <th title={`${taxaPct}% sobre o consumo já descontado de cada conta — o que a taxa daria se todo cliente pagasse.`} style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right", cursor: "help" }}>Esperado ({taxaPct}%)</th>}
               <th style={{ padding: "14px 16px", color: "#1E293B", fontWeight: 800, fontSize: 13, textAlign: "right" }}>Taxa de serviço</th>
+              {temEsperado && <th title="Taxa cobrada ÷ esperada. Abaixo de 100%: parte dos clientes não pagou a taxa (ou ela foi tirada no fechamento)." style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right", cursor: "help" }}>% atingido</th>}
               <th style={{ padding: "14px 16px", color: "#475569", fontWeight: 700, fontSize: 13, textAlign: "right" }}>Gorjetas</th>
             </tr>
           </thead>
@@ -234,7 +261,16 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#475569", fontWeight: 600 }}>{ticket(g.consumo, g.mesas)}</td>
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#64748B", fontWeight: 700 }}>{pctDoSalao(g.consumo)}</td>
                     {temDesconto && <td style={{ padding: "14px 16px", textAlign: "right", color: "#9A3412", fontWeight: 600 }}>{g.desconto > 0 ? fmt(g.desconto) : "—"}</td>}
+                    {temEsperado && <td style={{ padding: "14px 16px", textAlign: "right", color: "#64748B" }}>{fmt(g.taxaEsperada || 0)}</td>}
                     <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#0F766E" }}>{fmt(g.taxaServico)}</td>
+                    {temEsperado && (
+                      <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: corDoAtingido(g.pctAtingido) }}>
+                        {fmtAtingido(g.pctAtingido)}
+                        {(g.contasSemTaxa || 0) > 0 && (
+                          <div style={{ fontSize: 11, color: "#94A3B8", fontWeight: 600 }}>{fmtQtd(g.contasSemTaxa || 0)} sem taxa</div>
+                        )}
+                      </td>
+                    )}
                     <td style={{ padding: "14px 16px", textAlign: "right", color: "#B45309", fontWeight: 700 }}>{g.gorjetas > 0 ? fmt(g.gorjetas) : "—"}</td>
                   </tr>
                 ))}
@@ -245,7 +281,9 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800 }}>{ticket(dados.mesas.consumo, dados.mesas.fechadas)}</td>
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#64748B" }}>{dados.mesas.consumo > 0 ? "100%" : "—"}</td>
                   {temDesconto && <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#9A3412" }}>{fmt(desconto)}</td>}
+                  {temEsperado && <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#64748B" }}>{fmt(dados.mesas.taxaEsperada || 0)}</td>}
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 900, color: "#134E4A" }}>{fmt(dados.mesas.taxaServico)}</td>
+                  {temEsperado && <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 900, color: corDoAtingido(dados.mesas.pctAtingido) }}>{fmtAtingido(dados.mesas.pctAtingido)}</td>}
                   <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#B45309" }}>{dados.mesas.gorjetas > 0 ? fmt(dados.mesas.gorjetas) : "—"}</td>
                 </tr>
               </>
@@ -327,7 +365,8 @@ export default function RelatorioDeMesas({ onVoltar }: { onVoltar: () => void })
         Mesas fechadas, consumo, taxa de serviço e gorjeta: as contas fechadas no período (a mesa liberada sem consumo também conta como
         fechada). O consumo é o que foi lançado na conta, sem taxa de serviço, gorjeta e troco; o desconto dado ao fechar a conta aparece à
         parte e não sai do consumo. Mesa a mesa, com abertura, fechamento, forma de pagamento e itens: Mesas › 📋 Histórico (os mesmos
-        números, dia a dia).
+        números, dia a dia). Esperado: a taxa da loja ({taxaPct || 10}%) sobre o consumo já descontado de cada conta; o % atingido mostra
+        quanto dela os clientes pagaram (vale a % cadastrada hoje). Mesa a mesa, com giro e ticket por pessoa: Relatórios › Giro de mesas.
       </p>
       <p style={{ margin: "6px 4px 0", fontSize: 12, color: "#94A3B8", lineHeight: 1.5 }}>
         Vendas por origem: pela hora do pedido, os mesmos números do relatório Vendas por período — por isso a linha Mesa inclui mesa

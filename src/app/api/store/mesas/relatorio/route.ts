@@ -38,8 +38,11 @@ import { prisma } from "@/lib/prisma";
 import { hojeNaLoja, STATUS_FORA_DA_VENDA } from "@/lib/relatorios/base";
 import { janelaDoPeriodo, MAX_DIAS } from "@/lib/relatorios/servidor";
 import { mesasFechadasDoRelatorio, periodoDaConsulta, vendasPorOrigem } from "@/lib/relatorios/relatorio-de-mesas";
+import { sanearTaxa } from "@/lib/conta-da-mesa";
 
 const DIA_MS = 24 * 60 * 60 * 1000;
+/** Sem % cadastrada vale 10, o costume da casa — a mesma da tela das mesas e do fechamento. */
+const TAXA_PADRAO = 10;
 
 export async function GET(req: NextRequest) {
   const session = await getServerSession(authOptions).catch(() => null);
@@ -65,7 +68,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Período maior que um ano." }, { status: 400 });
   }
 
-  const [sessoes, pedidos] = await Promise.all([
+  const [sessoes, pedidos, loja] = await Promise.all([
     prisma.tableSession.findMany({
       where: { franchiseeId: lojaId, status: "CLOSED", closedAt: { gte: inicio, lt: fim } },
       select: {
@@ -90,6 +93,8 @@ export async function GET(req: NextRequest) {
         items: { select: { quantity: true, price: true } },
       },
     }),
+    // A % de serviço da loja: o "esperado" da taxa por garçom (esperado × realizado).
+    prisma.user.findUnique({ where: { id: lojaId }, select: { taxaServicoPadrao: true } }),
   ]);
 
   const mesas = mesasFechadasDoRelatorio(sessoes.map((s) => ({
@@ -101,7 +106,7 @@ export async function GET(req: NextRequest) {
     fechadaEm: s.closedAt,
     pago: s.totalPaid,
     pedidos: s.orders,
-  })));
+  })), { taxaPct: sanearTaxa(loja?.taxaServicoPadrao, TAXA_PADRAO) });
 
   return NextResponse.json({
     periodo: { de, ate, hoje, inicio: inicio.toISOString(), fim: fim.toISOString() },
