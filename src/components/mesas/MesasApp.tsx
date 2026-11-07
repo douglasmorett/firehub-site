@@ -24,6 +24,7 @@ import HistoricoDeMesas from "@/components/mesas/HistoricoDeMesas";
 import ComandasConfig from "@/components/mesas/ComandasConfig";
 import { ehComanda, nomeDaMesa, numeroLidoDoCartao } from "@/lib/comanda";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
+import { ModalDoComprovanteDoFiado, OpcoesDoComprovante, usePreferenciasDoComprovante } from "@/components/ComprovanteDoFiado";
 import { motivoValido } from "@/lib/motivo-do-cancelamento";
 import { rotuloDaForma } from "@/lib/formas-proprias";
 import {
@@ -458,6 +459,11 @@ export default function MesasApp({
   const [lancandoFiado, setLancandoFiado] = useState(false);
   // Com a senha do gerente ligada para o fiado, a rota pede e este modal abre.
   const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
+  // Conta no fiado: imprimir para assinar / assinar na tela
+  // (components/ComprovanteDoFiado.tsx). Só no painel da loja: as rotas do
+  // comprovante são da sessão da loja, e o app do garçom não entra nelas.
+  const prefDoComprovante = usePreferenciasDoComprovante();
+  const [fiadoParaAssinar, setFiadoParaAssinar] = useState<{ employeeId: string; nome: string; alvoId: string; valor: number; mesa: string } | null>(null);
   const [showNewTableModal, setShowNewTableModal] = useState(false);
   const [showConfigModal, setShowConfigModal] = useState(false);
   /** Histórico de mesas (as contas fechadas no dia) — só no painel, não no link do garçom. */
@@ -1227,6 +1233,9 @@ export default function MesasApp({
       const d = await res.json().catch(() => ({}));
       if (res.ok) {
         showToast(`📒 Mesa ${numero} no fiado de ${d?.fiado?.cliente || "cliente"} (${fmt(Number(d?.fiado?.valor) || 0)}) — mesa liberada`);
+        if (!ehGarcom && d?.fiado?.id && d?.fiado?.employeeId && (prefDoComprovante.imprimir || prefDoComprovante.assinar)) {
+          setFiadoParaAssinar({ employeeId: String(d.fiado.employeeId), nome: String(d.fiado.cliente || "Cliente"), alvoId: String(d.fiado.id), valor: Number(d.fiado.valor) || 0, mesa: `Mesa ${numero}` });
+        }
         setShowFiado(false);
         setShowCloseModal(false);
         setSelectedTable(null);
@@ -3939,6 +3948,11 @@ export default function MesasApp({
                 )}
               </div>
 
+              {!ehGarcom && (
+                <div style={{ padding: "0 20px 4px" }}>
+                  <OpcoesDoComprovante {...prefDoComprovante} />
+                </div>
+              )}
               <div style={{ padding: "12px 20px 18px", borderTop: "1px solid #F1F5F9", display: "flex", gap: 8 }}>
                 <button onClick={() => setShowFiado(false)} disabled={lancandoFiado} style={{
                   flex: 1, padding: "12px 0", borderRadius: 12, border: "1.5px solid #CBD5E1", background: "#fff", color: "#334155",
@@ -3956,6 +3970,19 @@ export default function MesasApp({
         );
       })()}
       {modalDaSenha}
+      {fiadoParaAssinar && (
+        <ModalDoComprovanteDoFiado
+          employeeId={fiadoParaAssinar.employeeId}
+          alvo="MESA"
+          alvoId={fiadoParaAssinar.alvoId}
+          nomeDoCliente={fiadoParaAssinar.nome}
+          valor={fmt(fiadoParaAssinar.valor)}
+          rotulo={`Conta da ${fiadoParaAssinar.mesa}`}
+          pedirAssinatura={prefDoComprovante.assinar}
+          imprimir={prefDoComprovante.imprimir}
+          onFechar={(recado) => { setFiadoParaAssinar(null); if (recado) showToast(recado); }}
+        />
+      )}
 
       {/* ─── TRANSFER MODAL ─── */}
       {showTransferModal?.openSession && (

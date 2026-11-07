@@ -20,6 +20,7 @@ import { consultaDoBalcao, entregaNoPedidoDoBalcao, lerCotacaoNoBalcao } from "@
 import { lerConsulta, preencherBalcao, type ClienteSugerido } from "@/lib/busca-de-clientes";
 import { useSession } from "next-auth/react";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
+import { ModalDoComprovanteDoFiado, OpcoesDoComprovante, usePreferenciasDoComprovante } from "@/components/ComprovanteDoFiado";
 import { ehFormaPropria, rotuloDaForma, textosNoCanal } from "@/lib/formas-proprias";
 
 // A mesma lista do pedido de balcão do garçom (lib/balcao-config.ts).
@@ -62,6 +63,10 @@ export default function VendaPresencialPage() {
   // Venda na "Conta Funcionário" pode pedir a senha do gerente (Minha Loja →
   // Senha do gerente). Quem decide é a rota; a tela só pede e repete.
   const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
+  // Venda no fiado: imprimir o comprovante para assinar e/ou assinar na tela
+  // (components/ComprovanteDoFiado.tsx). A escolha fica lembrada no aparelho.
+  const prefDoComprovante = usePreferenciasDoComprovante();
+  const [fiadoParaAssinar, setFiadoParaAssinar] = useState<{ employeeId: string; nome: string; orderId: string; valor: number; numero: number | null } | null>(null);
   const [products, setProducts] = useState<any[]>([]);
   const [paymentConfig, setPaymentConfig] = useState<any>(null);
   // As formas PRÓPRIAS da loja marcadas para o Caixa/PDV (lib/formas-proprias.ts):
@@ -744,6 +749,11 @@ export default function VendaPresencialPage() {
         ? ok.avisosDeEntrega.filter((a: unknown) => typeof a === "string" && a.trim()).join(" ")
         : "";
       setMsg(avisos ? `✅ Pedido registrado! ${avisos}` : "✅ Pedido registrado!");
+      // Foi para o fiado de alguém: abre o comprovante (papel e/ou assinatura),
+      // com o que ainda está na tela — o bloco abaixo limpa o funcionário.
+      if (selectedEmployeeId && ok?.orderId && (prefDoComprovante.imprimir || prefDoComprovante.assinar)) {
+        setFiadoParaAssinar({ employeeId: selectedEmployeeId, nome: selectedEmployeeName, orderId: String(ok.orderId), valor: total, numero: ok.dailyOrderNumber ?? null });
+      }
       // TUDO DO CLIENTE SAI DAQUI, inclusive pager e documento. O que fica no
       // campo vai parar na comanda do PRÓXIMO cliente, e "PAGER 12" chamando a
       // pessoa errada ou o CPF de outro impresso na nota é o tipo de erro que
@@ -858,6 +868,19 @@ export default function VendaPresencialPage() {
   return (
     <div className="pdv-layout" style={{ fontFamily: "'Inter', sans-serif", height: "calc(100vh - 145px)", maxHeight: "calc(100vh - 145px)", overflow: "hidden", position: "relative" }}>
       {modalDaSenha}
+      {fiadoParaAssinar && (
+        <ModalDoComprovanteDoFiado
+          employeeId={fiadoParaAssinar.employeeId}
+          alvo="PEDIDO"
+          alvoId={fiadoParaAssinar.orderId}
+          nomeDoCliente={fiadoParaAssinar.nome}
+          valor={fmt(fiadoParaAssinar.valor)}
+          rotulo={fiadoParaAssinar.numero != null ? `Pedido #${fiadoParaAssinar.numero}` : undefined}
+          pedirAssinatura={prefDoComprovante.assinar}
+          imprimir={prefDoComprovante.imprimir}
+          onFechar={(recado) => { setFiadoParaAssinar(null); if (recado) setMsg(`✅ Pedido registrado! ${recado}`); }}
+        />
+      )}
       <style>{`
         /* ── LAYOUT ADAPTATIVO PARA TABLET ──────────────────────────────────
            O carrinho tinha 380px FIXOS. Num tablet em retrato (768px) sobravam
@@ -1396,6 +1419,7 @@ export default function VendaPresencialPage() {
                   ))}
                 </select>
               )}
+              {employees.length > 0 && <OpcoesDoComprovante {...prefDoComprovante} />}
             </div>
           )}
 

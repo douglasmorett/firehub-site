@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { limiteDeDia } from "@/lib/timezone";
 import { mesasNoFiado, totalDasMesasNoFiado } from "@/lib/fiado-da-mesa";
 import { saldoDoFiado } from "@/lib/fiado-da-mesa-regras";
+import { assinaturasDosLancamentos } from "@/lib/fiado-para-assinar";
 
 export async function GET(
   req: NextRequest,
@@ -100,6 +101,15 @@ export async function GET(
   // Contas de mesa jogadas para o fiado no fechamento (lib/fiado-da-mesa.ts).
   const mesas = await mesasNoFiado([employeeId], hasDateFilter ? dateFilter : undefined);
 
+  // A assinatura feita na tela (lib/fiado-para-assinar.ts): o extrato mostra
+  // "assinado por Fulano em…" com o desenho, e os botões de imprimir/assinar
+  // usam `alvo` para saber se é pedido ou mesa.
+  const assinaturas = await assinaturasDosLancamentos([...orders.map((o) => o.id), ...mesas.map((m) => m.id)]);
+  const assinaturaDe = (id: string) => {
+    const a = assinaturas.get(id);
+    return a ? { nome: a.nome, em: a.createdAt, imagem: a.imagem } : null;
+  };
+
   // Unifica em um extrato cronológico único
   const statementItems = [
     ...orders.map((o) => ({
@@ -110,6 +120,8 @@ export async function GET(
       date: o.createdAt,
       notes: o.notes,
       itemsSummary: o.items.length === 0 ? o.notes : o.items.map((i) => `${i.quantity}x ${i.menuProduct?.name || "Item"}`).join(", "),
+      alvo: "PEDIDO" as const,
+      assinatura: assinaturaDe(o.id),
     })),
     ...mesas.map((m) => ({
       id: m.id,
@@ -119,6 +131,8 @@ export async function GET(
       date: m.createdAt,
       notes: m.criadoPor ? `Lançada por ${m.criadoPor}` : null,
       itemsSummary: m.descricao,
+      alvo: "MESA" as const,
+      assinatura: assinaturaDe(m.id),
     })),
     ...payments.map((p) => ({
       id: p.id,
@@ -128,6 +142,8 @@ export async function GET(
       date: p.createdAt,
       notes: p.notes,
       itemsSummary: null,
+      alvo: null,
+      assinatura: null,
     })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 

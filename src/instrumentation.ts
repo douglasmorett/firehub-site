@@ -168,6 +168,10 @@ export async function register() {
   await garantirTabelaDaSenhaDoGerente();
   const { garantirTabelaDoFiadoDaMesa } = await import("./lib/fiado-da-mesa");
   await garantirTabelaDoFiadoDaMesa();
+  // A assinatura feita na tela no fiado (lib/fiado-para-assinar.ts). Se faltar,
+  // o comprovante imprime igual, só sem "assinado na tela".
+  const { garantirTabelaDaAssinaturaDoFiado } = await import("./lib/fiado-para-assinar");
+  await garantirTabelaDaAssinaturaDoFiado();
   // Posição que a loja ensinou para um endereço na roteirização (o operador
   // arrastou o pino; lib/ponto-aprendido.ts). Tabela própria por SQL cru; se
   // faltar, a roteirização segue como antes e só deixa de aprender.

@@ -5,6 +5,7 @@ import {
   AlertTriangle, Search, Trash2, Edit, CreditCard, RefreshCw, X, ShieldAlert
 } from "lucide-react";
 import { comSenhaDoGerente, useSenhaDoGerente } from "@/components/SenhaDoGerente";
+import { ModalDoComprovanteDoFiado, OpcoesDoComprovante, usePreferenciasDoComprovante } from "@/components/ComprovanteDoFiado";
 
 /**
  * Como o fiado foi pago na baixa. Fica escrito na observação da baixa (o
@@ -40,6 +41,16 @@ type StatementItem = {
   date: string;
   notes: string | null;
   itemsSummary: string | null;
+  /** Pedido ou mesa no fiado (o que se imprime e assina); baixa é null. */
+  alvo: "PEDIDO" | "MESA" | null;
+  /** Assinado na tela (lib/fiado-para-assinar.ts). */
+  assinatura: { nome: string; em: string; imagem: string | null } | null;
+};
+
+/** O comprovante aberto agora: depois da dívida à mão, ou pelo Extrato. */
+type ComprovanteAberto = {
+  employeeId: string; nome: string; alvo: "PEDIDO" | "MESA"; alvoId: string; valor: number; rotulo?: string;
+  pedirAssinatura: boolean; imprimir: boolean; segundaVia?: boolean; doExtrato?: boolean;
 };
 
 export default function FuncionariosPage() {
@@ -71,6 +82,10 @@ export default function FuncionariosPage() {
   // Lançar dívida à mão pode pedir a senha do gerente (Minha Loja → Senha do
   // gerente). Quem decide é a rota; a tela só pede e repete.
   const { pedirSenha, modalDaSenha } = useSenhaDoGerente();
+  // Imprimir para assinar / assinar na tela (components/ComprovanteDoFiado.tsx).
+  const prefDoComprovante = usePreferenciasDoComprovante();
+  const [comprovante, setComprovante] = useState<ComprovanteAberto | null>(null);
+  const [recadoDoComprovante, setRecadoDoComprovante] = useState("");
 
   const [statementEmp, setStatementEmp] = useState<Employee | null>(null);
   const [statementData, setStatementData] = useState<StatementItem[]>([]);
@@ -222,6 +237,7 @@ export default function FuncionariosPage() {
 
   // Abrir Extrato
   const handleOpenStatement = async (emp: Employee) => {
+    if (emp.id !== statementEmp?.id) setRecadoDoComprovante("");
     setStatementEmp(emp);
     setLoadingStatement(true);
     try {
@@ -257,6 +273,15 @@ export default function FuncionariosPage() {
       if (!res) {
         setAddDebtErro("Dívida não lançada: precisa da senha do gerente.");
       } else if (res.ok) {
+        const d = await res.json().catch(() => ({}));
+        // A dívida à mão também é fiado para assinar: abre o comprovante com
+        // as mesmas caixinhas do Balcão.
+        if (d?.order?.id && (prefDoComprovante.imprimir || prefDoComprovante.assinar)) {
+          setComprovante({
+            employeeId: addDebtEmp.id, nome: addDebtEmp.name, alvo: "PEDIDO", alvoId: String(d.order.id), valor: amountNum,
+            rotulo: "Dívida lançada à mão", pedirAssinatura: prefDoComprovante.assinar, imprimir: prefDoComprovante.imprimir,
+          });
+        }
         setAddDebtEmp(null);
         fetchEmployees();
       } else {
@@ -869,6 +894,7 @@ export default function FuncionariosPage() {
               <div>
                 <h3 style={{ margin: 0, fontWeight: 800, fontSize: "1.1rem" }}>Extrato — {statementEmp.name}</h3>
                 <span style={{ fontSize: "0.75rem", color: "#64748B" }}>Histórico de consumos e baixas registradas</span>
+                {recadoDoComprovante && <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#0F766E", marginTop: 2 }}>{recadoDoComprovante}</div>}
               </div>
               <button onClick={() => setStatementEmp(null)} style={{ border: "none", background: "none", cursor: "pointer", color: "#64748B" }}>
                 <X size={20} />
@@ -903,6 +929,35 @@ export default function FuncionariosPage() {
                       <div style={{ fontSize: "0.68rem", color: "#94A3B8", marginTop: 2 }}>
                         {new Date(item.date).toLocaleString("pt-BR")}
                       </div>
+                      {item.assinatura && (
+                        <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 8 }}>
+                          {item.assinatura.imagem && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.assinatura.imagem} alt={`Assinatura de ${item.assinatura.nome}`} style={{ height: 34, maxWidth: 110, objectFit: "contain", background: "#fff", border: "1px solid #E2E8F0", borderRadius: 6 }} />
+                          )}
+                          <span style={{ fontSize: "0.7rem", fontWeight: 700, color: "#0F766E" }}>
+                            ✍️ Assinado por {item.assinatura.nome} em {new Date(item.assinatura.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        </div>
+                      )}
+                      {item.alvo && statementEmp && (
+                        <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                          <button type="button" style={botaoDoExtrato}
+                            onClick={() => setComprovante({ employeeId: statementEmp.id, nome: statementEmp.name, alvo: item.alvo!, alvoId: item.id, valor: item.amount, rotulo: item.title, pedirAssinatura: false, imprimir: true, segundaVia: true, doExtrato: true })}>
+                            🖨️ Imprimir para assinar
+                          </button>
+                          <a href={`/api/store/employees/${encodeURIComponent(statementEmp.id)}/comprovante?alvo=${item.alvo}&alvoId=${encodeURIComponent(item.id)}&segundaVia=1`} target="_blank" rel="noopener"
+                            style={{ ...botaoDoExtrato, textDecoration: "none" }} title="Abre o comprovante (com o desenho da assinatura) para imprimir pelo navegador">
+                            🧾 Navegador
+                          </a>
+                          {!item.assinatura && (
+                            <button type="button" style={botaoDoExtrato}
+                              onClick={() => setComprovante({ employeeId: statementEmp.id, nome: statementEmp.name, alvo: item.alvo!, alvoId: item.id, valor: item.amount, rotulo: item.title, pedirAssinatura: true, imprimir: false, doExtrato: true })}>
+                              ✍️ Assinar na tela
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                     <div style={{ fontWeight: 900, fontSize: "0.95rem", color: item.type === "ORDER" ? "#C92E09" : "#0F766E" }}>
@@ -958,6 +1013,10 @@ export default function FuncionariosPage() {
               />
             </div>
 
+            <div style={{ marginTop: -12, marginBottom: 16 }}>
+              <OpcoesDoComprovante {...prefDoComprovante} />
+            </div>
+
             {addDebtErro && (
               <div role="alert" style={{ background: "#FEF2F2", border: "1px solid #FECACA", color: "#B91C1C", padding: "8px 12px", borderRadius: 8, fontSize: "0.82rem", fontWeight: 700, marginBottom: 12 }}>
                 {addDebtErro}
@@ -983,6 +1042,31 @@ export default function FuncionariosPage() {
       )}
 
       {modalDaSenha}
+      {comprovante && (
+        <ModalDoComprovanteDoFiado
+          employeeId={comprovante.employeeId}
+          alvo={comprovante.alvo}
+          alvoId={comprovante.alvoId}
+          nomeDoCliente={comprovante.nome}
+          valor={fmt(comprovante.valor)}
+          rotulo={comprovante.rotulo}
+          pedirAssinatura={comprovante.pedirAssinatura}
+          imprimir={comprovante.imprimir}
+          segundaVia={comprovante.segundaVia}
+          onFechar={(recado) => {
+            const doExtrato = comprovante.doExtrato;
+            setComprovante(null);
+            setRecadoDoComprovante(recado || "");
+            // Assinou pelo Extrato: recarrega para aparecer "assinado por...".
+            if (doExtrato && statementEmp) handleOpenStatement(statementEmp);
+          }}
+        />
+      )}
     </div>
   );
 }
+
+const botaoDoExtrato: React.CSSProperties = {
+  padding: "5px 9px", borderRadius: 7, border: "1.5px solid #CBD5E1", background: "#fff", color: "#334155",
+  fontWeight: 700, fontSize: "0.72rem", cursor: "pointer", fontFamily: "inherit", display: "inline-block",
+};
