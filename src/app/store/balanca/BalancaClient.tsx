@@ -306,20 +306,38 @@ function ComoFunciona() {
   );
 }
 
+/** O que indicamos (pesquisa no Mercado Livre de 06/11/2026: vendedor com reputação, peça certa para a Web Serial). */
+const EQUIPAMENTO: [string, string, string | null][] = [
+  ["Balança Toledo Prix 3 Fit", "o kit já vem com o cabo conversor serial RS-232 da Toledo (sem ele a Prix não tem saída para o computador).",
+    "https://www.mercadolivre.com.br/kit-balanca-toledo-prix-3-fit--cabo-conversor-serial-rs232/up/MLBU1732884937"],
+  ["Cabo USB-serial (chip FTDI)", "liga o cabo da balança na porta USB do computador.",
+    "https://www.mercadolivre.com.br/ftdi-conversor-usb-porta-com-serial-rs232-cabo-todos-sinais/up/MLBU1413538863"],
+  ["Leitor de código de barras de mesa", "o cliente só encosta o cartão na frente dele e o número entra sozinho; lê o Code 39 dos cartões.",
+    "https://www.mercadolivre.com.br/leitor-de-codigo-de-barras-fixo-pdv-usb-1d-2d-qr-code/p/MLB27764962"],
+  ["Computador com Windows ao lado da balança", "um notebook simples serve, com o Chrome (ou o Edge).",
+    "https://www.mercadolivre.com.br/notebook-positivo-vision-c14-lumina-bar-celeron-4gb-ram-128gb-emmc-windows-11-tela-14-polegadas-hd-antirreflexo-tecla-link-cinza/p/MLB26133653"],
+];
+
 function Equipamento() {
   return (
     <section style={cartao}>
       <h2 style={h2}>O que a loja compra</h2>
+      <p style={{ ...texto, marginBottom: 8 }}>
+        O FireHub não vende equipamento: estes são os que indicamos, no Mercado Livre.
+      </p>
       <ol style={{ margin: 0, paddingLeft: 20, color: "#334155", fontSize: 14, lineHeight: 1.8 }}>
-        <li><b>Balança Toledo Prix 3 Fit com saída serial</b> (RS-232). Confirme na compra que vem com a saída serial.</li>
-        <li>
-          <b>Ligação da balança:</b> no computador, cabo serial + adaptador USB-serial; no tablet Android, adaptador
-          serial→Bluetooth, pareado nas configurações do Android.
-        </li>
-        <li><b>Leitor de código de barras USB</b> (qualquer um que leia Code 39 — praticamente todos).</li>
-        <li><b>Tablet Android ou computador</b> com o Chrome (no computador, o Edge também serve).</li>
+        {EQUIPAMENTO.map(([nome, detalhe, link]) => (
+          <li key={nome}>
+            <b>{nome}</b> — {detalhe}{" "}
+            {link && <a href={link} target="_blank" rel="noreferrer" style={{ color: COR, fontWeight: 800 }}>Ver no Mercado Livre</a>}
+          </li>
+        ))}
         <li><b>Cartões de comanda:</b> o FireHub gera para imprimir (Mesas › ⚙️ › 🎫 Comandas).</li>
       </ol>
+      <p style={{ ...texto, marginTop: 8, fontSize: 13 }}>
+        No tablet Android a balança só liga por um adaptador serial→Bluetooth, pareado nas configurações do Android; o
+        computador com Windows é o caminho mais simples.
+      </p>
       <h2 style={{ ...h2, marginTop: 16 }}>Configurar a balança</h2>
       <p style={texto}>
         De fábrica a Prix vem configurada para impressora de etiqueta. No menu da balança (ou com o técnico da Toledo),
