@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CHAVE_DO_CODIGO } from "@/lib/painel-de-senhas";
+import { CHAVE_DA_TELA, CHAVE_DO_CODIGO, type SenhaNaTela, type TelaDoPainel } from "@/lib/painel-de-senhas";
 
 /**
  * A TV do Painel de senhas (lib/painel-de-senhas.ts): marca da loja no topo,
@@ -14,9 +14,13 @@ import { CHAVE_DO_CODIGO } from "@/lib/painel-de-senhas";
  * (frame-ancestors 'none'). Sem som, sem guardar o código, com números de
  * exemplo quando a loja não tem pedido agora. Por isso toda medida é em
  * `--u`: 1vh na TV, 1% da altura da moldura na prévia.
+ *
+ * `tela="motoboy"` é a TV dos entregadores de aplicativo: no lugar do nosso
+ * número vai o código que o entregador conhece (o do iFood, o do 99), com o
+ * nome e a cor da plataforma. O resto — colunas, chamada, som — é o mesmo.
  */
 
-type Senha = { id: string; numero: number; nome: string; desde: string };
+type Senha = SenhaNaTela;
 type Dados = {
   loja: { nome: string; logo: string | null; cardapio: string | null };
   config: { mostrarNome: boolean; som: boolean; voz: boolean; mensagem: string; cor: string };
@@ -28,9 +32,35 @@ const INTERVALO_MS = 4000;
 const CHAMADA_MS = 7000;
 const MAX_PREPARANDO = 15;
 const MAX_PRONTOS = 9;
+// O cartão do motoboy tem o selo da plataforma em cima: cabe uma linha a menos.
+const MAX_PREPARANDO_MOTOBOY = 12;
 
 const EXEMPLO_PREPARANDO: Senha[] = [418, 233, 871, 129, 560].map((n, i) => ({ id: `p${i}`, numero: n, nome: ["Ana", "Lucas", "", "Bruna", ""][i], desde: "" }));
 const EXEMPLO_PRONTOS: Senha[] = [347, 812, 95].map((n, i) => ({ id: `r${i}`, numero: n, nome: ["Maria", "", "João"][i], desde: "" }));
+const IFOOD = { plataforma: "iFood", corDaPlataforma: "#EA1D2C", textoDaPlataforma: "#FFFFFF" };
+const NOVENTA_E_NOVE = { plataforma: "99Food", corDaPlataforma: "#FFDD00", textoDaPlataforma: "#0B0F17" };
+const EXEMPLO_MOTOBOY_PREPARANDO: Senha[] = [["3704", IFOOD], ["9380", NOVENTA_E_NOVE], ["2922", IFOOD], ["7781", IFOOD], ["5184", NOVENTA_E_NOVE]].map(
+  ([codigo, p], i) => ({ id: `mp${i}`, numero: i, nome: "", desde: "", codigo: codigo as string, ...(p as typeof IFOOD) }),
+);
+const EXEMPLO_MOTOBOY_PRONTOS: Senha[] = [["4259", IFOOD], ["7580", NOVENTA_E_NOVE], ["8267", IFOOD]].map(
+  ([codigo, p], i) => ({ id: `mr${i}`, numero: i, nome: "", desde: "", codigo: codigo as string, ...(p as typeof IFOOD) }),
+);
+
+/** Código de 4 dígitos no tamanho cheio; os mais compridos encolhem para caber no cartão. */
+const tamanhoDoCodigo = (codigo: string, maximo: number, largura: number) => Math.min(maximo, largura / (0.62 * Math.max(1, codigo.length)));
+
+/** O selo "iFood" / "99Food" em cima do código. */
+function Selo({ s, tamanho }: { s: Senha; tamanho: number }) {
+  return (
+    <span style={{
+      background: s.corDaPlataforma, color: s.textoDaPlataforma, fontSize: `calc(var(--u) * ${tamanho})`, fontWeight: 900,
+      padding: `calc(var(--u) * ${tamanho * 0.15}) calc(var(--u) * ${tamanho * 0.6})`, borderRadius: "calc(var(--u) * 99)",
+      lineHeight: 1.1, marginBottom: `calc(var(--u) * ${tamanho * 0.35})`, whiteSpace: "nowrap",
+    }}>
+      {s.plataforma}
+    </span>
+  );
+}
 
 /** Texto escuro sobre cor clara (âmbar, verde-claro); branco sobre o resto. */
 function textoSobre(hex: string): string {
@@ -74,8 +104,9 @@ function falar(texto: string) {
   } catch {}
 }
 
-export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: string; codigo: string; previa: boolean }) {
+export default function PainelDeSenhasTV({ lojaId, codigo, previa, tela = "balcao" }: { lojaId: string; codigo: string; previa: boolean; tela?: TelaDoPainel }) {
   const router = useRouter();
+  const motoboy = tela === "motoboy";
 
   const [dados, setDados] = useState<Dados | null>(null);
   const [semConexao, setSemConexao] = useState(false);
@@ -103,7 +134,8 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
     if (cfg?.som && audio.current) {
       try { void audio.current.resume(); tocarChamada(audio.current); } catch {}
     }
-    if (cfg?.voz) setTimeout(() => falar(`Senha ${s.numero}${s.nome ? `, ${s.nome}` : ""}`), 900);
+    // O código do app é falado dígito a dígito ("3 7 0 4"), como o motoboy lê.
+    if (cfg?.voz) setTimeout(() => falar(s.codigo ? `${s.plataforma}, ${s.codigo.split("").join(" ")}` : `Senha ${s.numero}${s.nome ? `, ${s.nome}` : ""}`), 900);
     setTimeout(() => {
       setChamada(null);
       chamando.current = false;
@@ -116,7 +148,7 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
     let vivo = true;
     async function buscar() {
       try {
-        const r = await fetch(`/api/painel-de-senhas?loja=${encodeURIComponent(lojaId)}&codigo=${codigo}`, { cache: "no-store" });
+        const r = await fetch(`/api/painel-de-senhas?loja=${encodeURIComponent(lojaId)}&codigo=${codigo}${motoboy ? "&tela=motoboy" : ""}`, { cache: "no-store" });
         if (r.status === 410 || r.status === 400) {
           if (!previa) {
             try { localStorage.removeItem(CHAVE_DO_CODIGO); } catch {}
@@ -130,7 +162,7 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
         ultimoOk.current = Date.now();
         setSemConexao(false);
         configRef.current = d.config;
-        if (!previa) { try { localStorage.setItem(CHAVE_DO_CODIGO, codigo); } catch {} }
+        if (!previa) { try { localStorage.setItem(CHAVE_DO_CODIGO, codigo); localStorage.setItem(CHAVE_DA_TELA, tela); } catch {} }
 
         // Número que ENTROU em Pronto agora é chamado. Na primeira resposta
         // nada é chamado: a TV que liga às 20h não grita 9 senhas de uma vez.
@@ -157,7 +189,7 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
     buscar();
     const t = setInterval(buscar, INTERVALO_MS);
     return () => { vivo = false; clearInterval(t); };
-  }, [lojaId, codigo, previa, router, proximaChamada]);
+  }, [lojaId, codigo, previa, motoboy, tela, router, proximaChamada]);
 
   // ── Relógio ─────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -213,9 +245,9 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
   const corTexto = textoSobre(cor);
   const vazio = dados.preparando.length === 0 && dados.prontos.length === 0;
   const exemplo = previa && vazio;
-  const preparando = exemplo ? EXEMPLO_PREPARANDO : dados.preparando;
-  const prontos = exemplo ? EXEMPLO_PRONTOS : dados.prontos;
-  const prepVisiveis = preparando.slice(0, MAX_PREPARANDO);
+  const preparando = exemplo ? (motoboy ? EXEMPLO_MOTOBOY_PREPARANDO : EXEMPLO_PREPARANDO) : dados.preparando;
+  const prontos = exemplo ? (motoboy ? EXEMPLO_MOTOBOY_PRONTOS : EXEMPLO_PRONTOS) : dados.prontos;
+  const prepVisiveis = preparando.slice(0, motoboy ? MAX_PREPARANDO_MOTOBOY : MAX_PREPARANDO);
   const sobra = preparando.length - prepVisiveis.length;
   const prontosVisiveis = prontos.slice(0, MAX_PRONTOS);
   const mostrarNome = dados.config.mostrarNome || exemplo;
@@ -242,7 +274,7 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
           <div style={{ minWidth: 0 }}>
             <div style={S.nomeDaLoja}>{nomeDaLoja}</div>
             <div style={{ fontSize: "calc(var(--u) * 2.2)", color: "rgba(255,255,255,0.55)", fontWeight: 600, letterSpacing: "calc(var(--u) * 0.3)", textTransform: "uppercase" }}>
-              Acompanhe sua senha
+              {motoboy ? "Entregadores de aplicativo" : "Acompanhe sua senha"}
             </div>
           </div>
         </div>
@@ -261,12 +293,15 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
             Preparando
           </h2>
           {prepVisiveis.length === 0 ? (
-            <p style={S.vazio}>Sua senha aparece aqui assim que o pedido for feito.</p>
+            <p style={S.vazio}>{motoboy ? "Os pedidos do iFood, 99 e outros apps aparecem aqui pelo código do app." : "Sua senha aparece aqui assim que o pedido for feito."}</p>
           ) : (
             <div style={S.gradePreparando}>
               {prepVisiveis.map((s) => (
                 <div key={s.id} className="fh-entra" style={S.senhaPreparando}>
-                  <span style={S.numeroPreparando}>{s.numero}</span>
+                  {s.codigo && <Selo s={s} tamanho={1.8} />}
+                  {s.codigo
+                    ? <span style={{ ...S.numeroPreparando, fontSize: `calc(var(--u) * ${tamanhoDoCodigo(s.codigo, 6, 16)})` }}>{s.codigo}</span>
+                    : <span style={S.numeroPreparando}>{s.numero}</span>}
                   {/* Sem nome, a linha fica vazia: os números da grade não desalinham. */}
                   {mostrarNome && <span style={S.nomePreparando}>{s.nome || " "}</span>}
                 </div>
@@ -279,7 +314,7 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
         <section style={{ ...S.colunaPronto, background: `linear-gradient(160deg, ${cor}26 0%, ${cor}0D 60%)`, borderColor: `${cor}55` }}>
           <h2 style={{ ...S.tituloColuna, color: cor }}>
             <span style={{ ...S.check, background: cor, color: corTexto }}>✓</span>
-            Pronto · retire seu pedido
+            {motoboy ? "Pronto · pode retirar" : "Pronto · retire seu pedido"}
           </h2>
           {prontosVisiveis.length === 0 ? (
             <p style={S.vazio}>Nenhum pedido esperando retirada.</p>
@@ -299,7 +334,10 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
                       ["--fh-cor" as any]: cor,
                     }}
                   >
-                    <span style={S.numeroPronto}>{s.numero}</span>
+                    {s.codigo && <Selo s={s} tamanho={2.6} />}
+                    {s.codigo
+                      ? <span style={{ ...S.numeroPronto, fontSize: `calc(var(--u) * ${tamanhoDoCodigo(s.codigo, 9.5, 27)})` }}>{s.codigo}</span>
+                      : <span style={S.numeroPronto}>{s.numero}</span>}
                     {mostrarNome && <span style={{ ...S.nomePronto, color: destaque ? corTexto : "rgba(255,255,255,0.75)" }}>{s.nome || " "}</span>}
                   </div>
                 );
@@ -335,10 +373,12 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa }: { lojaId: s
       {/* ── A chamada ── */}
       {chamada && (
         <div className="fh-chamada" style={{ ...S.chamada, position: previa ? "absolute" : "fixed", background: cor, color: corTexto }}>
-          <div style={{ fontSize: "calc(var(--u) * 6)", fontWeight: 800, letterSpacing: "calc(var(--u) * 1.2)", textTransform: "uppercase", opacity: 0.85 }}>Senha</div>
-          <div className="fh-numero-chamada" style={{ fontSize: "calc(var(--u) * 34)", fontWeight: 900, lineHeight: 0.95, fontVariantNumeric: "tabular-nums" }}>{chamada.numero}</div>
+          {chamada.codigo
+            ? <Selo s={chamada} tamanho={6} />
+            : <div style={{ fontSize: "calc(var(--u) * 6)", fontWeight: 800, letterSpacing: "calc(var(--u) * 1.2)", textTransform: "uppercase", opacity: 0.85 }}>Senha</div>}
+          <div className="fh-numero-chamada" style={{ fontSize: `calc(var(--u) * ${chamada.codigo ? tamanhoDoCodigo(chamada.codigo, 34, 150) : 34})`, fontWeight: 900, lineHeight: 0.95, fontVariantNumeric: "tabular-nums" }}>{chamada.codigo || chamada.numero}</div>
           {dados.config.mostrarNome && chamada.nome && <div style={{ fontSize: "calc(var(--u) * 8)", fontWeight: 800 }}>{chamada.nome}</div>}
-          <div style={{ fontSize: "calc(var(--u) * 4.5)", fontWeight: 700, marginTop: "calc(var(--u) * 2)", opacity: 0.9 }}>Seu pedido está pronto!</div>
+          <div style={{ fontSize: "calc(var(--u) * 4.5)", fontWeight: 700, marginTop: "calc(var(--u) * 2)", opacity: 0.9 }}>{chamada.codigo ? "Pedido pronto para retirar" : "Seu pedido está pronto!"}</div>
           <div style={{ position: "absolute", top: "calc(var(--u) * 4)", left: "calc(var(--u) * 4)", display: "flex", alignItems: "center", gap: "calc(var(--u) * 1.6)", opacity: 0.9 }}>
             {dados.loja.logo && <img src={dados.loja.logo} alt="" style={{ width: "calc(var(--u) * 8)", height: "calc(var(--u) * 8)", borderRadius: "calc(var(--u) * 2)", objectFit: "cover", background: "#fff" }} />}
             <span style={{ fontSize: "calc(var(--u) * 3.4)", fontWeight: 800 }}>{nomeDaLoja}</span>

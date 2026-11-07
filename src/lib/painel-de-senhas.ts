@@ -13,9 +13,17 @@
  *     duas colunas: Preparando e Pronto. Quando um número entra em Pronto,
  *     ele é chamado em tela cheia, com som.
  *
+ * Duas telas no mesmo código (pedido do Douglas pelo Ragnar, 07/11/2026): a
+ * dos CLIENTES DO BALCÃO, de sempre, e a dos MOTOBOYS DE APLICATIVO
+ * (/tv/<código>?tela=motoboy) — o entregador do iFood/99 não conhece o nosso
+ * número, só o da plataforma, e ficava perguntando na portinhola. As duas
+ * podem estar ligadas ao mesmo tempo, em TVs diferentes.
+ *
  * Arquivo puro (sem banco): a regra de "o que aparece onde" é a mesma na rota
  * e no teste (scripts/teste-painel-de-senhas.ts).
  */
+import { canalDoPedido, type ChaveDeCanal } from "./canal-do-pedido";
+import { infoDaEntrega } from "./entrega-parceira";
 
 /** O que a loja escolhe na tela de configuração. */
 export type ConfigDoPainel = {
@@ -45,6 +53,12 @@ export const CORES_DO_PAINEL = ["#22C55E", "#F59E0B", "#EF4444", "#3B82F6", "#A8
 
 /** Onde a TV guarda o último código: religou a TV, abriu /tv, volta sozinha ao painel. */
 export const CHAVE_DO_CODIGO = "firehub-tv-codigo";
+/** E a tela: a TV dos motoboys que religa volta para a dos motoboys. */
+export const CHAVE_DA_TELA = "firehub-tv-tela";
+
+/** Qual das duas telas a TV mostra (vem da URL, não da configuração). */
+export type TelaDoPainel = "balcao" | "motoboy";
+export const lerTela = (v: unknown): TelaDoPainel => (v === "motoboy" ? "motoboy" : "balcao");
 
 /** Sem 0/O, 1/I/L: o código é digitado no controle remoto da TV. */
 const ALFABETO_DO_CODIGO = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -125,9 +139,33 @@ export type PedidoDoPainel = {
   updatedAt: Date | string;
   createdAt: Date | string;
   scheduledDatetime?: Date | string | null;
+  // Daqui para baixo, só a tela dos motoboys usa.
+  source?: string | null;
+  openDeliveryChannel?: string | null;
+  openDeliveryOrderId?: string | null;
+  ifoodOrderId?: string | null;
+  ifoodReference?: string | null;
+  openDeliveryReference?: string | null;
+  ifoodPickupCode?: string | null;
+  openDeliveryPickupCode?: string | null;
+  deliveryBy?: string | null;
+  ifoodDriverName?: string | null;
+  ifoodDriverStatus?: string | null;
+  /** Número do iFood quando a loja chamou o entregador do iFood Sob Demanda para este pedido (lib/ifood-sob-demanda.ts). */
+  sobDemandaIfood?: string | null;
 };
 
-export type SenhaNaTela = { id: string; numero: number; nome: string; desde: string };
+export type SenhaNaTela = {
+  id: string;
+  numero: number;
+  nome: string;
+  desde: string;
+  /** Tela dos motoboys: o código que o entregador conhece e de qual app ele é. */
+  codigo?: string;
+  plataforma?: string;
+  corDaPlataforma?: string;
+  textoDaPlataforma?: string;
+};
 
 /** Status em que o pedido ainda está sendo feito (aceito ou esperando o aceite). */
 const PREPARANDO = new Set(["NOVO", "ACEITO", "PREPARANDO"]);
@@ -152,6 +190,53 @@ export function nomeNaTela(nome: string | null | undefined): string {
 
 const ms = (d: Date | string | null | undefined) => (d ? new Date(d).getTime() : NaN);
 
+/** Cor da marca no cartão escuro da TV: iFood vermelho, 99 amarelo. Os outros usam a cor do selo do painel. */
+const COR_NA_TV: Partial<Record<ChaveDeCanal, [string, string]>> = {
+  IFOOD: ["#EA1D2C", "#FFFFFF"],
+  "99FOOD": ["#FFDD00", "#0B0F17"],
+  KEETA: ["#FACC15", "#0B0F17"],
+};
+
+/** O entregador do iFood já pegou o pedido: sai da TV mesmo antes de a loja despachar. */
+const ENTREGADOR_JA_LEVOU = new Set(["COLLECTED", "DISPATCHED", "ARRIVED_AT_DESTINATION", "DELIVERED"]);
+
+/**
+ * Se quem vem buscar este pedido é entregador de plataforma, o que vai no
+ * cartão; senão null (entrega própria, retirada, balcão, mesa).
+ *
+ * Quem decide é `infoDaEntrega` (lib/entrega-parceira.ts), a mesma regra do
+ * quadro e da comanda — mais o vínculo do iFood Sob Demanda, que não marca
+ * nada no pedido da loja.
+ *
+ * O código é o que o entregador daquele canal fala no balcão:
+ *   - iFood: o número de exibição (o "N. no iFood: 3704" da comanda);
+ *   - 99Food: o "Código de verificação" do painel do 99 (handover_code, gravado
+ *     em `openDeliveryPickupCode`) — é ele que o motoboy do 99 fala (Delícia de
+ *     Casa, 22/10/2026); sem ele, o número do pedido no 99;
+ *   - os outros apps (Keeta, Jotajá…): o número de exibição; sem ele, o código de coleta;
+ *   - pedido da loja com entregador chamado no iFood: o número do iFood Sob
+ *     Demanda; sem ele, o código de coleta; sem nada, o nosso número.
+ */
+export function entregadorDePlataforma(
+  p: PedidoDoPainel,
+): { codigo: string; plataforma: string; corDaPlataforma: string; textoDaPlataforma: string } | null {
+  if (grupoDoPedido(p.deliveryType) !== "delivery") return null;
+  const sobDemanda = String(p.sobDemandaIfood || "").trim();
+  const info = infoDaEntrega(p);
+  if (!sobDemanda && !info.parceira) return null;
+
+  const canal = canalDoPedido(p);
+  const chave: ChaveDeCanal = sobDemanda || info.parceiro === "IFOOD" ? "IFOOD" : info.parceiro === "99FOOD" ? "99FOOD" : canal.chave;
+  const coleta = String(info.codigoDeColeta || "").trim();
+  let codigo = sobDemanda || (chave === "99FOOD" ? coleta || canal.referencia || "" : canal.referencia || coleta);
+  if (!codigo && p.dailyOrderNumber != null) codigo = String(p.dailyOrderNumber);
+  if (!codigo) return null;
+
+  const nome = chave === "IFOOD" ? "iFood" : chave === "99FOOD" ? "99Food" : canal.ehMarketplace ? canal.nome : info.parceiro || canal.nome;
+  const [corDaPlataforma, textoDaPlataforma] = COR_NA_TV[chave] || [canal.fundo, canal.texto];
+  return { codigo: codigo.toUpperCase(), plataforma: nome, corDaPlataforma, textoDaPlataforma };
+}
+
 /**
  * Divide os pedidos entre Preparando e Pronto.
  *
@@ -163,6 +248,7 @@ export function separarSenhas(
   pedidos: PedidoDoPainel[],
   config: Pick<ConfigDoPainel, "balcao" | "mesa" | "delivery" | "mostrarNome" | "prontoFicaMin">,
   agora: number = Date.now(),
+  tela: TelaDoPainel = "balcao",
 ): { preparando: SenhaNaTela[]; prontos: SenhaNaTela[] } {
   const preparando: (SenhaNaTela & { t: number })[] = [];
   const prontos: (SenhaNaTela & { t: number })[] = [];
@@ -171,7 +257,13 @@ export function separarSenhas(
   for (const p of pedidos) {
     if (p.dailyOrderNumber == null) continue;
     const grupo = grupoDoPedido(p.deliveryType);
-    if (!config[grupo]) continue;
+    // A tela dos motoboys não segue as caixinhas Balcão/Mesa/Delivery: mostra
+    // o pedido que um entregador de plataforma vem buscar, e só ele.
+    const entregador = tela === "motoboy" ? entregadorDePlataforma(p) : null;
+    if (tela === "motoboy") {
+      if (!entregador) continue;
+      if (ENTREGADOR_JA_LEVOU.has(String(p.ifoodDriverStatus || "").toUpperCase())) continue;
+    } else if (!config[grupo]) continue;
     // Encomenda para mais tarde ainda não é senha de ninguém.
     if (p.scheduledDatetime && ms(p.scheduledDatetime) > agora + 30 * 60_000) continue;
 
@@ -186,6 +278,7 @@ export function separarSenhas(
       id: p.id,
       numero: p.dailyOrderNumber,
       nome: config.mostrarNome ? nomeNaTela(p.customerName) : "",
+      ...entregador,
     };
 
     if (pronto) {

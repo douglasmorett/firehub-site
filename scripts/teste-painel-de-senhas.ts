@@ -6,7 +6,7 @@
  */
 import { senhaDaPosicao } from "../src/lib/senha-aleatoria";
 import {
-  lerConfigDoPainel, separarSenhas, nomeNaTela, normalizarCodigo, novoCodigo, type PedidoDoPainel,
+  lerConfigDoPainel, separarSenhas, nomeNaTela, normalizarCodigo, novoCodigo, lerTela, entregadorDePlataforma, type PedidoDoPainel,
 } from "../src/lib/painel-de-senhas";
 
 let falhas = 0;
@@ -80,6 +80,44 @@ const deliveryPronto = separarSenhas([pedido("k", 300, "SAIU_ENTREGA", { deliver
 confere("delivery que já saiu não fica em Pronto", deliveryPronto.prontos.length + deliveryPronto.preparando.length, 0);
 const semNome = separarSenhas(pedidos, { ...cfg, mostrarNome: false }, agora);
 confere("sem nome quando desligado", semNome.preparando[0].nome, "");
+
+// ── Tela dos motoboys de aplicativo (?tela=motoboy) ─────────────────────────
+// Pedidos como estão no banco da Ragnar Burger (07/11/2026, só leitura).
+confere("tela: só 'motoboy' liga a dos motoboys", [lerTela("motoboy"), lerTela(null), lerTela("x")], ["motoboy", "balcao", "balcao"]);
+const app = (id: string, n: number, status: string, extra: Partial<PedidoDoPainel>): PedidoDoPainel =>
+  pedido(id, n, status, { deliveryType: "DELIVERY", customerName: "Fulano", ...extra });
+const ifood = (id: string, n: number, ref: string, status: string, extra: Partial<PedidoDoPainel> = {}) =>
+  app(id, n, status, { source: "IFOOD", ifoodOrderId: `if-${id}`, ifoodReference: ref, deliveryBy: "IFOOD", ...extra });
+const doMotoboy: PedidoDoPainel[] = [
+  ifood("m1", 52, "2922", "ACEITO", { createdAt: min(4) }),
+  ifood("m2", 41, "3517", "PREPARANDO", { kdsStage: "FINISHED", readyAt: min(2), ifoodDriverStatus: "ARRIVED_AT_ORIGIN" }),
+  ifood("m3", 34, "2312", "PRONTO", { readyAt: min(1), ifoodDriverStatus: "COLLECTED" }),            // motoboy já pegou
+  app("m4", 54, "ACEITO", { source: "99FOOD", openDeliveryChannel: "99FOOD", openDeliveryReference: "569048", openDeliveryPickupCode: "9380", deliveryBy: "99FOOD", createdAt: min(6) }),
+  app("m5", 49, "PREPARANDO", { source: "99FOOD", openDeliveryChannel: "99FOOD", openDeliveryReference: "569046", openDeliveryPickupCode: "7580", deliveryBy: "99FOOD", kdsStage: "FINISHED", readyAt: min(3) }),
+  app("m6", 60, "ACEITO", { source: "KEETA", openDeliveryChannel: "KEETA", openDeliveryOrderId: "k1", openDeliveryReference: "1187", deliveryBy: "LOGISTICS" }),
+  ifood("m7", 61, "4421", "ACEITO", { deliveryBy: "MERCHANT" }),                                       // iFood com entrega da loja
+  app("m8", 62, "ACEITO", { source: "ONLINE" }),                                                        // site, motoboy da loja
+  app("m9", 63, "PRONTO", { source: "ONLINE", deliveryBy: "IFOOD", ifoodDriverStatus: "REQUESTED", readyAt: min(1) }), // site com entregador do iFood chamado
+  app("m10", 64, "ACEITO", { source: "ONLINE", sobDemandaIfood: "8814" }),                              // site com iFood Sob Demanda
+  ifood("m11", 65, "0059", "PRONTO", { deliveryType: "RETIRADA", deliveryBy: "MERCHANT", readyAt: min(1) }), // cliente do iFood retira
+  pedido("m12", 66, "ACEITO"),                                                                          // balcão
+  app("m13", 67, "SAIU_ENTREGA", { source: "99FOOD", openDeliveryReference: "569040", openDeliveryPickupCode: "1610", deliveryBy: "99FOOD", readyAt: min(1) }),
+];
+const mot = separarSenhas(doMotoboy, cfg, agora, "motoboy");
+const cod = (l: { codigo?: string }[]) => l.map((s) => s.codigo);
+confere("motoboy · Preparando: iFood, 99 e Keeta pelo código do app, e o Sob Demanda", cod(mot.preparando).sort(), ["1187", "2922", "8814", "9380"].sort());
+confere("motoboy · Pronto: KDS finalizado / PRONTO; o que o motoboy do iFood já coletou saiu", cod(mot.prontos), ["63", "3517", "7580"]);
+confere("motoboy · iFood mostra o número do iFood com o nome e o vermelho", (({ codigo, plataforma, corDaPlataforma }) => [codigo, plataforma, corDaPlataforma])(mot.preparando.find((s) => s.id === "m1")!), ["2922", "iFood", "#EA1D2C"]);
+confere("motoboy · 99 mostra o código de verificação, em amarelo", (({ codigo, plataforma, corDaPlataforma }) => [codigo, plataforma, corDaPlataforma])(mot.preparando.find((s) => s.id === "m4")!), ["9380", "99Food", "#FFDD00"]);
+confere("motoboy · Keeta pelo número de exibição", mot.preparando.find((s) => s.id === "m6")?.plataforma, "Keeta");
+confere("motoboy · site com entregador do iFood chamado entra (sem código do iFood, vai o nosso)", mot.prontos.find((s) => s.id === "m9")?.plataforma, "iFood");
+const fora = ["m7", "m8", "m11", "m12", "m13", "m3"];
+confere("motoboy · entrega própria, retirada, balcão, saiu para entrega e coletado ficam de fora", [...mot.preparando, ...mot.prontos].filter((s) => fora.includes(s.id)).length, 0);
+confere("motoboy · 99 sem código de verificação cai no número do pedido no 99", entregadorDePlataforma(app("x", 1, "ACEITO", { source: "99FOOD", openDeliveryReference: "569048", deliveryBy: "99FOOD" }))?.codigo, "569048");
+confere("motoboy · aparece mesmo com a caixinha Delivery desligada", cfg.delivery, false);
+// O balcão não muda: os mesmos pedidos na tela de sempre.
+confere("balcão inalterado com os campos novos no pedido", separarSenhas([...pedidos, ...doMotoboy], cfg, agora).preparando.map((s) => s.numero), [66, 812, 347]); // o 66 é o balcão da lista dos motoboys
+confere("balcão não ganha código de app", separarSenhas([...pedidos, ...doMotoboy], { ...cfg, delivery: true }, agora).preparando.some((s) => s.codigo), false);
 
 console.log(falhas ? `\n❌ ${falhas} falha(s)` : "\n✅ tudo certo");
 process.exit(falhas ? 1 : 0);
