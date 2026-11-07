@@ -380,6 +380,8 @@ export default function MesasCelular({
   const [abrindo, setAbrindo] = useState<Mesa | null>(null);
   const [nomeCliente, setNomeCliente] = useState("");
   const [obsMesa, setObsMesa] = useState("");
+  // "Quantas pessoas?" — opcional, vazio por padrão (lib/pessoas-da-mesa.ts).
+  const [pessoasMesa, setPessoasMesa] = useState("");
   const [garcomEscolhido, setGarcomEscolhido] = useState(garcom?.id || "");
   const [ocupado, setOcupado] = useState(false);
 
@@ -583,6 +585,7 @@ export default function MesasCelular({
       setAbrindo(m);
       setNomeCliente("");
       setObsMesa("");
+      setPessoasMesa("");
       setGarcomEscolhido(garcom?.id || "");
       return;
     }
@@ -609,6 +612,7 @@ export default function MesasCelular({
           tableId: abrindo.id,
           customerName: nomeCliente,
           notes: obsMesa,
+          pessoas: pessoasMesa,
           waiterId: garcomId,
           waiterName: nomeDoGarcom,
         }),
@@ -1437,11 +1441,14 @@ export default function MesasCelular({
         {abrindo && (
           <>
             <h3>Abrir mesa {abrindo.number}</h3>
-            <p style={{ margin: 0, color: "#64748B", fontSize: 14 }}>Os dois campos são opcionais.</p>
+            <p style={{ margin: 0, color: "#64748B", fontSize: 14 }}>Todos os campos são opcionais.</p>
             <label className="mc-rotulo" htmlFor="mc-cliente">Nome do cliente</label>
             <input id="mc-cliente" className="mc-campo" value={nomeCliente} onChange={(e) => setNomeCliente(e.target.value)} placeholder="Ex.: Juliana" autoComplete="off" />
             <label className="mc-rotulo" htmlFor="mc-obs">Observação da mesa</label>
             <input id="mc-obs" className="mc-campo" value={obsMesa} onChange={(e) => setObsMesa(e.target.value)} placeholder="Ex.: aniversário, sem glúten" autoComplete="off" />
+            {/* O ticket por pessoa do Giro de mesas e do Ticket médio. */}
+            <label className="mc-rotulo" htmlFor="mc-pessoas">Quantas pessoas?</label>
+            <input id="mc-pessoas" className="mc-campo" value={pessoasMesa} onChange={(e) => setPessoasMesa(e.target.value.replace(/\D/g, "").slice(0, 2))} inputMode="numeric" placeholder="Ex.: 4" autoComplete="off" />
             {!ehGarcom && garcons.length > 0 && (
               <>
                 <label className="mc-rotulo" htmlFor="mc-garcom">Garçom</label>

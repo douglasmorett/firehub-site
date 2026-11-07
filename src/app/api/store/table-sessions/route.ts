@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { resolverOperadorDaMesa } from "@/lib/garcom-auth";
 import { recusaSeCaixaFechado } from "@/lib/caixa-aberto-servidor";
+import { sanearPessoas } from "@/lib/pessoas-da-mesa";
 
 export async function GET(req: NextRequest) {
   try {
@@ -94,6 +95,11 @@ export async function POST(req: NextRequest) {
     // 24/09/2026). Teto de 200: é recado de mesa, não um campo de texto livre
     // que alguém cola a conversa inteira.
     const observacao = String(notes ?? "").trim().slice(0, 200) || null;
+    // "Quantas pessoas?" — opcional (lib/pessoas-da-mesa.ts): o divisor do
+    // ticket por pessoa do Giro de mesas e do Ticket médio. Vazio fica nulo.
+    // Coluna garantida no boot (src/lib/garantir-colunas.ts).
+    const pessoas = sanearPessoas(data.pessoas);
+    const comPessoas: { pessoas?: number } = pessoas !== null ? { pessoas } : {};
 
     if (!tableId) return NextResponse.json({ error: "Table ID is required" }, { status: 400 });
 
@@ -141,6 +147,7 @@ export async function POST(req: NextRequest) {
           franchiseeId: targetFranchiseeId,
           customerName: customerName || null,
           notes: observacao,
+          ...comPessoas,
           // waiterId informado mas não é desta loja: nem o nome entra, senão o
           // card da mesa mostraria um garçom que não existe aqui.
           waiterName: garcomDaMesa?.name || (waiterId ? null : waiterName || null),

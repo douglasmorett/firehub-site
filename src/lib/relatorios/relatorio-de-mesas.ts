@@ -146,6 +146,12 @@ export type LinhaDoGarcom = {
   gorjetas: number;
   desconto: number;
   mesasComDesconto: number;
+  /** A taxa que as mesas dele dariam com a % da loja (`taxaEsperada`). 0 sem a %. */
+  taxaEsperada: number;
+  /** taxaServico ÷ taxaEsperada, em %. null = sem a % da loja ou nada a esperar. */
+  pctAtingido: number | null;
+  /** Contas com consumo fechadas sem taxa de serviço — o cliente recusou os 10% (ou a loja tirou). */
+  contasSemTaxa: number;
 };
 
 export type MesasFechadas = {
@@ -156,14 +162,48 @@ export type MesasFechadas = {
   /** Desconto dado no fechamento das contas, à parte (NÃO sai do consumo). */
   descontoNoFechamento: number;
   mesasComDesconto: number;
+  /** A % de serviço da loja usada no esperado (User.taxaServicoPadrao); null = não informada. */
+  taxaPct: number | null;
+  taxaEsperada: number;
+  pctAtingido: number | null;
+  contasSemTaxa: number;
   porGarcom: LinhaDoGarcom[];
 };
 
+/**
+ * TAXA DE SERVIÇO ESPERADA × REALIZADA — o "Taxas de serviços" do SWFast
+ * (pedido do Alex, Hambúrgueria Avenida, 11/2026): quanto da taxa o cliente
+ * deixou de pagar.
+ *
+ * O esperado de cada conta é a % da loja sobre o consumo JÁ DESCONTADO — a
+ * mesma base do fechamento (lib/conta-da-mesa.ts: "a taxa de serviço incide
+ * sobre o consumo já descontado"): a conta que ganhou desconto e pagou os 10%
+ * do que sobrou cumpriu a taxa. Soma crua, arredondada no fim, como
+ * `servicoDasMesas`. O realizado é a taxa cobrada (`servicoDasMesas`).
+ *
+ * A % é a de HOJE na loja (User.taxaServicoPadrao): se a loja mudou de 10 para
+ * 12 no meio do período, as contas antigas aparecem "abaixo" — a % de cada
+ * conta não é gravada no fechamento.
+ */
+function taxaEsperada(mesas: MesaFechada[], taxaPct: number | null) {
+  let esperado = 0, semTaxa = 0;
+  for (const m of mesas) {
+    const consumo = consumoDaConta(m.pedidos);
+    if (consumo <= 0) continue;
+    if (!((Number(m.serviceFee) || 0) > 0)) semTaxa++;
+    if (taxaPct) esperado += (Math.max(0, consumo - descontoNoFechamento(m)) * taxaPct) / 100;
+  }
+  return { esperado: reais(Math.round(esperado * 100)), semTaxa };
+}
+
+const pctDe = (realizado: number, esperado: number) => (esperado > 0 ? Math.round((realizado / esperado) * 1000) / 10 : null);
+
 /** Consumo, serviço, gorjeta e desconto de um grupo de mesas — a mesma conta para a loja e para cada garçom. */
-function somaDasMesas(mesas: MesaFechada[]) {
+function somaDasMesas(mesas: MesaFechada[], taxaPct: number | null) {
   const servico = servicoDasMesas(mesas);
   const consumo = mesas.reduce((c, m) => c + cent(consumoDaConta(m.pedidos)), 0);
-  return { consumo: reais(consumo), ...servico };
+  const esperada = taxaEsperada(mesas, taxaPct);
+  return { consumo: reais(consumo), ...servico, taxaEsperada: esperada.esperado, pctAtingido: pctDe(servico.taxa, esperada.esperado), contasSemTaxa: esperada.semTaxa };
 }
 
 /**
@@ -171,8 +211,9 @@ function somaDasMesas(mesas: MesaFechada[]) {
  * Mesas e a tabela por garçom. Mesa sem garçom vinculado vai para uma linha
  * própria, nunca some (na Pastel da Paulista eram 157 de 552 mesas em 30 dias).
  */
-export function mesasFechadasDoRelatorio(sessoes: SessaoFechada[]): MesasFechadas {
-  const total = somaDasMesas(sessoes);
+export function mesasFechadasDoRelatorio(sessoes: SessaoFechada[], opts: { taxaPct?: number | null } = {}): MesasFechadas {
+  const taxaPct = opts.taxaPct ?? null;
+  const total = somaDasMesas(sessoes, taxaPct);
   const grupos = new Map<string, { waiterId: string | null; nome: string; mesas: SessaoFechada[] }>();
   for (const s of sessoes) {
     const chave = s.waiterId || "__sem__";
@@ -181,10 +222,11 @@ export function mesasFechadasDoRelatorio(sessoes: SessaoFechada[]): MesasFechada
     grupos.set(chave, g);
   }
   const porGarcom: LinhaDoGarcom[] = [...grupos.values()].map((g) => {
-    const t = somaDasMesas(g.mesas);
+    const t = somaDasMesas(g.mesas, taxaPct);
     return {
       waiterId: g.waiterId, nome: g.nome, mesas: g.mesas.length, consumo: t.consumo,
       taxaServico: t.taxa, gorjetas: t.gorjeta, desconto: t.descontoNaMesa, mesasComDesconto: t.mesasComDesconto,
+      taxaEsperada: t.taxaEsperada, pctAtingido: t.pctAtingido, contasSemTaxa: t.contasSemTaxa,
     };
   });
   // Quem mais arrecadou de taxa primeiro; na loja que não cobra taxa, quem mais vendeu.
@@ -196,6 +238,10 @@ export function mesasFechadasDoRelatorio(sessoes: SessaoFechada[]): MesasFechada
     gorjetas: total.gorjeta,
     descontoNoFechamento: total.descontoNaMesa,
     mesasComDesconto: total.mesasComDesconto,
+    taxaPct,
+    taxaEsperada: total.taxaEsperada,
+    pctAtingido: total.pctAtingido,
+    contasSemTaxa: total.contasSemTaxa,
     porGarcom,
   };
 }
