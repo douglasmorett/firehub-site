@@ -25,6 +25,8 @@ const INSTRUCOES = [
   `ALTER TABLE "StockItem" ADD COLUMN IF NOT EXISTS "local" TEXT`,
   `ALTER TABLE "StockItem" ADD COLUMN IF NOT EXISTS "contagemDiaria" BOOLEAN`,
   `ALTER TABLE "StockItem" ADD COLUMN IF NOT EXISTS "entraNoCmv" BOOLEAN`,
+  // Estoque ideal: a lista de compras compra até ele (lib/relatorios/sugestao-de-compras.ts, 07/11/2026).
+  `ALTER TABLE "StockItem" ADD COLUMN IF NOT EXISTS "idealQuantity" DOUBLE PRECISION`,
 
   // ── Movimento: o custo daquela hora e a compra de onde veio ───────────────
   `ALTER TABLE "StockTransaction" ADD COLUMN IF NOT EXISTS "unitCost" DOUBLE PRECISION`,
@@ -151,7 +153,7 @@ const INSTRUCOES = [
 
 /** As colunas em tabelas que JÁ existem: sem elas o estoque e as contas a pagar quebram. */
 const COLUNAS_ESPERADAS = [
-  "StockItem.tipo", "StockItem.rendimento", "StockItem.local", "StockItem.contagemDiaria", "StockItem.entraNoCmv",
+  "StockItem.tipo", "StockItem.rendimento", "StockItem.local", "StockItem.contagemDiaria", "StockItem.entraNoCmv", "StockItem.idealQuantity",
   "StockTransaction.unitCost", "StockTransaction.stockInvoiceId",
   "StockInvoice.dia", "StockInvoice.origem", "StockInvoice.valorNoEstoque", "StockInvoice.criadoPor", "StockInvoice.canceladaEm",
   "Payable.stockInvoiceId",

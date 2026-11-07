@@ -261,21 +261,29 @@ function acharOpcao(indice: IndiceDoCombo | null, e: EscolhaDoItem, cat: Catalog
 
 // ── O item ──────────────────────────────────────────────────────────────────
 
-export function custoDoItem(item: ItemParaCusto, cat: Catalogo, insumo: CustoDoInsumo): CustoDoItem {
-  const q = Number(item.quantidade) || 0;
-  const valor = r2((Number(item.preco) || 0) * q);
+/**
+ * O produto que diz o custo (e o consumo) do item: o do item, se tem ficha ou
+ * grupos; senão o do cardápio com o mesmo nome (o espelho do app; um produto
+ * renomeado). Uma função só para `custoDoItem` e `consumoDoItem` não
+ * divergirem.
+ */
+function produtoDoItem(item: ItemParaCusto, cat: Catalogo): { proprio: ProdutoParaCusto | null; produto: ProdutoParaCusto | null; nome: string } {
   const proprio = item.produtoId ? cat.porId.get(item.produtoId) ?? null : null;
   const nome = (item.nome || proprio?.nome || "Item sem nome").trim();
   const temEstrutura = (p: ProdutoParaCusto) => p.ficha.length > 0 || p.grupos.length > 0;
-
-  // O produto que diz o custo: o do item, se tem ficha ou grupos; senão o do
-  // cardápio com o mesmo nome (o espelho do app; um produto renomeado).
   let produto: ProdutoParaCusto | null = proprio && temEstrutura(proprio) ? proprio : null;
   if (!produto) {
     produto = cat.porNome.get(chave(nome)) ?? (proprio ? cat.porNome.get(chave(proprio.nome)) ?? null : null);
     if (produto && !temEstrutura(produto) && !temCusto(produto) && proprio) produto = proprio;
   }
   if (!produto && proprio && !ehEspelho(proprio)) produto = proprio;
+  return { proprio, produto, nome };
+}
+
+export function custoDoItem(item: ItemParaCusto, cat: Catalogo, insumo: CustoDoInsumo): CustoDoItem {
+  const q = Number(item.quantidade) || 0;
+  const valor = r2((Number(item.preco) || 0) * q);
+  const { proprio, produto, nome } = produtoDoItem(item, cat);
 
   const escolhas = lerEscolhas(item.escolhas);
   const faltas: FaltaDoItem[] = [];
@@ -328,4 +336,60 @@ export function custoDoItem(item: ItemParaCusto, cat: Catalogo, insumo: CustoDoI
     return { nome, valor, custo: null, fonte: null, faltas: [...unicas.values()] };
   }
   return { nome, valor, custo: r2(custoUnitario * q), fonte: usouFicha ? "FICHA" : usouCadastro ? "CADASTRO" : "FICHA", faltas: [] };
+}
+
+// ── O consumo do item ───────────────────────────────────────────────────────
+
+export type ConsumoDoItem = {
+  /** insumoId → quanto sai do estoque pelo item inteiro (já × quantidade), na unidade do insumo. */
+  insumos: Map<string, number>;
+  /** Nenhuma ficha achada (produto e opções): o item não gasta insumo nenhum na conta. */
+  semFicha: boolean;
+  /** Alguma opção escolhida ficou sem ficha: o consumo do item está incompleto. */
+  incompleto: boolean;
+  nome: string;
+};
+
+/**
+ * Quanto de cada insumo o item gasta pela ficha técnica de HOJE — a mesma
+ * resolução do `custoDoItem` (produto, espelho pelo nome, opções do combo ×
+ * quantidade da opção). É a base da lista de compras e da previsão de
+ * insumos: prever a semana que vem se faz com a receita de hoje, e a loja que
+ * acabou de cadastrar a ficha (Hambúrgueria Avenida, 06/11/2026) já tem
+ * consumo pelas vendas passadas, sem esperar as baixas acumularem.
+ *
+ * O custo digitado no produto (`MenuProduct.cost`) não é insumo: o item só
+ * com ele conta como sem ficha aqui.
+ */
+export function consumoDoItem(item: ItemParaCusto, cat: Catalogo): ConsumoDoItem {
+  const q = Number(item.quantidade) || 0;
+  const { produto, nome } = produtoDoItem(item, cat);
+  const insumos = new Map<string, number>();
+  let usouFicha = false;
+  let incompleto = false;
+  const somar = (p: ProdutoParaCusto, vezes: number) => {
+    usouFicha = true;
+    for (const l of p.ficha) {
+      const qtd = Number(l.quantidade) * vezes * q;
+      if (qtd > 0 && Number.isFinite(qtd)) insumos.set(l.insumoId, (insumos.get(l.insumoId) || 0) + qtd);
+    }
+  };
+  if (!(q > 0) || !produto) return { insumos, semFicha: true, incompleto: false, nome };
+
+  const escolhas = lerEscolhas(item.escolhas);
+  const ehCombo = produto.combo || produto.grupos.length > 0;
+  if (produto.ficha.length) somar(produto, 1);
+  else if (!(ehCombo && escolhas.length > 0)) return { insumos, semFicha: true, incompleto: false, nome };
+
+  if (escolhas.length) {
+    const indice = produto.grupos.length ? indexarCombo(produto, cat) : null;
+    for (const e of escolhas) {
+      const o = acharOpcao(indice, e, cat);
+      if (o && o.ficha.length) { somar(o, e.qtd); continue; }
+      // Modificador ("Sem cebola") num produto com ficha própria não muda nada.
+      if (!o && !ehCombo && produto.ficha.length && !((e.preco ?? 0) > 0)) continue;
+      incompleto = true;
+    }
+  }
+  return { insumos, semFicha: !usouFicha, incompleto, nome };
 }

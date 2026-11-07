@@ -15,6 +15,7 @@ import EditarInsumo, { type InsumoEditavel } from "@/components/cmv/EditarInsumo
 import PagamentoDaCompra, { pagamentoInicial, pagamentoParaApi, type EstadoDoPagamento } from "@/components/cmv/PagamentoDaCompra";
 import DesperdicioDoEstoque from "@/components/estoque/DesperdicioDoEstoque";
 import PausaPeloEstoque from "@/components/estoque/PausaPeloEstoque";
+import { MOTIVOS_DE_SAIDA } from "@/lib/relatorios/saidas-de-estoque";
 
 /** Hoje no dia operacional (vira às 5h), no relógio de quem está lançando. */
 function hojeOperacional(): string {
@@ -38,6 +39,8 @@ interface StockItem {
   quantity: number;
   unit: string;
   minQuantity: number | null;
+  /** Estoque ideal (Lista de compras); vem da rota por SQL (lib/cmv/ideal-no-banco.ts). */
+  idealQuantity?: number | null;
   unitCost: number | null;
   supplier: string | null;
   /** CMV real (lib/cmv): preparo, local, contagem do dia, fora do CMV. */
@@ -283,6 +286,9 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
   const totalItemsCount = items.length;
   const negativeStockItems = items.filter(i => i.quantity < 0);
   const lowStockItems = items.filter(i => i.minQuantity !== null && i.quantity <= i.minQuantity && i.quantity >= 0);
+  // Valor do estoque: saldo × custo do cadastro, a mesma conta da coluna "Valor em Estoque".
+  const valorDoEstoque = items.reduce((s, i) => s + (i.quantity > 0 && (i.unitCost || 0) > 0 ? i.quantity * (i.unitCost as number) : 0), 0);
+  const insumosSemCusto = items.filter(i => i.quantity > 0 && !((i.unitCost || 0) > 0)).length;
   
   const validProducts = products.filter(p => !isHiddenIntegrationItem(p));
   const productsWithRecipe = validProducts.filter(p => p.recipeItems.length > 0);
@@ -656,6 +662,10 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
           <Link href="/store/estoque/compras" className="fh-btn fh-btn--secundario" style={{ textDecoration: "none" }}>
             <FileText size={18} /> Compras
           </Link>
+          {/* O que comprar, de quem e quanto, com o pedido pronto para o WhatsApp. */}
+          <Link href="/store/relatorios/sugestao-de-compras" className="fh-btn fh-btn--secundario" style={{ textDecoration: "none" }}>
+            <ClipboardList size={18} /> Lista de compras
+          </Link>
           <button className="fh-btn fh-btn--secundario" onClick={() => setMostrarScanner(true)}>
             <ScanLine size={18} /> Escanear etiqueta
           </button>
@@ -740,6 +750,13 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
             <div className="kpi-info">
               <span className="kpi-label">Fichas Técnicas</span>
               <span className="kpi-value">{recipeCoveragePct}% <span className="kpi-subtext">({productsWithRecipe.length}/{validProducts.length})</span></span>
+            </div>
+          </div>
+          <div className="kpi-card" title={insumosSemCusto ? `${insumosSemCusto} insumo(s) com saldo e sem custo ficam fora do valor` : "Saldo × custo de cada insumo"}>
+            <div className="kpi-icon-wrapper blue"><Database size={20} /></div>
+            <div className="kpi-info">
+              <span className="kpi-label">Valor do estoque</span>
+              <span className="kpi-value">{formatCurrency(valorDoEstoque)}{insumosSemCusto > 0 && <span className="kpi-subtext"> ({insumosSemCusto} sem custo)</span>}</span>
             </div>
           </div>
         </div>
@@ -1022,7 +1039,10 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                               {item.entraNoCmv === false && <span className="badge" style={{ marginLeft: 6 }}>Fora do CMV</span>}
                             </td>
                             <td className="qty-col">{formatQuantity(item.quantity, item.unit)}</td>
-                            <td>{item.minQuantity !== null ? formatQuantity(item.minQuantity, item.unit) : "—"}</td>
+                            <td>
+                              {item.minQuantity !== null ? formatQuantity(item.minQuantity, item.unit) : "—"}
+                              {item.idealQuantity != null && <div style={{ fontSize: "0.75rem", color: "#57534E" }}>ideal {formatQuantity(item.idealQuantity, item.unit)}</div>}
+                            </td>
                             <td>{unitCost > 0 ? formatCurrency(unitCost) : "—"}</td>
                             <td>{stockValue > 0 ? formatCurrency(stockValue) : "—"}</td>
                             <td>
@@ -1544,6 +1564,19 @@ export default function EstoqueClient({ userName, storeName, fluxo = { criadas: 
                   value={moveNotes}
                   onChange={e => setMoveNotes(e.target.value)}
                 />
+                {/* O motivo em um toque: o rótulo vai no começo da observação e o
+                    relatório Saídas de estoque agrupa por ele (lib/relatorios/saidas-de-estoque.ts). */}
+                {(moveType === "OUTPUT" || moveType === "WASTE") && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>
+                    {MOTIVOS_DE_SAIDA.filter((m) => m.chave !== "cancelado" && m.chave !== "outro").map((m) => (
+                      <button key={m.chave} type="button"
+                        onClick={() => setMoveNotes((n) => { const antes = MOTIVOS_DE_SAIDA.find((x) => n.startsWith(x.rotulo)); const resto = (antes ? n.slice(antes.rotulo.length).replace(/^ — /, "") : n).trim(); return resto ? `${m.rotulo} — ${resto}` : m.rotulo; })}
+                        style={{ padding: "4px 10px", borderRadius: 999, border: "1px solid #E7DDD3", background: moveNotes.startsWith(m.rotulo) ? "#FFF4EF" : "#fff", color: "#44403C", fontSize: "0.78rem", fontWeight: 700, cursor: "pointer" }}>
+                        {m.rotulo}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <button type="submit" className="btn-submit">

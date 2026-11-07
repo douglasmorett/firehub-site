@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { lerNumeroBr } from "@/lib/cmv/numero";
 import { conferirPausaPeloEstoque } from "@/lib/pausa-pelo-estoque-no-banco";
+import { gravarIdeal, idealDosInsumos, lerIdeal } from "@/lib/cmv/ideal-no-banco";
 
 // O STAFF é um User com ownerId apontando para o dono da loja. Usando só o user.id,
 // o funcionário caía num estoque paralelo vazio em vez do estoque da loja onde trabalha.
@@ -67,8 +68,10 @@ export async function GET(req: Request) {
       // A receita do preparo (massa, recheio): o custo dele sai daqui.
       include: { componentes: { select: { insumoId: true, quantidade: true } } },
     });
+    // O estoque ideal (lista de compras) vem por SQL: lib/cmv/ideal-no-banco.ts.
+    const ideais = await idealDosInsumos(items.map((i) => i.id));
 
-    return NextResponse.json({ success: true, items });
+    return NextResponse.json({ success: true, items: items.map((i) => ({ ...i, idealQuantity: ideais.get(i.id) ?? null })) });
   } catch (error: any) {
     console.error("[Stock Items GET] Erro:", error);
     return NextResponse.json({ error: error.message || "Erro interno" }, { status: 500 });
@@ -146,6 +149,8 @@ export async function PUT(req: Request) {
     if ("erro" in extras) return NextResponse.json({ error: extras.erro }, { status: 400 });
 
     if (!id) return NextResponse.json({ error: "ID é obrigatório" }, { status: 400 });
+    const ideal = body.idealQuantity !== undefined ? lerIdeal(body.idealQuantity) : null;
+    if (ideal && "erro" in ideal) return NextResponse.json({ error: ideal.erro }, { status: 400 });
 
     const existing = await prisma.stockItem.findUnique({ where: { id } });
     if (!existing || existing.franchiseeId !== franchiseeId) {
@@ -189,6 +194,7 @@ export async function PUT(req: Request) {
       }
       return item;
     });
+    if (ideal) await gravarIdeal([franchiseeId], id, ideal.ideal);
 
     return NextResponse.json({ success: true, item: updated });
   } catch (error: any) {
