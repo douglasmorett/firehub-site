@@ -73,6 +73,12 @@ const TELAS: Array<{ prefixo: string; abre: Array<Permissao> | typeof LIVRE }> =
   { prefixo: "/store/funcionarios", abre: ["financeiro"] },
   { prefixo: "/store/notas-compras", abre: ["financeiro"] },
   { prefixo: "/store/relatorios", abre: ["relatorios", "financeiro"] },
+  // Os relatórios do dinheiro da loja (saldo, contas, diferença de caixa por
+  // pessoa): só com "Financeiro" — "Relatórios" sozinho é o de vendas.
+  { prefixo: "/store/relatorios/fluxo-de-caixa", abre: ["financeiro"] },
+  { prefixo: "/store/relatorios/contas-a-receber", abre: ["financeiro"] },
+  { prefixo: "/store/relatorios/diferencas-de-caixa", abre: ["financeiro"] },
+  { prefixo: "/store/relatorios/sangrias-e-suprimentos", abre: ["financeiro"] },
   // CMV real, CMO e folha: só com a caixinha própria, que nasce desmarcada
   // (lib/cmv/acesso.ts). Quem tem Financeiro não ganha isto de carona.
   { prefixo: "/store/dados-sensiveis", abre: ["dados_sensiveis"] },

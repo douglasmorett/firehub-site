@@ -21,6 +21,7 @@ import AjudaModulo from "@/components/AjudaModulo";
 import ContasAPagarClient, { type PayableDTO } from "./ContasAPagarClient";
 import type { DespesaDTO } from "./DespesasLancadas";
 import AbaDRE from "./AbaDRE";
+import DREDoAno from "./DREDoAno";
 import AbaMensalidade from "./AbaMensalidade";
 import { AbaExtrato, AbaRelatorio } from "./AbaExtrato";
 import AbaConfiguracoes from "./AbaConfiguracoes";
@@ -41,7 +42,7 @@ export default function DREClient({
   initialFixedCosts = [], comissoesIniciais = {}, initialRepasseConfig = {}, payables = [], initialDespesas = [],
 }: {
   /** Período, "hoje" e fuso decididos NO SERVIDOR (o dia operacional da loja). */
-  inicio: { de: string; ate: string; hoje: string; tz: string; aba: Aba };
+  inicio: { de: string; ate: string; hoje: string; tz: string; aba: Aba; visao?: "periodo" | "ano" };
   dadosIniciais: DadosDoPeriodo | null;
   erroInicial: string | null;
   cicloInicial: VisaoDoCiclo | null;
@@ -63,6 +64,8 @@ export default function DREClient({
   const [custos, setCustos] = useState<CustoFixo[]>(initialFixedCosts);
   const [despesas, setDespesas] = useState<DespesaDTO[]>(initialDespesas);
   const [comissoes, setComissoes] = useState<ComissoesDosApps>(comissoesIniciais);
+  // O DRE do período escolhido ou o do ano, mês a mês (o "Balancete" do SWFast).
+  const [visao, setVisao] = useState<"periodo" | "ano">(inicio.visao === "ano" ? "ano" : "periodo");
   const ultimoPedido = useRef(0);
 
   // O período e a aba vão para a URL: recarregar ou mandar o link abre a
@@ -73,10 +76,11 @@ export default function DREClient({
       sp.set("tab", aba);
       sp.set("de", periodo.de);
       sp.set("ate", periodo.ate);
+      if (aba === "dre" && visao === "ano") sp.set("visao", "ano"); else sp.delete("visao");
       const hash = aba === "mensalidade" ? window.location.hash : "";
       window.history.replaceState(null, "", `${window.location.pathname}?${sp.toString()}${hash}`);
     } catch { /* navegador sem history: nada a fazer */ }
-  }, [aba, periodo]);
+  }, [aba, periodo, visao]);
 
   const carregar = useCallback(async (de: string, ate: string) => {
     const id = ++ultimoPedido.current;
@@ -227,7 +231,22 @@ export default function DREClient({
 
         {aba === "mensalidade" && <AbaMensalidade ciclo={cicloInicial} tz={inicio.tz} />}
 
-        {aba === "dre" && (dre && dados
+        {aba === "dre" && (
+          <div style={{ display: "inline-flex", gap: 4, background: "#F1F5F9", borderRadius: 10, padding: 3, marginBottom: "1rem" }}>
+            {([["periodo", "Período escolhido"], ["ano", "Ano mês a mês"]] as const).map(([k, rotulo]) => (
+              <button key={k} type="button" onClick={() => setVisao(k)} aria-pressed={visao === k}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontWeight: 700, fontSize: "0.8rem", fontFamily: "inherit", background: visao === k ? "#fff" : "transparent", color: visao === k ? "#0F172A" : "#64748B", boxShadow: visao === k ? "0 1px 3px rgba(0,0,0,.08)" : "none" }}>
+                {rotulo}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {aba === "dre" && visao === "ano" && (
+          <DREDoAno hoje={hoje} custosFixos={custos} despesas={despesas} comissoes={comissoes} paymentFees={paymentFees} />
+        )}
+
+        {aba === "dre" && visao === "periodo" && (dre && dados
           ? <AbaDRE dre={dre} de={dados.de} ate={dados.ate} comissoes={comissoes}
               despesas={despesas} onDespesas={setDespesas} irPara={(a) => setAba(a)} />
           : semDados)}

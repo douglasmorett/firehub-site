@@ -118,7 +118,7 @@ export default async function StoreFinanceiroPage({ searchParams }: { searchPara
 
   return (
     <DREClient
-      inicio={{ de, ate, hoje: ctx.hoje, tz: ctx.tz, aba }}
+      inicio={{ de, ate, hoje: ctx.hoje, tz: ctx.tz, aba, visao: um(sp.visao) === "ano" ? "ano" : "periodo" }}
       dadosIniciais={dados}
       erroInicial={erroDoPeriodo}
       cicloInicial={visaoDoCiclo}
