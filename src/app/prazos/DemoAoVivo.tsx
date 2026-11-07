@@ -50,7 +50,7 @@ function faixaDoPrazo(pedidos: number) {
 }
 
 const NOMES = ["Ana", "Lucas", "Bia", "Caio", "Dani", "Edu", "Fê", "Gui", "Hugo", "Ivo", "Jorge", "Kau", "Lia", "Nina"];
-const ITENS = ["X-burguer", "Pastel", "Esfiha", "Combo 2", "Pizza", "Açaí", "Coxinha"];
+const ITENS = ["X-burguer", "Pastel", "Frango", "Combo 2", "Pizza", "Açaí", "Coxinha"];
 
 /** As cenas do ciclo, na ordem, com quanto cada uma fica na tela. */
 const CENAS = [
