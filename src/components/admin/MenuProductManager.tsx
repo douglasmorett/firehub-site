@@ -963,9 +963,11 @@ export default function MenuProductManager({
     setDeleteConfirmText("");
     const product = products.find(p => p.id === id);
     let affectedCombos: any[] = [];
-    if (product && !product.isCombo) {
+    if (product) {
+      // Toda PERGUNTA onde ele é opção, não só combo: o produto é um só e
+      // excluir tira ele de todo lugar (Douglas, 07/11/2026).
       affectedCombos = products.filter(comb =>
-        comb.isCombo &&
+        comb.id !== id &&
         comb.comboGroups?.some((g: any) =>
           g.items?.some((i: any) => i.menuProduct?.id === id || i.menuProductId === id)
         )
@@ -1772,6 +1774,8 @@ export default function MenuProductManager({
             <p style={{ textAlign: "center", color: "#64748B", fontSize: "0.88rem", marginBottom: "1rem", lineHeight: 1.6 }}>
               Você está prestes a excluir 
               <strong style={{ color: "#0F172A" }}>“{confirmModal.name}”</strong>.
+              {" "}Ele sai de <strong style={{ color: "#0F172A" }}>todos os canais</strong> (Delivery, WhatsApp, Totem, Mesa e Balcão).
+              {" "}Se você só não quer que apareça em um lugar, <strong style={{ color: "#0F172A" }}>pause</strong> em vez de excluir.
             </p>
 
             {/* Aviso de Vinculação a Combos */}
@@ -1781,7 +1785,7 @@ export default function MenuProductManager({
                 padding: "0.85rem 1rem", marginBottom: "1.25rem",
               }}>
                 <p style={{ color: "#9A3412", fontSize: "0.85rem", fontWeight: 700, margin: "0 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
-                  ⚠️ Atenção! Este item está vinculado em {confirmModal.affectedCombos.length} combo(s):
+                  ⚠️ Atenção! Este item é opção em {confirmModal.affectedCombos.length} pergunta(s) de outros produtos:
                 </p>
                 <ul style={{ margin: "0 0 8px 18px", padding: 0, color: "#9A3412", fontSize: "0.82rem", fontWeight: 600 }}>
                   {confirmModal.affectedCombos.map((comb: any) => (
@@ -1789,7 +1793,7 @@ export default function MenuProductManager({
                   ))}
                 </ul>
                 <p style={{ color: "#9A3412", fontSize: "0.78rem", fontWeight: 700, margin: 0, borderTop: "1px solid #FFD3C2", paddingTop: 6 }}>
-                  💡 Se você excluir este item, ele <strong>sairá de todos esses combos automaticamente</strong>.
+                  💡 Se você excluir este item, ele <strong>sai dessas perguntas automaticamente</strong>. Para tirar só de uma, abra o produto e remova a opção lá.
                 </p>
               </div>
             )}
@@ -1849,6 +1853,19 @@ export default function MenuProductManager({
                 }}>
                 Cancelar
               </button>
+              {/* O caminho que o lojista quase sempre quer: some do cardápio, mas continua cadastrado. */}
+              {products.find((p) => p.id === confirmModal.id)?.active && (
+                <button
+                  onClick={() => { handleToggle(confirmModal.id, true); setConfirmModal(null); setDeleteConfirmText(""); }}
+                  style={{
+                    flex: 1, padding: "0.65rem", borderRadius: "10px", fontWeight: 700,
+                    border: "1.5px solid #F59E0B",
+                    background: "#FFFBEB", color: "#92400E",
+                    cursor: "pointer", fontSize: "0.9rem",
+                  }}>
+                  ⏸ Pausar em vez disso
+                </button>
+              )}
               <button
                 onClick={confirmDelete}
                 disabled={deleting || deleteConfirmText !== "excluir"}
