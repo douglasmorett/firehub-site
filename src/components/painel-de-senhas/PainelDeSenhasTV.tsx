@@ -328,15 +328,16 @@ export default function PainelDeSenhasTV({ lojaId, codigo, previa, tela = "balca
                     className={destaque ? "fh-entra fh-brilha" : "fh-entra"}
                     style={{
                       ...S.senhaPronto,
+                      ...(s.codigo ? { padding: "calc(var(--u) * 1.4) 0" } : {}),
                       background: destaque ? cor : "rgba(255,255,255,0.06)",
                       color: destaque ? corTexto : "#fff",
                       borderColor: destaque ? cor : `${cor}66`,
                       ["--fh-cor" as any]: cor,
                     }}
                   >
-                    {s.codigo && <Selo s={s} tamanho={2.6} />}
+                    {s.codigo && <Selo s={s} tamanho={2.2} />}
                     {s.codigo
-                      ? <span style={{ ...S.numeroPronto, fontSize: `calc(var(--u) * ${tamanhoDoCodigo(s.codigo, 9.5, 27)})` }}>{s.codigo}</span>
+                      ? <span style={{ ...S.numeroPronto, fontSize: `calc(var(--u) * ${tamanhoDoCodigo(s.codigo, 8, 27)})` }}>{s.codigo}</span>
                       : <span style={S.numeroPronto}>{s.numero}</span>}
                     {mostrarNome && <span style={{ ...S.nomePronto, color: destaque ? corTexto : "rgba(255,255,255,0.75)" }}>{s.nome || " "}</span>}
                   </div>
