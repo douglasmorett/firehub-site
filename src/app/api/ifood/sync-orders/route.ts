@@ -9,6 +9,7 @@ import { parseIfoodPaymentInfo } from "@/app/api/ifood/webhook/route";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
 import { vincularSobDemanda } from "@/lib/ifood-sob-demanda";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 
 /**
  * POST /api/ifood/sync-orders
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { id: true, role: true, ifoodMerchantId: true, ownerId: true, storeTimezone: true },
+    select: { id: true, role: true, ifoodMerchantId: true, ownerId: true, storeTimezone: true, autoAcceptOrders: true, painelPedidosConfig: true },
   });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
   if (!merchantId && user.ownerId) {
     const owner = await prisma.user.findUnique({
       where: { id: user.ownerId },
-      select: { id: true, role: true, ifoodMerchantId: true, storeTimezone: true },
+      select: { id: true, role: true, ifoodMerchantId: true, storeTimezone: true, autoAcceptOrders: true, painelPedidosConfig: true },
     });
     if (owner?.ifoodMerchantId) {
       merchantId = owner.ifoodMerchantId;
@@ -310,8 +311,8 @@ async function createIfoodOrder(orderId: string, token: string, franchisee: any)
 
   console.log(`[iFood Sync] ✅ Pedido ${orderId} importado (status: ${status})`);
 
-  // Auto-confirm se status é PLACED
-  if (ifoodStatus === "PLACED" || !ifoodStatus) {
+  // Auto-confirm se status é PLACED — só com o aceite automático ligado.
+  if ((ifoodStatus === "PLACED" || !ifoodStatus) && (await aceitaSozinhoAgora(franchisee))) {
     await fetch(
       `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/confirm`,
       { method: "POST", headers: { Authorization: `Bearer ${token}` } }

@@ -12,6 +12,7 @@ import { registrarChamadaWebhook } from "@/lib/ifood-webhook-registro";
 import { verifyCronAuth } from "@/lib/cron-auth";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 
 
 import { parseOrderPaymentInfo } from "@/lib/payment-parser";
@@ -544,7 +545,8 @@ async function processIfoodEvent(event: any, franchiseeIdOverride?: string, orig
         console.warn("[iFood Webhook] Erro ao enfileirar impressão automática:", printErr?.message);
       }
 
-    await autoConfirmIfoodOrder(orderId, token);
+    // Só com o aceite automático ligado; desligado, confirma o Aceitar do painel.
+    if (await aceitaSozinhoAgora(franchisee)) await autoConfirmIfoodOrder(orderId, token);
   }
 
   // Pedido passou a exigir código de entrega: só grava a marca — não há

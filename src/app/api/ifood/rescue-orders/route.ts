@@ -9,6 +9,7 @@ import { getIfoodToken } from "@/lib/ifood-api";
 import { generateDailyOrderNumber } from "@/lib/order-number";
 import { montarItensDoPedidoIfood } from "@/lib/ifood-itens";
 import { vincularSobDemanda } from "@/lib/ifood-sob-demanda";
+import { aceitaSozinhoAgora } from "@/lib/loja-sem-conexao-no-banco";
 
 /**
  * GET /api/ifood/rescue-orders
@@ -422,8 +423,8 @@ async function createOrderFromIfoodData(orderId: string, orderData: any, franchi
 
   console.log(`[iFood Rescue] ✅ Pedido ${orderId} importado (status: ${status})`);
 
-  // Auto-confirm if still PLACED
-  if (ifoodStatus === "PLACED" || !ifoodStatus) {
+  // Auto-confirm if still PLACED — só com o aceite automático ligado.
+  if ((ifoodStatus === "PLACED" || !ifoodStatus) && (await aceitaSozinhoAgora({ id: franchiseeId }))) {
     await fetch(
       `https://merchant-api.ifood.com.br/order/v1.0/orders/${orderId}/confirm`,
       { method: "POST", headers: { Authorization: `Bearer ${token}` } }
