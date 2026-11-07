@@ -104,20 +104,14 @@ export default function KDSHubClient() {
     fetch("/api/store/kds-screens")
       .then(r => r.ok ? r.json() : Promise.reject())
       .then((data: KDSScreenConfig[]) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setScreens(data);
-          gravarNoAparelho(STORAGE_KEY, JSON.stringify(data));
-        } else if (localScreens.length > 0) {
-          // Se o banco estiver vazio mas houver telas salvas localmente neste PC, migra para o banco
-          setScreens(localScreens);
-          fetch("/api/store/kds-screens", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(localScreens),
-          }).catch(() => {});
-        } else {
-          setScreens([]);
-        }
+        // O banco manda, mesmo vazio. Copiar para o banco as telas guardadas
+        // neste PC (migração da época do localStorage) trazia de volta, na loja
+        // que ficou sem tela, as telas da OUTRA loja do grupo aberta antes no
+        // mesmo computador — a chave do aparelho é uma só para todas (Annalu:
+        // excluía a tela na PasteLê e voltava a "ESTAÇÃO PIZZA" da Rush, 04/11/2026).
+        const doBanco = Array.isArray(data) ? data : [];
+        setScreens(doBanco);
+        gravarNoAparelho(STORAGE_KEY, JSON.stringify(doBanco));
       })
       .catch(() => {
         // Fallback local se estiver offline
