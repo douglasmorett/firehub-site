@@ -5,6 +5,7 @@ import { perguntaTravadaPelaPausa } from "@/lib/opcao-pausada";
 import { combosQueDependemDoItem, combosParaReativar, itemFixoDoGrupo } from "@/lib/combo-e-pergunta";
 import { pizzasJaMontadas } from "@/lib/pizza-por-tamanho";
 import { precoMinimoDoProduto } from "@/lib/preco-combo";
+import { ondeAOpcaoAparece, type OpcaoEmOutroProduto } from "@/lib/preco-da-opcao-em-todas";
 import CadastroDePizza, { EscolhaDoNovoItem, type PizzaJaMontada } from "@/components/admin/CadastroDePizza";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -1034,6 +1035,11 @@ export default function MenuProductManager({
   const [comboGroups, setComboGroups] = useState<{ fixo?: boolean; title: string; maxQty: number; minQty: number | null; priceRule: string | null; items: { id: string; additionalPrice: number; additionalPriceSalao: number | null; additionalPriceDelivery: number | null; additionalPriceTotem: number | null; maxPerItem: number | null; optionNote: string | null; precoPorEscolha?: Record<string, number> | null; promoAdditionalPrice?: number | null }[] }[]>([]);
   /** Mostra os três campos de preço por canal em cada opção do combo. */
   const [precosCanalNoCombo, setPrecosCanalNoCombo] = useState(false);
+  /**
+   * Preço mudou num produto que é OPÇÃO em outros (a borda dentro das pizzas):
+   * a pergunta "aplicar em todos?" antes de salvar (lib/preco-da-opcao-em-todas.ts).
+   */
+  const [precoNasOpcoes, setPrecoNasOpcoes] = useState<{ preco: number; lista: OpcaoEmOutroProduto[]; marcadas: string[] } | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState("TODAS");
 
@@ -1343,7 +1349,8 @@ export default function MenuProductManager({
     };
   })();
 
-  const handleSubmit = async () => {
+  /** `opcoesConfirmadas`: a resposta da pergunta do preço nas opções (vazio = não mudar). */
+  const handleSubmit = async (opcoesConfirmadas?: string[]) => {
     if (!name || !description || !price) { alert("Preencha nome, descrição e preço."); return; }
     // O servidor recusa isto com 400 de qualquer jeito (api/admin/menu-products);
     // aqui o lojista descobre antes de perder o resto do formulário.
@@ -1355,6 +1362,20 @@ export default function MenuProductManager({
     if (!category || category.trim() === "") { alert("Selecione uma categoria válida."); return; }
     const horarioPayload = horarioMode === "specific" ? lerHorarioDoProduto({ de: horarioDe, ate: horarioAte }) : null;
     if (horarioMode === "specific" && !horarioPayload) { alert("Horário do produto: escolha o início e o fim, diferentes um do outro."); return; }
+    // O preço mudou e este produto é opção em outros: o cliente paga o
+    // acréscimo de cada um deles, não este preço. Pergunta antes de salvar.
+    if (opcoesConfirmadas === undefined && editingId) {
+      const original = produtosPorId.get(String(editingId));
+      const precoNovo = parseFloat(price);
+      if (original && Number(original.price) !== precoNovo) {
+        const lista = ondeAOpcaoAparece(products, original, precoNovo);
+        if (lista.length > 0) {
+          setPrecoNasOpcoes({ preco: precoNovo, lista, marcadas: lista.filter(o => !o.bloqueio).map(o => o.itemId) });
+          return;
+        }
+      }
+    }
+    setPrecoNasOpcoes(null);
     setLoading(true);
 
     try {
@@ -1383,6 +1404,7 @@ export default function MenuProductManager({
           // refrigerante com tamanho têm pergunta e não são combo.
           comboGroups: comboGroups.map(({ fixo: _fixo, ...g }) => g),
           ...(duplicandoDe && !editingId ? { duplicadoDe: duplicandoDe.id } : {}),
+          ...(editingId && opcoesConfirmadas?.length ? { aplicarPrecoNasOpcoes: opcoesConfirmadas } : {}),
         })
       });
       if (res.ok) {
@@ -1390,6 +1412,11 @@ export default function MenuProductManager({
           const criado = await res.json().catch(() => null);
           if (criado?.id) setCopiaRecemCriada(criado.id);
           showToast("📄 Cópia criada, logo abaixo do original");
+        }
+        if (opcoesConfirmadas?.length) {
+          const salvo = await res.json().catch(() => null);
+          const n = Number(salvo?.opcoesAtualizadas) || 0;
+          showToast(`✅ Preço salvo e aplicado em ${n} produto${n === 1 ? "" : "s"}`);
         }
         resetForm(); router.refresh();
       }
@@ -1795,6 +1822,60 @@ export default function MenuProductManager({
 
   return (
     <div>
+      {/* ===== PREÇO NAS OPÇÕES: aplicar em todos os produtos que oferecem esta opção? ===== */}
+      {precoNasOpcoes && (() => {
+        const aplicaveis = precoNasOpcoes.lista.filter(o => !o.bloqueio);
+        const marcadas = precoNasOpcoes.marcadas;
+        const alternar = (itemId: string) => setPrecoNasOpcoes(atual => atual && ({
+          ...atual,
+          marcadas: atual.marcadas.includes(itemId) ? atual.marcadas.filter(x => x !== itemId) : [...atual.marcadas, itemId],
+        }));
+        return (
+          <div style={{ position: "fixed", inset: 0, zIndex: 100002, background: "rgba(15, 23, 42, 0.6)", display: "flex", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+            <div role="dialog" aria-modal="true" style={{ background: "#fff", borderRadius: "16px", padding: "1.5rem", maxWidth: "480px", width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 60px rgba(0,0,0,0.35)", border: "1px solid #E2E8F0" }}>
+              <h3 style={{ fontWeight: 800, fontSize: "1.05rem", margin: "0 0 0.5rem", color: "#0F172A" }}>
+                Aplicar {moeda(precoNasOpcoes.preco)} em todos os produtos que oferecem “{name}”?
+              </h3>
+              <p style={{ color: "#475569", fontSize: "0.85rem", margin: "0 0 1rem", lineHeight: 1.5 }}>
+                “{name}” também é opção dentro de outros produtos. Lá o cliente paga o acréscimo de cada um, não o preço deste produto. Hoje está assim:
+              </p>
+              <div style={{ display: "grid", gap: "6px", marginBottom: "1rem" }}>
+                {precoNasOpcoes.lista.map(o => (
+                  <label key={o.itemId} style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "8px 10px", borderRadius: "10px", border: `1px solid ${o.bloqueio ? "#FDE68A" : "#E2E8F0"}`, background: o.bloqueio ? "#FFFBEB" : "#F8FAFC", cursor: o.bloqueio ? "default" : "pointer" }}>
+                    <input type="checkbox" disabled={!!o.bloqueio} checked={!o.bloqueio && marcadas.includes(o.itemId)} onChange={() => alternar(o.itemId)} style={{ marginTop: "3px" }} />
+                    <span style={{ fontSize: "0.84rem", color: "#1E293B", lineHeight: 1.4 }}>
+                      <strong>{o.produto}</strong>{o.grupo ? <span style={{ color: "#64748B" }}> · {o.grupo}</span> : null}: <strong style={{ color: "#E8360C" }}>+{moeda(o.acrescimoAtual)}</strong>
+                      {o.bloqueio
+                        ? <span style={{ display: "block", fontSize: "0.74rem", color: "#B45309", fontWeight: 700 }}>⚠️ Não muda aqui: {o.bloqueio}.</span>
+                        : marcadas.includes(o.itemId) ? <span style={{ color: "#0F766E", fontWeight: 700 }}> → +{moeda(precoNasOpcoes.preco)}</span> : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              {aplicaveis.length > 1 && (
+                <p style={{ color: "#64748B", fontSize: "0.76rem", margin: "0 0 1rem", lineHeight: 1.5 }}>
+                  Brotinho e grande podem cobrar diferente de propósito: desmarque o que deve continuar como está.
+                </p>
+              )}
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button type="button" onClick={() => handleSubmit([])} disabled={loading}
+                  style={{ flex: "1 1 160px", padding: "11px", borderRadius: "12px", border: "1.5px solid #CBD5E1", background: "#fff", color: "#334155", fontWeight: 700, fontSize: "0.88rem", cursor: "pointer", fontFamily: "inherit" }}>
+                  Não mudar, salvar só este produto
+                </button>
+                <button type="button" onClick={() => handleSubmit(marcadas)} disabled={loading || marcadas.length === 0}
+                  style={{ flex: "1 1 160px", padding: "11px", borderRadius: "12px", border: "none", background: marcadas.length === 0 ? "#CBD5E1" : "linear-gradient(135deg, #E8360C, #C92E09)", color: "#fff", fontWeight: 800, fontSize: "0.88rem", cursor: marcadas.length === 0 ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                  Aplicar {moeda(precoNasOpcoes.preco)} {marcadas.length === aplicaveis.length ? "em todos" : `em ${marcadas.length}`}
+                </button>
+              </div>
+              <button type="button" onClick={() => setPrecoNasOpcoes(null)} disabled={loading}
+                style={{ display: "block", margin: "10px auto 0", background: "none", border: "none", color: "#64748B", fontSize: "0.8rem", textDecoration: "underline", cursor: "pointer", fontFamily: "inherit" }}>
+                Voltar para a edição
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ===== MODAL DE CONFIRMAÇÃO CUSTOMIZADO ===== */}
       {confirmModal && (
         <div style={{
@@ -2343,7 +2424,7 @@ export default function MenuProductManager({
             </p>
 
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-              <button type="button" className="btn btn-primary" onClick={handleSubmit} disabled={loading || uploadingImage || !name.trim()}
+              <button type="button" className="btn btn-primary" onClick={() => handleSubmit()} disabled={loading || uploadingImage || !name.trim()}
                 style={{ padding: "11px 18px", fontSize: "0.92rem", borderRadius: "12px", flex: "1 1 180px", justifyContent: "center" }}>
                 <Copy size={16} /> {loading ? "Criando..." : "Criar cópia"}
               </button>
@@ -3774,7 +3855,7 @@ export default function MenuProductManager({
               </button>
               <button
                 type="button"
-                onClick={handleSubmit}
+                onClick={() => handleSubmit()}
                 disabled={loading}
                 style={{
                   flex: 2, padding: "12px", borderRadius: "12px",
