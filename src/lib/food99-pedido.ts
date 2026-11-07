@@ -657,6 +657,19 @@ export function itens99ParaPrisma(
           // loja, ele nasce onde a cozinha espera.
           category: categorias?.get(i.nome) ?? "99Food",
           franchiseeId: lojaId,
+          // A MESMA regra do espelho do iFood (lib/ifood-itens.ts): espelho não
+          // é cardápio. Com a categoria real (acima) e `active` no padrão true,
+          // o filtro de lib/cardapio-interno.ts não o reconhecia — nem pela
+          // categoria, nem pelo prefixo, que só condena espelho inativo — e
+          // cada item vendido pelo 99 virava uma cópia sem foto no cardápio e
+          // no Balcão: 494 em 19 lojas (26/10/2026, NIK com o Limoneto e a
+          // Coca repetidos). Pausado, o KDS continua achando a categoria pelo
+          // nome do produto da loja (categoria-do-item.ts, ehItemDeEspelho).
+          active: false,
+          activePDV: false,
+          activeDelivery: false,
+          activeTotem: false,
+          activeGarcom: false,
         },
       },
     },
