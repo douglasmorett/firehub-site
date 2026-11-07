@@ -163,6 +163,8 @@ const HASH_TO_SECTION: Record<string, Section> = {
   coupons: "coupons",
   fidelidade: "loyalty",
   loyalty: "loyalty",
+  // Abre a Fidelidade já na aba do cashback (LoyaltyConfigForm lê o mesmo hash).
+  cashback: "loyalty",
   avaliacoes: "reviews",
   reviews: "reviews",
   equipe: "equipe",
