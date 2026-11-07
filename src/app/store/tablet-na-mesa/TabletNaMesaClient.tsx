@@ -14,6 +14,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { BellRing, ChefHat, Plus, Receipt, TabletSmartphone, Trash2, Wifi, WifiOff } from "lucide-react";
 import InterruptorDoModulo from "@/components/modulos/InterruptorDoModulo";
 import EditorDaTelaDoTablet from "./EditorDaTelaDoTablet";
+import LinksDoAppFireHub from "@/components/customer/LinksDoAppFireHub";
 import ResumoDaCobranca from "@/components/modulos/ResumoDaCobranca";
 import { PRECO_POR_TABLET } from "@/lib/tablet-da-mesa/preco";
 import { CLAUSULAS_DO_TERMO_DO_TABLET, TITULO_DO_TERMO_DO_TABLET, VERSAO_DO_TERMO_DO_TABLET } from "@/lib/tablet-da-mesa/termo";
@@ -285,6 +286,7 @@ function ComoDeixarPronto() {
         <li>Toque em <b>Adicionar tablet</b> aqui, escolha a mesa e digite o número no tablet.</li>
         <li>Prenda a tela para o cliente não sair do cardápio: no Android, <b>Fixar app</b> (Configurações › Segurança); no iPad, <b>Acesso Guiado</b> (Ajustes › Acessibilidade).</li>
       </ol>
+      <LinksDoAppFireHub />
     </section>
   );
 }

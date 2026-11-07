@@ -6,6 +6,7 @@ import { lojaDaSessao } from "@/lib/ifood-token";
 import { keetaConfigurada, linkDeAutorizacao } from "@/lib/keeta/api";
 import { lojaKeetaDoFranqueado, desligarVinculo } from "@/lib/keeta/lojas";
 import { statusNaKeeta, abrirOuPausarNaKeeta, enviarHorarioParaKeeta, enviarContatoParaKeeta } from "@/lib/keeta/loja-na-keeta";
+import { enviarCardapioParaKeeta } from "@/lib/keeta/cardapio";
 import {
   COOKIE_DA_CONEXAO,
   assinarConexao,
@@ -24,7 +25,7 @@ export const dynamic = "force-dynamic";
  *   GET    ?authId=          → as lojas que ele acabou de autorizar (para escolher)
  *   POST   { acao:"conectar" }                         → link oficial da Keeta
  *   POST   { acao:"escolher", authId, keetaMerchantId } → liga a loja escolhida
- *   POST   { acao:"abrir"|"pausar"|"enviar-horario"|"enviar-contato" } → a loja na Keeta
+ *   POST   { acao:"abrir"|"pausar"|"enviar-horario"|"enviar-contato"|"enviar-cardapio" } → a loja na Keeta
  *   DELETE                   → desliga
  *
  * O fluxo é o "self-serve com redirect" da Keeta: o botão abre a Keeta, o
@@ -124,6 +125,7 @@ export async function POST(req: NextRequest) {
     pausar: () => abrirOuPausarNaKeeta(s.lojaId!, false),
     "enviar-horario": () => enviarHorarioParaKeeta(s.lojaId!),
     "enviar-contato": () => enviarContatoParaKeeta(s.lojaId!),
+    "enviar-cardapio": () => enviarCardapioParaKeeta(s.lojaId!),
   };
   const acao = acoesDaLoja[String(corpo?.acao || "")];
   if (acao) {

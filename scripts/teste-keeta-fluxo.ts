@@ -172,7 +172,7 @@ async function main() {
   confere("CREATED: número do dia e km", [p1?.dailyOrderNumber, p1?.deliveryDistance], [1, 2.4]);
   confere("CREATED: foi para a impressão", impressos.includes(p1?.id), true);
   const confirm1 = chamadas.find((c) => c.caminho === "/v1/orders/1001/confirm");
-  confere("CREATED: confirm na hora, com o número do FireHub", [!!confirm1, confirm1?.corpo?.orderExternalCode, typeof confirm1?.corpo?.createdAt], [true, "#1", "string"]);
+  confere("CREATED: aceite automático desligado → NÃO confirma (quem confirma é o Aceitar do painel)", !!confirm1, false);
   confere("toda chamada à Keeta saiu assinada certo", chamadas.every((c) => c.assinaturaOk), true);
   confere("payload cru guardado com a loja", payloads.some((p) => p.tipo === "pedido" && p.idNoParceiro === "1001" && p.franchiseeId === "loja-teste"), true);
 
@@ -207,10 +207,17 @@ async function main() {
   confere("entrega da Keeta: o resto do sistema vê entrega parceira da Keeta", infoDaEntrega(p4), { parceira: true, parceiro: "KEETA", codigoDeColeta: "7731" });
 
   // 7. Confirm recusado: pedido fica, pendência registrada, loja avisada
+  // (com o aceite automático LIGADO: é ele que confirma na gravação)
+  db.user[0].autoAcceptOrders = true;
+  pedidosNaKeeta["4501"] = pedidoBase("4501");
+  await processarEventoKeeta(ev("4501", "CREATED"));
+  const confirmAuto = chamadas.find((c) => c.caminho === "/v1/orders/4501/confirm");
+  confere("aceite automático ligado: confirm na hora, com o número do FireHub", [!!confirmAuto, typeof confirmAuto?.corpo?.orderExternalCode, typeof confirmAuto?.corpo?.createdAt], [true, "string", "string"]);
   confirmResponde = 503;
   pedidosNaKeeta["5001"] = pedidoBase("5001");
   const alertasAntes = alertas.length;
   const r7 = await processarEventoKeeta(ev("5001", "CREATED"));
+  db.user[0].autoAcceptOrders = false;
   await new Promise((r) => setTimeout(r, 50));
   confere("confirm 503: pedido gravado e ack (o pedido está salvo)", [r7.confirmar, db.customerOrder.some((o) => o.openDeliveryOrderId === "keeta_5001")], [true, true]);
   confere("confirm 503: vira pendência para o polling repetir + aviso", [pendentes.some((p) => p.pedidoId === "keeta_5001" && p.acao === "confirm"), alertas.length > alertasAntes], [true, true]);
@@ -236,7 +243,7 @@ async function main() {
   await processarEventoKeeta(ev("1001", "DISPATCHED"));
   confere("DISPATCHED atrasado não volta o pedido", p1?.status, "ENTREGUE");
   await processarEventoKeeta(ev("4001", "CONFIRMED"));
-  confere("CONFIRMED (eco do nosso confirm) não muda o status escolhido pela loja", p4?.status, "NOVO");
+  confere("CONFIRMED (aceito no Portal da Keeta) tira de Novos: ACEITO", p4?.status, "ACEITO");
 
   // 11. Cancelado pela Keeta
   await processarEventoKeeta(ev("4001", "CANCELLED", { cancelReason: "Preparo dos alimentos demorado", cancelType: 505001 }));

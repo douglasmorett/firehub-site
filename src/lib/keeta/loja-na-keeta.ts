@@ -64,6 +64,27 @@ const hora = (min: number) =>
  * dias diferentes saem juntos num só `dayOfWeek`.
  */
 export function horarioParaKeeta(storeHours: unknown, deslocamentoMin: number) {
+  const turnos: Array<{ dia: number; ini: number; fim: number }> = [];
+  normalizeStoreHours(storeHours).forEach((dia, idx) => {
+    if (!dia.active) return;
+    for (const t of dia.shifts || []) {
+      if (t.active === false || !t.open || !t.close) continue;
+      const ini = hhmm(t.open);
+      let fim = hhmm(t.close);
+      if (fim === ini) continue;
+      if (fim < ini) fim += 1440; // vira a noite
+      turnos.push({ dia: idx, ini, fim });
+    }
+  });
+  return semanaParaKeeta(turnos, deslocamentoMin);
+}
+
+/**
+ * Turnos em hora local (dia 0 = segunda, minutos; `fim` pode passar de 1440
+ * quando vira a noite) → weekHours da Keeta. Serve a loja e o horário do
+ * produto (lib/keeta/cardapio.ts).
+ */
+export function semanaParaKeeta(turnos: Array<{ dia: number; ini: number; fim: number }>, deslocamentoMin: number) {
   const pedacos: Array<{ dia: number; ini: number; fim: number }> = [];
   const empurrar = (dia: number, ini: number, fim: number) => {
     // Desloca para UTC e corta onde passa da meia-noite.
@@ -78,17 +99,7 @@ export function horarioParaKeeta(storeHours: unknown, deslocamentoMin: number) {
       pedacos.push({ dia: (d + 1) % 7, ini: 0, fim: b - 1440 });
     }
   };
-  normalizeStoreHours(storeHours).forEach((dia, idx) => {
-    if (!dia.active) return;
-    for (const t of dia.shifts || []) {
-      if (t.active === false || !t.open || !t.close) continue;
-      const ini = hhmm(t.open);
-      let fim = hhmm(t.close);
-      if (fim === ini) continue;
-      if (fim < ini) fim += 1440; // vira a noite
-      empurrar(idx, ini, fim);
-    }
-  });
+  for (const t of turnos) empurrar(t.dia, t.ini, t.fim);
   const porPeriodo = new Map<string, Set<number>>();
   for (const p of pedacos) {
     if (p.fim - p.ini < 1) continue;

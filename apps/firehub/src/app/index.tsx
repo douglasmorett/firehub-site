@@ -4,10 +4,10 @@
  */
 import { Redirect, useRouter } from "expo-router";
 import { useEffect, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import type { Modo } from "@/lib/config";
+import { API_URL, type Modo } from "@/lib/config";
 import { gravarModo, lerModo } from "@/lib/guardado";
 
 const OPCOES: { modo: Modo; emoji: string; titulo: string; texto: string }[] = [
@@ -46,6 +46,9 @@ export default function Inicio() {
             </View>
           </Pressable>
         ))}
+        <Pressable onPress={() => Linking.openURL(`${API_URL}/privacidade-app-firehub`).catch(() => {})}>
+          <Text style={estilos.privacidade}>Política de privacidade</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -61,4 +64,5 @@ const estilos = StyleSheet.create({
   emoji: { fontSize: 36 },
   cartaoTitulo: { color: "#fff", fontSize: 19, fontWeight: "800" },
   cartaoTexto: { color: "#94A3B8", fontSize: 14, marginTop: 4, lineHeight: 20 },
+  privacidade: { color: "#64748B", fontSize: 13, textAlign: "center", textDecorationLine: "underline", marginTop: 8 },
 });

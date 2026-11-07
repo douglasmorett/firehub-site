@@ -86,8 +86,10 @@
       "reactCompiler": true
     },
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": { "projectId": "71aedacc-445d-4b4d-bf63-498d3645fabe" }
     },
+    "updates": { "url": "https://u.expo.dev/71aedacc-445d-4b4d-bf63-498d3645fabe" },
     "owner": "douglasmorett"
   }
 }

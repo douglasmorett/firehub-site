@@ -254,10 +254,16 @@ export async function decifrar(cifrados: string[]): Promise<Map<string, string>>
  * registrado APAGA o histórico do mapeamento lá — por isso só a rota de vínculo
  * chama isto, e só quando o par (nosso id, id da Keeta) é novo.
  */
-export function onboardingDaLoja(merchantId: string, keetaMerchantId: number, ordersWebhookURL: string) {
+export function onboardingDaLoja(
+  merchantId: string,
+  keetaMerchantId: number,
+  ordersWebhookURL: string,
+  cardapio?: { baseURL: string; apiKey: string },
+) {
+  // `getMerchantURL`: de onde a Keeta puxa o cardápio da loja (lib/keeta/cardapio.ts).
   return chamarKeeta("PUT", "/v1/merchantOnboarding", {
     query: { merchantId },
-    corpo: { ordersWebhookURL, keetaMerchantId },
+    corpo: { ...(cardapio ? { getMerchantURL: cardapio } : {}), ordersWebhookURL, keetaMerchantId },
   });
 }
 

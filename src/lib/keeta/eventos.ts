@@ -10,9 +10,9 @@
  * ── Por que o FireHub confirma na Keeta assim que grava ────────────────────
  *
  * Pedido não confirmado em 5 minutos é cancelado pela Keeta E a loja fica
- * fechada por um tempo (política da Keeta). O confirm sai na gravação, como na
- * Wabiz e na Brendi — é o "recebi". O status no FireHub continua seguindo o
- * aceite automático da loja (NOVO ou ACEITO); recusar depois é
+ * fechada por um tempo (política da Keeta). Com o aceite automático ligado o
+ * confirm sai na gravação, como na Wabiz e na Brendi. Desligado, sai no
+ * Aceitar do painel (lib/keeta/status.ts). Recusar depois é
  * `requestCancellation`, que a rota de status já manda.
  */
 import { prisma } from "@/lib/prisma";
@@ -130,11 +130,12 @@ async function importarPedido(evento: EventoKeeta, merchantDoCabecalho?: string 
   const dono = await prisma.user.findUnique({ where: { id: loja.franchiseeId }, select: { id: true, storeName: true, autoAcceptOrders: true } });
   if (!dono) return { confirmar: false, acao: "erro", mensagem: `loja ${loja.franchiseeId} não existe` };
 
+  // Loja SEM CONEXÃO: o pedido não nasce aceito (lib/loja-sem-conexao-no-banco.ts).
+  const aceitaSozinho = await aceitaSozinhoAgora(dono);
   const traducao = traduzirPedidoOpenDelivery(pedido, {
     lojaId: dono.id,
     fuso: await fusoDaLoja(dono.id),
-    // Loja SEM CONEXÃO: o pedido não nasce aceito (lib/loja-sem-conexao-no-banco.ts).
-    autoAcceptOrders: await aceitaSozinhoAgora(dono),
+    autoAcceptOrders: aceitaSozinho,
     canal: CANAL_KEETA,
   });
   await guardarPayloadCru({ canal: "KEETA", tipo: "pedido", idNoParceiro: evento.orderId, franchiseeId: dono.id, payload: pedido, avisos: traducao.avisos });
@@ -147,10 +148,13 @@ async function importarPedido(evento: EventoKeeta, merchantDoCabecalho?: string 
   }
 
   // ── O "recebi" para a Keeta (prazo de 5 min) ────────────────────────────
+  // Só com o aceite automático ligado. Desligado, quem confirma é o Aceitar
+  // do painel (lib/keeta/status.ts) — e sem aceite em 5 min a Keeta cancela,
+  // que é o que a loja escolheu (homologação, 06/11/2026).
   const criadoNaKeeta = new Date(String(pedido.createdAt || "")).getTime();
   const recente = Number.isFinite(criadoNaKeeta) ? Date.now() - criadoNaKeeta < JANELA_DO_CONFIRM_MS : true;
   const aindaNaoConfirmado = ["", "CREATED"].includes(String(pedido.lastEvent || "").toUpperCase());
-  if (gravado.pedidoId && recente && aindaNaoConfirmado) {
+  if (aceitaSozinho && gravado.pedidoId && recente && aindaNaoConfirmado) {
     const numero = await prisma.customerOrder.findUnique({ where: { id: gravado.pedidoId }, select: { dailyOrderNumber: true } }).catch(() => null);
     const corpo = {
       reason: "Recebido pelo FireHub",
@@ -244,8 +248,8 @@ export async function processarEventoKeeta(
   }
 
   // Eventos que nós mesmos geramos ou que são só informativos.
-  if (["CANCELLATION_REQUESTED", "CONFIRMED", "PICKUP_ONGOING", "RIDER_ARRIVED_AT_STORE", "RECOMMENDED_PREPARATION_START", "PICKED_UP"].includes(tipo)) {
-    if (!existente && tipo === "CONFIRMED") return importarPedido(evento, opts.merchantDoCabecalho);
+  if (!existente && tipo === "CONFIRMED") return importarPedido(evento, opts.merchantDoCabecalho);
+  if (["CANCELLATION_REQUESTED", "PICKUP_ONGOING", "RIDER_ARRIVED_AT_STORE", "RECOMMENDED_PREPARATION_START", "PICKED_UP"].includes(tipo)) {
     return { confirmar: true, acao: "informativo" };
   }
 
@@ -255,8 +259,12 @@ export async function processarEventoKeeta(
 
   // ── Avanço de status vindo da Keeta (só para frente) ─────────────────────
   const entregadorDaKeeta = String(existente.deliveryBy || "").toUpperCase() === "LOGISTICS";
+  // CONFIRMED: aceito no Portal/app da Keeta (aceite automático desligado) —
+  // o pedido sai de Novos. Eco do nosso confirm não muda nada: já está ACEITO
+  // ou adiante e a régua abaixo só anda para frente (06/11/2026).
   const alvo =
-    tipo === "READY_FOR_PICKUP" ? "PRONTO"
+    tipo === "CONFIRMED" ? "ACEITO"
+    : tipo === "READY_FOR_PICKUP" ? "PRONTO"
     : tipo === "DISPATCHED" ? "SAIU_ENTREGA"
     : tipo === "ORDER_COLLECTED" && entregadorDaKeeta ? "SAIU_ENTREGA"
     : tipo === "DELIVERED" || tipo === "CONCLUDED" ? "ENTREGUE"
