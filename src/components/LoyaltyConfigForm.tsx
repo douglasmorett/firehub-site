@@ -20,6 +20,7 @@ import {
   type TrilhaPremiada,
 } from "@/lib/trilha-premiada";
 import TrilhaPremiadaEditor from "@/components/trilha/TrilhaPremiadaEditor";
+import PainelDoCashback from "@/components/cashback/PainelDoCashback";
 import {
   CANAIS_DO_CASHBACK,
   CANAIS_DO_CASHBACK_PADRAO,
@@ -136,6 +137,13 @@ export default function LoyaltyConfigForm({
     stampCanais: lerCanaisDosCarimbos(initialConfig),
   });
   const [activeTab, setActiveTab] = useState<"trilha" | "converter" | "cashback" | "stamps" | "referral" | "birthday" | "vip">("trilha");
+  // A aba do cashback abre nos clientes e saldos (Douglas, 07/11/2026: "na aba
+  // cashback já conseguir ver os clientes que usam e têm crédito"); a
+  // configuração fica ao lado. "#cashback" no endereço abre direto aqui.
+  const [cashbackVendo, setCashbackVendo] = useState<"clientes" | "config">("clientes");
+  useEffect(() => {
+    if (window.location.hash.replace("#", "").toLowerCase() === "cashback") setActiveTab("cashback");
+  }, []);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -618,6 +626,27 @@ export default function LoyaltyConfigForm({
 
         {/* TAB 1: CASHBACK AUTOMÁTICO */}
         {activeTab === "cashback" && (
+          <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+            {([["clientes", "👥 Clientes e saldos"], ["config", "⚙️ Configuração"]] as const).map(([k, rot]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setCashbackVendo(k)}
+                style={{
+                  padding: "8px 14px", borderRadius: 10, border: "1.5px solid " + (cashbackVendo === k ? "#334155" : "#E2E8F0"),
+                  background: cashbackVendo === k ? "#334155" : "#fff", color: cashbackVendo === k ? "#fff" : "#334155",
+                  fontWeight: 800, fontSize: "0.82rem", cursor: "pointer", fontFamily: "inherit",
+                }}
+              >
+                {rot}
+              </button>
+            ))}
+          </div>
+        )}
+        {activeTab === "cashback" && cashbackVendo === "clientes" && (
+          <PainelDoCashback onConfigurar={() => setCashbackVendo("config")} />
+        )}
+        {activeTab === "cashback" && cashbackVendo === "config" && (
           <div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <div>
@@ -1444,8 +1473,8 @@ export default function LoyaltyConfigForm({
           </div>
         )}
 
-        {/* Action Button Footer */}
-        <button
+        {/* Action Button Footer — some nos clientes do cashback: ali não há o que salvar. */}
+        {!(activeTab === "cashback" && cashbackVendo === "clientes") && <button
           type="button"
           onClick={handleSave}
           disabled={saving}
@@ -1466,7 +1495,7 @@ export default function LoyaltyConfigForm({
           }}
         >
           {saved ? "✅ Configurações de Fidelidade Salvas!" : saving ? "Salvando..." : "💾 Salvar Programa de Fidelidade"}
-        </button>
+        </button>}
       </div>
     </div>
   );

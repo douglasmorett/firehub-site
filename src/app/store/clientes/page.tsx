@@ -245,6 +245,13 @@ export default function ClientesPage() {
 
   useEffect(() => { carregar(); }, [carregar]);
 
+  // Vindo do extrato da aba Cashback (Minha loja › Fidelidade): "?telefone="
+  // abre a ficha, onde se dá ou tira saldo.
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("telefone");
+    if (t && t.replace(/\D/g, "").length >= 10) setAberto(t);
+  }, []);
+
   const paginas = lista ? Math.max(1, Math.ceil(lista.total / (lista.porPagina || 50))) : 1;
   const resumo = lista?.resumo;
   const regra = lista?.cashback;

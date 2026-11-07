@@ -31,6 +31,7 @@ import {
   saldoDoCashback,
   taxaDoCliente,
   type AjusteDoCashback,
+  type CreditosExtras,
   type ExtratoDoCashback,
   type SaldoDoCashback,
 } from "./cashback";
@@ -207,33 +208,40 @@ export async function extratoDoCliente(
   return extratoDoCashback(lerCashback(storeLoyalty), pedidos, ajustes, agora, extras);
 }
 
+/** Um cliente da loja no cashback, pela chave do saldo: o que entra na conta dele. */
+export type GrupoDoCashbackDaLoja = {
+  pedidos: Awaited<ReturnType<typeof pedidosComCashbackDaLoja>>;
+  ajustes: LinhaDeAjuste[];
+  extras: CreditosExtras | undefined;
+  nome: string | null;
+  telefone: string;
+};
+
+const pedidosComCashbackDaLoja = (lojaId: string) =>
+  prisma.customerOrder.findMany({
+    where: { franchiseeId: lojaId, OR: [{ cashbackEarned: { gt: 0 } }, { cashbackUsed: { gt: 0 } }] },
+    select: { ...CAMPOS_DO_PEDIDO, customerPhone: true, customerName: true },
+    orderBy: { createdAt: "asc" },
+    take: 20_000,
+  });
+
 /**
- * O saldo de TODOS os clientes da loja que já mexeram com cashback, pela
- * chave do telefone. Só entram os pedidos que geraram ou usaram cashback e os
- * lançamentos — é pouca coisa perto da base inteira, e é o que a lista
- * precisa para a coluna de saldo e o filtro "com saldo".
+ * TODOS os clientes da loja que já mexeram com cashback, pela chave do
+ * telefone, com o que entra na conta de cada um. Só entram os pedidos que
+ * geraram ou usaram cashback e os lançamentos — é pouca coisa perto da base
+ * inteira. Quem lê: `saldosDaLoja` (a aba Clientes) e o painel da aba
+ * Cashback (lib/painel-do-cashback.ts), para os dois contarem igual.
  */
-export async function saldosDaLoja(
-  lojaId: string,
-  storeLoyalty: unknown,
-  agora = new Date(),
-): Promise<Map<string, SaldoDoCashback & { nome: string | null; telefone: string }>> {
-  const regra = lerCashback(storeLoyalty);
+export async function gruposDoCashbackDaLoja(lojaId: string): Promise<Map<string, GrupoDoCashbackDaLoja>> {
   const [pedidos, ajustes, indicacoes] = await Promise.all([
-    prisma.customerOrder.findMany({
-      where: { franchiseeId: lojaId, OR: [{ cashbackEarned: { gt: 0 } }, { cashbackUsed: { gt: 0 } }] },
-      select: { ...CAMPOS_DO_PEDIDO, customerPhone: true, customerName: true },
-      orderBy: { createdAt: "asc" },
-      take: 20_000,
-    }),
+    pedidosComCashbackDaLoja(lojaId),
     ajustesDaLoja(lojaId),
     indicacoesDaLoja(lojaId),
   ]);
-  type Grupo = { pedidos: typeof pedidos; ajustes: LinhaDeAjuste[]; nome: string | null; telefone: string };
-  const grupos = new Map<string, Grupo>();
+  const grupos = new Map<string, GrupoDoCashbackDaLoja>();
   const grupo = (final: string, telefone: string) => {
     let g = grupos.get(final);
-    if (!g) grupos.set(final, (g = { pedidos: [], ajustes: [], nome: null, telefone }));
+    if (!g) grupos.set(final, (g = { pedidos: [], ajustes: [], extras: undefined, nome: null, telefone }));
     return g;
   };
   for (const p of pedidos) {
@@ -251,12 +259,27 @@ export async function saldosDaLoja(
     if (!g.nome && a.nome) g.nome = a.nome;
   }
   // Quem só tem a recompensa de indicação (nunca usou cashback) também entra na lista.
-  for (const final of indicacoes.keys()) {
-    if (!grupos.has(final)) grupo(final, final);
+  for (const [final, extras] of indicacoes) {
+    grupo(final, final).extras = extras;
   }
+  return grupos;
+}
+
+/**
+ * O saldo de TODOS os clientes da loja que já mexeram com cashback, pela
+ * chave do telefone — é o que a lista da aba Clientes precisa para a coluna
+ * de saldo e o filtro "com saldo".
+ */
+export async function saldosDaLoja(
+  lojaId: string,
+  storeLoyalty: unknown,
+  agora = new Date(),
+): Promise<Map<string, SaldoDoCashback & { nome: string | null; telefone: string }>> {
+  const regra = lerCashback(storeLoyalty);
+  const grupos = await gruposDoCashbackDaLoja(lojaId);
   const saldos = new Map<string, SaldoDoCashback & { nome: string | null; telefone: string }>();
   for (const [final, g] of grupos) {
-    saldos.set(final, { ...saldoDoCashback(regra, g.pedidos, agora, g.ajustes, indicacoes.get(final)), nome: g.nome, telefone: g.telefone });
+    saldos.set(final, { ...saldoDoCashback(regra, g.pedidos, agora, g.ajustes, g.extras), nome: g.nome, telefone: g.telefone });
   }
   return saldos;
 }

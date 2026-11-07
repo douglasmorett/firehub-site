@@ -413,6 +413,42 @@ export async function listarClientes(
   };
 }
 
+/**
+ * Nome, telefone, pedidos e último pedido de quem tem cashback — a lista da
+ * aba Cashback (api/store/clientes/cashback/painel). É a MESMA base da lista
+ * acima (pedidos pela régua, nome corrigido no "Editar cadastro"), buscada
+ * pela chave do saldo (8 últimos dígitos), que é como o cashback agrupa. Dois
+ * clientes de DDD diferente com o mesmo final ficam com o de pedido mais
+ * recente — a mesma junção `right(tel, 8)` que põe o saldo na lista.
+ */
+export async function baseDosClientesDoSaldo(
+  lojaId: string,
+  finais: string[],
+): Promise<Map<string, { telefone: string; nome: string | null; pedidos: number; gasto: number; ultimo: string | null }>> {
+  const mapa = new Map<string, { telefone: string; nome: string | null; pedidos: number; gasto: number; ultimo: string | null }>();
+  if (!finais.length) return mapa;
+  await garantirTabelaDeAjustes();
+  const comEdicoes = await garantirTabelaDoCadastro();
+  type Linha = { final8: string; tel: string; nome: string | null; pedidos: number; gasto: number; ultimo: Date | null };
+  const linhas = await prisma.$queryRaw<Linha[]>(Prisma.sql`
+    ${sqlDaBaseDeClientes(lojaId, [], [], comEdicoes)}
+    SELECT right(c.tel, 8) AS final8, c.tel, c.nome, c.pedidos, c.gasto, c.ultimo
+    FROM clientes c
+    WHERE right(c.tel, 8) = ANY(${finais}::text[])
+    ORDER BY c.ultimo ASC NULLS FIRST`);
+  // Em ordem do último pedido: o mais recente fica por último e vence.
+  for (const l of linhas) {
+    mapa.set(l.final8, {
+      telefone: l.tel,
+      nome: l.nome,
+      pedidos: Number(l.pedidos) || 0,
+      gasto: Math.round((Number(l.gasto) || 0) * 100) / 100,
+      ultimo: l.ultimo ? new Date(l.ultimo).toISOString() : null,
+    });
+  }
+  return mapa;
+}
+
 // ── Um cliente ──────────────────────────────────────────────────────────────
 
 export type DetalheDoCliente = {
