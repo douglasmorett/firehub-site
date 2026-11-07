@@ -2333,7 +2333,11 @@ export default function MenuProductManager({
             <Plus size={16} style={{ marginRight: "4px" }} /> Novo Combo
           </button>
           {/* Vínculo dos itens das integrações: lib/espelho-de-integracao.ts */}
-          <Link href="/store/cardapio/integracoes" style={{ fontSize: "0.8rem", color: "#64748B", fontWeight: 600, textDecoration: "none" }}>🔗 Itens das integrações</Link>
+          <Link href="/store/cardapio/integracoes" className="btn btn-outline"
+            style={{ fontSize: "0.85rem", fontWeight: 700, textDecoration: "none", background: "#FFF", borderColor: "#CBD5E1", color: "#334155", display: "inline-flex", alignItems: "center", gap: "6px" }}
+            title="Itens que chegaram do iFood, 99Food, Keeta… com nome diferente do seu cardápio: diga qual produto seu é cada um">
+            🔗 Vincular itens do iFood e 99
+          </Link>
         </div>
       </div>
 
