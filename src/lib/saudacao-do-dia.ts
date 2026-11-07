@@ -129,7 +129,7 @@ function saudacaoPelaHora(horaLocal: number): string {
 
 /**
  * A mensagem inteira, pronta para enviar. Curta: cumprimento, quem fala (se a
- * loja deu nome ao atendente), o link e a porta aberta para a conversa seguir.
+ * loja deu nome ao atendente) e o link.
  */
 export function mensagemDeBoasVindasDoDia(d: DadosDaBoasVindas): string {
   const formal = String(d.personalidade || "").toUpperCase() === "FORMAL";
@@ -147,9 +147,10 @@ export function mensagemDeBoasVindasDoDia(d: DadosDaBoasVindas): string {
     ? `\n\nComo é seu primeiro pedido aqui, você ganha ${cupom.beneficio} com o cupom ${cupom.code}${formal ? "." : " 🎉"}`
     : "";
   const convite = `Para conhecer nosso cardápio e fazer seu pedido é só acessar: ${d.link}${presente}`;
-  const porta = formal
-    ? "Se tiver qualquer dúvida sobre sabores, preços ou entrega, estou à disposição por aqui."
-    : "Qualquer dúvida sobre sabor, preço ou entrega, é só me chamar por aqui!";
 
-  return `${cumprimento}${apresentacao}\n\n${convite}\n\n${porta}`;
+  // Sem a terceira linha ("qualquer dúvida é só me chamar por aqui!"): é a
+  // frase que a regra 2 do prompt proíbe no fim de toda resposta, e o "oi"
+  // virava três blocos de texto (Douglas, 06/11/2026: "quanto menos ela
+  // falar, melhor"). Quem tem dúvida pergunta.
+  return `${cumprimento}${apresentacao}\n\n${convite}`;
 }

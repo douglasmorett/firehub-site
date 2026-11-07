@@ -66,14 +66,19 @@ async function withRetry<T>(operation: () => Promise<T>, retries = 3, delay = 50
 //   • mudança de status é idempotente (sobe de etapa, nunca desce).
 // Pôr a vez no banco aqui seria uma consulta por rodada por loja, no caminho
 // mais quente do servidor.
-let lastIfoodPoll = 0;
-
-
+//
+// O freio do iFood é POR LOJA, como os do JotaJá e da Brendi. Era um número só
+// para o servidor inteiro: com dezenas de painéis abertos, a cada 5 s uma loja
+// qualquer puxava e as outras ficavam no cron de 1 em 1 minuto — pedido do
+// iFood levando 1 a 2 min para aparecer (Sushi Dojo, 02/11/2026). 10 s por loja
+// para não martelar o polling do iFood.
+const lastIfoodPollMap = new Map<string, number>();
 
 async function pollIfoodEvents(sessionUserId?: string) {
   const now = Date.now();
-  if (now - lastIfoodPoll < 5_000) return; // Skip if polled less than 5s ago
-  lastIfoodPoll = now;
+  const chave = sessionUserId || "";
+  if (now - (lastIfoodPollMap.get(chave) || 0) < 10_000) return;
+  lastIfoodPollMap.set(chave, now);
 
   try {
     const { getIfoodToken, getTokenDaLojaIfood } = await import("@/lib/ifood-api");

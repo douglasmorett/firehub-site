@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { escolhasDoItem } from "@/lib/comanda-do-robo";
+import { somDesligado } from "@/lib/som-do-painel";
 
 /**
  * "🤖 Pedido novo do robô — confira antes de aceitar".
@@ -99,6 +100,7 @@ export default function AvisoPedidoDoRoboParaConferir({
   // pedidos já costuma ter sido clicado, e o aviso escrito vale de qualquer jeito.
   const ctxRef = useRef<AudioContext | null>(null);
   const tocar = useCallback(() => {
+    if (somDesligado()) return;
     try {
       const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
       if (!Ctx) return;

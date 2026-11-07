@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PALETA } from "@/lib/paleta-brasa";
+import { somDesligado } from "@/lib/som-do-painel";
 
 /**
  * "Cliente quer acrescentar no pedido" — o pop-up que abre sozinho quando o
@@ -113,6 +114,7 @@ export default function AvisoDeAcrescimo() {
 
   /** Três notas SUBINDO: é coisa a mais chegando, não cancelamento. */
   const tocar = useCallback(() => {
+    if (somDesligado()) return;
     const ctx = ctxRef.current;
     if (!ctx || ctx.state !== "running") return;
     const t = ctx.currentTime + 0.05;

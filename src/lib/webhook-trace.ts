@@ -45,6 +45,8 @@ export type TraceStage =
   | "assessor-bill"
   /** Dono sem o Bill: recebeu a oferta, ativou ou recusou (lib/assessor/oferta-no-whatsapp). */
   | "dono-sem-bill"
+  /** Reação ou emoji solto num status da loja: o robô fica quieto (lib/reacao-e-status.ts). */
+  | "reacao-ignorada"
   | "pedido-gravado"
   | "pedido-nao-gravado"
   | "enviado"

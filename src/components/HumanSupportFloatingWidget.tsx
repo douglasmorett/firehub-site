@@ -7,6 +7,7 @@ import { useArrastavel } from "@/lib/useArrastavel";
 import { MessageSquare, X, Send, User, CheckCircle2, Bot, ShieldCheck } from "lucide-react";
 import SuporteDoFireHub, { useRespostaNovaDoSuporte } from "@/components/SuporteDoFireHub";
 import { EVENTO_ABRIR_SUPORTE } from "@/lib/abrir-suporte";
+import { somDesligado } from "@/lib/som-do-painel";
 
 export default function HumanSupportFloatingWidget() {
   // Este botão é montado no layout de /store inteiro, então aparecia também na
@@ -223,6 +224,7 @@ export default function HumanSupportFloatingWidget() {
 
   /** "Ding-dong" duas vezes: alguém tem que ir lá responder. */
   const tocarChamado = () => {
+    if (somDesligado()) return;
     const ctx = ctxRef.current;
     if (!ctx || ctx.state !== "running") return;
     const t = ctx.currentTime + 0.05;

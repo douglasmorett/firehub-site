@@ -12,6 +12,7 @@ const js = ts.transpileModule(readFileSync("src/lib/rascunho-do-robo.ts", "utf8"
 const {
   destinoDaTag, cancelamentoDaTag, contemTudo, mesmosItens, candidatosValidos,
   candidatosSoDeComparacao, memoriaDoPedidoParaOPrompt, escolhasEmTexto, JANELA_DO_PEDIDO_ENVIADO_MS,
+  pedidosParaNaoDuplicar, itensAlemDoPedido, JANELA_DE_COMPARACAO_MS,
 } = await import("data:text/javascript," + encodeURIComponent(js));
 
 let falhas = 0;
@@ -51,7 +52,9 @@ console.log("\n3) Pedido ENVIADO nunca vira rascunho");
   const d2 = destinoDaTag({ candidatos: [enviado([xtudo(), coca()])], isFinal: false, itensNovos: [guarana()], alteraPedido: 12, agora: AGORA });
   conferir("alteração declarada e não confirmada: não mexe", d2.acao === "nao_mexer", d2);
   const d3 = destinoDaTag({ candidatos: [enviado([xtudo(), coca()])], isFinal: false, itensNovos: [guarana()], agora: AGORA });
-  conferir("tag não-final de OUTRO pedido: cria rascunho novo, o enviado fica", d3.acao === "criar", d3);
+  conferir("tag não-final só com item novo: não abre rascunho (vira acréscimo ao confirmar)", d3.acao === "nao_mexer" && d3.pedido.id === "n1", d3);
+  const d4 = destinoDaTag({ candidatos: [enviado([xtudo(), coca()])], isFinal: false, itensNovos: [guarana()], pedidoSeparado: true, agora: AGORA });
+  conferir("tag não-final de OUTRO pedido (pedidoSeparado): cria rascunho novo, o enviado fica", d4.acao === "criar", d4);
 }
 
 console.log("\n4) Pedido enviado + tag FINAL");
@@ -74,7 +77,9 @@ console.log("\n4) Pedido enviado + tag FINAL");
   const outroNumero = destinoDaTag({ candidatos: [enviado(base)], isFinal: true, itensNovos: [guarana()], alteraPedido: 7, agora: AGORA });
   conferir("alteraPedido de OUTRO número não autoriza", outroNumero.acao === "criar", outroNumero);
   const separado = destinoDaTag({ candidatos: [enviado(base)], isFinal: true, itensNovos: [guarana()], agora: AGORA });
-  conferir("só a coca nova, sem declarar: pedido SEPARADO (o enviado não perde itens)", separado.acao === "criar", separado);
+  conferir("só o item novo, sem declarar: acréscimo do mesmo pedido (o enviado não perde itens)", separado.acao === "acrescentar" && separado.pedido.id === "n1" && separado.itens.length === 1, separado);
+  const separadoDeclarado = destinoDaTag({ candidatos: [enviado(base)], isFinal: true, itensNovos: [guarana()], pedidoSeparado: true, agora: AGORA });
+  conferir("só o item novo com pedidoSeparado: pedido SEPARADO", separadoDeclarado.acao === "criar", separadoDeclarado);
   const outroEndereco = destinoDaTag({ candidatos: [enviado(base)], isFinal: true, itensNovos: [xtudo(), coca()], endereco: "Rua B, 99", pagamento: "Dinheiro", agora: AGORA });
   conferir("'outro igual pra minha mãe na Rua B': pedido separado, não reescreve", outroEndereco.acao === "criar", outroEndereco);
   const outroEnderecoDeclarado = destinoDaTag({ candidatos: [enviado(base)], isFinal: true, itensNovos: [xtudo(), coca()], endereco: "Rua B, 99", alteraPedido: 12, agora: AGORA });
@@ -89,12 +94,14 @@ console.log("\n5) O que a tag NÃO pode tocar");
   conferir("pedido do SITE", destinoDaTag({ candidatos: [doSite], isFinal: true, itensNovos: [xtudo(), coca()], agora: AGORA }).acao === "criar");
   const semOrigem = enviado([xtudo()], 5, { source: null });
   conferir("pedido sem origem", destinoDaTag({ candidatos: [semOrigem], isFinal: true, itensNovos: [xtudo(), coca()], agora: AGORA }).acao === "criar");
+  // Não reescreve nenhum destes; o que é novo vira ACRÉSCIMO do mesmo pedido (06/11).
+  const soCoca = (d) => d.acao === "acrescentar" && d.itens.length === 1 && d.itens[0].productName === "Coca 2L" && d.itens[0].quantity === 1;
   const velho = enviado([xtudo()], 21);
-  conferir("pedido enviado há mais de 20 min", destinoDaTag({ candidatos: [velho], isFinal: true, itensNovos: [xtudo(), coca()], agora: AGORA }).acao === "criar");
+  conferir("pedido enviado há mais de 20 min: não reescreve, a coca vira acréscimo", soCoca(destinoDaTag({ candidatos: [velho], isFinal: true, itensNovos: [xtudo(), coca()], agora: AGORA })));
   const aceito = enviado([xtudo()], 2, { status: "ACEITO" });
-  conferir("pedido que a loja já ACEITOU", destinoDaTag({ candidatos: [aceito], isFinal: true, itensNovos: [xtudo(), coca()], agora: AGORA }).acao === "criar");
+  conferir("pedido que a loja já ACEITOU: não reescreve, a coca vira acréscimo", soCoca(destinoDaTag({ candidatos: [aceito], isFinal: true, itensNovos: [xtudo(), coca()], agora: AGORA })));
   const preparando = enviado([xtudo()], 2, { status: "PREPARANDO" });
-  conferir("pedido em preparo", destinoDaTag({ candidatos: [preparando], isFinal: false, itensNovos: [coca()], agora: AGORA }).acao === "criar");
+  conferir("pedido em preparo + tag não-final da coca: não abre rascunho", destinoDaTag({ candidatos: [preparando], isFinal: false, itensNovos: [coca()], agora: AGORA }).acao === "nao_mexer");
   conferir("janela é de 20 min", JANELA_DO_PEDIDO_ENVIADO_MS === 20 * 60 * 1000);
   conferir("candidatos nulos", candidatosValidos(null, AGORA).length === 0);
 }
@@ -142,17 +149,63 @@ console.log("\n6d) Tag repetida depois do ACEITE não vira pedido gêmeo");
     const d = destinoDaTag({ candidatos: [p], isFinal: true, itensNovos: [coca(), xtudo(2)], endereco: "Rua A, 10", pagamento: "Pix", tipo: "ENTREGA", agora: AGORA });
     conferir(`${status}: reconhece e não duplica`, d.acao === "identico" && d.pedido.id === "a1", d);
     const alterado = destinoDaTag({ candidatos: [p], isFinal: true, itensNovos: [xtudo(2), coca(), guarana()], alteraPedido: 12, agora: AGORA });
-    conferir(`${status}: alteração vira pedido separado, nunca reescreve o que está na chapa`, alterado.acao === "criar", alterado);
+    conferir(`${status}: o que foi pedido depois vira acréscimo (só o guaraná), nunca reescreve o que está na chapa`, alterado.acao === "acrescentar" && alterado.itens.length === 1 && alterado.itens[0].productName === "Guaraná 2L", alterado);
   }
   // Garagem Burger, 31/10/2026: a loja finalizou à mão; o "Confirmo" trouxe pagamento/troco/observação de outro jeito.
   const amao = enviado(base, 3, { status: "ACEITO", id: "a5", paymentMethod: "Dinheiro", changeAmount: 81, notes: "🤖 Montado pela IA no WhatsApp · 🧑‍💼 Finalizado à mão" });
   const gemeo = destinoDaTag({ candidatos: [amao], isFinal: true, itensNovos: [coca(), xtudo(2)], endereco: "Rua A 10 - centro", pagamento: "Dinheiro (troco para 81)", troco: 81, observacao: "tem trocado", tipo: "ENTREGA", agora: AGORA });
   conferir("finalizado à mão + 'Confirmo' com o resto escrito diferente: não nasce gêmeo", gemeo.acao === "identico" && gemeo.pedido.id === "a5", gemeo);
   const outraCoisa = destinoDaTag({ candidatos: [amao], isFinal: true, itensNovos: [xtudo(2), coca(), guarana()], tipo: "ENTREGA", agora: AGORA });
-  conferir("aceito + itens diferentes continua virando pedido separado", outraCoisa.acao === "criar", outraCoisa);
-  const velho = enviado(base, 25, { status: "ACEITO", id: "a1" });
+  conferir("aceito + item a mais: só o item a mais vira acréscimo", outraCoisa.acao === "acrescentar" && outraCoisa.itens.length === 1, outraCoisa);
+  const velho = enviado(base, 50, { status: "ACEITO", id: "a1" });
   conferir("fora da janela: não compara", destinoDaTag({ candidatos: [velho], isFinal: true, itensNovos: [xtudo(2), coca()], agora: AGORA }).acao === "criar");
   conferir("só de comparação: pedido do site fora", candidatosSoDeComparacao([enviado(base, 3, { status: "ACEITO", source: "ONLINE" })], AGORA).length === 0);
+}
+
+console.log("\n6d2) Casos reais de 31/10 a 06/11: gêmeo, rascunho gêmeo e 'e uma coca'");
+{
+  const pizza = (q = 1) => ({ menuProductId: "p-pizza", productName: "Pizza Grande", quantity: q, price: 50 });
+  // Deeds nº 6/9 (03/11): a tag repetida veio 16,8 min depois, com o pedido já saindo.
+  const saindo = enviado([pizza()], 17, { status: "SAIU_ENTREGA", id: "d6" });
+  const deeds = destinoDaTag({ candidatos: [saindo], isFinal: true, itensNovos: [pizza()], endereco: "Rua A, 10", pagamento: "Pix", tipo: "ENTREGA", agora: AGORA });
+  conferir("pedido SAINDO + tag igual: não abre gêmeo", deeds.acao === "identico" && deeds.pedido.id === "d6", deeds);
+  const entregue = enviado([pizza()], 30, { status: "ENTREGUE", id: "d7" });
+  conferir("pedido ENTREGUE há pouco + tag igual: não abre gêmeo", destinoDaTag({ candidatos: [entregue], isFinal: true, itensNovos: [pizza()], tipo: "ENTREGA", agora: AGORA }).acao === "identico");
+  // Pizzaria Cardoso nº 52/53 (31/10): 20,1 min depois, ainda ACEITO.
+  const cardoso = enviado([pizza()], 21, { status: "ACEITO", id: "c52" });
+  conferir("ACEITO há 21 min + tag igual: não abre gêmeo", destinoDaTag({ candidatos: [cardoso], isFinal: true, itensNovos: [pizza()], tipo: "ENTREGA", agora: AGORA }).acao === "identico");
+  // Garagem nº 74 (31/10) e Pizzaria 17 nº 48 (06/11): rascunho gêmeo segundos depois do aceite.
+  const g74 = enviado([xtudo(1)], 1, { status: "ACEITO", id: "g74" });
+  conferir("ACEITO + tag NÃO-final igual: não abre rascunho", destinoDaTag({ candidatos: [g74], isFinal: false, itensNovos: [xtudo(1)], agora: AGORA }).acao === "nao_mexer");
+  // Garagem nº 69 (02/11): rascunho só com o milkshake que já estava no pedido.
+  const g69 = enviado([xtudo(1), coca()], 9, { status: "ACEITO", id: "g69" });
+  conferir("ACEITO + tag NÃO-final com parte do pedido: não abre rascunho", destinoDaTag({ candidatos: [g69], isFinal: false, itensNovos: [coca()], agora: AGORA }).acao === "nao_mexer");
+  const novoParcial = destinoDaTag({ candidatos: [enviado([xtudo(1), coca()], 3)], isFinal: false, itensNovos: [coca()], agora: AGORA });
+  conferir("NOVO + tag NÃO-final com parte do pedido: não abre rascunho", novoParcial.acao === "nao_mexer", novoParcial);
+  // Yakisoba nº 35/36 (02/11): a tag trouxe os 2 yakisobas de novo + o guaraná.
+  const yaki = destinoDaTag({ candidatos: [enviado([xtudo(2)], 1, { status: "ACEITO", id: "y35" })], isFinal: true, itensNovos: [xtudo(2), guarana()], tipo: "ENTREGA", agora: AGORA });
+  conferir("pedido inteiro + guaraná: só o guaraná vira acréscimo", yaki.acao === "acrescentar" && yaki.pedido.id === "y35" && yaki.itens.length === 1 && yaki.itens[0].productName === "Guaraná 2L", yaki);
+  // Túlio nº 69/70 (27/10): retirada, o segundo pedido só com o que veio depois.
+  const tulio = destinoDaTag({ candidatos: [enviado([xtudo(1)], 4, { status: "ACEITO", deliveryType: "RETIRADA", customerAddress: null, id: "t69" })], isFinal: true, itensNovos: [coca(), guarana(3)], tipo: "RETIRADA", agora: AGORA });
+  conferir("retirada + itens novos: viram acréscimo do mesmo pedido", tulio.acao === "acrescentar" && tulio.itens.length === 2, tulio);
+  const mais1 = destinoDaTag({ candidatos: [enviado([xtudo(2), coca()], 4, { status: "ACEITO" })], isFinal: true, itensNovos: [xtudo(3), coca()], agora: AGORA });
+  conferir("mais um do mesmo: acréscimo de 1", mais1.acao === "acrescentar" && mais1.itens.length === 1 && mais1.itens[0].quantity === 1, mais1);
+  // O que NÃO vira acréscimo.
+  const aceitoBase = enviado([xtudo(2)], 4, { status: "ACEITO" });
+  conferir("pedidoSeparado: true → pedido novo", destinoDaTag({ candidatos: [aceitoBase], isFinal: true, itensNovos: [coca()], pedidoSeparado: true, agora: AGORA }).acao === "criar");
+  conferir("pedidoSeparado: true → até o igual vira pedido novo", destinoDaTag({ candidatos: [aceitoBase], isFinal: true, itensNovos: [xtudo(2)], pedidoSeparado: true, agora: AGORA }).acao === "criar");
+  conferir("outro endereço → pedido novo", destinoDaTag({ candidatos: [aceitoBase], isFinal: true, itensNovos: [coca()], endereco: "Rua B, 99", agora: AGORA }).acao === "criar");
+  conferir("endereço escrito de outro jeito ainda é o mesmo lugar", destinoDaTag({ candidatos: [aceitoBase], isFinal: true, itensNovos: [coca()], endereco: "Rua A, 10 - Centro", agora: AGORA }).acao === "acrescentar");
+  conferir("entrega × retirada → pedido novo", destinoDaTag({ candidatos: [aceitoBase], isFinal: true, itensNovos: [coca()], tipo: "RETIRADA", agora: AGORA }).acao === "criar");
+  conferir("pedido que já SAIU → pedido novo (não dá para acrescentar)", destinoDaTag({ candidatos: [enviado([xtudo(2)], 4, { status: "SAIU_ENTREGA" })], isFinal: true, itensNovos: [coca()], agora: AGORA }).acao === "criar");
+  conferir("troca de item (mistura) → caminho antigo", destinoDaTag({ candidatos: [enviado([xtudo(2), coca()], 4, { status: "ACEITO" })], isFinal: true, itensNovos: [xtudo(2), guarana()], agora: AGORA }).acao === "criar");
+  conferir("fora da janela de 45 min → pedido novo", destinoDaTag({ candidatos: [enviado([xtudo(2)], 50, { status: "ACEITO" })], isFinal: true, itensNovos: [coca()], agora: AGORA }).acao === "criar");
+  conferir("janela de comparação é 45 min", JANELA_DE_COMPARACAO_MS === 45 * 60 * 1000);
+  conferir("pedido do site não entra na comparação", pedidosParaNaoDuplicar([enviado([xtudo()], 3, { status: "ACEITO", source: "ONLINE" })], AGORA).length === 0);
+  conferir("cancelado não entra na comparação", pedidosParaNaoDuplicar([enviado([xtudo()], 3, { status: "CANCELADO" })], AGORA).length === 0);
+  conferir("itensAlemDoPedido: diferença", JSON.stringify(itensAlemDoPedido([xtudo(2)], [xtudo(3), coca()]).map((i) => [i.productName, i.quantity])) === JSON.stringify([["X-Tudo", 1], ["Coca 2L", 1]]));
+  conferir("itensAlemDoPedido: tag sem o pedido inteiro → null", itensAlemDoPedido([xtudo(2), coca()], [xtudo(2)]) === null);
+  conferir("itensAlemDoPedido: escolha diferente não é o mesmo item", itensAlemDoPedido([xtudo(1, { comboSelections: { g: { Bacon: 1 } } })], [xtudo(1)]) === null);
 }
 
 console.log("\n6e) 'ENTREGA' da tag e 'DELIVERY' do banco são a mesma coisa");

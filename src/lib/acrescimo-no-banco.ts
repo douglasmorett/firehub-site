@@ -164,7 +164,7 @@ async function acrescimoPendenteDoPedido(orderId: string): Promise<Linha | null>
 // ── O robô registra ─────────────────────────────────────────────────────────
 
 export type ResultadoDoRegistro =
-  | { ok: true; repetido: boolean; numero: string | number | null }
+  | { ok: true; repetido: boolean; numero: string | number | null; jaIncluido?: boolean }
   | { ok: false; motivo: string; situacao?: string };
 
 /**
@@ -202,6 +202,18 @@ export async function registrarAcrescimo(o: {
   // esperando a loja não vira dois pop-ups.
   if (pendente && itensEmTexto(pendente.itens) === itensEmTexto(o.itens)) {
     return { ok: true, repetido: true, numero: pedido.dailyOrderNumber ?? null };
+  }
+  // E o mesmo acréscimo que a loja ACABOU de aceitar: a tag repetida no
+  // "obrigado" abria um segundo pop-up igual. Na Túlio Lanches a loja recusou
+  // "Já foi incluido" (06/11, nº 31; 26/10, nº 49) ou aceitou duas vezes o
+  // mesmo molho (19/10, nº 31) — o cliente pagaria em dobro.
+  const aceitoHaPouco = await prisma.$queryRaw<Linha[]>`
+    SELECT * FROM "AcrescimoDoPedido"
+    WHERE "orderId" = ${pedido.id} AND "status" = 'ACEITO'
+      AND "createdAt" > (NOW() AT TIME ZONE 'UTC') - INTERVAL '15 minutes'
+    ORDER BY "createdAt" DESC LIMIT 5`;
+  if (aceitoHaPouco.some((l) => itensEmTexto(l.itens) === itensEmTexto(o.itens))) {
+    return { ok: true, repetido: true, jaIncluido: true, numero: pedido.dailyOrderNumber ?? null };
   }
 
   const id = randomUUID();

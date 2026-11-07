@@ -663,8 +663,11 @@ export async function itens99ParaPrisma(
           // loja, ele nasce onde a cozinha espera.
           category: categorias?.get(i.nome) ?? "99Food",
           franchiseeId: lojaId,
-          // Espelho com campo, pausado e fora dos canais: nascia ATIVO e era
-          // o item sem foto que o cliente via no site (07/11/2026).
+          // Espelho com campo, pausado e fora dos canais (a mesma regra do
+          // espelho do iFood, lib/ifood-itens.ts): nascia ATIVO com categoria
+          // real e era o item sem foto que o cliente via no site e no Balcão —
+          // 494 em 19 lojas (26/10/2026). Pausado, o KDS continua achando a
+          // categoria pelo nome do produto da loja (categoria-do-item.ts).
           ...camposDoEspelho(ORIGENS.FOOD99, null),
         },
       },

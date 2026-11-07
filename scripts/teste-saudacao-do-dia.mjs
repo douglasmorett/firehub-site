@@ -62,7 +62,7 @@ console.log("\n5) O texto que vai para o cliente");
   conferir("boa noite às 20h, com nome", m.startsWith("Boa noite, Douglas! Tudo bem? 😊"), m);
   conferir("apresenta a atendente e a loja", m.includes("Aqui é Ana, do atendimento da Hakim Centro."), m);
   conferir("convida com o link", m.includes(`Para conhecer nosso cardápio e fazer seu pedido é só acessar: ${link}`), m);
-  conferir("deixa a porta aberta", m.includes("Qualquer dúvida sobre sabor, preço ou entrega"), m);
+  conferir("sem a linha de 'qualquer dúvida é só chamar' (06/11)", !/qualquer dúvida/i.test(m) && m.endsWith(link), m);
 
   const cedo = mensagemDeBoasVindasDoDia({ horaLocal: 9, link });
   conferir("bom dia às 9h, sem nome nem atendente", cedo.startsWith("Bom dia! Tudo bem? 😊\n\nPara conhecer"), cedo);
@@ -71,7 +71,7 @@ console.log("\n5) O texto que vai para o cliente");
   const madrugada = mensagemDeBoasVindasDoDia({ horaLocal: 1, link });
   conferir("1h da manhã ainda é boa noite", madrugada.startsWith("Boa noite!"), madrugada);
   const formal = mensagemDeBoasVindasDoDia({ horaLocal: 20, link, personalidade: "FORMAL", nomeDoAtendente: "Carlos" });
-  conferir("formal: sem emoji e com 'à disposição'", !formal.includes("😊") && formal.includes("estou à disposição"), formal);
+  conferir("formal: sem emoji", !formal.includes("😊") && !/disposição/.test(formal), formal);
   conferir("o link aparece uma vez só", (m.match(/https:\/\//g) || []).length === 1);
 
   // Rafa (R&D, 28/09): o cliente novo ouve do cupom de primeiro pedido no "oi".

@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { PALETA } from "@/lib/paleta-brasa";
+import { somDesligado } from "@/lib/som-do-painel";
 
 /**
  * "Pedido enviado da loja X para esta loja. Aceitar?" — o lado de LÁ do
@@ -126,6 +127,7 @@ export default function AvisoDeTransferencia() {
 
   /** Duas notas, duas vezes: pedido chegando de outra loja. */
   const tocar = useCallback(() => {
+    if (somDesligado()) return;
     const ctx = ctxRef.current;
     if (!ctx || ctx.state !== "running") return;
     const t = ctx.currentTime + 0.05;

@@ -90,9 +90,11 @@ caso("situação do pedido pelo status", () => {
   assert.equal(situacaoDoPedido("ENTREGUE"), "ENCERRADO");
 });
 
-caso("na cozinha: pergunta se quer acrescentar e ensina a tag", () => {
+caso("na cozinha: o item novo vai no mesmo pedido, sem perguntar, e ensina a tag", () => {
   const t = pedidoAtivoParaOPrompt({ ...base, status: "PREPARANDO" });
-  assert.match(t, /Quer acrescentar nesse pedido\?/);
+  assert.match(t, /ele vai NESTE pedido/);
+  assert.match(t, /no seu pedido nº 47\?/);
+  assert.match(t, /"pedidoSeparado": true/);
   assert.match(t, /"acrescentarAoPedido": 47/);
   assert.match(t, /SÓ os itens NOVOS/);
   assert.match(t, /NÃO diga que já foi incluído/);
