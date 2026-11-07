@@ -1580,6 +1580,7 @@ export default function VendaPresencialPage() {
             comboGroups: comboProduct.comboGroups || [],
             isCombo: comboProduct.isCombo
           }}
+          buscaNasOpcoes
           onClose={() => setComboProduct(null)}
           onConfirm={(selections, extraSum, qty, notes) => {
             const formatted: { name: string; quantity: number }[] = [];
