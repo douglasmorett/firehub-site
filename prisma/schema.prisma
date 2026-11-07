@@ -2454,6 +2454,32 @@ model OpenDeliverySaidaEvento {
   @@index([webhookStatus, webhookProximaEm])
 }
 
+/// Pedido de app (iFood, 99Food) que NÃO entrou no FireHub: o ponto de falha
+/// da integração grava aqui (lib/falhas-de-integracao-no-banco.ts) e o
+/// relatório "Pedidos com falha na integração" lista. Uma linha por pedido do
+/// parceiro: a nova tentativa do mesmo pedido soma em `tentativas`. "Entrou
+/// depois" não é gravado: o relatório confere se o pedido existe hoje. Criada
+/// por garantir-colunas (garantirEstruturaDeFalhasDeIntegracao) e lida por
+/// SQL, sem depender do client.
+model FalhaDeIntegracao {
+  id            String   @id
+  franchiseeId  String
+  /// "IFOOD" | "99FOOD" — a chave do canal (lib/canal-do-pedido.ts).
+  plataforma    String
+  /// O id do pedido no parceiro (ifoodOrderId / openDeliveryOrderId).
+  pedidoExterno String
+  /// O número que o lojista vê no app do parceiro, quando veio.
+  codigo        String?
+  /// O erro técnico, cru (até 500 caracteres); a tela traduz.
+  erro          String
+  tentativas    Int      @default(1)
+  primeiraEm    DateTime @default(now())
+  ultimaEm      DateTime @default(now())
+
+  @@unique([plataforma, pedidoExterno])
+  @@index([franchiseeId, primeiraEm])
+}
+
 // ══════════════════════════════════════════════════════════
 // TRACKING DE CUSTOS POR LOJISTA
 // ══════════════════════════════════════════════════════════

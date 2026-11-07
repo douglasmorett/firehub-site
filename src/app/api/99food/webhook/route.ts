@@ -532,6 +532,14 @@ export async function POST(req: NextRequest) {
           console.error(
             `[99Food Webhook] pedido ${orderId} não buscado (app_shop_id ${ondeVeio}, conta ${franchisee.id}): ${achado.errno} ${achado.errmsg}`,
           );
+          // O relatório "Pedidos com falha na integração" (sem await: o webhook segue igual).
+          import("@/lib/falhas-de-integracao-no-banco")
+            .then((m) => m.registrarFalhaDeIntegracao({
+              plataforma: "99FOOD", franchiseeId: franchisee.id, pedidoExterno: String(orderId),
+              codigo: displayId && String(displayId) !== String(orderId) ? String(displayId) : null,
+              erro: achado.errno === -2 ? "nenhuma loja da conta tem auth_token (errno -2)" : `order/detail recusou: ${achado.errno} ${achado.errmsg}`,
+            }))
+            .catch(() => {});
           // Sem token nenhum na conta, reenviar não muda nada — o que falta é
           // a loja reconectar. Com erro da API deles, vale pedir o reenvio.
           if (achado.errno !== -2) paraReenviar.push(String(orderId));
@@ -704,6 +712,14 @@ export async function POST(req: NextRequest) {
               });
               console.log(`[99Food Webhook] Pedido ${orderId} já existia (corrida de reenvio) — nada a fazer`);
             } else {
+              // O relatório "Pedidos com falha na integração" (sem await: o erro segue para o 500 de sempre).
+              import("@/lib/falhas-de-integracao-no-banco")
+                .then((m) => m.registrarFalhaDeIntegracao({
+                  plataforma: "99FOOD", franchiseeId: franchisee!.id, pedidoExterno: String(orderId),
+                  codigo: p.numeroNoParceiro ? String(p.numeroNoParceiro) : null,
+                  erro: String(errCriacao?.message || "erro ao gravar o pedido"),
+                }))
+                .catch(() => {});
               throw errCriacao;
             }
           }

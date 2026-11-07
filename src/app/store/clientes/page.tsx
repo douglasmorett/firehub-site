@@ -16,12 +16,12 @@ import {
   ArrowDownCircle, ArrowUpCircle, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Contact, Download, FileUp,
   MessageCircle, Pencil, Plus, Search, Wallet, X,
 } from "lucide-react";
-import { haQuanto as haQuantoNaLoja } from "@/lib/clientes-da-loja-regras";
+import { haQuanto as haQuantoNaLoja, linkDoParabens, mensagemDeAniversario, type CupomDoPresente } from "@/lib/clientes-da-loja-regras";
 import { FUSO_PADRAO } from "@/lib/fuso";
 import type { CarimbosNaFicha, FidelidadeNaFicha, ParadaNaFicha, TrilhaNaFicha } from "@/lib/fidelidade-na-ficha";
 import type { IndicacaoNaFicha } from "@/lib/clientes-da-loja";
 
-type Filtro = "todos" | "com_saldo" | "pediram" | "nunca" | "sumidos";
+type Filtro = "todos" | "com_saldo" | "pediram" | "nunca" | "sumidos" | "aniversario_mes" | "aniversario_semana";
 type Ordem = "recentes" | "pedidos" | "gasto" | "saldo" | "nome";
 
 type ClienteDaLista = {
@@ -33,6 +33,10 @@ type ClienteDaLista = {
   primeiro: string | null;
   importado: boolean;
   saldo: number;
+  /** Só nos filtros de aniversário (lib/clientes-da-loja.ts). */
+  aniversario?: string;
+  aniversarioEm?: string;
+  aniversarioHoje?: boolean;
 };
 
 /** `canais` = onde o pedido novo gera e usa (lib/cashback.ts); ausente = os dois. */
@@ -58,6 +62,8 @@ type Lista = {
   fuso?: string;
   /** "Todas as lojas": a aba mostra só a loja da sessão, e a tela avisa. */
   visao?: { todas: boolean; lojaAtual: string | null; outras: string[] };
+  /** Nos filtros de aniversário: o que o parabéns pelo WhatsApp usa. */
+  presente?: { loja: string; link: string | null; cupons: CupomDoPresente[] };
 };
 
 type Movimento = {
@@ -158,7 +164,18 @@ const ROTULO_DO_FILTRO: Record<Filtro, string> = {
   pediram: "Já pediram",
   nunca: "Nunca pediram",
   sumidos: "Sumidos (30+ dias)",
+  aniversario_mes: "🎂 Aniversário no mês",
+  aniversario_semana: "🎂 Aniversário em 7 dias",
 };
+const ehAniversario = (f: Filtro) => f === "aniversario_mes" || f === "aniversario_semana";
+/** "dia 15/03", com o "hoje" e o "já passou" — o dia do aniversário neste ano. */
+const diaDoAniversario = (c: ClienteDaLista) => {
+  if (!c.aniversarioEm) return c.aniversario || "";
+  const [, m, d] = c.aniversarioEm.split("-");
+  return c.aniversarioHoje ? "é hoje!" : `dia ${d}/${m}`;
+};
+/** O cupom escolhido para o parabéns fica guardado neste navegador (só conveniência). */
+const CHAVE_DO_CUPOM_DO_PRESENTE = "fh-clientes-cupom-do-aniversario";
 const ROTULO_DA_ORDEM: Record<Ordem, string> = {
   recentes: "Pedido mais recente",
   pedidos: "Mais pedidos",
@@ -215,6 +232,15 @@ export default function ClientesPage() {
   const [aviso, setAviso] = useState<Aviso | null>(null);
   const fecharAviso = useCallback(() => setAviso(null), []);
   const pedidoAtual = useRef(0);
+  // O cupom do parabéns ("" = sem cupom). Guardado no navegador; sem acesso, começa vazio.
+  const [cupomDoPresente, setCupomDoPresente] = useState("");
+  useEffect(() => {
+    try { setCupomDoPresente(localStorage.getItem(CHAVE_DO_CUPOM_DO_PRESENTE) || ""); } catch {}
+  }, []);
+  const escolherCupom = (codigo: string) => {
+    setCupomDoPresente(codigo);
+    try { localStorage.setItem(CHAVE_DO_CUPOM_DO_PRESENTE, codigo); } catch {}
+  };
 
   useEffect(() => {
     const t = setTimeout(() => { setBuscaFeita(busca.trim()); setPagina(1); }, 350);
@@ -250,6 +276,20 @@ export default function ClientesPage() {
   const regra = lista?.cashback;
   const fuso = lista?.fuso || FUSO_PADRAO;
   const visao = lista?.visao;
+  // O parabéns: o texto pronto com o cupom escolhido, aberto no WhatsApp do lojista.
+  const presente = lista?.presente;
+  const cupomEscolhido = presente?.cupons.find((c) => c.codigo === cupomDoPresente) || null;
+  const parabensPara = (c: ClienteDaLista) =>
+    linkDoParabens(c.telefone, mensagemDeAniversario({ nome: c.nome, loja: presente?.loja || "a loja", cupom: cupomEscolhido, link: presente?.link }));
+  const botaoDoParabens = (c: ClienteDaLista) => {
+    const href = parabensPara(c);
+    return href ? (
+      <a href={href} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
+        style={{ ...botao("#fff", "#16A34A", { padding: "6px 10px", fontSize: "0.78rem", textDecoration: "none" }) }}>
+        <MessageCircle size={14} /> Mandar parabéns
+      </a>
+    ) : null;
+  };
 
   return (
     <div style={{ padding: 20, maxWidth: 1200, margin: "0 auto", fontFamily: "'Inter', sans-serif", color: corDoTexto }}>
@@ -357,10 +397,34 @@ export default function ClientesPage() {
             </button>
           ))}
         </div>
-        <select value={ordem} onChange={(e) => { setOrdem(e.target.value as Ordem); setPagina(1); }} style={{ ...campo, width: "auto", padding: "7px 10px", fontSize: "0.8rem" }} aria-label="Ordenar">
+        <select value={ordem} onChange={(e) => { setOrdem(e.target.value as Ordem); setPagina(1); }} style={{ ...campo, width: "auto", padding: "7px 10px", fontSize: "0.8rem" }} aria-label="Ordenar"
+          disabled={ehAniversario(filtro)} title={ehAniversario(filtro) ? "Os aniversariantes vêm na ordem do dia do aniversário" : undefined}>
           {(Object.keys(ROTULO_DA_ORDEM) as Ordem[]).map((o) => <option key={o} value={o}>{ROTULO_DA_ORDEM[o]}</option>)}
         </select>
       </div>
+
+      {/* Aniversariantes: o presente e como o parabéns sai (pelo WhatsApp do lojista, nunca sozinho) */}
+      {ehAniversario(filtro) && (
+        <div style={{ background: "#FDF2F8", border: "1.5px solid #FBCFE8", borderRadius: 14, padding: "12px 14px", marginBottom: 14, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ flex: "1 1 320px", fontSize: "0.86rem", color: "#831843", lineHeight: 1.5 }}>
+            <strong>Mande os parabéns pelo seu WhatsApp.</strong> O botão “Mandar parabéns” abre o WhatsApp com a mensagem pronta
+            {cupomEscolhido ? <> e o cupom <strong>{cupomEscolhido.codigo}</strong></> : ""} — você confere e aperta enviar. Nada é enviado sozinho.
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.82rem", fontWeight: 700, color: "#831843" }}>
+            Presente
+            <select value={cupomEscolhido?.codigo || ""} onChange={(e) => escolherCupom(e.target.value)} style={{ ...campo, width: "auto", padding: "7px 10px", fontSize: "0.82rem" }}>
+              <option value="">Sem cupom (só os parabéns)</option>
+              {(presente?.cupons || []).map((c) => <option key={c.codigo} value={c.codigo}>{c.codigo} — {c.beneficio}</option>)}
+            </select>
+          </label>
+          {presente && presente.cupons.length === 0 && (
+            <div style={{ flexBasis: "100%", fontSize: "0.78rem", color: "#9D174D" }}>
+              A loja não tem cupom ativo. Para mandar um presente, crie um em{" "}
+              <a href="/store/minha-loja#cupons" style={{ color: "#9D174D", fontWeight: 800 }}>Minha loja → Cupons</a> (por exemplo ANIVERSARIO, 10% de desconto).
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Lista */}
       <div style={{ background: "#fff", border: borda, borderRadius: 14, overflow: "hidden", opacity: carregando && lista ? 0.6 : 1, transition: "opacity .15s" }}>
@@ -369,9 +433,15 @@ export default function ClientesPage() {
         ) : !lista || lista.clientes.length === 0 ? (
           <div style={{ padding: "3rem 1rem", textAlign: "center" }}>
             <Contact size={40} color="#CBD5E1" style={{ margin: "0 auto 10px" }} />
-            <div style={{ fontWeight: 700, color: "#475569" }}>{buscaFeita || filtro !== "todos" ? "Nenhum cliente com esse filtro" : "Nenhum cliente ainda"}</div>
+            <div style={{ fontWeight: 700, color: "#475569" }}>
+              {ehAniversario(filtro) && !buscaFeita
+                ? (filtro === "aniversario_mes" ? "Nenhum aniversariante neste mês" : "Nenhum aniversário nos próximos 7 dias")
+                : buscaFeita || filtro !== "todos" ? "Nenhum cliente com esse filtro" : "Nenhum cliente ainda"}
+            </div>
             <div style={{ fontSize: "0.82rem", color: "#94A3B8", marginTop: 4 }}>
-              {buscaFeita || filtro !== "todos" ? "Tente outro nome, número ou filtro." : "Os clientes aparecem aqui a partir do primeiro pedido."}
+              {ehAniversario(filtro)
+                ? "O aniversário vem do cadastro que o cliente faz no site e do “Editar cadastro” na ficha dele."
+                : buscaFeita || filtro !== "todos" ? "Tente outro nome, número ou filtro." : "Os clientes aparecem aqui a partir do primeiro pedido."}
             </div>
           </div>
         ) : (
@@ -393,6 +463,12 @@ export default function ClientesPage() {
                     <td>
                       <div style={{ fontWeight: 700 }}>{c.nome || <span style={{ color: "#94A3B8" }}>Sem nome</span>}</div>
                       {c.importado && c.pedidos === 0 && <span style={selo("#EFF6FF", "#1D4ED8")}>veio de outro sistema</span>}
+                      {c.aniversario && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                          <span style={{ ...selo("#FDF2F8", "#BE185D"), marginTop: 0 }}>🎂 {diaDoAniversario(c)}</span>
+                          {botaoDoParabens(c)}
+                        </div>
+                      )}
                     </td>
                     <td style={{ whiteSpace: "nowrap", color: "#334155" }}>{telefoneBonito(c.telefone)}</td>
                     <td className="cl-num">{c.pedidos || "—"}</td>
@@ -405,8 +481,8 @@ export default function ClientesPage() {
             </table>
             <div className="cl-cards" style={{ padding: 10 }}>
               {lista.clientes.map((c) => (
+                <div key={c.telefone} style={{ display: "grid", gap: 6 }}>
                 <button
-                  key={c.telefone}
                   onClick={() => setAberto(c.telefone)}
                   style={{ textAlign: "left", background: "#fff", border: borda, borderRadius: 12, padding: 12, cursor: "pointer", fontFamily: "inherit" }}
                 >
@@ -418,7 +494,10 @@ export default function ClientesPage() {
                   <div style={{ fontSize: "0.78rem", color: corSuave, marginTop: 4 }}>
                     {c.pedidos ? `${c.pedidos} ${c.pedidos === 1 ? "pedido" : "pedidos"} · ${fmt(c.gasto)} · último ${haQuanto(c.ultimo, fuso)}` : c.importado ? "Veio de outro sistema · nunca pediu aqui" : "Nunca pediu"}
                   </div>
+                  {c.aniversario && <div style={{ ...selo("#FDF2F8", "#BE185D"), marginTop: 6 }}>🎂 {diaDoAniversario(c)}</div>}
                 </button>
+                {c.aniversario && botaoDoParabens(c)}
+                </div>
               ))}
             </div>
           </>

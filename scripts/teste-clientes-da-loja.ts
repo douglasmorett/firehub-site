@@ -23,7 +23,7 @@ import { pathToFileURL } from "url";
 import {
   chaveDoCliente, contaComoPedido, dataNaLoja, diasAtras, haQuanto, nomeDoArquivoDeClientes, numerosDoCliente, semRamal, telefoneDoCliente,
 } from "../src/lib/clientes-da-loja-regras";
-import { sqlDaBaseDeClientes, sqlDosPedidosDoCliente, sqlDoResumoDeClientes } from "../src/lib/clientes-da-loja";
+import { sqlDaBaseDeClientes, sqlDosAniversariosDoCadastro, sqlDoFiltroDeAniversario, sqlDosPedidosDoCliente, sqlDoResumoDeClientes } from "../src/lib/clientes-da-loja";
 import { Prisma } from "@prisma/client";
 
 let falhas = 0;
@@ -168,6 +168,26 @@ if (!db) {
   const [resumo] = await rodar(sqlDoResumoDeClientes(L, [], [], limite));
   confere("resumo: 6 clientes, 4 pediram, 3 em 30 dias, 1 sumido, 3 pela primeira vez (nunca mais estreantes que ativos)",
     resumo, { clientes: 6, pediram: 4, ativos30: 3, sumidos: 1, novos30: 3 });
+
+  // Aniversariantes (07/11/2026): de onde vem a data e o filtro da lista.
+  await db.exec(`
+    ALTER TABLE "StoreCustomer" ADD COLUMN "id" text, ADD COLUMN "birthDate" text;
+    ALTER TABLE "CustomerOrder" ADD COLUMN "customerId" text;
+  `);
+  await db.query(`UPDATE "StoreCustomer" SET "id" = 'sc-erik', "birthDate" = '15/11/1990'`);
+  await db.query(`INSERT INTO "StoreCustomer" ("id", "phone", "name", "birthDate") VALUES ('sc-bia', '22999990002', 'Bia', '1995-11-09'), ('sc-fora', '22988887777', 'Zé', '01/11')`);
+  await db.query(`UPDATE "CustomerOrder" SET "customerId" = 'sc-bia' WHERE "id" = 'b1'`);
+  await db.query(`INSERT INTO "CustomerOrder" ("id", "franchiseeId", "customerPhone", "status", "totalAmount", "createdAt", "customerId") VALUES ('z1', 'outra', '22988887777', 'ENTREGUE', 10, '2026-10-01 20:00:00', 'sc-fora')`);
+  confere("aniversários do cadastro: o importado pela loja (Erik) e o do site de quem pediu aqui (Bia); o cliente de outra loja não",
+    (await rodar(sqlDosAniversariosDoCadastro(L))).map((r) => [r.phone, r.birthDate]).sort(),
+    [["(91) 8106-0960", "15/11/1990"], ["22999990002", "1995-11-09"]]);
+  const filtro = sqlDoFiltroDeAniversario(["2299990002", "9181060960"]);
+  confere("o filtro da lista: só as chaves do aniversário, na ordem delas (Bia dia 9, Erik dia 15)",
+    (await rodar(Prisma.sql`${sqlDaBaseDeClientes(L, [], [])} SELECT c.chave FROM clientes c WHERE ${filtro.onde} ORDER BY ${filtro.ordem}`)).map((r) => r.chave),
+    ["2299990002", "9181060960"]);
+  const vazio = sqlDoFiltroDeAniversario([]);
+  confere("ninguém fazendo aniversário: lista vazia (não a base inteira)",
+    (await rodar(Prisma.sql`${sqlDaBaseDeClientes(L, [], [])} SELECT c.chave FROM clientes c WHERE ${vazio.onde} ORDER BY ${vazio.ordem}`)).length, 0);
 }
 }
 

@@ -5,7 +5,7 @@
  * Filtros comuns (lib/relatorios/base.ts): período, horário, tipo de venda,
  * canal, marca e loja. Categoria e produto não se aplicam: a casa do mapa é o
  * PEDIDO (quando o cliente chegou), não o item.
- *   formato=xlsx   baixa a planilha (Resumo + matrizes de vendas, valor e itens)
+ *   formato=xlsx   baixa a planilha (Resumo + matrizes de vendas, valor e itens + a grade por data)
  *
  * A métrica escolhida na tela (vendas, valor, itens) não vem para cá: a
  * resposta traz as três, e trocar de métrica não refaz a busca.
@@ -154,7 +154,30 @@ export async function GET(req: NextRequest) {
     };
   };
 
-  const abas: AbaDaPlanilha[] = [abaDoResumo(resultado, topo), ...METRICAS.map(abaDaMetrica)];
+  /** A grade por data (dia do período × hora), as três métricas uma embaixo da outra. */
+  const abaPorData = (): AbaDaPlanilha => {
+    const g = resultado.porData;
+    const bloco = (m: Metrica): LinhaDaPlanilha[] => [
+      { celulas: [{ v: `${ROTULO_DA_METRICA[m]} — total de cada hora de cada dia`, estilo: "negrito" }] },
+      { celulas: ["Data", "Dia", ...horas.map((h) => `${h}h`), "Total do dia"], estilo: "cabecalho" },
+      ...g.dias.map((d, i): LinhaDaPlanilha => ({
+        celulas: [
+          fmtDia(d), NOMES_DOS_DIAS[new Date(`${d}T12:00:00Z`).getUTCDay()].slice(0, 3),
+          ...horas.map((h): Celula => ({ v: g.mapa[m][i][h] || null, estilo: estiloDe(m) })),
+          { v: g.doDia[m][i], estilo: estiloDe(m, true) },
+        ],
+      })),
+      { celulas: [] },
+    ];
+    return {
+      nome: "Por data",
+      congelarLinhas: 0,
+      larguras: [12, 6, ...horas.map(() => 10), 14],
+      linhas: [...topo("Vendas por data e hora"), ...METRICAS.flatMap(bloco)],
+    };
+  };
+
+  const abas: AbaDaPlanilha[] = [abaDoResumo(resultado, topo), ...METRICAS.map(abaDaMetrica), abaPorData()];
   const buffer = montarPlanilha(abas);
   return respostaDePlanilha(buffer, `vendas-por-dia-e-hora_${ctx.filtros.de}_a_${ctx.filtros.ate}.xlsx`);
 }
