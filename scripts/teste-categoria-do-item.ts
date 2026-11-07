@@ -338,5 +338,47 @@ confere("item sem menuProduct não explode", categoriaResolvida({ productName: "
   confere("nome sem nada do cardápio continua curinga", categoriaResolvida(doIfood("Oferta Especial do Dia"), ragnar), "");
 }
 
+// ── 07/11/2026: o molho escolhido não leva o combo para "Complementos" (Showrrascão) ──
+//
+// iFood 3704, pedido #8: "Trio classico" (Molho - Especial / Batata P /
+// Coca-Cola 350ml) + "Classico". O nome do trio não existe no cardápio; a
+// única opção que casava era o molho, cadastrado em "Complementos", e o trio
+// inteiro virou "Complementos" — fora da COZINHA (Hambúrguer, Porções...).
+// A cozinha imprimiu só o "Classico". Mesmo caso no iFood 2860 (06/11).
+{
+  const show = montarMapa([
+    { id: "s1", name: "Classico", category: "Hambúrguer", active: true },
+    { id: "s2", name: "Trio Burguer Duplo", category: "Hambúrguer", active: true },
+    { id: "s3", name: "Burguer Duplo", category: "Complementos", active: true },
+    { id: "s4", name: "Molho -Especial", category: "Complementos", active: true },
+    { id: "s5", name: "Molho - Barbecue", category: "Complementos", active: true },
+    { id: "s6", name: "Coca-Cola", category: "Complementos", active: true },
+    { id: "s7", name: "Calabresa", category: "Complementos", active: true },
+    { id: "s8", name: "Guaravita", category: "Bebidas", active: true },
+  ]);
+  const doIfood = (nome: string, opcoes: string[]) => ({
+    productName: nome,
+    comboSelections: JSON.stringify(opcoes.map((name) => ({ name, quantity: 1, price: 0 }))),
+    menuProduct: { id: "ifood-bb5721e5", active: false, name: nome, category: "iFood" },
+  });
+  confere(
+    "iFood 3704: Trio classico com Molho - Especial → Hambúrguer, não Complementos",
+    categoriaResolvida(doIfood("Trio classico", ["Molho - Especial", "Batata P", "Coca-Cola 350ml"]), show),
+    "Hambúrguer",
+  );
+  confere(
+    "iFood 2860: Trio Duplo Artesanal com Molho - Barbecue → Hambúrguer",
+    categoriaResolvida(doIfood("Trio Duplo Artesanal", ["Molho - Barbecue", "Batata P", "Coca Cola Zero 350 Ml", "Não Quero Turbinar meu Burguer"]), show),
+    "Hambúrguer",
+  );
+  // Só sabor em "Complementos" e nome que não diz o tipo: curinga (sai em
+  // toda impressora), nunca a categoria do complemento.
+  confere(
+    "Pizza G-35cm-8fatias com sabor em Complementos → curinga",
+    categoriaResolvida(doIfood("Pizza G-35cm-8fatias", ["Calabresa", "Sem Borda"]), show),
+    "",
+  );
+}
+
 console.log(falhas === 0 ? "\nTudo certo." : `\n${falhas} falha(s).`);
 process.exit(falhas === 0 ? 0 : 1);

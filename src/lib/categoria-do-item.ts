@@ -346,6 +346,10 @@ function porOpcaoDoCombo(item: ItemComCategoria, mapa: MapaDeCategorias): string
     // nas opções; o guaraná era o único que casava, a pizza virou "Bebidas" —
     // que a loja deixa só na finalização — e não apareceu em produção nenhuma.
     if (isBeverageCategory(categoria)) continue;
+    // Nem o molho/complemento escolhido. Na Showrrascão (iFood 3704,
+    // 07/11/2026) o "Trio classico" só casava pelo "Molho - Especial", de
+    // "Complementos", e o trio sumiu da comanda da cozinha (Hambúrguer).
+    if (CATEGORIA_DE_OPCAO.test(categoria)) continue;
     if (!votos.has(categoria)) ordem.push(categoria);
     votos.set(categoria, (votos.get(categoria) ?? 0) + 1);
   }
@@ -591,8 +595,12 @@ function palavrasDoNome(nome: unknown): string[] {
   return chaveDoNome(nome).split(" ").filter((w) => w && !PALAVRAS_VAZIAS.has(w));
 }
 
-/** Categoria só de opção (complemento, borda, molho): não é onde o prato é feito. */
-const CATEGORIA_DE_OPCAO = /complement|adiciona|acrescimo|acréscimo|finalizar|borda|molho|sache|sachê/i;
+/**
+ * Categoria só de opção (complemento, borda, molho): não é onde o prato é feito.
+ * Com `\b` na frente: sem ele "adiciona" casava dentro de "TrADICIONAis", e
+ * "Pizzas Tradicionais" passava por categoria de opção (07/11/2026).
+ */
+const CATEGORIA_DE_OPCAO = /\b(complement|adiciona|acrescimo|acréscimo|finalizar|borda|molho|sache|sachê)/i;
 
 /**
  * O produto real cujas palavras estão TODAS no nome do item — o de nome mais
