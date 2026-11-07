@@ -250,7 +250,7 @@ export default function SugestaoDeComprasClient({ inicio }: { inicio: InicioDosF
               <button type="button" className="btn btn-outline" onClick={() => copiar(g)} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px" }}>
                 <Copy size={14} /> Copiar pedido
               </button>
-              <a href={`https://wa.me/?text=${encodeURIComponent(g.texto)}`} target="_blank" rel="noopener noreferrer" className="btn btn-primary"
+              <a href={`https://wa.me/${g.telefone || ""}?text=${encodeURIComponent(g.texto)}`} target="_blank" rel="noopener noreferrer" className="btn btn-primary"
                 style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", textDecoration: "none", background: "#25D366", borderColor: "#25D366" }}>
                 <MessageCircle size={14} /> Mandar no WhatsApp
               </a>

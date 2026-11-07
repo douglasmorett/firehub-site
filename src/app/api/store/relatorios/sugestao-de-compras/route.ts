@@ -14,10 +14,11 @@
  * tem lista. Hoje fica fora da média (o dia não acabou); o saldo é o de agora.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
 import { cabecalhoDoRelatorio, contextoDoRelatorio, janelaDoPeriodo } from "@/lib/relatorios/servidor";
 import { consumoDasLojas } from "@/lib/relatorios/consumo-pela-ficha-no-banco";
 import { quantidadeLegivel, separarPreparos, totalDosDias } from "@/lib/relatorios/consumo-pela-ficha";
-import { listaDeCompras, type InsumoDaLista, type LinhaDaLista, type ModoDaLista } from "@/lib/relatorios/sugestao-de-compras";
+import { chaveDoFornecedor, listaDeCompras, type InsumoDaLista, type LinhaDaLista, type ModoDaLista } from "@/lib/relatorios/sugestao-de-compras";
 import { diasNoPeriodo, fmtDia, somarDias } from "@/lib/relatorios/base";
 import { gravarIdeal, lerIdeal } from "@/lib/cmv/ideal-no-banco";
 import { montarPlanilha, respostaDePlanilha, type LinhaDaPlanilha } from "@/lib/planilha-xlsx";
@@ -55,6 +56,15 @@ export async function GET(req: NextRequest) {
     minimo: i.minimo, ideal: i.ideal, custo: i.custoHoje, fornecedor: i.fornecedor,
   });
   const compras = listaDeCompras({ insumos: insumos.filter((i) => !i.preparo).map(paraLista), consumo: comprados, diasDaBase, modo, loja });
+  // O fornecedor cadastrado na Cotação automática com o mesmo nome do insumo
+  // empresta o WhatsApp: o pedido já abre na conversa dele. Sem a tabela (boot
+  // ainda não criou) a lista segue sem número.
+  const cadastrados = await prisma.fornecedor.findMany({
+    where: { franchiseeId: { in: ctx.lojaIds }, ativo: true, telefone: { not: null } },
+    select: { nome: true, telefone: true },
+  }).catch(() => []);
+  const telefoneDe = new Map(cadastrados.map((f) => [chaveDoFornecedor(f.nome), f.telefone]));
+  for (const g of compras.fornecedores) g.telefone = telefoneDe.get(chaveDoFornecedor(g.fornecedor)) ?? null;
   const producao = listaDeCompras({ insumos: insumos.filter((i) => i.preparo).map(paraLista), consumo: preparos, diasDaBase, modo, loja });
   // O valor do estoque é de TUDO o que está na prateleira, preparo pronto incluído.
   const valorDoEstoque = Math.round((compras.totais.valorDoEstoque + producao.totais.valorDoEstoque) * 100) / 100;

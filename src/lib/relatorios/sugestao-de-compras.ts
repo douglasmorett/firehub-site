@@ -81,6 +81,9 @@ export type GrupoDoFornecedor = {
   itensSemCusto: number;
   /** O pedido pronto para colar no WhatsApp. */
   texto: string;
+  /** O WhatsApp do fornecedor cadastrado na Cotação automática com o mesmo
+   *  nome (55…): o "Mandar no WhatsApp" já abre a conversa dele. */
+  telefone?: string | null;
 };
 
 export type ResultadoDaLista = {
@@ -139,6 +142,9 @@ export function linhaDaLista(i: InsumoDaLista, consumoNaBase: number, diasDaBase
   };
 }
 
+/** O mesmo fornecedor escrito de dois jeitos ("Atacadão" e "atacadao ") é um só. */
+export const chaveDoFornecedor = (f: string) => f.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
 /** O texto do pedido para o fornecedor. `*` é negrito no WhatsApp. */
 export function textoDoPedido(loja: string, itens: Pick<LinhaDaLista, "nome" | "comprar" | "unidade">[]): string {
   const linhas = itens.filter((i) => i.comprar > 0).map((i) => `• ${quantidadeLegivel(i.comprar, i.unidade)} — ${i.nome}`);
@@ -157,8 +163,7 @@ export function listaDeCompras(e: {
     .map((i) => linhaDaLista(i, e.consumo.get(i.id) || 0, e.diasDaBase, e.modo))
     .sort((a, b) => ORDEM[a.situacao] - ORDEM[b.situacao] || a.nome.localeCompare(b.nome, "pt-BR"));
 
-  // O mesmo fornecedor escrito de dois jeitos ("Atacadão" e "atacadao ") é um só.
-  const chave = (f: string) => f.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+  const chave = chaveDoFornecedor;
   const grupos = new Map<string, GrupoDoFornecedor>();
   for (const l of linhas) {
     if (!(l.comprar > 0)) continue;
