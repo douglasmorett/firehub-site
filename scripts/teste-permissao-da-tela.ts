@@ -33,6 +33,12 @@ confere("caixa barrado vai para os pedidos", primeiraTelaDoFuncionario(CAIXA), "
 confere("só cozinha vai para o KDS", primeiraTelaDoFuncionario("kds"), "/store/kds");
 confere("sem nenhuma caixinha, a conta dele", primeiraTelaDoFuncionario(""), "/store/perfil");
 confere("relatórios abre com a caixinha antiga 'relatorios'", funcionarioAbre("/store/relatorios", "relatorios"), true);
+// Os relatórios do dinheiro da loja (07/11/2026): só com "Financeiro"; "Relatórios" sozinho continua abrindo os de venda.
+for (const tela of ["/store/relatorios/fluxo-de-caixa", "/store/relatorios/contas-a-receber", "/store/relatorios/diferencas-de-caixa", "/store/relatorios/sangrias-e-suprimentos"]) {
+  confere(`${tela}: "Relatórios" sozinho não abre`, funcionarioAbre(tela, "relatorios"), false);
+  confere(`${tela}: "Financeiro" abre`, funcionarioAbre(tela, "financeiro"), true);
+}
+confere("o Faturamento por dia continua abrindo com 'relatorios'", funcionarioAbre("/store/relatorios/faturamento-por-dia", "relatorios"), true);
 
 const menuDoCaixa = menuDaLoja({ permissoesDoFuncionario: CAIXA }).flatMap((g) => g.itens.map((i) => i.href));
 // Multimarcas abre com "cardapio" (montar as marcas é trabalho de cardápio; contratar segue do dono). 22/10/2026.
